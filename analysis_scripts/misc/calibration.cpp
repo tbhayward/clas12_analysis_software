@@ -635,6 +635,20 @@ void plot_pcal_energy(TTreeReader& dataReader, TTreeReader* mcReader = nullptr,
     create_pcal_plots("negative", negative_pids);
 }
 
+#include <TROOT.h>
+#include <TCanvas.h>
+#include <TH1D.h>
+#include <TH2D.h>
+#include <TGraph.h>
+#include <TF1.h>
+#include <TLegend.h>
+#include <TLatex.h>
+#include <TLine.h>
+#include <TStyle.h>
+#include <TTreeReader.h>
+#include <TTreeReaderValue.h>
+#include <TPaveText.h>
+
 void plot_sampling_fraction(TTreeReader& dataReader, TTreeReader* mcReader = nullptr,
     const std::string& dataset = "rga_fa18_inb") {
     // Disable stat boxes
@@ -728,9 +742,9 @@ void plot_sampling_fraction(TTreeReader& dataReader, TTreeReader* mcReader = nul
         std::vector<TH2D*> histsData(6), histsMC(6);
         for (int i = 0; i < 6; ++i) {
             histsData[i] = new TH2D(Form("hData_sector%d", i+1), Form("%s Sector %d %s Data", dataset.c_str(), i+1, track_type.c_str()),
-                                     100, 2, 9, 100, 0, 0.35);
+                                     100, 2, 9, 100, 0.15, 0.35);  // Y-axis from 0.15 to 0.35
             histsMC[i] = new TH2D(Form("hMC_sector%d", i+1), Form("%s Sector %d %s MC", dataset.c_str(), i+1, track_type.c_str()),
-                                  100, 2, 9, 100, 0, 0.35);
+                                  100, 2, 9, 100, 0.15, 0.35);    // Y-axis from 0.15 to 0.35
         }
 
         // Fill data 2D histograms
@@ -825,7 +839,7 @@ void plot_sampling_fraction(TTreeReader& dataReader, TTreeReader* mcReader = nul
             histsData[i]->GetXaxis()->SetTitle("p (GeV)");
             histsData[i]->GetYaxis()->SetTitle("Sampling Fraction");
             histsData[i]->GetXaxis()->SetRangeUser(2.0, 9.0);
-            histsData[i]->GetYaxis()->SetRangeUser(0.0, 0.35);
+            histsData[i]->GetYaxis()->SetRangeUser(0.15, 0.35);  // Changed Y-axis range
             histsData[i]->Draw("COLZ");
 
             // Draw the mean quadratic fit as a solid red line
@@ -844,13 +858,36 @@ void plot_sampling_fraction(TTreeReader& dataReader, TTreeReader* mcReader = nul
             meanMinusSigma->SetLineWidth(2);
             meanMinusSigma->Draw("L SAME");
 
-            // Add legend in the top right
-            TLegend* legend = new TLegend(0.65, 0.75, 0.9, 0.9);
-            legend->SetTextSize(0.035);
-            legend->SetBorderSize(0);
+            // Adjust legend position and add border
+            TLegend* legend = new TLegend(0.6, 0.7, 0.85, 0.9);  // Moved slightly to the left
+            legend->SetTextSize(0.025);  // Reduced text size to fit equations
+            // legend->SetBorderSize(0);  // Default is to have a border
+
+            // Get coefficients and format equations
+            double a_mean = meanFit->GetParameter(0);
+            double b_mean = meanFit->GetParameter(1);
+            double c_mean = meanFit->GetParameter(2);
+
+            double a_sigma = sigmaFit->GetParameter(0);
+            double b_sigma = sigmaFit->GetParameter(1);
+            double c_sigma = sigmaFit->GetParameter(2);
+
+            // Format the equations
+            std::string meanFitStr = Form("Mean Fit: %.3f + %.3f#timesp + %.3f#timesp^{2}", a_mean, b_mean, c_mean);
+            std::string sigmaFitStr = Form("Sigma Fit: %.3f + %.3f#timesp + %.3f#timesp^{2}", a_sigma, b_sigma, c_sigma);
+
             legend->AddEntry(meanFit, "Mean Fit", "l");
-            legend->AddEntry(meanPlusSigma, "Mean #pm Sigma", "l");
+            legend->AddEntry(meanPlusSigma, "Mean ± Sigma", "l");
             legend->Draw("SAME");
+
+            // Display the equations using TPaveText
+            TPaveText* pave = new TPaveText(0.2, 0.55, 0.55, 0.7, "NDC");
+            pave->SetFillColor(0);
+            pave->SetTextAlign(13); // Align at top left
+            pave->SetTextSize(0.025);
+            pave->AddText(meanFitStr.c_str());
+            pave->AddText(sigmaFitStr.c_str());
+            pave->Draw("SAME");
 
             // Clean up temporary histograms and graphs
             delete hMean;
@@ -910,7 +947,7 @@ void plot_sampling_fraction(TTreeReader& dataReader, TTreeReader* mcReader = nul
                 histsMC[i]->GetXaxis()->SetTitle("Momentum (GeV)");
                 histsMC[i]->GetYaxis()->SetTitle("Sampling Fraction");
                 histsMC[i]->GetXaxis()->SetRangeUser(2.0, 9.0);
-                histsMC[i]->GetYaxis()->SetRangeUser(0.0, 0.35);
+                histsMC[i]->GetYaxis()->SetRangeUser(0.15, 0.35);  // Changed Y-axis range
                 histsMC[i]->Draw("COLZ");
 
                 // Draw the mean quadratic fit as a solid red line
@@ -929,13 +966,36 @@ void plot_sampling_fraction(TTreeReader& dataReader, TTreeReader* mcReader = nul
                 meanMinusSigma->SetLineWidth(2);
                 meanMinusSigma->Draw("L SAME");
 
-                // Add legend in the top right
-                TLegend* legend = new TLegend(0.65, 0.75, 0.9, 0.9);
-                legend->SetTextSize(0.035);
-                legend->SetBorderSize(0);
+                // Adjust legend position and add border
+                TLegend* legend = new TLegend(0.6, 0.7, 0.85, 0.9);  // Moved slightly to the left
+                legend->SetTextSize(0.025);  // Reduced text size to fit equations
+                // legend->SetBorderSize(0);  // Default is to have a border
+
+                // Get coefficients and format equations
+                double a_mean = meanFit->GetParameter(0);
+                double b_mean = meanFit->GetParameter(1);
+                double c_mean = meanFit->GetParameter(2);
+
+                double a_sigma = sigmaFit->GetParameter(0);
+                double b_sigma = sigmaFit->GetParameter(1);
+                double c_sigma = sigmaFit->GetParameter(2);
+
+                // Format the equations
+                std::string meanFitStr = Form("Mean Fit: %.3f + %.3f#timesp + %.3f#timesp^{2}", a_mean, b_mean, c_mean);
+                std::string sigmaFitStr = Form("Sigma Fit: %.3f + %.3f#timesp + %.3f#timesp^{2}", a_sigma, b_sigma, c_sigma);
+
                 legend->AddEntry(meanFit, "Mean Fit", "l");
-                legend->AddEntry(meanPlusSigma, "Mean #pm Sigma", "l");
+                legend->AddEntry(meanPlusSigma, "Mean ± Sigma", "l");
                 legend->Draw("SAME");
+
+                // Display the equations using TPaveText
+                TPaveText* pave = new TPaveText(0.2, 0.55, 0.55, 0.7, "NDC");
+                pave->SetFillColor(0);
+                pave->SetTextAlign(13); // Align at top left
+                pave->SetTextSize(0.025);
+                pave->AddText(meanFitStr.c_str());
+                pave->AddText(sigmaFitStr.c_str());
+                pave->Draw("SAME");
 
                 // Clean up temporary histograms and graphs
                 delete hMean;
@@ -8828,7 +8888,7 @@ int main(int argc, char** argv) {
 
     //// PLOTS ////
 
-    std::string dataset = "rga_sp19_inb";
+    std::string dataset = "rga_fa18_inb";
 
     // plot_htcc_nphe(dataReader, mcReader, dataset);
     // plot_ltcc_nphe(dataReader, mcReader, dataset);
@@ -8839,9 +8899,9 @@ int main(int argc, char** argv) {
     // dataReader.Restart();
     // if (mcReader) mcReader->Restart();
 
-    // plot_sampling_fraction(dataReader, mcReader, dataset);
-    // dataReader.Restart();
-    // if (mcReader) mcReader->Restart();
+    plot_sampling_fraction(dataReader, mcReader, dataset);
+    dataReader.Restart();
+    if (mcReader) mcReader->Restart();
 
     // plot_diagonal_cut(dataReader, mcReader, dataset);
     // dataReader.Restart();
@@ -8866,9 +8926,9 @@ int main(int argc, char** argv) {
     // if (mcReader) mcReader->Restart();
     // plot_cal_hit_position(dataReader, mcReader, dataset);
 
-    dataReader.Restart();
-    if (mcReader) mcReader->Restart();
-    dc_fiducial_determination(dataReader, mcReader, dataset);
+    // dataReader.Restart();
+    // if (mcReader) mcReader->Restart();
+    // dc_fiducial_determination(dataReader, mcReader, dataset);
 
     // dataReader.Restart();
     // if (mcReader) mcReader->Restart();
