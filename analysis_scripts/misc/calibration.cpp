@@ -4049,7 +4049,7 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
             }
 
             // Set the y-axis maximum to 125 as per your request
-            double max_value = 125;
+            double max_value = 100;
             // Draw and save the mean chi2/ndf vs traj_edge plots
             TCanvas* c_edge = new TCanvas(("c_edge_" + particle_name + "_" + region_name).c_str(), ("Mean chi2/ndf vs traj_edge for " + particle_name + " in " + region_name).c_str(), 1800, 1200);
             c_edge->Divide(3, 2);
