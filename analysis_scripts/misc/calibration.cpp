@@ -3775,11 +3775,11 @@ std::pair<double, double> rotate_coordinates(double x, double y, int sector) {
 }
 
 void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
-    int nBins = 50;
+    int nBins = 20;
     std::vector<std::tuple<std::string, std::string, std::string, double, double, double, double, std::string, double>> regions = {
-        {"traj_x_6", "traj_y_6", "region_1", 15, 160, -80, 80, "traj_edge_6", 50},
-        {"traj_x_18", "traj_y_18", "region_2", 30, 240, -125, 125, "traj_edge_18", 50},
-        {"traj_x_36", "traj_y_36", "region_3", 30, 400, -200, 200, "traj_edge_36", 50}
+        {"traj_x_6", "traj_y_6", "region_1", 15, 160, -80, 80, "traj_edge_6", 20},
+        {"traj_x_18", "traj_y_18", "region_2", 30, 240, -125, 125, "traj_edge_18", 20},
+        {"traj_x_36", "traj_y_36", "region_3", 30, 400, -200, 200, "traj_edge_36", 20}
     };
 
     // Array of particle types (photons and electrons) and their corresponding PIDs
@@ -4093,7 +4093,7 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
                 }
 
                 // Update the legend
-                TLegend* legend = new TLegend(0.5, 0.5, 0.9, 0.9);
+                TLegend* legend = new TLegend(0.5, 0.7, 0.9, 0.9);
                 legend->SetTextSize(0.03);  // Reduced text size
                 legend->AddEntry(h_sum_chi2_ndf_sector[sector], "Data (All #theta)", "p");
                 for (int t = 0; t < num_theta_bins; ++t) {
