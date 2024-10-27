@@ -734,7 +734,7 @@ void plot_sampling_fraction(TTreeReader& dataReader, TTreeReader* mcReader = nul
 
         // Fill data 2D histograms
         for (int i = 0; i < 6e7; i++) {
-            dataReader.Next();
+            if (!dataReader.Next()) break;
             double nphe = *cc_nphe_15;
             int pid = *particle_pid;
             int sector = *cal_sector;
@@ -762,7 +762,7 @@ void plot_sampling_fraction(TTreeReader& dataReader, TTreeReader* mcReader = nul
         // Fill MC 2D histograms
         if (mcReader) {
             for (int i = 0; i < 6e7; i++) {
-                mcReader->Next();
+                if (!mcReader->Next()) break;
                 double nphe = **mc_cc_nphe_15;
                 int pid = **mc_particle_pid;
                 int sector = **mc_cal_sector;
@@ -788,8 +788,38 @@ void plot_sampling_fraction(TTreeReader& dataReader, TTreeReader* mcReader = nul
             }
         }
 
-        // Draw 2D histograms for data
+        // Draw 2D histograms for data and perform fits
         for (int i = 0; i < 6; ++i) {
+            // Fit slices in Y (sampling fraction) for each bin in X (momentum)
+            TH1D* hMean = nullptr;
+            TH1D* hSigma = nullptr;
+            histsData[i]->FitSlicesY(0, 0, -1, 0, "QNR");  // QNR to suppress output
+
+            // Retrieve mean and sigma histograms
+            hMean = (TH1D*)gROOT->FindObject(Form("%s_1", histsData[i]->GetName()));
+            hSigma = (TH1D*)gROOT->FindObject(Form("%s_2", histsData[i]->GetName()));
+
+            // Fit mean and sigma to quadratic polynomials
+            TF1* meanFit = new TF1(Form("meanFit_sector%d", i+1), "pol2", 2.0, 9.0);
+            TF1* sigmaFit = new TF1(Form("sigmaFit_sector%d", i+1), "pol2", 2.0, 9.0);
+
+            hMean->Fit(meanFit, "QNR");   // Fit mean vs momentum
+            hSigma->Fit(sigmaFit, "QNR"); // Fit sigma vs momentum
+
+            // Create TGraph for mean + sigma and mean - sigma
+            TGraph* meanPlusSigma = new TGraph();
+            TGraph* meanMinusSigma = new TGraph();
+
+            int nPoints = hMean->GetNbinsX();
+            for (int bin = 1; bin <= nPoints; ++bin) {
+                double p = hMean->GetBinCenter(bin);
+                double mean = meanFit->Eval(p);
+                double sigma = sigmaFit->Eval(p);
+                meanPlusSigma->SetPoint(bin-1, p, mean + sigma);
+                meanMinusSigma->SetPoint(bin-1, p, mean - sigma);
+            }
+
+            // Draw the 2D histogram
             cData.cd(i + 1);  // Move to the corresponding pad
             histsData[i]->GetXaxis()->SetTitle("p (GeV)");
             histsData[i]->GetYaxis()->SetTitle("Sampling Fraction");
@@ -797,16 +827,35 @@ void plot_sampling_fraction(TTreeReader& dataReader, TTreeReader* mcReader = nul
             histsData[i]->GetYaxis()->SetRangeUser(0.0, 0.35);
             histsData[i]->Draw("COLZ");
 
-            // Draw horizontal line at sampling fraction = 0.19
-            TLine* line = new TLine(2.0, 0.19, 9.0, 0.19);
-            line->SetLineColor(kRed);
-            line->SetLineWidth(2);
-            line->Draw("SAME");
+            // Draw the mean quadratic fit as a solid red line
+            meanFit->SetLineColor(kRed);
+            meanFit->SetLineWidth(2);
+            meanFit->Draw("SAME");
 
-            // Add red text for SF > 0.19
-            TLatex latex;
-            latex.SetTextColor(kRed);
-            latex.DrawLatex(5.0, 0.17, "SF > 0.19");
+            // Draw the mean + sigma and mean - sigma fits as dashed red lines
+            meanPlusSigma->SetLineColor(kRed);
+            meanPlusSigma->SetLineStyle(2);
+            meanPlusSigma->SetLineWidth(2);
+            meanPlusSigma->Draw("L SAME");
+
+            meanMinusSigma->SetLineColor(kRed);
+            meanMinusSigma->SetLineStyle(2);
+            meanMinusSigma->SetLineWidth(2);
+            meanMinusSigma->Draw("L SAME");
+
+            // Add legend in the top right
+            TLegend* legend = new TLegend(0.65, 0.75, 0.9, 0.9);
+            legend->SetTextSize(0.035);
+            legend->SetBorderSize(0);
+            legend->AddEntry(meanFit, "Mean Fit", "l");
+            legend->AddEntry(meanPlusSigma, "Mean #pm Sigma", "l");
+            legend->Draw("SAME");
+
+            // Clean up temporary histograms and graphs
+            delete hMean;
+            delete hSigma;
+            delete meanPlusSigma;
+            delete meanMinusSigma;
         }
 
         // Declare cMC outside the block to ensure it's accessible for saving the plot later
@@ -826,6 +875,36 @@ void plot_sampling_fraction(TTreeReader& dataReader, TTreeReader* mcReader = nul
             }
 
             for (int i = 0; i < 6; ++i) {
+                // Fit slices in Y (sampling fraction) for each bin in X (momentum)
+                TH1D* hMean = nullptr;
+                TH1D* hSigma = nullptr;
+                histsMC[i]->FitSlicesY(0, 0, -1, 0, "QNR");  // QNR to suppress output
+
+                // Retrieve mean and sigma histograms
+                hMean = (TH1D*)gROOT->FindObject(Form("%s_1", histsMC[i]->GetName()));
+                hSigma = (TH1D*)gROOT->FindObject(Form("%s_2", histsMC[i]->GetName()));
+
+                // Fit mean and sigma to quadratic polynomials
+                TF1* meanFit = new TF1(Form("meanFit_sector%d", i+1), "pol2", 2.0, 9.0);
+                TF1* sigmaFit = new TF1(Form("sigmaFit_sector%d", i+1), "pol2", 2.0, 9.0);
+
+                hMean->Fit(meanFit, "QNR");   // Fit mean vs momentum
+                hSigma->Fit(sigmaFit, "QNR"); // Fit sigma vs momentum
+
+                // Create TGraph for mean + sigma and mean - sigma
+                TGraph* meanPlusSigma = new TGraph();
+                TGraph* meanMinusSigma = new TGraph();
+
+                int nPoints = hMean->GetNbinsX();
+                for (int bin = 1; bin <= nPoints; ++bin) {
+                    double p = hMean->GetBinCenter(bin);
+                    double mean = meanFit->Eval(p);
+                    double sigma = sigmaFit->Eval(p);
+                    meanPlusSigma->SetPoint(bin-1, p, mean + sigma);
+                    meanMinusSigma->SetPoint(bin-1, p, mean - sigma);
+                }
+
+                // Draw the 2D histogram
                 cMC->cd(i + 1);  // Move to the corresponding pad
                 histsMC[i]->GetXaxis()->SetTitle("Momentum (GeV)");
                 histsMC[i]->GetYaxis()->SetTitle("Sampling Fraction");
@@ -833,16 +912,35 @@ void plot_sampling_fraction(TTreeReader& dataReader, TTreeReader* mcReader = nul
                 histsMC[i]->GetYaxis()->SetRangeUser(0.0, 0.35);
                 histsMC[i]->Draw("COLZ");
 
-                // Draw horizontal line at sampling fraction = 0.19
-                TLine* line = new TLine(2.0, 0.19, 9.0, 0.19);
-                line->SetLineColor(kRed);
-                line->SetLineWidth(2);
-                line->Draw("SAME");
+                // Draw the mean quadratic fit as a solid red line
+                meanFit->SetLineColor(kRed);
+                meanFit->SetLineWidth(2);
+                meanFit->Draw("SAME");
 
-                // Add red text for SF > 0.19
-                TLatex latex;
-                latex.SetTextColor(kRed);
-                latex.DrawLatex(5.0, 0.17, "SF > 0.19");
+                // Draw the mean + sigma and mean - sigma fits as dashed red lines
+                meanPlusSigma->SetLineColor(kRed);
+                meanPlusSigma->SetLineStyle(2);
+                meanPlusSigma->SetLineWidth(2);
+                meanPlusSigma->Draw("L SAME");
+
+                meanMinusSigma->SetLineColor(kRed);
+                meanMinusSigma->SetLineStyle(2);
+                meanMinusSigma->SetLineWidth(2);
+                meanMinusSigma->Draw("L SAME");
+
+                // Add legend in the top right
+                TLegend* legend = new TLegend(0.65, 0.75, 0.9, 0.9);
+                legend->SetTextSize(0.035);
+                legend->SetBorderSize(0);
+                legend->AddEntry(meanFit, "Mean Fit", "l");
+                legend->AddEntry(meanPlusSigma, "Mean #pm Sigma", "l");
+                legend->Draw("SAME");
+
+                // Clean up temporary histograms and graphs
+                delete hMean;
+                delete hSigma;
+                delete meanPlusSigma;
+                delete meanMinusSigma;
             }
         }
 
@@ -8739,9 +8837,9 @@ int main(int argc, char** argv) {
     // dataReader.Restart();
     // if (mcReader) mcReader->Restart();
 
-    // plot_sampling_fraction(dataReader, mcReader, dataset);
-    // dataReader.Restart();
-    // if (mcReader) mcReader->Restart();
+    plot_sampling_fraction(dataReader, mcReader, dataset);
+    dataReader.Restart();
+    if (mcReader) mcReader->Restart();
 
     // plot_diagonal_cut(dataReader, mcReader, dataset);
     // dataReader.Restart();
@@ -8766,21 +8864,21 @@ int main(int argc, char** argv) {
     // if (mcReader) mcReader->Restart();
     // plot_cal_hit_position(dataReader, mcReader, dataset);
 
-    dataReader.Restart();
-    if (mcReader) mcReader->Restart();
-    dc_fiducial_determination(dataReader, mcReader);
+    // dataReader.Restart();
+    // if (mcReader) mcReader->Restart();
+    // dc_fiducial_determination(dataReader, mcReader);
 
     // dataReader.Restart();
     // if (mcReader) mcReader->Restart();
     // plot_dc_hit_position(dataReader, mcReader);
 
-    dataReader.Restart();
-    if (mcReader) mcReader->Restart();
-    cvt_fiducial_determination(dataReader, mcReader);
+    // dataReader.Restart();
+    // if (mcReader) mcReader->Restart();
+    // cvt_fiducial_determination(dataReader, mcReader);
 
-    dataReader.Restart();
-    if (mcReader) mcReader->Restart();
-    plot_cvt_hit_position(dataReader, mcReader);
+    // dataReader.Restart();
+    // if (mcReader) mcReader->Restart();
+    // plot_cvt_hit_position(dataReader, mcReader);
 
     // dataReader.Restart();
     // if (mcReader) mcReader->Restart();
