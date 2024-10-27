@@ -3487,16 +3487,16 @@ void plot_cal_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = null
 
 bool dc_fiducial(double edge_6, double edge_18, double edge_36, 
 	int pid) {
-    if (pid == 11 || pid == -11) {
-        return edge_6 > 5 && edge_18 > 5 && edge_36 > 10;
-    } else if (pid == 211 || pid == -211 || pid == 321 || pid == -321 || pid == 2212 || pid == -2212) {
-        return edge_6 > 3 && edge_18 > 3 && edge_36 > 7;
-    } 
     // if (pid == 11 || pid == -11) {
-    //     return edge_6 > 3 && edge_18 > 3 && edge_36 > 10;
+    //     return edge_6 > 5 && edge_18 > 5 && edge_36 > 10;
     // } else if (pid == 211 || pid == -211 || pid == 321 || pid == -321 || pid == 2212 || pid == -2212) {
-    //     return edge_6 > 3 && edge_18 > 3 && edge_36 > 9;
+    //     return edge_6 > 3 && edge_18 > 3 && edge_36 > 7;
     // } 
+    if (pid == 11 || pid == -11) {
+        return edge_6 > 3 && edge_18 > 3 && edge_36 > 10;
+    } else if (pid == 211 || pid == -211 || pid == 321 || pid == -321 || pid == 2212 || pid == -2212) {
+        return edge_6 > 3 && edge_18 > 3 && edge_36 > 9;
+    } 
     return false; // not a charged track? wrong pid?
 }
 
@@ -8720,16 +8720,16 @@ int main(int argc, char** argv) {
 
     //// PLOTS ////
 
-    std::string dataset = "rga_sp19_inb";
+    std::string dataset = "rga_fa18_out";
 
-    plot_htcc_nphe(dataReader, mcReader, dataset);
-    plot_ltcc_nphe(dataReader, mcReader, dataset);
-    dataReader.Restart();
-    if (mcReader) mcReader->Restart();
+    // plot_htcc_nphe(dataReader, mcReader, dataset);
+    // plot_ltcc_nphe(dataReader, mcReader, dataset);
+    // dataReader.Restart();
+    // if (mcReader) mcReader->Restart();
 
-    plot_pcal_energy(dataReader, mcReader, dataset);
-    dataReader.Restart();
-    if (mcReader) mcReader->Restart();
+    // plot_pcal_energy(dataReader, mcReader, dataset);
+    // dataReader.Restart();
+    // if (mcReader) mcReader->Restart();
 
     // plot_sampling_fraction(dataReader, mcReader, dataset);
     // dataReader.Restart();
@@ -8762,17 +8762,17 @@ int main(int argc, char** argv) {
     // if (mcReader) mcReader->Restart();
     // dc_fiducial_determination(dataReader, mcReader, dataset);
 
+    dataReader.Restart();
+    if (mcReader) mcReader->Restart();
+    plot_dc_hit_position(dataReader, mcReader, dataset);
+
     // dataReader.Restart();
     // if (mcReader) mcReader->Restart();
-    // plot_dc_hit_position(dataReader, mcReader, dataset);
+    // cvt_fiducial_determination(dataReader, mcReader);
 
-    dataReader.Restart();
-    if (mcReader) mcReader->Restart();
-    cvt_fiducial_determination(dataReader, mcReader);
-
-    dataReader.Restart();
-    if (mcReader) mcReader->Restart();
-    plot_cvt_hit_position(dataReader, mcReader);
+    // dataReader.Restart();
+    // if (mcReader) mcReader->Restart();
+    // plot_cvt_hit_position(dataReader, mcReader);
 
     // dataReader.Restart();
     // if (mcReader) mcReader->Restart();
