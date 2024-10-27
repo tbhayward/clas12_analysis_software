@@ -3512,10 +3512,10 @@ void plot_dc_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = nullp
 
     std::vector<std::tuple<int, std::string>> particle_types = {
         {11, "electron"},
-        {-211, "pim"},
-        {211, "pip"},
-        {321, "kp"},
-        {-321, "km"},
+        // {-211, "pim"},
+        // {211, "pip"},
+        // {321, "kp"},
+        // {-321, "km"},
         {2212, "proton"}
     };
 
