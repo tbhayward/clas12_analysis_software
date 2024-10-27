@@ -635,30 +635,6 @@ void plot_pcal_energy(TTreeReader& dataReader, TTreeReader* mcReader = nullptr,
     create_pcal_plots("negative", negative_pids);
 }
 
-#include <TROOT.h>
-#include <TCanvas.h>
-#include <TH1D.h>
-#include <TH2D.h>
-#include <TGraph.h>
-#include <TF1.h>
-#include <TLegend.h>
-#include <TLatex.h>
-#include <TLine.h>
-#include <TStyle.h>
-#include <TTreeReader.h>
-#include <TTreeReaderValue.h>
-#include <TPaveText.h>
-
-#include <TROOT.h>
-#include <TCanvas.h>
-#include <TH1D.h>
-#include <TH2D.h>
-#include <TF1.h>
-#include <TLegend.h>
-#include <TStyle.h>
-#include <TTreeReader.h>
-#include <TTreeReaderValue.h>
-
 void plot_sampling_fraction(TTreeReader& dataReader, TTreeReader* mcReader = nullptr,
     const std::string& dataset = "rga_fa18_inb") {
     // Disable stat boxes
@@ -699,43 +675,6 @@ void plot_sampling_fraction(TTreeReader& dataReader, TTreeReader* mcReader = nul
         TTreeReaderValue<double> cal_lw_7(dataReader, "cal_lw_7");
         TTreeReaderValue<double> cal_lu_7(dataReader, "cal_lu_7");
 
-        // MC variables for fiducial cuts and momentum
-        TTreeReaderValue<double>* mc_p = nullptr;
-        TTreeReaderValue<double>* mc_cc_nphe_15 = nullptr;
-        TTreeReaderValue<int>* mc_particle_pid = nullptr;
-        TTreeReaderValue<int>* mc_cal_sector = nullptr;
-        TTreeReaderValue<double>* mc_cal_energy_1 = nullptr;
-        TTreeReaderValue<double>* mc_cal_energy_4 = nullptr;
-        TTreeReaderValue<double>* mc_cal_energy_7 = nullptr;
-        TTreeReaderValue<double>* mc_cal_lv_1 = nullptr;
-        TTreeReaderValue<double>* mc_cal_lw_1 = nullptr;
-        TTreeReaderValue<double>* mc_cal_lu_1 = nullptr;
-        TTreeReaderValue<double>* mc_cal_lv_4 = nullptr;
-        TTreeReaderValue<double>* mc_cal_lw_4 = nullptr;
-        TTreeReaderValue<double>* mc_cal_lu_4 = nullptr;
-        TTreeReaderValue<double>* mc_cal_lv_7 = nullptr;
-        TTreeReaderValue<double>* mc_cal_lw_7 = nullptr;
-        TTreeReaderValue<double>* mc_cal_lu_7 = nullptr;
-
-        if (mcReader) {
-            mc_p = new TTreeReaderValue<double>(*mcReader, "p");
-            mc_cc_nphe_15 = new TTreeReaderValue<double>(*mcReader, "cc_nphe_15");
-            mc_particle_pid = new TTreeReaderValue<int>(*mcReader, "particle_pid");
-            mc_cal_sector = new TTreeReaderValue<int>(*mcReader, "cal_sector");
-            mc_cal_energy_1 = new TTreeReaderValue<double>(*mcReader, "cal_energy_1");
-            mc_cal_energy_4 = new TTreeReaderValue<double>(*mcReader, "cal_energy_4");
-            mc_cal_energy_7 = new TTreeReaderValue<double>(*mcReader, "cal_energy_7");
-            mc_cal_lv_1 = new TTreeReaderValue<double>(*mcReader, "cal_lv_1");
-            mc_cal_lw_1 = new TTreeReaderValue<double>(*mcReader, "cal_lw_1");
-            mc_cal_lu_1 = new TTreeReaderValue<double>(*mcReader, "cal_lu_1");
-            mc_cal_lv_4 = new TTreeReaderValue<double>(*mcReader, "cal_lv_4");
-            mc_cal_lw_4 = new TTreeReaderValue<double>(*mcReader, "cal_lw_4");
-            mc_cal_lu_4 = new TTreeReaderValue<double>(*mcReader, "cal_lu_4");
-            mc_cal_lv_7 = new TTreeReaderValue<double>(*mcReader, "cal_lv_7");
-            mc_cal_lw_7 = new TTreeReaderValue<double>(*mcReader, "cal_lw_7");
-            mc_cal_lu_7 = new TTreeReaderValue<double>(*mcReader, "cal_lu_7");
-        }
-
         // Adjusted canvas with more space between subplots
         TCanvas cData("cData", "Sampling Fraction Data", 1200, 800);
         cData.Divide(3, 2, 0.03, 0.03);  // Added more space between subplots
@@ -748,13 +687,11 @@ void plot_sampling_fraction(TTreeReader& dataReader, TTreeReader* mcReader = nul
             gPad->SetBottomMargin(0.15);  // Increase bottom margin
         }
 
-        // Arrays for data and MC 2D histograms for each sector (6 sectors)
-        std::vector<TH2D*> histsData(6), histsMC(6);
+        // Arrays for data 2D histograms for each sector (6 sectors)
+        std::vector<TH2D*> histsData(6);
         for (int i = 0; i < 6; ++i) {
             histsData[i] = new TH2D(Form("hData_sector%d", i+1), Form("%s Sector %d %s Data", dataset.c_str(), i+1, track_type.c_str()),
-                                     100, 2, 8, 100, 0.15, 0.35);  // X-axis from 2 to 8, Y-axis from 0.15 to 0.35
-            histsMC[i] = new TH2D(Form("hMC_sector%d", i+1), Form("%s Sector %d %s MC", dataset.c_str(), i+1, track_type.c_str()),
-                                  100, 2, 8, 100, 0.15, 0.35);    // X-axis from 2 to 8, Y-axis from 0.15 to 0.35
+                                     100, 2, 8, 100, 0.18, 0.40);  // X-axis from 2 to 8, Y-axis from 0.18 to 0.40
         }
 
         // Fill data 2D histograms
@@ -784,35 +721,6 @@ void plot_sampling_fraction(TTreeReader& dataReader, TTreeReader* mcReader = nul
             }
         }
 
-        // Fill MC 2D histograms
-        if (mcReader) {
-            for (int i = 0; i < 6e7; i++) {
-                if (!mcReader->Next()) break;
-                double nphe = **mc_cc_nphe_15;
-                int pid = **mc_particle_pid;
-                int sector = **mc_cal_sector;
-                double energy1 = **mc_cal_energy_1;
-                double energy4 = **mc_cal_energy_4;
-                double energy7 = **mc_cal_energy_7;
-                double sf = (energy1 + energy4 + energy7) / **mc_p;
-
-                double lv1 = **mc_cal_lv_1, lw1 = **mc_cal_lw_1, lu1 = **mc_cal_lu_1;
-                double lv4 = **mc_cal_lv_4, lw4 = **mc_cal_lw_4, lu4 = **mc_cal_lu_4;
-                double lv7 = **mc_cal_lv_7, lw7 = **mc_cal_lw_7, lu7 = **mc_cal_lu_7;
-
-                if (nphe == -9999 || sector == -9999 || energy1 == -9999) continue;
-
-                // Check if the pid is in the provided list (positive or negative pids)
-                if (!is_in(pid, pids)) continue;
-
-                // Apply HTCC, PCal, and fiducial cuts
-                if (**mc_p > 2.0 && nphe >= 2 && energy1 >= 0.07 && sector >= 1 && sector <= 6 &&
-                    pcal_fiducial(lv1, lw1, lu1, lv4, lw4, lu4, lv7, lw7, lu7, sector, 1)) {
-                    histsMC[sector - 1]->Fill(**mc_p, sf);
-                }
-            }
-        }
-
         // Draw 2D histograms for data and perform fits
         for (int i = 0; i < 6; ++i) {
             // Fit slices in Y (sampling fraction) for each bin in X (momentum)
@@ -831,180 +739,75 @@ void plot_sampling_fraction(TTreeReader& dataReader, TTreeReader* mcReader = nul
             hMean->Fit(meanFit, "QNR");   // Fit mean vs momentum
             hSigma->Fit(sigmaFit, "QNR"); // Fit sigma vs momentum
 
-            // Create TF1 functions for mean + sigma and mean - sigma
-            TF1* meanPlusSigmaFit = new TF1(Form("meanPlusSigmaFit_sector%d", i+1), "pol2", 2.0, 8.0);
-            TF1* meanMinusSigmaFit = new TF1(Form("meanMinusSigmaFit_sector%d", i+1), "pol2", 2.0, 8.0);
+            // Create TGraph for mean + 3*sigma and mean - 3*sigma
+            TGraph* meanPlus3Sigma = new TGraph();
+            TGraph* meanMinus3Sigma = new TGraph();
 
-            // Set parameters for meanPlusSigmaFit
-            meanPlusSigmaFit->SetParameters(
-                meanFit->GetParameter(0) + sigmaFit->GetParameter(0),
-                meanFit->GetParameter(1) + sigmaFit->GetParameter(1),
-                meanFit->GetParameter(2) + sigmaFit->GetParameter(2)
-            );
+            int nPoints = 100;  // Number of points to evaluate
+            double pMin = 2.0;
+            double pMax = 8.0;
+            double dp = (pMax - pMin) / (nPoints - 1);
 
-            // Set parameters for meanMinusSigmaFit
-            meanMinusSigmaFit->SetParameters(
-                meanFit->GetParameter(0) - sigmaFit->GetParameter(0),
-                meanFit->GetParameter(1) - sigmaFit->GetParameter(1),
-                meanFit->GetParameter(2) - sigmaFit->GetParameter(2)
-            );
+            for (int j = 0; j < nPoints; ++j) {
+                double p_val = pMin + j * dp;
+                double mean = meanFit->Eval(p_val);
+                double sigma = sigmaFit->Eval(p_val);
+                meanPlus3Sigma->SetPoint(j, p_val, mean + 3 * sigma);
+                meanMinus3Sigma->SetPoint(j, p_val, mean - 3 * sigma);
+            }
 
             // Set line styles and colors
             meanFit->SetLineColor(kRed);
             meanFit->SetLineStyle(1); // Solid line
             meanFit->SetLineWidth(2);
 
-            meanPlusSigmaFit->SetLineColor(kRed);
-            meanPlusSigmaFit->SetLineStyle(2); // Dashed line
-            meanPlusSigmaFit->SetLineWidth(2);
+            meanPlus3Sigma->SetLineColor(kRed);
+            meanPlus3Sigma->SetLineStyle(2); // Dashed line
+            meanPlus3Sigma->SetLineWidth(2);
 
-            meanMinusSigmaFit->SetLineColor(kRed);
-            meanMinusSigmaFit->SetLineStyle(3); // Dash-dotted line
-            meanMinusSigmaFit->SetLineWidth(2);
+            meanMinus3Sigma->SetLineColor(kRed);
+            meanMinus3Sigma->SetLineStyle(3); // Dash-dotted line
+            meanMinus3Sigma->SetLineWidth(2);
 
             // Draw the 2D histogram
             cData.cd(i + 1);  // Move to the corresponding pad
             histsData[i]->GetXaxis()->SetTitle("p (GeV)");
             histsData[i]->GetYaxis()->SetTitle("Sampling Fraction");
             histsData[i]->GetXaxis()->SetRangeUser(2.0, 8.0); // Changed X-axis range
-            histsData[i]->GetYaxis()->SetRangeUser(0.15, 0.35);
+            histsData[i]->GetYaxis()->SetRangeUser(0.18, 0.40);
             histsData[i]->Draw("COLZ");
 
             // Draw the fitted functions
             meanFit->Draw("SAME");
-            meanPlusSigmaFit->Draw("SAME");
-            meanMinusSigmaFit->Draw("SAME");
+            meanPlus3Sigma->Draw("L SAME");
+            meanMinus3Sigma->Draw("L SAME");
 
             // Prepare strings for legend entries with fit parameters
             std::string meanFitStr = Form("Mean Fit: %.3f + %.3f#timesp + %.3f#timesp^{2}", meanFit->GetParameter(0), meanFit->GetParameter(1), meanFit->GetParameter(2));
-            std::string meanPlusSigmaFitStr = Form("Mean+Sigma Fit: %.3f + %.3f#timesp + %.3f#timesp^{2}", meanPlusSigmaFit->GetParameter(0), meanPlusSigmaFit->GetParameter(1), meanPlusSigmaFit->GetParameter(2));
-            std::string meanMinusSigmaFitStr = Form("Mean-Sigma Fit: %.3f + %.3f#timesp + %.3f#timesp^{2}", meanMinusSigmaFit->GetParameter(0), meanMinusSigmaFit->GetParameter(1), meanMinusSigmaFit->GetParameter(2));
+            std::string sigmaFitStr = Form("Sigma Fit: %.3f + %.3f#timesp + %.3f#timesp^{2}", sigmaFit->GetParameter(0), sigmaFit->GetParameter(1), sigmaFit->GetParameter(2));
 
             // Adjust legend position and size to accommodate entries
             TLegend* legend = new TLegend(0.15, 0.65, 0.85, 0.9);  // Adjusted position and size
             legend->SetTextSize(0.025);  // Adjust text size as needed
 
             legend->AddEntry(meanFit, meanFitStr.c_str(), "l");
-            legend->AddEntry(meanPlusSigmaFit, meanPlusSigmaFitStr.c_str(), "l");
-            legend->AddEntry(meanMinusSigmaFit, meanMinusSigmaFitStr.c_str(), "l");
+            legend->AddEntry(meanPlus3Sigma, "Mean + 3*Sigma", "l");
+            legend->AddEntry(meanMinus3Sigma, "Mean - 3*Sigma", "l");
             legend->Draw("SAME");
 
-            // Clean up temporary histograms and functions
+            // Clean up temporary histograms and graphs
             delete hMean;
             delete hSigma;
-            delete meanPlusSigmaFit;
-            delete meanMinusSigmaFit;
-        }
-
-        // Declare cMC outside the block to ensure it's accessible for saving the plot later
-        TCanvas* cMC = nullptr;
-
-        // Draw 2D histograms for MC (if available)
-        if (mcReader) {
-            cMC = new TCanvas("cMC", "Sampling Fraction MC", 1200, 800);
-            cMC->Divide(3, 2, 0.03, 0.03);  // Added more padding space
-            // Increase the padding (left, right, top, and bottom margins) for each subplot
-            for (int i = 1; i <= 6; ++i) {
-                cMC->cd(i);
-                gPad->SetLeftMargin(0.15);  // Increase left margin
-                gPad->SetRightMargin(0.15);  // Increase right margin
-                gPad->SetTopMargin(0.1);   // Increase top margin
-                gPad->SetBottomMargin(0.15);  // Increase bottom margin
-            }
-
-            for (int i = 0; i < 6; ++i) {
-                // Fit slices in Y (sampling fraction) for each bin in X (momentum)
-                TH1D* hMean = nullptr;
-                TH1D* hSigma = nullptr;
-                histsMC[i]->FitSlicesY(0, 0, -1, 0, "QNR");  // QNR to suppress output
-
-                // Retrieve mean and sigma histograms
-                hMean = (TH1D*)gROOT->FindObject(Form("%s_1", histsMC[i]->GetName()));
-                hSigma = (TH1D*)gROOT->FindObject(Form("%s_2", histsMC[i]->GetName()));
-
-                // Fit mean and sigma to quadratic polynomials
-                TF1* meanFit = new TF1(Form("meanFit_sector%d", i+1), "pol2", 2.0, 8.0);
-                TF1* sigmaFit = new TF1(Form("sigmaFit_sector%d", i+1), "pol2", 2.0, 8.0);
-
-                hMean->Fit(meanFit, "QNR");   // Fit mean vs momentum
-                hSigma->Fit(sigmaFit, "QNR"); // Fit sigma vs momentum
-
-                // Create TF1 functions for mean + sigma and mean - sigma
-                TF1* meanPlusSigmaFit = new TF1(Form("meanPlusSigmaFit_sector%d", i+1), "pol2", 2.0, 8.0);
-                TF1* meanMinusSigmaFit = new TF1(Form("meanMinusSigmaFit_sector%d", i+1), "pol2", 2.0, 8.0);
-
-                // Set parameters for meanPlusSigmaFit
-                meanPlusSigmaFit->SetParameters(
-                    meanFit->GetParameter(0) + sigmaFit->GetParameter(0),
-                    meanFit->GetParameter(1) + sigmaFit->GetParameter(1),
-                    meanFit->GetParameter(2) + sigmaFit->GetParameter(2)
-                );
-
-                // Set parameters for meanMinusSigmaFit
-                meanMinusSigmaFit->SetParameters(
-                    meanFit->GetParameter(0) - sigmaFit->GetParameter(0),
-                    meanFit->GetParameter(1) - sigmaFit->GetParameter(1),
-                    meanFit->GetParameter(2) - sigmaFit->GetParameter(2)
-                );
-
-                // Set line styles and colors
-                meanFit->SetLineColor(kRed);
-                meanFit->SetLineStyle(1); // Solid line
-                meanFit->SetLineWidth(2);
-
-                meanPlusSigmaFit->SetLineColor(kRed);
-                meanPlusSigmaFit->SetLineStyle(2); // Dashed line
-                meanPlusSigmaFit->SetLineWidth(2);
-
-                meanMinusSigmaFit->SetLineColor(kRed);
-                meanMinusSigmaFit->SetLineStyle(3); // Dash-dotted line
-                meanMinusSigmaFit->SetLineWidth(2);
-
-                // Draw the 2D histogram
-                cMC->cd(i + 1);  // Move to the corresponding pad
-                histsMC[i]->GetXaxis()->SetTitle("Momentum (GeV)");
-                histsMC[i]->GetYaxis()->SetTitle("Sampling Fraction");
-                histsMC[i]->GetXaxis()->SetRangeUser(2.0, 8.0); // Changed X-axis range
-                histsMC[i]->GetYaxis()->SetRangeUser(0.15, 0.35);
-                histsMC[i]->Draw("COLZ");
-
-                // Draw the fitted functions
-                meanFit->Draw("SAME");
-                meanPlusSigmaFit->Draw("SAME");
-                meanMinusSigmaFit->Draw("SAME");
-
-                // Prepare strings for legend entries with fit parameters
-                std::string meanFitStr = Form("Mean Fit: %.3f + %.3f#timesp + %.3f#timesp^{2}", meanFit->GetParameter(0), meanFit->GetParameter(1), meanFit->GetParameter(2));
-                std::string meanPlusSigmaFitStr = Form("Mean+Sigma Fit: %.3f + %.3f#timesp + %.3f#timesp^{2}", meanPlusSigmaFit->GetParameter(0), meanPlusSigmaFit->GetParameter(1), meanPlusSigmaFit->GetParameter(2));
-                std::string meanMinusSigmaFitStr = Form("Mean-Sigma Fit: %.3f + %.3f#timesp + %.3f#timesp^{2}", meanMinusSigmaFit->GetParameter(0), meanMinusSigmaFit->GetParameter(1), meanMinusSigmaFit->GetParameter(2));
-
-                // Adjust legend position and size to accommodate entries
-                TLegend* legend = new TLegend(0.15, 0.65, 0.85, 0.9);  // Adjusted position and size
-                legend->SetTextSize(0.025);  // Adjust text size as needed
-
-                legend->AddEntry(meanFit, meanFitStr.c_str(), "l");
-                legend->AddEntry(meanPlusSigmaFit, meanPlusSigmaFitStr.c_str(), "l");
-                legend->AddEntry(meanMinusSigmaFit, meanMinusSigmaFitStr.c_str(), "l");
-                legend->Draw("SAME");
-
-                // Clean up temporary histograms and functions
-                delete hMean;
-                delete hSigma;
-                delete meanPlusSigmaFit;
-                delete meanMinusSigmaFit;
-            }
+            delete meanPlus3Sigma;
+            delete meanMinus3Sigma;
         }
 
         // Save the plots
         cData.SaveAs(("output/calibration/cal/pid/sampling_fraction_" + dataset + "_" + plot_name + "_data.png").c_str());
-        if (mcReader && cMC) {
-            cMC->SaveAs(("output/calibration/cal/pid/sampling_fraction_" + dataset + "_" + plot_name + "_mc.png").c_str());
-        }
 
         // Clean up
         for (int i = 0; i < 6; ++i) {
             delete histsData[i];
-            if (mcReader) delete histsMC[i];
         }
     };
 
@@ -8889,9 +8692,9 @@ int main(int argc, char** argv) {
     // dataReader.Restart();
     // if (mcReader) mcReader->Restart();
 
-    // plot_sampling_fraction(dataReader, mcReader, dataset);
-    // dataReader.Restart();
-    // if (mcReader) mcReader->Restart();
+    plot_sampling_fraction(dataReader, mcReader, dataset);
+    dataReader.Restart();
+    if (mcReader) mcReader->Restart();
 
     // plot_diagonal_cut(dataReader, mcReader, dataset);
     // dataReader.Restart();
@@ -8916,9 +8719,9 @@ int main(int argc, char** argv) {
     // if (mcReader) mcReader->Restart();
     // plot_cal_hit_position(dataReader, mcReader, dataset);
 
-    dataReader.Restart();
-    if (mcReader) mcReader->Restart();
-    dc_fiducial_determination(dataReader, mcReader, dataset);
+    // dataReader.Restart();
+    // if (mcReader) mcReader->Restart();
+    // dc_fiducial_determination(dataReader, mcReader, dataset);
 
     // dataReader.Restart();
     // if (mcReader) mcReader->Restart();
