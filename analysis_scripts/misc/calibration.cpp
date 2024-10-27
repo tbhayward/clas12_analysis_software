@@ -4541,14 +4541,13 @@ void cvt_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader =
         {new TTreeReaderValue<double>(dataReader, "traj_edge_12"), "layer_{12}", -10.0, 25.0}
     };
 
-    // Define angular ranges: [25,34], [34,43], [43,52], [52,70] degrees
+    // Define angular ranges: [30,40], [40,50], [50,70] degrees
     const int num_theta_bins = 4;
-    double theta_bins[num_theta_bins + 1] = {25.0, 34.0, 43.0, 52.0, 70.0};
+    double theta_bins[num_theta_bins + 1] = {30.0, 40.0, 50.0, 70.0};
     std::vector<std::pair<double, double>> theta_ranges = {
-        {25.0, 34.0},
-        {34.0, 43.0},
-        {43.0, 52.0},
-        {52.0, 70.0}
+        {25.0, 38},
+        {38, 50.0},
+        {50.0, 70.0}
     };
 
     // Define particle types: PID, name, LaTeX name for plotting
@@ -4771,18 +4770,18 @@ void cvt_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader =
 
         // Define colors and markers for theta ranges
         // First color for overall (all theta), followed by specific theta ranges
-        std::vector<int> colors_data = {kBlack, kBlue, kGreen + 2, kOrange + 7, kCyan}; // 0: All theta, 1-4: [25,34], [34,43], [43,52], [52,70]
-        std::vector<int> markers_data = {20, 21, 22, 23, 24}; // Different marker styles
+        std::vector<int> colors_data = {kBlack, kBlue, kGreen + 2, kOrange + 7}; // 0: All theta, 1-3: [30,40], [40,50], [50,70]
+        std::vector<int> markers_data = {20, 21, 22, 23}; // Different marker styles
 
-        std::vector<int> colors_mc = {kRed, kMagenta, kViolet + 1, kPink + 1, kYellow}; // 0: All theta, 1-4: [25,34], [34,43], [43,52], [52,70]
-        std::vector<int> markers_mc = {24, 25, 26, 27, 28}; // Different marker styles
+        std::vector<int> colors_mc = {kRed, kMagenta, kViolet + 1, kPink + 1}; // 0: All theta, 1-3: [30,40], [40,50], [50,70]
+        std::vector<int> markers_mc = {24, 25, 26, 27}; // Different marker styles
 
         // Loop over each layer to plot
         for (size_t i = 0; i < layers.size(); ++i) {
             c_edge->cd(i + 1); // Pads start at 1
 
             // Set margins for better visibility
-            gPad->SetMargin(0.15, 0.15, 0.15, 0.1); // left, right, bottom, top (increased top margin)
+            gPad->SetMargin(0.15, 0.15, 0.15, 0.05); // left, right, bottom, top
 
             // Set maximum and minimum for y-axis
             h_sum_chi2_ndf_data[i]->SetMaximum(100.0);
@@ -4821,10 +4820,9 @@ void cvt_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader =
 
             // Create and configure the legend
             TLegend* legend = new TLegend(0.55, 0.75, 0.85, 0.95); // Adjust position as needed
-            legend->SetBorderSize(1);         // Add a border around the legend
-            legend->SetFillColor(kWhite);     // Set the fill color to white
-            legend->SetFillStyle(1001);       // Set the fill style to solid
-            legend->SetTextSize(0.025);       // Smaller text size
+            legend->SetBorderSize(1); // Add a border around the legend
+            legend->SetFillStyle(0);
+            legend->SetTextSize(0.025); // Smaller text size
 
             // Add entries for data
             legend->AddEntry(h_sum_chi2_ndf_data[i], "Data (All #theta)", "lep");
@@ -4845,18 +4843,6 @@ void cvt_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader =
             // Draw the legend
             legend->Draw("SAME");
 
-            // Add annotations (particle type, dataset, layer) at the top of each pad
-            TLatex* latex = new TLatex();
-            latex->SetNDC(); // Use normalized device coordinates
-            latex->SetTextFont(42);
-            latex->SetTextSize(0.04);
-            latex->DrawLatex(0.15, 0.95, ("Particle: " + particle_latex).c_str());
-            latex->DrawLatex(0.15, 0.90, ("Dataset: " + dataset).c_str());
-            latex->DrawLatex(0.15, 0.85, ("Layer: " + std::get<1>(layers[i])).c_str());
-
-            // Clean up the legend and latex objects
-            // delete legend;
-            delete latex;
         }
 
         // Save the canvas with dataset variable included in the filename
@@ -9101,7 +9087,7 @@ int main(int argc, char** argv) {
 
     //// PLOTS ////
 
-    std::string dataset = "rga_sp19_inb";
+    std::string dataset = "rga_fa18_inb";
 
     // plot_htcc_nphe(dataReader, mcReader, dataset);
     // plot_ltcc_nphe(dataReader, mcReader, dataset);
