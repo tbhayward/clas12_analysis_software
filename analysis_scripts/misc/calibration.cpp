@@ -3877,16 +3877,16 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
     const std::string& dataset = "rga_fa18_inb") {
     int nBins = 20;
     std::vector<std::tuple<std::string, std::string, std::string, double, double, double, double, std::string, double>> regions = {
-        {"traj_x_6", "traj_y_6", "region_1", 15, 160, -80, 80, "traj_edge_6", 20},
-        {"traj_x_18", "traj_y_18", "region_2", 30, 240, -125, 125, "traj_edge_18", 20},
-        {"traj_x_36", "traj_y_36", "region_3", 30, 400, -200, 200, "traj_edge_36", 20}
+        {"traj_x_6", "traj_y_6", "region_{1}", 15, 160, -80, 80, "traj_edge_6", 20},
+        {"traj_x_18", "traj_y_18", "region_{2}", 30, 240, -125, 125, "traj_edge_18", 20},
+        {"traj_x_36", "traj_y_36", "region_{3}", 30, 400, -200, 200, "traj_edge_36", 20}
     };
 
     // Array of particle types (photons and electrons) and their corresponding PIDs
     std::vector<std::tuple<int, std::string>> particle_types = {
-        {11, "electron"}
+        {11, "e^{-}"}
         ,
-        {2212, "proton"}
+        {2212, "p"}
     };
 
     for (const auto& particle_type : particle_types) {
@@ -3911,11 +3911,11 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
             auto h_mc_sum_sector = create_histograms_for_sector(region_name, particle_name, nBins, xMin, xMax, yMin, yMax, true);
             auto h_mc_count_sector = create_histograms_for_sector(region_name, particle_name, nBins, xMin, xMax, yMin, yMax, true);
 
-            TCanvas* c_region = new TCanvas(("c_" + particle_name + "_" + region_name + "_chi2_ndf").c_str(), ("c_" + particle_name + " #chi^{2}/ndf").c_str(), 1800, 1200);
+            TCanvas* c_region = new TCanvas(("c_" + dataset + "_" + particle_name + "_" + region_name + "_chi2_ndf").c_str(), ("c_" + particle_name + " #chi^{2}/ndf").c_str(), 1800, 1200);
             c_region->Divide(3, 2);
             TCanvas* c_mc_region = nullptr;
             if (mcReader) {
-                c_mc_region = new TCanvas(("c_mc_" + particle_name + "_" + region_name + "_chi2_ndf").c_str(), ("MC " + particle_name + " #chi^{2}/ndf").c_str(), 1800, 1200);
+                c_mc_region = new TCanvas(("c_mc_" + dataset + "_" + particle_name + "_" + region_name + "_chi2_ndf").c_str(), ("MC " + particle_name + " #chi^{2}/ndf").c_str(), 1800, 1200);
                 c_mc_region->Divide(3, 2);
             }
 
@@ -4053,7 +4053,7 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
 
                     h_sum_chi2_ndf_sector_theta[sector][t] = new TH1D(
                         ("h_sum_chi2_ndf_sector_theta" + std::to_string(t + 1) + "_" + region_name + "_sector" + std::to_string(sector + 1)).c_str(),
-                        (particle_name + " in " + region_name + " - Sector " + std::to_string(sector + 1) + " " + theta_range).c_str(),
+                        (dataset+", "+particle_name + " in " + region_name + " - Sector " + std::to_string(sector + 1) + " " + theta_range).c_str(),
                         nBins, 0, edge_max);
                     h_sum_chi2_ndf_sector_theta[sector][t]->GetXaxis()->SetTitle("edge");
                     h_sum_chi2_ndf_sector_theta[sector][t]->GetYaxis()->SetTitle("<chi2/ndf>");
