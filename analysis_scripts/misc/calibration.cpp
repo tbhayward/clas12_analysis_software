@@ -691,7 +691,7 @@ void plot_sampling_fraction(TTreeReader& dataReader, TTreeReader* mcReader = nul
         std::vector<TH2D*> histsData(6);
         for (int i = 0; i < 6; ++i) {
             histsData[i] = new TH2D(Form("hData_sector%d", i+1), Form("%s Sector %d %s Data", dataset.c_str(), i+1, track_type.c_str()),
-                                     100, 2, 8, 100, 0.14, 0.40);  // X-axis from 2 to 8, Y-axis from 0.18 to 0.40
+                                     100, 2, 8, 100, 0.14, 0.40);  // X-axis from 2 to 8, Y-axis from 0.14 to 0.40
         }
 
         // Fill data 2D histograms
@@ -768,16 +768,16 @@ void plot_sampling_fraction(TTreeReader& dataReader, TTreeReader* mcReader = nul
             meanMinus3SigmaGraph->Fit(meanMinus3SigmaFit, "QNR");
 
             // Set line styles and colors
-            meanFit->SetLineColor(kRed);
+            meanFit->SetLineColor(kBlack);
             meanFit->SetLineStyle(1); // Solid line
             meanFit->SetLineWidth(2);
 
             meanPlus3SigmaFit->SetLineColor(kRed);
-            meanPlus3SigmaFit->SetLineStyle(2); // Dashed line
+            meanPlus3SigmaFit->SetLineStyle(1); // Solid line
             meanPlus3SigmaFit->SetLineWidth(2);
 
             meanMinus3SigmaFit->SetLineColor(kRed);
-            meanMinus3SigmaFit->SetLineStyle(2); // Dash-dotted line
+            meanMinus3SigmaFit->SetLineStyle(1); // Solid line
             meanMinus3SigmaFit->SetLineWidth(2);
 
             // Draw the 2D histogram
@@ -806,6 +806,22 @@ void plot_sampling_fraction(TTreeReader& dataReader, TTreeReader* mcReader = nul
             legend->AddEntry(meanPlus3SigmaFit, meanPlus3SigmaFitStr.c_str(), "l");
             legend->AddEntry(meanMinus3SigmaFit, meanMinus3SigmaFitStr.c_str(), "l");
             legend->Draw("SAME");
+
+            // **Print out the fits for each sector in the desired format**
+            // Extract coefficients with sufficient precision
+            double a_minus = meanMinus3SigmaFit->GetParameter(0);
+            double b_minus = meanMinus3SigmaFit->GetParameter(1);
+            double c_minus = meanMinus3SigmaFit->GetParameter(2);
+
+            double a_plus = meanPlus3SigmaFit->GetParameter(0);
+            double b_plus = meanPlus3SigmaFit->GetParameter(1);
+            double c_plus = meanPlus3SigmaFit->GetParameter(2);
+
+            // Set precision for printing
+            std::cout << std::fixed << std::setprecision(6);
+
+            // Print the expressions in Java-compatible format
+            std::cout << "Sector " << (i+1) << ": sf > (" << a_minus << " + " << b_minus << "*p + " << c_minus << "*p*p) && sf < (" << a_plus << " + " << b_plus << "*p + " << c_plus << "*p*p);" << std::endl;
 
             // Clean up temporary histograms and graphs
             delete hMean;
