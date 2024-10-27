@@ -692,11 +692,11 @@ void plot_sampling_fraction(TTreeReader& dataReader, TTreeReader* mcReader = nul
         std::vector<TH2D*> histsData(6);
         for (int i = 0; i < 6; ++i) {
             histsData[i] = new TH2D(Form("hData_sector%d", i+1), Form("%s Sector %d %s Data", dataset.c_str(), i+1, track_type.c_str()),
-                                     100, 2, 8, 100, 0.14, 0.40);  // X-axis from 2 to 8, Y-axis from 0.14 to 0.40
+                                     100, 2, 8, 100, 0.12, 0.45);  // X-axis from 2 to 8, Y-axis from 0.14 to 0.40
         }
 
         // Fill data 2D histograms
-        for (int i = 0; i < 6e7; i++) {
+        for (int i = 0; i < 1e8; i++) {
             if (!dataReader.Next()) break;
             double nphe = *cc_nphe_15;
             int pid = *particle_pid;
@@ -786,7 +786,7 @@ void plot_sampling_fraction(TTreeReader& dataReader, TTreeReader* mcReader = nul
             histsData[i]->GetXaxis()->SetTitle("p (GeV)");
             histsData[i]->GetYaxis()->SetTitle("Sampling Fraction");
             histsData[i]->GetXaxis()->SetRangeUser(2.0, 8.0); // Changed X-axis range
-            histsData[i]->GetYaxis()->SetRangeUser(0.14, 0.40);
+            histsData[i]->GetYaxis()->SetRangeUser(0.12, 0.45);
             histsData[i]->Draw("COLZ");
 
             // Draw the fitted functions
