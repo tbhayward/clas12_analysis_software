@@ -4545,9 +4545,10 @@ void cvt_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader =
     const int num_theta_bins = 4;
     double theta_bins[num_theta_bins + 1] = {30.0, 40.0, 50.0, 70.0};
     std::vector<std::pair<double, double>> theta_ranges = {
-        {25.0, 38},
-        {38, 50.0},
-        {50.0, 70.0}
+        {25.0, 35},
+        {35, 45.0},
+        {45.0, 55.0},
+        {55, 70}
     };
 
     // Define particle types: PID, name, LaTeX name for plotting
