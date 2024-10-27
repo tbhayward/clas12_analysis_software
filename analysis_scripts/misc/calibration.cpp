@@ -8720,7 +8720,7 @@ int main(int argc, char** argv) {
 
     //// PLOTS ////
 
-    std::string dataset = "rga_fa18_out";
+    std::string dataset = "rga_sp19_inb";
 
     plot_htcc_nphe(dataReader, mcReader, dataset);
     plot_ltcc_nphe(dataReader, mcReader, dataset);
