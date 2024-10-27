@@ -9135,7 +9135,7 @@ int main(int argc, char** argv) {
 
     dataReader.Restart();
     if (mcReader) mcReader->Restart();
-    cvt_fiducial_determination(dataReader, mcReader);
+    cvt_fiducial_determination(dataReader, mcReader, dataset);
 
     // dataReader.Restart();
     // if (mcReader) mcReader->Restart();
