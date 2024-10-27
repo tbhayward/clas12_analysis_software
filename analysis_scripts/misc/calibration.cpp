@@ -739,11 +739,10 @@ void plot_sampling_fraction(TTreeReader& dataReader, TTreeReader* mcReader = nul
             hMean->Fit(meanFit, "QNR");   // Fit mean vs momentum
             hSigma->Fit(sigmaFit, "QNR"); // Fit sigma vs momentum
 
-            // Create TGraph for mean + 3*sigma and mean - 3*sigma
-            TGraph* meanPlus3Sigma = new TGraph();
-            TGraph* meanMinus3Sigma = new TGraph();
+            // Create arrays to hold momentum and mean ± 3 sigma values
+            std::vector<double> p_vals, mean_plus_3sigma_vals, mean_minus_3sigma_vals;
 
-            int nPoints = 100;  // Number of points to evaluate
+            int nPoints = 100;
             double pMin = 2.0;
             double pMax = 8.0;
             double dp = (pMax - pMin) / (nPoints - 1);
@@ -752,22 +751,34 @@ void plot_sampling_fraction(TTreeReader& dataReader, TTreeReader* mcReader = nul
                 double p_val = pMin + j * dp;
                 double mean = meanFit->Eval(p_val);
                 double sigma = sigmaFit->Eval(p_val);
-                meanPlus3Sigma->SetPoint(j, p_val, mean + 3 * sigma);
-                meanMinus3Sigma->SetPoint(j, p_val, mean - 3 * sigma);
+                p_vals.push_back(p_val);
+                mean_plus_3sigma_vals.push_back(mean + 3 * sigma);
+                mean_minus_3sigma_vals.push_back(mean - 3 * sigma);
             }
+
+            // Create TGraph objects for mean ± 3 sigma
+            TGraph* meanPlus3SigmaGraph = new TGraph(nPoints, &p_vals[0], &mean_plus_3sigma_vals[0]);
+            TGraph* meanMinus3SigmaGraph = new TGraph(nPoints, &p_vals[0], &mean_minus_3sigma_vals[0]);
+
+            // Fit mean ± 3 sigma graphs to quadratic polynomials
+            TF1* meanPlus3SigmaFit = new TF1(Form("meanPlus3SigmaFit_sector%d", i+1), "pol2", 2.0, 8.0);
+            TF1* meanMinus3SigmaFit = new TF1(Form("meanMinus3SigmaFit_sector%d", i+1), "pol2", 2.0, 8.0);
+
+            meanPlus3SigmaGraph->Fit(meanPlus3SigmaFit, "QNR");
+            meanMinus3SigmaGraph->Fit(meanMinus3SigmaFit, "QNR");
 
             // Set line styles and colors
             meanFit->SetLineColor(kRed);
             meanFit->SetLineStyle(1); // Solid line
             meanFit->SetLineWidth(2);
 
-            meanPlus3Sigma->SetLineColor(kRed);
-            meanPlus3Sigma->SetLineStyle(2); // Dashed line
-            meanPlus3Sigma->SetLineWidth(2);
+            meanPlus3SigmaFit->SetLineColor(kRed);
+            meanPlus3SigmaFit->SetLineStyle(2); // Dashed line
+            meanPlus3SigmaFit->SetLineWidth(2);
 
-            meanMinus3Sigma->SetLineColor(kRed);
-            meanMinus3Sigma->SetLineStyle(3); // Dash-dotted line
-            meanMinus3Sigma->SetLineWidth(2);
+            meanMinus3SigmaFit->SetLineColor(kRed);
+            meanMinus3SigmaFit->SetLineStyle(3); // Dash-dotted line
+            meanMinus3SigmaFit->SetLineWidth(2);
 
             // Draw the 2D histogram
             cData.cd(i + 1);  // Move to the corresponding pad
@@ -778,28 +789,29 @@ void plot_sampling_fraction(TTreeReader& dataReader, TTreeReader* mcReader = nul
             histsData[i]->Draw("COLZ");
 
             // Draw the fitted functions
-            // meanFit->Draw("SAME");
-            meanPlus3Sigma->Draw("SAME");
-            // meanMinus3Sigma->Draw("L SAME");
+            meanFit->Draw("SAME");
+            meanPlus3SigmaFit->Draw("SAME");
+            meanMinus3SigmaFit->Draw("SAME");
 
             // Prepare strings for legend entries with fit parameters
-            std::string meanFitStr = Form("Mean Fit: %.3f + %.3f#timesp + %.3f#timesp^{2}", meanFit->GetParameter(0), meanFit->GetParameter(1), meanFit->GetParameter(2));
-            std::string sigmaFitStr = Form("Sigma Fit: %.3f + %.3f#timesp + %.3f#timesp^{2}", sigmaFit->GetParameter(0), sigmaFit->GetParameter(1), sigmaFit->GetParameter(2));
+            std::string meanFitStr = Form("Mean Fit: %.4f + %.4f#timesp + %.4f#timesp^{2}", meanFit->GetParameter(0), meanFit->GetParameter(1), meanFit->GetParameter(2));
+            std::string meanPlus3SigmaFitStr = Form("Mean+3#sigma Fit: %.4f + %.4f#timesp + %.4f#timesp^{2}", meanPlus3SigmaFit->GetParameter(0), meanPlus3SigmaFit->GetParameter(1), meanPlus3SigmaFit->GetParameter(2));
+            std::string meanMinus3SigmaFitStr = Form("Mean-3#sigma Fit: %.4f + %.4f#timesp + %.4f#timesp^{2}", meanMinus3SigmaFit->GetParameter(0), meanMinus3SigmaFit->GetParameter(1), meanMinus3SigmaFit->GetParameter(2));
 
             // Adjust legend position and size to accommodate entries
             TLegend* legend = new TLegend(0.15, 0.65, 0.85, 0.9);  // Adjusted position and size
             legend->SetTextSize(0.025);  // Adjust text size as needed
 
             legend->AddEntry(meanFit, meanFitStr.c_str(), "l");
-            legend->AddEntry(meanPlus3Sigma, "Mean + 3*Sigma", "l");
-            legend->AddEntry(meanMinus3Sigma, "Mean - 3*Sigma", "l");
+            legend->AddEntry(meanPlus3SigmaFit, meanPlus3SigmaFitStr.c_str(), "l");
+            legend->AddEntry(meanMinus3SigmaFit, meanMinus3SigmaFitStr.c_str(), "l");
             legend->Draw("SAME");
 
             // Clean up temporary histograms and graphs
             delete hMean;
             delete hSigma;
-            delete meanPlus3Sigma;
-            delete meanMinus3Sigma;
+            delete meanPlus3SigmaGraph;
+            delete meanMinus3SigmaGraph;
         }
 
         // Save the plots
