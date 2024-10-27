@@ -778,9 +778,9 @@ void plot_sampling_fraction(TTreeReader& dataReader, TTreeReader* mcReader = nul
             histsData[i]->Draw("COLZ");
 
             // Draw the fitted functions
-            meanFit->Draw("SAME");
-            meanPlus3Sigma->Draw("L SAME");
-            meanMinus3Sigma->Draw("L SAME");
+            // meanFit->Draw("SAME");
+            meanPlus3Sigma->Draw("SAME");
+            // meanMinus3Sigma->Draw("L SAME");
 
             // Prepare strings for legend entries with fit parameters
             std::string meanFitStr = Form("Mean Fit: %.3f + %.3f#timesp + %.3f#timesp^{2}", meanFit->GetParameter(0), meanFit->GetParameter(1), meanFit->GetParameter(2));
