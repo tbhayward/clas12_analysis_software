@@ -4534,9 +4534,9 @@ void cvt_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader =
 
     // Define CVT layers with their corresponding traj_edge variables, names, and edge ranges
     std::vector<std::tuple<TTreeReaderValue<double>*, std::string, double, double>> layers = {
-        {new TTreeReaderValue<double>(dataReader, "traj_edge_1"), "layer_1", -2.0, 3.0},
-        {new TTreeReaderValue<double>(dataReader, "traj_edge_3"), "layer_3", -2.0, 3.0},
-        {new TTreeReaderValue<double>(dataReader, "traj_edge_5"), "layer_5", -2.0, 3.0},
+        {new TTreeReaderValue<double>(dataReader, "traj_edge_1"), "layer_1", -2.0, 2.2},
+        {new TTreeReaderValue<double>(dataReader, "traj_edge_3"), "layer_3", -2.0, 2.2},
+        {new TTreeReaderValue<double>(dataReader, "traj_edge_5"), "layer_5", -2.0, 2.2},
         {new TTreeReaderValue<double>(dataReader, "traj_edge_7"), "layer_7", -5.0, 15.0},
         {new TTreeReaderValue<double>(dataReader, "traj_edge_12"), "layer_12", -10.0, 25.0}
     };
@@ -4545,8 +4545,8 @@ void cvt_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader =
     const int num_theta_bins = 3;
     double theta_bins[num_theta_bins + 1] = {30.0, 40.0, 50.0, 70.0};
     std::vector<std::pair<double, double>> theta_ranges = {
-        {30.0, 40.0},
-        {40.0, 50.0},
+        {25.0, 37.5},
+        {37.5, 50.0},
         {50.0, 70.0}
     };
 
@@ -4587,7 +4587,7 @@ void cvt_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader =
             h_sum_chi2_ndf_data[i] = new TH1D(("h_sum_chi2_ndf_data_" + layer_name + "_" + particle_name).c_str(),
                                               (particle_latex + " - " + layer_name + " - Sum").c_str(),
                                               nBinsX, xMin, xMax);
-            h_sum_chi2_ndf_data[i]->SetTitle(("Particle: " + particle_latex + "\nDataset: " + dataset + "\nLayer: " + layer_name).c_str());
+            h_sum_chi2_ndf_data[i]->SetTitle(("Particle: " + particle_latex + ", Dataset: " + dataset + ", Layer: " + layer_name).c_str());
             h_sum_chi2_ndf_data[i]->GetXaxis()->SetTitle("Edge (cm)");
             h_sum_chi2_ndf_data[i]->GetYaxis()->SetTitle("<#chi^{2}/ndf>");
 
