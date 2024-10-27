@@ -649,6 +649,16 @@ void plot_pcal_energy(TTreeReader& dataReader, TTreeReader* mcReader = nullptr,
 #include <TTreeReaderValue.h>
 #include <TPaveText.h>
 
+#include <TROOT.h>
+#include <TCanvas.h>
+#include <TH1D.h>
+#include <TH2D.h>
+#include <TF1.h>
+#include <TLegend.h>
+#include <TStyle.h>
+#include <TTreeReader.h>
+#include <TTreeReaderValue.h>
+
 void plot_sampling_fraction(TTreeReader& dataReader, TTreeReader* mcReader = nullptr,
     const std::string& dataset = "rga_fa18_inb") {
     // Disable stat boxes
@@ -742,9 +752,9 @@ void plot_sampling_fraction(TTreeReader& dataReader, TTreeReader* mcReader = nul
         std::vector<TH2D*> histsData(6), histsMC(6);
         for (int i = 0; i < 6; ++i) {
             histsData[i] = new TH2D(Form("hData_sector%d", i+1), Form("%s Sector %d %s Data", dataset.c_str(), i+1, track_type.c_str()),
-                                     100, 2, 9, 100, 0.15, 0.35);  // Y-axis from 0.15 to 0.35
+                                     100, 2, 8, 100, 0.15, 0.35);  // X-axis from 2 to 8, Y-axis from 0.15 to 0.35
             histsMC[i] = new TH2D(Form("hMC_sector%d", i+1), Form("%s Sector %d %s MC", dataset.c_str(), i+1, track_type.c_str()),
-                                  100, 2, 9, 100, 0.15, 0.35);    // Y-axis from 0.15 to 0.35
+                                  100, 2, 8, 100, 0.15, 0.35);    // X-axis from 2 to 8, Y-axis from 0.15 to 0.35
         }
 
         // Fill data 2D histograms
@@ -815,85 +825,75 @@ void plot_sampling_fraction(TTreeReader& dataReader, TTreeReader* mcReader = nul
             hSigma = (TH1D*)gROOT->FindObject(Form("%s_2", histsData[i]->GetName()));
 
             // Fit mean and sigma to quadratic polynomials
-            TF1* meanFit = new TF1(Form("meanFit_sector%d", i+1), "pol2", 2.0, 9.0);
-            TF1* sigmaFit = new TF1(Form("sigmaFit_sector%d", i+1), "pol2", 2.0, 9.0);
+            TF1* meanFit = new TF1(Form("meanFit_sector%d", i+1), "pol2", 2.0, 8.0);
+            TF1* sigmaFit = new TF1(Form("sigmaFit_sector%d", i+1), "pol2", 2.0, 8.0);
 
             hMean->Fit(meanFit, "QNR");   // Fit mean vs momentum
             hSigma->Fit(sigmaFit, "QNR"); // Fit sigma vs momentum
 
-            // Create TGraph for mean + sigma and mean - sigma
-            TGraph* meanPlusSigma = new TGraph();
-            TGraph* meanMinusSigma = new TGraph();
+            // Create TF1 functions for mean + sigma and mean - sigma
+            TF1* meanPlusSigmaFit = new TF1(Form("meanPlusSigmaFit_sector%d", i+1), "pol2", 2.0, 8.0);
+            TF1* meanMinusSigmaFit = new TF1(Form("meanMinusSigmaFit_sector%d", i+1), "pol2", 2.0, 8.0);
 
-            int nPoints = hMean->GetNbinsX();
-            for (int bin = 1; bin <= nPoints; ++bin) {
-                double p = hMean->GetBinCenter(bin);
-                double mean = meanFit->Eval(p);
-                double sigma = sigmaFit->Eval(p);
-                meanPlusSigma->SetPoint(bin-1, p, mean + sigma);
-                meanMinusSigma->SetPoint(bin-1, p, mean - sigma);
-            }
+            // Set parameters for meanPlusSigmaFit
+            meanPlusSigmaFit->SetParameters(
+                meanFit->GetParameter(0) + sigmaFit->GetParameter(0),
+                meanFit->GetParameter(1) + sigmaFit->GetParameter(1),
+                meanFit->GetParameter(2) + sigmaFit->GetParameter(2)
+            );
+
+            // Set parameters for meanMinusSigmaFit
+            meanMinusSigmaFit->SetParameters(
+                meanFit->GetParameter(0) - sigmaFit->GetParameter(0),
+                meanFit->GetParameter(1) - sigmaFit->GetParameter(1),
+                meanFit->GetParameter(2) - sigmaFit->GetParameter(2)
+            );
+
+            // Set line styles and colors
+            meanFit->SetLineColor(kRed);
+            meanFit->SetLineStyle(1); // Solid line
+            meanFit->SetLineWidth(2);
+
+            meanPlusSigmaFit->SetLineColor(kRed);
+            meanPlusSigmaFit->SetLineStyle(2); // Dashed line
+            meanPlusSigmaFit->SetLineWidth(2);
+
+            meanMinusSigmaFit->SetLineColor(kRed);
+            meanMinusSigmaFit->SetLineStyle(3); // Dash-dotted line
+            meanMinusSigmaFit->SetLineWidth(2);
 
             // Draw the 2D histogram
             cData.cd(i + 1);  // Move to the corresponding pad
             histsData[i]->GetXaxis()->SetTitle("p (GeV)");
             histsData[i]->GetYaxis()->SetTitle("Sampling Fraction");
-            histsData[i]->GetXaxis()->SetRangeUser(2.0, 9.0);
-            histsData[i]->GetYaxis()->SetRangeUser(0.15, 0.35);  // Changed Y-axis range
+            histsData[i]->GetXaxis()->SetRangeUser(2.0, 8.0); // Changed X-axis range
+            histsData[i]->GetYaxis()->SetRangeUser(0.15, 0.35);
             histsData[i]->Draw("COLZ");
 
-            // Draw the mean quadratic fit as a solid red line
-            meanFit->SetLineColor(kRed);
-            meanFit->SetLineWidth(2);
+            // Draw the fitted functions
             meanFit->Draw("SAME");
+            meanPlusSigmaFit->Draw("SAME");
+            meanMinusSigmaFit->Draw("SAME");
 
-            // Draw the mean + sigma and mean - sigma fits as dashed red lines
-            meanPlusSigma->SetLineColor(kRed);
-            meanPlusSigma->SetLineStyle(2);
-            meanPlusSigma->SetLineWidth(2);
-            meanPlusSigma->Draw("L SAME");
+            // Prepare strings for legend entries with fit parameters
+            std::string meanFitStr = Form("Mean Fit: %.3f + %.3f#timesp + %.3f#timesp^{2}", meanFit->GetParameter(0), meanFit->GetParameter(1), meanFit->GetParameter(2));
+            std::string meanPlusSigmaFitStr = Form("Mean+Sigma Fit: %.3f + %.3f#timesp + %.3f#timesp^{2}", meanPlusSigmaFit->GetParameter(0), meanPlusSigmaFit->GetParameter(1), meanPlusSigmaFit->GetParameter(2));
+            std::string meanMinusSigmaFitStr = Form("Mean-Sigma Fit: %.3f + %.3f#timesp + %.3f#timesp^{2}", meanMinusSigmaFit->GetParameter(0), meanMinusSigmaFit->GetParameter(1), meanMinusSigmaFit->GetParameter(2));
 
-            meanMinusSigma->SetLineColor(kRed);
-            meanMinusSigma->SetLineStyle(2);
-            meanMinusSigma->SetLineWidth(2);
-            meanMinusSigma->Draw("L SAME");
+            // Adjust legend position and size to accommodate entries
+            TLegend* legend = new TLegend(0.15, 0.65, 0.85, 0.9);  // Adjusted position and size
+            legend->SetTextSize(0.025);  // Adjust text size as needed
 
-            // Adjust legend position and add border
-            TLegend* legend = new TLegend(0.6, 0.7, 0.85, 0.9);  // Moved slightly to the left
-            legend->SetTextSize(0.025);  // Reduced text size to fit equations
-            // legend->SetBorderSize(0);  // Default is to have a border
-
-            // Get coefficients and format equations
-            double a_mean = meanFit->GetParameter(0);
-            double b_mean = meanFit->GetParameter(1);
-            double c_mean = meanFit->GetParameter(2);
-
-            double a_sigma = sigmaFit->GetParameter(0);
-            double b_sigma = sigmaFit->GetParameter(1);
-            double c_sigma = sigmaFit->GetParameter(2);
-
-            // Format the equations
-            std::string meanFitStr = Form("Mean Fit: %.3f + %.3f#timesp + %.3f#timesp^{2}", a_mean, b_mean, c_mean);
-            std::string sigmaFitStr = Form("Sigma Fit: %.3f + %.3f#timesp + %.3f#timesp^{2}", a_sigma, b_sigma, c_sigma);
-
-            legend->AddEntry(meanFit, "Mean Fit", "l");
-            legend->AddEntry(meanPlusSigma, "Mean ± Sigma", "l");
+            legend->AddEntry(meanFit, meanFitStr.c_str(), "l");
+            legend->AddEntry(meanPlusSigmaFit, meanPlusSigmaFitStr.c_str(), "l");
+            legend->AddEntry(meanMinusSigmaFit, meanMinusSigmaFitStr.c_str(), "l");
             legend->Draw("SAME");
 
-            // Display the equations using TPaveText
-            TPaveText* pave = new TPaveText(0.2, 0.55, 0.55, 0.7, "NDC");
-            pave->SetFillColor(0);
-            pave->SetTextAlign(13); // Align at top left
-            pave->SetTextSize(0.025);
-            pave->AddText(meanFitStr.c_str());
-            pave->AddText(sigmaFitStr.c_str());
-            pave->Draw("SAME");
-
-            // Clean up temporary histograms and graphs
+            // Clean up temporary histograms and functions
             delete hMean;
             delete hSigma;
-            delete meanPlusSigma;
-            delete meanMinusSigma;
+            delete meanPlusSigmaFit;
+            delete meanMinusSigmaFit;
         }
 
         // Declare cMC outside the block to ensure it's accessible for saving the plot later
@@ -923,85 +923,75 @@ void plot_sampling_fraction(TTreeReader& dataReader, TTreeReader* mcReader = nul
                 hSigma = (TH1D*)gROOT->FindObject(Form("%s_2", histsMC[i]->GetName()));
 
                 // Fit mean and sigma to quadratic polynomials
-                TF1* meanFit = new TF1(Form("meanFit_sector%d", i+1), "pol2", 2.0, 9.0);
-                TF1* sigmaFit = new TF1(Form("sigmaFit_sector%d", i+1), "pol2", 2.0, 9.0);
+                TF1* meanFit = new TF1(Form("meanFit_sector%d", i+1), "pol2", 2.0, 8.0);
+                TF1* sigmaFit = new TF1(Form("sigmaFit_sector%d", i+1), "pol2", 2.0, 8.0);
 
                 hMean->Fit(meanFit, "QNR");   // Fit mean vs momentum
                 hSigma->Fit(sigmaFit, "QNR"); // Fit sigma vs momentum
 
-                // Create TGraph for mean + sigma and mean - sigma
-                TGraph* meanPlusSigma = new TGraph();
-                TGraph* meanMinusSigma = new TGraph();
+                // Create TF1 functions for mean + sigma and mean - sigma
+                TF1* meanPlusSigmaFit = new TF1(Form("meanPlusSigmaFit_sector%d", i+1), "pol2", 2.0, 8.0);
+                TF1* meanMinusSigmaFit = new TF1(Form("meanMinusSigmaFit_sector%d", i+1), "pol2", 2.0, 8.0);
 
-                int nPoints = hMean->GetNbinsX();
-                for (int bin = 1; bin <= nPoints; ++bin) {
-                    double p = hMean->GetBinCenter(bin);
-                    double mean = meanFit->Eval(p);
-                    double sigma = sigmaFit->Eval(p);
-                    meanPlusSigma->SetPoint(bin-1, p, mean + sigma);
-                    meanMinusSigma->SetPoint(bin-1, p, mean - sigma);
-                }
+                // Set parameters for meanPlusSigmaFit
+                meanPlusSigmaFit->SetParameters(
+                    meanFit->GetParameter(0) + sigmaFit->GetParameter(0),
+                    meanFit->GetParameter(1) + sigmaFit->GetParameter(1),
+                    meanFit->GetParameter(2) + sigmaFit->GetParameter(2)
+                );
+
+                // Set parameters for meanMinusSigmaFit
+                meanMinusSigmaFit->SetParameters(
+                    meanFit->GetParameter(0) - sigmaFit->GetParameter(0),
+                    meanFit->GetParameter(1) - sigmaFit->GetParameter(1),
+                    meanFit->GetParameter(2) - sigmaFit->GetParameter(2)
+                );
+
+                // Set line styles and colors
+                meanFit->SetLineColor(kRed);
+                meanFit->SetLineStyle(1); // Solid line
+                meanFit->SetLineWidth(2);
+
+                meanPlusSigmaFit->SetLineColor(kRed);
+                meanPlusSigmaFit->SetLineStyle(2); // Dashed line
+                meanPlusSigmaFit->SetLineWidth(2);
+
+                meanMinusSigmaFit->SetLineColor(kRed);
+                meanMinusSigmaFit->SetLineStyle(3); // Dash-dotted line
+                meanMinusSigmaFit->SetLineWidth(2);
 
                 // Draw the 2D histogram
                 cMC->cd(i + 1);  // Move to the corresponding pad
                 histsMC[i]->GetXaxis()->SetTitle("Momentum (GeV)");
                 histsMC[i]->GetYaxis()->SetTitle("Sampling Fraction");
-                histsMC[i]->GetXaxis()->SetRangeUser(2.0, 9.0);
-                histsMC[i]->GetYaxis()->SetRangeUser(0.15, 0.35);  // Changed Y-axis range
+                histsMC[i]->GetXaxis()->SetRangeUser(2.0, 8.0); // Changed X-axis range
+                histsMC[i]->GetYaxis()->SetRangeUser(0.15, 0.35);
                 histsMC[i]->Draw("COLZ");
 
-                // Draw the mean quadratic fit as a solid red line
-                meanFit->SetLineColor(kRed);
-                meanFit->SetLineWidth(2);
+                // Draw the fitted functions
                 meanFit->Draw("SAME");
+                meanPlusSigmaFit->Draw("SAME");
+                meanMinusSigmaFit->Draw("SAME");
 
-                // Draw the mean + sigma and mean - sigma fits as dashed red lines
-                meanPlusSigma->SetLineColor(kRed);
-                meanPlusSigma->SetLineStyle(2);
-                meanPlusSigma->SetLineWidth(2);
-                meanPlusSigma->Draw("L SAME");
+                // Prepare strings for legend entries with fit parameters
+                std::string meanFitStr = Form("Mean Fit: %.3f + %.3f#timesp + %.3f#timesp^{2}", meanFit->GetParameter(0), meanFit->GetParameter(1), meanFit->GetParameter(2));
+                std::string meanPlusSigmaFitStr = Form("Mean+Sigma Fit: %.3f + %.3f#timesp + %.3f#timesp^{2}", meanPlusSigmaFit->GetParameter(0), meanPlusSigmaFit->GetParameter(1), meanPlusSigmaFit->GetParameter(2));
+                std::string meanMinusSigmaFitStr = Form("Mean-Sigma Fit: %.3f + %.3f#timesp + %.3f#timesp^{2}", meanMinusSigmaFit->GetParameter(0), meanMinusSigmaFit->GetParameter(1), meanMinusSigmaFit->GetParameter(2));
 
-                meanMinusSigma->SetLineColor(kRed);
-                meanMinusSigma->SetLineStyle(2);
-                meanMinusSigma->SetLineWidth(2);
-                meanMinusSigma->Draw("L SAME");
+                // Adjust legend position and size to accommodate entries
+                TLegend* legend = new TLegend(0.15, 0.65, 0.85, 0.9);  // Adjusted position and size
+                legend->SetTextSize(0.025);  // Adjust text size as needed
 
-                // Adjust legend position and add border
-                TLegend* legend = new TLegend(0.6, 0.7, 0.85, 0.9);  // Moved slightly to the left
-                legend->SetTextSize(0.025);  // Reduced text size to fit equations
-                // legend->SetBorderSize(0);  // Default is to have a border
-
-                // Get coefficients and format equations
-                double a_mean = meanFit->GetParameter(0);
-                double b_mean = meanFit->GetParameter(1);
-                double c_mean = meanFit->GetParameter(2);
-
-                double a_sigma = sigmaFit->GetParameter(0);
-                double b_sigma = sigmaFit->GetParameter(1);
-                double c_sigma = sigmaFit->GetParameter(2);
-
-                // Format the equations
-                std::string meanFitStr = Form("Mean Fit: %.3f + %.3f#timesp + %.3f#timesp^{2}", a_mean, b_mean, c_mean);
-                std::string sigmaFitStr = Form("Sigma Fit: %.3f + %.3f#timesp + %.3f#timesp^{2}", a_sigma, b_sigma, c_sigma);
-
-                legend->AddEntry(meanFit, "Mean Fit", "l");
-                legend->AddEntry(meanPlusSigma, "Mean ± Sigma", "l");
+                legend->AddEntry(meanFit, meanFitStr.c_str(), "l");
+                legend->AddEntry(meanPlusSigmaFit, meanPlusSigmaFitStr.c_str(), "l");
+                legend->AddEntry(meanMinusSigmaFit, meanMinusSigmaFitStr.c_str(), "l");
                 legend->Draw("SAME");
 
-                // Display the equations using TPaveText
-                TPaveText* pave = new TPaveText(0.2, 0.55, 0.55, 0.7, "NDC");
-                pave->SetFillColor(0);
-                pave->SetTextAlign(13); // Align at top left
-                pave->SetTextSize(0.025);
-                pave->AddText(meanFitStr.c_str());
-                pave->AddText(sigmaFitStr.c_str());
-                pave->Draw("SAME");
-
-                // Clean up temporary histograms and graphs
+                // Clean up temporary histograms and functions
                 delete hMean;
                 delete hSigma;
-                delete meanPlusSigma;
-                delete meanMinusSigma;
+                delete meanPlusSigmaFit;
+                delete meanMinusSigmaFit;
             }
         }
 
