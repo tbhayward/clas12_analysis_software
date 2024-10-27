@@ -4112,7 +4112,7 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
                 legend->Draw();
             }
 
-            c_edge->SaveAs(("output/calibration/dc/determination/mean_chi2_per_ndf_vs_traj_edge_" + particle_name + "_" + region_name + ".png").c_str());
+            c_edge->SaveAs(("output/calibration/dc/determination/mean_chi2_per_ndf_vs_traj_edge_" + dataset + "_" + particle_name + "_" + region_name + ".png").c_str());
 
             // Cleanup for mean chi2/ndf vs traj_edge histograms
             delete c_edge;
