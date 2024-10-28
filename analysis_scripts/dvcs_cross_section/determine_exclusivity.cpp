@@ -51,6 +51,14 @@ void determine_exclusivity(const std::string& analysisType, const std::string& t
     std::vector<std::string> variables_to_fit_gaussian = {"xF", "Emiss2"};
     std::vector<std::string> variables_to_fit_crystalball = {"pTmiss", "Mx2", "Mx2_1", "Mx2_2"};
 
+    // Initial parameter guesses for specific variables
+    std::map<std::string, std::pair<double, double>> initial_guesses = {
+        {"pTmiss", {0.03, 0.02}},
+        {"Mx2", {0.00, 0.01}},
+        {"Mx2_1", {0.00, 0.01}},
+        {"Mx2_2", {0.88, 0.01}}
+    };
+
     // Readers for relevant variables for cuts
     TTreeReaderValue<double> t_data(dataReader, "t1");
     TTreeReaderValue<double> t_mc(mcReader, "t1");
@@ -209,6 +217,21 @@ void determine_exclusivity(const std::string& analysisType, const std::string& t
                 // Use Crystal Ball function
                 fit_data = new TF1("fit_data", "crystalball", hist_data_loose->GetXaxis()->GetXmin(), hist_data_loose->GetXaxis()->GetXmax());
                 fit_mc = new TF1("fit_mc", "crystalball", hist_mc_loose->GetXaxis()->GetXmin(), hist_mc_loose->GetXaxis()->GetXmax());
+
+                // Set initial parameter guesses for mu and sigma if available
+                if (initial_guesses.find(variables[i]) != initial_guesses.end()) {
+                    auto [mu_guess, sigma_guess] = initial_guesses[variables[i]];
+                    // Parameters: [0]=alpha, [1]=n, [2]=mean, [3]=sigma, [4]=norm
+                    fit_data->SetParameter(2, mu_guess);     // mu
+                    fit_data->SetParameter(3, sigma_guess);  // sigma
+                    fit_mc->SetParameter(2, mu_guess);
+                    fit_mc->SetParameter(3, sigma_guess);
+                    // Set reasonable initial values for alpha and n
+                    fit_data->SetParameter(0, 1.0);
+                    fit_data->SetParameter(1, 2.0);
+                    fit_mc->SetParameter(0, 1.0);
+                    fit_mc->SetParameter(1, 2.0);
+                }
             } else {
                 // Use Gaussian function
                 fit_data = new TF1("fit_data", "gaus", hist_data_loose->GetXaxis()->GetXmin(), hist_data_loose->GetXaxis()->GetXmax());
