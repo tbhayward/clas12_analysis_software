@@ -11,6 +11,20 @@
 #include <filesystem>
 #include <cmath>  // for radian conversion
 
+// Define the asymmetric Gaussian function
+Double_t asymmetricGaussian(Double_t* x, Double_t* par) {
+    // Parameters:
+    // par[0] = Normalization
+    // par[1] = Mean (mu)
+    // par[2] = Sigma_left (sigma for x < mu)
+    // par[3] = Sigma_right (sigma for x >= mu)
+    Double_t xx = x[0];
+    Double_t mu = par[1];
+    Double_t sigma = (xx < mu) ? par[2] : par[3];
+    Double_t norm = par[0];
+    return norm * exp(-0.5 * ((xx - mu) / sigma) * ((xx - mu) / sigma));
+}
+
 void determine_exclusivity(const std::string& analysisType, const std::string& topology, TTreeReader& dataReader, TTreeReader& mcReader, const std::string& outputDir, const std::string& plotTitle) {
     // Set up global style options (remove stat boxes)
     gStyle->SetOptStat(0);
@@ -49,15 +63,7 @@ void determine_exclusivity(const std::string& analysisType, const std::string& t
 
     // Variables to perform fits on
     std::vector<std::string> variables_to_fit_gaussian = {"xF", "Emiss2"};
-    std::vector<std::string> variables_to_fit_crystalball = {"pTmiss", "Mx2", "Mx2_1", "Mx2_2"};
-
-    // Initial parameter guesses for specific variables
-    std::map<std::string, std::pair<double, double>> initial_guesses = {
-        {"pTmiss", {0.03, 0.02}},
-        {"Mx2", {0.00, 0.01}},
-        {"Mx2_1", {0.00, 0.01}},
-        {"Mx2_2", {0.88, 0.01}}
-    };
+    std::vector<std::string> variables_to_fit_asymmetric_gaussian = {"pTmiss", "Mx2", "Mx2_1", "Mx2_2"};
 
     // Readers for relevant variables for cuts
     TTreeReaderValue<double> t_data(dataReader, "t1");
@@ -207,31 +213,29 @@ void determine_exclusivity(const std::string& analysisType, const std::string& t
 
         // Check if the variable is in the list of variables to fit
         if (std::find(variables_to_fit_gaussian.begin(), variables_to_fit_gaussian.end(), variables[i]) != variables_to_fit_gaussian.end() ||
-            std::find(variables_to_fit_crystalball.begin(), variables_to_fit_crystalball.end(), variables[i]) != variables_to_fit_crystalball.end()) {
+            std::find(variables_to_fit_asymmetric_gaussian.begin(), variables_to_fit_asymmetric_gaussian.end(), variables[i]) != variables_to_fit_asymmetric_gaussian.end()) {
 
             TF1* fit_data;
             TF1* fit_mc;
 
             // Determine the fit function based on the variable
-            if (std::find(variables_to_fit_crystalball.begin(), variables_to_fit_crystalball.end(), variables[i]) != variables_to_fit_crystalball.end()) {
-                // Use Crystal Ball function
-                fit_data = new TF1("fit_data", "crystalball", hist_data_loose->GetXaxis()->GetXmin(), hist_data_loose->GetXaxis()->GetXmax());
-                fit_mc = new TF1("fit_mc", "crystalball", hist_mc_loose->GetXaxis()->GetXmin(), hist_mc_loose->GetXaxis()->GetXmax());
+            if (std::find(variables_to_fit_asymmetric_gaussian.begin(), variables_to_fit_asymmetric_gaussian.end(), variables[i]) != variables_to_fit_asymmetric_gaussian.end()) {
+                // Use Asymmetric Gaussian function
+                fit_data = new TF1("fit_data", asymmetricGaussian, hist_data_loose->GetXaxis()->GetXmin(), hist_data_loose->GetXaxis()->GetXmax(), 5);
+                fit_mc = new TF1("fit_mc", asymmetricGaussian, hist_mc_loose->GetXaxis()->GetXmin(), hist_mc_loose->GetXaxis()->GetXmax(), 5);
 
-                // Set initial parameter guesses for mu and sigma if available
-                if (initial_guesses.find(variables[i]) != initial_guesses.end()) {
-                    auto [mu_guess, sigma_guess] = initial_guesses[variables[i]];
-                    // Parameters: [0]=alpha, [1]=n, [2]=mean, [3]=sigma, [4]=norm
-                    fit_data->SetParameter(2, mu_guess);     // mu
-                    fit_data->SetParameter(3, sigma_guess);  // sigma
-                    fit_mc->SetParameter(2, mu_guess);
-                    fit_mc->SetParameter(3, sigma_guess);
-                    // Set reasonable initial values for alpha and n
-                    fit_data->SetParameter(0, 1.0);
-                    fit_data->SetParameter(1, 2.0);
-                    fit_mc->SetParameter(0, 1.0);
-                    fit_mc->SetParameter(1, 2.0);
-                }
+                // Set initial parameter guesses
+                double peak_data = hist_data_loose->GetMaximum();
+                double peak_mc = hist_mc_loose->GetMaximum();
+                double mean_guess = hist_data_loose->GetMean();
+
+                fit_data->SetParameters(peak_data, mean_guess, 0.01, 0.01);
+                fit_mc->SetParameters(peak_mc, mean_guess, 0.01, 0.01);
+
+                // Optional: Set parameter limits if needed
+                // fit_data->SetParLimits(2, 0.0, 0.1);  // sigma_left
+                // fit_data->SetParLimits(3, 0.0, 0.1);  // sigma_right
+                // Similar for fit_mc
             } else {
                 // Use Gaussian function
                 fit_data = new TF1("fit_data", "gaus", hist_data_loose->GetXaxis()->GetXmin(), hist_data_loose->GetXaxis()->GetXmax());
@@ -255,12 +259,19 @@ void determine_exclusivity(const std::string& analysisType, const std::string& t
             // Get mu and sigma from fits
             double mu_data, sigma_data, mu_mc, sigma_mc;
 
-            if (std::find(variables_to_fit_crystalball.begin(), variables_to_fit_crystalball.end(), variables[i]) != variables_to_fit_crystalball.end()) {
-                // Crystal Ball parameters: [0]=alpha, [1]=n, [2]=mean, [3]=sigma, [4]=norm
-                mu_data = fit_data->GetParameter(2);
-                sigma_data = fit_data->GetParameter(3);
-                mu_mc = fit_mc->GetParameter(2);
-                sigma_mc = fit_mc->GetParameter(3);
+            if (std::find(variables_to_fit_asymmetric_gaussian.begin(), variables_to_fit_asymmetric_gaussian.end(), variables[i]) != variables_to_fit_asymmetric_gaussian.end()) {
+                // For Asymmetric Gaussian
+                mu_data = fit_data->GetParameter(1);
+                double sigma_left_data = fit_data->GetParameter(2);
+                double sigma_right_data = fit_data->GetParameter(3);
+
+                mu_mc = fit_mc->GetParameter(1);
+                double sigma_left_mc = fit_mc->GetParameter(2);
+                double sigma_right_mc = fit_mc->GetParameter(3);
+
+                // For simplicity, we can report the average sigma
+                sigma_data = (sigma_left_data + sigma_right_data) / 2.0;
+                sigma_mc = (sigma_left_mc + sigma_right_mc) / 2.0;
             } else {
                 // Gaussian parameters: [0]=norm, [1]=mean, [2]=sigma
                 mu_data = fit_data->GetParameter(1);
