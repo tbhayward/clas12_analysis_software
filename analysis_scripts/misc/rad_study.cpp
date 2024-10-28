@@ -29,8 +29,8 @@ int main(int argc, char** argv) {
     }
 
     // Get the TTrees
-    TTree* data_tree = (TTree*)data_file->Get("T");
-    TTree* input_tree = (TTree*)input_file->Get("T");
+    TTree* data_tree = (TTree*)data_file->Get("PhysicsEvents");
+    TTree* input_tree = (TTree*)input_file->Get("PhysicsEvents");
 
     if (!data_tree || !input_tree) {
         std::cout << "Error getting TTrees from files." << std::endl;
@@ -53,6 +53,9 @@ int main(int argc, char** argv) {
     std::string xLabels[nVars] = {"e_{p} (GeV)", "e_{#theta}", "M_{x}^{2} (GeV^{2})", "#phi", "P_{T} (GeV)", "Q^{2} (GeV^{2})", "W (GeV)", "x_{B}", "x_{F}", "#xi", "z"};
     int nBins[nVars] = {80, 70, 100, 64, 60, 100, 100, 70, 100, 100, 100};
 
+    // Selection criteria
+    std::string selection = "Mx2 > 1.8225";
+
     for (int i = 0; i < nVars; ++i) {
         // Create histograms
         std::string hist_name_data = "h_data_" + varNames[i];
@@ -61,22 +64,17 @@ int main(int argc, char** argv) {
         TH1D* h_data = new TH1D(hist_name_data.c_str(), "", nBins[i], varMin[i], varMax[i]);
         TH1D* h_input = new TH1D(hist_name_input.c_str(), "", nBins[i], varMin[i], varMax[i]);
 
+        // Apply selection except for Mx2
+        std::string data_selection = (varNames[i] == "Mx2") ? "" : selection;
+        std::string input_selection = data_selection;
+
         // Project data onto histograms
-        data_tree->Project(hist_name_data.c_str(), varNames[i].c_str());
-        input_tree->Project(hist_name_input.c_str(), varNames[i].c_str());
+        data_tree->Project(hist_name_data.c_str(), varNames[i].c_str(), data_selection.c_str());
+        input_tree->Project(hist_name_input.c_str(), varNames[i].c_str(), input_selection.c_str());
 
         // Create ratio histogram
         TH1D* h_ratio = (TH1D*)h_input->Clone(("h_ratio_" + varNames[i]).c_str());
-        for (int bin = 1; bin <= h_ratio->GetNbinsX(); ++bin) {
-            double data_content = h_data->GetBinContent(bin);
-            double input_content = h_input->GetBinContent(bin);
-
-            if (data_content != 0) {
-                h_ratio->SetBinContent(bin, input_content / data_content);
-            } else {
-                h_ratio->SetBinContent(bin, 0);
-            }
-        }
+        h_ratio->Divide(h_data);
 
         // Create canvas and draw
         TCanvas* c = new TCanvas("c", "c", 800, 600);
