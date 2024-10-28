@@ -202,7 +202,7 @@ void createIntegratedKinematicPlots() {
         // leg->AddEntry(dataHist, "NH_{3}", "l");
         // leg->AddEntry(mcHist, "C", "l");
         leg->AddEntry(dataHist, (std::string("no rad (") + std::to_string((int)dataHist->GetEntries()) + " counts)").c_str(), "l");
-        leg->AddEntry(mcHist, (std::string("ISR (") + std::to_string((int)mcHist->GetEntries()) + " counts)").c_str(), "l");
+        leg->AddEntry(mcHist, (std::string("FSR (") + std::to_string((int)mcHist->GetEntries()) + " counts)").c_str(), "l");
         
         
         // Set line colors for histograms
