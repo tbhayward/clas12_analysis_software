@@ -7,6 +7,7 @@
 #include <TLegend.h>
 #include <TStyle.h>
 #include <TTreeReaderValue.h>
+#include <TF1.h>
 #include <filesystem>
 #include <cmath>  // for radian conversion
 
@@ -45,6 +46,9 @@ void determine_exclusivity(const std::string& analysisType, const std::string& t
     } else {
         throw std::runtime_error("Invalid analysis type! Must be 'dvcs' or 'eppi0'");
     }
+
+    // Variables to perform Gaussian fits on
+    std::vector<std::string> variables_to_fit = {"pTmiss", "xF", "Emiss2", "Mx2", "Mx2_1", "Mx2_2"};
 
     // Readers for relevant variables for cuts
     TTreeReaderValue<double> t_data(dataReader, "t1");
@@ -95,6 +99,23 @@ void determine_exclusivity(const std::string& analysisType, const std::string& t
         hist_data_loose->SetDirectory(0);
         TH1D* hist_mc_loose = new TH1D(hist_mc_name_loose.c_str(), "", config.bins, config.min, config.max);
         hist_mc_loose->SetDirectory(0);
+
+        // Set marker styles and colors for data and MC histograms
+        hist_data->SetMarkerStyle(20);
+        hist_data->SetMarkerColor(kBlue);
+        hist_data->SetLineColor(kBlue);
+
+        hist_mc->SetMarkerStyle(21);
+        hist_mc->SetMarkerColor(kRed);
+        hist_mc->SetLineColor(kRed);
+
+        hist_data_loose->SetMarkerStyle(20);
+        hist_data_loose->SetMarkerColor(kBlue);
+        hist_data_loose->SetLineColor(kBlue);
+
+        hist_mc_loose->SetMarkerStyle(21);
+        hist_mc_loose->SetMarkerColor(kRed);
+        hist_mc_loose->SetLineColor(kRed);
 
         // Create readers for the variable
         TTreeReaderValue<double> dataVar(dataReader, variables[i].c_str());
@@ -148,18 +169,16 @@ void determine_exclusivity(const std::string& analysisType, const std::string& t
         canvas->cd(i + 1);
         gPad->SetLeftMargin(0.15);  // Add left padding
         gPad->SetBottomMargin(0.15);  // Add bottom padding
-        hist_data->SetLineColor(kBlue);
-        hist_mc->SetLineColor(kRed);
         hist_data->SetXTitle(formatLabelName(variables[i], analysisType).c_str());  // Pass analysisType to formatLabelName
         hist_data->SetYTitle("Normalized counts");
         hist_data->GetYaxis()->SetRangeUser(0, y_max);
-        hist_data->Draw("HIST");
-        hist_mc->Draw("HIST SAME");
+        hist_data->Draw("E1");
+        hist_mc->Draw("E1 SAME");
 
         // Add a legend with the count information (integer format)
         TLegend* legend = new TLegend(0.4, 0.7, 0.9, 0.9);
-        legend->AddEntry(hist_data, ("Data (" + std::to_string(static_cast<int>(hist_data->GetEntries())) + " events)").c_str(), "l");
-        legend->AddEntry(hist_mc, ("MC (" + std::to_string(static_cast<int>(hist_mc->GetEntries())) + " events)").c_str(), "l");
+        legend->AddEntry(hist_data, ("Data (" + std::to_string(static_cast<int>(hist_data->GetEntries())) + " events)").c_str(), "lep");
+        legend->AddEntry(hist_mc, ("MC (" + std::to_string(static_cast<int>(hist_mc->GetEntries())) + " events)").c_str(), "lep");
         legend->SetTextSize(0.03);  // Set smaller font size for legend
         legend->Draw();
 
@@ -167,20 +186,53 @@ void determine_exclusivity(const std::string& analysisType, const std::string& t
         canvas_loose_cuts->cd(i + 1);
         gPad->SetLeftMargin(0.15);  // Add left padding
         gPad->SetBottomMargin(0.15);  // Add bottom padding
-        hist_data_loose->SetLineColor(kBlue);
-        hist_mc_loose->SetLineColor(kRed);
         hist_data_loose->SetXTitle(formatLabelName(variables[i], analysisType).c_str());  // Pass analysisType to formatLabelName
         hist_data_loose->SetYTitle("Normalized counts");
         hist_data_loose->GetYaxis()->SetRangeUser(0, y_max_loose);
-        hist_data_loose->Draw("HIST");
-        hist_mc_loose->Draw("HIST SAME");
+        hist_data_loose->Draw("E1");
+        hist_mc_loose->Draw("E1 SAME");
 
-        // Add a legend with the count information for "Loose Cuts" (integer format)
-        TLegend* legend_loose = new TLegend(0.275, 0.7, 0.9, 0.9);
-        legend_loose->AddEntry(hist_data_loose, ("Data (" + std::to_string(static_cast<int>(hist_data_loose->GetEntries())) + " events; Loose Cuts)").c_str(), "l");
-        legend_loose->AddEntry(hist_mc_loose, ("MC (" + std::to_string(static_cast<int>(hist_mc_loose->GetEntries())) + " events; Loose Cuts)").c_str(), "l");
-        legend_loose->SetTextSize(0.03);  // Set smaller font size for "Loose Cuts" legend
-        legend_loose->Draw();
+        // Check if the variable is in the list of variables to fit
+        if (std::find(variables_to_fit.begin(), variables_to_fit.end(), variables[i]) != variables_to_fit.end()) {
+            // Perform Gaussian fits on data and MC histograms
+            TF1* fit_data = new TF1("fit_data", "gaus", hist_data_loose->GetXaxis()->GetXmin(), hist_data_loose->GetXaxis()->GetXmax());
+            hist_data_loose->Fit(fit_data, "RQ0");  // 'R' for range, 'Q0' for quiet mode
+            fit_data->SetLineColor(kBlue);
+            fit_data->SetLineStyle(2);  // Dashed line
+            fit_data->Draw("SAME");
+
+            TF1* fit_mc = new TF1("fit_mc", "gaus", hist_mc_loose->GetXaxis()->GetXmin(), hist_mc_loose->GetXaxis()->GetXmax());
+            hist_mc_loose->Fit(fit_mc, "RQ0");
+            fit_mc->SetLineColor(kRed);
+            fit_mc->SetLineStyle(2);
+            fit_mc->Draw("SAME");
+
+            // Get mu and sigma from fits
+            double mu_data = fit_data->GetParameter(1);
+            double sigma_data = fit_data->GetParameter(2);
+            double mu_mc = fit_mc->GetParameter(1);
+            double sigma_mc = fit_mc->GetParameter(2);
+
+            // Add a legend with mu and sigma from fits
+            TLegend* legend_loose = new TLegend(0.275, 0.6, 0.9, 0.9);
+            legend_loose->AddEntry(hist_data_loose, ("Data (" + std::to_string(static_cast<int>(hist_data_loose->GetEntries())) + " events; Loose Cuts)").c_str(), "lep");
+            legend_loose->AddEntry(fit_data, Form("Data Fit: #mu=%.2f, #sigma=%.2f", mu_data, sigma_data), "l");
+            legend_loose->AddEntry(hist_mc_loose, ("MC (" + std::to_string(static_cast<int>(hist_mc_loose->GetEntries())) + " events; Loose Cuts)").c_str(), "lep");
+            legend_loose->AddEntry(fit_mc, Form("MC Fit: #mu=%.2f, #sigma=%.2f", mu_mc, sigma_mc), "l");
+            legend_loose->SetTextSize(0.03);  // Set smaller font size for "Loose Cuts" legend
+            legend_loose->Draw();
+
+            // Clean up fits
+            delete fit_data;
+            delete fit_mc;
+        } else {
+            // Add a legend without fits
+            TLegend* legend_loose = new TLegend(0.275, 0.7, 0.9, 0.9);
+            legend_loose->AddEntry(hist_data_loose, ("Data (" + std::to_string(static_cast<int>(hist_data_loose->GetEntries())) + " events; Loose Cuts)").c_str(), "lep");
+            legend_loose->AddEntry(hist_mc_loose, ("MC (" + std::to_string(static_cast<int>(hist_mc_loose->GetEntries())) + " events; Loose Cuts)").c_str(), "lep");
+            legend_loose->SetTextSize(0.03);  // Set smaller font size for "Loose Cuts" legend
+            legend_loose->Draw();
+        }
     }
 
     // Save the canvases with updated names to reflect the plotTitle and topology input
