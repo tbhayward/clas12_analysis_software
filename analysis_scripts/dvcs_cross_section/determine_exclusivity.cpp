@@ -233,8 +233,8 @@ void determine_exclusivity(const std::string& analysisType, const std::string& t
                 fit_mc->SetParameters(peak_mc, mean_guess, 0.01, 0.01);
 
                 // Optional: Set parameter limits if needed
-                // fit_data->SetParLimits(2, 0.0, 0.1);  // sigma_left
-                // fit_data->SetParLimits(3, 0.0, 0.1);  // sigma_right
+                fit_data->SetParLimits(2, 0.05, 1);  // sigma_left
+                fit_data->SetParLimits(3, 0.05, 1);  // sigma_right
                 // Similar for fit_mc
             } else {
                 // Use Gaussian function
