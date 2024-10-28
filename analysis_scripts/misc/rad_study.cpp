@@ -80,6 +80,10 @@ int main(int argc, char** argv) {
         TCanvas* c = new TCanvas("c", "c", 800, 600);
         c->SetGrid();
 
+        // Adjust margins to prevent cutting off labels
+        c->SetLeftMargin(0.15);
+        c->SetBottomMargin(0.15);
+
         h_ratio->SetTitle("");
         h_ratio->GetXaxis()->SetTitle(xLabels[i].c_str());
         h_ratio->GetYaxis()->SetTitle(("ratio (" + rad_type + "/data)").c_str());
@@ -87,8 +91,13 @@ int main(int argc, char** argv) {
         h_ratio->GetYaxis()->SetLabelSize(0.04);
         h_ratio->GetXaxis()->SetTitleSize(0.05);
         h_ratio->GetYaxis()->SetTitleSize(0.05);
+        h_ratio->GetXaxis()->SetTitleOffset(1.2);
+        h_ratio->GetYaxis()->SetTitleOffset(1.4);
         h_ratio->SetLineColor(kBlue);
         h_ratio->SetLineWidth(2);
+
+        // Set y-axis range from 0.7 to 1.3
+        h_ratio->GetYaxis()->SetRangeUser(0.7, 1.3);
 
         h_ratio->Draw("HIST");
 
