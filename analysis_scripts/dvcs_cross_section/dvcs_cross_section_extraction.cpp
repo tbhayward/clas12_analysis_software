@@ -292,8 +292,8 @@ int main(int argc, char* argv[]) {
     // plot_pi0_mass(eppi0_readers[0], eppi0_readers[1], eppi0_readers[2],
     //               mc_rec_aaogen_readers[0], mc_rec_aaogen_readers[1], mc_rec_aaogen_readers[2], "output");
 
-    // // Call the exclusivity plots (optional)
-    // call_determine_exclusivity(data_readers, mc_rec_dvcsgen_readers, eppi0_readers, mc_rec_aaogen_readers);
+    // Call the exclusivity plots (optional)
+    call_determine_exclusivity(data_readers, mc_rec_dvcsgen_readers, eppi0_readers, mc_rec_aaogen_readers);
 
     // // Loop over unique xB bins and call the plotting function for DVCS data/MC comparison
     // for (int xB_bin = 0; xB_bin < num_xB_bins; ++xB_bin) {
@@ -306,28 +306,28 @@ int main(int argc, char* argv[]) {
     //     plot_dvcs_data_mc_comparison(output_dir, "eppi0", "Fa18 Inb", xB_bin, bin_boundaries, eppi0_readers[0], mc_gen_aaogen_readers[0], mc_rec_aaogen_readers[0]);
     // }
 
-    // Create a vector to hold all the unfolding data across bins
-    std::vector<UnfoldingData> all_unfolding_data;
-    // Iterate over the xB bins
-    for (int xB_bin = 0; xB_bin < num_xB_bins; ++xB_bin) {
-        // Call the plot_unfolding function for each xB_bin and get the results
-        std::vector<UnfoldingData> bin_data = plot_unfolding(base_output_dir, "dvcs", xB_bin, bin_boundaries,
-            data_readers, mc_gen_dvcsgen_readers, mc_rec_dvcsgen_readers, eppi0_readers,
-            mc_gen_aaogen_readers, mc_rec_aaogen_readers);
+    // // Create a vector to hold all the unfolding data across bins
+    // std::vector<UnfoldingData> all_unfolding_data;
+    // // Iterate over the xB bins
+    // for (int xB_bin = 0; xB_bin < num_xB_bins; ++xB_bin) {
+    //     // Call the plot_unfolding function for each xB_bin and get the results
+    //     std::vector<UnfoldingData> bin_data = plot_unfolding(base_output_dir, "dvcs", xB_bin, bin_boundaries,
+    //         data_readers, mc_gen_dvcsgen_readers, mc_rec_dvcsgen_readers, eppi0_readers,
+    //         mc_gen_aaogen_readers, mc_rec_aaogen_readers);
 
-        // Calculate the contamination factor and update bin_data
-        calculate_contamination(base_output_dir, xB_bin, bin_boundaries, data_readers, eppi0_readers,
-            mc_rec_aaogen_readers, mc_rec_eppi0_bkg_readers, bin_data);
+    //     // Calculate the contamination factor and update bin_data
+    //     calculate_contamination(base_output_dir, xB_bin, bin_boundaries, data_readers, eppi0_readers,
+    //         mc_rec_aaogen_readers, mc_rec_eppi0_bkg_readers, bin_data);
 
-        // Append the collected bin data to the main results
-        all_unfolding_data.insert(all_unfolding_data.end(), bin_data.begin(), bin_data.end());
-    }
+    //     // Append the collected bin data to the main results
+    //     all_unfolding_data.insert(all_unfolding_data.end(), bin_data.begin(), bin_data.end());
+    // }
 
-    // Debug information to check the contents of all_unfolding_data
-    std::cout << "Debug: Number of unfolding_data entries: " << all_unfolding_data.size() << std::endl;
+    // // Debug information to check the contents of all_unfolding_data
+    // std::cout << "Debug: Number of unfolding_data entries: " << all_unfolding_data.size() << std::endl;
 
     // After collecting all the data, write it to a CSV file
-    write_csv("output/unfolding_data.csv", all_unfolding_data);
+    // write_csv("output/unfolding_data.csv", all_unfolding_data);
 
     std::cout << "Program complete. Additional functionality to be added later." << std::endl << std::endl;
 

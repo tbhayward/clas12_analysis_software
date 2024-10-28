@@ -166,16 +166,16 @@ void createIntegratedKinematicPlots() {
 
         double dataScale = 0;
         double mcScale = 0;
-        // if (dataHist->Integral() != 0) {
-        //     dataScale = dataHist->Integral();
-        //     // dataScale = data_count;
-        //     dataHist->Scale(1.0 / dataScale);
-        // }
-        // if (mcHist->Integral() != 0) {
-        //     mcScale = mcHist->Integral();
-        //     // mcScale = mc_count;
-        //     mcHist->Scale(1.0 / mcScale);
-        // }
+        if (dataHist->Integral() != 0) {
+            dataScale = dataHist->Integral();
+            // dataScale = data_count;
+            dataHist->Scale(1.0 / dataScale);
+        }
+        if (mcHist->Integral() != 0) {
+            mcScale = mcHist->Integral();
+            // mcScale = mc_count;
+            mcHist->Scale(1.0 / mcScale);
+        }
 
         // Find the maximum value for y-axis
         double maxY = 1.4*std::max(dataHist->GetMaximum(), mcHist->GetMaximum());
@@ -197,12 +197,12 @@ void createIntegratedKinematicPlots() {
         // Add entries to the legend with scientific notation for the number of entries
         dataHist->SetEntries(dataHist->GetEntries());
         mcHist->SetEntries(mcHist->GetEntries());
-        // leg->AddEntry(dataHist, (std::string("data (") + std::to_string((int)dataHist->GetEntries()) + " counts)").c_str(), "l");
-        // leg->AddEntry(mcHist, (std::string("mc (") + std::to_string((int)mcHist->GetEntries()) + " counts)").c_str(), "l");
+        leg->AddEntry(dataHist, (std::string("data (") + std::to_string((int)dataHist->GetEntries()) + " counts)").c_str(), "l");
+        leg->AddEntry(mcHist, (std::string("mc (") + std::to_string((int)mcHist->GetEntries()) + " counts)").c_str(), "l");
         // leg->AddEntry(dataHist, "NH_{3}", "l");
         // leg->AddEntry(mcHist, "C", "l");
-        leg->AddEntry(dataHist, (std::string("no rad (") + std::to_string((int)dataHist->GetEntries()) + " counts)").c_str(), "l");
-        leg->AddEntry(mcHist, (std::string("FSR (") + std::to_string((int)mcHist->GetEntries()) + " counts)").c_str(), "l");
+        // leg->AddEntry(dataHist, (std::string("no rad (") + std::to_string((int)dataHist->GetEntries()) + " counts)").c_str(), "l");
+        // leg->AddEntry(mcHist, (std::string("FSR (") + std::to_string((int)mcHist->GetEntries()) + " counts)").c_str(), "l");
         
         
         // Set line colors for histograms
