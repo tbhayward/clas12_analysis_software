@@ -4771,11 +4771,11 @@ void cvt_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader =
 
         // Define colors and markers for theta ranges
         // First color for overall (all theta), followed by specific theta ranges
-        std::vector<int> colors_data = {kBlack, kBlue, kGreen + 2, kOrange + 7}; // 0: All theta, 1-3: [30,40], [40,50], [50,70]
-        std::vector<int> markers_data = {20, 21, 22, 23}; // Different marker styles
+        std::vector<int> colors_data = {kBlack, kBlue, kGreen + 2, kOrange + 7, kCyan}; // Updated for 4 theta bins
+        std::vector<int> markers_data = {20, 21, 22, 23, 24}; // Updated for 4 theta bins
 
-        std::vector<int> colors_mc = {kRed, kMagenta, kViolet + 1, kPink + 1}; // 0: All theta, 1-3: [30,40], [40,50], [50,70]
-        std::vector<int> markers_mc = {24, 25, 26, 27}; // Different marker styles
+        std::vector<int> colors_mc = {kRed, kMagenta, kViolet + 1, kPink + 1, kCyan + 1}; // Updated for 4 theta bins
+        std::vector<int> markers_mc = {24, 25, 26, 27, 28}; // Updated for 4 theta bins
 
         // Loop over each layer to plot
         for (size_t i = 0; i < layers.size(); ++i) {
