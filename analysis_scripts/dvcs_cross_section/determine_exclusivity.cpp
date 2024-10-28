@@ -216,15 +216,15 @@ void determine_exclusivity(const std::string& analysisType, const std::string& t
             // Add a legend with mu and sigma from fits
             TLegend* legend_loose = new TLegend(0.275, 0.6, 0.9, 0.9);
             legend_loose->AddEntry(hist_data_loose, ("Data (" + std::to_string(static_cast<int>(hist_data_loose->GetEntries())) + " events; Loose Cuts)").c_str(), "lep");
-            legend_loose->AddEntry(fit_data, Form("Data Fit: #mu=%.2f, #sigma=%.2f", mu_data, sigma_data), "l");
+            legend_loose->AddEntry(fit_data, Form("Data Fit: #mu=%.3f, #sigma=%.3f", mu_data, sigma_data), "l");
             legend_loose->AddEntry(hist_mc_loose, ("MC (" + std::to_string(static_cast<int>(hist_mc_loose->GetEntries())) + " events; Loose Cuts)").c_str(), "lep");
-            legend_loose->AddEntry(fit_mc, Form("MC Fit: #mu=%.2f, #sigma=%.2f", mu_mc, sigma_mc), "l");
+            legend_loose->AddEntry(fit_mc, Form("MC Fit: #mu=%.3f, #sigma=%.3f", mu_mc, sigma_mc), "l");
             legend_loose->SetTextSize(0.03);  // Set smaller font size for "Loose Cuts" legend
             legend_loose->Draw();
 
             // Clean up fits
-            delete fit_data;
-            delete fit_mc;
+            // delete fit_data;
+            // delete fit_mc;
         } else {
             // Add a legend without fits
             TLegend* legend_loose = new TLegend(0.275, 0.7, 0.9, 0.9);
