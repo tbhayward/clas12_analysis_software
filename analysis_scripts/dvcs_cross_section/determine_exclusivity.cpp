@@ -11,20 +11,6 @@
 #include <filesystem>
 #include <cmath>  // for radian conversion
 
-// Define the asymmetric Gaussian function
-Double_t asymmetricGaussian(Double_t* x, Double_t* par) {
-    // Parameters:
-    // par[0] = Normalization
-    // par[1] = Mean (mu)
-    // par[2] = Sigma_left (sigma for x < mu)
-    // par[3] = Sigma_right (sigma for x >= mu)
-    Double_t xx = x[0];
-    Double_t mu = par[1];
-    Double_t sigma = (xx < mu) ? par[2] : par[3];
-    Double_t norm = par[0];
-    return norm * exp(-0.5 * ((xx - mu) / sigma) * ((xx - mu) / sigma));
-}
-
 void determine_exclusivity(const std::string& analysisType, const std::string& topology, TTreeReader& dataReader, TTreeReader& mcReader, const std::string& outputDir, const std::string& plotTitle) {
     // Set up global style options (remove stat boxes)
     gStyle->SetOptStat(0);
@@ -61,9 +47,8 @@ void determine_exclusivity(const std::string& analysisType, const std::string& t
         throw std::runtime_error("Invalid analysis type! Must be 'dvcs' or 'eppi0'");
     }
 
-    // Variables to perform fits on
-    std::vector<std::string> variables_to_fit_gaussian = {"xF", "Emiss2"};
-    std::vector<std::string> variables_to_fit_asymmetric_gaussian = {"pTmiss", "Mx2", "Mx2_1", "Mx2_2"};
+    // Variables to perform Gaussian fits on
+    std::vector<std::string> variables_to_fit = {"pTmiss", "xF", "Emiss2", "Mx2", "Mx2_1", "Mx2_2"};
 
     // Readers for relevant variables for cuts
     TTreeReaderValue<double> t_data(dataReader, "t1");
@@ -212,35 +197,15 @@ void determine_exclusivity(const std::string& analysisType, const std::string& t
         hist_mc_loose->Draw("E1 SAME");
 
         // Check if the variable is in the list of variables to fit
-        if (std::find(variables_to_fit_gaussian.begin(), variables_to_fit_gaussian.end(), variables[i]) != variables_to_fit_gaussian.end() ||
-            std::find(variables_to_fit_asymmetric_gaussian.begin(), variables_to_fit_asymmetric_gaussian.end(), variables[i]) != variables_to_fit_asymmetric_gaussian.end()) {
+        if (std::find(variables_to_fit.begin(), variables_to_fit.end(), variables[i]) != variables_to_fit.end()) {
+            // Perform Gaussian fits on data and MC histograms
+            TF1* fit_data = new TF1("fit_data", "gaus", config.min, config.max);
+            TF1* fit_mc = new TF1("fit_mc", "gaus", config.min, config.max);
 
-            TF1* fit_data;
-            TF1* fit_mc;
-
-            // Determine the fit function based on the variable
-            if (std::find(variables_to_fit_asymmetric_gaussian.begin(), variables_to_fit_asymmetric_gaussian.end(), variables[i]) != variables_to_fit_asymmetric_gaussian.end()) {
-                // Use Asymmetric Gaussian function
-                fit_data = new TF1("fit_data", asymmetricGaussian, hist_data_loose->GetXaxis()->GetXmin(), hist_data_loose->GetXaxis()->GetXmax(), 5);
-                fit_mc = new TF1("fit_mc", asymmetricGaussian, hist_mc_loose->GetXaxis()->GetXmin(), hist_mc_loose->GetXaxis()->GetXmax(), 5);
-
-                // Set initial parameter guesses
-                double peak_data = hist_data_loose->GetMaximum();
-                double peak_mc = hist_mc_loose->GetMaximum();
-                double mean_guess = hist_data_loose->GetMean();
-
-                fit_data->SetParameters(peak_data, mean_guess, 0.01, 0.01);
-                fit_mc->SetParameters(peak_mc, mean_guess, 0.01, 0.01);
-
-                // Optional: Set parameter limits if needed
-                fit_data->SetParLimits(2, 0.05, 1);  // sigma_left
-                fit_data->SetParLimits(3, 0.05, 1);  // sigma_right
-                // Similar for fit_mc
-            } else {
-                // Use Gaussian function
-                fit_data = new TF1("fit_data", "gaus", hist_data_loose->GetXaxis()->GetXmin(), hist_data_loose->GetXaxis()->GetXmax());
-                fit_mc = new TF1("fit_mc", "gaus", hist_mc_loose->GetXaxis()->GetXmin(), hist_mc_loose->GetXaxis()->GetXmax());
-            }
+            // Optional: Set initial parameter guesses if needed
+            // For example, you can set initial guesses based on histogram properties
+            fit_data->SetParameters(hist_data_loose->GetMaximum(), hist_data_loose->GetMean(), hist_data_loose->GetRMS());
+            fit_mc->SetParameters(hist_mc_loose->GetMaximum(), hist_mc_loose->GetMean(), hist_mc_loose->GetRMS());
 
             // Fit data
             hist_data_loose->Fit(fit_data, "RQ0");
@@ -257,28 +222,10 @@ void determine_exclusivity(const std::string& analysisType, const std::string& t
             fit_mc->Draw("SAME");
 
             // Get mu and sigma from fits
-            double mu_data, sigma_data, mu_mc, sigma_mc;
-
-            if (std::find(variables_to_fit_asymmetric_gaussian.begin(), variables_to_fit_asymmetric_gaussian.end(), variables[i]) != variables_to_fit_asymmetric_gaussian.end()) {
-                // For Asymmetric Gaussian
-                mu_data = fit_data->GetParameter(1);
-                double sigma_left_data = fit_data->GetParameter(2);
-                double sigma_right_data = fit_data->GetParameter(3);
-
-                mu_mc = fit_mc->GetParameter(1);
-                double sigma_left_mc = fit_mc->GetParameter(2);
-                double sigma_right_mc = fit_mc->GetParameter(3);
-
-                // For simplicity, we can report the average sigma
-                sigma_data = (sigma_left_data + sigma_right_data) / 2.0;
-                sigma_mc = (sigma_left_mc + sigma_right_mc) / 2.0;
-            } else {
-                // Gaussian parameters: [0]=norm, [1]=mean, [2]=sigma
-                mu_data = fit_data->GetParameter(1);
-                sigma_data = fit_data->GetParameter(2);
-                mu_mc = fit_mc->GetParameter(1);
-                sigma_mc = fit_mc->GetParameter(2);
-            }
+            double mu_data = fit_data->GetParameter(1);
+            double sigma_data = fit_data->GetParameter(2);
+            double mu_mc = fit_mc->GetParameter(1);
+            double sigma_mc = fit_mc->GetParameter(2);
 
             // Add a legend with mu and sigma from fits
             TLegend* legend_loose = new TLegend(0.275, 0.6, 0.9, 0.9);
