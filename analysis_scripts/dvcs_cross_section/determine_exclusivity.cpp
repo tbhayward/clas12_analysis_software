@@ -47,8 +47,9 @@ void determine_exclusivity(const std::string& analysisType, const std::string& t
         throw std::runtime_error("Invalid analysis type! Must be 'dvcs' or 'eppi0'");
     }
 
-    // Variables to perform Gaussian fits on
-    std::vector<std::string> variables_to_fit = {"pTmiss", "xF", "Emiss2", "Mx2", "Mx2_1", "Mx2_2"};
+    // Variables to perform fits on
+    std::vector<std::string> variables_to_fit_gaussian = {"xF", "Emiss2"};
+    std::vector<std::string> variables_to_fit_crystalball = {"pTmiss", "Mx2", "Mx2_1", "Mx2_2"};
 
     // Readers for relevant variables for cuts
     TTreeReaderValue<double> t_data(dataReader, "t1");
@@ -197,16 +198,19 @@ void determine_exclusivity(const std::string& analysisType, const std::string& t
         hist_mc_loose->Draw("E1 SAME");
 
         // Check if the variable is in the list of variables to fit
-        if (std::find(variables_to_fit.begin(), variables_to_fit.end(), variables[i]) != variables_to_fit.end()) {
+        if (std::find(variables_to_fit_gaussian.begin(), variables_to_fit_gaussian.end(), variables[i]) != variables_to_fit_gaussian.end() ||
+            std::find(variables_to_fit_crystalball.begin(), variables_to_fit_crystalball.end(), variables[i]) != variables_to_fit_crystalball.end()) {
+
             TF1* fit_data;
             TF1* fit_mc;
 
-            // For Mx2, perform a double Gaussian fit
-            if (variables[i] == "Mx2") {
-                fit_data = new TF1("fit_data", "gaus(0)+gaus(3)", hist_data_loose->GetXaxis()->GetXmin(), hist_data_loose->GetXaxis()->GetXmax());
-                fit_mc = new TF1("fit_mc", "gaus(0)+gaus(3)", hist_mc_loose->GetXaxis()->GetXmin(), hist_mc_loose->GetXaxis()->GetXmax());
+            // Determine the fit function based on the variable
+            if (std::find(variables_to_fit_crystalball.begin(), variables_to_fit_crystalball.end(), variables[i]) != variables_to_fit_crystalball.end()) {
+                // Use Crystal Ball function
+                fit_data = new TF1("fit_data", "crystalball", hist_data_loose->GetXaxis()->GetXmin(), hist_data_loose->GetXaxis()->GetXmax());
+                fit_mc = new TF1("fit_mc", "crystalball", hist_mc_loose->GetXaxis()->GetXmin(), hist_mc_loose->GetXaxis()->GetXmax());
             } else {
-                // Perform Gaussian fits on data and MC histograms
+                // Use Gaussian function
                 fit_data = new TF1("fit_data", "gaus", hist_data_loose->GetXaxis()->GetXmin(), hist_data_loose->GetXaxis()->GetXmax());
                 fit_mc = new TF1("fit_mc", "gaus", hist_mc_loose->GetXaxis()->GetXmin(), hist_mc_loose->GetXaxis()->GetXmax());
             }
@@ -225,40 +229,29 @@ void determine_exclusivity(const std::string& analysisType, const std::string& t
             fit_mc->SetLineWidth(2);
             fit_mc->Draw("SAME");
 
+            // Get mu and sigma from fits
+            double mu_data, sigma_data, mu_mc, sigma_mc;
+
+            if (std::find(variables_to_fit_crystalball.begin(), variables_to_fit_crystalball.end(), variables[i]) != variables_to_fit_crystalball.end()) {
+                // Crystal Ball parameters: [0]=alpha, [1]=n, [2]=mean, [3]=sigma, [4]=norm
+                mu_data = fit_data->GetParameter(2);
+                sigma_data = fit_data->GetParameter(3);
+                mu_mc = fit_mc->GetParameter(2);
+                sigma_mc = fit_mc->GetParameter(3);
+            } else {
+                // Gaussian parameters: [0]=norm, [1]=mean, [2]=sigma
+                mu_data = fit_data->GetParameter(1);
+                sigma_data = fit_data->GetParameter(2);
+                mu_mc = fit_mc->GetParameter(1);
+                sigma_mc = fit_mc->GetParameter(2);
+            }
+
             // Add a legend with mu and sigma from fits
             TLegend* legend_loose = new TLegend(0.275, 0.6, 0.9, 0.9);
             legend_loose->AddEntry(hist_data_loose, ("Data (" + std::to_string(static_cast<int>(hist_data_loose->GetEntries())) + " events; Loose Cuts)").c_str(), "lep");
-
-            if (variables[i] == "Mx2") {
-                // For double Gaussian, we can provide the parameters of the main peak
-                double mu_data1 = fit_data->GetParameter(1);
-                double sigma_data1 = fit_data->GetParameter(2);
-                double mu_data2 = fit_data->GetParameter(4);
-                double sigma_data2 = fit_data->GetParameter(5);
-
-                double mu_mc1 = fit_mc->GetParameter(1);
-                double sigma_mc1 = fit_mc->GetParameter(2);
-                double mu_mc2 = fit_mc->GetParameter(4);
-                double sigma_mc2 = fit_mc->GetParameter(5);
-
-                legend_loose->AddEntry(fit_data, Form("Data Fit: #mu_{1}=%.3f, #sigma_{1}=%.3f", mu_data1, sigma_data1), "l");
-                legend_loose->AddEntry(fit_data, Form("Data Fit: #mu_{2}=%.3f, #sigma_{2}=%.3f", mu_data2, sigma_data2), "l");
-
-                legend_loose->AddEntry(hist_mc_loose, ("MC (" + std::to_string(static_cast<int>(hist_mc_loose->GetEntries())) + " events; Loose Cuts)").c_str(), "lep");
-                legend_loose->AddEntry(fit_mc, Form("MC Fit: #mu_{1}=%.3f, #sigma_{1}=%.3f", mu_mc1, sigma_mc1), "l");
-                legend_loose->AddEntry(fit_mc, Form("MC Fit: #mu_{2}=%.3f, #sigma_{2}=%.3f", mu_mc2, sigma_mc2), "l");
-            } else {
-                // For single Gaussian
-                double mu_data = fit_data->GetParameter(1);
-                double sigma_data = fit_data->GetParameter(2);
-                double mu_mc = fit_mc->GetParameter(1);
-                double sigma_mc = fit_mc->GetParameter(2);
-
-                legend_loose->AddEntry(fit_data, Form("Data Fit: #mu=%.3f, #sigma=%.3f", mu_data, sigma_data), "l");
-                legend_loose->AddEntry(hist_mc_loose, ("MC (" + std::to_string(static_cast<int>(hist_mc_loose->GetEntries())) + " events; Loose Cuts)").c_str(), "lep");
-                legend_loose->AddEntry(fit_mc, Form("MC Fit: #mu=%.3f, #sigma=%.3f", mu_mc, sigma_mc), "l");
-            }
-
+            legend_loose->AddEntry(fit_data, Form("Data Fit: #mu=%.3f, #sigma=%.3f", mu_data, sigma_data), "l");
+            legend_loose->AddEntry(hist_mc_loose, ("MC (" + std::to_string(static_cast<int>(hist_mc_loose->GetEntries())) + " events; Loose Cuts)").c_str(), "lep");
+            legend_loose->AddEntry(fit_mc, Form("MC Fit: #mu=%.3f, #sigma=%.3f", mu_mc, sigma_mc), "l");
             legend_loose->SetTextSize(0.03);  // Set smaller font size for "Loose Cuts" legend
             legend_loose->Draw();
 
