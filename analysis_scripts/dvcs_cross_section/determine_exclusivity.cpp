@@ -7,7 +7,6 @@
 #include <TLegend.h>
 #include <TStyle.h>
 #include <TTreeReaderValue.h>
-#include <TF1.h>
 #include <filesystem>
 #include <cmath>  // for radian conversion
 
@@ -46,9 +45,6 @@ void determine_exclusivity(const std::string& analysisType, const std::string& t
     } else {
         throw std::runtime_error("Invalid analysis type! Must be 'dvcs' or 'eppi0'");
     }
-
-    // Variables to perform Gaussian fits on
-    std::vector<std::string> variables_to_fit = {"pTmiss", "xF", "Emiss2", "Mx2", "Mx2_1", "Mx2_2"};
 
     // Readers for relevant variables for cuts
     TTreeReaderValue<double> t_data(dataReader, "t1");
@@ -196,55 +192,18 @@ void determine_exclusivity(const std::string& analysisType, const std::string& t
         hist_data_loose->Draw("E1");
         hist_mc_loose->Draw("E1 SAME");
 
-        // Check if the variable is in the list of variables to fit
-        if (std::find(variables_to_fit.begin(), variables_to_fit.end(), variables[i]) != variables_to_fit.end()) {
-            // Perform Gaussian fits on data and MC histograms
-            TF1* fit_data = new TF1("fit_data", "gaus", config.min, config.max);
-            TF1* fit_mc = new TF1("fit_mc", "gaus", config.min, config.max);
+        // Calculate mean and standard deviation for data and MC histograms
+        double mean_data = hist_data_loose->GetMean();
+        double stddev_data = hist_data_loose->GetStdDev();
+        double mean_mc = hist_mc_loose->GetMean();
+        double stddev_mc = hist_mc_loose->GetStdDev();
 
-            // Optional: Set initial parameter guesses if needed
-            // For example, you can set initial guesses based on histogram properties
-            fit_data->SetParameters(hist_data_loose->GetMaximum(), hist_data_loose->GetMean(), hist_data_loose->GetRMS());
-            fit_mc->SetParameters(hist_mc_loose->GetMaximum(), hist_mc_loose->GetMean(), hist_mc_loose->GetRMS());
-
-            // Fit data
-            hist_data_loose->Fit(fit_data, "RQ0");
-            fit_data->SetLineColor(kBlue);
-            fit_data->SetLineStyle(2);  // Dashed line
-            fit_data->SetLineWidth(2);  // Slightly thicker line
-            fit_data->Draw("SAME");
-
-            // Fit MC
-            hist_mc_loose->Fit(fit_mc, "RQ0");
-            fit_mc->SetLineColor(kRed);
-            fit_mc->SetLineStyle(2);
-            fit_mc->SetLineWidth(2);
-            fit_mc->Draw("SAME");
-
-            // Get mu and sigma from fits
-            double mu_data = fit_data->GetParameter(1);
-            double sigma_data = fit_data->GetParameter(2);
-            double mu_mc = fit_mc->GetParameter(1);
-            double sigma_mc = fit_mc->GetParameter(2);
-
-            // Add a legend with mu and sigma from fits
-            TLegend* legend_loose = new TLegend(0.275, 0.6, 0.9, 0.9);
-            legend_loose->AddEntry(hist_data_loose, ("Data (" + std::to_string(static_cast<int>(hist_data_loose->GetEntries())) + " events; Loose Cuts)").c_str(), "lep");
-            legend_loose->AddEntry(fit_data, Form("Data Fit: #mu=%.3f, #sigma=%.3f", mu_data, sigma_data), "l");
-            legend_loose->AddEntry(hist_mc_loose, ("MC (" + std::to_string(static_cast<int>(hist_mc_loose->GetEntries())) + " events; Loose Cuts)").c_str(), "lep");
-            legend_loose->AddEntry(fit_mc, Form("MC Fit: #mu=%.3f, #sigma=%.3f", mu_mc, sigma_mc), "l");
-            legend_loose->SetTextSize(0.03);  // Set smaller font size for "Loose Cuts" legend
-            legend_loose->Draw();
-
-            // Note: Do not delete fit functions here to keep them on the canvas
-        } else {
-            // Add a legend without fits
-            TLegend* legend_loose = new TLegend(0.275, 0.7, 0.9, 0.9);
-            legend_loose->AddEntry(hist_data_loose, ("Data (" + std::to_string(static_cast<int>(hist_data_loose->GetEntries())) + " events; Loose Cuts)").c_str(), "lep");
-            legend_loose->AddEntry(hist_mc_loose, ("MC (" + std::to_string(static_cast<int>(hist_mc_loose->GetEntries())) + " events; Loose Cuts)").c_str(), "lep");
-            legend_loose->SetTextSize(0.03);  // Set smaller font size for "Loose Cuts" legend
-            legend_loose->Draw();
-        }
+        // Add a legend with mu and sigma from histogram statistics
+        TLegend* legend_loose = new TLegend(0.275, 0.6, 0.9, 0.9);
+        legend_loose->AddEntry(hist_data_loose, Form("Data (#mu=%.3f, #sigma=%.3f)", mean_data, stddev_data), "lep");
+        legend_loose->AddEntry(hist_mc_loose, Form("MC (#mu=%.3f, #sigma=%.3f)", mean_mc, stddev_mc), "lep");
+        legend_loose->SetTextSize(0.03);  // Set smaller font size for "Loose Cuts" legend
+        legend_loose->Draw();
     }
 
     // Save the canvases with updated names to reflect the plotTitle and topology input
