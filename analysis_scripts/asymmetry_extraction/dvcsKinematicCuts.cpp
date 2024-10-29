@@ -18,7 +18,7 @@ bool dvcsKinematicCuts::applyCuts(int currentFits, bool isMC) {
     bool goodEvent = false;
     string property = binNames[currentFits];
 
-    goodEvent = *Q2 > 1 && *W > 2 && *eta2 < 0 && *t1 > -1 && pTmiss < 0.15 && Emiss2 < 1 && theta_gamma_gamma < 0.7 && open_angle_ep2 > 5;
+    goodEvent = *Q2 > 1 && *W > 2 && *eta2 < 0 && *t1 > -1 && *pTmiss < 0.15 && *Emiss2 < 1 && *theta_gamma_gamma < 0.7 && *open_angle_ep2 > 5;
     goodEvent = true;
     
     if (isMC || (*runnum < 16042 || *runnum > 17811)) {
