@@ -35,7 +35,7 @@ int main(int argc, char** argv) {
     }
 
     // Define cuts
-    std::string cuts = "t < -1 && open_angle_ep2 > 5 && theta_gamma_gamma < 0.7 && Emiss2 < 1 && pTmiss < 0.15";
+    std::string cuts = "t > -1 && open_angle_ep2 > 5 && theta_gamma_gamma < 0.7 && Emiss2 < 1 && pTmiss < 0.15";
 
     // Define bin edges
     std::vector<double> xB_bin_edges = {0.062, 0.090, 0.118, 0.155, 0.204, 0.268, 0.357, 0.446, 0.581};
