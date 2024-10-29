@@ -106,11 +106,12 @@ int main(int argc, char** argv) {
 
     // Draw h_phi
     TCanvas *c3 = new TCanvas("c3", "#phi distribution", 800, 600);
+    gPad->SetLeftMargin(0.15);
     h_phi->Draw();
 
     // Draw vertical lines every 15 degrees
     for (int phi = 0; phi <= 360; phi += 15) {
-        TLine *line = new TLine(phi, 1400, phi, 9550);
+        TLine *line = new TLine(phi, 0, phi, 13000);
         line->SetLineColor(kRed);
         line->SetLineStyle(2);
         line->Draw("same");
