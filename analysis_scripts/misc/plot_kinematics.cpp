@@ -93,7 +93,7 @@ int main(int argc, char** argv) {
     // Draw vertical lines at t bin edges
     for (size_t i = 0; i < t_bin_edges.size(); ++i) {
         double x = t_bin_edges[i];
-        TLine *line = new TLine(x, 1600, x, 9750);
+        TLine *line = new TLine(x, 1600, x, 9900);
         line->SetLineColor(kRed);
         line->SetLineStyle(2);
         line->Draw("same");
