@@ -8983,9 +8983,9 @@ int main(int argc, char** argv) {
     // if (mcReader) mcReader->Restart();
     // plot_chi2pid_cd(dataReader, mcReader);
 
-    // dataReader.Restart();
-    // if (mcReader) mcReader->Restart();
-    // plot_vertices(dataReader, mcReader);
+    dataReader.Restart();
+    if (mcReader) mcReader->Restart();
+    plot_vertices(dataReader, mcReader);
 
     // dataReader.Restart();
     // if (mcReader) mcReader->Restart();
