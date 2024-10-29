@@ -43,8 +43,8 @@ int main(int argc, char** argv) {
     std::vector<double> t_bin_edges = {0.110, 0.150, 0.250, 0.400, 0.600, 0.800, 1.000};
 
     // Create histograms
-    TH2D *hQ2_vs_x = new TH2D("hQ2_vs_x", "Q^{2} vs x_{B};x_{B};Q^{2} (GeV^{2})", 100, 0.05, 1, 100, 0.6, 8.0);
-    TH1D *h_t = new TH1D("h_t", "-t distribution;-t (GeV^{2});Counts", 100, 0, 1.0);
+    TH2D *hQ2_vs_x = new TH2D("hQ2_vs_x", "Q^{2} vs x_{B};x_{B};Q^{2} (GeV^{2})", 100, 0.05, 0.6, 100, 0.6, 8.0);
+    TH1D *h_t = new TH1D("h_t", "-t distribution;-t (GeV^{2});Counts", 100, -2, 2.0);
     TH1D *h_phi = new TH1D("h_phi", "#phi distribution;#phi (degrees);Counts", 360, 0, 360);
 
     // Fill histograms
