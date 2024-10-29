@@ -6181,7 +6181,7 @@ void plot_vertices(TTreeReader& dataReader, TTreeReader* mcReader = nullptr,
         }
 
         // Save the plot
-        c.SaveAs(("output/calibration/vertices/vertex_z_" dataset + "_" + plot_name + ".pdf").c_str());
+        c.SaveAs(("output/calibration/vertices/vertex_z_" + dataset + "_" + plot_name + ".pdf").c_str());
 
         // Clean up
         for (int i = 0; i < 7; ++i) {
