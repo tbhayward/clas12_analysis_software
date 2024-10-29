@@ -2,6 +2,7 @@
 #include <string>
 #include <vector>
 #include <sys/stat.h> // For mkdir
+#include <cmath>      // For std::isnan
 
 #include "TFile.h"
 #include "TTree.h"
@@ -34,9 +35,6 @@ int main(int argc, char** argv) {
         return 1;
     }
 
-    // Define cuts
-    std::string cuts = "open_angle_ep2 > 5 && theta_gamma_gamma < 0.7 && Emiss2 < 1 && pTmiss < 0.15";
-
     // Define bin edges
     std::vector<double> xB_bin_edges = {0.062, 0.090, 0.118, 0.155, 0.204, 0.268, 0.357, 0.446, 0.581};
     std::vector<double> Q2_bin_edges = {1.000, 1.200, 1.456, 1.912, 2.510, 3.295, 4.326, 5.761};
@@ -47,10 +45,63 @@ int main(int argc, char** argv) {
     TH1D *h_t = new TH1D("h_t", "-t distribution;-t (GeV^{2});Counts", 100, 0, 1.0);
     TH1D *h_phi = new TH1D("h_phi", "#phi distribution;#phi (degrees);Counts", 360, 0, 360);
 
-    // Fill histograms
-    tree->Draw("Q2:x>>hQ2_vs_x", cuts.c_str(), "COLZ");
-    tree->Draw("(-t)>>h_t", cuts.c_str());
-    tree->Draw("(180/3.14159)*phi>>h_phi", cuts.c_str());
+    // Variables to hold the data
+    double t_value;
+    double Q2_value;
+    double x_value;
+    double phi_value;
+    double open_angle_ep2_value;
+    double theta_gamma_gamma_value;
+    double Emiss2_value;
+    double pTmiss_value;
+
+    // Enable only the branches we need
+    tree->SetBranchStatus("*", 0); // Disable all branches
+    tree->SetBranchStatus("t", 1);
+    tree->SetBranchStatus("Q2", 1);
+    tree->SetBranchStatus("x", 1);
+    tree->SetBranchStatus("phi", 1);
+    tree->SetBranchStatus("open_angle_ep2", 1);
+    tree->SetBranchStatus("theta_gamma_gamma", 1);
+    tree->SetBranchStatus("Emiss2", 1);
+    tree->SetBranchStatus("pTmiss", 1);
+
+    // Set branch addresses
+    tree->SetBranchAddress("t", &t_value);
+    tree->SetBranchAddress("Q2", &Q2_value);
+    tree->SetBranchAddress("x", &x_value);
+    tree->SetBranchAddress("phi", &phi_value);
+    tree->SetBranchAddress("open_angle_ep2", &open_angle_ep2_value);
+    tree->SetBranchAddress("theta_gamma_gamma", &theta_gamma_gamma_value);
+    tree->SetBranchAddress("Emiss2", &Emiss2_value);
+    tree->SetBranchAddress("pTmiss", &pTmiss_value);
+
+    // Loop over entries
+    Long64_t nentries = tree->GetEntries();
+    std::cout << "Total entries in tree: " << nentries << std::endl;
+    int entries_after_cuts = 0;
+    for (Long64_t i = 0; i < nentries; ++i) {
+        tree->GetEntry(i);
+
+        // Apply cuts
+        if (open_angle_ep2_value > 5 &&
+            theta_gamma_gamma_value < 0.7 &&
+            Emiss2_value < 1 &&
+            pTmiss_value < 0.15) {
+
+            // Fill histograms
+            hQ2_vs_x->Fill(x_value, Q2_value);
+            h_t->Fill(-t_value);
+            h_phi->Fill(phi_value * (180.0 / M_PI));
+
+            // Print t value
+            std::cout << "Entry " << i << ": t = " << t_value << std::endl;
+
+            entries_after_cuts++;
+        }
+    }
+
+    std::cout << "Total entries after cuts: " << entries_after_cuts << std::endl;
 
     // Set style
     gStyle->SetOptStat(0);
@@ -108,7 +159,7 @@ int main(int argc, char** argv) {
 
     // Draw vertical lines every 15 degrees
     for (int phi = 0; phi <= 360; phi += 15) {
-        TLine *line = new TLine(phi, 1400, phi, 9550);
+        TLine *line = new TLine(phi, 0, phi, h_phi->GetMaximum());
         line->SetLineColor(kRed);
         line->SetLineStyle(2);
         line->Draw("same");
