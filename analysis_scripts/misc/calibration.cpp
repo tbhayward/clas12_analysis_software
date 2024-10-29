@@ -4911,7 +4911,7 @@ void plot_cvt_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = null
             gPad->SetMargin(0.15, 0.15, 0.1, 0.1);
             h_data_after[layer_idx]->Draw("COLZ");
         }
-        c_data->SaveAs(("output/calibration/cvt/positions/" dataset + "_" + particle_name + "_cvt_hit_position.png").c_str());
+        c_data->SaveAs(("output/calibration/cvt/positions/" + dataset + "_" + particle_name + "_cvt_hit_position.png").c_str());
 
         // Draw and save the MC canvas if available
         if (mcReader) {
@@ -4926,7 +4926,7 @@ void plot_cvt_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = null
                 gPad->SetMargin(0.15, 0.15, 0.1, 0.1);
                 h_mc_after[layer_idx]->Draw("COLZ");
             }
-            c_mc->SaveAs(("output/calibration/cvt/positions/mc_" + particle_name + "_cvt_hit_position.png").c_str());
+            c_mc->SaveAs(("output/calibration/cvt/positions/mc_" + dataset + "_" + particle_name + "_cvt_hit_position.png").c_str());
         }
 
         // Convert theta to degrees for both data and MC
