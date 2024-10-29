@@ -4723,7 +4723,8 @@ void cvt_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader =
     }
 }
 
-void plot_cvt_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
+void plot_cvt_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = nullptr,
+    const std::string& dataset = "rga_fa18_inb") {
     int nBins = 100;
 
     std::vector<std::tuple<std::string, std::string, std::string, double, double>> layers = {
@@ -4910,7 +4911,7 @@ void plot_cvt_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = null
             gPad->SetMargin(0.15, 0.15, 0.1, 0.1);
             h_data_after[layer_idx]->Draw("COLZ");
         }
-        c_data->SaveAs(("output/calibration/cvt/positions/data_" + particle_name + "_cvt_hit_position.png").c_str());
+        c_data->SaveAs(("output/calibration/cvt/positions/" dataset + "_" + particle_name + "_cvt_hit_position.png").c_str());
 
         // Draw and save the MC canvas if available
         if (mcReader) {
@@ -5093,7 +5094,7 @@ void plot_cvt_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = null
             gPad->SetMargin(0.2, 0.05, 0.1, 0.1);
             h_phi_vs_theta_CVT_mc_after->Draw("COLZ");
 
-            c_theta_vs_theta_mc->SaveAs(("output/calibration/cvt/positions/theta_vs_theta_mc_" + particle_name + ".png").c_str());
+            c_theta_vs_theta_mc->SaveAs(("output/calibration/cvt/positions/theta_vs_theta_mc_" + particle_name + ".pdf").c_str());
         }
 
         // Clean up
@@ -5996,7 +5997,8 @@ bool is_cd_track(double track_sector_6) {
     return track_sector_6 != -9999;
 }
 
-void plot_vertices(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
+void plot_vertices(TTreeReader& dataReader, TTreeReader* mcReader = nullptr,
+    const std::string& dataset = "rga_fa18_inb") {
     // Disable stat boxes
     gStyle->SetOptStat(0);
 
@@ -6179,7 +6181,7 @@ void plot_vertices(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
         }
 
         // Save the plot
-        c.SaveAs(("output/calibration/vertices/vertex_z_" + plot_name + ".png").c_str());
+        c.SaveAs(("output/calibration/vertices/vertex_z_" dataset + "_" + plot_name + ".pdf").c_str());
 
         // Clean up
         for (int i = 0; i < 7; ++i) {
@@ -8973,7 +8975,7 @@ int main(int argc, char** argv) {
 
     dataReader.Restart();
     if (mcReader) mcReader->Restart();
-    plot_cvt_hit_position(dataReader, mcReader);
+    plot_cvt_hit_position(dataReader, mcReader, dataset);
 
     // dataReader.Restart();
     // if (mcReader) mcReader->Restart();
@@ -8985,7 +8987,7 @@ int main(int argc, char** argv) {
 
     dataReader.Restart();
     if (mcReader) mcReader->Restart();
-    plot_vertices(dataReader, mcReader);
+    plot_vertices(dataReader, mcReader, dataset);
 
     // dataReader.Restart();
     // if (mcReader) mcReader->Restart();
