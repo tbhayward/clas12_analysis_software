@@ -4224,9 +4224,8 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
 
 bool cvt_fiducial(double edge_1, double edge_3, double edge_5, double edge_7, 
      double edge_12) {
-    // Dummy function, always returns true
-    return edge_1 > 0 && edge_3 > 0 && edge_5 > 0 && edge_7 > -2 && edge_12 > -5;
-    return true;
+    // return edge_1 > 0 && edge_3 > 0 && edge_5 > 0 && edge_7 > -2 && edge_12 > -5;
+    return edge_1 > 0 && edge_3 > 0 && edge_5 > 0;
 }
 
 // Helper functions for theta_CVT and phi_CVT calculations
@@ -4355,172 +4354,6 @@ void plot_chi2_ndf_vs_phi_CVT_2D(TTreeReader& dataReader, TTreeReader* mcReader,
         delete mc_track_ndf_5;
     }
 }
-
-// void cvt_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
-//     int nBinsX = 50;  // Number of bins for edge
-//     int nBinsY = 100;  // Number of bins for chi2/ndf
-
-//     // Define CVT layers and edges for data
-//     std::vector<std::tuple<TTreeReaderValue<double>*, std::string, double, double>> layers = {
-//         {new TTreeReaderValue<double>(dataReader, "traj_edge_1"), "layer_1", -2, 2.2},
-//         {new TTreeReaderValue<double>(dataReader, "traj_edge_3"), "layer_3", -2, 2.2},
-//         {new TTreeReaderValue<double>(dataReader, "traj_edge_5"), "layer_5", -2, 2.2},
-//         {new TTreeReaderValue<double>(dataReader, "traj_edge_7"), "layer_7", -5, 15},
-//         {new TTreeReaderValue<double>(dataReader, "traj_edge_12"), "layer_12", -10, 25}
-//     };
-
-//     // Define CVT layers and edges for MC if available
-//     std::vector<std::tuple<TTreeReaderValue<double>*, std::string, double, double>> mc_layers;
-//     if (mcReader) {
-//         mc_layers = {
-//             {new TTreeReaderValue<double>(*mcReader, "traj_edge_1"), "layer_1", -2, 2.2},
-//             {new TTreeReaderValue<double>(*mcReader, "traj_edge_3"), "layer_3", -2, 2.2},
-//             {new TTreeReaderValue<double>(*mcReader, "traj_edge_5"), "layer_5", -2, 2.2},
-//             {new TTreeReaderValue<double>(*mcReader, "traj_edge_7"), "layer_7", -5, 15},
-//             {new TTreeReaderValue<double>(*mcReader, "traj_edge_12"), "layer_12", -10, 25}
-//         };
-//     }
-
-//     // Define particle PID and track variables for data
-//     TTreeReaderValue<int> particle_pid(dataReader, "particle_pid");
-//     TTreeReaderValue<double> track_chi2_5(dataReader, "track_chi2_5");
-//     TTreeReaderValue<int> track_ndf_5(dataReader, "track_ndf_5");
-
-//     // Define particle PID and track variables for MC if available
-//     TTreeReaderValue<int>* mc_particle_pid = nullptr;
-//     TTreeReaderValue<double>* mc_track_chi2_5 = nullptr;
-//     TTreeReaderValue<int>* mc_track_ndf_5 = nullptr;
-
-//     if (mcReader) {
-//         mc_particle_pid = new TTreeReaderValue<int>(*mcReader, "particle_pid");
-//         mc_track_chi2_5 = new TTreeReaderValue<double>(*mcReader, "track_chi2_5");
-//         mc_track_ndf_5 = new TTreeReaderValue<int>(*mcReader, "track_ndf_5");
-//     }
-
-//     std::vector<std::tuple<int, std::string, std::string>> particle_types = {
-//         // {211, "pip", "#pi^{+}"},
-//         // {-211, "pim", "#pi^{-}"},
-//         // {321, "kp", "k^{+}"},
-//         // {-321, "km", "k^{-}"},
-//         {2212, "proton", "proton"}
-//     };
-
-//     plot_chi2_ndf_vs_phi_CVT_2D(dataReader, mcReader, particle_types);
-
-//     for (const auto& particle_type : particle_types) {
-//         int pid = std::get<0>(particle_type);
-//         std::string particle_name = std::get<1>(particle_type);
-//         std::string particle_latex = std::get<2>(particle_type);
-
-//         std::vector<TH2D*> h_chi2_vs_edge_data, h_chi2_vs_edge_mc;
-
-//         // Initialize 2D histograms for data and MC
-//         for (const auto& layer : layers) {
-//             std::string layer_name = std::get<1>(layer);
-//             double xMin = std::get<2>(layer);
-//             double xMax = std::get<3>(layer);
-//             double yMin = 0;
-//             double yMax = 100;  // This can be adjusted depending on your expected range of chi2/ndf
-
-//             h_chi2_vs_edge_data.push_back(new TH2D(("h_chi2_vs_edge_data_" + layer_name + "_" + particle_name).c_str(), (particle_latex + " - " + layer_name).c_str(), nBinsX, xMin, xMax, nBinsY, yMin, yMax));
-
-//             if (mcReader) {
-//                 h_chi2_vs_edge_mc.push_back(new TH2D(("h_chi2_vs_edge_mc_" + layer_name + "_" + particle_name).c_str(), (particle_latex + " - MC - " + layer_name).c_str(), nBinsX, xMin, xMax, nBinsY, yMin, yMax));
-//             }
-//         }
-
-//         // Fill 2D histograms for data
-//         dataReader.Restart();
-//         while (dataReader.Next()) {
-//             if (*particle_pid == pid && *track_ndf_5 > 0 && *track_chi2_5 < 10000) {
-//                 double chi2_ndf = *track_chi2_5 / *track_ndf_5;
-
-//                 for (size_t i = 0; i < layers.size(); ++i) {
-//                     double traj_edge = **std::get<0>(layers[i]);
-
-//                     if (traj_edge != -9999) {
-//                         h_chi2_vs_edge_data[i]->Fill(traj_edge, chi2_ndf);
-//                     }
-//                 }
-//             }
-//         }
-
-//         // Fill 2D histograms for MC
-//         if (mcReader) {
-//             mcReader->Restart();
-//             while (mcReader->Next()) {
-//                 if (**mc_particle_pid == pid && **mc_track_ndf_5 > 0 && **mc_track_chi2_5 < 10000) {
-//                     double mc_chi2_ndf = **mc_track_chi2_5 / **mc_track_ndf_5;
-
-//                     for (size_t i = 0; i < mc_layers.size(); ++i) {
-//                         double traj_edge = **std::get<0>(mc_layers[i]);
-
-//                         if (traj_edge != -9999) {
-//                             h_chi2_vs_edge_mc[i]->Fill(traj_edge, mc_chi2_ndf);
-//                         }
-//                     }
-//                 }
-//             }
-//         }
-
-//         // Plot data results
-//         TCanvas* c_layer_data = new TCanvas(("c_data_" + particle_name).c_str(), ("#chi^{2}/ndf vs edge for " + particle_latex + " (Data)").c_str(), 1800, 1200);
-//         c_layer_data->Divide(3, 2);
-//         c_layer_data->SetLeftMargin(0.2);  // Increase left margin for better y-axis label visibility
-
-//         for (size_t i = 0; i < layers.size(); ++i) {
-//             c_layer_data->cd(i + 1);
-//             gPad->SetLogz();  // Set the z-axis to log scale
-//             gPad->SetMargin(0.2, 0.15, 0.2, 0.1);  // Adjust margins: left, right, bottom, top
-//             h_chi2_vs_edge_data[i]->GetXaxis()->SetTitle("edge (cm)");
-//             h_chi2_vs_edge_data[i]->GetYaxis()->SetTitle("#chi^{2}/ndf");
-//             h_chi2_vs_edge_data[i]->Draw("COLZ");
-//         }
-
-//         c_layer_data->SaveAs(("output/calibration/cvt/determination/chi2_per_ndf_vs_edge_data_" + particle_name + ".png").c_str());
-
-//         // Plot MC results
-//         if (mcReader) {
-//             TCanvas* c_layer_mc = new TCanvas(("c_mc_" + particle_name).c_str(), ("#chi^{2}/ndf vs edge for " + particle_latex + " (MC)").c_str(), 1800, 1200);
-//             c_layer_mc->Divide(3, 2);
-//             c_layer_mc->SetLeftMargin(0.2);  // Increase left margin for better y-axis label visibility
-
-//             for (size_t i = 0; i < mc_layers.size(); ++i) {
-//                 c_layer_mc->cd(i + 1);
-//                 gPad->SetLogz();  // Set the z-axis to log scale
-//                 gPad->SetMargin(0.2, 0.15, 0.2, 0.1);  // Adjust margins: left, right, bottom, top
-//                 h_chi2_vs_edge_mc[i]->GetXaxis()->SetTitle("edge (cm)");
-//                 h_chi2_vs_edge_mc[i]->GetYaxis()->SetTitle("#chi^{2}/ndf");
-//                 h_chi2_vs_edge_mc[i]->Draw("COLZ");
-//             }
-
-//             c_layer_mc->SaveAs(("output/calibration/cvt/determination/chi2_per_ndf_vs_edge_mc_" + particle_name + ".png").c_str());
-//             delete c_layer_mc;
-//         }
-//         // Clean up
-//         for (auto hist : h_chi2_vs_edge_data) delete hist;
-//         if (mcReader) {
-//             for (auto hist : h_chi2_vs_edge_mc) delete hist;
-//         }
-//         delete c_layer_data;
-//     }
-
-//     // Clean up dynamically allocated memory for MC
-//     if (mcReader) {
-//         for (auto& mc_layer : mc_layers) {
-//             delete std::get<0>(mc_layer);
-//         }
-
-//         delete mc_particle_pid;
-//         delete mc_track_chi2_5;
-//         delete mc_track_ndf_5;
-//     }
-
-//     // Clean up dynamically allocated memory for data
-//     for (auto& layer : layers) {
-//         delete std::get<0>(layer);
-//     }
-// }
 
 void cvt_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = nullptr,
     const std::string& dataset = "rga_fa18_inb") {
@@ -9134,13 +8967,13 @@ int main(int argc, char** argv) {
     // if (mcReader) mcReader->Restart();
     // plot_dc_hit_position(dataReader, mcReader, dataset);
 
-    dataReader.Restart();
-    if (mcReader) mcReader->Restart();
-    cvt_fiducial_determination(dataReader, mcReader, dataset);
-
     // dataReader.Restart();
     // if (mcReader) mcReader->Restart();
-    // plot_cvt_hit_position(dataReader, mcReader);
+    // cvt_fiducial_determination(dataReader, mcReader, dataset);
+
+    dataReader.Restart();
+    if (mcReader) mcReader->Restart();
+    plot_cvt_hit_position(dataReader, mcReader);
 
     // dataReader.Restart();
     // if (mcReader) mcReader->Restart();
