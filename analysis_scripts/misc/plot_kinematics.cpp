@@ -63,6 +63,8 @@ int main(int argc, char** argv) {
 
     // Draw hQ2_vs_x
     TCanvas *c1 = new TCanvas("c1", "Q^{2} vs x_{B}", 800, 600);
+    // Set right margin to add padding
+    gPad->SetRightMargin(0.15);
     hQ2_vs_x->Draw("COLZ");
 
     // Draw bin lines for xB
