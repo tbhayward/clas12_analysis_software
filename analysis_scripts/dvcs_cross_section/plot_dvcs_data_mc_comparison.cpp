@@ -124,7 +124,7 @@ void plot_dvcs_data_mc_comparison(const std::string& output_dir,
     mc_rec_reader.Restart();
 
     // Readers for data and MC
-    TTreeReaderValue<double> phi_data(data_reader, "phi");
+    TTreeReaderValue<double> phi_data(data_reader, "phi2");
     TTreeReaderValue<double> xB_data(data_reader, "x");
     TTreeReaderValue<double> Q2_data(data_reader, "Q2");
     TTreeReaderValue<double> t1_data(data_reader, "t1");
@@ -148,7 +148,7 @@ void plot_dvcs_data_mc_comparison(const std::string& output_dir,
     }
 
 
-    TTreeReaderValue<double> phi_mc_gen(mc_gen_reader, "phi");
+    TTreeReaderValue<double> phi_mc_gen(mc_gen_reader, "phi2");
     TTreeReaderValue<double> xB_mc_gen(mc_gen_reader, "x");
     TTreeReaderValue<double> Q2_mc_gen(mc_gen_reader, "Q2");
     TTreeReaderValue<double> t1_mc_gen(mc_gen_reader, "t1");
@@ -157,7 +157,7 @@ void plot_dvcs_data_mc_comparison(const std::string& output_dir,
     TTreeReaderValue<double> Mx2_1_mc_gen(mc_gen_reader, "Mx2_1");
     TTreeReaderValue<double> pTmiss_mc_gen(mc_gen_reader, "pTmiss");
 
-    TTreeReaderValue<double> phi_mc_rec(mc_rec_reader, "phi");
+    TTreeReaderValue<double> phi_mc_rec(mc_rec_reader, "phi2");
     TTreeReaderValue<double> xB_mc_rec(mc_rec_reader, "x");
     TTreeReaderValue<double> Q2_mc_rec(mc_rec_reader, "Q2");
     TTreeReaderValue<double> t1_mc_rec(mc_rec_reader, "t1");
