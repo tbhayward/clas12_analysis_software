@@ -12,13 +12,13 @@ dvcsKinematicCuts::dvcsKinematicCuts(TTreeReader& reader)
       runnum(reader, "runnum"), Q2(reader, "Q2"), W(reader, "W"), 
       x(reader, "x"), y(reader, "y"), t1(reader, "t1"), eta2(reader, "eta2"),
       Emiss2(reader, "Emiss2"), theta_gamma_gamma(reader, "theta_gamma_gamma"),
-      pTmiss(reader, "pTmiss") {}
+      pTmiss(reader, "pTmiss"), open_angle_ep2(reader, "open_angle_ep2") {}
 
 bool dvcsKinematicCuts::applyCuts(int currentFits, bool isMC) {
     bool goodEvent = false;
     string property = binNames[currentFits];
 
-    // goodEvent = *Q2 > 1 && *W > 2 && *y < 0.75 && *eta2 < 0 && *t1 > -2;// DIS cuts (and radiative photon in detector)
+    goodEvent = *Q2 > 1 && *W > 2 && *eta2 < 0 && *t1 > -1 && pTmiss < 0.15 && Emiss2 < 1 && theta_gamma_gamma < 0.7 && open_angle_ep2 > 5;
     goodEvent = true;
     
     if (isMC || (*runnum < 16042 || *runnum > 17811)) {

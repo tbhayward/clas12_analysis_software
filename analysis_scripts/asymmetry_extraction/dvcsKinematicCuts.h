@@ -19,6 +19,7 @@ private:
     TTreeReaderValue<double> y;
     TTreeReaderValue<double> Emiss2;
     TTreeReaderValue<double> theta_gamma_gamma;
+    TTreeReaderValue<double> open_angle_ep2;
     TTreeReaderValue<double> pTmiss;
     TTreeReaderValue<double> eta2;
 };
