@@ -108,7 +108,7 @@ int main(int argc, char** argv) {
 
     // Draw vertical lines every 15 degrees
     for (int phi = 0; phi <= 360; phi += 15) {
-        TLine *line = new TLine(phi, 0.0, phi, 9500);
+        TLine *line = new TLine(phi, 1500, phi, 9550);
         line->SetLineColor(kRed);
         line->SetLineStyle(2);
         line->Draw("same");
