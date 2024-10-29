@@ -49,7 +49,7 @@ int main(int argc, char** argv) {
 
     // Fill histograms
     tree->Draw("Q2:x>>hQ2_vs_x", cuts.c_str(), "COLZ");
-    tree->Draw("(-(t1)>>h_t", cuts.c_str());
+    tree->Draw("(-t1)>>h_t", cuts.c_str());
     tree->Draw("(180/3.14159)*phi>>h_phi", cuts.c_str());
 
     // Set style
