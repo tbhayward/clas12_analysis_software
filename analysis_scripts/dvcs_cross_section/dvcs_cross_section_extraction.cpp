@@ -35,59 +35,105 @@ bool checkFileExists(const string& path) {
 }
 
 // Function to handle exclusivity plots
+// void call_determine_exclusivity(std::vector<TTreeReader>& data_readers, std::vector<TTreeReader>& mc_rec_dvcsgen_readers, std::vector<TTreeReader>& eppi0_readers, std::vector<TTreeReader>& mc_rec_aaogen_readers) {
+//     // DVCS channel calls
+//     for (int i = 0; i < 3; i++) {
+//         data_readers[i].Restart();
+//         mc_rec_dvcsgen_readers[i].Restart();
+        
+//         determine_exclusivity("dvcs", "(FD,FD)", data_readers[i], mc_rec_dvcsgen_readers[i], "output/exclusivity_plots", "e'p'#gamma (Fa18 Inb, FD,FD)");
+//         determine_exclusivity("dvcs", "(CD,FD)", data_readers[i], mc_rec_dvcsgen_readers[i], "output/exclusivity_plots", "e'p'#gamma (Fa18 Inb, CD,FD)");
+//         determine_exclusivity("dvcs", "(CD,FT)", data_readers[i], mc_rec_dvcsgen_readers[i], "output/exclusivity_plots", "e'p'#gamma (Fa18 Inb, CD,FT)");
+//     }
+
+//     for (int i = 1; i < 3; i++) {
+//         data_readers[i].Restart();
+//         mc_rec_dvcsgen_readers[i].Restart();
+        
+//         determine_exclusivity("dvcs", "(FD,FD)", data_readers[i], mc_rec_dvcsgen_readers[i], "output/exclusivity_plots", "e'p'#gamma (Fa18 Out, FD,FD)");
+//         determine_exclusivity("dvcs", "(CD,FD)", data_readers[i], mc_rec_dvcsgen_readers[i], "output/exclusivity_plots", "e'p'#gamma (Fa18 Out, CD,FD)");
+//         determine_exclusivity("dvcs", "(CD,FT)", data_readers[i], mc_rec_dvcsgen_readers[i], "output/exclusivity_plots", "e'p'#gamma (Fa18 Out, CD,FT)");
+//     }
+
+//     for (int i = 2; i < 3; i++) {
+//         data_readers[i].Restart();
+//         mc_rec_dvcsgen_readers[i].Restart();
+        
+//         determine_exclusivity("dvcs", "(FD,FD)", data_readers[i], mc_rec_dvcsgen_readers[i], "output/exclusivity_plots", "e'p'#gamma (Sp19 Inb, FD,FD)");
+//         determine_exclusivity("dvcs", "(CD,FD)", data_readers[i], mc_rec_dvcsgen_readers[i], "output/exclusivity_plots", "e'p'#gamma (Sp19 Inb, CD,FD)");
+//         determine_exclusivity("dvcs", "(CD,FT)", data_readers[i], mc_rec_dvcsgen_readers[i], "output/exclusivity_plots", "e'p'#gamma (Sp19 Inb, CD,FT)");
+//     }
+
+//     // Eppi0 channel calls
+//     for (int i = 0; i < 3; i++) {
+//         eppi0_readers[i].Restart();
+//         mc_rec_aaogen_readers[i].Restart();
+        
+//         determine_exclusivity("eppi0", "(CD,FD)", eppi0_readers[i], mc_rec_aaogen_readers[i], "output/exclusivity_plots", "e'p'#pi^{0} (Fa18 Inb, CD,FD)");
+//         determine_exclusivity("eppi0", "(FD,FD)", eppi0_readers[i], mc_rec_aaogen_readers[i], "output/exclusivity_plots", "e'p'#pi^{0} (Fa18 Inb, FD,FD)");
+//     }
+
+//     for (int i = 1; i < 3; i++) {
+//         eppi0_readers[i].Restart();
+//         mc_rec_aaogen_readers[i].Restart();
+        
+//         determine_exclusivity("eppi0", "(CD,FD)", eppi0_readers[i], mc_rec_aaogen_readers[i], "output/exclusivity_plots", "e'p'#pi^{0} (Fa18 Out, CD,FD)");
+//         determine_exclusivity("eppi0", "(FD,FD)", eppi0_readers[i], mc_rec_aaogen_readers[i], "output/exclusivity_plots", "e'p'#pi^{0} (Fa18 Out, FD,FD)");
+//     }
+
+//     for (int i = 2; i < 3; i++) {
+//         eppi0_readers[i].Restart();
+//         mc_rec_aaogen_readers[i].Restart();
+        
+//         determine_exclusivity("eppi0", "(CD,FD)", eppi0_readers[i], mc_rec_aaogen_readers[i], "output/exclusivity_plots", "e'p'#pi^{0} (Sp19 Inb, CD,FD)");
+//         determine_exclusivity("eppi0", "(FD,FD)", eppi0_readers[i], mc_rec_aaogen_readers[i], "output/exclusivity_plots", "e'p'#pi^{0} (Sp19 Inb, FD,FD)");
+//     }
+// }
+
 void call_determine_exclusivity(std::vector<TTreeReader>& data_readers, std::vector<TTreeReader>& mc_rec_dvcsgen_readers, std::vector<TTreeReader>& eppi0_readers, std::vector<TTreeReader>& mc_rec_aaogen_readers) {
     // DVCS channel calls
-    for (int i = 0; i < 3; i++) {
-        data_readers[i].Restart();
-        mc_rec_dvcsgen_readers[i].Restart();
-        
-        determine_exclusivity("dvcs", "(FD,FD)", data_readers[i], mc_rec_dvcsgen_readers[i], "output/exclusivity_plots", "e'p'#gamma (Fa18 Inb, FD,FD)");
-        determine_exclusivity("dvcs", "(CD,FD)", data_readers[i], mc_rec_dvcsgen_readers[i], "output/exclusivity_plots", "e'p'#gamma (Fa18 Inb, CD,FD)");
-        determine_exclusivity("dvcs", "(CD,FT)", data_readers[i], mc_rec_dvcsgen_readers[i], "output/exclusivity_plots", "e'p'#gamma (Fa18 Inb, CD,FT)");
-    }
+    data_readers[0].Restart(); mc_rec_dvcsgen_readers[0].Restart();
+    determine_exclusivity("dvcs", "(FD,FD)", data_readers[0], mc_rec_dvcsgen_readers[0], "output/exclusivity_plots", "e'p'#gamma (Fa18 Inb, FD,FD)");
+    data_readers[0].Restart(); mc_rec_dvcsgen_readers[0].Restart();
+    determine_exclusivity("dvcs", "(CD,FD)", data_readers[0], mc_rec_dvcsgen_readers[0], "output/exclusivity_plots", "e'p'#gamma (Fa18 Inb, CD,FD)");
+    data_readers[0].Restart(); mc_rec_dvcsgen_readers[0].Restart();
+    determine_exclusivity("dvcs", "(CD,FT)", data_readers[0], mc_rec_dvcsgen_readers[0], "output/exclusivity_plots", "e'p'#gamma (Fa18 Inb, CD,FT)");
+    data_readers[0].Restart(); mc_rec_dvcsgen_readers[0].Restart();
 
-    for (int i = 1; i < 3; i++) {
-        data_readers[i].Restart();
-        mc_rec_dvcsgen_readers[i].Restart();
-        
-        determine_exclusivity("dvcs", "(FD,FD)", data_readers[i], mc_rec_dvcsgen_readers[i], "output/exclusivity_plots", "e'p'#gamma (Fa18 Out, FD,FD)");
-        determine_exclusivity("dvcs", "(CD,FD)", data_readers[i], mc_rec_dvcsgen_readers[i], "output/exclusivity_plots", "e'p'#gamma (Fa18 Out, CD,FD)");
-        determine_exclusivity("dvcs", "(CD,FT)", data_readers[i], mc_rec_dvcsgen_readers[i], "output/exclusivity_plots", "e'p'#gamma (Fa18 Out, CD,FT)");
-    }
+    data_readers[1].Restart(); mc_rec_dvcsgen_readers[1].Restart(); 
+    determine_exclusivity("dvcs", "(FD,FD)", data_readers[1], mc_rec_dvcsgen_readers[1], "output/exclusivity_plots", "e'p'#gamma (Fa18 Out, FD,FD)");
+    data_readers[1].Restart(); mc_rec_dvcsgen_readers[1].Restart();
+    determine_exclusivity("dvcs", "(CD,FD)", data_readers[1], mc_rec_dvcsgen_readers[1], "output/exclusivity_plots", "e'p'#gamma (Fa18 Out, CD,FD)");
+    data_readers[1].Restart(); mc_rec_dvcsgen_readers[1].Restart();
+    determine_exclusivity("dvcs", "(CD,FT)", data_readers[1], mc_rec_dvcsgen_readers[1], "output/exclusivity_plots", "e'p'#gamma (Fa18 Out, CD,FT)");
+    data_readers[1].Restart(); mc_rec_dvcsgen_readers[1].Restart();
 
-    for (int i = 2; i < 3; i++) {
-        data_readers[i].Restart();
-        mc_rec_dvcsgen_readers[i].Restart();
-        
-        determine_exclusivity("dvcs", "(FD,FD)", data_readers[i], mc_rec_dvcsgen_readers[i], "output/exclusivity_plots", "e'p'#gamma (Sp19 Inb, FD,FD)");
-        determine_exclusivity("dvcs", "(CD,FD)", data_readers[i], mc_rec_dvcsgen_readers[i], "output/exclusivity_plots", "e'p'#gamma (Sp19 Inb, CD,FD)");
-        determine_exclusivity("dvcs", "(CD,FT)", data_readers[i], mc_rec_dvcsgen_readers[i], "output/exclusivity_plots", "e'p'#gamma (Sp19 Inb, CD,FT)");
-    }
+    data_readers[2].Restart(); mc_rec_dvcsgen_readers[2].Restart();
+    determine_exclusivity("dvcs", "(FD,FD)", data_readers[2], mc_rec_dvcsgen_readers[2], "output/exclusivity_plots", "e'p'#gamma (Sp19 Inb, FD,FD)");
+    data_readers[2].Restart(); mc_rec_dvcsgen_readers[2].Restart();
+    determine_exclusivity("dvcs", "(CD,FD)", data_readers[2], mc_rec_dvcsgen_readers[2], "output/exclusivity_plots", "e'p'#gamma (Sp19 Inb, CD,FD)");
+    data_readers[2].Restart(); mc_rec_dvcsgen_readers[2].Restart();   
+    determine_exclusivity("dvcs", "(CD,FT)", data_readers[2], mc_rec_dvcsgen_readers[2], "output/exclusivity_plots", "e'p'#gamma (Sp19 Inb, CD,FT)");
+    data_readers[2].Restart(); mc_rec_dvcsgen_readers[2].Restart();
 
     // Eppi0 channel calls
-    for (int i = 0; i < 3; i++) {
-        eppi0_readers[i].Restart();
-        mc_rec_aaogen_readers[i].Restart();
-        
-        determine_exclusivity("eppi0", "(CD,FD)", eppi0_readers[i], mc_rec_aaogen_readers[i], "output/exclusivity_plots", "e'p'#pi^{0} (Fa18 Inb, CD,FD)");
-        determine_exclusivity("eppi0", "(FD,FD)", eppi0_readers[i], mc_rec_aaogen_readers[i], "output/exclusivity_plots", "e'p'#pi^{0} (Fa18 Inb, FD,FD)");
-    }
+    eppi0_readers[0].Restart(); mc_rec_aaogen_readers[0].Restart();
+    determine_exclusivity("eppi0", "(CD,FD)", eppi0_readers[0], mc_rec_aaogen_readers[0], "output/exclusivity_plots", "e'p'#pi^{0} (Fa18 Inb, CD,FD)");
+    eppi0_readers[0].Restart(); mc_rec_aaogen_readers[0].Restart();
+    determine_exclusivity("eppi0", "(FD,FD)", eppi0_readers[0], mc_rec_aaogen_readers[0], "output/exclusivity_plots", "e'p'#pi^{0} (Fa18 Inb, FD,FD)");
+    eppi0_readers[0].Restart(); mc_rec_aaogen_readers[0].Restart();
 
-    for (int i = 1; i < 3; i++) {
-        eppi0_readers[i].Restart();
-        mc_rec_aaogen_readers[i].Restart();
-        
-        determine_exclusivity("eppi0", "(CD,FD)", eppi0_readers[i], mc_rec_aaogen_readers[i], "output/exclusivity_plots", "e'p'#pi^{0} (Fa18 Out, CD,FD)");
-        determine_exclusivity("eppi0", "(FD,FD)", eppi0_readers[i], mc_rec_aaogen_readers[i], "output/exclusivity_plots", "e'p'#pi^{0} (Fa18 Out, FD,FD)");
-    }
+    eppi0_readers[1].Restart(); mc_rec_aaogen_readers[1].Restart();   
+    determine_exclusivity("eppi0", "(CD,FD)", eppi0_readers[1], mc_rec_aaogen_readers[1], "output/exclusivity_plots", "e'p'#pi^{0} (Fa18 Out, CD,FD)");
+    eppi0_readers[1].Restart(); mc_rec_aaogen_readers[1].Restart();
+    determine_exclusivity("eppi0", "(FD,FD)", eppi0_readers[1], mc_rec_aaogen_readers[1], "output/exclusivity_plots", "e'p'#pi^{0} (Fa18 Out, FD,FD)");
+    eppi0_readers[1].Restart(); mc_rec_aaogen_readers[1].Restart();
 
-    for (int i = 2; i < 3; i++) {
-        eppi0_readers[i].Restart();
-        mc_rec_aaogen_readers[i].Restart();
-        
-        determine_exclusivity("eppi0", "(CD,FD)", eppi0_readers[i], mc_rec_aaogen_readers[i], "output/exclusivity_plots", "e'p'#pi^{0} (Sp19 Inb, CD,FD)");
-        determine_exclusivity("eppi0", "(FD,FD)", eppi0_readers[i], mc_rec_aaogen_readers[i], "output/exclusivity_plots", "e'p'#pi^{0} (Sp19 Inb, FD,FD)");
-    }
+    eppi0_readers[2].Restart(); mc_rec_aaogen_readers[2].Restart(); 
+    determine_exclusivity("eppi0", "(CD,FD)", eppi0_readers[2], mc_rec_aaogen_readers[2], "output/exclusivity_plots", "e'p'#pi^{0} (Sp19 Inb, CD,FD)");
+    eppi0_readers[2].Restart(); mc_rec_aaogen_readers[2].Restart();
+    determine_exclusivity("eppi0", "(FD,FD)", eppi0_readers[2], mc_rec_aaogen_readers[2], "output/exclusivity_plots", "e'p'#pi^{0} (Sp19 Inb, FD,FD)");
+    eppi0_readers[2].Restart(); mc_rec_aaogen_readers[2].Restart();
 }
 
 // Function to count the number of unique xB bins
