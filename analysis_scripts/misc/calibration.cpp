@@ -3994,6 +3994,7 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
                         int sector_index = *track_sector_6 - 1;
                         h_sum_chi2_ndf_sector[sector_index]->Fill(*traj_edge, chi2_ndf);
                         h_count_chi2_ndf_sector[sector_index]->Fill(*traj_edge);
+                        std::cout<<*traj_edge<<std::endl;
 
                         // Fill theta bins
                         for (int t = 0; t < num_theta_bins; ++t) {
@@ -8929,9 +8930,9 @@ int main(int argc, char** argv) {
 
     //// PLOTS ////
 
-    // std::string dataset = "rga_fa18_inb";
+    std::string dataset = "rga_fa18_inb";
     // std::string dataset = "rga_fa18_out";
-    std::string dataset = "rga_sp19_inb";
+    // std::string dataset = "rga_sp19_inb";
 
     // plot_htcc_nphe(dataReader, mcReader, dataset);
     // plot_ltcc_nphe(dataReader, mcReader, dataset);
