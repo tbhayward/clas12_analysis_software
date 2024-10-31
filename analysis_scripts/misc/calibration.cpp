@@ -3497,7 +3497,7 @@ bool dc_fiducial(double edge_6, double edge_18, double edge_36,
     // } else if (pid == 211 || pid == -211 || pid == 321 || pid == -321 || pid == 2212 || pid == -2212) {
     //     return edge_6 > 3 && edge_18 > 3 && edge_36 > 9;
     // } 
-    println(edge_6)
+    std::cout << edge_6 << std::endl;
     if (edge_6 < 3) return false;
     return false; // not a charged track? wrong pid?
 }
