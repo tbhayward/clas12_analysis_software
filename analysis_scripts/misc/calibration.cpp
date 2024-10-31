@@ -3989,7 +3989,7 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
             while (dataReader.Next()) {
                 if (*particle_pid == pid && *traj_edge != -9999 && *track_ndf_6 > 0) {
                     if (dc_fiducial(*traj_edge_6, *traj_edge_18, *traj_edge_36, pid)) {
-                        std::cout << edge_6 << std::endl;
+                        // std::cout << edge_6 << std::endl;
                         double chi2_ndf = *track_chi2_6 / *track_ndf_6;
                         int sector_index = *track_sector_6 - 1;
                         h_sum_chi2_ndf_sector[sector_index]->Fill(*traj_edge, chi2_ndf);
