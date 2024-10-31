@@ -4018,7 +4018,7 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
                         // Fill theta bins
                         for (int t = 0; t < num_theta_bins; ++t) {
                             if (**mc_track_theta >= theta_bins[t] && **mc_track_theta < theta_bins[t + 1]) {
-                                if (dc_fiducial(*mc_traj_edge_6, *mc_traj_edge_18, *mc_traj_edge_36, pid)) {
+                                if (dc_fiducial(**mc_traj_edge_6, **mc_traj_edge_18, **mc_traj_edge_36, pid)) {
                                     h_sum_chi2_ndf_mc_sector_theta[sector_index][t]->Fill(**mc_traj_edge, mc_chi2_ndf);
                                     h_count_chi2_ndf_mc_sector_theta[sector_index][t]->Fill(**mc_traj_edge);
                                 }
