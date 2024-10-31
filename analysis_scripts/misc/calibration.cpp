@@ -3497,7 +3497,7 @@ bool dc_fiducial(double edge_6, double edge_18, double edge_36,
     // } else if (pid == 211 || pid == -211 || pid == 321 || pid == -321 || pid == 2212 || pid == -2212) {
     //     return edge_6 > 3 && edge_18 > 3 && edge_36 > 9;
     // } 
-    return (edge_6 < 3);
+    return (edge_6 > 3);
     return false; // not a charged track? wrong pid?
 }
 
@@ -8929,9 +8929,9 @@ int main(int argc, char** argv) {
 
     //// PLOTS ////
 
-    // std::string dataset = "rga_fa18_inb";
+    std::string dataset = "rga_fa18_inb";
     // std::string dataset = "rga_fa18_out";
-    std::string dataset = "rga_sp19_inb";
+    // std::string dataset = "rga_sp19_inb";
 
     // plot_htcc_nphe(dataReader, mcReader, dataset);
     // plot_ltcc_nphe(dataReader, mcReader, dataset);
