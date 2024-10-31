@@ -3497,7 +3497,7 @@ bool dc_fiducial(double edge_6, double edge_18, double edge_36,
     // } else if (pid == 211 || pid == -211 || pid == 321 || pid == -321 || pid == 2212 || pid == -2212) {
     //     return edge_6 > 3 && edge_18 > 3 && edge_36 > 9;
     // } 
-    if (edge_6 < 3) return false;
+    return (edge_6 < 3);
     return false; // not a charged track? wrong pid?
 }
 
@@ -3994,7 +3994,6 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
                         int sector_index = *track_sector_6 - 1;
                         h_sum_chi2_ndf_sector[sector_index]->Fill(*traj_edge, chi2_ndf);
                         h_count_chi2_ndf_sector[sector_index]->Fill(*traj_edge);
-                        std::cout<<*traj_edge<<std::endl;
 
                         // Fill theta bins
                         for (int t = 0; t < num_theta_bins; ++t) {
