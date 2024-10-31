@@ -163,7 +163,7 @@ public class analysis_fitter extends GenericKinematicFitter {
         boolean passesForwardTagger = generic_tests.forward_tagger_cut(particle_Index, rec_Bank);
 
         return true
-//                && p > 0.5
+                && p > 0.5
                 && (passesForwardDetector || passesForwardTagger)
                 && (passesForwardDetector
                         ? fiducial_cuts.pcal_fiducial_cut(particle_Index, 3, run_Bank, rec_Bank, cal_Bank)
