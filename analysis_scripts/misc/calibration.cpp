@@ -3766,9 +3766,9 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
     const std::string& dataset = "rga_fa18_inb") {
     int nBins = 20;
     std::vector<std::tuple<std::string, std::string, std::string, double, double, double, double, std::string, double>> regions = {
-        {"traj_x_6", "traj_y_6", "region_{1}", 15, 160, -80, 80, "traj_edge_6", 20},
-        {"traj_x_18", "traj_y_18", "region_{2}", 30, 240, -125, 125, "traj_edge_18", 20},
-        {"traj_x_36", "traj_y_36", "region_{3}", 30, 400, -200, 200, "traj_edge_36", 20}
+        {"traj_x_6", "traj_y_6", "region_{1}", 15, 160, -80, 80, "traj_edge_6", 25},
+        {"traj_x_18", "traj_y_18", "region_{2}", 30, 240, -125, 125, "traj_edge_18", 25},
+        {"traj_x_36", "traj_y_36", "region_{3}", 30, 400, -200, 200, "traj_edge_36", 25}
         // {"traj_x_6", "traj_y_6", "region_{1}", 15, 160, -80, 80, "traj_edge_6", 75},
         // {"traj_x_18", "traj_y_18", "region_{2}", 30, 240, -125, 125, "traj_edge_18", 75},
         // {"traj_x_36", "traj_y_36", "region_{3}", 30, 400, -200, 200, "traj_edge_36", 75}
@@ -3777,7 +3777,14 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
     // Array of particle types (photons and electrons) and their corresponding PIDs
     std::vector<std::tuple<int, std::string>> particle_types = {
         {11, "e^{-}"}
-        // {-211, "#pi^{-}"}
+        ,
+        {-211, "#pi^{-}"}
+        ,
+        {211, "#pi^{+}"}
+        ,
+        {-321, "k^{-}"}
+        ,
+        {321, "k^{+}"}
         ,
         {2212, "p"}
     };
@@ -3919,8 +3926,8 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
             std::vector<TH1D*> h_count_chi2_ndf_sector(6);
 
             // Histograms for different theta ranges
-            const int num_theta_bins = 4;
-            double theta_bins[num_theta_bins + 1] = {5, 12, 18, 24, 40};
+            const int num_theta_bins = 5;
+            double theta_bins[num_theta_bins + 1] = {5, 10, 15, 20, 25, 40};
             std::vector<std::vector<TH1D*>> h_sum_chi2_ndf_sector_theta(6, std::vector<TH1D*>(num_theta_bins));
             std::vector<std::vector<TH1D*>> h_count_chi2_ndf_sector_theta(6, std::vector<TH1D*>(num_theta_bins));
 
@@ -4053,7 +4060,7 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
             c_edge->Divide(3, 2);
 
             // Colors for the different theta ranges
-            int colors_data[num_theta_bins + 1] = {kBlack, kBlue, kGreen + 2, kOrange + 7, kMagenta};
+            int colors_data[num_theta_bins + 1] = {kBlack, kBlue, kRed, kGreen + 2, kOrange + 7, kMagenta};
             int colors_mc[num_theta_bins + 1] = {kRed, kAzure + 1, kSpring + 5, kPink + 7, kViolet};
 
             for (int sector = 0; sector < 6; ++sector) {
@@ -8929,9 +8936,9 @@ int main(int argc, char** argv) {
 
     //// PLOTS ////
 
-    // std::string dataset = "rga_fa18_inb";
+    std::string dataset = "rga_fa18_inb";
     // std::string dataset = "rga_fa18_out";
-    std::string dataset = "rga_sp19_inb";
+    // std::string dataset = "rga_sp19_inb";
 
     // plot_htcc_nphe(dataReader, mcReader, dataset);
     // plot_ltcc_nphe(dataReader, mcReader, dataset);
