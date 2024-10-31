@@ -3497,7 +3497,6 @@ bool dc_fiducial(double edge_6, double edge_18, double edge_36,
     // } else if (pid == 211 || pid == -211 || pid == 321 || pid == -321 || pid == 2212 || pid == -2212) {
     //     return edge_6 > 3 && edge_18 > 3 && edge_36 > 9;
     // } 
-    std::cout << edge_6 << std::endl;
     if (edge_6 < 3) return false;
     return false; // not a charged track? wrong pid?
 }
@@ -3990,6 +3989,7 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
             while (dataReader.Next()) {
                 if (*particle_pid == pid && *traj_edge != -9999 && *track_ndf_6 > 0) {
                     if (dc_fiducial(*traj_edge_6, *traj_edge_18, *traj_edge_36, pid)) {
+                        std::cout << edge_6 << std::endl;
                         double chi2_ndf = *track_chi2_6 / *track_ndf_6;
                         int sector_index = *track_sector_6 - 1;
                         h_sum_chi2_ndf_sector[sector_index]->Fill(*traj_edge, chi2_ndf);
