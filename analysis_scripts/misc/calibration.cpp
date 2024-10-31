@@ -3492,11 +3492,12 @@ bool dc_fiducial(double edge_6, double edge_18, double edge_36,
     // } else if (pid == 211 || pid == -211 || pid == 321 || pid == -321 || pid == 2212 || pid == -2212) {
     //     return edge_6 > 3 && edge_18 > 3 && edge_36 > 7;
     // } 
-    if (pid == 11 || pid == -11) {
-        return edge_6 > 3 && edge_18 > 3 && edge_36 > 10;
-    } else if (pid == 211 || pid == -211 || pid == 321 || pid == -321 || pid == 2212 || pid == -2212) {
-        return edge_6 > 3 && edge_18 > 3 && edge_36 > 9;
-    } 
+    // if (pid == 11 || pid == -11) {
+    //     return edge_6 > 3 && edge_18 > 3 && edge_36 > 10;
+    // } else if (pid == 211 || pid == -211 || pid == 321 || pid == -321 || pid == 2212 || pid == -2212) {
+    //     return edge_6 > 3 && edge_18 > 3 && edge_36 > 9;
+    // } 
+    if (edge_6 < 3) return false;
     return false; // not a charged track? wrong pid?
 }
 
@@ -3775,10 +3776,10 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
 
     // Array of particle types (photons and electrons) and their corresponding PIDs
     std::vector<std::tuple<int, std::string>> particle_types = {
-        // {11, "e^{-}"}
-        {-211, "#pi^{-}"}
-        // ,
-        // {2212, "p"}
+        {11, "e^{-}"}
+        // {-211, "#pi^{-}"}
+        ,
+        {2212, "p"}
     };
 
     for (const auto& particle_type : particle_types) {
@@ -3995,8 +3996,10 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
                     // Fill theta bins
                     for (int t = 0; t < num_theta_bins; ++t) {
                         if (*track_theta >= theta_bins[t] && *track_theta < theta_bins[t + 1]) {
-                            h_sum_chi2_ndf_sector_theta[sector_index][t]->Fill(*traj_edge, chi2_ndf);
-                            h_count_chi2_ndf_sector_theta[sector_index][t]->Fill(*traj_edge);
+                            if (dc_fiducial(*traj_edge_6, *traj_edge_18, *traj_edge_36, pid)) {
+                                h_sum_chi2_ndf_sector_theta[sector_index][t]->Fill(*traj_edge, chi2_ndf);
+                                h_count_chi2_ndf_sector_theta[sector_index][t]->Fill(*traj_edge);
+                            }
                         }
                     }
                 }
@@ -4015,8 +4018,10 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
                         // Fill theta bins
                         for (int t = 0; t < num_theta_bins; ++t) {
                             if (**mc_track_theta >= theta_bins[t] && **mc_track_theta < theta_bins[t + 1]) {
-                                h_sum_chi2_ndf_mc_sector_theta[sector_index][t]->Fill(**mc_traj_edge, mc_chi2_ndf);
-                                h_count_chi2_ndf_mc_sector_theta[sector_index][t]->Fill(**mc_traj_edge);
+                                if (dc_fiducial(*mc_traj_edge_6, *mc_traj_edge_18, *mc_traj_edge_36, pid)) {
+                                    h_sum_chi2_ndf_mc_sector_theta[sector_index][t]->Fill(**mc_traj_edge, mc_chi2_ndf);
+                                    h_count_chi2_ndf_mc_sector_theta[sector_index][t]->Fill(**mc_traj_edge);
+                                }
                             }
                         }
                     }
@@ -8923,7 +8928,7 @@ int main(int argc, char** argv) {
 
     //// PLOTS ////
 
-    std::string dataset = "rga_sp19_inb";
+    std::string dataset = "rga_fa18_inb";
 
     // plot_htcc_nphe(dataReader, mcReader, dataset);
     // plot_ltcc_nphe(dataReader, mcReader, dataset);
@@ -8961,9 +8966,9 @@ int main(int argc, char** argv) {
     // if (mcReader) mcReader->Restart();
     // plot_cal_hit_position(dataReader, mcReader, dataset);
 
-    // dataReader.Restart();
-    // if (mcReader) mcReader->Restart();
-    // dc_fiducial_determination(dataReader, mcReader, dataset);
+    dataReader.Restart();
+    if (mcReader) mcReader->Restart();
+    dc_fiducial_determination(dataReader, mcReader, dataset);
 
     // dataReader.Restart();
     // if (mcReader) mcReader->Restart();
@@ -8973,9 +8978,9 @@ int main(int argc, char** argv) {
     // if (mcReader) mcReader->Restart();
     // cvt_fiducial_determination(dataReader, mcReader, dataset);
 
-    dataReader.Restart();
-    if (mcReader) mcReader->Restart();
-    plot_cvt_hit_position(dataReader, mcReader, dataset);
+    // dataReader.Restart();
+    // if (mcReader) mcReader->Restart();
+    // plot_cvt_hit_position(dataReader, mcReader, dataset);
 
     // dataReader.Restart();
     // if (mcReader) mcReader->Restart();
@@ -8985,9 +8990,9 @@ int main(int argc, char** argv) {
     // if (mcReader) mcReader->Restart();
     // plot_chi2pid_cd(dataReader, mcReader);
 
-    dataReader.Restart();
-    if (mcReader) mcReader->Restart();
-    plot_vertices(dataReader, mcReader, dataset);
+    // dataReader.Restart();
+    // if (mcReader) mcReader->Restart();
+    // plot_vertices(dataReader, mcReader, dataset);
 
     // dataReader.Restart();
     // if (mcReader) mcReader->Restart();
