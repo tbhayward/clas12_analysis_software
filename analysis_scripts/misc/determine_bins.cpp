@@ -86,9 +86,6 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
-    // Apply the cut Mx2 > 1.8225
-    std::string cut = "Mx2 > 1.8225";
-
     // Set up branches
     double pT, xi, x, Q2, Mx2;
     tree->SetBranchAddress("pT", &pT);
@@ -117,21 +114,18 @@ int main(int argc, char* argv[]) {
     // Determine pT bins
     std::vector<double> pT_bin_edges = find_bin_edges(pT_values, 2, 0.3);
 
-    std::cout << "\npT bins:" << std::endl;
-    for (size_t i = 0; i < pT_bin_edges.size() - 1; ++i) {
-        std::cout << "Bin " << i + 1 << ": " << pT_bin_edges[i] << " <= pT < " << pT_bin_edges[i + 1] << std::endl;
-    }
-
-    // Determine xi bins within each pT bin
+    // Loop over pT bins
     for (size_t i = 0; i < pT_bin_edges.size() - 1; ++i) {
         double pT_min = pT_bin_edges[i];
         double pT_max = pT_bin_edges[i + 1];
 
         // Collect xi values in this pT bin
         std::vector<double> xi_in_pT_bin;
+        std::vector<size_t> xi_indices;
         for (size_t j = 0; j < pT_values.size(); ++j) {
             if (pT_values[j] >= pT_min && pT_values[j] < pT_max) {
                 xi_in_pT_bin.push_back(xi_values[j]);
+                xi_indices.push_back(j);
             }
         }
 
@@ -140,17 +134,19 @@ int main(int argc, char* argv[]) {
         // Determine xi bins
         std::vector<double> xi_bin_edges = find_bin_edges(xi_in_pT_bin, 3, 0.2);
 
-        std::cout << "\nxi bins for pT bin " << i + 1 << ":" << std::endl;
+        // Loop over xi bins
         for (size_t k = 0; k < xi_bin_edges.size() - 1; ++k) {
-            std::cout << "Bin " << k + 1 << ": " << xi_bin_edges[k] << " <= xi < " << xi_bin_edges[k + 1] << std::endl;
-
-            // Determine x bins within each xi bin
             double xi_min = xi_bin_edges[k];
             double xi_max = xi_bin_edges[k + 1];
+
+            // Collect x values in this xi bin
             std::vector<double> x_in_xi_bin;
+            std::vector<size_t> x_indices;
             for (size_t l = 0; l < xi_in_pT_bin.size(); ++l) {
                 if (xi_in_pT_bin[l] >= xi_min && xi_in_pT_bin[l] < xi_max) {
-                    x_in_xi_bin.push_back(x_values[l]);
+                    size_t idx = xi_indices[l];
+                    x_in_xi_bin.push_back(x_values[idx]);
+                    x_indices.push_back(idx);
                 }
             }
 
@@ -159,17 +155,17 @@ int main(int argc, char* argv[]) {
             // Determine x bins
             std::vector<double> x_bin_edges = find_bin_edges(x_in_xi_bin, 4, 0, 0.12, true);
 
-            std::cout << "\nx bins for xi bin " << k + 1 << " of pT bin " << i + 1 << ":" << std::endl;
+            // Loop over x bins
             for (size_t m = 0; m < x_bin_edges.size() - 1; ++m) {
-                std::cout << "Bin " << m + 1 << ": " << x_bin_edges[m] << " <= x < " << x_bin_edges[m + 1] << std::endl;
-
-                // Determine Q2 bins within each x bin
                 double x_min = x_bin_edges[m];
                 double x_max = x_bin_edges[m + 1];
+
+                // Collect Q2 values in this x bin
                 std::vector<double> Q2_in_x_bin;
                 for (size_t n = 0; n < x_in_xi_bin.size(); ++n) {
                     if (x_in_xi_bin[n] >= x_min && x_in_xi_bin[n] < x_max) {
-                        Q2_in_x_bin.push_back(Q2_values[n]);
+                        size_t idx = x_indices[n];
+                        Q2_in_x_bin.push_back(Q2_values[idx]);
                     }
                 }
 
@@ -178,16 +174,16 @@ int main(int argc, char* argv[]) {
                 // Determine Q2 bins
                 std::vector<double> Q2_bin_edges = find_bin_edges(Q2_in_x_bin, 3);
 
-                std::cout << "\nQ2 bins for x bin " << m + 1 << " of xi bin " << k + 1 << " of pT bin " << i + 1 << ":" << std::endl;
+                // Loop over Q2 bins
                 for (size_t o = 0; o < Q2_bin_edges.size() - 1; ++o) {
-                    std::cout << "Bin " << o + 1 << ": " << Q2_bin_edges[o] << " <= Q2 < " << Q2_bin_edges[o + 1] << std::endl;
+                    double Q2_min = Q2_bin_edges[o];
+                    double Q2_max = Q2_bin_edges[o + 1];
 
                     // Print out the bin bounds in the required format
-                    std::cout << "\nCopy-paste format:" << std::endl;
                     std::cout << pT_min << " <= *pT && " << pT_max << " > *pT && ";
                     std::cout << xi_min << " <= *xi && " << xi_max << " > *xi && ";
                     std::cout << x_min << " <= *x && " << x_max << " > *x && ";
-                    std::cout << "*Q2 > " << Q2_bin_edges[o] << " && *Q2 < " << Q2_bin_edges[o + 1] << std::endl;
+                    std::cout << "*Q2 > " << Q2_min << " && *Q2 < " << Q2_max << std::endl;
                 }
             }
         }
