@@ -205,11 +205,24 @@ int main(int argc, char* argv[]) {
                     double Q2_max = Q2_bin_edges[o + 1];
                     int Q2_bin = o + 1;
 
-                    // Print out the bin bounds in the required format
-                    std::cout << pT_min << " <= *pT && " << pT_max << " > *pT && ";
-                    std::cout << xi_min << " <= *xi && " << xi_max << " > *xi && ";
-                    std::cout << x_min << " <= *x && " << x_max << " > *x && ";
-                    std::cout << "*Q2 > " << Q2_min << " && *Q2 < " << Q2_max << std::endl;
+                    // Prepare bin name
+                    std::stringstream bin_name_ss;
+                    bin_name_ss << "pT" << pT_bin << "xi" << xi_bin << "x" << x_bin << "Q2" << Q2_bin;
+                    std::string bin_name = bin_name_ss.str();
+
+                    // Prepare the logical condition string
+                    std::stringstream condition_ss;
+                    condition_ss << std::fixed << std::setprecision(6);
+                    condition_ss << pT_min << " <= *pT && " << pT_max << " > *pT && ";
+                    condition_ss << xi_min << " <= *xi && " << xi_max << " > *xi && ";
+                    condition_ss << x_min << " <= *x && " << x_max << " > *x && ";
+                    condition_ss << "*Q2 > " << Q2_min << " && *Q2 < " << Q2_max;
+
+                    // Print out the if statement
+                    std::cout << "if (property == \"" << bin_name << "\") {\n";
+                    std::cout << "    goodEvent = " << condition_ss.str() << ";\n";
+                    std::cout << "    return goodEvent;\n";
+                    std::cout << "}\n\n";
 
                     // Store bin definition
                     BinDefinition bin_def;
