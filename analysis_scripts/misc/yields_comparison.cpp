@@ -503,8 +503,8 @@ int main() {
             line->Draw();
 
             // Add legend
-            TLegend *legend = new TLegend(0.35, 0.75, 0.9, 0.9); // Adjusted position
-            legend->SetTextSize(0.045); // Increased text size
+            TLegend *legend = new TLegend(0.3, 0.75, 0.9, 0.9); // Adjusted position
+            legend->SetTextSize(0.04); // Increased text size
             legend->AddEntry((TObject*)0, ("Dilks Tree Entries: " + std::to_string(nEntries1)).c_str(), "");
             legend->AddEntry((TObject*)0, ("Hayward Tree Entries: " + std::to_string(nEntries2)).c_str(), "");
             legend->Draw();
