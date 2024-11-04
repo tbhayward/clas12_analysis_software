@@ -249,7 +249,7 @@ int main() {
         {"z", {50, 0, 1}},
         {"xF", {50, -2, 1}},
         {"pT", {50, 0, 1.2}},
-        {"xi", {50, -1, 1}},
+        {"xi", {50, -1, 2}},
         {"eta", {50, -3, 3}},
         {"phi", {50, 0, 2 * pi}},
         {"DepA", {50, 0, 1}},
@@ -503,7 +503,7 @@ int main() {
             line->Draw();
 
             // Add legend
-            TLegend *legend = new TLegend(0.55, 0.75, 0.9, 0.9); // Adjusted position
+            TLegend *legend = new TLegend(0.35, 0.75, 0.9, 0.9); // Adjusted position
             legend->SetTextSize(0.045); // Increased text size
             legend->AddEntry((TObject*)0, ("Dilks Tree Entries: " + std::to_string(nEntries1)).c_str(), "");
             legend->AddEntry((TObject*)0, ("Hayward Tree Entries: " + std::to_string(nEntries2)).c_str(), "");
