@@ -21,7 +21,7 @@ int main() {
     // Set style to remove stat boxes
     gStyle->SetOptStat(0);
 
-    const double pi = TMath::Pi();
+    const double pi = 3.141529;
 
     // Open the first ROOT file and get the tree "tree"
     TFile *file1 = TFile::Open("/volatile/clas12/thayward/cross_check_rgc_epX/step1_EB_yields/dilks_files/rgc_su22_inb_NH3_run016346_EB_yields.root");
@@ -117,9 +117,9 @@ int main() {
         {"t", {100, -12, 1}},
         {"tmin", {100, -0.5, 0}},
         {"z", {100, 0, 1}},
-        {"xF", {100, -1, 1}},
+        {"xF", {100, -3, 1}},
         {"pT", {100, 0, 1.2}},
-        {"xi", {100, -1, 1}},
+        {"xi", {100, -2, 2}},
         {"eta", {100, -3, 3}},
         {"phi", {100, 0, 2 * pi}},
         {"DepA", {100, 0, 1}},
