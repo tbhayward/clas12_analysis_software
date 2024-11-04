@@ -304,6 +304,14 @@ int main() {
     Long64_t nEntries1 = tree1->GetEntries();
     Long64_t nEntries2 = tree2->GetEntries();
 
+    // Variables to hold Mx2 values
+    double Mx2_value1 = 0;
+    double Mx2_value2 = 0;
+
+    // Set branch addresses for Mx2
+    tree1->SetBranchAddress("Mx2", &Mx2_value1);
+    tree2->SetBranchAddress("Mx2", &Mx2_value2);
+
     for (const auto& branchName : branches) {
         // Check if branch exists in both trees
         if (!tree1->GetBranch(branchName.c_str())) {
@@ -338,14 +346,19 @@ int main() {
             TH1D *hist1 = new TH1D(("hist1_" + branchName).c_str(), branchName.c_str(), histConfig.bins, histConfig.x_min, histConfig.x_max);
             TH1D *hist2 = new TH1D(("hist2_" + branchName).c_str(), branchName.c_str(), histConfig.bins, histConfig.x_min, histConfig.x_max);
 
-            // Fill histograms
+            // Fill histograms for tree1
             for (Long64_t i = 0; i < nEntries1; ++i) {
                 tree1->GetEntry(i);
-                hist1->Fill(value1);
+                if (Mx2_value1 > 0) {
+                    hist1->Fill(value1);
+                }
             }
+            // Fill histograms for tree2
             for (Long64_t i = 0; i < nEntries2; ++i) {
                 tree2->GetEntry(i);
-                hist2->Fill(value2);
+                if (Mx2_value2 > 0) {
+                    hist2->Fill(value2);
+                }
             }
 
             // Normalize histograms
@@ -435,18 +448,23 @@ int main() {
             // Adjust phi variables from [-pi, pi] to [0, 2*pi] for tree1
             bool isPhiVariable = (branchName == "e_phi" || branchName == "p_phi" || branchName == "phi");
 
-            // Fill histograms
+            // Fill histograms for tree1
             for (Long64_t i = 0; i < nEntries1; ++i) {
                 tree1->GetEntry(i);
-                if (isPhiVariable) {
-                    if (value1 < 0)
-                        value1 += 2 * pi;
+                if (Mx2_value1 > 0) {
+                    if (isPhiVariable) {
+                        if (value1 < 0)
+                            value1 += 2 * pi;
+                    }
+                    hist1->Fill(value1);
                 }
-                hist1->Fill(value1);
             }
+            // Fill histograms for tree2
             for (Long64_t i = 0; i < nEntries2; ++i) {
                 tree2->GetEntry(i);
-                hist2->Fill(value2);
+                if (Mx2_value2 > 0) {
+                    hist2->Fill(value2);
+                }
             }
 
             // Normalize histograms
@@ -468,7 +486,8 @@ int main() {
                 double error1 = hist1->GetBinError(bin);
                 double error2 = hist2->GetBinError(bin);
 
-                if (content2 > 0) {
+                // Skip bins where either content is zero to avoid division by zero
+                if (content1 > 0 && content2 > 0) {
                     double ratio = content1 / content2;
                     double ratioError = ratio * sqrt( (error1/content1)*(error1/content1) + (error2/content2)*(error2/content2) );
                     xValues.push_back(binCenter);
