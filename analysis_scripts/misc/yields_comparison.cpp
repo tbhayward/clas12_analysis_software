@@ -12,6 +12,7 @@
 #include "TStyle.h"
 #include "TSystem.h"
 #include "TLine.h"
+#include "TMath.h"
 
 struct HistConfig {
     int bins;
@@ -150,7 +151,7 @@ int main() {
     gStyle->SetTitleFont(42, "XYZ");
     gStyle->SetLabelFont(42, "XYZ");
 
-    const double pi = TMath::Pi();
+    const double pi = 3.14159;
 
     // Open the first ROOT file and get the tree "tree"
     TFile *file1 = TFile::Open("/volatile/clas12/thayward/cross_check_rgc_epX/step1_EB_yields/dilks_files/rgc_su22_inb_NH3_run016346_EB_yields.root");
