@@ -105,11 +105,12 @@ int main(int argc, char* argv[]) {
     }
 
     // Set up branches
-    double pT, xi, x, Q2, Mx2;
+    double pT, xi, x, Q2, xF, Mx2;
     tree->SetBranchAddress("pT", &pT);
     tree->SetBranchAddress("xi", &xi);
     tree->SetBranchAddress("x", &x);
     tree->SetBranchAddress("Q2", &Q2);
+    tree->SetBranchAddress("xF", &xF);
     tree->SetBranchAddress("Mx2", &Mx2);
 
     // Collect values satisfying the cut
@@ -121,7 +122,7 @@ int main(int argc, char* argv[]) {
     Long64_t nEntries = tree->GetEntries();
     for (Long64_t i = 0; i < nEntries; ++i) {
         tree->GetEntry(i);
-        if (Mx2 > 1.8225) {
+        if (xF < 0 && Mx2 > 1.8225) {
             pT_values.push_back(pT);
             xi_values.push_back(xi);
             x_values.push_back(x);
