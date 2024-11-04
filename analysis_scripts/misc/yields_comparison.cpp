@@ -468,8 +468,7 @@ int main() {
                 double error1 = hist1->GetBinError(bin);
                 double error2 = hist2->GetBinError(bin);
 
-                // Skip bins where either content is zero to avoid division by zero
-                if (content1 > 0 && content2 > 0) {
+                if (content2 > 0) {
                     double ratio = content1 / content2;
                     double ratioError = ratio * sqrt( (error1/content1)*(error1/content1) + (error2/content2)*(error2/content2) );
                     xValues.push_back(binCenter);
@@ -490,7 +489,7 @@ int main() {
 
             graph->SetTitle("");
             graph->GetYaxis()->SetTitle("Dilks / Hayward");
-            graph->GetYaxis()->SetRangeUser(0, 2);
+            graph->GetYaxis()->SetRangeUser(0.4, 1.6);
             graph->GetXaxis()->SetTitle(formatLabelName(branchName).c_str());
             graph->SetMarkerStyle(20);
             graph->SetMarkerSize(0.8);
