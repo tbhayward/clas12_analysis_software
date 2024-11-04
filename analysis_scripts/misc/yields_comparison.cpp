@@ -496,12 +496,6 @@ int main() {
             graph->SetMarkerSize(0.8);
             graph->Draw("AP");
 
-            // Add dashed line at y=1
-            TLine *line = new TLine(histConfig.x_min, 1, histConfig.x_max, 1);
-            line->SetLineColor(kGray+2);
-            line->SetLineStyle(2);
-            line->Draw();
-
             // Add legend
             TLegend *legend = new TLegend(0.3, 0.75, 0.9, 0.9); // Adjusted position
             legend->SetTextSize(0.04); // Increased text size
