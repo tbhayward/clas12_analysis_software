@@ -72,7 +72,7 @@ std::string formatLabelName(const std::string& original) {
         {"t3", "t_{3}"},
         {"xF", "x_{F}"},
         {"xF1", "x_{F1}"},
-        {"xF2", "x_{F2}"},
+        {"xF2", "xF_{2}"},
         {"x", "x_{B}"},
         {"z1", "z_{1}"},
         {"z2", "z_{2}"},
@@ -146,12 +146,12 @@ int main() {
     // Set style to remove stat boxes and increase font sizes
     gStyle->SetOptStat(0);
     gStyle->SetLegendTextSize(0.04);
-    gStyle->SetLabelSize(0.04, "XYZ");
-    gStyle->SetTitleSize(0.05, "XYZ");
+    gStyle->SetLabelSize(0.05, "XYZ");
+    gStyle->SetTitleSize(0.06, "XYZ");
     gStyle->SetTitleFont(42, "XYZ");
     gStyle->SetLabelFont(42, "XYZ");
 
-    const double pi = 3.14159;
+    const double pi = TMath::Pi();
 
     // Open the first ROOT file and get the tree "tree"
     TFile *file1 = TFile::Open("/volatile/clas12/thayward/cross_check_rgc_epX/step1_EB_yields/dilks_files/rgc_su22_inb_NH3_run016346_EB_yields.root");
@@ -241,13 +241,13 @@ int main() {
         {"open_angle", {50, 0, 180}},
         {"Q2", {50, 0, 10}},
         {"W", {50, 2, 4}},
-        {"Mx2", {50, 0, 3}},
+        {"Mx2", {50, -2, 3}},
         {"x", {50, 0, 0.7}},
         {"y", {50, 0.0, 1.00}},
         {"t", {50, -12, 1}},
         {"tmin", {50, -0.5, 0}},
         {"z", {50, 0, 1}},
-        {"xF", {50, -1, 1}},
+        {"xF", {50, -2, 1}},
         {"pT", {50, 0, 1.2}},
         {"xi", {50, -1, 1}},
         {"eta", {50, -3, 3}},
@@ -367,7 +367,8 @@ int main() {
                 double error1 = hist1->GetBinError(bin);
                 double error2 = hist2->GetBinError(bin);
 
-                if (content2 != 0) {
+                // Skip bins where either content is zero to avoid division by zero
+                if (content1 > 0 && content2 > 0) {
                     double ratio = content1 / content2;
                     double ratioError = ratio * sqrt( (error1/content1)*(error1/content1) + (error2/content2)*(error2/content2) );
                     xValues.push_back(binCenter);
@@ -383,7 +384,10 @@ int main() {
             // Create canvas and draw
             TCanvas *c = new TCanvas(("c_" + branchName).c_str(), branchName.c_str(), 800, 600);
             c->SetGrid();
-            graph->SetTitle(branchName.c_str());
+            c->SetLeftMargin(0.15);   // Increase left margin
+            c->SetBottomMargin(0.15); // Increase bottom margin
+
+            graph->SetTitle("");
             graph->GetYaxis()->SetTitle("Dilks / Hayward");
             graph->GetYaxis()->SetRangeUser(0, 2);
             graph->GetXaxis()->SetTitle(formatLabelName(branchName).c_str());
@@ -398,8 +402,8 @@ int main() {
             line->Draw();
 
             // Add legend
-            TLegend *legend = new TLegend(0.7, 0.75, 0.9, 0.9);
-            legend->SetTextSize(0.04);
+            TLegend *legend = new TLegend(0.55, 0.75, 0.9, 0.9); // Adjusted position
+            legend->SetTextSize(0.045); // Increased text size
             legend->AddEntry((TObject*)0, ("Dilks Tree Entries: " + std::to_string(nEntries1)).c_str(), "");
             legend->AddEntry((TObject*)0, ("Hayward Tree Entries: " + std::to_string(nEntries2)).c_str(), "");
             legend->Draw();
@@ -430,6 +434,7 @@ int main() {
 
             // Adjust phi variables from [-pi, pi] to [0, 2*pi] for tree1
             bool isPhiVariable = (branchName == "e_phi" || branchName == "p_phi" || branchName == "phi");
+
             // Fill histograms
             for (Long64_t i = 0; i < nEntries1; ++i) {
                 tree1->GetEntry(i);
@@ -463,7 +468,8 @@ int main() {
                 double error1 = hist1->GetBinError(bin);
                 double error2 = hist2->GetBinError(bin);
 
-                if (content2 != 0) {
+                // Skip bins where either content is zero to avoid division by zero
+                if (content1 > 0 && content2 > 0) {
                     double ratio = content1 / content2;
                     double ratioError = ratio * sqrt( (error1/content1)*(error1/content1) + (error2/content2)*(error2/content2) );
                     xValues.push_back(binCenter);
@@ -479,6 +485,9 @@ int main() {
             // Create canvas and draw
             TCanvas *c = new TCanvas(("c_" + branchName).c_str(), branchName.c_str(), 800, 600);
             c->SetGrid();
+            c->SetLeftMargin(0.15);   // Increase left margin
+            c->SetBottomMargin(0.15); // Increase bottom margin
+
             graph->SetTitle("");
             graph->GetYaxis()->SetTitle("Dilks / Hayward");
             graph->GetYaxis()->SetRangeUser(0, 2);
@@ -494,8 +503,8 @@ int main() {
             line->Draw();
 
             // Add legend
-            TLegend *legend = new TLegend(0.7, 0.75, 0.9, 0.9);
-            legend->SetTextSize(0.04);
+            TLegend *legend = new TLegend(0.55, 0.75, 0.9, 0.9); // Adjusted position
+            legend->SetTextSize(0.045); // Increased text size
             legend->AddEntry((TObject*)0, ("Dilks Tree Entries: " + std::to_string(nEntries1)).c_str(), "");
             legend->AddEntry((TObject*)0, ("Hayward Tree Entries: " + std::to_string(nEntries2)).c_str(), "");
             legend->Draw();
