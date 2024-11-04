@@ -349,14 +349,14 @@ int main() {
             // Fill histograms for tree1
             for (Long64_t i = 0; i < nEntries1; ++i) {
                 tree1->GetEntry(i);
-                if (Mx2_value1 > 2) {
+                if (Mx2_value1 > 0) {
                     hist1->Fill(value1);
                 }
             }
             // Fill histograms for tree2
             for (Long64_t i = 0; i < nEntries2; ++i) {
                 tree2->GetEntry(i);
-                if (Mx2_value2 > 2) {
+                if (Mx2_value2 > 0) {
                     hist2->Fill(value2);
                 }
             }
