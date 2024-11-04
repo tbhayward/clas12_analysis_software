@@ -514,7 +514,6 @@ int main() {
             delete hist1;
             delete hist2;
             delete graph;
-            delete line;
 
         } else {
             std::cerr << "Unknown branch type for " << branchName << std::endl;
