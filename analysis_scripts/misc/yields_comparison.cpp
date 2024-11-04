@@ -6,10 +6,12 @@
 #include "TFile.h"
 #include "TTree.h"
 #include "TH1D.h"
+#include "TGraphErrors.h"
 #include "TCanvas.h"
 #include "TLegend.h"
 #include "TStyle.h"
 #include "TSystem.h"
+#include "TLine.h"
 
 struct HistConfig {
     int bins;
@@ -17,11 +19,138 @@ struct HistConfig {
     double x_max;
 };
 
-int main() {
-    // Set style to remove stat boxes
-    gStyle->SetOptStat(0);
+// Function to format axis labels
+std::string formatLabelName(const std::string& original) {
+    std::map<std::string, std::string> specialLabels = {
+        {"Q2", "Q^{2} (GeV^{2})"},
+        {"W", "W (GeV)"},
+        {"Delta_eta", "#Delta#eta"},
+        {"Delta_phi", "#Delta#phi"},
+        {"Delta_phi12", "#Delta#phi_{12}"},
+        {"Delta_phi13", "#Delta#phi_{13}"},
+        {"Delta_phi23", "#Delta#phi_{23}"},
+        {"eta1", "#eta_{1}"},
+        {"eta2", "#eta_{2}"},
+        {"eta3", "#eta_{3}"},
+        {"eta12", "#eta_{12}"},
+        {"eta13", "#eta_{13}"},
+        {"eta23", "#eta_{23}"},
+        {"pT", "P_{T} (GeV)"},
+        {"pT1", "P_{1T} (GeV)"},
+        {"pT2", "P_{2T} (GeV)"},
+        {"pT23", "P_{3T} (GeV)"},
+        {"pT12", "P_{12T} (GeV)"},
+        {"pT13", "P_{13T} (GeV)"},
+        {"pT23", "P_{23T} (GeV)"},
+        {"pTpT", "P_{1T}P_{2T} (GeV^{2})"},
+        {"Mh", "M_{h} (GeV)"},
+        {"Mh12", "M_{h12} (GeV)"},
+        {"Mh13", "M_{h13} (GeV)"},
+        {"Mh23", "M_{h23} (GeV)"},
+        {"t", "t (GeV^{2})"},
+        {"phi1", "#phi_{1}"},
+        {"phi2", "#phi_{2}"},
+        {"phi3", "#phi_{3}"},
+        {"phi12", "#phi_{12}"},
+        {"phi13", "#phi_{13}"},
+        {"phiR", "#phi_{R}"},
+        {"tmin", "t_{min} (GeV^{2})"},
+        {"e_p", "e_{p} (GeV)"},
+        {"Mx", "M_{x} (GeV)"},
+        {"Mx1", "M_{x1} (GeV)"},
+        {"Mx2", "M_{x2} (GeV)"},
+        {"Mx3", "M_{x3} (GeV)"},
+        {"Mx12", "M_{x12} (GeV)"},
+        {"Mx13", "M_{x13} (GeV)"},
+        {"Mx23", "M_{x23} (GeV)"},
+        {"p_p", "p_{p} (GeV)"},
+        {"p1_p", "p1_{p} (GeV)"},
+        {"p2_p", "p2_{p} (GeV)"},
+        {"t1", "t_{1}"},
+        {"t2", "t_{2}"},
+        {"t3", "t_{3}"},
+        {"xF", "x_{F}"},
+        {"xF1", "x_{F1}"},
+        {"xF2", "x_{F2}"},
+        {"x", "x_{B}"},
+        {"z1", "z_{1}"},
+        {"z2", "z_{2}"},
+        {"z3", "z_{3}"},
+        {"z12", "z_{12}"},
+        {"z13", "z_{13}"},
+        {"z23", "z_{23}"},
+        {"zeta", "#zeta"},
+        {"zeta1", "#zeta_{1}"},
+        {"zeta2", "#zeta_{2}"},
+        {"zeta3", "#zeta_{3}"},
+        {"zeta12", "#zeta_{12}"},
+        {"zeta13", "#zeta_{13}"},
+        {"zeta23", "#zeta_{23}"},
+        {"xi", "#xi"},
+        {"xi1", "#xi_{1}"},
+        {"xi2", "#xi_{2}"},
+        {"xi3", "#xi_{3}"},
+        {"xi12", "#xi_{12}"},
+        {"xi13", "#xi_{13}"},
+        {"xi23", "#xi_{23}"},
+        {"vz_e", "v_{z_{e}} (cm)"},
+        {"vz_p", "v_{z_{p}} (cm)"},
+        {"vz_p1", "v_{z_{p1}} (cm)"},
+        {"vz_p2", "v_{z_{p2}} (cm)"},
+        {"vz_p3", "v_{z_{p3}} (cm)"},
+        {"Emiss2", "E_{miss} (GeV)"},
+        {"theta_gamma_gamma", "#theta_{#gamma#gamma}"},
+        {"pTmiss", "p_{t miss} (GeV)"},
+        {"Mxgammasquared", "M_{e'#gammaX}^{2} (GeV^{2})"}
+    };
+  
+    if (specialLabels.find(original) != specialLabels.end()) {
+        return specialLabels[original];
+    }
 
-    const double pi = 3.141529;
+    std::string formatted = original;
+    size_t pos = 0;
+    while ((pos = formatted.find('_', pos)) != std::string::npos) {
+        formatted.replace(pos, 1, "_{");
+        size_t closing = formatted.find('_', pos + 2);
+        if (closing == std::string::npos) {
+            closing = formatted.length();
+        }
+        formatted.insert(closing, "}");
+        pos = closing + 1;
+    }
+
+    if (formatted.find("theta") != std::string::npos) {
+        formatted.replace(formatted.find("theta"), 5, "#theta");
+    }
+
+    if (formatted.find("zeta") != std::string::npos) {
+        formatted.replace(formatted.find("zeta"), 5, "#zeta");
+    }
+
+    if (formatted.find("phi") != std::string::npos) {
+        formatted.replace(formatted.find("phi"), 3, "#phi");
+    }
+
+    if (formatted.find("eta") != std::string::npos && 
+        formatted.find("theta") == std::string::npos && 
+        formatted.find("zeta") == std::string::npos) {
+        formatted.replace(formatted.find("eta"), 3, "#eta");
+    }
+  
+    return formatted;
+}
+
+int main() {
+    // Set style to remove stat boxes and increase font sizes
+    gStyle->SetOptStat(0);
+    gStyle->SetLegendTextSize(0.04);
+    gStyle->SetLabelSize(0.04, "XYZ");
+    gStyle->SetTitleSize(0.05, "XYZ");
+    gStyle->SetTitleFont(42, "XYZ");
+    gStyle->SetLabelFont(42, "XYZ");
+
+    const double pi = TMath::Pi();
 
     // Open the first ROOT file and get the tree "tree"
     TFile *file1 = TFile::Open("/volatile/clas12/thayward/cross_check_rgc_epX/step1_EB_yields/dilks_files/rgc_su22_inb_NH3_run016346_EB_yields.root");
@@ -90,43 +219,43 @@ int main() {
 
     // Histogram configurations
     std::map<std::string, HistConfig> histConfigs = {
-        {"fiducial_status", {100, -5, 5}},
-        {"runnum", {638, 16135, 16773}},
-        {"num_pos", {10, 0, 10}},
-        {"num_neg", {10, 0, 10}},
-        {"num_neutral", {10, 0, 10}},
-        {"evnum", {100, 0, 0}},
-        {"helicity", {2, -2, 2}},
-        {"detector", {10, 0, 10}},
-        {"beam_pol", {100, -1, 1}},
-        {"target_pol", {100, -1, 1}},
-        {"e_p", {100, 1, 9}},
-        {"e_theta", {100, 0, 30}},
-        {"e_phi", {100, 0, 2 * pi}},
-        {"vz_e", {100, -15, 15}},
-        {"p_p", {100, 0, 6}},
-        {"p_theta", {100, 0, 90}},
-        {"p_phi", {100, 0, 2 * pi}},
-        {"vz_p", {100, -15, 15}},
-        {"open_angle", {100, 0, 180}},
-        {"Q2", {100, 0, 10}},
-        {"W", {100, 2, 4}},
-        {"Mx2", {100, 0, 3}},
-        {"x", {100, 0, 0.7}},
-        {"y", {100, 0.0, 1.00}},
-        {"t", {100, -12, 1}},
-        {"tmin", {100, -0.5, 0}},
-        {"z", {100, 0, 1}},
-        {"xF", {100, -3, 1}},
-        {"pT", {100, 0, 1.2}},
-        {"xi", {100, -2, 2}},
-        {"eta", {100, -3, 3}},
-        {"phi", {100, 0, 2 * pi}},
-        {"DepA", {100, 0, 1}},
-        {"DepB", {100, 0, 1}},
-        {"DepC", {100, 0, 1}},
-        {"DepV", {100, 0, 2}},
-        {"DepW", {100, 0, 1}}
+        {"fiducial_status", {50, -5, 5}},
+        {"runnum", {50, 16135, 16773}},
+        {"num_pos", {50, 0, 10}},
+        {"num_neg", {50, 0, 10}},
+        {"num_neutral", {50, 0, 10}},
+        {"evnum", {50, 0, 0}},
+        {"helicity", {4, -2, 2}},
+        {"detector", {50, 0, 10}},
+        {"beam_pol", {50, -1, 1}},
+        {"target_pol", {50, -1, 1}},
+        {"e_p", {50, 1, 9}},
+        {"e_theta", {50, 0, 30}},
+        {"e_phi", {50, 0, 2 * pi}},
+        {"vz_e", {50, -15, 15}},
+        {"p_p", {50, 0, 6}},
+        {"p_theta", {50, 0, 90}},
+        {"p_phi", {50, 0, 2 * pi}},
+        {"vz_p", {50, -15, 15}},
+        {"open_angle", {50, 0, 180}},
+        {"Q2", {50, 0, 10}},
+        {"W", {50, 2, 4}},
+        {"Mx2", {50, 0, 3}},
+        {"x", {50, 0, 0.7}},
+        {"y", {50, 0.0, 1.00}},
+        {"t", {50, -12, 1}},
+        {"tmin", {50, -0.5, 0}},
+        {"z", {50, 0, 1}},
+        {"xF", {50, -1, 1}},
+        {"pT", {50, 0, 1.2}},
+        {"xi", {50, -1, 1}},
+        {"eta", {50, -3, 3}},
+        {"phi", {50, 0, 2 * pi}},
+        {"DepA", {50, 0, 1}},
+        {"DepB", {50, 0, 1}},
+        {"DepC", {50, 0, 1}},
+        {"DepV", {50, 0, 2}},
+        {"DepW", {50, 0, 1}}
     };
 
     // Branch types
@@ -191,7 +320,7 @@ int main() {
             histConfig = histConfigs[branchName];
         } else {
             // If not specified, use default values
-            histConfig = {100, 0, 1};
+            histConfig = {50, 0, 1};
             std::cerr << "Histogram config for " << branchName << " not found. Using default values." << std::endl;
         }
 
@@ -224,19 +353,52 @@ int main() {
             if (hist2->Integral() != 0)
                 hist2->Scale(1.0 / hist2->Integral());
 
-            // Compute ratio histogram
-            TH1D *ratioHist = (TH1D*)hist1->Clone(("ratio_" + branchName).c_str());
-            ratioHist->Divide(hist2);
+            // Compute ratio and uncertainties
+            std::vector<double> xValues;
+            std::vector<double> yValues;
+            std::vector<double> xErrors;
+            std::vector<double> yErrors;
+
+            for (int bin = 1; bin <= hist1->GetNbinsX(); ++bin) {
+                double binCenter = hist1->GetBinCenter(bin);
+                double content1 = hist1->GetBinContent(bin);
+                double content2 = hist2->GetBinContent(bin);
+                double error1 = hist1->GetBinError(bin);
+                double error2 = hist2->GetBinError(bin);
+
+                if (content2 != 0) {
+                    double ratio = content1 / content2;
+                    double ratioError = ratio * sqrt( (error1/content1)*(error1/content1) + (error2/content2)*(error2/content2) );
+                    xValues.push_back(binCenter);
+                    yValues.push_back(ratio);
+                    xErrors.push_back(0);
+                    yErrors.push_back(ratioError);
+                }
+            }
+
+            // Create TGraphErrors
+            TGraphErrors *graph = new TGraphErrors(xValues.size(), &xValues[0], &yValues[0], &xErrors[0], &yErrors[0]);
 
             // Create canvas and draw
             TCanvas *c = new TCanvas(("c_" + branchName).c_str(), branchName.c_str(), 800, 600);
-            ratioHist->SetTitle(branchName.c_str());
-            ratioHist->GetYaxis()->SetTitle("Dilks / Hayward");
-            ratioHist->SetStats(0); // Remove stat box
-            ratioHist->Draw();
+            c->SetGrid();
+            graph->SetTitle(branchName.c_str());
+            graph->GetYaxis()->SetTitle("Dilks / Hayward");
+            graph->GetYaxis()->SetRangeUser(0, 2);
+            graph->GetXaxis()->SetTitle(formatLabelName(branchName).c_str());
+            graph->SetMarkerStyle(20);
+            graph->SetMarkerSize(0.8);
+            graph->Draw("AP");
+
+            // Add dashed line at y=1
+            TLine *line = new TLine(histConfig.x_min, 1, histConfig.x_max, 1);
+            line->SetLineColor(kGray+2);
+            line->SetLineStyle(2);
+            line->Draw();
 
             // Add legend
             TLegend *legend = new TLegend(0.7, 0.75, 0.9, 0.9);
+            legend->SetTextSize(0.04);
             legend->AddEntry((TObject*)0, ("Dilks Tree Entries: " + std::to_string(nEntries1)).c_str(), "");
             legend->AddEntry((TObject*)0, ("Hayward Tree Entries: " + std::to_string(nEntries2)).c_str(), "");
             legend->Draw();
@@ -251,7 +413,8 @@ int main() {
             delete c;
             delete hist1;
             delete hist2;
-            delete ratioHist;
+            delete graph;
+            delete line;
 
         } else if (branchType == "D") {
             // Double type
@@ -264,9 +427,15 @@ int main() {
             TH1D *hist1 = new TH1D(("hist1_" + branchName).c_str(), branchName.c_str(), histConfig.bins, histConfig.x_min, histConfig.x_max);
             TH1D *hist2 = new TH1D(("hist2_" + branchName).c_str(), branchName.c_str(), histConfig.bins, histConfig.x_min, histConfig.x_max);
 
+            // Adjust phi variables from [-pi, pi] to [0, 2*pi] for tree1
+            bool isPhiVariable = (branchName == "e_phi" || branchName == "p_phi" || branchName == "phi");
             // Fill histograms
             for (Long64_t i = 0; i < nEntries1; ++i) {
                 tree1->GetEntry(i);
+                if (isPhiVariable) {
+                    if (value1 < 0)
+                        value1 += 2 * pi;
+                }
                 hist1->Fill(value1);
             }
             for (Long64_t i = 0; i < nEntries2; ++i) {
@@ -280,19 +449,52 @@ int main() {
             if (hist2->Integral() != 0)
                 hist2->Scale(1.0 / hist2->Integral());
 
-            // Compute ratio histogram
-            TH1D *ratioHist = (TH1D*)hist1->Clone(("ratio_" + branchName).c_str());
-            ratioHist->Divide(hist2);
+            // Compute ratio and uncertainties
+            std::vector<double> xValues;
+            std::vector<double> yValues;
+            std::vector<double> xErrors;
+            std::vector<double> yErrors;
+
+            for (int bin = 1; bin <= hist1->GetNbinsX(); ++bin) {
+                double binCenter = hist1->GetBinCenter(bin);
+                double content1 = hist1->GetBinContent(bin);
+                double content2 = hist2->GetBinContent(bin);
+                double error1 = hist1->GetBinError(bin);
+                double error2 = hist2->GetBinError(bin);
+
+                if (content2 != 0) {
+                    double ratio = content1 / content2;
+                    double ratioError = ratio * sqrt( (error1/content1)*(error1/content1) + (error2/content2)*(error2/content2) );
+                    xValues.push_back(binCenter);
+                    yValues.push_back(ratio);
+                    xErrors.push_back(0);
+                    yErrors.push_back(ratioError);
+                }
+            }
+
+            // Create TGraphErrors
+            TGraphErrors *graph = new TGraphErrors(xValues.size(), &xValues[0], &yValues[0], &xErrors[0], &yErrors[0]);
 
             // Create canvas and draw
             TCanvas *c = new TCanvas(("c_" + branchName).c_str(), branchName.c_str(), 800, 600);
-            ratioHist->SetTitle(branchName.c_str());
-            ratioHist->GetYaxis()->SetTitle("Dilks / Hayward");
-            ratioHist->SetStats(0); // Remove stat box
-            ratioHist->Draw();
+            c->SetGrid();
+            graph->SetTitle("");
+            graph->GetYaxis()->SetTitle("Dilks / Hayward");
+            graph->GetYaxis()->SetRangeUser(0, 2);
+            graph->GetXaxis()->SetTitle(formatLabelName(branchName).c_str());
+            graph->SetMarkerStyle(20);
+            graph->SetMarkerSize(0.8);
+            graph->Draw("AP");
+
+            // Add dashed line at y=1
+            TLine *line = new TLine(histConfig.x_min, 1, histConfig.x_max, 1);
+            line->SetLineColor(kGray+2);
+            line->SetLineStyle(2);
+            line->Draw();
 
             // Add legend
             TLegend *legend = new TLegend(0.7, 0.75, 0.9, 0.9);
+            legend->SetTextSize(0.04);
             legend->AddEntry((TObject*)0, ("Dilks Tree Entries: " + std::to_string(nEntries1)).c_str(), "");
             legend->AddEntry((TObject*)0, ("Hayward Tree Entries: " + std::to_string(nEntries2)).c_str(), "");
             legend->Draw();
@@ -307,7 +509,8 @@ int main() {
             delete c;
             delete hist1;
             delete hist2;
-            delete ratioHist;
+            delete graph;
+            delete line;
 
         } else {
             std::cerr << "Unknown branch type for " << branchName << std::endl;
