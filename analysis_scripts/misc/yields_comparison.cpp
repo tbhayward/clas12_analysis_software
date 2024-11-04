@@ -1,0 +1,323 @@
+#include <iostream>
+#include <string>
+#include <map>
+#include <vector>
+#include <cmath>
+#include "TFile.h"
+#include "TTree.h"
+#include "TH1D.h"
+#include "TCanvas.h"
+#include "TLegend.h"
+#include "TStyle.h"
+#include "TSystem.h"
+
+struct HistConfig {
+    int bins;
+    double x_min;
+    double x_max;
+};
+
+int main() {
+    // Set style to remove stat boxes
+    gStyle->SetOptStat(0);
+
+    const double pi = TMath::Pi();
+
+    // Open the first ROOT file and get the tree "tree"
+    TFile *file1 = TFile::Open("/volatile/clas12/thayward/cross_check_rgc_epX/step1_EB_yields/dilks_files/rgc_su22_inb_NH3_run016346_EB_yields.root");
+    if (!file1 || file1->IsZombie()) {
+        std::cerr << "Error opening file1!" << std::endl;
+        return -1;
+    }
+    TTree *tree1 = (TTree*)file1->Get("tree");
+    if (!tree1) {
+        std::cerr << "Error getting tree from file1!" << std::endl;
+        return -1;
+    }
+
+    // Open the second ROOT file and get the tree "PhysicsEvents"
+    TFile *file2 = TFile::Open("/volatile/clas12/thayward/cross_check_rgc_epX/step1_EB_yields/hayward_files/rgc_su22_inb_NH3_run016346_EB_yields.root");
+    if (!file2 || file2->IsZombie()) {
+        std::cerr << "Error opening file2!" << std::endl;
+        return -1;
+    }
+    TTree *tree2 = (TTree*)file2->Get("PhysicsEvents");
+    if (!tree2) {
+        std::cerr << "Error getting tree from file2!" << std::endl;
+        return -1;
+    }
+
+    // List of branches to process
+    std::vector<std::string> branches = {
+        "fiducial_status",
+        "runnum",
+        "num_pos",
+        "num_neg",
+        "num_neutral",
+        "evnum",
+        "helicity",
+        "detector",
+        "beam_pol",
+        "target_pol",
+        "e_p",
+        "e_theta",
+        "e_phi",
+        "vz_e",
+        "p_p",
+        "p_theta",
+        "p_phi",
+        "vz_p",
+        "open_angle",
+        "Q2",
+        "W",
+        "Mx2",
+        "x",
+        "y",
+        "t",
+        "tmin",
+        "z",
+        "xF",
+        "pT",
+        "xi",
+        "eta",
+        "phi",
+        "DepA",
+        "DepB",
+        "DepC",
+        "DepV",
+        "DepW"
+    };
+
+    // Histogram configurations
+    std::map<std::string, HistConfig> histConfigs = {
+        {"fiducial_status", {100, -5, 5}},
+        {"runnum", {638, 16135, 16773}},
+        {"num_pos", {10, 0, 10}},
+        {"num_neg", {10, 0, 10}},
+        {"num_neutral", {10, 0, 10}},
+        {"evnum", {100, 0, 0}},
+        {"helicity", {2, -2, 2}},
+        {"detector", {10, 0, 10}},
+        {"beam_pol", {100, -1, 1}},
+        {"target_pol", {100, -1, 1}},
+        {"e_p", {100, 1, 9}},
+        {"e_theta", {100, 0, 30}},
+        {"e_phi", {100, 0, 2 * pi}},
+        {"vz_e", {100, -15, 15}},
+        {"p_p", {100, 0, 6}},
+        {"p_theta", {100, 0, 90}},
+        {"p_phi", {100, 0, 2 * pi}},
+        {"vz_p", {100, -15, 15}},
+        {"open_angle", {100, 0, 180}},
+        {"Q2", {100, 0, 10}},
+        {"W", {100, 2, 4}},
+        {"Mx2", {100, 0, 3}},
+        {"x", {100, 0, 0.7}},
+        {"y", {100, 0.0, 1.00}},
+        {"t", {100, -12, 1}},
+        {"tmin", {100, -0.5, 0}},
+        {"z", {100, 0, 1}},
+        {"xF", {100, -1, 1}},
+        {"pT", {100, 0, 1.2}},
+        {"xi", {100, -1, 1}},
+        {"eta", {100, -3, 3}},
+        {"phi", {100, 0, 2 * pi}},
+        {"DepA", {100, 0, 1}},
+        {"DepB", {100, 0, 1}},
+        {"DepC", {100, 0, 1}},
+        {"DepV", {100, 0, 2}},
+        {"DepW", {100, 0, 1}}
+    };
+
+    // Branch types
+    std::map<std::string, std::string> branchTypes = {
+        {"fiducial_status", "I"},
+        {"runnum", "I"},
+        {"num_pos", "I"},
+        {"num_neg", "I"},
+        {"num_neutral", "I"},
+        {"evnum", "I"},
+        {"helicity", "I"},
+        {"detector", "I"},
+        {"beam_pol", "D"},
+        {"target_pol", "D"},
+        {"e_p", "D"},
+        {"e_theta", "D"},
+        {"e_phi", "D"},
+        {"vz_e", "D"},
+        {"p_p", "D"},
+        {"p_theta", "D"},
+        {"p_phi", "D"},
+        {"vz_p", "D"},
+        {"open_angle", "D"},
+        {"Q2", "D"},
+        {"W", "D"},
+        {"Mx2", "D"},
+        {"x", "D"},
+        {"y", "D"},
+        {"t", "D"},
+        {"tmin", "D"},
+        {"z", "D"},
+        {"xF", "D"},
+        {"pT", "D"},
+        {"xi", "D"},
+        {"eta", "D"},
+        {"phi", "D"},
+        {"DepA", "D"},
+        {"DepB", "D"},
+        {"DepC", "D"},
+        {"DepV", "D"},
+        {"DepW", "D"}
+    };
+
+    // Get total number of entries
+    Long64_t nEntries1 = tree1->GetEntries();
+    Long64_t nEntries2 = tree2->GetEntries();
+
+    for (const auto& branchName : branches) {
+        // Check if branch exists in both trees
+        if (!tree1->GetBranch(branchName.c_str())) {
+            std::cerr << "Branch " << branchName << " does not exist in tree1" << std::endl;
+            continue;
+        }
+        if (!tree2->GetBranch(branchName.c_str())) {
+            std::cerr << "Branch " << branchName << " does not exist in tree2" << std::endl;
+            continue;
+        }
+
+        // Get hist config for this branch
+        HistConfig histConfig;
+        if (histConfigs.find(branchName) != histConfigs.end()) {
+            histConfig = histConfigs[branchName];
+        } else {
+            // If not specified, use default values
+            histConfig = {100, 0, 1};
+            std::cerr << "Histogram config for " << branchName << " not found. Using default values." << std::endl;
+        }
+
+        // Determine the type of the branch
+        std::string branchType = branchTypes[branchName];
+        if (branchType == "I") {
+            // Integer type
+            int value1 = 0;
+            int value2 = 0;
+            tree1->SetBranchAddress(branchName.c_str(), &value1);
+            tree2->SetBranchAddress(branchName.c_str(), &value2);
+
+            // Create histograms
+            TH1D *hist1 = new TH1D(("hist1_" + branchName).c_str(), branchName.c_str(), histConfig.bins, histConfig.x_min, histConfig.x_max);
+            TH1D *hist2 = new TH1D(("hist2_" + branchName).c_str(), branchName.c_str(), histConfig.bins, histConfig.x_min, histConfig.x_max);
+
+            // Fill histograms
+            for (Long64_t i = 0; i < nEntries1; ++i) {
+                tree1->GetEntry(i);
+                hist1->Fill(value1);
+            }
+            for (Long64_t i = 0; i < nEntries2; ++i) {
+                tree2->GetEntry(i);
+                hist2->Fill(value2);
+            }
+
+            // Normalize histograms
+            if (hist1->Integral() != 0)
+                hist1->Scale(1.0 / hist1->Integral());
+            if (hist2->Integral() != 0)
+                hist2->Scale(1.0 / hist2->Integral());
+
+            // Compute ratio histogram
+            TH1D *ratioHist = (TH1D*)hist1->Clone(("ratio_" + branchName).c_str());
+            ratioHist->Divide(hist2);
+
+            // Create canvas and draw
+            TCanvas *c = new TCanvas(("c_" + branchName).c_str(), branchName.c_str(), 800, 600);
+            ratioHist->SetTitle(branchName.c_str());
+            ratioHist->GetYaxis()->SetTitle("Dilks / Hayward");
+            ratioHist->SetStats(0); // Remove stat box
+            ratioHist->Draw();
+
+            // Add legend
+            TLegend *legend = new TLegend(0.7, 0.75, 0.9, 0.9);
+            legend->AddEntry((TObject*)0, ("Dilks Tree Entries: " + std::to_string(nEntries1)).c_str(), "");
+            legend->AddEntry((TObject*)0, ("Hayward Tree Entries: " + std::to_string(nEntries2)).c_str(), "");
+            legend->Draw();
+
+            // Save plot
+            std::string outputDir = "output/comparison";
+            gSystem->mkdir(outputDir.c_str(), kTRUE);
+            std::string outputFileName = outputDir + "/" + branchName + ".png";
+            c->SaveAs(outputFileName.c_str());
+
+            // Clean up
+            delete c;
+            delete hist1;
+            delete hist2;
+            delete ratioHist;
+
+        } else if (branchType == "D") {
+            // Double type
+            double value1 = 0;
+            double value2 = 0;
+            tree1->SetBranchAddress(branchName.c_str(), &value1);
+            tree2->SetBranchAddress(branchName.c_str(), &value2);
+
+            // Create histograms
+            TH1D *hist1 = new TH1D(("hist1_" + branchName).c_str(), branchName.c_str(), histConfig.bins, histConfig.x_min, histConfig.x_max);
+            TH1D *hist2 = new TH1D(("hist2_" + branchName).c_str(), branchName.c_str(), histConfig.bins, histConfig.x_min, histConfig.x_max);
+
+            // Fill histograms
+            for (Long64_t i = 0; i < nEntries1; ++i) {
+                tree1->GetEntry(i);
+                hist1->Fill(value1);
+            }
+            for (Long64_t i = 0; i < nEntries2; ++i) {
+                tree2->GetEntry(i);
+                hist2->Fill(value2);
+            }
+
+            // Normalize histograms
+            if (hist1->Integral() != 0)
+                hist1->Scale(1.0 / hist1->Integral());
+            if (hist2->Integral() != 0)
+                hist2->Scale(1.0 / hist2->Integral());
+
+            // Compute ratio histogram
+            TH1D *ratioHist = (TH1D*)hist1->Clone(("ratio_" + branchName).c_str());
+            ratioHist->Divide(hist2);
+
+            // Create canvas and draw
+            TCanvas *c = new TCanvas(("c_" + branchName).c_str(), branchName.c_str(), 800, 600);
+            ratioHist->SetTitle(branchName.c_str());
+            ratioHist->GetYaxis()->SetTitle("Dilks / Hayward");
+            ratioHist->SetStats(0); // Remove stat box
+            ratioHist->Draw();
+
+            // Add legend
+            TLegend *legend = new TLegend(0.7, 0.75, 0.9, 0.9);
+            legend->AddEntry((TObject*)0, ("Dilks Tree Entries: " + std::to_string(nEntries1)).c_str(), "");
+            legend->AddEntry((TObject*)0, ("Hayward Tree Entries: " + std::to_string(nEntries2)).c_str(), "");
+            legend->Draw();
+
+            // Save plot
+            std::string outputDir = "output/comparison";
+            gSystem->mkdir(outputDir.c_str(), kTRUE);
+            std::string outputFileName = outputDir + "/" + branchName + ".png";
+            c->SaveAs(outputFileName.c_str());
+
+            // Clean up
+            delete c;
+            delete hist1;
+            delete hist2;
+            delete ratioHist;
+
+        } else {
+            std::cerr << "Unknown branch type for " << branchName << std::endl;
+            continue;
+        }
+    }
+
+    // Close files
+    file1->Close();
+    file2->Close();
+
+    return 0;
+}
