@@ -97,7 +97,7 @@ int main(int argc, char** argv) {
         h_ratio->SetLineWidth(2);
 
         // Set y-axis range from 0.7 to 1.3
-        h_ratio->GetYaxis()->SetRangeUser(0.4, 1.3);
+        h_ratio->GetYaxis()->SetRangeUser(0.0, 1.3);
 
         h_ratio->Draw("HIST");
 
