@@ -50,7 +50,7 @@ void radiative_mx_distribution(const char* filename) {
     Double_t M_p = 0.93827;  // Proton mass in GeV/c^2
 
     // Beam energies
-    Double_t beam_energies[] = {10.6, 10.0, 9.0, 7.0, 7.0};
+    Double_t beam_energies[] = {10.6, 10.0, 9.0, 7.0, 5.0};
     const int n_beam = 5;
 
     // Histograms
