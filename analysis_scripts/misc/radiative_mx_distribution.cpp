@@ -1,16 +1,20 @@
+// radiative_mx_distribution.cpp
+
+#include <iostream>
+#include <cmath>
+
+// Include ROOT headers
+#include <TFile.h>
+#include <TTree.h>
+#include <TH1F.h>
+#include <TCanvas.h>
+#include <TLegend.h>
+#include <TSystem.h>
+#include <TStyle.h>
+
+using namespace std;
+
 void radiative_mx_distribution(const char* filename) {
-    // Include necessary headers
-    #include <TFile.h>
-    #include <TTree.h>
-    #include <TH1F.h>
-    #include <TCanvas.h>
-    #include <TLegend.h>
-    #include <TSystem.h>
-    #include <TStyle.h>
-    #include <iostream>
-
-    using namespace std;
-
     // Open the file
     TFile* file = TFile::Open(filename);
     if (!file || file->IsZombie()) {
@@ -70,10 +74,8 @@ void radiative_mx_distribution(const char* filename) {
             Double_t E_beam = beam_energies[j];
 
             // Initial electron
-            Double_t E_electron_initial = sqrt(E_beam * E_beam + m_e * m_e);
-            Double_t p_electron_initial_x = 0;
-            Double_t p_electron_initial_y = 0;
-            Double_t p_electron_initial_z = sqrt(E_beam * E_beam - m_e * m_e);
+            Double_t E_electron_initial = E_beam;
+            Double_t p_electron_initial_z = sqrt(E_electron_initial * E_electron_initial - m_e * m_e);
 
             // Initial proton
             Double_t E_proton_initial = M_p;
@@ -83,8 +85,8 @@ void radiative_mx_distribution(const char* filename) {
 
             // Total initial four-momentum
             Double_t E_initial = E_electron_initial + E_proton_initial;
-            Double_t p_initial_x = p_electron_initial_x + p_proton_initial_x;
-            Double_t p_initial_y = p_electron_initial_y + p_proton_initial_y;
+            Double_t p_initial_x = 0;
+            Double_t p_initial_y = 0;
             Double_t p_initial_z = p_electron_initial_z + p_proton_initial_z;
 
             // Scattered electron
@@ -119,28 +121,44 @@ void radiative_mx_distribution(const char* filename) {
         }
     }
 
+    // Find maximum y-value for each subplot
+    Double_t maxY1 = 0;
+    Double_t maxY2 = 0;
+
+    for (int i = 0; i < n_beam; ++i) {
+        // For first subplot (-1 to 1)
+        Int_t bin_min1 = hMx2[i]->FindBin(-1);
+        Int_t bin_max1 = hMx2[i]->FindBin(1);
+        Double_t tempMax1 = hMx2[i]->GetBinContent(hMx2[i]->GetMaximumBin());
+        if (tempMax1 > maxY1) maxY1 = tempMax1;
+
+        // For second subplot (-3 to 6)
+        Int_t bin_min2 = hMx2[i]->FindBin(-3);
+        Int_t bin_max2 = hMx2[i]->FindBin(6);
+        Double_t tempMax2 = hMx2[i]->GetBinContent(hMx2[i]->GetMaximumBin());
+        if (tempMax2 > maxY2) maxY2 = tempMax2;
+    }
+
     // Create canvas
     TCanvas* c1 = new TCanvas("c1", "Radiative Mx2 Distribution", 1200, 800);
     c1->Divide(1,2);
 
     // First pad
     c1->cd(1);
-    hMx2[0]->GetXaxis()->SetRangeUser(-1, 1);
-    hMx2[0]->GetXaxis()->SetTitle("M_{x}^{2} (GeV^{2})");
-    hMx2[0]->GetYaxis()->SetTitle("Counts");
-    hMx2[0]->SetLineColor(colors[0]);
-    hMx2[0]->SetStats(0);
-    hMx2[0]->Draw();
+    gPad->SetTicks();
+    gStyle->SetOptStat(0);
 
-    for (int i = 1; i < n_beam; ++i) {
+    TH1F* frame1 = c1->cd(1)->DrawFrame(-1, 0, 1, maxY1 * 1.35);
+    frame1->GetXaxis()->SetTitle("M_{x}^{2} (GeV^{2})");
+    frame1->GetYaxis()->SetTitle("Counts");
+
+    TLegend* legend1 = new TLegend(0.7,0.7,0.9,0.9);
+
+    for (int i = 0; i < n_beam; ++i) {
         hMx2[i]->SetLineColor(colors[i]);
         hMx2[i]->SetStats(0);
-        hMx2[i]->Draw("same");
-    }
-
-    // Create legend
-    TLegend* legend1 = new TLegend(0.7,0.7,0.9,0.9);
-    for (int i = 0; i < n_beam; ++i) {
+        hMx2[i]->GetXaxis()->SetRangeUser(-1, 1);
+        hMx2[i]->Draw("HIST SAME");
         TString entry = Form("%.1f GeV", beam_energies[i]);
         legend1->AddEntry(hMx2[i], entry, "l");
     }
@@ -148,22 +166,20 @@ void radiative_mx_distribution(const char* filename) {
 
     // Second pad
     c1->cd(2);
-    hMx2[0]->GetXaxis()->SetRangeUser(-3, 6);
-    hMx2[0]->GetXaxis()->SetTitle("M_{x}^{2} (GeV^{2})");
-    hMx2[0]->GetYaxis()->SetTitle("Counts");
-    hMx2[0]->SetLineColor(colors[0]);
-    hMx2[0]->SetStats(0);
-    hMx2[0]->Draw();
+    gPad->SetTicks();
+    gStyle->SetOptStat(0);
 
-    for (int i = 1; i < n_beam; ++i) {
+    TH1F* frame2 = c1->cd(2)->DrawFrame(-3, 0, 6, maxY2 * 1.35);
+    frame2->GetXaxis()->SetTitle("M_{x}^{2} (GeV^{2})");
+    frame2->GetYaxis()->SetTitle("Counts");
+
+    TLegend* legend2 = new TLegend(0.7,0.7,0.9,0.9);
+
+    for (int i = 0; i < n_beam; ++i) {
         hMx2[i]->SetLineColor(colors[i]);
         hMx2[i]->SetStats(0);
-        hMx2[i]->Draw("same");
-    }
-
-    // Create legend for second pad
-    TLegend* legend2 = new TLegend(0.7,0.7,0.9,0.9);
-    for (int i = 0; i < n_beam; ++i) {
+        hMx2[i]->GetXaxis()->SetRangeUser(-3, 6);
+        hMx2[i]->Draw("HIST SAME");
         TString entry = Form("%.1f GeV", beam_energies[i]);
         legend2->AddEntry(hMx2[i], entry, "l");
     }
