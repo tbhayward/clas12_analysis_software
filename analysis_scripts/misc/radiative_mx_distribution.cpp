@@ -31,8 +31,8 @@ void radiative_mx_distribution(const char* filename) {
     }
 
     // Set branch addresses
-    Float_t e_p, e_theta, e_phi;
-    Float_t p_p, p_theta, p_phi;
+    double e_p, e_theta, e_phi;
+    double p_p, p_theta, p_phi;
 
     tree->SetBranchAddress("e_p", &e_p);
     tree->SetBranchAddress("e_theta", &e_theta);
