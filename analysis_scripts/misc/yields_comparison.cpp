@@ -3,6 +3,7 @@
 #include <map>
 #include <vector>
 #include <cmath>
+#include <set>
 #include "TFile.h"
 #include "TTree.h"
 #include "TH1D.h"
@@ -241,7 +242,7 @@ int main() {
         {"open_angle", {50, 0, 180}},
         {"Q2", {50, 0, 10}},
         {"W", {50, 2, 4}},
-        {"Mx2", {50, -2, 3}},
+        {"Mx2", {50, -3, 8}},
         {"x", {50, 0, 0.7}},
         {"y", {50, 0.0, 1.00}},
         {"t", {50, -12, 1}},
@@ -300,19 +301,11 @@ int main() {
         {"DepW", "D"}
     };
 
-    // Variables to hold Mx2 values
-    double Mx2_value1 = 0;
-    double Mx2_value2 = 0;
-
     // Get total number of entries
     Long64_t nEntries1 = tree1->GetEntries();
     Long64_t nEntries2 = tree2->GetEntries();
 
     for (const auto& branchName : branches) {
-        // Set branch addresses for Mx2_value1 and Mx2_value2
-        tree1->SetBranchAddress("Mx2", &Mx2_value1);
-        tree2->SetBranchAddress("Mx2", &Mx2_value2);
-
         // Check if branch exists in both trees
         if (!tree1->GetBranch(branchName.c_str())) {
             std::cerr << "Branch " << branchName << " does not exist in tree1" << std::endl;
@@ -336,10 +329,6 @@ int main() {
         // Determine the type of the branch
         std::string branchType = branchTypes[branchName];
 
-        // Variables to count entries with Mx2 > 0 for this branch
-        Long64_t nEntriesMx2Pos1 = 0;
-        Long64_t nEntriesMx2Pos2 = 0;
-
         if (branchType == "I") {
             // Integer type
             int value1 = 0;
@@ -349,10 +338,6 @@ int main() {
             tree1->SetBranchAddress(branchName.c_str(), &value1);
             tree2->SetBranchAddress(branchName.c_str(), &value2);
 
-            // Re-set branch addresses for Mx2_value1 and Mx2_value2 after setting value1 and value2
-            tree1->SetBranchAddress("Mx2", &Mx2_value1);
-            tree2->SetBranchAddress("Mx2", &Mx2_value2);
-
             // Create histograms
             TH1D *hist1 = new TH1D(("hist1_" + branchName).c_str(), "", histConfig.bins, histConfig.x_min, histConfig.x_max);
             TH1D *hist2 = new TH1D(("hist2_" + branchName).c_str(), "", histConfig.bins, histConfig.x_min, histConfig.x_max);
@@ -360,18 +345,12 @@ int main() {
             // Fill histograms for tree1
             for (Long64_t i = 0; i < nEntries1; ++i) {
                 tree1->GetEntry(i);
-                if (Mx2_value1 > 0) {
-                    hist1->Fill(value1);
-                    ++nEntriesMx2Pos1;
-                }
+                hist1->Fill(value1);
             }
             // Fill histograms for tree2
             for (Long64_t i = 0; i < nEntries2; ++i) {
                 tree2->GetEntry(i);
-                if (Mx2_value2 > 0) {
-                    hist2->Fill(value2);
-                    ++nEntriesMx2Pos2;
-                }
+                hist2->Fill(value2);
             }
 
             // Normalize histograms
@@ -427,11 +406,11 @@ int main() {
             line->SetLineStyle(2);
             line->Draw();
 
-            // Add legend with updated entry counts
+            // Add legend with total entry counts
             TLegend *legend = new TLegend(0.55, 0.75, 0.9, 0.9); // Adjusted position
             legend->SetTextSize(0.045); // Increased text size
-            legend->AddEntry((TObject*)0, ("Dilks Entries (Mx2 > 0): " + std::to_string(nEntriesMx2Pos1)).c_str(), "");
-            legend->AddEntry((TObject*)0, ("Hayward Entries (Mx2 > 0): " + std::to_string(nEntriesMx2Pos2)).c_str(), "");
+            legend->AddEntry((TObject*)0, ("Dilks Entries: " + std::to_string(nEntries1)).c_str(), "");
+            legend->AddEntry((TObject*)0, ("Hayward Entries: " + std::to_string(nEntries2)).c_str(), "");
             legend->Draw();
 
             // Save plot
@@ -456,10 +435,6 @@ int main() {
             tree1->SetBranchAddress(branchName.c_str(), &value1);
             tree2->SetBranchAddress(branchName.c_str(), &value2);
 
-            // Re-set branch addresses for Mx2_value1 and Mx2_value2 after setting value1 and value2
-            tree1->SetBranchAddress("Mx2", &Mx2_value1);
-            tree2->SetBranchAddress("Mx2", &Mx2_value2);
-
             // Create histograms
             TH1D *hist1 = new TH1D(("hist1_" + branchName).c_str(), "", histConfig.bins, histConfig.x_min, histConfig.x_max);
             TH1D *hist2 = new TH1D(("hist2_" + branchName).c_str(), "", histConfig.bins, histConfig.x_min, histConfig.x_max);
@@ -470,29 +445,23 @@ int main() {
             // Fill histograms for tree1
             for (Long64_t i = 0; i < nEntries1; ++i) {
                 tree1->GetEntry(i);
-                if (Mx2_value1 > -100) {
-                    if (isPhiVariable) {
-                        if (value1 < 0)
-                            value1 += 2 * pi;
-                    }
-                    hist1->Fill(value1);
-                    ++nEntriesMx2Pos1;
+                if (isPhiVariable) {
+                    if (value1 < 0)
+                        value1 += 2 * pi;
                 }
+                hist1->Fill(value1);
             }
             // Fill histograms for tree2
             for (Long64_t i = 0; i < nEntries2; ++i) {
                 tree2->GetEntry(i);
-                if (Mx2_value2 > -100) {
-                    hist2->Fill(value2);
-                    ++nEntriesMx2Pos2;
-                }
+                hist2->Fill(value2);
             }
 
-            // // Normalize histograms
-            // if (hist1->Integral() != 0)
-            //     hist1->Scale(1.0 / hist1->Integral());
-            // if (hist2->Integral() != 0)
-            //     hist2->Scale(1.0 / hist2->Integral());
+            // Normalize histograms
+            if (hist1->Integral() != 0)
+                hist1->Scale(1.0 / hist1->Integral());
+            if (hist2->Integral() != 0)
+                hist2->Scale(1.0 / hist2->Integral());
 
             // Compute ratio and uncertainties
             std::vector<double> xValues;
@@ -508,7 +477,7 @@ int main() {
                 double error2 = hist2->GetBinError(bin);
 
                 // Skip bins where either content is zero to avoid division by zero
-                if (content1 >= 0 && content2 >= 0) {
+                if (content1 > 0 && content2 > 0) {
                     double ratio = content1 / content2;
                     double ratioError = ratio * sqrt( (error1/content1)*(error1/content1) + (error2/content2)*(error2/content2) );
                     xValues.push_back(binCenter);
@@ -535,11 +504,11 @@ int main() {
             graph->SetMarkerSize(0.8);
             graph->Draw("AP");
 
-            // Add legend with updated entry counts
+            // Add legend with total entry counts
             TLegend *legend = new TLegend(0.3, 0.75, 0.9, 0.9); // Adjusted position
             legend->SetTextSize(0.04); // Increased text size
-            legend->AddEntry((TObject*)0, ("Dilks Entries: " + std::to_string(nEntriesMx2Pos1)).c_str(), "");
-            legend->AddEntry((TObject*)0, ("Hayward Entries: " + std::to_string(nEntriesMx2Pos2)).c_str(), "");
+            legend->AddEntry((TObject*)0, ("Dilks Entries: " + std::to_string(nEntries1)).c_str(), "");
+            legend->AddEntry((TObject*)0, ("Hayward Entries: " + std::to_string(nEntries2)).c_str(), "");
             legend->Draw();
 
             // Save plot
@@ -558,6 +527,148 @@ int main() {
             std::cerr << "Unknown branch type for " << branchName << std::endl;
             continue;
         }
+    }
+
+    // Part 2: Find ten entries that are in one tree but not the other and print out all the branch values
+    std::cout << "\nFinding entries unique to each tree...\n" << std::endl;
+
+    // Read 'evnum' from both trees
+    std::set<int> evnum_set1;
+    std::set<int> evnum_set2;
+
+    int evnum1 = 0;
+    int evnum2 = 0;
+
+    tree1->SetBranchAddress("evnum", &evnum1);
+    tree2->SetBranchAddress("evnum", &evnum2);
+
+    // Populate sets of event numbers
+    for (Long64_t i = 0; i < nEntries1; ++i) {
+        tree1->GetEntry(i);
+        evnum_set1.insert(evnum1);
+    }
+    for (Long64_t i = 0; i < nEntries2; ++i) {
+        tree2->GetEntry(i);
+        evnum_set2.insert(evnum2);
+    }
+
+    // Find event numbers unique to each tree
+    std::vector<int> unique_to_tree1;
+    std::vector<int> unique_to_tree2;
+
+    std::set_difference(evnum_set1.begin(), evnum_set1.end(), evnum_set2.begin(), evnum_set2.end(),
+                        std::back_inserter(unique_to_tree1));
+    std::set_difference(evnum_set2.begin(), evnum_set2.end(), evnum_set1.begin(), evnum_set1.end(),
+                        std::back_inserter(unique_to_tree2));
+
+    // Print out branch values for ten entries unique to each tree
+    int max_entries_to_print = 10;
+    int entries_printed = 0;
+
+    if (!unique_to_tree1.empty()) {
+        std::cout << "Entries unique to Dilks tree:" << std::endl;
+        for (int unique_evnum : unique_to_tree1) {
+            if (entries_printed >= max_entries_to_print)
+                break;
+
+            // Find the entry with this evnum
+            tree1->SetBranchAddress("evnum", &evnum1);
+            Long64_t entry = tree1->GetEntries();
+            for (Long64_t i = 0; i < nEntries1; ++i) {
+                tree1->GetEntry(i);
+                if (evnum1 == unique_evnum) {
+                    entry = i;
+                    break;
+                }
+            }
+
+            if (entry == tree1->GetEntries())
+                continue;
+
+            // Set branch addresses for all branches
+            std::map<std::string, double> doubleValues;
+            std::map<std::string, int> intValues;
+
+            for (const auto& branchName : branches) {
+                std::string branchType = branchTypes[branchName];
+                if (branchType == "I") {
+                    intValues[branchName] = 0;
+                    tree1->SetBranchAddress(branchName.c_str(), &intValues[branchName]);
+                } else if (branchType == "D") {
+                    doubleValues[branchName] = 0;
+                    tree1->SetBranchAddress(branchName.c_str(), &doubleValues[branchName]);
+                }
+            }
+
+            // Get entry and print values
+            tree1->GetEntry(entry);
+            std::cout << "\nEvent Number: " << unique_evnum << std::endl;
+            for (const auto& branchName : branches) {
+                std::string branchType = branchTypes[branchName];
+                if (branchType == "I") {
+                    std::cout << branchName << ": " << intValues[branchName] << std::endl;
+                } else if (branchType == "D") {
+                    std::cout << branchName << ": " << doubleValues[branchName] << std::endl;
+                }
+            }
+            ++entries_printed;
+        }
+    } else {
+        std::cout << "No entries unique to Dilks tree." << std::endl;
+    }
+
+    entries_printed = 0;
+
+    if (!unique_to_tree2.empty()) {
+        std::cout << "\nEntries unique to Hayward tree:" << std::endl;
+        for (int unique_evnum : unique_to_tree2) {
+            if (entries_printed >= max_entries_to_print)
+                break;
+
+            // Find the entry with this evnum
+            tree2->SetBranchAddress("evnum", &evnum2);
+            Long64_t entry = tree2->GetEntries();
+            for (Long64_t i = 0; i < nEntries2; ++i) {
+                tree2->GetEntry(i);
+                if (evnum2 == unique_evnum) {
+                    entry = i;
+                    break;
+                }
+            }
+
+            if (entry == tree2->GetEntries())
+                continue;
+
+            // Set branch addresses for all branches
+            std::map<std::string, double> doubleValues;
+            std::map<std::string, int> intValues;
+
+            for (const auto& branchName : branches) {
+                std::string branchType = branchTypes[branchName];
+                if (branchType == "I") {
+                    intValues[branchName] = 0;
+                    tree2->SetBranchAddress(branchName.c_str(), &intValues[branchName]);
+                } else if (branchType == "D") {
+                    doubleValues[branchName] = 0;
+                    tree2->SetBranchAddress(branchName.c_str(), &doubleValues[branchName]);
+                }
+            }
+
+            // Get entry and print values
+            tree2->GetEntry(entry);
+            std::cout << "\nEvent Number: " << unique_evnum << std::endl;
+            for (const auto& branchName : branches) {
+                std::string branchType = branchTypes[branchName];
+                if (branchType == "I") {
+                    std::cout << branchName << ": " << intValues[branchName] << std::endl;
+                } else if (branchType == "D") {
+                    std::cout << branchName << ": " << doubleValues[branchName] << std::endl;
+                }
+            }
+            ++entries_printed;
+        }
+    } else {
+        std::cout << "No entries unique to Hayward tree." << std::endl;
     }
 
     // Close files
