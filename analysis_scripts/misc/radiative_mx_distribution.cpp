@@ -125,13 +125,21 @@ void radiative_mx_distribution(const char* filename) {
         // For first subplot (-1 to 1)
         Int_t bin_min1 = hMx2[i]->FindBin(-1);
         Int_t bin_max1 = hMx2[i]->FindBin(1);
-        Double_t tempMax1 = hMx2[i]->GetMaximum(bin_min1, bin_max1);
+        Double_t tempMax1 = 0;
+        for (Int_t bin = bin_min1; bin <= bin_max1; ++bin) {
+            Double_t binContent = hMx2[i]->GetBinContent(bin);
+            if (binContent > tempMax1) tempMax1 = binContent;
+        }
         if (tempMax1 > maxY1) maxY1 = tempMax1;
 
         // For second subplot (-3 to 6)
         Int_t bin_min2 = hMx2[i]->FindBin(-3);
         Int_t bin_max2 = hMx2[i]->FindBin(6);
-        Double_t tempMax2 = hMx2[i]->GetMaximum(bin_min2, bin_max2);
+        Double_t tempMax2 = 0;
+        for (Int_t bin = bin_min2; bin <= bin_max2; ++bin) {
+            Double_t binContent = hMx2[i]->GetBinContent(bin);
+            if (binContent > tempMax2) tempMax2 = binContent;
+        }
         if (tempMax2 > maxY2) maxY2 = tempMax2;
     }
 
