@@ -488,11 +488,11 @@ int main() {
                 }
             }
 
-            // Normalize histograms
-            if (hist1->Integral() != 0)
-                hist1->Scale(1.0 / hist1->Integral());
-            if (hist2->Integral() != 0)
-                hist2->Scale(1.0 / hist2->Integral());
+            // // Normalize histograms
+            // if (hist1->Integral() != 0)
+            //     hist1->Scale(1.0 / hist1->Integral());
+            // if (hist2->Integral() != 0)
+            //     hist2->Scale(1.0 / hist2->Integral());
 
             // Compute ratio and uncertainties
             std::vector<double> xValues;
@@ -529,7 +529,7 @@ int main() {
 
             graph->SetTitle("");
             graph->GetYaxis()->SetTitle("Dilks / Hayward");
-            graph->GetYaxis()->SetRangeUser(0.4, 1.6);
+            // graph->GetYaxis()->SetRangeUser(0.4, 1.6);
             graph->GetXaxis()->SetTitle(formatLabelName(branchName).c_str());
             graph->SetMarkerStyle(20);
             graph->SetMarkerSize(0.8);
