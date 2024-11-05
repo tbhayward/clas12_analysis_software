@@ -470,7 +470,7 @@ int main() {
             // Fill histograms for tree1
             for (Long64_t i = 0; i < nEntries1; ++i) {
                 tree1->GetEntry(i);
-                if (Mx2_value1 > -7) {
+                if (Mx2_value1 > -100) {
                     if (isPhiVariable) {
                         if (value1 < 0)
                             value1 += 2 * pi;
@@ -482,7 +482,7 @@ int main() {
             // Fill histograms for tree2
             for (Long64_t i = 0; i < nEntries2; ++i) {
                 tree2->GetEntry(i);
-                if (Mx2_value2 > -7) {
+                if (Mx2_value2 > -100) {
                     hist2->Fill(value2);
                     ++nEntriesMx2Pos2;
                 }
@@ -508,7 +508,7 @@ int main() {
                 double error2 = hist2->GetBinError(bin);
 
                 // Skip bins where either content is zero to avoid division by zero
-                if (content1 > 0 && content2 > 0) {
+                if (content1 >= 0 && content2 >= 0) {
                     double ratio = content1 / content2;
                     double ratioError = ratio * sqrt( (error1/content1)*(error1/content1) + (error2/content2)*(error2/content2) );
                     xValues.push_back(binCenter);
