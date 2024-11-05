@@ -56,7 +56,7 @@ void radiative_mx_distribution(const char* filename) {
     for (int i = 0; i < n_beam; ++i) {
         TString hname = Form("hMx2_%d", i);
         TString htitle = Form("Mx2 for Beam Energy %.1f GeV", beam_energies[i]);
-        hMx2[i] = new TH1F(hname, htitle, 200, -4, 8); // Adjust bins and range as needed
+        hMx2[i] = new TH1F(hname, htitle, 800, -4, 8); // Adjust bins and range as needed
     }
 
     // Colors
