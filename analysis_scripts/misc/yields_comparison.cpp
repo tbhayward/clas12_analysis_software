@@ -344,7 +344,7 @@ int main() {
 
             graph->SetTitle("");
             graph->GetYaxis()->SetTitle("Dilks / Hayward");
-            graph->GetYaxis()->SetRangeUser(0.4, 1.6);
+            graph->GetYaxis()->SetRangeUser(0.0, 2);
             graph->GetXaxis()->SetTitle(formatLabelName(branchName).c_str());
             graph->SetMarkerStyle(20);
             graph->SetMarkerSize(0.8);
@@ -353,8 +353,8 @@ int main() {
             // Add legend with updated entry counts
             TLegend *legend = new TLegend(0.3, 0.75, 0.9, 0.9); // Adjusted position
             legend->SetTextSize(0.04); // Increased text size
-            legend->AddEntry((TObject*)0, ("Dilks Entries (Mx2 > 0): " + std::to_string(nEntriesMx2Pos1)).c_str(), "");
-            legend->AddEntry((TObject*)0, ("Hayward Entries (Mx2 > 0): " + std::to_string(nEntriesMx2Pos2)).c_str(), "");
+            legend->AddEntry((TObject*)0, ("Dilks Entries: " + std::to_string(nEntriesMx2Pos1)).c_str(), "");
+            legend->AddEntry((TObject*)0, ("Hayward Entries: " + std::to_string(nEntriesMx2Pos2)).c_str(), "");
             legend->Draw();
 
             // Save plot
