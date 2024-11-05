@@ -23,7 +23,85 @@ struct HistConfig {
 // Function to format axis labels
 std::string formatLabelName(const std::string& original) {
     std::map<std::string, std::string> specialLabels = {
-        // ... [same as before]
+        {"Q2", "Q^{2} (GeV^{2})"},
+        {"W", "W (GeV)"},
+        {"Delta_eta", "#Delta#eta"},
+        {"Delta_phi", "#Delta#phi"},
+        {"Delta_phi12", "#Delta#phi_{12}"},
+        {"Delta_phi13", "#Delta#phi_{13}"},
+        {"Delta_phi23", "#Delta#phi_{23}"},
+        {"eta1", "#eta_{1}"},
+        {"eta2", "#eta_{2}"},
+        {"eta3", "#eta_{3}"},
+        {"eta12", "#eta_{12}"},
+        {"eta13", "#eta_{13}"},
+        {"eta23", "#eta_{23}"},
+        {"pT", "P_{T} (GeV)"},
+        {"pT1", "P_{1T} (GeV)"},
+        {"pT2", "P_{2T} (GeV)"},
+        {"pT23", "P_{3T} (GeV)"},
+        {"pT12", "P_{12T} (GeV)"},
+        {"pT13", "P_{13T} (GeV)"},
+        {"pT23", "P_{23T} (GeV)"},
+        {"pTpT", "P_{1T}P_{2T} (GeV^{2})"},
+        {"Mh", "M_{h} (GeV)"},
+        {"Mh12", "M_{h12} (GeV)"},
+        {"Mh13", "M_{h13} (GeV)"},
+        {"Mh23", "M_{h23} (GeV)"},
+        {"t", "t (GeV^{2})"},
+        {"phi1", "#phi_{1}"},
+        {"phi2", "#phi_{2}"},
+        {"phi3", "#phi_{3}"},
+        {"phi12", "#phi_{12}"},
+        {"phi13", "#phi_{13}"},
+        {"phiR", "#phi_{R}"},
+        {"tmin", "t_{min} (GeV^{2})"},
+        {"e_p", "e_{p} (GeV)"},
+        {"Mx", "M_{x} (GeV)"},
+        {"Mx1", "M_{x1} (GeV)"},
+        {"Mx2", "M_{x2} (GeV)"},
+        {"Mx3", "M_{x3} (GeV)"},
+        {"Mx12", "M_{x12} (GeV)"},
+        {"Mx13", "M_{x13} (GeV)"},
+        {"Mx23", "M_{x23} (GeV)"},
+        {"p_p", "p_{p} (GeV)"},
+        {"p1_p", "p1_{p} (GeV)"},
+        {"p2_p", "p2_{p} (GeV)"},
+        {"t1", "t_{1}"},
+        {"t2", "t_{2}"},
+        {"t3", "t_{3}"},
+        {"xF", "x_{F}"},
+        {"xF1", "x_{F1}"},
+        {"xF2", "xF_{2}"},
+        {"x", "x_{B}"},
+        {"z1", "z_{1}"},
+        {"z2", "z_{2}"},
+        {"z3", "z_{3}"},
+        {"z12", "z_{12}"},
+        {"z13", "z_{13}"},
+        {"z23", "z_{23}"},
+        {"zeta", "#zeta"},
+        {"zeta1", "#zeta_{1}"},
+        {"zeta2", "#zeta_{2}"},
+        {"zeta3", "#zeta_{3}"},
+        {"zeta12", "#zeta_{12}"},
+        {"zeta13", "#zeta_{13}"},
+        {"zeta23", "#zeta_{23}"},
+        {"xi", "#xi"},
+        {"xi1", "#xi_{1}"},
+        {"xi2", "#xi_{2}"},
+        {"xi3", "#xi_{3}"},
+        {"xi12", "#xi_{12}"},
+        {"xi13", "#xi_{13}"},
+        {"xi23", "#xi_{23}"},
+        {"vz_e", "v_{z_{e}} (cm)"},
+        {"vz_p", "v_{z_{p}} (cm)"},
+        {"vz_p1", "v_{z_{p1}} (cm)"},
+        {"vz_p2", "v_{z_{p2}} (cm)"},
+        {"vz_p3", "v_{z_{p3}} (cm)"},
+        {"Emiss2", "E_{miss} (GeV)"},
+        {"theta_gamma_gamma", "#theta_{#gamma#gamma}"},
+        {"pTmiss", "p_{t miss} (GeV)"},
         {"Mxgammasquared", "M_{e'#gammaX}^{2} (GeV^{2})"}
     };
   
@@ -101,54 +179,140 @@ int main() {
 
     // List of branches to process
     std::vector<std::string> branches = {
-        // ... [same as before]
+        "fiducial_status",
+        "runnum",
+        "num_pos",
+        "num_neg",
+        "num_neutral",
+        "evnum",
+        "helicity",
+        "detector",
+        "beam_pol",
+        "target_pol",
+        "e_p",
+        "e_theta",
+        "e_phi",
+        "vz_e",
+        "p_p",
+        "p_theta",
+        "p_phi",
+        "vz_p",
+        "open_angle",
+        "Q2",
+        "W",
+        "Mx2",
+        "x",
+        "y",
+        "t",
+        "tmin",
+        "z",
+        "xF",
+        "pT",
+        "xi",
+        "eta",
+        "phi",
+        "DepA",
+        "DepB",
+        "DepC",
+        "DepV",
         "DepW"
     };
 
     // Histogram configurations
     std::map<std::string, HistConfig> histConfigs = {
-        // ... [same as before]
+        {"fiducial_status", {50, -5, 5}},
+        {"runnum", {50, 16135, 16773}},
+        {"num_pos", {50, 0, 10}},
+        {"num_neg", {50, 0, 10}},
+        {"num_neutral", {50, 0, 10}},
+        {"evnum", {50, 0, 0}},
+        {"helicity", {4, -2, 2}},
+        {"detector", {50, 0, 10}},
+        {"beam_pol", {50, -1, 1}},
+        {"target_pol", {50, -1, 1}},
+        {"e_p", {50, 1, 9}},
+        {"e_theta", {50, 0, 0.9}},
+        {"e_phi", {50, 0, 2 * pi}},
+        {"vz_e", {50, -15, 15}},
+        {"p_p", {50, 0, 6}},
+        {"p_theta", {50, 0, 0.9}},
+        {"p_phi", {50, 0, 2 * pi}},
+        {"vz_p", {50, -15, 15}},
+        {"open_angle", {50, 0, 180}},
+        {"Q2", {50, 0, 10}},
+        {"W", {50, 2, 4}},
+        {"Mx2", {50, -2, 3}},
+        {"x", {50, 0, 0.7}},
+        {"y", {50, 0.0, 1.00}},
+        {"t", {50, -12, 1}},
+        {"tmin", {50, -0.5, 0}},
+        {"z", {50, 0, 1}},
+        {"xF", {50, -2, 1}},
+        {"pT", {50, 0, 1.2}},
+        {"xi", {50, -1, 2}},
+        {"eta", {50, -3, 3}},
+        {"phi", {50, 0, 2 * pi}},
+        {"DepA", {50, 0, 1}},
+        {"DepB", {50, 0, 1}},
+        {"DepC", {50, 0, 1}},
+        {"DepV", {50, 0, 2}},
         {"DepW", {50, 0, 1}}
     };
 
     // Branch types
     std::map<std::string, std::string> branchTypes = {
-        // ... [same as before]
+        {"fiducial_status", "I"},
+        {"runnum", "I"},
+        {"num_pos", "I"},
+        {"num_neg", "I"},
+        {"num_neutral", "I"},
+        {"evnum", "I"},
+        {"helicity", "I"},
+        {"detector", "I"},
+        {"beam_pol", "D"},
+        {"target_pol", "D"},
+        {"e_p", "D"},
+        {"e_theta", "D"},
+        {"e_phi", "D"},
+        {"vz_e", "D"},
+        {"p_p", "D"},
+        {"p_theta", "D"},
+        {"p_phi", "D"},
+        {"vz_p", "D"},
+        {"open_angle", "D"},
+        {"Q2", "D"},
+        {"W", "D"},
+        {"Mx2", "D"},
+        {"x", "D"},
+        {"y", "D"},
+        {"t", "D"},
+        {"tmin", "D"},
+        {"z", "D"},
+        {"xF", "D"},
+        {"pT", "D"},
+        {"xi", "D"},
+        {"eta", "D"},
+        {"phi", "D"},
+        {"DepA", "D"},
+        {"DepB", "D"},
+        {"DepC", "D"},
+        {"DepV", "D"},
         {"DepW", "D"}
     };
-
-    // Get total number of entries
-    Long64_t nEntries1 = tree1->GetEntries();
-    Long64_t nEntries2 = tree2->GetEntries();
 
     // Variables to hold Mx2 values
     double Mx2_value1 = 0;
     double Mx2_value2 = 0;
 
-    // Set branch addresses for Mx2
-    tree1->SetBranchAddress("Mx2", &Mx2_value1);
-    tree2->SetBranchAddress("Mx2", &Mx2_value2);
+    // Get total number of entries
+    Long64_t nEntries1 = tree1->GetEntries();
+    Long64_t nEntries2 = tree2->GetEntries();
 
-    // Variables to count entries with Mx2 > 0
-    Long64_t nEntriesMx2Pos1 = 0;
-    Long64_t nEntriesMx2Pos2 = 0;
-
-    // First, count the number of entries with Mx2 > 0 in each tree
-    for (Long64_t i = 0; i < nEntries1; ++i) {
-        tree1->GetEntry(i);
-        if (Mx2_value1 > 0) {
-            ++nEntriesMx2Pos1;
-        }
-    }
-    for (Long64_t i = 0; i < nEntries2; ++i) {
-        tree2->GetEntry(i);
-        if (Mx2_value2 > 0) {
-            ++nEntriesMx2Pos2;
-        }
-    }
-
-    // Now loop over branches
     for (const auto& branchName : branches) {
+        // Set branch addresses for Mx2_value1 and Mx2_value2
+        tree1->SetBranchAddress("Mx2", &Mx2_value1);
+        tree2->SetBranchAddress("Mx2", &Mx2_value2);
+
         // Check if branch exists in both trees
         if (!tree1->GetBranch(branchName.c_str())) {
             std::cerr << "Branch " << branchName << " does not exist in tree1" << std::endl;
@@ -171,22 +335,34 @@ int main() {
 
         // Determine the type of the branch
         std::string branchType = branchTypes[branchName];
+
+        // Variables to count entries with Mx2 > 0 for this branch
+        Long64_t nEntriesMx2Pos1 = 0;
+        Long64_t nEntriesMx2Pos2 = 0;
+
         if (branchType == "I") {
             // Integer type
             int value1 = 0;
             int value2 = 0;
+
+            // Set branch addresses for value1 and value2
             tree1->SetBranchAddress(branchName.c_str(), &value1);
             tree2->SetBranchAddress(branchName.c_str(), &value2);
 
+            // Re-set branch addresses for Mx2_value1 and Mx2_value2 after setting value1 and value2
+            tree1->SetBranchAddress("Mx2", &Mx2_value1);
+            tree2->SetBranchAddress("Mx2", &Mx2_value2);
+
             // Create histograms
-            TH1D *hist1 = new TH1D(("hist1_" + branchName).c_str(), branchName.c_str(), histConfig.bins, histConfig.x_min, histConfig.x_max);
-            TH1D *hist2 = new TH1D(("hist2_" + branchName).c_str(), branchName.c_str(), histConfig.bins, histConfig.x_min, histConfig.x_max);
+            TH1D *hist1 = new TH1D(("hist1_" + branchName).c_str(), "", histConfig.bins, histConfig.x_min, histConfig.x_max);
+            TH1D *hist2 = new TH1D(("hist2_" + branchName).c_str(), "", histConfig.bins, histConfig.x_min, histConfig.x_max);
 
             // Fill histograms for tree1
             for (Long64_t i = 0; i < nEntries1; ++i) {
                 tree1->GetEntry(i);
                 if (Mx2_value1 > 0) {
                     hist1->Fill(value1);
+                    ++nEntriesMx2Pos1;
                 }
             }
             // Fill histograms for tree2
@@ -194,6 +370,7 @@ int main() {
                 tree2->GetEntry(i);
                 if (Mx2_value2 > 0) {
                     hist2->Fill(value2);
+                    ++nEntriesMx2Pos2;
                 }
             }
 
@@ -231,7 +408,7 @@ int main() {
             TGraphErrors *graph = new TGraphErrors(xValues.size(), &xValues[0], &yValues[0], &xErrors[0], &yErrors[0]);
 
             // Create canvas and draw
-            TCanvas *c = new TCanvas(("c_" + branchName).c_str(), branchName.c_str(), 800, 600);
+            TCanvas *c = new TCanvas(("c_" + branchName).c_str(), "", 800, 600);
             c->SetGrid();
             c->SetLeftMargin(0.15);   // Increase left margin
             c->SetBottomMargin(0.15); // Increase bottom margin
@@ -274,12 +451,18 @@ int main() {
             // Double type
             double value1 = 0;
             double value2 = 0;
+
+            // Set branch addresses for value1 and value2
             tree1->SetBranchAddress(branchName.c_str(), &value1);
             tree2->SetBranchAddress(branchName.c_str(), &value2);
 
+            // Re-set branch addresses for Mx2_value1 and Mx2_value2 after setting value1 and value2
+            tree1->SetBranchAddress("Mx2", &Mx2_value1);
+            tree2->SetBranchAddress("Mx2", &Mx2_value2);
+
             // Create histograms
-            TH1D *hist1 = new TH1D(("hist1_" + branchName).c_str(), branchName.c_str(), histConfig.bins, histConfig.x_min, histConfig.x_max);
-            TH1D *hist2 = new TH1D(("hist2_" + branchName).c_str(), branchName.c_str(), histConfig.bins, histConfig.x_min, histConfig.x_max);
+            TH1D *hist1 = new TH1D(("hist1_" + branchName).c_str(), "", histConfig.bins, histConfig.x_min, histConfig.x_max);
+            TH1D *hist2 = new TH1D(("hist2_" + branchName).c_str(), "", histConfig.bins, histConfig.x_min, histConfig.x_max);
 
             // Adjust phi variables from [-pi, pi] to [0, 2*pi] for tree1
             bool isPhiVariable = (branchName == "e_phi" || branchName == "p_phi" || branchName == "phi");
@@ -293,6 +476,7 @@ int main() {
                             value1 += 2 * pi;
                     }
                     hist1->Fill(value1);
+                    ++nEntriesMx2Pos1;
                 }
             }
             // Fill histograms for tree2
@@ -300,6 +484,7 @@ int main() {
                 tree2->GetEntry(i);
                 if (Mx2_value2 > 0) {
                     hist2->Fill(value2);
+                    ++nEntriesMx2Pos2;
                 }
             }
 
@@ -337,7 +522,7 @@ int main() {
             TGraphErrors *graph = new TGraphErrors(xValues.size(), &xValues[0], &yValues[0], &xErrors[0], &yErrors[0]);
 
             // Create canvas and draw
-            TCanvas *c = new TCanvas(("c_" + branchName).c_str(), branchName.c_str(), 800, 600);
+            TCanvas *c = new TCanvas(("c_" + branchName).c_str(), "", 800, 600);
             c->SetGrid();
             c->SetLeftMargin(0.15);   // Increase left margin
             c->SetBottomMargin(0.15); // Increase bottom margin
