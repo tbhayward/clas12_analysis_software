@@ -2,7 +2,6 @@
 
 #include <iostream>
 #include <cmath>
-#include <vector>
 
 // Include ROOT headers
 #include <TFile.h>
@@ -12,8 +11,6 @@
 #include <TLegend.h>
 #include <TSystem.h>
 #include <TStyle.h>
-#include <TGraphErrors.h>
-#include <TAxis.h>
 
 using namespace std;
 
@@ -35,7 +32,7 @@ void radiative_mx_distribution(const char* filename) {
 
     // Set branch addresses
     double e_p, e_theta, e_phi;
-    double p_p, p_theta, p_phi;
+    Float_t p_p, p_theta, p_phi;
 
     tree->SetBranchAddress("e_p", &e_p);
     tree->SetBranchAddress("e_theta", &e_theta);
@@ -120,140 +117,75 @@ void radiative_mx_distribution(const char* filename) {
         }
     }
 
-    // Create TGraphErrors from histograms
-    TGraphErrors* graphs1[n_beam];
-    TGraphErrors* graphs2[n_beam];
-
-    // First subplot (-1 to 1)
+    // Find maximum y-value for each subplot
     Double_t maxY1 = 0;
-    Double_t minX1 = -1;
-    Double_t maxX1 = 1;
-
-    // Second subplot (-3 to 6)
     Double_t maxY2 = 0;
-    Double_t minX2 = -3;
-    Double_t maxX2 = 6;
 
     for (int i = 0; i < n_beam; ++i) {
-        // First subplot
-        std::vector<double> x1, y1, ex1, ey1;
-        Int_t bin_min1 = hMx2[i]->FindBin(minX1);
-        Int_t bin_max1 = hMx2[i]->FindBin(maxX1);
+        // For first subplot (-1 to 1)
+        Int_t bin_min1 = hMx2[i]->FindBin(-1);
+        Int_t bin_max1 = hMx2[i]->FindBin(1);
+        Double_t tempMax1 = 0;
         for (Int_t bin = bin_min1; bin <= bin_max1; ++bin) {
-            double binCenter = hMx2[i]->GetBinCenter(bin);
-            double binContent = hMx2[i]->GetBinContent(bin);
-            double binError = hMx2[i]->GetBinError(bin);
-            x1.push_back(binCenter);
-            y1.push_back(binContent);
-            ex1.push_back(0); // No horizontal error bars
-            ey1.push_back(binError);
-            if (binContent > maxY1) maxY1 = binContent;
+            Double_t binContent = hMx2[i]->GetBinContent(bin);
+            if (binContent > tempMax1) tempMax1 = binContent;
         }
-        graphs1[i] = new TGraphErrors(x1.size(), &x1[0], &y1[0], &ex1[0], &ey1[0]);
-        graphs1[i]->SetLineColor(colors[i]);
-        graphs1[i]->SetMarkerColor(colors[i]);
-        graphs1[i]->SetMarkerStyle(20 + i);
-        graphs1[i]->SetLineWidth(2);
+        if (tempMax1 > maxY1) maxY1 = tempMax1;
 
-        // Second subplot
-        std::vector<double> x2, y2, ex2, ey2;
-        Int_t bin_min2 = hMx2[i]->FindBin(minX2);
-        Int_t bin_max2 = hMx2[i]->FindBin(maxX2);
+        // For second subplot (-3 to 6)
+        Int_t bin_min2 = hMx2[i]->FindBin(-3);
+        Int_t bin_max2 = hMx2[i]->FindBin(6);
+        Double_t tempMax2 = 0;
         for (Int_t bin = bin_min2; bin <= bin_max2; ++bin) {
-            double binCenter = hMx2[i]->GetBinCenter(bin);
-            double binContent = hMx2[i]->GetBinContent(bin);
-            double binError = hMx2[i]->GetBinError(bin);
-            x2.push_back(binCenter);
-            y2.push_back(binContent);
-            ex2.push_back(0); // No horizontal error bars
-            ey2.push_back(binError);
-            if (binContent > maxY2) maxY2 = binContent;
+            Double_t binContent = hMx2[i]->GetBinContent(bin);
+            if (binContent > tempMax2) tempMax2 = binContent;
         }
-        graphs2[i] = new TGraphErrors(x2.size(), &x2[0], &y2[0], &ex2[0], &ey2[0]);
-        graphs2[i]->SetLineColor(colors[i]);
-        graphs2[i]->SetMarkerColor(colors[i]);
-        graphs2[i]->SetMarkerStyle(20 + i);
-        graphs2[i]->SetLineWidth(2);
+        if (tempMax2 > maxY2) maxY2 = tempMax2;
     }
 
-    // Set style options for fonts
-    gStyle->SetTitleFontSize(0.05);
-    gStyle->SetLabelFont(42,"xyz");
-    gStyle->SetLabelSize(0.05,"xyz");
-    gStyle->SetTitleSize(0.06,"xyz");
-    gStyle->SetLegendTextSize(0.05);
-
     // Create canvas
-    TCanvas* c1 = new TCanvas("c1", "Radiative Mx2 Distribution", 1200, 600);
-    c1->Divide(2,1); // Two columns, one row
+    TCanvas* c1 = new TCanvas("c1", "Radiative Mx2 Distribution", 1200, 800);
+    c1->Divide(1,2);
 
     // First pad
     c1->cd(1);
     gPad->SetTicks();
-    gPad->SetLeftMargin(0.15);
-    gPad->SetBottomMargin(0.15);
-    gPad->SetTopMargin(0.1);
-    gPad->SetRightMargin(0.05);
     gStyle->SetOptStat(0);
 
-    TH1F* frame1 = gPad->DrawFrame(minX1, 0, maxX1, maxY1 * 1.35);
+    TH1F* frame1 = c1->cd(1)->DrawFrame(-1, 0, 1, maxY1 * 1.35);
     frame1->GetXaxis()->SetTitle("M_{x}^{2} (GeV^{2})");
     frame1->GetYaxis()->SetTitle("Counts");
-    frame1->GetXaxis()->CenterTitle();
-    frame1->GetYaxis()->CenterTitle();
-    frame1->GetXaxis()->SetTitleSize(0.06);
-    frame1->GetYaxis()->SetTitleSize(0.06);
-    frame1->GetXaxis()->SetLabelSize(0.05);
-    frame1->GetYaxis()->SetLabelSize(0.05);
-    frame1->GetXaxis()->SetTitleOffset(1.0);
-    frame1->GetYaxis()->SetTitleOffset(1.2);
 
-    TLegend* legend1 = new TLegend(0.6,0.7,0.9,0.9);
-    legend1->SetTextSize(0.05);
+    TLegend* legend1 = new TLegend(0.7,0.7,0.9,0.9);
 
     for (int i = 0; i < n_beam; ++i) {
-        if (i == 0) {
-            graphs1[i]->Draw("AP");
-        } else {
-            graphs1[i]->Draw("P SAME");
-        }
+        hMx2[i]->SetLineColor(colors[i]);
+        hMx2[i]->SetStats(0);
+        hMx2[i]->GetXaxis()->SetRangeUser(-1, 1);
+        hMx2[i]->Draw("HIST SAME");
         TString entry = Form("%.1f GeV", beam_energies[i]);
-        legend1->AddEntry(graphs1[i], entry, "p");
+        legend1->AddEntry(hMx2[i], entry, "l");
     }
     legend1->Draw();
 
     // Second pad
     c1->cd(2);
     gPad->SetTicks();
-    gPad->SetLeftMargin(0.15);
-    gPad->SetBottomMargin(0.15);
-    gPad->SetTopMargin(0.1);
-    gPad->SetRightMargin(0.05);
     gStyle->SetOptStat(0);
 
-    TH1F* frame2 = gPad->DrawFrame(minX2, 0, maxX2, maxY2 * 1.35);
+    TH1F* frame2 = c1->cd(2)->DrawFrame(-3, 0, 6, maxY2 * 1.35);
     frame2->GetXaxis()->SetTitle("M_{x}^{2} (GeV^{2})");
     frame2->GetYaxis()->SetTitle("Counts");
-    frame2->GetXaxis()->CenterTitle();
-    frame2->GetYaxis()->CenterTitle();
-    frame2->GetXaxis()->SetTitleSize(0.06);
-    frame2->GetYaxis()->SetTitleSize(0.06);
-    frame2->GetXaxis()->SetLabelSize(0.05);
-    frame2->GetYaxis()->SetLabelSize(0.05);
-    frame2->GetXaxis()->SetTitleOffset(1.0);
-    frame2->GetYaxis()->SetTitleOffset(1.2);
 
-    TLegend* legend2 = new TLegend(0.6,0.7,0.9,0.9);
-    legend2->SetTextSize(0.05);
+    TLegend* legend2 = new TLegend(0.7,0.7,0.9,0.9);
 
     for (int i = 0; i < n_beam; ++i) {
-        if (i == 0) {
-            graphs2[i]->Draw("AP");
-        } else {
-            graphs2[i]->Draw("P SAME");
-        }
+        hMx2[i]->SetLineColor(colors[i]);
+        hMx2[i]->SetStats(0);
+        hMx2[i]->GetXaxis()->SetRangeUser(-3, 6);
+        hMx2[i]->Draw("HIST SAME");
         TString entry = Form("%.1f GeV", beam_energies[i]);
-        legend2->AddEntry(graphs2[i], entry, "p");
+        legend2->AddEntry(hMx2[i], entry, "l");
     }
     legend2->Draw();
 
@@ -268,6 +200,7 @@ void radiative_mx_distribution(const char* filename) {
     file->Close();
 }
 
+// Add a main function
 int main(int argc, char* argv[]) {
     if (argc != 2) {
         cout << "Usage: ./radiative_mx_distribution <root_file>" << endl;
