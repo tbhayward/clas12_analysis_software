@@ -529,7 +529,7 @@ int main() {
 
             graph->SetTitle("");
             graph->GetYaxis()->SetTitle("Dilks / Hayward");
-            // graph->GetYaxis()->SetRangeUser(0.4, 1.6);
+            graph->GetYaxis()->SetRangeUser(0.4, 1.6);
             graph->GetXaxis()->SetTitle(formatLabelName(branchName).c_str());
             graph->SetMarkerStyle(20);
             graph->SetMarkerSize(0.8);
