@@ -538,8 +538,8 @@ int main() {
             // Add legend with updated entry counts
             TLegend *legend = new TLegend(0.3, 0.75, 0.9, 0.9); // Adjusted position
             legend->SetTextSize(0.04); // Increased text size
-            legend->AddEntry((TObject*)0, ("Dilks Entries (Mx2 > 0): " + std::to_string(nEntriesMx2Pos1)).c_str(), "");
-            legend->AddEntry((TObject*)0, ("Hayward Entries (Mx2 > 0): " + std::to_string(nEntriesMx2Pos2)).c_str(), "");
+            legend->AddEntry((TObject*)0, ("Dilks Entries: " + std::to_string(nEntriesMx2Pos1)).c_str(), "");
+            legend->AddEntry((TObject*)0, ("Hayward Entries: " + std::to_string(nEntriesMx2Pos2)).c_str(), "");
             legend->Draw();
 
             // Save plot
