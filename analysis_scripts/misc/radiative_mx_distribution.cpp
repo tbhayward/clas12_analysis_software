@@ -26,6 +26,7 @@ void radiative_mx_distribution(const char* filename) {
     TTree* tree = (TTree*)file->Get("PhysicsEvents");
     if (!tree) {
         cout << "Error: PhysicsEvents tree not found in file " << filename << endl;
+        file->Close();
         return;
     }
 
@@ -67,27 +68,22 @@ void radiative_mx_distribution(const char* filename) {
     for (Long64_t ientry = 0; ientry < nentries; ++ientry) {
         tree->GetEntry(ientry);
 
-        // Get outgoing electron and proton four-momenta
-        // Angles are in radians
-
+        // Loop over beam energies
         for (int j = 0; j < n_beam; ++j) {
             Double_t E_beam = beam_energies[j];
 
             // Initial electron
             Double_t E_electron_initial = E_beam;
-            Double_t p_electron_initial_z = sqrt(E_electron_initial * E_electron_initial - m_e * m_e);
+            Double_t p_electron_initial_z = sqrt(E_beam * E_beam - m_e * m_e);
 
             // Initial proton
             Double_t E_proton_initial = M_p;
-            Double_t p_proton_initial_x = 0;
-            Double_t p_proton_initial_y = 0;
-            Double_t p_proton_initial_z = 0;
 
             // Total initial four-momentum
             Double_t E_initial = E_electron_initial + E_proton_initial;
             Double_t p_initial_x = 0;
             Double_t p_initial_y = 0;
-            Double_t p_initial_z = p_electron_initial_z + p_proton_initial_z;
+            Double_t p_initial_z = p_electron_initial_z;
 
             // Scattered electron
             Double_t E_electron_scattered = sqrt(e_p * e_p + m_e * m_e);
@@ -129,13 +125,13 @@ void radiative_mx_distribution(const char* filename) {
         // For first subplot (-1 to 1)
         Int_t bin_min1 = hMx2[i]->FindBin(-1);
         Int_t bin_max1 = hMx2[i]->FindBin(1);
-        Double_t tempMax1 = hMx2[i]->GetBinContent(hMx2[i]->GetMaximumBin());
+        Double_t tempMax1 = hMx2[i]->GetMaximum(bin_min1, bin_max1);
         if (tempMax1 > maxY1) maxY1 = tempMax1;
 
         // For second subplot (-3 to 6)
         Int_t bin_min2 = hMx2[i]->FindBin(-3);
         Int_t bin_max2 = hMx2[i]->FindBin(6);
-        Double_t tempMax2 = hMx2[i]->GetBinContent(hMx2[i]->GetMaximumBin());
+        Double_t tempMax2 = hMx2[i]->GetMaximum(bin_min2, bin_max2);
         if (tempMax2 > maxY2) maxY2 = tempMax2;
     }
 
@@ -194,4 +190,15 @@ void radiative_mx_distribution(const char* filename) {
 
     // Clean up
     file->Close();
+}
+
+// Add a main function
+int main(int argc, char* argv[]) {
+    if (argc != 2) {
+        cout << "Usage: ./radiative_mx_distribution <root_file>" << endl;
+        return 1;
+    }
+    const char* filename = argv[1];
+    radiative_mx_distribution(filename);
+    return 0;
 }
