@@ -555,12 +555,12 @@ int main() {
     // Populate sets of event numbers where Mx2 > 0
     for (Long64_t i = 0; i < nEntries1; ++i) {
         tree1->GetEntry(i);
-        if (Mx2_1 > 0)
+        // if (Mx2_1 > 0)
             evnum_set1.insert(evnum1);
     }
     for (Long64_t i = 0; i < nEntries2; ++i) {
         tree2->GetEntry(i);
-        if (Mx2_2 > 0)
+        // if (Mx2_2 > 0)
             evnum_set2.insert(evnum2);
     }
 
@@ -574,13 +574,13 @@ int main() {
                         std::back_inserter(unique_to_tree2));
 
     // Print out the first 1000 unique evnums for each tree (with Mx2 > 0)
-    std::cout << "\nFirst 1000 unique evnums in Dilks tree (Mx2 > 0):\n";
+    std::cout << "\nFirst 1000 unique evnums in Dilks tree:\n";
     int count = 0;
     for (int ev : unique_to_tree1) {
         std::cout << ev << ", ";
         if (++count >= 1000) break;
     }
-    std::cout << "\n\nFirst 1000 unique evnums in Hayward tree (Mx2 > 0):\n";
+    std::cout << "\n\nFirst 1000 unique evnums in Hayward tree:\n";
     count = 0;
     for (int ev : unique_to_tree2) {
         std::cout << ev << ", ";
@@ -661,9 +661,9 @@ int main() {
                 hist->Fill(val);
             }
 
-            // Normalize histogram
-            if (hist->Integral() != 0)
-                hist->Scale(1.0 / hist->Integral());
+            // // Normalize histogram
+            // if (hist->Integral() != 0)
+            //     hist->Scale(1.0 / hist->Integral());
 
             // Create canvas and draw
             TCanvas *c = new TCanvas(("c_" + branchName).c_str(), "", 800, 600);
@@ -761,9 +761,9 @@ int main() {
                 hist->Fill(val);
             }
 
-            // Normalize histogram
-            if (hist->Integral() != 0)
-                hist->Scale(1.0 / hist->Integral());
+            // // Normalize histogram
+            // if (hist->Integral() != 0)
+            //     hist->Scale(1.0 / hist->Integral());
 
             // Create canvas and draw
             TCanvas *c = new TCanvas(("c_" + branchName).c_str(), "", 800, 600);
