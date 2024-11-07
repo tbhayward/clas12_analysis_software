@@ -4,7 +4,6 @@
 #include <vector>
 #include <cmath>
 #include <set>
-#include <algorithm>
 #include "TFile.h"
 #include "TTree.h"
 #include "TH1D.h"
@@ -306,243 +305,232 @@ int main() {
     Long64_t nEntries1 = tree1->GetEntries();
     Long64_t nEntries2 = tree2->GetEntries();
 
-    // for (const auto& branchName : branches) {
-    //     // Check if branch exists in both trees
-    //     if (!tree1->GetBranch(branchName.c_str())) {
-    //         std::cerr << "Branch " << branchName << " does not exist in tree1" << std::endl;
-    //         continue;
-    //     }
-    //     if (!tree2->GetBranch(branchName.c_str())) {
-    //         std::cerr << "Branch " << branchName << " does not exist in tree2" << std::endl;
-    //         continue;
-    //     }
+    for (const auto& branchName : branches) {
+        // Check if branch exists in both trees
+        if (!tree1->GetBranch(branchName.c_str())) {
+            std::cerr << "Branch " << branchName << " does not exist in tree1" << std::endl;
+            continue;
+        }
+        if (!tree2->GetBranch(branchName.c_str())) {
+            std::cerr << "Branch " << branchName << " does not exist in tree2" << std::endl;
+            continue;
+        }
 
-    //     // Get hist config for this branch
-    //     HistConfig histConfig;
-    //     if (histConfigs.find(branchName) != histConfigs.end()) {
-    //         histConfig = histConfigs[branchName];
-    //     } else {
-    //         // If not specified, use default values
-    //         histConfig = {50, 0, 1};
-    //         std::cerr << "Histogram config for " << branchName << " not found. Using default values." << std::endl;
-    //     }
+        // Get hist config for this branch
+        HistConfig histConfig;
+        if (histConfigs.find(branchName) != histConfigs.end()) {
+            histConfig = histConfigs[branchName];
+        } else {
+            // If not specified, use default values
+            histConfig = {50, 0, 1};
+            std::cerr << "Histogram config for " << branchName << " not found. Using default values." << std::endl;
+        }
 
-    //     // Determine the type of the branch
-    //     std::string branchType = branchTypes[branchName];
+        // Determine the type of the branch
+        std::string branchType = branchTypes[branchName];
 
-    //     if (branchType == "I") {
-    //         // Integer type
-    //         int value1 = 0;
-    //         int value2 = 0;
+        if (branchType == "I") {
+            // Integer type
+            int value1 = 0;
+            int value2 = 0;
 
-    //         // Set branch addresses for value1 and value2
-    //         tree1->SetBranchAddress(branchName.c_str(), &value1);
-    //         tree2->SetBranchAddress(branchName.c_str(), &value2);
+            // Set branch addresses for value1 and value2
+            tree1->SetBranchAddress(branchName.c_str(), &value1);
+            tree2->SetBranchAddress(branchName.c_str(), &value2);
 
-    //         // Create histograms
-    //         TH1D *hist1 = new TH1D(("hist1_" + branchName).c_str(), "", histConfig.bins, histConfig.x_min, histConfig.x_max);
-    //         TH1D *hist2 = new TH1D(("hist2_" + branchName).c_str(), "", histConfig.bins, histConfig.x_min, histConfig.x_max);
+            // Create histograms
+            TH1D *hist1 = new TH1D(("hist1_" + branchName).c_str(), "", histConfig.bins, histConfig.x_min, histConfig.x_max);
+            TH1D *hist2 = new TH1D(("hist2_" + branchName).c_str(), "", histConfig.bins, histConfig.x_min, histConfig.x_max);
 
-    //         // Fill histograms for tree1
-    //         for (Long64_t i = 0; i < nEntries1; ++i) {
-    //             tree1->GetEntry(i);
-    //             hist1->Fill(value1);
-    //         }
-    //         // Fill histograms for tree2
-    //         for (Long64_t i = 0; i < nEntries2; ++i) {
-    //             tree2->GetEntry(i);
-    //             hist2->Fill(value2);
-    //         }
+            // Fill histograms for tree1
+            for (Long64_t i = 0; i < nEntries1; ++i) {
+                tree1->GetEntry(i);
+                hist1->Fill(value1);
+            }
+            // Fill histograms for tree2
+            for (Long64_t i = 0; i < nEntries2; ++i) {
+                tree2->GetEntry(i);
+                hist2->Fill(value2);
+            }
 
-    //         // Normalize histograms
-    //         if (hist1->Integral() != 0)
-    //             hist1->Scale(1.0 / hist1->Integral());
-    //         if (hist2->Integral() != 0)
-    //             hist2->Scale(1.0 / hist2->Integral());
+            // Normalize histograms
+            if (hist1->Integral() != 0)
+                hist1->Scale(1.0 / hist1->Integral());
+            if (hist2->Integral() != 0)
+                hist2->Scale(1.0 / hist2->Integral());
 
-    //         // Compute ratio and uncertainties
-    //         std::vector<double> xValues;
-    //         std::vector<double> yValues;
-    //         std::vector<double> xErrors;
-    //         std::vector<double> yErrors;
+            // Compute ratio and uncertainties
+            std::vector<double> xValues;
+            std::vector<double> yValues;
+            std::vector<double> xErrors;
+            std::vector<double> yErrors;
 
-    //         for (int bin = 1; bin <= hist1->GetNbinsX(); ++bin) {
-    //             double binCenter = hist1->GetBinCenter(bin);
-    //             double content1 = hist1->GetBinContent(bin);
-    //             double content2 = hist2->GetBinContent(bin);
-    //             double error1 = hist1->GetBinError(bin);
-    //             double error2 = hist2->GetBinError(bin);
+            for (int bin = 1; bin <= hist1->GetNbinsX(); ++bin) {
+                double binCenter = hist1->GetBinCenter(bin);
+                double content1 = hist1->GetBinContent(bin);
+                double content2 = hist2->GetBinContent(bin);
+                double error1 = hist1->GetBinError(bin);
+                double error2 = hist2->GetBinError(bin);
 
-    //             // Skip bins where either content is zero to avoid division by zero
-    //             if (content1 > 0 && content2 > 0) {
-    //                 double ratio = content1 / content2;
-    //                 double ratioError = ratio * sqrt( (error1/content1)*(error1/content1) + (error2/content2)*(error2/content2) );
-    //                 xValues.push_back(binCenter);
-    //                 yValues.push_back(ratio);
-    //                 xErrors.push_back(0);
-    //                 yErrors.push_back(ratioError);
-    //             }
-    //         }
+                // Skip bins where either content is zero to avoid division by zero
+                if (content1 > 0 && content2 > 0) {
+                    double ratio = content1 / content2;
+                    double ratioError = ratio * sqrt( (error1/content1)*(error1/content1) + (error2/content2)*(error2/content2) );
+                    xValues.push_back(binCenter);
+                    yValues.push_back(ratio);
+                    xErrors.push_back(0);
+                    yErrors.push_back(ratioError);
+                }
+            }
 
-    //         // Create TGraphErrors
-    //         TGraphErrors *graph = new TGraphErrors(xValues.size(), &xValues[0], &yValues[0], &xErrors[0], &yErrors[0]);
+            // Create TGraphErrors
+            TGraphErrors *graph = new TGraphErrors(xValues.size(), &xValues[0], &yValues[0], &xErrors[0], &yErrors[0]);
 
-    //         // Create canvas and draw
-    //         TCanvas *c = new TCanvas(("c_" + branchName).c_str(), "", 800, 600);
-    //         c->SetGrid();
-    //         c->SetLeftMargin(0.15);   // Increase left margin
-    //         c->SetBottomMargin(0.15); // Increase bottom margin
+            // Create canvas and draw
+            TCanvas *c = new TCanvas(("c_" + branchName).c_str(), "", 800, 600);
+            c->SetGrid();
+            c->SetLeftMargin(0.15);   // Increase left margin
+            c->SetBottomMargin(0.15); // Increase bottom margin
 
-    //         graph->SetTitle("");
-    //         graph->GetYaxis()->SetTitle("Dilks / Hayward");
-    //         graph->GetYaxis()->SetRangeUser(0, 2);
-    //         graph->GetXaxis()->SetTitle(formatLabelName(branchName).c_str());
-    //         graph->SetMarkerStyle(20);
-    //         graph->SetMarkerSize(0.8);
-    //         graph->Draw("AP");
+            graph->SetTitle("");
+            graph->GetYaxis()->SetTitle("Dilks / Hayward");
+            graph->GetYaxis()->SetRangeUser(0, 2);
+            graph->GetXaxis()->SetTitle(formatLabelName(branchName).c_str());
+            graph->SetMarkerStyle(20);
+            graph->SetMarkerSize(0.8);
+            graph->Draw("AP");
 
-    //         // Add dashed line at y=1
-    //         TLine *line = new TLine(histConfig.x_min, 1, histConfig.x_max, 1);
-    //         line->SetLineColor(kGray+2);
-    //         line->SetLineStyle(2);
-    //         line->Draw();
+            // Add dashed line at y=1
+            TLine *line = new TLine(histConfig.x_min, 1, histConfig.x_max, 1);
+            line->SetLineColor(kGray+2);
+            line->SetLineStyle(2);
+            line->Draw();
 
-    //         // Add legend with total entry counts
-    //         TLegend *legend = new TLegend(0.55, 0.75, 0.9, 0.9); // Adjusted position
-    //         legend->SetTextSize(0.045); // Increased text size
-    //         legend->AddEntry((TObject*)0, ("Dilks Entries: " + std::to_string(nEntries1)).c_str(), "");
-    //         legend->AddEntry((TObject*)0, ("Hayward Entries: " + std::to_string(nEntries2)).c_str(), "");
-    //         legend->Draw();
+            // Add legend with total entry counts
+            TLegend *legend = new TLegend(0.55, 0.75, 0.9, 0.9); // Adjusted position
+            legend->SetTextSize(0.045); // Increased text size
+            legend->AddEntry((TObject*)0, ("Dilks Entries: " + std::to_string(nEntries1)).c_str(), "");
+            legend->AddEntry((TObject*)0, ("Hayward Entries: " + std::to_string(nEntries2)).c_str(), "");
+            legend->Draw();
 
-    //         // Save plot
-    //         std::string outputDir = "output/comparison";
-    //         gSystem->mkdir(outputDir.c_str(), kTRUE);
-    //         std::string outputFileName = outputDir + "/" + branchName + ".png";
-    //         c->SaveAs(outputFileName.c_str());
+            // Save plot
+            std::string outputDir = "output/comparison";
+            gSystem->mkdir(outputDir.c_str(), kTRUE);
+            std::string outputFileName = outputDir + "/" + branchName + ".png";
+            c->SaveAs(outputFileName.c_str());
 
-    //         // Clean up
-    //         delete c;
-    //         delete hist1;
-    //         delete hist2;
-    //         delete graph;
-    //         delete line;
+            // Clean up
+            delete c;
+            delete hist1;
+            delete hist2;
+            delete graph;
+            delete line;
 
-    //     } else if (branchType == "D") {
-    //         // Double type
-    //         double value1 = 0;
-    //         double value2 = 0;
+        } else if (branchType == "D") {
+            // Double type
+            double value1 = 0;
+            double value2 = 0;
 
-    //         // Set branch addresses for value1 and value2
-    //         tree1->SetBranchAddress(branchName.c_str(), &value1);
-    //         tree2->SetBranchAddress(branchName.c_str(), &value2);
+            // Set branch addresses for value1 and value2
+            tree1->SetBranchAddress(branchName.c_str(), &value1);
+            tree2->SetBranchAddress(branchName.c_str(), &value2);
 
-    //         // Create histograms
-    //         TH1D *hist1 = new TH1D(("hist1_" + branchName).c_str(), "", histConfig.bins, histConfig.x_min, histConfig.x_max);
-    //         TH1D *hist2 = new TH1D(("hist2_" + branchName).c_str(), "", histConfig.bins, histConfig.x_min, histConfig.x_max);
+            // Create histograms
+            TH1D *hist1 = new TH1D(("hist1_" + branchName).c_str(), "", histConfig.bins, histConfig.x_min, histConfig.x_max);
+            TH1D *hist2 = new TH1D(("hist2_" + branchName).c_str(), "", histConfig.bins, histConfig.x_min, histConfig.x_max);
 
-    //         // Adjust phi variables from [-pi, pi] to [0, 2*pi] for tree1
-    //         bool isPhiVariable = (branchName == "e_phi" || branchName == "p_phi" || branchName == "phi");
+            // Adjust phi variables from [-pi, pi] to [0, 2*pi] for tree1
+            bool isPhiVariable = (branchName == "e_phi" || branchName == "p_phi" || branchName == "phi");
 
-    //         // Fill histograms for tree1
-    //         for (Long64_t i = 0; i < nEntries1; ++i) {
-    //             tree1->GetEntry(i);
-    //             if (isPhiVariable) {
-    //                 if (value1 < 0)
-    //                     value1 += 2 * pi;
-    //             }
-    //             hist1->Fill(value1);
-    //         }
-    //         // Fill histograms for tree2
-    //         for (Long64_t i = 0; i < nEntries2; ++i) {
-    //             tree2->GetEntry(i);
-    //             hist2->Fill(value2);
-    //         }
+            // Fill histograms for tree1
+            for (Long64_t i = 0; i < nEntries1; ++i) {
+                tree1->GetEntry(i);
+                if (isPhiVariable) {
+                    if (value1 < 0)
+                        value1 += 2 * pi;
+                }
+                hist1->Fill(value1);
+            }
+            // Fill histograms for tree2
+            for (Long64_t i = 0; i < nEntries2; ++i) {
+                tree2->GetEntry(i);
+                hist2->Fill(value2);
+            }
 
-    //         // Normalize histograms
-    //         if (hist1->Integral() != 0)
-    //             hist1->Scale(1.0 / hist1->Integral());
-    //         if (hist2->Integral() != 0)
-    //             hist2->Scale(1.0 / hist2->Integral());
+            // Normalize histograms
+            if (hist1->Integral() != 0)
+                hist1->Scale(1.0 / hist1->Integral());
+            if (hist2->Integral() != 0)
+                hist2->Scale(1.0 / hist2->Integral());
 
-    //         // Compute ratio and uncertainties
-    //         std::vector<double> xValues;
-    //         std::vector<double> yValues;
-    //         std::vector<double> xErrors;
-    //         std::vector<double> yErrors;
+            // Compute ratio and uncertainties
+            std::vector<double> xValues;
+            std::vector<double> yValues;
+            std::vector<double> xErrors;
+            std::vector<double> yErrors;
 
-    //         for (int bin = 1; bin <= hist1->GetNbinsX(); ++bin) {
-    //             double binCenter = hist1->GetBinCenter(bin);
-    //             double content1 = hist1->GetBinContent(bin);
-    //             double content2 = hist2->GetBinContent(bin);
-    //             double error1 = hist1->GetBinError(bin);
-    //             double error2 = hist2->GetBinError(bin);
+            for (int bin = 1; bin <= hist1->GetNbinsX(); ++bin) {
+                double binCenter = hist1->GetBinCenter(bin);
+                double content1 = hist1->GetBinContent(bin);
+                double content2 = hist2->GetBinContent(bin);
+                double error1 = hist1->GetBinError(bin);
+                double error2 = hist2->GetBinError(bin);
 
-    //             // Skip bins where either content is zero to avoid division by zero
-    //             if (content1 > 0 && content2 > 0) {
-    //                 double ratio = content1 / content2;
-    //                 double ratioError = ratio * sqrt( (error1/content1)*(error1/content1) + (error2/content2)*(error2/content2) );
-    //                 xValues.push_back(binCenter);
-    //                 yValues.push_back(ratio);
-    //                 xErrors.push_back(0);
-    //                 yErrors.push_back(ratioError);
-    //             }
-    //         }
+                // Skip bins where either content is zero to avoid division by zero
+                if (content1 > 0 && content2 > 0) {
+                    double ratio = content1 / content2;
+                    double ratioError = ratio * sqrt( (error1/content1)*(error1/content1) + (error2/content2)*(error2/content2) );
+                    xValues.push_back(binCenter);
+                    yValues.push_back(ratio);
+                    xErrors.push_back(0);
+                    yErrors.push_back(ratioError);
+                }
+            }
 
-    //         // Create TGraphErrors
-    //         TGraphErrors *graph = new TGraphErrors(xValues.size(), &xValues[0], &yValues[0], &xErrors[0], &yErrors[0]);
+            // Create TGraphErrors
+            TGraphErrors *graph = new TGraphErrors(xValues.size(), &xValues[0], &yValues[0], &xErrors[0], &yErrors[0]);
 
-    //         // Create canvas and draw
-    //         TCanvas *c = new TCanvas(("c_" + branchName).c_str(), "", 800, 600);
-    //         c->SetGrid();
-    //         c->SetLeftMargin(0.15);   // Increase left margin
-    //         c->SetBottomMargin(0.15); // Increase bottom margin
+            // Create canvas and draw
+            TCanvas *c = new TCanvas(("c_" + branchName).c_str(), "", 800, 600);
+            c->SetGrid();
+            c->SetLeftMargin(0.15);   // Increase left margin
+            c->SetBottomMargin(0.15); // Increase bottom margin
 
-    //         graph->SetTitle("");
-    //         graph->GetYaxis()->SetTitle("Dilks / Hayward");
-    //         graph->GetYaxis()->SetRangeUser(0.4, 1.6);
-    //         graph->GetXaxis()->SetTitle(formatLabelName(branchName).c_str());
-    //         graph->SetMarkerStyle(20);
-    //         graph->SetMarkerSize(0.8);
-    //         graph->Draw("AP");
+            graph->SetTitle("");
+            graph->GetYaxis()->SetTitle("Dilks / Hayward");
+            graph->GetYaxis()->SetRangeUser(0.4, 1.6);
+            graph->GetXaxis()->SetTitle(formatLabelName(branchName).c_str());
+            graph->SetMarkerStyle(20);
+            graph->SetMarkerSize(0.8);
+            graph->Draw("AP");
 
-    //         // Add legend with total entry counts
-    //         TLegend *legend = new TLegend(0.3, 0.75, 0.9, 0.9); // Adjusted position
-    //         legend->SetTextSize(0.04); // Increased text size
-    //         legend->AddEntry((TObject*)0, ("Dilks Entries: " + std::to_string(nEntries1)).c_str(), "");
-    //         legend->AddEntry((TObject*)0, ("Hayward Entries: " + std::to_string(nEntries2)).c_str(), "");
-    //         legend->Draw();
+            // Add legend with total entry counts
+            TLegend *legend = new TLegend(0.3, 0.75, 0.9, 0.9); // Adjusted position
+            legend->SetTextSize(0.04); // Increased text size
+            legend->AddEntry((TObject*)0, ("Dilks Entries: " + std::to_string(nEntries1)).c_str(), "");
+            legend->AddEntry((TObject*)0, ("Hayward Entries: " + std::to_string(nEntries2)).c_str(), "");
+            legend->Draw();
 
-    //         // Save plot
-    //         std::string outputDir = "output/comparison";
-    //         gSystem->mkdir(outputDir.c_str(), kTRUE);
-    //         std::string outputFileName = outputDir + "/" + branchName + ".png";
-    //         c->SaveAs(outputFileName.c_str());
+            // Save plot
+            std::string outputDir = "output/comparison";
+            gSystem->mkdir(outputDir.c_str(), kTRUE);
+            std::string outputFileName = outputDir + "/" + branchName + ".png";
+            c->SaveAs(outputFileName.c_str());
 
-    //         // Clean up
-    //         delete c;
-    //         delete hist1;
-    //         delete hist2;
-    //         delete graph;
+            // Clean up
+            delete c;
+            delete hist1;
+            delete hist2;
+            delete graph;
 
-    //     } else {
-    //         std::cerr << "Unknown branch type for " << branchName << std::endl;
-    //         continue;
-    //     }
-    // }
+        } else {
+            std::cerr << "Unknown branch type for " << branchName << std::endl;
+            continue;
+        }
+    }
 
-    // Close the files (we'll reopen them for writing the unique events)
-    file1->Close();
-    file2->Close();
-
-    // Reopen the files in READ mode
-    file1 = TFile::Open("/volatile/clas12/thayward/cross_check_rgc_epX/step1_EB_yields/dilks_files/rgc_su22_inb_NH3_run016346_EB_yields.root", "READ");
-    file2 = TFile::Open("/volatile/clas12/thayward/cross_check_rgc_epX/step1_EB_yields/hayward_files/rgc_su22_inb_NH3_run016346_EB_yields.root", "READ");
-
-    tree1 = (TTree*)file1->Get("tree");
-    tree2 = (TTree*)file2->Get("PhysicsEvents");
-
-    // Part 2: Create new ROOT trees with unique events
-    std::cout << "\nCreating new ROOT trees with unique events...\n" << std::endl;
+    // Part 2: Find ten entries that are in one tree but not the other and print out all the branch values
+    std::cout << "\nFinding entries unique to each tree...\n" << std::endl;
 
     // Read 'evnum' from both trees
     std::set<int> evnum_set1;
@@ -553,9 +541,6 @@ int main() {
 
     tree1->SetBranchAddress("evnum", &evnum1);
     tree2->SetBranchAddress("evnum", &evnum2);
-
-    nEntries1 = tree1->GetEntries();
-    nEntries2 = tree2->GetEntries();
 
     // Populate sets of event numbers
     for (Long64_t i = 0; i < nEntries1; ++i) {
@@ -576,80 +561,119 @@ int main() {
     std::set_difference(evnum_set2.begin(), evnum_set2.end(), evnum_set1.begin(), evnum_set1.end(),
                         std::back_inserter(unique_to_tree2));
 
-    // Open a new ROOT file to save the unique events
-    TFile *uniqueFile = new TFile("output/unique_events.root", "RECREATE");
-    TTree *uniqueTree1 = new TTree("unique_tree1", "Events unique to Dilks tree");
-    TTree *uniqueTree2 = new TTree("unique_tree2", "Events unique to Hayward tree");
+    // Print out branch values for ten entries unique to each tree
+    int max_entries_to_print = 100;
+    int entries_printed = 0;
 
-    // Set up branch addresses for all branches in tree1
-    std::map<std::string, double> doubleValues1;
-    std::map<std::string, int> intValues1;
-    for (const auto& branchName : branches) {
-        std::string branchType = branchTypes[branchName];
-        if (branchType == "I") {
-            intValues1[branchName] = 0;
-            tree1->SetBranchAddress(branchName.c_str(), &intValues1[branchName]);
-            uniqueTree1->Branch(branchName.c_str(), &intValues1[branchName]);
-        } else if (branchType == "D") {
-            doubleValues1[branchName] = 0;
-            tree1->SetBranchAddress(branchName.c_str(), &doubleValues1[branchName]);
-            uniqueTree1->Branch(branchName.c_str(), &doubleValues1[branchName]);
-        }
-    }
-
-    // Copy unique events from tree1 to uniqueTree1
     if (!unique_to_tree1.empty()) {
-        std::cout << "Copying " << unique_to_tree1.size() << " unique events from Dilks tree." << std::endl;
-        std::set<int> unique_evnums_set(unique_to_tree1.begin(), unique_to_tree1.end());
-        for (Long64_t i = 0; i < nEntries1; ++i) {
-            tree1->GetEntry(i);
-            if (unique_evnums_set.count(evnum1)) {
-                uniqueTree1->Fill();
+        std::cout << "Entries unique to Dilks tree:" << std::endl;
+        for (int unique_evnum : unique_to_tree1) {
+            if (entries_printed >= max_entries_to_print)
+                break;
+
+            // Find the entry with this evnum
+            tree1->SetBranchAddress("evnum", &evnum1);
+            Long64_t entry = tree1->GetEntries();
+            for (Long64_t i = 0; i < nEntries1; ++i) {
+                tree1->GetEntry(i);
+                if (evnum1 == unique_evnum) {
+                    entry = i;
+                    break;
+                }
             }
+
+            if (entry == tree1->GetEntries())
+                continue;
+
+            // Set branch addresses for all branches
+            std::map<std::string, double> doubleValues;
+            std::map<std::string, int> intValues;
+
+            for (const auto& branchName : branches) {
+                std::string branchType = branchTypes[branchName];
+                if (branchType == "I") {
+                    intValues[branchName] = 0;
+                    tree1->SetBranchAddress(branchName.c_str(), &intValues[branchName]);
+                } else if (branchType == "D") {
+                    doubleValues[branchName] = 0;
+                    tree1->SetBranchAddress(branchName.c_str(), &doubleValues[branchName]);
+                }
+            }
+
+            // Get entry and print values
+            tree1->GetEntry(entry);
+            std::cout << "\nEvent Number: " << unique_evnum << std::endl;
+            for (const auto& branchName : branches) {
+                std::string branchType = branchTypes[branchName];
+                if (branchType == "I") {
+                    std::cout << branchName << ": " << intValues[branchName] << std::endl;
+                } else if (branchType == "D") {
+                    std::cout << branchName << ": " << doubleValues[branchName] << std::endl;
+                }
+            }
+            ++entries_printed;
         }
     } else {
-        std::cout << "No unique events found in Dilks tree." << std::endl;
+        std::cout << "No entries unique to Dilks tree." << std::endl;
     }
 
-    // Set up branch addresses for all branches in tree2
-    std::map<std::string, double> doubleValues2;
-    std::map<std::string, int> intValues2;
-    for (const auto& branchName : branches) {
-        std::string branchType = branchTypes[branchName];
-        if (branchType == "I") {
-            intValues2[branchName] = 0;
-            tree2->SetBranchAddress(branchName.c_str(), &intValues2[branchName]);
-            uniqueTree2->Branch(branchName.c_str(), &intValues2[branchName]);
-        } else if (branchType == "D") {
-            doubleValues2[branchName] = 0;
-            tree2->SetBranchAddress(branchName.c_str(), &doubleValues2[branchName]);
-            uniqueTree2->Branch(branchName.c_str(), &doubleValues2[branchName]);
-        }
-    }
+    entries_printed = 0;
 
-    // Copy unique events from tree2 to uniqueTree2
     if (!unique_to_tree2.empty()) {
-        std::cout << "Copying " << unique_to_tree2.size() << " unique events from Hayward tree." << std::endl;
-        std::set<int> unique_evnums_set(unique_to_tree2.begin(), unique_to_tree2.end());
-        for (Long64_t i = 0; i < nEntries2; ++i) {
-            tree2->GetEntry(i);
-            if (unique_evnums_set.count(evnum2)) {
-                uniqueTree2->Fill();
+        std::cout << "\nEntries unique to Hayward tree:" << std::endl;
+        for (int unique_evnum : unique_to_tree2) {
+            if (entries_printed >= max_entries_to_print)
+                break;
+
+            // Find the entry with this evnum
+            tree2->SetBranchAddress("evnum", &evnum2);
+            Long64_t entry = tree2->GetEntries();
+            for (Long64_t i = 0; i < nEntries2; ++i) {
+                tree2->GetEntry(i);
+                if (evnum2 == unique_evnum) {
+                    entry = i;
+                    break;
+                }
             }
+
+            if (entry == tree2->GetEntries())
+                continue;
+
+            // Set branch addresses for all branches
+            std::map<std::string, double> doubleValues;
+            std::map<std::string, int> intValues;
+
+            for (const auto& branchName : branches) {
+                std::string branchType = branchTypes[branchName];
+                if (branchType == "I") {
+                    intValues[branchName] = 0;
+                    tree2->SetBranchAddress(branchName.c_str(), &intValues[branchName]);
+                } else if (branchType == "D") {
+                    doubleValues[branchName] = 0;
+                    tree2->SetBranchAddress(branchName.c_str(), &doubleValues[branchName]);
+                }
+            }
+
+            // Get entry and print values
+            tree2->GetEntry(entry);
+            std::cout << "\nEvent Number: " << unique_evnum << std::endl;
+            // for (const auto& branchName : branches) {
+            //     std::string branchType = branchTypes[branchName];
+            //     if (branchType == "I") {
+            //         std::cout << branchName << ": " << intValues[branchName] << std::endl;
+            //     } else if (branchType == "D") {
+            //         std::cout << branchName << ": " << doubleValues[branchName] << std::endl;
+            //     }
+            // }
+            ++entries_printed;
         }
     } else {
-        std::cout << "No unique events found in Hayward tree." << std::endl;
+        std::cout << "No entries unique to Hayward tree." << std::endl;
     }
 
-    // Write the new trees to the file
-    uniqueFile->Write();
-    uniqueFile->Close();
-
-    // Close the original files
+    // Close files
     file1->Close();
     file2->Close();
-
-    std::cout << "\nUnique events have been saved to 'unique_events.root'.\n" << std::endl;
 
     return 0;
 }
