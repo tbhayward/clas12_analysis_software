@@ -577,7 +577,7 @@ int main() {
                         std::back_inserter(unique_to_tree2));
 
     // Open a new ROOT file to save the unique events
-    TFile *uniqueFile = new TFile("unique_events.root", "RECREATE");
+    TFile *uniqueFile = new TFile("output/unique_events.root", "RECREATE");
     TTree *uniqueTree1 = new TTree("unique_tree1", "Events unique to Dilks tree");
     TTree *uniqueTree2 = new TTree("unique_tree2", "Events unique to Hayward tree");
 
