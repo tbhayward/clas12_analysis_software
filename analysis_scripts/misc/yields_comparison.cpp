@@ -575,11 +575,12 @@ int main() {
             branchValues[branchName] = std::vector<double>();
         }
 
-        // Set branch addresses
+        // Set branch addresses, excluding 'evnum'
         std::map<std::string, double> doubleValues;
         std::map<std::string, int> intValues;
 
         for (const auto& branchName : branches) {
+            if (branchName == "evnum") continue;  // Skip 'evnum' to avoid overwriting its address
             std::string branchType = branchTypes[branchName];
             if (branchType == "I") {
                 intValues[branchName] = 0;
@@ -598,6 +599,7 @@ int main() {
             tree1->GetEntry(i);
             if (unique_evnums_set.count(evnum1)) {
                 for (const auto& branchName : branches) {
+                    if (branchName == "evnum") continue;  // 'evnum' already handled
                     std::string branchType = branchTypes[branchName];
                     if (branchType == "I") {
                         branchValues[branchName].push_back(intValues[branchName]);
@@ -610,6 +612,7 @@ int main() {
 
         // Now, for each branch, create a histogram and plot
         for (const auto& branchName : branches) {
+            if (branchName == "evnum") continue;  // Skip 'evnum'
             HistConfig histConfig = histConfigs[branchName];
             std::string branchType = branchTypes[branchName];
 
@@ -666,11 +669,12 @@ int main() {
             branchValues[branchName] = std::vector<double>();
         }
 
-        // Set branch addresses
+        // Set branch addresses, excluding 'evnum'
         std::map<std::string, double> doubleValues;
         std::map<std::string, int> intValues;
 
         for (const auto& branchName : branches) {
+            if (branchName == "evnum") continue;  // Skip 'evnum' to avoid overwriting its address
             std::string branchType = branchTypes[branchName];
             if (branchType == "I") {
                 intValues[branchName] = 0;
@@ -689,6 +693,7 @@ int main() {
             tree2->GetEntry(i);
             if (unique_evnums_set.count(evnum2)) {
                 for (const auto& branchName : branches) {
+                    if (branchName == "evnum") continue;  // 'evnum' already handled
                     std::string branchType = branchTypes[branchName];
                     if (branchType == "I") {
                         branchValues[branchName].push_back(intValues[branchName]);
@@ -701,6 +706,7 @@ int main() {
 
         // Now, for each branch, create a histogram and plot
         for (const auto& branchName : branches) {
+            if (branchName == "evnum") continue;  // Skip 'evnum'
             HistConfig histConfig = histConfigs[branchName];
             std::string branchType = branchTypes[branchName];
 
