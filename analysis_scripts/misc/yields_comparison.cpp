@@ -62,7 +62,7 @@ std::string formatLabelName(const std::string& original) {
         {"e_p", "e_{p} (GeV)"},
         {"Mx", "M_{x} (GeV)"},
         {"Mx1", "M_{x1} (GeV)"},
-        {"Mx2", "M_{x2} (GeV^{2})"},
+        {"Mx2", "M_{x}^{2} (GeV^{2})"},
         {"Mx3", "M_{x3} (GeV)"},
         {"Mx12", "M_{x12} (GeV)"},
         {"Mx13", "M_{x13} (GeV)"},
@@ -102,9 +102,9 @@ std::string formatLabelName(const std::string& original) {
         {"vz_p1", "v_{z_{p1}} (cm)"},
         {"vz_p2", "v_{z_{p2}} (cm)"},
         {"vz_p3", "v_{z_{p3}} (cm)"},
-        {"Emiss2", "E_{miss} (GeV)"},
+        {"Emiss2", "E_{miss}^{2} (GeV^{2})"},
         {"theta_gamma_gamma", "#theta_{#gamma#gamma}"},
-        {"pTmiss", "p_{t miss} (GeV)"},
+        {"pTmiss", "p_{T}^{miss} (GeV)"},
         {"Mxgammasquared", "M_{e'#gammaX}^{2} (GeV^{2})"}
     };
   
@@ -535,7 +535,7 @@ int main() {
     // Part 2: Find entries that are unique to each tree and plot branch distributions
     std::cout << "\nFinding entries unique to each tree and plotting branch distributions...\n" << std::endl;
 
-    // Read 'evnum' from both trees
+    // Read 'evnum' and 'Mx2' from both trees
     std::set<int> evnum_set1;
     std::set<int> evnum_set2;
 
@@ -552,17 +552,19 @@ int main() {
     tree1->SetBranchAddress("Mx2", &Mx2_1);
     tree2->SetBranchAddress("Mx2", &Mx2_2);
 
-    // Populate sets of event numbers
+    // Populate sets of event numbers where Mx2 > 0
     for (Long64_t i = 0; i < nEntries1; ++i) {
         tree1->GetEntry(i);
-        evnum_set1.insert(evnum1);
+        if (Mx2_1 > 0)
+            evnum_set1.insert(evnum1);
     }
     for (Long64_t i = 0; i < nEntries2; ++i) {
         tree2->GetEntry(i);
-        evnum_set2.insert(evnum2);
+        if (Mx2_2 > 0)
+            evnum_set2.insert(evnum2);
     }
 
-    // Find event numbers unique to each tree
+    // Find event numbers unique to each tree (with Mx2 > 0)
     std::vector<int> unique_to_tree1;
     std::vector<int> unique_to_tree2;
 
@@ -571,14 +573,14 @@ int main() {
     std::set_difference(evnum_set2.begin(), evnum_set2.end(), evnum_set1.begin(), evnum_set1.end(),
                         std::back_inserter(unique_to_tree2));
 
-    // Print out the first 1000 unique evnums for each tree
-    std::cout << "\nFirst 1000 unique evnums in Dilks tree:\n";
+    // Print out the first 1000 unique evnums for each tree (with Mx2 > 0)
+    std::cout << "\nFirst 1000 unique evnums in Dilks tree (Mx2 > 0):\n";
     int count = 0;
     for (int ev : unique_to_tree1) {
         std::cout << ev << ", ";
         if (++count >= 1000) break;
     }
-    std::cout << "\n\nFirst 1000 unique evnums in Hayward tree:\n";
+    std::cout << "\n\nFirst 1000 unique evnums in Hayward tree (Mx2 > 0):\n";
     count = 0;
     for (int ev : unique_to_tree2) {
         std::cout << ev << ", ";
@@ -620,7 +622,7 @@ int main() {
         // Loop over tree1 and collect branch values for unique events where Mx2 > 0
         for (Long64_t i = 0; i < nEntries1; ++i) {
             tree1->GetEntry(i);
-            if (unique_evnums_set.count(evnum1) && Mx2_1 > 0) {
+            if (unique_evnums_set.count(evnum1)) {
                 for (const auto& branchName : branches) {
                     if (branchName == "evnum") continue;  // 'evnum' already handled
                     std::string branchType = branchTypes[branchName];
@@ -720,7 +722,7 @@ int main() {
         // Loop over tree2 and collect branch values for unique events where Mx2 > 0
         for (Long64_t i = 0; i < nEntries2; ++i) {
             tree2->GetEntry(i);
-            if (unique_evnums_set.count(evnum2) && Mx2_2 > 0) {
+            if (unique_evnums_set.count(evnum2)) {
                 for (const auto& branchName : branches) {
                     if (branchName == "evnum") continue;  // 'evnum' already handled
                     std::string branchType = branchTypes[branchName];
