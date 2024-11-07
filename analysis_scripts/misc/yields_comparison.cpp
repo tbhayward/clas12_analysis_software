@@ -5,6 +5,7 @@
 #include <cmath>
 #include <set>
 #include <algorithm>
+#include <fstream>
 #include "TFile.h"
 #include "TTree.h"
 #include "TH1D.h"
@@ -61,7 +62,7 @@ std::string formatLabelName(const std::string& original) {
         {"e_p", "e_{p} (GeV)"},
         {"Mx", "M_{x} (GeV)"},
         {"Mx1", "M_{x1} (GeV)"},
-        {"Mx2", "M_{x2} (GeV)"},
+        {"Mx2", "M_{x2} (GeV^{2})"},
         {"Mx3", "M_{x3} (GeV)"},
         {"Mx12", "M_{x12} (GeV)"},
         {"Mx13", "M_{x13} (GeV)"},
@@ -544,6 +545,13 @@ int main() {
     tree1->SetBranchAddress("evnum", &evnum1);
     tree2->SetBranchAddress("evnum", &evnum2);
 
+    // Read 'Mx2' from both trees
+    double Mx2_1 = 0;
+    double Mx2_2 = 0;
+
+    tree1->SetBranchAddress("Mx2", &Mx2_1);
+    tree2->SetBranchAddress("Mx2", &Mx2_2);
+
     // Populate sets of event numbers
     for (Long64_t i = 0; i < nEntries1; ++i) {
         tree1->GetEntry(i);
@@ -563,9 +571,24 @@ int main() {
     std::set_difference(evnum_set2.begin(), evnum_set2.end(), evnum_set1.begin(), evnum_set1.end(),
                         std::back_inserter(unique_to_tree2));
 
+    // Print out the first 1000 unique evnums for each tree
+    std::cout << "\nFirst 1000 unique evnums in Dilks tree:\n";
+    int count = 0;
+    for (int ev : unique_to_tree1) {
+        std::cout << ev << ", ";
+        if (++count >= 1000) break;
+    }
+    std::cout << "\n\nFirst 1000 unique evnums in Hayward tree:\n";
+    count = 0;
+    for (int ev : unique_to_tree2) {
+        std::cout << ev << ", ";
+        if (++count >= 1000) break;
+    }
+    std::cout << "\n";
+
     // Part 2a: Plot branch distributions for events unique to Dilks tree
     if (!unique_to_tree1.empty()) {
-        std::cout << "Plotting branch distributions for events unique to Dilks tree..." << std::endl;
+        std::cout << "\nPlotting branch distributions for events unique to Dilks tree...\n";
 
         // Create maps to hold branch values
         std::map<std::string, std::vector<double>> branchValues;
@@ -575,12 +598,12 @@ int main() {
             branchValues[branchName] = std::vector<double>();
         }
 
-        // Set branch addresses, excluding 'evnum'
+        // Set branch addresses, excluding 'evnum' and 'Mx2' (already set)
         std::map<std::string, double> doubleValues;
         std::map<std::string, int> intValues;
 
         for (const auto& branchName : branches) {
-            if (branchName == "evnum") continue;  // Skip 'evnum' to avoid overwriting its address
+            if (branchName == "evnum" || branchName == "Mx2") continue;  // Skip 'evnum' and 'Mx2' to avoid overwriting their addresses
             std::string branchType = branchTypes[branchName];
             if (branchType == "I") {
                 intValues[branchName] = 0;
@@ -594,17 +617,21 @@ int main() {
         // Create a set for faster lookup
         std::set<int> unique_evnums_set(unique_to_tree1.begin(), unique_to_tree1.end());
 
-        // Loop over tree1 and collect branch values for unique events
+        // Loop over tree1 and collect branch values for unique events where Mx2 > 0
         for (Long64_t i = 0; i < nEntries1; ++i) {
             tree1->GetEntry(i);
-            if (unique_evnums_set.count(evnum1)) {
+            if (unique_evnums_set.count(evnum1) && Mx2_1 > 0) {
                 for (const auto& branchName : branches) {
                     if (branchName == "evnum") continue;  // 'evnum' already handled
                     std::string branchType = branchTypes[branchName];
                     if (branchType == "I") {
                         branchValues[branchName].push_back(intValues[branchName]);
                     } else if (branchType == "D") {
-                        branchValues[branchName].push_back(doubleValues[branchName]);
+                        if (branchName == "Mx2") {
+                            branchValues[branchName].push_back(Mx2_1);
+                        } else {
+                            branchValues[branchName].push_back(doubleValues[branchName]);
+                        }
                     }
                 }
             }
@@ -613,6 +640,8 @@ int main() {
         // Now, for each branch, create a histogram and plot
         for (const auto& branchName : branches) {
             if (branchName == "evnum") continue;  // Skip 'evnum'
+            if (branchValues[branchName].empty()) continue;  // Skip if no data
+
             HistConfig histConfig = histConfigs[branchName];
             std::string branchType = branchTypes[branchName];
 
@@ -654,12 +683,12 @@ int main() {
             delete hist;
         }
     } else {
-        std::cout << "No unique events found in Dilks tree." << std::endl;
+        std::cout << "No unique events found in Dilks tree.\n";
     }
 
     // Part 2b: Plot branch distributions for events unique to Hayward tree
     if (!unique_to_tree2.empty()) {
-        std::cout << "Plotting branch distributions for events unique to Hayward tree..." << std::endl;
+        std::cout << "\nPlotting branch distributions for events unique to Hayward tree...\n";
 
         // Create maps to hold branch values
         std::map<std::string, std::vector<double>> branchValues;
@@ -669,12 +698,12 @@ int main() {
             branchValues[branchName] = std::vector<double>();
         }
 
-        // Set branch addresses, excluding 'evnum'
+        // Set branch addresses, excluding 'evnum' and 'Mx2' (already set)
         std::map<std::string, double> doubleValues;
         std::map<std::string, int> intValues;
 
         for (const auto& branchName : branches) {
-            if (branchName == "evnum") continue;  // Skip 'evnum' to avoid overwriting its address
+            if (branchName == "evnum" || branchName == "Mx2") continue;  // Skip 'evnum' and 'Mx2' to avoid overwriting their addresses
             std::string branchType = branchTypes[branchName];
             if (branchType == "I") {
                 intValues[branchName] = 0;
@@ -688,17 +717,21 @@ int main() {
         // Create a set for faster lookup
         std::set<int> unique_evnums_set(unique_to_tree2.begin(), unique_to_tree2.end());
 
-        // Loop over tree2 and collect branch values for unique events
+        // Loop over tree2 and collect branch values for unique events where Mx2 > 0
         for (Long64_t i = 0; i < nEntries2; ++i) {
             tree2->GetEntry(i);
-            if (unique_evnums_set.count(evnum2)) {
+            if (unique_evnums_set.count(evnum2) && Mx2_2 > 0) {
                 for (const auto& branchName : branches) {
                     if (branchName == "evnum") continue;  // 'evnum' already handled
                     std::string branchType = branchTypes[branchName];
                     if (branchType == "I") {
                         branchValues[branchName].push_back(intValues[branchName]);
                     } else if (branchType == "D") {
-                        branchValues[branchName].push_back(doubleValues[branchName]);
+                        if (branchName == "Mx2") {
+                            branchValues[branchName].push_back(Mx2_2);
+                        } else {
+                            branchValues[branchName].push_back(doubleValues[branchName]);
+                        }
                     }
                 }
             }
@@ -707,6 +740,8 @@ int main() {
         // Now, for each branch, create a histogram and plot
         for (const auto& branchName : branches) {
             if (branchName == "evnum") continue;  // Skip 'evnum'
+            if (branchValues[branchName].empty()) continue;  // Skip if no data
+
             HistConfig histConfig = histConfigs[branchName];
             std::string branchType = branchTypes[branchName];
 
@@ -748,7 +783,7 @@ int main() {
             delete hist;
         }
     } else {
-        std::cout << "No unique events found in Hayward tree." << std::endl;
+        std::cout << "No unique events found in Hayward tree.\n";
     }
 
     // Close files
