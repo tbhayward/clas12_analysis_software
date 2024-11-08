@@ -57,12 +57,12 @@ public class TwoParticles {
 //        if (variables.helicity == 0 && variables.runnum != 11) {
 //            return false;
 //        }
-//        if (variables.Q2() < 1.00) {
-//            return false;
-//        }
-//        if (variables.W() < 2) {
-//            return false;
-//        } 
+        if (variables.Q2() < 1.00) {
+            return false;
+        }
+        if (variables.W() < 2) {
+            return false;
+        } 
 //        else if (variables.y() > 0.80) {
 //            return false;
 //        }

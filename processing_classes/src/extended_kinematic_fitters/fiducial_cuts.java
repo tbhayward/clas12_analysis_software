@@ -111,7 +111,8 @@ public class fiducial_cuts {
                 }
                 break;
             case 3:
-                if ((lw_1 < 19 || lv_1 < 19) || (lu_1 < 39 || lu_1 > 400)) {
+//                if ((lw_1 < 19 || lv_1 < 19) || (lu_1 < 39 || lu_1 > 400)) {
+                if ((lw_1 < 19 || lv_1 < 19) || (false || lu_1 > 395)) {
                     return false;
                 }
                 break;

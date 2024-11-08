@@ -31,45 +31,57 @@ public class dvcs_fitter extends GenericKinematicFitter {
         pid_cuts pid_cuts = new pid_cuts();
 
         return true
-                && p > 2.0 // higher cut ultimately enforced when we cut on y, this speeds processing
+                && p > 2.0 
                 && generic_tests.forward_detector_cut(particle_Index, rec_Bank)
                 && generic_tests.vertex_cut(particle_Index, rec_Bank, run_Bank)
-                && pid_cuts.calorimeter_energy_cut(particle_Index, cal_Bank)
+                && pid_cuts.calorimeter_energy_cut(particle_Index, cal_Bank, 0)
                 && pid_cuts.calorimeter_sampling_fraction_cut(particle_Index, p, run_Bank, cal_Bank)
                 && pid_cuts.calorimeter_diagonal_cut(particle_Index, p, cal_Bank)
-                && fiducial_cuts.pcal_fiducial_cut(particle_Index, 1, run_Bank, rec_Bank, cal_Bank)
+                && fiducial_cuts.pcal_fiducial_cut(particle_Index, 3, run_Bank, rec_Bank, cal_Bank)
                 && fiducial_cuts.dc_fiducial_cut(particle_Index, rec_Bank, traj_Bank);
     }
 
     public boolean proton_test(int particle_Index, int pid, float vz, double trigger_electron_vz,
-            HipoDataBank rec_Bank, HipoDataBank cal_Bank, 
+            HipoDataBank rec_Bank, HipoDataBank cal_Bank,
             HipoDataBank traj_Bank, HipoDataBank run_Bank) {
 
         generic_tests generic_tests = new generic_tests();
         fiducial_cuts fiducial_cuts = new fiducial_cuts();
         pid_cuts pid_cuts = new pid_cuts();
 
+        float px = rec_Bank.getFloat("px", particle_Index);
+        float py = rec_Bank.getFloat("py", particle_Index);
+        float pz = rec_Bank.getFloat("pz", particle_Index);
+        double p = Math.sqrt(px * px + py * py + pz * pz);
+        
+        float torus = run_Bank.getFloat("torus", 0);
+
         boolean passesForwardDetector = generic_tests.forward_detector_cut(particle_Index, rec_Bank);
         boolean passesCentralDetector = generic_tests.central_detector_cut(particle_Index, rec_Bank);
 
         return true
-                //            && p > 0.4
+                && (passesCentralDetector ? p > 0.3 : true)
+                && (passesForwardDetector && (torus > 0) ? p > 0.42 : true)
+                && (passesForwardDetector && (torus < 0) ? p > 0.50 : true)
+                && p < 1.2 // this bound is enforced at p < 1.14 by -t < 1, done here to speed up processing
+                && generic_tests.theta_calculation(px, py, pz) < 64.23
                 && generic_tests.vertex_cut(particle_Index, rec_Bank, run_Bank)
                 && (passesForwardDetector
                         ? fiducial_cuts.dc_fiducial_cut(particle_Index, rec_Bank, traj_Bank)
                         : true)
-                && (passesForwardDetector // dedicated PID cuts for forward
-                        ? pid_cuts.charged_hadron_chi2pid_cut(particle_Index, rec_Bank, run_Bank)
-                        : true)
-                && (passesCentralDetector
-                        ? pid_cuts.charged_hadron_chi2pid_cut(particle_Index, rec_Bank, run_Bank)
-                        : true) //            && charged_hadron_chi2pid_cut(particle_Index, rec_Bank)
                 && (passesCentralDetector
                         ? fiducial_cuts.cvt_fiducial_cut(particle_Index, rec_Bank, traj_Bank)
-                        : true);
+                        : true)
+//                && (passesForwardDetector // dedicated PID cuts for forward
+//                        ? pid_cuts.charged_hadron_chi2pid_cut(particle_Index, rec_Bank, run_Bank)
+//                        : true)
+//                && (passesCentralDetector
+//                        ? pid_cuts.charged_hadron_chi2pid_cut(particle_Index, rec_Bank, run_Bank)
+//                        : true) //            && charged_hadron_chi2pid_cut(particle_Index, rec_Bank)
+                ;
     }
 
-    public boolean photon_test(int particle_Index, HipoDataBank run_Bank, HipoDataBank rec_Bank, 
+    public boolean photon_test(int particle_Index, HipoDataBank run_Bank, HipoDataBank rec_Bank,
             HipoDataBank cal_Bank, HipoDataBank ft_Bank, LorentzVector lv_e) {
 
         generic_tests generic_tests = new generic_tests();
@@ -85,7 +97,7 @@ public class dvcs_fitter extends GenericKinematicFitter {
 
         boolean passesForwardDetector = generic_tests.forward_detector_cut(particle_Index, rec_Bank);
         boolean passesForwardTagger = generic_tests.forward_tagger_cut(particle_Index, rec_Bank);
-        
+
         return true
                 && p > 2.00
                 && (passesForwardDetector || passesForwardTagger)
@@ -109,7 +121,7 @@ public class dvcs_fitter extends GenericKinematicFitter {
             HipoDataBank cc_Bank = (HipoDataBank) event.getBank("REC::Cherenkov");
             HipoDataBank traj_Bank = (HipoDataBank) event.getBank("REC::Traj");
             HipoDataBank run_Bank = (HipoDataBank) event.getBank("RUN::config");
-            HipoDataBank ft_Bank = null; 
+            HipoDataBank ft_Bank = null;
             if (event.hasBank("REC::ForwardTagger")) {
                 ft_Bank = (HipoDataBank) event.getBank("REC::ForwardTagger");
             }

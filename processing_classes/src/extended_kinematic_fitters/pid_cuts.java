@@ -11,7 +11,7 @@ import org.jlab.clas.physics.*;
 public class pid_cuts {
 
     /*~~~~~~~~~~~~~~~~~ Electrons ~~~~~~~~~~~~~~~~~*/
-    public boolean calorimeter_energy_cut(int particle_Index, HipoDataBank cal_Bank) {
+    public boolean calorimeter_energy_cut(int particle_Index, HipoDataBank cal_Bank, int strictness) {
         // Iterate through the rows of the data bank
         for (int current_Row = 0; current_Row < cal_Bank.rows(); current_Row++) {
             // Get the pindex and layer values for the current row
@@ -24,7 +24,8 @@ public class pid_cuts {
                 float energy = cal_Bank.getFloat("energy", current_Row);
 
                 // Check if the energy is greater than the threshold value
-                return energy > 0.07;
+                if (strictness == 0) return energy > 0.06;
+                if (strictness == 1) return energy > 0.07;
             }
         }
 
@@ -32,17 +33,6 @@ public class pid_cuts {
         return false;
     }
 
-//    public boolean calorimeter_sampling_fraction_cut(int particle_Index, double p, HipoDataBank run_Bank, 
-//            HipoDataBank cal_Bank) {
-//        double cal_energy = 0;
-//        for (int current_Row = 0; current_Row < cal_Bank.rows(); current_Row++) {
-//            if (cal_Bank.getInt("pindex", current_Row)==particle_Index)  {
-//                cal_energy+= cal_Bank.getFloat("energy", current_Row);
-//            }
-//        }
-//        
-//        return cal_energy/p > 0.19;
-//    }
     public boolean calorimeter_sampling_fraction_cut(int particle_Index, double p, HipoDataBank run_Bank,
             HipoDataBank cal_Bank) {
         double cal_energy = 0;

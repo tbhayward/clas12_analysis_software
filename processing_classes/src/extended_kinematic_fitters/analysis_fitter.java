@@ -30,14 +30,14 @@ public class analysis_fitter extends GenericKinematicFitter {
         pid_cuts pid_cuts = new pid_cuts();
 
         return true
-//                && p > 2.0 // higher cut ultimately enforced when we cut on y, this speeds processing
-//                && generic_tests.forward_detector_cut(particle_Index, rec_Bank)
-//                && generic_tests.vertex_cut(particle_Index, rec_Bank, run_Bank)
-//                && pid_cuts.calorimeter_energy_cut(particle_Index, cal_Bank)
-//                && pid_cuts.calorimeter_sampling_fraction_cut(particle_Index, p, run_Bank, cal_Bank)
-//                && pid_cuts.calorimeter_diagonal_cut(particle_Index, p, cal_Bank) //            && generic_tests.vertex_cut(particle_Index, rec_Bank, run_Bank)    
-//                && fiducial_cuts.pcal_fiducial_cut(particle_Index, 1, run_Bank, rec_Bank, cal_Bank)
-//                && fiducial_cuts.dc_fiducial_cut(particle_Index, rec_Bank, traj_Bank)
+                && p > 2.0 // higher cut ultimately enforced when we cut on y, this speeds processing
+                && generic_tests.forward_detector_cut(particle_Index, rec_Bank)
+                && generic_tests.vertex_cut(particle_Index, rec_Bank, run_Bank)
+                && pid_cuts.calorimeter_energy_cut(particle_Index, cal_Bank, 1)
+                && pid_cuts.calorimeter_sampling_fraction_cut(particle_Index, p, run_Bank, cal_Bank)
+                && pid_cuts.calorimeter_diagonal_cut(particle_Index, p, cal_Bank)    
+                && fiducial_cuts.pcal_fiducial_cut(particle_Index, 3, run_Bank, rec_Bank, cal_Bank)
+                && fiducial_cuts.dc_fiducial_cut(particle_Index, rec_Bank, traj_Bank)
                 ;
     }
 
@@ -127,26 +127,25 @@ public class analysis_fitter extends GenericKinematicFitter {
 
         return true
                 //            && p > 0.4
-//                && generic_tests.vertex_cut(particle_Index, rec_Bank, run_Bank)
-//                //            && generic_tests.forward_detector_cut(particle_Index, rec_Bank)
+                && generic_tests.vertex_cut(particle_Index, rec_Bank, run_Bank)
+                && (passesForwardDetector
+                        ? fiducial_cuts.dc_fiducial_cut(particle_Index, rec_Bank, traj_Bank)
+                        : true)
+                && (passesCentralDetector
+                        ? fiducial_cuts.cvt_fiducial_cut(particle_Index, rec_Bank, traj_Bank)
+                        : true)
 //                && (passesForwardDetector // dedicated PID cuts for forward
-//                        //                        ? pid_cuts.charged_hadron_pass2_chi2pid_cut(particle_Index, rec_Bank)
+//                        // ? pid_cuts.charged_hadron_pass2_chi2pid_cut(particle_Index, rec_Bank)
 //                        ? pid_cuts.charged_hadron_chi2pid_cut(particle_Index, rec_Bank, run_Bank)
 //                        : true)
 //                && (passesCentralDetector // generic |chi2pid| < 3.5 for cd
 //                        ? pid_cuts.charged_hadron_chi2pid_cut(particle_Index, rec_Bank, run_Bank)
 //                        : true) //            && charged_hadron_chi2pid_cut(particle_Index, rec_Bank)
-//                && (passesForwardDetector
-//                        ? fiducial_cuts.dc_fiducial_cut(particle_Index, rec_Bank, traj_Bank)
-//                        : true)
-//                && (passesCentralDetector
-//                        ? fiducial_cuts.cvt_fiducial_cut(particle_Index, rec_Bank, traj_Bank)
-//                        : true)
                 ;
     }
 
     public boolean photon_test(int particle_Index, HipoDataBank run_Bank, HipoDataBank rec_Bank, HipoDataBank cal_Bank,
-            HipoDataBank ft_Bank, LorentzVector lv_e) {
+            HipoDataBank ft_Bank, LorentzVector lv_e, int num_photons) {
 
         generic_tests generic_tests = new generic_tests();
         fiducial_cuts fiducial_cuts = new fiducial_cuts();
@@ -163,7 +162,7 @@ public class analysis_fitter extends GenericKinematicFitter {
         boolean passesForwardTagger = generic_tests.forward_tagger_cut(particle_Index, rec_Bank);
 
         return true
-                && p > 0.5
+                && (num_photons == 0 ? p > 2.0 : p > 0.5)
                 && (passesForwardDetector || passesForwardTagger)
                 && (passesForwardDetector
                         ? fiducial_cuts.pcal_fiducial_cut(particle_Index, 3, run_Bank, rec_Bank, cal_Bank)
@@ -207,6 +206,7 @@ public class analysis_fitter extends GenericKinematicFitter {
                 return physEvent;
             } // trigger particle was not an electron
 
+            int num_photons = 0; // we're going to require first photon > 2 GeV, later > 0.5 GeV
             for (int particle_Index = 0; particle_Index < rec_Bank.rows(); particle_Index++) {
                 int pid = rec_Bank.getInt("pid", particle_Index);
                 float px = rec_Bank.getFloat("px", particle_Index);
@@ -264,7 +264,7 @@ public class analysis_fitter extends GenericKinematicFitter {
                         traj_Bank, run_Bank)) {
 
                     float[] momentum = {px, py, pz};
-//                    energy_loss_corrections.proton_energy_loss_corrections(particle_Index, momentum, rec_Bank, run_Bank);
+                    energy_loss_corrections.proton_energy_loss_corrections(particle_Index, momentum, rec_Bank, run_Bank);
 
                     px = momentum[0];
                     py = momentum[1];
@@ -273,9 +273,10 @@ public class analysis_fitter extends GenericKinematicFitter {
                     physEvent.addParticle(part);
                 }
 
-                if (pid == 22 && photon_test(particle_Index, run_Bank, rec_Bank, cal_Bank, ft_Bank, lv_e)) {
+                if (pid == 22 && photon_test(particle_Index, run_Bank, rec_Bank, cal_Bank, ft_Bank, lv_e, num_photons)) {
                     Particle part = new Particle(pid, px, py, pz, vx, vy, vz);
                     physEvent.addParticle(part);
+                    num_photons++;
                 }
             }
 
