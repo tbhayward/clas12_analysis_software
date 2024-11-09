@@ -45,9 +45,9 @@ int main(int argc, char* argv[])
     }
 
     // Create histograms for Mx2 from each tree with the new range
-    TH1F *h1 = new TH1F("h1", "", 100, -2, 8);
-    TH1F *h2 = new TH1F("h2", "", 100, -2, 8);
-    TH1F *h3 = new TH1F("h3", "", 100, -2, 8);
+    TH1F *h1 = new TH1F("h1", "", 150, -4, 8);
+    TH1F *h2 = new TH1F("h2", "", 150, -4, 8);
+    TH1F *h3 = new TH1F("h3", "", 150, -4, 8);
 
     // Fill the histograms with Mx2 data
     tree1->Draw("Mx2>>h1", "", "goff");
