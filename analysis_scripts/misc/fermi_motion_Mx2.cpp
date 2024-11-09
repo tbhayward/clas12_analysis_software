@@ -44,10 +44,10 @@ int main(int argc, char* argv[])
         return 1;
     }
 
-    // Create histograms for Mx2 from each tree
-    TH1F *h1 = new TH1F("h1", "", 100, 0, 10);
-    TH1F *h2 = new TH1F("h2", "", 100, 0, 10);
-    TH1F *h3 = new TH1F("h3", "", 100, 0, 10);
+    // Create histograms for Mx2 from each tree with the new range
+    TH1F *h1 = new TH1F("h1", "", 100, -2, 8);
+    TH1F *h2 = new TH1F("h2", "", 100, -2, 8);
+    TH1F *h3 = new TH1F("h3", "", 100, -2, 8);
 
     // Fill the histograms with Mx2 data
     tree1->Draw("Mx2>>h1", "", "goff");
@@ -68,6 +68,10 @@ int main(int argc, char* argv[])
 
     // Create a canvas to draw the histograms
     TCanvas *c = new TCanvas("c", "", 800, 600);
+
+    // Set canvas margins for additional padding
+    c->SetLeftMargin(0.15);
+    c->SetBottomMargin(0.15);
 
     // Adjust the maximum value for better display
     double max1 = h1->GetMaximum();
