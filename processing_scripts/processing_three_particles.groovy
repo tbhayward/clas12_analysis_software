@@ -181,7 +181,6 @@ public static void main(String[] args) {
 			            if (variables.channel_test(variables)) {
 			                fiducial_status = variables.get_fiducial_status(); // fiducial_status of track
 			                helicity = variables.get_helicity(); // helicity of event
-			                if (helicity != 0) println(helicity);
 			                detector1 = variables.get_detector1(); 
 			                detector2 = variables.get_detector2(); 
 			                num_pos = variables.get_num_pos();
