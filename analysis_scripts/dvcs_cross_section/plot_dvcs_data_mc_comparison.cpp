@@ -184,18 +184,19 @@ void plot_dvcs_data_mc_comparison(const std::string& output_dir,
         // Adjust phi_deg to be within [0, 360)
         phi_deg = std::fmod(phi_deg + 360.0, 360.0);
 
+        std::cout << "Before bin group" << std::endl;
         // Find the (xB, Q2, t) bin group
         for (const auto& group : bin_groups) {
             const auto& key = group.first;
             const auto& idx_list = group.second;
 
             const auto& bin_example = bin_boundaries[idx_list[0]];  // Use first bin as representative
-            std::cout << "MADE IT PASSED KINEMATIC CUTS" << std::endl;
+            std::cout << "Entered bin group" << std::endl;
             if (xB >= bin_example.xB_low && xB <= bin_example.xB_high &&
                 Q2 >= bin_example.Q2_low && Q2 <= bin_example.Q2_high &&
                 t_abs >= bin_example.t_low && t_abs <= bin_example.t_high &&
                 apply_kinematic_cuts(*t1_data, *open_angle_ep2_data, *theta_neutral_neutral_data, *Emiss2_data, *Mx2_1_data, *pTmiss_data)) {
-                
+
                 // Now find the phi bin within this group
                 std::vector<BinCounts>& bin_counts_vector = bin_counts_map[key];
 
