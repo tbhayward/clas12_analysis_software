@@ -18,6 +18,7 @@
 #include "bin_helpers.h"
 #include <map>
 #include <set>
+#include <numeric>
 
 // Constant to convert radians to degrees
 constexpr double RAD_TO_DEG = 180.0 / M_PI;
