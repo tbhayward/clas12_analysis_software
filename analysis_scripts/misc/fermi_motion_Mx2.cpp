@@ -54,17 +54,22 @@ int main(int argc, char* argv[])
     tree2->Draw("Mx2>>h2", "", "goff");
     tree3->Draw("Mx2>>h3", "", "goff");
 
-    // Normalize the histograms to the specified values
-    double norm1 = 0.3725622171315408;
-    double norm2 = 0.050721607409*12;
-    double norm3 = 0.3725622171315408;
-    // double norm1 = 1;
-    // double norm2 = 1;
-    // double norm3 = 1;
+    // Normalize the histograms so they have the same integral from Mx2 = 6 to 8
+    int bin_min = h1->FindBin(6.0);
+    int bin_max = h1->FindBin(8.0);
 
-    h1->Scale(1.0 / norm1);
-    h2->Scale(1.0 / norm2);
-    h3->Scale(1.0 / norm3);
+    double int1 = h1->Integral(bin_min, bin_max);
+    double int2 = h2->Integral(bin_min, bin_max);
+    double int3 = h3->Integral(bin_min, bin_max);
+
+    // Choose h1 as reference and scale h2 and h3 accordingly
+    double scale1 = 1.0;
+    double scale2 = int1 / int2;
+    double scale3 = int1 / int3;
+
+    h1->Scale(scale1);
+    h2->Scale(scale2);
+    h3->Scale(scale3);
 
     // Set styles for the histograms
     h1->SetLineColor(kRed);
@@ -90,7 +95,9 @@ int main(int argc, char* argv[])
     double max2 = h2->GetMaximum();
     double max3 = h3->GetMaximum();
     double max = std::max({max1, max2, max3});
-    h1->SetMaximum(max * 1.1);
+
+    h1->SetMaximum(max * 1.4); // Set y-axis maximum to 1.4 times the max value
+    h1->SetMinimum(0);         // Set y-axis minimum to 0
 
     // Draw the histograms on the same canvas
     h1->Draw("HIST");
@@ -101,7 +108,7 @@ int main(int argc, char* argv[])
     TLegend *leg = new TLegend(0.45, 0.7, 0.9, 0.9);
     leg->AddEntry(h1, "H_{2}", "l");
     leg->AddEntry(h2, "C", "l");
-    leg->AddEntry(h3, "C, p_{z} = Gauss(0,0.033)", "l");
+    leg->AddEntry(h3, "H_{2}, p_{z} = Gauss(0,0.033)", "l");
     leg->SetTextSize(0.04);
     leg->Draw();
 
