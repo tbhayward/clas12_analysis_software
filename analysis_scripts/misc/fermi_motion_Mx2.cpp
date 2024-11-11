@@ -54,6 +54,15 @@ int main(int argc, char* argv[])
     tree2->Draw("Mx2>>h2", "", "goff");
     tree3->Draw("Mx2>>h3", "", "goff");
 
+    // Normalize the histograms to the specified values
+    double norm1 = 374762.1;
+    double norm2 = 50721.607409000004;
+    double norm3 = 374762.1;
+
+    h1->Scale(1.0 / norm1);
+    h2->Scale(1.0 / norm2);
+    h3->Scale(1.0 / norm3);
+
     // Set styles for the histograms
     h1->SetLineColor(kRed);
     h1->SetLineWidth(2);
@@ -64,7 +73,7 @@ int main(int argc, char* argv[])
 
     // Set axis labels
     h1->GetXaxis()->SetTitle("M_{x}^{2} (GeV^{2})");
-    h1->GetYaxis()->SetTitle("Counts");
+    h1->GetYaxis()->SetTitle("Counts/nC");
 
     // Create a canvas to draw the histograms
     TCanvas *c = new TCanvas("c", "", 800, 600);
@@ -87,9 +96,9 @@ int main(int argc, char* argv[])
 
     // Add a legend with the specified labels
     TLegend *leg = new TLegend(0.6, 0.7, 0.9, 0.9);
-    leg->AddEntry(h1, "p_{z} = 0 MeV", "l");
-    leg->AddEntry(h2, "p_{z} = + 33 MeV", "l");
-    leg->AddEntry(h3, "p_{z} = - 33 MeV", "l");
+    leg->AddEntry(h1, "H_{2}", "l");
+    leg->AddEntry(h2, "C", "l");
+    leg->AddEntry(h3, "C, p_{z} = Gauss(0,0.033)", "l");
     leg->SetTextSize(0.04);
     leg->Draw();
 

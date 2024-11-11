@@ -202,7 +202,10 @@ public class ThreeParticles {
                 kinematic_variables.particle_mass(11));
         LorentzVector lv_target = new LorentzVector();
         // target, proton for RGA... what mass to use for RGB (deuterium target)?
-        lv_target.setPxPyPzM(0, 0, 0, kinematic_variables.particle_mass(2212));
+        double target_pz = 0;
+//        double target_pz = kinematic_variables.rand_Gaussian(0,0.033);
+//        double target_pz = kinematic_variables.rand_table(0,0.033);
+        lv_target.setPxPyPzM(0, 0, target_pz, kinematic_variables.particle_mass(2212));
         // pull from rec banks for outgoing particles
         // electron
         String electron_index = "[11,0]"; // highest p, kinematic fitter should require FD etc
