@@ -81,7 +81,7 @@ int main(int argc, char* argv[])
 
     // Set axis labels
     h1->GetXaxis()->SetTitle("M_{x}^{2} (GeV^{2})");
-    h1->GetYaxis()->SetTitle("Counts/nC");
+    h1->GetYaxis()->SetTitle("normalized counts");
 
     // Create a canvas to draw the histograms
     TCanvas *c = new TCanvas("c", "", 800, 600);
