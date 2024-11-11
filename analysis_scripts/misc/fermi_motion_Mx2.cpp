@@ -55,12 +55,12 @@ int main(int argc, char* argv[])
     tree3->Draw("Mx2>>h3", "", "goff");
 
     // Normalize the histograms to the specified values
-    // double norm1 = 374762.1;
-    // double norm2 = 50721.607409000004;
-    // double norm3 = 374762.1;
-    double norm1 = 1;
-    double norm2 = 1;
-    double norm3 = 1;
+    double norm1 = 0.3725622171315408;
+    double norm2 = 0.050721607409;
+    double norm3 = 0.3725622171315408;
+    // double norm1 = 1;
+    // double norm2 = 1;
+    // double norm3 = 1;
 
     h1->Scale(1.0 / norm1);
     h2->Scale(1.0 / norm2);
