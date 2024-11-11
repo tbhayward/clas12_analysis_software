@@ -195,7 +195,7 @@ void plot_dvcs_data_mc_comparison(const std::string& output_dir,
                 Q2 >= bin_example.Q2_low && Q2 <= bin_example.Q2_high &&
                 t_abs >= bin_example.t_low && t_abs <= bin_example.t_high &&
                 apply_kinematic_cuts(*t1_data, *open_angle_ep2_data, *theta_neutral_neutral_data, *Emiss2_data, *Mx2_1_data, *pTmiss_data)) {
-
+                std::cout << "MADE IT PASSED KINEMATIC CUTS" << std::endl;
                 // Now find the phi bin within this group
                 std::vector<BinCounts>& bin_counts_vector = bin_counts_map[key];
 
