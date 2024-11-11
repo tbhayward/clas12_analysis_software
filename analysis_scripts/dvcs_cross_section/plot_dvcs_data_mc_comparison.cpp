@@ -57,7 +57,7 @@ void plot_dvcs_data_mc_comparison(const std::string& output_dir,
     int canvas_height = static_cast<int>(1.5 * base_canvas_height);
 
     // Determine number of columns and rows for the canvas
-    int n_columns = std::sqrt(n_bins);
+    int n_columns = std::ceil(std::sqrt(n_bins));
     int n_rows = std::ceil(static_cast<double>(n_bins) / n_columns);
 
     TCanvas* canvas = new TCanvas("c1", "Data vs MC", canvas_width, canvas_height);
@@ -75,6 +75,55 @@ void plot_dvcs_data_mc_comparison(const std::string& output_dir,
     // Map to store the index mapping from (xB, Q2, t) keys to histogram indices
     std::map<std::tuple<double, double, double>, int> bin_index_map;
 
+    // Restart the readers before declaring TTreeReaderValue objects
+    data_reader.Restart();
+    mc_gen_reader.Restart();
+    mc_rec_reader.Restart();
+
+    // Handle theta_neutral_neutral based on analysis type (dvcs or eppi0)
+    std::string theta_variable_name;
+    if (analysisType == "dvcs") {
+        theta_variable_name = "theta_gamma_gamma";
+    } else if (analysisType == "eppi0") {
+        theta_variable_name = "theta_pi0_pi0";
+    } else {
+        std::cerr << "Error: Unknown analysisType '" << analysisType << "'" << std::endl;
+        return;
+    }
+
+    // Readers for data
+    TTreeReaderValue<double> phi_data(data_reader, "phi2");
+    TTreeReaderValue<double> xB_data(data_reader, "x");
+    TTreeReaderValue<double> Q2_data(data_reader, "Q2");
+    TTreeReaderValue<double> t1_data(data_reader, "t1");
+    TTreeReaderValue<double> open_angle_ep2_data(data_reader, "open_angle_ep2");
+    TTreeReaderValue<double> Emiss2_data(data_reader, "Emiss2");
+    TTreeReaderValue<double> Mx2_1_data(data_reader, "Mx2_1");
+    TTreeReaderValue<double> pTmiss_data(data_reader, "pTmiss");
+    TTreeReaderValue<double> theta_neutral_neutral_data(data_reader, theta_variable_name.c_str());
+
+    // Readers for MC-generated data
+    TTreeReaderValue<double> phi_mc_gen(mc_gen_reader, "phi2");
+    TTreeReaderValue<double> xB_mc_gen(mc_gen_reader, "x");
+    TTreeReaderValue<double> Q2_mc_gen(mc_gen_reader, "Q2");
+    TTreeReaderValue<double> t1_mc_gen(mc_gen_reader, "t1");
+    TTreeReaderValue<double> open_angle_ep2_mc_gen(mc_gen_reader, "open_angle_ep2");
+    TTreeReaderValue<double> Emiss2_mc_gen(mc_gen_reader, "Emiss2");
+    TTreeReaderValue<double> Mx2_1_mc_gen(mc_gen_reader, "Mx2_1");
+    TTreeReaderValue<double> pTmiss_mc_gen(mc_gen_reader, "pTmiss");
+    TTreeReaderValue<double> theta_neutral_neutral_mc_gen(mc_gen_reader, theta_variable_name.c_str());
+
+    // Readers for MC-reconstructed data
+    TTreeReaderValue<double> phi_mc_rec(mc_rec_reader, "phi2");
+    TTreeReaderValue<double> xB_mc_rec(mc_rec_reader, "x");
+    TTreeReaderValue<double> Q2_mc_rec(mc_rec_reader, "Q2");
+    TTreeReaderValue<double> t1_mc_rec(mc_rec_reader, "t1");
+    TTreeReaderValue<double> open_angle_ep2_mc_rec(mc_rec_reader, "open_angle_ep2");
+    TTreeReaderValue<double> Emiss2_mc_rec(mc_rec_reader, "Emiss2");
+    TTreeReaderValue<double> Mx2_1_mc_rec(mc_rec_reader, "Mx2_1");
+    TTreeReaderValue<double> pTmiss_mc_rec(mc_rec_reader, "pTmiss");
+    TTreeReaderValue<double> theta_neutral_neutral_mc_rec(mc_rec_reader, theta_variable_name.c_str());
+
     // Create histograms for each (xB, Q2, t) bin with phi bins from bin boundaries
     for (const auto& group : bin_groups) {
         const auto& key = group.first;
@@ -86,32 +135,31 @@ void plot_dvcs_data_mc_comparison(const std::string& output_dir,
         for (int idx : idx_list) {
             const auto& bin = bin_boundaries[idx];
             phi_bin_edges.push_back(bin.phi_low);
+            phi_bin_edges.push_back(bin.phi_high);
         }
-        // Add the last upper edge
-        phi_bin_edges.push_back(bin_boundaries[idx_list.back()].phi_high);
 
         // Remove duplicate phi edges and sort them
         std::sort(phi_bin_edges.begin(), phi_bin_edges.end());
         phi_bin_edges.erase(std::unique(phi_bin_edges.begin(), phi_bin_edges.end()), phi_bin_edges.end());
 
+        // Ensure we have at least two edges to create a histogram
+        if (phi_bin_edges.size() < 2) {
+            std::cerr << "Warning: Insufficient phi bin edges for bin group, skipping histogram creation." << std::endl;
+            continue;
+        }
+
         // Create histograms
         std::string title = Form("%s, %s: x_{B} [%.2f, %.2f], Q^{2} [%.2f, %.2f], -t [%.2f, %.2f]", 
                                  analysisType.c_str(), 
                                  dataset.c_str(),  
-                                 std::get<0>(key), std::get<0>(key) + bin_boundaries[idx_list[0]].xB_high - bin_boundaries[idx_list[0]].xB_low,
-                                 std::get<1>(key), std::get<1>(key) + bin_boundaries[idx_list[0]].Q2_high - bin_boundaries[idx_list[0]].Q2_low,
-                                 std::get<2>(key), std::get<2>(key) + bin_boundaries[idx_list[0]].t_high - bin_boundaries[idx_list[0]].t_low);
-
-        // Convert phi edges to degrees
-        std::vector<double> phi_edges_deg;
-        for (double edge : phi_bin_edges) {
-            phi_edges_deg.push_back(edge);
-        }
+                                 std::get<0>(key), bin_boundaries[idx_list[0]].xB_high,
+                                 std::get<1>(key), bin_boundaries[idx_list[0]].Q2_high,
+                                 std::get<2>(key), bin_boundaries[idx_list[0]].t_high);
 
         // Create histograms
-        TH1D* h_data = new TH1D(Form("h_data_%d", pad_idx - 1), title.c_str(), phi_edges_deg.size() - 1, &phi_edges_deg[0]);
-        TH1D* h_mc_gen = new TH1D(Form("h_mc_gen_%d", pad_idx - 1), "gen", phi_edges_deg.size() - 1, &phi_edges_deg[0]);
-        TH1D* h_mc_rec = new TH1D(Form("h_mc_rec_%d", pad_idx - 1), "rec", phi_edges_deg.size() - 1, &phi_edges_deg[0]);
+        TH1D* h_data = new TH1D(Form("h_data_%d", pad_idx - 1), title.c_str(), phi_bin_edges.size() - 1, &phi_bin_edges[0]);
+        TH1D* h_mc_gen = new TH1D(Form("h_mc_gen_%d", pad_idx - 1), "gen", phi_bin_edges.size() - 1, &phi_bin_edges[0]);
+        TH1D* h_mc_rec = new TH1D(Form("h_mc_rec_%d", pad_idx - 1), "rec", phi_bin_edges.size() - 1, &phi_bin_edges[0]);
 
         // Axis labels and styles
         h_data->GetXaxis()->SetTitle("#phi [deg]");
@@ -140,56 +188,6 @@ void plot_dvcs_data_mc_comparison(const std::string& output_dir,
         ++pad_idx;
     }
 
-    // Readers for data
-    TTreeReaderValue<double> phi_data(data_reader, "phi2");
-    TTreeReaderValue<double> xB_data(data_reader, "x");
-    TTreeReaderValue<double> Q2_data(data_reader, "Q2");
-    TTreeReaderValue<double> t1_data(data_reader, "t1");
-    TTreeReaderValue<double> open_angle_ep2_data(data_reader, "open_angle_ep2");
-    TTreeReaderValue<double> Emiss2_data(data_reader, "Emiss2");
-    TTreeReaderValue<double> Mx2_1_data(data_reader, "Mx2_1");
-    TTreeReaderValue<double> pTmiss_data(data_reader, "pTmiss");
-
-    // Readers for MC-generated data
-    TTreeReaderValue<double> phi_mc_gen(mc_gen_reader, "phi2");
-    TTreeReaderValue<double> xB_mc_gen(mc_gen_reader, "x");
-    TTreeReaderValue<double> Q2_mc_gen(mc_gen_reader, "Q2");
-    TTreeReaderValue<double> t1_mc_gen(mc_gen_reader, "t1");
-    TTreeReaderValue<double> open_angle_ep2_mc_gen(mc_gen_reader, "open_angle_ep2");
-    TTreeReaderValue<double> Emiss2_mc_gen(mc_gen_reader, "Emiss2");
-    TTreeReaderValue<double> Mx2_1_mc_gen(mc_gen_reader, "Mx2_1");
-    TTreeReaderValue<double> pTmiss_mc_gen(mc_gen_reader, "pTmiss");
-
-    // Readers for MC-reconstructed data
-    TTreeReaderValue<double> phi_mc_rec(mc_rec_reader, "phi2");
-    TTreeReaderValue<double> xB_mc_rec(mc_rec_reader, "x");
-    TTreeReaderValue<double> Q2_mc_rec(mc_rec_reader, "Q2");
-    TTreeReaderValue<double> t1_mc_rec(mc_rec_reader, "t1");
-    TTreeReaderValue<double> open_angle_ep2_mc_rec(mc_rec_reader, "open_angle_ep2");
-    TTreeReaderValue<double> Emiss2_mc_rec(mc_rec_reader, "Emiss2");
-    TTreeReaderValue<double> Mx2_1_mc_rec(mc_rec_reader, "Mx2_1");
-    TTreeReaderValue<double> pTmiss_mc_rec(mc_rec_reader, "pTmiss");
-
-    // Handle theta_neutral_neutral based on analysis type (dvcs or eppi0)
-    TTreeReaderValue<double>* theta_neutral_neutral_data;
-    TTreeReaderValue<double>* theta_neutral_neutral_mc_gen;
-    TTreeReaderValue<double>* theta_neutral_neutral_mc_rec;
-
-    if (analysisType == "dvcs") {
-        theta_neutral_neutral_data = new TTreeReaderValue<double>(data_reader, "theta_gamma_gamma");
-        theta_neutral_neutral_mc_gen = new TTreeReaderValue<double>(mc_gen_reader, "theta_gamma_gamma");
-        theta_neutral_neutral_mc_rec = new TTreeReaderValue<double>(mc_rec_reader, "theta_gamma_gamma");
-    } else if (analysisType == "eppi0") {
-        theta_neutral_neutral_data = new TTreeReaderValue<double>(data_reader, "theta_pi0_pi0");
-        theta_neutral_neutral_mc_gen = new TTreeReaderValue<double>(mc_gen_reader, "theta_pi0_pi0");
-        theta_neutral_neutral_mc_rec = new TTreeReaderValue<double>(mc_rec_reader, "theta_pi0_pi0");
-    }
-
-    // Restart the readers before looping over data
-    data_reader.Restart();
-    mc_gen_reader.Restart();
-    mc_rec_reader.Restart();
-
     // Fill data histograms
     while (data_reader.Next()) {
         double phi_deg = *phi_data * RAD_TO_DEG;  
@@ -207,17 +205,30 @@ void plot_dvcs_data_mc_comparison(const std::string& output_dir,
             if (xB >= bin_example.xB_low && xB <= bin_example.xB_high &&
                 Q2 >= bin_example.Q2_low && Q2 <= bin_example.Q2_high &&
                 t_abs >= bin_example.t_low && t_abs <= bin_example.t_high &&
-                apply_kinematic_cuts(*t1_data, *open_angle_ep2_data, **theta_neutral_neutral_data, *Emiss2_data, *Mx2_1_data, *pTmiss_data)) {
+                apply_kinematic_cuts(*t1_data, *open_angle_ep2_data, *theta_neutral_neutral_data, *Emiss2_data, *Mx2_1_data, *pTmiss_data)) {
 
                 int hist_idx = bin_index_map[key];
                 TH1D* h_data = h_data_histograms[hist_idx];
 
                 // Find the phi bin within this (xB, Q2, t) bin
+                bool filled = false;
                 for (int idx : idx_list) {
                     const auto& bin = bin_boundaries[idx];
                     if (phi_deg >= bin.phi_low && phi_deg < bin.phi_high) {
                         h_data->Fill(phi_deg);
+                        filled = true;
                         break;
+                    }
+                }
+                if (!filled) {
+                    // Handle wrap-around for phi (if necessary)
+                    double phi_wrapped = (phi_deg < 0) ? phi_deg + 360 : (phi_deg >= 360 ? phi_deg - 360 : phi_deg);
+                    for (int idx : idx_list) {
+                        const auto& bin = bin_boundaries[idx];
+                        if (phi_wrapped >= bin.phi_low && phi_wrapped < bin.phi_high) {
+                            h_data->Fill(phi_wrapped);
+                            break;
+                        }
                     }
                 }
                 break;  // Exit the loop once the event is assigned
@@ -241,17 +252,29 @@ void plot_dvcs_data_mc_comparison(const std::string& output_dir,
             if (xB >= bin_example.xB_low && xB <= bin_example.xB_high &&
                 Q2 >= bin_example.Q2_low && Q2 <= bin_example.Q2_high &&
                 t_abs >= bin_example.t_low && t_abs <= bin_example.t_high &&
-                apply_kinematic_cuts(*t1_mc_gen, *open_angle_ep2_mc_gen, **theta_neutral_neutral_mc_gen, *Emiss2_mc_gen, *Mx2_1_mc_gen, *pTmiss_mc_gen)) {
+                apply_kinematic_cuts(*t1_mc_gen, *open_angle_ep2_mc_gen, *theta_neutral_neutral_mc_gen, *Emiss2_mc_gen, *Mx2_1_mc_gen, *pTmiss_mc_gen)) {
 
                 int hist_idx = bin_index_map[key];
                 TH1D* h_mc_gen = h_mc_gen_histograms[hist_idx];
 
                 // Find the phi bin within this (xB, Q2, t) bin
+                bool filled = false;
                 for (int idx : idx_list) {
                     const auto& bin = bin_boundaries[idx];
                     if (phi_deg >= bin.phi_low && phi_deg < bin.phi_high) {
                         h_mc_gen->Fill(phi_deg);
+                        filled = true;
                         break;
+                    }
+                }
+                if (!filled) {
+                    double phi_wrapped = (phi_deg < 0) ? phi_deg + 360 : (phi_deg >= 360 ? phi_deg - 360 : phi_deg);
+                    for (int idx : idx_list) {
+                        const auto& bin = bin_boundaries[idx];
+                        if (phi_wrapped >= bin.phi_low && phi_wrapped < bin.phi_high) {
+                            h_mc_gen->Fill(phi_wrapped);
+                            break;
+                        }
                     }
                 }
                 break;
@@ -275,17 +298,29 @@ void plot_dvcs_data_mc_comparison(const std::string& output_dir,
             if (xB >= bin_example.xB_low && xB <= bin_example.xB_high &&
                 Q2 >= bin_example.Q2_low && Q2 <= bin_example.Q2_high &&
                 t_abs >= bin_example.t_low && t_abs <= bin_example.t_high &&
-                apply_kinematic_cuts(*t1_mc_rec, *open_angle_ep2_mc_rec, **theta_neutral_neutral_mc_rec, *Emiss2_mc_rec, *Mx2_1_mc_rec, *pTmiss_mc_rec)) {
+                apply_kinematic_cuts(*t1_mc_rec, *open_angle_ep2_mc_rec, *theta_neutral_neutral_mc_rec, *Emiss2_mc_rec, *Mx2_1_mc_rec, *pTmiss_mc_rec)) {
 
                 int hist_idx = bin_index_map[key];
                 TH1D* h_mc_rec = h_mc_rec_histograms[hist_idx];
 
                 // Find the phi bin within this (xB, Q2, t) bin
+                bool filled = false;
                 for (int idx : idx_list) {
                     const auto& bin = bin_boundaries[idx];
                     if (phi_deg >= bin.phi_low && phi_deg < bin.phi_high) {
                         h_mc_rec->Fill(phi_deg);
+                        filled = true;
                         break;
+                    }
+                }
+                if (!filled) {
+                    double phi_wrapped = (phi_deg < 0) ? phi_deg + 360 : (phi_deg >= 360 ? phi_deg - 360 : phi_deg);
+                    for (int idx : idx_list) {
+                        const auto& bin = bin_boundaries[idx];
+                        if (phi_wrapped >= bin.phi_low && phi_wrapped < bin.phi_high) {
+                            h_mc_rec->Fill(phi_wrapped);
+                            break;
+                        }
                     }
                 }
                 break;
@@ -364,8 +399,4 @@ void plot_dvcs_data_mc_comparison(const std::string& output_dir,
     for (auto& h : h_mc_gen_histograms) delete h;
     for (auto& h : h_mc_rec_histograms) delete h;
     delete canvas;
-
-    delete theta_neutral_neutral_data;
-    delete theta_neutral_neutral_mc_gen;
-    delete theta_neutral_neutral_mc_rec;
 }
