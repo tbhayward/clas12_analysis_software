@@ -58,18 +58,15 @@ int main(int argc, char* argv[])
     int bin_min = h1->FindBin(6.0);
     int bin_max = h1->FindBin(8.0);
 
-    double int1 = h1->Integral(bin_min, bin_max);
-    double int2 = h2->Integral(bin_min, bin_max);
-    double int3 = h3->Integral(bin_min, bin_max);
+    // Calculate integrals for each histogram
+    double int1 = h1->Integral();
+    double int2 = h2->Integral();
+    double int3 = h3->Integral();
 
-    // Choose h1 as reference and scale h2 and h3 accordingly
-    double scale1 = 1.0;
-    double scale2 = int1 / int2;
-    double scale3 = int1 / int3;
-
-    h1->Scale(scale1);
-    h2->Scale(scale2);
-    h3->Scale(scale3);
+    // Scale each histogram to normalize to its integral
+    if (int1 != 0) h1->Scale(1.0 / int1);
+    if (int2 != 0) h2->Scale(1.0 / int2);
+    if (int3 != 0) h3->Scale(1.0 / int3);
 
     // Set styles for the histograms
     h1->SetLineColor(kRed);
