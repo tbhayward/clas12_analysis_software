@@ -392,10 +392,10 @@ void plot_dvcs_data_mc_comparison(const std::string& output_dir,
         latex.DrawLatex(0.15, 0.85, title.c_str());
 
         // Clean up
-        delete graph_data;
-        delete graph_mc_gen;
-        delete graph_mc_rec;
-        delete frame;
+        // delete graph_data;
+        // delete graph_mc_gen;
+        // delete graph_mc_rec;
+        // delete frame;
         ++pad_idx;
     }
 
