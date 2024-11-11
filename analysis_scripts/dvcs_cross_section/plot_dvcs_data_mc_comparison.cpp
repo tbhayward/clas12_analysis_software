@@ -140,7 +140,7 @@ void plot_dvcs_data_mc_comparison(const std::string& output_dir,
         ++pad_idx;
     }
 
-    // Readers for data and MC
+    // Readers for data
     TTreeReaderValue<double> phi_data(data_reader, "phi2");
     TTreeReaderValue<double> xB_data(data_reader, "x");
     TTreeReaderValue<double> Q2_data(data_reader, "Q2");
@@ -150,10 +150,31 @@ void plot_dvcs_data_mc_comparison(const std::string& output_dir,
     TTreeReaderValue<double> Mx2_1_data(data_reader, "Mx2_1");
     TTreeReaderValue<double> pTmiss_data(data_reader, "pTmiss");
 
+    // Readers for MC-generated data
+    TTreeReaderValue<double> phi_mc_gen(mc_gen_reader, "phi2");
+    TTreeReaderValue<double> xB_mc_gen(mc_gen_reader, "x");
+    TTreeReaderValue<double> Q2_mc_gen(mc_gen_reader, "Q2");
+    TTreeReaderValue<double> t1_mc_gen(mc_gen_reader, "t1");
+    TTreeReaderValue<double> open_angle_ep2_mc_gen(mc_gen_reader, "open_angle_ep2");
+    TTreeReaderValue<double> Emiss2_mc_gen(mc_gen_reader, "Emiss2");
+    TTreeReaderValue<double> Mx2_1_mc_gen(mc_gen_reader, "Mx2_1");
+    TTreeReaderValue<double> pTmiss_mc_gen(mc_gen_reader, "pTmiss");
+
+    // Readers for MC-reconstructed data
+    TTreeReaderValue<double> phi_mc_rec(mc_rec_reader, "phi2");
+    TTreeReaderValue<double> xB_mc_rec(mc_rec_reader, "x");
+    TTreeReaderValue<double> Q2_mc_rec(mc_rec_reader, "Q2");
+    TTreeReaderValue<double> t1_mc_rec(mc_rec_reader, "t1");
+    TTreeReaderValue<double> open_angle_ep2_mc_rec(mc_rec_reader, "open_angle_ep2");
+    TTreeReaderValue<double> Emiss2_mc_rec(mc_rec_reader, "Emiss2");
+    TTreeReaderValue<double> Mx2_1_mc_rec(mc_rec_reader, "Mx2_1");
+    TTreeReaderValue<double> pTmiss_mc_rec(mc_rec_reader, "pTmiss");
+
     // Handle theta_neutral_neutral based on analysis type (dvcs or eppi0)
     TTreeReaderValue<double>* theta_neutral_neutral_data;
     TTreeReaderValue<double>* theta_neutral_neutral_mc_gen;
     TTreeReaderValue<double>* theta_neutral_neutral_mc_rec;
+
     if (analysisType == "dvcs") {
         theta_neutral_neutral_data = new TTreeReaderValue<double>(data_reader, "theta_gamma_gamma");
         theta_neutral_neutral_mc_gen = new TTreeReaderValue<double>(mc_gen_reader, "theta_gamma_gamma");
