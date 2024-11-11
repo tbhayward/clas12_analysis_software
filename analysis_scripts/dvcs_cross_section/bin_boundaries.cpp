@@ -1,96 +1,84 @@
+// read_bin_boundaries.cpp
+
 #include "bin_boundaries.h"
 #include <fstream>
 #include <sstream>
 #include <iostream>
+#include <algorithm>
 
 std::vector<BinBoundary> read_bin_boundaries(const std::string& filename) {
     std::vector<BinBoundary> bin_boundaries;
-    std::ifstream file(filename);
-
-    if (!file.is_open()) {
-        std::cerr << "Error: Could not open file " << filename << std::endl;
+    std::ifstream infile(filename);
+    if (!infile.is_open()) {
+        std::cerr << "Error: Unable to open binning file: " << filename << std::endl;
         return bin_boundaries;
     }
 
     std::string line;
-    int line_num = 0;
+    // Skip header line if present
+    std::getline(infile, line); // Adjust this if your CSV does not have a header
 
-    // Skip first two lines (header and descriptive line)
-    while (line_num < 2 && std::getline(file, line)) {
-        ++line_num;
-    }
-
-    // Read data from the file line by line
-    while (std::getline(file, line)) {
+    while (std::getline(infile, line)) {
         std::stringstream ss(line);
-        std::string token;
+        std::string item;
         BinBoundary bin;
 
-        // First column: bin index (skip it)
-        std::getline(ss, token, '\t');  // Skip bin index
+        // Read and discard the first two columns (index and bin name)
+        std::getline(ss, item, ','); // Skip index
+        std::getline(ss, item, ','); // Skip bin name
 
-        // Second column: bin name (read it)
-        std::getline(ss, token, '\t');
-        bin.bin_label = token;
+        // Now read xBmin (xB_low)
+        if (!std::getline(ss, item, ',')) continue;
+        bin.xB_low = std::stod(item);
 
-        try {
-            // xB_low (min)
-            std::getline(ss, token, '\t');
-            bin.xB_low = std::stod(token);
+        // xBmax (xB_high)
+        if (!std::getline(ss, item, ',')) continue;
+        bin.xB_high = std::stod(item);
 
-            // xB_high (max)
-            std::getline(ss, token, '\t');
-            bin.xB_high = std::stod(token);
+        // Skip xBavg
+        if (!std::getline(ss, item, ',')) continue;
 
-            // xB_avg (average)
-            std::getline(ss, token, '\t');
-            bin.xB_avg = std::stod(token);
+        // Q2min (Q2_low)
+        if (!std::getline(ss, item, ',')) continue;
+        bin.Q2_low = std::stod(item);
 
-            // Q2_low (min)
-            std::getline(ss, token, '\t');
-            bin.Q2_low = std::stod(token);
+        // Q2max (Q2_high)
+        if (!std::getline(ss, item, ',')) continue;
+        bin.Q2_high = std::stod(item);
 
-            // Q2_high (max)
-            std::getline(ss, token, '\t');
-            bin.Q2_high = std::stod(token);
+        // Skip Q2avg
+        if (!std::getline(ss, item, ',')) continue;
 
-            // Q2_avg (average)
-            std::getline(ss, token, '\t');
-            bin.Q2_avg = std::stod(token);
+        // t_abs_min (t_low)
+        if (!std::getline(ss, item, ',')) continue;
+        bin.t_low = std::stod(item);
 
-            // t_low (min)
-            std::getline(ss, token, '\t');
-            bin.t_low = std::stod(token);
+        // t_abs_max (t_high)
+        if (!std::getline(ss, item, ',')) continue;
+        bin.t_high = std::stod(item);
 
-            // t_high (max)
-            std::getline(ss, token, '\t');
-            bin.t_high = std::stod(token);
+        // Skip t_abs_avg
+        if (!std::getline(ss, item, ',')) continue;
 
-            // t_avg (average)
-            std::getline(ss, token, '\t');
-            bin.t_avg = std::stod(token);
+        // phimin (phi_low)
+        if (!std::getline(ss, item, ',')) continue;
+        bin.phi_low = std::stod(item);
 
-            // phi_low (min)
-            std::getline(ss, token, '\t');
-            bin.phi_low = std::stod(token);
+        // phimax (phi_high)
+        if (!std::getline(ss, item, ',')) continue;
+        bin.phi_high = std::stod(item);
 
-            // phi_high (max)
-            std::getline(ss, token, '\t');
-            bin.phi_high = std::stod(token);
+        // Optionally, skip phiavg
+        if (!std::getline(ss, item, ',')) continue;
 
-            // phi_avg (average)
-            std::getline(ss, token, '\t');
-            bin.phi_avg = std::stod(token);
-
-        } catch (const std::invalid_argument& e) {
-            std::cerr << "Invalid argument while parsing token: '" << token << "' in bin " << bin.bin_label << std::endl;
-        } catch (const std::out_of_range& e) {
-            std::cerr << "Out of range error while parsing token: '" << token << "' in bin " << bin.bin_label << std::endl;
-        }
+        // Convert phi values to degrees if necessary
+        // If phi values are already in degrees, you can skip this
+        // bin.phi_low *= RAD_TO_DEG;
+        // bin.phi_high *= RAD_TO_DEG;
 
         bin_boundaries.push_back(bin);
     }
 
-    file.close();
+    infile.close();
     return bin_boundaries;
 }
