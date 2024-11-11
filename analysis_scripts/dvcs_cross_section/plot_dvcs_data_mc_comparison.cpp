@@ -54,6 +54,21 @@ void plot_dvcs_data_mc_comparison(const std::string& output_dir,
     // Precompute the relevant bins for the xB_bin
     std::vector<int> relevant_bins = precompute_relevant_bins(xB_bin, bin_boundaries);
 
+    std::cout << "xB_bin: " << xB_bin << std::endl;
+    std::cout << "Number of bin boundaries: " << bin_boundaries.size() << std::endl;
+    std::cout << "Number of relevant bins: " << relevant_bins.size() << std::endl;
+
+    // Group the bins by (xB, Q2, t)
+    std::map<std::tuple<double, double, double>, std::vector<int>> bin_groups;
+
+    for (int idx : relevant_bins) {
+        const auto& bin = bin_boundaries[idx];
+        auto key = std::make_tuple(bin.xB_low, bin.Q2_low, bin.t_low);
+        bin_groups[key].push_back(idx);
+    }
+
+    std::cout << "Number of bin groups: " << bin_groups.size() << std::endl;
+
     // Group the bins by (xB, Q2, t)
     std::map<std::tuple<double, double, double>, std::vector<int>> bin_groups;
 
