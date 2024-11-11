@@ -15,67 +15,74 @@ std::vector<BinBoundary> read_bin_boundaries(const std::string& filename) {
     }
 
     std::string line;
-    // Skip header line if present
-    std::getline(infile, line); // Adjust this if your CSV does not have a header
+    // Read header line (the first line with column names)
+    std::getline(infile, line);
 
     while (std::getline(infile, line)) {
         std::stringstream ss(line);
         std::string item;
         BinBoundary bin;
 
-        // Read and discard the first two columns (index and bin name)
-        std::getline(ss, item, ','); // Skip index
-        std::getline(ss, item, ','); // Skip bin name
+        // **Handle the empty first item in the header**
 
-        // Now read xBmin (xB_low)
+        // Read bin index (first column)
+        if (!std::getline(ss, item, ',')) continue;
+        if (item.empty()) {
+            // Handle possible empty bin index
+            std::cerr << "Warning: Empty bin index in line: " << line << std::endl;
+            continue;
+        }
+        bin.bin_index = std::stoi(item);
+
+        // Read bin name (second column)
+        if (!std::getline(ss, item, ',')) continue;
+        bin.bin_name = item;
+
+        // Read xBmin (xB_low)
         if (!std::getline(ss, item, ',')) continue;
         bin.xB_low = std::stod(item);
 
-        // xBmax (xB_high)
+        // Read xBmax (xB_high)
         if (!std::getline(ss, item, ',')) continue;
         bin.xB_high = std::stod(item);
 
         // Skip xBavg
         if (!std::getline(ss, item, ',')) continue;
 
-        // Q2min (Q2_low)
+        // Read Q2min (Q2_low)
         if (!std::getline(ss, item, ',')) continue;
         bin.Q2_low = std::stod(item);
 
-        // Q2max (Q2_high)
+        // Read Q2max (Q2_high)
         if (!std::getline(ss, item, ',')) continue;
         bin.Q2_high = std::stod(item);
 
         // Skip Q2avg
         if (!std::getline(ss, item, ',')) continue;
 
-        // t_abs_min (t_low)
+        // Read t_abs_min (t_low)
         if (!std::getline(ss, item, ',')) continue;
         bin.t_low = std::stod(item);
 
-        // t_abs_max (t_high)
+        // Read t_abs_max (t_high)
         if (!std::getline(ss, item, ',')) continue;
         bin.t_high = std::stod(item);
 
         // Skip t_abs_avg
         if (!std::getline(ss, item, ',')) continue;
 
-        // phimin (phi_low)
+        // Read phimin (phi_low)
         if (!std::getline(ss, item, ',')) continue;
         bin.phi_low = std::stod(item);
 
-        // phimax (phi_high)
+        // Read phimax (phi_high)
         if (!std::getline(ss, item, ',')) continue;
         bin.phi_high = std::stod(item);
 
         // Optionally, skip phiavg
         if (!std::getline(ss, item, ',')) continue;
 
-        // Convert phi values to degrees if necessary
-        // If phi values are already in degrees, you can skip this
-        // bin.phi_low *= RAD_TO_DEG;
-        // bin.phi_high *= RAD_TO_DEG;
-
+        // Add the bin to the vector
         bin_boundaries.push_back(bin);
     }
 
