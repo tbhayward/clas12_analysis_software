@@ -4,7 +4,6 @@
 #include <fstream>
 #include <sstream>
 #include <iostream>
-#include <algorithm>
 
 std::vector<BinBoundary> read_bin_boundaries(const std::string& filename) {
     std::vector<BinBoundary> bin_boundaries;
@@ -23,20 +22,13 @@ std::vector<BinBoundary> read_bin_boundaries(const std::string& filename) {
         std::string item;
         BinBoundary bin;
 
-        // **Handle the empty first item in the header**
-
-        // Read bin index (first column)
+        // Read unnamed (first column)
         if (!std::getline(ss, item, ',')) continue;
-        if (item.empty()) {
-            // Handle possible empty bin index
-            std::cerr << "Warning: Empty bin index in line: " << line << std::endl;
-            continue;
-        }
-        bin.bin_index = std::stoi(item);
+        bin.unnamed = std::stoi(item);
 
         // Read bin name (second column)
         if (!std::getline(ss, item, ',')) continue;
-        bin.bin_name = item;
+        bin.bin_name = std::stoi(item);
 
         // Read xBmin (xB_low)
         if (!std::getline(ss, item, ',')) continue;
@@ -46,8 +38,9 @@ std::vector<BinBoundary> read_bin_boundaries(const std::string& filename) {
         if (!std::getline(ss, item, ',')) continue;
         bin.xB_high = std::stod(item);
 
-        // Skip xBavg
+        // Read xBavg
         if (!std::getline(ss, item, ',')) continue;
+        bin.xB_avg = std::stod(item);
 
         // Read Q2min (Q2_low)
         if (!std::getline(ss, item, ',')) continue;
@@ -57,8 +50,9 @@ std::vector<BinBoundary> read_bin_boundaries(const std::string& filename) {
         if (!std::getline(ss, item, ',')) continue;
         bin.Q2_high = std::stod(item);
 
-        // Skip Q2avg
+        // Read Q2avg
         if (!std::getline(ss, item, ',')) continue;
+        bin.Q2_avg = std::stod(item);
 
         // Read t_abs_min (t_low)
         if (!std::getline(ss, item, ',')) continue;
@@ -68,8 +62,9 @@ std::vector<BinBoundary> read_bin_boundaries(const std::string& filename) {
         if (!std::getline(ss, item, ',')) continue;
         bin.t_high = std::stod(item);
 
-        // Skip t_abs_avg
+        // Read t_abs_avg
         if (!std::getline(ss, item, ',')) continue;
+        bin.t_avg = std::stod(item);
 
         // Read phimin (phi_low)
         if (!std::getline(ss, item, ',')) continue;
@@ -79,8 +74,9 @@ std::vector<BinBoundary> read_bin_boundaries(const std::string& filename) {
         if (!std::getline(ss, item, ',')) continue;
         bin.phi_high = std::stod(item);
 
-        // Optionally, skip phiavg
+        // Read phiavg
         if (!std::getline(ss, item, ',')) continue;
+        bin.phi_avg = std::stod(item);
 
         // Add the bin to the vector
         bin_boundaries.push_back(bin);
