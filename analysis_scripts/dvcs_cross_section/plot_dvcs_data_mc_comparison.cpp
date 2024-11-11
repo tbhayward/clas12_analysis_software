@@ -54,6 +54,22 @@ void plot_dvcs_data_mc_comparison(const std::string& output_dir,
     // Precompute the relevant bins for the xB_bin
     std::vector<int> relevant_bins = precompute_relevant_bins(xB_bin, bin_boundaries);
 
+    // Debugging: Print xB_bin and number of bin boundaries
+    std::cout << "xB_bin: " << xB_bin << std::endl;
+    std::cout << "Number of bin boundaries: " << bin_boundaries.size() << std::endl;
+
+    // Check if relevant_bins is empty
+    if (relevant_bins.empty()) {
+        std::cerr << "Error: No relevant bins found for xB_bin: " << xB_bin << std::endl;
+    } else {
+        std::cout << "Number of relevant bins: " << relevant_bins.size() << std::endl;
+        // Optionally, print the relevant bin indices and xB ranges
+        for (int idx : relevant_bins) {
+            const auto& bin = bin_boundaries[idx];
+            std::cout << "Relevant bin idx: " << idx << ", xB: [" << bin.xB_low << ", " << bin.xB_high << "]" << std::endl;
+        }
+    }
+
     // Group the bins by (xB, Q2, t)
     std::map<std::tuple<double, double, double>, std::vector<int>> bin_groups;
 
@@ -63,17 +79,11 @@ void plot_dvcs_data_mc_comparison(const std::string& output_dir,
         bin_groups[key].push_back(idx);
     }
 
-    // Print number of bin groups
+    // Debugging: Print number of bin groups
     std::cout << "Number of bin groups: " << bin_groups.size() << std::endl;
-    for (const auto& group : bin_groups) {
-        const auto& key = group.first;
-        const auto& idx_list = group.second;
-        std::cout << "Bin group: xB_low=" << std::get<0>(key) << ", Q2_low=" << std::get<1>(key) << ", t_low=" << std::get<2>(key)
-                  << ", indices:";
-        for (int idx : idx_list) {
-            std::cout << " " << idx;
-        }
-        std::cout << std::endl;
+    if (bin_groups.empty()) {
+        std::cerr << "Error: No bin groups created. Exiting function." << std::endl;
+        return;
     }
 
     // Map to store counts for each (xB, Q2, t) bin group
