@@ -105,7 +105,7 @@ int main(int argc, char* argv[])
     TLegend *leg = new TLegend(0.45, 0.7, 0.9, 0.9);
     leg->AddEntry(h1, "H_{2}", "l");
     leg->AddEntry(h2, "C", "l");
-    leg->AddEntry(h3, "H_{2}, p_{z} = table(0,0.33)", "l");
+    leg->AddEntry(h3, "H_{2}, p_{z} = table(0,0.67)", "l");
     leg->SetTextSize(0.04);
     leg->Draw();
 
