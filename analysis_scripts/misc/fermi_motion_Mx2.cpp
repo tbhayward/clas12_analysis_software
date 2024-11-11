@@ -56,7 +56,7 @@ int main(int argc, char* argv[])
 
     // Normalize the histograms to the specified values
     double norm1 = 0.3725622171315408;
-    double norm2 = 0.050721607409;
+    double norm2 = 0.050721607409*12;
     double norm3 = 0.3725622171315408;
     // double norm1 = 1;
     // double norm2 = 1;
