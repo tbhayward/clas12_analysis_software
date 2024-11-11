@@ -55,9 +55,12 @@ int main(int argc, char* argv[])
     tree3->Draw("Mx2>>h3", "", "goff");
 
     // Normalize the histograms to the specified values
-    double norm1 = 374762.1;
-    double norm2 = 50721.607409000004;
-    double norm3 = 374762.1;
+    // double norm1 = 374762.1;
+    // double norm2 = 50721.607409000004;
+    // double norm3 = 374762.1;
+    double norm1 = 1;
+    double norm2 = 1;
+    double norm3 = 1;
 
     h1->Scale(1.0 / norm1);
     h2->Scale(1.0 / norm2);
@@ -95,7 +98,7 @@ int main(int argc, char* argv[])
     h3->Draw("HIST SAME");
 
     // Add a legend with the specified labels
-    TLegend *leg = new TLegend(0.6, 0.7, 0.9, 0.9);
+    TLegend *leg = new TLegend(0.45, 0.7, 0.9, 0.9);
     leg->AddEntry(h1, "H_{2}", "l");
     leg->AddEntry(h2, "C", "l");
     leg->AddEntry(h3, "C, p_{z} = Gauss(0,0.033)", "l");
