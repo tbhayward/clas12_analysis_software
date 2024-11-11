@@ -12,12 +12,14 @@ struct BinBoundary {
     double xB_avg;           // Average xB
     double Q2_avg;           // Average Q2
     double t_avg;            // Average |t|
+    double phi_low, phi_high; // Phi min and max
+    double phi_avg;           // Average phi
 };
 
 // Function to read bin boundaries from CSV
 std::vector<BinBoundary> read_bin_boundaries(const std::string& filename);
 
-// Function to map xB, Q2, and t to a bin index
-int map_to_bin(const std::vector<BinBoundary>& bin_boundaries, double xB, double Q2, double t);
+// Function to map xB, Q2, t, and phi to a bin index (if needed)
+int map_to_bin(const std::vector<BinBoundary>& bin_boundaries, double xB, double Q2, double t, double phi);
 
 #endif

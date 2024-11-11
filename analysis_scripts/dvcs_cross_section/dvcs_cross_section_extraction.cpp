@@ -34,62 +34,6 @@ bool checkFileExists(const string& path) {
     return fs::exists(path);
 }
 
-// Function to handle exclusivity plots
-// void call_determine_exclusivity(std::vector<TTreeReader>& data_readers, std::vector<TTreeReader>& mc_rec_dvcsgen_readers, std::vector<TTreeReader>& eppi0_readers, std::vector<TTreeReader>& mc_rec_aaogen_readers) {
-//     // DVCS channel calls
-//     for (int i = 0; i < 3; i++) {
-//         data_readers[i].Restart();
-//         mc_rec_dvcsgen_readers[i].Restart();
-        
-//         determine_exclusivity("dvcs", "(FD,FD)", data_readers[i], mc_rec_dvcsgen_readers[i], "output/exclusivity_plots", "e'p'#gamma (Fa18 Inb, FD,FD)");
-//         determine_exclusivity("dvcs", "(CD,FD)", data_readers[i], mc_rec_dvcsgen_readers[i], "output/exclusivity_plots", "e'p'#gamma (Fa18 Inb, CD,FD)");
-//         determine_exclusivity("dvcs", "(CD,FT)", data_readers[i], mc_rec_dvcsgen_readers[i], "output/exclusivity_plots", "e'p'#gamma (Fa18 Inb, CD,FT)");
-//     }
-
-//     for (int i = 1; i < 3; i++) {
-//         data_readers[i].Restart();
-//         mc_rec_dvcsgen_readers[i].Restart();
-        
-//         determine_exclusivity("dvcs", "(FD,FD)", data_readers[i], mc_rec_dvcsgen_readers[i], "output/exclusivity_plots", "e'p'#gamma (Fa18 Out, FD,FD)");
-//         determine_exclusivity("dvcs", "(CD,FD)", data_readers[i], mc_rec_dvcsgen_readers[i], "output/exclusivity_plots", "e'p'#gamma (Fa18 Out, CD,FD)");
-//         determine_exclusivity("dvcs", "(CD,FT)", data_readers[i], mc_rec_dvcsgen_readers[i], "output/exclusivity_plots", "e'p'#gamma (Fa18 Out, CD,FT)");
-//     }
-
-//     for (int i = 2; i < 3; i++) {
-//         data_readers[i].Restart();
-//         mc_rec_dvcsgen_readers[i].Restart();
-        
-//         determine_exclusivity("dvcs", "(FD,FD)", data_readers[i], mc_rec_dvcsgen_readers[i], "output/exclusivity_plots", "e'p'#gamma (Sp19 Inb, FD,FD)");
-//         determine_exclusivity("dvcs", "(CD,FD)", data_readers[i], mc_rec_dvcsgen_readers[i], "output/exclusivity_plots", "e'p'#gamma (Sp19 Inb, CD,FD)");
-//         determine_exclusivity("dvcs", "(CD,FT)", data_readers[i], mc_rec_dvcsgen_readers[i], "output/exclusivity_plots", "e'p'#gamma (Sp19 Inb, CD,FT)");
-//     }
-
-//     // Eppi0 channel calls
-//     for (int i = 0; i < 3; i++) {
-//         eppi0_readers[i].Restart();
-//         mc_rec_aaogen_readers[i].Restart();
-        
-//         determine_exclusivity("eppi0", "(CD,FD)", eppi0_readers[i], mc_rec_aaogen_readers[i], "output/exclusivity_plots", "e'p'#pi^{0} (Fa18 Inb, CD,FD)");
-//         determine_exclusivity("eppi0", "(FD,FD)", eppi0_readers[i], mc_rec_aaogen_readers[i], "output/exclusivity_plots", "e'p'#pi^{0} (Fa18 Inb, FD,FD)");
-//     }
-
-//     for (int i = 1; i < 3; i++) {
-//         eppi0_readers[i].Restart();
-//         mc_rec_aaogen_readers[i].Restart();
-        
-//         determine_exclusivity("eppi0", "(CD,FD)", eppi0_readers[i], mc_rec_aaogen_readers[i], "output/exclusivity_plots", "e'p'#pi^{0} (Fa18 Out, CD,FD)");
-//         determine_exclusivity("eppi0", "(FD,FD)", eppi0_readers[i], mc_rec_aaogen_readers[i], "output/exclusivity_plots", "e'p'#pi^{0} (Fa18 Out, FD,FD)");
-//     }
-
-//     for (int i = 2; i < 3; i++) {
-//         eppi0_readers[i].Restart();
-//         mc_rec_aaogen_readers[i].Restart();
-        
-//         determine_exclusivity("eppi0", "(CD,FD)", eppi0_readers[i], mc_rec_aaogen_readers[i], "output/exclusivity_plots", "e'p'#pi^{0} (Sp19 Inb, CD,FD)");
-//         determine_exclusivity("eppi0", "(FD,FD)", eppi0_readers[i], mc_rec_aaogen_readers[i], "output/exclusivity_plots", "e'p'#pi^{0} (Sp19 Inb, FD,FD)");
-//     }
-// }
-
 void call_determine_exclusivity(std::vector<TTreeReader>& data_readers, std::vector<TTreeReader>& mc_rec_dvcsgen_readers, std::vector<TTreeReader>& eppi0_readers, std::vector<TTreeReader>& mc_rec_aaogen_readers) {
     // DVCS channel calls
     data_readers[0].Restart(); mc_rec_dvcsgen_readers[0].Restart();
@@ -163,7 +107,7 @@ int main(int argc, char* argv[]) {
     std::string dir4 = argv[4];
 
     // File paths for the binning CSVs
-    std::string binning_file = "imports/integrated_bin_v2.csv";  // Path to bin boundaries file
+    std::string binning_file = "imports/all_bin_v3.csv";  // Path to new bin boundaries file
 
     // Read bin boundaries from CSV
     std::vector<BinBoundary> bin_boundaries = read_bin_boundaries(binning_file);
@@ -174,11 +118,11 @@ int main(int argc, char* argv[]) {
     // Calculate the number of unique xB bins
     int num_xB_bins = count_unique_xB_bins(bin_boundaries);
 
-    std::string lee_data_file = "imports/all_bin_v3.csv";  // Path to bin boundaries file
-    // Read the bin data
-    // Use std::vector<std::string> for bin names, not AllBinData
-    std::vector<AllBinData> all_bin_data = read_bin_data(lee_data_file);
-    // print_bin_data(all_bin_data);
+    // std::string lee_data_file = "imports/all_bin_v3.csv";  // Path to bin boundaries file
+    // // Read the bin data
+    // // Use std::vector<std::string> for bin names, not AllBinData
+    // std::vector<AllBinData> all_bin_data = read_bin_data(lee_data_file);
+    // // print_bin_data(all_bin_data);
 
     // Define filenames for each directory (3 periods)
     std::vector<std::string> data_filenames = {
