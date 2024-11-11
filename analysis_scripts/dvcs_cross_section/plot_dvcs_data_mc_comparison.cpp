@@ -1,12 +1,13 @@
 // plot_dvcs_data_mc_comparison.cpp
 
-#include <TH1D.h>
+#include <TH1F.h>
 #include <TCanvas.h>
 #include <TLegend.h>
 #include <TStyle.h>
 #include <TTreeReader.h>
 #include <TTreeReaderValue.h>
 #include <TLatex.h>
+#include <TGraphErrors.h>
 #include <cmath>
 #include <string>
 #include <vector>
@@ -21,11 +22,14 @@
 // Constant to convert radians to degrees
 constexpr double RAD_TO_DEG = 180.0 / M_PI;
 
-// Helper function to find the closest lower power of 10 for a given value
-double closest_lower_power_of_ten(double value) {
-    if (value <= 0) return 0.1;  // Safety check for non-positive values
-    return std::pow(10, std::floor(std::log10(value)));
-}
+// Structure to hold counts and errors for each phi bin
+struct BinCounts {
+    double phi_center;
+    double phi_width;
+    double count_data;
+    double count_mc_gen;
+    double count_mc_rec;
+};
 
 void plot_dvcs_data_mc_comparison(const std::string& output_dir, 
                                   const std::string& analysisType, 
@@ -48,23 +52,32 @@ void plot_dvcs_data_mc_comparison(const std::string& output_dir,
         bin_groups[key].push_back(idx);
     }
 
-    // Collect all unique phi bin edges from bin boundaries
-    std::set<double> global_phi_edges_set;
+    // Map to store counts for each (xB, Q2, t) bin group
+    std::map<std::tuple<double, double, double>, std::vector<BinCounts>> bin_counts_map;
 
-    for (const auto& idx : relevant_bins) {
-        const auto& bin = bin_boundaries[idx];
-        global_phi_edges_set.insert(bin.phi_low);
-        global_phi_edges_set.insert(bin.phi_high);
-    }
+    // Initialize bin_counts_map
+    for (const auto& group : bin_groups) {
+        const auto& key = group.first;
+        const auto& idx_list = group.second;
 
-    // Convert set to sorted vector
-    std::vector<double> global_phi_edges(global_phi_edges_set.begin(), global_phi_edges_set.end());
-    std::sort(global_phi_edges.begin(), global_phi_edges.end());
+        std::vector<BinCounts> bin_counts_vector;
 
-    // Ensure we have at least two edges to create histograms
-    if (global_phi_edges.size() < 2) {
-        std::cerr << "Error: Insufficient global phi bin edges. Cannot create histograms." << std::endl;
-        return;
+        for (int idx : idx_list) {
+            const auto& bin = bin_boundaries[idx];
+            double phi_center = (bin.phi_low + bin.phi_high) / 2.0;
+            double phi_width = bin.phi_high - bin.phi_low;
+
+            BinCounts bin_counts;
+            bin_counts.phi_center = phi_center;
+            bin_counts.phi_width = phi_width;
+            bin_counts.count_data = 0.0;
+            bin_counts.count_mc_gen = 0.0;
+            bin_counts.count_mc_rec = 0.0;
+
+            bin_counts_vector.push_back(bin_counts);
+        }
+
+        bin_counts_map[key] = bin_counts_vector;
     }
 
     // Adjust canvas size
@@ -82,11 +95,6 @@ void plot_dvcs_data_mc_comparison(const std::string& output_dir,
     canvas->Divide(n_columns, n_rows);
 
     gStyle->SetOptStat(0);
-
-    // Histograms per (xB, Q2, t) bin
-    std::map<std::tuple<double, double, double>, TH1D*> h_data_histograms;
-    std::map<std::tuple<double, double, double>, TH1D*> h_mc_gen_histograms;
-    std::map<std::tuple<double, double, double>, TH1D*> h_mc_rec_histograms;
 
     int pad_idx = 1;  // Pad index for canvas
 
@@ -139,48 +147,7 @@ void plot_dvcs_data_mc_comparison(const std::string& output_dir,
     TTreeReaderValue<double> pTmiss_mc_rec(mc_rec_reader, "pTmiss");
     TTreeReaderValue<double> theta_neutral_neutral_mc_rec(mc_rec_reader, theta_variable_name.c_str());
 
-    // Create histograms for each (xB, Q2, t) bin using global phi bin edges
-    for (const auto& group : bin_groups) {
-        const auto& key = group.first;
-
-        // Create histograms with global phi bin edges
-        std::string title = Form("%s, %s: x_{B} [%.2f, %.2f], Q^{2} [%.2f, %.2f], -t [%.2f, %.2f]", 
-                                 analysisType.c_str(), 
-                                 dataset.c_str(),  
-                                 std::get<0>(key), bin_boundaries[group.second[0]].xB_high,
-                                 std::get<1>(key), bin_boundaries[group.second[0]].Q2_high,
-                                 std::get<2>(key), bin_boundaries[group.second[0]].t_high);
-
-        TH1D* h_data = new TH1D(Form("h_data_%d", pad_idx - 1), title.c_str(), global_phi_edges.size() - 1, &global_phi_edges[0]);
-        TH1D* h_mc_gen = new TH1D(Form("h_mc_gen_%d", pad_idx - 1), "gen", global_phi_edges.size() - 1, &global_phi_edges[0]);
-        TH1D* h_mc_rec = new TH1D(Form("h_mc_rec_%d", pad_idx - 1), "rec", global_phi_edges.size() - 1, &global_phi_edges[0]);
-
-        // Axis labels and styles
-        h_data->GetXaxis()->SetTitle("#phi [deg]");
-        h_data->GetYaxis()->SetTitle("Counts");
-        h_data->GetXaxis()->SetLabelSize(0.05);
-        h_data->GetYaxis()->SetLabelSize(0.05);
-        h_data->GetXaxis()->SetTitleSize(0.06);
-        h_data->GetYaxis()->SetTitleSize(0.06);
-
-        h_mc_gen->GetXaxis()->SetLabelSize(0.05);
-        h_mc_gen->GetYaxis()->SetLabelSize(0.05);
-        h_mc_gen->GetXaxis()->SetTitleSize(0.06);
-        h_mc_gen->GetYaxis()->SetTitleSize(0.06);
-
-        h_mc_rec->GetXaxis()->SetLabelSize(0.05);
-        h_mc_rec->GetYaxis()->SetLabelSize(0.05);
-        h_mc_rec->GetXaxis()->SetTitleSize(0.06);
-        h_mc_rec->GetYaxis()->SetTitleSize(0.06);
-
-        h_data_histograms[key] = h_data;
-        h_mc_gen_histograms[key] = h_mc_gen;
-        h_mc_rec_histograms[key] = h_mc_rec;
-
-        ++pad_idx;
-    }
-
-    // Fill data histograms
+    // Fill data counts
     while (data_reader.Next()) {
         double phi_deg = *phi_data * RAD_TO_DEG;  
         double xB = *xB_data;
@@ -190,28 +157,38 @@ void plot_dvcs_data_mc_comparison(const std::string& output_dir,
         // Adjust phi_deg to be within [0, 360)
         phi_deg = std::fmod(phi_deg + 360.0, 360.0);
 
-        // Find the (xB, Q2, t) bin
+        // Find the (xB, Q2, t) bin group
         for (const auto& group : bin_groups) {
             const auto& key = group.first;
             const auto& idx_list = group.second;
 
             const auto& bin_example = bin_boundaries[idx_list[0]];  // Use first bin as representative
 
-            if (xB >= bin_example.xB_low && xB <= bin_example.xB_high &&
-                Q2 >= bin_example.Q2_low && Q2 <= bin_example.Q2_high &&
-                t_abs >= bin_example.t_low && t_abs <= bin_example.t_high &&
+            if (xB >= bin_example.xB_low && xB < bin_example.xB_high &&
+                Q2 >= bin_example.Q2_low && Q2 < bin_example.Q2_high &&
+                t_abs >= bin_example.t_low && t_abs < bin_example.t_high &&
                 apply_kinematic_cuts(*t1_data, *open_angle_ep2_data, *theta_neutral_neutral_data, *Emiss2_data, *Mx2_1_data, *pTmiss_data)) {
 
-                TH1D* h_data = h_data_histograms[key];
-                if (h_data) {
-                    h_data->Fill(phi_deg);
+                // Now find the phi bin within this group
+                std::vector<BinCounts>& bin_counts_vector = bin_counts_map[key];
+
+                for (size_t i = 0; i < idx_list.size(); ++i) {
+                    int idx = idx_list[i];
+                    const auto& bin = bin_boundaries[idx];
+
+                    if (phi_deg >= bin.phi_low && phi_deg < bin.phi_high) {
+                        // Increment the count
+                        bin_counts_vector[i].count_data += 1.0;
+                        break;
+                    }
                 }
+
                 break;  // Exit the loop once the event is assigned
             }
         }
     }
 
-    // Fill mc_gen histograms
+    // Fill mc_gen counts
     while (mc_gen_reader.Next()) {
         double phi_deg = *phi_mc_gen * RAD_TO_DEG; 
         double xB = *xB_mc_gen;
@@ -223,24 +200,35 @@ void plot_dvcs_data_mc_comparison(const std::string& output_dir,
 
         for (const auto& group : bin_groups) {
             const auto& key = group.first;
+            const auto& idx_list = group.second;
 
-            const auto& bin_example = bin_boundaries[group.second[0]];
+            const auto& bin_example = bin_boundaries[idx_list[0]];
 
-            if (xB >= bin_example.xB_low && xB <= bin_example.xB_high &&
-                Q2 >= bin_example.Q2_low && Q2 <= bin_example.Q2_high &&
-                t_abs >= bin_example.t_low && t_abs <= bin_example.t_high &&
+            if (xB >= bin_example.xB_low && xB < bin_example.xB_high &&
+                Q2 >= bin_example.Q2_low && Q2 < bin_example.Q2_high &&
+                t_abs >= bin_example.t_low && t_abs < bin_example.t_high &&
                 apply_kinematic_cuts(*t1_mc_gen, *open_angle_ep2_mc_gen, *theta_neutral_neutral_mc_gen, *Emiss2_mc_gen, *Mx2_1_mc_gen, *pTmiss_mc_gen)) {
 
-                TH1D* h_mc_gen = h_mc_gen_histograms[key];
-                if (h_mc_gen) {
-                    h_mc_gen->Fill(phi_deg);
+                // Now find the phi bin within this group
+                std::vector<BinCounts>& bin_counts_vector = bin_counts_map[key];
+
+                for (size_t i = 0; i < idx_list.size(); ++i) {
+                    int idx = idx_list[i];
+                    const auto& bin = bin_boundaries[idx];
+
+                    if (phi_deg >= bin.phi_low && phi_deg < bin.phi_high) {
+                        // Increment the count
+                        bin_counts_vector[i].count_mc_gen += 1.0;
+                        break;
+                    }
                 }
-                break;
+
+                break;  // Exit the loop once the event is assigned
             }
         }
     }
 
-    // Fill mc_rec histograms
+    // Fill mc_rec counts
     while (mc_rec_reader.Next()) {
         double phi_deg = *phi_mc_rec * RAD_TO_DEG; 
         double xB = *xB_mc_rec;
@@ -252,86 +240,161 @@ void plot_dvcs_data_mc_comparison(const std::string& output_dir,
 
         for (const auto& group : bin_groups) {
             const auto& key = group.first;
+            const auto& idx_list = group.second;
 
-            const auto& bin_example = bin_boundaries[group.second[0]];
+            const auto& bin_example = bin_boundaries[idx_list[0]];
 
-            if (xB >= bin_example.xB_low && xB <= bin_example.xB_high &&
-                Q2 >= bin_example.Q2_low && Q2 <= bin_example.Q2_high &&
-                t_abs >= bin_example.t_low && t_abs <= bin_example.t_high &&
+            if (xB >= bin_example.xB_low && xB < bin_example.xB_high &&
+                Q2 >= bin_example.Q2_low && Q2 < bin_example.Q2_high &&
+                t_abs >= bin_example.t_low && t_abs < bin_example.t_high &&
                 apply_kinematic_cuts(*t1_mc_rec, *open_angle_ep2_mc_rec, *theta_neutral_neutral_mc_rec, *Emiss2_mc_rec, *Mx2_1_mc_rec, *pTmiss_mc_rec)) {
 
-                TH1D* h_mc_rec = h_mc_rec_histograms[key];
-                if (h_mc_rec) {
-                    h_mc_rec->Fill(phi_deg);
+                // Now find the phi bin within this group
+                std::vector<BinCounts>& bin_counts_vector = bin_counts_map[key];
+
+                for (size_t i = 0; i < idx_list.size(); ++i) {
+                    int idx = idx_list[i];
+                    const auto& bin = bin_boundaries[idx];
+
+                    if (phi_deg >= bin.phi_low && phi_deg < bin.phi_high) {
+                        // Increment the count
+                        bin_counts_vector[i].count_mc_rec += 1.0;
+                        break;
+                    }
                 }
-                break;
+
+                break;  // Exit the loop once the event is assigned
             }
         }
     }
 
-    // Normalize histograms and plot
+    // Now create TGraphErrors for each bin group
     pad_idx = 1;
     for (const auto& group : bin_groups) {
         const auto& key = group.first;
+        const auto& bin_counts_vector = bin_counts_map[key];
 
-        canvas->cd(pad_idx);
+        size_t n_points = bin_counts_vector.size();
 
-        TPad* pad = (TPad*)gPad;
-
-        // Adjust margins if necessary
-        pad->SetLeftMargin(0.15);
-        pad->SetBottomMargin(0.15);
-
-        TH1D* h_data = h_data_histograms[key];
-        TH1D* h_mc_gen = h_mc_gen_histograms[key];
-        TH1D* h_mc_rec = h_mc_rec_histograms[key];
-
-        if (!h_data || !h_mc_gen || !h_mc_rec) {
-            std::cerr << "Error: Histograms not found for bin group. Skipping plotting for this bin group." << std::endl;
+        if (n_points == 0) {
+            std::cerr << "Warning: No phi bins for bin group. Skipping plotting for this bin group." << std::endl;
             ++pad_idx;
             continue;
         }
 
-        // Scaling and plotting as before
-        double integral_data = h_data->Integral();
-        double integral_mc_rec = h_mc_rec->Integral();
-        double integral_mc_gen = h_mc_gen->Integral();
+        // Arrays to hold phi centers and counts
+        std::vector<double> phi_centers(n_points);
+        std::vector<double> phi_errors(n_points, 0.0); // Set x-errors to zero or phi_width/2 if desired
+        std::vector<double> counts_data(n_points);
+        std::vector<double> errors_data(n_points);
+        std::vector<double> counts_mc_gen(n_points);
+        std::vector<double> errors_mc_gen(n_points);
+        std::vector<double> counts_mc_rec(n_points);
+        std::vector<double> errors_mc_rec(n_points);
 
-        // Scale reconstructed MC to have the same integral as data
-        if (integral_mc_rec > 0 && integral_data > 0) {
-            h_mc_rec->Scale(integral_data / integral_mc_rec);
+        // Fill the arrays
+        for (size_t i = 0; i < n_points; ++i) {
+            const auto& bin_counts = bin_counts_vector[i];
+            phi_centers[i] = bin_counts.phi_center;
+            phi_errors[i] = 0.0; // bin_counts.phi_width / 2.0; // Optional
+
+            counts_data[i] = bin_counts.count_data;
+            errors_data[i] = std::sqrt(bin_counts.count_data);
+
+            counts_mc_gen[i] = bin_counts.count_mc_gen;
+            errors_mc_gen[i] = std::sqrt(bin_counts.count_mc_gen);
+
+            counts_mc_rec[i] = bin_counts.count_mc_rec;
+            errors_mc_rec[i] = std::sqrt(bin_counts.count_mc_rec);
+        }
+
+        // Total counts for scaling
+        double sum_data = std::accumulate(counts_data.begin(), counts_data.end(), 0.0);
+        double sum_mc_rec = std::accumulate(counts_mc_rec.begin(), counts_mc_rec.end(), 0.0);
+        double sum_mc_gen = std::accumulate(counts_mc_gen.begin(), counts_mc_gen.end(), 0.0);
+
+        // Scale reconstructed MC to have the same total counts as data
+        if (sum_mc_rec > 0 && sum_data > 0) {
+            double scale_factor = sum_data / sum_mc_rec;
+            for (size_t i = 0; i < n_points; ++i) {
+                counts_mc_rec[i] *= scale_factor;
+                errors_mc_rec[i] *= scale_factor;
+            }
         }
 
         // Now scale generated MC using the ratio of its original integral to the original reconstructed MC integral
-        if (integral_mc_gen > 0 && integral_mc_rec > 0) {
-            h_mc_gen->Scale((integral_mc_gen / integral_mc_rec) * (integral_data / integral_mc_rec));
+        if (sum_mc_gen > 0 && sum_mc_rec > 0 && sum_data > 0) {
+            double scale_factor = (sum_mc_gen / sum_mc_rec) * (sum_data / sum_mc_rec);
+            for (size_t i = 0; i < n_points; ++i) {
+                counts_mc_gen[i] *= scale_factor;
+                errors_mc_gen[i] *= scale_factor;
+            }
         }
 
+        // Create TGraphErrors
+        TGraphErrors* graph_data = new TGraphErrors(n_points, &phi_centers[0], &counts_data[0], &phi_errors[0], &errors_data[0]);
+        TGraphErrors* graph_mc_gen = new TGraphErrors(n_points, &phi_centers[0], &counts_mc_gen[0], &phi_errors[0], &errors_mc_gen[0]);
+        TGraphErrors* graph_mc_rec = new TGraphErrors(n_points, &phi_centers[0], &counts_mc_rec[0], &phi_errors[0], &errors_mc_rec[0]);
+
         // Set styles
-        h_data->SetMarkerColor(kBlue);
-        h_data->SetMarkerStyle(20);
-        h_data->SetLineColor(kBlue);
+        graph_data->SetMarkerColor(kBlue);
+        graph_data->SetMarkerStyle(20);
+        graph_data->SetLineColor(kBlue);
 
-        h_mc_gen->SetLineColor(kBlack);
-        h_mc_gen->SetLineStyle(2);
+        graph_mc_gen->SetLineColor(kBlack);
+        graph_mc_gen->SetLineStyle(2);
 
-        h_mc_rec->SetMarkerColor(kRed);
-        h_mc_rec->SetMarkerStyle(22);
-        h_mc_rec->SetLineColor(kRed);
+        graph_mc_rec->SetMarkerColor(kRed);
+        graph_mc_rec->SetMarkerStyle(22);
+        graph_mc_rec->SetLineColor(kRed);
 
-        // Draw histograms
-        h_data->Draw("E1");
-        h_mc_rec->Draw("E1 SAME");
-        h_mc_gen->Draw("HIST SAME");
+        // Draw graphs
+        canvas->cd(pad_idx);
+        TPad* pad = (TPad*)gPad;
+        pad->SetLeftMargin(0.15);
+        pad->SetBottomMargin(0.15);
+
+        // Create a frame histogram for axes
+        double phi_min = *std::min_element(phi_centers.begin(), phi_centers.end()) - 5.0;
+        double phi_max = *std::max_element(phi_centers.begin(), phi_centers.end()) + 5.0;
+        double count_max = std::max(*std::max_element(counts_data.begin(), counts_data.end()),
+                                    std::max(*std::max_element(counts_mc_rec.begin(), counts_mc_rec.end()),
+                                             *std::max_element(counts_mc_gen.begin(), counts_mc_gen.end()))) * 1.2;
+        double count_min = 0.0;
+
+        TH1F* frame = pad->DrawFrame(phi_min, count_min, phi_max, count_max);
+        frame->GetXaxis()->SetTitle("#phi [deg]");
+        frame->GetYaxis()->SetTitle("Counts");
+
+        graph_data->Draw("P SAME");
+        graph_mc_rec->Draw("P SAME");
+        graph_mc_gen->Draw("L SAME");
 
         // Add legend
         TLegend* legend = new TLegend(0.575, 0.45, 0.9, 0.75);
-        legend->AddEntry(h_data, "Data", "lep");
-        legend->AddEntry(h_mc_rec, "Reconstructed MC", "lep");
-        legend->AddEntry(h_mc_gen, "Generated MC", "l");
+        legend->AddEntry(graph_data, "Data", "lep");
+        legend->AddEntry(graph_mc_rec, "Reconstructed MC", "lep");
+        legend->AddEntry(graph_mc_gen, "Generated MC", "l");
         legend->SetTextSize(0.04);
         legend->Draw();
 
+        // Add title
+        std::string title = Form("%s, %s: x_{B} [%.3f, %.3f], Q^{2} [%.3f, %.3f], -t [%.3f, %.3f]", 
+                                 analysisType.c_str(), 
+                                 dataset.c_str(),  
+                                 std::get<0>(key), bin_boundaries[bin_groups[key][0]].xB_high,
+                                 std::get<1>(key), bin_boundaries[bin_groups[key][0]].Q2_high,
+                                 std::get<2>(key), bin_boundaries[bin_groups[key][0]].t_high);
+        TLatex latex;
+        latex.SetNDC();
+        latex.SetTextSize(0.04);
+        latex.DrawLatex(0.15, 0.85, title.c_str());
+
+        // Clean up
+        delete graph_data;
+        delete graph_mc_gen;
+        delete graph_mc_rec;
+        delete frame;
         ++pad_idx;
     }
 
@@ -340,8 +403,5 @@ void plot_dvcs_data_mc_comparison(const std::string& output_dir,
     canvas->SaveAs(filename.c_str());
 
     // Clean up
-    for (auto& entry : h_data_histograms) delete entry.second;
-    for (auto& entry : h_mc_gen_histograms) delete entry.second;
-    for (auto& entry : h_mc_rec_histograms) delete entry.second;
     delete canvas;
 }

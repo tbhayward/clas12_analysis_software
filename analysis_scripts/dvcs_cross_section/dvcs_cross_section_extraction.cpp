@@ -115,14 +115,14 @@ int main(int argc, char* argv[]) {
         std::cerr << "Error: No bin boundaries read from file." << std::endl;
         return 1;
     }
-    // Print out the bin boundaries for verification
-    std::cout << "Bin boundaries read from CSV:" << std::endl;
-    for (const auto& bin : bin_boundaries) {
-        std::cout << "xB: [" << bin.xB_low << ", " << bin.xB_high << "], "
-                  << "Q2: [" << bin.Q2_low << ", " << bin.Q2_high << "], "
-                  << "t: [" << bin.t_low << ", " << bin.t_high << "], "
-                  << "phi: [" << bin.phi_low << ", " << bin.phi_high << "]" << std::endl;
-    }
+    // // Print out the bin boundaries for verification
+    // std::cout << "Bin boundaries read from CSV:" << std::endl;
+    // for (const auto& bin : bin_boundaries) {
+    //     std::cout << "xB: [" << bin.xB_low << ", " << bin.xB_high << "], "
+    //               << "Q2: [" << bin.Q2_low << ", " << bin.Q2_high << "], "
+    //               << "t: [" << bin.t_low << ", " << bin.t_high << "], "
+    //               << "phi: [" << bin.phi_low << ", " << bin.phi_high << "]" << std::endl;
+    // }
     // Calculate the number of unique xB bins
     int num_xB_bins = count_unique_xB_bins(bin_boundaries);
 
