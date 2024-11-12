@@ -12,13 +12,12 @@
 #include <string>
 #include <vector>
 #include "bin_boundaries.h"
-#include <algorithm>
-#include <cctype>
 #include "kinematic_cuts.h"
 #include "bin_helpers.h"
+#include <algorithm>
 #include <map>
-#include <set>
 #include <numeric>
+#include <iostream>
 
 // Constant to convert radians to degrees
 constexpr double RAD_TO_DEG = 180.0 / M_PI;
@@ -61,6 +60,7 @@ void plot_dvcs_data_mc_comparison(const std::string& output_dir,
     // Check if relevant_bins is empty
     if (relevant_bins.empty()) {
         std::cerr << "Error: No relevant bins found for xB_bin: " << xB_bin << std::endl;
+        return;
     } else {
         std::cout << "Number of relevant bins: " << relevant_bins.size() << std::endl;
         // Optionally, print the relevant bin indices and xB ranges
@@ -70,12 +70,13 @@ void plot_dvcs_data_mc_comparison(const std::string& output_dir,
         }
     }
 
-    // Group the bins by (xB, Q2, t)
-    std::map<std::tuple<double, double, double>, std::vector<int>> bin_groups;
+    // Group the bins by (Q2_low, t_low)
+    // Since xB is fixed for all relevant bins, we group by Q2_low and t_low
+    std::map<std::pair<double, double>, std::vector<int>> bin_groups;
 
     for (int idx : relevant_bins) {
         const auto& bin = bin_boundaries[idx];
-        auto key = std::make_tuple(bin.xB_low, bin.Q2_low, bin.t_low);
+        auto key = std::make_pair(bin.Q2_low, bin.t_low);
         bin_groups[key].push_back(idx);
     }
 
@@ -86,8 +87,8 @@ void plot_dvcs_data_mc_comparison(const std::string& output_dir,
         return;
     }
 
-    // Map to store counts for each (xB, Q2, t) bin group
-    std::map<std::tuple<double, double, double>, std::vector<BinCounts>> bin_counts_map;
+    // Map to store counts for each bin group
+    std::map<std::pair<double, double>, std::vector<BinCounts>> bin_counts_map;
 
     // Initialize bin_counts_map
     for (const auto& group : bin_groups) {
@@ -181,8 +182,10 @@ void plot_dvcs_data_mc_comparison(const std::string& output_dir,
     TTreeReaderValue<double> pTmiss_mc_rec(mc_rec_reader, "pTmiss");
     TTreeReaderValue<double> theta_neutral_neutral_mc_rec(mc_rec_reader, theta_variable_name.c_str());
 
+    // Initialize event counters
     int data_event_count = 0;
     int data_events_assigned = 0;
+
     // Fill data counts
     while (data_reader.Next()) {
         data_event_count++;
@@ -194,19 +197,24 @@ void plot_dvcs_data_mc_comparison(const std::string& output_dir,
         // Adjust phi_deg to be within [0, 360)
         phi_deg = std::fmod(phi_deg + 360.0, 360.0);
 
-        // std::cout << "Before bin group" << std::endl;
-        // Find the (xB, Q2, t) bin group
+        // Apply kinematic cuts
+        if (!apply_kinematic_cuts(*t1_data, *open_angle_ep2_data, *theta_neutral_neutral_data, *Emiss2_data, *Mx2_1_data, *pTmiss_data)) {
+            continue;
+        }
+
+        // Find the bin group
+        bool event_assigned = false;
         for (const auto& group : bin_groups) {
             const auto& key = group.first;
             const auto& idx_list = group.second;
 
-            const auto& bin_example = bin_boundaries[idx_list[0]];  // Use first bin as representative
-            // std::cout << "Entered bin group" << std::endl;
-            if (xB >= bin_example.xB_low && xB <= bin_example.xB_high &&
-                Q2 >= bin_example.Q2_low && Q2 <= bin_example.Q2_high &&
-                t_abs >= bin_example.t_low && t_abs <= bin_example.t_high &&
-                apply_kinematic_cuts(*t1_data, *open_angle_ep2_data, *theta_neutral_neutral_data, *Emiss2_data, *Mx2_1_data, *pTmiss_data)) {
+            // Since xB_bin is fixed, we only need to check Q2 and t ranges
+            double Q2_low = key.first;
+            double Q2_high = bin_boundaries[idx_list[0]].Q2_high;
+            double t_low = key.second;
+            double t_high = bin_boundaries[idx_list[0]].t_high;
 
+            if (Q2 >= Q2_low && Q2 <= Q2_high && t_abs >= t_low && t_abs <= t_high) {
                 // Now find the phi bin within this group
                 std::vector<BinCounts>& bin_counts_vector = bin_counts_map[key];
 
@@ -218,20 +226,123 @@ void plot_dvcs_data_mc_comparison(const std::string& output_dir,
                         // Increment the count
                         bin_counts_vector[i].count_data += 1.0;
                         data_events_assigned++;
+                        event_assigned = true;
                         break;
                     }
                 }
-
-                break;  // Exit the loop once the event is assigned
+                break; // Exit loop after assigning to a bin group
             }
         }
     }
     std::cout << "Total data events processed: " << data_event_count << std::endl;
     std::cout << "Total data events assigned to bins: " << data_events_assigned << std::endl;
 
-    // Similar code for mc_gen and mc_rec, with event counts and assigned counts
+    // Similar code for mc_gen and mc_rec
+    int mc_gen_event_count = 0;
+    int mc_gen_events_assigned = 0;
 
-    // ... (Repeat for mc_gen and mc_rec, adding similar counters and print statements)
+    // Fill mc_gen counts
+    while (mc_gen_reader.Next()) {
+        mc_gen_event_count++;
+        double phi_deg = *phi_mc_gen * RAD_TO_DEG;  
+        double xB = *xB_mc_gen;
+        double Q2 = *Q2_mc_gen;
+        double t_abs = std::abs(*t1_mc_gen);
+
+        // Adjust phi_deg to be within [0, 360)
+        phi_deg = std::fmod(phi_deg + 360.0, 360.0);
+
+        // Apply kinematic cuts
+        if (!apply_kinematic_cuts(*t1_mc_gen, *open_angle_ep2_mc_gen, *theta_neutral_neutral_mc_gen, *Emiss2_mc_gen, *Mx2_1_mc_gen, *pTmiss_mc_gen)) {
+            continue;
+        }
+
+        // Find the bin group
+        bool event_assigned = false;
+        for (const auto& group : bin_groups) {
+            const auto& key = group.first;
+            const auto& idx_list = group.second;
+
+            double Q2_low = key.first;
+            double Q2_high = bin_boundaries[idx_list[0]].Q2_high;
+            double t_low = key.second;
+            double t_high = bin_boundaries[idx_list[0]].t_high;
+
+            if (Q2 >= Q2_low && Q2 <= Q2_high && t_abs >= t_low && t_abs <= t_high) {
+                // Now find the phi bin within this group
+                std::vector<BinCounts>& bin_counts_vector = bin_counts_map[key];
+
+                for (size_t i = 0; i < idx_list.size(); ++i) {
+                    int idx = idx_list[i];
+                    const auto& bin = bin_boundaries[idx];
+
+                    if (phi_in_bin(phi_deg, bin.phi_low, bin.phi_high)) {
+                        // Increment the count
+                        bin_counts_vector[i].count_mc_gen += 1.0;
+                        mc_gen_events_assigned++;
+                        event_assigned = true;
+                        break;
+                    }
+                }
+                break; // Exit loop after assigning to a bin group
+            }
+        }
+    }
+    std::cout << "Total mc_gen events processed: " << mc_gen_event_count << std::endl;
+    std::cout << "Total mc_gen events assigned to bins: " << mc_gen_events_assigned << std::endl;
+
+    int mc_rec_event_count = 0;
+    int mc_rec_events_assigned = 0;
+
+    // Fill mc_rec counts
+    while (mc_rec_reader.Next()) {
+        mc_rec_event_count++;
+        double phi_deg = *phi_mc_rec * RAD_TO_DEG;  
+        double xB = *xB_mc_rec;
+        double Q2 = *Q2_mc_rec;
+        double t_abs = std::abs(*t1_mc_rec);
+
+        // Adjust phi_deg to be within [0, 360)
+        phi_deg = std::fmod(phi_deg + 360.0, 360.0);
+
+        // Apply kinematic cuts
+        if (!apply_kinematic_cuts(*t1_mc_rec, *open_angle_ep2_mc_rec, *theta_neutral_neutral_mc_rec, *Emiss2_mc_rec, *Mx2_1_mc_rec, *pTmiss_mc_rec)) {
+            continue;
+        }
+
+        // Find the bin group
+        bool event_assigned = false;
+        for (const auto& group : bin_groups) {
+            const auto& key = group.first;
+            const auto& idx_list = group.second;
+
+            double Q2_low = key.first;
+            double Q2_high = bin_boundaries[idx_list[0]].Q2_high;
+            double t_low = key.second;
+            double t_high = bin_boundaries[idx_list[0]].t_high;
+
+            if (Q2 >= Q2_low && Q2 <= Q2_high && t_abs >= t_low && t_abs <= t_high) {
+                // Now find the phi bin within this group
+                std::vector<BinCounts>& bin_counts_vector = bin_counts_map[key];
+
+                for (size_t i = 0; i < idx_list.size(); ++i) {
+                    int idx = idx_list[i];
+                    const auto& bin = bin_boundaries[idx];
+
+                    if (phi_in_bin(phi_deg, bin.phi_low, bin.phi_high)) {
+                        // Increment the count
+                        bin_counts_vector[i].count_mc_rec += 1.0;
+                        mc_rec_events_assigned++;
+                        event_assigned = true;
+                        break;
+                    }
+                }
+                break; // Exit loop after assigning to a bin group
+            }
+        }
+    }
+    std::cout << "Total mc_rec events processed: " << mc_rec_event_count << std::endl;
+    std::cout << "Total mc_rec events assigned to bins: " << mc_rec_events_assigned << std::endl;
 
     // Now create TGraphErrors for each bin group
     pad_idx = 1;
@@ -274,7 +385,7 @@ void plot_dvcs_data_mc_comparison(const std::string& output_dir,
         }
 
         // Print counts
-        std::cout << "Counts for bin group xB_low=" << std::get<0>(key) << ", Q2_low=" << std::get<1>(key) << ", t_low=" << std::get<2>(key) << std::endl;
+        std::cout << "Counts for bin group Q2_low=" << key.first << ", t_low=" << key.second << std::endl;
         std::cout << "Phi centers: ";
         for (double phi : phi_centers) {
             std::cout << phi << " ";
@@ -367,12 +478,13 @@ void plot_dvcs_data_mc_comparison(const std::string& output_dir,
         legend->Draw();
 
         // Add title
+        const auto& bin = bin_boundaries[bin_groups[key][0]];
         std::string title = Form("%s, %s: x_{B} [%.3f, %.3f], Q^{2} [%.3f, %.3f], -t [%.3f, %.3f]", 
                                  analysisType.c_str(), 
                                  dataset.c_str(),  
-                                 std::get<0>(key), bin_boundaries[bin_groups[key][0]].xB_high,
-                                 std::get<1>(key), bin_boundaries[bin_groups[key][0]].Q2_high,
-                                 std::get<2>(key), bin_boundaries[bin_groups[key][0]].t_high);
+                                 bin.xB_low, bin.xB_high,
+                                 bin.Q2_low, bin.Q2_high,
+                                 bin.t_low, bin.t_high);
         TLatex latex;
         latex.SetNDC();
         latex.SetTextSize(0.04);
