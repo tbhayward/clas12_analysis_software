@@ -47,7 +47,6 @@ void create_directories(const std::string& base_output_dir) {
         exclusivity_dir, dvcs_dir, eppi0_dir, pi0_mass_dir,
         dvcs_comparison_dir, eppi0_comparison_dir,
         unfolded_dvcs_dir, unfolded_eppi0_dir,
-        unfolded_yields_dir, unfolded_acceptances_dir,
         fa18inb_yields_dir, fa18inb_acceptances_dir, fa18out_yields_dir, fa18out_acceptances_dir, sp19inb_yields_dir, sp19inb_acceptances_dir,
         fa18inb_eppi0_yields_dir, fa18inb_eppi0_acceptances_dir, fa18out_eppi0_yields_dir, fa18out_eppi0_acceptances_dir, sp19inb_eppi0_yields_dir, sp19inb_eppi0_acceptances_dir,
         contamination_plots_dir  // Added contamination_plots_dir
