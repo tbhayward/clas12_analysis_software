@@ -132,7 +132,6 @@ int main(int argc, char* argv[]) {
     // }
     // Calculate the number of unique xB bins
     int num_xB_bins = count_unique_xB_bins(bin_boundaries);
-    std::cout << num_xB_bins << std::endl;
 
     // std::string lee_data_file = "imports/all_bin_v3.csv";  // Path to bin boundaries file
     // // Read the bin data
@@ -302,15 +301,14 @@ int main(int argc, char* argv[]) {
     // call_determine_exclusivity(data_readers, mc_rec_dvcsgen_readers, eppi0_readers, mc_rec_aaogen_readers);
 
     // Loop over unique xB bins and call the plotting function for DVCS data/MC comparison
-    // for (int xB_bin = 0; xB_bin < num_xB_bins; ++xB_bin) {
-    for (int xB_bin = 0; xB_bin < 1; ++xB_bin) {
+    for (int xB_bin = 0; xB_bin < num_xB_bins; ++xB_bin) {
         plot_dvcs_data_mc_comparison(output_dir, "dvcs", "Fa18_Out", xB_bin, bin_boundaries, data_readers[1], mc_gen_dvcsgen_readers[1], mc_rec_dvcsgen_readers[1]);
     }
 
-    // for (int xB_bin = 0; xB_bin < num_xB_bins; ++xB_bin) {
-    // // for (int xB_bin = 0; xB_bin < 2; ++xB_bin) {
-    //     plot_dvcs_data_mc_comparison(output_dir, "eppi0", "Fa18_Inb", xB_bin, bin_boundaries, eppi0_readers[0], mc_gen_aaogen_readers[0], mc_rec_aaogen_readers[0]);
-    // }
+    for (int xB_bin = 0; xB_bin < num_xB_bins; ++xB_bin) {
+    // for (int xB_bin = 0; xB_bin < 2; ++xB_bin) {
+        plot_dvcs_data_mc_comparison(output_dir, "eppi0", "Fa18_Inb", xB_bin, bin_boundaries, eppi0_readers[0], mc_gen_aaogen_readers[0], mc_rec_aaogen_readers[0]);
+    }
 
     // // Create a vector to hold all the unfolding data across bins
     // std::vector<UnfoldingData> all_unfolding_data;

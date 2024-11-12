@@ -8,7 +8,7 @@
 // Function to precompute relevant bins based on xB_bin
 std::vector<int> precompute_relevant_bins(int xB_bin, const std::vector<BinBoundary>& bin_boundaries) {
     std::vector<int> relevant_bins;
-    std::cout << "Entering precompute_relevant_bins with xB_bin = " << xB_bin << std::endl;
+    // std::cout << "Entering precompute_relevant_bins with xB_bin = " << xB_bin << std::endl;
 
     // Extract unique xB ranges from bin_boundaries
     std::set<std::pair<double, double>> xB_ranges_set;
@@ -39,11 +39,11 @@ std::vector<int> precompute_relevant_bins(int xB_bin, const std::vector<BinBound
 
         if (bin.xB_low == xB_low && bin.xB_high == xB_high) {
             relevant_bins.push_back(bin_idx);
-            std::cout << "Bin_idx " << bin_idx << " added to relevant_bins." << std::endl;
+            // std::cout << "Bin_idx " << bin_idx << " added to relevant_bins." << std::endl;
         }
     }
 
-    std::cout << "Total relevant bins found: " << relevant_bins.size() << std::endl;
+    // std::cout << "Total relevant bins found: " << relevant_bins.size() << std::endl;
     return relevant_bins;
 }
 
