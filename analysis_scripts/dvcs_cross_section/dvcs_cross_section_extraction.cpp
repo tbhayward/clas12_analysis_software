@@ -313,10 +313,10 @@ int main(int argc, char* argv[]) {
     // Create a vector to hold all the unfolding data across bins
     std::vector<UnfoldingData> all_unfolding_data;
     // Iterate over the xB bins
-    for (int xB_bin = 3; xB_bin < 4; ++xB_bin) {
+    for (int xB_bin = 0; xB_bin < 1; ++xB_bin) {
         // Call the plot_unfolding function for each xB_bin and get the results
-        std::vector<UnfoldingData> bin_data = plot_unfolding(base_output_dir, xB_bin, bin_boundaries,
-            data_readers, mc_gen_dvcsgen_readers, mc_rec_dvcsgen_readers, eppi0_readers,
+        std::unordered_map<std::string, std::vector<UnfoldingData>> bin_data = plot_unfolding(base_output_dir, 
+            xB_bin, bin_boundaries, data_readers, mc_gen_dvcsgen_readers, mc_rec_dvcsgen_readers, eppi0_readers,
             mc_gen_aaogen_readers, mc_rec_aaogen_readers);
 
         // // Calculate the contamination factor and update bin_data
