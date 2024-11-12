@@ -91,7 +91,7 @@ std::map<std::string, std::vector<UnfoldingData>> plot_unfolding(const std::stri
 
         int n_bins = bin_groups.size();
         int n_columns = std::ceil(std::sqrt(n_bins));
-        int n_rows = std::ceil(static_cast<double>(n_bins) / n_columns);
+        // int n_rows = std::ceil(static_cast<double>(n_bins) / n_columns); // Unused variable
 
         // Initialize UnfoldingData structures and histograms
         for (const auto& group : bin_groups) {
@@ -332,13 +332,13 @@ std::map<std::string, std::vector<UnfoldingData>> plot_unfolding(const std::stri
             TTreeReaderValue<double> theta_neutral_neutral_mc_gen(mc_gen_reader, theta_variable_name.c_str());
 
             // Readers for detector status variables (detector1 and detector2)
-            TTreeReaderValue<int> detector1_mc(mc_gen_reader, "detector1");
-            TTreeReaderValue<int> detector2_mc(mc_gen_reader, "detector2");
+            TTreeReaderValue<int> detector1_mc_gen(mc_gen_reader, "detector1");
+            TTreeReaderValue<int> detector2_mc_gen(mc_gen_reader, "detector2");
 
             while (mc_gen_reader.Next()) {
                 // Determine topology based on detector1 and detector2
-                int det1 = *detector1_mc;
-                int det2 = *detector2_mc;
+                int det1 = *detector1_mc_gen;
+                int det2 = *detector2_mc_gen;
 
                 std::string event_topology = "";
                 if (det1 == 2 && det2 == 1) {
@@ -413,13 +413,13 @@ std::map<std::string, std::vector<UnfoldingData>> plot_unfolding(const std::stri
             TTreeReaderValue<double> theta_neutral_neutral_mc_rec(mc_rec_reader, theta_variable_name.c_str());
 
             // Readers for detector status variables (detector1 and detector2)
-            TTreeReaderValue<int> detector1_mc(mc_rec_reader, "detector1");
-            TTreeReaderValue<int> detector2_mc(mc_rec_reader, "detector2");
+            TTreeReaderValue<int> detector1_mc_rec(mc_rec_reader, "detector1");
+            TTreeReaderValue<int> detector2_mc_rec(mc_rec_reader, "detector2");
 
             while (mc_rec_reader.Next()) {
                 // Determine topology based on detector1 and detector2
-                int det1 = *detector1_mc;
-                int det2 = *detector2_mc;
+                int det1 = *detector1_mc_rec;
+                int det2 = *detector2_mc_rec;
 
                 std::string event_topology = "";
                 if (det1 == 2 && det2 == 1) {
@@ -497,13 +497,13 @@ std::map<std::string, std::vector<UnfoldingData>> plot_unfolding(const std::stri
             TTreeReaderValue<double> theta_neutral_neutral_mc_gen(mc_gen_reader, theta_variable_name.c_str());
 
             // Readers for detector status variables (detector1 and detector2)
-            TTreeReaderValue<int> detector1_mc(mc_gen_reader, "detector1");
-            TTreeReaderValue<int> detector2_mc(mc_gen_reader, "detector2");
+            TTreeReaderValue<int> detector1_mc_gen(mc_gen_reader, "detector1");
+            TTreeReaderValue<int> detector2_mc_gen(mc_gen_reader, "detector2");
 
             while (mc_gen_reader.Next()) {
                 // Determine topology based on detector1 and detector2
-                int det1 = *detector1_mc;
-                int det2 = *detector2_mc;
+                int det1 = *detector1_mc_gen;
+                int det2 = *detector2_mc_gen;
 
                 std::string event_topology = "";
                 if (det1 == 2 && det2 == 1) {
@@ -573,13 +573,13 @@ std::map<std::string, std::vector<UnfoldingData>> plot_unfolding(const std::stri
             TTreeReaderValue<double> theta_neutral_neutral_mc_rec(mc_rec_reader, theta_variable_name.c_str());
 
             // Readers for detector status variables (detector1 and detector2)
-            TTreeReaderValue<int> detector1_mc(mc_rec_reader, "detector1");
-            TTreeReaderValue<int> detector2_mc(mc_rec_reader, "detector2");
+            TTreeReaderValue<int> detector1_mc_rec(mc_rec_reader, "detector1");
+            TTreeReaderValue<int> detector2_mc_rec(mc_rec_reader, "detector2");
 
             while (mc_rec_reader.Next()) {
                 // Determine topology based on detector1 and detector2
-                int det1 = *detector1_mc;
-                int det2 = *detector2_mc;
+                int det1 = *detector1_mc_rec;
+                int det2 = *detector2_mc_rec;
 
                 std::string event_topology = "";
                 if (det1 == 2 && det2 == 1) {
