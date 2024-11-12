@@ -37,7 +37,6 @@ static bool phi_in_bin(double phi_deg, double phi_low, double phi_high) {
 
 // Function implementation
 std::vector<UnfoldingData> plot_unfolding(const std::string& output_dir,
-                                          const std::string& analysisType,
                                           int xB_bin,
                                           const std::vector<BinBoundary>& bin_boundaries,
                                           std::vector<TTreeReader>& data_readers,
@@ -86,9 +85,6 @@ std::vector<UnfoldingData> plot_unfolding(const std::string& output_dir,
 
     gStyle->SetOptStat(0);
 
-    // Adjust theta_neutral_neutral based on analysisType
-    std::string theta_variable_name = (analysisType == "dvcs") ? "theta_gamma_gamma" : "theta_pi0_pi0";
-
     // Initialize UnfoldingData structures and histograms
     for (const auto& group : bin_groups) {
         const auto& idx_list = group.second; // List of indices in bin_boundaries
@@ -125,6 +121,10 @@ std::vector<UnfoldingData> plot_unfolding(const std::string& output_dir,
         unfolding_data.unfolded_yields.resize(total_periods, std::vector<double>(n_phi_bins, 0.0));
         // No changes to UnfoldingData struct; mc_gen_counts and mc_rec_counts will be local variables
 
+        // Initialize contamination_ratio and contamination_error
+        unfolding_data.contamination_ratio.resize(total_periods, std::vector<double>(n_phi_bins, 0.0));
+        unfolding_data.contamination_error.resize(total_periods, std::vector<double>(n_phi_bins, 0.0));
+
         // Store the unfolding_data instance
         all_unfolding_data.push_back(unfolding_data);
     }
@@ -149,6 +149,9 @@ std::vector<UnfoldingData> plot_unfolding(const std::string& output_dir,
     for (int period = 0; period < n_periods; ++period) {
         TTreeReader& data_reader = data_readers[period];
         data_reader.Restart();
+
+        // Set theta_variable_name based on period
+        std::string theta_variable_name = "theta_gamma_gamma"; // For DVCS data
 
         // Initialize TTreeReaderValues
         TTreeReaderValue<double> phi_data(data_reader, "phi2");
@@ -206,6 +209,9 @@ std::vector<UnfoldingData> plot_unfolding(const std::string& output_dir,
         TTreeReader& eppi0_reader = eppi0_readers[period];
         eppi0_reader.Restart();
 
+        // Set theta_variable_name based on period
+        std::string theta_variable_name = "theta_pi0_pi0"; // For eppi0 data
+
         // Initialize TTreeReaderValues
         TTreeReaderValue<double> phi_data(eppi0_reader, "phi2");
         TTreeReaderValue<double> xB_data(eppi0_reader, "x");
@@ -262,6 +268,9 @@ std::vector<UnfoldingData> plot_unfolding(const std::string& output_dir,
         TTreeReader& mc_gen_reader = mc_gen_readers[period];
         mc_gen_reader.Restart();
 
+        // Set theta_variable_name based on period
+        std::string theta_variable_name = "theta_gamma_gamma"; // For DVCS MC data
+
         // Initialize TTreeReaderValues
         TTreeReaderValue<double> phi_mc_gen(mc_gen_reader, "phi2");
         TTreeReaderValue<double> xB_mc_gen(mc_gen_reader, "x");
@@ -317,6 +326,9 @@ std::vector<UnfoldingData> plot_unfolding(const std::string& output_dir,
     for (int period = 0; period < n_periods; ++period) {
         TTreeReader& mc_rec_reader = mc_rec_readers[period];
         mc_rec_reader.Restart();
+
+        // Set theta_variable_name based on period
+        std::string theta_variable_name = "theta_gamma_gamma"; // For DVCS MC data
 
         // Initialize TTreeReaderValues
         TTreeReaderValue<double> phi_mc_rec(mc_rec_reader, "phi2");
@@ -377,6 +389,9 @@ std::vector<UnfoldingData> plot_unfolding(const std::string& output_dir,
         TTreeReader& mc_gen_reader = mc_gen_aaogen_readers[period];
         mc_gen_reader.Restart();
 
+        // Set theta_variable_name based on period
+        std::string theta_variable_name = "theta_pi0_pi0"; // For eppi0 MC data
+
         // Initialize TTreeReaderValues
         TTreeReaderValue<double> phi_mc_gen(mc_gen_reader, "phi2");
         TTreeReaderValue<double> xB_mc_gen(mc_gen_reader, "x");
@@ -430,6 +445,9 @@ std::vector<UnfoldingData> plot_unfolding(const std::string& output_dir,
         // mc_rec_aaogen_readers
         TTreeReader& mc_rec_reader = mc_rec_aaogen_readers[period];
         mc_rec_reader.Restart();
+
+        // Set theta_variable_name based on period
+        // Already set to "theta_pi0_pi0" above
 
         // Initialize TTreeReaderValues
         TTreeReaderValue<double> phi_mc_rec(mc_rec_reader, "phi2");
@@ -581,8 +599,7 @@ std::vector<UnfoldingData> plot_unfolding(const std::string& output_dir,
             legend->Draw();
 
             // Add title with averages
-            std::string title = Form("%s, %s, x_{B}=%.3f, Q^{2}=%.3f, -t=%.3f",
-                                     analysisType.c_str(),
+            std::string title = Form("DVCS, %s, x_{B}=%.3f, Q^{2}=%.3f, -t=%.3f",
                                      period_names[period].c_str(),
                                      unfolding_data.xB_avg,
                                      unfolding_data.Q2_avg,
@@ -597,7 +614,7 @@ std::vector<UnfoldingData> plot_unfolding(const std::string& output_dir,
         }
 
         // Save canvas
-        std::string filename = output_dir + "/unfolding_results_" + analysisType + "_" + period_names[period] + "_xB_bin_" + std::to_string(xB_bin) + ".pdf";
+        std::string filename = output_dir + "/unfolding_results_DVCS_" + period_names[period] + "_xB_bin_" + std::to_string(xB_bin) + ".pdf";
         canvas->SaveAs(filename.c_str());
 
         delete canvas;
@@ -674,8 +691,7 @@ std::vector<UnfoldingData> plot_unfolding(const std::string& output_dir,
             legend->Draw();
 
             // Add title with averages
-            std::string title = Form("%s, %s, x_{B}=%.3f, Q^{2}=%.3f, -t=%.3f",
-                                     analysisType.c_str(),
+            std::string title = Form("eppi0, %s, x_{B}=%.3f, Q^{2}=%.3f, -t=%.3f",
                                      period_names[period].c_str(),
                                      unfolding_data.xB_avg,
                                      unfolding_data.Q2_avg,
@@ -690,7 +706,7 @@ std::vector<UnfoldingData> plot_unfolding(const std::string& output_dir,
         }
 
         // Save canvas
-        std::string filename = output_dir + "/unfolding_results_eppi0_" + analysisType + "_" + period_names[period] + "_xB_bin_" + std::to_string(xB_bin) + ".pdf";
+        std::string filename = output_dir + "/unfolding_results_eppi0_" + period_names[period] + "_xB_bin_" + std::to_string(xB_bin) + ".pdf";
         canvas->SaveAs(filename.c_str());
 
         delete canvas;

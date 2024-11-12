@@ -15,7 +15,6 @@
 
 // Function prototype for plot_unfolding
 std::vector<UnfoldingData> plot_unfolding(const std::string& output_dir,
-                                          const std::string& analysisType,
                                           int xB_bin,
                                           const std::vector<BinBoundary>& bin_boundaries,
                                           std::vector<TTreeReader>& data_readers,
