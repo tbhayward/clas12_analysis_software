@@ -14,14 +14,16 @@
 #include "unfolding_data.h"  // Include the UnfoldingData structure
 
 // Function prototype for plot_unfolding
-std::vector<UnfoldingData> plot_unfolding(const std::string& output_dir,
-                                          int xB_bin,
-                                          const std::vector<BinBoundary>& bin_boundaries,
-                                          std::vector<TTreeReader>& data_readers,
-                                          std::vector<TTreeReader>& mc_gen_readers,
-                                          std::vector<TTreeReader>& mc_rec_readers,
-                                          std::vector<TTreeReader>& eppi0_readers,
-                                          std::vector<TTreeReader>& mc_gen_aaogen_readers,
-                                          std::vector<TTreeReader>& mc_rec_aaogen_readers);
+std::map<std::string, std::vector<UnfoldingData>> plot_unfolding(
+    const std::string& output_dir,
+    int xB_bin,
+    const std::vector<BinBoundary>& bin_boundaries,
+    std::vector<TTreeReader>& data_readers,
+    std::vector<TTreeReader>& mc_gen_readers,
+    std::vector<TTreeReader>& mc_rec_readers,
+    std::vector<TTreeReader>& eppi0_readers,
+    std::vector<TTreeReader>& mc_gen_aaogen_readers,
+    std::vector<TTreeReader>& mc_rec_aaogen_readers
+);
 
 #endif // PLOT_UNFOLDING_H
