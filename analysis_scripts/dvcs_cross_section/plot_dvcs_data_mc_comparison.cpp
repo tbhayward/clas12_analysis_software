@@ -99,7 +99,7 @@ void plot_dvcs_data_mc_comparison(const std::string& output_dir,
 
         for (int idx : idx_list) {
             const auto& bin = bin_boundaries[idx];
-            double phi_center = (bin.phi_low + bin.phi_high) / 2.0;
+            double phi_center = bin.phi_avg; // Use phi_avg instead of (phi_low + phi_high)/2.0
             double phi_width = bin.phi_high - bin.phi_low;
 
             BinCounts bin_counts;
@@ -202,13 +202,18 @@ void plot_dvcs_data_mc_comparison(const std::string& output_dir,
             continue;
         }
 
+        // Check if xB is within the xB_bin range
+        const auto& bin_example = bin_boundaries[relevant_bins[0]]; // Representative bin
+        if (xB < bin_example.xB_low || xB > bin_example.xB_high) {
+            continue;
+        }
+
         // Find the bin group
         bool event_assigned = false;
         for (const auto& group : bin_groups) {
             const auto& key = group.first;
             const auto& idx_list = group.second;
 
-            // Since xB_bin is fixed, we only need to check Q2 and t ranges
             double Q2_low = key.first;
             double Q2_high = bin_boundaries[idx_list[0]].Q2_high;
             double t_low = key.second;
@@ -254,6 +259,12 @@ void plot_dvcs_data_mc_comparison(const std::string& output_dir,
 
         // Apply kinematic cuts
         if (!apply_kinematic_cuts(*t1_mc_gen, *open_angle_ep2_mc_gen, *theta_neutral_neutral_mc_gen, *Emiss2_mc_gen, *Mx2_1_mc_gen, *pTmiss_mc_gen)) {
+            continue;
+        }
+
+        // Check if xB is within the xB_bin range
+        const auto& bin_example = bin_boundaries[relevant_bins[0]]; // Representative bin
+        if (xB < bin_example.xB_low || xB > bin_example.xB_high) {
             continue;
         }
 
@@ -307,6 +318,12 @@ void plot_dvcs_data_mc_comparison(const std::string& output_dir,
 
         // Apply kinematic cuts
         if (!apply_kinematic_cuts(*t1_mc_rec, *open_angle_ep2_mc_rec, *theta_neutral_neutral_mc_rec, *Emiss2_mc_rec, *Mx2_1_mc_rec, *pTmiss_mc_rec)) {
+            continue;
+        }
+
+        // Check if xB is within the xB_bin range
+        const auto& bin_example = bin_boundaries[relevant_bins[0]]; // Representative bin
+        if (xB < bin_example.xB_low || xB > bin_example.xB_high) {
             continue;
         }
 
@@ -375,37 +392,39 @@ void plot_dvcs_data_mc_comparison(const std::string& output_dir,
             phi_errors[i] = 0.0; // bin_counts.phi_width / 2.0; // Optional
 
             counts_data[i] = bin_counts.count_data;
-            errors_data[i] = std::sqrt(bin_counts.count_data);
+            errors_data[i] = std::sqrt(bin_counts.count_data); // Before normalization
 
             counts_mc_gen[i] = bin_counts.count_mc_gen;
-            errors_mc_gen[i] = std::sqrt(bin_counts.count_mc_gen);
+            errors_mc_gen[i] = std::sqrt(bin_counts.count_mc_gen); // Before normalization
 
             counts_mc_rec[i] = bin_counts.count_mc_rec;
-            errors_mc_rec[i] = std::sqrt(bin_counts.count_mc_rec);
+            errors_mc_rec[i] = std::sqrt(bin_counts.count_mc_rec); // Before normalization
         }
 
-        // Print counts
-        std::cout << "Counts for bin group Q2_low=" << key.first << ", t_low=" << key.second << std::endl;
-        std::cout << "Phi centers: ";
-        for (double phi : phi_centers) {
-            std::cout << phi << " ";
-        }
-        std::cout << std::endl;
-        std::cout << "Counts data: ";
-        for (double count : counts_data) {
-            std::cout << count << " ";
-        }
-        std::cout << std::endl;
-        std::cout << "Counts mc rec: ";
-        for (double count : counts_mc_rec) {
-            std::cout << count << " ";
-        }
-        std::cout << std::endl;
-        std::cout << "Counts mc gen: ";
-        for (double count : counts_mc_gen) {
-            std::cout << count << " ";
-        }
-        std::cout << std::endl;
+        // Sort the data by phi_centers to ensure proper plotting
+        std::vector<size_t> indices(n_points);
+        std::iota(indices.begin(), indices.end(), 0);
+        std::sort(indices.begin(), indices.end(), [&](size_t a, size_t b) {
+            return phi_centers[a] < phi_centers[b];
+        });
+
+        // Reorder all arrays according to sorted indices
+        auto reorder = [&](std::vector<double>& vec) {
+            std::vector<double> temp(n_points);
+            for (size_t i = 0; i < n_points; ++i) {
+                temp[i] = vec[indices[i]];
+            }
+            vec = std::move(temp);
+        };
+
+        reorder(phi_centers);
+        reorder(phi_errors);
+        reorder(counts_data);
+        reorder(errors_data);
+        reorder(counts_mc_gen);
+        reorder(errors_mc_gen);
+        reorder(counts_mc_rec);
+        reorder(errors_mc_rec);
 
         // Total counts for scaling
         double sum_data = std::accumulate(counts_data.begin(), counts_data.end(), 0.0);
@@ -452,14 +471,15 @@ void plot_dvcs_data_mc_comparison(const std::string& output_dir,
         TPad* pad = (TPad*)gPad;
         pad->SetLeftMargin(0.15);
         pad->SetBottomMargin(0.15);
+        pad->SetLogy(); // Set y-axis to logarithmic scale
 
         // Create a frame histogram for axes
         double phi_min = *std::min_element(phi_centers.begin(), phi_centers.end()) - 5.0;
         double phi_max = *std::max_element(phi_centers.begin(), phi_centers.end()) + 5.0;
         double count_max = std::max(*std::max_element(counts_data.begin(), counts_data.end()),
                                     std::max(*std::max_element(counts_mc_rec.begin(), counts_mc_rec.end()),
-                                             *std::max_element(counts_mc_gen.begin(), counts_mc_gen.end()))) * 1.2;
-        double count_min = 0.0;
+                                             *std::max_element(counts_mc_gen.begin(), counts_mc_gen.end()))) * 5.0; // Adjusted for log scale
+        double count_min = 0.1; // Set minimum count for log scale
 
         TH1F* frame = pad->DrawFrame(phi_min, count_min, phi_max, count_max);
         frame->GetXaxis()->SetTitle("#phi [deg]");
@@ -477,14 +497,14 @@ void plot_dvcs_data_mc_comparison(const std::string& output_dir,
         legend->SetTextSize(0.04);
         legend->Draw();
 
-        // Add title
+        // Add title with averages instead of ranges
         const auto& bin = bin_boundaries[bin_groups[key][0]];
-        std::string title = Form("%s, %s: x_{B} [%.3f, %.3f], Q^{2} [%.3f, %.3f], -t [%.3f, %.3f]", 
+        std::string title = Form("%s, %s: x_{B}=%.3f, Q^{2}=%.3f, -t=%.3f", 
                                  analysisType.c_str(), 
                                  dataset.c_str(),  
-                                 bin.xB_low, bin.xB_high,
-                                 bin.Q2_low, bin.Q2_high,
-                                 bin.t_low, bin.t_high);
+                                 bin.xB_avg,
+                                 bin.Q2_avg,
+                                 bin.t_avg);
         TLatex latex;
         latex.SetNDC();
         latex.SetTextSize(0.04);
