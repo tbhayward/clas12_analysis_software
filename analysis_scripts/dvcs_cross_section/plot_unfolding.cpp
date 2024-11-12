@@ -769,7 +769,7 @@ std::map<std::string, std::vector<UnfoldingData>> plot_unfolding(
                 latex.DrawLatex(0.5, 0.95, title.c_str()); // Centered on x=0.5
 
                 // Clean up graph
-                delete graph_unfolded;
+                // delete graph_unfolded;
             }
 
             // Save the canvas after all subplots have been added
@@ -860,7 +860,7 @@ std::map<std::string, std::vector<UnfoldingData>> plot_unfolding(
                 latex.DrawLatex(0.5, 0.95, title.c_str()); // Centered on x=0.5
 
                 // Clean up graph
-                delete graph_unfolded;
+                // delete graph_unfolded;
             }
 
             // Save the canvas after all subplots have been added
@@ -956,7 +956,7 @@ std::map<std::string, std::vector<UnfoldingData>> plot_unfolding(
             latex.DrawLatex(0.5, 0.95, title.c_str()); // Centered on x=0.5
 
             // Clean up graph
-            delete graph_unfolded;
+            // delete graph_unfolded;
         }
 
         // Save the canvas
@@ -1046,7 +1046,7 @@ std::map<std::string, std::vector<UnfoldingData>> plot_unfolding(
             latex.DrawLatex(0.5, 0.95, title.c_str()); // Centered on x=0.5
 
             // Clean up graph
-            delete graph_unfolded;
+            // delete graph_unfolded;
         }
 
         // Save the canvas
