@@ -302,9 +302,9 @@ int main(int argc, char* argv[]) {
 
     // Loop over unique xB bins and call the plotting function for DVCS data/MC comparison
     // for (int xB_bin = 0; xB_bin < num_xB_bins; ++xB_bin) {
-    for (int xB_bin = 0; xB_bin < 1; ++xB_bin) {
-        plot_dvcs_data_mc_comparison(output_dir, "dvcs", "Fa18_Out", xB_bin, bin_boundaries, data_readers[1], mc_gen_dvcsgen_readers[1], mc_rec_dvcsgen_readers[1]);
-    }
+    // for (int xB_bin = 0; xB_bin < 1; ++xB_bin) {
+    //     plot_dvcs_data_mc_comparison(output_dir, "dvcs", "Fa18_Out", xB_bin, bin_boundaries, data_readers[1], mc_gen_dvcsgen_readers[1], mc_rec_dvcsgen_readers[1]);
+    // }
 
     // for (int xB_bin = 0; xB_bin < num_xB_bins; ++xB_bin) {
     // // for (int xB_bin = 0; xB_bin < 2; ++xB_bin) {
