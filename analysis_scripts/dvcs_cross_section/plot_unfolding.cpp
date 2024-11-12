@@ -22,6 +22,7 @@
 #include "kinematic_cuts.h"
 #include "bin_helpers.h"
 #include "unfolding_data.h"
+#include "plot_unfolding.h"  // Include the header file for function declaration
 
 // Constant to convert radians to degrees
 constexpr double RAD_TO_DEG = 180.0 / M_PI;
@@ -154,14 +155,519 @@ std::map<std::string, std::vector<UnfoldingData>> plot_unfolding(
             }
         }
 
-        // The rest of the code remains the same for processing data and MC
-        // (This includes processing data readers, eppi0 readers, mc_gen_readers, mc_rec_readers, etc.)
-        // ...
+        // Process data readers (periods 0-2)
+        for (int period = 0; period < n_periods; ++period) {
+            TTreeReader& data_reader = data_readers[period];
+            data_reader.Restart();
 
-        // [Process data readers, eppi0 readers, mc_gen_readers, mc_rec_readers as in your existing code]
+            // Set theta_variable_name based on period
+            std::string theta_variable_name = "theta_gamma_gamma"; // For DVCS data
+
+            // Initialize TTreeReaderValues
+            TTreeReaderValue<double> phi_data(data_reader, "phi2");
+            TTreeReaderValue<double> xB_data(data_reader, "x");
+            TTreeReaderValue<double> Q2_data(data_reader, "Q2");
+            TTreeReaderValue<double> t1_data(data_reader, "t1");
+            TTreeReaderValue<double> open_angle_ep2_data(data_reader, "open_angle_ep2");
+            TTreeReaderValue<double> Emiss2_data(data_reader, "Emiss2");
+            TTreeReaderValue<double> Mx2_1_data(data_reader, "Mx2_1");
+            TTreeReaderValue<double> pTmiss_data(data_reader, "pTmiss");
+            TTreeReaderValue<double> theta_neutral_neutral_data(data_reader, theta_variable_name.c_str());
+
+            // Readers for detector status variables (detector1 and detector2)
+            TTreeReaderValue<int> detector1_data(data_reader, "detector1");
+            TTreeReaderValue<int> detector2_data(data_reader, "detector2");
+
+            while (data_reader.Next()) {
+                // Determine topology based on detector1 and detector2
+                int det1 = *detector1_data;
+                int det2 = *detector2_data;
+
+                std::string event_topology = "";
+                if (det1 == 2 && det2 == 1) {
+                    event_topology = "CD_FD";
+                } else if (det1 == 2 && det2 == 0) {
+                    event_topology = "CD_FT";
+                } else if (det1 == 1 && det2 == 1) {
+                    event_topology = "FD_FD";
+                } else {
+                    continue; // Not one of the desired topologies
+                }
+
+                if (event_topology != topology)
+                    continue; // Skip events that don't match the current topology
+
+                double phi_deg = *phi_data * RAD_TO_DEG;
+                phi_deg = std::fmod(phi_deg + 360.0, 360.0); // Ensure phi in [0, 360)
+                double xB_value = *xB_data;
+                double Q2_value = *Q2_data;
+                double t_abs = std::abs(*t1_data);
+
+                // Apply kinematic cuts
+                if (!apply_kinematic_cuts(*t1_data, *open_angle_ep2_data, *theta_neutral_neutral_data, *Emiss2_data, *Mx2_1_data, *pTmiss_data))
+                    continue;
+
+                // Check if xB is within the xB_bin range
+                const auto& bin_example = bin_boundaries[relevant_bins[0]];
+                if (xB_value < bin_example.xB_low || xB_value > bin_example.xB_high)
+                    continue;
+
+                // Find the bin group
+                for (size_t group_idx = 0; group_idx < all_unfolding_data.size(); ++group_idx) {
+                    UnfoldingData& unfolding_data = all_unfolding_data[group_idx];
+
+                    if (Q2_value >= unfolding_data.Q2_min && Q2_value <= unfolding_data.Q2_max &&
+                        t_abs >= unfolding_data.t_min && t_abs <= unfolding_data.t_max) {
+
+                        // Find the phi bin within this group
+                        for (size_t phi_idx = 0; phi_idx < unfolding_data.phi_min.size(); ++phi_idx) {
+                            double phi_low = unfolding_data.phi_min[phi_idx];
+                            double phi_high = unfolding_data.phi_max[phi_idx];
+
+                            if (phi_in_bin(phi_deg, phi_low, phi_high)) {
+                                // Increment raw_yields for this period
+                                unfolding_data.raw_yields[period][phi_idx] += 1;
+                                break; // Exit phi bin loop
+                            }
+                        }
+                        break; // Exit bin group loop
+                    }
+                }
+            }
+        }
+
+        // Process eppi0 readers (periods 3-5)
+        for (int period = 0; period < n_periods; ++period) {
+            TTreeReader& eppi0_reader = eppi0_readers[period];
+            eppi0_reader.Restart();
+
+            // Set theta_variable_name based on period
+            std::string theta_variable_name = "theta_pi0_pi0"; // For eppi0 data
+
+            // Initialize TTreeReaderValues
+            TTreeReaderValue<double> phi_data(eppi0_reader, "phi2");
+            TTreeReaderValue<double> xB_data(eppi0_reader, "x");
+            TTreeReaderValue<double> Q2_data(eppi0_reader, "Q2");
+            TTreeReaderValue<double> t1_data(eppi0_reader, "t1");
+            TTreeReaderValue<double> open_angle_ep2_data(eppi0_reader, "open_angle_ep2");
+            TTreeReaderValue<double> Emiss2_data(eppi0_reader, "Emiss2");
+            TTreeReaderValue<double> Mx2_1_data(eppi0_reader, "Mx2_1");
+            TTreeReaderValue<double> pTmiss_data(eppi0_reader, "pTmiss");
+            TTreeReaderValue<double> theta_neutral_neutral_data(eppi0_reader, theta_variable_name.c_str());
+
+            // Readers for detector status variables (detector1 and detector2)
+            TTreeReaderValue<int> detector1_data(eppi0_reader, "detector1");
+            TTreeReaderValue<int> detector2_data(eppi0_reader, "detector2");
+
+            int eppi0_period = period + 3; // Adjust period index for eppi0 data
+
+            while (eppi0_reader.Next()) {
+                // Determine topology based on detector1 and detector2
+                int det1 = *detector1_data;
+                int det2 = *detector2_data;
+
+                std::string event_topology = "";
+                if (det1 == 2 && det2 == 1) {
+                    event_topology = "CD_FD";
+                } else if (det1 == 2 && det2 == 0) {
+                    event_topology = "CD_FT";
+                } else if (det1 == 1 && det2 == 1) {
+                    event_topology = "FD_FD";
+                } else {
+                    continue; // Not one of the desired topologies
+                }
+
+                if (event_topology != topology)
+                    continue; // Skip events that don't match the current topology
+
+                double phi_deg = *phi_data * RAD_TO_DEG;
+                phi_deg = std::fmod(phi_deg + 360.0, 360.0); // Ensure phi in [0, 360)
+                double xB_value = *xB_data;
+                double Q2_value = *Q2_data;
+                double t_abs = std::abs(*t1_data);
+
+                // Apply kinematic cuts
+                if (!apply_kinematic_cuts(*t1_data, *open_angle_ep2_data, *theta_neutral_neutral_data, *Emiss2_data, *Mx2_1_data, *pTmiss_data))
+                    continue;
+
+                // Check if xB is within the xB_bin range
+                const auto& bin_example = bin_boundaries[relevant_bins[0]];
+                if (xB_value < bin_example.xB_low || xB_value > bin_example.xB_high)
+                    continue;
+
+                // Find the bin group
+                for (size_t group_idx = 0; group_idx < all_unfolding_data.size(); ++group_idx) {
+                    UnfoldingData& unfolding_data = all_unfolding_data[group_idx];
+
+                    if (Q2_value >= unfolding_data.Q2_min && Q2_value <= unfolding_data.Q2_max &&
+                        t_abs >= unfolding_data.t_min && t_abs <= unfolding_data.t_max) {
+
+                        // Find the phi bin within this group
+                        for (size_t phi_idx = 0; phi_idx < unfolding_data.phi_min.size(); ++phi_idx) {
+                            double phi_low = unfolding_data.phi_min[phi_idx];
+                            double phi_high = unfolding_data.phi_max[phi_idx];
+
+                            if (phi_in_bin(phi_deg, phi_low, phi_high)) {
+                                // Increment raw_yields for this period
+                                unfolding_data.raw_yields[eppi0_period][phi_idx] += 1;
+                                break; // Exit phi bin loop
+                            }
+                        }
+                        break; // Exit bin group loop
+                    }
+                }
+            }
+        }
+
+        // Process mc_gen_readers (periods 0-2)
+        for (int period = 0; period < n_periods; ++period) {
+            TTreeReader& mc_gen_reader = mc_gen_readers[period];
+            mc_gen_reader.Restart();
+
+            // Set theta_variable_name based on period
+            std::string theta_variable_name = "theta_gamma_gamma"; // For DVCS MC data
+
+            // Initialize TTreeReaderValues
+            TTreeReaderValue<double> phi_mc_gen(mc_gen_reader, "phi2");
+            TTreeReaderValue<double> xB_mc_gen(mc_gen_reader, "x");
+            TTreeReaderValue<double> Q2_mc_gen(mc_gen_reader, "Q2");
+            TTreeReaderValue<double> t1_mc_gen(mc_gen_reader, "t1");
+            TTreeReaderValue<double> open_angle_ep2_mc_gen(mc_gen_reader, "open_angle_ep2");
+            TTreeReaderValue<double> Emiss2_mc_gen(mc_gen_reader, "Emiss2");
+            TTreeReaderValue<double> Mx2_1_mc_gen(mc_gen_reader, "Mx2_1");
+            TTreeReaderValue<double> pTmiss_mc_gen(mc_gen_reader, "pTmiss");
+            TTreeReaderValue<double> theta_neutral_neutral_mc_gen(mc_gen_reader, theta_variable_name.c_str());
+
+            // Readers for detector status variables (detector1 and detector2)
+            TTreeReaderValue<int> detector1_mc_gen(mc_gen_reader, "detector1");
+            TTreeReaderValue<int> detector2_mc_gen(mc_gen_reader, "detector2");
+
+            while (mc_gen_reader.Next()) {
+                // Determine topology based on detector1 and detector2
+                int det1 = *detector1_mc_gen;
+                int det2 = *detector2_mc_gen;
+
+                std::string event_topology = "";
+                if (det1 == 2 && det2 == 1) {
+                    event_topology = "CD_FD";
+                } else if (det1 == 2 && det2 == 0) {
+                    event_topology = "CD_FT";
+                } else if (det1 == 1 && det2 == 1) {
+                    event_topology = "FD_FD";
+                } else {
+                    continue; // Not one of the desired topologies
+                }
+
+                if (event_topology != topology)
+                    continue; // Skip events that don't match the current topology
+
+                double phi_deg = *phi_mc_gen * RAD_TO_DEG;
+                phi_deg = std::fmod(phi_deg + 360.0, 360.0); // Ensure phi in [0, 360)
+                double xB_value = *xB_mc_gen;
+                double Q2_value = *Q2_mc_gen;
+                double t_abs = std::abs(*t1_mc_gen);
+
+                // Apply kinematic cuts
+                if (!apply_kinematic_cuts(*t1_mc_gen, *open_angle_ep2_mc_gen, *theta_neutral_neutral_mc_gen, *Emiss2_mc_gen, *Mx2_1_mc_gen, *pTmiss_mc_gen))
+                    continue;
+
+                // Check if xB is within the xB_bin range
+                const auto& bin_example = bin_boundaries[relevant_bins[0]];
+                if (xB_value < bin_example.xB_low || xB_value > bin_example.xB_high)
+                    continue;
+
+                // Find the bin group
+                for (size_t group_idx = 0; group_idx < n_groups; ++group_idx) {
+                    UnfoldingData& unfolding_data = all_unfolding_data[group_idx];
+
+                    if (Q2_value >= unfolding_data.Q2_min && Q2_value <= unfolding_data.Q2_max &&
+                        t_abs >= unfolding_data.t_min && t_abs <= unfolding_data.t_max) {
+
+                        // Find the phi bin within this group
+                        for (size_t phi_idx = 0; phi_idx < unfolding_data.phi_min.size(); ++phi_idx) {
+                            double phi_low = unfolding_data.phi_min[phi_idx];
+                            double phi_high = unfolding_data.phi_max[phi_idx];
+
+                            if (phi_in_bin(phi_deg, phi_low, phi_high)) {
+                                // Increment mc_gen_counts for this period and group
+                                mc_gen_counts[period][group_idx][phi_idx] += 1.0;
+                                break; // Exit phi bin loop
+                            }
+                        }
+                        break; // Exit bin group loop
+                    }
+                }
+            }
+        }
+
+        // Process mc_rec_readers (periods 0-2)
+        for (int period = 0; period < n_periods; ++period) {
+            TTreeReader& mc_rec_reader = mc_rec_readers[period];
+            mc_rec_reader.Restart();
+
+            // Set theta_variable_name based on period
+            std::string theta_variable_name = "theta_gamma_gamma"; // For DVCS MC data
+
+            // Initialize TTreeReaderValues
+            TTreeReaderValue<double> phi_mc_rec(mc_rec_reader, "phi2");
+            TTreeReaderValue<double> xB_mc_rec(mc_rec_reader, "x");
+            TTreeReaderValue<double> Q2_mc_rec(mc_rec_reader, "Q2");
+            TTreeReaderValue<double> t1_mc_rec(mc_rec_reader, "t1");
+            TTreeReaderValue<double> open_angle_ep2_mc_rec(mc_rec_reader, "open_angle_ep2");
+            TTreeReaderValue<double> Emiss2_mc_rec(mc_rec_reader, "Emiss2");
+            TTreeReaderValue<double> Mx2_1_mc_rec(mc_rec_reader, "Mx2_1");
+            TTreeReaderValue<double> pTmiss_mc_rec(mc_rec_reader, "pTmiss");
+            TTreeReaderValue<double> theta_neutral_neutral_mc_rec(mc_rec_reader, theta_variable_name.c_str());
+
+            // Readers for detector status variables (detector1 and detector2)
+            TTreeReaderValue<int> detector1_mc_rec(mc_rec_reader, "detector1");
+            TTreeReaderValue<int> detector2_mc_rec(mc_rec_reader, "detector2");
+
+            while (mc_rec_reader.Next()) {
+                // Determine topology based on detector1 and detector2
+                int det1 = *detector1_mc_rec;
+                int det2 = *detector2_mc_rec;
+
+                std::string event_topology = "";
+                if (det1 == 2 && det2 == 1) {
+                    event_topology = "CD_FD";
+                } else if (det1 == 2 && det2 == 0) {
+                    event_topology = "CD_FT";
+                } else if (det1 == 1 && det2 == 1) {
+                    event_topology = "FD_FD";
+                } else {
+                    continue; // Not one of the desired topologies
+                }
+
+                if (event_topology != topology)
+                    continue; // Skip events that don't match the current topology
+
+                double phi_deg = *phi_mc_rec * RAD_TO_DEG;
+                phi_deg = std::fmod(phi_deg + 360.0, 360.0); // Ensure phi in [0, 360)
+                double xB_value = *xB_mc_rec;
+                double Q2_value = *Q2_mc_rec;
+                double t_abs = std::abs(*t1_mc_rec);
+
+                // Apply kinematic cuts
+                if (!apply_kinematic_cuts(*t1_mc_rec, *open_angle_ep2_mc_rec, *theta_neutral_neutral_mc_rec, *Emiss2_mc_rec, *Mx2_1_mc_rec, *pTmiss_mc_rec))
+                    continue;
+
+                // Check if xB is within the xB_bin range
+                const auto& bin_example = bin_boundaries[relevant_bins[0]];
+                if (xB_value < bin_example.xB_low || xB_value > bin_example.xB_high)
+                    continue;
+
+                // Find the bin group
+                for (size_t group_idx = 0; group_idx < n_groups; ++group_idx) {
+                    UnfoldingData& unfolding_data = all_unfolding_data[group_idx];
+
+                    if (Q2_value >= unfolding_data.Q2_min && Q2_value <= unfolding_data.Q2_max &&
+                        t_abs >= unfolding_data.t_min && t_abs <= unfolding_data.t_max) {
+
+                        // Find the phi bin within this group
+                        for (size_t phi_idx = 0; phi_idx < unfolding_data.phi_min.size(); ++phi_idx) {
+                            double phi_low = unfolding_data.phi_min[phi_idx];
+                            double phi_high = unfolding_data.phi_max[phi_idx];
+
+                            if (phi_in_bin(phi_deg, phi_low, phi_high)) {
+                                // Increment mc_rec_counts for this period and group
+                                mc_rec_counts[period][group_idx][phi_idx] += 1.0;
+                                break; // Exit phi bin loop
+                            }
+                        }
+                        break; // Exit bin group loop
+                    }
+                }
+            }
+        }
+
+        // Process mc_gen_aaogen_readers and mc_rec_aaogen_readers for eppi0 (periods 3-5)
+        for (int period = 0; period < n_periods; ++period) {
+            int eppi0_period = period + 3; // Adjust period index for eppi0 data
+
+            // mc_gen_aaogen_readers
+            TTreeReader& mc_gen_reader = mc_gen_aaogen_readers[period];
+            mc_gen_reader.Restart();
+
+            // Set theta_variable_name based on period
+            std::string theta_variable_name = "theta_pi0_pi0"; // For eppi0 MC data
+
+            // Initialize TTreeReaderValues
+            TTreeReaderValue<double> phi_mc_gen(mc_gen_reader, "phi2");
+            TTreeReaderValue<double> xB_mc_gen(mc_gen_reader, "x");
+            TTreeReaderValue<double> Q2_mc_gen(mc_gen_reader, "Q2");
+            TTreeReaderValue<double> t1_mc_gen(mc_gen_reader, "t1");
+            TTreeReaderValue<double> open_angle_ep2_mc_gen(mc_gen_reader, "open_angle_ep2");
+            TTreeReaderValue<double> Emiss2_mc_gen(mc_gen_reader, "Emiss2");
+            TTreeReaderValue<double> Mx2_1_mc_gen(mc_gen_reader, "Mx2_1");
+            TTreeReaderValue<double> pTmiss_mc_gen(mc_gen_reader, "pTmiss");
+            TTreeReaderValue<double> theta_neutral_neutral_mc_gen(mc_gen_reader, theta_variable_name.c_str());
+
+            // Readers for detector status variables (detector1 and detector2)
+            TTreeReaderValue<int> detector1_mc_gen(mc_gen_reader, "detector1");
+            TTreeReaderValue<int> detector2_mc_gen(mc_gen_reader, "detector2");
+
+            while (mc_gen_reader.Next()) {
+                // Determine topology based on detector1 and detector2
+                int det1 = *detector1_mc_gen;
+                int det2 = *detector2_mc_gen;
+
+                std::string event_topology = "";
+                if (det1 == 2 && det2 == 1) {
+                    event_topology = "CD_FD";
+                } else if (det1 == 2 && det2 == 0) {
+                    event_topology = "CD_FT";
+                } else if (det1 == 1 && det2 == 1) {
+                    event_topology = "FD_FD";
+                } else {
+                    continue; // Not one of the desired topologies
+                }
+
+                if (event_topology != topology)
+                    continue; // Skip events that don't match the current topology
+
+                double phi_deg = *phi_mc_gen * RAD_TO_DEG;
+                phi_deg = std::fmod(phi_deg + 360.0, 360.0); // Ensure phi in [0, 360)
+                double xB_value = *xB_mc_gen;
+                double Q2_value = *Q2_mc_gen;
+                double t_abs = std::abs(*t1_mc_gen);
+
+                // Apply kinematic cuts
+                if (!apply_kinematic_cuts(*t1_mc_gen, *open_angle_ep2_mc_gen, *theta_neutral_neutral_mc_gen, *Emiss2_mc_gen, *Mx2_1_mc_gen, *pTmiss_mc_gen))
+                    continue;
+
+                // Check if xB is within the xB_bin range
+                const auto& bin_example = bin_boundaries[relevant_bins[0]];
+                if (xB_value < bin_example.xB_low || xB_value > bin_example.xB_high)
+                    continue;
+
+                // Find the bin group
+                for (size_t group_idx = 0; group_idx < n_groups; ++group_idx) {
+                    UnfoldingData& unfolding_data = all_unfolding_data[group_idx];
+
+                    if (Q2_value >= unfolding_data.Q2_min && Q2_value <= unfolding_data.Q2_max &&
+                        t_abs >= unfolding_data.t_min && t_abs <= unfolding_data.t_max) {
+
+                        // Find the phi bin within this group
+                        for (size_t phi_idx = 0; phi_idx < unfolding_data.phi_min.size(); ++phi_idx) {
+                            double phi_low = unfolding_data.phi_min[phi_idx];
+                            double phi_high = unfolding_data.phi_max[phi_idx];
+
+                            if (phi_in_bin(phi_deg, phi_low, phi_high)) {
+                                // Increment mc_gen_counts for this eppi0 period and group
+                                mc_gen_counts[eppi0_period][group_idx][phi_idx] += 1.0;
+                                break; // Exit phi bin loop
+                            }
+                        }
+                        break; // Exit bin group loop
+                    }
+                }
+            }
+
+            // mc_rec_aaogen_readers
+            TTreeReader& mc_rec_reader = mc_rec_aaogen_readers[period];
+            mc_rec_reader.Restart();
+
+            // Initialize TTreeReaderValues
+            TTreeReaderValue<double> phi_mc_rec(mc_rec_reader, "phi2");
+            TTreeReaderValue<double> xB_mc_rec(mc_rec_reader, "x");
+            TTreeReaderValue<double> Q2_mc_rec(mc_rec_reader, "Q2");
+            TTreeReaderValue<double> t1_mc_rec(mc_rec_reader, "t1");
+            TTreeReaderValue<double> open_angle_ep2_mc_rec(mc_rec_reader, "open_angle_ep2");
+            TTreeReaderValue<double> Emiss2_mc_rec(mc_rec_reader, "Emiss2");
+            TTreeReaderValue<double> Mx2_1_mc_rec(mc_rec_reader, "Mx2_1");
+            TTreeReaderValue<double> pTmiss_mc_rec(mc_rec_reader, "pTmiss");
+            TTreeReaderValue<double> theta_neutral_neutral_mc_rec(mc_rec_reader, theta_variable_name.c_str());
+
+            // Readers for detector status variables (detector1 and detector2)
+            TTreeReaderValue<int> detector1_mc_rec(mc_rec_reader, "detector1");
+            TTreeReaderValue<int> detector2_mc_rec(mc_rec_reader, "detector2");
+
+            while (mc_rec_reader.Next()) {
+                // Determine topology based on detector1 and detector2
+                int det1 = *detector1_mc_rec;
+                int det2 = *detector2_mc_rec;
+
+                std::string event_topology = "";
+                if (det1 == 2 && det2 == 1) {
+                    event_topology = "CD_FD";
+                } else if (det1 == 2 && det2 == 0) {
+                    event_topology = "CD_FT";
+                } else if (det1 == 1 && det2 == 1) {
+                    event_topology = "FD_FD";
+                } else {
+                    continue; // Not one of the desired topologies
+                }
+
+                if (event_topology != topology)
+                    continue; // Skip events that don't match the current topology
+
+                double phi_deg = *phi_mc_rec * RAD_TO_DEG;
+                phi_deg = std::fmod(phi_deg + 360.0, 360.0); // Ensure phi in [0, 360)
+                double xB_value = *xB_mc_rec;
+                double Q2_value = *Q2_mc_rec;
+                double t_abs = std::abs(*t1_mc_rec);
+
+                // Apply kinematic cuts
+                if (!apply_kinematic_cuts(*t1_mc_rec, *open_angle_ep2_mc_rec, *theta_neutral_neutral_mc_rec, *Emiss2_mc_rec, *Mx2_1_mc_rec, *pTmiss_mc_rec))
+                    continue;
+
+                // Check if xB is within the xB_bin range
+                const auto& bin_example = bin_boundaries[relevant_bins[0]];
+                if (xB_value < bin_example.xB_low || xB_value > bin_example.xB_high)
+                    continue;
+
+                // Find the bin group
+                for (size_t group_idx = 0; group_idx < n_groups; ++group_idx) {
+                    UnfoldingData& unfolding_data = all_unfolding_data[group_idx];
+
+                    if (Q2_value >= unfolding_data.Q2_min && Q2_value <= unfolding_data.Q2_max &&
+                        t_abs >= unfolding_data.t_min && t_abs <= unfolding_data.t_max) {
+
+                        // Find the phi bin within this group
+                        for (size_t phi_idx = 0; phi_idx < unfolding_data.phi_min.size(); ++phi_idx) {
+                            double phi_low = unfolding_data.phi_min[phi_idx];
+                            double phi_high = unfolding_data.phi_max[phi_idx];
+
+                            if (phi_in_bin(phi_deg, phi_low, phi_high)) {
+                                // Increment mc_rec_counts for this eppi0 period and group
+                                mc_rec_counts[eppi0_period][group_idx][phi_idx] += 1.0;
+                                break; // Exit phi bin loop
+                            }
+                        }
+                        break; // Exit bin group loop
+                    }
+                }
+            }
+        }
 
         // Compute acceptances and unfolded yields
-        // [Compute acceptances and unfolded yields as in your existing code]
+        for (size_t group_idx = 0; group_idx < n_groups; ++group_idx) {
+            UnfoldingData& unfolding_data = all_unfolding_data[group_idx];
+            size_t n_phi_bins = unfolding_data.phi_min.size();
+
+            for (size_t period = 0; period < total_periods; ++period) {
+                for (size_t phi_idx = 0; phi_idx < n_phi_bins; ++phi_idx) {
+                    double mc_gen_count = mc_gen_counts[period][group_idx][phi_idx];
+                    double mc_rec_count = mc_rec_counts[period][group_idx][phi_idx];
+
+                    if (mc_gen_count > 0) {
+                        double acceptance = mc_rec_count / mc_gen_count;
+                        unfolding_data.acceptance[period][phi_idx] = acceptance;
+                    } else {
+                        unfolding_data.acceptance[period][phi_idx] = 0.0;
+                    }
+
+                    // Unfolded yield
+                    double raw_yield = unfolding_data.raw_yields[period][phi_idx];
+                    if (unfolding_data.acceptance[period][phi_idx] > 0) {
+                        unfolding_data.unfolded_yields[period][phi_idx] = raw_yield / unfolding_data.acceptance[period][phi_idx];
+                    } else {
+                        unfolding_data.unfolded_yields[period][phi_idx] = 0.0;
+                    }
+                }
+            }
+        }
 
         // Add the unfolding data for this topology to the combined data
         if (combined_unfolding_data.empty()) {
@@ -176,7 +682,11 @@ std::map<std::string, std::vector<UnfoldingData>> plot_unfolding(
                     for (size_t phi_idx = 0; phi_idx < combined_data.phi_min.size(); ++phi_idx) {
                         combined_data.raw_yields[period][phi_idx] += current_data.raw_yields[period][phi_idx];
                         combined_data.unfolded_yields[period][phi_idx] += current_data.unfolded_yields[period][phi_idx];
-                        combined_data.acceptance[period][phi_idx] = (combined_data.acceptance[period][phi_idx] + current_data.acceptance[period][phi_idx]) / 2.0;
+                        if (combined_data.acceptance[period][phi_idx] > 0 && current_data.acceptance[period][phi_idx] > 0) {
+                            combined_data.acceptance[period][phi_idx] = (combined_data.acceptance[period][phi_idx] + current_data.acceptance[period][phi_idx]) / 2.0;
+                        } else if (current_data.acceptance[period][phi_idx] > 0) {
+                            combined_data.acceptance[period][phi_idx] = current_data.acceptance[period][phi_idx];
+                        }
                     }
                 }
             }
@@ -258,8 +768,8 @@ std::map<std::string, std::vector<UnfoldingData>> plot_unfolding(
                 latex.SetTextAlign(22); // Center alignment
                 latex.DrawLatex(0.5, 0.95, title.c_str()); // Centered on x=0.5
 
-                // Clean up graph (if needed)
-                // delete graph_unfolded;
+                // Clean up graph
+                delete graph_unfolded;
             }
 
             // Save the canvas after all subplots have been added
@@ -349,8 +859,8 @@ std::map<std::string, std::vector<UnfoldingData>> plot_unfolding(
                 latex.SetTextAlign(22); // Center alignment
                 latex.DrawLatex(0.5, 0.95, title.c_str()); // Centered on x=0.5
 
-                // Clean up graph (if needed)
-                // delete graph_unfolded;
+                // Clean up graph
+                delete graph_unfolded;
             }
 
             // Save the canvas after all subplots have been added
@@ -444,6 +954,9 @@ std::map<std::string, std::vector<UnfoldingData>> plot_unfolding(
             latex.SetTextSize(0.04);
             latex.SetTextAlign(22); // Center alignment
             latex.DrawLatex(0.5, 0.95, title.c_str()); // Centered on x=0.5
+
+            // Clean up graph
+            delete graph_unfolded;
         }
 
         // Save the canvas
@@ -531,6 +1044,9 @@ std::map<std::string, std::vector<UnfoldingData>> plot_unfolding(
             latex.SetTextSize(0.04);
             latex.SetTextAlign(22); // Center alignment
             latex.DrawLatex(0.5, 0.95, title.c_str()); // Centered on x=0.5
+
+            // Clean up graph
+            delete graph_unfolded;
         }
 
         // Save the canvas
