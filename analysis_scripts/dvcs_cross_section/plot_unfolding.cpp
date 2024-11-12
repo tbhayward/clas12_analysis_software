@@ -26,7 +26,7 @@
 constexpr double RAD_TO_DEG = 180.0 / M_PI;
 
 // Helper function to check if phi is within bin, accounting for wrap-around
-bool phi_in_bin(double phi_deg, double phi_low, double phi_high) {
+static bool phi_in_bin(double phi_deg, double phi_low, double phi_high) {
     if (phi_low <= phi_high) {
         return phi_deg >= phi_low && phi_deg <= phi_high;
     } else {
