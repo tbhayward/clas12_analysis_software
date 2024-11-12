@@ -132,6 +132,7 @@ int main(int argc, char* argv[]) {
     // }
     // Calculate the number of unique xB bins
     int num_xB_bins = count_unique_xB_bins(bin_boundaries);
+    std::cout << num_xB_bins << std::endl;
 
     // std::string lee_data_file = "imports/all_bin_v3.csv";  // Path to bin boundaries file
     // // Read the bin data
