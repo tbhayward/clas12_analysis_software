@@ -361,7 +361,7 @@ void plot_dvcs_data_mc_comparison(const std::string& output_dir,
         latex.SetNDC();
         latex.SetTextSize(0.04);
         latex.SetTextAlign(22); // Center alignment
-        latex.DrawLatex(0.5, 0.85, title.c_str()); // Centered on x=0.5
+        latex.DrawLatex(0.5, 0.95, title.c_str()); // Centered on x=0.5
 
         ++pad_idx;
     }
