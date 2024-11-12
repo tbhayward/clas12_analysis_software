@@ -116,20 +116,20 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
-    // Print out the bin boundaries for verification
-    std::cout << "Bin boundaries read from CSV:" << std::endl;
-    for (const auto& bin : bin_boundaries) {
-        std::cout << "Unnamed: " << bin.unnamed << ", "
-                  << "Bin Name: " << bin.bin_name << ", "
-                  << "xB: [" << bin.xB_low << ", " << bin.xB_high << "], "
-                  << "xB_avg: " << bin.xB_avg << ", "
-                  << "Q2: [" << bin.Q2_low << ", " << bin.Q2_high << "], "
-                  << "Q2_avg: " << bin.Q2_avg << ", "
-                  << "t: [" << bin.t_low << ", " << bin.t_high << "], "
-                  << "t_avg: " << bin.t_avg << ", "
-                  << "phi: [" << bin.phi_low << ", " << bin.phi_high << "], "
-                  << "phi_avg: " << bin.phi_avg << std::endl;
-    }
+    // // Print out the bin boundaries for verification
+    // std::cout << "Bin boundaries read from CSV:" << std::endl;
+    // for (const auto& bin : bin_boundaries) {
+    //     std::cout << "Unnamed: " << bin.unnamed << ", "
+    //               << "Bin Name: " << bin.bin_name << ", "
+    //               << "xB: [" << bin.xB_low << ", " << bin.xB_high << "], "
+    //               << "xB_avg: " << bin.xB_avg << ", "
+    //               << "Q2: [" << bin.Q2_low << ", " << bin.Q2_high << "], "
+    //               << "Q2_avg: " << bin.Q2_avg << ", "
+    //               << "t: [" << bin.t_low << ", " << bin.t_high << "], "
+    //               << "t_avg: " << bin.t_avg << ", "
+    //               << "phi: [" << bin.phi_low << ", " << bin.phi_high << "], "
+    //               << "phi_avg: " << bin.phi_avg << std::endl;
+    // }
     // Calculate the number of unique xB bins
     int num_xB_bins = count_unique_xB_bins(bin_boundaries);
 
@@ -302,9 +302,9 @@ int main(int argc, char* argv[]) {
 
     // Loop over unique xB bins and call the plotting function for DVCS data/MC comparison
     // for (int xB_bin = 0; xB_bin < num_xB_bins; ++xB_bin) {
-    // for (int xB_bin = 0; xB_bin < 1; ++xB_bin) {
-    //     plot_dvcs_data_mc_comparison(output_dir, "dvcs", "Fa18_Out", xB_bin, bin_boundaries, data_readers[1], mc_gen_dvcsgen_readers[1], mc_rec_dvcsgen_readers[1]);
-    // }
+    for (int xB_bin = 0; xB_bin < 1; ++xB_bin) {
+        plot_dvcs_data_mc_comparison(output_dir, "dvcs", "Fa18_Out", xB_bin, bin_boundaries, data_readers[1], mc_gen_dvcsgen_readers[1], mc_rec_dvcsgen_readers[1]);
+    }
 
     // for (int xB_bin = 0; xB_bin < num_xB_bins; ++xB_bin) {
     // // for (int xB_bin = 0; xB_bin < 2; ++xB_bin) {
