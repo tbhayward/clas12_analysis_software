@@ -310,12 +310,13 @@ int main(int argc, char* argv[]) {
     //     plot_dvcs_data_mc_comparison(output_dir, "eppi0", "Fa18_Inb", xB_bin, bin_boundaries, eppi0_readers[0], mc_gen_aaogen_readers[0], mc_rec_aaogen_readers[0]);
     // }
 
-    // Create a vector to hold all the unfolding data across bins
-    std::vector<UnfoldingData> all_unfolding_data;
+    // Create a map to hold all the unfolding data across bins
+    std::map<std::string, std::vector<UnfoldingData>> all_unfolding_data;
+
     // Iterate over the xB bins
     for (int xB_bin = 0; xB_bin < 1; ++xB_bin) {
         // Call the plot_unfolding function for each xB_bin and get the results
-        std::unordered_map<std::string, std::vector<UnfoldingData>> bin_data = plot_unfolding(base_output_dir, 
+        std::map<std::string, std::vector<UnfoldingData>> bin_data = plot_unfolding(base_output_dir,
             xB_bin, bin_boundaries, data_readers, mc_gen_dvcsgen_readers, mc_rec_dvcsgen_readers, eppi0_readers,
             mc_gen_aaogen_readers, mc_rec_aaogen_readers);
 
@@ -323,8 +324,10 @@ int main(int argc, char* argv[]) {
         // calculate_contamination(base_output_dir, xB_bin, bin_boundaries, data_readers, eppi0_readers,
         //     mc_rec_aaogen_readers, mc_rec_eppi0_bkg_readers, bin_data);
 
-        // // Append the collected bin data to the main results
-        // all_unfolding_data.insert(all_unfolding_data.end(), bin_data.begin(), bin_data.end());
+        // // Merge bin_data into all_unfolding_data
+        // for (const auto& [topology, data_vector] : bin_data) {
+        //     all_unfolding_data[topology].insert(all_unfolding_data[topology].end(), data_vector.begin(), data_vector.end());
+        // }
     }
 
     // // Debug information to check the contents of all_unfolding_data
