@@ -86,9 +86,11 @@ std::vector<UnfoldingData> plot_unfolding(const std::string& output_dir,
 
     gStyle->SetOptStat(0);
 
+    // Adjust theta_neutral_neutral based on analysisType
+    std::string theta_variable_name = (analysisType == "dvcs") ? "theta_gamma_gamma" : "theta_pi0_pi0";
+
     // Initialize UnfoldingData structures and histograms
     for (const auto& group : bin_groups) {
-        const auto& key = group.first; // (Q2_low, t_low)
         const auto& idx_list = group.second; // List of indices in bin_boundaries
 
         // Create an UnfoldingData instance
@@ -121,11 +123,26 @@ std::vector<UnfoldingData> plot_unfolding(const std::string& output_dir,
         unfolding_data.raw_yields.resize(total_periods, std::vector<int>(n_phi_bins, 0));
         unfolding_data.acceptance.resize(total_periods, std::vector<double>(n_phi_bins, 0.0));
         unfolding_data.unfolded_yields.resize(total_periods, std::vector<double>(n_phi_bins, 0.0));
-        unfolding_data.mc_gen_counts.resize(total_periods, std::vector<double>(n_phi_bins, 0.0));
-        unfolding_data.mc_rec_counts.resize(total_periods, std::vector<double>(n_phi_bins, 0.0));
+        // No changes to UnfoldingData struct; mc_gen_counts and mc_rec_counts will be local variables
 
         // Store the unfolding_data instance
         all_unfolding_data.push_back(unfolding_data);
+    }
+
+    // Initialize local variables to store mc_gen_counts and mc_rec_counts
+    size_t total_periods = 6; // 0-2: DVCS, 3-5: eppi0
+    size_t n_groups = all_unfolding_data.size();
+    // mc_gen_counts[period][group_idx][phi_idx]
+    std::vector<std::vector<std::vector<double>>> mc_gen_counts(total_periods, std::vector<std::vector<double>>(n_groups));
+    std::vector<std::vector<std::vector<double>>> mc_rec_counts(total_periods, std::vector<std::vector<double>>(n_groups));
+
+    // Initialize mc_gen_counts and mc_rec_counts vectors
+    for (size_t period = 0; period < total_periods; ++period) {
+        for (size_t group_idx = 0; group_idx < n_groups; ++group_idx) {
+            size_t n_phi_bins = all_unfolding_data[group_idx].phi_min.size();
+            mc_gen_counts[period][group_idx].resize(n_phi_bins, 0.0);
+            mc_rec_counts[period][group_idx].resize(n_phi_bins, 0.0);
+        }
     }
 
     // Process data readers (periods 0-2)
@@ -142,8 +159,6 @@ std::vector<UnfoldingData> plot_unfolding(const std::string& output_dir,
         TTreeReaderValue<double> Emiss2_data(data_reader, "Emiss2");
         TTreeReaderValue<double> Mx2_1_data(data_reader, "Mx2_1");
         TTreeReaderValue<double> pTmiss_data(data_reader, "pTmiss");
-        // Adjust theta_neutral_neutral based on analysisType
-        std::string theta_variable_name = (analysisType == "dvcs") ? "theta_gamma_gamma" : "theta_pi0_pi0";
         TTreeReaderValue<double> theta_neutral_neutral_data(data_reader, theta_variable_name.c_str());
 
         while (data_reader.Next()) {
@@ -200,8 +215,6 @@ std::vector<UnfoldingData> plot_unfolding(const std::string& output_dir,
         TTreeReaderValue<double> Emiss2_data(eppi0_reader, "Emiss2");
         TTreeReaderValue<double> Mx2_1_data(eppi0_reader, "Mx2_1");
         TTreeReaderValue<double> pTmiss_data(eppi0_reader, "pTmiss");
-        // Adjust theta_neutral_neutral based on analysisType
-        std::string theta_variable_name = (analysisType == "dvcs") ? "theta_gamma_gamma" : "theta_pi0_pi0";
         TTreeReaderValue<double> theta_neutral_neutral_data(eppi0_reader, theta_variable_name.c_str());
 
         while (eppi0_reader.Next()) {
@@ -277,7 +290,7 @@ std::vector<UnfoldingData> plot_unfolding(const std::string& output_dir,
                 continue;
 
             // Find the bin group
-            for (size_t group_idx = 0; group_idx < all_unfolding_data.size(); ++group_idx) {
+            for (size_t group_idx = 0; group_idx < n_groups; ++group_idx) {
                 UnfoldingData& unfolding_data = all_unfolding_data[group_idx];
 
                 if (Q2_value >= unfolding_data.Q2_min && Q2_value <= unfolding_data.Q2_max &&
@@ -289,8 +302,8 @@ std::vector<UnfoldingData> plot_unfolding(const std::string& output_dir,
                         double phi_high = unfolding_data.phi_max[phi_idx];
 
                         if (phi_in_bin(phi_deg, phi_low, phi_high)) {
-                            // Increment mc_gen_counts for this period
-                            unfolding_data.mc_gen_counts[period][phi_idx] += 1.0;
+                            // Increment mc_gen_counts for this period and group
+                            mc_gen_counts[period][group_idx][phi_idx] += 1.0;
                             break; // Exit phi bin loop
                         }
                     }
@@ -333,7 +346,7 @@ std::vector<UnfoldingData> plot_unfolding(const std::string& output_dir,
                 continue;
 
             // Find the bin group
-            for (size_t group_idx = 0; group_idx < all_unfolding_data.size(); ++group_idx) {
+            for (size_t group_idx = 0; group_idx < n_groups; ++group_idx) {
                 UnfoldingData& unfolding_data = all_unfolding_data[group_idx];
 
                 if (Q2_value >= unfolding_data.Q2_min && Q2_value <= unfolding_data.Q2_max &&
@@ -345,8 +358,8 @@ std::vector<UnfoldingData> plot_unfolding(const std::string& output_dir,
                         double phi_high = unfolding_data.phi_max[phi_idx];
 
                         if (phi_in_bin(phi_deg, phi_low, phi_high)) {
-                            // Increment mc_rec_counts for this period
-                            unfolding_data.mc_rec_counts[period][phi_idx] += 1.0;
+                            // Increment mc_rec_counts for this period and group
+                            mc_rec_counts[period][group_idx][phi_idx] += 1.0;
                             break; // Exit phi bin loop
                         }
                     }
@@ -358,6 +371,8 @@ std::vector<UnfoldingData> plot_unfolding(const std::string& output_dir,
 
     // Process mc_gen_aaogen_readers and mc_rec_aaogen_readers for eppi0 (periods 3-5)
     for (int period = 0; period < n_periods; ++period) {
+        int eppi0_period = period + 3; // Adjust period index for eppi0 data
+
         // mc_gen_aaogen_readers
         TTreeReader& mc_gen_reader = mc_gen_aaogen_readers[period];
         mc_gen_reader.Restart();
@@ -390,7 +405,7 @@ std::vector<UnfoldingData> plot_unfolding(const std::string& output_dir,
                 continue;
 
             // Find the bin group
-            for (size_t group_idx = 0; group_idx < all_unfolding_data.size(); ++group_idx) {
+            for (size_t group_idx = 0; group_idx < n_groups; ++group_idx) {
                 UnfoldingData& unfolding_data = all_unfolding_data[group_idx];
 
                 if (Q2_value >= unfolding_data.Q2_min && Q2_value <= unfolding_data.Q2_max &&
@@ -402,8 +417,8 @@ std::vector<UnfoldingData> plot_unfolding(const std::string& output_dir,
                         double phi_high = unfolding_data.phi_max[phi_idx];
 
                         if (phi_in_bin(phi_deg, phi_low, phi_high)) {
-                            // Increment mc_gen_counts for this period (period + 3)
-                            unfolding_data.mc_gen_counts[period + 3][phi_idx] += 1.0;
+                            // Increment mc_gen_counts for this eppi0 period and group
+                            mc_gen_counts[eppi0_period][group_idx][phi_idx] += 1.0;
                             break; // Exit phi bin loop
                         }
                     }
@@ -444,7 +459,7 @@ std::vector<UnfoldingData> plot_unfolding(const std::string& output_dir,
                 continue;
 
             // Find the bin group
-            for (size_t group_idx = 0; group_idx < all_unfolding_data.size(); ++group_idx) {
+            for (size_t group_idx = 0; group_idx < n_groups; ++group_idx) {
                 UnfoldingData& unfolding_data = all_unfolding_data[group_idx];
 
                 if (Q2_value >= unfolding_data.Q2_min && Q2_value <= unfolding_data.Q2_max &&
@@ -456,8 +471,8 @@ std::vector<UnfoldingData> plot_unfolding(const std::string& output_dir,
                         double phi_high = unfolding_data.phi_max[phi_idx];
 
                         if (phi_in_bin(phi_deg, phi_low, phi_high)) {
-                            // Increment mc_rec_counts for this period (period + 3)
-                            unfolding_data.mc_rec_counts[period + 3][phi_idx] += 1.0;
+                            // Increment mc_rec_counts for this eppi0 period and group
+                            mc_rec_counts[eppi0_period][group_idx][phi_idx] += 1.0;
                             break; // Exit phi bin loop
                         }
                     }
@@ -468,15 +483,14 @@ std::vector<UnfoldingData> plot_unfolding(const std::string& output_dir,
     }
 
     // Compute acceptances and unfolded yields
-    for (size_t group_idx = 0; group_idx < all_unfolding_data.size(); ++group_idx) {
+    for (size_t group_idx = 0; group_idx < n_groups; ++group_idx) {
         UnfoldingData& unfolding_data = all_unfolding_data[group_idx];
         size_t n_phi_bins = unfolding_data.phi_min.size();
-        size_t total_periods = 6;
 
         for (size_t period = 0; period < total_periods; ++period) {
             for (size_t phi_idx = 0; phi_idx < n_phi_bins; ++phi_idx) {
-                double mc_gen_count = unfolding_data.mc_gen_counts[period][phi_idx];
-                double mc_rec_count = unfolding_data.mc_rec_counts[period][phi_idx];
+                double mc_gen_count = mc_gen_counts[period][group_idx][phi_idx];
+                double mc_rec_count = mc_rec_counts[period][group_idx][phi_idx];
 
                 if (mc_gen_count > 0) {
                     double acceptance = mc_rec_count / mc_gen_count;
