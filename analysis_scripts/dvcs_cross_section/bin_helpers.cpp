@@ -2,6 +2,7 @@
 #include <iostream>
 #include <set>
 #include <vector>
+#include <cmath>  
 #include <algorithm>
 
 // Function to precompute relevant bins based on xB_bin
