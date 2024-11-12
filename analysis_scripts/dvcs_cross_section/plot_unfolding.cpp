@@ -50,7 +50,7 @@ std::map<std::string, std::vector<UnfoldingData>> plot_unfolding(
     std::vector<TTreeReader>& mc_rec_aaogen_readers
 ) {
     // Define topologies
-    std::vector<std::string> topologies = {"CD_FD", "CD_FT", "FD_FD"};
+    std::vector<std::string> topologies = {"FD_FD", "CD_FD", "CD_FT"};
     std::string combined_topology = "combined";
 
     // Names of the periods
@@ -89,9 +89,8 @@ std::map<std::string, std::vector<UnfoldingData>> plot_unfolding(
     gStyle->SetOptStat(0);
 
     // Map to hold combined unfolding data
-    std::vector<UnfoldingData> combined_unfolding_data;
+    std::vector<UnfoldingData> combined_unfolding_data_vec;
 
-    // Initialize UnfoldingData structures and histograms for combined data
     size_t total_periods = 6; // 0-2: DVCS, 3-5: eppi0
     size_t n_bins = bin_groups.size();
 
@@ -134,10 +133,10 @@ std::map<std::string, std::vector<UnfoldingData>> plot_unfolding(
         unfolding_data.unfolded_yields.resize(total_periods, std::vector<double>(n_phi_bins, 0.0));
 
         // Store the unfolding_data instance
-        combined_unfolding_data.push_back(unfolding_data);
+        combined_unfolding_data_vec.push_back(unfolding_data);
     }
 
-    size_t n_groups = combined_unfolding_data.size();
+    size_t n_groups = combined_unfolding_data_vec.size();
 
     // Initialize local variables to store mc_gen_counts and mc_rec_counts for combined data
     // mc_gen_counts[period][group_idx][phi_idx]
@@ -147,7 +146,7 @@ std::map<std::string, std::vector<UnfoldingData>> plot_unfolding(
     // Initialize mc_gen_counts and mc_rec_counts vectors
     for (size_t period = 0; period < total_periods; ++period) {
         for (size_t group_idx = 0; group_idx < n_groups; ++group_idx) {
-            size_t n_phi_bins = combined_unfolding_data[group_idx].phi_min.size();
+            size_t n_phi_bins = combined_unfolding_data_vec[group_idx].phi_min.size();
             mc_gen_counts[period][group_idx].resize(n_phi_bins, 0.0);
             mc_rec_counts[period][group_idx].resize(n_phi_bins, 0.0);
         }
@@ -183,12 +182,12 @@ std::map<std::string, std::vector<UnfoldingData>> plot_unfolding(
             int det2 = *detector2_data;
 
             std::string event_topology = "";
-            if (det1 == 2 && det2 == 1) {
+            if (det1 == 1 && det2 == 1) {
+                event_topology = "FD_FD";
+            } else if (det1 == 2 && det2 == 1) {
                 event_topology = "CD_FD";
             } else if (det1 == 2 && det2 == 0) {
                 event_topology = "CD_FT";
-            } else if (det1 == 1 && det2 == 1) {
-                event_topology = "FD_FD";
             } else {
                 continue; // Not one of the desired topologies
             }
@@ -209,8 +208,8 @@ std::map<std::string, std::vector<UnfoldingData>> plot_unfolding(
                 continue;
 
             // Find the bin group
-            for (size_t group_idx = 0; group_idx < combined_unfolding_data.size(); ++group_idx) {
-                UnfoldingData& unfolding_data = combined_unfolding_data[group_idx];
+            for (size_t group_idx = 0; group_idx < combined_unfolding_data_vec.size(); ++group_idx) {
+                UnfoldingData& unfolding_data = combined_unfolding_data_vec[group_idx];
 
                 if (Q2_value >= unfolding_data.Q2_min && Q2_value <= unfolding_data.Q2_max &&
                     t_abs >= unfolding_data.t_min && t_abs <= unfolding_data.t_max) {
@@ -265,12 +264,12 @@ std::map<std::string, std::vector<UnfoldingData>> plot_unfolding(
             int det2 = *detector2_data;
 
             std::string event_topology = "";
-            if (det1 == 2 && det2 == 1) {
+            if (det1 == 1 && det2 == 1) {
+                event_topology = "FD_FD";
+            } else if (det1 == 2 && det2 == 1) {
                 event_topology = "CD_FD";
             } else if (det1 == 2 && det2 == 0) {
                 event_topology = "CD_FT";
-            } else if (det1 == 1 && det2 == 1) {
-                event_topology = "FD_FD";
             } else {
                 continue; // Not one of the desired topologies
             }
@@ -291,8 +290,8 @@ std::map<std::string, std::vector<UnfoldingData>> plot_unfolding(
                 continue;
 
             // Find the bin group
-            for (size_t group_idx = 0; group_idx < combined_unfolding_data.size(); ++group_idx) {
-                UnfoldingData& unfolding_data = combined_unfolding_data[group_idx];
+            for (size_t group_idx = 0; group_idx < combined_unfolding_data_vec.size(); ++group_idx) {
+                UnfoldingData& unfolding_data = combined_unfolding_data_vec[group_idx];
 
                 if (Q2_value >= unfolding_data.Q2_min && Q2_value <= unfolding_data.Q2_max &&
                     t_abs >= unfolding_data.t_min && t_abs <= unfolding_data.t_max) {
@@ -355,8 +354,8 @@ std::map<std::string, std::vector<UnfoldingData>> plot_unfolding(
                 continue;
 
             // Find the bin group
-            for (size_t group_idx = 0; group_idx < combined_unfolding_data.size(); ++group_idx) {
-                UnfoldingData& unfolding_data = combined_unfolding_data[group_idx];
+            for (size_t group_idx = 0; group_idx < combined_unfolding_data_vec.size(); ++group_idx) {
+                UnfoldingData& unfolding_data = combined_unfolding_data_vec[group_idx];
 
                 if (Q2_value >= unfolding_data.Q2_min && Q2_value <= unfolding_data.Q2_max &&
                     t_abs >= unfolding_data.t_min && t_abs <= unfolding_data.t_max) {
@@ -402,7 +401,7 @@ std::map<std::string, std::vector<UnfoldingData>> plot_unfolding(
             int det2 = *detector2_mc_rec;
 
             // Only consider events that match our desired topologies
-            if (!((det1 == 2 && det2 == 1) || (det1 == 2 && det2 == 0) || (det1 == 1 && det2 == 1))) {
+            if (!((det1 == 1 && det2 == 1) || (det1 == 2 && det2 == 1) || (det1 == 2 && det2 == 0))) {
                 continue;
             }
 
@@ -422,8 +421,8 @@ std::map<std::string, std::vector<UnfoldingData>> plot_unfolding(
                 continue;
 
             // Find the bin group
-            for (size_t group_idx = 0; group_idx < combined_unfolding_data.size(); ++group_idx) {
-                UnfoldingData& unfolding_data = combined_unfolding_data[group_idx];
+            for (size_t group_idx = 0; group_idx < combined_unfolding_data_vec.size(); ++group_idx) {
+                UnfoldingData& unfolding_data = combined_unfolding_data_vec[group_idx];
 
                 if (Q2_value >= unfolding_data.Q2_min && Q2_value <= unfolding_data.Q2_max &&
                     t_abs >= unfolding_data.t_min && t_abs <= unfolding_data.t_max) {
@@ -485,8 +484,8 @@ std::map<std::string, std::vector<UnfoldingData>> plot_unfolding(
                 continue;
 
             // Find the bin group
-            for (size_t group_idx = 0; group_idx < combined_unfolding_data.size(); ++group_idx) {
-                UnfoldingData& unfolding_data = combined_unfolding_data[group_idx];
+            for (size_t group_idx = 0; group_idx < combined_unfolding_data_vec.size(); ++group_idx) {
+                UnfoldingData& unfolding_data = combined_unfolding_data_vec[group_idx];
 
                 if (Q2_value >= unfolding_data.Q2_min && Q2_value <= unfolding_data.Q2_max &&
                     t_abs >= unfolding_data.t_min && t_abs <= unfolding_data.t_max) {
@@ -532,7 +531,7 @@ std::map<std::string, std::vector<UnfoldingData>> plot_unfolding(
             int det2 = *detector2_mc_rec;
 
             // Only consider events that match our desired topologies
-            if (!((det1 == 2 && det2 == 1) || (det1 == 2 && det2 == 0) || (det1 == 1 && det2 == 1))) {
+            if (!((det1 == 1 && det2 == 1) || (det1 == 2 && det2 == 1) || (det1 == 2 && det2 == 0))) {
                 continue;
             }
 
@@ -552,8 +551,8 @@ std::map<std::string, std::vector<UnfoldingData>> plot_unfolding(
                 continue;
 
             // Find the bin group
-            for (size_t group_idx = 0; group_idx < combined_unfolding_data.size(); ++group_idx) {
-                UnfoldingData& unfolding_data = combined_unfolding_data[group_idx];
+            for (size_t group_idx = 0; group_idx < combined_unfolding_data_vec.size(); ++group_idx) {
+                UnfoldingData& unfolding_data = combined_unfolding_data_vec[group_idx];
 
                 if (Q2_value >= unfolding_data.Q2_min && Q2_value <= unfolding_data.Q2_max &&
                     t_abs >= unfolding_data.t_min && t_abs <= unfolding_data.t_max) {
@@ -577,7 +576,7 @@ std::map<std::string, std::vector<UnfoldingData>> plot_unfolding(
 
     // Compute acceptances and unfolded yields for the combined topology
     for (size_t group_idx = 0; group_idx < n_groups; ++group_idx) {
-        UnfoldingData& unfolding_data = combined_unfolding_data[group_idx];
+        UnfoldingData& unfolding_data = combined_unfolding_data_vec[group_idx];
         size_t n_phi_bins = unfolding_data.phi_min.size();
 
         for (size_t period = 0; period < total_periods; ++period) {
@@ -606,7 +605,7 @@ std::map<std::string, std::vector<UnfoldingData>> plot_unfolding(
     // Now, we need to separate the data per topology for plotting
     // For each topology, create a vector of UnfoldingData
     for (const auto& topology : topologies) {
-        std::vector<UnfoldingData> topology_data = combined_unfolding_data; // Copy the combined data
+        std::vector<UnfoldingData> topology_data = combined_unfolding_data_vec; // Copy the combined data
 
         // For each UnfoldingData instance, we need to zero out the raw_yields for other topologies
         for (auto& data : topology_data) {
@@ -625,7 +624,7 @@ std::map<std::string, std::vector<UnfoldingData>> plot_unfolding(
     }
 
     // Also store the combined data
-    topology_unfolding_data[combined_topology] = combined_unfolding_data;
+    topology_unfolding_data[combined_topology] = combined_unfolding_data_vec;
 
     // Plotting code for each topology
     for (const auto& topology : topologies) {
@@ -658,7 +657,7 @@ std::map<std::string, std::vector<UnfoldingData>> plot_unfolding(
                 std::vector<double> raw_errors(n_phi_bins);
 
                 for (size_t phi_idx = 0; phi_idx < n_phi_bins; ++phi_idx) {
-                    phi_centers[phi_idx] = (unfolding_data.phi_min[phi_idx] + unfolding_data.phi_max[phi_idx]) / 2.0;
+                    phi_centers[phi_idx] = unfolding_data.phi_avg[phi_idx];
                     phi_widths[phi_idx] = (unfolding_data.phi_max[phi_idx] - unfolding_data.phi_min[phi_idx]) / 2.0;
 
                     raw_counts[phi_idx] = unfolding_data.raw_yields.at(topology)[period][phi_idx];
@@ -748,7 +747,7 @@ std::map<std::string, std::vector<UnfoldingData>> plot_unfolding(
                 std::vector<double> raw_errors(n_phi_bins);
 
                 for (size_t phi_idx = 0; phi_idx < n_phi_bins; ++phi_idx) {
-                    phi_centers[phi_idx] = (unfolding_data.phi_min[phi_idx] + unfolding_data.phi_max[phi_idx]) / 2.0;
+                    phi_centers[phi_idx] = unfolding_data.phi_avg[phi_idx];
                     phi_widths[phi_idx] = (unfolding_data.phi_max[phi_idx] - unfolding_data.phi_min[phi_idx]) / 2.0;
 
                     raw_counts[phi_idx] = unfolding_data.raw_yields.at(topology)[eppi0_period][phi_idx];
@@ -840,7 +839,7 @@ std::map<std::string, std::vector<UnfoldingData>> plot_unfolding(
             std::vector<double> unfolded_errors(n_phi_bins);
 
             for (size_t phi_idx = 0; phi_idx < n_phi_bins; ++phi_idx) {
-                phi_centers[phi_idx] = (unfolding_data.phi_min[phi_idx] + unfolding_data.phi_max[phi_idx]) / 2.0;
+                phi_centers[phi_idx] = unfolding_data.phi_avg[phi_idx];
                 phi_widths[phi_idx] = (unfolding_data.phi_max[phi_idx] - unfolding_data.phi_min[phi_idx]) / 2.0;
 
                 unfolded_counts[phi_idx] = unfolding_data.unfolded_yields[period][phi_idx];
@@ -932,7 +931,7 @@ std::map<std::string, std::vector<UnfoldingData>> plot_unfolding(
             std::vector<double> unfolded_errors(n_phi_bins);
 
             for (size_t phi_idx = 0; phi_idx < n_phi_bins; ++phi_idx) {
-                phi_centers[phi_idx] = (unfolding_data.phi_min[phi_idx] + unfolding_data.phi_max[phi_idx]) / 2.0;
+                phi_centers[phi_idx] = unfolding_data.phi_avg[phi_idx];
                 phi_widths[phi_idx] = (unfolding_data.phi_max[phi_idx] - unfolding_data.phi_min[phi_idx]) / 2.0;
 
                 unfolded_counts[phi_idx] = unfolding_data.unfolded_yields[eppi0_period][phi_idx];
