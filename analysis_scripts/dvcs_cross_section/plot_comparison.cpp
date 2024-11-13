@@ -176,10 +176,10 @@ void plot_comparison(
     int canvas_height = static_cast<int>(1.5 * base_canvas_height);
 
     gStyle->SetOptStat(0);
-
+    std::cout << "before getting all unfolding data" << std::endl;
     // Get the combined data
     const auto& combined_unfolding_data = all_unfolding_data.at("combined");
-
+    std::cout << "after getting all unfolding data" << std::endl;
     // Create a map to quickly access previous data by bin identifiers
     // We'll use a combination of bin_number and phi_avg as the key
     std::map<std::pair<int, double>, PreviousUnfoldingData> previous_data_map;
