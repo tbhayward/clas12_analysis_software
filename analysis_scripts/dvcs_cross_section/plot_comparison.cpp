@@ -34,19 +34,20 @@ struct PreviousUnfoldingData {
 };
 
 // Function to read previous unfolding data from CSV
-std::vector<PreviousUnfoldingData> read_previous_unfolding_data(const std::string& filename) {
-    std::vector<PreviousUnfoldingData> previous_data;
+// Function to read unfolding data from CSV
+std::vector<UnfoldingData> read_unfolding_data(const std::string& filename, bool is_previous_data) {
+    std::vector<UnfoldingData> data_vector;
     std::ifstream file(filename);
     if (!file.is_open()) {
-        std::cerr << "Error: Could not open previous data file " << filename << std::endl;
-        return previous_data;
+        std::cerr << "Error: Could not open data file " << filename << std::endl;
+        return data_vector;
     }
 
     std::string line;
     // Read the header line
     if (!std::getline(file, line)) {
         std::cerr << "Error: Could not read header line from file " << filename << std::endl;
-        return previous_data;
+        return data_vector;
     }
 
     // Parse the header to get column indices
@@ -63,29 +64,65 @@ std::vector<PreviousUnfoldingData> read_previous_unfolding_data(const std::strin
         column_indices[headers[i]] = i;
     }
 
-    // Get indices of required columns
-    int idx_bin_number = column_indices["Bin Name"];
-    int idx_xBmin = column_indices["xBmin"];
-    int idx_xBmax = column_indices["xBmax"];
-    int idx_xBavg = column_indices["xBavg"];
-    int idx_Q2min = column_indices["Q2min"];
-    int idx_Q2max = column_indices["Q2max"];
-    int idx_Q2avg = column_indices["Q2avg"];
-    int idx_t_abs_min = column_indices["t_abs_min"];
-    int idx_t_abs_max = column_indices["t_abs_max"];
-    int idx_t_abs_avg = column_indices["t_abs_avg"];
-    int idx_phimin = column_indices["phimin"];
-    int idx_phimax = column_indices["phimax"];
-    int idx_phiavg = column_indices["phiavg"];
+    // Now, set up the column names based on whether we're reading previous data or new data
+    int idx_bin_number;
+    int idx_xBmin, idx_xBmax, idx_xBavg;
+    int idx_Q2min, idx_Q2max, idx_Q2avg;
+    int idx_t_abs_min, idx_t_abs_max, idx_t_abs_avg;
+    int idx_phimin, idx_phimax, idx_phiavg;
 
-    // Unfolded yields
-    int idx_unfolded_yield_dvcs_Fa18Inb = column_indices["acceptance corrected yield, ep->epg, exp"];
-    int idx_unfolded_yield_eppi0_Fa18Inb = column_indices["acceptance corrected yield, ep->eppi0, exp"]; // Assuming this column exists
+    int idx_unfolded_yield_dvcs_Fa18Inb;
+    int idx_unfolded_yield_dvcs_Fa18Out;
+    int idx_unfolded_yield_eppi0_Fa18Inb;
+    int idx_unfolded_yield_eppi0_Fa18Out;
 
-    // Since the pass-1 data does not have Spring 2019 data, we can read unfolded yields for Fa18Out if available
-    // For simplicity, we'll assume unfolded yields for Fa18Out are stored in a similar column; adjust if necessary
-    int idx_unfolded_yield_dvcs_Fa18Out = column_indices["acceptance corrected yield, ep->epg, exp, outbending"]; // Adjust column name if needed
-    int idx_unfolded_yield_eppi0_Fa18Out = column_indices["acceptance corrected yield, ep->eppi0, exp, outbending"]; // Adjust column name if needed
+    if (is_previous_data) {
+        // For the previous data CSV, use the column names from the old CSV
+        idx_bin_number = column_indices["Bin Name"];
+        idx_xBmin = column_indices["xBmin"];
+        idx_xBmax = column_indices["xBmax"];
+        idx_xBavg = column_indices["xBavg"];
+        idx_Q2min = column_indices["Q2min"];
+        idx_Q2max = column_indices["Q2max"];
+        idx_Q2avg = column_indices["Q2avg"];
+        idx_t_abs_min = column_indices["t_abs_min"];
+        idx_t_abs_max = column_indices["t_abs_max"];
+        idx_t_abs_avg = column_indices["t_abs_avg"];
+        idx_phimin = column_indices["phimin"];
+        idx_phimax = column_indices["phimax"];
+        idx_phiavg = column_indices["phiavg"];
+
+        // Unfolded yields for DVCS
+        idx_unfolded_yield_dvcs_Fa18Inb = column_indices["acceptance corrected yield, ep->epg, exp"];
+        idx_unfolded_yield_dvcs_Fa18Out = column_indices["acceptance corrected yield, ep->epg, exp, outbending"]; // Adjust if necessary
+
+        // For eppi0 unfolded yields, we might need to adjust the column names based on what's available
+        idx_unfolded_yield_eppi0_Fa18Inb = column_indices["acceptance corrected yield, ep->eppi0, exp"]; // Adjust if necessary
+        idx_unfolded_yield_eppi0_Fa18Out = column_indices["acceptance corrected yield, ep->eppi0, exp, outbending"]; // Adjust if necessary
+    } else {
+        // For the new data CSV, use the column names from the new CSV
+        idx_bin_number = column_indices["Bin"];
+        idx_xBmin = column_indices["xB_min"];
+        idx_xBmax = column_indices["xB_max"];
+        idx_xBavg = column_indices["xB_avg"];
+        idx_Q2min = column_indices["Q2_min"];
+        idx_Q2max = column_indices["Q2_max"];
+        idx_Q2avg = column_indices["Q2_avg"];
+        idx_t_abs_min = column_indices["t_min"];
+        idx_t_abs_max = column_indices["t_max"];
+        idx_t_abs_avg = column_indices["t_avg"];
+        idx_phimin = column_indices["phi_min"];
+        idx_phimax = column_indices["phi_max"];
+        idx_phiavg = column_indices["phi_avg"];
+
+        // Unfolded yields for DVCS
+        idx_unfolded_yield_dvcs_Fa18Inb = column_indices["ep->e'pgamma unfolded_yield_Fa18Inb"];
+        idx_unfolded_yield_dvcs_Fa18Out = column_indices["ep->e'pgamma unfolded_yield_Fa18Out"];
+
+        // Unfolded yields for eppi0
+        idx_unfolded_yield_eppi0_Fa18Inb = column_indices["ep->e'ppi0 unfolded_yield_Fa18Inb"];
+        idx_unfolded_yield_eppi0_Fa18Out = column_indices["ep->e'ppi0 unfolded_yield_Fa18Out"];
+    }
 
     // Read the data lines
     while (std::getline(file, line)) {
@@ -104,7 +141,7 @@ std::vector<PreviousUnfoldingData> read_previous_unfolding_data(const std::strin
             cells.resize(headers.size());
         }
 
-        PreviousUnfoldingData data;
+        UnfoldingData data;
 
         data.bin_number = std::stoi(cells[idx_bin_number]);
         data.xB_min = std::stod(cells[idx_xBmin]);
@@ -120,33 +157,36 @@ std::vector<PreviousUnfoldingData> read_previous_unfolding_data(const std::strin
         data.phi_max = std::stod(cells[idx_phimax]);
         data.phi_avg = std::stod(cells[idx_phiavg]);
 
-        // Unfolded yields for DVCS
-        data.unfolded_yield_dvcs_Fa18Inb = std::stod(cells[idx_unfolded_yield_dvcs_Fa18Inb]);
-
-        // Check if Fa18Out unfolded yield is available
-        if (idx_unfolded_yield_dvcs_Fa18Out < cells.size() && !cells[idx_unfolded_yield_dvcs_Fa18Out].empty()) {
-            data.unfolded_yield_dvcs_Fa18Out = std::stod(cells[idx_unfolded_yield_dvcs_Fa18Out]);
+        // Unfolded yields
+        // Handle possible missing data gracefully
+        if (cells[idx_unfolded_yield_dvcs_Fa18Inb].empty()) {
+            data.unfolded_yield_dvcs_Fa18Inb = 0.0;
         } else {
+            data.unfolded_yield_dvcs_Fa18Inb = std::stod(cells[idx_unfolded_yield_dvcs_Fa18Inb]);
+        }
+
+        if (cells[idx_unfolded_yield_dvcs_Fa18Out].empty()) {
             data.unfolded_yield_dvcs_Fa18Out = 0.0;
+        } else {
+            data.unfolded_yield_dvcs_Fa18Out = std::stod(cells[idx_unfolded_yield_dvcs_Fa18Out]);
         }
 
-        // Unfolded yields for eppi0
-        if (idx_unfolded_yield_eppi0_Fa18Inb < cells.size() && !cells[idx_unfolded_yield_eppi0_Fa18Inb].empty()) {
-            data.unfolded_yield_eppi0_Fa18Inb = std::stod(cells[idx_unfolded_yield_eppi0_Fa18Inb]);
-        } else {
+        if (cells[idx_unfolded_yield_eppi0_Fa18Inb].empty()) {
             data.unfolded_yield_eppi0_Fa18Inb = 0.0;
-        }
-
-        if (idx_unfolded_yield_eppi0_Fa18Out < cells.size() && !cells[idx_unfolded_yield_eppi0_Fa18Out].empty()) {
-            data.unfolded_yield_eppi0_Fa18Out = std::stod(cells[idx_unfolded_yield_eppi0_Fa18Out]);
         } else {
-            data.unfolded_yield_eppi0_Fa18Out = 0.0;
+            data.unfolded_yield_eppi0_Fa18Inb = std::stod(cells[idx_unfolded_yield_eppi0_Fa18Inb]);
         }
 
-        previous_data.push_back(data);
+        if (cells[idx_unfolded_yield_eppi0_Fa18Out].empty()) {
+            data.unfolded_yield_eppi0_Fa18Out = 0.0;
+        } else {
+            data.unfolded_yield_eppi0_Fa18Out = std::stod(cells[idx_unfolded_yield_eppi0_Fa18Out]);
+        }
+
+        data_vector.push_back(data);
     }
 
-    return previous_data;
+    return data_vector;
 }
 
 void plot_comparison(
