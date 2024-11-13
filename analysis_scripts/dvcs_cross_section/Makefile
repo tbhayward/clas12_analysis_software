@@ -7,7 +7,7 @@ LFLAGS = $(ROOTLIBS) -lMinuit -lstdc++fs  # Add -lstdc++fs for filesystem
 # Target executable
 TARGET = dvcs_cross_section_extraction
 
-# Source files (added calculate_contamination.cpp)
+# Source files
 SRC = dvcs_cross_section_extraction.cpp \
       determine_exclusivity.cpp \
       histConfigs.cpp \
@@ -22,19 +22,20 @@ SRC = dvcs_cross_section_extraction.cpp \
       plot_unfolding.cpp \
       bin_helpers.cpp \
       write_csv.cpp \
-      calculate_contamination.cpp  
+      calculate_contamination.cpp \
+      plot_comparison.cpp  # Added plot_comparison.cpp
 
 # Object files
 OBJ = $(SRC:.cpp=.o)
 
 # Main target
 $(TARGET): $(OBJ)
-	$(CXX) $(CXXFLAGS) -o $@ $^ $(LFLAGS)
+      $(CXX) $(CXXFLAGS) -o $@ $^ $(LFLAGS)
 
 # Generic rule for compiling source files
 %.o: %.cpp
-	$(CXX) $(CXXFLAGS) -c $< $(ROOTLIBS)
+      $(CXX) $(CXXFLAGS) -c $< $(ROOTLIBS)
 
 # Clean target
 clean:
-	rm -f $(OBJ) $(TARGET)
+      rm -f $(OBJ) $(TARGET)
