@@ -177,7 +177,15 @@ void plot_comparison(
 
     gStyle->SetOptStat(0);
     std::cout << "before getting all unfolding data" << std::endl;
-    // Get the combined data
+
+    // Debug: print keys in all_unfolding_data
+    std::cout << "Keys in all_unfolding_data: ";
+    for (const auto& kv : all_unfolding_data) {
+        std::cout << kv.first << " ";
+    }
+    std::cout << std::endl;
+
+    // Attempt to access "combined" key
     const auto& combined_unfolding_data = all_unfolding_data.at("combined");
     std::cout << "after getting all unfolding data" << std::endl;
     // Create a map to quickly access previous data by bin identifiers
