@@ -3,13 +3,14 @@
 
 #include <string>
 #include <vector>
-#include <map>
+#include "bin_boundaries.h"
 
+// Adjusted function signature to match plot_comparison.cpp
 void plot_comparison(
     const std::string& output_dir,
-    const std::string& bin_boundaries_csv,
-    const std::string& previous_data_csv,
-    const std::string& new_data_csv
+    const std::vector<BinBoundary>& bin_boundaries,
+    const std::string& csv_fa18_inb,
+    const std::string& csv_fa18_out
 );
 
 #endif // PLOT_COMPARISON_H
