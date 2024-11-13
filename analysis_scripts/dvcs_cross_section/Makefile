@@ -30,12 +30,12 @@ OBJ = $(SRC:.cpp=.o)
 
 # Main target
 $(TARGET): $(OBJ)
-      $(CXX) $(CXXFLAGS) -o $@ $^ $(LFLAGS)
+      $(CXX) $(CXXFLAGS) -o $@ $^ $(LFLAGS)  # <---- Make sure this line starts with a TAB
 
 # Generic rule for compiling source files
 %.o: %.cpp
-      $(CXX) $(CXXFLAGS) -c $< $(ROOTLIBS)
+      $(CXX) $(CXXFLAGS) -c $< $(ROOTLIBS)  # <---- Make sure this line starts with a TAB
 
 # Clean target
 clean:
-      rm -f $(OBJ) $(TARGET)
+      rm -f $(OBJ) $(TARGET)  # <---- Make sure this line starts with a TAB
