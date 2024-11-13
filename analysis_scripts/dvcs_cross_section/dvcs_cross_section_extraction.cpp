@@ -24,6 +24,7 @@
 #include "calculate_contamination.h"
 #include "unfolding_data.h"
 #include "write_csv.h"
+#include "plot_comparison.h"
 
 // Namespace declaration
 using namespace std;
@@ -337,7 +338,7 @@ int main(int argc, char* argv[]) {
     // write_csv("output/unfolding_data.csv", all_unfolding_data);
 
     // Call plot_comparison
-    plot_comparison(output_dir, bin_boundaries, previous_data_csv, all_unfolding_data);
+    plot_comparison(output_dir, bin_boundaries, binning_file, all_unfolding_data);
 
     std::cout << "Program complete. Additional functionality to be added later." << std::endl << std::endl;
 
