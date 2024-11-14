@@ -117,7 +117,7 @@ int main(int argc, char** argv) {
         }
     }
 
-    // Step 2: Record positions of matching events in file1
+    // Step 2: Record positions of matching events in file1 starting from ratio_lower_bound
     TH1D* hist3 = new TH1D("hist3", "", num_bins, x_min, x_max);
     tree1->SetBranchAddress("runnum", &runnum);
     tree1->SetBranchAddress("evnum", &evnum);
@@ -126,7 +126,7 @@ int main(int argc, char** argv) {
     Long64_t nEntries1 = tree1->GetEntries();
     for (Long64_t i = 0; i < nEntries1; ++i) {
         tree1->GetEntry(i);
-        if (matching_event_pairs.find({runnum, evnum}) != matching_event_pairs.end()) {
+        if (branch_value >= ratio_lower_bound && matching_event_pairs.find({runnum, evnum}) != matching_event_pairs.end()) {
             hist3->Fill(branch_value);
         }
     }
@@ -139,6 +139,9 @@ int main(int argc, char** argv) {
     hist3->SetLineStyle(2); // Dashed line for third histogram
     hist3->SetStats(0);
 
+    // Set x-axis range for hist3 in the main plot
+    hist3->GetXaxis()->SetRangeUser(ratio_lower_bound, x_max);
+
     // Calculate the maximum y-axis range
     double max_val = std::max({hist1->GetMaximum(), hist2->GetMaximum(), hist3->GetMaximum()});
     hist1->SetMaximum(1.2 * max_val); // Set y-axis range
@@ -149,7 +152,7 @@ int main(int argc, char** argv) {
 
     hist1->Draw("HIST");
     hist2->Draw("HIST SAME");
-    hist3->Draw("HIST SAME"); // Draw third histogram on the same canvas
+    hist3->Draw("HIST SAME"); // Draw third histogram on the same canvas with restricted range
 
     // Use the new input arguments for legend labels
     TLegend* legend = new TLegend(0.7, 0.7, 0.9, 0.9);
