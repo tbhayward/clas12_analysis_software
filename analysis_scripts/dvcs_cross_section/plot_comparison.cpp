@@ -267,12 +267,13 @@ void plot_for_xB_bin(const std::vector<BinData> &data, int xB_index, const std::
 // Main function to control the import, processing, and debug output
 void plot_comparison(const std::string &csv_file_path_first, const std::string &csv_file_path_second) {
     
-    std::cout << "HELLO WORLD" << std::endl;
     // Ensure output directories exist
     ensure_directory_exists("output");
     ensure_directory_exists("output/cross_check");
     ensure_directory_exists("output/cross_check/RGAFa18Out");
     ensure_directory_exists("output/cross_check/RGAFa18Inb");
+    std::cout << "HELLO WORLD" << std::endl;
+
 
     // Step 1: Read the first CSV data into a vector of BinData
     std::vector<BinData> bin_data_first = read_csv_first(csv_file_path_first);
