@@ -125,7 +125,7 @@ std::vector<BinData> read_csv_second(const std::string &file_path, const std::ve
         bin.phiavg = std::stod(value);
 
         // Skip columns until reaching unfolded_yield_inbending (column S)
-        for (int i = 0; i < 17; ++i) std::getline(ss, value, ',');
+        for (int i = 0; i < 5; ++i) std::getline(ss, value, ',');
 
         std::getline(ss, value, ','); // ep->e'pgamma unfolded_yield_Fa18Inb
         bin.unfolded_yield_inbending = std::stod(value);
