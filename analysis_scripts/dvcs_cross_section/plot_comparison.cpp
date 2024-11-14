@@ -87,11 +87,11 @@ std::vector<BinData> read_csv_second(const std::string &file_path) {
 
         BinData bin;
 
-        // Read values based on column order for the second CSV format
-        std::getline(ss, value, ','); // First unnamed column
-        bin.global_bin_number = std::stoi(value);
+        // Assign a default value to global_bin_number since it's not in the new CSV file
+        bin.global_bin_number = 0;
 
-        std::getline(ss, value, ','); // Bin name column
+        // Read values based on column order for the second CSV format
+        std::getline(ss, value, ','); // Bin number column
         bin.bin_number = std::stoi(value);
 
         std::getline(ss, value, ','); // xBmin
@@ -108,11 +108,11 @@ std::vector<BinData> read_csv_second(const std::string &file_path) {
         std::getline(ss, value, ','); // Q2avg
         bin.Q2avg = std::stod(value);
 
-        std::getline(ss, value, ','); // t_abs_min (tmin)
+        std::getline(ss, value, ','); // t_min (tmin)
         bin.tmin = std::stod(value);
-        std::getline(ss, value, ','); // t_abs_max (tmax)
+        std::getline(ss, value, ','); // t_max (tmax)
         bin.tmax = std::stod(value);
-        std::getline(ss, value, ','); // t_abs_avg (tavg)
+        std::getline(ss, value, ','); // t_avg (tavg)
         bin.tavg = std::stod(value);
 
         std::getline(ss, value, ','); // phimin
@@ -122,13 +122,16 @@ std::vector<BinData> read_csv_second(const std::string &file_path) {
         std::getline(ss, value, ','); // phiavg
         bin.phiavg = std::stod(value);
 
-        // Skip to columns "AJ" and "AK" for unfolded yields inbending and outbending
-        for (int i = 0; i < 35; ++i) std::getline(ss, value, ',');
+        // Skip columns until reaching unfolded_yield_inbending (column S)
+        for (int i = 0; i < 17; ++i) std::getline(ss, value, ',');
 
-        std::getline(ss, value, ','); // "ep->e'pgamma unfolded_yield_Fa18Inb"
+        std::getline(ss, value, ','); // ep->e'pgamma unfolded_yield_Fa18Inb
         bin.unfolded_yield_inbending = std::stod(value);
 
-        std::getline(ss, value, ','); // "ep->e'pgamma unfolded_yield_Fa18Out"
+        // Skip to unfolded_yield_outbending (column Y)
+        for (int i = 0; i < 5; ++i) std::getline(ss, value, ',');
+
+        std::getline(ss, value, ','); // ep->e'pgamma unfolded_yield_Fa18Out
         bin.unfolded_yield_outbending = std::stod(value);
 
         bins.push_back(bin);
