@@ -43,8 +43,8 @@ std::string getFileNameWithoutExtension(const std::string& filePath) {
 }
 
 int main(int argc, char** argv) {
-    if (argc != 11) {
-        std::cerr << "Usage: " << argv[0] << " <file1.root> <file2.root> <label1> <label2> <branch_variable> <x_axis_label> <x_min> <x_max> <range_low> <range_high>" << std::endl;
+    if (argc != 12) {
+        std::cerr << "Usage: " << argv[0] << " <file1.root> <file2.root> <label1> <label2> <branch_variable> <x_axis_label> <x_min> <x_max> <range_low> <range_high> <ratio_lower_bound>" << std::endl;
         return 1;
     }
 
@@ -58,6 +58,7 @@ int main(int argc, char** argv) {
     double x_max = std::stod(argv[8]);
     double range_low = std::stod(argv[9]);
     double range_high = std::stod(argv[10]);
+    double ratio_lower_bound = std::stod(argv[11]);
 
     std::string formatted_label = formatLatexString(x_axis_label);
 
@@ -160,14 +161,29 @@ int main(int argc, char** argv) {
     // Construct output filename based on the second file's name and branch variable
     std::string file2_identifier = getFileNameWithoutExtension(file2_name);
     std::string output_filename = "output/rad_study/" + file2_identifier + "_" + branch_name + ".pdf";
-
-    // Save the plot
     canvas->SaveAs(output_filename.c_str());
 
+    // Create the ratio plot of hist3 / hist1 within the specified bounds
+    TH1D* ratio_hist = (TH1D*)hist3->Clone("ratio_hist");
+    ratio_hist->Divide(hist1);
+    ratio_hist->GetXaxis()->SetRangeUser(ratio_lower_bound, x_max); // Set x-axis range for ratio
+    ratio_hist->GetYaxis()->SetTitle("rad events / nominal events");
+    ratio_hist->GetXaxis()->SetTitle(formatted_label.c_str());
+
+    TCanvas* ratio_canvas = new TCanvas("ratio_canvas", "", 800, 600);
+    ratio_canvas->SetLeftMargin(0.125); // User-preferred padding for ratio plot
+    ratio_hist->Draw("HIST");
+
+    // Save the ratio plot with an additional "_ratio" suffix
+    std::string ratio_output_filename = "output/rad_study/" + file2_identifier + "_" + branch_name + "_ratio.pdf";
+    ratio_canvas->SaveAs(ratio_output_filename.c_str());
+
     delete canvas;
+    delete ratio_canvas;
     delete hist1;
     delete hist2;
     delete hist3;
+    delete ratio_hist;
     file1->Close();
     file2->Close();
     delete file1;
