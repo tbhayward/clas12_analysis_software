@@ -189,7 +189,7 @@ public static void main(String[] args) {
 							if (current_p2 == current_p3 && p2_Str.toInteger() == p3_Str.toInteger()) {continue; }
 
 							// supply runnum and boolean for radiative simulation or not
-							BeamEnergy Eb = new BeamEnergy(runnum, false);
+							BeamEnergy Eb = new BeamEnergy(runnum, true);
 							// Use the input beam energy if runnum == 11, otherwise use Eb.Eb()
 							double energy = (runnum == 11) ? beam_energy : Eb.Eb();
 				            FourParticles variables = new FourParticles(event, research_Event, p1_int, 

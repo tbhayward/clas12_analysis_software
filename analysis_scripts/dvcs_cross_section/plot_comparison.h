@@ -21,7 +21,7 @@ void plot_comparison(const std::string &csv_file_path_first, const std::string &
 
 // Helper functions to read each CSV format and print bin data for debugging
 std::vector<BinData> read_csv_first(const std::string &file_path);
-std::vector<BinData> read_csv_second(const std::string &file_path);
+std::vector<BinData> read_csv_second(const std::string &file_path, const std::vector<BinData> &first_csv_data);
 void print_bin_data(const std::vector<BinData> &bins);
 
 #endif // PLOT_COMPARISON_H

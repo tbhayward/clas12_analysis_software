@@ -71,8 +71,8 @@ std::vector<BinData> read_csv_first(const std::string &file_path) {
     return bins;
 }
 
-// Helper function to read data from the second CSV file format
-std::vector<BinData> read_csv_second(const std::string &file_path) {
+// Helper function to read data from the second CSV file format, using bin information from the first CSV
+std::vector<BinData> read_csv_second(const std::string &file_path, const std::vector<BinData> &first_csv_data) {
     std::vector<BinData> bins;
     std::ifstream file(file_path);
     std::string line;
@@ -81,18 +81,20 @@ std::vector<BinData> read_csv_second(const std::string &file_path) {
     std::getline(file, line);
 
     // Read each line of the CSV
-    while (std::getline(file, line)) {
+    int index = 0;
+    while (std::getline(file, line) && index < first_csv_data.size()) {
         std::stringstream ss(line);
         std::string value;
 
         BinData bin;
 
-        // Assign a default value to global_bin_number since it's not in the new CSV file
-        bin.global_bin_number = 0;
+        // Assign global_bin_number and bin_number based on the first CSV
+        bin.global_bin_number = first_csv_data[index].global_bin_number;
+        bin.bin_number = first_csv_data[index].bin_number;
 
         // Read values based on column order for the second CSV format
-        std::getline(ss, value, ','); // Bin number column
-        bin.bin_number = std::stoi(value);
+        std::getline(ss, value, ','); // Skip Bin number column
+        // The bin number is already assigned from first_csv_data
 
         std::getline(ss, value, ','); // xBmin
         bin.xBmin = std::stod(value);
@@ -135,6 +137,7 @@ std::vector<BinData> read_csv_second(const std::string &file_path) {
         bin.unfolded_yield_outbending = std::stod(value);
 
         bins.push_back(bin);
+        index++;
     }
 
     return bins;
@@ -160,11 +163,8 @@ void plot_comparison(const std::string &csv_file_path_first, const std::string &
     // Step 1: Read the first CSV data into a vector of BinData
     std::vector<BinData> bin_data_first = read_csv_first(csv_file_path_first);
 
-    // Optional: Print out the first CSV data for verification (commented out for now)
-    // print_bin_data(bin_data_first);
-
-    // Step 2: Read the second CSV data into a vector of BinData
-    std::vector<BinData> bin_data_second = read_csv_second(csv_file_path_second);
+    // Step 2: Read the second CSV data, matching bin numbers with the first CSV
+    std::vector<BinData> bin_data_second = read_csv_second(csv_file_path_second, bin_data_first);
 
     // Step 3: Print out the second CSV data to verify correctness
     print_bin_data(bin_data_second);
