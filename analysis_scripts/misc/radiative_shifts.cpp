@@ -8,8 +8,10 @@
 #include <string>
 #include <regex>
 #include <unordered_set>
+#include <utility>
 #include <cmath>
 
+// Helper function to format LaTeX-like input for ROOT titles
 std::string formatLatexString(const std::string& input) {
     std::string formatted = input;
 
@@ -21,6 +23,16 @@ std::string formatLatexString(const std::string& input) {
 
     return formatted;
 }
+
+// Hash function for std::pair<int, int> to allow use in unordered_set
+struct pair_hash {
+    template <class T1, class T2>
+    std::size_t operator()(const std::pair<T1, T2>& p) const {
+        auto hash1 = std::hash<T1>{}(p.first);
+        auto hash2 = std::hash<T2>{}(p.second);
+        return hash1 ^ (hash2 << 1); // Combine the two hashes
+    }
+};
 
 int main(int argc, char** argv) {
     if (argc != 11) {
@@ -80,30 +92,32 @@ int main(int argc, char** argv) {
     hist1->SetStats(0);
     hist2->SetStats(0);
 
-    // Step 1: Find event numbers within the specified range in file2
-    std::unordered_set<int> matching_event_numbers;
+    // Step 1: Find (runnum, evnum) pairs within the specified range in file2
+    std::unordered_set<std::pair<int, int>, pair_hash> matching_event_pairs;
     double branch_value;
-    int evnnum;
+    int runnum, evnum;
     tree2->SetBranchAddress(branch_name, &branch_value);
-    tree2->SetBranchAddress("evnnum", &evnnum);
+    tree2->SetBranchAddress("runnum", &runnum);
+    tree2->SetBranchAddress("evnum", &evnum);
 
     Long64_t nEntries2 = tree2->GetEntries();
     for (Long64_t i = 0; i < nEntries2; ++i) {
         tree2->GetEntry(i);
         if (branch_value >= range_low && branch_value <= range_high) {
-            matching_event_numbers.insert(evnnum);
+            matching_event_pairs.emplace(runnum, evnum);
         }
     }
 
     // Step 2: Record positions of matching events in file1
     TH1D* hist3 = new TH1D("hist3", "", num_bins, x_min, x_max);
-    tree1->SetBranchAddress("evnnum", &evnnum);
+    tree1->SetBranchAddress("runnum", &runnum);
+    tree1->SetBranchAddress("evnum", &evnum);
     tree1->SetBranchAddress(branch_name, &branch_value);
 
     Long64_t nEntries1 = tree1->GetEntries();
     for (Long64_t i = 0; i < nEntries1; ++i) {
         tree1->GetEntry(i);
-        if (matching_event_numbers.find(evnnum) != matching_event_numbers.end()) {
+        if (matching_event_pairs.find({runnum, evnum}) != matching_event_pairs.end()) {
             hist3->Fill(branch_value);
         }
     }
