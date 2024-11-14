@@ -207,25 +207,50 @@ std::vector<BinData> filter_data_by_xB(const std::vector<BinData> &data, const s
 
 // Plotting function for each xB bin
 void plot_for_xB_bin(const std::vector<BinData> &data, int xB_index) {
-    int num_plots = data.size();
+    // Step 1: Identify unique (Q2min, Q2max, tmin, tmax) bins
+    std::map<std::tuple<double, double, double, double>, std::vector<BinData>> qt_bins;
+    for (const auto &bin : data) {
+        // Use a tuple of (Q2min, Q2max, tmin, tmax) to identify unique bins
+        auto key = std::make_tuple(bin.Q2min, bin.Q2max, bin.tmin, bin.tmax);
+        qt_bins[key].push_back(bin);
+    }
+
+    // Step 2: Determine the grid size for subplots
+    int num_plots = qt_bins.size();
     int grid_size = std::ceil(std::sqrt(num_plots));
 
+    // Create a canvas and divide it into a grid
     TCanvas canvas("canvas", "Cross Check", 1200, 1200);
     canvas.Divide(grid_size, grid_size);
 
     int plot_index = 1;
-    for (const auto &bin : data) {
+    for (const auto &[qt_key, bins] : qt_bins) {
+        // Move to the next pad
         canvas.cd(plot_index);
 
-        std::vector<double> phi_values = { bin.phiavg };
-        std::vector<double> yields = { bin.unfolded_yield_outbending };
-        std::vector<double> yield_errors = { sqrt(bin.unfolded_yield_outbending) };
+        // Prepare vectors for phiavg and unfolded yield outbending values
+        std::vector<double> phi_values;
+        std::vector<double> yields;
+        std::vector<double> yield_errors;
 
-        TGraphErrors *graph = new TGraphErrors(phi_values.size(), &phi_values[0], &yields[0], nullptr, &yield_errors[0]);
-        graph->SetTitle(Form("Q2 = %.2f, t = %.2f", bin.Q2avg, bin.tavg));
+        for (const auto &bin : bins) {
+            phi_values.push_back(bin.phiavg);
+            yields.push_back(bin.unfolded_yield_outbending);
+            yield_errors.push_back(std::sqrt(bin.unfolded_yield_outbending)); // Simple sqrt error
+        }
+
+        // Create TGraphErrors for each (Q2, t) bin
+        int n_points = phi_values.size();
+        TGraphErrors *graph = new TGraphErrors(n_points, &phi_values[0], &yields[0], nullptr, &yield_errors[0]);
+        
+        // Set the title based on Q2 and t bin
+        double Q2avg = (std::get<0>(qt_key) + std::get<1>(qt_key)) / 2.0;
+        double tavg = (std::get<2>(qt_key) + std::get<3>(qt_key)) / 2.0;
+        graph->SetTitle(Form("Q2 = %.2f, t = %.2f", Q2avg, tavg));
         graph->SetMarkerStyle(20);
         graph->SetMarkerColor(kBlack);
 
+        // Style the graph
         graph->GetXaxis()->SetTitle("phi avg");
         graph->GetYaxis()->SetTitle("Unfolded Yield Outbending");
         graph->Draw("AP");
@@ -233,6 +258,7 @@ void plot_for_xB_bin(const std::vector<BinData> &data, int xB_index) {
         plot_index++;
     }
 
+    // Save the canvas
     canvas.SaveAs(Form("output/cross_check/RGAFa18Out/rga_fa18_out_cross_check_xB_%d.pdf", xB_index));
 }
 
