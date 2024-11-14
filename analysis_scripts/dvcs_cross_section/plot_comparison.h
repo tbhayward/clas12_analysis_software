@@ -3,14 +3,24 @@
 
 #include <string>
 #include <vector>
-#include "bin_boundaries.h"
 
-// Adjusted function signature to match plot_comparison.cpp
-void plot_comparison(
-    const std::string& output_dir,
-    const std::vector<BinBoundary>& bin_boundaries,
-    const std::string& csv_fa18_inb,
-    const std::string& csv_fa18_out
-);
+// Struct to hold bin data from the CSV
+struct BinData {
+    int global_bin_number;
+    int bin_number;
+    double xBmin, xBmax, xBavg;
+    double Q2min, Q2max, Q2avg;
+    double tmin, tmax, tavg;
+    double phimin, phimax, phiavg;
+    double unfolded_yield_inbending;
+    double unfolded_yield_outbending;
+};
+
+// Main function to manage reading, processing, and printing bin data
+void plot_comparison(const std::string &csv_file_path);
+
+// Helper functions (internal to plot_comparison.cpp)
+std::vector<BinData> read_csv(const std::string &file_path);
+void print_bin_data(const std::vector<BinData> &bins);
 
 #endif // PLOT_COMPARISON_H

@@ -338,8 +338,8 @@ int main(int argc, char* argv[]) {
     // write_csv("output/unfolding_data.csv", all_unfolding_data);
 
     // Call plot_comparison
-    plot_comparison(output_dir, "imports/all_bin_v3.csv", "imports/all_bin_v3.csv", "output/unfolding_data.csv");
-
+    plot_comparison(binning_file);
+    
     std::cout << "Program complete. Additional functionality to be added later." << std::endl << std::endl;
 
     return 0;
