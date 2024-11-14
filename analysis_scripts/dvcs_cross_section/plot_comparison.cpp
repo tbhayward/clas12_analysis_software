@@ -177,17 +177,23 @@ std::vector<BinData> filter_data_by_xB(const std::vector<BinData> &data, const s
     return filtered_data;
 }
 
-// Plotting function for each xB bin
-void plot_for_xB_bin(const std::vector<BinData> &data, int xB_index) {
-    // Step 1: Identify unique (Q2min, Q2max, tmin, tmax) bins
-    std::map<std::tuple<double, double, double, double>, std::vector<BinData>> qt_bins;
-    for (const auto &bin : data) {
+// Plotting function for each xB bin with comparison between two datasets
+void plot_for_xB_bin(const std::vector<BinData> &data_first, const std::vector<BinData> &data_second, int xB_index) {
+    // Step 1: Identify unique (Q2min, Q2max, tmin, tmax) bins in the first dataset
+    std::map<std::tuple<double, double, double, double>, std::vector<BinData>> qt_bins_first, qt_bins_second;
+
+    for (const auto &bin : data_first) {
         auto key = std::make_tuple(bin.Q2min, bin.Q2max, bin.tmin, bin.tmax);
-        qt_bins[key].push_back(bin);
+        qt_bins_first[key].push_back(bin);
     }
 
-    // Step 2: Determine the grid size based on unique (Q2, t) bins
-    int num_plots = qt_bins.size();
+    for (const auto &bin : data_second) {
+        auto key = std::make_tuple(bin.Q2min, bin.Q2max, bin.tmin, bin.tmax);
+        qt_bins_second[key].push_back(bin);
+    }
+
+    // Step 2: Determine the grid size for subplots based on the first dataset's bins
+    int num_plots = qt_bins_first.size();
     int grid_size = std::ceil(std::sqrt(num_plots));
 
     // For canvases _3 and _4, adjust grid size to have one less row if possible
@@ -199,39 +205,60 @@ void plot_for_xB_bin(const std::vector<BinData> &data, int xB_index) {
     canvas.Divide(grid_size, grid_size, 0.02, 0.02); // Small padding between pads
 
     int plot_index = 1;
-    for (const auto &[qt_key, bins] : qt_bins) {
+    for (const auto &[qt_key, bins_first] : qt_bins_first) {
         canvas.cd(plot_index);
         gPad->SetLeftMargin(0.15);  // Adds padding to the left
         gPad->SetBottomMargin(0.15); // Adds padding to the bottom
 
-        // Prepare vectors for phi and unfolded yield values for each phi point in the (Q2, t) bin
-        std::vector<double> phi_values;
-        std::vector<double> yields;
-        std::vector<double> yield_errors;
+        // Prepare vectors for the first dataset
+        std::vector<double> phi_values_first, yields_first, yield_errors_first;
 
-        for (const auto &bin : bins) {
-            phi_values.push_back(bin.phiavg);
-            yields.push_back(bin.unfolded_yield_outbending);
-            yield_errors.push_back(std::sqrt(bin.unfolded_yield_outbending)); // Simple sqrt error
+        for (const auto &bin : bins_first) {
+            phi_values_first.push_back(bin.phiavg);
+            yields_first.push_back(bin.unfolded_yield_outbending);
+            yield_errors_first.push_back(std::sqrt(bin.unfolded_yield_outbending)); // Simple sqrt error
         }
 
-        // Create TGraphErrors for each (Q2, t) bin
-        int n_points = phi_values.size();
-        TGraphErrors *graph = new TGraphErrors(n_points, &phi_values[0], &yields[0], nullptr, &yield_errors[0]);
+        // Create TGraphErrors for the first dataset (blue)
+        TGraphErrors *graph_first = new TGraphErrors(phi_values_first.size(), &phi_values_first[0], &yields_first[0], nullptr, &yield_errors_first[0]);
+        graph_first->SetMarkerStyle(20);
+        graph_first->SetMarkerColor(kBlue);
 
-        // Set the title with xB, Q2, and t directly from the first BinData struct in each (Q2, t) bin
-        double xB_avg = bins[0].xBavg;
-        double Q2avg = bins[0].Q2avg;
-        double tavg = bins[0].tavg;
-        graph->SetTitle(Form("Out: x_{B} = %.2f, Q^{2} = %.2f, -t = %.2f", xB_avg, Q2avg, tavg));
+        // Prepare vectors for the second dataset (if matching (Q2, t) bin exists)
+        auto it_second = qt_bins_second.find(qt_key);
+        if (it_second != qt_bins_second.end()) {
+            const auto &bins_second = it_second->second;
+            std::vector<double> phi_values_second, yields_second, yield_errors_second;
 
-        graph->SetMarkerStyle(20);
-        graph->SetMarkerColor(kBlack);
+            for (const auto &bin : bins_second) {
+                phi_values_second.push_back(bin.phiavg);
+                yields_second.push_back(bin.unfolded_yield_outbending);
+                yield_errors_second.push_back(std::sqrt(bin.unfolded_yield_outbending)); // Simple sqrt error
+            }
 
-        // Style the graph axes
-        graph->GetXaxis()->SetTitle("#phi");
-        graph->GetYaxis()->SetTitle("Unfolded Yield");
-        graph->Draw("AP");
+            // Create TGraphErrors for the second dataset (red)
+            TGraphErrors *graph_second = new TGraphErrors(phi_values_second.size(), &phi_values_second[0], &yields_second[0], nullptr, &yield_errors_second[0]);
+            graph_second->SetMarkerStyle(21);
+            graph_second->SetMarkerColor(kRed);
+
+            // Draw both graphs with legends for comparison
+            graph_first->Draw("AP");
+            graph_second->Draw("P SAME");
+        } else {
+            // If no matching (Q2, t) bin in the second dataset, draw only the first dataset graph
+            graph_first->Draw("AP");
+        }
+
+        // Customize title and axis labels
+        double xB_avg = bins_first[0].xBavg;
+        double Q2avg = bins_first[0].Q2avg;
+        double tavg = bins_first[0].tavg;
+        graph_first->SetTitle(Form("Out: x_{B} = %.2f, Q^{2} = %.2f, -t = %.2f", xB_avg, Q2avg, tavg));
+
+        graph_first->GetXaxis()->SetTitle("#phi");
+        graph_first->GetYaxis()->SetTitle("Unfolded Yield");
+        graph_first->GetXaxis()->SetLabelSize(0.04); // Increased font size
+        graph_first->GetYaxis()->SetLabelSize(0.04); // Increased font size
 
         plot_index++;
     }
