@@ -286,7 +286,7 @@ void plot_comparison(const std::string &csv_file_path_first, const std::string &
     int xB_index = 0;
     for (const auto &xB_range : unique_xB_bins) {
         auto filtered_data = filter_data_by_xB(bin_data_second, xB_range);
-        plot_for_xB_bin(filtered_data, xB_index);
+        plot_for_xB_bin(filtered_data, xB_index, "Out");
         xB_index++;
     }
 
