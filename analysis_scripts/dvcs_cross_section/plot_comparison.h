@@ -17,10 +17,11 @@ struct BinData {
 };
 
 // Main function to manage reading, processing, and printing bin data
-void plot_comparison(const std::string &csv_file_path);
+void plot_comparison(const std::string &csv_file_path_first, const std::string &csv_file_path_second);
 
-// Helper functions (internal to plot_comparison.cpp)
-std::vector<BinData> read_csv(const std::string &file_path);
+// Helper functions to read each CSV format and print bin data for debugging
+std::vector<BinData> read_csv_first(const std::string &file_path);
+std::vector<BinData> read_csv_second(const std::string &file_path);
 void print_bin_data(const std::vector<BinData> &bins);
 
 #endif // PLOT_COMPARISON_H
