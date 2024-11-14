@@ -57,7 +57,7 @@ std::vector<BinData> read_csv(const std::string &file_path) {
         bin.phiavg = std::stod(value);
 
         // Skip intermediate columns until reaching "signal yield, ep->epg, exp, inbending"
-        for (int i = 0; i < 22; ++i) std::getline(ss, value, ',');
+        for (int i = 0; i < 21; ++i) std::getline(ss, value, ',');
 
         std::getline(ss, value, ','); // signal yield, ep->epg, exp, inbending
         bin.unfolded_yield_inbending = std::stod(value);
