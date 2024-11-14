@@ -178,10 +178,7 @@ std::vector<BinData> filter_data_by_xB(const std::vector<BinData> &data, const s
 }
 
 // Plotting function for each xB bin
-// Plotting function for each xB bin
 void plot_for_xB_bin(const std::vector<BinData> &data, int xB_index) {
-    std::cout << "Starting plot_for_xB_bin for xB index: " << xB_index << std::endl;
-
     // Step 1: Identify unique (Q2min, Q2max, tmin, tmax) bins
     std::map<std::tuple<double, double, double, double>, std::vector<BinData>> qt_bins;
     for (const auto &bin : data) {
@@ -189,16 +186,20 @@ void plot_for_xB_bin(const std::vector<BinData> &data, int xB_index) {
         qt_bins[key].push_back(bin);
     }
 
-    // Step 2: Determine the grid size for subplots based on unique (Q2, t) bins
+    // Step 2: Determine the grid size based on unique (Q2, t) bins
     int num_plots = qt_bins.size();
     int grid_size = std::ceil(std::sqrt(num_plots));
+
+    // For canvases _3 and _4, adjust grid size to have one less row if possible
+    if ((xB_index == 3 || xB_index == 4) && grid_size * (grid_size - 1) >= num_plots) {
+        grid_size -= 1;
+    }
 
     TCanvas canvas("canvas", "Cross Check", 1200, 1200);
     canvas.Divide(grid_size, grid_size, 0.02, 0.02); // Small padding between pads
 
     int plot_index = 1;
     for (const auto &[qt_key, bins] : qt_bins) {
-        // Move to the next pad
         canvas.cd(plot_index);
         gPad->SetLeftMargin(0.15);  // Adds padding to the left
         gPad->SetBottomMargin(0.15); // Adds padding to the bottom
@@ -238,8 +239,6 @@ void plot_for_xB_bin(const std::vector<BinData> &data, int xB_index) {
     // Save the canvas
     std::string save_path = Form("output/cross_check/RGAFa18Out/rga_fa18_out_cross_check_xB_%d.pdf", xB_index);
     canvas.SaveAs(save_path.c_str());
-
-    std::cout << "Finished plot_for_xB_bin for xB index: " << xB_index << std::endl;
 }
 
 // Main function to control the import, processing, and debug output
