@@ -334,7 +334,6 @@ public class FourParticles {
         open_angle_p1p2 = kinematic_variables.open_angle(lv_p1, lv_p2);
         open_angle_p1p3 = kinematic_variables.open_angle(lv_p1, lv_p3);
         open_angle_p2p3 = kinematic_variables.open_angle(lv_p2, lv_p3);
-        System.out.println(open_angle_ep);
 
         // kinematics of hadrons
         p1_px = lv_p1.px();
