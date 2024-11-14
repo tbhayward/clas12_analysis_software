@@ -284,11 +284,11 @@ void plot_comparison(const std::string &csv_file_path_first, const std::string &
     // print_bin_data(bin_data_second);  
 
     auto unique_xB_bins = find_unique_xB_bins(bin_data_second);
+    std::cout << "There are " << unique_xB_bins << std::endl;
 
     int xB_index = 0;
     for (const auto &xB_range : unique_xB_bins) {
         auto filtered_data = filter_data_by_xB(bin_data_second, xB_range);
-        std::cout << "HELLO WORLD" << std::endl;
         plot_for_xB_bin(filtered_data, xB_index, "Out");
         xB_index++;
     }
