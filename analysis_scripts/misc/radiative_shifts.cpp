@@ -7,6 +7,7 @@
 #include <iostream>
 #include <string>
 #include <regex>
+#include <cmath>
 
 std::string formatLatexString(const std::string& input) {
     std::string formatted = input;
@@ -21,17 +22,19 @@ std::string formatLatexString(const std::string& input) {
 }
 
 int main(int argc, char** argv) {
-    if (argc != 7) {
-        std::cerr << "Usage: " << argv[0] << " <file1.root> <file2.root> <branch_variable> <x_axis_label> <x_min> <x_max>" << std::endl;
+    if (argc != 9) {
+        std::cerr << "Usage: " << argv[0] << " <file1.root> <file2.root> <label1> <label2> <branch_variable> <x_axis_label> <x_min> <x_max>" << std::endl;
         return 1;
     }
 
     const char* file1_name = argv[1];
     const char* file2_name = argv[2];
-    const char* branch_name = argv[3];
-    std::string x_axis_label = argv[4];
-    double x_min = std::stod(argv[5]);
-    double x_max = std::stod(argv[6]);
+    std::string label1 = argv[3];
+    std::string label2 = argv[4];
+    const char* branch_name = argv[5];
+    std::string x_axis_label = argv[6];
+    double x_min = std::stod(argv[7]);
+    double x_max = std::stod(argv[8]);
 
     std::string formatted_label = formatLatexString(x_axis_label);
 
@@ -49,8 +52,11 @@ int main(int argc, char** argv) {
         return 1;
     }
 
-    TH1D* hist1 = new TH1D("hist1", "", 100, x_min, x_max);
-    TH1D* hist2 = new TH1D("hist2", "", 100, x_min, x_max);
+    // Increase bins by a factor of 1.5 and round to the nearest integer
+    int num_bins = static_cast<int>(100 * 1.5);
+
+    TH1D* hist1 = new TH1D("hist1", "", num_bins, x_min, x_max);
+    TH1D* hist2 = new TH1D("hist2", "", num_bins, x_min, x_max);
 
     tree1->Project("hist1", branch_name);
     tree2->Project("hist2", branch_name);
@@ -64,20 +70,21 @@ int main(int argc, char** argv) {
     hist1->SetLineColor(kBlue);
     hist2->SetLineColor(kRed);
     hist1->GetXaxis()->SetTitle(formatted_label.c_str());
-    hist1->GetYaxis()->SetTitle("Counts (Normalized)");
+    hist1->GetYaxis()->SetTitle("Normalized Counts"); // Updated title
     hist2->GetXaxis()->SetTitle(formatted_label.c_str());
-    hist2->GetYaxis()->SetTitle("Counts (Normalized)");
+    hist2->GetYaxis()->SetTitle("Normalized Counts");
 
     hist1->SetStats(0);
     hist2->SetStats(0);
 
-    TCanvas* canvas = new TCanvas("canvas", "", 800, 600); // Removed title
+    TCanvas* canvas = new TCanvas("canvas", "", 800, 600);
     hist1->Draw("HIST");
     hist2->Draw("HIST SAME");
 
+    // Use the new input arguments for legend labels
     TLegend* legend = new TLegend(0.7, 0.7, 0.9, 0.9);
-    legend->AddEntry(hist1, "File 1", "l");
-    legend->AddEntry(hist2, "File 2", "l");
+    legend->AddEntry(hist1, label1.c_str(), "l");
+    legend->AddEntry(hist2, label2.c_str(), "l");
     legend->Draw();
 
     canvas->SaveAs("output/rad_study/test.pdf");
