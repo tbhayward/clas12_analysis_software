@@ -4,6 +4,21 @@
 #include <sstream>
 #include <string>
 #include <vector>
+#include <cmath>     
+#include <set>      
+
+// ROOT includes for plotting
+#include <TCanvas.h>
+#include <TGraphErrors.h>
+#include <TAxis.h>
+#include <TColor.h>
+#include <TStyle.h>
+#include <TLegend.h>
+#include <TString.h>
+#include <TFile.h>
+#include <TROOT.h>
+#include <TMath.h>
+#include <TLegend.h>
 
 // Helper function to read data from the first CSV file format
 std::vector<BinData> read_csv_first(const std::string &file_path) {
