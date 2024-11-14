@@ -36,7 +36,7 @@ std::vector<std::pair<double, double>> find_unique_xB_bins(const std::vector<Bin
 // Function to filter data for a specific xB bin range
 std::vector<BinData> filter_data_by_xB(const std::vector<BinData> &data, const std::pair<double, double> &xB_range);
 
-// Function to plot data for a specific xB bin with aesthetic enhancements
-void plot_for_xB_bin(const std::vector<BinData> &data, int xB_index);
+// Function to plot data for a specific xB bin with comparison of two datasets
+void plot_for_xB_bin(const std::vector<BinData> &data_first, const std::vector<BinData> &data_second, int xB_index);
 
 #endif // PLOT_COMPARISON_H

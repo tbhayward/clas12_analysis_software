@@ -281,8 +281,12 @@ void plot_comparison(const std::string &csv_file_path_first, const std::string &
 
     int xB_index = 0;
     for (const auto &xB_range : unique_xB_bins) {
-        auto filtered_data = filter_data_by_xB(bin_data_second, xB_range);
-        plot_for_xB_bin(filtered_data, xB_index);
+        // Filter data for the current xB bin range in both datasets
+        auto filtered_data_first = filter_data_by_xB(bin_data_first, xB_range);
+        auto filtered_data_second = filter_data_by_xB(bin_data_second, xB_range);
+
+        // Pass both datasets to the plotting function
+        plot_for_xB_bin(filtered_data_first, filtered_data_second, xB_index);
         xB_index++;
     }
 }
