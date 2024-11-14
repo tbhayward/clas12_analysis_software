@@ -187,7 +187,6 @@ void plot_for_xB_bin(const std::vector<BinData> &data_first, const std::vector<B
         auto key = std::make_tuple(bin.Q2min, bin.Q2max, bin.tmin, bin.tmax);
         qt_bins_first[key].push_back(bin);
     }
-
     for (const auto &bin : data_second) {
         auto key = std::make_tuple(bin.Q2min, bin.Q2max, bin.tmin, bin.tmax);
         qt_bins_second[key].push_back(bin);
@@ -202,6 +201,23 @@ void plot_for_xB_bin(const std::vector<BinData> &data_first, const std::vector<B
         grid_size -= 1;
     }
 
+    // Step 3: Calculate the maximum yield value across both datasets
+    double max_yield = 0.0;
+    for (const auto &bin : data_first) {
+        if (bin.unfolded_yield_outbending > max_yield) {
+            max_yield = bin.unfolded_yield_outbending;
+        }
+    }
+    for (const auto &bin : data_second) {
+        if (bin.unfolded_yield_outbending > max_yield) {
+            max_yield = bin.unfolded_yield_outbending;
+        }
+    }
+
+    // Set the y-axis range
+    double y_min = 0.1;
+    double y_max = 1.1 * max_yield;
+
     TCanvas canvas("canvas", "Cross Check", 1200, 1200);
     canvas.Divide(grid_size, grid_size, 0.02, 0.02); // Small padding between pads
 
@@ -210,6 +226,7 @@ void plot_for_xB_bin(const std::vector<BinData> &data_first, const std::vector<B
         canvas.cd(plot_index);
         gPad->SetLeftMargin(0.15);  // Adds padding to the left
         gPad->SetBottomMargin(0.15); // Adds padding to the bottom
+        gPad->SetLogy();  // Set log scale for the y-axis
 
         // Prepare vectors for the first dataset
         std::vector<double> phi_values_first, yields_first, yield_errors_first;
@@ -255,10 +272,12 @@ void plot_for_xB_bin(const std::vector<BinData> &data_first, const std::vector<B
         double tavg = bins_first[0].tavg;
         graph_first->SetTitle(Form("Out: x_{B} = %.2f, Q^{2} = %.2f, -t = %.2f", xB_avg, Q2avg, tavg));
 
+        // Adjust axis labels and range
         graph_first->GetXaxis()->SetTitle("#phi");
         graph_first->GetYaxis()->SetTitle("Unfolded Yield");
         graph_first->GetXaxis()->SetLabelSize(0.04); // Increased font size
         graph_first->GetYaxis()->SetLabelSize(0.04); // Increased font size
+        graph_first->GetYaxis()->SetRangeUser(y_min, y_max);  // Set y-axis range
 
         plot_index++;
     }
