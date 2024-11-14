@@ -206,7 +206,7 @@ std::vector<BinData> filter_data_by_xB(const std::vector<BinData> &data, const s
 }
 
 // Plotting function for each xB bin
-void plot_for_xB_bin(const std::vector<BinData> &data, int xB_index, const std::string &type) {
+void plot_for_xB_bin(const std::vector<BinData> &data, int xB_index) {
     // Step 1: Identify unique (Q2min, Q2max, tmin, tmax) bins
     std::map<std::tuple<double, double, double, double>, std::vector<BinData>> qt_bins;
     for (const auto &bin : data) {
@@ -228,7 +228,7 @@ void plot_for_xB_bin(const std::vector<BinData> &data, int xB_index, const std::
         // Move to the next pad
         canvas.cd(plot_index);
 
-        // Prepare vectors for phiavg and unfolded yield values
+        // Prepare vectors for phiavg and unfolded yield outbending values
         std::vector<double> phi_values;
         std::vector<double> yields;
         std::vector<double> yield_errors;
@@ -243,18 +243,16 @@ void plot_for_xB_bin(const std::vector<BinData> &data, int xB_index, const std::
         int n_points = phi_values.size();
         TGraphErrors *graph = new TGraphErrors(n_points, &phi_values[0], &yields[0], nullptr, &yield_errors[0]);
         
-        // Set the title based on xB, Q2, and t bin
-        double xB_avg = bins[0].xBavg;
+        // Set the title based on Q2 and t bin
         double Q2avg = (std::get<0>(qt_key) + std::get<1>(qt_key)) / 2.0;
         double tavg = (std::get<2>(qt_key) + std::get<3>(qt_key)) / 2.0;
-        graph->SetTitle(Form("%s: x_{B} = %.2f, Q^{2} = %.2f, -t = %.2f", type.c_str(), xB_avg, Q2avg, tavg));
-        
+        graph->SetTitle(Form("Q2 = %.2f, t = %.2f", Q2avg, tavg));
         graph->SetMarkerStyle(20);
         graph->SetMarkerColor(kBlack);
 
         // Style the graph
-        graph->GetXaxis()->SetTitle("#phi");
-        graph->GetYaxis()->SetTitle("Unfolded Yields");
+        graph->GetXaxis()->SetTitle("phi avg");
+        graph->GetYaxis()->SetTitle("Unfolded Yield Outbending");
         graph->Draw("AP");
 
         plot_index++;
@@ -266,13 +264,11 @@ void plot_for_xB_bin(const std::vector<BinData> &data, int xB_index, const std::
 
 // Main function to control the import, processing, and debug output
 void plot_comparison(const std::string &csv_file_path_first, const std::string &csv_file_path_second) {
-    
     // Ensure output directories exist
     ensure_directory_exists("output");
     ensure_directory_exists("output/cross_check");
     ensure_directory_exists("output/cross_check/RGAFa18Out");
     ensure_directory_exists("output/cross_check/RGAFa18Inb");
-
 
     // Step 1: Read the first CSV data into a vector of BinData
     std::vector<BinData> bin_data_first = read_csv_first(csv_file_path_first);
@@ -288,7 +284,7 @@ void plot_comparison(const std::string &csv_file_path_first, const std::string &
     int xB_index = 0;
     for (const auto &xB_range : unique_xB_bins) {
         auto filtered_data = filter_data_by_xB(bin_data_second, xB_range);
-        plot_for_xB_bin(filtered_data, xB_index, "Out");
+        plot_for_xB_bin(filtered_data, xB_index);
         xB_index++;
     }
 
