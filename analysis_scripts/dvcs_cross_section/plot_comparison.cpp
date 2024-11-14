@@ -182,6 +182,7 @@ void plot_for_xB_bin(const std::vector<BinData> &data_first, const std::vector<B
     // Step 1: Identify unique (Q2min, Q2max, tmin, tmax) bins in the first dataset
     std::map<std::tuple<double, double, double, double>, std::vector<BinData>> qt_bins_first, qt_bins_second;
 
+    // Populate qt_bins_first and qt_bins_second
     for (const auto &bin : data_first) {
         auto key = std::make_tuple(bin.Q2min, bin.Q2max, bin.tmin, bin.tmax);
         qt_bins_first[key].push_back(bin);
@@ -196,7 +197,7 @@ void plot_for_xB_bin(const std::vector<BinData> &data_first, const std::vector<B
     int num_plots = qt_bins_first.size();
     int grid_size = std::ceil(std::sqrt(num_plots));
 
-    // For canvases _3 and _4, adjust grid size to have one less row if possible
+    // Adjust grid size for canvas layout (for specified canvases _3 and _4)
     if ((xB_index == 3 || xB_index == 4) && grid_size * (grid_size - 1) >= num_plots) {
         grid_size -= 1;
     }
@@ -212,7 +213,6 @@ void plot_for_xB_bin(const std::vector<BinData> &data_first, const std::vector<B
 
         // Prepare vectors for the first dataset
         std::vector<double> phi_values_first, yields_first, yield_errors_first;
-
         for (const auto &bin : bins_first) {
             phi_values_first.push_back(bin.phiavg);
             yields_first.push_back(bin.unfolded_yield_outbending);
@@ -224,7 +224,7 @@ void plot_for_xB_bin(const std::vector<BinData> &data_first, const std::vector<B
         graph_first->SetMarkerStyle(20);
         graph_first->SetMarkerColor(kBlue);
 
-        // Prepare vectors for the second dataset (if matching (Q2, t) bin exists)
+        // Prepare and plot the second dataset only if there’s a matching key
         auto it_second = qt_bins_second.find(qt_key);
         if (it_second != qt_bins_second.end()) {
             const auto &bins_second = it_second->second;
@@ -249,7 +249,7 @@ void plot_for_xB_bin(const std::vector<BinData> &data_first, const std::vector<B
             graph_first->Draw("AP");
         }
 
-        // Customize title and axis labels
+        // Customize title and axis labels directly from data (no averaging needed)
         double xB_avg = bins_first[0].xBavg;
         double Q2avg = bins_first[0].Q2avg;
         double tavg = bins_first[0].tavg;
@@ -286,7 +286,7 @@ void plot_comparison(const std::string &csv_file_path_first, const std::string &
         auto filtered_data_second = filter_data_by_xB(bin_data_second, xB_range);
 
         // Pass both datasets to the plotting function
-        plot_for_xB_bin(filtered_data_second, filtered_data_first, xB_index);
+        plot_for_xB_bin(filtered_data_first, filtered_data_second, xB_index);
         xB_index++;
     }
 }
