@@ -178,25 +178,49 @@ std::vector<BinData> filter_data_by_xB(const std::vector<BinData> &data, const s
 }
 
 // Plotting function for each xB bin
+// Plotting function for each xB bin
 void plot_for_xB_bin(const std::vector<BinData> &data, int xB_index) {
-    int num_plots = data.size();
+    // Step 1: Identify unique (Q2min, Q2max, tmin, tmax) bins
+    std::map<std::tuple<double, double, double, double>, std::vector<BinData>> qt_bins;
+    for (const auto &bin : data) {
+        // Use a tuple of (Q2min, Q2max, tmin, tmax) to identify unique bins
+        auto key = std::make_tuple(bin.Q2min, bin.Q2max, bin.tmin, bin.tmax);
+        qt_bins[key].push_back(bin);
+    }
+
+    // Step 2: Determine the grid size for subplots based on the number of unique (Q2, t) bins
+    int num_plots = qt_bins.size();
     int grid_size = std::ceil(std::sqrt(num_plots));
 
     TCanvas canvas("canvas", "Cross Check", 1200, 1200);
     canvas.Divide(grid_size, grid_size);
 
     int plot_index = 1;
-    for (const auto &bin : data) {
+    for (const auto &[qt_key, bins] : qt_bins) {
+        // Move to the next pad
         canvas.cd(plot_index);
 
-        std::vector<double> phi_values = { bin.phiavg };
-        std::vector<double> yields = { bin.unfolded_yield_outbending };
-        std::vector<double> yield_errors = { sqrt(bin.unfolded_yield_outbending) };
+        // Prepare vectors for phi and unfolded yield values for each phi point in the (Q2, t) bin
+        std::vector<double> phi_values;
+        std::vector<double> yields;
+        std::vector<double> yield_errors;
 
-        TGraphErrors *graph = new TGraphErrors(phi_values.size(), &phi_values[0], &yields[0], nullptr, &yield_errors[0]);
+        for (const auto &bin : bins) {
+            phi_values.push_back(bin.phiavg);
+            yields.push_back(bin.unfolded_yield_outbending);
+            yield_errors.push_back(std::sqrt(bin.unfolded_yield_outbending)); // Simple sqrt error
+        }
 
-        // Set the enhanced title including xB_avg, Q2, and t
-        graph->SetTitle(Form("Out: x_{B} = %.2f, Q^{2} = %.2f, -t = %.2f", bin.xBavg, bin.Q2avg, bin.tavg));
+        // Create TGraphErrors for each (Q2, t) bin
+        int n_points = phi_values.size();
+        TGraphErrors *graph = new TGraphErrors(n_points, &phi_values[0], &yields[0], nullptr, &yield_errors[0]);
+
+        // Set the title with xB_avg, Q2, and t
+        double xB_avg = bins[0].xBavg;
+        double Q2avg = (std::get<0>(qt_key) + std::get<1>(qt_key)) / 2.0;
+        double tavg = (std::get<2>(qt_key) + std::get<3>(qt_key)) / 2.0;
+        graph->SetTitle(Form("Out: x_{B} = %.2f, Q^{2} = %.2f, -t = %.2f", xB_avg, Q2avg, tavg));
+
         graph->SetMarkerStyle(20);
         graph->SetMarkerColor(kBlack);
 
