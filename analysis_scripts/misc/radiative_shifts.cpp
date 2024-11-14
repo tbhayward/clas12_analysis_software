@@ -34,6 +34,14 @@ struct pair_hash {
     }
 };
 
+// Helper function to get the file name without path or extension
+std::string getFileNameWithoutExtension(const std::string& filePath) {
+    size_t lastSlashPos = filePath.find_last_of("/");
+    std::string fileName = (lastSlashPos == std::string::npos) ? filePath : filePath.substr(lastSlashPos + 1);
+    size_t lastDotPos = fileName.find_last_of(".");
+    return (lastDotPos == std::string::npos) ? fileName : fileName.substr(0, lastDotPos);
+}
+
 int main(int argc, char** argv) {
     if (argc != 11) {
         std::cerr << "Usage: " << argv[0] << " <file1.root> <file2.root> <label1> <label2> <branch_variable> <x_axis_label> <x_min> <x_max> <range_low> <range_high>" << std::endl;
@@ -130,6 +138,10 @@ int main(int argc, char** argv) {
     hist3->SetLineStyle(2); // Dashed line for third histogram
     hist3->SetStats(0);
 
+    // Calculate the maximum y-axis range
+    double max_val = std::max({hist1->GetMaximum(), hist2->GetMaximum(), hist3->GetMaximum()});
+    hist1->SetMaximum(1.2 * max_val); // Set y-axis range
+
     // Create a canvas with extra left margin padding
     TCanvas* canvas = new TCanvas("canvas", "", 800, 600);
     canvas->SetLeftMargin(0.125); // User-preferred padding
@@ -142,10 +154,15 @@ int main(int argc, char** argv) {
     TLegend* legend = new TLegend(0.7, 0.7, 0.9, 0.9);
     legend->AddEntry(hist1, label1.c_str(), "l");
     legend->AddEntry(hist2, label2.c_str(), "l");
-    legend->AddEntry(hist3, "Selected Events", "l");
+    legend->AddEntry(hist3, "Shifted Rad Events", "l"); // Updated label
     legend->Draw();
 
-    canvas->SaveAs("output/rad_study/test.pdf");
+    // Construct output filename based on the second file's name and branch variable
+    std::string file2_identifier = getFileNameWithoutExtension(file2_name);
+    std::string output_filename = "output/rad_study/" + file2_identifier + "_" + branch_name + ".pdf";
+
+    // Save the plot
+    canvas->SaveAs(output_filename.c_str());
 
     delete canvas;
     delete hist1;
