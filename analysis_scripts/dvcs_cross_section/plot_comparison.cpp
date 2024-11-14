@@ -5,7 +5,9 @@
 #include <string>
 #include <vector>
 #include <cmath>     
-#include <set>      
+#include <set>    
+#include <sys/stat.h> 
+#include <unistd.h>   
 
 // ROOT includes for plotting
 #include <TCanvas.h>
@@ -241,7 +243,7 @@ void plot_comparison(const std::string &csv_file_path_first, const std::string &
     ensure_directory_exists("output/cross_check");
     ensure_directory_exists("output/cross_check/RGAFa18Out");
     ensure_directory_exists("output/cross_check/RGAFa18Inb");
-    
+
     // Step 1: Read the first CSV data into a vector of BinData
     std::vector<BinData> bin_data_first = read_csv_first(csv_file_path_first);
     // // Step 2: Print out the first CSV data to verify correctness
