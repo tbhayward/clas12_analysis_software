@@ -20,6 +20,15 @@
 #include <TMath.h>
 #include <TLegend.h>
 
+// Helper function to ensure a directory exists
+void ensure_directory_exists(const std::string &path) {
+    struct stat info;
+    if (stat(path.c_str(), &info) != 0) {
+        // Directory does not exist, so create it
+        mkdir(path.c_str(), 0777);
+    }
+}
+
 // Helper function to read data from the first CSV file format
 std::vector<BinData> read_csv_first(const std::string &file_path) {
     std::vector<BinData> bins;
@@ -227,6 +236,12 @@ void plot_for_xB_bin(const std::vector<BinData> &data, int xB_index) {
 
 // Main function to control the import, processing, and debug output
 void plot_comparison(const std::string &csv_file_path_first, const std::string &csv_file_path_second) {
+    // Ensure output directories exist
+    ensure_directory_exists("output");
+    ensure_directory_exists("output/cross_check");
+    ensure_directory_exists("output/cross_check/RGAFa18Out");
+    ensure_directory_exists("output/cross_check/RGAFa18Inb");
+    
     // Step 1: Read the first CSV data into a vector of BinData
     std::vector<BinData> bin_data_first = read_csv_first(csv_file_path_first);
     // // Step 2: Print out the first CSV data to verify correctness
