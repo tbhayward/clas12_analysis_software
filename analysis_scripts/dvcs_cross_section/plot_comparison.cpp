@@ -130,6 +130,7 @@ std::vector<BinData> read_csv_second(const std::string &file_path, const std::ve
         std::getline(ss, value, ','); // ep->e'pgamma unfolded_yield_Fa18Inb
         bin.unfolded_yield_inbending = std::stod(value);
 
+
         // Skip to unfolded_yield_outbending (column Y)
         for (int i = 0; i < 5; ++i) std::getline(ss, value, ',');
 
@@ -162,10 +163,10 @@ void print_bin_data(const std::vector<BinData> &bins) {
 void plot_comparison(const std::string &csv_file_path_first, const std::string &csv_file_path_second) {
     // Step 1: Read the first CSV data into a vector of BinData
     std::vector<BinData> bin_data_first = read_csv_first(csv_file_path_first);
-
-    // Step 2: Read the second CSV data, matching bin numbers with the first CSV
+    // // Step 2: Print out the first CSV data to verify correctness
+    // print_bin_data(bin_data_first);
+    // Step 3: Read the second CSV data, matching bin numbers with the first CSV
     std::vector<BinData> bin_data_second = read_csv_second(csv_file_path_second, bin_data_first);
-
-    // Step 3: Print out the second CSV data to verify correctness
-    print_bin_data(bin_data_second);
+    // // Step 4: Print out the second CSV data to verify correctness
+    // print_bin_data(bin_data_second);  
 }
