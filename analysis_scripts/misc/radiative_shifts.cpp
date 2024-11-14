@@ -7,14 +7,15 @@
 #include <iostream>
 
 int main(int argc, char** argv) {
-    if (argc != 4) {
-        std::cerr << "Usage: " << argv[0] << " <file1.root> <file2.root> <branch_variable>" << std::endl;
+    if (argc != 5) {
+        std::cerr << "Usage: " << argv[0] << " <file1.root> <file2.root> <branch_variable> <x_axis_label>" << std::endl;
         return 1;
     }
 
     const char* file1_name = argv[1];
     const char* file2_name = argv[2];
     const char* branch_name = argv[3];
+    const char* x_axis_label = argv[4];
 
     // Open the input files
     TFile* file1 = TFile::Open(file1_name);
@@ -40,10 +41,20 @@ int main(int argc, char** argv) {
     tree1->Project("hist1", branch_name);
     tree2->Project("hist2", branch_name);
 
-    // Create a canvas and draw the histograms
-    TCanvas* canvas = new TCanvas("canvas", "Comparison of Branch Variable", 800, 600);
+    // Customize histogram appearance
     hist1->SetLineColor(kBlue);
     hist2->SetLineColor(kRed);
+    hist1->GetXaxis()->SetTitle(x_axis_label);
+    hist1->GetYaxis()->SetTitle("Counts");
+    hist2->GetXaxis()->SetTitle(x_axis_label);
+    hist2->GetYaxis()->SetTitle("Counts");
+
+    // Remove the stat boxes
+    hist1->SetStats(0);
+    hist2->SetStats(0);
+
+    // Create a canvas and draw the histograms
+    TCanvas* canvas = new TCanvas("canvas", "Comparison of Branch Variable", 800, 600);
     hist1->Draw("HIST");
     hist2->Draw("HIST SAME");
 
