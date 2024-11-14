@@ -79,7 +79,7 @@ int main(int argc, char** argv) {
 
     // Create a canvas with extra left margin padding
     TCanvas* canvas = new TCanvas("canvas", "", 800, 600);
-    canvas->SetLeftMargin(0.2); // Increase left margin for y-axis label padding
+    canvas->SetLeftMargin(0.075); // Increase left margin for y-axis label padding
 
     hist1->Draw("HIST");
     hist2->Draw("HIST SAME");
