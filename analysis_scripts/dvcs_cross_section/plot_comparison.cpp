@@ -210,6 +210,8 @@ std::vector<BinData> filter_data_by_xB(const std::vector<BinData> &data, const s
 
 // Plotting function for each xB bin
 void plot_for_xB_bin(const std::vector<BinData> &data, int xB_index) {
+    std::cout << "Starting plot_for_xB_bin for xB index: " << xB_index << std::endl;
+
     int num_plots = data.size();
     int grid_size = std::ceil(std::sqrt(num_plots));
 
@@ -225,7 +227,7 @@ void plot_for_xB_bin(const std::vector<BinData> &data, int xB_index) {
         std::vector<double> yield_errors = { sqrt(bin.unfolded_yield_outbending) };
 
         TGraphErrors *graph = new TGraphErrors(phi_values.size(), &phi_values[0], &yields[0], nullptr, &yield_errors[0]);
-        graph->SetTitle(Form("Q^{2} = %.2f, -t = %.2f, x_{B} = %.2f", bin.Q2avg, bin.tavg, bin.xBavg));
+        graph->SetTitle(Form("Q2 = %.2f, t = %.2f", bin.Q2avg, bin.tavg));
         graph->SetMarkerStyle(20);
         graph->SetMarkerColor(kBlack);
 
@@ -236,13 +238,11 @@ void plot_for_xB_bin(const std::vector<BinData> &data, int xB_index) {
         plot_index++;
     }
 
-    // Update canvas before saving
-    canvas.Update();
-
-    // Ensure output path is correct
     std::string save_path = Form("output/cross_check/RGAFa18Out/rga_fa18_out_cross_check_xB_%d.pdf", xB_index);
-    std::cout << "Saving canvas to: " << save_path << std::endl; // Debugging line
+    std::cout << "Attempting to save canvas to: " << save_path << std::endl;
     canvas.SaveAs(save_path.c_str());
+
+    std::cout << "Finished plot_for_xB_bin for xB index: " << xB_index << std::endl;
 }
 
 // Main function to control the import, processing, and debug output
