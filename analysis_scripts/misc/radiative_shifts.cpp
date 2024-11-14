@@ -44,9 +44,9 @@ int main(int argc, char** argv) {
     // Customize histogram appearance
     hist1->SetLineColor(kBlue);
     hist2->SetLineColor(kRed);
-    hist1->GetXaxis()->SetTitle(Form("#it{%s}", x_axis_label)); // Set LaTeX-style title
+    hist1->GetXaxis()->SetTitle(Form("#it{%s}", "M_{x}^{2}")); // Set LaTeX-style title
     hist1->GetYaxis()->SetTitle("Counts");
-    hist2->GetXaxis()->SetTitle(Form("#it{%s}", x_axis_label));
+    hist2->GetXaxis()->SetTitle(Form("#it{%s}", "M_{x}^{2}"));
     hist2->GetYaxis()->SetTitle("Counts");
 
     // Remove the stat boxes
