@@ -74,20 +74,25 @@ int main(int argc, char** argv) {
     hist2->GetXaxis()->SetTitle(formatted_label.c_str());
     hist2->GetYaxis()->SetTitle("normalized counts");
 
+    hist1->SetMarkerStyle(20); // Set points with marker style
+    hist2->SetMarkerStyle(21);
+    hist1->SetMarkerColor(kBlue);
+    hist2->SetMarkerColor(kRed);
     hist1->SetStats(0);
     hist2->SetStats(0);
 
     // Create a canvas with extra left margin padding
     TCanvas* canvas = new TCanvas("canvas", "", 800, 600);
-    canvas->SetLeftMargin(0.15); // Increase left margin for y-axis label padding
+    canvas->SetLeftMargin(0.125); // User-preferred padding
 
-    hist1->Draw("HIST");
-    hist2->Draw("HIST SAME");
+    // Draw histograms as points with error bars (no horizontal bars)
+    hist1->Draw("E1"); // E1 draws error bars without horizontal ticks
+    hist2->Draw("E1 SAME");
 
     // Use the new input arguments for legend labels
     TLegend* legend = new TLegend(0.7, 0.7, 0.9, 0.9);
-    legend->AddEntry(hist1, label1.c_str(), "l");
-    legend->AddEntry(hist2, label2.c_str(), "l");
+    legend->AddEntry(hist1, label1.c_str(), "p"); // "p" for points
+    legend->AddEntry(hist2, label2.c_str(), "p");
     legend->Draw();
 
     canvas->SaveAs("output/rad_study/test.pdf");
