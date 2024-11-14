@@ -215,8 +215,6 @@ void plot_for_xB_bin(const std::vector<BinData> &data, int xB_index, const std::
         qt_bins[key].push_back(bin);
     }
 
-    std::cout << "HELLO WORLD" << std::endl;
-
     // Step 2: Determine the grid size for subplots
     int num_plots = qt_bins.size();
     int grid_size = std::ceil(std::sqrt(num_plots));
@@ -268,6 +266,8 @@ void plot_for_xB_bin(const std::vector<BinData> &data, int xB_index, const std::
 
 // Main function to control the import, processing, and debug output
 void plot_comparison(const std::string &csv_file_path_first, const std::string &csv_file_path_second) {
+    
+    std::cout << "HELLO WORLD" << std::endl;
     // Ensure output directories exist
     ensure_directory_exists("output");
     ensure_directory_exists("output/cross_check");
