@@ -170,6 +170,10 @@ int main(int argc, char** argv) {
     ratio_hist->GetYaxis()->SetTitle("rad events / nominal events");
     ratio_hist->GetXaxis()->SetTitle(formatted_label.c_str());
 
+    // Set the y-axis maximum to 1.35 times the maximum value in the ratio histogram
+    double ratio_max_val = ratio_hist->GetMaximum();
+    ratio_hist->SetMaximum(1.35 * ratio_max_val);
+
     TCanvas* ratio_canvas = new TCanvas("ratio_canvas", "", 800, 600);
     ratio_canvas->SetLeftMargin(0.125); // User-preferred padding for ratio plot
     ratio_hist->Draw("HIST");
