@@ -20,6 +20,18 @@
 #include <TMath.h>
 #include <TLegend.h>
 
+// Helper function to ensure a directory exists
+void ensure_directory_exists(const std::string &path) {
+    struct stat info;
+    if (stat(path.c_str(), &info) != 0) {
+        // Directory does not exist, so create it
+        mkdir(path.c_str(), 0777);
+        std::cout << "Created directory: " << path << std::endl; // Debugging line
+    } else {
+        std::cout << "Directory exists: " << path << std::endl; // Debugging line
+    }
+}
+
 // Helper function to read data from the first CSV file format
 std::vector<BinData> read_csv_first(const std::string &file_path) {
     std::vector<BinData> bins;
@@ -211,22 +223,33 @@ void plot_for_xB_bin(const std::vector<BinData> &data, int xB_index) {
         std::vector<double> yield_errors = { sqrt(bin.unfolded_yield_outbending) };
 
         TGraphErrors *graph = new TGraphErrors(phi_values.size(), &phi_values[0], &yields[0], nullptr, &yield_errors[0]);
-        graph->SetTitle(Form("Q2 = %.2f, t = %.2f", bin.Q2avg, bin.tavg));
+        graph->SetTitle(Form("Q^{2} = %.2f, -t = %.2f, x_{B} = %.2f", bin.Q2avg, bin.tavg, bin.xBavg));
         graph->SetMarkerStyle(20);
         graph->SetMarkerColor(kBlack);
 
-        graph->GetXaxis()->SetTitle("phi avg");
-        graph->GetYaxis()->SetTitle("Unfolded Yield Outbending");
+        graph->GetXaxis()->SetTitle("#phi");
+        graph->GetYaxis()->SetTitle("Unfolded Yield");
         graph->Draw("AP");
 
         plot_index++;
     }
 
-    canvas.SaveAs(Form("output/cross_check/RGAFa18Out/rga_fa18_out_cross_check_xB_%d.pdf", xB_index));
+    // Update canvas before saving
+    canvas.Update();
+
+    // Ensure output path is correct
+    std::string save_path = Form("output/cross_check/RGAFa18Out/rga_fa18_out_cross_check_xB_%d.pdf", xB_index);
+    std::cout << "Saving canvas to: " << save_path << std::endl; // Debugging line
+    canvas.SaveAs(save_path.c_str());
 }
 
 // Main function to control the import, processing, and debug output
 void plot_comparison(const std::string &csv_file_path_first, const std::string &csv_file_path_second) {
+    // Ensure output directories exist
+    ensure_directory_exists("output");
+    ensure_directory_exists("output/cross_check");
+    ensure_directory_exists("output/cross_check/RGAFa18Out");
+    
     // Step 1: Read the first CSV data into a vector of BinData
     std::vector<BinData> bin_data_first = read_csv_first(csv_file_path_first);
     // // Step 2: Print out the first CSV data to verify correctness
@@ -241,6 +264,7 @@ void plot_comparison(const std::string &csv_file_path_first, const std::string &
     int xB_index = 0;
     for (const auto &xB_range : unique_xB_bins) {
         auto filtered_data = filter_data_by_xB(bin_data_second, xB_range);
+        std::cout << "Processing xB bin index: " << xB_index << std::endl; // Debugging line
         plot_for_xB_bin(filtered_data, xB_index);
         xB_index++;
     }
