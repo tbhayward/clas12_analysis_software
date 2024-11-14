@@ -5,6 +5,24 @@
 #include <TLegend.h>
 #include <TApplication.h>
 #include <iostream>
+#include <string>
+#include <regex>
+
+// Helper function to format LaTeX-like input
+std::string formatLatexString(const std::string& input) {
+    std::string formatted = input;
+
+    // Replace "_{...}" with "#lower[{...}]"
+    std::regex subscript_pattern("\\_\\{([^}]*)\\}");
+    formatted = std::regex_replace(formatted, subscript_pattern, "#lower[{$1}]");
+
+    // Replace "^{...}" with "#sup[{...}]"
+    std::regex superscript_pattern("\\^\\{([^}]*)\\}");
+    formatted = std::regex_replace(formatted, superscript_pattern, "#sup[{$1}]");
+
+    // Optionally handle other LaTeX-style notations if needed
+    return formatted;
+}
 
 int main(int argc, char** argv) {
     if (argc != 5) {
@@ -15,7 +33,10 @@ int main(int argc, char** argv) {
     const char* file1_name = argv[1];
     const char* file2_name = argv[2];
     const char* branch_name = argv[3];
-    const char* x_axis_label = argv[4];
+    std::string x_axis_label = argv[4];
+
+    // Format the LaTeX-style string for ROOT
+    std::string formatted_label = formatLatexString(x_axis_label);
 
     // Open the input files
     TFile* file1 = TFile::Open(file1_name);
@@ -44,9 +65,9 @@ int main(int argc, char** argv) {
     // Customize histogram appearance
     hist1->SetLineColor(kBlue);
     hist2->SetLineColor(kRed);
-    hist1->GetXaxis()->SetTitle(Form("#it{%s}", "M_{x}^{2}")); // Set LaTeX-style title
+    hist1->GetXaxis()->SetTitle(formatted_label.c_str()); // Set formatted x-axis label
     hist1->GetYaxis()->SetTitle("Counts");
-    hist2->GetXaxis()->SetTitle(Form("#it{%s}", "M_{x}^{2}"));
+    hist2->GetXaxis()->SetTitle(formatted_label.c_str());
     hist2->GetYaxis()->SetTitle("Counts");
 
     // Remove the stat boxes
