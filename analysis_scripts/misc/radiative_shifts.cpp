@@ -70,14 +70,17 @@ int main(int argc, char** argv) {
     hist1->SetLineColor(kBlue);
     hist2->SetLineColor(kRed);
     hist1->GetXaxis()->SetTitle(formatted_label.c_str());
-    hist1->GetYaxis()->SetTitle("Normalized Counts"); // Updated title
+    hist1->GetYaxis()->SetTitle("normalized counts"); // Lowercase title
     hist2->GetXaxis()->SetTitle(formatted_label.c_str());
-    hist2->GetYaxis()->SetTitle("Normalized Counts");
+    hist2->GetYaxis()->SetTitle("normalized counts");
 
     hist1->SetStats(0);
     hist2->SetStats(0);
 
+    // Create a canvas with extra left margin padding
     TCanvas* canvas = new TCanvas("canvas", "", 800, 600);
+    canvas->SetLeftMargin(0.15); // Increase left margin for y-axis label padding
+
     hist1->Draw("HIST");
     hist2->Draw("HIST SAME");
 
