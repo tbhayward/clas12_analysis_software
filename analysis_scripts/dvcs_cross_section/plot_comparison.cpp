@@ -286,7 +286,7 @@ void plot_comparison(const std::string &csv_file_path_first, const std::string &
         auto filtered_data_second = filter_data_by_xB(bin_data_second, xB_range);
 
         // Pass both datasets to the plotting function
-        plot_for_xB_bin(filtered_data_second, filtered_data_second, xB_index);
+        plot_for_xB_bin(filtered_data_first, filtered_data_second, xB_index);
         xB_index++;
     }
 }
