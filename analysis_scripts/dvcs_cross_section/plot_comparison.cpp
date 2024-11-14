@@ -272,7 +272,6 @@ void plot_comparison(const std::string &csv_file_path_first, const std::string &
     ensure_directory_exists("output/cross_check");
     ensure_directory_exists("output/cross_check/RGAFa18Out");
     ensure_directory_exists("output/cross_check/RGAFa18Inb");
-    std::cout << "HELLO WORLD" << std::endl;
 
 
     // Step 1: Read the first CSV data into a vector of BinData
@@ -285,6 +284,7 @@ void plot_comparison(const std::string &csv_file_path_first, const std::string &
     // print_bin_data(bin_data_second);  
 
     auto unique_xB_bins = find_unique_xB_bins(bin_data_second);
+    std::cout << "HELLO WORLD" << std::endl;
 
     int xB_index = 0;
     for (const auto &xB_range : unique_xB_bins) {
