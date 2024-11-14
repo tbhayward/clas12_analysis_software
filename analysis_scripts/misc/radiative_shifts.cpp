@@ -7,6 +7,7 @@
 #include <iostream>
 #include <string>
 #include <regex>
+#include <unordered_set>
 #include <cmath>
 
 std::string formatLatexString(const std::string& input) {
@@ -22,8 +23,8 @@ std::string formatLatexString(const std::string& input) {
 }
 
 int main(int argc, char** argv) {
-    if (argc != 9) {
-        std::cerr << "Usage: " << argv[0] << " <file1.root> <file2.root> <label1> <label2> <branch_variable> <x_axis_label> <x_min> <x_max>" << std::endl;
+    if (argc != 11) {
+        std::cerr << "Usage: " << argv[0] << " <file1.root> <file2.root> <label1> <label2> <branch_variable> <x_axis_label> <x_min> <x_max> <range_low> <range_high>" << std::endl;
         return 1;
     }
 
@@ -35,6 +36,8 @@ int main(int argc, char** argv) {
     std::string x_axis_label = argv[6];
     double x_min = std::stod(argv[7]);
     double x_max = std::stod(argv[8]);
+    double range_low = std::stod(argv[9]);
+    double range_high = std::stod(argv[10]);
 
     std::string formatted_label = formatLatexString(x_axis_label);
 
@@ -74,25 +77,54 @@ int main(int argc, char** argv) {
     hist2->GetXaxis()->SetTitle(formatted_label.c_str());
     hist2->GetYaxis()->SetTitle("normalized counts");
 
-    hist1->SetMarkerStyle(20); // Set points with marker style
-    hist2->SetMarkerStyle(21);
-    hist1->SetMarkerColor(kBlue);
-    hist2->SetMarkerColor(kRed);
     hist1->SetStats(0);
     hist2->SetStats(0);
+
+    // Step 1: Find event numbers within the specified range in file2
+    std::unordered_set<int> matching_event_numbers;
+    double branch_value;
+    int evnnum;
+    tree2->SetBranchAddress(branch_name, &branch_value);
+    tree2->SetBranchAddress("evnnum", &evnnum);
+
+    Long64_t nEntries2 = tree2->GetEntries();
+    for (Long64_t i = 0; i < nEntries2; ++i) {
+        tree2->GetEntry(i);
+        if (branch_value >= range_low && branch_value <= range_high) {
+            matching_event_numbers.insert(evnnum);
+        }
+    }
+
+    // Step 2: Record positions of matching events in file1
+    TH1D* hist3 = new TH1D("hist3", "", num_bins, x_min, x_max);
+    tree1->SetBranchAddress("evnnum", &evnnum);
+    tree1->SetBranchAddress(branch_name, &branch_value);
+
+    Long64_t nEntries1 = tree1->GetEntries();
+    for (Long64_t i = 0; i < nEntries1; ++i) {
+        tree1->GetEntry(i);
+        if (matching_event_numbers.find(evnnum) != matching_event_numbers.end()) {
+            hist3->Fill(branch_value);
+        }
+    }
+
+    hist3->SetLineColor(kBlack);
+    hist3->SetLineStyle(2); // Dashed line for third histogram
+    hist3->SetStats(0);
 
     // Create a canvas with extra left margin padding
     TCanvas* canvas = new TCanvas("canvas", "", 800, 600);
     canvas->SetLeftMargin(0.125); // User-preferred padding
 
-    // Draw histograms as points with error bars (no horizontal bars)
-    hist1->Draw("E1"); // E1 draws error bars without horizontal ticks
-    hist2->Draw("E1 SAME");
+    hist1->Draw("HIST");
+    hist2->Draw("HIST SAME");
+    hist3->Draw("HIST SAME"); // Draw third histogram on the same canvas
 
     // Use the new input arguments for legend labels
     TLegend* legend = new TLegend(0.7, 0.7, 0.9, 0.9);
-    legend->AddEntry(hist1, label1.c_str(), "p"); // "p" for points
-    legend->AddEntry(hist2, label2.c_str(), "p");
+    legend->AddEntry(hist1, label1.c_str(), "l");
+    legend->AddEntry(hist2, label2.c_str(), "l");
+    legend->AddEntry(hist3, "Selected Events", "l");
     legend->Draw();
 
     canvas->SaveAs("output/rad_study/test.pdf");
@@ -100,6 +132,7 @@ int main(int argc, char** argv) {
     delete canvas;
     delete hist1;
     delete hist2;
+    delete hist3;
     file1->Close();
     file2->Close();
     delete file1;
