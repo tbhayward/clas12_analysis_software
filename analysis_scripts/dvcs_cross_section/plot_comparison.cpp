@@ -180,25 +180,28 @@ std::vector<BinData> filter_data_by_xB(const std::vector<BinData> &data, const s
 // Plotting function for each xB bin
 // Plotting function for each xB bin
 void plot_for_xB_bin(const std::vector<BinData> &data, int xB_index) {
+    std::cout << "Starting plot_for_xB_bin for xB index: " << xB_index << std::endl;
+
     // Step 1: Identify unique (Q2min, Q2max, tmin, tmax) bins
     std::map<std::tuple<double, double, double, double>, std::vector<BinData>> qt_bins;
     for (const auto &bin : data) {
-        // Use a tuple of (Q2min, Q2max, tmin, tmax) to identify unique bins
         auto key = std::make_tuple(bin.Q2min, bin.Q2max, bin.tmin, bin.tmax);
         qt_bins[key].push_back(bin);
     }
 
-    // Step 2: Determine the grid size for subplots based on the number of unique (Q2, t) bins
+    // Step 2: Determine the grid size for subplots based on unique (Q2, t) bins
     int num_plots = qt_bins.size();
     int grid_size = std::ceil(std::sqrt(num_plots));
 
     TCanvas canvas("canvas", "Cross Check", 1200, 1200);
-    canvas.Divide(grid_size, grid_size);
+    canvas.Divide(grid_size, grid_size, 0.02, 0.02); // Small padding between pads
 
     int plot_index = 1;
     for (const auto &[qt_key, bins] : qt_bins) {
         // Move to the next pad
         canvas.cd(plot_index);
+        gPad->SetLeftMargin(0.15);  // Adds padding to the left
+        gPad->SetBottomMargin(0.15); // Adds padding to the bottom
 
         // Prepare vectors for phi and unfolded yield values for each phi point in the (Q2, t) bin
         std::vector<double> phi_values;
@@ -215,10 +218,10 @@ void plot_for_xB_bin(const std::vector<BinData> &data, int xB_index) {
         int n_points = phi_values.size();
         TGraphErrors *graph = new TGraphErrors(n_points, &phi_values[0], &yields[0], nullptr, &yield_errors[0]);
 
-        // Set the title with xB_avg, Q2, and t
+        // Set the title with xB, Q2, and t directly from the first BinData struct in each (Q2, t) bin
         double xB_avg = bins[0].xBavg;
-        double Q2avg = (std::get<0>(qt_key) + std::get<1>(qt_key)) / 2.0;
-        double tavg = (std::get<2>(qt_key) + std::get<3>(qt_key)) / 2.0;
+        double Q2avg = bins[0].Q2avg;
+        double tavg = bins[0].tavg;
         graph->SetTitle(Form("Out: x_{B} = %.2f, Q^{2} = %.2f, -t = %.2f", xB_avg, Q2avg, tavg));
 
         graph->SetMarkerStyle(20);
@@ -235,6 +238,8 @@ void plot_for_xB_bin(const std::vector<BinData> &data, int xB_index) {
     // Save the canvas
     std::string save_path = Form("output/cross_check/RGAFa18Out/rga_fa18_out_cross_check_xB_%d.pdf", xB_index);
     canvas.SaveAs(save_path.c_str());
+
+    std::cout << "Finished plot_for_xB_bin for xB index: " << xB_index << std::endl;
 }
 
 // Main function to control the import, processing, and debug output
