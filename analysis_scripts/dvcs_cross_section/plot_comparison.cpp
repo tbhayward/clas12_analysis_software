@@ -26,11 +26,7 @@
 void ensure_directory_exists(const std::string &path) {
     struct stat info;
     if (stat(path.c_str(), &info) != 0) {
-        // Directory does not exist, so create it
         mkdir(path.c_str(), 0777);
-        std::cout << "Created directory: " << path << std::endl; // Debugging line
-    } else {
-        std::cout << "Directory exists: " << path << std::endl; // Debugging line
     }
 }
 
@@ -50,7 +46,6 @@ std::vector<BinData> read_csv_first(const std::string &file_path) {
 
         BinData bin;
 
-        // Read values based on column order for the first CSV format
         std::getline(ss, value, ','); // First unnamed column
         bin.global_bin_number = std::stoi(value);
 
@@ -109,22 +104,16 @@ std::vector<BinData> read_csv_second(const std::string &file_path, const std::ve
     // Skip the header line
     std::getline(file, line);
 
-    // Read each line of the CSV
     int index = 0;
     while (std::getline(file, line) && index < first_csv_data.size()) {
         std::stringstream ss(line);
         std::string value;
 
         BinData bin;
-
-        // Assign global_bin_number and bin_number based on the first CSV
         bin.global_bin_number = first_csv_data[index].global_bin_number;
         bin.bin_number = first_csv_data[index].bin_number;
 
-        // Read values based on column order for the second CSV format
         std::getline(ss, value, ','); // Skip Bin number column
-        // The bin number is already assigned from first_csv_data
-
         std::getline(ss, value, ','); // xBmin
         bin.xBmin = std::stod(value);
         std::getline(ss, value, ','); // xBmax
@@ -153,16 +142,11 @@ std::vector<BinData> read_csv_second(const std::string &file_path, const std::ve
         std::getline(ss, value, ','); // phiavg
         bin.phiavg = std::stod(value);
 
-        // Skip columns until reaching unfolded_yield_inbending (column S)
         for (int i = 0; i < 5; ++i) std::getline(ss, value, ',');
-
         std::getline(ss, value, ','); // ep->e'pgamma unfolded_yield_Fa18Inb
         bin.unfolded_yield_inbending = std::stod(value);
 
-
-        // Skip to unfolded_yield_outbending (column Y)
         for (int i = 0; i < 5; ++i) std::getline(ss, value, ',');
-
         std::getline(ss, value, ','); // ep->e'pgamma unfolded_yield_Fa18Out
         bin.unfolded_yield_outbending = std::stod(value);
 
@@ -171,21 +155,6 @@ std::vector<BinData> read_csv_second(const std::string &file_path, const std::ve
     }
 
     return bins;
-}
-
-// Helper function to print out values in the struct for debugging
-void print_bin_data(const std::vector<BinData> &bins) {
-    for (const auto &bin : bins) {
-        std::cout << "Global Bin Number: " << bin.global_bin_number << '\n';
-        std::cout << "Bin Number: " << bin.bin_number << '\n';
-        std::cout << "xBmin: " << bin.xBmin << ", xBmax: " << bin.xBmax << ", xBavg: " << bin.xBavg << '\n';
-        std::cout << "Q2min: " << bin.Q2min << ", Q2max: " << bin.Q2max << ", Q2avg: " << bin.Q2avg << '\n';
-        std::cout << "tmin: " << bin.tmin << ", tmax: " << bin.tmax << ", tavg: " << bin.tavg << '\n';
-        std::cout << "phimin: " << bin.phimin << ", phimax: " << bin.phimax << ", phiavg: " << bin.phiavg << '\n';
-        std::cout << "Unfolded Yield Inbending: " << bin.unfolded_yield_inbending << '\n';
-        std::cout << "Unfolded Yield Outbending: " << bin.unfolded_yield_outbending << '\n';
-        std::cout << "----------------------\n";
-    }
 }
 
 // Function to find unique xB bins in the data
@@ -210,8 +179,6 @@ std::vector<BinData> filter_data_by_xB(const std::vector<BinData> &data, const s
 
 // Plotting function for each xB bin
 void plot_for_xB_bin(const std::vector<BinData> &data, int xB_index) {
-    std::cout << "Starting plot_for_xB_bin for xB index: " << xB_index << std::endl;
-
     int num_plots = data.size();
     int grid_size = std::ceil(std::sqrt(num_plots));
 
@@ -227,10 +194,13 @@ void plot_for_xB_bin(const std::vector<BinData> &data, int xB_index) {
         std::vector<double> yield_errors = { sqrt(bin.unfolded_yield_outbending) };
 
         TGraphErrors *graph = new TGraphErrors(phi_values.size(), &phi_values[0], &yields[0], nullptr, &yield_errors[0]);
-        graph->SetTitle(Form("Q2 = %.2f, t = %.2f", bin.Q2avg, bin.tavg));
+
+        // Set the enhanced title including xB_avg, Q2, and t
+        graph->SetTitle(Form("Out: x_{B} = %.2f, Q^{2} = %.2f, -t = %.2f", bin.xBavg, bin.Q2avg, bin.tavg));
         graph->SetMarkerStyle(20);
         graph->SetMarkerColor(kBlack);
 
+        // Style the graph axes
         graph->GetXaxis()->SetTitle("#phi");
         graph->GetYaxis()->SetTitle("Unfolded Yield");
         graph->Draw("AP");
@@ -238,38 +208,26 @@ void plot_for_xB_bin(const std::vector<BinData> &data, int xB_index) {
         plot_index++;
     }
 
+    // Save the canvas
     std::string save_path = Form("output/cross_check/RGAFa18Out/rga_fa18_out_cross_check_xB_%d.pdf", xB_index);
-    std::cout << "Attempting to save canvas to: " << save_path << std::endl;
     canvas.SaveAs(save_path.c_str());
-
-    std::cout << "Finished plot_for_xB_bin for xB index: " << xB_index << std::endl;
 }
 
 // Main function to control the import, processing, and debug output
 void plot_comparison(const std::string &csv_file_path_first, const std::string &csv_file_path_second) {
-    // Ensure output directories exist
     ensure_directory_exists("output");
     ensure_directory_exists("output/cross_check");
     ensure_directory_exists("output/cross_check/RGAFa18Out");
 
-    // Step 1: Read the first CSV data into a vector of BinData
     std::vector<BinData> bin_data_first = read_csv_first(csv_file_path_first);
-    // // Step 2: Print out the first CSV data to verify correctness
-    // print_bin_data(bin_data_first);
-    // Step 3: Read the second CSV data, matching bin numbers with the first CSV
     std::vector<BinData> bin_data_second = read_csv_second(csv_file_path_second, bin_data_first);
-    // // Step 4: Print out the second CSV data to verify correctness
-    // print_bin_data(bin_data_second);  
 
     auto unique_xB_bins = find_unique_xB_bins(bin_data_second);
-    std::cout << "Number of unique xB bins: " << unique_xB_bins.size() << std::endl;
 
     int xB_index = 0;
     for (const auto &xB_range : unique_xB_bins) {
         auto filtered_data = filter_data_by_xB(bin_data_second, xB_range);
-        std::cout << "Processing xB bin index: " << xB_index << std::endl; // Debugging line
         plot_for_xB_bin(filtered_data, xB_index);
         xB_index++;
     }
-
 }
