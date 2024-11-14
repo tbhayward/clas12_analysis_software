@@ -12,15 +12,14 @@
 std::string formatLatexString(const std::string& input) {
     std::string formatted = input;
 
-    // Replace "_{...}" with "#lower[{...}]"
+    // Replace "\_" with "_" for LaTeX subscripts directly
     std::regex subscript_pattern("\\_\\{([^}]*)\\}");
-    formatted = std::regex_replace(formatted, subscript_pattern, "#lower[{$1}]");
+    formatted = std::regex_replace(formatted, subscript_pattern, "_{$1}");
 
-    // Replace "^{...}" with "#sup[{...}]"
+    // Replace "\^" with "^" for LaTeX superscripts directly
     std::regex superscript_pattern("\\^\\{([^}]*)\\}");
-    formatted = std::regex_replace(formatted, superscript_pattern, "#sup[{$1}]");
+    formatted = std::regex_replace(formatted, superscript_pattern, "^{$1}");
 
-    // Optionally handle other LaTeX-style notations if needed
     return formatted;
 }
 
