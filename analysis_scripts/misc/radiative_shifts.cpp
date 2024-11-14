@@ -122,6 +122,10 @@ int main(int argc, char** argv) {
         }
     }
 
+    // Normalize hist3 by the integral of hist1
+    if (integral1 > 0) {
+        hist3->Scale(1.0 / integral1);
+    }
     hist3->SetLineColor(kBlack);
     hist3->SetLineStyle(2); // Dashed line for third histogram
     hist3->SetStats(0);
