@@ -215,6 +215,8 @@ void plot_for_xB_bin(const std::vector<BinData> &data, int xB_index, const std::
         qt_bins[key].push_back(bin);
     }
 
+    std::cout << "HELLO WORLD" << std::endl;
+
     // Step 2: Determine the grid size for subplots
     int num_plots = qt_bins.size();
     int grid_size = std::ceil(std::sqrt(num_plots));
