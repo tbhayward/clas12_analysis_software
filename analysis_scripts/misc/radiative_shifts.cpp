@@ -43,8 +43,8 @@ std::string getFileNameWithoutExtension(const std::string& filePath) {
 }
 
 int main(int argc, char** argv) {
-    if (argc != 12) {
-        std::cerr << "Usage: " << argv[0] << " <file1.root> <file2.root> <label1> <label2> <branch_variable> <x_axis_label> <x_min> <x_max> <range_low> <range_high> <ratio_lower_bound>" << std::endl;
+    if (argc != 12 && argc != 14) {
+        std::cerr << "Usage: " << argv[0] << " <file1.root> <file2.root> <label1> <label2> <branch_variable> <x_axis_label> <x_min> <x_max> <range_low> <range_high> <ratio_lower_bound> [range_low2 range_high2]" << std::endl;
         return 1;
     }
 
@@ -59,6 +59,13 @@ int main(int argc, char** argv) {
     double range_low = std::stod(argv[9]);
     double range_high = std::stod(argv[10]);
     double ratio_lower_bound = std::stod(argv[11]);
+
+    double range_low2 = 0, range_high2 = 0;
+    bool has_second_region = (argc == 14);
+    if (has_second_region) {
+        range_low2 = std::stod(argv[12]);
+        range_high2 = std::stod(argv[13]);
+    }
 
     std::string formatted_label = formatLatexString(x_axis_label);
 
@@ -101,8 +108,8 @@ int main(int argc, char** argv) {
     hist1->SetStats(0);
     hist2->SetStats(0);
 
-    // Step 1: Find (runnum, evnum) pairs within the specified range in file2
-    std::unordered_set<std::pair<int, int>, pair_hash> matching_event_pairs;
+    // Step 1: Find (runnum, evnum) pairs within the specified range(s) in file2
+    std::unordered_set<std::pair<int, int>, pair_hash> matching_event_pairs1, matching_event_pairs2;
     double branch_value;
     int runnum, evnum;
     tree2->SetBranchAddress(branch_name, &branch_value);
@@ -113,12 +120,17 @@ int main(int argc, char** argv) {
     for (Long64_t i = 0; i < nEntries2; ++i) {
         tree2->GetEntry(i);
         if (branch_value >= range_low && branch_value <= range_high) {
-            matching_event_pairs.emplace(runnum, evnum);
+            matching_event_pairs1.emplace(runnum, evnum);
+        }
+        if (has_second_region && branch_value >= range_low2 && branch_value <= range_high2) {
+            matching_event_pairs2.emplace(runnum, evnum);
         }
     }
 
     // Step 2: Record positions of matching events in file1 starting from ratio_lower_bound
     TH1D* hist3 = new TH1D("hist3", "", num_bins, x_min, x_max);
+    TH1D* hist4 = has_second_region ? new TH1D("hist4", "", num_bins, x_min, x_max) : nullptr;
+
     tree1->SetBranchAddress("runnum", &runnum);
     tree1->SetBranchAddress("evnum", &evnum);
     tree1->SetBranchAddress(branch_name, &branch_value);
@@ -126,75 +138,33 @@ int main(int argc, char** argv) {
     Long64_t nEntries1 = tree1->GetEntries();
     for (Long64_t i = 0; i < nEntries1; ++i) {
         tree1->GetEntry(i);
-        if (branch_value >= ratio_lower_bound && matching_event_pairs.find({runnum, evnum}) != matching_event_pairs.end()) {
-            hist3->Fill(branch_value);
+        if (branch_value >= ratio_lower_bound) {
+            if (matching_event_pairs1.find({runnum, evnum}) != matching_event_pairs1.end()) {
+                hist3->Fill(branch_value);
+            }
+            if (has_second_region && matching_event_pairs2.find({runnum, evnum}) != matching_event_pairs2.end()) {
+                hist4->Fill(branch_value);
+            }
         }
     }
 
-    // Normalize hist3 by the integral of hist1
+    // Normalize histograms
     if (integral1 > 0) {
         hist3->Scale(1.0 / integral1);
+        if (has_second_region) hist4->Scale(1.0 / integral1);
     }
-    hist3->SetLineColor(kBlack);
-    hist3->SetLineStyle(2); // Dashed line for third histogram
-    hist3->SetStats(0);
 
-    // Set x-axis range for hist3 in the main plot
-    hist3->GetXaxis()->SetRangeUser(ratio_lower_bound, x_max);
+    // Set histogram colors and styles
+    hist3->SetLineColor(kBlack);
+    hist3->SetLineStyle(2); // Dashed line
+    if (has_second_region) {
+        hist4->SetLineColor(kGreen);
+        hist4->SetLineStyle(2); // Dashed line
+    }
 
     // Calculate the maximum y-axis range
     double max_val = std::max({hist1->GetMaximum(), hist2->GetMaximum(), hist3->GetMaximum()});
-    hist1->SetMaximum(1.2 * max_val); // Set y-axis range
+    if (has_second_region) max_val = std::max(max_val, hist4->GetMaximum());
+    hist1->SetMaximum(1.2 * max_val);
 
-    // Create a canvas with extra left margin padding
-    TCanvas* canvas = new TCanvas("canvas", "", 800, 600);
-    canvas->SetLeftMargin(0.125); // User-preferred padding
-
-    hist1->Draw("HIST");
-    hist2->Draw("HIST SAME");
-    hist3->Draw("HIST SAME"); // Draw third histogram on the same canvas with restricted range
-
-    // Use the new input arguments for legend labels
-    TLegend* legend = new TLegend(0.7, 0.7, 0.9, 0.9);
-    legend->AddEntry(hist1, label1.c_str(), "l");
-    legend->AddEntry(hist2, label2.c_str(), "l");
-    legend->AddEntry(hist3, "Shifted Rad Events", "l"); // Updated label
-    legend->Draw();
-
-    // Construct output filename based on the second file's name and branch variable
-    std::string file2_identifier = getFileNameWithoutExtension(file2_name);
-    std::string output_filename = "output/rad_study/" + file2_identifier + "_" + branch_name + ".pdf";
-    canvas->SaveAs(output_filename.c_str());
-
-    // Create the ratio plot of hist3 / hist1 within the specified bounds
-    TH1D* ratio_hist = (TH1D*)hist3->Clone("ratio_hist");
-    ratio_hist->Divide(hist1);
-    ratio_hist->GetXaxis()->SetRangeUser(ratio_lower_bound, x_max); // Set x-axis range for ratio
-    ratio_hist->GetYaxis()->SetTitle("rad events / nominal events");
-    ratio_hist->GetXaxis()->SetTitle(formatted_label.c_str());
-
-    // Set the y-axis maximum to 1.35 times the maximum value in the ratio histogram
-    double ratio_max_val = ratio_hist->GetMaximum();
-    ratio_hist->SetMaximum(1.35 * ratio_max_val);
-
-    TCanvas* ratio_canvas = new TCanvas("ratio_canvas", "", 800, 600);
-    ratio_canvas->SetLeftMargin(0.125); // User-preferred padding for ratio plot
-    ratio_hist->Draw("HIST");
-
-    // Save the ratio plot with an additional "_ratio" suffix
-    std::string ratio_output_filename = "output/rad_study/" + file2_identifier + "_" + branch_name + "_ratio.pdf";
-    ratio_canvas->SaveAs(ratio_output_filename.c_str());
-
-    delete canvas;
-    delete ratio_canvas;
-    delete hist1;
-    delete hist2;
-    delete hist3;
-    delete ratio_hist;
-    file1->Close();
-    file2->Close();
-    delete file1;
-    delete file2;
-
-    return 0;
-}
+    //
