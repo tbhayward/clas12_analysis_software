@@ -167,4 +167,68 @@ int main(int argc, char** argv) {
     if (has_second_region) max_val = std::max(max_val, hist4->GetMaximum());
     hist1->SetMaximum(1.2 * max_val);
 
-    //
+    // Create the main canvas
+    TCanvas* canvas = new TCanvas("canvas", "", 800, 600);
+    canvas->SetLeftMargin(0.125);
+
+    hist1->Draw("HIST");
+    hist2->Draw("HIST SAME");
+    hist3->Draw("HIST SAME");
+    if (has_second_region) hist4->Draw("HIST SAME");
+
+    // Add legend
+    TLegend* legend = new TLegend(0.7, 0.7, 0.9, 0.9);
+    legend->AddEntry(hist1, label1.c_str(), "l");
+    legend->AddEntry(hist2, label2.c_str(), "l");
+    legend->AddEntry(hist3, Form("Shifted Rad Events [%g, %g]", range_low, range_high), "l");
+    if (has_second_region) {
+        legend->AddEntry(hist4, Form("Shifted Rad Events [%g, %g]", range_low2, range_high2), "l");
+    }
+    legend->Draw();
+
+    // Save the main plot
+    std::string file2_identifier = getFileNameWithoutExtension(file2_name);
+    std::string output_filename = "output/rad_study/" + file2_identifier + "_" + branch_name + ".pdf";
+    canvas->SaveAs(output_filename.c_str());
+
+    // Create the ratio plot
+    TCanvas* ratio_canvas = new TCanvas("ratio_canvas", "", 800, 600);
+    ratio_canvas->SetLeftMargin(0.125);
+
+    TH1D* ratio_hist3 = (TH1D*)hist3->Clone("ratio_hist3");
+    ratio_hist3->Divide(hist1);
+    ratio_hist3->SetLineColor(kBlack);
+    ratio_hist3->SetLineStyle(2);
+    ratio_hist3->GetYaxis()->SetTitle("rad events / nominal events");
+    ratio_hist3->GetXaxis()->SetTitle(formatted_label.c_str());
+
+    ratio_hist3->Draw("HIST");
+    if (has_second_region) {
+        TH1D* ratio_hist4 = (TH1D*)hist4->Clone("ratio_hist4");
+        ratio_hist4->Divide(hist1);
+        ratio_hist4->SetLineColor(kGreen);
+        ratio_hist4->SetLineStyle(2);
+        ratio_hist4->Draw("HIST SAME");
+
+        legend = new TLegend(0.7, 0.7, 0.9, 0.9);
+        legend->AddEntry(ratio_hist3, Form("Ratio [%g, %g]", range_low, range_high), "l");
+        legend->AddEntry(ratio_hist4, Form("Ratio [%g, %g]", range_low2, range_high2), "l");
+        legend->Draw();
+    }
+
+    // Save the ratio plot
+    std::string ratio_output_filename = "output/rad_study/" + file2_identifier + "_" + branch_name + "_ratio.pdf";
+    ratio_canvas->SaveAs(ratio_output_filename.c_str());
+
+    // Cleanup
+    delete canvas;
+    delete ratio_canvas;
+    delete hist1;
+    delete hist2;
+    delete hist3;
+    if (has_second_region) delete hist4;
+    delete file1;
+    delete file2;
+
+    return 0;
+}
