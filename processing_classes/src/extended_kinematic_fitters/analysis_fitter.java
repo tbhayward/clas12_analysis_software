@@ -224,22 +224,22 @@ public class analysis_fitter extends GenericKinematicFitter {
                     // this checks all of the PID requirements, if it passes all of them the electron is 
                     // added to the event below
 
-                    // check for photons within 8 degree cone angle around electron and add 
-//                    for (int particle_index_neutral = 0; particle_index_neutral < rec_Bank.rows(); particle_index_neutral++) {
-//                        int pid_neutral = rec_Bank.getInt("pid", particle_index_neutral);
-//                        if (pid_neutral == 22 || pid_neutral == 2112) {
-//                            float px_neutral = rec_Bank.getFloat("px", particle_index_neutral);
-//                            float py_neutral = rec_Bank.getFloat("py", particle_index_neutral);
-//                            float pz_neutral = rec_Bank.getFloat("pz", particle_index_neutral);
-//                            LorentzVector lv_neutral = new LorentzVector();
-//                            lv_neutral.setPxPyPzM(px_neutral, py_neutral, pz_neutral, 0);
-//                            double cone_angle = 180 / Math.PI * Math.acos(lv_e.vect().dot(lv_neutral.vect())
-//                                    / (lv_e.vect().mag() * lv_neutral.vect().mag()));
-//                            if (cone_angle < 8) {
-//                                px+=px_neutral; py+=py_neutral; pz+=pz_neutral;
-//                            }
-//                        }
-//                    }
+//                     check for photons within 8 degree cone angle around electron and add 
+                    for (int particle_index_neutral = 0; particle_index_neutral < rec_Bank.rows(); particle_index_neutral++) {
+                        int pid_neutral = rec_Bank.getInt("pid", particle_index_neutral);
+                        if (pid_neutral == 22 || pid_neutral == 2112) {
+                            float px_neutral = rec_Bank.getFloat("px", particle_index_neutral);
+                            float py_neutral = rec_Bank.getFloat("py", particle_index_neutral);
+                            float pz_neutral = rec_Bank.getFloat("pz", particle_index_neutral);
+                            LorentzVector lv_neutral = new LorentzVector();
+                            lv_neutral.setPxPyPzM(px_neutral, py_neutral, pz_neutral, 0);
+                            double cone_angle = 180 / Math.PI * Math.acos(lv_e.vect().dot(lv_neutral.vect())
+                                    / (lv_e.vect().mag() * lv_neutral.vect().mag()));
+                            if (cone_angle < 8) {
+                                px+=px_neutral; py+=py_neutral; pz+=pz_neutral;
+                            }
+                        }
+                    }
                     Particle electron = new Particle(pid, px, py, pz, vx, vy, vz_e);
                     physEvent.addParticle(electron);
                 }
