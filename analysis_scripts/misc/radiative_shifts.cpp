@@ -15,9 +15,9 @@
 const double Q2_MIN = 0.0;
 const double Q2_MAX = 12.0;
 const double W_MIN = 0.0;
-const double W_MAX = 10.0;
+const double W_MAX = 4.0;
 const double y_MIN = 0.0;
-const double y_MAX = 0.4;
+const double y_MAX = 0.8;
 
 // Helper function to format LaTeX-like input for ROOT titles
 std::string formatLatexString(const std::string& input) {
@@ -91,14 +91,15 @@ int main(int argc, char** argv) {
         return 1;
     }
 
-    // Increase bins by a factor of 1.5 and round to the nearest integer
-    int num_bins = static_cast<int>(100 * 1.5);
+    // Create expressions for filtering based on Q², W, and y ranges
+    std::string filter_expr = Form("Q2 >= %f && Q2 <= %f && W >= %f && W <= %f && y >= %f && y <= %f", 
+                                    Q2_MIN, Q2_MAX, W_MIN, W_MAX, y_MIN, y_MAX);
 
-    TH1D* hist1 = new TH1D("hist1", "", num_bins, x_min, x_max);
-    TH1D* hist2 = new TH1D("hist2", "", num_bins, x_min, x_max);
-
-    tree1->Project("hist1", branch_name);
-    tree2->Project("hist2", branch_name);
+    // Create histograms for tree projections with the filtering conditions
+    TH1D* hist1 = new TH1D("hist1", "", static_cast<int>(100 * 1.5), x_min, x_max);
+    TH1D* hist2 = new TH1D("hist2", "", static_cast<int>(100 * 1.5), x_min, x_max);
+    tree1->Project("hist1", branch_name, filter_expr.c_str());
+    tree2->Project("hist2", branch_name, filter_expr.c_str());
 
     double integral1 = hist1->Integral();
     if (integral1 > 0) {
@@ -130,19 +131,17 @@ int main(int argc, char** argv) {
     Long64_t nEntries2 = tree2->GetEntries();
     for (Long64_t i = 0; i < nEntries2; ++i) {
         tree2->GetEntry(i);
-        if (Q2 >= Q2_MIN && Q2 <= Q2_MAX && W >= W_MIN && W <= W_MAX && y >= y_MIN && y <= y_MAX) {
-            if (branch_value >= range_low && branch_value <= range_high) {
-                matching_event_pairs1.emplace(runnum, evnum);
-            }
-            if (has_second_region && branch_value >= range_low2 && branch_value <= range_high2) {
-                matching_event_pairs2.emplace(runnum, evnum);
-            }
+        if (branch_value >= range_low && branch_value <= range_high) {
+            matching_event_pairs1.emplace(runnum, evnum);
+        }
+        if (has_second_region && branch_value >= range_low2 && branch_value <= range_high2) {
+            matching_event_pairs2.emplace(runnum, evnum);
         }
     }
 
     // Step 2: Record positions of matching events in file1 starting from ratio_lower_bound
-    TH1D* hist3 = new TH1D("hist3", "", num_bins, x_min, x_max);
-    TH1D* hist4 = has_second_region ? new TH1D("hist4", "", num_bins, x_min, x_max) : nullptr;
+    TH1D* hist3 = new TH1D("hist3", "", static_cast<int>(100 * 1.5), x_min, x_max);
+    TH1D* hist4 = has_second_region ? new TH1D("hist4", "", static_cast<int>(100 * 1.5), x_min, x_max);
 
     tree1->SetBranchAddress("runnum", &runnum);
     tree1->SetBranchAddress("evnum", &evnum);
@@ -154,7 +153,7 @@ int main(int argc, char** argv) {
     Long64_t nEntries1 = tree1->GetEntries();
     for (Long64_t i = 0; i < nEntries1; ++i) {
         tree1->GetEntry(i);
-        if (Q2 >= Q2_MIN && Q2 <= Q2_MAX && W >= W_MIN && W <= W_MAX && y >= y_MIN && y <= y_MAX && branch_value >= ratio_lower_bound) {
+        if (branch_value >= ratio_lower_bound) {
             if (matching_event_pairs1.find({runnum, evnum}) != matching_event_pairs1.end()) {
                 hist3->Fill(branch_value);
             }
