@@ -155,10 +155,10 @@ int main(int argc, char** argv) {
     }
 
     // Set histogram colors and styles
-    hist3->SetLineColor(kBlack);
+    hist3->SetLineColor(kCyan + 2); // Distinct color
     hist3->SetLineStyle(2); // Dashed line
     if (has_second_region) {
-        hist4->SetLineColor(kGreen);
+        hist4->SetLineColor(kMagenta + 1); // Distinct color
         hist4->SetLineStyle(2); // Dashed line
     }
 
@@ -197,17 +197,19 @@ int main(int argc, char** argv) {
 
     TH1D* ratio_hist3 = (TH1D*)hist3->Clone("ratio_hist3");
     ratio_hist3->Divide(hist1);
-    ratio_hist3->SetLineColor(kBlack);
+    ratio_hist3->SetLineColor(kCyan + 2);
     ratio_hist3->SetLineStyle(2);
     ratio_hist3->GetYaxis()->SetTitle("rad events / nominal events");
     ratio_hist3->GetXaxis()->SetTitle(formatted_label.c_str());
+    ratio_hist3->SetStats(0);
 
     ratio_hist3->Draw("HIST");
     if (has_second_region) {
         TH1D* ratio_hist4 = (TH1D*)hist4->Clone("ratio_hist4");
         ratio_hist4->Divide(hist1);
-        ratio_hist4->SetLineColor(kGreen);
+        ratio_hist4->SetLineColor(kMagenta + 1);
         ratio_hist4->SetLineStyle(2);
+        ratio_hist4->SetStats(0);
         ratio_hist4->Draw("HIST SAME");
 
         legend = new TLegend(0.7, 0.7, 0.9, 0.9);
@@ -215,6 +217,9 @@ int main(int argc, char** argv) {
         legend->AddEntry(ratio_hist4, Form("Ratio [%g, %g]", range_low2, range_high2), "l");
         legend->Draw();
     }
+
+    // Adjust y-axis range for ratio plot
+    ratio_hist3->SetMaximum(0.3);
 
     // Save the ratio plot
     std::string ratio_output_filename = "output/rad_study/" + file2_identifier + "_" + branch_name + "_ratio.pdf";
