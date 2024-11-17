@@ -11,6 +11,10 @@
 #include <utility>
 #include <cmath>
 
+// Global Q² range variables
+const double Q2_MIN = 1.0;
+const double Q2_MAX = 2.0;
+
 // Helper function to format LaTeX-like input for ROOT titles
 std::string formatLatexString(const std::string& input) {
     std::string formatted = input;
@@ -110,20 +114,23 @@ int main(int argc, char** argv) {
 
     // Step 1: Find (runnum, evnum) pairs within the specified range(s) in file2
     std::unordered_set<std::pair<int, int>, pair_hash> matching_event_pairs1, matching_event_pairs2;
-    double branch_value;
+    double branch_value, Q2;
     int runnum, evnum;
     tree2->SetBranchAddress(branch_name, &branch_value);
+    tree2->SetBranchAddress("Q2", &Q2);
     tree2->SetBranchAddress("runnum", &runnum);
     tree2->SetBranchAddress("evnum", &evnum);
 
     Long64_t nEntries2 = tree2->GetEntries();
     for (Long64_t i = 0; i < nEntries2; ++i) {
         tree2->GetEntry(i);
-        if (branch_value >= range_low && branch_value <= range_high) {
-            matching_event_pairs1.emplace(runnum, evnum);
-        }
-        if (has_second_region && branch_value >= range_low2 && branch_value <= range_high2) {
-            matching_event_pairs2.emplace(runnum, evnum);
+        if (Q2 >= Q2_MIN && Q2 <= Q2_MAX) {
+            if (branch_value >= range_low && branch_value <= range_high) {
+                matching_event_pairs1.emplace(runnum, evnum);
+            }
+            if (has_second_region && branch_value >= range_low2 && branch_value <= range_high2) {
+                matching_event_pairs2.emplace(runnum, evnum);
+            }
         }
     }
 
@@ -134,11 +141,12 @@ int main(int argc, char** argv) {
     tree1->SetBranchAddress("runnum", &runnum);
     tree1->SetBranchAddress("evnum", &evnum);
     tree1->SetBranchAddress(branch_name, &branch_value);
+    tree1->SetBranchAddress("Q2", &Q2);
 
     Long64_t nEntries1 = tree1->GetEntries();
     for (Long64_t i = 0; i < nEntries1; ++i) {
         tree1->GetEntry(i);
-        if (branch_value >= ratio_lower_bound) {
+        if (Q2 >= Q2_MIN && Q2 <= Q2_MAX && branch_value >= ratio_lower_bound) {
             if (matching_event_pairs1.find({runnum, evnum}) != matching_event_pairs1.end()) {
                 hist3->Fill(branch_value);
             }
