@@ -12,8 +12,8 @@
 #include <cmath>
 
 // Global Q² range variables
-const double Q2_MIN = 4.0;
-const double Q2_MAX = 5.0;
+const double Q2_MIN = 1.0;
+const double Q2_MAX = 2.0;
 
 // Helper function to format LaTeX-like input for ROOT titles
 std::string formatLatexString(const std::string& input) {
@@ -227,7 +227,7 @@ int main(int argc, char** argv) {
     }
 
     // Adjust y-axis range for ratio plot
-    ratio_hist3->SetMaximum(0.3);
+    ratio_hist3->SetMaximum(0.1);
 
     // Save the ratio plot
     std::string ratio_output_filename = "output/rad_study/" + file2_identifier + "_" + branch_name + "_ratio.pdf";
