@@ -21,9 +21,9 @@ bool SingleHadronKinematicCuts::applyCuts(int currentFits, bool isMC) {
     string property = binNames[currentFits];
 
     if (*fiducial_status != 2) return false; // fiducial cuts
-    if (*Q2 < 1) return false;
-    if (*W < 2) return false;
-    if (*y > 0.8) return false;
+    // if (*Q2 < 1) return false;
+    // if (*W < 2) return false;
+    // if (*y > 0.8) return false;
 
     if (property == "integrated") {
       goodEvent = *Q2 > 1 && *W > 2 && *Mx2 > 1.8225 && *y < 0.80;
