@@ -12,8 +12,8 @@
 #include <cmath>
 
 // Global Q² range variables
-const double Q2_MIN = 1.0;
-const double Q2_MAX = 2.0;
+const double Q2_MIN = 4.0;
+const double Q2_MAX = 5.0;
 
 // Helper function to format LaTeX-like input for ROOT titles
 std::string formatLatexString(const std::string& input) {
