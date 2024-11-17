@@ -165,6 +165,11 @@ int main(int argc, char** argv) {
         }
     }
 
+    std::cout << "Entries in hist3: " << hist3->GetEntries() << std::endl;
+    if (has_second_region) {
+        std::cout << "Entries in hist4: " << hist4->GetEntries() << std::endl;
+    }
+
     // Normalize histograms
     if (integral1 > 0) {
         hist3->Scale(1.0 / integral1);
