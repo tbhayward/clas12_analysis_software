@@ -15,7 +15,7 @@
 const double Q2_MIN = 0.0;
 const double Q2_MAX = 12.0;
 const double y_MIN = 0.0;
-const double y_MAX = 1.0;
+const double y_MAX = 0.8;
 
 // Helper function to format LaTeX-like input for ROOT titles
 std::string formatLatexString(const std::string& input) {
