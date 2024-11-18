@@ -22,7 +22,7 @@ bool SingleHadronKinematicCuts::applyCuts(int currentFits, bool isMC) {
 
     if (*fiducial_status != 2) return false; // fiducial cuts
     if (*Q2 < 1) return false;
-    if (*W < 2) return false;
+    // if (*W < 2) return false;
     if (*y > 0.8) return false;
     if (property == "W") {
       goodEvent = true;
