@@ -19,6 +19,8 @@ const double y_MIN = 0.0;
 const double y_MAX = 0.8;
 const double W_MIN = 0;
 const double W_MAX = 10;
+const double Mx2_MIN = 0
+const double Mx2_MAX = 15;
 
 // Helper function to format LaTeX-like input for ROOT titles
 std::string formatLatexString(const std::string& input) {
@@ -93,7 +95,7 @@ int main(int argc, char** argv) {
     }
 
     // Create expressions for filtering based on Q² and y ranges
-    std::string filter_expr = Form("Q2 >= %f && Q2 <= %f && y >= %f && y <= %f && W >= %f && W <= %f", Q2_MIN, Q2_MAX, y_MIN, y_MAX, W_MIN, W_MAX);
+    std::string filter_expr = Form("Q2 >= %f && Q2 <= %f && y >= %f && y <= %f && W >= %f && W <= %f && Mx2 >= Mx2_MIN && Mx2 <= Mx2_MAX", Q2_MIN, Q2_MAX, y_MIN, y_MAX, W_MIN, W_MAX, Mx2_MIN, Mx2_MAX);
 
     // Create histograms for tree projections with the filtering conditions
     TH1D* hist1 = new TH1D("hist1", "", static_cast<int>(100 * 1.5), x_min, x_max);
@@ -122,6 +124,7 @@ int main(int argc, char** argv) {
     TTreeReaderValue<double> W_reader(reader, "W");
     TTreeReaderValue<double> Q2_reader(reader, "Q2");
     TTreeReaderValue<double> y_reader(reader, "y");
+    TTreeReaderValue<double> Mx2_reader(reader, "Mx2");
     TTreeReaderValue<double> branch_reader(reader, branch_name); // Dynamically handle branch_name
     TTreeReaderValue<int> runnum_reader(reader, "runnum");
     TTreeReaderValue<int> evnum_reader(reader, "evnum");
@@ -133,6 +136,7 @@ int main(int argc, char** argv) {
         double W_filter = *W_reader;
         double Q2_filter = *Q2_reader;
         double y_filter = *y_reader;
+        double Mx2_filter = *Mx2_reader;
         double branch_data = *branch_reader; // This dynamically links to branch_name
         int run = *runnum_reader;
         int event = *evnum_reader;
@@ -141,6 +145,7 @@ int main(int argc, char** argv) {
         bool passW = W_filter >= W_MIN && W_filter <= W_MAX;
         bool passQ2 = Q2_filter >= Q2_MIN && Q2_filter <= Q2_MAX;
         bool passY = y_filter >= y_MIN && y_filter <= y_MAX;
+        bool passMx2 = Mx2_filter >= Mx2_MIN && Mx2_filter <= Mx2_MAX;
 
         // Check if branch_data falls within the specified ranges
         if (branch_data >= range_low && branch_data <= range_high) {
@@ -168,6 +173,7 @@ int main(int argc, char** argv) {
         double W1 = *W_reader1;
         double Q21 = *Q2_reader1;
         double y1 = *y_reader1;
+        double Mx2_filter = *Mx2_reader;
         int run1 = *runnum_reader1;
         int event1 = *evnum_reader1;
 
@@ -175,8 +181,9 @@ int main(int argc, char** argv) {
         bool passW = W1 >= W_MIN && W1 <= W_MAX;
         bool passQ2 = Q21 >= Q2_MIN && Q21 <= Q2_MAX;
         bool passY = y1 >= y_MIN && y1 <= y_MAX;
+        bool passMx2 = Mx2_filter >= Mx2_MIN && Mx2_filter <= Mx2_MAX;
 
-        if (passW && passQ2 && passY && branch_data1 >= ratio_lower_bound) {
+        if (passW && passQ2 && passY && passMx2 && branch_data1 >= ratio_lower_bound) {
             if (matching_event_pairs1.find({run1, event1}) != matching_event_pairs1.end()) {
                 hist3->Fill(branch_data1);
             }
@@ -257,7 +264,7 @@ int main(int argc, char** argv) {
     }
 
     // Adjust y-axis range for ratio plot
-    ratio_hist3->SetMaximum(0.2);
+    ratio_hist3->SetMaximum(0.25);
 
     // Save the ratio plot
     std::string ratio_output_filename = "output/rad_study/" + file2_identifier + "_" + branch_name + "_ratio.pdf";
