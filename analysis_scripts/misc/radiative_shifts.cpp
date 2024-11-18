@@ -13,7 +13,7 @@
 #include <cmath>
 
 // Global Q² and y range variables
-const double Q2_MIN = 1.0;
+const double Q2_MIN = 0.0;
 const double Q2_MAX = 12.0;
 const double y_MIN = 0.0;
 const double y_MAX = 0.8;
@@ -142,15 +142,12 @@ int main(int argc, char** argv) {
         bool passQ2 = Q2_filter >= Q2_MIN && Q2_filter <= Q2_MAX;
         bool passY = y_filter >= y_MIN && y_filter <= y_MAX;
 
-        // if (passW && passQ2 && passY) {
-        if (true) {
-            // Check if branch_data falls within the specified ranges
-            if (branch_data >= range_low && branch_data <= range_high) {
-                matching_event_pairs1.emplace(run, event);
-            }
-            if (has_second_region && branch_data >= range_low2 && branch_data <= range_high2) {
-                matching_event_pairs2.emplace(run, event);
-            }
+        // Check if branch_data falls within the specified ranges
+        if (branch_data >= range_low && branch_data <= range_high) {
+            matching_event_pairs1.emplace(run, event);
+        }
+        if (has_second_region && branch_data >= range_low2 && branch_data <= range_high2) {
+            matching_event_pairs2.emplace(run, event);
         }
     }
 
