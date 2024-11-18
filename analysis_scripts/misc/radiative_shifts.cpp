@@ -118,40 +118,35 @@ int main(int argc, char** argv) {
 
     // Step 1: Find (runnum, evnum) pairs within the specified range(s) in file2
     std::unordered_set<std::pair<int, int>, pair_hash> matching_event_pairs1, matching_event_pairs2;
-    double branch_value = 0.0, Q2 = 0.0, y = 0.0, W_filter = 0.0; // Separate W for filtering
+    double branch_value = 0.0, W_filter = 0.0, Q2 = 0.0, y = 0.0;
     int runnum, evnum;
 
-    // Dynamically attach branch_name to branch_value and set other variables as needed
-    tree2->SetBranchAddress(branch_name, &branch_value);
+    tree2->SetBranchAddress(branch_name, &branch_value); // General plotting variable
+    tree2->SetBranchAddress("W", &W_filter);            // Specific filtering variable
     tree2->SetBranchAddress("Q2", &Q2);
     tree2->SetBranchAddress("y", &y);
-    tree2->SetBranchAddress("W", &W_filter); // Explicitly use W_filter for filtering
     tree2->SetBranchAddress("runnum", &runnum);
     tree2->SetBranchAddress("evnum", &evnum);
-
-    std::cout << "Verifying W data..." << std::endl;
-    Long64_t entriesToCheck = 100; // Check the first 100 entries
-    for (Long64_t i = 0; i < entriesToCheck; ++i) {
-        tree2->GetEntry(i);
-        std::cout << "Entry: " << i
-                  << ", W_filter: " << W_filter
-                  << ", branch_value (" << branch_name << "): " << branch_value
-                  << std::endl;
-    }
 
     Long64_t nEntries2 = tree2->GetEntries();
     for (Long64_t i = 0; i < nEntries2; ++i) {
         tree2->GetEntry(i);
-        // Apply filters using independent variables
-        // if (Q2 >= Q2_MIN && Q2 <= Q2_MAX && y >= y_MIN && y <= y_MAX && W_filter >= W_MIN && W_filter <= W_MAX) {
+
+        bool passW = W_filter >= W_MIN && W_filter <= W_MAX;
+        bool passQ2 = Q2 >= Q2_MIN && Q2 <= Q2_MAX;
+        bool passY = y >= y_MIN && y <= y_MAX;
+
+        if (passW && passQ2 && passY) {
             if (branch_value >= range_low && branch_value <= range_high) {
                 matching_event_pairs1.emplace(runnum, evnum);
             }
             if (has_second_region && branch_value >= range_low2 && branch_value <= range_high2) {
                 matching_event_pairs2.emplace(runnum, evnum);
             }
-        // }
+        }
     }
+
+    std::cout << "Finished filtering. Matching events: " << matching_event_pairs1.size() << std::endl;
 
     // Step 2: Record positions of matching events in file1 starting from ratio_lower_bound
     TH1D* hist3 = new TH1D("hist3", "", static_cast<int>(100 * 1.5), x_min, x_max);
