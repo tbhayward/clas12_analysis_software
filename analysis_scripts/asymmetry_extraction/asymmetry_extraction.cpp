@@ -250,8 +250,8 @@ int main(int argc, char *argv[]) {
   currentFits=0;
   dataReader.Restart(); mcReader.Restart();
 
-  // for (size_t i = 0; i < allBins.size(); ++i) {
-  //   cout << "-- Beginning kinematic fits." << endl;
+  for (size_t i = 0; i < allBins.size(); ++i) {
+    cout << "-- Beginning kinematic fits." << endl;
 
   //   if (cpp != 1) {
   //       // Calculate the dilution factors for the current bin
