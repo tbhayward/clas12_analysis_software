@@ -118,22 +118,22 @@ int main(int argc, char** argv) {
 
     // Step 1: Find (runnum, evnum) pairs within the specified range(s) in file2
     std::unordered_set<std::pair<int, int>, pair_hash> matching_event_pairs1, matching_event_pairs2;
-    double branch_value = 0.0, W = 0.0, Q2 = 0.0, y = 0.0; // Declare all necessary variables
+    double branch_value = 0.0, Q2 = 0.0, y = 0.0, W_filter = 0.0; // Separate W for filtering
     int runnum, evnum;
 
-    // Dynamically attach the branch_name to branch_value, and other bounds branches as needed
+    // Dynamically attach branch_name to branch_value and set other variables as needed
     tree2->SetBranchAddress(branch_name, &branch_value);
-    if (std::string(branch_name) != "W") tree2->SetBranchAddress("W", &W);
-    if (std::string(branch_name) != "Q2") tree2->SetBranchAddress("Q2", &Q2);
-    if (std::string(branch_name) != "y") tree2->SetBranchAddress("y", &y);
+    tree2->SetBranchAddress("Q2", &Q2);
+    tree2->SetBranchAddress("y", &y);
+    tree2->SetBranchAddress("W", &W_filter); // Explicitly use W_filter for filtering
     tree2->SetBranchAddress("runnum", &runnum);
     tree2->SetBranchAddress("evnum", &evnum);
 
     Long64_t nEntries2 = tree2->GetEntries();
     for (Long64_t i = 0; i < nEntries2; ++i) {
         tree2->GetEntry(i);
-        // Apply bounds only to the relevant variables
-        if (Q2 >= Q2_MIN && Q2 <= Q2_MAX && y >= y_MIN && y <= y_MAX && W >= W_MIN && W <= W_MAX) {
+        // Apply filters using independent variables
+        if (Q2 >= Q2_MIN && Q2 <= Q2_MAX && y >= y_MIN && y <= y_MAX && W_filter >= W_MIN && W_filter <= W_MAX) {
             if (branch_value >= range_low && branch_value <= range_high) {
                 matching_event_pairs1.emplace(runnum, evnum);
             }
@@ -147,18 +147,19 @@ int main(int argc, char** argv) {
     TH1D* hist3 = new TH1D("hist3", "", static_cast<int>(100 * 1.5), x_min, x_max);
     TH1D* hist4 = has_second_region ? new TH1D("hist4", "", static_cast<int>(100 * 1.5), x_min, x_max) : nullptr;
 
-    // Dynamically attach the branch_name to branch_value, and other bounds branches as needed
     tree1->SetBranchAddress(branch_name, &branch_value);
-    if (std::string(branch_name) != "W") tree1->SetBranchAddress("W", &W);
-    if (std::string(branch_name) != "Q2") tree1->SetBranchAddress("Q2", &Q2);
-    if (std::string(branch_name) != "y") tree1->SetBranchAddress("y", &y);
+    tree1->SetBranchAddress("Q2", &Q2);
+    tree1->SetBranchAddress("y", &y);
+    tree1->SetBranchAddress("W", &W_filter); // Explicitly use W_filter for filtering
     tree1->SetBranchAddress("runnum", &runnum);
     tree1->SetBranchAddress("evnum", &evnum);
 
     Long64_t nEntries1 = tree1->GetEntries();
     for (Long64_t i = 0; i < nEntries1; ++i) {
         tree1->GetEntry(i);
-        if (Q2 >= Q2_MIN && Q2 <= Q2_MAX && y >= y_MIN && y <= y_MAX && W >= W_MIN && W <= W_MAX && branch_value >= ratio_lower_bound) {
+        // Apply the same filters using W_filter and branch_value
+        if (Q2 >= Q2_MIN && Q2 <= Q2_MAX && y >= y_MIN && y <= y_MAX && W_filter >= W_MIN && W_filter <= W_MAX &&
+            branch_value >= ratio_lower_bound) {
             if (matching_event_pairs1.find({runnum, evnum}) != matching_event_pairs1.end()) {
                 hist3->Fill(branch_value);
             }
