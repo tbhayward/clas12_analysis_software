@@ -123,6 +123,7 @@ int main(int argc, char** argv) {
     tree2->SetBranchAddress(branch_name, &branch_value);
     tree2->SetBranchAddress("Q2", &Q2);
     tree2->SetBranchAddress("y", &y);
+    tree2->SetBranchAddress("W", &W);
     tree2->SetBranchAddress("runnum", &runnum);
     tree2->SetBranchAddress("evnum", &evnum);
 
