@@ -116,61 +116,75 @@ int main(int argc, char** argv) {
     hist1->SetStats(0);
     hist2->SetStats(0);
 
-    // Step 1: Find (runnum, evnum) pairs within the specified range(s) in file2
+    // Step 1: Set up TTreeReader
+    TTreeReader reader(tree2);
+    TTreeReaderValue<double> W_reader(reader, "W");
+    TTreeReaderValue<double> Q2_reader(reader, "Q2");
+    TTreeReaderValue<double> y_reader(reader, "y");
+    TTreeReaderValue<double> branch_reader(reader, branch_name); // Dynamically handle branch_name
+    TTreeReaderValue<int> runnum_reader(reader, "runnum");
+    TTreeReaderValue<int> evnum_reader(reader, "evnum");
+
+    // Step 2: Iterate over entries in tree2
     std::unordered_set<std::pair<int, int>, pair_hash> matching_event_pairs1, matching_event_pairs2;
-    double branch_value = 0.0, W_filter = 0.0, Q2 = 0.0, y = 0.0;
-    int runnum, evnum;
 
-    tree2->SetBranchAddress(branch_name, &branch_value); // General plotting variable
-    tree2->SetBranchAddress("W", &W_filter);            // Specific filtering variable
-    tree2->SetBranchAddress("Q2", &Q2);
-    tree2->SetBranchAddress("y", &y);
-    tree2->SetBranchAddress("runnum", &runnum);
-    tree2->SetBranchAddress("evnum", &evnum);
+    while (reader.Next()) {
+        double W_filter = *W_reader;
+        double Q2_filter = *Q2_reader;
+        double y_filter = *y_reader;
+        double branch_data = *branch_reader; // This dynamically links to branch_name
+        int run = *runnum_reader;
+        int event = *evnum_reader;
 
-    Long64_t nEntries2 = tree2->GetEntries();
-    for (Long64_t i = 0; i < nEntries2; ++i) {
-        tree2->GetEntry(i);
-
+        // Apply the required cuts
         bool passW = W_filter >= W_MIN && W_filter <= W_MAX;
-        bool passQ2 = Q2 >= Q2_MIN && Q2 <= Q2_MAX;
-        bool passY = y >= y_MIN && y <= y_MAX;
+        bool passQ2 = Q2_filter >= Q2_MIN && Q2_filter <= Q2_MAX;
+        bool passY = y_filter >= y_MIN && y_filter <= y_MAX;
 
         if (passW && passQ2 && passY) {
-            if (branch_value >= range_low && branch_value <= range_high) {
-                matching_event_pairs1.emplace(runnum, evnum);
+            // Check if branch_data falls within the specified ranges
+            if (branch_data >= range_low && branch_data <= range_high) {
+                matching_event_pairs1.emplace(run, event);
             }
-            if (has_second_region && branch_value >= range_low2 && branch_value <= range_high2) {
-                matching_event_pairs2.emplace(runnum, evnum);
+            if (has_second_region && branch_data >= range_low2 && branch_data <= range_high2) {
+                matching_event_pairs2.emplace(run, event);
             }
         }
     }
 
-    std::cout << "Finished filtering. Matching events: " << matching_event_pairs1.size() << std::endl;
+    // Step 3: Create histograms for file1 based on matching events
+    TTreeReader reader1(tree1);
+    TTreeReaderValue<double> branch_reader1(reader1, branch_name); // Dynamically handle branch_name
+    TTreeReaderValue<int> runnum_reader1(reader1, "runnum");
+    TTreeReaderValue<int> evnum_reader1(reader1, "evnum");
+    TTreeReaderValue<double> W_reader1(reader1, "W");
+    TTreeReaderValue<double> Q2_reader1(reader1, "Q2");
+    TTreeReaderValue<double> y_reader1(reader1, "y");
 
-    // Step 2: Record positions of matching events in file1 starting from ratio_lower_bound
     TH1D* hist3 = new TH1D("hist3", "", static_cast<int>(100 * 1.5), x_min, x_max);
     TH1D* hist4 = has_second_region ? new TH1D("hist4", "", static_cast<int>(100 * 1.5), x_min, x_max) : nullptr;
 
-    tree1->SetBranchAddress(branch_name, &branch_value);
-    tree1->SetBranchAddress("Q2", &Q2);
-    tree1->SetBranchAddress("y", &y);
-    tree1->SetBranchAddress("W", &W_filter); // Explicitly use W_filter for filtering
-    tree1->SetBranchAddress("runnum", &runnum);
-    tree1->SetBranchAddress("evnum", &evnum);
+    while (reader1.Next()) {
+        double branch_data1 = *branch_reader1;
+        double W1 = *W_reader1;
+        double Q21 = *Q2_reader1;
+        double y1 = *y_reader1;
+        int run1 = *runnum_reader1;
+        int event1 = *evnum_reader1;
 
-    Long64_t nEntries1 = tree1->GetEntries();
-    for (Long64_t i = 0; i < nEntries1; ++i) {
-        tree1->GetEntry(i);
-        // Apply the same filters using W_filter and branch_value
-        // if (Q2 >= Q2_MIN && Q2 <= Q2_MAX && y >= y_MIN && y <= y_MAX && W_filter >= W_MIN && W_filter <= W_MAX && branch_value >= ratio_lower_bound) {
-            if (matching_event_pairs1.find({runnum, evnum}) != matching_event_pairs1.end()) {
-                hist3->Fill(branch_value);
+        // Apply cuts for file1
+        bool passW = W1 >= W_MIN && W1 <= W_MAX;
+        bool passQ2 = Q21 >= Q2_MIN && Q21 <= Q2_MAX;
+        bool passY = y1 >= y_MIN && y1 <= y_MAX;
+
+        if (passW && passQ2 && passY && branch_data1 >= ratio_lower_bound) {
+            if (matching_event_pairs1.find({run1, event1}) != matching_event_pairs1.end()) {
+                hist3->Fill(branch_data1);
             }
-            if (has_second_region && matching_event_pairs2.find({runnum, evnum}) != matching_event_pairs2.end()) {
-                hist4->Fill(branch_value);
+            if (has_second_region && matching_event_pairs2.find({run1, event1}) != matching_event_pairs2.end()) {
+                hist4->Fill(branch_data1);
             }
-        // }
+        }
     }
 
     // Normalize histograms
