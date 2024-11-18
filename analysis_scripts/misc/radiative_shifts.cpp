@@ -16,7 +16,7 @@ const double Q2_MIN = 1.0;
 const double Q2_MAX = 12.0;
 const double y_MIN = 0.0;
 const double y_MAX = 0.8;
-const double W_MIN = 2;
+const double W_MIN = 0;
 const double W_MAX = 10;
 
 // Helper function to format LaTeX-like input for ROOT titles
