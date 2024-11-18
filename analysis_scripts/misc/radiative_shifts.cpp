@@ -4,6 +4,7 @@
 #include <TCanvas.h>
 #include <TLegend.h>
 #include <TApplication.h>
+#include <TTreeReader.h>
 #include <iostream>
 #include <string>
 #include <regex>
