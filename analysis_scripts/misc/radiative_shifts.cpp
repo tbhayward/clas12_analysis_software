@@ -12,7 +12,7 @@
 #include <cmath>
 
 // Global Q² and y range variables
-const double Q2_MIN = 0.0;
+const double Q2_MIN = 1.0;
 const double Q2_MAX = 12.0;
 const double y_MIN = 0.0;
 const double y_MAX = 0.8;
