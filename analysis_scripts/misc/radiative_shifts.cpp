@@ -130,7 +130,7 @@ int main(int argc, char** argv) {
     tree2->SetBranchAddress("evnum", &evnum);
 
     std::cout << "Verifying W data..." << std::endl;
-    Long64_t entriesToCheck = std::min(nEntries2, 100L); // Check the first 100 entries
+    Long64_t entriesToCheck = 100; // Check the first 100 entries
     for (Long64_t i = 0; i < entriesToCheck; ++i) {
         tree2->GetEntry(i);
         std::cout << "Entry: " << i
