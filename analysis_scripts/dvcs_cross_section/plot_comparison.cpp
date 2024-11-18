@@ -31,6 +31,7 @@ void ensure_directory_exists(const std::string &path) {
 }
 
 // Helper function to read data from the first CSV file format
+// Helper function to read data from the first CSV file format
 std::vector<BinData> read_csv_first(const std::string &file_path) {
     std::vector<BinData> bins;
     std::ifstream file(file_path);
@@ -80,14 +81,11 @@ std::vector<BinData> read_csv_first(const std::string &file_path) {
         std::getline(ss, value, ','); // phiavg
         bin.phiavg = std::stod(value);
 
-        // Skip intermediate columns until reaching "signal yield, ep->epg, exp, inbending"
-        for (int i = 0; i < 21; ++i) std::getline(ss, value, ',');
+        // Skip intermediate columns until reaching "acceptance corrected yield, ep->epg, exp"
+        for (int i = 0; i < 32; ++i) std::getline(ss, value, ',');
 
-        std::getline(ss, value, ','); // signal yield, ep->epg, exp, inbending
-        bin.unfolded_yield_inbending = std::stod(value);
-
-        std::getline(ss, value, ','); // signal yield, ep->epg, exp, outbending
-        bin.unfolded_yield_outbending = std::stod(value);
+        std::getline(ss, value, ','); // Acceptance corrected yield
+        bin.unfolded_yield_inbending = std::stod(value); // Store as a single total yield
 
         bins.push_back(bin);
     }
@@ -143,12 +141,15 @@ std::vector<BinData> read_csv_second(const std::string &file_path, const std::ve
         bin.phiavg = std::stod(value);
 
         for (int i = 0; i < 5; ++i) std::getline(ss, value, ',');
-        std::getline(ss, value, ','); // ep->e'pgamma unfolded_yield_Fa18Inb
-        bin.unfolded_yield_inbending = std::stod(value);
+        std::getline(ss, value, ','); // Unfolded yield (inbending)
+        double unfolded_yield_inbending = std::stod(value);
 
         for (int i = 0; i < 5; ++i) std::getline(ss, value, ',');
-        std::getline(ss, value, ','); // ep->e'pgamma unfolded_yield_Fa18Out
-        bin.unfolded_yield_outbending = std::stod(value);
+        std::getline(ss, value, ','); // Unfolded yield (outbending)
+        double unfolded_yield_outbending = std::stod(value);
+
+        // Store the sum of inbending and outbending as the total yield
+        bin.unfolded_yield_inbending = unfolded_yield_inbending + unfolded_yield_outbending;
 
         bins.push_back(bin);
         index++;
@@ -179,109 +180,115 @@ std::vector<BinData> filter_data_by_xB(const std::vector<BinData> &data, const s
 
 // Plotting function for each xB bin with comparison between inbending and outbending datasets
 void plot_for_xB_bin(const std::vector<BinData> &data_first, const std::vector<BinData> &data_second, int xB_index) {
-    for (const std::string &type : {"Inb", "Out"}) {
-        bool is_inbending = (type == "Inb");
+    // Step 1: Identify unique (Q2min, Q2max, tmin, tmax) bins in the first dataset
+    std::map<std::tuple<double, double, double, double>, std::vector<BinData>> qt_bins_first, qt_bins_second;
 
-        // Step 1: Identify unique (Q2min, Q2max, tmin, tmax) bins for the current dataset
-        std::map<std::tuple<double, double, double, double>, std::vector<BinData>> qt_bins_first, qt_bins_second;
-
-        // Populate qt_bins_first and qt_bins_second based on the chosen dataset
-        for (const auto &bin : data_first) {
-            auto key = std::make_tuple(bin.Q2min, bin.Q2max, bin.tmin, bin.tmax);
-            qt_bins_first[key].push_back(bin);
-        }
-        for (const auto &bin : data_second) {
-            auto key = std::make_tuple(bin.Q2min, bin.Q2max, bin.tmin, bin.tmax);
-            qt_bins_second[key].push_back(bin);
-        }
-
-        int num_plots = qt_bins_first.size();
-        int grid_size = std::ceil(std::sqrt(num_plots));
-
-        if ((xB_index == 3 || xB_index == 4) && grid_size * (grid_size - 1) >= num_plots) {
-            grid_size -= 1;
-        }
-
-        // Step 3: Calculate the maximum yield value across both datasets for y-axis scaling
-        double max_yield = 0.0;
-        for (const auto &bin : data_first) {
-            double yield = is_inbending ? bin.unfolded_yield_inbending : bin.unfolded_yield_outbending;
-            if (yield > max_yield) max_yield = yield;
-        }
-        for (const auto &bin : data_second) {
-            double yield = is_inbending ? bin.unfolded_yield_inbending : bin.unfolded_yield_outbending;
-            if (yield > max_yield) max_yield = yield;
-        }
-
-        double y_min = 0.1;
-        double y_max = 1.1 * max_yield;
-
-        TCanvas canvas("canvas", "Cross Check", 1200, 1200);
-        canvas.Divide(grid_size, grid_size, 0.02, 0.02);
-
-        int plot_index = 1;
-        for (const auto &[qt_key, bins_first] : qt_bins_first) {
-            canvas.cd(plot_index);
-            gPad->SetLeftMargin(0.15);
-            gPad->SetBottomMargin(0.15);
-            gPad->SetLogy();
-
-            std::vector<double> phi_values_first, yields_first, phi_errors_first;
-            for (const auto &bin : bins_first) {
-                phi_values_first.push_back(bin.phiavg);
-                double yield = is_inbending ? bin.unfolded_yield_inbending : bin.unfolded_yield_outbending;
-                yields_first.push_back(yield);
-                
-                // Calculate half-width of the phi bin for horizontal error bars
-                double phi_bin_width = (bin.phimax - bin.phimin) / 2.0;
-                phi_errors_first.push_back(phi_bin_width);
-            }
-
-            TGraphErrors *graph_first = new TGraphErrors(phi_values_first.size(), &phi_values_first[0], &yields_first[0], &phi_errors_first[0], nullptr);
-            graph_first->SetMarkerStyle(20);
-            graph_first->SetMarkerColor(kBlue);
-
-            auto it_second = qt_bins_second.find(qt_key);
-            if (it_second != qt_bins_second.end()) {
-                const auto &bins_second = it_second->second;
-                std::vector<double> phi_values_second, yields_second, phi_errors_second;
-
-                for (const auto &bin : bins_second) {
-                    phi_values_second.push_back(bin.phiavg);
-                    double yield = is_inbending ? bin.unfolded_yield_inbending : bin.unfolded_yield_outbending;
-                    yields_second.push_back(yield);
-                    double phi_bin_width = (bin.phimax - bin.phimin) / 2.0;
-                    phi_errors_second.push_back(phi_bin_width);
-                }
-
-                TGraphErrors *graph_second = new TGraphErrors(phi_values_second.size(), &phi_values_second[0], &yields_second[0], &phi_errors_second[0], nullptr);
-                graph_second->SetMarkerStyle(21);
-                graph_second->SetMarkerColor(kRed);
-
-                graph_first->Draw("AP");
-                graph_second->Draw("P SAME");
-            } else {
-                graph_first->Draw("AP");
-            }
-
-            double xB_avg = bins_first[0].xBavg;
-            double Q2avg = bins_first[0].Q2avg;
-            double tavg = bins_first[0].tavg;
-            graph_first->SetTitle(Form("%s: x_{B} = %.2f, Q^{2} = %.2f, -t = %.2f", type.c_str(), xB_avg, Q2avg, tavg));
-
-            graph_first->GetXaxis()->SetTitle("#phi");
-            graph_first->GetYaxis()->SetTitle("Unfolded Yield");
-            graph_first->GetXaxis()->SetLabelSize(0.04);
-            graph_first->GetYaxis()->SetLabelSize(0.04);
-            graph_first->GetYaxis()->SetRangeUser(y_min, y_max);
-
-            plot_index++;
-        }
-
-        std::string save_path = Form("output/cross_check/RGAFa18%s/rga_fa18_%s_cross_check_xB_%d.pdf", type.c_str(), type.c_str(), xB_index);
-        ensure_directory_exists("output/cross_check/RGAFa18" + type);
-        canvas.SaveAs(save_path.c_str());
+    // Populate qt_bins_first and qt_bins_second
+    for (const auto &bin : data_first) {
+        auto key = std::make_tuple(bin.Q2min, bin.Q2max, bin.tmin, bin.tmax);
+        qt_bins_first[key].push_back(bin);
     }
+    for (const auto &bin : data_second) {
+        auto key = std::make_tuple(bin.Q2min, bin.Q2max, bin.tmin, bin.tmax);
+        qt_bins_second[key].push_back(bin);
+    }
+
+    // Step 2: Determine the grid size for subplots based on the first dataset's bins
+    int num_plots = qt_bins_first.size();
+    int grid_size = std::ceil(std::sqrt(num_plots));
+
+    // Adjust grid size for canvas layout (for specified canvases _3 and _4)
+    if ((xB_index == 3 || xB_index == 4) && grid_size * (grid_size - 1) >= num_plots) {
+        grid_size -= 1;
+    }
+
+    // Step 3: Calculate the maximum yield value across both datasets for y-axis scaling
+    double max_yield = 0.0;
+    for (const auto &bin : data_first) {
+        if (bin.unfolded_yield_inbending > max_yield) {
+            max_yield = bin.unfolded_yield_inbending;
+        }
+    }
+    for (const auto &bin : data_second) {
+        if (bin.unfolded_yield_inbending > max_yield) {
+            max_yield = bin.unfolded_yield_inbending;
+        }
+    }
+
+    // Set the y-axis range
+    double y_min = 0.1;
+    double y_max = 1.1 * max_yield;
+
+    TCanvas canvas("canvas", "Cross Check", 1200, 1200);
+    canvas.Divide(grid_size, grid_size, 0.02, 0.02); // Small padding between pads
+
+    int plot_index = 1;
+    for (const auto &[qt_key, bins_first] : qt_bins_first) {
+        canvas.cd(plot_index);
+        gPad->SetLeftMargin(0.15);  // Adds padding to the left
+        gPad->SetBottomMargin(0.15); // Adds padding to the bottom
+        gPad->SetLogy();  // Set log scale for the y-axis
+
+        // Prepare vectors for the first dataset
+        std::vector<double> phi_values_first, yields_first, phi_errors_first;
+        for (const auto &bin : bins_first) {
+            phi_values_first.push_back(bin.phiavg);
+            yields_first.push_back(bin.unfolded_yield_inbending); // Use total yield
+            double phi_bin_width = (bin.phimax - bin.phimin) / 2.0; // Calculate half-width of the phi bin
+            phi_errors_first.push_back(phi_bin_width);
+        }
+
+        // Create TGraphErrors for the first dataset (blue)
+        TGraphErrors *graph_first = new TGraphErrors(phi_values_first.size(), &phi_values_first[0], &yields_first[0], &phi_errors_first[0], nullptr);
+        graph_first->SetMarkerStyle(20);
+        graph_first->SetMarkerColor(kBlue);
+
+        // Prepare and plot the second dataset only if there’s a matching key
+        auto it_second = qt_bins_second.find(qt_key);
+        if (it_second != qt_bins_second.end()) {
+            const auto &bins_second = it_second->second;
+            std::vector<double> phi_values_second, yields_second, phi_errors_second;
+
+            for (const auto &bin : bins_second) {
+                phi_values_second.push_back(bin.phiavg);
+                yields_second.push_back(bin.unfolded_yield_inbending); // Use total yield
+                double phi_bin_width = (bin.phimax - bin.phimin) / 2.0;
+                phi_errors_second.push_back(phi_bin_width);
+            }
+
+            // Create TGraphErrors for the second dataset (red)
+            TGraphErrors *graph_second = new TGraphErrors(phi_values_second.size(), &phi_values_second[0], &yields_second[0], &phi_errors_second[0], nullptr);
+            graph_second->SetMarkerStyle(21);
+            graph_second->SetMarkerColor(kRed);
+
+            // Draw both graphs with legends for comparison
+            graph_first->Draw("AP");
+            graph_second->Draw("P SAME");
+        } else {
+            // If no matching (Q2, t) bin in the second dataset, draw only the first dataset graph
+            graph_first->Draw("AP");
+        }
+
+        // Customize title and axis labels directly from data (no averaging needed)
+        double xB_avg = bins_first[0].xBavg;
+        double Q2avg = bins_first[0].Q2avg;
+        double tavg = bins_first[0].tavg;
+        graph_first->SetTitle(Form("x_{B} = %.2f, Q^{2} = %.2f, -t = %.2f", xB_avg, Q2avg, tavg));
+
+        // Adjust axis labels and range
+        graph_first->GetXaxis()->SetTitle("#phi");
+        graph_first->GetYaxis()->SetTitle("Unfolded Yield");
+        graph_first->GetXaxis()->SetLabelSize(0.04); // Increased font size
+        graph_first->GetYaxis()->SetLabelSize(0.04); // Increased font size
+        graph_first->GetYaxis()->SetRangeUser(y_min, y_max);  // Set y-axis range
+
+        plot_index++;
+    }
+
+    // Save the canvas
+    std::string save_path = Form("output/cross_check/RGAFa18/rga_fa18_cross_check_xB_%d.pdf", xB_index);
+    ensure_directory_exists("output/cross_check/RGAFa18");
+    canvas.SaveAs(save_path.c_str());
 }
 
 // Main function to control the import, processing, and debug output

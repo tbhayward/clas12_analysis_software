@@ -16,8 +16,7 @@ struct BinData {
     double Q2min, Q2max, Q2avg;
     double tmin, tmax, tavg;
     double phimin, phimax, phiavg;
-    double unfolded_yield_inbending;
-    double unfolded_yield_outbending;
+    double unfolded_yield_inbending; // Now holds total yield
 };
 
 // Primary function to manage reading, processing, and plotting of bin data
@@ -37,6 +36,6 @@ std::vector<std::pair<double, double>> find_unique_xB_bins(const std::vector<Bin
 std::vector<BinData> filter_data_by_xB(const std::vector<BinData> &data, const std::pair<double, double> &xB_range);
 
 // Function to plot data for a specific xB bin with aesthetic enhancements and comparison between two datasets
-void plot_for_xB_bin(const std::vector<BinData> &data_first, const std::vector<BinData> &data_second, int xB_index, const std::string &type);
+void plot_for_xB_bin(const std::vector<BinData> &data_first, const std::vector<BinData> &data_second, int xB_index);
 
 #endif // PLOT_COMPARISON_H
