@@ -129,6 +129,16 @@ int main(int argc, char** argv) {
     tree2->SetBranchAddress("runnum", &runnum);
     tree2->SetBranchAddress("evnum", &evnum);
 
+    std::cout << "Verifying W data..." << std::endl;
+    Long64_t entriesToCheck = std::min(nEntries2, 100L); // Check the first 100 entries
+    for (Long64_t i = 0; i < entriesToCheck; ++i) {
+        tree2->GetEntry(i);
+        std::cout << "Entry: " << i
+                  << ", W_filter: " << W_filter
+                  << ", branch_value (" << branch_name << "): " << branch_value
+                  << std::endl;
+    }
+
     Long64_t nEntries2 = tree2->GetEntries();
     for (Long64_t i = 0; i < nEntries2; ++i) {
         tree2->GetEntry(i);
