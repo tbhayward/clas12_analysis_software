@@ -31,11 +31,17 @@
 
 
 // Fractional charge values for Total
-const double xAtotal = 0.72104;
-const double xCtotal = 0.07181;
-const double xCHtotal = 0.03746;
-const double xHetotal = 0.07688;
-const double xftotal = 0.09280;
+// const double xAtotal = 0.72104;
+// const double xCtotal = 0.07181;
+// const double xCHtotal = 0.03746;
+// const double xHetotal = 0.07688;
+// const double xftotal = 0.09280;
+
+const double xAtotal = 0.1538;
+const double xCtotal = 0.0617;
+const double xCHtotal = 0.0647;
+const double xHetotal = 0.1477;
+const double xftotal = 0.5719;
 
 // Fractional charge values for Period 1
 const double xAperiod_1 = 0.17469;
