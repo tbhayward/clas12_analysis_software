@@ -14,8 +14,8 @@
 // Global Q², W, and y range variables
 const double Q2_MIN = 0.0;
 const double Q2_MAX = 12.0;
-const double W_MIN = 0.0;
-const double W_MAX = 5.0;
+const double W_MIN = -1e6;
+const double W_MAX = 1e6;
 const double y_MIN = 0.0;
 const double y_MAX = 0.8;
 
