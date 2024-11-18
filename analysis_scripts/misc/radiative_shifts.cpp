@@ -128,6 +128,22 @@ int main(int argc, char** argv) {
     tree2->SetBranchAddress("runnum", &runnum);
     tree2->SetBranchAddress("evnum", &evnum);
 
+    double W_min_actual = std::numeric_limits<double>::max();
+    double W_max_actual = -std::numeric_limits<double>::max();
+    double y_min_actual = std::numeric_limits<double>::max();
+    double y_max_actual = -std::numeric_limits<double>::max();
+
+    for (Long64_t i = 0; i < tree2->GetEntries(); ++i) {
+        tree2->GetEntry(i);
+        if (W < W_min_actual) W_min_actual = W;
+        if (W > W_max_actual) W_max_actual = W;
+        if (y < y_min_actual) y_min_actual = y;
+        if (y > y_max_actual) y_max_actual = y;
+    }
+
+    std::cout << "Actual W range: [" << W_min_actual << ", " << W_max_actual << "]" << std::endl;
+    std::cout << "Actual y range: [" << y_min_actual << ", " << y_max_actual << "]" << std::endl;
+
     Long64_t nEntries2 = tree2->GetEntries();
     for (Long64_t i = 0; i < nEntries2; ++i) {
         tree2->GetEntry(i);
