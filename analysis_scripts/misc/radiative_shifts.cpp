@@ -16,7 +16,7 @@ const double Q2_MIN = 1.0;
 const double Q2_MAX = 12.0;
 const double y_MIN = 0.0;
 const double y_MAX = 0.8;
-const double W_MIN = 0;
+const double W_MIN = 2;
 const double W_MAX = 10;
 
 // Helper function to format LaTeX-like input for ROOT titles
@@ -133,14 +133,14 @@ int main(int argc, char** argv) {
     for (Long64_t i = 0; i < nEntries2; ++i) {
         tree2->GetEntry(i);
         // Apply filters using independent variables
-        if (Q2 >= Q2_MIN && Q2 <= Q2_MAX && y >= y_MIN && y <= y_MAX && W_filter >= W_MIN && W_filter <= W_MAX) {
+        // if (Q2 >= Q2_MIN && Q2 <= Q2_MAX && y >= y_MIN && y <= y_MAX && W_filter >= W_MIN && W_filter <= W_MAX) {
             if (branch_value >= range_low && branch_value <= range_high) {
                 matching_event_pairs1.emplace(runnum, evnum);
             }
             if (has_second_region && branch_value >= range_low2 && branch_value <= range_high2) {
                 matching_event_pairs2.emplace(runnum, evnum);
             }
-        }
+        // }
     }
 
     // Step 2: Record positions of matching events in file1 starting from ratio_lower_bound
@@ -158,15 +158,14 @@ int main(int argc, char** argv) {
     for (Long64_t i = 0; i < nEntries1; ++i) {
         tree1->GetEntry(i);
         // Apply the same filters using W_filter and branch_value
-        if (Q2 >= Q2_MIN && Q2 <= Q2_MAX && y >= y_MIN && y <= y_MAX && W_filter >= W_MIN && W_filter <= W_MAX &&
-            branch_value >= ratio_lower_bound) {
+        // if (Q2 >= Q2_MIN && Q2 <= Q2_MAX && y >= y_MIN && y <= y_MAX && W_filter >= W_MIN && W_filter <= W_MAX && branch_value >= ratio_lower_bound) {
             if (matching_event_pairs1.find({runnum, evnum}) != matching_event_pairs1.end()) {
                 hist3->Fill(branch_value);
             }
             if (has_second_region && matching_event_pairs2.find({runnum, evnum}) != matching_event_pairs2.end()) {
                 hist4->Fill(branch_value);
             }
-        }
+        // }
     }
 
     // Normalize histograms
