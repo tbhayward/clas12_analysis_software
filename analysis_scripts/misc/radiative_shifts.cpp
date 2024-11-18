@@ -11,11 +11,9 @@
 #include <utility>
 #include <cmath>
 
-// Global Q², W, and y range variables
+// Global Q² and y range variables
 const double Q2_MIN = 0.0;
 const double Q2_MAX = 12.0;
-const double W_MIN = 0.0;
-const double W_MAX = 5.0;
 const double y_MIN = 0.0;
 const double y_MAX = 0.8;
 
@@ -91,9 +89,8 @@ int main(int argc, char** argv) {
         return 1;
     }
 
-    // Create expressions for filtering based on Q², W, and y ranges
-    std::string filter_expr = Form("Q2 >= %f && Q2 <= %f && W >= %f && W <= %f && y >= %f && y <= %f", 
-                                    Q2_MIN, Q2_MAX, W_MIN, W_MAX, y_MIN, y_MAX);
+    // Create expressions for filtering based on Q² and y ranges
+    std::string filter_expr = Form("Q2 >= %f && Q2 <= %f && y >= %f && y <= %f", Q2_MIN, Q2_MAX, y_MIN, y_MAX);
 
     // Create histograms for tree projections with the filtering conditions
     TH1D* hist1 = new TH1D("hist1", "", static_cast<int>(100 * 1.5), x_min, x_max);
@@ -119,11 +116,10 @@ int main(int argc, char** argv) {
 
     // Step 1: Find (runnum, evnum) pairs within the specified range(s) in file2
     std::unordered_set<std::pair<int, int>, pair_hash> matching_event_pairs1, matching_event_pairs2;
-    double branch_value, Q2, W, y;
+    double branch_value, Q2, y;
     int runnum, evnum;
     tree2->SetBranchAddress(branch_name, &branch_value);
     tree2->SetBranchAddress("Q2", &Q2);
-    tree2->SetBranchAddress("W", &W);
     tree2->SetBranchAddress("y", &y);
     tree2->SetBranchAddress("runnum", &runnum);
     tree2->SetBranchAddress("evnum", &evnum);
@@ -131,7 +127,7 @@ int main(int argc, char** argv) {
     Long64_t nEntries2 = tree2->GetEntries();
     for (Long64_t i = 0; i < nEntries2; ++i) {
         tree2->GetEntry(i);
-        if (Q2 >= Q2_MIN && Q2 <= Q2_MAX && W >= W_MIN && W <= W_MAX && y >= y_MIN && y <= y_MAX) {
+        if (Q2 >= Q2_MIN && Q2 <= Q2_MAX && y >= y_MIN && y <= y_MAX) {
             if (branch_value >= range_low && branch_value <= range_high) {
                 matching_event_pairs1.emplace(runnum, evnum);
             }
@@ -149,13 +145,12 @@ int main(int argc, char** argv) {
     tree1->SetBranchAddress("evnum", &evnum);
     tree1->SetBranchAddress(branch_name, &branch_value);
     tree1->SetBranchAddress("Q2", &Q2);
-    tree1->SetBranchAddress("W", &W);
     tree1->SetBranchAddress("y", &y);
 
     Long64_t nEntries1 = tree1->GetEntries();
     for (Long64_t i = 0; i < nEntries1; ++i) {
         tree1->GetEntry(i);
-        if (Q2 >= Q2_MIN && Q2 <= Q2_MAX && W >= W_MIN && W <= W_MAX && y >= y_MIN && y <= y_MAX && branch_value >= ratio_lower_bound) {
+        if (Q2 >= Q2_MIN && Q2 <= Q2_MAX && y >= y_MIN && y <= y_MAX && branch_value >= ratio_lower_bound) {
             if (matching_event_pairs1.find({runnum, evnum}) != matching_event_pairs1.end()) {
                 hist3->Fill(branch_value);
             }
