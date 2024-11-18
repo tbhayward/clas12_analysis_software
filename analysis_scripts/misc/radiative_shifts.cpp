@@ -91,10 +91,6 @@ int main(int argc, char** argv) {
         return 1;
     }
 
-    // Print branch information for debugging
-    std::cout << "Branches in tree2:" << std::endl;
-    tree2->Print();
-
     // Create expressions for filtering based on Q², W, and y ranges
     std::string filter_expr = Form("Q2 >= %f && Q2 <= %f && W >= %f && W <= %f && y >= %f && y <= %f", 
                                     Q2_MIN, Q2_MAX, W_MIN, W_MAX, y_MIN, y_MAX);
@@ -132,16 +128,9 @@ int main(int argc, char** argv) {
     tree2->SetBranchAddress("runnum", &runnum);
     tree2->SetBranchAddress("evnum", &evnum);
 
-    // Debug: Check min and max W
-    std::cout << "Min W: " << tree2->GetMinimum("W") << ", Max W: " << tree2->GetMaximum("W") << std::endl;
-
     Long64_t nEntries2 = tree2->GetEntries();
     for (Long64_t i = 0; i < nEntries2; ++i) {
         tree2->GetEntry(i);
-
-        // Debug: Print values of W
-        std::cout << "Entry: " << i << ", Q2: " << Q2 << ", W: " << W << ", y: " << y << std::endl;
-
         if (Q2 >= Q2_MIN && Q2 <= Q2_MAX && W >= W_MIN && W <= W_MAX && y >= y_MIN && y <= y_MAX) {
             if (branch_value >= range_low && branch_value <= range_high) {
                 matching_event_pairs1.emplace(runnum, evnum);
@@ -150,12 +139,6 @@ int main(int argc, char** argv) {
                 matching_event_pairs2.emplace(runnum, evnum);
             }
         }
-    }
-
-    // Debug: Print size of matching event pairs
-    std::cout << "Matching Event Pairs 1: " << matching_event_pairs1.size() << std::endl;
-    if (has_second_region) {
-        std::cout << "Matching Event Pairs 2: " << matching_event_pairs2.size() << std::endl;
     }
 
     // Step 2: Record positions of matching events in file1 starting from ratio_lower_bound
