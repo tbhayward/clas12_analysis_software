@@ -207,7 +207,6 @@ public static void main(String[] args) {
 		                // DIS variables
 		                Q2 = variables.Q2(); // exchanged virtual photon energy
 		                W = variables.W(); // hadronic mass
-		                println(W)
 		                x = variables.x(); // Bjorken-x
 		                t = variables.t(); // t
 		                tmin = variables.tmin(); // tmin
