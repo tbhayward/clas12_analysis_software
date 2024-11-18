@@ -118,7 +118,7 @@ int main(int argc, char** argv) {
 
     // Step 1: Find (runnum, evnum) pairs within the specified range(s) in file2
     std::unordered_set<std::pair<int, int>, pair_hash> matching_event_pairs1, matching_event_pairs2;
-    double branch_value, Q2, y;
+    double branch_value, Q2, y, W;
     int runnum, evnum;
     tree2->SetBranchAddress(branch_name, &branch_value);
     tree2->SetBranchAddress("Q2", &Q2);
