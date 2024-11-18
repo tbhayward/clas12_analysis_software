@@ -92,7 +92,7 @@ int main(int argc, char** argv) {
     }
 
     // Create expressions for filtering based on Q² and y ranges
-    std::string filter_expr = Form("Q2 >= %f && Q2 <= %f && y >= %f && y <= %f", Q2_MIN, Q2_MAX, y_MIN, y_MAX);
+    std::string filter_expr = Form("Q2 >= %f && Q2 <= %f && y >= %f && y <= %f && W >= %f && W <= %f", Q2_MIN, Q2_MAX, y_MIN, y_MAX, W_MIN, W_MAX);
 
     // Create histograms for tree projections with the filtering conditions
     TH1D* hist1 = new TH1D("hist1", "", static_cast<int>(100 * 1.5), x_min, x_max);
