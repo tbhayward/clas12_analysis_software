@@ -19,7 +19,7 @@ const double y_MIN = 0.0;
 const double y_MAX = 0.8;
 const double W_MIN = 0;
 const double W_MAX = 10;
-const double Mx2_MIN = 0;
+const double Mx2_MIN = -10;
 const double Mx2_MAX = 15;
 
 // Helper function to format LaTeX-like input for ROOT titles
