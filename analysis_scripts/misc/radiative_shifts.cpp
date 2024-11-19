@@ -35,10 +35,7 @@ const double Mx2_2_MAX = 15;
 // const double W_MAX = 10;
 // const double Mx2_MIN = 1.8225;
 // const double Mx2_MAX = 15;
-// const double Mx2_1_MIN = 3.24;
-// const double Mx2_1_MAX = 15;
-// const double Mx2_2_MIN = 1.8225;
-// const double Mx2_2_MAX = 15;
+
 
 // Helper function to format LaTeX-like input for ROOT titles
 std::string formatLatexString(const std::string& input) {
@@ -359,7 +356,7 @@ int main(int argc, char** argv) {
 
     // Adjust y-axis range for ratio plot
     ratio_hist3->SetMinimum(0.0);
-    ratio_hist3->SetMaximum(0.5);
+    ratio_hist3->SetMaximum(0.35);
 
     // Save the ratio plot
     std::string ratio_output_filename = "output/rad_study/" + file2_identifier + "_" + branch_name + "_ratio.pdf";
