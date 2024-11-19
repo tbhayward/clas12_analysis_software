@@ -12,29 +12,25 @@
 #include <utility>
 #include <cmath>
 
-// Global Q² and y range variables
+// Commented-out version
 const double Q2_MIN = -2.0;
 const double Q2_MAX = 12.0;
 const double y_MIN = 0.0;
 const double y_MAX = 1.0;
 const double W_MIN = -2;
 const double W_MAX = 10;
-const double Mx2_MIN = -12;
-const double Mx2_MAX = 15;
 const double Mx2_1_MIN = -12;
 const double Mx2_1_MAX = 15;
 const double Mx2_2_MIN = -12;
 const double Mx2_2_MAX = 15;
 
-// Global Q² and y range variables
+// Global Q² and y range variables 
 // const double Q2_MIN = 1.0;
 // const double Q2_MAX = 12.0;
 // const double y_MIN = 0.0;
 // const double y_MAX = 0.80;
 // const double W_MIN = 2;
 // const double W_MAX = 10;
-// const double Mx2_MIN = 1.8225;
-// const double Mx2_MAX = 15;
 // const double Mx2_1_MIN = 3.24;
 // const double Mx2_1_MAX = 15;
 // const double Mx2_2_MIN = 1.8225;
@@ -124,15 +120,20 @@ int main(int argc, char** argv) {
         return 1;
     }
 
-    // Create expressions for filtering based on Q² and y ranges
-    std::string filter_expr = Form("Q2 >= %f && Q2 <= %f && y >= %f && y <= %f && W >= %f && W <= %f && Mx2 >= %f && Mx2 <= %f",
-                                   Q2_MIN, Q2_MAX, y_MIN, y_MAX, W_MIN, W_MAX, Mx2_MIN, Mx2_MAX);
+    // Create expressions for filtering based on Q² and y ranges, using Mx2_1 and Mx2_2
+    std::string filter_expr1 = Form("Q2 >= %f && Q2 <= %f && y >= %f && y <= %f && "
+                                    "W >= %f && W <= %f && Mx2_1 >= %f && Mx2_1 <= %f",
+                                    Q2_MIN, Q2_MAX, y_MIN, y_MAX, W_MIN, W_MAX, Mx2_1_MIN, Mx2_1_MAX);
+
+    std::string filter_expr2 = Form("Q2 >= %f && Q2 <= %f && y >= %f && y <= %f && "
+                                    "W >= %f && W <= %f && Mx2_2 >= %f && Mx2_2 <= %f",
+                                    Q2_MIN, Q2_MAX, y_MIN, y_MAX, W_MIN, W_MAX, Mx2_2_MIN, Mx2_2_MAX);
 
     // Create histograms for tree projections with the filtering conditions
     TH1D* hist1 = new TH1D("hist1", "", static_cast<int>(100), x_min, x_max);
     TH1D* hist2 = new TH1D("hist2", "", static_cast<int>(100), x_min, x_max);
-    tree1->Project("hist1", branch_name, filter_expr.c_str());
-    tree2->Project("hist2", branch_name, filter_expr.c_str());
+    tree1->Project("hist1", branch_name, filter_expr1.c_str());
+    tree2->Project("hist2", branch_name, filter_expr2.c_str());
 
     double integral1 = hist1->Integral();
     if (integral1 > 0) {
@@ -187,14 +188,14 @@ int main(int argc, char** argv) {
         TTreeReaderValue<double> W_reader1(reader1, "W");
         TTreeReaderValue<double> Q2_reader1(reader1, "Q2");
         TTreeReaderValue<double> y_reader1(reader1, "y");
-        TTreeReaderValue<double> Mx2_reader1(reader1, "Mx2");
+        TTreeReaderValue<double> Mx2_1_reader1(reader1, "Mx2_1");
 
         while (reader1.Next()) {
             double branch_data1 = *branch_reader1;
             double W1 = *W_reader1;
             double Q21 = *Q2_reader1;
             double y1 = *y_reader1;
-            double Mx21 = *Mx2_reader1;
+            double Mx2_1 = *Mx2_1_reader1;
             int run1 = *runnum_reader1;
             int event1 = *evnum_reader1;
 
@@ -202,9 +203,9 @@ int main(int argc, char** argv) {
             bool passW = W1 >= W_MIN && W1 <= W_MAX;
             bool passQ2 = Q21 >= Q2_MIN && Q21 <= Q2_MAX;
             bool passY = y1 >= y_MIN && y1 <= y_MAX;
-            bool passMx2 = Mx21 >= Mx2_MIN && Mx21 <= Mx2_MAX;
+            bool passMx2_1 = Mx2_1 >= Mx2_1_MIN && Mx2_1 <= Mx2_1_MAX;
 
-            if (passW && passQ2 && passY && passMx2 && branch_data1 >= ratio_lower_bound) {
+            if (passW && passQ2 && passY && passMx2_1 && branch_data1 >= ratio_lower_bound) {
                 if (matching_event_pairs1.find({run1, event1}) != matching_event_pairs1.end()) {
                     hist3->Fill(branch_data1);
                 }
@@ -222,7 +223,7 @@ int main(int argc, char** argv) {
         TTreeReaderValue<double> W_reader(reader, "W");
         TTreeReaderValue<double> Q2_reader(reader, "Q2");
         TTreeReaderValue<double> y_reader(reader, "y");
-        TTreeReaderValue<double> Mx2_reader(reader, "Mx2");
+        TTreeReaderValue<double> Mx2_2_reader(reader, "Mx2_2");
 
         // Step 2: Iterate over entries in tree2 to find events that do NOT meet kinematic cuts
         std::unordered_set<std::pair<int, int>, pair_hash> non_passing_events;
@@ -231,7 +232,7 @@ int main(int argc, char** argv) {
             double W = *W_reader;
             double Q2 = *Q2_reader;
             double y = *y_reader;
-            double Mx2 = *Mx2_reader;
+            double Mx2_2 = *Mx2_2_reader;
             int run = *runnum_reader;
             int event = *evnum_reader;
 
@@ -239,9 +240,9 @@ int main(int argc, char** argv) {
             bool passW = W >= W_MIN && W <= W_MAX;
             bool passQ2 = Q2 >= Q2_MIN && Q2 <= Q2_MAX;
             bool passY = y >= y_MIN && y <= y_MAX;
-            bool passMx2 = Mx2 >= Mx2_MIN && Mx2 <= Mx2_MAX;
+            bool passMx2_2 = Mx2_2 >= Mx2_2_MIN && Mx2_2 <= Mx2_2_MAX;
 
-            if (!(passW && passQ2 && passY && passMx2)) {
+            if (!(passW && passQ2 && passY && passMx2_2)) {
                 // Event does NOT meet kinematic cuts in tree2
                 non_passing_events.emplace(run, event);
             }
@@ -255,14 +256,14 @@ int main(int argc, char** argv) {
         TTreeReaderValue<double> W_reader1(reader1, "W");
         TTreeReaderValue<double> Q2_reader1(reader1, "Q2");
         TTreeReaderValue<double> y_reader1(reader1, "y");
-        TTreeReaderValue<double> Mx2_reader1(reader1, "Mx2");
+        TTreeReaderValue<double> Mx2_1_reader1(reader1, "Mx2_1");
 
         while (reader1.Next()) {
             double branch_data1 = *branch_reader1;
             double W1 = *W_reader1;
             double Q21 = *Q2_reader1;
             double y1 = *y_reader1;
-            double Mx21 = *Mx2_reader1;
+            double Mx2_1 = *Mx2_1_reader1;
             int run1 = *runnum_reader1;
             int event1 = *evnum_reader1;
 
@@ -270,9 +271,9 @@ int main(int argc, char** argv) {
             bool passW1 = W1 >= W_MIN && W1 <= W_MAX;
             bool passQ21 = Q21 >= Q2_MIN && Q21 <= Q2_MAX;
             bool passY1 = y1 >= y_MIN && y1 <= y_MAX;
-            bool passMx21 = Mx21 >= Mx2_MIN && Mx21 <= Mx2_MAX;
+            bool passMx2_1 = Mx2_1 >= Mx2_1_MIN && Mx2_1 <= Mx2_1_MAX;
 
-            if (passW1 && passQ21 && passY1 && passMx21) {
+            if (passW1 && passQ21 && passY1 && passMx2_1) {
                 // Event meets kinematic cuts in tree1
                 if (non_passing_events.find({run1, event1}) != non_passing_events.end()) {
                     // Event did not meet kinematic cuts in tree2
