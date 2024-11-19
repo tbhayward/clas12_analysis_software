@@ -281,11 +281,17 @@ std::vector<std::pair<double, double>> calculate_dilution_factors() {
     // TFile* emptyFile = TFile::Open("/work/clas12/thayward/CLAS12_SIDIS/processed_data/pass2/data/epi+X/ISR_FSR/dilution_factor/ISR_FSR_rgc_su22_inb_ET_epi+X.root");
 
 
-    TFile* nh3File = TFile::Open("/volatile/clas12/thayward/compass_rad_workshop/RGC_files/NH3/rgc_su22_inb_NH3_epX.root");
-    TFile* cFile = TFile::Open("/volatile/clas12/thayward/compass_rad_workshop/RGC_files/C/rgc_su22_inb_C_16292_epX.root");
-    TFile* chFile = TFile::Open("/volatile/clas12/thayward/compass_rad_workshop/RGC_files/CH2/rgc_su22_inb_CH2_16298_epX.root");
-    TFile* heFile = TFile::Open("/volatile/clas12/thayward/compass_rad_workshop/RGC_files/He/rgc_su22_inb_He_16309_epX.root");
-    TFile* emptyFile = TFile::Open("/volatile/clas12/thayward/compass_rad_workshop/RGC_files/ET/rgc_su22_inb_ET_16194_epX.root");
+    // TFile* nh3File = TFile::Open("/volatile/clas12/thayward/compass_rad_workshop/RGC_files/NH3/rgc_su22_inb_NH3_epX.root");
+    // TFile* cFile = TFile::Open("/volatile/clas12/thayward/compass_rad_workshop/RGC_files/C/rgc_su22_inb_C_16292_epX.root");
+    // TFile* chFile = TFile::Open("/volatile/clas12/thayward/compass_rad_workshop/RGC_files/CH2/rgc_su22_inb_CH2_16298_epX.root");
+    // TFile* heFile = TFile::Open("/volatile/clas12/thayward/compass_rad_workshop/RGC_files/He/rgc_su22_inb_He_16309_epX.root");
+    // TFile* emptyFile = TFile::Open("/volatile/clas12/thayward/compass_rad_workshop/RGC_files/ET/rgc_su22_inb_ET_16194_epX.root");
+
+    TFile* nh3File = TFile::Open("/volatile/clas12/thayward/compass_rad_workshop/RGC_files/NH3/ISR_FSR_rgc_su22_inb_NH3_epX.root");
+    TFile* cFile = TFile::Open("/volatile/clas12/thayward/compass_rad_workshop/RGC_files/C/ISR_FSR_rgc_su22_inb_C_16292_epX.root");
+    TFile* chFile = TFile::Open("/volatile/clas12/thayward/compass_rad_workshop/RGC_files/CH2/ISR_FSR_rgc_su22_inb_CH2_16298_epX.root");
+    TFile* heFile = TFile::Open("/volatile/clas12/thayward/compass_rad_workshop/RGC_files/He/ISR_FSR_rgc_su22_inb_He_16309_epX.root");
+    TFile* emptyFile = TFile::Open("/volatile/clas12/thayward/compass_rad_workshop/RGC_files/ET/ISR_FSR_rgc_su22_inb_ET_16194_epX.root");
 
 
     TTree* nh3 = (TTree*)nh3File->Get("PhysicsEvents");
