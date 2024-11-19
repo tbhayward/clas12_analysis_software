@@ -13,23 +13,23 @@
 #include <cmath>
 
 // Global Q² and y range variables
-const double Q2_MIN = -2.0;
-const double Q2_MAX = 12.0;
-const double y_MIN = 0.0;
-const double y_MAX = 1.0;
-const double W_MIN = -2;
-const double W_MAX = 10;
-const double Mx2_MIN = -12;
-const double Mx2_MAX = 15;
-
-// const double Q2_MIN = 1.0;
+// const double Q2_MIN = -2.0;
 // const double Q2_MAX = 12.0;
 // const double y_MIN = 0.0;
-// const double y_MAX = 0.80;
-// const double W_MIN = 2;
+// const double y_MAX = 1.0;
+// const double W_MIN = -2;
 // const double W_MAX = 10;
-// const double Mx2_MIN = 1.8225;
+// const double Mx2_MIN = -12;
 // const double Mx2_MAX = 15;
+
+const double Q2_MIN = 1.0;
+const double Q2_MAX = 12.0;
+const double y_MIN = 0.0;
+const double y_MAX = 0.80;
+const double W_MIN = 2;
+const double W_MAX = 10;
+const double Mx2_MIN = 1.8225;
+const double Mx2_MAX = 15;
 
 // Helper function to format LaTeX-like input for ROOT titles
 std::string formatLatexString(const std::string& input) {
@@ -280,7 +280,7 @@ int main(int argc, char** argv) {
     }
 
     // Adjust y-axis range for ratio plot
-    ratio_hist3->SetMaximum(1);
+    ratio_hist3->SetMaximum(0.25);
 
     // Save the ratio plot
     std::string ratio_output_filename = "output/rad_study/" + file2_identifier + "_" + branch_name + "_ratio.pdf";
