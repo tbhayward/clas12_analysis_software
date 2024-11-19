@@ -113,10 +113,10 @@ int main(int argc, char** argv) {
     tree2->Project("hist2", branch_name, filter_expr.c_str());
 
     double integral1 = hist1->Integral();
-    // if (integral1 > 0) {
-    //     hist1->Scale(1.0 / integral1); // Normalize hist1 to 1
-    //     hist2->Scale(1.0 / integral1); // Normalize hist2 by the same factor as hist1
-    // }
+    if (integral1 > 0) {
+        hist1->Scale(1.0 / integral1); // Normalize hist1 to 1
+        hist2->Scale(1.0 / integral1); // Normalize hist2 by the same factor as hist1
+    }
 
     hist1->SetLineColor(kBlue);
     hist2->SetLineColor(kRed);
@@ -194,19 +194,23 @@ int main(int argc, char** argv) {
 
         if (passW && passQ2 && passY && passMx2 && branch_data1 >= ratio_lower_bound) {
             if (matching_event_pairs1.find({run1, event1}) != matching_event_pairs1.end()) {
-                hist3->Fill(branch_data1);
+                if (hist1->GetBinContent(bin) > 0) {
+                    hist3->Fill(branch_data1);
+                }
             }
             if (has_second_region && matching_event_pairs2.find({run1, event1}) != matching_event_pairs2.end()) {
-                hist4->Fill(branch_data1);
+                if (hist1->GetBinContent(bin) > 0) {
+                    hist4->Fill(branch_data1);
+                }
             }
         }
     }
 
-    // // Normalize histograms
-    // if (integral1 > 0) {
-    //     hist3->Scale(1.0 / integral1);
-    //     if (has_second_region) hist4->Scale(1.0 / integral1);
-    // }
+    // Normalize histograms
+    if (integral1 > 0) {
+        hist3->Scale(1.0 / integral1);
+        if (has_second_region) hist4->Scale(1.0 / integral1);
+    }
 
     // Set histogram colors and styles
     hist3->SetLineColor(kCyan + 2); // Distinct color
