@@ -194,11 +194,13 @@ int main(int argc, char** argv) {
 
         if (passW && passQ2 && passY && passMx2 && branch_data1 >= ratio_lower_bound) {
             if (matching_event_pairs1.find({run1, event1}) != matching_event_pairs1.end()) {
+                int bin = hist1->FindBin(branch_data1);
                 if (hist1->GetBinContent(bin) > 0) {
                     hist3->Fill(branch_data1);
                 }
             }
             if (has_second_region && matching_event_pairs2.find({run1, event1}) != matching_event_pairs2.end()) {
+                int bin = hist1->FindBin(branch_data1);
                 if (hist1->GetBinContent(bin) > 0) {
                     hist4->Fill(branch_data1);
                 }
