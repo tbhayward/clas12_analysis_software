@@ -173,6 +173,7 @@ int main(int argc, char** argv) {
     TTreeReaderValue<double> W_reader1(reader1, "W");
     TTreeReaderValue<double> Q2_reader1(reader1, "Q2");
     TTreeReaderValue<double> y_reader1(reader1, "y");
+    TTreeReaderValue<double> Mx2_reader1(reader1, "Mx21");
 
     TH1D* hist3 = new TH1D("hist3", "", static_cast<int>(100 * 1.5), x_min, x_max);
     TH1D* hist4 = has_second_region ? new TH1D("hist4", "", static_cast<int>(100 * 1.5), x_min, x_max) : nullptr;
@@ -182,7 +183,7 @@ int main(int argc, char** argv) {
         double W1 = *W_reader1;
         double Q21 = *Q2_reader1;
         double y1 = *y_reader1;
-        double Mx2_filter = *Mx2_reader;
+        double Mx21 = *Mx2_reader1;
         int run1 = *runnum_reader1;
         int event1 = *evnum_reader1;
 
@@ -190,7 +191,7 @@ int main(int argc, char** argv) {
         bool passW = W1 >= W_MIN && W1 <= W_MAX;
         bool passQ2 = Q21 >= Q2_MIN && Q21 <= Q2_MAX;
         bool passY = y1 >= y_MIN && y1 <= y_MAX;
-        bool passMx2 = Mx2_filter >= Mx2_MIN && Mx2_filter <= Mx2_MAX;
+        bool passMx2 = Mx21 >= Mx2_MIN && Mx21 <= Mx2_MAX;
 
         if (passW && passQ2 && passY && passMx2 && branch_data1 >= ratio_lower_bound) {
             if (matching_event_pairs1.find({run1, event1}) != matching_event_pairs1.end()) {
