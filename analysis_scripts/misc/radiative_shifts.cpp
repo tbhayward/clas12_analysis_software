@@ -173,7 +173,7 @@ int main(int argc, char** argv) {
     TTreeReaderValue<double> W_reader1(reader1, "W");
     TTreeReaderValue<double> Q2_reader1(reader1, "Q2");
     TTreeReaderValue<double> y_reader1(reader1, "y");
-    TTreeReaderValue<double> Mx2_reader1(reader1, "Mx21");
+    TTreeReaderValue<double> Mx2_reader1(reader1, "Mx2");
 
     TH1D* hist3 = new TH1D("hist3", "", static_cast<int>(100 * 1.5), x_min, x_max);
     TH1D* hist4 = has_second_region ? new TH1D("hist4", "", static_cast<int>(100 * 1.5), x_min, x_max) : nullptr;
