@@ -121,8 +121,8 @@ int main(int argc, char** argv) {
                                    Q2_MIN, Q2_MAX, y_MIN, y_MAX, W_MIN, W_MAX, Mx2_MIN, Mx2_MAX);
 
     // Create histograms for tree projections with the filtering conditions
-    TH1D* hist1 = new TH1D("hist1", "", static_cast<int>(100 * 1.5), x_min, x_max);
-    TH1D* hist2 = new TH1D("hist2", "", static_cast<int>(100 * 1.5), x_min, x_max);
+    TH1D* hist1 = new TH1D("hist1", "", static_cast<int>(100), x_min, x_max);
+    TH1D* hist2 = new TH1D("hist2", "", static_cast<int>(100), x_min, x_max);
     tree1->Project("hist1", branch_name, filter_expr.c_str());
     tree2->Project("hist2", branch_name, filter_expr.c_str());
 
@@ -143,8 +143,8 @@ int main(int argc, char** argv) {
     hist2->SetStats(0);
 
     // Create hist3 (and hist4 if needed)
-    TH1D* hist3 = new TH1D("hist3", "", static_cast<int>(100 * 1.5), x_min, x_max);
-    TH1D* hist4 = has_second_region ? new TH1D("hist4", "", static_cast<int>(100 * 1.5), x_min, x_max) : nullptr;
+    TH1D* hist3 = new TH1D("hist3", "", static_cast<int>(100), x_min, x_max);
+    TH1D* hist4 = has_second_region ? new TH1D("hist4", "", static_cast<int>(100), x_min, x_max) : nullptr;
 
     if (extra_args_provided) {
         // Previous functionality
