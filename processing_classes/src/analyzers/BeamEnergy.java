@@ -115,10 +115,10 @@ public class BeamEnergy {
 //        }
         if (isRadiative) {
             // Calculate the total rest mass of the final state particles
-            double total_mass = num_elec * 0.000511 + num_positrons * 0.000511
+            double total_mass = (num_elec-1) * 0.000511 + num_positrons * 0.000511
                     + num_piplus * 0.13957 + num_piminus * 0.13957
                     + num_pi0 * 0.1349766 + num_kplus * 0.493677
-                    + num_kminus * 0.493677 + num_protons * 0.938272
+                    + num_kminus * 0.493677 + (num_protons-1) * 0.938272
                     + num_antiprotons * 0.938272;
 
             // Determine the minimum beam percentage allowed
