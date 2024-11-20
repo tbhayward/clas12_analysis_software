@@ -50,8 +50,8 @@ void plot_open_angle() {
     canvas->SaveAs("output/FSR.pdf");
 
     // Access the branch 'open_angle' for looping
-    Double_t open_angle = 0; // Change to Double_t to ensure compatibility
-    tree->SetBranchAddress("open_angle", &open_angle_ep2);
+    Double_t open_angle_ep2 = 0; // Change to Double_t to ensure compatibility
+    tree->SetBranchAddress("open_angle", &open_angle);
 
     std::cout << "Open angle values:" << std::endl;
 
