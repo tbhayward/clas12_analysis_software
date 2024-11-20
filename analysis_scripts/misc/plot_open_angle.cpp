@@ -51,7 +51,7 @@ void plot_open_angle() {
 
     // Access the branch 'open_angle' for looping
     Double_t open_angle = 0; // Change to Double_t to ensure compatibility
-    tree->SetBranchAddress("open_angle", &open_angle);
+    tree->SetBranchAddress("open_angle", &open_angle_ep2);
 
     std::cout << "Open angle values:" << std::endl;
 
