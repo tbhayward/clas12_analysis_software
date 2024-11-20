@@ -7,7 +7,7 @@
 
 void plot_open_angle() {
     // Open the input ROOT file
-    TFile *file = TFile::Open("/volatile/clas12/thayward/compass_rad_workshop/rga_sp19_inb_egammaX.root");
+    TFile *file = TFile::Open("/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/data/dvcs/rga_sp19_inb_epgamma.root");
     if (!file || file->IsZombie()) {
         std::cerr << "Error: Cannot open file!" << std::endl;
         return;
