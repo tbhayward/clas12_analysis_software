@@ -7,7 +7,7 @@
 
 void plot_open_angle() {
     // Open the input ROOT file
-    TFile *file = TFile::Open("/volatile/clas12/thayward/compass_rad_workshop/rga_sp19_inb_egammaX.root");
+    TFile *file = TFile::Open("/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/data/dvcs/rga_sp19_inb_epgamma.root");
     if (!file || file->IsZombie()) {
         std::cerr << "Error: Cannot open file!" << std::endl;
         return;
@@ -23,7 +23,7 @@ void plot_open_angle() {
 
     // Create a histogram for the branch 'open_angle'
     TH1D *hist = new TH1D("hist", ";#theta_{e'#gamma};Normalized Counts", 150, 0, 40); // Adjust range/bins as needed
-    tree->Draw("open_angle>>hist", "", "goff");
+    tree->Draw("open_angle_ep2>>hist", "", "goff");
 
     // Normalize the histogram
     if (hist->Integral() > 0)
