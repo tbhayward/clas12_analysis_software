@@ -84,15 +84,15 @@ public class ThreeParticles {
 //        if (variables.helicity == 0 && variables.runnum != 11) {
 //            return false;
 //        }
-//        if (variables.Q2() < 1.00) {
-//            return false;
-//        } 
-//        else if (variables.W() < 2) {
-//            return false;
-//        } 
-//        else if (variables.y() > 0.80) {
-//            return false;
-//        }
+        if (variables.Q2() < 1.00) {
+            return false;
+        } 
+        else if (variables.W() < 2) {
+            return false;
+        } 
+        else if (variables.y() > 0.80) {
+            return false;
+        }
         return true;
     }
     
