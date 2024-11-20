@@ -50,3 +50,9 @@ void plot_open_angle() {
 
     std::cout << "Plot saved to output/FSR.pdf" << std::endl;
 }
+
+// Main function for standalone compilation
+int main() {
+    plot_open_angle();
+    return 0;
+}
