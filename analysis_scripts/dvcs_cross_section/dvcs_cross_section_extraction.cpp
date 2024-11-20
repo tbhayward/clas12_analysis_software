@@ -299,7 +299,7 @@ int main(int argc, char* argv[]) {
     //               mc_rec_aaogen_readers[0], mc_rec_aaogen_readers[1], mc_rec_aaogen_readers[2], "output");
 
     // Call the exclusivity plots (optional)
-    // call_determine_exclusivity(data_readers, mc_rec_dvcsgen_readers, eppi0_readers, mc_rec_aaogen_readers);
+    call_determine_exclusivity(data_readers, mc_rec_dvcsgen_readers, eppi0_readers, mc_rec_aaogen_readers);
 
     // // Loop over unique xB bins and call the plotting function for DVCS data/MC comparison
     // for (int xB_bin = 0; xB_bin < num_xB_bins; ++xB_bin) {
