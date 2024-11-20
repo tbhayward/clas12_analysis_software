@@ -23,7 +23,7 @@ void plot_open_angle() {
 
     // Create a histogram for the branch 'open_angle'
     TH1D *hist = new TH1D("hist", ";#theta_{e'#gamma};Normalized Counts", 150, 0, 40); // Adjust range/bins as needed
-    tree->Draw("open_angle_ep1>>hist", "detector1 == 1 && detector2 == 1", "goff");
+    tree->Draw("open_angle_ep2>>hist", "detector1 == 1 && detector2 == 1", "goff");
 
     // Normalize the histogram
     if (hist->Integral() > 0)
