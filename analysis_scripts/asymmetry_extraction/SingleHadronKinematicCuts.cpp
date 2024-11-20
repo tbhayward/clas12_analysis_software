@@ -62,7 +62,7 @@ bool SingleHadronKinematicCuts::applyCuts(int currentFits, bool isMC) {
       return goodEvent;
     }
     if (property == "xCFR" || property == "z" || property == "PTCFR") {
-      goodEvent = *Q2 > 1 && *W > 2 && *y < 0.80 && *Mx2 > 1.8225 && *xF > 0.2;
+      goodEvent = *Q2 > 1 && *W > 2 && *y < 0.80 && *Mx2 > 1.8225 && *xF > 0.0;
       return goodEvent;
     }
 
