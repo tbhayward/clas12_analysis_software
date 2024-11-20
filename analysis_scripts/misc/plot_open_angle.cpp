@@ -22,7 +22,7 @@ void plot_open_angle() {
     }
 
     // Create a histogram for the branch 'open_angle'
-    TH1D *hist = new TH1D("hist", ";#theta_{e'#gamma};Normalized Counts", 150, 0.01, 40); // Adjust range/bins as needed
+    TH1D *hist = new TH1D("hist", ";#theta_{e'#gamma};Normalized Counts", 150, 0, 40); // Adjust range/bins as needed
     tree->Draw("open_angle>>hist", "", "goff");
 
     // Normalize the histogram
@@ -48,6 +48,19 @@ void plot_open_angle() {
 
     // Save the plot
     canvas->SaveAs("output/FSR.pdf");
+
+    // Access the branch 'open_angle' for looping
+    Float_t open_angle;
+    tree->SetBranchAddress("open_angle", &open_angle);
+
+    std::cout << "Open angle values:" << std::endl;
+
+    // Loop through the tree entries and print the values of 'open_angle'
+    Long64_t nEntries = tree->GetEntries();
+    for (Long64_t i = 0; i < nEntries; i++) {
+        tree->GetEntry(i);
+        std::cout << "Entry " << i << ": " << open_angle << std::endl;
+    }
 
     // Clean up
     delete canvas;
