@@ -191,7 +191,7 @@ public static void main(String[] args) {
 		    	if (detector_gamma1 == 2 || detector_gamma2 == 2) continue;
 
         		// supply runnum and boolean for radiative simulation or not
-				BeamEnergy Eb = new BeamEnergy(runnum, false);
+				BeamEnergy Eb = new BeamEnergy(research_Event, runnum, false);
 				// Use the input beam energy if runnum == 11, otherwise use Eb.Eb()
 				double energy = (runnum == 11) ? beam_energy : Eb.Eb();
 	            ThreeParticles variables = new ThreeParticles(event, research_Event, 
