@@ -20,11 +20,12 @@ bool SingleHadronKinematicCuts::applyCuts(int currentFits, bool isMC) {
     bool checked = false;
     string property = binNames[currentFits];
 
-    if (*fiducial_status != 2) return false; // fiducial cuts
+    // if (*fiducial_status != 2) return false; // fiducial cuts
     // if (*Q2 < 1) return false;
     // if (*W < 2) return false;
     // if (*y > 0.8) return false;
     if (property == "W" || property == "x") {
+        std::cout << "HELLO WORLD" << std::endl;
       goodEvent = true;
       return goodEvent;
     }
