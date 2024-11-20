@@ -31,17 +31,17 @@
 
 
 // Fractional charge values for Total
-// const double xAtotal = 0.72104;
-// const double xCtotal = 0.07181;
-// const double xCHtotal = 0.03746;
-// const double xHetotal = 0.07688;
-// const double xftotal = 0.09280;
+const double xAtotal = 0.72104;
+const double xCtotal = 0.07181;
+const double xCHtotal = 0.03746;
+const double xHetotal = 0.07688;
+const double xftotal = 0.09280;
 
-const double xAtotal = 0.1538;
-const double xCtotal = 0.0617;
-const double xCHtotal = 0.0647;
-const double xHetotal = 0.1477;
-const double xftotal = 0.5719;
+// const double xAtotal = 0.1538;
+// const double xCtotal = 0.0617;
+// const double xCHtotal = 0.0647;
+// const double xHetotal = 0.1477;
+// const double xftotal = 0.5719;
 
 // Fractional charge values for Period 1
 const double xAperiod_1 = 0.17469;
@@ -262,11 +262,11 @@ std::vector<std::pair<double, double>> calculate_dilution_factors() {
     // TFile* heFile = TFile::Open("/work/clas12/thayward/CLAS12_SIDIS/processed_data/pass2/data/epX/FSR/dilution_factor/FSR_rgc_su22_inb_He_epX.root");
     // TFile* emptyFile = TFile::Open("/work/clas12/thayward/CLAS12_SIDIS/processed_data/pass2/data/epX/FSR/dilution_factor/FSR_rgc_su22_inb_ET_epX.root");
 
-    // TFile* nh3File = TFile::Open("/work/clas12/thayward/CLAS12_SIDIS/processed_data/pass2/data/epX/ISR_FSR/ISR_FSR_rgc_su22_inb_NH3_epX.root");
-    // TFile* cFile = TFile::Open("/work/clas12/thayward/CLAS12_SIDIS/processed_data/pass2/data/epX/ISR_FSR/ISR_FSR_rgc_su22_inb_C_epX.root");
-    // TFile* chFile = TFile::Open("/work/clas12/thayward/CLAS12_SIDIS/processed_data/pass2/data/epX/ISR_FSR/dilution_factor/ISR_FSR_rgc_su22_inb_CH2_epX.root");
-    // TFile* heFile = TFile::Open("/work/clas12/thayward/CLAS12_SIDIS/processed_data/pass2/data/epX/ISR_FSR/dilution_factor/ISR_FSR_rgc_su22_inb_He_epX.root");
-    // TFile* emptyFile = TFile::Open("/work/clas12/thayward/CLAS12_SIDIS/processed_data/pass2/data/epX/ISR_FSR/dilution_factor/ISR_FSR_rgc_su22_inb_ET_epX.root");
+    TFile* nh3File = TFile::Open("/work/clas12/thayward/CLAS12_SIDIS/processed_data/pass2/data/epX/ISR_FSR/ISR_FSR_rgc_su22_inb_NH3_epX.root");
+    TFile* cFile = TFile::Open("/work/clas12/thayward/CLAS12_SIDIS/processed_data/pass2/data/epX/ISR_FSR/ISR_FSR_rgc_su22_inb_C_epX.root");
+    TFile* chFile = TFile::Open("/work/clas12/thayward/CLAS12_SIDIS/processed_data/pass2/data/epX/ISR_FSR/dilution_factor/ISR_FSR_rgc_su22_inb_CH2_epX.root");
+    TFile* heFile = TFile::Open("/work/clas12/thayward/CLAS12_SIDIS/processed_data/pass2/data/epX/ISR_FSR/dilution_factor/ISR_FSR_rgc_su22_inb_He_epX.root");
+    TFile* emptyFile = TFile::Open("/work/clas12/thayward/CLAS12_SIDIS/processed_data/pass2/data/epX/ISR_FSR/dilution_factor/ISR_FSR_rgc_su22_inb_ET_epX.root");
 
     // TFile* nh3File = TFile::Open("/work/clas12/thayward/CLAS12_SIDIS/processed_data/pass2/data/epi+X/rgc_su22_inb_NH3_epi+X.root");
     // TFile* cFile = TFile::Open("/work/clas12/thayward/CLAS12_SIDIS/processed_data/pass2/data/epi+X/rgc_su22_inb_C_epi+X.root");
@@ -281,11 +281,11 @@ std::vector<std::pair<double, double>> calculate_dilution_factors() {
     // TFile* emptyFile = TFile::Open("/work/clas12/thayward/CLAS12_SIDIS/processed_data/pass2/data/epi+X/ISR_FSR/dilution_factor/ISR_FSR_rgc_su22_inb_ET_epi+X.root");
 
 
-    TFile* nh3File = TFile::Open("/volatile/clas12/thayward/compass_rad_workshop/RGC_files/NH3/rgc_su22_inb_NH3_epX.root");
-    TFile* cFile = TFile::Open("/volatile/clas12/thayward/compass_rad_workshop/RGC_files/C/rgc_su22_inb_C_16292_epX.root");
-    TFile* chFile = TFile::Open("/volatile/clas12/thayward/compass_rad_workshop/RGC_files/CH2/rgc_su22_inb_CH2_16298_epX.root");
-    TFile* heFile = TFile::Open("/volatile/clas12/thayward/compass_rad_workshop/RGC_files/He/rgc_su22_inb_He_16309_epX.root");
-    TFile* emptyFile = TFile::Open("/volatile/clas12/thayward/compass_rad_workshop/RGC_files/ET/rgc_su22_inb_ET_16194_epX.root");
+    // TFile* nh3File = TFile::Open("/volatile/clas12/thayward/compass_rad_workshop/RGC_files/NH3/rgc_su22_inb_NH3_epX.root");
+    // TFile* cFile = TFile::Open("/volatile/clas12/thayward/compass_rad_workshop/RGC_files/C/rgc_su22_inb_C_16292_epX.root");
+    // TFile* chFile = TFile::Open("/volatile/clas12/thayward/compass_rad_workshop/RGC_files/CH2/rgc_su22_inb_CH2_16298_epX.root");
+    // TFile* heFile = TFile::Open("/volatile/clas12/thayward/compass_rad_workshop/RGC_files/He/rgc_su22_inb_He_16309_epX.root");
+    // TFile* emptyFile = TFile::Open("/volatile/clas12/thayward/compass_rad_workshop/RGC_files/ET/rgc_su22_inb_ET_16194_epX.root");
 
     // TFile* nh3File = TFile::Open("/volatile/clas12/thayward/compass_rad_workshop/RGC_files/NH3/ISR_FSR_rgc_su22_inb_NH3_epX.root");
     // TFile* cFile = TFile::Open("/volatile/clas12/thayward/compass_rad_workshop/RGC_files/C/ISR_FSR_rgc_su22_inb_C_16292_epX.root");
