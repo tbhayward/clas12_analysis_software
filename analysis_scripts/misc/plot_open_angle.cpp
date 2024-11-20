@@ -50,7 +50,7 @@ void plot_open_angle() {
     canvas->SaveAs("output/FSR.pdf");
 
     // Access the branch 'open_angle' for looping
-    Float_t open_angle;
+    Double_t open_angle = 0; // Change to Double_t to ensure compatibility
     tree->SetBranchAddress("open_angle", &open_angle);
 
     std::cout << "Open angle values:" << std::endl;
@@ -59,7 +59,11 @@ void plot_open_angle() {
     Long64_t nEntries = tree->GetEntries();
     for (Long64_t i = 0; i < nEntries; i++) {
         tree->GetEntry(i);
-        std::cout << "Entry " << i << ": " << open_angle << std::endl;
+        if (open_angle != 0) { // Debug: Check if the value is non-zero
+            std::cout << "Entry " << i << ": " << open_angle << std::endl;
+        } else {
+            std::cerr << "Entry " << i << ": open_angle is zero or uninitialized!" << std::endl;
+        }
     }
 
     // Clean up
