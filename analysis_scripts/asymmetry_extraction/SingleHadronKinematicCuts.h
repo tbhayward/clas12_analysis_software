@@ -18,8 +18,6 @@ private:
     TTreeReaderValue<double> Q2;
     TTreeReaderValue<double> W;
     TTreeReaderValue<double> Mx2;
-    TTreeReaderValue<double> Mx2_1;
-    TTreeReaderValue<double> Mx2_2;
     TTreeReaderValue<double> x;
     TTreeReaderValue<double> t;
     TTreeReaderValue<double> tmin;
