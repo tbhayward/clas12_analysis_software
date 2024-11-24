@@ -109,65 +109,6 @@ void print_bin_boundaries(const std::vector<BinBoundary>& bin_boundaries) {
     }
 }
 
-// Function to define filenames and check if they exist
-std::map<std::string, std::vector<std::string>> define_and_check_files(
-    const std::string& dir1,
-    const std::string& dir2,
-    const std::string& dir3,
-    const std::string& dir4) {
-
-    std::map<std::string, std::vector<std::string>> filenames = {
-        {"data", {
-            dir1 + "/rga_fa18_inb_epgamma.root",
-            dir1 + "/rga_fa18_out_epgamma.root",
-            dir1 + "/rga_sp19_inb_epgamma.root"
-        }},
-        {"eppi0", {
-            dir3 + "/rga_fa18_inb_eppi0.root",
-            dir3 + "/rga_fa18_out_eppi0.root",
-            dir3 + "/rga_sp19_inb_eppi0.root"
-        }},
-        {"mc_gen_dvcsgen", {
-            dir2 + "/gen_dvcsgen_rga_fa18_inb_50nA_10604MeV_epgamma.root",
-            dir2 + "/gen_dvcsgen_rga_fa18_out_50nA_10604MeV_epgamma.root",
-            dir2 + "/gen_dvcsgen_rga_sp19_inb_50nA_10200MeV_epgamma.root"
-        }},
-        {"mc_rec_dvcsgen", {
-            dir2 + "/rec_dvcsgen_rga_fa18_inb_50nA_10604MeV_epgamma.root",
-            dir2 + "/rec_dvcsgen_rga_fa18_out_50nA_10604MeV_epgamma.root",
-            dir2 + "/rec_dvcsgen_rga_sp19_inb_50nA_10200MeV_epgamma.root"
-        }},
-        {"mc_gen_aaogen", {
-            dir4 + "/gen_aaogen_norad_rga_fa18_inb_50nA_10604MeV_eppi0.root",
-            dir4 + "/gen_aaogen_norad_rga_fa18_out_50nA_10604MeV_eppi0.root",
-            dir4 + "/gen_aaogen_norad_rga_sp19_inb_50nA_10200MeV_eppi0.root"
-        }},
-        {"mc_rec_aaogen", {
-            dir4 + "/rec_aaogen_norad_rga_fa18_inb_50nA_10604MeV_eppi0.root",
-            dir4 + "/rec_aaogen_norad_rga_fa18_out_50nA_10604MeV_eppi0.root",
-            dir4 + "/rec_aaogen_norad_rga_sp19_inb_50nA_10200MeV_eppi0.root"
-        }},
-        {"mc_rec_eppi0_bkg", {
-            dir4 + "/eppi0_bkg_aaogen_norad_rga_fa18_inb_epgamma.root",
-            dir4 + "/eppi0_bkg_aaogen_norad_rga_fa18_out_epgamma.root",
-            dir4 + "/eppi0_bkg_aaogen_norad_rga_sp19_inb_epgamma.root"
-        }}
-    };
-
-    // Check if all files exist
-    for (const auto& [key, file_list] : filenames) {
-        for (const auto& file : file_list) {
-            if (!std::filesystem::exists(file)) {
-                std::cerr << "Error: File " << file << " not found." << std::endl;
-                exit(2);  // Exit with error code
-            }
-        }
-    }
-
-    std::cout << "All required files found. Proceeding to load data and MC files." << std::endl;
-    return filenames;
-}
-
 int main(int argc, char* argv[]) {
     std::cout << std::endl << std::endl << std::endl;
     TApplication theApp("App", nullptr, nullptr);
@@ -193,28 +134,98 @@ int main(int argc, char* argv[]) {
         return 1;
     }
     // Print out the bin boundaries for verification
-    print_bin_boundaries(bin_boundaries);
+    // print_bin_boundaries(bin_boundaries);
     
     // Calculate the number of unique xB bins
     int num_xB_bins = count_unique_xB_bins(bin_boundaries);
 
+    // Define filenames for each directory (3 periods)
+    std::vector<std::string> data_filenames = {
+        dir1 + "/rga_fa18_inb_epgamma.root",
+        dir1 + "/rga_fa18_out_epgamma.root",
+        dir1 + "/rga_sp19_inb_epgamma.root"
+    };
 
-    std::string dir1 = argv[1];
-    std::string dir2 = argv[2];
-    std::string dir3 = argv[3];
-    std::string dir4 = argv[4];
+    std::vector<std::string> eppi0_filenames = {
+        dir3 + "/rga_fa18_inb_eppi0.root",
+        dir3 + "/rga_fa18_out_eppi0.root",
+        dir3 + "/rga_sp19_inb_eppi0.root"
+    };
 
-    // Call helper function to define filenames and check existence
-    std::map<std::string, std::vector<std::string>> filenames = define_and_check_files(dir1, dir2, dir3, dir4);
+    std::vector<std::string> mc_gen_dvcsgen_filenames = {
+        dir2 + "/gen_dvcsgen_rga_fa18_inb_50nA_10604MeV_epgamma.root",
+        dir2 + "/gen_dvcsgen_rga_fa18_out_50nA_10604MeV_epgamma.root",
+        dir2 + "/gen_dvcsgen_rga_sp19_inb_50nA_10200MeV_epgamma.root"
+    };
 
-    // Access specific filename vectors for subsequent use
-    std::vector<std::string> data_filenames = filenames["data"];
-    std::vector<std::string> eppi0_filenames = filenames["eppi0"];
-    std::vector<std::string> mc_gen_dvcsgen_filenames = filenames["mc_gen_dvcsgen"];
-    std::vector<std::string> mc_rec_dvcsgen_filenames = filenames["mc_rec_dvcsgen"];
-    std::vector<std::string> mc_gen_aaogen_filenames = filenames["mc_gen_aaogen"];
-    std::vector<std::string> mc_rec_aaogen_filenames = filenames["mc_rec_aaogen"];
-    std::vector<std::string> mc_rec_eppi0_bkg_filenames = filenames["mc_rec_eppi0"];
+    std::vector<std::string> mc_rec_dvcsgen_filenames = {
+        dir2 + "/rec_dvcsgen_rga_fa18_inb_50nA_10604MeV_epgamma.root",
+        dir2 + "/rec_dvcsgen_rga_fa18_out_50nA_10604MeV_epgamma.root",
+        dir2 + "/rec_dvcsgen_rga_sp19_inb_50nA_10200MeV_epgamma.root"
+    };
+
+    std::vector<std::string> mc_gen_aaogen_filenames = {
+        dir4 + "/gen_aaogen_norad_rga_fa18_inb_50nA_10604MeV_eppi0.root",
+        dir4 + "/gen_aaogen_norad_rga_fa18_out_50nA_10604MeV_eppi0.root",
+        dir4 + "/gen_aaogen_norad_rga_sp19_inb_50nA_10200MeV_eppi0.root"
+    };
+
+    std::vector<std::string> mc_rec_aaogen_filenames = {
+        dir4 + "/rec_aaogen_norad_rga_fa18_inb_50nA_10604MeV_eppi0.root",
+        dir4 + "/rec_aaogen_norad_rga_fa18_out_50nA_10604MeV_eppi0.root",
+        dir4 + "/rec_aaogen_norad_rga_sp19_inb_50nA_10200MeV_eppi0.root"
+    };
+
+    std::vector<std::string> mc_rec_eppi0_bkg_filenames = {
+        dir4 + "/eppi0_bkg_aaogen_norad_rga_fa18_inb_epgamma.root",
+        dir4 + "/eppi0_bkg_aaogen_norad_rga_fa18_out_epgamma.root",
+        dir4 + "/eppi0_bkg_aaogen_norad_rga_sp19_inb_epgamma.root"
+    };
+
+    // Check if all expected files exist
+    for (const auto& file : data_filenames) {
+        if (!checkFileExists(file)) {
+            std::cerr << "Error: File " << file << " not found." << std::endl;
+            return 2;
+        }
+    }
+    for (const auto& file : eppi0_filenames) {
+        if (!checkFileExists(file)) {
+            std::cerr << "Error: File " << file << " not found." << std::endl;
+            return 2;
+        }
+    }
+    for (const auto& file : mc_gen_dvcsgen_filenames) {
+        if (!checkFileExists(file)) {
+            std::cerr << "Error: File " << file << " not found." << std::endl;
+            return 2;
+        }
+    }
+    for (const auto& file : mc_rec_dvcsgen_filenames) {
+        if (!checkFileExists(file)) {
+            std::cerr << "Error: File " << file << " not found." << std::endl;
+            return 2;
+        }
+    }
+    for (const auto& file : mc_gen_aaogen_filenames) {
+        if (!checkFileExists(file)) {
+            std::cerr << "Error: File " << file << " not found." << std::endl;
+            return 2;
+        }
+    }
+    for (const auto& file : mc_rec_aaogen_filenames) {
+        if (!checkFileExists(file)) {
+            std::cerr << "Error: File " << file << " not found." << std::endl;
+            return 2;
+        }
+    }
+    // **Check for the new eppi0 background files**
+    for (const auto& file : mc_rec_eppi0_bkg_filenames) {
+        if (!checkFileExists(file)) {
+            std::cerr << "Error: File " << file << " not found." << std::endl;
+            return 2;
+        }
+    }
 
     std::cout << "All required files found. Proceeding to load data and MC files." << std::endl;
 
