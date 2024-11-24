@@ -121,32 +121,28 @@ std::map<std::string, std::vector<std::string>> define_and_check_files(
     return filenames;
 }
 
-// Struct to hold TFile pointers and TTreeReaders
 struct FileAndReader {
-    std::vector<TFile*> files;
+    std::vector<std::shared_ptr<TFile>> files;
     std::vector<TTreeReader> readers;
 
     ~FileAndReader() {
-        // Automatically close files when the struct goes out of scope
-        for (TFile* file : files) {
-            if (file) file->Close();
-        }
+        // Shared pointers automatically manage the file closure
     }
 };
 
-// Helper function to load trees and initialize TTreeReaders
+// Updated Helper Function to Load Trees
 FileAndReader load_trees(const std::vector<std::string>& filenames) {
     FileAndReader result;
     result.files.resize(filenames.size());
     result.readers.resize(filenames.size());
 
     for (size_t i = 0; i < filenames.size(); ++i) {
-        result.files[i] = new TFile(filenames[i].c_str(), "READ");
+        result.files[i] = std::shared_ptr<TFile>(TFile::Open(filenames[i].c_str(), "READ"));
         if (!result.files[i] || result.files[i]->IsZombie()) {
             throw std::runtime_error("Error: Unable to open file " + filenames[i]);
         }
 
-        TTree* tree = (TTree*)result.files[i]->Get("PhysicsEvents");
+        TTree* tree = static_cast<TTree*>(result.files[i]->Get("PhysicsEvents"));
         if (!tree) {
             throw std::runtime_error("Error: Unable to find 'PhysicsEvents' tree in file " + filenames[i]);
         }

@@ -2,12 +2,12 @@
 CXX = g++
 CXXFLAGS = -Wall -Wextra -g -Wno-unused-but-set-variable -std=c++17
 ROOTLIBS = $(shell root-config --cflags --libs)
-LFLAGS = $(ROOTLIBS) -lMinuit -lstdc++fs  # Add -lstdc++fs for filesystem
+LFLAGS = $(ROOTLIBS) -lMinuit -lstdc++fs  # Ensure -lstdc++fs is present
 
 # Target executable
 TARGET = dvcs_cross_section_extraction
 
-# Source files (added calculate_contamination.cpp)
+# Source files
 SRC = dvcs_cross_section_extraction.cpp \
       determine_exclusivity.cpp \
       histConfigs.cpp \
@@ -30,12 +30,12 @@ OBJ = $(SRC:.cpp=.o)
 
 # Main target
 $(TARGET): $(OBJ)
-	$(CXX) $(CXXFLAGS) -o $@ $^ $(LFLAGS)
+      $(CXX) $(CXXFLAGS) -o $@ $^ $(LFLAGS)
 
 # Generic rule for compiling source files
 %.o: %.cpp
-	$(CXX) $(CXXFLAGS) -c $< $(ROOTLIBS)
+      $(CXX) $(CXXFLAGS) -c $< $(ROOTLIBS)
 
 # Clean target
 clean:
-	rm -f $(OBJ) $(TARGET)
+      rm -f $(OBJ) $(TARGET)
