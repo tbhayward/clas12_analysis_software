@@ -20,7 +20,7 @@ bool SingleHadronKinematicCuts::applyCuts(int currentFits, bool isMC) {
     bool checked = false;
     string property = binNames[currentFits];
 
-    // if (*fiducial_status != 2) return false; // fiducial cuts
+    if (*fiducial_status != 2) return false; // fiducial cuts
     // if (*Q2 < 1) return false;
     // if (*W < 2) return false;
     // if (*y > 0.8) return false;
@@ -66,27 +66,27 @@ bool SingleHadronKinematicCuts::applyCuts(int currentFits, bool isMC) {
       return goodEvent;
     }
 
-    if (property == "xFsector1") {
+    if (property == "xBsector1") {
       goodEvent = *Q2 > 1 && *W > 2 && *y < 0.80 && *Mx2 > 1.8225 && (*e_phi < 0.7 || *e_phi > 5.9);
       return goodEvent;
     } 
-    if (property == "xFsector2") {
+    if (property == "xBsector2") {
       goodEvent = *Q2 > 1 && *W > 2 && *y < 0.80 && *Mx2 > 1.8225 && (*e_phi > 0.7 && *e_phi < 1.8);
       return goodEvent;
     } 
-    if (property == "xFsector3") {
+    if (property == "xBsector3") {
       goodEvent = *Q2 > 1 && *W > 2 && *y < 0.80 && *Mx2 > 1.8225 && (*e_phi > 1.8 && *e_phi < 2.8);
       return goodEvent;
     } 
-    if (property == "xFsector4") {
+    if (property == "xBsector4") {
       goodEvent = *Q2 > 1 && *W > 2 && *y < 0.80 && *Mx2 > 1.8225 && (*e_phi > 2.8 && *e_phi < 3.8);
       return goodEvent;
     } 
-    if (property == "xFsector5") {
+    if (property == "xBsector5") {
       goodEvent = *Q2 > 1 && *W > 2 && *y < 0.80 && *Mx2 > 1.8225 && (*e_phi > 3.8 && *e_phi < 4.8);
       return goodEvent;
     } 
-    if (property == "xFsector6") {
+    if (property == "xBsector6") {
       goodEvent = *Q2 > 1 && *W > 2 && *y < 0.80 && *Mx2 > 1.8225 && (*e_phi > 4.8 && *e_phi < 5.85);
       return goodEvent;
     } 
