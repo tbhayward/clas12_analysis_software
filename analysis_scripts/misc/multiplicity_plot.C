@@ -219,7 +219,7 @@ void multiplicity_plot(const char* filename)
     leg->Draw();
 
     // Save canvas to file
-    c1->SaveAs("nh3_multiplicity.pdf");
+    c1->SaveAs("output/nh3_multiplicity.pdf");
 
     // Now process per-sector data
 
@@ -327,7 +327,7 @@ void multiplicity_plot(const char* filename)
     }
 
     // Save canvas to file
-    c2->SaveAs("nh3_multiplicity_per_sector.pdf");
+    c2->SaveAs("output/nh3_multiplicity_per_sector.pdf");
 
     // Clean up
     delete gr_pos;

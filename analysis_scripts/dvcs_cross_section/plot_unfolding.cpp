@@ -85,7 +85,6 @@ std::map<std::string, std::vector<UnfoldingData>> plot_unfolding(
     const int base_canvas_height = 800;
     int canvas_width = static_cast<int>(1.5 * base_canvas_width);
     int canvas_height = static_cast<int>(1.5 * base_canvas_height);
-
     gStyle->SetOptStat(0);
 
     // Map to hold combined unfolding data
