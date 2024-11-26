@@ -13,6 +13,7 @@
 #include "TLegend.h"
 #include "TAxis.h"
 #include "TStyle.h"
+#include "TApplication.h"
 #include "TROOT.h"
 
 void multiplicity_plot(const char* filename)
