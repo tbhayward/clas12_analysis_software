@@ -22,9 +22,10 @@ struct UnfoldingData {
     // combined_raw_yields[period][phi_idx]
     std::vector<std::vector<int>> combined_raw_yields;
 
-    // Acceptances and unfolded yields per period:
+    // Acceptances, contamination and unfolded yields per period:
     // acceptance[period][phi_idx]
     std::vector<std::vector<double>> acceptance;
+    std::vector<std::vector<double>> contamination;
     std::vector<std::vector<double>> unfolded_yields;
 };
 

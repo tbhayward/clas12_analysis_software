@@ -66,6 +66,10 @@ bool SingleHadronKinematicCuts::applyCuts(int currentFits, bool isMC) {
       return goodEvent;
     }
 
+    if (property == "xBsector0") { // meant to be all six sectors
+      goodEvent = *Q2 > 1 && *W > 2 && *y < 0.80 && *Mx2 > 1.8225;
+      return goodEvent;
+    } 
     if (property == "xBsector1") {
       goodEvent = *Q2 > 1 && *W > 2 && *y < 0.80 && *Mx2 > 1.8225 && (*e_phi < 0.7 || *e_phi > 5.9);
       return goodEvent;
