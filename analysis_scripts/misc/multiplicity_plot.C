@@ -339,17 +339,17 @@ void multiplicity_plot(const char* filename)
     delete file;
 }
 
-// Main function to run the script from command line
 int main(int argc, char** argv) {
     // Initialize ROOT application to handle graphics
     TApplication app("app", &argc, argv);
 
-    if (argc != 2) {
+    // Use app.Argc() and app.Argv() to get the adjusted arguments
+    if (app.Argc() != 2) {
         std::cerr << "Usage: ./multiplicity_plot <root_file>" << std::endl;
         return 1;
     }
 
-    multiplicity_plot(argv[1]);
+    multiplicity_plot(app.Argv()[1]);
 
     // If you want to display the canvases, uncomment the next line
     // app.Run();
