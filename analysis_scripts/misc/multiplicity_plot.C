@@ -344,10 +344,10 @@ int main(int argc, char** argv) {
     // Initialize ROOT application to handle graphics
     TApplication app("app", &argc, argv);
 
-    // if (argc != 2) {
-    //     std::cerr << "Usage: ./multiplicity_plot <root_file>" << std::endl;
-    //     return 1;
-    // }
+    if (argc != 2) {
+        std::cerr << "Usage: ./multiplicity_plot <root_file>" << std::endl;
+        return 1;
+    }
 
     multiplicity_plot(argv[1]);
 
