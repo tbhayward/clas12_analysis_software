@@ -1,3 +1,20 @@
+#include <iostream>
+#include <vector>
+#include <map>
+#include <algorithm>
+#include <numeric>
+#include <cmath>
+
+// Include ROOT headers
+#include "TFile.h"
+#include "TTree.h"
+#include "TCanvas.h"
+#include "TGraphErrors.h"
+#include "TLegend.h"
+#include "TAxis.h"
+#include "TStyle.h"
+#include "TROOT.h"
+
 void multiplicity_plot(const char* filename)
 {
     // Open the ROOT file
@@ -160,9 +177,9 @@ void multiplicity_plot(const char* filename)
     }
 
     // Create TGraphErrors for plotting
-    TGraphErrors *gr_pos = new TGraphErrors(runnum_vals_sorted.size(), &runnum_vals_sorted[0], &mean_pos_sorted[0], 0, &err_pos_sorted[0]);
-    TGraphErrors *gr_neg = new TGraphErrors(runnum_vals_sorted.size(), &runnum_vals_sorted[0], &mean_neg_sorted[0], 0, &err_neg_sorted[0]);
-    TGraphErrors *gr_neutral = new TGraphErrors(runnum_vals_sorted.size(), &runnum_vals_sorted[0], &mean_neutral_sorted[0], 0, &err_neutral_sorted[0]);
+    TGraphErrors *gr_pos = new TGraphErrors(runnum_vals_sorted.size(), &runnum_vals_sorted[0], &mean_pos_sorted[0], nullptr, &err_pos_sorted[0]);
+    TGraphErrors *gr_neg = new TGraphErrors(runnum_vals_sorted.size(), &runnum_vals_sorted[0], &mean_neg_sorted[0], nullptr, &err_neg_sorted[0]);
+    TGraphErrors *gr_neutral = new TGraphErrors(runnum_vals_sorted.size(), &runnum_vals_sorted[0], &mean_neutral_sorted[0], nullptr, &err_neutral_sorted[0]);
 
     // Customize graph appearance
     gr_pos->SetMarkerStyle(20);
@@ -201,7 +218,7 @@ void multiplicity_plot(const char* filename)
     leg->Draw();
 
     // Save canvas to file
-    c1->SaveAs("/home/thayward/nh3_multiplicity.pdf");
+    c1->SaveAs("nh3_multiplicity.pdf");
 
     // Now process per-sector data
 
@@ -271,9 +288,9 @@ void multiplicity_plot(const char* filename)
         }
 
         // Create TGraphErrors for plotting
-        TGraphErrors *gr_pos_s = new TGraphErrors(runnum_vals_sorted_s.size(), &runnum_vals_sorted_s[0], &mean_pos_sorted_s[0], 0, &err_pos_sorted_s[0]);
-        TGraphErrors *gr_neg_s = new TGraphErrors(runnum_vals_sorted_s.size(), &runnum_vals_sorted_s[0], &mean_neg_sorted_s[0], 0, &err_neg_sorted_s[0]);
-        TGraphErrors *gr_neutral_s = new TGraphErrors(runnum_vals_sorted_s.size(), &runnum_vals_sorted_s[0], &mean_neutral_sorted_s[0], 0, &err_neutral_sorted_s[0]);
+        TGraphErrors *gr_pos_s = new TGraphErrors(runnum_vals_sorted_s.size(), &runnum_vals_sorted_s[0], &mean_pos_sorted_s[0], nullptr, &err_pos_sorted_s[0]);
+        TGraphErrors *gr_neg_s = new TGraphErrors(runnum_vals_sorted_s.size(), &runnum_vals_sorted_s[0], &mean_neg_sorted_s[0], nullptr, &err_neg_sorted_s[0]);
+        TGraphErrors *gr_neutral_s = new TGraphErrors(runnum_vals_sorted_s.size(), &runnum_vals_sorted_s[0], &mean_neutral_sorted_s[0], nullptr, &err_neutral_sorted_s[0]);
 
         // Customize graph appearance
         gr_pos_s->SetMarkerStyle(20);
@@ -309,7 +326,7 @@ void multiplicity_plot(const char* filename)
     }
 
     // Save canvas to file
-    c2->SaveAs("/home/thayward/nh3_multiplicity_per_sector.pdf");
+    c2->SaveAs("nh3_multiplicity_per_sector.pdf");
 
     // Clean up
     delete gr_pos;
@@ -319,4 +336,22 @@ void multiplicity_plot(const char* filename)
     delete c2;
     file->Close();
     delete file;
+}
+
+// Main function to run the script from command line
+int main(int argc, char** argv) {
+    // Initialize ROOT application to handle graphics
+    TApplication app("app", &argc, argv);
+
+    if (argc != 2) {
+        std::cerr << "Usage: ./multiplicity_plot <root_file>" << std::endl;
+        return 1;
+    }
+
+    multiplicity_plot(argv[1]);
+
+    // If you want to display the canvases, uncomment the next line
+    // app.Run();
+
+    return 0;
 }
