@@ -15,6 +15,7 @@ private:
     TTreeReaderValue<int> fiducial_status;
     TTreeReaderValue<double> e_phi;
     TTreeReaderValue<double> vz_e;
+    TTreeReaderValue<double> p_phi;
     TTreeReaderValue<double> Q2;
     TTreeReaderValue<double> W;
     TTreeReaderValue<double> Mx2;
