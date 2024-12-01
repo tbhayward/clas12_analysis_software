@@ -310,7 +310,7 @@ void multiplicity_plot(const char* filename)
         gr_pos_s->SetTitle(Form("Sector %d", sector));
         gr_pos_s->GetXaxis()->SetTitle("runnum");
         gr_pos_s->GetYaxis()->SetTitle("Multiplicity");
-        gr_pos_s->GetYaxis()->SetRangeUser(0.0, 1.3);  // Adjust y-axis range as needed
+        gr_pos_s->GetYaxis()->SetRangeUser(0.0, 2.0);  // Adjust y-axis range as needed
         gr_pos_s->Draw("AP");
         gr_neg_s->Draw("P SAME");
         gr_neutral_s->Draw("P SAME");
