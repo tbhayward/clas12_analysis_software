@@ -226,15 +226,15 @@ std::pair<double, double> calculate_dilution_and_error(double nA, double nC, dou
     //                     78.6217 * nCH * xC * xf * xHe + 
     //                     14.9756 * nC * xCH * xf * xHe));
 
-    // double dilution = (27.3473 * (-1.0 * nMT * xA + nA * xHe) *
-    //                (-0.505693 * nMT * xC * xCH * xf +
-    //                 (1.0 * nf * xC * xCH - 3.34924 * nCH * xC * xf + 2.85493 * nC * xCH * xf) * xHe)
-    //               ) / (nA * xHe *
-    //                    (73.2426 * nMT * xC * xCH * xf +
-    //                     1.0 * nf * xC * xCH * xHe - 91.5925 * nCH * xC * xf * xHe + 17.3499 * nC * xCH * xf * xHe)
-    //                   );
+    double dilution = (27.3473 * (-1.0 * nMT * xA + nA * xHe) *
+                   (-0.505693 * nMT * xC * xCH * xf +
+                    (1.0 * nf * xC * xCH - 3.34924 * nCH * xC * xf + 2.85493 * nC * xCH * xf) * xHe)
+                  ) / (nA * xHe *
+                       (73.2426 * nMT * xC * xCH * xf +
+                        1.0 * nf * xC * xCH * xHe - 91.5925 * nCH * xC * xf * xHe + 17.3499 * nC * xCH * xf * xHe)
+                      );
 
-    double dilution = (0.699832)*(nA/xA-nMT/xHe)/(1.25055*nCH/xCH-0.23688*nC/xC-0.013668*nf/xf-nMT/xHe);
+    // double packing_fraction = (0.699832)*(nA/xA-nMT/xHe)/(1.25055*nCH/xCH-0.23688*nC/xC-0.013668*nf/xf-nMT/xHe);
     
     double error = calculate_dilution_error(nA, nC, nCH, nMT, nf, xA, xC, xCH, xHe, xf);
     
