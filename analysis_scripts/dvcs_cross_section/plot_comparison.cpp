@@ -31,7 +31,6 @@ void ensure_directory_exists(const std::string &path) {
 }
 
 // Helper function to read data from the first CSV file format
-// Helper function to read data from the first CSV file format
 std::vector<BinData> read_csv_first(const std::string &file_path) {
     std::vector<BinData> bins;
     std::ifstream file(file_path);
@@ -312,7 +311,6 @@ void plot_for_xB_bin(const std::vector<BinData> &data_first, const std::vector<B
 void plot_comparison(const std::string &csv_file_path_first, const std::string &csv_file_path_second) {
     ensure_directory_exists("output");
     ensure_directory_exists("output/cross_check");
-    ensure_directory_exists("output/cross_check/RGAFa18Out");
 
     std::vector<BinData> bin_data_first = read_csv_first(csv_file_path_first);
     std::vector<BinData> bin_data_second = read_csv_second(csv_file_path_second, bin_data_first);
