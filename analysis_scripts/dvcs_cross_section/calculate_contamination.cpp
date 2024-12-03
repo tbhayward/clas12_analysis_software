@@ -394,8 +394,6 @@ void calculate_contamination(
             double contamination_min = 0.0;
             double contamination_max = 0.6;
 
-            double contamination_min = 0.0;
-
             TH1F* frame = pad->DrawFrame(phi_min, contamination_min, phi_max, contamination_max);
             frame->GetXaxis()->SetTitle("#phi [deg]");
             frame->GetYaxis()->SetTitle("Contamination");
