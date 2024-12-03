@@ -23,6 +23,7 @@ static bool phi_in_bin(double phi_deg, double phi_low, double phi_high) {
     }
 }
 
+// Function to calculate contamination and produce plots
 void calculate_contamination(
     const std::string& base_output_dir,
     int xB_bin,
@@ -42,13 +43,15 @@ void calculate_contamination(
     auto& unfolding_data_vec = bin_data["combined"];
 
     const int n_periods = 3; // Periods 0-2
+    std::vector<std::string> period_names = {"Fa18Inb", "Fa18Out", "Sp19Inb"};
 
     // Loop over each UnfoldingData instance
     for (auto& unfolding_data : unfolding_data_vec) {
         size_t n_phi_bins = unfolding_data.phi_min.size();
 
-        // Initialize contamination_fraction and signal_yield
+        // Initialize contamination_fraction, contamination_uncertainty, and signal_yield
         unfolding_data.contamination_fraction.resize(n_periods, std::vector<double>(n_phi_bins, 0.0));
+        unfolding_data.contamination_uncertainty.resize(n_periods, std::vector<double>(n_phi_bins, 0.0));
         unfolding_data.signal_yield.resize(n_periods, std::vector<double>(n_phi_bins, 0.0));
 
         // For each period
@@ -271,13 +274,34 @@ void calculate_contamination(
                 double N_eppi0_misID_sim_count = N_eppi0_misID_sim[phi_idx];
 
                 double contamination = 0.0;
+                double sigma_contamination = 0.0; // Statistical uncertainty on contamination
 
-                if (N_DVCS > 0.0 && N_eppi0_sim_count > 0.0) {
+                if (N_DVCS > 0.0 && N_eppi0_sim_count > 0.0 && N_eppi0_data_count > 0.0 && N_eppi0_misID_sim_count > 0.0) {
                     double ratio = N_eppi0_data_count / N_eppi0_sim_count;
                     contamination = (N_eppi0_misID_sim_count * ratio) / N_DVCS;
+
+                    // Calculate uncertainties
+                    double sigma_N_DVCS = sqrt(N_DVCS);
+                    double sigma_N_eppi0_data = sqrt(N_eppi0_data_count);
+                    double sigma_N_eppi0_sim = sqrt(N_eppi0_sim_count);
+                    double sigma_N_misID_sim = sqrt(N_eppi0_misID_sim_count);
+
+                    double sigma_ratio = ratio * sqrt(
+                        (sigma_N_eppi0_data / N_eppi0_data_count) * (sigma_N_eppi0_data / N_eppi0_data_count) +
+                        (sigma_N_eppi0_sim / N_eppi0_sim_count) * (sigma_N_eppi0_sim / N_eppi0_sim_count)
+                    );
+
+                    sigma_contamination = contamination * sqrt(
+                        (sigma_N_misID_sim / N_eppi0_misID_sim_count) * (sigma_N_misID_sim / N_eppi0_misID_sim_count) +
+                        (sigma_ratio / ratio) * (sigma_ratio / ratio) +
+                        (sigma_N_DVCS / N_DVCS) * (sigma_N_DVCS / N_DVCS)
+                    );
+
                     unfolding_data.contamination_fraction[period][phi_idx] = contamination;
+                    unfolding_data.contamination_uncertainty[period][phi_idx] = sigma_contamination;
                 } else {
                     unfolding_data.contamination_fraction[period][phi_idx] = 0.0;
+                    unfolding_data.contamination_uncertainty[period][phi_idx] = 0.0;
                 }
 
                 // **Correct unfolded yield to get signal yield**
@@ -286,5 +310,108 @@ void calculate_contamination(
                 unfolding_data.signal_yield[period][phi_idx] = signal_yield;
             }
         }
+    }
+
+    // **Plotting code for contamination fractions**
+
+    gStyle->SetOptStat(0); // Turn off the stats box
+
+    // Create output directory for contamination plots
+    std::string output_dir = base_output_dir + "/contamination_plots";
+    gSystem->mkdir(output_dir.c_str(), true);
+
+    // For each period (DVCS periods 0-2)
+    for (int period = 0; period < n_periods; ++period) {
+        const std::string& period_name = period_names[period];
+
+        // Create output subdirectory
+        std::string output_subdir = output_dir + "/" + period_name;
+        gSystem->mkdir(output_subdir.c_str(), true);
+
+        size_t n_bins = unfolding_data_vec.size();
+        int n_columns = std::ceil(std::sqrt(n_bins));
+        int n_rows = std::ceil(static_cast<double>(n_bins) / n_columns);
+
+        // Create the canvas
+        TCanvas* canvas = new TCanvas(Form("c_contamination_%s", period_name.c_str()), "Contamination Plots", 1200, 800);
+        canvas->Divide(n_columns, n_rows);
+
+        for (size_t group_idx = 0; group_idx < unfolding_data_vec.size(); ++group_idx) {
+            const UnfoldingData& data = unfolding_data_vec[group_idx];
+            size_t n_phi_bins = data.phi_min.size();
+
+            // Prepare data for plotting
+            std::vector<double> phi_centers(n_phi_bins);
+            std::vector<double> phi_widths(n_phi_bins);
+            std::vector<double> contamination_values(n_phi_bins);
+            std::vector<double> contamination_errors(n_phi_bins);
+
+            for (size_t phi_idx = 0; phi_idx < n_phi_bins; ++phi_idx) {
+                phi_centers[phi_idx] = data.phi_avg[phi_idx];
+                phi_widths[phi_idx] = (data.phi_max[phi_idx] - data.phi_min[phi_idx]) / 2.0;
+
+                contamination_values[phi_idx] = data.contamination_fraction[period][phi_idx];
+                contamination_errors[phi_idx] = data.contamination_uncertainty[period][phi_idx];
+            }
+
+            // Move to the appropriate pad
+            canvas->cd(group_idx + 1);
+
+            // Create TGraphErrors
+            TGraphErrors* graph_contamination = new TGraphErrors(n_phi_bins, &phi_centers[0], &contamination_values[0], &phi_widths[0], &contamination_errors[0]);
+
+            // Set styles
+            graph_contamination->SetMarkerColor(kBlack);
+            graph_contamination->SetMarkerStyle(20);
+            graph_contamination->SetLineColor(kBlack);
+
+            // Draw graph
+            TPad* pad = (TPad*)gPad;
+            pad->SetLeftMargin(0.15);
+            pad->SetBottomMargin(0.15);
+
+            // Create a frame histogram for axes
+            double phi_min = 0.0;
+            double phi_max = 360.0;
+
+            // Determine y-axis range
+            double contamination_max = 0.1; // Set a default maximum
+            if (!contamination_values.empty()) {
+                double max_value = *std::max_element(contamination_values.begin(), contamination_values.end());
+                if (max_value > contamination_max) {
+                    contamination_max = max_value * 1.2; // Add 20% padding
+                }
+            }
+
+            double contamination_min = 0.0;
+
+            TH1F* frame = pad->DrawFrame(phi_min, contamination_min, phi_max, contamination_max);
+            frame->GetXaxis()->SetTitle("#phi [deg]");
+            frame->GetYaxis()->SetTitle("Contamination");
+
+            graph_contamination->Draw("P SAME");
+
+            // Add title with averages
+            std::string title = Form("Contamination, %s, x_{B}=%.3f, Q^{2}=%.3f, -t=%.3f",
+                                     period_name.c_str(),
+                                     data.xB_avg,
+                                     data.Q2_avg,
+                                     data.t_avg);
+            TLatex latex;
+            latex.SetNDC();
+            latex.SetTextSize(0.04);
+            latex.SetTextAlign(22); // Center alignment
+            latex.DrawLatex(0.5, 0.95, title.c_str()); // Centered on x=0.5
+
+            // Clean up graph
+            // delete graph_contamination; // Uncomment if you wish to delete the graph
+        }
+
+        // Save the canvas
+        std::string filename = output_subdir + "/contamination_xB_bin_" + std::to_string(unfolding_data_vec[0].bin_number) + ".pdf";
+        canvas->SaveAs(filename.c_str());
+
+        // Clean up
+        delete canvas;
     }
 }

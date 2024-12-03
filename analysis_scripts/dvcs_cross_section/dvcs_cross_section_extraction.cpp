@@ -314,8 +314,8 @@ int main(int argc, char* argv[]) {
     std::map<std::string, std::vector<UnfoldingData>> all_unfolding_data;
 
     // Iterate over the xB bins
-    for (int xB_bin = 0; xB_bin < num_xB_bins; ++xB_bin) {
-    // for (int xB_bin = 2; xB_bin < 3; ++xB_bin) {
+    // for (int xB_bin = 0; xB_bin < num_xB_bins; ++xB_bin) {
+    for (int xB_bin = 2; xB_bin < 3; ++xB_bin) {
         // Call the plot_unfolding function for each xB_bin and get the results
         // std::map<std::string, std::vector<UnfoldingData>> bin_data = plot_unfolding(base_output_dir,
         //     xB_bin, bin_boundaries, data_readers, mc_gen_dvcsgen_readers, mc_rec_dvcsgen_readers, eppi0_readers,

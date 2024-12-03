@@ -22,7 +22,8 @@ struct UnfoldingData {
     std::vector<std::vector<double>> unfolded_yields;  // [period][phi_idx]
 
     // Contamination fractions and signal yields per period:
-    std::vector<std::vector<double>> contamination_fraction; // [period][phi_idx]
+    std::vector<std::vector<double>> contamination_fraction;    // [period][phi_idx]
+    std::vector<std::vector<double>> contamination_uncertainty; // [period][phi_idx]
     std::vector<std::vector<double>> signal_yield;           // [period][phi_idx]
 };
 
