@@ -390,14 +390,9 @@ void calculate_contamination(
             double phi_min = 0.0;
             double phi_max = 360.0;
 
-            // Determine y-axis range
-            double contamination_max = 0.1; // Set a default maximum
-            if (!contamination_values.empty()) {
-                double max_value = *std::max_element(contamination_values.begin(), contamination_values.end());
-                if (max_value > contamination_max) {
-                    contamination_max = max_value * 1.2; // Add 20% padding
-                }
-            }
+            // Set fixed y-axis range
+            double contamination_min = 0.0;
+            double contamination_max = 0.6;
 
             double contamination_min = 0.0;
 
