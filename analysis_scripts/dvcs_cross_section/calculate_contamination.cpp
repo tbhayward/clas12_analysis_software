@@ -1,6 +1,7 @@
 // calculate_contamination.cpp
 
 #include "calculate_contamination.h"
+#include "kinematic_cuts.h"
 
 // Standard library includes
 #include <cmath>
