@@ -334,8 +334,8 @@ int main(int argc, char* argv[]) {
     // // Debug information to check the contents of all_unfolding_data
     // std::cout << "Debug: Number of unfolding_data entries: " << all_unfolding_data.size() << std::endl;
 
-    // // After collecting all the data, write it to a CSV file
-    // write_csv("output/unfolding_data.csv", all_unfolding_data);
+    // After collecting all the data, write it to a CSV file
+    write_csv("output/unfolding_data.csv", all_unfolding_data);
 
     // Call plot_comparison
     // plot_comparison(binning_file, "output/unfolding_data.csv");
