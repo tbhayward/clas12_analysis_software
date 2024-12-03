@@ -111,7 +111,8 @@ std::vector<BinData> read_csv_second(const std::string &file_path, const std::ve
         bin.global_bin_number = first_csv_data[index].global_bin_number;
         bin.bin_number = first_csv_data[index].bin_number;
 
-        std::getline(ss, value, ','); // Skip Bin number column
+        // Read initial binning information (13 columns)
+        std::getline(ss, value, ','); // Bin number column
         std::getline(ss, value, ','); // xBmin
         bin.xBmin = std::stod(value);
         std::getline(ss, value, ','); // xBmax
@@ -140,16 +141,38 @@ std::vector<BinData> read_csv_second(const std::string &file_path, const std::ve
         std::getline(ss, value, ','); // phiavg
         bin.phiavg = std::stod(value);
 
+        // Now, we need to skip columns to reach the unfolded yield for DVCS periods
+        // We've read 13 columns so far
+
+        // For each DVCS period (3 periods), we have 8 columns:
+        // 3 topology raw yields, 1 combined raw yield, 1 acceptance, 1 unfolded yield, 1 contamination fraction, 1 signal yield
+        // We want to reach the unfolded yield for period 0 (inbending)
+
+        // Skip columns for period 0 up to unfolded yield
+        // From current position (after 13 columns), skip 3 (topology raw yields) + 1 (combined raw yield) + 1 (acceptance) = 5 columns
         for (int i = 0; i < 5; ++i) std::getline(ss, value, ',');
+
+        // Now read unfolded yield for period 0
         std::getline(ss, value, ','); // Unfolded yield (inbending)
         double unfolded_yield_inbending = std::stod(value);
 
+        // Skip contamination fraction and signal yield for period 0
+        for (int i = 0; i < 2; ++i) std::getline(ss, value, ',');
+
+        // Now, to get to the unfolded yield for period 1 (outbending), skip the columns for period 1 up to unfolded yield
+        // For period 1, skip 3 (topology raw yields) + 1 (combined raw yield) + 1 (acceptance) = 5 columns
         for (int i = 0; i < 5; ++i) std::getline(ss, value, ',');
+
+        // Read unfolded yield for period 1
         std::getline(ss, value, ','); // Unfolded yield (outbending)
         double unfolded_yield_outbending = std::stod(value);
 
-        // Store the sum of inbending and outbending as the total yield
-        bin.unfolded_yield_inbending = unfolded_yield_inbending + unfolded_yield_outbending;
+        // Skip contamination fraction and signal yield for period 1
+        for (int i = 0; i < 2; ++i) std::getline(ss, value, ',');
+
+        // Sum the unfolded yields from periods 0 and 1
+        double total_unfolded_yield = unfolded_yield_inbending + unfolded_yield_outbending;
+        bin.unfolded_yield_inbending = total_unfolded_yield;
 
         bins.push_back(bin);
         index++;

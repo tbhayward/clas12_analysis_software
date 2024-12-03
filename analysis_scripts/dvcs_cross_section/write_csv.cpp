@@ -5,7 +5,7 @@
 #include <cstddef>  // For size_t
 #include <map>
 #include "write_csv.h"
-#include "unfolding_data.h"  // Assuming UnfoldingData is defined here
+#include "unfolding_data.h"
 
 void write_csv(const std::string& filename, const std::map<std::string, std::vector<UnfoldingData>>& topology_unfolding_data) {
     // Open the file
@@ -38,6 +38,10 @@ void write_csv(const std::string& filename, const std::map<std::string, std::vec
         file << "ep->e'pgamma raw_yield_combined_" << period_name << ",";
         file << "ep->e'pgamma acceptance_" << period_name << ",";
         file << "ep->e'pgamma unfolded_yield_" << period_name << ",";
+
+        // Insert contamination_fraction and signal_yield
+        file << "ep->e'pgamma contamination_fraction_" << period_name << ",";
+        file << "ep->e'pgamma signal_yield_" << period_name << ",";
     }
 
     // Column headers for eppi0 data (periods 3-5)
@@ -92,6 +96,11 @@ void write_csv(const std::string& filename, const std::map<std::string, std::vec
                 double acceptance = data.acceptance[period][phi_idx];
                 double unfolded_yield = data.unfolded_yields[period][phi_idx];
                 file << acceptance << "," << unfolded_yield << ",";
+
+                // Contamination fraction and signal yield
+                double contamination_fraction = data.contamination_fraction[period][phi_idx];
+                double signal_yield = data.signal_yield[period][phi_idx];
+                file << contamination_fraction << "," << signal_yield << ",";
             }
 
             // eppi0 data (periods 3-5)
