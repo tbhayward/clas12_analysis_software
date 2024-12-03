@@ -1,14 +1,29 @@
+// calculate_contamination.cpp
+
 #include "calculate_contamination.h"
-#include "kinematic_cuts.h"
-#include "bin_helpers.h"
-#include "unfolding_data.h"
-#include <TTreeReader.h>
-#include <TTreeReaderValue.h>
+
+// Standard library includes
 #include <cmath>
-#include <iostream>
+#include <algorithm>
 #include <vector>
 #include <string>
 #include <map>
+#include <iostream>
+
+// ROOT includes
+#include <TTreeReader.h>
+#include <TTreeReaderValue.h>
+#include <TStyle.h>
+#include <TSystem.h>
+#include <TCanvas.h>
+#include <TGraphErrors.h>
+#include <TPad.h>
+#include <TH1F.h>
+#include <TLatex.h>
+#include <TMath.h>
+#include <TROOT.h>
+#include <TFile.h>
+#include <TLegend.h>
 
 // Constants
 constexpr double RAD_TO_DEG = 180.0 / M_PI;
