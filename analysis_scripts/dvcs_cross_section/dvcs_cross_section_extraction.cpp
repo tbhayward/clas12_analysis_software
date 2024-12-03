@@ -321,9 +321,9 @@ int main(int argc, char* argv[]) {
             xB_bin, bin_boundaries, data_readers, mc_gen_dvcsgen_readers, mc_rec_dvcsgen_readers, eppi0_readers,
             mc_gen_aaogen_readers, mc_rec_aaogen_readers);
 
-        // // Calculate the contamination factor and update bin_data
-        // calculate_contamination(base_output_dir, xB_bin, bin_boundaries, data_readers, eppi0_readers,
-        //     mc_rec_aaogen_readers, mc_rec_eppi0_bkg_readers, bin_data);
+        // Calculate the contamination factor and update bin_data
+        calculate_contamination(base_output_dir, xB_bin, bin_boundaries, data_readers, eppi0_readers,
+            mc_rec_aaogen_readers, mc_rec_eppi0_bkg_readers, bin_data);
 
         // Merge bin_data into all_unfolding_data
         for (const auto& [topology, data_vector] : bin_data) {
@@ -338,7 +338,7 @@ int main(int argc, char* argv[]) {
     // write_csv("output/unfolding_data.csv", all_unfolding_data);
 
     // Call plot_comparison
-    plot_comparison(binning_file, "output/unfolding_data.csv");
+    // plot_comparison(binning_file, "output/unfolding_data.csv");
 
     std::cout << "Program complete. Additional functionality to be added later." << std::endl << std::endl;
 
