@@ -591,10 +591,20 @@ std::map<std::string, std::vector<UnfoldingData>> plot_unfolding(
                     // Calculate uncertainty on acceptance
                     double sigma_mc_rec = sqrt(mc_rec_count);
                     double sigma_mc_gen = sqrt(mc_gen_count);
+
+                    // Avoid division by zero
+                    double rel_error_mc_rec = (mc_rec_count > 0) ? (sigma_mc_rec / mc_rec_count) : 0.0;
+                    double rel_error_mc_gen = sigma_mc_gen / mc_gen_count;
+
                     double acceptance_uncertainty = acceptance * sqrt(
-                        (sigma_mc_rec / mc_rec_count) * (sigma_mc_rec / mc_rec_count) +
-                        (sigma_mc_gen / mc_gen_count) * (sigma_mc_gen / mc_gen_count)
+                        rel_error_mc_rec * rel_error_mc_rec +
+                        rel_error_mc_gen * rel_error_mc_gen
                     );
+
+                    // Ensure that if acceptance is zero, uncertainty is zero
+                    if (acceptance == 0.0) {
+                        acceptance_uncertainty = 0.0;
+                    }
 
                     unfolding_data.acceptance_uncertainty[period][phi_idx] = acceptance_uncertainty;
                 } else {
@@ -860,11 +870,14 @@ std::map<std::string, std::vector<UnfoldingData>> plot_unfolding(
                 double acceptance_uncertainty = unfolding_data.acceptance_uncertainty[period][phi_idx];
 
                 // Calculate the uncertainty on the unfolded yield using error propagation
-                if (acceptance > 0) {
+                if (acceptance > 0 && raw_yield > 0) {
                     double sigma_raw = sqrt(raw_yield);
+                    double rel_error_raw = sigma_raw / raw_yield;
+                    double rel_error_acceptance = acceptance_uncertainty / acceptance;
+
                     double unfolded_yield_uncertainty = unfolded_counts[phi_idx] * sqrt(
-                        (sigma_raw / raw_yield) * (sigma_raw / raw_yield) +
-                        (acceptance_uncertainty / acceptance) * (acceptance_uncertainty / acceptance)
+                        rel_error_raw * rel_error_raw +
+                        rel_error_acceptance * rel_error_acceptance
                     );
                     unfolded_errors[phi_idx] = unfolded_yield_uncertainty;
                 } else {
@@ -963,11 +976,14 @@ std::map<std::string, std::vector<UnfoldingData>> plot_unfolding(
                 double acceptance_uncertainty = unfolding_data.acceptance_uncertainty[eppi0_period][phi_idx];
 
                 // Calculate the uncertainty on the unfolded yield using error propagation
-                if (acceptance > 0) {
+                if (acceptance > 0 && raw_yield > 0) {
                     double sigma_raw = sqrt(raw_yield);
+                    double rel_error_raw = sigma_raw / raw_yield;
+                    double rel_error_acceptance = acceptance_uncertainty / acceptance;
+
                     double unfolded_yield_uncertainty = unfolded_counts[phi_idx] * sqrt(
-                        (sigma_raw / raw_yield) * (sigma_raw / raw_yield) +
-                        (acceptance_uncertainty / acceptance) * (acceptance_uncertainty / acceptance)
+                        rel_error_raw * rel_error_raw +
+                        rel_error_acceptance * rel_error_acceptance
                     );
                     unfolded_errors[phi_idx] = unfolded_yield_uncertainty;
                 } else {
