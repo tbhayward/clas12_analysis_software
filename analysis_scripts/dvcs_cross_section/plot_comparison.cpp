@@ -112,52 +112,60 @@ std::vector<BinData> read_csv_second(const std::string &file_path, const std::ve
 
         // Read initial binning information (13 columns)
         std::getline(ss, value, ','); // Bin number column
-        std::getline(ss, value, ','); // xBmin
+        std::getline(ss, value, ','); // xB_min
         bin.xBmin = std::stod(value);
-        std::getline(ss, value, ','); // xBmax
+        std::getline(ss, value, ','); // xB_max
         bin.xBmax = std::stod(value);
-        std::getline(ss, value, ','); // xBavg
+        std::getline(ss, value, ','); // xB_avg
         bin.xBavg = std::stod(value);
 
-        std::getline(ss, value, ','); // Q2min
+        std::getline(ss, value, ','); // Q2_min
         bin.Q2min = std::stod(value);
-        std::getline(ss, value, ','); // Q2max
+        std::getline(ss, value, ','); // Q2_max
         bin.Q2max = std::stod(value);
-        std::getline(ss, value, ','); // Q2avg
+        std::getline(ss, value, ','); // Q2_avg
         bin.Q2avg = std::stod(value);
 
-        std::getline(ss, value, ','); // t_min (tmin)
+        std::getline(ss, value, ','); // t_min
         bin.tmin = std::stod(value);
-        std::getline(ss, value, ','); // t_max (tmax)
+        std::getline(ss, value, ','); // t_max
         bin.tmax = std::stod(value);
-        std::getline(ss, value, ','); // t_avg (tavg)
+        std::getline(ss, value, ','); // t_avg
         bin.tavg = std::stod(value);
 
-        std::getline(ss, value, ','); // phimin
+        std::getline(ss, value, ','); // phi_min
         bin.phimin = std::stod(value);
-        std::getline(ss, value, ','); // phimax
+        std::getline(ss, value, ','); // phi_max
         bin.phimax = std::stod(value);
-        std::getline(ss, value, ','); // phiavg
+        std::getline(ss, value, ','); // phi_avg
         bin.phiavg = std::stod(value);
 
         // Now, we need to skip columns to reach the signal yield for DVCS periods
         // We've read 13 columns so far
 
-        // For each DVCS period (3 periods), we have 8 columns:
-        // 3 topology raw yields, 1 combined raw yield, 1 acceptance, 1 unfolded yield, 1 contamination fraction, 1 signal yield
-        // We want to reach the signal yield for period 0 (inbending)
+        // For each DVCS period (3 periods), we have:
+        // 3 topology raw yields (FD_FD, CD_FD, CD_FT): 3 columns
+        // 1 combined raw yield: 1 column
+        // 1 acceptance: 1 column
+        // 1 unfolded yield: 1 column
+        // 1 contamination fraction: 1 column
+        // 1 contamination uncertainty: 1 column (new column added)
+        // 1 signal yield: 1 column
+        // Total per period: 9 columns
+
+        // Since we are interested in the signal yields for periods 0 and 1, we'll adjust the skips accordingly
 
         // Skip columns for period 0 up to signal yield
-        // From current position (after 13 columns), skip 3 (topology raw yields) + 1 (combined raw yield) + 1 (acceptance) + 1 (unfolded yield) + 1 (contamination fraction) = 7 columns
-        for (int i = 0; i < 7; ++i) std::getline(ss, value, ',');
+        // From current position (after 13 columns), skip 3 (topology raw yields) + 1 (combined raw yield) + 1 (acceptance) + 1 (unfolded yield) + 1 (contamination fraction) + 1 (contamination uncertainty) = 8 columns
+        for (int i = 0; i < 8; ++i) std::getline(ss, value, ',');
 
         // Now read signal yield for period 0
         std::getline(ss, value, ','); // Signal yield (inbending)
         double signal_yield_inbending = std::stod(value);
 
-        // Now, to get to the signal yield for period 1 (outbending), skip the columns for period 1 up to signal yield
-        // For period 1, skip 3 (topology raw yields) + 1 (combined raw yield) + 1 (acceptance) + 1 (unfolded yield) + 1 (contamination fraction) = 7 columns
-        for (int i = 0; i < 7; ++i) std::getline(ss, value, ',');
+        // For period 1, skip columns up to signal yield
+        // For period 1, skip 8 columns (same as above)
+        for (int i = 0; i < 8; ++i) std::getline(ss, value, ',');
 
         // Read signal yield for period 1
         std::getline(ss, value, ','); // Signal yield (outbending)
