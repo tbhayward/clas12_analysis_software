@@ -129,6 +129,7 @@ std::map<std::string, std::vector<UnfoldingData>> plot_unfolding(
         }
         unfolding_data.combined_raw_yields.resize(total_periods, std::vector<int>(n_phi_bins, 0));
         unfolding_data.acceptance.resize(total_periods, std::vector<double>(n_phi_bins, 0.0));
+        unfolding_data.acceptance_uncertainty.resize(total_periods, std::vector<double>(n_phi_bins, 0.0)); // Initialize acceptance uncertainties
         unfolding_data.unfolded_yields.resize(total_periods, std::vector<double>(n_phi_bins, 0.0));
 
         // Store the unfolding_data instance
@@ -573,7 +574,7 @@ std::map<std::string, std::vector<UnfoldingData>> plot_unfolding(
         }
     }
 
-    // Compute acceptances and unfolded yields for the combined topology
+    // Compute acceptances, their uncertainties, and unfolded yields for the combined topology
     for (size_t group_idx = 0; group_idx < n_groups; ++group_idx) {
         UnfoldingData& unfolding_data = combined_unfolding_data_vec[group_idx];
         size_t n_phi_bins = unfolding_data.phi_min.size();
@@ -586,8 +587,19 @@ std::map<std::string, std::vector<UnfoldingData>> plot_unfolding(
                 if (mc_gen_count > 0) {
                     double acceptance = mc_rec_count / mc_gen_count;
                     unfolding_data.acceptance[period][phi_idx] = acceptance;
+
+                    // Calculate uncertainty on acceptance
+                    double sigma_mc_rec = sqrt(mc_rec_count);
+                    double sigma_mc_gen = sqrt(mc_gen_count);
+                    double acceptance_uncertainty = acceptance * sqrt(
+                        (sigma_mc_rec / mc_rec_count) * (sigma_mc_rec / mc_rec_count) +
+                        (sigma_mc_gen / mc_gen_count) * (sigma_mc_gen / mc_gen_count)
+                    );
+
+                    unfolding_data.acceptance_uncertainty[period][phi_idx] = acceptance_uncertainty;
                 } else {
                     unfolding_data.acceptance[period][phi_idx] = 0.0;
+                    unfolding_data.acceptance_uncertainty[period][phi_idx] = 0.0;
                 }
 
                 // Unfolded yield for the combined topology
@@ -615,6 +627,7 @@ std::map<std::string, std::vector<UnfoldingData>> plot_unfolding(
 
             // Since acceptances and unfolded yields are only for the combined topology, we can leave them as zero
             data.acceptance.assign(total_periods, std::vector<double>(data.phi_min.size(), 0.0));
+            data.acceptance_uncertainty.assign(total_periods, std::vector<double>(data.phi_min.size(), 0.0));
             data.unfolded_yields.assign(total_periods, std::vector<double>(data.phi_min.size(), 0.0));
         }
 
@@ -843,9 +856,20 @@ std::map<std::string, std::vector<UnfoldingData>> plot_unfolding(
 
                 unfolded_counts[phi_idx] = unfolding_data.unfolded_yields[period][phi_idx];
                 double raw_yield = unfolding_data.combined_raw_yields[period][phi_idx];
-                unfolded_errors[phi_idx] = (unfolding_data.acceptance[period][phi_idx] > 0)
-                                               ? std::sqrt(raw_yield) / unfolding_data.acceptance[period][phi_idx]
-                                               : 0.0;
+                double acceptance = unfolding_data.acceptance[period][phi_idx];
+                double acceptance_uncertainty = unfolding_data.acceptance_uncertainty[period][phi_idx];
+
+                // Calculate the uncertainty on the unfolded yield using error propagation
+                if (acceptance > 0) {
+                    double sigma_raw = sqrt(raw_yield);
+                    double unfolded_yield_uncertainty = unfolded_counts[phi_idx] * sqrt(
+                        (sigma_raw / raw_yield) * (sigma_raw / raw_yield) +
+                        (acceptance_uncertainty / acceptance) * (acceptance_uncertainty / acceptance)
+                    );
+                    unfolded_errors[phi_idx] = unfolded_yield_uncertainty;
+                } else {
+                    unfolded_errors[phi_idx] = 0.0;
+                }
             }
 
             // Move to the appropriate pad
@@ -935,9 +959,20 @@ std::map<std::string, std::vector<UnfoldingData>> plot_unfolding(
 
                 unfolded_counts[phi_idx] = unfolding_data.unfolded_yields[eppi0_period][phi_idx];
                 double raw_yield = unfolding_data.combined_raw_yields[eppi0_period][phi_idx];
-                unfolded_errors[phi_idx] = (unfolding_data.acceptance[eppi0_period][phi_idx] > 0)
-                                               ? std::sqrt(raw_yield) / unfolding_data.acceptance[eppi0_period][phi_idx]
-                                               : 0.0;
+                double acceptance = unfolding_data.acceptance[eppi0_period][phi_idx];
+                double acceptance_uncertainty = unfolding_data.acceptance_uncertainty[eppi0_period][phi_idx];
+
+                // Calculate the uncertainty on the unfolded yield using error propagation
+                if (acceptance > 0) {
+                    double sigma_raw = sqrt(raw_yield);
+                    double unfolded_yield_uncertainty = unfolded_counts[phi_idx] * sqrt(
+                        (sigma_raw / raw_yield) * (sigma_raw / raw_yield) +
+                        (acceptance_uncertainty / acceptance) * (acceptance_uncertainty / acceptance)
+                    );
+                    unfolded_errors[phi_idx] = unfolded_yield_uncertainty;
+                } else {
+                    unfolded_errors[phi_idx] = 0.0;
+                }
             }
 
             // Move to the appropriate pad

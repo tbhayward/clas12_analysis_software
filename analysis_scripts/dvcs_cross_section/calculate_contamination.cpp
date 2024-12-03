@@ -392,7 +392,7 @@ void calculate_contamination(
 
             // Set fixed y-axis range
             double contamination_min = 0.0;
-            double contamination_max = 0.6;
+            double contamination_max = 1;
 
             TH1F* frame = pad->DrawFrame(phi_min, contamination_min, phi_max, contamination_max);
             frame->GetXaxis()->SetTitle("#phi [deg]");

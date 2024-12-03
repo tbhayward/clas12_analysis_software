@@ -147,25 +147,26 @@ std::vector<BinData> read_csv_second(const std::string &file_path, const std::ve
         // 3 topology raw yields (FD_FD, CD_FD, CD_FT): 3 columns
         // 1 combined raw yield: 1 column
         // 1 acceptance: 1 column
+        // 1 acceptance_uncertainty: 1 column (new column added)
         // 1 unfolded yield: 1 column
         // 1 contamination fraction: 1 column
-        // 1 contamination uncertainty: 1 column (new column added)
+        // 1 contamination uncertainty: 1 column
         // 1 signal yield: 1 column
-        // Total per period: 9 columns
+        // Total per period: 10 columns
 
         // Since we are interested in the signal yields for periods 0 and 1, we'll adjust the skips accordingly
 
         // Skip columns for period 0 up to signal yield
-        // From current position (after 13 columns), skip 3 (topology raw yields) + 1 (combined raw yield) + 1 (acceptance) + 1 (unfolded yield) + 1 (contamination fraction) + 1 (contamination uncertainty) = 8 columns
-        for (int i = 0; i < 8; ++i) std::getline(ss, value, ',');
+        // From current position (after 13 columns), skip 3 (topology raw yields) + 1 (combined raw yield) + 1 (acceptance) + 1 (acceptance_uncertainty) + 1 (unfolded yield) + 1 (contamination fraction) + 1 (contamination uncertainty) = 9 columns
+        for (int i = 0; i < 9; ++i) std::getline(ss, value, ',');
 
         // Now read signal yield for period 0
         std::getline(ss, value, ','); // Signal yield (inbending)
         double signal_yield_inbending = std::stod(value);
 
         // For period 1, skip columns up to signal yield
-        // For period 1, skip 8 columns (same as above)
-        for (int i = 0; i < 8; ++i) std::getline(ss, value, ',');
+        // For period 1, skip 10 columns (same as above)
+        for (int i = 0; i < 9; ++i) std::getline(ss, value, ',');
 
         // Read signal yield for period 1
         std::getline(ss, value, ','); // Signal yield (outbending)

@@ -3,6 +3,7 @@
 
 #include <vector>
 #include <string>
+#include <map>
 
 struct UnfoldingData {
     int bin_number;
@@ -17,14 +18,15 @@ struct UnfoldingData {
     std::map<std::string, std::vector<std::vector<int>>> raw_yields;
     std::vector<std::vector<int>> combined_raw_yields;
 
-    // Acceptances and unfolded yields per period:
-    std::vector<std::vector<double>> acceptance;       // [period][phi_idx]
-    std::vector<std::vector<double>> unfolded_yields;  // [period][phi_idx]
+    // Acceptances, their uncertainties, and unfolded yields per period:
+    std::vector<std::vector<double>> acceptance;              // [period][phi_idx]
+    std::vector<std::vector<double>> acceptance_uncertainty;  // [period][phi_idx]
+    std::vector<std::vector<double>> unfolded_yields;         // [period][phi_idx]
 
     // Contamination fractions and signal yields per period:
     std::vector<std::vector<double>> contamination_fraction;    // [period][phi_idx]
     std::vector<std::vector<double>> contamination_uncertainty; // [period][phi_idx]
-    std::vector<std::vector<double>> signal_yield;           // [period][phi_idx]
+    std::vector<std::vector<double>> signal_yield;              // [period][phi_idx]
 };
 
 #endif // UNFOLDING_DATA_H
