@@ -89,6 +89,7 @@ std::vector<BinData> read_csv_first(const std::string &file_path) {
         double unfolded_yield = std::stod(value); // Store as a single total yield
 
         bin.signal_yields.push_back(unfolded_yield); // Only one yield in first CSV
+        bin.signal_yield_uncertainties.push_back(0.0); // No uncertainties provided in first CSV
 
         bins.push_back(bin);
     }
@@ -163,7 +164,7 @@ std::vector<BinData> read_csv_second(const std::string &file_path, const std::ve
         bin.signal_yield_uncertainties.clear(); // Ensure vector is empty
 
         double total_signal_yield = 0.0;
-        double total_signal_yield_uncertainty = 0.0;
+        double total_signal_yield_uncertainty_squared = 0.0;
 
         const int n_periods = 2; // Only periods 0 and 1
 
@@ -190,7 +191,7 @@ std::vector<BinData> read_csv_second(const std::string &file_path, const std::ve
 
             // Sum the signal yields and uncertainties
             total_signal_yield += signal_yield;
-            total_signal_yield_uncertainty += signal_yield_uncertainty; // Assuming uncertainties are independent
+            total_signal_yield_uncertainty_squared += signal_yield_uncertainty * signal_yield_uncertainty; // Sum in quadrature
         }
 
         // Skip columns for the third period (period 2)
@@ -199,7 +200,7 @@ std::vector<BinData> read_csv_second(const std::string &file_path, const std::ve
 
         // Store the total signal yield and uncertainty
         bin.signal_yields.push_back(total_signal_yield);
-        bin.signal_yield_uncertainties.push_back(total_signal_yield_uncertainty);
+        bin.signal_yield_uncertainties.push_back(std::sqrt(total_signal_yield_uncertainty_squared));
 
         bins.push_back(bin);
         index++;
@@ -280,20 +281,24 @@ void plot_for_xB_bin(const std::vector<BinData> &data_first, const std::vector<B
         gPad->SetLogy();  // Set log scale for the y-axis
 
         // Prepare vectors for the first dataset
-        std::vector<double> phi_values_first, yields_first, phi_errors_first;
+        std::vector<double> phi_values_first, yields_first, phi_errors_first, yield_uncertainties_first;
         for (const auto &bin : bins_first) {
             phi_values_first.push_back(bin.phiavg);
             if (!bin.signal_yields.empty()) {
                 yields_first.push_back(bin.signal_yields[0]); // Use the only yield in first CSV
+                yield_uncertainties_first.push_back(0.0);     // No uncertainties provided in first CSV
             } else {
                 yields_first.push_back(0);
+                yield_uncertainties_first.push_back(0.0);
             }
             double phi_bin_width = (bin.phimax - bin.phimin) / 2.0; // Calculate half-width of the phi bin
             phi_errors_first.push_back(phi_bin_width);
         }
 
         // Create TGraphErrors for the first dataset (blue)
-        TGraphErrors *graph_first = new TGraphErrors(phi_values_first.size(), &phi_values_first[0], &yields_first[0], &phi_errors_first[0], nullptr);
+        TGraphErrors *graph_first = new TGraphErrors(phi_values_first.size(),
+                                                     &phi_values_first[0], &yields_first[0],
+                                                     &phi_errors_first[0], &yield_uncertainties_first[0]);
         graph_first->SetMarkerStyle(20);
         graph_first->SetMarkerColor(kBlue);
 
@@ -302,21 +307,25 @@ void plot_for_xB_bin(const std::vector<BinData> &data_first, const std::vector<B
         if (it_second != qt_bins_second.end()) {
             const auto &bins_second = it_second->second;
 
-            std::vector<double> phi_values_second, yields_second, phi_errors_second;
+            std::vector<double> phi_values_second, yields_second, phi_errors_second, yield_uncertainties_second;
 
             for (const auto &bin : bins_second) {
                 phi_values_second.push_back(bin.phiavg);
                 if (!bin.signal_yields.empty()) {
                     yields_second.push_back(bin.signal_yields[0]); // Use the summed yield in second CSV
+                    yield_uncertainties_second.push_back(bin.signal_yield_uncertainties[0]);
                 } else {
                     yields_second.push_back(0);
+                    yield_uncertainties_second.push_back(0);
                 }
                 double phi_bin_width = (bin.phimax - bin.phimin) / 2.0;
                 phi_errors_second.push_back(phi_bin_width);
             }
 
-            // Create TGraphErrors for the second dataset (red)
-            TGraphErrors *graph_second = new TGraphErrors(phi_values_second.size(), &phi_values_second[0], &yields_second[0], &phi_errors_second[0], nullptr);
+            // Create TGraphErrors for the second dataset (red) with error bars
+            TGraphErrors *graph_second = new TGraphErrors(phi_values_second.size(),
+                                                          &phi_values_second[0], &yields_second[0],
+                                                          &phi_errors_second[0], &yield_uncertainties_second[0]);
             graph_second->SetMarkerStyle(21);
             graph_second->SetMarkerColor(kRed);
 
@@ -324,11 +333,11 @@ void plot_for_xB_bin(const std::vector<BinData> &data_first, const std::vector<B
             graph_first->Draw("AP");
             graph_second->Draw("P SAME");
 
-            // Create and draw legend
-            TLegend* legend = new TLegend(0.6, 0.7, 0.9, 0.9); // Adjust legend position as needed
+            // Create and draw legend at bottom right
+            TLegend* legend = new TLegend(0.6, 0.15, 0.9, 0.35); // Adjusted legend position to bottom right
             legend->SetTextSize(0.03);
-            legend->AddEntry(graph_first, "First CSV Data", "p");
-            legend->AddEntry(graph_second, "Second CSV Data (Periods 0+1)", "p");
+            legend->AddEntry(graph_first, "Lee, pass-1", "p");
+            legend->AddEntry(graph_second, "Hayward, pass-2", "p");
             legend->Draw();
         } else {
             // If no matching (Q2, t) bin in the second dataset, draw only the first dataset graph
@@ -342,7 +351,7 @@ void plot_for_xB_bin(const std::vector<BinData> &data_first, const std::vector<B
         graph_first->SetTitle(Form("x_{B} = %.2f, Q^{2} = %.2f, -t = %.2f", xB_avg, Q2avg, tavg));
 
         // Adjust axis labels and range
-        graph_first->GetXaxis()->SetTitle("#phi");
+        graph_first->GetXaxis()->SetTitle("#phi [deg]");
         graph_first->GetYaxis()->SetTitle("Signal Yield");
         graph_first->GetXaxis()->SetLabelSize(0.04); // Increased font size
         graph_first->GetYaxis()->SetLabelSize(0.04); // Increased font size
