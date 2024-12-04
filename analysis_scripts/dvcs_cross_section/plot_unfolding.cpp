@@ -358,7 +358,6 @@ std::map<std::string, std::vector<UnfoldingData>> plot_unfolding(
         }
     }
 
-    std::cout << "WE EXITED THE eppi0 CASE" << std::endl;
     // Process mc_gen_readers and mc_rec_readers to compute acceptances
     // MC readers for periods 0-2 (DVCS MC)
     for (int period = 0; period < n_periods; ++period) {
@@ -658,6 +657,7 @@ std::map<std::string, std::vector<UnfoldingData>> plot_unfolding(
                 event_topology = "(CD,FD)";
             } else if (det1 == 2 && det2 == 0) {
                 event_topology = "(CD,FT)";
+                continue; // not doing CD_FT eppi0s
             } else {
                 continue;
             }
