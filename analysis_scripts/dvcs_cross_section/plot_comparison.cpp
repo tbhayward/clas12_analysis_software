@@ -6,10 +6,10 @@
 #include <sstream>
 #include <string>
 #include <vector>
-#include <cmath>     
-#include <set>    
-#include <sys/stat.h> 
-#include <unistd.h>  
+#include <cmath>
+#include <set>
+#include <sys/stat.h>
+#include <unistd.h>
 
 // ROOT includes for plotting
 #include <TCanvas.h>
@@ -23,7 +23,6 @@
 #include <TROOT.h>
 #include <TMath.h>
 #include <TLegend.h>
-
 
 // Helper function to ensure a directory exists
 void ensure_directory_exists(const std::string &path) {
@@ -106,7 +105,7 @@ std::vector<BinData> read_csv_second(const std::string &file_path, const std::ve
     // Skip the header line
     std::getline(file, line);
 
-    int index = 0;
+    size_t index = 0;
     while (std::getline(file, line) && index < first_csv_data.size()) {
         std::stringstream ss(line);
         std::string value;
@@ -116,7 +115,7 @@ std::vector<BinData> read_csv_second(const std::string &file_path, const std::ve
         bin.bin_number = first_csv_data[index].bin_number;
 
         // Read initial binning information (13 columns)
-        std::getline(ss, value, ','); // Bin number column
+        std::getline(ss, value, ','); // Bin number column (already read above)
         std::getline(ss, value, ','); // xB_min
         bin.xBmin = std::stod(value);
         std::getline(ss, value, ','); // xB_max
@@ -161,7 +160,9 @@ std::vector<BinData> read_csv_second(const std::string &file_path, const std::ve
 
         bin.signal_yields.clear(); // Ensure vector is empty
 
-        const int n_periods = 3;
+        double total_signal_yield = 0.0;
+
+        const int n_periods = 2; // Only periods 0 and 1
 
         for (int period = 0; period < n_periods; ++period) {
             // Skip columns for this period up to signal yield
@@ -179,10 +180,15 @@ std::vector<BinData> read_csv_second(const std::string &file_path, const std::ve
             // Now read signal yield for this period
             std::getline(ss, value, ','); // Signal yield
             double signal_yield = std::stod(value);
-            bin.signal_yields.push_back(signal_yield);
+            total_signal_yield += signal_yield;
         }
 
-        // We can ignore the eppi0 data (periods 3-5) for now, unless needed
+        // Skip columns for the third period (period 2)
+        // Since each period has 10 columns, skip 10 columns
+        for (int i = 0; i < 10; ++i) std::getline(ss, value, ',');
+
+        // Store the total signal yield in bin.signal_yields[0]
+        bin.signal_yields.push_back(total_signal_yield);
 
         bins.push_back(bin);
         index++;
@@ -243,10 +249,8 @@ void plot_for_xB_bin(const std::vector<BinData> &data_first, const std::vector<B
         }
     }
     for (const auto &bin : data_second) {
-        for (double yield : bin.signal_yields) {
-            if (yield > max_yield) {
-                max_yield = yield;
-            }
+        if (!bin.signal_yields.empty() && bin.signal_yields[0] > max_yield) {
+            max_yield = bin.signal_yields[0];
         }
     }
 
@@ -287,45 +291,33 @@ void plot_for_xB_bin(const std::vector<BinData> &data_first, const std::vector<B
         if (it_second != qt_bins_second.end()) {
             const auto &bins_second = it_second->second;
 
-            // We will plot signal yields for each period in the second dataset
-            const int n_periods = bins_second[0].signal_yields.size();
-            std::vector<int> marker_styles = {21, 22, 23}; // Different marker styles for different periods
-            std::vector<int> colors = {kRed, kGreen+2, kMagenta}; // Different colors for different periods
+            std::vector<double> phi_values_second, yields_second, phi_errors_second;
 
-            TLegend* legend = new TLegend(0.6, 0.7, 0.9, 0.9); // Adjust legend position as needed
-            legend->SetTextSize(0.03);
-
-            // First, draw the first dataset graph
-            graph_first->Draw("AP");
-            legend->AddEntry(graph_first, "First CSV Data", "p");
-
-            for (int period = 0; period < n_periods; ++period) {
-                std::vector<double> phi_values_second, yields_second, phi_errors_second;
-
-                for (const auto &bin : bins_second) {
-                    phi_values_second.push_back(bin.phiavg);
-                    if (period < bin.signal_yields.size()) {
-                        yields_second.push_back(bin.signal_yields[period]);
-                    } else {
-                        yields_second.push_back(0);
-                    }
-                    double phi_bin_width = (bin.phimax - bin.phimin) / 2.0;
-                    phi_errors_second.push_back(phi_bin_width);
+            for (const auto &bin : bins_second) {
+                phi_values_second.push_back(bin.phiavg);
+                if (!bin.signal_yields.empty()) {
+                    yields_second.push_back(bin.signal_yields[0]); // Use the summed yield in second CSV
+                } else {
+                    yields_second.push_back(0);
                 }
-
-                // Create TGraphErrors for the second dataset (period-specific)
-                TGraphErrors *graph_second = new TGraphErrors(phi_values_second.size(), &phi_values_second[0], &yields_second[0], &phi_errors_second[0], nullptr);
-                graph_second->SetMarkerStyle(marker_styles[period]);
-                graph_second->SetMarkerColor(colors[period]);
-
-                // Draw the graph
-                graph_second->Draw("P SAME");
-
-                // Add to legend
-                legend->AddEntry(graph_second, Form("Second CSV Period %d", period), "p");
+                double phi_bin_width = (bin.phimax - bin.phimin) / 2.0;
+                phi_errors_second.push_back(phi_bin_width);
             }
 
-            // Draw the legend
+            // Create TGraphErrors for the second dataset (red)
+            TGraphErrors *graph_second = new TGraphErrors(phi_values_second.size(), &phi_values_second[0], &yields_second[0], &phi_errors_second[0], nullptr);
+            graph_second->SetMarkerStyle(21);
+            graph_second->SetMarkerColor(kRed);
+
+            // Draw both graphs with legends for comparison
+            graph_first->Draw("AP");
+            graph_second->Draw("P SAME");
+
+            // Create and draw legend
+            TLegend* legend = new TLegend(0.6, 0.7, 0.9, 0.9); // Adjust legend position as needed
+            legend->SetTextSize(0.03);
+            legend->AddEntry(graph_first, "First CSV Data", "p");
+            legend->AddEntry(graph_second, "Second CSV Data (Periods 0+1)", "p");
             legend->Draw();
         } else {
             // If no matching (Q2, t) bin in the second dataset, draw only the first dataset graph
