@@ -9,6 +9,7 @@
 #include <TTreeReaderValue.h>
 #include <filesystem>
 #include <cmath>  // for radian conversion
+#include <algorithm> // for std::replace
 
 void determine_exclusivity(const std::string& analysisType, const std::string& topology, TTreeReader& dataReader, TTreeReader& mcReader, const std::string& outputDir, const std::string& plotTitle) {
     // Set up global style options (remove stat boxes)
@@ -33,7 +34,7 @@ void determine_exclusivity(const std::string& analysisType, const std::string& t
     canvas->Divide(4, 2);  // 2 rows, 4 columns
 
     // Create a 2x4 canvas for plots with "Loose Cuts"
-    TCanvas* canvas_loose_cuts = new TCanvas("exclusivity_canvas_loose_cuts", "Exclusivity Plots with Loose Cuts", 1600, 800);
+    TCanvas* canvas_loose_cuts = new TCanvas("exclusivity_canvas_loose_cuts", "Exclusivity Plots with Kinematic Cuts", 1600, 800);
     canvas_loose_cuts->Divide(4, 2);
 
     // Vector of variables for plotting (switch between "dvcs" and "eppi0")
@@ -44,6 +45,19 @@ void determine_exclusivity(const std::string& analysisType, const std::string& t
         variables = {"open_angle_ep2", "theta_pi0_pi0", "pTmiss", "xF", "Emiss2", "Mx2", "Mx2_1", "Mx2_2"};
     } else {
         throw std::runtime_error("Invalid analysis type! Must be 'dvcs' or 'eppi0'");
+    }
+
+    // Parse the run period from the plotTitle
+    std::string run_period;
+    if (plotTitle.find("Fa18 Inb") != std::string::npos) {
+        run_period = "RGA Fa18 Inb";
+    } else if (plotTitle.find("Fa18 Out") != std::string::npos) {
+        run_period = "RGA Fa18 Out";
+    } else if (plotTitle.find("Sp19 Inb") != std::string::npos) {
+        run_period = "RGA Sp19 Inb";
+    } else {
+        std::cerr << "Unknown run period in plotTitle: " << plotTitle << std::endl;
+        return;
     }
 
     // Readers for relevant variables for cuts
@@ -57,6 +71,14 @@ void determine_exclusivity(const std::string& analysisType, const std::string& t
     TTreeReaderValue<double> Mx2_1_mc(mcReader, "Mx2_1");
     TTreeReaderValue<double> pTmiss_data(dataReader, "pTmiss");
     TTreeReaderValue<double> pTmiss_mc(mcReader, "pTmiss");
+
+    // Additional variables for cuts
+    TTreeReaderValue<double> Mx2_data(dataReader, "Mx2");
+    TTreeReaderValue<double> Mx2_mc(mcReader, "Mx2");
+    TTreeReaderValue<double> Mx2_2_data(dataReader, "Mx2_2");
+    TTreeReaderValue<double> Mx2_2_mc(mcReader, "Mx2_2");
+    TTreeReaderValue<double> xF_data(dataReader, "xF");
+    TTreeReaderValue<double> xF_mc(mcReader, "xF");
 
     // Readers for detector status variables (detector1 and detector2)
     TTreeReaderValue<int> detector1_data(dataReader, "detector1");
@@ -128,7 +150,23 @@ void determine_exclusivity(const std::string& analysisType, const std::string& t
                 (topology == "(CD,FT)" && *detector1_data == 2 && *detector2_data == 0)) {
 
                 hist_data->Fill(*dataVar);            
-                if (apply_kinematic_cuts(*t_data, *open_angle_ep2_data, **theta_neutral_neutral_data, *Emiss2_data, *Mx2_1_data, *pTmiss_data)) {
+
+                // Apply kinematic cuts
+                if (apply_kinematic_cuts(
+                    *t_data,
+                    *open_angle_ep2_data,
+                    **theta_neutral_neutral_data,
+                    *Emiss2_data,
+                    *Mx2_data,
+                    *Mx2_1_data,
+                    *Mx2_2_data,
+                    *pTmiss_data,
+                    *xF_data,
+                    analysisType,    // "dvcs" or "eppi0"
+                    "data",          // data_type
+                    run_period,
+                    topology
+                )) {
                     hist_data_loose->Fill(*dataVar);
                 }
             }
@@ -141,7 +179,23 @@ void determine_exclusivity(const std::string& analysisType, const std::string& t
                 (topology == "(CD,FT)" && *detector1_mc == 2 && *detector2_mc == 0)) {
 
                 hist_mc->Fill(*mcVar);
-                if (apply_kinematic_cuts(*t_mc, *open_angle_ep2_mc, **theta_neutral_neutral_mc, *Emiss2_mc, *Mx2_1_mc, *pTmiss_mc)) {
+
+                // Apply kinematic cuts
+                if (apply_kinematic_cuts(
+                    *t_mc,
+                    *open_angle_ep2_mc,
+                    **theta_neutral_neutral_mc,
+                    *Emiss2_mc,
+                    *Mx2_mc,
+                    *Mx2_1_mc,
+                    *Mx2_2_mc,
+                    *pTmiss_mc,
+                    *xF_mc,
+                    analysisType,    // "dvcs" or "eppi0"
+                    "mc",            // data_type
+                    run_period,
+                    topology
+                )) {
                     hist_mc_loose->Fill(*mcVar);
                 }
             }
@@ -182,7 +236,7 @@ void determine_exclusivity(const std::string& analysisType, const std::string& t
         legend->SetTextSize(0.03);  // Set smaller font size for legend
         legend->Draw();
 
-        // Draw the histograms for "Loose Cuts" plots
+        // Draw the histograms for "Kinematic Cuts" plots
         canvas_loose_cuts->cd(i + 1);
         gPad->SetLeftMargin(0.15);  // Add left padding
         gPad->SetBottomMargin(0.15);  // Add bottom padding
@@ -202,15 +256,15 @@ void determine_exclusivity(const std::string& analysisType, const std::string& t
         TLegend* legend_loose = new TLegend(0.275, 0.6, 0.9, 0.9);
         legend_loose->AddEntry(hist_data_loose, Form("Data (#mu=%.3f, #sigma=%.3f)", mean_data, stddev_data), "lep");
         legend_loose->AddEntry(hist_mc_loose, Form("MC (#mu=%.3f, #sigma=%.3f)", mean_mc, stddev_mc), "lep");
-        legend_loose->SetTextSize(0.03);  // Set smaller font size for "Loose Cuts" legend
+        legend_loose->SetTextSize(0.03);  // Set smaller font size for "Kinematic Cuts" legend
         legend_loose->Draw();
     }
 
     // Save the canvases with updated names to reflect the plotTitle and topology input
     std::string cleanTitle = plotTitle;
     std::replace(cleanTitle.begin(), cleanTitle.end(), ' ', '_');  // Replace spaces with underscores
-    canvas->SaveAs((final_output_dir + "/exclusivity_plots_" + cleanTitle + "_" + topology + "_0_cuts.png").c_str());
-    canvas_loose_cuts->SaveAs((final_output_dir + "/exclusivity_plots_" + cleanTitle + "_" + topology + "_1_cuts.png").c_str());
+    canvas->SaveAs((final_output_dir + "/exclusivity_plots_" + cleanTitle + "_" + topology + "_no_cuts.png").c_str());
+    canvas_loose_cuts->SaveAs((final_output_dir + "/exclusivity_plots_" + cleanTitle + "_" + topology + "_kinematic_cuts.png").c_str());
 
     // Clean up
     delete canvas; delete canvas_loose_cuts;
