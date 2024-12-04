@@ -24,18 +24,6 @@
 #include <TMath.h>
 #include <TLegend.h>
 
-// Define BinData structure
-struct BinData {
-    int global_bin_number;
-    int bin_number;
-    double xBmin, xBmax, xBavg;
-    double Q2min, Q2max, Q2avg;
-    double tmin, tmax, tavg;
-    double phimin, phimax, phiavg;
-    double unfolded_yield_inbending;
-    double unfolded_yield_uncertainty; // New field for uncertainty
-    // Add other fields if necessary
-};
 
 // Helper function to ensure a directory exists
 void ensure_directory_exists(const std::string &path) {
