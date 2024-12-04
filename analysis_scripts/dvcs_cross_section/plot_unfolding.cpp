@@ -257,8 +257,6 @@ std::map<std::string, std::vector<UnfoldingData>> plot_unfolding(
         }
     }
 
-    std::cout << "WE EXITED THE DVCS CASE" << std::endl;
-
     // Data readers for periods 3-5 (eppi0 data)
     for (int period = 0; period < n_periods; ++period) {
         TTreeReader& data_reader = eppi0_readers[period];
@@ -303,7 +301,6 @@ std::map<std::string, std::vector<UnfoldingData>> plot_unfolding(
             } else {
                 continue; // Not one of the desired topologies
             }
-            std::cout << "(" + event_topology.substr(0, 2) + "," + event_topology.substr(3, 2) + ")" << std::endl;
 
             double phi_deg = *phi_data * RAD_TO_DEG;
             phi_deg = std::fmod(phi_deg + 360.0, 360.0); // Ensure phi in [0, 360)
@@ -361,6 +358,7 @@ std::map<std::string, std::vector<UnfoldingData>> plot_unfolding(
         }
     }
 
+    std::cout << "WE EXITED THE eppi0 CASE" << std::endl;
     // Process mc_gen_readers and mc_rec_readers to compute acceptances
     // MC readers for periods 0-2 (DVCS MC)
     for (int period = 0; period < n_periods; ++period) {
