@@ -164,7 +164,7 @@ std::map<std::string, std::vector<UnfoldingData>> plot_unfolding(
         TTreeReader& data_reader = data_readers[period];
         data_reader.Restart();
 
-        // Set theta_variable_name based on period
+        // Set theta_variable_name based on analysis type
         std::string theta_variable_name = "theta_gamma_gamma"; // For DVCS data
 
         // Initialize TTreeReaderValues
@@ -174,8 +174,11 @@ std::map<std::string, std::vector<UnfoldingData>> plot_unfolding(
         TTreeReaderValue<double> t1_data(data_reader, "t1");
         TTreeReaderValue<double> open_angle_ep2_data(data_reader, "open_angle_ep2");
         TTreeReaderValue<double> Emiss2_data(data_reader, "Emiss2");
+        TTreeReaderValue<double> Mx2_data(data_reader, "Mx2");
         TTreeReaderValue<double> Mx2_1_data(data_reader, "Mx2_1");
+        TTreeReaderValue<double> Mx2_2_data(data_reader, "Mx2_2");
         TTreeReaderValue<double> pTmiss_data(data_reader, "pTmiss");
+        TTreeReaderValue<double> xF_data(data_reader, "xF");
         TTreeReaderValue<double> theta_neutral_neutral_data(data_reader, theta_variable_name.c_str());
 
         // Readers for detector status variables (detector1 and detector2)
@@ -205,8 +208,23 @@ std::map<std::string, std::vector<UnfoldingData>> plot_unfolding(
             double t_abs = std::abs(*t1_data);
 
             // Apply kinematic cuts
-            if (!apply_kinematic_cuts(*t1_data, *open_angle_ep2_data, *theta_neutral_neutral_data, *Emiss2_data, *Mx2_1_data, *pTmiss_data))
+            if (!apply_kinematic_cuts(
+                *t1_data,
+                *open_angle_ep2_data,
+                *theta_neutral_neutral_data,
+                *Emiss2_data,
+                *Mx2_data,
+                *Mx2_1_data,
+                *Mx2_2_data,
+                *pTmiss_data,
+                *xF_data,
+                "dvcs",       // analysisType
+                "data",       // data_type
+                period_names[period],  // run_period
+                "(" + event_topology.substr(0, 2) + "," + event_topology.substr(3, 2) + ")" // topology
+            )) {
                 continue;
+            }
 
             // Check if xB is within the xB_bin range
             const auto& bin_example = bin_boundaries[relevant_bins[0]];
@@ -244,7 +262,7 @@ std::map<std::string, std::vector<UnfoldingData>> plot_unfolding(
         TTreeReader& data_reader = eppi0_readers[period];
         data_reader.Restart();
 
-        // Set theta_variable_name based on period
+        // Set theta_variable_name based on analysis type
         std::string theta_variable_name = "theta_pi0_pi0"; // For eppi0 data
 
         // Initialize TTreeReaderValues
@@ -254,8 +272,11 @@ std::map<std::string, std::vector<UnfoldingData>> plot_unfolding(
         TTreeReaderValue<double> t1_data(data_reader, "t1");
         TTreeReaderValue<double> open_angle_ep2_data(data_reader, "open_angle_ep2");
         TTreeReaderValue<double> Emiss2_data(data_reader, "Emiss2");
+        TTreeReaderValue<double> Mx2_data(data_reader, "Mx2");
         TTreeReaderValue<double> Mx2_1_data(data_reader, "Mx2_1");
+        TTreeReaderValue<double> Mx2_2_data(data_reader, "Mx2_2");
         TTreeReaderValue<double> pTmiss_data(data_reader, "pTmiss");
+        TTreeReaderValue<double> xF_data(data_reader, "xF");
         TTreeReaderValue<double> theta_neutral_neutral_data(data_reader, theta_variable_name.c_str());
 
         // Readers for detector status variables (detector1 and detector2)
@@ -287,8 +308,23 @@ std::map<std::string, std::vector<UnfoldingData>> plot_unfolding(
             double t_abs = std::abs(*t1_data);
 
             // Apply kinematic cuts
-            if (!apply_kinematic_cuts(*t1_data, *open_angle_ep2_data, *theta_neutral_neutral_data, *Emiss2_data, *Mx2_1_data, *pTmiss_data))
+            if (!apply_kinematic_cuts(
+                *t1_data,
+                *open_angle_ep2_data,
+                *theta_neutral_neutral_data,
+                *Emiss2_data,
+                *Mx2_data,
+                *Mx2_1_data,
+                *Mx2_2_data,
+                *pTmiss_data,
+                *xF_data,
+                "eppi0",     // analysisType
+                "data",      // data_type
+                period_names[period],  // run_period
+                "(" + event_topology.substr(0, 2) + "," + event_topology.substr(3, 2) + ")" // topology
+            )) {
                 continue;
+            }
 
             // Check if xB is within the xB_bin range
             const auto& bin_example = bin_boundaries[relevant_bins[0]];
@@ -328,7 +364,7 @@ std::map<std::string, std::vector<UnfoldingData>> plot_unfolding(
         TTreeReader& mc_gen_reader = mc_gen_readers[period];
         mc_gen_reader.Restart();
 
-        // Set theta_variable_name based on period
+        // Set theta_variable_name based on analysis type
         std::string theta_variable_name = "theta_gamma_gamma"; // For DVCS MC data
 
         // Initialize TTreeReaderValues
@@ -338,12 +374,14 @@ std::map<std::string, std::vector<UnfoldingData>> plot_unfolding(
         TTreeReaderValue<double> t1_mc_gen(mc_gen_reader, "t1");
         TTreeReaderValue<double> open_angle_ep2_mc_gen(mc_gen_reader, "open_angle_ep2");
         TTreeReaderValue<double> Emiss2_mc_gen(mc_gen_reader, "Emiss2");
+        TTreeReaderValue<double> Mx2_mc_gen(mc_gen_reader, "Mx2");
         TTreeReaderValue<double> Mx2_1_mc_gen(mc_gen_reader, "Mx2_1");
+        TTreeReaderValue<double> Mx2_2_mc_gen(mc_gen_reader, "Mx2_2");
         TTreeReaderValue<double> pTmiss_mc_gen(mc_gen_reader, "pTmiss");
+        TTreeReaderValue<double> xF_mc_gen(mc_gen_reader, "xF");
         TTreeReaderValue<double> theta_neutral_neutral_mc_gen(mc_gen_reader, theta_variable_name.c_str());
 
         while (mc_gen_reader.Next()) {
-            // Since we're computing acceptances for the combined topology, we consider all events regardless of topology
             double phi_deg = *phi_mc_gen * RAD_TO_DEG;
             phi_deg = std::fmod(phi_deg + 360.0, 360.0); // Ensure phi in [0, 360)
             double xB_value = *xB_mc_gen;
@@ -351,8 +389,23 @@ std::map<std::string, std::vector<UnfoldingData>> plot_unfolding(
             double t_abs = std::abs(*t1_mc_gen);
 
             // Apply kinematic cuts
-            if (!apply_kinematic_cuts(*t1_mc_gen, *open_angle_ep2_mc_gen, *theta_neutral_neutral_mc_gen, *Emiss2_mc_gen, *Mx2_1_mc_gen, *pTmiss_mc_gen))
+            if (!apply_kinematic_cuts(
+                *t1_mc_gen,
+                *open_angle_ep2_mc_gen,
+                *theta_neutral_neutral_mc_gen,
+                *Emiss2_mc_gen,
+                *Mx2_mc_gen,
+                *Mx2_1_mc_gen,
+                *Mx2_2_mc_gen,
+                *pTmiss_mc_gen,
+                *xF_mc_gen,
+                "dvcs",       // analysisType
+                "mc",         // data_type
+                period_names[period],  // run_period
+                ""            // topology (not needed for MC gen)
+            )) {
                 continue;
+            }
 
             // Check if xB is within the xB_bin range
             const auto& bin_example = bin_boundaries[relevant_bins[0]];
@@ -393,8 +446,11 @@ std::map<std::string, std::vector<UnfoldingData>> plot_unfolding(
         TTreeReaderValue<double> t1_mc_rec(mc_rec_reader, "t1");
         TTreeReaderValue<double> open_angle_ep2_mc_rec(mc_rec_reader, "open_angle_ep2");
         TTreeReaderValue<double> Emiss2_mc_rec(mc_rec_reader, "Emiss2");
+        TTreeReaderValue<double> Mx2_mc_rec(mc_rec_reader, "Mx2");
         TTreeReaderValue<double> Mx2_1_mc_rec(mc_rec_reader, "Mx2_1");
+        TTreeReaderValue<double> Mx2_2_mc_rec(mc_rec_reader, "Mx2_2");
         TTreeReaderValue<double> pTmiss_mc_rec(mc_rec_reader, "pTmiss");
+        TTreeReaderValue<double> xF_mc_rec(mc_rec_reader, "xF");
         TTreeReaderValue<double> theta_neutral_neutral_mc_rec(mc_rec_reader, theta_variable_name.c_str());
 
         // Readers for detector status variables (detector1 and detector2)
@@ -402,7 +458,6 @@ std::map<std::string, std::vector<UnfoldingData>> plot_unfolding(
         TTreeReaderValue<int> detector2_mc_rec(mc_rec_reader, "detector2");
 
         while (mc_rec_reader.Next()) {
-            // Since we're computing acceptances for the combined topology, we consider all events that match our desired topologies
             int det1 = *detector1_mc_rec;
             int det2 = *detector2_mc_rec;
 
@@ -417,13 +472,39 @@ std::map<std::string, std::vector<UnfoldingData>> plot_unfolding(
             double Q2_value = *Q2_mc_rec;
             double t_abs = std::abs(*t1_mc_rec);
 
-            // Apply kinematic cuts
-            if (!apply_kinematic_cuts(*t1_mc_rec, *open_angle_ep2_mc_rec, *theta_neutral_neutral_mc_rec, *Emiss2_mc_rec, *Mx2_1_mc_rec, *pTmiss_mc_rec))
+            // Determine topology for this event
+            std::string event_topology = "";
+            if (det1 == 1 && det2 == 1) {
+                event_topology = "(FD,FD)";
+            } else if (det1 == 2 && det2 == 1) {
+                event_topology = "(CD,FD)";
+            } else if (det1 == 2 && det2 == 0) {
+                event_topology = "(CD,FT)";
+            } else {
                 continue;
+            }
+
+            // Apply kinematic cuts
+            if (!apply_kinematic_cuts(
+                *t1_mc_rec,
+                *open_angle_ep2_mc_rec,
+                *theta_neutral_neutral_mc_rec,
+                *Emiss2_mc_rec,
+                *Mx2_mc_rec,
+                *Mx2_1_mc_rec,
+                *Mx2_2_mc_rec,
+                *pTmiss_mc_rec,
+                *xF_mc_rec,
+                "dvcs",          // analysisType
+                "data",          // data_type (mc_rec treated as data for cuts)
+                period_names[period],  // run_period
+                event_topology   // topology
+            )) {
+                continue;
+            }
 
             // Check if xB is within the xB_bin range
-            const auto& bin_example = bin_boundaries[relevant_bins[0]];
-            if (xB_value < bin_example.xB_low || xB_value > bin_example.xB_high)
+            if (xB_value < bin_boundaries[relevant_bins[0]].xB_low || xB_value > bin_boundaries[relevant_bins[0]].xB_high)
                 continue;
 
             // Find the bin group
@@ -458,7 +539,7 @@ std::map<std::string, std::vector<UnfoldingData>> plot_unfolding(
         TTreeReader& mc_gen_reader = mc_gen_aaogen_readers[period];
         mc_gen_reader.Restart();
 
-        // Set theta_variable_name based on period
+        // Set theta_variable_name based on analysis type
         std::string theta_variable_name = "theta_pi0_pi0"; // For eppi0 MC data
 
         // Initialize TTreeReaderValues
@@ -468,12 +549,14 @@ std::map<std::string, std::vector<UnfoldingData>> plot_unfolding(
         TTreeReaderValue<double> t1_mc_gen(mc_gen_reader, "t1");
         TTreeReaderValue<double> open_angle_ep2_mc_gen(mc_gen_reader, "open_angle_ep2");
         TTreeReaderValue<double> Emiss2_mc_gen(mc_gen_reader, "Emiss2");
+        TTreeReaderValue<double> Mx2_mc_gen(mc_gen_reader, "Mx2");
         TTreeReaderValue<double> Mx2_1_mc_gen(mc_gen_reader, "Mx2_1");
+        TTreeReaderValue<double> Mx2_2_mc_gen(mc_gen_reader, "Mx2_2");
         TTreeReaderValue<double> pTmiss_mc_gen(mc_gen_reader, "pTmiss");
+        TTreeReaderValue<double> xF_mc_gen(mc_gen_reader, "xF");
         TTreeReaderValue<double> theta_neutral_neutral_mc_gen(mc_gen_reader, theta_variable_name.c_str());
 
         while (mc_gen_reader.Next()) {
-            // Since we're computing acceptances for the combined topology, we consider all events regardless of topology
             double phi_deg = *phi_mc_gen * RAD_TO_DEG;
             phi_deg = std::fmod(phi_deg + 360.0, 360.0); // Ensure phi in [0, 360)
             double xB_value = *xB_mc_gen;
@@ -481,12 +564,26 @@ std::map<std::string, std::vector<UnfoldingData>> plot_unfolding(
             double t_abs = std::abs(*t1_mc_gen);
 
             // Apply kinematic cuts
-            if (!apply_kinematic_cuts(*t1_mc_gen, *open_angle_ep2_mc_gen, *theta_neutral_neutral_mc_gen, *Emiss2_mc_gen, *Mx2_1_mc_gen, *pTmiss_mc_gen))
+            if (!apply_kinematic_cuts(
+                *t1_mc_gen,
+                *open_angle_ep2_mc_gen,
+                *theta_neutral_neutral_mc_gen,
+                *Emiss2_mc_gen,
+                *Mx2_mc_gen,
+                *Mx2_1_mc_gen,
+                *Mx2_2_mc_gen,
+                *pTmiss_mc_gen,
+                *xF_mc_gen,
+                "eppi0",      // analysisType
+                "mc",         // data_type
+                period_names[period],  // run_period
+                ""            // topology (not needed for MC gen)
+            )) {
                 continue;
+            }
 
             // Check if xB is within the xB_bin range
-            const auto& bin_example = bin_boundaries[relevant_bins[0]];
-            if (xB_value < bin_example.xB_low || xB_value > bin_example.xB_high)
+            if (xB_value < bin_boundaries[relevant_bins[0]].xB_low || xB_value > bin_boundaries[relevant_bins[0]].xB_high)
                 continue;
 
             // Find the bin group
@@ -523,8 +620,11 @@ std::map<std::string, std::vector<UnfoldingData>> plot_unfolding(
         TTreeReaderValue<double> t1_mc_rec(mc_rec_reader, "t1");
         TTreeReaderValue<double> open_angle_ep2_mc_rec(mc_rec_reader, "open_angle_ep2");
         TTreeReaderValue<double> Emiss2_mc_rec(mc_rec_reader, "Emiss2");
+        TTreeReaderValue<double> Mx2_mc_rec(mc_rec_reader, "Mx2");
         TTreeReaderValue<double> Mx2_1_mc_rec(mc_rec_reader, "Mx2_1");
+        TTreeReaderValue<double> Mx2_2_mc_rec(mc_rec_reader, "Mx2_2");
         TTreeReaderValue<double> pTmiss_mc_rec(mc_rec_reader, "pTmiss");
+        TTreeReaderValue<double> xF_mc_rec(mc_rec_reader, "xF");
         TTreeReaderValue<double> theta_neutral_neutral_mc_rec(mc_rec_reader, theta_variable_name.c_str());
 
         // Readers for detector status variables (detector1 and detector2)
@@ -532,7 +632,6 @@ std::map<std::string, std::vector<UnfoldingData>> plot_unfolding(
         TTreeReaderValue<int> detector2_mc_rec(mc_rec_reader, "detector2");
 
         while (mc_rec_reader.Next()) {
-            // Since we're computing acceptances for the combined topology, we consider all events that match our desired topologies
             int det1 = *detector1_mc_rec;
             int det2 = *detector2_mc_rec;
 
@@ -547,13 +646,39 @@ std::map<std::string, std::vector<UnfoldingData>> plot_unfolding(
             double Q2_value = *Q2_mc_rec;
             double t_abs = std::abs(*t1_mc_rec);
 
-            // Apply kinematic cuts
-            if (!apply_kinematic_cuts(*t1_mc_rec, *open_angle_ep2_mc_rec, *theta_neutral_neutral_mc_rec, *Emiss2_mc_rec, *Mx2_1_mc_rec, *pTmiss_mc_rec))
+            // Determine topology for this event
+            std::string event_topology = "";
+            if (det1 == 1 && det2 == 1) {
+                event_topology = "(FD,FD)";
+            } else if (det1 == 2 && det2 == 1) {
+                event_topology = "(CD,FD)";
+            } else if (det1 == 2 && det2 == 0) {
+                event_topology = "(CD,FT)";
+            } else {
                 continue;
+            }
+
+            // Apply kinematic cuts
+            if (!apply_kinematic_cuts(
+                *t1_mc_rec,
+                *open_angle_ep2_mc_rec,
+                *theta_neutral_neutral_mc_rec,
+                *Emiss2_mc_rec,
+                *Mx2_mc_rec,
+                *Mx2_1_mc_rec,
+                *Mx2_2_mc_rec,
+                *pTmiss_mc_rec,
+                *xF_mc_rec,
+                "eppi0",          // analysisType
+                "data",           // data_type (mc_rec treated as data for cuts)
+                period_names[period],  // run_period
+                event_topology    // topology
+            )) {
+                continue;
+            }
 
             // Check if xB is within the xB_bin range
-            const auto& bin_example = bin_boundaries[relevant_bins[0]];
-            if (xB_value < bin_example.xB_low || xB_value > bin_example.xB_high)
+            if (xB_value < bin_boundaries[relevant_bins[0]].xB_low || xB_value > bin_boundaries[relevant_bins[0]].xB_high)
                 continue;
 
             // Find the bin group

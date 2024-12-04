@@ -71,7 +71,7 @@ void calculate_contamination(
         unfolding_data.contamination_fraction.resize(n_periods, std::vector<double>(n_phi_bins, 0.0));
         unfolding_data.contamination_uncertainty.resize(n_periods, std::vector<double>(n_phi_bins, 0.0));
         unfolding_data.signal_yield.resize(n_periods, std::vector<double>(n_phi_bins, 0.0));
-        unfolding_data.signal_yield_uncertainty.resize(n_periods, std::vector<double>(n_phi_bins, 0.0)); // Added
+        unfolding_data.signal_yield_uncertainty.resize(n_periods, std::vector<double>(n_phi_bins, 0.0));
 
         // For each period
         for (int period = 0; period < n_periods; ++period) {
@@ -93,11 +93,33 @@ void calculate_contamination(
                 TTreeReaderValue<double> t1_data(reader, "t1");
                 TTreeReaderValue<double> open_angle_ep2_data(reader, "open_angle_ep2");
                 TTreeReaderValue<double> Emiss2_data(reader, "Emiss2");
+                TTreeReaderValue<double> Mx2_data(reader, "Mx2");
                 TTreeReaderValue<double> Mx2_1_data(reader, "Mx2_1");
+                TTreeReaderValue<double> Mx2_2_data(reader, "Mx2_2");
                 TTreeReaderValue<double> pTmiss_data(reader, "pTmiss");
+                TTreeReaderValue<double> xF_data(reader, "xF");
                 TTreeReaderValue<double> theta_neutral_neutral_data(reader, "theta_gamma_gamma");
 
+                // Readers for detector status variables (detector1 and detector2)
+                TTreeReaderValue<int> detector1_data(reader, "detector1");
+                TTreeReaderValue<int> detector2_data(reader, "detector2");
+
                 while (reader.Next()) {
+                    // Determine topology based on detector1 and detector2
+                    int det1 = *detector1_data;
+                    int det2 = *detector2_data;
+
+                    std::string event_topology = "";
+                    if (det1 == 1 && det2 == 1) {
+                        event_topology = "(FD,FD)";
+                    } else if (det1 == 2 && det2 == 1) {
+                        event_topology = "(CD,FD)";
+                    } else if (det1 == 2 && det2 == 0) {
+                        event_topology = "(CD,FT)";
+                    } else {
+                        continue; // Not one of the desired topologies
+                    }
+
                     double phi_deg = *phi_data * RAD_TO_DEG;
                     phi_deg = std::fmod(phi_deg + 360.0, 360.0);
 
@@ -106,8 +128,21 @@ void calculate_contamination(
                     double t_abs = std::abs(*t1_data);
 
                     // Apply kinematic cuts
-                    if (!apply_kinematic_cuts(*t1_data, *open_angle_ep2_data, *theta_neutral_neutral_data,
-                                              *Emiss2_data, *Mx2_1_data, *pTmiss_data))
+                    if (!apply_kinematic_cuts(
+                        *t1_data,
+                        *open_angle_ep2_data,
+                        *theta_neutral_neutral_data,
+                        *Emiss2_data,
+                        *Mx2_data,
+                        *Mx2_1_data,
+                        *Mx2_2_data,
+                        *pTmiss_data,
+                        *xF_data,
+                        "dvcs",       // analysisType
+                        "data",       // data_type
+                        period_names[period],  // run_period
+                        event_topology        // topology
+                    ))
                         continue;
 
                     // Check if xB is within the xB_bin range
@@ -144,11 +179,33 @@ void calculate_contamination(
                 TTreeReaderValue<double> t1_data(reader, "t1");
                 TTreeReaderValue<double> open_angle_ep2_data(reader, "open_angle_ep2");
                 TTreeReaderValue<double> Emiss2_data(reader, "Emiss2");
+                TTreeReaderValue<double> Mx2_data(reader, "Mx2");
                 TTreeReaderValue<double> Mx2_1_data(reader, "Mx2_1");
+                TTreeReaderValue<double> Mx2_2_data(reader, "Mx2_2");
                 TTreeReaderValue<double> pTmiss_data(reader, "pTmiss");
+                TTreeReaderValue<double> xF_data(reader, "xF");
                 TTreeReaderValue<double> theta_neutral_neutral_data(reader, "theta_pi0_pi0");
 
+                // Readers for detector status variables (detector1 and detector2)
+                TTreeReaderValue<int> detector1_data(reader, "detector1");
+                TTreeReaderValue<int> detector2_data(reader, "detector2");
+
                 while (reader.Next()) {
+                    // Determine topology based on detector1 and detector2
+                    int det1 = *detector1_data;
+                    int det2 = *detector2_data;
+
+                    std::string event_topology = "";
+                    if (det1 == 1 && det2 == 1) {
+                        event_topology = "(FD,FD)";
+                    } else if (det1 == 2 && det2 == 1) {
+                        event_topology = "(CD,FD)";
+                    } else if (det1 == 2 && det2 == 0) {
+                        event_topology = "(CD,FT)";
+                    } else {
+                        continue; // Not one of the desired topologies
+                    }
+
                     double phi_deg = *phi_data * RAD_TO_DEG;
                     phi_deg = std::fmod(phi_deg + 360.0, 360.0);
 
@@ -157,8 +214,21 @@ void calculate_contamination(
                     double t_abs = std::abs(*t1_data);
 
                     // Apply kinematic cuts
-                    if (!apply_kinematic_cuts(*t1_data, *open_angle_ep2_data, *theta_neutral_neutral_data,
-                                              *Emiss2_data, *Mx2_1_data, *pTmiss_data))
+                    if (!apply_kinematic_cuts(
+                        *t1_data,
+                        *open_angle_ep2_data,
+                        *theta_neutral_neutral_data,
+                        *Emiss2_data,
+                        *Mx2_data,
+                        *Mx2_1_data,
+                        *Mx2_2_data,
+                        *pTmiss_data,
+                        *xF_data,
+                        "eppi0",      // analysisType
+                        "data",       // data_type
+                        period_names[period],  // run_period
+                        event_topology        // topology
+                    ))
                         continue;
 
                     // Check if xB is within the xB_bin range
@@ -195,11 +265,33 @@ void calculate_contamination(
                 TTreeReaderValue<double> t1_data(reader, "t1");
                 TTreeReaderValue<double> open_angle_ep2_data(reader, "open_angle_ep2");
                 TTreeReaderValue<double> Emiss2_data(reader, "Emiss2");
+                TTreeReaderValue<double> Mx2_data(reader, "Mx2");
                 TTreeReaderValue<double> Mx2_1_data(reader, "Mx2_1");
+                TTreeReaderValue<double> Mx2_2_data(reader, "Mx2_2");
                 TTreeReaderValue<double> pTmiss_data(reader, "pTmiss");
+                TTreeReaderValue<double> xF_data(reader, "xF");
                 TTreeReaderValue<double> theta_neutral_neutral_data(reader, "theta_pi0_pi0");
 
+                // Readers for detector status variables (detector1 and detector2)
+                TTreeReaderValue<int> detector1_data(reader, "detector1");
+                TTreeReaderValue<int> detector2_data(reader, "detector2");
+
                 while (reader.Next()) {
+                    // Determine topology based on detector1 and detector2
+                    int det1 = *detector1_data;
+                    int det2 = *detector2_data;
+
+                    std::string event_topology = "";
+                    if (det1 == 1 && det2 == 1) {
+                        event_topology = "(FD,FD)";
+                    } else if (det1 == 2 && det2 == 1) {
+                        event_topology = "(CD,FD)";
+                    } else if (det1 == 2 && det2 == 0) {
+                        event_topology = "(CD,FT)";
+                    } else {
+                        continue; // Not one of the desired topologies
+                    }
+
                     double phi_deg = *phi_data * RAD_TO_DEG;
                     phi_deg = std::fmod(phi_deg + 360.0, 360.0);
 
@@ -208,8 +300,21 @@ void calculate_contamination(
                     double t_abs = std::abs(*t1_data);
 
                     // Apply kinematic cuts
-                    if (!apply_kinematic_cuts(*t1_data, *open_angle_ep2_data, *theta_neutral_neutral_data,
-                                              *Emiss2_data, *Mx2_1_data, *pTmiss_data))
+                    if (!apply_kinematic_cuts(
+                        *t1_data,
+                        *open_angle_ep2_data,
+                        *theta_neutral_neutral_data,
+                        *Emiss2_data,
+                        *Mx2_data,
+                        *Mx2_1_data,
+                        *Mx2_2_data,
+                        *pTmiss_data,
+                        *xF_data,
+                        "eppi0",      // analysisType
+                        "data",       // data_type (treated as data for cuts)
+                        period_names[period],  // run_period
+                        event_topology        // topology
+                    ))
                         continue;
 
                     // Check if xB is within the xB_bin range
@@ -246,11 +351,33 @@ void calculate_contamination(
                 TTreeReaderValue<double> t1_data(reader, "t1");
                 TTreeReaderValue<double> open_angle_ep2_data(reader, "open_angle_ep2");
                 TTreeReaderValue<double> Emiss2_data(reader, "Emiss2");
+                TTreeReaderValue<double> Mx2_data(reader, "Mx2");
                 TTreeReaderValue<double> Mx2_1_data(reader, "Mx2_1");
+                TTreeReaderValue<double> Mx2_2_data(reader, "Mx2_2");
                 TTreeReaderValue<double> pTmiss_data(reader, "pTmiss");
+                TTreeReaderValue<double> xF_data(reader, "xF");
                 TTreeReaderValue<double> theta_neutral_neutral_data(reader, "theta_gamma_gamma");
 
+                // Readers for detector status variables (detector1 and detector2)
+                TTreeReaderValue<int> detector1_data(reader, "detector1");
+                TTreeReaderValue<int> detector2_data(reader, "detector2");
+
                 while (reader.Next()) {
+                    // Determine topology based on detector1 and detector2
+                    int det1 = *detector1_data;
+                    int det2 = *detector2_data;
+
+                    std::string event_topology = "";
+                    if (det1 == 1 && det2 == 1) {
+                        event_topology = "(FD,FD)";
+                    } else if (det1 == 2 && det2 == 1) {
+                        event_topology = "(CD,FD)";
+                    } else if (det1 == 2 && det2 == 0) {
+                        event_topology = "(CD,FT)";
+                    } else {
+                        continue; // Not one of the desired topologies
+                    }
+
                     double phi_deg = *phi_data * RAD_TO_DEG;
                     phi_deg = std::fmod(phi_deg + 360.0, 360.0);
 
@@ -259,8 +386,21 @@ void calculate_contamination(
                     double t_abs = std::abs(*t1_data);
 
                     // Apply kinematic cuts
-                    if (!apply_kinematic_cuts(*t1_data, *open_angle_ep2_data, *theta_neutral_neutral_data,
-                                              *Emiss2_data, *Mx2_1_data, *pTmiss_data))
+                    if (!apply_kinematic_cuts(
+                        *t1_data,
+                        *open_angle_ep2_data,
+                        *theta_neutral_neutral_data,
+                        *Emiss2_data,
+                        *Mx2_data,
+                        *Mx2_1_data,
+                        *Mx2_2_data,
+                        *pTmiss_data,
+                        *xF_data,
+                        "dvcs",      // analysisType
+                        "data",      // data_type (treated as data for cuts)
+                        period_names[period],  // run_period
+                        event_topology        // topology
+                    ))
                         continue;
 
                     // Check if xB is within the xB_bin range
