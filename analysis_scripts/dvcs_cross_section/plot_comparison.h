@@ -9,14 +9,28 @@
 #include <TGraphErrors.h>
 
 // Define the BinData struct to hold bin information from the CSV
+// Define the BinData struct
 struct BinData {
     int global_bin_number;
     int bin_number;
-    double xBmin, xBmax, xBavg;
-    double Q2min, Q2max, Q2avg;
-    double tmin, tmax, tavg;
-    double phimin, phimax, phiavg;
-    double unfolded_yield_inbending; // Now holds total yield
+
+    double xBmin;
+    double xBmax;
+    double xBavg;
+
+    double Q2min;
+    double Q2max;
+    double Q2avg;
+
+    double tmin;
+    double tmax;
+    double tavg;
+
+    double phimin;
+    double phimax;
+    double phiavg;
+
+    std::vector<double> signal_yields; // Added member
 };
 
 // Primary function to manage reading, processing, and plotting of bin data
