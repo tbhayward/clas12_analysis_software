@@ -390,6 +390,7 @@ std::map<std::string, std::vector<UnfoldingData>> plot_unfolding(
             double Q2_value = *Q2_mc_gen;
             double t_abs = std::abs(*t1_mc_gen);
 
+            // no need to apply kinematic cuts to generated data
             // Apply kinematic cuts
             if (!apply_kinematic_cuts(
                 *t1_mc_gen,
@@ -404,7 +405,7 @@ std::map<std::string, std::vector<UnfoldingData>> plot_unfolding(
                 "dvcs",       // analysisType
                 "mc",         // data_type
                 period_names[period],  // run_period
-                ""            // topology (not needed for MC gen)
+                "generated"            // topology (not needed for MC gen)
             )) {
                 continue;
             }
@@ -565,6 +566,7 @@ std::map<std::string, std::vector<UnfoldingData>> plot_unfolding(
             double Q2_value = *Q2_mc_gen;
             double t_abs = std::abs(*t1_mc_gen);
 
+            // no need to apply kinematic cuts to generated MC
             // Apply kinematic cuts
             if (!apply_kinematic_cuts(
                 *t1_mc_gen,
@@ -579,7 +581,7 @@ std::map<std::string, std::vector<UnfoldingData>> plot_unfolding(
                 "eppi0",      // analysisType
                 "mc",         // data_type
                 period_names[period],  // run_period
-                ""            // topology (not needed for MC gen)
+                "generated"            // topology (not needed for MC gen)
             )) {
                 continue;
             }
