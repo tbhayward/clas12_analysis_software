@@ -1,5 +1,3 @@
-// UnfoldingData.h
-
 #ifndef UNFOLDING_DATA_H
 #define UNFOLDING_DATA_H
 
@@ -17,14 +15,13 @@ struct UnfoldingData {
     std::vector<double> phi_avg;
 
     // Raw yields per topology and period:
-    std::map<std::string, std::vector<std::vector<int>>> raw_yields; // [topology][period][phi_idx]
-    std::vector<std::vector<int>> combined_raw_yields;               // [period][phi_idx]
+    std::map<std::string, std::vector<std::vector<int>>> raw_yields;
+    std::vector<std::vector<int>> combined_raw_yields;
 
     // Acceptances, their uncertainties, and unfolded yields per period:
-    std::vector<std::vector<double>> acceptance;                 // [period][phi_idx]
-    std::vector<std::vector<double>> acceptance_uncertainty;     // [period][phi_idx]
-    std::vector<std::vector<double>> unfolded_yields;            // [period][phi_idx]
-    std::vector<std::vector<double>> unfolded_yield_uncertainty; // [period][phi_idx]
+    std::vector<std::vector<double>> acceptance;              // [period][phi_idx]
+    std::vector<std::vector<double>> acceptance_uncertainty;  // [period][phi_idx]
+    std::vector<std::vector<double>> unfolded_yields;         // [period][phi_idx]
 
     // Contamination fractions and signal yields per period:
     std::vector<std::vector<double>> contamination_fraction;    // [period][phi_idx]
