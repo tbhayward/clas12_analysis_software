@@ -152,15 +152,18 @@ std::vector<BinData> read_csv_second(const std::string &file_path, const std::ve
         // 1 combined raw yield: 1 column
         // 1 acceptance: 1 column
         // 1 unfolded yield: 1 column
-        // 1 unfolded yield uncertainty: 1 column (new column added)
+        // 1 unfolded yield uncertainty: 1 column
         // 1 contamination fraction: 1 column
         // 1 contamination uncertainty: 1 column
         // 1 signal yield: 1 column
-        // Total per period: 10 columns
+        // 1 signal yield uncertainty: 1 column (newly added)
+        // Total per period: 11 columns
 
-        bin.signal_yields.clear(); // Ensure vector is empty
+        bin.signal_yields.clear();              // Ensure vector is empty
+        bin.signal_yield_uncertainties.clear(); // Ensure vector is empty
 
         double total_signal_yield = 0.0;
+        double total_signal_yield_uncertainty = 0.0;
 
         const int n_periods = 2; // Only periods 0 and 1
 
@@ -180,15 +183,23 @@ std::vector<BinData> read_csv_second(const std::string &file_path, const std::ve
             // Now read signal yield for this period
             std::getline(ss, value, ','); // Signal yield
             double signal_yield = std::stod(value);
+
+            // Read signal yield uncertainty for this period
+            std::getline(ss, value, ','); // Signal yield uncertainty
+            double signal_yield_uncertainty = std::stod(value);
+
+            // Sum the signal yields and uncertainties
             total_signal_yield += signal_yield;
+            total_signal_yield_uncertainty += signal_yield_uncertainty; // Assuming uncertainties are independent
         }
 
         // Skip columns for the third period (period 2)
-        // Since each period has 10 columns, skip 10 columns
-        for (int i = 0; i < 10; ++i) std::getline(ss, value, ',');
+        // Since each period has 11 columns, skip 11 columns
+        for (int i = 0; i < 11; ++i) std::getline(ss, value, ',');
 
-        // Store the total signal yield in bin.signal_yields[0]
+        // Store the total signal yield and uncertainty
         bin.signal_yields.push_back(total_signal_yield);
+        bin.signal_yield_uncertainties.push_back(total_signal_yield_uncertainty);
 
         bins.push_back(bin);
         index++;

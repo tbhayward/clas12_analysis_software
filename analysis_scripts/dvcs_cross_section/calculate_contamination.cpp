@@ -3,6 +3,8 @@
 #include "calculate_contamination.h"
 #include "kinematic_cuts.h"
 
+#include "unfolding_data.h" // Include the header file for UnfoldingData
+
 // Standard library includes
 #include <cmath>
 #include <algorithm>
@@ -65,10 +67,11 @@ void calculate_contamination(
     for (auto& unfolding_data : unfolding_data_vec) {
         size_t n_phi_bins = unfolding_data.phi_min.size();
 
-        // Initialize contamination_fraction, contamination_uncertainty, and signal_yield
+        // Initialize contamination_fraction, contamination_uncertainty, signal_yield, and signal_yield_uncertainty
         unfolding_data.contamination_fraction.resize(n_periods, std::vector<double>(n_phi_bins, 0.0));
         unfolding_data.contamination_uncertainty.resize(n_periods, std::vector<double>(n_phi_bins, 0.0));
         unfolding_data.signal_yield.resize(n_periods, std::vector<double>(n_phi_bins, 0.0));
+        unfolding_data.signal_yield_uncertainty.resize(n_periods, std::vector<double>(n_phi_bins, 0.0)); // Added
 
         // For each period
         for (int period = 0; period < n_periods; ++period) {
@@ -322,8 +325,19 @@ void calculate_contamination(
 
                 // **Correct unfolded yield to get signal yield**
                 double unfolded_yield = unfolding_data.unfolded_yields[period][phi_idx];
-                double signal_yield = unfolded_yield * (1.0 - contamination);
+                double unfolded_yield_uncertainty = unfolding_data.unfolded_yield_uncertainty[period][phi_idx];
+                double f = unfolding_data.contamination_fraction[period][phi_idx];
+                double sigma_f = unfolding_data.contamination_uncertainty[period][phi_idx];
+
+                double signal_yield = unfolded_yield * (1.0 - f);
                 unfolding_data.signal_yield[period][phi_idx] = signal_yield;
+
+                // **Calculate uncertainty on the signal yield**
+                double sigma_signal_yield = sqrt(
+                    pow((1.0 - f) * unfolded_yield_uncertainty, 2) + pow(unfolded_yield * sigma_f, 2)
+                );
+
+                unfolding_data.signal_yield_uncertainty[period][phi_idx] = sigma_signal_yield;
             }
         }
     }

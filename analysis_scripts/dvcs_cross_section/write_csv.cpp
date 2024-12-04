@@ -40,12 +40,13 @@ void write_csv(const std::string& filename, const std::map<std::string, std::vec
         file << "ep->e'pgamma raw_yield_combined_" << period_name << ",";
         file << "ep->e'pgamma acceptance_" << period_name << ",";
         file << "ep->e'pgamma unfolded_yield_" << period_name << ",";
-        file << "ep->e'pgamma unfolded_yield_uncertainty_" << period_name << ",";  // Added column for uncertainty
+        file << "ep->e'pgamma unfolded_yield_uncertainty_" << period_name << ",";  // Unfolded yield uncertainty
 
-        // Insert contamination_fraction, contamination_uncertainty, and signal_yield
+        // Insert contamination_fraction, contamination_uncertainty, signal_yield, and signal_yield_uncertainty
         file << "ep->e'pgamma contamination_fraction_" << period_name << ",";
         file << "ep->e'pgamma contamination_uncertainty_" << period_name << ",";
         file << "ep->e'pgamma signal_yield_" << period_name << ",";
+        file << "ep->e'pgamma signal_yield_uncertainty_" << period_name << ",";  // Added column for signal yield uncertainty
     }
 
     // Column headers for eppi0 data (periods 3-5)
@@ -59,7 +60,7 @@ void write_csv(const std::string& filename, const std::map<std::string, std::vec
         file << "ep->e'ppi0 raw_yield_combined_" << period_name << ",";
         file << "ep->e'ppi0 acceptance_" << period_name << ",";
         file << "ep->e'ppi0 unfolded_yield_" << period_name << ",";
-        file << "ep->e'ppi0 unfolded_yield_uncertainty_" << period_name;  // Added column for uncertainty
+        file << "ep->e'ppi0 unfolded_yield_uncertainty_" << period_name;  // Unfolded yield uncertainty
 
         if (period < n_periods - 1) {
             file << ",";
@@ -100,14 +101,16 @@ void write_csv(const std::string& filename, const std::map<std::string, std::vec
                 // Acceptance, unfolded yield, and unfolded yield uncertainty
                 double acceptance = data.acceptance[period][phi_idx];
                 double unfolded_yield = data.unfolded_yields[period][phi_idx];
-                double unfolded_yield_uncertainty = data.unfolded_yield_uncertainty[period][phi_idx];  // Retrieve uncertainty
-                file << acceptance << "," << unfolded_yield << "," << unfolded_yield_uncertainty << ",";  // Write uncertainty
+                double unfolded_yield_uncertainty = data.unfolded_yield_uncertainty[period][phi_idx];
+                file << acceptance << "," << unfolded_yield << "," << unfolded_yield_uncertainty << ",";
 
-                // Contamination fraction, contamination uncertainty, and signal yield
+                // Contamination fraction, contamination uncertainty, signal yield, and signal yield uncertainty
                 double contamination_fraction = data.contamination_fraction[period][phi_idx];
                 double contamination_uncertainty = data.contamination_uncertainty[period][phi_idx];
                 double signal_yield = data.signal_yield[period][phi_idx];
-                file << contamination_fraction << "," << contamination_uncertainty << "," << signal_yield << ",";
+                double signal_yield_uncertainty = data.signal_yield_uncertainty[period][phi_idx];  // Retrieve signal yield uncertainty
+
+                file << contamination_fraction << "," << contamination_uncertainty << "," << signal_yield << "," << signal_yield_uncertainty << ",";
             }
 
             // eppi0 data (periods 3-5)
@@ -128,8 +131,8 @@ void write_csv(const std::string& filename, const std::map<std::string, std::vec
                 // Acceptance, unfolded yield, and unfolded yield uncertainty
                 double acceptance = data.acceptance[eppi0_period][phi_idx];
                 double unfolded_yield = data.unfolded_yields[eppi0_period][phi_idx];
-                double unfolded_yield_uncertainty = data.unfolded_yield_uncertainty[eppi0_period][phi_idx];  // Retrieve uncertainty
-                file << acceptance << "," << unfolded_yield << "," << unfolded_yield_uncertainty;  // Write uncertainty
+                double unfolded_yield_uncertainty = data.unfolded_yield_uncertainty[eppi0_period][phi_idx];
+                file << acceptance << "," << unfolded_yield << "," << unfolded_yield_uncertainty;
 
                 if (period < n_periods - 1) {
                     file << ",";

@@ -22,12 +22,13 @@ struct UnfoldingData {
     std::vector<std::vector<double>> acceptance;              // [period][phi_idx]
     std::vector<std::vector<double>> acceptance_uncertainty;  // [period][phi_idx]
     std::vector<std::vector<double>> unfolded_yields;         // [period][phi_idx]
-    std::vector<std::vector<double>> unfolded_yield_uncertainty; // [period][phi_idx] (Added)
+    std::vector<std::vector<double>> unfolded_yield_uncertainty; // [period][phi_idx]
 
     // Contamination fractions and signal yields per period:
     std::vector<std::vector<double>> contamination_fraction;    // [period][phi_idx]
     std::vector<std::vector<double>> contamination_uncertainty; // [period][phi_idx]
     std::vector<std::vector<double>> signal_yield;              // [period][phi_idx]
+    std::vector<std::vector<double>> signal_yield_uncertainty;  // [period][phi_idx] (Added)
 };
 
 #endif // UNFOLDING_DATA_H
