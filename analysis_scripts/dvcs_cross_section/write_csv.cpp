@@ -1,5 +1,3 @@
-// write_csv.cpp
-
 #include <fstream>
 #include <iostream>
 #include <string>
@@ -39,9 +37,7 @@ void write_csv(const std::string& filename, const std::map<std::string, std::vec
 
         file << "ep->e'pgamma raw_yield_combined_" << period_name << ",";
         file << "ep->e'pgamma acceptance_" << period_name << ",";
-        file << "ep->e'pgamma acceptance_uncertainty_" << period_name << ",";
         file << "ep->e'pgamma unfolded_yield_" << period_name << ",";
-        file << "ep->e'pgamma unfolded_yield_uncertainty_" << period_name << ","; // New column
 
         // Insert contamination_fraction, contamination_uncertainty, and signal_yield
         file << "ep->e'pgamma contamination_fraction_" << period_name << ",";
@@ -59,9 +55,7 @@ void write_csv(const std::string& filename, const std::map<std::string, std::vec
 
         file << "ep->e'ppi0 raw_yield_combined_" << period_name << ",";
         file << "ep->e'ppi0 acceptance_" << period_name << ",";
-        file << "ep->e'ppi0 acceptance_uncertainty_" << period_name << ",";
-        file << "ep->e'ppi0 unfolded_yield_" << period_name << ",";
-        file << "ep->e'ppi0 unfolded_yield_uncertainty_" << period_name; // No comma at the end
+        file << "ep->e'ppi0 unfolded_yield_" << period_name;
 
         if (period < n_periods - 1) {
             file << ",";
@@ -99,12 +93,10 @@ void write_csv(const std::string& filename, const std::map<std::string, std::vec
                 int combined_raw_yield = data.combined_raw_yields[period][phi_idx];
                 file << combined_raw_yield << ",";
 
-                // Acceptance, acceptance uncertainty, unfolded yield, and unfolded yield uncertainty
+                // Acceptance and unfolded yield
                 double acceptance = data.acceptance[period][phi_idx];
-                double acceptance_uncertainty = data.acceptance_uncertainty[period][phi_idx];
                 double unfolded_yield = data.unfolded_yields[period][phi_idx];
-                double unfolded_yield_uncertainty = data.unfolded_yield_uncertainty[period][phi_idx];
-                file << acceptance << "," << acceptance_uncertainty << "," << unfolded_yield << "," << unfolded_yield_uncertainty << ",";
+                file << acceptance << "," << unfolded_yield << ",";
 
                 // Contamination fraction, contamination uncertainty, and signal yield
                 double contamination_fraction = data.contamination_fraction[period][phi_idx];
@@ -128,12 +120,10 @@ void write_csv(const std::string& filename, const std::map<std::string, std::vec
                 int combined_raw_yield = data.combined_raw_yields[eppi0_period][phi_idx];
                 file << combined_raw_yield << ",";
 
-                // Acceptance, acceptance uncertainty, unfolded yield, and unfolded yield uncertainty
+                // Acceptance and unfolded yield
                 double acceptance = data.acceptance[eppi0_period][phi_idx];
-                double acceptance_uncertainty = data.acceptance_uncertainty[eppi0_period][phi_idx];
                 double unfolded_yield = data.unfolded_yields[eppi0_period][phi_idx];
-                double unfolded_yield_uncertainty = data.unfolded_yield_uncertainty[eppi0_period][phi_idx];
-                file << acceptance << "," << acceptance_uncertainty << "," << unfolded_yield << "," << unfolded_yield_uncertainty;
+                file << acceptance << "," << unfolded_yield;
 
                 if (period < n_periods - 1) {
                     file << ",";

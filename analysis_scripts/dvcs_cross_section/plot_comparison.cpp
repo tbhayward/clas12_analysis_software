@@ -1,5 +1,3 @@
-// plot_comparison.cpp
-
 #include "plot_comparison.h"
 #include <fstream>
 #include <iostream>
@@ -23,7 +21,6 @@
 #include <TROOT.h>
 #include <TMath.h>
 #include <TLegend.h>
-
 
 // Helper function to ensure a directory exists
 void ensure_directory_exists(const std::string &path) {
@@ -89,9 +86,6 @@ std::vector<BinData> read_csv_first(const std::string &file_path) {
         std::getline(ss, value, ','); // Acceptance corrected yield
         bin.unfolded_yield_inbending = std::stod(value); // Store as a single total yield
 
-        // Since the first CSV doesn't have uncertainties, set to zero
-        bin.unfolded_yield_uncertainty = 0.0;
-
         bins.push_back(bin);
     }
 
@@ -146,61 +140,41 @@ std::vector<BinData> read_csv_second(const std::string &file_path, const std::ve
         std::getline(ss, value, ','); // phi_avg
         bin.phiavg = std::stod(value);
 
-        // Now, we need to skip columns to reach the unfolded yield and its uncertainty for DVCS periods
+        // Now, we need to skip columns to reach the signal yield for DVCS periods
         // We've read 13 columns so far
 
         // For each DVCS period (3 periods), we have:
-        // - 3 topology raw yields: 3 columns
-        // - 1 combined raw yield: 1 column
-        // - 1 acceptance: 1 column
-        // - 1 acceptance uncertainty: 1 column
-        // - 1 unfolded yield: 1 column
-        // - 1 unfolded yield uncertainty: 1 column (new)
-        // - 1 contamination fraction: 1 column
-        // - 1 contamination uncertainty: 1 column
-        // - 1 signal yield: 1 column
-        // Total per period: 11 columns
+        // 3 topology raw yields (FD_FD, CD_FD, CD_FT): 3 columns
+        // 1 combined raw yield: 1 column
+        // 1 acceptance: 1 column
+        // 1 acceptance_uncertainty: 1 column (new column added)
+        // 1 unfolded yield: 1 column
+        // 1 contamination fraction: 1 column
+        // 1 contamination uncertainty: 1 column
+        // 1 signal yield: 1 column
+        // Total per period: 10 columns
 
-        // Since we are interested in the unfolded yield and its uncertainty for periods 0 and 1, we'll adjust the skips accordingly
+        // Since we are interested in the signal yields for periods 0 and 1, we'll adjust the skips accordingly
 
-        // Skip columns for period 0 up to unfolded yield
-        // From current position (after 13 columns), skip 3 (topology raw yields) + 1 (combined raw yield) + 1 (acceptance) + 1 (acceptance uncertainty) = 6 columns
-        for (int i = 0; i < 6; ++i) std::getline(ss, value, ',');
+        // Skip columns for period 0 up to signal yield
+        // From current position (after 13 columns), skip 3 (topology raw yields) + 1 (combined raw yield) + 1 (acceptance) + 1 (acceptance_uncertainty) + 1 (unfolded yield) + 1 (contamination fraction) + 1 (contamination uncertainty) = 9 columns
+        for (int i = 0; i < 9; ++i) std::getline(ss, value, ',');
 
-        // Now read unfolded yield for period 0
-        std::getline(ss, value, ','); // Unfolded yield (period 0)
-        double unfolded_yield_period0 = std::stod(value);
+        // Now read signal yield for period 0
+        std::getline(ss, value, ','); // Signal yield (inbending)
+        double signal_yield_inbending = std::stod(value);
 
-        // Read unfolded yield uncertainty for period 0
-        std::getline(ss, value, ','); // Unfolded yield uncertainty (period 0)
-        double unfolded_yield_uncertainty_period0 = std::stod(value);
+        // For period 1, skip columns up to signal yield
+        // For period 1, skip 10 columns (same as above)
+        for (int i = 0; i < 9; ++i) std::getline(ss, value, ',');
 
-        // Skip contamination_fraction, contamination_uncertainty, signal_yield (3 columns)
-        for (int i = 0; i < 3; ++i) std::getline(ss, value, ',');
+        // Read signal yield for period 1
+        std::getline(ss, value, ','); // Signal yield (outbending)
+        double signal_yield_outbending = std::stod(value);
 
-        // For period 1, skip columns up to unfolded yield
-        // Skip 11 columns (since we have 11 columns per period)
-        for (int i = 0; i < 11; ++i) std::getline(ss, value, ',');
-
-        // Read unfolded yield for period 1
-        std::getline(ss, value, ','); // Unfolded yield (period 1)
-        double unfolded_yield_period1 = std::stod(value);
-
-        // Read unfolded yield uncertainty for period 1
-        std::getline(ss, value, ','); // Unfolded yield uncertainty (period 1)
-        double unfolded_yield_uncertainty_period1 = std::stod(value);
-
-        // Sum the unfolded yields from periods 0 and 1
-        double total_unfolded_yield = unfolded_yield_period0 + unfolded_yield_period1;
-
-        // Combine the uncertainties (assuming they are independent)
-        double total_uncertainty = std::sqrt(
-            unfolded_yield_uncertainty_period0 * unfolded_yield_uncertainty_period0 +
-            unfolded_yield_uncertainty_period1 * unfolded_yield_uncertainty_period1
-        );
-
-        bin.unfolded_yield_inbending = total_unfolded_yield;
-        bin.unfolded_yield_uncertainty = total_uncertainty;
+        // Sum the signal yields from periods 0 and 1
+        double total_signal_yield = signal_yield_inbending + signal_yield_outbending;
+        bin.unfolded_yield_inbending = total_signal_yield; // Store as 'unfolded_yield_inbending' for consistency
 
         bins.push_back(bin);
         index++;
@@ -281,17 +255,16 @@ void plot_for_xB_bin(const std::vector<BinData> &data_first, const std::vector<B
         gPad->SetLogy();  // Set log scale for the y-axis
 
         // Prepare vectors for the first dataset
-        std::vector<double> phi_values_first, yields_first, phi_errors_first, yield_errors_first;
+        std::vector<double> phi_values_first, yields_first, phi_errors_first;
         for (const auto &bin : bins_first) {
             phi_values_first.push_back(bin.phiavg);
             yields_first.push_back(bin.unfolded_yield_inbending); // Use total yield
             double phi_bin_width = (bin.phimax - bin.phimin) / 2.0; // Calculate half-width of the phi bin
             phi_errors_first.push_back(phi_bin_width);
-            yield_errors_first.push_back(0.0); // No uncertainties for first dataset
         }
 
         // Create TGraphErrors for the first dataset (blue)
-        TGraphErrors *graph_first = new TGraphErrors(phi_values_first.size(), &phi_values_first[0], &yields_first[0], &phi_errors_first[0], &yield_errors_first[0]);
+        TGraphErrors *graph_first = new TGraphErrors(phi_values_first.size(), &phi_values_first[0], &yields_first[0], &phi_errors_first[0], nullptr);
         graph_first->SetMarkerStyle(20);
         graph_first->SetMarkerColor(kBlue);
 
@@ -299,32 +272,23 @@ void plot_for_xB_bin(const std::vector<BinData> &data_first, const std::vector<B
         auto it_second = qt_bins_second.find(qt_key);
         if (it_second != qt_bins_second.end()) {
             const auto &bins_second = it_second->second;
-            std::vector<double> phi_values_second, yields_second, phi_errors_second, yield_errors_second;
+            std::vector<double> phi_values_second, yields_second, phi_errors_second;
 
             for (const auto &bin : bins_second) {
                 phi_values_second.push_back(bin.phiavg);
                 yields_second.push_back(bin.unfolded_yield_inbending); // Use total yield
                 double phi_bin_width = (bin.phimax - bin.phimin) / 2.0;
                 phi_errors_second.push_back(phi_bin_width);
-                yield_errors_second.push_back(bin.unfolded_yield_uncertainty); // Include uncertainties
             }
 
             // Create TGraphErrors for the second dataset (red)
-            TGraphErrors *graph_second = new TGraphErrors(phi_values_second.size(), &phi_values_second[0], &yields_second[0], &phi_errors_second[0], &yield_errors_second[0]);
+            TGraphErrors *graph_second = new TGraphErrors(phi_values_second.size(), &phi_values_second[0], &yields_second[0], &phi_errors_second[0], nullptr);
             graph_second->SetMarkerStyle(21);
             graph_second->SetMarkerColor(kRed);
 
             // Draw both graphs with legends for comparison
             graph_first->Draw("AP");
             graph_second->Draw("P SAME");
-
-            // Add legend
-            TLegend *legend = new TLegend(0.6, 0.75, 0.89, 0.89);
-            legend->SetBorderSize(0);
-            legend->SetFillStyle(0);
-            legend->AddEntry(graph_first, "First CSV (No uncertainties)", "p");
-            legend->AddEntry(graph_second, "Second CSV", "p");
-            legend->Draw();
         } else {
             // If no matching (Q2, t) bin in the second dataset, draw only the first dataset graph
             graph_first->Draw("AP");
