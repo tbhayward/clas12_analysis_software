@@ -6,6 +6,7 @@
 #include <vector>
 #include <cstddef>  // For size_t
 #include <map>
+#include <cmath>    // For M_PI and std::sqrt
 #include "write_csv.h"
 #include "unfolding_data.h"
 
@@ -67,7 +68,8 @@ void write_csv(const std::string& filename, const std::map<std::string, std::vec
         }
     }
 
-    file << std::endl;
+    // Add new columns to the header
+    file << ",bin_volume,fall_cross_section,fall_cross_section_stat_uncertainty,fall_cross_section_sys_uncertainty" << std::endl;
 
     // Get the combined data
     const auto& combined_data = topology_unfolding_data.at(combined_topology);
@@ -139,7 +141,56 @@ void write_csv(const std::string& filename, const std::map<std::string, std::vec
                 }
             }
 
-            file << std::endl;
+            // Calculate bin_volume
+            double xB_min = data.xB_min;
+            double xB_max = data.xB_max;
+            double Q2_min = data.Q2_min;
+            double Q2_max = data.Q2_max;
+            double t_min = data.t_min;
+            double t_max = data.t_max;
+            double phi_min_deg = data.phi_min[phi_idx];
+            double phi_max_deg = data.phi_max[phi_idx];
+            double phi_min_rad = phi_min_deg * M_PI / 180.0;
+            double phi_max_rad = phi_max_deg * M_PI / 180.0;
+
+            // Adjust for possible wrap-around in phi
+            double delta_phi_rad = phi_max_rad - phi_min_rad;
+            if (delta_phi_rad < 0) {
+                delta_phi_rad += 2 * M_PI;
+            }
+
+            // Bin volume calculation
+            double bin_volume = (xB_max - xB_min) * (Q2_max - Q2_min) * (t_max - t_min) * delta_phi_rad;
+
+            // Get signal_yield for Fa18Inb (period 0) and Fa18Out (period 1)
+            double signal_yield_Fa18Inb = data.signal_yield[0][phi_idx];
+            double signal_yield_Fa18Out = data.signal_yield[1][phi_idx];
+            double combined_signal_yield = signal_yield_Fa18Inb + signal_yield_Fa18Out;
+
+            // Get uncertainties
+            double uncertainty_Fa18Inb = data.signal_yield_uncertainty[0][phi_idx];
+            double uncertainty_Fa18Out = data.signal_yield_uncertainty[1][phi_idx];
+            double combined_uncertainty = std::sqrt(uncertainty_Fa18Inb * uncertainty_Fa18Inb + uncertainty_Fa18Out * uncertainty_Fa18Out);
+
+            // Compute fall_cross_section
+            double denominator = 8.213e7 * bin_volume; // fa18 integrated luminosity
+            double fall_cross_section = 0.0;
+            double fall_cross_section_stat_uncertainty = 0.0;
+
+            if (denominator != 0.0) {
+                fall_cross_section = combined_signal_yield / denominator;
+                fall_cross_section_stat_uncertainty = combined_uncertainty / denominator;
+            } else {
+                // Handle division by zero
+                fall_cross_section = 0.0;
+                fall_cross_section_stat_uncertainty = 0.0;
+            }
+
+            // Compute fall_cross_section_sys_uncertainty (50% of cross section)
+            double fall_cross_section_sys_uncertainty = 0.5 * fall_cross_section;
+
+            // Write these values to the file
+            file << "," << bin_volume << "," << fall_cross_section << "," << fall_cross_section_stat_uncertainty << "," << fall_cross_section_sys_uncertainty << std::endl;
         }
     }
 
