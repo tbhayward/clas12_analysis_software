@@ -9,7 +9,6 @@
 #include <TGraphErrors.h>
 
 // Define the BinData struct to hold bin information from the CSV
-// Define the BinData struct
 struct BinData {
     int global_bin_number;
     int bin_number;
@@ -30,7 +29,8 @@ struct BinData {
     double phimax;
     double phiavg;
 
-    std::vector<double> signal_yields; // Added member
+    std::vector<double> signal_yields;              // May have multiple yields
+    std::vector<double> signal_yield_uncertainties; // Corresponding uncertainties (Added)
 };
 
 // Primary function to manage reading, processing, and plotting of bin data
