@@ -258,7 +258,7 @@ std::map<std::string, std::vector<UnfoldingData>> plot_unfolding(
     }
 
     std::cout << "WE EXITED THE DVCS CASE" << std::endl;
-    
+
     // Data readers for periods 3-5 (eppi0 data)
     for (int period = 0; period < n_periods; ++period) {
         TTreeReader& data_reader = eppi0_readers[period];
@@ -299,6 +299,7 @@ std::map<std::string, std::vector<UnfoldingData>> plot_unfolding(
                 event_topology = "CD_FD";
             } else if (det1 == 2 && det2 == 0) {
                 event_topology = "CD_FT";
+                continue; // not doing CD_FT eppi0s
             } else {
                 continue; // Not one of the desired topologies
             }
