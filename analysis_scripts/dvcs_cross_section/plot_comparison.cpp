@@ -24,29 +24,6 @@
 #include <TMath.h>
 #include <TLegend.h>
 
-// Define the BinData struct
-struct BinData {
-    int global_bin_number;
-    int bin_number;
-
-    double xBmin;
-    double xBmax;
-    double xBavg;
-
-    double Q2min;
-    double Q2max;
-    double Q2avg;
-
-    double tmin;
-    double tmax;
-    double tavg;
-
-    double phimin;
-    double phimax;
-    double phiavg;
-
-    std::vector<double> signal_yields; // To store signal yields for each period
-};
 
 // Helper function to ensure a directory exists
 void ensure_directory_exists(const std::string &path) {
