@@ -303,7 +303,7 @@ std::map<std::string, std::vector<UnfoldingData>> plot_unfolding(
             } else {
                 continue; // Not one of the desired topologies
             }
-            std::cout << event_topology << std::endl;
+            std::cout << "(" + event_topology.substr(0, 2) + "," + event_topology.substr(3, 2) + ")" << std::endl;
 
             double phi_deg = *phi_data * RAD_TO_DEG;
             phi_deg = std::fmod(phi_deg + 360.0, 360.0); // Ensure phi in [0, 360)
