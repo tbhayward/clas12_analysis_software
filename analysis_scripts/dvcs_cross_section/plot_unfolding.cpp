@@ -257,6 +257,8 @@ std::map<std::string, std::vector<UnfoldingData>> plot_unfolding(
         }
     }
 
+    std::cout << "WE EXITED THE DVCS CASE" << std::endl;
+    
     // Data readers for periods 3-5 (eppi0 data)
     for (int period = 0; period < n_periods; ++period) {
         TTreeReader& data_reader = eppi0_readers[period];
