@@ -42,11 +42,11 @@ bool apply_kinematic_cuts(
 
     // Map run_period to internal period identifiers
     std::string period;
-    if (run_period == "RGA Fa18 Inb" || run_period == "first period") {
+    if (run_period == "RGA Fa18 Inb" || run_period == "first period" || run_period == "Fa18Inb" ||) {
         period = "period1";
-    } else if (run_period == "RGA Fa18 Out" || run_period == "second period") {
+    } else if (run_period == "RGA Fa18 Out" || run_period == "second period" || run_period == "Fa18Out" ||) {
         period = "period2";
-    } else if (run_period == "RGA Sp19 Inb" || run_period == "third period") {
+    } else if (run_period == "RGA Sp19 Inb" || run_period == "third period" || run_period == "Sp19Inb" ||) {
         period = "period3";
     } else {
         std::cerr << "Unknown run period: " << run_period << std::endl;
