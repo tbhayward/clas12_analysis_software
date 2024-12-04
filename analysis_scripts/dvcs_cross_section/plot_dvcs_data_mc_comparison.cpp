@@ -193,10 +193,10 @@ void plot_dvcs_data_mc_comparison(const std::string& output_dir,
 
         while (reader.Next()) {
             event_count++;
-            double phi_deg = *phi * RAD_TO_DEG;  
-            double xB_value = *xB;
-            double Q2_value = *Q2;
-            double t_abs = std::abs(*t1);
+            double phi_deg = phi() * RAD_TO_DEG;  
+            double xB_value = xB();
+            double Q2_value = Q2();
+            double t_abs = std::abs(t1());
 
             // Adjust phi_deg to be within [0, 360)
             phi_deg = std::fmod(phi_deg + 360.0, 360.0);
@@ -204,11 +204,11 @@ void plot_dvcs_data_mc_comparison(const std::string& output_dir,
             // Determine topology based on detector1 and detector2
             std::string topology = "(FD,FD)";  // Default topology
             if (detector1 && detector2) {
-                if (*detector1 == 1 && *detector2 == 1) {
+                if (detector1()->operator int() == 1 && detector2()->operator int() == 1) {
                     topology = "(FD,FD)";
-                } else if (*detector1 == 2 && *detector2 == 1) {
+                } else if (detector1()->operator int() == 2 && detector2()->operator int() == 1) {
                     topology = "(CD,FD)";
-                } else if (*detector1 == 2 && *detector2 == 0) {
+                } else if (detector1()->operator int() == 2 && detector2()->operator int() == 0) {
                     topology = "(CD,FT)";
                 } else {
                     // Unknown topology, skip event
@@ -218,15 +218,15 @@ void plot_dvcs_data_mc_comparison(const std::string& output_dir,
 
             // Apply kinematic cuts
             bool passes_cuts = apply_kinematic_cuts(
-                *t1,
-                *open_angle_ep2,
-                *theta_neutral_neutral,
-                *Emiss2,
-                *Mx2,
-                *Mx2_1,
-                *Mx2_2,
-                *pTmiss,
-                *xF,
+                t1(),
+                open_angle_ep2(),
+                theta_neutral_neutral(),
+                Emiss2(),
+                Mx2(),
+                Mx2_1(),
+                Mx2_2(),
+                pTmiss(),
+                xF(),
                 analysisType,          // channel: "dvcs" or "eppi0"
                 (type == "data" || type == "mc_rec") ? "data" : "mc",  // data_type
                 dataset,               // run_period
