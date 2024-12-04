@@ -17,6 +17,7 @@ struct BinData {
     double tmin, tmax, tavg;
     double phimin, phimax, phiavg;
     double unfolded_yield_inbending; // Now holds total yield
+    double unfolded_yield_uncertainty;
 };
 
 // Primary function to manage reading, processing, and plotting of bin data
