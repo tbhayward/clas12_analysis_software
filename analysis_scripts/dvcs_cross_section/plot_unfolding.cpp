@@ -189,7 +189,7 @@ std::map<std::string, std::vector<UnfoldingData>> plot_unfolding(
             // Determine topology based on detector1 and detector2
             int det1 = *detector1_data;
             int det2 = *detector2_data;
-            std::cout << "TEST" << std::endl;
+
             std::string event_topology = "";
             if (det1 == 1 && det2 == 1) {
                 event_topology = "FD_FD";
@@ -303,6 +303,7 @@ std::map<std::string, std::vector<UnfoldingData>> plot_unfolding(
             } else {
                 continue; // Not one of the desired topologies
             }
+            std::cout << event_topology << std::endl;
 
             double phi_deg = *phi_data * RAD_TO_DEG;
             phi_deg = std::fmod(phi_deg + 360.0, 360.0); // Ensure phi in [0, 360)
