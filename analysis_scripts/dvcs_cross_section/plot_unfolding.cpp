@@ -54,7 +54,7 @@ std::map<std::string, std::vector<UnfoldingData>> plot_unfolding(
     std::string combined_topology = "combined";
 
     // Names of the periods
-    std::vector<std::string> period_names = {"Fa18Inb", "Fa18Out", "Sp19Inb"};
+    std::vector<std::string> period_names = {"Fa18_Inb", "Fa18_Out", "Sp19_Inb"};
     const int n_periods = 3; // Number of periods for data and MC
 
     // Initialize a map to hold all unfolding data for each topology
