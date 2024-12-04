@@ -1,3 +1,5 @@
+// plot_comparison.cpp
+
 #include "plot_comparison.h"
 #include <fstream>
 #include <iostream>
@@ -21,6 +23,30 @@
 #include <TROOT.h>
 #include <TMath.h>
 #include <TLegend.h>
+
+// Define the BinData struct
+struct BinData {
+    int global_bin_number;
+    int bin_number;
+
+    double xBmin;
+    double xBmax;
+    double xBavg;
+
+    double Q2min;
+    double Q2max;
+    double Q2avg;
+
+    double tmin;
+    double tmax;
+    double tavg;
+
+    double phimin;
+    double phimax;
+    double phiavg;
+
+    std::vector<double> signal_yields; // To store signal yields for each period
+};
 
 // Helper function to ensure a directory exists
 void ensure_directory_exists(const std::string &path) {
@@ -84,7 +110,9 @@ std::vector<BinData> read_csv_first(const std::string &file_path) {
         for (int i = 0; i < 32; ++i) std::getline(ss, value, ',');
 
         std::getline(ss, value, ','); // Acceptance corrected yield
-        bin.unfolded_yield_inbending = std::stod(value); // Store as a single total yield
+        double unfolded_yield = std::stod(value); // Store as a single total yield
+
+        bin.signal_yields.push_back(unfolded_yield); // Only one yield in first CSV
 
         bins.push_back(bin);
     }
@@ -147,34 +175,37 @@ std::vector<BinData> read_csv_second(const std::string &file_path, const std::ve
         // 3 topology raw yields (FD_FD, CD_FD, CD_FT): 3 columns
         // 1 combined raw yield: 1 column
         // 1 acceptance: 1 column
-        // 1 acceptance_uncertainty: 1 column (new column added)
         // 1 unfolded yield: 1 column
+        // 1 unfolded yield uncertainty: 1 column (new column added)
         // 1 contamination fraction: 1 column
         // 1 contamination uncertainty: 1 column
         // 1 signal yield: 1 column
         // Total per period: 10 columns
 
-        // Since we are interested in the signal yields for periods 0 and 1, we'll adjust the skips accordingly
+        bin.signal_yields.clear(); // Ensure vector is empty
 
-        // Skip columns for period 0 up to signal yield
-        // From current position (after 13 columns), skip 3 (topology raw yields) + 1 (combined raw yield) + 1 (acceptance) + 1 (acceptance_uncertainty) + 1 (unfolded yield) + 1 (contamination fraction) + 1 (contamination uncertainty) = 9 columns
-        for (int i = 0; i < 9; ++i) std::getline(ss, value, ',');
+        const int n_periods = 3;
 
-        // Now read signal yield for period 0
-        std::getline(ss, value, ','); // Signal yield (inbending)
-        double signal_yield_inbending = std::stod(value);
+        for (int period = 0; period < n_periods; ++period) {
+            // Skip columns for this period up to signal yield
+            // From current position, skip:
+            // 3 (topology raw yields)
+            // + 1 (combined raw yield)
+            // + 1 (acceptance)
+            // + 1 (unfolded yield)
+            // + 1 (unfolded yield uncertainty)
+            // + 1 (contamination fraction)
+            // + 1 (contamination uncertainty)
+            // So total of 9 columns to skip to reach signal_yield
+            for (int i = 0; i < 9; ++i) std::getline(ss, value, ',');
 
-        // For period 1, skip columns up to signal yield
-        // For period 1, skip 10 columns (same as above)
-        for (int i = 0; i < 9; ++i) std::getline(ss, value, ',');
+            // Now read signal yield for this period
+            std::getline(ss, value, ','); // Signal yield
+            double signal_yield = std::stod(value);
+            bin.signal_yields.push_back(signal_yield);
+        }
 
-        // Read signal yield for period 1
-        std::getline(ss, value, ','); // Signal yield (outbending)
-        double signal_yield_outbending = std::stod(value);
-
-        // Sum the signal yields from periods 0 and 1
-        double total_signal_yield = signal_yield_inbending + signal_yield_outbending;
-        bin.unfolded_yield_inbending = total_signal_yield; // Store as 'unfolded_yield_inbending' for consistency
+        // We can ignore the eppi0 data (periods 3-5) for now, unless needed
 
         bins.push_back(bin);
         index++;
@@ -203,7 +234,7 @@ std::vector<BinData> filter_data_by_xB(const std::vector<BinData> &data, const s
     return filtered_data;
 }
 
-// Plotting function for each xB bin with comparison between inbending and outbending datasets
+// Plotting function for each xB bin with comparison between datasets
 void plot_for_xB_bin(const std::vector<BinData> &data_first, const std::vector<BinData> &data_second, int xB_index) {
     // Step 1: Identify unique (Q2min, Q2max, tmin, tmax) bins in the first dataset
     std::map<std::tuple<double, double, double, double>, std::vector<BinData>> qt_bins_first, qt_bins_second;
@@ -230,13 +261,15 @@ void plot_for_xB_bin(const std::vector<BinData> &data_first, const std::vector<B
     // Step 3: Calculate the maximum yield value across both datasets for y-axis scaling
     double max_yield = 0.0;
     for (const auto &bin : data_first) {
-        if (bin.unfolded_yield_inbending > max_yield) {
-            max_yield = bin.unfolded_yield_inbending;
+        if (!bin.signal_yields.empty() && bin.signal_yields[0] > max_yield) {
+            max_yield = bin.signal_yields[0];
         }
     }
     for (const auto &bin : data_second) {
-        if (bin.unfolded_yield_inbending > max_yield) {
-            max_yield = bin.unfolded_yield_inbending;
+        for (double yield : bin.signal_yields) {
+            if (yield > max_yield) {
+                max_yield = yield;
+            }
         }
     }
 
@@ -258,7 +291,11 @@ void plot_for_xB_bin(const std::vector<BinData> &data_first, const std::vector<B
         std::vector<double> phi_values_first, yields_first, phi_errors_first;
         for (const auto &bin : bins_first) {
             phi_values_first.push_back(bin.phiavg);
-            yields_first.push_back(bin.unfolded_yield_inbending); // Use total yield
+            if (!bin.signal_yields.empty()) {
+                yields_first.push_back(bin.signal_yields[0]); // Use the only yield in first CSV
+            } else {
+                yields_first.push_back(0);
+            }
             double phi_bin_width = (bin.phimax - bin.phimin) / 2.0; // Calculate half-width of the phi bin
             phi_errors_first.push_back(phi_bin_width);
         }
@@ -268,27 +305,51 @@ void plot_for_xB_bin(const std::vector<BinData> &data_first, const std::vector<B
         graph_first->SetMarkerStyle(20);
         graph_first->SetMarkerColor(kBlue);
 
-        // Prepare and plot the second dataset only if there’s a matching key
+        // Prepare and plot the second dataset if there’s a matching key
         auto it_second = qt_bins_second.find(qt_key);
         if (it_second != qt_bins_second.end()) {
             const auto &bins_second = it_second->second;
-            std::vector<double> phi_values_second, yields_second, phi_errors_second;
 
-            for (const auto &bin : bins_second) {
-                phi_values_second.push_back(bin.phiavg);
-                yields_second.push_back(bin.unfolded_yield_inbending); // Use total yield
-                double phi_bin_width = (bin.phimax - bin.phimin) / 2.0;
-                phi_errors_second.push_back(phi_bin_width);
+            // We will plot signal yields for each period in the second dataset
+            const int n_periods = bins_second[0].signal_yields.size();
+            std::vector<int> marker_styles = {21, 22, 23}; // Different marker styles for different periods
+            std::vector<int> colors = {kRed, kGreen+2, kMagenta}; // Different colors for different periods
+
+            TLegend* legend = new TLegend(0.6, 0.7, 0.9, 0.9); // Adjust legend position as needed
+            legend->SetTextSize(0.03);
+
+            // First, draw the first dataset graph
+            graph_first->Draw("AP");
+            legend->AddEntry(graph_first, "First CSV Data", "p");
+
+            for (int period = 0; period < n_periods; ++period) {
+                std::vector<double> phi_values_second, yields_second, phi_errors_second;
+
+                for (const auto &bin : bins_second) {
+                    phi_values_second.push_back(bin.phiavg);
+                    if (period < bin.signal_yields.size()) {
+                        yields_second.push_back(bin.signal_yields[period]);
+                    } else {
+                        yields_second.push_back(0);
+                    }
+                    double phi_bin_width = (bin.phimax - bin.phimin) / 2.0;
+                    phi_errors_second.push_back(phi_bin_width);
+                }
+
+                // Create TGraphErrors for the second dataset (period-specific)
+                TGraphErrors *graph_second = new TGraphErrors(phi_values_second.size(), &phi_values_second[0], &yields_second[0], &phi_errors_second[0], nullptr);
+                graph_second->SetMarkerStyle(marker_styles[period]);
+                graph_second->SetMarkerColor(colors[period]);
+
+                // Draw the graph
+                graph_second->Draw("P SAME");
+
+                // Add to legend
+                legend->AddEntry(graph_second, Form("Second CSV Period %d", period), "p");
             }
 
-            // Create TGraphErrors for the second dataset (red)
-            TGraphErrors *graph_second = new TGraphErrors(phi_values_second.size(), &phi_values_second[0], &yields_second[0], &phi_errors_second[0], nullptr);
-            graph_second->SetMarkerStyle(21);
-            graph_second->SetMarkerColor(kRed);
-
-            // Draw both graphs with legends for comparison
-            graph_first->Draw("AP");
-            graph_second->Draw("P SAME");
+            // Draw the legend
+            legend->Draw();
         } else {
             // If no matching (Q2, t) bin in the second dataset, draw only the first dataset graph
             graph_first->Draw("AP");
@@ -302,7 +363,7 @@ void plot_for_xB_bin(const std::vector<BinData> &data_first, const std::vector<B
 
         // Adjust axis labels and range
         graph_first->GetXaxis()->SetTitle("#phi");
-        graph_first->GetYaxis()->SetTitle("Unfolded Yield");
+        graph_first->GetYaxis()->SetTitle("Signal Yield");
         graph_first->GetXaxis()->SetLabelSize(0.04); // Increased font size
         graph_first->GetYaxis()->SetLabelSize(0.04); // Increased font size
         graph_first->GetYaxis()->SetRangeUser(y_min, y_max);  // Set y-axis range

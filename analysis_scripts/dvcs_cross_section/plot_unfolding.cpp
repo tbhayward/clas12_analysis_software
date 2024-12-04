@@ -129,7 +129,14 @@ std::map<std::string, std::vector<UnfoldingData>> plot_unfolding(
         }
         unfolding_data.combined_raw_yields.resize(total_periods, std::vector<int>(n_phi_bins, 0));
         unfolding_data.acceptance.resize(total_periods, std::vector<double>(n_phi_bins, 0.0));
+        unfolding_data.acceptance_uncertainty.resize(total_periods, std::vector<double>(n_phi_bins, 0.0)); // Initialize acceptance uncertainties
         unfolding_data.unfolded_yields.resize(total_periods, std::vector<double>(n_phi_bins, 0.0));
+        unfolding_data.unfolded_yield_uncertainty.resize(total_periods, std::vector<double>(n_phi_bins, 0.0)); // Initialize unfolded yield uncertainties
+
+        // Initialize contamination fractions and uncertainties
+        unfolding_data.contamination_fraction.resize(total_periods, std::vector<double>(n_phi_bins, 0.0));
+        unfolding_data.contamination_uncertainty.resize(total_periods, std::vector<double>(n_phi_bins, 0.0));
+        unfolding_data.signal_yield.resize(total_periods, std::vector<double>(n_phi_bins, 0.0));
 
         // Store the unfolding_data instance
         combined_unfolding_data_vec.push_back(unfolding_data);
@@ -573,7 +580,7 @@ std::map<std::string, std::vector<UnfoldingData>> plot_unfolding(
         }
     }
 
-    // Compute acceptances and unfolded yields for the combined topology
+    // Compute acceptances, acceptance uncertainties, and unfolded yields for the combined topology
     for (size_t group_idx = 0; group_idx < n_groups; ++group_idx) {
         UnfoldingData& unfolding_data = combined_unfolding_data_vec[group_idx];
         size_t n_phi_bins = unfolding_data.phi_min.size();
@@ -586,16 +593,35 @@ std::map<std::string, std::vector<UnfoldingData>> plot_unfolding(
                 if (mc_gen_count > 0) {
                     double acceptance = mc_rec_count / mc_gen_count;
                     unfolding_data.acceptance[period][phi_idx] = acceptance;
+
+                    // Calculate acceptance uncertainty using binomial statistics
+                    double acceptance_uncertainty = sqrt(acceptance * (1.0 - acceptance) / mc_gen_count);
+                    unfolding_data.acceptance_uncertainty[period][phi_idx] = acceptance_uncertainty;
                 } else {
                     unfolding_data.acceptance[period][phi_idx] = 0.0;
+                    unfolding_data.acceptance_uncertainty[period][phi_idx] = 0.0;
                 }
 
                 // Unfolded yield for the combined topology
                 double raw_yield = unfolding_data.combined_raw_yields[period][phi_idx];
                 if (unfolding_data.acceptance[period][phi_idx] > 0) {
                     unfolding_data.unfolded_yields[period][phi_idx] = raw_yield / unfolding_data.acceptance[period][phi_idx];
+
+                    // Calculate unfolded yield uncertainty
+                    double sigma_raw = sqrt(raw_yield); // Uncertainty in raw yield
+                    double acceptance = unfolding_data.acceptance[period][phi_idx];
+                    double acceptance_uncertainty = unfolding_data.acceptance_uncertainty[period][phi_idx];
+
+                    double rel_error_raw = sigma_raw / raw_yield;
+                    double rel_error_acceptance = acceptance_uncertainty / acceptance;
+
+                    double unfolded_yield_uncertainty = unfolding_data.unfolded_yields[period][phi_idx] * sqrt(
+                        rel_error_raw * rel_error_raw + rel_error_acceptance * rel_error_acceptance
+                    );
+                    unfolding_data.unfolded_yield_uncertainty[period][phi_idx] = unfolded_yield_uncertainty;
                 } else {
                     unfolding_data.unfolded_yields[period][phi_idx] = 0.0;
+                    unfolding_data.unfolded_yield_uncertainty[period][phi_idx] = 0.0;
                 }
             }
         }
@@ -615,7 +641,9 @@ std::map<std::string, std::vector<UnfoldingData>> plot_unfolding(
 
             // Since acceptances and unfolded yields are only for the combined topology, we can leave them as zero
             data.acceptance.assign(total_periods, std::vector<double>(data.phi_min.size(), 0.0));
+            data.acceptance_uncertainty.assign(total_periods, std::vector<double>(data.phi_min.size(), 0.0));
             data.unfolded_yields.assign(total_periods, std::vector<double>(data.phi_min.size(), 0.0));
+            data.unfolded_yield_uncertainty.assign(total_periods, std::vector<double>(data.phi_min.size(), 0.0));
         }
 
         // Store in the map
@@ -842,10 +870,7 @@ std::map<std::string, std::vector<UnfoldingData>> plot_unfolding(
                 phi_widths[phi_idx] = (unfolding_data.phi_max[phi_idx] - unfolding_data.phi_min[phi_idx]) / 2.0;
 
                 unfolded_counts[phi_idx] = unfolding_data.unfolded_yields[period][phi_idx];
-                double raw_yield = unfolding_data.combined_raw_yields[period][phi_idx];
-                unfolded_errors[phi_idx] = (unfolding_data.acceptance[period][phi_idx] > 0)
-                                               ? std::sqrt(raw_yield) / unfolding_data.acceptance[period][phi_idx]
-                                               : 0.0;
+                unfolded_errors[phi_idx] = unfolding_data.unfolded_yield_uncertainty[period][phi_idx];
             }
 
             // Move to the appropriate pad
@@ -934,10 +959,7 @@ std::map<std::string, std::vector<UnfoldingData>> plot_unfolding(
                 phi_widths[phi_idx] = (unfolding_data.phi_max[phi_idx] - unfolding_data.phi_min[phi_idx]) / 2.0;
 
                 unfolded_counts[phi_idx] = unfolding_data.unfolded_yields[eppi0_period][phi_idx];
-                double raw_yield = unfolding_data.combined_raw_yields[eppi0_period][phi_idx];
-                unfolded_errors[phi_idx] = (unfolding_data.acceptance[eppi0_period][phi_idx] > 0)
-                                               ? std::sqrt(raw_yield) / unfolding_data.acceptance[eppi0_period][phi_idx]
-                                               : 0.0;
+                unfolded_errors[phi_idx] = unfolding_data.unfolded_yield_uncertainty[eppi0_period][phi_idx];
             }
 
             // Move to the appropriate pad
