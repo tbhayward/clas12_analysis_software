@@ -24,7 +24,6 @@ bool apply_kinematic_cuts(
     if (-t >= 1) return false;
     if (open_angle_ep2 <= 5) return false;
     if (topology == "generated") return true;
-    }
 
     // Variables for mu and sigma values
     double mu_theta_neutral_neutral = 0.0;
