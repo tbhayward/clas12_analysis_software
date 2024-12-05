@@ -221,7 +221,7 @@ CrossSectionData read_second_csv(const std::string &filename) {
         // entry.sys_uncertainty = 0;
 
         entry.cross_section=0.98*entry.cross_section/0.80/0.93;
-        entry.stat_uncertainty=2*0.98*entry.stat_uncertainty/0.80/0.93;
+        entry.stat_uncertainty=0.98*entry.stat_uncertainty/0.80/0.93;
         entry.sys_uncertainty=0.204*entry.cross_section*3;
 
         data.push_back(entry);
