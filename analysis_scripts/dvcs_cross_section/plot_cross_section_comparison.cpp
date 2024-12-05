@@ -22,6 +22,7 @@
 #include <TStyle.h>
 #include <TLegend.h>
 #include <TString.h>
+#include <TH1F.h>
 #include <TFile.h>
 #include <TROOT.h>
 #include <TMath.h>
@@ -279,7 +280,7 @@ CrossSectionData filter_data_by_xB(const CrossSectionData &data, const std::pair
 }
 
 // Plotting function for each xB bin with comparison between datasets
-void plot_for_xB_bin(const CrossSectionData &data_first, const CrossSectionData &data_second, int xB_index, const std::string &output_dir) {
+void plot_for_xB_bin(const CrossSectionData &data_first, const CrossSectionData &data_second, int xB_index) {
     // Step 1: Identify unique (Q2min, Q2max, tmin, tmax) bins in the first dataset
     std::map<std::tuple<double, double, double, double>, CrossSectionData> qt_bins_first, qt_bins_second;
 
@@ -452,6 +453,7 @@ void plot_for_xB_bin(const CrossSectionData &data_first, const CrossSectionData 
 
     // Save the canvas
     std::string save_path = Form("output/cross_section_cross_check/cross_section_cross_check_xB_%d.pdf", xB_index);
+    ensure_directory_exists("output/cross_section_cross_check/");
     canvas.SaveAs(save_path.c_str());
 }
 
@@ -474,7 +476,7 @@ void plot_cross_section_comparison(const std::string &first_csv_file,
         auto filtered_data_second = filter_data_by_xB(data_second_csv, xB_range);
 
         // Pass both datasets to the plotting function
-        plot_for_xB_bin(filtered_data_first, filtered_data_second, xB_index, output_dir);
+        plot_for_xB_bin(filtered_data_first, filtered_data_second, xB_index);
         xB_index++;
     }
 }
