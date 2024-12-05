@@ -272,7 +272,7 @@ void plot_for_xB_bin(const CrossSectionData &data_first, const CrossSectionData 
             if (bin.cross_section > 0) {
                 double cs_min = bin.cross_section;
                 double cs_max = bin.cross_section;
-                if (cs_min < min_cs) min_cs = cs_min;
+                if (cs_min < min_cs && cs_min > 0) min_cs = cs_min;
                 if (cs_max > max_cs) max_cs = cs_max;
             }
         }
@@ -282,7 +282,7 @@ void plot_for_xB_bin(const CrossSectionData &data_first, const CrossSectionData 
             if (bin.cross_section > 0) {
                 double cs_min = bin.cross_section;
                 double cs_max = bin.cross_section;
-                if (cs_min < min_cs) min_cs = cs_min;
+                if (cs_min < min_cs && cs_min > 0) min_cs = cs_min;
                 if (cs_max > max_cs) max_cs = cs_max;
             }
         }
