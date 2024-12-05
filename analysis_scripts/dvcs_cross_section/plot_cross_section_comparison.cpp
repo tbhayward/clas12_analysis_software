@@ -287,6 +287,15 @@ void plot_for_xB_bin(const CrossSectionData &data_first, const CrossSectionData 
     double y_min = std::pow(10, log_min_cs);
     double y_max = std::pow(10, log_max_cs);
 
+    // **Calculate grid_size before using it**
+    int num_plots = qt_bins_first.size();
+    int grid_size = std::ceil(std::sqrt(num_plots));
+
+    // Adjust grid size for canvas layout (if needed)
+    if ((xB_index == 3 || xB_index == 4) && grid_size * (grid_size - 1) >= num_plots) {
+        grid_size -= 1;
+    }
+
     // Step 3: Set up the canvas
     TCanvas canvas("canvas", "Cross Section Cross Check", 1200, 1200);
     canvas.Divide(grid_size, grid_size, 0.02, 0.02); // Small padding between pads
@@ -352,6 +361,10 @@ void plot_for_xB_bin(const CrossSectionData &data_first, const CrossSectionData 
         frame->GetXaxis()->SetTitle("#phi [deg]");
         frame->GetYaxis()->SetTitle("d#sigma/dx_{B}dQ^{2}d|t|d#phi (nb/GeV^{4})");
 
+        // **Declare graph pointers before the if blocks**
+        TGraphErrors *graph_first_stat = nullptr;
+        TGraphErrors *graph_second_stat = nullptr;
+
         // Proceed only if there are data points to plot
         if (!data_points_first.empty() || !data_points_second.empty()) {
             // Plot first dataset if it has data points
@@ -372,9 +385,9 @@ void plot_for_xB_bin(const CrossSectionData &data_first, const CrossSectionData 
                 }
 
                 // Create TGraphErrors for statistical uncertainties (first dataset)
-                TGraphErrors *graph_first_stat = new TGraphErrors(n_points_first,
-                                                                  &phi_values_first[0], &cs_first[0],
-                                                                  &phi_errors_first[0], &stat_err_first[0]);
+                graph_first_stat = new TGraphErrors(n_points_first,
+                                                    &phi_values_first[0], &cs_first[0],
+                                                    &phi_errors_first[0], &stat_err_first[0]);
                 graph_first_stat->SetMarkerStyle(20);
                 graph_first_stat->SetMarkerColor(kBlue);
                 graph_first_stat->SetLineColor(kBlue);
@@ -420,9 +433,9 @@ void plot_for_xB_bin(const CrossSectionData &data_first, const CrossSectionData 
                 }
 
                 // Create TGraphErrors for statistical uncertainties (second dataset)
-                TGraphErrors *graph_second_stat = new TGraphErrors(n_points_second,
-                                                                   &phi_values_second[0], &cs_second[0],
-                                                                   &phi_errors_second[0], &stat_err_second[0]);
+                graph_second_stat = new TGraphErrors(n_points_second,
+                                                     &phi_values_second[0], &cs_second[0],
+                                                     &phi_errors_second[0], &stat_err_second[0]);
                 graph_second_stat->SetMarkerStyle(21);
                 graph_second_stat->SetMarkerColor(kRed);
                 graph_second_stat->SetLineColor(kRed);
@@ -453,43 +466,10 @@ void plot_for_xB_bin(const CrossSectionData &data_first, const CrossSectionData 
             // Create and draw legend
             TLegend* legend = new TLegend(0.55, 0.65, 0.9, 0.85);
             legend->SetTextSize(0.03);
-            if (!data_points_first.empty()) {
-                legend->AddEntry((TObject*)0, "", ""); // Empty entry for spacing
-                legend->AddEntry((TObject*)0, "", "");
-                legend->AddEntry((TObject*)0, "", "");
-                legend->AddEntry((TObject*)0, "", "");
-                legend->AddEntry((TObject*)0, "", "");
-                legend->AddEntry((TObject*)0, "", "");
-                legend->AddEntry((TObject*)0, "", "");
-                legend->AddEntry((TObject*)0, "", "");
-                legend->AddEntry((TObject*)0, "", "");
-                legend->AddEntry((TObject*)0, "", "");
-
-                legend->AddEntry((TObject*)0, "", "");
-                legend->AddEntry((TObject*)0, "", "");
-                legend->AddEntry((TObject*)0, "", "");
-                legend->AddEntry((TObject*)0, "", "");
-
-                legend->AddEntry((TObject*)0, "", "");
-                legend->AddEntry((TObject*)0, "", "");
-
-                legend->AddEntry((TObject*)0, "", "");
-                legend->AddEntry((TObject*)0, "", "");
-                legend->AddEntry((TObject*)0, "", "");
-                legend->AddEntry((TObject*)0, "", "");
-                legend->AddEntry((TObject*)0, "", "");
-                legend->AddEntry((TObject*)0, "", "");
-
-                legend->AddEntry((TObject*)0, "", "");
-                legend->AddEntry((TObject*)0, "", "");
-
-                legend->AddEntry((TObject*)0, "", "");
-                legend->AddEntry((TObject*)0, "", "");
-
+            if (graph_first_stat) {
                 legend->AddEntry(graph_first_stat, "pass-1, Lee", "lep");
             }
-            if (!data_points_second.empty()) {
-                legend->AddEntry((TObject*)0, "", "");
+            if (graph_second_stat) {
                 legend->AddEntry(graph_second_stat, "pass-2, Hayward", "lep");
             }
             legend->Draw();
