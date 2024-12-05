@@ -110,7 +110,7 @@ CrossSectionData read_first_csv(const std::string &filename) {
         // Skip intermediate columns until reaching "cross sections, ep->epg, exp"
         // "cross sections, ep->epg, exp" is at column index 56 (BD in Excel)
         // Currently at column index 13, need to skip 43 columns
-        for (int i = 0; i < 43; ++i) std::getline(ss, value, ',');
+        for (int i = 0; i < 41; ++i) std::getline(ss, value, ',');
 
         // Column 56: cross sections, ep->epg, exp
         std::getline(ss, value, ',');
