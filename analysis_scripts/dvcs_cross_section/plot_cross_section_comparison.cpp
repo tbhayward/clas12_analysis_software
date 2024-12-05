@@ -194,7 +194,7 @@ CrossSectionData read_second_csv(const std::string &filename) {
 
         // Skip columns until reaching "fall_cross_section" (Column index 45)
         // Currently at column 12, need to skip 32 columns
-        for (int i = 0; i < 32; ++i) std::getline(ss, value, ',');
+        for (int i = 0; i < 55; ++i) std::getline(ss, value, ',');
 
         // Column 45: fall_cross_section
         std::getline(ss, value, ',');
