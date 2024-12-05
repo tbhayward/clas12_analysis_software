@@ -218,10 +218,10 @@ CrossSectionData read_second_csv(const std::string &filename) {
         // Column 47: fall_cross_section_sys_uncertainty
         std::getline(ss, value, ',');
         // entry.sys_uncertainty = std::stod(value);
-        entry.sys_uncertainty = 0;
+        // entry.sys_uncertainty = 0;
 
-        entry.cross_section=entry.cross_section/0.75;
-        entry.stat_uncertainty=entry.stat_uncertainty/0.75;
+        // entry.cross_section=entry.cross_section/0.75;
+        // entry.stat_uncertainty=entry.stat_uncertainty/0.75;
 
 
         data.push_back(entry);
