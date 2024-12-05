@@ -242,10 +242,10 @@ void plot_for_xB_bin(const std::vector<BinData> &data_first, const std::vector<B
     int num_plots = qt_bins_first.size();
     int grid_size = std::ceil(std::sqrt(num_plots));
 
-    // Adjust grid size for canvas layout (for specified canvases _3 and _4)
-    if ((xB_index == 3 || xB_index == 4) && grid_size * (grid_size - 1) >= num_plots) {
-        grid_size -= 1;
-    }
+    // // Adjust grid size for canvas layout (for specified canvases _3 and _4)
+    // if ((xB_index == 3 || xB_index == 4) && grid_size * (grid_size - 1) >= num_plots) {
+    //     grid_size -= 1;
+    // }
 
     // Step 3: Calculate the maximum yield value across both datasets for y-axis scaling
     double max_yield = 0.0;
