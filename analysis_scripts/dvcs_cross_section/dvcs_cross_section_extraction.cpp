@@ -339,7 +339,7 @@ int main(int argc, char* argv[]) {
     // write_csv("output/unfolding_data.csv", all_unfolding_data);
 
     // Call plot_comparison
-    plot_comparison(binning_file, "output/unfolding_data.csv");
+    // plot_comparison(binning_file, "output/unfolding_data.csv");
     plot_cross_section_comparison(binning_file, "output/unfolding_data.csv");
 
     std::cout << "Program complete. Additional functionality to be added later." << std::endl << std::endl;
