@@ -23,14 +23,8 @@
 #include <TROOT.h>
 #include <TMath.h>
 #include <TLegend.h>
+#include "utilities.h"
 
-// Helper function to ensure a directory exists
-void ensure_directory_exists(const std::string &path) {
-    struct stat info;
-    if (stat(path.c_str(), &info) != 0) {
-        mkdir(path.c_str(), 0777);
-    }
-}
 
 // Helper function to read data from the first CSV file format
 std::vector<BinData> read_csv_first(const std::string &file_path) {

@@ -28,14 +28,8 @@
 #include <TMath.h>
 #include <TLatex.h>
 #include <TGraphAsymmErrors.h>
+#include "utilities.h"
 
-// Helper function to ensure a directory exists
-void ensure_directory_exists(const std::string &path) {
-    struct stat info;
-    if (stat(path.c_str(), &info) != 0) {
-        mkdir(path.c_str(), 0777);
-    }
-}
 
 // Structure to hold bin data
 struct CrossSectionBinData {
