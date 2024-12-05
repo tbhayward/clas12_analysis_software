@@ -22,14 +22,14 @@
 #include <TStyle.h>
 #include <TLegend.h>
 #include <TString.h>
-#include <TH1F.h>
 #include <TFile.h>
 #include <TROOT.h>
 #include <TMath.h>
 #include <TLatex.h>
 #include <TGraphAsymmErrors.h>
-#include "utilities.h"
+#include <TH1F.h>  // Added header for TH1F
 
+#include "utilities.h" // Include the utilities header
 
 // Structure to hold bin data
 struct CrossSectionBinData {
@@ -76,20 +76,20 @@ CrossSectionData read_first_csv(const std::string &filename) {
         header_indices[headers[i]] = i;
     }
 
-    // Required columns
-    std::string bin_col = "Bin";
-    std::string xB_avg_col = "xB_avg";
-    std::string xB_min_col = "xB_min";
-    std::string xB_max_col = "xB_max";
-    std::string Q2_avg_col = "Q2_avg";
-    std::string Q2_min_col = "Q2_min";
-    std::string Q2_max_col = "Q2_max";
-    std::string t_avg_col = "t_avg";
-    std::string t_min_col = "t_min";
-    std::string t_max_col = "t_max";
-    std::string phi_avg_col = "phi_avg";
-    std::string phi_min_col = "phi_min";
-    std::string phi_max_col = "phi_max";
+    // Adjusted Required columns based on your CSV file
+    std::string bin_col = "Bin Name";
+    std::string xB_avg_col = "xBavg";
+    std::string xB_min_col = "xBmin";
+    std::string xB_max_col = "xBmax";
+    std::string Q2_avg_col = "Q2avg";
+    std::string Q2_min_col = "Q2min";
+    std::string Q2_max_col = "Q2max";
+    std::string t_avg_col = "t_abs_avg"; // Adjusted based on your column names
+    std::string t_min_col = "t_abs_min";
+    std::string t_max_col = "t_abs_max";
+    std::string phi_avg_col = "phiavg";
+    std::string phi_min_col = "phimin";
+    std::string phi_max_col = "phimax";
     std::string cross_section_col = "cross sections, ep->epg, exp";
     std::string stat_unc_col = "cross sections, ep->epg, exp, stat. unc.";
     std::string sys_unc_col = "cross sections, ep->epg, exp, syst. unc. (up)";
@@ -100,6 +100,7 @@ CrossSectionData read_first_csv(const std::string &filename) {
                                               t_avg_col, t_min_col, t_max_col,
                                               phi_avg_col, phi_min_col, phi_max_col,
                                               cross_section_col};
+
     for (const auto &col : required_cols) {
         if (header_indices.find(col) == header_indices.end()) {
             std::cerr << "Error: Column " << col << " not found in " << filename << std::endl;
@@ -107,18 +108,18 @@ CrossSectionData read_first_csv(const std::string &filename) {
         }
     }
 
-    // Since 'stat_unc_col' is 4 columns after 'cross_section_col', find its index
-    int cross_section_idx = header_indices[cross_section_col];
-    int stat_unc_idx = cross_section_idx + 4;
-    if (stat_unc_idx >= headers.size()) {
-        std::cerr << "Error: Stat. unc. column index out of range in " << filename << std::endl;
+    // Since 'stat_unc_col' and 'sys_unc_col' are present in your CSV, find their indices
+    if (header_indices.find(stat_unc_col) == header_indices.end()) {
+        std::cerr << "Error: Column " << stat_unc_col << " not found in " << filename << std::endl;
         return data;
     }
-    int sys_unc_idx = stat_unc_idx + 1;
-    if (sys_unc_idx >= headers.size()) {
-        std::cerr << "Error: Syst. unc. column index out of range in " << filename << std::endl;
+    if (header_indices.find(sys_unc_col) == header_indices.end()) {
+        std::cerr << "Error: Column " << sys_unc_col << " not found in " << filename << std::endl;
         return data;
     }
+
+    int stat_unc_idx = header_indices[stat_unc_col];
+    int sys_unc_idx = header_indices[sys_unc_col];
 
     // Read data lines
     while (std::getline(file, line)) {
@@ -129,8 +130,6 @@ CrossSectionData read_first_csv(const std::string &filename) {
         while (std::getline(ss, token, ',')) {
             tokens.push_back(token);
         }
-
-        if (tokens.size() <= sys_unc_idx) continue; // Skip incomplete lines
 
         CrossSectionBinData entry;
         entry.bin_number = std::stoi(tokens[header_indices[bin_col]]);
@@ -146,9 +145,9 @@ CrossSectionData read_first_csv(const std::string &filename) {
         entry.phi_avg = std::stod(tokens[header_indices[phi_avg_col]]);
         entry.phi_min = std::stod(tokens[header_indices[phi_min_col]]);
         entry.phi_max = std::stod(tokens[header_indices[phi_max_col]]);
-        entry.cross_section = std::stod(tokens[cross_section_idx]);
-        entry.stat_uncertainty = std::stod(tokens[stat_unc_idx]);
-        entry.sys_uncertainty = std::stod(tokens[sys_unc_idx]);
+        entry.cross_section = std::stod(tokens[header_indices[cross_section_col]]);
+        entry.stat_uncertainty = std::stod(tokens[header_indices[stat_unc_col]]);
+        entry.sys_uncertainty = std::stod(tokens[header_indices[sys_unc_idx]]);
 
         data.push_back(entry);
     }
@@ -157,7 +156,7 @@ CrossSectionData read_first_csv(const std::string &filename) {
     return data;
 }
 
-// Function to read the second CSV file
+// Function to read the second CSV file (assuming column names match expected)
 CrossSectionData read_second_csv(const std::string &filename) {
     CrossSectionData data;
     std::ifstream file(filename);
