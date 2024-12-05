@@ -208,8 +208,6 @@ CrossSectionData read_second_csv(const std::string &filename) {
         std::getline(ss, value, ',');
         entry.sys_uncertainty = std::stod(value);
 
-        std::cout << entry.cross_section << " " << entry.stat_uncertainty << " " << entry.sys_uncertainty << std::endl;
-
         data.push_back(entry);
     }
 
@@ -338,7 +336,7 @@ void plot_for_xB_bin(const CrossSectionData &data_first, const CrossSectionData 
             graph_second_sys->SetLineColor(kRed);
 
             // Determine y-axis range
-            double y_min = 0.01;
+            double y_min = 0.001;
             double y_max = 100;
 
             // Create a frame for the plot
