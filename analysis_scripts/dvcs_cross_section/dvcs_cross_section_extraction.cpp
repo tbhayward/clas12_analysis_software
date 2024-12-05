@@ -25,6 +25,7 @@
 #include "unfolding_data.h"
 #include "write_csv.h"
 #include "plot_comparison.h"
+#include "plot_cross_section_comparison.h"
 
 // Namespace declaration
 using namespace std;
