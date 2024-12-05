@@ -127,7 +127,7 @@ CrossSectionData read_first_csv(const std::string &filename) {
         std::getline(ss, value, ',');
         entry.sys_uncertainty = std::stod(value);
 
-        std::cout << entry.bin_number << " " << entry.xB_avg << " " << entry.Q2_avg << " " << entry.t_avg << " " << entry.cross_section << " " << entry.stat_uncertainty << " " << entry.sys_uncertainty << std::endl;
+        std::cout << entry.bin_number << " " << entry.xB_avg << " " << entry.Q2_avg << " " << entry.t_avg << " " << " " << entry.phi_avg << " " << entry.cross_section << " " << entry.stat_uncertainty << " " << entry.sys_uncertainty << std::endl;
 
         data.push_back(entry);
     }
