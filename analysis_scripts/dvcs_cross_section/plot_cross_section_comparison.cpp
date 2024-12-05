@@ -56,98 +56,76 @@ CrossSectionData read_first_csv(const std::string &filename) {
     }
 
     std::string line;
-    // Read header
-    if (!std::getline(file, line)) {
-        std::cerr << "Error: Cannot read header from file " << filename << std::endl;
-        return data;
-    }
-
-    // Split header
-    std::vector<std::string> headers;
-    std::istringstream ss_header(line);
-    std::string header;
-    while (std::getline(ss_header, header, ',')) {
-        headers.push_back(header);
-    }
-
-    // Map header names to indices
-    std::map<std::string, int> header_indices;
-    for (size_t i = 0; i < headers.size(); ++i) {
-        header_indices[headers[i]] = i;
-    }
-
-    // Adjusted Required columns based on your CSV file
-    std::string bin_col = "Bin Name";
-    std::string xB_avg_col = "xBavg";
-    std::string xB_min_col = "xBmin";
-    std::string xB_max_col = "xBmax";
-    std::string Q2_avg_col = "Q2avg";
-    std::string Q2_min_col = "Q2min";
-    std::string Q2_max_col = "Q2max";
-    std::string t_avg_col = "t_abs_avg"; // Adjusted based on your column names
-    std::string t_min_col = "t_abs_min";
-    std::string t_max_col = "t_abs_max";
-    std::string phi_avg_col = "phiavg";
-    std::string phi_min_col = "phimin";
-    std::string phi_max_col = "phimax";
-    std::string cross_section_col = "cross sections, ep->epg, exp";
-    std::string stat_unc_col = "cross sections, ep->epg, exp, stat. unc.";
-    std::string sys_unc_col = "cross sections, ep->epg, exp, syst. unc. (up)";
-
-    // Find indices of required columns
-    std::vector<std::string> required_cols = {bin_col, xB_avg_col, xB_min_col, xB_max_col,
-                                              Q2_avg_col, Q2_min_col, Q2_max_col,
-                                              t_avg_col, t_min_col, t_max_col,
-                                              phi_avg_col, phi_min_col, phi_max_col,
-                                              cross_section_col};
-
-    for (const auto &col : required_cols) {
-        if (header_indices.find(col) == header_indices.end()) {
-            std::cerr << "Error: Column " << col << " not found in " << filename << std::endl;
-            return data;
-        }
-    }
-
-    // Since 'stat_unc_col' and 'sys_unc_col' are present in your CSV, find their indices
-    if (header_indices.find(stat_unc_col) == header_indices.end()) {
-        std::cerr << "Error: Column " << stat_unc_col << " not found in " << filename << std::endl;
-        return data;
-    }
-    if (header_indices.find(sys_unc_col) == header_indices.end()) {
-        std::cerr << "Error: Column " << sys_unc_col << " not found in " << filename << std::endl;
-        return data;
-    }
-
-    int stat_unc_idx = header_indices[stat_unc_col];
-    int sys_unc_idx = header_indices[sys_unc_col];
+    // Skip header
+    std::getline(file, line);
 
     // Read data lines
     while (std::getline(file, line)) {
         if (line.empty()) continue;
         std::istringstream ss(line);
-        std::vector<std::string> tokens;
-        std::string token;
-        while (std::getline(ss, token, ',')) {
-            tokens.push_back(token);
-        }
+        std::string value;
 
         CrossSectionBinData entry;
-        entry.bin_number = std::stoi(tokens[header_indices[bin_col]]);
-        entry.xB_avg = std::stod(tokens[header_indices[xB_avg_col]]);
-        entry.xB_min = std::stod(tokens[header_indices[xB_min_col]]);
-        entry.xB_max = std::stod(tokens[header_indices[xB_max_col]]);
-        entry.Q2_avg = std::stod(tokens[header_indices[Q2_avg_col]]);
-        entry.Q2_min = std::stod(tokens[header_indices[Q2_min_col]]);
-        entry.Q2_max = std::stod(tokens[header_indices[Q2_max_col]]);
-        entry.t_avg = std::stod(tokens[header_indices[t_avg_col]]);
-        entry.t_min = std::stod(tokens[header_indices[t_min_col]]);
-        entry.t_max = std::stod(tokens[header_indices[t_max_col]]);
-        entry.phi_avg = std::stod(tokens[header_indices[phi_avg_col]]);
-        entry.phi_min = std::stod(tokens[header_indices[phi_min_col]]);
-        entry.phi_max = std::stod(tokens[header_indices[phi_max_col]]);
-        entry.cross_section = std::stod(tokens[header_indices[cross_section_col]]);
-        entry.stat_uncertainty = std::stod(tokens[header_indices[stat_unc_col]]);
-        entry.sys_uncertainty = std::stod(tokens[header_indices[sys_unc_idx]]);
+
+        // Read columns by index
+        // Column 0: Empty
+        std::getline(ss, value, ','); // Empty column
+
+        // Column 1: Bin Name
+        std::getline(ss, value, ',');
+        entry.bin_number = std::stoi(value);
+
+        // Columns 2-4: xB_min, xB_max, xB_avg
+        std::getline(ss, value, ',');
+        entry.xB_min = std::stod(value);
+        std::getline(ss, value, ',');
+        entry.xB_max = std::stod(value);
+        std::getline(ss, value, ',');
+        entry.xB_avg = std::stod(value);
+
+        // Columns 5-7: Q2_min, Q2_max, Q2_avg
+        std::getline(ss, value, ',');
+        entry.Q2_min = std::stod(value);
+        std::getline(ss, value, ',');
+        entry.Q2_max = std::stod(value);
+        std::getline(ss, value, ',');
+        entry.Q2_avg = std::stod(value);
+
+        // Columns 8-10: t_min, t_max, t_avg
+        std::getline(ss, value, ',');
+        entry.t_min = std::stod(value);
+        std::getline(ss, value, ',');
+        entry.t_max = std::stod(value);
+        std::getline(ss, value, ',');
+        entry.t_avg = std::stod(value);
+
+        // Columns 11-13: phi_min, phi_max, phi_avg
+        std::getline(ss, value, ',');
+        entry.phi_min = std::stod(value);
+        std::getline(ss, value, ',');
+        entry.phi_max = std::stod(value);
+        std::getline(ss, value, ',');
+        entry.phi_avg = std::stod(value);
+
+        // Skip intermediate columns until reaching "cross sections, ep->epg, exp"
+        // "cross sections, ep->epg, exp" is at column index 56 (BD in Excel)
+        // Currently at column index 13, need to skip 43 columns
+        for (int i = 0; i < 43; ++i) std::getline(ss, value, ',');
+
+        // Column 56: cross sections, ep->epg, exp
+        std::getline(ss, value, ',');
+        entry.cross_section = std::stod(value);
+
+        // Skip 3 columns to reach "cross sections, ep->epg, exp, stat. unc."
+        for (int i = 0; i < 3; ++i) std::getline(ss, value, ',');
+
+        // Column 60: cross sections, ep->epg, exp, stat. unc.
+        std::getline(ss, value, ',');
+        entry.stat_uncertainty = std::stod(value);
+
+        // Column 61: cross sections, ep->epg, exp, syst. unc. (up)
+        std::getline(ss, value, ',');
+        entry.sys_uncertainty = std::stod(value);
 
         data.push_back(entry);
     }
@@ -156,7 +134,7 @@ CrossSectionData read_first_csv(const std::string &filename) {
     return data;
 }
 
-// Function to read the second CSV file (assuming column names match expected)
+// Function to read the second CSV file
 CrossSectionData read_second_csv(const std::string &filename) {
     CrossSectionData data;
     std::ifstream file(filename);
@@ -166,84 +144,69 @@ CrossSectionData read_second_csv(const std::string &filename) {
     }
 
     std::string line;
-    // Read header
-    if (!std::getline(file, line)) {
-        std::cerr << "Error: Cannot read header from file " << filename << std::endl;
-        return data;
-    }
-
-    // Split header
-    std::vector<std::string> headers;
-    std::istringstream ss_header(line);
-    std::string header;
-    while (std::getline(ss_header, header, ',')) {
-        headers.push_back(header);
-    }
-
-    // Map header names to indices
-    std::map<std::string, int> header_indices;
-    for (size_t i = 0; i < headers.size(); ++i) {
-        header_indices[headers[i]] = i;
-    }
-
-    // Required columns
-    std::string bin_col = "Bin";
-    std::string xB_avg_col = "xB_avg";
-    std::string xB_min_col = "xB_min";
-    std::string xB_max_col = "xB_max";
-    std::string Q2_avg_col = "Q2_avg";
-    std::string Q2_min_col = "Q2_min";
-    std::string Q2_max_col = "Q2_max";
-    std::string t_avg_col = "t_avg";
-    std::string t_min_col = "t_min";
-    std::string t_max_col = "t_max";
-    std::string phi_avg_col = "phi_avg";
-    std::string phi_min_col = "phi_min";
-    std::string phi_max_col = "phi_max";
-    std::string cross_section_col = "fall_cross_section";
-    std::string stat_unc_col = "fall_cross_section_stat_uncertainty";
-    std::string sys_unc_col = "fall_cross_section_sys_uncertainty";
-
-    // Check if required columns are present
-    std::vector<std::string> required_cols = {bin_col, xB_avg_col, xB_min_col, xB_max_col,
-                                              Q2_avg_col, Q2_min_col, Q2_max_col,
-                                              t_avg_col, t_min_col, t_max_col,
-                                              phi_avg_col, phi_min_col, phi_max_col,
-                                              cross_section_col, stat_unc_col, sys_unc_col};
-    for (const auto &col : required_cols) {
-        if (header_indices.find(col) == header_indices.end()) {
-            std::cerr << "Error: Column " << col << " not found in " << filename << std::endl;
-            return data;
-        }
-    }
+    // Skip header
+    std::getline(file, line);
 
     // Read data lines
     while (std::getline(file, line)) {
         if (line.empty()) continue;
         std::istringstream ss(line);
-        std::vector<std::string> tokens;
-        std::string token;
-        while (std::getline(ss, token, ',')) {
-            tokens.push_back(token);
-        }
+        std::string value;
 
         CrossSectionBinData entry;
-        entry.bin_number = std::stoi(tokens[header_indices[bin_col]]);
-        entry.xB_avg = std::stod(tokens[header_indices[xB_avg_col]]);
-        entry.xB_min = std::stod(tokens[header_indices[xB_min_col]]);
-        entry.xB_max = std::stod(tokens[header_indices[xB_max_col]]);
-        entry.Q2_avg = std::stod(tokens[header_indices[Q2_avg_col]]);
-        entry.Q2_min = std::stod(tokens[header_indices[Q2_min_col]]);
-        entry.Q2_max = std::stod(tokens[header_indices[Q2_max_col]]);
-        entry.t_avg = std::stod(tokens[header_indices[t_avg_col]]);
-        entry.t_min = std::stod(tokens[header_indices[t_min_col]]);
-        entry.t_max = std::stod(tokens[header_indices[t_max_col]]);
-        entry.phi_avg = std::stod(tokens[header_indices[phi_avg_col]]);
-        entry.phi_min = std::stod(tokens[header_indices[phi_min_col]]);
-        entry.phi_max = std::stod(tokens[header_indices[phi_max_col]]);
-        entry.cross_section = std::stod(tokens[header_indices[cross_section_col]]);
-        entry.stat_uncertainty = std::stod(tokens[header_indices[stat_unc_col]]);
-        entry.sys_uncertainty = std::stod(tokens[header_indices[sys_unc_col]]);
+
+        // Read columns by index
+        // Column 0: Bin
+        std::getline(ss, value, ',');
+        entry.bin_number = std::stoi(value);
+
+        // Columns 1-3: xB_min, xB_max, xB_avg
+        std::getline(ss, value, ',');
+        entry.xB_min = std::stod(value);
+        std::getline(ss, value, ',');
+        entry.xB_max = std::stod(value);
+        std::getline(ss, value, ',');
+        entry.xB_avg = std::stod(value);
+
+        // Columns 4-6: Q2_min, Q2_max, Q2_avg
+        std::getline(ss, value, ',');
+        entry.Q2_min = std::stod(value);
+        std::getline(ss, value, ',');
+        entry.Q2_max = std::stod(value);
+        std::getline(ss, value, ',');
+        entry.Q2_avg = std::stod(value);
+
+        // Columns 7-9: t_min, t_max, t_avg
+        std::getline(ss, value, ',');
+        entry.t_min = std::stod(value);
+        std::getline(ss, value, ',');
+        entry.t_max = std::stod(value);
+        std::getline(ss, value, ',');
+        entry.t_avg = std::stod(value);
+
+        // Columns 10-12: phi_min, phi_max, phi_avg
+        std::getline(ss, value, ',');
+        entry.phi_min = std::stod(value);
+        std::getline(ss, value, ',');
+        entry.phi_max = std::stod(value);
+        std::getline(ss, value, ',');
+        entry.phi_avg = std::stod(value);
+
+        // Skip columns until reaching "fall_cross_section" (Column index 45)
+        // Currently at column 12, need to skip 32 columns
+        for (int i = 0; i < 32; ++i) std::getline(ss, value, ',');
+
+        // Column 45: fall_cross_section
+        std::getline(ss, value, ',');
+        entry.cross_section = std::stod(value);
+
+        // Column 46: fall_cross_section_stat_uncertainty
+        std::getline(ss, value, ',');
+        entry.stat_uncertainty = std::stod(value);
+
+        // Column 47: fall_cross_section_sys_uncertainty
+        std::getline(ss, value, ',');
+        entry.sys_uncertainty = std::stod(value);
 
         data.push_back(entry);
     }
