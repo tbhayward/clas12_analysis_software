@@ -250,14 +250,42 @@ void plot_for_xB_bin(const CrossSectionData &data_first, const CrossSectionData 
         qt_bins_second[key].push_back(bin);
     }
 
-    // Step 2: Determine the grid size for subplots based on the first dataset's bins
-    int num_plots = qt_bins_first.size();
-    int grid_size = std::ceil(std::sqrt(num_plots));
+    // Collect all cross-section values (excluding zeros) to determine global y-axis limits
+    double min_cs = std::numeric_limits<double>::max();
+    double max_cs = std::numeric_limits<double>::lowest();
 
-    // Adjust grid size for canvas layout (if needed)
-    if ((xB_index == 3 || xB_index == 4) && grid_size * (grid_size - 1) >= num_plots) {
-        grid_size -= 1;
+    // Iterate over all bins in both datasets to find global min and max
+    for (const auto &bins_first : qt_bins_first) {
+        for (const auto &bin : bins_first.second) {
+            if (bin.cross_section > 0) {
+                double cs_min = bin.cross_section - bin.stat_uncertainty - bin.sys_uncertainty;
+                double cs_max = bin.cross_section + bin.stat_uncertainty + bin.sys_uncertainty;
+                if (cs_min < min_cs) min_cs = cs_min;
+                if (cs_max > max_cs) max_cs = cs_max;
+            }
+        }
     }
+    for (const auto &bins_second : qt_bins_second) {
+        for (const auto &bin : bins_second.second) {
+            if (bin.cross_section > 0) {
+                double cs_min = bin.cross_section - bin.stat_uncertainty - bin.sys_uncertainty;
+                double cs_max = bin.cross_section + bin.stat_uncertainty + bin.sys_uncertainty;
+                if (cs_min < min_cs) min_cs = cs_min;
+                if (cs_max > max_cs) max_cs = cs_max;
+            }
+        }
+    }
+
+    // Adjust min_cs and max_cs to be positive and exclude zeros
+    if (min_cs <= 0 || min_cs == std::numeric_limits<double>::max()) min_cs = 1e-3;
+    if (max_cs <= 0 || max_cs == std::numeric_limits<double>::lowest()) max_cs = 1.0;
+
+    // Calculate y_min and y_max as powers of 10
+    double log_min_cs = std::floor(std::log10(min_cs));
+    double log_max_cs = std::ceil(std::log10(max_cs));
+
+    double y_min = std::pow(10, log_min_cs);
+    double y_max = std::pow(10, log_max_cs);
 
     // Step 3: Set up the canvas
     TCanvas canvas("canvas", "Cross Section Cross Check", 1200, 1200);
@@ -280,6 +308,9 @@ void plot_for_xB_bin(const CrossSectionData &data_first, const CrossSectionData 
         };
         std::vector<DataPoint> data_points_first;
         for (const auto &bin : bins_first) {
+            // Skip data points with zero or negative cross-section
+            if (bin.cross_section <= 0) continue;
+
             DataPoint dp;
             dp.phi = bin.phi_avg;
             dp.cs = bin.cross_section;
@@ -299,6 +330,9 @@ void plot_for_xB_bin(const CrossSectionData &data_first, const CrossSectionData 
         if (it_second != qt_bins_second.end()) {
             const auto &bins_second = it_second->second;
             for (const auto &bin : bins_second) {
+                // Skip data points with zero or negative cross-section
+                if (bin.cross_section <= 0) continue;
+
                 DataPoint dp;
                 dp.phi = bin.phi_avg;
                 dp.cs = bin.cross_section;
@@ -313,154 +347,171 @@ void plot_for_xB_bin(const CrossSectionData &data_first, const CrossSectionData 
             });
         }
 
-        // Determine y-axis range based on both datasets
-        double min_cs = std::numeric_limits<double>::max();
-        double max_cs = std::numeric_limits<double>::lowest();
-
-        // Include systematic and statistical uncertainties in min and max calculations
-        for (const auto &dp : data_points_first) {
-            double cs_min = dp.cs - dp.stat_err - dp.sys_err;
-            double cs_max = dp.cs + dp.stat_err + dp.sys_err;
-            if (cs_min < min_cs) min_cs = cs_min;
-            if (cs_max > max_cs) max_cs = cs_max;
-        }
-        for (const auto &dp : data_points_second) {
-            double cs_min = dp.cs - dp.stat_err - dp.sys_err;
-            double cs_max = dp.cs + dp.stat_err + dp.sys_err;
-            if (cs_min < min_cs) min_cs = cs_min;
-            if (cs_max > max_cs) max_cs = cs_max;
-        }
-
-        // Adjust min_cs and max_cs to be positive
-        if (min_cs <= 0) min_cs = 1e-3;
-
-        // Calculate y_min and y_max as powers of 10
-        double log_min_cs = std::floor(std::log10(min_cs));
-        double log_max_cs = std::ceil(std::log10(max_cs));
-
-        double y_min = std::pow(10, log_min_cs);
-        double y_max = std::pow(10, log_max_cs);
-
-        // Create a frame for the plot
+        // Create a frame for the plot with global y-axis limits
         TH1F *frame = gPad->DrawFrame(0, y_min, 360, y_max);
         frame->GetXaxis()->SetTitle("#phi [deg]");
         frame->GetYaxis()->SetTitle("d#sigma/dx_{B}dQ^{2}d|t|d#phi (nb/GeV^{4})");
 
-        // Prepare arrays for TGraphErrors and TGraph
-        int n_points_first = data_points_first.size();
-        std::vector<double> phi_values_first(n_points_first);
-        std::vector<double> cs_first(n_points_first);
-        std::vector<double> phi_errors_first(n_points_first);
-        std::vector<double> stat_err_first(n_points_first);
-        std::vector<double> sys_err_first(n_points_first);
+        // Proceed only if there are data points to plot
+        if (!data_points_first.empty() || !data_points_second.empty()) {
+            // Plot first dataset if it has data points
+            if (!data_points_first.empty()) {
+                int n_points_first = data_points_first.size();
+                std::vector<double> phi_values_first(n_points_first);
+                std::vector<double> cs_first(n_points_first);
+                std::vector<double> phi_errors_first(n_points_first);
+                std::vector<double> stat_err_first(n_points_first);
+                std::vector<double> sys_err_first(n_points_first);
 
-        for (int i = 0; i < n_points_first; ++i) {
-            phi_values_first[i] = data_points_first[i].phi;
-            cs_first[i] = data_points_first[i].cs;
-            phi_errors_first[i] = data_points_first[i].phi_err;
-            stat_err_first[i] = data_points_first[i].stat_err;
-            sys_err_first[i] = data_points_first[i].sys_err;
-        }
+                for (int i = 0; i < n_points_first; ++i) {
+                    phi_values_first[i] = data_points_first[i].phi;
+                    cs_first[i] = data_points_first[i].cs;
+                    phi_errors_first[i] = data_points_first[i].phi_err;
+                    stat_err_first[i] = data_points_first[i].stat_err;
+                    sys_err_first[i] = data_points_first[i].sys_err;
+                }
 
-        // Create TGraphErrors for statistical uncertainties (first dataset)
-        TGraphErrors *graph_first_stat = new TGraphErrors(n_points_first,
-                                                          &phi_values_first[0], &cs_first[0],
-                                                          &phi_errors_first[0], &stat_err_first[0]);
-        graph_first_stat->SetMarkerStyle(20);
-        graph_first_stat->SetMarkerColor(kBlue);
-        graph_first_stat->SetLineColor(kBlue);
+                // Create TGraphErrors for statistical uncertainties (first dataset)
+                TGraphErrors *graph_first_stat = new TGraphErrors(n_points_first,
+                                                                  &phi_values_first[0], &cs_first[0],
+                                                                  &phi_errors_first[0], &stat_err_first[0]);
+                graph_first_stat->SetMarkerStyle(20);
+                graph_first_stat->SetMarkerColor(kBlue);
+                graph_first_stat->SetLineColor(kBlue);
 
-        // Create systematic uncertainty bands for first dataset
-        std::vector<double> cs_first_sys_up(n_points_first), cs_first_sys_down(n_points_first);
-        for (int i = 0; i < n_points_first; ++i) {
-            cs_first_sys_up[i] = cs_first[i] + sys_err_first[i];
-            cs_first_sys_down[i] = cs_first[i] - sys_err_first[i];
-        }
+                // Create systematic uncertainty bands for first dataset
+                std::vector<double> cs_first_sys_up(n_points_first), cs_first_sys_down(n_points_first);
+                for (int i = 0; i < n_points_first; ++i) {
+                    cs_first_sys_up[i] = cs_first[i] + sys_err_first[i];
+                    cs_first_sys_down[i] = cs_first[i] - sys_err_first[i];
+                }
 
-        // Create filled area between upper and lower bounds
-        TGraph *graph_first_sys_band = new TGraph(2 * n_points_first);
-        for (int i = 0; i < n_points_first; ++i) {
-            graph_first_sys_band->SetPoint(i, phi_values_first[i], cs_first_sys_up[i]);
-            graph_first_sys_band->SetPoint(2 * n_points_first - 1 - i, phi_values_first[i], cs_first_sys_down[i]);
-        }
-        graph_first_sys_band->SetFillColorAlpha(kBlue, 0.35);
-        graph_first_sys_band->SetLineColor(kBlue);
+                // Create filled area between upper and lower bounds
+                TGraph *graph_first_sys_band = new TGraph(2 * n_points_first);
+                for (int i = 0; i < n_points_first; ++i) {
+                    graph_first_sys_band->SetPoint(i, phi_values_first[i], cs_first_sys_up[i]);
+                    graph_first_sys_band->SetPoint(2 * n_points_first - 1 - i, phi_values_first[i], cs_first_sys_down[i]);
+                }
+                graph_first_sys_band->SetFillColorAlpha(kBlue, 0.35);
+                graph_first_sys_band->SetLineColor(kBlue);
 
-        // Similarly for second dataset if it exists
-        TGraphErrors *graph_second_stat = nullptr;
-        TGraph *graph_second_sys_band = nullptr;
-        if (!data_points_second.empty()) {
-            int n_points_second = data_points_second.size();
-            std::vector<double> phi_values_second(n_points_second);
-            std::vector<double> cs_second(n_points_second);
-            std::vector<double> phi_errors_second(n_points_second);
-            std::vector<double> stat_err_second(n_points_second);
-            std::vector<double> sys_err_second(n_points_second);
+                // Draw the systematic uncertainty bands first
+                graph_first_sys_band->Draw("F SAME");
 
-            for (int i = 0; i < n_points_second; ++i) {
-                phi_values_second[i] = data_points_second[i].phi;
-                cs_second[i] = data_points_second[i].cs;
-                phi_errors_second[i] = data_points_second[i].phi_err;
-                stat_err_second[i] = data_points_second[i].stat_err;
-                sys_err_second[i] = data_points_second[i].sys_err;
+                // Draw the statistical uncertainties
+                graph_first_stat->Draw("P SAME");
             }
 
-            // Create TGraphErrors for statistical uncertainties (second dataset)
-            graph_second_stat = new TGraphErrors(n_points_second,
-                                                 &phi_values_second[0], &cs_second[0],
-                                                 &phi_errors_second[0], &stat_err_second[0]);
-            graph_second_stat->SetMarkerStyle(21);
-            graph_second_stat->SetMarkerColor(kRed);
-            graph_second_stat->SetLineColor(kRed);
+            // Plot second dataset if it has data points
+            if (!data_points_second.empty()) {
+                int n_points_second = data_points_second.size();
+                std::vector<double> phi_values_second(n_points_second);
+                std::vector<double> cs_second(n_points_second);
+                std::vector<double> phi_errors_second(n_points_second);
+                std::vector<double> stat_err_second(n_points_second);
+                std::vector<double> sys_err_second(n_points_second);
 
-            // Create systematic uncertainty bands for second dataset
-            std::vector<double> cs_second_sys_up(n_points_second), cs_second_sys_down(n_points_second);
-            for (int i = 0; i < n_points_second; ++i) {
-                cs_second_sys_up[i] = cs_second[i] + sys_err_second[i];
-                cs_second_sys_down[i] = cs_second[i] - sys_err_second[i];
+                for (int i = 0; i < n_points_second; ++i) {
+                    phi_values_second[i] = data_points_second[i].phi;
+                    cs_second[i] = data_points_second[i].cs;
+                    phi_errors_second[i] = data_points_second[i].phi_err;
+                    stat_err_second[i] = data_points_second[i].stat_err;
+                    sys_err_second[i] = data_points_second[i].sys_err;
+                }
+
+                // Create TGraphErrors for statistical uncertainties (second dataset)
+                TGraphErrors *graph_second_stat = new TGraphErrors(n_points_second,
+                                                                   &phi_values_second[0], &cs_second[0],
+                                                                   &phi_errors_second[0], &stat_err_second[0]);
+                graph_second_stat->SetMarkerStyle(21);
+                graph_second_stat->SetMarkerColor(kRed);
+                graph_second_stat->SetLineColor(kRed);
+
+                // Create systematic uncertainty bands for second dataset
+                std::vector<double> cs_second_sys_up(n_points_second), cs_second_sys_down(n_points_second);
+                for (int i = 0; i < n_points_second; ++i) {
+                    cs_second_sys_up[i] = cs_second[i] + sys_err_second[i];
+                    cs_second_sys_down[i] = cs_second[i] - sys_err_second[i];
+                }
+
+                // Create filled area between upper and lower bounds
+                TGraph *graph_second_sys_band = new TGraph(2 * n_points_second);
+                for (int i = 0; i < n_points_second; ++i) {
+                    graph_second_sys_band->SetPoint(i, phi_values_second[i], cs_second_sys_up[i]);
+                    graph_second_sys_band->SetPoint(2 * n_points_second - 1 - i, phi_values_second[i], cs_second_sys_down[i]);
+                }
+                graph_second_sys_band->SetFillColorAlpha(kRed, 0.35);
+                graph_second_sys_band->SetLineColor(kRed);
+
+                // Draw the systematic uncertainty bands
+                graph_second_sys_band->Draw("F SAME");
+
+                // Draw the statistical uncertainties
+                graph_second_stat->Draw("P SAME");
             }
 
-            // Create filled area between upper and lower bounds
-            graph_second_sys_band = new TGraph(2 * n_points_second);
-            for (int i = 0; i < n_points_second; ++i) {
-                graph_second_sys_band->SetPoint(i, phi_values_second[i], cs_second_sys_up[i]);
-                graph_second_sys_band->SetPoint(2 * n_points_second - 1 - i, phi_values_second[i], cs_second_sys_down[i]);
+            // Create and draw legend
+            TLegend* legend = new TLegend(0.55, 0.65, 0.9, 0.85);
+            legend->SetTextSize(0.03);
+            if (!data_points_first.empty()) {
+                legend->AddEntry((TObject*)0, "", ""); // Empty entry for spacing
+                legend->AddEntry((TObject*)0, "", "");
+                legend->AddEntry((TObject*)0, "", "");
+                legend->AddEntry((TObject*)0, "", "");
+                legend->AddEntry((TObject*)0, "", "");
+                legend->AddEntry((TObject*)0, "", "");
+                legend->AddEntry((TObject*)0, "", "");
+                legend->AddEntry((TObject*)0, "", "");
+                legend->AddEntry((TObject*)0, "", "");
+                legend->AddEntry((TObject*)0, "", "");
+
+                legend->AddEntry((TObject*)0, "", "");
+                legend->AddEntry((TObject*)0, "", "");
+                legend->AddEntry((TObject*)0, "", "");
+                legend->AddEntry((TObject*)0, "", "");
+
+                legend->AddEntry((TObject*)0, "", "");
+                legend->AddEntry((TObject*)0, "", "");
+
+                legend->AddEntry((TObject*)0, "", "");
+                legend->AddEntry((TObject*)0, "", "");
+                legend->AddEntry((TObject*)0, "", "");
+                legend->AddEntry((TObject*)0, "", "");
+                legend->AddEntry((TObject*)0, "", "");
+                legend->AddEntry((TObject*)0, "", "");
+
+                legend->AddEntry((TObject*)0, "", "");
+                legend->AddEntry((TObject*)0, "", "");
+
+                legend->AddEntry((TObject*)0, "", "");
+                legend->AddEntry((TObject*)0, "", "");
+
+                legend->AddEntry(graph_first_stat, "pass-1, Lee", "lep");
             }
-            graph_second_sys_band->SetFillColorAlpha(kRed, 0.35);
-            graph_second_sys_band->SetLineColor(kRed);
+            if (!data_points_second.empty()) {
+                legend->AddEntry((TObject*)0, "", "");
+                legend->AddEntry(graph_second_stat, "pass-2, Hayward", "lep");
+            }
+            legend->Draw();
+        } else {
+            // If no data points to plot, display a message
+            TLatex latex;
+            latex.SetNDC();
+            latex.SetTextSize(0.05);
+            latex.SetTextAlign(22); // Center alignment
+            latex.DrawLatex(0.5, 0.5, "No data to display");
         }
-
-        // Draw the systematic uncertainty bands first
-        graph_first_sys_band->Draw("F SAME");
-        if (graph_second_sys_band) {
-            graph_second_sys_band->Draw("F SAME");
-        }
-
-        // Draw the statistical uncertainties
-        graph_first_stat->Draw("P SAME");
-        if (graph_second_stat) {
-            graph_second_stat->Draw("P SAME");
-        }
-
-        // Create and draw legend
-        TLegend* legend = new TLegend(0.55, 0.65, 0.9, 0.85);
-        legend->SetTextSize(0.03);
-        legend->AddEntry(graph_first_stat, "pass-1, Lee", "lep");
-        if (graph_second_stat) {
-            legend->AddEntry(graph_second_stat, "pass-2, Hayward", "lep");
-        }
-        legend->Draw();
 
         // Add title with bin information
         double xB_avg = bins_first[0].xB_avg;
         double Q2_avg = bins_first[0].Q2_avg;
         double t_avg = bins_first[0].t_avg;
         std::string title = Form("x_{B} = %.2f, Q^{2} = %.2f, -t = %.2f", xB_avg, Q2_avg, t_avg);
-        TLatex latex;
-        latex.SetNDC();
-        latex.SetTextSize(0.04);
-        latex.SetTextAlign(22); // Center alignment
-        latex.DrawLatex(0.5, 0.95, title.c_str()); // Centered on x=0.5
+        TLatex latex_title;
+        latex_title.SetNDC();
+        latex_title.SetTextSize(0.04);
+        latex_title.SetTextAlign(22); // Center alignment
+        latex_title.DrawLatex(0.5, 0.95, title.c_str()); // Centered on x=0.5
 
         plot_index++;
     }
