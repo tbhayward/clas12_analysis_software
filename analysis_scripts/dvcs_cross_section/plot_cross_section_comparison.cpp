@@ -108,26 +108,35 @@ CrossSectionData read_first_csv(const std::string &filename) {
         entry.phi_avg = std::stod(value);
 
         // Skip intermediate columns until reaching "cross sections, ep->epg, exp"
-        // "cross sections, ep->epg, exp" is at column index 56 (BD in Excel)
-        // Currently at column index 13, need to skip 43 columns
+        // Currently at column index 13, need to skip 41 columns to reach column 55
         for (int i = 0; i < 41; ++i) std::getline(ss, value, ',');
 
-        // Column 56: cross sections, ep->epg, exp
+        // Column 55: cross sections, ep->epg, exp
         std::getline(ss, value, ',');
         entry.cross_section = std::stod(value);
 
         // Skip 3 columns to reach "cross sections, ep->epg, exp, stat. unc."
         for (int i = 0; i < 3; ++i) std::getline(ss, value, ',');
 
-        // Column 60: cross sections, ep->epg, exp, stat. unc.
+        // Column 59: cross sections, ep->epg, exp, stat. unc.
         std::getline(ss, value, ',');
         entry.stat_uncertainty = std::stod(value);
 
-        // Column 61: cross sections, ep->epg, exp, syst. unc. (up)
+        // Column 60: cross sections, ep->epg, exp, syst. unc. (up)
         std::getline(ss, value, ',');
         entry.sys_uncertainty = std::stod(value);
 
-        std::cout << entry.bin_number << " " << entry.xB_avg << " " << entry.Q2_avg << " " << entry.t_avg << " " << " " << entry.phi_avg << " " << entry.cross_section << " " << entry.stat_uncertainty << " " << entry.sys_uncertainty << std::endl;
+        // Skip one column to reach "valid bin"
+        std::getline(ss, value, ',');
+
+        // Column: valid bin
+        std::getline(ss, value, ',');
+        int valid_bin = std::stoi(value);
+
+        // Check if valid_bin is 0, skip the bin if so
+        if (valid_bin == 0) {
+            continue; // Skip this bin
+        }
 
         data.push_back(entry);
     }
@@ -208,7 +217,8 @@ CrossSectionData read_second_csv(const std::string &filename) {
 
         // Column 47: fall_cross_section_sys_uncertainty
         std::getline(ss, value, ',');
-        entry.sys_uncertainty = std::stod(value);
+        // entry.sys_uncertainty = std::stod(value);
+        entry.sys_uncertainty = 0;
 
         data.push_back(entry);
     }
@@ -289,7 +299,7 @@ void plot_for_xB_bin(const CrossSectionData &data_first, const CrossSectionData 
     double y_min = std::pow(10, log_min_cs);
     double y_max = std::pow(10, log_max_cs);
 
-    // **Calculate grid_size before using it**
+    // Calculate grid_size before using it
     int num_plots = qt_bins_first.size();
     int grid_size = std::ceil(std::sqrt(num_plots));
 
@@ -316,6 +326,8 @@ void plot_for_xB_bin(const CrossSectionData &data_first, const CrossSectionData 
             double phi_err;
             double stat_err;
             double sys_err;
+            double phi_min;
+            double phi_max;
         };
         std::vector<DataPoint> data_points_first;
         for (const auto &bin : bins_first) {
@@ -328,6 +340,8 @@ void plot_for_xB_bin(const CrossSectionData &data_first, const CrossSectionData 
             dp.phi_err = (bin.phi_max - bin.phi_min) / 2.0;
             dp.stat_err = bin.stat_uncertainty;
             dp.sys_err = bin.sys_uncertainty;
+            dp.phi_min = bin.phi_min;
+            dp.phi_max = bin.phi_max;
             data_points_first.push_back(dp);
         }
         // Sort data points by phi
@@ -350,6 +364,8 @@ void plot_for_xB_bin(const CrossSectionData &data_first, const CrossSectionData 
                 dp.phi_err = (bin.phi_max - bin.phi_min) / 2.0;
                 dp.stat_err = bin.stat_uncertainty;
                 dp.sys_err = bin.sys_uncertainty;
+                dp.phi_min = bin.phi_min;
+                dp.phi_max = bin.phi_max;
                 data_points_second.push_back(dp);
             }
             // Sort data points by phi
@@ -363,7 +379,7 @@ void plot_for_xB_bin(const CrossSectionData &data_first, const CrossSectionData 
         frame->GetXaxis()->SetTitle("#phi [deg]");
         frame->GetYaxis()->SetTitle("d#sigma/dx_{B}dQ^{2}d|t|d#phi (nb/GeV^{4})");
 
-        // **Declare graph pointers before the if blocks**
+        // Declare graph pointers before the if blocks
         TGraphErrors *graph_first_stat = nullptr;
         TGraphErrors *graph_second_stat = nullptr;
 
@@ -377,6 +393,8 @@ void plot_for_xB_bin(const CrossSectionData &data_first, const CrossSectionData 
                 std::vector<double> phi_errors_first(n_points_first);
                 std::vector<double> stat_err_first(n_points_first);
                 std::vector<double> sys_err_first(n_points_first);
+                std::vector<double> phi_min_first(n_points_first);
+                std::vector<double> phi_max_first(n_points_first);
 
                 for (int i = 0; i < n_points_first; ++i) {
                     phi_values_first[i] = data_points_first[i].phi;
@@ -384,6 +402,8 @@ void plot_for_xB_bin(const CrossSectionData &data_first, const CrossSectionData 
                     phi_errors_first[i] = data_points_first[i].phi_err;
                     stat_err_first[i] = data_points_first[i].stat_err;
                     sys_err_first[i] = data_points_first[i].sys_err;
+                    phi_min_first[i] = data_points_first[i].phi_min;
+                    phi_max_first[i] = data_points_first[i].phi_max;
                 }
 
                 // Create TGraphErrors for statistical uncertainties (first dataset)
@@ -394,24 +414,17 @@ void plot_for_xB_bin(const CrossSectionData &data_first, const CrossSectionData 
                 graph_first_stat->SetMarkerColor(kBlue);
                 graph_first_stat->SetLineColor(kBlue);
 
-                // Create systematic uncertainty bands for first dataset
-                std::vector<double> cs_first_sys_up(n_points_first), cs_first_sys_down(n_points_first);
+                // Draw the systematic uncertainty bands as TBox for each bin
                 for (int i = 0; i < n_points_first; ++i) {
-                    cs_first_sys_up[i] = cs_first[i] + sys_err_first[i];
-                    cs_first_sys_down[i] = cs_first[i] - sys_err_first[i];
+                    double x_min = phi_min_first[i];
+                    double x_max = phi_max_first[i];
+                    double y_min = cs_first[i] - sys_err_first[i];
+                    double y_max = cs_first[i] + sys_err_first[i];
+                    TBox *box = new TBox(x_min, y_min, x_max, y_max);
+                    box->SetFillColorAlpha(kBlue, 0.35);
+                    box->SetLineColor(kBlue);
+                    box->Draw("same");
                 }
-
-                // Create filled area between upper and lower bounds
-                TGraph *graph_first_sys_band = new TGraph(2 * n_points_first);
-                for (int i = 0; i < n_points_first; ++i) {
-                    graph_first_sys_band->SetPoint(i, phi_values_first[i], cs_first_sys_up[i]);
-                    graph_first_sys_band->SetPoint(2 * n_points_first - 1 - i, phi_values_first[i], cs_first_sys_down[i]);
-                }
-                graph_first_sys_band->SetFillColorAlpha(kBlue, 0.35);
-                graph_first_sys_band->SetLineColor(kBlue);
-
-                // Draw the systematic uncertainty bands first
-                graph_first_sys_band->Draw("F SAME");
 
                 // Draw the statistical uncertainties
                 graph_first_stat->Draw("P SAME");
@@ -425,6 +438,8 @@ void plot_for_xB_bin(const CrossSectionData &data_first, const CrossSectionData 
                 std::vector<double> phi_errors_second(n_points_second);
                 std::vector<double> stat_err_second(n_points_second);
                 std::vector<double> sys_err_second(n_points_second);
+                std::vector<double> phi_min_second(n_points_second);
+                std::vector<double> phi_max_second(n_points_second);
 
                 for (int i = 0; i < n_points_second; ++i) {
                     phi_values_second[i] = data_points_second[i].phi;
@@ -432,6 +447,8 @@ void plot_for_xB_bin(const CrossSectionData &data_first, const CrossSectionData 
                     phi_errors_second[i] = data_points_second[i].phi_err;
                     stat_err_second[i] = data_points_second[i].stat_err;
                     sys_err_second[i] = data_points_second[i].sys_err;
+                    phi_min_second[i] = data_points_second[i].phi_min;
+                    phi_max_second[i] = data_points_second[i].phi_max;
                 }
 
                 // Create TGraphErrors for statistical uncertainties (second dataset)
@@ -442,24 +459,17 @@ void plot_for_xB_bin(const CrossSectionData &data_first, const CrossSectionData 
                 graph_second_stat->SetMarkerColor(kRed);
                 graph_second_stat->SetLineColor(kRed);
 
-                // Create systematic uncertainty bands for second dataset
-                std::vector<double> cs_second_sys_up(n_points_second), cs_second_sys_down(n_points_second);
+                // Draw the systematic uncertainty bands as TBox for each bin
                 for (int i = 0; i < n_points_second; ++i) {
-                    cs_second_sys_up[i] = cs_second[i] + sys_err_second[i];
-                    cs_second_sys_down[i] = cs_second[i] - sys_err_second[i];
+                    double x_min = phi_min_second[i];
+                    double x_max = phi_max_second[i];
+                    double y_min = cs_second[i] - sys_err_second[i];
+                    double y_max = cs_second[i] + sys_err_second[i];
+                    TBox *box = new TBox(x_min, y_min, x_max, y_max);
+                    box->SetFillColorAlpha(kRed, 0.35);
+                    box->SetLineColor(kRed);
+                    box->Draw("same");
                 }
-
-                // Create filled area between upper and lower bounds
-                TGraph *graph_second_sys_band = new TGraph(2 * n_points_second);
-                for (int i = 0; i < n_points_second; ++i) {
-                    graph_second_sys_band->SetPoint(i, phi_values_second[i], cs_second_sys_up[i]);
-                    graph_second_sys_band->SetPoint(2 * n_points_second - 1 - i, phi_values_second[i], cs_second_sys_down[i]);
-                }
-                graph_second_sys_band->SetFillColorAlpha(kRed, 0.35);
-                graph_second_sys_band->SetLineColor(kRed);
-
-                // Draw the systematic uncertainty bands
-                graph_second_sys_band->Draw("F SAME");
 
                 // Draw the statistical uncertainties
                 graph_second_stat->Draw("P SAME");
