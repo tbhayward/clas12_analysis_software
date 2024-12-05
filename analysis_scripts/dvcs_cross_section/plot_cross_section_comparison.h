@@ -5,8 +5,7 @@
 
 #include <string>
 
-void plot_cross_section_comparison(const std::string& first_csv_file,
-                                   const std::string& second_csv_file,
-                                   const std::string& output_dir);
+void plot_cross_section_comparison(const std::string &first_csv_file,
+                                   const std::string &second_csv_file);
 
 #endif // PLOT_CROSS_SECTION_COMPARISON_H
