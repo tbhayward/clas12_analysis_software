@@ -289,7 +289,7 @@ void plot_for_xB_bin(const CrossSectionData &data_first, const CrossSectionData 
     }
 
     // Adjust min_cs and max_cs to be positive and exclude zeros
-    if (min_cs <= 0 || min_cs == std::numeric_limits<double>::max()) min_cs = 1e-3;
+    if (min_cs <= 0 || min_cs == std::numeric_limits<double>::max()) min_cs = 1e-4;
     if (max_cs <= 0 || max_cs == std::numeric_limits<double>::lowest()) max_cs = 1.0;
 
     // Calculate y_min and y_max as powers of 10
