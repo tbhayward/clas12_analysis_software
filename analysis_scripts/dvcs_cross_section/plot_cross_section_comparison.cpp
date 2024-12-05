@@ -336,8 +336,8 @@ void plot_for_xB_bin(const CrossSectionData &data_first, const CrossSectionData 
             graph_second_sys->SetLineColor(kRed);
 
             // Determine y-axis range
-            double y_min = 0.01;
-            double y_max = 100;
+            double y_min = 0.0001;
+            double y_max = 10000;
 
             // Create a frame for the plot
             TH1F *frame = gPad->DrawFrame(0, y_min, 360, y_max);
