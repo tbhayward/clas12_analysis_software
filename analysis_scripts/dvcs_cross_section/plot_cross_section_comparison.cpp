@@ -126,7 +126,6 @@ CrossSectionData read_first_csv(const std::string &filename) {
         // Column 61: cross sections, ep->epg, exp, syst. unc. (up)
         std::getline(ss, value, ',');
         entry.sys_uncertainty = std::stod(value);
-        std::cout << entry.stat_uncertainty << " " << entry.sys_uncertainty << std::endl;
 
         data.push_back(entry);
     }
@@ -208,6 +207,8 @@ CrossSectionData read_second_csv(const std::string &filename) {
         // Column 47: fall_cross_section_sys_uncertainty
         std::getline(ss, value, ',');
         entry.sys_uncertainty = std::stod(value);
+
+        std::cout << entry.cross_section << " " << entry.stat_uncertainty << " " << entry.sys_uncertainty << std::endl;
 
         data.push_back(entry);
     }
