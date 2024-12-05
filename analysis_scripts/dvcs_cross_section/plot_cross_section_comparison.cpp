@@ -270,8 +270,8 @@ void plot_for_xB_bin(const CrossSectionData &data_first, const CrossSectionData 
     for (const auto &bins_first : qt_bins_first) {
         for (const auto &bin : bins_first.second) {
             if (bin.cross_section > 0) {
-                double cs_min = bin.cross_section - bin.stat_uncertainty - bin.sys_uncertainty;
-                double cs_max = bin.cross_section + bin.stat_uncertainty + bin.sys_uncertainty;
+                double cs_min = bin.cross_section;
+                double cs_max = bin.cross_section;
                 if (cs_min < min_cs) min_cs = cs_min;
                 if (cs_max > max_cs) max_cs = cs_max;
             }
@@ -280,8 +280,8 @@ void plot_for_xB_bin(const CrossSectionData &data_first, const CrossSectionData 
     for (const auto &bins_second : qt_bins_second) {
         for (const auto &bin : bins_second.second) {
             if (bin.cross_section > 0) {
-                double cs_min = bin.cross_section - bin.stat_uncertainty - bin.sys_uncertainty;
-                double cs_max = bin.cross_section + bin.stat_uncertainty + bin.sys_uncertainty;
+                double cs_min = bin.cross_section;
+                double cs_max = bin.cross_section;
                 if (cs_min < min_cs) min_cs = cs_min;
                 if (cs_max > max_cs) max_cs = cs_max;
             }
