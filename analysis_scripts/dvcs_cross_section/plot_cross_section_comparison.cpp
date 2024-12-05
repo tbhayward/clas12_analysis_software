@@ -127,6 +127,8 @@ CrossSectionData read_first_csv(const std::string &filename) {
         std::getline(ss, value, ',');
         entry.sys_uncertainty = std::stod(value);
 
+        std::cout << entry.cross_section << " " << entry.stat_uncertainty << " " << entry.sys_uncertainty << std::endl;
+
         data.push_back(entry);
     }
 
