@@ -6,7 +6,7 @@
 #include <vector>
 #include <cstddef>  // For size_t
 #include <map>
-#include <cmath>    // For M_PI and std::sqrt
+#include <cmath>    // For M_PI, std::sqrt, std::isnan, std::isfinite
 #include "write_csv.h"
 #include "unfolding_data.h"
 
@@ -104,13 +104,25 @@ void write_csv(const std::string& filename, const std::map<std::string, std::vec
                 double acceptance = data.acceptance[period][phi_idx];
                 double unfolded_yield = data.unfolded_yields[period][phi_idx];
                 double unfolded_yield_uncertainty = data.unfolded_yield_uncertainty[period][phi_idx];
+
+                // Check for NaN or Inf and set to zero if found
+                if (!std::isfinite(acceptance)) acceptance = 0.0;
+                if (!std::isfinite(unfolded_yield)) unfolded_yield = 0.0;
+                if (!std::isfinite(unfolded_yield_uncertainty)) unfolded_yield_uncertainty = 0.0;
+
                 file << acceptance << "," << unfolded_yield << "," << unfolded_yield_uncertainty << ",";
 
                 // Contamination fraction, contamination uncertainty, signal yield, and signal yield uncertainty
                 double contamination_fraction = data.contamination_fraction[period][phi_idx];
                 double contamination_uncertainty = data.contamination_uncertainty[period][phi_idx];
                 double signal_yield = data.signal_yield[period][phi_idx];
-                double signal_yield_uncertainty = data.signal_yield_uncertainty[period][phi_idx];  // Retrieve signal yield uncertainty
+                double signal_yield_uncertainty = data.signal_yield_uncertainty[period][phi_idx];
+
+                // Check for NaN or Inf and set to zero if found
+                if (!std::isfinite(contamination_fraction)) contamination_fraction = 0.0;
+                if (!std::isfinite(contamination_uncertainty)) contamination_uncertainty = 0.0;
+                if (!std::isfinite(signal_yield)) signal_yield = 0.0;
+                if (!std::isfinite(signal_yield_uncertainty)) signal_yield_uncertainty = 0.0;
 
                 file << contamination_fraction << "," << contamination_uncertainty << "," << signal_yield << "," << signal_yield_uncertainty << ",";
             }
@@ -134,6 +146,12 @@ void write_csv(const std::string& filename, const std::map<std::string, std::vec
                 double acceptance = data.acceptance[eppi0_period][phi_idx];
                 double unfolded_yield = data.unfolded_yields[eppi0_period][phi_idx];
                 double unfolded_yield_uncertainty = data.unfolded_yield_uncertainty[eppi0_period][phi_idx];
+
+                // Check for NaN or Inf and set to zero if found
+                if (!std::isfinite(acceptance)) acceptance = 0.0;
+                if (!std::isfinite(unfolded_yield)) unfolded_yield = 0.0;
+                if (!std::isfinite(unfolded_yield_uncertainty)) unfolded_yield_uncertainty = 0.0;
+
                 file << acceptance << "," << unfolded_yield << "," << unfolded_yield_uncertainty;
 
                 if (period < n_periods - 1) {
@@ -159,17 +177,36 @@ void write_csv(const std::string& filename, const std::map<std::string, std::vec
                 delta_phi_rad += 2 * M_PI;
             }
 
+            // Check for NaN or Inf in bin boundaries
+            if (!std::isfinite(delta_phi_rad)) delta_phi_rad = 0.0;
+            if (!std::isfinite(xB_max) || !std::isfinite(xB_min)) xB_max = xB_min = 0.0;
+            if (!std::isfinite(Q2_max) || !std::isfinite(Q2_min)) Q2_max = Q2_min = 0.0;
+            if (!std::isfinite(t_max) || !std::isfinite(t_min)) t_max = t_min = 0.0;
+
             // Bin volume calculation
             double bin_volume = (xB_max - xB_min) * (Q2_max - Q2_min) * (t_max - t_min) * delta_phi_rad;
+
+            // Check for NaN or negative bin volume
+            if (!std::isfinite(bin_volume) || bin_volume <= 0.0) bin_volume = 0.0;
 
             // Get signal_yield for Fa18Inb (period 0) and Fa18Out (period 1)
             double signal_yield_Fa18Inb = data.signal_yield[0][phi_idx];
             double signal_yield_Fa18Out = data.signal_yield[1][phi_idx];
+
+            // Check for NaN or Inf and set to zero if found
+            if (!std::isfinite(signal_yield_Fa18Inb)) signal_yield_Fa18Inb = 0.0;
+            if (!std::isfinite(signal_yield_Fa18Out)) signal_yield_Fa18Out = 0.0;
+
             double combined_signal_yield = signal_yield_Fa18Inb + signal_yield_Fa18Out;
 
             // Get uncertainties
             double uncertainty_Fa18Inb = data.signal_yield_uncertainty[0][phi_idx];
             double uncertainty_Fa18Out = data.signal_yield_uncertainty[1][phi_idx];
+
+            // Check for NaN or Inf and set to zero if found
+            if (!std::isfinite(uncertainty_Fa18Inb)) uncertainty_Fa18Inb = 0.0;
+            if (!std::isfinite(uncertainty_Fa18Out)) uncertainty_Fa18Out = 0.0;
+
             double combined_uncertainty = std::sqrt(uncertainty_Fa18Inb * uncertainty_Fa18Inb + uncertainty_Fa18Out * uncertainty_Fa18Out);
 
             // Compute fall_cross_section
@@ -177,7 +214,7 @@ void write_csv(const std::string& filename, const std::map<std::string, std::vec
             double fall_cross_section = 0.0;
             double fall_cross_section_stat_uncertainty = 0.0;
 
-            if (denominator != 0.0) {
+            if (denominator > 0.0) {
                 fall_cross_section = combined_signal_yield / denominator;
                 fall_cross_section_stat_uncertainty = combined_uncertainty / denominator;
             } else {
@@ -187,7 +224,7 @@ void write_csv(const std::string& filename, const std::map<std::string, std::vec
             }
 
             // Compute fall_cross_section_sys_uncertainty (50% of cross section)
-            double fall_cross_section_sys_uncertainty = 0.5 * fall_cross_section;
+            double fall_cross_section_sys_uncertainty = 0.5 * std::abs(fall_cross_section);
 
             // Write these values to the file
             file << "," << bin_volume << "," << fall_cross_section << "," << fall_cross_section_stat_uncertainty << "," << fall_cross_section_sys_uncertainty << std::endl;

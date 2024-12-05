@@ -23,7 +23,8 @@ SRC = dvcs_cross_section_extraction.cpp \
       bin_helpers.cpp \
       write_csv.cpp \
       calculate_contamination.cpp \
-      plot_comparison.cpp 
+      plot_comparison.cpp \
+      plot_cross_section_comparison.cpp 
 
 # Object files
 OBJ = $(SRC:.cpp=.o)
