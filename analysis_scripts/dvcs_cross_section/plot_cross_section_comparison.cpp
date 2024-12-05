@@ -452,7 +452,6 @@ void plot_for_xB_bin(const CrossSectionData &data_first, const CrossSectionData 
 
     // Save the canvas
     std::string save_path = Form("output/cross_section_cross_check/cross_section_cross_check_xB_%d.pdf", xB_index);
-    ensure_directory_exists(output_dir);
     canvas.SaveAs(save_path.c_str());
 }
 
