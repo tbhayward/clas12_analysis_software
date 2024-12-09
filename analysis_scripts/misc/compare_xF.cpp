@@ -41,10 +41,10 @@ int main(int argc, char** argv) {
     // ---------------------------
     // Proton (pT2) histograms (Left pad)
     // ---------------------------
-    TH1F *h10_0pT06_pT2 = new TH1F("h10_0pT06_pT2","",50,-1.5,1.5);
-    TH1F *h10_06pT16_pT2 = new TH1F("h10_06pT16_pT2","",50,-1.5,1.5);
-    TH1F *h22_0pT06_pT2 = new TH1F("h22_0pT06_pT2","",50,-1.5,1.5);
-    TH1F *h22_06pT16_pT2 = new TH1F("h22_06pT16_pT2","",50,-1.5,1.5);
+    TH1F *h10_0pT06_pT2 = new TH1F("h10_0pT06_pT2","",50,-1.0,1.0);
+    TH1F *h10_06pT16_pT2 = new TH1F("h10_06pT16_pT2","",50,-1.0,1.0);
+    TH1F *h22_0pT06_pT2 = new TH1F("h22_0pT06_pT2","",50,-1.0,1.0);
+    TH1F *h22_06pT16_pT2 = new TH1F("h22_06pT16_pT2","",50,-1.0,1.0);
 
     // Draw into histograms for pT2
     t1->Draw("xF2>>h10_0pT06_pT2","pT2>0.0 && pT2<0.6","");
@@ -80,10 +80,10 @@ int main(int argc, char** argv) {
     // ---------------------------
     // Pion (pT1) histograms (Right pad)
     // ---------------------------
-    TH1F *h10_0pT06_pT1 = new TH1F("h10_0pT06_pT1","",50,-1.5,1.5);
-    TH1F *h10_06pT16_pT1 = new TH1F("h10_06pT16_pT1","",50,-1.5,1.5);
-    TH1F *h22_0pT06_pT1 = new TH1F("h22_0pT06_pT1","",50,-1.5,1.5);
-    TH1F *h22_06pT16_pT1 = new TH1F("h22_06pT16_pT1","",50,-1.5,1.5);
+    TH1F *h10_0pT06_pT1 = new TH1F("h10_0pT06_pT1","",50,-1.0,1.0);
+    TH1F *h10_06pT16_pT1 = new TH1F("h10_06pT16_pT1","",50,-1.0,1.0);
+    TH1F *h22_0pT06_pT1 = new TH1F("h22_0pT06_pT1","",50,-1.0,1.0);
+    TH1F *h22_06pT16_pT1 = new TH1F("h22_06pT16_pT1","",50,-1.0,1.0);
 
     // Draw into histograms for pT1
     t1->Draw("xF1>>h10_0pT06_pT1","pT1>0.0 && pT1<0.6","");
