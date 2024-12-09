@@ -66,17 +66,6 @@ int main(int argc, char** argv) {
     temp_max = h22_0pT05_pT2->GetMaximum(); if (temp_max > max_val_pT2) max_val_pT2 = temp_max;
     temp_max = h22_05pT15_pT2->GetMaximum(); if (temp_max > max_val_pT2) max_val_pT2 = temp_max;
 
-    // Set colors and styles for pT2
-    h10_0pT05_pT2->SetLineColor(kRed);   h10_0pT05_pT2->SetLineStyle(2);
-    h10_05pT15_pT2->SetLineColor(kRed);  h10_05pT15_pT2->SetLineStyle(1);
-    h22_0pT05_pT2->SetLineColor(kBlue);  h22_0pT05_pT2->SetLineStyle(2);
-    h22_05pT15_pT2->SetLineColor(kBlue); h22_05pT15_pT2->SetLineStyle(1);
-
-    h10_0pT05_pT2->SetStats(0);
-    h10_05pT15_pT2->SetStats(0);
-    h22_0pT05_pT2->SetStats(0);
-    h22_05pT15_pT2->SetStats(0);
-
     // ---------------------------
     // Pion (pT1) histograms (Right pad)
     // ---------------------------
@@ -92,7 +81,7 @@ int main(int argc, char** argv) {
     t2->Draw("xF1>>h22_0pT05_pT1","pT1>0 && pT1<0.5","");
     t2->Draw("xF1>>h22_05pT15_pT1","pT1>0.5 && pT1<1.5","");
 
-    // Normalize histograms (pT1)
+    // Normalize histograms for pT1
     if (h10_0pT05_pT1->Integral() > 0) h10_0pT05_pT1->Scale(1.0/h10_0pT05_pT1->Integral());
     if (h10_05pT15_pT1->Integral() > 0) h10_05pT15_pT1->Scale(1.0/h10_05pT15_pT1->Integral());
     if (h22_0pT05_pT1->Integral() > 0) h22_0pT05_pT1->Scale(1.0/h22_0pT05_pT1->Integral());
@@ -105,16 +94,9 @@ int main(int argc, char** argv) {
     temp_max = h22_0pT05_pT1->GetMaximum(); if (temp_max > max_val_pT1) max_val_pT1 = temp_max;
     temp_max = h22_05pT15_pT1->GetMaximum(); if (temp_max > max_val_pT1) max_val_pT1 = temp_max;
 
-    // Set colors and styles for pT1
-    h10_0pT05_pT1->SetLineColor(kRed);   h10_0pT05_pT1->SetLineStyle(2);
-    h10_05pT15_pT1->SetLineColor(kRed);  h10_05pT15_pT1->SetLineStyle(1);
-    h22_0pT05_pT1->SetLineColor(kBlue);  h22_0pT05_pT1->SetLineStyle(2);
-    h22_05pT15_pT1->SetLineColor(kBlue); h22_05pT15_pT1->SetLineStyle(1);
-
-    h10_0pT05_pT1->SetStats(0);
-    h10_05pT15_pT1->SetStats(0);
-    h22_0pT05_pT1->SetStats(0);
-    h22_05pT15_pT1->SetStats(0);
+    // Adjust max values for 3x scaling
+    max_val_pT2 *= 3;
+    max_val_pT1 *= 3;
 
     gStyle->SetOptStat(0);
 
@@ -127,7 +109,7 @@ int main(int argc, char** argv) {
     gPad->SetLogy(); // Set log scale for left pad
     h10_0pT05_pT2->GetXaxis()->SetTitle("x_{F}");
     h10_0pT05_pT2->GetYaxis()->SetTitle("normalized counts");
-    h10_0pT05_pT2->SetMaximum(1.25 * max_val_pT2);
+    h10_0pT05_pT2->SetMaximum(max_val_pT2);
     h10_0pT05_pT2->SetTitle("proton");
     h10_0pT05_pT2->Draw("hist");
     h10_05pT15_pT2->Draw("hist same");
@@ -135,7 +117,7 @@ int main(int argc, char** argv) {
     h22_05pT15_pT2->Draw("hist same");
 
     {
-        TLegend *leg = new TLegend(0.15,0.75,0.5,0.9);
+        TLegend *leg = new TLegend(0.7,0.75,0.9,0.9); // Top-right corner
         leg->AddEntry(h10_0pT05_pT2,"10.5 GeV, 0 < P_{T} < 0.5","l");
         leg->AddEntry(h10_05pT15_pT2,"10.5 GeV, 0.5 < P_{T} < 1.5","l");
         leg->AddEntry(h22_0pT05_pT2,"22 GeV, 0 < P_{T} < 0.5","l");
@@ -148,7 +130,7 @@ int main(int argc, char** argv) {
     gPad->SetLogy(); // Set log scale for right pad
     h10_0pT05_pT1->GetXaxis()->SetTitle("x_{F}");
     h10_0pT05_pT1->GetYaxis()->SetTitle("normalized counts");
-    h10_0pT05_pT1->SetMaximum(1.25 * max_val_pT1);
+    h10_0pT05_pT1->SetMaximum(max_val_pT1);
     h10_0pT05_pT1->SetTitle("pion");
     h10_0pT05_pT1->Draw("hist");
     h10_05pT15_pT1->Draw("hist same");
@@ -156,7 +138,7 @@ int main(int argc, char** argv) {
     h22_05pT15_pT1->Draw("hist same");
 
     {
-        TLegend *leg2 = new TLegend(0.15,0.75,0.5,0.9);
+        TLegend *leg2 = new TLegend(0.7,0.75,0.9,0.9); // Top-right corner
         leg2->AddEntry(h10_0pT05_pT1,"10.5 GeV, 0 < P_{T} < 0.5","l");
         leg2->AddEntry(h10_05pT15_pT1,"10.5 GeV, 0.5 < P_{T} < 1.5","l");
         leg2->AddEntry(h22_0pT05_pT1,"22 GeV, 0 < P_{T} < 0.5","l");
