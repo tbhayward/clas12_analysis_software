@@ -135,7 +135,7 @@ int main(int argc, char** argv) {
     h22_05pT15_pT2->Draw("hist same");
 
     {
-        TLegend *leg = new TLegend(0.15,0.75,0.5,0.9);
+        TLegend *leg = new TLegend(0.7,0.75,0.9,0.9);
         leg->AddEntry(h10_0pT05_pT2,"10.5 GeV, 0 < P_{T} < 0.5","l");
         leg->AddEntry(h10_05pT15_pT2,"10.5 GeV, 0.5 < P_{T} < 1.5","l");
         leg->AddEntry(h22_0pT05_pT2,"22 GeV, 0 < P_{T} < 0.5","l");
@@ -156,7 +156,7 @@ int main(int argc, char** argv) {
     h22_05pT15_pT1->Draw("hist same");
 
     {
-        TLegend *leg2 = new TLegend(0.15,0.75,0.5,0.9);
+        TLegend *leg2 = new TLegend(0.7,0.75,0.9,0.9);
         leg2->AddEntry(h10_0pT05_pT1,"10.5 GeV, 0 < P_{T} < 0.5","l");
         leg2->AddEntry(h10_05pT15_pT1,"10.5 GeV, 0.5 < P_{T} < 1.5","l");
         leg2->AddEntry(h22_0pT05_pT1,"22 GeV, 0 < P_{T} < 0.5","l");
@@ -204,7 +204,7 @@ int main(int argc, char** argv) {
 
     // Legend: just say which pT bin is which
     {
-        TLegend *leg_ratio = new TLegend(0.15,0.75,0.5,0.9);
+        TLegend *leg_ratio = new TLegend(0.7,0.75,0.9,0.9);
         leg_ratio->AddEntry(ratio_low_pT_pT2,"0 < P_{T} < 0.5","l");
         leg_ratio->AddEntry(ratio_high_pT_pT2,"0.5 < P_{T} < 1.5","l");
         leg_ratio->Draw();
