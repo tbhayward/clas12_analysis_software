@@ -41,177 +41,182 @@ int main(int argc, char** argv) {
     // ---------------------------
     // Proton (pT2) histograms (Left pad)
     // ---------------------------
-    TH1F *h10_0pT05_pT2 = new TH1F("h10_0pT05_pT2","",50,-1.5,1.5);
-    TH1F *h10_05pT15_pT2 = new TH1F("h10_05pT15_pT2","",50,-1.5,1.5);
-    TH1F *h22_0pT05_pT2 = new TH1F("h22_0pT05_pT2","",50,-1.5,1.5);
-    TH1F *h22_05pT15_pT2 = new TH1F("h22_05pT15_pT2","",50,-1.5,1.5);
+    TH1F *h10_0pT06_pT2 = new TH1F("h10_0pT06_pT2","",50,-1.5,1.5);
+    TH1F *h10_06pT16_pT2 = new TH1F("h10_06pT16_pT2","",50,-1.5,1.5);
+    TH1F *h22_0pT06_pT2 = new TH1F("h22_0pT06_pT2","",50,-1.5,1.5);
+    TH1F *h22_06pT16_pT2 = new TH1F("h22_06pT16_pT2","",50,-1.5,1.5);
 
     // Draw into histograms for pT2
-    t1->Draw("xF2>>h10_0pT05_pT2","pT2>0 && pT2<0.5","");
-    t1->Draw("xF2>>h10_05pT15_pT2","pT2>0.5 && pT2<1.5","");
+    t1->Draw("xF2>>h10_0pT06_pT2","pT2>0.0 && pT2<0.6","");
+    t1->Draw("xF2>>h10_06pT16_pT2","pT2>0.6 && pT2<1.6","");
 
-    t2->Draw("xF2>>h22_0pT05_pT2","pT2>0 && pT2<0.5","");
-    t2->Draw("xF2>>h22_05pT15_pT2","pT2>0.5 && pT2<1.5","");
+    t2->Draw("xF2>>h22_0pT06_pT2","pT2>0.0 && pT2<0.6","");
+    t2->Draw("xF2>>h22_06pT16_pT2","pT2>0.6 && pT2<1.6","");
 
     // Normalize histograms for pT2
-    if (h10_0pT05_pT2->Integral() > 0) h10_0pT05_pT2->Scale(1.0/h10_0pT05_pT2->Integral());
-    if (h10_05pT15_pT2->Integral() > 0) h10_05pT15_pT2->Scale(1.0/h10_05pT15_pT2->Integral());
-    if (h22_0pT05_pT2->Integral() > 0) h22_0pT05_pT2->Scale(1.0/h22_0pT05_pT2->Integral());
-    if (h22_05pT15_pT2->Integral() > 0) h22_05pT15_pT2->Scale(1.0/h22_05pT15_pT2->Integral());
+    if (h10_0pT06_pT2->Integral() > 0) h10_0pT06_pT2->Scale(1.0/h10_0pT06_pT2->Integral());
+    if (h10_06pT16_pT2->Integral() > 0) h10_06pT16_pT2->Scale(1.0/h10_06pT16_pT2->Integral());
+    if (h22_0pT06_pT2->Integral() > 0) h22_0pT06_pT2->Scale(1.0/h22_0pT06_pT2->Integral());
+    if (h22_06pT16_pT2->Integral() > 0) h22_06pT16_pT2->Scale(1.0/h22_06pT16_pT2->Integral());
 
     // Determine max for pT2 set
     double max_val_pT2 = 0;
-    double temp_max = h10_0pT05_pT2->GetMaximum(); if (temp_max > max_val_pT2) max_val_pT2 = temp_max;
-    temp_max = h10_05pT15_pT2->GetMaximum(); if (temp_max > max_val_pT2) max_val_pT2 = temp_max;
-    temp_max = h22_0pT05_pT2->GetMaximum(); if (temp_max > max_val_pT2) max_val_pT2 = temp_max;
-    temp_max = h22_05pT15_pT2->GetMaximum(); if (temp_max > max_val_pT2) max_val_pT2 = temp_max;
+    double temp_max = h10_0pT06_pT2->GetMaximum(); if (temp_max > max_val_pT2) max_val_pT2 = temp_max;
+    temp_max = h10_06pT16_pT2->GetMaximum(); if (temp_max > max_val_pT2) max_val_pT2 = temp_max;
+    temp_max = h22_0pT06_pT2->GetMaximum(); if (temp_max > max_val_pT2) max_val_pT2 = temp_max;
+    temp_max = h22_06pT16_pT2->GetMaximum(); if (temp_max > max_val_pT2) max_val_pT2 = temp_max;
 
     // Set colors and styles for pT2
-    h10_0pT05_pT2->SetLineColor(kRed);   h10_0pT05_pT2->SetLineStyle(2);
-    h10_05pT15_pT2->SetLineColor(kRed);  h10_05pT15_pT2->SetLineStyle(1);
-    h22_0pT05_pT2->SetLineColor(kBlue);  h22_0pT05_pT2->SetLineStyle(2);
-    h22_05pT15_pT2->SetLineColor(kBlue); h22_05pT15_pT2->SetLineStyle(1);
+    h10_0pT06_pT2->SetLineColor(kRed);   h10_0pT06_pT2->SetLineStyle(2);
+    h10_06pT16_pT2->SetLineColor(kRed);  h10_06pT16_pT2->SetLineStyle(1);
+    h22_0pT06_pT2->SetLineColor(kBlue);  h22_0pT06_pT2->SetLineStyle(2);
+    h22_06pT16_pT2->SetLineColor(kBlue); h22_06pT16_pT2->SetLineStyle(1);
 
-    h10_0pT05_pT2->SetStats(0);
-    h10_05pT15_pT2->SetStats(0);
-    h22_0pT05_pT2->SetStats(0);
-    h22_05pT15_pT2->SetStats(0);
+    h10_0pT06_pT2->SetStats(0);
+    h10_06pT16_pT2->SetStats(0);
+    h22_0pT06_pT2->SetStats(0);
+    h22_06pT16_pT2->SetStats(0);
 
     // ---------------------------
     // Pion (pT1) histograms (Right pad)
     // ---------------------------
-    TH1F *h10_0pT05_pT1 = new TH1F("h10_0pT05_pT1","",50,-1.5,1.5);
-    TH1F *h10_05pT15_pT1 = new TH1F("h10_05pT15_pT1","",50,-1.5,1.5);
-    TH1F *h22_0pT05_pT1 = new TH1F("h22_0pT05_pT1","",50,-1.5,1.5);
-    TH1F *h22_05pT15_pT1 = new TH1F("h22_05pT15_pT1","",50,-1.5,1.5);
+    TH1F *h10_0pT06_pT1 = new TH1F("h10_0pT06_pT1","",50,-1.5,1.5);
+    TH1F *h10_06pT16_pT1 = new TH1F("h10_06pT16_pT1","",50,-1.5,1.5);
+    TH1F *h22_0pT06_pT1 = new TH1F("h22_0pT06_pT1","",50,-1.5,1.5);
+    TH1F *h22_06pT16_pT1 = new TH1F("h22_06pT16_pT1","",50,-1.5,1.5);
 
     // Draw into histograms for pT1
-    t1->Draw("xF1>>h10_0pT05_pT1","pT1>0 && pT1<0.5","");
-    t1->Draw("xF1>>h10_05pT15_pT1","pT1>0.5 && pT1<1.5","");
+    t1->Draw("xF1>>h10_0pT06_pT1","pT1>0.0 && pT1<0.6","");
+    t1->Draw("xF1>>h10_06pT16_pT1","pT1>0.6 && pT1<1.6","");
 
-    t2->Draw("xF1>>h22_0pT05_pT1","pT1>0 && pT1<0.5","");
-    t2->Draw("xF1>>h22_05pT15_pT1","pT1>0.5 && pT1<1.5","");
+    t2->Draw("xF1>>h22_0pT06_pT1","pT1>0.0 && pT1<0.6","");
+    t2->Draw("xF1>>h22_06pT16_pT1","pT1>0.6 && pT1<1.6","");
 
     // Normalize histograms (pT1)
-    if (h10_0pT05_pT1->Integral() > 0) h10_0pT05_pT1->Scale(1.0/h10_0pT05_pT1->Integral());
-    if (h10_05pT15_pT1->Integral() > 0) h10_05pT15_pT1->Scale(1.0/h10_05pT15_pT1->Integral());
-    if (h22_0pT05_pT1->Integral() > 0) h22_0pT05_pT1->Scale(1.0/h22_0pT05_pT1->Integral());
-    if (h22_05pT15_pT1->Integral() > 0) h22_05pT15_pT1->Scale(1.0/h22_05pT15_pT1->Integral());
+    if (h10_0pT06_pT1->Integral() > 0) h10_0pT06_pT1->Scale(1.0/h10_0pT06_pT1->Integral());
+    if (h10_06pT16_pT1->Integral() > 0) h10_06pT16_pT1->Scale(1.0/h10_06pT16_pT1->Integral());
+    if (h22_0pT06_pT1->Integral() > 0) h22_0pT06_pT1->Scale(1.0/h22_0pT06_pT1->Integral());
+    if (h22_06pT16_pT1->Integral() > 0) h22_06pT16_pT1->Scale(1.0/h22_06pT16_pT1->Integral());
 
     // Determine max for pT1 set
     double max_val_pT1 = 0;
-    temp_max = h10_0pT05_pT1->GetMaximum(); if (temp_max > max_val_pT1) max_val_pT1 = temp_max;
-    temp_max = h10_05pT15_pT1->GetMaximum(); if (temp_max > max_val_pT1) max_val_pT1 = temp_max;
-    temp_max = h22_0pT05_pT1->GetMaximum(); if (temp_max > max_val_pT1) max_val_pT1 = temp_max;
-    temp_max = h22_05pT15_pT1->GetMaximum(); if (temp_max > max_val_pT1) max_val_pT1 = temp_max;
+    temp_max = h10_0pT06_pT1->GetMaximum(); if (temp_max > max_val_pT1) max_val_pT1 = temp_max;
+    temp_max = h10_06pT16_pT1->GetMaximum(); if (temp_max > max_val_pT1) max_val_pT1 = temp_max;
+    temp_max = h22_0pT06_pT1->GetMaximum(); if (temp_max > max_val_pT1) max_val_pT1 = temp_max;
+    temp_max = h22_06pT16_pT1->GetMaximum(); if (temp_max > max_val_pT1) max_val_pT1 = temp_max;
 
     // Set colors and styles for pT1
-    h10_0pT05_pT1->SetLineColor(kRed);   h10_0pT05_pT1->SetLineStyle(2);
-    h10_05pT15_pT1->SetLineColor(kRed);  h10_05pT15_pT1->SetLineStyle(1);
-    h22_0pT05_pT1->SetLineColor(kBlue);  h22_0pT05_pT1->SetLineStyle(2);
-    h22_05pT15_pT1->SetLineColor(kBlue); h22_05pT15_pT1->SetLineStyle(1);
+    h10_0pT06_pT1->SetLineColor(kRed);   h10_0pT06_pT1->SetLineStyle(2);
+    h10_06pT16_pT1->SetLineColor(kRed);  h10_06pT16_pT1->SetLineStyle(1);
+    h22_0pT06_pT1->SetLineColor(kBlue);  h22_0pT06_pT1->SetLineStyle(2);
+    h22_06pT16_pT1->SetLineColor(kBlue); h22_06pT16_pT1->SetLineStyle(1);
 
-    h10_0pT05_pT1->SetStats(0);
-    h10_05pT15_pT1->SetStats(0);
-    h22_0pT05_pT1->SetStats(0);
-    h22_05pT15_pT1->SetStats(0);
+    h10_0pT06_pT1->SetStats(0);
+    h10_06pT16_pT1->SetStats(0);
+    h22_0pT06_pT1->SetStats(0);
+    h22_06pT16_pT1->SetStats(0);
 
     gStyle->SetOptStat(0);
 
-    // Create a 1x2 canvas (original functionality)
+    // Create the first canvas (1x2)
     TCanvas *c1 = new TCanvas("c1","c1",1200,600);
-    c1->Divide(2,1); // 1 row, 2 columns
+    c1->Divide(2,1);
 
     // Left pad: pT2 (proton)
     c1->cd(1);
-    gPad->SetLogy(); // Set log scale for left pad
-    h10_0pT05_pT2->GetXaxis()->SetTitle("x_{F}");
-    h10_0pT05_pT2->GetYaxis()->SetTitle("normalized counts");
-    h10_0pT05_pT2->SetMaximum(5 * max_val_pT2);
-    h10_0pT05_pT2->SetTitle("proton");
-    h10_0pT05_pT2->Draw("hist");
-    h10_05pT15_pT2->Draw("hist same");
-    h22_0pT05_pT2->Draw("hist same");
-    h22_05pT15_pT2->Draw("hist same");
+    gPad->SetLogy();
+    h10_0pT06_pT2->GetXaxis()->SetTitle("x_{F}");
+    h10_0pT06_pT2->GetYaxis()->SetTitle("normalized counts");
+    h10_0pT06_pT2->SetMaximum(1.25 * max_val_pT2);
+    h10_0pT06_pT2->SetTitle("proton");
+    h10_0pT06_pT2->Draw("hist");
+    h10_06pT16_pT2->Draw("hist same");
+    h22_0pT06_pT2->Draw("hist same");
+    h22_06pT16_pT2->Draw("hist same");
 
-    {
-        TLegend *leg = new TLegend(0.7,0.75,0.9,0.9);
-        leg->AddEntry(h10_0pT05_pT2,"10.5 GeV, 0 < P_{T} < 0.5","l");
-        leg->AddEntry(h10_05pT15_pT2,"10.5 GeV, 0.5 < P_{T} < 1.5","l");
-        leg->AddEntry(h22_0pT05_pT2,"22 GeV, 0 < P_{T} < 0.5","l");
-        leg->AddEntry(h22_05pT15_pT2,"22 GeV, 0.5 < P_{T} < 1.5","l");
-        leg->Draw();
-    }
+    TLegend *leg1 = new TLegend(0.7,0.75,0.9,0.9);
+    leg1->AddEntry(h10_0pT06_pT2,"10.5 GeV, 0 < P_{T} < 0.6","l");
+    leg1->AddEntry(h10_06pT16_pT2,"10.5 GeV, 0.6 < P_{T} < 1.6","l");
+    leg1->AddEntry(h22_0pT06_pT2,"22 GeV, 0 < P_{T} < 0.6","l");
+    leg1->AddEntry(h22_06pT16_pT2,"22 GeV, 0.6 < P_{T} < 1.6","l");
+    leg1->Draw();
 
     // Right pad: pT1 (pion)
     c1->cd(2);
-    gPad->SetLogy(); // Set log scale for right pad
-    h10_0pT05_pT1->GetXaxis()->SetTitle("x_{F}");
-    h10_0pT05_pT1->GetYaxis()->SetTitle("normalized counts");
-    h10_0pT05_pT1->SetMaximum(5 * max_val_pT1);
-    h10_0pT05_pT1->SetTitle("pion");
-    h10_0pT05_pT1->Draw("hist");
-    h10_05pT15_pT1->Draw("hist same");
-    h22_0pT05_pT1->Draw("hist same");
-    h22_05pT15_pT1->Draw("hist same");
+    gPad->SetLogy();
+    h10_0pT06_pT1->GetXaxis()->SetTitle("x_{F}");
+    h10_0pT06_pT1->GetYaxis()->SetTitle("normalized counts");
+    h10_0pT06_pT1->SetMaximum(1.25 * max_val_pT1);
+    h10_0pT06_pT1->SetTitle("pion");
+    h10_0pT06_pT1->Draw("hist");
+    h10_06pT16_pT1->Draw("hist same");
+    h22_0pT06_pT1->Draw("hist same");
+    h22_06pT16_pT1->Draw("hist same");
 
-    {
-        TLegend *leg2 = new TLegend(0.7,0.75,0.9,0.9);
-        leg2->AddEntry(h10_0pT05_pT1,"10.5 GeV, 0 < P_{T} < 0.5","l");
-        leg2->AddEntry(h10_05pT15_pT1,"10.5 GeV, 0.5 < P_{T} < 1.5","l");
-        leg2->AddEntry(h22_0pT05_pT1,"22 GeV, 0 < P_{T} < 0.5","l");
-        leg2->AddEntry(h22_05pT15_pT1,"22 GeV, 0.5 < P_{T} < 1.5","l");
-        leg2->Draw();
-    }
+    TLegend *leg2 = new TLegend(0.7,0.75,0.9,0.9);
+    leg2->AddEntry(h10_0pT06_pT1,"10.5 GeV, 0 < P_{T} < 0.6","l");
+    leg2->AddEntry(h10_06pT16_pT1,"10.5 GeV, 0.6 < P_{T} < 1.6","l");
+    leg2->AddEntry(h22_0pT06_pT1,"22 GeV, 0 < P_{T} < 0.6","l");
+    leg2->AddEntry(h22_06pT16_pT1,"22 GeV, 0.6 < P_{T} < 1.6","l");
+    leg2->Draw();
 
     c1->SaveAs("output/22gev_comparison.png");
 
-    // Now create a new canvas for the ratio
-    // Ratio = (22 GeV histogram) / (10.5 GeV histogram)
-    // We'll do this for pT2 (proton) as an example, giving two lines (low pT and high pT).
+    // Create the second canvas (ratios)
+    TCanvas *c2 = new TCanvas("c2","c2",1200,600);
+    c2->Divide(2,1);
 
-    // Create ratio histograms for pT2
-    TH1F *ratio_low_pT_pT2 = (TH1F*)h22_0pT05_pT2->Clone("ratio_low_pT_pT2");
-    ratio_low_pT_pT2->Divide(h10_0pT05_pT2);
+    // Create and plot ratio histograms for pT2
+    TH1F *ratio_low_pT_pT2 = (TH1F*)h22_0pT06_pT2->Clone("ratio_low_pT_pT2");
+    ratio_low_pT_pT2->Divide(h10_0pT06_pT2);
+    TH1F *ratio_high_pT_pT2 = (TH1F*)h22_06pT16_pT2->Clone("ratio_high_pT_pT2");
+    ratio_high_pT_pT2->Divide(h10_06pT16_pT2);
 
-    TH1F *ratio_high_pT_pT2 = (TH1F*)h22_05pT15_pT2->Clone("ratio_high_pT_pT2");
-    ratio_high_pT_pT2->Divide(h10_05pT15_pT2);
-
-    // Set styles: black line for high pT, dashed black line for low pT
     ratio_low_pT_pT2->SetLineColor(kBlack);
-    ratio_low_pT_pT2->SetLineStyle(2);  // dashed
+    ratio_low_pT_pT2->SetLineStyle(2);
     ratio_high_pT_pT2->SetLineColor(kBlack);
-    ratio_high_pT_pT2->SetLineStyle(1); // solid
+    ratio_high_pT_pT2->SetLineStyle(1);
 
-    ratio_low_pT_pT2->SetStats(0);
-    ratio_high_pT_pT2->SetStats(0);
+    double max_ratio_pT2 = std::max(ratio_low_pT_pT2->GetMaximum(), ratio_high_pT_pT2->GetMaximum()) * 1.25;
 
-    // Determine max for ratio
-    double max_ratio = 0;
-    temp_max = ratio_low_pT_pT2->GetMaximum(); if(temp_max > max_ratio) max_ratio = temp_max;
-    temp_max = ratio_high_pT_pT2->GetMaximum(); if(temp_max > max_ratio) max_ratio = temp_max;
-
-    // Create second canvas for ratio
-    TCanvas *c2 = new TCanvas("c2","c2",800,600);
-    gPad->SetLogy();
-    // "with all similar aesthetics" - we keep axis titles, etc.
+    c2->cd(1);
     ratio_low_pT_pT2->GetXaxis()->SetTitle("x_{F}");
     ratio_low_pT_pT2->GetYaxis()->SetTitle("ratio");
-    ratio_low_pT_pT2->SetMaximum(1.25 * max_ratio);
-
-    // Draw ratio histograms
+    ratio_low_pT_pT2->SetMaximum(max_ratio_pT2);
     ratio_low_pT_pT2->Draw("hist");
     ratio_high_pT_pT2->Draw("hist same");
 
-    // Legend: just say which pT bin is which
-    {
-        TLegend *leg_ratio = new TLegend(0.7,0.75,0.9,0.9);
-        leg_ratio->AddEntry(ratio_low_pT_pT2,"0 < P_{T} < 0.5","l");
-        leg_ratio->AddEntry(ratio_high_pT_pT2,"0.5 < P_{T} < 1.5","l");
-        leg_ratio->Draw();
-    }
+    TLegend *leg_ratio_pT2 = new TLegend(0.7,0.75,0.9,0.9);
+    leg_ratio_pT2->AddEntry(ratio_low_pT_pT2,"0 < P_{T} < 0.6","l");
+    leg_ratio_pT2->AddEntry(ratio_high_pT_pT2,"0.6 < P_{T} < 1.6","l");
+    leg_ratio_pT2->Draw();
 
-    c2->SaveAs("output/22gev_ratio.png");
+    // Create and plot ratio histograms for pT1
+    TH1F *ratio_low_pT_pT1 = (TH1F*)h22_0pT06_pT1->Clone("ratio_low_pT_pT1");
+    ratio_low_pT_pT1->Divide(h10_0pT06_pT1);
+    TH1F *ratio_high_pT_pT1 = (TH1F*)h22_06pT16_pT1->Clone("ratio_high_pT_pT1");
+    ratio_high_pT_pT1->Divide(h10_06pT16_pT1);
+
+    ratio_low_pT_pT1->SetLineColor(kBlack);
+    ratio_low_pT_pT1->SetLineStyle(2);
+    ratio_high_pT_pT1->SetLineColor(kBlack);
+    ratio_high_pT_pT1->SetLineStyle(1);
+
+    double max_ratio_pT1 = std::max(ratio_low_pT_pT1->GetMaximum(), ratio_high_pT_pT1->GetMaximum()) * 1.25;
+
+    c2->cd(2);
+    ratio_low_pT_pT1->GetXaxis()->SetTitle("x_{F}");
+    ratio_low_pT_pT1->GetYaxis()->SetTitle("ratio");
+    ratio_low_pT_pT1->SetMaximum(max_ratio_pT1);
+    ratio_low_pT_pT1->Draw("hist");
+    ratio_high_pT_pT1->Draw("hist same");
+
+    TLegend *leg_ratio_pT1 = new TLegend(0.7,0.75,0.9,0.9);
+    leg_ratio_pT1->AddEntry(ratio_low_pT_pT1,"0 < P_{T} < 0.6","l");
+    leg_ratio_pT1->AddEntry(ratio_high_pT_pT1,"0.6 < P_{T} < 1.6","l");
+    leg_ratio_pT1->Draw();
+
+    c2->SaveAs("output/22gev_ratios.png");
 
     // Cleanup
     f1->Close();
