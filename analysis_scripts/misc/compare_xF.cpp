@@ -180,6 +180,7 @@ int main(int argc, char** argv) {
     double max_ratio_pT2 = std::max(ratio_low_pT_pT2->GetMaximum(), ratio_high_pT_pT2->GetMaximum()) * 1.25;
 
     c2->cd(1);
+    gPad->SetLogy();
     ratio_low_pT_pT2->GetXaxis()->SetTitle("x_{F}");
     ratio_low_pT_pT2->GetYaxis()->SetTitle("ratio");
     ratio_low_pT_pT2->SetTitle("pion");
@@ -206,6 +207,7 @@ int main(int argc, char** argv) {
     double max_ratio_pT1 = std::max(ratio_low_pT_pT1->GetMaximum(), ratio_high_pT_pT1->GetMaximum()) * 1.25;
 
     c2->cd(2);
+    gPad->SetLogy();
     ratio_low_pT_pT1->GetXaxis()->SetTitle("x_{F}");
     ratio_low_pT_pT1->GetYaxis()->SetTitle("ratio");
     ratio_low_pT_pT1->SetTitle("pion");
