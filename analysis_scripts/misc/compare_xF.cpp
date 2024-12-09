@@ -38,10 +38,6 @@ int main(int argc, char** argv) {
         return 1;
     }
 
-    // We will now do the same analysis twice:
-    // Left pad: use pT2 (proton)
-    // Right pad: use pT1 (pion)
-
     // ---------------------------
     // Proton (pT2) histograms (Left pad)
     // ---------------------------
@@ -57,7 +53,7 @@ int main(int argc, char** argv) {
     t2->Draw("xF2>>h22_0pT05_pT2","pT2>0 && pT2<0.5","");
     t2->Draw("xF2>>h22_05pT15_pT2","pT2>0.5 && pT2<1.5","");
 
-    // Normalize histograms
+    // Normalize histograms for pT2
     if (h10_0pT05_pT2->Integral() > 0) h10_0pT05_pT2->Scale(1.0/h10_0pT05_pT2->Integral());
     if (h10_05pT15_pT2->Integral() > 0) h10_05pT15_pT2->Scale(1.0/h10_05pT15_pT2->Integral());
     if (h22_0pT05_pT2->Integral() > 0) h22_0pT05_pT2->Scale(1.0/h22_0pT05_pT2->Integral());
@@ -122,24 +118,22 @@ int main(int argc, char** argv) {
 
     gStyle->SetOptStat(0);
 
-    // Create a 1x2 canvas
+    // Create a 1x2 canvas (original functionality)
     TCanvas *c1 = new TCanvas("c1","c1",1200,600);
     c1->Divide(2,1); // 1 row, 2 columns
 
     // Left pad: pT2 (proton)
     c1->cd(1);
+    gPad->SetLogy(); // Set log scale for left pad
     h10_0pT05_pT2->GetXaxis()->SetTitle("x_{F}");
     h10_0pT05_pT2->GetYaxis()->SetTitle("normalized counts");
     h10_0pT05_pT2->SetMaximum(1.25 * max_val_pT2);
-    // Set pad title as "proton"
-    // One way is to set the title on the histogram:
     h10_0pT05_pT2->SetTitle("proton");
     h10_0pT05_pT2->Draw("hist");
     h10_05pT15_pT2->Draw("hist same");
     h22_0pT05_pT2->Draw("hist same");
     h22_05pT15_pT2->Draw("hist same");
 
-    // Legend on left pad
     {
         TLegend *leg = new TLegend(0.15,0.75,0.5,0.9);
         leg->AddEntry(h10_0pT05_pT2,"10.5 GeV, 0 < P_{T} < 0.5","l");
@@ -151,17 +145,16 @@ int main(int argc, char** argv) {
 
     // Right pad: pT1 (pion)
     c1->cd(2);
+    gPad->SetLogy(); // Set log scale for right pad
     h10_0pT05_pT1->GetXaxis()->SetTitle("x_{F}");
     h10_0pT05_pT1->GetYaxis()->SetTitle("normalized counts");
     h10_0pT05_pT1->SetMaximum(1.25 * max_val_pT1);
-    // Set pad title as "pion"
     h10_0pT05_pT1->SetTitle("pion");
     h10_0pT05_pT1->Draw("hist");
     h10_05pT15_pT1->Draw("hist same");
     h22_0pT05_pT1->Draw("hist same");
     h22_05pT15_pT1->Draw("hist same");
 
-    // Legend on right pad
     {
         TLegend *leg2 = new TLegend(0.15,0.75,0.5,0.9);
         leg2->AddEntry(h10_0pT05_pT1,"10.5 GeV, 0 < P_{T} < 0.5","l");
@@ -172,6 +165,52 @@ int main(int argc, char** argv) {
     }
 
     c1->SaveAs("output/22gev_comparison.png");
+
+    // Now create a new canvas for the ratio
+    // Ratio = (22 GeV histogram) / (10.5 GeV histogram)
+    // We'll do this for pT2 (proton) as an example, giving two lines (low pT and high pT).
+
+    // Create ratio histograms for pT2
+    TH1F *ratio_low_pT_pT2 = (TH1F*)h22_0pT05_pT2->Clone("ratio_low_pT_pT2");
+    ratio_low_pT_pT2->Divide(h10_0pT05_pT2);
+
+    TH1F *ratio_high_pT_pT2 = (TH1F*)h22_05pT15_pT2->Clone("ratio_high_pT_pT2");
+    ratio_high_pT_pT2->Divide(h10_05pT15_pT2);
+
+    // Set styles: black line for high pT, dashed black line for low pT
+    ratio_low_pT_pT2->SetLineColor(kBlack);
+    ratio_low_pT_pT2->SetLineStyle(2);  // dashed
+    ratio_high_pT_pT2->SetLineColor(kBlack);
+    ratio_high_pT_pT2->SetLineStyle(1); // solid
+
+    ratio_low_pT_pT2->SetStats(0);
+    ratio_high_pT_pT2->SetStats(0);
+
+    // Determine max for ratio
+    double max_ratio = 0;
+    temp_max = ratio_low_pT_pT2->GetMaximum(); if(temp_max > max_ratio) max_ratio = temp_max;
+    temp_max = ratio_high_pT_pT2->GetMaximum(); if(temp_max > max_ratio) max_ratio = temp_max;
+
+    // Create second canvas for ratio
+    TCanvas *c2 = new TCanvas("c2","c2",800,600);
+    // "with all similar aesthetics" - we keep axis titles, etc.
+    ratio_low_pT_pT2->GetXaxis()->SetTitle("x_{F}");
+    ratio_low_pT_pT2->GetYaxis()->SetTitle("ratio");
+    ratio_low_pT_pT2->SetMaximum(1.25 * max_ratio);
+
+    // Draw ratio histograms
+    ratio_low_pT_pT2->Draw("hist");
+    ratio_high_pT_pT2->Draw("hist same");
+
+    // Legend: just say which pT bin is which
+    {
+        TLegend *leg_ratio = new TLegend(0.15,0.75,0.5,0.9);
+        leg_ratio->AddEntry(ratio_low_pT_pT2,"0 < P_{T} < 0.5","l");
+        leg_ratio->AddEntry(ratio_high_pT_pT2,"0.5 < P_{T} < 1.5","l");
+        leg_ratio->Draw();
+    }
+
+    c2->SaveAs("output/22gev_ratio.png");
 
     // Cleanup
     f1->Close();
