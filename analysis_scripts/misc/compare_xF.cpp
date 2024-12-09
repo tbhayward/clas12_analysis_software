@@ -80,10 +80,10 @@ int main(int argc, char** argv) {
     // ---------------------------
     // Pion (pT1) histograms (Right pad)
     // ---------------------------
-    TH1F *h10_0pT05_pT1 = new TH1F("h10_0pT05_pT1","",50,-1.0,1.0);
-    TH1F *h10_05pT15_pT1 = new TH1F("h10_05pT15_pT1","",50,-1.0,1.0);
-    TH1F *h22_0pT05_pT1 = new TH1F("h22_0pT05_pT1","",50,-1.0,1.0);
-    TH1F *h22_05pT15_pT1 = new TH1F("h22_05pT15_pT1","",50,-1.0,1.0);
+    TH1F *h10_0pT05_pT1 = new TH1F("h10_0pT05_pT1","",50,-1.5,1.5);
+    TH1F *h10_05pT15_pT1 = new TH1F("h10_05pT15_pT1","",50,-1.5,1.5);
+    TH1F *h22_0pT05_pT1 = new TH1F("h22_0pT05_pT1","",50,-1.5,1.5);
+    TH1F *h22_05pT15_pT1 = new TH1F("h22_05pT15_pT1","",50,-1.5,1.5);
 
     // Draw into histograms for pT1
     t1->Draw("xF1>>h10_0pT05_pT1","pT1>0 && pT1<0.5","");
