@@ -210,7 +210,7 @@ int main(int argc, char** argv) {
     gPad->SetLogy();
     ratio_low_pT_pT1->GetXaxis()->SetTitle("x_{F}");
     ratio_low_pT_pT1->GetYaxis()->SetTitle("ratio");
-    ratio_low_pT_pT1->SetTitle("pion");
+    ratio_low_pT_pT1->SetTitle("proton");
     ratio_low_pT_pT1->SetMaximum(max_ratio_pT1);
     ratio_low_pT_pT1->Draw("hist");
     ratio_high_pT_pT1->Draw("hist same");
