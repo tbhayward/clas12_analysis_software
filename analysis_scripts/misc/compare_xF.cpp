@@ -47,10 +47,10 @@ int main(int argc, char** argv) {
     TH1F *h22_06pT16_pT2 = new TH1F("h22_06pT16_pT2","",50,-1.5,1.5);
 
     // Draw into histograms for pT2
-    t1->Draw("xF2>>h10_0pT06_pT2","pT2>0.0 && pT2<0.6","");
+    t1->Draw("xF2>>h10_0pT06_pT2","pT2>0.0 && pT2<1.6","");
     t1->Draw("xF2>>h10_06pT16_pT2","pT2>0.6 && pT2<1.6","");
 
-    t2->Draw("xF2>>h22_0pT06_pT2","pT2>0.0 && pT2<0.6","");
+    t2->Draw("xF2>>h22_0pT06_pT2","pT2>0.0 && pT2<1.6","");
     t2->Draw("xF2>>h22_06pT16_pT2","pT2>0.6 && pT2<1.6","");
 
     // Normalize histograms for pT2
@@ -86,10 +86,10 @@ int main(int argc, char** argv) {
     TH1F *h22_06pT16_pT1 = new TH1F("h22_06pT16_pT1","",50,-1.5,1.5);
 
     // Draw into histograms for pT1
-    t1->Draw("xF1>>h10_0pT06_pT1","pT1>0.0 && pT1<0.6","");
+    t1->Draw("xF1>>h10_0pT06_pT1","pT1>0.0 && pT1<1.6","");
     t1->Draw("xF1>>h10_06pT16_pT1","pT1>0.6 && pT1<1.6","");
 
-    t2->Draw("xF1>>h22_0pT06_pT1","pT1>0.0 && pT1<0.6","");
+    t2->Draw("xF1>>h22_0pT06_pT1","pT1>0.0 && pT1<1.6","");
     t2->Draw("xF1>>h22_06pT16_pT1","pT1>0.6 && pT1<1.6","");
 
     // Normalize histograms (pT1)
