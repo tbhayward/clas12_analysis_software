@@ -41,10 +41,10 @@ int main(int argc, char** argv) {
     // ---------------------------
     // Proton (pT2) histograms (Left pad)
     // ---------------------------
-    TH1F *h10_0pT05_pT2 = new TH1F("h10_0pT05_pT2","",50,-1.0,1.0);
-    TH1F *h10_05pT15_pT2 = new TH1F("h10_05pT15_pT2","",50,-1.0,1.0);
-    TH1F *h22_0pT05_pT2 = new TH1F("h22_0pT05_pT2","",50,-1.0,1.0);
-    TH1F *h22_05pT15_pT2 = new TH1F("h22_05pT15_pT2","",50,-1.0,1.0);
+    TH1F *h10_0pT05_pT2 = new TH1F("h10_0pT05_pT2","",50,-1.5,1.5);
+    TH1F *h10_05pT15_pT2 = new TH1F("h10_05pT15_pT2","",50,-1.5,1.5);
+    TH1F *h22_0pT05_pT2 = new TH1F("h22_0pT05_pT2","",50,-1.5,1.5);
+    TH1F *h22_05pT15_pT2 = new TH1F("h22_05pT15_pT2","",50,-1.5,1.5);
 
     // Draw into histograms for pT2
     t1->Draw("xF2>>h10_0pT05_pT2","pT2>0 && pT2<0.5","");
