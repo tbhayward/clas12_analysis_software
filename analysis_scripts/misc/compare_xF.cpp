@@ -193,6 +193,7 @@ int main(int argc, char** argv) {
 
     // Create second canvas for ratio
     TCanvas *c2 = new TCanvas("c2","c2",800,600);
+    gPad->SetLogy();
     // "with all similar aesthetics" - we keep axis titles, etc.
     ratio_low_pT_pT2->GetXaxis()->SetTitle("x_{F}");
     ratio_low_pT_pT2->GetYaxis()->SetTitle("ratio");
