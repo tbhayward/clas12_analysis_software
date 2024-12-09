@@ -51,11 +51,11 @@ int main(int argc, char** argv) {
     TH1F *h22_05pT15_pT2 = new TH1F("h22_05pT15_pT2","",50,-1.0,1.0);
 
     // Draw into histograms for pT2
-    t1->Draw("xF>>h10_0pT05_pT2","pT2>0 && pT2<0.5","");
-    t1->Draw("xF>>h10_05pT15_pT2","pT2>0.5 && pT2<1.5","");
+    t1->Draw("xF2>>h10_0pT05_pT2","pT2>0 && pT2<0.5","");
+    t1->Draw("xF2>>h10_05pT15_pT2","pT2>0.5 && pT2<1.5","");
 
-    t2->Draw("xF>>h22_0pT05_pT2","pT2>0 && pT2<0.5","");
-    t2->Draw("xF>>h22_05pT15_pT2","pT2>0.5 && pT2<1.5","");
+    t2->Draw("xF2>>h22_0pT05_pT2","pT2>0 && pT2<0.5","");
+    t2->Draw("xF2>>h22_05pT15_pT2","pT2>0.5 && pT2<1.5","");
 
     // Normalize histograms
     if (h10_0pT05_pT2->Integral() > 0) h10_0pT05_pT2->Scale(1.0/h10_0pT05_pT2->Integral());
@@ -90,11 +90,11 @@ int main(int argc, char** argv) {
     TH1F *h22_05pT15_pT1 = new TH1F("h22_05pT15_pT1","",50,-1.0,1.0);
 
     // Draw into histograms for pT1
-    t1->Draw("xF>>h10_0pT05_pT1","pT1>0 && pT1<0.5","");
-    t1->Draw("xF>>h10_05pT15_pT1","pT1>0.5 && pT1<1.5","");
+    t1->Draw("xF1>>h10_0pT05_pT1","pT1>0 && pT1<0.5","");
+    t1->Draw("xF1>>h10_05pT15_pT1","pT1>0.5 && pT1<1.5","");
 
-    t2->Draw("xF>>h22_0pT05_pT1","pT1>0 && pT1<0.5","");
-    t2->Draw("xF>>h22_05pT15_pT1","pT1>0.5 && pT1<1.5","");
+    t2->Draw("xF1>>h22_0pT05_pT1","pT1>0 && pT1<0.5","");
+    t2->Draw("xF1>>h22_05pT15_pT1","pT1>0.5 && pT1<1.5","");
 
     // Normalize histograms (pT1)
     if (h10_0pT05_pT1->Integral() > 0) h10_0pT05_pT1->Scale(1.0/h10_0pT05_pT1->Integral());
