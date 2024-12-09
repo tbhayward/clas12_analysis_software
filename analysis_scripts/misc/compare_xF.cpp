@@ -38,41 +38,77 @@ int main(int argc, char** argv) {
         return 1;
     }
 
+    // Debug: Print the number of entries in each tree
+    std::cout << "Entries in " << argv[1] << ": " << t1->GetEntries() << std::endl;
+    std::cout << "Entries in " << argv[2] << ": " << t2->GetEntries() << std::endl;
+
     // Create histograms for different pT ranges and files
-    // We'll use 50 bins from -1 to 1 for xF
     TH1F *h10_0pT05 = new TH1F("h10_0pT05","",50,-1.0,1.0);
     TH1F *h10_05pT15 = new TH1F("h10_05pT15","",50,-1.0,1.0);
     TH1F *h22_0pT05 = new TH1F("h22_0pT05","",50,-1.0,1.0);
     TH1F *h22_05pT15 = new TH1F("h22_05pT15","",50,-1.0,1.0);
 
     // Draw into histograms
-    t1->Draw("xF>>h10_0pT05","pT>0 && pT<0.5");
-    t1->Draw("xF>>h10_05pT15","pT>0.5 && pT<1.5");
+    // Debug: print the draw commands
+    std::cout << "Drawing for h10_0pT05 with cut 'pT>0 && pT<0.5'" << std::endl;
+    t1->Draw("xF>>h10_0pT05","pT>0 && pT<0.5","");
+    std::cout << "After drawing h10_0pT05: Integral = " << h10_0pT05->Integral() << std::endl;
 
-    t2->Draw("xF>>h22_0pT05","pT>0 && pT<0.5");
-    t2->Draw("xF>>h22_05pT15","pT>0.5 && pT<1.5");
+    std::cout << "Drawing for h10_05pT15 with cut 'pT>0.5 && pT<1.5'" << std::endl;
+    t1->Draw("xF>>h10_05pT15","pT>0.5 && pT<1.5","");
+    std::cout << "After drawing h10_05pT15: Integral = " << h10_05pT15->Integral() << std::endl;
+
+    std::cout << "Drawing for h22_0pT05 with cut 'pT>0 && pT<0.5'" << std::endl;
+    t2->Draw("xF>>h22_0pT05","pT>0 && pT<0.5","");
+    std::cout << "After drawing h22_0pT05: Integral = " << h22_0pT05->Integral() << std::endl;
+
+    std::cout << "Drawing for h22_05pT15 with cut 'pT>0.5 && pT<1.5'" << std::endl;
+    t2->Draw("xF>>h22_05pT15","pT>0.5 && pT<1.5","");
+    std::cout << "After drawing h22_05pT15: Integral = " << h22_05pT15->Integral() << std::endl;
 
     // Normalize histograms to their integral
-    if (h10_0pT05->Integral() > 0) h10_0pT05->Scale(1.0/h10_0pT05->Integral());
-    if (h10_05pT15->Integral() > 0) h10_05pT15->Scale(1.0/h10_05pT15->Integral());
-    if (h22_0pT05->Integral() > 0) h22_0pT05->Scale(1.0/h22_0pT05->Integral());
-    if (h22_05pT15->Integral() > 0) h22_05pT15->Scale(1.0/h22_05pT15->Integral());
+    if (h10_0pT05->Integral() > 0) {
+        h10_0pT05->Scale(1.0/h10_0pT05->Integral());
+        std::cout << "Scaled h10_0pT05: New integral = " << h10_0pT05->Integral() << std::endl;
+    } else {
+        std::cout << "Warning: h10_0pT05 integral is zero, not scaling." << std::endl;
+    }
+
+    if (h10_05pT15->Integral() > 0) {
+        h10_05pT15->Scale(1.0/h10_05pT15->Integral());
+        std::cout << "Scaled h10_05pT15: New integral = " << h10_05pT15->Integral() << std::endl;
+    } else {
+        std::cout << "Warning: h10_05pT15 integral is zero, not scaling." << std::endl;
+    }
+
+    if (h22_0pT05->Integral() > 0) {
+        h22_0pT05->Scale(1.0/h22_0pT05->Integral());
+        std::cout << "Scaled h22_0pT05: New integral = " << h22_0pT05->Integral() << std::endl;
+    } else {
+        std::cout << "Warning: h22_0pT05 integral is zero, not scaling." << std::endl;
+    }
+
+    if (h22_05pT15->Integral() > 0) {
+        h22_05pT15->Scale(1.0/h22_05pT15->Integral());
+        std::cout << "Scaled h22_05pT15: New integral = " << h22_05pT15->Integral() << std::endl;
+    } else {
+        std::cout << "Warning: h22_05pT15 integral is zero, not scaling." << std::endl;
+    }
 
     // Determine the maximum bin content among all histograms
     double max_val = 0;
-    double temp_max = h10_0pT05->GetMaximum();
-    if (temp_max > max_val) max_val = temp_max;
-    temp_max = h10_05pT15->GetMaximum();
-    if (temp_max > max_val) max_val = temp_max;
-    temp_max = h22_0pT05->GetMaximum();
-    if (temp_max > max_val) max_val = temp_max;
-    temp_max = h22_05pT15->GetMaximum();
-    if (temp_max > max_val) max_val = temp_max;
+    double temp_max = h10_0pT05->GetMaximum(); if (temp_max > max_val) max_val = temp_max;
+    temp_max = h10_05pT15->GetMaximum(); if (temp_max > max_val) max_val = temp_max;
+    temp_max = h22_0pT05->GetMaximum(); if (temp_max > max_val) max_val = temp_max;
+    temp_max = h22_05pT15->GetMaximum(); if (temp_max > max_val) max_val = temp_max;
+
+    std::cout << "Max value among histograms: " << max_val << std::endl;
 
     // Set line colors and styles
     // First file (10.5 GeV): red
     h10_0pT05->SetLineColor(kRed);
     h10_05pT15->SetLineColor(kRed);
+
     // Second file (22 GeV): blue
     h22_0pT05->SetLineColor(kBlue);
     h22_05pT15->SetLineColor(kBlue);
@@ -97,6 +133,13 @@ int main(int argc, char** argv) {
     h10_0pT05->GetXaxis()->SetTitle("x_{F}");
     h10_0pT05->GetYaxis()->SetTitle("normalized counts");
     h10_0pT05->SetMaximum(1.25 * max_val);
+
+    // Debug: Print integrals before drawing
+    std::cout << "Final integrals: " << std::endl;
+    std::cout << "h10_0pT05 integral: " << h10_0pT05->Integral() << std::endl;
+    std::cout << "h10_05pT15 integral: " << h10_05pT15->Integral() << std::endl;
+    std::cout << "h22_0pT05 integral: " << h22_0pT05->Integral() << std::endl;
+    std::cout << "h22_05pT15 integral: " << h22_05pT15->Integral() << std::endl;
 
     h10_0pT05->Draw("hist");
     h10_05pT15->Draw("hist same");
