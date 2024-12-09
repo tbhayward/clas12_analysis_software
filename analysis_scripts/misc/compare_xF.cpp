@@ -182,6 +182,7 @@ int main(int argc, char** argv) {
     c2->cd(1);
     ratio_low_pT_pT2->GetXaxis()->SetTitle("x_{F}");
     ratio_low_pT_pT2->GetYaxis()->SetTitle("ratio");
+    ratio_low_pT_pT2->SetTitle("pion");
     ratio_low_pT_pT2->SetMaximum(max_ratio_pT2);
     ratio_low_pT_pT2->Draw("hist");
     ratio_high_pT_pT2->Draw("hist same");
@@ -207,6 +208,7 @@ int main(int argc, char** argv) {
     c2->cd(2);
     ratio_low_pT_pT1->GetXaxis()->SetTitle("x_{F}");
     ratio_low_pT_pT1->GetYaxis()->SetTitle("ratio");
+    ratio_low_pT_pT1->SetTitle("pion");
     ratio_low_pT_pT1->SetMaximum(max_ratio_pT1);
     ratio_low_pT_pT1->Draw("hist");
     ratio_high_pT_pT1->Draw("hist same");
