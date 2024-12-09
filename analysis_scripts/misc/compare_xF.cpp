@@ -26,8 +26,8 @@ int main(int argc, char** argv) {
     }
 
     // Get trees (assuming they are named "tree")
-    TTree *t1 = (TTree*)f1->Get("tree");
-    TTree *t2 = (TTree*)f2->Get("tree");
+    TTree *t1 = (TTree*)f1->Get("PhysicsEvents");
+    TTree *t2 = (TTree*)f2->Get("PhysicsEvents");
 
     if(!t1) {
         std::cerr << "Tree named 'tree' not found in " << argv[1] << std::endl;
