@@ -75,4 +75,36 @@ int main(int argc, char** argv) {
     // Remove stats boxes
     gStyle->SetOptStat(0);
     h10_0pT05->SetStats(0);
-    h10_05pT15->SetStats(0
+    h10_05pT15->SetStats(0);
+    h22_0pT05->SetStats(0);
+    h22_05pT15->SetStats(0);
+
+    // Create a canvas
+    TCanvas *c1 = new TCanvas("c1","c1",800,600);
+
+    // Draw first histogram (set axis labels)
+    h10_0pT05->GetXaxis()->SetTitle("x_{F}");
+    h10_0pT05->GetYaxis()->SetTitle("normalized counts");
+    h10_0pT05->Draw("hist");
+    h10_05pT15->Draw("hist same");
+    h22_0pT05->Draw("hist same");
+    h22_05pT15->Draw("hist same");
+
+    // Add a legend
+    TLegend *leg = new TLegend(0.15,0.75,0.5,0.9);
+    leg->AddEntry(h10_0pT05,"10.5 GeV, 0 < P_{T} (GeV) < 0.5","l");
+    leg->AddEntry(h10_05pT15,"10.5 GeV, 0.5 < P_{T} (GeV) < 1.5","l");
+    leg->AddEntry(h22_0pT05,"22 GeV, 0 < P_{T} (GeV) < 0.5","l");
+    leg->AddEntry(h22_05pT15,"22 GeV, 0.5 < P_{T} (GeV) < 1.5","l");
+    leg->Draw();
+
+    // Create output directory if needed, then save the plot
+    // (Assuming the directory "output" already exists or you have permissions)
+    c1->SaveAs("output/22gev_comparison.png");
+
+    // Cleanup
+    f1->Close();
+    f2->Close();
+
+    return 0;
+}
