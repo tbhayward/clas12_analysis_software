@@ -41,10 +41,10 @@ int main(int argc, char** argv) {
     // ---------------------------
     // Proton (pT2) histograms (Left pad)
     // ---------------------------
-    TH1F *h10_0pT06_pT2 = new TH1F("h10_0pT06_pT2","",50,-1.5,1.5);
-    TH1F *h10_06pT16_pT2 = new TH1F("h10_06pT16_pT2","",50,-1.5,1.5);
-    TH1F *h22_0pT06_pT2 = new TH1F("h22_0pT06_pT2","",50,-1.5,1.5);
-    TH1F *h22_06pT16_pT2 = new TH1F("h22_06pT16_pT2","",50,-1.5,1.5);
+    TH1F *h10_0pT06_pT2 = new TH1F("h10_0pT06_pT2","",50,-1.0,1.0);
+    TH1F *h10_06pT16_pT2 = new TH1F("h10_06pT16_pT2","",50,-1.0,1.0);
+    TH1F *h22_0pT06_pT2 = new TH1F("h22_0pT06_pT2","",50,-1.0,1.0);
+    TH1F *h22_06pT16_pT2 = new TH1F("h22_06pT16_pT2","",50,-1.0,1.0);
 
     // Draw into histograms for pT2
     t1->Draw("xF2>>h10_0pT06_pT2","pT2>0.0 && pT2<0.6","");
@@ -80,10 +80,10 @@ int main(int argc, char** argv) {
     // ---------------------------
     // Pion (pT1) histograms (Right pad)
     // ---------------------------
-    TH1F *h10_0pT06_pT1 = new TH1F("h10_0pT06_pT1","",50,-1.5,1.5);
-    TH1F *h10_06pT16_pT1 = new TH1F("h10_06pT16_pT1","",50,-1.5,1.5);
-    TH1F *h22_0pT06_pT1 = new TH1F("h22_0pT06_pT1","",50,-1.5,1.5);
-    TH1F *h22_06pT16_pT1 = new TH1F("h22_06pT16_pT1","",50,-1.5,1.5);
+    TH1F *h10_0pT06_pT1 = new TH1F("h10_0pT06_pT1","",50,-1.0,1.0);
+    TH1F *h10_06pT16_pT1 = new TH1F("h10_06pT16_pT1","",50,-1.0,1.0);
+    TH1F *h22_0pT06_pT1 = new TH1F("h22_0pT06_pT1","",50,-1.0,1.0);
+    TH1F *h22_06pT16_pT1 = new TH1F("h22_06pT16_pT1","",50,-1.0,1.0);
 
     // Draw into histograms for pT1
     t1->Draw("xF1>>h10_0pT06_pT1","pT1>0.0 && pT1<0.6","");
@@ -134,7 +134,7 @@ int main(int argc, char** argv) {
     h22_0pT06_pT2->Draw("hist same");
     h22_06pT16_pT2->Draw("hist same");
 
-    TLegend *leg1 = new TLegend(0.7,0.75,0.9,0.9);
+    TLegend *leg1 = new TLegend(0.55,0.75,0.9,0.9);
     leg1->AddEntry(h10_0pT06_pT2,"10.5 GeV, 0 < P_{T} < 0.6","l");
     leg1->AddEntry(h10_06pT16_pT2,"10.5 GeV, 0.6 < P_{T} < 1.6","l");
     leg1->AddEntry(h22_0pT06_pT2,"22 GeV, 0 < P_{T} < 0.6","l");
@@ -153,7 +153,7 @@ int main(int argc, char** argv) {
     h22_0pT06_pT1->Draw("hist same");
     h22_06pT16_pT1->Draw("hist same");
 
-    TLegend *leg2 = new TLegend(0.7,0.75,0.9,0.9);
+    TLegend *leg2 = new TLegend(0.55,0.75,0.9,0.9);
     leg2->AddEntry(h10_0pT06_pT1,"10.5 GeV, 0 < P_{T} < 0.6","l");
     leg2->AddEntry(h10_06pT16_pT1,"10.5 GeV, 0.6 < P_{T} < 1.6","l");
     leg2->AddEntry(h22_0pT06_pT1,"22 GeV, 0 < P_{T} < 0.6","l");
@@ -186,7 +186,7 @@ int main(int argc, char** argv) {
     ratio_low_pT_pT2->Draw("hist");
     ratio_high_pT_pT2->Draw("hist same");
 
-    TLegend *leg_ratio_pT2 = new TLegend(0.7,0.75,0.9,0.9);
+    TLegend *leg_ratio_pT2 = new TLegend(0.6,0.75,0.9,0.9);
     leg_ratio_pT2->AddEntry(ratio_low_pT_pT2,"0 < P_{T} < 0.6","l");
     leg_ratio_pT2->AddEntry(ratio_high_pT_pT2,"0.6 < P_{T} < 1.6","l");
     leg_ratio_pT2->Draw();
@@ -211,7 +211,7 @@ int main(int argc, char** argv) {
     ratio_low_pT_pT1->Draw("hist");
     ratio_high_pT_pT1->Draw("hist same");
 
-    TLegend *leg_ratio_pT1 = new TLegend(0.7,0.75,0.9,0.9);
+    TLegend *leg_ratio_pT1 = new TLegend(0.6,0.75,0.9,0.9);
     leg_ratio_pT1->AddEntry(ratio_low_pT_pT1,"0 < P_{T} < 0.6","l");
     leg_ratio_pT1->AddEntry(ratio_high_pT_pT1,"0.6 < P_{T} < 1.6","l");
     leg_ratio_pT1->Draw();
