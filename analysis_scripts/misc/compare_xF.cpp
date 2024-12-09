@@ -25,16 +25,16 @@ int main(int argc, char** argv) {
         return 1;
     }
 
-    // Get trees (assuming they are named "tree")
+    // Get trees (previously named "tree", now "PhysicsEvents")
     TTree *t1 = (TTree*)f1->Get("PhysicsEvents");
     TTree *t2 = (TTree*)f2->Get("PhysicsEvents");
 
     if(!t1) {
-        std::cerr << "Tree named 'tree' not found in " << argv[1] << std::endl;
+        std::cerr << "Tree named 'PhysicsEvents' not found in " << argv[1] << std::endl;
         return 1;
     }
     if(!t2) {
-        std::cerr << "Tree named 'tree' not found in " << argv[2] << std::endl;
+        std::cerr << "Tree named 'PhysicsEvents' not found in " << argv[2] << std::endl;
         return 1;
     }
 
@@ -57,6 +57,17 @@ int main(int argc, char** argv) {
     if (h10_05pT15->Integral() > 0) h10_05pT15->Scale(1.0/h10_05pT15->Integral());
     if (h22_0pT05->Integral() > 0) h22_0pT05->Scale(1.0/h22_0pT05->Integral());
     if (h22_05pT15->Integral() > 0) h22_05pT15->Scale(1.0/h22_05pT15->Integral());
+
+    // Determine the maximum bin content among all histograms
+    double max_val = 0;
+    double temp_max = h10_0pT05->GetMaximum();
+    if (temp_max > max_val) max_val = temp_max;
+    temp_max = h10_05pT15->GetMaximum();
+    if (temp_max > max_val) max_val = temp_max;
+    temp_max = h22_0pT05->GetMaximum();
+    if (temp_max > max_val) max_val = temp_max;
+    temp_max = h22_05pT15->GetMaximum();
+    if (temp_max > max_val) max_val = temp_max;
 
     // Set line colors and styles
     // First file (10.5 GeV): red
@@ -82,9 +93,11 @@ int main(int argc, char** argv) {
     // Create a canvas
     TCanvas *c1 = new TCanvas("c1","c1",800,600);
 
-    // Draw first histogram (set axis labels)
+    // Set axis labels, draw and set maximum y-axis range
     h10_0pT05->GetXaxis()->SetTitle("x_{F}");
     h10_0pT05->GetYaxis()->SetTitle("normalized counts");
+    h10_0pT05->SetMaximum(1.25 * max_val);
+
     h10_0pT05->Draw("hist");
     h10_05pT15->Draw("hist same");
     h22_0pT05->Draw("hist same");
@@ -98,8 +111,7 @@ int main(int argc, char** argv) {
     leg->AddEntry(h22_05pT15,"22 GeV, 0.5 < P_{T} (GeV) < 1.5","l");
     leg->Draw();
 
-    // Create output directory if needed, then save the plot
-    // (Assuming the directory "output" already exists or you have permissions)
+    // Save the plot
     c1->SaveAs("output/22gev_comparison.png");
 
     // Cleanup
