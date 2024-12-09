@@ -127,7 +127,7 @@ int main(int argc, char** argv) {
     gPad->SetLogy();
     h10_0pT06_pT2->GetXaxis()->SetTitle("x_{F}");
     h10_0pT06_pT2->GetYaxis()->SetTitle("normalized counts");
-    h10_0pT06_pT2->SetMaximum(1.25 * max_val_pT2);
+    h10_0pT06_pT2->SetMaximum(5 * max_val_pT2);
     h10_0pT06_pT2->SetTitle("proton");
     h10_0pT06_pT2->Draw("hist");
     h10_06pT16_pT2->Draw("hist same");
@@ -146,7 +146,7 @@ int main(int argc, char** argv) {
     gPad->SetLogy();
     h10_0pT06_pT1->GetXaxis()->SetTitle("x_{F}");
     h10_0pT06_pT1->GetYaxis()->SetTitle("normalized counts");
-    h10_0pT06_pT1->SetMaximum(1.25 * max_val_pT1);
+    h10_0pT06_pT1->SetMaximum(5 * max_val_pT1);
     h10_0pT06_pT1->SetTitle("pion");
     h10_0pT06_pT1->Draw("hist");
     h10_06pT16_pT1->Draw("hist same");
