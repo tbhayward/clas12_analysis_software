@@ -1,35 +1,42 @@
+#include <TROOT.h>
 #include <TFile.h>
 #include <TTree.h>
 #include <TCanvas.h>
 #include <TH1F.h>
 #include <TStyle.h>
-#include <TText.h>
 #include <TLatex.h>
-#include <iostream>
-#include <string>
-#include <vector>
 #include <TString.h>
+#include <TSystem.h>
+#include <iostream>
+#include <vector>
+#include <utility>
 
-void plot_t_bins(const char* infile = "input.root") {
+int main(int argc, char** argv) {
+    // Check command line arguments
+    if (argc < 2) {
+        std::cerr << "Usage: " << argv[0] << " input.root" << std::endl;
+        return 1; //endif
+    } //endif
 
-    // Open the file and retrieve the tree
+    const char* infile = argv[1];
+
+    // Open the input ROOT file
     TFile *f = TFile::Open(infile, "READ");
     if (!f || f->IsZombie()) {
         std::cerr << "Error opening file " << infile << std::endl;
-        return;
+        return 1; //endif
     } //endif
 
+    // Retrieve the PhysicsEvents TTree
     TTree *tree = (TTree*)f->Get("PhysicsEvents");
     if (!tree) {
         std::cerr << "Error: PhysicsEvents tree not found in file." << std::endl;
         f->Close();
-        return;
+        return 1; //endif
     } //endif
 
-    // Bins for -t
-    // We'll define the -t bins as requested:
-    // [0,0.5], [0.5,1], [1,2], [2,3], [3,6], [6,20]
-    std::vector<std::pair<double,double>> tBins = {
+    // Define the -t bins
+    std::vector<std::pair<double, double>> tBins = {
         {0.0,   0.5},
         {0.5,   1.0},
         {1.0,   2.0},
@@ -38,44 +45,41 @@ void plot_t_bins(const char* infile = "input.root") {
         {6.0,  20.0}
     };
 
-    // Turn off stats box globally
+    // Turn off stats
     gStyle->SetOptStat(0);
 
-    // Create a canvas with 3x2 pads
+    // Create a 3x2 canvas
     TCanvas *c = new TCanvas("c", "Mx2 in t-bins", 1200, 800);
     c->Divide(3,2);
 
-    // We'll store histograms in a vector to avoid memory issues
     std::vector<TH1F*> hists;
     hists.reserve(tBins.size());
 
-    // Loop over t-bins, draw Mx2 with cuts
+    // Loop over t-bins and plot Mx2
     for (size_t i = 0; i < tBins.size(); i++) {
         c->cd(i+1);
         double tmin = tBins[i].first;
         double tmax = tBins[i].second;
 
-        // Create a histogram name/title
+        // Create histogram for this bin
         TString hname = Form("hMx2_bin%zu", i);
         TH1F *h = new TH1F(hname, "", 100, -1, 6);
         h->GetXaxis()->SetTitle("M_{x}^{2} (GeV^{2})");
         h->GetYaxis()->SetTitle("Normalized Counts");
 
-        // Cut on -t to be within [tmin, tmax]
-        // Condition: t is negative, so -t is positive.
-        // The cut string: "(-t>tmin && -t<tmax)"
+        // Apply cut on -t
         TString cut = Form("(-t>%f && -t<%f)", tmin, tmax);
 
-        // Draw Mx2 into the histogram
+        // Draw into histogram
         tree->Draw("Mx2 >> "+hname, cut, "E");
 
-        // Normalize the histogram to its integral if integral > 0
+        // Normalize each histogram
         double integral = h->Integral();
         if (integral > 0) {
             h->Scale(1.0/integral);
         } //endif
 
-        // Add a label with the t-bin range
+        // Add label with t-bin range
         TLatex latex;
         latex.SetNDC();
         latex.SetTextSize(0.05);
@@ -84,10 +88,10 @@ void plot_t_bins(const char* infile = "input.root") {
         hists.push_back(h);
     } //endfor
 
-    // Save the canvas as a PNG
-    system("mkdir -p output"); // Make sure the output directory exists
+    // Create output directory and save the plot
+    gSystem->Exec("mkdir -p output");
     c->SaveAs("output/rho_contribution.png");
 
-    // Clean up
     f->Close();
-} 
+    return 0;
+} //end of main
