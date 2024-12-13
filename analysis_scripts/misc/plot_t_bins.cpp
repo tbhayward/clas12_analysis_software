@@ -38,12 +38,12 @@ int main(int argc, char** argv) {
 
     // Define the original 6 -t bins
     std::vector<std::pair<double,double>> tBins = {
-        {0.0,   0.5},
+        {0.0,   0.2},
+        {0.2,   0.5},
         {0.5,   1.0},
         {1.0,   2.0},
         {2.0,   3.0},
-        {3.0,   6.0},
-        {6.0,  20.0}
+        {3.0,   20.0}
     };
 
     // Turn off stats
