@@ -12,10 +12,10 @@ variable_names_here
 #xFall,xF,-1.00,-0.30,0.20,1.00
 #
 # epX
-integrated,x,0,1
-integrated,pT,0,3
-integrated,Q2,0,20
-integrated,xF,-1,1
+#integrated,x,0,1
+#integrated,pT,0,3
+#integrated,Q2,0,20
+#integrated,xF,-1,1
 #W,W,0,2.0,2.67,3.33,4.00
 #Mx2,Mx2,0,0.5,1.0,2.0,3.0,4.0,5.0,8.0
 #Mx2,Mx2,0.00,0.16,0.26,0.36,0.50,0.64,0.80,1.00,1.44,1.96,2.56,3.24,4.00,4.84,6,10
