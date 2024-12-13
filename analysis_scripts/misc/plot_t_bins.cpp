@@ -7,6 +7,7 @@
 #include <TLatex.h>
 #include <TString.h>
 #include <TSystem.h>
+#include <TLegend.h>
 #include <iostream>
 #include <vector>
 #include <utility>
@@ -35,8 +36,8 @@ int main(int argc, char** argv) {
         return 1; //endif
     } //endif
 
-    // Define the -t bins
-    std::vector<std::pair<double, double>> tBins = {
+    // Define the original 6 -t bins
+    std::vector<std::pair<double,double>> tBins = {
         {0.0,   0.5},
         {0.5,   1.0},
         {1.0,   2.0},
@@ -48,45 +49,66 @@ int main(int argc, char** argv) {
     // Turn off stats
     gStyle->SetOptStat(0);
 
-    // Create a 3x2 canvas
+    // Create a single canvas
     TCanvas *c = new TCanvas("c", "Mx2 in t-bins", 1200, 800);
-    c->Divide(3,2);
+    // Add some padding on the right so the axis and legend don't get cut off
+    c->SetRightMargin(0.1);
 
+    // We'll store histograms
     std::vector<TH1F*> hists;
     hists.reserve(tBins.size());
 
-    // Loop over t-bins and plot Mx2
+    // Create a legend in the top-right corner
+    TLegend *leg = new TLegend(0.7, 0.7, 0.9, 0.9);
+    leg->SetBorderSize(0);
+    leg->SetFillStyle(0);
+    leg->SetTextSize(0.03);
+
+    // Pick colors for the 6 histograms
+    Color_t colors[6] = {kRed, kBlue, kGreen+2, kMagenta, kOrange+7, kCyan+1};
+
+    bool firstHist = true; // To know when to draw the axis
     for (size_t i = 0; i < tBins.size(); i++) {
-        c->cd(i+1);
         double tmin = tBins[i].first;
         double tmax = tBins[i].second;
 
-        // Create histogram for this bin
         TString hname = Form("hMx2_bin%zu", i);
-        TH1F *h = new TH1F(hname, "", 100, -1, 6);
+        // Twice as many bins as before: previously 100, now 200
+        TH1F *h = new TH1F(hname, "", 200, -1, 6);
+        // Set axis titles
         h->GetXaxis()->SetTitle("M_{x}^{2} (GeV^{2})");
         h->GetYaxis()->SetTitle("Normalized Counts");
 
         // Apply cut on -t
         TString cut = Form("(-t>%f && -t<%f)", tmin, tmax);
+        tree->Draw("Mx2 >> "+hname, cut, "goff"); // Fill histogram in memory
 
-        // Draw into histogram
-        tree->Draw("Mx2 >> "+hname, cut, "E");
-
-        // Normalize each histogram
+        // Normalize the histogram
         double integral = h->Integral();
         if (integral > 0) {
             h->Scale(1.0/integral);
         } //endif
 
-        // Add label with t-bin range
-        TLatex latex;
-        latex.SetNDC();
-        latex.SetTextSize(0.05);
-        latex.DrawLatex(0.15, 0.85, Form("%.1f < -t < %.1f", tmin, tmax));
+        // Set line style and color
+        h->SetLineColor(colors[i % 6]);
+        h->SetLineWidth(2);
+
+        // Draw the histogram
+        if (firstHist) {
+            h->Draw("hist");
+            firstHist = false;
+        } else {
+            h->Draw("hist same");
+        } //endif
+
+        // Add to the legend
+        leg->AddEntry(h, Form("%.1f < -t < %.1f", tmin, tmax), "l");
 
         hists.push_back(h);
     } //endfor
+
+    // Draw the legend
+    leg->Draw();
 
     // Create output directory and save the plot
     gSystem->Exec("mkdir -p output");
