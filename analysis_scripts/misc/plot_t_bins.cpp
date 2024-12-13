@@ -80,8 +80,8 @@ int main(int argc, char** argv) {
         h->GetYaxis()->SetTitle("Normalized Counts");
 
         // Apply cut on -t
-        TString cut = Form("(-t>%f && -t<%f)", tmin, tmax);
-        tree->Draw("Mx2 >> "+hname, cut, "goff"); // Fill histogram in memory
+        TString cut = Form("(-t2>%f && -t2<%f)", tmin, tmax);
+        tree->Draw("Mx2_2 >> "+hname, cut, "goff"); // Fill histogram in memory
 
         // Normalize the histogram
         double integral = h->Integral();
