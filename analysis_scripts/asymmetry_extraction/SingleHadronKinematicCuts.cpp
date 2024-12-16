@@ -133,29 +133,58 @@ bool SingleHadronKinematicCuts::applyCuts(int currentFits, bool isMC) {
       return goodEvent;
     } 
     if (property == "pTsector1") {
-      goodEvent = *Q2 > 1 && *W > 2 && *y < 0.80 && *Mx2 > 1.8225 && (*p_phi < 0.2 || *p_phi > 5.5);
+      goodEvent = *Q2 > 1 && *W > 2 && *y < 0.80 && *Mx2 > 1.8225 && (*e_phi < 0.2 || *e_phi > 5.5);
       return goodEvent;
     } 
     if (property == "pTsector2") {
-      goodEvent = *Q2 > 1 && *W > 2 && *y < 0.80 && *Mx2 > 1.8225 && (*p_phi > 0.2 && *p_phi < 1.25);
+      goodEvent = *Q2 > 1 && *W > 2 && *y < 0.80 && *Mx2 > 1.8225 && (*e_phi > 0.2 && *e_phi < 1.25);
       return goodEvent;
     } 
     if (property == "pTsector3") {
-      goodEvent = *Q2 > 1 && *W > 2 && *y < 0.80 && *Mx2 > 1.8225 && (*p_phi > 1.25 && *p_phi < 2.25);
+      goodEvent = *Q2 > 1 && *W > 2 && *y < 0.80 && *Mx2 > 1.8225 && (*e_phi > 1.25 && *e_phi < 2.25);
       return goodEvent;
     } 
     if (property == "pTsector4") {
-      goodEvent = *Q2 > 1 && *W > 2 && *y < 0.80 && *Mx2 > 1.8225 && (*p_phi > 2.25 && *p_phi < 3.35);
+      goodEvent = *Q2 > 1 && *W > 2 && *y < 0.80 && *Mx2 > 1.8225 && (*e_phi > 2.25 && *e_phi < 3.35);
       return goodEvent;
     } 
     if (property == "pTsector5") {
-      goodEvent = *Q2 > 1 && *W > 2 && *y < 0.80 && *Mx2 > 1.8225 && (*p_phi > 3.35 && *p_phi < 4.4);
+      goodEvent = *Q2 > 1 && *W > 2 && *y < 0.80 && *Mx2 > 1.8225 && (*e_phi > 3.35 && *e_phi < 4.4);
       return goodEvent;
     } 
     if (property == "pTsector6") {
-      goodEvent = *Q2 > 1 && *W > 2 && *y < 0.80 && *Mx2 > 1.8225 && (*p_phi > 4.4 && *p_phi < 5.5);
+      goodEvent = *Q2 > 1 && *W > 2 && *y < 0.80 && *Mx2 > 1.8225 && (*e_phi > 4.4 && *e_phi < 5.5);
       return goodEvent;
     } 
+
+    // if (property == "pTsector0") { // meant to be all six sectors
+    //   goodEvent = *Q2 > 1 && *W > 2 && *y < 0.80 && *Mx2 > 1.8225;
+    //   return goodEvent;
+    // } 
+    // if (property == "pTsector1") {
+    //   goodEvent = *Q2 > 1 && *W > 2 && *y < 0.80 && *Mx2 > 1.8225 && (*p_phi < 0.2 || *p_phi > 5.5);
+    //   return goodEvent;
+    // } 
+    // if (property == "pTsector2") {
+    //   goodEvent = *Q2 > 1 && *W > 2 && *y < 0.80 && *Mx2 > 1.8225 && (*p_phi > 0.2 && *p_phi < 1.25);
+    //   return goodEvent;
+    // } 
+    // if (property == "pTsector3") {
+    //   goodEvent = *Q2 > 1 && *W > 2 && *y < 0.80 && *Mx2 > 1.8225 && (*p_phi > 1.25 && *p_phi < 2.25);
+    //   return goodEvent;
+    // } 
+    // if (property == "pTsector4") {
+    //   goodEvent = *Q2 > 1 && *W > 2 && *y < 0.80 && *Mx2 > 1.8225 && (*p_phi > 2.25 && *p_phi < 3.35);
+    //   return goodEvent;
+    // } 
+    // if (property == "pTsector5") {
+    //   goodEvent = *Q2 > 1 && *W > 2 && *y < 0.80 && *Mx2 > 1.8225 && (*p_phi > 3.35 && *p_phi < 4.4);
+    //   return goodEvent;
+    // } 
+    // if (property == "pTsector6") {
+    //   goodEvent = *Q2 > 1 && *W > 2 && *y < 0.80 && *Mx2 > 1.8225 && (*p_phi > 4.4 && *p_phi < 5.5);
+    //   return goodEvent;
+    // } 
 
     
     if (property == "pT1xi1x1Q21") {
