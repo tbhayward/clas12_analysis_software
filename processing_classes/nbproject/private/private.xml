@@ -4,11 +4,8 @@
     <open-files xmlns="http://www.netbeans.org/ns/projectui-open-files/2">
         <group>
             <file>file:/Users/tbhayward/Documents/Research.nosync/clas12_analysis_software/processing_classes/src/analyzers/ThreeParticles.java</file>
-            <file>file:/Users/tbhayward/Documents/Research.nosync/clas12_analysis_software/processing_classes/src/analyzers/TwoParticles.java</file>
             <file>file:/Users/tbhayward/Documents/Research.nosync/clas12_analysis_software/processing_classes/src/extended_kinematic_fitters/dvcs_fitter.java</file>
             <file>file:/Users/tbhayward/Documents/Research.nosync/clas12_analysis_software/processing_classes/src/extended_kinematic_fitters/analysis_fitter.java</file>
-            <file>file:/Users/tbhayward/Documents/Research.nosync/clas12_analysis_software/processing_classes/src/analyzers/Inclusive.java</file>
-            <file>file:/Users/tbhayward/Documents/Research.nosync/clas12_analysis_software/processing_classes/src/analyzers/FourParticles.java</file>
             <file>file:/Users/tbhayward/Documents/Research.nosync/clas12_analysis_software/processing_classes/src/analyzers/kinematic_variables.java</file>
         </group>
     </open-files>
