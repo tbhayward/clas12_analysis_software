@@ -102,7 +102,7 @@ int main(int argc, char** argv) {
         } //endif
 
         // Add to the legend
-        leg->AddEntry(h, Form("%.1f < -t < %.1f", tmin, tmax), "l");
+        leg->AddEntry(h, Form("%.1f < -(t-t_{min}) < %.1f", tmin, tmax), "l");
 
         hists.push_back(h);
     } //endfor
