@@ -59,7 +59,7 @@ int main(int argc, char** argv) {
     hists.reserve(tBins.size());
 
     // Create a legend in the top-right corner
-    TLegend *leg = new TLegend(0.6, 0.7, 0.9, 0.9);
+    TLegend *leg = new TLegend(0.65, 0.7, 0.9, 0.9);
     leg->SetBorderSize(0);
     leg->SetFillStyle(0);
     leg->SetTextSize(0.03);
