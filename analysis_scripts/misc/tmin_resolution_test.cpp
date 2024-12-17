@@ -35,8 +35,8 @@ int main(int argc, char** argv) {
     // 2) For 0 < |t| - |tmin| < 0.1
 
     // Create histograms
-    TH1F *h1 = new TH1F("h1", "Mx2_2 Distribution", 100, 0, 5);
-    TH1F *h2 = new TH1F("h2", "Mx2_2 Distribution", 100, 0, 5);
+    TH1F *h1 = new TH1F("h1", "Mx2_2 Distribution", 250, 0, 5);
+    TH1F *h2 = new TH1F("h2", "Mx2_2 Distribution", 250, 0, 5);
 
     // Draw into histograms with cuts
     // For the first distribution: |t2| < 0.1
