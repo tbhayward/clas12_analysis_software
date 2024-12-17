@@ -80,8 +80,8 @@ int main(int argc, char** argv) {
         h->GetYaxis()->SetTitle("Normalized Counts");
 
         // Apply cut on -t
-        // TString cut = Form("(-(t2-tmin)>%f && -(t2-tmin)<%f)", tmin, tmax);
-        TString cut = Form("(-(t1-tmin)>%f && -(t1-tmin)<%f)", tmin, tmax);
+        // TString cut = Form("(TMath::Abs(t2) - TMath::Abs(tmin)) > %f && (TMath::Abs(t2) - TMath::Abs(tmin)) < %f", tmin, tmax);
+        TString cut = Form("(TMath::Abs(t1) - TMath::Abs(tmin)) > %f && (TMath::Abs(t1) - TMath::Abs(tmin)) < %f", tmin, tmax);
         tree->Draw("Mx2_1 >> "+hname, cut, "goff"); // Fill histogram in memory
 
         // Normalize the histogram
