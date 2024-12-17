@@ -80,10 +80,10 @@ int main(int argc, char** argv) {
         h->GetYaxis()->SetTitle("Normalized Counts");
 
         // Apply cut on -t
-        // TString cut = Form("(TMath::Abs(t2) - TMath::Abs(tmin)) > %f && (TMath::Abs(t2) - TMath::Abs(tmin)) < %f", tmin, tmax);
-        // tree->Draw("Mx2_2 >> "+hname, cut, "goff"); // Fill histogram in memory
-        TString cut = Form("(TMath::Abs(t1) - TMath::Abs(tmin)) > %f && (TMath::Abs(t1) - TMath::Abs(tmin)) < %f", tmin, tmax);
-        tree->Draw("Mx2_1 >> "+hname, cut, "goff"); // Fill histogram in memory
+        TString cut = Form("(TMath::Abs(t2) - TMath::Abs(tmin)) > %f && (TMath::Abs(t2) - TMath::Abs(tmin)) < %f", tmin, tmax);
+        tree->Draw("Mx2_2 >> "+hname, cut, "goff"); // Fill histogram in memory
+        // TString cut = Form("(TMath::Abs(t1) - TMath::Abs(tmin)) > %f && (TMath::Abs(t1) - TMath::Abs(tmin)) < %f", tmin, tmax);
+        // tree->Draw("Mx2_1 >> "+hname, cut, "goff"); // Fill histogram in memory
 
         // Normalize the histogram
         double integral = h->Integral();
