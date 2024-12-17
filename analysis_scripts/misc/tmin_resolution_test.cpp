@@ -44,7 +44,7 @@ int main(int argc, char** argv) {
 
     // For the second distribution: 0 < |t| - |tmin| < 0.1
     // This means we require fabs(t)-fabs(tmin) to be between 0 and 0.1
-    tree->Draw("Mx2_2 >> h2", "(fabs(t2)-fabs(tmin))>0 && (fabs(t2)-fabs(tmin))<0.1", "goff"); //endfor
+    tree->Draw("Mx2_2 >> h2", "(fabs(t2)-fabs(tmin))>-0.1 && (fabs(t2)-fabs(tmin))<0.1", "goff"); //endfor
 
     // Set line colors and styles
     h1->SetLineColor(kBlue);
