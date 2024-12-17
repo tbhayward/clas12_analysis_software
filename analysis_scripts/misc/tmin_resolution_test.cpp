@@ -38,15 +38,15 @@ int main(int argc, char** argv) {
 
     // Draw into histograms with cuts
     tree->Draw("Mx2_2 >> h1", "fabs(t2)<0.1", "goff"); //endfor
-    tree->Draw("Mx2_2 >> h2", "(fabs(t2)-fabs(tmin))>0 && (fabs(t2)-fabs(tmin))<0.1", "goff"); //endfor
+    tree->Draw("Mx2_2 >> h2", "(fabs(t2)-fabs(tmin))>-0.1 && (fabs(t2)-fabs(tmin))<0.1", "goff"); //endfor
 
     // Set line colors and styles
     h1->SetLineColor(kBlue);
     h2->SetLineColor(kRed);
 
     // Now create histograms for |t2| and (|t2|-|tmin|) from -1 to 10
-    TH1F *h3 = new TH1F("h3", "|t2| Distribution", 100, -1, 10);
-    TH1F *h4 = new TH1F("h4", "|t2|-|tmin| Distribution", 100, -1, 10);
+    TH1F *h3 = new TH1F("h3", "|t2| Distribution", 100, -1, 8);
+    TH1F *h4 = new TH1F("h4", "|t2|-|tmin| Distribution", 100, -1, 8);
 
     // Fill those histograms
     tree->Draw("fabs(t2) >> h3", "", "goff"); //endfor
