@@ -38,7 +38,7 @@ int main(int argc, char** argv) {
 
     // Draw into histograms with cuts
     tree->Draw("Mx2_2 >> h1", "fabs(t2)<0.1", "goff"); //endfor
-    tree->Draw("Mx2_2 >> h2", "(fabs(t2)-fabs(tmin))>-0.1 && (fabs(t2)-fabs(tmin))<0.1", "goff"); //endfor
+    tree->Draw("Mx2_2 >> h2", "(fabs(t2)-fabs(tmin))>0 && (fabs(t2)-fabs(tmin))<0.1", "goff"); //endfor
 
     // Set line colors and styles
     h1->SetLineColor(kBlue);
