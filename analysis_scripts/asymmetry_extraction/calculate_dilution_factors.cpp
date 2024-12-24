@@ -295,9 +295,9 @@ std::vector<std::pair<double, double>> calculate_dilution_factors() {
 
     TFile* nh3File = TFile::Open("/work/clas12/thayward/CLAS12_SIDIS/processed_data/pass2/data/eX/rgc_su22_inb_NH3_eX.root");
     TFile* cFile = TFile::Open("/work/clas12/thayward/CLAS12_SIDIS/processed_data/pass2/data/eX/rgc_su22_inb_C_epX.root");
-    TFile* chFile = TFile::Open("/work/clas12/thayward/CLAS12_SIDIS/processed_data/pass2/data/eX/dilution_factor/rgc_su22_inb_CH2_eX.root");
-    TFile* heFile = TFile::Open("/work/clas12/thayward/CLAS12_SIDIS/processed_data/pass2/data/eX/dilution_factor/rgc_su22_inb_He_eX.root");
-    TFile* emptyFile = TFile::Open("/work/clas12/thayward/CLAS12_SIDIS/processed_data/pass2/data/eX/dilution_factor/rgc_su22_inb_ET_eX.root");
+    TFile* chFile = TFile::Open("/work/clas12/thayward/CLAS12_SIDIS/processed_data/pass2/data/eX/rgc_su22_inb_CH2_eX.root");
+    TFile* heFile = TFile::Open("/work/clas12/thayward/CLAS12_SIDIS/processed_data/pass2/data/eX/rgc_su22_inb_He_eX.root");
+    TFile* emptyFile = TFile::Open("/work/clas12/thayward/CLAS12_SIDIS/processed_data/pass2/data/eX/rgc_su22_inb_ET_eX.root");
 
     TTree* nh3 = (TTree*)nh3File->Get("PhysicsEvents");
     TTree* c = (TTree*)cFile->Get("PhysicsEvents");
