@@ -8,7 +8,8 @@ using std::string;
 
 InclusiveKinematicCuts::InclusiveKinematicCuts(TTreeReader& reader)
     : BaseKinematicCuts(reader), // Initialize BaseKinematicCuts
-      runnum(reader, "runnum"), Q2(reader, "Q2"), W(reader, "W"), 
+      runnum(reader, "runnum"), 
+      Q2(reader, "Q2"), W(reader, "W"), 
       x(reader, "x"), y(reader, "y"), e_phi(reader, "e_phi"), target_pol(reader, "target_pol") {}
 
 bool InclusiveKinematicCuts::applyCuts(int currentFits, bool isMC) {
@@ -16,7 +17,7 @@ bool InclusiveKinematicCuts::applyCuts(int currentFits, bool isMC) {
     string property = binNames[currentFits];
 
 
-    if (*fiducial_status != 1) return false; // fiducial cuts
+    // if (*fiducial_status != 1) return false; // fiducial cuts
 
     if (property == "eX") {
         goodEvent = *Q2 > 1 && *W > 2 && *y < 0.75;
