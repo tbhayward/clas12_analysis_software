@@ -23,9 +23,7 @@ bool InclusiveKinematicCuts::applyCuts(int currentFits, bool isMC) {
         goodEvent = *Q2 > 1 && *W > 2 && *y < 0.75;
     } else if (property == "xeX") {
         goodEvent = *Q2 > 1 && *W > 2 && *y < 0.75;
-    } else {
-      std::cout << "Property, " << property << ", not detected." << std::endl;
-    }
+    } 
 
     if (property == "xBsector0") { // meant to be all six sectors
       goodEvent = *Q2 > 1 && *W > 2 && *y < 0.80;
