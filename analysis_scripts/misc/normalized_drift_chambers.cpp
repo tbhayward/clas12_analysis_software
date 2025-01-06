@@ -1,6 +1,6 @@
 /*****************************************************************************
  * File: normalized_drift_chambers.cpp
- * 
+ *
  * Compile with:
  *   g++ normalized_drift_chambers.cpp -o normalized_drift_chambers \
  *       $(root-config --cflags --libs)
@@ -15,7 +15,8 @@
  *   - It creates 2D histograms for each of the three drift chamber regions
  *     (Region 1, 2, 3) in both datasets, then takes the ratio of
  *     SIDISDVCS/CLASDIS and plots them side by side.
- *   - The Z-axis is set to log scale in each pad.
+ *   - The Z-axis is set to log scale in each pad, and each pad has extra 
+ *     right padding so that axis labels/legends do not get clipped.
  *****************************************************************************/
 
 #include <iostream>
@@ -60,7 +61,7 @@ int main(int argc, char** argv)
     //--------------------------------------------------------------------------
     // 3. Set up branch addresses for the variables we need
     //--------------------------------------------------------------------------
-    Int_t particle_pid;
+    Int_t   particle_pid;
     Double_t traj_x_6, traj_y_6;
     Double_t traj_x_18, traj_y_18;
     Double_t traj_x_36, traj_y_36;
@@ -166,7 +167,7 @@ int main(int argc, char** argv)
     //--------------------------------------------------------------------------
     TH2D* h2_r1_ratio = (TH2D*) h2_r1_sidisdvcs->Clone("h2_r1_ratio");
     h2_r1_ratio->Divide(h2_r1_clasdis);
-    h2_r1_ratio->SetTitle("Region 1");  // Label for the top
+    h2_r1_ratio->SetTitle("Region 1");
 
     TH2D* h2_r2_ratio = (TH2D*) h2_r2_sidisdvcs->Clone("h2_r2_ratio");
     h2_r2_ratio->Divide(h2_r2_clasdis);
@@ -187,19 +188,19 @@ int main(int argc, char** argv)
 
     // Region 1
     c->cd(1);
-    gPad->SetRightMargin(0.20);   // Add padding on the right so label doesn't clip
+    gPad->SetRightMargin(0.25);   // Add padding on the right so label doesn't clip
     gPad->SetLogz();              // Log scale for the Z axis
     h2_r1_ratio->Draw("COLZ");
 
     // Region 2
     c->cd(2);
-    gPad->SetRightMargin(0.20);
+    gPad->SetRightMargin(0.25);
     gPad->SetLogz();
     h2_r2_ratio->Draw("COLZ");
 
     // Region 3
     c->cd(3);
-    gPad->SetRightMargin(0.20);
+    gPad->SetRightMargin(0.25);
     gPad->SetLogz();
     h2_r3_ratio->Draw("COLZ");
 
