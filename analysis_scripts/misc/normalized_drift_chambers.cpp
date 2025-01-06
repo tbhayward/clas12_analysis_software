@@ -80,9 +80,9 @@ int main(int argc, char** argv)
     chain_sidisdvcs.SetBranchAddress("traj_y_18",   &traj_y_18);
     chain_sidisdvcs.SetBranchAddress("traj_x_36",   &traj_x_36);
     chain_sidisdvcs.SetBranchAddress("traj_y_36",   &traj_y_36);
-    chain_sidisdvcs.SetBranchAddress("edge_1",      &edge_1);
-    chain_sidisdvcs.SetBranchAddress("edge_2",      &edge_2);
-    chain_sidisdvcs.SetBranchAddress("edge_3",      &edge_3);
+    chain_sidisdvcs.SetBranchAddress("traj_edge_6",      &traj_edge_6);
+    chain_sidisdvcs.SetBranchAddress("traj_edge_18",      &traj_edge_18);
+    chain_sidisdvcs.SetBranchAddress("traj_edge_36",      &traj_edge_36);
 
     // --- CLASDIS chain
     chain_clasdis.SetBranchAddress("particle_pid",  &particle_pid);
@@ -92,9 +92,9 @@ int main(int argc, char** argv)
     chain_clasdis.SetBranchAddress("traj_y_18",     &traj_y_18);
     chain_clasdis.SetBranchAddress("traj_x_36",     &traj_x_36);
     chain_clasdis.SetBranchAddress("traj_y_36",     &traj_y_36);
-    chain_clasdis.SetBranchAddress("edge_1",        &edge_1);
-    chain_clasdis.SetBranchAddress("edge_2",        &edge_2);
-    chain_clasdis.SetBranchAddress("edge_3",        &edge_3);
+    chain_clasdis.SetBranchAddress("traj_edge_6",        &traj_edge_6);
+    chain_clasdis.SetBranchAddress("traj_edge_18",        &traj_edge_18);
+    chain_clasdis.SetBranchAddress("traj_edge_36",        &traj_edge_36);
 
     //--------------------------------------------------------------------------
     // 4. Create 2D histograms for each region, for each dataset
