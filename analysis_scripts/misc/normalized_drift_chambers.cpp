@@ -187,17 +187,17 @@ int main(int argc, char** argv)
 
     // Region 1
     c->cd(1);
-    gPad->SetLogy();            // log-scale the Y axis
+    gPad->SetLogz();            // log-scale the Y axis
     h2_r1_ratio->Draw("COLZ");
 
     // Region 2
     c->cd(2);
-    gPad->SetLogy();            // log-scale the Y axis
+    gPad->SetLogz();            // log-scale the Y axis
     h2_r2_ratio->Draw("COLZ");
 
     // Region 3
     c->cd(3);
-    gPad->SetLogy();            // log-scale the Y axis
+    gPad->SetLogz();            // log-scale the Y axis
     h2_r3_ratio->Draw("COLZ");
 
     //--------------------------------------------------------------------------
