@@ -70,7 +70,7 @@ int main(int argc, char** argv)
     Double_t traj_x_36, traj_y_36;
 
     // Additional variables for the new cuts
-    Double_t edge_1, edge_2, edge_3;
+    Double_t traj_edge_6, traj_edge_18, traj_edge_36;
 
     // --- SIDIS-DVCS chain
     chain_sidisdvcs.SetBranchAddress("particle_pid", &particle_pid);
@@ -133,7 +133,7 @@ int main(int argc, char** argv)
         if (particle_pid != 11) continue; // #endif
 
         // Filter 2: must satisfy edge_1 > 5, edge_2 > 5, edge_3 > 10
-        if (edge_1 <= 5 || edge_2 <= 5 || edge_3 <= 10) continue; // #endif
+        if (traj_edge_6 <= 5 || traj_edge_18 <= 5 || traj_edge_36 <= 10) continue; // #endif
 
         // Fill Region 1 if traj_x_6 != -9999
         if (traj_x_6 != -9999) {
