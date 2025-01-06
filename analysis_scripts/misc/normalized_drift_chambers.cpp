@@ -61,9 +61,9 @@ int main(int argc, char** argv)
     // 3. Set up branch addresses for the variables we need
     //--------------------------------------------------------------------------
     Int_t particle_pid;
-    Float_t traj_x_6, traj_y_6;
-    Float_t traj_x_18, traj_y_18;
-    Float_t traj_x_36, traj_y_36;
+    Double_t traj_x_6, traj_y_6;
+    Double_t traj_x_18, traj_y_18;
+    Double_t traj_x_36, traj_y_36;
 
     // --- SIDIS-DVCS chain
     chain_sidisdvcs.SetBranchAddress("particle_pid", &particle_pid);
