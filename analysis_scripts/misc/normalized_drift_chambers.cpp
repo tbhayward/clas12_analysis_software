@@ -1,20 +1,21 @@
 /*****************************************************************************
  * File: normalized_drift_chambers.cpp
+ * 
  * Compile with:
  *   g++ normalized_drift_chambers.cpp -o normalized_drift_chambers \
  *       $(root-config --cflags --libs)
  *
  * Run with:
  *   ./normalized_drift_chambers [NeventsSIDISDVCS]
- *   (If NeventsSIDISDVCS is omitted, all SIDIS-DVCS events will be processed.)
+ *   (If NeventsSIDISDVCS is omitted, *all* SIDIS-DVCS events will be processed.)
  *
  * Explanation:
  *   - This program merges three SIDIS-DVCS ROOT files into one TChain and
  *     reads a separate CLASDIS ROOT file into another TChain.
  *   - It creates 2D histograms for each of the three drift chamber regions
  *     (Region 1, 2, 3) in both datasets, then takes the ratio of
- *     SIDISDVCS/CLASDIS and plots them side-by-side.
- *   - The y-axis is set to log scale on each pad.
+ *     SIDISDVCS/CLASDIS and plots them side by side.
+ *   - The Z-axis is set to log scale in each pad.
  *****************************************************************************/
 
 #include <iostream>
@@ -26,6 +27,7 @@
 #include "TCanvas.h"
 #include "TStyle.h"
 #include "TROOT.h"
+#include "TPad.h"
 
 int main(int argc, char** argv)
 {
@@ -57,12 +59,11 @@ int main(int argc, char** argv)
 
     //--------------------------------------------------------------------------
     // 3. Set up branch addresses for the variables we need
-    //    We'll do it for each chain separately
     //--------------------------------------------------------------------------
     Int_t particle_pid;
-    Double_t traj_x_6, traj_y_6;
-    Double_t traj_x_18, traj_y_18;
-    Double_t traj_x_36, traj_y_36;
+    Float_t traj_x_6, traj_y_6;
+    Float_t traj_x_18, traj_y_18;
+    Float_t traj_x_36, traj_y_36;
 
     // --- SIDIS-DVCS chain
     chain_sidisdvcs.SetBranchAddress("particle_pid", &particle_pid);
@@ -85,28 +86,27 @@ int main(int argc, char** argv)
     //--------------------------------------------------------------------------
     // 4. Create 2D histograms for each region, for each dataset
     //--------------------------------------------------------------------------
-    // Binning: x from -500 to 500, y from -500 to 500 (250 bins in each dimension)
-    int    nbins = 250;
-    double xmin  = -500.0;
-    double xmax  =  500.0;
+    // Region 1: -200 to 200 for x and y
+    // Region 2: -200 to 200 for x and y
+    // Region 3: -300 to 300 for x and y
+    int nbins = 250;
 
     TH2D* h2_r1_sidisdvcs = new TH2D("h2_r1_sidisdvcs", "Region 1; x; y", 
-                                     nbins, xmin, xmax, nbins, xmin, xmax);
+                                     nbins, -200.0, 200.0, nbins, -200.0, 200.0);
     TH2D* h2_r2_sidisdvcs = new TH2D("h2_r2_sidisdvcs", "Region 2; x; y", 
-                                     nbins, xmin, xmax, nbins, xmin, xmax);
+                                     nbins, -200.0, 200.0, nbins, -200.0, 200.0);
     TH2D* h2_r3_sidisdvcs = new TH2D("h2_r3_sidisdvcs", "Region 3; x; y", 
-                                     nbins, xmin, xmax, nbins, xmin, xmax);
+                                     nbins, -300.0, 300.0, nbins, -300.0, 300.0);
 
     TH2D* h2_r1_clasdis = new TH2D("h2_r1_clasdis", "Region 1; x; y", 
-                                   nbins, xmin, xmax, nbins, xmin, xmax);
+                                   nbins, -200.0, 200.0, nbins, -200.0, 200.0);
     TH2D* h2_r2_clasdis = new TH2D("h2_r2_clasdis", "Region 2; x; y", 
-                                   nbins, xmin, xmax, nbins, xmin, xmax);
+                                   nbins, -200.0, 200.0, nbins, -200.0, 200.0);
     TH2D* h2_r3_clasdis = new TH2D("h2_r3_clasdis", "Region 3; x; y", 
-                                   nbins, xmin, xmax, nbins, xmin, xmax);
+                                   nbins, -300.0, 300.0, nbins, -300.0, 300.0);
 
     //--------------------------------------------------------------------------
     // 5. Fill histograms from the SIDIS-DVCS chain
-    //    We apply the user-specified limit for SIDIS-DVCS if provided
     //--------------------------------------------------------------------------
     Long64_t nEntriesSIDIS = chain_sidisdvcs.GetEntries();
     if (maxEventsSIDIS > 0 && maxEventsSIDIS < nEntriesSIDIS) {
@@ -166,7 +166,7 @@ int main(int argc, char** argv)
     //--------------------------------------------------------------------------
     TH2D* h2_r1_ratio = (TH2D*) h2_r1_sidisdvcs->Clone("h2_r1_ratio");
     h2_r1_ratio->Divide(h2_r1_clasdis);
-    h2_r1_ratio->SetTitle("Region 1");  // Panel label
+    h2_r1_ratio->SetTitle("Region 1");  // Label for the top
 
     TH2D* h2_r2_ratio = (TH2D*) h2_r2_sidisdvcs->Clone("h2_r2_ratio");
     h2_r2_ratio->Divide(h2_r2_clasdis);
@@ -187,17 +187,20 @@ int main(int argc, char** argv)
 
     // Region 1
     c->cd(1);
-    gPad->SetLogz();            // log-scale the Y axis
+    gPad->SetRightMargin(0.20);   // Add padding on the right so label doesn't clip
+    gPad->SetLogz();              // Log scale for the Z axis
     h2_r1_ratio->Draw("COLZ");
 
     // Region 2
     c->cd(2);
-    gPad->SetLogz();            // log-scale the Y axis
+    gPad->SetRightMargin(0.20);
+    gPad->SetLogz();
     h2_r2_ratio->Draw("COLZ");
 
     // Region 3
     c->cd(3);
-    gPad->SetLogz();            // log-scale the Y axis
+    gPad->SetRightMargin(0.20);
+    gPad->SetLogz();
     h2_r3_ratio->Draw("COLZ");
 
     //--------------------------------------------------------------------------
@@ -205,7 +208,7 @@ int main(int argc, char** argv)
     //--------------------------------------------------------------------------
     c->SaveAs("output/normalized_drift_chambers.png");
 
-    // Cleanup and exit
+    // Cleanup
     delete c;
     delete h2_r1_sidisdvcs;
     delete h2_r2_sidisdvcs;
