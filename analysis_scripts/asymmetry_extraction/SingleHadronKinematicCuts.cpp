@@ -70,63 +70,35 @@ bool SingleHadronKinematicCuts::applyCuts(int currentFits, bool isMC) {
       return goodEvent;
     }
 
-    // if (property == "xBsector0") { // meant to be all six sectors
-    //   goodEvent = *Q2 > 1 && *W > 2 && *y < 0.80 && *Mx2 > 1.8225;
-    //   return goodEvent;
-    // } 
-    // if (property == "xBsector1") {
-    //   goodEvent = *Q2 > 1 && *W > 2 && *y < 0.80 && *Mx2 > 1.8225 && (*e_phi < 0.7 || *e_phi > 5.9);
-    //   return goodEvent;
-    // } 
-    // if (property == "xBsector2") {
-    //   goodEvent = *Q2 > 1 && *W > 2 && *y < 0.80 && *Mx2 > 1.8225 && (*e_phi > 0.7 && *e_phi < 1.8);
-    //   return goodEvent;
-    // } 
-    // if (property == "xBsector3") {
-    //   goodEvent = *Q2 > 1 && *W > 2 && *y < 0.80 && *Mx2 > 1.8225 && (*e_phi > 1.8 && *e_phi < 2.8);
-    //   return goodEvent;
-    // } 
-    // if (property == "xBsector4") {
-    //   goodEvent = *Q2 > 1 && *W > 2 && *y < 0.80 && *Mx2 > 1.8225 && (*e_phi > 2.8 && *e_phi < 3.8);
-    //   return goodEvent;
-    // } 
-    // if (property == "xBsector5") {
-    //   goodEvent = *Q2 > 1 && *W > 2 && *y < 0.80 && *Mx2 > 1.8225 && (*e_phi > 3.8 && *e_phi < 4.8);
-    //   return goodEvent;
-    // } 
-    // if (property == "xBsector6") {
-    //   goodEvent = *Q2 > 1 && *W > 2 && *y < 0.80 && *Mx2 > 1.8225 && (*e_phi > 4.8 && *e_phi < 5.85);
-    //   return goodEvent;
-    // } 
 
-    // if (property == "xBsector0") { // meant to be all six sectors
-    //   goodEvent = *Q2 > 1 && *W > 2 && *y < 0.80 && *Mx2 > 1.8225;
-    //   return goodEvent;
-    // } 
-    // if (property == "xBsector1") {
-    //   goodEvent = *Q2 > 1 && *W > 2 && *y < 0.80 && *Mx2 > 1.8225 && (*p_phi < 0.2 || *p_phi > 5.5);
-    //   return goodEvent;
-    // } 
-    // if (property == "xBsector2") {
-    //   goodEvent = *Q2 > 1 && *W > 2 && *y < 0.80 && *Mx2 > 1.8225 && (*p_phi > 0.2 && *p_phi < 1.25);
-    //   return goodEvent;
-    // } 
-    // if (property == "xBsector3") {
-    //   goodEvent = *Q2 > 1 && *W > 2 && *y < 0.80 && *Mx2 > 1.8225 && (*p_phi > 1.25 && *p_phi < 2.25);
-    //   return goodEvent;
-    // } 
-    // if (property == "xBsector4") {
-    //   goodEvent = *Q2 > 1 && *W > 2 && *y < 0.80 && *Mx2 > 1.8225 && (*p_phi > 2.25 && *p_phi < 3.35);
-    //   return goodEvent;
-    // } 
-    // if (property == "xBsector5") {
-    //   goodEvent = *Q2 > 1 && *W > 2 && *y < 0.80 && *Mx2 > 1.8225 && (*p_phi > 3.35 && *p_phi < 4.4);
-    //   return goodEvent;
-    // } 
-    // if (property == "xBsector6") {
-    //   goodEvent = *Q2 > 1 && *W > 2 && *y < 0.80 && *Mx2 > 1.8225 && (*p_phi > 4.4 && *p_phi < 5.5);
-    //   return goodEvent;
-    // }
+    if (property == "xBsector0") { // meant to be all six sectors
+      goodEvent = *Q2 > 1 && *W > 2 && *y < 0.80 && *Mx2 > 1.8225;
+      return goodEvent;
+    } 
+    if (property == "xBsector1") {
+      goodEvent = *Q2 > 1 && *W > 2 && *y < 0.80 && *Mx2 > 1.8225 && (*p_phi < 0.2 || *p_phi > 5.5);
+      return goodEvent;
+    } 
+    if (property == "xBsector2") {
+      goodEvent = *Q2 > 1 && *W > 2 && *y < 0.80 && *Mx2 > 1.8225 && (*p_phi > 0.2 && *p_phi < 1.25);
+      return goodEvent;
+    } 
+    if (property == "xBsector3") {
+      goodEvent = *Q2 > 1 && *W > 2 && *y < 0.80 && *Mx2 > 1.8225 && (*p_phi > 1.25 && *p_phi < 2.25);
+      return goodEvent;
+    } 
+    if (property == "xBsector4") {
+      goodEvent = *Q2 > 1 && *W > 2 && *y < 0.80 && *Mx2 > 1.8225 && (*p_phi > 2.25 && *p_phi < 3.35);
+      return goodEvent;
+    } 
+    if (property == "xBsector5") {
+      goodEvent = *Q2 > 1 && *W > 2 && *y < 0.80 && *Mx2 > 1.8225 && (*p_phi > 3.35 && *p_phi < 4.4);
+      return goodEvent;
+    } 
+    if (property == "xBsector6") {
+      goodEvent = *Q2 > 1 && *W > 2 && *y < 0.80 && *Mx2 > 1.8225 && (*p_phi > 4.4 && *p_phi < 5.5);
+      return goodEvent;
+    }
 
     if (property == "pTsector0") { // meant to be all six sectors
       goodEvent = *Q2 > 1 && *W > 2 && *y < 0.80 && *Mx2 > 1.8225;
