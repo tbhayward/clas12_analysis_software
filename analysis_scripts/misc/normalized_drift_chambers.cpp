@@ -189,18 +189,21 @@ int main(int argc, char** argv)
     // Region 1
     c->cd(1);
     gPad->SetRightMargin(0.2);   // Add padding on the right so label doesn't clip
+    gPad->SetLeftMargin(0.2);
     gPad->SetLogz();              // Log scale for the Z axis
     h2_r1_ratio->Draw("COLZ");
 
     // Region 2
     c->cd(2);
     gPad->SetRightMargin(0.2);
+    gPad->SetLeftMargin(0.2);
     gPad->SetLogz();
     h2_r2_ratio->Draw("COLZ");
 
     // Region 3
     c->cd(3);
     gPad->SetRightMargin(0.2);
+    gPad->SetLeftMargin(0.2);
     gPad->SetLogz();
     h2_r3_ratio->Draw("COLZ");
 
