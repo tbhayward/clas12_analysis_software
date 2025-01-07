@@ -105,18 +105,18 @@ int main(int argc, char** argv)
     int nbins = 250;
 
     TH2D* h2_r1_sidisdvcs = new TH2D("h2_r1_sidisdvcs", "Region 1; x; y", 
-                                     nbins, -300.0, 300.0, nbins, -300.0, 300.0);
+                                     nbins, -180.0, 300.0, nbins, -180.0, 300.0);
     TH2D* h2_r2_sidisdvcs = new TH2D("h2_r2_sidisdvcs", "Region 2; x; y", 
-                                     nbins, -400.0, 400.0, nbins, -400.0, 400.0);
+                                     nbins, -280.0, 400.0, nbins, -280.0, 400.0);
     TH2D* h2_r3_sidisdvcs = new TH2D("h2_r3_sidisdvcs", "Region 3; x; y", 
-                                     nbins, -600.0, 600.0, nbins, -600.0, 600.0);
+                                     nbins, -320.0, 600.0, nbins, -320.0, 600.0);
 
     TH2D* h2_r1_clasdis = new TH2D("h2_r1_clasdis", "Region 1; x; y", 
-                                   nbins, -300.0, 300.0, nbins, -300.0, 300.0);
+                                   nbins, -180.0, 300.0, nbins, -180.0, 300.0);
     TH2D* h2_r2_clasdis = new TH2D("h2_r2_clasdis", "Region 2; x; y", 
-                                   nbins, -400.0, 400.0, nbins, -400.0, 400.0);
+                                   nbins, -280.0, 400.0, nbins, -280.0, 400.0);
     TH2D* h2_r3_clasdis = new TH2D("h2_r3_clasdis", "Region 3; x; y", 
-                                   nbins, -600.0, 600.0, nbins, -600.0, 600.0);
+                                   nbins, -320.0, 600.0, nbins, -320.0, 600.0);
 
     //--------------------------------------------------------------------------
     // 5. Fill histograms from the SIDIS-DVCS chain
