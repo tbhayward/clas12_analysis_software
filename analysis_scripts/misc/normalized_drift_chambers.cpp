@@ -208,21 +208,21 @@ int main(int argc, char** argv)
     c->cd(1);
     gPad->SetRightMargin(0.20);
     gPad->SetLeftMargin(0.20);   // Add padding on the right so the color scale doesn't clip
-    gPad->SetLogz();              // Log scale for the Z axis
+    // gPad->SetLogz();              // Log scale for the Z axis
     h2_r1_ratio->Draw("COLZ");
 
     // Region 2
     c->cd(2);
     gPad->SetRightMargin(0.20);
     gPad->SetLeftMargin(0.20);
-    gPad->SetLogz();
+    // gPad->SetLogz();
     h2_r2_ratio->Draw("COLZ");
 
     // Region 3
     c->cd(3);
     gPad->SetRightMargin(0.20);
     gPad->SetLeftMargin(0.20);
-    gPad->SetLogz();
+    // gPad->SetLogz();
     h2_r3_ratio->Draw("COLZ");
 
     //--------------------------------------------------------------------------
