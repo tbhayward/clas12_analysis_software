@@ -6,20 +6,27 @@
  *       $(root-config --cflags --libs)
  *
  * Run with:
- *   ./normalized_drift_chambers [NeventsSIDISDVCS]
- *   (If NeventsSIDISDVCS is omitted, *all* SIDIS-DVCS events will be processed.)
+ *   ./normalized_drift_chambers [NeventsSIDISDVCS] [dataFile] [mcFile]
+ *
+ * Notes on the arguments:
+ *   1) NeventsSIDISDVCS: 
+ *      - If 0, processes *all* events 
+ *      - If omitted, also processes all events by default.
+ *      - Otherwise, processes up to NeventsSIDISDVCS events.
+ *   2) dataFile: 
+ *      - If provided, uses this file for the SIDIS-DVCS chain (no merging).
+ *      - If omitted, merges the three hard-coded SIDIS-DVCS files.
+ *   3) mcFile:
+ *      - If provided, uses this file for the CLASDIS chain (skips the hard-coded file).
+ *      - If omitted, uses the single hard-coded CLASDIS file.
  *
  * Explanation:
- *   - This program merges three SIDIS-DVCS ROOT files into one TChain and
- *     reads a separate CLASDIS ROOT file into another TChain.
- *   - It creates 2D histograms for each of the three drift chamber regions
- *     (Region 1, 2, 3) in both datasets, then takes the ratio of
- *     SIDISDVCS/CLASDIS and plots them side by side.
- *   - The Z-axis is set to log scale in each pad, each pad has extra right 
- *     padding for color scale, and we apply the cuts:
- *         (particle_pid == 11) &&
- *         (edge_1 > 5) && (edge_2 > 5) && (edge_3 > 10)
- *     before filling histograms.
+ *   - Creates TChains and reads the user-specified (or default/hard-coded)
+ *     data (SIDIS-DVCS) and mc (CLASDIS) files into "PhysicsEvents" TTrees.
+ *   - Applies filters on PID, trajectory edges, and -9999 track checks.
+ *   - Creates 2D histograms per region, accumulates them for each dataset,
+ *     then takes the ratio SIDIS-DVCS/CLASDIS in each region.
+ *   - Draws a 1×3 canvas of ratio plots with a log Z-axis and saves it.
  *****************************************************************************/
 
 #include <iostream>
@@ -36,30 +43,68 @@
 int main(int argc, char** argv)
 {
     //--------------------------------------------------------------------------
-    // 1. Parse optional input argument for number of SIDIS-DVCS events
+    // 1. Parse input arguments
     //--------------------------------------------------------------------------
-    Long64_t maxEventsSIDIS = -1; // -1 means process all events
+    Long64_t maxEventsSIDIS = -1; // Default: process all events
+    
     if (argc > 1) {
+        // If the user specified a first argument, convert it to a number
         maxEventsSIDIS = std::stoll(argv[1]);
-        std::cout << "Will process up to " << maxEventsSIDIS 
-                  << " events for the SIDIS-DVCS data set." << std::endl;
-    } else {
-        std::cout << "No event limit specified; will process *all* SIDIS-DVCS events." 
+        // If that number is 0, treat it as "process all" (same as -1)
+        if (maxEventsSIDIS == 0) {
+            maxEventsSIDIS = -1;
+        }
+        std::cout << "First argument (NeventsSIDISDVCS) = " 
+                  << argv[1] 
+                  << "; interpreted as maxEventsSIDIS = " 
+                  << maxEventsSIDIS 
                   << std::endl;
+    } else {
+        std::cout << "No event limit argument specified; will process *all* events." 
+                  << std::endl;
+    }
+
+    // If second argument is provided, it's the user-specified SIDIS-DVCS data file
+    bool useUserDataFile = false;
+    std::string userDataFile;
+    if (argc > 2) {
+        useUserDataFile = true;
+        userDataFile = argv[2];
+        std::cout << "Second argument provided (dataFile): " << userDataFile << std::endl;
+    }
+
+    // If third argument is provided, it's the user-specified CLASDIS MC file
+    bool useUserMCFile = false;
+    std::string userMCFile;
+    if (argc > 3) {
+        useUserMCFile = true;
+        userMCFile = argv[3];
+        std::cout << "Third argument provided (mcFile): " << userMCFile << std::endl;
     }
 
     //--------------------------------------------------------------------------
     // 2. Create TChains and add the input files
     //--------------------------------------------------------------------------
-    // SIDIS-DVCS (these three files will be merged)
     TChain chain_sidisdvcs("PhysicsEvents");
-    chain_sidisdvcs.Add("/work/clas12/thayward/CLAS12_SIDIS/processed_data/pass2/calibration/sidisdvcs_rgc_su22_inb_calibration.root");
-    chain_sidisdvcs.Add("/work/clas12/thayward/CLAS12_SIDIS/processed_data/pass2/calibration/sidisdvcs_rgc_su22_inb_calibration_1.root");
-    chain_sidisdvcs.Add("/work/clas12/thayward/CLAS12_SIDIS/processed_data/pass2/calibration/sidisdvcs_rgc_su22_inb_calibration_2.root");
-
-    // CLASDIS (separate file)
     TChain chain_clasdis("PhysicsEvents");
-    chain_clasdis.Add("/work/clas12/thayward/CLAS12_SIDIS/processed_data/pass2/calibration/clasdis_rgc_su22_inb_neutron_calibration.root");
+
+    if (useUserDataFile) {
+        // If a second argument was provided, use that single file for data
+        chain_sidisdvcs.Add(userDataFile.c_str());
+    } else {
+        // Otherwise, revert to the original 3-file merge
+        chain_sidisdvcs.Add("/work/clas12/thayward/CLAS12_SIDIS/processed_data/pass2/calibration/sidisdvcs_rgc_su22_inb_calibration.root");
+        chain_sidisdvcs.Add("/work/clas12/thayward/CLAS12_SIDIS/processed_data/pass2/calibration/sidisdvcs_rgc_su22_inb_calibration_1.root");
+        chain_sidisdvcs.Add("/work/clas12/thayward/CLAS12_SIDIS/processed_data/pass2/calibration/sidisdvcs_rgc_su22_inb_calibration_2.root");
+    }
+
+    if (useUserMCFile) {
+        // If a third argument was provided, use that single file for MC
+        chain_clasdis.Add(userMCFile.c_str());
+    } else {
+        // Otherwise, revert to the original hard-coded single file
+        chain_clasdis.Add("/work/clas12/thayward/CLAS12_SIDIS/processed_data/pass2/calibration/clasdis_rgc_su22_inb_neutron_calibration.root");
+    }
 
     //--------------------------------------------------------------------------
     // 3. Set up branch addresses for the variables we need
@@ -80,9 +125,9 @@ int main(int argc, char** argv)
     chain_sidisdvcs.SetBranchAddress("traj_y_18",   &traj_y_18);
     chain_sidisdvcs.SetBranchAddress("traj_x_36",   &traj_x_36);
     chain_sidisdvcs.SetBranchAddress("traj_y_36",   &traj_y_36);
-    chain_sidisdvcs.SetBranchAddress("traj_edge_6",      &traj_edge_6);
-    chain_sidisdvcs.SetBranchAddress("traj_edge_18",      &traj_edge_18);
-    chain_sidisdvcs.SetBranchAddress("traj_edge_36",      &traj_edge_36);
+    chain_sidisdvcs.SetBranchAddress("traj_edge_6", &traj_edge_6);
+    chain_sidisdvcs.SetBranchAddress("traj_edge_18",&traj_edge_18);
+    chain_sidisdvcs.SetBranchAddress("traj_edge_36",&traj_edge_36);
 
     // --- CLASDIS chain
     chain_clasdis.SetBranchAddress("particle_pid",  &particle_pid);
@@ -92,18 +137,16 @@ int main(int argc, char** argv)
     chain_clasdis.SetBranchAddress("traj_y_18",     &traj_y_18);
     chain_clasdis.SetBranchAddress("traj_x_36",     &traj_x_36);
     chain_clasdis.SetBranchAddress("traj_y_36",     &traj_y_36);
-    chain_clasdis.SetBranchAddress("traj_edge_6",        &traj_edge_6);
-    chain_clasdis.SetBranchAddress("traj_edge_18",        &traj_edge_18);
-    chain_clasdis.SetBranchAddress("traj_edge_36",        &traj_edge_36);
+    chain_clasdis.SetBranchAddress("traj_edge_6",   &traj_edge_6);
+    chain_clasdis.SetBranchAddress("traj_edge_18",  &traj_edge_18);
+    chain_clasdis.SetBranchAddress("traj_edge_36",  &traj_edge_36);
 
     //--------------------------------------------------------------------------
     // 4. Create 2D histograms for each region, for each dataset
     //--------------------------------------------------------------------------
-    // Region 1: -300 to 300 for x and y
-    // Region 2: -400 to 400 for x and y
-    // Region 3: -600 to 600 for x and y
+    // (User has changed the x,y ranges for each region here. 
+    //  Below is the version in your snippet, but you can adjust as needed.)
     int nbins = 250;
-
     TH2D* h2_r1_sidisdvcs = new TH2D("h2_r1_sidisdvcs", "Region 1; x; y", 
                                      nbins, -180.0, 180, nbins, -180.0, 180);
     TH2D* h2_r2_sidisdvcs = new TH2D("h2_r2_sidisdvcs", "Region 2; x; y", 
@@ -122,6 +165,7 @@ int main(int argc, char** argv)
     // 5. Fill histograms from the SIDIS-DVCS chain
     //--------------------------------------------------------------------------
     Long64_t nEntriesSIDIS = chain_sidisdvcs.GetEntries();
+    // If user gave a specific limit that is >0, use it, else process all
     if (maxEventsSIDIS > 0 && maxEventsSIDIS < nEntriesSIDIS) {
         nEntriesSIDIS = maxEventsSIDIS; 
     }
@@ -131,8 +175,9 @@ int main(int argc, char** argv)
 
         // Filter 1: must be an electron
         if (particle_pid != 11) continue; // #endif
+        // (Or commented line for protons if you want to revert.)
 
-        // Filter 2: must satisfy edge_1 > 5, edge_2 > 5, edge_3 > 10
+        // Filter 2: must satisfy edge_6 > 5, edge_18 > 5, edge_36 > 10
         if (traj_edge_6 <= 5 || traj_edge_18 <= 5 || traj_edge_36 <= 10) continue; // #endif
 
         // Fill Region 1 if traj_x_6 != -9999
@@ -160,10 +205,10 @@ int main(int argc, char** argv)
 
         // // Filter 1: must be an electron
         // if (particle_pid != 11) continue; // #endif
-        // Filter 1: must be an proton
+        // Filter 1: must be a proton
         if (particle_pid != 2212) continue; // #endif
 
-        // Filter 2: must satisfy edge_1 > 5, edge_2 > 5, edge_3 > 10
+        // Filter 2: must satisfy edge_6 > 5, edge_18 > 5, edge_36 > 10
         if (traj_edge_6 <= 5 || traj_edge_18 <= 5 || traj_edge_36 <= 10) continue; // #endif
 
         // Fill Region 1 if traj_x_6 != -9999
@@ -209,8 +254,8 @@ int main(int argc, char** argv)
     // Region 1
     c->cd(1);
     gPad->SetRightMargin(0.20);
-    gPad->SetLeftMargin(0.20);   // Add padding on the right so the color scale doesn't clip
-    gPad->SetLogz();              // Log scale for the Z axis
+    gPad->SetLeftMargin(0.20);
+    gPad->SetLogz();  // Log scale for the Z axis
     h2_r1_ratio->Draw("COLZ");
 
     // Region 2
@@ -230,7 +275,7 @@ int main(int argc, char** argv)
     //--------------------------------------------------------------------------
     // 9. Save to file
     //--------------------------------------------------------------------------
-    c->SaveAs("output/normalized_drift_chambers.png");
+    c->SaveAs("output/normalized_drift_chambers_test.png");
 
     // Cleanup
     delete c;
