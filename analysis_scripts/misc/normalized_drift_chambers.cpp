@@ -158,8 +158,10 @@ int main(int argc, char** argv)
     for (Long64_t i = 0; i < nEntriesCLASDIS; i++) {
         chain_clasdis.GetEntry(i);
 
-        // Filter 1: must be an electron
-        if (particle_pid != 11) continue; // #endif
+        // // Filter 1: must be an electron
+        // if (particle_pid != 11) continue; // #endif
+        // Filter 1: must be an proton
+        if (particle_pid != 2212) continue; // #endif
 
         // Filter 2: must satisfy edge_1 > 5, edge_2 > 5, edge_3 > 10
         if (traj_edge_6 <= 5 || traj_edge_18 <= 5 || traj_edge_36 <= 10) continue; // #endif
