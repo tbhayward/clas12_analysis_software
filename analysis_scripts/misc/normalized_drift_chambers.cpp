@@ -173,9 +173,10 @@ int main(int argc, char** argv)
     for (Long64_t i = 0; i < nEntriesSIDIS; i++) {
         chain_sidisdvcs.GetEntry(i);
 
-        // Filter 1: must be an electron
+        // // Filter 1: must be an electron
         if (particle_pid != 11) continue; // #endif
-        // (Or commented line for protons if you want to revert.)
+        // Filter 1: must be a proton
+        // if (particle_pid != 2212) continue; // #endif
 
         // Filter 2: must satisfy edge_6 > 5, edge_18 > 5, edge_36 > 10
         if (traj_edge_6 <= 5 || traj_edge_18 <= 5 || traj_edge_36 <= 10) continue; // #endif
