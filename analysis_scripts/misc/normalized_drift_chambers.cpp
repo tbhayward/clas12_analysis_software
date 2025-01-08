@@ -215,14 +215,14 @@ int main(int argc, char** argv)
     TH2D* h2_r2_sidisdvcs = new TH2D("h2_r2_sidisdvcs", "Region 2; x; y", 
                                      nbins2D, -280.0, 280, nbins2D, -280.0, 280);
     TH2D* h2_r3_sidisdvcs = new TH2D("h2_r3_sidisdvcs", "Region 3; x; y", 
-                                     nbins2D, -380.0, 320, nbins2D, -380.0, 320);
+                                     nbins2D, -450.0, 450, nbins2D, 450.0, 450);
 
     TH2D* h2_r1_clasdis = new TH2D("h2_r1_clasdis", "Region 1; x; y", 
                                    nbins2D, -180.0, 180, nbins2D, -180.0, 180.0);
     TH2D* h2_r2_clasdis = new TH2D("h2_r2_clasdis", "Region 2; x; y", 
                                    nbins2D, -280.0, 280, nbins2D, -280.0, 280);
     TH2D* h2_r3_clasdis = new TH2D("h2_r3_clasdis", "Region 3; x; y", 
-                                   nbins2D, -380.0, 320, nbins2D, -380.0, 320);
+                                   nbins2D, -450.0, 450, nbins2D, 450.0, 450);
 
     // -- Cut
     TH2D* h2_r1_sidisdvcs_cut = new TH2D("h2_r1_sidisdvcs_cut", "Region 1 (cut); x; y", 
@@ -230,21 +230,21 @@ int main(int argc, char** argv)
     TH2D* h2_r2_sidisdvcs_cut = new TH2D("h2_r2_sidisdvcs_cut", "Region 2 (cut); x; y", 
                                          nbins2D, -280.0, 280, nbins2D, -280.0, 280);
     TH2D* h2_r3_sidisdvcs_cut = new TH2D("h2_r3_sidisdvcs_cut", "Region 3 (cut); x; y", 
-                                         nbins2D, -380.0, 320, nbins2D, -380.0, 320);
+                                         nbins2D, -450.0, 450, nbins2D, 450.0, 450);
 
     TH2D* h2_r1_clasdis_cut = new TH2D("h2_r1_clasdis_cut", "Region 1 (cut); x; y", 
                                        nbins2D, -180.0, 180, nbins2D, -180.0, 180.0);
     TH2D* h2_r2_clasdis_cut = new TH2D("h2_r2_clasdis_cut", "Region 2 (cut); x; y", 
                                        nbins2D, -280.0, 280, nbins2D, -280.0, 280);
     TH2D* h2_r3_clasdis_cut = new TH2D("h2_r3_clasdis_cut", "Region 3 (cut); x; y", 
-                                       nbins2D, -380.0, 320, nbins2D, -380.0, 320);
+                                       nbins2D, -450.0, 450, nbins2D, 450.0, 450);
 
     //--------------------------------------------------------------------------
     // 4a. Create 1D histograms for the edge variables
     //--------------------------------------------------------------------------
-    int nbins1D = 150;
+    int nbins1D = 125 ;
     double edgeMin = 0.0;
-    double edgeMax = 150.0;
+    double edgeMax = 125.0;
 
     TH1D* h1_edge_r1_sidis = new TH1D("h1_edge_r1_sidis", "Region 1; edge (cm); counts", 
                                       nbins1D, edgeMin, edgeMax);
@@ -265,9 +265,9 @@ int main(int argc, char** argv)
     //     We'll use degrees for phi in [0,360) and radius up to e.g. 400 or 500 
     //     as appropriate. We unify all 3 regions to the same range to keep it simple.
     //--------------------------------------------------------------------------
-    int nbinsR  = 200;   // radial bins
-    double rMin = 0.0;
-    double rMax = 400.0; // adjust if needed
+    int nbinsR  = 90;   // radial bins
+    double rMin = 40.0;
+    double rMax = 130.0; // adjust if needed
 
     int nbinsPhi = 180; // for 0..360 degrees
     double phiMin = 0.0;
