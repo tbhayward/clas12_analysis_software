@@ -49,7 +49,7 @@
 #include "TStyle.h"
 #include "TROOT.h"
 #include "TPad.h"
-#include "TCircle.h"
+#include "TEllipse.h"
 
 int main(int argc, char** argv)
 {
