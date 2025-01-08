@@ -268,10 +268,10 @@ int main(int argc, char** argv)
     for (Long64_t i = 0; i < nEntriesSIDIS; i++) {
         chain_sidisdvcs.GetEntry(i);
 
-        // Must be an electron
-        if (particle_pid != 11) continue;
-        // // Must be a proton
-        // if (particle_pid != 2212) continue;
+        // // Must be an electron
+        // if (particle_pid != 11) continue;
+        // Must be a proton
+        if (particle_pid != 2212) continue;
 
         // Must satisfy edges
         if (traj_edge_6 <= 5 || traj_edge_18 <= 5 || traj_edge_36 <= 10) continue;
@@ -314,10 +314,10 @@ int main(int argc, char** argv)
     for (Long64_t i = 0; i < nEntriesCLASDIS; i++) {
         chain_clasdis.GetEntry(i);
 
-        // Must be an electron
-        if (particle_pid != 11) continue;
-        // // Must be a proton
-        // if (particle_pid != 2212) continue;
+        // // Must be an electron
+        // if (particle_pid != 11) continue;
+        // Must be a proton
+        if (particle_pid != 2212) continue;
 
         if (traj_edge_6 <= 5 || traj_edge_18 <= 5 || traj_edge_36 <= 10) continue;
 
@@ -416,8 +416,8 @@ int main(int argc, char** argv)
     gPad->SetLogz();
     h2_r3_ratio->Draw("COLZ");
 
-    c2D_uncut->SaveAs("output/normalization/electron_normalized_drift_chambers_uncut.png");
-    // c2D_uncut->SaveAs("output/normalization/proton_normalized_drift_chambers_uncut.png");
+    // c2D_uncut->SaveAs("output/normalization/electron_normalized_drift_chambers_uncut.png");
+    c2D_uncut->SaveAs("output/normalization/proton_normalized_drift_chambers_uncut.png");
 
     //--------------------------------------------------------------------------
     // 9. Draw the same ratio histograms with circles (Canvas 2)
@@ -472,8 +472,8 @@ int main(int argc, char** argv)
       circ3->Draw("same");
     }
 
-    c2D_circle->SaveAs("output/normalization/electron_normalized_drift_chambers_circle.png");
-    // c2D_circle->SaveAs("output/normalization/proton_normalized_drift_chambers_circle.png");
+    // c2D_circle->SaveAs("output/normalization/electron_normalized_drift_chambers_circle.png");
+    c2D_circle->SaveAs("output/normalization/proton_normalized_drift_chambers_circle.png");
 
     //--------------------------------------------------------------------------
     // 10. Normalize the "cut" histograms, then ratio
@@ -533,8 +533,8 @@ int main(int argc, char** argv)
     gPad->SetLogz();
     h2_r3_ratio_cut->Draw("COLZ");
 
-    c2D_cut->SaveAs("output/normalization/electron_normalized_drift_chambers_cut.png");
-    // c2D_cut->SaveAs("output/normalization/proton_normalized_drift_chambers_cut.png");
+    // c2D_cut->SaveAs("output/normalization/electron_normalized_drift_chambers_cut.png");
+    c2D_cut->SaveAs("output/normalization/proton_normalized_drift_chambers_cut.png");
 
     //--------------------------------------------------------------------------
     // 12. Normalize each 1D edge histogram individually, then compute ratio
@@ -594,8 +594,8 @@ int main(int argc, char** argv)
     h1_edge_r3_ratio->GetYaxis()->SetTitle("normalized density ratio");
     h1_edge_r3_ratio->Draw("HIST");
 
-    c1D->SaveAs("output/normalization/electron_normalized_drift_chambers_edges.png");
-    // c1D->SaveAs("output/normalization/proton_normalized_drift_chambers_edges.png");
+    // c1D->SaveAs("output/normalization/electron_normalized_drift_chambers_edges.png");
+    c1D->SaveAs("output/normalization/proton_normalized_drift_chambers_edges.png");
 
     //--------------------------------------------------------------------------
     // Cleanup
