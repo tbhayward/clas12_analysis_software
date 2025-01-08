@@ -25,7 +25,8 @@
  *     data (SIDIS-DVCS) and mc (CLASDIS) files into "PhysicsEvents" TTrees.
  *   - Applies filters on PID, trajectory edges, and -9999 track checks.
  *   - Creates 2D histograms per region, accumulates them for each dataset,
- *     then takes the ratio SIDIS-DVCS/CLASDIS in each region.
+ *     then normalizes them individually before taking the ratio:
+ *        ratio = (normalized SIDIS-DVCS) / (normalized CLASDIS).
  *   - Draws a 1×3 canvas of ratio plots with a log Z-axis and saves it.
  *****************************************************************************/
 
@@ -144,9 +145,8 @@ int main(int argc, char** argv)
     //--------------------------------------------------------------------------
     // 4. Create 2D histograms for each region, for each dataset
     //--------------------------------------------------------------------------
-    // (User has changed the x,y ranges for each region here. 
-    //  Below is the version in your snippet, but you can adjust as needed.)
-    int nbins = 100;
+    // The x,y ranges here reflect your snippet:
+    int nbins = 250;
     TH2D* h2_r1_sidisdvcs = new TH2D("h2_r1_sidisdvcs", "Region 1; x; y", 
                                      nbins, -180.0, 180, nbins, -180.0, 180);
     TH2D* h2_r2_sidisdvcs = new TH2D("h2_r2_sidisdvcs", "Region 2; x; y", 
@@ -165,7 +165,7 @@ int main(int argc, char** argv)
     // 5. Fill histograms from the SIDIS-DVCS chain
     //--------------------------------------------------------------------------
     Long64_t nEntriesSIDIS = chain_sidisdvcs.GetEntries();
-    // If user gave a specific limit that is >0, use it, else process all
+    // If user gave a specific limit that is >0, use it; else process all
     if (maxEventsSIDIS > 0 && maxEventsSIDIS < nEntriesSIDIS) {
         nEntriesSIDIS = maxEventsSIDIS; 
     }
@@ -204,9 +204,9 @@ int main(int argc, char** argv)
         chain_clasdis.GetEntry(i);
 
         // // Filter 1: must be an electron
-        // if (particle_pid != 11) continue; // #endif
+        if (particle_pid != 11) continue; // #endif
         // Filter 1: must be a proton
-        if (particle_pid != 2212) continue; // #endif
+        // if (particle_pid != 2212) continue; // #endif
 
         // Filter 2: must satisfy edge_6 > 5, edge_18 > 5, edge_36 > 10
         if (traj_edge_6 <= 5 || traj_edge_18 <= 5 || traj_edge_36 <= 10) continue; // #endif
@@ -228,19 +228,40 @@ int main(int argc, char** argv)
     } //endfor
 
     //--------------------------------------------------------------------------
-    // 7. Compute ratio histograms = SIDISDVCS / CLASDIS for each region
+    // 7. Normalize each histogram individually, then compute ratio
     //--------------------------------------------------------------------------
+    //--- Normalize the SIDIS-DVCS histograms
+    double int_r1_sidis = h2_r1_sidisdvcs->Integral();
+    if (int_r1_sidis > 0) h2_r1_sidisdvcs->Scale(1.0 / int_r1_sidis);
+
+    double int_r2_sidis = h2_r2_sidisdvcs->Integral();
+    if (int_r2_sidis > 0) h2_r2_sidisdvcs->Scale(1.0 / int_r2_sidis);
+
+    double int_r3_sidis = h2_r3_sidisdvcs->Integral();
+    if (int_r3_sidis > 0) h2_r3_sidisdvcs->Scale(1.0 / int_r3_sidis);
+
+    //--- Normalize the CLASDIS histograms
+    double int_r1_clas = h2_r1_clasdis->Integral();
+    if (int_r1_clas > 0) h2_r1_clasdis->Scale(1.0 / int_r1_clas);
+
+    double int_r2_clas = h2_r2_clasdis->Integral();
+    if (int_r2_clas > 0) h2_r2_clasdis->Scale(1.0 / int_r2_clas);
+
+    double int_r3_clas = h2_r3_clasdis->Integral();
+    if (int_r3_clas > 0) h2_r3_clasdis->Scale(1.0 / int_r3_clas);
+
+    // Now compute ratio = (normalized SIDIS) / (normalized CLASDIS)
     TH2D* h2_r1_ratio = (TH2D*) h2_r1_sidisdvcs->Clone("h2_r1_ratio");
-    h2_r1_ratio->Divide(h2_r1_clasdis);
     h2_r1_ratio->SetTitle("Region 1");
+    h2_r1_ratio->Divide(h2_r1_clasdis);
 
     TH2D* h2_r2_ratio = (TH2D*) h2_r2_sidisdvcs->Clone("h2_r2_ratio");
-    h2_r2_ratio->Divide(h2_r2_clasdis);
     h2_r2_ratio->SetTitle("Region 2");
+    h2_r2_ratio->Divide(h2_r2_clasdis);
 
     TH2D* h2_r3_ratio = (TH2D*) h2_r3_sidisdvcs->Clone("h2_r3_ratio");
-    h2_r3_ratio->Divide(h2_r3_clasdis);
     h2_r3_ratio->SetTitle("Region 3");
+    h2_r3_ratio->Divide(h2_r3_clasdis);
 
     // Remove stat boxes
     gStyle->SetOptStat(0);
@@ -275,7 +296,7 @@ int main(int argc, char** argv)
     //--------------------------------------------------------------------------
     // 9. Save to file
     //--------------------------------------------------------------------------
-    c->SaveAs("output/normalized_drift_chambers_test.png");
+    c->SaveAs("output/normalized_density_drift_chambers.png");
 
     // Cleanup
     delete c;
