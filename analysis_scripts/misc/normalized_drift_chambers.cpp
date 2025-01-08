@@ -260,40 +260,75 @@ int main(int argc, char** argv)
     TH1D* h1_edge_r3_clas = new TH1D("h1_edge_r3_clas", "Region 3; edge (cm); counts", 
                                      nbins1D, edgeMin, edgeMax);
 
-    //--------------------------------------------------------------------------
+    // --------------------------------------------------------------------------
     // 4b. Create new 2D histograms for (radius, phi) for each region
-    //     We'll use degrees for phi in [0,360) and radius up to e.g. 400 or 500 
-    //     as appropriate. We unify all 3 regions to the same range to keep it simple.
-    //--------------------------------------------------------------------------
-    int nbinsR  = 90;   // radial bins
-    double rMin = 40.0;
-    double rMax = 130.0; // adjust if needed
+    //     Each region has its own radial binning, from 40 up to the region's max.
+    //     Number of radial bins = (rMax - 40). We'll use 180 bins for phi in [0,360).
+    // --------------------------------------------------------------------------
 
-    int nbinsPhi = 180; // for 0..360 degrees
-    double phiMin = 0.0;
-    double phiMax = 360.0;
+    // ---- Region 1: r in [40, 170]
+    int nbinsR1    = 170 - 40;  // = 130
+    double rMin1   = 40.0;
+    double rMax1   = 170.0;
 
-    // SIDIS rad-phi
-    TH2D* h2_r1_sidis_radphi = new TH2D("h2_r1_sidis_radphi","Region 1 rad-phi; radius (cm); phi (deg)",
-                                        nbinsR,  rMin,  rMax,
-                                        nbinsPhi,phiMin,phiMax);
-    TH2D* h2_r2_sidis_radphi = new TH2D("h2_r2_sidis_radphi","Region 2 rad-phi; radius (cm); phi (deg)",
-                                        nbinsR,  rMin,  rMax,
-                                        nbinsPhi,phiMin,phiMax);
-    TH2D* h2_r3_sidis_radphi = new TH2D("h2_r3_sidis_radphi","Region 3 rad-phi; radius (cm); phi (deg)",
-                                        nbinsR,  rMin,  rMax,
-                                        nbinsPhi,phiMin,phiMax);
+    // ---- Region 2: r in [40, 250]
+    int nbinsR2    = 250 - 40;  // = 210
+    double rMin2   = 40.0;
+    double rMax2   = 250.0;
 
-    // CLAS rad-phi
-    TH2D* h2_r1_clas_radphi = new TH2D("h2_r1_clas_radphi","Region 1 rad-phi; radius (cm); phi (deg)",
-                                       nbinsR,  rMin,  rMax,
-                                       nbinsPhi,phiMin,phiMax);
-    TH2D* h2_r2_clas_radphi = new TH2D("h2_r2_clas_radphi","Region 2 rad-phi; radius (cm); phi (deg)",
-                                       nbinsR,  rMin,  rMax,
-                                       nbinsPhi,phiMin,phiMax);
-    TH2D* h2_r3_clas_radphi = new TH2D("h2_r3_clas_radphi","Region 3 rad-phi; radius (cm); phi (deg)",
-                                       nbinsR,  rMin,  rMax,
-                                       nbinsPhi,phiMin,phiMax);
+    // ---- Region 3: r in [40, 420]
+    int nbinsR3    = 420 - 40;  // = 380
+    double rMin3   = 40.0;
+    double rMax3   = 420.0;
+
+    // Phi binning for all regions
+    int    nbinsPhi = 180;
+    double phiMin   = 0.0;
+    double phiMax   = 360.0;
+
+    // ------------------- SIDIS rad-phi histograms -------------------
+    TH2D* h2_r1_sidis_radphi = new TH2D(
+        "h2_r1_sidis_radphi",
+        "Region 1 rad-phi; radius (cm); phi (deg)",
+        nbinsR1, rMin1, rMax1,
+        nbinsPhi, phiMin, phiMax
+    );
+
+    TH2D* h2_r2_sidis_radphi = new TH2D(
+        "h2_r2_sidis_radphi",
+        "Region 2 rad-phi; radius (cm); phi (deg)",
+        nbinsR2, rMin2, rMax2,
+        nbinsPhi, phiMin, phiMax
+    );
+
+    TH2D* h2_r3_sidis_radphi = new TH2D(
+        "h2_r3_sidis_radphi",
+        "Region 3 rad-phi; radius (cm); phi (deg)",
+        nbinsR3, rMin3, rMax3,
+        nbinsPhi, phiMin, phiMax
+    );
+
+    // ------------------- CLAS rad-phi histograms -------------------
+    TH2D* h2_r1_clas_radphi = new TH2D(
+        "h2_r1_clas_radphi",
+        "Region 1 rad-phi; radius (cm); phi (deg)",
+        nbinsR1, rMin1, rMax1,
+        nbinsPhi, phiMin, phiMax
+    );
+
+    TH2D* h2_r2_clas_radphi = new TH2D(
+        "h2_r2_clas_radphi",
+        "Region 2 rad-phi; radius (cm); phi (deg)",
+        nbinsR2, rMin2, rMax2,
+        nbinsPhi, phiMin, phiMax
+    );
+
+    TH2D* h2_r3_clas_radphi = new TH2D(
+        "h2_r3_clas_radphi",
+        "Region 3 rad-phi; radius (cm); phi (deg)",
+        nbinsR3, rMin3, rMax3,
+        nbinsPhi, phiMin, phiMax
+    );
 
     //--------------------------------------------------------------------------
     // Radii for the 3 circles
@@ -314,8 +349,8 @@ int main(int argc, char** argv)
         chain_sidisdvcs.GetEntry(i);
 
         // // Filter line (commented out so we can revert):
-        // if (particle_pid != 11) continue; // electron
-        if (particle_pid != 2212) continue; // proton
+        if (particle_pid != 11) continue; // electron
+        // if (particle_pid != 2212) continue; // proton
 
         if (traj_edge_6 <= 5 || traj_edge_18 <= 5 || traj_edge_36 <= 10) continue; // #endif
 
@@ -379,8 +414,8 @@ int main(int argc, char** argv)
         chain_clasdis.GetEntry(i);
 
         // // Filter line (commented out so we can revert):
-        // if (particle_pid != 11) continue; // electron
-        if (particle_pid != 2212) continue; // proton
+        if (particle_pid != 11) continue; // electron
+        // if (particle_pid != 2212) continue; // proton
 
         if (traj_edge_6 <= 5 || traj_edge_18 <= 5 || traj_edge_36 <= 10) continue; // #endif
 
@@ -495,8 +530,8 @@ int main(int argc, char** argv)
     gPad->SetLogz();
     h2_r3_ratio->Draw("COLZ");
 
-    // c2D_uncut->SaveAs("output/normalization/electron_normalized_drift_chambers_uncut.png");
-    c2D_uncut->SaveAs("output/normalization/proton_normalized_drift_chambers_uncut.png");
+    c2D_uncut->SaveAs("output/normalization/electron_normalized_drift_chambers_uncut.png");
+    // c2D_uncut->SaveAs("output/normalization/proton_normalized_drift_chambers_uncut.png");
 
     //--------------------------------------------------------------------------
     // 9. Draw the same ratio histograms with circles (Canvas 2)
@@ -550,8 +585,8 @@ int main(int argc, char** argv)
       circ3->Draw("same");
     }
 
-    // c2D_circle->SaveAs("output/normalization/electron_normalized_drift_chambers_circle.png");
-    c2D_circle->SaveAs("output/normalization/proton_normalized_drift_chambers_circle.png");
+    c2D_circle->SaveAs("output/normalization/electron_normalized_drift_chambers_circle.png");
+    // c2D_circle->SaveAs("output/normalization/proton_normalized_drift_chambers_circle.png");
 
     //--------------------------------------------------------------------------
     // 10. Normalize the "cut" histograms, then ratio
@@ -611,8 +646,8 @@ int main(int argc, char** argv)
     gPad->SetLogz();
     h2_r3_ratio_cut->Draw("COLZ");
 
-    // c2D_cut->SaveAs("output/normalization/electron_normalized_drift_chambers_cut.png");
-    c2D_cut->SaveAs("output/normalization/proton_normalized_drift_chambers_cut.png");
+    c2D_cut->SaveAs("output/normalization/electron_normalized_drift_chambers_cut.png");
+    // c2D_cut->SaveAs("output/normalization/proton_normalized_drift_chambers_cut.png");
 
     //--------------------------------------------------------------------------
     // 12. Normalize each 1D edge histogram individually, then compute ratio
@@ -672,8 +707,8 @@ int main(int argc, char** argv)
     h1_edge_r3_ratio->GetYaxis()->SetTitle("normalized density ratio");
     h1_edge_r3_ratio->Draw("HIST");
 
-    // c1D->SaveAs("output/normalization/electron_normalized_drift_chambers_edges.png");
-    c1D->SaveAs("output/normalization/proton_normalized_drift_chambers_edges.png");
+    c1D->SaveAs("output/normalization/electron_normalized_drift_chambers_edges.png");
+    // c1D->SaveAs("output/normalization/proton_normalized_drift_chambers_edges.png");
 
     //--------------------------------------------------------------------------
     // 14. Now produce the final "rad-phi" ratio for each region (uncut).
@@ -736,8 +771,8 @@ int main(int argc, char** argv)
     gPad->SetLogz();
     h2_r3_ratio_radphi->Draw("COLZ");
 
-    // cRadPhi->SaveAs("output/normalization/electron_normalized_drift_chambers_radphi.png");
-    cRadPhi->SaveAs("output/normalization/proton_normalized_drift_chambers_radphi.png");
+    cRadPhi->SaveAs("output/normalization/electron_normalized_drift_chambers_radphi.png");
+    // cRadPhi->SaveAs("output/normalization/proton_normalized_drift_chambers_radphi.png");
 
     //--------------------------------------------------------------------------
     // Cleanup
