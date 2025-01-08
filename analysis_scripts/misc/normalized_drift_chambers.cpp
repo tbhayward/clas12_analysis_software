@@ -146,7 +146,7 @@ int main(int argc, char** argv)
     //--------------------------------------------------------------------------
     // (User has changed the x,y ranges for each region here. 
     //  Below is the version in your snippet, but you can adjust as needed.)
-    int nbins = 250;
+    int nbins = 100;
     TH2D* h2_r1_sidisdvcs = new TH2D("h2_r1_sidisdvcs", "Region 1; x; y", 
                                      nbins, -180.0, 180, nbins, -180.0, 180);
     TH2D* h2_r2_sidisdvcs = new TH2D("h2_r2_sidisdvcs", "Region 2; x; y", 
