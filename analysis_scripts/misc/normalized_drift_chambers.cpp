@@ -267,18 +267,18 @@ int main(int argc, char** argv)
     // --------------------------------------------------------------------------
 
     // ---- Region 1: r in [40, 170]
-    int nbinsR1    = 170 - 30;  // = 130
-    double rMin1   = 30.0;
+    int nbinsR1    = 170 - 20;  // = 130
+    double rMin1   = 20.0;
     double rMax1   = 170.0;
 
     // ---- Region 2: r in [40, 250]
-    int nbinsR2    = 250 - 30;  // = 210
-    double rMin2   = 30.0;
+    int nbinsR2    = 250 - 20;  // = 210
+    double rMin2   = 20.0;
     double rMax2   = 250.0;
 
     // ---- Region 3: r in [40, 420]
-    int nbinsR3    = 420 - 30;  // = 380
-    double rMin3   = 30.0;
+    int nbinsR3    = 420 - 20;  // = 380
+    double rMin3   = 20.0;
     double rMax3   = 420.0;
 
     // Phi binning for all regions
@@ -418,6 +418,7 @@ int main(int argc, char** argv)
         // if (particle_pid != 2212) continue; // proton
 
         if (traj_edge_6 <= 5 || traj_edge_18 <= 5 || traj_edge_36 <= 10) continue; // #endif
+        // if (traj_edge_6 <= 3 || traj_edge_18 <= 3 || traj_edge_36 <= 7) continue; // #endif
 
         // Region 1
         if (traj_x_6 != -9999) {
