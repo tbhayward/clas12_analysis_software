@@ -37,6 +37,10 @@
  *     and takes their ratio. This 1D edge ratio plot is not changed by
  *     the circular cuts or circles overlay; it's the same as before.
  *
+ *   - Finally, we produce a 4th "rad-phi" canvas with 1×3 subplots. Each region
+ *     shows the ratio of normalized SIDIS vs CLASDIS, but now binned in
+ *     radius (rho) and phi, where phi=0 means pointing left (x<0,y=0).
+ *
  * Output images are written into:
  *   output/normalization/
  *
@@ -44,11 +48,12 @@
  *   - normalized_drift_chambers_circle.png
  *   - normalized_drift_chambers_cut.png
  *   - normalized_drift_chambers_edges.png
+ *   - normalized_drift_chambers_radphi.png
  *****************************************************************************/
 
 #include <iostream>
 #include <string>
-#include <cmath>          // for sqrt(...)
+#include <cmath>          // for sqrt, atan2, etc.
 #include "TChain.h"
 #include "TFile.h"
 #include "TTree.h"
@@ -87,16 +92,13 @@ void SetSame1DScale(TH1D* h1, TH1D* h2, TH1D* h3)
     double minVal = +1e9;
     double maxVal = -1e9;
 
-    // Find global min & max across the three
     for (auto* hh : {h1, h2, h3}) {
-        // min, max from histogram data
         double locMin = hh->GetMinimum();
         double locMax = hh->GetMaximum();
         if (locMin < minVal) minVal = locMin;
         if (locMax > maxVal) maxVal = locMax;
     }
 
-    // Apply them
     for (auto* hh : {h1, h2, h3}) {
         hh->SetMinimum(minVal);
         hh->SetMaximum(maxVal);
@@ -112,6 +114,7 @@ int main(int argc, char** argv)
     
     if (argc > 1) {
         maxEventsSIDIS = std::stoll(argv[1]);
+        // If that number is 0, treat it as "process all" (same as -1)
         if (maxEventsSIDIS == 0) {
             maxEventsSIDIS = -1;
         }
@@ -125,6 +128,7 @@ int main(int argc, char** argv)
                   << std::endl;
     }
 
+    // If second argument is provided, it's the user-specified SIDIS-DVCS data file
     bool useUserDataFile = false;
     std::string userDataFile;
     if (argc > 2) {
@@ -133,6 +137,7 @@ int main(int argc, char** argv)
         std::cout << "Second argument provided (dataFile): " << userDataFile << std::endl;
     }
 
+    // If third argument is provided, it's the user-specified CLASDIS MC file
     bool useUserMCFile = false;
     std::string userMCFile;
     if (argc > 3) {
@@ -169,9 +174,14 @@ int main(int argc, char** argv)
     Double_t traj_x_18, traj_y_18;
     Double_t traj_x_36, traj_y_36;
 
+    // Additional variables for the new cuts
     Double_t traj_edge_6, traj_edge_18, traj_edge_36;
 
-    // SIDIS-DVCS
+    // // Filter line (commented out so we can revert):
+    // // if (particle_pid != 11) continue; // electron
+    // // if (particle_pid != 2212) continue; // proton
+
+    // --- SIDIS-DVCS chain
     chain_sidisdvcs.SetBranchAddress("particle_pid", &particle_pid);
     chain_sidisdvcs.SetBranchAddress("traj_x_6",    &traj_x_6);
     chain_sidisdvcs.SetBranchAddress("traj_y_6",    &traj_y_6);
@@ -183,7 +193,7 @@ int main(int argc, char** argv)
     chain_sidisdvcs.SetBranchAddress("traj_edge_18",&traj_edge_18);
     chain_sidisdvcs.SetBranchAddress("traj_edge_36",&traj_edge_36);
 
-    // CLASDIS
+    // --- CLASDIS chain
     chain_clasdis.SetBranchAddress("particle_pid",  &particle_pid);
     chain_clasdis.SetBranchAddress("traj_x_6",      &traj_x_6);
     chain_clasdis.SetBranchAddress("traj_y_6",      &traj_y_6);
@@ -251,6 +261,41 @@ int main(int argc, char** argv)
                                      nbins1D, edgeMin, edgeMax);
 
     //--------------------------------------------------------------------------
+    // 4b. Create new 2D histograms for (radius, phi) for each region
+    //     We'll use degrees for phi in [0,360) and radius up to e.g. 400 or 500 
+    //     as appropriate. We unify all 3 regions to the same range to keep it simple.
+    //--------------------------------------------------------------------------
+    int nbinsR  = 200;   // radial bins
+    double rMin = 0.0;
+    double rMax = 400.0; // adjust if needed
+
+    int nbinsPhi = 180; // for 0..360 degrees
+    double phiMin = 0.0;
+    double phiMax = 360.0;
+
+    // SIDIS rad-phi
+    TH2D* h2_r1_sidis_radphi = new TH2D("h2_r1_sidis_radphi","Region 1 rad-phi; radius (cm); phi (deg)",
+                                        nbinsR,  rMin,  rMax,
+                                        nbinsPhi,phiMin,phiMax);
+    TH2D* h2_r2_sidis_radphi = new TH2D("h2_r2_sidis_radphi","Region 2 rad-phi; radius (cm); phi (deg)",
+                                        nbinsR,  rMin,  rMax,
+                                        nbinsPhi,phiMin,phiMax);
+    TH2D* h2_r3_sidis_radphi = new TH2D("h2_r3_sidis_radphi","Region 3 rad-phi; radius (cm); phi (deg)",
+                                        nbinsR,  rMin,  rMax,
+                                        nbinsPhi,phiMin,phiMax);
+
+    // CLAS rad-phi
+    TH2D* h2_r1_clas_radphi = new TH2D("h2_r1_clas_radphi","Region 1 rad-phi; radius (cm); phi (deg)",
+                                       nbinsR,  rMin,  rMax,
+                                       nbinsPhi,phiMin,phiMax);
+    TH2D* h2_r2_clas_radphi = new TH2D("h2_r2_clas_radphi","Region 2 rad-phi; radius (cm); phi (deg)",
+                                       nbinsR,  rMin,  rMax,
+                                       nbinsPhi,phiMin,phiMax);
+    TH2D* h2_r3_clas_radphi = new TH2D("h2_r3_clas_radphi","Region 3 rad-phi; radius (cm); phi (deg)",
+                                       nbinsR,  rMin,  rMax,
+                                       nbinsPhi,phiMin,phiMax);
+
+    //--------------------------------------------------------------------------
     // Radii for the 3 circles
     //--------------------------------------------------------------------------
     const double r1 = 140.0;  // Region 1 radius
@@ -268,40 +313,61 @@ int main(int argc, char** argv)
     for (Long64_t i = 0; i < nEntriesSIDIS; i++) {
         chain_sidisdvcs.GetEntry(i);
 
-        // // Must be an electron
-        // if (particle_pid != 11) continue;
-        // Must be a proton
-        if (particle_pid != 2212) continue;
+        // // Filter line (commented out so we can revert):
+        // if (particle_pid != 11) continue; // electron
+        // if (particle_pid != 2212) continue; // proton
 
-        // Must satisfy edges
-        if (traj_edge_6 <= 5 || traj_edge_18 <= 5 || traj_edge_36 <= 10) continue;
+        if (particle_pid != 11) continue; // #endif
 
-        // Region 1 fill
+        if (traj_edge_6 <= 5 || traj_edge_18 <= 5 || traj_edge_36 <= 10) continue; // #endif
+
+        // Region 1 (x_6,y_6)
         if (traj_x_6 != -9999) {
             h2_r1_sidisdvcs->Fill(traj_x_6, traj_y_6);
             double dist1 = std::sqrt(traj_x_6*traj_x_6 + traj_y_6*traj_y_6);
             if (dist1 < r1) {
                 h2_r1_sidisdvcs_cut->Fill(traj_x_6, traj_y_6);
             }
+
+            // Fill rad-phi
+            double rawAngle = std::atan2(traj_y_6, traj_x_6); 
+            double phi = rawAngle - M_PI;  // shift so left is 0 deg
+            if (phi < 0) phi += 2.*M_PI;
+            double phiDeg = phi * 180./M_PI;
+            h2_r1_sidis_radphi->Fill(dist1, phiDeg);
         }
-        // Region 2 fill
+
+        // Region 2 (x_18,y_18)
         if (traj_x_18 != -9999) {
             h2_r2_sidisdvcs->Fill(traj_x_18, traj_y_18);
             double dist2 = std::sqrt(traj_x_18*traj_x_18 + traj_y_18*traj_y_18);
             if (dist2 < r2) {
                 h2_r2_sidisdvcs_cut->Fill(traj_x_18, traj_y_18);
             }
+
+            double rawAngle = std::atan2(traj_y_18, traj_x_18); 
+            double phi = rawAngle - M_PI;
+            if (phi < 0) phi += 2.*M_PI;
+            double phiDeg = phi * 180./M_PI;
+            h2_r2_sidis_radphi->Fill(dist2, phiDeg);
         }
-        // Region 3 fill
+
+        // Region 3 (x_36,y_36)
         if (traj_x_36 != -9999) {
             h2_r3_sidisdvcs->Fill(traj_x_36, traj_y_36);
             double dist3 = std::sqrt(traj_x_36*traj_x_36 + traj_y_36*traj_y_36);
             if (dist3 < r3) {
                 h2_r3_sidisdvcs_cut->Fill(traj_x_36, traj_y_36);
             }
+
+            double rawAngle = std::atan2(traj_y_36, traj_x_36); 
+            double phi = rawAngle - M_PI;
+            if (phi < 0) phi += 2.*M_PI;
+            double phiDeg = phi * 180./M_PI;
+            h2_r3_sidis_radphi->Fill(dist3, phiDeg);
         }
 
-        // Fill 1D edges
+        // Fill 1D edge histograms
         h1_edge_r1_sidis->Fill(traj_edge_6);
         h1_edge_r2_sidis->Fill(traj_edge_18);
         h1_edge_r3_sidis->Fill(traj_edge_36);
@@ -314,12 +380,13 @@ int main(int argc, char** argv)
     for (Long64_t i = 0; i < nEntriesCLASDIS; i++) {
         chain_clasdis.GetEntry(i);
 
-        // // Must be an electron
-        // if (particle_pid != 11) continue;
-        // Must be a proton
-        if (particle_pid != 2212) continue;
+        // // Filter line (commented out so we can revert):
+        // if (particle_pid != 11) continue; // electron
+        // if (particle_pid != 2212) continue; // proton
 
-        if (traj_edge_6 <= 5 || traj_edge_18 <= 5 || traj_edge_36 <= 10) continue;
+        if (particle_pid != 2212) continue; // #endif
+
+        if (traj_edge_6 <= 5 || traj_edge_18 <= 5 || traj_edge_36 <= 10) continue; // #endif
 
         // Region 1
         if (traj_x_6 != -9999) {
@@ -328,7 +395,14 @@ int main(int argc, char** argv)
             if (dist1 < r1) {
                 h2_r1_clasdis_cut->Fill(traj_x_6, traj_y_6);
             }
+
+            double rawAngle = std::atan2(traj_y_6, traj_x_6); 
+            double phi = rawAngle - M_PI;
+            if (phi < 0) phi += 2.*M_PI;
+            double phiDeg = phi * 180./M_PI;
+            h2_r1_clas_radphi->Fill(dist1, phiDeg);
         }
+
         // Region 2
         if (traj_x_18 != -9999) {
             h2_r2_clasdis->Fill(traj_x_18, traj_y_18);
@@ -336,7 +410,14 @@ int main(int argc, char** argv)
             if (dist2 < r2) {
                 h2_r2_clasdis_cut->Fill(traj_x_18, traj_y_18);
             }
+
+            double rawAngle = std::atan2(traj_y_18, traj_x_18); 
+            double phi = rawAngle - M_PI;
+            if (phi < 0) phi += 2.*M_PI;
+            double phiDeg = phi * 180./M_PI;
+            h2_r2_clas_radphi->Fill(dist2, phiDeg);
         }
+
         // Region 3
         if (traj_x_36 != -9999) {
             h2_r3_clasdis->Fill(traj_x_36, traj_y_36);
@@ -344,6 +425,12 @@ int main(int argc, char** argv)
             if (dist3 < r3) {
                 h2_r3_clasdis_cut->Fill(traj_x_36, traj_y_36);
             }
+
+            double rawAngle = std::atan2(traj_y_36, traj_x_36); 
+            double phi = rawAngle - M_PI;
+            if (phi < 0) phi += 2.*M_PI;
+            double phiDeg = phi * 180./M_PI;
+            h2_r3_clas_radphi->Fill(dist3, phiDeg);
         }
 
         // Fill 1D edges
@@ -355,21 +442,17 @@ int main(int argc, char** argv)
     //--------------------------------------------------------------------------
     // 7. Normalize each 2D histogram (uncut), then compute ratio
     //--------------------------------------------------------------------------
-    double int_r1_sidis = h2_r1_sidisdvcs->Integral(); 
+    double int_r1_sidis = h2_r1_sidisdvcs->Integral();
     if (int_r1_sidis > 0) h2_r1_sidisdvcs->Scale(1.0 / int_r1_sidis);
-
     double int_r2_sidis = h2_r2_sidisdvcs->Integral();
     if (int_r2_sidis > 0) h2_r2_sidisdvcs->Scale(1.0 / int_r2_sidis);
-
     double int_r3_sidis = h2_r3_sidisdvcs->Integral();
     if (int_r3_sidis > 0) h2_r3_sidisdvcs->Scale(1.0 / int_r3_sidis);
 
     double int_r1_clas = h2_r1_clasdis->Integral();
     if (int_r1_clas > 0) h2_r1_clasdis->Scale(1.0 / int_r1_clas);
-
     double int_r2_clas = h2_r2_clasdis->Integral();
     if (int_r2_clas > 0) h2_r2_clasdis->Scale(1.0 / int_r2_clas);
-
     double int_r3_clas = h2_r3_clasdis->Integral();
     if (int_r3_clas > 0) h2_r3_clasdis->Scale(1.0 / int_r3_clas);
 
@@ -416,19 +499,17 @@ int main(int argc, char** argv)
     gPad->SetLogz();
     h2_r3_ratio->Draw("COLZ");
 
-    // c2D_uncut->SaveAs("output/normalization/electron_normalized_drift_chambers_uncut.png");
-    c2D_uncut->SaveAs("output/normalization/proton_normalized_drift_chambers_uncut.png");
+    c2D_uncut->SaveAs("output/normalization/normalized_drift_chambers_uncut.png");
 
     //--------------------------------------------------------------------------
     // 9. Draw the same ratio histograms with circles (Canvas 2)
-    //    They have the same scale, so no need to unify again
     //--------------------------------------------------------------------------
     TCanvas *c2D_circle = new TCanvas("c2D_circle", "Normalized 2D Drift Chambers (Circle Overlay)", 1800, 600);
     c2D_circle->Divide(3,1);
 
     int circleColor    = kRed;
     int circleLineWidth = 2;
-    int circleFillStyle = 0; 
+    int circleFillStyle = 0;
 
     // Region 1
     c2D_circle->cd(1);
@@ -472,8 +553,7 @@ int main(int argc, char** argv)
       circ3->Draw("same");
     }
 
-    // c2D_circle->SaveAs("output/normalization/electron_normalized_drift_chambers_circle.png");
-    c2D_circle->SaveAs("output/normalization/proton_normalized_drift_chambers_circle.png");
+    c2D_circle->SaveAs("output/normalization/normalized_drift_chambers_circle.png");
 
     //--------------------------------------------------------------------------
     // 10. Normalize the "cut" histograms, then ratio
@@ -533,8 +613,7 @@ int main(int argc, char** argv)
     gPad->SetLogz();
     h2_r3_ratio_cut->Draw("COLZ");
 
-    // c2D_cut->SaveAs("output/normalization/electron_normalized_drift_chambers_cut.png");
-    c2D_cut->SaveAs("output/normalization/proton_normalized_drift_chambers_cut.png");
+    c2D_cut->SaveAs("output/normalization/normalized_drift_chambers_cut.png");
 
     //--------------------------------------------------------------------------
     // 12. Normalize each 1D edge histogram individually, then compute ratio
@@ -594,8 +673,70 @@ int main(int argc, char** argv)
     h1_edge_r3_ratio->GetYaxis()->SetTitle("normalized density ratio");
     h1_edge_r3_ratio->Draw("HIST");
 
-    // c1D->SaveAs("output/normalization/electron_normalized_drift_chambers_edges.png");
-    c1D->SaveAs("output/normalization/proton_normalized_drift_chambers_edges.png");
+    c1D->SaveAs("output/normalization/normalized_drift_chambers_edges.png");
+
+    //--------------------------------------------------------------------------
+    // 14. Now produce the final "rad-phi" ratio for each region (uncut).
+    //--------------------------------------------------------------------------
+    // Normalize SIDIS rad-phi
+    double int_r1_sidis_radphi = h2_r1_sidis_radphi->Integral();
+    if (int_r1_sidis_radphi > 0) h2_r1_sidis_radphi->Scale(1.0/int_r1_sidis_radphi);
+
+    double int_r2_sidis_radphi = h2_r2_sidis_radphi->Integral();
+    if (int_r2_sidis_radphi > 0) h2_r2_sidis_radphi->Scale(1.0/int_r2_sidis_radphi);
+
+    double int_r3_sidis_radphi = h2_r3_sidis_radphi->Integral();
+    if (int_r3_sidis_radphi > 0) h2_r3_sidis_radphi->Scale(1.0/int_r3_sidis_radphi);
+
+    // Normalize CLAS rad-phi
+    double int_r1_clas_radphi = h2_r1_clas_radphi->Integral();
+    if (int_r1_clas_radphi > 0) h2_r1_clas_radphi->Scale(1.0/int_r1_clas_radphi);
+
+    double int_r2_clas_radphi = h2_r2_clas_radphi->Integral();
+    if (int_r2_clas_radphi > 0) h2_r2_clas_radphi->Scale(1.0/int_r2_clas_radphi);
+
+    double int_r3_clas_radphi = h2_r3_clas_radphi->Integral();
+    if (int_r3_clas_radphi > 0) h2_r3_clas_radphi->Scale(1.0/int_r3_clas_radphi);
+
+    // Ratio
+    TH2D* h2_r1_ratio_radphi = (TH2D*) h2_r1_sidis_radphi->Clone("h2_r1_ratio_radphi");
+    h2_r1_ratio_radphi->SetTitle("Region 1 (radius vs phi)");
+    h2_r1_ratio_radphi->Divide(h2_r1_clas_radphi);
+
+    TH2D* h2_r2_ratio_radphi = (TH2D*) h2_r2_sidis_radphi->Clone("h2_r2_ratio_radphi");
+    h2_r2_ratio_radphi->SetTitle("Region 2 (radius vs phi)");
+    h2_r2_ratio_radphi->Divide(h2_r2_clas_radphi);
+
+    TH2D* h2_r3_ratio_radphi = (TH2D*) h2_r3_sidis_radphi->Clone("h2_r3_ratio_radphi");
+    h2_r3_ratio_radphi->SetTitle("Region 3 (radius vs phi)");
+    h2_r3_ratio_radphi->Divide(h2_r3_clas_radphi);
+
+    // Set same scale
+    SetSame2DScale(h2_r1_ratio_radphi, h2_r2_ratio_radphi, h2_r3_ratio_radphi);
+
+    // Draw final rad-phi ratio canvas (Canvas 4)
+    TCanvas* cRadPhi = new TCanvas("cRadPhi","Ratio of radius vs phi",1800,600);
+    cRadPhi->Divide(3,1);
+
+    cRadPhi->cd(1);
+    gPad->SetRightMargin(0.20);
+    gPad->SetLeftMargin(0.20);
+    gPad->SetLogz();
+    h2_r1_ratio_radphi->Draw("COLZ");
+
+    cRadPhi->cd(2);
+    gPad->SetRightMargin(0.20);
+    gPad->SetLeftMargin(0.20);
+    gPad->SetLogz();
+    h2_r2_ratio_radphi->Draw("COLZ");
+
+    cRadPhi->cd(3);
+    gPad->SetRightMargin(0.20);
+    gPad->SetLeftMargin(0.20);
+    gPad->SetLogz();
+    h2_r3_ratio_radphi->Draw("COLZ");
+
+    cRadPhi->SaveAs("output/normalization/normalized_drift_chambers_radphi.png");
 
     //--------------------------------------------------------------------------
     // Cleanup
@@ -604,6 +745,7 @@ int main(int argc, char** argv)
     delete c2D_circle;
     delete c2D_cut;
     delete c1D;
+    delete cRadPhi;
 
     // 2D hists (uncut)
     delete h2_r1_sidisdvcs;
@@ -637,6 +779,17 @@ int main(int argc, char** argv)
     delete h1_edge_r1_ratio;
     delete h1_edge_r2_ratio;
     delete h1_edge_r3_ratio;
+
+    // Rad-phi hists
+    delete h2_r1_sidis_radphi;
+    delete h2_r2_sidis_radphi;
+    delete h2_r3_sidis_radphi;
+    delete h2_r1_clas_radphi;
+    delete h2_r2_clas_radphi;
+    delete h2_r3_clas_radphi;
+    delete h2_r1_ratio_radphi;
+    delete h2_r2_ratio_radphi;
+    delete h2_r3_ratio_radphi;
 
     return 0;
 }
