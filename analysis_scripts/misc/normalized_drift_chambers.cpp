@@ -215,14 +215,14 @@ int main(int argc, char** argv)
     TH2D* h2_r2_sidisdvcs = new TH2D("h2_r2_sidisdvcs", "Region 2; x; y", 
                                      nbins2D, -280.0, 280, nbins2D, -280.0, 280);
     TH2D* h2_r3_sidisdvcs = new TH2D("h2_r3_sidisdvcs", "Region 3; x; y", 
-                                     nbins2D, -320.0, 320, nbins2D, -320.0, 320);
+                                     nbins2D, -380.0, 320, nbins2D, -380.0, 320);
 
     TH2D* h2_r1_clasdis = new TH2D("h2_r1_clasdis", "Region 1; x; y", 
                                    nbins2D, -180.0, 180, nbins2D, -180.0, 180.0);
     TH2D* h2_r2_clasdis = new TH2D("h2_r2_clasdis", "Region 2; x; y", 
                                    nbins2D, -280.0, 280, nbins2D, -280.0, 280);
     TH2D* h2_r3_clasdis = new TH2D("h2_r3_clasdis", "Region 3; x; y", 
-                                   nbins2D, -320.0, 320, nbins2D, -320.0, 320);
+                                   nbins2D, -380.0, 320, nbins2D, -380.0, 320);
 
     // -- Cut
     TH2D* h2_r1_sidisdvcs_cut = new TH2D("h2_r1_sidisdvcs_cut", "Region 1 (cut); x; y", 
@@ -230,21 +230,21 @@ int main(int argc, char** argv)
     TH2D* h2_r2_sidisdvcs_cut = new TH2D("h2_r2_sidisdvcs_cut", "Region 2 (cut); x; y", 
                                          nbins2D, -280.0, 280, nbins2D, -280.0, 280);
     TH2D* h2_r3_sidisdvcs_cut = new TH2D("h2_r3_sidisdvcs_cut", "Region 3 (cut); x; y", 
-                                         nbins2D, -320.0, 320, nbins2D, -320.0, 320);
+                                         nbins2D, -380.0, 320, nbins2D, -380.0, 320);
 
     TH2D* h2_r1_clasdis_cut = new TH2D("h2_r1_clasdis_cut", "Region 1 (cut); x; y", 
                                        nbins2D, -180.0, 180, nbins2D, -180.0, 180.0);
     TH2D* h2_r2_clasdis_cut = new TH2D("h2_r2_clasdis_cut", "Region 2 (cut); x; y", 
                                        nbins2D, -280.0, 280, nbins2D, -280.0, 280);
     TH2D* h2_r3_clasdis_cut = new TH2D("h2_r3_clasdis_cut", "Region 3 (cut); x; y", 
-                                       nbins2D, -320.0, 320, nbins2D, -320.0, 320);
+                                       nbins2D, -380.0, 320, nbins2D, -380.0, 320);
 
     //--------------------------------------------------------------------------
     // 4a. Create 1D histograms for the edge variables
     //--------------------------------------------------------------------------
-    int nbins1D = 100;
+    int nbins1D = 150;
     double edgeMin = 0.0;
-    double edgeMax = 100.0;
+    double edgeMax = 150.0;
 
     TH1D* h1_edge_r1_sidis = new TH1D("h1_edge_r1_sidis", "Region 1; edge (cm); counts", 
                                       nbins1D, edgeMin, edgeMax);
@@ -314,10 +314,8 @@ int main(int argc, char** argv)
         chain_sidisdvcs.GetEntry(i);
 
         // // Filter line (commented out so we can revert):
-        // if (particle_pid != 11) continue; // electron
+        if (particle_pid != 11) continue; // electron
         // if (particle_pid != 2212) continue; // proton
-
-        if (particle_pid != 11) continue; // #endif
 
         if (traj_edge_6 <= 5 || traj_edge_18 <= 5 || traj_edge_36 <= 10) continue; // #endif
 
@@ -381,10 +379,8 @@ int main(int argc, char** argv)
         chain_clasdis.GetEntry(i);
 
         // // Filter line (commented out so we can revert):
-        // if (particle_pid != 11) continue; // electron
+        if (particle_pid != 11) continue; // electron
         // if (particle_pid != 2212) continue; // proton
-
-        if (particle_pid != 2212) continue; // #endif
 
         if (traj_edge_6 <= 5 || traj_edge_18 <= 5 || traj_edge_36 <= 10) continue; // #endif
 
@@ -499,7 +495,8 @@ int main(int argc, char** argv)
     gPad->SetLogz();
     h2_r3_ratio->Draw("COLZ");
 
-    c2D_uncut->SaveAs("output/normalization/normalized_drift_chambers_uncut.png");
+    c2D_uncut->SaveAs("output/normalization/electron_normalized_drift_chambers_uncut.png");
+    // c2D_uncut->SaveAs("output/normalization/proton_normalized_drift_chambers_uncut.png");
 
     //--------------------------------------------------------------------------
     // 9. Draw the same ratio histograms with circles (Canvas 2)
@@ -553,7 +550,8 @@ int main(int argc, char** argv)
       circ3->Draw("same");
     }
 
-    c2D_circle->SaveAs("output/normalization/normalized_drift_chambers_circle.png");
+    c2D_circle->SaveAs("output/normalization/electron_normalized_drift_chambers_circle.png");
+    // c2D_circle->SaveAs("output/normalization/proton_normalized_drift_chambers_circle.png");
 
     //--------------------------------------------------------------------------
     // 10. Normalize the "cut" histograms, then ratio
@@ -613,7 +611,8 @@ int main(int argc, char** argv)
     gPad->SetLogz();
     h2_r3_ratio_cut->Draw("COLZ");
 
-    c2D_cut->SaveAs("output/normalization/normalized_drift_chambers_cut.png");
+    c2D_cut->SaveAs("output/normalization/electron_normalized_drift_chambers_cut.png");
+    // c2D_cut->SaveAs("output/normalization/proton_normalized_drift_chambers_cut.png");
 
     //--------------------------------------------------------------------------
     // 12. Normalize each 1D edge histogram individually, then compute ratio
@@ -673,7 +672,8 @@ int main(int argc, char** argv)
     h1_edge_r3_ratio->GetYaxis()->SetTitle("normalized density ratio");
     h1_edge_r3_ratio->Draw("HIST");
 
-    c1D->SaveAs("output/normalization/normalized_drift_chambers_edges.png");
+    c1D->SaveAs("output/normalization/electron_normalized_drift_chambers_edges.png");
+    // c1D->SaveAs("output/normalization/proton_normalized_drift_chambers_edges.png");
 
     //--------------------------------------------------------------------------
     // 14. Now produce the final "rad-phi" ratio for each region (uncut).
@@ -736,7 +736,8 @@ int main(int argc, char** argv)
     gPad->SetLogz();
     h2_r3_ratio_radphi->Draw("COLZ");
 
-    cRadPhi->SaveAs("output/normalization/normalized_drift_chambers_radphi.png");
+    cRadPhi->SaveAs("output/normalization/electron_normalized_drift_chambers_radphi.png");
+    // cRadPhi->SaveAs("output/normalization/proton_normalized_drift_chambers_radphi.png");
 
     //--------------------------------------------------------------------------
     // Cleanup
