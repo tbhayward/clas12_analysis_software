@@ -215,14 +215,14 @@ int main(int argc, char** argv)
     TH2D* h2_r2_sidisdvcs = new TH2D("h2_r2_sidisdvcs", "Region 2; x; y", 
                                      nbins2D, -280.0, 280, nbins2D, -280.0, 280);
     TH2D* h2_r3_sidisdvcs = new TH2D("h2_r3_sidisdvcs", "Region 3; x; y", 
-                                     nbins2D, -450.0, 450, nbins2D, 450.0, 450);
+                                     nbins2D, -450.0, 450, nbins2D, -450.0, 450);
 
     TH2D* h2_r1_clasdis = new TH2D("h2_r1_clasdis", "Region 1; x; y", 
                                    nbins2D, -180.0, 180, nbins2D, -180.0, 180.0);
     TH2D* h2_r2_clasdis = new TH2D("h2_r2_clasdis", "Region 2; x; y", 
                                    nbins2D, -280.0, 280, nbins2D, -280.0, 280);
     TH2D* h2_r3_clasdis = new TH2D("h2_r3_clasdis", "Region 3; x; y", 
-                                   nbins2D, -450.0, 450, nbins2D, 450.0, 450);
+                                   nbins2D, -450.0, 450, nbins2D, -450.0, 450);
 
     // -- Cut
     TH2D* h2_r1_sidisdvcs_cut = new TH2D("h2_r1_sidisdvcs_cut", "Region 1 (cut); x; y", 
@@ -230,14 +230,14 @@ int main(int argc, char** argv)
     TH2D* h2_r2_sidisdvcs_cut = new TH2D("h2_r2_sidisdvcs_cut", "Region 2 (cut); x; y", 
                                          nbins2D, -280.0, 280, nbins2D, -280.0, 280);
     TH2D* h2_r3_sidisdvcs_cut = new TH2D("h2_r3_sidisdvcs_cut", "Region 3 (cut); x; y", 
-                                         nbins2D, -450.0, 450, nbins2D, 450.0, 450);
+                                         nbins2D, -450.0, 450, nbins2D, -450.0, 450);
 
     TH2D* h2_r1_clasdis_cut = new TH2D("h2_r1_clasdis_cut", "Region 1 (cut); x; y", 
                                        nbins2D, -180.0, 180, nbins2D, -180.0, 180.0);
     TH2D* h2_r2_clasdis_cut = new TH2D("h2_r2_clasdis_cut", "Region 2 (cut); x; y", 
                                        nbins2D, -280.0, 280, nbins2D, -280.0, 280);
     TH2D* h2_r3_clasdis_cut = new TH2D("h2_r3_clasdis_cut", "Region 3 (cut); x; y", 
-                                       nbins2D, -450.0, 450, nbins2D, 450.0, 450);
+                                       nbins2D, -450.0, 450, nbins2D, -450.0, 450);
 
     //--------------------------------------------------------------------------
     // 4a. Create 1D histograms for the edge variables
@@ -267,18 +267,18 @@ int main(int argc, char** argv)
     // --------------------------------------------------------------------------
 
     // ---- Region 1: r in [40, 170]
-    int nbinsR1    = 170 - 40;  // = 130
-    double rMin1   = 40.0;
+    int nbinsR1    = 170 - 30;  // = 130
+    double rMin1   = 30.0;
     double rMax1   = 170.0;
 
     // ---- Region 2: r in [40, 250]
-    int nbinsR2    = 250 - 40;  // = 210
-    double rMin2   = 40.0;
+    int nbinsR2    = 250 - 30;  // = 210
+    double rMin2   = 30.0;
     double rMax2   = 250.0;
 
     // ---- Region 3: r in [40, 420]
-    int nbinsR3    = 420 - 40;  // = 380
-    double rMin3   = 40.0;
+    int nbinsR3    = 420 - 30;  // = 380
+    double rMin3   = 30.0;
     double rMax3   = 420.0;
 
     // Phi binning for all regions
