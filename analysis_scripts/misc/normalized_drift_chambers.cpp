@@ -518,19 +518,19 @@ int main(int argc, char** argv)
     c2D_uncut->cd(1);
     gPad->SetRightMargin(0.20);
     gPad->SetLeftMargin(0.20);
-    gPad->SetLogz();
+    // gPad->SetLogz();
     h2_r1_ratio->Draw("COLZ");
 
     c2D_uncut->cd(2);
     gPad->SetRightMargin(0.20);
     gPad->SetLeftMargin(0.20);
-    gPad->SetLogz();
+    // gPad->SetLogz();
     h2_r2_ratio->Draw("COLZ");
 
     c2D_uncut->cd(3);
     gPad->SetRightMargin(0.20);
     gPad->SetLeftMargin(0.20);
-    gPad->SetLogz();
+    // gPad->SetLogz();
     h2_r3_ratio->Draw("COLZ");
 
     // c2D_uncut->SaveAs("output/normalization/electron_normalized_drift_chambers_uncut.png");
@@ -550,7 +550,7 @@ int main(int argc, char** argv)
     c2D_circle->cd(1);
     gPad->SetRightMargin(0.20);
     gPad->SetLeftMargin(0.20);
-    gPad->SetLogz();
+    // gPad->SetLogz();
     h2_r1_ratio->Draw("COLZ");
     {
       TEllipse* circ1 = new TEllipse(0.0, 0.0, r1, r1);
@@ -564,7 +564,7 @@ int main(int argc, char** argv)
     c2D_circle->cd(2);
     gPad->SetRightMargin(0.20);
     gPad->SetLeftMargin(0.20);
-    gPad->SetLogz();
+    // gPad->SetLogz();
     h2_r2_ratio->Draw("COLZ");
     {
       TEllipse* circ2 = new TEllipse(0.0, 0.0, r2, r2);
@@ -578,7 +578,7 @@ int main(int argc, char** argv)
     c2D_circle->cd(3);
     gPad->SetRightMargin(0.20);
     gPad->SetLeftMargin(0.20);
-    gPad->SetLogz();
+    // gPad->SetLogz();
     h2_r3_ratio->Draw("COLZ");
     {
       TEllipse* circ3 = new TEllipse(0.0, 0.0, r3, r3);
@@ -634,19 +634,19 @@ int main(int argc, char** argv)
     c2D_cut->cd(1);
     gPad->SetRightMargin(0.20);
     gPad->SetLeftMargin(0.20);
-    gPad->SetLogz();
+    // gPad->SetLogz();
     h2_r1_ratio_cut->Draw("COLZ");
 
     c2D_cut->cd(2);
     gPad->SetRightMargin(0.20);
     gPad->SetLeftMargin(0.20);
-    gPad->SetLogz();
+    // gPad->SetLogz();
     h2_r2_ratio_cut->Draw("COLZ");
 
     c2D_cut->cd(3);
     gPad->SetRightMargin(0.20);
     gPad->SetLeftMargin(0.20);
-    gPad->SetLogz();
+    // gPad->SetLogz();
     h2_r3_ratio_cut->Draw("COLZ");
 
     // c2D_cut->SaveAs("output/normalization/electron_normalized_drift_chambers_cut.png");
@@ -759,19 +759,19 @@ int main(int argc, char** argv)
     cRadPhi->cd(1);
     gPad->SetRightMargin(0.20);
     gPad->SetLeftMargin(0.20);
-    gPad->SetLogz();
+    // gPad->SetLogz();
     h2_r1_ratio_radphi->Draw("COLZ");
 
     cRadPhi->cd(2);
     gPad->SetRightMargin(0.20);
     gPad->SetLeftMargin(0.20);
-    gPad->SetLogz();
+    // gPad->SetLogz();
     h2_r2_ratio_radphi->Draw("COLZ");
 
     cRadPhi->cd(3);
     gPad->SetRightMargin(0.20);
     gPad->SetLeftMargin(0.20);
-    gPad->SetLogz();
+    // gPad->SetLogz();
     h2_r3_ratio_radphi->Draw("COLZ");
 
     // cRadPhi->SaveAs("output/normalization/electron_normalized_drift_chambers_radphi.png");
