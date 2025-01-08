@@ -17,7 +17,8 @@
  *      - If provided, uses this file for the SIDIS-DVCS chain (no merging).
  *      - If omitted, merges the three hard-coded SIDIS-DVCS files.
  *   3) mcFile:
- *      - If provided, uses this file for the CLASDIS chain (skips the hard-coded file).
+ *      - If provided, uses this file for the CLASDIS chain (skips the
+ *        hard-coded file).
  *      - If omitted, uses the single hard-coded CLASDIS file.
  *
  * Explanation:
@@ -35,6 +36,14 @@
  *     (traj_edge_6, traj_edge_18, traj_edge_36), normalizes them,
  *     and takes their ratio. This 1D edge ratio plot is not changed by
  *     the circular cuts or circles overlay; it's the same as before.
+ *
+ * Output images are written into:
+ *   output/normalization/
+ *
+ *   - normalized_drift_chambers_uncut.png
+ *   - normalized_drift_chambers_circle.png
+ *   - normalized_drift_chambers_cut.png
+ *   - normalized_drift_chambers_edges.png
  *****************************************************************************/
 
 #include <iostream>
@@ -49,7 +58,7 @@
 #include "TStyle.h"
 #include "TROOT.h"
 #include "TPad.h"
-#include "TEllipse.h"
+#include "TEllipse.h"     // Use TEllipse for drawing circles
 
 int main(int argc, char** argv)
 {
@@ -413,7 +422,7 @@ int main(int argc, char** argv)
     c2D_circle->Divide(3,1);
 
     // Circle style
-    int circleColor = kRed; 
+    int circleColor    = kRed;
     int circleLineWidth = 2;  // thin line
     int circleFillStyle = 0;  // hollow
 
@@ -423,8 +432,10 @@ int main(int argc, char** argv)
     gPad->SetLeftMargin(0.20);
     gPad->SetLogz();
     h2_r1_ratio->Draw("COLZ");
+
     {
-      TCircle *circ1 = new TCircle(0.0, 0.0, r1);
+      // TEllipse works as circle if we use same radius for X and Y
+      TEllipse* circ1 = new TEllipse(0.0, 0.0, r1, r1);
       circ1->SetLineColor(circleColor);
       circ1->SetLineWidth(circleLineWidth);
       circ1->SetFillStyle(circleFillStyle);
@@ -437,8 +448,9 @@ int main(int argc, char** argv)
     gPad->SetLeftMargin(0.20);
     gPad->SetLogz();
     h2_r2_ratio->Draw("COLZ");
+
     {
-      TCircle *circ2 = new TCircle(0.0, 0.0, r2);
+      TEllipse* circ2 = new TEllipse(0.0, 0.0, r2, r2);
       circ2->SetLineColor(circleColor);
       circ2->SetLineWidth(circleLineWidth);
       circ2->SetFillStyle(circleFillStyle);
@@ -451,8 +463,9 @@ int main(int argc, char** argv)
     gPad->SetLeftMargin(0.20);
     gPad->SetLogz();
     h2_r3_ratio->Draw("COLZ");
+
     {
-      TCircle *circ3 = new TCircle(0.0, 0.0, r3);
+      TEllipse* circ3 = new TEllipse(0.0, 0.0, r3, r3);
       circ3->SetLineColor(circleColor);
       circ3->SetLineWidth(circleLineWidth);
       circ3->SetFillStyle(circleFillStyle);
