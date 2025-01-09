@@ -208,7 +208,7 @@ int main(int argc, char** argv)
     //--------------------------------------------------------------------------
     // 4. Create 2D histograms for each region, for each dataset (uncut & cut)
     //--------------------------------------------------------------------------
-    int nbins2D = 100;
+    int nbins2D = 200;
     // -- Uncut
     TH2D* h2_r1_sidisdvcs = new TH2D("h2_r1_sidisdvcs", "Region 1; x; y", 
                                      nbins2D, -180.0, 180, nbins2D, -180.0, 180);
@@ -242,7 +242,7 @@ int main(int argc, char** argv)
     //--------------------------------------------------------------------------
     // 4a. Create 1D histograms for the edge variables
     //--------------------------------------------------------------------------
-    int nbins1D = 125 ;
+    int nbins1D = 125;
     double edgeMin = 0.0;
     double edgeMax = 125.0;
 
