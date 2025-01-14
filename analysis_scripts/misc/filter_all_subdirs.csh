@@ -2,87 +2,101 @@
 
 # ------------------------------------------------------------------------------
 # Usage:
-#   ./filter_all_subdirs.csh <MERGED_FILE> <MIN_CURRENT> <OUTPUT_PARENT> <INPUT_PARENT> <DIR_1> [DIR_2 ...]
+#   ./filter_all_subdirs.csh <MERGED_FILE> <MIN_CURRENT> <OUTPUT_PARENT> <INPUT_PARENT> <SUBDIR_1> [SUBDIR_2 ...]
 #
 # Example:
 #   ./filter_all_subdirs.csh \
-#       /scratch/thayward/final_merged_output.hipo \
+#       /scratch/thayward/test.hipo \
 #       35 \
-#       /scratch/thayward \
+#       /scratch/thayward/output \
 #       /cache/clas12/rg-a/production/decoded/6b.0.0 \
 #       004025 004312
 #
-# This script:
-#   1) Loops over each specified subdirectory
-#       a) Finds all *.hipo files
-#       b) Calls trigger-filter, writing one output per subdirectory
-#   2) Merges all subdirectory outputs (OUTPUT_PARENT/*.hipo) into one file:
-#       hipoutils -merge -o <MERGED_FILE> OUTPUT_PARENT/*.hipo
-#   3) Removes those intermediate subdirectory output files from OUTPUT_PARENT
+# Steps:
+#   1) For each subdirectory, gather *.hipo and call trigger-filter -> produce <SUBDIR>_00001.hipo
+#   2) Merge all <OUTPUT_PARENT>/*.hipo into one file <MERGED_FILE>
+#   3) Remove the intermediate <OUTPUT_PARENT>/*.hipo files
 # ------------------------------------------------------------------------------
- 
-# Check for minimum number of arguments
-# We need at least 5: MERGED_FILE, MIN_CURRENT, OUTPUT_PARENT, INPUT_PARENT, and at least 1 directory
+
+# 1) Require at least 5 arguments
 if ( $#argv < 5 ) then
     echo "Usage: $0 MERGED_FILE MIN_CURRENT OUTPUT_PARENT INPUT_PARENT DIR_1 [DIR_2 ...]"
     exit 1
 endif
 
-# 1) The merged output file (new first argument)
+# 2) Parse the arguments
 set MERGED_FILE   = $argv[1]
-
-# 2) The minimum current (goes to -c)
 set MIN_CURRENT   = $argv[2]
-
-# 3) The output base directory (where subdirectory outputs go)
 set OUTPUT_PARENT = $argv[3]
-
-# 4) The input base directory (where all numbered subdirs live)
 set INPUT_PARENT  = $argv[4]
 
-# Shift so $argv now holds only the subdirectories
+# 3) Shift so remaining arguments are subdirectories
 shift
 shift
 shift
 shift
 
-# Now, for each subdirectory:
+# 4) Loop over each subdirectory
 foreach SUBDIR ($argv)
-    echo "------------------------------"
+    echo "-------------------------------------------------------"
     echo "Processing directory: $SUBDIR"
 
-    # Build the full path for the subdirectory
+    # Build full path, e.g.: /cache/clas12/rg-a/production/decoded/6b.0.0/004025
     set FULL_PATH = "${INPUT_PARENT}/${SUBDIR}"
 
-    # Gather all the .hipo files from that subdirectory
-    set FILE_LIST = (`ls ${FULL_PATH}/*.hipo 2> /dev/null`)
+    # Gather *.hipo with 'ls -1' (one filename per line)
+    # redirect both stdout+stderr in csh with '>& /dev/null'
+    set FILE_LIST = ( `ls -1 ${FULL_PATH}/*.hipo >& /dev/null` )
 
-    # If no files found, skip
-    if ( "$FILE_LIST" == "" ) then
+    # If FILE_LIST is empty, skip
+    if ( $#FILE_LIST == 0 ) then
         echo "No *.hipo files found in ${FULL_PATH}, skipping."
         continue
     endif
 
-    # Construct the output filename, e.g.: /scratch/thayward/004025_00001.hipo
+    echo "Found files:"
+    echo "$FILE_LIST"
+
+    # Construct output file, e.g.: /scratch/thayward/output/004025_00001.hipo
     set OUTPUT_FILE = "${OUTPUT_PARENT}/${SUBDIR}_00001.hipo"
 
-    # Run the filter
+    # Ensure output parent directory exists
+    if ( ! -d "${OUTPUT_PARENT}" ) then
+        echo "Creating directory: ${OUTPUT_PARENT}"
+        mkdir -p "${OUTPUT_PARENT}"
+    endif
+
+    # Run trigger-filter
     /u/home/thayward/coatjava/bin/trigger-filter \
         -c ${MIN_CURRENT} \
         -b 0x80000000 \
         $FILE_LIST \
         -o ${OUTPUT_FILE}
 
-    echo "Output written to: ${OUTPUT_FILE}"
+    echo "Wrote filtered file to: ${OUTPUT_FILE}"
+    echo ""
 end
 
-# After all subdirectories are processed, merge their outputs:
-echo "------------------------------"
-echo "Merging all subdir output files in ${OUTPUT_PARENT} into:"
-echo "  ${MERGED_FILE}"
-hipoutils -merge -o "${MERGED_FILE}" ${OUTPUT_PARENT}/*.hipo
+# 5) Merge step:
+#    Only do so if we actually have *.hipo files in OUTPUT_PARENT
+#    (Otherwise "No match" errors can occur.)
+echo "-------------------------------------------------------"
+echo "Merging all subdirectory outputs (if any) into: ${MERGED_FILE}"
 
-# Finally, remove the intermediate subdirectory output files
-echo "Removing intermediate files from: ${OUTPUT_PARENT}/*.hipo"
+# Check if we have any *.hipo in OUTPUT_PARENT
+set MERGE_CANDIDATES = ( `ls -1 ${OUTPUT_PARENT}/*.hipo >& /dev/null` )
+if ( $#MERGE_CANDIDATES == 0 ) then
+    echo "No subdirectory outputs found in ${OUTPUT_PARENT} to merge. Exiting."
+    exit 0
+endif
+
+echo "Merging these files:"
+echo "$MERGE_CANDIDATES"
+
+hipoutils -merge -o "${MERGED_FILE}" $MERGE_CANDIDATES
+
+# 6) Remove intermediate files
+echo "Removing intermediate files: ${OUTPUT_PARENT}/*.hipo"
 rm ${OUTPUT_PARENT}/*.hipo
-echo "All done!"
+
+echo "Done! Final merged file is: ${MERGED_FILE}"
