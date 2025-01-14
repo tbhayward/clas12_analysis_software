@@ -1,32 +1,47 @@
 #!/bin/tcsh
 
 # ------------------------------------------------------------------------------
-# Usage: ./filter_all_subdirs.csh min_current out_parent_dir input_parent_dir dir1 [dir2 ...]
-# Example:
-#   ./filter_all_subdirs.csh 35 /scratch/thayward /cache/clas12/rg-a/production/decoded/6b.0.0/ 004025 004312
+# Usage:
+#   ./filter_all_subdirs.csh <MERGED_FILE> <MIN_CURRENT> <OUTPUT_PARENT> <INPUT_PARENT> <DIR_1> [DIR_2 ...]
 #
-# This script loops over the specified subdirectories and for each:
-#   1) Finds all *.hipo files
-#   2) Calls /u/home/thayward/coatjava/bin/trigger-filter with those files
-#   3) Produces a single output file named: out_parent_dir/subdirectory_00001.hipo
+# Example:
+#   ./filter_all_subdirs.csh \
+#       /scratch/thayward/final_merged_output.hipo \
+#       35 \
+#       /scratch/thayward \
+#       /cache/clas12/rg-a/production/decoded/6b.0.0 \
+#       004025 004312
+#
+# This script:
+#   1) Loops over each specified subdirectory
+#       a) Finds all *.hipo files
+#       b) Calls trigger-filter, writing one output per subdirectory
+#   2) Merges all subdirectory outputs (OUTPUT_PARENT/*.hipo) into one file:
+#       hipoutils -merge -o <MERGED_FILE> OUTPUT_PARENT/*.hipo
+#   3) Removes those intermediate subdirectory output files from OUTPUT_PARENT
 # ------------------------------------------------------------------------------
-
+ 
 # Check for minimum number of arguments
-if ( $#argv < 4 ) then
-    echo "Usage: $0 MIN_CURRENT OUTPUT_PARENT INPUT_PARENT DIR_1 [DIR_2 DIR_3 ...]"
+# We need at least 5: MERGED_FILE, MIN_CURRENT, OUTPUT_PARENT, INPUT_PARENT, and at least 1 directory
+if ( $#argv < 5 ) then
+    echo "Usage: $0 MERGED_FILE MIN_CURRENT OUTPUT_PARENT INPUT_PARENT DIR_1 [DIR_2 ...]"
     exit 1
 endif
 
-# 1) The minimum current:
-set MIN_CURRENT = $argv[1]
+# 1) The merged output file (new first argument)
+set MERGED_FILE   = $argv[1]
 
-# 2) The output base directory:
-set OUTPUT_PARENT = $argv[2]
+# 2) The minimum current (goes to -c)
+set MIN_CURRENT   = $argv[2]
 
-# 3) The input base directory (where all numbered subdirs live):
-set INPUT_PARENT = $argv[3]
+# 3) The output base directory (where subdirectory outputs go)
+set OUTPUT_PARENT = $argv[3]
 
-# Shift the arguments so $argv now holds only the subdirectories
+# 4) The input base directory (where all numbered subdirs live)
+set INPUT_PARENT  = $argv[4]
+
+# Shift so $argv now holds only the subdirectories
+shift
 shift
 shift
 shift
@@ -40,7 +55,7 @@ foreach SUBDIR ($argv)
     set FULL_PATH = "${INPUT_PARENT}/${SUBDIR}"
 
     # Gather all the .hipo files from that subdirectory
-    set FILE_LIST = (`ls ${FULL_PATH}/*.hipo`)
+    set FILE_LIST = (`ls ${FULL_PATH}/*.hipo 2> /dev/null`)
 
     # If no files found, skip
     if ( "$FILE_LIST" == "" ) then
@@ -48,11 +63,10 @@ foreach SUBDIR ($argv)
         continue
     endif
 
-    # Construct the output filename (for example: /scratch/thayward/004025_00001.hipo)
+    # Construct the output filename, e.g.: /scratch/thayward/004025_00001.hipo
     set OUTPUT_FILE = "${OUTPUT_PARENT}/${SUBDIR}_00001.hipo"
 
     # Run the filter
-    # Adjust this command to include any other flags you need (-n <some_number> etc.)
     /u/home/thayward/coatjava/bin/trigger-filter \
         -c ${MIN_CURRENT} \
         -b 0x80000000 \
@@ -61,3 +75,14 @@ foreach SUBDIR ($argv)
 
     echo "Output written to: ${OUTPUT_FILE}"
 end
+
+# After all subdirectories are processed, merge their outputs:
+echo "------------------------------"
+echo "Merging all subdir output files in ${OUTPUT_PARENT} into:"
+echo "  ${MERGED_FILE}"
+hipoutils -merge -o "${MERGED_FILE}" ${OUTPUT_PARENT}/*.hipo
+
+# Finally, remove the intermediate subdirectory output files
+echo "Removing intermediate files from: ${OUTPUT_PARENT}/*.hipo"
+rm ${OUTPUT_PARENT}/*.hipo
+echo "All done!"
