@@ -2,18 +2,18 @@
 
 # ------------------------------------------------------------------------------
 # Usage:
-#
 #   ./filter_all_subdirs.csh <MIN_CURRENT> <OUTPUT_PARENT_DIR> <INPUT_PARENT_DIR> <SUBDIR_1> [<SUBDIR_2> ...]
 #
 # Example:
 #   ./filter_all_subdirs.csh 35 /scratch/thayward /cache/clas12/rg-a/production/decoded/6b.0.0 004025 004312
 #
-# This produces one output file per subdirectory. For example:
-#   /scratch/thayward/004025_00001.hipo
-#   /scratch/thayward/004312_00001.hipo
+# This will run trigger-filter once per subdirectory:
+#   - Gathers all *.hipo files in /cache/clas12/rg-a/production/decoded/6b.0.0/004025/
+#     and writes a single output /scratch/thayward/004025_00001.hipo
+#   - Then does the same for /cache/clas12/rg-a/production/decoded/6b.0.0/004312/
 # ------------------------------------------------------------------------------
 
-# 1) Check for enough arguments
+# 1) Check that we have enough arguments
 if ( $#argv < 4 ) then
     echo "Usage: $0 MIN_CURRENT OUTPUT_PARENT INPUT_PARENT DIR_1 [DIR_2 ...]"
     exit 1
@@ -24,42 +24,37 @@ set MIN_CURRENT   = $argv[1]
 set OUTPUT_PARENT = $argv[2]
 set INPUT_PARENT  = $argv[3]
 
-# 3) Shift them so remaining arguments are subdirectories
+# 3) Shift so that $argv now holds only the subdirectories
 shift
 shift
 shift
 
-# 4) For each subdirectory:
+# 4) Iterate over each subdirectory
 foreach SUBDIR ($argv)
     echo "========================================================"
     echo "Processing subdirectory: $SUBDIR"
 
-    # Full path to the subdirectory we want to read from:
+    # Build the full path to the subdirectory
     set FULL_PATH = "${INPUT_PARENT}/${SUBDIR}"
 
-    # Check if there is at least one matching *.hipo file
-    if ( -f ${FULL_PATH}/*.hipo ) then
-        # Gather those files into FILE_LIST
-        set FILE_LIST = ( ${FULL_PATH}/*.hipo )
-    else
+    # Gather all the .hipo files in that subdirectory
+    # If you prefer to pick up everything, you could use * instead of *.hipo.
+    set FILE_LIST = (`ls ${FULL_PATH}/*.hipo 2> /dev/null`)
+
+    # If no .hipo files found, skip
+    if ( "$FILE_LIST" == "" ) then
         echo "No .hipo files found in: ${FULL_PATH}. Skipping."
         continue
     endif
 
-    # Construct the output file name, e.g.: /scratch/thayward/004025_00001.hipo
+    # Construct the output filename, e.g.  /scratch/thayward/004025_00001.hipo
     set OUTPUT_FILE = "${OUTPUT_PARENT}/${SUBDIR}_00001.hipo"
 
-    echo "-> Filtering these input files:"
+    echo "-> Filtering these files:"
     echo "$FILE_LIST"
-    echo "-> Output file will be: $OUTPUT_FILE"
+    echo "-> Output file: $OUTPUT_FILE"
 
-    # Make sure the output directory exists
-    if ( ! -d "${OUTPUT_PARENT}" ) then
-        echo "Creating output directory: ${OUTPUT_PARENT}"
-        mkdir -p "${OUTPUT_PARENT}"
-    endif
-
-    # Run trigger-filter on the collected files
+    # Run trigger-filter
     /u/home/thayward/coatjava/bin/trigger-filter \
         -c ${MIN_CURRENT} \
         -b 0x80000000 \
