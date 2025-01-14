@@ -2,22 +2,22 @@
 
 # ------------------------------------------------------------------------------
 # Usage:
-#   ./simple_loop_filter.csh <MIN_CURRENT> <OUTPUT_DIR> <INPUT_DIR> <SUBDIR_1> [<SUBDIR_2> ...]
+#   ./filter_all_subdirs.csh <MIN_CURRENT> <OUTPUT_DIR> <INPUT_DIR> <SUBDIR_1> [<SUBDIR_2> ...]
 #
 # Example:
-#   ./simple_loop_filter.csh \
+#   ./filter_all_subdirs.csh \
 #       45 \
 #       /scratch/thayward/output \
 #       /cache/clas12/rg-a/production/decoded/6b.0.0 \
 #       004003 004013 004014
 #
-# This will call:
-#   /u/home/thayward/coatjava/bin/trigger-filter \
-#       -c 45 \
-#       -b 0x80000000 \
-#       /cache/clas12/rg-a/production/decoded/6b.0.0/004003/*.hipo \
-#       -o /scratch/thayward/output/004003_00001.hipo
-# and similarly for 004013, 004014, etc.
+# For each subdirectory, it calls trigger-filter with:
+#   -c <MIN_CURRENT>
+#   -b 0x80000000
+#   <INPUT_DIR>/<SUBDIR>/*.hipo
+#   -o <OUTPUT_DIR>/<SUBDIR>_00001.hipo
+#
+# No checks, no merging—just one run per subdirectory.
 # ------------------------------------------------------------------------------
 
 # 1) Check for enough arguments
@@ -36,7 +36,7 @@ shift
 shift
 shift
 
-# 4) Make sure the output directory exists
+# 4) Ensure the output directory exists
 if ( ! -d "${OUTPUT_DIR}" ) then
     echo "Creating output directory: ${OUTPUT_DIR}"
     mkdir -p "${OUTPUT_DIR}"
@@ -47,14 +47,15 @@ foreach SUBDIR ($argv)
     echo "-------------------------------------------------------"
     echo "Processing subdir: $SUBDIR"
 
-    # Build the full input wildcard
-    # e.g. /cache/clas12/rg-a/production/decoded/6b.0.0/004003/*.hipo
+    # Build the wildcard for input files, e.g. /path/to/6b.0.0/004003/*.hipo
     set INPUT_FILES = "${INPUT_DIR}/${SUBDIR}/*.hipo"
 
     # Build the output file name, e.g. /scratch/thayward/output/004003_00001.hipo
     set OUTPUT_FILE = "${OUTPUT_DIR}/${SUBDIR}_00001.hipo"
 
-    # Call trigger-filter
+    echo "-> Running trigger-filter on: ${INPUT_FILES}"
+    echo "-> Output: ${OUTPUT_FILE}"
+
     /u/home/thayward/coatjava/bin/trigger-filter \
         -c ${MIN_CURRENT} \
         -b 0x80000000 \
