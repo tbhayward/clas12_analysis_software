@@ -2,71 +2,65 @@
 
 # ------------------------------------------------------------------------------
 # Usage:
-#   ./filter_all_subdirs.csh <MIN_CURRENT> <OUTPUT_FILE> <PARENT_DIR> <SUBDIR_1> [<SUBDIR_2> ...]
+#   ./filter_all_subdirs.csh <MIN_CURRENT> <OUTPUT_PARENT_DIR> <INPUT_PARENT_DIR> <SUBDIR_1> [<SUBDIR_2> ...]
 #
 # Example:
-#   ./filter_all_subdirs.csh 35 /scratch/thayward/my_output.hipo \
-#       /cache/clas12/rg-a/production/decoded/6b.0.0/ 004025 004312
+#   ./filter_all_subdirs.csh 35 /scratch/thayward /cache/clas12/rg-a/production/decoded/6b.0.0 004025 004312
 #
-# This will run:
-#   /u/home/thayward/coatjava/bin/trigger-filter \
-#       -c 35 \
-#       -b 0x80000000 \
-#       /cache/clas12/rg-a/production/decoded/6b.0.0/004025/* \
-#       /cache/clas12/rg-a/production/decoded/6b.0.0/004312/* \
-#       -o /scratch/thayward/my_output.hipo
+# This will run trigger-filter once per subdirectory:
+#   - Gathers all *.hipo files in /cache/clas12/rg-a/production/decoded/6b.0.0/004025/
+#     and writes a single output /scratch/thayward/004025_00001.hipo
+#   - Then does the same for /cache/clas12/rg-a/production/decoded/6b.0.0/004312/
 # ------------------------------------------------------------------------------
 
-# 1) Check for minimum number of arguments
+# 1) Check that we have enough arguments
 if ( $#argv < 4 ) then
-    echo "Usage: $0 MIN_CURRENT OUTPUT_FILE PARENT_DIR SUBDIR_1 [SUBDIR_2 ...]"
+    echo "Usage: $0 MIN_CURRENT OUTPUT_PARENT INPUT_PARENT DIR_1 [DIR_2 ...]"
     exit 1
 endif
 
 # 2) Parse arguments
-set MIN_CURRENT  = $argv[1]
-set OUTPUT_FILE  = $argv[2]
-set PARENT_DIR   = $argv[3]
+set MIN_CURRENT   = $argv[1]
+set OUTPUT_PARENT = $argv[2]
+set INPUT_PARENT  = $argv[3]
 
-# 3) Shift so that remaining arguments are the subdirectories
+# 3) Shift so that $argv now holds only the subdirectories
 shift
 shift
 shift
 
-# 4) Combine all the subdirectories' files into a single list
-set FILE_LIST = ()
+# 4) Iterate over each subdirectory
 foreach SUBDIR ($argv)
-    set FULL_PATH = "${PARENT_DIR}/${SUBDIR}"
+    echo "========================================================"
+    echo "Processing subdirectory: $SUBDIR"
 
-    # Collect all files from each subdirectory
-    # The wildcard * will match everything, so you may want *.hipo if you only want .hipo files.
-    # But the user specifically said "the code will handle the subdirectories inside them," 
-    # so let's gather everything. Adjust to *.hipo if you only want .hipo files.
-    set SUBDIR_FILES = (`ls ${FULL_PATH}/*`)
-    if ( "$SUBDIR_FILES" == "" ) then
-        echo "Warning: no files found in ${FULL_PATH}/*"
-    else
-        # Append these files to FILE_LIST
-        set FILE_LIST = ( $FILE_LIST $SUBDIR_FILES )
+    # Build the full path to the subdirectory
+    set FULL_PATH = "${INPUT_PARENT}/${SUBDIR}"
+
+    # Gather all the .hipo files in that subdirectory
+    # If you prefer to pick up everything, you could use * instead of *.hipo.
+    set FILE_LIST = (`ls ${FULL_PATH}/*.hipo 2> /dev/null`)
+
+    # If no .hipo files found, skip
+    if ( "$FILE_LIST" == "" ) then
+        echo "No .hipo files found in: ${FULL_PATH}. Skipping."
+        continue
     endif
-end
 
-# 5) Check if we have at least one file
-if ( "$FILE_LIST" == "" ) then
-    echo "No files collected from subdirectories. Exiting."
-    exit 1
-endif
+    # Construct the output filename, e.g.  /scratch/thayward/004025_00001.hipo
+    set OUTPUT_FILE = "${OUTPUT_PARENT}/${SUBDIR}_00001.hipo"
 
-# 6) Call trigger-filter with the entire set of files
-echo "Calling trigger-filter with the following files:"
-echo "$FILE_LIST"
-echo "Output: $OUTPUT_FILE"
+    echo "-> Filtering these files:"
+    echo "$FILE_LIST"
+    echo "-> Output file: $OUTPUT_FILE"
 
-# If you have some other arguments like -n <number> to pass, 
-# add them similarly in the command below.
-# E.g., -n 20011 if desired.
-/u/home/thayward/coatjava/bin/trigger-filter \
-    -c ${MIN_CURRENT} \
-    -b 0x80000000 \
-    $FILE_LIST \
-    -o ${OUTPUT_FILE}
+    # Run trigger-filter
+    /u/home/thayward/coatjava/bin/trigger-filter \
+        -c ${MIN_CURRENT} \
+        -b 0x80000000 \
+        $FILE_LIST \
+        -o ${OUTPUT_FILE}
+
+    echo "Done processing subdirectory: $SUBDIR"
+    echo ""
+#endfor
