@@ -166,16 +166,17 @@ void createIntegratedKinematicPlots() {
         if (dataHist->Integral() != 0) {
             // dataScale = dataHist->Integral();
             // dataScale = data_count;
-            // dataScale = 35.64108025469488; // inbending
-            dataScale = 0.01424; // inbending
+            dataScale = 35.64108025469488; // inbending
             // dataScale = 32.72115949294347; // outbending
             dataHist->Scale(1.0 / dataScale);
         }
         if (mcHist->Integral() != 0) {
             // mcScale = mcHist->Integral();
             // mcScale = mc_count;
-            mcScale = 0.01424; // inbending
+            // mcScale = 0.01424; // inbending
             // mcScale = 0.01163; // outbending
+            mcScale = 77215080937.272; // inbending
+            // mcScale = 1417123.67; // outbending
             mcHist->Scale(1.0 / mcScale);
         }
 
