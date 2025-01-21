@@ -166,7 +166,8 @@ void createIntegratedKinematicPlots() {
         if (dataHist->Integral() != 0) {
             // dataScale = dataHist->Integral();
             // dataScale = data_count;
-            dataScale = 35.64108025469488; // inbending
+            // dataScale = 35.64108025469488; // inbending
+            dataScale = 0.01424; // inbending
             // dataScale = 32.72115949294347; // outbending
             dataHist->Scale(1.0 / dataScale);
         }
