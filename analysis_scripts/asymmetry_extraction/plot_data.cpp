@@ -126,9 +126,9 @@ void createIntegratedKinematicPlots() {
         mcHist->GetYaxis()->SetTitleSize(0.05);
 
         // Set y-axis title and center it
-        dataHist->GetYaxis()->SetTitle("Normalized Counts");
+        dataHist->GetYaxis()->SetTitle("Normalized Counts (mC)");
         dataHist->GetYaxis()->CenterTitle();
-        mcHist->GetYaxis()->SetTitle("Normalized Counts");
+        mcHist->GetYaxis()->SetTitle("Normalized Counts (mC)");
         mcHist->GetYaxis()->CenterTitle();
 
         // Set y-axis title offset to make room for centering
@@ -160,20 +160,21 @@ void createIntegratedKinematicPlots() {
           FillHistogram<double>(mcReader, branchName, mcHist, *mckinematicCuts, 0, true);
         }
         
-        // // Normalize the histograms
-        // dataHist->Scale(1.0 / dataHist->Integral());
-        // mcHist->Scale(1.0 / mcHist->Integral());
 
         double dataScale = 0;
         double mcScale = 0;
         if (dataHist->Integral() != 0) {
-            dataScale = dataHist->Integral();
+            // dataScale = dataHist->Integral();
             // dataScale = data_count;
+            mcScale = 35.64108025469488; // inbending
+            // mcScale = 32.72115949294347; // outbending
             dataHist->Scale(1.0 / dataScale);
         }
         if (mcHist->Integral() != 0) {
-            mcScale = mcHist->Integral();
+            // mcScale = mcHist->Integral();
             // mcScale = mc_count;
+            mcScale = 0.01424; // inbending
+            // mcScale = 0.01163; // outbending
             mcHist->Scale(1.0 / mcScale);
         }
 
@@ -197,10 +198,10 @@ void createIntegratedKinematicPlots() {
         // Add entries to the legend with scientific notation for the number of entries
         dataHist->SetEntries(dataHist->GetEntries());
         mcHist->SetEntries(mcHist->GetEntries());
-        leg->AddEntry(dataHist, (std::string("data (") + std::to_string((int)dataHist->GetEntries()) + " counts)").c_str(), "l");
-        leg->AddEntry(mcHist, (std::string("mc (") + std::to_string((int)mcHist->GetEntries()) + " counts)").c_str(), "l");
-        // leg->AddEntry(dataHist, "NH_{3}", "l");
-        // leg->AddEntry(mcHist, "C", "l");
+        // leg->AddEntry(dataHist, (std::string("data (") + std::to_string((int)dataHist->GetEntries()) + " counts)").c_str(), "l");
+        // leg->AddEntry(mcHist, (std::string("mc (") + std::to_string((int)mcHist->GetEntries()) + " counts)").c_str(), "l");
+        leg->AddEntry(dataHist, "Fall 2018", "l");
+        leg->AddEntry(mcHist, "Spring 2018", "l");
         // leg->AddEntry(dataHist, (std::string("no rad (") + std::to_string((int)dataHist->GetEntries()) + " counts)").c_str(), "l");
         // leg->AddEntry(mcHist, (std::string("FSR (") + std::to_string((int)mcHist->GetEntries()) + " counts)").c_str(), "l");
         
