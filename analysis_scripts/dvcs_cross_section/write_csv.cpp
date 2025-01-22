@@ -218,7 +218,6 @@ void write_csv(const std::string& filename, const std::map<std::string, std::vec
             // 2.808
             double fall_cross_section = 0.0;
             double fall_cross_section_stat_uncertainty = 0.0;
-
             if (fall_denominator > 0.0) {
                 fall_cross_section = combined_signal_yield / fall_denominator;
                 fall_cross_section_stat_uncertainty = combined_uncertainty / fall_denominator;
@@ -227,24 +226,21 @@ void write_csv(const std::string& filename, const std::map<std::string, std::vec
                 fall_cross_section = 0.0;
                 fall_cross_section_stat_uncertainty = 0.0;
             }
-
             // Compute fall_cross_section_sys_uncertainty (50% of cross section)
             double fall_cross_section_sys_uncertainty = 1.0 * std::abs(fall_cross_section);
 
-            // Compute fall_cross_section
+            // Compute spring_cross_section
             double spring_denominator = 6.181e7 * bin_volume; // sp19 integrated luminosity
             double spring_cross_section = 0.0;
             double spring_cross_section_stat_uncertainty = 0.0;
-
             if (spring_denominator > 0.0) {
-                spring_cross_section = combined_signal_yield / spring_denominator;
-                spring_cross_section_stat_uncertainty = combined_uncertainty / spring_denominator;
+                spring_cross_section = signal_yield_Sp19 / spring_denominator;
+                spring_cross_section_stat_uncertainty = uncertainty_Sp19 / spring_denominator;
             } else {
                 // Handle division by zero
                 spring_cross_section = 0.0;
                 spring_cross_section_stat_uncertainty = 0.0;
             }
-
             // Compute fall_cross_section_sys_uncertainty (50% of cross section)
             double spring_cross_section_sys_uncertainty = 1.0 * std::abs(spring_cross_section);
 
