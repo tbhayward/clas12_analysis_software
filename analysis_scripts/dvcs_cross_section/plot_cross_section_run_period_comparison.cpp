@@ -467,7 +467,7 @@ void plot_for_xB_bin_run_period(const CrossSectionData &data_first, const CrossS
             }
 
             // Create and draw legend
-            TLegend* legend = new TLegend(0.55, 0.65, 0.9, 0.85);
+            TLegend* legend = new TLegend(0.65, 0.65, 0.9, 0.85);
             legend->SetTextSize(0.03);
             if (graph_first_stat) {
                 legend->AddEntry(graph_first_stat, "10.6 GeV", "lep");
