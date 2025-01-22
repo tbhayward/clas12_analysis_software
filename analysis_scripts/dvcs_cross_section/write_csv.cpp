@@ -214,7 +214,7 @@ void write_csv(const std::string& filename, const std::map<std::string, std::vec
             double combined_uncertainty = std::sqrt(uncertainty_Fa18Inb * uncertainty_Fa18Inb + uncertainty_Fa18Out * uncertainty_Fa18Out);
 
             // Compute fall_cross_section
-            double fall_denominator = 8.276e7 * bin_volume; // fa18 integrated luminosity
+            double fall_denominator = 8.255e7 * bin_volume; // fa18 integrated luminosity
             // 2.808
             double fall_cross_section = 0.0;
             double fall_cross_section_stat_uncertainty = 0.0;
@@ -232,7 +232,7 @@ void write_csv(const std::string& filename, const std::map<std::string, std::vec
             double fall_cross_section_sys_uncertainty = 1.0 * std::abs(fall_cross_section);
 
             // Compute fall_cross_section
-            double spring_denominator = 2.808e7 * bin_volume; // fa18 integrated luminosity
+            double spring_denominator = 6.181e7 * bin_volume; // sp19 integrated luminosity
             double spring_cross_section = 0.0;
             double spring_cross_section_stat_uncertainty = 0.0;
 
