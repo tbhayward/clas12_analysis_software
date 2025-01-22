@@ -219,7 +219,7 @@ CrossSectionData read_spring_csv(const std::string &filename) {
 }
 
 // Function to find unique xB bins in the data
-std::vector<std::pair<double, double>> find_unique_xB_bins(const CrossSectionData &data) {
+std::vector<std::pair<double, double>> find_unique_xB_bins_run_period(const CrossSectionData &data) {
     std::set<std::pair<double, double>> unique_bins;
     for (const auto &bin : data) {
         unique_bins.emplace(bin.xB_min, bin.xB_max);
@@ -228,7 +228,7 @@ std::vector<std::pair<double, double>> find_unique_xB_bins(const CrossSectionDat
 }
 
 // Function to filter data for a specific xB bin
-CrossSectionData filter_data_by_xB(const CrossSectionData &data, const std::pair<double, double> &xB_range) {
+CrossSectionData filter_data_by_xB_run_period(const CrossSectionData &data, const std::pair<double, double> &xB_range) {
     CrossSectionData filtered_data;
     for (const auto &bin : data) {
         if (bin.xB_min == xB_range.first && bin.xB_max == xB_range.second) {
@@ -239,7 +239,7 @@ CrossSectionData filter_data_by_xB(const CrossSectionData &data, const std::pair
 }
 
 // Plotting function for each xB bin with comparison between datasets
-void plot_for_xB_bin(const CrossSectionData &data_first, const CrossSectionData &data_second, int xB_index) {
+void plot_for_xB_bin_run_period(const CrossSectionData &data_first, const CrossSectionData &data_second, int xB_index) {
     // Step 1: Identify unique (Q2min, Q2max, tmin, tmax) bins in the first dataset
     std::map<std::tuple<double, double, double, double>, CrossSectionData> qt_bins_first, qt_bins_second;
 
@@ -514,16 +514,16 @@ void plot_cross_section_run_period_comparison(const std::string &csv_file) {
     CrossSectionData data_spring_csv = read_spring_csv(csv_file);
 
     // Find unique xB bins
-    auto unique_xB_bins = find_unique_xB_bins(data_fall_csv);
+    auto unique_xB_bins = find_unique_xB_bins_run_period(data_fall_csv);
 
     int xB_index = 0;
     for (const auto &xB_range : unique_xB_bins) {
         // Filter data for the current xB bin range in both datasets
-        auto filtered_data_first = filter_data_by_xB(data_fall_csv, xB_range);
-        auto filtered_data_second = filter_data_by_xB(data_spring_csv, xB_range);
+        auto filtered_data_first = filter_data_by_xB_run_period(data_fall_csv, xB_range);
+        auto filtered_data_second = filter_data_by_xB_run_period(data_spring_csv, xB_range);
 
         // Pass both datasets to the plotting function
-        plot_for_xB_bin(filtered_data_first, filtered_data_second, xB_index);
+        plot_for_xB_bin_run_period(filtered_data_first, filtered_data_second, xB_index);
         xB_index++;
     }
 }
