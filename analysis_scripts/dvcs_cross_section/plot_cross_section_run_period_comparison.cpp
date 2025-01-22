@@ -190,19 +190,19 @@ CrossSectionData read_spring_csv(const std::string &filename) {
         std::getline(ss, value, ',');
         entry.phi_avg = std::stod(value);
 
-        // Skip columns until reaching "fall_cross_section" (Column index 45)
-        // Currently at column 12, need to skip 32 columns
-        for (int i = 0; i < 55; ++i) std::getline(ss, value, ',');
+        // Skip columns until reaching "spring_cross_section" (Column index 48)
+        // Currently at column 12, need to skip 35 columns
+        for (int i = 0; i < 58; ++i) std::getline(ss, value, ',');
 
-        // Column 45: fall_cross_section
+        // Column 48: spring_cross_section
         std::getline(ss, value, ',');
         entry.cross_section = std::stod(value);
 
-        // Column 46: fall_cross_section_stat_uncertainty
+        // Column 49: spring_cross_section_stat_uncertainty
         std::getline(ss, value, ',');
         entry.stat_uncertainty = std::stod(value);
 
-        // Column 47: fall_cross_section_sys_uncertainty
+        // Column 50: spring_cross_section_sys_uncertainty
         std::getline(ss, value, ',');
         // entry.sys_uncertainty = std::stod(value);
         // entry.sys_uncertainty = 0;
@@ -470,10 +470,10 @@ void plot_for_xB_bin(const CrossSectionData &data_first, const CrossSectionData 
             TLegend* legend = new TLegend(0.55, 0.65, 0.9, 0.85);
             legend->SetTextSize(0.03);
             if (graph_first_stat) {
-                legend->AddEntry(graph_first_stat, "pass-1, Lee", "lep");
+                legend->AddEntry(graph_first_stat, "Fall18", "lep");
             }
             if (graph_second_stat) {
-                legend->AddEntry(graph_second_stat, "pass-2, Hayward", "lep");
+                legend->AddEntry(graph_second_stat, "Spring19", "lep");
             }
             legend->Draw();
         } else {
@@ -500,17 +500,18 @@ void plot_for_xB_bin(const CrossSectionData &data_first, const CrossSectionData 
     }
 
     // Save the canvas
-    std::string save_path = Form("output/cross_section_cross_check/cross_section_cross_check_xB_%d.pdf", xB_index);
+    std::string save_path = Form("output/cross_section_run_period_cross_check/cross_section_cross_check_xB_%d.pdf", xB_index);
     ensure_directory_exists("output/cross_section_cross_check/");
     canvas.SaveAs(save_path.c_str());
 }
 
 // Main function to control the import, processing, and plotting
 void plot_cross_section_run_period_comparison(const std::string &csv_file) {
-    ensure_directory_exists("output/cross_section_cross_check/");
+    ensure_directory_exists("output/cross_section_run_period_cross_check/");
 
     // Read data from CSV files
-    CrossSectionData data_fall_csv = read_second_csv(csv_file);
+    CrossSectionData data_fall_csv = read_fall_csv(csv_file);
+    CrossSectionData data_spring_csv = read_spring_csv(csv_file);
 
     // Find unique xB bins
     auto unique_xB_bins = find_unique_xB_bins(data_first_csv);
@@ -518,8 +519,8 @@ void plot_cross_section_run_period_comparison(const std::string &csv_file) {
     int xB_index = 0;
     for (const auto &xB_range : unique_xB_bins) {
         // Filter data for the current xB bin range in both datasets
-        auto filtered_data_first = filter_data_by_xB(data_first_csv, xB_range);
-        auto filtered_data_second = filter_data_by_xB(data_second_csv, xB_range);
+        auto filtered_data_first = filter_data_by_xB(data_fall_csv, xB_range);
+        auto filtered_data_second = filter_data_by_xB(data_spring_csv, xB_range);
 
         // Pass both datasets to the plotting function
         plot_for_xB_bin(filtered_data_first, filtered_data_second, xB_index);
