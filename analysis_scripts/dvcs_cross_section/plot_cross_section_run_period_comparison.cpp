@@ -514,7 +514,7 @@ void plot_cross_section_run_period_comparison(const std::string &csv_file) {
     CrossSectionData data_spring_csv = read_spring_csv(csv_file);
 
     // Find unique xB bins
-    auto unique_xB_bins = find_unique_xB_bins(csv_file);
+    auto unique_xB_bins = find_unique_xB_bins(data_fall_csv);
 
     int xB_index = 0;
     for (const auto &xB_range : unique_xB_bins) {
