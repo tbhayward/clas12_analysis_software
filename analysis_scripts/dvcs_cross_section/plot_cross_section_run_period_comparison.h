@@ -5,6 +5,6 @@
 
 #include <string>
 
-void plot_cross_section_comparison(const std::string &first_csv_file);
+void plot_cross_section_run_period_comparison(const std::string &first_csv_file);
 
 #endif // PLOT_CROSS_SECTION_RUN_PERIOD_COMPARISON_H
