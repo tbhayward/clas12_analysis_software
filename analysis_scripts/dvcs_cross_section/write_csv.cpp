@@ -69,7 +69,7 @@ void write_csv(const std::string& filename, const std::map<std::string, std::vec
     }
 
     // Add new columns to the header
-    file << ",bin_volume,fall_cross_section,fall_cross_section_stat_uncertainty,fall_cross_section_sys_uncertainty" << std::endl;
+    file << ",bin_volume,fall_cross_section,fall_cross_section_stat_uncertainty,fall_cross_section_sys_uncertainty,spring_cross_section,spring_cross_section_stat_uncertainty,spring_cross_section_sys_uncertainty" << std::endl;
 
     // Get the combined data
     const auto& combined_data = topology_unfolding_data.at(combined_topology);
@@ -189,34 +189,39 @@ void write_csv(const std::string& filename, const std::map<std::string, std::vec
             // Check for NaN or negative bin volume
             if (!std::isfinite(bin_volume) || bin_volume <= 0.0) bin_volume = 0.0;
 
-            // Get signal_yield for Fa18Inb (period 0) and Fa18Out (period 1)
+            // Get signal_yields
             double signal_yield_Fa18Inb = data.signal_yield[0][phi_idx];
             double signal_yield_Fa18Out = data.signal_yield[1][phi_idx];
+            double signal_yield_Sp19 = data.signal_yield[2][phi_idx];
 
             // Check for NaN or Inf and set to zero if found
             if (!std::isfinite(signal_yield_Fa18Inb)) signal_yield_Fa18Inb = 0.0;
             if (!std::isfinite(signal_yield_Fa18Out)) signal_yield_Fa18Out = 0.0;
+            if (!std::isfinite(signal_yield_Sp19)) signal_yield_Sp19 = 0.0;
 
             double combined_signal_yield = signal_yield_Fa18Inb + signal_yield_Fa18Out;
 
             // Get uncertainties
             double uncertainty_Fa18Inb = data.signal_yield_uncertainty[0][phi_idx];
             double uncertainty_Fa18Out = data.signal_yield_uncertainty[1][phi_idx];
+            double uncertainty_Sp19 = data.signal_yield_uncertainty[2][phi_idx];
 
             // Check for NaN or Inf and set to zero if found
             if (!std::isfinite(uncertainty_Fa18Inb)) uncertainty_Fa18Inb = 0.0;
             if (!std::isfinite(uncertainty_Fa18Out)) uncertainty_Fa18Out = 0.0;
+            if (!std::isfinite(uncertainty_Sp19)) uncertainty_Sp19 = 0.0;
 
             double combined_uncertainty = std::sqrt(uncertainty_Fa18Inb * uncertainty_Fa18Inb + uncertainty_Fa18Out * uncertainty_Fa18Out);
 
             // Compute fall_cross_section
-            double denominator = 8.213e7 * bin_volume; // fa18 integrated luminosity
+            double fall_denominator = 8.276e7 * bin_volume; // fa18 integrated luminosity
+            // 2.808
             double fall_cross_section = 0.0;
             double fall_cross_section_stat_uncertainty = 0.0;
 
-            if (denominator > 0.0) {
-                fall_cross_section = combined_signal_yield / denominator;
-                fall_cross_section_stat_uncertainty = combined_uncertainty / denominator;
+            if (fall_denominator > 0.0) {
+                fall_cross_section = combined_signal_yield / fall_denominator;
+                fall_cross_section_stat_uncertainty = combined_uncertainty / fall_denominator;
             } else {
                 // Handle division by zero
                 fall_cross_section = 0.0;
@@ -226,8 +231,25 @@ void write_csv(const std::string& filename, const std::map<std::string, std::vec
             // Compute fall_cross_section_sys_uncertainty (50% of cross section)
             double fall_cross_section_sys_uncertainty = 1.0 * std::abs(fall_cross_section);
 
+            // Compute fall_cross_section
+            double spring_denominator = 2.808e7 * bin_volume; // fa18 integrated luminosity
+            double spring_cross_section = 0.0;
+            double spring_cross_section_stat_uncertainty = 0.0;
+
+            if (spring_denominator > 0.0) {
+                spring_cross_section = combined_signal_yield / spring_denominator;
+                spring_cross_section_stat_uncertainty = combined_uncertainty / spring_denominator;
+            } else {
+                // Handle division by zero
+                spring_cross_section = 0.0;
+                spring_cross_section_stat_uncertainty = 0.0;
+            }
+
+            // Compute fall_cross_section_sys_uncertainty (50% of cross section)
+            double spring_cross_section_sys_uncertainty = 1.0 * std::abs(spring_cross_section);
+
             // Write these values to the file
-            file << "," << bin_volume << "," << fall_cross_section << "," << fall_cross_section_stat_uncertainty << "," << fall_cross_section_sys_uncertainty << std::endl;
+            file << "," << bin_volume << "," << fall_cross_section << "," << fall_cross_section_stat_uncertainty << "," << fall_cross_section_sys_uncertainty << "," << spring_cross_section << "," << spring_cross_section_stat_uncertainty << "," << spring_cross_section_sys_uncertainty << std::endl;
         }
     }
 
