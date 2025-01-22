@@ -25,6 +25,7 @@ SRC = dvcs_cross_section_extraction.cpp \
       calculate_contamination.cpp \
       plot_comparison.cpp \
       plot_cross_section_comparison.cpp \
+      plot_cross_section_run_period_comparison.cpp \
       utilities.cpp
 
 # Object files
