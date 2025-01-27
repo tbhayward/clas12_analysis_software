@@ -7,8 +7,8 @@
 #include <TFile.h>
 #include <TTree.h>
 #include <TTreeReader.h>
-#include <TROOT.h>
 #include <TApplication.h>
+#include <TROOT.h>
 
 // Custom headers
 #include "create_directories.h"
@@ -47,6 +47,9 @@ struct RootResource {
         
         reader.SetTree(tree);
     }
+
+    // Allow non-const access to reader for Restart()
+    TTreeReader& getReader() { return reader; }
 };
 
 // Helper function to validate file existence
@@ -63,10 +66,10 @@ struct ExclusivityConfig {
     string legend;
 };
 
-void call_determine_exclusivity(const vector<RootResource>& data_resources,
-                               const vector<RootResource>& mc_dvcs_resources,
-                               const vector<RootResource>& eppi0_resources,
-                               const vector<RootResource>& mc_aao_resources) {
+void call_determine_exclusivity(vector<RootResource>& data_resources,
+                               vector<RootResource>& mc_dvcs_resources,
+                               vector<RootResource>& eppi0_resources,
+                               vector<RootResource>& mc_aao_resources) {
     // Configuration for DVCS analysis
     const vector<ExclusivityConfig> dvcs_configs = {
         {"dvcs", "(FD,FD)", "e'p'#gamma (%s, FD,FD)"},
@@ -86,16 +89,16 @@ void call_determine_exclusivity(const vector<RootResource>& data_resources,
     // Process DVCS configurations
     for (size_t i = 0; i < 3; ++i) {
         for (const auto& cfg : dvcs_configs) {
-            data_resources[i].reader.Restart();
-            mc_dvcs_resources[i].reader.Restart();
+            data_resources[i].getReader().Restart();
+            mc_dvcs_resources[i].getReader().Restart();
             
             determine_exclusivity(
                 cfg.channel,
                 cfg.detector_config,
-                data_resources[i].reader,
-                mc_dvcs_resources[i].reader,
+                data_resources[i].getReader(),
+                mc_dvcs_resources[i].getReader(),
                 output_dir,
-                format(cfg.legend, periods[i])
+                TString::Format(cfg.legend.c_str(), periods[i].c_str())
             );
         }
     }
@@ -103,16 +106,16 @@ void call_determine_exclusivity(const vector<RootResource>& data_resources,
     // Process eppi0 configurations
     for (size_t i = 0; i < 3; ++i) {
         for (const auto& cfg : eppi0_configs) {
-            eppi0_resources[i].reader.Restart();
-            mc_aao_resources[i].reader.Restart();
+            eppi0_resources[i].getReader().Restart();
+            mc_aao_resources[i].getReader().Restart();
             
             determine_exclusivity(
                 cfg.channel,
                 cfg.detector_config,
-                eppi0_resources[i].reader,
-                mc_aao_resources[i].reader,
+                eppi0_resources[i].getReader(),
+                mc_aao_resources[i].getReader(),
                 output_dir,
-                format(cfg.legend, periods[i])
+                TString::Format(cfg.legend.c_str(), periods[i].c_str())
             );
         }
     }
@@ -160,7 +163,7 @@ int main(int argc, char* argv[]) {
         for (const auto& period : periods) {
             // Validate and load resources
             auto load_resource = [&](int dir_idx, const string& pattern) {
-                string path = dirs[dir_idx] + format(pattern, period);
+                string path = dirs[dir_idx] + TString::Format(pattern.c_str(), period.c_str()).Data();
                 validate_file(path);
                 return RootResource(path, "PhysicsEvents");
             };
@@ -194,8 +197,8 @@ int main(int argc, char* argv[]) {
         // 5. Core Analysis Pipeline
         // ---------------------------
         // 5.1 Pi0 Mass Validation
-        plot_pi0_mass(eppi0_data[0].reader, eppi0_data[1].reader, eppi0_data[2].reader,
-                     mc_aao_rec[0].reader, mc_aao_rec[1].reader, mc_aao_rec[2].reader,
+        plot_pi0_mass(eppi0_data[0].getReader(), eppi0_data[1].getReader(), eppi0_data[2].getReader(),
+                     mc_aao_rec[0].getReader(), mc_aao_rec[1].getReader(), mc_aao_rec[2].getReader(),
                      "output");
 
         // 5.2 Exclusivity Cuts
@@ -208,13 +211,13 @@ int main(int argc, char* argv[]) {
             // DVCS comparison
             plot_dvcs_data_mc_comparison(
                 comp_dir + "/dvcs", "dvcs", "Fa18_Out", xb, bin_boundaries,
-                data_resources[1].reader, mc_dvcs_gen[1].reader, mc_dvcs_rec[1].reader
+                data_resources[1].getReader(), mc_dvcs_gen[1].getReader(), mc_dvcs_rec[1].getReader()
             );
 
             // eppi0 comparison
             plot_dvcs_data_mc_comparison(
                 comp_dir + "/eppi0", "eppi0", "Fa18_Inb", xb, bin_boundaries,
-                eppi0_data[0].reader, mc_aao_gen[0].reader, mc_aao_rec[0].reader
+                eppi0_data[0].getReader(), mc_aao_gen[0].getReader(), mc_aao_rec[0].getReader()
             );
         }
 
@@ -223,24 +226,55 @@ int main(int argc, char* argv[]) {
         // ---------------------------
         map<string, vector<UnfoldingData>> unfolding_results;
 
-        for (int xb = 0; xb < 1; ++xb) {
-        // for (int xb = 0; xb < num_xb_bins; ++xb) {
+        for (int xb = 0; xb < num_xb_bins; ++xb) {
+            vector<TTreeReader> data_readers = {
+                data_resources[0].getReader(),
+                data_resources[1].getReader(),
+                data_resources[2].getReader()
+            };
+
+            vector<TTreeReader> mc_gen_readers = {
+                mc_dvcs_gen[0].getReader(),
+                mc_dvcs_gen[1].getReader(),
+                mc_dvcs_gen[2].getReader()
+            };
+
+            vector<TTreeReader> mc_rec_readers = {
+                mc_dvcs_rec[0].getReader(),
+                mc_dvcs_rec[1].getReader(),
+                mc_dvcs_rec[2].getReader()
+            };
+
+            vector<TTreeReader> eppi0_readers = {
+                eppi0_data[0].getReader(),
+                eppi0_data[1].getReader(),
+                eppi0_data[2].getReader()
+            };
+
+            vector<TTreeReader> mc_aao_gen_readers = {
+                mc_aao_gen[0].getReader(),
+                mc_aao_gen[1].getReader(),
+                mc_aao_gen[2].getReader()
+            };
+
+            vector<TTreeReader> mc_aao_rec_readers = {
+                mc_aao_rec[0].getReader(),
+                mc_aao_rec[1].getReader(),
+                mc_aao_rec[2].getReader()
+            };
+
             auto bin_data = plot_unfolding(
                 "output", xb, bin_boundaries,
-                {data_resources[0].reader, data_resources[1].reader, data_resources[2].reader},
-                {mc_dvcs_gen[0].reader, mc_dvcs_gen[1].reader, mc_dvcs_gen[2].reader},
-                {mc_dvcs_rec[0].reader, mc_dvcs_rec[1].reader, mc_dvcs_rec[2].reader},
-                {eppi0_data[0].reader, eppi0_data[1].reader, eppi0_data[2].reader},
-                {mc_aao_gen[0].reader, mc_aao_gen[1].reader, mc_aao_gen[2].reader},
-                {mc_aao_rec[0].reader, mc_aao_rec[1].reader, mc_aao_rec[2].reader}
+                data_readers, mc_gen_readers, mc_rec_readers,
+                eppi0_readers, mc_aao_gen_readers, mc_aao_rec_readers
             );
 
             calculate_contamination(
                 "output", xb, bin_boundaries,
-                {data_resources[0].reader, data_resources[1].reader, data_resources[2].reader},
-                {eppi0_data[0].reader, eppi0_data[1].reader, eppi0_data[2].reader},
-                {mc_aao_rec[0].reader, mc_aao_rec[1].reader, mc_aao_rec[2].reader},
-                {mc_eppi0_bkg[0].reader, mc_eppi0_bkg[1].reader, mc_eppi0_bkg[2].reader},
+                data_readers,
+                eppi0_readers,
+                mc_aao_rec_readers,
+                {mc_eppi0_bkg[0].getReader(), mc_eppi0_bkg[1].getReader(), mc_eppi0_bkg[2].getReader()},
                 bin_data
             );
 
