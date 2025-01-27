@@ -223,7 +223,8 @@ int main(int argc, char* argv[]) {
         // ---------------------------
         map<string, vector<UnfoldingData>> unfolding_results;
 
-        for (int xb = 0; xb < num_xb_bins; ++xb) {
+        for (int xb = 0; xb < 1; ++xb) {
+        // for (int xb = 0; xb < num_xb_bins; ++xb) {
             auto bin_data = plot_unfolding(
                 "output", xb, bin_boundaries,
                 {data_resources[0].reader, data_resources[1].reader, data_resources[2].reader},
