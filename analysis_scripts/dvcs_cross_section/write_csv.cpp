@@ -227,7 +227,7 @@ void write_csv(const std::string& filename, const std::map<std::string, std::vec
                 fall_cross_section_stat_uncertainty = 0.0;
             }
             // Compute fall_cross_section_sys_uncertainty (50% of cross section)
-            double fall_cross_section_sys_uncertainty = 1.0 * std::abs(fall_cross_section);
+            double fall_cross_section_sys_uncertainty = 0.5 * std::abs(fall_cross_section);
 
             // Compute spring_cross_section
             double spring_denominator = 6.181e7 * bin_volume; // sp19 integrated luminosity
@@ -242,7 +242,7 @@ void write_csv(const std::string& filename, const std::map<std::string, std::vec
                 spring_cross_section_stat_uncertainty = 0.0;
             }
             // Compute fall_cross_section_sys_uncertainty (50% of cross section)
-            double spring_cross_section_sys_uncertainty = 1.0 * std::abs(spring_cross_section);
+            double spring_cross_section_sys_uncertainty = 0.5 * std::abs(spring_cross_section);
 
             // Write these values to the file
             file << "," << bin_volume << "," << fall_cross_section << "," << fall_cross_section_stat_uncertainty << "," << fall_cross_section_sys_uncertainty << "," << spring_cross_section << "," << spring_cross_section_stat_uncertainty << "," << spring_cross_section_sys_uncertainty << std::endl;
