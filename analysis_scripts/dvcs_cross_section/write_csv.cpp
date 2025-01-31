@@ -70,7 +70,7 @@ void write_csv(const std::string& filename, const std::map<std::string, std::vec
     }
 
     // Add new columns to the header
-    file << ",cubic_bin_volume,fall_cross_section,fall_cross_section_stat_uncertainty,fall_cross_section_sys_uncertainty,spring_cross_section,spring_cross_section_stat_uncertainty,spring_cross_section_sys_uncertainty" << std::endl;
+    file << ",bin_volume_cube,fall_bin_volume,fall_cross_section,fall_cross_section_stat_uncertainty,fall_cross_section_sys_uncertainty,spring_bin_volume,spring_cross_section,spring_cross_section_stat_uncertainty,spring_cross_section_sys_uncertainty" << std::endl;
 
     // Get the combined data
     const auto& combined_data = topology_unfolding_data.at(combined_topology);
@@ -250,7 +250,7 @@ void write_csv(const std::string& filename, const std::map<std::string, std::vec
             double spring_cross_section_sys_uncertainty = 0.5 * std::abs(spring_cross_section);
 
             // Write these values to the file
-            file << "," << fall_bin_volume << "," << fall_cross_section << "," << fall_cross_section_stat_uncertainty << "," << fall_cross_section_sys_uncertainty << "," << spring_cross_section << "," << spring_cross_section_stat_uncertainty << "," << spring_cross_section_sys_uncertainty << std::endl;
+            file << "," << cubic_bin_volume << "," << fall_bin_volume << "," << fall_cross_section << "," << fall_cross_section_stat_uncertainty << "," << fall_cross_section_sys_uncertainty << "," << spring_bin_volume << "," << spring_cross_section << "," << spring_cross_section_stat_uncertainty << "," << spring_cross_section_sys_uncertainty << std::endl;
         }
     }
 
