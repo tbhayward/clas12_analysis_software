@@ -27,6 +27,7 @@
 #include "plot_comparison.h"
 #include "plot_cross_section_comparison.h"
 #include "plot_cross_section_run_period_comparison.h"
+#include "bin_volume.h"
 
 // Namespace declaration
 using namespace std;

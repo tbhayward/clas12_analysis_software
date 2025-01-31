@@ -9,6 +9,7 @@
 #include <cmath>    // For M_PI, std::sqrt, std::isnan, std::isfinite
 #include "write_csv.h"
 #include "unfolding_data.h"
+#include "cubic_bin_volume.h"
 
 void write_csv(const std::string& filename, const std::map<std::string, std::vector<UnfoldingData>>& topology_unfolding_data) {
     // Open the file
@@ -69,7 +70,7 @@ void write_csv(const std::string& filename, const std::map<std::string, std::vec
     }
 
     // Add new columns to the header
-    file << ",bin_volume,fall_cross_section,fall_cross_section_stat_uncertainty,fall_cross_section_sys_uncertainty,spring_cross_section,spring_cross_section_stat_uncertainty,spring_cross_section_sys_uncertainty" << std::endl;
+    file << ",cubic_bin_volume,fall_cross_section,fall_cross_section_stat_uncertainty,fall_cross_section_sys_uncertainty,spring_cross_section,spring_cross_section_stat_uncertainty,spring_cross_section_sys_uncertainty" << std::endl;
 
     // Get the combined data
     const auto& combined_data = topology_unfolding_data.at(combined_topology);
@@ -159,7 +160,7 @@ void write_csv(const std::string& filename, const std::map<std::string, std::vec
                 }
             }
 
-            // Calculate bin_volume
+            // Calculate cubic_bin_volume
             double xB_min = data.xB_min;
             double xB_max = data.xB_max;
             double Q2_min = data.Q2_min;
@@ -184,10 +185,14 @@ void write_csv(const std::string& filename, const std::map<std::string, std::vec
             if (!std::isfinite(t_max) || !std::isfinite(t_min)) t_max = t_min = 0.0;
 
             // Bin volume calculation
-            double bin_volume = (xB_max - xB_min) * (Q2_max - Q2_min) * (t_max - t_min) * delta_phi_rad;
+            double cubic_bin_volume = (xB_max - xB_min) * (Q2_max - Q2_min) * (t_max - t_min) * delta_phi_rad;
+            double fall_bin_volume = bin_volume(xB_min, xB_max, Q2_min, Q2_max, t_min, t_max, phi_min_rad, phi_max_rad, 10.6040);
+            double spring_bin_volume = bin_volume(xB_min, xB_max, Q2_min, Q2_max, t_min, t_max, phi_min_rad, phi_max_rad, 10.1998);
 
             // Check for NaN or negative bin volume
-            if (!std::isfinite(bin_volume) || bin_volume <= 0.0) bin_volume = 0.0;
+            if (!std::isfinite(cubic_bin_volume) || cubic_bin_volume <= 0.0) cubic_bin_volume = 0.0;
+            if (!std::isfinite(fall_bin_volume) || fall_bin_volume <= 0.0) fall_bin_volume = 0.0;
+            if (!std::isfinite(spring_bin_volume) || spring_bin_volume <= 0.0) spring_bin_volume = 0.0;
 
             // Get signal_yields
             double signal_yield_Fa18Inb = data.signal_yield[0][phi_idx];
@@ -214,7 +219,7 @@ void write_csv(const std::string& filename, const std::map<std::string, std::vec
             double combined_uncertainty = std::sqrt(uncertainty_Fa18Inb * uncertainty_Fa18Inb + uncertainty_Fa18Out * uncertainty_Fa18Out);
 
             // Compute fall_cross_section
-            double fall_denominator = 8.255e7 * bin_volume; // fa18 integrated luminosity
+            double fall_denominator = 8.255e7 * fall_bin_volume; // fa18 integrated luminosity
             // 2.808
             double fall_cross_section = 0.0;
             double fall_cross_section_stat_uncertainty = 0.0;
@@ -230,7 +235,7 @@ void write_csv(const std::string& filename, const std::map<std::string, std::vec
             double fall_cross_section_sys_uncertainty = 0.5 * std::abs(fall_cross_section);
 
             // Compute spring_cross_section
-            double spring_denominator = 6.181e7 * bin_volume; // sp19 integrated luminosity
+            double spring_denominator = 6.181e7 * spring_bin_volume; // sp19 integrated luminosity
             double spring_cross_section = 0.0;
             double spring_cross_section_stat_uncertainty = 0.0;
             if (spring_denominator > 0.0) {
@@ -245,7 +250,7 @@ void write_csv(const std::string& filename, const std::map<std::string, std::vec
             double spring_cross_section_sys_uncertainty = 0.5 * std::abs(spring_cross_section);
 
             // Write these values to the file
-            file << "," << bin_volume << "," << fall_cross_section << "," << fall_cross_section_stat_uncertainty << "," << fall_cross_section_sys_uncertainty << "," << spring_cross_section << "," << spring_cross_section_stat_uncertainty << "," << spring_cross_section_sys_uncertainty << std::endl;
+            file << "," << fall_bin_volume << "," << fall_cross_section << "," << fall_cross_section_stat_uncertainty << "," << fall_cross_section_sys_uncertainty << "," << spring_cross_section << "," << spring_cross_section_stat_uncertainty << "," << spring_cross_section_sys_uncertainty << std::endl;
         }
     }
 

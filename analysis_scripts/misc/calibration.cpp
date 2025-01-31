@@ -7008,7 +7008,7 @@ void energy_loss_distributions_delta_p_fd(TTreeReader& mcReader, const std::stri
             // Create profile histograms
             TProfile* prof_deltap = histograms[pid][i]->ProfileX();
 
-            // Find the first and last bins with more than 1000 entries
+            // Find the first and last bins with more than 100 entries
             int firstBin = 1; // Start from the first bin
             double minXValue = 0.5; // Default minimum x-value
             double maxXValue = std::get<2>(particle_types[pid]); // Default maximum x-value
@@ -7299,7 +7299,7 @@ void energy_loss_distributions_delta_phi_fd(TTreeReader& mcReader, const std::st
             {26.7273, 27.9545}, {27.9545, 29.1818}, {29.1818, 30.4091},
             {30.4091, 31.6364}, {31.6364, 32.8636}, {32.8636, 34.0909},
             {34.0909, 35.3182}, {35.3182, 36.5455}, {36.5455, 37.7727},
-            {37.7727, 39.0},  // Bins between 12 and 39
+            {37.7727, 39.0},  // Bins between 6 and 39 
             {39.0, 44.0}  // Last bin
         };
     } else {
