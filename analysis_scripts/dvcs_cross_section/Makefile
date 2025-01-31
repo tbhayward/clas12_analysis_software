@@ -2,12 +2,12 @@
 CXX = g++
 CXXFLAGS = -Wall -Wextra -g -Wno-unused-but-set-variable -std=c++17
 ROOTLIBS = $(shell root-config --cflags --libs)
-LFLAGS = $(ROOTLIBS) -lMinuit -lstdc++fs
+LFLAGS = $(ROOTLIBS) -lMinuit -lstdc++fs  # Add -lstdc++fs for filesystem
 
 # Target executable
 TARGET = dvcs_cross_section_extraction
 
-# Source files (added bin_volume.cpp)
+# Source files (added calculate_contamination.cpp)
 SRC = dvcs_cross_section_extraction.cpp \
       determine_exclusivity.cpp \
       histConfigs.cpp \
@@ -26,20 +26,20 @@ SRC = dvcs_cross_section_extraction.cpp \
       plot_comparison.cpp \
       plot_cross_section_comparison.cpp \
       plot_cross_section_run_period_comparison.cpp \
-      utilities.cpp \
-      bin_volume.cpp
+      bin_volume.cpp \
+      utilities.cpp
 
 # Object files
 OBJ = $(SRC:.cpp=.o)
 
 # Main target
 $(TARGET): $(OBJ)
-      $(CXX) $(CXXFLAGS) -o $@ $^ $(LFLAGS)
+	$(CXX) $(CXXFLAGS) -o $@ $^ $(LFLAGS)
 
 # Generic rule for compiling source files
 %.o: %.cpp
-      $(CXX) $(CXXFLAGS) -c $< $(ROOTLIBS)
+	$(CXX) $(CXXFLAGS) -c $< $(ROOTLIBS)
 
 # Clean target
 clean:
-      rm -f $(OBJ) $(TARGET)
+	rm -f $(OBJ) $(TARGET)
