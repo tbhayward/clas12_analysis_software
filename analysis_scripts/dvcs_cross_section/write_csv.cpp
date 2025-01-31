@@ -186,8 +186,8 @@ void write_csv(const std::string& filename, const std::map<std::string, std::vec
 
             // Bin volume calculation
             double cubic_bin_volume = (xB_max - xB_min) * (Q2_max - Q2_min) * (t_max - t_min) * delta_phi_rad;
-            double fall_bin_volume = bin_volume(xB_min, xB_max, Q2_min, Q2_max, t_min, t_max, phi_min_rad, phi_max_rad, 10.6040);
-            double spring_bin_volume = bin_volume(xB_min, xB_max, Q2_min, Q2_max, t_min, t_max, phi_min_rad, phi_max_rad, 10.1998);
+            double fall_bin_volume = calculate_bin_volume(xB_min, xB_max, Q2_min, Q2_max, t_min, t_max, phi_min_rad, phi_max_rad, 10.6040);
+            double spring_bin_volume = calculate_bin_volume(xB_min, xB_max, Q2_min, Q2_max, t_min, t_max, phi_min_rad, phi_max_rad, 10.1998);
 
             // Check for NaN or negative bin volume
             if (!std::isfinite(cubic_bin_volume) || cubic_bin_volume <= 0.0) cubic_bin_volume = 0.0;
