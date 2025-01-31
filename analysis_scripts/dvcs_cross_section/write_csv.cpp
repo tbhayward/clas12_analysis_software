@@ -9,7 +9,7 @@
 #include <cmath>    // For M_PI, std::sqrt, std::isnan, std::isfinite
 #include "write_csv.h"
 #include "unfolding_data.h"
-#include "cubic_bin_volume.h"
+#include "bin_volume.h"
 
 void write_csv(const std::string& filename, const std::map<std::string, std::vector<UnfoldingData>>& topology_unfolding_data) {
     // Open the file
