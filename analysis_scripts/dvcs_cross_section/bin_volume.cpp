@@ -26,8 +26,9 @@ double calculate_bin_volume(double xB_min, double xB_max,
             double Q2 = Q2_min + (j+0.5)*dQ2;
             
             // Calculate t_min for these kinematics
-            double sqrt_term = sqrt(1 + (4*Mp*Mp*xB*xB)/Q2);
-            double t_min_val = -Q2*(1-xB)*(1-xB)/(xB*(1 + sqrt_term));
+            // double sqrt_term = sqrt(1 + (4*Mp*Mp*xB*xB)/Q2);
+            // double t_min_val = -Q2*(1-xB)*(1-xB)/(xB*(1 + sqrt_term));
+            t_min_val = -pow((Mp*x),2)/(1-x);
             
             for(int k=0; k<n_steps; k++) {
                 double t = t_phys_min + (k+0.5)*dt;
