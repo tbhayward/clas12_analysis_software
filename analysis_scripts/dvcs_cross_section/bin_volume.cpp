@@ -37,7 +37,7 @@ double calculate_bin_volume(double xB_min, double xB_max,
                 double W = sqrt(Mp*Mp + Q2*(1.0/xB - 1));
                 
                 // Check kinematic cuts
-                if(t > t_min_val && y > 0.19 && y < 0.8 && W > 2.0) {
+                if(t < t_min_val && y > 0.19 && y < 0.8 && W > 2.0) {
                     valid_count++;
                 }
             }
