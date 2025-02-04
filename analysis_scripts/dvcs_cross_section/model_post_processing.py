@@ -131,7 +131,7 @@ def dvcsgen_bh_only(xB, Q2, t_pos, phi_deg, beam_E=10.604, globalfit=True, local
 ###################################################
 # 2) Function for bin-centering correction (KM15 + VGG)
 ###################################################
-def calculate_fbin(row, prefix, beam_E, n_steps=2):
+def calculate_fbin(row, prefix, beam_E, n_steps=3):
     """
     Calculate bin-centering factors by sub-binning with both KM15 and VGG.
     We return four values:
