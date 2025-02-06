@@ -49,7 +49,7 @@ def km15_model(xB, Q2, t_pos, phi_deg, beam_E=10.604):
     - xB, Q2   : usual DIS variables
     - t_pos    : positive number for |t| (we feed negative to KM15 internally)
     - phi_deg  : phi in degrees, converted to radians with (pi - phi_rad) for TRENTO
-    - beam_E   : beam energy (GeV)
+    - beam_E   : beam energy (GeV), e.g. 10.604 or 10.1998
     """
     t_km15 = -abs(t_pos)  # Convert to negative t for KM15
     phi_rad = np.radians(phi_deg)
@@ -77,8 +77,10 @@ def dvcsgen_vgg(xB, Q2, t_pos, phi_deg, beam_E=10.604, globalfit=True, pol=0, lo
     Calls external dvcsgen for the VGG model using the *regular* dvcsgen_print installation.
     """
     my_env = os.environ.copy()
-    path = REGULAR_DVCSGEN_PATH  # Normal (non-radiative) branch
+    # Use the "print" branch for normal GPD calculations:
+    path = REGULAR_DVCSGEN_PATH
     if local:
+        # If for some reason you want local override
         path = "/Users/sangbaek.lee/CLAS12/dvcs/print/"
 
     my_env["PATH"] = f"{path}:{my_env['PATH']}"
@@ -110,8 +112,10 @@ def dvcsgen_vgg(xB, Q2, t_pos, phi_deg, beam_E=10.604, globalfit=True, pol=0, lo
             i = 1
 
         line_str = dstot.splitlines()[-1 - i].decode("utf-8")
+        # If dvcsgen prints something like "Total 10000 in pb 23980.62..."
         tokens = line_str.split()
-        val_str = tokens[-1]  # numeric cross section
+        # The last token should be numeric
+        val_str = tokens[-1]
         return float(val_str)
     except Exception as e:
         print(f"dvcsgen VGG error at xB={xB}, Q2={Q2}, t={t_pos}, phi={phi_deg} deg -> {e}")
@@ -164,11 +168,10 @@ def dvcsgen_printrad(xB, Q2, t_pos, phi_deg, beam_E=10.604):
     Calls the *radiative* dvcsgen installation with `--printrad`,
     then parses the penultimate line for 'Frad_with_error' factor + sys.
     If something fails or doesn't parse, return (1.0, 0.0).
-    
-    Includes debug statements showing the dvcsgen command & output.
     """
     my_env = os.environ.copy()
-    path = RADIATIVE_DVCSGEN_PATH  # "rad2" branch
+    # We use the *rad2* branch for the special radiative code:
+    path = RADIATIVE_DVCSGEN_PATH
 
     my_env["PATH"] = f"{path}:{my_env['PATH']}"
     my_env["CLASDVCS_PDF"] = path
@@ -190,43 +193,21 @@ def dvcsgen_printrad(xB, Q2, t_pos, phi_deg, beam_E=10.604):
     ]
 
     try:
-        # Execute dvcsgen
         dstot = subprocess.check_output(cmd, env=my_env)
-
-        # Decode output to text
-        decoded = dstot.decode("utf-8", errors="replace")
-        lines = decoded.splitlines()
-
-        # DEBUG prints
-        print("===== dvcsgen_printrad DEBUG =====")
-        print(f"xB={xB}, Q2={Q2}, t={t_pos}, phi_deg={phi_deg}, beamE={beam_E}")
-        print("Command:", " ".join(cmd))
-        print("---- Full dvcsgen output ----")
-        for ln in lines:
-            print(ln)
-        print("=================================")
-
-        # Check we have at least 2 lines
+        lines = dstot.decode("utf-8", errors="replace").splitlines()
         if len(lines) < 2:
-            print("  [dvcsgen_printrad]: Output has fewer than 2 lines. Returning fallback.")
             return (1.0, 0.0)
 
-        # Penultimate line
         penultimate = lines[-2]
-        print(f"  [dvcsgen_printrad]: penultimate line => {penultimate}")
-
         if "Frad_with_error" not in penultimate:
-            print("  [dvcsgen_printrad]: 'Frad_with_error' not found in penultimate line.")
             return (1.0, 0.0)
 
         tokens = penultimate.split()
         if len(tokens) < 3:
-            print("  [dvcsgen_printrad]: penultimate line has <3 tokens. Returning fallback.")
             return (1.0, 0.0)
 
         factor = float(tokens[1])
         sysval = float(tokens[2])
-        print(f"  [dvcsgen_printrad]: Parsed Frad factor={factor}, sys={sysval}")
         return (factor, sysval)
 
     except Exception as e:
@@ -241,8 +222,6 @@ def calculate_fbin(row, prefix, beam_E, n_steps=3):
     """
     Sub-binning with KM15 & VGG from *regular* dvcsgen_print code
     to get (km15_fbin, vgg_fbin, final_fbin, fbin_sys_unc).
-    We also apply cuts:
-       if (t_phys >= t_min_val) and (0.19<y<0.8) and (W>2.0).
     """
     Mp = 0.938272
     xB_samples   = np.linspace(row['xB_min'],   row['xB_max'],   n_steps)
@@ -258,18 +237,17 @@ def calculate_fbin(row, prefix, beam_E, n_steps=3):
             for t_pos in t_pos_samples:
                 t_phys = -abs(t_pos)
                 try:
-                    sqrt_term = np.sqrt(1 + (4*Mp**2*xB**2)/Q2)
+                    sqrt_term = np.sqrt(1 + (4 * Mp**2 * xB**2) / Q2)
                     t_min_val = -Q2*(1 - xB)**2 / (xB*(1 + sqrt_term))
                 except:
                     continue
 
                 try:
-                    y = Q2/(2*Mp*xB*beam_E)
+                    y = Q2/(2 * Mp * xB * beam_E)
                     W = np.sqrt(Mp**2 + Q2*(1/xB - 1))
                 except:
                     continue
 
-                # Apply the cuts here
                 if (t_phys >= t_min_val) and (0.19<y<0.8) and (W>2.0):
                     for phi_deg in phi_samples:
                         try:
@@ -310,10 +288,8 @@ def calculate_fbin(row, prefix, beam_E, n_steps=3):
 ######################################################
 def calculate_frad(row, prefix, beam_E, n_steps=3):
     """
-    Sub-binning approach, but calls dvcsgen_rad2 with `--printrad`.
-    We also apply the same cuts:
-       if (t_phys >= t_min_val) and (0.19<y<0.8) and (W>2.0).
-    Then average sub-bin, compare to center => final_frad, final_frad_sys
+    Sub-binning approach, but calls dvcsgen (RADIATIVE version) with `--printrad`.
+    We gather sub-bin Frad, compare to center, combine sys as sqrt(subbin_std^2 + center_sys^2).
     """
     Mp = 0.938272
     xB_samples   = np.linspace(row['xB_min'], row['xB_max'], n_steps)
@@ -329,21 +305,20 @@ def calculate_frad(row, prefix, beam_E, n_steps=3):
                 t_phys = -abs(t_pos)
                 try:
                     sqrt_term = np.sqrt(1 + (4*Mp**2*xB**2)/Q2)
-                    t_min_val = -Q2*(1 - xB)**2/(xB*(1+ sqrt_term))
+                    t_min_val = -Q2*(1 - xB)**2 / (xB*(1 + sqrt_term))
                 except:
                     continue
 
                 try:
                     y = Q2/(2*Mp*xB*beam_E)
-                    W = np.sqrt(Mp**2 + Q2*(1/xB -1))
+                    W = np.sqrt(Mp**2 + Q2*(1/xB - 1))
                 except:
                     continue
 
-                # Kinematic cuts
                 if (t_phys >= t_min_val) and (0.19<y<0.8) and (W>2.0):
                     for phi_deg in phi_samples:
                         try:
-                            f_sub, _subsys = dvcsgen_printrad(xB, Q2, t_pos, phi_deg, beam_E)
+                            f_sub, _sys_sub = dvcsgen_printrad(xB, Q2, t_pos, phi_deg, beam_E)
                             subbin_vals.append(f_sub)
                         except:
                             continue
@@ -371,8 +346,8 @@ def calculate_frad(row, prefix, beam_E, n_steps=3):
 # 3) Main code
 ######################################################
 def main():
-    # Parse optional arg
-    n_rows_to_process = parse_args()
+    # Parse optional argument
+    n_rows_to_process = parse_args()  # None => process all
 
     print("Beginning code.")
     input_csv = "/u/home/thayward/clas12_analysis_software/analysis_scripts/dvcs_cross_section/output/unfolding_data.csv"
@@ -414,7 +389,7 @@ def main():
 
         row = df.iloc[i]
 
-        # (A) Existing model calcs at bin center (KM15, VGG, BH)
+        # (A) Existing model calcs at bin center (KM15, VGG, BH) => regular dvcsgen_print
         fall_km15_val = km15_model( row["xB_avg"], row["Q2_avg"], row["t_avg"], row["phi_avg"], 10.604 )
         fall_vgg_val  = dvcsgen_vgg( row["xB_avg"], row["Q2_avg"], row["t_avg"], row["phi_avg"], 10.604, globalfit=False )
         fall_bh_val   = dvcsgen_bh_only( row["xB_avg"], row["Q2_avg"], row["t_avg"], row["phi_avg"], 10.604, globalfit=False )
@@ -491,28 +466,28 @@ def main():
     new_column_order = []
     common_columns = [c for c in all_cols if not c.startswith(("fall_","spring_"))]
 
-    fall_cols   = get_ordered_columns("fall")
+    fall_cols = get_ordered_columns("fall")
     spring_cols = get_ordered_columns("spring")
 
-    # 1) Keep original non-prefixed columns
+    # 1) Keep original non-prefixed first
     for col in common_columns:
         new_column_order.append(col)
         if col in all_cols:
             all_cols.remove(col)
 
-    # 2) Then fall
+    # 2) Then add fall
     for col in fall_cols:
         if col in all_cols:
             new_column_order.append(col)
             all_cols.remove(col)
 
-    # 3) Then spring
+    # 3) Then add spring
     for col in spring_cols:
         if col in all_cols:
             new_column_order.append(col)
             all_cols.remove(col)
 
-    # 4) leftover
+    # 4) Add leftover
     new_column_order += all_cols
 
     df = df[new_column_order]
