@@ -214,7 +214,7 @@ def _subbin_frad_task(args):
 ######################################################
 # 2A) calculate_fbin with concurrency
 ######################################################
-def calculate_fbin(row, prefix, beam_E, n_steps=5):
+def calculate_fbin(row, prefix, beam_E, n_steps=6):
     """
     Sub-binning with KM15 & VGG from dvcsgen_print code
     to get (km15_fbin, vgg_fbin, final_fbin, fbin_sys_unc).
@@ -294,7 +294,7 @@ def calculate_fbin(row, prefix, beam_E, n_steps=5):
 ######################################################
 # 2B) calculate_frad with concurrency
 ######################################################
-def calculate_frad(row, prefix, beam_E, n_steps=5):
+def calculate_frad(row, prefix, beam_E, n_steps=6):
     """
     Sub-binning approach, but calls dvcsgen_rad2 with `--printrad`.
     We'll do concurrency to parallelize each subbin call.
