@@ -1,11 +1,30 @@
-import pandas as pd
-import numpy as np
+#!/usr/bin/env python3
+
+import sys
 import os
 import subprocess
+import numpy as np
+import pandas as pd
 
 # GEPARD imports
 import gepard as g
 from gepard.fits import th_KM15
+
+###############################################
+# 0) Command-Line Argument for Number of Rows
+###############################################
+
+def parse_args():
+    """
+    Parses sys.argv for an optional integer specifying how many rows to process.
+    If none provided, returns None (meaning process all).
+    """
+    if len(sys.argv) > 1:
+        try:
+            return int(sys.argv[1])
+        except ValueError:
+            pass
+    return None
 
 ###############################################
 # 1) Define helper functions for KM15 & dvcsgen
@@ -16,40 +35,35 @@ def km15_model(xB, Q2, t_pos, phi_deg, beam_E=10.604):
     Compute KM15 cross section (via GEPARD) for given kinematics.
 
     - xB, Q2   : usual DIS variables
-    - t_pos    : positive number for |t|, we feed it as negative to KM15
+    - t_pos    : positive number for |t| (we feed negative to KM15 internally)
     - phi_deg  : phi in degrees, converted to radians with (pi - phi_rad) for TRENTO
     - beam_E   : beam energy (GeV), e.g. 10.604 or 10.1998
     """
-    # Convert to negative t for KM15
-    t_km15 = -abs(t_pos)
-
-    # Convert degrees to radians and shift for TRENTO frame
+    t_km15 = -abs(t_pos)  # Convert to negative t for KM15
     phi_rad = np.radians(phi_deg)
-    phi_trento = np.pi - phi_rad
+    phi_trento = np.pi - phi_rad  # TRENTO shift
 
-    # Construct GEPARD DataPoint
     pt = g.DataPoint(
-        xB=xB,
-        t=t_km15,
-        Q2=Q2,
-        phi=phi_trento,
-        observable='XS',
-        frame='trento',
-        process='ep2epgamma',
-        exptype='fixed target',
-        in1energy=beam_E,
-        in1charge=-1,
-        in1polarization=0
+        xB        = xB,
+        t         = t_km15,
+        Q2        = Q2,
+        phi       = phi_trento,
+        observable= 'XS',
+        frame     = 'trento',
+        process   = 'ep2epgamma',
+        exptype   = 'fixed target',
+        in1energy = beam_E,
+        in1charge = -1,
+        in1polarization = 0
     )
     pt.prepare()
     return th_KM15.predict(pt)
 #endfor
 
+
 def dvcsgen_vgg(xB, Q2, t_pos, phi_deg, beam_E=10.604, globalfit=True, pol=0, local=False):
     """
-    Calls an external dvcsgen executable for the VGG model (unused for bin-centering if desired,
-    but here it *is* used to define sub-binning for a second model, as we want the final Fbin
-    to be the average of KM15 & VGG).
+    Calls external dvcsgen for the VGG model.
     """
     my_env = os.environ.copy()
     path = "/u/home/thayward/dvcsgen"
@@ -59,9 +73,7 @@ def dvcsgen_vgg(xB, Q2, t_pos, phi_deg, beam_E=10.604, globalfit=True, pol=0, lo
     my_env["PATH"] = f"{path}:{my_env['PATH']}"
     my_env["CLASDVCS_PDF"] = path
 
-    # dvcsgen expects phi in radians
     phi_rad = np.radians(phi_deg)
-
     cmd = [
         f"{path}/dvcsgen",
         "--beam", f"{beam_E:.3f}",
@@ -78,12 +90,14 @@ def dvcsgen_vgg(xB, Q2, t_pos, phi_deg, beam_E=10.604, globalfit=True, pol=0, lo
 
     try:
         dstot = subprocess.check_output(cmd, env=my_env)
+        # pol=0 => last line index=0; pol=1 => index=2; etc.
         if pol == 0:
             i = 0
         elif pol == 1:
             i = 2
         else:
             i = 1
+
         val_str = dstot.splitlines()[-1 - i].decode("utf-8")
         return float(val_str)
     except Exception as e:
@@ -91,10 +105,10 @@ def dvcsgen_vgg(xB, Q2, t_pos, phi_deg, beam_E=10.604, globalfit=True, pol=0, lo
         return 0.0
 #endfor
 
+
 def dvcsgen_bh_only(xB, Q2, t_pos, phi_deg, beam_E=10.604, globalfit=True, local=False):
     """
-    Calls an external dvcsgen executable for the BH-only model (bh=1).
-    (Unused for bin-centering, but kept if you want BH in existing calculations.)
+    Calls external dvcsgen for BH-only (bh=1).
     """
     my_env = os.environ.copy()
     path = "/u/home/thayward/dvcsgen"
@@ -105,7 +119,6 @@ def dvcsgen_bh_only(xB, Q2, t_pos, phi_deg, beam_E=10.604, globalfit=True, local
     my_env["CLASDVCS_PDF"] = path
 
     phi_rad = np.radians(phi_deg)
-
     cmd = [
         f"{path}/dvcsgen",
         "--beam", f"{beam_E:.3f}",
@@ -128,27 +141,84 @@ def dvcsgen_bh_only(xB, Q2, t_pos, phi_deg, beam_E=10.604, globalfit=True, local
         return 0.0
 #endfor
 
-###################################################
+###############################################
+# 1B) dvcsgen with --printrad to get Frad
+###############################################
+
+def dvcsgen_printrad(xB, Q2, t_pos, phi_deg, beam_E=10.604):
+    """
+    Calls dvcsgen with a special command:
+       --printrad
+    and parses the penultimate line for 'Frad_with_error' factor + sys.
+    We then return (Frad_factor, Frad_sys).
+    If something fails or doesn't parse, return (1.0, 0.0).
+    """
+
+    my_env = os.environ.copy()
+    path = "/u/home/thayward/dvcsgen"
+
+    my_env["PATH"] = f"{path}:{my_env['PATH']}"
+    my_env["CLASDVCS_PDF"] = path
+
+    phi_rad = np.radians(phi_deg)
+
+    # The command you specified: 
+    #    ./dvcsgen --beam BEAM_ENERGY --x xValue xValue --q2 Q2Value Q2Value 
+    #              --t tValue tValue --gpd 101 --y 0 1 --phi phiValue
+    #              --vv2cut 0.3 --delta 0.1 --printrad
+    cmd = [
+        f"{path}/dvcsgen",
+        "--beam", f"{beam_E:.3f}",
+        "--x", str(xB), str(xB),
+        "--q2", str(Q2), str(Q2),
+        "--t", str(t_pos), str(t_pos),
+        "--gpd", "101",
+        "--y", "0", "1",
+        "--phi", f"{phi_rad}",
+        "--vv2cut", "0.3",
+        "--delta", "0.1",
+        "--printrad"
+    ]
+
+    try:
+        dstot = subprocess.check_output(cmd, env=my_env)
+        lines = dstot.decode("utf-8", errors="replace").splitlines()
+        if len(lines) < 2:
+            return (1.0, 0.0)
+
+        # The penultimate line is lines[-2].
+        # It should contain something like:
+        # " Frad_with_error  0.88183283631317655  7.6579640022232884E-005"
+        penultimate = lines[-2]
+        if "Frad_with_error" not in penultimate:
+            return (1.0, 0.0)
+
+        # parse it
+        tokens = penultimate.split()
+        # e.g. ["Frad_with_error","0.88183283631317655","7.6579640022232884E-005"]
+        # tokens[0] -> "Frad_with_error"
+        # tokens[1] -> factor
+        # tokens[2] -> sys
+        if len(tokens) < 3:
+            return (1.0, 0.0)
+
+        factor = float(tokens[1])
+        sysval = float(tokens[2])
+        return (factor, sysval)
+    except Exception as e:
+        print(f"dvcsgen printrad error (xB={xB}, Q2={Q2}, t={t_pos}, phi={phi_deg}): {e}")
+        return (1.0, 0.0)
+#enddef
+
+###############################################
 # 2) Function for bin-centering correction (KM15 + VGG)
-###################################################
-def calculate_fbin(row, prefix, beam_E, n_steps=5):
+###############################################
+def calculate_fbin(row, prefix, beam_E, n_steps=3):
     """
-    Calculate bin-centering factors by sub-binning with both KM15 and VGG.
-    We return four values:
-
-        (km15_fbin, vgg_fbin, final_fbin, fbin_sys_unc)
-
-    Where:
-      - km15_fbin = centerKM15 / average over sub-bins (KM15)
-      - vgg_fbin  = centerVGG  / average over sub-bins (VGG)
-      - final_fbin = (km15_fbin + vgg_fbin)/2
-      - fbin_sys_unc = std([km15_fbin, vgg_fbin])
-
-    This final_fbin is what we'll store in row["prefix_Fbin"] and apply to the cross section.
+    Same as your existing Fbin function: sub-binning with KM15 & VGG.
+    Returns: (km15_fbin, vgg_fbin, final_fbin, fbin_sys_unc).
     """
-    Mp = 0.938272  # Proton mass in GeV/c²
-
-    # Generate grid points for each variable
+    Mp = 0.938272
     xB_samples   = np.linspace(row['xB_min'],   row['xB_max'],   n_steps)
     Q2_samples   = np.linspace(row['Q2_min'],   row['Q2_max'],   n_steps)
     t_pos_samples= np.linspace(row['t_min'],    row['t_max'],    n_steps)
@@ -168,7 +238,6 @@ def calculate_fbin(row, prefix, beam_E, n_steps=5):
                 except:
                     continue
 
-                # y, W
                 try:
                     y = Q2 / (2 * Mp * xB * beam_E)
                     W = np.sqrt(Mp**2 + Q2 * (1/xB - 1))
@@ -187,16 +256,14 @@ def calculate_fbin(row, prefix, beam_E, n_steps=5):
                 else:
                     continue
 
-    # Now compute the center values (KM15 & VGG) at bin center
+    # Center values
     try:
         centerKM15 = km15_model(row['xB_avg'], row['Q2_avg'], row['t_avg'], row['phi_avg'], beam_E)
         centerVGG  = dvcsgen_vgg(row['xB_avg'], row['Q2_avg'], row['t_avg'], row['phi_avg'], beam_E, globalfit=False)
     except:
-        # fallback
         return (1.0, 1.0, 1.0, 0.0)
 
     if not valid_KM15 or not valid_VGG:
-        # no valid sub-bins
         return (1.0, 1.0, 1.0, 0.0)
 
     avgKM15 = np.mean(valid_KM15)
@@ -204,50 +271,138 @@ def calculate_fbin(row, prefix, beam_E, n_steps=5):
     if avgKM15 == 0.0 or avgVGG == 0.0:
         return (1.0, 1.0, 1.0, 0.0)
 
-    # compute each ratio
     km15_fbin = centerKM15 / avgKM15
     vgg_fbin  = centerVGG  / avgVGG
-    # final fbin is average, sys is the std
     fbin_values   = [km15_fbin, vgg_fbin]
     final_fbin    = np.mean(fbin_values)
     fbin_sys_unc  = np.std(fbin_values)
 
-    # debug prints if desired:
-    print(f"KM15: {km15_fbin:.4f}, VGG: {vgg_fbin:.4f}, final: {final_fbin:.4f}, sys: {fbin_sys_unc:.4f}")
-
     return (km15_fbin, vgg_fbin, final_fbin, fbin_sys_unc)
 #enddef
 
+###############################################
+# 2B) Radiative correction (Frad) with sub-binning
+###############################################
+def calculate_frad(row, prefix, beam_E, n_steps=3):
+    """
+    Similar sub-binning approach, but calls dvcsgen with `--printrad`.
+
+    Procedure:
+      - For each sub-bin, call dvcsgen_printrad(...), gather sub-bin factor (f_sub).
+      - Then at bin center, also call dvcsgen_printrad(...) => (f_center, sys_center).
+      - final_frad = average_subbin / f_center
+      - final_frad_sys = sqrt( (std_subbin^2) + (sys_center^2 ) )
+
+    returns (final_frad, final_frad_sys).
+    """
+    Mp = 0.938272
+
+    xB_samples   = np.linspace(row['xB_min'],   row['xB_max'],   n_steps)
+    Q2_samples   = np.linspace(row['Q2_min'],   row['Q2_max'],   n_steps)
+    t_pos_samples= np.linspace(row['t_min'],    row['t_max'],    n_steps)
+    phi_samples  = np.linspace(row['phi_min'],  row['phi_max'],  n_steps)
+
+    subbin_vals = []  # store Frad for each sub-bin
+
+    for xB in xB_samples:
+        for Q2 in Q2_samples:
+            for t_pos in t_pos_samples:
+                t_phys = -abs(t_pos)
+                try:
+                    sqrt_term = np.sqrt(1 + (4 * Mp**2 * xB**2) / Q2)
+                    t_min_val = -Q2 * (1 - xB)**2 / (xB * (1 + sqrt_term))
+                except:
+                    continue
+
+                try:
+                    y = Q2 / (2*Mp*xB*beam_E)
+                    W = np.sqrt(Mp**2 + Q2*(1/xB - 1))
+                except:
+                    continue
+
+                if (t_phys >= t_min_val) and (0.19 < y < 0.8) and (W>2.0):
+                    for phi_deg in phi_samples:
+                        try:
+                            f_sub, _subsys = dvcsgen_printrad(xB, Q2, t_pos, phi_deg, beam_E)
+                            subbin_vals.append(f_sub)
+                        except:
+                            continue
+                else:
+                    continue
+
+    # Now the center
+    try:
+        f_center, center_sys = dvcsgen_printrad(row['xB_avg'], row['Q2_avg'], row['t_avg'], row['phi_avg'], beam_E)
+    except:
+        return (1.0, 0.0)
+
+    if (not subbin_vals) or (f_center==0.0):
+        return (1.0, 0.0)
+
+    avg_subbin = np.mean(subbin_vals)
+    std_subbin = np.std(subbin_vals)
+
+    # final factor = avg_subbin / f_center
+    # total sys = sqrt( std_subbin^2 + center_sys^2 )
+    final_val = avg_subbin / f_center
+    final_sys = np.sqrt(std_subbin**2 + center_sys**2)
+
+    return (final_val, final_sys)
+#enddef
+
 ###################################################
-# 3) Main code execution
+# 3) Main code
 ###################################################
-if __name__ == "__main__":
+def main():
+    # 3A) parse arguments
+    n_rows_to_process = parse_args()  # None if no argument provided
+
     print("Beginning code.")
     input_csv = "/u/home/thayward/clas12_analysis_software/analysis_scripts/dvcs_cross_section/output/unfolding_data.csv"
     print(f"Reading CSV from: {input_csv}")
     df = pd.read_csv(input_csv)
     print(f"Loaded DataFrame with {len(df)} rows and {len(df.columns)} columns.")
 
-    # Create columns for the Fbin factors (KM15_Fbin, VGG_Fbin, Fbin, Fbin_sys_uncertainty)
-    print("Preparing new columns...")
+    # If user specified a limit, override
+    if n_rows_to_process is None:
+        n_rows_to_process = len(df)
+    else:
+        n_rows_to_process = min(n_rows_to_process, len(df))
 
+    # Create columns for bin-centering factors
     fb_cols = ['KM15_Fbin', 'VGG_Fbin', 'Fbin', 'Fbin_sys_uncertainty']
+    # Create columns for radiative corrections
+    frad_cols = ['Frad', 'Frad_sys_uncertainty']
+
+    print("Preparing new columns for Fbin and Frad...")
+
     for prefix in ['fall', 'spring']:
         for c in fb_cols:
             df[f"{prefix}_{c}"] = np.nan
+        for c in frad_cols:
+            df[f"{prefix}_{c}"] = np.nan
 
-    # Main loop
-    print("Beginning cross-section and Fbin calculations...")
-    progress_interval = 1  # or whatever you prefer
+    # Also ensure we have columns for existing model calculations
+    # (km15, vgg, bh) if not present
+    # Not strictly necessary, but in case they don't exist
+    for prefix in ['fall', 'spring']:
+        for c in ['km15','vgg','bh']:
+            colname = f"{prefix}_{c}"
+            if colname not in df.columns:
+                df[colname] = np.nan
 
-    for i in range(len(df)):
+    print("Beginning cross-section, Fbin, and Frad calculations...")
+
+    # You may choose a progress interval
+    progress_interval = 25
+
+    for i in range(n_rows_to_process):
         if i % progress_interval == 0:
-            print(f"  Processing row {i} of {len(df)} ...")
+            print(f"  Processing row {i} of {n_rows_to_process} ...")
 
         row = df.iloc[i]
 
-        # 1) "Existing" model calculations, if you want them:
-        #    (These are the cross section predictions at the bin center.)
+        # 1) "Existing" model calculations at bin center
         fall_km15_val = km15_model(row["xB_avg"], row["Q2_avg"], row["t_avg"], row["phi_avg"], 10.604)
         fall_vgg_val  = dvcsgen_vgg(row["xB_avg"], row["Q2_avg"], row["t_avg"], row["phi_avg"], 10.604, globalfit=False)
         fall_bh_val   = dvcsgen_bh_only(row["xB_avg"], row["Q2_avg"], row["t_avg"], row["phi_avg"], 10.604, globalfit=False)
@@ -257,21 +412,30 @@ if __name__ == "__main__":
         spring_bh_val   = dvcsgen_bh_only(row["xB_avg"], row["Q2_avg"], row["t_avg"], row["phi_avg"], 10.1998, globalfit=False)
 
         # 2) Bin-centering factor (Fall)
-        fall_KM15_Fbin, fall_VGG_Fbin, fall_Fbin, fall_Fbin_sys = calculate_fbin(row, 'fall', beam_E=10.604)
-        # store them
-        df.loc[i, "fall_KM15_Fbin"]              = fall_KM15_Fbin
-        df.loc[i, "fall_VGG_Fbin"]               = fall_VGG_Fbin
-        df.loc[i, "fall_Fbin"]                   = fall_Fbin
-        df.loc[i, "fall_Fbin_sys_uncertainty"]   = fall_Fbin_sys
+        fall_KM15_Fbin, fall_VGG_Fbin, fall_Fbin, fall_Fbin_sys = calculate_fbin(row, 'fall', 10.604)
+        df.loc[i, "fall_KM15_Fbin"]            = fall_KM15_Fbin
+        df.loc[i, "fall_VGG_Fbin"]             = fall_VGG_Fbin
+        df.loc[i, "fall_Fbin"]                 = fall_Fbin
+        df.loc[i, "fall_Fbin_sys_uncertainty"] = fall_Fbin_sys
+
+        # 2B) Radiative correction factor (Fall)
+        fall_Frad_val, fall_Frad_sys = calculate_frad(row, 'fall', 10.604)
+        df.loc[i, "fall_Frad"] = fall_Frad_val
+        df.loc[i, "fall_Frad_sys_uncertainty"] = fall_Frad_sys
 
         # 3) Bin-centering factor (Spring)
-        spring_KM15_Fbin, spring_VGG_Fbin, spring_Fbin, spring_Fbin_sys = calculate_fbin(row, 'spring', beam_E=10.1998)
+        spring_KM15_Fbin, spring_VGG_Fbin, spring_Fbin, spring_Fbin_sys = calculate_fbin(row, 'spring', 10.1998)
         df.loc[i, "spring_KM15_Fbin"]            = spring_KM15_Fbin
         df.loc[i, "spring_VGG_Fbin"]             = spring_VGG_Fbin
         df.loc[i, "spring_Fbin"]                 = spring_Fbin
         df.loc[i, "spring_Fbin_sys_uncertainty"] = spring_Fbin_sys
 
-        # 4) Store the bin-center model outputs
+        # 3B) Radiative correction factor (Spring)
+        spring_Frad_val, spring_Frad_sys = calculate_frad(row, 'spring', 10.1998)
+        df.loc[i, "spring_Frad"] = spring_Frad_val
+        df.loc[i, "spring_Frad_sys_uncertainty"] = spring_Frad_sys
+
+        # 4) Store bin-center model outputs
         df.loc[i, "fall_km15"]   = fall_km15_val
         df.loc[i, "fall_vgg"]    = fall_vgg_val
         df.loc[i, "fall_bh"]     = fall_bh_val
@@ -279,27 +443,33 @@ if __name__ == "__main__":
         df.loc[i, "spring_vgg"]  = spring_vgg_val
         df.loc[i, "spring_bh"]   = spring_bh_val
 
-        # 5) Apply final Fbin to cross section & stat. uncertainty
-        #    (We use 'fall_Fbin' or 'spring_Fbin' = the average of KM15 & VGG.)
+        # 5) Apply final Fbin *and* Frad factors to cross section & stat uncertainty.
         for pre in ['fall', 'spring']:
-            fbin_val = df.loc[i, f"{pre}_Fbin"]
-            df.loc[i, f"{pre}_cross_section"] *= fbin_val
-            df.loc[i, f"{pre}_cross_section_stat_uncertainty"] *= fbin_val
+            fbin_factor = df.loc[i, f"{pre}_Fbin"]
+            frad_factor = df.loc[i, f"{pre}_Frad"]
+            
+            total_factor = fbin_factor * frad_factor
+            
+            df.loc[i, f"{pre}_cross_section"] *= total_factor
+            df.loc[i, f"{pre}_cross_section_stat_uncertainty"] *= total_factor
 
-    ###################################################
-    # Reorder columns
-    ###################################################
+    # Reordering columns
     print("Reordering columns...")
     all_cols = list(df.columns)
 
     def get_ordered_columns(prefix):
-        """Return columns in correct order for a given prefix."""
+        """
+        Return columns in correct order for a given prefix.
+        We'll place the new Frad columns right after Fbin_sys_uncertainty.
+        """
         return [
             f"{prefix}_bin_volume",
             f"{prefix}_KM15_Fbin",
             f"{prefix}_VGG_Fbin",
             f"{prefix}_Fbin",
             f"{prefix}_Fbin_sys_uncertainty",
+            f"{prefix}_Frad",
+            f"{prefix}_Frad_sys_uncertainty",
             f"{prefix}_cross_section",
             f"{prefix}_cross_section_stat_uncertainty",
             f"{prefix}_cross_section_sys_uncertainty",
@@ -309,37 +479,42 @@ if __name__ == "__main__":
         ]
 
     new_column_order = []
-    common_columns   = [col for col in all_cols if not col.startswith(('fall_', 'spring_'))]
+    common_columns   = [c for c in all_cols if not c.startswith(("fall_","spring_"))]
 
-    # Add columns for FALL, then SPRING, in desired order
     fall_columns   = get_ordered_columns('fall')
     spring_columns = get_ordered_columns('spring')
 
-    # Preserve original non-prefixed columns at start
+    # keep original non-prefixed first
     for col in common_columns:
         new_column_order.append(col)
         if col in all_cols:
             all_cols.remove(col)
 
-    # Then add fall columns
+    # then fall
     for col in fall_columns:
         if col in all_cols:
             new_column_order.append(col)
             all_cols.remove(col)
 
-    # Then add spring columns
+    # then spring
     for col in spring_columns:
         if col in all_cols:
             new_column_order.append(col)
             all_cols.remove(col)
 
-    # Add any leftover
+    # any leftover
     new_column_order += all_cols
 
-    # Reorder
     df = df[new_column_order]
 
-    # Save output
-    output_csv = "/u/home/thayward/clas12_analysis_software/analysis_scripts/dvcs_cross_section/output/unfolding_data_with_models.csv"
-    df.to_csv(output_csv, index=False)
-    print(f"Done! Updated file saved to:\n{output_csv}")
+    # Save
+    outpath = "/u/home/thayward/clas12_analysis_software/analysis_scripts/dvcs_cross_section/output/unfolding_data_with_models.csv"
+    df.to_csv(outpath, index=False)
+    print(f"Done! Updated file saved to:\n{outpath}")
+
+
+###############################################
+# 4) Entry point
+###############################################
+if __name__ == "__main__":
+    main()
