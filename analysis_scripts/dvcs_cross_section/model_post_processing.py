@@ -161,16 +161,14 @@ def dvcsgen_bh_only(xB, Q2, t_pos, phi_deg, beam_E=10.604, globalfit=True, local
 
 def dvcsgen_printrad(xB, Q2, t_pos, phi_deg, beam_E=10.604):
     """
-    Calls dvcsgen with a special command:
-       --printrad
-    and parses the penultimate line for 'Frad_with_error' factor + sys.
-    We then return (Frad_factor, Frad_sys).
+    Calls the *radiative* dvcsgen installation with `--printrad`,
+    then parses the penultimate line for 'Frad_with_error' factor + sys.
     If something fails or doesn't parse, return (1.0, 0.0).
-
-    Now includes debug print statements to show all dvcsgen output.
+    
+    Includes debug statements showing the dvcsgen command & output.
     """
     my_env = os.environ.copy()
-    path = "/u/home/thayward/dvcsgen"
+    path = RADIATIVE_DVCSGEN_PATH  # "rad2" branch
 
     my_env["PATH"] = f"{path}:{my_env['PATH']}"
     my_env["CLASDVCS_PDF"] = path
@@ -192,50 +190,49 @@ def dvcsgen_printrad(xB, Q2, t_pos, phi_deg, beam_E=10.604):
     ]
 
     try:
+        # Execute dvcsgen
         dstot = subprocess.check_output(cmd, env=my_env)
+
+        # Decode output to text
         decoded = dstot.decode("utf-8", errors="replace")
-
-        # DEBUG PRINT: Full dvcsgen output
-        print("===== dvcsgen printrad DEBUG OUTPUT =====")
-        print(f"xB={xB}, Q2={Q2}, t={t_pos}, phi_deg={phi_deg}, beamE={beam_E}")
-        print("CMD =", " ".join(cmd))
-        print("---- dvcsgen output ----")
-        print(decoded)
-        print("===== END dvcsgen printrad DEBUG =====")
-
         lines = decoded.splitlines()
+
+        # DEBUG prints
+        print("===== dvcsgen_printrad DEBUG =====")
+        print(f"xB={xB}, Q2={Q2}, t={t_pos}, phi_deg={phi_deg}, beamE={beam_E}")
+        print("Command:", " ".join(cmd))
+        print("---- Full dvcsgen output ----")
+        for ln in lines:
+            print(ln)
+        print("=================================")
+
+        # Check we have at least 2 lines
         if len(lines) < 2:
-            print(" -> Too few lines in dvcsgen output, returning fallback (1.0, 0.0).")
+            print("  [dvcsgen_printrad]: Output has fewer than 2 lines. Returning fallback.")
             return (1.0, 0.0)
 
-        # The penultimate line is lines[-2].
-        # It should contain something like:
-        # " Frad_with_error  0.88183283631317655  7.6579640022232884E-005"
-        penultimate = lines[-2].strip()
+        # Penultimate line
+        penultimate = lines[-2]
+        print(f"  [dvcsgen_printrad]: penultimate line => {penultimate}")
+
         if "Frad_with_error" not in penultimate:
-            print(f" -> 'Frad_with_error' not found in penultimate line: {penultimate}")
+            print("  [dvcsgen_printrad]: 'Frad_with_error' not found in penultimate line.")
             return (1.0, 0.0)
 
         tokens = penultimate.split()
-        # e.g. ["Frad_with_error","0.88183283631317655","7.6579640022232884E-005"]
         if len(tokens) < 3:
-            print(f" -> penultimate line does not have 3 tokens: {penultimate}")
+            print("  [dvcsgen_printrad]: penultimate line has <3 tokens. Returning fallback.")
             return (1.0, 0.0)
 
         factor = float(tokens[1])
         sysval = float(tokens[2])
-        print(f" -> PARSED Frad factor={factor:.6f}, sys={sysval:.6f}")
+        print(f"  [dvcsgen_printrad]: Parsed Frad factor={factor}, sys={sysval}")
         return (factor, sysval)
 
-    except subprocess.CalledProcessError as e:
-        # If dvcsgen fails to run, we can see the error code or partial output
+    except Exception as e:
         print(f"dvcsgen printrad error (xB={xB}, Q2={Q2}, t={t_pos}, phi={phi_deg}): {e}")
         return (1.0, 0.0)
-    except Exception as e:
-        # Catch-all for any other parse/time out/etc.
-        print(f"dvcsgen printrad unknown error (xB={xB}, Q2={Q2}, t={t_pos}, phi={phi_deg}): {e}")
-        return (1.0, 0.0)
-#enddef
+#endfor
 
 ######################################################
 # 2) Function for bin-centering correction (KM15 + VGG)
