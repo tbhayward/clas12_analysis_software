@@ -36,7 +36,7 @@ def parse_args():
 REGULAR_DVCSGEN_PATH = "/u/home/thayward/dvcsgens/dvcsgen_print"
 
 # Radiative dvcsgen for `--printrad` calculations:
-RADIATIVE_DVCSGEN_PATH = "/u/home/thayward/dvcsgens/dvcsgen_rad2"
+RADIATIVE_DVCSGEN_PATH = "/u/home/thayward/dvcsgen_rad2"
 
 ######################################################
 # 1) Define helper functions for KM15 & dvcsgen
@@ -51,9 +51,9 @@ def km15_model(xB, Q2, t_pos, phi_deg, beam_E=10.604):
     - phi_deg  : phi in degrees, converted to radians with (pi - phi_rad) for TRENTO
     - beam_E   : beam energy (GeV), e.g. 10.604 or 10.1998
     """
-    t_km15 = -abs(t_pos)  # Convert to negative t for KM15
+    t_km15 = -abs(t_pos)
     phi_rad = np.radians(phi_deg)
-    phi_trento = np.pi - phi_rad  # TRENTO shift
+    phi_trento = np.pi - phi_rad
 
     pt = g.DataPoint(
         xB        = xB,
@@ -72,15 +72,14 @@ def km15_model(xB, Q2, t_pos, phi_deg, beam_E=10.604):
     return th_KM15.predict(pt)
 #endfor
 
+
 def dvcsgen_vgg(xB, Q2, t_pos, phi_deg, beam_E=10.604, globalfit=True, pol=0, local=False):
     """
     Calls external dvcsgen for the VGG model using the *regular* dvcsgen_print installation.
     """
     my_env = os.environ.copy()
-    # Use the "print" branch for normal GPD calculations:
     path = REGULAR_DVCSGEN_PATH
     if local:
-        # If for some reason you want local override
         path = "/Users/sangbaek.lee/CLAS12/dvcs/print/"
 
     my_env["PATH"] = f"{path}:{my_env['PATH']}"
@@ -103,7 +102,6 @@ def dvcsgen_vgg(xB, Q2, t_pos, phi_deg, beam_E=10.604, globalfit=True, pol=0, lo
 
     try:
         dstot = subprocess.check_output(cmd, env=my_env)
-        # pol=0 => last line index=0; pol=1 => index=2; etc.
         if pol == 0:
             i = 0
         elif pol == 1:
@@ -112,15 +110,14 @@ def dvcsgen_vgg(xB, Q2, t_pos, phi_deg, beam_E=10.604, globalfit=True, pol=0, lo
             i = 1
 
         line_str = dstot.splitlines()[-1 - i].decode("utf-8")
-        # If dvcsgen prints something like "Total 10000 in pb 23980.62..."
         tokens = line_str.split()
-        # The last token should be numeric
         val_str = tokens[-1]
         return float(val_str)
     except Exception as e:
         print(f"dvcsgen VGG error at xB={xB}, Q2={Q2}, t={t_pos}, phi={phi_deg} deg -> {e}")
         return 0.0
 #endfor
+
 
 def dvcsgen_bh_only(xB, Q2, t_pos, phi_deg, beam_E=10.604, globalfit=True, local=False):
     """
@@ -159,9 +156,11 @@ def dvcsgen_bh_only(xB, Q2, t_pos, phi_deg, beam_E=10.604, globalfit=True, local
         return 0.0
 #endfor
 
+
 ######################################################
 # 1B) dvcsgen with --printrad for Frad (RADIATIVE version)
 ######################################################
+RADIATIVE_DVCSGEN_PATH = "/u/home/thayward/dvcsgens/dvcsgen_rad2"
 
 def dvcsgen_printrad(xB, Q2, t_pos, phi_deg, beam_E=10.604):
     """
@@ -170,7 +169,6 @@ def dvcsgen_printrad(xB, Q2, t_pos, phi_deg, beam_E=10.604):
     If something fails or doesn't parse, return (1.0, 0.0).
     """
     my_env = os.environ.copy()
-    # We use the *rad2* branch for the special radiative code:
     path = RADIATIVE_DVCSGEN_PATH
 
     my_env["PATH"] = f"{path}:{my_env['PATH']}"
@@ -222,33 +220,38 @@ def calculate_fbin(row, prefix, beam_E, n_steps=3):
     """
     Sub-binning with KM15 & VGG from *regular* dvcsgen_print code
     to get (km15_fbin, vgg_fbin, final_fbin, fbin_sys_unc).
+
+    We'll define xB_samples, Q2_samples, t_pos_samples, phi_samples
+    once at the start of the function to avoid repeated np.linspace calls
+    in the nested loop.
     """
     Mp = 0.938272
-    xB_samples   = np.linspace(row['xB_min'],   row['xB_max'],   n_steps)
-    Q2_samples   = np.linspace(row['Q2_min'],   row['Q2_max'],   n_steps)
-    t_pos_samples= np.linspace(row['t_min'],    row['t_max'],    n_steps)
-    phi_samples  = np.linspace(row['phi_min'],  row['phi_max'],  n_steps)
+
+    xB_samples = np.linspace(row['xB_min'], row['xB_max'], n_steps)
+    Q2_samples = np.linspace(row['Q2_min'], row['Q2_max'], n_steps)
+    t_pos_samples = np.linspace(row['t_min'], row['t_max'], n_steps)
+    phi_samples = np.linspace(row['phi_min'], row['phi_max'], n_steps)
 
     valid_KM15 = []
-    valid_VGG  = []
+    valid_VGG = []
 
     for xB in xB_samples:
         for Q2 in Q2_samples:
             for t_pos in t_pos_samples:
                 t_phys = -abs(t_pos)
                 try:
-                    sqrt_term = np.sqrt(1 + (4 * Mp**2 * xB**2) / Q2)
+                    sqrt_term = np.sqrt(1 + (4*Mp**2*xB**2)/Q2)
                     t_min_val = -Q2*(1 - xB)**2 / (xB*(1 + sqrt_term))
                 except:
                     continue
 
                 try:
-                    y = Q2/(2 * Mp * xB * beam_E)
+                    y = Q2/(2*Mp*xB*beam_E)
                     W = np.sqrt(Mp**2 + Q2*(1/xB - 1))
                 except:
                     continue
 
-                if (t_phys >= t_min_val) and (0.19<y<0.8) and (W>2.0):
+                if (t_phys >= t_min_val) and (0.19 < y < 0.8) and (W > 2.0):
                     for phi_deg in phi_samples:
                         try:
                             km15_val = km15_model(xB, Q2, t_pos, phi_deg, beam_E)
@@ -275,13 +278,13 @@ def calculate_fbin(row, prefix, beam_E, n_steps=3):
         return (1.0, 1.0, 1.0, 0.0)
 
     km15_fbin = centerKM15 / avgKM15
-    vgg_fbin  = centerVGG  / avgVGG
+    vgg_fbin = centerVGG / avgVGG
     fbin_vals = [km15_fbin, vgg_fbin]
-    final_fbin= np.mean(fbin_vals)
-    sys_unc   = np.std(fbin_vals)
+    final_fbin = np.mean(fbin_vals)
+    sys_unc = np.std(fbin_vals)
 
     return (km15_fbin, vgg_fbin, final_fbin, sys_unc)
-#enddef
+#endfor
 
 ######################################################
 # 2B) Radiative correction (Frad) with sub-binning
@@ -290,12 +293,17 @@ def calculate_frad(row, prefix, beam_E, n_steps=3):
     """
     Sub-binning approach, but calls dvcsgen (RADIATIVE version) with `--printrad`.
     We gather sub-bin Frad, compare to center, combine sys as sqrt(subbin_std^2 + center_sys^2).
+    
+    We'll define xB_samples, Q2_samples, t_pos_samples, phi_samples
+    once at the start of the function to avoid repeated np.linspace calls
+    in the nested loop.
     """
     Mp = 0.938272
-    xB_samples   = np.linspace(row['xB_min'], row['xB_max'], n_steps)
-    Q2_samples   = np.linspace(row['Q2_min'], row['Q2_max'], n_steps)
-    t_pos_samples= np.linspace(row['t_min'],  row['t_max'],  n_steps)
-    phi_samples  = np.linspace(row['phi_min'],row['phi_max'],n_steps)
+
+    xB_samples = np.linspace(row['xB_min'], row['xB_max'], n_steps)
+    Q2_samples = np.linspace(row['Q2_min'], row['Q2_max'], n_steps)
+    t_pos_samples = np.linspace(row['t_min'], row['t_max'], n_steps)
+    phi_samples = np.linspace(row['phi_min'], row['phi_max'], n_steps)
 
     subbin_vals = []
 
@@ -340,14 +348,14 @@ def calculate_frad(row, prefix, beam_E, n_steps=3):
     final_sys = np.sqrt(std_subbin**2 + center_sys**2)
 
     return (final_val, final_sys)
-#enddef
+#endfor
 
 ######################################################
 # 3) Main code
 ######################################################
 def main():
     # Parse optional argument
-    n_rows_to_process = parse_args()  # None => process all
+    n_rows_to_process = parse_args()
 
     print("Beginning code.")
     input_csv = "/u/home/thayward/clas12_analysis_software/analysis_scripts/dvcs_cross_section/output/unfolding_data.csv"
@@ -389,7 +397,7 @@ def main():
 
         row = df.iloc[i]
 
-        # (A) Existing model calcs at bin center (KM15, VGG, BH) => regular dvcsgen_print
+        # (A) Existing model calcs at bin center
         fall_km15_val = km15_model( row["xB_avg"], row["Q2_avg"], row["t_avg"], row["phi_avg"], 10.604 )
         fall_vgg_val  = dvcsgen_vgg( row["xB_avg"], row["Q2_avg"], row["t_avg"], row["phi_avg"], 10.604, globalfit=False )
         fall_bh_val   = dvcsgen_bh_only( row["xB_avg"], row["Q2_avg"], row["t_avg"], row["phi_avg"], 10.604, globalfit=False )
@@ -469,7 +477,7 @@ def main():
     fall_cols = get_ordered_columns("fall")
     spring_cols = get_ordered_columns("spring")
 
-    # 1) Keep original non-prefixed first
+    # 1) Keep original non-prefixed columns
     for col in common_columns:
         new_column_order.append(col)
         if col in all_cols:
@@ -487,7 +495,7 @@ def main():
             new_column_order.append(col)
             all_cols.remove(col)
 
-    # 4) Add leftover
+    # 4) leftover
     new_column_order += all_cols
 
     df = df[new_column_order]
@@ -495,6 +503,7 @@ def main():
     outpath = "/u/home/thayward/clas12_analysis_software/analysis_scripts/dvcs_cross_section/output/unfolding_data_with_models.csv"
     df.to_csv(outpath, index=False)
     print(f"Done! Updated file saved to:\n{outpath}")
+
 
 ######################################################
 # 4) Entry point
