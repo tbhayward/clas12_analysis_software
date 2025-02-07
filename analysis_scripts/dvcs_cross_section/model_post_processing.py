@@ -292,14 +292,35 @@ def calculate_fbin(row, prefix, beam_E, n_steps=3):
 #enddef
 
 ######################################################
-# 2B) calculate_frad with concurrency
+# 1) Radiative sub-binning concurrency tasks
+######################################################
+def _subbin_frad_task(args):
+    """
+    Helper function for parallel calls in calculate_frad.
+    Expects args=(xB, Q2, t_pos, beam_E, phi_deg) => returns single f_sub
+    """
+    (xB, Q2, t_pos, beam_E, phi_deg) = args
+    try:
+        f_sub, _sys_sub = dvcsgen_printrad(xB, Q2, t_pos, phi_deg, beam_E)
+        return f_sub
+    except:
+        return 1.0
+
+######################################################
+# 2) calculate_frad with concurrency and clamping
 ######################################################
 def calculate_frad(row, prefix, beam_E, n_steps=3):
     """
-    Sub-binning approach, but calls dvcsgen_rad2 with `--printrad`.
+    Sub-binning approach for radiative correction factor (Frad),
+    but calls dvcsgen_rad2 with `--printrad`.
     We'll do concurrency to parallelize each subbin call.
+
+    Additional constraints:
+      - If final Frad < 0 or > 2, we set final Frad=1.0 and sys=1.0
+      - If no valid sub-bins or center=0 => final=1.0, sys=1.0
     """
-    print(row);
+    print(row)  # debug print as requested
+
     Mp = 0.938272
     xB_samples   = np.linspace(row['xB_min'], row['xB_max'], n_steps)
     Q2_samples   = np.linspace(row['Q2_min'], row['Q2_max'], n_steps)
@@ -312,48 +333,63 @@ def calculate_frad(row, prefix, beam_E, n_steps=3):
         for Q2 in Q2_samples:
             for t_pos in t_pos_samples:
                 t_phys = -abs(t_pos)
+
+                # Compute t_min
                 try:
-                    sqrt_term = np.sqrt(1 + (4*Mp**2*xB**2)/Q2)
+                    sqrt_term = np.sqrt(1 + (4 * Mp**2 * xB**2)/Q2)
                     t_min_val = -Q2*(1 - xB)**2/(xB*(1+ sqrt_term))
                 except:
+                    # skip if sqrt or other error
                     continue
 
+                # Compute y, W
                 try:
                     y = Q2/(2*Mp*xB*beam_E)
                     W = np.sqrt(Mp**2 + Q2*(1/xB -1))
                 except:
                     continue
 
+                # Kinematic cuts
                 if (t_phys>=t_min_val) and (0.19<y<0.8) and (W>2.0):
                     for phi_deg in phi_samples:
                         tasks.append((xB, Q2, t_pos, beam_E, phi_deg))
                 else:
                     continue
 
-    # Parallel execution for sub-bins
     subbin_vals = []
+    # Parallel execution for sub-bins
     if len(tasks)==0:
+        # no sub-bins
         pass
     else:
         with concurrent.futures.ProcessPoolExecutor() as executor:
             results = list(executor.map(_subbin_frad_task, tasks))
-        # results is a list of f_sub
         for f_sub in results:
             subbin_vals.append(f_sub)
 
-    # Now the center
+    # Now the center point
     try:
-        f_center, center_sys = dvcsgen_printrad(row['xB_avg'], row['Q2_avg'], row['t_avg'], row['phi_avg'], beam_E)
+        f_center, center_sys = dvcsgen_printrad(row['xB_avg'], row['Q2_avg'],
+                                                row['t_avg'],  row['phi_avg'],
+                                                beam_E)
     except:
-        return (1.0, 0.0)
+        # fallback => 1 ± 1
+        return (1.0, 1.0)
 
     if not subbin_vals or (f_center==0.0):
-        return (1.0, 0.0)
+        # if no sub-bins or center=0 => 1 ± 1
+        return (1.0, 1.0)
 
     avg_subbin = np.mean(subbin_vals)
     std_subbin = np.std(subbin_vals)
-    final_val = avg_subbin/f_center
+
+    final_val = avg_subbin / f_center
     final_sys = np.sqrt(std_subbin**2 + center_sys**2)
+
+    # If final_val <0 or >2 => clamp to (1±1) per your request
+    if (final_val < 0.0) or (final_val > 2.0):
+        final_val = 1.0
+        final_sys = 1.0
 
     return (final_val, final_sys)
 #enddef
