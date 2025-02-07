@@ -299,6 +299,7 @@ def calculate_frad(row, prefix, beam_E, n_steps=3):
     Sub-binning approach, but calls dvcsgen_rad2 with `--printrad`.
     We'll do concurrency to parallelize each subbin call.
     """
+    print(row);
     Mp = 0.938272
     xB_samples   = np.linspace(row['xB_min'], row['xB_max'], n_steps)
     Q2_samples   = np.linspace(row['Q2_min'], row['Q2_max'], n_steps)
