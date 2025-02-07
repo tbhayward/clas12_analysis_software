@@ -312,14 +312,16 @@ def _subbin_frad_task(args):
 def calculate_frad(row, prefix, beam_E, n_steps=3):
     """
     Sub-binning approach for radiative correction factor (Frad),
-    but calls dvcsgen_rad2 with `--printrad`.
-    We'll do concurrency to parallelize each subbin call.
+    but calls dvcsgen_rad2 with `--printrad` in parallel.
 
     Additional constraints:
-      - If final Frad < 0 or > 2, we set final Frad=1.0 and sys=1.0
-      - If no valid sub-bins or center=0 => final=1.0, sys=1.0
+      - If final Frad < 0 or > 2 => final=1.0, sys=1.0
+      - If sub-bins empty or center=0 => final=1.0, sys=1.0
+      - If final_val is NaN/Inf => final=1.0, sys=1.0
     """
-    print(row)  # debug print as requested
+    import math  # For checking isfinite
+
+    print(row)  # debug line
 
     Mp = 0.938272
     xB_samples   = np.linspace(row['xB_min'], row['xB_max'], n_steps)
@@ -333,13 +335,11 @@ def calculate_frad(row, prefix, beam_E, n_steps=3):
         for Q2 in Q2_samples:
             for t_pos in t_pos_samples:
                 t_phys = -abs(t_pos)
-
                 # Compute t_min
                 try:
                     sqrt_term = np.sqrt(1 + (4 * Mp**2 * xB**2)/Q2)
-                    t_min_val = -Q2*(1 - xB)**2/(xB*(1+ sqrt_term))
+                    t_min_val = -Q2*(1 - xB)**2/(xB*(1 + sqrt_term))
                 except:
-                    # skip if sqrt or other error
                     continue
 
                 # Compute y, W
@@ -357,36 +357,38 @@ def calculate_frad(row, prefix, beam_E, n_steps=3):
                     continue
 
     subbin_vals = []
-    # Parallel execution for sub-bins
-    if len(tasks)==0:
-        # no sub-bins
-        pass
-    else:
+    if len(tasks) > 0:
         with concurrent.futures.ProcessPoolExecutor() as executor:
             results = list(executor.map(_subbin_frad_task, tasks))
         for f_sub in results:
             subbin_vals.append(f_sub)
 
-    # Now the center point
+    # Call dvcsgen for bin center
     try:
-        f_center, center_sys = dvcsgen_printrad(row['xB_avg'], row['Q2_avg'],
-                                                row['t_avg'],  row['phi_avg'],
-                                                beam_E)
+        f_center, center_sys = dvcsgen_printrad(
+            row['xB_avg'], row['Q2_avg'], row['t_avg'], row['phi_avg'], beam_E
+        )
     except:
         # fallback => 1 ± 1
         return (1.0, 1.0)
 
-    if not subbin_vals or (f_center==0.0):
-        # if no sub-bins or center=0 => 1 ± 1
+    # If no sub-bins or center=0 => 1±1
+    if not subbin_vals or (f_center == 0.0):
         return (1.0, 1.0)
 
     avg_subbin = np.mean(subbin_vals)
     std_subbin = np.std(subbin_vals)
 
     final_val = avg_subbin / f_center
-    final_sys = np.sqrt(std_subbin**2 + center_sys**2)
+    final_sys = math.sqrt(std_subbin**2 + center_sys**2)
 
-    # If final_val <0 or >2 => clamp to (1±1) per your request
+    # Check if final_val is not finite (NaN or Inf)
+    if not math.isfinite(final_val):
+        final_val = 1.0
+        final_sys = 1.0
+        return (final_val, final_sys)
+
+    # If final_val <0 or >2 => clamp to (1±1)
     if (final_val < 0.0) or (final_val > 2.0):
         final_val = 1.0
         final_sys = 1.0
