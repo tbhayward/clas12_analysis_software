@@ -313,6 +313,7 @@ def calculate_fbin(row, prefix, beam_E, n_steps=4):
     print("\nUncertainty Breakdown:")
     # print(f"KM15 sub-bin variation: ±{km15_unc:.4f}")
     # print(f"VGG sub-bin variation:  ±{vgg_unc:.4f}")
+    print(f"Fbin = {final_fbin:.4f}")
     print(f"Model disagreement (total systematic):     ±{model_disagreement:.4f}")
     # print(f"Total systematic:       ±{total_unc:.4f}")
 
