@@ -287,34 +287,34 @@ def calculate_fbin(row, prefix, beam_E, n_steps=4):
     # Calculate ratios and their uncertainties
     try:
         km15_fbin = centerKM15 / avgKM15
-        km15_unc = (std_KM15/avgKM15) * km15_fbin  # Relative uncertainty propagation
+        # km15_unc = (std_KM15/avgKM15) * km15_fbin  # Relative uncertainty propagation
     except:
         km15_fbin = 1.0
-        km15_unc = 0.0
+        # km15_unc = 0.0
 
     try:
         vgg_fbin = centerVGG / avgVGG
-        vgg_unc = (std_VGG/avgVGG) * vgg_fbin
+        # vgg_unc = (std_VGG/avgVGG) * vgg_fbin
     except:
         vgg_fbin = 1.0
-        vgg_unc = 0.0
+        # vgg_unc = 0.0
 
     # Calculate model disagreement
     model_disagreement = np.std([km15_fbin, vgg_fbin]) if len(valid_KM15) > 0 and len(valid_VGG) > 0 else 0
 
     # Combine uncertainties (sub-bin spread + model disagreement)
     total_unc = np.sqrt(
-        (0.5*(km15_unc + vgg_unc))**2 +  # Average sub-bin uncertainty
+        0 +  # Average sub-bin uncertainty
         model_disagreement**2            # Model-to-model variation
     )
 
     final_fbin = np.mean([km15_fbin, vgg_fbin])
     
     print("\nUncertainty Breakdown:")
-    print(f"KM15 sub-bin variation: ±{km15_unc:.4f}")
-    print(f"VGG sub-bin variation:  ±{vgg_unc:.4f}")
-    print(f"Model disagreement:     ±{model_disagreement:.4f}")
-    print(f"Total systematic:       ±{total_unc:.4f}")
+    # print(f"KM15 sub-bin variation: ±{km15_unc:.4f}")
+    # print(f"VGG sub-bin variation:  ±{vgg_unc:.4f}")
+    print(f"Model disagreement (total systematic):     ±{model_disagreement:.4f}")
+    # print(f"Total systematic:       ±{total_unc:.4f}")
 
     return (km15_fbin, vgg_fbin, final_fbin, total_unc)
 #enddef
