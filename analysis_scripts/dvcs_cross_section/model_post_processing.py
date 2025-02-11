@@ -214,7 +214,7 @@ def _subbin_frad_task(args):
 ######################################################
 # 2A) calculate_fbin with concurrency
 ######################################################
-def calculate_fbin(row, prefix, beam_E, n_steps=3):
+def calculate_fbin(row, prefix, beam_E, n_steps=4):
     """
     Sub-binning with KM15 & VGG from dvcsgen_print code
     to get (km15_fbin, vgg_fbin, final_fbin, fbin_sys_unc).
@@ -268,10 +268,9 @@ def calculate_fbin(row, prefix, beam_E, n_steps=3):
             valid_KM15.append(km15_val)
             valid_VGG.append(vgg_val)
 
-    # Now the center
     try:
         centerKM15 = km15_model(row['xB_avg'], row['Q2_avg'], row['t_avg'], row['phi_avg'], beam_E)
-        centerVGG  = dvcsgen_vgg(row['xB_avg'], row['Q2_avg'], row['t_avg'], row['phi_avg'], beam_E, globalfit=False)
+        centerVGG = dvcsgen_vgg(row['xB_avg'], row['Q2_avg'], row['t_avg'], row['phi_avg'], beam_E, globalfit=False)
     except:
         return (1.0, 1.0, 1.0, 0.0)
 
@@ -279,16 +278,45 @@ def calculate_fbin(row, prefix, beam_E, n_steps=3):
         return (1.0, 1.0, 1.0, 0.0)
 
     avgKM15 = np.mean(valid_KM15)
-    avgVGG  = np.mean(valid_VGG)
-    if avgKM15==0.0 or avgVGG==0.0:
-        return (1.0, 1.0, 1.0, 0.0)
+    avgVGG = np.mean(valid_VGG)
+    
+    # Calculate standard deviations of sub-bin values
+    std_KM15 = np.std(valid_KM15) if len(valid_KM15) > 1 else 0
+    std_VGG = np.std(valid_VGG) if len(valid_VGG) > 1 else 0
 
-    km15_fbin = centerKM15/avgKM15
-    vgg_fbin  = centerVGG /avgVGG
-    final_fbin= np.mean([km15_fbin, vgg_fbin])
-    fbin_sys  = np.std([km15_fbin, vgg_fbin])
+    # Calculate ratios and their uncertainties
+    try:
+        km15_fbin = centerKM15 / avgKM15
+        km15_unc = (std_KM15/avgKM15) * km15_fbin  # Relative uncertainty propagation
+    except:
+        km15_fbin = 1.0
+        km15_unc = 0.0
 
-    return (km15_fbin, vgg_fbin, final_fbin, fbin_sys)
+    try:
+        vgg_fbin = centerVGG / avgVGG
+        vgg_unc = (std_VGG/avgVGG) * vgg_fbin
+    except:
+        vgg_fbin = 1.0
+        vgg_unc = 0.0
+
+    # Calculate model disagreement
+    model_disagreement = np.std([km15_fbin, vgg_fbin]) if len(valid_KM15) > 0 and len(valid_VGG) > 0 else 0
+
+    # Combine uncertainties (sub-bin spread + model disagreement)
+    total_unc = np.sqrt(
+        (0.5*(km15_unc + vgg_unc))**2 +  # Average sub-bin uncertainty
+        model_disagreement**2            # Model-to-model variation
+    )
+
+    final_fbin = np.mean([km15_fbin, vgg_fbin])
+    
+    print("\nUncertainty Breakdown:")
+    print(f"KM15 sub-bin variation: ±{km15_unc:.4f}")
+    print(f"VGG sub-bin variation:  ±{vgg_unc:.4f}")
+    print(f"Model disagreement:     ±{model_disagreement:.4f}")
+    print(f"Total systematic:       ±{total_unc:.4f}")
+
+    return (km15_fbin, vgg_fbin, final_fbin, total_unc)
 #enddef
 
 ######################################################
@@ -307,93 +335,60 @@ def _subbin_frad_task(args):
         return 1.0
 
 ######################################################
-# 2) calculate_frad with concurrency and clamping
+# 2) calculate_frad with concurrency and clamping (modified)
 ######################################################
-def calculate_frad(row, prefix, beam_E, n_steps=3):
+def calculate_frad(row, prefix, beam_E, n_steps=4):
     """
-    Sub-binning approach for radiative correction factor (Frad),
-    but calls dvcsgen_rad2 with `--printrad` in parallel.
-
-    Additional constraints:
-      - If final Frad < 0 or > 2 => final=1.0, sys=1.0
-      - If sub-bins empty or center=0 => final=1.0, sys=1.0
-      - If final_val is NaN/Inf => final=1.0, sys=1.0
+    Modified sub-binning approach returning direct sub-bin average
+    Maintains physics validation and error handling
     """
     import math  # For checking isfinite
 
     print(row)  # debug line
 
     Mp = 0.938272
-    xB_samples   = np.linspace(row['xB_min'], row['xB_max'], n_steps)
-    Q2_samples   = np.linspace(row['Q2_min'], row['Q2_max'], n_steps)
-    t_pos_samples= np.linspace(row['t_min'],  row['t_max'],  n_steps)
-    phi_samples  = np.linspace(row['phi_min'],row['phi_max'],n_steps)
+    xB_samples = np.linspace(row['xB_min'], row['xB_max'], n_steps)
+    Q2_samples = np.linspace(row['Q2_min'], row['Q2_max'], n_steps)
+    t_pos_samples = np.linspace(row['t_min'], row['t_max'], n_steps)
+    phi_samples = np.linspace(row['phi_min'], row['phi_max'], n_steps)
 
     tasks = []
 
+    # Physics-validated task generation (keep original validation)
     for xB in xB_samples:
         for Q2 in Q2_samples:
             for t_pos in t_pos_samples:
                 t_phys = -abs(t_pos)
-                # Compute t_min
                 try:
                     sqrt_term = np.sqrt(1 + (4 * Mp**2 * xB**2)/Q2)
                     t_min_val = -Q2*(1 - xB)**2/(xB*(1 + sqrt_term))
-                except:
-                    continue
-
-                # Compute y, W
-                try:
                     y = Q2/(2*Mp*xB*beam_E)
                     W = np.sqrt(Mp**2 + Q2*(1/xB -1))
+                    
+                    if (t_phys >= t_min_val) and (0.19 < y < 0.8) and (W > 2.0):
+                        for phi_deg in phi_samples:
+                            tasks.append((xB, Q2, t_pos, beam_E, phi_deg))
                 except:
-                    continue
-
-                # Kinematic cuts
-                if (t_phys>=t_min_val) and (0.19<y<0.8) and (W>2.0):
-                    for phi_deg in phi_samples:
-                        tasks.append((xB, Q2, t_pos, beam_E, phi_deg))
-                else:
                     continue
 
     subbin_vals = []
-    if len(tasks) > 0:
+    if tasks:
         with concurrent.futures.ProcessPoolExecutor() as executor:
-            results = list(executor.map(_subbin_frad_task, tasks))
-        for f_sub in results:
-            subbin_vals.append(f_sub)
+            results = executor.map(_subbin_frad_task, tasks)
+            subbin_vals = list(results)
 
-    # Call dvcsgen for bin center
-    try:
-        f_center, center_sys = dvcsgen_printrad(
-            row['xB_avg'], row['Q2_avg'], row['t_avg'], row['phi_avg'], beam_E
-        )
-    except:
-        # fallback => 1 ± 1
-        return (1.0, 1.0)
-
-    # If no sub-bins or center=0 => 1±1
-    if not subbin_vals or (f_center == 0.0):
+    # Simplified statistics calculation
+    if not subbin_vals:
         return (1.0, 1.0)
 
     avg_subbin = np.mean(subbin_vals)
     std_subbin = np.std(subbin_vals)
 
-    final_val = avg_subbin / f_center
-    final_sys = math.sqrt(std_subbin**2 + center_sys**2)
+    # Clamping and validation
+    if not math.isfinite(avg_subbin) or (avg_subbin < 0) or (avg_subbin > 2):
+        return (1.0, 1.0)
 
-    # Check if final_val is not finite (NaN or Inf)
-    if not math.isfinite(final_val):
-        final_val = 1.0
-        final_sys = 1.0
-        return (final_val, final_sys)
-
-    # If final_val <0 or >2 => clamp to (1±1)
-    if (final_val < 0.0) or (final_val > 2.0):
-        final_val = 1.0
-        final_sys = 1.0
-
-    return (final_val, final_sys)
+    return (avg_subbin, std_subbin)
 #enddef
 
 ######################################################

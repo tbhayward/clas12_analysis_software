@@ -118,7 +118,7 @@ std::map<std::string, std::vector<UnfoldingData>> plot_unfolding(
             const auto& bin = bin_boundaries[idx];
             unfolding_data.phi_min.push_back(bin.phi_low);
             unfolding_data.phi_max.push_back(bin.phi_high);
-            unfolding_data.phi_avg.push_back((bin.phi_low + bin.phi_high) / 2.0);
+            unfolding_data.phi_avg.push_back(bin.phi_avg);
         }
 
         size_t n_phi_bins = unfolding_data.phi_min.size();
