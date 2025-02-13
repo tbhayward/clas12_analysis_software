@@ -335,62 +335,108 @@ def _subbin_frad_task(args):
     except:
         return 1.0
 
-######################################################
-# 2) calculate_frad with concurrency and clamping (modified)
-######################################################
+# ######################################################
+# # 2) calculate_frad with concurrency and clamping (modified)
+# ######################################################
+# def calculate_frad(row, prefix, beam_E, n_steps=4):
+#     """
+#     Modified sub-binning approach returning direct sub-bin average
+#     Maintains physics validation and error handling
+#     """
+#     import math  # For checking isfinite
+
+#     print(row)  # debug line
+
+#     Mp = 0.938272
+#     xB_samples = np.linspace(row['xB_min'], row['xB_max'], n_steps)
+#     Q2_samples = np.linspace(row['Q2_min'], row['Q2_max'], n_steps)
+#     t_pos_samples = np.linspace(row['t_min'], row['t_max'], n_steps)
+#     phi_samples = np.linspace(row['phi_min'], row['phi_max'], n_steps)
+
+#     tasks = []
+
+#     # Physics-validated task generation (keep original validation)
+#     for xB in xB_samples:
+#         for Q2 in Q2_samples:
+#             for t_pos in t_pos_samples:
+#                 t_phys = -abs(t_pos)
+#                 try:
+#                     sqrt_term = np.sqrt(1 + (4 * Mp**2 * xB**2)/Q2)
+#                     t_min_val = -Q2*(1 - xB)**2/(xB*(1 + sqrt_term))
+#                     y = Q2/(2*Mp*xB*beam_E)
+#                     W = np.sqrt(Mp**2 + Q2*(1/xB -1))
+                    
+#                     if (t_phys >= t_min_val) and (0.19 < y < 0.8) and (W > 2.0):
+#                         for phi_deg in phi_samples:
+#                             tasks.append((xB, Q2, t_pos, beam_E, phi_deg))
+#                 except:
+#                     continue
+
+#     subbin_vals = []
+#     if tasks:
+#         with concurrent.futures.ProcessPoolExecutor() as executor:
+#             results = executor.map(_subbin_frad_task, tasks)
+#             subbin_vals = list(results)
+
+#     # Simplified statistics calculation
+#     if not subbin_vals:
+#         return (1.0, 1.0)
+
+#     avg_subbin = np.mean(subbin_vals)
+#     std_subbin = np.std(subbin_vals)
+
+#     # Clamping and validation
+#     if not math.isfinite(avg_subbin) or (avg_subbin < 0) or (avg_subbin > 2):
+#         return (1.0, 1.0)
+
+#     return (avg_subbin, std_subbin)
+# #enddef
+
 def calculate_frad(row, prefix, beam_E, n_steps=4):
     """
-    Modified sub-binning approach returning direct sub-bin average
-    Maintains physics validation and error handling
+    Computes Frad using the average values of the bin, without sub-binning.
+    Returns (Frad_factor, Frad_sys_uncertainty) from a single dvcsgen_printrad call.
     """
-    import math  # For checking isfinite
+    import math
 
-    print(row)  # debug line
+    # Extract average kinematic values from the row
+    xB = row['xB_avg']
+    Q2 = row['Q2_avg']
+    t_avg = row['t_avg']  # t_avg is expected to be negative (physics convention)
+    phi_deg = row['phi_avg']
 
-    Mp = 0.938272
-    xB_samples = np.linspace(row['xB_min'], row['xB_max'], n_steps)
-    Q2_samples = np.linspace(row['Q2_min'], row['Q2_max'], n_steps)
-    t_pos_samples = np.linspace(row['t_min'], row['t_max'], n_steps)
-    phi_samples = np.linspace(row['phi_min'], row['phi_max'], n_steps)
+    Mp = 0.938272  # Proton mass in GeV
 
-    tasks = []
+    # Convert t_avg to positive for dvcsgen's --t parameter
+    t_pos = abs(t_avg)
+    t_phys = -t_pos  # Physics t is negative
 
-    # Physics-validated task generation (keep original validation)
-    for xB in xB_samples:
-        for Q2 in Q2_samples:
-            for t_pos in t_pos_samples:
-                t_phys = -abs(t_pos)
-                try:
-                    sqrt_term = np.sqrt(1 + (4 * Mp**2 * xB**2)/Q2)
-                    t_min_val = -Q2*(1 - xB)**2/(xB*(1 + sqrt_term))
-                    y = Q2/(2*Mp*xB*beam_E)
-                    W = np.sqrt(Mp**2 + Q2*(1/xB -1))
-                    
-                    if (t_phys >= t_min_val) and (0.19 < y < 0.8) and (W > 2.0):
-                        for phi_deg in phi_samples:
-                            tasks.append((xB, Q2, t_pos, beam_E, phi_deg))
-                except:
-                    continue
+    try:
+        # Calculate t_min_val, y, and W for physics checks
+        sqrt_term = np.sqrt(1 + (4 * Mp**2 * xB**2) / Q2)
+        t_min_val = -Q2 * (1 - xB)**2 / (xB * (1 + sqrt_term))
+        y = Q2 / (2 * Mp * xB * beam_E)
+        W = np.sqrt(Mp**2 + Q2 * (1/xB - 1))
+    except:
+        return (1.0, 0.0)  # Default values if calculation fails
 
-    subbin_vals = []
-    if tasks:
-        with concurrent.futures.ProcessPoolExecutor() as executor:
-            results = executor.map(_subbin_frad_task, tasks)
-            subbin_vals = list(results)
-
-    # Simplified statistics calculation
-    if not subbin_vals:
-        return (1.0, 1.0)
-
-    avg_subbin = np.mean(subbin_vals)
-    std_subbin = np.std(subbin_vals)
-
-    # Clamping and validation
-    if not math.isfinite(avg_subbin) or (avg_subbin < 0) or (avg_subbin > 2):
-        return (1.0, 1.0)
-
-    return (avg_subbin, std_subbin)
-#enddef
+    # Check if the point meets the physics criteria
+    if (t_phys >= t_min_val) and (0.19 < y < 0.8) and (W > 2.0):
+        try:
+            # Call dvcsgen_printrad with average values and positive t_pos
+            f_sub, sysval = dvcsgen_printrad(xB, Q2, t_pos, phi_deg, beam_E)
+            
+            # Validate the result
+            if not math.isfinite(f_sub) or f_sub < 0 or f_sub > 2:
+                return (1.0, 0.0)
+            
+            return (f_sub, sysval)
+        except Exception as e:
+            print(f"Error in calculate_frad for average values: {e}")
+            return (1.0, 0.0)
+    else:
+        # Physics cuts not satisfied
+        return (1.0, 0.0)
 
 ######################################################
 # 3) Main code
