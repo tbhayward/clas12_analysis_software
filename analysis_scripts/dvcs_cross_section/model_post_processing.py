@@ -399,6 +399,8 @@ def calculate_frad(row, prefix, beam_E, n_steps=4):
     """
     import math
 
+    print(row)  # debug line
+
     # Extract average kinematic values from the row
     xB = row['xB_avg']
     Q2 = row['Q2_avg']
