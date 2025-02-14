@@ -168,7 +168,7 @@ public static void main(String[] args) {
 	    	// 	runnum == 16308 || runnum == 16184 || runnum == 16307 || runnum == 16309 ||
 	    	// 	qa.OkForAsymmetry(runnum, evnum));
 	    	boolean process_event = filter.isValid(research_Event) && (runnum == 11 || runnum < 5020 ||
-	    	qa.pass(runnum, evnum));
+	    	qa.pass(runnum, evnum) || runnum > 17000);
 	    	// boolean process_event = filter.isValid(research_Event);
 
 		    if (process_event) {
