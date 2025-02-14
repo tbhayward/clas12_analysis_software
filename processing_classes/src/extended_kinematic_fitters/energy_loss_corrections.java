@@ -188,7 +188,7 @@ public class energy_loss_corrections {
                 A_phi = -0.5459156 + 0.0219868 * theta - 0.0002349 * theta * theta;
                 B_phi = 0.74223687 - 0.03037065 * theta + 0.00032761 * theta * theta;
                 C_phi = -0.29798258 + 0.01246744 * theta - 0.00013525 * theta * theta;
- 
+
             }
 
         } else if (runnum >= 16089 && runnum <= 16786) { // RGC Su22 Inb
