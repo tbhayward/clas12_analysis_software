@@ -390,8 +390,8 @@ def calculate_frad(row, prefix, beam_E, n_steps=4):
     mean_propagated_error = np.mean(inverted_errors)
     sys_unc = max(std_from_spread, mean_propagated_error)
 
-    # Clamp to [0.0, 3.0] to avoid extreme values
-    if avg_frad < 0.0 or avg_frad > 3.0 or not np.isfinite(avg_frad):
+    # Clamp to [0.0, 10.0] to avoid extreme values
+    if avg_frad < 0.0 or avg_frad > 10.0 or not np.isfinite(avg_frad):
         avg_frad = 1.0
         sys_unc = 0.0
 
