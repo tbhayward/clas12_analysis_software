@@ -347,6 +347,9 @@ def calculate_frad(row, prefix, beam_E, n_steps=4):
     Computes Frad as the average of (1/f_sub) across sub-bins.
     Systematic uncertainty combines sub-bin spread and propagated errors.
     """
+
+    print(row)
+
     Mp = 0.938272
     xB_samples = np.linspace(row['xB_min'], row['xB_max'], n_steps)
     Q2_samples = np.linspace(row['Q2_min'], row['Q2_max'], n_steps)
@@ -481,7 +484,7 @@ def main():
                 df[colname] = np.nan
 
     print("Beginning cross-section, Fbin, and Frad calculations...")
-    progress_interval = 25
+    progress_interval = 1
 
     for i in range(n_rows_to_process):
         if i % progress_interval == 0:
