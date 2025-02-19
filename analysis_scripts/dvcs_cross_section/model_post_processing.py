@@ -216,11 +216,13 @@ def _subbin_frad_task(args):
 ######################################################
 def calculate_fbin(row, prefix, beam_E, n_steps=4):
     """
-    Sub-binning with KM15 & VGG from dvcsgen_print code
-    to get (km15_fbin, vgg_fbin, final_fbin, fbin_sys_unc).
-
-    We do concurrency to parallelize the sub-bin calls. 
+    Perform sub-binning for KM15 and VGG, then compute final_fbin:
+      - If KM15 is valid => final_fbin = average(km15_fbin, vgg_fbin)
+                              with a systematic from the difference
+      - If KM15 is invalid => final_fbin = vgg_fbin, systematic = 1.0
     """
+
+    import math
 
     Mp = 0.938272
     xB_samples   = np.linspace(row['xB_min'], row['xB_max'], n_steps)
@@ -228,21 +230,20 @@ def calculate_fbin(row, prefix, beam_E, n_steps=4):
     t_pos_samples= np.linspace(row['t_min'],  row['t_max'],  n_steps)
     phi_samples  = np.linspace(row['phi_min'],row['phi_max'],n_steps)
 
-    # We'll gather tasks for each valid sub-bin (w/ cuts) in a list
     tasks = []
 
+    # Sub-binning tasks
     for xB in xB_samples:
         for Q2 in Q2_samples:
             for t_pos in t_pos_samples:
                 t_phys = -abs(t_pos)
                 try:
-                    sqrt_term = np.sqrt(1 + (4*Mp**2*xB**2)/Q2)
-                    t_min_val = -Q2*(1 - xB)**2 / (xB*(1+ sqrt_term))
+                    sqrt_term = np.sqrt(1 + (4 * Mp**2 * xB**2) / Q2)
+                    t_min_val = -Q2*(1 - xB)**2 / (xB*(1 + sqrt_term))
                 except:
                     continue
-
                 try:
-                    y = Q2/(2*Mp*xB*beam_E)
+                    y = Q2 / (2*Mp*xB*beam_E)
                     W = np.sqrt(Mp**2 + Q2*(1/xB -1))
                 except:
                     continue
@@ -253,71 +254,68 @@ def calculate_fbin(row, prefix, beam_E, n_steps=4):
                 else:
                     continue
 
-    # Parallel execution
+    # parallel calls
     valid_KM15 = []
     valid_VGG  = []
 
-    if len(tasks)==0:
-        # fallback if no sub-bins
-        pass
-    else:
+    if len(tasks)>0:
         with concurrent.futures.ProcessPoolExecutor() as executor:
             results = list(executor.map(_subbin_fbin_task, tasks))
-        # results is a list of (km15_val, vgg_val) for each sub-bin
         for (km15_val, vgg_val) in results:
             valid_KM15.append(km15_val)
             valid_VGG.append(vgg_val)
 
+    # Evaluate the central values
     try:
         centerKM15 = km15_model(row['xB_avg'], row['Q2_avg'], row['t_avg'], row['phi_avg'], beam_E)
-        centerVGG = dvcsgen_vgg(row['xB_avg'], row['Q2_avg'], row['t_avg'], row['phi_avg'], beam_E, globalfit=False)
     except:
-        return (1.0, 1.0, 1.0, 0.0)
+        centerKM15 = 0.0
+    try:
+        centerVGG  = dvcsgen_vgg(row['xB_avg'], row['Q2_avg'], row['t_avg'], row['phi_avg'], beam_E, globalfit=False)
+    except:
+        centerVGG = 0.0
 
     if not valid_KM15 or not valid_VGG:
-        return (1.0, 1.0, 1.0, 0.0)
+        # If no valid sub-bins => fallback
+        # Use vgg=1.0, systematic=1.0
+        return (1.0, 1.0, 1.0, 1.0)
 
     avgKM15 = np.mean(valid_KM15)
-    avgVGG = np.mean(valid_VGG)
-    
-    # Calculate standard deviations of sub-bin values
-    std_KM15 = np.std(valid_KM15) if len(valid_KM15) > 1 else 0
-    std_VGG = np.std(valid_VGG) if len(valid_VGG) > 1 else 0
+    avgVGG  = np.mean(valid_VGG)
 
-    # Calculate ratios and their uncertainties
-    try:
-        km15_fbin = centerKM15 / avgKM15
-        # km15_unc = (std_KM15/avgKM15) * km15_fbin  # Relative uncertainty propagation
-    except:
-        km15_fbin = 1.0
-        # km15_unc = 0.0
+    # compute fbin for each model
+    def safe_ratio(center_val, avg_val):
+        try:
+            ratio = center_val / avg_val
+            if (not math.isfinite(ratio)) or (ratio<=0):
+                return 0.0
+            return ratio
+        except:
+            return 0.0
 
-    try:
-        vgg_fbin = centerVGG / avgVGG
-        # vgg_unc = (std_VGG/avgVGG) * vgg_fbin
-    except:
-        vgg_fbin = 1.0
-        # vgg_unc = 0.0
+    km15_fbin = safe_ratio(centerKM15, avgKM15)
+    vgg_fbin  = safe_ratio(centerVGG,  avgVGG)
 
-    # Calculate model disagreement
-    model_disagreement = np.std([km15_fbin, vgg_fbin]) if len(valid_KM15) > 0 and len(valid_VGG) > 0 else 0
+    # check if KM15 is valid
+    # we say "valid" if km15_fbin>0 (some small threshold)
+    if km15_fbin>0:
+        # => average them
+        final_fbin = 0.5*(km15_fbin + vgg_fbin)
+        # systematic from model difference
+        model_spread = abs(km15_fbin - vgg_fbin)
+        total_unc = model_spread  # or do 0.5*spread or something
+        if not math.isfinite(total_unc):
+            total_unc=1.0
+    else:
+        # => skip KM15, use only vgg_fbin
+        final_fbin = vgg_fbin
+        total_unc  = 1.0
 
-    # Combine uncertainties (sub-bin spread + model disagreement)
-    total_unc = np.sqrt(
-        0 +  # Average sub-bin uncertainty
-        model_disagreement**2            # Model-to-model variation
-    )
-
-    final_fbin = np.mean([km15_fbin, vgg_fbin])
-    
-    print("\nUncertainty Breakdown:")
-    # print(f"KM15 sub-bin variation: ±{km15_unc:.4f}")
-    # print(f"VGG sub-bin variation:  ±{vgg_unc:.4f}")
-    print(f"Fbin = {final_fbin:.4f}")
-    print(f"Model disagreement (total systematic):     ±{model_disagreement:.4f}")
-    # print(f"Total systematic:       ±{total_unc:.4f}")
-
-    return (km15_fbin, vgg_fbin, final_fbin, total_unc)
+    # store results
+    return (km15_fbin if km15_fbin>0 else 1.0,
+            vgg_fbin,
+            final_fbin,
+            total_unc)
 #enddef
 
 ######################################################
