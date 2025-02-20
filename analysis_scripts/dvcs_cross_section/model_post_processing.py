@@ -214,7 +214,7 @@ def _subbin_frad_task(args):
 ######################################################
 # 2A) calculate_fbin with concurrency
 ######################################################
-def calculate_fbin(row, prefix, beam_E, n_steps=4):
+def calculate_fbin(row, prefix, beam_E, n_steps=3):
     """
     Perform sub-binning for KM15 and VGG, then compute final_fbin:
       - If KM15 is valid => final_fbin = average(km15_fbin, vgg_fbin)
@@ -340,7 +340,7 @@ def _subbin_frad_task(args):
 # ######################################################
 # # 2) calculate_frad with concurrency and clamping (modified)
 # ######################################################
-def calculate_frad(row, prefix, beam_E, n_steps=4):
+def calculate_frad(row, prefix, beam_E, n_steps=3):
     """
     Computes Frad as the average of (1/f_sub) across sub-bins.
     Systematic uncertainty combines sub-bin spread and propagated errors.
@@ -398,54 +398,6 @@ def calculate_frad(row, prefix, beam_E, n_steps=4):
 
     return (avg_frad, sys_unc)
 #enddef
-
-# def calculate_frad(row, prefix, beam_E, n_steps=4):
-#     """
-#     Computes Frad using the average values of the bin, without sub-binning.
-#     Returns (Frad_factor, Frad_sys_uncertainty) from a single dvcsgen_printrad call.
-#     """
-#     import math
-
-#     print(row)  # debug line
-
-#     # Extract average kinematic values from the row
-#     xB = row['xB_avg']
-#     Q2 = row['Q2_avg']
-#     t_avg = row['t_avg']  # t_avg is expected to be negative (physics convention)
-#     phi_deg = row['phi_avg']
-
-#     Mp = 0.938272  # Proton mass in GeV
-
-#     # Convert t_avg to positive for dvcsgen's --t parameter
-#     t_pos = abs(t_avg)
-#     t_phys = -t_pos  # Physics t is negative
-
-#     try:
-#         # Calculate t_min_val, y, and W for physics checks
-#         sqrt_term = np.sqrt(1 + (4 * Mp**2 * xB**2) / Q2)
-#         t_min_val = -Q2 * (1 - xB)**2 / (xB * (1 + sqrt_term))
-#         y = Q2 / (2 * Mp * xB * beam_E)
-#         W = np.sqrt(Mp**2 + Q2 * (1/xB - 1))
-#     except:
-#         return (1.0, 0.0)  # Default values if calculation fails
-
-#     # Check if the point meets the physics criteria
-#     if (t_phys >= t_min_val) and (0.19 < y < 0.8) and (W > 2.0):
-#         try:
-#             # Call dvcsgen_printrad with average values and positive t_pos
-#             f_sub, sysval = dvcsgen_printrad(xB, Q2, t_pos, phi_deg, beam_E)
-            
-#             # Validate the result
-#             if not math.isfinite(f_sub) or f_sub < 0 or f_sub > 2:
-#                 return (1.0, 0.0)
-            
-#             return (f_sub, sysval)
-#         except Exception as e:
-#             print(f"Error in calculate_frad for average values: {e}")
-#             return (1.0, 0.0)
-#     else:
-#         # Physics cuts not satisfied
-#         return (1.0, 0.0)
 
 ######################################################
 # 3) Main code
