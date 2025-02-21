@@ -21,7 +21,7 @@ bool SingleHadronKinematicCuts::applyCuts(int currentFits, bool isMC) {
     bool checked = false;
     string property = binNames[currentFits];
 
-    if (*Q2 < 1 || *W < 2 || y > 0.75 || *fiducial_status!=2) return false;
+    if (*Q2 < 1 || *W < 2 || *y > 0.75 || *fiducial_status!=2) return false;
     if (*p_p < 1.2 || *xF < 0 || *Mx2 < 3.24) return false;
     return true;
 
