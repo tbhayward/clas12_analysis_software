@@ -214,7 +214,7 @@ def _subbin_frad_task(args):
 ######################################################
 # 2A) calculate_fbin with concurrency
 ######################################################
-def calculate_fbin(row, prefix, beam_E, n_steps=3):
+def calculate_fbin(row, prefix, beam_E, n_steps=5):
     """
     Perform sub-binning for KM15 and VGG, then compute final_fbin:
       - If KM15 is valid => final_fbin = average(km15_fbin, vgg_fbin)
@@ -340,7 +340,7 @@ def _subbin_frad_task(args):
 # ######################################################
 # # 2) calculate_frad with concurrency and clamping (modified)
 # ######################################################
-def calculate_frad(row, prefix, beam_E, n_steps=3):
+def calculate_frad(row, prefix, beam_E, n_steps=5):
     """
     Computes Frad as the average of (1/f_sub) across sub-bins.
     Systematic uncertainty combines sub-bin spread and propagated errors.
