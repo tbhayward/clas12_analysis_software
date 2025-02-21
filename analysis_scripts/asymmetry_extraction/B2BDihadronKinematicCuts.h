@@ -12,6 +12,7 @@ public:
 
 private:
     TTreeReaderValue<int> runnum;
+    TTreeReaderValue<int> fiducial_status;
     TTreeReaderValue<double> Q2;
     TTreeReaderValue<double> W;
     TTreeReaderValue<double> p1_p;
@@ -20,8 +21,7 @@ private:
     TTreeReaderValue<double> z1;
     TTreeReaderValue<double> xF1;
     TTreeReaderValue<double> xF2;
-    TTreeReaderValue<double> Mx;
-    TTreeReaderValue<double> Mx1;
     TTreeReaderValue<double> Mx2;
+    TTreeReaderValue<double> Mx2_1;
     TTreeReaderValue<double> target_pol;
 };
