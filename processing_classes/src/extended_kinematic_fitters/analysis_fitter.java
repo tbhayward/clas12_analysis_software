@@ -36,8 +36,8 @@ public class analysis_fitter extends GenericKinematicFitter {
                 && pid_cuts.calorimeter_energy_cut(particle_Index, cal_Bank, 1)
                 && pid_cuts.calorimeter_sampling_fraction_cut(particle_Index, p, run_Bank, cal_Bank)
                 && pid_cuts.calorimeter_diagonal_cut(particle_Index, p, cal_Bank)    
-                && fiducial_cuts.pcal_fiducial_cut(particle_Index, 3, run_Bank, rec_Bank, cal_Bank)
-                && fiducial_cuts.dc_fiducial_cut(particle_Index, rec_Bank, traj_Bank)
+//                && fiducial_cuts.pcal_fiducial_cut(particle_Index, 3, run_Bank, rec_Bank, cal_Bank)
+//                && fiducial_cuts.dc_fiducial_cut(particle_Index, rec_Bank, traj_Bank)
                 ;
     }
 
@@ -58,14 +58,14 @@ public class analysis_fitter extends GenericKinematicFitter {
         return true
 //                && p > 1.20
                 //            && p < 5.00 
-//                && generic_tests.vertex_cut(particle_Index, rec_Bank, run_Bank)
-//                && (passesForwardDetector // dedicated PID cuts for forward
-//                        //                        ? pid_cuts.charged_hadron_pass2_chi2pid_cut(particle_Index, rec_Bank)
-//                        ? pid_cuts.charged_hadron_chi2pid_cut(particle_Index, rec_Bank, run_Bank)
-//                        : true)
-//                && (passesCentralDetector // generic |chi2pid| < 3.5 for cd
-//                        ? pid_cuts.charged_hadron_chi2pid_cut(particle_Index, rec_Bank, run_Bank)
-//                        : true)
+                && generic_tests.vertex_cut(particle_Index, rec_Bank, run_Bank)
+                && (passesForwardDetector // dedicated PID cuts for forward
+                        //                        ? pid_cuts.charged_hadron_pass2_chi2pid_cut(particle_Index, rec_Bank)
+                        ? pid_cuts.charged_hadron_chi2pid_cut(particle_Index, rec_Bank, run_Bank)
+                        : true)
+                && (passesCentralDetector // generic |chi2pid| < 3.5 for cd
+                        ? pid_cuts.charged_hadron_chi2pid_cut(particle_Index, rec_Bank, run_Bank)
+                        : true)
 //                && (passesForwardDetector
 //                        ? fiducial_cuts.dc_fiducial_cut(particle_Index, rec_Bank, traj_Bank)
 //                        : true)
@@ -129,18 +129,18 @@ public class analysis_fitter extends GenericKinematicFitter {
 
         return true
                 //            && p > 0.4
-                && (passesCentralDetector ? p > 0.3 : true)
-                && (passesForwardDetector && (torus > 0) ? p > 0.42 : true)
-                && (passesForwardDetector && (torus < 0) ? p > 0.50 : true)
-                && p < 1.2 // this bound is enforced at p < 1.14 by -t < 1, done here to speed up processing
-                && generic_tests.theta_calculation(px, py, pz) < 64.23
+//                && (passesCentralDetector ? p > 0.3 : true)
+//                && (passesForwardDetector && (torus > 0) ? p > 0.42 : true)
+//                && (passesForwardDetector && (torus < 0) ? p > 0.50 : true)
+//                && p < 1.2 // this bound is enforced at p < 1.14 by -t < 1, done here to speed up processing
+//                && generic_tests.theta_calculation(px, py, pz) < 64.23
                 && generic_tests.vertex_cut(particle_Index, rec_Bank, run_Bank)
-                && (passesForwardDetector
-                        ? fiducial_cuts.dc_fiducial_cut(particle_Index, rec_Bank, traj_Bank)
-                        : true)
-                && (passesCentralDetector
-                        ? fiducial_cuts.cvt_fiducial_cut(particle_Index, rec_Bank, traj_Bank)
-                        : true)
+//                && (passesForwardDetector
+//                        ? fiducial_cuts.dc_fiducial_cut(particle_Index, rec_Bank, traj_Bank)
+//                        : true)
+//                && (passesCentralDetector
+//                        ? fiducial_cuts.cvt_fiducial_cut(particle_Index, rec_Bank, traj_Bank)
+//                        : true)
                 && (passesForwardDetector // dedicated PID cuts for forward
                         ? pid_cuts.charged_hadron_chi2pid_cut(particle_Index, rec_Bank, run_Bank)
                         : true)
