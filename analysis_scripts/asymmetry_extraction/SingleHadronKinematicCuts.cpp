@@ -9,6 +9,7 @@ using std::string;
 SingleHadronKinematicCuts::SingleHadronKinematicCuts(TTreeReader& reader)
     : BaseKinematicCuts(reader), // Call to the BaseKinematicCuts constructor
       runnum(reader, "runnum"), fiducial_status(reader, "fiducial_status"), 
+      p_p(reader, "p_p"),
       e_phi(reader, "e_phi"), vz_e(reader, "vz_e"), p_phi(reader, "p_phi"),
       Q2(reader, "Q2"), W(reader, "W"), Mx2(reader, "Mx2"), x(reader, "x"), 
       t(reader, "t"), tmin(reader, "tmin"), y(reader, "y"), z(reader, "z"), 
@@ -20,10 +21,10 @@ bool SingleHadronKinematicCuts::applyCuts(int currentFits, bool isMC) {
     bool checked = false;
     string property = binNames[currentFits];
 
-    // if (*fiducial_status != 2) return false; // fiducial cuts
-    // if (*Q2 < 1) return false;
-    // if (*W < 2) return false;
-    // if (*y > 0.8) return false;
+    if (*Q2 < 1 || *W < 2 || y > 0.75 || *fiducial_status!=2) return false;
+    if (*p_p < 1.2 || *xF < 0 || *Mx2 < 3.24) return false;
+    return true;
+
     if (property == "Fall18xB" || property == "Fall18pT" || property == "Spring18xB" || property == "Spring18pT") {
       goodEvent = *Q2 > 1 && *W > 2 && *y < 0.80 && *Mx2 > 2.25;
       return goodEvent;
@@ -404,11 +405,11 @@ bool SingleHadronKinematicCuts::applyCuts(int currentFits, bool isMC) {
     }
 
 
-  if (isMC || (*runnum < 16042 || *runnum > 17811)) {
-    return goodEvent;
-  } else {
-    // return goodEvent && *target_pol!=0;
-    return goodEvent;
-  }
+  // if (isMC || (*runnum < 16042 || *runnum > 17811)) {
+  //   return goodEvent;
+  // } else {
+  //   // return goodEvent && *target_pol!=0;
+  //   return goodEvent;
+  // }
   return false;
 }

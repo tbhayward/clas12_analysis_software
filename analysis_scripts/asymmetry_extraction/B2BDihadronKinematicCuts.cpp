@@ -16,7 +16,10 @@ bool B2BDihadronKinematicCuts::applyCuts(int currentFits, bool isMC) {
     bool goodEvent = false;
     string property = binNames[currentFits];
 
-    goodEvent = *Q2 > 1 && *W > 2 && *y < 0.75; // DIS cuts
+    if (*Q2 < 1 || *W < 2 || y > 0.75 || *fiducial_status!=3) return false;
+    if (*p1_p < 1.2 || *xF1 < 0 || *Mx2_1 < 3.24) return false;
+    return true;
+
     if (property == "PTPT") {
         goodEvent = goodEvent;
     } else if (property == "b2bchannel") {

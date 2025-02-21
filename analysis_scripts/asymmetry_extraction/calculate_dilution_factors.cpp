@@ -244,60 +244,36 @@ std::pair<double, double> calculate_dilution_and_error(double nA, double nC, dou
 std::vector<std::pair<double, double>> calculate_dilution_factors() {
 
     // Load ROOT files and trees
-    TFile* nh3File = TFile::Open("/work/clas12/thayward/CLAS12_SIDIS/processed_data/pass2/data/epX/rgc_su22_inb_NH3_epX.root");
-    TFile* cFile = TFile::Open("/work/clas12/thayward/CLAS12_SIDIS/processed_data/pass2/data/epX/rgc_su22_inb_C_epX.root");
-    TFile* chFile = TFile::Open("/work/clas12/thayward/CLAS12_SIDIS/processed_data/pass2/data/epX/dilution_factor/rgc_su22_inb_CH2_epX.root");
-    TFile* heFile = TFile::Open("/work/clas12/thayward/CLAS12_SIDIS/processed_data/pass2/data/epX/dilution_factor/rgc_su22_inb_He_epX.root");
-    TFile* emptyFile = TFile::Open("/work/clas12/thayward/CLAS12_SIDIS/processed_data/pass2/data/epX/dilution_factor/rgc_su22_inb_ET_epX.root");
+    // TFile* nh3File = TFile::Open("/work/clas12/thayward/CLAS12_SIDIS/processed_data/pass2/data/epX/rgc_su22_inb_NH3_epX.root");
+    // TFile* cFile = TFile::Open("/work/clas12/thayward/CLAS12_SIDIS/processed_data/pass2/data/epX/rgc_su22_inb_C_epX.root");
+    // TFile* chFile = TFile::Open("/work/clas12/thayward/CLAS12_SIDIS/processed_data/pass2/data/epX/dilution_factor/rgc_su22_inb_CH2_epX.root");
+    // TFile* heFile = TFile::Open("/work/clas12/thayward/CLAS12_SIDIS/processed_data/pass2/data/epX/dilution_factor/rgc_su22_inb_He_epX.root");
+    // TFile* emptyFile = TFile::Open("/work/clas12/thayward/CLAS12_SIDIS/processed_data/pass2/data/epX/dilution_factor/rgc_su22_inb_ET_epX.root");
 
-    // TFile* nh3File = TFile::Open("/work/clas12/thayward/CLAS12_SIDIS/processed_data/pass2/data/epX/ISR/ISR_rgc_su22_inb_NH3_epX.root");
-    // TFile* cFile = TFile::Open("/work/clas12/thayward/CLAS12_SIDIS/processed_data/pass2/data/epX/ISR/ISR_rgc_su22_inb_C_epX.root");
-    // TFile* chFile = TFile::Open("/work/clas12/thayward/CLAS12_SIDIS/processed_data/pass2/data/epX/ISR/dilution_factor/ISR_rgc_su22_inb_CH2_epX.root");
-    // TFile* heFile = TFile::Open("/work/clas12/thayward/CLAS12_SIDIS/processed_data/pass2/data/epX/ISR/dilution_factor/ISR_rgc_su22_inb_He_epX.root");
-    // TFile* emptyFile = TFile::Open("/work/clas12/thayward/CLAS12_SIDIS/processed_data/pass2/data/epX/ISR/dilution_factor/ISR_rgc_su22_inb_ET_epX.root");
+    TFile* nh3File = TFile::Open("/work/clas12/thayward/CLAS12_SIDIS/processed_data/pass2/data/epi+X/rgc_su22_inb_NH3_epi+X.root");
+    TFile* cFile = TFile::Open("/work/clas12/thayward/CLAS12_SIDIS/processed_data/pass2/data/epi+X/rgc_su22_inb_C_epi+X.root");
+    TFile* chFile = TFile::Open("/work/clas12/thayward/CLAS12_SIDIS/processed_data/pass2/data/epi+X/dilution_factor/rgc_su22_inb_CH2_epi+X.root");
+    TFile* heFile = TFile::Open("/work/clas12/thayward/CLAS12_SIDIS/processed_data/pass2/data/epi+X/dilution_factor/rgc_su22_inb_He_epi+X.root");
+    TFile* emptyFile = TFile::Open("/work/clas12/thayward/CLAS12_SIDIS/processed_data/pass2/data/epi+X/dilution_factor/rgc_su22_inb_ET_epi+X.root");
 
-    // TFile* nh3File = TFile::Open("/work/clas12/thayward/CLAS12_SIDIS/processed_data/pass2/data/epX/FSR/FSR_rgc_su22_inb_NH3_epX.root");
-    // TFile* cFile = TFile::Open("/work/clas12/thayward/CLAS12_SIDIS/processed_data/pass2/data/epX/FSR/FSR_rgc_su22_inb_C_epX.root");
-    // TFile* chFile = TFile::Open("/work/clas12/thayward/CLAS12_SIDIS/processed_data/pass2/data/epX/FSR/dilution_factor/FSR_rgc_su22_inb_CH2_epX.root");
-    // TFile* heFile = TFile::Open("/work/clas12/thayward/CLAS12_SIDIS/processed_data/pass2/data/epX/FSR/dilution_factor/FSR_rgc_su22_inb_He_epX.root");
-    // TFile* emptyFile = TFile::Open("/work/clas12/thayward/CLAS12_SIDIS/processed_data/pass2/data/epX/FSR/dilution_factor/FSR_rgc_su22_inb_ET_epX.root");
+    // TFile* nh3File = TFile::Open("/work/clas12/thayward/CLAS12_SIDIS/processed_data/pass2/data/epi-X/rgc_su22_inb_NH3_epi-X.root");
+    // TFile* cFile = TFile::Open("/work/clas12/thayward/CLAS12_SIDIS/processed_data/pass2/data/epi-X/rgc_su22_inb_C_epi-X.root");
+    // TFile* chFile = TFile::Open("/work/clas12/thayward/CLAS12_SIDIS/processed_data/pass2/data/epi-X/dilution_factor/rgc_su22_inb_CH2_epi-X.root");
+    // TFile* heFile = TFile::Open("/work/clas12/thayward/CLAS12_SIDIS/processed_data/pass2/data/epi-X/dilution_factor/rgc_su22_inb_He_epi-X.root");
+    // TFile* emptyFile = TFile::Open("/work/clas12/thayward/CLAS12_SIDIS/processed_data/pass2/data/epi-X/dilution_factor/rgc_su22_inb_ET_epi-X.root");
 
-    // TFile* nh3File = TFile::Open("/work/clas12/thayward/CLAS12_SIDIS/processed_data/pass2/data/epX/ISR_FSR/ISR_FSR_rgc_su22_inb_NH3_epX.root");
-    // TFile* cFile = TFile::Open("/work/clas12/thayward/CLAS12_SIDIS/processed_data/pass2/data/epX/ISR_FSR/ISR_FSR_rgc_su22_inb_C_epX.root");
-    // TFile* chFile = TFile::Open("/work/clas12/thayward/CLAS12_SIDIS/processed_data/pass2/data/epX/ISR_FSR/dilution_factor/ISR_FSR_rgc_su22_inb_CH2_epX.root");
-    // TFile* heFile = TFile::Open("/work/clas12/thayward/CLAS12_SIDIS/processed_data/pass2/data/epX/ISR_FSR/dilution_factor/ISR_FSR_rgc_su22_inb_He_epX.root");
-    // TFile* emptyFile = TFile::Open("/work/clas12/thayward/CLAS12_SIDIS/processed_data/pass2/data/epX/ISR_FSR/dilution_factor/ISR_FSR_rgc_su22_inb_ET_epX.root");
+    // TFile* nh3File = TFile::Open("/work/clas12/thayward/CLAS12_SIDIS/processed_data/pass2/data/epi+pX/rgc_su22_inb_NH3_epi+pX.root");
+    // TFile* cFile = TFile::Open("/work/clas12/thayward/CLAS12_SIDIS/processed_data/pass2/data/epi+pX/rgc_su22_inb_C_epi+pX.root");
+    // TFile* chFile = TFile::Open("/work/clas12/thayward/CLAS12_SIDIS/processed_data/pass2/data/epi+pX/dilution_factor/rgc_su22_inb_CH2_epi+pX.root");
+    // TFile* heFile = TFile::Open("/work/clas12/thayward/CLAS12_SIDIS/processed_data/pass2/data/epi+pX/dilution_factor/rgc_su22_inb_He_epi+pX.root");
+    // TFile* emptyFile = TFile::Open("/work/clas12/thayward/CLAS12_SIDIS/processed_data/pass2/data/epi+pX/dilution_factor/rgc_su22_inb_ET_epi+pX.root");
 
-    // TFile* nh3File = TFile::Open("/work/clas12/thayward/CLAS12_SIDIS/processed_data/pass2/data/epi+X/rgc_su22_inb_NH3_epi+X.root");
-    // TFile* cFile = TFile::Open("/work/clas12/thayward/CLAS12_SIDIS/processed_data/pass2/data/epi+X/rgc_su22_inb_C_epi+X.root");
-    // TFile* chFile = TFile::Open("/work/clas12/thayward/CLAS12_SIDIS/processed_data/pass2/data/epi+X/dilution_factor/rgc_su22_inb_CH2_epi+X.root");
-    // TFile* heFile = TFile::Open("/work/clas12/thayward/CLAS12_SIDIS/processed_data/pass2/data/epi+X/dilution_factor/rgc_su22_inb_He_epi+X.root");
-    // TFile* emptyFile = TFile::Open("/work/clas12/thayward/CLAS12_SIDIS/processed_data/pass2/data/epi+X/dilution_factor/rgc_su22_inb_ET_epi+X.root");
+    // TFile* nh3File = TFile::Open("/work/clas12/thayward/CLAS12_SIDIS/processed_data/pass2/data/epi-pX/rgc_su22_inb_NH3_epi-pX.root");
+    // TFile* cFile = TFile::Open("/work/clas12/thayward/CLAS12_SIDIS/processed_data/pass2/data/epi-pX/rgc_su22_inb_C_epi-pX.root");
+    // TFile* chFile = TFile::Open("/work/clas12/thayward/CLAS12_SIDIS/processed_data/pass2/data/epi-pX/dilution_factor/rgc_su22_inb_CH2_epi-pX.root");
+    // TFile* heFile = TFile::Open("/work/clas12/thayward/CLAS12_SIDIS/processed_data/pass2/data/epi-pX/dilution_factor/rgc_su22_inb_He_epi-pX.root");
+    // TFile* emptyFile = TFile::Open("/work/clas12/thayward/CLAS12_SIDIS/processed_data/pass2/data/epi-pX/dilution_factor/rgc_su22_inb_ET_epi-pX.root");
 
-    // TFile* nh3File = TFile::Open("/work/clas12/thayward/CLAS12_SIDIS/processed_data/pass2/data/epi+X/ISR_FSR/ISR_FSR_rgc_su22_inb_NH3_epi+X.root");
-    // TFile* cFile = TFile::Open("/work/clas12/thayward/CLAS12_SIDIS/processed_data/pass2/data/epi+X/ISR_FSR/ISR_FSR_rgc_su22_inb_C_epi+X.root");
-    // TFile* chFile = TFile::Open("/work/clas12/thayward/CLAS12_SIDIS/processed_data/pass2/data/epi+X/ISR_FSR/dilution_factor/ISR_FSR_rgc_su22_inb_CH2_epi+X.root");
-    // TFile* heFile = TFile::Open("/work/clas12/thayward/CLAS12_SIDIS/processed_data/pass2/data/epi+X/ISR_FSR/dilution_factor/ISR_FSR_rgc_su22_inb_He_epi+X.root");
-    // TFile* emptyFile = TFile::Open("/work/clas12/thayward/CLAS12_SIDIS/processed_data/pass2/data/epi+X/ISR_FSR/dilution_factor/ISR_FSR_rgc_su22_inb_ET_epi+X.root");
-
-
-    // TFile* nh3File = TFile::Open("/volatile/clas12/thayward/compass_rad_workshop/RGC_files/NH3/rgc_su22_inb_NH3_epX.root");
-    // TFile* cFile = TFile::Open("/volatile/clas12/thayward/compass_rad_workshop/RGC_files/C/rgc_su22_inb_C_16292_epX.root");
-    // TFile* chFile = TFile::Open("/volatile/clas12/thayward/compass_rad_workshop/RGC_files/CH2/rgc_su22_inb_CH2_16298_epX.root");
-    // TFile* heFile = TFile::Open("/volatile/clas12/thayward/compass_rad_workshop/RGC_files/He/rgc_su22_inb_He_16309_epX.root");
-    // TFile* emptyFile = TFile::Open("/volatile/clas12/thayward/compass_rad_workshop/RGC_files/ET/rgc_su22_inb_ET_16194_epX.root");
-
-    // TFile* nh3File = TFile::Open("/volatile/clas12/thayward/compass_rad_workshop/RGC_files/NH3/ISR_FSR_rgc_su22_inb_NH3_epX.root");
-    // TFile* cFile = TFile::Open("/volatile/clas12/thayward/compass_rad_workshop/RGC_files/C/ISR_FSR_rgc_su22_inb_C_16292_epX.root");
-    // TFile* chFile = TFile::Open("/volatile/clas12/thayward/compass_rad_workshop/RGC_files/CH2/ISR_FSR_rgc_su22_inb_CH2_16298_epX.root");
-    // TFile* heFile = TFile::Open("/volatile/clas12/thayward/compass_rad_workshop/RGC_files/He/ISR_FSR_rgc_su22_inb_He_16309_epX.root");
-    // TFile* emptyFile = TFile::Open("/volatile/clas12/thayward/compass_rad_workshop/RGC_files/ET/ISR_FSR_rgc_su22_inb_ET_16194_epX.root");
-
-    // TFile* nh3File = TFile::Open("/work/clas12/thayward/CLAS12_SIDIS/processed_data/pass2/data/eX/rgc_su22_inb_NH3_eX.root");
-    // TFile* cFile = TFile::Open("/work/clas12/thayward/CLAS12_SIDIS/processed_data/pass2/data/eX/rgc_su22_inb_C_eX.root");
-    // TFile* chFile = TFile::Open("/work/clas12/thayward/CLAS12_SIDIS/processed_data/pass2/data/eX/dilution_factor/rgc_su22_inb_CH2_eX.root");
-    // TFile* heFile = TFile::Open("/work/clas12/thayward/CLAS12_SIDIS/processed_data/pass2/data/eX/dilution_factor/rgc_su22_inb_He_eX.root");
-    // TFile* emptyFile = TFile::Open("/work/clas12/thayward/CLAS12_SIDIS/processed_data/pass2/data/eX/dilution_factor/rgc_su22_inb_ET_eX.root");
 
     TTree* nh3 = (TTree*)nh3File->Get("PhysicsEvents");
     TTree* c = (TTree*)cFile->Get("PhysicsEvents");
