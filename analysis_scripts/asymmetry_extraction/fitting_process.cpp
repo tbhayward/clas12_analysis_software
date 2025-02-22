@@ -1959,31 +1959,50 @@ void performChi2Fits_b2b_dihadron(const char* output_file, const char* kinematic
   // Create a new TF1 object called fitFunction representing the function to fit
   // and create string stream prefix depending on current asymmetry we're fitting
   TF2* fitFunction;
+  // switch (asymmetry_index) {
+  //   case 0: // beam-spin asymmetry
+  //     fitFunction = new TF2("fitFunction", BSA_b2b_dihadron,0,2*TMath::Pi(),0,2*TMath::Pi(),5);
+  //     chi2FitsStreams[0] << prefix << "chi2FitsALUoffset = {";
+  //     chi2FitsStreams[1] << prefix << "chi2FitsALUsinphi1 = {";
+  //     chi2FitsStreams[2] << prefix << "chi2FitsALUsinphi2 = {";
+  //     chi2FitsStreams[3] << prefix << "chi2FitsALUsinDeltaphi = {";
+  //     chi2FitsStreams[4] << prefix << "chi2FitsALUsin2Deltaphi = {";
+  //     break;
+  //   case 1: // target-spin asymmetry
+  //     fitFunction = new TF2("fitFunction", TSA_b2b_dihadron,0,2*TMath::Pi(),0,2*TMath::Pi(),8);
+  //     chi2FitsStreams[0] << prefix << "chi2FitsAULoffset = {";
+  //     chi2FitsStreams[1] << prefix << "chi2FitsAULsinphi1 = {";
+  //     chi2FitsStreams[2] << prefix << "chi2FitsAULsinphi2 = {";
+  //     chi2FitsStreams[3] << prefix << "chi2FitsAULsin2phi1 = {";
+  //     chi2FitsStreams[4] << prefix << "chi2FitsAULsin2phi2 = {";
+  //     chi2FitsStreams[5] << prefix << "chi2FitsAULsinDeltaphi = {";
+  //     chi2FitsStreams[6] << prefix << "chi2FitsAULsin2Deltaphi = {";
+  //     chi2FitsStreams[7] << prefix << "chi2FitsAULsinSumphi = {";
+  //     break;
+  //   case 2: // double-spin asymmetry
+  //     fitFunction = new TF2("fitFunction", DSA_b2b_dihadron,0,2*TMath::Pi(),0,2*TMath::Pi(),3);
+  //     chi2FitsStreams[0] << prefix << "chi2FitsALL = {";
+  //     chi2FitsStreams[1] << prefix << "chi2FitsALLcosphi1 = {";
+  //     chi2FitsStreams[2] << prefix << "chi2FitsALLcosphi2 = {";
+  //     break;
+  // }
   switch (asymmetry_index) {
     case 0: // beam-spin asymmetry
-      fitFunction = new TF2("fitFunction", BSA_b2b_dihadron,0,2*TMath::Pi(),0,2*TMath::Pi(),5);
+      fitFunction = new TF2("fitFunction", BSA_b2b_dihadron,0,2*TMath::Pi(),0,2*TMath::Pi(),3);
       chi2FitsStreams[0] << prefix << "chi2FitsALUoffset = {";
-      chi2FitsStreams[1] << prefix << "chi2FitsALUsinphi1 = {";
-      chi2FitsStreams[2] << prefix << "chi2FitsALUsinphi2 = {";
-      chi2FitsStreams[3] << prefix << "chi2FitsALUsinDeltaphi = {";
-      chi2FitsStreams[4] << prefix << "chi2FitsALUsin2Deltaphi = {";
+      chi2FitsStreams[1] << prefix << "chi2FitsALUsinDeltaphi = {";
+      chi2FitsStreams[2] << prefix << "chi2FitsALUsin2Deltaphi = {";
       break;
     case 1: // target-spin asymmetry
-      fitFunction = new TF2("fitFunction", TSA_b2b_dihadron,0,2*TMath::Pi(),0,2*TMath::Pi(),8);
+      fitFunction = new TF2("fitFunction", TSA_b2b_dihadron,0,2*TMath::Pi(),0,2*TMath::Pi(),4);
       chi2FitsStreams[0] << prefix << "chi2FitsAULoffset = {";
-      chi2FitsStreams[1] << prefix << "chi2FitsAULsinphi1 = {";
-      chi2FitsStreams[2] << prefix << "chi2FitsAULsinphi2 = {";
-      chi2FitsStreams[3] << prefix << "chi2FitsAULsin2phi1 = {";
-      chi2FitsStreams[4] << prefix << "chi2FitsAULsin2phi2 = {";
-      chi2FitsStreams[5] << prefix << "chi2FitsAULsinDeltaphi = {";
-      chi2FitsStreams[6] << prefix << "chi2FitsAULsin2Deltaphi = {";
-      chi2FitsStreams[7] << prefix << "chi2FitsAULsinSumphi = {";
+      chi2FitsStreams[1] << prefix << "chi2FitsAULsinDeltaphi = {";
+      chi2FitsStreams[2] << prefix << "chi2FitsAULsin2Deltaphi = {";
+      chi2FitsStreams[3] << prefix << "chi2FitsAULsinSumphi = {";
       break;
     case 2: // double-spin asymmetry
-      fitFunction = new TF2("fitFunction", DSA_b2b_dihadron,0,2*TMath::Pi(),0,2*TMath::Pi(),3);
+      fitFunction = new TF2("fitFunction", DSA_b2b_dihadron,0,2*TMath::Pi(),0,2*TMath::Pi(),1);
       chi2FitsStreams[0] << prefix << "chi2FitsALL = {";
-      chi2FitsStreams[1] << prefix << "chi2FitsALLcosphi1 = {";
-      chi2FitsStreams[2] << prefix << "chi2FitsALLcosphi2 = {";
       break;
   }
 
@@ -2097,20 +2116,20 @@ void performChi2Fits_b2b_dihadron(const char* output_file, const char* kinematic
         // Get the fitted parameters and their errors
         double ALU_offset = fitFunction->GetParameter(0);
         double ALU_offset_error = fitFunction->GetParError(0);
-        double ALU_sinphi1 = fitFunction->GetParameter(1); 
-        double ALU_sinphi1_error = fitFunction->GetParError(1);
-        double ALU_sinphi2 = fitFunction->GetParameter(2); 
-        double ALU_sinphi2_error = fitFunction->GetParError(2);
-        double ALU_sinDeltaphi = fitFunction->GetParameter(3); 
-        double ALU_sinDeltaphi_error = fitFunction->GetParError(3);
-        double ALU_sin2Deltaphi = fitFunction->GetParameter(4); 
-        double ALU_sin2Deltaphi_error = fitFunction->GetParError(4);
+        // double ALU_sinphi1 = fitFunction->GetParameter(1); 
+        // double ALU_sinphi1_error = fitFunction->GetParError(1);
+        // double ALU_sinphi2 = fitFunction->GetParameter(2); 
+        // double ALU_sinphi2_error = fitFunction->GetParError(2);
+        double ALU_sinDeltaphi = fitFunction->GetParameter(1); 
+        double ALU_sinDeltaphi_error = fitFunction->GetParError(1);
+        double ALU_sin2Deltaphi = fitFunction->GetParameter(2); 
+        double ALU_sin2Deltaphi_error = fitFunction->GetParError(2);
         //
-        ALU_sinphi1 = (meanDepA/meanDepW)*ALU_sinphi1;
-        ALU_sinphi1_error = (meanDepA/meanDepW)*ALU_sinphi1_error;
-        //
-        ALU_sinphi2 = (meanDepA/meanDepW)*ALU_sinphi2;
-        ALU_sinphi2_error = (meanDepA/meanDepW)*ALU_sinphi2_error;
+        // ALU_sinphi1 = (meanDepA/meanDepW)*ALU_sinphi1;
+        // ALU_sinphi1_error = (meanDepA/meanDepW)*ALU_sinphi1_error;
+        // //
+        // ALU_sinphi2 = (meanDepA/meanDepW)*ALU_sinphi2;
+        // ALU_sinphi2_error = (meanDepA/meanDepW)*ALU_sinphi2_error;
         //
         ALU_sinDeltaphi = (meanDepA/meanDepC)*ALU_sinDeltaphi;
         ALU_sinDeltaphi_error = (meanDepA/meanDepC)*ALU_sinDeltaphi_error;
@@ -2119,14 +2138,15 @@ void performChi2Fits_b2b_dihadron(const char* output_file, const char* kinematic
         ALU_sin2Deltaphi_error = (meanDepA/meanDepC)*ALU_sin2Deltaphi_error;
         //
         chi2FitsStreams[0]<<"{"<<meanVariable<<", "<< ALU_offset << ", " << ALU_offset_error <<"}";
-        chi2FitsStreams[1]<<"{"<<meanVariable<<", "<< ALU_sinphi1 << ", " << ALU_sinphi1_error <<"}";
-        chi2FitsStreams[2]<<"{"<<meanVariable<<", "<< ALU_sinphi2 << ", " << ALU_sinphi2_error <<"}";
-        chi2FitsStreams[3]<<"{"<<meanVariable<<", "<< ALU_sinDeltaphi << ", " << ALU_sinDeltaphi_error <<"}";
-        chi2FitsStreams[4]<<"{"<<meanVariable<<", "<< ALU_sin2Deltaphi << ", " << ALU_sin2Deltaphi_error <<"}";
+        // chi2FitsStreams[1]<<"{"<<meanVariable<<", "<< ALU_sinphi1 << ", " << ALU_sinphi1_error <<"}";
+        // chi2FitsStreams[2]<<"{"<<meanVariable<<", "<< ALU_sinphi2 << ", " << ALU_sinphi2_error <<"}";
+        chi2FitsStreams[1]<<"{"<<meanVariable<<", "<< ALU_sinDeltaphi << ", " << ALU_sinDeltaphi_error <<"}";
+        chi2FitsStreams[2]<<"{"<<meanVariable<<", "<< ALU_sin2Deltaphi << ", " << ALU_sin2Deltaphi_error <<"}";
         if (i < numBins - 1) {
             chi2FitsStreams[0] << ", "; chi2FitsStreams[1] << ", "; 
-            chi2FitsStreams[2] << ", "; chi2FitsStreams[3] << ", "; 
-            chi2FitsStreams[4] << ", ";
+            chi2FitsStreams[2] << ", "; 
+            // chi2FitsStreams[3] << ", "; 
+            // chi2FitsStreams[4] << ", ";
         }
         break;
       }
@@ -2134,32 +2154,32 @@ void performChi2Fits_b2b_dihadron(const char* output_file, const char* kinematic
         // Get the fitted parameters and their errors
         double AUL_offset = fitFunction->GetParameter(0);
         double AUL_offset_error = fitFunction->GetParError(0);
-        double AUL_sinphi1 = fitFunction->GetParameter(1);
-        double AUL_sinphi1_error = fitFunction->GetParError(1);
-        double AUL_sinphi2 = fitFunction->GetParameter(2);
-        double AUL_sinphi2_error = fitFunction->GetParError(2);
-        double AUL_sin2phi1 = fitFunction->GetParameter(3);
-        double AUL_sin2phi1_error = fitFunction->GetParError(3);
-        double AUL_sin2phi2 = fitFunction->GetParameter(4);
-        double AUL_sin2phi2_error = fitFunction->GetParError(4);
-        double AUL_sinDeltaphi = fitFunction->GetParameter(5);
-        double AUL_sinDeltaphi_error = fitFunction->GetParError(5);
-        double AUL_sin2Deltaphi = fitFunction->GetParameter(6);
-        double AUL_sin2Deltaphi_error = fitFunction->GetParError(6);
-        double AUL_sinSumphi = fitFunction->GetParameter(7);
-        double AUL_sinSumphi_error = fitFunction->GetParError(7);
+        // double AUL_sinphi1 = fitFunction->GetParameter(1);
+        // double AUL_sinphi1_error = fitFunction->GetParError(1);
+        // double AUL_sinphi2 = fitFunction->GetParameter(2);
+        // double AUL_sinphi2_error = fitFunction->GetParError(2);
+        // double AUL_sin2phi1 = fitFunction->GetParameter(3);
+        // double AUL_sin2phi1_error = fitFunction->GetParError(3);
+        // double AUL_sin2phi2 = fitFunction->GetParameter(4);
+        // double AUL_sin2phi2_error = fitFunction->GetParError(4);
+        double AUL_sinDeltaphi = fitFunction->GetParameter(1);
+        double AUL_sinDeltaphi_error = fitFunction->GetParError(1);
+        double AUL_sin2Deltaphi = fitFunction->GetParameter(2);
+        double AUL_sin2Deltaphi_error = fitFunction->GetParError(2);
+        double AUL_sinSumphi = fitFunction->GetParameter(3);
+        double AUL_sinSumphi_error = fitFunction->GetParError(3);
         //
-        AUL_sinphi1 = (meanDepA/meanDepV)*AUL_sinphi1;
-        AUL_sinphi1_error = (meanDepA/meanDepV)*AUL_sinphi1_error;
-        //
-        AUL_sinphi2 = (meanDepA/meanDepV)*AUL_sinphi2;
-        AUL_sinphi2_error = (meanDepA/meanDepV)*AUL_sinphi2_error;
-        //
-        AUL_sin2phi1 = (meanDepA/meanDepB)*AUL_sin2phi1;
-        AUL_sin2phi1_error = (meanDepA/meanDepB)*AUL_sin2phi1_error;
-        //
-        AUL_sin2phi2 = (meanDepA/meanDepB)*AUL_sin2phi2;
-        AUL_sin2phi2_error = (meanDepA/meanDepB)*AUL_sin2phi2_error;
+        // AUL_sinphi1 = (meanDepA/meanDepV)*AUL_sinphi1;
+        // AUL_sinphi1_error = (meanDepA/meanDepV)*AUL_sinphi1_error;
+        // //
+        // AUL_sinphi2 = (meanDepA/meanDepV)*AUL_sinphi2;
+        // AUL_sinphi2_error = (meanDepA/meanDepV)*AUL_sinphi2_error;
+        // //
+        // AUL_sin2phi1 = (meanDepA/meanDepB)*AUL_sin2phi1;
+        // AUL_sin2phi1_error = (meanDepA/meanDepB)*AUL_sin2phi1_error;
+        // //
+        // AUL_sin2phi2 = (meanDepA/meanDepB)*AUL_sin2phi2;
+        // AUL_sin2phi2_error = (meanDepA/meanDepB)*AUL_sin2phi2_error;
         //
         // No depolarization factor for the sin(Deltaphi) and sin(2Deltaphi) asymmetries
         // in the TSA
@@ -2168,17 +2188,18 @@ void performChi2Fits_b2b_dihadron(const char* output_file, const char* kinematic
         AUL_sinSumphi_error = (meanDepA/meanDepB)*AUL_sinSumphi_error;
         //
         chi2FitsStreams[0]<<"{"<<meanVariable<<", "<< AUL_offset << ", " << AUL_offset_error <<"}";
-        chi2FitsStreams[1]<<"{"<<meanVariable<<", "<< AUL_sinphi1 << ", " << AUL_sinphi1_error <<"}";
-        chi2FitsStreams[2]<<"{"<<meanVariable<<", "<< AUL_sinphi2 << ", " << AUL_sinphi2_error <<"}";
-        chi2FitsStreams[3]<<"{"<<meanVariable<<", "<< AUL_sin2phi1 << ", " << AUL_sin2phi1_error <<"}";
-        chi2FitsStreams[4]<<"{"<<meanVariable<<", "<< AUL_sin2phi2 << ", " << AUL_sin2phi2_error <<"}";
-        chi2FitsStreams[5]<<"{"<<meanVariable<<", "<< AUL_sinDeltaphi << ", " << AUL_sinDeltaphi_error <<"}";
-        chi2FitsStreams[6]<<"{"<<meanVariable<<", "<< AUL_sin2Deltaphi << ", " << AUL_sin2Deltaphi_error <<"}";
-        chi2FitsStreams[7]<<"{"<<meanVariable<<", "<< AUL_sinSumphi << ", " << AUL_sinSumphi_error <<"}";
+        // chi2FitsStreams[1]<<"{"<<meanVariable<<", "<< AUL_sinphi1 << ", " << AUL_sinphi1_error <<"}";
+        // chi2FitsStreams[2]<<"{"<<meanVariable<<", "<< AUL_sinphi2 << ", " << AUL_sinphi2_error <<"}";
+        // chi2FitsStreams[3]<<"{"<<meanVariable<<", "<< AUL_sin2phi1 << ", " << AUL_sin2phi1_error <<"}";
+        // chi2FitsStreams[4]<<"{"<<meanVariable<<", "<< AUL_sin2phi2 << ", " << AUL_sin2phi2_error <<"}";
+        chi2FitsStreams[1]<<"{"<<meanVariable<<", "<< AUL_sinDeltaphi << ", " << AUL_sinDeltaphi_error <<"}";
+        chi2FitsStreams[2]<<"{"<<meanVariable<<", "<< AUL_sin2Deltaphi << ", " << AUL_sin2Deltaphi_error <<"}";
+        chi2FitsStreams[3]<<"{"<<meanVariable<<", "<< AUL_sinSumphi << ", " << AUL_sinSumphi_error <<"}";
         if (i < numBins - 1) {
             chi2FitsStreams[0] << ", "; chi2FitsStreams[1] << ", "; chi2FitsStreams[2] << ", ";
-            chi2FitsStreams[3] << ", "; chi2FitsStreams[4] << ", "; chi2FitsStreams[5] << ", ";
-            chi2FitsStreams[6] << ", "; chi2FitsStreams[7] << ", "; 
+            chi2FitsStreams[3] << ", "; 
+            // chi2FitsStreams[4] << ", "; chi2FitsStreams[5] << ", ";
+            // chi2FitsStreams[6] << ", "; chi2FitsStreams[7] << ", "; 
         }
         break;
       }
@@ -2186,27 +2207,28 @@ void performChi2Fits_b2b_dihadron(const char* output_file, const char* kinematic
         // Get the fitted parameters and their errors
         double ALL = fitFunction->GetParameter(0);
         double ALL_error = fitFunction->GetParError(0);
-        double ALL_cosphi1 = fitFunction->GetParameter(1);
-        double ALL_cosphi1_error = fitFunction->GetParError(1);
-        double ALL_cosphi2 = fitFunction->GetParameter(2);
-        double ALL_cosphi2_error = fitFunction->GetParError(2);
+        // double ALL_cosphi1 = fitFunction->GetParameter(1);
+        // double ALL_cosphi1_error = fitFunction->GetParError(1);
+        // double ALL_cosphi2 = fitFunction->GetParameter(2);
+        // double ALL_cosphi2_error = fitFunction->GetParError(2);
         //
         ALL = (meanDepA/meanDepC)*ALL;
         ALL_error = (meanDepA/meanDepC)*ALL_error;
         //
-        ALL_cosphi1 = (meanDepA/meanDepW)*ALL_cosphi1;
-        ALL_cosphi1_error = (meanDepA/meanDepW)*ALL_cosphi1_error;
-        //
-        ALL_cosphi2 = (meanDepA/meanDepW)*ALL_cosphi2;
-        ALL_cosphi2_error = (meanDepA/meanDepW)*ALL_cosphi2_error;
+        // ALL_cosphi1 = (meanDepA/meanDepW)*ALL_cosphi1;
+        // ALL_cosphi1_error = (meanDepA/meanDepW)*ALL_cosphi1_error;
+        // //
+        // ALL_cosphi2 = (meanDepA/meanDepW)*ALL_cosphi2;
+        // ALL_cosphi2_error = (meanDepA/meanDepW)*ALL_cosphi2_error;
         //
         chi2FitsStreams[0]<<"{"<<meanVariable<<", "<< ALL << ", " << ALL_error <<"}";
-        chi2FitsStreams[1]<<"{"<<meanVariable<<", "<< ALL_cosphi1 << ", " << ALL_cosphi1_error <<"}";
-        chi2FitsStreams[2]<<"{"<<meanVariable<<", "<< ALL_cosphi2 << ", " << ALL_cosphi2_error <<"}";
+        // chi2FitsStreams[1]<<"{"<<meanVariable<<", "<< ALL_cosphi1 << ", " << ALL_cosphi1_error <<"}";
+        // chi2FitsStreams[2]<<"{"<<meanVariable<<", "<< ALL_cosphi2 << ", " << ALL_cosphi2_error <<"}";
         if (i < numBins - 1) {
-            chi2FitsStreams[0] << ", "; chi2FitsStreams[1] << ", "; chi2FitsStreams[2] << ", ";
-            chi2FitsStreams[3] << ", "; chi2FitsStreams[4] << ", "; chi2FitsStreams[5] << ", ";
-            chi2FitsStreams[6] << ", "; chi2FitsStreams[7] << ", "; 
+            chi2FitsStreams[0] << ", "; 
+            // chi2FitsStreams[1] << ", "; chi2FitsStreams[2] << ", ";
+            // chi2FitsStreams[3] << ", "; chi2FitsStreams[4] << ", "; chi2FitsStreams[5] << ", ";
+            // chi2FitsStreams[6] << ", "; chi2FitsStreams[7] << ", "; 
         }
         break;
       }

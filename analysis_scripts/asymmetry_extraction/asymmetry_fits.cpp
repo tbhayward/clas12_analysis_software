@@ -49,21 +49,31 @@ double BSA_dvcs(double* x, double* par) {
   return ALU_offset + ALU_sinphi*sin(phi)/(1+AUU_cosphi*cos(phi));
 }
 
+// double BSA_b2b_dihadron(double* x, double* par) {
+//   // Retrieve the parameters 
+//   double ALU_offset = par[0];
+//   double ALU_sinphi1 = par[1];
+//   double ALU_sinphi2 = par[2];
+//   double ALU_sinDeltaphi = par[3];
+//   double ALU_sin2Deltaphi = par[4];
+//   // Retrieve the phi variables from the input arrays
+//   double phi1 = x[0];
+//   double phi2 = x[1];
+//   // Calculate and return the value of the function for the given phi and parameters 
+//   return ALU_offset + ALU_sinphi1*sin(phi1) + ALU_sinphi2*sin(phi2) +
+//     ALU_sinDeltaphi*sin(phi1 - phi2) + ALU_sin2Deltaphi*sin(2*phi1 - 2*phi2);
+// }
+
 double BSA_b2b_dihadron(double* x, double* par) {
   // Retrieve the parameters 
   double ALU_offset = par[0];
-  double ALU_sinphi1 = par[1];
-  double ALU_sinphi2 = par[2];
-  double ALU_sinDeltaphi = par[3];
-  double ALU_sin2Deltaphi = par[4];
+  double ALU_sinDeltaphi = par[1];
+  double ALU_sin2Deltaphi = par[2];
   // Retrieve the phi variables from the input arrays
   double phi1 = x[0];
   double phi2 = x[1];
   // Calculate and return the value of the function for the given phi and parameters 
-  // return ALU_offset + ALU_sinphi1*sin(phi1) + ALU_sinphi2*sin(phi2) +
-  //   ALU_sinDeltaphi*sin(phi1 - phi2) + ALU_sin2Deltaphi*sin(2*phi1 - 2*phi2);
-  return ALU_offset + 
-    ALU_sinDeltaphi*sin(phi1 - phi2) + ALU_sin2Deltaphi*sin(2*phi1 - 2*phi2);
+  return ALU_offset + ALU_sinDeltaphi*sin(phi1 - phi2) + ALU_sin2Deltaphi*sin(2*phi1 - 2*phi2);
 }
 
 double BSA_dihadron(double* x, double* par) {
@@ -125,23 +135,14 @@ double TSA_single_hadron(double* x, double* par) {
 double TSA_b2b_dihadron(double* x, double* par) {
   // Retrieve the parameters 
   double AUL_offset = par[0];
-  double AUL_sinphi1 = par[1];
-  double AUL_sinphi2 = par[2];
-  double AUL_sin2phi1 = par[3];
-  double AUL_sin2phi2 = par[4];
-  double AUL_sinDeltaphi = par[5];
-  double AUL_sin2Deltaphi = par[6];
-  double AUL_sinSumphi = par[7];
+  double AUL_sinDeltaphi = par[1];
+  double AUL_sin2Deltaphi = par[2];
+  double AUL_sinSumphi = par[3];
   // Retrieve the phi variable from the input x array
   double phi1 = x[0];
   double phi2 = x[1];
   // Calculate and return the value of the function for the given phi and parameters 
-  // return AUL_offset + AUL_sinphi1*sin(phi1) + AUL_sinphi2*sin(phi2) +
-  //   AUL_sin2phi1*sin(2*phi1) + AUL_sin2phi2*sin(2*phi2) +
-  //   + AUL_sinDeltaphi*sin(phi1 - phi2) + AUL_sin2Deltaphi*sin(2*phi1 - 2*phi2) +
-  //   AUL_sinSumphi*sin(phi1 + phi2);
-  return AUL_offset +
-    + AUL_sinDeltaphi*sin(phi1 - phi2) + AUL_sin2Deltaphi*sin(2*phi1 - 2*phi2) +
+  return AUL_offset + AUL_sinDeltaphi*sin(phi1 - phi2) + AUL_sin2Deltaphi*sin(2*phi1 - 2*phi2) +
     AUL_sinSumphi*sin(phi1 + phi2);
 }
 
@@ -222,14 +223,11 @@ double DSA_single_hadron(double* x, double* par) {
 double DSA_b2b_dihadron(double* x, double* par) {
   // Retrieve the parameters A
   double ALL = par[0];
-  double ALL_cosphi1 = par[1];
-  double ALL_cosphi2 = par[2];
   // Retrieve the phi variable from the input x array
   double phi1 = x[0];
   double phi2 = x[1];
   // Calculate and return the value of the function for the given phi and parameters 
   // return ALL;
-  // return ALL + ALL_cosphi1*cos(phi1) + ALL_cosphi2*cos(phi2);
   return ALL;
 }
 
