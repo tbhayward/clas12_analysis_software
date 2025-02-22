@@ -60,7 +60,9 @@ double BSA_b2b_dihadron(double* x, double* par) {
   double phi1 = x[0];
   double phi2 = x[1];
   // Calculate and return the value of the function for the given phi and parameters 
-  return ALU_offset + ALU_sinphi1*sin(phi1) + ALU_sinphi2*sin(phi2) +
+  // return ALU_offset + ALU_sinphi1*sin(phi1) + ALU_sinphi2*sin(phi2) +
+  //   ALU_sinDeltaphi*sin(phi1 - phi2) + ALU_sin2Deltaphi*sin(2*phi1 - 2*phi2);
+  return ALU_offset + 
     ALU_sinDeltaphi*sin(phi1 - phi2) + ALU_sin2Deltaphi*sin(2*phi1 - 2*phi2);
 }
 
@@ -134,8 +136,11 @@ double TSA_b2b_dihadron(double* x, double* par) {
   double phi1 = x[0];
   double phi2 = x[1];
   // Calculate and return the value of the function for the given phi and parameters 
-  return AUL_offset + AUL_sinphi1*sin(phi1) + AUL_sinphi2*sin(phi2) +
-    AUL_sin2phi1*sin(2*phi1) + AUL_sin2phi2*sin(2*phi2) +
+  // return AUL_offset + AUL_sinphi1*sin(phi1) + AUL_sinphi2*sin(phi2) +
+  //   AUL_sin2phi1*sin(2*phi1) + AUL_sin2phi2*sin(2*phi2) +
+  //   + AUL_sinDeltaphi*sin(phi1 - phi2) + AUL_sin2Deltaphi*sin(2*phi1 - 2*phi2) +
+  //   AUL_sinSumphi*sin(phi1 + phi2);
+  return AUL_offset +
     + AUL_sinDeltaphi*sin(phi1 - phi2) + AUL_sin2Deltaphi*sin(2*phi1 - 2*phi2) +
     AUL_sinSumphi*sin(phi1 + phi2);
 }
@@ -224,7 +229,8 @@ double DSA_b2b_dihadron(double* x, double* par) {
   double phi2 = x[1];
   // Calculate and return the value of the function for the given phi and parameters 
   // return ALL;
-  return ALL + ALL_cosphi1*cos(phi1) + ALL_cosphi2*cos(phi2);
+  // return ALL + ALL_cosphi1*cos(phi1) + ALL_cosphi2*cos(phi2);
+  return ALL;
 }
 
 double DSA_dihadron(double* x, double* par) {
