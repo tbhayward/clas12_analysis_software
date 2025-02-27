@@ -111,25 +111,25 @@ def get_hist_configs(analysis_type):
     if analysis_type == "dvcs":
         # 8 variables total (e.g. open_angle_ep2, theta_gamma_gamma, pTmiss, xF, Emiss2, Mx2, Mx2_1, Mx2_2)
         return {
-            "open_angle_ep2":    (100, 0, 40),
+            "open_angle_ep2":    (100, 0, 60),
             "theta_gamma_gamma": (100, 0, 2),
             "pTmiss":            (100, 0, 0.3),
             "xF":                (100, -0.4, 0.2),
             "Emiss2":            (100, -1, 2),
-            "Mx2":               (100, -0.015, 0.015),
-            "Mx2_1":             (100, -1, 1.5),
+            "Mx2":               (100, -0.025, 0.025),
+            "Mx2_1":             (100, -1.5, 1.5),
             "Mx2_2":             (100, 0, 3)
         }
     elif analysis_type == "eppi0":
         # 8 variables total for eppi0 (replace theta_gamma_gamma w/ theta_pi0_pi0)
         return {
-            "open_angle_ep2":    (100, 0, 40),
-            "theta_pi0_pi0":     (100, 0, 40),
+            "open_angle_ep2":    (100, 0, 60),
+            "theta_pi0_pi0":     (100, 0, 2),
             "pTmiss":            (100, 0, 0.3),
             "xF":                (100, -0.4, 0.2),
             "Emiss2":            (100, -1, 2),
-            "Mx2":               (100, -0.015, 0.015),
-            "Mx2_1":             (100, -1, 1.5),
+            "Mx2":               (100, -0.025, 0.025),
+            "Mx2_1":             (100, -1.5, 1.5),
             "Mx2_2":             (100, 0, 3)
         }
     else:
