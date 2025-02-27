@@ -334,3 +334,46 @@ def plot_results(data_hists, mc_hists, plot_title, topology, output_dir, suffix=
     canvas.SaveAs(os.path.join(output_dir, out_png))
     del canvas
 #enddef
+
+def combine_results(output_dir):
+    """
+    Combine all final JSON files of the form:
+      cuts_{period_code}_{topology}_final.json
+    into a single combined_cuts.json for convenience.
+    """
+    import json, os
+
+    combined = {}
+
+    # Suppose your periods are:
+    all_periods = [
+        "DVCS_Fa18_inb", "DVCS_Fa18_out", "DVCS_Sp19_inb",
+        "eppi0_Fa18_inb", "eppi0_Fa18_out", "eppi0_Sp19_inb"
+    ]
+    topologies = ["FD_FD", "CD_FD", "CD_FT"]
+
+    for period_code in all_periods:
+        for topo in topologies:
+            file_name = f"cuts_{period_code}_{topo}_final.json"
+            fpath = os.path.join(output_dir, file_name)
+            if not os.path.exists(fpath):
+                continue
+            #endif
+            key_name = f"{period_code}_{topo}"
+            try:
+                with open(fpath, "r") as f:
+                    combined[key_name] = json.load(f)
+                #endwith
+            except FileNotFoundError:
+                print(f"⚠️ Missing file {fpath}")
+            #endtry
+        #endfor
+    #endfor
+
+    # Write out one big combined_cuts.json
+    combined_path = os.path.join(output_dir, "combined_cuts.json")
+    with open(combined_path, "w") as f:
+        json.dump(combined, f, indent=2)
+    #endwith
+    print(f"✅ Wrote combined JSON => {combined_path}")
+#enddef

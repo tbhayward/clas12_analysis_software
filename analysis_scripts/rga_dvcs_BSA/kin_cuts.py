@@ -16,8 +16,10 @@ def apply_kinematic_cuts(t_value, open_angle_ep2_value, theta_neutral_neutral_va
         return False
     #endif
 
-    # 2) any other conditions you desire
-    # e.g. if Emiss2_value < -0.5: return False, etc.
+    # 2) universal angle cut
+    if -t_value > 1.0:
+        return False
+    #endif
 
     # If all checks pass:
     return True
