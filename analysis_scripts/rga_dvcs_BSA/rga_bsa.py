@@ -169,8 +169,33 @@ def determine_exclusivity_cuts(analysis_type, topology, data_tree, mc_tree,
 # 5) main (unchanged)
 # --------------------------------------------------------------------------------------
 def main():
-    # Properly indented lines inside main()
-    pass
+    output_dir = "exclusivity_plots"
+    os.makedirs(output_dir, exist_ok=True)
 
-if __name__ == "__main__":
-    main()
+    # 1) Load the DVCS trees
+    tree_dict = load_root_files()
+
+    # 2) Pick a run period (e.g., "Fa18_inb") and a topology (e.g., "(FD,FD)")
+    run_period_key = "Fa18_inb"
+    topology = "(FD,FD)"
+
+    # 3) Retrieve the TChains for data and MC
+    data_tree = tree_dict["dvcs_data"][run_period_key]
+    mc_tree   = tree_dict["dvcs_mc"][run_period_key]
+
+    # 4) Build a descriptive plot title
+    plot_title = "Fa18 Inb DVCS"
+    run_period_str = "RGA Fa18 Inb"
+
+    # 5) Call determine_exclusivity_cuts
+    determine_exclusivity_cuts(
+        analysis_type="dvcs",
+        topology=topology,
+        data_tree=data_tree,
+        mc_tree=mc_tree,
+        output_dir=output_dir,
+        run_period=run_period_str,
+        plot_title=plot_title
+    )
+
+    print("Done! Check the exclusivity_plots/dvcs/ directory for your plots.png file.")
