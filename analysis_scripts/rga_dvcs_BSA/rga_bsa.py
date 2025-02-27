@@ -170,7 +170,7 @@ def determine_exclusivity_cuts(analysis_type, topology, data_tree, mc_tree,
 # --------------------------------------------------------------------------------------
 def main():
     # Properly indented lines inside main()
-    print("Beginning rga_bsa.py!")
+    pass
 
 if __name__ == "__main__":
     main()
