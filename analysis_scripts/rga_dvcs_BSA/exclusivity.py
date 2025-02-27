@@ -215,12 +215,11 @@ def save_final_cuts(period_code, topology, output_dir, cuts_dict):
 def fit_crystal_ball(hist, var_name, is_data=True):
     """
     Fit 'hist' with a 5-parameter Crystal Ball PDF in valid C++ syntax.
-    Returns (fit_mu, fit_sigma, fitFunc).
+    We rename the function to 'crystalBallFunc' to avoid TFormula confusion.
     """
-
-    # 1) Valid C++ code for the crystalBall function
+    # 1) Valid C++ code with a distinct name:
     crystal_cpp = r'''
-Double_t crystalBall(Double_t *x, Double_t *par) {
+Double_t crystalBallFunc(Double_t *x, Double_t *par) {
    double A     = par[0];
    double mean  = par[1];
    double sigma = par[2];
@@ -242,19 +241,18 @@ Double_t crystalBall(Double_t *x, Double_t *par) {
 }
 '''
 
-    # 2) Declare it exactly once
-    if not hasattr(ROOT, "crystalBallDeclared"):
+    # 2) Declare once
+    if not hasattr(ROOT, "crystalBallFunc_declared"):
         ROOT.gInterpreter.Declare(crystal_cpp)
-        ROOT.crystalBallDeclared = True
-    #endif
+        ROOT.crystalBallFunc_declared = True
 
-    # 3) Create the TF1
-    func_name = f"crystalBall_{var_name}_{'data' if is_data else 'mc'}"
+    # 3) Create TF1 referencing "crystalBallFunc" (the C++ function name)
+    func_name = f"crystalBallFunc_{var_name}_{'data' if is_data else 'mc'}"
     x_min = hist.GetXaxis().GetXmin()
     x_max = hist.GetXaxis().GetXmax()
 
-    # "crystalBall" must match the function name in the C++ code above
-    fcb = ROOT.TF1(func_name, "crystalBall", x_min, x_max, 5)
+    # Instead of "crystalBall", use "crystalBallFunc" here:
+    fcb = ROOT.TF1(func_name, "crystalBallFunc", x_min, x_max, 5)
 
     # 4) Initial guesses
     A_guess = hist.GetMaximum()
@@ -277,7 +275,7 @@ Double_t crystalBall(Double_t *x, Double_t *par) {
     fcb.SetParameter(3, alpha_guess)
     fcb.SetParameter(4, n_guess)
 
-    # 5) Fit quietly (R=fit range, 0=no draw, Q=quiet)
+    # 5) Fit quietly
     fit_opts = "R0Q"
     hist.Fit(fcb, fit_opts)
 
@@ -285,7 +283,6 @@ Double_t crystalBall(Double_t *x, Double_t *par) {
     fit_sigma = fcb.GetParameter(2)
 
     return fit_mu, fit_sigma, fcb
-#enddef
 
 
 def plot_results(data_hists, mc_hists, plot_title, topology, output_dir, suffix="cut_0"):
@@ -328,7 +325,6 @@ def plot_results(data_hists, mc_hists, plot_title, topology, output_dir, suffix=
         mh.SetMarkerStyle(21)
         mh.SetMarkerSize(1.2)
 
-        # Normalize
         if dh.Integral() > 0:
             dh.Scale(1.0 / dh.Integral())
         if mh.Integral() > 0:
@@ -375,7 +371,6 @@ def plot_results(data_hists, mc_hists, plot_title, topology, output_dir, suffix=
             mh.Draw("E1 SAME")
         #endif
 
-        # Legend
         pad_leg = base_legend.Clone()
         pad_leg.AddEntry(dh, f"Data (#mu={mu_data:.3f}, #sigma={sigma_data:.3f})", "lep")
         pad_leg.AddEntry(mh, f"MC (#mu={mu_mc:.3f}, #sigma={sigma_mc:.3f})", "lep")
