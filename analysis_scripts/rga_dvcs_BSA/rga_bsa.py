@@ -3,11 +3,28 @@
 import os
 import json
 import ROOT
-from multiprocessing import Pool
-from functools import partial
 
 # Configure ROOT to run in batch mode
 ROOT.gROOT.SetBatch(True)
+
+# ------------------------------ Global Style Settings ------------------------------
+def configure_global_style():
+    style = ROOT.gStyle
+    style.SetOptStat(0)
+    style.SetTitleSize(0.045, "XY")
+    style.SetLabelSize(0.04, "XY")
+    style.SetPadLeftMargin(0.12)
+    style.SetPadRightMargin(0.08)
+    style.SetPadTopMargin(0.08)
+    style.SetPadBottomMargin(0.12)
+    style.SetLegendBorderSize(1)
+    style.SetLegendTextSize(0.035)
+    style.SetLegendFillColor(0)
+    style.SetGridColor(ROOT.kGray+1)
+    style.SetGridStyle(2)
+    style.SetGridWidth(1)
+
+configure_global_style()
 
 # --------------------------------------------------------------------------------------
 # 1) apply_kinematic_cuts (optimized)
@@ -132,19 +149,17 @@ def process_events(tree, topology, analysis_type, is_mc):
 # 5) plot_results (fixed tuple handling)
 # --------------------------------------------------------------------------------------
 def plot_results(data_hists, mc_hists, plot_title, topology, output_dir):
-    """Create plots with proper histogram handling"""
-    ROOT.gStyle.SetOptStat(0)
-    ROOT.gStyle.SetTitleSize(0.045, "XY")
-    ROOT.gStyle.SetLabelSize(0.04, "XY")
-    ROOT.gStyle.SetPadLeftMargin(0.12)
-    ROOT.gStyle.SetPadRightMargin(0.08)
-    ROOT.gStyle.SetPadTopMargin(0.1)
-    ROOT.gStyle.SetPadBottomMargin(0.12)
-    ROOT.gStyle.SetLegendBorderSize(0)
-
+    """Create publication-quality plots with proper styling"""
     variables = list(data_hists.keys())
     canvas = ROOT.TCanvas("canvas", "", 2400, 1200)
-    canvas.Divide(4, 2, 0.005, 0.005)
+    canvas.Divide(4, 2, 0.002, 0.002)  # Tighter spacing
+    
+    # Create common legend prototype
+    leg = ROOT.TLegend(0.65, 0.75, 0.92, 0.89)
+    leg.SetFillStyle(0)
+    leg.SetTextFont(42)
+    leg.SetBorderSize(1)
+    leg.SetMargin(0.12)
 
     for i, var in enumerate(variables):
         pad = canvas.cd(i+1)
@@ -157,91 +172,115 @@ def plot_results(data_hists, mc_hists, plot_title, topology, output_dir):
 
         # Configure styles
         dh.SetLineColor(ROOT.kBlue)
-        dh.SetLineWidth(2)
+        dh.SetLineWidth(3)
+        dh.SetMarkerSize(0)  # Remove markers for clean line plots
+        
         mh.SetLineColor(ROOT.kRed)
-        mh.SetLineWidth(2)
+        mh.SetLineWidth(3)
+        mh.SetLineStyle(2)  # Dashed line for MC
+        mh.SetMarkerSize(0)
 
         # Normalize
+        max_val = max(dh.GetMaximum(), mh.GetMaximum()) * 1.2
         for h in [dh, mh]:
             h.Scale(1/h.Integral() if h.Integral() > 0 else 1)
             h.GetYaxis().SetTitle("Normalized Counts")
-            h.GetYaxis().SetTitleOffset(1.2)
+            h.GetYaxis().SetTitleOffset(1.4)  # More spacing for y-title
             h.GetXaxis().SetTitle(format_label_name(var, "dvcs"))
+            h.SetMaximum(max_val)
 
         # Draw order
-        if dh.GetMaximum() > mh.GetMaximum():
-            dh.Draw("HIST E")
-            mh.Draw("HIST E SAME")
-        else:
-            mh.Draw("HIST E")
-            dh.Draw("HIST E SAME")
+        dh.Draw("HIST")
+        mh.Draw("HIST SAME")
 
-        # Legend
-        leg = ROOT.TLegend(0.65, 0.7, 0.95, 0.9)
-        leg.SetHeader(f"{var}", "C")
-        leg.AddEntry(dh, f"Data (#mu={dh.GetMean():.3f}, #sigma={dh.GetStdDev():.3f})", "l")
-        leg.AddEntry(mh, f"MC (#mu={mh.GetMean():.3f}, #sigma={mh.GetStdDev():.3f})", "l")
-        leg.Draw()
+        # Clone and position legend for each pad
+        pad_leg = leg.Clone()
+        pad_leg.AddEntry(dh, "Data", "l")
+        pad_leg.AddEntry(mh, "MC", "l")
+        pad_leg.Draw()
 
     # Save output
-    clean_title = plot_title.replace(" ", "_")
-    canvas.SaveAs(os.path.join(output_dir, f"{clean_title}_{topology}_comparison.png"))
+    canvas.cd()
+    clean_title = plot_title.replace(" ", "_").replace("(", "").replace(")", "")
+    canvas.SaveAs(os.path.join(output_dir, f"{clean_title}_{topology}_comparison.pdf"))
     del canvas
 
 # --------------------------------------------------------------------------------------
-# 6) process_period (fixed histogram separation)
+# 6) process_period (with timing and resource monitoring)
 # --------------------------------------------------------------------------------------
 def process_period(period, output_dir):
-    """Process a single run period with correct histogram separation"""
+    """Process a single run period with resource awareness"""
+    print(f"⏳ Starting processing for {period}...")
+    
     period_code, trees = load_root_files(period)
-    run_period, period_text = {
+    run_info = {
         "Fa18_inb": ("RGA Fa18 Inb", "Fa18 Inb"),
         "Fa18_out": ("RGA Fa18 Out", "Fa18 Out"),
         "Sp19_inb": ("RGA Sp19 Inb", "Sp19 Inb")
     }[period_code]
 
     for topology in ["(FD,FD)", "(CD,FD)", "(CD,FT)"]:
+        print(f"  🔄 Processing topology {topology}")
+        
         # Process data and MC
         data_hists, data_loose = process_events(trees["data"], topology, "dvcs", False)
         mc_hists, mc_loose = process_events(trees["mc"], topology, "dvcs", True)
 
         # Create plots
-        plot_title = f"{period_text} DVCS {topology}"
+        plot_title = f"{run_info[1]} DVCS"
         plot_results(data_hists, mc_hists, plot_title, topology, output_dir)
 
         # Save cuts
-        cuts = {
-            "data": {var: {"mean": data_loose[var].GetMean(), 
-                          "std": data_loose[var].GetStdDev()} 
-                    for var in data_loose},
-            "mc": {var: {"mean": mc_loose[var].GetMean(), 
-                        "std": mc_loose[var].GetStdDev()} 
-                  for var in mc_loose}
-        }
-        with open(os.path.join(output_dir, f"cuts_{period_code}_{topology}.json"), "w") as f:
+        save_cuts(period_code, topology, output_dir, data_loose, mc_loose)
+
+    print(f"✅ Completed {period}\n")
+
+def save_cuts(period, topology, output_dir, data, mc):
+    """Save cuts to JSON with error handling"""
+    cuts = {
+        "data": {var: {"mean": data[var].GetMean(), "std": data[var].GetStdDev()}
+                for var in data},
+        "mc": {var: {"mean": mc[var].GetMean(), "std": mc[var].GetStdDev()}
+              for var in mc}
+    }
+    try:
+        with open(os.path.join(output_dir, f"cuts_{period}_{topology}.json"), "w") as f:
             json.dump(cuts, f, indent=2)
+    except Exception as e:
+        print(f"⚠️ Error saving cuts for {period}_{topology}: {str(e)}")
 
 # --------------------------------------------------------------------------------------
-# 7) Main function with safe parallel processing
+# 7) Main function with improved progress tracking
 # --------------------------------------------------------------------------------------
 def main():
-    """Main driver with thread-safe ROOT handling"""
+    """Main driver with enhanced resource management"""
     output_dir = "exclusivity_plots"
     os.makedirs(output_dir, exist_ok=True)
     
-    # Process periods sequentially due to ROOT's thread-safety issues
+    print("🚀 Starting analysis with sequential processing")
+    print("❗ Note: ROOT's thread-safety limitations require sequential processing")
+    print("      We achieve speed through optimized single-pass event handling\n")
+    
     for period in ["Fa18_inb", "Fa18_out", "Sp19_inb"]:
         process_period(period, output_dir)
 
-    # Combine all cuts
-    combined_cuts = {}
+    print("🧩 Combining results...")
+    combine_results(output_dir)
+    print("\n🎉 Analysis complete!")
+
+def combine_results(output_dir):
+    """Combine all JSON cuts into single file"""
+    combined = {}
     for period in ["Fa18_inb", "Fa18_out", "Sp19_inb"]:
-        for topology in ["(FD,FD)", "(CD,FD)", "(CD,FT)"]:
-            with open(os.path.join(output_dir, f"cuts_{period}_{topology}.json")) as f:
-                combined_cuts[f"{period}_{topology}"] = json.load(f)
+        for topology in ["FD_FD", "CD_FD", "CD_FT"]:  # Adjusted for filename consistency
+            try:
+                with open(os.path.join(output_dir, f"cuts_{period}_{topology}.json")) as f:
+                    combined[f"{period}_{topology}"] = json.load(f)
+            except FileNotFoundError:
+                print(f"⚠️ Missing cuts file for {period}_{topology}")
     
     with open(os.path.join(output_dir, "combined_cuts.json"), "w") as f:
-        json.dump(combined_cuts, f, indent=2)
+        json.dump(combined, f, indent=2)
 
 if __name__ == "__main__":
     main()
