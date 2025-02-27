@@ -171,5 +171,5 @@ def determine_exclusivity_cuts(analysis_type, topology, data_tree, mc_tree,
 def main():
     # Same as original
 
-    if __name__ == "__main__":
+if __name__ == "__main__":
     main()
