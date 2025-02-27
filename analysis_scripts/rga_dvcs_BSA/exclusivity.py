@@ -159,8 +159,8 @@ def get_hist_configs(analysis_type):
     if analysis_type == "dvcs":
         return {
             "open_angle_ep2":    (100, 0, 60),
-            "theta_gamma_gamma": (100, -0.2, 2),
-            "pTmiss":            (100, -0.05, 0.3),
+            "theta_gamma_gamma": (100, 0, 2),
+            "pTmiss":            (100, 0, 0.3),
             "xF":                (100, -0.4, 0.2),
             "Emiss2":            (100, -1, 2),
             "Mx2":               (100, -0.025, 0.025),
@@ -170,8 +170,8 @@ def get_hist_configs(analysis_type):
     elif analysis_type == "eppi0":
         return {
             "open_angle_ep2":    (100, 0, 60),
-            "theta_pi0_pi0":     (100, -0.2, 2),
-            "pTmiss":            (100, -0.05, 0.3),
+            "theta_pi0_pi0":     (100, 0, 2),
+            "pTmiss":            (100, 0, 0.3),
             "xF":                (100, -0.4, 0.2),
             "Emiss2":            (100, -1, 2),
             "Mx2":               (100, -0.025, 0.025),
@@ -231,9 +231,9 @@ def fit_gaussian_left_side(hist, var_name, is_data=True, return_tf1=False):
     peak_bin = hist.GetMaximumBin()
     x_peak   = hist.GetBinCenter(peak_bin)
 
-    # 3) Build a standard Gaussian TF1 from x_left to 0.85*x_peak (avoid big tails)
+    # 3) Build a standard Gaussian TF1 from x_left to slightly passed the x_peak (avoid big tails)
     func_name = f"gausLeft_{var_name}_{'data' if is_data else 'mc'}"
-    fgaus = ROOT.TF1(func_name, "gaus(0)", x_left, 0.85*x_peak)
+    fgaus = ROOT.TF1(func_name, "gaus(0)", x_left, 1.2*x_peak)
 
     # 4) Initial parameter guesses:
     amp_guess  = hist.GetMaximum()
