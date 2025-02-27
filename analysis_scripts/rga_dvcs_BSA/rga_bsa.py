@@ -2,10 +2,9 @@
 
 import os
 import json
-import math
 import ROOT
 
-# Ensure ROOT runs in batch mode
+# Configure ROOT to run in batch mode
 ROOT.gROOT.SetBatch(True)
 
 # --------------------------------------------------------------------------------------
@@ -14,7 +13,8 @@ ROOT.gROOT.SetBatch(True)
 def apply_kinematic_cuts(t_value, open_angle_ep2_value, theta_neutral_neutral_value,
                          Emiss2_value, Mx2_value, Mx2_1_value, Mx2_2_value, pTmiss_value,
                          xF_value, analysis_type, data_type, run_period, topology):
-    return True  # Replace with actual cuts
+    """Placeholder for actual kinematic cuts logic"""
+    return True
 
 # --------------------------------------------------------------------------------------
 # 2) format_label_name
@@ -40,23 +40,18 @@ def format_label_name(variable, analysis_type):
 # 3) load_root_files
 # --------------------------------------------------------------------------------------
 def load_root_files():
-    """
-    Loads your ROOT files into TChains keyed by (category, run period).
-    """
+    """Load ROOT files into TChains"""
     file_dict = {
-        # dvcs data:
         "dvcs_data": {
             "Fa18_inb": "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/data/dvcs/rga_fa18_inb_epgamma.root",
             "Fa18_out": "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/data/dvcs/rga_fa18_out_epgamma.root",
             "Sp19_inb": "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/data/dvcs/rga_sp19_inb_epgamma.root"
-        }, 
-        # dvcs mc (reconstructed):
+        },
         "dvcs_mc": {
             "Fa18_inb": "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/mc/dvcsgen/rec_dvcsgen_rga_fa18_inb_50nA_10604MeV_epgamma.root",
             "Fa18_out": "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/mc/dvcsgen/rec_dvcsgen_rga_fa18_out_50nA_10604MeV_epgamma.root",
             "Sp19_inb": "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/mc/dvcsgen/rec_dvcsgen_rga_sp19_inb_50nA_10200MeV_epgamma.root"
         }
-        # eppi0-related files omitted, since we're not using them yet
     }
 
     tree_dict = {}
@@ -66,9 +61,6 @@ def load_root_files():
             chain = ROOT.TChain("PhysicsEvents")
             chain.Add(filename)
             tree_dict[category][period] = chain
-        #endfor
-    #endfor
-
     return tree_dict
 
 # --------------------------------------------------------------------------------------
@@ -76,6 +68,7 @@ def load_root_files():
 # --------------------------------------------------------------------------------------
 def determine_exclusivity_cuts(analysis_type, topology, data_tree, mc_tree,
                                output_dir, run_period, plot_title):
+    """Main analysis function with corrected event processing"""
     ROOT.gStyle.SetOptStat(0)
     ROOT.gStyle.SetTitleSize(0.05, "XY")
     ROOT.gStyle.SetLabelSize(0.04, "XY")
@@ -85,10 +78,9 @@ def determine_exclusivity_cuts(analysis_type, topology, data_tree, mc_tree,
     final_output_dir = os.path.join(output_dir, analysis_dir)
     os.makedirs(final_output_dir, exist_ok=True)
 
-    # Initialize variables and histograms
+    # Variables and histogram configurations
     variables = ["open_angle_ep2", "theta_gamma_gamma", "pTmiss", "xF",
-                 "Emiss2", "Mx2", "Mx2_1", "Mx2_2"] if analysis_type == "dvcs" else []
-
+                 "Emiss2", "Mx2", "Mx2_1", "Mx2_2"]
     hist_configs = {
         "open_angle_ep2": (100, 0, 40),
         "theta_gamma_gamma": (100, 0, 40),
@@ -100,7 +92,7 @@ def determine_exclusivity_cuts(analysis_type, topology, data_tree, mc_tree,
         "Mx2_2": (100, -0.5, 1.5)
     }
 
-    # Initialize all histograms
+    # Initialize histograms
     hists = {
         'data': {var: ROOT.TH1D(f"data_{var}", "", *hist_configs[var]) for var in variables},
         'mc': {var: ROOT.TH1D(f"mc_{var}", "", *hist_configs[var]) for var in variables},
@@ -108,7 +100,7 @@ def determine_exclusivity_cuts(analysis_type, topology, data_tree, mc_tree,
         'mc_loose': {var: ROOT.TH1D(f"mc_loose_{var}", "", *hist_configs[var]) for var in variables}
     }
 
-    # Style histograms
+    # Style configuration
     for key in ['data', 'data_loose']:
         for hist in hists[key].values():
             hist.SetMarkerStyle(20)
@@ -130,13 +122,10 @@ def determine_exclusivity_cuts(analysis_type, topology, data_tree, mc_tree,
             continue
 
         # Get cut variables
-        t_val = event.t1
-        open_ang = event.open_angle_ep2
-        theta_nn = event.theta_gamma_gamma if analysis_type == "dvcs" else event.theta_pi0_pi0
         cuts_passed = apply_kinematic_cuts(
-            t_val, open_ang, theta_nn, event.Emiss2, event.Mx2,
-            event.Mx2_1, event.Mx2_2, event.pTmiss, event.xF,
-            analysis_type, "data", run_period, topology
+            event.t1, event.open_angle_ep2, event.theta_gamma_gamma,
+            event.Emiss2, event.Mx2, event.Mx2_1, event.Mx2_2,
+            event.pTmiss, event.xF, analysis_type, "data", run_period, topology
         )
 
         # Fill histograms
@@ -146,56 +135,111 @@ def determine_exclusivity_cuts(analysis_type, topology, data_tree, mc_tree,
             if cuts_passed:
                 hists['data_loose'][var].Fill(val)
 
-    # Process MC tree (similar structure)
-    # ... [Repeat same structure for MC tree] ...
+    # Process MC tree
+    for event in mc_tree:
+        det1 = event.detector1
+        det2 = event.detector2
+        if not ((topology == "(FD,FD)" and det1 == 1 and det2 == 1) or
+                (topology == "(CD,FD)" and det1 == 2 and det2 == 1) or
+                (topology == "(CD,FT)" and det1 == 2 and det2 == 0)):
+            continue
 
-    # Normalize and draw
+        # Get cut variables
+        cuts_passed = apply_kinematic_cuts(
+            event.t1, event.open_angle_ep2, event.theta_gamma_gamma,
+            event.Emiss2, event.Mx2, event.Mx2_1, event.Mx2_2,
+            event.pTmiss, event.xF, analysis_type, "mc", run_period, topology
+        )
+
+        # Fill histograms
+        for var in variables:
+            val = getattr(event, var)
+            hists['mc'][var].Fill(val)
+            if cuts_passed:
+                hists['mc_loose'][var].Fill(val)
+
+    # Create canvases
     canvas = ROOT.TCanvas("canvas", "Exclusivity Plots", 1600, 800)
     canvas.Divide(4, 2)
-    
+    canvas_loose = ROOT.TCanvas("canvas_loose", "With Kinematic Cuts", 1600, 800)
+    canvas_loose.Divide(4, 2)
+
+    cuts_dictionary = {"data": {}, "mc": {}}
+
+    # Draw and process results
     for i, var in enumerate(variables):
+        # Normalize
+        for key in ['data', 'mc', 'data_loose', 'mc_loose']:
+            if hists[key][var].Integral() > 0:
+                hists[key][var].Scale(1.0 / hists[key][var].Integral())
+
+        # Original plots
         canvas.cd(i+1)
-        hists['data'][var].Scale(1/hists['data'][var].Integral() if hists['data'][var].Integral() > 0 else 1)
-        hists['mc'][var].Scale(1/hists['mc'][var].Integral() if hists['mc'][var].Integral() > 0 else 1)
+        hists['data'][var].SetTitle(f"{plot_title} - {var}")
+        hists['data'][var].SetXTitle(format_label_name(var, analysis_type))
+        hists['data'][var].SetYTitle("Normalized Counts")
         hists['data'][var].Draw("E1")
         hists['mc'][var].Draw("E1 SAME")
-        # Add legends/labels
 
-    # Save and clean up
-    canvas.SaveAs(os.path.join(final_output_dir, "plots.png"))
+        # Loose cuts plots
+        canvas_loose.cd(i+1)
+        hists['data_loose'][var].SetTitle(f"{plot_title} - {var} (Cuts)")
+        hists['data_loose'][var].SetXTitle(format_label_name(var, analysis_type))
+        hists['data_loose'][var].SetYTitle("Normalized Counts")
+        hists['data_loose'][var].Draw("E1")
+        hists['mc_loose'][var].Draw("E1 SAME")
+
+        # Store cuts
+        cuts_dictionary["data"][var] = {
+            "mean": hists['data_loose'][var].GetMean(),
+            "std": hists['data_loose'][var].GetStdDev()
+        }
+        cuts_dictionary["mc"][var] = {
+            "mean": hists['mc_loose'][var].GetMean(),
+            "std": hists['mc_loose'][var].GetStdDev()
+        }
+
+    # Save outputs
+    clean_title = plot_title.replace(" ", "_")
+    canvas.SaveAs(os.path.join(final_output_dir, f"{clean_title}_{topology}_nocuts.png"))
+    canvas_loose.SaveAs(os.path.join(final_output_dir, f"{clean_title}_{topology}_cuts.png"))
+
     return cuts_dictionary
 
 # --------------------------------------------------------------------------------------
-# 5) main (unchanged)
+# 5) Main function
 # --------------------------------------------------------------------------------------
 def main():
+    """Main driver function"""
     output_dir = "exclusivity_plots"
     os.makedirs(output_dir, exist_ok=True)
-
-    # 1) Load the DVCS trees
     tree_dict = load_root_files()
 
-    # 2) Pick a run period (e.g., "Fa18_inb") and a topology (e.g., "(FD,FD)")
-    run_period_key = "Fa18_inb"
-    topology = "(FD,FD)"
+    analysis_type = "dvcs"
+    topologies = ["(FD,FD)", "(CD,FD)", "(CD,FT)"]
+    periods = {
+        "Fa18_inb": ("RGA Fa18 Inb", "Fa18 Inb"),
+        "Fa18_out": ("RGA Fa18 Out", "Fa18 Out"),
+        "Sp19_inb": ("RGA Sp19 Inb", "Sp19 Inb")
+    }
 
-    # 3) Retrieve the TChains for data and MC
-    data_tree = tree_dict["dvcs_data"][run_period_key]
-    mc_tree   = tree_dict["dvcs_mc"][run_period_key]
+    combined_cuts = {}
 
-    # 4) Build a descriptive plot title
-    plot_title = "Fa18 Inb DVCS"
-    run_period_str = "RGA Fa18 Inb"
+    for period_code, (run_period, period_text) in periods.items():
+        data_tree = tree_dict["dvcs_data"][period_code]
+        mc_tree = tree_dict["dvcs_mc"][period_code]
 
-    # 5) Call determine_exclusivity_cuts
-    determine_exclusivity_cuts(
-        analysis_type="dvcs",
-        topology=topology,
-        data_tree=data_tree,
-        mc_tree=mc_tree,
-        output_dir=output_dir,
-        run_period=run_period_str,
-        plot_title=plot_title
-    )
+        for topology in topologies:
+            plot_title = f"{period_text} DVCS {topology}"
+            cuts = determine_exclusivity_cuts(
+                analysis_type, topology, data_tree, mc_tree,
+                output_dir, run_period, plot_title
+            )
+            combined_cuts[f"{period_code}_{topology}"] = cuts
 
-    print("Done! Check the exclusivity_plots/dvcs/ directory for your plots.png file.")
+    # Save combined cuts
+    with open(os.path.join(output_dir, "exclusivity_cuts.json"), "w") as f:
+        json.dump(combined_cuts, f, indent=2)
+
+if __name__ == "__main__":
+    main()
