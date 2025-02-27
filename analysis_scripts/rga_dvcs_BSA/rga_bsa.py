@@ -72,11 +72,10 @@ def load_root_files(period):
     return period, trees
 
 # --------------------------------------------------------------------------------------
-# 4) process_events (optimized single-loop processing)
+# 4) process_events (fixed histogram handling)
 # --------------------------------------------------------------------------------------
 def process_events(tree, topology, analysis_type, is_mc):
-    """Process events in a single pass with vectorized operations"""
-    # Updated histogram configurations
+    """Process events with corrected histogram creation"""
     hist_configs = {
         "open_angle_ep2":    (100, 0, 40),
         "theta_gamma_gamma": (100, 0, 2),
@@ -89,10 +88,13 @@ def process_events(tree, topology, analysis_type, is_mc):
     }
 
     variables = list(hist_configs.keys())
-    hists = {var: ROOT.TH1D(f"{'mc' if is_mc else 'data'}_{var}", "", *hist_configs[var]) 
-             for var in variables}
-    hists_loose = {var: ROOT.TH1D(f"{'mc' if is_mc else 'data'}_loose_{var}", "", *hist_configs[var]) 
-                  for var in variables}
+    hists = {}
+    hists_loose = {}
+
+    # Create histograms first
+    for var in variables:
+        hists[var] = ROOT.TH1D(f"{'mc' if is_mc else 'data'}_{var}", "", *hist_configs[var])
+        hists_loose[var] = ROOT.TH1D(f"{'mc' if is_mc else 'data'}_loose_{var}", "", *hist_configs[var])
 
     # Precompute topology condition
     if topology == "(FD,FD)":
@@ -101,6 +103,8 @@ def process_events(tree, topology, analysis_type, is_mc):
         det_cond = lambda d1, d2: d1 == 2 and d2 == 1
     elif topology == "(CD,FT)":
         det_cond = lambda d1, d2: d1 == 2 and d2 == 0
+    else:
+        return hists, hists_loose
 
     # Main processing loop
     for event in tree:
@@ -122,13 +126,13 @@ def process_events(tree, topology, analysis_type, is_mc):
             if cuts_passed:
                 hists_loose[var].Fill(val)
 
-    return {k: (v, hists_loose[k]) for k, v in hists.items()}
+    return hists, hists_loose
 
 # --------------------------------------------------------------------------------------
-# 5) plot_results (with improved styling)
+# 5) plot_results (fixed tuple handling)
 # --------------------------------------------------------------------------------------
 def plot_results(data_hists, mc_hists, plot_title, topology, output_dir):
-    """Create styled plots with proper spacing and legends"""
+    """Create plots with proper histogram handling"""
     ROOT.gStyle.SetOptStat(0)
     ROOT.gStyle.SetTitleSize(0.045, "XY")
     ROOT.gStyle.SetLabelSize(0.04, "XY")
@@ -140,52 +144,55 @@ def plot_results(data_hists, mc_hists, plot_title, topology, output_dir):
 
     variables = list(data_hists.keys())
     canvas = ROOT.TCanvas("canvas", "", 2400, 1200)
-    canvas.Divide(4, 2, 0.005, 0.005)  # Add spacing between pads
+    canvas.Divide(4, 2, 0.005, 0.005)
 
     for i, var in enumerate(variables):
         pad = canvas.cd(i+1)
         pad.SetGrid()
         pad.SetTicks(1, 1)
 
-        # Configure histograms
-        dh, dlh = data_hists[var]
-        mh, mlh = mc_hists[var]
+        # Get histograms
+        dh = data_hists[var]
+        mh = mc_hists[var]
 
-        for h, c in [(dh, ROOT.kBlue), (mh, ROOT.kRed)]:
-            h.SetLineColor(c)
-            h.SetLineWidth(2)
+        # Configure styles
+        dh.SetLineColor(ROOT.kBlue)
+        dh.SetLineWidth(2)
+        mh.SetLineColor(ROOT.kRed)
+        mh.SetLineWidth(2)
+
+        # Normalize
+        for h in [dh, mh]:
+            h.Scale(1/h.Integral() if h.Integral() > 0 else 1)
             h.GetYaxis().SetTitle("Normalized Counts")
             h.GetYaxis().SetTitleOffset(1.2)
             h.GetXaxis().SetTitle(format_label_name(var, "dvcs"))
-            h.Scale(1/h.Integral() if h.Integral() > 0 else 1)
 
-        # Draw with proper ordering
-        mh_max = mh.GetMaximum()
-        dh_max = dh.GetMaximum()
-        if dh_max > mh_max:
+        # Draw order
+        if dh.GetMaximum() > mh.GetMaximum():
             dh.Draw("HIST E")
             mh.Draw("HIST E SAME")
         else:
             mh.Draw("HIST E")
             dh.Draw("HIST E SAME")
 
-        # Create unified legend
+        # Legend
         leg = ROOT.TLegend(0.65, 0.7, 0.95, 0.9)
         leg.SetHeader(f"{var}", "C")
         leg.AddEntry(dh, Form("Data (#mu=%.3f, #sigma=%.3f)", dh.GetMean(), dh.GetStdDev()), "l")
         leg.AddEntry(mh, Form("MC (#mu=%.3f, #sigma=%.3f)", mh.GetMean(), mh.GetStdDev()), "l")
         leg.Draw()
 
-    # Save outputs
+    # Save output
     clean_title = plot_title.replace(" ", "_")
     canvas.SaveAs(os.path.join(output_dir, f"{clean_title}_{topology}_comparison.png"))
     del canvas
 
 # --------------------------------------------------------------------------------------
-# 6) process_period (parallel processing unit)
+# 6) process_period (fixed histogram separation)
 # --------------------------------------------------------------------------------------
 def process_period(period, output_dir):
-    """Process a single run period with all topologies"""
+    """Process a single run period with correct histogram separation"""
     period_code, trees = load_root_files(period)
     run_period, period_text = {
         "Fa18_inb": ("RGA Fa18 Inb", "Fa18 Inb"),
@@ -194,13 +201,9 @@ def process_period(period, output_dir):
     }[period_code]
 
     for topology in ["(FD,FD)", "(CD,FD)", "(CD,FT)"]:
-        # Process data and MC in sequence
-        data_result = process_events(trees["data"], topology, "dvcs", False)
-        mc_result = process_events(trees["mc"], topology, "dvcs", True)
-
-        # Extract and pair histograms
-        data_hists = {k: (v, data_result[k][1]) for k, v in data_result.items()}
-        mc_hists = {k: (v, mc_result[k][1]) for k, v in mc_result.items()}
+        # Process data and MC
+        data_hists, data_loose = process_events(trees["data"], topology, "dvcs", False)
+        mc_hists, mc_loose = process_events(trees["mc"], topology, "dvcs", True)
 
         # Create plots
         plot_title = f"{period_text} DVCS {topology}"
@@ -208,26 +211,27 @@ def process_period(period, output_dir):
 
         # Save cuts
         cuts = {
-            "data": {var: {"mean": h[0].GetMean(), "std": h[0].GetStdDev()} 
-                    for var, h in data_hists.items()},
-            "mc": {var: {"mean": h[0].GetMean(), "std": h[0].GetStdDev()} 
-                  for var, h in mc_hists.items()}
+            "data": {var: {"mean": data_loose[var].GetMean(), 
+                          "std": data_loose[var].GetStdDev()} 
+                    for var in data_loose},
+            "mc": {var: {"mean": mc_loose[var].GetMean(), 
+                        "std": mc_loose[var].GetStdDev()} 
+                  for var in mc_loose}
         }
         with open(os.path.join(output_dir, f"cuts_{period_code}_{topology}.json"), "w") as f:
             json.dump(cuts, f, indent=2)
 
 # --------------------------------------------------------------------------------------
-# 7) Main function with parallel processing
+# 7) Main function with safe parallel processing
 # --------------------------------------------------------------------------------------
 def main():
-    """Main driver with parallel execution"""
+    """Main driver with thread-safe ROOT handling"""
     output_dir = "exclusivity_plots"
     os.makedirs(output_dir, exist_ok=True)
     
-    # Create pool of workers for parallel period processing
-    with Pool(processes=3) as pool:
-        pool.map(partial(process_period, output_dir=output_dir),
-                 ["Fa18_inb", "Fa18_out", "Sp19_inb"])
+    # Process periods sequentially due to ROOT's thread-safety issues
+    for period in ["Fa18_inb", "Fa18_out", "Sp19_inb"]:
+        process_period(period, output_dir)
 
     # Combine all cuts
     combined_cuts = {}
