@@ -261,11 +261,11 @@ Double_t crystalBallLambda(Double_t x,
     n_guess = 2.0
 
     if var_name in ["theta_gamma_gamma", "theta_pi0_pi0"]:
-        mu_guess    = 0.2
-        sigma_guess = 0.02
+        mu_guess    = 0.15 
+        sigma_guess = 0.10
     elif var_name == "pTmiss":
-        mu_guess    = 0.05
-        sigma_guess = 0.01
+        mu_guess    = 0.04
+        sigma_guess = 0.02
     else:
         mu_guess    = hist.GetMean()
         sigma_guess = hist.GetRMS() / 2.0
