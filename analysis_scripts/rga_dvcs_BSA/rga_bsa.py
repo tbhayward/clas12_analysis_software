@@ -5,33 +5,16 @@ import json
 import math
 import ROOT
 
-# Make sure ROOT doesn't pop up any GUI windows:
+# Ensure ROOT runs in batch mode
 ROOT.gROOT.SetBatch(True)
 
 # --------------------------------------------------------------------------------------
 # 1) apply_kinematic_cuts
 # --------------------------------------------------------------------------------------
-def apply_kinematic_cuts(t_value,
-                         open_angle_ep2_value,
-                         theta_neutral_neutral_value,
-                         Emiss2_value,
-                         Mx2_value,
-                         Mx2_1_value,
-                         Mx2_2_value,
-                         pTmiss_value,
-                         xF_value,
-                         analysis_type,
-                         data_type,
-                         run_period,
-                         topology):
-    """
-    Placeholder function that implements your real logic for 'apply_kinematic_cuts'.
-    Currently returns True for all events.
-    Replace with your actual cut thresholds/conditions as needed.
-    """
-    return True
-#enddef
-
+def apply_kinematic_cuts(t_value, open_angle_ep2_value, theta_neutral_neutral_value,
+                         Emiss2_value, Mx2_value, Mx2_1_value, Mx2_2_value, pTmiss_value,
+                         xF_value, analysis_type, data_type, run_period, topology):
+    return True  # Replace with actual cuts
 
 # --------------------------------------------------------------------------------------
 # 2) format_label_name
@@ -52,8 +35,6 @@ def format_label_name(variable, analysis_type):
     if analysis_type == "eppi0":
         label = label.replace("#gamma", "#pi^{0}")
     return label
-#enddef
-
 
 # --------------------------------------------------------------------------------------
 # 3) load_root_files
@@ -89,8 +70,6 @@ def load_root_files():
     #endfor
 
     return tree_dict
-#enddef
-
 
 # --------------------------------------------------------------------------------------
 # 4) determine_exclusivity_cuts (UPDATED)
@@ -194,4 +173,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-#endif
