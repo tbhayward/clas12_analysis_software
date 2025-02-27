@@ -46,8 +46,8 @@ def passes_3sigma_cuts(event, is_mc, cuts_dict):
             continue
         #endif
 
-        # The actual 3sigma check:
-        if val < (mean - 3.0*stdv) or val > (mean + 3.0*stdv):
+        # The actual 2.5sigma check:
+        if val < (mean - 2.5*stdv) or val > (mean + 2.5*stdv):
             return False
         #endif
     #endfor

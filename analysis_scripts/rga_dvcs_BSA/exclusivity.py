@@ -4,13 +4,8 @@ import os
 import json
 import ROOT
 
-# 1) Import cut logic
 from kin_cuts import apply_kinematic_cuts, passes_3sigma_cuts
-
-# 2) Label function
 from label_formatting import format_label_name
-
-# 3) Root-file loader
 from root_io import load_root_files
 
 # -------------------------------------------------------------------------
@@ -18,23 +13,17 @@ from root_io import load_root_files
 # -------------------------------------------------------------------------
 def process_period_multi_stage(period, output_dir, analysis_type):
     """
-    A multi-stage analysis approach for either 'dvcs' or 'eppi0'.
-    We do repeated passes (stage 0..N), each time:
-      - filling histograms,
-      - plotting them,
-      - measuring mu±3sigma for 'stage variables',
-      - saving those cuts to a cumulative dictionary,
-      - applying them in the next stage.
-
-    The universal cut on open_angle_ep2 > 5 is enforced *inside*
-    apply_kinematic_cuts(...), from the very first pass (stage 0).
+    A multi-stage approach, but we only save one JSON at the end of all stages
+    for each topology. We keep a "cumulative_cuts_dict" in memory, then at the
+    final stage we have all discovered variables and their mu±3σ. We do:
+        save_final_cuts(...)
+    to write out exactly one file per topology.
     """
     print(f"⏳ Multi-stage processing for period='{period}' (analysis_type='{analysis_type}')...")
 
-    # 1) Load data & MC trees
     period_code, trees = load_root_files(period)
 
-    # Some user-friendly naming for output plots:
+    # Friendly naming for your output
     run_info_map = {
         "DVCS_Fa18_inb":  ("RGA Fa18 Inb DVCS",  "Fa18 Inb DVCS"),
         "DVCS_Fa18_out":  ("RGA Fa18 Out DVCS",  "Fa18 Out DVCS"),
@@ -45,68 +34,155 @@ def process_period_multi_stage(period, output_dir, analysis_type):
     }
     run_info = run_info_map.get(period_code, (period_code, period_code))
 
-    # 2) Define stage variables we will measure & cut on incrementally.
-    #    e.g. first stage: Mx2, Mx2_1; second stage: Emiss2, Mx2_2; final stage: pTmiss, xF, etc.
-    #    Also note if analysis_type == "eppi0", we might want to use "theta_pi0_pi0" instead of "theta_gamma_gamma".
+    # Example sets of variables to measure/cut in multiple stages:
+    # Stage 0 => Mx2, Mx2_1
+    # Stage 1 => Emiss2, Mx2_2
+    # Stage 2 => pTmiss, xF, plus "theta_gamma_gamma" or "theta_pi0_pi0"
     stage_vars = [
-        ["Mx2", "Mx2_1"],  # Stage 0 variables to measure => then cut
-        ["Emiss2", "Mx2_2"],  # Stage 1
-        ["theta_gamma_gamma", "pTmiss", "xF"]  # Stage 2
+        ["Mx2", "Mx2_1"],
+        ["Emiss2", "Mx2_2"],
+        ["pTmiss", "xF"]
     ]
-    if analysis_type == "eppi0":
-        # Replace 'theta_gamma_gamma' with 'theta_pi0_pi0' in the final stage
-        stage_vars[2][0] = "theta_pi0_pi0"
-    #endif
+    # If eppi0, we replace gamma variable with "theta_pi0_pi0"
+    # If dvcs, we use "theta_gamma_gamma"
+    if analysis_type == "dvcs":
+        stage_vars[-1].append("theta_gamma_gamma")
+    else:
+        stage_vars[-1].append("theta_pi0_pi0")
+    #endfor
 
-    # 3) We'll handle multiple topologies:
     for topology in ["(FD,FD)", "(CD,FD)", "(CD,FT)"]:
         print(f"  🔄 Processing topology {topology}")
 
-        # We'll keep a dictionary of all mu/std so far. Each stage updates it:
+        # This dictionary accumulates the final mu±3σ for all variables discovered
+        # across all stages. We do NOT write partial JSON now.
         cumulative_cuts_dict = {"data": {}, "mc": {}}
 
-        # We'll do len(stage_vars)+1 passes => e.g. if stage_vars has 3 entries, we do passes 0..3
-        # Stage 0 => measure stage_vars[0]
-        # Stage 1 => measure stage_vars[1]
-        # Stage 2 => measure stage_vars[2]
-        # Stage 3 => final pass (no new measurement, just final distribution with all cuts applied)
+        # We'll do len(stage_vars)+1 passes:
+        #   pass 0 => measure stage_vars[0]
+        #   pass 1 => measure stage_vars[1]
+        #   pass 2 => measure stage_vars[2]
+        #   pass 3 => final pass with all cuts in place, but no new measurement
         num_stages = len(stage_vars) + 1
 
         for stage_index in range(num_stages):
-            # 3.1) Fill histograms applying all known cuts from previous stages
+            # Fill histograms applying all previously known cuts
             data_hists, mc_hists = fill_stage_histograms(
                 trees["data"], trees["mc"], topology, analysis_type,
                 cumulative_cuts_dict, stage_index
             )
 
-            # 3.2) Plot them with suffix => e.g. _cut_0, _cut_1, ...
+            # Plot them
             cut_label = f"cut_{stage_index}"
             plot_title = f"{run_info[1]}"
             plot_results(data_hists, mc_hists, plot_title, topology, output_dir, suffix=cut_label)
 
-            # 3.3) If we're not at the final stage, measure new mu/sigma for stage_vars[stage_index]
+            # If we are not at final stage, measure new mu/sigma for stage_vars[stage_index]
             if stage_index < len(stage_vars):
                 active_vars = stage_vars[stage_index]
-                # Update the cumulative dictionary with newly measured mu/sigmas
                 update_cuts_dict(data_hists, mc_hists, cumulative_cuts_dict, active_vars)
-
-                # Write them out to JSON for debugging or for post-check
-                save_stage_cuts(period_code, topology, output_dir, cumulative_cuts_dict, stage_index)
             #endif
         #endfor
+
+        # ⭐ At this point we've completed all stages for this topology,
+        # and "cumulative_cuts_dict" has the final mu/sigma for everything.
+        # We only save JSON *once* here:
+        save_final_cuts(period_code, topology, output_dir, cumulative_cuts_dict)
     #endfor
 
     print(f"✅ Completed multi-stage for {period}\n")
 #enddef
 
+# -------------------------------------------------------------------------
+# fill_stage_histograms
+# -------------------------------------------------------------------------
+def fill_stage_histograms(data_tree, mc_tree, topology, analysis_type,
+                          cuts_dict, stage_index):
+    """
+    Fill histograms for data & MC, applying:
+      1) The universal kinematic_cuts(...) for open_angle_ep2 > 5, etc.
+      2) The existing 3sigma cuts from 'cuts_dict' for all previously discovered variables.
+    'stage_index' is used only for naming histograms. We do NOT save partial JSON here.
+    """
+    hist_configs = get_hist_configs(analysis_type)
 
+    data_hists = {}
+    mc_hists   = {}
+
+    for var, (nbins, xlow, xhigh) in hist_configs.items():
+        data_name = f"data_{var}_stage{stage_index}"
+        mc_name   = f"mc_{var}_stage{stage_index}"
+        data_hists[var] = ROOT.TH1D(data_name, "", nbins, xlow, xhigh)
+        mc_hists[var]   = ROOT.TH1D(mc_name,   "", nbins, xlow, xhigh)
+    #endfor
+
+    def passes_topology(e):
+        if topology == "(FD,FD)":
+            return (e.detector1 == 1 and e.detector2 == 1)
+        elif topology == "(CD,FD)":
+            return (e.detector1 == 2 and e.detector2 == 1)
+        elif topology == "(CD,FT)":
+            return (e.detector1 == 2 and e.detector2 == 0)
+        else:
+            return False
+
+    # Fill data
+    for event in data_tree:
+        if not passes_topology(event):
+            continue
+        # universal cuts
+        if not apply_kinematic_cuts(
+            event.t1, event.open_angle_ep2, 0.0,
+            event.Emiss2, event.Mx2, event.Mx2_1, event.Mx2_2,
+            event.pTmiss, event.xF,
+            analysis_type, "data", "", topology
+        ):
+            continue
+        # apply previous 3sigma cuts
+        if not passes_3sigma_cuts(event, False, cuts_dict):
+            continue
+        # fill
+        for var in hist_configs.keys():
+            val = getattr(event, var, None)
+            if val is not None:
+                data_hists[var].Fill(val)
+            #endif
+        #endfor
+    #endfor
+
+    # Fill MC
+    for event in mc_tree:
+        if not passes_topology(event):
+            continue
+        if not apply_kinematic_cuts(
+            event.t1, event.open_angle_ep2, 0.0,
+            event.Emiss2, event.Mx2, event.Mx2_1, event.Mx2_2,
+            event.pTmiss, event.xF,
+            analysis_type, "mc", "", topology
+        ):
+            continue
+        if not passes_3sigma_cuts(event, True, cuts_dict):
+            continue
+        for var in hist_configs.keys():
+            val = getattr(event, var, None)
+            if val is not None:
+                mc_hists[var].Fill(val)
+            #endif
+        #endfor
+    #endfor
+
+    return data_hists, mc_hists
+#enddef
+
+# -------------------------------------------------------------------------
+# get_hist_configs
+# -------------------------------------------------------------------------
 def get_hist_configs(analysis_type):
     """
-    Returns a dictionary mapping variable_name -> (nbins, xlow, xhigh).
-    For DVCS: we include theta_gamma_gamma, but NOT theta_pi0_pi0.
-    For eppi0: we include theta_pi0_pi0, but NOT theta_gamma_gamma.
+    Returns a dictionary of exactly the variables we want to plot for either dvcs or eppi0.
+    That way, dvcs => 'theta_gamma_gamma', eppi0 => 'theta_pi0_pi0'.
 
-    We also include Mx2_2 so it appears in the final plots.
+    This ensures we only produce 8 subplots (4x2).
     """
     if analysis_type == "dvcs":
         # 8 variables total (e.g. open_angle_ep2, theta_gamma_gamma, pTmiss, xF, Emiss2, Mx2, Mx2_1, Mx2_2)
@@ -129,7 +205,7 @@ def get_hist_configs(analysis_type):
             "xF":                (100, -0.4, 0.2),
             "Emiss2":            (100, -1, 2),
             "Mx2":               (100, -0.025, 0.025),
-            "Mx2_1":             (100, -1.5, 1.5),
+            "Mx2_1":             (100, -1.5 , 1.5),
             "Mx2_2":             (100, 0, 3)
         }
     else:
@@ -138,98 +214,12 @@ def get_hist_configs(analysis_type):
 #enddef
 
 # -------------------------------------------------------------------------
-# fill_stage_histograms
-# -------------------------------------------------------------------------
-def fill_stage_histograms(data_tree, mc_tree, topology, analysis_type,
-                          cuts_dict, stage_index):
-    """
-    Fill histograms for data & MC, applying:
-      1) The original apply_kinematic_cuts(...) for open_angle_ep2>5
-      2) The 3sigma cuts from 'cuts_dict' for all variables discovered so far.
-
-    'stage_index' is just used for naming the histograms (like _stage0).
-    """
-    # Get the correct dictionary for dvcs or eppi0
-    hist_configs = get_hist_configs(analysis_type)
-
-    # Decide which "theta" variable to fill if analysis_type == "dvcs" or "eppi0"
-    # But we already handle that in 'root_io.py' by only loading the correct branch name.
-    # So we can fill them all if they exist or not.
-
-    vars_to_fill = list(hist_configs.keys())
-
-    # Create the histograms
-    data_hists = {}
-    mc_hists   = {}
-
-    for var in vars_to_fill:
-        data_hists[var] = ROOT.TH1D(f"data_{var}_stage{stage_index}", "", *hist_configs[var])
-        mc_hists[var]   = ROOT.TH1D(f"mc_{var}_stage{stage_index}",   "", *hist_configs[var])
-    #endfor
-
-    # Make a topology condition function
-    def passes_topology(e):
-        if topology == "(FD,FD)":
-            return (e.detector1 == 1 and e.detector2 == 1)
-        elif topology == "(CD,FD)":
-            return (e.detector1 == 2 and e.detector2 == 1)
-        elif topology == "(CD,FT)":
-            return (e.detector1 == 2 and e.detector2 == 0)
-        else:
-            return False
-
-    # Fill data
-    for event in data_tree:
-        if not passes_topology(event):
-            continue
-        # Apply our "placeholder" kinematic cuts, including open_angle_ep2>5
-        if not apply_kinematic_cuts(
-            event.t1, event.open_angle_ep2, getattr(event, "theta_gamma_gamma", 0), 
-            event.Emiss2, event.Mx2, event.Mx2_1, event.Mx2_2,
-            event.pTmiss, event.xF, analysis_type, "data", "", topology
-        ):
-            continue
-        # Now apply any discovered 3sigma cuts
-        if not passes_3sigma_cuts(event, False, cuts_dict):
-            continue
-        # If we get here, the event passes everything
-        for var in vars_to_fill:
-            val = getattr(event, var, None)
-            if val is not None:
-                data_hists[var].Fill(val)
-    #endfor
-
-    # Fill MC
-    for event in mc_tree:
-        if not passes_topology(event):
-            continue
-        if not apply_kinematic_cuts(
-            event.t1, event.open_angle_ep2, getattr(event, "theta_gamma_gamma", 0), 
-            event.Emiss2, event.Mx2, event.Mx2_1, event.Mx2_2,
-            event.pTmiss, event.xF, analysis_type, "mc", "", topology
-        ):
-            continue
-        if not passes_3sigma_cuts(event, True, cuts_dict):
-            continue
-        # If we get here, the event is accepted
-        for var in vars_to_fill:
-            val = getattr(event, var, None)
-            if val is not None:
-                mc_hists[var].Fill(val)
-    #endfor
-
-    return data_hists, mc_hists
-#enddef
-
-
-# -------------------------------------------------------------------------
 # update_cuts_dict
 # -------------------------------------------------------------------------
 def update_cuts_dict(data_hists, mc_hists, cumulative_dict, active_vars):
     """
-    For the given 'active_vars', we compute data_hists[var].GetMean/StdDev
-    and MC hists. Then we store them in 'cumulative_dict', which is used
-    by passes_3sigma_cuts(...) to enforce mu+/-3sigma in the subsequent stage.
+    For each var in active_vars, measure data_hists[var].mean/std, MC likewise,
+    update the dictionary. We do not write any file here.
     """
     for var in active_vars:
         d_mean = data_hists[var].GetMean()
@@ -243,21 +233,21 @@ def update_cuts_dict(data_hists, mc_hists, cumulative_dict, active_vars):
 #enddef
 
 # -------------------------------------------------------------------------
-# save_stage_cuts
+# save_final_cuts
 # -------------------------------------------------------------------------
-def save_stage_cuts(period_code, topology, output_dir, cuts_dict, stage_index):
+def save_final_cuts(period_code, topology, output_dir, cuts_dict):
     """
-    Write out the current dictionary of mu±3sigma for the variables
-    discovered so far. e.g. cuts_DVCS_Fa18_inb_(FD,FD)_stage0.json
+    Called once after all multi-stage loops. Writes the final dictionary of mu/sigma
+    for each variable we've discovered. Only a SINGLE JSON file is created for each (period_code, topology).
     """
-    safe_topology = topology.replace("(", "").replace(")", "")
-    filename = f"cuts_{period_code}_{safe_topology}_stage{stage_index}.json"
+    safe_topo = topology.replace("(", "").replace(")", "")
+    filename = f"cuts_{period_code}_{safe_topo}_final.json"
     out_path = os.path.join(output_dir, filename)
     with open(out_path, "w") as f:
         json.dump(cuts_dict, f, indent=2)
-    print(f"   📝 Saved stage-{stage_index} JSON => {out_path}")
+    #endwith
+    print(f"   ✅ Wrote final JSON => {out_path}")
 #enddef
-
 
 # -------------------------------------------------------------------------
 # plot_results
@@ -265,10 +255,7 @@ def save_stage_cuts(period_code, topology, output_dir, cuts_dict, stage_index):
 def plot_results(data_hists, mc_hists, plot_title, topology, output_dir, suffix="cut_0"):
     """
     Compare data vs. MC histograms: normalize them, set max, display (mu, sigma).
-    We also append 'suffix' to the final PNG file name, e.g. _cut_0, _cut_1, etc.
-
-    'plot_title' typically is something like "Fa18 Inb DVCS" from run_info[1].
-    We'll incorporate 'topology' and 'suffix' in the final filename.
+    We append 'suffix' in the final PNG file name so we see e.g. _cut_0, _cut_1, etc.
     """
     variables = list(data_hists.keys())
     canvas = ROOT.TCanvas("canvas", "", 2400, 1200)
@@ -287,11 +274,10 @@ def plot_results(data_hists, mc_hists, plot_title, topology, output_dir, suffix=
         dh = data_hists[var]
         mh = mc_hists[var]
 
-        # Optionally set the histogram title to show period, topology, suffix:
-        # e.g. "Fa18 Inb DVCS (FD,FD) cut_1"
-        hist_title = f"{plot_title} {topology} {suffix}"
-        dh.SetTitle(hist_title)
-        mh.SetTitle(hist_title)
+        # Optional: Set a nice histogram title: "Fa18 Inb DVCS (FD,FD) cut_0"
+        the_title = f"{plot_title} {topology} {suffix}"
+        dh.SetTitle(the_title)
+        mh.SetTitle(the_title)
 
         # Style
         dh.SetLineColor(ROOT.kBlue)
@@ -307,17 +293,21 @@ def plot_results(data_hists, mc_hists, plot_title, topology, output_dir, suffix=
         mh.SetMarkerSize(1.2)
 
         # Normalize
-        for h in [dh, mh]:
-            if h.Integral() > 0:
-                h.Scale(1.0 / h.Integral())
-            h.GetYaxis().SetTitle("Normalized Counts")
-            h.GetYaxis().SetTitleOffset(1.4)
-            # We pass analysis_type='dvcs' or 'eppi0' if we want different labels
-            # But let's just pass "dvcs" for demonstration or adapt as needed
-            h.GetXaxis().SetTitle(format_label_name(var, "dvcs"))
-        #endfor
+        if dh.Integral() > 0:
+            dh.Scale(1.0 / dh.Integral())
+        #endif
+        if mh.Integral() > 0:
+            mh.Scale(1.0 / mh.Integral())
+        #endif
 
-        # Set max
+        dh.GetYaxis().SetTitle("Normalized Counts")
+        dh.GetYaxis().SetTitleOffset(1.4)
+        dh.GetXaxis().SetTitle(format_label_name(var, "dvcs"))  # or analysis_type if you prefer
+
+        mh.GetYaxis().SetTitle("Normalized Counts")
+        mh.GetYaxis().SetTitleOffset(1.4)
+        mh.GetXaxis().SetTitle(format_label_name(var, "dvcs"))
+
         max_val = max(dh.GetMaximum(), mh.GetMaximum()) * 1.2
         dh.SetMaximum(max_val)
         mh.SetMaximum(max_val)
@@ -331,66 +321,16 @@ def plot_results(data_hists, mc_hists, plot_title, topology, output_dir, suffix=
         dh.Draw("E1")
         mh.Draw("E1 SAME")
 
-        # Legend
         pad_leg = base_legend.Clone()
         pad_leg.AddEntry(dh, f"Data (#mu={mu_data:.3f}, #sigma={sigma_data:.3f})", "lep")
         pad_leg.AddEntry(mh, f"MC (#mu={mu_mc:.3f}, #sigma={sigma_mc:.3f})", "lep")
         pad_leg.Draw()
     #endfor
 
-    # Save
-    safe_topology = topology.replace("(", "").replace(")", "")
+    safe_topo = topology.replace("(", "").replace(")", "")
     clean_title = plot_title.replace(" ", "_")
-    out_png = f"{clean_title}_{safe_topology}_{suffix}_comparison.png"
+    out_png = f"{clean_title}_{safe_topo}_{suffix}_comparison.png"
     out_png = out_png.replace(" ", "_")
     canvas.SaveAs(os.path.join(output_dir, out_png))
     del canvas
-#enddef
-
-
-# -------------------------------------------------------------------------
-# combine_results
-# -------------------------------------------------------------------------
-def combine_results(output_dir):
-    """
-    Combine all stage cut JSONs (cuts_period_topology_stageX.json) 
-    into one big 'combined_cuts.json' if desired.
-    This is called once at the end from main.py
-    """
-    combined = {}
-
-    # We'll guess your periods might be these:
-    all_periods = [
-        "DVCS_Fa18_inb", "DVCS_Fa18_out", "DVCS_Sp19_inb",
-        "eppi0_Fa18_inb", "eppi0_Fa18_out", "eppi0_Sp19_inb"
-    ]
-    topologies = ["FD_FD", "CD_FD", "CD_FT"]
-
-    # We'll look for stage0..stageN
-    for period_code in all_periods:
-        for topo in topologies:
-            stage_index = 0
-            while True:
-                fname = f"cuts_{period_code}_{topo}_stage{stage_index}.json"
-                fpath = os.path.join(output_dir, fname)
-                if not os.path.exists(fpath):
-                    break
-                #endif
-                key_name = f"{period_code}_{topo}_stage{stage_index}"
-                try:
-                    with open(fpath, "r") as f:
-                        combined[key_name] = json.load(f)
-                    #endwith
-                except FileNotFoundError:
-                    print(f"⚠️ Missing file {fpath}")
-                #endif
-                stage_index += 1
-            #endwhile
-        #endfor
-    #endfor
-
-    combined_path = os.path.join(output_dir, "combined_cuts.json")
-    with open(combined_path, "w") as f:
-        json.dump(combined, f, indent=2)
-    print(f"✅ Wrote combined JSON => {combined_path}")
 #enddef
