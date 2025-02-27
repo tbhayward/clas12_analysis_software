@@ -4,7 +4,7 @@ import os
 import json
 import math
 import ROOT
-import concurrent.futures  # for parallel processing with futures
+import concurrent.futures  # for parallel processing
 
 # --------------------------------------------------------------------------------------
 # 1) apply_kinematic_cuts
@@ -23,9 +23,9 @@ def apply_kinematic_cuts(t_value,
                          run_period,
                          topology):
     """
-    This function implements your real logic for 'apply_kinematic_cuts'.
-    Right now it's a placeholder that always returns True. 
-    Replace with your actual cut thresholds/conditions.
+    Placeholder function that implements your real logic for 'apply_kinematic_cuts'.
+    Currently returns True for all events.
+    Replace with your actual cut thresholds/conditions as needed.
     """
     return True
 #enddef
@@ -36,17 +36,38 @@ def apply_kinematic_cuts(t_value,
 # --------------------------------------------------------------------------------------
 def format_label_name(variable, analysis_type):
     """
-    Mirrors 'formatLabelName' from your C++ code. 
-    Customize if certain variable names should get special LaTeX formatting, etc.
+    Mimics your C++ 'formatLabelName' function with LaTeX-style replacements.
+    We define a dictionary of common labels for both DVCS and eppi0. If analysisType
+    is "eppi0", we do a string replacement of '#gamma' -> '#pi^{0}'.
     """
-    if variable == "theta_gamma_gamma" and analysis_type == "dvcs":
-        return "#theta_{#gamma#gamma} (deg)"
-    elif variable == "theta_pi0_pi0" and analysis_type == "eppi0":
-        return "#theta_{#pi^{0}#pi^{0}} (deg)"
-    elif variable == "pTmiss":
-        return "p_{T}^{miss} (GeV/c)"
-    else:
+
+    # Dictionary mirroring your C++ code
+    common_labels = {
+        "open_angle_ep2"    : "#theta_{e'\\gamma} (deg)",
+        "Mx2_2"             : "Miss M_{e'\\gamma}^{2} (GeV^{2})",
+        "theta_gamma_gamma" : "#theta_{#gamma(det)#gamma(rec)}",
+        "theta_pi0_pi0"     : "#theta_{#pi^{0}(det)#pi^{0}(rec)}",
+        "xF"                : "x_{F}",
+        "Emiss2"            : "Miss E_{e'p'\\gamma} (GeV)",
+        "Mx2"               : "Miss M_{e'p'\\gamma}^{2} (GeV^{2})",
+        "Mx2_1"             : "Miss M_{e'p'}^{2} (GeV^{2})",
+        "pTmiss"            : "Miss P_{T(e'p'\\gamma)} (GeV)"
+    }
+
+    if variable not in common_labels:
+        # If no special formatting defined, just return the variable name
         return variable
+    #endif
+
+    label = common_labels[variable]
+
+    # If we are in eppi0 mode, replace every occurrence of "#gamma" with "#pi^{0}"
+    # (This mirrors your C++ approach.)
+    if analysis_type == "eppi0":
+        label = label.replace("#gamma", "#pi^{0}")
+    #endif
+
+    return label
 #enddef
 
 
@@ -56,7 +77,7 @@ def format_label_name(variable, analysis_type):
 def load_root_files():
     """
     Loads all your ROOT files into TChains keyed by (category, run period).
-    No lines omitted -- every path you gave is included explicitly.
+    Keeping the eppi0 entries for future usage, but we won't process them yet.
     """
 
     file_dict = {
@@ -72,23 +93,18 @@ def load_root_files():
             "Fa18_out": "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/mc/dvcsgen/rec_dvcsgen_rga_fa18_out_50nA_10604MeV_epgamma.root",
             "Sp19_inb": "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/mc/dvcsgen/rec_dvcsgen_rga_sp19_inb_50nA_10200MeV_epgamma.root"
         }, 
-        # eppi0 reconstructed mc (for background subtraction):
+
+        # eppi0 reconstructed mc (for background subtraction) - not used yet
         "eppi0_mc_recon": {
             "Fa18_inb": "/work/clas12/thayward/CLAS12_exclusive/eppi0/data/pass2/mc/hipo_files/rec_aaogen_norad_rga_fa18_inb_50nA_10604MeV_eppi0.root",
             "Fa18_out": "/work/clas12/thayward/CLAS12_exclusive/eppi0/data/pass2/mc/hipo_files/rec_aaogen_norad_rga_fa18_out_50nA_10604MeV_eppi0.root",
             "Sp19_inb": "/work/clas12/thayward/CLAS12_exclusive/eppi0/data/pass2/mc/hipo_files/rec_aaogen_norad_rga_sp19_inb_50nA_10200MeV_eppi0.root"
         },
-        # eppi0 generated mc (for background subtraction):
+        # eppi0 generated mc (for background subtraction) - not used yet
         "eppi0_mc_gen": {
             "Fa18_inb": "/work/clas12/thayward/CLAS12_exclusive/eppi0/data/pass2/mc/hipo_files/gen_aaogen_norad_rga_fa18_inb_50nA_10604MeV_eppi0.root",
             "Fa18_out": "/work/clas12/thayward/CLAS12_exclusive/eppi0/data/pass2/mc/hipo_files/gen_aaogen_norad_rga_fa18_out_50nA_10604MeV_eppi0.root",
             "Sp19_inb": "/work/clas12/thayward/CLAS12_exclusive/eppi0/data/pass2/mc/hipo_files/gen_aaogen_norad_rga_sp19_inb_50nA_10200MeV_eppi0.root"
-        },
-        # eppi0 background files:
-        "eppi0_bkg": {
-            "Fa18_inb": "/work/clas12/thayward/CLAS12_exclusive/eppi0/data/pass2/mc/hipo_files/eppi0_bkg_aaogen_norad_rga_fa18_inb_epgamma.root",
-            "Fa18_out": "/work/clas12/thayward/CLAS12_exclusive/eppi0/data/pass2/mc/hipo_files/eppi0_bkg_aaogen_norad_rga_fa18_out_epgamma.root",
-            "Sp19_inb": "/work/clas12/thayward/CLAS12_exclusive/eppi0/data/pass2/mc/hipo_files/eppi0_bkg_aaogen_norad_rga_sp19_inb_epgamma.root"
         }
     }
     #enddict
@@ -118,13 +134,9 @@ def determine_exclusivity_cuts(analysis_type,
                                run_period,
                                plot_title):
     """
-    Replicates your C++ determine_exclusivity(...) logic:
-     - Creates canvases
-     - Defines variables (dvcs/eppi0)
-     - Loops over events to fill histograms
-     - Applies "loose" cuts (apply_kinematic_cuts)
-     - Normalizes, draws, saves histograms
-     - Returns mean±3σ cuts for each variable in data vs. MC
+    Creates TCanvas, defines variables, loops over events to fill histograms,
+    applies "loose" kinematic cuts, normalizes, draws, and saves histograms.
+    Returns a dictionary of mean ± 3σ cuts for each variable in data vs. MC.
     """
 
     # 1) Global style options
@@ -133,16 +145,9 @@ def determine_exclusivity_cuts(analysis_type,
     ROOT.gStyle.SetLabelSize(0.04, "XY")
     ROOT.gStyle.SetLegendTextSize(0.04)
 
-    # -------------------------------------------------------
-    #  FIX #1: Remove the extra "exclusivity_plots" component
-    # -------------------------------------------------------
-    # Instead of os.path.join(output_dir, "exclusivity_plots", analysis_dir),
-    # we just do: final_output_dir = os.path.join(output_dir, analysis_dir)
-    # Because output_dir is already "exclusivity_plots" in your main() function
+    # 2) Subdirectory under output_dir for dvcs or eppi0
     analysis_dir = "dvcs" if analysis_type == "dvcs" else "eppi0"
     final_output_dir = os.path.join(output_dir, analysis_dir)
-
-    # If multiple processes try to create the same directory, we can use exist_ok=True
     os.makedirs(final_output_dir, exist_ok=True)
 
     # 3) Create canvases
@@ -154,34 +159,39 @@ def determine_exclusivity_cuts(analysis_type,
                                      1600, 800)
     canvas_loose_cuts.Divide(4, 2)
 
-    # 4) Define variables
+    # 4) Variables depend on dvcs or eppi0
     if analysis_type == "dvcs":
-        variables = ["open_angle_ep2", 
-                     "theta_gamma_gamma", 
-                     "pTmiss", 
-                     "xF", 
-                     "Emiss2", 
-                     "Mx2", 
-                     "Mx2_1", 
-                     "Mx2_2"]
+        variables = [
+            "open_angle_ep2", 
+            "theta_gamma_gamma", 
+            "pTmiss", 
+            "xF", 
+            "Emiss2", 
+            "Mx2", 
+            "Mx2_1", 
+            "Mx2_2"
+        ]
     else:
-        variables = ["open_angle_ep2",
-                     "theta_pi0_pi0",
-                     "pTmiss",
-                     "xF",
-                     "Emiss2",
-                     "Mx2",
-                     "Mx2_1",
-                     "Mx2_2"]
+        # eppi0
+        variables = [
+            "open_angle_ep2",
+            "theta_pi0_pi0",
+            "pTmiss",
+            "xF",
+            "Emiss2",
+            "Mx2",
+            "Mx2_1",
+            "Mx2_2"
+        ]
     #endif
 
-    # 6) Prepare dictionary to store final cuts
+    # 5) Prepare dictionary to store final cuts
     cuts_dictionary = {
         "data": {},
         "mc":   {}
     }
 
-    # 7) Hist binning
+    # 6) Hist binning
     hist_configs = {
         "open_angle_ep2":   (100,  0.0,  40.0),
         "theta_gamma_gamma":(100,  0.0,  40.0),
@@ -194,7 +204,7 @@ def determine_exclusivity_cuts(analysis_type,
         "Mx2_2":            (100, -0.5,  1.5),
     }
 
-    # 8) Loop over variables
+    # 7) Loop over variables
     for i, var in enumerate(variables):
         bins, hmin, hmax = hist_configs[var]
 
@@ -203,12 +213,11 @@ def determine_exclusivity_cuts(analysis_type,
         hist_data_loose = ROOT.TH1D(f"data_loose_{var}", "", bins, hmin, hmax)
         hist_mc_loose   = ROOT.TH1D(f"mc_loose_{var}",   "", bins, hmin, hmax)
 
-        hist_data.SetDirectory(0)
-        hist_mc.SetDirectory(0)
-        hist_data_loose.SetDirectory(0)
-        hist_mc_loose.SetDirectory(0)
+        for hist_ in [hist_data, hist_mc, hist_data_loose, hist_mc_loose]:
+            hist_.SetDirectory(0)
+        #endfor
 
-        # Style
+        # Set style
         hist_data.SetMarkerStyle(20)
         hist_data.SetMarkerColor(ROOT.kBlue)
         hist_data.SetLineColor(ROOT.kBlue)
@@ -231,29 +240,36 @@ def determine_exclusivity_cuts(analysis_type,
 
         # Fill data histograms
         for event in data_tree:
-            det1 = getattr(event, "detector1")
-            det2 = getattr(event, "detector2")
+            det1 = getattr(event, "detector1", -1)
+            det2 = getattr(event, "detector2", -1)
 
             if (topology == "(FD,FD)" and det1 == 1 and det2 == 1) or \
                (topology == "(CD,FD)" and det1 == 2 and det2 == 1) or \
                (topology == "(CD,FT)" and det1 == 2 and det2 == 0):
-                val_data = getattr(event, var)
+
+                # If the variable isn't in the tree, this might fail.
+                # So we do getattr with a default to avoid crash:
+                val_data = getattr(event, var, None)
+                if val_data is None:
+                    continue
+                #endif
                 hist_data.Fill(val_data)
 
-                t_val_data    = getattr(event, "t1")
-                open_ang_data = getattr(event, "open_angle_ep2")
+                # Now apply the "loose" cuts
+                t_val_data    = getattr(event, "t1", 0)
+                open_ang_data = getattr(event, "open_angle_ep2", 0)
                 if analysis_type == "dvcs":
-                    theta_nn_data = getattr(event, "theta_gamma_gamma")
+                    theta_nn_data = getattr(event, "theta_gamma_gamma", 0)
                 else:
-                    theta_nn_data = getattr(event, "theta_pi0_pi0")
+                    theta_nn_data = getattr(event, "theta_pi0_pi0", 0)
                 #endif
 
-                Emiss2_d  = getattr(event, "Emiss2")
-                Mx2_d     = getattr(event, "Mx2")
-                Mx2_1_d   = getattr(event, "Mx2_1")
-                Mx2_2_d   = getattr(event, "Mx2_2")
-                pTmiss_d  = getattr(event, "pTmiss")
-                xF_d      = getattr(event, "xF")
+                Emiss2_d  = getattr(event, "Emiss2", 0)
+                Mx2_d     = getattr(event, "Mx2", 0)
+                Mx2_1_d   = getattr(event, "Mx2_1", 0)
+                Mx2_2_d   = getattr(event, "Mx2_2", 0)
+                pTmiss_d  = getattr(event, "pTmiss", 0)
+                xF_d      = getattr(event, "xF", 0)
 
                 if apply_kinematic_cuts(t_val_data,
                                         open_ang_data,
@@ -275,28 +291,33 @@ def determine_exclusivity_cuts(analysis_type,
 
         # Fill MC histograms
         for event in mc_tree:
-            det1_mc = getattr(event, "detector1")
-            det2_mc = getattr(event, "detector2")
+            det1_mc = getattr(event, "detector1", -1)
+            det2_mc = getattr(event, "detector2", -1)
+
             if (topology == "(FD,FD)" and det1_mc == 1 and det2_mc == 1) or \
                (topology == "(CD,FD)" and det1_mc == 2 and det2_mc == 1) or \
                (topology == "(CD,FT)" and det1_mc == 2 and det2_mc == 0):
-                val_mc = getattr(event, var)
+
+                val_mc = getattr(event, var, None)
+                if val_mc is None:
+                    continue
+                #endif
                 hist_mc.Fill(val_mc)
 
-                t_val_mc    = getattr(event, "t1")
-                open_ang_mc = getattr(event, "open_angle_ep2")
+                t_val_mc    = getattr(event, "t1", 0)
+                open_ang_mc = getattr(event, "open_angle_ep2", 0)
                 if analysis_type == "dvcs":
-                    theta_nn_mc = getattr(event, "theta_gamma_gamma")
+                    theta_nn_mc = getattr(event, "theta_gamma_gamma", 0)
                 else:
-                    theta_nn_mc = getattr(event, "theta_pi0_pi0")
+                    theta_nn_mc = getattr(event, "theta_pi0_pi0", 0)
                 #endif
 
-                Emiss2_m = getattr(event, "Emiss2")
-                Mx2_m    = getattr(event, "Mx2")
-                Mx2_1_m  = getattr(event, "Mx2_1")
-                Mx2_2_m  = getattr(event, "Mx2_2")
-                pTmiss_m = getattr(event, "pTmiss")
-                xF_m     = getattr(event, "xF")
+                Emiss2_m = getattr(event, "Emiss2", 0)
+                Mx2_m    = getattr(event, "Mx2", 0)
+                Mx2_1_m  = getattr(event, "Mx2_1", 0)
+                Mx2_2_m  = getattr(event, "Mx2_2", 0)
+                pTmiss_m = getattr(event, "pTmiss", 0)
+                xF_m     = getattr(event, "xF", 0)
 
                 if apply_kinematic_cuts(t_val_mc,
                                         open_ang_mc,
@@ -399,10 +420,14 @@ def determine_exclusivity_cuts(analysis_type,
 
     # Save canvases
     clean_title = plot_title.replace(" ", "_")
-    outname_nocuts = os.path.join(final_output_dir, 
-                                  f"exclusivity_plots_{clean_title}_{topology}_no_cuts.png")
-    outname_cuts   = os.path.join(final_output_dir, 
-                                  f"exclusivity_plots_{clean_title}_{topology}_kinematic_cuts.png")
+    outname_nocuts = os.path.join(
+        final_output_dir, 
+        f"exclusivity_plots_{clean_title}_{topology}_no_cuts.png"
+    )
+    outname_cuts   = os.path.join(
+        final_output_dir, 
+        f"exclusivity_plots_{clean_title}_{topology}_kinematic_cuts.png"
+    )
 
     canvas.SaveAs(outname_nocuts)
     canvas_loose_cuts.SaveAs(outname_cuts)
@@ -424,12 +449,7 @@ def process_combination(analysis_type, run_period_key, topology, tree_dict, outp
     Returns (analysis_type, run_period_key, topology, cuts_dictionary).
     """
 
-    # ---------------------------------------------------------
-    #  FIX #2: Directly define run_period & plot_title from key
-    # ---------------------------------------------------------
-    # Instead of relying on searching "Fa18 Inb" in the string, 
-    # we know the dictionary key is "Fa18_inb", "Fa18_out", or "Sp19_inb".
-    # We'll build the "user-friendly" run_period string accordingly:
+    # Convert run_period_key to a user-friendly string
     if run_period_key == "Fa18_inb":
         run_period  = "RGA Fa18 Inb"
         period_text = "Fa18 Inb"
@@ -440,20 +460,21 @@ def process_combination(analysis_type, run_period_key, topology, tree_dict, outp
         run_period  = "RGA Sp19 Inb"
         period_text = "Sp19 Inb"
     else:
-        # fallback:
         run_period  = "Unknown"
         period_text = run_period_key
     #endif
 
-    # Build a better plot title:
+    # For now, we only do DVCS, so let's skip eppi0 to avoid "theta_pi0_pi0" issues
+    # If you *did* want eppi0, you'd have to ensure the file and variable exist.
     if analysis_type == "dvcs":
         data_tree = tree_dict["dvcs_data"][run_period_key]
         mc_tree   = tree_dict["dvcs_mc"][run_period_key]
         plot_title = f"{period_text} DVCS"
     else:
-        # eppi0
+        # (We won't actually run this branch for now, 
+        #  but here's how you'd do it for eppi0.)
         data_tree = tree_dict["eppi0_mc_recon"][run_period_key]
-        mc_tree   = tree_dict["eppi0_bkg"][run_period_key]
+        mc_tree   = tree_dict["eppi0_mc_gen"][run_period_key]
         plot_title = f"{period_text} eppi0"
     #endif
 
@@ -472,41 +493,37 @@ def process_combination(analysis_type, run_period_key, topology, tree_dict, outp
 # 6) main
 # --------------------------------------------------------------------------------------
 def main():
-    # We'll create a single "exclusivity_plots" folder
+    """
+    Main driver. We only submit DVCS tasks right now, ignoring eppi0 
+    so we don't encounter 'theta_pi0_pi0' issues. 
+    """
+
     output_dir = "exclusivity_plots"
     os.makedirs(output_dir, exist_ok=True)
 
-    # Load all ROOT files
     tree_dict = load_root_files()
 
+    # We'll only do DVCS tasks for now:
+    analysis_type = "dvcs"
     topologies = ["(FD,FD)", "(CD,FD)", "(CD,FT)"]
-    dvcs_period_keys   = ["Fa18_inb", "Fa18_out", "Sp19_inb"]
-    eppi0_period_keys  = ["Fa18_inb", "Fa18_out", "Sp19_inb"]
+    dvcs_period_keys = ["Fa18_inb", "Fa18_out", "Sp19_inb"]
 
     tasks = []
     for rp in dvcs_period_keys:
         for topo in topologies:
-            tasks.append(("dvcs", rp, topo))
-        #endfor
-    #endfor
-    for rp in eppi0_period_keys:
-        for topo in topologies:
-            tasks.append(("eppi0", rp, topo))
+            tasks.append((analysis_type, rp, topo))
         #endfor
     #endfor
 
     combined_cuts = {}
 
-    # Use a ProcessPoolExecutor for parallel runs, ignoring "already exists" errors
-    # We do exist_ok=True on directory creation, so no crash even if multiple processes
-    # attempt to create the same subdir. 
     with concurrent.futures.ProcessPoolExecutor() as executor:
         future_to_task = {
-            executor.submit(process_combination, 
-                            analysis_type=a, 
-                            run_period_key=rp, 
-                            topology=topo, 
-                            tree_dict=tree_dict, 
+            executor.submit(process_combination,
+                            analysis_type=a,
+                            run_period_key=rp,
+                            topology=topo,
+                            tree_dict=tree_dict,
                             output_dir=output_dir): (a, rp, topo)
             for (a, rp, topo) in tasks
         }
@@ -525,7 +542,7 @@ def main():
         #endfor
     #endwith
 
-    # Save combined results to JSON
+    # Save results
     out_json = os.path.join(output_dir, "combined_exclusivity_cuts.json")
     jdict = {}
     for (analysis, rp, topo), val in combined_cuts.items():
@@ -537,7 +554,7 @@ def main():
         json.dump(jdict, f, indent=4)
     #endwith
 
-    print(f"All cuts saved to {out_json}")
+    print(f"All DVCS cuts saved to {out_json}")
 #enddef
 
 
