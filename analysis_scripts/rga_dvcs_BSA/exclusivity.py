@@ -196,103 +196,57 @@ def save_final_cuts(period_code, topology, output_dir, cuts_dict):
         json.dump(cuts_dict, f, indent=2)
     print(f"   ✅ Wrote final JSON => {out_path}")
 
-# ------------------------------------------------------------------------------
-# The 1D Crystal Ball approach (inline formula)
-# ------------------------------------------------------------------------------
-def fit_crystal_ball_lambda(hist, var_name, is_data=True, return_tf1=False):
+def fit_gaussian_left_side(hist, var_name, is_data=True, return_tf1=False):
     """
-    Same as before, but now we optionally return the TF1 object so we can draw it.
+    Fits a simple Gaussian to the LEFT side of the distribution:
+      - from x_min (e.g., 0) up to the histogram's peak position.
+    Returns (fit_mu, fit_sigma) or (fit_mu, fit_sigma, TF1) if return_tf1=True.
     """
-    cxx_code = r'''
-Double_t crystalBallLambda(Double_t x,
-                           Double_t p0, Double_t p1,
-                           Double_t p2, Double_t p3, Double_t p4)
-{
-   double A     = p0;
-   double mean  = p1;
-   double sigma = p2;
-   double alpha = p3;
-   double n     = p4;
+    # 1) Decide the left boundary. For many variables, 0 is a natural left edge.
+    #    If your histogram's x-axis minimum is > 0, you could use that instead.
+    x_left = 0
+    # or x_left = hist.GetXaxis().GetXmin() if that’s more appropriate
 
-   // "t" is the number of sigma from the mean
-   double t = (x - mean) / sigma;
-   // If alpha < 0, flip sign so tail is on the other side
-   if (alpha < 0) t = -t;
-   double absAlpha = fabs(alpha);
+    # 2) Find the bin with the maximum content:
+    peak_bin = hist.GetMaximumBin()
+    x_peak   = hist.GetBinCenter(peak_bin)
 
-   // Core Gaussian part
-   if (t > -absAlpha) {
-       return A * exp(-0.5 * t * t);
-   } 
-   // Power-law tail part
-   else {
-       double nDivAbsA = n / absAlpha;
-       double AA = pow(nDivAbsA, n) * exp(-0.5 * absAlpha * absAlpha);
-       double B  = nDivAbsA - absAlpha;
-       return A * AA * pow(B - t, -n);
-   }
-}
-'''
+    # 3) Build a standard Gaussian TF1 from x_left to x_peak
+    func_name = f"gausLeft_{var_name}_{'data' if is_data else 'mc'}"
+    fgaus = ROOT.TF1(func_name, "gaus(0)", x_left, x_peak)
 
-    # Declare once
-    if not hasattr(ROOT, "crystalBallLambdaDeclared"):
-        ROOT.gInterpreter.Declare(cxx_code)
-        ROOT.crystalBallLambdaDeclared = True
-    #endif
+    # 4) Initial parameter guesses:
+    #    param0 = amplitude, param1 = mean, param2 = sigma
+    amp_guess  = hist.GetMaximum()
+    mean_guess = hist.GetMean()   # might be bigger than x_peak if there's a long tail
+    sigma_guess= hist.GetRMS()/2.0
 
-    # Build the TFormula expression:
-    x_min = hist.GetXaxis().GetXmin()
-    x_max = hist.GetXaxis().GetXmax()
-    func_name = f"cbLambda_{var_name}_{'data' if is_data else 'mc'}"
+    fgaus.SetParameter(0, amp_guess)
+    fgaus.SetParameter(1, mean_guess)
+    fgaus.SetParameter(2, sigma_guess)
 
-    fcb = ROOT.TF1(func_name, "crystalBallLambda(x,[0],[1],[2],[3],[4])",
-                   x_min, x_max)
+    # If you want to ensure sigma>0, you can do:
+    fgaus.SetParLimits(2, 1e-6, 5.0)
 
-    # Initial guesses
-    A_guess = hist.GetMaximum()
-    alpha_guess = 1.5
-    n_guess = 2.0
+    # 5) Fit options:
+    #    - "R" => respect the user-defined range (x_left to x_peak).
+    #    - "0" => do not draw automatically
+    #    - "Q" => quiet
+    fit_opts = "R0Q"
+    hist.Fit(fgaus, fit_opts)
 
-    if var_name in ["theta_gamma_gamma", "theta_pi0_pi0"]:
-        mu_guess    = 0.15
-        sigma_guess = 0.10
-    elif var_name == "pTmiss":
-        mu_guess    = 0.04
-        sigma_guess = 0.02
-    else:
-        mu_guess    = hist.GetMean()
-        sigma_guess = hist.GetRMS() / 2.0
-    #endif
+    # 6) Extract results:
+    fit_amp   = fgaus.GetParameter(0)
+    fit_mu    = fgaus.GetParameter(1)
+    fit_sigma = fgaus.GetParameter(2)
 
-    # Set parameters
-    fcb.SetParameter(0, A_guess)      # amplitude
-    fcb.SetParameter(1, mu_guess)     # mean
-    fcb.SetParameter(2, sigma_guess)  # sigma
-    fcb.SetParameter(3, alpha_guess)  # alpha
-    fcb.SetParameter(4, n_guess)      # n
-
-    # Keep sigma > 0
-    fcb.SetParLimits(2, 1e-5, 5.0)
-
-    # Fit
-    fit_opts = "R0Q"  # R=fit range, 0=no draw, Q=quiet
-    hist.Fit(fcb, fit_opts)
-
-    fit_mu    = fcb.GetParameter(1)  # mean
-    fit_sigma = fcb.GetParameter(2)  # sigma
-
-    # Optionally return TF1 so we can draw it
     if return_tf1:
-        return (fit_mu, fit_sigma, fcb)
+        return (fit_mu, fit_sigma, fgaus)
     else:
         return (fit_mu, fit_sigma)
 #enddef
 
 def plot_results(data_hists, mc_hists, plot_title, topology, output_dir, suffix="cut_0"):
-    """
-    Plots the data_hists vs mc_hists, fits them if the variable is in crystal_vars,
-    and overlays the fitted function as a thin line.
-    """
     variables = list(data_hists.keys())
     canvas = ROOT.TCanvas("canvas", "", 2400, 1200)
     canvas.Divide(4, 2, 0.002, 0.002)
@@ -303,6 +257,7 @@ def plot_results(data_hists, mc_hists, plot_title, topology, output_dir, suffix=
     base_legend.SetBorderSize(1)
     base_legend.SetMargin(0.12)
 
+    # We'll do left-side Gaussian fits for these variables:
     crystal_vars = ["theta_gamma_gamma", "theta_pi0_pi0", "pTmiss"]
 
     for i, var in enumerate(variables):
@@ -328,6 +283,7 @@ def plot_results(data_hists, mc_hists, plot_title, topology, output_dir, suffix=
         mh.SetMarkerStyle(21)
         mh.SetMarkerSize(1.2)
 
+        # Normalize
         if dh.Integral() > 0:
             dh.Scale(1.0 / dh.Integral())
         if mh.Integral() > 0:
@@ -343,31 +299,28 @@ def plot_results(data_hists, mc_hists, plot_title, topology, output_dir, suffix=
         mh.SetMaximum(max_val)
 
         if var in crystal_vars:
-            # Fit data, returning the TF1 so we can draw it
-            mu_data, sigma_data, fcb_data = fit_crystal_ball_lambda(dh, var, True, return_tf1=True)
-            # Fit MC
-            mu_mc, sigma_mc, fcb_mc = fit_crystal_ball_lambda(mh, var, False, return_tf1=True)
+            # Use the left-side Gaussian fit for both data and MC
+            mu_data, sigma_data, fgaus_data = fit_gaussian_left_side(dh, var, True, return_tf1=True)
+            mu_mc, sigma_mc, fgaus_mc       = fit_gaussian_left_side(mh, var, False, return_tf1=True)
 
-            # Draw histograms
             dh.Draw("E1")
             mh.Draw("E1 SAME")
 
-            # Draw the fitted function on top of each histogram
-            # Increase Npx for a smoother line
-            fcb_data.SetNpx(1000)
-            fcb_data.SetLineColor(ROOT.kBlue + 1)
-            fcb_data.SetLineStyle(2)   # dashed
-            fcb_data.SetLineWidth(2)
-            fcb_data.Draw("SAME")
+            # Draw the fitted Gaussian over the histogram
+            fgaus_data.SetNpx(1000)
+            fgaus_data.SetLineColor(ROOT.kBlue + 1)
+            fgaus_data.SetLineStyle(2)   # dashed
+            fgaus_data.SetLineWidth(2)
+            fgaus_data.Draw("SAME")
 
-            fcb_mc.SetNpx(1000)
-            fcb_mc.SetLineColor(ROOT.kRed + 1)
-            fcb_mc.SetLineStyle(2)    # dashed
-            fcb_mc.SetLineWidth(2)
-            fcb_mc.Draw("SAME")
+            fgaus_mc.SetNpx(1000)
+            fgaus_mc.SetLineColor(ROOT.kRed + 1)
+            fgaus_mc.SetLineStyle(2)    # dashed
+            fgaus_mc.SetLineWidth(2)
+            fgaus_mc.Draw("SAME")
 
         else:
-            # Just raw histogram means
+            # If not in crystal_vars, just draw the hist
             mu_data    = dh.GetMean()
             sigma_data = dh.GetStdDev()
             mu_mc      = mh.GetMean()
