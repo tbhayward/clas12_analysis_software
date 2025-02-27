@@ -149,12 +149,16 @@ def process_events(tree, topology, analysis_type, is_mc):
 # 5) plot_results (fixed empty plots and grid lines)
 # --------------------------------------------------------------------------------------
 def plot_results(data_hists, mc_hists, plot_title, topology, output_dir):
-    """Create publication-quality plots with proper styling"""
+    """
+    Create publication-quality plots with proper styling.
+    This version ensures histogram normalization is done
+    before computing the maximum scale on the y-axis.
+    """
     variables = list(data_hists.keys())
     canvas = ROOT.TCanvas("canvas", "", 2400, 1200)
     canvas.Divide(4, 2, 0.002, 0.002)
     
-    # Create common legend prototype
+    # Create a base legend (we'll clone it for each pad to keep formatting).
     leg = ROOT.TLegend(0.65, 0.75, 0.92, 0.89)
     leg.SetFillStyle(0)
     leg.SetTextFont(42)
@@ -162,49 +166,55 @@ def plot_results(data_hists, mc_hists, plot_title, topology, output_dir):
     leg.SetMargin(0.12)
 
     for i, var in enumerate(variables):
-        pad = canvas.cd(i+1)
-        pad.SetTicks(1, 1)  # Removed SetGrid()
+        pad = canvas.cd(i + 1)
+        pad.SetTicks(1, 1)  # Grid removed, but ticks remain.
 
-        # Get histograms
+        # Retrieve histograms
         dh = data_hists[var]
         mh = mc_hists[var]
 
-        # Configure styles
+        # Set line colors, widths, markers, etc.
         dh.SetLineColor(ROOT.kBlue)
         dh.SetLineWidth(3)
         dh.SetMarkerStyle(20)
         dh.SetMarkerSize(1.2)
-        
+
         mh.SetLineColor(ROOT.kRed)
         mh.SetLineWidth(3)
         mh.SetMarkerStyle(21)
         mh.SetMarkerSize(1.2)
 
-        # Normalize using original counts
-        max_val = max(dh.GetMaximum(), mh.GetMaximum()) * 1.2
+        # Scale the histograms *before* setting maximum
         for h in [dh, mh]:
             if h.Integral() > 0:
-                h.Scale(1.0/h.Integral())
+                h.Scale(1.0 / h.Integral())
+            #endif
             h.GetYaxis().SetTitle("Normalized Counts")
             h.GetYaxis().SetTitleOffset(1.4)
             h.GetXaxis().SetTitle(format_label_name(var, "dvcs"))
-            h.SetMaximum(max_val)
+        #endfor
+
+        # Now determine the largest bin content after scaling
+        max_val = max(dh.GetMaximum(), mh.GetMaximum()) * 1.2
+        dh.SetMaximum(max_val)
+        mh.SetMaximum(max_val)
 
         # Draw with error bars
         dh.Draw("E1")
         mh.Draw("E1 SAME")
 
-        # Clone and position legend for each pad
+        # Clone and position a legend for each pad
         pad_leg = leg.Clone()
         pad_leg.AddEntry(dh, "Data", "lep")
         pad_leg.AddEntry(mh, "MC", "lep")
         pad_leg.Draw()
+    #endfor
 
     # Save output
-    canvas.cd()
     clean_title = plot_title.replace(" ", "_").replace("(", "").replace(")", "")
     canvas.SaveAs(os.path.join(output_dir, f"{clean_title}_{topology}_comparison.png"))
     del canvas
+#enddef
 
 # --------------------------------------------------------------------------------------
 # 6) process_period (with timing and resource monitoring)
