@@ -4,6 +4,7 @@ import os
 import json
 import math
 import ROOT
+ROOT.gROOT.SetBatch(True)
 import concurrent.futures  # for parallel processing
 
 # --------------------------------------------------------------------------------------
