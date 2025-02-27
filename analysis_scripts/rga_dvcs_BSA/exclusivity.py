@@ -100,6 +100,43 @@ def process_period_multi_stage(period, output_dir, analysis_type):
 #enddef
 
 
+def get_hist_configs(analysis_type):
+    """
+    Returns a dictionary mapping variable_name -> (nbins, xlow, xhigh).
+    For DVCS: we include theta_gamma_gamma, but NOT theta_pi0_pi0.
+    For eppi0: we include theta_pi0_pi0, but NOT theta_gamma_gamma.
+
+    We also include Mx2_2 so it appears in the final plots.
+    """
+    if analysis_type == "dvcs":
+        # 8 variables total (e.g. open_angle_ep2, theta_gamma_gamma, pTmiss, xF, Emiss2, Mx2, Mx2_1, Mx2_2)
+        return {
+            "open_angle_ep2":    (100, 0, 40),
+            "theta_gamma_gamma": (100, 0, 2),
+            "pTmiss":            (100, 0, 0.3),
+            "xF":                (100, -0.4, 0.2),
+            "Emiss2":            (100, -1, 2),
+            "Mx2":               (100, -0.015, 0.015),
+            "Mx2_1":             (100, -1, 1.5),
+            "Mx2_2":             (100, 0, 3)
+        }
+    elif analysis_type == "eppi0":
+        # 8 variables total for eppi0 (replace theta_gamma_gamma w/ theta_pi0_pi0)
+        return {
+            "open_angle_ep2":    (100, 0, 40),
+            "theta_pi0_pi0":     (100, 0, 40),
+            "pTmiss":            (100, 0, 0.3),
+            "xF":                (100, -0.4, 0.2),
+            "Emiss2":            (100, -1, 2),
+            "Mx2":               (100, -0.015, 0.015),
+            "Mx2_1":             (100, -1, 1.5),
+            "Mx2_2":             (100, 0, 3)
+        }
+    else:
+        raise ValueError(f"Unrecognized analysis_type: {analysis_type}")
+    #enddef
+#enddef
+
 # -------------------------------------------------------------------------
 # fill_stage_histograms
 # -------------------------------------------------------------------------
@@ -112,17 +149,8 @@ def fill_stage_histograms(data_tree, mc_tree, topology, analysis_type,
 
     'stage_index' is just used for naming the histograms (like _stage0).
     """
-    hist_configs = {
-        "open_angle_ep2":    (100, 0, 40),
-        "theta_gamma_gamma": (100, 0, 2),
-        "theta_pi0_pi0":     (100, 0, 40),
-        "pTmiss":            (100, 0, 0.3),
-        "xF":                (100, -0.4, 0.2),
-        "Emiss2":            (100, -1, 2),
-        "Mx2":               (100, -0.015, 0.015),
-        "Mx2_1":             (100, -1, 1.5),
-        "Mx2_2":             (100, 0, 3)
-    }
+    # Get the correct dictionary for dvcs or eppi0
+    hist_configs = get_hist_configs(analysis_type)
 
     # Decide which "theta" variable to fill if analysis_type == "dvcs" or "eppi0"
     # But we already handle that in 'root_io.py' by only loading the correct branch name.
