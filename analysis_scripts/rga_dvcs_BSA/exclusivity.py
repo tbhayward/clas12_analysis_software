@@ -42,6 +42,7 @@ def process_period_multi_stage(period, output_dir, analysis_type):
         stage_vars[-1].append("theta_gamma_gamma")
     else:
         stage_vars[-1].append("theta_pi0_pi0")
+    #endif
 
     for topology in ["(FD,FD)", "(CD,FD)", "(CD,FT)"]:
         print(f"  🔄 Processing topology {topology}")
@@ -55,11 +56,13 @@ def process_period_multi_stage(period, output_dir, analysis_type):
                 trees["data"], trees["mc"], topology, analysis_type,
                 cumulative_cuts_dict, stage_index
             )
+            #endfor
 
             cut_label = f"cut_{stage_index}"
             plot_title = f"{run_info[1]}"
             plot_results(data_hists, mc_hists, plot_title, topology, output_dir, suffix=cut_label)
 
+            # Update the 3σ cut dictionary for the next stage
             if stage_index < len(stage_vars):
                 active_vars = stage_vars[stage_index]
                 update_cuts_dict(data_hists, mc_hists, cumulative_cuts_dict, active_vars)
@@ -82,6 +85,7 @@ def fill_stage_histograms(data_tree, mc_tree, topology, analysis_type, cuts_dict
         mc_name   = f"mc_{var}_stage{stage_index}"
         data_hists[var] = ROOT.TH1D(data_name, "", nbins, xlow, xhigh)
         mc_hists[var]   = ROOT.TH1D(mc_name,   "", nbins, xlow, xhigh)
+    #endfor
 
     def passes_topology(e):
         if topology == "(FD,FD)":
@@ -90,12 +94,16 @@ def fill_stage_histograms(data_tree, mc_tree, topology, analysis_type, cuts_dict
             return (e.detector1 == 2 and e.detector2 == 1)
         elif topology == "(CD,FT)":
             return (e.detector1 == 2 and e.detector2 == 0)
+        #endif
         return False
+    #enddef
 
     # Fill data
     for event in data_tree:
         if not passes_topology(event):
             continue
+        #endif
+
         if not apply_kinematic_cuts(
             event.t1, event.open_angle_ep2, 0.0,
             event.Emiss2, event.Mx2, event.Mx2_1, event.Mx2_2,
@@ -103,13 +111,17 @@ def fill_stage_histograms(data_tree, mc_tree, topology, analysis_type, cuts_dict
             analysis_type, "data", "", topology
         ):
             continue
+        #endif
+
         if not passes_3sigma_cuts(event, False, cuts_dict):
             continue
+        #endif
 
         for var in hist_configs.keys():
             val = getattr(event, var, None)
             if val is not None:
                 data_hists[var].Fill(val)
+            #endif
         #endfor
     #endfor
 
@@ -117,6 +129,8 @@ def fill_stage_histograms(data_tree, mc_tree, topology, analysis_type, cuts_dict
     for event in mc_tree:
         if not passes_topology(event):
             continue
+        #endif
+
         if not apply_kinematic_cuts(
             event.t1, event.open_angle_ep2, 0.0,
             event.Emiss2, event.Mx2, event.Mx2_1, event.Mx2_2,
@@ -124,13 +138,17 @@ def fill_stage_histograms(data_tree, mc_tree, topology, analysis_type, cuts_dict
             analysis_type, "mc", "", topology
         ):
             continue
+        #endif
+
         if not passes_3sigma_cuts(event, True, cuts_dict):
             continue
+        #endif
 
         for var in hist_configs.keys():
             val = getattr(event, var, None)
             if val is not None:
                 mc_hists[var].Fill(val)
+            #endif
         #endfor
     #endfor
 
@@ -141,8 +159,8 @@ def get_hist_configs(analysis_type):
     if analysis_type == "dvcs":
         return {
             "open_angle_ep2":    (100, 0, 60),
-            "theta_gamma_gamma": (100, 0, 2),
-            "pTmiss":            (100, 0, 0.3),
+            "theta_gamma_gamma": (100, -0.2, 2),
+            "pTmiss":            (100, -0.05, 0.3),
             "xF":                (100, -0.4, 0.2),
             "Emiss2":            (100, -1, 2),
             "Mx2":               (100, -0.025, 0.025),
@@ -152,8 +170,8 @@ def get_hist_configs(analysis_type):
     elif analysis_type == "eppi0":
         return {
             "open_angle_ep2":    (100, 0, 60),
-            "theta_pi0_pi0":     (100, 0, 2),
-            "pTmiss":            (100, 0, 0.3),
+            "theta_pi0_pi0":     (100, -0.2, 2),
+            "pTmiss":            (100, -0.05, 0.3),
             "xF":                (100, -0.4, 0.2),
             "Emiss2":            (100, -1, 2),
             "Mx2":               (100, -0.025, 0.025),
@@ -162,17 +180,20 @@ def get_hist_configs(analysis_type):
         }
     else:
         raise ValueError(f"Unrecognized analysis_type: {analysis_type}")
+    #endif
+#enddef
 
 def update_cuts_dict(data_hists, mc_hists, cumulative_dict, active_vars):
     """
-    For each var in active_vars, we do a crystal-ball fit for pTmiss & theta_* to get (mu, sigma).
+    For each var in active_vars, we do a left-side Gaussian fit for pTmiss & theta_* to get (mu, sigma).
     That way, the next stage's 3σ cut uses these fitted values. For other variables,
     we just store the raw histogram mean/std.
     """
     for var in active_vars:
         if var in ["theta_gamma_gamma", "theta_pi0_pi0", "pTmiss"]:
-            fit_mu_data, fit_sigma_data = fit_crystal_ball_lambda(data_hists[var], var, True)
-            fit_mu_mc,   fit_sigma_mc   = fit_crystal_ball_lambda(mc_hists[var],   var, False)
+            # Use left-side Gaussian to get (mu, sigma)
+            fit_mu_data, fit_sigma_data = fit_gaussian_left_side(data_hists[var], var, True)
+            fit_mu_mc,   fit_sigma_mc   = fit_gaussian_left_side(mc_hists[var],   var, False)
 
             cumulative_dict["data"][var] = {"mean": fit_mu_data, "std": fit_sigma_data}
             cumulative_dict["mc"][var]   = {"mean": fit_mu_mc,   "std": fit_sigma_mc}
@@ -194,49 +215,43 @@ def save_final_cuts(period_code, topology, output_dir, cuts_dict):
     out_path = os.path.join(output_dir, filename)
     with open(out_path, "w") as f:
         json.dump(cuts_dict, f, indent=2)
+    #endif
     print(f"   ✅ Wrote final JSON => {out_path}")
+#enddef
 
 def fit_gaussian_left_side(hist, var_name, is_data=True, return_tf1=False):
     """
     Fits a simple Gaussian to the LEFT side of the distribution:
-      - from x_min (e.g., 0) up to the histogram's peak position.
+      - from x_min (0) up to ~some fraction of the peak position.
     Returns (fit_mu, fit_sigma) or (fit_mu, fit_sigma, TF1) if return_tf1=True.
     """
-    # 1) Decide the left boundary. For many variables, 0 is a natural left edge.
-    #    If your histogram's x-axis minimum is > 0, you could use that instead.
+    # 1) Decide the left boundary. Often 0 is a natural left edge for these variables.
     x_left = 0
-    # or x_left = hist.GetXaxis().GetXmin() if that’s more appropriate
-
     # 2) Find the bin with the maximum content:
     peak_bin = hist.GetMaximumBin()
     x_peak   = hist.GetBinCenter(peak_bin)
 
-    # 3) Build a standard Gaussian TF1 from x_left to x_peak
+    # 3) Build a standard Gaussian TF1 from x_left to 0.85*x_peak (avoid big tails)
     func_name = f"gausLeft_{var_name}_{'data' if is_data else 'mc'}"
     fgaus = ROOT.TF1(func_name, "gaus(0)", x_left, 0.85*x_peak)
 
     # 4) Initial parameter guesses:
-    #    param0 = amplitude, param1 = mean, param2 = sigma
     amp_guess  = hist.GetMaximum()
-    mean_guess = hist.GetMean()   # might be bigger than x_peak if there's a long tail
-    sigma_guess= hist.GetRMS()/2.0
+    mean_guess = hist.GetMean()
+    sigma_guess= hist.GetRMS() / 2.0
 
     fgaus.SetParameter(0, amp_guess)
     fgaus.SetParameter(1, mean_guess)
     fgaus.SetParameter(2, sigma_guess)
 
-    # If you want to ensure sigma>0, you can do:
+    # Keep sigma > 0
     fgaus.SetParLimits(2, 1e-6, 5.0)
 
-    # 5) Fit options:
-    #    - "R" => respect the user-defined range (x_left to x_peak).
-    #    - "0" => do not draw automatically
-    #    - "Q" => quiet
+    # 5) Fit only in [x_left, 0.85*x_peak], quietly
     fit_opts = "R0Q"
     hist.Fit(fgaus, fit_opts)
 
-    # 6) Extract results:
-    fit_amp   = fgaus.GetParameter(0)
+    # 6) Extract results
     fit_mu    = fgaus.GetParameter(1)
     fit_sigma = fgaus.GetParameter(2)
 
@@ -244,6 +259,7 @@ def fit_gaussian_left_side(hist, var_name, is_data=True, return_tf1=False):
         return (fit_mu, fit_sigma, fgaus)
     else:
         return (fit_mu, fit_sigma)
+    #endif
 #enddef
 
 def plot_results(data_hists, mc_hists, plot_title, topology, output_dir, suffix="cut_0"):
@@ -258,7 +274,7 @@ def plot_results(data_hists, mc_hists, plot_title, topology, output_dir, suffix=
     base_legend.SetMargin(0.12)
 
     # We'll do left-side Gaussian fits for these variables:
-    crystal_vars = ["theta_gamma_gamma", "theta_pi0_pi0", "pTmiss"]
+    gaussian_vars = ["theta_gamma_gamma", "theta_pi0_pi0", "pTmiss"]
 
     for i, var in enumerate(variables):
         pad = canvas.cd(i + 1)
@@ -286,8 +302,10 @@ def plot_results(data_hists, mc_hists, plot_title, topology, output_dir, suffix=
         # Normalize
         if dh.Integral() > 0:
             dh.Scale(1.0 / dh.Integral())
+        #endif
         if mh.Integral() > 0:
             mh.Scale(1.0 / mh.Integral())
+        #endif
 
         dh.GetYaxis().SetTitle("Normalized Counts")
         dh.GetXaxis().SetTitle(format_label_name(var, "dvcs"))
@@ -298,7 +316,7 @@ def plot_results(data_hists, mc_hists, plot_title, topology, output_dir, suffix=
         dh.SetMaximum(max_val)
         mh.SetMaximum(max_val)
 
-        if var in crystal_vars:
+        if var in gaussian_vars:
             # Use the left-side Gaussian fit for both data and MC
             mu_data, sigma_data, fgaus_data = fit_gaussian_left_side(dh, var, True, return_tf1=True)
             mu_mc, sigma_mc, fgaus_mc       = fit_gaussian_left_side(mh, var, False, return_tf1=True)
@@ -318,9 +336,8 @@ def plot_results(data_hists, mc_hists, plot_title, topology, output_dir, suffix=
             fgaus_mc.SetLineStyle(2)    # dashed
             fgaus_mc.SetLineWidth(2)
             fgaus_mc.Draw("SAME")
-
         else:
-            # If not in crystal_vars, just draw the hist
+            # If not in gaussian_vars, just draw the hist
             mu_data    = dh.GetMean()
             sigma_data = dh.GetStdDev()
             mu_mc      = mh.GetMean()
@@ -364,17 +381,21 @@ def combine_results(output_dir):
             fpath = os.path.join(output_dir, fname)
             if not os.path.exists(fpath):
                 continue
+            #endif
             key_name = f"{period_code}_{topo}"
             try:
                 with open(fpath, "r") as f:
                     combined[key_name] = json.load(f)
+                #endwith
             except FileNotFoundError:
                 print(f"⚠️ Missing file {fpath}")
+            #endtry
         #endfor
     #endfor
 
     combined_path = os.path.join(output_dir, "combined_cuts.json")
     with open(combined_path, "w") as f:
         json.dump(combined, f, indent=2)
+    #endif
     print(f"✅ Wrote combined JSON => {combined_path}")
 #enddef
