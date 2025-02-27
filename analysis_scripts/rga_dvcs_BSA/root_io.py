@@ -3,14 +3,17 @@
 import os
 import ROOT
 
-# Configure ROOT to run in batch mode
+# Configure ROOT to run in batch mode so we don't pop up windows
 ROOT.gROOT.SetBatch(True)
 
 def load_root_files(period):
     """
-    Load ROOT files with only required branches.
+    Load ROOT files with only required branches. We handle DVCS or eppi0
+    by checking if period starts with 'eppi0' or 'DVCS'.
     Returns (period, {'data': TChain, 'mc': TChain}).
     """
+    # Mapping from period -> file paths
+    # We'll prefix them with "DVCS_" or "eppi0_" to differentiate
     file_map = {
         "DVCS_Fa18_inb": {
             "data": "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/data/dvcs/rga_fa18_inb_epgamma.root",
@@ -23,19 +26,44 @@ def load_root_files(period):
         "DVCS_Sp19_inb": {
             "data": "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/data/dvcs/rga_sp19_inb_epgamma.root",
             "mc":   "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/mc/dvcsgen/rec_dvcsgen_rga_sp19_inb_50nA_10200MeV_epgamma.root"
+        },
+        "eppi0_Fa18_inb": {
+            "data": "/work/clas12/thayward/CLAS12_exclusive/eppi0/data/pass2/data/rga_fa18_inb_eppi0.root",
+            "mc":   "/work/clas12/thayward/CLAS12_exclusive/eppi0/data/pass2/mc/hipo_files/rec_aaogen_norad_rga_fa18_inb_50nA_10604MeV_eppi0.root"
+        },
+        "eppi0_Fa18_out": {
+            "data": "/work/clas12/thayward/CLAS12_exclusive/eppi0/data/pass2/data/rga_fa18_out_eppi0.root",
+            "mc":   "/work/clas12/thayward/CLAS12_exclusive/eppi0/data/pass2/mc/hipo_files/rec_aaogen_norad_rga_fa18_out_50nA_10604MeV_eppi0.root"
+        },
+        "eppi0_Sp19_inb": {
+            "data": "/work/clas12/thayward/CLAS12_exclusive/eppi0/data/pass2/data/rga_sp19_inb_eppi0.root",
+            "mc":   "/work/clas12/thayward/CLAS12_exclusive/eppi0/data/pass2/mc/hipo_files/rec_aaogen_norad_rga_sp19_inb_50nA_10200MeV_eppi0.root"
         }
     }
+
+    if period not in file_map:
+        raise ValueError(f"Unrecognized period: {period}. Check your file_map keys.")
 
     trees = {}
     for category in ["data", "mc"]:
         chain = ROOT.TChain("PhysicsEvents")
         chain.Add(file_map[period][category])
 
-        # Activate only the required branches:
-        branches = [
-            "detector1", "detector2", "t1", "open_angle_ep2", "theta_gamma_gamma",
-            "Emiss2", "Mx2", "Mx2_1", "Mx2_2", "pTmiss", "xF"
-        ]
+        # If period starts with 'eppi0', we assume we need 'theta_pi0_pi0' branch
+        # Otherwise we assume DVCS with 'theta_gamma_gamma'
+        if period.startswith("eppi0"):
+            branches = [
+                "detector1", "detector2", "t1", "open_angle_ep2", "theta_pi0_pi0",
+                "Emiss2", "Mx2", "Mx2_1", "Mx2_2", "pTmiss", "xF"
+            ]
+        else:
+            branches = [
+                "detector1", "detector2", "t1", "open_angle_ep2", "theta_gamma_gamma",
+                "Emiss2", "Mx2", "Mx2_1", "Mx2_2", "pTmiss", "xF"
+            ]
+        #endfor
+
+        # Activate only these required branches:
         for br in branches:
             chain.SetBranchStatus(br, 1)
         #endfor

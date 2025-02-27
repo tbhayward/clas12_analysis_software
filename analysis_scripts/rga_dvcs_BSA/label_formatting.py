@@ -1,12 +1,11 @@
 # label_formatting.py
 
 import ROOT
-# Configure ROOT to run in batch mode
-ROOT.gROOT.SetBatch(True)
 
 def configure_global_style():
     """
     Applies a global ROOT style for consistent plotting.
+    Called once at the beginning in main.py.
     """
     style = ROOT.gStyle
     style.SetOptStat(0)
@@ -27,19 +26,27 @@ def configure_global_style():
 def format_label_name(variable, analysis_type):
     """
     Returns axis label text for a given variable & analysis type.
+    If 'analysis_type' == 'eppi0', we might replace gamma with pi0 in the label.
     """
     labels = {
         "open_angle_ep2": "#theta_{e'#gamma} (deg)",
-        "Mx2_2": "Miss M_{e'#gamma}^{2} (GeV^{2})",
         "theta_gamma_gamma": "#theta_{#gamma#gamma} (deg)",
         "theta_pi0_pi0": "#theta_{#pi^{0}#pi^{0}} (deg)",
-        "xF": "x_{F}",
         "Emiss2": "Miss E^{2} (GeV^{2})",
         "Mx2": "Miss M^{2} (GeV^{2})",
         "Mx2_1": "Miss M_{e'p'}^{2} (GeV^{2})",
-        "pTmiss": "p_{T}^{miss} (GeV)"
+        "Mx2_2": "Miss M_{e'#gamma}^{2} (GeV^{2})",
+        "pTmiss": "p_{T}^{miss} (GeV)",
+        "xF": "x_{F}",
+        # We can also do an open_angle_ep2 if eppi0 vs dvcs, etc.
     }
+
     if analysis_type == "eppi0":
+        # eppi0 might need to replace some gamma references with pi0.
+        # For instance, we might rename Mx2_2 to Miss M_{e'#pi^{0}}^{2}, etc.
+        # But below is just an example:
         return labels.get(variable, variable).replace("#gamma", "#pi^{0}")
-    return labels.get(variable, variable)
+    else:
+        return labels.get(variable, variable)
+    #endif
 #enddef
