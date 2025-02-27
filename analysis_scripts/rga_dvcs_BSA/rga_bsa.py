@@ -151,40 +151,45 @@ def process_events(tree, topology, analysis_type, is_mc):
 def plot_results(data_hists, mc_hists, plot_title, topology, output_dir):
     """
     Create publication-quality plots with proper styling.
-    This version ensures histogram normalization is done
-    before computing the maximum scale on the y-axis.
+    This version:
+      - Normalizes each histogram before computing the maximum.
+      - Sets the y-axis range to 1.2x the largest normalized bin.
+      - Plots data in blue, MC in red.
+      - Appends each histogram’s (mu, sigma) to the legend entry.
     """
     variables = list(data_hists.keys())
     canvas = ROOT.TCanvas("canvas", "", 2400, 1200)
     canvas.Divide(4, 2, 0.002, 0.002)
     
-    # Create a base legend (we'll clone it for each pad to keep formatting).
-    leg = ROOT.TLegend(0.65, 0.75, 0.92, 0.89)
-    leg.SetFillStyle(0)
-    leg.SetTextFont(42)
-    leg.SetBorderSize(1)
-    leg.SetMargin(0.12)
+    # Create a base legend we will clone in each pad.
+    base_legend = ROOT.TLegend(0.65, 0.75, 0.92, 0.89)
+    base_legend.SetFillStyle(0)
+    base_legend.SetTextFont(42)
+    base_legend.SetBorderSize(1)
+    base_legend.SetMargin(0.12)
 
     for i, var in enumerate(variables):
         pad = canvas.cd(i + 1)
-        pad.SetTicks(1, 1)  # Grid removed, but ticks remain.
+        pad.SetTicks(1, 1)  # Ticks only (no grid).
 
         # Retrieve histograms
         dh = data_hists[var]
         mh = mc_hists[var]
 
-        # Set line colors, widths, markers, etc.
+        # Set colors/styles: Data in blue, MC in red
         dh.SetLineColor(ROOT.kBlue)
+        dh.SetMarkerColor(ROOT.kBlue)
         dh.SetLineWidth(3)
         dh.SetMarkerStyle(20)
         dh.SetMarkerSize(1.2)
 
         mh.SetLineColor(ROOT.kRed)
+        mh.SetMarkerColor(ROOT.kRed)
         mh.SetLineWidth(3)
         mh.SetMarkerStyle(21)
         mh.SetMarkerSize(1.2)
 
-        # Scale the histograms *before* setting maximum
+        # Scale (normalize) the histograms before setting maximum
         for h in [dh, mh]:
             if h.Integral() > 0:
                 h.Scale(1.0 / h.Integral())
@@ -194,19 +199,25 @@ def plot_results(data_hists, mc_hists, plot_title, topology, output_dir):
             h.GetXaxis().SetTitle(format_label_name(var, "dvcs"))
         #endfor
 
-        # Now determine the largest bin content after scaling
+        # Now find the largest bin content after scaling
         max_val = max(dh.GetMaximum(), mh.GetMaximum()) * 1.2
         dh.SetMaximum(max_val)
         mh.SetMaximum(max_val)
 
-        # Draw with error bars
+        # Compute mu and sigma for each
+        mu_data = dh.GetMean()
+        sigma_data = dh.GetStdDev()
+        mu_mc   = mh.GetMean()
+        sigma_mc = mh.GetStdDev()
+
+        # Draw the histograms with error bars
         dh.Draw("E1")
         mh.Draw("E1 SAME")
 
-        # Clone and position a legend for each pad
-        pad_leg = leg.Clone()
-        pad_leg.AddEntry(dh, "Data", "lep")
-        pad_leg.AddEntry(mh, "MC", "lep")
+        # Clone and position a legend for each pad; add mu and sigma text
+        pad_leg = base_legend.Clone()
+        pad_leg.AddEntry(dh, f"Data (#mu={mu_data:.3f}, #sigma={sigma_data:.3f})", "lep")
+        pad_leg.AddEntry(mh, f"MC (#mu={mu_mc:.3f}, #sigma={sigma_mc:.3f})", "lep")
         pad_leg.Draw()
     #endfor
 
