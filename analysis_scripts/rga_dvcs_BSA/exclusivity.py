@@ -8,7 +8,6 @@ from kin_cuts import apply_kinematic_cuts, passes_3sigma_cuts
 from label_formatting import format_label_name
 from root_io import load_root_files
 
-# 1) Multi-stage approach, single JSON at the end
 def process_period_multi_stage(period, output_dir, analysis_type):
     """
     We have 3 stages, plus a final pass:
@@ -34,23 +33,19 @@ def process_period_multi_stage(period, output_dir, analysis_type):
     }
     run_info = run_info_map.get(period_code, (period_code, period_code))
 
-    # 2) stage_vars
-    # Stage 0 => Mx2, Mx2_1
-    # Stage 1 => Emiss2, Mx2_2
-    # Stage 2 => pTmiss, xF, plus the "theta_neutral_neutral" variable
+    # Stage definitions
     stage_vars = [
-        ["Mx2", "Mx2_1"],
-        ["Emiss2", "Mx2_2"],
-        ["pTmiss", "xF"]  # We'll append the correct theta below
+        ["Mx2", "Mx2_1"],       # stage 0
+        ["Emiss2", "Mx2_2"],    # stage 1
+        ["pTmiss", "xF"]        # stage 2 => we will add the neutral angle
     ]
-    # If dvcs => "theta_gamma_gamma", else => "theta_pi0_pi0"
     if analysis_type == "dvcs":
         stage_vars[-1].append("theta_gamma_gamma")
     else:
         stage_vars[-1].append("theta_pi0_pi0")
     #endif
 
-    # 3) Loop topologies
+    # Loop topologies
     for topology in ["(FD,FD)", "(CD,FD)", "(CD,FT)"]:
         print(f"  🔄 Processing topology {topology}")
 
@@ -59,26 +54,25 @@ def process_period_multi_stage(period, output_dir, analysis_type):
 
         num_stages = len(stage_vars) + 1  # e.g. 3 + 1 = 4 total passes
         for stage_index in range(num_stages):
-            # 1) Fill histograms
+            # Fill histograms
             data_hists, mc_hists = fill_stage_histograms(
                 trees["data"], trees["mc"], topology, analysis_type,
                 cumulative_cuts_dict, stage_index
             )
 
-            # 2) Plot them
+            # Plot them
             cut_label = f"cut_{stage_index}"
             plot_title = f"{run_info[1]}"
             plot_results(data_hists, mc_hists, plot_title, topology, output_dir, suffix=cut_label)
 
-            # 3) If not the final pass, measure mu±3σ for stage_vars[stage_index]
-            #    Now we do crystal-ball fits for pTmiss/theta to store in dictionary
+            # If not the final pass, measure new mu±3σ for these variables
             if stage_index < len(stage_vars):
                 active_vars = stage_vars[stage_index]
                 update_cuts_dict(data_hists, mc_hists, cumulative_cuts_dict, active_vars)
             #endif
         #endfor
 
-        # 4) After final stage, save JSON once
+        # After final stage, save JSON once
         save_final_cuts(period_code, topology, output_dir, cumulative_cuts_dict)
     #endfor
 
@@ -86,7 +80,6 @@ def process_period_multi_stage(period, output_dir, analysis_type):
 #enddef
 
 
-# 2) Fill
 def fill_stage_histograms(data_tree, mc_tree, topology, analysis_type, cuts_dict, stage_index):
     hist_configs = get_hist_configs(analysis_type)
     data_hists = {}
@@ -126,7 +119,6 @@ def fill_stage_histograms(data_tree, mc_tree, topology, analysis_type, cuts_dict
             val = getattr(event, var, None)
             if val is not None:
                 data_hists[var].Fill(val)
-            #endif
         #endfor
     #endfor
 
@@ -148,7 +140,6 @@ def fill_stage_histograms(data_tree, mc_tree, topology, analysis_type, cuts_dict
             val = getattr(event, var, None)
             if val is not None:
                 mc_hists[var].Fill(val)
-            #endif
         #endfor
     #endfor
 
@@ -156,7 +147,6 @@ def fill_stage_histograms(data_tree, mc_tree, topology, analysis_type, cuts_dict
 #enddef
 
 
-# 3) get_hist_configs
 def get_hist_configs(analysis_type):
     if analysis_type == "dvcs":
         return {
@@ -185,7 +175,6 @@ def get_hist_configs(analysis_type):
 #enddef
 
 
-# 4) update_cuts_dict
 def update_cuts_dict(data_hists, mc_hists, cumulative_dict, active_vars):
     """
     For each var in active_vars, we *fit* a crystal ball for pTmiss & theta_...
@@ -195,14 +184,12 @@ def update_cuts_dict(data_hists, mc_hists, cumulative_dict, active_vars):
     """
     for var in active_vars:
         if var in ["theta_gamma_gamma", "theta_pi0_pi0", "pTmiss"]:
-            # Fit crystal ball to get mu, sigma
             fit_mu_data, fit_sigma_data, _ = fit_crystal_ball(data_hists[var], var, True)
             fit_mu_mc,   fit_sigma_mc,   _ = fit_crystal_ball(mc_hists[var],   var, False)
 
             cumulative_dict["data"][var] = {"mean": fit_mu_data, "std": fit_sigma_data}
             cumulative_dict["mc"][var]   = {"mean": fit_mu_mc,   "std": fit_sigma_mc}
         else:
-            # Use raw histogram
             d_mean = data_hists[var].GetMean()
             d_std  = data_hists[var].GetStdDev()
             m_mean = mc_hists[var].GetMean()
@@ -215,7 +202,6 @@ def update_cuts_dict(data_hists, mc_hists, cumulative_dict, active_vars):
 #enddef
 
 
-# 5) save_final_cuts
 def save_final_cuts(period_code, topology, output_dir, cuts_dict):
     safe_topo = topology.replace("(", "").replace(")", "")
     filename = f"cuts_{period_code}_{safe_topo}_final.json"
@@ -226,38 +212,51 @@ def save_final_cuts(period_code, topology, output_dir, cuts_dict):
 #enddef
 
 
-# 6) fit_crystal_ball (unchanged from before)
 def fit_crystal_ball(hist, var_name, is_data=True):
     """
-    Fit 'hist' with a 5-parameter Crystal Ball PDF.
+    Fit 'hist' with a 5-parameter Crystal Ball PDF in valid C++ syntax.
     Returns (fit_mu, fit_sigma, fitFunc).
     """
-    crystal_str = """
-    function crystalBall(x, par) {
-        double A    = par[0];
-        double mean = par[1];
-        double sigma= par[2];
-        double alpha= par[3];
-        double n    = par[4];
-        double t = (x[0] - mean)/sigma;
-        if (alpha < 0) t = -t;
-        double absAlpha = fabs(alpha);
 
-        if (t > -absAlpha) {
-            return A * exp(-0.5 * t*t);
-        } else {
-            double nDivAbsA = n/absAlpha;
-            double AA =  pow(nDivAbsA, n) * exp(-0.5*absAlpha*absAlpha);
-            double B  = nDivAbsA - absAlpha;
-            return A * AA * pow(B - t, -n);
-        }
-    }
-    """
-    ROOT.gInterpreter.ProcessLine(crystal_str)
+    # 1) Valid C++ code for the crystalBall function
+    crystal_cpp = r'''
+Double_t crystalBall(Double_t *x, Double_t *par) {
+   double A     = par[0];
+   double mean  = par[1];
+   double sigma = par[2];
+   double alpha = par[3];
+   double n     = par[4];
 
+   double t = (x[0] - mean) / sigma;
+   if (alpha < 0) t = -t;
+   double absAlpha = fabs(alpha);
+
+   if (t > -absAlpha) {
+       return A * exp(-0.5 * t * t);
+   } else {
+       double nDivAbsA = n / absAlpha;
+       double AA = pow(nDivAbsA, n) * exp(-0.5 * absAlpha * absAlpha);
+       double B  = nDivAbsA - absAlpha;
+       return A * AA * pow(B - t, -n);
+   }
+}
+'''
+
+    # 2) Declare it exactly once
+    if not hasattr(ROOT, "crystalBallDeclared"):
+        ROOT.gInterpreter.Declare(crystal_cpp)
+        ROOT.crystalBallDeclared = True
+    #endif
+
+    # 3) Create the TF1
     func_name = f"crystalBall_{var_name}_{'data' if is_data else 'mc'}"
-    fcb = ROOT.TF1(func_name, "crystalBall", hist.GetXaxis().GetXmin(), hist.GetXaxis().GetXmax(), 5)
+    x_min = hist.GetXaxis().GetXmin()
+    x_max = hist.GetXaxis().GetXmax()
 
+    # "crystalBall" must match the function name in the C++ code above
+    fcb = ROOT.TF1(func_name, "crystalBall", x_min, x_max, 5)
+
+    # 4) Initial guesses
     A_guess = hist.GetMaximum()
     alpha_guess = 1.5
     n_guess = 2.0
@@ -271,7 +270,6 @@ def fit_crystal_ball(hist, var_name, is_data=True):
     else:
         mu_guess    = hist.GetMean()
         sigma_guess = hist.GetRMS() / 2.0
-    #endif
 
     fcb.SetParameter(0, A_guess)
     fcb.SetParameter(1, mu_guess)
@@ -279,7 +277,8 @@ def fit_crystal_ball(hist, var_name, is_data=True):
     fcb.SetParameter(3, alpha_guess)
     fcb.SetParameter(4, n_guess)
 
-    fit_opts = "R0Q"  # no drawing, quiet
+    # 5) Fit quietly (R=fit range, 0=no draw, Q=quiet)
+    fit_opts = "R0Q"
     hist.Fit(fcb, fit_opts)
 
     fit_mu    = fcb.GetParameter(1)
@@ -289,7 +288,6 @@ def fit_crystal_ball(hist, var_name, is_data=True):
 #enddef
 
 
-# 7) plot_results
 def plot_results(data_hists, mc_hists, plot_title, topology, output_dir, suffix="cut_0"):
     """
     We do a crystal ball fit for pTmiss and theta_..., overlay it as a line,
@@ -330,6 +328,7 @@ def plot_results(data_hists, mc_hists, plot_title, topology, output_dir, suffix=
         mh.SetMarkerStyle(21)
         mh.SetMarkerSize(1.2)
 
+        # Normalize
         if dh.Integral() > 0:
             dh.Scale(1.0 / dh.Integral())
         if mh.Integral() > 0:
@@ -362,6 +361,7 @@ def plot_results(data_hists, mc_hists, plot_title, topology, output_dir, suffix=
 
             dh.Draw("E1")
             mh.Draw("E1 SAME")
+            # Overlay the fits
             fcb_data.Draw("SAME L")
             fcb_mc.Draw("SAME L")
         else:
@@ -375,6 +375,7 @@ def plot_results(data_hists, mc_hists, plot_title, topology, output_dir, suffix=
             mh.Draw("E1 SAME")
         #endif
 
+        # Legend
         pad_leg = base_legend.Clone()
         pad_leg.AddEntry(dh, f"Data (#mu={mu_data:.3f}, #sigma={sigma_data:.3f})", "lep")
         pad_leg.AddEntry(mh, f"MC (#mu={mu_mc:.3f}, #sigma={sigma_mc:.3f})", "lep")
@@ -390,8 +391,10 @@ def plot_results(data_hists, mc_hists, plot_title, topology, output_dir, suffix=
 #enddef
 
 
-# 8) combine_results (if you still want to combine final JSON outputs)
 def combine_results(output_dir):
+    """
+    If you want to combine final JSON outputs into one big file:
+    """
     import json
 
     combined = {}
