@@ -18,13 +18,13 @@ def main():
     """
     configure_global_style()  # Or call it once, if needed
 
-    output_dir = "exclusivity_plots"
+    output_dir = "exclusivity"
     os.makedirs(output_dir, exist_ok=True)
 
-    print("🚀 Starting analysis with sequential processing\n")
+    print("🚀 Starting analysis.\n")
 
     # Example of processing multiple run periods
-    for period in ["Fa18_inb", "Fa18_out", "Sp19_inb"]:
+    for period in ["DVCS_Fa18_inb", "DVCS_Fa18_out", "DVCS_Sp19_inb"]:
         process_period(period, output_dir)
     #endfor
 

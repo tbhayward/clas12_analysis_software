@@ -4,6 +4,9 @@ import os
 import json
 import ROOT
 
+# Configure ROOT to run in batch mode
+ROOT.gROOT.SetBatch(True)
+
 # 1) Import cut logic from kin_cuts.py
 from kin_cuts import apply_kinematic_cuts, passes_3sigma_cuts
 

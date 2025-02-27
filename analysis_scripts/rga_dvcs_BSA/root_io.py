@@ -3,21 +3,24 @@
 import os
 import ROOT
 
+# Configure ROOT to run in batch mode
+ROOT.gROOT.SetBatch(True)
+
 def load_root_files(period):
     """
     Load ROOT files with only required branches.
     Returns (period, {'data': TChain, 'mc': TChain}).
     """
     file_map = {
-        "Fa18_inb": {
+        "DVCS_Fa18_inb": {
             "data": "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/data/dvcs/rga_fa18_inb_epgamma.root",
             "mc":   "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/mc/dvcsgen/rec_dvcsgen_rga_fa18_inb_50nA_10604MeV_epgamma.root"
         },
-        "Fa18_out": {
+        "DVCS_Fa18_out": {
             "data": "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/data/dvcs/rga_fa18_out_epgamma.root",
             "mc":   "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/mc/dvcsgen/rec_dvcsgen_rga_fa18_out_50nA_10604MeV_epgamma.root"
         },
-        "Sp19_inb": {
+        "DVCS_Sp19_inb": {
             "data": "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/data/dvcs/rga_sp19_inb_epgamma.root",
             "mc":   "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/mc/dvcsgen/rec_dvcsgen_rga_sp19_inb_50nA_10200MeV_epgamma.root"
         }

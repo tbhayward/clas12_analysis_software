@@ -1,6 +1,8 @@
 # label_formatting.py
 
 import ROOT
+# Configure ROOT to run in batch mode
+ROOT.gROOT.SetBatch(True)
 
 def configure_global_style():
     """
