@@ -49,7 +49,7 @@ def main():
     tasks = [(period, analysis_type, output_dir) for period, analysis_type in periods_to_run]
 
     # Use ProcessPoolExecutor with a maximum of 3 workers
-    with ProcessPoolExecutor(max_workers=3) as executor:
+    with ProcessPoolExecutor(max_workers=6) as executor:
         futures = [executor.submit(run_period, task) for task in tasks]
         for future in as_completed(futures):
             try:
