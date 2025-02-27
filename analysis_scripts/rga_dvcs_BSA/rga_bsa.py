@@ -3,12 +3,14 @@
 import os
 import json
 import ROOT
+from multiprocessing import Pool
+from functools import partial
 
 # Configure ROOT to run in batch mode
 ROOT.gROOT.SetBatch(True)
 
 # --------------------------------------------------------------------------------------
-# 1) apply_kinematic_cuts
+# 1) apply_kinematic_cuts (optimized)
 # --------------------------------------------------------------------------------------
 def apply_kinematic_cuts(t_value, open_angle_ep2_value, theta_neutral_neutral_value,
                          Emiss2_value, Mx2_value, Mx2_1_value, Mx2_2_value, pTmiss_value,
@@ -17,228 +19,224 @@ def apply_kinematic_cuts(t_value, open_angle_ep2_value, theta_neutral_neutral_va
     return True
 
 # --------------------------------------------------------------------------------------
-# 2) format_label_name
+# 2) format_label_name (updated ranges)
 # --------------------------------------------------------------------------------------
 def format_label_name(variable, analysis_type):
     labels = {
         "open_angle_ep2": "#theta_{e'#gamma} (deg)",
         "Mx2_2": "Miss M_{e'#gamma}^{2} (GeV^{2})",
-        "theta_gamma_gamma": "#theta_{#gamma#gamma}",
-        "theta_pi0_pi0": "#theta_{#pi^{0}#pi^{0}}",
+        "theta_gamma_gamma": "#theta_{#gamma#gamma} (deg)",
+        "theta_pi0_pi0": "#theta_{#pi^{0}#pi^{0}} (deg)",
         "xF": "x_{F}",
         "Emiss2": "Miss E^{2} (GeV^{2})",
         "Mx2": "Miss M^{2} (GeV^{2})",
         "Mx2_1": "Miss M_{e'p'}^{2} (GeV^{2})",
         "pTmiss": "p_{T}^{miss} (GeV)"
     }
-    label = labels.get(variable, variable)
     if analysis_type == "eppi0":
-        label = label.replace("#gamma", "#pi^{0}")
-    return label
+        return labels.get(variable, variable).replace("#gamma", "#pi^{0}")
+    return labels.get(variable, variable)
 
 # --------------------------------------------------------------------------------------
-# 3) load_root_files
+# 3) load_root_files (optimized branch loading)
 # --------------------------------------------------------------------------------------
-def load_root_files():
-    """Load ROOT files into TChains"""
-    file_dict = {
-        "dvcs_data": {
-            "Fa18_inb": "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/data/dvcs/rga_fa18_inb_epgamma.root",
-            "Fa18_out": "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/data/dvcs/rga_fa18_out_epgamma.root",
-            "Sp19_inb": "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/data/dvcs/rga_sp19_inb_epgamma.root"
+def load_root_files(period):
+    """Load ROOT files with only required branches"""
+    file_map = {
+        "Fa18_inb": {
+            "data": "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/data/dvcs/rga_fa18_inb_epgamma.root",
+            "mc": "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/mc/dvcsgen/rec_dvcsgen_rga_fa18_inb_50nA_10604MeV_epgamma.root"
         },
-        "dvcs_mc": {
-            "Fa18_inb": "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/mc/dvcsgen/rec_dvcsgen_rga_fa18_inb_50nA_10604MeV_epgamma.root",
-            "Fa18_out": "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/mc/dvcsgen/rec_dvcsgen_rga_fa18_out_50nA_10604MeV_epgamma.root",
-            "Sp19_inb": "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/mc/dvcsgen/rec_dvcsgen_rga_sp19_inb_50nA_10200MeV_epgamma.root"
+        "Fa18_out": {
+            "data": "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/data/dvcs/rga_fa18_out_epgamma.root",
+            "mc": "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/mc/dvcsgen/rec_dvcsgen_rga_fa18_out_50nA_10604MeV_epgamma.root"
+        },
+        "Sp19_inb": {
+            "data": "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/data/dvcs/rga_sp19_inb_epgamma.root",
+            "mc": "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/mc/dvcsgen/rec_dvcsgen_rga_sp19_inb_50nA_10200MeV_epgamma.root"
         }
     }
 
-    tree_dict = {}
-    for category, subdict in file_dict.items():
-        tree_dict[category] = {}
-        for period, filename in subdict.items():
-            chain = ROOT.TChain("PhysicsEvents")
-            chain.Add(filename)
-            tree_dict[category][period] = chain
-    return tree_dict
+    trees = {}
+    for category in ["data", "mc"]:
+        chain = ROOT.TChain("PhysicsEvents")
+        chain.Add(file_map[period][category])
+        
+        # Activate only required branches
+        branches = ["detector1", "detector2", "t1", "open_angle_ep2", "theta_gamma_gamma",
+                    "Emiss2", "Mx2", "Mx2_1", "Mx2_2", "pTmiss", "xF"]
+        for br in branches:
+            chain.SetBranchStatus(br, 1)
+        
+        trees[category] = chain
+    return period, trees
 
 # --------------------------------------------------------------------------------------
-# 4) determine_exclusivity_cuts (UPDATED)
+# 4) process_events (optimized single-loop processing)
 # --------------------------------------------------------------------------------------
-def determine_exclusivity_cuts(analysis_type, topology, data_tree, mc_tree,
-                               output_dir, run_period, plot_title):
-    """Main analysis function with corrected event processing"""
-    ROOT.gStyle.SetOptStat(0)
-    ROOT.gStyle.SetTitleSize(0.05, "XY")
-    ROOT.gStyle.SetLabelSize(0.04, "XY")
-
-    # Create output directory
-    analysis_dir = "dvcs" if analysis_type == "dvcs" else "eppi0"
-    final_output_dir = os.path.join(output_dir, analysis_dir)
-    os.makedirs(final_output_dir, exist_ok=True)
-
-    # Variables and histogram configurations
-    variables = ["open_angle_ep2", "theta_gamma_gamma", "pTmiss", "xF",
-                 "Emiss2", "Mx2", "Mx2_1", "Mx2_2"]
+def process_events(tree, topology, analysis_type, is_mc):
+    """Process events in a single pass with vectorized operations"""
+    # Updated histogram configurations
     hist_configs = {
-        "open_angle_ep2": (100, 0, 40),
-        "theta_gamma_gamma": (100, 0, 40),
-        "pTmiss": (100, 0, 1.5),
-        "xF": (100, -1, 1),
-        "Emiss2": (100, -0.5, 1),
-        "Mx2": (100, -0.5, 1.5),
-        "Mx2_1": (100, -0.5, 1.5),
-        "Mx2_2": (100, -0.5, 1.5)
+        "open_angle_ep2":    (100, 0, 40),
+        "theta_gamma_gamma": (100, 0, 2),
+        "pTmiss":            (100, 0, 0.3),
+        "xF":                (100, -0.4, 0.2),
+        "Emiss2":            (100, -1, 2),
+        "Mx2":               (100, -0.015, 0.015),
+        "Mx2_1":             (100, -1, 1.5),
+        "Mx2_2":             (100, 0, 3)
     }
 
-    # Initialize histograms
-    hists = {
-        'data': {var: ROOT.TH1D(f"data_{var}", "", *hist_configs[var]) for var in variables},
-        'mc': {var: ROOT.TH1D(f"mc_{var}", "", *hist_configs[var]) for var in variables},
-        'data_loose': {var: ROOT.TH1D(f"data_loose_{var}", "", *hist_configs[var]) for var in variables},
-        'mc_loose': {var: ROOT.TH1D(f"mc_loose_{var}", "", *hist_configs[var]) for var in variables}
-    }
+    variables = list(hist_configs.keys())
+    hists = {var: ROOT.TH1D(f"{'mc' if is_mc else 'data'}_{var}", "", *hist_configs[var]) 
+             for var in variables}
+    hists_loose = {var: ROOT.TH1D(f"{'mc' if is_mc else 'data'}_loose_{var}", "", *hist_configs[var]) 
+                  for var in variables}
 
-    # Style configuration
-    for key in ['data', 'data_loose']:
-        for hist in hists[key].values():
-            hist.SetMarkerStyle(20)
-            hist.SetMarkerColor(ROOT.kBlue)
-            hist.SetLineColor(ROOT.kBlue)
-    for key in ['mc', 'mc_loose']:
-        for hist in hists[key].values():
-            hist.SetMarkerStyle(21)
-            hist.SetMarkerColor(ROOT.kRed)
-            hist.SetLineColor(ROOT.kRed)
+    # Precompute topology condition
+    if topology == "(FD,FD)":
+        det_cond = lambda d1, d2: d1 == 1 and d2 == 1
+    elif topology == "(CD,FD)":
+        det_cond = lambda d1, d2: d1 == 2 and d2 == 1
+    elif topology == "(CD,FT)":
+        det_cond = lambda d1, d2: d1 == 2 and d2 == 0
 
-    # Process data tree
-    for event in data_tree:
-        det1 = event.detector1
-        det2 = event.detector2
-        if not ((topology == "(FD,FD)" and det1 == 1 and det2 == 1) or
-                (topology == "(CD,FD)" and det1 == 2 and det2 == 1) or
-                (topology == "(CD,FT)" and det1 == 2 and det2 == 0)):
+    # Main processing loop
+    for event in tree:
+        d1 = event.detector1
+        d2 = event.detector2
+        if not det_cond(d1, d2):
             continue
 
-        # Get cut variables
         cuts_passed = apply_kinematic_cuts(
             event.t1, event.open_angle_ep2, event.theta_gamma_gamma,
             event.Emiss2, event.Mx2, event.Mx2_1, event.Mx2_2,
-            event.pTmiss, event.xF, analysis_type, "data", run_period, topology
+            event.pTmiss, event.xF, analysis_type, 
+            "mc" if is_mc else "data", "", topology
         )
 
-        # Fill histograms
         for var in variables:
             val = getattr(event, var)
-            hists['data'][var].Fill(val)
+            hists[var].Fill(val)
             if cuts_passed:
-                hists['data_loose'][var].Fill(val)
+                hists_loose[var].Fill(val)
 
-    # Process MC tree
-    for event in mc_tree:
-        det1 = event.detector1
-        det2 = event.detector2
-        if not ((topology == "(FD,FD)" and det1 == 1 and det2 == 1) or
-                (topology == "(CD,FD)" and det1 == 2 and det2 == 1) or
-                (topology == "(CD,FT)" and det1 == 2 and det2 == 0)):
-            continue
+    return {k: (v, hists_loose[k]) for k, v in hists.items()}
 
-        # Get cut variables
-        cuts_passed = apply_kinematic_cuts(
-            event.t1, event.open_angle_ep2, event.theta_gamma_gamma,
-            event.Emiss2, event.Mx2, event.Mx2_1, event.Mx2_2,
-            event.pTmiss, event.xF, analysis_type, "mc", run_period, topology
-        )
+# --------------------------------------------------------------------------------------
+# 5) plot_results (with improved styling)
+# --------------------------------------------------------------------------------------
+def plot_results(data_hists, mc_hists, plot_title, topology, output_dir):
+    """Create styled plots with proper spacing and legends"""
+    ROOT.gStyle.SetOptStat(0)
+    ROOT.gStyle.SetTitleSize(0.045, "XY")
+    ROOT.gStyle.SetLabelSize(0.04, "XY")
+    ROOT.gStyle.SetPadLeftMargin(0.12)
+    ROOT.gStyle.SetPadRightMargin(0.08)
+    ROOT.gStyle.SetPadTopMargin(0.1)
+    ROOT.gStyle.SetPadBottomMargin(0.12)
+    ROOT.gStyle.SetLegendBorderSize(0)
 
-        # Fill histograms
-        for var in variables:
-            val = getattr(event, var)
-            hists['mc'][var].Fill(val)
-            if cuts_passed:
-                hists['mc_loose'][var].Fill(val)
+    variables = list(data_hists.keys())
+    canvas = ROOT.TCanvas("canvas", "", 2400, 1200)
+    canvas.Divide(4, 2, 0.005, 0.005)  # Add spacing between pads
 
-    # Create canvases
-    canvas = ROOT.TCanvas("canvas", "Exclusivity Plots", 1600, 800)
-    canvas.Divide(4, 2)
-    canvas_loose = ROOT.TCanvas("canvas_loose", "With Kinematic Cuts", 1600, 800)
-    canvas_loose.Divide(4, 2)
-
-    cuts_dictionary = {"data": {}, "mc": {}}
-
-    # Draw and process results
     for i, var in enumerate(variables):
-        # Normalize
-        for key in ['data', 'mc', 'data_loose', 'mc_loose']:
-            if hists[key][var].Integral() > 0:
-                hists[key][var].Scale(1.0 / hists[key][var].Integral())
+        pad = canvas.cd(i+1)
+        pad.SetGrid()
+        pad.SetTicks(1, 1)
 
-        # Original plots
-        canvas.cd(i+1)
-        hists['data'][var].SetTitle(f"{plot_title} - {var}")
-        hists['data'][var].SetXTitle(format_label_name(var, analysis_type))
-        hists['data'][var].SetYTitle("Normalized Counts")
-        hists['data'][var].Draw("E1")
-        hists['mc'][var].Draw("E1 SAME")
+        # Configure histograms
+        dh, dlh = data_hists[var]
+        mh, mlh = mc_hists[var]
 
-        # Loose cuts plots
-        canvas_loose.cd(i+1)
-        hists['data_loose'][var].SetTitle(f"{plot_title} - {var} (Cuts)")
-        hists['data_loose'][var].SetXTitle(format_label_name(var, analysis_type))
-        hists['data_loose'][var].SetYTitle("Normalized Counts")
-        hists['data_loose'][var].Draw("E1")
-        hists['mc_loose'][var].Draw("E1 SAME")
+        for h, c in [(dh, ROOT.kBlue), (mh, ROOT.kRed)]:
+            h.SetLineColor(c)
+            h.SetLineWidth(2)
+            h.GetYaxis().SetTitle("Normalized Counts")
+            h.GetYaxis().SetTitleOffset(1.2)
+            h.GetXaxis().SetTitle(format_label_name(var, "dvcs"))
+            h.Scale(1/h.Integral() if h.Integral() > 0 else 1)
 
-        # Store cuts
-        cuts_dictionary["data"][var] = {
-            "mean": hists['data_loose'][var].GetMean(),
-            "std": hists['data_loose'][var].GetStdDev()
-        }
-        cuts_dictionary["mc"][var] = {
-            "mean": hists['mc_loose'][var].GetMean(),
-            "std": hists['mc_loose'][var].GetStdDev()
-        }
+        # Draw with proper ordering
+        mh_max = mh.GetMaximum()
+        dh_max = dh.GetMaximum()
+        if dh_max > mh_max:
+            dh.Draw("HIST E")
+            mh.Draw("HIST E SAME")
+        else:
+            mh.Draw("HIST E")
+            dh.Draw("HIST E SAME")
+
+        # Create unified legend
+        leg = ROOT.TLegend(0.65, 0.7, 0.95, 0.9)
+        leg.SetHeader(f"{var}", "C")
+        leg.AddEntry(dh, Form("Data (#mu=%.3f, #sigma=%.3f)", dh.GetMean(), dh.GetStdDev()), "l")
+        leg.AddEntry(mh, Form("MC (#mu=%.3f, #sigma=%.3f)", mh.GetMean(), mh.GetStdDev()), "l")
+        leg.Draw()
 
     # Save outputs
     clean_title = plot_title.replace(" ", "_")
-    canvas.SaveAs(os.path.join(final_output_dir, f"{clean_title}_{topology}_nocuts.png"))
-    canvas_loose.SaveAs(os.path.join(final_output_dir, f"{clean_title}_{topology}_cuts.png"))
-
-    return cuts_dictionary
+    canvas.SaveAs(os.path.join(output_dir, f"{clean_title}_{topology}_comparison.png"))
+    del canvas
 
 # --------------------------------------------------------------------------------------
-# 5) Main function
+# 6) process_period (parallel processing unit)
 # --------------------------------------------------------------------------------------
-def main():
-    """Main driver function"""
-    output_dir = "exclusivity_plots"
-    os.makedirs(output_dir, exist_ok=True)
-    tree_dict = load_root_files()
-
-    analysis_type = "dvcs"
-    topologies = ["(FD,FD)", "(CD,FD)", "(CD,FT)"]
-    periods = {
+def process_period(period, output_dir):
+    """Process a single run period with all topologies"""
+    period_code, trees = load_root_files(period)
+    run_period, period_text = {
         "Fa18_inb": ("RGA Fa18 Inb", "Fa18 Inb"),
         "Fa18_out": ("RGA Fa18 Out", "Fa18 Out"),
         "Sp19_inb": ("RGA Sp19 Inb", "Sp19 Inb")
-    }
+    }[period_code]
 
+    for topology in ["(FD,FD)", "(CD,FD)", "(CD,FT)"]:
+        # Process data and MC in sequence
+        data_result = process_events(trees["data"], topology, "dvcs", False)
+        mc_result = process_events(trees["mc"], topology, "dvcs", True)
+
+        # Extract and pair histograms
+        data_hists = {k: (v, data_result[k][1]) for k, v in data_result.items()}
+        mc_hists = {k: (v, mc_result[k][1]) for k, v in mc_result.items()}
+
+        # Create plots
+        plot_title = f"{period_text} DVCS {topology}"
+        plot_results(data_hists, mc_hists, plot_title, topology, output_dir)
+
+        # Save cuts
+        cuts = {
+            "data": {var: {"mean": h[0].GetMean(), "std": h[0].GetStdDev()} 
+                    for var, h in data_hists.items()},
+            "mc": {var: {"mean": h[0].GetMean(), "std": h[0].GetStdDev()} 
+                  for var, h in mc_hists.items()}
+        }
+        with open(os.path.join(output_dir, f"cuts_{period_code}_{topology}.json"), "w") as f:
+            json.dump(cuts, f, indent=2)
+
+# --------------------------------------------------------------------------------------
+# 7) Main function with parallel processing
+# --------------------------------------------------------------------------------------
+def main():
+    """Main driver with parallel execution"""
+    output_dir = "exclusivity_plots"
+    os.makedirs(output_dir, exist_ok=True)
+    
+    # Create pool of workers for parallel period processing
+    with Pool(processes=3) as pool:
+        pool.map(partial(process_period, output_dir=output_dir),
+                 ["Fa18_inb", "Fa18_out", "Sp19_inb"])
+
+    # Combine all cuts
     combined_cuts = {}
-
-    for period_code, (run_period, period_text) in periods.items():
-        data_tree = tree_dict["dvcs_data"][period_code]
-        mc_tree = tree_dict["dvcs_mc"][period_code]
-
-        for topology in topologies:
-            plot_title = f"{period_text} DVCS {topology}"
-            cuts = determine_exclusivity_cuts(
-                analysis_type, topology, data_tree, mc_tree,
-                output_dir, run_period, plot_title
-            )
-            combined_cuts[f"{period_code}_{topology}"] = cuts
-
-    # Save combined cuts
-    with open(os.path.join(output_dir, "exclusivity_cuts.json"), "w") as f:
+    for period in ["Fa18_inb", "Fa18_out", "Sp19_inb"]:
+        for topology in ["(FD,FD)", "(CD,FD)", "(CD,FT)"]:
+            with open(os.path.join(output_dir, f"cuts_{period}_{topology}.json")) as f:
+                combined_cuts[f"{period}_{topology}"] = json.load(f)
+    
+    with open(os.path.join(output_dir, "combined_cuts.json"), "w") as f:
         json.dump(combined_cuts, f, indent=2)
 
 if __name__ == "__main__":
