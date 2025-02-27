@@ -213,7 +213,7 @@ def fit_gaussian_left_side(hist, var_name, is_data=True, return_tf1=False):
 
     # 3) Build a standard Gaussian TF1 from x_left to x_peak
     func_name = f"gausLeft_{var_name}_{'data' if is_data else 'mc'}"
-    fgaus = ROOT.TF1(func_name, "gaus(0)", x_left, x_peak)
+    fgaus = ROOT.TF1(func_name, "gaus(0)", x_left, 0.85*x_peak)
 
     # 4) Initial parameter guesses:
     #    param0 = amplitude, param1 = mean, param2 = sigma
