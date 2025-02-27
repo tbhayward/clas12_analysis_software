@@ -1,30 +1,39 @@
 # main.py
 
 import os
-import sys
 
-# We'll import from kin_cuts once we've placed functions there
-import kin_cuts
+# Import only the pieces needed to run your full analysis:
+from exclusivity import process_period, combine_results
+# If you want to configure global style, import it from label_formatting or wherever it is:
+from label_formatting import configure_global_style
 
 def main():
     """
-    Main entry point. We'll gradually expand this to orchestrate
-    the reading of ROOT trees, applying cuts, plotting, etc.
+    Master workflow for the analysis.
+    - Configure style (if you like).
+    - Create output directory.
+    - Loop over run periods.
+    - Call process_period(...) for each.
+    - Combine final JSON outputs.
     """
-    print("Hello from main.py!")
-    
-    # Example usage of something from kin_cuts:
-    test_pass = kin_cuts.apply_kinematic_cuts(
-        t_value=0, open_angle_ep2_value=0, theta_neutral_neutral_value=0,
-        Emiss2_value=0, Mx2_value=0, Mx2_1_value=0, Mx2_2_value=0,
-        pTmiss_value=0, xF_value=0,
-        analysis_type="dvcs", data_type="data",
-        run_period="fake_period", topology="(FD,FD)"
-    )
-    print(f"Kinematic cut result (placeholder) = {test_pass}")
+    configure_global_style()  # Or call it once, if needed
 
+    output_dir = "exclusivity_plots"
+    os.makedirs(output_dir, exist_ok=True)
+
+    print("🚀 Starting analysis with sequential processing\n")
+
+    # Example of processing multiple run periods
+    for period in ["Fa18_inb", "Fa18_out", "Sp19_inb"]:
+        process_period(period, output_dir)
+    #endfor
+
+    print("🧩 Combining results...")
+    combine_results(output_dir)
+    print("\n🎉 Analysis complete!")
 #enddef
+
 
 if __name__ == "__main__":
     main()
-#enddef
+#endif
