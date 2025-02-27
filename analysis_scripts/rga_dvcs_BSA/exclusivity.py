@@ -199,19 +199,9 @@ def save_final_cuts(period_code, topology, output_dir, cuts_dict):
 # ------------------------------------------------------------------------------
 # The 1D Crystal Ball approach (inline formula)
 # ------------------------------------------------------------------------------
-def fit_crystal_ball_lambda(hist, var_name, is_data=True):
+def fit_crystal_ball_lambda(hist, var_name, is_data=True, return_tf1=False):
     """
-    This approach uses a 1D function signature so TFormula can parse it inline.
-    We'll define:
-
-        Double_t crystalBallLambda(Double_t x,
-                                   Double_t p0, p1, p2, p3, p4) { ... }
-
-    Then we create a TF1 with the expression:
-        "crystalBallLambda(x,[0],[1],[2],[3],[4])"
-
-    This way, TFormula doesn't get confused about function pointers.
-    We set the initial parameter guesses, do the fit, and read param 1 & 2 (mu, sigma).
+    Same as before, but now we optionally return the TF1 object so we can draw it.
     """
     cxx_code = r'''
 Double_t crystalBallLambda(Double_t x,
@@ -224,13 +214,18 @@ Double_t crystalBallLambda(Double_t x,
    double alpha = p3;
    double n     = p4;
 
+   // "t" is the number of sigma from the mean
    double t = (x - mean) / sigma;
+   // If alpha < 0, flip sign so tail is on the other side
    if (alpha < 0) t = -t;
    double absAlpha = fabs(alpha);
 
+   // Core Gaussian part
    if (t > -absAlpha) {
        return A * exp(-0.5 * t * t);
-   } else {
+   } 
+   // Power-law tail part
+   else {
        double nDivAbsA = n / absAlpha;
        double AA = pow(nDivAbsA, n) * exp(-0.5 * absAlpha * absAlpha);
        double B  = nDivAbsA - absAlpha;
@@ -243,15 +238,13 @@ Double_t crystalBallLambda(Double_t x,
     if not hasattr(ROOT, "crystalBallLambdaDeclared"):
         ROOT.gInterpreter.Declare(cxx_code)
         ROOT.crystalBallLambdaDeclared = True
+    #endif
 
     # Build the TFormula expression:
-    # "crystalBallLambda(x, [0], [1], [2], [3], [4])"
-    # We'll store it in a TF1
     x_min = hist.GetXaxis().GetXmin()
     x_max = hist.GetXaxis().GetXmax()
     func_name = f"cbLambda_{var_name}_{'data' if is_data else 'mc'}"
 
-    # The expression is the second argument:
     fcb = ROOT.TF1(func_name, "crystalBallLambda(x,[0],[1],[2],[3],[4])",
                    x_min, x_max)
 
@@ -261,7 +254,7 @@ Double_t crystalBallLambda(Double_t x,
     n_guess = 2.0
 
     if var_name in ["theta_gamma_gamma", "theta_pi0_pi0"]:
-        mu_guess    = 0.15 
+        mu_guess    = 0.15
         sigma_guess = 0.10
     elif var_name == "pTmiss":
         mu_guess    = 0.04
@@ -269,30 +262,36 @@ Double_t crystalBallLambda(Double_t x,
     else:
         mu_guess    = hist.GetMean()
         sigma_guess = hist.GetRMS() / 2.0
+    #endif
 
-    # Now we set the 5 parameters (p0..p4)
+    # Set parameters
     fcb.SetParameter(0, A_guess)      # amplitude
     fcb.SetParameter(1, mu_guess)     # mean
     fcb.SetParameter(2, sigma_guess)  # sigma
     fcb.SetParameter(3, alpha_guess)  # alpha
     fcb.SetParameter(4, n_guess)      # n
 
+    # Keep sigma > 0
+    fcb.SetParLimits(2, 1e-5, 5.0)
+
     # Fit
     fit_opts = "R0Q"  # R=fit range, 0=no draw, Q=quiet
     hist.Fit(fcb, fit_opts)
 
-    fit_mu    = fcb.GetParameter(1)  # p1
-    fit_sigma = fcb.GetParameter(2)  # p2
+    fit_mu    = fcb.GetParameter(1)  # mean
+    fit_sigma = fcb.GetParameter(2)  # sigma
 
-    return (fit_mu, fit_sigma)
+    # Optionally return TF1 so we can draw it
+    if return_tf1:
+        return (fit_mu, fit_sigma, fcb)
+    else:
+        return (fit_mu, fit_sigma)
+#enddef
 
 def plot_results(data_hists, mc_hists, plot_title, topology, output_dir, suffix="cut_0"):
     """
-    We'll do a separate inline fit for data and MC if var in (theta,pTmiss).
-    Then we display the resulting function as a dashed line by re-drawing it.
-    But here we can also do a quick re-draw approach or just show hist means.
-    For a demonstration, let's do the same approach: fit with 'fit_crystal_ball_lambda(...)'
-    then overlay if needed.
+    Plots the data_hists vs mc_hists, fits them if the variable is in crystal_vars,
+    and overlays the fitted function as a thin line.
     """
     variables = list(data_hists.keys())
     canvas = ROOT.TCanvas("canvas", "", 2400, 1200)
@@ -344,26 +343,41 @@ def plot_results(data_hists, mc_hists, plot_title, topology, output_dir, suffix=
         mh.SetMaximum(max_val)
 
         if var in crystal_vars:
-            # We'll do the 1D inline fit for data
-            mu_data, sigma_data = fit_crystal_ball_lambda(dh, var, True)
-            # Similarly for MC
-            mu_mc, sigma_mc     = fit_crystal_ball_lambda(mh, var, False)
+            # Fit data, returning the TF1 so we can draw it
+            mu_data, sigma_data, fcb_data = fit_crystal_ball_lambda(dh, var, True, return_tf1=True)
+            # Fit MC
+            mu_mc, sigma_mc, fcb_mc = fit_crystal_ball_lambda(mh, var, False, return_tf1=True)
 
-            # Draw hist
+            # Draw histograms
             dh.Draw("E1")
             mh.Draw("E1 SAME")
 
+            # Draw the fitted function on top of each histogram
+            # Increase Npx for a smoother line
+            fcb_data.SetNpx(1000)
+            fcb_data.SetLineColor(ROOT.kBlue + 1)
+            fcb_data.SetLineStyle(2)   # dashed
+            fcb_data.SetLineWidth(2)
+            fcb_data.Draw("SAME")
+
+            fcb_mc.SetNpx(1000)
+            fcb_mc.SetLineColor(ROOT.kRed + 1)
+            fcb_mc.SetLineStyle(2)    # dashed
+            fcb_mc.SetLineWidth(2)
+            fcb_mc.Draw("SAME")
+
         else:
             # Just raw histogram means
-            mu_data   = dh.GetMean()
-            sigma_data= dh.GetStdDev()
-            mu_mc     = mh.GetMean()
-            sigma_mc  = mh.GetStdDev()
+            mu_data    = dh.GetMean()
+            sigma_data = dh.GetStdDev()
+            mu_mc      = mh.GetMean()
+            sigma_mc   = mh.GetStdDev()
 
             dh.Draw("E1")
             mh.Draw("E1 SAME")
         #endif
 
+        # Legend
         pad_leg = base_legend.Clone()
         pad_leg.AddEntry(dh, f"Data (#mu={mu_data:.3f}, #sigma={sigma_data:.3f})", "lep")
         pad_leg.AddEntry(mh, f"MC (#mu={mu_mc:.3f}, #sigma={sigma_mc:.3f})", "lep")
