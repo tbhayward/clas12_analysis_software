@@ -233,7 +233,7 @@ def fit_gaussian_left_side(hist, var_name, is_data=True, return_tf1=False):
 
     # 3) Build a standard Gaussian TF1 from x_left to slightly passed the x_peak (avoid big tails)
     func_name = f"gausLeft_{var_name}_{'data' if is_data else 'mc'}"
-    fgaus = ROOT.TF1(func_name, "gaus(0)", x_left, 1.2*x_peak)
+    fgaus = ROOT.TF1(func_name, "gaus(0)", x_left, 1.35*x_peak)
 
     # 4) Initial parameter guesses:
     amp_guess  = hist.GetMaximum()
