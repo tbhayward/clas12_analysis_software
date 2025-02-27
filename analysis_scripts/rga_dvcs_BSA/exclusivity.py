@@ -283,9 +283,9 @@ def process_period(period, output_dir):
 
     period_code, trees = load_root_files(period)
     run_info = {
-        "Fa18_inb": ("RGA Fa18 Inb", "Fa18 Inb"),
-        "Fa18_out": ("RGA Fa18 Out", "Fa18 Out"),
-        "Sp19_inb": ("RGA Sp19 Inb", "Sp19 Inb")
+        "DVCS_Fa18_inb": ("RGA Fa18 Inb", "Fa18 Inb"),
+        "DVCS_Fa18_out": ("RGA Fa18 Out", "Fa18 Out"),
+        "DVCS_Sp19_inb": ("RGA Sp19 Inb", "Sp19 Inb")
     }[period_code]
 
     for topology in ["(FD,FD)", "(CD,FD)", "(CD,FT)"]:
