@@ -146,13 +146,13 @@ def process_events(tree, topology, analysis_type, is_mc):
     return hists, hists_loose
 
 # --------------------------------------------------------------------------------------
-# 5) plot_results (fixed tuple handling)
+# 5) plot_results (fixed empty plots and grid lines)
 # --------------------------------------------------------------------------------------
 def plot_results(data_hists, mc_hists, plot_title, topology, output_dir):
     """Create publication-quality plots with proper styling"""
     variables = list(data_hists.keys())
     canvas = ROOT.TCanvas("canvas", "", 2400, 1200)
-    canvas.Divide(4, 2, 0.002, 0.002)  # Tighter spacing
+    canvas.Divide(4, 2, 0.002, 0.002)
     
     # Create common legend prototype
     leg = ROOT.TLegend(0.65, 0.75, 0.92, 0.89)
@@ -163,8 +163,7 @@ def plot_results(data_hists, mc_hists, plot_title, topology, output_dir):
 
     for i, var in enumerate(variables):
         pad = canvas.cd(i+1)
-        pad.SetGrid()
-        pad.SetTicks(1, 1)
+        pad.SetTicks(1, 1)  # Removed SetGrid()
 
         # Get histograms
         dh = data_hists[var]
@@ -173,36 +172,38 @@ def plot_results(data_hists, mc_hists, plot_title, topology, output_dir):
         # Configure styles
         dh.SetLineColor(ROOT.kBlue)
         dh.SetLineWidth(3)
-        dh.SetMarkerSize(0)  # Remove markers for clean line plots
+        dh.SetMarkerStyle(20)
+        dh.SetMarkerSize(1.2)
         
         mh.SetLineColor(ROOT.kRed)
         mh.SetLineWidth(3)
-        mh.SetLineStyle(2)  # Dashed line for MC
-        mh.SetMarkerSize(0)
+        mh.SetMarkerStyle(21)
+        mh.SetMarkerSize(1.2)
 
-        # Normalize
+        # Normalize using original counts
         max_val = max(dh.GetMaximum(), mh.GetMaximum()) * 1.2
         for h in [dh, mh]:
-            h.Scale(1/h.Integral() if h.Integral() > 0 else 1)
+            if h.Integral() > 0:
+                h.Scale(1.0/h.Integral())
             h.GetYaxis().SetTitle("Normalized Counts")
-            h.GetYaxis().SetTitleOffset(1.4)  # More spacing for y-title
+            h.GetYaxis().SetTitleOffset(1.4)
             h.GetXaxis().SetTitle(format_label_name(var, "dvcs"))
             h.SetMaximum(max_val)
 
-        # Draw order
-        dh.Draw("HIST")
-        mh.Draw("HIST SAME")
+        # Draw with error bars
+        dh.Draw("E1")
+        mh.Draw("E1 SAME")
 
         # Clone and position legend for each pad
         pad_leg = leg.Clone()
-        pad_leg.AddEntry(dh, "Data", "l")
-        pad_leg.AddEntry(mh, "MC", "l")
+        pad_leg.AddEntry(dh, "Data", "lep")
+        pad_leg.AddEntry(mh, "MC", "lep")
         pad_leg.Draw()
 
     # Save output
     canvas.cd()
     clean_title = plot_title.replace(" ", "_").replace("(", "").replace(")", "")
-    canvas.SaveAs(os.path.join(output_dir, f"{clean_title}_{topology}_comparison.pdf"))
+    canvas.SaveAs(os.path.join(output_dir, f"{clean_title}_{topology}_comparison.png"))
     del canvas
 
 # --------------------------------------------------------------------------------------
