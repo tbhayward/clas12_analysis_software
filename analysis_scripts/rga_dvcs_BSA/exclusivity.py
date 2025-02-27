@@ -163,7 +163,7 @@ def get_hist_configs(analysis_type):
             "pTmiss":            (100, 0, 0.3),
             "xF":                (100, -0.4, 0.2),
             "Emiss2":            (100, -1, 2),
-            "Mx2":               (100, -0.025, 0.025),
+            "Mx2":               (100, -0.03, 0.03),
             "Mx2_1":             (100, -1.5, 1.5),
             "Mx2_2":             (100, 0, 3)
         }
@@ -174,7 +174,7 @@ def get_hist_configs(analysis_type):
             "pTmiss":            (100, 0, 0.3),
             "xF":                (100, -0.4, 0.2),
             "Emiss2":            (100, -1, 2),
-            "Mx2":               (100, -0.025, 0.025),
+            "Mx2":               (100, -0.03, 0.03),
             "Mx2_1":             (100, -1.5, 1.5),
             "Mx2_2":             (100, 0, 3)
         }
@@ -279,6 +279,7 @@ def plot_results(data_hists, mc_hists, plot_title, topology, output_dir, suffix=
     for i, var in enumerate(variables):
         pad = canvas.cd(i + 1)
         pad.SetTicks(1, 1)
+        pad.SetLeftMargin(0.2)
 
         dh = data_hists[var]
         mh = mc_hists[var]
