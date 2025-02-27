@@ -179,8 +179,8 @@ def plot_results(data_hists, mc_hists, plot_title, topology, output_dir):
         # Legend
         leg = ROOT.TLegend(0.65, 0.7, 0.95, 0.9)
         leg.SetHeader(f"{var}", "C")
-        leg.AddEntry(dh, Form("Data (#mu=%.3f, #sigma=%.3f)", dh.GetMean(), dh.GetStdDev()), "l")
-        leg.AddEntry(mh, Form("MC (#mu=%.3f, #sigma=%.3f)", mh.GetMean(), mh.GetStdDev()), "l")
+        leg.AddEntry(dh, ROOT.Form("Data (#mu=%.3f, #sigma=%.3f)", dh.GetMean(), dh.GetStdDev()), "l")
+        leg.AddEntry(mh, ROOT.Form("MC (#mu=%.3f, #sigma=%.3f)", mh.GetMean(), mh.GetStdDev()), "l")
         leg.Draw()
 
     # Save output
