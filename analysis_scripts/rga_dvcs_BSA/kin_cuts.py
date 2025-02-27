@@ -17,7 +17,12 @@ def apply_kinematic_cuts(t_value, open_angle_ep2_value, theta_neutral_neutral_va
     #endif
 
     # 2) universal angle cut
-    if -t_value > 1.0:
+    if (-t_value) > 1.0:
+        return False
+    #endif
+
+    # 3) universal missing pt cut
+    if pTmiss_value < 0.25:
         return False
     #endif
 
