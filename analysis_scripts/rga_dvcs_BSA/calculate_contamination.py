@@ -118,9 +118,11 @@ def calculate_contamination(period, topology, analysis_type, binning_scheme):
 
     
     # --- Count DVCS data events ---
+    count = 0
     for event in dvcs_trees["data"]:
-        if (event > 100):
+        if count >= 100:
             break
+        count += 1
         try:
             if not apply_kinematic_cuts(
                 event.t1, event.open_angle_ep2, 0.0,
@@ -152,10 +154,12 @@ def calculate_contamination(period, topology, analysis_type, binning_scheme):
         results[(i_xB, i_Q2, i_t, i_phi)]['N_data'] += 1
 
     # --- Count π⁰ misidentification events from eppi0_bkg MC ---
+    count = 0
     if "mc" in pi0_bkg_trees and pi0_bkg_trees["mc"].GetEntries() > 0:
         for event in pi0_bkg_trees["mc"]:
-            if (event > 100):
+            if count >= 100:
                 break
+            count += 1
             try:
                 if not apply_kinematic_cuts(
                     event.t1, event.open_angle_ep2, 0.0,
@@ -185,9 +189,11 @@ def calculate_contamination(period, topology, analysis_type, binning_scheme):
             results[(i_xB, i_Q2, i_t, i_phi)]['N_pi0_mc'] += 1
 
     # --- Count π⁰ experimental events from eppi0 data ---
+    count = 0
     for event in pi0_exp_trees.get("data", []):
-        if (event > 100):
+        if count >= 100:
             break
+        count += 1
         try:
             if not apply_kinematic_cuts(
                 event.t1, event.open_angle_ep2, 0.0,
@@ -217,9 +223,11 @@ def calculate_contamination(period, topology, analysis_type, binning_scheme):
         results[(i_xB, i_Q2, i_t, i_phi)]['N_pi0_exp'] += 1
 
     # --- Count π⁰ reconstructed events from eppi0 MC ---
+    count = 0
     for event in pi0_exp_trees.get("mc", []):
-        if (event > 100):
+        if count >= 100:
             break
+        count += 1
         try:
             if not apply_kinematic_cuts(
                 event.t1, event.open_angle_ep2, 0.0,
@@ -248,7 +256,6 @@ def calculate_contamination(period, topology, analysis_type, binning_scheme):
             continue
         results[(i_xB, i_Q2, i_t, i_phi)]['N_pi0_reco'] += 1
 
-    print("moving to compute contamination")
     # --- Compute contamination in each 4D bin ---
     for key, counts in results.items():
         N_data = counts['N_data']
