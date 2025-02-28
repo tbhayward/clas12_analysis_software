@@ -161,13 +161,14 @@ def calculate_contamination(period, topology, analysis_type, binning_scheme):
             break
         count += 1
         try:
+            print(f"t1={event.t1}, open_angle_ep2={event.open_angle_ep2}, "
+              f"pTmiss={event.pTmiss}")
             if not apply_kinematic_cuts(
                 event.t1, event.open_angle_ep2, theta_gamma_gamma,
                 event.Emiss2, event.Mx2, event.Mx2_1, event.Mx2_2,
                 event.pTmiss, event.xF,
                 analysis_type, "mc", "", topology
             ):
-                print("failed apply apply_kinematic_cuts")
                 continue
             if not passes_3sigma_cuts(event, True, cuts_dict):
                 continue
