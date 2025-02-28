@@ -161,14 +161,14 @@ def calculate_contamination(period, topology, analysis_type, binning_scheme):
             break
         count += 1
         print(apply_kinematic_cuts(
-                event.t1, event.open_angle_ep2, theta_gamma_gamma,
+                event.t1, event.open_angle_ep2, event.theta_gamma_gamma,
                 event.Emiss2, event.Mx2, event.Mx2_1, event.Mx2_2,
                 event.pTmiss, event.xF,
                 analysis_type, "mc", "", topology
             ))
         try:
             if not apply_kinematic_cuts(
-                event.t1, event.open_angle_ep2, theta_gamma_gamma,
+                event.t1, event.open_angle_ep2, event.theta_gamma_gamma,
                 event.Emiss2, event.Mx2, event.Mx2_1, event.Mx2_2,
                 event.pTmiss, event.xF,
                 analysis_type, "mc", "", topology
@@ -207,7 +207,7 @@ def calculate_contamination(period, topology, analysis_type, binning_scheme):
         count += 1
         try:
             if not apply_kinematic_cuts(
-                event.t1, event.open_angle_ep2, theta_pi0_pi0,
+                event.t1, event.open_angle_ep2, event.theta_pi0_pi0,
                 event.Emiss2, event.Mx2, event.Mx2_1, event.Mx2_2,
                 event.pTmiss, event.xF,
                 "eppi0", "data", "", topology
@@ -241,7 +241,7 @@ def calculate_contamination(period, topology, analysis_type, binning_scheme):
         count += 1
         try:
             if not apply_kinematic_cuts(
-                event.t1, event.open_angle_ep2, theta_pi0_pi0,
+                event.t1, event.open_angle_ep2, event.theta_pi0_pi0,
                 event.Emiss2, event.Mx2, event.Mx2_1, event.Mx2_2,
                 event.pTmiss, event.xF,
                 "eppi0", "mc", "", topology
