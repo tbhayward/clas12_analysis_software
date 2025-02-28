@@ -116,7 +116,7 @@ def calculate_contamination(period, topology, analysis_type, binning_scheme):
     
     # --- Count DVCS data events ---
     for event in dvcs_trees["data"]:
-        if (event > 1000)
+        if (event > 1000):
             break
         try:
             if not apply_kinematic_cuts(
@@ -150,7 +150,7 @@ def calculate_contamination(period, topology, analysis_type, binning_scheme):
     # --- Count π⁰ misidentification events from eppi0_bkg MC ---
     if "mc" in pi0_bkg_trees and pi0_bkg_trees["mc"].GetEntries() > 0:
         for event in pi0_bkg_trees["mc"]:
-            if (event > 1000)
+            if (event > 1000):
                 break
             try:
                 if not apply_kinematic_cuts(
@@ -182,7 +182,7 @@ def calculate_contamination(period, topology, analysis_type, binning_scheme):
 
     # --- Count π⁰ experimental events from eppi0 data ---
     for event in pi0_exp_trees.get("data", []):
-        if (event > 1000)
+        if (event > 1000):
             break
         try:
             if not apply_kinematic_cuts(
@@ -214,7 +214,7 @@ def calculate_contamination(period, topology, analysis_type, binning_scheme):
 
     # --- Count π⁰ reconstructed events from eppi0 MC ---
     for event in pi0_exp_trees.get("mc", []):
-        if (event > 1000)
+        if (event > 1000):
             break
         try:
             if not apply_kinematic_cuts(
