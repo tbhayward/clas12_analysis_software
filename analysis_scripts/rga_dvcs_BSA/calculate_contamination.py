@@ -279,5 +279,4 @@ def calculate_contamination(period, topology, analysis_type, binning_scheme):
             counts['c_i_err'] = c_i_err
 
     print("FINISHED CONTAMINATION")
-    print(c_i); print("\n");
     return results
