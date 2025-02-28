@@ -108,13 +108,9 @@ def main():
     
     # print("\n🎉 Analysis complete!")
 
-    print("HELLO WORLD 1")
-
     # Sequential execution for debugging
     for task in tasks:
-        print("HELLO WORLD 2")
         try:
-            print("HELLO WORLD 3")
             period, topology, analysis_type, _ = task  # Unpack all 4 elements.
             print(period)
             print(topology)
@@ -122,11 +118,9 @@ def main():
             
             # print(f"Calling calculate_contamination with args: {task}")
             # Directly call `calculate_contamination` instead of using executor.submit
-            print("Calling calculate_contamination")
             result = calculate_contamination(*task)
 
             safe_topo = topology.replace("(", "").replace(")", "").replace(",", "_")
-            print("HELLO WORLD 4")
 
             json_filename = f"contamination_{period}_{safe_topo}.json"
             json_path = os.path.join(contamination_dir, json_filename)
