@@ -125,6 +125,7 @@ def main():
             json_path = os.path.join(contamination_dir, json_filename)
             print("json_path created")
             with open(json_path, "w") as f:
+                print("in with open loop")
                 json.dump(result, f, indent=2)
 
             print(f"Saved contamination for {period} {topology} to {json_path}")
