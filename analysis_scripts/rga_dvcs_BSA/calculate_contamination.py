@@ -131,7 +131,7 @@ def calculate_contamination(period, topology, analysis_type, binning_scheme):
                         'N_pi0_reco': 0
                     }
 
-
+    print("THIS IS A TEST WE'RE LOOKING FOR THIS")
     for i, event in enumerate(dvcs_trees["data"]):
         if i < 5:  # Print only the first few events
             print(f"[DEBUG] Sample event {i}: xB={getattr(event, 'xB', 'MISSING')}, Q2={getattr(event, 'Q2', 'MISSING')}, t={getattr(event, 't', 'MISSING')}")
