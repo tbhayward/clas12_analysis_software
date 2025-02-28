@@ -165,7 +165,7 @@ def calculate_contamination(period, topology, analysis_type, binning_scheme):
         print("HEY!!!!!!!")
         if count >= 10000:
             break
-        print(f"t1={event.t1}, open_angle_ep2={event.open_angle_ep2}, theta_gamma_gamma={theta_gamma_gamma}, "
+        print(f"t1={event.t1}, open_angle_ep2={event.open_angle_ep2}, theta_gamma_gamma={event.theta_gamma_gamma}, "
               f"Emiss2={event.Emiss2}, Mx2={event.Mx2}, Mx2_1={event.Mx2_1}, Mx2_2={event.Mx2_2}, "
               f"pTmiss={event.pTmiss}, xF={event.xF}, analysis_type={analysis_type}, topology={topology}")
         count += 1
