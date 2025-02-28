@@ -114,6 +114,7 @@ def calculate_contamination(period, topology, analysis_type, binning_scheme):
               'c_i_err':    <float>  # uncertainty on contamination
           }
     """
+    print("beginning of calculate_contamination")
     # Load the DVCS trees.
     _, dvcs_trees = load_root_files(period)
     
@@ -131,7 +132,7 @@ def calculate_contamination(period, topology, analysis_type, binning_scheme):
     _, pi0_reco_trees = load_root_files(pi0_reco_period)
     _, pi0_bkg_trees  = load_root_files(pi0_bkg_period)
 
-    print("BEFORE cuts_dict")
+
     # Load the cuts from the exclusivity processing.
     cuts_dict = load_cuts(period, topology)
     
