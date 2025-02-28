@@ -157,7 +157,6 @@ def calculate_contamination(period, topology, analysis_type, binning_scheme):
     print("FINISHED FIRST LOOP")
     # --- Count π⁰ misidentification events from eppi0_bkg MC ---
     count = 0
-    if "mc" in pi0_bkg_trees and pi0_bkg_trees["mc"].GetEntries() > 0:
         for event in pi0_bkg_trees["mc"]:
             if count >= 100:
                 break
@@ -190,6 +189,7 @@ def calculate_contamination(period, topology, analysis_type, binning_scheme):
                 continue
             results[(i_xB, i_Q2, i_t, i_phi)]['N_pi0_mc'] += 1
 
+    print("FINISHED SECOND LOOP")
     # --- Count π⁰ experimental events from eppi0 data ---
     count = 0
     for event in pi0_exp_trees.get("data", []):
