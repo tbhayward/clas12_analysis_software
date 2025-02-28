@@ -50,6 +50,11 @@ def load_cuts(period, topology):
     with the corresponding 'DVCS' period (so we reuse the DVCS dictionary).
     That way, the bkg sample uses the same 3σ cuts as DVCS, avoiding KeyError('data').
     """
+    key_we_built = f"{period}_{some_cleaned_topology}"
+        print("DEBUG load_cuts => looking up key:", key_we_built)
+
+    if key_we_built not in combined_cuts:
+        print("  keys in combined_cuts are:", list(combined_cuts.keys()))
 
     # 1) Clean up the topology string for the JSON key
     topo_clean = topology.replace("(", "").replace(")", "").replace(",", "_").strip()
