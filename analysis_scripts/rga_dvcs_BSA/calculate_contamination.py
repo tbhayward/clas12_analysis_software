@@ -265,13 +265,12 @@ def calculate_contamination(period, topology, analysis_type, binning_scheme):
         else:
             ratio = counts['N_pi0_exp'] / counts['N_pi0_reco']
             c_i = counts['N_pi0_mc'] * ratio / N_data
-            print(c_i);
             rel_pi0_mc = 1 / math.sqrt(counts['N_pi0_mc']) if counts['N_pi0_mc'] > 0 else 0
             rel_pi0_exp = 1 / math.sqrt(counts['N_pi0_exp']) if counts['N_pi0_exp'] > 0 else 0
             rel_pi0_reco = 1 / math.sqrt(counts['N_pi0_reco']) if counts['N_pi0_reco'] > 0 else 0
             rel_data = 1 / math.sqrt(N_data)
             # For the ratio (N_pi0_exp/N_pi0_reco) we sum the relative uncertainties.
-            rel_ratio = rel_pi0_exp + rel_pi0_reco
+            rel_ratio = math.sqrt(rel_pi0_exp**2 + rel_pi0_reco**2)
             rel_err = math.sqrt(rel_pi0_mc**2 + rel_ratio**2 + rel_data**2)
             c_i_err = c_i * rel_err
             counts['c_i'] = c_i

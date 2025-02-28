@@ -82,61 +82,38 @@ def main():
         for topo in topologies:
             tasks.append((period, topo, analysis_type, binning_scheme))
     
-    # print("HELLO WORLD 1")
-    # # Run contamination calculations in parallel (max 3 workers).
-    # with ProcessPoolExecutor(max_workers=1) as executor:
-    #     future_to_task = {executor.submit(calculate_contamination, *task): task for task in tasks}
-    #     for future in as_completed(future_to_task):
-    #         print("HELLO WORLD 2")
-    #         task = future_to_task[future]
-    #         try:
-    #             print("HELLO WORLD 3")
-    #             period, topology, analysis_type, _ = task  # Unpack all 4 elements.
-    #             print(period)
-    #             print(topology)
-    #             print(analysis_type)
-    #             result = future.result()
-    #             safe_topo = topology.replace("(", "").replace(")", "").replace(",", "_")
-    #             print("HELLO WORLD 4")
-    #             json_filename = f"contamination_{period}_{safe_topo}.json"
-    #             json_path = os.path.join(contamination_dir, json_filename)
-    #             with open(json_path, "w") as f:
-    #                 json.dump(result, f, indent=2)
-    #             print(f"Saved contamination for {period} {topology} to {json_path}")
-    #         except Exception as exc:
-    #             print(f"Task {task} generated an exception: {exc}")
-    
-    # print("\n🎉 Analysis complete!")
-
-    # Sequential execution for debugging
-    for task in tasks:
-        try:
-            period, topology, analysis_type, _ = task  # Unpack all 4 elements.
+    # Run contamination calculations in parallel
+    with ProcessPoolExecutor(max_workers=3) as executor:
+        future_to_task = {executor.submit(calculate_contamination, *task): task for task in tasks}
+        for future in as_completed(future_to_task):
+            task = future_to_task[future]
+            try:
+                period, topology, analysis_type, _ = task
+                result = future.result()
+                
+                # Create safe topology string for filename
+                safe_topo = topology.replace("(", "").replace(")", "").replace(",", "_")
+                json_filename = f"contamination_{period}_{safe_topo}.json"
+                json_path = os.path.join(contamination_dir, json_filename)
+                
+                # Filter and round results
+                filtered_results = {
+                    str(key): {
+                        'c_i': round(counts['c_i'], 5),
+                        'c_i_err': round(counts['c_i_err'], 5)
+                    }
+                    for key, counts in result.items() 
+                    if counts['c_i'] != 0
+                }
+                
+                # Save results
+                with open(json_path, "w") as f:
+                    json.dump(filtered_results, f, indent=2)
+                
+                print(f"Saved contamination for {period} {topology} to {json_path}")
             
-            # Directly call `calculate_contamination`
-            result = calculate_contamination(*task)
-            print("Left calculate_contamination!")
-            
-            safe_topo = topology.replace("(", "").replace(")", "").replace(",", "_")
-            json_filename = f"contamination_{period}_{safe_topo}.json"
-            json_path = os.path.join(contamination_dir, json_filename)
-            print("JSON path created:", json_path)
-            
-            # Create a filtered dictionary: only include bins where c_i is nonzero
-            # and only include c_i and c_i_err.
-            filtered_results = {
-                str(key): {'c_i': counts['c_i'], 'c_i_err': counts['c_i_err']}
-                for key, counts in result.items() if counts['c_i'] != 0
-            }
-            
-            with open(json_path, "w") as f:
-                print("In with open loop")
-                json.dump(filtered_results, f, indent=2)
-            
-            print(f"Saved contamination for {period} {topology} to {json_path}")
-
-        except Exception as exc:
-            print(f"Task {task} generated an exception: {exc}")
+            except Exception as exc:
+                print(f"Task {task} generated an exception: {exc}")
 
     print("\n🎉 Analysis complete!")
 
