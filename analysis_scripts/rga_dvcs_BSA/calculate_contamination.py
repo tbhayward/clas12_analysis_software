@@ -122,9 +122,9 @@ def calculate_contamination(period, topology, analysis_type, binning_scheme):
     # --- Count DVCS data events ---
     count = 0
     for event in dvcs_trees["data"]:
-        if count >= 10000:
-            break
-        count += 1
+        # if count >= 10000:
+        #     break
+        # count += 1
         try:
             if not apply_kinematic_cuts(
                 event.t1, event.open_angle_ep2, event.theta_gamma_gamma,
@@ -157,15 +157,9 @@ def calculate_contamination(period, topology, analysis_type, binning_scheme):
     # --- Count π⁰ misidentification events from eppi0_bkg MC ---
     count = 0
     for event in pi0_bkg_trees["mc"]:
-        if count >= 10000:
-            break
-        count += 1
-        print(apply_kinematic_cuts(
-                event.t1, event.open_angle_ep2, event.theta_gamma_gamma,
-                event.Emiss2, event.Mx2, event.Mx2_1, event.Mx2_2,
-                event.pTmiss, event.xF,
-                analysis_type, "mc", "", topology
-            ))
+        # if count >= 10000:
+        #     break
+        # count += 1
         try:
             if not apply_kinematic_cuts(
                 event.t1, event.open_angle_ep2, event.theta_gamma_gamma,
@@ -185,9 +179,6 @@ def calculate_contamination(period, topology, analysis_type, binning_scheme):
             Q2_val = float(event.Q2)
             t_val  = abs(float(event.t1))
             phi_val = float(event.phi2)
-            print(f"t1={event.t1}, open_angle_ep2={event.open_angle_ep2}, theta_gamma_gamma={event.theta_gamma_gamma}, "
-              f"Emiss2={event.Emiss2}, Mx2={event.Mx2}, Mx2_1={event.Mx2_1}, Mx2_2={event.Mx2_2}, "
-              f"pTmiss={event.pTmiss}, xF={event.xF}, analysis_type={analysis_type}, topology={topology}")
         except Exception as e:
             continue
         i_xB = find_bin(xB_val, xB_bins)
@@ -202,9 +193,9 @@ def calculate_contamination(period, topology, analysis_type, binning_scheme):
     # --- Count π⁰ experimental events from eppi0 data ---
     count = 0
     for event in pi0_exp_trees.get("data", []):
-        if count >= 10000:
-            break
-        count += 1
+        # if count >= 10000:
+        #     break
+        # count += 1
         try:
             if not apply_kinematic_cuts(
                 event.t1, event.open_angle_ep2, event.theta_pi0_pi0,
@@ -236,9 +227,9 @@ def calculate_contamination(period, topology, analysis_type, binning_scheme):
     # --- Count π⁰ reconstructed events from eppi0 MC ---
     count = 0
     for event in pi0_exp_trees.get("mc", []):
-        if count >= 10000:
-            break
-        count += 1
+        # if count >= 10000:
+        #     break
+        # count += 1
         try:
             if not apply_kinematic_cuts(
                 event.t1, event.open_angle_ep2, event.theta_pi0_pi0,
