@@ -106,14 +106,14 @@ def calculate_contamination(period, topology, analysis_type, binning_scheme):
     pi0_reco_period = period.replace("DVCS", "eppi0")
     pi0_bkg_period  = period.replace("DVCS", "eppi0_bkg")
     
+    print("THIS IS A TEST WE'RE LOOKING FOR THIS")
+
     _, pi0_exp_trees = load_root_files(pi0_exp_period)
     _, pi0_reco_trees = load_root_files(pi0_reco_period)
     _, pi0_bkg_trees  = load_root_files(pi0_bkg_period)
     
     # Load the cuts dictionary (using DVCS cuts even for bkg, if needed).
     cuts_dict = load_cuts(period, topology)
-
-    print("THIS IS A TEST WE'RE LOOKING FOR THIS")
     
     # Build bin boundaries from the binning scheme.
     xB_bins = [(b.xBmin, b.xBmax) for b in binning_scheme]
