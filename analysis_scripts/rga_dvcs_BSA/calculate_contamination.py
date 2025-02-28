@@ -79,10 +79,9 @@ def calculate_contamination(period, topology, analysis_type, binning_scheme):
     _, dvcs_trees = load_root_files(period)
     print("passed load root files")
 
-    # Ensure dvcs_trees exists
-    if period not in dvcs_trees:
-        print("HELLO THERE")
-        raise KeyError(f"[ERROR] dvcs_trees does not contain data for period {period}")
+    # Check that the 'data' key exists.
+    if "data" not in dvcs_trees:
+        raise KeyError(f"[ERROR] DVCS trees for period {period} do not contain 'data'.")
 
     # For DVCS, we use:
     #   DVCS data: dvcs_trees["data"]
