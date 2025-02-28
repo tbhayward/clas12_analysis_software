@@ -75,7 +75,7 @@ def main():
     ]
     # Define the three topologies.
     topologies = ["(FD,FD)", "(CD,FD)", "(CD,FT)"]
-    print("HELLO WORLD")
+    
     # Build tasks: each task is (period, topology, analysis_type, binning_scheme)
     tasks = []
     for period, analysis_type in dvcs_periods:
@@ -90,6 +90,7 @@ def main():
             try:
                 period, topology, analysis_type, _ = task  # Unpack all 4 elements.
                 result = future.result()
+                print("HELLO WORLD")
                 safe_topo = topology.replace("(", "").replace(")", "").replace(",", "_")
                 json_filename = f"contamination_{period}_{safe_topo}.json"
                 json_path = os.path.join(contamination_dir, json_filename)
