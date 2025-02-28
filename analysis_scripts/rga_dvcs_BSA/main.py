@@ -82,30 +82,61 @@ def main():
         for topo in topologies:
             tasks.append((period, topo, analysis_type, binning_scheme))
     
-    print("HELLO WORLD 1")
-    # Run contamination calculations in parallel (max 3 workers).
-    with ProcessPoolExecutor(max_workers=1) as executor:
-        future_to_task = {executor.submit(calculate_contamination, dvcs_trees, *task): task for task in tasks}
-        for future in as_completed(future_to_task):
-            print("HELLO WORLD 2")
-            task = future_to_task[future]
-            try:
-                print("HELLO WORLD 3")
-                period, topology, analysis_type, _ = task  # Unpack all 4 elements.
-                print(period)
-                print(topology)
-                print(analysis_type)
-                result = future.result()
-                safe_topo = topology.replace("(", "").replace(")", "").replace(",", "_")
-                print("HELLO WORLD 4")
-                json_filename = f"contamination_{period}_{safe_topo}.json"
-                json_path = os.path.join(contamination_dir, json_filename)
-                with open(json_path, "w") as f:
-                    json.dump(result, f, indent=2)
-                print(f"Saved contamination for {period} {topology} to {json_path}")
-            except Exception as exc:
-                print(f"Task {task} generated an exception: {exc}")
+    # print("HELLO WORLD 1")
+    # # Run contamination calculations in parallel (max 3 workers).
+    # with ProcessPoolExecutor(max_workers=1) as executor:
+    #     future_to_task = {executor.submit(calculate_contamination, *task): task for task in tasks}
+    #     for future in as_completed(future_to_task):
+    #         print("HELLO WORLD 2")
+    #         task = future_to_task[future]
+    #         try:
+    #             print("HELLO WORLD 3")
+    #             period, topology, analysis_type, _ = task  # Unpack all 4 elements.
+    #             print(period)
+    #             print(topology)
+    #             print(analysis_type)
+    #             result = future.result()
+    #             safe_topo = topology.replace("(", "").replace(")", "").replace(",", "_")
+    #             print("HELLO WORLD 4")
+    #             json_filename = f"contamination_{period}_{safe_topo}.json"
+    #             json_path = os.path.join(contamination_dir, json_filename)
+    #             with open(json_path, "w") as f:
+    #                 json.dump(result, f, indent=2)
+    #             print(f"Saved contamination for {period} {topology} to {json_path}")
+    #         except Exception as exc:
+    #             print(f"Task {task} generated an exception: {exc}")
     
+    # print("\n🎉 Analysis complete!")
+
+    print("HELLO WORLD 1")
+
+    # Sequential execution for debugging
+    for task in tasks:
+        print("HELLO WORLD 2")
+        try:
+            print("HELLO WORLD 3")
+            period, topology, analysis_type, _ = task  # Unpack all 4 elements.
+            print(period)
+            print(topology)
+            print(analysis_type)
+            
+            # Directly call `calculate_contamination` instead of using executor.submit
+            result = calculate_contamination(*task)
+
+            safe_topo = topology.replace("(", "").replace(")", "").replace(",", "_")
+            print("HELLO WORLD 4")
+
+            json_filename = f"contamination_{period}_{safe_topo}.json"
+            json_path = os.path.join(contamination_dir, json_filename)
+
+            with open(json_path, "w") as f:
+                json.dump(result, f, indent=2)
+
+            print(f"Saved contamination for {period} {topology} to {json_path}")
+
+        except Exception as exc:
+            print(f"Task {task} generated an exception: {exc}")
+
     print("\n🎉 Analysis complete!")
 
 if __name__ == "__main__":
