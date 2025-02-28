@@ -75,14 +75,15 @@ def calculate_contamination(period, topology, analysis_type, binning_scheme):
     print(f"[calculate_contamination] Beginning contamination calculation for {period}, topology {topology}, analysis {analysis_type}")
     print(f"DEBUG: Looking for key: {period}_{topology}")
 
+    print("before load_root_files")
+    result = load_root_files(period)
+    print("passed load root files")
+
     # Ensure dvcs_trees exists
     if period not in dvcs_trees:
         print("HELLO THERE")
         raise KeyError(f"[ERROR] dvcs_trees does not contain data for period {period}")
 
-    print("before load_root_files")
-    result = load_root_files(period)
-    print("passed load root files")
     # For DVCS, we use:
     #   DVCS data: dvcs_trees["data"]
     # For π⁰ samples we need to build the corresponding period names.
