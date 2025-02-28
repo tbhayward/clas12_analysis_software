@@ -120,7 +120,7 @@ def calculate_contamination(period, topology, analysis_type, binning_scheme):
     # --- Count DVCS data events ---
     count = 0
     for event in dvcs_trees["data"]:
-        if count >= 100:
+        if count >= 10000:
             break
         count += 1
         try:
@@ -155,7 +155,7 @@ def calculate_contamination(period, topology, analysis_type, binning_scheme):
     # --- Count π⁰ misidentification events from eppi0_bkg MC ---
     count = 0
     for event in pi0_bkg_trees["mc"]:
-        if count >= 100:
+        if count >= 10000:
             break
         count += 1
         try:
@@ -189,7 +189,7 @@ def calculate_contamination(period, topology, analysis_type, binning_scheme):
     # --- Count π⁰ experimental events from eppi0 data ---
     count = 0
     for event in pi0_exp_trees.get("data", []):
-        if count >= 100:
+        if count >= 10000:
             break
         count += 1
         try:
@@ -223,7 +223,7 @@ def calculate_contamination(period, topology, analysis_type, binning_scheme):
     # --- Count π⁰ reconstructed events from eppi0 MC ---
     count = 0
     for event in pi0_exp_trees.get("mc", []):
-        if count >= 100:
+        if count >= 10000:
             break
         count += 1
         try:
