@@ -91,6 +91,9 @@ def main():
             task = future_to_task[future]
             try:
                 print("HELLO WORLD 3")
+                print(period)
+                print(topology)
+                print(analysis_type)
                 period, topology, analysis_type, _ = task  # Unpack all 4 elements.
                 result = future.result()
                 safe_topo = topology.replace("(", "").replace(")", "").replace(",", "_")
