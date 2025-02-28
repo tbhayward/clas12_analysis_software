@@ -11,6 +11,8 @@ def apply_kinematic_cuts(t_value, open_angle_ep2_value, theta_neutral_neutral_va
 
     If you want to add more universal cuts, do so here.
     """
+    print(-t_value, open_angle_ep2_value, pTmiss_value)
+
     # 1) universal angle cut
     if open_angle_ep2_value <= 5.0:
         return False
