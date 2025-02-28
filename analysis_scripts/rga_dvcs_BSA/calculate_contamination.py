@@ -94,6 +94,13 @@ def calculate_contamination(period, topology, analysis_type, binning_scheme):
     except ValueError:
         print(f"[WARNING] No background MC found for {pi0_bkg_period}, skipping.")
         pi0_bkg_trees = {}
+
+    _, pi0_bkg_trees = load_root_files(pi0_bkg_period)
+    if "mc" in pi0_bkg_trees:
+        n_entries = pi0_bkg_trees["mc"].GetEntries()
+        print(f"pi0_bkg_trees['mc'] has {n_entries} entries")
+    else:
+        print("pi0_bkg_trees does not contain 'mc'")
     
     # Load the cuts dictionary (using DVCS cuts even for bkg, if needed).
     cuts_dict = load_cuts(period, topology)
