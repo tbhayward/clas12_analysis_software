@@ -123,7 +123,7 @@ def main():
             print("safe_topo is done although Im not sure what the point of it was")
             json_filename = f"contamination_{period}_{safe_topo}.json"
             json_path = os.path.join(contamination_dir, json_filename)
-
+            print("json_path created")
             with open(json_path, "w") as f:
                 json.dump(result, f, indent=2)
 
