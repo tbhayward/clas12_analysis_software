@@ -120,7 +120,7 @@ def main():
             result = calculate_contamination(*task)
             print("left calculate contamination!!")
             safe_topo = topology.replace("(", "").replace(")", "").replace(",", "_")
-
+            print("safe_topo is done although Im not sure what the point of it was")
             json_filename = f"contamination_{period}_{safe_topo}.json"
             json_path = os.path.join(contamination_dir, json_filename)
 
