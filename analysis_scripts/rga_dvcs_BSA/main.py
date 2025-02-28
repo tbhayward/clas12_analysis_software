@@ -84,7 +84,7 @@ def main():
     
     # Run contamination calculations in parallel (max 3 workers).
     with ProcessPoolExecutor(max_workers=3) as executor:
-        future_to_task = {executor.submit(lambda t: calculate_contamination(*t), task): task for task in tasks}
+        future_to_task = {executor.submit(calculate_contamination, *task): task for task in tasks}
         for future in as_completed(future_to_task):
             task = future_to_task[future]
             try:
