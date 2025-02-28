@@ -263,6 +263,7 @@ def calculate_contamination(period, topology, analysis_type, binning_scheme):
         else:
             ratio = counts['N_pi0_exp'] / counts['N_pi0_reco']
             c_i = counts['N_pi0_mc'] * ratio / N_data
+            print(c_i);
             rel_pi0_mc = 1 / math.sqrt(counts['N_pi0_mc']) if counts['N_pi0_mc'] > 0 else 0
             rel_pi0_exp = 1 / math.sqrt(counts['N_pi0_exp']) if counts['N_pi0_exp'] > 0 else 0
             rel_pi0_reco = 1 / math.sqrt(counts['N_pi0_reco']) if counts['N_pi0_reco'] > 0 else 0
