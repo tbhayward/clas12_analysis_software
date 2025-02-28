@@ -74,15 +74,31 @@ def calculate_contamination(period, topology, analysis_type, binning_scheme):
     print(f"[calculate_contamination] Beginning contamination calculation for {period}, topology {topology}, analysis {analysis_type}")
     
 
+    print(f"[DEBUG] Calling load_root_files with period: {period}")
+    result = load_root_files(period)
+
+    # Check if result is a tuple and contains the expected elements
+    if not isinstance(result, tuple) or len(result) != 2:
+        print(f"[ERROR] load_root_files({period}) returned unexpected structure: {type(result)} with value {result}")
+        return {}
+
+    # Unpack the result
+    _, dvcs_trees = result
+
+    # Ensure dvcs_trees is a dictionary
+    if not isinstance(dvcs_trees, dict):
+        print(f"[ERROR] load_root_files({period}) returned an unexpected type for dvcs_trees: {type(dvcs_trees)} with value {dvcs_trees}")
+        return {}
+
+    # Print debug information about keys
+    print(f"[calculate_contamination] DVCS trees keys: {list(dvcs_trees.keys())}")
+
+    # Check for missing keys
     if "data" not in dvcs_trees:
         print(f"[ERROR] 'data' key missing in dvcs_trees for {period}. Available keys: {list(dvcs_trees.keys())}")
     if "mc" not in dvcs_trees:
         print(f"[ERROR] 'mc' key missing in dvcs_trees for {period}. Available keys: {list(dvcs_trees.keys())}")
-    # Load DVCS trees.
-    _, dvcs_trees = load_root_files(period)
-    if not isinstance(dvcs_trees, dict):
-        print(f"[ERROR] load_root_files({period}) returned unexpected structure: {type(dvcs_trees)}")
-    print(f"[calculate_contamination] DVCS trees keys: {list(dvcs_trees.keys())}")
+
     if "data" not in dvcs_trees or "mc" not in dvcs_trees:
         print(f"[calculate_contamination] ERROR: Missing 'data' or 'mc' in DVCS trees for {period}.")
         return {}
