@@ -116,10 +116,9 @@ def main():
             print(topology)
             print(analysis_type)
             
-            # print(f"Calling calculate_contamination with args: {task}")
             # Directly call `calculate_contamination` instead of using executor.submit
             result = calculate_contamination(*task)
-
+            print("left calculate contamination!!")
             safe_topo = topology.replace("(", "").replace(")", "").replace(",", "_")
 
             json_filename = f"contamination_{period}_{safe_topo}.json"
