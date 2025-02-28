@@ -27,7 +27,6 @@ def apply_kinematic_cuts(t_value, open_angle_ep2_value, theta_neutral_neutral_va
     #endif
 
     # If all checks pass:
-    print("We're going to return true now!");
     return True
 #enddef
 
