@@ -4,8 +4,9 @@ import os
 from concurrent.futures import ProcessPoolExecutor, as_completed
 
 # We import the multi-stage process_period function and the combine_results function
-from exclusivity import process_period_multi_stage, combine_results
 from label_formatting import configure_global_style
+from exclusivity import process_period_multi_stage, combine_results
+from load_binning_scheme import load_binning_scheme
 
 def run_period(args):
     """
@@ -45,20 +46,27 @@ def main():
         ("eppi0_Sp19_inb", "eppi0"),
     ]
 
-    # Prepare a list of argument tuples for each period (include the output_dir)
-    tasks = [(period, analysis_type, output_dir) for period, analysis_type in periods_to_run]
+    # # Prepare a list of argument tuples for each period (include the output_dir)
+    # tasks = [(period, analysis_type, output_dir) for period, analysis_type in periods_to_run]
 
-    # Use ProcessPoolExecutor with a maximum of 3 workers
-    with ProcessPoolExecutor(max_workers=6) as executor:
-        futures = [executor.submit(run_period, task) for task in tasks]
-        for future in as_completed(futures):
-            try:
-                future.result()  # wait for individual task to complete
-            except Exception as exc:
-                print(f"⚠️ A task generated an exception: {exc}")
+    # # Use ProcessPoolExecutor with a maximum of 3 workers
+    # with ProcessPoolExecutor(max_workers=6) as executor:
+    #     futures = [executor.submit(run_period, task) for task in tasks]
+    #     for future in as_completed(futures):
+    #         try:
+    #             future.result()  # wait for individual task to complete
+    #         except Exception as exc:
+    #             print(f"⚠️ A task generated an exception: {exc}")
+    # print("🧩 Combining results (JSON files from each topology & stage)...")
+    # combine_results(output_dir)
 
-    print("🧩 Combining results (JSON files from each topology & stage)...")
-    combine_results(output_dir)
+
+    # Load the binning scheme from the CSV file.
+    csv_file_path = os.path.join("imports", "integrated_bin_v2.csv")
+    binning_scheme = load_binning_scheme(csv_file_path)
+    print("Loaded binning scheme:")
+    for b in binning_scheme:
+        print(b)
     print("\n🎉 Analysis complete!")
 
 if __name__ == "__main__":
