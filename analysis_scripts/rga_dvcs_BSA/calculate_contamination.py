@@ -76,7 +76,7 @@ def calculate_contamination(period, topology, analysis_type, binning_scheme):
     print(f"DEBUG: Looking for key: {period}_{topology}")
 
     print("before load_root_files")
-    result = load_root_files(period)
+    _, dvcs_trees = load_root_files(period)
     print("passed load root files")
 
     # Ensure dvcs_trees exists
