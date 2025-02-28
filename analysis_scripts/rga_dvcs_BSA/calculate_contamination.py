@@ -170,9 +170,8 @@ def calculate_contamination(period, topology, analysis_type, binning_scheme):
                 analysis_type, "mc", "", topology
             ):
                 continue
-            print(f"t1={event.t1}, open_angle_ep2={event.open_angle_ep2}, "
-              f"pTmiss={event.pTmiss}")
             if not passes_3sigma_cuts(event, True, cuts_dict):
+                print("hey");
                 continue
         except Exception as e:
             continue
