@@ -157,37 +157,37 @@ def calculate_contamination(period, topology, analysis_type, binning_scheme):
     print("FINISHED FIRST LOOP")
     # --- Count π⁰ misidentification events from eppi0_bkg MC ---
     count = 0
-        for event in pi0_bkg_trees["mc"]:
-            if count >= 100:
-                break
-            count += 1
-            try:
-                if not apply_kinematic_cuts(
-                    event.t1, event.open_angle_ep2, theta_gamma_gamma,
-                    event.Emiss2, event.Mx2, event.Mx2_1, event.Mx2_2,
-                    event.pTmiss, event.xF,
-                    analysis_type, "mc", "", topology
-                ):
-                    continue
-                if not passes_3sigma_cuts(event, True, cuts_dict):
-                    continue
-            except Exception as e:
+    for event in pi0_bkg_trees["mc"]:
+        if count >= 100:
+            break
+        count += 1
+        try:
+            if not apply_kinematic_cuts(
+                event.t1, event.open_angle_ep2, theta_gamma_gamma,
+                event.Emiss2, event.Mx2, event.Mx2_1, event.Mx2_2,
+                event.pTmiss, event.xF,
+                analysis_type, "mc", "", topology
+            ):
                 continue
+            if not passes_3sigma_cuts(event, True, cuts_dict):
+                continue
+        except Exception as e:
+            continue
 
-            try:
-                xB_val = float(event.x)
-                Q2_val = float(event.Q2)
-                t_val  = abs(float(event.t1))
-                phi_val = float(event.phi2)
-            except Exception as e:
-                continue
-            i_xB = find_bin(xB_val, xB_bins)
-            i_Q2 = find_bin(Q2_val, Q2_bins)
-            i_t  = find_bin(t_val, t_bins)
-            i_phi = np.digitize(phi_val, phi_edges) - 1
-            if i_xB is None or i_Q2 is None or i_t is None or i_phi is None or i_phi < 0 or i_phi >= N_PHI_BINS:
-                continue
-            results[(i_xB, i_Q2, i_t, i_phi)]['N_pi0_mc'] += 1
+        try:
+            xB_val = float(event.x)
+            Q2_val = float(event.Q2)
+            t_val  = abs(float(event.t1))
+            phi_val = float(event.phi2)
+        except Exception as e:
+            continue
+        i_xB = find_bin(xB_val, xB_bins)
+        i_Q2 = find_bin(Q2_val, Q2_bins)
+        i_t  = find_bin(t_val, t_bins)
+        i_phi = np.digitize(phi_val, phi_edges) - 1
+        if i_xB is None or i_Q2 is None or i_t is None or i_phi is None or i_phi < 0 or i_phi >= N_PHI_BINS:
+            continue
+        results[(i_xB, i_Q2, i_t, i_phi)]['N_pi0_mc'] += 1
 
     print("FINISHED SECOND LOOP")
     # --- Count π⁰ experimental events from eppi0 data ---
