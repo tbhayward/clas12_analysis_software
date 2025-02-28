@@ -61,7 +61,8 @@ def load_cuts(period, topology):
     if not cuts_dict:
         print(f"[WARNING] No cuts found for key '{dictionary_key}'. Is combined_cuts.json correct?")
 
-def calculate_contamination(period, topology, analysis_type, binning_scheme):
+
+def calculate_contamination(dvcs_trees, period, topology, analysis_type, binning_scheme):
     """
     Calculate the 4D contamination for a given DVCS period and topology.
     
@@ -72,7 +73,12 @@ def calculate_contamination(period, topology, analysis_type, binning_scheme):
     Returns a dictionary keyed by a 4‐tuple (i_xB, i_Q2, i_t, i_phi) with contamination info.
     """
     print(f"[calculate_contamination] Beginning contamination calculation for {period}, topology {topology}, analysis {analysis_type}")
-    
+    print(f"DEBUG: Looking for key: {period}_{topology}")
+
+    # Ensure dvcs_trees exists
+    if period not in dvcs_trees:
+        raise KeyError(f"[ERROR] dvcs_trees does not contain data for period {period}")
+
     result = load_root_files(period)
 
     

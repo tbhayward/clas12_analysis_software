@@ -85,7 +85,7 @@ def main():
     print("HELLO WORLD 1")
     # Run contamination calculations in parallel (max 3 workers).
     with ProcessPoolExecutor(max_workers=1) as executor:
-        future_to_task = {executor.submit(calculate_contamination, *task): task for task in tasks}
+        future_to_task = {executor.submit(calculate_contamination, dvcs_trees, *task): task for task in tasks}
         for future in as_completed(future_to_task):
             print("HELLO WORLD 2")
             task = future_to_task[future]
