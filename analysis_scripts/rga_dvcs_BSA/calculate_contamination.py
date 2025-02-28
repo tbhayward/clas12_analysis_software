@@ -84,35 +84,20 @@ def calculate_contamination(period, topology, analysis_type, binning_scheme):
 
     # Unpack the result
     _, dvcs_trees = result
-
-    # Ensure dvcs_trees is a dictionary
     if not isinstance(dvcs_trees, dict):
-        print(f"[ERROR] load_root_files({period}) returned an unexpected type for dvcs_trees: {type(dvcs_trees)} with value {dvcs_trees}")
-        return {}
+    print(f"[ERROR] dvcs_trees is not a dictionary! Type: {type(dvcs_trees)}, Value: {dvcs_trees}")
 
-    # Print debug information about keys
-    print(f"[calculate_contamination] DVCS trees keys: {list(dvcs_trees.keys())}")
-
-    print(f"[calculate_contamination] DVCS trees keys: {list(dvcs_trees.keys())}")
-
-    if "data" in dvcs_trees:
-        print(f"[DEBUG] dvcs_trees['data'] type: {type(dvcs_trees['data'])}")
-        if dvcs_trees["data"] is None:
-            print(f"[ERROR] dvcs_trees['data'] is None!")
-        elif not hasattr(dvcs_trees["data"], "GetEntries"):
-            print(f"[ERROR] dvcs_trees['data'] does not appear to be a TChain. Value: {dvcs_trees['data']}")
-    else:
-        print(f"[ERROR] 'data' key missing from dvcs_trees after assignment!")
-
-    # Check for missing keys
     if "data" not in dvcs_trees:
-        print(f"[ERROR] 'data' key missing in dvcs_trees for {period}. Available keys: {list(dvcs_trees.keys())}")
-    if "mc" not in dvcs_trees:
-        print(f"[ERROR] 'mc' key missing in dvcs_trees for {period}. Available keys: {list(dvcs_trees.keys())}")
+        print(f"[ERROR] Missing 'data' key in dvcs_trees! Available keys: {list(dvcs_trees.keys())}")
 
-    if "data" not in dvcs_trees or "mc" not in dvcs_trees:
-        print(f"[calculate_contamination] ERROR: Missing 'data' or 'mc' in DVCS trees for {period}.")
-        return {}
+    if dvcs_trees["data"] is None:
+        print("[ERROR] dvcs_trees['data'] is None!")
+
+    if not hasattr(dvcs_trees["data"], "__iter__"):
+        print(f"[ERROR] dvcs_trees['data'] is not iterable! Type: {type(dvcs_trees['data'])}")
+
+    print(f"[DEBUG] Ready to iterate over dvcs_trees['data'] with {dvcs_trees['data'].GetEntries()} entries.")
+
     
     # For DVCS, we use:
     #   DVCS data: dvcs_trees["data"]
@@ -145,6 +130,12 @@ def calculate_contamination(period, topology, analysis_type, binning_scheme):
                         'N_pi0_exp': 0,
                         'N_pi0_reco': 0
                     }
+
+
+    for i, event in enumerate(dvcs_trees["data"]):
+        if i < 5:  # Print only the first few events
+            print(f"[DEBUG] Sample event {i}: xB={getattr(event, 'xB', 'MISSING')}, Q2={getattr(event, 'Q2', 'MISSING')}, t={getattr(event, 't', 'MISSING')}")
+        break  # Ensure this runs only once at the start
     
     # --- Count DVCS data events ---
     for event in dvcs_trees["data"]:
