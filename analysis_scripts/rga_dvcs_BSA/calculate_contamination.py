@@ -157,6 +157,8 @@ def calculate_contamination(period, topology, analysis_type, binning_scheme):
     # --- Count π⁰ misidentification events from eppi0_bkg MC ---
     count = 0
     for event in pi0_bkg_trees["mc"]:
+        print(f"t1={event.t1}, open_angle_ep2={event.open_angle_ep2}, "
+              f"pTmiss={event.pTmiss}")
         if count >= 10000:
             break
         count += 1
