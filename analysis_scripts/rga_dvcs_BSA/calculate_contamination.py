@@ -125,7 +125,7 @@ def calculate_contamination(period, topology, analysis_type, binning_scheme):
         count += 1
         try:
             if not apply_kinematic_cuts(
-                event.t1, event.open_angle_ep2, 0.0,
+                event.t1, event.open_angle_ep2, event.theta_gamma_gamma,
                 event.Emiss2, event.Mx2, event.Mx2_1, event.Mx2_2,
                 event.pTmiss, event.xF,
                 analysis_type, "data", "", topology
@@ -154,6 +154,7 @@ def calculate_contamination(period, topology, analysis_type, binning_scheme):
             continue
         results[(i_xB, i_Q2, i_t, i_phi)]['N_data'] += 1
 
+    print("FINISHED FIRST LOOP")
     # --- Count π⁰ misidentification events from eppi0_bkg MC ---
     count = 0
     if "mc" in pi0_bkg_trees and pi0_bkg_trees["mc"].GetEntries() > 0:
@@ -163,7 +164,7 @@ def calculate_contamination(period, topology, analysis_type, binning_scheme):
             count += 1
             try:
                 if not apply_kinematic_cuts(
-                    event.t1, event.open_angle_ep2, 0.0,
+                    event.t1, event.open_angle_ep2, theta_gamma_gamma,
                     event.Emiss2, event.Mx2, event.Mx2_1, event.Mx2_2,
                     event.pTmiss, event.xF,
                     analysis_type, "mc", "", topology
@@ -197,7 +198,7 @@ def calculate_contamination(period, topology, analysis_type, binning_scheme):
         count += 1
         try:
             if not apply_kinematic_cuts(
-                event.t1, event.open_angle_ep2, 0.0,
+                event.t1, event.open_angle_ep2, theta_pi0_pi0,
                 event.Emiss2, event.Mx2, event.Mx2_1, event.Mx2_2,
                 event.pTmiss, event.xF,
                 "eppi0", "data", "", topology
@@ -231,7 +232,7 @@ def calculate_contamination(period, topology, analysis_type, binning_scheme):
         count += 1
         try:
             if not apply_kinematic_cuts(
-                event.t1, event.open_angle_ep2, 0.0,
+                event.t1, event.open_angle_ep2, theta_pi0_pi0,
                 event.Emiss2, event.Mx2, event.Mx2_1, event.Mx2_2,
                 event.pTmiss, event.xF,
                 "eppi0", "mc", "", topology
