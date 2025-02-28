@@ -120,7 +120,7 @@ def main():
             print(topology)
             print(analysis_type)
             
-            print(f"Calling calculate_contamination with args: {task}")
+            # print(f"Calling calculate_contamination with args: {task}")
             # Directly call `calculate_contamination` instead of using executor.submit
             print("Calling calculate_contamination")
             result = calculate_contamination(*task)
