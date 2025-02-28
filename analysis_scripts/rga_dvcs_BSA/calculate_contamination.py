@@ -160,13 +160,13 @@ def calculate_contamination(period, topology, analysis_type, binning_scheme):
         if count >= 10000:
             break
         count += 1
-        try:
-            print(apply_kinematic_cuts(
+        print(apply_kinematic_cuts(
                 event.t1, event.open_angle_ep2, theta_gamma_gamma,
                 event.Emiss2, event.Mx2, event.Mx2_1, event.Mx2_2,
                 event.pTmiss, event.xF,
                 analysis_type, "mc", "", topology
             ))
+        try:
             if not apply_kinematic_cuts(
                 event.t1, event.open_angle_ep2, theta_gamma_gamma,
                 event.Emiss2, event.Mx2, event.Mx2_1, event.Mx2_2,
