@@ -112,8 +112,11 @@ def calculate_contamination(period, topology, analysis_type, binning_scheme):
     _, pi0_reco_trees = load_root_files(pi0_reco_period)
     print("THIS IS A TEST WE'RE LOOKING FOR THIS ONE MORE TIME")
     pi0_bkg_trees = {}
-    if pi0_bkg_period in file_map:
+    try:
         _, pi0_bkg_trees = load_root_files(pi0_bkg_period)
+    except ValueError:
+        print(f"[WARNING] No background MC found for {pi0_bkg_period}, skipping.")
+        pi0_bkg_trees = {}
     print("THIS IS A TEST WE'RE LOOKING FOR THIS ONE FINAL TIME")
     
     # Load the cuts dictionary (using DVCS cuts even for bkg, if needed).
