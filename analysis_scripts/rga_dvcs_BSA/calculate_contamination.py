@@ -44,22 +44,44 @@ def find_bin(value, bin_boundaries):
 
 def load_cuts(period, topology):
     """
-    Load the combined cuts JSON from the exclusivity processing and return the cuts dictionary
-    for the given period and topology. The key is assumed to be in the form:
-         "<period>_<topology_cleaned>"
-    where topology_cleaned removes parentheses and commas.
-    If the file or key is not found, returns an empty dict.
+    Loads the final cuts dictionary from combined_cuts.json for a given (period, topology).
+
+    If the period includes 'bkg' (e.g. 'eppi0_bkg_Sp19_inb'), we REPLACE that
+    with the corresponding 'DVCS' period (so we reuse the DVCS dictionary).
+    That way, the bkg sample uses the same 3σ cuts as DVCS, avoiding KeyError('data').
     """
-    cuts_dict = {}
+
+    # 1) Clean up the topology string for the JSON key
+    topo_clean = topology.replace("(", "").replace(")", "").replace(",", "_").strip()
+
+    # 2) If this period is a 'bkg' sample, re-map it to the DVCS version:
+    #    e.g. "eppi0_bkg_Sp19_inb" -> "DVCS_Sp19_inb"
+    #    Adjust the exact string replacements as needed for your naming scheme.
+    if "bkg" in period:
+        # Example approach:
+        # If your 'bkg' name always is "eppi0_bkg_Sp19_inb",
+        # and the DVCS name is "DVCS_Sp19_inb":
+        dvcs_equiv = period.replace("eppi0_bkg", "DVCS")
+        # If your code just wants to drop "bkg_", do something like:
+        # dvcs_equiv = period.replace("bkg_", "")
+        dictionary_key = f"{dvcs_equiv}_{topo_clean}"
+    else:
+        # Normal case:
+        dictionary_key = f"{period}_{topo_clean}"
+
+    # 3) Load combined_cuts.json
     combined_cuts_path = os.path.join("exclusivity", "combined_cuts.json")
+    cuts_dict = {}
     if os.path.exists(combined_cuts_path):
         with open(combined_cuts_path, "r") as f:
             combined_cuts = json.load(f)
-        # Clean topology: remove parentheses and commas, and strip spaces.
-        topo_clean = topology.replace("(", "").replace(")", "").replace(",", "_").strip()
-        key = f"{period}_{topo_clean}"
-        if key in combined_cuts:
-            cuts_dict = combined_cuts[key]
+        if dictionary_key in combined_cuts:
+            cuts_dict = combined_cuts[dictionary_key]
+        else:
+            # Key not found => empty dictionary => passes_3sigma_cuts(...) will skip or break
+            print(f"⚠️ Key '{dictionary_key}' not found in {combined_cuts_path}; returning empty cuts_dict.")
+    else:
+        print(f"⚠️ {combined_cuts_path} does not exist, returning empty cuts_dict.")
     return cuts_dict
 
 def calculate_contamination(period, topology, analysis_type, binning_scheme):
