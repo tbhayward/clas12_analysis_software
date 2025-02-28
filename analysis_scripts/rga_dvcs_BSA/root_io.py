@@ -60,17 +60,18 @@ def load_root_files(period):
 
         # If period starts with 'eppi0', we assume we need 'theta_pi0_pi0' branch
         # Otherwise we assume DVCS with 'theta_gamma_gamma'
-        if period.startswith("eppi0"):
-            branches = [
-                "helicity", "x", "Q2", "detector1", "detector2", "t1", "open_angle_ep2", "theta_pi0_pi0",
-                "Emiss2", "Mx2", "Mx2_1", "Mx2_2", "pTmiss", "xF", "phi2"
-            ]
-        else:
+        if period.startswith("eppi0_bkg") or if period.startswith("DVCS"):
+            # Background files, even though they start with eppi0, are DVCS-like.
             branches = [
                 "helicity", "x", "Q2", "detector1", "detector2", "t1", "open_angle_ep2", "theta_gamma_gamma",
                 "Emiss2", "Mx2", "Mx2_1", "Mx2_2", "pTmiss", "xF", "phi2"
             ]
-        #endfor
+        elif period.startswith("eppi0"):
+            # Regular eppi0 files.
+            branches = [
+                "helicity", "x", "Q2", "detector1", "detector2", "t1", "open_angle_ep2", "theta_pi0_pi0",
+                "Emiss2", "Mx2", "Mx2_1", "Mx2_2", "pTmiss", "xF", "phi2"
+            ]
 
         # Activate only these required branches:
         for br in branches:
