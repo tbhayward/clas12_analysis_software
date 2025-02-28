@@ -40,13 +40,13 @@ def load_root_files(period):
             "mc":   "/work/clas12/thayward/CLAS12_exclusive/eppi0/data/pass2/mc/hipo_files/rec_aaogen_norad_rga_sp19_inb_50nA_10200MeV_eppi0.root"
         },
         "eppi0_bkg_Fa18_inb": {
-            "mc":   "/work/clas12/thayward/CLAS12_exclusive/eppi0/data/pass2/mc/hipo_files/eppi0_bkg_aaogen_norad_rga_fa18_inb_epgamma.root"
+            "data":   "/work/clas12/thayward/CLAS12_exclusive/eppi0/data/pass2/mc/hipo_files/eppi0_bkg_aaogen_norad_rga_fa18_inb_epgamma.root"
         },
         "eppi0_bkg_Fa18_out": {
-            "mc":   "/work/clas12/thayward/CLAS12_exclusive/eppi0/data/pass2/mc/hipo_files/eppi0_bkg_aaogen_norad_rga_fa18_out_epgamma.root"
+            "data":   "/work/clas12/thayward/CLAS12_exclusive/eppi0/data/pass2/mc/hipo_files/eppi0_bkg_aaogen_norad_rga_fa18_out_epgamma.root"
         },
         "eppi0_bkg_Sp19_inb": {
-            "mc":   "/work/clas12/thayward/CLAS12_exclusive/eppi0/data/pass2/mc/hipo_files/eppi0_bkg_aaogen_norad_rga_sp19_inb_epgamma.root"
+            "data":   "/work/clas12/thayward/CLAS12_exclusive/eppi0/data/pass2/mc/hipo_files/eppi0_bkg_aaogen_norad_rga_sp19_inb_epgamma.root"
         }
     }
 
@@ -62,12 +62,12 @@ def load_root_files(period):
         # Otherwise we assume DVCS with 'theta_gamma_gamma'
         if period.startswith("eppi0"):
             branches = [
-                "detector1", "detector2", "t1", "open_angle_ep2", "theta_pi0_pi0",
+                "helicity", "detector1", "detector2", "t1", "open_angle_ep2", "theta_pi0_pi0",
                 "Emiss2", "Mx2", "Mx2_1", "Mx2_2", "pTmiss", "xF", "phi2"
             ]
         else:
             branches = [
-                "detector1", "detector2", "t1", "open_angle_ep2", "theta_gamma_gamma",
+                "helicity", "detector1", "detector2", "t1", "open_angle_ep2", "theta_gamma_gamma",
                 "Emiss2", "Mx2", "Mx2_1", "Mx2_2", "pTmiss", "xF", "phi2"
             ]
         #endfor
