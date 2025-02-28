@@ -19,34 +19,44 @@ def find_bin(value, bin_boundaries):
             return i
     return None
 
+import os
+import json
+
 def load_cuts(period, topology):
     """
     Loads the final cuts dictionary from combined_cuts.json for a given (period, topology).
 
-    If the period includes 'bkg', it is remapped to the corresponding DVCS period.
-    If no entry is found, returns a default dictionary {"data": {}, "mc": {}}.
+    If the period includes 'bkg' (e.g. 'eppi0_bkg_Sp19_inb'), we map it to the corresponding
+    'DVCS' period (e.g. 'DVCS_Sp19_inb') so that the same 3σ cuts are used.
     """
-    topo_clean = topology.replace("(", "").replace(")", "").replace(",", "_").replace(" ", "")
+    # Clean up the topology string for the JSON key.
+    topo_clean = topology.replace("(", "").replace(")", "").replace(",", "_").strip()
+
+    # If this period is a 'bkg' sample, map it to the corresponding DVCS period.
     if "bkg" in period:
+        # Example: "eppi0_bkg_Sp19_inb" -> "DVCS_Sp19_inb"
         dvcs_equiv = period.replace("eppi0_bkg", "DVCS")
         dictionary_key = f"{dvcs_equiv}_{topo_clean}"
     else:
         dictionary_key = f"{period}_{topo_clean}"
     
-    print(f"[load_cuts] Looking up key: '{dictionary_key}'")
+    print("DEBUG: Looking for key:", dictionary_key)
+
+    # Load combined_cuts.json
     combined_cuts_path = os.path.join("exclusivity", "combined_cuts.json")
-    default_dict = {"data": {}, "mc": {}}
-    if os.path.exists(combined_cuts_path):
-        with open(combined_cuts_path, "r") as f:
-            combined_cuts = json.load(f)
-        if dictionary_key in combined_cuts:
-            return combined_cuts[dictionary_key]
-        else:
-            print(f"[load_cuts] Key '{dictionary_key}' not found; available keys: {list(combined_cuts.keys())}")
-            return default_dict
+    if not os.path.exists(combined_cuts_path):
+        print(f"⚠️ {combined_cuts_path} does not exist; returning empty cuts dictionary.")
+        return {}
+
+    with open(combined_cuts_path, "r") as f:
+        combined_cuts = json.load(f)
+
+    if dictionary_key in combined_cuts:
+        return combined_cuts[dictionary_key]
     else:
-        print(f"[load_cuts] File {combined_cuts_path} not found; returning default cuts dictionary.")
-        return default_dict
+        print(f"⚠️ Key '{dictionary_key}' not found in {combined_cuts_path}.")
+        print("Available keys:", list(combined_cuts.keys()))
+        return {}
 
 def calculate_contamination(period, topology, analysis_type, binning_scheme):
     """
