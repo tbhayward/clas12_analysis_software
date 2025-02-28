@@ -90,9 +90,11 @@ def main():
             print("HELLO WORLD 2")
             task = future_to_task[future]
             try:
+                print("HELLO WORLD 3")
                 period, topology, analysis_type, _ = task  # Unpack all 4 elements.
                 result = future.result()
                 safe_topo = topology.replace("(", "").replace(")", "").replace(",", "_")
+                print("HELLO WORLD 4")
                 json_filename = f"contamination_{period}_{safe_topo}.json"
                 json_path = os.path.join(contamination_dir, json_filename)
                 with open(json_path, "w") as f:
