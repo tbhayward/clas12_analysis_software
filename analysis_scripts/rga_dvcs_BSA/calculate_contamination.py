@@ -159,7 +159,6 @@ def calculate_contamination(period, topology, analysis_type, binning_scheme):
             break
         count += 1
         try:
-            print("in here")
             if not apply_kinematic_cuts(
                 event.t1, event.open_angle_ep2, theta_gamma_gamma,
                 event.Emiss2, event.Mx2, event.Mx2_1, event.Mx2_2,
@@ -172,6 +171,7 @@ def calculate_contamination(period, topology, analysis_type, binning_scheme):
         except Exception as e:
             continue
 
+        print("in here")
         try:
             xB_val = float(event.x)
             Q2_val = float(event.Q2)
