@@ -111,7 +111,9 @@ def calculate_contamination(period, topology, analysis_type, binning_scheme):
     print("THIS IS A TEST WE'RE LOOKING FOR THIS AGAIN")
     _, pi0_reco_trees = load_root_files(pi0_reco_period)
     print("THIS IS A TEST WE'RE LOOKING FOR THIS ONE MORE TIME")
-    _, pi0_bkg_trees  = load_root_files(pi0_bkg_period)
+    pi0_bkg_trees = {}
+    if pi0_bkg_period in file_map:
+        _, pi0_bkg_trees = load_root_files(pi0_bkg_period)
     print("THIS IS A TEST WE'RE LOOKING FOR THIS ONE FINAL TIME")
     
     # Load the cuts dictionary (using DVCS cuts even for bkg, if needed).
@@ -173,34 +175,35 @@ def calculate_contamination(period, topology, analysis_type, binning_scheme):
         results[(i_xB, i_Q2, i_t, i_phi)]['N_data'] += 1
 
     # --- Count π⁰ misidentification events from eppi0_bkg MC ---
-    for event in pi0_bkg_trees.get("mc", []):
-        try:
-            if not apply_kinematic_cuts(
-                event.t1, event.open_angle_ep2, 0.0,
-                event.Emiss2, event.Mx2, event.Mx2_1, event.Mx2_2,
-                event.pTmiss, event.xF,
-                analysis_type, "mc", "", topology
-            ):
+    if "mc" in pi0_bkg_trees and pi0_bkg_trees["mc"].GetEntries() > 0:
+        for event in pi0_bkg_trees["mc"]:
+            try:
+                if not apply_kinematic_cuts(
+                    event.t1, event.open_angle_ep2, 0.0,
+                    event.Emiss2, event.Mx2, event.Mx2_1, event.Mx2_2,
+                    event.pTmiss, event.xF,
+                    analysis_type, "mc", "", topology
+                ):
+                    continue
+                if not passes_3sigma_cuts(event, True, cuts_dict):
+                    continue
+            except Exception as e:
                 continue
-            if not passes_3sigma_cuts(event, True, cuts_dict):
-                continue
-        except Exception as e:
-            continue
 
-        try:
-            xB_val = float(event.xB)
-            Q2_val = float(event.Q2)
-            t_val  = abs(float(event.t))
-            phi_val = float(event.phi2)
-        except Exception as e:
-            continue
-        i_xB = find_bin(xB_val, xB_bins)
-        i_Q2 = find_bin(Q2_val, Q2_bins)
-        i_t  = find_bin(t_val, t_bins)
-        i_phi = np.digitize(phi_val, phi_edges) - 1
-        if i_xB is None or i_Q2 is None or i_t is None or i_phi is None or i_phi < 0 or i_phi >= N_PHI_BINS:
-            continue
-        results[(i_xB, i_Q2, i_t, i_phi)]['N_pi0_mc'] += 1
+            try:
+                xB_val = float(event.xB)
+                Q2_val = float(event.Q2)
+                t_val  = abs(float(event.t))
+                phi_val = float(event.phi2)
+            except Exception as e:
+                continue
+            i_xB = find_bin(xB_val, xB_bins)
+            i_Q2 = find_bin(Q2_val, Q2_bins)
+            i_t  = find_bin(t_val, t_bins)
+            i_phi = np.digitize(phi_val, phi_edges) - 1
+            if i_xB is None or i_Q2 is None or i_t is None or i_phi is None or i_phi < 0 or i_phi >= N_PHI_BINS:
+                continue
+            results[(i_xB, i_Q2, i_t, i_phi)]['N_pi0_mc'] += 1
 
     # --- Count π⁰ experimental events from eppi0 data ---
     for event in pi0_exp_trees.get("data", []):

@@ -40,13 +40,13 @@ def load_root_files(period):
             "mc":   "/work/clas12/thayward/CLAS12_exclusive/eppi0/data/pass2/mc/hipo_files/rec_aaogen_norad_rga_sp19_inb_50nA_10200MeV_eppi0.root"
         },
         "eppi0_bkg_Fa18_inb": {
-            "data":   "/work/clas12/thayward/CLAS12_exclusive/eppi0/data/pass2/mc/hipo_files/eppi0_bkg_aaogen_norad_rga_fa18_inb_epgamma.root"
+            "mc":   "/work/clas12/thayward/CLAS12_exclusive/eppi0/data/pass2/mc/hipo_files/eppi0_bkg_aaogen_norad_rga_fa18_inb_epgamma.root"
         },
         "eppi0_bkg_Fa18_out": {
-            "data":   "/work/clas12/thayward/CLAS12_exclusive/eppi0/data/pass2/mc/hipo_files/eppi0_bkg_aaogen_norad_rga_fa18_out_epgamma.root"
+            "mc":   "/work/clas12/thayward/CLAS12_exclusive/eppi0/data/pass2/mc/hipo_files/eppi0_bkg_aaogen_norad_rga_fa18_out_epgamma.root"
         },
         "eppi0_bkg_Sp19_inb": {
-            "data":   "/work/clas12/thayward/CLAS12_exclusive/eppi0/data/pass2/mc/hipo_files/eppi0_bkg_aaogen_norad_rga_sp19_inb_epgamma.root"
+            "mc":   "/work/clas12/thayward/CLAS12_exclusive/eppi0/data/pass2/mc/hipo_files/eppi0_bkg_aaogen_norad_rga_sp19_inb_epgamma.root"
         }
     }
 
@@ -54,7 +54,7 @@ def load_root_files(period):
         raise ValueError(f"Unrecognized period: {period}. Check your file_map keys.")
 
     trees = {}
-    for category in ["data", "mc"]:
+    for category in file_map[period]:  # Only iterate over available categories
         chain = ROOT.TChain("PhysicsEvents")
         chain.Add(file_map[period][category])
 
