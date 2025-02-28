@@ -112,9 +112,6 @@ def main():
     for task in tasks:
         try:
             period, topology, analysis_type, _ = task  # Unpack all 4 elements.
-            print(period)
-            print(topology)
-            print(analysis_type)
             
             # Directly call `calculate_contamination`
             result = calculate_contamination(*task)
