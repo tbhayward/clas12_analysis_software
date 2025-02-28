@@ -50,6 +50,7 @@ def load_root_files(period):
         }
     }
 
+    print("this is inside of root_io.py")
     if period not in file_map:
         raise ValueError(f"Unrecognized period: {period}. Check your file_map keys.")
 
