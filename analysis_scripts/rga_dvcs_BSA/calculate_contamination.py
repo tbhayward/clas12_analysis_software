@@ -62,7 +62,7 @@ def load_cuts(period, topology):
         print(f"[WARNING] No cuts found for key '{dictionary_key}'. Is combined_cuts.json correct?")
 
 
-def calculate_contamination(dvcs_trees, period, topology, analysis_type, binning_scheme):
+def calculate_contamination(period, topology, analysis_type, binning_scheme):
     """
     Calculate the 4D contamination for a given DVCS period and topology.
     
