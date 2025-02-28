@@ -248,6 +248,7 @@ def calculate_contamination(period, topology, analysis_type, binning_scheme):
             continue
         results[(i_xB, i_Q2, i_t, i_phi)]['N_pi0_reco'] += 1
 
+    print("moving to compute contamination")
     # --- Compute contamination in each 4D bin ---
     for key, counts in results.items():
         N_data = counts['N_data']
@@ -268,5 +269,4 @@ def calculate_contamination(period, topology, analysis_type, binning_scheme):
             counts['c_i'] = c_i
             counts['c_i_err'] = c_i_err
 
-    print("Finished calculate_contamination.py")
     return results
