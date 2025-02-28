@@ -140,7 +140,7 @@ def calculate_contamination(period, topology, analysis_type, binning_scheme):
         try:
             xB_val = float(event.x)
             Q2_val = float(event.Q2)
-            t_val  = abs(float(event.t))
+            t_val  = abs(float(event.t1))
             phi_val = float(event.phi2)
         except Exception as e:
             continue
@@ -177,7 +177,7 @@ def calculate_contamination(period, topology, analysis_type, binning_scheme):
             try:
                 xB_val = float(event.x)
                 Q2_val = float(event.Q2)
-                t_val  = abs(float(event.t))
+                t_val  = abs(float(event.t1))
                 phi_val = float(event.phi2)
             except Exception as e:
                 continue
@@ -211,7 +211,7 @@ def calculate_contamination(period, topology, analysis_type, binning_scheme):
         try:
             xB_val = float(event.x)
             Q2_val = float(event.Q2)
-            t_val  = abs(float(event.t))
+            t_val  = abs(float(event.t1))
             phi_val = float(event.phi2)
         except Exception as e:
             continue
@@ -245,7 +245,7 @@ def calculate_contamination(period, topology, analysis_type, binning_scheme):
         try:
             xB_val = float(event.x)
             Q2_val = float(event.Q2)
-            t_val  = abs(float(event.t))
+            t_val  = abs(float(event.t1))
             phi_val = float(event.phi2)
         except Exception as e:
             continue
