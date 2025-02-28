@@ -93,6 +93,17 @@ def calculate_contamination(period, topology, analysis_type, binning_scheme):
     # Print debug information about keys
     print(f"[calculate_contamination] DVCS trees keys: {list(dvcs_trees.keys())}")
 
+    print(f"[calculate_contamination] DVCS trees keys: {list(dvcs_trees.keys())}")
+
+    if "data" in dvcs_trees:
+        print(f"[DEBUG] dvcs_trees['data'] type: {type(dvcs_trees['data'])}")
+        if dvcs_trees["data"] is None:
+            print(f"[ERROR] dvcs_trees['data'] is None!")
+        elif not hasattr(dvcs_trees["data"], "GetEntries"):
+            print(f"[ERROR] dvcs_trees['data'] does not appear to be a TChain. Value: {dvcs_trees['data']}")
+    else:
+        print(f"[ERROR] 'data' key missing from dvcs_trees after assignment!")
+
     # Check for missing keys
     if "data" not in dvcs_trees:
         print(f"[ERROR] 'data' key missing in dvcs_trees for {period}. Available keys: {list(dvcs_trees.keys())}")
