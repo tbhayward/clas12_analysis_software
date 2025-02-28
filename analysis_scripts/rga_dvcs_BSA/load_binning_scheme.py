@@ -2,6 +2,9 @@
 
 from collections import namedtuple
 
+# Define Binning at module level.
+Binning = namedtuple("Binning", ["xBmin", "xBmax", "Q2min", "Q2max", "tmin", "tmax"])
+
 def load_binning_scheme(csv_file_path):
     """
     Reads the integrated_bin_v2.csv file and returns a list of bin boundaries.
@@ -28,7 +31,6 @@ def load_binning_scheme(csv_file_path):
       
     We extract columns 4, 5, 7, 8, 10, and 11 (with the t values made positive).
     """
-    Binning = namedtuple("Binning", ["xBmin", "xBmax", "Q2min", "Q2max", "tmin", "tmax"])
     binning_list = []
     
     with open(csv_file_path, "r") as f:
