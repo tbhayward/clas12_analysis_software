@@ -73,30 +73,7 @@ def calculate_contamination(period, topology, analysis_type, binning_scheme):
     """
     print(f"[calculate_contamination] Beginning contamination calculation for {period}, topology {topology}, analysis {analysis_type}")
     
-
-    print(f"[DEBUG] Calling load_root_files with period: {period}")
     result = load_root_files(period)
-
-    # Check if result is a tuple and contains the expected elements
-    if not isinstance(result, tuple) or len(result) != 2:
-        print(f"[ERROR] load_root_files({period}) returned unexpected structure: {type(result)} with value {result}")
-        return {}
-
-    # Unpack the result
-    _, dvcs_trees = result
-    if not isinstance(dvcs_trees, dict):
-        print(f"[ERROR] dvcs_trees is not a dictionary! Type: {type(dvcs_trees)}, Value: {dvcs_trees}")
-
-    if "data" not in dvcs_trees:
-        print(f"[ERROR] Missing 'data' key in dvcs_trees! Available keys: {list(dvcs_trees.keys())}")
-
-    if dvcs_trees["data"] is None:
-        print("[ERROR] dvcs_trees['data'] is None!")
-
-    if not hasattr(dvcs_trees["data"], "__iter__"):
-        print(f"[ERROR] dvcs_trees['data'] is not iterable! Type: {type(dvcs_trees['data'])}")
-
-    print(f"[DEBUG] Ready to iterate over dvcs_trees['data'] with {dvcs_trees['data'].GetEntries()} entries.")
 
     
     # For DVCS, we use:
@@ -106,18 +83,14 @@ def calculate_contamination(period, topology, analysis_type, binning_scheme):
     pi0_reco_period = period.replace("DVCS", "eppi0")
     pi0_bkg_period  = period.replace("DVCS", "eppi0_bkg")
     
-    print("THIS IS A TEST WE'RE LOOKING FOR THIS")
     _, pi0_exp_trees = load_root_files(pi0_exp_period)
-    print("THIS IS A TEST WE'RE LOOKING FOR THIS AGAIN")
     _, pi0_reco_trees = load_root_files(pi0_reco_period)
-    print("THIS IS A TEST WE'RE LOOKING FOR THIS ONE MORE TIME")
     pi0_bkg_trees = {}
     try:
         _, pi0_bkg_trees = load_root_files(pi0_bkg_period)
     except ValueError:
         print(f"[WARNING] No background MC found for {pi0_bkg_period}, skipping.")
         pi0_bkg_trees = {}
-    print("THIS IS A TEST WE'RE LOOKING FOR THIS ONE FINAL TIME")
     
     # Load the cuts dictionary (using DVCS cuts even for bkg, if needed).
     cuts_dict = load_cuts(period, topology)
@@ -140,14 +113,11 @@ def calculate_contamination(period, topology, analysis_type, binning_scheme):
                         'N_pi0_reco': 0
                     }
 
-
-    for i, event in enumerate(dvcs_trees["data"]):
-        if i < 5:  # Print only the first few events
-            print(f"[DEBUG] Sample event {i}: xB={getattr(event, 'xB', 'MISSING')}, Q2={getattr(event, 'Q2', 'MISSING')}, t={getattr(event, 't', 'MISSING')}")
-        break  # Ensure this runs only once at the start
     
     # --- Count DVCS data events ---
     for event in dvcs_trees["data"]:
+        if (event > 1000)
+            break
         try:
             if not apply_kinematic_cuts(
                 event.t1, event.open_angle_ep2, 0.0,
@@ -163,7 +133,7 @@ def calculate_contamination(period, topology, analysis_type, binning_scheme):
             continue
 
         try:
-            xB_val = float(event.xB)
+            xB_val = float(event.x)
             Q2_val = float(event.Q2)
             t_val  = abs(float(event.t))
             phi_val = float(event.phi2)
@@ -180,6 +150,8 @@ def calculate_contamination(period, topology, analysis_type, binning_scheme):
     # --- Count π⁰ misidentification events from eppi0_bkg MC ---
     if "mc" in pi0_bkg_trees and pi0_bkg_trees["mc"].GetEntries() > 0:
         for event in pi0_bkg_trees["mc"]:
+            if (event > 1000)
+                break
             try:
                 if not apply_kinematic_cuts(
                     event.t1, event.open_angle_ep2, 0.0,
@@ -194,7 +166,7 @@ def calculate_contamination(period, topology, analysis_type, binning_scheme):
                 continue
 
             try:
-                xB_val = float(event.xB)
+                xB_val = float(event.x)
                 Q2_val = float(event.Q2)
                 t_val  = abs(float(event.t))
                 phi_val = float(event.phi2)
@@ -210,6 +182,8 @@ def calculate_contamination(period, topology, analysis_type, binning_scheme):
 
     # --- Count π⁰ experimental events from eppi0 data ---
     for event in pi0_exp_trees.get("data", []):
+        if (event > 1000)
+            break
         try:
             if not apply_kinematic_cuts(
                 event.t1, event.open_angle_ep2, 0.0,
@@ -224,7 +198,7 @@ def calculate_contamination(period, topology, analysis_type, binning_scheme):
             continue
 
         try:
-            xB_val = float(event.xB)
+            xB_val = float(event.x)
             Q2_val = float(event.Q2)
             t_val  = abs(float(event.t))
             phi_val = float(event.phi2)
@@ -240,6 +214,8 @@ def calculate_contamination(period, topology, analysis_type, binning_scheme):
 
     # --- Count π⁰ reconstructed events from eppi0 MC ---
     for event in pi0_exp_trees.get("mc", []):
+        if (event > 1000)
+            break
         try:
             if not apply_kinematic_cuts(
                 event.t1, event.open_angle_ep2, 0.0,
@@ -254,7 +230,7 @@ def calculate_contamination(period, topology, analysis_type, binning_scheme):
             continue
 
         try:
-            xB_val = float(event.xB)
+            xB_val = float(event.x)
             Q2_val = float(event.Q2)
             t_val  = abs(float(event.t))
             phi_val = float(event.phi2)

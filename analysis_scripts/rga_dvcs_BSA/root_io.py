@@ -62,12 +62,12 @@ def load_root_files(period):
         # Otherwise we assume DVCS with 'theta_gamma_gamma'
         if period.startswith("eppi0"):
             branches = [
-                "helicity", "detector1", "detector2", "t1", "open_angle_ep2", "theta_pi0_pi0",
+                "helicity", "x", "Q2", "detector1", "detector2", "t1", "open_angle_ep2", "theta_pi0_pi0",
                 "Emiss2", "Mx2", "Mx2_1", "Mx2_2", "pTmiss", "xF", "phi2"
             ]
         else:
             branches = [
-                "helicity", "detector1", "detector2", "t1", "open_angle_ep2", "theta_gamma_gamma",
+                "helicity", "x", "Q2", "detector1", "detector2", "t1", "open_angle_ep2", "theta_gamma_gamma",
                 "Emiss2", "Mx2", "Mx2_1", "Mx2_2", "pTmiss", "xF", "phi2"
             ]
         #endfor
