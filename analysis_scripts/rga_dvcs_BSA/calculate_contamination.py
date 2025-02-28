@@ -96,11 +96,6 @@ def calculate_contamination(period, topology, analysis_type, binning_scheme):
         pi0_bkg_trees = {}
 
     _, pi0_bkg_trees = load_root_files(pi0_bkg_period)
-    if "mc" in pi0_bkg_trees:
-        n_entries = pi0_bkg_trees["mc"].GetEntries()
-        print(f"pi0_bkg_trees['mc'] has {n_entries} entries")
-    else:
-        print("pi0_bkg_trees does not contain 'mc'")
     
     # Load the cuts dictionary (using DVCS cuts even for bkg, if needed).
     cuts_dict = load_cuts(period, topology)
@@ -165,9 +160,6 @@ def calculate_contamination(period, topology, analysis_type, binning_scheme):
         print("HEY!!!!!!!")
         if count >= 10000:
             break
-        print(f"t1={event.t1}, open_angle_ep2={event.open_angle_ep2}, theta_gamma_gamma={event.theta_gamma_gamma}, "
-              f"Emiss2={event.Emiss2}, Mx2={event.Mx2}, Mx2_1={event.Mx2_1}, Mx2_2={event.Mx2_2}, "
-              f"pTmiss={event.pTmiss}, xF={event.xF}, analysis_type={analysis_type}, topology={topology}")
         count += 1
         try:
             if not apply_kinematic_cuts(
@@ -187,6 +179,9 @@ def calculate_contamination(period, topology, analysis_type, binning_scheme):
             Q2_val = float(event.Q2)
             t_val  = abs(float(event.t1))
             phi_val = float(event.phi2)
+            print(f"t1={event.t1}, open_angle_ep2={event.open_angle_ep2}, theta_gamma_gamma={event.theta_gamma_gamma}, "
+              f"Emiss2={event.Emiss2}, Mx2={event.Mx2}, Mx2_1={event.Mx2_1}, Mx2_2={event.Mx2_2}, "
+              f"pTmiss={event.pTmiss}, xF={event.xF}, analysis_type={analysis_type}, topology={topology}")
         except Exception as e:
             continue
         i_xB = find_bin(xB_val, xB_bins)
