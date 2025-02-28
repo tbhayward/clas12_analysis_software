@@ -210,12 +210,11 @@ def update_cuts_dict(data_hists, mc_hists, cumulative_dict, active_vars):
 #enddef
 
 def save_final_cuts(period_code, topology, output_dir, cuts_dict):
-    safe_topo = topology.replace("(", "").replace(")", "")
+    safe_topo = topology.replace("(", "").replace(")", "").replace(",", "_").strip()
     filename = f"cuts_{period_code}_{safe_topo}_final.json"
     out_path = os.path.join(output_dir, filename)
     with open(out_path, "w") as f:
         json.dump(cuts_dict, f, indent=2)
-    #endif
     print(f"   ✅ Wrote final JSON => {out_path}")
 #enddef
 
