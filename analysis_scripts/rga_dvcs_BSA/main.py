@@ -120,13 +120,16 @@ def main():
             result = calculate_contamination(*task)
             print("left calculate contamination!!")
             safe_topo = topology.replace("(", "").replace(")", "").replace(",", "_")
-            print("safe_topo is done although Im not sure what the point of it was")
             json_filename = f"contamination_{period}_{safe_topo}.json"
             json_path = os.path.join(contamination_dir, json_filename)
             print("json_path created")
+            
+            # Convert the tuple keys in `result` to strings.
+            result_str_keys = {str(key): value for key, value in result.items()}
+            
             with open(json_path, "w") as f:
                 print("in with open loop")
-                json.dump(result, f, indent=2)
+                json.dump(result_str_keys, f, indent=2)
 
             print(f"Saved contamination for {period} {topology} to {json_path}")
 
