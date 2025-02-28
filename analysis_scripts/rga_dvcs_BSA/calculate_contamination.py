@@ -58,6 +58,9 @@ def load_cuts(period, topology):
         print("Available keys:", list(combined_cuts.keys()))
         return {}
 
+    if not cuts_dict:
+        print(f"[WARNING] No cuts found for key '{dictionary_key}'. Is combined_cuts.json correct?")
+
 def calculate_contamination(period, topology, analysis_type, binning_scheme):
     """
     Calculate the 4D contamination for a given DVCS period and topology.
@@ -70,8 +73,15 @@ def calculate_contamination(period, topology, analysis_type, binning_scheme):
     """
     print(f"[calculate_contamination] Beginning contamination calculation for {period}, topology {topology}, analysis {analysis_type}")
     
+
+    if "data" not in dvcs_trees:
+        print(f"[ERROR] 'data' key missing in dvcs_trees for {period}. Available keys: {list(dvcs_trees.keys())}")
+    if "mc" not in dvcs_trees:
+        print(f"[ERROR] 'mc' key missing in dvcs_trees for {period}. Available keys: {list(dvcs_trees.keys())}")
     # Load DVCS trees.
     _, dvcs_trees = load_root_files(period)
+    if not isinstance(dvcs_trees, dict):
+        print(f"[ERROR] load_root_files({period}) returned unexpected structure: {type(dvcs_trees)}")
     print(f"[calculate_contamination] DVCS trees keys: {list(dvcs_trees.keys())}")
     if "data" not in dvcs_trees or "mc" not in dvcs_trees:
         print(f"[calculate_contamination] ERROR: Missing 'data' or 'mc' in DVCS trees for {period}.")
