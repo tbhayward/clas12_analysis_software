@@ -75,7 +75,7 @@ def main():
     ]
     # Define the three topologies.
     topologies = ["(FD,FD)", "(CD,FD)", "(CD,FT)"]
-    
+    print("HELLO WORLD")
     # Build tasks: each task is (period, topology, analysis_type, binning_scheme)
     tasks = []
     for period, analysis_type in dvcs_periods:
