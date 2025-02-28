@@ -85,7 +85,7 @@ def calculate_contamination(period, topology, analysis_type, binning_scheme):
     # Unpack the result
     _, dvcs_trees = result
     if not isinstance(dvcs_trees, dict):
-    print(f"[ERROR] dvcs_trees is not a dictionary! Type: {type(dvcs_trees)}, Value: {dvcs_trees}")
+        print(f"[ERROR] dvcs_trees is not a dictionary! Type: {type(dvcs_trees)}, Value: {dvcs_trees}")
 
     if "data" not in dvcs_trees:
         print(f"[ERROR] Missing 'data' key in dvcs_trees! Available keys: {list(dvcs_trees.keys())}")
