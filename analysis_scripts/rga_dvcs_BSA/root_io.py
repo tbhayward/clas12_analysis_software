@@ -7,6 +7,7 @@ import ROOT
 ROOT.gROOT.SetBatch(True)
 
 def load_root_files(period):
+    print("this is inside of root_io.py")
     """
     Load ROOT files with only required branches. We handle DVCS or eppi0
     by checking if period starts with 'eppi0' or 'DVCS'.
@@ -50,7 +51,6 @@ def load_root_files(period):
         }
     }
 
-    print("this is inside of root_io.py")
     if period not in file_map:
         raise ValueError(f"Unrecognized period: {period}. Check your file_map keys.")
 
