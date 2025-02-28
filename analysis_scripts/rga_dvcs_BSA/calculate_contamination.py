@@ -39,8 +39,6 @@ def load_cuts(period, topology):
         dictionary_key = f"{dvcs_equiv}_{topo_clean}"
     else:
         dictionary_key = f"{period}_{topo_clean}"
-    
-    print("DEBUG: Looking for key:", dictionary_key)
 
     # Load combined_cuts.json
     combined_cuts_path = os.path.join("exclusivity", "combined_cuts.json")
@@ -75,9 +73,7 @@ def calculate_contamination(period, topology, analysis_type, binning_scheme):
     print(f"[calculate_contamination] Beginning contamination calculation for {period}, topology {topology}, analysis {analysis_type}")
     print(f"DEBUG: Looking for key: {period}_{topology}")
 
-    print("before load_root_files")
     _, dvcs_trees = load_root_files(period)
-    print("passed load root files")
 
     # Check that the 'data' key exists.
     if "data" not in dvcs_trees:
@@ -123,7 +119,7 @@ def calculate_contamination(period, topology, analysis_type, binning_scheme):
     
     # --- Count DVCS data events ---
     for event in dvcs_trees["data"]:
-        if (event > 1000):
+        if (event > 100):
             break
         try:
             if not apply_kinematic_cuts(
@@ -144,6 +140,7 @@ def calculate_contamination(period, topology, analysis_type, binning_scheme):
             Q2_val = float(event.Q2)
             t_val  = abs(float(event.t))
             phi_val = float(event.phi2)
+            print(xB_val);
         except Exception as e:
             continue
         i_xB = find_bin(xB_val, xB_bins)
@@ -157,7 +154,7 @@ def calculate_contamination(period, topology, analysis_type, binning_scheme):
     # --- Count π⁰ misidentification events from eppi0_bkg MC ---
     if "mc" in pi0_bkg_trees and pi0_bkg_trees["mc"].GetEntries() > 0:
         for event in pi0_bkg_trees["mc"]:
-            if (event > 1000):
+            if (event > 100):
                 break
             try:
                 if not apply_kinematic_cuts(
@@ -189,7 +186,7 @@ def calculate_contamination(period, topology, analysis_type, binning_scheme):
 
     # --- Count π⁰ experimental events from eppi0 data ---
     for event in pi0_exp_trees.get("data", []):
-        if (event > 1000):
+        if (event > 100):
             break
         try:
             if not apply_kinematic_cuts(
@@ -221,7 +218,7 @@ def calculate_contamination(period, topology, analysis_type, binning_scheme):
 
     # --- Count π⁰ reconstructed events from eppi0 MC ---
     for event in pi0_exp_trees.get("mc", []):
-        if (event > 1000):
+        if (event > 100):
             break
         try:
             if not apply_kinematic_cuts(
@@ -271,4 +268,5 @@ def calculate_contamination(period, topology, analysis_type, binning_scheme):
             counts['c_i'] = c_i
             counts['c_i_err'] = c_i_err
 
+    print("Finished calculate_contamination.py")
     return results
