@@ -81,7 +81,7 @@ def calculate_contamination(period, topology, analysis_type, binning_scheme):
 
     result = load_root_files(period)
 
-    
+    print("passed load root files")
     # For DVCS, we use:
     #   DVCS data: dvcs_trees["data"]
     # For π⁰ samples we need to build the corresponding period names.
