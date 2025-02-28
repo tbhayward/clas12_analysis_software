@@ -65,6 +65,7 @@ def main():
     # print("Loaded binning scheme:")
     # for b in binning_scheme:
     #     print(b)
+    print(f"Loaded binning_scheme: {type(binning_scheme)} - {binning_scheme}")
     
     # --- Contamination calculation ---
     # Define DVCS periods for contamination calculation.
@@ -120,6 +121,7 @@ def main():
             print(topology)
             print(analysis_type)
             
+            print(f"Calling calculate_contamination with args: {task}")
             # Directly call `calculate_contamination` instead of using executor.submit
             result = calculate_contamination(*task)
 
