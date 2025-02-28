@@ -5,9 +5,10 @@ plot_contamination.py
 This script reads the contamination JSON file (one per run period) and the 
 binning scheme (from imports/integrated_bin_v2.csv) and produces a set of plots.
 For each unique xB bin, it produces a canvas (figure) whose rows are the unique Q² bins 
-and columns are the unique t bins (as determined by the contamination data).
+and columns are the unique t bins (as defined by the binning scheme).
 Each subplot shows the contamination (with error bars) as a function of φ (in degrees),
 with a fixed y–axis from 0 to 1 and a title that includes the average xB, Q², and t.
+If a bin is not present in the JSON file, it is plotted with contamination = 0 and error = 0.
 """
 
 import os
@@ -36,7 +37,7 @@ def load_contamination(run_period, contamination_dir="contamination"):
         data = json.load(f)
     contamination = {}
     for key_str, value in data.items():
-        # Convert key string to tuple of ints.
+        # Convert key string to a tuple of ints.
         key_tuple = tuple(int(x.strip()) for x in key_str.strip("()").split(","))
         contamination[key_tuple] = value
     return contamination
@@ -50,10 +51,10 @@ def plot_contamination_for_run(run_period,
     the binning scheme, then produce one plot per unique xB bin.
     
     For each xB bin, the function:
-      - Extracts the unique Q² and t bin indices (as they appear in the contamination data).
-      - Creates a canvas (figure) with rows corresponding to unique Q² bins and columns 
-        corresponding to unique t bins.
-      - In each subplot, the contamination (with error bars) is plotted vs. φ (in degrees).
+      - Uses all unique Q² and t bin boundaries (from the binning scheme).
+      - Creates a canvas with rows = unique Q² bins and columns = unique t bins.
+      - In each cell, it plots the contamination vs. φ (in degrees). For each phi‐bin,
+        if no entry is found in the JSON, it plots a point with c_i = 0 and error = 0.
       - Each subplot’s title shows the average xB, Q², and t for that cell.
       - The y–axis is fixed from 0 to 1.
     """
@@ -63,7 +64,7 @@ def plot_contamination_for_run(run_period,
     # Load the binning scheme.
     binning_scheme = load_binning_scheme(binning_csv)
     
-    # Compute the overall unique bin boundaries from the binning scheme.
+    # Compute the unique bin boundaries from the binning scheme.
     unique_xB_bins = sorted(set((b.xBmin, b.xBmax) for b in binning_scheme))
     unique_Q2_bins = sorted(set((b.Q2min, b.Q2max) for b in binning_scheme))
     unique_t_bins  = sorted(set((b.tmin, b.tmax) for b in binning_scheme))
@@ -72,48 +73,41 @@ def plot_contamination_for_run(run_period,
     
     # Loop over each unique xB bin.
     for i_xB, (xB_min, xB_max) in enumerate(unique_xB_bins):
-        # Filter contamination keys for this xB bin.
-        keys_for_xB = [key for key in contamination if key[0] == i_xB]
-        if not keys_for_xB:
-            continue  # Skip if no contamination data for this xB.
-        
-        # Extract unique Q² and t indices from the contamination keys.
-        unique_q2_indices = sorted({ key[1] for key in keys_for_xB })
-        unique_t_indices  = sorted({ key[2] for key in keys_for_xB })
-        
         xB_avg = (xB_min + xB_max) / 2.0
-        nrows = len(unique_q2_indices)
-        ncols = len(unique_t_indices)
-        fig, axes = plt.subplots(nrows, ncols, figsize=(3 * ncols + 2, 3 * nrows + 2), squeeze=False)
         
-        for row, q2_idx in enumerate(unique_q2_indices):
-            Q2_min, Q2_max = unique_Q2_bins[q2_idx]
+        nrows = len(unique_Q2_bins)
+        ncols = len(unique_t_bins)
+        fig, axes = plt.subplots(nrows, ncols, figsize=(3*ncols + 2, 3*nrows + 2), squeeze=False)
+        
+        for i_Q2, (Q2_min, Q2_max) in enumerate(unique_Q2_bins):
             Q2_avg = (Q2_min + Q2_max) / 2.0
-            for col, t_idx in enumerate(unique_t_indices):
-                t_min, t_max = unique_t_bins[t_idx]
+            for i_t, (t_min, t_max) in enumerate(unique_t_bins):
                 t_avg = (t_min + t_max) / 2.0
-                ax = axes[row, col]
+                ax = axes[i_Q2, i_t]
                 phi_vals = []
                 c_vals = []
                 c_errs = []
                 # Loop over phi bins.
                 for i_phi in range(N_PHI_BINS):
-                    key = (i_xB, q2_idx, t_idx, i_phi)
+                    key = (i_xB, i_Q2, i_t, i_phi)
+                    # Always add the phi bin center.
+                    phi_vals.append(phi_centers_deg[i_phi])
                     if key in contamination:
-                        phi_vals.append(phi_centers_deg[i_phi])
                         c_vals.append(contamination[key]['c_i'])
                         c_errs.append(contamination[key]['c_i_err'])
-                if phi_vals:
-                    ax.errorbar(phi_vals, c_vals, yerr=c_errs, fmt='o', color='black', capsize=3)
+                    else:
+                        c_vals.append(0)
+                        c_errs.append(0)
+                ax.errorbar(phi_vals, c_vals, yerr=c_errs, fmt='o', color='black', capsize=3)
                 ax.set_xlim(0, 360)
                 ax.set_xticks([0, 90, 180, 270, 360])
-                ax.set_ylim(0, 1)  # Fixed y-axis range from 0 to 1.
+                ax.set_ylim(0, 1)  # Fixed y–axis range from 0 to 1.
                 ax.grid(True, linestyle='--', alpha=0.5)
-                # Set the subplot title including the average xB, Q², and t.
+                # Set the subplot title including xB_avg, Q2_avg, and t_avg.
                 ax.set_title(rf"$x_B={xB_avg:.3f},\ Q^2={Q2_avg:.2f},\ -t={t_avg:.2f}$", fontsize=9)
-                if row == nrows - 1:
+                if i_Q2 == nrows - 1:
                     ax.set_xlabel(r"$\phi\ (\deg)$", fontsize=9)
-                if col == 0:
+                if i_t == 0:
                     ax.set_ylabel(r"$\pi^0$ contamination", fontsize=9)
         
         fig.suptitle(rf"Run Period: {run_period} -- x_B={xB_avg:.3f}", fontsize=12)
