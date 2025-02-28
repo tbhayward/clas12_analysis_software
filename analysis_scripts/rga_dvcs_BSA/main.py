@@ -116,21 +116,26 @@ def main():
             print(topology)
             print(analysis_type)
             
-            # Directly call `calculate_contamination` instead of using executor.submit
+            # Directly call `calculate_contamination`
             result = calculate_contamination(*task)
-            print("left calculate contamination!!")
+            print("Left calculate_contamination!")
+            
             safe_topo = topology.replace("(", "").replace(")", "").replace(",", "_")
             json_filename = f"contamination_{period}_{safe_topo}.json"
             json_path = os.path.join(contamination_dir, json_filename)
-            print("json_path created")
+            print("JSON path created:", json_path)
             
-            # Convert the tuple keys in `result` to strings.
-            result_str_keys = {str(key): value for key, value in result.items()}
+            # Create a filtered dictionary: only include bins where c_i is nonzero
+            # and only include c_i and c_i_err.
+            filtered_results = {
+                str(key): {'c_i': counts['c_i'], 'c_i_err': counts['c_i_err']}
+                for key, counts in result.items() if counts['c_i'] != 0
+            }
             
             with open(json_path, "w") as f:
-                print("in with open loop")
-                json.dump(result_str_keys, f, indent=2)
-
+                print("In with open loop")
+                json.dump(filtered_results, f, indent=2)
+            
             print(f"Saved contamination for {period} {topology} to {json_path}")
 
         except Exception as exc:

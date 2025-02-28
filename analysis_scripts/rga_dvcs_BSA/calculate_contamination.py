@@ -152,7 +152,6 @@ def calculate_contamination(period, topology, analysis_type, binning_scheme):
             continue
         results[(i_xB, i_Q2, i_t, i_phi)]['N_data'] += 1
 
-    print("FINISHED FIRST LOOP")
     # --- Count π⁰ misidentification events from eppi0_bkg MC ---
     count = 0
     for event in pi0_bkg_trees["mc"]:
@@ -187,7 +186,6 @@ def calculate_contamination(period, topology, analysis_type, binning_scheme):
             continue
         results[(i_xB, i_Q2, i_t, i_phi)]['N_pi0_mc'] += 1
 
-    print("FINISHED SECOND LOOP")
     # --- Count π⁰ experimental events from eppi0 data ---
     count = 0
     for event in pi0_exp_trees.get("data", []):
@@ -222,7 +220,6 @@ def calculate_contamination(period, topology, analysis_type, binning_scheme):
             continue
         results[(i_xB, i_Q2, i_t, i_phi)]['N_pi0_exp'] += 1
 
-    print("FINISHED THIRD LOOP")
     # --- Count π⁰ reconstructed events from eppi0 MC ---
     count = 0
     for event in pi0_exp_trees.get("mc", []):
@@ -257,7 +254,6 @@ def calculate_contamination(period, topology, analysis_type, binning_scheme):
             continue
         results[(i_xB, i_Q2, i_t, i_phi)]['N_pi0_reco'] += 1
 
-    print("FINISHED FOURTH LOOP")
     # --- Compute contamination in each 4D bin ---
     for key, counts in results.items():
         N_data = counts['N_data']
