@@ -125,7 +125,7 @@ def main():
             # Create a filtered dictionary: only include bins where c_i is nonzero
             # and only include c_i and c_i_err.
             filtered_results = {
-                str(key): {'c_i': counts['c_i'], 'c_i_err': counts['c_i_err']}
+                # str(key): {'c_i': counts['c_i'], 'c_i_err': counts['c_i_err']}
                 for key, counts in result.items() if counts['c_i'] != 0
             }
             

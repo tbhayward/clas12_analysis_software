@@ -168,7 +168,6 @@ def calculate_contamination(period, topology, analysis_type, binning_scheme):
                 analysis_type, "mc", "", topology
             ):
                 continue
-            print("hey");
             if not passes_3sigma_cuts(event, True, cuts_dict):
                 continue
         except Exception as e:
@@ -185,7 +184,6 @@ def calculate_contamination(period, topology, analysis_type, binning_scheme):
         i_Q2 = find_bin(Q2_val, Q2_bins)
         i_t  = find_bin(t_val, t_bins)
         i_phi = np.digitize(phi_val, phi_edges) - 1
-        print(i_xB); print(i_Q2); print(i_t); print(i_phi); print("\n");
         if i_xB is None or i_Q2 is None or i_t is None or i_phi is None or i_phi < 0 or i_phi >= N_PHI_BINS:
             continue
         results[(i_xB, i_Q2, i_t, i_phi)]['N_pi0_mc'] += 1
