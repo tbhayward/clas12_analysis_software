@@ -157,7 +157,6 @@ def calculate_contamination(period, topology, analysis_type, binning_scheme):
     # --- Count π⁰ misidentification events from eppi0_bkg MC ---
     count = 0
     for event in pi0_bkg_trees["mc"]:
-        print("HEY!!!!!!!")
         if count >= 10000:
             break
         count += 1
@@ -168,6 +167,7 @@ def calculate_contamination(period, topology, analysis_type, binning_scheme):
                 event.pTmiss, event.xF,
                 analysis_type, "mc", "", topology
             ):
+                print("failed apply apply_kinematic_cuts")
                 continue
             if not passes_3sigma_cuts(event, True, cuts_dict):
                 continue
