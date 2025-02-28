@@ -13,18 +13,22 @@ def load_binning_scheme(csv_file_path):
     with open(csv_file_path, "r") as f:
         reader = csv.reader(f)
         # Skip the first two rows (header information)
-        next(reader)
-        next(reader)
-        for row in reader:
+        header1 = next(reader)
+        header2 = next(reader)
+        print("Header row 1:", header1)
+        print("Header row 2:", header2)
+        for i, row in enumerate(reader):
+            print(f"Row {i}:", row)
             try:
                 xBmin = float(row[2])
                 xBmax = float(row[3])
                 Q2min = float(row[5])
                 Q2max = float(row[6])
-                # The CSV provides |tmin| and |tmax|; we make sure they are positive.
+                # The CSV provides |tmin| and |tmax|; we ensure they are positive.
                 tmin = abs(float(row[8]))
                 tmax = abs(float(row[9]))
-            except (ValueError, IndexError):
+            except (ValueError, IndexError) as e:
+                print(f"Skipping row {i} due to error: {e}")
                 continue
             binning_list.append(Binning(xBmin, xBmax, Q2min, Q2max, tmin, tmax))
     return binning_list
