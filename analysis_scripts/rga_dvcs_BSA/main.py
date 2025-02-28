@@ -62,9 +62,9 @@ def main():
     # --- Load binning scheme ---
     csv_file_path = os.path.join("imports", "integrated_bin_v2.csv")
     binning_scheme = load_binning_scheme(csv_file_path)
-    print("Loaded binning scheme:")
-    for b in binning_scheme:
-        print(b)
+    # print("Loaded binning scheme:")
+    # for b in binning_scheme:
+    #     print(b)
     
     # --- Contamination calculation ---
     # Define DVCS periods for contamination calculation.
