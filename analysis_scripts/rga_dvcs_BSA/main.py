@@ -88,7 +88,7 @@ def main():
         for future in as_completed(future_to_task):
             task = future_to_task[future]
             try:
-                period, topology, _ = task  # Unpack task for filename generation.
+                period, topology, analysis_type, _ = task  # Unpack all 4 elements.
                 result = future.result()
                 safe_topo = topology.replace("(", "").replace(")", "").replace(",", "_")
                 json_filename = f"contamination_{period}_{safe_topo}.json"
