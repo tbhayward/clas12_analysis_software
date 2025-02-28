@@ -148,8 +148,6 @@ def calculate_contamination(period, topology, analysis_type, binning_scheme):
         i_Q2 = find_bin(Q2_val, Q2_bins)
         i_t  = find_bin(t_val, t_bins)
         i_phi = np.digitize(phi_val, phi_edges) - 1
-        print(t_val);
-        print(i_xB); print(i_Q2); print(i_t); print(i_phi); print("\n");
         if i_xB is None or i_Q2 is None or i_t is None or i_phi is None or i_phi < 0 or i_phi >= N_PHI_BINS:
             continue
         results[(i_xB, i_Q2, i_t, i_phi)]['N_data'] += 1
@@ -224,6 +222,7 @@ def calculate_contamination(period, topology, analysis_type, binning_scheme):
             continue
         results[(i_xB, i_Q2, i_t, i_phi)]['N_pi0_exp'] += 1
 
+    print("FINISHED THIRD LOOP")
     # --- Count π⁰ reconstructed events from eppi0 MC ---
     count = 0
     for event in pi0_exp_trees.get("mc", []):
@@ -258,6 +257,7 @@ def calculate_contamination(period, topology, analysis_type, binning_scheme):
             continue
         results[(i_xB, i_Q2, i_t, i_phi)]['N_pi0_reco'] += 1
 
+    print("FINISHED FOURTH LOOP")
     # --- Compute contamination in each 4D bin ---
     for key, counts in results.items():
         N_data = counts['N_data']
