@@ -105,11 +105,16 @@ def calculate_contamination(period, topology, analysis_type, binning_scheme):
     Q2_bins = [(b.Q2min, b.Q2max) for b in binning_scheme]
     t_bins  = [(b.tmin, b.tmax) for b in binning_scheme]
     
+
+    # Extract the unique bin boundaries from the binning scheme.
+    unique_xB_bins = sorted(set((b.xBmin, b.xBmax) for b in binning_scheme))
+    unique_Q2_bins = sorted(set((b.Q2min, b.Q2max) for b in binning_scheme))
+    unique_t_bins  = sorted(set((b.tmin, b.tmax) for b in binning_scheme))
     # Initialize a results dictionary for every 4D bin.
     results = {}
-    for i_xB in range(len(xB_bins)):
-        for i_Q2 in range(len(Q2_bins)):
-            for i_t in range(len(t_bins)):
+    for i_xB in range(len(unique_xB_bins)):
+        for i_Q2 in range(len(unique_Q2_bins)):
+            for i_t in range(len(unique_t_bins)):
                 for i_phi in range(N_PHI_BINS):
                     results[(i_xB, i_Q2, i_t, i_phi)] = {
                         'N_data': 0,
@@ -146,9 +151,9 @@ def calculate_contamination(period, topology, analysis_type, binning_scheme):
             phi_val = float(event.phi2)
         except Exception as e:
             continue
-        i_xB = find_bin(xB_val, xB_bins)
-        i_Q2 = find_bin(Q2_val, Q2_bins)
-        i_t  = find_bin(t_val, t_bins)
+        i_xB = find_bin(xB_val, unique_xB_bins)
+        i_Q2 = find_bin(Q2_val, unique_Q2_bins)
+        i_t  = find_bin(t_val, unique_t_bins)
         i_phi = np.digitize(phi_val, phi_edges) - 1
         if i_xB is None or i_Q2 is None or i_t is None or i_phi is None or i_phi < 0 or i_phi >= N_PHI_BINS:
             continue
@@ -180,9 +185,9 @@ def calculate_contamination(period, topology, analysis_type, binning_scheme):
             phi_val = float(event.phi2)
         except Exception as e:
             continue
-        i_xB = find_bin(xB_val, xB_bins)
-        i_Q2 = find_bin(Q2_val, Q2_bins)
-        i_t  = find_bin(t_val, t_bins)
+        i_xB = find_bin(xB_val, unique_xB_bins)
+        i_Q2 = find_bin(Q2_val, unique_Q2_bins)
+        i_t  = find_bin(t_val, unique_t_bins)
         i_phi = np.digitize(phi_val, phi_edges) - 1
         if i_xB is None or i_Q2 is None or i_t is None or i_phi is None or i_phi < 0 or i_phi >= N_PHI_BINS:
             continue
@@ -214,9 +219,9 @@ def calculate_contamination(period, topology, analysis_type, binning_scheme):
             phi_val = float(event.phi2)
         except Exception as e:
             continue
-        i_xB = find_bin(xB_val, xB_bins)
-        i_Q2 = find_bin(Q2_val, Q2_bins)
-        i_t  = find_bin(t_val, t_bins)
+        i_xB = find_bin(xB_val, unique_xB_bins)
+        i_Q2 = find_bin(Q2_val, unique_Q2_bins)
+        i_t  = find_bin(t_val, unique_t_bins)
         i_phi = np.digitize(phi_val, phi_edges) - 1
         if i_xB is None or i_Q2 is None or i_t is None or i_phi is None or i_phi < 0 or i_phi >= N_PHI_BINS:
             continue
@@ -248,9 +253,9 @@ def calculate_contamination(period, topology, analysis_type, binning_scheme):
             phi_val = float(event.phi2)
         except Exception as e:
             continue
-        i_xB = find_bin(xB_val, xB_bins)
-        i_Q2 = find_bin(Q2_val, Q2_bins)
-        i_t  = find_bin(t_val, t_bins)
+        i_xB = find_bin(xB_val, unique_xB_bins)
+        i_Q2 = find_bin(Q2_val, unique_Q2_bins)
+        i_t  = find_bin(t_val, unique_t_bins)
         i_phi = np.digitize(phi_val, phi_edges) - 1
         if i_xB is None or i_Q2 is None or i_t is None or i_phi is None or i_phi < 0 or i_phi >= N_PHI_BINS:
             continue
