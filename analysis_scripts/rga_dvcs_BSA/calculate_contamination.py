@@ -131,7 +131,7 @@ def calculate_contamination(period, topology, analysis_type, binning_scheme):
     _, pi0_reco_trees = load_root_files(pi0_reco_period)
     _, pi0_bkg_trees  = load_root_files(pi0_bkg_period)
 
-    
+    print("BEFORE cuts_dict")
     # Load the cuts from the exclusivity processing.
     cuts_dict = load_cuts(period, topology)
     
