@@ -61,12 +61,12 @@ def main():
     # print("🧩 Combining exclusivity results (JSON files from each topology & stage)...")
     # combine_results(output_dir)
     
-    # --- Load binning scheme ---
-    csv_file_path = os.path.join("imports", "integrated_bin_v2.csv")
-    binning_scheme = load_binning_scheme(csv_file_path)
-    print("Loaded binning scheme:")
-    for b in binning_scheme:
-        print(b)
+    # # --- Load binning scheme ---
+    # csv_file_path = os.path.join("imports", "integrated_bin_v2.csv")
+    # binning_scheme = load_binning_scheme(csv_file_path)
+    # print("Loaded binning scheme:")
+    # for b in binning_scheme:
+    #     print(b)
     
     # --- Contamination calculation tasks ---
     dvcs_periods = [
@@ -83,27 +83,19 @@ def main():
             tasks.append((period, topo, analysis_type, binning_scheme))
     
     # Run contamination calculations in parallel
-    period_results = {}  # Will group combined results by period
-    with ProcessPoolExecutor(max_workers=1) as executor:
+    period_results = {}  # Will group results by period
+    with ProcessPoolExecutor(max_workers=6) as executor:
         future_to_task = {executor.submit(calculate_contamination, *task): task for task in tasks}
         for future in as_completed(future_to_task):
             task = future_to_task[future]
             try:
                 period, topology, analysis_type, _ = task
                 result = future.result()
-                # Write individual contamination JSON for this topology.
-                # (We do not filter out zero bins so that every bin appears.)
-                safe_topo = topology.replace("(", "").replace(")", "").replace(",", "_")
-                json_filename = f"contamination_{period}_{safe_topo}.json"
-                json_path = os.path.join(contamination_dir, json_filename)
-                with open(json_path, "w") as f:
-                    json.dump(result, f, indent=2)
-                print(f"Saved individual contamination for {period} {topology} to {json_path}")
-                
-                # Combine results for this period (summing raw counts)
+                # Group the result under the corresponding period:
                 if period not in period_results:
                     period_results[period] = result
                 else:
+                    # Sum the counts in each bin (the keys should match if you use unique bins)
                     for key, counts in result.items():
                         if key not in period_results[period]:
                             period_results[period][key] = counts
@@ -114,9 +106,9 @@ def main():
                             period_results[period][key]['N_pi0_reco'] += counts['N_pi0_reco']
             except Exception as exc:
                 print(f"Task {task} generated an exception: {exc}")
-
-    # Now, for each run period we recompute the contamination values (c_i and c_i_err)
-    # from the summed counts and write one combined JSON file per period.
+    
+    # Now recompute the contamination values for each bin from the summed counts,
+    # and write one file per period.
     for period, result in period_results.items():
         for key, counts in result.items():
             N_data = counts['N_data']
@@ -130,25 +122,26 @@ def main():
                 rel_pi0_exp = 1 / math.sqrt(counts['N_pi0_exp']) if counts['N_pi0_exp'] > 0 else 0
                 rel_pi0_reco = 1 / math.sqrt(counts['N_pi0_reco']) if counts['N_pi0_reco'] > 0 else 0
                 rel_data = 1 / math.sqrt(N_data)
-                # Combine the uncertainties in quadrature for the ratio:
+                # Here we add the uncertainties for the ratio in quadrature.
                 rel_ratio = math.sqrt(rel_pi0_exp**2 + rel_pi0_reco**2)
                 rel_err = math.sqrt(rel_pi0_mc**2 + rel_ratio**2 + rel_data**2)
                 c_i_err = c_i * rel_err
                 counts['c_i'] = c_i
                 counts['c_i_err'] = c_i_err
-
-        # Save the combined contamination results.
-        combined_results = {
+        
+        # Filter out bins with zero contamination and round the numbers
+        filtered_results = {
             str(key): {
                 'c_i': round(counts['c_i'], 5),
                 'c_i_err': round(counts['c_i_err'], 5)
             }
-            for key, counts in result.items()
+            for key, counts in result.items() if counts['c_i'] != 0
         }
+        
         json_filename = f"contamination_{period}.json"
         json_path = os.path.join(contamination_dir, json_filename)
         with open(json_path, "w") as f:
-            json.dump(combined_results, f, indent=2)
+            json.dump(filtered_results, f, indent=2)
         print(f"Saved combined contamination for {period} to {json_path}")
 
     # --- Plotting contamination for each run period ---
