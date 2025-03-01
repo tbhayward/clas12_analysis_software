@@ -61,12 +61,12 @@ def main():
     # print("🧩 Combining exclusivity results (JSON files from each topology & stage)...")
     # combine_results(output_dir)
     
-    # # --- Load binning scheme ---
-    # csv_file_path = os.path.join("imports", "integrated_bin_v2.csv")
-    # binning_scheme = load_binning_scheme(csv_file_path)
-    # print("Loaded binning scheme:")
-    # for b in binning_scheme:
-    #     print(b)
+    # --- Load binning scheme ---
+    csv_file_path = os.path.join("imports", "integrated_bin_v2.csv")
+    binning_scheme = load_binning_scheme(csv_file_path)
+    print("Loaded binning scheme:")
+    for b in binning_scheme:
+        print(b)
     
     # --- Contamination calculation tasks ---
     dvcs_periods = [
