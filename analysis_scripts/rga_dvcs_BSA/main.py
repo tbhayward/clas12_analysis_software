@@ -84,7 +84,7 @@ def main():
 
     # Run contamination calculations in parallel
     period_results = {}  # Will group results by period
-    with ProcessPoolExecutor(max_workers=6) as executor:
+    with ProcessPoolExecutor(max_workers=1) as executor:
         future_to_task = {executor.submit(calculate_contamination, *task): task for task in tasks}
         for future in as_completed(future_to_task):
             task = future_to_task[future]
