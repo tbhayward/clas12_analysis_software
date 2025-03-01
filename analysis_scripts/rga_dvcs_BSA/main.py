@@ -67,7 +67,7 @@ def main():
     print("Loaded binning scheme:")
     for b in binning_scheme:
         print(b)
-    
+
     # --- Contamination calculation tasks ---
     dvcs_periods = [
         ("DVCS_Fa18_inb", "dvcs"),
@@ -75,13 +75,13 @@ def main():
         ("DVCS_Sp19_inb", "dvcs")
     ]
     topologies = ["(FD,FD)", "(CD,FD)", "(CD,FT)"]
-    
+
     # Build tasks: each task is (period, topology, analysis_type, binning_scheme)
     tasks = []
     for period, analysis_type in dvcs_periods:
         for topo in topologies:
             tasks.append((period, topo, analysis_type, binning_scheme))
-    
+
     # Run contamination calculations in parallel
     period_results = {}  # Will group results by period
     with ProcessPoolExecutor(max_workers=6) as executor:
@@ -91,6 +91,17 @@ def main():
             try:
                 period, topology, analysis_type, _ = task
                 result = future.result()
+                
+                # NEW: Print raw results from each topology
+                print(f"\n=== Raw results for {period} {topology} ===")
+                for key, counts in result.items():
+                    print(f"Bin {key}:")
+                    print(f"  N_data: {counts['N_data']}")
+                    print(f"  N_pi0_mc: {counts['N_pi0_mc']}")
+                    print(f"  N_pi0_exp: {counts['N_pi0_exp']}")
+                    print(f"  N_pi0_reco: {counts['N_pi0_reco']}")
+                    print("  -----------------")
+
                 # Group the result under the corresponding period:
                 if period not in period_results:
                     period_results[period] = result
@@ -100,36 +111,74 @@ def main():
                         if key not in period_results[period]:
                             period_results[period][key] = counts
                         else:
+                            print(f"\nMerging {period} {topology} bin {key}:")
+                            print(f"Existing counts: {period_results[period][key]}")
+                            print(f"New counts: {counts}")
+                            
                             period_results[period][key]['N_data'] += counts['N_data']
                             period_results[period][key]['N_pi0_mc'] += counts['N_pi0_mc']
                             period_results[period][key]['N_pi0_exp'] += counts['N_pi0_exp']
                             period_results[period][key]['N_pi0_reco'] += counts['N_pi0_reco']
+                            
+                            print(f"Updated counts: {period_results[period][key]}")
+                            print("--------------------------")
+
             except Exception as exc:
                 print(f"Task {task} generated an exception: {exc}")
-    
+
     # Now recompute the contamination values for each bin from the summed counts,
     # and write one file per period.
     for period, result in period_results.items():
+        print(f"\n\n=== Final calculation for {period} ===")
         for key, counts in result.items():
             N_data = counts['N_data']
+            print(f"\nProcessing bin {key}:")
+            print(f"Initial counts:")
+            print(f"  N_data: {N_data}")
+            print(f"  N_pi0_mc: {counts['N_pi0_mc']}")
+            print(f"  N_pi0_exp: {counts['N_pi0_exp']}")
+            print(f"  N_pi0_reco: {counts['N_pi0_reco']}")
+
             if N_data == 0 or counts['N_pi0_reco'] == 0:
                 counts['c_i'] = 0.0
                 counts['c_i_err'] = 0.0
+                print("Skipping bin - zero N_data or N_pi0_reco")
             else:
                 ratio = counts['N_pi0_exp'] / counts['N_pi0_reco']
                 c_i = counts['N_pi0_mc'] * ratio / N_data
+                
+                print("\nCalculation steps:")
+                print(f"  Ratio (exp/reco): {counts['N_pi0_exp']} / {counts['N_pi0_reco']} = {ratio:.5f}")
+                print(f"  MC scaling: {counts['N_pi0_mc']} * {ratio:.5f} = {counts['N_pi0_mc'] * ratio:.2f}")
+                print(f"  Final c_i: ({counts['N_pi0_mc'] * ratio:.2f}) / {N_data} = {c_i:.5f}")
+
+                # Error calculation
                 rel_pi0_mc = 1 / math.sqrt(counts['N_pi0_mc']) if counts['N_pi0_mc'] > 0 else 0
                 rel_pi0_exp = 1 / math.sqrt(counts['N_pi0_exp']) if counts['N_pi0_exp'] > 0 else 0
                 rel_pi0_reco = 1 / math.sqrt(counts['N_pi0_reco']) if counts['N_pi0_reco'] > 0 else 0
                 rel_data = 1 / math.sqrt(N_data)
-                # Here we add the uncertainties for the ratio in quadrature.
+                
+                print("\nRelative uncertainties:")
+                print(f"  MC: {rel_pi0_mc:.5f}")
+                print(f"  Exp: {rel_pi0_exp:.5f}")
+                print(f"  Reco: {rel_pi0_reco:.5f}")
+                print(f"  Data: {rel_data:.5f}")
+
                 rel_ratio = math.sqrt(rel_pi0_exp**2 + rel_pi0_reco**2)
                 rel_err = math.sqrt(rel_pi0_mc**2 + rel_ratio**2 + rel_data**2)
                 c_i_err = c_i * rel_err
+                
+                print(f"\nCombined relative error: {rel_err:.5f}")
+                print(f"Absolute error: {c_i_err:.5f}")
+
                 counts['c_i'] = c_i
                 counts['c_i_err'] = c_i_err
-        
-        # Filter out bins with zero contamination and round the numbers
+            
+            print("\nFinal values for bin:")
+            print(f"  c_i: {counts['c_i']:.5f} ± {counts['c_i_err']:.5f}")
+            print("=================================")
+
+        # Filter and save results (existing code)
         filtered_results = {
             str(key): {
                 'c_i': round(counts['c_i'], 5),
@@ -142,27 +191,27 @@ def main():
         json_path = os.path.join(contamination_dir, json_filename)
         with open(json_path, "w") as f:
             json.dump(filtered_results, f, indent=2)
-        print(f"Saved combined contamination for {period} to {json_path}")
+        print(f"\nSaved combined contamination for {period} to {json_path}")
 
-    # --- Plotting contamination for each run period ---
-    run_periods = ["DVCS_Fa18_inb", "DVCS_Fa18_out", "DVCS_Sp19_inb"]
-    plots_dir = os.path.join("contamination", "contamination_plots")
-    os.makedirs(plots_dir, exist_ok=True)
-    csv_file_path = os.path.join("imports", "integrated_bin_v2.csv")
+    # # --- Plotting contamination for each run period ---
+    # run_periods = ["DVCS_Fa18_inb", "DVCS_Fa18_out", "DVCS_Sp19_inb"]
+    # plots_dir = os.path.join("contamination", "contamination_plots")
+    # os.makedirs(plots_dir, exist_ok=True)
+    # csv_file_path = os.path.join("imports", "integrated_bin_v2.csv")
 
-    with ProcessPoolExecutor(max_workers=3) as executor:
-        future_to_rp = {executor.submit(plot_contamination_for_run,
-                                        run_period=rp,
-                                        binning_csv=csv_file_path,
-                                        contamination_dir="contamination",
-                                        output_dir=plots_dir): rp for rp in run_periods}
-        for future in as_completed(future_to_rp):
-            rp = future_to_rp[future]
-            try:
-                future.result()
-                print(f"Finished plotting contamination for {rp}")
-            except Exception as exc:
-                print(f"Plotting for {rp} generated an exception: {exc}")
+    # with ProcessPoolExecutor(max_workers=3) as executor:
+    #     future_to_rp = {executor.submit(plot_contamination_for_run,
+    #                                     run_period=rp,
+    #                                     binning_csv=csv_file_path,
+    #                                     contamination_dir="contamination",
+    #                                     output_dir=plots_dir): rp for rp in run_periods}
+    #     for future in as_completed(future_to_rp):
+    #         rp = future_to_rp[future]
+    #         try:
+    #             future.result()
+    #             print(f"Finished plotting contamination for {rp}")
+    #         except Exception as exc:
+    #             print(f"Plotting for {rp} generated an exception: {exc}")
 
     print("\n🎉 Analysis complete!")
 
