@@ -110,10 +110,10 @@ def calculate_contamination(period, topology, analysis_type, binning_scheme):
     #     elif event.detector1 == 2 and event.detector2 == 0:
     #         cd_ft_count +=1
 
-    print(f"\n[TOPOLOGY] {pi0_bkg_period} raw MC counts:")
-    print(f"  (FD,FD): {fd_fd_count}")
-    print(f"  (CD,FD): {cd_fd_count}")
-    print(f"  (CD,FT): {cd_ft_count}")
+    # print(f"\n[TOPOLOGY] {pi0_bkg_period} raw MC counts:")
+    # print(f"  (FD,FD): {fd_fd_count}")
+    # print(f"  (CD,FD): {cd_fd_count}")
+    # print(f"  (CD,FT): {cd_ft_count}")
 
     # After loading cuts_dict in calculate_contamination.py:
     print(f"\n=== Cuts for {period} {topology} ===")
