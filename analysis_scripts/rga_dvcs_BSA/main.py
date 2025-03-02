@@ -41,25 +41,25 @@ def main():
     
     print("🚀 Starting multi-stage analysis with parallel processing\n")
     
-    # # --- Exclusivity processing (commented out) ---
-    # periods_to_run = [
-    #     ("DVCS_Fa18_inb",  "dvcs"),
-    #     ("DVCS_Fa18_out",  "dvcs"),
-    #     ("DVCS_Sp19_inb",  "dvcs"),
-    #     ("eppi0_Fa18_inb", "eppi0"),
-    #     ("eppi0_Fa18_out", "eppi0"),
-    #     ("eppi0_Sp19_inb", "eppi0"),
-    # ]
-    # tasks = [(period, analysis_type, output_dir) for period, analysis_type in periods_to_run]
-    # with ProcessPoolExecutor(max_workers=8) as executor:
-    #     futures = [executor.submit(run_period, task) for task in tasks]
-    #     for future in as_completed(futures):
-    #         try:
-    #             future.result()
-    #         except Exception as exc:
-    #             print(f"⚠️ A task generated an exception: {exc}")
-    # print("🧩 Combining exclusivity results (JSON files from each topology & stage)...")
-    # combine_results(output_dir)
+    # --- Exclusivity processing (commented out) ---
+    periods_to_run = [
+        ("DVCS_Fa18_inb",  "dvcs"),
+        ("DVCS_Fa18_out",  "dvcs"),
+        ("DVCS_Sp19_inb",  "dvcs"),
+        ("eppi0_Fa18_inb", "eppi0"),
+        ("eppi0_Fa18_out", "eppi0"),
+        ("eppi0_Sp19_inb", "eppi0"),
+    ]
+    tasks = [(period, analysis_type, output_dir) for period, analysis_type in periods_to_run]
+    with ProcessPoolExecutor(max_workers=8) as executor:
+        futures = [executor.submit(run_period, task) for task in tasks]
+        for future in as_completed(futures):
+            try:
+                future.result()
+            except Exception as exc:
+                print(f"⚠️ A task generated an exception: {exc}")
+    print("🧩 Combining exclusivity results (JSON files from each topology & stage)...")
+    combine_results(output_dir)
     
     # --- Load binning scheme ---
     csv_file_path = os.path.join("imports", "integrated_bin_v2.csv")
@@ -95,15 +95,14 @@ def main():
                 if period not in period_results:
                     period_results[period] = result
                 else:
+                    # Sum the counts in each bin (the keys should match if you use unique bins)
                     for key, counts in result.items():
                         if key not in period_results[period]:
                             period_results[period][key] = counts
                         else:
-                            period_results[period][key]['N_data_plus'] += counts['N_data_plus']
-                            period_results[period][key]['N_data_minus'] += counts['N_data_minus']
+                            period_results[period][key]['N_data'] += counts['N_data']
                             period_results[period][key]['N_pi0_mc'] += counts['N_pi0_mc']
-                            period_results[period][key]['N_pi0_exp_plus'] += counts['N_pi0_exp_plus']
-                            period_results[period][key]['N_pi0_exp_minus'] += counts['N_pi0_exp_minus']
+                            period_results[period][key]['N_pi0_exp'] += counts['N_pi0_exp']
                             period_results[period][key]['N_pi0_reco'] += counts['N_pi0_reco']
             except Exception as exc:
                 print(f"Task {task} generated an exception: {exc}")
@@ -130,34 +129,20 @@ def main():
                 counts['c_i'] = c_i
                 counts['c_i_err'] = c_i_err
         
-        # Filter and save results with helicity separation
+        # Filter out bins with zero contamination and round the numbers
         filtered_results = {
             str(key): {
-                'c_i_plus': round(counts['c_i_plus'], 5),
-                'c_i_plus_err': round(counts['c_i_plus_err'], 5),
-                'c_i_minus': round(counts['c_i_minus'], 5),
-                'c_i_minus_err': round(counts['c_i_minus_err'], 5)
+                'c_i': round(counts['c_i'], 5),
+                'c_i_err': round(counts['c_i_err'], 5)
             }
-            for key, counts in result.items() 
-            if counts['c_i_plus'] != 0 or counts['c_i_minus'] != 0
+            for key, counts in result.items() if counts['c_i'] != 0
         }
         
-        # Save both helicity versions
-        for helicity in ['plus', 'minus']:
-            helicity_results = {
-                str(key): {
-                    'c_i': round(counts[f'c_i_{helicity}'], 5),
-                    'c_i_err': round(counts[f'c_i_{helicity}_err'], 5)
-                }
-                for key, counts in result.items()
-                if counts[f'c_i_{helicity}'] != 0
-            }
-            
-            json_filename = f"contamination_{period}_{helicity}.json"
-            json_path = os.path.join(contamination_dir, json_filename)
-            with open(json_path, "w") as f:
-                json.dump(helicity_results, f, indent=2)
-            print(f"Saved {helicity} helicity contamination for {period} to {json_path}")
+        json_filename = f"contamination_{period}.json"
+        json_path = os.path.join(contamination_dir, json_filename)
+        with open(json_path, "w") as f:
+            json.dump(filtered_results, f, indent=2)
+        print(f"Saved combined contamination for {period} to {json_path}")
 
     # --- Plotting contamination for each run period ---
     run_periods = ["DVCS_Fa18_inb", "DVCS_Fa18_out", "DVCS_Sp19_inb"]
@@ -166,26 +151,18 @@ def main():
     csv_file_path = os.path.join("imports", "integrated_bin_v2.csv")
 
     with ProcessPoolExecutor(max_workers=8) as executor:
-        # Submit ONE job per run period (no helicity specified)
-        future_to_rp = {}
-        for rp in run_periods:
-            future = executor.submit(
-                plot_contamination_for_run,
-                run_period=rp,
-                binning_csv=csv_file_path,
-                contamination_dir="contamination",
-                output_dir=plots_dir,
-                helicity=None  # Explicitly set to None to plot both
-            )
-            future_to_rp[future] = rp  # Track run period only
-
+        future_to_rp = {executor.submit(plot_contamination_for_run,
+                                        run_period=rp,
+                                        binning_csv=csv_file_path,
+                                        contamination_dir="contamination",
+                                        output_dir=plots_dir): rp for rp in run_periods}
         for future in as_completed(future_to_rp):
             rp = future_to_rp[future]
             try:
                 future.result()
-                print(f"Finished plotting BOTH helicities for {rp}")
+                print(f"Finished plotting contamination for {rp}")
             except Exception as exc:
-                print(f"Plotting for {rp} failed: {exc}")
+                print(f"Plotting for {rp} generated an exception: {exc}")
 
     print("\n🎉 Analysis complete!")
 
