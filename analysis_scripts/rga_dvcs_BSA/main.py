@@ -13,6 +13,7 @@ from calculate_contamination import calculate_contamination
 from plot_contamination import plot_contamination_for_run
 from determine_raw_bsa import calculate_raw_bsa
 from determine_final_bsa import determine_final_bsa
+from plot_bsa import plot_raw_bsa, plot_adjusted_bsa, plot_combined_bsa
 
 def run_period(args):
     """
