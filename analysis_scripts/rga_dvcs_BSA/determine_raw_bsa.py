@@ -58,10 +58,11 @@ def calculate_raw_bsa(period, channel, binning_csv, output_dir):
     # Load data tree
     analysis_type = "dvcs" if channel == "dvcs" else "eppi0"
     try:
-        _, trees = load_root_files(f"{channel}_{period.split('_', 1)[1]}")
+        # Use period directly instead of reconstructing
+        _, trees = load_root_files(period)
         data_tree = trees.get("data")
     except Exception as e:
-        print(f"Error loading data for {channel}_{period}: {e}")
+        print(f"Error loading data for {period}: {e}")
         return {}
 
     # Process events
