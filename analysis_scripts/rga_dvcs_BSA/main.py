@@ -84,7 +84,7 @@ def main():
     
     # Run contamination calculations in parallel
     period_results = {}  # Will group results by period
-    with ProcessPoolExecutor(max_workers=1) as executor:
+    with ProcessPoolExecutor(max_workers=6) as executor:
         future_to_task = {executor.submit(calculate_contamination, *task): task for task in tasks}
         for future in as_completed(future_to_task):
             task = future_to_task[future]
@@ -150,7 +150,7 @@ def main():
     os.makedirs(plots_dir, exist_ok=True)
     csv_file_path = os.path.join("imports", "integrated_bin_v2.csv")
 
-    with ProcessPoolExecutor(max_workers=3) as executor:
+    with ProcessPoolExecutor(max_workers=6) as executor:
         future_to_rp = {executor.submit(plot_contamination_for_run,
                                         run_period=rp,
                                         binning_csv=csv_file_path,
