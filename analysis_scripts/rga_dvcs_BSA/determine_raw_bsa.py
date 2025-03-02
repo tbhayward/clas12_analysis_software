@@ -27,22 +27,24 @@ def load_cuts(period, topology):
         json_key = f"{period}_{topo_clean}"
 
     cuts_path = os.path.join("exclusivity", "combined_cuts.json")
-    if not os.path.exists(cuts_path):
-        return {}
     with open(cuts_path) as f:
         return json.load(f).get(json_key, {})
 
 def calculate_raw_bsa(period, channel, binning_csv, output_dir):
-    """Calculate BSA with topology-specific cuts and validity flags"""
+    """Calculate BSA with beam polarization scaling and validity flags"""
     binning_scheme = load_binning_scheme(binning_csv)
     unique_xB = sorted({(b.xBmin, b.xBmax) for b in binning_scheme})
     unique_Q2 = sorted({(b.Q2min, b.Q2max) for b in binning_scheme})
     unique_t = sorted({(b.tmin, b.tmax) for b in binning_scheme})
     phi_bins = np.linspace(0, 2*math.pi, 13)
 
+    # Initialize storage for counts and beam polarization
     results = {(i_xB, i_Q2, i_t, i_phi): {"N_plus":0, "N_minus":0} 
               for i_xB in range(len(unique_xB)) for i_Q2 in range(len(unique_Q2))
               for i_t in range(len(unique_t)) for i_phi in range(12)}
+    
+    beam_pol_sum = 0.0
+    beam_pol_count = 0
 
     try:
         _, trees = load_root_files(period)
@@ -51,6 +53,7 @@ def calculate_raw_bsa(period, channel, binning_csv, output_dir):
         print(f"Error loading {period}: {e}")
         return {}
 
+    # First pass: collect beam polarization data and counts
     for event in data_tree:
         topology = determine_topology(event)
         if not topology: continue
@@ -68,35 +71,67 @@ def calculate_raw_bsa(period, channel, binning_csv, output_dir):
             continue
 
         try:
+            # Collect beam polarization data
+            beam_pol = event.beam_pol
+            beam_pol_sum += beam_pol
+            beam_pol_count += 1
+
+            # Bin the event
             xB, Q2, t, phi = event.x, event.Q2, abs(event.t1), event.phi2
             i_xB = next(i for i, (lo,hi) in enumerate(unique_xB) if lo <= xB < hi)
             i_Q2 = next(i for i, (lo,hi) in enumerate(unique_Q2) if lo <= Q2 < hi)
             i_t = next(i for i, (lo,hi) in enumerate(unique_t) if lo <= t < hi)
             i_phi = np.digitize(phi, phi_bins) - 1
+            
             if 0 <= i_phi < 12:
                 key = (i_xB, i_Q2, i_t, i_phi)
                 if event.helicity > 0:
                     results[key]["N_plus"] += 1
                 else:
                     results[key]["N_minus"] += 1
-        except:
+        except Exception as e:
+            print(f"Error processing event: {e}")
             continue
 
+    # Calculate average beam polarization
+    if beam_pol_count == 0:
+        print(f"No valid events found for {period} {channel}")
+        return {}
+        
+    beam_pol_avg = beam_pol_sum / beam_pol_count
+    print(f"Calculated beam polarization for {period} {channel}: {beam_pol_avg:.3f}")
+
+    # Second pass: calculate scaled BSA values
     valid_results = {}
     for key, counts in results.items():
         total = counts["N_plus"] + counts["N_minus"]
         if total == 0: continue
         
-        bsa = (counts["N_plus"] - counts["N_minus"]) / total
-        bsa_err = math.sqrt((4 * counts["N_plus"] * counts["N_minus"]) / (total**3))
+        # Calculate raw BSA and error
+        bsa_raw = (counts["N_plus"] - counts["N_minus"]) / total
+        bsa_err_raw = math.sqrt((4 * counts["N_plus"] * counts["N_minus"]) / (total**3))
+        
+        # Apply beam polarization scaling
+        try:
+            bsa = bsa_raw / beam_pol_avg
+            bsa_err = bsa_err_raw / beam_pol_avg
+        except ZeroDivisionError:
+            print(f"Invalid beam polarization {beam_pol_avg} for {period}")
+            bsa = 0
+            bsa_err = 0
+
         valid_results[key] = {
             "bsa": round(bsa, 5),
             "bsa_err": round(bsa_err, 5),
-            "valid": True
+            "valid": True,
+            "beam_pol": round(beam_pol_avg, 3),
+            "N_total": total
         }
 
+    # Save results
     os.makedirs(output_dir, exist_ok=True)
     out_path = os.path.join(output_dir, f"raw_bsa_{channel}_{period}.json")
     with open(out_path, "w") as f:
         json.dump({str(k): v for k, v in valid_results.items()}, f, indent=2)
+        
     return valid_results
