@@ -34,12 +34,12 @@ def main():
     """
     configure_global_style()
     
-    output_dir = "exclusivity"
-    os.makedirs(output_dir, exist_ok=True)
-    contamination_dir = "contamination"
-    os.makedirs(contamination_dir, exist_ok=True)
+    # output_dir = "exclusivity"
+    # os.makedirs(output_dir, exist_ok=True)
+    # contamination_dir = "contamination"
+    # os.makedirs(contamination_dir, exist_ok=True)
     
-    print("🚀 Starting multi-stage analysis with parallel processing\n")
+    # print("🚀 Starting multi-stage analysis with parallel processing\n")
     
     # # --- Exclusivity processing (commented out) ---
     # periods_to_run = [
@@ -51,7 +51,7 @@ def main():
     #     ("eppi0_Sp19_inb", "eppi0"),
     # ]
     # tasks = [(period, analysis_type, output_dir) for period, analysis_type in periods_to_run]
-    # with ProcessPoolExecutor(max_workers=8) as executor:
+    # with ProcessPoolExecutor(max_workers=6) as executor:
     #     futures = [executor.submit(run_period, task) for task in tasks]
     #     for future in as_completed(futures):
     #         try:
@@ -84,7 +84,7 @@ def main():
     
     # Run contamination calculations in parallel
     period_results = {}  # Will group results by period
-    with ProcessPoolExecutor(max_workers=8) as executor:
+    with ProcessPoolExecutor(max_workers=1) as executor:
         future_to_task = {executor.submit(calculate_contamination, *task): task for task in tasks}
         for future in as_completed(future_to_task):
             task = future_to_task[future]
@@ -150,7 +150,7 @@ def main():
     os.makedirs(plots_dir, exist_ok=True)
     csv_file_path = os.path.join("imports", "integrated_bin_v2.csv")
 
-    with ProcessPoolExecutor(max_workers=8) as executor:
+    with ProcessPoolExecutor(max_workers=3) as executor:
         future_to_rp = {executor.submit(plot_contamination_for_run,
                                         run_period=rp,
                                         binning_csv=csv_file_path,

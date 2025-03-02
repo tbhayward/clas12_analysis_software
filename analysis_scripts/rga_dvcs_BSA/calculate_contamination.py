@@ -100,15 +100,15 @@ def calculate_contamination(period, topology, analysis_type, binning_scheme):
     # Load the cuts dictionary (using DVCS cuts even for bkg, if needed).
     cuts_dict = load_cuts(period, topology)
 
-    # # In calculate_contamination.py, add to topology check:
-    # fd_fd_count = cd_fd_count = cd_ft_count = 0
-    # for event in pi0_bkg_trees["mc"]:
-    #     if event.detector1 == 1 and event.detector2 == 1:
-    #         fd_fd_count +=1
-    #     elif event.detector1 == 2 and event.detector2 == 1:
-    #         cd_fd_count +=1
-    #     elif event.detector1 == 2 and event.detector2 == 0:
-    #         cd_ft_count +=1
+    # In calculate_contamination.py, add to topology check:
+    fd_fd_count = cd_fd_count = cd_ft_count = 0
+    for event in pi0_bkg_trees["mc"]:
+        if event.detector1 == 1 and event.detector2 == 1:
+            fd_fd_count +=1
+        elif event.detector1 == 2 and event.detector2 == 1:
+            cd_fd_count +=1
+        elif event.detector1 == 2 and event.detector2 == 0:
+            cd_ft_count +=1
 
     print(f"\n[TOPOLOGY] {pi0_bkg_period} raw MC counts:")
     print(f"  (FD,FD): {fd_fd_count}")
@@ -124,6 +124,7 @@ def calculate_contamination(period, topology, analysis_type, binning_scheme):
     xB_bins = [(b.xBmin, b.xBmax) for b in binning_scheme]
     Q2_bins = [(b.Q2min, b.Q2max) for b in binning_scheme]
     t_bins  = [(b.tmin, b.tmax) for b in binning_scheme]
+    
 
     # Extract the unique bin boundaries from the binning scheme.
     unique_xB_bins = sorted(set((b.xBmin, b.xBmax) for b in binning_scheme))
@@ -182,9 +183,9 @@ def calculate_contamination(period, topology, analysis_type, binning_scheme):
 
     # --- Count π⁰ misidentification events from eppi0_bkg MC ---
     # In the π⁰ MC event loop (pi0_bkg_trees["mc"] section):
-    # total_events = 0
-    # passed_kinematic = 0
-    # passed_3sigma = 0
+    total_events = 0
+    passed_kinematic = 0
+    passed_3sigma = 0
     for event in pi0_bkg_trees["mc"]:
         total_events += 1
         # if count >= 10000:
@@ -198,10 +199,10 @@ def calculate_contamination(period, topology, analysis_type, binning_scheme):
                 analysis_type, "mc", "", topology
             ):
                 continue
-            # passed_kinematic += 1
+            passed_kinematic += 1
             if not passes_3sigma_cuts(event, True, cuts_dict):
                 continue
-            # passed_3sigma += 1
+            passed_3sigma += 1
         except Exception as e:
             continue
 
@@ -220,10 +221,10 @@ def calculate_contamination(period, topology, analysis_type, binning_scheme):
             continue
         results[(i_xB, i_Q2, i_t, i_phi)]['N_pi0_mc'] += 1
 
-    # print(f"[CUTS] {pi0_bkg_period} {topology}:")
-    # print(f"  Total MC: {total_events}")
-    # print(f"  Passed kinematic: {passed_kinematic} ({passed_kinematic/total_events:.1%})")
-    # print(f"  Passed 3σ: {passed_3sigma} ({passed_3sigma/passed_kinematic:.1%})")
+    print(f"[CUTS] {pi0_bkg_period} {topology}:")
+    print(f"  Total MC: {total_events}")
+    print(f"  Passed kinematic: {passed_kinematic} ({passed_kinematic/total_events:.1%})")
+    print(f"  Passed 3σ: {passed_3sigma} ({passed_3sigma/passed_kinematic:.1%})")
 
     # --- Count π⁰ experimental events from eppi0 data ---
     count = 0
