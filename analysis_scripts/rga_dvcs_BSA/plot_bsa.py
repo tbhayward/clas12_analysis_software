@@ -6,7 +6,20 @@ import matplotlib.pyplot as plt
 from scipy.optimize import curve_fit
 from load_binning_scheme import load_binning_scheme
 
-# ... [keep constants and styling section same] ...
+# Constants and styling
+N_PHI_BINS = 12
+phi_edges = np.linspace(0, 2 * np.pi, N_PHI_BINS + 1)
+phi_centers = (phi_edges[:-1] + phi_edges[1:]) / 2.0
+phi_deg = np.degrees(phi_centers)
+PLOT_STYLE = {
+    'font.size': 8,
+    'axes.titlesize': 9,
+    'axes.labelsize': 8,
+    'xtick.labelsize': 7,
+    'ytick.labelsize': 7,
+    'legend.fontsize': 7,
+    'figure.titlesize': 10
+}
 
 def load_bsa_data(file_path):
     """Load BSA data from JSON file with enhanced error handling"""
@@ -14,12 +27,24 @@ def load_bsa_data(file_path):
     try:
         with open(file_path) as f:
             data = json.load(f)
-        converted = {tuple(map(int, k.strip("()").split(',')): v for k, v in data.items()}
+        converted = {tuple(map(int, k.strip("()").split(','))): v for k, v in data.items()}
         print(f"[SUCCESS] Loaded {len(converted)} entries from {os.path.basename(file_path)}")
         return converted
     except Exception as e:
         print(f"[ERROR] Failed to load {file_path}: {str(e)}")
         return {}
+
+def collect_bin_data(data_dict, key_base):
+    """Collect non-zero data points with errors for a bin"""
+    x, y, yerr = [], [], []
+    for i in range(N_PHI_BINS):
+        key = key_base + (i,)
+        if key in data_dict and 'bsa' in data_dict[key] and 'bsa_err' in data_dict[key]:
+            if data_dict[key]['bsa'] != 0:  # Skip zero-valued data points
+                x.append(phi_deg[i])
+                y.append(data_dict[key]['bsa'])
+                yerr.append(data_dict[key]['bsa_err'])
+    return x, y, yerr
 
 def plot_raw_bsa(binning_csv, bsa_dir="bsa_results", output_dir="bsa_plots/raw"):
     print("\n" + "="*60)
@@ -163,7 +188,82 @@ def plot_adjusted_bsa(binning_csv, final_dir="final_results", output_dir="bsa_pl
         plt.close()
         print(f"[SUCCESS] Saved plot: {plt_path}")
 
-# ... [keep other functions same but ensure status messages are present] ...
+def plot_combined_bsa(binning_csv, final_dir="final_results", output_dir="bsa_plots/combined"):
+    print("\n" + "="*60)
+    print("Starting combined BSA plotting process")
+    print(f"Output directory: {output_dir}")
+    
+    plt.style.use(PLOT_STYLE)
+    print("\n[STATUS] Loading binning scheme...")
+    binning = load_binning_scheme(binning_csv)
+    combined_file = f"{final_dir}/combined_bsa.json"
+    print(f"\n[STATUS] Loading combined data from: {combined_file}")
+    combined_data = load_bsa_data(combined_file)
+    unique_xB = sorted({(b.xBmin, b.xBmax) for b in binning})
+
+    os.makedirs(output_dir, exist_ok=True)
+    print(f"\n[STATUS] Created output directory: {output_dir}")
+
+    for i_xB, (xB_min, xB_max) in enumerate(unique_xB):
+        xB_avg = 0.5*(xB_min + xB_max)
+        print(f"\nProcessing xB bin {i_xB} ({xB_min:.3f}-{xB_max:.3f}, avg {xB_avg:.3f})")
+        
+        subset = [b for b in binning if (b.xBmin, b.xBmax) == (xB_min, xB_max)]
+        unique_Q2 = sorted({(b.Q2min, b.Q2max) for b in subset})
+        unique_t = sorted({(b.tmin, b.tmax) for b in subset})
+
+        nrows, ncols = len(unique_Q2), len(unique_t)
+        print(f"Creating {nrows}x{ncols} plot grid")
+        fig, axs = plt.subplots(nrows, ncols, figsize=(3.5*ncols, 3.5*nrows), squeeze=False)
+
+        for r, (Q2_min, Q2_max) in enumerate(unique_Q2):
+            for c, (t_min, t_max) in enumerate(unique_t):
+                ax = axs[r,c]
+                key_base = (i_xB, *get_bin_indices(binning, Q2_min, Q2_max, t_min, t_max))
+                
+                # Collect data
+                x, y, yerr = collect_bin_data(combined_data, key_base)
+                if not x:
+                    print(f"[WARNING] No data for Q²={0.5*(Q2_min+Q2_max):.2f}, t={0.5*(t_min+t_max):.2f}")
+                    continue
+                
+                # Perform fit
+                try:
+                    print(f"Fitting Q²={0.5*(Q2_min+Q2_max):.2f}, t={0.5*(t_min+t_max):.2f}")
+                    popt, pcov = curve_fit(bsa_fit_function, 
+                                         np.radians(x), y,
+                                         sigma=yerr,
+                                         absolute_sigma=True)
+                    fit_x = np.linspace(0, 360, 100)
+                    fit_y = bsa_fit_function(np.radians(fit_x), *popt)
+                    ax.plot(fit_x, fit_y, 'r-', lw=1.5)
+                    print(f"Fit successful: Amp={popt[0]:.2f}, b1={popt[1]:.2f}")
+                except Exception as e:
+                    print(f"[ERROR] Fit failed: {str(e)}")
+                    popt, pcov = [np.nan]*2, None
+                
+                # Plot data
+                ax.errorbar(x, y, yerr=yerr, fmt='ko', 
+                           markersize=5, capsize=3)
+                
+                # Add fit info
+                if pcov is not None:
+                    text = (f"Amp = {popt[0]:.2f} ± {np.sqrt(pcov[0,0]):.2f}\n"
+                            f"b1 = {popt[1]:.2f} ± {np.sqrt(pcov[1,1]):.2f}")
+                    ax.text(0.95, 0.95, text, transform=ax.transAxes,
+                           ha='right', va='top', fontsize=6)
+                
+                ax.set_xlim(0, 360)
+                ax.set_ylim(-1, 1)
+                ax.grid(True, alpha=0.3)
+                ax.set_title(f"Q²={0.5*(Q2_min+Q2_max):.2f}, -t={0.5*(t_min+t_max):.2f}")
+
+        plt_path = f"{output_dir}/combined_xB{i_xB}.png"
+        fig.suptitle(f"Combined BSA with Fit - xB = {xB_avg:.3f}")
+        fig.tight_layout(rect=[0, 0, 1, 0.95])
+        plt.savefig(plt_path, dpi=150)
+        plt.close()
+        print(f"[SUCCESS] Saved plot: {plt_path}")
 
 def get_bin_indices(binning, Q2_min, Q2_max, t_min, t_max):
     """Get bin indices with error checking and logging"""
@@ -177,3 +277,7 @@ def get_bin_indices(binning, Q2_min, Q2_max, t_min, t_max):
     except ValueError as e:
         print(f"[WARNING] Bin not found: Q²({Q2_min}-{Q2_max}), t({t_min}-{t_max})")
         return (-1, -1)
+
+def bsa_fit_function(phi, Amp, b1):
+    """Simplified BSA fitting function: Amp*sin(phi)/(1 + b1*cos(phi))"""
+    return Amp * np.sin(phi) / (1 + b1 * np.cos(phi))
