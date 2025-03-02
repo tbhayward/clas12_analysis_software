@@ -11,7 +11,7 @@ from exclusivity import process_period_multi_stage, combine_results
 from load_binning_scheme import load_binning_scheme
 from calculate_contamination import calculate_contamination
 from plot_contamination import plot_contamination_for_run
-from determine_raw_bsa.py import calculate_raw_bsa
+from determine_raw_bsa import calculate_raw_bsa
 
 def run_period(args):
     """
