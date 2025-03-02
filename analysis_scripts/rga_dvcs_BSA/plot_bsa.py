@@ -209,7 +209,7 @@ def plot_combined_bsa(binning_csv, final_dir="final_results", output_dir="bsa_pl
                 
                 # Add labels for bottom row and left column
                 if r == nrows - 1:
-                    ax.set_xlabel("$#phi$ (deg)")
+                    ax.set_xlabel("$\phi$ (deg)")
                 if c == 0:
                     ax.set_ylabel("$A_{LU}$")
 
