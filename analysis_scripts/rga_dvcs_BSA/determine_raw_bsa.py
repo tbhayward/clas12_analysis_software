@@ -71,6 +71,7 @@ def calculate_raw_bsa(period, channel, binning_csv, output_dir):
             continue
 
         try:
+            print("We're here!")
             # Collect beam polarization data
             beam_pol = event.beam_pol
             beam_pol_sum += beam_pol
