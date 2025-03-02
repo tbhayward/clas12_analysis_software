@@ -176,9 +176,9 @@ def main():
     # Create tasks using EXACT file_map keys
     bsa_tasks = [
         # DVCS periods
-        ("DVCS_Fa18_inb", "dvcs", csv_path, bsa_output),
-        ("DVCS_Fa18_out", "dvcs", csv_path, bsa_output),
-        ("DVCS_Sp19_inb", "dvcs", csv_path, bsa_output),
+        ("DVCS_Fa18_inb", "Dvcs", csv_path, bsa_output),
+        ("DVCS_Fa18_out", "Dvcs", csv_path, bsa_output),
+        ("DVCS_Sp19_inb", "Dvcs", csv_path, bsa_output),
         # eppi0 periods
         ("eppi0_Fa18_inb", "eppi0", csv_path, bsa_output),
         ("eppi0_Fa18_out", "eppi0", csv_path, bsa_output),
