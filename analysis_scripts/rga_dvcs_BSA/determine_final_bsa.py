@@ -31,7 +31,7 @@ def propagate_errors(D, D_err, c, c_err, E, E_err):
 def process_period(period, contamination_dir, bsa_dir):
     contamination = load_contamination(period, contamination_dir)
     dvcs_bsa = load_bsa(period, "dvcs", bsa_dir)
-    eppi0_bsa = load_bsa(period, "eppi0", bsa_dir)
+    eppi0_bsa = load_bsa(period, "eppi0_eppi0", bsa_dir)
     
     print(f"\nProcessing {period}:")
     print(f"Contamination bins: {len(contamination)}")
