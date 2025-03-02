@@ -165,32 +165,35 @@ def main():
     #         except Exception as exc:
     #             print(f"Plotting for {rp} generated an exception: {exc}")
 
-        # --- Add after contamination plotting ---
+    
     print("\n🚀 Calculating raw BSA values with topology-aware cuts...")
     
-    # Configure BSA parameters
-    periods = ["Fa18_inb", "Fa18_out", "Sp19_inb"]  # Base period names
-    channels = ["DVCS", "eppi0"]
+    # --- Raw BSA calculation ---
+    print("\n🚀 Calculating raw BSA values...")
     csv_path = os.path.join("imports", "integrated_bin_v2.csv")
     bsa_output = os.path.join("bsa_results")
-    
-    # Create tasks (6 total: 3 periods × 2 channels)
-    bsa_tasks = []
-    for channel in channels:
-        for period in periods:
-            full_period = f"{channel}_{period}"
-            bsa_tasks.append((full_period, channel, csv_path, bsa_output))
-    
-    # Process in parallel
+
+    # Create tasks using EXACT file_map keys
+    bsa_tasks = [
+        # DVCS periods
+        ("DVCS_Fa18_inb", "dvcs", csv_path, bsa_output),
+        ("DVCS_Fa18_out", "dvcs", csv_path, bsa_output),
+        ("DVCS_Sp19_inb", "dvcs", csv_path, bsa_output),
+        # eppi0 periods
+        ("eppi0_Fa18_inb", "eppi0", csv_path, bsa_output),
+        ("eppi0_Fa18_out", "eppi0", csv_path, bsa_output),
+        ("eppi0_Sp19_inb", "eppi0", csv_path, bsa_output)
+    ]
+
     with ProcessPoolExecutor(max_workers=6) as executor:
         futures = {executor.submit(calculate_raw_bsa, *task): task for task in bsa_tasks}
         for future in as_completed(futures):
             task = futures[future]
             try:
                 future.result()
-                print(f"Finished BSA for {task[1]} {task[0]}")
+                print(f"Finished BSA for {task[0]}")
             except Exception as exc:
-                print(f"BSA failed for {task[1]} {task[0]}: {exc}")
+                print(f"BSA failed for {task[0]}: {exc}")
 
     print("\n🎉 Analysis complete!")
 
