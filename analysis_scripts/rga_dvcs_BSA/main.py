@@ -71,7 +71,7 @@ def main():
     # --- Contamination calculation tasks ---
     dvcs_periods = [
         ("DVCS_Fa18_inb", "dvcs"),
-        # ("DVCS_Fa18_out", "dvcs"),
+        ("DVCS_Fa18_out", "dvcs"),
         ("DVCS_Sp19_inb", "dvcs")
     ]
     topologies = ["(FD,FD)", "(CD,FD)", "(CD,FT)"]
