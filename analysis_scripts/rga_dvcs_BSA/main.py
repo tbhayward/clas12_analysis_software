@@ -194,14 +194,24 @@ def main():
     #         except Exception as exc:
     #             print(f"BSA failed for {task[0]}: {exc}")
 
-    # --- Final BSA calculation and combination ---
-    print("\n🔧 Calculating final adjusted BSA values...")
-    determine_final_bsa(
-        contamination_dir="contamination",
-        bsa_dir="bsa_results",
-        final_dir="final_results"
-    )
-    print("✅ Final BSA results saved to final_results/ directory")
+    # # --- Final BSA calculation and combination ---
+    # print("\n🔧 Calculating final adjusted BSA values...")
+    # determine_final_bsa(
+    #     contamination_dir="contamination",
+    #     bsa_dir="bsa_results",
+    #     final_dir="final_results"
+    # )
+    # print("✅ Final BSA results saved to final_results/ directory")
+
+     # --- Plotting ---
+    print("\n📊 Generating BSA plots...")
+    csv_path = os.path.join("imports", "integrated_bin_v2.csv")
+    
+    plot_raw_bsa(csv_path)
+    plot_adjusted_bsa(csv_path)
+    plot_combined_bsa(csv_path)
+    
+    print("✅ All plots saved to bsa_plots/ directory")
 
     print("\n🎉 Analysis complete!")
 
