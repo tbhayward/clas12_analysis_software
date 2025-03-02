@@ -304,50 +304,61 @@ def calculate_contamination(period, topology, analysis_type, binning_scheme):
 
     # --- Compute contamination for both helicities ---
     for key, counts in results.items():
+        # Helper function to safely calculate terms
+        def safe_sqrt_ratio(value, factor=1.0):
+            if value <= 0:
+                return 0.0
+            return factor / math.sqrt(value)
+
         # For positive helicity
         N_data_plus = counts['N_data_plus']
-        if N_data_plus == 0 or counts['N_pi0_reco'] == 0:
+        N_pi0_reco = counts['N_pi0_reco']
+        N_pi0_mc = counts['N_pi0_mc']
+        N_pi0_exp_plus = counts['N_pi0_exp_plus']
+        
+        # Check all critical denominators
+        if (N_data_plus == 0 or N_pi0_reco == 0 or 
+            N_pi0_mc == 0 or N_pi0_exp_plus == 0):
             c_i_plus = 0.0
             c_i_plus_err = 0.0
         else:
-            # Key formula changes for MC splitting
-            ratio_plus = (2 * counts['N_pi0_exp_plus']) / counts['N_pi0_reco']  # Adjusted denominator (MC split)
-            c_i_plus = (counts['N_pi0_mc'] * counts['N_pi0_exp_plus']) / (counts['N_pi0_reco'] * N_data_plus)  # Same as before mathematically
+            # Main calculation
+            ratio_plus = (2 * N_pi0_exp_plus) / N_pi0_reco
+            c_i_plus = (N_pi0_mc * N_pi0_exp_plus) / (N_pi0_reco * N_data_plus)
             
-            # Error propagation with MC splitting
-            # Relative error terms
-            rel_pi0_mc = (math.sqrt(2) / math.sqrt(counts['N_pi0_mc'])) if counts['N_pi0_mc'] > 0 else 0  # Adjusted for MC split
-            rel_pi0_exp_plus = (1 / math.sqrt(counts['N_pi0_exp_plus'])) if counts['N_pi0_exp_plus'] > 0 else 0
-            rel_pi0_reco = (math.sqrt(2) / math.sqrt(counts['N_pi0_reco'])) if counts['N_pi0_reco'] > 0 else 0  # Adjusted for MC split
+            # Error propagation with safe checks
+            rel_pi0_mc = safe_sqrt_ratio(N_pi0_mc, math.sqrt(2))
+            rel_pi0_exp_plus = safe_sqrt_ratio(N_pi0_exp_plus)
+            rel_pi0_reco = safe_sqrt_ratio(N_pi0_reco, math.sqrt(2))
             
-            # Combine errors
             rel_ratio_plus = math.sqrt(rel_pi0_exp_plus**2 + rel_pi0_reco**2)
             rel_err_plus = math.sqrt(
                 rel_pi0_mc**2 + 
                 rel_ratio_plus**2 + 
-                (1 / math.sqrt(N_data_plus))**2  # Data term unchanged
+                safe_sqrt_ratio(N_data_plus)**2
             )
             c_i_plus_err = c_i_plus * rel_err_plus
 
-        # For negative helicity (mirror of above)
+        # For negative helicity (identical structure)
         N_data_minus = counts['N_data_minus']
-        if N_data_minus == 0 or counts['N_pi0_reco'] == 0:
+        N_pi0_exp_minus = counts['N_pi0_exp_minus']
+        
+        if (N_data_minus == 0 or N_pi0_reco == 0 or 
+            N_pi0_mc == 0 or N_pi0_exp_minus == 0):
             c_i_minus = 0.0
             c_i_minus_err = 0.0
         else:
-            ratio_minus = (2 * counts['N_pi0_exp_minus']) / counts['N_pi0_reco']  # Adjusted denominator
-            c_i_minus = (counts['N_pi0_mc'] * counts['N_pi0_exp_minus']) / (counts['N_pi0_reco'] * N_data_minus)
+            ratio_minus = (2 * N_pi0_exp_minus) / N_pi0_reco
+            c_i_minus = (N_pi0_mc * N_pi0_exp_minus) / (N_pi0_reco * N_data_minus)
             
-            # Error propagation
-            rel_pi0_exp_minus = (1 / math.sqrt(counts['N_pi0_exp_minus'])) if counts['N_pi0_exp_minus'] > 0 else 0
-            rel_ratio_minus = math.sqrt(
-                rel_pi0_exp_minus**2 + 
-                (math.sqrt(2) / math.sqrt(counts['N_pi0_reco']))**2  # Adjusted reco term
-            )
+            rel_pi0_exp_minus = safe_sqrt_ratio(N_pi0_exp_minus)
+            rel_pi0_reco = safe_sqrt_ratio(N_pi0_reco, math.sqrt(2))
+            
+            rel_ratio_minus = math.sqrt(rel_pi0_exp_minus**2 + rel_pi0_reco**2)
             rel_err_minus = math.sqrt(
-                (math.sqrt(2) / math.sqrt(counts['N_pi0_mc']))**2 +  # Adjusted MC term
+                safe_sqrt_ratio(N_pi0_mc, math.sqrt(2))**2 + 
                 rel_ratio_minus**2 + 
-                (1 / math.sqrt(N_data_minus))**2
+                safe_sqrt_ratio(N_data_minus)**2
             )
             c_i_minus_err = c_i_minus * rel_err_minus
 
