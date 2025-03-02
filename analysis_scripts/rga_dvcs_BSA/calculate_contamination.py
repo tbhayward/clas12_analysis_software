@@ -191,7 +191,7 @@ def calculate_contamination(period, topology, analysis_type, binning_scheme):
     # passed_kinematic = 0
     # passed_3sigma = 0
     for event in pi0_bkg_trees["mc"]:
-        total_events += 1
+        # total_events += 1
         # if count >= 10000:
         #     break
         # count += 1
