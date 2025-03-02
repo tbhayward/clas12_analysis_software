@@ -1,12 +1,9 @@
 #!/usr/bin/env python3
 import os
 import json
-import math
 import numpy as np
 import matplotlib.pyplot as plt
 from scipy.optimize import curve_fit
-
-# Import binning scheme loading from existing code
 from load_binning_scheme import load_binning_scheme
 
 # Constants and styling
@@ -25,14 +22,26 @@ PLOT_STYLE = {
 }
 
 def load_bsa_data(file_path):
-    """Load BSA data from JSON file and convert keys to tuples"""
-    with open(file_path) as f:
-        data = json.load(f)
-    return {tuple(map(int, k.strip("()").split(','))): v for k, v in data.items()}
+    """Load BSA data from JSON file with error handling"""
+    try:
+        with open(file_path) as f:
+            data = json.load(f)
+        return {tuple(map(int, k.strip("()").split(','))): v for k, v in data.items()}
+    except Exception as e:
+        print(f"Error loading {file_path}: {str(e)}")
+        return {}
 
-def bsa_fit_function(phi, Amp, a1, a2, b1):
-    """BSA fitting function: Amp*(a1*sin(phi) + a2*sin(2phi)) / (1 + b1*cos(phi))"""
-    return Amp * (a1*np.sin(phi) + a2*np.sin(2*phi)) / (1 + b1*np.cos(phi))
+def collect_bin_data(data_dict, key_base):
+    """Collect non-zero data points with errors for a bin"""
+    x, y, yerr = [], [], []
+    for i in range(N_PHI_BINS):
+        key = key_base + (i,)
+        if key in data_dict and 'bsa' in data_dict[key] and 'bsa_err' in data_dict[key]:
+            if data_dict[key]['bsa'] != 0:  # Skip zero-valued data points
+                x.append(phi_deg[i])
+                y.append(data_dict[key]['bsa'])
+                yerr.append(data_dict[key]['bsa_err'])
+    return x, y, yerr
 
 def plot_raw_bsa(binning_csv, bsa_dir="bsa_results", output_dir="bsa_plots/raw"):
     plt.style.use(PLOT_STYLE)
@@ -42,13 +51,10 @@ def plot_raw_bsa(binning_csv, bsa_dir="bsa_results", output_dir="bsa_plots/raw")
     os.makedirs(output_dir, exist_ok=True)
     
     for dvcs_period in ["DVCS_Fa18_inb", "DVCS_Fa18_out", "DVCS_Sp19_inb"]:
-        # Get corresponding eppi0 period name
         eppi0_period = dvcs_period.replace("DVCS", "eppi0")
-        
-        # Load data with corrected filenames
         dvcs_data = load_bsa_data(f"{bsa_dir}/raw_bsa_dvcs_{dvcs_period}.json")
-        eppi0_data = load_bsa_data(f"{bsa_dir}/raw_bsa_eppi0_{eppi0_period}.json")  # Changed here
-        
+        eppi0_data = load_bsa_data(f"{bsa_dir}/raw_bsa_eppi0_{eppi0_period}.json")
+
         for i_xB, (xB_min, xB_max) in enumerate(unique_xB):
             subset = [b for b in binning if (b.xBmin, b.xBmax) == (xB_min, xB_max)]
             unique_Q2 = sorted({(b.Q2min, b.Q2max) for b in subset})
@@ -62,35 +68,43 @@ def plot_raw_bsa(binning_csv, bsa_dir="bsa_results", output_dir="bsa_plots/raw")
                     ax = axs[r,c]
                     key_base = (i_xB, *get_bin_indices(binning, Q2_min, Q2_max, t_min, t_max))
                     
-                    # Plot DVCS
-                    dvcs_vals = [dvcs_data.get(key_base + (i,), {}).get('bsa', 0) 
-                                for i in range(N_PHI_BINS)]
-                    ax.errorbar(phi_deg, dvcs_vals, fmt='o', color='black', label='DVCS')
+                    # Plot DVCS data
+                    dvcs_x, dvcs_y, dvcs_yerr = collect_bin_data(dvcs_data, key_base)
+                    if dvcs_x:
+                        ax.errorbar(dvcs_x, dvcs_y, yerr=dvcs_yerr, 
+                                  fmt='o', color='black', markersize=5,
+                                  capsize=3, label='DVCS')
                     
-                    # Plot eppi0
-                    eppi0_vals = [eppi0_data.get(key_base + (i,), {}).get('bsa', 0)
-                                 for i in range(N_PHI_BINS)]
-                    ax.errorbar(phi_deg, eppi0_vals, fmt='s', color='red', label='epπ⁰')
+                    # Plot eppi0 data
+                    eppi0_x, eppi0_y, eppi0_yerr = collect_bin_data(eppi0_data, key_base)
+                    if eppi0_x:
+                        ax.errorbar(eppi0_x, eppi0_y, yerr=eppi0_yerr,
+                                  fmt='s', color='red', markersize=4,
+                                  capsize=3, label='epπ⁰')
                     
+                    # Configure axes
                     ax.set_xlim(0, 360)
                     ax.set_xticks([0, 90, 180, 270, 360])
                     ax.set_ylim(-1, 1)
                     ax.grid(True, alpha=0.3)
                     ax.set_title(f"Q²={0.5*(Q2_min+Q2_max):.2f}, -t={0.5*(t_min+t_max):.2f}")
-                    if r == nrows-1: ax.set_xlabel("φ (deg)")
-                    if c == 0: ax.set_ylabel("BSA")
+                    if dvcs_x or eppi0_x:
+                        ax.legend(loc='upper right', frameon=False)
             
-            fig.suptitle(f"{dvcs_period} - xB = {0.5*(xB_min+xB_max):.3f}")  # Changed variable name
+            fig.suptitle(f"{dvcs_period} - xB = {0.5*(xB_min+xB_max):.3f}")
             fig.tight_layout(rect=[0, 0, 1, 0.96])
             plt.savefig(f"{output_dir}/{dvcs_period}_xB{i_xB}.png", dpi=150)
             plt.close()
 
 def plot_adjusted_bsa(binning_csv, final_dir="final_results", output_dir="bsa_plots/adjusted"):
-    """Plot adjusted BSAs for all three periods"""
     plt.style.use(PLOT_STYLE)
     binning = load_binning_scheme(binning_csv)
     unique_xB = sorted({(b.xBmin, b.xBmax) for b in binning})
-    colors = {'DVCS_Fa18_inb': 'red', 'DVCS_Fa18_out': 'blue', 'DVCS_Sp19_inb': 'green'}
+    colors = {
+        'DVCS_Fa18_inb': ('red', 'o'),
+        'DVCS_Fa18_out': ('blue', '^'),
+        'DVCS_Sp19_inb': ('green', 'D')
+    }
     
     os.makedirs(output_dir, exist_ok=True)
     
@@ -107,28 +121,29 @@ def plot_adjusted_bsa(binning_csv, final_dir="final_results", output_dir="bsa_pl
                 ax = axs[r,c]
                 key_base = (i_xB, *get_bin_indices(binning, Q2_min, Q2_max, t_min, t_max))
                 
-                for period in colors.keys():
+                # Plot all periods
+                for period, (color, marker) in colors.items():
                     data = load_bsa_data(f"{final_dir}/adjusted_bsa_{period}.json")
-                    vals = [data.get(key_base + (i,), {}).get('bsa', 0)
-                            for i in range(N_PHI_BINS)]
-                    ax.plot(phi_deg, vals, 'o-', color=colors[period], 
-                           markersize=3, label=period.split('_')[-1])
+                    x, y, yerr = collect_bin_data(data, key_base)
+                    if x:
+                        label = period.split('_')[-1].capitalize()
+                        ax.errorbar(x, y, yerr=yerr, fmt=marker, color=color,
+                                   markersize=5, capsize=3, label=label)
                 
+                # Configure axes
                 ax.set_xlim(0, 360)
                 ax.set_ylim(-1, 1)
                 ax.grid(True, alpha=0.3)
                 ax.set_title(f"Q²={0.5*(Q2_min+Q2_max):.2f}, -t={0.5*(t_min+t_max):.2f}")
-                if r == nrows-1: ax.set_xlabel("φ (deg)")
-                if c == 0: ax.set_ylabel("BSA")
+                if any(x for x in [data.keys() for data in colors.keys()]):
+                    ax.legend(loc='upper right', frameon=False)
         
         fig.suptitle(f"Adjusted BSA - xB = {0.5*(xB_min+xB_max):.3f}")
-        fig.legend(['Fa18 Inb', 'Fa18 Out', 'Sp19 Inb'], loc='upper right')
         fig.tight_layout(rect=[0, 0, 1, 0.95])
         plt.savefig(f"{output_dir}/adjusted_xB{i_xB}.png", dpi=150)
         plt.close()
 
 def plot_combined_bsa(binning_csv, final_dir="final_results", output_dir="bsa_plots/combined"):
-    """Plot combined BSA with theoretical fit"""
     plt.style.use(PLOT_STYLE)
     binning = load_binning_scheme(binning_csv)
     combined_data = load_bsa_data(f"{final_dir}/combined_bsa.json")
@@ -149,44 +164,38 @@ def plot_combined_bsa(binning_csv, final_dir="final_results", output_dir="bsa_pl
                 ax = axs[r,c]
                 key_base = (i_xB, *get_bin_indices(binning, Q2_min, Q2_max, t_min, t_max))
                 
-                # Get data points
-                yvals = [combined_data.get(key_base + (i,), {}).get('bsa', 0)
-                         for i in range(N_PHI_BINS)]
-                yerrs = [combined_data.get(key_base + (i,), {}).get('bsa_err', 0)
-                         for i in range(N_PHI_BINS)]
+                # Collect data
+                x, y, yerr = collect_bin_data(combined_data, key_base)
+                if not x:
+                    continue
                 
-                # Perform fit
+                # Perform fit with new function
                 try:
-                    popt, pcov = curve_fit(bsa_fit_function, phi_edges[:-1], yvals,
-                                          sigma=yerrs, absolute_sigma=True)
-                    fit_phi = np.linspace(0, 2*np.pi, 100)
-                    fit_deg = np.degrees(fit_phi)
-                    fit_bsa = bsa_fit_function(fit_phi, *popt)
-                except:
-                    popt, pcov = [np.nan]*4, None
-                    fit_deg, fit_bsa = [], []
+                    popt, pcov = curve_fit(bsa_fit_function, 
+                                         np.radians(x), y,
+                                         sigma=yerr,
+                                         absolute_sigma=True)
+                    fit_x = np.linspace(0, 360, 100)
+                    fit_y = bsa_fit_function(np.radians(fit_x), *popt)
+                    ax.plot(fit_x, fit_y, 'r-', lw=1.5)
+                except Exception as e:
+                    popt, pcov = [np.nan]*2, None  # Now only 2 parameters
                 
-                # Plotting
-                ax.errorbar(phi_deg, yvals, yerr=yerrs, fmt='ko', capsize=3)
-                if len(fit_deg) > 0:
-                    ax.plot(fit_deg, fit_bsa, 'r-', linewidth=1.5)
+                # Plot data
+                ax.errorbar(x, y, yerr=yerr, fmt='ko', 
+                           markersize=5, capsize=3)
                 
-                # Add fit parameters
-                textstr = '\n'.join([
-                    f"Amp = {popt[0]:.2f} ± {np.sqrt(pcov[0,0]):.2f}",
-                    f"a1 = {popt[1]:.2f} ± {np.sqrt(pcov[1,1]):.2f}",
-                    f"a2 = {popt[2]:.2f} ± {np.sqrt(pcov[2,2]):.2f}",
-                    f"b1 = {popt[3]:.2f} ± {np.sqrt(pcov[3,3]):.2f}"
-                ]) if pcov is not None else "Fit failed"
-                ax.text(0.95, 0.95, textstr, transform=ax.transAxes,
-                       ha='right', va='top', fontsize=6)
+                # Add fit info for 2 parameters
+                if pcov is not None:
+                    text = (f"Amp = {popt[0]:.2f} ± {np.sqrt(pcov[0,0]):.2f}\n"
+                            f"b1 = {popt[1]:.2f} ± {np.sqrt(pcov[1,1]):.2f}")
+                    ax.text(0.95, 0.95, text, transform=ax.transAxes,
+                           ha='right', va='top', fontsize=6)
                 
                 ax.set_xlim(0, 360)
                 ax.set_ylim(-1, 1)
                 ax.grid(True, alpha=0.3)
                 ax.set_title(f"Q²={0.5*(Q2_min+Q2_max):.2f}, -t={0.5*(t_min+t_max):.2f}")
-                if r == nrows-1: ax.set_xlabel("φ (deg)")
-                if c == 0: ax.set_ylabel("BSA")
         
         fig.suptitle(f"Combined BSA with Fit - xB = {0.5*(xB_min+xB_max):.3f}")
         fig.tight_layout(rect=[0, 0, 1, 0.95])
@@ -194,8 +203,15 @@ def plot_combined_bsa(binning_csv, final_dir="final_results", output_dir="bsa_pl
         plt.close()
 
 def get_bin_indices(binning, Q2_min, Q2_max, t_min, t_max):
-    """Get overall Q² and t bin indices from bin boundaries"""
+    """Get bin indices with error checking"""
     unique_Q2 = sorted({(b.Q2min, b.Q2max) for b in binning})
     unique_t = sorted({(b.tmin, b.tmax) for b in binning})
-    return (unique_Q2.index((Q2_min, Q2_max)), 
-            unique_t.index((t_min, t_max)))
+    try:
+        return (unique_Q2.index((Q2_min, Q2_max)), 
+                unique_t.index((t_min, t_max)))
+    except ValueError:
+        return (-1, -1)  # Handle missing bins gracefully
+
+def bsa_fit_function(phi, Amp, b1):
+    """Simplified BSA fitting function: Amp*sin(phi)/(1 + b1*cos(phi))"""
+    return Amp * np.sin(phi) / (1 + b1 * np.cos(phi))
