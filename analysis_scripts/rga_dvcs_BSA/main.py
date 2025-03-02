@@ -34,10 +34,10 @@ def main():
     """
     configure_global_style()
     
-    # output_dir = "exclusivity"
-    # os.makedirs(output_dir, exist_ok=True)
-    # contamination_dir = "contamination"
-    # os.makedirs(contamination_dir, exist_ok=True)
+    output_dir = "exclusivity"
+    os.makedirs(output_dir, exist_ok=True)
+    contamination_dir = "contamination"
+    os.makedirs(contamination_dir, exist_ok=True)
     
     # print("🚀 Starting multi-stage analysis with parallel processing\n")
     
