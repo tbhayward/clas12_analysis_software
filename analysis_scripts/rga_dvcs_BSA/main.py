@@ -170,7 +170,7 @@ def main():
     
     # Configure BSA parameters
     periods = ["Fa18_inb", "Fa18_out", "Sp19_inb"]  # Base period names
-    channels = ["dvcs", "eppi0"]
+    channels = ["DVCS", "eppi0"]
     csv_path = os.path.join("imports", "integrated_bin_v2.csv")
     bsa_output = os.path.join("bsa_results")
     
