@@ -43,9 +43,9 @@ def main():
     
     # --- Exclusivity processing (commented out) ---
     periods_to_run = [
-        ("DVCS_Fa18_inb",  "dvcs"),
+        # ("DVCS_Fa18_inb",  "dvcs"),
         # ("DVCS_Fa18_out",  "dvcs"),
-        # ("DVCS_Sp19_inb",  "dvcs"),
+        ("DVCS_Sp19_inb",  "dvcs"),
         # ("eppi0_Fa18_inb", "eppi0"),
         # ("eppi0_Fa18_out", "eppi0"),
         # ("eppi0_Sp19_inb", "eppi0"),
