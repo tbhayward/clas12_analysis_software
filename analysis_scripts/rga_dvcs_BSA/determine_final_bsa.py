@@ -29,17 +29,25 @@ def propagate_errors(D, D_err, c, c_err, E, E_err):
     return A, math.sqrt((dA_dD*D_err)**2 + (dA_dc*c_err)**2 + (dA_dE*E_err)**2)
 
 def process_period(period, contamination_dir, bsa_dir):
+    # For DVCS periods, load corresponding eppi0 period data
+    eppi0_period = period.replace("DVCS", "eppi0") if "DVCS" in period else period
+    
     contamination = load_contamination(period, contamination_dir)
     dvcs_bsa = load_bsa(period, "dvcs", bsa_dir)
-    eppi0_bsa = load_bsa(period, "eppi0_eppi0", bsa_dir)
+    eppi0_bsa = load_bsa(eppi0_period, "eppi0", bsa_dir)  # Changed here
     
     print(f"\nProcessing {period}:")
     print(f"Contamination bins: {len(contamination)}")
     print(f"DVCS BSA bins: {len(dvcs_bsa)}")
-    print(f"EPPI0 BSA bins: {len(eppi0_bsa)}")
+    print(f"EPPI0 BSA bins ({eppi0_period}): {len(eppi0_bsa)}")
     
     common_bins = set(dvcs_bsa.keys()) & set(eppi0_bsa.keys()) & set(contamination.keys())
     print(f"Common bins: {len(common_bins)}")
+
+     # Temporary debug: compare first 5 bins
+    print("\nSample DVCS BSA bins:", list(dvcs_bsa.keys())[:5])
+    print("Sample EPPI0 BSA bins:", list(eppi0_bsa.keys())[:5])
+    print("Sample Contamination bins:", list(contamination.keys())[:5])
     
     results = {}
     for bin_key in set(dvcs_bsa.keys()) & set(eppi0_bsa.keys()) & set(contamination.keys()):

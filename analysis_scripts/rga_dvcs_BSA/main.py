@@ -167,10 +167,10 @@ def main():
     #             print(f"Plotting for {rp} generated an exception: {exc}")
 
         
-    # --- Raw BSA calculation ---
-    print("\n🚀 Calculating raw BSA values...")
-    csv_path = os.path.join("imports", "integrated_bin_v2.csv")
-    bsa_output = os.path.join("bsa_results")
+    # # --- Raw BSA calculation ---
+    # print("\n🚀 Calculating raw BSA values...")
+    # csv_path = os.path.join("imports", "integrated_bin_v2.csv")
+    # bsa_output = os.path.join("bsa_results")
 
     # # Create tasks using EXACT file_map keys
     # bsa_tasks = [
