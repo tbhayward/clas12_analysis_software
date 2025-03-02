@@ -34,32 +34,32 @@ def main():
     """
     configure_global_style()
     
-    # output_dir = "exclusivity"
-    # os.makedirs(output_dir, exist_ok=True)
-    # contamination_dir = "contamination"
-    # os.makedirs(contamination_dir, exist_ok=True)
+    output_dir = "exclusivity"
+    os.makedirs(output_dir, exist_ok=True)
+    contamination_dir = "contamination"
+    os.makedirs(contamination_dir, exist_ok=True)
     
-    # print("🚀 Starting multi-stage analysis with parallel processing\n")
+    print("🚀 Starting multi-stage analysis with parallel processing\n")
     
-    # # --- Exclusivity processing (commented out) ---
-    # periods_to_run = [
-    #     ("DVCS_Fa18_inb",  "dvcs"),
-    #     ("DVCS_Fa18_out",  "dvcs"),
-    #     ("DVCS_Sp19_inb",  "dvcs"),
-    #     ("eppi0_Fa18_inb", "eppi0"),
-    #     ("eppi0_Fa18_out", "eppi0"),
-    #     ("eppi0_Sp19_inb", "eppi0"),
-    # ]
-    # tasks = [(period, analysis_type, output_dir) for period, analysis_type in periods_to_run]
-    # with ProcessPoolExecutor(max_workers=6) as executor:
-    #     futures = [executor.submit(run_period, task) for task in tasks]
-    #     for future in as_completed(futures):
-    #         try:
-    #             future.result()
-    #         except Exception as exc:
-    #             print(f"⚠️ A task generated an exception: {exc}")
-    # print("🧩 Combining exclusivity results (JSON files from each topology & stage)...")
-    # combine_results(output_dir)
+    # --- Exclusivity processing (commented out) ---
+    periods_to_run = [
+        ("DVCS_Fa18_inb",  "dvcs"),
+        ("DVCS_Fa18_out",  "dvcs"),
+        ("DVCS_Sp19_inb",  "dvcs"),
+        ("eppi0_Fa18_inb", "eppi0"),
+        ("eppi0_Fa18_out", "eppi0"),
+        ("eppi0_Sp19_inb", "eppi0"),
+    ]
+    tasks = [(period, analysis_type, output_dir) for period, analysis_type in periods_to_run]
+    with ProcessPoolExecutor(max_workers=6) as executor:
+        futures = [executor.submit(run_period, task) for task in tasks]
+        for future in as_completed(futures):
+            try:
+                future.result()
+            except Exception as exc:
+                print(f"⚠️ A task generated an exception: {exc}")
+    print("🧩 Combining exclusivity results (JSON files from each topology & stage)...")
+    combine_results(output_dir)
     
     # --- Load binning scheme ---
     csv_file_path = os.path.join("imports", "integrated_bin_v2.csv")
@@ -68,81 +68,81 @@ def main():
     for b in binning_scheme:
         print(b)
     
-    # --- Contamination calculation tasks ---
-    dvcs_periods = [
-        ("DVCS_Fa18_inb", "dvcs"),
-        ("DVCS_Fa18_out", "dvcs"),
-        ("DVCS_Sp19_inb", "dvcs")
-    ]
-    topologies = ["(FD,FD)", "(CD,FD)", "(CD,FT)"]
+    # # --- Contamination calculation tasks ---
+    # dvcs_periods = [
+    #     ("DVCS_Fa18_inb", "dvcs"),
+    #     ("DVCS_Fa18_out", "dvcs"),
+    #     ("DVCS_Sp19_inb", "dvcs")
+    # ]
+    # topologies = ["(FD,FD)", "(CD,FD)", "(CD,FT)"]
     
-    # Build tasks: each task is (period, topology, analysis_type, binning_scheme)
-    tasks = []
-    for period, analysis_type in dvcs_periods:
-        for topo in topologies:
-            tasks.append((period, topo, analysis_type, binning_scheme))
+    # # Build tasks: each task is (period, topology, analysis_type, binning_scheme)
+    # tasks = []
+    # for period, analysis_type in dvcs_periods:
+    #     for topo in topologies:
+    #         tasks.append((period, topo, analysis_type, binning_scheme))
     
-    # Run contamination calculations in parallel
-    period_results = {}  # Will group results by period
-    with ProcessPoolExecutor(max_workers=1) as executor:
-        future_to_task = {executor.submit(calculate_contamination, *task): task for task in tasks}
-        for future in as_completed(future_to_task):
-            task = future_to_task[future]
-            try:
-                period, topology, analysis_type, _ = task
-                result = future.result()
-                # Group the result under the corresponding period:
-                if period not in period_results:
-                    period_results[period] = result
-                else:
-                    # Sum the counts in each bin (the keys should match if you use unique bins)
-                    for key, counts in result.items():
-                        if key not in period_results[period]:
-                            period_results[period][key] = counts
-                        else:
-                            period_results[period][key]['N_data'] += counts['N_data']
-                            period_results[period][key]['N_pi0_mc'] += counts['N_pi0_mc']
-                            period_results[period][key]['N_pi0_exp'] += counts['N_pi0_exp']
-                            period_results[period][key]['N_pi0_reco'] += counts['N_pi0_reco']
-            except Exception as exc:
-                print(f"Task {task} generated an exception: {exc}")
+    # # Run contamination calculations in parallel
+    # period_results = {}  # Will group results by period
+    # with ProcessPoolExecutor(max_workers=1) as executor:
+    #     future_to_task = {executor.submit(calculate_contamination, *task): task for task in tasks}
+    #     for future in as_completed(future_to_task):
+    #         task = future_to_task[future]
+    #         try:
+    #             period, topology, analysis_type, _ = task
+    #             result = future.result()
+    #             # Group the result under the corresponding period:
+    #             if period not in period_results:
+    #                 period_results[period] = result
+    #             else:
+    #                 # Sum the counts in each bin (the keys should match if you use unique bins)
+    #                 for key, counts in result.items():
+    #                     if key not in period_results[period]:
+    #                         period_results[period][key] = counts
+    #                     else:
+    #                         period_results[period][key]['N_data'] += counts['N_data']
+    #                         period_results[period][key]['N_pi0_mc'] += counts['N_pi0_mc']
+    #                         period_results[period][key]['N_pi0_exp'] += counts['N_pi0_exp']
+    #                         period_results[period][key]['N_pi0_reco'] += counts['N_pi0_reco']
+    #         except Exception as exc:
+    #             print(f"Task {task} generated an exception: {exc}")
     
-    # Now recompute the contamination values for each bin from the summed counts,
-    # and write one file per period.
-    for period, result in period_results.items():
-        for key, counts in result.items():
-            N_data = counts['N_data']
-            if N_data == 0 or counts['N_pi0_reco'] == 0:
-                counts['c_i'] = 0.0
-                counts['c_i_err'] = 0.0
-            else:
-                ratio = counts['N_pi0_exp'] / counts['N_pi0_reco']
-                c_i = counts['N_pi0_mc'] * ratio / N_data
-                rel_pi0_mc = 1 / math.sqrt(counts['N_pi0_mc']) if counts['N_pi0_mc'] > 0 else 0
-                rel_pi0_exp = 1 / math.sqrt(counts['N_pi0_exp']) if counts['N_pi0_exp'] > 0 else 0
-                rel_pi0_reco = 1 / math.sqrt(counts['N_pi0_reco']) if counts['N_pi0_reco'] > 0 else 0
-                rel_data = 1 / math.sqrt(N_data)
-                # Here we add the uncertainties for the ratio in quadrature.
-                rel_ratio = math.sqrt(rel_pi0_exp**2 + rel_pi0_reco**2)
-                rel_err = math.sqrt(rel_pi0_mc**2 + rel_ratio**2 + rel_data**2)
-                c_i_err = c_i * rel_err
-                counts['c_i'] = c_i
-                counts['c_i_err'] = c_i_err
+    # # Now recompute the contamination values for each bin from the summed counts,
+    # # and write one file per period.
+    # for period, result in period_results.items():
+    #     for key, counts in result.items():
+    #         N_data = counts['N_data']
+    #         if N_data == 0 or counts['N_pi0_reco'] == 0:
+    #             counts['c_i'] = 0.0
+    #             counts['c_i_err'] = 0.0
+    #         else:
+    #             ratio = counts['N_pi0_exp'] / counts['N_pi0_reco']
+    #             c_i = counts['N_pi0_mc'] * ratio / N_data
+    #             rel_pi0_mc = 1 / math.sqrt(counts['N_pi0_mc']) if counts['N_pi0_mc'] > 0 else 0
+    #             rel_pi0_exp = 1 / math.sqrt(counts['N_pi0_exp']) if counts['N_pi0_exp'] > 0 else 0
+    #             rel_pi0_reco = 1 / math.sqrt(counts['N_pi0_reco']) if counts['N_pi0_reco'] > 0 else 0
+    #             rel_data = 1 / math.sqrt(N_data)
+    #             # Here we add the uncertainties for the ratio in quadrature.
+    #             rel_ratio = math.sqrt(rel_pi0_exp**2 + rel_pi0_reco**2)
+    #             rel_err = math.sqrt(rel_pi0_mc**2 + rel_ratio**2 + rel_data**2)
+    #             c_i_err = c_i * rel_err
+    #             counts['c_i'] = c_i
+    #             counts['c_i_err'] = c_i_err
         
-        # Filter out bins with zero contamination and round the numbers
-        filtered_results = {
-            str(key): {
-                'c_i': round(counts['c_i'], 5),
-                'c_i_err': round(counts['c_i_err'], 5)
-            }
-            for key, counts in result.items() if counts['c_i'] != 0
-        }
+    #     # Filter out bins with zero contamination and round the numbers
+    #     filtered_results = {
+    #         str(key): {
+    #             'c_i': round(counts['c_i'], 5),
+    #             'c_i_err': round(counts['c_i_err'], 5)
+    #         }
+    #         for key, counts in result.items() if counts['c_i'] != 0
+    #     }
         
-        json_filename = f"contamination_{period}.json"
-        json_path = os.path.join(contamination_dir, json_filename)
-        with open(json_path, "w") as f:
-            json.dump(filtered_results, f, indent=2)
-        print(f"Saved combined contamination for {period} to {json_path}")
+    #     json_filename = f"contamination_{period}.json"
+    #     json_path = os.path.join(contamination_dir, json_filename)
+    #     with open(json_path, "w") as f:
+    #         json.dump(filtered_results, f, indent=2)
+    #     print(f"Saved combined contamination for {period} to {json_path}")
 
     # # --- Plotting contamination for each run period ---
     # run_periods = ["DVCS_Fa18_inb", "DVCS_Fa18_out", "DVCS_Sp19_inb"]
