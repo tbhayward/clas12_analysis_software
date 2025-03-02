@@ -63,13 +63,15 @@ def load_root_files(period):
         if period.startswith("eppi0_bkg") or period.startswith("DVCS"):
             # Background files, even though they start with eppi0, are DVCS-like.
             branches = [
-                "helicity", "x", "Q2", "detector1", "detector2", "t1", "open_angle_ep2", "theta_gamma_gamma",
+                "beam_pol", "helicity", "x", "Q2", "detector1", "detector2", "t1", 
+                "open_angle_ep2", "theta_gamma_gamma",
                 "Emiss2", "Mx2", "Mx2_1", "Mx2_2", "pTmiss", "xF", "phi2"
             ]
         elif period.startswith("eppi0"):
             # Regular eppi0 files.
             branches = [
-                "helicity", "x", "Q2", "detector1", "detector2", "t1", "open_angle_ep2", "theta_pi0_pi0",
+                "beam_pol", "helicity", "x", "Q2", "detector1", "detector2", "t1", 
+                "open_angle_ep2", "theta_pi0_pi0",
                 "Emiss2", "Mx2", "Mx2_1", "Mx2_2", "pTmiss", "xF", "phi2"
             ]
 
