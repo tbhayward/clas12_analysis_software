@@ -46,7 +46,7 @@ def collect_bin_data(data_dict, key_base):
     return x, y, yerr
 
 def bsa_fit_function(phi, a1, b1):
-    b1 = np.clip(b1, -0.99, 0.99)
+    b1 = np.clip(b1, -0.99999, 0.99999)
     return a1 * np.sin(phi) / (1 + b1 * np.cos(phi))
 
 def plot_raw_bsa(binning_csv, bsa_dir="bsa_results", output_dir="bsa_plots/raw"):
@@ -66,9 +66,10 @@ def plot_raw_bsa(binning_csv, bsa_dir="bsa_results", output_dir="bsa_plots/raw")
             subset = [b for b in binning if (b.xBmin, b.xBmax) == (xB_min, xB_max)]
             unique_Q2 = sorted({(b.Q2min, b.Q2max) for b in subset})
             unique_t = sorted({(b.tmin, b.tmax) for b in subset})
+            nrows = len(unique_Q2)
             
-            fig, axs = plt.subplots(len(unique_Q2), len(unique_t), 
-                          figsize=(3.5*len(unique_t), 3.5*len(unique_Q2)), 
+            fig, axs = plt.subplots(nrows, len(unique_t), 
+                          figsize=(3.5*len(unique_t), 3.5*nrows), 
                           squeeze=False)
 
             for r, (Q2_min, Q2_max) in enumerate(unique_Q2):
@@ -92,6 +93,13 @@ def plot_raw_bsa(binning_csv, bsa_dir="bsa_results", output_dir="bsa_plots/raw")
                           xticks=[0, 90, 180, 270, 360],
                           title=f"$x_B$={xB_avg:.3f}, $Q^2$={0.5*(Q2_min+Q2_max):.2f}, -t={0.5*(t_min+t_max):.2f}")
                     ax.grid(True, alpha=0.3)
+                    
+                    # Add labels for bottom row and left column
+                    if r == nrows - 1:
+                        ax.set_xlabel("$\phi$ (deg)")
+                    if c == 0:
+                        ax.set_ylabel("$A_{LU}$")
+                        
                     if dvcs_x or eppi0_x:
                         ax.legend(loc='upper right', frameon=False)
 
@@ -110,9 +118,10 @@ def plot_adjusted_bsa(binning_csv, final_dir="final_results", output_dir="bsa_pl
         subset = [b for b in binning if (b.xBmin, b.xBmax) == (xB_min, xB_max)]
         unique_Q2 = sorted({(b.Q2min, b.Q2max) for b in subset})
         unique_t = sorted({(b.tmin, b.tmax) for b in subset})
+        nrows = len(unique_Q2)
         
-        fig, axs = plt.subplots(len(unique_Q2), len(unique_t),
-                              figsize=(3.5*len(unique_t), 3.5*len(unique_Q2)),
+        fig, axs = plt.subplots(nrows, len(unique_t),
+                              figsize=(3.5*len(unique_t), 3.5*nrows),
                               squeeze=False)
 
         for r, (Q2_min, Q2_max) in enumerate(unique_Q2):
@@ -129,9 +138,17 @@ def plot_adjusted_bsa(binning_csv, final_dir="final_results", output_dir="bsa_pl
                         ax.errorbar(x, y, yerr, fmt='o', markersize=5, capsize=3,
                                   label=PERIOD_LABELS[period])
                 
+                # Configure axes
                 ax.set(xlim=(0, 360), ylim=(-1, 1),
                       title=f"$x_B$={xB_avg:.3f}, $Q^2$={0.5*(Q2_min+Q2_max):.2f}, -t={0.5*(t_min+t_max):.2f}")
                 ax.grid(True, alpha=0.3)
+                
+                # Add labels for bottom row and left column
+                if r == nrows - 1:
+                    ax.set_xlabel("$\phi$ (deg)")
+                if c == 0:
+                    ax.set_ylabel("$A_{LU}$")
+                    
                 if has_data:
                     ax.legend(loc='upper right', frameon=False)
 
@@ -151,9 +168,10 @@ def plot_combined_bsa(binning_csv, final_dir="final_results", output_dir="bsa_pl
         subset = [b for b in binning if (b.xBmin, b.xBmax) == (xB_min, xB_max)]
         unique_Q2 = sorted({(b.Q2min, b.Q2max) for b in subset})
         unique_t = sorted({(b.tmin, b.tmax) for b in subset})
+        nrows = len(unique_Q2)
         
-        fig, axs = plt.subplots(len(unique_Q2), len(unique_t),
-                              figsize=(3.5*len(unique_t), 3.5*len(unique_Q2)),
+        fig, axs = plt.subplots(nrows, len(unique_t),
+                              figsize=(3.5*len(unique_t), 3.5*nrows),
                               squeeze=False)
 
         for r, (Q2_min, Q2_max) in enumerate(unique_Q2):
@@ -188,6 +206,12 @@ def plot_combined_bsa(binning_csv, final_dir="final_results", output_dir="bsa_pl
                 ax.set(xlim=(0, 360), ylim=(-1, 1),
                       title=f"$x_B$={xB_avg:.3f}, $Q^2$={0.5*(Q2_min+Q2_max):.2f}, -t={0.5*(t_min+t_max):.2f}")
                 ax.grid(True, alpha=0.3)
+                
+                # Add labels for bottom row and left column
+                if r == nrows - 1:
+                    ax.set_xlabel("$#phi$ (deg)")
+                if c == 0:
+                    ax.set_ylabel("$A_{LU}$")
 
         plt.savefig(f"{output_dir}/combined_xB{i_xB}.png", dpi=150)
         plt.close()
