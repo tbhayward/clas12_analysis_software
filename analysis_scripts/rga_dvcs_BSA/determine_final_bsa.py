@@ -7,13 +7,15 @@ from collections import defaultdict
 def load_contamination(period, contamination_dir="contamination"):
     file_path = os.path.join(contamination_dir, f"contamination_{period}.json")
     with open(file_path) as f:
-        return {tuple(map(int, k.strip("()").split(", "))): v for k, v in json.load(f).items()}
+        # Handle both tuple formats: "(0, 0, 0, 0)" and "0,0,0,0"
+        return {tuple(map(int, k.strip("()").replace(" ", "").split(","))): v 
+                for k, v in json.load(f).items()}
 
 def load_bsa(period, channel, bsa_dir="bsa_results"):
     file_path = os.path.join(bsa_dir, f"raw_bsa_{channel}_{period}.json")
     try:
         with open(file_path) as f:
-            return {tuple(map(int, k.strip("()").split(", "))): v 
+            return {tuple(map(int, k.strip("()").replace(" ", "").split(","))): v 
                     for k, v in json.load(f).items() 
                     if v.get("valid", True)}
     except:
@@ -30,6 +32,14 @@ def process_period(period, contamination_dir, bsa_dir):
     contamination = load_contamination(period, contamination_dir)
     dvcs_bsa = load_bsa(period, "dvcs", bsa_dir)
     eppi0_bsa = load_bsa(period, "eppi0", bsa_dir)
+    
+    print(f"\nProcessing {period}:")
+    print(f"Contamination bins: {len(contamination)}")
+    print(f"DVCS BSA bins: {len(dvcs_bsa)}")
+    print(f"EPPI0 BSA bins: {len(eppi0_bsa)}")
+    
+    common_bins = set(dvcs_bsa.keys()) & set(eppi0_bsa.keys()) & set(contamination.keys())
+    print(f"Common bins: {len(common_bins)}")
     
     results = {}
     for bin_key in set(dvcs_bsa.keys()) & set(eppi0_bsa.keys()) & set(contamination.keys()):
@@ -103,11 +113,14 @@ def determine_final_bsa(contamination_dir="contamination", bsa_dir="bsa_results"
     os.makedirs(final_dir, exist_ok=True)
     periods = ["DVCS_Fa18_inb", "DVCS_Fa18_out", "DVCS_Sp19_inb"]
     
-    # Process individual periods
     for period in periods:
-        result = process_period(period, contamination_dir, bsa_dir)
-        with open(os.path.join(final_dir, f"adjusted_bsa_{period}.json"), "w") as f:
-            json.dump({str(k): v for k, v in result.items()}, f, indent=2)
+        try:
+            result = process_period(period, contamination_dir, bsa_dir)
+            print(f"{period} processed bins: {len(result)}")
+            with open(os.path.join(final_dir, f"adjusted_bsa_{period}.json"), "w") as f:
+                json.dump({str(k): v for k, v in result.items()}, f, indent=2)
+        except Exception as e:
+            print(f"Failed processing {period}: {str(e)}")
     
     # Combine periods
     combined = combine_periods(periods, final_dir)

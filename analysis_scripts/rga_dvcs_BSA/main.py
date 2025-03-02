@@ -172,27 +172,27 @@ def main():
     csv_path = os.path.join("imports", "integrated_bin_v2.csv")
     bsa_output = os.path.join("bsa_results")
 
-    # Create tasks using EXACT file_map keys
-    bsa_tasks = [
-        # DVCS periods
-        ("DVCS_Fa18_inb", "dvcs", csv_path, bsa_output),
-        ("DVCS_Fa18_out", "dvcs", csv_path, bsa_output),
-        ("DVCS_Sp19_inb", "dvcs", csv_path, bsa_output),
-        # eppi0 periods
-        ("eppi0_Fa18_inb", "eppi0", csv_path, bsa_output),
-        ("eppi0_Fa18_out", "eppi0", csv_path, bsa_output),
-        ("eppi0_Sp19_inb", "eppi0", csv_path, bsa_output)
-    ]
+    # # Create tasks using EXACT file_map keys
+    # bsa_tasks = [
+    #     # DVCS periods
+    #     ("DVCS_Fa18_inb", "dvcs", csv_path, bsa_output),
+    #     ("DVCS_Fa18_out", "dvcs", csv_path, bsa_output),
+    #     ("DVCS_Sp19_inb", "dvcs", csv_path, bsa_output),
+    #     # eppi0 periods
+    #     ("eppi0_Fa18_inb", "eppi0", csv_path, bsa_output),
+    #     ("eppi0_Fa18_out", "eppi0", csv_path, bsa_output),
+    #     ("eppi0_Sp19_inb", "eppi0", csv_path, bsa_output)
+    # ]
 
-    with ProcessPoolExecutor(max_workers=6) as executor:
-        futures = {executor.submit(calculate_raw_bsa, *task): task for task in bsa_tasks}
-        for future in as_completed(futures):
-            task = futures[future]
-            try:
-                future.result()
-                print(f"Finished BSA for {task[0]}")
-            except Exception as exc:
-                print(f"BSA failed for {task[0]}: {exc}")
+    # with ProcessPoolExecutor(max_workers=6) as executor:
+    #     futures = {executor.submit(calculate_raw_bsa, *task): task for task in bsa_tasks}
+    #     for future in as_completed(futures):
+    #         task = futures[future]
+    #         try:
+    #             future.result()
+    #             print(f"Finished BSA for {task[0]}")
+    #         except Exception as exc:
+    #             print(f"BSA failed for {task[0]}: {exc}")
 
     # --- Final BSA calculation and combination ---
     print("\n🔧 Calculating final adjusted BSA values...")
