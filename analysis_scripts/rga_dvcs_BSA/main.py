@@ -12,6 +12,7 @@ from load_binning_scheme import load_binning_scheme
 from calculate_contamination import calculate_contamination
 from plot_contamination import plot_contamination_for_run
 from determine_raw_bsa import calculate_raw_bsa
+from determine_final_bsa import determine_final_bsa
 
 def run_period(args):
     """
@@ -165,9 +166,7 @@ def main():
     #         except Exception as exc:
     #             print(f"Plotting for {rp} generated an exception: {exc}")
 
-    
-    print("\n🚀 Calculating raw BSA values with topology-aware cuts...")
-    
+        
     # --- Raw BSA calculation ---
     print("\n🚀 Calculating raw BSA values...")
     csv_path = os.path.join("imports", "integrated_bin_v2.csv")
@@ -194,6 +193,15 @@ def main():
                 print(f"Finished BSA for {task[0]}")
             except Exception as exc:
                 print(f"BSA failed for {task[0]}: {exc}")
+
+    # --- Final BSA calculation and combination ---
+    print("\n🔧 Calculating final adjusted BSA values...")
+    determine_final_bsa(
+        contamination_dir="contamination",
+        bsa_dir="bsa_results",
+        final_dir="final_results"
+    )
+    print("✅ Final BSA results saved to final_results/ directory")
 
     print("\n🎉 Analysis complete!")
 
