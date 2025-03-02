@@ -136,9 +136,11 @@ def calculate_contamination(period, topology, analysis_type, binning_scheme):
             for i_t in range(len(unique_t_bins)):
                 for i_phi in range(N_PHI_BINS):
                     results[(i_xB, i_Q2, i_t, i_phi)] = {
-                        'N_data': 0,
+                        'N_data_plus': 0,
+                        'N_data_minus': 0,
                         'N_pi0_mc': 0,
-                        'N_pi0_exp': 0,
+                        'N_pi0_exp_plus': 0,
+                        'N_pi0_exp_minus': 0,
                         'N_pi0_reco': 0
                     }
 
@@ -164,6 +166,7 @@ def calculate_contamination(period, topology, analysis_type, binning_scheme):
             continue
 
         try:
+            helicity = int(event.helicity)
             xB_val = float(event.x)
             Q2_val = float(event.Q2)
             t_val  = abs(float(event.t1))
@@ -176,8 +179,10 @@ def calculate_contamination(period, topology, analysis_type, binning_scheme):
         i_phi = np.digitize(phi_val, phi_edges) - 1
         if i_xB is None or i_Q2 is None or i_t is None or i_phi is None or i_phi < 0 or i_phi >= N_PHI_BINS:
             continue
-        results[(i_xB, i_Q2, i_t, i_phi)]['N_data'] += 1
-
+        if helicity == 1:
+            results[(i_xB, i_Q2, i_t, i_phi)]['N_data_plus'] += 1
+        elif helicity == -1:
+            results[(i_xB, i_Q2, i_t, i_phi)]['N_data_minus'] += 1
 
 
     # --- Count π⁰ misidentification events from eppi0_bkg MC ---
@@ -245,6 +250,7 @@ def calculate_contamination(period, topology, analysis_type, binning_scheme):
             continue
 
         try:
+            helicity = int(event.helicity)
             xB_val = float(event.x)
             Q2_val = float(event.Q2)
             t_val  = abs(float(event.t1))
@@ -257,7 +263,10 @@ def calculate_contamination(period, topology, analysis_type, binning_scheme):
         i_phi = np.digitize(phi_val, phi_edges) - 1
         if i_xB is None or i_Q2 is None or i_t is None or i_phi is None or i_phi < 0 or i_phi >= N_PHI_BINS:
             continue
-        results[(i_xB, i_Q2, i_t, i_phi)]['N_pi0_exp'] += 1
+        if helicity == 1:
+            results[(i_xB, i_Q2, i_t, i_phi)]['N_pi0_exp_plus'] += 1
+        elif helicity == -1:
+            results[(i_xB, i_Q2, i_t, i_phi)]['N_pi0_exp_minus'] += 1
 
     # --- Count π⁰ reconstructed events from eppi0 MC ---
     count = 0
@@ -293,24 +302,42 @@ def calculate_contamination(period, topology, analysis_type, binning_scheme):
             continue
         results[(i_xB, i_Q2, i_t, i_phi)]['N_pi0_reco'] += 1
 
-    # --- Compute contamination in each 4D bin ---
+    # --- Compute contamination for both helicities ---
     for key, counts in results.items():
-        N_data = counts['N_data']
-        if N_data == 0 or counts['N_pi0_reco'] == 0:
-            counts['c_i'] = 0.0
-            counts['c_i_err'] = 0.0
+        # For positive helicity
+        N_data_plus = counts['N_data_plus']
+        if N_data_plus == 0 or counts['N_pi0_reco'] == 0:
+            c_i_plus = 0.0
+            c_i_plus_err = 0.0
         else:
-            ratio = counts['N_pi0_exp'] / counts['N_pi0_reco']
-            c_i = counts['N_pi0_mc'] * ratio / N_data
-            rel_pi0_mc = 1 / math.sqrt(counts['N_pi0_mc']) if counts['N_pi0_mc'] > 0 else 0
-            rel_pi0_exp = 1 / math.sqrt(counts['N_pi0_exp']) if counts['N_pi0_exp'] > 0 else 0
-            rel_pi0_reco = 1 / math.sqrt(counts['N_pi0_reco']) if counts['N_pi0_reco'] > 0 else 0
-            rel_data = 1 / math.sqrt(N_data)
-            # For the ratio (N_pi0_exp/N_pi0_reco) we sum the relative uncertainties.
-            rel_ratio = math.sqrt(rel_pi0_exp**2 + rel_pi0_reco**2)
-            rel_err = math.sqrt(rel_pi0_mc**2 + rel_ratio**2 + rel_data**2)
-            c_i_err = c_i * rel_err
-            counts['c_i'] = c_i
-            counts['c_i_err'] = c_i_err
+            ratio_plus = counts['N_pi0_exp_plus'] / counts['N_pi0_reco']
+            c_i_plus = counts['N_pi0_mc'] * ratio_plus / N_data_plus
+            # Error calculation for plus
+            rel_pi0_mc = 1/math.sqrt(counts['N_pi0_mc']) if counts['N_pi0_mc'] > 0 else 0
+            rel_pi0_exp_plus = 1/math.sqrt(counts['N_pi0_exp_plus']) if counts['N_pi0_exp_plus'] > 0 else 0
+            rel_ratio_plus = math.sqrt(rel_pi0_exp_plus**2 + rel_pi0_reco**2)
+            rel_err_plus = math.sqrt(rel_pi0_mc**2 + rel_ratio_plus**2 + (1/math.sqrt(N_data_plus))**2)
+            c_i_plus_err = c_i_plus * rel_err_plus
+
+        # For negative helicity
+        N_data_minus = counts['N_data_minus']
+        if N_data_minus == 0 or counts['N_pi0_reco'] == 0:
+            c_i_minus = 0.0
+            c_i_minus_err = 0.0
+        else:
+            ratio_minus = counts['N_pi0_exp_minus'] / counts['N_pi0_reco']
+            c_i_minus = counts['N_pi0_mc'] * ratio_minus / N_data_minus
+            # Error calculation for minus
+            rel_pi0_exp_minus = 1/math.sqrt(counts['N_pi0_exp_minus']) if counts['N_pi0_exp_minus'] > 0 else 0
+            rel_ratio_minus = math.sqrt(rel_pi0_exp_minus**2 + rel_pi0_reco**2)
+            rel_err_minus = math.sqrt(rel_pi0_mc**2 + rel_ratio_minus**2 + (1/math.sqrt(N_data_minus))**2)
+            c_i_minus_err = c_i_minus * rel_err_minus
+
+        counts.update({
+            'c_i_plus': c_i_plus,
+            'c_i_plus_err': c_i_plus_err,
+            'c_i_minus': c_i_minus,
+            'c_i_minus_err': c_i_minus_err
+        })
 
     return results
