@@ -35,16 +35,19 @@ def bsa_fit_function(phi, Amp, a1, a2, b1):
     return Amp * (a1*np.sin(phi) + a2*np.sin(2*phi)) / (1 + b1*np.cos(phi))
 
 def plot_raw_bsa(binning_csv, bsa_dir="bsa_results", output_dir="bsa_plots/raw"):
-    """Plot raw DVCS and eppi0 BSAs on same plots"""
     plt.style.use(PLOT_STYLE)
     binning = load_binning_scheme(binning_csv)
     unique_xB = sorted({(b.xBmin, b.xBmax) for b in binning})
     
     os.makedirs(output_dir, exist_ok=True)
     
-    for period in ["DVCS_Fa18_inb", "DVCS_Fa18_out", "DVCS_Sp19_inb"]:
-        dvcs_data = load_bsa_data(f"{bsa_dir}/raw_bsa_dvcs_{period}.json")
-        eppi0_data = load_bsa_data(f"{bsa_dir}/raw_bsa_eppi0_{period}.json")
+    for dvcs_period in ["DVCS_Fa18_inb", "DVCS_Fa18_out", "DVCS_Sp19_inb"]:
+        # Get corresponding eppi0 period name
+        eppi0_period = dvcs_period.replace("DVCS", "eppi0")
+        
+        # Load data with corrected filenames
+        dvcs_data = load_bsa_data(f"{bsa_dir}/raw_bsa_dvcs_{dvcs_period}.json")
+        eppi0_data = load_bsa_data(f"{bsa_dir}/raw_bsa_eppi0_{eppi0_period}.json")  # Changed here
         
         for i_xB, (xB_min, xB_max) in enumerate(unique_xB):
             subset = [b for b in binning if (b.xBmin, b.xBmax) == (xB_min, xB_max)]
@@ -77,9 +80,9 @@ def plot_raw_bsa(binning_csv, bsa_dir="bsa_results", output_dir="bsa_plots/raw")
                     if r == nrows-1: ax.set_xlabel("φ (deg)")
                     if c == 0: ax.set_ylabel("BSA")
             
-            fig.suptitle(f"{period} - xB = {0.5*(xB_min+xB_max):.3f}")
+            fig.suptitle(f"{dvcs_period} - xB = {0.5*(xB_min+xB_max):.3f}")  # Changed variable name
             fig.tight_layout(rect=[0, 0, 1, 0.96])
-            plt.savefig(f"{output_dir}/{period}_xB{i_xB}.png", dpi=150)
+            plt.savefig(f"{output_dir}/{dvcs_period}_xB{i_xB}.png", dpi=150)
             plt.close()
 
 def plot_adjusted_bsa(binning_csv, final_dir="final_results", output_dir="bsa_plots/adjusted"):
