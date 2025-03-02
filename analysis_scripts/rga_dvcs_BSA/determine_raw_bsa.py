@@ -70,29 +70,28 @@ def calculate_raw_bsa(period, channel, binning_csv, output_dir):
         ) or not passes_3sigma_cuts(event, False, cuts_dict):
             continue
 
-        try:
-            print("We're here!")
+        # try:
             # Collect beam polarization data
-            beam_pol = event.beam_pol
-            beam_pol_sum += beam_pol
-            beam_pol_count += 1
+        beam_pol = event.beam_pol
+        beam_pol_sum += beam_pol
+        beam_pol_count += 1
 
-            # Bin the event
-            xB, Q2, t, phi = event.x, event.Q2, abs(event.t1), event.phi2
-            i_xB = next(i for i, (lo,hi) in enumerate(unique_xB) if lo <= xB < hi)
-            i_Q2 = next(i for i, (lo,hi) in enumerate(unique_Q2) if lo <= Q2 < hi)
-            i_t = next(i for i, (lo,hi) in enumerate(unique_t) if lo <= t < hi)
-            i_phi = np.digitize(phi, phi_bins) - 1
-            
-            if 0 <= i_phi < 12:
-                key = (i_xB, i_Q2, i_t, i_phi)
-                if event.helicity > 0:
-                    results[key]["N_plus"] += 1
-                else:
-                    results[key]["N_minus"] += 1
-        except Exception as e:
-            print(f"Error processing event: {e}")
-            continue
+        # Bin the event
+        xB, Q2, t, phi = event.x, event.Q2, abs(event.t1), event.phi2
+        i_xB = next(i for i, (lo,hi) in enumerate(unique_xB) if lo <= xB < hi)
+        i_Q2 = next(i for i, (lo,hi) in enumerate(unique_Q2) if lo <= Q2 < hi)
+        i_t = next(i for i, (lo,hi) in enumerate(unique_t) if lo <= t < hi)
+        i_phi = np.digitize(phi, phi_bins) - 1
+        
+        if 0 <= i_phi < 12:
+            key = (i_xB, i_Q2, i_t, i_phi)
+            if event.helicity > 0:
+                results[key]["N_plus"] += 1
+            else:
+                results[key]["N_minus"] += 1
+        # except Exception as e:
+        #     print(f"Error processing event: {e}")
+        #     continue
 
     # Calculate average beam polarization
     if beam_pol_count == 0:
