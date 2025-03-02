@@ -310,27 +310,45 @@ def calculate_contamination(period, topology, analysis_type, binning_scheme):
             c_i_plus = 0.0
             c_i_plus_err = 0.0
         else:
-            ratio_plus = counts['N_pi0_exp_plus'] / counts['N_pi0_reco']
-            c_i_plus = counts['N_pi0_mc'] * ratio_plus / N_data_plus
-            # Error calculation for plus
-            rel_pi0_mc = 1/math.sqrt(counts['N_pi0_mc']) if counts['N_pi0_mc'] > 0 else 0
-            rel_pi0_exp_plus = 1/math.sqrt(counts['N_pi0_exp_plus']) if counts['N_pi0_exp_plus'] > 0 else 0
+            # Key formula changes for MC splitting
+            ratio_plus = (2 * counts['N_pi0_exp_plus']) / counts['N_pi0_reco']  # Adjusted denominator (MC split)
+            c_i_plus = (counts['N_pi0_mc'] * counts['N_pi0_exp_plus']) / (counts['N_pi0_reco'] * N_data_plus)  # Same as before mathematically
+            
+            # Error propagation with MC splitting
+            # Relative error terms
+            rel_pi0_mc = (math.sqrt(2) / math.sqrt(counts['N_pi0_mc'])) if counts['N_pi0_mc'] > 0 else 0  # Adjusted for MC split
+            rel_pi0_exp_plus = (1 / math.sqrt(counts['N_pi0_exp_plus'])) if counts['N_pi0_exp_plus'] > 0 else 0
+            rel_pi0_reco = (math.sqrt(2) / math.sqrt(counts['N_pi0_reco'])) if counts['N_pi0_reco'] > 0 else 0  # Adjusted for MC split
+            
+            # Combine errors
             rel_ratio_plus = math.sqrt(rel_pi0_exp_plus**2 + rel_pi0_reco**2)
-            rel_err_plus = math.sqrt(rel_pi0_mc**2 + rel_ratio_plus**2 + (1/math.sqrt(N_data_plus))**2)
+            rel_err_plus = math.sqrt(
+                rel_pi0_mc**2 + 
+                rel_ratio_plus**2 + 
+                (1 / math.sqrt(N_data_plus))**2  # Data term unchanged
+            )
             c_i_plus_err = c_i_plus * rel_err_plus
 
-        # For negative helicity
+        # For negative helicity (mirror of above)
         N_data_minus = counts['N_data_minus']
         if N_data_minus == 0 or counts['N_pi0_reco'] == 0:
             c_i_minus = 0.0
             c_i_minus_err = 0.0
         else:
-            ratio_minus = counts['N_pi0_exp_minus'] / counts['N_pi0_reco']
-            c_i_minus = counts['N_pi0_mc'] * ratio_minus / N_data_minus
-            # Error calculation for minus
-            rel_pi0_exp_minus = 1/math.sqrt(counts['N_pi0_exp_minus']) if counts['N_pi0_exp_minus'] > 0 else 0
-            rel_ratio_minus = math.sqrt(rel_pi0_exp_minus**2 + rel_pi0_reco**2)
-            rel_err_minus = math.sqrt(rel_pi0_mc**2 + rel_ratio_minus**2 + (1/math.sqrt(N_data_minus))**2)
+            ratio_minus = (2 * counts['N_pi0_exp_minus']) / counts['N_pi0_reco']  # Adjusted denominator
+            c_i_minus = (counts['N_pi0_mc'] * counts['N_pi0_exp_minus']) / (counts['N_pi0_reco'] * N_data_minus)
+            
+            # Error propagation
+            rel_pi0_exp_minus = (1 / math.sqrt(counts['N_pi0_exp_minus'])) if counts['N_pi0_exp_minus'] > 0 else 0
+            rel_ratio_minus = math.sqrt(
+                rel_pi0_exp_minus**2 + 
+                (math.sqrt(2) / math.sqrt(counts['N_pi0_reco']))**2  # Adjusted reco term
+            )
+            rel_err_minus = math.sqrt(
+                (math.sqrt(2) / math.sqrt(counts['N_pi0_mc']))**2 +  # Adjusted MC term
+                rel_ratio_minus**2 + 
+                (1 / math.sqrt(N_data_minus))**2
+            )
             c_i_minus_err = c_i_minus * rel_err_minus
 
         counts.update({

@@ -166,32 +166,26 @@ def main():
     csv_file_path = os.path.join("imports", "integrated_bin_v2.csv")
 
     with ProcessPoolExecutor(max_workers=8) as executor:
-        # Submit both helicity versions for each run period
-        future_to_rp = {}
-        for rp in run_periods:
-            # Submit positive helicity
-            future_to_rp[executor.submit(plot_contamination_for_run,
-                run_period=rp,
-                binning_csv=csv_file_path,
-                contamination_dir="contamination",
-                output_dir=plots_dir,
-                helicity="plus")] = (rp, "plus")
-            
-            # Submit negative helicity
-            future_to_rp[executor.submit(plot_contamination_for_run,
-                run_period=rp,
-                binning_csv=csv_file_path,
-                contamination_dir="contamination",
-                output_dir=plots_dir,
-                helicity="minus")] = (rp, "minus")
-        
-        for future in as_completed(future_to_rp):
-            rp, helicity = future_to_rp[future]
-            try:
-                future.result()
-                print(f"Finished plotting {helicity} helicity for {rp}")
-            except Exception as exc:
-                print(f"Plotting {helicity} helicity for {rp} failed: {exc}")
+    # Submit ONE job per run period (no helicity specified)
+    future_to_rp = {}
+    for rp in run_periods:
+        future = executor.submit(
+            plot_contamination_for_run,
+            run_period=rp,
+            binning_csv=csv_file_path,
+            contamination_dir="contamination",
+            output_dir=plots_dir,
+            helicity=None  # Explicitly set to None to plot both
+        )
+        future_to_rp[future] = rp  # Track run period only
+
+    for future in as_completed(future_to_rp):
+        rp = future_to_rp[future]
+        try:
+            future.result()
+            print(f"Finished plotting BOTH helicities for {rp}")
+        except Exception as exc:
+            print(f"Plotting for {rp} failed: {exc}")
 
     print("\n🎉 Analysis complete!")
 
