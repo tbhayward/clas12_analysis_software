@@ -45,10 +45,10 @@ def collect_bin_data(data_dict, key_base):
                 yerr.append(data_dict[key]['bsa_err'])
     return x, y, yerr
 
-def bsa_fit_function(phi, Amp, a1, b1):
+def bsa_fit_function(phi, c0, a1, b1):
     b1 = np.clip(b1, -0.7, 0.7)  # Constrain b1 between -0.7 and 0.7
     a1 = np.clip(a1, -0.6, 0.6)  # Constrain a1 between -0.6 and 0.6
-    return Amp + (a1 * np.sin(phi)) / (1 + b1 * np.cos(phi))
+    return c0 + (a1 * np.sin(phi)) / (1 + b1 * np.cos(phi))
 
 def plot_raw_bsa(binning_csv, bsa_dir="bsa_results", output_dir="bsa_plots/raw"):
     plt.style.use(PLOT_STYLE)
@@ -184,7 +184,7 @@ def plot_combined_bsa(binning_csv, final_dir="final_results", output_dir="bsa_pl
                 if not x: continue
                 
                 try:
-                    # Set parameter bounds: Amp (unbounded), a1 (-0.6 to 0.6), b1 (-0.7 to 0.7)
+                    # Set parameter bounds: c0 (unbounded), a1 (-0.6 to 0.6), b1 (-0.7 to 0.7)
                     popt, pcov = curve_fit(bsa_fit_function, np.radians(x), y,
                                          sigma=yerr, 
                                          bounds=([-np.inf, -0.6, -0.7], 
@@ -198,7 +198,7 @@ def plot_combined_bsa(binning_csv, final_dir="final_results", output_dir="bsa_pl
                     ndf = len(x) - 3  # Now 3 parameters
                     
                     ax.plot(fit_x, fit_y, 'r-', lw=1.5)
-                    text = (f"Amp = {popt[0]:.2f} ± {np.sqrt(pcov[0,0]):.2f}\n"
+                    text = (f"$c_0$ = {popt[0]:.2f} ± {np.sqrt(pcov[0,0]):.2f}\n"
                             f"$a_1$ = {popt[1]:.2f} ± {np.sqrt(pcov[1,1]):.2f}\n"
                             f"$b_1$ = {popt[2]:.2f} ± {np.sqrt(pcov[2,2]):.2f}\n"
                             f"χ²/ndf = {chi2/ndf:.2f}")
