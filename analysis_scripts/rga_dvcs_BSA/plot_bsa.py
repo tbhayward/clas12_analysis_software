@@ -92,14 +92,14 @@ def plot_raw_bsa(binning_csv, bsa_dir="bsa_results", output_dir="bsa_plots/raw")
                     # Configure axes
                     ax.set(xlim=(0, 360), ylim=(-1, 1), 
                           xticks=[0, 90, 180, 270, 360],
-                          title=f"$x_B$={xB_avg:.3f}, $Q^2$={0.5*(Q2_min+Q2_max):.2f}, -t={0.5*(t_min+t_max):.2f}")
+                          title=fr"$x_B$={xB_avg:.3f}, $Q^2$={0.5*(Q2_min+Q2_max):.2f}, $-t$={0.5*(t_min+t_max):.2f}"
                     ax.grid(True, alpha=0.3)
                     
                     # Add labels for bottom row and left column
                     if r == nrows - 1:
-                        ax.set_xlabel("$\phi$ (deg)")
+                        ax.set_xlabel(r"$\phi$ (deg)")
                     if c == 0:
-                        ax.set_ylabel("$A_{LU}$")
+                        ax.set_ylabel(r"$A_{LU}$")
                         
                     if dvcs_x or eppi0_x:
                         ax.legend(loc='upper right', frameon=False)
@@ -171,7 +171,7 @@ def plot_adjusted_bsa(binning_csv, final_dir="final_results", output_dir="bsa_pl
                     weighted_mean = np.sum(np.array(y_vals) * weights) / np.sum(weights)
                     
                     # Calculate chi2 contribution
-                    chi2_contribution = np.sum(((np.array(y_vals) - weighted_mean)**2 / np.array(y_errs)**2)
+                    chi2_contribution = np.sum(((np.array(y_vals) - weighted_mean)**2 / np.array(y_errs)**2))
                     dof_contribution = len(y_vals) - 1
                     
                     total_chi2 += chi2_contribution
