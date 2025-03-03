@@ -36,12 +36,12 @@ def calculate_raw_bsa(period, channel, binning_csv, output_dir):
     unique_xB = sorted({(b.xBmin, b.xBmax) for b in binning_scheme})
     unique_Q2 = sorted({(b.Q2min, b.Q2max) for b in binning_scheme})
     unique_t = sorted({(b.tmin, b.tmax) for b in binning_scheme})
-    phi_bins = np.linspace(0, 2*math.pi, 13)
+    phi_bins = np.linspace(0, 2*math.pi, 10)
 
     # Initialize storage for counts and beam polarization
     results = {(i_xB, i_Q2, i_t, i_phi): {"N_plus":0, "N_minus":0} 
               for i_xB in range(len(unique_xB)) for i_Q2 in range(len(unique_Q2))
-              for i_t in range(len(unique_t)) for i_phi in range(12)}
+              for i_t in range(len(unique_t)) for i_phi in range(9)}
     
     beam_pol_sum = 0.0
     beam_pol_count = 0
@@ -83,7 +83,7 @@ def calculate_raw_bsa(period, channel, binning_csv, output_dir):
         i_t = next(i for i, (lo,hi) in enumerate(unique_t) if lo <= t < hi)
         i_phi = np.digitize(phi, phi_bins) - 1
         
-        if 0 <= i_phi < 12:
+        if 0 <= i_phi < 9:
             key = (i_xB, i_Q2, i_t, i_phi)
             if event.helicity > 0:
                 results[key]["N_plus"] += 1
