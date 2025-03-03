@@ -40,8 +40,10 @@ def calculate_raw_bsa(period, channel, binning_csv, output_dir):
 
     # Initialize storage for counts and beam polarization
     results = {(i_xB, i_Q2, i_t, i_phi): {"N_plus":0, "N_minus":0} 
-              for i_xB in range(len(unique_xB)) for i_Q2 in range(len(unique_Q2))
-              for i_t in range(len(unique_t)) for i_phi in range(9)}
+              for i_xB in range(len(unique_xB)) 
+              for i_Q2 in range(len(unique_Q2))
+              for i_t in range(len(unique_t))
+              for i_phi in range(9)}
     
     beam_pol_sum = 0.0
     beam_pol_count = 0
@@ -70,18 +72,20 @@ def calculate_raw_bsa(period, channel, binning_csv, output_dir):
         ) or not passes_3sigma_cuts(event, False, cuts_dict):
             continue
 
-        # try:
-            # Collect beam polarization data
+        # Collect beam polarization data
         beam_pol = event.beam_pol
         beam_pol_sum += beam_pol
         beam_pol_count += 1
 
         # Bin the event
         xB, Q2, t, phi = event.x, event.Q2, abs(event.t1), event.phi2
-        i_xB = next(i for i, (lo,hi) in enumerate(unique_xB) if lo <= xB < hi)
-        i_Q2 = next(i for i, (lo,hi) in enumerate(unique_Q2) if lo <= Q2 < hi)
-        i_t = next(i for i, (lo,hi) in enumerate(unique_t) if lo <= t < hi)
-        i_phi = np.digitize(phi, phi_bins) - 1
+        try:
+            i_xB = next(i for i, (lo,hi) in enumerate(unique_xB) if lo <= xB < hi)
+            i_Q2 = next(i for i, (lo,hi) in enumerate(unique_Q2) if lo <= Q2 < hi)
+            i_t = next(i for i, (lo,hi) in enumerate(unique_t) if lo <= t < hi)
+            i_phi = np.digitize(phi, phi_bins) - 1
+        except StopIteration:
+            continue
         
         if 0 <= i_phi < 9:
             key = (i_xB, i_Q2, i_t, i_phi)
@@ -89,9 +93,6 @@ def calculate_raw_bsa(period, channel, binning_csv, output_dir):
                 results[key]["N_plus"] += 1
             else:
                 results[key]["N_minus"] += 1
-        # except Exception as e:
-        #     print(f"Error processing event: {e}")
-        #     continue
 
     # Calculate average beam polarization
     if beam_pol_count == 0:
@@ -117,8 +118,11 @@ def calculate_raw_bsa(period, channel, binning_csv, output_dir):
             bsa_err = bsa_err_raw / beam_pol_avg
         except ZeroDivisionError:
             print(f"Invalid beam polarization {beam_pol_avg} for {period}")
-            bsa = 0
-            bsa_err = 0
+            continue
+
+        # Skip bins with BSA values of exactly ±1
+        if round(bsa, 5) in (1.00000, -1.00000):
+            continue
 
         valid_results[key] = {
             "bsa": round(bsa, 5),
