@@ -45,10 +45,10 @@ def collect_bin_data(data_dict, key_base):
                 yerr.append(data_dict[key]['bsa_err'])
     return x, y, yerr
 
-def bsa_fit_function(phi, amp, a1, b1):
-    a1 = np.clip(b1, -0.5, 0.5)
-    b1 = np.clip(b1, -0.9, 0.9)
-    return amp + a1 * np.sin(phi) / (1 + b1 * np.cos(phi))
+def bsa_fit_function(phi, Amp, a1, b1):
+    b1 = np.clip(b1, -0.7, 0.7)  # Constrain b1 between -0.7 and 0.7
+    a1 = np.clip(a1, -0.6, 0.6)  # Constrain a1 between -0.6 and 0.6
+    return Amp + (a1 * np.sin(phi)) / (1 + b1 * np.cos(phi))
 
 def plot_raw_bsa(binning_csv, bsa_dir="bsa_results", output_dir="bsa_plots/raw"):
     plt.style.use(PLOT_STYLE)
@@ -184,22 +184,26 @@ def plot_combined_bsa(binning_csv, final_dir="final_results", output_dir="bsa_pl
                 if not x: continue
                 
                 try:
+                    # Set parameter bounds: Amp (unbounded), a1 (-0.6 to 0.6), b1 (-0.7 to 0.7)
                     popt, pcov = curve_fit(bsa_fit_function, np.radians(x), y,
-                                         sigma=yerr, bounds=([-np.inf, -1], [np.inf, 1]))
+                                         sigma=yerr, 
+                                         bounds=([-np.inf, -0.6, -0.7], 
+                                                 [np.inf, 0.6, 0.7]))
                     fit_x = np.linspace(0, 360, 100)
                     fit_y = bsa_fit_function(np.radians(fit_x), *popt)
                     
                     # Calculate chi2/ndf
                     residuals = y - bsa_fit_function(np.radians(x), *popt)
                     chi2 = np.sum((residuals/yerr)**2)
-                    ndf = len(x) - 2
+                    ndf = len(x) - 3  # Now 3 parameters
                     
                     ax.plot(fit_x, fit_y, 'r-', lw=1.5)
                     text = (f"Amp = {popt[0]:.2f} ± {np.sqrt(pcov[0,0]):.2f}\n"
                             f"$a_1$ = {popt[1]:.2f} ± {np.sqrt(pcov[1,1]):.2f}\n"
                             f"$b_1$ = {popt[2]:.2f} ± {np.sqrt(pcov[2,2]):.2f}\n"
                             f"χ²/ndf = {chi2/ndf:.2f}")
-                except:
+                except Exception as e:
+                    print(f"Fit failed: {str(e)}")
                     text = "Fit failed"
                 
                 ax.errorbar(x, y, yerr, fmt='ko', markersize=5, capsize=3)
