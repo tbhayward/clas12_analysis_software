@@ -147,25 +147,25 @@ def main():
     #         json.dump(filtered_results, f, indent=2)
     #     print(f"Saved combined contamination for {period} to {json_path}")
 
-    # --- Plotting contamination for each run period ---
-    run_periods = ["DVCS_Fa18_inb", "DVCS_Fa18_out", "DVCS_Sp19_inb"]
-    plots_dir = os.path.join("contamination", "contamination_plots")
-    os.makedirs(plots_dir, exist_ok=True)
-    csv_file_path = os.path.join("imports", "integrated_bin_v2.csv")
+    # # --- Plotting contamination for each run period ---
+    # run_periods = ["DVCS_Fa18_inb", "DVCS_Fa18_out", "DVCS_Sp19_inb"]
+    # plots_dir = os.path.join("contamination", "contamination_plots")
+    # os.makedirs(plots_dir, exist_ok=True)
+    # csv_file_path = os.path.join("imports", "integrated_bin_v2.csv")
 
-    with ProcessPoolExecutor(max_workers=8) as executor:
-        future_to_rp = {executor.submit(plot_contamination_for_run,
-                                        run_period=rp,
-                                        binning_csv=csv_file_path,
-                                        contamination_dir="contamination",
-                                        output_dir=plots_dir): rp for rp in run_periods}
-        for future in as_completed(future_to_rp):
-            rp = future_to_rp[future]
-            try:
-                future.result()
-                print(f"Finished plotting contamination for {rp}")
-            except Exception as exc:
-                print(f"Plotting for {rp} generated an exception: {exc}")
+    # with ProcessPoolExecutor(max_workers=8) as executor:
+    #     future_to_rp = {executor.submit(plot_contamination_for_run,
+    #                                     run_period=rp,
+    #                                     binning_csv=csv_file_path,
+    #                                     contamination_dir="contamination",
+    #                                     output_dir=plots_dir): rp for rp in run_periods}
+    #     for future in as_completed(future_to_rp):
+    #         rp = future_to_rp[future]
+    #         try:
+    #             future.result()
+    #             print(f"Finished plotting contamination for {rp}")
+    #         except Exception as exc:
+    #             print(f"Plotting for {rp} generated an exception: {exc}")
 
         
     # # --- Raw BSA calculation ---

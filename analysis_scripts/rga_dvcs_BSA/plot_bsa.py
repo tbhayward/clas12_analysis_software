@@ -112,6 +112,10 @@ def plot_adjusted_bsa(binning_csv, final_dir="final_results", output_dir="bsa_pl
     binning = load_binning_scheme(binning_csv)
     unique_xB = sorted({(b.xBmin, b.xBmax) for b in binning})
     
+    # Create phi degree to index mapping
+    phi_deg_list = phi_deg.tolist()
+    phi_deg_to_index = {deg: idx for idx, deg in enumerate(phi_deg_list)}
+    
     os.makedirs(output_dir, exist_ok=True)
     
     for i_xB, (xB_min, xB_max) in enumerate(unique_xB):
@@ -131,20 +135,59 @@ def plot_adjusted_bsa(binning_csv, final_dir="final_results", output_dir="bsa_pl
                 key_base = (i_xB, *get_bin_indices(binning, Q2_min, Q2_max, t_min, t_max))
                 has_data = False
                 
+                # Initialize storage for statistical test
+                phi_data = {i: {'y': [], 'yerr': []} for i in range(N_PHI_BINS)}
+                all_period_data = []
+                
                 for period in PERIOD_LABELS.keys():
                     data = load_bsa_data(f"{final_dir}/adjusted_bsa_{period}.json")
                     x, y, yerr = collect_bin_data(data, key_base)
                     if x:
                         has_data = True
+                        # Plot each period's data
                         ax.errorbar(x, y, yerr, fmt='o', markersize=5, capsize=3,
                                   label=PERIOD_LABELS[period])
+                        # Collect data for statistical test
+                        indices = [phi_deg_to_index[xi] for xi in x]
+                        for idx, yi, yerri in zip(indices, y, yerr):
+                            phi_data[idx]['y'].append(yi)
+                            phi_data[idx]['yerr'].append(yerri)
+                
+                # Calculate consistency statistics
+                total_chi2 = 0.0
+                total_dof = 0
+                for idx in range(N_PHI_BINS):
+                    y_vals = phi_data[idx]['y']
+                    y_errs = phi_data[idx]['yerr']
+                    if len(y_vals) < 2:
+                        continue  # Need at least 2 measurements to compare
+                    
+                    # Calculate weighted average
+                    weights = 1 / np.array(y_errs)**2
+                    weighted_mean = np.sum(np.array(y_vals) * weights) / np.sum(weights)
+                    
+                    # Calculate chi2 contribution
+                    chi2_contribution = np.sum(((np.array(y_vals) - weighted_mean)**2 / np.array(y_errs)**2))
+                    dof_contribution = len(y_vals) - 1
+                    
+                    total_chi2 += chi2_contribution
+                    total_dof += dof_contribution
+                
+                # Calculate and display p-value
+                p_value = np.nan
+                if total_dof > 0:
+                    from scipy.stats import chi2
+                    p_value = chi2.sf(total_chi2, total_dof)
+                    ax.text(0.05, 0.95, f"Consistency p={p_value:.3f}",
+                            transform=ax.transAxes, ha='left', va='top',
+                            fontsize=6, bbox=dict(facecolor='white', alpha=0.8))
                 
                 # Configure axes
                 ax.set(xlim=(0, 360), ylim=(-1, 1),
-                      title=f"$x_B$={xB_avg:.3f}, $Q^2$={0.5*(Q2_min+Q2_max):.2f}, -t={0.5*(t_min+t_max):.2f}")
+                      title=f"$x_B$={xB_avg:.3f}, $Q^²$={0.5*(Q2_min+Q2_max):.2f}, -t={0.5*(t_min+t_max):.2f}")
                 ax.grid(True, alpha=0.3)
                 
-                # Add labels for bottom row and left column
+                # Add labels
                 if r == nrows - 1:
                     ax.set_xlabel("$\phi$ (deg)")
                 if c == 0:
