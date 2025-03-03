@@ -45,9 +45,10 @@ def collect_bin_data(data_dict, key_base):
                 yerr.append(data_dict[key]['bsa_err'])
     return x, y, yerr
 
-def bsa_fit_function(phi, a1, b1):
-    b1 = np.clip(b1, -0.99999, 0.99999)
-    return a1 * np.sin(phi) / (1 + b1 * np.cos(phi))
+def bsa_fit_function(phi, amp, a1, b1):
+    a1 = np.clip(b1, -0.5, 0.5)
+    b1 = np.clip(b1, -0.9, 0.9)
+    return amp + a1 * np.sin(phi) / (1 + b1 * np.cos(phi))
 
 def plot_raw_bsa(binning_csv, bsa_dir="bsa_results", output_dir="bsa_plots/raw"):
     plt.style.use(PLOT_STYLE)
@@ -194,8 +195,9 @@ def plot_combined_bsa(binning_csv, final_dir="final_results", output_dir="bsa_pl
                     ndf = len(x) - 2
                     
                     ax.plot(fit_x, fit_y, 'r-', lw=1.5)
-                    text = (f"$a_1$ = {popt[0]:.2f} ± {np.sqrt(pcov[0,0]):.2f}\n"
-                            f"$b_1$ = {popt[1]:.2f} ± {np.sqrt(pcov[1,1]):.2f}\n"
+                    text = (f"Amp = {popt[0]:.2f} ± {np.sqrt(pcov[0,0]):.2f}\n"
+                            f"$a_1$ = {popt[1]:.2f} ± {np.sqrt(pcov[1,1]):.2f}\n"
+                            f"$b_1$ = {popt[2]:.2f} ± {np.sqrt(pcov[2,2]):.2f}\n"
                             f"χ²/ndf = {chi2/ndf:.2f}")
                 except:
                     text = "Fit failed"
