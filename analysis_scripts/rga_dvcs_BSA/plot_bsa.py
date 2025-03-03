@@ -7,7 +7,7 @@ from scipy.optimize import curve_fit
 from load_binning_scheme import load_binning_scheme
 
 # Constants and styling
-N_PHI_BINS = 12
+N_PHI_BINS = 9
 phi_edges = np.linspace(0, 2 * np.pi, N_PHI_BINS + 1)
 phi_centers = (phi_edges[:-1] + phi_edges[1:]) / 2.0
 phi_deg = np.degrees(phi_centers)
