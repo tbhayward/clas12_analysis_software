@@ -92,7 +92,7 @@ def plot_raw_bsa(binning_csv, bsa_dir="bsa_results", output_dir="bsa_plots/raw")
                     # Configure axes
                     ax.set(xlim=(0, 360), ylim=(-1, 1), 
                           xticks=[0, 90, 180, 270, 360],
-                          title=fr"$x_B$={xB_avg:.3f}, $Q^2$={0.5*(Q2_min+Q2_max):.2f}, $-t$={0.5*(t_min+t_max):.2f}"
+                          title=fr"$x_B$={xB_avg:.3f}, $Q^2$={0.5*(Q2_min+Q2_max):.2f}, $-t$={0.5*(t_min+t_max):.2f}")
                     ax.grid(True, alpha=0.3)
                     
                     # Add labels for bottom row and left column
