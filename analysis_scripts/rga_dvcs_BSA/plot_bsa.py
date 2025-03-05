@@ -576,7 +576,7 @@ def plot_a1_vs_t_grid(binning_csv, final_dir="final_results", output_dir="bsa_pl
             ax.set_xlim(0, 1)  # Force x-axis from 0 to 1.
     
     # Remove extra spacing between subplots.
-    plt.subplots_adjust(wspace=0, hspace=0)
+    plt.subplots_adjust(wspace=-1, hspace=-1)
     
     # Add outer axis tick labels only on the boundaries.
     # For each column, assign x-axis label on the bottom-most valid subplot.
