@@ -4,6 +4,7 @@ import json
 import numpy as np
 import math
 import matplotlib.pyplot as plt
+import matplotlib.gridspec as gridspec
 import matplotlib.lines as mlines
 from scipy.stats import chi2 
 from scipy.optimize import curve_fit
