@@ -78,7 +78,8 @@ def calculate_raw_bsa(period, channel, binning_csv, output_dir):
         beam_pol_count += 1
 
         # Bin the event
-        xB, Q2, t, phi = event.x, event.Q2, abs(event.t1), event.phi2
+        # xB, Q2, t, phi = event.x, event.Q2, abs(event.t1), event.phi2
+        xB, Q2, t, phi = event.x, event.Q2, abs(event.t1), event.Delta_phi
         try:
             i_xB = next(i for i, (lo,hi) in enumerate(unique_xB) if lo <= xB < hi)
             i_Q2 = next(i for i, (lo,hi) in enumerate(unique_Q2) if lo <= Q2 < hi)
