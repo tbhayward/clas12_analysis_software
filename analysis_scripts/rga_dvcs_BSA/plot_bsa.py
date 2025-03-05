@@ -756,11 +756,6 @@ def plot_pass_comparison(binning_csv, final_dir="final_results", output_dir="bsa
     Each subplot gets a legend showing "pass-1" and "pass-2".
     The resulting canvases are saved in the folder bsa_plots/pass1_cross_check/.
     """
-    import numpy as np
-    import matplotlib.pyplot as plt
-    import matplotlib.lines as mlines
-    from load_binning_scheme import load_binning_scheme
-    from load_bsa_data import load_global_bin_means, load_bsa_data  # Ensure these exist
 
     plt.style.use(PLOT_STYLE)
     
