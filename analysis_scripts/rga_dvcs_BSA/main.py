@@ -15,7 +15,7 @@ from plot_contamination import plot_contamination_for_run
 from determine_raw_bsa import calculate_raw_bsa
 from determine_final_bsa import determine_final_bsa
 from plot_bsa import plot_raw_bsa, plot_adjusted_bsa, plot_combined_bsa
-from plot_bsa import plot_a1_vs_t_by_Q2, plot_a1_vs_t_grid, plot_a1_vs_t_grid_top, plot_a1_vs_t_grid_bottom
+from plot_bsa import plot_a1_vs_t_by_Q2, plot_a1_vs_t_grid_full, plot_a1_vs_t_grid_top, plot_a1_vs_t_grid_bottom
 
 def run_period(args):
     """
@@ -233,7 +233,7 @@ def main():
     # plot_adjusted_bsa(csv_path)
     # plot_combined_bsa(csv_path)
     plot_a1_vs_t_by_Q2(csv_path)
-    plot_a1_vs_t_grid(csv_path)
+    plot_a1_vs_t_grid_full(csv_path)
     plot_a1_vs_t_grid_top(csv_path)
     plot_a1_vs_t_grid_bottom(csv_path)
     
