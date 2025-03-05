@@ -110,8 +110,8 @@ def calculate_bin_means(dvcs_periods, topologies, analysis_type, binning_scheme,
                     xB_val   = float(event.x)
                     Q2_val   = float(event.Q2)
                     t_val    = abs(float(event.t1))  # if t1 is negative, use abs
-                    # phi_val  = float(event.phi2)
-                    phi_val  = float(event.Delta_phi)
+                    phi_val  = float(event.phi2)
+                    # phi_val  = float(event.Delta_phi)
                 except Exception:
                     # Skip if we can't parse these
                     continue
