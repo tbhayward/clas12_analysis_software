@@ -234,6 +234,8 @@ def main():
     # plot_combined_bsa(csv_path)
     plot_a1_vs_t_by_Q2(csv_path)
     plot_a1_vs_t_grid(csv_path)
+    plot_a1_vs_t_grid_top(csv_path)
+    plot_a1_vs_t_grid_bottom(csv_path)
     
     print("✅ All plots saved to bsa_plots/ directory")
 
