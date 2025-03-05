@@ -4,6 +4,7 @@ import json
 import numpy as np
 import math
 import matplotlib.pyplot as plt
+from scipy.stats import chi2 
 from scipy.optimize import curve_fit
 from load_binning_scheme import load_binning_scheme
 
@@ -186,6 +187,13 @@ def plot_adjusted_bsa(binning_csv, final_dir="final_results", output_dir="bsa_pl
     
     os.makedirs(output_dir, exist_ok=True)
     
+    # Define a fixed color mapping for each period.
+    # For example, PERIOD_LABELS might be:
+    # {"Fa18 Inb": "Fa18 Inb", "Fa18 Out": "Fa18 Out", "Sp19 Inb": "Sp19 Inb"}
+    period_list = list(PERIOD_LABELS.keys())
+    colors = ['C0', 'C1', 'C2']  # Extend if you have more than three periods.
+    period_colors = {period: colors[i % len(colors)] for i, period in enumerate(period_list)}
+    
     all_p_values = []
     
     for i_xB, (xB_min, xB_max) in enumerate(unique_xB):
@@ -218,20 +226,20 @@ def plot_adjusted_bsa(binning_csv, final_dir="final_results", output_dir="bsa_pl
             for c, (t_min, t_max) in enumerate(unique_t):
                 ax = axs[r, c]
                 key_base = (i_xB, *get_bin_indices(binning, Q2_min, Q2_max, t_min, t_max))
-                has_data = False
-                # Initialize storage for consistency test.
+                # Initialize storage for the consistency test.
                 phi_data = {i: {'y': [], 'yerr': []} for i in range(N_PHI_BINS)}
                 
                 overall_q2_idx = overall_unique_Q2.index((Q2_min, Q2_max))
                 overall_t_idx = overall_unique_t.index((t_min, t_max))
-                for period in PERIOD_LABELS.keys():
+                # Loop through each period in a fixed order.
+                for period in period_list:
                     data = load_bsa_data(f"{final_dir}/adjusted_bsa_{period}.json")
                     x, y, yerr = collect_bin_data(data, key_base, global_bin_means)
                     if x:
-                        has_data = True
+                        # Plot the data with the fixed color.
                         ax.errorbar(x, y, yerr, fmt='o', markersize=5, capsize=3,
-                                    label=PERIOD_LABELS[period])
-                        # Instead of exact matching, assign phi bin indices using digitize.
+                                    label=PERIOD_LABELS[period], color=period_colors[period])
+                        # Assign phi bin indices using np.digitize.
                         indices = [int(np.digitize(xi, phi_edges_deg) - 1) for xi in x]
                         for idx, yi, yerri in zip(indices, y, yerr):
                             phi_data[idx]['y'].append(yi)
@@ -251,7 +259,6 @@ def plot_adjusted_bsa(binning_csv, final_dir="final_results", output_dir="bsa_pl
                     total_dof += dof_contribution
                 p_value = np.nan
                 if total_dof > 0:
-                    from scipy.stats import chi2
                     p_value = chi2.sf(total_chi2, total_dof)
                     ax.text(0.05, 0.95, f"Consistency p={p_value:.3f}",
                             transform=ax.transAxes, ha='left', va='top', fontsize=6,
@@ -259,7 +266,7 @@ def plot_adjusted_bsa(binning_csv, final_dir="final_results", output_dir="bsa_pl
                     xB_p_values.append(p_value)
                     all_p_values.append(p_value)
                 
-                # Compute actual Q² and t averages for this cell from global bin means.
+                # Compute the Q² and t averages for this cell.
                 Q2_vals = []
                 t_vals = []
                 for i_phi in range(N_PHI_BINS):
@@ -280,6 +287,16 @@ def plot_adjusted_bsa(binning_csv, final_dir="final_results", output_dir="bsa_pl
                     ax.set_xlabel(r"$\phi$ (deg)")
                 if c == 0:
                     ax.set_ylabel(r"$A_{LU}$")
+                
+                # Create a consistent legend with dummy handles for all periods.
+                handles = []
+                for period in period_list:
+                    handle = mlines.Line2D([], [], color=period_colors[period],
+                                           marker='o', linestyle='None', markersize=5,
+                                           label=PERIOD_LABELS[period])
+                    handles.append(handle)
+                ax.legend(handles=handles, loc='best', fontsize=6)
+        
         plt.savefig(f"{output_dir}/adjusted_xB{i_xB}.png", dpi=150)
         plt.close()
         
@@ -349,15 +366,21 @@ def plot_combined_bsa(binning_csv, final_dir="final_results", output_dir="bsa_pl
                 if not x:
                     continue
 
-                # --- Iterative fitting with outlier removal ---
-                # Convert data to numpy arrays.
+                # --- Pre-filtering: Remove any point with y outside [-0.6, 0.6] ---
                 x_arr = np.array(x)
                 y_arr = np.array(y)
                 yerr_arr = np.array(yerr)
+                mask = (y_arr >= -0.6) & (y_arr <= 0.6)
+                x_arr = x_arr[mask]
+                y_arr = y_arr[mask]
+                yerr_arr = yerr_arr[mask]
+                if len(x_arr) < 4:
+                    continue
+                
+                # --- Iterative fitting with outlier removal ---
                 max_iter = 10  # Maximum iterations for outlier removal.
                 removed_points = 0
                 
-                # Iteratively remove the worst outlier if χ²/ndf > 3.
                 for iter_idx in range(max_iter):
                     try:
                         popt, pcov = curve_fit(bsa_fit_function, np.radians(x_arr), y_arr, sigma=yerr_arr,
@@ -389,7 +412,6 @@ def plot_combined_bsa(binning_csv, final_dir="final_results", output_dir="bsa_pl
                 # --- Final fit evaluation ---
                 fit_x = np.linspace(0, 360, 100)
                 fit_y = bsa_fit_function(np.radians(fit_x), *popt)
-                # Recalculate final residuals with the accepted data points.
                 final_fit = bsa_fit_function(np.radians(x_arr), *popt)
                 final_residuals = y_arr - final_fit
                 final_chi2 = np.sum((final_residuals / yerr_arr)**2)
@@ -398,15 +420,11 @@ def plot_combined_bsa(binning_csv, final_dir="final_results", output_dir="bsa_pl
                 chi2_ndf_list.append(final_chi2_ndf)
                 overall_chi2_ndf_list.append(final_chi2_ndf)
                 
-                # Plot the fit and data.
                 ax.plot(fit_x, fit_y, 'r-', lw=1.5)
                 text = (f"$c_0$ = {popt[0]:.2f} ± {np.sqrt(pcov[0,0]):.2f}\n"
                         f"$a_1$ = {popt[1]:.2f} ± {np.sqrt(pcov[1,1]):.2f}\n"
                         f"$b_1$ = {popt[2]:.2f} ± {np.sqrt(pcov[2,2]):.2f}\n"
                         f"χ²/ndf = {final_chi2_ndf:.2f}")
-                if removed_points > 0:
-                    text += f"\n({removed_points} point(s) removed)"
-                
                 ax.errorbar(x, y, yerr, fmt='ko', markersize=5, capsize=3)
                 ax.text(0.95, 0.95, text, transform=ax.transAxes,
                         ha='right', va='top', fontsize=6)
@@ -442,10 +460,9 @@ def plot_combined_bsa(binning_csv, final_dir="final_results", output_dir="bsa_pl
         valid_chi2_ndf = np.array([val for val in chi2_ndf_list if not np.isnan(val)])
         if len(valid_chi2_ndf) >= 5:
             try:
-                # Fit a χ² distribution to the collected χ²/ndf values (fixing location to 0)
+                # Fit a χ² distribution to the collected χ²/ndf values (with location fixed at 0)
                 df_fit, loc, scale = chi2.fit(valid_chi2_ndf, floc=0)
-                # Use the median of the fitted distribution as the robust estimate.
-                robust_chi2_ndf = chi2.median(df_fit, loc=loc, scale=scale)
+                robust_chi2_ndf = chi2.ppf(0.5, df_fit, loc=loc, scale=scale)
             except Exception as e:
                 print(f"Chi2 fit failed for xB bin {i_xB}: {str(e)}")
                 robust_chi2_ndf = np.mean(valid_chi2_ndf)
@@ -462,7 +479,7 @@ def plot_combined_bsa(binning_csv, final_dir="final_results", output_dir="bsa_pl
     if len(valid_overall) >= 5:
         try:
             df_fit_all, loc_all, scale_all = chi2.fit(valid_overall, floc=0)
-            overall_robust = chi2.median(df_fit_all, loc=loc_all, scale=scale_all)
+            overall_robust = chi2.ppf(0.5, df_fit_all, loc=loc_all, scale=scale_all)
         except Exception as e:
             print(f"Overall chi2 fit failed: {str(e)}")
             overall_robust = np.mean(valid_overall)
