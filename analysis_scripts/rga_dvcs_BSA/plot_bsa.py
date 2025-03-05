@@ -168,7 +168,8 @@ def plot_raw_bsa(binning_csv, bsa_dir="bsa_results", output_dir="bsa_plots/raw",
                            title=fr"$x_B$={xB_avg_slice:.3f}, $Q^2$={Q2_avg_cell:.2f}, $-t$={t_avg_cell:.2f}")
                     ax.grid(True, alpha=0.3)
                     if r == nrows - 1:
-                        ax.set_xlabel(r"$\phi$ (deg)")
+                        # ax.set_xlabel(r"$\phi$ (deg)")
+                        ax.set_xlabel(r"$\Delta\phi$ (deg)")
                     if c == 0:
                         ax.set_ylabel(r"$A_{LU}$")
                     if dvcs_x or eppi0_x:
@@ -285,7 +286,8 @@ def plot_adjusted_bsa(binning_csv, final_dir="final_results", output_dir="bsa_pl
                        title=fr"$x_B$={xB_avg_slice:.3f}, $Q^2$={Q2_avg_cell:.2f}, $-t$={t_avg_cell:.2f}")
                 ax.grid(True, alpha=0.3)
                 if r == nrows - 1:
-                    ax.set_xlabel(r"$\phi$ (deg)")
+                    # ax.set_xlabel(r"$\phi$ (deg)")
+                    ax.set_xlabel(r"$\Delta\phi$ (deg)")
                 if c == 0:
                     ax.set_ylabel(r"$A_{LU}$")
                 
@@ -450,7 +452,8 @@ def plot_combined_bsa(binning_csv, final_dir="final_results", output_dir="bsa_pl
                        title=fr"$x_B$={xB_avg_slice:.3f}, $Q^2$={Q2_avg_cell:.2f}, $-t$={t_avg_cell:.2f}")
                 ax.grid(True, alpha=0.3)
                 if r == nrows - 1:
-                    ax.set_xlabel("$\phi$ (deg)")
+                    # ax.set_xlabel("$\phi$ (deg)")
+                    ax.set_xlabel("$\Delta\phi$ (deg)")
                 if c == 0:
                     ax.set_ylabel("$A_{LU}$")
         
