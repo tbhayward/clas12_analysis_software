@@ -332,6 +332,7 @@ def plot_combined_bsa(binning_csv, final_dir="final_results", output_dir="bsa_pl
     os.makedirs(output_dir, exist_ok=True)
     
     overall_chi2_ndf_list = []  # Will accumulate the robust χ²/ndf from all fits
+    a1_fits = {}  # Will store fitted parameters: key (i_xB, i_Q2, i_t) -> {a1, a1_err, chi2_ndf}
     
     # Loop over xB bins.
     for i_xB, (xB_min, xB_max) in enumerate(unique_xB):
@@ -381,9 +382,8 @@ def plot_combined_bsa(binning_csv, final_dir="final_results", output_dir="bsa_pl
                     continue
                 
                 # --- Iterative fitting with outlier removal ---
-                max_iter = 10  # Maximum iterations for outlier removal.
+                max_iter = 10
                 removed_points = 0
-                
                 for iter_idx in range(max_iter):
                     try:
                         popt, pcov = curve_fit(bsa_fit_function, np.radians(x_arr), y_arr, sigma=yerr_arr,
@@ -399,12 +399,9 @@ def plot_combined_bsa(binning_csv, final_dir="final_results", output_dir="bsa_pl
                     chi2_val = np.sum((residuals / yerr_arr)**2)
                     ndf = len(x_arr) - 3
                     current_chi2_ndf = chi2_val / ndf if ndf > 0 else np.nan
-                    
-                    # Break out if the fit is acceptable or if too few points remain.
                     if current_chi2_ndf <= 3 or len(x_arr) < 4:
                         break
                     else:
-                        # Identify and remove the point with the largest contribution.
                         contributions = (residuals / yerr_arr)**2
                         idx_to_remove = np.argmax(contributions)
                         x_arr = np.delete(x_arr, idx_to_remove)
@@ -422,6 +419,15 @@ def plot_combined_bsa(binning_csv, final_dir="final_results", output_dir="bsa_pl
                 final_chi2_ndf = final_chi2 / final_ndf if final_ndf > 0 else np.nan
                 chi2_ndf_list.append(final_chi2_ndf)
                 overall_chi2_ndf_list.append(final_chi2_ndf)
+                
+                # Save the fitted a1 value for this cell.
+                # Here, overall_t_idx is the index for the t bin.
+                key_fit = (i_xB, overall_q2_dict[(Q2_min, Q2_max)], overall_t_dict[(t_min, t_max)])
+                a1_fits[key_fit] = {
+                    "a1": popt[1],
+                    "a1_err": np.sqrt(pcov[1,1]),
+                    "chi2_ndf": final_chi2_ndf
+                }
                 
                 ax.plot(fit_x, fit_y, 'r-', lw=1.5)
                 text = (f"$c_0$ = {popt[0]:.2f} ± {np.sqrt(pcov[0,0]):.2f}\n"
@@ -459,11 +465,9 @@ def plot_combined_bsa(binning_csv, final_dir="final_results", output_dir="bsa_pl
         plt.savefig(f"{output_dir}/combined_xB{i_xB}.png", dpi=150)
         plt.close()
         
-        # --- Robust summary for this xB bin ---
         valid_chi2_ndf = np.array([val for val in chi2_ndf_list if not np.isnan(val)])
         if len(valid_chi2_ndf) >= 5:
             try:
-                # Fit a χ² distribution to the collected χ²/ndf values (with location fixed at 0)
                 df_fit, loc, scale = chi2.fit(valid_chi2_ndf, floc=0)
                 robust_chi2_ndf = chi2.ppf(0.5, df_fit, loc=loc, scale=scale)
             except Exception as e:
@@ -477,19 +481,121 @@ def plot_combined_bsa(binning_csv, final_dir="final_results", output_dir="bsa_pl
         print(f"xB bin {i_xB} (⟨x_B⟩ = {xB_avg_slice:.3f}) robust χ²/ndf: {robust_chi2_ndf:.2f} "
               f"(from {len(valid_chi2_ndf)} fits)")
     
-    # --- Overall robust summary ---
-    valid_overall = np.array([val for val in overall_chi2_ndf_list if not np.isnan(val)])
-    if len(valid_overall) >= 5:
+    if len(overall_chi2_ndf_list) >= 5:
         try:
-            df_fit_all, loc_all, scale_all = chi2.fit(valid_overall, floc=0)
+            df_fit_all, loc_all, scale_all = chi2.fit(np.array(overall_chi2_ndf_list), floc=0)
             overall_robust = chi2.ppf(0.5, df_fit_all, loc=loc_all, scale=scale_all)
         except Exception as e:
             print(f"Overall chi2 fit failed: {str(e)}")
-            overall_robust = np.mean(valid_overall)
-    elif len(valid_overall) > 0:
-        overall_robust = np.mean(valid_overall)
+            overall_robust = np.mean(overall_chi2_ndf_list)
+    elif len(overall_chi2_ndf_list) > 0:
+        overall_robust = np.mean(overall_chi2_ndf_list)
     else:
         overall_robust = np.nan
     
     print(f"\nOverall robust χ²/ndf across all fits: {overall_robust:.2f} "
-          f"(from {len(valid_overall)} total fits)")
+          f"(from {len(overall_chi2_ndf_list)} total fits)")
+    
+    # Save the fitted a1 parameters to a JSON file.
+    a1_fits_out = os.path.join(final_dir, "a1_fits.json")
+    # Convert tuple keys to strings.
+    a1_fits_str = {str(k): v for k, v in a1_fits.items()}
+    with open(a1_fits_out, "w") as f:
+        import json
+        json.dump(a1_fits_str, f, indent=2)
+    print(f"Saved fitted a₁ parameters to {a1_fits_out}")
+
+
+def plot_a1_vs_t(binning_csv, final_dir="final_results", output_dir="bsa_plots/a1_vs_t",
+                 global_means_file="bin_means_global.json", a1_json_file="a1_fits.json"):
+    plt.style.use(PLOT_STYLE)
+    binning = load_binning_scheme(binning_csv)
+    global_means = load_global_bin_means(global_means_file)
+    
+    # Load fitted a1 parameters.
+    a1_path = os.path.join(final_dir, a1_json_file)
+    with open(a1_path) as f:
+        a1_data = json.load(f)
+    # Convert keys back to tuples of ints.
+    a1_data = {tuple(map(int, k.strip("()").split(", "))): v for k, v in a1_data.items()}
+    # a1_data keys are (i_xB, i_Q2, i_t)
+    
+    # Determine unique xB and Q² indices.
+    xB_indices = sorted(set(key[0] for key in a1_data.keys()))
+    Q2_indices = sorted(set(key[1] for key in a1_data.keys()))
+    
+    # For each (i_xB, i_Q2), get representative xB and Q² mean values from global_means using key (i_xB, i_Q2, 0, 0).
+    bin_means = {}
+    for i_xB in xB_indices:
+        for i_Q2 in Q2_indices:
+            key = (i_xB, i_Q2, 0, 0)
+            if key in global_means:
+                bin_means[(i_xB, i_Q2)] = {
+                    "xB_avg": global_means[key].get("xB_avg", None),
+                    "Q2_avg": global_means[key].get("Q2_avg", None)
+                }
+            else:
+                bin_means[(i_xB, i_Q2)] = {"xB_avg": None, "Q2_avg": None}
+    
+    # Group fitted a1 values by (i_xB, i_Q2) over different t bins.
+    cell_data = {}  # (i_xB, i_Q2) -> list of (minus_t, a1, a1_err)
+    for (i_xB, i_Q2, i_t), fit in a1_data.items():
+        # Get the mean t value from global_means using key (i_xB, i_Q2, i_t, 0)
+        global_key = (i_xB, i_Q2, i_t, 0)
+        if global_key in global_means:
+            t_avg = global_means[global_key].get("t_avg", None)
+        else:
+            t_avg = None
+        if t_avg is None:
+            continue
+        minus_t = -t_avg  # plot as a function of -t
+        cell_key = (i_xB, i_Q2)
+        if cell_key not in cell_data:
+            cell_data[cell_key] = []
+        cell_data[cell_key].append((minus_t, fit["a1"], fit["a1_err"]))
+    
+    # Create subplot grid. Columns = xB (in increasing order), rows = Q² (lowest at bottom).
+    ncols = len(xB_indices)
+    nrows = len(Q2_indices)
+    Q2_indices_plot = sorted(Q2_indices)[::-1]
+    
+    fig, axs = plt.subplots(nrows, ncols, figsize=(3.5 * ncols, 3.5 * nrows), sharex=True, sharey=True)
+    
+    marker_styles = ['o', 's', '^', 'D', 'v', 'p', '*', 'h']
+    
+    for i, i_Q2 in enumerate(Q2_indices_plot):
+        for j, i_xB in enumerate(xB_indices):
+            ax = axs[i, j]
+            cell_key = (i_xB, i_Q2)
+            if cell_key in cell_data:
+                points = sorted(cell_data[cell_key], key=lambda x: x[0])
+                for idx, (minus_t, a1, a1_err) in enumerate(points):
+                    marker = marker_styles[idx % len(marker_styles)]
+                    ax.errorbar(minus_t, a1, yerr=a1_err, fmt=marker, color='black', capsize=3)
+                # Create dummy legend handles.
+                handles = []
+                for idx, (minus_t, a1, a1_err) in enumerate(points):
+                    marker = marker_styles[idx % len(marker_styles)]
+                    handle = mlines.Line2D([], [], marker=marker, color='black', linestyle='None',
+                                           markersize=5, label=f"-t = {minus_t:.2f}")
+                    handles.append(handle)
+                ax.legend(handles=handles, fontsize=7, loc='best')
+            ax.grid(True, alpha=0.3)
+            if i == nrows - 1:
+                ax.set_xlabel("-t")
+            if j == 0:
+                ax.set_ylabel("a₁")
+            bm = bin_means.get((i_xB, i_Q2), {})
+            title_str = ""
+            if bm.get("xB_avg") is not None:
+                title_str += f"xB = {bm['xB_avg']:.3f}, "
+            if bm.get("Q2_avg") is not None:
+                title_str += f"Q² = {bm['Q2_avg']:.2f}"
+            ax.set_title(title_str, fontsize=8)
+    
+    plt.tight_layout()
+    os.makedirs(output_dir, exist_ok=True)
+    out_path = os.path.join(output_dir, "a1_vs_t.png")
+    plt.savefig(out_path, dpi=150)
+    plt.close()
+    print(f"Saved a₁ vs -t plot to {out_path}")
