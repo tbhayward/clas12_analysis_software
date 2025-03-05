@@ -22,11 +22,17 @@ def load_bsa(period, channel, bsa_dir="bsa_results"):
         return {}
 
 def propagate_errors(D, D_err, c, c_err, E, E_err):
-    A = D * (1 - c*E)
-    dA_dD = 1 - c*E
-    dA_dc = -D*E
-    dA_dE = -D*c
-    return A, math.sqrt((dA_dD*D_err)**2 + (dA_dc*c_err)**2 + (dA_dE*E_err)**2)
+    denominator = 1 - c
+    # Check if the denominator is zero or nearly zero
+    if abs(denominator) < 1e-12:  # tolerance to catch floating-point issues
+        return 0, 1  # fail-safe: return 0 ± 1
+    A = (D - c * E) / denominator
+    dA_dD = 1 / denominator
+    dA_dc = (D - E) / (denominator ** 2)
+    dA_dE = -c / denominator
+    variance = (dA_dD * D_err) ** 2 + (dA_dc * c_err) ** 2 + (dA_dE * E_err) ** 2
+    A_err = math.sqrt(variance)
+    return A, A_err
 
 def process_period(period, contamination_dir, bsa_dir):
     # For DVCS periods, load corresponding eppi0 period data
