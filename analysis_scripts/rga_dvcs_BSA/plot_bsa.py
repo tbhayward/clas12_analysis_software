@@ -779,13 +779,13 @@ def plot_pass_comparison(binning_csv, final_dir="final_results", output_dir="bsa
             parts = line.split()
             if len(parts) < 7:
                 continue
-            # Parse the values:
+            # Parse values:
             phi_rad = float(parts[0])
             q2_val = float(parts[1])
             xb_val = float(parts[2])
-            t_val = float(parts[3])  # Note: t is negative in file.
-            pass_t = -t_val         # Make it positive.
-            # Column 5 (Eb) is not used.
+            t_val = float(parts[3])  # t is negative in file.
+            pass_t = -t_val         # Convert to positive.
+            # Column 5 (Eb) is ignored.
             A_val = float(parts[5])
             sigA = float(parts[6])
             phi_deg = np.degrees(phi_rad)
@@ -794,7 +794,7 @@ def plot_pass_comparison(binning_csv, final_dir="final_results", output_dir="bsa
     # Determine unique xB bins from the binning scheme.
     unique_xB = sorted({(b.xBmin, b.xBmax) for b in binning})
     
-    # Loop over each xB bin.
+    # For each xB bin, create a separate canvas.
     for i, (xb_min, xb_max) in enumerate(unique_xB):
         # Filter binning for the current xB bin.
         subset = [b for b in binning if (b.xBmin, b.xBmax) == (xb_min, xb_max)]
@@ -805,56 +805,52 @@ def plot_pass_comparison(binning_csv, final_dir="final_results", output_dir="bsa
         overall_t_dict = {t: idx for idx, t in enumerate(unique_t)}
         
         # Create figure with subplots for this xB bin.
-        fig, axs = plt.subplots(len(unique_Q2), len(unique_t), figsize=(3.5*len(unique_t), 3.5*len(unique_Q2)), squeeze=False)
-        # (We use the default spacing so that every subplot displays its own axis tick labels.)
-        
+        fig, axs = plt.subplots(len(unique_Q2), len(unique_t), 
+                                figsize=(3.5*len(unique_t), 3.5*len(unique_Q2)),
+                                squeeze=False)
         # Loop over Q² and t bins (cells).
         for r, (Q2_min, Q2_max) in enumerate(unique_Q2):
             for c, (t_min, t_max) in enumerate(unique_t):
                 ax = axs[r, c]
                 # Get pass-2 data for this cell using your collect_bin_data function.
-                # (Assuming collect_bin_data(combined_data, key_base, global_bin_means) exists.)
                 key_base = (i, overall_q2_dict[(Q2_min, Q2_max)], overall_t_dict[(t_min, t_max)])
                 x_vals, y_vals, y_errs = collect_bin_data(combined_data, key_base, global_means)
                 if x_vals:
-                    ax.errorbar(x_vals, y_vals, y_errs, fmt='ko', markersize=5, capsize=3, label="pass-2")
-                
-                # Determine the cell's representative values using rep_key = (i, overall_q2_idx, overall_t_idx, 0)
+                    ax.errorbar(x_vals, y_vals, yerr=y_errs, fmt='ko', markersize=5, capsize=3, label="pass-2")
+                # Determine cell representative values.
                 rep_key = (i, overall_q2_dict[(Q2_min, Q2_max)], overall_t_dict[(t_min, t_max)], 0)
                 if rep_key in global_means:
                     cell_xb = global_means[rep_key].get("xB_avg", None)
                     cell_q2 = global_means[rep_key].get("Q2_avg", None)
                     cell_t = global_means[rep_key].get("t_avg", None)
                 else:
-                    continue  # Skip if no representative data.
-                
-                # For each pass-1 point that falls within this xB bin...
+                    continue
+                # For each pass-1 point in this xB bin...
                 for (phi_deg, pass_q2, pass_xb, pass_t, pass_A, pass_sigA) in pass1_points:
                     if pass_xb < xb_min or pass_xb > xb_max:
                         continue
                     # Compute Euclidean distance between pass-1 point and cell center.
                     dist = np.sqrt((pass_q2 - cell_q2)**2 + (pass_t - cell_t)**2 + (pass_xb - cell_xb)**2)
-                    threshold = 0.2  # Set a threshold (tune if needed)
+                    threshold = 0.2  # threshold (adjust as needed)
                     if dist < threshold:
                         ax.errorbar(phi_deg, pass_A, yerr=pass_sigA, fmt='ro', markersize=5, capsize=3, label="pass-1")
-                
-                # Set a title for the cell using its representative values.
-                cell_title = f"xB: {cell_xb:.3f}\nQ²: {cell_q2:.2f}\n-t: {cell_t:.2f}"
-                ax.set_title(cell_title, fontsize=8)
-                ax.set_xlim(0, 360)  # phi axis in degrees.
-                ax.set_xlabel("$\phi$ (deg)", fontsize=9)
-                ax.set_ylabel("$A_{LU}$", fontsize=9)
+                # Set cell title (all on one line).
+                cell_title = f"xB = {cell_xb:.3f}, Q² = {cell_q2:.2f}, -t = {cell_t:.2f}"
+                ax.set_title(cell_title, fontsize=9)
+                ax.set_xlim(0, 360)  # phi in degrees.
+                ax.set_xlabel("$\phi$ (deg)", fontsize=10)
+                ax.set_ylabel("$A_{LU}$", fontsize=10)
                 ax.grid(True, alpha=0.3)
-                # Add legend (remove duplicate labels)
+                # Add legend with unique labels.
                 handles, labels = ax.get_legend_handles_labels()
                 if handles:
-                    unique_legend = {}
+                    unique_dict = {}
                     for h, l in zip(handles, labels):
-                        unique_legend[l] = h
-                    ax.legend(unique_legend.values(), unique_legend.keys(), fontsize=8, loc='best')
-        
+                        unique_dict[l] = h
+                    ax.legend(unique_dict.values(), unique_dict.keys(), fontsize=9, loc='best')
+                # Set y-axis scale for all cells.
+                ax.set_ylim(-1, 1)
         plt.tight_layout()
-        # Create output directory if it doesn't exist.
         os.makedirs(output_dir, exist_ok=True)
         out_file = os.path.join(output_dir, f"pass_comparison_xB_{i}.png")
         plt.savefig(out_file, dpi=150)
