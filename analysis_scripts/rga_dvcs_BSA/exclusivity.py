@@ -158,7 +158,8 @@ def fill_stage_histograms(data_tree, mc_tree, topology, analysis_type, cuts_dict
 def get_hist_configs(analysis_type):
     if analysis_type == "dvcs":
         return {
-            "open_angle_ep2":    (100, 0, 60),
+            # "open_angle_ep2":    (100, 0, 60),
+            "Delta_phi":    (100, 0, 360),
             "theta_gamma_gamma": (100, 0, 2),
             "pTmiss":            (100, 0, 0.3),
             "xF":                (100, -0.4, 0.2),
@@ -169,7 +170,8 @@ def get_hist_configs(analysis_type):
         }
     elif analysis_type == "eppi0":
         return {
-            "open_angle_ep2":    (100, 0, 60),
+            # "open_angle_ep2":    (100, 0, 60),
+            "Delta_phi":    (100, 0, 360),
             "theta_pi0_pi0":     (100, 0, 2),
             "pTmiss":            (100, 0, 0.3),
             "xF":                (100, -0.4, 0.2),
