@@ -4,6 +4,7 @@ import json
 import numpy as np
 import math
 import matplotlib.pyplot as plt
+import matplotlib.lines as mlines
 from scipy.stats import chi2 
 from scipy.optimize import curve_fit
 from load_binning_scheme import load_binning_scheme
