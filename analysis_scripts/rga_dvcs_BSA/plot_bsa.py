@@ -510,7 +510,8 @@ def plot_a1_vs_t_grid(binning_csv, final_dir="final_results", output_dir="bsa_pl
                       global_means_file="bin_means_global.json", a1_json_file="a1_fits.json"):
     """
     Create a grid of subplots arranged by xB (columns) and Q² (rows) such that the lowest
-    xB and Q² values are in the bottom-left. Each subplot plots fitted a₁ vs. -t for that (xB, Q²) cell.
+    xB and Q² values are in the bottom-left. Each subplot plots fitted a₁ vs. -t (taken directly
+    from the global means, which already store -t) for that (xB, Q²) cell.
     If a cell is empty, its axis is removed.
     """
     plt.style.use(PLOT_STYLE)
@@ -520,40 +521,42 @@ def plot_a1_vs_t_grid(binning_csv, final_dir="final_results", output_dir="bsa_pl
     a1_path = os.path.join(final_dir, a1_json_file)
     with open(a1_path) as f:
         a1_data = json.load(f)
+    # Convert keys from strings "(i_xB, i_Q2, i_t, i_phi)" to tuple of ints.
+    # Here a1_data keys are expected to be (i_xB, i_Q2, i_t)
     a1_data = {tuple(map(int, k.strip("()").split(","))): v for k, v in a1_data.items()}
-    # Keys are (i_xB, i_Q2, i_t)
     
     xB_indices = sorted(set(key[0] for key in a1_data.keys()))
     Q2_indices = sorted(set(key[1] for key in a1_data.keys()))
     
-    # For the grid plot, we want rows (Q²) sorted in increasing order from bottom to top.
-    Q2_indices_plot = sorted(Q2_indices)  # lowest Q² first
-    xB_indices_plot = sorted(xB_indices)   # lowest xB first
+    # For the grid plot, rows (Q²) are sorted in increasing order (lowest Q² first)
+    Q2_indices_plot = sorted(Q2_indices)
+    xB_indices_plot = sorted(xB_indices)
     
     nrows = len(Q2_indices_plot)
     ncols = len(xB_indices_plot)
     fig, axs = plt.subplots(nrows, ncols, figsize=(2.8*ncols, 3*nrows), sharex=True, sharey=True)
     
-    # We want the lowest Q² in the bottom row, so reverse the vertical order.
-    axs = axs[::-1, :]  # Now bottom row corresponds to the smallest Q².
+    # Reverse vertical order so that the lowest Q² appears at the bottom.
+    axs = axs[::-1, :]
     
     for i, i_Q2 in enumerate(Q2_indices_plot):
         for j, i_xB in enumerate(xB_indices_plot):
             ax = axs[i, j]
             cell_points = []
             for (xx, qq, tt), fit in a1_data.items():
-                if xx==i_xB and qq==i_Q2:
+                if xx == i_xB and qq == i_Q2:
                     global_key = (i_xB, i_Q2, tt, 0)
                     if global_key in global_means:
-                        t_avg = global_means[global_key].get("t_avg", None)
-                        if t_avg is not None:
-                            cell_points.append( (-t_avg, fit["a1"], fit["a1_err"]) )
+                        # Here, t_avg is already -t.
+                        t_val = global_means[global_key].get("t_avg", None)
+                        if t_val is not None:
+                            cell_points.append((t_val, fit["a1"], fit["a1_err"]))
             if cell_points:
                 cell_points.sort(key=lambda tup: tup[0])
-                minus_t_vals, a1_vals, a1_err_vals = zip(*cell_points)
-                ax.errorbar(minus_t_vals, a1_vals, yerr=a1_err_vals, fmt='o', color='black',
+                t_vals, a1_vals, a1_err_vals = zip(*cell_points)
+                ax.errorbar(t_vals, a1_vals, yerr=a1_err_vals, fmt='o', color='black',
                             markersize=4, capsize=3, linestyle="None")
-                # Set title using representative xB and Q².
+                # Set title using representative xB and Q² values.
                 rep_key = (i_xB, i_Q2, 0, 0)
                 xB_avg = global_means[rep_key].get("xB_avg", None) if rep_key in global_means else None
                 Q2_avg = global_means[rep_key].get("Q2_avg", None) if rep_key in global_means else None
@@ -581,61 +584,51 @@ def plot_a1_vs_t_by_Q2(binning_csv, final_dir="final_results", output_dir="bsa_p
     """
     Create a single-row figure where each subplot corresponds to a Q² bin.
     On each subplot, curves for different xB bins are overlaid (with fixed color/marker per xB).
-    The x-axis values (representing -t) are obtained as the absolute value of t_avg,
-    ensuring they are positive. The x-axis is forced to range from 0 to 1.
-    The legend shows the average xB value for each curve, and the far right subplot has its y-axis
-    ticks on the right.
+    The x-axis values (representing -t) are taken directly from the global means.
+    The x-axis is forced to range from 0 to 1.
+    The legend shows the average xB value for each curve.
+    The far right subplot shows y-axis ticks on the right.
     """
-    import os, json, math, numpy as np, matplotlib.pyplot as plt, matplotlib.lines as mlines
-    from load_binning_scheme import load_binning_scheme
-    from load_bsa_data import load_global_bin_means
-
     plt.style.use(PLOT_STYLE)
     binning = load_binning_scheme(binning_csv)
     global_means = load_global_bin_means(global_means_file)
     
-    # Load fitted a1 parameters.
     a1_path = os.path.join(final_dir, a1_json_file)
     with open(a1_path) as f:
         a1_data = json.load(f)
     a1_data = {tuple(map(int, k.strip("()").split(","))): v for k, v in a1_data.items()}
-    # a1_data keys are (i_xB, i_Q2, i_t)
+    # Keys are (i_xB, i_Q2, i_t)
     
-    # Determine unique Q² and xB indices.
     Q2_indices = sorted(set(key[1] for key in a1_data.keys()))
     xB_indices = sorted(set(key[0] for key in a1_data.keys()))
     
-    # Build mapping for representative bin means.
-    bin_means = {}
+    bin_means_map = {}
     for i_xB in xB_indices:
         for i_Q2 in Q2_indices:
             key = (i_xB, i_Q2, 0, 0)
             if key in global_means:
-                bin_means[(i_xB, i_Q2)] = {
-                    "xB_avg": global_means[key].get("xB_avg", None),
-                    "Q2_avg": global_means[key].get("Q2_avg", None)
-                }
+                bin_means_map[(i_xB, i_Q2)] = {"xB_avg": global_means[key].get("xB_avg", None),
+                                               "Q2_avg": global_means[key].get("Q2_avg", None)}
             else:
-                bin_means[(i_xB, i_Q2)] = {"xB_avg": None, "Q2_avg": None}
+                bin_means_map[(i_xB, i_Q2)] = {"xB_avg": None, "Q2_avg": None}
     
     # Group fitted a1 values by Q² then by xB.
-    # Structure: data_by_Q2[i_Q2][i_xB] = list of (t_plotted, a1, a1_err)
+    # Structure: data_by_Q2[i_Q2][i_xB] = list of (t_val, a1, a1_err)
     data_by_Q2 = {}
     for (i_xB, i_Q2, i_t), fit in a1_data.items():
         global_key = (i_xB, i_Q2, i_t, 0)
         if global_key in global_means:
-            t_avg = global_means[global_key].get("t_avg", None)
+            t_val = global_means[global_key].get("t_avg", None)
         else:
-            t_avg = None
-        if t_avg is None:
+            t_val = None
+        if t_val is None:
             continue
-        # Instead of simply -t, take the absolute value to ensure positivity.
-        plotted_t = abs(t_avg)
+        # Use the t value directly (it should already be positive as it represents -t).
         if i_Q2 not in data_by_Q2:
             data_by_Q2[i_Q2] = {}
         if i_xB not in data_by_Q2[i_Q2]:
             data_by_Q2[i_Q2][i_xB] = []
-        data_by_Q2[i_Q2][i_xB].append((plotted_t, fit["a1"], fit["a1_err"]))
+        data_by_Q2[i_Q2][i_xB].append((t_val, fit["a1"], fit["a1_err"]))
     for i_Q2 in data_by_Q2:
         for i_xB in data_by_Q2[i_Q2]:
             data_by_Q2[i_Q2][i_xB].sort(key=lambda tup: tup[0])
@@ -646,7 +639,7 @@ def plot_a1_vs_t_by_Q2(binning_csv, final_dir="final_results", output_dir="bsa_p
     if ncols == 1:
         axs = [axs]
     
-    # Assign fixed styles for xB bins.
+    # Fixed styles for xB bins.
     color_list = ['C0', 'C1', 'C2', 'C3', 'C4', 'C5']
     marker_list = ['o', 's', '^', 'D', 'v', 'p']
     xB_style = {}
@@ -668,17 +661,15 @@ def plot_a1_vs_t_by_Q2(binning_csv, final_dir="final_results", output_dir="bsa_p
         Q2_avg = global_means[rep_keys[0]].get("Q2_avg", None) if rep_keys else None
         title_str = f"Q² ≈ {Q2_avg:.2f}" if Q2_avg is not None else f"Q² index {i_Q2}"
         ax.set_title(title_str, fontsize=9)
-        # Force x-axis to run from 0 to 1.
         ax.set_xlim(0, 1)
         if i_Q2 in data_by_Q2:
             for i_xB in sorted(data_by_Q2[i_Q2].keys()):
                 points = data_by_Q2[i_Q2][i_xB]
                 points.sort(key=lambda tup: tup[0])
-                minus_t_vals, a1_vals, a1_err_vals = zip(*points)
+                t_vals, a1_vals, a1_err_vals = zip(*points)
                 color, marker = xB_style[i_xB]
-                ax.errorbar(minus_t_vals, a1_vals, yerr=a1_err_vals, fmt=marker,
+                ax.errorbar(t_vals, a1_vals, yerr=a1_err_vals, fmt=marker,
                             color=color, markersize=5, capsize=3, linestyle="None")
-            # Build legend for xB bins.
             handles = []
             for i_xB in sorted(data_by_Q2[i_Q2].keys()):
                 color, marker = xB_style[i_xB]
@@ -688,7 +679,6 @@ def plot_a1_vs_t_by_Q2(binning_csv, final_dir="final_results", output_dir="bsa_p
             ax.legend(handles=handles, fontsize=7, loc='best')
         ax.grid(True, alpha=0.3)
         ax.set_xlabel("-t")
-        # For the far right subplot, add y-axis ticks on the right.
         if idx == ncols - 1:
             ax.yaxis.tick_right()
     axs[0].set_ylabel("$A_{LU}$")
