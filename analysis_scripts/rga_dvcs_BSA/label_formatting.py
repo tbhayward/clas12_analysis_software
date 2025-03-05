@@ -30,7 +30,7 @@ def format_label_name(variable, analysis_type):
     """
     labels = {
         "open_angle_ep2": "#theta_{e'#gamma} (deg)",
-        "Delta_phi": "#Delta#phi (deg)",
+        "Delta_phi": "#Delta#phi (rad)",
         "theta_gamma_gamma": "#theta_{#gamma#gamma} (deg)",
         "theta_pi0_pi0": "#theta_{#pi^{0}#pi^{0}} (deg)",
         "Emiss2": "Miss E^{2} (GeV^{2})",
