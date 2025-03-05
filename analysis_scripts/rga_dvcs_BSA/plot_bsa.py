@@ -77,7 +77,7 @@ def collect_bin_data(data_dict, key_base, global_bin_means):
 def bsa_fit_function(phi, c0, a1, b1):
     # Constrain parameters as needed.
     b1 = np.clip(b1, -0.99999, 0.999999)
-    a1 = np.clip(a1, -0.7, 0.7)
+    a1 = np.clip(a1, -0.99999, 0.999999)
     return c0 + (a1 * np.sin(phi)) / (1 + b1 * np.cos(phi))
 
 def get_bin_indices(binning, Q2_min, Q2_max, t_min, t_max):
@@ -311,8 +311,9 @@ def plot_combined_bsa(binning_csv, final_dir="final_results", output_dir="bsa_pl
     
     os.makedirs(output_dir, exist_ok=True)
     
-    overall_chi2_ndf_list = []  # to accumulate chi2/ndf of all fits
+    overall_chi2_ndf_list = []  # Will accumulate the robust χ²/ndf from all fits
     
+    # Loop over xB bins.
     for i_xB, (xB_min, xB_max) in enumerate(unique_xB):
         xB_vals = []
         subset = [b for b in binning if (b.xBmin, b.xBmax) == (xB_min, xB_max)]
@@ -337,8 +338,9 @@ def plot_combined_bsa(binning_csv, final_dir="final_results", output_dir="bsa_pl
         ncols = len(unique_t)
         fig, axs = plt.subplots(nrows, ncols, figsize=(3.5 * ncols, 3.5 * nrows), squeeze=False)
         
-        chi2_ndf_list = []  # chi2/ndf for this xB bin
+        chi2_ndf_list = []  # To store the robust χ²/ndf for each cell in this xB bin
         
+        # Loop over Q² and t bins within the current xB bin.
         for r, (Q2_min, Q2_max) in enumerate(unique_Q2):
             for c, (t_min, t_max) in enumerate(unique_t):
                 ax = axs[r, c]
@@ -346,27 +348,64 @@ def plot_combined_bsa(binning_csv, final_dir="final_results", output_dir="bsa_pl
                 x, y, yerr = collect_bin_data(combined_data, key_base, global_bin_means)
                 if not x:
                     continue
-                try:
-                    # Use initial guess: c0=0, a1=0.2, b1=-0.4.
-                    popt, pcov = curve_fit(bsa_fit_function, np.radians(x), y, sigma=yerr,
-                                             p0=[0, 0.2, -0.4],
-                                             bounds=([-np.inf, -0.6, -0.7], [np.inf, 0.6, 0.7]))
-                    fit_x = np.linspace(0, 360, 100)
-                    fit_y = bsa_fit_function(np.radians(fit_x), *popt)
-                    residuals = y - bsa_fit_function(np.radians(x), *popt)
-                    chi2 = np.sum((residuals / yerr)**2)
-                    ndf = len(x) - 3
-                    chi2_ndf = chi2 / ndf if ndf > 0 else np.nan
-                    chi2_ndf_list.append(chi2_ndf)
-                    overall_chi2_ndf_list.append(chi2_ndf)
-                    ax.plot(fit_x, fit_y, 'r-', lw=1.5)
-                    text = (f"$c_0$ = {popt[0]:.2f} ± {np.sqrt(pcov[0,0]):.2f}\n"
-                            f"$a_1$ = {popt[1]:.2f} ± {np.sqrt(pcov[1,1]):.2f}\n"
-                            f"$b_1$ = {popt[2]:.2f} ± {np.sqrt(pcov[2,2]):.2f}\n"
-                            f"χ²/ndf = {chi2_ndf:.2f}")
-                except Exception as e:
-                    print(f"Fit failed: {str(e)}")
-                    text = "Fit failed"
+
+                # --- Iterative fitting with outlier removal ---
+                # Convert data to numpy arrays.
+                x_arr = np.array(x)
+                y_arr = np.array(y)
+                yerr_arr = np.array(yerr)
+                max_iter = 10  # Maximum iterations for outlier removal.
+                removed_points = 0
+                
+                # Iteratively remove the worst outlier if χ²/ndf > 3.
+                for iter_idx in range(max_iter):
+                    try:
+                        popt, pcov = curve_fit(bsa_fit_function, np.radians(x_arr), y_arr, sigma=yerr_arr,
+                                                 p0=[0, 0.2, -0.4],
+                                                 bounds=([-np.inf, -0.6, -0.7], [np.inf, 0.6, 0.7]))
+                    except Exception as e:
+                        print(f"Fit failed for bin {key_base}: {str(e)}")
+                        popt, pcov = [0, 0, 0], np.zeros((3, 3))
+                        break
+                    
+                    fit_vals = bsa_fit_function(np.radians(x_arr), *popt)
+                    residuals = y_arr - fit_vals
+                    chi2_val = np.sum((residuals / yerr_arr)**2)
+                    ndf = len(x_arr) - 3
+                    current_chi2_ndf = chi2_val / ndf if ndf > 0 else np.nan
+                    
+                    # Break out if the fit is acceptable or if too few points remain.
+                    if current_chi2_ndf <= 3 or len(x_arr) < 4:
+                        break
+                    else:
+                        # Identify and remove the point with the largest contribution.
+                        contributions = (residuals / yerr_arr)**2
+                        idx_to_remove = np.argmax(contributions)
+                        x_arr = np.delete(x_arr, idx_to_remove)
+                        y_arr = np.delete(y_arr, idx_to_remove)
+                        yerr_arr = np.delete(yerr_arr, idx_to_remove)
+                        removed_points += 1
+                
+                # --- Final fit evaluation ---
+                fit_x = np.linspace(0, 360, 100)
+                fit_y = bsa_fit_function(np.radians(fit_x), *popt)
+                # Recalculate final residuals with the accepted data points.
+                final_fit = bsa_fit_function(np.radians(x_arr), *popt)
+                final_residuals = y_arr - final_fit
+                final_chi2 = np.sum((final_residuals / yerr_arr)**2)
+                final_ndf = len(x_arr) - 3
+                final_chi2_ndf = final_chi2 / final_ndf if final_ndf > 0 else np.nan
+                chi2_ndf_list.append(final_chi2_ndf)
+                overall_chi2_ndf_list.append(final_chi2_ndf)
+                
+                # Plot the fit and data.
+                ax.plot(fit_x, fit_y, 'r-', lw=1.5)
+                text = (f"$c_0$ = {popt[0]:.2f} ± {np.sqrt(pcov[0,0]):.2f}\n"
+                        f"$a_1$ = {popt[1]:.2f} ± {np.sqrt(pcov[1,1]):.2f}\n"
+                        f"$b_1$ = {popt[2]:.2f} ± {np.sqrt(pcov[2,2]):.2f}\n"
+                        f"χ²/ndf = {final_chi2_ndf:.2f}")
+                if removed_points > 0:
+                    text += f"\n({removed_points} point(s) removed)"
                 
                 ax.errorbar(x, y, yerr, fmt='ko', markersize=5, capsize=3)
                 ax.text(0.95, 0.95, text, transform=ax.transAxes,
@@ -395,23 +434,42 @@ def plot_combined_bsa(binning_csv, final_dir="final_results", output_dir="bsa_pl
                     ax.set_xlabel("$\phi$ (deg)")
                 if c == 0:
                     ax.set_ylabel("$A_{LU}$")
+        
         plt.savefig(f"{output_dir}/combined_xB{i_xB}.png", dpi=150)
         plt.close()
         
-        # Filter out NaN values before calculating the mean for this xB bin.
-        valid_chi2_ndf = [val for val in chi2_ndf_list if not np.isnan(val)]
-        if valid_chi2_ndf:
-            mean_chi2_ndf = np.mean(valid_chi2_ndf)
-            print(f"xB bin {i_xB} (⟨x_B⟩ = {xB_avg_slice:.3f}) mean χ²/ndf: {mean_chi2_ndf:.2f} "
-                  f"(from {len(valid_chi2_ndf)} fits)")
+        # --- Robust summary for this xB bin ---
+        valid_chi2_ndf = np.array([val for val in chi2_ndf_list if not np.isnan(val)])
+        if len(valid_chi2_ndf) >= 5:
+            try:
+                # Fit a χ² distribution to the collected χ²/ndf values (fixing location to 0)
+                df_fit, loc, scale = chi2.fit(valid_chi2_ndf, floc=0)
+                # Use the median of the fitted distribution as the robust estimate.
+                robust_chi2_ndf = chi2.median(df_fit, loc=loc, scale=scale)
+            except Exception as e:
+                print(f"Chi2 fit failed for xB bin {i_xB}: {str(e)}")
+                robust_chi2_ndf = np.mean(valid_chi2_ndf)
+        elif len(valid_chi2_ndf) > 0:
+            robust_chi2_ndf = np.mean(valid_chi2_ndf)
         else:
-            print(f"xB bin {i_xB} (⟨x_B⟩ = {xB_avg_slice:.3f}) - no valid fits")
+            robust_chi2_ndf = np.nan
+        
+        print(f"xB bin {i_xB} (⟨x_B⟩ = {xB_avg_slice:.3f}) robust χ²/ndf: {robust_chi2_ndf:.2f} "
+              f"(from {len(valid_chi2_ndf)} fits)")
     
-    # Filter out NaN values for overall average as well.
-    valid_overall = [val for val in overall_chi2_ndf_list if not np.isnan(val)]
-    if valid_overall:
-        overall_mean = np.mean(valid_overall)
-        print(f"\nOverall average χ²/ndf across all fits: {overall_mean:.2f} "
-              f"(from {len(valid_overall)} total fits)")
+    # --- Overall robust summary ---
+    valid_overall = np.array([val for val in overall_chi2_ndf_list if not np.isnan(val)])
+    if len(valid_overall) >= 5:
+        try:
+            df_fit_all, loc_all, scale_all = chi2.fit(valid_overall, floc=0)
+            overall_robust = chi2.median(df_fit_all, loc=loc_all, scale=scale_all)
+        except Exception as e:
+            print(f"Overall chi2 fit failed: {str(e)}")
+            overall_robust = np.mean(valid_overall)
+    elif len(valid_overall) > 0:
+        overall_robust = np.mean(valid_overall)
     else:
-        print("\nNo valid χ²/ndf values calculated in any bins")
+        overall_robust = np.nan
+    
+    print(f"\nOverall robust χ²/ndf across all fits: {overall_robust:.2f} "
+          f"(from {len(valid_overall)} total fits)")
