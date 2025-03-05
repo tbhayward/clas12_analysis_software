@@ -14,7 +14,8 @@ from calculate_bin_means import calculate_bin_means
 from plot_contamination import plot_contamination_for_run
 from determine_raw_bsa import calculate_raw_bsa
 from determine_final_bsa import determine_final_bsa
-from plot_bsa import plot_raw_bsa, plot_adjusted_bsa, plot_combined_bsa, plot_a1_vs_t_by_Q2
+from plot_bsa import plot_raw_bsa, plot_adjusted_bsa, plot_combined_bsa
+from plot_bsa import plot_a1_vs_t_by_Q2, plot_a1_vs_t_grid
 
 def run_period(args):
     """
@@ -232,6 +233,7 @@ def main():
     # plot_adjusted_bsa(csv_path)
     # plot_combined_bsa(csv_path)
     plot_a1_vs_t_by_Q2(csv_path)
+    plot_a1_vs_t_grid(csv_path)
     
     print("✅ All plots saved to bsa_plots/ directory")
 
