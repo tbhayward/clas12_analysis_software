@@ -607,7 +607,8 @@ def plot_a1_vs_t_grid(binning_csv, final_dir="final_results", output_dir="bsa_pl
                 if j != left_j:
                     ax.tick_params(axis='y', labelleft=False)
     
-    plt.tight_layout(rect=[0.08, 0.08, 0.98, 0.98])
+    plt.tight_layout(rect=[0,0,1,1])
+    plt.subplots_adjust(left=0.1, bottom=0.1, right=0.9, top=0.9, wspace=0, hspace=0)
     os.makedirs(output_dir, exist_ok=True)
     out_path = os.path.join(output_dir, "a1_vs_t_grid.png")
     plt.savefig(out_path, dpi=150)
