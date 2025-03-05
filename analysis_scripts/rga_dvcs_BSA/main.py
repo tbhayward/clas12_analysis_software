@@ -72,23 +72,23 @@ def main():
     for b in binning_scheme:
         print(b)
 
-    # calculate global means of bins
-    # Define the DVCS periods (which we want to combine)
-    dvcs_periods = [
-        "DVCS_Fa18_inb",
-        "DVCS_Fa18_out",
-        "DVCS_Sp19_inb"
-    ]
-    # Define topologies to include
-    topologies = ["(FD,FD)", "(CD,FD)", "(CD,FT)"]
-    #endfor
-    # Set your analysis type (usually "dvcs") 
-    analysis_type = "dvcs"
-    # Define where you want the final JSON to be saved
-    output_json = "bin_means_global.json"
-    # Call the updated function to calculate the GLOBAL bin means
-    calculate_bin_means(dvcs_periods, topologies, analysis_type, binning_scheme, output_json)
-    print("[main] Global bin-averaged kinematics have been computed!")
+    # # calculate global means of bins
+    # # Define the DVCS periods (which we want to combine)
+    # dvcs_periods = [
+    #     "DVCS_Fa18_inb",
+    #     "DVCS_Fa18_out",
+    #     "DVCS_Sp19_inb"
+    # ]
+    # # Define topologies to include
+    # topologies = ["(FD,FD)", "(CD,FD)", "(CD,FT)"]
+    # #endfor
+    # # Set your analysis type (usually "dvcs") 
+    # analysis_type = "dvcs"
+    # # Define where you want the final JSON to be saved
+    # output_json = "bin_means_global.json"
+    # # Call the updated function to calculate the GLOBAL bin means
+    # calculate_bin_means(dvcs_periods, topologies, analysis_type, binning_scheme, output_json)
+    # print("[main] Global bin-averaged kinematics have been computed!")
 
     
     # # --- Contamination calculation tasks ---
@@ -188,41 +188,41 @@ def main():
     #             print(f"Plotting for {rp} generated an exception: {exc}")
 
         
-    # # --- Raw BSA calculation ---
-    # print("\n🚀 Calculating raw BSA values...")
-    # csv_path = os.path.join("imports", "integrated_bin_v2.csv")
-    # bsa_output = os.path.join("bsa_results")
+    # --- Raw BSA calculation ---
+    print("\n🚀 Calculating raw BSA values...")
+    csv_path = os.path.join("imports", "integrated_bin_v2.csv")
+    bsa_output = os.path.join("bsa_results")
 
-    # # Create tasks using EXACT file_map keys
-    # bsa_tasks = [
-    #     # DVCS periods
-    #     ("DVCS_Fa18_inb", "dvcs", csv_path, bsa_output),
-    #     ("DVCS_Fa18_out", "dvcs", csv_path, bsa_output),
-    #     ("DVCS_Sp19_inb", "dvcs", csv_path, bsa_output),
-    #     # eppi0 periods
-    #     ("eppi0_Fa18_inb", "eppi0", csv_path, bsa_output),
-    #     ("eppi0_Fa18_out", "eppi0", csv_path, bsa_output),
-    #     ("eppi0_Sp19_inb", "eppi0", csv_path, bsa_output)
-    # ]
+    # Create tasks using EXACT file_map keys
+    bsa_tasks = [
+        # DVCS periods
+        ("DVCS_Fa18_inb", "dvcs", csv_path, bsa_output),
+        ("DVCS_Fa18_out", "dvcs", csv_path, bsa_output),
+        ("DVCS_Sp19_inb", "dvcs", csv_path, bsa_output),
+        # eppi0 periods
+        ("eppi0_Fa18_inb", "eppi0", csv_path, bsa_output),
+        ("eppi0_Fa18_out", "eppi0", csv_path, bsa_output),
+        ("eppi0_Sp19_inb", "eppi0", csv_path, bsa_output)
+    ]
 
-    # with ProcessPoolExecutor(max_workers=6) as executor:
-    #     futures = {executor.submit(calculate_raw_bsa, *task): task for task in bsa_tasks}
-    #     for future in as_completed(futures):
-    #         task = futures[future]
-    #         try:
-    #             future.result()
-    #             print(f"Finished BSA for {task[0]}")
-    #         except Exception as exc:
-    #             print(f"BSA failed for {task[0]}: {exc}")
+    with ProcessPoolExecutor(max_workers=6) as executor:
+        futures = {executor.submit(calculate_raw_bsa, *task): task for task in bsa_tasks}
+        for future in as_completed(futures):
+            task = futures[future]
+            try:
+                future.result()
+                print(f"Finished BSA for {task[0]}")
+            except Exception as exc:
+                print(f"BSA failed for {task[0]}: {exc}")
 
-    # # --- Final BSA calculation and combination ---
-    # print("\n🔧 Calculating final adjusted BSA values...")
-    # determine_final_bsa(
-    #     contamination_dir="contamination",
-    #     bsa_dir="bsa_results",
-    #     final_dir="final_results"
-    # )
-    # print("✅ Final BSA results saved to final_results/ directory")
+    # --- Final BSA calculation and combination ---
+    print("\n🔧 Calculating final adjusted BSA values...")
+    determine_final_bsa(
+        contamination_dir="contamination",
+        bsa_dir="bsa_results",
+        final_dir="final_results"
+    )
+    print("✅ Final BSA results saved to final_results/ directory")
 
      # --- Plotting ---
     print("\n📊 Generating BSA plots...")
