@@ -527,7 +527,8 @@ def _plot_grid(Q2_subset, xB_indices, a1_data, global_means, output_filename):
     for i, i_Q2 in enumerate(Q2_subset):
         for j, i_xB in enumerate(xB_indices):
             ax = axs[i, j]
-            ax.set_ylim(-0.1, 0.5)
+            # ax.set_ylim(-0.1, 0.5)
+            ax.set_ylim(-0.5, 0.1)
             cell_points = []
             for (xx, qq, tt), fit in a1_data.items():
                 if xx == i_xB and qq == i_Q2:
@@ -709,7 +710,8 @@ def plot_a1_vs_t_by_Q2(binning_csv, final_dir="final_results", output_dir="bsa_p
         title_str = f"Q² ≈ {Q2_avg:.2f}" if Q2_avg is not None else f"Q² index {i_Q2}"
         ax.set_title(title_str, fontsize=10)
         ax.set_xlim(0, 1)
-        ax.set_ylim(-0.2, 0.6)
+        # ax.set_ylim(-0.2, 0.6)
+        ax.set_ylim(-0.6, 0.2)
         ax.axhline(0, color='gray', linestyle='--', linewidth=1, alpha=0.5)
         if i_Q2 in data_by_Q2:
             for i_xB in sorted(data_by_Q2[i_Q2].keys()):
