@@ -762,7 +762,7 @@ def plot_pass_comparison(binning_csv, final_dir="final_results", output_dir="bsa
     binning = load_binning_scheme(binning_csv)
     global_means = load_global_bin_means(global_means_file)
     
-    # Load current (pass-2) results from combined_bsa.json.
+    # Load current (pass-2) results.
     combined_path = os.path.join(final_dir, "combined_bsa.json")
     with open(combined_path) as f:
         combined_data = json.load(f)
@@ -782,7 +782,7 @@ def plot_pass_comparison(binning_csv, final_dir="final_results", output_dir="bsa
             q2_val = float(parts[1])
             xb_val = float(parts[2])
             t_val = float(parts[3])  # t is negative in file.
-            pass_t = -t_val         # convert to positive.
+            pass_t = -t_val         # Convert to positive.
             A_val = float(parts[5])
             sigA = float(parts[6])
             phi_deg = np.degrees(phi_rad)
@@ -791,20 +791,19 @@ def plot_pass_comparison(binning_csv, final_dir="final_results", output_dir="bsa
     # Determine unique xB bins from the binning scheme.
     unique_xB = sorted({(b.xBmin, b.xBmax) for b in binning})
     
-    # For each xB bin, create a canvas.
+    # Process each xB bin.
     for i, (xb_min, xb_max) in enumerate(unique_xB):
         # Filter binning for this xB bin.
         subset = [b for b in binning if (b.xBmin, b.xBmax) == (xb_min, xb_max)]
         unique_Q2 = sorted({(b.Q2min, b.Q2max) for b in subset})
         unique_t = sorted({(b.tmin, b.tmax) for b in subset})
-        # Build index dictionaries.
         overall_q2_dict = {q: idx for idx, q in enumerate(unique_Q2)}
         overall_t_dict = {t: idx for idx, t in enumerate(unique_t)}
         
-        # Create a dictionary to store assigned pass-1 points per cell.
+        # Create dictionary for cell assignments.
         cell_assignments = { (overall_q2_dict[q], overall_t_dict[t]): [] for q in unique_Q2 for t in unique_t }
         
-        # For each pass-1 point in this xB bin, assign it to the nearest cell.
+        # For each pass-1 point in this xB bin, assign it to the closest cell.
         for (phi_deg, pass_q2, pass_xb, pass_t, pass_A, pass_sigA) in pass1_points:
             if pass_xb < xb_min or pass_xb > xb_max:
                 continue
@@ -829,15 +828,14 @@ def plot_pass_comparison(binning_csv, final_dir="final_results", output_dir="bsa
             if best_dist is not None and best_dist < threshold:
                 cell_assignments[best_cell].append((phi_deg, pass_A, pass_sigA))
         
-        # Create figure with subplots (one for each Q² and t bin).
+        # Create canvas for this xB bin.
         fig, axs = plt.subplots(len(unique_Q2), len(unique_t), 
                                 figsize=(3.5*len(unique_t), 3.5*len(unique_Q2)),
                                 squeeze=False)
-        # Loop over cells.
         for r, (Q2_min, Q2_max) in enumerate(unique_Q2):
             for c, (t_min, t_max) in enumerate(unique_t):
                 ax = axs[r, c]
-                # Get pass-2 data using your helper collect_bin_data.
+                # Get pass-2 data for this cell.
                 key_base = (i, overall_q2_dict[(Q2_min, Q2_max)], overall_t_dict[(t_min, t_max)])
                 x_vals, y_vals, y_errs = collect_bin_data(combined_data, key_base, global_means)
                 if x_vals:
@@ -856,14 +854,13 @@ def plot_pass_comparison(binning_csv, final_dir="final_results", output_dir="bsa
                 if pass1_cell:
                     for (phi_deg, pass_A, pass_sigA) in pass1_cell:
                         ax.errorbar(phi_deg, pass_A, yerr=pass_sigA, fmt='ro', markersize=5, capsize=3, label="pass-1")
-                
-                # --- Fitting section ---
-                # Fit pass-2 data if >= 4 points.
+                # --- Fitting: Only fit pass-2 data if there are >=4 points.
                 pass2_fit = None
                 if x_vals and len(x_vals) >= 4:
                     try:
                         x_radians = np.radians(np.array(x_vals))
-                        popt2, pcov2 = curve_fit(bsa_fit_function, x_radians, np.array(y_vals), sigma=np.array(y_errs),
+                        popt2, pcov2 = curve_fit(bsa_fit_function, x_radians, np.array(y_vals),
+                                                 sigma=np.array(y_errs),
                                                  p0=[0, 0.2, -0.4],
                                                  bounds=([-np.inf, -0.6, -0.7], [np.inf, 0.6, 0.7]))
                         pass2_fit = (popt2, pcov2)
@@ -873,66 +870,45 @@ def plot_pass_comparison(binning_csv, final_dir="final_results", output_dir="bsa
                         ax.plot(phi_dense_deg, fit2_vals, 'k--', lw=1.5, label="pass-2 fit")
                     except Exception as e:
                         print(f"Pass-2 fit failed for cell {rep_key}: {e}")
-                # Fit pass-1 data if >= 4 points.
-                pass1_fit = None
-                if pass1_cell and len(pass1_cell) >= 4:
-                    try:
-                        pass1_phi = np.array([p[0] for p in pass1_cell])
-                        pass1_A = np.array([p[1] for p in pass1_cell])
-                        pass1_err = np.array([p[2] for p in pass1_cell])
-                        x_radians = np.radians(pass1_phi)
-                        popt1, pcov1 = curve_fit(bsa_fit_function, x_radians, pass1_A, sigma=pass1_err,
-                                                 p0=[0, 0.2, -0.4],
-                                                 bounds=([-np.inf, -0.6, -0.7], [np.inf, 0.6, 0.7]))
-                        pass1_fit = (popt1, pcov1)
-                        phi_dense_deg = np.linspace(0, 360, 200)
-                        phi_dense_rad = np.radians(phi_dense_deg)
-                        fit1_vals = bsa_fit_function(phi_dense_rad, *popt1)
-                        ax.plot(phi_dense_deg, fit1_vals, 'r--', lw=1.5, label="pass-1 fit")
-                    except Exception as e:
-                        print(f"Pass-1 fit failed for cell {rep_key}: {e}")
-                
-                # Compute cross chi2/ndf if both fits exist.
+                # If pass-1 points exist and pass2_fit exists, compute chi2/ndf and p-value of pass-1 data vs pass-2 fit.
                 cross_info = ""
-                if pass1_fit is not None and x_vals and len(x_vals) >= 1:
-                    # Compute chi2/ndf for pass-2 data against pass-1 fit.
-                    model_pass2 = bsa_fit_function(np.radians(np.array(x_vals)), *popt1)
-                    chi2_pass2 = np.sum(((np.array(y_vals) - model_pass2)/np.array(y_errs))**2)
-                    ndf2 = len(x_vals) - 3
-                    chi2_ndf_pass2 = chi2_pass2/ndf2 if ndf2>0 else np.nan
-                    cross_info += f"pass-2 vs 1 fit: {chi2_ndf_pass2:.2f}  "
                 if pass2_fit is not None and pass1_cell and len(pass1_cell) >= 1:
-                    pass1_phi_arr = np.array([p[0] for p in pass1_cell])
-                    pass1_A_arr = np.array([p[1] for p in pass1_cell])
-                    pass1_err_arr = np.array([p[2] for p in pass1_cell])
-                    model_pass1 = bsa_fit_function(np.radians(pass1_phi_arr), *popt2)
-                    chi2_pass1 = np.sum(((pass1_A_arr - model_pass1)/pass1_err_arr)**2)
-                    ndf1 = len(pass1_cell) - 3
-                    chi2_ndf_pass1 = chi2_pass1/ndf1 if ndf1>0 else np.nan
-                    cross_info += f"pass-1 vs 2 fit: {chi2_ndf_pass1:.2f}"
-                
-                # Set cell title (one line).
+                    popt2 = pass2_fit[0]
+                    # Evaluate model at pass-1 φ values.
+                    pass1_phi = np.array([p[0] for p in pass1_cell])
+                    model_pass1 = bsa_fit_function(np.radians(pass1_phi), *popt2)
+                    pass1_y = np.array([p[1] for p in pass1_cell])
+                    pass1_err = np.array([p[2] for p in pass1_cell])
+                    chi2_val = np.sum(((pass1_y - model_pass1)/pass1_err)**2)
+                    ndf = len(pass1_cell) - 3
+                    chi2_ndf = chi2_val/ndf if ndf > 0 else np.nan
+                    p_val = chi2.sf(chi2_val, ndf) if ndf > 0 else np.nan
+                    cross_info = f"p = {p_val:.3f} (χ²/ndf = {chi2_ndf:.2f})"
+                # Set a single-line title.
                 cell_title = f"xB = {cell_xb:.3f}, Q² = {cell_q2:.2f}, -t = {cell_t:.2f}"
                 if cross_info:
-                    cell_title += "\n" + cross_info
+                    cell_title += " | " + cross_info
                 ax.set_title(cell_title, fontsize=10)
-                ax.set_xlim(0, 360)  # φ axis in degrees.
+                ax.set_xlim(0, 360)
                 ax.set_xlabel("$\phi$ (deg)", fontsize=10)
                 ax.set_ylabel("$A_{LU}$", fontsize=10)
                 ax.grid(True, alpha=0.3)
                 ax.set_ylim(-1, 1)
-                # Build custom legend: order pass-1 then pass-2 then cross info.
+                # Build custom legend: order pass-1 then pass-2.
                 handles = []
-                if pass1_fit is not None or (pass1_cell and len(pass1_cell)>0):
+                if pass1_cell and len(pass1_cell) > 0:
                     h1 = mlines.Line2D([], [], color='red', marker='o', linestyle="None", markersize=5, label="pass-1")
                     handles.append(h1)
-                if pass2_fit is not None or (x_vals and len(x_vals)>0):
+                if x_vals and len(x_vals) > 0:
                     h2 = mlines.Line2D([], [], color='black', marker='o', linestyle="None", markersize=5, label="pass-2")
                     handles.append(h2)
                 if cross_info:
                     h3 = mlines.Line2D([], [], color='none', marker='', linestyle='', label=cross_info)
                     handles.append(h3)
                 ax.legend(handles=handles, fontsize=9, loc='best')
+                # Set y-axis.
+                ax.set_ylim(-1, 1)
+                # End cell loop.
         plt.tight_layout()
         os.makedirs(output_dir, exist_ok=True)
         out_file = os.path.join(output_dir, f"pass_comparison_xB_{i}.png")
