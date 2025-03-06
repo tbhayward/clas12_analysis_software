@@ -74,23 +74,23 @@ def main():
     for b in binning_scheme:
         print(b)
 
-    # calculate global means of bins
-    # Define the DVCS periods (which we want to combine)
-    dvcs_periods = [
-        "DVCS_Fa18_inb",
-        "DVCS_Fa18_out",
-        "DVCS_Sp19_inb"
-    ]
-    # Define topologies to include
-    topologies = ["(FD,FD)", "(CD,FD)", "(CD,FT)"]
-    #endfor
-    # Set your analysis type (usually "dvcs") 
-    analysis_type = "dvcs"
-    # Define where you want the final JSON to be saved
-    output_json = "bin_means_global.json"
-    # Call the updated function to calculate the GLOBAL bin means
-    calculate_bin_means(dvcs_periods, topologies, analysis_type, binning_scheme, output_json)
-    print("[main] Global bin-averaged kinematics have been computed!")
+    # # calculate global means of bins
+    # # Define the DVCS periods (which we want to combine)
+    # dvcs_periods = [
+    #     "DVCS_Fa18_inb",
+    #     "DVCS_Fa18_out",
+    #     "DVCS_Sp19_inb"
+    # ]
+    # # Define topologies to include
+    # topologies = ["(FD,FD)", "(CD,FD)", "(CD,FT)"]
+    # #endfor
+    # # Set your analysis type (usually "dvcs") 
+    # analysis_type = "dvcs"
+    # # Define where you want the final JSON to be saved
+    # output_json = "bin_means_global.json"
+    # # Call the updated function to calculate the GLOBAL bin means
+    # calculate_bin_means(dvcs_periods, topologies, analysis_type, binning_scheme, output_json)
+    # print("[main] Global bin-averaged kinematics have been computed!")
 
     
     # --- Contamination calculation tasks ---
