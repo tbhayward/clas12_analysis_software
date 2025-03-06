@@ -768,7 +768,7 @@ def plot_pass_comparison(binning_csv, final_dir="final_results", output_dir="bsa
         combined_data = json.load(f)
     combined_data = {tuple(map(int, k.strip("()").split(","))): v for k, v in combined_data.items()}
     
-    # Load pass-1 data from the text file.
+    # Load pass-1 data from text file.
     pass1_points = []
     with open(pass1_file, "r") as f:
         for line in f:
@@ -778,13 +778,11 @@ def plot_pass_comparison(binning_csv, final_dir="final_results", output_dir="bsa
             parts = line.split()
             if len(parts) < 7:
                 continue
-            # Parse values:
             phi_rad = float(parts[0])
             q2_val = float(parts[1])
             xb_val = float(parts[2])
             t_val = float(parts[3])  # t is negative in file.
-            pass_t = -t_val         # convert to positive.
-            # Column 5 (beam energy) is ignored.
+            pass_t = -t_val         # Make it positive.
             A_val = float(parts[5])
             sigA = float(parts[6])
             phi_deg = np.degrees(phi_rad)
@@ -793,7 +791,7 @@ def plot_pass_comparison(binning_csv, final_dir="final_results", output_dir="bsa
     # Determine unique xB bins from the binning scheme.
     unique_xB = sorted({(b.xBmin, b.xBmax) for b in binning})
     
-    # Loop over each xB bin.
+    # For each xB bin, create a separate canvas.
     for i, (xb_min, xb_max) in enumerate(unique_xB):
         # Filter binning for the current xB bin.
         subset = [b for b in binning if (b.xBmin, b.xBmax) == (xb_min, xb_max)]
@@ -803,20 +801,16 @@ def plot_pass_comparison(binning_csv, final_dir="final_results", output_dir="bsa
         overall_q2_dict = {q: idx for idx, q in enumerate(unique_Q2)}
         overall_t_dict = {t: idx for idx, t in enumerate(unique_t)}
         
-        # Prepare a dictionary to store assigned pass-1 points.
-        # Keys are (q_idx, t_idx) for the cell.
-        cell_assignments = {}
-        for q in unique_Q2:
-            for t in unique_t:
-                cell_assignments[(overall_q2_dict[q], overall_t_dict[t])] = []
+        # Create an empty dictionary for cell assignments.
+        # Keys: (q_idx, t_idx)
+        cell_assignments = { (overall_q2_dict[q], overall_t_dict[t]): [] for q in unique_Q2 for t in unique_t }
         
-        # For each pass-1 point that falls within this xB bin, find its closest cell.
+        # For each pass-1 point within this xB bin, determine its closest cell.
         for (phi_deg, pass_q2, pass_xb, pass_t, pass_A, pass_sigA) in pass1_points:
             if pass_xb < xb_min or pass_xb > xb_max:
                 continue
             best_dist = None
             best_cell = None
-            # Loop over all cells in this xB bin.
             for q in unique_Q2:
                 for t in unique_t:
                     cell_key = (overall_q2_dict[q], overall_t_dict[t])
@@ -832,7 +826,7 @@ def plot_pass_comparison(binning_csv, final_dir="final_results", output_dir="bsa
                     if best_dist is None or dist < best_dist:
                         best_dist = dist
                         best_cell = cell_key
-            threshold = 0.2  # Adjust threshold if needed.
+            threshold = 0.2  # adjust threshold as needed
             if best_dist is not None and best_dist < threshold:
                 cell_assignments[best_cell].append((phi_deg, pass_A, pass_sigA))
         
@@ -840,16 +834,16 @@ def plot_pass_comparison(binning_csv, final_dir="final_results", output_dir="bsa
         fig, axs = plt.subplots(len(unique_Q2), len(unique_t), 
                                 figsize=(3.5*len(unique_t), 3.5*len(unique_Q2)),
                                 squeeze=False)
-        # Loop over Q² and t bins (cells).
+        # Loop over cells (arranged by Q² and t).
         for r, (Q2_min, Q2_max) in enumerate(unique_Q2):
             for c, (t_min, t_max) in enumerate(unique_t):
                 ax = axs[r, c]
-                # Get pass-2 data for this cell using your collect_bin_data function.
+                # Get pass-2 data using your existing collect_bin_data function.
                 key_base = (i, overall_q2_dict[(Q2_min, Q2_max)], overall_t_dict[(t_min, t_max)])
                 x_vals, y_vals, y_errs = collect_bin_data(combined_data, key_base, global_means)
                 if x_vals:
                     ax.errorbar(x_vals, y_vals, yerr=y_errs, fmt='ko', markersize=5, capsize=3, label="pass-2")
-                # Get the representative cell values.
+                # Get representative cell values.
                 rep_key = (i, overall_q2_dict[(Q2_min, Q2_max)], overall_t_dict[(t_min, t_max)], 0)
                 if rep_key in global_means:
                     cell_xb = global_means[rep_key].get("xB_avg", None)
@@ -857,26 +851,45 @@ def plot_pass_comparison(binning_csv, final_dir="final_results", output_dir="bsa
                     cell_t = global_means[rep_key].get("t_avg", None)
                 else:
                     continue
-                # Plot pass-1 point(s) assigned to this cell, if any.
+                # Plot pass-1 points assigned to this cell.
                 cell_id = (overall_q2_dict[(Q2_min, Q2_max)], overall_t_dict[(t_min, t_max)])
-                if cell_assignments[cell_id]:
-                    for (phi_deg, pass_A, pass_sigA) in cell_assignments[cell_id]:
-                        ax.errorbar(phi_deg, pass_A, yerr=pass_sigA, fmt='ro', markersize=5, capsize=3, label="pass-1")
-                # Set a single-line title for the cell.
+                pass1_cell = cell_assignments[cell_id]
+                if pass1_cell:
+                    for (phi_deg, pass_A, pass_sigA) in pass1_cell:
+                        ax.errorbar(phi_deg, pass_A, yerr=pass_sigA, fmt='ro', markersize=5, capsize=3)
+                # Compute weighted means and p-value if both pass-1 and pass-2 exist.
+                if x_vals and pass1_cell:
+                    pass2_y = np.array(y_vals)
+                    pass2_err = np.array(y_errs)
+                    wm2 = np.sum(pass2_y / pass2_err**2) / np.sum(1/pass2_err**2)
+                    sigma2 = 1/np.sqrt(np.sum(1/pass2_err**2))
+                    pass1_y = np.array([p[1] for p in pass1_cell])
+                    pass1_err = np.array([p[2] for p in pass1_cell])
+                    wm1 = np.sum(pass1_y / pass1_err**2) / np.sum(1/pass1_err**2)
+                    sigma1 = 1/np.sqrt(np.sum(1/pass1_err**2))
+                    chi2_val = (wm1 - wm2)**2 / (sigma1**2 + sigma2**2)
+                    p_val = chi2.sf(chi2_val, 1)
+                else:
+                    p_val = None
+                # Set cell title (one line).
                 cell_title = f"xB = {cell_xb:.3f}, Q² = {cell_q2:.2f}, -t = {cell_t:.2f}"
                 ax.set_title(cell_title, fontsize=10)
                 ax.set_xlim(0, 360)  # phi in degrees.
                 ax.set_xlabel("$\phi$ (deg)", fontsize=10)
                 ax.set_ylabel("$A_{LU}$", fontsize=10)
                 ax.grid(True, alpha=0.3)
-                # Add legend with unique labels.
-                handles, labels = ax.get_legend_handles_labels()
-                if handles:
-                    unique_legend = {}
-                    for h, l in zip(handles, labels):
-                        unique_legend[l] = h
-                    ax.legend(unique_legend.values(), unique_legend.keys(), fontsize=9, loc='best')
-                # Set y-axis scale.
+                # Build custom legend: order pass-1 then pass-2.
+                handles = []
+                if pass1_cell:
+                    h1 = mlines.Line2D([], [], color='red', marker='o', linestyle="None", markersize=5, label="pass-1")
+                    handles.append(h1)
+                if x_vals:
+                    h2 = mlines.Line2D([], [], color='black', marker='o', linestyle="None", markersize=5, label="pass-2")
+                    handles.append(h2)
+                if p_val is not None:
+                    h3 = mlines.Line2D([], [], color='none', marker='', linestyle='', label=f"p = {p_val:.3f}")
+                    handles.append(h3)
+                ax.legend(handles=handles, fontsize=9, loc='best')
                 ax.set_ylim(-1, 1)
         plt.tight_layout()
         os.makedirs(output_dir, exist_ok=True)
