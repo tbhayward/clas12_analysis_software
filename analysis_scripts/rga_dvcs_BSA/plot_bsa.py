@@ -744,7 +744,19 @@ def plot_a1_vs_t_by_Q2(binning_csv, final_dir="final_results", output_dir="bsa_p
     print(f"Saved a₁ vs -t plot by Q² to {out_path}")
 
 
-plt.style.use(PLOT_STYLE)
+def plot_pass_comparison(binning_csv, final_dir="final_results", output_dir="bsa_plots/pass1_cross_check",
+                         global_means_file="bin_means_global.json", pass1_file="imports/pass1.txt"):
+    """
+    Compare current (pass-2) combined BSA results to previous analysis from pass1.txt.
+    For each xB bin, a separate canvas is created with subplots arranged by Q² and t bins.
+    The pass-2 results (from combined_bsa.json) are plotted as black markers.
+    For each pass-1 point (from pass1.txt), we compute the Euclidean distance in (Q², xB, -t)
+    space to every cell center in the canvas and assign the point to the cell with the smallest
+    distance if that distance is below a chosen threshold. Then the pass-1 point is overlaid as a red
+    marker (with its error bar) in that cell. A legend is added indicating "pass-1" (red) and "pass-2" (black).
+    The resulting plots are saved in the folder bsa_plots/pass1_cross_check/.
+    """
+    plt.style.use(PLOT_STYLE)
     
     # Load binning and global means.
     binning = load_binning_scheme(binning_csv)
