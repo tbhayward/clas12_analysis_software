@@ -750,13 +750,18 @@ def plot_pass_comparison(binning_csv, final_dir="final_results", output_dir="bsa
     Compare current (pass-2) combined BSA results to previous analysis from pass1.txt.
     For each xB bin, a separate canvas is created with subplots arranged by Q² and t bins.
     The pass-2 results (from combined_bsa.json) are plotted as black markers.
-    Then, for each pass-1 point (from pass1.txt), the nearest cell (in Q², xB, -t space) is determined.
-    If the distance is below a chosen threshold, the pass-1 point is overlaid as a red marker
-    (with its error bar) at the phi value given (converted to degrees).
-    Each subplot gets a legend showing "pass-1" and "pass-2".
-    The resulting canvases are saved in the folder bsa_plots/pass1_cross_check/.
+    For each pass-1 point (from pass1.txt), we compute the Euclidean distance in (Q², xB, -t)
+    space to every cell center in the canvas and assign the point to the cell with the smallest
+    distance if that distance is below a chosen threshold. Then the pass-1 point is overlaid as a red
+    marker (with its error bar) in that cell. A legend is added indicating "pass-1" (red) and "pass-2" (black).
+    The resulting plots are saved in the folder bsa_plots/pass1_cross_check/.
     """
-
+    import numpy as np
+    import matplotlib.pyplot as plt
+    import matplotlib.lines as mlines
+    from load_binning_scheme import load_binning_scheme
+    from load_bsa_data import load_global_bin_means, load_bsa_data  # Ensure these exist
+    
     plt.style.use(PLOT_STYLE)
     
     # Load binning and global means.
@@ -784,8 +789,8 @@ def plot_pass_comparison(binning_csv, final_dir="final_results", output_dir="bsa
             q2_val = float(parts[1])
             xb_val = float(parts[2])
             t_val = float(parts[3])  # t is negative in file.
-            pass_t = -t_val         # Convert to positive.
-            # Column 5 (Eb) is ignored.
+            pass_t = -t_val         # convert to positive.
+            # Column 5 (beam energy) is ignored.
             A_val = float(parts[5])
             sigA = float(parts[6])
             phi_deg = np.degrees(phi_rad)
@@ -794,7 +799,7 @@ def plot_pass_comparison(binning_csv, final_dir="final_results", output_dir="bsa
     # Determine unique xB bins from the binning scheme.
     unique_xB = sorted({(b.xBmin, b.xBmax) for b in binning})
     
-    # For each xB bin, create a separate canvas.
+    # Loop over each xB bin.
     for i, (xb_min, xb_max) in enumerate(unique_xB):
         # Filter binning for the current xB bin.
         subset = [b for b in binning if (b.xBmin, b.xBmax) == (xb_min, xb_max)]
@@ -803,6 +808,39 @@ def plot_pass_comparison(binning_csv, final_dir="final_results", output_dir="bsa
         # Build index dictionaries for Q² and t.
         overall_q2_dict = {q: idx for idx, q in enumerate(unique_Q2)}
         overall_t_dict = {t: idx for idx, t in enumerate(unique_t)}
+        
+        # Prepare a dictionary to store assigned pass-1 points.
+        # Keys are (q_idx, t_idx) for the cell.
+        cell_assignments = {}
+        for q in unique_Q2:
+            for t in unique_t:
+                cell_assignments[(overall_q2_dict[q], overall_t_dict[t])] = []
+        
+        # For each pass-1 point that falls within this xB bin, find its closest cell.
+        for (phi_deg, pass_q2, pass_xb, pass_t, pass_A, pass_sigA) in pass1_points:
+            if pass_xb < xb_min or pass_xb > xb_max:
+                continue
+            best_dist = None
+            best_cell = None
+            # Loop over all cells in this xB bin.
+            for q in unique_Q2:
+                for t in unique_t:
+                    cell_key = (overall_q2_dict[q], overall_t_dict[t])
+                    rep_key = (i, overall_q2_dict[q], overall_t_dict[t], 0)
+                    if rep_key not in global_means:
+                        continue
+                    cell_xb = global_means[rep_key].get("xB_avg", None)
+                    cell_q2 = global_means[rep_key].get("Q2_avg", None)
+                    cell_t = global_means[rep_key].get("t_avg", None)
+                    if cell_xb is None or cell_q2 is None or cell_t is None:
+                        continue
+                    dist = np.sqrt((pass_q2 - cell_q2)**2 + (pass_t - cell_t)**2 + (pass_xb - cell_xb)**2)
+                    if best_dist is None or dist < best_dist:
+                        best_dist = dist
+                        best_cell = cell_key
+            threshold = 0.2  # Adjust threshold if needed.
+            if best_dist is not None and best_dist < threshold:
+                cell_assignments[best_cell].append((phi_deg, pass_A, pass_sigA))
         
         # Create figure with subplots for this xB bin.
         fig, axs = plt.subplots(len(unique_Q2), len(unique_t), 
@@ -817,7 +855,7 @@ def plot_pass_comparison(binning_csv, final_dir="final_results", output_dir="bsa
                 x_vals, y_vals, y_errs = collect_bin_data(combined_data, key_base, global_means)
                 if x_vals:
                     ax.errorbar(x_vals, y_vals, yerr=y_errs, fmt='ko', markersize=5, capsize=3, label="pass-2")
-                # Determine cell representative values.
+                # Get the representative cell values.
                 rep_key = (i, overall_q2_dict[(Q2_min, Q2_max)], overall_t_dict[(t_min, t_max)], 0)
                 if rep_key in global_means:
                     cell_xb = global_means[rep_key].get("xB_avg", None)
@@ -825,18 +863,14 @@ def plot_pass_comparison(binning_csv, final_dir="final_results", output_dir="bsa
                     cell_t = global_means[rep_key].get("t_avg", None)
                 else:
                     continue
-                # For each pass-1 point in this xB bin...
-                for (phi_deg, pass_q2, pass_xb, pass_t, pass_A, pass_sigA) in pass1_points:
-                    if pass_xb < xb_min or pass_xb > xb_max:
-                        continue
-                    # Compute Euclidean distance between pass-1 point and cell center.
-                    dist = np.sqrt((pass_q2 - cell_q2)**2 + (pass_t - cell_t)**2 + (pass_xb - cell_xb)**2)
-                    threshold = 0.2  # threshold (adjust as needed)
-                    if dist < threshold:
+                # Plot pass-1 point(s) assigned to this cell, if any.
+                cell_id = (overall_q2_dict[(Q2_min, Q2_max)], overall_t_dict[(t_min, t_max)])
+                if cell_assignments[cell_id]:
+                    for (phi_deg, pass_A, pass_sigA) in cell_assignments[cell_id]:
                         ax.errorbar(phi_deg, pass_A, yerr=pass_sigA, fmt='ro', markersize=5, capsize=3, label="pass-1")
-                # Set cell title (all on one line).
+                # Set a single-line title for the cell.
                 cell_title = f"xB = {cell_xb:.3f}, Q² = {cell_q2:.2f}, -t = {cell_t:.2f}"
-                ax.set_title(cell_title, fontsize=9)
+                ax.set_title(cell_title, fontsize=10)
                 ax.set_xlim(0, 360)  # phi in degrees.
                 ax.set_xlabel("$\phi$ (deg)", fontsize=10)
                 ax.set_ylabel("$A_{LU}$", fontsize=10)
@@ -844,11 +878,11 @@ def plot_pass_comparison(binning_csv, final_dir="final_results", output_dir="bsa
                 # Add legend with unique labels.
                 handles, labels = ax.get_legend_handles_labels()
                 if handles:
-                    unique_dict = {}
+                    unique_legend = {}
                     for h, l in zip(handles, labels):
-                        unique_dict[l] = h
-                    ax.legend(unique_dict.values(), unique_dict.keys(), fontsize=9, loc='best')
-                # Set y-axis scale for all cells.
+                        unique_legend[l] = h
+                    ax.legend(unique_legend.values(), unique_legend.keys(), fontsize=9, loc='best')
+                # Set y-axis scale.
                 ax.set_ylim(-1, 1)
         plt.tight_layout()
         os.makedirs(output_dir, exist_ok=True)
