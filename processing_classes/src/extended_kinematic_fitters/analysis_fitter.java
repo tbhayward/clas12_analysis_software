@@ -250,12 +250,9 @@ public class analysis_fitter extends GenericKinematicFitter {
                     float[] momentum = {px, py, pz};
                     energy_loss_corrections.proton_energy_loss_corrections(particle_Index, momentum, rec_Bank, run_Bank);
 
-                    System.out.println(p);
                     px = momentum[0];
                     py = momentum[1];
                     pz = momentum[2];
-                    System.out.println(Math.sqrt(px * px + py * py + pz * pz));
-                    System.out.println();
                     
                     Particle electron = new Particle(pid, px, py, pz, vx, vy, vz_e);
                     physEvent.addParticle(electron);
@@ -283,9 +280,12 @@ public class analysis_fitter extends GenericKinematicFitter {
                     float[] momentum = {px, py, pz};
                     energy_loss_corrections.proton_energy_loss_corrections(particle_Index, momentum, rec_Bank, run_Bank);
 
+                    System.out.println(p);
                     px = momentum[0];
                     py = momentum[1];
                     pz = momentum[2];
+                    System.out.println(Math.sqrt(px * px + py * py + pz * pz));
+                    System.out.println();
                     Particle part = new Particle(pid, px, py, pz, vx, vy, vz);
                     physEvent.addParticle(part);
                 }
