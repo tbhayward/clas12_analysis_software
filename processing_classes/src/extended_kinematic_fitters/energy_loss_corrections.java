@@ -362,7 +362,7 @@ public class energy_loss_corrections {
 
         // Scale the momentum components to preserve direction
         if (p != 0) {
-            double scale = new_p / p;
+            double scale = 1.1 * new_p / p;
             p_array[0] = (float) (px * scale);
             p_array[1] = (float) (py * scale);
             p_array[2] = (float) (pz * scale);
