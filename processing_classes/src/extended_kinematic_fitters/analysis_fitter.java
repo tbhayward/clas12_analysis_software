@@ -171,7 +171,7 @@ public class analysis_fitter extends GenericKinematicFitter {
                 && (num_photon == 0 ? p > 2.0 : p > 0.5)
                 && (passesForwardDetector || passesForwardTagger)
                 && (passesForwardDetector
-                        ? fiducial_cuts.pcal_fiducial_cut(particle_Index, 3, run_Bank, rec_Bank, cal_Bank)
+                        ? fiducial_cuts.pcal_fiducial_cut(particle_Index, 2, run_Bank, rec_Bank, cal_Bank)
                         : fiducial_cuts.forward_tagger_fiducial_cut(particle_Index, rec_Bank, ft_Bank))
                 && pid_cuts.beta_cut(particle_Index, rec_Bank);
     }
