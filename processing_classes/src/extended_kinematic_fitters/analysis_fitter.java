@@ -222,7 +222,6 @@ public class analysis_fitter extends GenericKinematicFitter {
                 float vy = rec_Bank.getFloat("vy", particle_Index);
                 float vz = rec_Bank.getFloat("vz", particle_Index);
                 double p = Math.sqrt(px * px + py * py + pz * pz);
-                System.out.println(p);
 
                 energy_loss_corrections energy_loss_corrections = new energy_loss_corrections();
 
@@ -251,6 +250,7 @@ public class analysis_fitter extends GenericKinematicFitter {
                     float[] momentum = {px, py, pz};
                     energy_loss_corrections.proton_energy_loss_corrections(particle_Index, momentum, rec_Bank, run_Bank);
 
+                    System.out.println(p);
                     px = momentum[0];
                     py = momentum[1];
                     pz = momentum[2];
