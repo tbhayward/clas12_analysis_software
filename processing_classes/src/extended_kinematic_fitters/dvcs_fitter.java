@@ -37,7 +37,7 @@ public class dvcs_fitter extends GenericKinematicFitter {
                 && pid_cuts.calorimeter_energy_cut(particle_Index, cal_Bank, 1)
                 && pid_cuts.calorimeter_sampling_fraction_cut(particle_Index, p, run_Bank, cal_Bank)
                 && pid_cuts.calorimeter_diagonal_cut(particle_Index, p, cal_Bank)
-                && fiducial_cuts.pcal_fiducial_cut(particle_Index, 3, run_Bank, rec_Bank, cal_Bank)
+                && fiducial_cuts.pcal_fiducial_cut(particle_Index, 2, run_Bank, rec_Bank, cal_Bank)
                 && fiducial_cuts.dc_fiducial_cut(particle_Index, rec_Bank, traj_Bank);
     }
 
@@ -102,7 +102,7 @@ public class dvcs_fitter extends GenericKinematicFitter {
                 && p > 2.00
                 && (passesForwardDetector || passesForwardTagger)
                 && (passesForwardDetector
-                        ? fiducial_cuts.pcal_fiducial_cut(particle_Index, 3, run_Bank, rec_Bank, cal_Bank)
+                        ? fiducial_cuts.pcal_fiducial_cut(particle_Index, 2, run_Bank, rec_Bank, cal_Bank)
                         : fiducial_cuts.forward_tagger_fiducial_cut(particle_Index, rec_Bank, ft_Bank))
                 && pid_cuts.beta_cut(particle_Index, rec_Bank);
     }
@@ -156,6 +156,14 @@ public class dvcs_fitter extends GenericKinematicFitter {
 
                 if (pid == 11 && electron_test(particle_Index, p, rec_Bank, cal_Bank,
                         traj_Bank, run_Bank, cc_Bank)) {
+                    
+                    float[] momentum = {px, py, pz};
+                    energy_loss_corrections.proton_energy_loss_corrections(particle_Index, momentum, rec_Bank, run_Bank);
+
+                    px = momentum[0];
+                    py = momentum[1];
+                    pz = momentum[2];
+                    
                     // this checks all of the PID requirements, if it passes all of them the electron is 
                     // added to the event below
                     Particle part = new Particle(pid, px, py, pz, vx, vy, vz_e);
@@ -177,6 +185,13 @@ public class dvcs_fitter extends GenericKinematicFitter {
 
                 if (pid == 22 && photon_test(particle_Index, run_Bank, rec_Bank, cal_Bank, ft_Bank, lv_e)) {
 
+                    float[] momentum = {px, py, pz};
+                    energy_loss_corrections.proton_energy_loss_corrections(particle_Index, momentum, rec_Bank, run_Bank);
+
+                    px = momentum[0];
+                    py = momentum[1];
+                    pz = momentum[2];
+                    
                     Particle part = new Particle(pid, px, py, pz, vx, vy, vz);
                     physEvent.addParticle(part);
                 }

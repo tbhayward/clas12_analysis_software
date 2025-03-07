@@ -1,7 +1,3 @@
-/*
- * Click nbfs://nbhost/SystemFileSystem/Templates/Licenses/license-default.txt to change this license
- * Click nbfs://nbhost/SystemFileSystem/Templates/Classes/Class.java to edit this template
- */
 package extended_kinematic_fitters;
 
 import org.jlab.io.hipo.HipoDataBank;
@@ -240,6 +236,137 @@ public class energy_loss_corrections {
         p_array[0] = (float) x_calculation(p, theta, phi);
         p_array[1] = (float) y_calculation(p, theta, phi);
         p_array[2] = (float) z_calculation(p, theta);
+    }
+    
+    public static void electron_energy_loss_corrections(int particle_Index, float[] p_array,
+            HipoDataBank rec_Bank, HipoDataBank run_Bank) {
+
+        double px = p_array[0];
+        double py = p_array[1];
+        double pz = p_array[2];
+
+        double p = Math.sqrt(px * px + py * py + pz * pz);
+        double theta = Math.acos(pz / p); // in radians
+        double phi = Math.atan2(py, px); // in radians
+
+        generic_tests genericTests = new generic_tests();
+        boolean isForwardTagger = genericTests.forward_tagger_cut(particle_Index, rec_Bank);
+
+        int runnum = run_Bank.getInt("run", 0);
+
+        // Check if run is in allowed ranges
+        boolean validRun = (runnum >= 4763 && runnum <= 5419) || 
+                          (runnum >= 5423 && runnum <= 5666) || 
+                          (runnum >= 6616 && runnum <= 6783);
+        if (!validRun) {
+            return;
+        }
+
+        double mass = 0.00511; // Electron mass in GeV
+        double E = Math.sqrt(p * p + mass * mass);
+        double E_new = E;
+        double theta_new = theta;
+
+        if (isForwardTagger) {
+            // Apply spring19 fit correction for forward tagger
+            E_new = E + 0.085643 - 0.0288063 * E + 0.00894691 * E * E - 0.000725449 * E * E * E;
+        } else {
+            // Apply Richard Tyson's correction for other cases
+            double[] corOut_PDep = {-6.520e-02, 7.099e-03, -5.929e-05, 2.145e-01, -1.153e-01};
+            double delta = corOut_PDep[0] + corOut_PDep[1] * E + corOut_PDep[2] * E * E 
+                         + corOut_PDep[3] / E + corOut_PDep[4] / (E * E);
+            E_new = E + delta * E;
+
+            // Theta correction
+            double p0 = -0.08783;
+            double p1 = 73.43;
+            double p2 = 0.03231;
+
+            double phi_deg = Math.toDegrees(phi);
+            double theta_correction_deg = p0 * Math.sin(Math.toRadians(p1 + phi_deg)) + p2;
+            theta_new += Math.toRadians(theta_correction_deg);
+        }
+
+        // Calculate new momentum magnitude (approximated as E_new)
+        double new_p = E_new;
+
+        // Calculate new components based on theta_new and original phi
+        double px_new = new_p * Math.sin(theta_new) * Math.cos(phi);
+        double py_new = new_p * Math.sin(theta_new) * Math.sin(phi);
+        double pz_new = new_p * Math.cos(theta_new);
+
+        // Update the momentum array
+        p_array[0] = (float) px_new;
+        p_array[1] = (float) py_new;
+        p_array[2] = (float) pz_new;
+    }
+
+    public static void photon_energy_loss_corrections(int particle_Index, float[] p_array,
+            HipoDataBank rec_Bank, HipoDataBank run_Bank) {
+
+        double px = p_array[0];
+        double py = p_array[1];
+        double pz = p_array[2];
+
+        double p = Math.sqrt(px * px + py * py + pz * pz);
+        double theta = Math.acos(pz / p); // in radians
+        double theta_deg = Math.toDegrees(theta);
+
+        generic_tests genericTests = new generic_tests();
+        boolean isForwardTagger = genericTests.forward_tagger_cut(particle_Index, rec_Bank);
+
+        int runnum = run_Bank.getInt("run", 0);
+
+        // Check if run is in allowed ranges
+        boolean validRun = (runnum >= 4763 && runnum <= 5419) || 
+                          (runnum >= 5423 && runnum <= 5666) || 
+                          (runnum >= 6616 && runnum <= 6783);
+        if (!validRun) {
+            return;
+        }
+
+        double new_p = p;
+
+        if (isForwardTagger) {
+            // Apply spring19 fit correction for forward tagger
+            new_p += 0.085643 - 0.0288063 * p + 0.00894691 * p * p - 0.000725449 * p * p * p;
+
+            double x0 = 117.969;
+            double a = -5.26113;
+            double b = 0.0133069;
+            double c = 0.000141808;
+            double d = -3.30662e-06;
+
+            double delta = a + b * (theta_deg - x0) + c * Math.pow(theta_deg - x0, 2) 
+                         + d * Math.pow(theta_deg - x0, 3);
+            new_p -= delta;
+        } else {
+            if (theta_deg < 20) {
+                double x0 = 27.8139;
+                double a = -0.028155;
+                double b = -0.00496108;
+                double c = -0.000369676;
+                double d = -5.68592e-06;
+                new_p -= (a + b * (theta_deg - x0) + c * Math.pow(theta_deg - x0, 2) 
+                        + d * Math.pow(theta_deg - x0, 3));
+            } else {
+                double x0 = 17.4002;
+                double a = -0.0338089;
+                double b = 0.00296576;
+                double c = -0.000212105;
+                double d = -2.19736e-05;
+                new_p -= (a + b * (theta_deg - x0) + c * Math.pow(theta_deg - x0, 2) 
+                        + d * Math.pow(theta_deg - x0, 3));
+            }
+        }
+
+        // Scale the momentum components to preserve direction
+        if (p != 0) {
+            double scale = new_p / p;
+            p_array[0] = (float) (px * scale);
+            p_array[1] = (float) (py * scale);
+            p_array[2] = (float) (pz * scale);
+        }
     }
 
 }

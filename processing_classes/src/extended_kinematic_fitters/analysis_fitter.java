@@ -36,8 +36,8 @@ public class analysis_fitter extends GenericKinematicFitter {
                 && pid_cuts.calorimeter_energy_cut(particle_Index, cal_Bank, 1)
                 && pid_cuts.calorimeter_sampling_fraction_cut(particle_Index, p, run_Bank, cal_Bank)
                 && pid_cuts.calorimeter_diagonal_cut(particle_Index, p, cal_Bank)    
-//                && fiducial_cuts.pcal_fiducial_cut(particle_Index, 3, run_Bank, rec_Bank, cal_Bank)
-//                && fiducial_cuts.dc_fiducial_cut(particle_Index, rec_Bank, traj_Bank)
+                && fiducial_cuts.pcal_fiducial_cut(particle_Index, 2, run_Bank, rec_Bank, cal_Bank)
+                && fiducial_cuts.dc_fiducial_cut(particle_Index, rec_Bank, traj_Bank)
                 ;
     }
 
@@ -128,19 +128,19 @@ public class analysis_fitter extends GenericKinematicFitter {
         boolean passesCentralDetector = generic_tests.central_detector_cut(particle_Index, rec_Bank);
 
         return true
-                //            && p > 0.4
-//                && (passesCentralDetector ? p > 0.3 : true)
-//                && (passesForwardDetector && (torus > 0) ? p > 0.42 : true)
-//                && (passesForwardDetector && (torus < 0) ? p > 0.50 : true)
-//                && p < 1.2 // this bound is enforced at p < 1.14 by -t < 1, done here to speed up processing
-//                && generic_tests.theta_calculation(px, py, pz) < 64.23
+                            && p > 0.4
+                && (passesCentralDetector ? p > 0.3 : true)
+                && (passesForwardDetector && (torus > 0) ? p > 0.42 : true)
+                && (passesForwardDetector && (torus < 0) ? p > 0.50 : true)
+                && p < 1.2 // this bound is enforced at p < 1.14 by -t < 1, done here to speed up processing
+                && generic_tests.theta_calculation(px, py, pz) < 64.23
                 && generic_tests.vertex_cut(particle_Index, rec_Bank, run_Bank)
-//                && (passesForwardDetector
-//                        ? fiducial_cuts.dc_fiducial_cut(particle_Index, rec_Bank, traj_Bank)
-//                        : true)
-//                && (passesCentralDetector
-//                        ? fiducial_cuts.cvt_fiducial_cut(particle_Index, rec_Bank, traj_Bank)
-//                        : true)
+                && (passesForwardDetector
+                        ? fiducial_cuts.dc_fiducial_cut(particle_Index, rec_Bank, traj_Bank)
+                        : true)
+                && (passesCentralDetector
+                        ? fiducial_cuts.cvt_fiducial_cut(particle_Index, rec_Bank, traj_Bank)
+                        : true)
                 && (passesForwardDetector // dedicated PID cuts for forward
                         ? pid_cuts.charged_hadron_chi2pid_cut(particle_Index, rec_Bank, run_Bank)
                         : true)
@@ -246,6 +246,14 @@ public class analysis_fitter extends GenericKinematicFitter {
 //                            }
 //                        }
 //                    }
+
+                    float[] momentum = {px, py, pz};
+                    energy_loss_corrections.proton_energy_loss_corrections(particle_Index, momentum, rec_Bank, run_Bank);
+
+                    px = momentum[0];
+                    py = momentum[1];
+                    pz = momentum[2];
+                    
                     Particle electron = new Particle(pid, px, py, pz, vx, vy, vz_e);
                     physEvent.addParticle(electron);
                 }
@@ -280,6 +288,14 @@ public class analysis_fitter extends GenericKinematicFitter {
                 }
 
                 if (pid == 22 && photon_test(particle_Index, run_Bank, rec_Bank, cal_Bank, ft_Bank, lv_e, num_photon)) {
+                    
+                    float[] momentum = {px, py, pz};
+                    energy_loss_corrections.proton_energy_loss_corrections(particle_Index, momentum, rec_Bank, run_Bank);
+
+                    px = momentum[0];
+                    py = momentum[1];
+                    pz = momentum[2];
+                    
                     Particle part = new Particle(pid, px, py, pz, vx, vy, vz);
                     physEvent.addParticle(part);
                     num_photon++;

@@ -168,8 +168,8 @@ def calculate_contamination(period, topology, analysis_type, binning_scheme):
             xB_val = float(event.x)
             Q2_val = float(event.Q2)
             t_val  = abs(float(event.t1))
-            # phi_val = float(event.phi2)
-            phi_val = float(event.phi1)
+            phi_val = float(event.phi2)
+            # phi_val = float(event.phi1)
         except Exception as e:
             continue
         i_xB = find_bin(xB_val, unique_xB_bins)
@@ -211,8 +211,8 @@ def calculate_contamination(period, topology, analysis_type, binning_scheme):
             xB_val = float(event.x)
             Q2_val = float(event.Q2)
             t_val  = abs(float(event.t1))
-            # phi_val = float(event.phi2)
-            phi_val = float(event.phi1)
+            phi_val = float(event.phi2)
+            # phi_val = float(event.phi1)
         except Exception as e:
             continue
         i_xB = find_bin(xB_val, unique_xB_bins)
@@ -251,8 +251,8 @@ def calculate_contamination(period, topology, analysis_type, binning_scheme):
             xB_val = float(event.x)
             Q2_val = float(event.Q2)
             t_val  = abs(float(event.t1))
-            # phi_val = float(event.phi2)
-            phi_val = float(event.phi1)
+            phi_val = float(event.phi2)
+            # phi_val = float(event.phi1)
         except Exception as e:
             continue
         i_xB = find_bin(xB_val, unique_xB_bins)
@@ -286,8 +286,8 @@ def calculate_contamination(period, topology, analysis_type, binning_scheme):
             xB_val = float(event.x)
             Q2_val = float(event.Q2)
             t_val  = abs(float(event.t1))
-            phi_val = float(event.phi2)
-            # phi_val = float(event.Delta_phi)
+            # phi_val = float(event.phi2)
+            phi_val = float(event.Delta_phi)
         except Exception as e:
             continue
         i_xB = find_bin(xB_val, unique_xB_bins)
