@@ -94,6 +94,7 @@ def main():
         if f1:
             f1.SetLineColor(ROOT.kBlack)
             f1.SetLineStyle(2)
+            f1.SetLineWidth(1)  # Thin dashed line
             f1.Draw("SAME")
     
     if fit_result2 and fit_result2.IsValid():
@@ -101,9 +102,9 @@ def main():
         if f2:
             f2.SetLineColor(ROOT.kRed)
             f2.SetLineStyle(2)
+            f2.SetLineWidth(1)  # Thin dashed line
             f2.Draw("SAME")
     
-    # Force pad update before getting ymax
     ROOT.gPad.Modified()
     ROOT.gPad.Update()
     ymax = ROOT.gPad.GetUymax()
@@ -113,8 +114,7 @@ def main():
     line.Draw()
     all_objects['lines'].append(line)
     
-    # Adjusted legend position and size
-    leg = ROOT.TLegend(0.2, 0.15, 0.9, 0.32)
+    leg = ROOT.TLegend(0.2, 0.15, 0.9, 0.28)
     leg.SetBorderSize(1)
     leg.SetFillColor(ROOT.kWhite)
     leg.SetTextSize(0.035)
@@ -170,10 +170,12 @@ def main():
         if f1:
             f1.SetLineColor(ROOT.kBlack)
             f1.SetLineStyle(2)
+            f1.SetLineWidth(1)  # Thin dashed line
             f1.Draw("SAME")
         if f2:
             f2.SetLineColor(ROOT.kRed)
             f2.SetLineStyle(2)
+            f2.SetLineWidth(1)  # Thin dashed line
             f2.Draw("SAME")
         
         for h, color in [(h1, ROOT.kBlack), (h2, ROOT.kRed)]:
@@ -188,7 +190,6 @@ def main():
         h1.Draw("PE")
         h2.Draw("PE SAME")
         
-        # Force pad update before getting ymax
         ROOT.gPad.Modified()
         ROOT.gPad.Update()
         ymax = ROOT.gPad.GetUymax()
@@ -198,8 +199,7 @@ def main():
         line.Draw()
         all_objects['lines'].append(line)
         
-        # Adjusted legend position
-        leg = ROOT.TLegend(0.2, 0.15, 0.9, 0.32)
+        leg = ROOT.TLegend(0.2, 0.15, 0.9, 0.28)
         leg.SetBorderSize(1)
         leg.SetFillColor(ROOT.kWhite)
         leg.SetTextSize(0.035)
@@ -214,16 +214,18 @@ def main():
         leg.Draw()
         all_objects['legends'].append(leg)
         
-        fit_results1.append((fit_result1.Parameter(1), fit_result1.ParError(1)) if fit1_valid else (0,0))
-        fit_results2.append((fit_result2.Parameter(1), fit_result2.ParError(1)) if fit2_valid else (0,0))
+        # Store mean and sigma for both datasets
+        fit_results1.append((fit_result1.Parameter(1), fit_result1.Parameter(2)) if fit1_valid else (0,0))
+        fit_results2.append((fit_result2.Parameter(1), fit_result2.Parameter(2)) if fit2_valid else (0,0))
         bin_centers.append((low + high)/2)
 
-    # Final plot (pad 12)
+    # Final plot (pad 12) with sigma error bars
     canvas.cd(12)
     gr1 = ROOT.TGraphErrors(len(bin_centers))
     gr2 = ROOT.TGraphErrors(len(bin_centers))
     
     for i in range(len(bin_centers)):
+        # y = mean, y error = sigma
         gr1.SetPoint(i, bin_centers[i], fit_results1[i][0])
         gr1.SetPointError(i, 0, fit_results1[i][1])
         gr2.SetPoint(i, bin_centers[i], fit_results2[i][0])
