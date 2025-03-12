@@ -116,9 +116,13 @@ def main():
         h1 = ROOT.TH1D(f"h1_{i}", f"{low:.1f}-{high:.1f}°", 100, xmin, xmax)
         h2 = ROOT.TH1D(f"h2_{i}", "", 100, xmin, xmax)
         
-        # Fill histograms
-        h1.FillN(len(mx1), mx1, np.where((theta1 >= low_rad) & (theta1 < high_rad), 1, 0))
-        h2.FillN(len(mx2), mx2, np.where((theta2 >= low_rad) & (theta2 < high_rad), 1, 0))
+        # Create mask arrays with proper data types
+        mask1 = ((theta1 >= low_rad) & (theta1 < high_rad)).astype(np.float64)
+        mask2 = ((theta2 >= low_rad) & (theta2 < high_rad)).astype(np.float64)
+        
+        # Fill histograms with correct FillN signature
+        h1.FillN(len(mx1), mx1.astype(np.float64), mask1)
+        h2.FillN(len(mx2), mx2.astype(np.float64), mask2)
         
         # Perform fits
         f1, f2 = None, None
