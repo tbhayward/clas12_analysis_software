@@ -33,7 +33,7 @@ def main():
     else:
         mx_branch = 'Mx2_2'
         theta_branch = 'p2_theta' 
-        xmin, xmax = 0.578, 1.178
+        xmin, xmax = 0.578, 1.4  # Changed upper limit to 1.4
         xlabel = "M_{x2}^{2} (GeV^{2})"
         vline = 0.880
         hline_y = 0.880
@@ -82,13 +82,11 @@ def main():
 
     # Angular bin configuration
     if args.type == 1:
-        # Original binning for type 1
         angular_bins = [(0, 25)]
         middle_bins = [(25 + 4.5*i, 25 + 4.5*(i+1)) for i in range(7)]
         angular_bins += middle_bins
         angular_bins += [(56.5, 60.5), (60.5, 90)]
     else:
-        # New binning for type 2: 10 evenly spaced bins from 0-30 degrees
         angular_bins = [(3*i, 3*(i+1)) for i in range(10)]
 
     canvas = ROOT.TCanvas("canvas", "Comparison", 2400, 1800)
@@ -128,6 +126,7 @@ def main():
         h.GetYaxis().SetTitle("Counts")
         h.GetXaxis().SetTitleSize(0.06)
         h.GetYaxis().SetTitleSize(0.06)
+        h.SetMinimum(0)  # Force y-axis to start at 0
     
     h1.Draw("PE")
     h2.Draw("PE SAME")
@@ -220,6 +219,16 @@ def main():
                 fit2_valid = True
                 f2 = h2.GetFunction(fit_func_name)
         
+        for h, color in [(h1, ROOT.kBlack), (h2, ROOT.kRed)]:
+            h.SetLineColor(color)
+            h.SetMarkerColor(color)
+            h.SetMarkerStyle(20)
+            h.GetXaxis().SetTitle(xlabel)
+            h.GetYaxis().SetTitle("Counts")
+            h.GetXaxis().SetTitleSize(0.06)
+            h.GetYaxis().SetTitleSize(0.06)
+            h.SetMinimum(0)  # Force y-axis to start at 0
+        
         h1.Draw("PE")
         h2.Draw("PE SAME")
 
@@ -236,15 +245,6 @@ def main():
             f2.SetLineWidth(2)
             f2.Draw("SAME")
             all_objects['funcs'].append(f2)
-        
-        for h, color in [(h1, ROOT.kBlack), (h2, ROOT.kRed)]:
-            h.SetLineColor(color)
-            h.SetMarkerColor(color)
-            h.SetMarkerStyle(20)
-            h.GetXaxis().SetTitle(xlabel)
-            h.GetYaxis().SetTitle("Counts")
-            h.GetXaxis().SetTitleSize(0.06)
-            h.GetYaxis().SetTitleSize(0.06)
         
         ROOT.gPad.Modified()
         ROOT.gPad.Update()
@@ -315,7 +315,7 @@ def main():
         mg.SetMaximum(0.2)
     else:
         mg.SetMinimum(0.5)
-        mg.SetMaximum(1.2)
+        mg.SetMaximum(1.4)  # Adjusted upper limit for type 2
     
     # Adjust horizontal line based on type
     if args.type == 1:
