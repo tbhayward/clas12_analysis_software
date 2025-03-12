@@ -42,7 +42,30 @@ def main():
         try:
             f = uproot.open(file_path)
             tree = f[f.keys()[0]]
-            return tree[mx_branch].array(library="np"), tree[theta_branch].array(library="np")
+            
+            # Check for theta cut branch
+            available_branches = tree.keys()
+            if 'theta_gamma_gamma' in available_branches:
+                theta_cut_branch = 'theta_gamma_gamma'
+            elif 'theta_pi0_pi0' in available_branches:
+                theta_cut_branch = 'theta_pi0_pi0'
+            else:
+                raise ValueError(f"No valid theta cut branch found in {file_path}")
+
+            # Load all required data
+            data = tree.arrays([mx_branch, theta_branch, 'pTmiss', theta_cut_branch, 'xF'], 
+                              library="np")
+            
+            # Apply kinematic cuts
+            mask = (
+                (data['pTmiss'] < 0.1) &
+                (data[theta_cut_branch] < 0.5) &
+                (data['xF'] >= -0.15) &
+                (data['xF'] <= 0.15)
+            )
+            
+            return data[mx_branch][mask], data[theta_branch][mask]
+            
         except Exception as e:
             print(f"Error loading {file_path}: {str(e)}")
             sys.exit(1)
@@ -63,7 +86,7 @@ def main():
         'hists': [],
         'lines': [],
         'legends': [],
-        'funcs': []  # NEW: Store fit functions
+        'funcs': []
     }
 
     # Integrated plot (pad 1)
@@ -75,8 +98,8 @@ def main():
     for x in mx1: h1.Fill(x)
     for x in mx2: h2.Fill(x)
     
-    fit_result1 = h1.Fit("gaus", "SQN")
-    fit_result2 = h2.Fit("gaus", "SQN")
+    fit_result1 = h1.Fit("gaus", "SQ")
+    fit_result2 = h2.Fit("gaus", "SQ")
     
     for h, color in [(h1, ROOT.kBlack), (h2, ROOT.kRed)]:
         h.SetLineColor(color)
@@ -87,30 +110,28 @@ def main():
         h.GetXaxis().SetTitleSize(0.06)
         h.GetYaxis().SetTitleSize(0.06)
     
-    # Draw order modified
     h1.Draw("PE")
     h2.Draw("PE SAME")
     
-    # NEW: Store and draw fits
     if fit_result1 and fit_result1.IsValid():
         f1 = h1.GetFunction("gaus")
         if f1:
             f1.SetLineColor(ROOT.kBlack)
             f1.SetLineStyle(2)
-            f1.SetLineWidth(1)
+            f1.SetLineWidth(2)
             f1.SetRange(xmin, xmax)
             f1.Draw("SAME")
-            all_objects['funcs'].append(f1)  # Retain ownership
+            all_objects['funcs'].append(f1)
 
     if fit_result2 and fit_result2.IsValid():
         f2 = h2.GetFunction("gaus")
         if f2:
             f2.SetLineColor(ROOT.kRed)
             f2.SetLineStyle(2)
-            f2.SetLineWidth(1)
+            f2.SetLineWidth(2)
             f2.SetRange(xmin, xmax)
             f2.Draw("SAME")
-            all_objects['funcs'].append(f2)  # Retain ownership
+            all_objects['funcs'].append(f2)
     
     ROOT.gPad.Modified()
     ROOT.gPad.Update()
@@ -174,20 +195,16 @@ def main():
                 fit2_valid = True
                 f2 = h2.GetFunction("gaus")
         
-        # Draw the histogram first
         h1.Draw("PE")
         h2.Draw("PE SAME")
 
-        # Explicitly draw Gaussian fits
-        f1 = h1.GetFunction("gaus")
         if f1:
             f1.SetLineColor(ROOT.kBlack)
             f1.SetLineStyle(2)
             f1.SetLineWidth(2)
             f1.Draw("SAME")
             all_objects['funcs'].append(f1)
-
-        f2 = h2.GetFunction("gaus")
+            
         if f2:
             f2.SetLineColor(ROOT.kRed)
             f2.SetLineStyle(2)
@@ -232,7 +249,7 @@ def main():
         fit_results2.append((fit_result2.Parameter(1), fit_result2.Parameter(2)) if fit2_valid else (0,0))
         bin_centers.append((low + high)/2)
 
-    # Final plot (pad 12) with staggered points
+    # Final plot (pad 12)
     canvas.cd(12)
     gr1 = ROOT.TGraphErrors(len(bin_centers))
     gr2 = ROOT.TGraphErrors(len(bin_centers))
