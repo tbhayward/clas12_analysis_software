@@ -114,7 +114,7 @@ def main():
     all_objects['lines'].append(line)
     
     # Adjusted legend position and size
-    leg = ROOT.TLegend(0.35, 0.15, 0.7, 0.4)  # Wider and left-aligned
+    leg = ROOT.TLegend(0.2, 0.15, 0.9, 0.30)
     leg.SetBorderSize(1)
     leg.SetFillColor(ROOT.kWhite)
     leg.SetTextSize(0.045)
@@ -199,7 +199,7 @@ def main():
         all_objects['lines'].append(line)
         
         # Adjusted legend position
-        leg = ROOT.TLegend(0.35, 0.15, 0.9, 0.35)
+        leg = ROOT.TLegend(0.2, 0.15, 0.9, 0.30)
         leg.SetBorderSize(1)
         leg.SetFillColor(ROOT.kWhite)
         leg.SetTextSize(0.045)
