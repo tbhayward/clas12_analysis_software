@@ -54,8 +54,8 @@ def main():
     os.makedirs(output_dir, exist_ok=True)
 
     # Angular bins and canvas setup
-    angular_bins = [(5,11), (11,17), (17,23), (23,29), (29,35),
-                    (35,41), (41,47), (47,53), (53,59), (59,65)]
+    angular_bins = [(5,20), (20,25), (25,30), (30,35), (35,40),
+                    (40,45), (45,50), (50,55), (55,60), (60,65)]
     
     canvas = ROOT.TCanvas("canvas", "Comparison", 2400, 1800)
     canvas.Divide(4, 3)
@@ -113,7 +113,7 @@ def main():
         leg.AddEntry(h2, f"{args.label2} #mu={fit2.Parameter(1):.3f} #sigma={fit2.Parameter(2):.3f}", "LP")
     leg.Draw()
 
-        # Process angular bins (pads 2-11)
+    # Process angular bins (pads 2-11)
     for i, (low, high) in enumerate(angular_bins):
         pad_num = i + 2
         canvas.cd(pad_num)
@@ -175,14 +175,51 @@ def main():
                 f.SetLineStyle(2)
                 f.Draw("SAME")
 
-        # Legend - CORRECTED SECTION
+        # Legend
         leg = ROOT.TLegend(0.15, 0.7, 0.55, 0.88)
         leg.SetBorderSize(0)
-        if f1:  # Check stored fit reference
-            leg.AddEntry(h1, f"{args.label1} #mu={f1.GetParameter(1):.3f}", "LP")
-        if f2:  # Check stored fit reference
-            leg.AddEntry(h2, f"{args.label2} #mu={f2.GetParameter(1):.3f}", "LP")
+        if fit1_valid:
+            leg.AddEntry(h1, f"{args.label1} #mu={h1.GetFunction('gaus').GetParameter(1):.3f}", "LP")
+        if fit2_valid:
+            leg.AddEntry(h2, f"{args.label2} #mu={h2.GetFunction('gaus').GetParameter(1):.3f}", "LP")
         leg.Draw()
+
+    # Process mean plot (pad 12)
+    canvas.cd(12)
+    gr1 = ROOT.TGraphErrors(len(bin_centers))
+    gr2 = ROOT.TGraphErrors(len(bin_centers))
+    
+    for i in range(len(bin_centers)):
+        gr1.SetPoint(i, bin_centers[i], fit_results1[i][0])
+        gr1.SetPointError(i, 0, fit_results1[i][1])
+        gr2.SetPoint(i, bin_centers[i], fit_results2[i][0])
+        gr2.SetPointError(i, 0, fit_results2[i][1])
+    
+    mg = ROOT.TMultiGraph()
+    mg.Add(gr1)
+    mg.Add(gr2)
+    mg.SetTitle(";#theta (degrees);Mean " + xlabel)
+    
+    # Style graphs
+    for gr, color in [(gr1, ROOT.kBlack), (gr2, ROOT.kRed)]:
+        gr.SetMarkerColor(color)
+        gr.SetLineColor(color)
+        gr.SetMarkerStyle(20)
+        gr.SetLineWidth(2)
+
+    mg.Draw("AP")
+    mg.GetXaxis().SetLimits(0, 70)
+    
+    # Set y-axis range
+    ymin, ymax = (min(fit_results1+fit_results2)[0]*0.9, max(fit_results1+fit_results2)[0]*1.1)
+    mg.SetMinimum(ymin)
+    mg.SetMaximum(ymax)
+    
+    # Add legend
+    leg = ROOT.TLegend(0.6, 0.7, 0.9, 0.85)
+    leg.AddEntry(gr1, args.label1, "P")
+    leg.AddEntry(gr2, args.label2, "P")
+    leg.Draw()
 
     # Save output
     canvas.SaveAs(f"{output_dir}/comparison_{args.label1}_{args.label2}.png")
