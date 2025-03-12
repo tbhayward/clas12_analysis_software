@@ -89,12 +89,14 @@ def main():
     h1.Draw("PE")
     h2.Draw("PE SAME")
     
+    # Draw fits with explicit range and styling
     if fit_result1 and fit_result1.IsValid():
         f1 = h1.GetFunction("gaus")
         if f1:
             f1.SetLineColor(ROOT.kBlack)
             f1.SetLineStyle(2)
-            f1.SetLineWidth(1)  # Thin dashed line
+            f1.SetLineWidth(1)
+            f1.SetRange(xmin, xmax)  # Explicit range
             f1.Draw("SAME")
     
     if fit_result2 and fit_result2.IsValid():
@@ -102,7 +104,8 @@ def main():
         if f2:
             f2.SetLineColor(ROOT.kRed)
             f2.SetLineStyle(2)
-            f2.SetLineWidth(1)  # Thin dashed line
+            f2.SetLineWidth(1)
+            f2.SetRange(xmin, xmax)  # Explicit range
             f2.Draw("SAME")
     
     ROOT.gPad.Modified()
@@ -119,11 +122,11 @@ def main():
     leg.SetFillColor(ROOT.kWhite)
     leg.SetTextSize(0.035)
     if fit_result1 and fit_result1.IsValid():
-        leg.AddEntry(h1, f"{args.label1}: #mu={fit_result1.Parameter(1):.3f}#pm{fit_result1.ParError(1):.3f}", "p")
+        leg.AddEntry(h1, f"{args.label1}: #mu={fit_result1.Parameter(1):.3f}#pm{fit_result1.Parameter(2):.3f}", "p")  # Show sigma instead of mu error
     else:
         leg.AddEntry(h1, f"{args.label1}: No fit", "p")
     if fit_result2 and fit_result2.IsValid():
-        leg.AddEntry(h2, f"{args.label2}: #mu={fit_result2.Parameter(1):.3f}#pm{fit_result2.ParError(1):.3f}", "p")
+        leg.AddEntry(h2, f"{args.label2}: #mu={fit_result2.Parameter(1):.3f}#pm{fit_result2.Parameter(2):.3f}", "p")  # Show sigma instead of mu error
     else:
         leg.AddEntry(h2, f"{args.label2}: No fit", "p")
     leg.Draw()
@@ -170,12 +173,14 @@ def main():
         if f1:
             f1.SetLineColor(ROOT.kBlack)
             f1.SetLineStyle(2)
-            f1.SetLineWidth(1)  # Thin dashed line
+            f1.SetLineWidth(1)
+            f1.SetRange(xmin, xmax)  # Explicit range
             f1.Draw("SAME")
         if f2:
             f2.SetLineColor(ROOT.kRed)
             f2.SetLineStyle(2)
-            f2.SetLineWidth(1)  # Thin dashed line
+            f2.SetLineWidth(1)
+            f2.SetRange(xmin, xmax)  # Explicit range
             f2.Draw("SAME")
         
         for h, color in [(h1, ROOT.kBlack), (h2, ROOT.kRed)]:
@@ -204,31 +209,32 @@ def main():
         leg.SetFillColor(ROOT.kWhite)
         leg.SetTextSize(0.035)
         if fit1_valid:
-            leg.AddEntry(h1, f"{args.label1}: #mu={fit_result1.Parameter(1):.3f}#pm{fit_result1.ParError(1):.3f}", "p")
+            leg.AddEntry(h1, f"{args.label1}: #mu={fit_result1.Parameter(1):.3f}#pm{fit_result1.Parameter(2):.3f}", "p")  # Show sigma
         else:
             leg.AddEntry(h1, f"{args.label1}: No fit", "p")
         if fit2_valid:
-            leg.AddEntry(h2, f"{args.label2}: #mu={fit_result2.Parameter(1):.3f}#pm{fit_result2.ParError(1):.3f}", "p")
+            leg.AddEntry(h2, f"{args.label2}: #mu={fit_result2.Parameter(1):.3f}#pm{fit_result2.Parameter(2):.3f}", "p")  # Show sigma
         else:
             leg.AddEntry(h2, f"{args.label2}: No fit", "p")
         leg.Draw()
         all_objects['legends'].append(leg)
         
-        # Store mean and sigma for both datasets
         fit_results1.append((fit_result1.Parameter(1), fit_result1.Parameter(2)) if fit1_valid else (0,0))
         fit_results2.append((fit_result2.Parameter(1), fit_result2.Parameter(2)) if fit2_valid else (0,0))
         bin_centers.append((low + high)/2)
 
-    # Final plot (pad 12) with sigma error bars
+    # Final plot (pad 12) with staggered points
     canvas.cd(12)
     gr1 = ROOT.TGraphErrors(len(bin_centers))
     gr2 = ROOT.TGraphErrors(len(bin_centers))
     
     for i in range(len(bin_centers)):
-        # y = mean, y error = sigma
-        gr1.SetPoint(i, bin_centers[i], fit_results1[i][0])
+        # Data1 points at original positions
+        gr1.SetPoint(i, bin_centers[i] - 0.25, fit_results1[i][0])  # Shift left
         gr1.SetPointError(i, 0, fit_results1[i][1])
-        gr2.SetPoint(i, bin_centers[i], fit_results2[i][0])
+        
+        # Data2 points shifted right
+        gr2.SetPoint(i, bin_centers[i] + 0.25, fit_results2[i][0])  # Shift right
         gr2.SetPointError(i, 0, fit_results2[i][1])
     
     mg = ROOT.TMultiGraph()
@@ -236,11 +242,18 @@ def main():
     mg.Add(gr2)
     mg.SetTitle(";#theta (degrees);Mean " + xlabel)
     
-    for gr, color in [(gr1, ROOT.kBlack), (gr2, ROOT.kRed)]:
-        gr.SetMarkerColor(color)
-        gr.SetLineColor(color)
-        gr.SetMarkerStyle(20)
-        gr.SetLineWidth(2)
+    # Styling with different marker sizes for clarity
+    gr1.SetMarkerColor(ROOT.kBlack)
+    gr1.SetLineColor(ROOT.kBlack)
+    gr1.SetMarkerStyle(20)
+    gr1.SetMarkerSize(1.2)
+    gr1.SetLineWidth(2)
+
+    gr2.SetMarkerColor(ROOT.kRed)
+    gr2.SetLineColor(ROOT.kRed)
+    gr2.SetMarkerStyle(21)
+    gr2.SetMarkerSize(1.2)
+    gr2.SetLineWidth(2)
 
     mg.Draw("AP")
     mg.GetXaxis().SetLimits(20, 65)
