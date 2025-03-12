@@ -12,15 +12,10 @@ def bsa_fit_function(phi, c0, a1, b1):
     a1 = np.clip(a1, -0.99999, 0.99999)
     return c0 + (a1 * np.sin(phi)) / (1 + b1 * np.cos(phi))
 
-# Load BSA data from JSON file.
-def load_bsa_data(filepath):
+# Load combined BSA data.
+def load_combined_bsa(filepath):
     with open(filepath) as f:
-        return {tuple(map(int, k.strip("()").split(','))): v for k, v in json.load(f).items()}
-
-# Load global bin averages.
-def load_global_bin_means(filepath):
-    with open(filepath) as f:
-        return {tuple(map(int, k.strip("()").split(','))): v for k, v in json.load(f).items()}
+        return {tuple(map(int, k.strip("()").split(","))): v for k, v in json.load(f).items()}
 
 # Combine values weighted by uncertainty.
 def weighted_mean(values, errors):
@@ -38,42 +33,40 @@ def plot_bsa_integrated_t(
 ):
     os.makedirs(output_dir, exist_ok=True)
     binning = load_binning_scheme(binning_csv)
-    combined_data = load_bsa_data(combined_bsa_file)
-    global_bin_means = load_global_bin_means(global_means_file)
+    combined_data = load_combined_bsa(combined_bsa_file)
 
     unique_xB = sorted({(b.xBmin, b.xBmax) for b in binning})
     unique_Q2 = sorted({(b.Q2min, b.Q2max) for b in binning})
 
     N_PHI_BINS = 9
+    phi_centers = np.degrees(np.linspace(0, 2 * np.pi, N_PHI_BINS + 1)[:-1] + np.pi / N_PHI_BINS)
 
-    fig, axs = plt.subplots(len(unique_Q2), len(unique_xB), figsize=(3.5*len(unique_xB), 3.5*len(unique_Q2)), squeeze=False)
+    fig, axs = plt.subplots(len(unique_Q2), len(unique_xB), figsize=(3.5 * len(unique_xB), 3.5 * len(unique_Q2)), squeeze=False)
 
-    phi_centers = np.degrees(np.linspace(0, 2*np.pi, N_PHI_BINS+1)[:-1] + np.pi/N_PHI_BINS)
-
-    for ix, (xB_min, xB_max) in enumerate(unique_xB):
-        for iq, (Q2_min, Q2_max) in enumerate(unique_Q2):
+    for iq2, (Q2_min, Q2_max) in enumerate(unique_Q2[::-1]):
+        for ixb, (xB_min, xB_max) in enumerate(unique_xB):
 
             phi_vals, bsa_vals, bsa_err_vals = [], [], []
 
             for iphi in range(N_PHI_BINS):
                 y_vals, y_errs = [], []
 
-                for key, data in combined_data.items():
-                    bin_xB, bin_Q2, bin_t, bin_phi = key
+                for (bin_xB, bin_Q2, bin_t, bin_phi), data in combined_data.items():
                     binning_entry = binning[bin_xB]
 
-                    if (binning_entry.xBmin, binning_entry.xBmax) == (xB_min, xB_max) and \
-                       (binning_entry.Q2min, binning_entry.Q2max) == (Q2_min, Q2_max) and bin_phi == iphi:
+                    if ((binning_entry.xBmin, binning_entry.xBmax) == (xB_min, xB_max) and
+                        (binning_entry.Q2min, binning_entry.Q2max) == (Q2_min, Q2_max) and
+                        bin_phi == iphi):
                         y_vals.append(data['bsa'])
                         y_errs.append(data['bsa_err'])
 
-                if len(y_vals) > 0:
+                if y_vals:
                     combined_y, combined_err = weighted_mean(np.array(y_vals), np.array(y_errs))
                     phi_vals.append(phi_centers[iphi])
                     bsa_vals.append(combined_y)
                     bsa_err_vals.append(combined_err)
 
-            ax = axs[len(unique_Q2)-1-iq, ix]
+            ax = axs[iq2, ixb]
 
             if len(phi_vals) >= 3:
                 phi_radians = np.radians(phi_vals)
@@ -90,18 +83,21 @@ def plot_bsa_integrated_t(
                 except Exception as e:
                     print(f"Fit failed ({xB_min}-{xB_max}, {Q2_min}-{Q2_max}): {e}")
 
-            ax.errorbar(phi_vals, bsa_vals, bsa_err_vals, fmt='ko', markersize=4, capsize=2)
+            if phi_vals:
+                ax.errorbar(phi_vals, bsa_vals, bsa_err_vals, fmt='ko', markersize=4, capsize=2)
+                ax.set_xlim(0, 360)
+                ax.set_ylim(-1, 1)
+            else:
+                ax.set_axis_off()
 
-            ax.set_xlim(0, 360)
-            ax.set_ylim(-1, 1)
             ax.set_title(f"$x_B$=[{xB_min:.2f},{xB_max:.2f}] $Q^2$=[{Q2_min:.2f},{Q2_max:.2f}]")
-            if iq == 0:
+            if iq2 == len(unique_Q2) - 1:
                 ax.set_xlabel("$\phi$ (deg)")
-            if ix == 0:
+            if ixb == 0:
                 ax.set_ylabel("$A_{LU}$")
             ax.grid(alpha=0.3)
 
-    plt.tight_layout()
+    # plt.tight_layout()
     plt.savefig(os.path.join(output_dir, "integrated_t_bsa.png"), dpi=150)
     plt.close()
 

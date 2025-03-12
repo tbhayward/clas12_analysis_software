@@ -228,7 +228,7 @@ def main():
     # print("✅ Final BSA results saved to final_results/ directory")
 
     #  # --- Plotting ---
-    # print("\n📊 Generating BSA plots...")
+    print("\n📊 Generating BSA plots...")
     # csv_path = os.path.join("imports", "integrated_bin_v2.csv")
     
     # plot_raw_bsa(csv_path)
