@@ -19,10 +19,11 @@ def main():
     # Suppress ROOT graphics window
     ROOT.gROOT.SetBatch(True)
 
-    # Set ROOT styles
+    # Set ROOT styles with increased bottom padding
     ROOT.gStyle.SetOptStat(0)
     ROOT.gStyle.SetTextFont(42)
-    ROOT.gStyle.SetPadLeftMargin(0.12)  # Increased left margin
+    ROOT.gStyle.SetPadLeftMargin(0.12)
+    ROOT.gStyle.SetPadBottomMargin(0.18)  # Increased from 0.12 to 0.18
 
     # Determine parameters based on type
     if args.type == 1:
@@ -55,14 +56,14 @@ def main():
     output_dir = "output/energy_loss_validation"
     os.makedirs(output_dir, exist_ok=True)
 
-    # Define angular bins in degrees
-    angular_bins = [(5,11), (11,17), (17,23), (23,29), (29,35),
-                    (35,41), (41,47), (47,53), (53,59), (59,65)]
+    # New angular bins: 5° increments from 20°-65°
+    angular_bins = [(20,25), (25,30), (30,35), (35,40),
+                   (40,45), (45,50), (50,55), (55,60), (60,65)]
 
     # Create canvas and pads
     canvas = ROOT.TCanvas("canvas", "Comparison", 2400, 1800)
     canvas.Divide(4, 3)
-    canvas.SetMargin(0.08, 0.02, 0.08, 0.1)  # Add more padding
+    canvas.SetMargin(0.08, 0.02, 0.08, 0.1)
 
     # Store references to all histograms and graphs
     histograms = []
@@ -70,7 +71,7 @@ def main():
     fit_results2 = []
     bin_centers = []
 
-    # Process integrated plot (pad 1)
+    # Process integrated plot (pad 1) - No changes below this line
     canvas.cd(1)
     h1 = ROOT.TH1D("h1_int", "Integrated", 100, xmin, xmax)
     h2 = ROOT.TH1D("h2_int", "Integrated", 100, xmin, xmax)
@@ -114,7 +115,7 @@ def main():
     leg.SetBorderSize(0)
     leg.Draw()
 
-    # Process angular bins (pads 2-11)
+    # Process angular bins (pads 2-10)
     for i, (low, high) in enumerate(angular_bins):
         pad_num = i + 2
         canvas.cd(pad_num)
