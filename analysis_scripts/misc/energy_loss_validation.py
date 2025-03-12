@@ -61,7 +61,11 @@ def main():
                 (data['pTmiss'] < 0.1) &
                 (data[theta_cut_branch] < 0.5) &
                 (data['xF'] >= -0.15) &
-                (data['xF'] <= 0.15)
+                (data['xF'] <= 0.15) &
+                (data['Mx2'] >= -0.02) &
+                (data['Mx2'] <= 0.02) & 
+                (data['Emiss2'] >= 0.4) & 
+                (data['Emiss2'] <= 0.4)
             )
             
             return data[mx_branch][mask], data[theta_branch][mask]
