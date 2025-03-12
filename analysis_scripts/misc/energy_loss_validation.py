@@ -131,12 +131,23 @@ def main():
         for x in mx2[mask2]: h2.Fill(x)
         
         # Perform fits
-        fit1_valid = h1.GetEntries() > 0 and h1.Fit("gaus", "SQN").IsValid()
-        fit2_valid = h2.GetEntries() > 0 and h2.Fit("gaus", "SQN").IsValid()
+        fit_result1 = h1.Fit("gaus", "SQN")
+        fit_result2 = h2.Fit("gaus", "SQN")
+        fit1_valid = h1.GetEntries() > 0 and fit_result1.IsValid()
+        fit2_valid = h2.GetEntries() > 0 and fit_result2.IsValid()
 
-        # Store results
-        fit_results1.append((h1.GetFunction("gaus").GetParameter(1), h1.GetFunction("gaus").GetParError(1)) if fit1_valid else (0,0))
-        fit_results2.append((h2.GetFunction("gaus").GetParameter(1), h2.GetFunction("gaus").GetParError(1)) if fit2_valid else (0,0))
+        # Store results with explicit function checks
+        f1 = h1.GetFunction("gaus") if fit1_valid else None
+        f2 = h2.GetFunction("gaus") if fit2_valid else None
+        
+        fit_results1.append(
+            (f1.GetParameter(1), f1.GetParError(1)) 
+            if f1 else (0, 0)
+        )
+        fit_results2.append(
+            (f2.GetParameter(1), f2.GetParError(1)) 
+            if f2 else (0, 0)
+        )
         bin_centers.append((low + high)/2)
 
         # Vertical line
