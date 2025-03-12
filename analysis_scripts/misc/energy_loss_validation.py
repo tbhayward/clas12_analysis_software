@@ -90,7 +90,19 @@ def main():
         h.GetYaxis().SetTitleSize(0.06)
     
     h1.Draw("PE")
-    h2.Draw("PE SAME")  # Draw both before adding legend
+    h2.Draw("PE SAME")
+    
+    # Draw Gaussian fits
+    if fit1 and fit1.IsValid():
+        f1 = h1.GetFunction("gaus")
+        f1.SetLineColor(ROOT.kBlack)
+        f1.SetLineStyle(2)
+        f1.Draw("SAME")
+    if fit2 and fit2.IsValid():
+        f2 = h2.GetFunction("gaus")
+        f2.SetLineColor(ROOT.kRed)
+        f2.SetLineStyle(2)
+        f2.Draw("SAME")
     
     # Add reference line
     line = ROOT.TLine(vline, 0, vline, h1.GetMaximum()*1.1)
@@ -99,9 +111,11 @@ def main():
     line.Draw()
     all_objects['lines'].append(line)
     
-    # Create and store legend
+    # Create and store legend with new styling
     leg = ROOT.TLegend(0.55, 0.15, 0.85, 0.35)
-    leg.SetBorderSize(0)
+    leg.SetBorderSize(1)
+    leg.SetFillColor(ROOT.kWhite)
+    leg.SetTextSize(0.04)
     if fit1 and fit1.IsValid():
         leg.AddEntry(h1, f"{args.label1}: #mu={fit1.Parameter(1):.3f}#pm{fit1.ParError(1):.3f}", "p")
     else:
@@ -144,9 +158,20 @@ def main():
         if h1.GetEntries() > 10:
             fit1 = h1.Fit("gaus", "SQN")
             fit1_valid = fit1 and fit1.IsValid()
+            if fit1_valid:
+                f1 = h1.GetFunction("gaus")
+                f1.SetLineColor(ROOT.kBlack)
+                f1.SetLineStyle(2)
+                f1.Draw("SAME")
+        
         if h2.GetEntries() > 10:
             fit2 = h2.Fit("gaus", "SQN")
             fit2_valid = fit2 and fit2.IsValid()
+            if fit2_valid:
+                f2 = h2.GetFunction("gaus")
+                f2.SetLineColor(ROOT.kRed)
+                f2.SetLineStyle(2)
+                f2.Draw("SAME")
         
         # Configure histograms
         for h, color in [(h1, ROOT.kBlack), (h2, ROOT.kRed)]:
@@ -159,7 +184,7 @@ def main():
             h.GetYaxis().SetTitleSize(0.06)
         
         h1.Draw("PE")
-        h2.Draw("PE SAME")  # Draw both before adding legend
+        h2.Draw("PE SAME")
         
         # Add reference line
         line = ROOT.TLine(vline, 0, vline, h1.GetMaximum()*1.1)
@@ -168,9 +193,11 @@ def main():
         line.Draw()
         all_objects['lines'].append(line)
         
-        # Create and store legend
+        # Create and store legend with new styling
         leg = ROOT.TLegend(0.55, 0.15, 0.85, 0.35)
-        leg.SetBorderSize(0)
+        leg.SetBorderSize(1)
+        leg.SetFillColor(ROOT.kWhite)
+        leg.SetTextSize(0.04)
         if fit1_valid:
             leg.AddEntry(h1, f"{args.label1}: #mu={fit1.Parameter(1):.3f}#pm{fit1.ParError(1):.3f}", "p")
         else:
@@ -220,9 +247,11 @@ def main():
         mg.SetMinimum(0.5)
         mg.SetMaximum(1.2)
     
-    # Add final legend
+    # Add final legend with new styling
     leg = ROOT.TLegend(0.55, 0.15, 0.85, 0.35)
-    leg.SetBorderSize(0)
+    leg.SetBorderSize(1)
+    leg.SetFillColor(ROOT.kWhite)
+    leg.SetTextSize(0.04)
     leg.AddEntry(gr1, args.label1, "p")
     leg.AddEntry(gr2, args.label2, "p")
     leg.Draw()
