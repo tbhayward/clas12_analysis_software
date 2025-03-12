@@ -200,7 +200,7 @@ def main():
     mg.GetXaxis().SetLimits(0, 70)
     
     # Set y-axis range
-    ymin, ymax = (min(fit_results1+fit_results2)[0]*0.9, max(fit_results1+fit_results2)[0]*1.1
+    ymin, ymax = (min(fit_results1+fit_results2)[0]*0.9, max(fit_results1+fit_results2)[0]*1.1)
     mg.SetMinimum(ymin)
     mg.SetMaximum(ymax)
     
