@@ -29,12 +29,14 @@ def main():
         xmin, xmax = -0.3, 0.3
         xlabel = "M_{x1}^{2} (GeV^{2})"
         vline = 0.0
+        hline_y = 0.0
     else:
         mx_branch = 'Mx2_2'
         theta_branch = 'p2_theta' 
         xmin, xmax = 0.578, 1.178
         xlabel = "M_{x2}^{2} (GeV^{2})"
         vline = 0.880
+        hline_y = 0.880
 
     def load_data(file_path):
         try:
@@ -107,18 +109,19 @@ def main():
             f2.SetLineStyle(2)
             f2.Draw("SAME")
     
-    # Add reference line
-    line = ROOT.TLine(vline, 0, vline, h1.GetMaximum()*1.1)
+    # Add reference line with proper bounds
+    ymax = ROOT.gPad.GetUymax()  # Get actual upper y limit from pad
+    line = ROOT.TLine(vline, 0, vline, ymax)
     line.SetLineStyle(2)
     line.SetLineColor(ROOT.kGray+2)
     line.Draw()
     all_objects['lines'].append(line)
     
-    # Create and store legend with new styling
-    leg = ROOT.TLegend(0.55, 0.15, 0.85, 0.35)
+    # Create and store legend with adjusted position and size
+    leg = ROOT.TLegend(0.45, 0.15, 0.75, 0.35)  # Moved left and wider
     leg.SetBorderSize(1)
     leg.SetFillColor(ROOT.kWhite)
-    leg.SetTextSize(0.04)
+    leg.SetTextSize(0.045)  # Slightly larger text
     if fit_result1 and fit_result1.IsValid():
         leg.AddEntry(h1, f"{args.label1}: #mu={fit_result1.Parameter(1):.3f}#pm{fit_result1.ParError(1):.3f}", "p")
     else:
@@ -195,18 +198,19 @@ def main():
         h1.Draw("PE")
         h2.Draw("PE SAME")
         
-        # Add reference line
-        line = ROOT.TLine(vline, 0, vline, h1.GetMaximum()*1.1)
+        # Add reference line with proper bounds
+        ymax = ROOT.gPad.GetUymax()
+        line = ROOT.TLine(vline, 0, vline, ymax)
         line.SetLineStyle(2)
         line.SetLineColor(ROOT.kGray+2)
         line.Draw()
         all_objects['lines'].append(line)
         
-        # Create and store legend with new styling
-        leg = ROOT.TLegend(0.55, 0.15, 0.85, 0.35)
+        # Create and store legend with adjusted position
+        leg = ROOT.TLegend(0.45, 0.15, 0.75, 0.35)  # Moved left
         leg.SetBorderSize(1)
         leg.SetFillColor(ROOT.kWhite)
-        leg.SetTextSize(0.04)
+        leg.SetTextSize(0.045)
         if fit1_valid:
             leg.AddEntry(h1, f"{args.label1}: #mu={fit_result1.Parameter(1):.3f}#pm{fit_result1.ParError(1):.3f}", "p")
         else:
@@ -256,11 +260,18 @@ def main():
         mg.SetMinimum(0.5)
         mg.SetMaximum(1.2)
     
-    # Add final legend with new styling
-    leg = ROOT.TLegend(0.55, 0.15, 0.85, 0.35)
+    # Add horizontal reference line
+    hline = ROOT.TLine(20, hline_y, 65, hline_y)
+    hline.SetLineStyle(2)
+    hline.SetLineColor(ROOT.kGray+2)
+    hline.Draw()
+    all_objects['lines'].append(hline)
+    
+    # Add final legend with new position
+    leg = ROOT.TLegend(0.2, 0.8, 0.5, 0.9)  # Top-left position
     leg.SetBorderSize(1)
     leg.SetFillColor(ROOT.kWhite)
-    leg.SetTextSize(0.04)
+    leg.SetTextSize(0.045)
     leg.AddEntry(gr1, args.label1, "p")
     leg.AddEntry(gr2, args.label2, "p")
     leg.Draw()
