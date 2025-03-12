@@ -33,7 +33,7 @@ def main():
     else:
         mx_branch = 'Mx2_2'
         theta_branch = 'p2_theta' 
-        xmin, xmax = 0.578, 1.4  # Changed upper limit to 1.4
+        xmin, xmax = 0.578, 1.8
         xlabel = "M_{x2}^{2} (GeV^{2})"
         vline = 0.880
         hline_y = 0.880
@@ -315,7 +315,7 @@ def main():
         mg.SetMaximum(0.2)
     else:
         mg.SetMinimum(0.5)
-        mg.SetMaximum(1.4)  # Adjusted upper limit for type 2
+        mg.SetMaximum(1.8)  # Adjusted upper limit for type 2
     
     # Adjust horizontal line based on type
     if args.type == 1:
