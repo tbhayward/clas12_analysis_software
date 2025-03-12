@@ -33,7 +33,7 @@ def main():
     else:
         mx_branch = 'Mx2_2'
         theta_branch = 'p2_theta' 
-        xmin, xmax = 0.578, 1.6
+        xmin, xmax = 0.578, 1.4
         xlabel = "M_{x2}^{2} (GeV^{2})"
         vline = 0.880
         hline_y = 0.880
@@ -109,15 +109,36 @@ def main():
     for x in mx1: h1.Fill(x)
     for x in mx2: h2.Fill(x)
     
-    # Define Gaussian+linear fit function
-    fit_func1 = ROOT.TF1("gaus_poly1", "gaus(0)+pol1(3)", xmin, xmax)
-    fit_func1.SetParameters(h1.GetMaximum(), h1.GetMean(), h1.GetRMS(), 0, 0)
-    fit_result1 = h1.Fit(fit_func1, "SQ")
-    
-    fit_func2 = ROOT.TF1("gaus_poly2", "gaus(0)+pol1(3)", xmin, xmax)
-    fit_func2.SetParameters(h2.GetMaximum(), h2.GetMean(), h2.GetRMS(), 0, 0)
-    fit_result2 = h2.Fit(fit_func2, "SQ")
-    
+    # Initialize fit results
+    fit_result1, fit_result2 = None, None
+    f1, f2 = None, None
+    mu1 = sigma1 = mu2 = sigma2 = 0.0
+
+    # Fit with safety checks
+    if h1.GetEntries() > 10:
+        try:
+            fit_func1 = ROOT.TF1("gaus_poly1", "gaus(0)+pol1(3)", xmin, xmax)
+            fit_func1.SetParameters(h1.GetMaximum(), h1.GetMean(), h1.GetRMS(), 0, 0)
+            fit_result1 = h1.Fit(fit_func1, "SQ")
+            if fit_result1 and fit_result1.IsValid():
+                f1 = h1.GetFunction("gaus_poly1")
+                mu1 = fit_result1.Parameter(1)
+                sigma1 = fit_result1.Parameter(2)
+        except Exception as e:
+            print(f"Integrated fit failed for {args.label1}: {str(e)}")
+
+    if h2.GetEntries() > 10:
+        try:
+            fit_func2 = ROOT.TF1("gaus_poly2", "gaus(0)+pol1(3)", xmin, xmax)
+            fit_func2.SetParameters(h2.GetMaximum(), h2.GetMean(), h2.GetRMS(), 0, 0)
+            fit_result2 = h2.Fit(fit_func2, "SQ")
+            if fit_result2 and fit_result2.IsValid():
+                f2 = h2.GetFunction("gaus_poly2")
+                mu2 = fit_result2.Parameter(1)
+                sigma2 = fit_result2.Parameter(2)
+        except Exception as e:
+            print(f"Integrated fit failed for {args.label2}: {str(e)}")
+
     for h, color in [(h1, ROOT.kBlack), (h2, ROOT.kRed)]:
         h.SetLineColor(color)
         h.SetMarkerColor(color)
@@ -126,31 +147,25 @@ def main():
         h.GetYaxis().SetTitle("Counts")
         h.GetXaxis().SetTitleSize(0.06)
         h.GetYaxis().SetTitleSize(0.06)
-        h.SetMinimum(0)  # Force y-axis to start at 0
-    
+        h.SetMinimum(0)
+
     h1.Draw("PE")
     h2.Draw("PE SAME")
-    
-    if fit_result1 and fit_result1.IsValid():
-        f1 = h1.GetFunction("gaus_poly1")
-        if f1:
-            f1.SetLineColor(ROOT.kBlack)
-            f1.SetLineStyle(2)
-            f1.SetLineWidth(2)
-            f1.SetRange(xmin, xmax)
-            f1.Draw("SAME")
-            all_objects['funcs'].append(f1)
 
-    if fit_result2 and fit_result2.IsValid():
-        f2 = h2.GetFunction("gaus_poly2")
-        if f2:
-            f2.SetLineColor(ROOT.kRed)
-            f2.SetLineStyle(2)
-            f2.SetLineWidth(2)
-            f2.SetRange(xmin, xmax)
-            f2.Draw("SAME")
-            all_objects['funcs'].append(f2)
-    
+    if f1:
+        f1.SetLineColor(ROOT.kBlack)
+        f1.SetLineStyle(2)
+        f1.SetLineWidth(2)
+        f1.Draw("SAME")
+        all_objects['funcs'].append(f1)
+
+    if f2:
+        f2.SetLineColor(ROOT.kRed)
+        f2.SetLineStyle(2)
+        f2.SetLineWidth(2)
+        f2.Draw("SAME")
+        all_objects['funcs'].append(f2)
+
     ROOT.gPad.Modified()
     ROOT.gPad.Update()
     ymax = ROOT.gPad.GetUymax()
@@ -164,14 +179,17 @@ def main():
     leg.SetBorderSize(1)
     leg.SetFillColor(ROOT.kWhite)
     leg.SetTextSize(0.035)
-    if fit_result1 and fit_result1.IsValid():
-        leg.AddEntry(h1, f"{args.label1}: #mu={fit_result1.Parameter(1):.3f}#pm{fit_result1.Parameter(2):.3f}", "p")
+    
+    if f1:
+        leg.AddEntry(h1, f"{args.label1}: #mu={mu1:.3f}#pm{sigma1:.3f}", "p")
     else:
         leg.AddEntry(h1, f"{args.label1}: No fit", "p")
-    if fit_result2 and fit_result2.IsValid():
-        leg.AddEntry(h2, f"{args.label2}: #mu={fit_result2.Parameter(1):.3f}#pm{fit_result2.Parameter(2):.3f}", "p")
+        
+    if f2:
+        leg.AddEntry(h2, f"{args.label2}: #mu={mu2:.3f}#pm{sigma2:.3f}", "p")
     else:
         leg.AddEntry(h2, f"{args.label2}: No fit", "p")
+        
     leg.Draw()
     all_objects['legends'].append(leg)
 
@@ -199,26 +217,37 @@ def main():
         
         fit1_valid = False
         fit2_valid = False
+        mu1 = sigma1 = mu2 = sigma2 = 0.0
         f1, f2 = None, None
-        
+
         if h1.GetEntries() > 10:
-            fit_func_name = f"gaus_poly1_bin{i}"
-            fit_func = ROOT.TF1(fit_func_name, "gaus(0)+pol1(3)", xmin, xmax)
-            fit_func.SetParameters(h1.GetMaximum(), h1.GetMean(), h1.GetRMS(), 0, 0)
-            fit_result1 = h1.Fit(fit_func, "SQ")
-            if fit_result1 and fit_result1.IsValid():
-                fit1_valid = True
-                f1 = h1.GetFunction(fit_func_name)
-        
+            try:
+                fit_func_name = f"gaus_poly1_bin{i}"
+                fit_func = ROOT.TF1(fit_func_name, "gaus(0)+pol1(3)", xmin, xmax)
+                fit_func.SetParameters(h1.GetMaximum(), h1.GetMean(), h1.GetRMS(), 0, 0)
+                fit_result = h1.Fit(fit_func, "SQ")
+                if fit_result and fit_result.IsValid():
+                    fit1_valid = True
+                    f1 = h1.GetFunction(fit_func_name)
+                    mu1 = fit_result.Parameter(1)
+                    sigma1 = fit_result.Parameter(2)
+            except Exception as e:
+                print(f"Fit failed for {args.label1} bin {i}: {str(e)}")
+
         if h2.GetEntries() > 10:
-            fit_func_name = f"gaus_poly2_bin{i}"
-            fit_func = ROOT.TF1(fit_func_name, "gaus(0)+pol1(3)", xmin, xmax)
-            fit_func.SetParameters(h2.GetMaximum(), h2.GetMean(), h2.GetRMS(), 0, 0)
-            fit_result2 = h2.Fit(fit_func, "SQ")
-            if fit_result2 and fit_result2.IsValid():
-                fit2_valid = True
-                f2 = h2.GetFunction(fit_func_name)
-        
+            try:
+                fit_func_name = f"gaus_poly2_bin{i}"
+                fit_func = ROOT.TF1(fit_func_name, "gaus(0)+pol1(3)", xmin, xmax)
+                fit_func.SetParameters(h2.GetMaximum(), h2.GetMean(), h2.GetRMS(), 0, 0)
+                fit_result = h2.Fit(fit_func, "SQ")
+                if fit_result and fit_result.IsValid():
+                    fit2_valid = True
+                    f2 = h2.GetFunction(fit_func_name)
+                    mu2 = fit_result.Parameter(1)
+                    sigma2 = fit_result.Parameter(2)
+            except Exception as e:
+                print(f"Fit failed for {args.label2} bin {i}: {str(e)}")
+
         for h, color in [(h1, ROOT.kBlack), (h2, ROOT.kRed)]:
             h.SetLineColor(color)
             h.SetMarkerColor(color)
@@ -227,8 +256,8 @@ def main():
             h.GetYaxis().SetTitle("Counts")
             h.GetXaxis().SetTitleSize(0.06)
             h.GetYaxis().SetTitleSize(0.06)
-            h.SetMinimum(0)  # Force y-axis to start at 0
-        
+            h.SetMinimum(0)
+
         h1.Draw("PE")
         h2.Draw("PE SAME")
 
@@ -259,19 +288,22 @@ def main():
         leg.SetBorderSize(1)
         leg.SetFillColor(ROOT.kWhite)
         leg.SetTextSize(0.035)
+        
         if fit1_valid:
-            leg.AddEntry(h1, f"{args.label1}: #mu={fit_result1.Parameter(1):.3f}#pm{fit_result1.Parameter(2):.3f}", "p")
+            leg.AddEntry(h1, f"{args.label1}: #mu={mu1:.3f}#pm{sigma1:.3f}", "p")
         else:
             leg.AddEntry(h1, f"{args.label1}: No fit", "p")
+            
         if fit2_valid:
-            leg.AddEntry(h2, f"{args.label2}: #mu={fit_result2.Parameter(1):.3f}#pm{fit_result2.Parameter(2):.3f}", "p")
+            leg.AddEntry(h2, f"{args.label2}: #mu={mu2:.3f}#pm{sigma2:.3f}", "p")
         else:
             leg.AddEntry(h2, f"{args.label2}: No fit", "p")
+            
         leg.Draw()
         all_objects['legends'].append(leg)
         
-        fit_results1.append((fit_result1.Parameter(1), fit_result1.Parameter(2)) if fit1_valid else (0,0))
-        fit_results2.append((fit_result2.Parameter(1), fit_result2.Parameter(2)) if fit2_valid else (0,0))
+        fit_results1.append((mu1, sigma1))
+        fit_results2.append((mu2, sigma2))
         bin_centers.append((low + high)/2)
 
     # Final plot (pad 12)
@@ -315,7 +347,7 @@ def main():
         mg.SetMaximum(0.2)
     else:
         mg.SetMinimum(0.5)
-        mg.SetMaximum(1.6)  # Adjusted upper limit for type 2
+        mg.SetMaximum(1.4)
     
     # Adjust horizontal line based on type
     if args.type == 1:
