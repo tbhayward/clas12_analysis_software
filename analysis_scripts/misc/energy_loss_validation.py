@@ -80,7 +80,18 @@ def main():
     output_dir = "output/energy_loss_validation"
     os.makedirs(output_dir, exist_ok=True)
 
-    angular_bins = [(20 + 4.5*i, 20 + 4.5*(i+1)) for i in range(10)]
+    # First bin: 0 to 25
+    angular_bins = [(0, 25)]
+
+    # Middle bins: 25 to 56.5 in steps of 4.5 degrees
+    middle_bins = [(25 + 4.5 * i, 25 + 4.5 * (i + 1)) for i in range(7)]
+    angular_bins += middle_bins
+
+    # Second-to-last bin: 56.5 to 60.5
+    angular_bins.append((56.5, 60.5))
+
+    # Last bin: 60.5 to 90
+    angular_bins.append((60.5, 90))
 
     canvas = ROOT.TCanvas("canvas", "Comparison", 2400, 1800)
     canvas.Divide(4, 3)
