@@ -163,37 +163,37 @@ def main():
         f1, f2 = None, None
         
         if h1.GetEntries() > 10:
-            fit_result1 = h1.Fit("gaus", "SQN")
+            fit_result1 = h1.Fit("gaus", "SQ")
             if fit_result1 and fit_result1.IsValid():
                 fit1_valid = True
                 f1 = h1.GetFunction("gaus")
         
         if h2.GetEntries() > 10:
-            fit_result2 = h2.Fit("gaus", "SQN")
+            fit_result2 = h2.Fit("gaus", "SQ")
             if fit_result2 and fit_result2.IsValid():
                 fit2_valid = True
                 f2 = h2.GetFunction("gaus")
         
-        # Draw histograms first
+        # Draw the histogram first
         h1.Draw("PE")
         h2.Draw("PE SAME")
-        
-        # Then draw fits
+
+        # Explicitly draw Gaussian fits
+        f1 = h1.GetFunction("gaus")
         if f1:
             f1.SetLineColor(ROOT.kBlack)
             f1.SetLineStyle(2)
-            f1.SetLineWidth(1)
-            f1.SetRange(xmin, xmax)
+            f1.SetLineWidth(2)
             f1.Draw("SAME")
-            all_objects['funcs'].append(f1)  # Retain ownership
-            
+            all_objects['funcs'].append(f1)
+
+        f2 = h2.GetFunction("gaus")
         if f2:
             f2.SetLineColor(ROOT.kRed)
             f2.SetLineStyle(2)
-            f2.SetLineWidth(1)
-            f2.SetRange(xmin, xmax)
+            f2.SetLineWidth(2)
             f2.Draw("SAME")
-            all_objects['funcs'].append(f2)  # Retain ownership
+            all_objects['funcs'].append(f2)
         
         for h, color in [(h1, ROOT.kBlack), (h2, ROOT.kRed)]:
             h.SetLineColor(color)
