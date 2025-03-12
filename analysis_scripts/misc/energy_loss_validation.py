@@ -91,8 +91,8 @@ def main():
 
     # Integrated plot (pad 1)
     canvas.cd(1)
-    h1 = ROOT.TH1D("h1_int", "Integrated", 100, xmin, xmax)
-    h2 = ROOT.TH1D("h2_int", "Integrated", 100, xmin, xmax)
+    h1 = ROOT.TH1D("h1_int", "Integrated", 50, xmin, xmax)
+    h2 = ROOT.TH1D("h2_int", "Integrated", 50, xmin, xmax)
     all_objects['hists'].extend([h1, h2])
     
     for x in mx1: h1.Fill(x)
@@ -170,8 +170,8 @@ def main():
         high_rad = math.radians(high)
         
         title = f"{low:.1f}-{high:.1f}#circ"
-        h1 = ROOT.TH1D(f"h1_{i}", title, 100, xmin, xmax)
-        h2 = ROOT.TH1D(f"h2_{i}", "", 100, xmin, xmax)
+        h1 = ROOT.TH1D(f"h1_{i}", title, 50, xmin, xmax)
+        h2 = ROOT.TH1D(f"h2_{i}", "", 50, xmin, xmax)
         all_objects['hists'].extend([h1, h2])
         
         mask1 = (theta1 >= low_rad) & (theta1 < high_rad)
