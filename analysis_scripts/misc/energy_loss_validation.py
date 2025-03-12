@@ -62,9 +62,9 @@ def main():
                 (data[theta_cut_branch] < 0.5) &
                 (data['xF'] >= -0.15) &
                 (data['xF'] <= 0.15) &
-                (data['Mx2'] >= -0.02) &  # Use mx_branch variable
+                (data['Mx2'] >= -0.02) &  
                 (data['Mx2'] <= 0.02) & 
-                (data['Emiss2'] >= 0.4) & 
+                (data['Emiss2'] >= -0.4) & 
                 (data['Emiss2'] <= 0.4)
             )
             
