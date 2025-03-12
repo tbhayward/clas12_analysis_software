@@ -51,30 +51,35 @@ def main():
     output_dir = "output/energy_loss_validation"
     os.makedirs(output_dir, exist_ok=True)
 
-    # Create 10 even bins from 20-65°
+    # Create 10 even bins from 20-65° with proper formatting
     angular_bins = [(20 + 4.5*i, 20 + 4.5*(i+1)) for i in range(10)]
 
     canvas = ROOT.TCanvas("canvas", "Comparison", 2400, 1800)
     canvas.Divide(4, 3)
     canvas.SetMargin(0.08, 0.02, 0.08, 0.1)
 
-    histograms = []
-    fit_results1 = []
-    fit_results2 = []
-    bin_centers = []
+    # Storage for all graphical objects
+    all_objects = {
+        'hists': [],
+        'lines': [],
+        'legends': []
+    }
 
     # Process integrated plot (pad 1)
     canvas.cd(1)
     h1 = ROOT.TH1D("h1_int", "Integrated", 100, xmin, xmax)
     h2 = ROOT.TH1D("h2_int", "Integrated", 100, xmin, xmax)
-    histograms.extend([h1, h2])
+    all_objects['hists'].extend([h1, h2])
     
+    # Fill histograms
     for x in mx1: h1.Fill(x)
     for x in mx2: h2.Fill(x)
     
+    # Perform and store fits
     fit1 = h1.Fit("gaus", "SQN")
     fit2 = h2.Fit("gaus", "SQN")
     
+    # Configure histograms
     for h, color in [(h1, ROOT.kBlack), (h2, ROOT.kRed)]:
         h.SetLineColor(color)
         h.SetMarkerColor(color)
@@ -85,25 +90,28 @@ def main():
         h.GetYaxis().SetTitleSize(0.06)
     
     h1.Draw("PE")
-    h2.Draw("PE SAME")
+    h2.Draw("PE SAME")  # Draw both before adding legend
     
+    # Add reference line
     line = ROOT.TLine(vline, 0, vline, h1.GetMaximum()*1.1)
     line.SetLineStyle(2)
     line.SetLineColor(ROOT.kGray+2)
     line.Draw()
+    all_objects['lines'].append(line)
     
-    # Bottom right legend for all plots
+    # Create and store legend
     leg = ROOT.TLegend(0.55, 0.15, 0.85, 0.35)
     leg.SetBorderSize(0)
     if fit1 and fit1.IsValid():
-        leg.AddEntry(h1, f"{args.label1}: #mu={fit1.Parameter(1):.3f}±{fit1.ParError(1):.3f}", "p")
+        leg.AddEntry(h1, f"{args.label1}: #mu={fit1.Parameter(1):.3f}#pm{fit1.ParError(1):.3f}", "p")
     else:
-        leg.AddEntry(h1, f"{args.label1} (no fit)", "p")
+        leg.AddEntry(h1, f"{args.label1}: No fit", "p")
     if fit2 and fit2.IsValid():
-        leg.AddEntry(h2, f"{args.label2}: #mu={fit2.Parameter(1):.3f}±{fit2.ParError(1):.3f}", "p")
+        leg.AddEntry(h2, f"{args.label2}: #mu={fit2.Parameter(1):.3f}#pm{fit2.ParError(1):.3f}", "p")
     else:
-        leg.AddEntry(h2, f"{args.label2} (no fit)", "p")
+        leg.AddEntry(h2, f"{args.label2}: No fit", "p")
     leg.Draw()
+    all_objects['legends'].append(leg)
 
     # Process angular bins (pads 2-11)
     for i, (low, high) in enumerate(angular_bins):
@@ -113,33 +121,32 @@ def main():
         low_rad = math.radians(low)
         high_rad = math.radians(high)
         
+        # Create histograms with proper bin labels
+        title = f"{low:.1f}-{high:.1f}#circ"
+        h1 = ROOT.TH1D(f"h1_{i}", title, 100, xmin, xmax)
+        h2 = ROOT.TH1D(f"h2_{i}", "", 100, xmin, xmax)
+        all_objects['hists'].extend([h1, h2])
+        
+        # Fill histograms
         mask1 = (theta1 >= low_rad) & (theta1 < high_rad)
         mask2 = (theta2 >= low_rad) & (theta2 < high_rad)
-        
-        h1 = ROOT.TH1D(f"h1_{i}", f"{low:.1f}-{high:.1f}°", 100, xmin, xmax)
-        h2 = ROOT.TH1D(f"h2_{i}", "", 100, xmin, xmax)
-        histograms.extend([h1, h2])
-        
         for x in mx1[mask1]: h1.Fill(x)
         for x in mx2[mask2]: h2.Fill(x)
         
+        # Perform fits
         fit1_valid = False
-        if h1.GetEntries() > 0:
-            fit1 = h1.Fit("gaus", "SQN")
-            fit1_valid = fit1 and fit1.IsValid() and fit1.Ndf() > 0
-        
         fit2_valid = False
-        if h2.GetEntries() > 0:
+        if h1.GetEntries() > 10:
+            fit1 = h1.Fit("gaus", "SQN")
+            fit1_valid = fit1 and fit1.IsValid()
+        if h2.GetEntries() > 10:
             fit2 = h2.Fit("gaus", "SQN")
-            fit2_valid = fit2 and fit2.IsValid() and fit2.Ndf() > 0
+            fit2_valid = fit2 and fit2.IsValid()
         
-        fit_results1.append((fit1.Parameter(1), fit1.ParError(1)) if fit1_valid else (0,0))
-        fit_results2.append((fit2.Parameter(1), fit2.ParError(1)) if fit2_valid else (0,0))
-        bin_centers.append((low + high)/2)
-        
-        for h in [h1, h2]:
-            h.SetLineColor(ROOT.kBlack if h == h1 else ROOT.kRed)
-            h.SetMarkerColor(ROOT.kBlack if h == h1 else ROOT.kRed)
+        # Configure histograms
+        for h, color in [(h1, ROOT.kBlack), (h2, ROOT.kRed)]:
+            h.SetLineColor(color)
+            h.SetMarkerColor(color)
             h.SetMarkerStyle(20)
             h.GetXaxis().SetTitle(xlabel)
             h.GetYaxis().SetTitle("Counts")
@@ -147,26 +154,33 @@ def main():
             h.GetYaxis().SetTitleSize(0.06)
         
         h1.Draw("PE")
-        h2.Draw("PE SAME")
+        h2.Draw("PE SAME")  # Draw both before adding legend
         
+        # Add reference line
         line = ROOT.TLine(vline, 0, vline, h1.GetMaximum()*1.1)
         line.SetLineStyle(2)
         line.SetLineColor(ROOT.kGray+2)
         line.Draw()
+        all_objects['lines'].append(line)
         
-        # Consistent bottom right legend position
+        # Create and store legend
         leg = ROOT.TLegend(0.55, 0.15, 0.85, 0.35)
         leg.SetBorderSize(0)
-        entries = []
         if fit1_valid:
-            leg.AddEntry(h1, f"{args.label1}: #mu={fit1.Parameter(1):.3f}±{fit1.ParError(1):.3f}", "p")
+            leg.AddEntry(h1, f"{args.label1}: #mu={fit1.Parameter(1):.3f}#pm{fit1.ParError(1):.3f}", "p")
         else:
-            leg.AddEntry(h1, f"{args.label1} (no fit)", "p")
+            leg.AddEntry(h1, f"{args.label1}: No fit", "p")
         if fit2_valid:
-            leg.AddEntry(h2, f"{args.label2}: #mu={fit2.Parameter(1):.3f}±{fit2.ParError(1):.3f}", "p")
+            leg.AddEntry(h2, f"{args.label2}: #mu={fit2.Parameter(1):.3f}#pm{fit2.ParError(1):.3f}", "p")
         else:
-            leg.AddEntry(h2, f"{args.label2} (no fit)", "p")
+            leg.AddEntry(h2, f"{args.label2}: No fit", "p")
         leg.Draw()
+        all_objects['legends'].append(leg)
+        
+        # Store fit results
+        fit_results1.append((fit1.Parameter(1), fit1.ParError(1)) if fit1_valid else (0,0))
+        fit_results2.append((fit2.Parameter(1), fit2.ParError(1)) if fit2_valid else (0,0))
+        bin_centers.append((low + high)/2)
 
     # Mean plot (pad 12)
     canvas.cd(12)
@@ -188,10 +202,12 @@ def main():
         gr.SetMarkerColor(color)
         gr.SetLineColor(color)
         gr.SetMarkerStyle(20)
-    
+        gr.SetLineWidth(2)
+
     mg.Draw("AP")
     mg.GetXaxis().SetLimits(20, 65)
     
+    # Set y-axis range based on type
     if args.type == 1:
         mg.SetMinimum(-0.2)
         mg.SetMaximum(0.2)
@@ -199,11 +215,15 @@ def main():
         mg.SetMinimum(0.5)
         mg.SetMaximum(1.2)
     
+    # Add final legend
     leg = ROOT.TLegend(0.55, 0.15, 0.85, 0.35)
+    leg.SetBorderSize(0)
     leg.AddEntry(gr1, args.label1, "p")
     leg.AddEntry(gr2, args.label2, "p")
     leg.Draw()
+    all_objects['legends'].append(leg)
 
+    # Save output
     canvas.SaveAs(f"{output_dir}/comparison_{args.label1}_{args.label2}.png")
 
 if __name__ == "__main__":
