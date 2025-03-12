@@ -19,8 +19,8 @@ def main():
     ROOT.gROOT.SetBatch(True)
     ROOT.gStyle.SetOptStat(0)
     ROOT.gStyle.SetTextFont(42)
-    ROOT.gStyle.SetPadLeftMargin(0.15)  # Increased left padding
-    ROOT.gStyle.SetPadBottomMargin(0.12)
+    ROOT.gStyle.SetPadLeftMargin(0.18)  # Increased left padding
+    ROOT.gStyle.SetPadBottomMargin(0.15)  # Increased bottom padding
 
     # Configuration
     if args.type == 1:
@@ -51,23 +51,21 @@ def main():
     output_dir = "output/energy_loss_validation"
     os.makedirs(output_dir, exist_ok=True)
 
-    # Create 10 even bins from 20-65°
+    # Create 10 bins from 20-65°
     angular_bins = [(20 + 4.5*i, 20 + 4.5*(i+1)) for i in range(10)]
 
     canvas = ROOT.TCanvas("canvas", "Comparison", 2400, 1800)
     canvas.Divide(4, 3)
-    canvas.SetMargin(0.08, 0.02, 0.08, 0.1)
 
     histograms = []
     fit_results1 = []
     fit_results2 = []
     bin_centers = []
 
-    # Process integrated plot (pad 1)
+    # Integrated plot (pad 1)
     canvas.cd(1)
     h1 = ROOT.TH1D("h1_int", "Integrated", 100, xmin, xmax)
     h2 = ROOT.TH1D("h2_int", "Integrated", 100, xmin, xmax)
-    histograms.extend([h1, h2])
     
     for x in mx1: h1.Fill(x)
     for x in mx2: h2.Fill(x)
@@ -75,6 +73,7 @@ def main():
     fit1 = h1.Fit("gaus", "SQN")
     fit2 = h2.Fit("gaus", "SQN")
     
+    # Configure histograms
     for h, color in [(h1, ROOT.kBlack), (h2, ROOT.kRed)]:
         h.SetLineColor(color)
         h.SetMarkerColor(color)
@@ -83,29 +82,32 @@ def main():
         h.GetYaxis().SetTitle("Counts")
         h.GetXaxis().SetTitleSize(0.06)
         h.GetYaxis().SetTitleSize(0.06)
-    
-    h1.Draw("PE")
-    h2.Draw("PE SAME")
-    
+        h.Draw("PE")
+        
+        f = h.GetFunction("gaus")
+        if f:
+            f.SetLineColor(color)
+            f.SetLineStyle(2)
+            f.Draw("SAME")
+
+    # Vertical line and legend
     line = ROOT.TLine(vline, 0, vline, h1.GetMaximum()*1.1)
     line.SetLineStyle(2)
     line.SetLineColor(ROOT.kGray+2)
     line.Draw()
     
-    leg = ROOT.TLegend(0.15, 0.7, 0.5, 0.88)
-    if fit1 and fit1.IsValid():
-        leg.AddEntry(h1, f"{args.label1} #mu={fit1.Parameter(1):.3f} #sigma={fit1.Parameter(2):.3f}", "p")
-    else:
-        leg.AddEntry(h1, f"{args.label1} (fit failed)", "p")
-    
-    if fit2 and fit2.IsValid():
-        leg.AddEntry(h2, f"{args.label2} #mu={fit2.Parameter(1):.3f} #sigma={fit2.Parameter(2):.3f}", "p")
-    else:
-        leg.AddEntry(h2, f"{args.label2} (fit failed)", "p")
+    leg = ROOT.TLegend(0.55, 0.15, 0.85, 0.35)  # Bottom right
     leg.SetBorderSize(0)
+    entries = []
+    if fit1 and fit1.IsValid():
+        entries.append((h1, args.label1, fit1.Parameter(1), fit1.Parameter(2)))
+    if fit2 and fit2.IsValid():
+        entries.append((h2, args.label2, fit2.Parameter(1), fit2.Parameter(2)))
+    for h, label, mu, sigma in entries:
+        leg.AddEntry(h, f"{label}: #mu={mu:.3f} #sigma={sigma:.3f}", "p")
     leg.Draw()
 
-    # Process angular bins (pads 2-11)
+    # Angular bins (pads 2-11)
     for i, (low, high) in enumerate(angular_bins):
         pad_num = i + 2
         canvas.cd(pad_num)
@@ -118,65 +120,76 @@ def main():
         
         h1 = ROOT.TH1D(f"h1_{i}", f"{low:.1f}-{high:.1f}°", 100, xmin, xmax)
         h2 = ROOT.TH1D(f"h2_{i}", "", 100, xmin, xmax)
-        histograms.extend([h1, h2])
         
         for x in mx1[mask1]: h1.Fill(x)
         for x in mx2[mask2]: h2.Fill(x)
         
+        # Perform fits
         fit1_valid = False
-        if h1.GetEntries() > 0:
-            fit1 = h1.Fit("gaus", "SQN")
-            fit1_valid = fit1 and fit1.IsValid() and fit1.Ndf() > 0
-        
         fit2_valid = False
-        if h2.GetEntries() > 0:
+        f1, f2 = None, None
+        
+        if h1.GetEntries() > 10:  # Minimum entries check
+            fit1 = h1.Fit("gaus", "SQN")
+            if fit1 and fit1.IsValid():
+                fit1_valid = True
+                f1 = h1.GetFunction("gaus")
+        
+        if h2.GetEntries() > 10:
             fit2 = h2.Fit("gaus", "SQN")
-            fit2_valid = fit2 and fit2.IsValid() and fit2.Ndf() > 0
-        
-        fit_results1.append((fit1.Parameter(1), fit1.ParError(1)) if fit1_valid else (0,0))
-        fit_results2.append((fit2.Parameter(1), fit2.ParError(1)) if fit2_valid else (0,0))
+            if fit2 and fit2.IsValid():
+                fit2_valid = True
+                f2 = h2.GetFunction("gaus")
+
+        # Store results (mu, sigma)
+        fit_results1.append((f1.GetParameter(1), f1.GetParameter(2)) if fit1_valid else (0,0))
+        fit_results2.append((f2.GetParameter(1), f2.GetParameter(2)) if fit2_valid else (0,0))
         bin_centers.append((low + high)/2)
-        
-        for h in [h1, h2]:
-            h.SetLineColor(ROOT.kBlack if h == h1 else ROOT.kRed)
-            h.SetMarkerColor(ROOT.kBlack if h == h1 else ROOT.kRed)
+
+        # Draw histograms
+        for h, color in [(h1, ROOT.kBlack), (h2, ROOT.kRed)]:
+            h.SetLineColor(color)
+            h.SetMarkerColor(color)
             h.SetMarkerStyle(20)
             h.GetXaxis().SetTitle(xlabel)
             h.GetYaxis().SetTitle("Counts")
             h.GetXaxis().SetTitleSize(0.06)
             h.GetYaxis().SetTitleSize(0.06)
-        
-        h1.Draw("PE")
-        h2.Draw("PE SAME")
-        
+            h.Draw("PE")
+            
+            f = h.GetFunction("gaus")
+            if f:
+                f.SetLineColor(color)
+                f.SetLineStyle(2)
+                f.Draw("SAME")
+
+        # Vertical line and legend
         line = ROOT.TLine(vline, 0, vline, h1.GetMaximum()*1.1)
         line.SetLineStyle(2)
         line.SetLineColor(ROOT.kGray+2)
         line.Draw()
         
-        leg = ROOT.TLegend(0.15, 0.7, 0.5, 0.88)
+        leg = ROOT.TLegend(0.55, 0.15, 0.85, 0.35)  # Bottom right
         leg.SetBorderSize(0)
+        entries = []
         if fit1_valid:
-            leg.AddEntry(h1, f"{args.label1} #mu={fit1.Parameter(1):.3f}", "p")
-        else:
-            leg.AddEntry(h1, f"{args.label1} (no fit)", "p")
-            
+            entries.append((h1, args.label1, f1.GetParameter(1), f1.GetParameter(2)))
         if fit2_valid:
-            leg.AddEntry(h2, f"{args.label2} #mu={fit2.Parameter(1):.3f}", "p")
-        else:
-            leg.AddEntry(h2, f"{args.label2} (no fit)", "p")
+            entries.append((h2, args.label2, f2.GetParameter(1), f2.GetParameter(2)))
+        for h, label, mu, sigma in entries:
+            leg.AddEntry(h, f"{label}: #mu={mu:.3f} #sigma={sigma:.3f}", "p")
         leg.Draw()
 
-    # Mean plot (pad 12)
+    # Mean plot with sigma errors (pad 12)
     canvas.cd(12)
     gr1 = ROOT.TGraphErrors(len(bin_centers))
     gr2 = ROOT.TGraphErrors(len(bin_centers))
     
     for i in range(len(bin_centers)):
         gr1.SetPoint(i, bin_centers[i], fit_results1[i][0])
-        gr1.SetPointError(i, 0, fit_results1[i][1])
+        gr1.SetPointError(i, 0, fit_results1[i][1])  # Use sigma as error
         gr2.SetPoint(i, bin_centers[i], fit_results2[i][0])
-        gr2.SetPointError(i, 0, fit_results2[i][1])
+        gr2.SetPointError(i, 0, fit_results2[i][1])  # Use sigma as error
     
     mg = ROOT.TMultiGraph()
     mg.Add(gr1)
@@ -187,16 +200,16 @@ def main():
         gr.SetMarkerColor(color)
         gr.SetLineColor(color)
         gr.SetMarkerStyle(20)
-    
+        gr.SetLineWidth(2)
+
     mg.Draw("AP")
     mg.GetXaxis().SetLimits(20, 65)
     
-    if args.type == 1:
-        mg.SetMinimum(-0.2)
-        mg.SetMaximum(0.2)
-    else:
-        mg.SetMinimum(0.5)
-        mg.SetMaximum(1.2)
+    # Auto-scale y-axis
+    ymin = min([fit[0]-fit[1] for fit in fit_results1+fit_results2])
+    ymax = max([fit[0]+fit[1] for fit in fit_results1+fit_results2])
+    mg.SetMinimum(ymin*1.1)
+    mg.SetMaximum(ymax*1.1)
     
     leg = ROOT.TLegend(0.6, 0.7, 0.9, 0.85)
     leg.AddEntry(gr1, args.label1, "p")
