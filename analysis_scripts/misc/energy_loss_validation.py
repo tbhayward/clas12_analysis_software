@@ -113,9 +113,9 @@ def main():
         h2.Draw("PE SAME")
         
         # Store fit results
-        if fit1 and fit1.NDF() > 0:
+        if fit1 and fit1.IsValid() and fit1.Ndf() > 0:
             fit_results1.append((fit1.Parameter(1), fit1.ParError(1)))
-        if fit2 and fit2.NDF() > 0:
+        if fit2 and fit2.IsValid() and fit2.Ndf() > 0:
             fit_results2.append((fit2.Parameter(1), fit2.ParError(1)))
         bin_centers.append((low + high)/2)
         
