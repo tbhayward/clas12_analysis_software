@@ -62,7 +62,8 @@ def main():
     all_objects = {
         'hists': [],
         'lines': [],
-        'legends': []
+        'legends': [],
+        'funcs': []  # NEW: Store fit functions
     }
 
     # Integrated plot (pad 1)
@@ -86,27 +87,30 @@ def main():
         h.GetXaxis().SetTitleSize(0.06)
         h.GetYaxis().SetTitleSize(0.06)
     
+    # Draw order modified
     h1.Draw("PE")
     h2.Draw("PE SAME")
     
-    # Draw fits with explicit range and styling
+    # NEW: Store and draw fits
     if fit_result1 and fit_result1.IsValid():
         f1 = h1.GetFunction("gaus")
         if f1:
             f1.SetLineColor(ROOT.kBlack)
             f1.SetLineStyle(2)
             f1.SetLineWidth(1)
-            f1.SetRange(xmin, xmax)  # Explicit range
+            f1.SetRange(xmin, xmax)
             f1.Draw("SAME")
-    
+            all_objects['funcs'].append(f1)  # Retain ownership
+
     if fit_result2 and fit_result2.IsValid():
         f2 = h2.GetFunction("gaus")
         if f2:
             f2.SetLineColor(ROOT.kRed)
             f2.SetLineStyle(2)
             f2.SetLineWidth(1)
-            f2.SetRange(xmin, xmax)  # Explicit range
+            f2.SetRange(xmin, xmax)
             f2.Draw("SAME")
+            all_objects['funcs'].append(f2)  # Retain ownership
     
     ROOT.gPad.Modified()
     ROOT.gPad.Update()
@@ -122,11 +126,11 @@ def main():
     leg.SetFillColor(ROOT.kWhite)
     leg.SetTextSize(0.035)
     if fit_result1 and fit_result1.IsValid():
-        leg.AddEntry(h1, f"{args.label1}: #mu={fit_result1.Parameter(1):.3f}#pm{fit_result1.Parameter(2):.3f}", "p")  # Show sigma instead of mu error
+        leg.AddEntry(h1, f"{args.label1}: #mu={fit_result1.Parameter(1):.3f}#pm{fit_result1.Parameter(2):.3f}", "p")
     else:
         leg.AddEntry(h1, f"{args.label1}: No fit", "p")
     if fit_result2 and fit_result2.IsValid():
-        leg.AddEntry(h2, f"{args.label2}: #mu={fit_result2.Parameter(1):.3f}#pm{fit_result2.Parameter(2):.3f}", "p")  # Show sigma instead of mu error
+        leg.AddEntry(h2, f"{args.label2}: #mu={fit_result2.Parameter(1):.3f}#pm{fit_result2.Parameter(2):.3f}", "p")
     else:
         leg.AddEntry(h2, f"{args.label2}: No fit", "p")
     leg.Draw()
@@ -170,18 +174,26 @@ def main():
                 fit2_valid = True
                 f2 = h2.GetFunction("gaus")
         
+        # Draw histograms first
+        h1.Draw("PE")
+        h2.Draw("PE SAME")
+        
+        # Then draw fits
         if f1:
             f1.SetLineColor(ROOT.kBlack)
             f1.SetLineStyle(2)
             f1.SetLineWidth(1)
-            f1.SetRange(xmin, xmax)  # Explicit range
+            f1.SetRange(xmin, xmax)
             f1.Draw("SAME")
+            all_objects['funcs'].append(f1)  # Retain ownership
+            
         if f2:
             f2.SetLineColor(ROOT.kRed)
             f2.SetLineStyle(2)
             f2.SetLineWidth(1)
-            f2.SetRange(xmin, xmax)  # Explicit range
+            f2.SetRange(xmin, xmax)
             f2.Draw("SAME")
+            all_objects['funcs'].append(f2)  # Retain ownership
         
         for h, color in [(h1, ROOT.kBlack), (h2, ROOT.kRed)]:
             h.SetLineColor(color)
@@ -191,9 +203,6 @@ def main():
             h.GetYaxis().SetTitle("Counts")
             h.GetXaxis().SetTitleSize(0.06)
             h.GetYaxis().SetTitleSize(0.06)
-        
-        h1.Draw("PE")
-        h2.Draw("PE SAME")
         
         ROOT.gPad.Modified()
         ROOT.gPad.Update()
@@ -209,11 +218,11 @@ def main():
         leg.SetFillColor(ROOT.kWhite)
         leg.SetTextSize(0.035)
         if fit1_valid:
-            leg.AddEntry(h1, f"{args.label1}: #mu={fit_result1.Parameter(1):.3f}#pm{fit_result1.Parameter(2):.3f}", "p")  # Show sigma
+            leg.AddEntry(h1, f"{args.label1}: #mu={fit_result1.Parameter(1):.3f}#pm{fit_result1.Parameter(2):.3f}", "p")
         else:
             leg.AddEntry(h1, f"{args.label1}: No fit", "p")
         if fit2_valid:
-            leg.AddEntry(h2, f"{args.label2}: #mu={fit_result2.Parameter(1):.3f}#pm{fit_result2.Parameter(2):.3f}", "p")  # Show sigma
+            leg.AddEntry(h2, f"{args.label2}: #mu={fit_result2.Parameter(1):.3f}#pm{fit_result2.Parameter(2):.3f}", "p")
         else:
             leg.AddEntry(h2, f"{args.label2}: No fit", "p")
         leg.Draw()
@@ -229,12 +238,9 @@ def main():
     gr2 = ROOT.TGraphErrors(len(bin_centers))
     
     for i in range(len(bin_centers)):
-        # Data1 points at original positions
-        gr1.SetPoint(i, bin_centers[i] - 0.25, fit_results1[i][0])  # Shift left
+        gr1.SetPoint(i, bin_centers[i] - 0.25, fit_results1[i][0])
         gr1.SetPointError(i, 0, fit_results1[i][1])
-        
-        # Data2 points shifted right
-        gr2.SetPoint(i, bin_centers[i] + 0.25, fit_results2[i][0])  # Shift right
+        gr2.SetPoint(i, bin_centers[i] + 0.25, fit_results2[i][0])
         gr2.SetPointError(i, 0, fit_results2[i][1])
     
     mg = ROOT.TMultiGraph()
@@ -242,7 +248,6 @@ def main():
     mg.Add(gr2)
     mg.SetTitle(";#theta (degrees);Mean " + xlabel)
     
-    # Styling with different marker sizes for clarity
     gr1.SetMarkerColor(ROOT.kBlack)
     gr1.SetLineColor(ROOT.kBlack)
     gr1.SetMarkerStyle(20)
