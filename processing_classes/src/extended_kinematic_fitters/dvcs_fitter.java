@@ -157,12 +157,12 @@ public class dvcs_fitter extends GenericKinematicFitter {
                 if (pid == 11 && electron_test(particle_Index, p, rec_Bank, cal_Bank,
                         traj_Bank, run_Bank, cc_Bank)) {
                     
-                    float[] momentum = {px, py, pz};
-                    energy_loss_corrections.proton_energy_loss_corrections(particle_Index, momentum, rec_Bank, run_Bank);
-
-                    px = momentum[0];
-                    py = momentum[1];
-                    pz = momentum[2];
+//                    float[] momentum = {px, py, pz};
+//                    energy_loss_corrections.proton_energy_loss_corrections(particle_Index, momentum, rec_Bank, run_Bank);
+//
+//                    px = momentum[0];
+//                    py = momentum[1];
+//                    pz = momentum[2];
                     
                     // this checks all of the PID requirements, if it passes all of them the electron is 
                     // added to the event below
@@ -186,12 +186,12 @@ public class dvcs_fitter extends GenericKinematicFitter {
 
                 if (pid == 22 && photon_test(particle_Index, run_Bank, rec_Bank, cal_Bank, ft_Bank, lv_e)) {
 
-                    float[] momentum = {px, py, pz};
-                    energy_loss_corrections.proton_energy_loss_corrections(particle_Index, momentum, rec_Bank, run_Bank);
-
-                    px = momentum[0];
-                    py = momentum[1];
-                    pz = momentum[2];
+//                    float[] momentum = {px, py, pz};
+//                    energy_loss_corrections.proton_energy_loss_corrections(particle_Index, momentum, rec_Bank, run_Bank);
+//
+//                    px = momentum[0];
+//                    py = momentum[1];
+//                    pz = momentum[2];
                     
                     Particle part = new Particle(pid, px, py, pz, vx, vy, vz);
                     physEvent.addParticle(part);

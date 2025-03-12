@@ -247,12 +247,12 @@ public class analysis_fitter extends GenericKinematicFitter {
 //                        }
 //                    }
 
-                    float[] momentum = {px, py, pz};
-                    energy_loss_corrections.proton_energy_loss_corrections(particle_Index, momentum, rec_Bank, run_Bank);
-
-                    px = momentum[0];
-                    py = momentum[1];
-                    pz = momentum[2];
+//                    float[] momentum = {px, py, pz};
+//                    energy_loss_corrections.proton_energy_loss_corrections(particle_Index, momentum, rec_Bank, run_Bank);
+//
+//                    px = momentum[0];
+//                    py = momentum[1];
+//                    pz = momentum[2];
                     
                     Particle electron = new Particle(pid, px, py, pz, vx, vy, vz_e);
                     physEvent.addParticle(electron);
@@ -290,12 +290,12 @@ public class analysis_fitter extends GenericKinematicFitter {
 
                 if (pid == 22 && photon_test(particle_Index, run_Bank, rec_Bank, cal_Bank, ft_Bank, lv_e, num_photon)) {
                     
-                    float[] momentum = {px, py, pz};
-                    energy_loss_corrections.proton_energy_loss_corrections(particle_Index, momentum, rec_Bank, run_Bank);
-
-                    px = momentum[0];
-                    py = momentum[1];
-                    pz = momentum[2];
+//                    float[] momentum = {px, py, pz};
+//                    energy_loss_corrections.proton_energy_loss_corrections(particle_Index, momentum, rec_Bank, run_Bank);
+//
+//                    px = momentum[0];
+//                    py = momentum[1];
+//                    pz = momentum[2];
                     
                     Particle part = new Particle(pid, px, py, pz, vx, vy, vz);
                     physEvent.addParticle(part);
