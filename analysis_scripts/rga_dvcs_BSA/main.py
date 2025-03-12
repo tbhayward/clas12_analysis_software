@@ -17,6 +17,7 @@ from determine_final_bsa import determine_final_bsa
 from plot_bsa import plot_raw_bsa, plot_adjusted_bsa, plot_combined_bsa
 from plot_bsa import plot_a1_vs_t_by_Q2, plot_a1_vs_t_grid_full, plot_a1_vs_t_grid_top, plot_a1_vs_t_grid_bottom
 from plot_bsa import plot_pass_comparison
+from plot_bsa_integrated_t import plot_bsa_integrated_t
 
 def run_period(args):
     """
@@ -226,18 +227,19 @@ def main():
     # )
     # print("✅ Final BSA results saved to final_results/ directory")
 
-     # --- Plotting ---
-    print("\n📊 Generating BSA plots...")
-    csv_path = os.path.join("imports", "integrated_bin_v2.csv")
+    #  # --- Plotting ---
+    # print("\n📊 Generating BSA plots...")
+    # csv_path = os.path.join("imports", "integrated_bin_v2.csv")
     
     # plot_raw_bsa(csv_path)
     # plot_adjusted_bsa(csv_path)
-    plot_combined_bsa(csv_path)
+    # plot_combined_bsa(csv_path)
     # plot_a1_vs_t_by_Q2(csv_path)
     # plot_a1_vs_t_grid_full(csv_path)
     # plot_a1_vs_t_grid_top(csv_path)
     # plot_a1_vs_t_grid_bottom(csv_path)
     # plot_pass_comparison(csv_path)
+    plot_bsa_integrated_t("imports/integrated_bin_v2.csv")
     
     print("✅ All plots saved to bsa_plots/ directory")
 
