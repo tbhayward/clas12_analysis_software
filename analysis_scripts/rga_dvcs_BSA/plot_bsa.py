@@ -368,9 +368,12 @@ def plot_combined_bsa(binning_csv, final_dir="final_results", output_dir="bsa_pl
                 ax = axs[r, c]
                 key_base = (i_xB, *get_bin_indices(binning, Q2_min, Q2_max, t_min, t_max))
                 x, y, yerr = collect_bin_data(combined_data, key_base, global_bin_means)
+                
+                # Skip and remove axes if original data is empty
                 if not x:
+                    ax.remove()
                     continue
-
+                
                 # --- Pre-filtering: Remove any point with y outside [-0.6, 0.6] ---
                 x_arr = np.array(x)
                 y_arr = np.array(y)
@@ -379,10 +382,16 @@ def plot_combined_bsa(binning_csv, final_dir="final_results", output_dir="bsa_pl
                 x_arr = x_arr[mask]
                 y_arr = y_arr[mask]
                 yerr_arr = yerr_arr[mask]
-
-                # Plot the filtered data points regardless of count
+                
+                # Skip and remove axes if filtered data is empty
+                if len(x_arr) == 0:
+                    ax.remove()
+                    continue
+                
+                # Plot the filtered data points
                 ax.errorbar(x_arr, y_arr, yerr_arr, fmt='ko', markersize=5, capsize=3)
-
+                
+                # --- Conditional fitting based on remaining points ---
                 if len(x_arr) >= 4:
                     # --- Iterative fitting with outlier removal ---
                     max_iter = 10
@@ -423,7 +432,7 @@ def plot_combined_bsa(binning_csv, final_dir="final_results", output_dir="bsa_pl
                     chi2_ndf_list.append(final_chi2_ndf)
                     overall_chi2_ndf_list.append(final_chi2_ndf)
                     
-                    # Save the fitted a1 value for this cell.
+                    # Save fitted parameters
                     key_fit = (i_xB, overall_q2_dict[(Q2_min, Q2_max)], overall_t_dict[(t_min, t_max)])
                     a1_fits[key_fit] = {
                         "a1": popt[1],
@@ -439,22 +448,13 @@ def plot_combined_bsa(binning_csv, final_dir="final_results", output_dir="bsa_pl
                     ax.text(0.95, 0.95, text, transform=ax.transAxes,
                             ha='right', va='top', fontsize=6)
                 
-                # Set cell title with average kinematic values
-                overall_q2_idx = overall_unique_Q2.index((Q2_min, Q2_max))
-                overall_t_idx = overall_unique_t.index((t_min, t_max))
-                Q2_vals = []
-                t_vals = []
-                for i_phi in range(N_PHI_BINS):
-                    key = (i_xB, overall_q2_idx, overall_t_idx, i_phi)
-                    if key in global_bin_means:
-                        Q2_vals.append(global_bin_means[key]['Q2_avg'])
-                        t_vals.append(global_bin_means[key]['t_avg'])
-                if Q2_vals:
-                    Q2_avg_cell = np.mean(Q2_vals)
-                    t_avg_cell = np.mean(t_vals)
-                else:
-                    Q2_avg_cell = 0.5 * (Q2_min + Q2_max)
-                    t_avg_cell = 0.5 * (t_min + t_max)
+                # --- Set titles/labels only for populated subplots ---
+                Q2_avg_cell = np.mean([global_bin_means.get((i_xB, overall_q2_dict[(Q2_min, Q2_max)], 
+                                                            overall_t_dict[(t_min, t_max)], i_phi), {}).get('Q2_avg', 
+                                                            0.5*(Q2_min + Q2_max)) for i_phi in range(N_PHI_BINS)])
+                t_avg_cell = np.mean([global_bin_means.get((i_xB, overall_q2_dict[(Q2_min, Q2_max)], 
+                                                           overall_t_dict[(t_min, t_max)], i_phi), {}).get('t_avg', 
+                                                           0.5*(t_min + t_max)) for i_phi in range(N_PHI_BINS)])
                 
                 ax.set(xlim=(0, 360), ylim=(-1, 1),
                        title=fr"$x_B$={xB_avg_slice:.3f}, $Q^2$={Q2_avg_cell:.2f}, $-t$={t_avg_cell:.2f}")
