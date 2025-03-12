@@ -81,10 +81,15 @@ def main():
     os.makedirs(output_dir, exist_ok=True)
 
     # Angular bin configuration
-    angular_bins = [(0, 25)]
-    middle_bins = [(25 + 4.5*i, 25 + 4.5*(i+1)) for i in range(7)]
-    angular_bins += middle_bins
-    angular_bins += [(56.5, 60.5), (60.5, 90)]
+    if args.type == 1:
+        # Original binning for type 1
+        angular_bins = [(0, 25)]
+        middle_bins = [(25 + 4.5*i, 25 + 4.5*(i+1)) for i in range(7)]
+        angular_bins += middle_bins
+        angular_bins += [(56.5, 60.5), (60.5, 90)]
+    else:
+        # New binning for type 2: 10 evenly spaced bins from 0-30 degrees
+        angular_bins = [(3*i, 3*(i+1)) for i in range(10)]
 
     canvas = ROOT.TCanvas("canvas", "Comparison", 2400, 1800)
     canvas.Divide(4, 3)
@@ -298,7 +303,12 @@ def main():
     gr2.SetLineWidth(2)
 
     mg.Draw("AP")
-    mg.GetXaxis().SetLimits(20, 65)
+    
+    # Set x-axis limits based on type
+    if args.type == 1:
+        mg.GetXaxis().SetLimits(20, 65)
+    else:
+        mg.GetXaxis().SetLimits(0, 30)
     
     if args.type == 1:
         mg.SetMinimum(-0.2)
@@ -307,7 +317,12 @@ def main():
         mg.SetMinimum(0.5)
         mg.SetMaximum(1.2)
     
-    hline = ROOT.TLine(20, hline_y, 65, hline_y)
+    # Adjust horizontal line based on type
+    if args.type == 1:
+        hline = ROOT.TLine(20, hline_y, 65, hline_y)
+    else:
+        hline = ROOT.TLine(0, hline_y, 30, hline_y)
+        
     hline.SetLineStyle(2)
     hline.SetLineColor(ROOT.kGray+2)
     hline.Draw()
