@@ -19,7 +19,7 @@ def main():
     ROOT.gROOT.SetBatch(True)
     ROOT.gStyle.SetOptStat(0)
     ROOT.gStyle.SetTextFont(42)
-    ROOT.gStyle.SetPadLeftMargin(0.17)  # Increased left padding
+    ROOT.gStyle.SetPadLeftMargin(0.17)
     ROOT.gStyle.SetPadBottomMargin(0.15)
 
     # Configuration
@@ -92,17 +92,17 @@ def main():
     line.SetLineColor(ROOT.kGray+2)
     line.Draw()
     
-    leg = ROOT.TLegend(0.15, 0.7, 0.5, 0.88)
-    if fit1 and fit1.IsValid():
-        leg.AddEntry(h1, f"{args.label1} #mu={fit1.Parameter(1):.3f} #sigma={fit1.Parameter(2):.3f}", "p")
-    else:
-        leg.AddEntry(h1, f"{args.label1} (fit failed)", "p")
-    
-    if fit2 and fit2.IsValid():
-        leg.AddEntry(h2, f"{args.label2} #mu={fit2.Parameter(1):.3f} #sigma={fit2.Parameter(2):.3f}", "p")
-    else:
-        leg.AddEntry(h2, f"{args.label2} (fit failed)", "p")
+    # Bottom right legend for all plots
+    leg = ROOT.TLegend(0.55, 0.15, 0.85, 0.35)
     leg.SetBorderSize(0)
+    if fit1 and fit1.IsValid():
+        leg.AddEntry(h1, f"{args.label1}: #mu={fit1.Parameter(1):.3f}±{fit1.ParError(1):.3f}", "p")
+    else:
+        leg.AddEntry(h1, f"{args.label1} (no fit)", "p")
+    if fit2 and fit2.IsValid():
+        leg.AddEntry(h2, f"{args.label2}: #mu={fit2.Parameter(1):.3f}±{fit2.ParError(1):.3f}", "p")
+    else:
+        leg.AddEntry(h2, f"{args.label2} (no fit)", "p")
     leg.Draw()
 
     # Process angular bins (pads 2-11)
@@ -154,15 +154,16 @@ def main():
         line.SetLineColor(ROOT.kGray+2)
         line.Draw()
         
-        leg = ROOT.TLegend(0.15, 0.7, 0.5, 0.88)
+        # Consistent bottom right legend position
+        leg = ROOT.TLegend(0.55, 0.15, 0.85, 0.35)
         leg.SetBorderSize(0)
+        entries = []
         if fit1_valid:
-            leg.AddEntry(h1, f"{args.label1} #mu={fit1.Parameter(1):.3f}", "p")
+            leg.AddEntry(h1, f"{args.label1}: #mu={fit1.Parameter(1):.3f}±{fit1.ParError(1):.3f}", "p")
         else:
             leg.AddEntry(h1, f"{args.label1} (no fit)", "p")
-            
         if fit2_valid:
-            leg.AddEntry(h2, f"{args.label2} #mu={fit2.Parameter(1):.3f}", "p")
+            leg.AddEntry(h2, f"{args.label2}: #mu={fit2.Parameter(1):.3f}±{fit2.ParError(1):.3f}", "p")
         else:
             leg.AddEntry(h2, f"{args.label2} (no fit)", "p")
         leg.Draw()
@@ -198,7 +199,7 @@ def main():
         mg.SetMinimum(0.5)
         mg.SetMaximum(1.2)
     
-    leg = ROOT.TLegend(0.6, 0.7, 0.9, 0.85)
+    leg = ROOT.TLegend(0.55, 0.15, 0.85, 0.35)
     leg.AddEntry(gr1, args.label1, "p")
     leg.AddEntry(gr2, args.label2, "p")
     leg.Draw()
