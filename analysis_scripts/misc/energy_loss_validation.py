@@ -113,6 +113,11 @@ def main():
     leg.Draw()
     all_objects['legends'].append(leg)
 
+    # Initialize lists to store fit results and bin centers
+    fit_results1 = []
+    fit_results2 = []
+    bin_centers = []
+
     # Process angular bins (pads 2-11)
     for i, (low, high) in enumerate(angular_bins):
         pad_num = i + 2
