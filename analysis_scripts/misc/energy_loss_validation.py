@@ -76,8 +76,8 @@ def main():
     for x in mx2: h2.Fill(x)
     
     # Perform and store fits
-    fit1 = h1.Fit("gaus", "SQN")
-    fit2 = h2.Fit("gaus", "SQN")
+    fit_result1 = h1.Fit("gaus", "SQN")
+    fit_result2 = h2.Fit("gaus", "SQN")
     
     # Configure histograms
     for h, color in [(h1, ROOT.kBlack), (h2, ROOT.kRed)]:
@@ -92,17 +92,20 @@ def main():
     h1.Draw("PE")
     h2.Draw("PE SAME")
     
-    # Draw Gaussian fits
-    if fit1 and fit1.IsValid():
+    # Draw Gaussian fits with null checks
+    if fit_result1 and fit_result1.IsValid():
         f1 = h1.GetFunction("gaus")
-        f1.SetLineColor(ROOT.kBlack)
-        f1.SetLineStyle(2)
-        f1.Draw("SAME")
-    if fit2 and fit2.IsValid():
+        if f1:
+            f1.SetLineColor(ROOT.kBlack)
+            f1.SetLineStyle(2)
+            f1.Draw("SAME")
+    
+    if fit_result2 and fit_result2.IsValid():
         f2 = h2.GetFunction("gaus")
-        f2.SetLineColor(ROOT.kRed)
-        f2.SetLineStyle(2)
-        f2.Draw("SAME")
+        if f2:
+            f2.SetLineColor(ROOT.kRed)
+            f2.SetLineStyle(2)
+            f2.Draw("SAME")
     
     # Add reference line
     line = ROOT.TLine(vline, 0, vline, h1.GetMaximum()*1.1)
@@ -116,12 +119,12 @@ def main():
     leg.SetBorderSize(1)
     leg.SetFillColor(ROOT.kWhite)
     leg.SetTextSize(0.04)
-    if fit1 and fit1.IsValid():
-        leg.AddEntry(h1, f"{args.label1}: #mu={fit1.Parameter(1):.3f}#pm{fit1.ParError(1):.3f}", "p")
+    if fit_result1 and fit_result1.IsValid():
+        leg.AddEntry(h1, f"{args.label1}: #mu={fit_result1.Parameter(1):.3f}#pm{fit_result1.ParError(1):.3f}", "p")
     else:
         leg.AddEntry(h1, f"{args.label1}: No fit", "p")
-    if fit2 and fit2.IsValid():
-        leg.AddEntry(h2, f"{args.label2}: #mu={fit2.Parameter(1):.3f}#pm{fit2.ParError(1):.3f}", "p")
+    if fit_result2 and fit_result2.IsValid():
+        leg.AddEntry(h2, f"{args.label2}: #mu={fit_result2.Parameter(1):.3f}#pm{fit_result2.ParError(1):.3f}", "p")
     else:
         leg.AddEntry(h2, f"{args.label2}: No fit", "p")
     leg.Draw()
@@ -152,26 +155,32 @@ def main():
         for x in mx1[mask1]: h1.Fill(x)
         for x in mx2[mask2]: h2.Fill(x)
         
-        # Perform fits
+        # Perform fits with safety checks
         fit1_valid = False
         fit2_valid = False
+        f1, f2 = None, None
+        
         if h1.GetEntries() > 10:
-            fit1 = h1.Fit("gaus", "SQN")
-            fit1_valid = fit1 and fit1.IsValid()
-            if fit1_valid:
+            fit_result1 = h1.Fit("gaus", "SQN")
+            if fit_result1 and fit_result1.IsValid():
+                fit1_valid = True
                 f1 = h1.GetFunction("gaus")
-                f1.SetLineColor(ROOT.kBlack)
-                f1.SetLineStyle(2)
-                f1.Draw("SAME")
         
         if h2.GetEntries() > 10:
-            fit2 = h2.Fit("gaus", "SQN")
-            fit2_valid = fit2 and fit2.IsValid()
-            if fit2_valid:
+            fit_result2 = h2.Fit("gaus", "SQN")
+            if fit_result2 and fit_result2.IsValid():
+                fit2_valid = True
                 f2 = h2.GetFunction("gaus")
-                f2.SetLineColor(ROOT.kRed)
-                f2.SetLineStyle(2)
-                f2.Draw("SAME")
+        
+        # Draw fit functions if available
+        if f1:
+            f1.SetLineColor(ROOT.kBlack)
+            f1.SetLineStyle(2)
+            f1.Draw("SAME")
+        if f2:
+            f2.SetLineColor(ROOT.kRed)
+            f2.SetLineStyle(2)
+            f2.Draw("SAME")
         
         # Configure histograms
         for h, color in [(h1, ROOT.kBlack), (h2, ROOT.kRed)]:
@@ -199,19 +208,19 @@ def main():
         leg.SetFillColor(ROOT.kWhite)
         leg.SetTextSize(0.04)
         if fit1_valid:
-            leg.AddEntry(h1, f"{args.label1}: #mu={fit1.Parameter(1):.3f}#pm{fit1.ParError(1):.3f}", "p")
+            leg.AddEntry(h1, f"{args.label1}: #mu={fit_result1.Parameter(1):.3f}#pm{fit_result1.ParError(1):.3f}", "p")
         else:
             leg.AddEntry(h1, f"{args.label1}: No fit", "p")
         if fit2_valid:
-            leg.AddEntry(h2, f"{args.label2}: #mu={fit2.Parameter(1):.3f}#pm{fit2.ParError(1):.3f}", "p")
+            leg.AddEntry(h2, f"{args.label2}: #mu={fit_result2.Parameter(1):.3f}#pm{fit_result2.ParError(1):.3f}", "p")
         else:
             leg.AddEntry(h2, f"{args.label2}: No fit", "p")
         leg.Draw()
         all_objects['legends'].append(leg)
         
         # Store fit results
-        fit_results1.append((fit1.Parameter(1), fit1.ParError(1)) if fit1_valid else (0,0))
-        fit_results2.append((fit2.Parameter(1), fit2.ParError(1)) if fit2_valid else (0,0))
+        fit_results1.append((fit_result1.Parameter(1), fit_result1.ParError(1)) if fit1_valid else (0,0))
+        fit_results2.append((fit_result2.Parameter(1), fit_result2.ParError(1)) if fit2_valid else (0,0))
         bin_centers.append((low + high)/2)
 
     # Mean plot (pad 12)
