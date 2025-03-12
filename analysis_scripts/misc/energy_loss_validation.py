@@ -19,8 +19,8 @@ def main():
     ROOT.gROOT.SetBatch(True)
     ROOT.gStyle.SetOptStat(0)
     ROOT.gStyle.SetTextFont(42)
-    ROOT.gStyle.SetPadLeftMargin(0.15)  # Increased left padding
-    ROOT.gStyle.SetPadBottomMargin(0.12)
+    ROOT.gStyle.SetPadLeftMargin(0.17)  # Increased left padding
+    ROOT.gStyle.SetPadBottomMargin(0.15)
 
     # Configuration
     if args.type == 1:
