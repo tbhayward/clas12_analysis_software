@@ -53,7 +53,7 @@ def main():
                 raise ValueError(f"No valid theta cut branch found in {file_path}")
 
             # Load all required data
-            data = tree.arrays([mx_branch, theta_branch, 'pTmiss', theta_cut_branch, 'xF'], 
+            data = tree.arrays([mx_branch, theta_branch, 'Mx2', 'pTmiss', theta_cut_branch, 'xF', 'Emiss2'], 
                               library="np")
             
             # Apply kinematic cuts
@@ -62,7 +62,7 @@ def main():
                 (data[theta_cut_branch] < 0.5) &
                 (data['xF'] >= -0.15) &
                 (data['xF'] <= 0.15) &
-                (data['Mx2'] >= -0.02) &
+                (data['Mx2'] >= -0.02) &  # Use mx_branch variable
                 (data['Mx2'] <= 0.02) & 
                 (data['Emiss2'] >= 0.4) & 
                 (data['Emiss2'] <= 0.4)
@@ -80,18 +80,11 @@ def main():
     output_dir = "output/energy_loss_validation"
     os.makedirs(output_dir, exist_ok=True)
 
-    # First bin: 0 to 25
+    # Angular bin configuration
     angular_bins = [(0, 25)]
-
-    # Middle bins: 25 to 56.5 in steps of 4.5 degrees
-    middle_bins = [(25 + 4.5 * i, 25 + 4.5 * (i + 1)) for i in range(7)]
+    middle_bins = [(25 + 4.5*i, 25 + 4.5*(i+1)) for i in range(7)]
     angular_bins += middle_bins
-
-    # Second-to-last bin: 56.5 to 60.5
-    angular_bins.append((56.5, 60.5))
-
-    # Last bin: 60.5 to 90
-    angular_bins.append((60.5, 90))
+    angular_bins += [(56.5, 60.5), (60.5, 90)]
 
     canvas = ROOT.TCanvas("canvas", "Comparison", 2400, 1800)
     canvas.Divide(4, 3)
@@ -113,8 +106,14 @@ def main():
     for x in mx1: h1.Fill(x)
     for x in mx2: h2.Fill(x)
     
-    fit_result1 = h1.Fit("gaus", "SQ")
-    fit_result2 = h2.Fit("gaus", "SQ")
+    # Define Gaussian+linear fit function
+    fit_func1 = ROOT.TF1("gaus_poly1", "gaus(0)+pol1(3)", xmin, xmax)
+    fit_func1.SetParameters(h1.GetMaximum(), h1.GetMean(), h1.GetRMS(), 0, 0)
+    fit_result1 = h1.Fit(fit_func1, "SQ")
+    
+    fit_func2 = ROOT.TF1("gaus_poly2", "gaus(0)+pol1(3)", xmin, xmax)
+    fit_func2.SetParameters(h2.GetMaximum(), h2.GetMean(), h2.GetRMS(), 0, 0)
+    fit_result2 = h2.Fit(fit_func2, "SQ")
     
     for h, color in [(h1, ROOT.kBlack), (h2, ROOT.kRed)]:
         h.SetLineColor(color)
@@ -129,7 +128,7 @@ def main():
     h2.Draw("PE SAME")
     
     if fit_result1 and fit_result1.IsValid():
-        f1 = h1.GetFunction("gaus")
+        f1 = h1.GetFunction("gaus_poly1")
         if f1:
             f1.SetLineColor(ROOT.kBlack)
             f1.SetLineStyle(2)
@@ -139,7 +138,7 @@ def main():
             all_objects['funcs'].append(f1)
 
     if fit_result2 and fit_result2.IsValid():
-        f2 = h2.GetFunction("gaus")
+        f2 = h2.GetFunction("gaus_poly2")
         if f2:
             f2.SetLineColor(ROOT.kRed)
             f2.SetLineStyle(2)
@@ -199,16 +198,22 @@ def main():
         f1, f2 = None, None
         
         if h1.GetEntries() > 10:
-            fit_result1 = h1.Fit("gaus", "SQ")
+            fit_func_name = f"gaus_poly1_bin{i}"
+            fit_func = ROOT.TF1(fit_func_name, "gaus(0)+pol1(3)", xmin, xmax)
+            fit_func.SetParameters(h1.GetMaximum(), h1.GetMean(), h1.GetRMS(), 0, 0)
+            fit_result1 = h1.Fit(fit_func, "SQ")
             if fit_result1 and fit_result1.IsValid():
                 fit1_valid = True
-                f1 = h1.GetFunction("gaus")
+                f1 = h1.GetFunction(fit_func_name)
         
         if h2.GetEntries() > 10:
-            fit_result2 = h2.Fit("gaus", "SQ")
+            fit_func_name = f"gaus_poly2_bin{i}"
+            fit_func = ROOT.TF1(fit_func_name, "gaus(0)+pol1(3)", xmin, xmax)
+            fit_func.SetParameters(h2.GetMaximum(), h2.GetMean(), h2.GetRMS(), 0, 0)
+            fit_result2 = h2.Fit(fit_func, "SQ")
             if fit_result2 and fit_result2.IsValid():
                 fit2_valid = True
-                f2 = h2.GetFunction("gaus")
+                f2 = h2.GetFunction(fit_func_name)
         
         h1.Draw("PE")
         h2.Draw("PE SAME")
