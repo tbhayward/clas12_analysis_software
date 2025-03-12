@@ -22,16 +22,21 @@ def main():
     # Set ROOT styles
     ROOT.gStyle.SetOptStat(0)
     ROOT.gStyle.SetTextFont(42)
+    ROOT.gStyle.SetPadLeftMargin(0.12)  # Increased left margin
 
-    # Determine branches and ranges
+    # Determine parameters based on type
     if args.type == 1:
         mx_branch = 'Mx2_1'
         theta_branch = 'p1_theta'
         xmin, xmax = -0.3, 0.3
+        xlabel = "M_{x1}^{2} (GeV^{2})"
+        vline = 0.0
     else:
         mx_branch = 'Mx2_2'
         theta_branch = 'p2_theta' 
         xmin, xmax = 0.578, 1.178
+        xlabel = "M_{x2}^{2} (GeV^{2})"
+        vline = 0.880  # Proton mass squared (0.938 GeV)^2
 
     # Load data
     def load_data(file_path):
@@ -47,7 +52,8 @@ def main():
     mx2, theta2 = load_data(args.data2)
 
     # Create output directory
-    os.makedirs('output', exist_ok=True)
+    output_dir = "output/energy_loss_validation"
+    os.makedirs(output_dir, exist_ok=True)
 
     # Define angular bins in degrees
     angular_bins = [(5,11), (11,17), (17,23), (23,29), (29,35),
@@ -56,7 +62,10 @@ def main():
     # Create canvas and pads
     canvas = ROOT.TCanvas("canvas", "Comparison", 2400, 1800)
     canvas.Divide(4, 3)
+    canvas.SetMargin(0.08, 0.02, 0.08, 0.1)  # Add more padding
 
+    # Store references to all histograms and graphs
+    histograms = []
     fit_results1 = []
     fit_results2 = []
     bin_centers = []
@@ -65,6 +74,7 @@ def main():
     canvas.cd(1)
     h1 = ROOT.TH1D("h1_int", "Integrated", 100, xmin, xmax)
     h2 = ROOT.TH1D("h2_int", "Integrated", 100, xmin, xmax)
+    histograms.extend([h1, h2])
     
     for x in mx1: h1.Fill(x)
     for x in mx2: h2.Fill(x)
@@ -77,12 +87,21 @@ def main():
         h.SetLineColor(color)
         h.SetMarkerColor(color)
         h.SetMarkerStyle(20)
-        h.GetXaxis().SetRangeUser(xmin, xmax)
+        h.GetXaxis().SetTitle(xlabel)
+        h.GetXaxis().SetTitleSize(0.06)
+        h.GetYaxis().SetTitleSize(0.06)
     
     h1.Draw("PE")
     h2.Draw("PE SAME")
     
-    leg = ROOT.TLegend(0.5, 0.65, 0.9, 0.85)
+    # Add vertical line
+    line = ROOT.TLine(vline, 0, vline, h1.GetMaximum()*1.1)
+    line.SetLineStyle(2)
+    line.SetLineColor(ROOT.kGray+2)
+    line.Draw()
+    
+    # Add legend
+    leg = ROOT.TLegend(0.15, 0.7, 0.5, 0.88)
     if fit1 and fit1.IsValid():
         leg.AddEntry(h1, f"{args.label1} #mu={fit1.Parameter(1):.3f} #sigma={fit1.Parameter(2):.3f}", "p")
     else:
@@ -92,6 +111,7 @@ def main():
         leg.AddEntry(h2, f"{args.label2} #mu={fit2.Parameter(1):.3f} #sigma={fit2.Parameter(2):.3f}", "p")
     else:
         leg.AddEntry(h2, f"{args.label2} (fit failed)", "p")
+    leg.SetBorderSize(0)
     leg.Draw()
 
     # Process angular bins (pads 2-11)
@@ -109,11 +129,12 @@ def main():
         # Create histograms with fixed ranges
         h1 = ROOT.TH1D(f"h1_{i}", f"{low}-{high} deg", 100, xmin, xmax)
         h2 = ROOT.TH1D(f"h2_{i}", "", 100, xmin, xmax)
+        histograms.extend([h1, h2])
         
         for x in mx1[mask1]: h1.Fill(x)
         for x in mx2[mask2]: h2.Fill(x)
         
-        # Perform fits only if there are entries
+        # Perform fits
         fit1_valid = False
         if h1.GetEntries() > 0:
             fit1 = h1.Fit("gaus", "SQN")
@@ -125,31 +146,31 @@ def main():
             fit2_valid = fit2 and fit2.IsValid() and fit2.Ndf() > 0
         
         # Store fit results
-        if fit1_valid:
-            fit_results1.append((fit1.Parameter(1), fit1.ParError(1)))
-        else:
-            fit_results1.append((0, 0))  # Placeholder for failed fits
-            
-        if fit2_valid:
-            fit_results2.append((fit2.Parameter(1), fit2.ParError(1)))
-        else:
-            fit_results2.append((0, 0))  # Placeholder for failed fits
-            
+        fit_results1.append((fit1.Parameter(1), fit1.ParError(1)) if fit1_valid else (0,0))
+        fit_results2.append((fit2.Parameter(1), fit2.ParError(1)) if fit2_valid else (0,0))
         bin_centers.append((low + high)/2)
         
         # Configure histograms
-        h1.SetLineColor(ROOT.kBlack)
-        h1.SetMarkerColor(ROOT.kBlack)
-        h1.SetMarkerStyle(20)
-        h2.SetLineColor(ROOT.kRed)
-        h2.SetMarkerColor(ROOT.kRed)
-        h2.SetMarkerStyle(20)
+        for h in [h1, h2]:
+            h.SetLineColor(ROOT.kBlack if h == h1 else ROOT.kRed)
+            h.SetMarkerColor(ROOT.kBlack if h == h1 else ROOT.kRed)
+            h.SetMarkerStyle(20)
+            h.GetXaxis().SetTitle(xlabel)
+            h.GetXaxis().SetTitleSize(0.06)
+            h.GetYaxis().SetTitleSize(0.06)
         
         h1.Draw("PE")
         h2.Draw("PE SAME")
         
+        # Add vertical line
+        line = ROOT.TLine(vline, 0, vline, h1.GetMaximum()*1.1)
+        line.SetLineStyle(2)
+        line.SetLineColor(ROOT.kGray+2)
+        line.Draw()
+        
         # Add legend
-        leg = ROOT.TLegend(0.5, 0.65, 0.9, 0.85)
+        leg = ROOT.TLegend(0.15, 0.7, 0.5, 0.88)
+        leg.SetBorderSize(0)
         if fit1_valid:
             leg.AddEntry(h1, f"{args.label1} #mu={fit1.Parameter(1):.3f}", "p")
         else:
@@ -173,19 +194,20 @@ def main():
         gr2.SetPointError(i, 0, fit_results2[i][1])
     
     mg = ROOT.TMultiGraph()
-    gr1.SetMarkerColor(ROOT.kBlack)
-    gr1.SetMarkerStyle(20)
-    gr2.SetMarkerColor(ROOT.kRed)
-    gr2.SetMarkerStyle(20)
     mg.Add(gr1)
     mg.Add(gr2)
+    mg.SetTitle(";θ (degrees);Mean " + xlabel)
+    
+    # Configure graphs
+    for gr, color in [(gr1, ROOT.kBlack), (gr2, ROOT.kRed)]:
+        gr.SetMarkerColor(color)
+        gr.SetLineColor(color)
+        gr.SetMarkerStyle(20)
     
     mg.Draw("AP")
-    mg.GetXaxis().SetTitle("#theta (degrees)")
-    mg.GetYaxis().SetTitle("Mean Mx2 [GeV/c^{2}]")
     mg.GetXaxis().SetLimits(0, 70)
     
-    # Set y-axis range based on type
+    # Set y-axis ranges
     if args.type == 1:
         mg.SetMinimum(-0.2)
         mg.SetMaximum(0.2)
@@ -193,13 +215,14 @@ def main():
         mg.SetMinimum(0.5)
         mg.SetMaximum(1.2)
     
+    # Add legend
     leg = ROOT.TLegend(0.6, 0.7, 0.9, 0.85)
     leg.AddEntry(gr1, args.label1, "p")
     leg.AddEntry(gr2, args.label2, "p")
     leg.Draw()
 
     # Save to output directory
-    canvas.SaveAs(f"output/comparison_{args.label1}_{args.label2}.png")
+    canvas.SaveAs(f"{output_dir}/comparison_{args.label1}_{args.label2}.png")
 
 if __name__ == "__main__":
     main()
