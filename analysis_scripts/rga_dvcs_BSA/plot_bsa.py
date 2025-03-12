@@ -379,66 +379,67 @@ def plot_combined_bsa(binning_csv, final_dir="final_results", output_dir="bsa_pl
                 x_arr = x_arr[mask]
                 y_arr = y_arr[mask]
                 yerr_arr = yerr_arr[mask]
-                if len(x_arr) < 4:
-                    continue
-                
-                # --- Iterative fitting with outlier removal ---
-                max_iter = 10
-                removed_points = 0
-                for iter_idx in range(max_iter):
-                    try:
-                        popt, pcov = curve_fit(bsa_fit_function, np.radians(x_arr), y_arr, sigma=yerr_arr,
-                                                 p0=[0, 0.2, -0.4],
-                                                 bounds=([-np.inf, -0.6, -0.7], [np.inf, 0.6, 0.7]))
-                    except Exception as e:
-                        print(f"Fit failed for bin {key_base}: {str(e)}")
-                        popt, pcov = [0, 0, 0], np.zeros((3, 3))
-                        break
+
+                # Plot the filtered data points regardless of count
+                ax.errorbar(x_arr, y_arr, yerr_arr, fmt='ko', markersize=5, capsize=3)
+
+                if len(x_arr) >= 4:
+                    # --- Iterative fitting with outlier removal ---
+                    max_iter = 10
+                    removed_points = 0
+                    for iter_idx in range(max_iter):
+                        try:
+                            popt, pcov = curve_fit(bsa_fit_function, np.radians(x_arr), y_arr, sigma=yerr_arr,
+                                                     p0=[0, 0.2, -0.4],
+                                                     bounds=([-np.inf, -0.6, -0.7], [np.inf, 0.6, 0.7]))
+                        except Exception as e:
+                            print(f"Fit failed for bin {key_base}: {str(e)}")
+                            popt, pcov = [0, 0, 0], np.zeros((3, 3))
+                            break
+                        
+                        fit_vals = bsa_fit_function(np.radians(x_arr), *popt)
+                        residuals = y_arr - fit_vals
+                        chi2_val = np.sum((residuals / yerr_arr)**2)
+                        ndf = len(x_arr) - 3
+                        current_chi2_ndf = chi2_val / ndf if ndf > 0 else np.nan
+                        if current_chi2_ndf <= 3 or len(x_arr) < 4:
+                            break
+                        else:
+                            contributions = (residuals / yerr_arr)**2
+                            idx_to_remove = np.argmax(contributions)
+                            x_arr = np.delete(x_arr, idx_to_remove)
+                            y_arr = np.delete(y_arr, idx_to_remove)
+                            yerr_arr = np.delete(yerr_arr, idx_to_remove)
+                            removed_points += 1
                     
-                    fit_vals = bsa_fit_function(np.radians(x_arr), *popt)
-                    residuals = y_arr - fit_vals
-                    chi2_val = np.sum((residuals / yerr_arr)**2)
-                    ndf = len(x_arr) - 3
-                    current_chi2_ndf = chi2_val / ndf if ndf > 0 else np.nan
-                    if current_chi2_ndf <= 3 or len(x_arr) < 4:
-                        break
-                    else:
-                        contributions = (residuals / yerr_arr)**2
-                        idx_to_remove = np.argmax(contributions)
-                        x_arr = np.delete(x_arr, idx_to_remove)
-                        y_arr = np.delete(y_arr, idx_to_remove)
-                        yerr_arr = np.delete(yerr_arr, idx_to_remove)
-                        removed_points += 1
+                    # --- Final fit evaluation ---
+                    fit_x = np.linspace(0, 360, 100)
+                    fit_y = bsa_fit_function(np.radians(fit_x), *popt)
+                    final_fit = bsa_fit_function(np.radians(x_arr), *popt)
+                    final_residuals = y_arr - final_fit
+                    final_chi2 = np.sum((final_residuals / yerr_arr)**2)
+                    final_ndf = len(x_arr) - 3
+                    final_chi2_ndf = final_chi2 / final_ndf if final_ndf > 0 else np.nan
+                    chi2_ndf_list.append(final_chi2_ndf)
+                    overall_chi2_ndf_list.append(final_chi2_ndf)
+                    
+                    # Save the fitted a1 value for this cell.
+                    key_fit = (i_xB, overall_q2_dict[(Q2_min, Q2_max)], overall_t_dict[(t_min, t_max)])
+                    a1_fits[key_fit] = {
+                        "a1": popt[1],
+                        "a1_err": np.sqrt(pcov[1,1]),
+                        "chi2_ndf": final_chi2_ndf
+                    }
+                    
+                    ax.plot(fit_x, fit_y, 'r-', lw=1.5)
+                    text = (f"$c_0$ = {popt[0]:.2f} ± {np.sqrt(pcov[0,0]):.2f}\n"
+                            f"$a_1$ = {popt[1]:.2f} ± {np.sqrt(pcov[1,1]):.2f}\n"
+                            f"$b_1$ = {popt[2]:.2f} ± {np.sqrt(pcov[2,2]):.2f}\n"
+                            f"χ²/ndf = {final_chi2_ndf:.2f}")
+                    ax.text(0.95, 0.95, text, transform=ax.transAxes,
+                            ha='right', va='top', fontsize=6)
                 
-                # --- Final fit evaluation ---
-                fit_x = np.linspace(0, 360, 100)
-                fit_y = bsa_fit_function(np.radians(fit_x), *popt)
-                final_fit = bsa_fit_function(np.radians(x_arr), *popt)
-                final_residuals = y_arr - final_fit
-                final_chi2 = np.sum((final_residuals / yerr_arr)**2)
-                final_ndf = len(x_arr) - 3
-                final_chi2_ndf = final_chi2 / final_ndf if final_ndf > 0 else np.nan
-                chi2_ndf_list.append(final_chi2_ndf)
-                overall_chi2_ndf_list.append(final_chi2_ndf)
-                
-                # Save the fitted a1 value for this cell.
-                # Here, overall_t_idx is the index for the t bin.
-                key_fit = (i_xB, overall_q2_dict[(Q2_min, Q2_max)], overall_t_dict[(t_min, t_max)])
-                a1_fits[key_fit] = {
-                    "a1": popt[1],
-                    "a1_err": np.sqrt(pcov[1,1]),
-                    "chi2_ndf": final_chi2_ndf
-                }
-                
-                ax.plot(fit_x, fit_y, 'r-', lw=1.5)
-                text = (f"$c_0$ = {popt[0]:.2f} ± {np.sqrt(pcov[0,0]):.2f}\n"
-                        f"$a_1$ = {popt[1]:.2f} ± {np.sqrt(pcov[1,1]):.2f}\n"
-                        f"$b_1$ = {popt[2]:.2f} ± {np.sqrt(pcov[2,2]):.2f}\n"
-                        f"χ²/ndf = {final_chi2_ndf:.2f}")
-                ax.errorbar(x, y, yerr, fmt='ko', markersize=5, capsize=3)
-                ax.text(0.95, 0.95, text, transform=ax.transAxes,
-                        ha='right', va='top', fontsize=6)
-                
+                # Set cell title with average kinematic values
                 overall_q2_idx = overall_unique_Q2.index((Q2_min, Q2_max))
                 overall_t_idx = overall_unique_t.index((t_min, t_max))
                 Q2_vals = []
