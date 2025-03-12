@@ -129,7 +129,7 @@ def main():
         fit2_valid = False
         f1, f2 = None, None
         
-        if h1.GetEntries() > 10:  # Minimum entries check
+        if h1.GetEntries() > 10:
             fit1 = h1.Fit("gaus", "SQN")
             if fit1 and fit1.IsValid():
                 fit1_valid = True
@@ -141,9 +141,15 @@ def main():
                 fit2_valid = True
                 f2 = h2.GetFunction("gaus")
 
-        # Store results (mu, sigma)
-        fit_results1.append((f1.GetParameter(1), f1.GetParameter(2)) if fit1_valid else (0,0))
-        fit_results2.append((f2.GetParameter(1), f2.GetParameter(2)) if fit2_valid else (0,0))
+        # Store results with null checks
+        fit_results1.append(
+            (f1.GetParameter(1), f1.GetParameter(2)) 
+            if (fit1_valid and f1) else (0, 0)  # Fixed line
+        )
+        fit_results2.append(
+            (f2.GetParameter(1), f2.GetParameter(2)) 
+            if (fit2_valid and f2) else (0, 0)  # Fixed line
+        )
         bin_centers.append((low + high)/2)
 
         # Draw histograms
