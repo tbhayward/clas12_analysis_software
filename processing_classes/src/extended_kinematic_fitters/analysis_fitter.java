@@ -36,7 +36,7 @@ public class analysis_fitter extends GenericKinematicFitter {
                 && pid_cuts.calorimeter_energy_cut(particle_Index, cal_Bank, 1)
                 && pid_cuts.calorimeter_sampling_fraction_cut(particle_Index, p, run_Bank, cal_Bank)
                 && pid_cuts.calorimeter_diagonal_cut(particle_Index, p, cal_Bank)    
-                && fiducial_cuts.pcal_fiducial_cut(particle_Index, 2, run_Bank, rec_Bank, cal_Bank)
+                && fiducial_cuts.pcal_fiducial_cut(particle_Index, 1, run_Bank, rec_Bank, cal_Bank)
                 && fiducial_cuts.dc_fiducial_cut(particle_Index, rec_Bank, traj_Bank)
                 ;
     }
@@ -247,12 +247,12 @@ public class analysis_fitter extends GenericKinematicFitter {
 //                        }
 //                    }
 
-                    float[] momentum = {px, py, pz};
-                    energy_loss_corrections.proton_energy_loss_corrections(particle_Index, momentum, rec_Bank, run_Bank);
-
-                    px = momentum[0];
-                    py = momentum[1];
-                    pz = momentum[2];
+//                    float[] momentum = {px, py, pz};
+//                    energy_loss_corrections.proton_energy_loss_corrections(particle_Index, momentum, rec_Bank, run_Bank);
+//
+//                    px = momentum[0];
+//                    py = momentum[1];
+//                    pz = momentum[2];
                     
                     Particle electron = new Particle(pid, px, py, pz, vx, vy, vz_e);
                     physEvent.addParticle(electron);
@@ -277,24 +277,25 @@ public class analysis_fitter extends GenericKinematicFitter {
                 if (pid == 2212 && proton_test(particle_Index, pid, vz, vz_e, rec_Bank, cal_Bank,
                         traj_Bank, run_Bank)) {
 
-                    float[] momentum = {px, py, pz};
-                    energy_loss_corrections.proton_energy_loss_corrections(particle_Index, momentum, rec_Bank, run_Bank);
+//                    float[] momentum = {px, py, pz};
+//                    energy_loss_corrections.proton_energy_loss_corrections(particle_Index, momentum, rec_Bank, run_Bank);
+//
+//                    px = momentum[0];
+//                    py = momentum[1];
+//                    pz = momentum[2];
 
-                    px = momentum[0];
-                    py = momentum[1];
-                    pz = momentum[2];
                     Particle part = new Particle(pid, px, py, pz, vx, vy, vz);
                     physEvent.addParticle(part);
                 }
 
                 if (pid == 22 && photon_test(particle_Index, run_Bank, rec_Bank, cal_Bank, ft_Bank, lv_e, num_photon)) {
                     
-                    float[] momentum = {px, py, pz};
-                    energy_loss_corrections.proton_energy_loss_corrections(particle_Index, momentum, rec_Bank, run_Bank);
-
-                    px = momentum[0];
-                    py = momentum[1];
-                    pz = momentum[2];
+//                    float[] momentum = {px, py, pz};
+//                    energy_loss_corrections.proton_energy_loss_corrections(particle_Index, momentum, rec_Bank, run_Bank);
+//
+//                    px = momentum[0];
+//                    py = momentum[1];
+//                    pz = momentum[2];
                     
                     Particle part = new Particle(pid, px, py, pz, vx, vy, vz);
                     physEvent.addParticle(part);

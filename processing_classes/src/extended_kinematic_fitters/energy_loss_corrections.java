@@ -288,7 +288,7 @@ public class energy_loss_corrections {
         }
 
         // Calculate new momentum magnitude (approximated as E_new)
-        double new_p = (5+E_new);
+        double new_p = (E_new);
 
         // Calculate new components based on theta_new and original phi
         double px_new = new_p * Math.sin(theta_new) * Math.cos(phi);
@@ -362,7 +362,7 @@ public class energy_loss_corrections {
 
         // Scale the momentum components to preserve direction
         if (p != 0) {
-            double scale = (new_p+5) / p;
+            double scale = (new_p) / p;
             p_array[0] = (float) (px * scale);
             p_array[1] = (float) (py * scale);
             p_array[2] = (float) (pz * scale);

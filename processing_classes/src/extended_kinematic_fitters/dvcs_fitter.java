@@ -102,7 +102,7 @@ public class dvcs_fitter extends GenericKinematicFitter {
                 && p > 2.00
                 && (passesForwardDetector || passesForwardTagger)
                 && (passesForwardDetector
-                        ? fiducial_cuts.pcal_fiducial_cut(particle_Index, 2, run_Bank, rec_Bank, cal_Bank)
+                        ? fiducial_cuts.pcal_fiducial_cut(particle_Index, 1, run_Bank, rec_Bank, cal_Bank)
                         : fiducial_cuts.forward_tagger_fiducial_cut(particle_Index, rec_Bank, ft_Bank))
                 && pid_cuts.beta_cut(particle_Index, rec_Bank);
     }
