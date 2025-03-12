@@ -114,9 +114,9 @@ def main():
         
         # Store fit results
         if fit1 and fit1.NDF() > 0:
-            fit_results1.append((fit1.Parameter(1), fit1.ParError(1))
+            fit_results1.append((fit1.Parameter(1), fit1.ParError(1)))
         if fit2 and fit2.NDF() > 0:
-            fit_results2.append((fit2.Parameter(1), fit2.ParError(1))
+            fit_results2.append((fit2.Parameter(1), fit2.ParError(1)))
         bin_centers.append((low + high)/2)
         
         leg = ROOT.TLegend(0.6, 0.65, 0.9, 0.85)
