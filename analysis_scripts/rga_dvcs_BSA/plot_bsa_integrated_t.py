@@ -99,6 +99,8 @@ def plot_integrated_bsa(json_filepath, binning_json="binning.json", output_dir="
                     fit_x = np.linspace(0, 360, 100)
                     fit_y = bsa_fit_function(np.radians(fit_x), *popt)
                     ax.plot(fit_x, fit_y, 'r-', lw=1.5)
+                except Exception as e:
+                    print(f"Curve fit failed: {e}")
 
             ax.set_ylim(-1, 1)
             ax.set_xlim(0, 360)
