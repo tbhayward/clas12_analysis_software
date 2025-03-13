@@ -43,7 +43,7 @@ def calculate_raw_bsa(period, channel, binning_csv, output_dir):
               for i_xB in range(len(unique_xB)) 
               for i_Q2 in range(len(unique_Q2))
               for i_t in range(len(unique_t))
-              for i_phi in range(9)}
+              for i_phi in range(12)}
     
     beam_pol_sum = 0.0
     beam_pol_count = 0
@@ -88,7 +88,7 @@ def calculate_raw_bsa(period, channel, binning_csv, output_dir):
         except StopIteration:
             continue
         
-        if 0 <= i_phi < 9:
+        if 0 <= i_phi < 12:
             key = (i_xB, i_Q2, i_t, i_phi)
             if event.helicity > 0:
                 results[key]["N_plus"] += 1

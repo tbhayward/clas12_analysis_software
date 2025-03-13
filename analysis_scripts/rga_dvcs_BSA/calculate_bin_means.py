@@ -12,7 +12,7 @@ from kin_cuts import apply_kinematic_cuts, passes_3sigma_cuts
 from load_binning_scheme import Binning
 
 # Number of phi bins and their edges
-N_PHI_BINS = 9
+N_PHI_BINS = 12
 phi_edges = np.linspace(0, 2 * math.pi, N_PHI_BINS + 1)
 
 def find_bin(value, bin_boundaries):

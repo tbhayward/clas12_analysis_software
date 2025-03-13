@@ -11,7 +11,7 @@ from scipy.optimize import curve_fit
 from load_binning_scheme import load_binning_scheme
 
 # Global constants and styling
-N_PHI_BINS = 9
+N_PHI_BINS = 12
 phi_edges = np.linspace(0, 2 * np.pi, N_PHI_BINS + 1)
 # Midpoints (fallback only)
 phi_centers = (phi_edges[:-1] + phi_edges[1:]) / 2.0
@@ -506,6 +506,8 @@ def plot_combined_bsa(binning_csv, final_dir="final_results", output_dir="bsa_pl
         import json
         json.dump(a1_fits_str, f, indent=2)
     print(f"Saved fitted a₁ parameters to {a1_fits_out}")
+
+
 
 # ---------------------------
 # Helper function for grid plots

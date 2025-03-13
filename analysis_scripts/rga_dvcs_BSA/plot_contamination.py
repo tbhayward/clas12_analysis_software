@@ -23,7 +23,7 @@ import matplotlib.pyplot as plt
 from load_binning_scheme import load_binning_scheme
 
 # Global constants: 9 φ bins from 0 to 2π.
-N_PHI_BINS = 9
+N_PHI_BINS = 12
 phi_edges = np.linspace(0, 2 * math.pi, N_PHI_BINS + 1)
 phi_centers = (phi_edges[:-1] + phi_edges[1:]) / 2.0
 phi_centers_deg = np.degrees(phi_centers)
