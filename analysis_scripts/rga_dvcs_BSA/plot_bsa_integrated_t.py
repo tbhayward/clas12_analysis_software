@@ -50,6 +50,39 @@ def integrate_t_bins(input_json, output_json):
         json.dump({str(k): v for k, v in integrated_results.items()}, f, indent=2)
     print(f"Integrated BSA (t-integrated) results saved to: {output_json}")
 
+def integrate_all_bins(input_json, output_json):
+    combined_data = load_combined_bsa_json(input_json)
+
+    integrated_results = {}
+
+    phi_groups = {}
+    for bin_key, values in combined_data.items():
+        phi_idx = bin_key[3]  # Only grouping by phi_idx now
+        phi_groups.setdefault(phi_idx, []).append((values["bsa"], values["bsa_err"]))
+
+    for phi_idx, measurements in phi_groups.items():
+        bsa_vals, bsa_errs = zip(*measurements)
+        weights = [1 / (err ** 2) for err in bsa_errs if err > 0]
+        total_weight = sum(weights)
+        
+        if total_weight == 0:
+            continue  # Skip if weights sum to zero
+        
+        combined_bsa = sum(w * val for w, val in zip(weights, bsa_vals)) / total_weight
+        combined_err = np.sqrt(1 / total_weight)
+
+        integrated_results[phi_idx] = {
+            "bsa": round(combined_bsa, 5),
+            "bsa_err": round(combined_err, 5),
+            "n_points": len(bsa_vals),
+            "valid": True
+        }
+
+    with open(output_json, 'w') as f:
+        json.dump({str(k): v for k, v in integrated_results.items()}, f, indent=2)
+
+    print(f"Fully integrated BSA results saved to: {output_json}")
+    
 def plot_integrated_bsa(json_filepath, output_dir="bsa_plots/integrated"):
     import os
     import json
