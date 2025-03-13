@@ -224,7 +224,7 @@ def plot_fully_integrated_bsa(json_filepath, output_dir="bsa_plots/integrated"):
     x, y, yerr = [], [], []
 
     for phi_idx in range(N_PHI_BINS):
-        key = (phi_idx,)  # match the tuple format used by load_combined_bsa_json
+        key = (phi_idx,)
         if key in integrated_data_dict:
             phi_center = (phi_idx + 0.5) * 360.0 / N_PHI_BINS
             bsa_val = integrated_data_dict[key]['bsa']
@@ -232,15 +232,14 @@ def plot_fully_integrated_bsa(json_filepath, output_dir="bsa_plots/integrated"):
                 x.append(phi_center)
                 y.append(bsa_val)
                 yerr.append(integrated_data_dict[key]['bsa_err'])
-
-    if not x:
-        print("No valid data points to plot for fully integrated BSA.")
-        return
+        #endfor
+    #endfor
 
     fig, ax = plt.subplots(figsize=(8, 6))
 
     ax.errorbar(x, y, yerr, fmt='ko', markersize=5, capsize=3)
 
+    fitted = False
     if len(x) >= 4:
         try:
             popt, pcov = curve_fit(
@@ -253,16 +252,28 @@ def plot_fully_integrated_bsa(json_filepath, output_dir="bsa_plots/integrated"):
             )
             fit_x = np.linspace(0, 360, 200)
             fit_y = bsa_fit_function(np.radians(fit_x), *popt)
-            ax.plot(fit_x, fit_y, 'r-', lw=2)
-
-            a1, b1 = popt[1], popt[2]
-            a1_err, b1_err = np.sqrt(pcov[1, 1]), np.sqrt(pcov[2, 2])
-            fit_label = f"$a_1$ = {a1:.3f} ± {a1_err:.3f}\n$b_1$ = {b1:.3f} ± {b1_err:.3f}"
-            ax.text(0.5, 0.05, fit_label, ha='center', va='bottom',
-                    transform=ax.transAxes, fontsize='medium')
-
+            fitted = True
         except Exception as e:
             print(f"Curve fit failed for fully integrated: {e}")
+
+    fig, ax = plt.subplots(figsize=(8, 6))
+
+    # Plot the data points
+    ax.errorbar(x, y, yerr, fmt='ko', markersize=5, capsize=3)
+
+    # Plot the fitted line if successful
+    if fitted:
+        ax.plot(fit_x, fit_y, 'r-', lw=2)
+
+        a1, b1 = popt[1], popt[2]
+        a1_err, b1_err = np.sqrt(pcov[1, 1]), np.sqrt(pcov[2, 2])
+        fit_label = f"$a_1$ = {a1:.3f} ± {a1_err:.3f}\n$b_1$ = {b1:.3f} ± {b1_err:.3f}"
+        ax.text(0.5, 0.05, fit_label, ha='center', va='bottom',
+                transform=ax.transAxes, fontsize=14)
+
+    # Plot the fitted curve after error bars to avoid overplotting
+    if fitted:
+        ax.plot(fit_x, fit_y, 'r-', lw=2)
 
     ax.set_ylim(-1, 1)
     ax.set_xlim(0, 360)
@@ -270,16 +281,12 @@ def plot_fully_integrated_bsa(json_filepath, output_dir="bsa_plots/integrated"):
     ax.set_xticklabels(["0", "90", "180", "270", "360"])
     ax.set_yticks([-1, -0.5, 0, 0.5, 1])
 
-    ax.set_ylabel(r"$A_{LU}$", fontsize=16)  # increased font size
-    ax.set_xlabel(r"$\phi$ (deg)", fontsize=14)  # increased font size
-    ax.set_title("Fully Integrated", fontsize=16, pad=10)  # slightly bigger and added padding
+    # Set axis labels with increased font size as requested
+    ax.set_ylabel(r"$A_{LU}$", fontsize=16)
+    ax.set_xlabel(r"$\phi$ (deg)", fontsize=16)
+    ax.set_title("Fully Integrated BSA", fontsize=16, pad=10)
 
-    # If you'd like the ticks themselves to be a bit larger as well:
     ax.tick_params(axis='both', which='major', labelsize=12)
-
-    # Also adjust the fit text for consistency:
-    ax.text(0.5, 0.05, fit_label, ha='center', va='bottom',
-            transform=ax.transAxes, fontsize=14)  # increased fontsize
 
     ax.grid(True, alpha=0.3)
 
