@@ -81,7 +81,7 @@ def integrate_all_bins(input_json, output_json):
 
     print(f"Fully integrated BSA results saved to: {output_json}")
 
-def plot_integrated_bsa(json_filepath, output_dir="bsa_plots/integrated"):
+def plot_integrated_bsa(json_filepath, fully_integrated_json, output_dir="bsa_plots/integrated"):
     import os
     import json
     import numpy as np
@@ -102,8 +102,52 @@ def plot_integrated_bsa(json_filepath, output_dir="bsa_plots/integrated"):
 
     populated_subplots = np.zeros_like(axs, dtype=bool)
 
+    # Load fully integrated data
+    with open("final_results/combined_bsa_fully_integrated.json", 'r') as f:
+        fully_integrated = json.load(f)
+
+    # Plot fully integrated data in top-left 2x2 subplot
+    ax_big = plt.subplot2grid((len(unique_Q2), len(unique_xB)), (0, 0), rowspan=2, colspan=2)
+    x_full, y_full, yerr_full = [], [], []
+    for phi_idx in range(N_PHI_BINS):
+        key = str(phi_idx)
+        if key in fully_integrated:
+            phi_center = (phi_idx + 0.5) * 360.0 / N_PHI_BINS
+            bsa_val = fully_integrated[key]['bsa']
+            if -0.6 <= bsa_val <= 0.6:
+                x.append(phi_center)
+                y.append(bsa_val)
+                yerr.append(fully_integrated[key]['bsa_err'])
+
+    ax_big.errorbar(x, y, yerr, fmt='ko', markersize=4, capsize=3)
+
+    if len(x) >= 4:
+        popt, pcov = curve_fit(
+            bsa_fit_function,
+            np.radians(x),
+            y,
+            sigma=yerr,
+            p0=[0, 0.2, -0.4],
+            bounds=([-np.inf, -0.6, -0.7], [np.inf, 0.6, 0.7])
+        )
+        fit_x = np.linspace(0, 360, 100)
+        fit_y = bsa_fit_function(np.radians(fit_x), *popt)
+        ax_big.plot(fit_x, fit_y, 'r-', lw=1.5)
+
+    ax_big.set_ylim(-1, 1)
+    ax_big.set_xlim(0, 360)
+    ax_big.set_xticks([0, 90, 180, 270, 360])
+    ax_big.set_ylabel(r"$A_{LU}$")
+    ax_big.set_xlabel(r"$\phi$ (deg)")
+    ax_big.set_title("Fully Integrated BSA", fontsize='medium')
+    ax_big.grid(True, alpha=0.3)
+
     for x_idx, xB in enumerate(unique_xB):
         for q_idx, Q2 in enumerate(unique_Q2):
+            if x_idx < 2 and q_idx >= len(unique_Q2)-2:
+                axs[len(unique_Q2)-1-q_idx, x_idx].axis('off')
+                continue
+
             ax = axs[len(unique_Q2)-1-q_idx, x_idx]
 
             key_base = (xB, Q2)
@@ -120,14 +164,11 @@ def plot_integrated_bsa(json_filepath, output_dir="bsa_plots/integrated"):
                         yerr.append(data_dict[key]['bsa_err'])
 
             if not x:
-                ax.axis('off')
+                axs[len(unique_Q2)-1-q_idx, x_idx].axis('off')
                 continue
 
-            populated_subplots[len(unique_Q2)-1-q_idx, x_idx] = 1
+            axs[len(unique_Q2)-1-q_idx, x_idx].errorbar(x, y, yerr, fmt='ko', markersize=4, capsize=3)
 
-            ax.errorbar(x, y, yerr, fmt='ko', markersize=4, capsize=3)
-
-            fitted = False
             if len(x) >= 4:
                 try:
                     popt, pcov = curve_fit(
@@ -140,62 +181,19 @@ def plot_integrated_bsa(json_filepath, output_dir="bsa_plots/integrated"):
                     )
                     fit_x = np.linspace(0, 360, 100)
                     fit_y = bsa_fit_function(np.radians(fit_x), *popt)
-                    ax.plot(fit_x, fit_y, 'r-', lw=1.5)
-                    fitted = True
+                    axs[len(unique_Q2)-1-q_idx, x_idx].plot(fit_x, fit_y, 'r-', lw=1.5)
                 except Exception as e:
                     print(f"Curve fit failed for bin ({xB}, {Q2}): {e}")
 
-            ax.set_ylim(-1, 1)
-            ax.set_xlim(0, 360)
+            axs[len(unique_Q2)-1-q_idx, x_idx].set_ylim(-1, 1)
+            axs[len(unique_Q2)-1-q_idx, x_idx].set_xlim(0, 360)
+            axs[len(unique_Q2)-1-q_idx, x_idx].grid(True, alpha=0.3)
 
-            # Label x-axis ticks
-            if (len(unique_Q2)-1-q_idx, x_idx) == (len(unique_Q2)-1, 0):
-                ax.set_xticks([0, 90, 180, 270, 360])
-                ax.set_xticklabels(["0", "90", "180", "270", "360"])
-            else:
-                ax.set_xticks([90, 180, 270, 360])
-
-            # Label y-axis ticks
-            if (len(unique_Q2)-1-q_idx, x_idx) == (len(unique_Q2)-1, 0):
-                ax.set_yticks([-1, -0.5, 0, 0.5, 1])
-            else:
-                ax.set_yticks([-0.5, 0, 0.5, 1])
-
-            # Axis labels
-            if not np.any(populated_subplots[len(unique_Q2)-1-q_idx, :x_idx]):
-                ax.set_ylabel(r"$A_{LU}$")
-            else:
-                ax.set_yticklabels([])
-
-            if not np.any(populated_subplots[len(unique_Q2)-q_idx:, x_idx]):
-                ax.set_xlabel(r"$\phi$ (deg)")
-            else:
-                ax.set_xticklabels([])
-
-            # Bin means
-            bin_key = f"({xB}, {Q2}, 0, 0)"
-            if bin_key in bin_means:
-                xB_avg = bin_means[bin_key]["xB_avg"]
-                Q2_avg = bin_means[bin_key]["Q2_avg"]
-                title_label = f"$x_B$={xB_avg:.2f}, $Q^2$={Q2_avg:.1f}"
-                ax.text(0.5, 0.96, title_label, ha='center', va='top', transform=ax.transAxes, fontsize='small')
-
-            # Fit results at bottom center
-            if fitted:
-                a1, b1 = popt[1], popt[2]
-                a1_err, b1_err = np.sqrt(pcov[1, 1]), np.sqrt(pcov[2, 2])
-                fit_label = f"$a_1$={a1:.3f}±{a1_err:.3f}\n$b_1$={b1:.3f}±{b1_err:.3f}"
-                ax.text(0.5, 0.02, fit_label, ha='center', va='bottom', transform=ax.transAxes, fontsize='small')
-
-            ax.grid(True, alpha=0.3)
-
-    # Equation text in bottom-right space
-    fig.text(0.88, 0.125 ,
+    plt.subplots_adjust(hspace=0, wspace=0)
+    fig.text(0.88, 0.125,
              r"$A_{LU} = c_0 + \frac{a_1 \sin\phi}{1 + b_1 \cos\phi}$",
              ha='right', va='bottom', fontsize=24)
 
-    plt.subplots_adjust(hspace=0, wspace=0)
     plt.savefig(os.path.join(output_dir, "bsa_integrated_over_t.png"), bbox_inches='tight')
-    plt.savefig(os.path.join(output_dir, "bsa_integrated_over_t.pdf"), bbox_inches='tight')
     plt.close()
     print(f"Integrated BSA plots saved to {output_dir}")
