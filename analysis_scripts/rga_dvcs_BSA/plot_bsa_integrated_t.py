@@ -6,7 +6,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from scipy.optimize import curve_fit
 
-N_PHI_BINS = 9
+N_PHI_BINS = 12
 
 def load_combined_bsa_json(json_filepath):
     with open(json_filepath) as f:
@@ -220,7 +220,7 @@ def plot_fully_integrated_bsa(json_filepath, output_dir="bsa_plots/integrated"):
 
     integrated_data_dict = load_combined_bsa_json(json_filepath)
 
-    N_PHI_BINS = 9
+    N_PHI_BINS = 12
     x, y, yerr = [], [], []
 
     for phi_idx in range(N_PHI_BINS):
