@@ -93,9 +93,13 @@ def plot_integrated_bsa(json_filepath, output_dir="bsa_plots/integrated"):
                 except RuntimeError:
                     print(f"Fit failed for bin {(xB, Q2)}")
 
+            ax.set_ylim(-1, 1)  # Set y-axis limits as requested
+            ax.set_xlim(0, 360)  # Ensure consistent x-axis range
+            ax.set_xticks([0, 90, 180, 270, 360])  # Set specified tick marks
+
             ax.set_title(f"$x_B$={xB}, $Q^2$={Q2}")
             ax.set_xlabel(r"$\phi$ (deg)")
-            ax.set_ylabel("BSA")
+            ax.set_ylabel(r"$A_{LU}$")  # Label changed to A_{LU}
             ax.grid(True, alpha=0.3)
 
     plt.tight_layout()
