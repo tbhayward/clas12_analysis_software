@@ -147,18 +147,19 @@ def plot_integrated_bsa(json_filepath, output_dir="bsa_plots/integrated"):
                 xB_avg = bin_means[bin_key]["xB_avg"]
                 Q2_avg = bin_means[bin_key]["Q2_avg"]
                 title_label = f"$x_B$={xB_avg:.2f}, $Q^2$={Q2_avg:.1f}"
-                ax.text(0.5, 0.92, title_label, ha='center', va='top', transform=ax.transAxes, fontsize='small')
+                ax.text(0.5, 0.94, title_label, ha='center', va='top', transform=ax.transAxes, fontsize='small')
 
             # Fit results at bottom center
             if fitted:
                 a1, b1 = popt[1], popt[2]
                 a1_err, b1_err = np.sqrt(pcov[1, 1]), np.sqrt(pcov[2, 2])
                 fit_label = f"$a_1$={a1:.3f}±{a1_err:.3f}\n$b_1$={b1:.3f}±{b1_err:.3f}"
-                ax.text(0.5, 0.04, fit_label, ha='center', va='bottom', transform=ax.transAxes, fontsize='small')
+                ax.text(0.5, 0.03, fit_label, ha='center', va='bottom', transform=ax.transAxes, fontsize='small')
 
             ax.grid(True, alpha=0.3)
 
     plt.subplots_adjust(hspace=0, wspace=0)
     plt.savefig(os.path.join(output_dir, "bsa_integrated_over_t.png"), bbox_inches='tight')
+    plt.savefig(os.path.join(output_dir, "bsa_integrated_over_t.pdf"), bbox_inches='tight')
     plt.close()
     print(f"Integrated BSA plots saved to {output_dir}")
