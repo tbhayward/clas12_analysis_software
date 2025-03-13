@@ -50,18 +50,24 @@ def integrate_t_bins(input_json, output_json):
         json.dump({str(k): v for k, v in integrated_results.items()}, f, indent=2)
     print(f"Integrated BSA (t-integrated) results saved to: {output_json}")
 
-def plot_integrated_bsa(json_filepath, output_dir="bsa_plots/integrated"):
+def plot_integrated_bsa(json_filepath, binning_json="binning.json", output_dir="bsa_plots/integrated"):
     os.makedirs(output_dir, exist_ok=True)
     data_dict = load_combined_bsa_json(json_filepath)
+
+    with open("bin_means/bin_means/bin_means.json") as f:
+        bin_means = json.load(f)
 
     unique_xB = sorted({k[0] for k in data_dict})
     unique_Q2 = sorted({k[1] for k in data_dict})
 
-    fig, axs = plt.subplots(len(unique_xB), len(unique_Q2), figsize=(15, 10), squeeze=False)
+    fig, axs = plt.subplots(len(unique_Q2), len(unique_xB), figsize=(20, 20), squeeze=False)
+
+    # Track filled subplots
+    has_data = np.zeros((len(unique_Q2), len(unique_xB)), dtype=bool)
 
     for i, xB in enumerate(unique_xB):
         for j, Q2 in enumerate(unique_Q2):
-            ax = axs[i, j]
+            ax = axs[len(unique_Q2)-1-j, i]  # lowest Q2 at bottom
 
             x, y, yerr = [], [], []
             for phi_idx in range(N_PHI_BINS):
@@ -69,19 +75,20 @@ def plot_integrated_bsa(json_filepath, output_dir="bsa_plots/integrated"):
                 if key in data_dict:
                     phi_center = (phi_idx + 0.5) * 360.0 / N_PHI_BINS
                     bsa_val = data_dict[key]['bsa']
-                    if -0.6 <= bsa_val <= 0.6:  # Exclude points outside this range
+                    if -0.6 <= bsa_val <= 0.6:
                         x.append(phi_center)
                         y.append(bsa_val)
                         yerr.append(data_dict[key]['bsa_err'])
 
             if not x:
+                ax.axis('off')
                 continue
 
-            ax.errorbar(x, y, yerr, fmt='ko', markersize=5, capsize=3)
+            ax.errorbar(x, y, yerr, fmt='ko', markersize=4, capsize=3)
 
             if len(x) >= 4:
                 try:
-                    popt, _ = curve_fit(
+                    popt, pcov = curve_fit(
                         bsa_fit_function,
                         np.radians(x),
                         y,
@@ -92,26 +99,34 @@ def plot_integrated_bsa(json_filepath, output_dir="bsa_plots/integrated"):
                     fit_x = np.linspace(0, 360, 100)
                     fit_y = bsa_fit_function(np.radians(fit_x), *popt)
                     ax.plot(fit_x, fit_y, 'r-', lw=1.5)
-                except RuntimeError:
-                    print(f"Fit failed for bin {(xB, Q2)}")
+                except Exception as e:
+                    print(f"Curve fit failed: {e}")
 
             ax.set_ylim(-1, 1)
             ax.set_xlim(0, 360)
             ax.set_xticks([0, 90, 180, 270, 360])
 
-            # Only apply y-axis labels to leftmost plots
-            if j == 0:
+            # Find furthest left subplot in this row to set ylabel
+            if all(not axs[len(unique_Q2)-1-j, idx].lines for idx in range(i)):
                 ax.set_ylabel(r"$A_{LU}$")
             else:
                 ax.set_yticklabels([])
 
-            # Only apply x-axis labels to bottom-most plots
-            if i == len(unique_xB) - 1:
+            # Find bottom-most subplot in this column to set xlabel
+            if all(not axs[len(unique_Q2)-1-idx, i].lines for idx in range(j)):
                 ax.set_xlabel(r"$\phi$ (deg)")
             else:
                 ax.set_xticklabels([])
 
-            ax.set_title(f"$x_B$={xB}, $Q^2$={Q2}")
+            # Use bin means for titles
+            mean_key = f"({xB}, {Q2}, 0, 0)"
+            with open(binning_json, 'r') as f:
+                bin_means = json.load(f)
+            if mean_key in binning_means:
+                xB_mean = binning_means[mean_key]['xB_avg']
+                Q2_mean = binning_json[mean_key]['Q2_avg']
+                ax.set_title(f"$x_B$={xB_mean:.2f}, $Q^2$={Q2_mean:.2f}")
+
             ax.grid(True, alpha=0.3)
 
     plt.tight_layout()
