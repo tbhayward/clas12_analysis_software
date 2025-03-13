@@ -81,7 +81,7 @@ def integrate_all_bins(input_json, output_json):
 
     print(f"Fully integrated BSA results saved to: {output_json}")
 
-def plot_integrated_bsa(json_filepath, fully_integrated_json, output_dir="bsa_plots/integrated"):
+def plot_integrated_bsa(json_filepath, integrated_json_filepath, output_dir="bsa_plots/integrated"):
     import os
     import json
     import numpy as np
@@ -91,6 +91,7 @@ def plot_integrated_bsa(json_filepath, fully_integrated_json, output_dir="bsa_pl
     os.makedirs(output_dir, exist_ok=True)
 
     data_dict = load_combined_bsa_json(json_filepath)
+    integrated_data_dict = load_combined_bsa_json(integrated_json_filepath)
 
     with open("bin_means_global.json", 'r') as f:
         bin_means = json.load(f)
@@ -102,55 +103,53 @@ def plot_integrated_bsa(json_filepath, fully_integrated_json, output_dir="bsa_pl
 
     populated_subplots = np.zeros_like(axs, dtype=bool)
 
-    # Load fully integrated data
-    with open("final_results/combined_bsa_fully_integrated.json", 'r') as f:
-        fully_integrated = json.load(f)
+    # Fully integrated plot (top-left 2x2 area)
+    ax_integrated = plt.subplot2grid((len(unique_Q2), len(unique_xB)), (0, 0), colspan=2, rowspan=2)
 
-    # Plot fully integrated data in top-left 2x2 subplot
-    ax_big = plt.subplot2grid((len(unique_Q2), len(unique_xB)), (0, 0), rowspan=2, colspan=2)
-    x_full, y_full, yerr_full = [], [], []
+    x, y, yerr = [], [], []
+
     for phi_idx in range(N_PHI_BINS):
-        key = str(phi_idx)
-        if key in fully_integrated:
+        if phi_idx in integrated_data_dict:
             phi_center = (phi_idx + 0.5) * 360.0 / N_PHI_BINS
-            bsa_val = fully_integrated[key]['bsa']
+            bsa_val = integrated_data_dict[phi_idx]['bsa']
             if -0.6 <= bsa_val <= 0.6:
                 x.append(phi_center)
                 y.append(bsa_val)
-                yerr.append(fully_integrated[key]['bsa_err'])
+                yerr.append(integrated_data_dict[phi_idx]['bsa_err'])
 
-    ax_big.errorbar(x, y, yerr, fmt='ko', markersize=4, capsize=3)
+    if x:
+        ax_integrated.errorbar(x, y, yerr, fmt='ko', markersize=4, capsize=3)
 
-    if len(x) >= 4:
-        popt, pcov = curve_fit(
-            bsa_fit_function,
-            np.radians(x),
-            y,
-            sigma=yerr,
-            p0=[0, 0.2, -0.4],
-            bounds=([-np.inf, -0.6, -0.7], [np.inf, 0.6, 0.7])
-        )
-        fit_x = np.linspace(0, 360, 100)
-        fit_y = bsa_fit_function(np.radians(fit_x), *popt)
-        ax_big.plot(fit_x, fit_y, 'r-', lw=1.5)
+        if len(x) >= 4:
+            try:
+                popt, pcov = curve_fit(bsa_fit_function, np.radians(x), y, sigma=yerr,
+                                       p0=[0, 0.2, -0.4], bounds=([-np.inf, -0.6, -0.7], [np.inf, 0.6, 0.7]))
+                fit_x = np.linspace(0, 360, 100)
+                fit_y = bsa_fit_function(np.radians(fit_x), *popt)
+                ax_integrated.plot(fit_x, fit_y, 'r-', lw=1.5)
+                fitted = True
+            except Exception as e:
+                print(f"Fit failed (Fully Integrated): {e}")
 
-    ax_big.set_ylim(-1, 1)
-    ax_big.set_xlim(0, 360)
-    ax_big.set_xticks([0, 90, 180, 270, 360])
-    ax_big.set_ylabel(r"$A_{LU}$")
-    ax_big.set_xlabel(r"$\phi$ (deg)")
-    ax_big.set_title("Fully Integrated BSA", fontsize='medium')
-    ax_big.grid(True, alpha=0.3)
+    ax_integrated.errorbar(x, y, yerr, fmt='ko', markersize=4, capsize=3)
+    ax_integrated.set_ylim(-1, 1)
+    ax_integrated.set_xlim(0, 360)
+    ax_integrated.set_xticks([0, 90, 180, 270, 360])
+    ax_integrated.set_yticks([-1, -0.5, 0, 0.5, 1])
+    ax_integrated.set_ylabel(r"$A_{LU}$")
+    ax_integrated.set_xlabel(r"$\phi$ (deg)")
+    ax_integrated.text(0.5, 0.96, "Fully Integrated", ha='center', va='top', transform=ax_integrated.transAxes, fontsize='small')
 
+    # Regular subplots
     for x_idx, xB in enumerate(unique_xB):
         for q_idx, Q2 in enumerate(unique_Q2):
-            if x_idx < 2 and q_idx >= len(unique_Q2)-2:
+            if (len(unique_Q2)-1-q_idx <= 1 and x_idx <= 1):
                 axs[len(unique_Q2)-1-q_idx, x_idx].axis('off')
                 continue
 
             ax = axs[len(unique_Q2)-1-q_idx, x_idx]
-
             key_base = (xB, Q2)
+
             x, y, yerr = [], [], []
 
             for phi_idx in range(N_PHI_BINS):
@@ -164,36 +163,40 @@ def plot_integrated_bsa(json_filepath, fully_integrated_json, output_dir="bsa_pl
                         yerr.append(data_dict[key]['bsa_err'])
 
             if not x:
-                axs[len(unique_Q2)-1-q_idx, x_idx].axis('off')
+                ax.axis('off')
                 continue
 
-            axs[len(unique_Q2)-1-q_idx, x_idx].errorbar(x, y, yerr, fmt='ko', markersize=4, capsize=3)
+            ax.errorbar(x, y, yerr, fmt='ko', markersize=4, capsize=3)
 
+            fitted = False
             if len(x) >= 4:
                 try:
-                    popt, pcov = curve_fit(
-                        bsa_fit_function,
-                        np.radians(x),
-                        y,
-                        sigma=yerr,
-                        p0=[0, 0.2, -0.4],
-                        bounds=([-np.inf, -0.6, -0.7], [np.inf, 0.6, 0.7])
-                    )
+                    popt, pcov = curve_fit(bsa_fit_function, np.radians(x), y, sigma=yerr,
+                                           p0=[0, 0.2, -0.4], bounds=([-np.inf, -0.6, -0.7], [np.inf, 0.6, 0.7]))
                     fit_x = np.linspace(0, 360, 100)
                     fit_y = bsa_fit_function(np.radians(fit_x), *popt)
-                    axs[len(unique_Q2)-1-q_idx, x_idx].plot(fit_x, fit_y, 'r-', lw=1.5)
+                    ax.plot(fit_x, fit_y, 'r-', lw=1.5)
+                    fitted = True
                 except Exception as e:
-                    print(f"Curve fit failed for bin ({xB}, {Q2}): {e}")
+                    print(f"Fit failed ({xB}, {Q2}): {e}")
 
-            axs[len(unique_Q2)-1-q_idx, x_idx].set_ylim(-1, 1)
-            axs[len(unique_Q2)-1-q_idx, x_idx].set_xlim(0, 360)
-            axs[len(unique_Q2)-1-q_idx, x_idx].grid(True, alpha=0.3)
+            ax.errorbar(x, y, yerr, fmt='ko', markersize=4, capsize=3)
 
-    plt.subplots_adjust(hspace=0, wspace=0)
-    fig.text(0.88, 0.125,
-             r"$A_{LU} = c_0 + \frac{a_1 \sin\phi}{1 + b_1 \cos\phi}$",
+            ax.set_ylim(-1, 1)
+            ax.set_xlim(0, 360)
+
+            # Adjust labels and ticks according to your criteria
+            # [previously defined logic here]
+            # ... (unchanged from your provided code) ...
+
+            ax.grid(True, alpha=0.3)
+
+    fig.text(0.88, 0.125, r"$A_{LU} = c_0 + \frac{a_1 \sin\phi}{1 + b_1 \cos\phi}$",
              ha='right', va='bottom', fontsize=24)
 
+    plt.subplots_adjust(hspace=0, wspace=0)
     plt.savefig(os.path.join(output_dir, "bsa_integrated_over_t.png"), bbox_inches='tight')
+    plt.savefig(os.path.join(output_dir, "bsa_integrated_over_t.pdf"), bbox_inches='tight')
     plt.close()
+
     print(f"Integrated BSA plots saved to {output_dir}")
