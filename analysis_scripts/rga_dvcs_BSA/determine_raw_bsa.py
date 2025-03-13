@@ -122,7 +122,7 @@ def calculate_raw_bsa(period, channel, binning_csv, output_dir):
             continue
 
         # Skip bins with BSA values of exactly ±1
-        if round(bsa, 5) in (1.00000, -1.00000):
+        if round(bsa, 5) in (1.0000, -1.0000):
             continue
 
         valid_results[key] = {
