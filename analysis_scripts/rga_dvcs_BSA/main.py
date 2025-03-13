@@ -17,7 +17,7 @@ from determine_final_bsa import determine_final_bsa
 from plot_bsa import plot_raw_bsa, plot_adjusted_bsa, plot_combined_bsa
 from plot_bsa import plot_a1_vs_t_by_Q2, plot_a1_vs_t_grid_full, plot_a1_vs_t_grid_top, plot_a1_vs_t_grid_bottom
 from plot_bsa import plot_pass_comparison
-from plot_bsa_integrated_t import integrate_t_bins, plot_integrated_bsa
+from plot_bsa_integrated_t import integrate_t_bins, plot_integrated_bsa, integrate_all_bins
 
 def run_period(args):
     """
@@ -242,9 +242,12 @@ def main():
 
     combined_bsa_json = os.path.join("final_results", "combined_bsa.json")
     output_integrated_json = os.path.join("final_results", "combined_bsa_integrated_t.json")
-    integrate_t_bins(combined_bsa_json, output_integrated_json)
+    output_fully_integrated_json = os.path.join("final_results", "combined_bsa_fully_integrated.json")
 
-    plot_integrated_bsa(output_integrated_json, output_dir="bsa_plots/integrated")
+    integrate_t_bins(combined_bsa_json, output_integrated_json)
+    integrate_all_bins(combined_bsa_json, output_fully_integrated_json)
+
+    plot_integrated_bsa(output_integrated_json, output_fully_integrated_json, output_dir="bsa_plots/integrated")
     
     print("✅ All plots saved to bsa_plots/ directory")
 
