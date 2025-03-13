@@ -17,7 +17,7 @@ from determine_final_bsa import determine_final_bsa
 from plot_bsa import plot_raw_bsa, plot_adjusted_bsa, plot_combined_bsa
 from plot_bsa import plot_a1_vs_t_by_Q2, plot_a1_vs_t_grid_full, plot_a1_vs_t_grid_top, plot_a1_vs_t_grid_bottom
 from plot_bsa import plot_pass_comparison
-from plot_bsa_integrated_t import plot_bsa_integrated_t
+from plot_bsa_integrated_t import integrate_t_bins
 
 def run_period(args):
     """
