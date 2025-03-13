@@ -239,7 +239,10 @@ def main():
     # plot_a1_vs_t_grid_top(csv_path)
     # plot_a1_vs_t_grid_bottom(csv_path)
     # plot_pass_comparison(csv_path)
-    integrate_t_bins("imports/integrated_bin_v2.csv")
+
+    combined_bsa_json = os.path.join("final_results", "combined_bsa.json")
+    output_integrated_json = os.path.join("final_results", "integrated_bsa.json")
+    integrate_t_bins(combined_bsa_json, output_integrated_json)
     
     print("✅ All plots saved to bsa_plots/ directory")
 
