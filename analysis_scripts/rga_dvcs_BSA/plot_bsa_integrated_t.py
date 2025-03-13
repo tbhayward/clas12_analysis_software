@@ -154,7 +154,7 @@ def plot_integrated_bsa(json_filepath, output_dir="bsa_plots/integrated"):
                 a1, b1 = popt[1], popt[2]
                 a1_err, b1_err = np.sqrt(pcov[1, 1]), np.sqrt(pcov[2, 2])
                 fit_label = f"$a_1$={a1:.3f}±{a1_err:.3f}\n$b_1$={b1:.3f}±{b1_err:.3f}"
-                ax.text(0.5, 0.05, fit_label, ha='center', va='bottom', transform=ax.transAxes, fontsize='small')
+                ax.text(0.5, 0.04, fit_label, ha='center', va='bottom', transform=ax.transAxes, fontsize='small')
 
             ax.grid(True, alpha=0.3)
 
