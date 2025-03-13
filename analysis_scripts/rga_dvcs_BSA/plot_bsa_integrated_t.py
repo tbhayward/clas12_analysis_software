@@ -52,15 +52,15 @@ def integrate_t_bins(input_json, output_json):
 
 def plot_integrated_bsa(json_filepath, output_dir="bsa_plots/integrated"):
     import os
-    import numpy as np
     import json
+    import numpy as np
     import matplotlib.pyplot as plt
     from scipy.optimize import curve_fit
 
     os.makedirs(output_dir, exist_ok=True)
+
     data_dict = load_combined_bsa_json(json_filepath)
 
-    # Load global bin means
     with open("bin_means_global.json", 'r') as f:
         bin_means = json.load(f)
 
@@ -73,11 +73,13 @@ def plot_integrated_bsa(json_filepath, output_dir="bsa_plots/integrated"):
 
     for x_idx, xB in enumerate(unique_xB):
         for q_idx, Q2 in enumerate(unique_Q2):
-            ax = axs[len(unique_Q2) - 1 - q_idx, x_idx]
+            ax = axs[len(unique_Q2)-1-q_idx, x_idx]
 
+            key_base = (xB, Q2)
             x, y, yerr = [], [], []
+
             for phi_idx in range(N_PHI_BINS):
-                key = (xB, Q2, phi_idx)
+                key = key_base + (phi_idx,)
                 if key in data_dict:
                     phi_center = (phi_idx + 0.5) * 360.0 / N_PHI_BINS
                     bsa_val = data_dict[key]['bsa']
@@ -90,8 +92,11 @@ def plot_integrated_bsa(json_filepath, output_dir="bsa_plots/integrated"):
                 ax.axis('off')
                 continue
 
+            populated_subplots[len(unique_Q2)-1-q_idx, x_idx] = 1
+
             ax.errorbar(x, y, yerr, fmt='ko', markersize=4, capsize=3)
 
+            fitted = False
             if len(x) >= 4:
                 try:
                     popt, pcov = curve_fit(
@@ -104,41 +109,56 @@ def plot_integrated_bsa(json_filepath, output_dir="bsa_plots/integrated"):
                     )
                     fit_x = np.linspace(0, 360, 100)
                     fit_y = bsa_fit_function(np.radians(fit_x), *popt)
-                    ax.plot(fit_x, fit_y, 'r-', lw=1.2)
-                except RuntimeError:
-                    print(f"Fit failed for bin {(xB, Q2)}")
+                    ax.plot(fit_x, fit_y, 'r-', lw=1.5)
+                    fitted = True
+                except Exception as e:
+                    print(f"Curve fit failed for bin ({xB}, {Q2}): {e}")
 
             ax.set_ylim(-1, 1)
             ax.set_xlim(0, 360)
-            ax.set_xticks([0, 90, 180, 270, 360])
 
-            bin_mean_key = f"({xB}, {Q2}, 0, 0)"
-            if bin_mean_key in bin_means:
-                xB_avg = bin_means[bin_mean_key]["xB_avg"]
-                Q2_avg = bin_means[bin_mean_key]["Q2_avg"]
-                ax.text(0.05, 0.85, f"$x_B$={xB_avg:.2f}, $Q^2$={Q2_avg:.1f}", transform=ax.transAxes, fontsize=9)
+            # Label x-axis ticks
+            if (len(unique_Q2)-1-q_idx, x_idx) == (len(unique_Q2)-1, 0):
+                ax.set_xticks([0, 90, 180, 270, 360])
+                ax.set_xticklabels(["0", "90", "180", "270", "360"])
+            else:
+                ax.set_xticks([90, 180, 270, 360])
 
-            populated_subplots[len(unique_Q2)-1-q_idx, x_idx] = True
+            # Label y-axis ticks
+            if (len(unique_Q2)-1-q_idx, x_idx) == (len(unique_Q2)-1, 0):
+                ax.set_yticks([-1, -0.5, 0, 0.5, 1])
+            else:
+                ax.set_yticks([-0.5, 0, 0.5, 1])
 
-    # Label logic for far-left and bottom subplots
-    for i in range(len(unique_Q2)):
-        row_indices = np.where(populated_subplots[i])[0]
-        if row_indices.size > 0:
-            leftmost = row_indices[0]
-            axs[i, leftmost].set_ylabel(r"$A_{LU}$")
-            for idx in row_indices[1:]:
-                axs[i, idx].set_yticklabels([])
+            # Axis labels
+            if not np.any(populated_subplots[len(unique_Q2)-1-q_idx, :x_idx]):
+                ax.set_ylabel(r"$A_{LU}$")
+            else:
+                ax.set_yticklabels([])
 
-    for j in range(len(unique_xB)):
-        col_indices = np.where(populated_subplots[:, j])[0]
-        if col_indices.size > 0:
-            bottommost = col_indices[-1]
-            axs[bottommost, j].set_xlabel(r"$\phi$ (deg)")
-            for idx in col_indices[:-1]:
-                axs[idx, j].set_xticklabels([])
+            if not np.any(populated_subplots[len(unique_Q2)-q_idx:, x_idx]):
+                ax.set_xlabel(r"$\phi$ (deg)")
+            else:
+                ax.set_xticklabels([])
+
+            # Bin means
+            bin_key = f"({xB}, {Q2}, 0, 0)"
+            if bin_key in bin_means:
+                xB_avg = bin_means[bin_key]["xB_avg"]
+                Q2_avg = bin_means[bin_key]["Q2_avg"]
+                title_label = f"$x_B$={xB_avg:.2f}, $Q^2$={Q2_avg:.1f}"
+                ax.text(0.5, 0.92, title_label, ha='center', va='top', transform=ax.transAxes, fontsize='small')
+
+            # Fit results at bottom center
+            if fitted:
+                a1, b1 = popt[1], popt[2]
+                a1_err, b1_err = np.sqrt(pcov[1, 1]), np.sqrt(pcov[2, 2])
+                fit_label = f"$a_1$={a1:.3f}±{a1_err:.3f}, $b_1$={b1:.3f}±{b1_err:.3f}"
+                ax.text(0.5, 0.05, fit_label, ha='center', va='bottom', transform=ax.transAxes, fontsize='small')
+
+            ax.grid(True, alpha=0.3)
 
     plt.subplots_adjust(hspace=0, wspace=0)
-    plot_file = os.path.join(output_dir, "bsa_integrated_over_t.png")
-    plt.savefig(plot_file)
+    plt.savefig(os.path.join(output_dir, "bsa_integrated_over_t.png"), bbox_inches='tight')
     plt.close()
     print(f"Integrated BSA plots saved to {output_dir}")
