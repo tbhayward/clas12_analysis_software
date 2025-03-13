@@ -66,37 +66,39 @@ def plot_integrated_bsa(json_filepath, output_dir="bsa_plots/integrated"):
     os.makedirs(output_dir, exist_ok=True)
     data_dict = load_combined_bsa_json(json_filepath)
 
-    unique_xB = sorted({k[0] for k in data_dict})
-    unique_Q2 = sorted({k[1] for k in data_dict}, reverse=False)
+    unique_xB = sorted(set(k[0] for k in data_dict))
+    unique_Q2 = sorted(set(k[1] for k in data_dict))
 
-    fig, axs = plt.subplots(len(unique_Q2), len(unique_xB), figsize=(20, 20), squeeze=False)
+    n_rows = len(unique_Q2)
+    n_cols = len(unique_xB)
+
+    fig, axs = plt.subplots(n_rows, n_cols, figsize=(4*n_cols, 3*n_rows), squeeze=False)
 
     for x_idx, xB in enumerate(unique_xB):
-        Q2_vals = sorted({k[1] for k in data_dict if k[0] == xB})
-        for q_idx, Q2 in enumerate(Q2_vals):
-            ax = axs[len(Q2_vals)-1 - q_idx, x_idx]  # lowest Q2 at bottom
+        for q_idx, Q2 in enumerate(unique_Q2):
+            ax = axs[n_rows - 1 - q_idx, x_idx]  # lowest Q2 at bottom
 
-            key_base = (xB, Q2)
             x, y, yerr = [], [], []
-
             for phi_idx in range(N_PHI_BINS):
-                key = key_base + (phi_idx,)
+                key = (xB, Q2, phi_idx)
                 if key in data_dict:
                     phi_center = (phi_idx + 0.5) * 360.0 / N_PHI_BINS
                     bsa_val = data_dict[key]['bsa']
+                    bsa_err = data_dict[key]['bsa_err']
                     if -0.6 <= bsa_val <= 0.6:
                         x.append(phi_center)
                         y.append(bsa_val)
-                        yerr.append(data_dict[key]['bsa_err'])
+                        yerr.append(bsa_err)
 
             if not x:
+                ax.set_visible(False)
                 continue
 
             ax.errorbar(x, y, yerr, fmt='ko', markersize=4, capsize=3)
 
             if len(x) >= 4:
                 try:
-                    popt, _ = curve_fit(
+                    popt, pcov = curve_fit(
                         bsa_fit_function,
                         np.radians(x),
                         y,
@@ -106,7 +108,11 @@ def plot_integrated_bsa(json_filepath, output_dir="bsa_plots/integrated"):
                     )
                     fit_x = np.linspace(0, 360, 200)
                     fit_y = bsa_fit_function(np.radians(fit_x), *popt)
-                    ax.plot(fit_x, fit_y, 'r-', lw=1.5, label=f'$a_1$={popt[1]:.3f}$\pm${np.sqrt(pcov[1,1]):.3f}\n$b_1$={popt[2]:.3f}$\pm${np.sqrt(pcov[2,2]):.3f}')
+                    a1, b1 = popt[1], popt[2]
+                    a1_err, b1_err = np.sqrt(np.diag(pcov))[1:3]
+
+                    ax.plot(fit_x, fit_y, 'r-', lw=1.5,
+                            label=f'$a_1$={a1:.3f}±{a1_err:.3f}\n$b_1$={b1:.3f}±{b1_err:.3f}')
                     ax.legend(fontsize='small')
                 except RuntimeError:
                     print(f"Fit failed for bin {(xB, Q2)}")
