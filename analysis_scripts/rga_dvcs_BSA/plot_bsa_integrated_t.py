@@ -54,7 +54,7 @@ def plot_integrated_bsa(json_filepath, binning_json="binning.json", output_dir="
     os.makedirs(output_dir, exist_ok=True)
     data_dict = load_combined_bsa_json(json_filepath)
 
-    with open("bin_means/bin_means/bin_means.json") as f:
+    with open("bin_means_global.json", 'r') as f:
         bin_means = json.load(f)
 
     unique_xB = sorted({k[0] for k in data_dict})
