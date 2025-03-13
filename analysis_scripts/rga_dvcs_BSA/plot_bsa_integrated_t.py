@@ -50,11 +50,12 @@ def integrate_t_bins(input_json, output_json):
         json.dump({str(k): v for k, v in integrated_results.items()}, f, indent=2)
     print(f"Integrated BSA (t-integrated) results saved to: {output_json}")
 
-def plot_integrated_bsa(json_filepath, binning_json="binning.json", output_dir="bsa_plots/integrated"):
+def plot_integrated_bsa(json_filepath, output_dir="bsa_plots/integrated"):
     os.makedirs(output_dir, exist_ok=True)
     data_dict = load_combined_bsa_json(json_filepath)
 
-    with open("bin_means/bin_means/bin_means.json") as f:
+    # Load global bin means
+    with open("bin_means_global.json", 'r') as f:
         bin_means = json.load(f)
 
     unique_xB = sorted({k[0] for k in data_dict})
@@ -62,16 +63,15 @@ def plot_integrated_bsa(json_filepath, binning_json="binning.json", output_dir="
 
     fig, axs = plt.subplots(len(unique_Q2), len(unique_xB), figsize=(20, 20), squeeze=False)
 
-    # Track filled subplots
-    has_data = np.zeros((len(unique_Q2), len(unique_xB)), dtype=bool)
+    for x_idx, xB in enumerate(unique_xB):
+        for q_idx, Q2 in enumerate(unique_Q2):
+            ax = axs[len(unique_Q2) - 1 - q_idx, x_idx]  # lowest Q2 at bottom
 
-    for i, xB in enumerate(unique_xB):
-        for j, Q2 in enumerate(unique_Q2):
-            ax = axs[len(unique_Q2)-1-j, i]  # lowest Q2 at bottom
-
+            key_base = (xB, Q2)
             x, y, yerr = [], [], []
+
             for phi_idx in range(N_PHI_BINS):
-                key = (xB, Q2, phi_idx)
+                key = key_base + (phi_idx,)
                 if key in data_dict:
                     phi_center = (phi_idx + 0.5) * 360.0 / N_PHI_BINS
                     bsa_val = data_dict[key]['bsa']
@@ -84,7 +84,7 @@ def plot_integrated_bsa(json_filepath, binning_json="binning.json", output_dir="
                 ax.axis('off')
                 continue
 
-            ax.errorbar(x, y, yerr, fmt='ko', markersize=4, capsize=3)
+            ax.errorbar(x, y, yerr, fmt='ko', markersize=5, capsize=3)
 
             if len(x) >= 4:
                 try:
@@ -99,33 +99,32 @@ def plot_integrated_bsa(json_filepath, binning_json="binning.json", output_dir="
                     fit_x = np.linspace(0, 360, 100)
                     fit_y = bsa_fit_function(np.radians(fit_x), *popt)
                     ax.plot(fit_x, fit_y, 'r-', lw=1.5)
-                except Exception as e:
-                    print(f"Curve fit failed: {e}")
+                except RuntimeError:
+                    print(f"Fit failed for bin {(xB, Q2)}")
 
             ax.set_ylim(-1, 1)
             ax.set_xlim(0, 360)
             ax.set_xticks([0, 90, 180, 270, 360])
 
-            # Find furthest left subplot in this row to set ylabel
-            if all(not axs[len(unique_Q2)-1-j, idx].lines for idx in range(i)):
+            # Y-axis labels only on leftmost plots
+            if x_idx == 0:
                 ax.set_ylabel(r"$A_{LU}$")
             else:
                 ax.set_yticklabels([])
 
-            # Find bottom-most subplot in this column to set xlabel
-            if all(not axs[len(unique_Q2)-1-idx, i].lines for idx in range(j)):
+            # X-axis labels only on bottom plots
+            if q_idx == 0:
                 ax.set_xlabel(r"$\phi$ (deg)")
             else:
                 ax.set_xticklabels([])
 
-            # Use bin means for titles
-            mean_key = f"({xB}, {Q2}, 0, 0)"
-            with open(binning_json, 'r') as f:
-                bin_means = json.load(f)
-            if mean_key in binning_means:
-                xB_mean = binning_means[mean_key]['xB_avg']
-                Q2_mean = binning_json[mean_key]['Q2_avg']
-                ax.set_title(f"$x_B$={xB_mean:.2f}, $Q^2$={Q2_mean:.2f}")
+            bin_mean_key = f"({xB}, {Q2}, 0, 0)"
+            if bin_mean_key in bin_means:
+                xB_avg = round(bin_means[bin_mean_key]["xB_avg"], 2)
+                Q2_avg = round(bin_means[bin_mean_key]["Q2_avg"], 2)
+                ax.set_title(f"$x_B$={xB_avg:.2f}, $Q^2$={Q2_avg:.2f}")
+            else:
+                ax.set_title(f"$x_B$={xB}, $Q^2$={Q2}")
 
             ax.grid(True, alpha=0.3)
 
