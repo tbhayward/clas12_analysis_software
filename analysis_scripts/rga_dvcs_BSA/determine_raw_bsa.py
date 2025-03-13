@@ -36,7 +36,7 @@ def calculate_raw_bsa(period, channel, binning_csv, output_dir):
     unique_xB = sorted({(b.xBmin, b.xBmax) for b in binning_scheme})
     unique_Q2 = sorted({(b.Q2min, b.Q2max) for b in binning_scheme})
     unique_t = sorted({(b.tmin, b.tmax) for b in binning_scheme})
-    phi_bins = np.linspace(0, 2*math.pi, 10)
+    phi_bins = np.linspace(0, 2*math.pi, 13)
 
     # Initialize storage for counts and beam polarization
     results = {(i_xB, i_Q2, i_t, i_phi): {"N_plus":0, "N_minus":0} 
