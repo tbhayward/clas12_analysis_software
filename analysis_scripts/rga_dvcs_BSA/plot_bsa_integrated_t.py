@@ -50,8 +50,15 @@ def integrate_t_bins(input_json, output_json):
         json.dump({str(k): v for k, v in integrated_results.items()}, f, indent=2)
     print(f"Integrated BSA (t-integrated) results saved to: {output_json}")
 
-def plot_integrated_bsa(json_filepath, binning_json="binning.json", output_dir="bsa_plots/integrated"):
+def plot_integrated_bsa(json_filepath, output_dir="bsa_plots/integrated"):
+    import os
+    import json
+    import numpy as np
+    import matplotlib.pyplot as plt
+    from scipy.optimize import curve_fit
+
     os.makedirs(output_dir, exist_ok=True)
+
     data_dict = load_combined_bsa_json(json_filepath)
 
     with open("bin_means_global.json", 'r') as f:
@@ -60,22 +67,22 @@ def plot_integrated_bsa(json_filepath, binning_json="binning.json", output_dir="
     unique_xB = sorted({k[0] for k in data_dict})
     unique_Q2 = sorted({k[1] for k in data_dict})
 
-    fig, axs = plt.subplots(len(unique_Q2), len(unique_xB), figsize=(20, 20), squeeze=False)
+    fig, axs = plt.subplots(len(unique_Q2), len(unique_xB), figsize=(15, 10), squeeze=False)
 
-    # Track filled subplots
-    has_data = np.zeros((len(unique_Q2), len(unique_xB)), dtype=bool)
+    # Keep track of populated subplots
+    populated_subplots = np.zeros_like(axs, dtype=bool)
 
-    for i, xB in enumerate(unique_xB):
-        for j, Q2 in enumerate(unique_Q2):
-            ax = axs[len(unique_Q2)-1-j, i]  # lowest Q2 at bottom
+    for x_idx, xB in enumerate(unique_xB):
+        for q_idx, Q2 in enumerate(unique_Q2):
+            ax = axs[len(unique_Q2) - 1 - q_idx, x_idx]  # lowest Q2 at bottom
 
             x, y, yerr = [], [], []
             for phi_idx in range(N_PHI_BINS):
                 key = (xB, Q2, phi_idx)
                 if key in data_dict:
-                    phi_center = (phi_idx + 0.5) * 360.0 / N_PHI_BINS
                     bsa_val = data_dict[key]['bsa']
                     if -0.6 <= bsa_val <= 0.6:
+                        phi_center = (phi_idx + 0.5) * 360.0 / N_PHI_BINS
                         x.append(phi_center)
                         y.append(bsa_val)
                         yerr.append(data_dict[key]['bsa_err'])
@@ -84,7 +91,9 @@ def plot_integrated_bsa(json_filepath, binning_json="binning.json", output_dir="
                 ax.axis('off')
                 continue
 
-            ax.errorbar(x, y, yerr, fmt='ko', markersize=4, capsize=3)
+            populated_subplots[len(unique_Q2)-1-q_idx, x_idx] = 1
+
+            ax.errorbar(x, y, yerr, fmt='ko', markersize=5, capsize=3)
 
             if len(x) >= 4:
                 try:
@@ -100,36 +109,42 @@ def plot_integrated_bsa(json_filepath, binning_json="binning.json", output_dir="
                     fit_y = bsa_fit_function(np.radians(fit_x), *popt)
                     ax.plot(fit_x, fit_y, 'r-', lw=1.5)
                 except Exception as e:
-                    print(f"Curve fit failed: {e}")
+                    print(f"Curve fit failed for bin ({xB}, {Q2}): {e}")
 
             ax.set_ylim(-1, 1)
             ax.set_xlim(0, 360)
             ax.set_xticks([0, 90, 180, 270, 360])
 
-            # Find furthest left subplot in this row to set ylabel
-            if all(not axs[len(unique_Q2)-1-j, idx].lines for idx in range(i)):
-                ax.set_ylabel(r"$A_{LU}$")
+    # Determine the farthest left subplot in each row and bottom subplot in each column
+    for i in range(len(unique_Q2)):
+        for j in range(len(unique_xB)):
+            if populated_subplots[i, j]:
+                # y-axis labels on farthest left subplot of each row
+                if j == 0 or np.sum(populated_subplots[i, :j]) == 0:
+                    axs[i, j].set_ylabel(r"$A_{LU}$")
+                else:
+                    axs[i, j].set_yticklabels([])
+
+                # x-axis labels on bottommost subplot
+                if i == len(unique_Q2)-1 or np.sum(populated_subplots[i+1:, j]) == 0:
+                    axs[i, j].set_xlabel(r"$\phi$ (deg)")
+                else:
+                    axs[i, j].set_xticklabels([])
+
+                # Set titles using bin_means_global.json
+                bin_key = f"({xB}, {Q2}, 0, 0)"
+                if bin_key in bin_means:
+                    xB_avg = round(bin_means[bin_key]["xB_avg"], 2)
+                    Q2_avg = round(bin_means[bin_key]["Q2_avg"], 1)
+                    axs[i, j].set_title(f"$x_B$={xB_avg}, $Q^2$={Q2_avg}", fontsize='small', pad=2)
+                else:
+                    axs[i, j].set_title(f"$x_B$={xB}, $Q^2$={Q2}", fontsize=9)
+
+                axs[i, j].grid(True, alpha=0.3)
             else:
-                ax.set_yticklabels([])
+                axs[i, j].axis('off')
 
-            # Find bottom-most subplot in this column to set xlabel
-            if all(not axs[len(unique_Q2)-1-idx, i].lines for idx in range(j)):
-                ax.set_xlabel(r"$\phi$ (deg)")
-            else:
-                ax.set_xticklabels([])
-
-            # Use bin means for titles
-            mean_key = f"({xB}, {Q2}, 0, 0)"
-            with open(binning_json, 'r') as f:
-                bin_means = json.load(f)
-            if mean_key in binning_means:
-                xB_mean = binning_means[mean_key]['xB_avg']
-                Q2_mean = binning_json[mean_key]['Q2_avg']
-                ax.set_title(f"$x_B$={xB_mean:.2f}, $Q^2$={Q2_mean:.2f}")
-
-            ax.grid(True, alpha=0.3)
-
-    plt.tight_layout()
+    plt.tight_layout(h_pad=0.5, w_pad=0.5)
     plot_file = os.path.join(output_dir, "bsa_integrated_over_t.png")
     plt.savefig(plot_file)
     plt.close()
