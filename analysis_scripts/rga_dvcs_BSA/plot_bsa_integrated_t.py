@@ -6,10 +6,8 @@ import numpy as np
 import matplotlib.pyplot as plt
 from scipy.optimize import curve_fit
 
-# Constants
 N_PHI_BINS = 9
 
-# Load JSON data
 def load_combined_bsa_json(json_filepath):
     with open(json_filepath) as f:
         data = json.load(f)
@@ -19,13 +17,11 @@ def load_combined_bsa_json(json_filepath):
         }
     return combined_data
 
-
 def bsa_fit_function(phi, c0, a1, b1):
     b1 = np.clip(b1, -0.99999, 0.999999)
     a1 = np.clip(a1, -0.99999, 0.999999)
     return c0 + (a1 * np.sin(phi)) / (1 + b1 * np.cos(phi))
 
-# Integrate t bins
 def integrate_t_bins(input_json, output_json):
     combined_data = load_combined_bsa_json(input_json)
     integrated_results = {}
@@ -34,22 +30,16 @@ def integrate_t_bins(input_json, output_json):
     for bin_key, values in combined_data.items():
         xB_idx, Q2_idx, _, phi_idx = bin_key
         key_3d = (xB_idx, Q2_idx, phi_idx)
-        if key_3d not in bin_groups:
-            bin_groups[key_3d] = []
-        bin_groups[key_3d].append((values["bsa"], values["bsa_err"]))
+        bin_groups.setdefault(key_3d, []).append((values["bsa"], values["bsa_err"]))
 
     for key, measurements in bin_groups.items():
         bsa_vals, bsa_errs = zip(*measurements)
         weights = [1 / (err ** 2) for err in bsa_errs]
         total_weight = sum(weights)
-        if total_weight > 0:
-            combined_bsa = sum(w * val for w, val in zip(weights, bsa_vals)) / total_weight
-            combined_err = np.sqrt(1 / total_weight)
-        else:
-            combined_bsa = np.mean(bsa_vals)
-            combined_err = np.std(bsa_vals) if len(bsa_vals) > 1 else bsa_errs[0]
+        combined_bsa = sum(w * val for w, val in zip(weights, bsa_vals)) / total_weight
+        combined_err = np.sqrt(1 / total_weight)
 
-        integrated_results[key_3d] = {
+        integrated_results[key] = {
             "bsa": round(combined_bsa, 5),
             "bsa_err": round(combined_err, 5),
             "n_points": len(bsa_vals),
@@ -58,47 +48,38 @@ def integrate_t_bins(input_json, output_json):
 
     with open(output_json, 'w') as f:
         json.dump({str(k): v for k, v in integrated_results.items()}, f, indent=2)
-
     print(f"Integrated BSA (t-integrated) results saved to: {output_json}")
-
 
 def plot_integrated_bsa(json_filepath, output_dir="bsa_plots/integrated"):
     os.makedirs(output_dir, exist_ok=True)
     data_dict = load_combined_bsa_json(json_filepath)
 
-    unique_xB = sorted(set(k[0] for k in data_dict))
-    unique_Q2 = sorted(set(k[1] for k in data_dict))
+    unique_xB = sorted({k[0] for k in data_dict})
+    unique_Q2 = sorted({k[1] for k in data_dict})
 
-    n_rows = len(unique_Q2)
-    n_cols = len(unique_xB)
+    fig, axs = plt.subplots(len(unique_xB), len(unique_Q2), figsize=(15, 10), squeeze=False)
 
-    fig, axs = plt.subplots(n_rows, n_cols, figsize=(4*n_cols, 3*n_rows), squeeze=False)
-
-    for x_idx, xB in enumerate(unique_xB):
-        for q_idx, Q2 in enumerate(unique_Q2):
-            ax = axs[n_rows - 1 - q_idx, x_idx]  # lowest Q2 at bottom
+    for i, xB in enumerate(unique_xB):
+        for j, Q2 in enumerate(unique_Q2):
+            ax = axs[i, j]
 
             x, y, yerr = [], [], []
             for phi_idx in range(N_PHI_BINS):
                 key = (xB, Q2, phi_idx)
                 if key in data_dict:
                     phi_center = (phi_idx + 0.5) * 360.0 / N_PHI_BINS
-                    bsa_val = data_dict[key]['bsa']
-                    bsa_err = data_dict[key]['bsa_err']
-                    if -0.6 <= bsa_val <= 0.6:
-                        x.append(phi_center)
-                        y.append(bsa_val)
-                        yerr.append(bsa_err)
+                    x.append(phi_center)
+                    y.append(data_dict[key]['bsa'])
+                    yerr.append(data_dict[key]['bsa_err'])
 
             if not x:
-                ax.set_visible(False)
                 continue
 
-            ax.errorbar(x, y, yerr, fmt='ko', markersize=4, capsize=3)
+            ax.errorbar(x, y, yerr, fmt='ko', markersize=5, capsize=3)
 
             if len(x) >= 4:
                 try:
-                    popt, pcov = curve_fit(
+                    popt, _ = curve_fit(
                         bsa_fit_function,
                         np.radians(x),
                         y,
@@ -106,32 +87,15 @@ def plot_integrated_bsa(json_filepath, output_dir="bsa_plots/integrated"):
                         p0=[0, 0.2, -0.4],
                         bounds=([-np.inf, -0.6, -0.7], [np.inf, 0.6, 0.7])
                     )
-                    fit_x = np.linspace(0, 360, 200)
+                    fit_x = np.linspace(0, 360, 100)
                     fit_y = bsa_fit_function(np.radians(fit_x), *popt)
-                    a1, b1 = popt[1], popt[2]
-                    a1_err, b1_err = np.sqrt(np.diag(pcov))[1:3]
-
-                    ax.plot(fit_x, fit_y, 'r-', lw=1.5,
-                            label=f'$a_1$={a1:.3f}±{a1_err:.3f}\n$b_1$={b1:.3f}±{b1_err:.3f}')
-                    ax.legend(fontsize='small')
+                    ax.plot(fit_x, fit_y, 'r-', lw=1.5)
                 except RuntimeError:
                     print(f"Fit failed for bin {(xB, Q2)}")
 
-            ax.set_ylim(-1, 1)
-            ax.set_xlim(0, 360)
-            ax.set_xticks([0, 90, 180, 270, 360])
-
-            if x_idx == 0:
-                ax.set_ylabel(r"$A_{LU}$")
-            else:
-                ax.set_yticklabels([])
-
-            if q_idx == 0:
-                ax.set_xlabel(r"$\phi$ (deg)")
-            else:
-                ax.set_xticklabels([])
-
             ax.set_title(f"$x_B$={xB}, $Q^2$={Q2}")
+            ax.set_xlabel(r"$\phi$ (deg)")
+            ax.set_ylabel("BSA")
             ax.grid(True, alpha=0.3)
 
     plt.tight_layout()
