@@ -54,34 +54,41 @@ def plot_integrated_bsa(json_filepath, output_dir="bsa_plots/integrated"):
     os.makedirs(output_dir, exist_ok=True)
     data_dict = load_combined_bsa_json(json_filepath)
 
+    # Load global bin means
+    with open("bin_means_global.json", 'r') as f:
+        bin_means = json.load(f)
+
     unique_xB = sorted({k[0] for k in data_dict})
     unique_Q2 = sorted({k[1] for k in data_dict})
 
-    fig, axs = plt.subplots(len(unique_xB), len(unique_Q2), figsize=(15, 10), squeeze=False)
+    fig, axs = plt.subplots(len(unique_Q2), len(unique_xB), figsize=(20, 20), squeeze=False)
 
-    for i, xB in enumerate(unique_xB):
-        for j, Q2 in enumerate(unique_Q2):
-            ax = axs[i, j]
+    for x_idx, xB in enumerate(unique_xB):
+        for q_idx, Q2 in enumerate(unique_Q2):
+            ax = axs[len(unique_Q2) - 1 - q_idx, x_idx]  # lowest Q2 at bottom
 
+            key_base = (xB, Q2)
             x, y, yerr = [], [], []
+
             for phi_idx in range(N_PHI_BINS):
-                key = (xB, Q2, phi_idx)
+                key = key_base + (phi_idx,)
                 if key in data_dict:
                     phi_center = (phi_idx + 0.5) * 360.0 / N_PHI_BINS
                     bsa_val = data_dict[key]['bsa']
-                    if -0.6 <= bsa_val <= 0.6:  # Exclude points outside this range
+                    if -0.6 <= bsa_val <= 0.6:
                         x.append(phi_center)
                         y.append(bsa_val)
                         yerr.append(data_dict[key]['bsa_err'])
 
             if not x:
+                ax.axis('off')
                 continue
 
             ax.errorbar(x, y, yerr, fmt='ko', markersize=5, capsize=3)
 
             if len(x) >= 4:
                 try:
-                    popt, _ = curve_fit(
+                    popt, pcov = curve_fit(
                         bsa_fit_function,
                         np.radians(x),
                         y,
@@ -99,19 +106,26 @@ def plot_integrated_bsa(json_filepath, output_dir="bsa_plots/integrated"):
             ax.set_xlim(0, 360)
             ax.set_xticks([0, 90, 180, 270, 360])
 
-            # Only apply y-axis labels to leftmost plots
-            if j == 0:
+            # Y-axis labels only on leftmost plots
+            if x_idx == 0:
                 ax.set_ylabel(r"$A_{LU}$")
             else:
                 ax.set_yticklabels([])
 
-            # Only apply x-axis labels to bottom-most plots
-            if i == len(unique_xB) - 1:
+            # X-axis labels only on bottom plots
+            if q_idx == 0:
                 ax.set_xlabel(r"$\phi$ (deg)")
             else:
                 ax.set_xticklabels([])
 
-            ax.set_title(f"$x_B$={xB}, $Q^2$={Q2}")
+            bin_mean_key = f"({xB}, {Q2}, 0, 0)"
+            if bin_mean_key in bin_means:
+                xB_avg = round(bin_means[bin_mean_key]["xB_avg"], 2)
+                Q2_avg = round(bin_means[bin_mean_key]["Q2_avg"], 2)
+                ax.set_title(f"$x_B$={xB_avg:.2f}, $Q^2$={Q2_avg:.2f}")
+            else:
+                ax.set_title(f"$x_B$={xB}, $Q^2$={Q2}")
+
             ax.grid(True, alpha=0.3)
 
     plt.tight_layout()
