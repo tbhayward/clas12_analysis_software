@@ -239,7 +239,8 @@ def plot_fully_integrated_bsa(json_filepath, output_dir="bsa_plots/integrated"):
 
     fig, ax = plt.subplots(figsize=(8, 6))
 
-    ax.errorbar(x, y, yerr, fmt='ko', markersize=5, capsize=3)
+    # Increase marker size, line width, and capsize for visibility
+    ax.errorbar(x, y, yerr, fmt='ko', markersize=8, capsize=5, capthick=1.5, elinewidth=1.5)
 
     fitted = False
     if len(x) >= 4:
@@ -255,19 +256,19 @@ def plot_fully_integrated_bsa(json_filepath, output_dir="bsa_plots/integrated"):
             fit_x = np.linspace(0, 360, 200)
             fit_y = bsa_fit_function(np.radians(fit_x), *popt)
 
+            # Increase the line width explicitly here
+            ax.plot(fit_x, fit_y, 'r-', lw=3)
+
             a1, b1 = popt[1], popt[2]
             a1_err, b1_err = np.sqrt(pcov[1, 1]), np.sqrt(pcov[2, 2])
             fit_label = f"$a_1$ = {a1:.3f} ± {a1_err:.3f}\n$b_1$ = {b1:.3f} ± {b1_err:.3f}"
             ax.text(0.5, 0.05, fit_label, ha='center', va='bottom',
                     transform=ax.transAxes, fontsize=14)
 
+            ax.plot(fit_x, fit_y, 'r-', linewidth=3)  # Thicker red fit line
             fitted = True
         except Exception as e:
             print(f"Curve fit failed for fully integrated: {e}")
-
-    # Plot the fitted curve again clearly
-    if fitted:
-        ax.plot(fit_x, fit_y, 'r-', lw=2.5)  # <-- increased linewidth here clearly
 
     ax.set_ylim(-1, 1)
     ax.set_xlim(0, 360)
@@ -275,14 +276,16 @@ def plot_fully_integrated_bsa(json_filepath, output_dir="bsa_plots/integrated"):
     ax.set_xticklabels(["0", "90", "180", "270", "360"])
     ax.set_yticks([-1, -0.5, 0, 0.5, 1])
 
-    # Larger font sizes as previously requested
-    ax.set_ylabel(r"$A_{LU}$", fontsize=16)
+    # Slightly larger labels
+    ax.set_ylabel(r"$A_{LU}$", fontsize=18)
     ax.set_xlabel(r"$\phi$ (deg)", fontsize=16)
-    ax.set_title("Fully Integrated BSA", fontsize=16, pad=10)
+    ax.set_title("Fully Integrated", fontsize=18, pad=10)
 
-    ax.tick_params(axis='both', which='major', labelsize=12)
+    # Increase tick label size for readability
+    ax.tick_params(axis='both', which='major', labelsize=14, width=1.5, length=7)
 
-    ax.grid(True, alpha=0.3)
+    # Make the grid slightly bolder
+    ax.grid(True, alpha=0.3, linewidth=1.0)
 
     plt.tight_layout()
     plt.savefig(os.path.join(output_dir, "bsa_fully_integrated.pdf"))
