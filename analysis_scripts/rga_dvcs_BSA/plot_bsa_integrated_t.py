@@ -68,9 +68,11 @@ def plot_integrated_bsa(json_filepath, output_dir="bsa_plots/integrated"):
                 key = (xB, Q2, phi_idx)
                 if key in data_dict:
                     phi_center = (phi_idx + 0.5) * 360.0 / N_PHI_BINS
-                    x.append(phi_center)
-                    y.append(data_dict[key]['bsa'])
-                    yerr.append(data_dict[key]['bsa_err'])
+                    bsa_val = data_dict[key]['bsa']
+                    if -0.6 <= bsa_val <= 0.6:  # Exclude points outside this range
+                        x.append(phi_center)
+                        y.append(bsa_val)
+                        yerr.append(data_dict[key]['bsa_err'])
 
             if not x:
                 continue
@@ -93,13 +95,23 @@ def plot_integrated_bsa(json_filepath, output_dir="bsa_plots/integrated"):
                 except RuntimeError:
                     print(f"Fit failed for bin {(xB, Q2)}")
 
-            ax.set_ylim(-1, 1)  # Set y-axis limits as requested
-            ax.set_xlim(0, 360)  # Ensure consistent x-axis range
-            ax.set_xticks([0, 90, 180, 270, 360])  # Set specified tick marks
+            ax.set_ylim(-1, 1)
+            ax.set_xlim(0, 360)
+            ax.set_xticks([0, 90, 180, 270, 360])
+
+            # Only apply y-axis labels to leftmost plots
+            if j == 0:
+                ax.set_ylabel(r"$A_{LU}$")
+            else:
+                ax.set_yticklabels([])
+
+            # Only apply x-axis labels to bottom-most plots
+            if i == len(unique_xB) - 1:
+                ax.set_xlabel(r"$\phi$ (deg)")
+            else:
+                ax.set_xticklabels([])
 
             ax.set_title(f"$x_B$={xB}, $Q^2$={Q2}")
-            ax.set_xlabel(r"$\phi$ (deg)")
-            ax.set_ylabel(r"$A_{LU}$")  # Label changed to A_{LU}
             ax.grid(True, alpha=0.3)
 
     plt.tight_layout()
