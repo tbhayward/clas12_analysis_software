@@ -51,38 +51,40 @@ def integrate_t_bins(input_json, output_json):
     print(f"Integrated BSA (t-integrated) results saved to: {output_json}")
 
 def integrate_all_bins(input_json, output_json):
-    combined_data = load_combined_bsa_json(input_json)
+    import json
+    import numpy as np
 
+    combined_data = load_combined_bsa_json(input_json)
     integrated_results = {}
 
-    # Group by phi_idx, integrating over everything else (xB, Q2, t)
     phi_groups = {}
     for bin_key, values in combined_data.items():
         phi_idx = bin_key[3]
-        phi_groups.setdefault(phi_idx, []).append((values["bsa"], values["bsa_err"]))
+        bsa_val = values["bsa"]
+        bsa_err = values["bsa_err"]
+
+        if -0.6 <= bsa_val <= 0.6 and bsa_err > 0:
+            phi_groups.setdefault(phi_idx, []).append((bsa_val, bsa_err))
 
     for phi_idx, measurements in phi_groups.items():
         bsa_vals, bsa_errs = zip(*measurements)
 
-        # Calculate weighted average
-        weights = [1 / (err ** 2) for err in bsa_errs if err > 0]
+        weights = [1 / (err ** 2) for err in bsa_errs]
         total_weight = sum(weights)
 
         if total_weight == 0:
-            continue  # Skip if no valid weights
+            continue
 
         combined_bsa = sum(w * val for w, val in zip(weights, bsa_vals)) / total_weight
         combined_err = np.sqrt(1 / total_weight)
 
-        # Ensure the combined BSA is reasonable (clipping, if desired, can be added)
-        integrated_results[(phi_idx,)] = {
+        integrated_results[phi_idx] = {
             "bsa": round(combined_bsa, 5),
             "bsa_err": round(combined_err, 5),
             "n_points": len(bsa_vals),
             "valid": True
         }
 
-    # Save the result
     with open(output_json, 'w') as f:
         json.dump({str(k): v for k, v in integrated_results.items()}, f, indent=2)
 
