@@ -82,7 +82,7 @@ def integrate_all_bins(input_json, output_json):
         json.dump({str(k): v for k, v in integrated_results.items()}, f, indent=2)
 
     print(f"Fully integrated BSA results saved to: {output_json}")
-    
+
 def plot_integrated_bsa(json_filepath, output_dir="bsa_plots/integrated"):
     import os
     import json
@@ -201,3 +201,78 @@ def plot_integrated_bsa(json_filepath, output_dir="bsa_plots/integrated"):
     plt.savefig(os.path.join(output_dir, "bsa_integrated_over_t.pdf"), bbox_inches='tight')
     plt.close()
     print(f"Integrated BSA plots saved to {output_dir}")
+
+def plot_fully_integrated_bsa(json_filepath, output_dir="bsa_plots/integrated"):
+    import os
+    import json
+    import numpy as np
+    import matplotlib.pyplot as plt
+    from scipy.optimize import curve_fit
+
+    os.makedirs(output_dir, exist_ok=True)
+
+    integrated_data_dict = load_combined_bsa_json(json_filepath)
+
+    N_PHI_BINS = 9
+    x, y, yerr = [], [], []
+
+    for phi_idx in range(N_PHI_BINS):
+        if phi_idx in integrated_data_dict:
+            phi_center = (phi_idx + 0.5) * 360.0 / N_PHI_BINS
+            bsa_val = integrated_data_dict[phi_idx]['bsa']
+            if -0.6 <= bsa_val <= 0.6:
+                x.append(phi_center)
+                y.append(bsa_val)
+                yerr.append(integrated_data_dict[phi_idx]['bsa_err'])
+
+    fig, ax = plt.subplots(figsize=(8, 6))
+
+    ax.errorbar(x, y, yerr, fmt='ko', markersize=5, capsize=3)
+
+    fitted = False
+    if len(x) >= 4:
+        try:
+            popt, pcov = curve_fit(
+                bsa_fit_function,
+                np.radians(x),
+                y,
+                sigma=yerr,
+                p0=[0, 0.2, -0.4],
+                bounds=([-np.inf, -0.6, -0.7], [np.inf, 0.6, 0.7])
+            )
+            fit_x = np.linspace(0, 360, 200)
+            fit_y = bsa_fit_function(np.radians(fit_x), *popt)
+            ax.plot(fit_x, fit_y, 'r-', lw=2)
+
+            a1, b1 = popt[1], popt[2]
+            a1_err, b1_err = np.sqrt(pcov[1, 1]), np.sqrt(pcov[2, 2])
+            fit_label = f"$a_1$ = {a1:.3f} ± {a1_err:.3f}\n$b_1$ = {b1:.3f} ± {b1_err:.3f}"
+            ax.text(0.5, 0.05, fit_label, ha='center', va='bottom',
+                    transform=ax.transAxes, fontsize='medium')
+
+            fitted = True
+        except Exception as e:
+            print(f"Curve fit failed for fully integrated: {e}")
+
+    ax.set_ylim(-1, 1)
+    ax.set_xlim(0, 360)
+    ax.set_xticks([0, 90, 180, 270, 360])
+    ax.set_xticklabels(["0", "90", "180", "270", "360"])
+    ax.set_yticks([-1, -0.5, 0, 0.5, 1])
+
+    ax.set_ylabel(r"$A_{LU}$")
+    ax.set_xlabel(r"$\phi$ (deg)")
+    ax.set_title("Fully Integrated BSA")
+
+    ax.grid(True, alpha=0.3)
+
+    # Equation on plot
+    fig.text(0.85, 0.15,
+             r"$A_{LU} = c_0 + \frac{a_1 \sin\phi}{1 + b_1 \cos\phi}$",
+             ha='right', va='bottom', fontsize=16)
+
+    plt.tight_layout()
+    plt.savefig(os.path.join(output_dir, "bsa_fully_integrated.pdf"))
+    plt.savefig(os.path.join(output_dir, "bsa_fully_integrated.png"))
+    plt.close()
+    print(f"Fully integrated BSA plot saved to {output_dir}")
