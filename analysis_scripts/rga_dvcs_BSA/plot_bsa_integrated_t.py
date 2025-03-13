@@ -185,9 +185,44 @@ def plot_integrated_bsa(json_filepath, integrated_json_filepath, output_dir="bsa
             ax.set_ylim(-1, 1)
             ax.set_xlim(0, 360)
 
-            # Adjust labels and ticks according to your criteria
-            # [previously defined logic here]
-            # ... (unchanged from your provided code) ...
+            # Label x-axis ticks
+            if (len(unique_Q2)-1-q_idx, x_idx) == (len(unique_Q2)-1, 0):
+                ax.set_xticks([0, 90, 180, 270, 360])
+                ax.set_xticklabels(["0", "90", "180", "270", "360"])
+            else:
+                ax.set_xticks([90, 180, 270, 360])
+
+            # Label y-axis ticks
+            if (len(unique_Q2)-1-q_idx, x_idx) == (len(unique_Q2)-1, 0):
+                ax.set_yticks([-1, -0.5, 0, 0.5, 1])
+            else:
+                ax.set_yticks([-0.5, 0, 0.5, 1])
+
+            # Axis labels
+            if not np.any(populated_subplots[len(unique_Q2)-1-q_idx, :x_idx]):
+                ax.set_ylabel(r"$A_{LU}$")
+            else:
+                ax.set_yticklabels([])
+
+            if not np.any(populated_subplots[len(unique_Q2)-q_idx:, x_idx]):
+                ax.set_xlabel(r"$\phi$ (deg)")
+            else:
+                ax.set_xticklabels([])
+
+            # Bin means
+            bin_key = f"({xB}, {Q2}, 0, 0)"
+            if bin_key in bin_means:
+                xB_avg = bin_means[bin_key]["xB_avg"]
+                Q2_avg = bin_means[bin_key]["Q2_avg"]
+                title_label = f"$x_B$={xB_avg:.2f}, $Q^2$={Q2_avg:.1f}"
+                ax.text(0.5, 0.96, title_label, ha='center', va='top', transform=ax.transAxes, fontsize='small')
+
+            # Fit results at bottom center
+            if fitted:
+                a1, b1 = popt[1], popt[2]
+                a1_err, b1_err = np.sqrt(pcov[1, 1]), np.sqrt(pcov[2, 2])
+                fit_label = f"$a_1$={a1:.3f}±{a1_err:.3f}\n$b_1$={b1:.3f}±{b1_err:.3f}"
+                ax.text(0.5, 0.02, fit_label, ha='center', va='bottom', transform=ax.transAxes, fontsize='small')
 
             ax.grid(True, alpha=0.3)
 
