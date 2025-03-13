@@ -270,9 +270,16 @@ def plot_fully_integrated_bsa(json_filepath, output_dir="bsa_plots/integrated"):
     ax.set_xticklabels(["0", "90", "180", "270", "360"])
     ax.set_yticks([-1, -0.5, 0, 0.5, 1])
 
-    ax.set_ylabel(r"$A_{LU}$")
-    ax.set_xlabel(r"$\phi$ (deg)")
-    ax.set_title("Fully Integrated BSA")
+    ax.set_ylabel(r"$A_{LU}$", fontsize=16)  # increased font size
+    ax.set_xlabel(r"$\phi$ (deg)", fontsize=14)  # increased font size
+    ax.set_title("Fully Integrated", fontsize=16, pad=10)  # slightly bigger and added padding
+
+    # If you'd like the ticks themselves to be a bit larger as well:
+    ax.tick_params(axis='both', which='major', labelsize=12)
+
+    # Also adjust the fit text for consistency:
+    ax.text(0.5, 0.05, fit_label, ha='center', va='bottom',
+            transform=ax.transAxes, fontsize=14)  # increased fontsize
 
     ax.grid(True, alpha=0.3)
 
