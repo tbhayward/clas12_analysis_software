@@ -214,22 +214,29 @@ def plot_fully_integrated_bsa(json_filepath, output_dir="bsa_plots/integrated"):
     integrated_data_dict = load_combined_bsa_json(json_filepath)
 
     N_PHI_BINS = 9
-    x, y, yerr = [], [], []
+    phi_centers, bsa_vals, bsa_errs = [], [], []
 
+    # Correctly loop over keys in integrated_data_dict
     for phi_idx in range(N_PHI_BINS):
-        if phi_idx in integrated_data_dict:
-            phi_center = (phi_idx + 0.5) * 360.0 / N_PHI_BINS
-            bsa_val = integrated_data_dict[phi_idx]['bsa']
+        key = (0, 0, phi_idx)
+        if key in integrated_data_dict:
+            bsa_val = integrated_data_dict[key]['bsa']
             if -0.6 <= bsa_val <= 0.6:
+                phi_center = (phi_idx + 0.5) * 360.0 / N_PHI_BINS
+                phi_centers = phi_center
                 x.append(phi_center)
                 y.append(bsa_val)
-                yerr.append(integrated_data_dict[phi_idx]['bsa_err'])
+                yerr.append(integrated_data_dict[key]['bsa_err'])
 
     fig, ax = plt.subplots(figsize=(8, 6))
 
+    if not x:
+        print("No valid data points to plot for fully integrated BSA.")
+        return
+
     ax.errorbar(x, y, yerr, fmt='ko', markersize=5, capsize=3)
 
-    fitted = False
+    # Perform fit if enough points exist
     if len(x) >= 4:
         try:
             popt, pcov = curve_fit(
@@ -244,15 +251,13 @@ def plot_fully_integrated_bsa(json_filepath, output_dir="bsa_plots/integrated"):
             fit_y = bsa_fit_function(np.radians(fit_x), *popt)
             ax.plot(fit_x, fit_y, 'r-', lw=2)
 
+            # Add fit results
             a1, b1 = popt[1], popt[2]
-            a1_err, b1_err = np.sqrt(pcov[1, 1]), np.sqrt(pcov[2, 2])
+            a1_err, b1_err = np.sqrt(np.diag(pcov))[1], np.sqrt(pcov[2, 2])
             fit_label = f"$a_1$ = {a1:.3f} ± {a1_err:.3f}\n$b_1$ = {b1:.3f} ± {b1_err:.3f}"
-            ax.text(0.5, 0.05, fit_label, ha='center', va='bottom',
-                    transform=ax.transAxes, fontsize='medium')
-
-            fitted = True
+            ax.text(0.5, 0.05, fit_label, ha='center', va='bottom', transform=ax.transAxes, fontsize='medium')
         except Exception as e:
-            print(f"Curve fit failed for fully integrated: {e}")
+            print(f"Fit failed for fully integrated: {e}")
 
     ax.set_ylim(-1, 1)
     ax.set_xlim(0, 360)
@@ -262,17 +267,13 @@ def plot_fully_integrated_bsa(json_filepath, output_dir="bsa_plots/integrated"):
 
     ax.set_ylabel(r"$A_{LU}$")
     ax.set_xlabel(r"$\phi$ (deg)")
-    ax.set_title("Fully Integrated BSA")
+    ax.set_title("Fully Integrated", fontsize='medium')
 
     ax.grid(True, alpha=0.3)
-
-    # Equation on plot
-    fig.text(0.85, 0.15,
-             r"$A_{LU} = c_0 + \frac{a_1 \sin\phi}{1 + b_1 \cos\phi}$",
-             ha='right', va='bottom', fontsize=16)
 
     plt.tight_layout()
     plt.savefig(os.path.join(output_dir, "bsa_fully_integrated.pdf"))
     plt.savefig(os.path.join(output_dir, "bsa_fully_integrated.png"))
     plt.close()
+
     print(f"Fully integrated BSA plot saved to {output_dir}")
