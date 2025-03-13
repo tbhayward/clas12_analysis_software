@@ -240,9 +240,9 @@ def main():
     # plot_a1_vs_t_grid_bottom(csv_path)
     # plot_pass_comparison(csv_path)
 
-    # combined_bsa_json = os.path.join("final_results", "combined_bsa.json")
-    # output_integrated_json = os.path.join("final_results", "combined_bsa_integrated_t.json")
-    # integrate_t_bins(combined_bsa_json, output_integrated_json)
+    combined_bsa_json = os.path.join("final_results", "combined_bsa.json")
+    output_integrated_json = os.path.join("final_results", "combined_bsa_integrated_t.json")
+    integrate_t_bins(combined_bsa_json, output_integrated_json)
 
     plot_integrated_bsa(output_integrated_json, output_dir="bsa_plots/integrated")
     
