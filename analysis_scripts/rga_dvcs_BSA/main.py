@@ -247,7 +247,7 @@ def main():
     integrate_t_bins(combined_bsa_json, output_integrated_json)
     integrate_all_bins(combined_bsa_json, output_fully_integrated_json)
 
-    plot_integrated_bsa(output_integrated_json, output_dir="bsa_plots/integrated")
+    plot_integrated_bsa(output_integrated_json, output_fully_integrated_json, output_dir="bsa_plots/integrated")
 
     print("✅ All plots saved to bsa_plots/ directory")
 
