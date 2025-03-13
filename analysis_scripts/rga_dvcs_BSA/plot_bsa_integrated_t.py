@@ -83,11 +83,11 @@ def plot_integrated_bsa(json_filepath, output_dir="bsa_plots/integrated"):
     unique_xB = sorted({k[0] for k in data_dict.keys()})
     unique_Q2 = sorted({k[1] for k in data_dict.keys()})
 
-    fig, axs = plt.subplots(len(unique_xB), len(unique_xB[0]), figsize=(15, 10), squeeze=False)
+    fig, axs = plt.subplots(len(unique_xB), len(unique_Q2), figsize=(15, 10), squeeze=False)
 
     for x_idx, xB in enumerate(unique_xB):
         for Q2 in sorted({k[1] for k in data_dict.keys() if k[0] == xB}):
-            ax = axs[Q2, xB]
+            ax = axs[x_idx, q2_idx] 
 
             key_base = (xB, Q2)
             x, y, yerr = [], [], []
