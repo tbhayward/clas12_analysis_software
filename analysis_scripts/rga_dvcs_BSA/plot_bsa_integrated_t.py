@@ -159,7 +159,7 @@ def plot_integrated_bsa(json_filepath, output_dir="bsa_plots/integrated"):
             ax.grid(True, alpha=0.3)
 
     # Equation text in bottom-right space
-    fig.text(0.9, 0.15,
+    fig.text(0.88, 0.125 ,
              r"$A_{LU} = c_0 + \frac{a_1 \sin\phi}{1 + b_1 \cos\phi}$",
              ha='right', va='bottom', fontsize=24)
 
