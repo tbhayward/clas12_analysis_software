@@ -63,7 +63,7 @@ def integrate_all_bins(input_json, output_json):
         bsa_val = values["bsa"]
         bsa_err = values["bsa_err"]
 
-        if -0.6 <= bsa_val <= 0.6 and bsa_err > 0:
+        if -0.5 <= bsa_val <= 0.5 and bsa_err > 0:
             phi_groups.setdefault(phi_idx, []).append((bsa_val, bsa_err))
 
     for phi_idx, measurements in phi_groups.items():
@@ -123,7 +123,7 @@ def plot_integrated_bsa(json_filepath, output_dir="bsa_plots/integrated"):
                 if key in data_dict:
                     phi_center = (phi_idx + 0.5) * 360.0 / N_PHI_BINS
                     bsa_val = data_dict[key]['bsa']
-                    if -0.6 <= bsa_val <= 0.6:
+                    if -0.5 <= bsa_val <= 0.5:
                         x.append(phi_center)
                         y.append(bsa_val)
                         yerr.append(data_dict[key]['bsa_err'])
@@ -228,7 +228,7 @@ def plot_fully_integrated_bsa(json_filepath, output_dir="bsa_plots/integrated"):
         if key in integrated_data_dict:
             phi_center = (phi_idx + 0.5) * 360.0 / N_PHI_BINS
             bsa_val = integrated_data_dict[key]['bsa']
-            if -0.6 <= bsa_val <= 0.6:
+            if -0.5 <= bsa_val <= 0.5:
                 x.append(phi_center)
                 y.append(bsa_val)
                 yerr.append(integrated_data_dict[key]['bsa_err'])
