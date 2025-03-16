@@ -274,11 +274,11 @@ def plot_fully_integrated_bsa(json_filepath, output_dir="bsa_plots/integrated"):
         except Exception as e:
             print(f"Curve fit failed for fully integrated: {e}")
 
-    ax.set_ylim(-0.6, 0.6)
+    ax.set_ylim(-0.4, 0.4)
     ax.set_xlim(0, 360)
     ax.set_xticks([0, 90, 180, 270, 360])
     ax.set_xticklabels(["0", "90", "180", "270", "360"])
-    ax.set_yticks([-0.6, -0.4, -0.2, 0, 0.2, 0.4, 0.6])
+    ax.set_yticks([-0.4, -0.2, 0, 0.2, 0.4])
 
     # Slightly larger labels
     ax.set_ylabel(r"$A_{LU}$", fontsize=18)
