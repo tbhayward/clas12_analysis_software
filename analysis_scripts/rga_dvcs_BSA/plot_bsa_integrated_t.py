@@ -155,7 +155,7 @@ def plot_integrated_bsa(json_filepath, output_dir="bsa_plots/integrated"):
                     print(f"Curve fit failed for bin ({xB}, {Q2}): {e}")
 
             # ax.set_ylim(-1, 1)
-            ax.set_ylim(-0.5, 0.5)
+            ax.set_ylim(-0.6, 0.6)
             ax.set_xlim(0, 360)
 
             # Label x-axis ticks
@@ -168,9 +168,9 @@ def plot_integrated_bsa(json_filepath, output_dir="bsa_plots/integrated"):
             # Label y-axis ticks
             if (len(unique_Q2)-1-q_idx, x_idx) == (len(unique_Q2)-1, 0):
                 # ax.set_yticks([-1, -0.5, 0, 0.5, 1])
-                ax.set_yticks([-0.4, -0.2, 0, 0.2, 0.4])
+                ax.set_yticks([-0.6, -0.4, -0.2, 0, 0.2, 0.4, 0.6])
             else:
-                ax.set_yticks([-0.2, 0, 0.2, 0.4])
+                ax.set_yticks([-0.4, -0.2, 0, 0.2, 0.4, 0.6])
 
             # Axis labels
             if not np.any(populated_subplots[len(unique_Q2)-1-q_idx, :x_idx]):
@@ -273,11 +273,11 @@ def plot_fully_integrated_bsa(json_filepath, output_dir="bsa_plots/integrated"):
         except Exception as e:
             print(f"Curve fit failed for fully integrated: {e}")
 
-    ax.set_ylim(-0.4, 0.4)
+    ax.set_ylim(-0.6, 0.6)
     ax.set_xlim(0, 360)
     ax.set_xticks([0, 90, 180, 270, 360])
     ax.set_xticklabels(["0", "90", "180", "270", "360"])
-    ax.set_yticks([-0.4, -0.2, 0, 0.2, 0.4])
+    ax.set_yticks([-0.6, -0.4, -0.2, 0, 0.2, 0.4, 0.6])
 
     # Slightly larger labels
     ax.set_ylabel(r"$A_{LU}$", fontsize=18)
