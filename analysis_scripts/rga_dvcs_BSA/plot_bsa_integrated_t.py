@@ -283,7 +283,7 @@ def plot_fully_integrated_bsa(json_filepath, output_dir="bsa_plots/integrated"):
     # Slightly larger labels
     ax.set_ylabel(r"$A_{LU}$", fontsize=18)
     ax.set_xlabel(r"$\phi$ (deg)", fontsize=16)
-    ax.set_title("Fully Integrated", fontsize=18, pad=10)
+    ax.set_title(r"$ep\rightarrow e'p'\gamma$", fontsize=18, pad=10)
 
     # Increase tick label size for readability
     ax.tick_params(axis='both', which='major', labelsize=14, width=1.5, length=7)
