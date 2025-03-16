@@ -154,7 +154,8 @@ def plot_integrated_bsa(json_filepath, output_dir="bsa_plots/integrated"):
                 except Exception as e:
                     print(f"Curve fit failed for bin ({xB}, {Q2}): {e}")
 
-            ax.set_ylim(-1, 1)
+            # ax.set_ylim(-1, 1)
+            ax.set_ylim(-0.5, 0.5)
             ax.set_xlim(0, 360)
 
             # Label x-axis ticks
@@ -193,8 +194,9 @@ def plot_integrated_bsa(json_filepath, output_dir="bsa_plots/integrated"):
             if fitted:
                 a1, b1 = popt[1], popt[2]
                 a1_err, b1_err = np.sqrt(pcov[1, 1]), np.sqrt(pcov[2, 2])
-                fit_label = f"$a_1$={a1:.3f}±{a1_err:.3f}\n$b_1$={b1:.3f}±{b1_err:.3f}"
-                ax.text(0.5, 0.02, fit_label, ha='center', va='bottom', transform=ax.transAxes, fontsize='small')
+                # fit_label = f"$a_1$={a1:.3f}±{a1_err:.3f}\n$b_1$={b1:.3f}±{b1_err:.3f}"
+                fit_label = f"$a_1$={a1:.3f}±{a1_err:.3f}"
+                ax.text(0.5, 0.01, fit_label, ha='center', va='bottom', transform=ax.transAxes, fontsize='small')
 
             ax.grid(True, alpha=0.3)
 
