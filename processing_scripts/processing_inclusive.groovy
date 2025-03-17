@@ -67,9 +67,10 @@ public static void main(String[] args) {
 	// Set the user-provided run number if available
 	Integer userProvidedRun = null
 	if (args.length < 5) {
-	    userProvidedRun = Integer.parseInt(args[4])
 	    println("Run number not provided, will pull from hipo files.")
 	    println("Think carefully about this if you are processing MC.")
+	} else {
+		userProvidedRun = Integer.parseInt(args[4]);
 	}
 
 	// ~~~~~~~~~~~~~~~~ prepare physics analysis ~~~~~~~~~~~~~~~~ //
