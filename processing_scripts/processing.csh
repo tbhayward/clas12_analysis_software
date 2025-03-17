@@ -61,9 +61,9 @@ module load qadb/2.0.0
 
 g++ `root-config --cflags --libs` -o processing_scripts/convert_txt_to_root processing_scripts/convert_txt_to_root.cpp
 
-# execute command based on number of entries (or dvcs designation)
+# execute command based on number of entries (or dvcs/eppi0/calibration designation)
 if ($arg1 == "processing_scripts/processing_inclusive.groovy") then
-    coatjava/bin/run-groovy -cp processing_classes/dist/processing_classes.jar "$arg1" "$arg2" "$3.txt" "$4" "$5" "$6" "$7"
+    coatjava/bin/run-groovy -cp processing_classes/dist/processing_classes.jar "$arg1" "$arg2" "$3.txt" "$4" "$5" "$6" 
     # Run the convert_txt_to_root program
     set txt_file = "$3.txt"
     set root_file = "$3.root"
