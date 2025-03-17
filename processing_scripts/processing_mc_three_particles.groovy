@@ -87,7 +87,7 @@ public static void main(String[] args) {
 	    println("Setting # of files to be equal to number of files in the directory.");
 	    println("There are $hipo_list.size files.");
 	}
-	println(args.length);
+	
 	// Set the beam energy based on the provided 6th argument or default to 10.6
 	double beam_energy = args.length < 6 ? 10.6 : Double.parseDouble(args[5]);
 	if (args.length < 6) {
