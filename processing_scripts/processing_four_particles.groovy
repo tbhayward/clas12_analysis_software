@@ -81,6 +81,15 @@ public static void main(String[] args) {
 	    println("No beam energy provided, defaulting to 10.6 GeV.");
 	}
 
+	// Set the user-provided run number if available
+	Integer userProvidedRun = null
+	if (args.length < 8) {
+	    println("Run number not provided, will pull from hipo files.")
+	    println("Think carefully about this if you are processing MC.")
+	} else {
+		userProvidedRun = Integer.parseInt(args[7]);
+	}
+
 	// ~~~~~~~~~~~~~~~~ prepare physics analysis ~~~~~~~~~~~~~~~~ //
 
 	// declare physics event variables
