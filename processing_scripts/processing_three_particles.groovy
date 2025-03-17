@@ -73,6 +73,7 @@ public static void main(String[] args) {
 	double beam_energy = args.length < 6 ? 10.6 : Double.parseDouble(args[5]);
 	if (args.length < 6) {
 	    println("No beam energy provided, defaulting to run number based beam energy.");
+	    println("All MC will use 10.604 GeV. You must manually enter a beam energy to change this.")
 	}
 
 	// ~~~~~~~~~~~~~~~~ prepare physics analysis ~~~~~~~~~~~~~~~~ //
