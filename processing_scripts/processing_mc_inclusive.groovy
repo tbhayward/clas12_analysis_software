@@ -73,6 +73,12 @@ public static void main(String[] args) {
 	    println("There are $hipo_list.size files.");
 	}
 
+	// Set the beam energy based on the provided 4th argument or default to 10.6
+	double beam_energy = args.length < 4 ? 10.6 : Double.parseDouble(args[3]);
+	if (args.length < 4) {
+	    println("No beam energy provided, defaulting to run number based beam energy.");
+	}
+
 	int hadron_pair_counts = 0;
 	GenericKinematicFitter research_fitter = new analysis_fitter(10.6041);
 	GenericKinematicFitter mc_fitter = new monte_carlo_fitter(10.6041);
@@ -114,10 +120,12 @@ public static void main(String[] args) {
 				HipoDataBank mcBank = (HipoDataBank) event.getBank("MC::Particle"); 
 
 				Particle exp_e = research_Event.getParticleByPid(11,0);
-				BeamEnergy Eb = new BeamEnergy(runnum, false);
-				BeamEnergy mc_Eb = new BeamEnergy(runnum, false);
-				Inclusive variables = new Inclusive(event, research_Event, Eb.Eb());
-				Inclusive mc_variables = new Inclusive(event, mc_Event, mc_Eb.Eb());
+				BeamEnergy Eb = new BeamEnergy(research_Event, runnum, false);
+				// Use the input beam energy if runnum == 11, otherwise use Eb.Eb()
+				double energy = (runnum == 11) ? beam_energy : Eb.Eb();	
+
+				Inclusive variables = new Inclusive(event, research_Event, energy);
+				Inclusive mc_variables = new Inclusive(event, mc_Event, energy);
 
 				if (variables.channel_test(variables)) {
 

@@ -88,6 +88,12 @@ public static void main(String[] args) {
 	    println("There are $hipo_list.size files.");
 	}
 
+	// Set the beam energy based on the provided 6th argument or default to 10.6
+	double beam_energy = args.length < 6 ? 10.6 : Double.parseDouble(args[5]);
+	if (args.length < 6) {
+	    println("No beam energy provided, defaulting to run number based beam energy.");
+	}
+
 	int hadron_pair_counts = 0;
 	GenericKinematicFitter research_fitter = new analysis_fitter(10.6041);
 	// GenericKinematicFitter research_fitter = event_builder_fitter(10.6041);
@@ -142,13 +148,15 @@ public static void main(String[] args) {
 						Particle exp_p1 = research_Event.getParticleByPid(p1_Str.toInteger(),current_p1);
 						Particle exp_p2 = research_Event.getParticleByPid(p2_Str.toInteger(),current_p2);
 
-						BeamEnergy Eb = new BeamEnergy(runnum, false);
+						BeamEnergy Eb = new BeamEnergy(research_Event, runnum, false);
+						// Use the input beam energy if runnum == 11, otherwise use Eb.Eb()
+						double energy = (runnum == 11) ? beam_energy : Eb.Eb();
 						ThreeParticles variables = new ThreeParticles(event, research_Event, 
 							p1_Str.toInteger(), current_p1, p2_Str.toInteger(), current_p2, 
-							Eb.Eb());
+							energy);
 						ThreeParticles mc_variables = new ThreeParticles(event, mc_Event, 
 							p1_Str.toInteger(), current_p1, p2_Str.toInteger(), current_p2,
-							Eb.Eb());
+							energy);
 
 						if (variables.channel_test(variables)) {
 

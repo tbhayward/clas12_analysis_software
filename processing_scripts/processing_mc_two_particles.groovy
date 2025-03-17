@@ -79,6 +79,12 @@ public static void main(String[] args) {
 	    println("There are $hipo_list.size files.");
 	}
 
+	// Set the beam energy based on the provided 5th argument or default to 10.6
+	double beam_energy = args.length < 5 ? 10.6 : Double.parseDouble(args[4]);
+	if (args.length < 5) {
+	    println("No beam energy provided, defaulting to 10.6 GeV.");
+	}
+
 	int hadron_pair_counts = 0;
 	GenericKinematicFitter research_fitter = new analysis_fitter(10.6041);
 	GenericKinematicFitter mc_fitter = new monte_carlo_fitter(10.6041);
@@ -126,12 +132,14 @@ public static void main(String[] args) {
 					Particle exp_e = research_Event.getParticleByPid(11,0);
 					Particle exp_p1 = research_Event.getParticleByPid(p1_Str.toInteger(),current_p1);
 
-					BeamEnergy Eb = new BeamEnergy(runnum, false);
-					BeamEnergy mc_Eb = new BeamEnergy(runnum, false);
+					BeamEnergy Eb = new BeamEnergy(research_Event, runnum, false);
+					// Use the input beam energy if runnum == 11, otherwise use Eb.Eb()
+					double energy = (runnum == 11) ? beam_energy : Eb.Eb();
+
 					TwoParticles variables = new TwoParticles(event, research_Event, 
-						p1_Str.toInteger(), current_p1, Eb.Eb());
+						p1_Str.toInteger(), current_p1, energy);
 					TwoParticles mc_variables = new TwoParticles(event, mc_Event, 
-						p1_Str.toInteger(), current_p1, mc_Eb.Eb());
+						p1_Str.toInteger(), current_p1, energy);
 
 					if (variables.channel_test(variables)) {
 

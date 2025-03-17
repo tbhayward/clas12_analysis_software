@@ -72,7 +72,7 @@ public static void main(String[] args) {
 	// Set the beam energy based on the provided 6th argument or default to 10.6
 	double beam_energy = args.length < 6 ? 10.6 : Double.parseDouble(args[5]);
 	if (args.length < 6) {
-	    println("No beam energy provided, defaulting to 10.6 GeV.");
+	    println("No beam energy provided, defaulting to run number based beam energy.");
 	}
 
 	// ~~~~~~~~~~~~~~~~ prepare physics analysis ~~~~~~~~~~~~~~~~ //
