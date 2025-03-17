@@ -156,7 +156,7 @@ public static void main(String[] args) {
 		    // get run and event numbers
 		    event = reader.getNextEvent();
 		    // collect info for QA
-		    int runnum = event.getBank("RUN::config").getInt('run', 0);
+		    int runnum = userProvidedRun ?: event.getBank("RUN::config").getInt('run', 0);
 		    if (runnum > 16600 && runnum < 16700) break; // Hall C bleedthrough
 		    int evnum = event.getBank("RUN::config").getInt('event', 0);
 

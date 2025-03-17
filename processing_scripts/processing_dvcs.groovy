@@ -63,6 +63,14 @@ public static void main(String[] args) {
 	    println("No beam energy provided, defaulting to 10.6 GeV.");
 	}
 
+	// Set the user-provided run number if available
+	Integer userProvidedRun = null
+	if (args.length < 5) {
+	    userProvidedRun = Integer.parseInt(args[4])
+	    println("Run number not provided, will pull from hipo files.")
+	    println("Think carefully about this if you are processing MC.")
+	}
+
 	// ~~~~~~~~~~~~~~~~ prepare physics analysis ~~~~~~~~~~~~~~~~ //
 
 	// declare physics event variables
@@ -132,7 +140,7 @@ public static void main(String[] args) {
 		    // get run and event numbers
 		    event = reader.getNextEvent();
 		    // collect info for QA
-		    int runnum = event.getBank("RUN::config").getInt('run', 0);
+		    int runnum = userProvidedRun ?: event.getBank("RUN::config").getInt('run', 0);
 		    int evnum = event.getBank("RUN::config").getInt('event', 0);
 
 		    PhysicsEvent research_Event = fitter.getPhysicsEvent(event);

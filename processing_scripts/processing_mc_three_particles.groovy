@@ -87,12 +87,20 @@ public static void main(String[] args) {
 	    println("Setting # of files to be equal to number of files in the directory.");
 	    println("There are $hipo_list.size files.");
 	}
-	
+
 	// Set the beam energy based on the provided 6th argument or default to 10.6
 	double beam_energy = args.length < 6 ? 10.6 : Double.parseDouble(args[5]);
 	if (args.length < 6) {
 	    println("No beam energy provided, defaulting to run number based beam energy.");
 	    println("All MC will use 10.604 GeV. You must manually enter a beam energy to change this.")
+	}
+
+	// Set the user-provided run number if available
+	Integer userProvidedRun = null
+	if (args.length < 7) {
+	    userProvidedRun = Integer.parseInt(args[6])
+	    println("Run number not provided, will pull from hipo files.")
+	    println("Think carefully about this if you are processing MC.")
 	}
 
 	int hadron_pair_counts = 0;
@@ -127,7 +135,7 @@ public static void main(String[] args) {
 
 			// get run and event numbers
 			event = reader.getNextEvent();
-		    int runnum = event.getBank("RUN::config").getInt('run',0);
+		    int runnum = userProvidedRun ?: event.getBank("RUN::config").getInt('run', 0);
 		    int evnum = event.getBank("RUN::config").getInt('event',0);
 
 		    PhysicsEvent research_Event = research_fitter.getPhysicsEvent(event);

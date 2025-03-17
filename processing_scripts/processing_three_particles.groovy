@@ -76,6 +76,14 @@ public static void main(String[] args) {
 	    println("All MC will use 10.604 GeV. You must manually enter a beam energy to change this.")
 	}
 
+	// Set the user-provided run number if available
+	Integer userProvidedRun = null
+	if (args.length < 7) {
+	    userProvidedRun = Integer.parseInt(args[6])
+	    println("Run number not provided, will pull from hipo files.")
+	    println("Think carefully about this if you are processing MC.")
+	}
+
 	// ~~~~~~~~~~~~~~~~ prepare physics analysis ~~~~~~~~~~~~~~~~ //
 
 	// declare physics event variables
@@ -144,7 +152,7 @@ public static void main(String[] args) {
 		    // get run and event numbers
 		    event = reader.getNextEvent();
 		    // collect info for QA
-		    int runnum = event.getBank("RUN::config").getInt('run', 0);
+		    int runnum = userProvidedRun ?: event.getBank("RUN::config").getInt('run', 0);
 		    if (runnum > 16600 && runnum < 16700) break; // Hall C bleedthrough
 		    int evnum = event.getBank("RUN::config").getInt('event', 0);
 

@@ -80,6 +80,14 @@ public static void main(String[] args) {
 	    println("All MC will use 10.604 GeV. You must manually enter a beam energy to change this.")
 	}
 
+	// Set the user-provided run number if available
+	Integer userProvidedRun = null
+	if (args.length < 5) {
+	    userProvidedRun = Integer.parseInt(args[4])
+	    println("Run number not provided, will pull from hipo files.")
+	    println("Think carefully about this if you are processing MC.")
+	}
+
 	int hadron_pair_counts = 0;
 	GenericKinematicFitter research_fitter = new analysis_fitter(10.6041);
 	GenericKinematicFitter mc_fitter = new monte_carlo_fitter(10.6041);
@@ -108,7 +116,7 @@ public static void main(String[] args) {
 
 			// get run and event numbers
 			event = reader.getNextEvent();
-		    int runnum = event.getBank("RUN::config").getInt('run',0);
+		    int runnum = userProvidedRun ?: event.getBank("RUN::config").getInt('run', 0);
 		    int evnum = event.getBank("RUN::config").getInt('event',0);
 
 		    PhysicsEvent research_Event = research_fitter.getPhysicsEvent(event);
