@@ -193,17 +193,17 @@ public static void main(String[] args) {
 							double Q2 = variables.Q2();
 							double W = variables.W();
 							double y = variables.y();
-							double Mx = variables.Mx();
-							double Mx1 = variables.Mx1();
 							double Mx2 = variables.Mx2();
+							double Mx2_1 = variables.Mx2_1();
+							double Mx2_2 = variables.Mx2_2();
 
 							// DIS variables MC
 							double mc_Q2 = mc_variables.Q2();
 							double mc_W = mc_variables.W(); 
 							double mc_y = mc_variables.y();
-							double mc_Mx = mc_variables.Mx();
-							double mc_Mx1 = mc_variables.Mx1();
 							double mc_Mx2 = mc_variables.Mx2();
+							double mc_Mx2_1 = mc_variables.Mx2_1();
+							double mc_Mx2_2 = mc_variables.Mx2_2();
 
 							// SIDIS variables data
 							double x = variables.x();
@@ -441,12 +441,12 @@ public static void main(String[] args) {
 								.append(mc_Q2).append(" ")			// 20
 								.append(W).append(" ")				// 21
 								.append(mc_W).append(" ")			// 22
-								.append(Mx).append(" ")				// 23
-								.append(mc_Mx).append(" ")			// 24
-								.append(Mx1).append(" ")			// 25
-								.append(mc_Mx1).append(" ")			// 26
-								.append(Mx2).append(" ")			// 27
-								.append(mc_Mx2).append(" ")			// 28
+								.append(Mx2).append(" ")			// 23
+								.append(mc_Mx2).append(" ")			// 24
+								.append(Mx2_1).append(" ")			// 25
+								.append(mc_Mx2_1).append(" ")		// 26
+								.append(Mx2_2).append(" ")			// 27
+								.append(mc_Mx2_2).append(" ")		// 28
 								.append(x).append(" ")				// 29
 								.append(mc_x).append(" ")			// 30
 								.append(y).append(" ")				// 31

@@ -168,7 +168,7 @@ public static void main(String[] args) {
 						double Q2 = variables.Q2();
 						double W = variables.W();
 						double y = variables.y();
-						double Mx = variables.Mx();
+						double Mx = variables.Mx2();
 						double Mx2 = variables.Mx2();
 
 						// DIS variables MC
