@@ -22,8 +22,8 @@ bool SingleHadronKinematicCuts::applyCuts(int currentFits, bool isMC) {
     string property = binNames[currentFits];
 
     if (*Q2 < 1 || *W < 2 || *y > 0.75 || *fiducial_status!=2) return false;
-    // if (*p_p < 1.2 || *xF < 0 || *Mx2 < 3.24) return false;
-    if (*p_p < 1.2 || *xF < 0 || *Mx2 < 0.75 || *Mx2 > 1.25) return false;
+    if (*p_p < 1.2 || *xF < 0 || *Mx2 < 3.24) return false;
+    // if (*p_p < 1.2 || *xF < 0 || *Mx2 < 0.75 || *Mx2 > 1.25) return false;
     return true;
 
     if (property == "Fall18xB" || property == "Fall18pT" || property == "Spring18xB" || property == "Spring18pT") {
