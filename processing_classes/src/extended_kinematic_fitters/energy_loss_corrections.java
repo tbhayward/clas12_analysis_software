@@ -273,6 +273,7 @@ public class energy_loss_corrections {
         } else {
             // Apply Richard Tyson's correction for other cases
             double[] corOut_PDep = {-6.520e-02, 7.099e-03, -5.929e-05, 2.145e-01, -1.153e-01};
+            double[] corIn_PDep = {-9.538e-03,6.661e-03,-3.333e-04,-6.136e-03,3.611e-02};
             double delta = corOut_PDep[0] + corOut_PDep[1] * E + corOut_PDep[2] * E * E 
                          + corOut_PDep[3] / E + corOut_PDep[4] / (E * E);
             E_new = E + delta * E;
