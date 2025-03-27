@@ -31,7 +31,7 @@ public class dvcs_fitter extends GenericKinematicFitter {
         pid_cuts pid_cuts = new pid_cuts();
 
         return true
-                && p > 2.0 
+                && p > 2.0
                 && generic_tests.forward_detector_cut(particle_Index, rec_Bank)
                 && generic_tests.vertex_cut(particle_Index, rec_Bank, run_Bank)
                 && pid_cuts.calorimeter_energy_cut(particle_Index, cal_Bank, 1)
@@ -53,7 +53,7 @@ public class dvcs_fitter extends GenericKinematicFitter {
         float py = rec_Bank.getFloat("py", particle_Index);
         float pz = rec_Bank.getFloat("pz", particle_Index);
         double p = Math.sqrt(px * px + py * py + pz * pz);
-        
+
         float torus = run_Bank.getFloat("torus", 0);
 
         boolean passesForwardDetector = generic_tests.forward_detector_cut(particle_Index, rec_Bank);
@@ -153,18 +153,30 @@ public class dvcs_fitter extends GenericKinematicFitter {
                 float vz = rec_Bank.getFloat("vz", particle_Index);
                 double p = Math.sqrt(px * px + py * py + pz * pz);
 
+                int sector = generic_tests.sector(particle_Index, track_Bank); // 0 FT/CD, 1-6 FD
+
+                int runnum = run_Bank.getInt("run", 0);
+                int runPeriod = -1;
+                if (runnum >= 4763 && runnum <= 5666) {
+                    runPeriod = 1;
+                } // RGA Fa18
+                else if (runnum >= 6616 && runnum <= 6783) {
+                    runPeriod = 2;
+                } // RGA Sp19 
+
                 energy_loss_corrections energy_loss_corrections = new energy_loss_corrections();
+                momentum_corrections momentum_corrections = new momentum_corrections();
 
                 if (pid == 11 && electron_test(particle_Index, p, rec_Bank, cal_Bank,
                         traj_Bank, run_Bank, cc_Bank)) {
-                    
-//                    float[] momentum = {px, py, pz};
+
+                    float[] momentum = {px, py, pz};
 //                    energy_loss_corrections.proton_energy_loss_corrections(particle_Index, momentum, rec_Bank, run_Bank);
-//
-//                    px = momentum[0];
-//                    py = momentum[1];
-//                    pz = momentum[2];
-                    
+                    momentum_corrections.momentum_corrections(momentum, sector, 0, runPeriod, runPeriod, 0, 0);
+                    px = momentum[0];
+                    py = momentum[1];
+                    pz = momentum[2];
+
                     // this checks all of the PID requirements, if it passes all of them the electron is 
                     // added to the event below
                     Particle part = new Particle(pid, px, py, pz, vx, vy, vz_e);
@@ -180,7 +192,6 @@ public class dvcs_fitter extends GenericKinematicFitter {
 //                    px = momentum[0];
 //                    py = momentum[1];
 //                    pz = momentum[2];
-
                     Particle part = new Particle(pid, px, py, pz, vx, vy, vz);
                     physEvent.addParticle(part);
                 }
@@ -193,7 +204,6 @@ public class dvcs_fitter extends GenericKinematicFitter {
 //                    px = momentum[0];
 //                    py = momentum[1];
 //                    pz = momentum[2];
-                    
                     Particle part = new Particle(pid, px, py, pz, vx, vy, vz);
                     physEvent.addParticle(part);
                 }
