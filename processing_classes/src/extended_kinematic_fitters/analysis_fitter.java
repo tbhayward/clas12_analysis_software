@@ -188,6 +188,7 @@ public class analysis_fitter extends GenericKinematicFitter {
             HipoDataBank rec_Bank = (HipoDataBank) event.getBank("REC::Particle");
             HipoDataBank cal_Bank = (HipoDataBank) event.getBank("REC::Calorimeter");
             HipoDataBank cc_Bank = (HipoDataBank) event.getBank("REC::Cherenkov");
+            HipoDataBank track_Bank = (HipoDataBank) event.getBank("REC::Track");
             HipoDataBank traj_Bank = (HipoDataBank) event.getBank("REC::Traj");
             HipoDataBank run_Bank = (HipoDataBank) event.getBank("RUN::config");
             HipoDataBank ft_Bank = null;
@@ -222,6 +223,7 @@ public class analysis_fitter extends GenericKinematicFitter {
                 float vy = rec_Bank.getFloat("vy", particle_Index);
                 float vz = rec_Bank.getFloat("vz", particle_Index);
                 double p = Math.sqrt(px * px + py * py + pz * pz);
+                int sector = generic_tests.sector(particle_Index, track_Bank); // 0 FT/CD, 1-6 FD
 
                 energy_loss_corrections energy_loss_corrections = new energy_loss_corrections();
 
@@ -261,6 +263,13 @@ public class analysis_fitter extends GenericKinematicFitter {
                 if (Math.abs(pid) == 211 && pion_test(particle_Index, pid, vz, vz_e, rec_Bank, cal_Bank,
                         traj_Bank, run_Bank)) {
                     // check for pion PID
+                    
+                    float[] momentum = {px, py, pz};
+                    energy_loss_corrections.proton_energy_loss_corrections(particle_Index, momentum, rec_Bank, run_Bank);
+
+                    px = momentum[0];
+                    py = momentum[1];
+                    pz = momentum[2];
 
                     Particle part = new Particle(pid, px, py, pz, vx, vy, vz);
                     physEvent.addParticle(part);
@@ -277,12 +286,12 @@ public class analysis_fitter extends GenericKinematicFitter {
                 if (pid == 2212 && proton_test(particle_Index, pid, vz, vz_e, rec_Bank, cal_Bank,
                         traj_Bank, run_Bank)) {
 
-//                    float[] momentum = {px, py, pz};
-//                    energy_loss_corrections.proton_energy_loss_corrections(particle_Index, momentum, rec_Bank, run_Bank);
-//
-//                    px = momentum[0];
-//                    py = momentum[1];
-//                    pz = momentum[2];
+                    float[] momentum = {px, py, pz};
+                    energy_loss_corrections.proton_energy_loss_corrections(particle_Index, momentum, rec_Bank, run_Bank);
+
+                    px = momentum[0];
+                    py = momentum[1];
+                    pz = momentum[2];
 
                     Particle part = new Particle(pid, px, py, pz, vx, vy, vz);
                     physEvent.addParticle(part);

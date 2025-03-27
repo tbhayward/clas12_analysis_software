@@ -12,7 +12,7 @@ public class generic_tests {
     
     public boolean banks_test(DataEvent event) {
         String[] bankNames = 
-            {"RUN::config","REC::Event","REC::Particle","REC::Calorimeter","REC::Traj","REC::Cherenkov"};
+            {"RUN::config","REC::Event","REC::Particle","REC::Calorimeter","REC::Traj","REC::Track","REC::Cherenkov"};
         for (String bankName : bankNames) {
             if (!event.hasBank(bankName)) { return false;  }
         }
@@ -79,6 +79,17 @@ public class generic_tests {
     public boolean forward_tagger_cut(int particle_Index, HipoDataBank rec_Bank) {
         int status = rec_Bank.getInt("status", particle_Index);
         return (Math.abs(status)>=1000 && Math.abs(status)<2000);
+    }
+    
+    public int sector(int particle_Index, HipoDataBank track_Bank) {
+        for (int current_Row = 0; current_Row < track_Bank.rows(); current_Row++) {
+            // Get the pindex and layer values for the current row
+            int pindex = track_Bank.getInt("pindex", current_Row);
+            if (pindex == particle_Index) {
+                return track_Bank.getInt("sector", current_Row);
+            }
+        }
+        return -1; // no match found?
     }
     
     public boolean nphe_cut(int particle_Index, HipoDataBank cc_Bank) {

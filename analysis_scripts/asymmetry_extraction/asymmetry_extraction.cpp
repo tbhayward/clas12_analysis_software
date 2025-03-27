@@ -277,8 +277,7 @@ int main(int argc, char *argv[]) {
     // cmp = 1.06509e+06;
     // cmm = 1.09221e+06;
 
-    // for (int asymmetry = 0; asymmetry < 3; ++asymmetry) {
-    for (int asymmetry = 1; asymmetry < 2; ++asymmetry) {
+    for (int asymmetry = 0; asymmetry < 3; ++asymmetry) {
         if (asymmetry > 0 && cpp == 1) {
             cout << "Skipping TSA and DSA for unpolarized target data." << endl;
             continue;

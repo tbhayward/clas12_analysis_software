@@ -120,6 +120,7 @@ public class dvcs_fitter extends GenericKinematicFitter {
             HipoDataBank cal_Bank = (HipoDataBank) event.getBank("REC::Calorimeter");
             HipoDataBank cc_Bank = (HipoDataBank) event.getBank("REC::Cherenkov");
             HipoDataBank traj_Bank = (HipoDataBank) event.getBank("REC::Traj");
+            HipoDataBank track_Bank = (HipoDataBank) event.getBank("REC::Track");
             HipoDataBank run_Bank = (HipoDataBank) event.getBank("RUN::config");
             HipoDataBank ft_Bank = null;
             if (event.hasBank("REC::ForwardTagger")) {
