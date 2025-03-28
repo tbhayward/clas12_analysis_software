@@ -156,29 +156,55 @@ def fill_stage_histograms(data_tree, mc_tree, topology, analysis_type, cuts_dict
 #enddef
 
 def get_hist_configs(analysis_type):
+    # if analysis_type == "dvcs":
+    #     return {
+    #         # "open_angle_ep2":    (100, 0, 60),
+    #         "Delta_phi":    (100, 2.84159, 3.44159),
+    #         "theta_gamma_gamma": (100, 0, 2),
+    #         "pTmiss":            (100, 0, 0.3),
+    #         "xF":                (100, -0.4, 0.2),
+    #         "Emiss2":            (100, -1, 2),
+    #         "Mx2":               (100, -0.03, 0.03),
+    #         "Mx2_1":             (100, -1.5, 1.5),
+    #         "Mx2_2":             (100, 0, 3)
+    #     }
+    # elif analysis_type == "eppi0":
+    #     return {
+    #         # "open_angle_ep2":    (100, 0, 60),
+    #         "Delta_phi":    (100, 2.84159, 3.44159),
+    #         "theta_pi0_pi0":     (100, 0, 2),
+    #         "pTmiss":            (100, 0, 0.3),
+    #         "xF":                (100, -0.4, 0.2),
+    #         "Emiss2":            (100, -1, 2),
+    #         "Mx2":               (100, -0.03, 0.03),
+    #         "Mx2_1":             (100, -1.5, 1.5),
+    #         "Mx2_2":             (100, 0, 3)
+    #     }
+    # else:
+    #     raise ValueError(f"Unrecognized analysis_type: {analysis_type}")
     if analysis_type == "dvcs":
         return {
             # "open_angle_ep2":    (100, 0, 60),
-            "Delta_phi":    (100, 2.84159, 3.44159),
-            "theta_gamma_gamma": (100, 0, 2),
-            "pTmiss":            (100, 0, 0.3),
-            "xF":                (100, -0.4, 0.2),
-            "Emiss2":            (100, -1, 2),
-            "Mx2":               (100, -0.03, 0.03),
-            "Mx2_1":             (100, -1.5, 1.5),
-            "Mx2_2":             (100, 0, 3)
+            "Delta_phi":    (33, 2.84159, 3.44159),
+            "theta_gamma_gamma": (33, 0, 2),
+            "pTmiss":            (33, 0, 0.3),
+            "xF":                (33, -0.4, 0.2),
+            "Emiss2":            (33, -1, 2),
+            "Mx2":               (33, -0.03, 0.03),
+            "Mx2_1":             (33, -1.5, 1.5),
+            "Mx2_2":             (33, 0, 3)
         }
     elif analysis_type == "eppi0":
         return {
             # "open_angle_ep2":    (100, 0, 60),
-            "Delta_phi":    (100, 2.84159, 3.44159),
-            "theta_pi0_pi0":     (100, 0, 2),
-            "pTmiss":            (100, 0, 0.3),
-            "xF":                (100, -0.4, 0.2),
-            "Emiss2":            (100, -1, 2),
-            "Mx2":               (100, -0.03, 0.03),
-            "Mx2_1":             (100, -1.5, 1.5),
-            "Mx2_2":             (100, 0, 3)
+            "Delta_phi":    (33, 2.84159, 3.44159),
+            "theta_pi0_pi0":     (33, 0, 2),
+            "pTmiss":            (33, 0, 0.3),
+            "xF":                (33, -0.4, 0.2),
+            "Emiss2":            (33, -1, 2),
+            "Mx2":               (33, -0.03, 0.03),
+            "Mx2_1":             (33, -1.5, 1.5),
+            "Mx2_2":             (33, 0, 3)
         }
     else:
         raise ValueError(f"Unrecognized analysis_type: {analysis_type}")
@@ -354,7 +380,7 @@ def plot_results(data_hists, mc_hists, plot_title, topology, output_dir, suffix=
         # pad_leg.AddEntry(dh, f"Data (#mu={mu_data:.3f}, #sigma={sigma_data:.3f})", "lep")
         # pad_leg.AddEntry(mh, f"MC (#mu={mu_mc:.3f}, #sigma={sigma_mc:.3f})", "lep")
         pad_leg.AddEntry(dh, f"pass2 (#mu={mu_data:.3f}, #sigma={sigma_data:.3f})", "lep")
-        pad_leg.AddEntry(mh, f"DAF (cj 11.1.1) (#mu={mu_mc:.3f}, #sigma={sigma_mc:.3f})", "lep")
+        pad_leg.AddEntry(mh, f"cj11.1 (#mu={mu_mc:.3f}, #sigma={sigma_mc:.3f})", "lep")
         pad_leg.Draw()
     #endfor
 
