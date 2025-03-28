@@ -351,8 +351,10 @@ def plot_results(data_hists, mc_hists, plot_title, topology, output_dir, suffix=
 
         # Legend
         pad_leg = base_legend.Clone()
-        pad_leg.AddEntry(dh, f"Data (#mu={mu_data:.3f}, #sigma={sigma_data:.3f})", "lep")
-        pad_leg.AddEntry(mh, f"MC (#mu={mu_mc:.3f}, #sigma={sigma_mc:.3f})", "lep")
+        # pad_leg.AddEntry(dh, f"Data (#mu={mu_data:.3f}, #sigma={sigma_data:.3f})", "lep")
+        # pad_leg.AddEntry(mh, f"MC (#mu={mu_mc:.3f}, #sigma={sigma_mc:.3f})", "lep")
+        pad_leg.AddEntry(dh, f"pass2 (#mu={mu_data:.3f}, #sigma={sigma_data:.3f})", "lep")
+        pad_leg.AddEntry(mh, f"DAF (cj 11.1.1) (#mu={mu_mc:.3f}, #sigma={sigma_mc:.3f})", "lep")
         pad_leg.Draw()
     #endfor
 

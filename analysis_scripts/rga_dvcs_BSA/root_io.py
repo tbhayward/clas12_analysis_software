@@ -14,26 +14,62 @@ def load_root_files(period):
     """
     # Mapping from period -> file paths
     # We'll prefix them with "DVCS_" or "eppi0_" to differentiate
+    # file_map = {
+    #     "DVCS_Fa18_inb": {
+    #         "data": "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/data/dvcs/rga_fa18_inb_epgamma.root",
+    #         "mc":   "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/mc/dvcsgen/rec_dvcsgen_rga_fa18_inb_50nA_10604MeV_epgamma.root"
+    #     },
+    #     "DVCS_Fa18_out": {
+    #         "data": "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/data/dvcs/rga_fa18_out_epgamma.root",
+    #         "mc":   "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/mc/dvcsgen/rec_dvcsgen_rga_fa18_out_50nA_10604MeV_epgamma.root"
+    #     },
+    #     "DVCS_Sp19_inb": {
+    #         "data": "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/data/dvcs/rga_sp19_inb_epgamma.root",
+    #         "mc":   "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/mc/dvcsgen/rec_dvcsgen_rga_sp19_inb_50nA_10200MeV_epgamma.root"
+    #     },
+    #     "eppi0_Fa18_inb": {
+    #         "data": "/work/clas12/thayward/CLAS12_exclusive/eppi0/data/pass2/data/rga_fa18_inb_eppi0.root",
+    #         "mc":   "/work/clas12/thayward/CLAS12_exclusive/eppi0/data/pass2/mc/hipo_files/rec_aaogen_norad_rga_fa18_inb_50nA_10604MeV_eppi0.root"
+    #     },
+    #     "eppi0_Fa18_out": {
+    #         "data": "/work/clas12/thayward/CLAS12_exclusive/eppi0/data/pass2/data/rga_fa18_out_eppi0.root",
+    #         "mc":   "/work/clas12/thayward/CLAS12_exclusive/eppi0/data/pass2/mc/hipo_files/rec_aaogen_norad_rga_fa18_out_50nA_10604MeV_eppi0.root"
+    #     },
+    #     "eppi0_Sp19_inb": {
+    #         "data": "/work/clas12/thayward/CLAS12_exclusive/eppi0/data/pass2/data/rga_sp19_inb_eppi0.root",
+    #         "mc":   "/work/clas12/thayward/CLAS12_exclusive/eppi0/data/pass2/mc/hipo_files/rec_aaogen_norad_rga_sp19_inb_50nA_10200MeV_eppi0.root"
+    #     },
+    #     "eppi0_bkg_Fa18_inb": {
+    #         "mc":   "/work/clas12/thayward/CLAS12_exclusive/eppi0/data/pass2/mc/hipo_files/eppi0_bkg_aaogen_norad_rga_fa18_inb_epgamma.root"
+    #     },
+    #     "eppi0_bkg_Fa18_out": {
+    #         "mc":   "/work/clas12/thayward/CLAS12_exclusive/eppi0/data/pass2/mc/hipo_files/eppi0_bkg_aaogen_norad_rga_fa18_out_epgamma.root"
+    #     },
+    #     "eppi0_bkg_Sp19_inb": {
+    #         "mc":   "/work/clas12/thayward/CLAS12_exclusive/eppi0/data/pass2/mc/hipo_files/eppi0_bkg_aaogen_norad_rga_sp19_inb_epgamma.root"
+    #     }
+    # }
+
     file_map = {
         "DVCS_Fa18_inb": {
-            "data": "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/data/dvcs/rga_fa18_inb_epgamma.root",
-            "mc":   "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/mc/dvcsgen/rec_dvcsgen_rga_fa18_inb_50nA_10604MeV_epgamma.root"
+            "data": "/scratch/thayward/DAF_validation/root_files/rga_fa18_inb_pass2_dvcs.root",
+            "mc":   "/scratch/thayward/DAF_validation/root_files/rga_fa18_inb_DAF_dvcs.root"
         },
         "DVCS_Fa18_out": {
-            "data": "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/data/dvcs/rga_fa18_out_epgamma.root",
-            "mc":   "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/mc/dvcsgen/rec_dvcsgen_rga_fa18_out_50nA_10604MeV_epgamma.root"
+            "data": "/scratch/thayward/DAF_validation/root_files/rga_fa18_out_pass2_dvcs.root",
+            "mc":   "/scratch/thayward/DAF_validation/root_files/rga_fa18_out_DAF_dvcs.root"
         },
         "DVCS_Sp19_inb": {
             "data": "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/data/dvcs/rga_sp19_inb_epgamma.root",
             "mc":   "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/mc/dvcsgen/rec_dvcsgen_rga_sp19_inb_50nA_10200MeV_epgamma.root"
         },
         "eppi0_Fa18_inb": {
-            "data": "/work/clas12/thayward/CLAS12_exclusive/eppi0/data/pass2/data/rga_fa18_inb_eppi0.root",
-            "mc":   "/work/clas12/thayward/CLAS12_exclusive/eppi0/data/pass2/mc/hipo_files/rec_aaogen_norad_rga_fa18_inb_50nA_10604MeV_eppi0.root"
+            "data": "/scratch/thayward/DAF_validation/root_files/rga_fa18_inb_pass2_eppi0.root",
+            "mc":   "/scratch/thayward/DAF_validation/root_files/rga_fa18_inb_DAF_eppi0.root"
         },
         "eppi0_Fa18_out": {
-            "data": "/work/clas12/thayward/CLAS12_exclusive/eppi0/data/pass2/data/rga_fa18_out_eppi0.root",
-            "mc":   "/work/clas12/thayward/CLAS12_exclusive/eppi0/data/pass2/mc/hipo_files/rec_aaogen_norad_rga_fa18_out_50nA_10604MeV_eppi0.root"
+            "data": "/scratch/thayward/DAF_validation/root_files/rga_fa18_out_pass2_eppi0.root",
+            "mc":   "/scratch/thayward/DAF_validation/root_files/rga_fa18_out_pass2_eppi0.root"
         },
         "eppi0_Sp19_inb": {
             "data": "/work/clas12/thayward/CLAS12_exclusive/eppi0/data/pass2/data/rga_sp19_inb_eppi0.root",
