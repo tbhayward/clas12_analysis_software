@@ -53,7 +53,7 @@ def load_root_files(period):
     file_map = {
         "DVCS_Fa18_inb": {
             "data": "/scratch/thayward/DAF_validation/root_files/rga_fa18_inb_pass2_dvcs.root",
-            "mc":   "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/mc/dvcsgen/rec_dvcsgen_rga_fa18_inb_50nA_10604MeV_epgamma.root"
+            "mc":   "/scratch/thayward/DAF_validation/root_files/rga_fa18_inb_DAF_dvcs.root"
         },
         "DVCS_Fa18_out": {
             "data": "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/data/dvcs/rga_fa18_out_epgamma.root",
