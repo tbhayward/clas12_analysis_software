@@ -185,26 +185,26 @@ def get_hist_configs(analysis_type):
     if analysis_type == "dvcs":
         return {
             # "open_angle_ep2":    (100, 0, 60),
-            "Delta_phi":    (33, 2.84159, 3.44159),
-            "theta_gamma_gamma": (33, 0, 2),
-            "pTmiss":            (33, 0, 0.3),
-            "xF":                (33, -0.4, 0.2),
-            "Emiss2":            (33, -1, 2),
-            "Mx2":               (33, -0.03, 0.03),
-            "Mx2_1":             (33, -1.5, 1.5),
-            "Mx2_2":             (33, 0, 3)
+            "Delta_phi":    (50, 2.84159, 3.44159),
+            "theta_gamma_gamma": (50, 0, 2),
+            "pTmiss":            (50, 0, 0.3),
+            "xF":                (50, -0.4, 0.2),
+            "Emiss2":            (50, -1, 2),
+            "Mx2":               (50, -0.03, 0.03),
+            "Mx2_1":             (50, -1.5, 1.5),
+            "Mx2_2":             (50, 0, 3)
         }
     elif analysis_type == "eppi0":
         return {
             # "open_angle_ep2":    (100, 0, 60),
-            "Delta_phi":    (33, 2.84159, 3.44159),
-            "theta_pi0_pi0":     (33, 0, 2),
-            "pTmiss":            (33, 0, 0.3),
-            "xF":                (33, -0.4, 0.2),
-            "Emiss2":            (33, -1, 2),
-            "Mx2":               (33, -0.03, 0.03),
-            "Mx2_1":             (33, -1.5, 1.5),
-            "Mx2_2":             (33, 0, 3)
+            "Delta_phi":    (50, 2.84159, 3.44159),
+            "theta_pi0_pi0":     (50, 0, 2),
+            "pTmiss":            (50, 0, 0.3),
+            "xF":                (50, -0.4, 0.2),
+            "Emiss2":            (50, -1, 2),
+            "Mx2":               (50, -0.03, 0.03),
+            "Mx2_1":             (50, -1.5, 1.5),
+            "Mx2_2":             (50, 0, 3)
         }
     else:
         raise ValueError(f"Unrecognized analysis_type: {analysis_type}")
