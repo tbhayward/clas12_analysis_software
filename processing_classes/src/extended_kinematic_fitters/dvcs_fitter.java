@@ -164,8 +164,8 @@ public class dvcs_fitter extends GenericKinematicFitter {
                     runPeriod = 2;
                 } // RGA Sp19 
 
-                energy_loss_corrections energy_loss_corrections = new energy_loss_corrections();
-                momentum_corrections momentum_corrections = new momentum_corrections();
+//                energy_loss_corrections energy_loss_corrections = new energy_loss_corrections();
+//                momentum_corrections momentum_corrections = new momentum_corrections();
 
                 if (pid == 11 && electron_test(particle_Index, p, rec_Bank, cal_Bank,
                         traj_Bank, run_Bank, cc_Bank)) {
