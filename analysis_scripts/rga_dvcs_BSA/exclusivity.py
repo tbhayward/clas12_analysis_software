@@ -186,8 +186,8 @@ def get_hist_configs(analysis_type):
         return {
             # "open_angle_ep2":    (100, 0, 60),
             "Delta_phi":    (50, 2.84159, 3.44159),
-            "theta_gamma_gamma": (50, 0, 2),
-            "pTmiss":            (50, 0, 0.3),
+            "theta_gamma_gamma": (50, 0, 0.6),
+            "pTmiss":            (50, 0, 0.15),
             "xF":                (50, -0.4, 0.2),
             "Emiss2":            (50, -1, 2),
             "Mx2":               (50, -0.03, 0.03),
@@ -198,8 +198,8 @@ def get_hist_configs(analysis_type):
         return {
             # "open_angle_ep2":    (100, 0, 60),
             "Delta_phi":    (50, 2.84159, 3.44159),
-            "theta_pi0_pi0":     (50, 0, 2),
-            "pTmiss":            (50, 0, 0.3),
+            "theta_pi0_pi0":     (50, 0, 0.6),
+            "pTmiss":            (50, 0, 0.15),
             "xF":                (50, -0.4, 0.2),
             "Emiss2":            (50, -1, 2),
             "Mx2":               (50, -0.03, 0.03),
