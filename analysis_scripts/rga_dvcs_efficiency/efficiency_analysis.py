@@ -296,11 +296,11 @@ def plot_normalized_efficiencies(output_dir):
         # Create the plot.
         plt.figure()
         plt.errorbar(currents_arr, efficiencies_arr, yerr=efficiency_errors, fmt='ko', label='Data')
-        plt.plot(fit_x, fit_y, 'r--', label=f"m = {m:.3e} ± {sigma_m:.3e}\n" + r"$\chi^{2}/ndf$ = " + f"{chi2_ndf:.2f}")
+        plt.plot(fit_x, fit_y, 'r--', label=f"m = {m:.4f} ± {sigma_m:.4f}\n" + r"$\chi^{2}/ndf$ = " + f"{chi2_ndf:.2f}")
         plt.xlabel("current (nA)")
         plt.ylabel("normalized efficiency")
         plt.xlim(-5, 60)
-        plt.ylim(0.7, 1.1)
+        plt.ylim(0.7, 1.05)
         plt.legend(loc='upper right')
         plt.title(f"Normalized Efficiency for {title_map.get(run_prefix, run_prefix)}")
         
