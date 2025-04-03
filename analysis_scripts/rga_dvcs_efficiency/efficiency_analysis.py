@@ -126,7 +126,7 @@ def get_total_tree_entries(file_path):
         print(f"Error opening file {file_path}")
         return 0
     #endif
-    tree = f.Get("tree")
+    tree = f.Get("PhysicsEvents")
     if not tree:
         print(f"Error: tree not found in file {file_path}")
         f.Close()
@@ -164,8 +164,8 @@ def plot_normalized_efficiencies(output_dir):
     # Loop over each run period.
     for run_prefix, period_code in run_periods.items():
         # Find all generated and reconstructed ROOT files for this run period.
-        pattern_gen = os.path.join(base_dir, f"gen_{run_prefix}_dvcs_*nA.root")
-        pattern_reco = os.path.join(base_dir, f"{run_prefix}_dvcs_*nA.root")
+        pattern_gen = os.path.join(base_dir, f"gen_{run_prefix}_dvcs_*.root")
+        pattern_reco = os.path.join(base_dir, f"{run_prefix}_dvcs_*.root")
         gen_files = glob.glob(pattern_gen)
         reco_files = glob.glob(pattern_reco)
         
