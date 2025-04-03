@@ -2,7 +2,7 @@
 import os
 from load_binning_scheme import load_binning_scheme
 from efficiency_analysis import (plot_normalized_efficiencies, 
-                                 calculate_binned_efficiencies, 
+                                 calculate_binned_efficiencies_all, 
                                  plot_binned_efficiencies)
 
 def main():
@@ -46,7 +46,7 @@ def main():
     output_dir = "output"
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
-        
+
     # plot_normalized_efficiencies(output_dir)
     
     # --- Calculate binned efficiencies for all run periods ---
