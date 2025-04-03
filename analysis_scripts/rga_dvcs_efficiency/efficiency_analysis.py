@@ -2,51 +2,52 @@
 import os
 import glob
 import json
+import math
 import ROOT
 import numpy as np
 import matplotlib.pyplot as plt
 from kin_cuts import apply_kinematic_cuts, passes_3sigma_cuts
+from load_binning_scheme import load_binning_scheme
+
+#############################################
+# Existing Functions for Integrated Analysis
+#############################################
 
 def load_cuts(period, topology):
     """
     Loads the final cuts dictionary from combined_cuts.json for a given (period, topology).
-
-    If the period includes 'bkg', it is mapped to the corresponding DVCS period.
+    If topology is "(all)", we use the DVCS cuts.
     """
-    topo_clean = topology.replace("(", "").replace(")", "").replace(",", "_").strip()
-    if "bkg" in period:
-        dvcs_equiv = period.replace("eppi0_bkg", "DVCS")
-        dictionary_key = f"{dvcs_equiv}_{topo_clean}"
+    if topology == "(all)":
+        dictionary_key = f"{period}_DVCS"
     else:
-        dictionary_key = f"{period}_{topo_clean}"
+        topo_clean = topology.replace("(", "").replace(")", "").replace(",", "_").strip()
+        if "bkg" in period:
+            dvcs_equiv = period.replace("eppi0_bkg", "DVCS")
+            dictionary_key = f"{dvcs_equiv}_{topo_clean}"
+        else:
+            dictionary_key = f"{period}_{topo_clean}"
     #endelse
 
     combined_cuts_path = os.path.join("exclusivity", "combined_cuts.json")
     if not os.path.exists(combined_cuts_path):
         print(f"⚠️ {combined_cuts_path} does not exist; returning empty cuts dictionary.")
         return {}
-    #endif
-
     with open(combined_cuts_path, "r") as f:
         combined_cuts = json.load(f)
-    #endwith
-
     if dictionary_key in combined_cuts:
         return combined_cuts[dictionary_key]
     else:
         print(f"⚠️ Key '{dictionary_key}' not found in {combined_cuts_path}.")
         print("Available keys:", list(combined_cuts.keys()))
         return {}
-    #endif
 #enddef
 
 def passes_exclusivity_cuts(event, cuts, topology, analysis_type, run_period):
     """
-    Applies the exclusivity cuts to an event based on the provided cuts dictionary.
-    It first determines the event’s topology from detector1 and detector2,
-    then applies kinematic cuts and finally the 3σ cuts.
+    Applies exclusivity cuts to an event.
+    (This version is used for integrated efficiency analysis and requires a topology match.)
     """
-    # Determine event topology based on detector1 and detector2.
     if event.detector1 == 1 and event.detector2 == 1:
         event_topo = "(FD,FD)"
     elif event.detector1 == 2 and event.detector2 == 1:
@@ -55,17 +56,9 @@ def passes_exclusivity_cuts(event, cuts, topology, analysis_type, run_period):
         event_topo = "(CD,FT)"
     else:
         return False
-    #endif
-
-    # Only proceed if event topology matches the selected topology.
     if event_topo != topology:
         return False
-    #endif
-
-    # Get theta value (for DVCS we expect theta_gamma_gamma).
     theta_val = getattr(event, "theta_gamma_gamma", None)
-
-    # Apply kinematic cuts.
     if not apply_kinematic_cuts(
             event.t1, event.open_angle_ep2, theta_val,
             event.Emiss2, event.Mx2, event.Mx2_1, event.Mx2_2,
@@ -73,13 +66,8 @@ def passes_exclusivity_cuts(event, cuts, topology, analysis_type, run_period):
             analysis_type, "data", run_period, topology
         ):
         return False
-    #endif
-
-    # Apply 3σ exclusivity cuts.
     if not passes_3sigma_cuts(event, False, cuts):
         return False
-    #endif
-
     return True
 #enddef
 
@@ -93,25 +81,19 @@ def get_tree_entries_with_cuts(file_path, cuts, topology, analysis_type, run_per
     if not f or f.IsZombie():
         print(f"Error opening file {file_path}")
         return 0
-    #endif
     tree = f.Get("PhysicsEvents")
     if not tree:
         print(f"Error: tree not found in file {file_path}")
         f.Close()
         return 0
-    #endif
-
     count = 0
     for event in tree:
         try:
             if passes_exclusivity_cuts(event, cuts, topology, analysis_type, run_period):
                 count += 1
-            #endif
         except Exception as e:
             print(f"Exception in applying exclusivity cuts: {e}")
             continue
-        #endfor
-    #endfor
     f.Close()
     return count
 #enddef
@@ -125,13 +107,11 @@ def get_total_tree_entries(file_path):
     if not f or f.IsZombie():
         print(f"Error opening file {file_path}")
         return 0
-    #endif
     tree = f.Get("PhysicsEvents")
     if not tree:
         print(f"Error: tree not found in file {file_path}")
         f.Close()
         return 0
-    #endif
     n = tree.GetEntries()
     f.Close()
     return n
@@ -140,53 +120,31 @@ def get_total_tree_entries(file_path):
 def plot_normalized_efficiencies(output_dir):
     """
     Calculates and plots normalized efficiencies as a function of beam current
-    for each run period. For each current x nA, the efficiency is calculated as:
-
-        efficiency = (n_reco(x nA)/n_gen(x nA)) / (n_reco(0 nA)/n_gen(0 nA))
-
-    The results are then fitted to a linear model forced through (0,1), i.e.,
-    y = m*x + 1. Three separate canvases (one per run period) are saved as PDFs.
+    for each run period (integrated over kinematics). The efficiency is calculated as:
+        efficiency = (n_reco/n_gen) normalized to the 0 nA (nobkg) value.
+    A forced linear fit through (0,1) is performed, and the results are plotted.
     """
-    # Define base directory where the ROOT files are stored.
     base_dir = "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/efficiency_study"
-    
-    # Define the run periods with their file prefix mapping.
     run_periods = {
         "rga_fa18_inb": "DVCS_Fa18_inb",
         "rga_fa18_out": "DVCS_Fa18_out",
         "rga_sp19_inb": "DVCS_Sp19_inb"
     }
-    
-    # Map run_prefix to a more stylized title.
     title_map = {
         "rga_fa18_inb": "RGA Fa18 Inb",
         "rga_fa18_out": "RGA Fa18 Out",
         "rga_sp19_inb": "RGA Sp19 Inb"
     }
-    
-    # Define the selected topology and analysis type.
     selected_topology = "(FD,FD)"
     analysis_type = "dvcs"
-    
-    # Loop over each run period.
     for run_prefix, period_code in run_periods.items():
-        # Find all generated and reconstructed ROOT files for this run period.
-        # Use a less restrictive pattern to include both "nobkg" and "XXnA" files.
         pattern_gen = os.path.join(base_dir, f"gen_{run_prefix}_dvcs_*.root")
         pattern_reco = os.path.join(base_dir, f"{run_prefix}_dvcs_*.root")
         gen_files = glob.glob(pattern_gen)
         reco_files = glob.glob(pattern_reco)
-        
-        # Create dictionaries mapping current (in nA) to file path for both gen and reco.
         gen_dict = {}
         reco_dict = {}
-        
         def extract_current(filename):
-            """
-            Extracts the beam current from the filename.
-            Expected pattern: ..._{current}nA.root, where current is a number
-            or 'nobkg' (which is mapped to 0).
-            """
             base = os.path.basename(filename)
             parts = base.split("_")
             last_part = parts[-1].replace(".root", "")
@@ -194,43 +152,24 @@ def plot_normalized_efficiencies(output_dir):
                 return 0
             else:
                 try:
-                    current_str = last_part.replace("nA", "")
-                    return int(current_str)
+                    return int(last_part.replace("nA", ""))
                 except:
                     return None
-                #endif
-            #endif
-        #enddef
-
         for fpath in gen_files:
             cur = extract_current(fpath)
             if cur is not None:
                 gen_dict[cur] = fpath
-            #endif
-        #endfor
-
         for fpath in reco_files:
             cur = extract_current(fpath)
             if cur is not None:
                 reco_dict[cur] = fpath
-            #endif
-        #endfor
-
-        # Check that we have a 0 nA (nobkg) file for normalization.
         if 0 not in gen_dict or 0 not in reco_dict:
             print(f"Missing nobkg files for run period {run_prefix}. Skipping.")
             continue
-        #endif
-        
-        # Load the exclusivity cuts for this period.
         cuts = load_cuts(period_code, selected_topology)
-        
-        # Calculate efficiency for each current.
         currents = []
         efficiencies = []
         efficiency_errors = []
-        
-        # Calculate normalization factor from the nobkg files (0 nA).
         n_gen_0 = get_total_tree_entries(gen_dict[0])
         n_reco_0 = get_tree_entries_with_cuts(reco_dict[0], cuts, selected_topology, analysis_type, period_code)
         if n_gen_0 == 0:
@@ -238,62 +177,36 @@ def plot_normalized_efficiencies(output_dir):
             norm_eff = 1.0
         else:
             norm_eff = (n_reco_0 / n_gen_0)
-        #endif
-
-        # Loop over all currents (ensuring 0 is included for normalization).
         for cur in sorted(gen_dict.keys()):
             if cur == 0:
                 currents.append(0)
-                efficiencies.append(1.0)  # by definition, normalized to itself
+                efficiencies.append(1.0)
                 efficiency_errors.append(0.0)
                 continue
-            #endif
             n_gen = get_total_tree_entries(gen_dict[cur])
             n_reco = get_tree_entries_with_cuts(reco_dict[cur], cuts, selected_topology, analysis_type, period_code)
-            
             if n_gen == 0:
                 eff = 0
                 err = 0
             else:
                 eff = (n_reco / n_gen) / norm_eff
-                # Estimate error from Poisson statistics (assuming error in n_reco dominates).
-                if n_reco > 0:
-                    err = (np.sqrt(n_reco) / n_gen) / norm_eff
-                else:
-                    err = 0
-                #endif
-            #endif
+                err = (np.sqrt(n_reco) / n_gen) / norm_eff if n_reco > 0 else 0
             currents.append(cur)
             efficiencies.append(eff)
             efficiency_errors.append(err)
-        #endfor
-        
-        # Convert lists to numpy arrays.
         currents_arr = np.array(currents)
         efficiencies_arr = np.array(efficiencies)
-        
-        # For weighted least squares, use weights = 1/(error^2).
-        weights2 = np.array([1/(err**2) if err > 0 else 1 for err in efficiency_errors])
-        
-        # Force the fit through (0,1): model: efficiency = m*x + 1.
-        # Calculate best-fit slope (m) and its uncertainty.
-        # m = sum(w * x*(y-1)) / sum(w * x^2)
+        weights2 = np.array([1/(e**2) if e > 0 else 1 for e in efficiency_errors])
         numerator = np.sum(weights2 * currents_arr * (efficiencies_arr - 1))
         denominator = np.sum(weights2 * currents_arr**2)
         m = numerator / denominator if denominator != 0 else 0
         sigma_m = np.sqrt(1 / denominator) if denominator != 0 else 0
-        
-        # Calculate chi2:
         model = 1 + m * currents_arr
         chi2 = np.sum(weights2 * (efficiencies_arr - model)**2)
-        ndf = len(currents_arr) - 1  # one parameter fit
+        ndf = len(currents_arr) - 1
         chi2_ndf = chi2 / ndf if ndf > 0 else 0
-        
-        # Generate fitted line data.
         fit_x = np.linspace(min(currents_arr), max(currents_arr), 100)
         fit_y = 1 + m * fit_x
-        
-        # Create the plot.
         plt.figure()
         plt.errorbar(currents_arr, efficiencies_arr, yerr=efficiency_errors, fmt='ko', label='Data')
         plt.plot(fit_x, fit_y, 'r--', label=f"m = {m:.4f} ± {sigma_m:.4f}\n" + r"$\chi^{2}/ndf$ = " + f"{chi2_ndf:.2f}")
@@ -303,11 +216,294 @@ def plot_normalized_efficiencies(output_dir):
         plt.ylim(0.7, 1.05)
         plt.legend(loc='upper right')
         plt.title(f"Normalized Efficiency for {title_map.get(run_prefix, run_prefix)}")
-        
-        # Save the plot as a PDF.
         output_path = os.path.join(output_dir, f"{run_prefix}_integrated.pdf")
         plt.savefig(output_path, format='pdf')
         plt.close()
         print(f"Saved plot for {run_prefix} to {output_path}")
+#enddef
+
+#############################################
+# New Functions for Binned Efficiency Analysis
+#############################################
+
+# Global φ binning parameters.
+N_PHI_BINS = 12
+phi_edges = np.linspace(0, 2 * math.pi, N_PHI_BINS + 1)
+phi_centers = (phi_edges[:-1] + phi_edges[1:]) / 2.0
+phi_centers_deg = np.degrees(phi_centers)
+
+def find_bin(value, bin_boundaries):
+    """
+    Given a value and a list of (min, max) boundaries, return the bin index (0-indexed)
+    if the value falls in a bin; otherwise, return None.
+    """
+    for i, (low, high) in enumerate(bin_boundaries):
+        if low <= value < high:
+            return i
+    return None
+#enddef
+
+def passes_exclusivity_cuts_eff(event, cuts, analysis_type, run_period):
+    """
+    Applies exclusivity cuts for efficiency analysis.
+    Instead of filtering by a fixed topology, we apply the kinematic and 3σ cuts based on the event's values.
+    """
+    theta_val = getattr(event, "theta_gamma_gamma", None)
+    if theta_val is None:
+        theta_val = getattr(event, "theta_pi0_pi0", None)
+    if not apply_kinematic_cuts(
+            event.t1, event.open_angle_ep2, theta_val,
+            event.Emiss2, event.Mx2, event.Mx2_1, event.Mx2_2,
+            event.pTmiss, event.xF,
+            analysis_type, "data", run_period, ""
+        ):
+        return False
+    if not passes_3sigma_cuts(event, False, cuts):
+        return False
+    return True
+#enddef
+
+def count_generated_in_bin(file_path, bin_idx, unique_xB_bins, unique_Q2_bins, unique_t_bins):
+    """
+    Opens the generated ROOT file and counts events falling into the bin defined by bin_idx.
+    Uses event.x for xB, event.Q2 for Q², |event.t1| for t, and event.phi2 for φ.
+    """
+    count = 0
+    f = ROOT.TFile.Open(file_path)
+    if not f or f.IsZombie():
+        print(f"Error opening file {file_path}")
+        return 0
+    tree = f.Get("PhysicsEvents")
+    if not tree:
+        print(f"Error: tree not found in file {file_path}")
+        f.Close()
+        return 0
+    for event in tree:
+        try:
+            xB_val = float(event.x)
+            Q2_val = float(event.Q2)
+            t_val  = abs(float(event.t1))
+            phi_val = float(event.phi2)
+        except Exception as e:
+            continue
+        i_xB = find_bin(xB_val, unique_xB_bins)
+        i_Q2 = find_bin(Q2_val, unique_Q2_bins)
+        i_t  = find_bin(t_val, unique_t_bins)
+        i_phi = np.digitize(phi_val, phi_edges) - 1
+        if (i_xB, i_Q2, i_t, i_phi) == bin_idx:
+            count += 1
+    f.Close()
+    return count
+#enddef
+
+def count_reco_in_bin(file_path, bin_idx, unique_xB_bins, unique_Q2_bins, unique_t_bins,
+                        cuts, analysis_type, run_period):
+    """
+    Opens the reconstructed ROOT file and counts events falling into the bin defined by bin_idx.
+    Only events that pass the exclusivity cuts (using the efficiency-specific function) are counted.
+    """
+    count = 0
+    f = ROOT.TFile.Open(file_path)
+    if not f or f.IsZombie():
+        print(f"Error opening file {file_path}")
+        return 0
+    tree = f.Get("PhysicsEvents")
+    if not tree:
+        print(f"Error: tree not found in file {file_path}")
+        f.Close()
+        return 0
+    for event in tree:
+        try:
+            if not passes_exclusivity_cuts_eff(event, cuts, analysis_type, run_period):
+                continue
+            xB_val = float(event.x)
+            Q2_val = float(event.Q2)
+            t_val  = abs(float(event.t1))
+            phi_val = float(event.phi2)
+        except Exception as e:
+            continue
+        i_xB = find_bin(xB_val, unique_xB_bins)
+        i_Q2 = find_bin(Q2_val, unique_Q2_bins)
+        i_t  = find_bin(t_val, unique_t_bins)
+        i_phi = np.digitize(phi_val, phi_edges) - 1
+        if (i_xB, i_Q2, i_t, i_phi) == bin_idx:
+            count += 1
+    f.Close()
+    return count
+#enddef
+
+def calculate_binned_efficiencies_all(binning_scheme, output_dir):
+    """
+    Loops over all run periods and calculates binned efficiencies.
+    For each run period, for each bin defined by unique xB, Q², t and φ,
+    the efficiency is computed (n_reco/n_gen normalized to the 0 nA value) and then
+    a forced linear fit through (0,1) (model: y = m*x + 1) is performed.
+    The slope m and its uncertainty are saved in a JSON file (one per run period).
+    """
+    # Define run periods.
+    RUN_PERIODS = {
+        "rga_fa18_inb": "DVCS_Fa18_inb",
+        "rga_fa18_out": "DVCS_Fa18_out",
+        "rga_sp19_inb": "DVCS_Sp19_inb"
+    }
+    analysis_type = "dvcs"
+    # Build unique bin boundaries from the binning scheme.
+    unique_xB_bins = sorted(set((b.xBmin, b.xBmax) for b in binning_scheme))
+    unique_Q2_bins = sorted(set((b.Q2min, b.Q2max) for b in binning_scheme))
+    unique_t_bins  = sorted(set((b.tmin, b.tmax) for b in binning_scheme))
+    base_dir = "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/efficiency_study"
+    def extract_current(filename):
+        base = os.path.basename(filename)
+        parts = base.split("_")
+        last_part = parts[-1].replace(".root", "")
+        if "nobkg" in last_part:
+            return 0
+        else:
+            try:
+                return int(last_part.replace("nA", ""))
+            except:
+                return None
+    #enddef
+    for run_prefix, period_code in RUN_PERIODS.items():
+        # Set cuts using topology = "(all)" to indicate global cuts.
+        cuts = load_cuts(period_code, "(all)")
+        pattern_gen = os.path.join(base_dir, f"gen_{run_prefix}_dvcs_*.root")
+        pattern_reco = os.path.join(base_dir, f"{run_prefix}_dvcs_*.root")
+        gen_files = glob.glob(pattern_gen)
+        reco_files = glob.glob(pattern_reco)
+        gen_dict = {extract_current(fp): fp for fp in gen_files if extract_current(fp) is not None}
+        reco_dict = {extract_current(fp): fp for fp in reco_files if extract_current(fp) is not None}
+        if 0 not in gen_dict or 0 not in reco_dict:
+            print(f"Missing nobkg files for run period {run_prefix}. Cannot compute efficiencies.")
+            continue
+        # Initialize data structure: for each bin (i_xB, i_Q2, i_t, i_phi), store lists for currents, efficiency and error.
+        efficiency_data = {}
+        for i_xB in range(len(unique_xB_bins)):
+            for i_Q2 in range(len(unique_Q2_bins)):
+                for i_t in range(len(unique_t_bins)):
+                    for i_phi in range(N_PHI_BINS):
+                        efficiency_data[(i_xB, i_Q2, i_t, i_phi)] = {"currents": [], "eff": [], "err": []}
+        # Loop over each beam current.
+        for cur in sorted(gen_dict.keys()):
+            for bin_idx in efficiency_data.keys():
+                n_gen = count_generated_in_bin(gen_dict[cur], bin_idx, unique_xB_bins, unique_Q2_bins, unique_t_bins)
+                n_reco = count_reco_in_bin(reco_dict[cur], bin_idx, unique_xB_bins, unique_Q2_bins, unique_t_bins,
+                                             cuts, analysis_type, period_code)
+                if n_gen > 0:
+                    eff = (n_reco / n_gen)
+                    err = (np.sqrt(n_reco) / n_gen) if n_reco > 0 else 0
+                else:
+                    eff = 0
+                    err = 0
+                efficiency_data[bin_idx]["currents"].append(cur)
+                efficiency_data[bin_idx]["eff"].append(eff)
+                efficiency_data[bin_idx]["err"].append(err)
+        # Normalize each bin's efficiencies to the 0 nA value.
+        for bin_idx, data in efficiency_data.items():
+            currents_arr = np.array(data["currents"])
+            eff_arr = np.array(data["eff"])
+            err_arr = np.array(data["err"])
+            norm = 1.0
+            zero_idx = np.where(currents_arr == 0)[0]
+            if len(zero_idx) > 0:
+                norm = eff_arr[zero_idx[0]]
+            if norm == 0:
+                norm = 1.0
+            eff_arr = eff_arr / norm
+            err_arr = err_arr / norm
+            data["eff"] = eff_arr.tolist()
+            data["err"] = err_arr.tolist()
+        # For each bin, perform a forced linear fit through (0,1): model y = m*x + 1.
+        fit_results = {}
+        for bin_idx, data in efficiency_data.items():
+            currents_arr = np.array(data["currents"])
+            eff_arr = np.array(data["eff"])
+            err_arr = np.array(data["err"])
+            weights = np.array([1/(e**2) if e > 0 else 1 for e in err_arr])
+            numerator = np.sum(weights * currents_arr * (eff_arr - 1))
+            denominator = np.sum(weights * currents_arr**2)
+            m = numerator / denominator if denominator != 0 else 0
+            sigma_m = np.sqrt(1/denominator) if denominator != 0 else 0
+            fit_results[bin_idx] = {"m": m, "m_err": sigma_m}
+        # Save results to JSON file for this run period.
+        run_output_path = os.path.join(output_dir, f"efficiencies_{run_prefix}.json")
+        fit_results_json = {str(k): v for k, v in fit_results.items()}
+        with open(run_output_path, "w") as f:
+            json.dump(fit_results_json, f, indent=2)
+        print(f"Saved binned efficiency fit results for {run_prefix} to {run_output_path}")
     #endfor
+    return
+#enddef
+
+def plot_binned_efficiencies_all(binning_csv, output_dir, efficiencies_json_dir=None):
+    """
+    Reads the JSON files of binned efficiency fit results (one per run period) and the binning scheme,
+    then creates a canvas for each overall xB bin. In each canvas, subplots are arranged by Q² (rows)
+    and t (columns), and in each subplot the slope m (with error bars) versus φ (in degrees) is plotted.
+    """
+    # Load the binning scheme.
+    binning_scheme = load_binning_scheme(binning_csv)
+    unique_xB_bins = sorted(set((b.xBmin, b.xBmax) for b in binning_scheme))
+    unique_Q2_bins = sorted(set((b.Q2min, b.Q2max) for b in binning_scheme))
+    unique_t_bins  = sorted(set((b.tmin, b.tmax) for b in binning_scheme))
+    # Define run periods.
+    RUN_PERIODS = {
+        "rga_fa18_inb": "DVCS_Fa18_inb",
+        "rga_fa18_out": "DVCS_Fa18_out",
+        "rga_sp19_inb": "DVCS_Sp19_inb"
+    }
+    # If efficiencies_json_dir is not provided, assume JSON files are in "output".
+    if efficiencies_json_dir is None:
+        efficiencies_json_dir = "output"
+    os.makedirs(output_dir, exist_ok=True)
+    # Loop over each run period.
+    for run_prefix, period_code in RUN_PERIODS.items():
+        json_path = os.path.join(efficiencies_json_dir, f"efficiencies_{run_prefix}.json")
+        if not os.path.exists(json_path):
+            print(f"JSON file for {run_prefix} not found, skipping plotting for this period.")
+            continue
+        with open(json_path, "r") as f:
+            data_json = json.load(f)
+        # Convert keys from string back to tuple of ints.
+        efficiencies = {}
+        for key_str, val in data_json.items():
+            key_tuple = tuple(int(x.strip()) for x in key_str.strip("()").split(","))
+            efficiencies[key_tuple] = val
+        # Loop over each overall xB bin.
+        for i_xB in range(len(unique_xB_bins)):
+            nrows = len(unique_Q2_bins)
+            ncols = len(unique_t_bins)
+            fig, axes = plt.subplots(nrows, ncols,
+                                     figsize=(3 * ncols + 2, 3 * nrows + 2),
+                                     squeeze=False)
+            for i_Q2 in range(len(unique_Q2_bins)):
+                for i_t in range(len(unique_t_bins)):
+                    ax = axes[i_Q2, i_t]
+                    m_vals = []
+                    m_errs = []
+                    phi_vals = []
+                    for i_phi in range(N_PHI_BINS):
+                        key = (i_xB, i_Q2, i_t, i_phi)
+                        if key in efficiencies:
+                            m_vals.append(efficiencies[key]["m"])
+                            m_errs.append(efficiencies[key]["m_err"])
+                        else:
+                            m_vals.append(0)
+                            m_errs.append(0)
+                        phi_vals.append(phi_centers_deg[i_phi])
+                    ax.errorbar(phi_vals, m_vals, yerr=m_errs, fmt='o', color='black', capsize=3)
+                    ax.set_xlim(0, 360)
+                    ax.set_xticks([0, 90, 180, 270, 360])
+                    ax.grid(True, linestyle='--', alpha=0.5)
+                    ax.set_title(f"Q² bin {i_Q2}, t bin {i_t}", fontsize=9)
+                    if i_Q2 == nrows - 1:
+                        ax.set_xlabel(r"$\phi\ (\deg)$", fontsize=9)
+                    if i_t == 0:
+                        ax.set_ylabel("Slope m", fontsize=9)
+            fig.suptitle(f"Efficiency Slope for {period_code}, xB bin {i_xB}", fontsize=12)
+            fig.tight_layout(rect=[0, 0, 1, 0.95])
+            outpath = os.path.join(output_dir, f"efficiency_slope_{run_prefix}_xB_{i_xB}.png")
+            plt.savefig(outpath, dpi=150)
+            plt.close(fig)
+            print(f"Saved efficiency slope plot for {run_prefix}, xB bin {i_xB} to {outpath}")
 #enddef
