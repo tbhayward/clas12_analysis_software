@@ -10,25 +10,20 @@ from kin_cuts import apply_kinematic_cuts, passes_3sigma_cuts
 from load_binning_scheme import load_binning_scheme
 
 #############################################
-# Existing Functions for Integrated Analysis
+# Existing Functions for Integrated Efficiency
 #############################################
 
 def load_cuts(period, topology):
     """
     Loads the final cuts dictionary from combined_cuts.json for a given (period, topology).
-    If topology is "(all)", we use the DVCS cuts.
+    Expect keys like "DVCS_Fa18_inb_FD_FD", etc.
     """
-    if topology == "(all)":
-        dictionary_key = f"{period}_DVCS"
+    topo_clean = topology.replace("(", "").replace(")", "").replace(",", "_").strip()
+    if "bkg" in period:
+        dvcs_equiv = period.replace("eppi0_bkg", "DVCS")
+        dictionary_key = f"{dvcs_equiv}_{topo_clean}"
     else:
-        topo_clean = topology.replace("(", "").replace(")", "").replace(",", "_").strip()
-        if "bkg" in period:
-            dvcs_equiv = period.replace("eppi0_bkg", "DVCS")
-            dictionary_key = f"{dvcs_equiv}_{topo_clean}"
-        else:
-            dictionary_key = f"{period}_{topo_clean}"
-    #endelse
-
+        dictionary_key = f"{period}_{topo_clean}"
     combined_cuts_path = os.path.join("exclusivity", "combined_cuts.json")
     if not os.path.exists(combined_cuts_path):
         print(f"⚠️ {combined_cuts_path} does not exist; returning empty cuts dictionary.")
@@ -45,8 +40,7 @@ def load_cuts(period, topology):
 
 def passes_exclusivity_cuts(event, cuts, topology, analysis_type, run_period):
     """
-    Applies exclusivity cuts to an event.
-    (This version is used for integrated efficiency analysis and requires a topology match.)
+    Applies exclusivity cuts to an event (for integrated analysis) given a fixed topology.
     """
     if event.detector1 == 1 and event.detector2 == 1:
         event_topo = "(FD,FD)"
@@ -73,8 +67,7 @@ def passes_exclusivity_cuts(event, cuts, topology, analysis_type, run_period):
 
 def get_tree_entries_with_cuts(file_path, cuts, topology, analysis_type, run_period):
     """
-    Opens the ROOT file and counts the number of entries in the tree
-    that pass the exclusivity cuts based on the provided cuts dictionary.
+    Opens the ROOT file and counts the number of entries in the tree that pass the exclusivity cuts.
     Assumes the tree is named 'PhysicsEvents'.
     """
     f = ROOT.TFile.Open(file_path)
@@ -119,10 +112,10 @@ def get_total_tree_entries(file_path):
 
 def plot_normalized_efficiencies(output_dir):
     """
-    Calculates and plots normalized efficiencies as a function of beam current
-    for each run period (integrated over kinematics). The efficiency is calculated as:
-        efficiency = (n_reco/n_gen) normalized to the 0 nA (nobkg) value.
-    A forced linear fit through (0,1) is performed, and the results are plotted.
+    Calculates and plots overall normalized efficiencies as a function of beam current
+    (integrated over kinematics) for each run period. Efficiency is defined as:
+        (n_reco/n_gen) normalized to the 0 nA (nobkg) value.
+    A forced linear fit through (0,1) is performed.
     """
     base_dir = "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/efficiency_study"
     run_periods = {
@@ -243,11 +236,23 @@ def find_bin(value, bin_boundaries):
     return None
 #enddef
 
-def passes_exclusivity_cuts_eff(event, cuts, analysis_type, run_period):
+def passes_exclusivity_cuts_eff(event, cuts_dict, analysis_type, run_period):
     """
-    Applies exclusivity cuts for efficiency analysis.
-    Instead of filtering by a fixed topology, we apply the kinematic and 3σ cuts based on the event's values.
+    Applies exclusivity cuts for binned efficiency analysis.
+    Determines the event's topology from detector1 and detector2, then applies kinematic and 3σ cuts
+    using the appropriate cuts dictionary from cuts_dict.
     """
+    if event.detector1 == 1 and event.detector2 == 1:
+        event_topo = "(FD,FD)"
+    elif event.detector1 == 2 and event.detector2 == 1:
+        event_topo = "(CD,FD)"
+    elif event.detector1 == 2 and event.detector2 == 0:
+        event_topo = "(CD,FT)"
+    else:
+        return False
+    if event_topo not in cuts_dict:
+        return False
+    cuts = cuts_dict[event_topo]
     theta_val = getattr(event, "theta_gamma_gamma", None)
     if theta_val is None:
         theta_val = getattr(event, "theta_pi0_pi0", None)
@@ -255,7 +260,7 @@ def passes_exclusivity_cuts_eff(event, cuts, analysis_type, run_period):
             event.t1, event.open_angle_ep2, theta_val,
             event.Emiss2, event.Mx2, event.Mx2_1, event.Mx2_2,
             event.pTmiss, event.xF,
-            analysis_type, "data", run_period, ""
+            analysis_type, "data", run_period, event_topo
         ):
         return False
     if not passes_3sigma_cuts(event, False, cuts):
@@ -297,7 +302,7 @@ def count_generated_in_bin(file_path, bin_idx, unique_xB_bins, unique_Q2_bins, u
 #enddef
 
 def count_reco_in_bin(file_path, bin_idx, unique_xB_bins, unique_Q2_bins, unique_t_bins,
-                        cuts, analysis_type, run_period):
+                        cuts_dict, analysis_type, run_period):
     """
     Opens the reconstructed ROOT file and counts events falling into the bin defined by bin_idx.
     Only events that pass the exclusivity cuts (using the efficiency-specific function) are counted.
@@ -314,7 +319,7 @@ def count_reco_in_bin(file_path, bin_idx, unique_xB_bins, unique_Q2_bins, unique
         return 0
     for event in tree:
         try:
-            if not passes_exclusivity_cuts_eff(event, cuts, analysis_type, run_period):
+            if not passes_exclusivity_cuts_eff(event, cuts_dict, analysis_type, run_period):
                 continue
             xB_val = float(event.x)
             Q2_val = float(event.Q2)
@@ -340,14 +345,12 @@ def calculate_binned_efficiencies_all(binning_scheme, output_dir):
     a forced linear fit through (0,1) (model: y = m*x + 1) is performed.
     The slope m and its uncertainty are saved in a JSON file (one per run period).
     """
-    # Define run periods.
     RUN_PERIODS = {
         "rga_fa18_inb": "DVCS_Fa18_inb",
         "rga_fa18_out": "DVCS_Fa18_out",
         "rga_sp19_inb": "DVCS_Sp19_inb"
     }
     analysis_type = "dvcs"
-    # Build unique bin boundaries from the binning scheme.
     unique_xB_bins = sorted(set((b.xBmin, b.xBmax) for b in binning_scheme))
     unique_Q2_bins = sorted(set((b.Q2min, b.Q2max) for b in binning_scheme))
     unique_t_bins  = sorted(set((b.tmin, b.tmax) for b in binning_scheme))
@@ -363,10 +366,13 @@ def calculate_binned_efficiencies_all(binning_scheme, output_dir):
                 return int(last_part.replace("nA", ""))
             except:
                 return None
-    #enddef
     for run_prefix, period_code in RUN_PERIODS.items():
-        # Set cuts using topology = "(all)" to indicate global cuts.
-        cuts = load_cuts(period_code, "(all)")
+        # Load cuts for each topology.
+        cuts_dict = {
+            "(FD,FD)": load_cuts(period_code, "(FD,FD)"),
+            "(CD,FD)": load_cuts(period_code, "(CD,FD)"),
+            "(CD,FT)": load_cuts(period_code, "(CD,FT)")
+        }
         pattern_gen = os.path.join(base_dir, f"gen_{run_prefix}_dvcs_*.root")
         pattern_reco = os.path.join(base_dir, f"{run_prefix}_dvcs_*.root")
         gen_files = glob.glob(pattern_gen)
@@ -376,19 +382,17 @@ def calculate_binned_efficiencies_all(binning_scheme, output_dir):
         if 0 not in gen_dict or 0 not in reco_dict:
             print(f"Missing nobkg files for run period {run_prefix}. Cannot compute efficiencies.")
             continue
-        # Initialize data structure: for each bin (i_xB, i_Q2, i_t, i_phi), store lists for currents, efficiency and error.
         efficiency_data = {}
         for i_xB in range(len(unique_xB_bins)):
             for i_Q2 in range(len(unique_Q2_bins)):
                 for i_t in range(len(unique_t_bins)):
                     for i_phi in range(N_PHI_BINS):
                         efficiency_data[(i_xB, i_Q2, i_t, i_phi)] = {"currents": [], "eff": [], "err": []}
-        # Loop over each beam current.
         for cur in sorted(gen_dict.keys()):
             for bin_idx in efficiency_data.keys():
                 n_gen = count_generated_in_bin(gen_dict[cur], bin_idx, unique_xB_bins, unique_Q2_bins, unique_t_bins)
                 n_reco = count_reco_in_bin(reco_dict[cur], bin_idx, unique_xB_bins, unique_Q2_bins, unique_t_bins,
-                                             cuts, analysis_type, period_code)
+                                             cuts_dict, analysis_type, period_code)
                 if n_gen > 0:
                     eff = (n_reco / n_gen)
                     err = (np.sqrt(n_reco) / n_gen) if n_reco > 0 else 0
@@ -398,7 +402,6 @@ def calculate_binned_efficiencies_all(binning_scheme, output_dir):
                 efficiency_data[bin_idx]["currents"].append(cur)
                 efficiency_data[bin_idx]["eff"].append(eff)
                 efficiency_data[bin_idx]["err"].append(err)
-        # Normalize each bin's efficiencies to the 0 nA value.
         for bin_idx, data in efficiency_data.items():
             currents_arr = np.array(data["currents"])
             eff_arr = np.array(data["eff"])
@@ -413,7 +416,6 @@ def calculate_binned_efficiencies_all(binning_scheme, output_dir):
             err_arr = err_arr / norm
             data["eff"] = eff_arr.tolist()
             data["err"] = err_arr.tolist()
-        # For each bin, perform a forced linear fit through (0,1): model y = m*x + 1.
         fit_results = {}
         for bin_idx, data in efficiency_data.items():
             currents_arr = np.array(data["currents"])
@@ -425,14 +427,11 @@ def calculate_binned_efficiencies_all(binning_scheme, output_dir):
             m = numerator / denominator if denominator != 0 else 0
             sigma_m = np.sqrt(1/denominator) if denominator != 0 else 0
             fit_results[bin_idx] = {"m": m, "m_err": sigma_m}
-        # Save results to JSON file for this run period.
         run_output_path = os.path.join(output_dir, f"efficiencies_{run_prefix}.json")
         fit_results_json = {str(k): v for k, v in fit_results.items()}
         with open(run_output_path, "w") as f:
             json.dump(fit_results_json, f, indent=2)
         print(f"Saved binned efficiency fit results for {run_prefix} to {run_output_path}")
-    #endfor
-    return
 #enddef
 
 def plot_binned_efficiencies_all(binning_csv, output_dir, efficiencies_json_dir=None):
@@ -441,22 +440,18 @@ def plot_binned_efficiencies_all(binning_csv, output_dir, efficiencies_json_dir=
     then creates a canvas for each overall xB bin. In each canvas, subplots are arranged by Q² (rows)
     and t (columns), and in each subplot the slope m (with error bars) versus φ (in degrees) is plotted.
     """
-    # Load the binning scheme.
     binning_scheme = load_binning_scheme(binning_csv)
     unique_xB_bins = sorted(set((b.xBmin, b.xBmax) for b in binning_scheme))
     unique_Q2_bins = sorted(set((b.Q2min, b.Q2max) for b in binning_scheme))
     unique_t_bins  = sorted(set((b.tmin, b.tmax) for b in binning_scheme))
-    # Define run periods.
     RUN_PERIODS = {
         "rga_fa18_inb": "DVCS_Fa18_inb",
         "rga_fa18_out": "DVCS_Fa18_out",
         "rga_sp19_inb": "DVCS_Sp19_inb"
     }
-    # If efficiencies_json_dir is not provided, assume JSON files are in "output".
     if efficiencies_json_dir is None:
         efficiencies_json_dir = "output"
     os.makedirs(output_dir, exist_ok=True)
-    # Loop over each run period.
     for run_prefix, period_code in RUN_PERIODS.items():
         json_path = os.path.join(efficiencies_json_dir, f"efficiencies_{run_prefix}.json")
         if not os.path.exists(json_path):
@@ -464,12 +459,10 @@ def plot_binned_efficiencies_all(binning_csv, output_dir, efficiencies_json_dir=
             continue
         with open(json_path, "r") as f:
             data_json = json.load(f)
-        # Convert keys from string back to tuple of ints.
         efficiencies = {}
         for key_str, val in data_json.items():
             key_tuple = tuple(int(x.strip()) for x in key_str.strip("()").split(","))
             efficiencies[key_tuple] = val
-        # Loop over each overall xB bin.
         for i_xB in range(len(unique_xB_bins)):
             nrows = len(unique_Q2_bins)
             ncols = len(unique_t_bins)
