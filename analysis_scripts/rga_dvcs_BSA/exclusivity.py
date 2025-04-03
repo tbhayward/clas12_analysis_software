@@ -156,59 +156,33 @@ def fill_stage_histograms(data_tree, mc_tree, topology, analysis_type, cuts_dict
 #enddef
 
 def get_hist_configs(analysis_type):
-    # if analysis_type == "dvcs":
-    #     return {
-    #         # "open_angle_ep2":    (100, 0, 60),
-    #         "Delta_phi":    (100, 2.84159, 3.44159),
-    #         "theta_gamma_gamma": (100, 0, 2),
-    #         "pTmiss":            (100, 0, 0.3),
-    #         "xF":                (100, -0.4, 0.2),
-    #         "Emiss2":            (100, -1, 2),
-    #         "Mx2":               (100, -0.03, 0.03),
-    #         "Mx2_1":             (100, -1.5, 1.5),
-    #         "Mx2_2":             (100, 0, 3)
-    #     }
-    # elif analysis_type == "eppi0":
-    #     return {
-    #         # "open_angle_ep2":    (100, 0, 60),
-    #         "Delta_phi":    (100, 2.84159, 3.44159),
-    #         "theta_pi0_pi0":     (100, 0, 2),
-    #         "pTmiss":            (100, 0, 0.3),
-    #         "xF":                (100, -0.4, 0.2),
-    #         "Emiss2":            (100, -1, 2),
-    #         "Mx2":               (100, -0.03, 0.03),
-    #         "Mx2_1":             (100, -1.5, 1.5),
-    #         "Mx2_2":             (100, 0, 3)
-    #     }
-    # else:
-    #     raise ValueError(f"Unrecognized analysis_type: {analysis_type}")
     if analysis_type == "dvcs":
         return {
             # "open_angle_ep2":    (100, 0, 60),
-            "Delta_phi":    (50, 2.84159, 3.44159),
-            "theta_gamma_gamma": (50, 0, 1),
-            "pTmiss":            (50, 0, 0.3),
-            "xF":                (50, -0.4, 0.2),
-            "Emiss2":            (50, -1, 2),
-            "Mx2":               (50, -0.03, 0.03),
-            "Mx2_1":             (50, -1.5, 1.5),
-            "Mx2_2":             (50, 0, 3)
+            "Delta_phi":    (100, 2.84159, 3.44159),
+            "theta_gamma_gamma": (100, 0, 2),
+            "pTmiss":            (100, 0, 0.3),
+            "xF":                (100, -0.4, 0.2),
+            "Emiss2":            (100, -1, 2),
+            "Mx2":               (100, -0.03, 0.03),
+            "Mx2_1":             (100, -1.5, 1.5),
+            "Mx2_2":             (100, 0, 3)
         }
     elif analysis_type == "eppi0":
         return {
             # "open_angle_ep2":    (100, 0, 60),
-            "Delta_phi":    (50, 2.84159, 3.44159),
-            "theta_pi0_pi0":     (50, 0, 1),
-            "pTmiss":            (50, 0, 0.3),
-            "xF":                (50, -0.4, 0.2),
-            "Emiss2":            (50, -1, 2),
-            "Mx2":               (50, -0.03, 0.03),
-            "Mx2_1":             (50, -1.5, 1.5),
-            "Mx2_2":             (50, 0, 3)
+            "Delta_phi":    (100, 2.84159, 3.44159),
+            "theta_pi0_pi0":     (100, 0, 2),
+            "pTmiss":            (100, 0, 0.3),
+            "xF":                (100, -0.4, 0.2),
+            "Emiss2":            (100, -1, 2),
+            "Mx2":               (100, -0.03, 0.03),
+            "Mx2_1":             (100, -1.5, 1.5),
+            "Mx2_2":             (100, 0, 3)
         }
     else:
         raise ValueError(f"Unrecognized analysis_type: {analysis_type}")
-    #endif
+    endif
 #enddef
 
 def update_cuts_dict(data_hists, mc_hists, cumulative_dict, active_vars):
