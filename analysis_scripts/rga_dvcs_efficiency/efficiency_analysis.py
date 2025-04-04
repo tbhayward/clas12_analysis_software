@@ -243,11 +243,11 @@ def find_bin(value, bin_boundaries):
     """
     for i, (low, high) in enumerate(bin_boundaries):
         if low <= value < high:
-            if DEBUG:
-                print(f"find_bin: value {value} is in bin {i} with boundaries ({low}, {high})")
+            # if DEBUG:
+            #     print(f"find_bin: value {value} is in bin {i} with boundaries ({low}, {high})")
             return i
-    if DEBUG:
-        print(f"find_bin: value {value} did not fall into any bin.")
+    # if DEBUG:
+    #     print(f"find_bin: value {value} did not fall into any bin.")
     return None
 #enddef
 
