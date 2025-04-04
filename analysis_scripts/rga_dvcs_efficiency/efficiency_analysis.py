@@ -10,13 +10,13 @@ from kin_cuts import apply_kinematic_cuts, passes_3sigma_cuts
 from load_binning_scheme import load_binning_scheme
 
 #############################################
-# Integrated Efficiency Functions
+# Existing Functions for Integrated Efficiency
 #############################################
 
 def load_cuts(period, topology):
     """
     Loads the final cuts dictionary from combined_cuts.json for a given (period, topology).
-    Expect keys such as "DVCS_Fa18_inb_FD_FD", etc.
+    Expect keys like "DVCS_Fa18_inb_FD_FD", etc.
     """
     topo_clean = topology.replace("(", "").replace(")", "").replace(",", "_").strip()
     if "bkg" in period:
@@ -40,7 +40,7 @@ def load_cuts(period, topology):
 
 def passes_exclusivity_cuts(event, cuts, topology, analysis_type, run_period):
     """
-    Applies exclusivity cuts (for integrated analysis) to an event given a fixed topology.
+    Applies exclusivity cuts to an event (for integrated analysis) given a fixed topology.
     """
     if event.detector1 == 1 and event.detector2 == 1:
         event_topo = "(FD,FD)"
@@ -67,8 +67,8 @@ def passes_exclusivity_cuts(event, cuts, topology, analysis_type, run_period):
 
 def get_tree_entries_with_cuts(file_path, cuts, topology, analysis_type, run_period):
     """
-    Opens the ROOT file and counts the number of entries in the "PhysicsEvents" tree
-    that pass the exclusivity cuts.
+    Opens the ROOT file and counts the number of entries in the tree that pass the exclusivity cuts.
+    Assumes the tree is named 'PhysicsEvents'.
     """
     f = ROOT.TFile.Open(file_path)
     if not f or f.IsZombie():
@@ -76,7 +76,7 @@ def get_tree_entries_with_cuts(file_path, cuts, topology, analysis_type, run_per
         return 0
     tree = f.Get("PhysicsEvents")
     if not tree:
-        print(f"Error: 'PhysicsEvents' tree not found in file {file_path}")
+        print(f"Error: tree not found in file {file_path}")
         f.Close()
         return 0
     count = 0
@@ -93,7 +93,8 @@ def get_tree_entries_with_cuts(file_path, cuts, topology, analysis_type, run_per
 
 def get_total_tree_entries(file_path):
     """
-    Opens the ROOT file and returns the total number of entries in the "PhysicsEvents" tree.
+    Opens the ROOT file and returns the total number of entries in the tree.
+    Assumes the tree is named 'PhysicsEvents'.
     """
     f = ROOT.TFile.Open(file_path)
     if not f or f.IsZombie():
@@ -101,7 +102,7 @@ def get_total_tree_entries(file_path):
         return 0
     tree = f.Get("PhysicsEvents")
     if not tree:
-        print(f"Error: 'PhysicsEvents' tree not found in file {file_path}")
+        print(f"Error: tree not found in file {file_path}")
         f.Close()
         return 0
     n = tree.GetEntries()
@@ -111,9 +112,9 @@ def get_total_tree_entries(file_path):
 
 def plot_normalized_efficiencies(output_dir):
     """
-    Calculates and plots overall normalized efficiencies (integrated over kinematics)
-    as a function of beam current for each run period.
-    Efficiency is computed as (n_reco/n_gen) normalized to the 0 nA (nobkg) value.
+    Calculates and plots overall normalized efficiencies as a function of beam current
+    (integrated over kinematics) for each run period. Efficiency is defined as:
+        (n_reco/n_gen) normalized to the 0 nA (nobkg) value.
     A forced linear fit through (0,1) is performed.
     """
     base_dir = "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/efficiency_study"
@@ -218,9 +219,82 @@ def plot_normalized_efficiencies(output_dir):
 # New Functions for Binned Efficiency Analysis (Efficient Version with Debug)
 #############################################
 
-# Global φ binning parameters are defined above.
+import math
+import numpy as np
+import os
+import glob
+import json
+import ROOT
+import matplotlib.pyplot as plt
+
+# Global debug flag
+DEBUG = True
+
+# Global φ binning parameters.
+N_PHI_BINS = 12
+phi_edges = np.linspace(0, 2 * math.pi, N_PHI_BINS + 1)
+phi_centers = (phi_edges[:-1] + phi_edges[1:]) / 2.0
+phi_centers_deg = np.degrees(phi_centers)
+
+def find_bin(value, bin_boundaries):
+    global DEBUG
+    """
+    Given a value and a list of (min, max) boundaries, return the bin index (0-indexed)
+    if the value falls in a bin; otherwise, return None.
+    """
+    for i, (low, high) in enumerate(bin_boundaries):
+        if low <= value < high:
+            if DEBUG:
+                print(f"find_bin: value {value} is in bin {i} with boundaries ({low}, {high})")
+            return i
+    if DEBUG:
+        print(f"find_bin: value {value} did not fall into any bin.")
+    return None
+#enddef
+
+def passes_exclusivity_cuts_eff(event, cuts_dict, analysis_type, run_period):
+    global DEBUG
+    """
+    Applies exclusivity cuts for binned efficiency analysis.
+    Determines the event's topology from detector1 and detector2, then applies kinematic and 3σ cuts
+    using the appropriate cuts dictionary from cuts_dict.
+    """
+    if event.detector1 == 1 and event.detector2 == 1:
+        event_topo = "(FD,FD)"
+    elif event.detector1 == 2 and event.detector2 == 1:
+        event_topo = "(CD,FD)"
+    elif event.detector1 == 2 and event.detector2 == 0:
+        event_topo = "(CD,FT)"
+    else:
+        if DEBUG:
+            print("passes_exclusivity_cuts_eff: Event failed detector topology check.")
+        return False
+    if event_topo not in cuts_dict:
+        if DEBUG:
+            print(f"passes_exclusivity_cuts_eff: No cuts found for topology {event_topo}.")
+        return False
+    cuts = cuts_dict[event_topo]
+    theta_val = getattr(event, "theta_gamma_gamma", None)
+    if theta_val is None:
+        theta_val = getattr(event, "theta_pi0_pi0", None)
+    if not apply_kinematic_cuts(
+            event.t1, event.open_angle_ep2, theta_val,
+            event.Emiss2, event.Mx2, event.Mx2_1, event.Mx2_2,
+            event.pTmiss, event.xF,
+            analysis_type, "data", run_period, event_topo
+        ):
+        if DEBUG:
+            print("passes_exclusivity_cuts_eff: Event failed kinematic cuts.")
+        return False
+    if not passes_3sigma_cuts(event, False, cuts):
+        if DEBUG:
+            print("passes_exclusivity_cuts_eff: Event failed 3σ cuts.")
+        return False
+    return True
+#enddef
 
 def count_generated_in_bin(file_path, bin_idx, unique_xB_bins, unique_Q2_bins, unique_t_bins):
+    global DEBUG
     """
     Opens the generated ROOT file and counts events falling into the bin defined by bin_idx.
     Uses event.x for xB, event.Q2 for Q², |event.t1| for t, and event.phi2 for φ.
@@ -251,7 +325,6 @@ def count_generated_in_bin(file_path, bin_idx, unique_xB_bins, unique_Q2_bins, u
         i_Q2 = find_bin(Q2_val, unique_Q2_bins)
         i_t  = find_bin(t_val, unique_t_bins)
         i_phi = np.digitize(phi_val, phi_edges) - 1
-        # Correct i_phi if it equals N_PHI_BINS.
         if i_phi >= N_PHI_BINS:
             if DEBUG:
                 print(f"count_generated_in_bin: Correcting i_phi from {i_phi} to {N_PHI_BINS - 1} for phi_val = {phi_val}")
@@ -268,6 +341,7 @@ def count_generated_in_bin(file_path, bin_idx, unique_xB_bins, unique_Q2_bins, u
 
 def count_reco_in_bin(file_path, bin_idx, unique_xB_bins, unique_Q2_bins, unique_t_bins,
                         cuts_dict, analysis_type, run_period):
+    global DEBUG
     """
     Opens the reconstructed ROOT file and counts events falling into the bin defined by bin_idx.
     Only events that pass the exclusivity cuts (using the efficiency-specific function) are counted.
@@ -300,7 +374,6 @@ def count_reco_in_bin(file_path, bin_idx, unique_xB_bins, unique_Q2_bins, unique
         i_Q2 = find_bin(Q2_val, unique_Q2_bins)
         i_t  = find_bin(t_val, unique_t_bins)
         i_phi = np.digitize(phi_val, phi_edges) - 1
-        # Correct i_phi if it equals or exceeds N_PHI_BINS.
         if i_phi >= N_PHI_BINS:
             if DEBUG:
                 print(f"count_reco_in_bin: Correcting i_phi from {i_phi} to {N_PHI_BINS - 1} for phi_val = {phi_val}")
@@ -316,6 +389,7 @@ def count_reco_in_bin(file_path, bin_idx, unique_xB_bins, unique_Q2_bins, unique
 #enddef
 
 def calculate_binned_efficiencies_all(binning_scheme, output_dir):
+    global DEBUG
     """
     Loops over all run periods and calculates binned efficiencies.
     For each run period, for each bin defined by unique xB, Q², t and φ,
@@ -373,7 +447,7 @@ def calculate_binned_efficiencies_all(binning_scheme, output_dir):
             print(f"Missing nobkg files for run period {run_prefix}. Skipping.")
             continue
 
-        # Get total generated counts (using GetEntries, no event loop).
+        # Get total generated counts using GetEntries.
         total_gen = {}
         for cur, file_path in gen_dict.items():
             f_gen = ROOT.TFile.Open(file_path)
@@ -391,7 +465,7 @@ def calculate_binned_efficiencies_all(binning_scheme, output_dir):
         if DEBUG:
             print(f"Total generated counts: {total_gen}")
 
-        # Loop through each reconstructed file once.
+        # Loop through each reconstructed file only once.
         rec_counts = {}  # rec_counts[current][bin_idx] = count
         for cur, file_path in reco_dict.items():
             if DEBUG:
@@ -440,7 +514,7 @@ def calculate_binned_efficiencies_all(binning_scheme, output_dir):
             f_rec.Close()
             if DEBUG:
                 print(f"Finished processing current {cur}. Total events processed: {processed}")
-        # Build efficiency data for each bin.
+        # Build efficiency data per bin.
         efficiency_data = {}
         for i_xB in range(len(unique_xB_bins)):
             for i_Q2 in range(len(unique_Q2_bins)):
@@ -460,7 +534,7 @@ def calculate_binned_efficiencies_all(binning_scheme, output_dir):
                 efficiency_data[bin_idx]["currents"].append(cur)
                 efficiency_data[bin_idx]["eff"].append(eff)
                 efficiency_data[bin_idx]["err"].append(err)
-        # Normalize each bin's efficiencies by the 0 nA value.
+        # Normalize each bin's efficiencies by the 0 nA (nobkg) value.
         for bin_idx, data in efficiency_data.items():
             currents_arr = np.array(data["currents"])
             eff_arr = np.array(data["eff"])
@@ -499,6 +573,7 @@ def calculate_binned_efficiencies_all(binning_scheme, output_dir):
 #enddef
 
 def plot_binned_efficiencies_all(binning_csv, output_dir, efficiencies_json_dir=None):
+    global DEBUG
     """
     Reads the JSON files of binned efficiency fit results (one per run period) and the binning scheme,
     then creates a canvas for each overall xB bin. In each canvas, subplots are arranged by Q² (rows)
