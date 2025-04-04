@@ -228,7 +228,7 @@ import ROOT
 import matplotlib.pyplot as plt
 
 # Global debug flag
-DEBUG = True
+DEBUG = False
 
 # Global φ binning parameters.
 N_PHI_BINS = 12
