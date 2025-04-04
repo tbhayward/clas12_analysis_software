@@ -215,49 +215,49 @@ def plot_normalized_efficiencies(output_dir):
         print(f"Saved plot for {run_prefix} to {output_path}")
 #enddef
 
-#!/usr/bin/env python3
+#############################################
+# New Functions for Binned Efficiency Analysis (Efficient Version with Debug)
+#############################################
+
+import math
+import numpy as np
 import os
 import glob
 import json
-import math
 import ROOT
-import numpy as np
 import matplotlib.pyplot as plt
-from kin_cuts import apply_kinematic_cuts, passes_3sigma_cuts
-from load_binning_scheme import load_binning_scheme
 
-#############################################
-# Integrated Efficiency Functions
-#############################################
+# Global debug flag
+DEBUG = False
 
-def load_cuts(period, topology):
+# Global φ binning parameters.
+N_PHI_BINS = 12
+phi_edges = np.linspace(0, 2 * math.pi, N_PHI_BINS + 1)
+phi_centers = (phi_edges[:-1] + phi_edges[1:]) / 2.0
+phi_centers_deg = np.degrees(phi_centers)
+
+def find_bin(value, bin_boundaries):
+    global DEBUG
     """
-    Loads the final cuts dictionary from combined_cuts.json for a given (period, topology).
-    Expect keys such as "DVCS_Fa18_inb_FD_FD", etc.
+    Given a value and a list of (min, max) boundaries, return the bin index (0-indexed)
+    if the value falls in a bin; otherwise, return None.
     """
-    topo_clean = topology.replace("(", "").replace(")", "").replace(",", "_").strip()
-    if "bkg" in period:
-        dvcs_equiv = period.replace("eppi0_bkg", "DVCS")
-        dictionary_key = f"{dvcs_equiv}_{topo_clean}"
-    else:
-        dictionary_key = f"{period}_{topo_clean}"
-    combined_cuts_path = os.path.join("exclusivity", "combined_cuts.json")
-    if not os.path.exists(combined_cuts_path):
-        print(f"⚠️ {combined_cuts_path} does not exist; returning empty cuts dictionary.")
-        return {}
-    with open(combined_cuts_path, "r") as f:
-        combined_cuts = json.load(f)
-    if dictionary_key in combined_cuts:
-        return combined_cuts[dictionary_key]
-    else:
-        print(f"⚠️ Key '{dictionary_key}' not found in {combined_cuts_path}.")
-        print("Available keys:", list(combined_cuts.keys()))
-        return {}
+    for i, (low, high) in enumerate(bin_boundaries):
+        if low <= value < high:
+            if DEBUG:
+                print(f"find_bin: value {value} is in bin {i} with boundaries ({low}, {high})")
+            return i
+    if DEBUG:
+        print(f"find_bin: value {value} did not fall into any bin.")
+    return None
 #enddef
 
-def passes_exclusivity_cuts(event, cuts, topology, analysis_type, run_period):
+def passes_exclusivity_cuts_eff(event, cuts_dict, analysis_type, run_period):
+    global DEBUG
     """
-    Applies exclusivity cuts (for integrated analysis) to an event given a fixed topology.
+    Applies exclusivity cuts for binned efficiency analysis.
+    Determines the event's topology from detector1 and detector2, then applies kinematic and 3σ cuts
+    using the appropriate cuts dictionary from cuts_dict.
     """
     if event.detector1 == 1 and event.detector2 == 1:
         event_topo = "(FD,FD)"
@@ -266,169 +266,31 @@ def passes_exclusivity_cuts(event, cuts, topology, analysis_type, run_period):
     elif event.detector1 == 2 and event.detector2 == 0:
         event_topo = "(CD,FT)"
     else:
+        if DEBUG:
+            print("passes_exclusivity_cuts_eff: Event failed detector topology check.")
         return False
-    if event_topo != topology:
+    if event_topo not in cuts_dict:
+        if DEBUG:
+            print(f"passes_exclusivity_cuts_eff: No cuts found for topology {event_topo}.")
         return False
+    cuts = cuts_dict[event_topo]
     theta_val = getattr(event, "theta_gamma_gamma", None)
+    if theta_val is None:
+        theta_val = getattr(event, "theta_pi0_pi0", None)
     if not apply_kinematic_cuts(
             event.t1, event.open_angle_ep2, theta_val,
             event.Emiss2, event.Mx2, event.Mx2_1, event.Mx2_2,
             event.pTmiss, event.xF,
-            analysis_type, "data", run_period, topology
+            analysis_type, "data", run_period, event_topo
         ):
+        if DEBUG:
+            print("passes_exclusivity_cuts_eff: Event failed kinematic cuts.")
         return False
     if not passes_3sigma_cuts(event, False, cuts):
+        if DEBUG:
+            print("passes_exclusivity_cuts_eff: Event failed 3σ cuts.")
         return False
     return True
-#enddef
-
-def get_tree_entries_with_cuts(file_path, cuts, topology, analysis_type, run_period):
-    """
-    Opens the ROOT file and counts the number of entries in the "PhysicsEvents" tree
-    that pass the exclusivity cuts.
-    """
-    f = ROOT.TFile.Open(file_path)
-    if not f or f.IsZombie():
-        print(f"Error opening file {file_path}")
-        return 0
-    tree = f.Get("PhysicsEvents")
-    if not tree:
-        print(f"Error: 'PhysicsEvents' tree not found in file {file_path}")
-        f.Close()
-        return 0
-    count = 0
-    for event in tree:
-        try:
-            if passes_exclusivity_cuts(event, cuts, topology, analysis_type, run_period):
-                count += 1
-        except Exception as e:
-            print(f"Exception in applying exclusivity cuts: {e}")
-            continue
-    f.Close()
-    return count
-#enddef
-
-def get_total_tree_entries(file_path):
-    """
-    Opens the ROOT file and returns the total number of entries in the "PhysicsEvents" tree.
-    """
-    f = ROOT.TFile.Open(file_path)
-    if not f or f.IsZombie():
-        print(f"Error opening file {file_path}")
-        return 0
-    tree = f.Get("PhysicsEvents")
-    if not tree:
-        print(f"Error: 'PhysicsEvents' tree not found in file {file_path}")
-        f.Close()
-        return 0
-    n = tree.GetEntries()
-    f.Close()
-    return n
-#enddef
-
-def plot_normalized_efficiencies(output_dir):
-    """
-    Calculates and plots overall normalized efficiencies (integrated over kinematics)
-    as a function of beam current for each run period.
-    Efficiency is computed as (n_reco/n_gen) normalized to the 0 nA (nobkg) value.
-    A forced linear fit through (0,1) is performed.
-    """
-    base_dir = "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/efficiency_study"
-    run_periods = {
-        "rga_fa18_inb": "DVCS_Fa18_inb",
-        "rga_fa18_out": "DVCS_Fa18_out",
-        "rga_sp19_inb": "DVCS_Sp19_inb"
-    }
-    title_map = {
-        "rga_fa18_inb": "RGA Fa18 Inb",
-        "rga_fa18_out": "RGA Fa18 Out",
-        "rga_sp19_inb": "RGA Sp19 Inb"
-    }
-    selected_topology = "(FD,FD)"
-    analysis_type = "dvcs"
-    for run_prefix, period_code in run_periods.items():
-        pattern_gen = os.path.join(base_dir, f"gen_{run_prefix}_dvcs_*.root")
-        pattern_reco = os.path.join(base_dir, f"{run_prefix}_dvcs_*.root")
-        gen_files = glob.glob(pattern_gen)
-        reco_files = glob.glob(pattern_reco)
-        gen_dict = {}
-        reco_dict = {}
-        def extract_current(filename):
-            base = os.path.basename(filename)
-            parts = base.split("_")
-            last_part = parts[-1].replace(".root", "")
-            if "nobkg" in last_part:
-                return 0
-            else:
-                try:
-                    return int(last_part.replace("nA", ""))
-                except:
-                    return None
-        for fpath in gen_files:
-            cur = extract_current(fpath)
-            if cur is not None:
-                gen_dict[cur] = fpath
-        for fpath in reco_files:
-            cur = extract_current(fpath)
-            if cur is not None:
-                reco_dict[cur] = fpath
-        if 0 not in gen_dict or 0 not in reco_dict:
-            print(f"Missing nobkg files for run period {run_prefix}. Skipping.")
-            continue
-        cuts = load_cuts(period_code, selected_topology)
-        currents = []
-        efficiencies = []
-        efficiency_errors = []
-        n_gen_0 = get_total_tree_entries(gen_dict[0])
-        n_reco_0 = get_tree_entries_with_cuts(reco_dict[0], cuts, selected_topology, analysis_type, period_code)
-        if n_gen_0 == 0:
-            print(f"Warning: 0 generated entries for normalization in run period {run_prefix}")
-            norm_eff = 1.0
-        else:
-            norm_eff = (n_reco_0 / n_gen_0)
-        for cur in sorted(gen_dict.keys()):
-            if cur == 0:
-                currents.append(0)
-                efficiencies.append(1.0)
-                efficiency_errors.append(0.0)
-                continue
-            n_gen = get_total_tree_entries(gen_dict[cur])
-            n_reco = get_tree_entries_with_cuts(reco_dict[cur], cuts, selected_topology, analysis_type, period_code)
-            if n_gen == 0:
-                eff = 0
-                err = 0
-            else:
-                eff = (n_reco / n_gen) / norm_eff
-                err = (np.sqrt(n_reco) / n_gen) / norm_eff if n_reco > 0 else 0
-            currents.append(cur)
-            efficiencies.append(eff)
-            efficiency_errors.append(err)
-        currents_arr = np.array(currents)
-        efficiencies_arr = np.array(efficiencies)
-        weights2 = np.array([1/(e**2) if e > 0 else 1 for e in efficiency_errors])
-        numerator = np.sum(weights2 * currents_arr * (efficiencies_arr - 1))
-        denominator = np.sum(weights2 * currents_arr**2)
-        m = numerator / denominator if denominator != 0 else 0
-        sigma_m = np.sqrt(1 / denominator) if denominator != 0 else 0
-        model = 1 + m * currents_arr
-        chi2 = np.sum(weights2 * (efficiencies_arr - model)**2)
-        ndf = len(currents_arr) - 1
-        chi2_ndf = chi2 / ndf if ndf > 0 else 0
-        fit_x = np.linspace(min(currents_arr), max(currents_arr), 100)
-        fit_y = 1 + m * fit_x
-        plt.figure()
-        plt.errorbar(currents_arr, efficiencies_arr, yerr=efficiency_errors, fmt='ko', label='Data')
-        plt.plot(fit_x, fit_y, 'r--', label=f"m = {m:.4f} ± {sigma_m:.4f}\n" + r"$\chi^{2}/ndf$ = " + f"{chi2_ndf:.2f}")
-        plt.xlabel("current (nA)")
-        plt.ylabel("normalized efficiency")
-        plt.xlim(-5, 60)
-        plt.ylim(0.7, 1.05)
-        plt.legend(loc='upper right')
-        plt.title(f"Normalized Efficiency for {title_map.get(run_prefix, run_prefix)}")
-        output_path = os.path.join(output_dir, f"{run_prefix}_integrated.pdf")
-        plt.savefig(output_path, format='pdf')
-        plt.close()
-        print(f"Saved plot for {run_prefix} to {output_path}")
 #enddef
 
 #############################################
