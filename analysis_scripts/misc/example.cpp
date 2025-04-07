@@ -24,6 +24,8 @@ using namespace std;
 
 int main(int argc, char **argv) {
 
+    gROOT->SetBatch(kTRUE); // Run ROOT in batch mode (no visual displays etc.)
+
     //----------------------------------------------------------------------------------
     // Check command-line arguments: the user must supply a ROOT file name.
     //----------------------------------------------------------------------------------
