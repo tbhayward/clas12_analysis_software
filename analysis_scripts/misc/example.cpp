@@ -67,7 +67,6 @@ int main(int argc, char **argv) {
 
     //----------------------------------------------------------------------------------
     // Define variables to hold the data for the branches we are interested in.
-    // Here, we assume that "e_p" and "e_theta" are stored as double precision numbers.
     //----------------------------------------------------------------------------------
     double e_p = 0.0;      // Variable to hold energy (GeV)
     double e_theta = 0.0;  // Variable to hold theta (radians)
@@ -141,9 +140,9 @@ int main(int argc, char **argv) {
     // the TApplication event loop. If you prefer batch mode (i.e., not displaying a window),
     // you can comment out the following lines.
     //----------------------------------------------------------------------------------
-    TApplication app("app", &argc, argv);
-    canvas->Update();  // Update the canvas to ensure it is drawn
-    app.Run();         // Start the application event loop
+    // TApplication app("app", &argc, argv);
+    // canvas->Update();  // Update the canvas to ensure it is drawn
+    // app.Run();         // Start the application event loop
 
     //----------------------------------------------------------------------------------
     // Clean up by closing the file and deleting dynamically allocated objects.
