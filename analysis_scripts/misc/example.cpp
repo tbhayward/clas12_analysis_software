@@ -119,19 +119,20 @@ int main(int argc, char **argv) {
     TCanvas *canvas = new TCanvas("canvas", "ROOT Example", 1200, 600);
     canvas->Divide(2, 1);
 
-    //----------------------------------------------------------------------------------
-    // Draw the 1D histogram (e_p) on the left pad.
-    //----------------------------------------------------------------------------------
+    //------------------------------------------------------------------
+    // Adjust the left margin of the first pad
     canvas->cd(1);                        // Switch to pad 1
-    hist_e_p->SetLineColor(kBlue);        // Set line color to blue
-    hist_e_p->Draw();                     // Draw the histogram
+    gPad->SetLeftMargin(0.20);            // Increase left margin (default ~0.15)
+    // Draw the 1D histogram (e_p) on pad 1
+    hist_e_p->SetLineColor(kBlue);
+    hist_e_p->Draw();
 
-    //----------------------------------------------------------------------------------
-    // Draw the 2D histogram (e_theta vs. e_p) on the right pad.
-    // The "COLZ" option displays the plot with a color palette.
-    //----------------------------------------------------------------------------------
+    //------------------------------------------------------------------
+    // Adjust the left margin of the second pad
     canvas->cd(2);                        // Switch to pad 2
-    hist2D->Draw("COLZ");                 // Draw the 2D histogram with color mapping
+    gPad->SetLeftMargin(0.20);            // Increase left margin for pad 2
+    // Draw the 2D histogram (e_theta vs. e_p) on pad 2 using the "COLZ" option
+    hist2D->Draw("COLZ");
 
     //----------------------------------------------------------------------------------
     // Save the canvas as a PNG file in the current working directory.
