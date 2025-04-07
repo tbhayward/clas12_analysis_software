@@ -148,13 +148,9 @@ int main(int argc, char **argv) {
     // app.Run();         // Start the application event loop
 
     //----------------------------------------------------------------------------------
-    // Clean up by closing the file and deleting dynamically allocated objects.
+    // Clean up by closing the file
     //----------------------------------------------------------------------------------
     file->Close();
-    delete file;
-    delete canvas;
-    delete hist_e_p;
-    delete hist2D;
 
     // End of program.
     return 0;
