@@ -82,14 +82,14 @@ int main(int argc, char **argv) {
     // The histogram has 100 bins ranging from 0 to 10.
     // The x-axis label is set with LaTeX formatting: "#it{#e_{p}} (GeV)"
     //----------------------------------------------------------------------------------
-    TH1F *hist_e_p = new TH1F("hist_e_p", "Histogram of e_{p};#it{#e_{p}} (GeV);Entries", 100, 0, 10);
+    TH1F *hist_e_p = new TH1F("hist_e_p", "Histogram of e_{p};#it{e_{p}} (GeV);Entries", 100, 0, 10);
 
     //----------------------------------------------------------------------------------
     // Create a 2D histogram to plot "e_theta" (in degrees) versus "e_p".
     // e_theta is converted from radians to degrees.
     // The x-axis is for e_p (from 0 to 10 GeV), and the y-axis is for e_theta in degrees (0 to 180).
     //----------------------------------------------------------------------------------
-    TH2F *hist2D = new TH2F("hist2D", "e_{theta} (deg) vs e_{p};#it{#e_{p}} (GeV);#it{#theta} (degrees)", 100, 0, 10, 100, 0, 180);
+    TH2F *hist2D = new TH2F("hist2D", "e_{theta} (deg) vs e_{p};#it{e_{p}} (GeV);#it{#theta} (degrees)", 100, 0, 10, 100, 0, 30);
 
     //----------------------------------------------------------------------------------
     // Loop over all entries in the TTree to fill the histograms.
