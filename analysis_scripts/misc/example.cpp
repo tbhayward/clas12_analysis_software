@@ -19,6 +19,7 @@
 #include <TApplication.h>// For interactive application display (if needed)
 #include <TMath.h>       // For mathematical functions (e.g., Pi)
 #include <iostream>      // For standard I/O operations
+#include <TROOT.h>       // load gROOT to run in batch mode
 
 using namespace std;
 
