@@ -122,7 +122,7 @@ int main(int argc, char **argv) {
     //------------------------------------------------------------------
     // Adjust the left margin of the first pad
     canvas->cd(1);                        // Switch to pad 1
-    gPad->SetLeftMargin(0.20);            // Increase left margin (default ~0.15)
+    gPad->SetLeftMargin(0.18);            // Increase left margin (default ~0.15)
     // Draw the 1D histogram (e_p) on pad 1
     hist_e_p->SetLineColor(kBlue);
     hist_e_p->Draw();
@@ -130,7 +130,7 @@ int main(int argc, char **argv) {
     //------------------------------------------------------------------
     // Adjust the left margin of the second pad
     canvas->cd(2);                        // Switch to pad 2
-    gPad->SetLeftMargin(0.20);            // Increase left margin for pad 2
+    gPad->SetLeftMargin(0.18);            // Increase left margin for pad 2
     // Draw the 2D histogram (e_theta vs. e_p) on pad 2 using the "COLZ" option
     hist2D->Draw("COLZ");
 
