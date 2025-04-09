@@ -19,7 +19,7 @@ public class pid_cuts {
             int layer = cal_Bank.getInt("layer", current_Row);
 
             // Check if the pindex and layer values match the specified particle and layer
-            if (pindex == particle_Index && layer == 1) {
+            if (pindex == particle_Index && layer == 1) { // layer 1 is pcal
                 // Get the energy value for the current row
                 float energy = cal_Bank.getFloat("energy", current_Row);
 
