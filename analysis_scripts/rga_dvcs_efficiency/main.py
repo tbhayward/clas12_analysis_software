@@ -47,16 +47,17 @@ def main():
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
 
-    plot_mc_normalized_efficiencies(output_dir)
+    # plot_mc_normalized_efficiencies(output_dir)
+    plot_data_normalized_efficiencies(output_dir)
     
-    # --- Calculate binned efficiencies for all run periods ---
-    # This function loops over all run periods and calculates binned efficiencies,
-    # saving one JSON file per run period.
-    calculate_binned_efficiencies_all(binning_scheme, output_dir)
+    # # --- Calculate binned efficiencies for all run periods ---
+    # # This function loops over all run periods and calculates binned efficiencies,
+    # # saving one JSON file per run period.
+    # calculate_binned_efficiencies_all(binning_scheme, output_dir)
     
-    # --- Plot binned efficiencies for all run periods ---
-    plot_binned_efficiencies_all(binning_csv=csv_file_path,
-                                 output_dir=os.path.join(output_dir, "efficiency_plots"))
+    # # --- Plot binned efficiencies for all run periods ---
+    # plot_binned_efficiencies_all(binning_csv=csv_file_path,
+    #                              output_dir=os.path.join(output_dir, "efficiency_plots"))
 #enddef
 
 if __name__ == "__main__":
