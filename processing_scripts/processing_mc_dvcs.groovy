@@ -108,28 +108,6 @@ public static void main(String[] args) {
 	
 	// set filter for final states
 	EventFilter filter = new EventFilter("11:2212:22:Xn"); 
-	
-	// setup QA database
-	QADB qa = new QADB();
-	qa.checkForDefect('TotalOutlier')    
-	qa.checkForDefect('TerminalOutlier')
-	qa.checkForDefect('MarginalOutlier')
-	qa.checkForDefect('SectorLoss')
-	qa.checkForDefect('LowLiveTime')
-	qa.checkForDefect('Misc')
-	qa.checkForDefect('ChargeHigh')
-	qa.checkForDefect('ChargeNegative')
-	qa.checkForDefect('ChargeUnknown')
-	qa.checkForDefect('PossiblyNoBeam')
-	[ // list of runs with `Misc` that should be allowed, generally empty target etc for dilution factor calculations
-	 	5046, 5047, 5051, 5128, 5129, 5130, 5158, 5159,
-  		5160, 5163, 5165, 5166, 5167, 5168, 5169, 5180,
-  		5181, 5182, 5183, 5400, 5448, 5495, 5496, 5505,
-  		5567, 5610, 5617, 5621, 5623, 6736, 6737, 6738,
-  		6739, 6740, 6741, 6742, 6743, 6744, 6746, 6747,
-  		6748, 6749, 6750, 6751, 6753, 6754, 6755, 6756,
-  		6757, 16194, 16089, 16185, 16308, 16184, 16307, 16309
-	].each{ run -> qa.allowMiscBit(run) }
 
 	// create a StringBuilder for accumulating lines
 	StringBuilder batchLines = new StringBuilder();
@@ -469,22 +447,37 @@ public static void main(String[] args) {
 		}
 
 		println("1: gen_e_p, 2: gen_e_theta, 3: gen_e_phi, 4: gen_vz_e, " +
-	    "14: gen_p1_p, 15: gen_p1_theta, 16: gen_p1_phi, 17: gen_vz_p1, 18: gen_p2_p, 19: gen_p2_theta, 20: gen_p2_phi, 21: gen_vz_p2, " +
-	    "22: gen_open_angle_ep, 23: gen_open_angle_ep1, 24: gen_open_angle_ep2, 25: gen_open_angle_p1p2, " +
-	    "26: gen_Q2, 27: gen_W, 28: gen_Mx2, 29: gen_Mx2_1, 30: gen_Mx2_2, 31: gen_x, 32: gen_t, 33: gen_t1, 34: gen_t2, 35: gen_tmin, 36: gen_y, 37: gen_z, " +
-	    "38: gen_z1, 39: gen_z2, 40: gen_Mh, 41: gen_xF, 42: gen_xF1, 43: gen_xF2, 44: gen_pT, 45: gen_pT1, 46: gen_pT2,  " +
-	    "57: gen_phi1, 58: gen_phi2, 59: gen_Delta_phi, 60: gen_phih, 61: gen_phiR, 62: gen_theta, " +
-	    "63: gen_DepA, 64: gen_DepB, 65: gen_DepC, 66: gen_DepV, 67: gen_DepW, 68: gen_Emiss2, 69: gen_theta_gamma_gamma, " +
-	    "70: gen_pTmiss");
-		println("1: fiducial_status, 2: num_pos, 3: num_neg, 4: num_neutrals, " +
-	    "5: runnum, 6: evnum, 7: helicity, 8: detector1, 9: detector2, 10: e_p, 11: e_theta, 12: e_phi, 13: vz_e, " +
-	    "14: p1_p, 15: p1_theta, 16: p1_phi, 17: vz_p1, 18: p2_p, 19: p2_theta, 20: p2_phi, 21: vz_p2, " +
-	    "22: open_angle_ep, 23: open_angle_ep1, 24: open_angle_ep2, 25: open_angle_p1p2, " +
-	    "26: Q2, 27: W, 28: Mx2, 29: Mx2_1, 30: Mx2_2, 31: x, 32: t, 33: t1, 34: t2, 35: tmin, 36: y, 37: z, " +
-	    "38: z1, 39: z2, 40: Mh, 41: xF, 42: xF1, 43: xF2, 44: pT, 45: pT1, 46: pT2, " +
-	    "57: phi1, 58: phi2, 59: Delta_phi, 60: phih, 61: phiR, 62: theta, " +
-	    "63: DepA, 64: DepB, 65: DepC, 66: DepV, 67: DepW, 68: Emiss2, 69: theta_gamma_gamma, " +
-	    "70: pTmiss");
+		    "5: gen_p1_p, 6: gen_p1_theta, 7: gen_p1_phi, 8: gen_vz_p1, " +
+		    "9: gen_p2_p, 10: gen_p2_theta, 11: gen_p2_phi, 12: gen_vz_p2, " +
+		    "13: gen_open_angle_ep, 14: gen_open_angle_ep1, 15: gen_open_angle_ep2, 16: gen_open_angle_p1p2, " +
+		    "17: gen_Q2, 18: gen_W, 19: gen_Mx2, 20: gen_Mx2_1, 21: gen_Mx2_2, " +
+		    "22: gen_x, 23: gen_t, 24: gen_t1, 25: gen_t2, 26: gen_tmin, " +
+		    "27: gen_y, 28: gen_z, " +
+		    "29: gen_z1, 30: gen_z2, 31: gen_Mh, " +
+		    "32: gen_xF, 33: gen_xF1, 34: gen_xF2, " +
+		    "35: gen_pT, 36: gen_pT1, 37: gen_pT2, " +
+		    "38: gen_phi1, 39: gen_phi2, 40: gen_Delta_phi, 41: gen_phih, " +
+		    "42: gen_phiR, 43: gen_theta, " +
+		    "44: gen_DepA, 45: gen_DepB, 46: gen_DepC, 47: gen_DepV, 48: gen_DepW, " +
+		    "49: gen_Emiss2, 50: gen_theta_gamma_gamma, " +
+		    "51: gen_pTmiss");
+
+		println("52: fiducial_status, 53: num_pos, 54: num_neg, 55: num_neutrals, " +
+		    "56: runnum, 57: evnum, 58: helicity, 59: detector1, 60: detector2, " +
+		    "61: e_p, 62: e_theta, 63: e_phi, 64: vz_e, " +
+		    "65: p1_p, 66: p1_theta, 67: p1_phi, 68: vz_p1, " +
+		    "69: p2_p, 70: p2_theta, 71: p2_phi, 72: vz_p2, " +
+		    "73: open_angle_ep, 74: open_angle_ep1, 75: open_angle_ep2, 76: open_angle_p1p2, " +
+		    "77: Q2, 78: W, 79: Mx2, 80: Mx2_1, 81: Mx2_2, " +
+		    "82: x, 83: t, 84: t1, 85: t2, 86: tmin, 87: y, 88: z, " +
+		    "89: z1, 90: z2, 91: Mh, " +
+		    "92: xF, 93: xF1, 94: xF2, " +
+		    "95: pT, 96: pT1, 97: pT2, " +
+		    "98: phi1, 99: phi2, 100: Delta_phi, 101: phih, " +
+		    "102: phiR, 103: theta, " +
+		    "104: DepA, 105: DepB, 106: DepC, 107: DepV, 108: DepW, " +
+		    "109: Emiss2, 110: theta_gamma_gamma, " +
+		    "111: pTmiss");
 
 		println("Analyzing dvcs.");
 		println("output text file is: $file");
