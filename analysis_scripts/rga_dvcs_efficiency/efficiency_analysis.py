@@ -470,7 +470,7 @@ def plot_data_normalized_efficiencies(output_dir):
         plt.xlabel("Current (nA)")
         plt.ylabel("Normalized Efficiency")
         plt.xlim(-5, 60)
-        plt.ylim(0.7, 1.05)
+        plt.ylim(0.0, 1.05)
         plt.legend(loc='upper right')
         plt.title(f"Normalized Efficiency for {title_map.get(run_prefix, run_prefix)}")
         
