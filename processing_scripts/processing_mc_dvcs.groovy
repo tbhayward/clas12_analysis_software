@@ -641,7 +641,4 @@ public static void main(String[] args) {
 	long elapsedTime = endTime - startTime
 	// Print the elapsed time in milliseconds
 	println("Elapsed time: ${elapsedTime} ms");
-	println("The amount of variables stored in this tree is unecessarily large (many are not applicable to exclusive analyses).");
-	println("If you're not explicitly using the .txt file it might be worth deleting it and just keeping the .root tree.");
-
 }
