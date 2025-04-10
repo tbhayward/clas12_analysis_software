@@ -1454,7 +1454,7 @@ int main(int argc, char *argv[]) {
 
             // If the reconstructed values are not meaningful, assign default values.
             if (!reconstructed) {
-                fiducial_status = num_pos = num_neg = num_neutrals = runnum = evnum = helicity = detector1 = detector2 = 0;
+                fiducial_status = num_pos = num_neg = num_neutral = runnum = evnum = helicity = detector1 = detector2 = 0;
                 e_p = e_theta = e_phi = vz_e = 0.0;
                 p1_p = p1_theta = p1_phi = vz_p1 = 0.0;
                 p2_p = p2_theta = p2_phi = vz_p2 = 0.0;
