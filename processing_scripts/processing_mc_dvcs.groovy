@@ -318,6 +318,7 @@ public static void main(String[] args) {
 		    // Use a StringBuilder to append all data in a single call
 	                StringBuilder line = new StringBuilder();
 	                // first the generated variables
+	                println(gen_e_p)
 	                line.append(gen_e_p).append(" ")
 	                	.append(gen_e_theta).append(" ")
 	                	.append(gen_e_phi).append(" ")
