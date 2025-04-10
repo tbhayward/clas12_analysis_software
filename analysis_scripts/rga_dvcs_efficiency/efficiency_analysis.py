@@ -296,19 +296,25 @@ def passes_exclusivity_cuts_eff(event, cuts_dict, analysis_type, run_period):
 
 def plot_data_normalized_efficiencies(output_dir):
     """
-    Calculates and plots overall normalized efficiencies as a function of beam current
+    Calculates and plots the percentage drop in efficiency as a function of beam current
     (integrated over kinematics) for each run period for data.
-    For each run, efficiency is defined as:
-        (counts / accumulated Faraday cup charge) normalized to the baseline (lowest current) run.
-    A forced linear fit through (0,1) is performed.
+    
+    For each run, the raw efficiency is defined as:
+        E_raw = counts / accumulated Faraday cup charge.
+        
+    The percentage drop relative to the baseline (lowest current, here assumed to be 5 nA) is:
+        Drop% = (1 - E_raw / E_baseline) * 100.
+    
+    A linear fit is performed on the drop percentage versus beam current, forced such that at the baseline current
+    (I_baseline) the drop is 0% (i.e. model: Drop% = m * (I - I_baseline)).
     
     Parameters:
-    output_dir (str): Directory where the output plots will be saved.
+      output_dir (str): Directory where the output plots (in PDF) will be saved.
     """
-    # Base directory for the data efficiency .root files
+    # Base directory for the data efficiency .root files.
     base_dir = "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/data_efficiency_study"
     
-    # Mapping of run period identifiers to period codes and titles for plotting
+    # Mapping of run period identifiers to period codes and titles for plotting.
     run_periods = {
         "rga_fa18_inb": "DVCS_Fa18_inb",
         "rga_fa18_out": "DVCS_Fa18_out",
@@ -321,7 +327,7 @@ def plot_data_normalized_efficiencies(output_dir):
     }
     
     # Mapping of accumulated Faraday cup charge (in nC) for each run period and beam current.
-    # The keys are run period identifiers and each inner dictionary maps the beam current (nA) to its charge.
+    # Each inner dictionary maps the beam current (nA) to its corresponding charge.
     charge_map = {
         "rga_fa18_inb": {
             5: 51797.38,
@@ -343,21 +349,21 @@ def plot_data_normalized_efficiencies(output_dir):
         }
     }
     
-    # Analysis parameters
+    # Analysis parameters.
     selected_topology = "(FD,FD)"
     analysis_type = "dvcs"
     
-    # Loop over each run period (e.g., Fall 2018 Inb, Fall 2018 Out, Spring 2019 Inb)
+    # Loop over each run period (e.g., Fall 2018 Inb, Fall 2018 Out, Spring 2019 Inb).
     for run_prefix, period_code in run_periods.items():
-        # Define the file pattern to collect all .root files for the current run period
+        # Define the file pattern to collect all .root files for the current run period.
         pattern = os.path.join(base_dir, f"{run_prefix}_dvcs_*.root")
         file_list = glob.glob(pattern)
         
-        # Dictionary to store files keyed by the extracted beam current (in nA)
+        # Dictionary to store files keyed by the extracted beam current (in nA).
         data_dict = {}
         
         # Function to extract the beam current from the filename.
-        # Expects filenames like "rga_fa18_inb_dvcs_40nA.root"
+        # Expects filenames like "rga_fa18_inb_dvcs_40nA.root".
         def extract_current(filename):
             """
             Extracts the beam current (in nA) from the given filename.
@@ -366,7 +372,7 @@ def plot_data_normalized_efficiencies(output_dir):
             parts = base.split("_")
             last_part = parts[-1].replace(".root", "")
             try:
-                # Remove the trailing "nA" and convert to integer
+                # Remove the trailing "nA" and convert to integer.
                 return int(last_part.replace("nA", ""))
             except:
                 return None
@@ -384,98 +390,102 @@ def plot_data_normalized_efficiencies(output_dir):
             #endif
         #endfor
         
-        # Check that we have at least one valid data file
+        # Check that we have at least one valid data file.
         if not data_dict:
             print(f"No data files found for run period {run_prefix}. Skipping.")
             continue
         #endif
         
-        # Determine the baseline run using the lowest available beam current (typically 5 nA)
+        # Determine the baseline run using the lowest available beam current.
+        # Here we assume the baseline is at 5 nA.
         baseline_current = min(data_dict.keys())
         if baseline_current not in charge_map.get(run_prefix, {}):
             print(f"Baseline current {baseline_current} nA not found in charge mapping for run period {run_prefix}. Skipping.")
             continue
         #endif
         
-        # Load the analysis cuts for the current period and selected topology
+        # Load the analysis cuts for the current period and selected topology.
         cuts = load_cuts(period_code, selected_topology)
         
-        # Lists to hold currents, normalized efficiencies, and their errors for plotting and fitting
+        # Lists to hold beam currents, drop percentages, and their errors for plotting and fitting.
         currents = []
-        efficiencies = []
-        efficiency_errors = []
+        drop_percentages = []
+        drop_errors = []
         
         # Calculate the baseline efficiency (to be used for normalization) from the run at the lowest current.
         baseline_file = data_dict[baseline_current]
-        # Get the number of events (counts) that pass the selection cuts for the baseline run
         baseline_counts = get_tree_entries_with_cuts(baseline_file, cuts, selected_topology, analysis_type, period_code)
         baseline_charge = charge_map[run_prefix][baseline_current]
         if baseline_charge == 0:
             print(f"Warning: Baseline charge is zero for run period {run_prefix} at {baseline_current} nA. Using normalization factor of 1.")
-            norm_factor = 1.0
+            baseline_efficiency = 1.0
         else:
-            norm_factor = baseline_counts / baseline_charge
+            baseline_efficiency = baseline_counts / baseline_charge
         #endfor
         
-        # Loop over each beam current (sorted from lowest to highest) in the current run period
+        # Loop over each beam current (sorted from lowest to highest) in the current run period.
         for current in sorted(data_dict.keys()):
             filename = data_dict[current]
-            # Get the number of events passing cuts for the current run
             counts = get_tree_entries_with_cuts(filename, cuts, selected_topology, analysis_type, period_code)
-            # Retrieve the corresponding Faraday cup charge for this beam current
             charge = charge_map[run_prefix].get(current, None)
             if charge is None or charge == 0:
                 print(f"Warning: Invalid charge for run period {run_prefix} at {current} nA. Skipping this run.")
                 continue
             #endif
-            # Calculate the raw efficiency as counts per unit charge
+            # Calculate the raw efficiency as counts per unit charge.
             raw_efficiency = counts / charge
-            # Normalize the efficiency by the baseline efficiency, forcing the baseline point to 1.
-            normalized_efficiency = raw_efficiency / norm_factor if norm_factor != 0 else 0
-            # Calculate the statistical error assuming Poisson uncertainties on the counts
-            error = (np.sqrt(counts) / charge) / norm_factor if counts > 0 and norm_factor != 0 else 0
+            # Compute the percentage drop relative to the baseline efficiency.
+            # Baseline (at 5 nA) will have 0% drop.
+            drop_percentage = (1 - (raw_efficiency / baseline_efficiency)) * 100
+            # Propagate the Poisson uncertainty from counts: 
+            # error on raw_efficiency is sqrt(counts)/charge, so error on the ratio (raw_efficiency/baseline_efficiency)
+            # is (sqrt(counts)/charge)/baseline_efficiency, then multiplied by 100.
+            error = (np.sqrt(counts) / charge) / baseline_efficiency * 100 if counts > 0 else 0
             
-            # Append the computed current, normalized efficiency, and its error to the respective lists
             currents.append(current)
-            efficiencies.append(normalized_efficiency)
-            efficiency_errors.append(error)
+            drop_percentages.append(drop_percentage)
+            drop_errors.append(error)
         #endfor
         
-        # Convert the lists to numpy arrays for use in the linear fit and plotting
+        # Convert lists to numpy arrays.
         currents_arr = np.array(currents)
-        efficiencies_arr = np.array(efficiencies)
-        # Define the weights for the fit; avoid division by zero by defaulting weight to 1 if error is zero.
-        weights2 = np.array([1/(err**2) if err > 0 else 1 for err in efficiency_errors])
+        drop_arr = np.array(drop_percentages)
+        # Define weights for the linear fit, avoiding division by zero.
+        weights2 = np.array([1/(err**2) if err > 0 else 1 for err in drop_errors])
         
-        # --- Forced Linear Fit Through (0,1) ---
-        # The fit model is: efficiency = 1 + m * current, where m is the slope.
-        numerator = np.sum(weights2 * currents_arr * (efficiencies_arr - 1))
-        denominator = np.sum(weights2 * currents_arr**2)
+        # --- Forced Linear Fit Through the Baseline (0% Drop at baseline_current) ---
+        # Use the shifted currents: x' = current - baseline_current, so that at baseline, x'=0.
+        shifted_currents = currents_arr - baseline_current
+        
+        # Perform a weighted linear fit with the model: drop = m * (current - baseline_current)
+        numerator = np.sum(weights2 * shifted_currents * drop_arr)
+        denominator = np.sum(weights2 * shifted_currents**2)
         m = numerator / denominator if denominator != 0 else 0
         sigma_m = np.sqrt(1 / denominator) if denominator != 0 else 0
         
-        # Calculate chi-squared for the fit
-        model = 1 + m * currents_arr
-        chi2 = np.sum(weights2 * (efficiencies_arr - model)**2)
-        ndf = len(currents_arr) - 1  # Number of degrees of freedom (one free parameter: the slope)
+        # Calculate chi-squared for the fit.
+        model = m * shifted_currents  # Since the model gives 0 drop at baseline.
+        chi2 = np.sum(weights2 * (drop_arr - model)**2)
+        ndf = len(shifted_currents) - 1  # One free parameter (the slope).
         chi2_ndf = chi2 / ndf if ndf > 0 else 0
         
-        # Prepare data for plotting the fit line over a continuous range of beam currents
-        fit_x = np.linspace(min(currents_arr), max(currents_arr), 100)
-        fit_y = 1 + m * fit_x
+        # Prepare data for plotting the fit line over the beam current range.
+        fit_currents = np.linspace(min(currents_arr), max(currents_arr), 100)
+        fit_shifted = fit_currents - baseline_current
+        fit_drop = m * fit_shifted
         
         # --- Plotting ---
         plt.figure()
-        plt.errorbar(currents_arr, efficiencies_arr, yerr=efficiency_errors, fmt='ko', label='Data')
-        plt.plot(fit_x, fit_y, 'r--', label=f"m = {m:.4f} ± {sigma_m:.4f}\n" + r"$\chi^{2}/ndf$ = " + f"{chi2_ndf:.2f}")
+        plt.errorbar(currents_arr, drop_arr, yerr=drop_errors, fmt='ko', label='Data')
+        plt.plot(fit_currents, fit_drop, 'r--', label=f"m = {m:.4f} ± {sigma_m:.4f}\n" + r"$\chi^{2}/ndf$ = " + f"{chi2_ndf:.2f}")
         plt.xlabel("Current (nA)")
-        plt.ylabel("Normalized Efficiency")
+        plt.ylabel("Percentage Drop in Efficiency (%)")
         plt.xlim(-5, 60)
-        plt.ylim(0.0, 1.05)
+        plt.ylim(0.70, 1.05)
         plt.legend(loc='upper right')
-        plt.title(f"Normalized Efficiency for {title_map.get(run_prefix, run_prefix)}")
+        plt.title(f"Efficiency Drop for {title_map.get(run_prefix, run_prefix)}")
         
-        # Save the plot as a PDF in the output directory
+        # Save the plot as a PDF in the output directory.
         output_path = os.path.join(output_dir, f"{run_prefix}_integrated.pdf")
         plt.savefig(output_path, format='pdf')
         plt.close()
