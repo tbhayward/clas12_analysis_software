@@ -78,7 +78,7 @@ public static void main(String[] args) {
 
 	// declare physics event variables
 	boolean reconstructed; // variable to declare whether the generated event has reconstructed particles
-	int fiducial_status, num_pos, num_neg, num_neutral, helicity, detector1, detector2;
+	int fiducial_status, num_pos, num_neg, num_neutrals, helicity, detector1, detector2;
 	double e_p, e_theta, e_phi, p1_phi, p1_p, p1_theta, p2_phi, p2_p, p2_theta; 
 	double vz_e, vz_p1, vz_p2;
 	double open_angle_ep, open_angle_ep1, open_angle_ep2, open_angle_p1p2;
