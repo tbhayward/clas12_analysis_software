@@ -1428,7 +1428,7 @@ int main(int argc, char *argv[]) {
                       >> gen_pT >> gen_pT1 >> gen_pT2 >> gen_phi1 >> gen_phi2 >> gen_Delta_phi
                       >> gen_Depolarization_A >> gen_Depolarization_B >> gen_Depolarization_C
                       >> gen_Depolarization_V >> gen_Depolarization_W >> gen_Emiss2 >> gen_theta_gamma_gamma >> gen_pTmiss
-                      >> fiducial_status >> num_pos >> num_neg >> num_neutrals
+                      >> fiducial_status >> num_pos >> num_neg >> num_neutral
                       >> runnum >> evnum >> helicity >> detector1 >> detector2
                       >> e_p >> e_theta >> e_phi >> vz_e
                       >> p1_p >> p1_theta >> p1_phi >> vz_p1
