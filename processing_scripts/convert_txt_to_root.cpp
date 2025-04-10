@@ -1431,8 +1431,8 @@ int main(int argc, char *argv[]) {
                       >> Q2 >> W >> Mx2 >> Mx2_1 >> Mx2_2
                       >> x >> t >> t1 >> t2 >> tmin >> y >> z
                       >> z1 >> z2 >> Mh >> xF >> xF1 >> xF2
-                      >> pT >> pT1 >> pT2 >> phi1 >> phi2 >> Delta_phi >> phih
-                      >> phiR >> theta >> DepA >> DepB >> DepC >> DepV >> DepW
+                      >> pT >> pT1 >> pT2 >> phi1 >> phi2 >> Delta_phi 
+                      >> DepA >> DepB >> DepC >> DepV >> DepW
                       >> Emiss2 >> theta_gamma_gamma >> pTmiss
                       >> rec_flag ) {
             eventCounter++;
