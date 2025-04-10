@@ -1413,9 +1413,9 @@ int main(int argc, char *argv[]) {
     }
 
     if (script_index == 4 && is_mc == 1) {
-        int rec_flagif (script_index == 4 && is_mc == 1) {
-        int rec_flag;  // temporary flag (read as the 112th value) indicating if reconstructed values are meaningful (1) or not (0)
+        int rec_flag;  // temporary flag read from the file (0 or 1)
         int eventCounter = 0;  // event index for debug printing
+
         // Loop while we can read all 112 values from the text file
         while ( infile >> gen_e_p >> gen_e_theta >> gen_e_phi >> gen_vz_e
                       >> gen_p1_p >> gen_p1_theta >> gen_p1_phi >> gen_vz_p1
@@ -1439,10 +1439,9 @@ int main(int argc, char *argv[]) {
                       >> pT >> pT1 >> pT2 >> phi1 >> phi2 >> Delta_phi >> phih
                       >> phiR >> theta >> DepA >> DepB >> DepC >> DepV >> DepW
                       >> Emiss2 >> theta_gamma_gamma >> pTmiss
-                      >> rec_flag )
-        {
+                      >> rec_flag ) {
             eventCounter++;
-            // Convert rec_flag to a boolean value and always write that branch.
+            // Set the boolean "reconstructed" branch (always written) based on the rec_flag value
             reconstructed = (rec_flag == 1);
 
             // Debug print out the event index and some key variables.
@@ -1450,26 +1449,29 @@ int main(int argc, char *argv[]) {
                       << "  runnum: " << runnum
                       << "  evnum: " << evnum
                       << "  rec_flag: " << rec_flag
-                      << "  reconstructed: " << (reconstructed ? "true" : "false") 
+                      << "  reconstructed: " << (reconstructed ? "true" : "false")
                       << std::endl;
-                      
-            // If reconstructed values are not meaningful, assign default values to the reconstructed variables.
+
+            // If the reconstructed values are not meaningful, assign default values.
             if (!reconstructed) {
                 fiducial_status = num_pos = num_neg = num_neutrals = runnum = evnum = helicity = detector1 = detector2 = 0;
-                e_p = e_theta = e_phi = vz_e = -999;
-                p1_p = p1_theta = p1_phi = vz_p1 = -999;
-                p2_p = p2_theta = p2_phi = vz_p2 = -999;
-                open_angle_ep = open_angle_ep1 = open_angle_ep2 = open_angle_p1p2 = -999;
-                Q2 = W = Mx2 = Mx2_1 = Mx2_2 = x = t = t1 = t2 = tmin = y = z = -999;
-                z1 = z2 = Mh = xF = xF1 = xF2 = pT = pT1 = pT2 = -999;
-                phi1 = phi2 = Delta_phi = phih = phiR = theta = -999;
-                DepA = DepB = DepC = DepV = DepW = Emiss2 = theta_gamma_gamma = pTmiss = -999;
+                e_p = e_theta = e_phi = vz_e = 0.0;
+                p1_p = p1_theta = p1_phi = vz_p1 = 0.0;
+                p2_p = p2_theta = p2_phi = vz_p2 = 0.0;
+                open_angle_ep = open_angle_ep1 = open_angle_ep2 = open_angle_p1p2 = 0.0;
+                Q2 = W = Mx2 = Mx2_1 = Mx2_2 = x = t = t1 = t2 = tmin = y = z = 0.0;
+                z1 = z2 = Mh = xF = xF1 = xF2 = pT = pT1 = pT2 = 0.0;
+                phi1 = phi2 = Delta_phi = phih = phiR = theta = 0.0;
+                DepA = DepB = DepC = DepV = DepW = Emiss2 = theta_gamma_gamma = pTmiss = 0.0;
                 std::cout << "   (Reconstructed variables set to default values)" << std::endl;
             }
             else {
-                // Optionally, add more debug print statements for reconstructed variables.
-                std::cout << "   e_p: " << e_p << ", p1_p: " << p1_p << ", p2_p: " << p2_p << std::endl;
+                // Optionally, print some reconstructed variables for debugging.
+                std::cout << "   e_p: " << e_p
+                          << ", p1_p: " << p1_p
+                          << ", p2_p: " << p2_p << std::endl;
             }
+            // Fill the tree with the read (or default) values.
             tree->Fill();
         }
     }
