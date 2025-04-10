@@ -473,7 +473,7 @@ def plot_data_normalized_efficiencies(output_dir):
         # Prepare data for plotting the fit line over the beam current range.
         fit_currents = np.linspace(min(currents_arr), max(currents_arr), 100)
         fit_shifted = fit_currents - baseline_current
-        fit_norm_eff = 1 + m * fit_shifted
+        fit_norm_eff =  m * fit_shifted
         
         # --- Plotting ---
         plt.figure()
