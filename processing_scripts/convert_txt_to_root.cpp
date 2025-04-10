@@ -1416,6 +1416,7 @@ int main(int argc, char *argv[]) {
         int rec_flag;  // temporary flag read from the file (0 or 1)
         int eventCounter = 0;  // event index for debug printing
 
+        std::cout << "HELLO WORLD" << std::endl;
         // Loop while we can read all 112 values from the text file
         while ( infile >> gen_e_p >> gen_e_theta >> gen_e_phi >> gen_vz_e
                       >> gen_p1_p >> gen_p1_theta >> gen_p1_phi >> gen_vz_p1
