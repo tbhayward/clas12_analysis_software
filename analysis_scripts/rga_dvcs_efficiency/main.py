@@ -2,6 +2,7 @@
 import os
 from load_binning_scheme import load_binning_scheme
 from efficiency_analysis import (plot_mc_normalized_efficiencies, 
+                                plot_data_normalized_efficiencies, 
                                  calculate_binned_efficiencies_all, 
                                  plot_binned_efficiencies_all)
 
