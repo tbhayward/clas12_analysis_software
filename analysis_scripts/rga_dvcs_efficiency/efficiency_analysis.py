@@ -82,7 +82,8 @@ def get_tree_entries_with_cuts(file_path, cuts, topology, analysis_type, run_per
     count = 0
     for event in tree:
         try:
-            if passes_exclusivity_cuts(event, cuts, topology, analysis_type, run_period):
+            # if passes_exclusivity_cuts(event, cuts, topology, analysis_type, run_period):
+            if True:
                 count += 1
         except Exception as e:
             print(f"Exception in applying exclusivity cuts: {e}")
