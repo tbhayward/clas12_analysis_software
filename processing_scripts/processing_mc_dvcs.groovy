@@ -295,7 +295,7 @@ public static void main(String[] args) {
 			boolean process_event = filter.isValid(gen_Event)
 			reconstructed = filter.isValid(rec_Event) ? 1 : 0;
 
-	    	if (process_event) {
+	    	if (true) {
 
 		        // get # of particles 
 		        int num_p1 = gen_Event.countByPid(2212);
