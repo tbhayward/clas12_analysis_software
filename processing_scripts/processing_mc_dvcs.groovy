@@ -573,7 +573,7 @@ public static void main(String[] args) {
 	                    .append(Depolarization_W).append(" ")
 	                    .append(Emiss2).append(" ")
 	                    .append(theta_gamma_gamma).append(" ")
-	                    .append(pTmiss).append(" ");
+	                    .append(pTmiss).append(" ")
 	                    .append(reconstructed).append("\n");
 
 	                // Append the line to the batchLines StringBuilder
