@@ -819,7 +819,6 @@ int main(int argc, char *argv[]) {
     }
     else if (script_index == 4 && is_mc == 1) {
         // ----- MC DVCS Tree Branches -----
-        std::cout << "HELLO WORLD" << std::endl;
         // Generated branches
         tree->Branch("gen_e_p", &gen_e_p, "gen_e_p/D");
         tree->Branch("gen_e_theta", &gen_e_theta, "gen_e_theta/D");
@@ -1414,8 +1413,9 @@ int main(int argc, char *argv[]) {
     }
 
     if (script_index == 4 && is_mc == 1) {
-        int rec_flag;  // temporary flag read from the file (assumed 0 or 1)
-        while (infile >> gen_e_p >> gen_e_theta >> gen_e_phi >> gen_vz_e
+        int rec_flag;  // temporary flag read from the file as the 112th value (0 or 1)
+        // Loop while we can read all 112 values from the text file
+        while ( infile >> gen_e_p >> gen_e_theta >> gen_e_phi >> gen_vz_e
                       >> gen_p1_p >> gen_p1_theta >> gen_p1_phi >> gen_vz_p1
                       >> gen_p2_p >> gen_p2_theta >> gen_p2_phi >> gen_vz_p2
                       >> gen_open_angle_ep >> gen_open_angle_ep1 >> gen_open_angle_ep2 >> gen_open_angle_p1p2
@@ -1425,24 +1425,24 @@ int main(int argc, char *argv[]) {
                       >> gen_pT >> gen_pT1 >> gen_pT2 >> gen_phi1 >> gen_phi2 >> gen_Delta_phi
                       >> gen_Depolarization_A >> gen_Depolarization_B >> gen_Depolarization_C
                       >> gen_Depolarization_V >> gen_Depolarization_W >> gen_Emiss2 >> gen_theta_gamma_gamma >> gen_pTmiss
+                      >> fiducial_status >> num_pos >> num_neg >> num_neutrals
+                      >> runnum >> evnum >> helicity >> detector1 >> detector2
+                      >> e_p >> e_theta >> e_phi >> vz_e
+                      >> p1_p >> p1_theta >> p1_phi >> vz_p1
+                      >> p2_p >> p2_theta >> p2_phi >> vz_p2
+                      >> open_angle_ep >> open_angle_ep1 >> open_angle_ep2 >> open_angle_p1p2
+                      >> Q2 >> W >> Mx2 >> Mx2_1 >> Mx2_2
+                      >> x >> t >> t1 >> t2 >> tmin >> y >> z
+                      >> z1 >> z2 >> Mh >> xF >> xF1 >> xF2
+                      >> pT >> pT1 >> pT2 >> phi1 >> phi2 >> Delta_phi >> phih
+                      >> phiR >> theta >> DepA >> DepB >> DepC >> DepV >> DepW
+                      >> Emiss2 >> theta_gamma_gamma >> pTmiss
                       >> rec_flag ) {
+            // Set the boolean "reconstructed" branch (always written) based on the flag
             reconstructed = (rec_flag == 1);
-            if (reconstructed) {
-                infile >> fiducial_status >> num_pos >> num_neg >> num_neutral
-                       >> runnum >> evnum >> helicity >> detector1 >> detector2
-                       >> e_p >> e_theta >> e_phi >> vz_e
-                       >> p1_p >> p1_theta >> p1_phi >> vz_p1
-                       >> p2_p >> p2_theta >> p2_phi >> vz_p2
-                       >> open_angle_ep >> open_angle_ep1 >> open_angle_ep2 >> open_angle_p1p2
-                       >> Q2 >> W >> Mx2 >> Mx2_1 >> Mx2_2
-                       >> x >> t >> t1 >> t2 >> tmin >> y >> z
-                       >> z1 >> z2 >> Mh >> xF >> xF1 >> xF2
-                       >> pT >> pT1 >> pT2 >> phi1 >> phi2 >> Delta_phi >> phih
-                       >> phiR >> theta >> DepA >> DepB >> DepC >> DepV >> DepW
-                       >> Emiss2 >> theta_gamma_gamma >> pTmiss;
-            } else {
-                // Leave reconstructed variables “blank” (assign default values, e.g., -999 or 0)
-                fiducial_status = num_pos = num_neg = num_neutral = runnum = evnum = helicity = detector1 = detector2 = 0;
+            // If reconstructed values are not meaningful, assign default values
+            if (!reconstructed) {
+                fiducial_status = num_pos = num_neg = num_neutrals = runnum = evnum = helicity = detector1 = detector2 = 0;
                 e_p = e_theta = e_phi = vz_e = 0.0;
                 p1_p = p1_theta = p1_phi = vz_p1 = 0.0;
                 p2_p = p2_theta = p2_phi = vz_p2 = 0.0;
