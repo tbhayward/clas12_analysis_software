@@ -226,6 +226,20 @@ int main(int argc, char *argv[]) {
     double mc_phi1, mc_phi2, mc_Delta_phi, mc_phih, mc_phiR, mc_theta;
     int matching_p2_pid, mc_p2_parent;
 
+    // Additional variables for MC DVCS (generated variables)
+    double gen_e_p, gen_e_theta, gen_e_phi, gen_vz_e;
+    double gen_p1_p, gen_p1_theta, gen_p1_phi, gen_vz_p1;
+    double gen_p2_p, gen_p2_theta, gen_p2_phi, gen_vz_p2;
+    double gen_open_angle_ep, gen_open_angle_ep1, gen_open_angle_ep2, gen_open_angle_p1p2;
+    double gen_Q2, gen_W, gen_Mx2, gen_Mx2_1, gen_Mx2_2;
+    double gen_x, gen_t, gen_t1, gen_t2, gen_tmin, gen_y, gen_z;
+    double gen_z1, gen_z2, gen_Mh, gen_xF, gen_xF1, gen_xF2;
+    double gen_pT, gen_pT1, gen_pT2;
+    double gen_phi1, gen_phi2, gen_Delta_phi;
+    double gen_Depolarization_A, gen_Depolarization_B, gen_Depolarization_C;
+    double gen_Depolarization_V, gen_Depolarization_W;
+    double gen_Emiss2, gen_theta_gamma_gamma, gen_pTmiss;
+
     // Additional variables for calibration scripts
     int config_run, config_event, event_helicity;
     int particle_pid, particle_status;
@@ -731,9 +745,8 @@ int main(int argc, char *argv[]) {
         tree->Branch("DepV", &DepV, "DepV/D");
         tree->Branch("DepW", &DepW, "DepW/D");
     }
-    // Case for dvcs (not actually two hadrons)
-    else if (script_index == 4 && is_mc == 0) { // dvcs, not actually 4 hadrons
-        // Link TTree branches to variables for dvcs
+    // Case for dvcs 
+    else if (script_index == 4 && is_mc == 0) { 
         tree->Branch("runnum", &runnum, "runnum/I");
         tree->Branch("evnum", &evnum, "evnum/I");
         tree->Branch("helicity", &helicity, "helicity/I");
@@ -802,6 +815,122 @@ int main(int argc, char *argv[]) {
         tree->Branch("Emiss2", &Emiss2, "Emiss2/D");
         tree->Branch("theta_gamma_gamma", &theta_gamma_gamma, "theta_gamma_gamma/D");
         tree->Branch("pTmiss", &pTmiss, "pTmiss/D");
+    }
+    else if (script_index == 4 && is_mc == 1) {
+        // ----- MC DVCS Tree Branches -----
+
+        // Generated branches
+        tree->Branch("gen_e_p", &gen_e_p, "gen_e_p/D");
+        tree->Branch("gen_e_theta", &gen_e_theta, "gen_e_theta/D");
+        tree->Branch("gen_e_phi", &gen_e_phi, "gen_e_phi/D");
+        tree->Branch("gen_vz_e", &gen_vz_e, "gen_vz_e/D");
+        tree->Branch("gen_p1_p", &gen_p1_p, "gen_p1_p/D");
+        tree->Branch("gen_p1_theta", &gen_p1_theta, "gen_p1_theta/D");
+        tree->Branch("gen_p1_phi", &gen_p1_phi, "gen_p1_phi/D");
+        tree->Branch("gen_vz_p1", &gen_vz_p1, "gen_vz_p1/D");
+        tree->Branch("gen_p2_p", &gen_p2_p, "gen_p2_p/D");
+        tree->Branch("gen_p2_theta", &gen_p2_theta, "gen_p2_theta/D");
+        tree->Branch("gen_p2_phi", &gen_p2_phi, "gen_p2_phi/D");
+        tree->Branch("gen_vz_p2", &gen_vz_p2, "gen_vz_p2/D");
+        tree->Branch("gen_open_angle_ep", &gen_open_angle_ep, "gen_open_angle_ep/D");
+        tree->Branch("gen_open_angle_ep1", &gen_open_angle_ep1, "gen_open_angle_ep1/D");
+        tree->Branch("gen_open_angle_ep2", &gen_open_angle_ep2, "gen_open_angle_ep2/D");
+        tree->Branch("gen_open_angle_p1p2", &gen_open_angle_p1p2, "gen_open_angle_p1p2/D");
+        tree->Branch("gen_Q2", &gen_Q2, "gen_Q2/D");
+        tree->Branch("gen_W", &gen_W, "gen_W/D");
+        tree->Branch("gen_Mx2", &gen_Mx2, "gen_Mx2/D");
+        tree->Branch("gen_Mx2_1", &gen_Mx2_1, "gen_Mx2_1/D");
+        tree->Branch("gen_Mx2_2", &gen_Mx2_2, "gen_Mx2_2/D");
+        tree->Branch("gen_x", &gen_x, "gen_x/D");
+        tree->Branch("gen_t", &gen_t, "gen_t/D");
+        tree->Branch("gen_t1", &gen_t1, "gen_t1/D");
+        tree->Branch("gen_t2", &gen_t2, "gen_t2/D");
+        tree->Branch("gen_tmin", &gen_tmin, "gen_tmin/D");
+        tree->Branch("gen_y", &gen_y, "gen_y/D");
+        tree->Branch("gen_z", &gen_z, "gen_z/D");
+        tree->Branch("gen_z1", &gen_z1, "gen_z1/D");
+        tree->Branch("gen_z2", &gen_z2, "gen_z2/D");
+        tree->Branch("gen_Mh", &gen_Mh, "gen_Mh/D");
+        tree->Branch("gen_xF", &gen_xF, "gen_xF/D");
+        tree->Branch("gen_xF1", &gen_xF1, "gen_xF1/D");
+        tree->Branch("gen_xF2", &gen_xF2, "gen_xF2/D");
+        tree->Branch("gen_pT", &gen_pT, "gen_pT/D");
+        tree->Branch("gen_pT1", &gen_pT1, "gen_pT1/D");
+        tree->Branch("gen_pT2", &gen_pT2, "gen_pT2/D");
+        tree->Branch("gen_phi1", &gen_phi1, "gen_phi1/D");
+        tree->Branch("gen_phi2", &gen_phi2, "gen_phi2/D");
+        tree->Branch("gen_Delta_phi", &gen_Delta_phi, "gen_Delta_phi/D");
+        tree->Branch("gen_Depolarization_A", &gen_Depolarization_A, "gen_Depolarization_A/D");
+        tree->Branch("gen_Depolarization_B", &gen_Depolarization_B, "gen_Depolarization_B/D");
+        tree->Branch("gen_Depolarization_C", &gen_Depolarization_C, "gen_Depolarization_C/D");
+        tree->Branch("gen_Depolarization_V", &gen_Depolarization_V, "gen_Depolarization_V/D");
+        tree->Branch("gen_Depolarization_W", &gen_Depolarization_W, "gen_Depolarization_W/D");
+        tree->Branch("gen_Emiss2", &gen_Emiss2, "gen_Emiss2/D");
+        tree->Branch("gen_theta_gamma_gamma", &gen_theta_gamma_gamma, "gen_theta_gamma_gamma/D");
+        tree->Branch("gen_pTmiss", &gen_pTmiss, "gen_pTmiss/D");
+
+        // Reconstructed branches (these will be written only if available)
+        tree->Branch("fiducial_status", &fiducial_status, "fiducial_status/I");
+        tree->Branch("num_pos", &num_pos, "num_pos/I");
+        tree->Branch("num_neg", &num_neg, "num_neg/I");
+        tree->Branch("num_neutrals", &num_neutral, "num_neutrals/I");
+        tree->Branch("runnum", &runnum, "runnum/I");
+        tree->Branch("evnum", &evnum, "evnum/I");
+        tree->Branch("helicity", &helicity, "helicity/I");
+        tree->Branch("detector1", &detector1, "detector1/I");
+        tree->Branch("detector2", &detector2, "detector2/I");
+        tree->Branch("e_p", &e_p, "e_p/D");
+        tree->Branch("e_theta", &e_theta, "e_theta/D");
+        tree->Branch("e_phi", &e_phi, "e_phi/D");
+        tree->Branch("vz_e", &vz_e, "vz_e/D");
+        tree->Branch("p1_p", &p1_p, "p1_p/D");
+        tree->Branch("p1_theta", &p1_theta, "p1_theta/D");
+        tree->Branch("p1_phi", &p1_phi, "p1_phi/D");
+        tree->Branch("vz_p1", &vz_p1, "vz_p1/D");
+        tree->Branch("p2_p", &p2_p, "p2_p/D");
+        tree->Branch("p2_theta", &p2_theta, "p2_theta/D");
+        tree->Branch("p2_phi", &p2_phi, "p2_phi/D");
+        tree->Branch("vz_p2", &vz_p2, "vz_p2/D");
+        tree->Branch("open_angle_ep", &open_angle_ep, "open_angle_ep/D");
+        tree->Branch("open_angle_ep1", &open_angle_ep1, "open_angle_ep1/D");
+        tree->Branch("open_angle_ep2", &open_angle_ep2, "open_angle_ep2/D");
+        tree->Branch("open_angle_p1p2", &open_angle_p1p2, "open_angle_p1p2/D");
+        tree->Branch("Q2", &Q2, "Q2/D");
+        tree->Branch("W", &W, "W/D");
+        tree->Branch("Mx2", &Mx2, "Mx2/D");
+        tree->Branch("Mx2_1", &Mx2_1, "Mx2_1/D");
+        tree->Branch("Mx2_2", &Mx2_2, "Mx2_2/D");
+        tree->Branch("x", &x, "x/D");
+        tree->Branch("t", &t, "t/D");
+        tree->Branch("t1", &t1, "t1/D");
+        tree->Branch("t2", &t2, "t2/D");
+        tree->Branch("tmin", &tmin, "tmin/D");
+        tree->Branch("y", &y, "y/D");
+        tree->Branch("z", &z, "z/D");
+        tree->Branch("z1", &z1, "z1/D");
+        tree->Branch("z2", &z2, "z2/D");
+        tree->Branch("Mh", &Mh, "Mh/D");
+        tree->Branch("xF", &xF, "xF/D");
+        tree->Branch("xF1", &xF1, "xF1/D");
+        tree->Branch("xF2", &xF2, "xF2/D");
+        tree->Branch("pT", &pT, "pT/D");
+        tree->Branch("pT1", &pT1, "pT1/D");
+        tree->Branch("pT2", &pT2, "pT2/D");
+        tree->Branch("phi1", &phi1, "phi1/D");
+        tree->Branch("phi2", &phi2, "phi2/D");
+        tree->Branch("Delta_phi", &Delta_phi, "Delta_phi/D");
+        tree->Branch("phih", &phih, "phih/D");
+        tree->Branch("phiR", &phiR, "phiR/D");
+        tree->Branch("theta", &theta, "theta/D");
+        tree->Branch("DepA", &DepA, "DepA/D");
+        tree->Branch("DepB", &DepB, "DepB/D");
+        tree->Branch("DepC", &DepC, "DepC/D");
+        tree->Branch("DepV", &DepV, "DepV/D");
+        tree->Branch("DepW", &DepW, "DepW/D");
+        tree->Branch("Emiss2", &Emiss2, "Emiss2/D");
+        tree->Branch("theta_gamma_gamma", &theta_gamma_gamma, "theta_gamma_gamma/D");
+        tree->Branch("pTmiss", &pTmiss, "pTmiss/D");
+        tree->Branch("reconstructed", &reconstructed, "reconstructed/O");
     }
     // Case for eppi0
     else if (script_index == 5 && is_mc == 0) {
@@ -1280,6 +1409,49 @@ int main(int argc, char *argv[]) {
             // tmin = gettmin(x); 
 
             tree->Fill(); // Fill the tree with the read data
+        }
+    }
+
+    if (script_index == 4 && is_mc == 1) {
+        int rec_flag;  // temporary flag read from the file (assumed 0 or 1)
+        while (infile >> gen_e_p >> gen_e_theta >> gen_e_phi >> gen_vz_e
+                      >> gen_p1_p >> gen_p1_theta >> gen_p1_phi >> gen_vz_p1
+                      >> gen_p2_p >> gen_p2_theta >> gen_p2_phi >> gen_vz_p2
+                      >> gen_open_angle_ep >> gen_open_angle_ep1 >> gen_open_angle_ep2 >> gen_open_angle_p1p2
+                      >> gen_Q2 >> gen_W >> gen_Mx2 >> gen_Mx2_1 >> gen_Mx2_2
+                      >> gen_x >> gen_t >> gen_t1 >> gen_t2 >> gen_tmin >> gen_y >> gen_z
+                      >> gen_z1 >> gen_z2 >> gen_Mh >> gen_xF >> gen_xF1 >> gen_xF2
+                      >> gen_pT >> gen_pT1 >> gen_pT2 >> gen_phi1 >> gen_phi2 >> gen_Delta_phi
+                      >> gen_Depolarization_A >> gen_Depolarization_B >> gen_Depolarization_C
+                      >> gen_Depolarization_V >> gen_Depolarization_W >> gen_Emiss2 >> gen_theta_gamma_gamma >> gen_pTmiss
+                      >> rec_flag ) {
+            reconstructed = (rec_flag == 1);
+            if (reconstructed) {
+                infile >> fiducial_status >> num_pos >> num_neg >> num_neutral
+                       >> runnum >> evnum >> helicity >> detector1 >> detector2
+                       >> e_p >> e_theta >> e_phi >> vz_e
+                       >> p1_p >> p1_theta >> p1_phi >> vz_p1
+                       >> p2_p >> p2_theta >> p2_phi >> vz_p2
+                       >> open_angle_ep >> open_angle_ep1 >> open_angle_ep2 >> open_angle_p1p2
+                       >> Q2 >> W >> Mx2 >> Mx2_1 >> Mx2_2
+                       >> x >> t >> t1 >> t2 >> tmin >> y >> z
+                       >> z1 >> z2 >> Mh >> xF >> xF1 >> xF2
+                       >> pT >> pT1 >> pT2 >> phi1 >> phi2 >> Delta_phi >> phih
+                       >> phiR >> theta >> DepA >> DepB >> DepC >> DepV >> DepW
+                       >> Emiss2 >> theta_gamma_gamma >> pTmiss;
+            } else {
+                // Leave reconstructed variables “blank” (assign default values, e.g., -999 or 0)
+                fiducial_status = num_pos = num_neg = num_neutral = runnum = evnum = helicity = detector1 = detector2 = 0;
+                e_p = e_theta = e_phi = vz_e = 0.0;
+                p1_p = p1_theta = p1_phi = vz_p1 = 0.0;
+                p2_p = p2_theta = p2_phi = vz_p2 = 0.0;
+                open_angle_ep = open_angle_ep1 = open_angle_ep2 = open_angle_p1p2 = 0.0;
+                Q2 = W = Mx2 = Mx2_1 = Mx2_2 = x = t = t1 = t2 = tmin = y = z = 0.0;
+                z1 = z2 = Mh = xF = xF1 = xF2 = pT = pT1 = pT2 = 0.0;
+                phi1 = phi2 = Delta_phi = phih = phiR = theta = 0.0;
+                DepA = DepB = DepC = DepV = DepW = Emiss2 = theta_gamma_gamma = pTmiss = 0.0;
+            }
+            tree->Fill();
         }
     }
 

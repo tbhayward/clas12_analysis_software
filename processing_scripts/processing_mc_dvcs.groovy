@@ -423,7 +423,8 @@ public static void main(String[] args) {
 	                    .append(Depolarization_W).append(" ")
 	                    .append(Emiss2).append(" ")
 	                    .append(theta_gamma_gamma).append(" ")
-	                    .append(pTmiss).append("\n");
+	                    .append(pTmiss).append(" ")
+	                    .append(reconstructed).append("\n");
 
 	                // Append the line to the batchLines StringBuilder
 	                batchLines.append(line.toString());
@@ -477,7 +478,7 @@ public static void main(String[] args) {
 		    "102: phiR, 103: theta, " +
 		    "104: DepA, 105: DepB, 106: DepC, 107: DepV, 108: DepW, " +
 		    "109: Emiss2, 110: theta_gamma_gamma, " +
-		    "111: pTmiss");
+		    "111: pTmiss, 112: reconstructed.");
 
 		println("Analyzing dvcs.");
 		println("output text file is: $file");
@@ -492,6 +493,6 @@ public static void main(String[] args) {
 	// Print the elapsed time in milliseconds
 	println("Elapsed time: ${elapsedTime} ms");
 	println("The amount of variables stored in this tree is unecessarily large (many are not applicable to exclusive analysis.");
-	println("If you're not explcitly using the .txt file it might be worth deleting it and just keeping the .root tree.");
+	println("If you're not explicitly using the .txt file it might be worth deleting it and just keeping the .root tree.");
 
 }
