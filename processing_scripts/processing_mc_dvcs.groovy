@@ -294,6 +294,7 @@ public static void main(String[] args) {
 			}
 			boolean process_event = filter.isValid(gen_Event)
 			reconstructed = filter.isValid(rec_Event) ? 1 : 0;
+			generated_cut = false;
 
 	    	if (true) {
 
@@ -308,7 +309,8 @@ public static void main(String[] args) {
 	            ThreeParticles variables = new ThreeParticles(event, gen_Event, 
 					2212, 0, 22, 0, energy);
 	            // this is my class for defining all relevant kinematic variables
-	            if (variables.channel_test(variables)) {
+	            generated_cut = variables.channel_test(variables);
+	            if (generated_cut) {
 	                // lab kinematics
 	                gen_e_p = variables.e_p(); // lab frame momentum
 	                gen_e_theta = variables.e_theta(); // lab polar angle
@@ -465,7 +467,8 @@ public static void main(String[] args) {
 			    	pTmiss = variables.pTmiss();
 	            }  
 		    }
-		    // Use a StringBuilder to append all data in a single call
+		    if (generated_cut) {
+		    	// Use a StringBuilder to append all data in a single call
 	                StringBuilder line = new StringBuilder();
 	                // first the generated variables
 	                line.append(gen_e_p).append(" ")
@@ -586,6 +589,8 @@ public static void main(String[] args) {
 	                    batchLines.setLength(0);
 	                    lineCount = 0;
 	                }
+		    }
+		    
 
 		
 		}
