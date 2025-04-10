@@ -1418,7 +1418,7 @@ int main(int argc, char *argv[]) {
 
         std::cout << "HELLO WORLD" << std::endl;
         // Loop while we can read all 112 values from the text file
-        while ( infile >> gen_e_p >> gen_e_theta >> gen_e_phi >> gen_vz_e
+        while (infile >> gen_e_p >> gen_e_theta >> gen_e_phi >> gen_vz_e
                       >> gen_p1_p >> gen_p1_theta >> gen_p1_phi >> gen_vz_p1
                       >> gen_p2_p >> gen_p2_theta >> gen_p2_phi >> gen_vz_p2
                       >> gen_open_angle_ep >> gen_open_angle_ep1 >> gen_open_angle_ep2 >> gen_open_angle_p1p2
