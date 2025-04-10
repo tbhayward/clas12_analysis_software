@@ -1413,21 +1413,15 @@ int main(int argc, char *argv[]) {
     }
 
     if (script_index == 4 && is_mc == 1) {
-        int rec_flag;  // temporary flag read from the file (0 or 1)
+        int rec_flag;  // temporary flag read from the file as the last value of the line (0 or 1)
         int eventCounter = 0;  // event index for debug printing
 
         std::cout << "HELLO WORLD" << std::endl;
-        // Loop while we can read all 112 values from the text file
-        while (infile >> gen_e_p >> gen_e_theta >> gen_e_phi //>> gen_vz_e
-                      >> gen_p1_p >> gen_p1_theta >> gen_p1_phi //>> gen_vz_p1
-                      >> gen_p2_p >> gen_p2_theta >> gen_p2_phi //>> gen_vz_p2
-                      // >> gen_open_angle_ep >> gen_open_angle_ep1 >> gen_open_angle_ep2 >> gen_open_angle_p1p2
-                      // >> gen_Q2 >> gen_W >> gen_Mx2 >> gen_Mx2_1 >> gen_Mx2_2
-                      // >> gen_x >> gen_t >> gen_t1 >> gen_t2 >> gen_tmin >> gen_y >> gen_z
-                      // >> gen_z1 >> gen_z2 >> gen_Mh >> gen_xF >> gen_xF1 >> gen_xF2
-                      // >> gen_pT >> gen_pT1 >> gen_pT2 >> gen_phi1 >> gen_phi2 >> gen_Delta_phi
-                      // >> gen_Depolarization_A >> gen_Depolarization_B >> gen_Depolarization_C
-                      // >> gen_Depolarization_V >> gen_Depolarization_W >> gen_Emiss2 >> gen_theta_gamma_gamma >> gen_pTmiss
+        // Loop while we can read all fields from the text file
+        // (Make sure this while loop exactly matches the number and order of fields written by your Groovy script.)
+        while ( infile >> gen_e_p >> gen_e_theta >> gen_e_phi
+                      >> gen_p1_p >> gen_p1_theta >> gen_p1_phi
+                      >> gen_p2_p >> gen_p2_theta >> gen_p2_phi
                       >> fiducial_status >> num_pos >> num_neg >> num_neutral
                       >> runnum >> evnum >> helicity >> detector1 >> detector2
                       >> e_p >> e_theta >> e_phi >> vz_e
@@ -1442,16 +1436,21 @@ int main(int argc, char *argv[]) {
                       >> Emiss2 >> theta_gamma_gamma >> pTmiss
                       >> rec_flag ) {
             eventCounter++;
-            // Set the boolean "reconstructed" branch (always written) based on the rec_flag value
+            // Set the boolean 'reconstructed' branch based on rec_flag (always written)
             reconstructed = (rec_flag == 1);
 
-            // Debug print out the event index and some key variables.
+            // Debug: Print event index and key values.
             std::cout << "Event " << eventCounter
                       << "  runnum: " << runnum
                       << "  evnum: " << evnum
                       << "  rec_flag: " << rec_flag
                       << "  reconstructed: " << (reconstructed ? "true" : "false")
                       << std::endl;
+            std::cout << "Generated 4-Vector: "
+                      << "e_p=" << gen_e_p << ", e_theta=" << gen_e_theta
+                      << ", e_phi=" << gen_e_phi << std::endl;
+            std::cout << "P1: p=" << gen_p1_p << ", theta=" << gen_p1_theta << ", phi=" << gen_p1_phi << std::endl;
+            std::cout << "P2: p=" << gen_p2_p << ", theta=" << gen_p2_theta << ", phi=" << gen_p2_phi << std::endl;
 
             // If the reconstructed values are not meaningful, assign default values.
             if (!reconstructed) {
@@ -1465,10 +1464,9 @@ int main(int argc, char *argv[]) {
                 phi1 = phi2 = Delta_phi = phih = phiR = theta = 0.0;
                 DepA = DepB = DepC = DepV = DepW = Emiss2 = theta_gamma_gamma = pTmiss = 0.0;
                 std::cout << "   (Reconstructed variables set to default values)" << std::endl;
-            }
-            else {
+            } else {
                 // Optionally, print some reconstructed variables for debugging.
-                std::cout << "   e_p: " << e_p
+                std::cout << "   Reconstructed e_p: " << e_p
                           << ", p1_p: " << p1_p
                           << ", p2_p: " << p2_p << std::endl;
             }
