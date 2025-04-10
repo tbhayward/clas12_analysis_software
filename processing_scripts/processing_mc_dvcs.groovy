@@ -294,7 +294,6 @@ public static void main(String[] args) {
 			}
 			boolean process_event = filter.isValid(gen_Event)
 			reconstructed = filter.isValid(rec_Event) ? 1 : 0;
-			println(reconstructed);
 
 	    	if (process_event) {
 
