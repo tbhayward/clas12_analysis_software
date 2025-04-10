@@ -239,7 +239,7 @@ int main(int argc, char *argv[]) {
     double gen_Depolarization_A, gen_Depolarization_B, gen_Depolarization_C;
     double gen_Depolarization_V, gen_Depolarization_W;
     double gen_Emiss2, gen_theta_gamma_gamma, gen_pTmiss;
-    bool reconstructed;
+    int reconstructed;
 
     // Additional variables for calibration scripts
     int config_run, config_event, event_helicity;
@@ -930,7 +930,7 @@ int main(int argc, char *argv[]) {
         tree->Branch("Emiss2", &Emiss2, "Emiss2/D");
         tree->Branch("theta_gamma_gamma", &theta_gamma_gamma, "theta_gamma_gamma/D");
         tree->Branch("pTmiss", &pTmiss, "pTmiss/D");
-        tree->Branch("reconstructed", &reconstructed, "reconstructed/O");
+        tree->Branch("reconstructed", &reconstructed, "reconstructed/I");
     }
     // Case for eppi0
     else if (script_index == 5 && is_mc == 0) {
