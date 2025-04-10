@@ -1418,16 +1418,16 @@ int main(int argc, char *argv[]) {
 
         std::cout << "HELLO WORLD" << std::endl;
         // Loop while we can read all 112 values from the text file
-        while (infile >> gen_e_p >> gen_e_theta >> gen_e_phi >> gen_vz_e
-                      >> gen_p1_p >> gen_p1_theta >> gen_p1_phi >> gen_vz_p1
-                      >> gen_p2_p >> gen_p2_theta >> gen_p2_phi >> gen_vz_p2
-                      >> gen_open_angle_ep >> gen_open_angle_ep1 >> gen_open_angle_ep2 >> gen_open_angle_p1p2
-                      >> gen_Q2 >> gen_W >> gen_Mx2 >> gen_Mx2_1 >> gen_Mx2_2
-                      >> gen_x >> gen_t >> gen_t1 >> gen_t2 >> gen_tmin >> gen_y >> gen_z
-                      >> gen_z1 >> gen_z2 >> gen_Mh >> gen_xF >> gen_xF1 >> gen_xF2
-                      >> gen_pT >> gen_pT1 >> gen_pT2 >> gen_phi1 >> gen_phi2 >> gen_Delta_phi
-                      >> gen_Depolarization_A >> gen_Depolarization_B >> gen_Depolarization_C
-                      >> gen_Depolarization_V >> gen_Depolarization_W >> gen_Emiss2 >> gen_theta_gamma_gamma >> gen_pTmiss
+        while (infile >> gen_e_p >> gen_e_theta >> gen_e_phi //>> gen_vz_e
+                      >> gen_p1_p >> gen_p1_theta >> gen_p1_phi //>> gen_vz_p1
+                      >> gen_p2_p >> gen_p2_theta >> gen_p2_phi //>> gen_vz_p2
+                      // >> gen_open_angle_ep >> gen_open_angle_ep1 >> gen_open_angle_ep2 >> gen_open_angle_p1p2
+                      // >> gen_Q2 >> gen_W >> gen_Mx2 >> gen_Mx2_1 >> gen_Mx2_2
+                      // >> gen_x >> gen_t >> gen_t1 >> gen_t2 >> gen_tmin >> gen_y >> gen_z
+                      // >> gen_z1 >> gen_z2 >> gen_Mh >> gen_xF >> gen_xF1 >> gen_xF2
+                      // >> gen_pT >> gen_pT1 >> gen_pT2 >> gen_phi1 >> gen_phi2 >> gen_Delta_phi
+                      // >> gen_Depolarization_A >> gen_Depolarization_B >> gen_Depolarization_C
+                      // >> gen_Depolarization_V >> gen_Depolarization_W >> gen_Emiss2 >> gen_theta_gamma_gamma >> gen_pTmiss
                       >> fiducial_status >> num_pos >> num_neg >> num_neutral
                       >> runnum >> evnum >> helicity >> detector1 >> detector2
                       >> e_p >> e_theta >> e_phi >> vz_e

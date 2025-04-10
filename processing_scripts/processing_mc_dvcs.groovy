@@ -320,60 +320,60 @@ public static void main(String[] args) {
 	                gen_p2_phi = variables.p2_phi(); // lab azimuthal angle
 	                gen_p2_p = variables.p2_p(); // lab momentum
 	                gen_p2_theta = variables.p2_theta(); // lab polar angle
-	                gen_open_angle_ep = variables.open_angle_ep;
-	                gen_open_angle_ep1 = variables.open_angle_ep1;
-	                gen_open_angle_ep2 = variables.open_angle_ep2;
-	                gen_open_angle_p1p2 = variables.open_angle_p1p2;
+	                // gen_open_angle_ep = variables.open_angle_ep;
+	                // gen_open_angle_ep1 = variables.open_angle_ep1;
+	                // gen_open_angle_ep2 = variables.open_angle_ep2;
+	                // gen_open_angle_p1p2 = variables.open_angle_p1p2;
 
-	                // vertices
-	                gen_vz_e = variables.vz_e();
-	                gen_vz_p1 = variables.vz_p1();
-	                gen_vz_p2 = variables.vz_p2();
+	                // // vertices
+	                // gen_vz_e = variables.vz_e();
+	                // gen_vz_p1 = variables.vz_p1();
+	                // gen_vz_p2 = variables.vz_p2();
 
-	                // DIS variables
-	                gen_Q2 = variables.Q2(); // exchanged virtual photon energy
-	                gen_W = variables.W(); // hadronic mass
-	                gen_x = variables.x(); // Bjorken-x
-	                gen_t = variables.t();
-	                gen_t1 = variables.t1();
-	                gen_t2 = variables.t2();
-	                gen_tmin = variables.tmin();
-	                gen_y = variables.y(); // E_scat/E_beam
-	                gen_Mx2 = variables.Mx2(); // missing mass
-	                gen_Mx2_1 = variables.Mx2_1(); // missing mass calculated with p1
-	                gen_Mx2_2 = variables.Mx2_2(); // missing mass squared
+	                // // DIS variables
+	                // gen_Q2 = variables.Q2(); // exchanged virtual photon energy
+	                // gen_W = variables.W(); // hadronic mass
+	                // gen_x = variables.x(); // Bjorken-x
+	                // gen_t = variables.t();
+	                // gen_t1 = variables.t1();
+	                // gen_t2 = variables.t2();
+	                // gen_tmin = variables.tmin();
+	                // gen_y = variables.y(); // E_scat/E_beam
+	                // gen_Mx2 = variables.Mx2(); // missing mass
+	                // gen_Mx2_1 = variables.Mx2_1(); // missing mass calculated with p1
+	                // gen_Mx2_2 = variables.Mx2_2(); // missing mass squared
 
-	                // SIDIS variables
-	                gen_z = variables.z(); // fractional hadron energy wrt virtual photon
-	                gen_xF = variables.xF(); // Feynman-x
-	                gen_pT = variables.pT(); // transverse momentum of hadron
+	                // // SIDIS variables
+	                // gen_z = variables.z(); // fractional hadron energy wrt virtual photon
+	                // gen_xF = variables.xF(); // Feynman-x
+	                // gen_pT = variables.pT(); // transverse momentum of hadron
 	                
 
-	                // SIDIS dihadron variables
-					gen_z1 = variables.z1();
-					gen_z2 = variables.z2();
-					gen_xF1 = variables.xF1();
-					gen_xF2 = variables.xF2();
-					gen_Mh = variables.Mh();
-					gen_pT1 = variables.pT1();
-					gen_pT2 = variables.pT2();
+	                // // SIDIS dihadron variables
+					// gen_z1 = variables.z1();
+					// gen_z2 = variables.z2();
+					// gen_xF1 = variables.xF1();
+					// gen_xF2 = variables.xF2();
+					// gen_Mh = variables.Mh();
+					// gen_pT1 = variables.pT1();
+					// gen_pT2 = variables.pT2();
 
-	                // angles
-					gen_phi1 = variables.phi1(); // trento phi of the p1
-					gen_phi2 = variables.phi2(); // trento phi of the p2
-					gen_Delta_phi = variables.Delta_phi();
+	                // // angles
+					// gen_phi1 = variables.phi1(); // trento phi of the p1
+					// gen_phi2 = variables.phi2(); // trento phi of the p2
+					// gen_Delta_phi = variables.Delta_phi();
 
-	                // depolarization factors
-	                gen_Depolarization_A = variables.Depolarization_A();
-	                gen_Depolarization_B = variables.Depolarization_B();
-	                gen_Depolarization_C = variables.Depolarization_C();
-	                gen_Depolarization_V = variables.Depolarization_V();
-			    	gen_Depolarization_W = variables.Depolarization_W();
+	                // // depolarization factors
+	                // gen_Depolarization_A = variables.Depolarization_A();
+	                // gen_Depolarization_B = variables.Depolarization_B();
+	                // gen_Depolarization_C = variables.Depolarization_C();
+	                // gen_Depolarization_V = variables.Depolarization_V();
+			    	// gen_Depolarization_W = variables.Depolarization_W();
 
-			    	// exclusivity variables
-			    	gen_Emiss2 = variables.Emiss2();
-			    	gen_theta_gamma_gamma = variables.theta_gamma_gamma();
-			    	gen_pTmiss = variables.pTmiss();
+			    	// // exclusivity variables
+			    	// gen_Emiss2 = variables.Emiss2();
+			    	// gen_theta_gamma_gamma = variables.theta_gamma_gamma();
+			    	// gen_pTmiss = variables.pTmiss();
 	            }  
 		    }
 
@@ -472,51 +472,51 @@ public static void main(String[] args) {
 	                line.append(gen_e_p).append(" ")
 	                	.append(gen_e_theta).append(" ")
 	                	.append(gen_e_phi).append(" ")
-	                	.append(gen_vz_e).append(" ")
+	                	// .append(gen_vz_e).append(" ")
 	                	.append(gen_p1_p).append(" ")
 	                	.append(gen_p1_theta).append(" ")
 	                	.append(gen_p1_phi).append(" ")
-	                	.append(gen_vz_p1).append(" ")
+	                	// .append(gen_vz_p1).append(" ")
 	                	.append(gen_p2_p).append(" ")
 	                	.append(gen_p2_theta).append(" ")
 	                	.append(gen_p2_phi).append(" ")
-	                	.append(gen_vz_p2).append(" ")
-	                	.append(gen_open_angle_ep).append(" ")
-	                	.append(gen_open_angle_ep1).append(" ")
-	                	.append(gen_open_angle_ep2).append(" ")
-	                	.append(gen_open_angle_p1p2).append(" ")
-	                	.append(gen_Q2).append(" ")
-	                	.append(gen_W).append(" ")
-	                	.append(gen_Mx2).append(" ")
-	                	.append(gen_Mx2_1).append(" ")
-	                	.append(gen_Mx2_2).append(" ")
-	                	.append(gen_x).append(" ")
-	                	.append(gen_t).append(" ")
-	                	.append(gen_t1).append(" ")
-	                	.append(gen_t2).append(" ")
-	                	.append(gen_tmin).append(" ")
-	                	.append(gen_y).append(" ")
-	                	.append(gen_z).append(" ")
-	                	.append(gen_z1).append(" ")
-	                	.append(gen_z2).append(" ")
-	                	.append(gen_Mh).append(" ")
-	                	.append(gen_xF).append(" ")
-	                	.append(gen_xF1).append(" ")
-	                	.append(gen_xF2).append(" ")
-	                	.append(gen_pT).append(" ")
-	                	.append(gen_pT1).append(" ")
-	                	.append(gen_pT2).append(" ")
-	                	.append(gen_phi1).append(" ")
-	                	.append(gen_phi2).append(" ")
-	                	.append(gen_Delta_phi).append(" ")
-	                	.append(gen_Depolarization_A).append(" ")
-	                    .append(gen_Depolarization_B).append(" ")
-	                    .append(gen_Depolarization_C).append(" ")
-	                    .append(gen_Depolarization_V).append(" ")
-	                    .append(gen_Depolarization_W).append(" ")
-	                    .append(gen_Emiss2).append(" ")
-	                    .append(gen_theta_gamma_gamma).append(" ")
-	                    .append(gen_pTmiss).append(" ")
+	                	// .append(gen_vz_p2).append(" ")
+	                	// .append(gen_open_angle_ep).append(" ")
+	                	// .append(gen_open_angle_ep1).append(" ")
+	                	// .append(gen_open_angle_ep2).append(" ")
+	                	// .append(gen_open_angle_p1p2).append(" ")
+	                	// .append(gen_Q2).append(" ")
+	                	// .append(gen_W).append(" ")
+	                	// .append(gen_Mx2).append(" ")
+	                	// .append(gen_Mx2_1).append(" ")
+	                	// .append(gen_Mx2_2).append(" ")
+	                	// .append(gen_x).append(" ")
+	                	// .append(gen_t).append(" ")
+	                	// .append(gen_t1).append(" ")
+	                	// .append(gen_t2).append(" ")
+	                	// .append(gen_tmin).append(" ")
+	                	// .append(gen_y).append(" ")
+	                	// .append(gen_z).append(" ")
+	                	// .append(gen_z1).append(" ")
+	                	// .append(gen_z2).append(" ")
+	                	// .append(gen_Mh).append(" ")
+	                	// .append(gen_xF).append(" ")
+	                	// .append(gen_xF1).append(" ")
+	                	// .append(gen_xF2).append(" ")
+	                	// .append(gen_pT).append(" ")
+	                	// .append(gen_pT1).append(" ")
+	                	// .append(gen_pT2).append(" ")
+	                	// .append(gen_phi1).append(" ")
+	                	// .append(gen_phi2).append(" ")
+	                	// .append(gen_Delta_phi).append(" ")
+	                	// .append(gen_Depolarization_A).append(" ")
+	                    // .append(gen_Depolarization_B).append(" ")
+	                    // .append(gen_Depolarization_C).append(" ")
+	                    // .append(gen_Depolarization_V).append(" ")
+	                    // .append(gen_Depolarization_W).append(" ")
+	                    // .append(gen_Emiss2).append(" ")
+	                    // .append(gen_theta_gamma_gamma).append(" ")
+	                    // .append(gen_pTmiss).append(" ")
 	                    // now reconstructed variables
 	                    .append(fiducial_status).append(" ")
 						.append(num_pos).append(" ")
