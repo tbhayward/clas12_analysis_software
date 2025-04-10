@@ -454,26 +454,37 @@ def plot_data_normalized_efficiencies(output_dir):
         # Define weights for the linear fit (avoid division by zero).
         weights2 = np.array([1/(err**2) if err > 0 else 1 for err in norm_eff_errors])
         
-        # --- Forced Linear Fit Through the Baseline (1 at baseline_current) ---
-        # Shift currents so that the baseline corresponds to x=0.
-        shifted_currents = currents_arr - baseline_current
-        
-        # The model is: norm_eff = 1 + m * (current - baseline_current)
-        numerator = np.sum(weights2 * shifted_currents * (norm_eff_arr - 1))
-        denominator = np.sum(weights2 * shifted_currents**2)
-        m = numerator / denominator if denominator != 0 else 0
-        sigma_m = np.sqrt(1 / denominator) if denominator != 0 else 0
+                # --- Linear Fit (free intercept and slope) ---
+        # Fit the model: norm_eff = b + m * current
+        # Define weights for the fit using norm_eff_errors:
+        w = weights2
+        x = currents_arr
+        y = norm_eff_arr
+        S = np.sum(w)
+        Sx = np.sum(w * x)
+        Sy = np.sum(w * y)
+        Sxx = np.sum(w * x**2)
+        Sxy = np.sum(w * x * y)
+        Delta = S * Sxx - Sx**2
+
+        if Delta != 0:
+            m = (S * Sxy - Sx * Sy) / Delta
+            b = (Sy * Sxx - Sx * Sxy) / Delta
+            sigma_m = np.sqrt(S / Delta)
+            sigma_b = np.sqrt(Sxx / Delta)
+        else:
+            m, b = 0, 0
+            sigma_m, sigma_b = 0, 0
         
         # Calculate chi-squared for the fit.
-        model = 1 + m * shifted_currents
-        chi2 = np.sum(weights2 * (norm_eff_arr - model)**2)
-        ndf = len(shifted_currents) - 1  # One free parameter (the slope).
+        model = b + m * x
+        chi2 = np.sum(w * (y - model)**2)
+        ndf = len(x) - 2  # two free parameters: slope and intercept
         chi2_ndf = chi2 / ndf if ndf > 0 else 0
         
         # Prepare data for plotting the fit line over the beam current range.
-        fit_currents = np.linspace(min(currents_arr), max(currents_arr), 100)
-        fit_shifted = fit_currents - baseline_current
-        fit_norm_eff =  m * fit_shifted
+        fit_currents = np.linspace(min(x), max(x), 100)
+        fit_norm_eff = b + m * fit_currents
         
         # --- Plotting ---
         plt.figure()
