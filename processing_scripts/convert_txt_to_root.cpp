@@ -819,7 +819,7 @@ int main(int argc, char *argv[]) {
     }
     else if (script_index == 4 && is_mc == 1) {
         // ----- MC DVCS Tree Branches -----
-
+        std::cout << "HELLO WORLD" << std::endl;
         // Generated branches
         tree->Branch("gen_e_p", &gen_e_p, "gen_e_p/D");
         tree->Branch("gen_e_theta", &gen_e_theta, "gen_e_theta/D");
