@@ -297,20 +297,21 @@ def passes_exclusivity_cuts_eff(event, cuts_dict, analysis_type, run_period):
 
 def plot_data_normalized_efficiencies(output_dir):
     """
-    Calculates and plots the percentage drop in efficiency as a function of beam current
+    Calculates and plots the normalized efficiency as a function of beam current
     (integrated over kinematics) for each run period for data.
     
     For each run, the raw efficiency is defined as:
         E_raw = counts / accumulated Faraday cup charge.
         
-    The percentage drop relative to the baseline (lowest current, here assumed to be 5 nA) is:
-        Drop% = (1 - E_raw / E_baseline) * 100.
+    The normalized efficiency is then given by:
+        norm_eff = (E_raw) / (E_baseline)
+    where E_baseline is the raw efficiency of the 5 nA (lowest current) run.
     
-    A linear fit is performed on the drop percentage versus beam current, forced such that at the baseline current
-    (I_baseline) the drop is 0% (i.e. model: Drop% = m * (I - I_baseline)).
+    A linear fit is performed on the normalized efficiency vs. beam current using a
+    forced fit through the baseline point (i.e. norm_eff = 1 at 5 nA).
     
     Parameters:
-      output_dir (str): Directory where the output plots (in PDF) will be saved.
+      output_dir (str): Directory where the output plots (in PDF format) will be saved.
     """
     # Base directory for the data efficiency .root files.
     base_dir = "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/data_efficiency_study"
@@ -408,21 +409,24 @@ def plot_data_normalized_efficiencies(output_dir):
         # Load the analysis cuts for the current period and selected topology.
         cuts = load_cuts(period_code, selected_topology)
         
-        # Lists to hold beam currents, drop percentages, and their errors for plotting and fitting.
-        currents = []
-        drop_percentages = []
-        drop_errors = []
-        
-        # Calculate the baseline efficiency (to be used for normalization) from the run at the lowest current.
+        # Calculate the baseline efficiency from the baseline run.
         baseline_file = data_dict[baseline_current]
         baseline_counts = get_tree_entries_with_cuts(baseline_file, cuts, selected_topology, analysis_type, period_code)
         baseline_charge = charge_map[run_prefix][baseline_current]
         if baseline_charge == 0:
-            print(f"Warning: Baseline charge is zero for run period {run_prefix} at {baseline_current} nA. Using normalization factor of 1.")
-            baseline_efficiency = 1.0
-        else:
-            baseline_efficiency = baseline_counts / baseline_charge
-        #endfor
+            print(f"Warning: Baseline charge is zero for run period {run_prefix} at {baseline_current} nA. Skipping.")
+            continue
+        #endif
+        baseline_efficiency = baseline_counts / baseline_charge
+        if baseline_efficiency == 0:
+            print(f"Warning: Baseline efficiency is zero for run period {run_prefix} at {baseline_current} nA. Skipping.")
+            continue
+        #endif
+        
+        # Lists to hold beam currents, normalized efficiencies, and their errors for plotting and fitting.
+        currents = []
+        norm_efficiencies = []
+        norm_eff_errors = []
         
         # Loop over each beam current (sorted from lowest to highest) in the current run period.
         for current in sorted(data_dict.keys()):
@@ -435,56 +439,55 @@ def plot_data_normalized_efficiencies(output_dir):
             #endif
             # Calculate the raw efficiency as counts per unit charge.
             raw_efficiency = counts / charge
-            # Compute the percentage drop relative to the baseline efficiency.
-            # Baseline (at 5 nA) will have 0% drop.
-            drop_percentage = (1 - (raw_efficiency / baseline_efficiency)) * 100
-            # Propagate the Poisson uncertainty from counts: 
-            # error on raw_efficiency is sqrt(counts)/charge, so error on the ratio (raw_efficiency/baseline_efficiency)
-            # is (sqrt(counts)/charge)/baseline_efficiency, then multiplied by 100.
-            error = (np.sqrt(counts) / charge) / baseline_efficiency * 100 if counts > 0 else 0
+            # Compute the normalized efficiency relative to the baseline.
+            normalized_efficiency = raw_efficiency / baseline_efficiency
+            # Propagate the Poisson uncertainty (sqrt(counts)) on counts.
+            error = (np.sqrt(counts) / charge) / baseline_efficiency if counts > 0 else 0
             
             currents.append(current)
-            drop_percentages.append(drop_percentage)
-            drop_errors.append(error)
+            norm_efficiencies.append(normalized_efficiency)
+            norm_eff_errors.append(error)
         #endfor
         
         # Convert lists to numpy arrays.
         currents_arr = np.array(currents)
-        drop_arr = np.array(drop_percentages)
-        # Define weights for the linear fit, avoiding division by zero.
-        weights2 = np.array([1/(err**2) if err > 0 else 1 for err in drop_errors])
+        norm_eff_arr = np.array(norm_efficiencies)
         
-        # --- Forced Linear Fit Through the Baseline (0% Drop at baseline_current) ---
-        # Use the shifted currents: x' = current - baseline_current, so that at baseline, x'=0.
+        # Define weights for the linear fit (avoid division by zero).
+        weights2 = np.array([1/(err**2) if err > 0 else 1 for err in norm_eff_errors])
+        
+        # --- Forced Linear Fit Through the Baseline (1 at baseline_current) ---
+        # Shift currents so that the baseline corresponds to x=0.
         shifted_currents = currents_arr - baseline_current
         
-        # Perform a weighted linear fit with the model: drop = m * (current - baseline_current)
-        numerator = np.sum(weights2 * shifted_currents * drop_arr)
+        # The model is: norm_eff = 1 + m * (current - baseline_current)
+        numerator = np.sum(weights2 * shifted_currents * (norm_eff_arr - 1))
         denominator = np.sum(weights2 * shifted_currents**2)
         m = numerator / denominator if denominator != 0 else 0
         sigma_m = np.sqrt(1 / denominator) if denominator != 0 else 0
         
         # Calculate chi-squared for the fit.
-        model = m * shifted_currents  # Since the model gives 0 drop at baseline.
-        chi2 = np.sum(weights2 * (drop_arr - model)**2)
+        model = 1 + m * shifted_currents
+        chi2 = np.sum(weights2 * (norm_eff_arr - model)**2)
         ndf = len(shifted_currents) - 1  # One free parameter (the slope).
         chi2_ndf = chi2 / ndf if ndf > 0 else 0
         
         # Prepare data for plotting the fit line over the beam current range.
         fit_currents = np.linspace(min(currents_arr), max(currents_arr), 100)
         fit_shifted = fit_currents - baseline_current
-        fit_drop = m * fit_shifted
+        fit_norm_eff = 1 + m * fit_shifted
         
         # --- Plotting ---
         plt.figure()
-        plt.errorbar(currents_arr, drop_arr, yerr=drop_errors, fmt='ko', label='Data')
-        plt.plot(fit_currents, fit_drop, 'r--', label=f"m = {m:.4f} ± {sigma_m:.4f}\n" + r"$\chi^{2}/ndf$ = " + f"{chi2_ndf:.2f}")
+        plt.errorbar(currents_arr, norm_eff_arr, yerr=norm_eff_errors, fmt='ko', label='Data')
+        plt.plot(fit_currents, fit_norm_eff, 'r--', 
+                 label=f"m = {m:.4f} ± {sigma_m:.4f}\n" + r"$\chi^{2}/ndf$ = " + f"{chi2_ndf:.2f}")
         plt.xlabel("Current (nA)")
-        plt.ylabel("Percentage Drop in Efficiency (%)")
+        plt.ylabel("Normalized Efficiency")
         plt.xlim(-5, 60)
-        plt.ylim(0.70, 1.05)
+        plt.ylim(0.70, 1.05)  # Set y-axis limits as requested.
         plt.legend(loc='upper right')
-        plt.title(f"Efficiency Drop for {title_map.get(run_prefix, run_prefix)}")
+        plt.title(f"Normalized Efficiency for {title_map.get(run_prefix, run_prefix)}")
         
         # Save the plot as a PDF in the output directory.
         output_path = os.path.join(output_dir, f"{run_prefix}_integrated.pdf")
