@@ -365,7 +365,7 @@ public static void main(String[] args) {
 	                    .append(gen_Depolarization_W).append(" ")
 	                    .append(gen_Emiss2).append(" ")
 	                    .append(gen_theta_gamma_gamma).append(" ")
-	                    .append(gen_pTmiss).append("\n")
+	                    .append(gen_pTmiss).append(" ")
 	                    // now reconstructed variables
 	                    .append(fiducial_status).append(" ")
 						.append(num_pos).append(" ")
@@ -423,8 +423,7 @@ public static void main(String[] args) {
 	                    .append(Depolarization_W).append(" ")
 	                    .append(Emiss2).append(" ")
 	                    .append(theta_gamma_gamma).append(" ")
-	                    .append(pTmiss).append(" ")
-	                    .append(reconstructed).append("\n");
+	                    .append(pTmiss).append(" ");
 
 	                // Append the line to the batchLines StringBuilder
 	                batchLines.append(line.toString());
