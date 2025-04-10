@@ -126,29 +126,155 @@ public static void main(String[] args) {
 
 		while (reader.hasEvent()) {
 
-			reconstructed = -999; // variable to declare whether the generated event has reconstructed particles
-			fiducial_status, num_pos, num_neg, num_neutrals, helicity, detector1, detector2 = -999;
-			e_p, e_theta, e_phi, p1_phi, p1_p, p1_theta, p2_phi, p2_p, p2_theta = -999; 
-			vz_e, vz_p1, vz_p2 = -999;
-			open_angle_ep, open_angle_ep1, open_angle_ep2, open_angle_p1p2 = -999;
-			Q2, W, y, Mx2, Mx2_1, Mx2_2 = -999; 
-			x, t, t1, t2, tmin, z, xF, pT, eta, eta_gN, xi = -999;
-			z1, z2, xF1, xF2, Mh, pT1, pT2, pTpT, eta1, eta2, Delta_eta, eta1_gN, eta2_gN = -999;
-			phi1, phi2, Delta_phi, phih, phiR, theta = -999;
-			Depolarization_A, Depolarization_B, Depolarization_C = -999;
-			Depolarization_V, Depolarization_W = -999;
-			Emiss2, theta_gamma_gamma, pTmiss = -999;
+			reconstructed = -999; // if you intend to use –999 as a flag (though normally this would be a boolean)
+			fiducial_status = -999;
+			num_pos = -999;
+			num_neg = -999;
+			num_neutrals = -999;
+			helicity = -999;
+			detector1 = -999;
+			detector2 = -999;
 
-			gen_e_p, gen_e_theta, gen_e_phi, gen_p1_phi, gen_p1_p, gen_p1_theta, gen_p2_phi, gen_p2_p, gen_p2_theta = -999; 
-			gen_vz_e, gen_vz_p1, gen_vz_p2 = -999;
-			gen_open_angle_ep, gen_open_angle_ep1, gen_open_angle_ep2, gen_open_angle_p1p2 = -999;
-			gen_Q2, gen_W, gen_y, gen_Mx2, gen_Mx2_1, gen_Mx2_2 = -999; 
-			gen_x, gen_t, gen_t1, gen_t2, gen_tmin, gen_z, gen_xF, gen_pT, gen_eta, gen_eta_gN, gen_xi = -999;
-			gen_z1, gen_z2, gen_xF1, gen_xF2, gen_Mh, gen_pT1, gen_pT2, gen_pTpT, gen_eta1, gen_eta2, gen_Delta_eta, gen_eta1_gN, gen_eta2_gN = -999;
-			gen_phi1, gen_phi2, gen_Delta_phi, gen_phih, gen_phiR, gen_theta = -999;
-			gen_Depolarization_A, gen_Depolarization_B, gen_Depolarization_C = -999;
-			gen_Depolarization_V, gen_Depolarization_W = -999;
-			gen_Emiss2, gen_theta_gamma_gamma, gen_pTmiss = -999;
+			e_p = -999;
+			e_theta = -999;
+			e_phi = -999;
+			p1_phi = -999;
+			p1_p = -999;
+			p1_theta = -999;
+			p2_phi = -999;
+			p2_p = -999;
+			p2_theta = -999;
+
+			vz_e = -999;
+			vz_p1 = -999;
+			vz_p2 = -999;
+
+			open_angle_ep = -999;
+			open_angle_ep1 = -999;
+			open_angle_ep2 = -999;
+			open_angle_p1p2 = -999;
+
+			Q2 = -999;
+			W = -999;
+			y = -999;
+			Mx2 = -999;
+			Mx2_1 = -999;
+			Mx2_2 = -999;
+
+			x = -999;
+			t = -999;
+			t1 = -999;
+			t2 = -999;
+			tmin = -999;
+			z = -999;
+			xF = -999;
+			pT = -999;
+			eta = -999;
+			eta_gN = -999;
+			xi = -999;
+
+			z1 = -999;
+			z2 = -999;
+			xF1 = -999;
+			xF2 = -999;
+			Mh = -999;
+			pT1 = -999;
+			pT2 = -999;
+			pTpT = -999;
+			eta1 = -999;
+			eta2 = -999;
+			Delta_eta = -999;
+			eta1_gN = -999;
+			eta2_gN = -999;
+
+			phi1 = -999;
+			phi2 = -999;
+			Delta_phi = -999;
+			phih = -999;
+			phiR = -999;
+			theta = -999;
+
+			Depolarization_A = -999;
+			Depolarization_B = -999;
+			Depolarization_C = -999;
+
+			Depolarization_V = -999;
+			Depolarization_W = -999;
+
+			Emiss2 = -999;
+			theta_gamma_gamma = -999;
+			pTmiss = -999;
+
+			// And similarly for the gen_ variables:
+			gen_e_p = -999;
+			gen_e_theta = -999;
+			gen_e_phi = -999;
+			gen_p1_phi = -999;
+			gen_p1_p = -999;
+			gen_p1_theta = -999;
+			gen_p2_phi = -999;
+			gen_p2_p = -999;
+			gen_p2_theta = -999;
+
+			gen_vz_e = -999;
+			gen_vz_p1 = -999;
+			gen_vz_p2 = -999;
+
+			gen_open_angle_ep = -999;
+			gen_open_angle_ep1 = -999;
+			gen_open_angle_ep2 = -999;
+			gen_open_angle_p1p2 = -999;
+
+			gen_Q2 = -999;
+			gen_W = -999;
+			gen_y = -999;
+			gen_Mx2 = -999;
+			gen_Mx2_1 = -999;
+			gen_Mx2_2 = -999;
+
+			gen_x = -999;
+			gen_t = -999;
+			gen_t1 = -999;
+			gen_t2 = -999;
+			gen_tmin = -999;
+			gen_z = -999;
+			gen_xF = -999;
+			gen_pT = -999;
+			gen_eta = -999;
+			gen_eta_gN = -999;
+			gen_xi = -999;
+
+			gen_z1 = -999;
+			gen_z2 = -999;
+			gen_xF1 = -999;
+			gen_xF2 = -999;
+			gen_Mh = -999;
+			gen_pT1 = -999;
+			gen_pT2 = -999;
+			gen_pTpT = -999;
+			gen_eta1 = -999;
+			gen_eta2 = -999;
+			gen_Delta_eta = -999;
+			gen_eta1_gN = -999;
+			gen_eta2_gN = -999;
+
+			gen_phi1 = -999;
+			gen_phi2 = -999;
+			gen_Delta_phi = -999;
+			gen_phih = -999;
+			gen_phiR = -999;
+			gen_theta = -999;
+
+			gen_Depolarization_A = -999;
+			gen_Depolarization_B = -999;
+			gen_Depolarization_C = -999;
+
+			gen_Depolarization_V = -999;
+			gen_Depolarization_W = -999;
+
+			gen_Emiss2 = -999;
+			gen_theta_gamma_gamma = -999;
+			gen_pTmiss = -999;
 		    ++num_events;
 		    if (num_events % 500000 == 0) { // not necessary, just updates output
 		        print("processed: " + num_events + " events. ");
