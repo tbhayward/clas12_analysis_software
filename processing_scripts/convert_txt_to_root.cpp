@@ -239,7 +239,7 @@ int main(int argc, char *argv[]) {
     double gen_Depolarization_A, gen_Depolarization_B, gen_Depolarization_C;
     double gen_Depolarization_V, gen_Depolarization_W;
     double gen_Emiss2, gen_theta_gamma_gamma, gen_pTmiss;
-    boolean reconstructed;
+    bool reconstructed;
 
     // Additional variables for calibration scripts
     int config_run, config_event, event_helicity;
