@@ -159,6 +159,7 @@ public static void main(String[] args) {
 					2212, 0, 22, 0, energy);
 	            // this is my class for defining all relevant kinematic variables
 	            if (variables.channel_test(variables)) {
+	            	println("HEY");
 	                // lab kinematics
 	                gen_e_p = variables.e_p(); // lab frame momentum
 	                gen_e_theta = variables.e_theta(); // lab polar angle
