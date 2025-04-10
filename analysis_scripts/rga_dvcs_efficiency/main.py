@@ -64,6 +64,3 @@ def main():
 if __name__ == "__main__":
     main()
 #enddef
-
-if __name__ == "__main__":
-    main()
