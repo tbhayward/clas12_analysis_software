@@ -77,7 +77,7 @@ public static void main(String[] args) {
 	// ~~~~~~~~~~~~~~~~ prepare physics analysis ~~~~~~~~~~~~~~~~ //
 
 	// declare physics event variables
-	boolean reconstructed; // variable to declare whether the generated event has reconstructed particles
+	int reconstructed; // variable to declare whether the generated event has reconstructed particles
 	int fiducial_status, num_pos, num_neg, num_neutrals, helicity, detector1, detector2;
 	double e_p, e_theta, e_phi, p1_phi, p1_p, p1_theta, p2_phi, p2_p, p2_theta; 
 	double vz_e, vz_p1, vz_p2;
@@ -143,7 +143,7 @@ public static void main(String[] args) {
 			    throw new IllegalArgumentException("error: runnum != 11; this script is intended for use on MC (runnum ==11).")
 			}
 			boolean process_event = filter.isValid(gen_Event)
-	    	reconstructed = filter.isValid(rec_Event);
+			reconstructed = filter.isValid(rec_Event) ? 1 : 0;
 
 	    	if (process_event) {
 
