@@ -155,7 +155,7 @@ public static void main(String[] args) {
 	    	// 	qa.OkForAsymmetry(runnum, evnum));
 	    	boolean process_event = filter.isValid(research_Event) && (runnum == 11 || runnum < 5020 ||
 	    	qa.pass(runnum, evnum));
-	    	// boolean process_event = filter.isValid(research_Event);
+	    	boolean process_event = filter.isValid(research_Event);
 
 		    if (process_event) {
 
