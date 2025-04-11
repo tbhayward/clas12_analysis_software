@@ -344,7 +344,7 @@ def plot_data_normalized_efficiencies(output_dir):
             50: 2.1047e6
         },
         "rga_sp19_inb": {
-            # 5: 30860.979,
+            5: 30860.979,
             10: 1.02766e6,
             50: 3.57217e6
         }
@@ -495,7 +495,7 @@ def plot_data_normalized_efficiencies(output_dir):
         plt.xlabel("Current (nA)")
         plt.ylabel("Normalized Efficiency")
         plt.xlim(-5, 60)
-        plt.ylim(0.0, 1.5)  # Set y-axis limits as requested.
+        # plt.ylim(0.0, 1.5)  # Set y-axis limits as requested.
         plt.legend(loc='upper right')
         plt.title(f"Normalized Efficiency for {title_map.get(run_prefix, run_prefix)}")
         
