@@ -2,7 +2,8 @@
 import os
 from load_binning_scheme import load_binning_scheme
 from efficiency_analysis import (plot_mc_normalized_efficiencies, 
-                                plot_data_normalized_efficiencies, 
+                                plot_data_normalized_efficiencies,
+                                plot_DAF_data_normalized_efficiencies, 
                                  calculate_binned_efficiencies_all, 
                                  plot_binned_efficiencies_all)
 
@@ -49,7 +50,8 @@ def main():
         os.makedirs(output_dir)
 
     # plot_mc_normalized_efficiencies(output_dir)
-    plot_data_normalized_efficiencies(output_dir)
+    # plot_data_normalized_efficiencies(output_dir)
+    plot_DAF_data_normalized_efficiencies(output_dir)
     
     # # --- Calculate binned efficiencies for all run periods ---
     # # This function loops over all run periods and calculates binned efficiencies,
