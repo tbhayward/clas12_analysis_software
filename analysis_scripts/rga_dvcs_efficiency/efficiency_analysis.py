@@ -330,7 +330,7 @@ def plot_data_normalized_efficiencies(output_dir):
     # Each inner dictionary maps the beam current (nA) to its corresponding charge.
     charge_map = {
         "rga_fa18_inb": {
-            5: 51797.38,
+            5: 93082,
             40: 88190.375,
             45: 2.47731e6,
             50: 1.59674e6,
@@ -344,9 +344,9 @@ def plot_data_normalized_efficiencies(output_dir):
             50: 2.1047e6
         },
         "rga_sp19_inb": {
-            5: 30860.979,
-            10: 126675.44,
-            50: 625251.9
+            # 5: 30860.979,
+            10: 1.02766e6,
+            50: 3.57217e6
         }
     }
     
