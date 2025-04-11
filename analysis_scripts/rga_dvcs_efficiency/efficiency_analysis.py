@@ -515,7 +515,7 @@ def plot_data_normalized_efficiencies(output_dir):
                  label=f"m = {m:.4f} ± {sigma_m:.4f}\n" + r"$\chi^{2}/ndf$ = " + f"{chi2_ndf:.2f}")
         plt.xlabel("Current (nA)")
         plt.ylabel("Normalized Efficiency")
-        plt.xlim(-5, 60)
+        plt.xlim(-5, 80)
         plt.ylim(0.0, 1.5)  # Adjust y-axis limits as needed.
         plt.legend(loc='upper right')
         # Use a friendly title if available; otherwise default to the run_prefix.
