@@ -340,7 +340,8 @@ def plot_data_normalized_efficiencies(output_dir):
             5: 40492.277,
             16: 7622.5957,
             20: 116623.69,
-            40: 286451.9
+            40: 1.75033e6,
+            50: 2.1047e6
         },
         "rga_sp19_inb": {
             5: 30860.979,
