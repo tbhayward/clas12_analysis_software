@@ -51,7 +51,7 @@ def main():
 
     # plot_mc_normalized_efficiencies(output_dir)
     plot_data_normalized_efficiencies(output_dir)
-    plot_DAF_data_normalized_efficiencies(output_dir)
+    # plot_DAF_data_normalized_efficiencies(output_dir)
     
     # # --- Calculate binned efficiencies for all run periods ---
     # # This function loops over all run periods and calculates binned efficiencies,
