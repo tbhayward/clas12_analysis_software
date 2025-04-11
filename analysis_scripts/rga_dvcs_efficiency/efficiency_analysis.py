@@ -299,49 +299,69 @@ def plot_data_normalized_efficiencies(output_dir):
     (integrated over kinematics) for each run period for data.
     
     For each run, the raw efficiency is defined as:
-        E_raw = counts / accumulated Faraday cup charge.
-        
+         E_raw = counts / accumulated Faraday cup charge.
+         
     The normalized efficiency is then given by:
-        norm_eff = (E_raw) / (E_baseline)
-    where E_baseline is the raw efficiency of the 5 nA (lowest current) run.
+         norm_eff = (E_raw) / (E_baseline)
+    where E_baseline is the raw efficiency of the lowest-current run available 
+    (assumed to be the baseline). Note that for some triggers (e.g. for FA18 out with
+    v22_1_no_FT.cnf) a 5 nA run may not be available—in that case the minimum available
+    current is used.
     
     A linear fit is performed on the normalized efficiency vs. beam current using a
-    forced fit through the baseline point (i.e. norm_eff = 1 at 5 nA).
+    free intercept and slope.
     
     Parameters:
       output_dir (str): Directory where the output plots (in PDF format) will be saved.
     """
+    import os
+    import glob
+    import numpy as np
+    import matplotlib.pyplot as plt
+
     # Base directory for the data efficiency .root files.
     base_dir = "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/data_efficiency_study"
     
-    # Mapping of run period identifiers to period codes and titles for plotting.
+    # Mapping of run period identifiers to period codes for loading cuts and for plotting.
+    # Note that these keys exactly match the start of the filename for each trigger
     run_periods = {
-        "rga_fa18_inb": "DVCS_Fa18_inb",
-        "rga_fa18_out": "DVCS_Fa18_out",
-        "rga_sp19_inb": "DVCS_Sp19_inb"
+        "rga_fa18_inb_v22_0.cnf": "DVCS_Fa18_inb",                  # FA18 inb with v22_0.cnf trigger
+        "rga_fa18_out_v22_0_no_dc_roads.cnf": "DVCS_Fa18_out",         # FA18 out with v22_0_no_dc_roads.cnf trigger
+        "rga_fa18_out_v22_1_no_dc_roads.cnf": "DVCS_Fa18_out",         # FA18 out with v22_1_no_dc_roads.cnf trigger
+        "rga_fa18_out_v22_1_no_FT.cnf": "DVCS_Fa18_out",               # FA18 out with v22_1_no_FT.cnf trigger
+        "rga_sp19_inb": "DVCS_Sp19_inb"                                # SP19 inb remains the same trigger
     }
+    
+    # Title map for more friendly plot titles.
     title_map = {
-        "rga_fa18_inb": "RGA Fa18 Inb",
-        "rga_fa18_out": "RGA Fa18 Out",
+        "rga_fa18_inb_v22_0.cnf": "RGA Fa18 Inb, v22_0.cnf",
+        "rga_fa18_out_v22_0_no_dc_roads.cnf": "RGA Fa18 Out, v22_0_no_dc_roads.cnf",
+        "rga_fa18_out_v22_1_no_dc_roads.cnf": "RGA Fa18 Out, v22_1_no_dc_roads.cnf",
+        "rga_fa18_out_v22_1_no_FT.cnf": "RGA Fa18 Out, v22_1_no_FT.cnf",
         "rga_sp19_inb": "RGA Sp19 Inb"
     }
     
     # Mapping of accumulated Faraday cup charge (in nC) for each run period and beam current.
-    # Each inner dictionary maps the beam current (nA) to its corresponding charge.
+    # Each inner dictionary maps a beam current (nA) to its corresponding charge.
     charge_map = {
-        "rga_fa18_inb": {
-            5: 159661.55,
-            # 40: 88190.375,
-            45: 2.47731e6,
-            # 50: 1.59674e6,
-            # 55: 2.17701e6
+        "rga_fa18_inb_v22_0.cnf": {
+            5: 93082,
+            45: 1.55491e6,
+            50: 2.32751e6,
+            55: 2.00433e6
         },
-        "rga_fa18_out": {
-            5: 166672.03,
-            # 16: 7622.5957,
-            20: 177239.66,
-            40: 3.6206e6,
-            # 50: 2.1047e6
+        "rga_fa18_out_v22_0_no_dc_roads.cnf": {
+            5: 56198.4,
+            20: 116623.69,
+            40: 2.23767e6
+        },
+        "rga_fa18_out_v22_1_no_dc_roads.cnf": {
+            5: 79710.5,
+            50: 1.82106e6
+        },
+        "rga_fa18_out_v22_1_no_FT.cnf": {
+            50: 14739.981,
+            70: 83940.98
         },
         "rga_sp19_inb": {
             5: 30860.979,
@@ -350,30 +370,31 @@ def plot_data_normalized_efficiencies(output_dir):
         }
     }
     
-    # Analysis parameters.
+    # Analysis parameters (common for all runs).
     selected_topology = "(FD,FD)"
     analysis_type = "dvcs"
     
-    # Loop over each run period (e.g., Fall 2018 Inb, Fall 2018 Out, Spring 2019 Inb).
+    # Loop over each run period (trigger configuration).
     for run_prefix, period_code in run_periods.items():
-        # Define the file pattern to collect all .root files for the current run period.
+        # Build the file pattern to collect all .root files for the current run period.
+        # This will match files such as 'rga_fa18_inb_v22_0.cnf_dvcs_45nA.root' etc.
         pattern = os.path.join(base_dir, f"{run_prefix}_dvcs_*.root")
         file_list = glob.glob(pattern)
         
-        # Dictionary to store files keyed by the extracted beam current (in nA).
+        # Dictionary to store files keyed by the extracted beam current (in nA)
         data_dict = {}
         
         # Function to extract the beam current from the filename.
-        # Expects filenames like "rga_fa18_inb_dvcs_40nA.root".
+        # Expects filenames like "rga_fa18_inb_v22_0.cnf_dvcs_40nA.root"
         def extract_current(filename):
             """
             Extracts the beam current (in nA) from the given filename.
             """
             base = os.path.basename(filename)
             parts = base.split("_")
+            # The beam current information is assumed to be in the last part, e.g. "45nA.root"
             last_part = parts[-1].replace(".root", "")
             try:
-                # Remove the trailing "nA" and convert to integer.
                 return int(last_part.replace("nA", ""))
             except:
                 return None
@@ -398,7 +419,7 @@ def plot_data_normalized_efficiencies(output_dir):
         #endif
         
         # Determine the baseline run using the lowest available beam current.
-        # Here we assume the baseline is at 5 nA.
+        # (For most FA18 runs this is expected to be 5 nA. For triggers missing a 5 nA run, the lowest available is used.)
         baseline_current = min(data_dict.keys())
         if baseline_current not in charge_map.get(run_prefix, {}):
             print(f"Baseline current {baseline_current} nA not found in charge mapping for run period {run_prefix}. Skipping.")
@@ -422,14 +443,15 @@ def plot_data_normalized_efficiencies(output_dir):
             continue
         #endif
         
-        # Lists to hold beam currents, normalized efficiencies, and their errors for plotting and fitting.
+        # Initialize lists to hold beam currents, normalized efficiencies, and their errors.
         currents = []
         norm_efficiencies = []
         norm_eff_errors = []
         
-        # Loop over each beam current (sorted from lowest to highest) in the current run period.
+        # Loop over each beam current (sorted in ascending order) in the current run period.
         for current in sorted(data_dict.keys()):
             filename = data_dict[current]
+            # Get the counts using the given cuts and analysis type.
             counts = get_tree_entries_with_cuts(filename, cuts, selected_topology, analysis_type, period_code)
             charge = charge_map[run_prefix].get(current, None)
             if charge is None or charge == 0:
@@ -438,7 +460,7 @@ def plot_data_normalized_efficiencies(output_dir):
             #endif
             # Calculate the raw efficiency as counts per unit charge.
             raw_efficiency = counts / charge
-            # Compute the normalized efficiency relative to the baseline.
+            # Compute the normalized efficiency relative to the baseline efficiency.
             normalized_efficiency = raw_efficiency / baseline_efficiency
             # Propagate the Poisson uncertainty (sqrt(counts)) on counts.
             error = (np.sqrt(counts) / charge) / baseline_efficiency if counts > 0 else 0
@@ -448,16 +470,15 @@ def plot_data_normalized_efficiencies(output_dir):
             norm_eff_errors.append(error)
         #endfor
         
-        # Convert lists to numpy arrays.
+        # Convert the lists to numpy arrays for ease of calculation.
         currents_arr = np.array(currents)
         norm_eff_arr = np.array(norm_efficiencies)
         
-        # Define weights for the linear fit (avoid division by zero).
+        # Define weights for the linear fit based on uncertainties (avoid division by zero).
         weights2 = np.array([1/(err**2) if err > 0 else 1 for err in norm_eff_errors])
         
-                # --- Linear Fit (free intercept and slope) ---
+        # --- Linear Fit (free intercept and slope) ---
         # Fit the model: norm_eff = b + m * current
-        # Define weights for the fit using norm_eff_errors:
         w = weights2
         x = currents_arr
         y = norm_eff_arr
@@ -480,10 +501,10 @@ def plot_data_normalized_efficiencies(output_dir):
         # Calculate chi-squared for the fit.
         model = b + m * x
         chi2 = np.sum(w * (y - model)**2)
-        ndf = len(x) - 2  # two free parameters: slope and intercept
+        ndf = len(x) - 2  # two free parameters: intercept and slope
         chi2_ndf = chi2 / ndf if ndf > 0 else 0
         
-        # Prepare data for plotting the fit line over the beam current range.
+        # Prepare data to plot the fit line across the range of beam currents.
         fit_currents = np.linspace(min(x), max(x), 100)
         fit_norm_eff = b + m * fit_currents
         
@@ -495,11 +516,12 @@ def plot_data_normalized_efficiencies(output_dir):
         plt.xlabel("Current (nA)")
         plt.ylabel("Normalized Efficiency")
         plt.xlim(-5, 60)
-        plt.ylim(0.0, 1.5)  # Set y-axis limits as requested.
+        plt.ylim(0.0, 1.5)  # Adjust y-axis limits as needed.
         plt.legend(loc='upper right')
+        # Use a friendly title if available; otherwise default to the run_prefix.
         plt.title(f"Normalized Efficiency for {title_map.get(run_prefix, run_prefix)}")
         
-        # Save the plot as a PDF in the output directory.
+        # Save the plot as a PDF in the given output directory.
         output_path = os.path.join(output_dir, f"{run_prefix}_integrated.pdf")
         plt.savefig(output_path, format='pdf')
         plt.close()
