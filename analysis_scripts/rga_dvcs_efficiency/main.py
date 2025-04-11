@@ -50,7 +50,7 @@ def main():
         os.makedirs(output_dir)
 
     # plot_mc_normalized_efficiencies(output_dir)
-    # plot_data_normalized_efficiencies(output_dir)
+    plot_data_normalized_efficiencies(output_dir)
     plot_DAF_data_normalized_efficiencies(output_dir)
     
     # # --- Calculate binned efficiencies for all run periods ---
