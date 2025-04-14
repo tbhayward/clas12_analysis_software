@@ -3778,14 +3778,14 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
     std::vector<std::tuple<int, std::string>> particle_types = {
         {11, "e^{-}"}
         ,
-        // {-211, "#pi^{-}"}
-        // ,
-        // {211, "#pi^{+}"}
-        // ,
-        // {-321, "k^{-}"}
-        // ,
-        // {321, "k^{+}"}
-        // ,
+        {-211, "#pi^{-}"}
+        ,
+        {211, "#pi^{+}"}
+        ,
+        {-321, "k^{-}"}
+        ,
+        {321, "k^{+}"}
+        ,
         {2212, "p"}
     };
 
@@ -4119,115 +4119,115 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
 
             c_edge->SaveAs(("output/calibration/dc/determination/mean_chi2_per_ndf_vs_traj_edge_" + dataset + "_" + particle_name + "_" + region_name + ".png").c_str());
 
-            // // Cleanup for mean chi2/ndf vs traj_edge histograms
-            // delete c_edge;
-            // for (auto& hist : h_sum_chi2_ndf_sector) delete hist;
-            // for (auto& hist : h_count_chi2_ndf_sector) delete hist;
+            // Cleanup for mean chi2/ndf vs traj_edge histograms
+            delete c_edge;
+            for (auto& hist : h_sum_chi2_ndf_sector) delete hist;
+            for (auto& hist : h_count_chi2_ndf_sector) delete hist;
 
-            // if (mcReader) {
-            //     for (auto& hist : h_sum_chi2_ndf_mc_sector) delete hist;
-            //     for (auto& hist : h_count_chi2_ndf_mc_sector) delete hist;
-            // }
+            if (mcReader) {
+                for (auto& hist : h_sum_chi2_ndf_mc_sector) delete hist;
+                for (auto& hist : h_count_chi2_ndf_mc_sector) delete hist;
+            }
 
-            // if (mc_traj_edge) delete mc_traj_edge;
+            if (mc_traj_edge) delete mc_traj_edge;
 
-            // // Count the number of non-kaon particles
-            // int num_valid_particles = 0;
-            // int num_particles = particle_types.size();
-            // for (int particle_idx = 0; particle_idx < num_particles; ++particle_idx) {
-            //     int pid = std::get<0>(particle_types[particle_idx]);
-            //     if (pid != 321 && pid != -321) {
-            //         ++num_valid_particles;
-            //     }
-            // }
+            // Count the number of non-kaon particles
+            int num_valid_particles = 0;
+            int num_particles = particle_types.size();
+            for (int particle_idx = 0; particle_idx < num_particles; ++particle_idx) {
+                int pid = std::get<0>(particle_types[particle_idx]);
+                if (pid != 321 && pid != -321) {
+                    ++num_valid_particles;
+                }
+            }
 
-            // // Create canvas with correct dimensions based on non-kaon particles
-            // TCanvas* c_theta = new TCanvas("c_theta", "Mean chi2/ndf vs Theta", 1800 * num_valid_particles, 1200);
-            // c_theta->Divide(num_valid_particles, 2);
+            // Create canvas with correct dimensions based on non-kaon particles
+            TCanvas* c_theta = new TCanvas("c_theta", "Mean chi2/ndf vs Theta", 1800 * num_valid_particles, 1200);
+            c_theta->Divide(num_valid_particles, 2);
 
-            // std::vector<TH2D*> h2_chi2_vs_theta_data(num_valid_particles);
-            // std::vector<TH2D*> h2_chi2_vs_theta_mc(num_valid_particles);
+            std::vector<TH2D*> h2_chi2_vs_theta_data(num_valid_particles);
+            std::vector<TH2D*> h2_chi2_vs_theta_mc(num_valid_particles);
 
-            // int valid_particle_idx = 0;
-            // for (int particle_idx = 0; particle_idx < num_particles; ++particle_idx) {
-            //     int pid = std::get<0>(particle_types[particle_idx]);
+            int valid_particle_idx = 0;
+            for (int particle_idx = 0; particle_idx < num_particles; ++particle_idx) {
+                int pid = std::get<0>(particle_types[particle_idx]);
 
-            //     // Skip kaons
-            //     if (pid == 321 || pid == -321) {
-            //         continue;
-            //     }
+                // Skip kaons
+                if (pid == 321 || pid == -321) {
+                    continue;
+                }
 
-            //     std::string particle_name = std::get<1>(particle_types[particle_idx]);
+                std::string particle_name = std::get<1>(particle_types[particle_idx]);
 
-            //     h2_chi2_vs_theta_data[valid_particle_idx] = new TH2D(
-            //         ("h2_chi2_vs_theta_data_" + particle_name).c_str(),
-            //         (particle_name + " (Data)").c_str(),
-            //         nBins, 0, 50, nBins, 0, 100
-            //     );
+                h2_chi2_vs_theta_data[valid_particle_idx] = new TH2D(
+                    ("h2_chi2_vs_theta_data_" + particle_name).c_str(),
+                    (particle_name + " (Data)").c_str(),
+                    nBins, 0, 50, nBins, 0, 100
+                );
 
-            //     if (mcReader) {
-            //         h2_chi2_vs_theta_mc[valid_particle_idx] = new TH2D(
-            //             ("h2_chi2_vs_theta_mc_" + particle_name).c_str(),
-            //             (particle_name + " (MC)").c_str(),
-            //             nBins, 0, 50, nBins, 0, 100
-            //         );
-            //     }
+                if (mcReader) {
+                    h2_chi2_vs_theta_mc[valid_particle_idx] = new TH2D(
+                        ("h2_chi2_vs_theta_mc_" + particle_name).c_str(),
+                        (particle_name + " (MC)").c_str(),
+                        nBins, 0, 50, nBins, 0, 100
+                    );
+                }
 
-            //     // Fill the histograms with fiducial cuts applied for data
-            //     dataReader.Restart();
-            //     while (dataReader.Next()) {
-            //         if (*particle_pid == pid && *track_ndf_6 > 0 && 
-            //             dc_fiducial(*traj_edge_6, *traj_edge_18, *traj_edge_36, pid)) {
-            //             double chi2_ndf = *track_chi2_6 / *track_ndf_6;
-            //             h2_chi2_vs_theta_data[valid_particle_idx]->Fill(*track_theta, chi2_ndf);
-            //         }
-            //     }
+                // Fill the histograms with fiducial cuts applied for data
+                dataReader.Restart();
+                while (dataReader.Next()) {
+                    if (*particle_pid == pid && *track_ndf_6 > 0 && 
+                        dc_fiducial(*traj_edge_6, *traj_edge_18, *traj_edge_36, pid)) {
+                        double chi2_ndf = *track_chi2_6 / *track_ndf_6;
+                        h2_chi2_vs_theta_data[valid_particle_idx]->Fill(*track_theta, chi2_ndf);
+                    }
+                }
 
-            //     // Fill the histograms with fiducial cuts applied for MC
-            //     if (mcReader) {
-            //         mcReader->Restart();
-            //         while (mcReader->Next()) {
-            //             if (**mc_particle_pid == pid && **mc_track_ndf_6 > 0 && 
-            //                 dc_fiducial(**mc_traj_edge_6, **mc_traj_edge_18, **mc_traj_edge_36, pid)) {
-            //                 double mc_chi2_ndf = **mc_track_chi2_6 / **mc_track_ndf_6;
-            //                 h2_chi2_vs_theta_mc[valid_particle_idx]->Fill(**mc_track_theta, mc_chi2_ndf);
-            //             }
-            //         }
-            //     }
+                // Fill the histograms with fiducial cuts applied for MC
+                if (mcReader) {
+                    mcReader->Restart();
+                    while (mcReader->Next()) {
+                        if (**mc_particle_pid == pid && **mc_track_ndf_6 > 0 && 
+                            dc_fiducial(**mc_traj_edge_6, **mc_traj_edge_18, **mc_traj_edge_36, pid)) {
+                            double mc_chi2_ndf = **mc_track_chi2_6 / **mc_track_ndf_6;
+                            h2_chi2_vs_theta_mc[valid_particle_idx]->Fill(**mc_track_theta, mc_chi2_ndf);
+                        }
+                    }
+                }
 
-            //     // Draw and save the 2D histograms of chi2/ndf vs theta
-            //     c_theta->cd(valid_particle_idx + 1);
-            //     gPad->SetMargin(0.15, 0.15, 0.1, 0.1);
-            //     gPad->SetRightMargin(0.2);  // Adjust the right margin
-            //     gPad->SetLogz();  // Set log scale for the z-axis
-            //     h2_chi2_vs_theta_data[valid_particle_idx]->SetStats(false);
-            //     h2_chi2_vs_theta_data[valid_particle_idx]->GetXaxis()->SetTitle("#theta (degrees)");
-            //     h2_chi2_vs_theta_data[valid_particle_idx]->GetYaxis()->SetTitle("<chi2/ndf>");
-            //     h2_chi2_vs_theta_data[valid_particle_idx]->Draw("COLZ");
+                // Draw and save the 2D histograms of chi2/ndf vs theta
+                c_theta->cd(valid_particle_idx + 1);
+                gPad->SetMargin(0.15, 0.15, 0.1, 0.1);
+                gPad->SetRightMargin(0.2);  // Adjust the right margin
+                gPad->SetLogz();  // Set log scale for the z-axis
+                h2_chi2_vs_theta_data[valid_particle_idx]->SetStats(false);
+                h2_chi2_vs_theta_data[valid_particle_idx]->GetXaxis()->SetTitle("#theta (degrees)");
+                h2_chi2_vs_theta_data[valid_particle_idx]->GetYaxis()->SetTitle("<chi2/ndf>");
+                h2_chi2_vs_theta_data[valid_particle_idx]->Draw("COLZ");
 
-            //     if (mcReader) {
-            //         c_theta->cd(valid_particle_idx + 1 + num_valid_particles); // Second row for MC
-            //         gPad->SetMargin(0.15, 0.15, 0.1, 0.1);
-            //         gPad->SetRightMargin(0.2);  // Adjust the right margin
-            //         gPad->SetLogz();  // Set log scale for the z-axis
-            //         h2_chi2_vs_theta_mc[valid_particle_idx]->SetStats(false);
-            //         h2_chi2_vs_theta_mc[valid_particle_idx]->GetXaxis()->SetTitle("#theta (degrees)");
-            //         h2_chi2_vs_theta_mc[valid_particle_idx]->GetYaxis()->SetTitle("<chi2/ndf>");
-            //         h2_chi2_vs_theta_mc[valid_particle_idx]->Draw("COLZ");
-            //     }
+                if (mcReader) {
+                    c_theta->cd(valid_particle_idx + 1 + num_valid_particles); // Second row for MC
+                    gPad->SetMargin(0.15, 0.15, 0.1, 0.1);
+                    gPad->SetRightMargin(0.2);  // Adjust the right margin
+                    gPad->SetLogz();  // Set log scale for the z-axis
+                    h2_chi2_vs_theta_mc[valid_particle_idx]->SetStats(false);
+                    h2_chi2_vs_theta_mc[valid_particle_idx]->GetXaxis()->SetTitle("#theta (degrees)");
+                    h2_chi2_vs_theta_mc[valid_particle_idx]->GetYaxis()->SetTitle("<chi2/ndf>");
+                    h2_chi2_vs_theta_mc[valid_particle_idx]->Draw("COLZ");
+                }
 
-            //     ++valid_particle_idx;
-            // }
+                ++valid_particle_idx;
+            }
 
-            // // Save as PDF instead of PNG
-            // c_theta->SaveAs("output/calibration/dc/determination/mean_chi2_per_ndf_vs_theta_all_particles.png");
+            // Save as PDF instead of PNG
+            c_theta->SaveAs("output/calibration/dc/determination/mean_chi2_per_ndf_vs_theta_all_particles.png");
 
-            // // Cleanup
-            // for (int particle_idx = 0; particle_idx < num_valid_particles; ++particle_idx) {
-            //     delete h2_chi2_vs_theta_data[particle_idx];
-            //     if (mcReader) delete h2_chi2_vs_theta_mc[particle_idx];
-            // }
-            // delete c_theta;
+            // Cleanup
+            for (int particle_idx = 0; particle_idx < num_valid_particles; ++particle_idx) {
+                delete h2_chi2_vs_theta_data[particle_idx];
+                if (mcReader) delete h2_chi2_vs_theta_mc[particle_idx];
+            }
+            delete c_theta;
         }
 
         dataReader.Restart();
@@ -8936,7 +8936,7 @@ int main(int argc, char** argv) {
 
     //// PLOTS ////
 
-    std::string dataset = "rga_fa18_inb";
+    // std::string dataset = "rga_fa18_inb";
     // std::string dataset = "rga_fa18_out";
     // std::string dataset = "rga_sp19_inb";
 
@@ -8962,27 +8962,27 @@ int main(int argc, char** argv) {
     // if (mcReader) mcReader->Restart();
     // plot_ft_hit_position(dataReader, mcReader, dataset);
 
-    dataReader.Restart();
-    if (mcReader) mcReader->Restart();
-    plot_pcal_fiducial_determination(dataReader, mcReader, dataset);
-    dataReader.Restart();
-    if (mcReader) mcReader->Restart();
-    plot_ecin_fiducial_determination(dataReader, mcReader, dataset);
-    dataReader.Restart();
-    if (mcReader) mcReader->Restart();
-    plot_ecout_fiducial_determination(dataReader, mcReader, dataset);
-
-    dataReader.Restart();
-    if (mcReader) mcReader->Restart();
-    plot_cal_hit_position(dataReader, mcReader, dataset);
+    // dataReader.Restart();
+    // if (mcReader) mcReader->Restart();
+    // plot_pcal_fiducial_determination(dataReader, mcReader, dataset);
+    // dataReader.Restart();
+    // if (mcReader) mcReader->Restart();
+    // plot_ecin_fiducial_determination(dataReader, mcReader, dataset);
+    // dataReader.Restart();
+    // if (mcReader) mcReader->Restart();
+    // plot_ecout_fiducial_determination(dataReader, mcReader, dataset);
 
     // dataReader.Restart();
     // if (mcReader) mcReader->Restart();
-    // dc_fiducial_determination(dataReader, mcReader, dataset);
+    // plot_cal_hit_position(dataReader, mcReader, dataset);
 
-    // dataReader.Restart();
-    // if (mcReader) mcReader->Restart();
-    // plot_dc_hit_position(dataReader, mcReader, dataset);
+    dataReader.Restart();
+    if (mcReader) mcReader->Restart();
+    dc_fiducial_determination(dataReader, mcReader, dataset);
+
+    dataReader.Restart();
+    if (mcReader) mcReader->Restart();
+    plot_dc_hit_position(dataReader, mcReader, dataset);
 
     // dataReader.Restart();
     // if (mcReader) mcReader->Restart();
