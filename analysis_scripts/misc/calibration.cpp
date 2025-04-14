@@ -8936,7 +8936,7 @@ int main(int argc, char** argv) {
 
     //// PLOTS ////
 
-    // std::string dataset = "rga_fa18_inb";
+    std::string dataset = "rga_fa18_inb";
     // std::string dataset = "rga_fa18_out";
     // std::string dataset = "rga_sp19_inb";
 
@@ -8980,9 +8980,9 @@ int main(int argc, char** argv) {
     if (mcReader) mcReader->Restart();
     dc_fiducial_determination(dataReader, mcReader, dataset);
 
-    dataReader.Restart();
-    if (mcReader) mcReader->Restart();
-    plot_dc_hit_position(dataReader, mcReader, dataset);
+    // dataReader.Restart();
+    // if (mcReader) mcReader->Restart();
+    // plot_dc_hit_position(dataReader, mcReader, dataset);
 
     // dataReader.Restart();
     // if (mcReader) mcReader->Restart();
