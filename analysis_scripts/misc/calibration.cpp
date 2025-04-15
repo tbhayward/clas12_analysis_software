@@ -3764,6 +3764,8 @@ std::pair<double, double> rotate_coordinates(double x, double y, int sector) {
 
 void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = nullptr,
     const std::string& dataset = "rga_fa18_inb") {
+    double p_min = 2.75;
+    double p_max = 3.25;
     int nBins = 20;
     std::vector<std::tuple<std::string, std::string, std::string, double, double, double, double, std::string, double>> regions = {
         {"traj_x_6", "traj_y_6", "region_{1}", 15, 160, -80, 80, "traj_edge_6", 25},
@@ -3778,13 +3780,13 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
     std::vector<std::tuple<int, std::string>> particle_types = {
         {11, "e^{-}"}
         ,
-        {-211, "#pi^{-}"}
-        ,
-        {211, "#pi^{+}"}
-        ,
-        {-321, "k^{-}"}
-        ,
-        {321, "k^{+}"}
+        // {-211, "#pi^{-}"}
+        // ,
+        // {211, "#pi^{+}"}
+        // ,
+        // {-321, "k^{-}"}
+        // ,
+        // {321, "k^{+}"}
         ,
         {2212, "p"}
     };
@@ -3834,6 +3836,7 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
             TTreeReaderValue<double> traj_edge_18(dataReader, "traj_edge_18");
             TTreeReaderValue<double> traj_edge_36(dataReader, "traj_edge_36");
             TTreeReaderValue<double> track_theta(dataReader, "theta");
+            TTreeReaderValue<double> track_p(dataReader, "p");
 
             TTreeReaderValue<double>* mc_traj_x = nullptr;
             TTreeReaderValue<double>* mc_traj_y = nullptr;
@@ -3846,6 +3849,7 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
             TTreeReaderValue<double>* mc_traj_edge_18 = nullptr;
             TTreeReaderValue<double>* mc_traj_edge_36 = nullptr;
             TTreeReaderValue<double>* mc_track_theta = nullptr;
+            TTreeReaderValue<double>* mc_track_p = nullptr;
 
             if (mcReader) {
                 mc_traj_x = new TTreeReaderValue<double>(*mcReader, x_branch.c_str());
@@ -3996,7 +4000,7 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
             while (dataReader.Next()) {
                 if (*particle_pid == pid && *traj_edge != -9999 && *track_ndf_6 > 0) {
                     if (dc_fiducial(*traj_edge_6, *traj_edge_18, *traj_edge_36, pid)) {
-                        // std::cout << edge_6 << std::endl;
+                        if (*track_p < p_min || *track_p > p_max) continue;
                         double chi2_ndf = *track_chi2_6 / *track_ndf_6;
                         int sector_index = *track_sector_6 - 1;
                         h_sum_chi2_ndf_sector[sector_index]->Fill(*traj_edge, chi2_ndf);
@@ -4019,7 +4023,8 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
                 while (mcReader->Next()) {
                     if (**mc_particle_pid == pid && **mc_traj_edge != -9999 && **mc_track_ndf_6 > 0) {
                         if (dc_fiducial(**mc_traj_edge_6, **mc_traj_edge_18, **mc_traj_edge_36, pid)) {
-                        double mc_chi2_ndf = **mc_track_chi2_6 / **mc_track_ndf_6;
+                            if (*track_p < p_min || *track_p > p_max) continue;
+                            double mc_chi2_ndf = **mc_track_chi2_6 / **mc_track_ndf_6;  
                             int sector_index = **mc_track_sector_6 - 1;
                             h_sum_chi2_ndf_mc_sector[sector_index]->Fill(**mc_traj_edge, mc_chi2_ndf);
                             h_count_chi2_ndf_mc_sector[sector_index]->Fill(**mc_traj_edge);
@@ -8936,9 +8941,9 @@ int main(int argc, char** argv) {
 
     //// PLOTS ////
 
-    // std::string dataset = "rga_fa18_inb";
+    std::string dataset = "rga_fa18_inb";
     // std::string dataset = "rga_fa18_out";
-    std::string dataset = "rga_sp19_inb";
+    // std::string dataset = "rga_sp19_inb";
 
     // plot_htcc_nphe(dataReader, mcReader, dataset);
     // plot_ltcc_nphe(dataReader, mcReader, dataset);
