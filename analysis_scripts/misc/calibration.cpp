@@ -3768,9 +3768,9 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
     double p_max = 20;
     int nBins = 50;
     std::vector<std::tuple<std::string, std::string, std::string, double, double, double, double, std::string, double>> regions = {
-        {"traj_x_6", "traj_y_6", "region_{1}", 15, 160, -80, 80, "traj_edge_6", 200},
-        {"traj_x_18", "traj_y_18", "region_{2}", 30, 240, -125, 125, "traj_edge_18", 200},
-        {"traj_x_36", "traj_y_36", "region_{3}", 30, 400, -200, 200, "traj_edge_36", 200}
+        {"traj_x_6", "traj_y_6", "region_{1}", 15, 160, -80, 80, "traj_edge_6", 55},
+        {"traj_x_18", "traj_y_18", "region_{2}", 30, 240, -125, 125, "traj_edge_18", 80},
+        {"traj_x_36", "traj_y_36", "region_{3}", 30, 400, -200, 200, "traj_edge_36", 130}
         // {"traj_x_6", "traj_y_6", "region_{1}", 15, 160, -80, 80, "traj_edge_6", 75},
         // {"traj_x_18", "traj_y_18", "region_{2}", 30, 240, -125, 125, "traj_edge_18", 75},
         // {"traj_x_36", "traj_y_36", "region_{3}", 30, 400, -200, 200, "traj_edge_36", 75}
