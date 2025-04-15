@@ -396,12 +396,12 @@ bool pcal_fiducial(double lv_1, double lw_1, double lu_1,
             }
             break;
         case 2:
-            if (lw_1 < 14 || lv_1 < 14 || lu_1 < 29) {
+            if (lw_1 < 13.5 || lv_1 < 13.5 || lu_1 < 13.5) {
                 return false;
             }
             break;
         case 3:
-            if ((lw_1 < 19 || lv_1 < 19) || (lu_1 < 39 || lu_1 > 400)) {
+            if ((lw_1 < 18 || lv_1 < 18) || lu_1 < 18) {
                 return false;
             }
             break;
@@ -409,28 +409,40 @@ bool pcal_fiducial(double lv_1, double lw_1, double lu_1,
             return false;
     }
 
-    // Specific cuts for each sector in PCal
-    // RGA only (not RGC)
     if (sector == 1) {
-        if ((lw_1 > 85 && lw_1 < 90) || (lw_1 > 223 && lw_1 < 228)) {
+        if ((lw_1 > 72.0 && lw_1 < 94.5) || (lw_1 > 220.5 && lw_1 < 234.0) || (lv_4 > 67.5 && lv_4 < 94.5)
+            || (lv_7 > 0 && lv_7 < 40.5)) {
             return false;
         }
     } else if (sector == 2) {
-        if ((lv_1 > 103 && lv_1 < 113) || (lu_1 > 108 && lu_1 < 126)) {
+        if ((lv_1 > 99.0 && lv_1 < 117) || (lu_1 > 108 && lu_1 < 126)) {
+            return false;
+        }
+    } else if (sector == 3) {
+        if ((lw_1 > 351.0 && lw_1 < 378.0) || (lv_1 > 346.5 && lv_1 < 360.0)) {
+            return false;
+        }
+    } else if (sector == 4) {
+        if ((lv_1 > 0 && lv_1 < 13.5) || (lv_1 > 229.5 && lv_1 < 243.0)) {
+            return false;
+        }
+    } else if (sector == 5) {
+        if ((lv_4 > 0 && lv_4 < 23.5) || (lu_7 > 193.5 && lu_7 < 216.0)) {
             return false;
         }
     } else if (sector == 6) {
-        if ((lw_1 > 169 && lw_1 < 198)) {
+        if ((lw_1 > 166.5 && lv_4 < 193.5)) {
             return false;
         }
     }
 
-    // RGA and RGC
-    if (sector == 1) {
-        if (lv_7 > 40 && lv_7 < 45) {
-            return false;
-        }
-    }
+    // // RGA Sp19 Only
+    // if (sector == 2) {
+    //     if (lv > 31.5 && lv < 49.5) {
+    //         return false;
+    //     }
+    // }
+
 
     // If none of the cuts apply, the track is good
     return true;
@@ -8941,8 +8953,8 @@ int main(int argc, char** argv) {
 
     //// PLOTS ////
 
-    // std::string dataset = "rga_fa18_inb";
-    std::string dataset = "rga_fa18_out";
+    std::string dataset = "rga_fa18_inb";
+    // std::string dataset = "rga_fa18_out";
     // std::string dataset = "rga_sp19_inb";
 
     // plot_htcc_nphe(dataReader, mcReader, dataset);
