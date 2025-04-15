@@ -3787,7 +3787,7 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
         // {-321, "k^{-}"}
         // ,
         // {321, "k^{+}"}
-        ,
+        // ,
         {2212, "p"}
     };
 
