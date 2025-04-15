@@ -438,7 +438,7 @@ bool pcal_fiducial(double lv_1, double lw_1, double lu_1,
 
     // RGA Sp19 Only
     if (sector == 2) {
-        if (lv > 31.5 && lv < 49.5) {
+        if (lv_1 > 31.5 && lv_1 < 49.5) {
             return false;
         }
     }
