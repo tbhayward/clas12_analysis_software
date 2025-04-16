@@ -3780,7 +3780,7 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
     // double p_max = 3.00;
     double p_min = 0;
     double p_max = 20;
-    int nBins = 50;
+    int nBins = 20;
     std::vector<std::tuple<std::string, std::string, std::string, double, double, double, double, std::string, double>> regions = {
         {"traj_x_6", "traj_y_6", "region_{1}", 15, 160, -80, 80, "traj_edge_6", 25},
         {"traj_x_18", "traj_y_18", "region_{2}", 30, 240, -125, 125, "traj_edge_18", 25},
@@ -8956,9 +8956,9 @@ int main(int argc, char** argv) {
 
     //// PLOTS ////
 
-    // std::string dataset = "rga_fa18_inb";
+    std::string dataset = "rga_fa18_inb";
     // std::string dataset = "rga_fa18_out";
-    std::string dataset = "rga_sp19_inb";
+    // std::string dataset = "rga_sp19_inb";
 
     // plot_htcc_nphe(dataReader, mcReader, dataset);
     // plot_ltcc_nphe(dataReader, mcReader, dataset);
