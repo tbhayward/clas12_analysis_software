@@ -3472,7 +3472,7 @@ void plot_cal_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = null
     }
 
     // Save the canvas
-    c->SaveAs(("output/calibration/cal/" + dataset + "_" + particle_name + "_" + layer_name + "_cal_hit_position.png").c_str());
+    c->SaveAs(("output/calibration/cal/" + dataset + "_" + particle_name + "_" + layer_name + "_cal_hit_position.pdf").c_str());
 
     // Clean up for this layer and particle type
     delete h_data_0;
@@ -8989,13 +8989,13 @@ int main(int argc, char** argv) {
     // if (mcReader) mcReader->Restart();
     // plot_ecout_fiducial_determination(dataReader, mcReader, dataset);
 
-    // dataReader.Restart();
-    // if (mcReader) mcReader->Restart();
-    // plot_cal_hit_position(dataReader, mcReader, dataset);
-
     dataReader.Restart();
     if (mcReader) mcReader->Restart();
-    dc_fiducial_determination(dataReader, mcReader, dataset);
+    plot_cal_hit_position(dataReader, mcReader, dataset);
+
+    // dataReader.Restart();
+    // if (mcReader) mcReader->Restart();
+    // dc_fiducial_determination(dataReader, mcReader, dataset);
 
     // dataReader.Restart();
     // if (mcReader) mcReader->Restart();
