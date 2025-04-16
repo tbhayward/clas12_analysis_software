@@ -299,8 +299,8 @@ class CalibrationScript {
 
                         particle_pid = rec_Bank.getInt("pid", particle_Index);
                         // if (particle_pid == 0 || particle_pid == 45) { continue; }
-                        // if (particle_pid == 0 || particle_pid == 45 || particle_pid == 211 || particle_pid == -211 || particle_pid == 321 || particle_pid == -321 || particle_pid == -11 || particle_pid == 2112) { continue; }
-                        if (particle_pid == 0 || particle_pid == 45 || particle_pid == 11 || particle_pid == -11 || particle_pid == 321 || particle_pid == -321 || particle_pid == -11 || particle_pid == 2212 || particle_pid == 2112) { continue; }
+                        if (particle_pid == 0 || particle_pid == 45 || particle_pid == 211 || particle_pid == -211 || particle_pid == 321 || particle_pid == -321 || particle_pid == -11 || particle_pid == 2112) { continue; }
+                        // if (particle_pid == 0 || particle_pid == 45 || particle_pid == 11 || particle_pid == -11 || particle_pid == 321 || particle_pid == -321 || particle_pid == -11 || particle_pid == 2212 || particle_pid == 2112) { continue; }
                         particle_px = rec_Bank.getFloat("px", particle_Index);
                         particle_py = rec_Bank.getFloat("py", particle_Index);
                         particle_pz = rec_Bank.getFloat("pz", particle_Index);

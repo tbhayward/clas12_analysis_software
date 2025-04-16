@@ -3776,8 +3776,10 @@ std::pair<double, double> rotate_coordinates(double x, double y, int sector) {
 
 void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = nullptr,
     const std::string& dataset = "rga_fa18_inb") {
-    double p_min = 2.75;
-    double p_max = 3.00;
+    // double p_min = 2.75;
+    // double p_max = 3.00;
+    double p_min = 0;
+    double p_max = 20;
     int nBins = 50;
     std::vector<std::tuple<std::string, std::string, std::string, double, double, double, double, std::string, double>> regions = {
         {"traj_x_6", "traj_y_6", "region_{1}", 15, 160, -80, 80, "traj_edge_6", 25},
@@ -3790,17 +3792,18 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
 
     // Array of particle types (photons and electrons) and their corresponding PIDs
     std::vector<std::tuple<int, std::string>> particle_types = {
-        {11, "e^{-}"}
-        ,
-        // {-211, "#pi^{-}"}
+        {
+            // 11, "e^{-}"}
         // ,
-        // {211, "#pi^{+}"}
+        {-211, "#pi^{-}"}
+        ,
+        {211, "#pi^{+}"}
         // ,
         // {-321, "k^{-}"}
         // ,
         // {321, "k^{+}"}
         // ,
-        {2212, "p"}
+        // {2212, "p"}
     };
 
     for (const auto& particle_type : particle_types) {
