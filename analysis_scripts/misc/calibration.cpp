@@ -4256,9 +4256,15 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
 }
 
 bool cvt_fiducial(double edge_1, double edge_3, double edge_5, double edge_7, 
-     double edge_12) {
+     double edge_12, double theta, double phi) {
     // return edge_1 > 0 && edge_3 > 0 && edge_5 > 0 && edge_7 > -2 && edge_12 > -5;
-    return edge_1 > 0 && edge_3 > 0 && edge_5 > 0;
+    // return edge_1 > 0 && edge_3 > 0 && edge_5 > 0;
+    bool edge_cut = edge_1 > 0 && edge_3 > 0 && edge_5 > 0 && edge_7 > 0 && edge_12 > 0;
+
+    //remove low efficiency regions of BMT
+    bool phi_cut = !((phi > 25 && phi < 40) || (phi > 143 && phi < 158) || (phi > 265 && phi < 280));
+    
+    return edge_cut && phi_cut;
 }
 
 // Helper functions for theta_CVT and phi_CVT calculations
