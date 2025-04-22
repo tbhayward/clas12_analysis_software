@@ -4127,13 +4127,15 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
                 legend->SetTextSize(0.03);  // Reduced text size
                 legend->AddEntry(h_sum_chi2_ndf_sector[sector], "Data (All #theta)", "p");
                 for (int t = 0; t < num_theta_bins; ++t) {
-                    std::string theta_range = std::to_string(static_cast<int>(theta_bins[t])) + "<#theta<" + std::to_string(static_cast<int>(theta_bins[t + 1]));
+                    // std::string theta_range = std::to_string(static_cast<int>(theta_bins[t])) + "<#theta<" + std::to_string(static_cast<int>(theta_bins[t + 1]));
+                    std::string theta_range = std::to_string(static_cast<int>(theta_bins[t])) + "<p<" + std::to_string(static_cast<int>(theta_bins[t + 1]));
                     legend->AddEntry(h_sum_chi2_ndf_sector_theta[sector][t], ("Data " + theta_range).c_str(), "p");
                 }
 
                 if (mcReader) {
                     legend->AddEntry(h_sum_chi2_ndf_mc_sector[sector], "MC (All #theta)", "p");
                     for (int t = 0; t < num_theta_bins; ++t) {
+                        // std::string theta_range = std::to_string(static_cast<int>(theta_bins[t])) + "<#theta<" + std::to_string(static_cast<int>(theta_bins[t + 1]));
                         std::string theta_range = std::to_string(static_cast<int>(theta_bins[t])) + "<#theta<" + std::to_string(static_cast<int>(theta_bins[t + 1]));
                         legend->AddEntry(h_sum_chi2_ndf_mc_sector_theta[sector][t], ("MC " + theta_range).c_str(), "p");
                     }
