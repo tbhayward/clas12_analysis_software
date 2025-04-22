@@ -3948,8 +3948,8 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
 
             // Histograms for different theta ranges
             const int num_theta_bins = 5;
-            // double theta_bins[num_theta_bins + 1] = {5, 10, 15, 20, 25, 40};
-            double theta_bins[num_theta_bins + 1] = {1, 2, 3, 4, 5, 6};
+            double theta_bins[num_theta_bins + 1] = {5, 10, 15, 20, 25, 40};
+            // double theta_bins[num_theta_bins + 1] = {1, 2, 3, 4, 5, 6};
             std::vector<std::vector<TH1D*>> h_sum_chi2_ndf_sector_theta(6, std::vector<TH1D*>(num_theta_bins));
             std::vector<std::vector<TH1D*>> h_count_chi2_ndf_sector_theta(6, std::vector<TH1D*>(num_theta_bins));
 
@@ -4127,16 +4127,16 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
                 legend->SetTextSize(0.03);  // Reduced text size
                 legend->AddEntry(h_sum_chi2_ndf_sector[sector], "Data (All #theta)", "p");
                 for (int t = 0; t < num_theta_bins; ++t) {
-                    // std::string theta_range = std::to_string(static_cast<int>(theta_bins[t])) + "<#theta<" + std::to_string(static_cast<int>(theta_bins[t + 1]));
-                    std::string theta_range = std::to_string(static_cast<int>(theta_bins[t])) + "<p<" + std::to_string(static_cast<int>(theta_bins[t + 1]));
+                    std::string theta_range = std::to_string(static_cast<int>(theta_bins[t])) + "<#theta<" + std::to_string(static_cast<int>(theta_bins[t + 1]));
+                    // std::string theta_range = std::to_string(static_cast<int>(theta_bins[t])) + "<p<" + std::to_string(static_cast<int>(theta_bins[t + 1]));
                     legend->AddEntry(h_sum_chi2_ndf_sector_theta[sector][t], ("Data " + theta_range).c_str(), "p");
                 }
 
                 if (mcReader) {
                     legend->AddEntry(h_sum_chi2_ndf_mc_sector[sector], "MC (All #theta)", "p");
                     for (int t = 0; t < num_theta_bins; ++t) {
-                        // std::string theta_range = std::to_string(static_cast<int>(theta_bins[t])) + "<#theta<" + std::to_string(static_cast<int>(theta_bins[t + 1]));
                         std::string theta_range = std::to_string(static_cast<int>(theta_bins[t])) + "<#theta<" + std::to_string(static_cast<int>(theta_bins[t + 1]));
+                        // std::string theta_range = std::to_string(static_cast<int>(theta_bins[t])) + "<#theta<" + std::to_string(static_cast<int>(theta_bins[t + 1]));
                         legend->AddEntry(h_sum_chi2_ndf_mc_sector_theta[sector][t], ("MC " + theta_range).c_str(), "p");
                     }
                 }
@@ -9221,8 +9221,8 @@ int main(int argc, char** argv) {
 
     //// PLOTS ////
 
-    // std::string dataset = "rga_fa18_inb";
-    std::string dataset = "rga_fa18_out";
+    std::string dataset = "rga_fa18_inb";
+    // std::string dataset = "rga_fa18_out";
     // std::string dataset = "rga_sp19_inb";
 
     // plot_htcc_nphe(dataReader, mcReader, dataset);
