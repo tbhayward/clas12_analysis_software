@@ -3782,7 +3782,7 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
     // double p_max = 2.75;
     double p_min = 0;
     double p_max = 10;
-    int nBins = 8;
+    int nBins = 25;
     std::vector<std::tuple<std::string, std::string, std::string, double, double, double, double, std::string, double>> regions = {
         {"traj_x_6", "traj_y_6", "region_{1}", 15, 160, -80, 80, "traj_edge_6", 25},
         {"traj_x_18", "traj_y_18", "region_{2}", 30, 240, -125, 125, "traj_edge_18", 25},
