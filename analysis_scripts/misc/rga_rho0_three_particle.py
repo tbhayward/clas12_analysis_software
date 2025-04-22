@@ -80,10 +80,10 @@ for label, path in files.items():
 
             # Unweighted asymmetry
             hj = helicity[sel_phi]
-            print(N);
             n_p = np.sum(hj > 0)
             n_m = np.sum(hj < 0)
             N   = n_p + n_m
+            print(N);
             if N > 0:
                 A_j   = (n_p - n_m) / N
                 err_j = np.sqrt((1 - A_j**2) / N)
