@@ -4255,6 +4255,15 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
     }
 }
 
+bool cvt_fiducial_no_angles(double edge_1, double edge_3, double edge_5, double edge_7, 
+     double edge_12) {
+    // return edge_1 > 0 && edge_3 > 0 && edge_5 > 0 && edge_7 > -2 && edge_12 > -5;
+    // return edge_1 > 0 && edge_3 > 0 && edge_5 > 0;
+    bool edge_cut = edge_1 > 0 && edge_3 > 0 && edge_5 > 0 && edge_7 > 0 && edge_12 > 0;
+
+    return edge_cut;
+}
+
 bool cvt_fiducial(double edge_1, double edge_3, double edge_5, double edge_7, 
      double edge_12, double theta, double phi) {
     // return edge_1 > 0 && edge_3 > 0 && edge_5 > 0 && edge_7 > -2 && edge_12 > -5;
@@ -4263,7 +4272,7 @@ bool cvt_fiducial(double edge_1, double edge_3, double edge_5, double edge_7,
 
     //remove low efficiency regions of BMT
     bool phi_cut = !((phi > 25 && phi < 40) || (phi > 143 && phi < 158) || (phi > 265 && phi < 280));
-    
+
     return edge_cut && phi_cut;
 }
 
@@ -4891,7 +4900,7 @@ void plot_cvt_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = null
 
                     if (traj_x_value != -9999 && traj_y_value != -9999) {
                         h_data_before[layer_idx]->Fill(traj_x_value, traj_y_value);
-                        if (cvt_fiducial(*traj_edge_1, *traj_edge_3, *traj_edge_5, *traj_edge_7, *traj_edge_12)) {
+                        if (cvt_fiducial_no_angles(*traj_edge_1, *traj_edge_3, *traj_edge_5, *traj_edge_7, *traj_edge_12)) {
                             h_data_after[layer_idx]->Fill(traj_x_value, traj_y_value);
                         }
                     }
@@ -4909,7 +4918,7 @@ void plot_cvt_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = null
                         double mc_traj_y_value = **mc_traj_y[layer_idx];
                         if (mc_traj_x_value != -9999 && mc_traj_y_value != -9999) {
                             h_mc_before[layer_idx]->Fill(mc_traj_x_value, mc_traj_y_value);
-                            if (cvt_fiducial(**mc_traj_edge_1, **mc_traj_edge_3, **mc_traj_edge_5, **mc_traj_edge_7, **mc_traj_edge_12)) {
+                            if (cvt_fiducial_no_angles(**mc_traj_edge_1, **mc_traj_edge_3, **mc_traj_edge_5, **mc_traj_edge_7, **mc_traj_edge_12)) {
                                 h_mc_after[layer_idx]->Fill(mc_traj_x_value, mc_traj_y_value);
                             }
                         }
