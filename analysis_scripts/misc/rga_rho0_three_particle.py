@@ -38,12 +38,12 @@ for label, path in files.items():
 
     # 5) Apply kinematic cuts
     mask = (
-        (data["W"]  > 2) &
-        (data["Q2"] > 2) &
-        (data["z23"]  > 0.9) &
-        (data["Mx23"] < 1.05) &
-        (data["Mh23"] > 0.65) &
-        (data["Mh23"] < 0.85)
+        # (data["W"]  > 2) &
+        # (data["Q2"] > 2) &
+        # (data["z23"]  > 0.9) &
+        # (data["Mx23"] < 1.05) &
+        # (data["Mh23"] > 0.65) &
+        # (data["Mh23"] < 0.85)
     )
     helicity = data["helicity"][mask]
     beam_pol  = data["beam_pol"][mask]
