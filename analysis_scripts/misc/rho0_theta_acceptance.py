@@ -54,7 +54,7 @@ err_eff[nonzero] = np.sqrt(eff[nonzero] * (1 - eff[nonzero]) / counts_gen[nonzer
 fig, ax = plt.subplots()
 ax.errorbar(centers, eff, yerr=err_eff, fmt='o', linestyle='none')
 ax.set_yscale('log')
-ax.set_ylim(10e-5, 10e-2)  # from 1e-4 to 1e0
+ax.set_ylim(10e-6, 10e-2)  # from 1e-4 to 1e0
 ax.set_xlabel(r'$\cos\theta$')
 ax.set_ylabel("Rec. Eff.")
 ax.grid(True, which='both', ls='--', lw=0.5)
