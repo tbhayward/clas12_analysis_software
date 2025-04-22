@@ -5055,7 +5055,7 @@ void plot_cvt_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = null
             h_phi_vs_theta_CVT_data_before->Fill(phi_CVT_data[i], theta_CVT_data[i]);
 
             // Apply fiducial cut based on stored edge values
-            if (cvt_fiducial(traj_edge_1_data[i], traj_edge_3_data[i], traj_edge_5_data[i], traj_edge_7_data[i], traj_edge_12_data[i], phi_CVT_data[i], theta_CVT_data[i])) {
+            if (cvt_fiducial(traj_edge_1_data[i], traj_edge_3_data[i], traj_edge_5_data[i], traj_edge_7_data[i], traj_edge_12_data[i], theta_CVT_data[i], phi_CVT_data[i])) {
                 h_theta_vs_theta_data_after->Fill(theta_in_degrees_data[i], theta_CVT_data[i]);
                     h_phi_vs_theta_CVT_data_after->Fill(phi_CVT_data[i], theta_CVT_data[i]);
             }
@@ -5089,7 +5089,7 @@ void plot_cvt_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = null
                 h_phi_vs_theta_CVT_mc_before->Fill(phi_CVT_mc[i], theta_CVT_mc[i]);
 
                 // Apply fiducial cut based on stored edge values
-                if (cvt_fiducial(traj_edge_1_mc[i], traj_edge_3_mc[i], traj_edge_5_mc[i], traj_edge_7_mc[i], traj_edge_12_mc[i])) {
+                if (cvt_fiducial(traj_edge_1_mc[i], traj_edge_3_mc[i], traj_edge_5_mc[i], traj_edge_7_mc[i], traj_edge_12_mc[i], theta_CVT_mc[i], phi_CVT_mc[i])) {
                     h_theta_vs_theta_mc_after->Fill(theta_in_degrees_mc[i], theta_CVT_mc[i]);
                     h_phi_vs_theta_CVT_mc_after->Fill(phi_CVT_mc[i], theta_CVT_mc[i]);
                 }
@@ -5780,7 +5780,8 @@ void plot_chi2pid_cd(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
     // while (dataReader.Next()) {
     for (int m=0; m<6e7; m++) {
         dataReader.Next();
-        if (*track_sector_5 != -9999 && cvt_fiducial(*edge_1, *edge_3, *edge_5, *edge_7, *edge_12)) {  // CD check
+        // if (*track_sector_5 != -9999 && cvt_fiducial(*edge_1, *edge_3, *edge_5, *edge_7, *edge_12)) {  // CD check
+        if (*track_sector_5 != -9999) {  // CD check
             for (size_t i = 0; i < particle_types.size(); ++i) {
                 if (*particle_pid == std::get<0>(particle_types[i])) {
                     h_data[i]->Fill(*particle_chi2pid);
@@ -5811,7 +5812,8 @@ void plot_chi2pid_cd(TTreeReader& dataReader, TTreeReader* mcReader = nullptr) {
         // while (mcReader->Next()) {
         for (int m=0; m<6e7; m++) {
             mcReader->Next();
-            if (**mc_track_sector_5 != -9999 && cvt_fiducial(**mc_edge_1, **mc_edge_3, **mc_edge_5, **mc_edge_7, **mc_edge_12)) {  // CD check
+            // if (**mc_track_sector_5 != -9999 && cvt_fiducial(**mc_edge_1, **mc_edge_3, **mc_edge_5, **mc_edge_7, **mc_edge_12)) {  // CD check
+            if (**mc_track_sector_5 != -9999) {  // CD check
                 for (size_t i = 0; i < particle_types.size(); ++i) {
                     if (**mc_particle_pid == std::get<0>(particle_types[i])) {
                         h_mc[i]->Fill(**mc_particle_chi2pid);
