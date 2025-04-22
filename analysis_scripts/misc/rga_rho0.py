@@ -41,6 +41,7 @@ for label, path in files.items():
 
     # Compute per‑event weight = DepA/(beam_pol*DepW)
     weights = DepA / (beam_pol * DepW)
+    print("weights:", weights)
 
     # cos(theta)
     cos_theta = np.cos(theta)
