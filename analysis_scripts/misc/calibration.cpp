@@ -3509,8 +3509,9 @@ bool dc_fiducial(double edge_6, double edge_18, double edge_36,
     // } else if (pid == 211 || pid == -211 || pid == 321 || pid == -321 || pid == 2212 || pid == -2212) {
     //     return edge_6 > 3 && edge_18 > 3 && edge_36 > 9;
     // } 
-    return (edge_6 > 3);
-    return false; // not a charged track? wrong pid?
+    // return (edge_6 > 3);
+    return true;
+    // return false; // not a charged track? wrong pid?
 }
 
 void plot_dc_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = nullptr,
@@ -4262,243 +4263,6 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
     }
 }
 
-// void dc_fiducial_determination(TTreeReader& dataReader,
-//                                TTreeReader* mcReader = nullptr,
-//                                const std::string& dataset = "rga_fa18_inb") {
-//     // Define the momentum bins and number of edge bins
-//     const int numMomBins = 5;
-//     double momBins[numMomBins + 1] = {1.0, 2.0, 3.0, 4.0, 6.0, 10.0};
-//     int nBinsEdge = 8;  // number of bins in traj_edge
-//     double maxChi2 = 100.0;
-
-//     // Regions to process
-//     std::vector<std::tuple<std::string, std::string, std::string,
-//                            double, double, double, double,
-//                            std::string, double>> regions = {
-//         {"traj_x_6",  "traj_y_6",  "region_{1}", 15, 160, -80,  80,  "traj_edge_6",  25},
-//         {"traj_x_18", "traj_y_18", "region_{2}", 30, 240, -125, 125, "traj_edge_18", 25},
-//         {"traj_x_36", "traj_y_36", "region_{3}", 30, 400, -200, 200, "traj_edge_36", 25}
-//     };
-
-//     // Particle types to loop over
-//     std::vector<std::tuple<int, std::string>> particle_types = {
-//         {11,   "e^{-}"},
-//         {2212, "p"}
-//     };
-
-//     for (auto const& [pid, particle_name] : particle_types) {
-//         // Restart readers before each particle
-//         dataReader.Restart();
-//         if (mcReader) mcReader->Restart();
-
-//         for (auto const& region : regions) {
-//             auto const& [x_branch, y_branch, region_name,
-//                          xMin, xMax, yMin, yMax,
-//                          edge_branch, edge_max] = region;
-
-//             // Prepare reader values
-//             TTreeReaderValue<double> traj_edge(dataReader, edge_branch.c_str());
-//             TTreeReaderValue<int>    particle_pid(dataReader, "particle_pid");
-//             TTreeReaderValue<int>    track_sector(dataReader, "track_sector_6");
-//             TTreeReaderValue<double> track_chi2(dataReader, "track_chi2_6");
-//             TTreeReaderValue<int>    track_ndf(dataReader, "track_ndf_6");
-//             TTreeReaderValue<double> track_p(dataReader, "p");
-
-//             TTreeReaderValue<double>* mc_traj_edge   = nullptr;
-//             TTreeReaderValue<int>*    mc_particle_pid= nullptr;
-//             TTreeReaderValue<int>*    mc_track_sector= nullptr;
-//             TTreeReaderValue<double>* mc_track_chi2  = nullptr;
-//             TTreeReaderValue<int>*    mc_track_ndf   = nullptr;
-//             TTreeReaderValue<double>* mc_track_p     = nullptr;
-//             if (mcReader) {
-//                 mc_traj_edge    = new TTreeReaderValue<double>(*mcReader, edge_branch.c_str());
-//                 mc_particle_pid = new TTreeReaderValue<int>(*mcReader, "particle_pid");
-//                 mc_track_sector = new TTreeReaderValue<int>(*mcReader, "track_sector_6");
-//                 mc_track_chi2   = new TTreeReaderValue<double>(*mcReader, "track_chi2_6");
-//                 mc_track_ndf    = new TTreeReaderValue<int>(*mcReader, "track_ndf_6");
-//                 mc_track_p      = new TTreeReaderValue<double>(*mcReader, "p");
-//             }
-
-//             // Create histograms: sum and count for mean chi2/ndf per sector & momentum bin
-//             std::vector<std::vector<TH1D*>> h_sum_data(6, std::vector<TH1D*>(numMomBins));
-//             std::vector<std::vector<TH1D*>> h_cnt_data(6, std::vector<TH1D*>(numMomBins));
-//             std::vector<std::vector<TH1D*>> h_sum_mc(6,   std::vector<TH1D*>(numMomBins));
-//             std::vector<std::vector<TH1D*>> h_cnt_mc(6,   std::vector<TH1D*>(numMomBins));
-
-//             for (int sector = 0; sector < 6; ++sector) {
-//                 for (int m = 0; m < numMomBins; ++m) {
-//                     double pMin = momBins[m];
-//                     double pMax = momBins[m + 1];
-//                     std::string momRange = "(" + std::to_string((int)pMin) +
-//                                             "<p<" + std::to_string((int)pMax) + ")";
-
-//                     // Data histograms
-//                     h_sum_data[sector][m] = new TH1D(
-//                         ("h_sum_" + region_name + "_sec" + std::to_string(sector+1) +
-//                          "_mom" + std::to_string(m+1)).c_str(),
-//                         (dataset + ", " + particle_name + " " + region_name +
-//                          " - Sec" + std::to_string(sector+1) + " " + momRange).c_str(),
-//                         nBinsEdge, 0, edge_max);
-//                     h_sum_data[sector][m]->GetXaxis()->SetTitle("traj_edge");
-//                     h_sum_data[sector][m]->GetYaxis()->SetTitle("<#chi^{2}/ndf>");
-//                     h_cnt_data[sector][m] = new TH1D(
-//                         ("h_cnt_" + region_name + "_sec" + std::to_string(sector+1) +
-//                          "_mom" + std::to_string(m+1)).c_str(),
-//                         "", nBinsEdge, 0, edge_max);
-
-//                     // MC histograms
-//                     if (mcReader) {
-//                         h_sum_mc[sector][m] = new TH1D(
-//                             ("h_sum_mc_" + region_name + "_sec" + std::to_string(sector+1) +
-//                              "_mom" + std::to_string(m+1)).c_str(),
-//                             ("MC " + particle_name + " " + region_name +
-//                              " - Sec" + std::to_string(sector+1) + " " + momRange).c_str(),
-//                             nBinsEdge, 0, edge_max);
-//                         h_sum_mc[sector][m]->GetXaxis()->SetTitle("traj_edge");
-//                         h_sum_mc[sector][m]->GetYaxis()->SetTitle("<#chi^{2}/ndf>");
-//                         h_cnt_mc[sector][m] = new TH1D(
-//                             ("h_cnt_mc_" + region_name + "_sec" + std::to_string(sector+1) +
-//                              "_mom" + std::to_string(m+1)).c_str(),
-//                             "", nBinsEdge, 0, edge_max);
-//                     }
-//                 }
-//             }
-
-//             // Fill data histograms
-//             dataReader.Restart();
-//             while (dataReader.Next()) {
-//                 if (*particle_pid == pid && *traj_edge != -9999 && *track_ndf > 0 &&
-//                     dc_fiducial(/*edge6=*/0, /*edge18=*/0, /*edge36=*/0, pid)) {
-//                     double chi2ndf = *track_chi2 / *track_ndf;
-//                     int secIdx = *track_sector - 1;
-//                     double p = *track_p;
-//                     for (int m = 0; m < numMomBins; ++m) {
-//                         if (p >= momBins[m] && p < momBins[m+1]) {
-//                             h_sum_data[secIdx][m]->Fill(*traj_edge, chi2ndf);
-//                             h_cnt_data[secIdx][m]->Fill(*traj_edge);
-//                         }
-//                     }
-//                 }
-//             }
-
-//             // Fill MC histograms
-//             if (mcReader) {
-//                 mcReader->Restart();
-//                 while (mcReader->Next()) {
-//                     if (**mc_particle_pid == pid && **mc_traj_edge != -9999 && **mc_track_ndf > 0 &&
-//                         dc_fiducial(/*edge6=*/0, /*edge18=*/0, /*edge36=*/0, pid)) {
-//                         double chi2ndf = **mc_track_chi2 / **mc_track_ndf;
-//                         int secIdx = **mc_track_sector - 1;
-//                         double p = **mc_track_p;
-//                         for (int m = 0; m < numMomBins; ++m) {
-//                             if (p >= momBins[m] && p < momBins[m+1]) {
-//                                 h_sum_mc[secIdx][m]->Fill(**mc_traj_edge, chi2ndf);
-//                                 h_cnt_mc[secIdx][m]->Fill(**mc_traj_edge);
-//                             }
-//                         }
-//                     }
-//                 }
-//             }
-
-//             // Normalize to get mean chi2/ndf
-//             for (int sector = 0; sector < 6; ++sector) {
-//                 for (int m = 0; m < numMomBins; ++m) {
-//                     h_sum_data[sector][m]->Divide(h_cnt_data[sector][m]);
-//                     if (mcReader) {
-//                         h_sum_mc[sector][m]->Divide(h_cnt_mc[sector][m]);
-//                     }
-//                 }
-//             }
-
-//             // Draw overlay of momentum bins for each sector
-//             TCanvas* c_edge = new TCanvas(
-//                 ("c_edge_" + particle_name + "_" + region_name).c_str(),
-//                 ("Mean #chi^{2}/ndf vs traj_edge: " + particle_name + " " + region_name).c_str(),
-//                 1800, 1200);
-//             c_edge->Divide(3, 2);
-
-//             int colors_data[numMomBins] = {kBlack, kBlue, kRed, kGreen+2, kOrange+7};
-//             int colors_mc  [numMomBins] = {kRed,   kAzure+1, kSpring+5, kPink+7, kViolet};
-
-//             for (int sector = 0; sector < 6; ++sector) {
-//                 c_edge->cd(sector+1);
-//                 gPad->SetMargin(0.15, 0.15, 0.1, 0.1);
-
-//                 // Draw data
-//                 for (int m = 0; m < numMomBins; ++m) {
-//                     TH1D* hD = h_sum_data[sector][m];
-//                     hD->SetStats(false);
-//                     hD->SetAxisRange(0, edge_max, "X");
-//                     hD->SetMaximum(maxChi2);
-//                     hD->SetMinimum(0);
-//                     hD->SetLineColor(colors_data[m]);
-//                     hD->SetMarkerStyle(20 + m);
-//                     hD->SetMarkerColor(colors_data[m]);
-//                     if (m == 0) hD->Draw("E1");
-//                     else        hD->Draw("E1 SAME");
-//                 }
-
-//                 // Draw MC
-//                 if (mcReader) {
-//                     for (int m = 0; m < numMomBins; ++m) {
-//                         TH1D* hM = h_sum_mc[sector][m];
-//                         hM->SetLineColor(colors_mc[m]);
-//                         hM->SetMarkerStyle(24 + m);
-//                         hM->SetMarkerColor(colors_mc[m]);
-//                         hM->Draw("E1 SAME");
-//                     }
-//                 }
-
-//                 // Legend
-//                 TLegend* legend = new TLegend(0.5, 0.7, 0.9, 0.9);
-//                 legend->SetTextSize(0.03);
-//                 for (int m = 0; m < numMomBins; ++m) {
-//                     std::string label = std::to_string((int)momBins[m]) +
-//                                         "<p<" + std::to_string((int)momBins[m+1]);
-//                     legend->AddEntry(h_sum_data[sector][m],
-//                                      ("Data " + label).c_str(), "p");
-//                 }
-//                 if (mcReader) {
-//                     for (int m = 0; m < numMomBins; ++m) {
-//                         std::string label = std::to_string((int)momBins[m]) +
-//                                             "<p<" + std::to_string((int)momBins[m+1]);
-//                         legend->AddEntry(h_sum_mc[sector][m],
-//                                          ("MC " + label).c_str(), "p");
-//                     }
-//                 }
-//                 legend->Draw();
-//             }
-
-//             c_edge->SaveAs(
-//                 ("output/calibration/dc/determination/"
-//                  "mean_chi2_per_ndf_vs_traj_edge_"
-//                  + dataset + "_" + particle_name + "_" + region_name + ".png")
-//                 .c_str());
-//             delete c_edge;
-
-//             // Cleanup histograms
-//             for (int sector = 0; sector < 6; ++sector) {
-//                 for (int m = 0; m < numMomBins; ++m) {
-//                     delete h_sum_data[sector][m];
-//                     delete h_cnt_data[sector][m];
-//                     if (mcReader) {
-//                         delete h_sum_mc[sector][m];
-//                         delete h_cnt_mc[sector][m];
-//                     }
-//                 }
-//             }
-
-//             if (mcReader) {
-//                 delete mc_traj_edge;
-//                 delete mc_particle_pid;
-//                 delete mc_track_sector;
-//                 delete mc_track_chi2;
-//                 delete mc_track_ndf;
-//                 delete mc_track_p;
-//             }
-//         } // end region loop
-//     } // end particle loop
-// }
 
 bool cvt_fiducial_no_angles(double edge_1, double edge_3, double edge_5, double edge_7, 
      double edge_12) {
@@ -9262,21 +9026,21 @@ int main(int argc, char** argv) {
     // if (mcReader) mcReader->Restart();
     // plot_cal_hit_position(dataReader, mcReader, dataset);
 
-    // dataReader.Restart();
-    // if (mcReader) mcReader->Restart();
-    // dc_fiducial_determination(dataReader, mcReader, dataset);
+    dataReader.Restart();
+    if (mcReader) mcReader->Restart();
+    dc_fiducial_determination(dataReader, mcReader, dataset);
 
     // dataReader.Restart();
     // if (mcReader) mcReader->Restart();
     // plot_dc_hit_position(dataReader, mcReader, dataset);
 
-    dataReader.Restart();
-    if (mcReader) mcReader->Restart();
-    cvt_fiducial_determination(dataReader, mcReader, dataset);
+    // dataReader.Restart();
+    // if (mcReader) mcReader->Restart();
+    // cvt_fiducial_determination(dataReader, mcReader, dataset);
 
-    dataReader.Restart();
-    if (mcReader) mcReader->Restart();
-    plot_cvt_hit_position(dataReader, mcReader, dataset);
+    // dataReader.Restart();
+    // if (mcReader) mcReader->Restart();
+    // plot_cvt_hit_position(dataReader, mcReader, dataset);
 
     // dataReader.Restart();
     // if (mcReader) mcReader->Restart();
