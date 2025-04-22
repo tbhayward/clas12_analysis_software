@@ -13,21 +13,21 @@ gen_file = "/volatile/clas12/thayward/rho0_study/rga_fa18_inb_epi+pi-X_gen.root"
 rec_tree = uproot.open(rec_file)["PhysicsEvents"]
 gen_tree = uproot.open(gen_file)["PhysicsEvents"]
 
-rec = rec_tree.arrays(["theta", "W", "Q2", "z", "Mx2"], library="np")
-gen = gen_tree.arrays(["theta", "W", "Q2", "z", "Mx2"], library="np")
+rec = rec_tree.arrays(["theta", "W", "Q2", "z", "Mx"], library="np")
+gen = gen_tree.arrays(["theta", "W", "Q2", "z", "Mx"], library="np")
 
 # 3) Apply kinematic cuts
 mask_rec = (
-    (rec["W"]  > 2) &
-    (rec["Q2"] > 2) &
-    (rec["z"]  > 0.9) &
-    (rec["Mx2"] < 1.11025)
+    # (rec["W"]  > 2) &
+    # (rec["Q2"] > 2) &
+    # (rec["z"]  > 0.9) &
+    # (rec["Mx"] < 1.05)
 )
 mask_gen = (
-    (gen["W"]  > 2) &
-    (gen["Q2"] > 2) &
-    (gen["z"]  > 0.9) &
-    (gen["Mx2"] < 1.11025)
+    # (gen["W"]  > 2) &
+    # (gen["Q2"] > 2) &
+    # (gen["z"]  > 0.9) &
+    # (gen["Mx"] < 1.05)
 )
 
 cos_rec = np.cos(rec["theta"][mask_rec])
@@ -46,16 +46,20 @@ eff = np.zeros_like(counts_rec, dtype=float)
 nonzero = counts_gen > 0
 eff[nonzero] = counts_rec[nonzero] / counts_gen[nonzero]
 
-# 7) Plotting
+# 7) Statistical uncertainty on efficiency (binomial)
+err_eff = np.zeros_like(eff)
+err_eff[nonzero] = np.sqrt(eff[nonzero] * (1 - eff[nonzero]) / counts_gen[nonzero])
+
+# 8) Plotting with markers only and error bars
 fig, ax = plt.subplots()
-ax.plot(centers, eff, 'o-')
+ax.errorbar(centers, eff, yerr=err_eff, fmt='o', linestyle='none')
 ax.set_yscale('log')
-ax.set_ylim(10e-5, 10e-1)          # from 10e-5 to 10e-1
+ax.set_ylim(10e-5, 10e-1)  # from 1e-4 to 1e0
 ax.set_xlabel(r'$\cos\theta$')
 ax.set_ylabel("Rec. Eff.")
 ax.grid(True, which='both', ls='--', lw=0.5)
 
-# 8) Save output
+# 9) Save output
 os.makedirs("output", exist_ok=True)
 plt.savefig("output/rho0_theta_acceptance.pdf")
 plt.close()
