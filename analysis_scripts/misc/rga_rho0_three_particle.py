@@ -50,7 +50,7 @@ for label, path in files.items():
     DepA      = data["DepA"][mask]
     DepW      = data["DepW"][mask]
     theta     = data["theta"][mask]
-    phi       = data["phi"][mask]
+    phi       = data["phi23"][mask]
 
     cos_th = np.cos(theta)
 
