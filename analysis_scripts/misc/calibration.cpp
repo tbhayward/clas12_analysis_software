@@ -6141,7 +6141,8 @@ void plot_vertices(TTreeReader& dataReader, TTreeReader* mcReader = nullptr,
             bool pass_fiducial = false;
             if (*track_sector_5 != -9999 && is_in(pid, pids)) {
                 // CD track
-                pass_fiducial = cvt_fiducial(*edge_1, *edge_3, *edge_5, *edge_7, *edge_12);
+                // pass_fiducial = cvt_fiducial(*edge_1, *edge_3, *edge_5, *edge_7, *edge_12);
+                pass_fiducial = true;
             } else if (*track_sector_6 != -9999 && is_in(pid, pids)) {
                 // FD track
                 pass_fiducial = dc_fiducial(*edge_6, *edge_18, *edge_36, pid);
@@ -6164,7 +6165,8 @@ void plot_vertices(TTreeReader& dataReader, TTreeReader* mcReader = nullptr,
                 bool pass_fiducial = false;
                 if (**mc_track_sector_5 != -9999 && is_in(pid, pids)) {
                     // CD track
-                    pass_fiducial = cvt_fiducial(**mc_edge_1, **mc_edge_3, **mc_edge_5, **mc_edge_7, **mc_edge_12);
+                    // pass_fiducial = cvt_fiducial(**mc_edge_1, **mc_edge_3, **mc_edge_5, **mc_edge_7, **mc_edge_12);
+                    pass_fiducial = true;
                 } else if (**mc_track_sector_6 != -9999 && is_in(pid, pids)) {
                     // FD track
                     pass_fiducial = dc_fiducial(**mc_edge_6, **mc_edge_18, **mc_edge_36, pid);
@@ -6351,7 +6353,8 @@ void energy_loss_distributions(TTreeReader& mcReader, const std::string& dataset
                     histograms[*pid].second.first->Fill(*p, delta_p);  // FD
                 }
             } else if (is_cd_track(*track_sector_5)) {
-                if (cvt_fiducial(*edge_1, *edge_3, *edge_5, *edge_7, *edge_12)) {
+                // if (cvt_fiducial(*edge_1, *edge_3, *edge_5, *edge_7, *edge_12)) {
+                if (true) {
                     histograms[*pid].second.second->Fill(*p, delta_p);  // CD
                 }
             }
@@ -7773,7 +7776,7 @@ void energy_loss_distributions_delta_p_cd(TTreeReader& mcReader, const std::stri
     //     mcReader.Next();
     while (mcReader.Next()) {
         if (!is_cd_track(*track_sector_5)) continue;
-        if (!cvt_fiducial(*traj_edge_1, *traj_edge_3, *traj_edge_5, *traj_edge_7, *traj_edge_12)) continue;
+        // if (!cvt_fiducial(*traj_edge_1, *traj_edge_3, *traj_edge_5, *traj_edge_7, *traj_edge_12)) continue;
         double delta_p = *mc_p - *p;
 
         // Check if the current particle type is one of interest and if the track is below the curve
@@ -7941,7 +7944,7 @@ void energy_loss_distributions_delta_theta_cd(TTreeReader& mcReader, const std::
     //     mcReader.Next();
     while (mcReader.Next()) {
         if (!is_cd_track(*track_sector_5)) continue;
-        if (!cvt_fiducial(*traj_edge_1, *traj_edge_3, *traj_edge_5, *traj_edge_7, *traj_edge_12)) continue;
+        // if (!cvt_fiducial(*traj_edge_1, *traj_edge_3, *traj_edge_5, *traj_edge_7, *traj_edge_12)) continue;
         double delta_theta = *mc_theta - *theta;
 
         // Check if the current particle type is one of interest and if the track is below the curve
@@ -8109,7 +8112,7 @@ void energy_loss_distributions_delta_phi_cd(TTreeReader& mcReader, const std::st
     //     mcReader.Next();
     while (mcReader.Next()) {
         if (!is_cd_track(*track_sector_5)) continue;
-        if (!cvt_fiducial(*traj_edge_1, *traj_edge_3, *traj_edge_5, *traj_edge_7, *traj_edge_12)) continue;
+        // if (!cvt_fiducial(*traj_edge_1, *traj_edge_3, *traj_edge_5, *traj_edge_7, *traj_edge_12)) continue;
         double delta_phi = *mc_phi - *phi;
 
         // Check if the current particle type is one of interest and if the track is below the curve
@@ -8743,7 +8746,7 @@ void plot_energy_loss_corrections_cd(TTreeReader& mcReader, const std::string& d
     while (mcReader.Next()) {
         // Check if the track passes the required cuts
         if (!is_cd_track(*track_sector_5)) continue;
-        if (!cvt_fiducial(*traj_edge_1, *traj_edge_3, *traj_edge_5, *traj_edge_7, *traj_edge_12)) continue;
+        // if (!cvt_fiducial(*traj_edge_1, *traj_edge_3, *traj_edge_5, *traj_edge_7, *traj_edge_12)) continue;
 
         double p_corr = *p, theta_corr = *theta, phi_corr = *phi;
 
