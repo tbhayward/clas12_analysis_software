@@ -21,13 +21,13 @@ mask_rec = (
     (rec["W"]  > 2) &
     (rec["Q2"] > 2) &
     (rec["z"]  > 0.9) &
-    (rec["Mx"] < 1.11025)
+    (rec["Mx2"] < 1.11025)
 )
 mask_gen = (
     (gen["W"]  > 2) &
     (gen["Q2"] > 2) &
     (gen["z"]  > 0.9) &
-    (gen["Mx"] < 1.11025)
+    (gen["Mx2"] < 1.11025)
 )
 
 cos_rec = np.cos(rec["theta"][mask_rec])
