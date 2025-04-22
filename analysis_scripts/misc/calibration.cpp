@@ -4026,8 +4026,8 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
 
                         // Fill theta bins
                         for (int t = 0; t < num_theta_bins; ++t) {
-                            // if (*track_theta >= theta_bins[t] && *track_theta < theta_bins[t + 1]) {
-                            if (*track_p >= theta_bins[t] && *track_p < theta_bins[t + 1]) {
+                            if (*track_theta >= theta_bins[t] && *track_theta < theta_bins[t + 1]) {
+                            // if (*track_p >= theta_bins[t] && *track_p < theta_bins[t + 1]) {
                                 h_sum_chi2_ndf_sector_theta[sector_index][t]->Fill(*traj_edge, chi2_ndf);
                                 h_count_chi2_ndf_sector_theta[sector_index][t]->Fill(*traj_edge);
                             }
@@ -4050,8 +4050,8 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
 
                             // Fill theta bins
                             for (int t = 0; t < num_theta_bins; ++t) {
-                                // if (**mc_track_theta >= theta_bins[t] && **mc_track_theta < theta_bins[t + 1]) {
-                                if (**mc_track_p >= theta_bins[t] && **mc_track_p < theta_bins[t + 1]) {
+                                if (**mc_track_theta >= theta_bins[t] && **mc_track_theta < theta_bins[t + 1]) {
+                                // if (**mc_track_p >= theta_bins[t] && **mc_track_p < theta_bins[t + 1]) {
                                     h_sum_chi2_ndf_mc_sector_theta[sector_index][t]->Fill(**mc_traj_edge, mc_chi2_ndf);
                                     h_count_chi2_ndf_mc_sector_theta[sector_index][t]->Fill(**mc_traj_edge);
                                 }
@@ -9221,8 +9221,8 @@ int main(int argc, char** argv) {
 
     //// PLOTS ////
 
-    // std::string dataset = "rga_fa18_inb";
-    std::string dataset = "rga_fa18_out";
+    std::string dataset = "rga_fa18_inb";
+    // std::string dataset = "rga_fa18_out";
     // std::string dataset = "rga_sp19_inb";
 
     // plot_htcc_nphe(dataReader, mcReader, dataset);
