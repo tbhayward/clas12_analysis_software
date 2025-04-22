@@ -42,7 +42,7 @@ for label, path in files.items():
         (data["W"]  > 2) &
         (data["Q2"] > 2) &
         (data["z23"]  > 0.9) &
-        (data["Mx"]  < 0.15) &
+        (data["Mx"]  < 1) &
         (data["Mx23"] < 1.05) &
         (data["Mh23"] > 0.65) &
         (data["Mh23"] < 0.85)
