@@ -3,150 +3,171 @@
 import uproot
 import numpy as np
 import matplotlib.pyplot as plt
+from scipy.optimize import curve_fit
 import os
 
-#--- 1) Define your files and labels
+# sinusoidal fit function
+def sin_func(phi, A):
+    return A * np.sin(phi)
+
+# 1) Define your files and labels
 files = {
-    "RGA Fa18 Inb": "/work/clas12/thayward/CLAS12_SIDIS/processed_data/pass2/data/epi+pi-X/rga_fa18_inb_epi+pi-X.root",
-    "RGA Fa18 Out": "/work/clas12/thayward/CLAS12_SIDIS/processed_data/pass2/data/epi+pi-X/rga_fa18_out_epi+pi-X.root",
-    "RGA Sp19 Inb": "/work/clas12/thayward/CLAS12_SIDIS/processed_data/pass2/data/epi+pi-X/rga_sp19_inb_epi+pi-X.root"
+    "RGA Fa18 Inb":  "/work/clas12/thayward/CLAS12_SIDIS/processed_data/pass2/data/epi+pi-X/rga_fa18_inb_epi+pi-X.root",
+    "RGA Fa18 Out":  "/work/clas12/thayward/CLAS12_SIDIS/processed_data/pass2/data/epi+pi-X/rga_fa18_out_epi+pi-X.root",
+    "RGA Sp19 Inb":  "/work/clas12/thayward/CLAS12_SIDIS/processed_data/pass2/data/epi+pi-X/rga_sp19_inb_epi+pi-X.root"
 }
 
-#--- 2) Set up bins in cos(theta)
-bins = np.linspace(-0.9, 0.9, 16)
-bin_centers = 0.5 * (bins[:-1] + bins[1:])
+# 2) Set up bins in cos(theta)
+cos_bins    = np.linspace(-0.9, 0.9, 16)
+cos_centers = 0.5 * (cos_bins[:-1] + cos_bins[1:])
 
-# Storage for results
+# 3) Phi bins for fit
+phi_bins    = np.linspace(0, np.pi, 13)
+phi_centers = 0.5 * (phi_bins[:-1] + phi_bins[1:])
+
+# Storage for amplitudes and uncertainties
 results = {}
 
-#--- 3) Loop over each dataset
+# 4) Loop over each dataset
 for label, path in files.items():
     tree = uproot.open(path)["PhysicsEvents"]
     data = tree.arrays(
-        ["helicity","beam_pol","DepA","DepW","theta","W","Q2","z","Mx"],
+        ["helicity","beam_pol","DepA","DepW","theta","phi","W","Q2","z","Mx"],
         library="np"
     )
 
-    # Apply kinematic cuts
+    # 5) Apply kinematic cuts
     mask = (
         (data["W"]  > 2) &
         (data["Q2"] > 2) &
         (data["z"]  > 0.9) &
         (data["Mx"] < 1.05)
     )
-
     helicity = data["helicity"][mask]
     beam_pol  = data["beam_pol"][mask]
     DepA      = data["DepA"][mask]
     DepW      = data["DepW"][mask]
     theta     = data["theta"][mask]
+    phi       = data["phi"][mask]
 
-    cos_theta = np.cos(theta)
+    cos_th = np.cos(theta)
 
     # Prepare arrays
-    A_first       = np.zeros(len(bin_centers))
-    err_first     = np.zeros(len(bin_centers))
-    A_weighted    = np.zeros(len(bin_centers))
-    err_weighted  = np.zeros(len(bin_centers))
-    mean_beam_pol = np.zeros(len(bin_centers))
-    mean_DepA     = np.zeros(len(bin_centers))
-    mean_DepW     = np.zeros(len(bin_centers))
+    amps_unw = np.zeros(len(cos_centers))
+    errs_unw = np.zeros(len(cos_centers))
+    amps_w   = np.zeros(len(cos_centers))
+    errs_w   = np.zeros(len(cos_centers))
 
-    #--- 4) Loop over cos(theta) bins
-    for i in range(len(bin_centers)):
-        sel = (cos_theta >= bins[i]) & (cos_theta < bins[i+1])
-
-        # Unweighted counts
-        h = helicity[sel]
-        n_plus  = np.sum(h > 0)
-        n_minus = np.sum(h < 0)
-        Ntot    = n_plus + n_minus
-
-        if Ntot > 0:
-            A_first[i]   = (n_plus - n_minus) / Ntot
-            err_first[i] = np.sqrt((1 - A_first[i]**2) / Ntot)
-        else:
-            A_first[i], err_first[i] = 0.0, 0.0
+    # 6) Loop over cos(theta) bins
+    for i in range(len(cos_centers)):
+        sel_cos = (cos_th >= cos_bins[i]) & (cos_th < cos_bins[i+1])
+        if not np.any(sel_cos):
+            amps_unw[i], errs_unw[i] = 0.0, 0.0
+            amps_w[i],   errs_w[i]   = 0.0, 0.0
+            continue
         #endif
 
-        # Weighted asymmetry
-        bp = beam_pol[sel]
-        dA = DepA[sel]
-        dW = DepW[sel]
-        w  = dA / (bp * dW)
+        # Lists for phi-dependent asymmetry
+        A_phi_unw, err_phi_unw = [], []
+        A_phi_w,   err_phi_w   = [], []
 
-        w_p   = w[h > 0]
-        w_m   = w[h < 0]
-        sum_p = np.sum(w_p)
-        sum_m = np.sum(w_m)
-        sum_p2 = np.sum(w_p**2)
-        sum_m2 = np.sum(w_m**2)
-        Ntot_w = sum_p + sum_m
+        # 7) Loop over phi bins
+        for j in range(len(phi_centers)):
+            sel_phi = sel_cos & (phi >= phi_bins[j]) & (phi < phi_bins[j+1])
 
-        if Ntot_w > 0:
-            A_weighted[i]   = (sum_p - sum_m) / Ntot_w
-            N_eff = Ntot_w**2 / (sum_p2 + sum_m2)
-            err_weighted[i] = np.sqrt((1 - A_weighted[i]**2) / N_eff)
-        else:
-            A_weighted[i], err_weighted[i] = 0.0, 0.0
+            # Unweighted asymmetry
+            hj = helicity[sel_phi]
+            n_p = np.sum(hj > 0)
+            n_m = np.sum(hj < 0)
+            N   = n_p + n_m
+            if N > 0:
+                A_j   = (n_p - n_m) / N
+                err_j = np.sqrt((1 - A_j**2) / N)
+            else:
+                A_j, err_j = 0.0, 0.0
+            #endif
+            A_phi_unw.append(A_j)
+            err_phi_unw.append(err_j)
+
+            # Weighted asymmetry
+            wj = DepA[sel_phi] / (beam_pol[sel_phi] * DepW[sel_phi])
+            w_p   = wj[hj > 0]
+            w_m   = wj[hj < 0]
+            sp, sm   = np.sum(w_p), np.sum(w_m)
+            sp2, sm2 = np.sum(w_p**2), np.sum(w_m**2)
+            Nw = sp + sm
+            if Nw > 0:
+                A_w   = (sp - sm) / Nw
+                N_eff = Nw**2 / (sp2 + sm2)
+                err_w = np.sqrt((1 - A_w**2) / N_eff)
+            else:
+                A_w, err_w = 0.0, 0.0
+            #endif
+            A_phi_w.append(A_w)
+            err_phi_w.append(err_w)
+        #endfor
+
+        # 8) Fit unweighted A(phi) → A·sin(phi)
+        try:
+            popt_u, pcov_u     = curve_fit(sin_func, phi_centers, A_phi_unw,
+                                            sigma=err_phi_unw, absolute_sigma=True)
+            amps_unw[i]        = popt_u[0]
+            errs_unw[i]        = np.sqrt(pcov_u[0,0])
+        except:
+            amps_unw[i], errs_unw[i] = 0.0, 0.0
         #endif
 
-        # Track means
-        if np.any(sel):
-            mean_beam_pol[i] = np.mean(bp)
-            mean_DepA[i]     = np.mean(dA)
-            mean_DepW[i]     = np.mean(dW)
-        else:
-            mean_beam_pol[i] = np.nan
-            mean_DepA[i]     = np.nan
-            mean_DepW[i]     = np.nan
+        # 9) Fit weighted A(phi)
+        try:
+            popt_w, pcov_w   = curve_fit(sin_func, phi_centers, A_phi_w,
+                                          sigma=err_phi_w, absolute_sigma=True)
+            amps_w[i]        = popt_w[0]
+            errs_w[i]        = np.sqrt(pcov_w[0,0])
+        except:
+            amps_w[i], errs_w[i] = 0.0, 0.0
         #endif
+
     #endfor
 
     results[label] = {
-        "A_first":       A_first,
-        "err_first":     err_first,
-        "A_weighted":    A_weighted,
-        "err_weighted":  err_weighted,
-        "mean_beam_pol": mean_beam_pol,
-        "mean_DepA":     mean_DepA,
-        "mean_DepW":     mean_DepW
+        "amp_unw": amps_unw,
+        "err_unw": errs_unw,
+        "amp_w":   amps_w,
+        "err_w":   errs_w
     }
 #endfor
 
-# Ensure output directory exists
+# 10) Ensure output directory exists
 os.makedirs("output", exist_ok=True)
 
-#--- 5) First-step (unweighted) plot
+# 11) First-step (unweighted amplitude) plot
 fig, ax = plt.subplots()
 for label, res in results.items():
-    ax.errorbar(bin_centers, res["A_first"], yerr=res["err_first"], fmt='o', label=label)
+    ax.errorbar(cos_centers, res["amp_unw"], yerr=res["err_unw"],
+                fmt='o', label=label)
 #endfor
 ax.set_xlabel(r'$\cos\theta$')
 ax.set_ylabel(r'$A_{LU}$')
 ax.set_ylim(-1.2, 0.4)
 ax.legend(loc='upper right')
-ax.text(
-    0.02, 0.98,
-    "W > 2, Q² > 2, z > 0.9, Mₓ < 1.05",
-    transform=ax.transAxes, va='top', ha='left'
-)
+ax.text(0.02, 0.98,
+        "W > 2, Q² > 2, z > 0.9, Mₓ < 1.05",
+        transform=ax.transAxes, va='top', ha='left')
 plt.savefig("output/rga_rho0_first_step.pdf")
 plt.close()
 
-#--- 6) Weighted (final) plot
+# 12) Weighted (final amplitude) plot
 fig, ax = plt.subplots()
 for label, res in results.items():
-    ax.errorbar(bin_centers, res["A_weighted"], yerr=res["err_weighted"], fmt='o', label=label)
+    ax.errorbar(cos_centers, res["amp_w"], yerr=res["err_w"],
+                fmt='o', label=label)
 #endfor
 ax.set_xlabel(r'$\cos\theta$')
 ax.set_ylabel(r'$F_{LU}/F_{UU}$')
 ax.set_ylim(-1.2, 0.4)
 ax.legend(loc='upper right')
-ax.text(
-    0.02, 0.98,
-    "W > 2, Q² > 2, z > 0.9, Mₓ < 1.05",
-    transform=ax.transAxes, va='top', ha='left'
-)
+ax.text(0.02, 0.98,
+        "W > 2, Q² > 2, z > 0.9, Mₓ < 1.05",
+        transform=ax.transAxes, va='top', ha='left')
 plt.savefig("output/rga_rho0_ALU.pdf")
 plt.close()
