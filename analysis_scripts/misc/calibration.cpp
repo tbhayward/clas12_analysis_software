@@ -3949,7 +3949,7 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
             // Histograms for different theta ranges
             const int num_theta_bins = 5;
             // double theta_bins[num_theta_bins + 1] = {5, 10, 15, 20, 25, 40};
-            double theta_bins[num_theta_bins + 1] = {1, 2, 3, 4, 5};
+            double theta_bins[num_theta_bins + 1] = {1, 2, 3, 4, 5, 6};
             std::vector<std::vector<TH1D*>> h_sum_chi2_ndf_sector_theta(6, std::vector<TH1D*>(num_theta_bins));
             std::vector<std::vector<TH1D*>> h_count_chi2_ndf_sector_theta(6, std::vector<TH1D*>(num_theta_bins));
 
