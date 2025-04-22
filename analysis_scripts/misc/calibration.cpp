@@ -3776,8 +3776,10 @@ std::pair<double, double> rotate_coordinates(double x, double y, int sector) {
 
 void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = nullptr,
     const std::string& dataset = "rga_fa18_inb") {
-    double p_min = 1.25;
-    double p_max = 1.50;
+    // double p_min = 1.25;
+    // double p_max = 1.50;
+    double p_min = 2.50;
+    double p_max = 2.75;
     // double p_min = 0;
     // double p_max = 10;
     int nBins = 8;
