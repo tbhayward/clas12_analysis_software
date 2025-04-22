@@ -12,9 +12,9 @@ def sin_func(phi, A):
 
 # 1) Define your files and labels
 files = {
-    "RGA Fa18 Inb":  "/work/clas12/thayward/CLAS12_SIDIS/processed_data/pass2/data/eppi+pi-X/rga_fa18_inb_eppi+pi-X.root",
-    # "RGA Fa18 Out":  "/work/clas12/thayward/CLAS12_SIDIS/processed_data/pass2/data/eppi+pi-X/rga_fa18_out_eppi+pi-X.root",
-    # "RGA Sp19 Inb":  "/work/clas12/thayward/CLAS12_SIDIS/processed_data/pass2/data/eppi+pi-X/rga_sp19_inb_eppi+pi-X.root"
+    "RGA Fa18 Inb":  "/work/clas12/thayward/CLAS12_SIDIS/processed_data/pass2/data/epi+pi-X/rga_fa18_inb_epi+pi-X.root",
+    # "RGA Fa18 Out":  "/work/clas12/thayward/CLAS12_SIDIS/processed_data/pass2/data/epi+pi-X/rga_fa18_out_epi+pi-X.root",
+    # "RGA Sp19 Inb":  "/work/clas12/thayward/CLAS12_SIDIS/processed_data/pass2/data/epi+pi-X/rga_sp19_inb_epi+pi-X.root"
 }
 
 # 2) Set up bins in cos(theta)
@@ -32,8 +32,7 @@ results = {}
 for label, path in files.items():
     tree = uproot.open(path)["PhysicsEvents"]
     data = tree.arrays(
-        # ["helicity","beam_pol","DepA","DepW","theta","phi","W","Q2","z","Mx","Mh"],
-        ["helicity","beam_pol","DepA","DepW","theta","phi23","W","Q2","z23","Mx","Mx23","Mh23"],
+        ["helicity","beam_pol","DepA","DepW","theta","phi","W","Q2","z","Mx","Mh"],
         library="np"
     )
 
@@ -41,18 +40,17 @@ for label, path in files.items():
     mask = (
         (data["W"]  > 2) &
         (data["Q2"] > 2) &
-        (data["z23"]  > 0.9) &
-        (data["Mx"]  < 1) &
-        (data["Mx23"] < 1.05) &
-        (data["Mh23"] > 0.65) &
-        (data["Mh23"] < 0.85)
+        (data["z"]  > 0.9) &
+        (data["Mx"] < 1.05) &
+        (data["Mh"] > 0.65) &
+        (data["Mh"] < 0.85)
     )
     helicity = data["helicity"][mask]
     beam_pol  = data["beam_pol"][mask]
     DepA      = data["DepA"][mask]
     DepW      = data["DepW"][mask]
     theta     = data["theta"][mask]
-    phi       = data["phi23"][mask]
+    phi       = data["phi"][mask]
 
     cos_th = np.cos(theta)
 
