@@ -33,7 +33,7 @@ for label, path in files.items():
     tree = uproot.open(path)["PhysicsEvents"]
     data = tree.arrays(
         # ["helicity","beam_pol","DepA","DepW","theta","phi","W","Q2","z","Mx","Mh"],
-        ["helicity","beam_pol","DepA","DepW","theta","phi","W","Q2","z23","Mx","Mx23","Mh23"],
+        ["helicity","beam_pol","DepA","DepW","theta","phi23","W","Q2","z23","Mx","Mx23","Mh23"],
         library="np"
     )
 
