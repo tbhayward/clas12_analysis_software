@@ -3792,18 +3792,18 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
 
     // Array of particle types (photons and electrons) and their corresponding PIDs
     std::vector<std::tuple<int, std::string>> particle_types = {
-        // {
-        // 11, "e^{-}"}
-        // ,
-        {-211, "#pi^{-}"}
+        {
+        11, "e^{-}"}
         ,
-        {211, "#pi^{+}"}
+        // {-211, "#pi^{-}"}
+        // ,
+        // {211, "#pi^{+}"}
         // ,
         // {-321, "k^{-}"}
         // ,
         // {321, "k^{+}"}
         // ,
-        // {2212, "p"}
+        {2212, "p"}
     };
 
     for (const auto& particle_type : particle_types) {
