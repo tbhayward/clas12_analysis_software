@@ -4,7 +4,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 # === CONFIGURATION ===
-QUICK_RUN   = False                        # set False to loop over full tree
+QUICK_RUN   = True                        # set False to loop over full tree
 MAX_EVENTS  = 100_000                     # only used when QUICK_RUN is True
 
 DATASETS = {
@@ -56,48 +56,34 @@ def kinematic_cuts(ev, use_missing_mass_cuts=False, beam_energy=10.6):
                 p * np.sin(th) * np.sin(ph),
                 p * np.cos(th))
 
-    px_e, py_e, pz_e   = to_cart(e_p, e_theta, e_phi)
+    px_e, py_e, pz_e    = to_cart(e_p,  e_theta,  e_phi)
     px_p1, py_p1, pz_p1 = to_cart(p1_p, p1_theta, p1_phi)
     px_p2, py_p2, pz_p2 = to_cart(p2_p, p2_theta, p2_phi)
 
-    px_m = - (px_e + px_p1 + px_p2)
-    py_m = - (py_e + py_p1 + py_p2)
+    px_m = -(px_e  + px_p1 + px_p2)
+    py_m = -(py_e  + py_p1 + py_p2)
     pz_m = beam_energy - (pz_e + pz_p1 + pz_p2)
 
     p_m = np.sqrt(px_m**2 + py_m**2 + pz_m**2)
     p_m[p_m == 0] = np.nan
-    theta_calc = np.arccos(pz_m / p_m)
-    delta_th = np.abs(p3_theta - theta_calc)
-
-    # mask = (
-    #     (Q2    > 2.0) &
-    #     (W     > 2.0) &
-    #     (y     < 0.75) &
-    #     (z_rho > 0.9) &
-    #     (delta_th < 0.05)
-    # )
-    # if use_missing_mass_cuts:
-    #     mask &= (
-    #         (np.abs(Mx2) < 0.01) &
-    #         (Mx2_2      > 3.24) &
-    #         (Mx2_3      > 1.8225)
-    #     )
-    # return mask
+    theta_calc  = np.arccos(pz_m / p_m)
+    delta_th    = np.abs(p3_theta - theta_calc)
 
     mask = (
-        (Q2    > 0.0) &
-        (W     > 0.0) &
-        (y     < 1) &
-        (z_rho > 0) &
-        (delta_th < 1000)
+        (Q2    > 2.0) &
+        (W     > 2.0) &
+        (y     < 0.75) &
+        (z_rho > 0.9) &
+        (delta_th < 0.05)
     )
     if use_missing_mass_cuts:
         mask &= (
-            (np.abs(Mx2) < 1000) &
-            (Mx2_2      > 0) &
-            (Mx2_3      > 0)
+            (np.abs(Mx2) < 0.01) &
+            (Mx2_2     > 3.24) &
+            (Mx2_3     > 1.8225)
         )
     return mask
+    #endif
 
 
 # === 2) MISSING‐MASS PLOTTING ===
@@ -113,11 +99,11 @@ def plot_missing_masses(data, masks):
         for label, ev in data.items():
             arr = ev[key][masks[label]]
             counts, edges = np.histogram(arr, bins=100, range=xlim)
-            centers = 0.5 * (edges[:-1] + edges[1:])
+            centers = 0.5*(edges[:-1]+edges[1:])
             ax.errorbar(centers, counts, yerr=np.sqrt(counts),
                         fmt='o', label=label)
             ymax = max(ymax, counts.max())
-        ymax = ymax * 1.2 if ymax > 0 else 1.0
+        ymax = ymax*1.2 if ymax>0 else 1.0
 
         ax.set(xlabel=xlabel, ylabel="Counts", xlim=xlim, ylim=(0, ymax))
         ax.text(0.05, 0.95, CUT_LABEL_BASE, transform=ax.transAxes,
@@ -130,7 +116,7 @@ def plot_missing_masses(data, masks):
     plt.close()
 
 
-# === 3) BEAM-SPIN ASYMMETRY CALCULATION ===
+# === 3) BEAM‐SPIN ASYMMETRY CALCULATION ===
 def calculate_bsa(data):
     cos_bins = np.linspace(-1, 1, 17)
     phi_bins = np.linspace(0, 2*np.pi, 13)
@@ -146,7 +132,7 @@ def calculate_bsa(data):
         DepW    = ev["DepW"][mask]
         pol     = ev["beam_pol"][mask]
 
-        centers = 0.5 * (cos_bins[:-1] + cos_bins[1:])
+        centers = 0.5*(cos_bins[:-1] + cos_bins[1:])
         vals = np.zeros_like(centers)
         errs = np.zeros_like(centers)
 
@@ -157,25 +143,22 @@ def calculate_bsa(data):
                 errs[i] = np.nan
                 continue
 
-            # count N+, N- in phi bins
             Np, edges = np.histogram(phi23[sel & (helic > 0)], bins=phi_bins)
             Nm, _     = np.histogram(phi23[sel & (helic < 0)], bins=phi_bins)
             tot = Np + Nm
             with np.errstate(divide='ignore', invalid='ignore'):
                 asym = (Np - Nm) / tot
 
-            ph_centers = 0.5 * (edges[:-1] + edges[1:])
+            ph_centers = 0.5*(edges[:-1] + edges[1:])
             x = np.sin(ph_centers)
             y = asym
 
-            # fit asym = A sinϕ
-            A = np.nansum(x * y) / np.nansum(x * x)
-            res = y - A * x
-            var = np.nansum(res**2) / (len(y) - 1) if len(y) > 1 else 0
-            sigmaA = np.sqrt(var / np.nansum(x * x)) if np.nansum(x * x) > 0 else np.nan
+            A = np.nansum(x*y) / np.nansum(x*x)
+            res = y - A*x
+            var = np.nansum(res**2)/(len(y)-1) if len(y)>1 else 0
+            sigmaA = np.sqrt(var/np.nansum(x*x)) if np.nansum(x*x)>0 else np.nan
 
-            # scale amplitude
-            scale = np.mean(DepA[sel]) / (np.mean(pol[sel]) * np.mean(DepW[sel]))
+            scale = np.mean(DepA[sel]) / (np.mean(pol[sel])*np.mean(DepW[sel]))
             vals[i] = A * scale
             errs[i] = sigmaA * scale
 
@@ -184,11 +167,11 @@ def calculate_bsa(data):
     # combined
     all_vals = np.array([results[l][1] for l in results])
     all_errs = np.array([results[l][2] for l in results])
-    w = np.where(all_errs > 0, 1 / all_errs**2, 0)
-    num = np.nansum(all_vals * w, axis=0)
+    w = np.where(all_errs>0, 1/all_errs**2, 0)
+    num = np.nansum(all_vals*w, axis=0)
     den = np.nansum(w, axis=0)
-    comb = np.where(den > 0, num / den, np.nan)
-    comb_err = np.where(den > 0, np.sqrt(1 / den), np.nan)
+    comb = np.where(den>0, num/den, np.nan)
+    comb_err = np.where(den>0, np.sqrt(1/den), np.nan)
     centers = next(iter(results.values()))[0]
     results["Combined"] = (centers, comb, comb_err)
 
@@ -222,7 +205,36 @@ def plot_bsa(bsa):
     plt.close()
 
 
-# === 5) MAIN ===
+# === 5) θ AND cosθ DISTRIBUTIONS ===
+def plot_theta_distributions(data, masks):
+    """
+    1×2 panel: left = θ distribution, right = cosθ distribution,
+    using base kinematic cuts.
+    """
+    fig, axes = plt.subplots(1, 2, figsize=(12, 5))
+    bins_theta = np.linspace(0, np.pi, 50)
+    bins_cos   = np.linspace(-1, 1, 50)
+
+    for label, ev in data.items():
+        mask = masks[label]
+        theta = ev["theta"][mask]
+        cos_t = np.cos(theta)
+        axes[0].hist(theta, bins=bins_theta, histtype='step', label=label)
+        axes[1].hist(cos_t, bins=bins_cos, histtype='step', label=label)
+    #endfor
+
+    axes[0].set(xlabel=r"$\theta$ (rad)", ylabel="Counts")
+    axes[1].set(xlabel=r"$\cos\theta$", ylabel="Counts")
+    axes[0].legend(loc='upper right', fontsize=8)
+    axes[1].legend(loc='upper right', fontsize=8)
+
+    plt.tight_layout()
+    os.makedirs("output/rho0", exist_ok=True)
+    plt.savefig("output/rho0/theta_distributions.pdf")
+    plt.close()
+
+
+# === 6) MAIN DRIVER ===
 def main():
     data = {}
     masks = {}
@@ -246,10 +258,12 @@ def main():
                 arrs, use_missing_mass_cuts=False,
                 beam_energy=BEAM_ENERGIES[label]
             )
+    #endfor
 
     plot_missing_masses(data, masks)
     bsa = calculate_bsa(data)
     plot_bsa(bsa)
+    plot_theta_distributions(data, masks)
 
 
 if __name__ == "__main__":
