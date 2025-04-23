@@ -11,15 +11,15 @@ DATASETS = {
     "RGA Fa18 Inb": (
         "/work/clas12/thayward/CLAS12_SIDIS/processed_data/"
         "pass2/data/eppi+pi-X/rga_fa18_inb_eppi+pi-X.root"
-    )
-    # "RGA Fa18 Out": (
-    #     "/work/clas12/thayward/CLAS12_SIDIS/processed_data/"
-    #     "pass2/data/eppi+pi-X/rga_fa18_out_eppi+pi-X.root"
-    # ),
-    # "RGA Sp19 Inb": (
-    #     "/work/clas12/thayward/CLAS12_SIDIS/processed_data/"
-    #     "pass2/data/eppi+pi-X/rga_sp19_inb_eppi+pi-X.root"
-    # ),
+    ),
+    "RGA Fa18 Out": (
+        "/work/clas12/thayward/CLAS12_SIDIS/processed_data/"
+        "pass2/data/eppi+pi-X/rga_fa18_out_eppi+pi-X.root"
+    ),
+    "RGA Sp19 Inb": (
+        "/work/clas12/thayward/CLAS12_SIDIS/processed_data/"
+        "pass2/data/eppi+pi-X/rga_sp19_inb_eppi+pi-X.root"
+    ),
 }
 
 # beam energies by dataset (GeV)
