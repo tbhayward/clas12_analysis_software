@@ -50,14 +50,14 @@ CUT_LABEL_BASE = (
 )
 CUT_LABEL_MX = (
     "$Q^{2}>2, W>2, y<0.75$\n"
-    "$z_{\\rho}>0.9, |M_{x}^{2}|<0.01$\n"
+    "$z_{\\rho}>0.9, |M_{h} - M_{\\rho}| < 0.1, |M_{x}^{2}|<0.01$\n"
     "$M_{x\\pi^{+}}^{2}>3.24, M_{x\\pi^{-}}^{2}>1.8225, \\Delta\\pi^{-}<0.05$"
 )
 
 # === 1) KINEMATIC‐CUTS FUNCTION ===
 def kinematic_cuts(ev, use_missing_mass_cuts=False, beam_energy=10.6):
     Q2, W, y, z_rho = ev["Q2"], ev["W"], ev["y"], ev["z23"]
-    Mx2, Mx2_2, Mx2_3 = ev["Mx2"], ev["Mx2_2"], ev["Mx2_3"]
+    Mx2, Mx2_2, Mx2_3, Mh23 = ev["Mx2"], ev["Mx2_2"], ev["Mx2_3"], ev["Mh23"];
     p3_theta = ev["p3_theta"]
     e_p, e_theta, e_phi = ev["e_p"], ev["e_theta"], ev["e_phi"]
     p1_p, p1_theta, p1_phi = ev["p1_p"], ev["p1_theta"], ev["p1_phi"]
@@ -85,6 +85,7 @@ def kinematic_cuts(ev, use_missing_mass_cuts=False, beam_energy=10.6):
         (Q2    > 2.0) &
         (W     > 2.0) &
         (y     < 0.75) &
+        (np.abs(Mh23 - 0.75) < 0.1) &
         (z_rho > 0.9) &
         (delta_th < 0.05)
     )
