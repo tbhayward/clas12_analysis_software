@@ -58,7 +58,7 @@ def kinematic_cuts(events, use_missing_mass_cuts=False):
         (W     > 2.0)      &
         (y     < 0.75)     &
         (z_rho > 0.9)      &
-        (delta_theta < 0.05)
+        # (delta_theta < 0.05)
     )
 
     if use_missing_mass_cuts:
@@ -90,12 +90,16 @@ def plot_missing_masses(data_dict, mask_dict):
         labels.append(label)
     #endfor
 
+    # determine a common y-axis maximum (1.2× highest bin count)
     all_max = []
     for arr_list in (Mxs, Mx2s, Mx3s):
         for arr in arr_list:
             counts, _ = np.histogram(arr, bins=100)
             all_max.append(counts.max())
+
     y_max = max(all_max) * 1.2
+    if y_max <= 0:
+        y_max = 1.0
 
     fig, axes = plt.subplots(1, 3, figsize=(15, 5), sharey=True)
 
@@ -143,7 +147,7 @@ def main():
             )
 
             data_dict[label] = arrs
-            # for the initial plot, pass False to exclude missing‐mass cuts
+            # for the initial plot, call with False to exclude Mx² cuts
             mask_dict[label] = kinematic_cuts(arrs, use_missing_mass_cuts=False)
     #endfor
 
