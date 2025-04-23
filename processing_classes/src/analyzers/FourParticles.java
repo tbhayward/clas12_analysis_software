@@ -475,7 +475,7 @@ public class FourParticles {
         // just used to calculate theta
         Vector3 pCOMBoost = lv_p.boostVector();
         pCOMBoost.negative();
-        LorentzVector lv_p23_COM = new LorentzVector(lv_p);
+        LorentzVector lv_p23_COM = new LorentzVector(lv_p23);
         lv_p23_COM.boost(pCOMBoost);
         LorentzVector lv_p2_COM = new LorentzVector(lv_p2);
         lv_p2_COM.boost(pCOMBoost);
