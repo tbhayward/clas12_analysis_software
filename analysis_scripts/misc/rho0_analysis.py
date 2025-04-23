@@ -4,34 +4,13 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 # === CONFIGURATION ===
-QUICK_RUN   = False                        # set False to loop over full tree
+QUICK_RUN   = False                       # set True to limit to MAX_EVENTS
 MAX_EVENTS  = 100_000                     # only used when QUICK_RUN is True
 
 DATASETS = {
-    # "RGA Fa18 Inb": (
-    #     "/work/clas12/thayward/CLAS12_SIDIS/processed_data/"
-    #     "pass2/data/eppi+pi-X/rga_fa18_inb_eppi+pi-X.root"
-    # ),
-    # "RGA Fa18 Out": (
-    #     "/work/clas12/thayward/CLAS12_SIDIS/processed_data/"
-    #     "pass2/data/eppi+pi-X/rga_fa18_out_eppi+pi-X.root"
-    # ),
-    # "RGA Sp19 Inb": (
-    #     "/work/clas12/thayward/CLAS12_SIDIS/processed_data/"
-    #     "pass2/data/eppi+pi-X/rga_sp19_inb_eppi+pi-X.root"
-    # ),
-    "RGA Fa18 Inb": (
-        "/scratch/thayward/"
-        "rga_fa18_inb_eppi+pi-X.root"
-    ),
-    "RGA Fa18 Out": (
-        "/scratch/thayward/"
-        "rga_fa18_out_eppi+pi-X.root"
-    ),
-    "RGA Sp19 Inb": (
-        "/scratch/thayward/"
-        "rga_sp19_inb_eppi+pi-X.root"
-    ),
+    "RGA Fa18 Inb": "/scratch/thayward/rga_fa18_inb_eppi+pi-X.root",
+    "RGA Fa18 Out": "/scratch/thayward/rga_fa18_out_eppi+pi-X.root",
+    "RGA Sp19 Inb": "/scratch/thayward/rga_sp19_inb_eppi+pi-X.root",
 }
 
 # beam energies by dataset (GeV)
@@ -50,73 +29,64 @@ CUT_LABEL_BASE = (
 )
 CUT_LABEL_MX = (
     "$Q^{2}>2, W>2, y<0.75$\n"
-    "$z_{\\rho}>0.9, |M_{h} - M_{\\rho}| < 0.1, |M_{x}^{2}|<0.01$\n"
+    "$z_{\\rho}>0.9, |M_{h}-M_{\\rho}|<0.1, |M_{x}^{2}|<0.01$\n"
     "$M_{x\\pi^{+}}^{2}>3.24, M_{x\\pi^{-}}^{2}>1.8225, \\Delta\\pi^{-}<0.05$"
 )
+
 
 # === 1) KINEMATIC‐CUTS FUNCTION ===
 def kinematic_cuts(ev, use_missing_mass_cuts=False, beam_energy=10.6):
     Q2, W, y, z_rho = ev["Q2"], ev["W"], ev["y"], ev["z23"]
-    Mx2, Mx2_2, Mx2_3, Mh23 = ev["Mx2"], ev["Mx2_2"], ev["Mx2_3"], ev["Mh23"];
+    Mx2, Mx2_2, Mx2_3, Mh23 = (
+        ev["Mx2"], ev["Mx2_2"], ev["Mx2_3"], ev["Mh23"]
+    )
     p3_theta = ev["p3_theta"]
     e_p, e_theta, e_phi = ev["e_p"], ev["e_theta"], ev["e_phi"]
     p1_p, p1_theta, p1_phi = ev["p1_p"], ev["p1_theta"], ev["p1_phi"]
     p2_p, p2_theta, p2_phi = ev["p2_p"], ev["p2_theta"], ev["p2_phi"]
 
     def to_cart(p, th, ph):
-        return (p * np.sin(th) * np.cos(ph),
-                p * np.sin(th) * np.sin(ph),
-                p * np.cos(th))
+        return (
+            p * np.sin(th) * np.cos(ph),
+            p * np.sin(th) * np.sin(ph),
+            p * np.cos(th),
+        )
 
     px_e, py_e, pz_e    = to_cart(e_p,  e_theta,  e_phi)
     px_p1, py_p1, pz_p1 = to_cart(p1_p, p1_theta, p1_phi)
     px_p2, py_p2, pz_p2 = to_cart(p2_p, p2_theta, p2_phi)
 
-    px_m = -(px_e  + px_p1 + px_p2)
-    py_m = -(py_e  + py_p1 + py_p2)
+    px_m = -(px_e + px_p1 + px_p2)
+    py_m = -(py_e + py_p1 + py_p2)
     pz_m = beam_energy - (pz_e + pz_p1 + pz_p2)
 
     p_m = np.sqrt(px_m**2 + py_m**2 + pz_m**2)
     p_m[p_m == 0] = np.nan
-    theta_calc  = np.arccos(pz_m / p_m)
-    delta_th    = np.abs(p3_theta - theta_calc)
+    theta_calc = np.arccos(pz_m / p_m)
+    delta_th   = np.abs(p3_theta - theta_calc)
 
     mask = (
-        (Q2    > 2.0) &
-        (W     > 2.0) &
-        (y     < 0.75) &
-        (np.abs(Mh23 - 0.75) < 0.1) &
-        (z_rho > 0.9) &
-        (delta_th < 0.05)
+        (Q2    >  2.0) &
+        (W     >  2.0) &
+        (y     <  0.75) &
+        (z_rho >  0.9) &
+        (delta_th < 0.05) &
+        (np.abs(Mh23 - 0.775) < 0.1)   # <-- apply your Mh23 cut here
     )
     if use_missing_mass_cuts:
         mask &= (
             (np.abs(Mx2) < 0.01) &
-            (Mx2_2     > 3.24) &
-            (Mx2_3     > 1.8225)
+            (Mx2_2       > 3.24) &
+            (Mx2_3       > 1.8225)
         )
-    # mask = (
-    #     (Q2    > 0.0) &
-    #     (W     > 0.0) &
-    #     (y     < 1) &
-    #     (z_rho > 0) &
-    #     (delta_th < 50)
-    # )
-    # if use_missing_mass_cuts:
-    #     mask &= (
-    #         (np.abs(Mx2) <100) &
-    #         (Mx2_2     > 0) &
-    #         (Mx2_3     > 0)
-    # )
     return mask
-    #endif
 
 
 # === 2) MISSING‐MASS PLOTTING ===
 def plot_missing_masses(data, masks):
     fig, axes = plt.subplots(1, 3, figsize=(18, 5))
     specs = [
-        ("Mx2",   r"$M_{x}^{2}\,(\mathrm{GeV}^2)$",    (-0.03, 0.03)),
+        ("Mx2",   r"$M_{x}^{2}\,(\mathrm{GeV}^2)$",     (-0.03, 0.03)),
         ("Mx2_2", r"$M_{x\pi^{+}}^{2}\,(\mathrm{GeV}^2)$",(1, 6)),
         ("Mx2_3", r"$M_{x\pi^{-}}^{2}\,(\mathrm{GeV}^2)$",(1, 6)),
     ]
@@ -125,11 +95,11 @@ def plot_missing_masses(data, masks):
         for label, ev in data.items():
             arr = ev[key][masks[label]]
             counts, edges = np.histogram(arr, bins=100, range=xlim)
-            centers = 0.5*(edges[:-1]+edges[1:])
+            centers = 0.5 * (edges[:-1] + edges[1:])
             ax.errorbar(centers, counts, yerr=np.sqrt(counts),
                         fmt='o', label=label)
             ymax = max(ymax, counts.max())
-        ymax = ymax*1.2 if ymax>0 else 1.0
+        ymax = ymax * 1.2 if ymax > 0 else 1.0
 
         ax.set(xlabel=xlabel, ylabel="Counts", xlim=xlim, ylim=(0, ymax))
         ax.text(0.05, 0.95, CUT_LABEL_BASE, transform=ax.transAxes,
@@ -149,8 +119,10 @@ def calculate_bsa(data):
     results = {}
 
     for label, ev in data.items():
-        mask = kinematic_cuts(ev, use_missing_mass_cuts=True,
-                               beam_energy=BEAM_ENERGIES[label])
+        mask = kinematic_cuts(
+            ev, use_missing_mass_cuts=True,
+            beam_energy=BEAM_ENERGIES[label]
+        )
         cos_t   = np.cos(ev["theta"][mask])
         phi23   = ev["phi23"][mask]
         helic   = ev["helicity"][mask]
@@ -158,7 +130,7 @@ def calculate_bsa(data):
         DepW    = ev["DepW"][mask]
         pol     = ev["beam_pol"][mask]
 
-        centers = 0.5*(cos_bins[:-1] + cos_bins[1:])
+        centers = 0.5 * (cos_bins[:-1] + cos_bins[1:])
         vals = np.zeros_like(centers)
         errs = np.zeros_like(centers)
 
@@ -175,7 +147,7 @@ def calculate_bsa(data):
             with np.errstate(divide='ignore', invalid='ignore'):
                 asym = (Np - Nm) / tot
 
-            ph_centers = 0.5*(edges[:-1] + edges[1:])
+            ph_centers = 0.5 * (edges[:-1] + edges[1:])
             x = np.sin(ph_centers)
             y = asym
 
@@ -184,7 +156,7 @@ def calculate_bsa(data):
             var = np.nansum(res**2)/(len(y)-1) if len(y)>1 else 0
             sigmaA = np.sqrt(var/np.nansum(x*x)) if np.nansum(x*x)>0 else np.nan
 
-            scale = np.mean(DepA[sel]) / (np.mean(pol[sel])*np.mean(DepW[sel]))
+            scale = np.mean(DepA[sel]) / (np.mean(pol[sel]) * np.mean(DepW[sel]))
             vals[i] = A * scale
             errs[i] = sigmaA * scale
 
@@ -193,11 +165,11 @@ def calculate_bsa(data):
     # combined
     all_vals = np.array([results[l][1] for l in results])
     all_errs = np.array([results[l][2] for l in results])
-    w = np.where(all_errs>0, 1/all_errs**2, 0)
-    num = np.nansum(all_vals*w, axis=0)
+    w = np.where(all_errs > 0, 1/all_errs**2, 0)
+    num = np.nansum(all_vals * w, axis=0)
     den = np.nansum(w, axis=0)
-    comb = np.where(den>0, num/den, np.nan)
-    comb_err = np.where(den>0, np.sqrt(1/den), np.nan)
+    comb = np.where(den > 0, num/den, np.nan)
+    comb_err = np.where(den > 0, np.sqrt(1/den), np.nan)
     centers = next(iter(results.values()))[0]
     results["Combined"] = (centers, comb, comb_err)
 
@@ -233,13 +205,9 @@ def plot_bsa(bsa):
 
 # === 5) θ AND cosθ DISTRIBUTIONS ===
 def plot_theta_distributions(data, masks):
-    """
-    1×2 panel: left = θ distribution, right = cosθ distribution,
-    using base kinematic cuts.
-    """
     fig, axes = plt.subplots(1, 2, figsize=(12, 5))
-    bins_theta = np.linspace(0, np.pi, 100)
-    bins_cos   = np.linspace(-1, 1, 100)
+    bins_theta = np.linspace(0, np.pi, 50)
+    bins_cos   = np.linspace(-1, 1, 50)
 
     for label, ev in data.items():
         mask = masks[label]
@@ -247,7 +215,6 @@ def plot_theta_distributions(data, masks):
         cos_t = np.cos(theta)
         axes[0].hist(theta, bins=bins_theta, histtype='step', label=label)
         axes[1].hist(cos_t, bins=bins_cos, histtype='step', label=label)
-    #endfor
 
     axes[0].set(xlabel=r"$\theta$ (rad)", ylabel="Counts")
     axes[1].set(xlabel=r"$\cos\theta$", ylabel="Counts")
@@ -266,7 +233,7 @@ def main():
     masks = {}
     branches = [
         "Q2","W","y","z23",
-        "Mx2","Mx2_2","Mx2_3",
+        "Mx2","Mx2_2","Mx2_3","Mh23",      # ← ensure Mh23 is read
         "p3_theta",
         "e_p","e_theta","e_phi",
         "p1_p","p1_theta","p1_phi",
@@ -279,12 +246,11 @@ def main():
             tree = f[TREE_NAME]
             stop = MAX_EVENTS if QUICK_RUN else None
             arrs = tree.arrays(branches, entry_stop=stop, library="np")
-            data[label] = arrs
+            data[label]  = arrs
             masks[label] = kinematic_cuts(
                 arrs, use_missing_mass_cuts=False,
                 beam_energy=BEAM_ENERGIES[label]
             )
-    #endfor
 
     plot_missing_masses(data, masks)
     bsa = calculate_bsa(data)
@@ -294,4 +260,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-    #endif
