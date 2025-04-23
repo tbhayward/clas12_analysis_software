@@ -70,17 +70,17 @@ def kinematic_cuts(ev, use_missing_mass_cuts=False, beam_energy=10.6):
     delta_th = np.abs(p3_theta - theta_calc)
 
     mask = (
-        (Q2    > 2.0) &
-        (W     > 2.0) &
-        (y     < 0.75) &
-        (z_rho > 0.9) &
-        (delta_th < 0.05)
+        # (Q2    > 2.0) &
+        # (W     > 2.0) &
+        # (y     < 0.75) &
+        # (z_rho > 0.9) &
+        # (delta_th < 0.05)
     )
     if use_missing_mass_cuts:
         mask &= (
-            (np.abs(Mx2) < 0.01) &
-            (Mx2_2      > 3.24) &
-            (Mx2_3      > 1.8225)
+            # (np.abs(Mx2) < 0.01) &
+            # (Mx2_2      > 3.24) &
+            # (Mx2_3      > 1.8225)
         )
     return mask
 
