@@ -87,14 +87,14 @@ def plot_missing_masses(data, masks):
     fig, axes = plt.subplots(1, 3, figsize=(18, 5))
     specs = [
         ("Mx2",   r"$M_{x}^{2}\,(\mathrm{GeV}^2)$",     (-0.02, 0.02)),
-        ("Mx2_2", r"$M_{x\pi^{+}}^{2}\,(\mathrm{GeV}^2)$",(1, 6)),
-        ("Mx2_3", r"$M_{x\pi^{-}}^{2}\,(\mathrm{GeV}^2)$",(1, 6)),
+        ("Mx2_2", r"$M_{x\pi^{+}}^{2}\,(\mathrm{GeV}^2)$",(1, 7)),
+        ("Mx2_3", r"$M_{x\pi^{-}}^{2}\,(\mathrm{GeV}^2)$",(1, 7)),
     ]
     for ax, (key, xlabel, xlim) in zip(axes, specs):
         ymax = 0
         for label, ev in data.items():
             arr = ev[key][masks[label]]
-            counts, edges = np.histogram(arr, bins=100, range=xlim)
+            counts, edges = np.histogram(arr, bins=75, range=xlim)
             centers = 0.5 * (edges[:-1] + edges[1:])
             ax.errorbar(centers, counts, yerr=np.sqrt(counts),
                         fmt='o', label=label)
