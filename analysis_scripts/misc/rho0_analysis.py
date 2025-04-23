@@ -86,7 +86,7 @@ def kinematic_cuts(ev, use_missing_mass_cuts=False, beam_energy=10.6):
 def plot_missing_masses(data, masks):
     fig, axes = plt.subplots(1, 3, figsize=(18, 5))
     specs = [
-        ("Mx2",   r"$M_{x}^{2}\,(\mathrm{GeV}^2)$",     (-0.03, 0.03)),
+        ("Mx2",   r"$M_{x}^{2}\,(\mathrm{GeV}^2)$",     (-0.02, 0.02)),
         ("Mx2_2", r"$M_{x\pi^{+}}^{2}\,(\mathrm{GeV}^2)$",(1, 6)),
         ("Mx2_3", r"$M_{x\pi^{-}}^{2}\,(\mathrm{GeV}^2)$",(1, 6)),
     ]
