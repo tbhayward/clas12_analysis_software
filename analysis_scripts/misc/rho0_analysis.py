@@ -4,7 +4,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 # === CONFIGURATION ===
-QUICK_RUN   = True                        # set False to loop over entire tree
+QUICK_RUN   = True                        # set False to loop over entire the full tree
 MAX_EVENTS  = 100_000                     # only used when QUICK_RUN is True
 
 DATASETS = {
@@ -22,6 +22,13 @@ DATASETS = {
     ),
 }
 
+# beam energies by dataset (GeV)
+BEAM_ENERGIES = {
+    "RGA Fa18 Inb": 10.6,
+    # "RGA Fa18 Out": 10.6,
+    "RGA Sp19 Inb": 10.2,
+}
+
 TREE_NAME = "PhysicsEvents"
 
 # This LaTeX‐style string will be drawn in the top‐left of each panel:
@@ -32,33 +39,65 @@ CUT_LABEL = (
 )
 
 # === 1) KINEMATIC‐CUTS FUNCTION ===
-def kinematic_cuts(events, use_missing_mass_cuts=False):
+def kinematic_cuts(events, use_missing_mass_cuts=False, beam_energy=10.6):
     """
     Given an 'events' dict of NumPy arrays for one dataset,
-    return a boolean mask of the same length where all selected cuts pass.
+    return a boolean mask where all selected cuts pass.
     If use_missing_mass_cuts=True, also apply the three Mx² cuts.
+    beam_energy (GeV) is used to compute the missing pi- direction.
     """
-    Q2    = events["Q2"]
-    W     = events["W"]
-    y     = events["y"]
-    z_rho = events["z23"]
-    Mx2   = events["Mx2"]
-    Mx2_2 = events["Mx2_2"]
-    Mx2_3 = events["Mx2_3"]
-    p3_theta = events["p3_theta"]
+    # extract branches
+    Q2        = events["Q2"]
+    W         = events["W"]
+    y         = events["y"]
+    z_rho     = events["z23"]
+    Mx2       = events["Mx2"]
+    Mx2_2     = events["Mx2_2"]
+    Mx2_3     = events["Mx2_3"]
+    p3_theta  = events["p3_theta"]
 
-    # --- CALCULATE EXCLUSIVE π⁻ ANGLE HERE ---
-    # TODO: replace this placeholder with your true calculation
-    calc_p3_theta = np.zeros_like(p3_theta)  # placeholder
-    delta_theta = np.abs(p3_theta - calc_p3_theta)
+    # measured 3-momenta (magnitude and angles in radians)
+    e_p       = events["e_p"]
+    e_theta   = events["e_theta"]
+    e_phi     = events["e_phi"]
+    p1_p      = events["p1_p"]
+    p1_theta  = events["p1_theta"]
+    p1_phi    = events["p1_phi"]
+    p2_p      = events["p2_p"]
+    p2_theta  = events["p2_theta"]
+    p2_phi    = events["p2_phi"]
 
-    # base mask: all cuts except the missing‐mass ones
+    # build 3-vectors
+    def to_cart(p, theta, phi):
+        px = p * np.sin(theta) * np.cos(phi)
+        py = p * np.sin(theta) * np.sin(phi)
+        pz = p * np.cos(theta)
+        return px, py, pz
+
+    px_e, py_e, pz_e   = to_cart(e_p,  e_theta,  e_phi)
+    px_p1, py_p1, pz_p1 = to_cart(p1_p, p1_theta, p1_phi)
+    px_p2, py_p2, pz_p2 = to_cart(p2_p, p2_theta, p2_phi)
+
+    # missing momentum = beam (0,0,beam_E) + target(0,0,0)
+    #                   - (e' + p' + pi+)
+    px_miss = - (px_e + px_p1 + px_p2)
+    py_miss = - (py_e + py_p1 + py_p2)
+    pz_miss = beam_energy - (pz_e + pz_p1 + pz_p2)
+
+    p_miss  = np.sqrt(px_miss**2 + py_miss**2 + pz_miss**2)
+    # avoid division by zero
+    p_miss[p_miss == 0] = np.nan
+
+    theta_calc = np.arccos(pz_miss / p_miss)
+    delta_theta = np.abs(p3_theta - theta_calc)
+
+    # base mask: all cuts except missing-mass ones
     mask = (
-        # (delta_theta < 0.05) &
-        (Q2    > 2.0)      &
-        (W     > 2.0)      &
-        (y     < 0.75)     &
-        (z_rho > 0.9)      
+        (Q2    > 2.0)    &
+        (W     > 2.0)    &
+        (y     < 0.75)   &
+        (z_rho > 0.9)    &
+        (delta_theta < 0.05)
     )
 
     if use_missing_mass_cuts:
@@ -90,19 +129,17 @@ def plot_missing_masses(data_dict, mask_dict):
         labels.append(label)
     #endfor
 
-    # determine a common y-axis maximum (1.2× highest bin count)
+    # determine common y-axis max
     all_max = []
     for arr_list in (Mxs, Mx2s, Mx3s):
         for arr in arr_list:
             counts, _ = np.histogram(arr, bins=100)
             all_max.append(counts.max())
-
     y_max = max(all_max) * 1.2
     if y_max <= 0:
         y_max = 1.0
 
     fig, axes = plt.subplots(1, 3, figsize=(15, 5), sharey=True)
-
     x_labels = [
         r"$M_{x}^{2}\,\mathrm{(GeV^{2})}$",
         r"$M_{x\pi^{+}}^{2}\,\mathrm{(GeV^{2})}$",
@@ -112,7 +149,7 @@ def plot_missing_masses(data_dict, mask_dict):
     for ax, arr_list, xlabel in zip(axes, (Mxs, Mx2s, Mx3s), x_labels):
         for arr, label in zip(arr_list, labels):
             counts, edges = np.histogram(arr, bins=100)
-            centers = 0.5 * (edges[:-1] + edges[1:])
+            centers = 0.5*(edges[:-1] + edges[1:])
             errors  = np.sqrt(counts)
             ax.errorbar(centers, counts, yerr=errors, fmt='o', label=label)
         ax.set_xlabel(xlabel)
@@ -141,14 +178,22 @@ def main():
             stop = MAX_EVENTS if QUICK_RUN else None
 
             arrs = tree.arrays(
-                ["Q2","W","y","z23","Mx2","Mx2_2","Mx2_3","p3_theta"],
+                [
+                    "Q2","W","y","z23",
+                    "Mx2","Mx2_2","Mx2_3",
+                    "p3_theta",
+                    "e_p","e_theta","e_phi",
+                    "p1_p","p1_theta","p1_phi",
+                    "p2_p","p2_theta","p2_phi"
+                ],
                 entry_stop=stop,
                 library="np"
             )
 
             data_dict[label] = arrs
-            # for the initial plot, call with False to exclude Mx² cuts
-            mask_dict[label] = kinematic_cuts(arrs, use_missing_mass_cuts=False)
+            beam_E = BEAM_ENERGIES[label]
+            # for initial plot: pass False to exclude missing-mass cuts
+            mask_dict[label] = kinematic_cuts(arrs, use_missing_mass_cuts=False, beam_energy=beam_E)
     #endfor
 
     plot_missing_masses(data_dict, mask_dict)
