@@ -1,12 +1,11 @@
 import os
-import uproot                              # pip install uproot awkward
+import uproot                              # pip install uproot
 import numpy as np
 import matplotlib.pyplot as plt
 
 # === CONFIGURATION ===
-QUICK_RUN = True                          # set False to loop over entire tree
-MAX_EVENTS = 100_000                      # only used when QUICK_RUN is True
-USE_MISSING_MASS_CUTS = False             # toggle to include/exclude Mx² cuts
+QUICK_RUN   = True                        # set False to loop over entire tree
+MAX_EVENTS  = 100_000                     # only used when QUICK_RUN is True
 
 DATASETS = {
     "RGA Fa18 Inb": (
@@ -33,10 +32,11 @@ CUT_LABEL = (
 )
 
 # === 1) KINEMATIC‐CUTS FUNCTION ===
-def kinematic_cuts(events):
+def kinematic_cuts(events, use_missing_mass_cuts=False):
     """
     Given an 'events' dict of NumPy arrays for one dataset,
     return a boolean mask of the same length where all selected cuts pass.
+    If use_missing_mass_cuts=True, also apply the three Mx² cuts.
     """
     Q2    = events["Q2"]
     W     = events["W"]
@@ -52,7 +52,7 @@ def kinematic_cuts(events):
     calc_p3_theta = np.zeros_like(p3_theta)  # placeholder
     delta_theta = np.abs(p3_theta - calc_p3_theta)
 
-    # base mask (all cuts except the missing‐mass ones)
+    # base mask: all cuts except the missing‐mass ones
     mask = (
         (Q2    > 2.0)      &
         (W     > 2.0)      &
@@ -61,8 +61,7 @@ def kinematic_cuts(events):
         (delta_theta < 0.05)
     )
 
-    # optionally include the three Mx² cuts (and room for two more)
-    if USE_MISSING_MASS_CUTS:
+    if use_missing_mass_cuts:
         mask &= (
             (np.abs(Mx2)   < 0.3) &
             (Mx2_2 > 3.24)       &
@@ -82,7 +81,6 @@ def plot_missing_masses(data_dict, mask_dict):
     Build a 1×3 panel for Mx2, Mx2_2, Mx2_3 distributions
     from each dataset in data_dict, using their masks in mask_dict.
     """
-    # gather masked arrays per dataset
     Mxs, Mx2s, Mx3s, labels = [], [], [], []
     for label, ev in data_dict.items():
         m = mask_dict[label]
@@ -92,7 +90,6 @@ def plot_missing_masses(data_dict, mask_dict):
         labels.append(label)
     #endfor
 
-    # determine a common y‐axis maximum (1.2× highest bin count)
     all_max = []
     for arr_list in (Mxs, Mx2s, Mx3s):
         for arr in arr_list:
@@ -114,13 +111,11 @@ def plot_missing_masses(data_dict, mask_dict):
             centers = 0.5 * (edges[:-1] + edges[1:])
             errors  = np.sqrt(counts)
             ax.errorbar(centers, counts, yerr=errors, fmt='o', label=label)
-        # set labels & limits
         ax.set_xlabel(xlabel)
         ax.set_ylabel("Counts")
         ax.set_ylim(0, y_max)
     #endfor
 
-    # annotate cuts on left panel, legend on right panel
     axes[0].text(0.05, 0.95, CUT_LABEL,
                  transform=axes[0].transAxes, va='top', fontsize=10)
     axes[2].legend(loc='upper right')
@@ -141,18 +136,17 @@ def main():
             tree = f[TREE_NAME]
             stop = MAX_EVENTS if QUICK_RUN else None
 
-            # read only the branches we need
             arrs = tree.arrays(
                 ["Q2","W","y","z23","Mx2","Mx2_2","Mx2_3","p3_theta"],
-                entry_stop=stop
+                entry_stop=stop,
+                library="np"
             )
 
-            # store as plain NumPy arrays
-            data_dict[label] = {k: arrs[k].to_numpy() for k in arrs.keys()}
-            mask_dict[label] = kinematic_cuts(data_dict[label])
+            data_dict[label] = arrs
+            # for the initial plot, pass False to exclude missing‐mass cuts
+            mask_dict[label] = kinematic_cuts(arrs, use_missing_mass_cuts=False)
     #endfor
 
-    # produce the initial missing‐mass panel (no Mx² cuts if USE_MISSING_MASS_CUTS=False)
     plot_missing_masses(data_dict, mask_dict)
 
 
