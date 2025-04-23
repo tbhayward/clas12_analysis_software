@@ -24,7 +24,8 @@ TREE_NAME = "PhysicsEvents"
 
 # === CUT LABELS ===
 CUT_LABEL_BASE = (
-    "$Q^{2}>2, W>2, y<0.75$\n"
+    # "$Q^{2}>2, W>2, y<0.75$\n"
+    "$Q^{2}>2, W>2\n"
     "$z_{\\rho}>0.9, \\Delta\\pi^{-}<0.05$"
 )
 CUT_LABEL_MX = (
@@ -68,7 +69,8 @@ def kinematic_cuts(ev, use_missing_mass_cuts=False, beam_energy=10.6):
     mask = (
         (Q2    >  2.0) &
         (W     >  2.0) &
-        (y     <  0.75) &
+        # (y     <  0.75) &
+        (y     <  1.00) &
         (z_rho >  0.9) &
         (delta_th < 0.05) &
         (np.abs(Mh23 - 0.775) < 0.1)   # <-- apply your Mh23 cut here
