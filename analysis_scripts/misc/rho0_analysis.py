@@ -185,16 +185,20 @@ def calculate_bsa(data_dict):
         results[label] = (cos_centers, bsa_vals, bsa_errs)
 
     # combined
-    cos_centers = results[next(iter(results))][0]
+    cos_centers = next(iter(results.values()))[0]
     vs = np.array([results[l][1] for l in results])
     es = np.array([results[l][2] for l in results])
-    w  = np.where(es>0, 1/es**2, 0)
-    num = np.nansum(w*vs, axis=0)
-    den = np.nansum(w, axis=0)
-    comb = np.where(den>0, num/den, np.nan)
-    comb_err = np.where(den>0, np.sqrt(1/den), np.nan)
-    results["Combined"] = (cos_centers, comb, comb_err)
 
+    num = np.nansum((vs / es**2), axis=0, where=(es>0))
+    den = np.nansum((1 / es**2), axis=0, where=(es>0))
+
+    comb = np.full_like(cos_centers, np.nan)
+    comb_err = np.full_like(cos_centers, np.nan)
+    valid = den > 0
+    comb[valid] = num[valid] / den[valid]
+    comb_err[valid] = np.sqrt(1 / den[valid])
+
+    results["Combined"] = (cos_centers, comb, comb_err)
     return results
 
 
@@ -202,6 +206,7 @@ def calculate_bsa(data_dict):
 def plot_bsa(bsa_dict):
     fig, axes = plt.subplots(1, 2, figsize=(12, 5), sharex=True, sharey=True)
 
+    # individual datasets
     for label in DATASETS.keys():
         if label in bsa_dict:
             x, y, yerr = bsa_dict[label]
@@ -214,6 +219,7 @@ def plot_bsa(bsa_dict):
     axes[0].set_ylim(-1, 0.2)
     axes[0].legend(loc='upper right', fontsize=8)
 
+    # combined
     x, y, yerr = bsa_dict["Combined"]
     axes[1].errorbar(x, y, yerr=yerr, fmt='o', label="Combined")
     axes[1].text(0.05, 0.95, CUT_LABEL_MX, transform=axes[1].transAxes,
@@ -256,7 +262,6 @@ def main():
             )
 
     plot_missing_masses(data_dict, mask_dict)
-
     bsa = calculate_bsa(data_dict)
     plot_bsa(bsa)
 
