@@ -37,7 +37,7 @@ DATASETS = {
 # beam energies by dataset (GeV)
 BEAM_ENERGIES = {
     "RGA Fa18 Inb": 10.6,
-    # "RGA Fa18 Out": 10.6,
+    "RGA Fa18 Out": 10.6,
     "RGA Sp19 Inb": 10.2,
 }
 
