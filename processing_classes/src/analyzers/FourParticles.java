@@ -473,7 +473,7 @@ public class FourParticles {
 
         // set up boost to dihadron rest frame (p2 and p3 center of mass frame)
         // just used to calculate theta
-        Vector3 pCOMBoost = lv_p.boostVector();
+        Vector3 pCOMBoost = lv_p23.boostVector();
         pCOMBoost.negative();
         LorentzVector lv_p23_COM = new LorentzVector(lv_p23);
         lv_p23_COM.boost(pCOMBoost);
