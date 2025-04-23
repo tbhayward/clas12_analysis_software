@@ -54,11 +54,11 @@ def kinematic_cuts(events, use_missing_mass_cuts=False):
 
     # base mask: all cuts except the missing‐mass ones
     mask = (
+        # (delta_theta < 0.05) &
         (Q2    > 2.0)      &
         (W     > 2.0)      &
         (y     < 0.75)     &
-        (z_rho > 0.9)      &
-        # (delta_theta < 0.05)
+        (z_rho > 0.9)      
     )
 
     if use_missing_mass_cuts:
