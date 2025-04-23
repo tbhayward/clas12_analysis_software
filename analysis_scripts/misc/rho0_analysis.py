@@ -81,32 +81,32 @@ def kinematic_cuts(ev, use_missing_mass_cuts=False, beam_energy=10.6):
     theta_calc  = np.arccos(pz_m / p_m)
     delta_th    = np.abs(p3_theta - theta_calc)
 
-    # mask = (
-    #     (Q2    > 2.0) &
-    #     (W     > 2.0) &
-    #     (y     < 0.75) &
-    #     (z_rho > 0.9) &
-    #     (delta_th < 0.05)
-    # )
-    # if use_missing_mass_cuts:
-    #     mask &= (
-    #         (np.abs(Mx2) < 0.01) &
-    #         (Mx2_2     > 3.24) &
-    #         (Mx2_3     > 1.8225)
-    #     )
     mask = (
-        (Q2    > 0.0) &
-        (W     > 0.0) &
-        (y     < 1) &
-        (z_rho > 0) &
-        (delta_th < 50)
+        (Q2    > 2.0) &
+        (W     > 2.0) &
+        (y     < 0.75) &
+        (z_rho > 0.9) &
+        (delta_th < 0.05)
     )
     if use_missing_mass_cuts:
         mask &= (
-            (np.abs(Mx2) <100) &
-            (Mx2_2     > 0) &
-            (Mx2_3     > 0)
-    )
+            (np.abs(Mx2) < 0.01) &
+            (Mx2_2     > 3.24) &
+            (Mx2_3     > 1.8225)
+        )
+    # mask = (
+    #     (Q2    > 0.0) &
+    #     (W     > 0.0) &
+    #     (y     < 1) &
+    #     (z_rho > 0) &
+    #     (delta_th < 50)
+    # )
+    # if use_missing_mass_cuts:
+    #     mask &= (
+    #         (np.abs(Mx2) <100) &
+    #         (Mx2_2     > 0) &
+    #         (Mx2_3     > 0)
+    # )
     return mask
     #endif
 
@@ -237,8 +237,8 @@ def plot_theta_distributions(data, masks):
     using base kinematic cuts.
     """
     fig, axes = plt.subplots(1, 2, figsize=(12, 5))
-    bins_theta = np.linspace(0, np.pi, 50)
-    bins_cos   = np.linspace(-1, 1, 50)
+    bins_theta = np.linspace(0, np.pi, 100)
+    bins_cos   = np.linspace(-1, 1, 100)
 
     for label, ev in data.items():
         mask = masks[label]
