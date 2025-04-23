@@ -5,7 +5,7 @@ import matplotlib.pyplot as plt
 
 # === CONFIGURATION ===
 QUICK_RUN   = True                        # set False to loop over the full tree
-MAX_EVENTS  = 400_000                     # only used when QUICK_RUN is True
+MAX_EVENTS  = 100_000                     # only used when QUICK_RUN is True
 
 DATASETS = {
     "RGA Fa18 Inb": (
@@ -112,11 +112,11 @@ def plot_missing_masses(data_dict, mask_dict):
     fig, axes = plt.subplots(1, 3, figsize=(18, 5))
     specs = [
         {"key": "Mx2",    "xlabel": r"$M_{x}^{2}\,(\mathrm{GeV}^2)$", 
-         "xlim": (-0.2, 0.2)},
+         "xlim": (-0.05, 0.05)},
         {"key": "Mx2_2",  "xlabel": r"$M_{x\pi^{+}}^{2}\,(\mathrm{GeV}^2)$", 
-         "xlim": (1, 5)},
+         "xlim": (1, 6)},
         {"key": "Mx2_3",  "xlabel": r"$M_{x\pi^{-}}^{2}\,(\mathrm{GeV}^2)$", 
-         "xlim": (1, 5)},
+         "xlim": (1, 6)},
     ]
 
     for ax, spec in zip(axes, specs):
