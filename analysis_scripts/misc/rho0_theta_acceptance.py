@@ -13,21 +13,21 @@ gen_file = "/volatile/clas12/thayward/rho0_study/rga_fa18_inb_epi+pi-X_gen.root"
 rec_tree = uproot.open(rec_file)["PhysicsEvents"]
 gen_tree = uproot.open(gen_file)["PhysicsEvents"]
 
-rec = rec_tree.arrays(["theta","phi","W","Q2","z","Mx"], library="np")
-gen = gen_tree.arrays(["theta","phi","W","Q2","z","Mx"], library="np")
+rec = rec_tree.arrays(["theta","phi","W","Q2","z","Mx2"], library="np")
+gen = gen_tree.arrays(["theta","phi","W","Q2","z","Mx2"], library="np")
 
 # 3) Apply kinematic cuts
 mask_rec = (
-    (rec["W"]  > 2) &
-    (rec["Q2"] > 2) &
-    (rec["z"]  > 0.9) &
-    (rec["Mx"] < 1.05)
+    # (rec["W"]  > 2) &
+    # (rec["Q2"] > 2) &
+    # (rec["z"]  > 0.9) &
+    # (rec["Mx"] < 1.05)
 )
 mask_gen = (
-    (gen["W"]  > 2) &
-    (gen["Q2"] > 2) &
-    (gen["z"]  > 0.9) &
-    (gen["Mx"] < 1.05)
+    # (gen["W"]  > 2) &
+    # (gen["Q2"] > 2) &
+    # (gen["z"]  > 0.9) &
+    # (gen["Mx"] < 1.05)
 )
 
 theta_rec = rec["theta"][mask_rec]
