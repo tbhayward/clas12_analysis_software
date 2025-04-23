@@ -5,7 +5,7 @@ import matplotlib.pyplot as plt
 
 # === CONFIGURATION ===
 QUICK_RUN   = True                        # set False to loop over the full tree
-MAX_EVENTS  = 100_000                     # only used when QUICK_RUN is True
+MAX_EVENTS  = 400_000                     # only used when QUICK_RUN is True
 
 DATASETS = {
     "RGA Fa18 Inb": (
@@ -93,8 +93,8 @@ def kinematic_cuts(events, use_missing_mass_cuts=False, beam_energy=10.6):
 
     if use_missing_mass_cuts:
         mask &= (
-            (np.abs(Mx2)    < 0.3) &
-            (Mx2_2  > 3.24)        &
+            (np.abs(Mx2)   < 0.3) &
+            (Mx2_2  > 3.24)       &
             (Mx2_3  > 1.8225)
         )
     #endif
@@ -111,12 +111,12 @@ def plot_missing_masses(data_dict, mask_dict):
     """
     fig, axes = plt.subplots(1, 3, figsize=(18, 5))
     specs = [
-        {"key": "Mx2",    "xlabel": r"$M_{x}^{2}\,( \mathrm{GeV}^2)$", 
-         "xlim": (-0.4, 0.4)},
-        {"key": "Mx2_2",  "xlabel": r"$M_{x\pi^{+}}^{2}\,( \mathrm{GeV}^2)$", 
-         "xlim": (-0.2, 4)},
-        {"key": "Mx2_3",  "xlabel": r"$M_{x\pi^{-}}^{2}\,( \mathrm{GeV}^2)$", 
-         "xlim": (-0.2, 4)},
+        {"key": "Mx2",    "xlabel": r"$M_{x}^{2}\,(\mathrm{GeV}^2)$", 
+         "xlim": (-0.2, 0.2)},
+        {"key": "Mx2_2",  "xlabel": r"$M_{x\pi^{+}}^{2}\,(\mathrm{GeV}^2)$", 
+         "xlim": (1, 5)},
+        {"key": "Mx2_3",  "xlabel": r"$M_{x\pi^{-}}^{2}\,(\mathrm{GeV}^2)$", 
+         "xlim": (1, 5)},
     ]
 
     for ax, spec in zip(axes, specs):
