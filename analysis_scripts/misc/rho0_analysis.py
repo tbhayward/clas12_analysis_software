@@ -4,7 +4,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 # === CONFIGURATION ===
-QUICK_RUN   = True                        # set False to loop over full tree
+QUICK_RUN   = False                        # set False to loop over full tree
 MAX_EVENTS  = 100_000                     # only used when QUICK_RUN is True
 
 DATASETS = {
