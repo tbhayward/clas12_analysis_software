@@ -1096,6 +1096,10 @@ bool forward_tagger_fiducial(double ft_x, double ft_y) {
         return false;
     }
 
+    if (radius > 15.5) {
+        return false;
+    }
+
     // Define the circle cut parameters: radius and center (x, y)
     std::vector<std::pair<double, std::pair<double, double>>> holes = {
         {1.60, {-8.42,  9.89}},  // circle 1
@@ -8986,8 +8990,8 @@ int main(int argc, char** argv) {
 
     //// PLOTS ////
 
-    // std::string dataset = "rga_fa18_inb";
-    std::string dataset = "rga_fa18_out";
+    std::string dataset = "rga_fa18_inb";
+    // std::string dataset = "rga_fa18_out";
     // std::string dataset = "rga_sp19_inb";
 
     // plot_htcc_nphe(dataReader, mcReader, dataset);
@@ -9009,8 +9013,8 @@ int main(int argc, char** argv) {
 
     // plot_ft_xy_energy(dataReader, mcReader, dataset);
     // dataReader.Restart();
-    // if (mcReader) mcReader->Restart();
-    // plot_ft_hit_position(dataReader, mcReader, dataset);
+    if (mcReader) mcReader->Restart();
+    plot_ft_hit_position(dataReader, mcReader, dataset);
 
     // dataReader.Restart();
     // if (mcReader) mcReader->Restart();
@@ -9026,9 +9030,9 @@ int main(int argc, char** argv) {
     // if (mcReader) mcReader->Restart();
     // plot_cal_hit_position(dataReader, mcReader, dataset);
 
-    dataReader.Restart();
-    if (mcReader) mcReader->Restart();
-    dc_fiducial_determination(dataReader, mcReader, dataset);
+    // dataReader.Restart();
+    // if (mcReader) mcReader->Restart();
+    // dc_fiducial_determination(dataReader, mcReader, dataset);
 
     // dataReader.Restart();
     // if (mcReader) mcReader->Restart();
