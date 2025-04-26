@@ -6340,94 +6340,94 @@ void fill_and_save_histograms(const std::map<int, std::pair<std::string, std::pa
     }
 }
 
-// Main energy loss distribution function
-void energy_loss_distributions(TTreeReader& mcReader, const std::string& dataset) {
-    // Particle types and their corresponding LaTeX names and x-axis ranges
-    std::map<int, std::tuple<std::string, double, double>> particle_types = {
-        // {11, {"e^{-}", 0.0, 7.0}},
-        // {211, {"#pi^{+}", 0.0, 5.0}},
-        // {-211, {"#pi^{-}", 0.0, 5.0}},
-        // {321, {"k^{+}", 0.0, 5.0}},
-        // {-321, {"k^{-}", 0.0, 5.0}},
-        {2212, {"p", 0.0, 3.0}}
-    };
+// // Main energy loss distribution function
+// void energy_loss_distributions(TTreeReader& mcReader, const std::string& dataset) {
+//     // Particle types and their corresponding LaTeX names and x-axis ranges
+//     std::map<int, std::tuple<std::string, double, double>> particle_types = {
+//         // {11, {"e^{-}", 0.0, 7.0}},
+//         // {211, {"#pi^{+}", 0.0, 5.0}},
+//         // {-211, {"#pi^{-}", 0.0, 5.0}},
+//         // {321, {"k^{+}", 0.0, 5.0}},
+//         // {-321, {"k^{-}", 0.0, 5.0}},
+//         {2212, {"p", 0.0, 3.0}}
+//     };
 
-    // Create histograms for each particle type
-    std::map<int, std::pair<std::string, std::pair<TH2D*, TH2D*>>> histograms;
-    for (const auto& particle : particle_types) {
-        int pid = particle.first;
-        const std::string& particle_name = std::get<0>(particle.second);
-        double xMin = std::get<1>(particle.second);
-        double xMax = std::get<2>(particle.second);
+//     // Create histograms for each particle type
+//     std::map<int, std::pair<std::string, std::pair<TH2D*, TH2D*>>> histograms;
+//     for (const auto& particle : particle_types) {
+//         int pid = particle.first;
+//         const std::string& particle_name = std::get<0>(particle.second);
+//         double xMin = std::get<1>(particle.second);
+//         double xMax = std::get<2>(particle.second);
 
-        TH2D* h_fd = new TH2D(("h_fd_" + particle_name).c_str(), ("(FD), " + particle_name).c_str(), 100, xMin, xMax, 100, -0.05, 0.10);
-        TH2D* h_cd = new TH2D(("h_cd_" + particle_name).c_str(), ("(CD), " + particle_name).c_str(), 100, xMin, xMax, 100, -0.05, 0.10);
+//         TH2D* h_fd = new TH2D(("h_fd_" + particle_name).c_str(), ("(FD), " + particle_name).c_str(), 100, xMin, xMax, 100, -0.05, 0.10);
+//         TH2D* h_cd = new TH2D(("h_cd_" + particle_name).c_str(), ("(CD), " + particle_name).c_str(), 100, xMin, xMax, 100, -0.05, 0.10);
 
-        h_fd->GetXaxis()->SetTitle("p (GeV)");
-        h_fd->GetYaxis()->SetTitle("#Delta p (GeV)");
-        h_fd->SetStats(false);
+//         h_fd->GetXaxis()->SetTitle("p (GeV)");
+//         h_fd->GetYaxis()->SetTitle("#Delta p (GeV)");
+//         h_fd->SetStats(false);
 
-        h_cd->GetXaxis()->SetTitle("p (GeV)");
-        h_cd->GetYaxis()->SetTitle("#Delta p (GeV)");
-        h_cd->SetStats(false);
+//         h_cd->GetXaxis()->SetTitle("p (GeV)");
+//         h_cd->GetYaxis()->SetTitle("#Delta p (GeV)");
+//         h_cd->SetStats(false);
 
-        histograms[pid] = std::make_pair(particle_name, std::make_pair(h_fd, h_cd));
-    }
+//         histograms[pid] = std::make_pair(particle_name, std::make_pair(h_fd, h_cd));
+//     }
 
-    gStyle->SetPalette(kRainBow);
-    gStyle->SetOptStat(0);
+//     gStyle->SetPalette(kRainBow);
+//     gStyle->SetOptStat(0);
 
-    // Set up TTreeReaderValues for necessary branches
-    TTreeReaderValue<double> mc_p(mcReader, "mc_p");
-    TTreeReaderValue<double> p(mcReader, "p");
-    TTreeReaderValue<int> pid(mcReader, "particle_pid");
-    TTreeReaderValue<int> track_sector_5(mcReader, "track_sector_5");
-    TTreeReaderValue<int> track_sector_6(mcReader, "track_sector_6");
+//     // Set up TTreeReaderValues for necessary branches
+//     TTreeReaderValue<double> mc_p(mcReader, "mc_p");
+//     TTreeReaderValue<double> p(mcReader, "p");
+//     TTreeReaderValue<int> pid(mcReader, "particle_pid");
+//     TTreeReaderValue<int> track_sector_5(mcReader, "track_sector_5");
+//     TTreeReaderValue<int> track_sector_6(mcReader, "track_sector_6");
 
-    // Edge variables for FD and CD fiducial cuts
-    TTreeReaderValue<double> edge_6(mcReader, "traj_edge_6");
-    TTreeReaderValue<double> edge_18(mcReader, "traj_edge_18");
-    TTreeReaderValue<double> edge_36(mcReader, "traj_edge_36");
-    TTreeReaderValue<double> edge_1(mcReader, "traj_edge_1");
-    TTreeReaderValue<double> edge_3(mcReader, "traj_edge_3");
-    TTreeReaderValue<double> edge_5(mcReader, "traj_edge_5");
-    TTreeReaderValue<double> edge_7(mcReader, "traj_edge_7");
-    TTreeReaderValue<double> edge_12(mcReader, "traj_edge_12");
+//     // Edge variables for FD and CD fiducial cuts
+//     TTreeReaderValue<double> edge_6(mcReader, "traj_edge_6");
+//     TTreeReaderValue<double> edge_18(mcReader, "traj_edge_18");
+//     TTreeReaderValue<double> edge_36(mcReader, "traj_edge_36");
+//     TTreeReaderValue<double> edge_1(mcReader, "traj_edge_1");
+//     TTreeReaderValue<double> edge_3(mcReader, "traj_edge_3");
+//     TTreeReaderValue<double> edge_5(mcReader, "traj_edge_5");
+//     TTreeReaderValue<double> edge_7(mcReader, "traj_edge_7");
+//     TTreeReaderValue<double> edge_12(mcReader, "traj_edge_12");
 
-    // Loop over events
-    while (mcReader.Next()) {
-        double delta_p = *mc_p - *p;
+//     // Loop over events
+//     while (mcReader.Next()) {
+//         double delta_p = *mc_p - *p;
 
-        // Check if the current particle type is one of interest
-        if (histograms.find(*pid) != histograms.end()) {
-            // Check if the track is FD or CD and fill the appropriate histogram
-            if (is_fd_track(*track_sector_6)) {
-                if (dc_fiducial(*edge_6, *edge_18, *edge_36, *pid)) {
-                    histograms[*pid].second.first->Fill(*p, delta_p);  // FD
-                }
-            } else if (is_cd_track(*track_sector_5)) {
-                // if (cvt_fiducial(*edge_1, *edge_3, *edge_5, *edge_7, *edge_12)) {
-                if (true) {
-                    histograms[*pid].second.second->Fill(*p, delta_p);  // CD
-                }
-            }
-        }
-    }
+//         // Check if the current particle type is one of interest
+//         if (histograms.find(*pid) != histograms.end()) {
+//             // Check if the track is FD or CD and fill the appropriate histogram
+//             if (is_fd_track(*track_sector_6)) {
+//                 if (dc_fiducial(*edge_6, *edge_18, *edge_36, *pid)) {
+//                     histograms[*pid].second.first->Fill(*p, delta_p);  // FD
+//                 }
+//             } else if (is_cd_track(*track_sector_5)) {
+//                 // if (cvt_fiducial(*edge_1, *edge_3, *edge_5, *edge_7, *edge_12)) {
+//                 if (true) {
+//                     histograms[*pid].second.second->Fill(*p, delta_p);  // CD
+//                 }
+//             }
+//         }
+//     }
 
-    // Save the histograms
-    fill_and_save_histograms(histograms, dataset);
-}
+//     // Save the histograms
+//     fill_and_save_histograms(histograms, dataset);
+// }
 
-bool is_above_deltap_curve(double p, double delta_p) {
-    return (delta_p > 0.011 / pow(p, 1.05));
-}
+// bool is_above_deltap_curve(double p, double delta_p) {
+//     return (delta_p > 0.011 / pow(p, 1.05));
+// }
 
-bool is_above_theta_dc_curve(double p, double theta_dc_1) {
-    double curve_value = -53.1468 + 79.6131 * pow(p - 0.3, 0.05739);
-    return (theta_dc_1 > curve_value);
-}
+// bool is_above_theta_dc_curve(double p, double theta_dc_1) {
+//     double curve_value = -53.1468 + 79.6131 * pow(p - 0.3, 0.05739);
+//     return (theta_dc_1 > curve_value);
+// }
 
-// Main FD-specific function
+// // Main FD-specific function
 // void energy_loss_fd_distributions(TTreeReader& mcReader, const std::string& dataset) {
 //     // Particle types and their corresponding LaTeX names and x-axis ranges
 //     std::map<int, std::tuple<std::string, double, double>> particle_types = {
