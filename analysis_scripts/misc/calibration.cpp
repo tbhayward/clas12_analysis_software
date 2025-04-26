@@ -3585,6 +3585,7 @@ void plot_dc_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = nullp
     TTreeReaderValue<double>* mc_traj_edge_6 = nullptr;
     TTreeReaderValue<double>* mc_traj_edge_18 = nullptr;
     TTreeReaderValue<double>* mc_traj_edge_36 = nullptr;
+    TTreeReaderValue<double>* mc_theta = nullptr;
     TTreeReaderValue<int>* mc_particle_pid = nullptr;
 
     if (mcReader) {
@@ -3657,7 +3658,7 @@ void plot_dc_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = nullp
 
                     if (traj_x_value != -9999 && traj_y_value != -9999) {
                         h_data_before[region_idx]->Fill(traj_x_value, traj_y_value);
-                        if (dc_fiducial(*traj_edge_6, *traj_edge_18, *traj_edge_36, pid, theta, runnum)) {
+                        if (dc_fiducial(*traj_edge_6, *traj_edge_18, *traj_edge_36, pid, *theta, *runnum)) {
                             h_data_after[region_idx]->Fill(traj_x_value, traj_y_value);
                         }
                     }
@@ -3676,7 +3677,7 @@ void plot_dc_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = nullp
 
                         if (mc_traj_x_value != -9999 && mc_traj_y_value != -9999) {
                             h_mc_before[region_idx]->Fill(mc_traj_x_value, mc_traj_y_value);
-                            if (dc_fiducial(**mc_traj_edge_6, **mc_traj_edge_18, **mc_traj_edge_36, pid, mc_theta, runnum)) {
+                            if (dc_fiducial(**mc_traj_edge_6, **mc_traj_edge_18, **mc_traj_edge_36, pid, *mc_theta, *runnum)) {
                                 h_mc_after[region_idx]->Fill(mc_traj_x_value, mc_traj_y_value);
                             }
                         }
