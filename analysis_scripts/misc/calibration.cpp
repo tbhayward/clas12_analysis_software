@@ -436,12 +436,12 @@ bool pcal_fiducial(double lv_1, double lw_1, double lu_1,
         }
     }
 
-    // RGA Sp19 Only
-    if (sector == 2) {
-        if (lv_1 > 31.5 && lv_1 < 49.5) {
-            return false;
-        }
-    }
+    // // RGA Sp19 Only
+    // if (sector == 2) {
+    //     if (lv_1 > 31.5 && lv_1 < 49.5) {
+    //         return false;
+    //     }
+    // }
 
 
     // If none of the cuts apply, the track is good
@@ -3502,7 +3502,7 @@ void plot_cal_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = null
 }
 
 bool dc_fiducial(double edge_6, double edge_18, double edge_36, 
-	int pid) {
+	int pid, double theta, int runnum) {
     // if (pid == 11 || pid == -11) {
     //     return edge_6 > 5 && edge_18 > 5 && edge_36 > 10;
     // } else if (pid == 211 || pid == -211 || pid == 321 || pid == -321 || pid == 2212 || pid == -2212) {
@@ -3514,13 +3514,49 @@ bool dc_fiducial(double edge_6, double edge_18, double edge_36,
     //     return edge_6 > 3 && edge_18 > 3 && edge_36 > 9;
     // } 
     // return (edge_6 > 3);
-    return true;
-    // return false; // not a charged track? wrong pid?
+
+    theta = theta*180/3.14159;
+
+    int torus = 0;
+    if ((runnum >= 4763 && runnum <= 5419) || (runnum >= 6616 && runnum <= 6783)) {
+        torus = -1; // inbending
+    } else if (runnum >= 5423 && runnum <= 5666) {
+        torus = 1; // outbending
+    }
+
+    int particle_track_direction = 0;
+    if (torus == -1) {
+        if (pid == 11 || pid == -211 || pid == -321 || pid == -2212) {
+            particle_track_direction = -1;
+        } else if (pid == -11 || pid == 211 || pid == 321 || pid == 2212) {
+            particle_track_direction = 1;
+        }
+    }
+    if (torus == 1) {
+        if (pid == 11 || pid == -211 || pid == -321 || pid == -2212) {
+            particle_track_direction = 1;
+        } else if (pid == -11 || pid == 211 || pid == 321 || pid == 2212) {
+            particle_track_direction = -1;
+        }
+    }
+
+    if (particle_track_direction == -1) {
+        if (theta < 10) {
+            return edge_6 > 10 && edge_18 > 10 && edge_36 > 10;
+        } else {
+            return edge_6 > 3 && edge_18 > 3 && edge_36 > 10;
+        }
+    } else if (particle_track_direction == 1) {
+        return edge_6 > 3 && edge_18 > 3 && edge_36 > 10;
+    }
+
+    // return true;
+    return false; // not a charged track? wrong pid?
 }
 
 void plot_dc_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = nullptr,
     const std::string& dataset = "rga_fa18_inb") {
-    int nBins = 100;
+    int nBins = 300;
 
     std::vector<std::tuple<std::string, std::string, std::string, double, double>> regions = {
         {"traj_x_6", "traj_y_6", "region_1", -200, 200},
@@ -3541,8 +3577,10 @@ void plot_dc_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = nullp
     TTreeReaderValue<double> traj_edge_6(dataReader, "traj_edge_6");
     TTreeReaderValue<double> traj_edge_18(dataReader, "traj_edge_18");
     TTreeReaderValue<double> traj_edge_36(dataReader, "traj_edge_36");
+    TTreeReaderValue<double> theta(dataReader, "theta");
 
     TTreeReaderValue<int> particle_pid(dataReader, "particle_pid");
+    TTreeReaderValue<int> runnum(dataReader, "config_run");
 
     TTreeReaderValue<double>* mc_traj_edge_6 = nullptr;
     TTreeReaderValue<double>* mc_traj_edge_18 = nullptr;
@@ -3553,6 +3591,7 @@ void plot_dc_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = nullp
         mc_traj_edge_6 = new TTreeReaderValue<double>(*mcReader, "traj_edge_6");
         mc_traj_edge_18 = new TTreeReaderValue<double>(*mcReader, "traj_edge_18");
         mc_traj_edge_36 = new TTreeReaderValue<double>(*mcReader, "traj_edge_36");
+        mc_theta = new TTreeReaderValue<double>(*mcReader, "theta");
         mc_particle_pid = new TTreeReaderValue<int>(*mcReader, "particle_pid");
     }
 
@@ -3618,7 +3657,7 @@ void plot_dc_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = nullp
 
                     if (traj_x_value != -9999 && traj_y_value != -9999) {
                         h_data_before[region_idx]->Fill(traj_x_value, traj_y_value);
-                        if (dc_fiducial(*traj_edge_6, *traj_edge_18, *traj_edge_36, pid)) {
+                        if (dc_fiducial(*traj_edge_6, *traj_edge_18, *traj_edge_36, pid, theta, runnum)) {
                             h_data_after[region_idx]->Fill(traj_x_value, traj_y_value);
                         }
                     }
@@ -3637,7 +3676,7 @@ void plot_dc_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = nullp
 
                         if (mc_traj_x_value != -9999 && mc_traj_y_value != -9999) {
                             h_mc_before[region_idx]->Fill(mc_traj_x_value, mc_traj_y_value);
-                            if (dc_fiducial(**mc_traj_edge_6, **mc_traj_edge_18, **mc_traj_edge_36, pid)) {
+                            if (dc_fiducial(**mc_traj_edge_6, **mc_traj_edge_18, **mc_traj_edge_36, pid, mc_theta, runnum)) {
                                 h_mc_after[region_idx]->Fill(mc_traj_x_value, mc_traj_y_value);
                             }
                         }
@@ -8989,9 +9028,9 @@ int main(int argc, char** argv) {
 
     //// PLOTS ////
 
-    // std::string dataset = "rga_fa18_inb";
+    std::string dataset = "rga_fa18_inb";
     // std::string dataset = "rga_fa18_out";
-    std::string dataset = "rga_sp19_inb";
+    // std::string dataset = "rga_sp19_inb";
 
     // plot_htcc_nphe(dataReader, mcReader, dataset);
     // plot_ltcc_nphe(dataReader, mcReader, dataset);
@@ -9025,17 +9064,17 @@ int main(int argc, char** argv) {
     // if (mcReader) mcReader->Restart();
     // plot_ecout_fiducial_determination(dataReader, mcReader, dataset);
 
-    dataReader.Restart();
-    if (mcReader) mcReader->Restart();
-    plot_cal_hit_position(dataReader, mcReader, dataset);
+    // dataReader.Restart();
+    // if (mcReader) mcReader->Restart();
+    // plot_cal_hit_position(dataReader, mcReader, dataset);
 
     // dataReader.Restart();
     // if (mcReader) mcReader->Restart();
     // dc_fiducial_determination(dataReader, mcReader, dataset);
 
-    // dataReader.Restart();
-    // if (mcReader) mcReader->Restart();
-    // plot_dc_hit_position(dataReader, mcReader, dataset);
+    dataReader.Restart();
+    if (mcReader) mcReader->Restart();
+    plot_dc_hit_position(dataReader, mcReader, dataset);
 
     // dataReader.Restart();
     // if (mcReader) mcReader->Restart();
