@@ -6300,45 +6300,45 @@ void plot_vertices(TTreeReader& dataReader, TTreeReader* mcReader = nullptr,
     create_vertex_plots("negative", negative_pids, "Negative", -9, 2);  // Example values for now
 }
 
-// Helper function to fill and save histograms for each particle type
-void fill_and_save_histograms(const std::map<int, std::pair<std::string, std::pair<TH2D*, TH2D*>>>& histograms, const std::string& dataset) {
-    for (const auto& entry : histograms) {
-        int pid = entry.first;
-        const std::string& particle_name = entry.second.first;
-        TH2D* h_fd = entry.second.second.first;
-        TH2D* h_cd = entry.second.second.second;
+// // Helper function to fill and save histograms for each particle type
+// void fill_and_save_histograms(const std::map<int, std::pair<std::string, std::pair<TH2D*, TH2D*>>>& histograms, const std::string& dataset) {
+//     for (const auto& entry : histograms) {
+//         int pid = entry.first;
+//         const std::string& particle_name = entry.second.first;
+//         TH2D* h_fd = entry.second.second.first;
+//         TH2D* h_cd = entry.second.second.second;
 
-        // Create a canvas with 1x2 subplots
-        TCanvas* c = new TCanvas(("c_" + particle_name).c_str(), ("Energy Loss Distributions: " + dataset + ", " + particle_name).c_str(), 1600, 800);
-        c->Divide(2, 1);
+//         // Create a canvas with 1x2 subplots
+//         TCanvas* c = new TCanvas(("c_" + particle_name).c_str(), ("Energy Loss Distributions: " + dataset + ", " + particle_name).c_str(), 1600, 800);
+//         c->Divide(2, 1);
 
-        // Add a title to the canvas
-        TLatex latex;
-        latex.SetTextSize(0.04);
-        latex.SetTextAlign(13);  // Align at top left
-        latex.DrawLatexNDC(0.45, 0.97, (dataset + ", " + particle_name).c_str());
+//         // Add a title to the canvas
+//         TLatex latex;
+//         latex.SetTextSize(0.04);
+//         latex.SetTextAlign(13);  // Align at top left
+//         latex.DrawLatexNDC(0.45, 0.97, (dataset + ", " + particle_name).c_str());
 
-        // Plot FD
-        c->cd(1);
-        gPad->SetMargin(0.15, 0.15, 0.10, 0.1);  // Left, right, bottom, top margins
-        gPad->SetLogz();
-        h_fd->Draw("COLZ");
+//         // Plot FD
+//         c->cd(1);
+//         gPad->SetMargin(0.15, 0.15, 0.10, 0.1);  // Left, right, bottom, top margins
+//         gPad->SetLogz();
+//         h_fd->Draw("COLZ");
 
-        // Plot CD
-        c->cd(2);
-        gPad->SetMargin(0.15, 0.15, 0.10, 0.1);  // Left, right, bottom, top margins
-        gPad->SetLogz();
-        h_cd->Draw("COLZ");
+//         // Plot CD
+//         c->cd(2);
+//         gPad->SetMargin(0.15, 0.15, 0.10, 0.1);  // Left, right, bottom, top margins
+//         gPad->SetLogz();
+//         h_cd->Draw("COLZ");
 
-        // Save the canvas
-        c->SaveAs(("output/calibration/energy_loss/" + dataset + "/distributions/energy_loss_distributions_" + particle_name + ".png").c_str());
+//         // Save the canvas
+//         c->SaveAs(("output/calibration/energy_loss/" + dataset + "/distributions/energy_loss_distributions_" + particle_name + ".png").c_str());
 
-        // Clean up
-        delete c;
-        delete h_fd;
-        delete h_cd;
-    }
-}
+//         // Clean up
+//         delete c;
+//         delete h_fd;
+//         delete h_cd;
+//     }
+// }
 
 // // Main energy loss distribution function
 // void energy_loss_distributions(TTreeReader& mcReader, const std::string& dataset) {
