@@ -3277,7 +3277,7 @@ void plot_ecout_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcR
 void plot_cal_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = nullptr,
     const std::string& dataset = "rga_fa18_inb") {
     // Define the 2D histogram bins and ranges
-    int nBins = 100;
+    int nBins = 500;
     double xMin = -450;
     double xMax = 450;
     double yMin = -450;
@@ -8989,9 +8989,9 @@ int main(int argc, char** argv) {
 
     //// PLOTS ////
 
-    // std::string dataset = "rga_fa18_inb";
+    std::string dataset = "rga_fa18_inb";
     // std::string dataset = "rga_fa18_out";
-    std::string dataset = "rga_sp19_inb";
+    // std::string dataset = "rga_sp19_inb";
 
     // plot_htcc_nphe(dataReader, mcReader, dataset);
     // plot_ltcc_nphe(dataReader, mcReader, dataset);
