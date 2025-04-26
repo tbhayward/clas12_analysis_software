@@ -4267,7 +4267,6 @@ void dc_fiducial_determination(TTreeReader& dataReader, TTreeReader* mcReader = 
     }
 }
 
-
 bool cvt_fiducial_no_angles(double edge_1, double edge_3, double edge_5, double edge_7, 
      double edge_12) {
     // return edge_1 > 0 && edge_3 > 0 && edge_5 > 0 && edge_7 > -2 && edge_12 > -5;
@@ -8990,9 +8989,9 @@ int main(int argc, char** argv) {
 
     //// PLOTS ////
 
-    // std::string dataset = "rga_fa18_inb";
+    std::string dataset = "rga_fa18_inb";
     // std::string dataset = "rga_fa18_out";
-    std::string dataset = "rga_sp19_inb";
+    // std::string dataset = "rga_sp19_inb";
 
     // plot_htcc_nphe(dataReader, mcReader, dataset);
     // plot_ltcc_nphe(dataReader, mcReader, dataset);
@@ -9013,8 +9012,8 @@ int main(int argc, char** argv) {
 
     // plot_ft_xy_energy(dataReader, mcReader, dataset);
     // dataReader.Restart();
-    if (mcReader) mcReader->Restart();
-    plot_ft_hit_position(dataReader, mcReader, dataset);
+    // if (mcReader) mcReader->Restart();
+    // plot_ft_hit_position(dataReader, mcReader, dataset);
 
     // dataReader.Restart();
     // if (mcReader) mcReader->Restart();
@@ -9026,9 +9025,9 @@ int main(int argc, char** argv) {
     // if (mcReader) mcReader->Restart();
     // plot_ecout_fiducial_determination(dataReader, mcReader, dataset);
 
-    // dataReader.Restart();
-    // if (mcReader) mcReader->Restart();
-    // plot_cal_hit_position(dataReader, mcReader, dataset);
+    dataReader.Restart();
+    if (mcReader) mcReader->Restart();
+    plot_cal_hit_position(dataReader, mcReader, dataset);
 
     // dataReader.Restart();
     // if (mcReader) mcReader->Restart();
