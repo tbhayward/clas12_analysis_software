@@ -6100,205 +6100,205 @@ bool is_cd_track(double track_sector_6) {
     return track_sector_6 != -9999;
 }
 
-void plot_vertices(TTreeReader& dataReader, TTreeReader* mcReader = nullptr,
-    const std::string& dataset = "rga_fa18_inb") {
-    // Disable stat boxes
-    gStyle->SetOptStat(0);
+// void plot_vertices(TTreeReader& dataReader, TTreeReader* mcReader = nullptr,
+//     const std::string& dataset = "rga_fa18_inb") {
+//     // Disable stat boxes
+//     gStyle->SetOptStat(0);
 
-    // Arrays to store positive and negative track conditions
-    std::vector<int> positive_pids = {-11, 211, 321, 2212};
-    std::vector<int> negative_pids = {11, -211, -321, -2212};
+//     // Arrays to store positive and negative track conditions
+//     std::vector<int> positive_pids = {-11, 211, 321, 2212};
+//     std::vector<int> negative_pids = {11, -211, -321, -2212};
 
-    // Helper lambda to check if pid is in a vector
-    auto is_in = [](int pid, const std::vector<int>& pid_list) {
-        return std::find(pid_list.begin(), pid_list.end(), pid) != pid_list.end();
-    };
+//     // Helper lambda to check if pid is in a vector
+//     auto is_in = [](int pid, const std::vector<int>& pid_list) {
+//         return std::find(pid_list.begin(), pid_list.end(), pid) != pid_list.end();
+//     };
 
-    // Helper function to plot particle_vz for each sector with adjustable cuts and axis range
-    auto create_vertex_plots = [&](const std::string& plot_name, const std::vector<int>& pids, const std::string& charge_label, double min_cut, double max_cut) {
-        // Restart the TTreeReader to process the data from the beginning
-        dataReader.Restart();
-        if (mcReader) mcReader->Restart();
+//     // Helper function to plot particle_vz for each sector with adjustable cuts and axis range
+//     auto create_vertex_plots = [&](const std::string& plot_name, const std::vector<int>& pids, const std::string& charge_label, double min_cut, double max_cut) {
+//         // Restart the TTreeReader to process the data from the beginning
+//         dataReader.Restart();
+//         if (mcReader) mcReader->Restart();
 
-        // Set up TTreeReaderValues before calling Next()
-        TTreeReaderValue<double> particle_vz(dataReader, "particle_vz");
-        TTreeReaderValue<int> particle_pid(dataReader, "particle_pid");
-        TTreeReaderValue<int> track_sector_5(dataReader, "track_sector_5");
-        TTreeReaderValue<int> track_sector_6(dataReader, "track_sector_6");
+//         // Set up TTreeReaderValues before calling Next()
+//         TTreeReaderValue<double> particle_vz(dataReader, "particle_vz");
+//         TTreeReaderValue<int> particle_pid(dataReader, "particle_pid");
+//         TTreeReaderValue<int> track_sector_5(dataReader, "track_sector_5");
+//         TTreeReaderValue<int> track_sector_6(dataReader, "track_sector_6");
 
-        // FD and CD fiducial cut edges
-        TTreeReaderValue<double> edge_1(dataReader, "traj_edge_1");
-        TTreeReaderValue<double> edge_3(dataReader, "traj_edge_3");
-        TTreeReaderValue<double> edge_5(dataReader, "traj_edge_5");
-        TTreeReaderValue<double> edge_7(dataReader, "traj_edge_7");
-        TTreeReaderValue<double> edge_12(dataReader, "traj_edge_12");
-        TTreeReaderValue<double> edge_6(dataReader, "traj_edge_6");
-        TTreeReaderValue<double> edge_18(dataReader, "traj_edge_18");
-        TTreeReaderValue<double> edge_36(dataReader, "traj_edge_36");
+//         // FD and CD fiducial cut edges
+//         TTreeReaderValue<double> edge_1(dataReader, "traj_edge_1");
+//         TTreeReaderValue<double> edge_3(dataReader, "traj_edge_3");
+//         TTreeReaderValue<double> edge_5(dataReader, "traj_edge_5");
+//         TTreeReaderValue<double> edge_7(dataReader, "traj_edge_7");
+//         TTreeReaderValue<double> edge_12(dataReader, "traj_edge_12");
+//         TTreeReaderValue<double> edge_6(dataReader, "traj_edge_6");
+//         TTreeReaderValue<double> edge_18(dataReader, "traj_edge_18");
+//         TTreeReaderValue<double> edge_36(dataReader, "traj_edge_36");
 
-        // MC variables
-        TTreeReaderValue<double>* mc_particle_vz = nullptr;
-        TTreeReaderValue<int>* mc_particle_pid = nullptr;
-        TTreeReaderValue<int>* mc_track_sector_5 = nullptr;
-        TTreeReaderValue<int>* mc_track_sector_6 = nullptr;
-        TTreeReaderValue<double>* mc_edge_1 = nullptr;
-        TTreeReaderValue<double>* mc_edge_3 = nullptr;
-        TTreeReaderValue<double>* mc_edge_5 = nullptr;
-        TTreeReaderValue<double>* mc_edge_7 = nullptr;
-        TTreeReaderValue<double>* mc_edge_12 = nullptr;
-        TTreeReaderValue<double>* mc_edge_6 = nullptr;
-        TTreeReaderValue<double>* mc_edge_18 = nullptr;
-        TTreeReaderValue<double>* mc_edge_36 = nullptr;
+//         // MC variables
+//         TTreeReaderValue<double>* mc_particle_vz = nullptr;
+//         TTreeReaderValue<int>* mc_particle_pid = nullptr;
+//         TTreeReaderValue<int>* mc_track_sector_5 = nullptr;
+//         TTreeReaderValue<int>* mc_track_sector_6 = nullptr;
+//         TTreeReaderValue<double>* mc_edge_1 = nullptr;
+//         TTreeReaderValue<double>* mc_edge_3 = nullptr;
+//         TTreeReaderValue<double>* mc_edge_5 = nullptr;
+//         TTreeReaderValue<double>* mc_edge_7 = nullptr;
+//         TTreeReaderValue<double>* mc_edge_12 = nullptr;
+//         TTreeReaderValue<double>* mc_edge_6 = nullptr;
+//         TTreeReaderValue<double>* mc_edge_18 = nullptr;
+//         TTreeReaderValue<double>* mc_edge_36 = nullptr;
 
-        if (mcReader) {
-            mc_particle_vz = new TTreeReaderValue<double>(*mcReader, "particle_vz");
-            mc_particle_pid = new TTreeReaderValue<int>(*mcReader, "particle_pid");
-            mc_track_sector_5 = new TTreeReaderValue<int>(*mcReader, "track_sector_5");
-            mc_track_sector_6 = new TTreeReaderValue<int>(*mcReader, "track_sector_6");
-            mc_edge_1 = new TTreeReaderValue<double>(*mcReader, "traj_edge_1");
-            mc_edge_3 = new TTreeReaderValue<double>(*mcReader, "traj_edge_3");
-            mc_edge_5 = new TTreeReaderValue<double>(*mcReader, "traj_edge_5");
-            mc_edge_7 = new TTreeReaderValue<double>(*mcReader, "traj_edge_7");
-            mc_edge_12 = new TTreeReaderValue<double>(*mcReader, "traj_edge_12");
-            mc_edge_6 = new TTreeReaderValue<double>(*mcReader, "traj_edge_6");
-            mc_edge_18 = new TTreeReaderValue<double>(*mcReader, "traj_edge_18");
-            mc_edge_36 = new TTreeReaderValue<double>(*mcReader, "traj_edge_36");
-        }
+//         if (mcReader) {
+//             mc_particle_vz = new TTreeReaderValue<double>(*mcReader, "particle_vz");
+//             mc_particle_pid = new TTreeReaderValue<int>(*mcReader, "particle_pid");
+//             mc_track_sector_5 = new TTreeReaderValue<int>(*mcReader, "track_sector_5");
+//             mc_track_sector_6 = new TTreeReaderValue<int>(*mcReader, "track_sector_6");
+//             mc_edge_1 = new TTreeReaderValue<double>(*mcReader, "traj_edge_1");
+//             mc_edge_3 = new TTreeReaderValue<double>(*mcReader, "traj_edge_3");
+//             mc_edge_5 = new TTreeReaderValue<double>(*mcReader, "traj_edge_5");
+//             mc_edge_7 = new TTreeReaderValue<double>(*mcReader, "traj_edge_7");
+//             mc_edge_12 = new TTreeReaderValue<double>(*mcReader, "traj_edge_12");
+//             mc_edge_6 = new TTreeReaderValue<double>(*mcReader, "traj_edge_6");
+//             mc_edge_18 = new TTreeReaderValue<double>(*mcReader, "traj_edge_18");
+//             mc_edge_36 = new TTreeReaderValue<double>(*mcReader, "traj_edge_36");
+//         }
 
-        // 2x4 canvas setup (7 subplots: 1 for CD, 6 for FD)
-        TCanvas c("c", ("Vertex Z (" + charge_label + " Tracks)").c_str(), 1800, 1200);
-        c.Divide(4, 2);
+//         // 2x4 canvas setup (7 subplots: 1 for CD, 6 for FD)
+//         TCanvas c("c", ("Vertex Z (" + charge_label + " Tracks)").c_str(), 1800, 1200);
+//         c.Divide(4, 2);
 
-        // Arrays for data and MC histograms of vertex_z for each sector (6 sectors + 1 for CD)
-        std::vector<TH1D*> histsData(7), histsMC(7);
-        for (int i = 0; i < 7; ++i) {
-            if (i == 0) {
-                // CD plot title
-                histsData[i] = new TH1D("hData_CD", ("CD Tracks " + charge_label + " Data").c_str(), 100, -15, 15);
-                histsMC[i] = new TH1D("hMC_CD", ("CD Tracks " + charge_label + " MC").c_str(), 100, -15, 15);
-            } else {
-                // FD plot title for each sector
-                histsData[i] = new TH1D(Form("hData_sector%d", i), Form("FD Sector %d %s Data", i, charge_label.c_str()), 100, -15, 15);
-                histsMC[i] = new TH1D(Form("hMC_sector%d", i), Form("FD Sector %d %s MC", i, charge_label.c_str()), 100, -15, 15);
-            }
-        }
+//         // Arrays for data and MC histograms of vertex_z for each sector (6 sectors + 1 for CD)
+//         std::vector<TH1D*> histsData(7), histsMC(7);
+//         for (int i = 0; i < 7; ++i) {
+//             if (i == 0) {
+//                 // CD plot title
+//                 histsData[i] = new TH1D("hData_CD", ("CD Tracks " + charge_label + " Data").c_str(), 100, -15, 15);
+//                 histsMC[i] = new TH1D("hMC_CD", ("CD Tracks " + charge_label + " MC").c_str(), 100, -15, 15);
+//             } else {
+//                 // FD plot title for each sector
+//                 histsData[i] = new TH1D(Form("hData_sector%d", i), Form("FD Sector %d %s Data", i, charge_label.c_str()), 100, -15, 15);
+//                 histsMC[i] = new TH1D(Form("hMC_sector%d", i), Form("FD Sector %d %s MC", i, charge_label.c_str()), 100, -15, 15);
+//             }
+//         }
 
-        // Fill data histograms
-        for (int m = 0; m < 6e7; m++) {
-            if (!dataReader.Next()) break;
-            int pid = *particle_pid;
-            double vz = *particle_vz;
-            int sector = (*track_sector_5 != -9999) ? 0 : *track_sector_6;  // 0 is CD track, sector 6 for FD
+//         // Fill data histograms
+//         for (int m = 0; m < 6e7; m++) {
+//             if (!dataReader.Next()) break;
+//             int pid = *particle_pid;
+//             double vz = *particle_vz;
+//             int sector = (*track_sector_5 != -9999) ? 0 : *track_sector_6;  // 0 is CD track, sector 6 for FD
 
-            // Apply fiducial cuts and check pid
-            bool pass_fiducial = false;
-            if (*track_sector_5 != -9999 && is_in(pid, pids)) {
-                // CD track
-                // pass_fiducial = cvt_fiducial(*edge_1, *edge_3, *edge_5, *edge_7, *edge_12);
-                pass_fiducial = true;
-            } else if (*track_sector_6 != -9999 && is_in(pid, pids)) {
-                // FD track
-                pass_fiducial = dc_fiducial(*edge_6, *edge_18, *edge_36, pid);
-            }
+//             // Apply fiducial cuts and check pid
+//             bool pass_fiducial = false;
+//             if (*track_sector_5 != -9999 && is_in(pid, pids)) {
+//                 // CD track
+//                 // pass_fiducial = cvt_fiducial(*edge_1, *edge_3, *edge_5, *edge_7, *edge_12);
+//                 pass_fiducial = true;
+//             } else if (*track_sector_6 != -9999 && is_in(pid, pids)) {
+//                 // FD track
+//                 pass_fiducial = dc_fiducial(*edge_6, *edge_18, *edge_36, pid);
+//             }
 
-            if (pass_fiducial && (sector == 0 || (sector >= 1 && sector <= 6))) {
-                histsData[sector]->Fill(vz);  // Sector 0 for CD, 1-6 for FD
-            }
-        }
+//             if (pass_fiducial && (sector == 0 || (sector >= 1 && sector <= 6))) {
+//                 histsData[sector]->Fill(vz);  // Sector 0 for CD, 1-6 for FD
+//             }
+//         }
 
-        // Fill MC histograms
-        if (mcReader) {
-            for (int m = 0; m < 6e7; m++) {
-                if (!mcReader->Next()) break;
-                int pid = **mc_particle_pid;
-                double vz = **mc_particle_vz;
-                int sector = (**mc_track_sector_5 != -9999) ? 0 : **mc_track_sector_6;  // 0 is CD track, sector 6 for FD
+//         // Fill MC histograms
+//         if (mcReader) {
+//             for (int m = 0; m < 6e7; m++) {
+//                 if (!mcReader->Next()) break;
+//                 int pid = **mc_particle_pid;
+//                 double vz = **mc_particle_vz;
+//                 int sector = (**mc_track_sector_5 != -9999) ? 0 : **mc_track_sector_6;  // 0 is CD track, sector 6 for FD
 
-                // Apply fiducial cuts and check pid
-                bool pass_fiducial = false;
-                if (**mc_track_sector_5 != -9999 && is_in(pid, pids)) {
-                    // CD track
-                    // pass_fiducial = cvt_fiducial(**mc_edge_1, **mc_edge_3, **mc_edge_5, **mc_edge_7, **mc_edge_12);
-                    pass_fiducial = true;
-                } else if (**mc_track_sector_6 != -9999 && is_in(pid, pids)) {
-                    // FD track
-                    pass_fiducial = dc_fiducial(**mc_edge_6, **mc_edge_18, **mc_edge_36, pid);
-                }
+//                 // Apply fiducial cuts and check pid
+//                 bool pass_fiducial = false;
+//                 if (**mc_track_sector_5 != -9999 && is_in(pid, pids)) {
+//                     // CD track
+//                     // pass_fiducial = cvt_fiducial(**mc_edge_1, **mc_edge_3, **mc_edge_5, **mc_edge_7, **mc_edge_12);
+//                     pass_fiducial = true;
+//                 } else if (**mc_track_sector_6 != -9999 && is_in(pid, pids)) {
+//                     // FD track
+//                     pass_fiducial = dc_fiducial(**mc_edge_6, **mc_edge_18, **mc_edge_36, pid);
+//                 }
 
-                if (pass_fiducial && (sector == 0 || (sector >= 1 && sector <= 6))) {
-                    histsMC[sector]->Fill(vz);  // Sector 0 for CD, 1-6 for FD
-                }
-            }
-        }
+//                 if (pass_fiducial && (sector == 0 || (sector >= 1 && sector <= 6))) {
+//                     histsMC[sector]->Fill(vz);  // Sector 0 for CD, 1-6 for FD
+//                 }
+//             }
+//         }
 
-        // Normalize histograms to their integrals
-        for (int i = 0; i < 7; ++i) {
-            double dataIntegral = histsData[i]->Integral();
-            if (dataIntegral > 0) histsData[i]->Scale(1.0 / dataIntegral);  // Normalize data histogram
+//         // Normalize histograms to their integrals
+//         for (int i = 0; i < 7; ++i) {
+//             double dataIntegral = histsData[i]->Integral();
+//             if (dataIntegral > 0) histsData[i]->Scale(1.0 / dataIntegral);  // Normalize data histogram
 
-            if (mcReader) {
-                double mcIntegral = histsMC[i]->Integral();
-                if (mcIntegral > 0) histsMC[i]->Scale(1.0 / mcIntegral);  // Normalize MC histogram
-            }
-        }
+//             if (mcReader) {
+//                 double mcIntegral = histsMC[i]->Integral();
+//                 if (mcIntegral > 0) histsMC[i]->Scale(1.0 / mcIntegral);  // Normalize MC histogram
+//             }
+//         }
 
-        // Draw the histograms for each sector on the canvas
-        for (int i = 0; i < 7; ++i) {
-            c.cd(i + 1);  // Move to the corresponding pad
-            gPad->SetLeftMargin(0.15);  // Add left margin to avoid label clipping
-            gPad->SetRightMargin(0.05);  // Add right margin to avoid label clipping
-            histsData[i]->SetLineColor(kBlue);
-            histsData[i]->SetMarkerStyle(20);
-            histsData[i]->SetMarkerColor(kBlue);
-            histsData[i]->SetMarkerSize(0.5);
-            histsData[i]->GetXaxis()->SetTitle("v_{z} (cm)");
-            histsData[i]->GetYaxis()->SetTitle("Normalized Counts");
-            double maxDataY = histsData[i]->GetMaximum();
-            histsData[i]->SetMaximum(1.25 * maxDataY);  // Set y-axis max to 1.25 times the max
-            histsData[i]->Draw("E");
+//         // Draw the histograms for each sector on the canvas
+//         for (int i = 0; i < 7; ++i) {
+//             c.cd(i + 1);  // Move to the corresponding pad
+//             gPad->SetLeftMargin(0.15);  // Add left margin to avoid label clipping
+//             gPad->SetRightMargin(0.05);  // Add right margin to avoid label clipping
+//             histsData[i]->SetLineColor(kBlue);
+//             histsData[i]->SetMarkerStyle(20);
+//             histsData[i]->SetMarkerColor(kBlue);
+//             histsData[i]->SetMarkerSize(0.5);
+//             histsData[i]->GetXaxis()->SetTitle("v_{z} (cm)");
+//             histsData[i]->GetYaxis()->SetTitle("Normalized Counts");
+//             double maxDataY = histsData[i]->GetMaximum();
+//             histsData[i]->SetMaximum(1.25 * maxDataY);  // Set y-axis max to 1.25 times the max
+//             histsData[i]->Draw("E");
 
-            if (mcReader) {
-                histsMC[i]->SetLineColor(kRed);
-                histsMC[i]->SetMarkerStyle(20);
-                histsMC[i]->SetMarkerColor(kRed);
-                histsMC[i]->SetMarkerSize(0.5);
-                histsMC[i]->Draw("SAME E");
-            }
+//             if (mcReader) {
+//                 histsMC[i]->SetLineColor(kRed);
+//                 histsMC[i]->SetMarkerStyle(20);
+//                 histsMC[i]->SetMarkerColor(kRed);
+//                 histsMC[i]->SetMarkerSize(0.5);
+//                 histsMC[i]->Draw("SAME E");
+//             }
 
-            // Draw vertical dashed lines for cuts
-            TLine* lineLeft = new TLine(min_cut, 0, min_cut, 1.25 * maxDataY);
-            lineLeft->SetLineColor(kBlack);
-            lineLeft->SetLineStyle(2);  // Dashed line
-            lineLeft->Draw("SAME");
+//             // Draw vertical dashed lines for cuts
+//             TLine* lineLeft = new TLine(min_cut, 0, min_cut, 1.25 * maxDataY);
+//             lineLeft->SetLineColor(kBlack);
+//             lineLeft->SetLineStyle(2);  // Dashed line
+//             lineLeft->Draw("SAME");
 
-            TLine* lineRight = new TLine(max_cut, 0, max_cut, 1.25 * maxDataY);
-            lineRight->SetLineColor(kBlack);
-            lineRight->SetLineStyle(2);  // Dashed line
-            lineRight->Draw("SAME");
+//             TLine* lineRight = new TLine(max_cut, 0, max_cut, 1.25 * maxDataY);
+//             lineRight->SetLineColor(kBlack);
+//             lineRight->SetLineStyle(2);  // Dashed line
+//             lineRight->Draw("SAME");
 
-            // Add a legend to each subplot (top right) with track counts
-            TLegend* legend = new TLegend(0.7, 0.8, 0.9, 0.9);
-            legend->AddEntry(histsData[i], "Data", "l");
-            if (mcReader) {
-                legend->AddEntry(histsMC[i], "MC", "l");
-            }
-            legend->Draw();
-        }
+//             // Add a legend to each subplot (top right) with track counts
+//             TLegend* legend = new TLegend(0.7, 0.8, 0.9, 0.9);
+//             legend->AddEntry(histsData[i], "Data", "l");
+//             if (mcReader) {
+//                 legend->AddEntry(histsMC[i], "MC", "l");
+//             }
+//             legend->Draw();
+//         }
 
-        // Save the plot
-        c.SaveAs(("output/calibration/vertices/vertex_z_" + dataset + "_" + plot_name + ".pdf").c_str());
+//         // Save the plot
+//         c.SaveAs(("output/calibration/vertices/vertex_z_" + dataset + "_" + plot_name + ".pdf").c_str());
 
-        // Clean up
-        for (int i = 0; i < 7; ++i) {
-            delete histsData[i];
-            if (mcReader) delete histsMC[i];
-        }
-    };
+//         // Clean up
+//         for (int i = 0; i < 7; ++i) {
+//             delete histsData[i];
+//             if (mcReader) delete histsMC[i];
+//         }
+//     };
 
-    // Create plots for positive and negative tracks with adjustable cuts
-    create_vertex_plots("positive", positive_pids, "Positive", -10, 1.5);  // Example values for now
-    create_vertex_plots("negative", negative_pids, "Negative", -9, 2);  // Example values for now
-}
+//     // Create plots for positive and negative tracks with adjustable cuts
+//     create_vertex_plots("positive", positive_pids, "Positive", -10, 1.5);  // Example values for now
+//     create_vertex_plots("negative", negative_pids, "Negative", -9, 2);  // Example values for now
+// }
 
 // // Helper function to fill and save histograms for each particle type
 // void fill_and_save_histograms(const std::map<int, std::pair<std::string, std::pair<TH2D*, TH2D*>>>& histograms, const std::string& dataset) {
