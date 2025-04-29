@@ -3734,12 +3734,12 @@ void plot_dc_hit_position(TTreeReader& dataReader,
 
     // comment/uncomment PIDs here
     std::vector<std::tuple<int,std::string>> particle_types = {
-        // {  11,"electron"},
-        {-211,"pim"},
-        { 211,"pip"}
+        {  11,"electron"},
+        // {-211,"pim"},
+        // { 211,"pip"}
         //{ 321,"kp"}, 
         // {-321,"km"},
-        // {2212,"proton"}
+        {2212,"proton"}
     };
 
     // Data readers
@@ -9192,9 +9192,9 @@ int main(int argc, char** argv) {
 
     //// PLOTS ////
 
-    // std::string dataset = "rga_fa18_inb";
+    std::string dataset = "rga_fa18_inb";
     // std::string dataset = "rga_fa18_out";
-    std::string dataset = "rga_sp19_inb";
+    // std::string dataset = "rga_sp19_inb";
 
     // plot_htcc_nphe(dataReader, mcReader, dataset);
     // plot_ltcc_nphe(dataReader, mcReader, dataset);
