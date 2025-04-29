@@ -3800,18 +3800,18 @@ void plot_dc_hit_position(TTreeReader& dataReader,
                 nBins,regions[r].min,regions[r].max,nBins,regions[r].min,regions[r].max));
             h_data[1].push_back(new TH2D(
                 Form("%s_db1_%s",dataset.c_str(),regions[r].name.c_str()),
-                Form("Data %s FidOnly (%s)",regions[r].name.c_str(),name.c_str()),
+                Form("Data %s Loose Cuts (%s)",regions[r].name.c_str(),name.c_str()),
                 nBins,regions[r].min,regions[r].max,nBins,regions[r].min,regions[r].max));
             h_data[2].push_back(new TH2D(
                 Form("%s_db2_%s",dataset.c_str(),regions[r].name.c_str()),
-                Form("Data %s Fid+Poly (%s)",regions[r].name.c_str(),name.c_str()),
+                Form("Data %s Tight Cuts (%s)",regions[r].name.c_str(),name.c_str()),
                 nBins,regions[r].min,regions[r].max,nBins,regions[r].min,regions[r].max));
             if(mcReader){
                 for(int k=0;k<3;++k){
                     h_mc[k].push_back(new TH2D(
                         Form("%s_mb%d_%s",dataset.c_str(),k,regions[r].name.c_str()),
                         Form("MC   %s %s (%s)",regions[r].name.c_str(),
-                             k==0?"NoCuts":k==1?"FidOnly":"Fid+Poly",
+                             k==0?"NoCuts":k==1?"Loose Cuts":"Tight Cuts",
                              name.c_str()),
                         nBins,regions[r].min,regions[r].max,nBins,regions[r].min,regions[r].max));
                 }
