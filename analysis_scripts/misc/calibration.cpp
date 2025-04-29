@@ -3716,8 +3716,7 @@ bool dc_polygon_cut(int region_idx,
 // ─────────────────────────────────────────────────────────────────────────────
 void plot_dc_hit_position(TTreeReader& dataReader,
                           TTreeReader* mcReader = nullptr,
-                          const std::string& dataset = "rga_fa18_inb")
-{
+                          const std::string& dataset = "rga_fa18_inb") {
     const int nBins = 300;
 
     struct Region { std::string xBranch, yBranch, name; double min, max; };
@@ -3747,7 +3746,7 @@ void plot_dc_hit_position(TTreeReader& dataReader,
     TTreeReaderValue<int>    sec18_reader  (dataReader, "track_sector_18");
     TTreeReaderValue<int>    sec36_reader  (dataReader, "track_sector_36");
 
-    // region‐by‐region x,y
+    // region-by-region x,y
     std::vector<TTreeReaderValue<double>> traj_x, traj_y;
     for (auto& R : regions) {
         traj_x.emplace_back(dataReader, R.xBranch.c_str());
@@ -3782,10 +3781,10 @@ void plot_dc_hit_position(TTreeReader& dataReader,
         }
     }
 
-    // —————— Per‐particle loop ——————
+    // —————— Per-particle loop ——————
     for (auto& pt : particle_types) {
         int pid    = pt.first;
-        auto name  = pt.second;
+        std::string name = pt.second;
 
         // Create canvases
         TCanvas* c_data = new TCanvas(
@@ -3884,7 +3883,7 @@ void plot_dc_hit_position(TTreeReader& dataReader,
             }
         }
 
-        // — Determine global maxima for consistent Z‐scale —
+        // — Determine global maxima for consistent Z-scale —
         double max_data = 0, max_mc = 0;
         for (int i = 0; i < 3; ++i) {
             max_data = std::max(max_data,   h_data_before[i]->GetMaximum());
@@ -3895,7 +3894,7 @@ void plot_dc_hit_position(TTreeReader& dataReader,
             }
         }
 
-        // — Apply Z‐scale and draw & save canvases —
+        // — Apply Z-scale and draw & save canvases —
         for (int i = 0; i < 3; ++i) {
             h_data_before[i]->SetMaximum(max_data * 1.1);
             h_data_after[i]->SetMaximum(max_data * 1.1);
