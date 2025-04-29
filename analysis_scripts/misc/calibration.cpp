@@ -3719,20 +3719,24 @@ void plot_dc_hit_position(TTreeReader& dataReader,
                           const std::string& dataset = "rga_fa18_inb") {
     const int nBins = 300;
 
-    struct Region { std::string xBranch, yBranch, name; double min, max; };
+    struct Region {
+        std::string xBranch, yBranch, name;
+        double min, max;
+    };
     std::vector<Region> regions = {
         {"traj_x_6",  "traj_y_6",  "region_1", -200,  200},
         {"traj_x_18", "traj_y_18", "region_2", -300,  300},
         {"traj_x_36", "traj_y_36", "region_3", -450,  450}
     };
 
+    // comment or uncomment PIDs here:
     std::vector<std::tuple<int, std::string>> particle_types = {
-        // {11, "electron"},
-        {-211, "pim"},
-        {211, "pip"}
-        // {321, "kp"},
-        // {-321, "km"},
-        // {2212, "proton"}
+        //{  11, "electron"},
+        { -211, "pim"},
+        {  211, "pip"}
+        //{  321, "kp"},
+        //{ -321, "km"},
+        //{ 2212, "proton"}
     };
 
     // —————— Data readers ——————
@@ -3746,7 +3750,7 @@ void plot_dc_hit_position(TTreeReader& dataReader,
     TTreeReaderValue<int>    sec18_reader  (dataReader, "track_sector_18");
     TTreeReaderValue<int>    sec36_reader  (dataReader, "track_sector_36");
 
-    // region-by-region x,y
+    // region‐by‐region x,y readers
     std::vector<TTreeReaderValue<double>> traj_x, traj_y;
     for (auto& R : regions) {
         traj_x.emplace_back(dataReader, R.xBranch.c_str());
@@ -3754,15 +3758,15 @@ void plot_dc_hit_position(TTreeReader& dataReader,
     }
 
     // —————— MC readers (if provided) ——————
-    TTreeReaderValue<double>* mc_edge_6    = nullptr;
-    TTreeReaderValue<double>* mc_edge_18   = nullptr;
-    TTreeReaderValue<double>* mc_edge_36   = nullptr;
-    TTreeReaderValue<double>* mc_theta     = nullptr;
-    TTreeReaderValue<int>*    mc_runnum    = nullptr;
-    TTreeReaderValue<int>*    mc_pid       = nullptr;
-    TTreeReaderValue<int>*    mc_sec6      = nullptr;
-    TTreeReaderValue<int>*    mc_sec18     = nullptr;
-    TTreeReaderValue<int>*    mc_sec36     = nullptr;
+    TTreeReaderValue<double>* mc_edge_6   = nullptr;
+    TTreeReaderValue<double>* mc_edge_18  = nullptr;
+    TTreeReaderValue<double>* mc_edge_36  = nullptr;
+    TTreeReaderValue<double>* mc_theta    = nullptr;
+    TTreeReaderValue<int>*    mc_runnum   = nullptr;
+    TTreeReaderValue<int>*    mc_pid      = nullptr;
+    TTreeReaderValue<int>*    mc_sec6     = nullptr;
+    TTreeReaderValue<int>*    mc_sec18    = nullptr;
+    TTreeReaderValue<int>*    mc_sec36    = nullptr;
     std::vector<TTreeReaderValue<double>*> mc_x, mc_y;
 
     if (mcReader) {
@@ -3781,10 +3785,10 @@ void plot_dc_hit_position(TTreeReader& dataReader,
         }
     }
 
-    // —————— Per-particle loop ——————
-    for (auto& pt : particle_types) {
-        int pid    = pt.first;
-        std::string name = pt.second;
+    // —————— Per‐particle loop ——————
+    for (const auto& pt : particle_types) {
+        int pid           = std::get<0>(pt);
+        const std::string name = std::get<1>(pt);
 
         // Create canvases
         TCanvas* c_data = new TCanvas(
@@ -3841,8 +3845,7 @@ void plot_dc_hit_position(TTreeReader& dataReader,
             if (*pid_reader != pid) continue;
             int secs[3] = {*sec6_reader, *sec18_reader, *sec36_reader};
             for (int i = 0; i < 3; ++i) {
-                double xv = *traj_x[i];
-                double yv = *traj_y[i];
+                double xv = *traj_x[i], yv = *traj_y[i];
                 if (xv == -9999 || yv == -9999) continue;
 
                 h_data_before[i]->Fill(xv, yv);
@@ -3865,8 +3868,7 @@ void plot_dc_hit_position(TTreeReader& dataReader,
                 if (**mc_pid != pid) continue;
                 int secs[3] = {**mc_sec6, **mc_sec18, **mc_sec36};
                 for (int i = 0; i < 3; ++i) {
-                    double xv = **mc_x[i];
-                    double yv = **mc_y[i];
+                    double xv = **mc_x[i], yv = **mc_y[i];
                     if (xv == -9999 || yv == -9999) continue;
 
                     h_mc_before[i]->Fill(xv, yv);
@@ -3883,7 +3885,7 @@ void plot_dc_hit_position(TTreeReader& dataReader,
             }
         }
 
-        // — Determine global maxima for consistent Z-scale —
+        // — Determine global maxima for consistent Z‐scale —
         double max_data = 0, max_mc = 0;
         for (int i = 0; i < 3; ++i) {
             max_data = std::max(max_data,   h_data_before[i]->GetMaximum());
@@ -3894,7 +3896,7 @@ void plot_dc_hit_position(TTreeReader& dataReader,
             }
         }
 
-        // — Apply Z-scale and draw & save canvases —
+        // — Apply Z‐scale and draw & save canvases —
         for (int i = 0; i < 3; ++i) {
             h_data_before[i]->SetMaximum(max_data * 1.1);
             h_data_after[i]->SetMaximum(max_data * 1.1);
