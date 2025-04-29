@@ -3714,7 +3714,7 @@ bool dc_polygon_cut(int region_idx,
     double yr = rotate_y_planar(x, y, sector);
 
     // Keep only if the point is _inside_ the polygon
-    return !(is_point_in_polygon(xr, yr, it->second));
+    return (is_point_in_polygon(xr, yr, it->second));
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -4483,8 +4483,8 @@ bool cvt_fiducial(double edge_1, double edge_3, double edge_5, double edge_7,
      double edge_12, double theta, double phi) {
     // return edge_1 > 0 && edge_3 > 0 && edge_5 > 0 && edge_7 > -2 && edge_12 > -5;
     // return edge_1 > 0 && edge_3 > 0 && edge_5 > 0;
-    // bool edge_cut = edge_1 > 0 && edge_3 > 0 && edge_5 > 0 && edge_7 > 0 && edge_12 > 0;
-    bool edge_cut = true;
+    bool edge_cut = edge_1 > 0 && edge_3 > 0 && edge_5 > 0 && edge_7 > 0 && edge_12 > 0;
+    // bool edge_cut = true;
 
     //remove low efficiency regions of BMT
     bool phi_cut = !((phi > 25 && phi < 40) || (phi > 143 && phi < 158) || (phi > 265 && phi < 280));
@@ -9192,8 +9192,8 @@ int main(int argc, char** argv) {
 
     //// PLOTS ////
 
-    // std::string dataset = "rga_fa18_inb";
-    std::string dataset = "rga_fa18_out";
+    std::string dataset = "rga_fa18_inb";
+    // std::string dataset = "rga_fa18_out";
     // std::string dataset = "rga_sp19_inb";
 
     // plot_htcc_nphe(dataReader, mcReader, dataset);
