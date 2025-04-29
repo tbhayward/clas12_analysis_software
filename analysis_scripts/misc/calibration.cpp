@@ -5000,11 +5000,11 @@ void plot_cvt_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = null
     };
 
     std::vector<std::tuple<int, std::string, std::string>> particle_types = {
-        {211, "pip", "#pi^{+}"},
-        {-211, "pim", "#pi^{-}"},
-        // {321, "kp", "k^{+}"},
+        // {211, "pip", "#pi^{+}"},
+        // {-211, "pim", "#pi^{-}"},
+        {321, "kp", "k^{+}"},
         // {-321, "km", "k^{-}"},
-        // {2212, "proton", "proton"}
+        {2212, "proton", "proton"}
     };
 
     // Declare TTreeReaderValues for the CVT edge and track variables
@@ -9192,9 +9192,9 @@ int main(int argc, char** argv) {
 
     //// PLOTS ////
 
-    // std::string dataset = "rga_fa18_inb";
+    std::string dataset = "rga_fa18_inb";
     // std::string dataset = "rga_fa18_out";
-    std::string dataset = "rga_sp19_inb";
+    // std::string dataset = "rga_sp19_inb";
 
     // plot_htcc_nphe(dataReader, mcReader, dataset);
     // plot_ltcc_nphe(dataReader, mcReader, dataset);
