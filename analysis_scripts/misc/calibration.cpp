@@ -3556,11 +3556,105 @@ bool dc_fiducial(double edge_6, double edge_18, double edge_36,
     return false; // not a charged track? wrong pid?
 }
 
-// ────────
-// 1) Planar‐rotation helpers
-// ────────
+// ─────────────────────────────────────────────────────────────────────────────
+// 1) Polygon definitions for π⁺ fiducial cuts (in Sector-1 coordinates)
+// ─────────────────────────────────────────────────────────────────────────────
+static const std::map<std::string, std::vector<std::pair<double,double>>> Polygon_Layers = {
+    {"Layer_6__pip", {
+        {0, 0}, {357, 210}, {357, -210}, {0, 0},
+        {24, 0}, {24, -6}, {111, -54}, {118, -50},
+        {122, 0}, {120, 20}, {111, 54}, {24, 6},
+        {24, 0}, {0, 0}, {357, 210}, {357, 425},
+        {0, 425}, {0, 0}, {12, 21}, {8, 24},
+        {10, 120}, {10, 126}, {50, 110}, {75, 100},
+        {100, 75}, {100, 69}, {17, 19}, {12, 21},
+        {0, 0}, {0, 425}, {-357, 425}, {-357, 210},
+        {0, 0}, {-12, 21}, {-17, 18}, {-98, 70},
+        {-100, 75}, {-78, 100}, {-50, 112}, {-15, 125},
+        {-11, 120}, {-8, 24}, {-12, 21}, {0, 0},
+        {-357, 210}, {-357, -210}, {0, 0}, {-24, 0},
+        {-24, -6}, {-110, -54}, {-120, -54}, {-125, 0},
+        {-120, 58}, {-110, 54}, {-24, 6}, {-24, 0},
+        {0, 0}, {-357, -210}, {-357, -425}, {0, -425},
+        {0, 0}, {-14, -20}, {-8, -25}, {-9, -80},
+        {-12, -120}, {-15, -128}, {-65, -109}, {-105, -75},
+        {-100, -70}, {-18, -18}, {-14, -20}, {0, 0},
+        {0, -425}, {357, -425}, {357, -210}, {0, 0},
+        {12, -21}, {17, -18}, {100, -69}, {100, -75},
+        {70, -100}, {50, -110}, {14, -125}, {10, -118},
+        {8, -24}, {12, -21}
+    }},
+    {"Layer_18_pip", {
+        {0, 0}, {357, 210}, {357, -210}, {0, 0},
+        {45, 0}, {47, -6}, {50, -6}, {72, -25},
+        {100, -42}, {166, -78}, {183, -88}, {185, -50},
+        {185, 0}, {180, 80}, {166, 78}, {150, 70},
+        {100, 44}, {50, 11}, {45, 0}, {0, 0},
+        {357, 210}, {357, 425}, {0, 425}, {0, 0},
+        {22, 38}, {16, 50}, {15, 84}, {15, 175},
+        {18, 190}, {120, 150}, {155, 120}, {155, 110},
+        {150, 103}, {100, 73}, {60, 51}, {50, 49},
+        {28, 38}, {22, 38}, {0, 0}, {0, 425},
+        {-357, 425}, {-357, 210}, {0, 0}, {-22, 38},
+        {-30, 35}, {-35, 40}, {-50, 45}, {-80, 61},
+        {-150, 105}, {-150, 120}, {-100, 160}, {-20, 190},
+        {-15, 180}, {-15, 80}, {-17, 60}, {-18, 42},
+        {-22, 38}, {0, 0}, {-357, 210}, {-357, -210},
+        {0, 0}, {-40, 0}, {-40, -5}, {-50, -8},
+        {-61, -18}, {-62, -21}, {-166, -80}, {-185, 0},
+        {-166, 80}, {-150, 70}, {-100, 43}, {-70, 25},
+        {-65, 20}, {-50, 10}, {-42, 5}, {-40, 0},
+        {0, 0}, {-357, -210}, {-357, -425}, {0, -425},
+        {0, 0}, {-21, -35}, {-16, -45}, {-15, -60},
+        {-15, -195}, {-50, -190}, {-100, -168}, {-140, -141},
+        {-160, -115}, {-151, -103}, {-100, -73}, {-50, -44},
+        {-30, -37}, {-21, -35}, {0, 0}, {0, -425},
+        {357, -425}, {357, -210}, {0, 0}, {20, -35},
+        {30, -35}, {35, -38}, {50, -43}, {80, -61},
+        {150, -100}, {150, -120}, {140, -135}, {100, -165},
+        {50, -185}, {15, -195}, {15, -80}, {17, -60},
+        {18, -42}, {20, -35}
+    }},
+    {"Layer_36_pip", {
+        {0, 0}, {357, 210}, {357, -210}, {0, 0},
+        {80, 0}, {90, -7}, {115, -35}, {135, -47},
+        {218, -97}, {265, -125}, {285, -138}, {285, 130},
+        {265, 130}, {213, 98}, {200, 90}, {160, 66},
+        {100, 24}, {81, 6}, {80, 0}, {0, 0},
+        {357, 210}, {357, 425}, {0, 425}, {0, 0},
+        {40, 70}, {32, 90}, {28, 100}, {23, 130},
+        {23, 310}, {250, 190}, {255, 180}, {238, 167},
+        {118, 100}, {108, 97}, {48, 72}, {40, 70},
+        {0, 0}, {0, 425}, {-357, 425}, {-357, 210},
+        {0, 0}, {-50, 65}, {-54, 71}, {-100, 87},
+        {-120, 100}, {-150, 116}, {-200, 145}, {-234, 162},
+        {-250, 180}, {-150, 250}, {-50, 295}, {-30, 300},
+        {-30, 285}, {-30, 250}, {-30, 200}, {-30, 150},
+        {-30, 110}, {-35, 100}, {-38, 80}, {-50, 65},
+        {0, 0}, {-357, 210}, {-357, -210}, {0, 0},
+        {-85, 0}, {-86, -7}, {-100, -10}, {-130, -45},
+        {-150, -60}, {-160, -65}, {-200, -90}, {-213, -95},
+        {-265, -125}, {-275, -135}, {-285, 0}, {-275, 135},
+        {-265, 125}, {-220, 95}, {-135, 45}, {-115, 35},
+        {-100, 15}, {-90, 10}, {-85, 0}, {0, 0},
+        {-357, -210}, {-357, -425}, {0, -425}, {0, 0},
+        {-45, -75}, {-30, -100}, {-25, -150}, {-25, -250},
+        {-26, -290}, {-35, -300}, {-45, -310}, {-260, -180},
+        {-236, -180}, {-235, -165}, {-200, -145}, {-150, -116},
+        {-100, -86}, {-80, -78}, {-45, -75}, {0, 0},
+        {0, -425}, {357, -425}, {357, -210}, {0, 0},
+        {50, -73}, {54, -73}, {75, -76}, {100, -85},
+        {240, -160}, {240, -190}, {145, -260}, {25, -315},
+        {25, -285}, {25, -250}, {26, -235}, {25, -200},
+        {27, -150}, {30, -120}, {30, -110}, {35, -100},
+        {38, -80}, {50, -73}
+    }}
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 2) Rotate (x,y) from any sector back to Sector-1 planar coordinates
+// ─────────────────────────────────────────────────────────────────────────────
 double rotate_x_planar(double x, double y, int sector) {
-    // rotate the (x,y) hit back to Sector 1
     double angle = TMath::DegToRad() * 60.0 * (sector - 1);
     return y * TMath::Sin(angle) + x * TMath::Cos(angle);
 }
@@ -3570,11 +3664,11 @@ double rotate_y_planar(double x, double y, int sector) {
     return y * TMath::Cos(angle) - x * TMath::Sin(angle);
 }
 
-// ────────
-// 2) Point‐in‐polygon (winding‐number) test
-// ────────
+// ─────────────────────────────────────────────────────────────────────────────
+// 3) Point‐in‐polygon (winding‐number) test
+// ─────────────────────────────────────────────────────────────────────────────
 bool is_point_in_polygon(double x, double y,
-    const std::vector<std::pair<double,double>>& poly)
+                         const std::vector<std::pair<double,double>>& poly)
 {
     double winding = 0.0;
     size_t n = poly.size();
@@ -3591,159 +3685,169 @@ bool is_point_in_polygon(double x, double y,
     return std::fabs(winding) > M_PI;
 }
 
-// ────────
-// 3) Paste in your π⁺ polygons here (Layer_6_pip, Layer_18_pip, Layer_36_pip).
-// ────────
-static const std::map<std::string,
-    std::vector<std::pair<double,double>>> Polygon_Layers = {
-    {"Layer_6_pip",   {
-        {0, 0}, {357, 210}, {357, -210}, {0, 0}, {24, 0}, {24, -6}, {111, -54}, {118, -50}, {122,   0}, {120,   20}, {111,   54}, {24,    6}, {24,    0}, {0,    0}, {357, 210}, {357, 425}, {0,  425}, {0,   0}, {12, 21}, {8, 24}, {10,  120}, {10,  126}, {50, 110}, {75, 100}, {100, 75}, {100, 69}, {17,  19}, {12,  21}, {0,    0}, {0,   425}, {-357, 425}, {-357, 210}, {0,     0}, {-12, 21}, {-17, 18}, {-98, 70}, {-100, 75}, {-78, 100}, {-50,  112}, {-15,  125}, {-11,  120}, {-8,    24}, {-12, 21}, {0,     0}, {-357, 210}, {-357, -210}, {0,      0}, {-24,    0}, {-24,   -6}, {-110, -54}, {-120, -54}, {-125,  0}, {-120, 58}, {-110, 54}, {-24,   6}, {-24,   0}, {0,     0}, {-357, -210}, {-357, -425}, {0,    -425}, {0, 0}, {-14,  -20}, {-8,    -25}, {-9, -80}, {-12, -120}, {-15, -128}, {-65, -109}, {-105, -75}, {-100, -70}, {-18,  -18}, {-14,  -20}, {0,      0}, {0,    -425}, {357,  -425}, {357, -210}, {0,      0}, {12,   -21}, {17,    -18}, {100,   -69}, {100, -75}, {70, -100}, {50, -110}, {14, -125}, {10, -118}, {8,     -24}, {12,  -21}}
-    },
-    {"Layer_18_pip",  {
-        {0, 0}, {357, 210}, {357, -210}, {0, 0}, {45, 0}, {47, -6}, {50,   -6}, {72,  -25}, {100, -42}, {166,  -78}, {183,  -88}, {185, -50}, {185,   0}, {180, 80}, {166,  78}, {150,  70}, {100, 44}, {50, 11}, {45,  0}, {0,  0}, {357, 210}, {357, 425}, {0,  425}, {0,    0}, {22,  38}, {16,  50}, {15,  84}, {15, 175}, {18, 190}, {120, 150}, {155,  120}, {155,  110}, {150, 103}, {100, 73}, {60,  51}, {50,  49}, {28,   38}, {22,   38}, {0,      0}, {0,    425}, {-357, 425}, {-357, 210}, {0,    0}, {-22,  38}, {-30,   35}, {-35,    40}, {-50,   45}, {-80,   61}, {-150, 105}, {-150, 120}, {-100, 160}, {-20, 190}, {-15, 180}, {-15,  80}, {-17,  60}, {-18,  42}, {-22,  38}, {0,       0}, {-357,  210}, {-357, -210}, {0, 0}, {-40,    0}, {-40,    -5}, {-50, -8}, {-61,  -18}, {-62,  -21}, {-166, -80}, {-185,   0}, {-166,  80}, {-150,  70}, {-100,  43}, {-70,   25}, {-65,    20}, {-50,    10}, {-42,    5}, {-40,    0}, {0,      0}, {-357, -210}, {-357, -425}, {0,  -425}, {0,     0}, {-21, -35}, {-16, -45}, {-15, -60}, {-15,  -195}, {-50,  -190}, {-100, -168}, {-140, -141}, {-160, -115}, {-151, -103}, {-100, -73}, {-50,  -44}, {-30,  -37}, {-21,  -35}, {0,      0}, {0,    -425}, {357,  -425}, {357,  -210}, {0,       0}, {20,    -35}, {30,   -35}, {35,  -38}, {50,  -43}, {80, -61}, {150, -100}, {150, -120}, {140, -135}, {100, -165}, {50, -185}, {15, -195}, {15, -80}, {17,  -60}, {18,   -42}, {20, -35}}
-    },
-    {"Layer_36_pip",  {
-        {0, 0}, {357, 210}, {357, -210}, {0, 0}, {80, 0}, {90, -7}, {115, -35}, {135, -47}, {218, -97}, {265, -125}, {285, -138}, {285, 130}, {265, 130}, {213, 98}, {200,  90}, {160,  66}, {100, 24}, {81,  6}, {80,  0}, {0,  0}, {357, 210}, {357, 425}, {0,  425}, {0,    0}, {40,  70}, {32,  90}, {28, 100}, {23, 130}, {23, 310}, {250, 190}, {255,  180}, {238,  167}, {118, 100}, {108, 97}, {48,  72}, {40,  70}, {0,     0}, {0,   425}, {-357, 425}, {-357, 210}, {0,      0}, {-50,   65}, {-54, 71}, {-100, 87}, {-120, 100}, {-150,  116}, {-200, 145}, {-234, 162}, {-250, 180}, {-150, 250}, {-50,  295}, {-30, 300}, {-30, 285}, {-30, 250}, {-30, 200}, {-30, 150}, {-30, 110}, {-35,   100}, {-38,    80}, {-50,    65}, {0, 0}, {-357, 210}, {-357, -210}, {0,    0}, {-85,    0}, {-86,   -7}, {-100, -10}, {-130, -45}, {-150, -60}, {-160, -65}, {-200, -90}, {-213, -95}, {-265, -125}, {-275, -135}, {-285,   0}, {-275, 135}, {-265, 125}, {-220,   95}, {-135,   45}, {-115, 35}, {-100, 15}, {-90,  10}, {-85,   0}, {0,     0}, {-357, -210}, {-357, -425}, {0,    -425}, {0,       0}, {-45,   -75}, {-30,  -100}, {-25, -150}, {-25, -250}, {-26, -290}, {-35, -300}, {-45, -310}, {-260, -180}, {-236, -180}, {-235, -165}, {-200, -145}, {-150, -116}, {-100, -86}, {-80, -78}, {-45, -75}, {0,    0}, {0,   -425}, {357, -425}, {357, -210}, {0,      0}, {50,  -73}, {54,  -73}, {75, -76}, {100, -85}, {240, -160}, {240, -190}, {145, -260}, {25, -315}, {25, -285}, {25, -250}, {26, -235}, {25, -200}, {27, -150}, {30, -120}, {30, -110}, {35, -100}, {38, -80}, {50, -73}}
-    }
-};
-
-// ────────
-// 4) New per‐region π⁺ fiducial cut
-// ────────
+// ─────────────────────────────────────────────────────────────────────────────
+// 4) Combined π⁺ polygon cut: rotate & inside‐polygon?
+// ─────────────────────────────────────────────────────────────────────────────
 bool dc_polygon_cut(int region_idx,
                     int pid,
                     double x, double y,
                     int sector)
 {
     // Only apply to π⁺ (pid == 211)
-    // if (pid != 211) return true;
+    if (pid != 211) return true;
 
-    // Pick the right polygon key
-    const char* key = (region_idx == 0 ? "Layer_6_pip"
+    // Select the correct polygon key
+    const char* key = (region_idx == 0 ? "Layer_6__pip"
                     : region_idx == 1 ? "Layer_18_pip"
                                       : "Layer_36_pip");
     auto it = Polygon_Layers.find(key);
     if (it == Polygon_Layers.end()) return true;
 
-    // Rotate into Sector 1 coords
+    // Rotate into Sector-1 coordinates
     double xr = rotate_x_planar(x, y, sector);
     double yr = rotate_y_planar(x, y, sector);
 
-    // Keep only if _inside_ the polygon
+    // Keep only if the point is _inside_ the polygon
     return is_point_in_polygon(xr, yr, it->second);
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// 5) Full plot_dc_hit_position including original dc_fiducial + π⁺ polygon cut
+// ─────────────────────────────────────────────────────────────────────────────
 void plot_dc_hit_position(TTreeReader& dataReader,
                           TTreeReader* mcReader = nullptr,
                           const std::string& dataset = "rga_fa18_inb")
 {
     const int nBins = 300;
 
-    struct Region {
-        std::string xBranch, yBranch, name;
-        double min, max;
-    };
+    struct Region { std::string xBranch, yBranch, name; double min, max; };
     std::vector<Region> regions = {
         {"traj_x_6",  "traj_y_6",  "region_1", -200,  200},
         {"traj_x_18", "traj_y_18", "region_2", -300,  300},
         {"traj_x_36", "traj_y_36", "region_3", -450,  450}
     };
 
-    std::vector<std::tuple<int, std::string>> particle_types = {
-        {11, "electron"},
-        // {-211, "pim"},
-        // {211, "pip"}
-        // {321, "kp"},
-        // {-321, "km"},
+    std::vector<std::pair<int,std::string>> particle_types = {
+        {11,   "electron"},
         {2212, "proton"}
     };
 
-    // --- declare readers for data ---
-    TTreeReaderValue<int> data_pid     (dataReader, "particle_pid");
-    TTreeReaderValue<int> data_run     (dataReader, "config_run");
-    TTreeReaderValue<int> sec6_reader  (dataReader, "track_sector_6");
-    TTreeReaderValue<int> sec18_reader (dataReader, "track_sector_18");
-    TTreeReaderValue<int> sec36_reader (dataReader, "track_sector_36");
+    // —————— Data readers ——————
+    TTreeReaderValue<double> traj_edge_6   (dataReader, "traj_edge_6");
+    TTreeReaderValue<double> traj_edge_18  (dataReader, "traj_edge_18");
+    TTreeReaderValue<double> traj_edge_36  (dataReader, "traj_edge_36");
+    TTreeReaderValue<double> theta_reader  (dataReader, "theta");
+    TTreeReaderValue<int>    runnum_reader (dataReader, "config_run");
+    TTreeReaderValue<int>    pid_reader    (dataReader, "particle_pid");
+    TTreeReaderValue<int>    sec6_reader   (dataReader, "track_sector_6");
+    TTreeReaderValue<int>    sec18_reader  (dataReader, "track_sector_18");
+    TTreeReaderValue<int>    sec36_reader  (dataReader, "track_sector_36");
 
-    // one per‐region for x,y
-    std::vector<TTreeReaderValue<double>> data_x, data_y;
-    for (auto& r : regions) {
-        data_x.emplace_back(dataReader, r.xBranch.c_str());
-        data_y.emplace_back(dataReader, r.yBranch.c_str());
+    // region‐by‐region x,y
+    std::vector<TTreeReaderValue<double>> traj_x, traj_y;
+    for (auto& R : regions) {
+        traj_x.emplace_back(dataReader, R.xBranch.c_str());
+        traj_y.emplace_back(dataReader, R.yBranch.c_str());
     }
 
-    // --- same for MC if requested ---
-    TTreeReaderValue<int>* mc_pid = nullptr;
-    TTreeReaderValue<int>* mc_run = nullptr;
-    TTreeReaderValue<int>* mc_sec6 = nullptr;
-    TTreeReaderValue<int>* mc_sec18 = nullptr;
-    TTreeReaderValue<int>* mc_sec36 = nullptr;
+    // —————— MC readers (if provided) ——————
+    TTreeReaderValue<double>* mc_edge_6    = nullptr;
+    TTreeReaderValue<double>* mc_edge_18   = nullptr;
+    TTreeReaderValue<double>* mc_edge_36   = nullptr;
+    TTreeReaderValue<double>* mc_theta     = nullptr;
+    TTreeReaderValue<int>*    mc_runnum    = nullptr;
+    TTreeReaderValue<int>*    mc_pid       = nullptr;
+    TTreeReaderValue<int>*    mc_sec6      = nullptr;
+    TTreeReaderValue<int>*    mc_sec18     = nullptr;
+    TTreeReaderValue<int>*    mc_sec36     = nullptr;
     std::vector<TTreeReaderValue<double>*> mc_x, mc_y;
 
     if (mcReader) {
-        mc_pid     = new TTreeReaderValue<int>(*mcReader,"particle_pid");
-        mc_run     = new TTreeReaderValue<int>(*mcReader,"config_run");
-        mc_sec6    = new TTreeReaderValue<int>(*mcReader,"track_sector_6");
-        mc_sec18   = new TTreeReaderValue<int>(*mcReader,"track_sector_18");
-        mc_sec36   = new TTreeReaderValue<int>(*mcReader,"track_sector_36");
-        for (auto& r : regions) {
-            mc_x.push_back(new TTreeReaderValue<double>(*mcReader, r.xBranch.c_str()));
-            mc_y.push_back(new TTreeReaderValue<double>(*mcReader, r.yBranch.c_str()));
+        mc_edge_6   = new TTreeReaderValue<double>(*mcReader, "traj_edge_6");
+        mc_edge_18  = new TTreeReaderValue<double>(*mcReader, "traj_edge_18");
+        mc_edge_36  = new TTreeReaderValue<double>(*mcReader, "traj_edge_36");
+        mc_theta    = new TTreeReaderValue<double>(*mcReader, "theta");
+        mc_runnum   = new TTreeReaderValue<int>   (*mcReader, "config_run");
+        mc_pid      = new TTreeReaderValue<int>   (*mcReader, "particle_pid");
+        mc_sec6     = new TTreeReaderValue<int>   (*mcReader, "track_sector_6");
+        mc_sec18    = new TTreeReaderValue<int>   (*mcReader, "track_sector_18");
+        mc_sec36    = new TTreeReaderValue<int>   (*mcReader, "track_sector_36");
+        for (auto& R : regions) {
+            mc_x.push_back(new TTreeReaderValue<double>(*mcReader, R.xBranch.c_str()));
+            mc_y.push_back(new TTreeReaderValue<double>(*mcReader, R.yBranch.c_str()));
         }
     }
 
-    for (auto& [pid, name] : particle_types) {
-        // create canvases
-        TCanvas* c_data = new TCanvas(("c_data_"+name).c_str(),
-                                      ("Data DC Hit Position ("+name+")").c_str(),
-                                      1800,1200);
+    // —————— Per‐particle loop ——————
+    for (auto& pt : particle_types) {
+        int pid    = pt.first;
+        auto name  = pt.second;
+
+        // Create canvases
+        TCanvas* c_data = new TCanvas(
+            ("c_data_"+name).c_str(),
+            ("Data DC Hit Position ("+name+")").c_str(),
+            1800, 1200
+        );
         c_data->Divide(3,2);
+
         TCanvas* c_mc = nullptr;
         if (mcReader) {
-            c_mc = new TCanvas(("c_mc_"+name).c_str(),
-                               ("MC DC Hit Position ("+name+")").c_str(),
-                               1800,1200);
+            c_mc = new TCanvas(
+                ("c_mc_"+name).c_str(),
+                ("MC DC Hit Position ("+name+")").c_str(),
+                1800, 1200
+            );
             c_mc->Divide(3,2);
         }
 
-        // histograms
-        std::vector<TH2D*> h_data_before(3), h_data_after(3),
-                           h_mc_before(3),   h_mc_after(3);
+        // Histograms
+        std::vector<TH2D*> h_data_before(3), h_data_after(3);
+        std::vector<TH2D*> h_mc_before(3),   h_mc_after(3);
 
-        for (int i=0; i<3; ++i) {
+        // Book histograms
+        for (int i = 0; i < 3; ++i) {
             auto& R = regions[i];
             h_data_before[i] = new TH2D(
-                (dataset+",h_db_"+R.name).c_str(),
+                (dataset+",db_"+R.name).c_str(),
                 ("Data "+R.name+" Before ("+name+")").c_str(),
-                nBins, R.min, R.max, nBins, R.min, R.max);
-            h_data_after[i]  = new TH2D(
-                (dataset+",h_da_"+R.name).c_str(),
+                nBins, R.min, R.max, nBins, R.min, R.max
+            );
+            h_data_after[i] = new TH2D(
+                (dataset+",da_"+R.name).c_str(),
                 ("Data "+R.name+" After  ("+name+")").c_str(),
-                nBins, R.min, R.max, nBins, R.min, R.max);
+                nBins, R.min, R.max, nBins, R.min, R.max
+            );
             if (mcReader) {
                 h_mc_before[i] = new TH2D(
-                    (dataset+",h_mb_"+R.name).c_str(),
+                    (dataset+",mb_"+R.name).c_str(),
                     ("MC "+R.name+" Before ("+name+")").c_str(),
-                    nBins, R.min, R.max, nBins, R.min, R.max);
-                h_mc_after[i]  = new TH2D(
-                    (dataset+",h_ma_"+R.name).c_str(),
+                    nBins, R.min, R.max, nBins, R.min, R.max
+                );
+                h_mc_after[i] = new TH2D(
+                    (dataset+",ma_"+R.name).c_str(),
                     ("MC "+R.name+" After  ("+name+")").c_str(),
-                    nBins, R.min, R.max, nBins, R.min, R.max);
+                    nBins, R.min, R.max, nBins, R.min, R.max
+                );
             }
         }
 
-        // --- Fill Data ---
+        // — Fill Data histograms —
         dataReader.Restart();
         while (dataReader.Next()) {
-            if (*data_pid != pid) continue;
+            if (*pid_reader != pid) continue;
             int secs[3] = {*sec6_reader, *sec18_reader, *sec36_reader};
-            for (int i=0; i<3; ++i) {
-                double xv = *data_x[i];
-                double yv = *data_y[i];
+            for (int i = 0; i < 3; ++i) {
+                double xv = *traj_x[i];
+                double yv = *traj_y[i];
+                if (xv == -9999 || yv == -9999) continue;
+
                 h_data_before[i]->Fill(xv, yv);
 
                 bool keep1 = dc_fiducial(
-                    /* your original args: */ /* e6,e18,e36,pid,theta,run */ );
+                    *traj_edge_6, *traj_edge_18, *traj_edge_36,
+                    pid, *theta_reader, *runnum_reader
+                );
                 bool keep2 = dc_polygon_cut(i, pid, xv, yv, secs[i]);
                 if (keep1 && keep2) {
                     h_data_after[i]->Fill(xv, yv);
@@ -3751,19 +3855,23 @@ void plot_dc_hit_position(TTreeReader& dataReader,
             }
         }
 
-        // --- Fill MC ---
+        // — Fill MC histograms —
         if (mcReader) {
             mcReader->Restart();
             while (mcReader->Next()) {
                 if (**mc_pid != pid) continue;
                 int secs[3] = {**mc_sec6, **mc_sec18, **mc_sec36};
-                for (int i=0; i<3; ++i) {
+                for (int i = 0; i < 3; ++i) {
                     double xv = **mc_x[i];
                     double yv = **mc_y[i];
+                    if (xv == -9999 || yv == -9999) continue;
+
                     h_mc_before[i]->Fill(xv, yv);
 
                     bool keep1 = dc_fiducial(
-                        /* mc args */ );
+                        **mc_edge_6, **mc_edge_18, **mc_edge_36,
+                        pid, **mc_theta, **mc_runnum
+                    );
                     bool keep2 = dc_polygon_cut(i, pid, xv, yv, secs[i]);
                     if (keep1 && keep2) {
                         h_mc_after[i]->Fill(xv, yv);
@@ -3772,76 +3880,80 @@ void plot_dc_hit_position(TTreeReader& dataReader,
             }
         }
 
-        // Find the maximum value across all histograms for consistent scaling
-        double max_value_data = 0, max_value_mc = 0;
-        for (int region_idx = 0; region_idx < 3; ++region_idx) {
-            max_value_data = std::max(max_value_data, h_data_before[region_idx]->GetMaximum());
-            max_value_data = std::max(max_value_data, h_data_after[region_idx]->GetMaximum());
+        // — Determine global maxima for consistent Z‐scale —
+        double max_data = 0, max_mc = 0;
+        for (int i = 0; i < 3; ++i) {
+            max_data = std::max(max_data,   h_data_before[i]->GetMaximum());
+            max_data = std::max(max_data,   h_data_after[i]->GetMaximum());
             if (mcReader) {
-                max_value_mc = std::max(max_value_mc, h_mc_before[region_idx]->GetMaximum());
-                max_value_mc = std::max(max_value_mc, h_mc_after[region_idx]->GetMaximum());
+                max_mc   = std::max(max_mc, h_mc_before[i]->GetMaximum());
+                max_mc   = std::max(max_mc, h_mc_after[i]->GetMaximum());
             }
         }
 
-        // Set the maximum for each histogram to ensure consistent scaling
-        for (int region_idx = 0; region_idx < 3; ++region_idx) {
-            h_data_before[region_idx]->SetMaximum(max_value_data * 1.1);
-            h_data_after[region_idx]->SetMaximum(max_value_data * 1.1);
+        // — Apply Z‐scale and draw & save canvases —
+        for (int i = 0; i < 3; ++i) {
+            h_data_before[i]->SetMaximum(max_data * 1.1);
+            h_data_after[i]->SetMaximum(max_data * 1.1);
             if (mcReader) {
-                h_mc_before[region_idx]->SetMaximum(max_value_mc * 1.1);
-                h_mc_after[region_idx]->SetMaximum(max_value_mc * 1.1);
+                h_mc_before[i]->SetMaximum(max_mc * 1.1);
+                h_mc_after[i]->SetMaximum(max_mc * 1.1);
             }
         }
 
-        // Draw and save the data canvas
-        for (int region_idx = 0; region_idx < 3; ++region_idx) {
-            c_data->cd(region_idx + 1);
-            gPad->SetLogz();
-            gPad->SetMargin(0.15, 0.15, 0.1, 0.1);
-            h_data_before[region_idx]->Draw("COLZ");
-            c_data->cd(region_idx + 4);
-            gPad->SetLogz();
-            gPad->SetMargin(0.15, 0.15, 0.1, 0.1);
-            h_data_after[region_idx]->Draw("COLZ");
+        // Data draw
+        for (int i = 0; i < 3; ++i) {
+            c_data->cd(i+1);
+            gPad->SetLogz(); gPad->SetMargin(0.15,0.15,0.1,0.1);
+            h_data_before[i]->Draw("COLZ");
+            c_data->cd(i+4);
+            gPad->SetLogz(); gPad->SetMargin(0.15,0.15,0.1,0.1);
+            h_data_after[i]->Draw("COLZ");
         }
-        c_data->SaveAs(("output/calibration/dc/positions/data_" + dataset+  "_" + particle_name + "_dc_hit_position.png").c_str());
+        c_data->SaveAs(
+            ("output/calibration/dc/positions/data_"+dataset+"_"+name+"_dc_hit_position.png").c_str()
+        );
 
-        // Draw and save the MC canvas if available
+        // MC draw
         if (mcReader) {
-            for (int region_idx = 0; region_idx < 3; ++region_idx) {
-                c_mc->cd(region_idx + 1);
-                gPad->SetLogz();
-                gPad->SetMargin(0.15, 0.15, 0.1, 0.1);
-                h_mc_before[region_idx]->Draw("COLZ");
-                c_mc->cd(region_idx + 4);
-                gPad->SetLogz();
-                gPad->SetMargin(0.15, 0.15, 0.1, 0.1);
-                h_mc_after[region_idx]->Draw("COLZ");
+            for (int i = 0; i < 3; ++i) {
+                c_mc->cd(i+1);
+                gPad->SetLogz(); gPad->SetMargin(0.15,0.15,0.1,0.1);
+                h_mc_before[i]->Draw("COLZ");
+                c_mc->cd(i+4);
+                gPad->SetLogz(); gPad->SetMargin(0.15,0.15,0.1,0.1);
+                h_mc_after[i]->Draw("COLZ");
             }
-            c_mc->SaveAs(("output/calibration/dc/positions/mc_" + dataset+  "_" + particle_name + "_dc_hit_position.png").c_str());
+            c_mc->SaveAs(
+                ("output/calibration/dc/positions/mc_"+dataset+"_"+name+"_dc_hit_position.png").c_str()
+            );
         }
 
-        // Cleanup
-        for (int region_idx = 0; region_idx < 3; ++region_idx) {
-            delete h_data_before[region_idx];
-            delete h_data_after[region_idx];
+        // — Cleanup histograms & canvases —
+        for (int i = 0; i < 3; ++i) {
+            delete h_data_before[i];
+            delete h_data_after[i];
             if (mcReader) {
-                delete h_mc_before[region_idx];
-                delete h_mc_after[region_idx];
+                delete h_mc_before[i];
+                delete h_mc_after[i];
             }
         }
         delete c_data;
         if (mcReader) delete c_mc;
     }
 
-    // Clean up the dynamically allocated memory for edge variables
-    if (mc_traj_edge_6) delete mc_traj_edge_6;
-    if (mc_traj_edge_18) delete mc_traj_edge_18;
-    if (mc_traj_edge_36) delete mc_traj_edge_36;
-
-    // Clean up mc_traj_x and mc_traj_y vectors
-    for (auto& ptr : mc_traj_x) delete ptr;
-    for (auto& ptr : mc_traj_y) delete ptr;
+    // — Cleanup MC readers —
+    if (mc_edge_6)   delete mc_edge_6;
+    if (mc_edge_18)  delete mc_edge_18;
+    if (mc_edge_36)  delete mc_edge_36;
+    if (mc_theta)    delete mc_theta;
+    if (mc_runnum)   delete mc_runnum;
+    if (mc_pid)      delete mc_pid;
+    if (mc_sec6)     delete mc_sec6;
+    if (mc_sec18)    delete mc_sec18;
+    if (mc_sec36)    delete mc_sec36;
+    for (auto p : mc_x) delete p;
+    for (auto p : mc_y) delete p;
 }
 
 void normalize_histogram(TH2D* h_sum, TH2D* h_count) {
