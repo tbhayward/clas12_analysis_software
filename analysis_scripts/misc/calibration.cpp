@@ -438,12 +438,12 @@ bool pcal_fiducial(double lv_1, double lw_1, double lu_1,
         }
     }
 
-    // RGA Sp19 Only
-    if (sector == 2) {
-        if (lv_1 > 31.5 && lv_1 < 49.5) {
-            return false;
-        }
-    }
+    // // RGA Sp19 Only
+    // if (sector == 2) {
+    //     if (lv_1 > 31.5 && lv_1 < 49.5) {
+    //         return false;
+    //     }
+    // }
 
 
     // If none of the cuts apply, the track is good
@@ -9031,9 +9031,9 @@ int main(int argc, char** argv) {
 
     //// PLOTS ////
 
-    // std::string dataset = "rga_fa18_inb";
+    std::string dataset = "rga_fa18_inb";
     // std::string dataset = "rga_fa18_out";
-    std::string dataset = "rga_sp19_inb";
+    // std::string dataset = "rga_sp19_inb";
 
     // plot_htcc_nphe(dataReader, mcReader, dataset);
     // plot_ltcc_nphe(dataReader, mcReader, dataset);
@@ -9067,9 +9067,9 @@ int main(int argc, char** argv) {
     // if (mcReader) mcReader->Restart();
     // plot_ecout_fiducial_determination(dataReader, mcReader, dataset);
 
-    dataReader.Restart();
-    if (mcReader) mcReader->Restart();
-    plot_cal_hit_position(dataReader, mcReader, dataset);
+    // dataReader.Restart();
+    // if (mcReader) mcReader->Restart();
+    // plot_cal_hit_position(dataReader, mcReader, dataset);
 
     // dataReader.Restart();
     // if (mcReader) mcReader->Restart();
@@ -9083,9 +9083,9 @@ int main(int argc, char** argv) {
     // if (mcReader) mcReader->Restart();
     // cvt_fiducial_determination(dataReader, mcReader, dataset);
 
-    // dataReader.Restart();
-    // if (mcReader) mcReader->Restart();
-    // plot_cvt_hit_position(dataReader, mcReader, dataset);
+    dataReader.Restart();
+    if (mcReader) mcReader->Restart();
+    plot_cvt_hit_position(dataReader, mcReader, dataset);
 
     // dataReader.Restart();
     // if (mcReader) mcReader->Restart();
