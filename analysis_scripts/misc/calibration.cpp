@@ -3716,241 +3716,201 @@ bool dc_polygon_cut(int region_idx,
 // ─────────────────────────────────────────────────────────────────────────────
 void plot_dc_hit_position(TTreeReader& dataReader,
                           TTreeReader* mcReader = nullptr,
-                          const std::string& dataset = "rga_fa18_inb") {
+                          const std::string& dataset = "rga_fa18_inb")
+{
     const int nBins = 300;
-
-    struct Region {
-        std::string xBranch, yBranch, name;
-        double min, max;
-    };
+    struct Region { std::string xBranch,yBranch,name; double min,max; };
     std::vector<Region> regions = {
-        {"traj_x_6",  "traj_y_6",  "region_1", -200,  200},
-        {"traj_x_18", "traj_y_18", "region_2", -300,  300},
-        {"traj_x_36", "traj_y_36", "region_3", -450,  450}
+        {"traj_x_6","traj_y_6","region_1",-200,200},
+        {"traj_x_18","traj_y_18","region_2",-300,300},
+        {"traj_x_36","traj_y_36","region_3",-450,450}
     };
 
-    // comment or uncomment PIDs here:
-    std::vector<std::tuple<int, std::string>> particle_types = {
-        //{  11, "electron"},
-        { -211, "pim"},
-        {  211, "pip"}
-        //{  321, "kp"},
-        //{ -321, "km"},
-        //{ 2212, "proton"}
+    // comment/uncomment PIDs here
+    std::vector<std::tuple<int,std::string>> particle_types = {
+        //{  11,"electron"},
+        {-211,"pim"},
+        { 211,"pip"}
+        //{ 321,"kp"}, {-321,"km"},{2212,"proton"}
     };
 
-    // —————— Data readers ——————
-    TTreeReaderValue<double> traj_edge_6   (dataReader, "traj_edge_6");
-    TTreeReaderValue<double> traj_edge_18  (dataReader, "traj_edge_18");
-    TTreeReaderValue<double> traj_edge_36  (dataReader, "traj_edge_36");
-    TTreeReaderValue<double> theta_reader  (dataReader, "theta");
-    TTreeReaderValue<int>    runnum_reader (dataReader, "config_run");
-    TTreeReaderValue<int>    pid_reader    (dataReader, "particle_pid");
-    TTreeReaderValue<int>    sec6_reader   (dataReader, "track_sector_6");
+    // Data readers
+    TTreeReaderValue<double> edge6(dataReader,"traj_edge_6");
+    TTreeReaderValue<double> edge18(dataReader,"traj_edge_18");
+    TTreeReaderValue<double> edge36(dataReader,"traj_edge_36");
+    TTreeReaderValue<double> theta(dataReader,"theta");
+    TTreeReaderValue<int>    runnum(dataReader,"config_run");
+    TTreeReaderValue<int>    pid(dataReader,"particle_pid");
+    TTreeReaderValue<int>    sec6(dataReader,"track_sector_6");
 
-    // region‐by‐region x,y readers
-    std::vector<TTreeReaderValue<double>> traj_x, traj_y;
-    for (auto& R : regions) {
-        traj_x.emplace_back(dataReader, R.xBranch.c_str());
-        traj_y.emplace_back(dataReader, R.yBranch.c_str());
+    // region-by-region x,y
+    std::vector<TTreeReaderValue<double>> xs, ys;
+    for (auto& R: regions) {
+        xs.emplace_back(dataReader,R.xBranch.c_str());
+        ys.emplace_back(dataReader,R.yBranch.c_str());
     }
 
-    // —————— MC readers (if provided) ——————
-    TTreeReaderValue<double>* mc_edge_6   = nullptr;
-    TTreeReaderValue<double>* mc_edge_18  = nullptr;
-    TTreeReaderValue<double>* mc_edge_36  = nullptr;
-    TTreeReaderValue<double>* mc_theta    = nullptr;
-    TTreeReaderValue<int>*    mc_runnum   = nullptr;
-    TTreeReaderValue<int>*    mc_pid      = nullptr;
-    TTreeReaderValue<int>*    mc_sec6     = nullptr;
+    // MC readers
+    TTreeReaderValue<double>* mc_e6=0,*mc_e18=0,*mc_e36=0,*mc_th=0;
+    TTreeReaderValue<int>* mc_run=0,*mc_pid=0,*mc_s6=0;
     std::vector<TTreeReaderValue<double>*> mc_x, mc_y;
-
-    if (mcReader) {
-        mc_edge_6   = new TTreeReaderValue<double>(*mcReader, "traj_edge_6");
-        mc_edge_18  = new TTreeReaderValue<double>(*mcReader, "traj_edge_18");
-        mc_edge_36  = new TTreeReaderValue<double>(*mcReader, "traj_edge_36");
-        mc_theta    = new TTreeReaderValue<double>(*mcReader, "theta");
-        mc_runnum   = new TTreeReaderValue<int>   (*mcReader, "config_run");
-        mc_pid      = new TTreeReaderValue<int>   (*mcReader, "particle_pid");
-        mc_sec6     = new TTreeReaderValue<int>   (*mcReader, "track_sector_6");
-        for (auto& R : regions) {
-            mc_x.push_back(new TTreeReaderValue<double>(*mcReader, R.xBranch.c_str()));
-            mc_y.push_back(new TTreeReaderValue<double>(*mcReader, R.yBranch.c_str()));
+    if(mcReader){
+        mc_e6  = new TTreeReaderValue<double>(*mcReader,"traj_edge_6");
+        mc_e18 = new TTreeReaderValue<double>(*mcReader,"traj_edge_18");
+        mc_e36 = new TTreeReaderValue<double>(*mcReader,"traj_edge_36");
+        mc_th  = new TTreeReaderValue<double>(*mcReader,"theta");
+        mc_run = new TTreeReaderValue<int>(*mcReader,"config_run");
+        mc_pid = new TTreeReaderValue<int>(*mcReader,"particle_pid");
+        mc_s6  = new TTreeReaderValue<int>(*mcReader,"track_sector_6");
+        for(auto& R: regions){
+            mc_x.push_back(new TTreeReaderValue<double>(*mcReader,R.xBranch.c_str()));
+            mc_y.push_back(new TTreeReaderValue<double>(*mcReader,R.yBranch.c_str()));
         }
     }
 
-    // —————— Per‐particle loop ——————
-    for (const auto& pt : particle_types) {
-        int pid           = std::get<0>(pt);
-        const std::string name = std::get<1>(pt);
+    // loop over particle types
+    for(auto& pt: particle_types){
+        int ipid = std::get<0>(pt);
+        std::string name = std::get<1>(pt);
 
-        // Create canvases
+        // canvases
         TCanvas* c_data = new TCanvas(
             ("c_data_"+name).c_str(),
             ("Data DC Hit Position ("+name+")").c_str(),
-            1800, 1200
-        );
-        c_data->Divide(3,2);
+            1800,1200);
+        c_data->Divide(3,3);
 
         TCanvas* c_mc = nullptr;
-        if (mcReader) {
+        if(mcReader){
             c_mc = new TCanvas(
                 ("c_mc_"+name).c_str(),
                 ("MC DC Hit Position ("+name+")").c_str(),
-                1800, 1200
-            );
-            c_mc->Divide(3,2);
+                1800,1200);
+            c_mc->Divide(3,3);
         }
 
-        // Histograms
-        std::vector<TH2D*> h_data_before(3), h_data_after(3);
-        std::vector<TH2D*> h_mc_before(3),   h_mc_after(3);
-
-        // Book histograms
-        for (int i = 0; i < 3; ++i) {
-            auto& R = regions[i];
-            h_data_before[i] = new TH2D(
-                (dataset+",db_"+R.name).c_str(),
-                ("Data "+R.name+" Before ("+name+")").c_str(),
-                nBins, R.min, R.max, nBins, R.min, R.max
-            );
-            h_data_after[i] = new TH2D(
-                (dataset+",da_"+R.name).c_str(),
-                ("Data "+R.name+" After  ("+name+")").c_str(),
-                nBins, R.min, R.max, nBins, R.min, R.max
-            );
-            if (mcReader) {
-                h_mc_before[i] = new TH2D(
-                    (dataset+",mb_"+R.name).c_str(),
-                    ("MC "+R.name+" Before ("+name+")").c_str(),
-                    nBins, R.min, R.max, nBins, R.min, R.max
-                );
-                h_mc_after[i] = new TH2D(
-                    (dataset+",ma_"+R.name).c_str(),
-                    ("MC "+R.name+" After  ("+name+")").c_str(),
-                    nBins, R.min, R.max, nBins, R.min, R.max
-                );
+        // Hist vectors: [noCut, fidOnly, fid+poly]
+        std::vector<TH2D*> h_data[3], h_mc[3];
+        for(int r=0; r<3; ++r){
+            h_data[0].push_back(new TH2D(
+                Form("%s_db0_%s",dataset.c_str(),regions[r].name.c_str()),
+                Form("Data %s NoCuts (%s)",regions[r].name.c_str(),name.c_str()),
+                nBins,regions[r].min,regions[r].max,nBins,regions[r].min,regions[r].max));
+            h_data[1].push_back(new TH2D(
+                Form("%s_db1_%s",dataset.c_str(),regions[r].name.c_str()),
+                Form("Data %s FidOnly (%s)",regions[r].name.c_str(),name.c_str()),
+                nBins,regions[r].min,regions[r].max,nBins,regions[r].min,regions[r].max));
+            h_data[2].push_back(new TH2D(
+                Form("%s_db2_%s",dataset.c_str(),regions[r].name.c_str()),
+                Form("Data %s Fid+Poly (%s)",regions[r].name.c_str(),name.c_str()),
+                nBins,regions[r].min,regions[r].max,nBins,regions[r].min,regions[r].max));
+            if(mcReader){
+                for(int k=0;k<3;++k){
+                    h_mc[k].push_back(new TH2D(
+                        Form("%s_mb%d_%s",dataset.c_str(),k,regions[r].name.c_str()),
+                        Form("MC   %s %s (%s)",regions[r].name.c_str(),
+                             k==0?"NoCuts":k==1?"FidOnly":"Fid+Poly",
+                             name.c_str()),
+                        nBins,regions[r].min,regions[r].max,nBins,regions[r].min,regions[r].max));
+                }
             }
         }
 
-        // — Fill Data histograms —
+        // Fill Data
         dataReader.Restart();
-        while (dataReader.Next()) {
-            if (*pid_reader != pid) continue;
-            int secs[3] = {*sec6_reader};
-            for (int i = 0; i < 3; ++i) {
-                double xv = *traj_x[i], yv = *traj_y[i];
-                if (xv == -9999 || yv == -9999) continue;
-
-                h_data_before[i]->Fill(xv, yv);
-
-                bool keep1 = dc_fiducial(
-                    *traj_edge_6, *traj_edge_18, *traj_edge_36,
-                    pid, *theta_reader, *runnum_reader
-                );
-                bool keep2 = dc_polygon_cut(i, pid, xv, yv, secs[0]);
-                if (keep1 && keep2) {
-                    h_data_after[i]->Fill(xv, yv);
-                }
+        while(dataReader.Next()){
+            if(*pid!=ipid) continue;
+            int sector = *sec6;
+            for(int r=0;r<3;++r){
+                double xv=*xs[r], yv=*ys[r];
+                if(xv==-9999||yv==-9999) continue;
+                // no cut
+                h_data[0][r]->Fill(xv,yv);
+                // fiducial only
+                bool f1 = dc_fiducial(*edge6,*edge18,*edge36,
+                                      ipid,*theta,*runnum);
+                if(f1) h_data[1][r]->Fill(xv,yv);
+                // fid+poly
+                if(f1 && dc_polygon_cut(r,ipid,xv,yv,sector))
+                    h_data[2][r]->Fill(xv,yv);
             }
         }
 
-        // — Fill MC histograms —
-        if (mcReader) {
+        // Fill MC
+        if(mcReader){
             mcReader->Restart();
-            while (mcReader->Next()) {
-                if (**mc_pid != pid) continue;
-                int secs[3] = {**mc_sec6};
-                for (int i = 0; i < 3; ++i) {
-                    double xv = **mc_x[i], yv = **mc_y[i];
-                    if (xv == -9999 || yv == -9999) continue;
-
-                    h_mc_before[i]->Fill(xv, yv);
-
-                    bool keep1 = dc_fiducial(
-                        **mc_edge_6, **mc_edge_18, **mc_edge_36,
-                        pid, **mc_theta, **mc_runnum
-                    );
-                    bool keep2 = dc_polygon_cut(i, pid, xv, yv, secs[0]);
-                    if (keep1 && keep2) {
-                        h_mc_after[i]->Fill(xv, yv);
-                    }
+            while(mcReader->Next()){
+                if(**mc_pid!=ipid) continue;
+                int sector = **mc_s6;
+                for(int r=0;r<3;++r){
+                    double xv=**mc_x[r], yv=**mc_y[r];
+                    if(xv==-9999||yv==-9999) continue;
+                    h_mc[0][r]->Fill(xv,yv);
+                    bool f1 = dc_fiducial(**mc_e6,**mc_e18,**mc_e36,
+                                          ipid,**mc_th,**mc_run);
+                    if(f1) h_mc[1][r]->Fill(xv,yv);
+                    if(f1 && dc_polygon_cut(r,ipid,xv,yv,sector))
+                        h_mc[2][r]->Fill(xv,yv);
                 }
             }
         }
 
-        // — Determine global maxima for consistent Z‐scale —
-        double max_data = 0, max_mc = 0;
-        for (int i = 0; i < 3; ++i) {
-            max_data = std::max(max_data,   h_data_before[i]->GetMaximum());
-            max_data = std::max(max_data,   h_data_after[i]->GetMaximum());
-            if (mcReader) {
-                max_mc   = std::max(max_mc, h_mc_before[i]->GetMaximum());
-                max_mc   = std::max(max_mc, h_mc_after[i]->GetMaximum());
-            }
+        // Find max for z-scaling
+        double maxd=0,maxm=0;
+        for(int k=0;k<3;++k) for(int r=0;r<3;++r){
+            maxd = std::max(maxd,h_data[k][r]->GetMaximum());
+            if(mcReader) maxm = std::max(maxm,h_mc[k][r]->GetMaximum());
+        }
+        for(int k=0;k<3;++k) for(int r=0;r<3;++r){
+            h_data[k][r]->SetMaximum(maxd*1.1);
+            if(mcReader) h_mc[k][r]->SetMaximum(maxm*1.1);
         }
 
-        // — Apply Z‐scale and draw & save canvases —
-        for (int i = 0; i < 3; ++i) {
-            h_data_before[i]->SetMaximum(max_data * 1.1);
-            h_data_after[i]->SetMaximum(max_data * 1.1);
-            if (mcReader) {
-                h_mc_before[i]->SetMaximum(max_mc * 1.1);
-                h_mc_after[i]->SetMaximum(max_mc * 1.1);
-            }
-        }
-
-        // Data draw
-        for (int i = 0; i < 3; ++i) {
-            c_data->cd(i+1);
-            gPad->SetLogz(); gPad->SetMargin(0.15,0.15,0.1,0.1);
-            h_data_before[i]->Draw("COLZ");
-            c_data->cd(i+4);
-            gPad->SetLogz(); gPad->SetMargin(0.15,0.15,0.1,0.1);
-            h_data_after[i]->Draw("COLZ");
-        }
-        c_data->SaveAs(
-            ("output/calibration/dc/positions/data_"+dataset+"_"+name+"_dc_hit_position.png").c_str()
-        );
-
-        // MC draw
-        if (mcReader) {
-            for (int i = 0; i < 3; ++i) {
-                c_mc->cd(i+1);
+        // Draw Data
+        for(int k=0;k<3;++k){
+            for(int r=0;r<3;++r){
+                c_data->cd(k*3 + r + 1);
                 gPad->SetLogz(); gPad->SetMargin(0.15,0.15,0.1,0.1);
-                h_mc_before[i]->Draw("COLZ");
-                c_mc->cd(i+4);
-                gPad->SetLogz(); gPad->SetMargin(0.15,0.15,0.1,0.1);
-                h_mc_after[i]->Draw("COLZ");
+                h_data[k][r]->Draw("COLZ");
             }
-            c_mc->SaveAs(
-                ("output/calibration/dc/positions/mc_"+dataset+"_"+name+"_dc_hit_position.png").c_str()
-            );
+        }
+        c_data->SaveAs(Form("output/calibration/dc/positions/data_%s_%s_dc_hit_position.png",
+                             dataset.c_str(),name.c_str()));
+
+        // Draw MC
+        if(mcReader){
+            for(int k=0;k<3;++k){
+                for(int r=0;r<3;++r){
+                    c_mc->cd(k*3 + r + 1);
+                    gPad->SetLogz(); gPad->SetMargin(0.15,0.15,0.1,0.1);
+                    h_mc[k][r]->Draw("COLZ");
+                }
+            }
+            c_mc->SaveAs(Form("output/calibration/dc/positions/mc_%s_%s_dc_hit_position.png",
+                              dataset.c_str(),name.c_str()));
         }
 
-        // — Cleanup histograms & canvases —
-        for (int i = 0; i < 3; ++i) {
-            delete h_data_before[i];
-            delete h_data_after[i];
-            if (mcReader) {
-                delete h_mc_before[i];
-                delete h_mc_after[i];
+        // Cleanup
+        for(int k=0;k<3;++k){
+            for(int r=0;r<3;++r){
+                delete h_data[k][r];
+                if(mcReader) delete h_mc[k][r];
             }
         }
         delete c_data;
-        if (mcReader) delete c_mc;
+        if(mcReader) delete c_mc;
     }
 
-    // — Cleanup MC readers —
-    if (mc_edge_6)   delete mc_edge_6;
-    if (mc_edge_18)  delete mc_edge_18;
-    if (mc_edge_36)  delete mc_edge_36;
-    if (mc_theta)    delete mc_theta;
-    if (mc_runnum)   delete mc_runnum;
-    if (mc_pid)      delete mc_pid;
-    if (mc_sec6)     delete mc_sec6;
-    for (auto p : mc_x) delete p;
-    for (auto p : mc_y) delete p;
+    // Delete MC readers
+    if(mc_e6)  delete mc_e6;
+    if(mc_e18) delete mc_e18;
+    if(mc_e36) delete mc_e36;
+    if(mc_th)  delete mc_th;
+    if(mc_run) delete mc_run;
+    if(mc_pid) delete mc_pid;
+    if(mc_s6)  delete mc_s6;
+    for(auto p: mc_x) delete p;
+    for(auto p: mc_y) delete p;
 }
 
 void normalize_histogram(TH2D* h_sum, TH2D* h_count) {
@@ -9224,9 +9184,9 @@ int main(int argc, char** argv) {
 
     //// PLOTS ////
 
-    // std::string dataset = "rga_fa18_inb";
+    std::string dataset = "rga_fa18_inb";
     // std::string dataset = "rga_fa18_out";
-    std::string dataset = "rga_sp19_inb";
+    // std::string dataset = "rga_sp19_inb";
 
     // plot_htcc_nphe(dataReader, mcReader, dataset);
     // plot_ltcc_nphe(dataReader, mcReader, dataset);
