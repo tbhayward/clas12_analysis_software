@@ -3747,8 +3747,6 @@ void plot_dc_hit_position(TTreeReader& dataReader,
     TTreeReaderValue<int>    runnum_reader (dataReader, "config_run");
     TTreeReaderValue<int>    pid_reader    (dataReader, "particle_pid");
     TTreeReaderValue<int>    sec6_reader   (dataReader, "track_sector_6");
-    TTreeReaderValue<int>    sec18_reader  (dataReader, "track_sector_18");
-    TTreeReaderValue<int>    sec36_reader  (dataReader, "track_sector_36");
 
     // region‐by‐region x,y readers
     std::vector<TTreeReaderValue<double>> traj_x, traj_y;
@@ -3765,8 +3763,6 @@ void plot_dc_hit_position(TTreeReader& dataReader,
     TTreeReaderValue<int>*    mc_runnum   = nullptr;
     TTreeReaderValue<int>*    mc_pid      = nullptr;
     TTreeReaderValue<int>*    mc_sec6     = nullptr;
-    TTreeReaderValue<int>*    mc_sec18    = nullptr;
-    TTreeReaderValue<int>*    mc_sec36    = nullptr;
     std::vector<TTreeReaderValue<double>*> mc_x, mc_y;
 
     if (mcReader) {
@@ -3777,8 +3773,6 @@ void plot_dc_hit_position(TTreeReader& dataReader,
         mc_runnum   = new TTreeReaderValue<int>   (*mcReader, "config_run");
         mc_pid      = new TTreeReaderValue<int>   (*mcReader, "particle_pid");
         mc_sec6     = new TTreeReaderValue<int>   (*mcReader, "track_sector_6");
-        mc_sec18    = new TTreeReaderValue<int>   (*mcReader, "track_sector_18");
-        mc_sec36    = new TTreeReaderValue<int>   (*mcReader, "track_sector_36");
         for (auto& R : regions) {
             mc_x.push_back(new TTreeReaderValue<double>(*mcReader, R.xBranch.c_str()));
             mc_y.push_back(new TTreeReaderValue<double>(*mcReader, R.yBranch.c_str()));
@@ -3843,7 +3837,7 @@ void plot_dc_hit_position(TTreeReader& dataReader,
         dataReader.Restart();
         while (dataReader.Next()) {
             if (*pid_reader != pid) continue;
-            int secs[3] = {*sec6_reader, *sec18_reader, *sec36_reader};
+            int secs[3] = {*sec6_reader};
             for (int i = 0; i < 3; ++i) {
                 double xv = *traj_x[i], yv = *traj_y[i];
                 if (xv == -9999 || yv == -9999) continue;
@@ -3854,7 +3848,7 @@ void plot_dc_hit_position(TTreeReader& dataReader,
                     *traj_edge_6, *traj_edge_18, *traj_edge_36,
                     pid, *theta_reader, *runnum_reader
                 );
-                bool keep2 = dc_polygon_cut(i, pid, xv, yv, secs[i]);
+                bool keep2 = dc_polygon_cut(i, pid, xv, yv, secs[0]);
                 if (keep1 && keep2) {
                     h_data_after[i]->Fill(xv, yv);
                 }
@@ -3866,7 +3860,7 @@ void plot_dc_hit_position(TTreeReader& dataReader,
             mcReader->Restart();
             while (mcReader->Next()) {
                 if (**mc_pid != pid) continue;
-                int secs[3] = {**mc_sec6, **mc_sec18, **mc_sec36};
+                int secs[3] = {**mc_sec6};
                 for (int i = 0; i < 3; ++i) {
                     double xv = **mc_x[i], yv = **mc_y[i];
                     if (xv == -9999 || yv == -9999) continue;
@@ -3877,7 +3871,7 @@ void plot_dc_hit_position(TTreeReader& dataReader,
                         **mc_edge_6, **mc_edge_18, **mc_edge_36,
                         pid, **mc_theta, **mc_runnum
                     );
-                    bool keep2 = dc_polygon_cut(i, pid, xv, yv, secs[i]);
+                    bool keep2 = dc_polygon_cut(i, pid, xv, yv, secs[0]);
                     if (keep1 && keep2) {
                         h_mc_after[i]->Fill(xv, yv);
                     }
@@ -3955,8 +3949,6 @@ void plot_dc_hit_position(TTreeReader& dataReader,
     if (mc_runnum)   delete mc_runnum;
     if (mc_pid)      delete mc_pid;
     if (mc_sec6)     delete mc_sec6;
-    if (mc_sec18)    delete mc_sec18;
-    if (mc_sec36)    delete mc_sec36;
     for (auto p : mc_x) delete p;
     for (auto p : mc_y) delete p;
 }
