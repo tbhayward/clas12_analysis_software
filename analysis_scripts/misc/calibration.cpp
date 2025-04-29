@@ -3696,6 +3696,8 @@ bool dc_polygon_cut(int region_idx,
     // Only apply to π⁺ (pid == 211)
     // if (pid != 211) return true;
 
+    if (x*x+y*y < 280*280) return false;
+
     // Select the correct polygon key
     const char* key = (region_idx == 0 ? "Layer_6__pip"
                     : region_idx == 1 ? "Layer_18_pip"
@@ -9184,8 +9186,8 @@ int main(int argc, char** argv) {
 
     //// PLOTS ////
 
-    // std::string dataset = "rga_fa18_inb";
-    std::string dataset = "rga_fa18_out";
+    std::string dataset = "rga_fa18_inb";
+    // std::string dataset = "rga_fa18_out";
     // std::string dataset = "rga_sp19_inb";
 
     // plot_htcc_nphe(dataReader, mcReader, dataset);
