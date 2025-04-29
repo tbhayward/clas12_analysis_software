@@ -3697,9 +3697,9 @@ bool dc_polygon_cut(int region_idx,
     // if (pid != 211) return true;
 
     if (x*x+y*y > 280*280) return false;
-    // if (region_idx == 0 && x*x+y+y < 63) return false;
-    // if (region_idx == 1 && x*x+y+y < 95) return false;
-    // if (region_idx == 2 && x*x+y+y < 95) return false;
+    if (region_idx == 0 && x*x+y+y < 63) return false;
+    if (region_idx == 1 && x*x+y+y < 95) return false;
+    if (region_idx == 2 && x*x+y+y < 95) return false;
 
 
     // Select the correct polygon key
@@ -3734,9 +3734,9 @@ void plot_dc_hit_position(TTreeReader& dataReader,
 
     // comment/uncomment PIDs here
     std::vector<std::tuple<int,std::string>> particle_types = {
-        {  11,"electron"},
-        // {-211,"pim"},
-        // { 211,"pip"}
+        // {  11,"electron"},
+        {-211,"pim"},
+        { 211,"pip"}
         //{ 321,"kp"}, 
         // {-321,"km"},
         // {2212,"proton"}
@@ -9192,9 +9192,9 @@ int main(int argc, char** argv) {
 
     //// PLOTS ////
 
-    // std::string dataset = "rga_fa18_inb";
+    std::string dataset = "rga_fa18_inb";
     // std::string dataset = "rga_fa18_out";
-    std::string dataset = "rga_sp19_inb";
+    // std::string dataset = "rga_sp19_inb";
 
     // plot_htcc_nphe(dataReader, mcReader, dataset);
     // plot_ltcc_nphe(dataReader, mcReader, dataset);
