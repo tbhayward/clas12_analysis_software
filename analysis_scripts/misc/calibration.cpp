@@ -3694,7 +3694,7 @@ bool dc_polygon_cut(int region_idx,
                     int sector)
 {
     // Only apply to π⁺ (pid == 211)
-    if (pid != 211) return true;
+    // if (pid != 211) return true;
 
     // Select the correct polygon key
     const char* key = (region_idx == 0 ? "Layer_6__pip"
@@ -3708,7 +3708,7 @@ bool dc_polygon_cut(int region_idx,
     double yr = rotate_y_planar(x, y, sector);
 
     // Keep only if the point is _inside_ the polygon
-    return is_point_in_polygon(xr, yr, it->second);
+    return !(is_point_in_polygon(xr, yr, it->second));
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -9224,9 +9224,9 @@ int main(int argc, char** argv) {
 
     //// PLOTS ////
 
-    // std::string dataset = "rga_fa18_inb";
+    std::string dataset = "rga_fa18_inb";
     // std::string dataset = "rga_fa18_out";
-    std::string dataset = "rga_sp19_inb";
+    // std::string dataset = "rga_sp19_inb";
 
     // plot_htcc_nphe(dataReader, mcReader, dataset);
     // plot_ltcc_nphe(dataReader, mcReader, dataset);
