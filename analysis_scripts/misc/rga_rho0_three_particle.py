@@ -46,7 +46,7 @@ for label, path in files.items():
         # np.ones(len(data["helicity"]), dtype=bool)
     )
 
-    print("HELLO WORLD")
+    # print("HELLO WORLD")
     helicity = data["helicity"][mask]
     beam_pol  = data["beam_pol"][mask]
     DepA      = data["DepA"][mask]
