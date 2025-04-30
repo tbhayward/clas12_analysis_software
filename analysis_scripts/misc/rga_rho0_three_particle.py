@@ -39,7 +39,7 @@ for label, path in files.items():
     mask = (
         (data["W"]    > 2) &
         (data["Q2"]   > 2) &
-        (data["z23"]  > 0.85) &
+        (data["z23"]  > 0.0) &
         (data["Mx2_23"]<1.05) &
         (data["Mh23"] > 0.65) &
         (data["Mh23"] < 0.85) &
