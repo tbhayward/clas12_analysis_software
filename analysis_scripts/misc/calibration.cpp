@@ -5005,10 +5005,10 @@ void cvt_fiducial_determination(TTreeReader& dataReader,
                                 TTreeReader* mcReader = nullptr,
                                 const std::string& dataset = "rga_fa18_inb")
 {
-    gStyle->SetOptStat(0);               // no stats box
-    const int nBinsX = 50;               // bins in edge
+    gStyle->SetOptStat(0);
+    const int nBinsX = 50;
 
-    // CVT layers: (reader ptr, name, edge min, edge max)
+    // CVT layers
     std::vector<std::tuple<TTreeReaderValue<double>*, std::string, double, double>> layers = {
         { new TTreeReaderValue<double>(dataReader, "traj_edge_1"),  "layer_1",  -2.0,  2.2 },
         { new TTreeReaderValue<double>(dataReader, "traj_edge_3"),  "layer_3",  -2.0,  2.2 },
@@ -5017,23 +5017,32 @@ void cvt_fiducial_determination(TTreeReader& dataReader,
         { new TTreeReaderValue<double>(dataReader, "traj_edge_12"), "layer_12", -10.0, 25.0 }
     };
 
-    // six φ‐bins: three tight and their complements
+    // φ‐bin ranges (we'll label them manually)
     const int num_phi_bins = 6;
     std::vector<std::pair<double,double>> phi_ranges = {
-        { 25.0,  40.0},  // tight #1
-        {143.0, 158.0},  // tight #2
-        {265.0, 280.0},  // tight #3
-        { 40.0, 143.0},  // between #1 & #2
-        {158.0, 265.0},  // between #2 & #3
-        {280.0,  25.0}   // wrap‐around
+        { 25.0,  40.0},
+        {143.0, 158.0},
+        {265.0, 280.0},
+        { 40.0, 143.0},
+        {158.0, 265.0},
+        {280.0,  25.0}
+    };
+    // Manual labels for each bin, with ROOT latex #circ
+    std::vector<std::string> binLabels = {
+        "25#circ < #phi < 40#circ",
+        "143#circ < #phi < 158#circ",
+        "265#circ < #phi < 280#circ",
+        "40#circ < #phi < 143#circ",
+        "158#circ < #phi < 265#circ",
+        "#phi #ge 280#circ or #phi < 25#circ"
     };
 
-    // particle types: PID, var name, LaTeX label
+    // Particle definitions
     std::vector<std::tuple<int,std::string,std::string>> particle_types = {
         {2212, "proton", "proton"}
     };
 
-    // data readers
+    // Data readers
     TTreeReaderValue<int>    pid   (dataReader, "particle_pid");
     TTreeReaderValue<double> chi2v (dataReader, "track_chi2_5");
     TTreeReaderValue<int>    ndfv  (dataReader, "track_ndf_5");
@@ -5051,13 +5060,13 @@ void cvt_fiducial_determination(TTreeReader& dataReader,
         mc_phiv = new TTreeReaderValue<double>(*mcReader, "phi");
     }
 
-    // loop over species
+    // Loop over each particle type
     for (auto& sp : particle_types) {
         int    pid_val   = std::get<0>(sp);
         std::string name = std::get<1>(sp);
         std::string latex= std::get<2>(sp);
 
-        // allocate histos [layer][phiBin]
+        // Allocate histograms [layer][phiBin]
         std::vector<std::vector<TH1D*>> hd_sum(layers.size(), std::vector<TH1D*>(num_phi_bins,nullptr)),
                                        hd_cnt(layers.size(), std::vector<TH1D*>(num_phi_bins,nullptr)),
                                        hm_sum, hm_cnt;
@@ -5065,7 +5074,7 @@ void cvt_fiducial_determination(TTreeReader& dataReader,
             hm_sum = hm_cnt = std::vector<std::vector<TH1D*>>(layers.size(), std::vector<TH1D*>(num_phi_bins,nullptr));
         }
 
-        // book histograms
+        // Book histograms
         for (size_t i = 0; i < layers.size(); ++i) {
             auto& tup = layers[i];
             std::string layer = std::get<1>(tup);
@@ -5094,7 +5103,7 @@ void cvt_fiducial_determination(TTreeReader& dataReader,
             }
         }
 
-        // fill DATA
+        // Fill DATA
         dataReader.Restart();
         while (dataReader.Next()) {
             if (*pid   != pid_val) continue;
@@ -5121,7 +5130,7 @@ void cvt_fiducial_determination(TTreeReader& dataReader,
             }
         }
 
-        // fill MC
+        // Fill MC
         if (mcReader) {
             mcReader->Restart();
             while (mcReader->Next()) {
@@ -5150,7 +5159,7 @@ void cvt_fiducial_determination(TTreeReader& dataReader,
             }
         }
 
-        // normalize
+        // Normalize to get mean χ²/ndf
         for (size_t i = 0; i < layers.size(); ++i) {
             for (int b = 0; b < num_phi_bins; ++b) {
                 if (hd_cnt[i][b]->Integral() > 0)
@@ -5160,7 +5169,7 @@ void cvt_fiducial_determination(TTreeReader& dataReader,
             }
         }
 
-        // draw on 3×2 canvas, title = dataset only
+        // Draw on 3×2 canvas; title = dataset only
         TCanvas* c = new TCanvas(
             Form("c_phi_%s_%s", name.c_str(), dataset.c_str()),
             dataset.c_str(),
@@ -5168,18 +5177,17 @@ void cvt_fiducial_determination(TTreeReader& dataReader,
         );
         c->Divide(3, 2, 0.005, 0.005);
 
-        // style arrays
-        std::vector<int> col_d = {kBlack,kBlue,kGreen+2,kOrange+7,kCyan,kMagenta},
+        // Style arrays
+        std::vector<int> col_d = {kBlack, kBlue, kGreen+2, kOrange+7, kCyan, kMagenta},
                           mrk_d = {20,21,22,23,24,25},
-                          col_m = {kRed,kMagenta,kViolet+1,kPink+1,kAzure+1,kGreen-8},
+                          col_m = {kRed, kMagenta, kViolet+1, kPink+1, kAzure+1, kGreen-8},
                           mrk_m = {24,25,26,27,28,29};
 
         for (size_t i = 0; i < layers.size(); ++i) {
             c->cd(i+1);
-            // enlarge top margin to fit dataset title
             gPad->SetMargin(0.15, 0.15, 0.15, 0.12);
 
-            // draw data curves
+            // Draw data
             for (int b = 0; b < num_phi_bins; ++b) {
                 TH1D* h = hd_sum[i][b];
                 h->SetLineColor(col_d[b]);
@@ -5187,7 +5195,7 @@ void cvt_fiducial_determination(TTreeReader& dataReader,
                 h->SetMarkerColor(col_d[b]);
                 h->Draw(b==0 ? "E1" : "E1 SAME");
             }
-            // draw MC curves
+            // Draw MC
             if (mcReader) {
                 for (int b = 0; b < num_phi_bins; ++b) {
                     TH1D* h = hm_sum[i][b];
@@ -5198,51 +5206,43 @@ void cvt_fiducial_determination(TTreeReader& dataReader,
                 }
             }
 
-            // manual dataset title at top center
+            // Manual dataset title at top center
             TLatex title;
             title.SetNDC();
-            title.SetTextAlign(23);  // center/top
+            title.SetTextAlign(23);
             title.SetTextSize(0.04);
             title.DrawLatex(0.5, 0.98, dataset.c_str());
 
-            // legend flush right, a bit wider
-            double lm = gPad->GetLeftMargin(),
-                   rm = gPad->GetRightMargin(),
-                   tm = gPad->GetTopMargin();
-            double legW = 0.40, legH = 0.25;  // wider
-            double x2 = 1.0 - rm - 0.01,
-                   y2 = 1.0 - tm - 0.01;
-            double x1 = x2 - legW,
-                   y1 = y2 - legH;
+            // Legend flush right, extra width
+            double rm = gPad->GetRightMargin();
+            double tm = gPad->GetTopMargin();
+            double legW = 0.50, legH = 0.25;
+            double x2 = 1.0 - rm - 0.01;
+            double y2 = 1.0 - tm - 0.01;
+            double x1 = x2 - legW;
+            double y1 = y2 - legH;
 
-            TLegend* leg = new TLegend(x1,y1,x2,y2);
+            TLegend* leg = new TLegend(x1, y1, x2, y2);
             leg->SetBorderSize(1);
             leg->SetFillStyle(0);
             leg->SetTextSize(0.03);
             leg->SetTextAlign(12);
 
+            // Add entries using manual labels
             for (int b = 0; b < num_phi_bins; ++b) {
-                std::string lab;
-                if (b == 5) {
-                    // hard‐code wrap‐around label
-                    lab = "#phi #ge 280#circ or #phi < 25#circ";
-                } else {
-                    auto r = phi_ranges[b];
-                    lab = Form("%.0f#circ < #phi < %.0f#circ", r.first, r.second);
-                }
-                leg->AddEntry(hd_sum[i][b], ("Data " + lab).c_str(), "lep");
+                leg->AddEntry(hd_sum[i][b], ("Data " + binLabels[b]).c_str(), "lep");
                 if (mcReader)
-                    leg->AddEntry(hm_sum[i][b], ("MC " + lab).c_str(), "lep");
+                    leg->AddEntry(hm_sum[i][b], ("MC " + binLabels[b]).c_str(), "lep");
             }
             leg->Draw("SAME");
         }
 
-        // save
+        // Save and cleanup
         c->SaveAs(Form("output/calibration/cvt/determination/mean_chi2_ndf_vs_edge_phi_%s_%s.png",
                        dataset.c_str(), name.c_str()));
         delete c;
 
-        // cleanup
+        // Delete histograms and readers
         for (size_t i = 0; i < layers.size(); ++i) {
             delete std::get<0>(layers[i]);
             for (int b = 0; b < num_phi_bins; ++b) {
