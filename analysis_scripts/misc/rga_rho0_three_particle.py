@@ -19,7 +19,6 @@ files = {
 # 2) Set up bins in cos(theta)
 cos_bins    = np.linspace(-0.9, 0.9, 16)
 cos_centers = 0.5 * (cos_bins[:-1] + cos_bins[1:])
-
 # 3) Phi bins for fit
 phi_bins    = np.linspace(0, np.pi, 13)
 phi_centers = 0.5 * (phi_bins[:-1] + phi_bins[1:])
@@ -42,7 +41,7 @@ for label, path in files.items():
         (data["z23"]  > 0.85) &
         (data["Mx2_23"]<1.05) &
         (data["Mh23"] > 0.65) &
-        (data["Mh23"] < 0.85)
+        (data["Mh23"] < 0.85) &
         np.ones(len(data["helicity"]), dtype=bool)
     )
     helicity = data["helicity"][mask]
