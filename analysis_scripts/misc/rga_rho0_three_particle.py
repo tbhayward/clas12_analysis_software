@@ -12,8 +12,9 @@ def sin_func(phi, A):
 
 # 1) Define your files and labels
 files = {
-    "RGA Fa18 Inb":  "/scratch/thayward/rho0_test.root",
-    # add the others if you need them
+    "RGA Fa18 Inb":  "/work/clas12/thayward/CLAS12_SIDIS/processed_data/pass2/data/eppi+pi-X/rga_fa18_inb_eppi+pi-X.root",
+    "RGA Fa18 Out":  "/work/clas12/thayward/CLAS12_SIDIS/processed_data/pass2/data/eppi+pi-X/rga_fa18_out_eppi+pi-X.root",
+    "RGA Sp19 Inb":  "/work/clas12/thayward/CLAS12_SIDIS/processed_data/pass2/data/eppi+pi-X/rga_sp19_inb_eppi+pi-X.root"
 }
 
 # 2) Set up bins in cos(theta)
