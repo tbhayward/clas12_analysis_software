@@ -8,9 +8,9 @@ QUICK_RUN   = False                       # set True to limit to MAX_EVENTS
 MAX_EVENTS  = 100_000                     # only used when QUICK_RUN is True
 
 DATASETS = {
-    "RGA Fa18 Inb": "/scratch/thayward/rga_fa18_inb_eppi+pi-X.root",
-    "RGA Fa18 Out": "/scratch/thayward/rga_fa18_out_eppi+pi-X.root",
-    "RGA Sp19 Inb": "/scratch/thayward/rga_sp19_inb_eppi+pi-X.root",
+    "RGA Fa18 Inb": "/work/clas12/thayward/CLAS12_SIDIS/processed_data/pass2/data/eppi+pi-X/rga_fa18_inb_eppi+pi-X.root",
+    "RGA Fa18 Out": "/work/clas12/thayward/CLAS12_SIDIS/processed_data/pass2/data/eppi+pi-X/rga_fa18_out_eppi+pi-X.root",
+    "RGA Sp19 Inb": "/work/clas12/thayward/CLAS12_SIDIS/processed_data/pass2/data/eppi+pi-X/rga_sp19_inb_eppi+pi-X.root",
 }
 
 # beam energies by dataset (GeV)
@@ -71,7 +71,7 @@ def kinematic_cuts(ev, use_missing_mass_cuts=False, beam_energy=10.6):
         (W     >  2.0) &
         # (y     <  0.75) &
         (y     <  1.00) &
-        (z_rho >  0.9) &
+        (z_rho >  0.85) &
         (delta_th < 0.05) &
         (np.abs(Mh23 - 0.775) < 0.1)   # <-- apply your Mh23 cut here
     )
