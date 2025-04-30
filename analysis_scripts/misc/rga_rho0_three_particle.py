@@ -37,12 +37,12 @@ for label, path in files.items():
 
     # 5) Apply kinematic cuts (uncomment & adjust as needed)
     mask = (
-        # (data["W"]    > 2) &
-        # (data["Q2"]   > 2) &
-        # (data["z23"]  > 0.9) &
-        # (data["Mx2_23"]<1.05) &
-        # (data["Mh23"] > 0.65) &
-        # (data["Mh23"] < 0.85)
+        (data["W"]    > 2) &
+        (data["Q2"]   > 2) &
+        (data["z23"]  > 0.85) &
+        (data["Mx2_23"]<1.05) &
+        (data["Mh23"] > 0.65) &
+        (data["Mh23"] < 0.85)
         np.ones(len(data["helicity"]), dtype=bool)
     )
     helicity = data["helicity"][mask]
@@ -144,7 +144,7 @@ ax.set_ylim(-1.2, 0.4)
 ax.legend(loc='upper right')
 ax.text(
     0.02, 0.98,
-    "W > 2, Q² > 2, z > 0.9, Mₓ < 1.05",
+    "W > 2, Q² > 2, z > 0.85, Mₓ < 1.05",
     transform=ax.transAxes, va='top', ha='left'
 )
 plt.savefig("output/rga_rho0_first_step.pdf")
@@ -161,7 +161,7 @@ ax.set_ylim(-1.2, 0.4)
 ax.legend(loc='upper right')
 ax.text(
     0.02, 0.98,
-    "W > 2, Q² > 2, z > 0.9, Mₓ < 1.05",
+    "W > 2, Q² > 2, z > 0.85, Mₓ < 1.05",
     transform=ax.transAxes, va='top', ha='left'
 )
 plt.savefig("output/rga_rho0_ALU.pdf")
