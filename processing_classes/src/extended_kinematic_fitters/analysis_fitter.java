@@ -56,8 +56,8 @@ public class analysis_fitter extends GenericKinematicFitter {
         boolean passesCentralDetector = generic_tests.central_detector_cut(particle_Index, rec_Bank);
 
         return true
-                                && p > 1.20
-                            && p < 5.00 
+//                                && p > 1.20
+//                            && p < 5.00 
                 && generic_tests.vertex_cut(particle_Index, rec_Bank, run_Bank)
                 && (passesForwardDetector // dedicated PID cuts for forward
                         //                        ? pid_cuts.charged_hadron_pass2_chi2pid_cut(particle_Index, rec_Bank)
@@ -126,12 +126,12 @@ public class analysis_fitter extends GenericKinematicFitter {
         boolean passesCentralDetector = generic_tests.central_detector_cut(particle_Index, rec_Bank);
 
         return true
-                && p > 0.4
-                && (passesCentralDetector ? p > 0.3 : true)
-                && (passesForwardDetector && (torus > 0) ? p > 0.42 : true)
-                && (passesForwardDetector && (torus < 0) ? p > 0.50 : true)
-                && p < 1.2 // this bound is enforced at p < 1.14 by -t < 1, done here to speed up processing
-                && generic_tests.theta_calculation(px, py, pz) < 64.23
+//                && p > 0.4
+//                && (passesCentralDetector ? p > 0.3 : true)
+//                && (passesForwardDetector && (torus > 0) ? p > 0.42 : true)
+//                && (passesForwardDetector && (torus < 0) ? p > 0.50 : true)
+//                && p < 1.2 // this bound is enforced at p < 1.14 by -t < 1, done here to speed up processing
+//                && generic_tests.theta_calculation(px, py, pz) < 64.23
                 && generic_tests.vertex_cut(particle_Index, rec_Bank, run_Bank)
                 && (passesForwardDetector
                         ? fiducial_cuts.dc_fiducial_cut(particle_Index, rec_Bank, traj_Bank)
