@@ -5006,7 +5006,7 @@ void cvt_fiducial_determination(TTreeReader& dataReader,
                                 const std::string& dataset = "rga_fa18_inb")
 {
     gStyle->SetOptStat(0);
-    const int nBinsX = 50;
+    const int nBinsX = 25;
 
     // CVT layers
     std::vector<std::tuple<TTreeReaderValue<double>*, std::string, double, double>> layers = {
@@ -5261,7 +5261,7 @@ void cvt_fiducial_determination(TTreeReader& dataReader,
             delete mc_phiv;
         }
     }
-}
+} 
 
 void plot_cvt_hit_position(TTreeReader& dataReader, TTreeReader* mcReader = nullptr,
     const std::string& dataset = "rga_fa18_inb") {
