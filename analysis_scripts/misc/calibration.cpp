@@ -4987,33 +4987,6 @@ void plot_chi2_ndf_vs_phi_CVT_2D(TTreeReader& dataReader, TTreeReader* mcReader,
 //     }
 // }
 
-#include <tuple>
-#include <map>
-#include <vector>
-#include <string>
-#include <utility>
-#include <cmath>
-#include "TMath.h"
-#include "TCanvas.h"
-#include "TH1D.h"
-#include "TLegend.h"
-#include "TStyle.h"
-#include "TTreeReader.h"
-#include "TTreeReaderValue.h"
-
-#include <tuple>
-#include <vector>
-#include <string>
-#include <utility>
-#include <cmath>
-#include "TMath.h"
-#include "TCanvas.h"
-#include "TH1D.h"
-#include "TLegend.h"
-#include "TStyle.h"
-#include "TTreeReader.h"
-#include "TTreeReaderValue.h"
-
 void cvt_fiducial_determination(TTreeReader& dataReader,
                                 TTreeReader* mcReader = nullptr,
                                 const std::string& dataset = "rga_fa18_inb")
@@ -5022,26 +4995,26 @@ void cvt_fiducial_determination(TTreeReader& dataReader,
     gStyle->SetOptStat(0);
 
     // number of bins in edge
-    const int nBinsX = 50;
+    const int nBinsX = 60;
 
     // set up the CVT layers: (pointer to reader, name, edge min, edge max)
     std::vector<std::tuple<TTreeReaderValue<double>*, std::string, double, double>> layers = {
-        { new TTreeReaderValue<double>(dataReader, "traj_edge_1"),  "layer_1",  -2.0,  2.2 },
-        { new TTreeReaderValue<double>(dataReader, "traj_edge_3"),  "layer_3",  -2.0,  2.2 },
-        { new TTreeReaderValue<double>(dataReader, "traj_edge_5"),  "layer_5",  -2.0,  2.2 },
-        { new TTreeReaderValue<double>(dataReader, "traj_edge_7"),  "layer_7",  -5.0, 15.0 },
-        { new TTreeReaderValue<double>(dataReader, "traj_edge_12"), "layer_12", -10.0, 25.0 }
+        { new TTreeReaderValue<double>(dataReader, "traj_edge_1"),  "layer_1",  -2.0,  3.2 },
+        { new TTreeReaderValue<double>(dataReader, "traj_edge_3"),  "layer_3",  -2.0,  3.2 },
+        { new TTreeReaderValue<double>(dataReader, "traj_edge_5"),  "layer_5",  -2.0,  3.2 },
+        { new TTreeReaderValue<double>(dataReader, "traj_edge_7"),  "layer_7",  -5.0, 20.0 },
+        { new TTreeReaderValue<double>(dataReader, "traj_edge_12"), "layer_12", -10.0, 30.0 }
     };
 
     // define six φ‐bins (three tight cuts and their complements)
     const int num_phi_bins = 6;
     std::vector<std::pair<double,double>> phi_ranges = {
         { 25.0,  40.0},
-        {143.0, 158.0},
-        {265.0, 280.0},
+        // {143.0, 158.0},
+        // {265.0, 280.0},
         { 40.0, 143.0},
-        {158.0, 265.0},
-        {280.0,  25.0}  // wrap‐around bin
+        {158.0, 265.0}
+        // {280.0,  25.0}  // wrap‐around bin
     };
 
     // define particle types: PID, variable name, LaTeX label
@@ -5222,15 +5195,15 @@ void cvt_fiducial_determination(TTreeReader& dataReader,
             }
 
             // legend
-            TLegend* leg = new TLegend(0.55,0.70,0.85,0.95);
+            TLegend* leg = new TLegend(0.45,0.60,0.85,0.95);
             leg->SetBorderSize(1);
             leg->SetFillStyle(0);
             leg->SetTextSize(0.03);
             for (int b = 0; b < num_phi_bins; ++b) {
                 auto r = phi_ranges[b];
                 std::string lab = (r.first < r.second)
-                    ? Form("%.0f<φ<%.0f", r.first, r.second)
-                    : Form("φ≥%.0f or φ<%.0f", r.first, r.second);
+                    ? Form("%.0f<#phi<%.0f", r.first, r.second)
+                    : Form("#phi≥%.0f or #phi<%.0f", r.first, r.second);
                 leg->AddEntry(hd_sum[i][b], ("Data "+lab).c_str(), "lep");
                 if (mcReader)
                     leg->AddEntry(hm_sum[i][b], ("MC "+lab).c_str(), "lep");
