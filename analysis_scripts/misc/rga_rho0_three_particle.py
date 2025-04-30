@@ -42,8 +42,8 @@ for label, path in files.items():
         (data["z23"]  > 0.85) &
         (data["Mx2_23"]<1.05) &
         (data["Mh23"] > 0.65) &
-        (data["Mh23"] < 0.85) &
-        np.ones(len(data["helicity"]), dtype=bool)
+        (data["Mh23"] < 0.85) 
+        # np.ones(len(data["helicity"]), dtype=bool)
     )
     helicity = data["helicity"][mask]
     beam_pol  = data["beam_pol"][mask]
