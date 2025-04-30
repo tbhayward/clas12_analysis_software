@@ -10,8 +10,6 @@ import os
 def sin_func(phi, A):
     return A * np.sin(phi)
 
-print("HELLO WORLD")
-
 # 1) Define your files and labels
 files = {
     "RGA Fa18 Inb":  "/work/clas12/thayward/CLAS12_SIDIS/processed_data/pass2/data/eppi+pi-X/rga_fa18_inb_eppi+pi-X.root",
@@ -47,6 +45,8 @@ for label, path in files.items():
         (data["Mh23"] < 0.85) 
         # np.ones(len(data["helicity"]), dtype=bool)
     )
+
+    print("HELLO WORLD")
     helicity = data["helicity"][mask]
     beam_pol  = data["beam_pol"][mask]
     DepA      = data["DepA"][mask]
