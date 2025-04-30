@@ -5230,7 +5230,7 @@ void cvt_fiducial_determination(TTreeReader& dataReader,
             );
 
             // legend
-            TLegend* leg = new TLegend(0.45,0.60,0.8,0.9);
+            TLegend* leg = new TLegend(0.4,0.60,0.7,0.95);
             leg->SetBorderSize(1);
             leg->SetFillStyle(0);
             leg->SetTextSize(0.03);
