@@ -5001,18 +5001,30 @@ void plot_chi2_ndf_vs_phi_CVT_2D(TTreeReader& dataReader, TTreeReader* mcReader,
 #include "TTreeReader.h"
 #include "TTreeReaderValue.h"
 
+#include <tuple>
+#include <vector>
+#include <string>
+#include <utility>
+#include <cmath>
+#include "TMath.h"
+#include "TCanvas.h"
+#include "TH1D.h"
+#include "TLegend.h"
+#include "TStyle.h"
+#include "TTreeReader.h"
+#include "TTreeReaderValue.h"
+
 void cvt_fiducial_determination(TTreeReader& dataReader,
                                 TTreeReader* mcReader = nullptr,
                                 const std::string& dataset = "rga_fa18_inb")
 {
-    // Disable stat boxes
+    // turn off statistics boxes
     gStyle->SetOptStat(0);
 
-    // Histogram binning
-    const int nBinsX = 50;   // edge
-    const int nBinsY = 100;  // chi2/ndf (unused directly)
+    // number of bins in edge
+    const int nBinsX = 50;
 
-    // CVT layers: (reader pointer, name, edge min, edge max)
+    // set up the CVT layers: (pointer to reader, name, edge min, edge max)
     std::vector<std::tuple<TTreeReaderValue<double>*, std::string, double, double>> layers = {
         { new TTreeReaderValue<double>(dataReader, "traj_edge_1"),  "layer_1",  -2.0,  2.2 },
         { new TTreeReaderValue<double>(dataReader, "traj_edge_3"),  "layer_3",  -2.0,  2.2 },
@@ -5021,233 +5033,233 @@ void cvt_fiducial_determination(TTreeReader& dataReader,
         { new TTreeReaderValue<double>(dataReader, "traj_edge_12"), "layer_12", -10.0, 25.0 }
     };
 
-    // Define six phi bins: three “tight” and their three complements (wrap-around)
+    // define six φ‐bins (three tight cuts and their complements)
     const int num_phi_bins = 6;
     std::vector<std::pair<double,double>> phi_ranges = {
-        { 25.0,  40.0 },   // tight #1
-        {143.0, 158.0 },   // tight #2
-        {265.0, 280.0 },   // tight #3
-        { 40.0, 143.0 },   // loose between 1 & 2
-        {158.0, 265.0 },   // loose between 2 & 3
-        {280.0,  25.0 }    // loose wrap: φ≥280 or φ<25
+        { 25.0,  40.0},
+        {143.0, 158.0},
+        {265.0, 280.0},
+        { 40.0, 143.0},
+        {158.0, 265.0},
+        {280.0,  25.0}  // wrap‐around bin
     };
 
-    // Particle types to process
+    // define particle types: PID, variable name, LaTeX label
     std::vector<std::tuple<int,std::string,std::string>> particle_types = {
         { 2212, "proton", "proton" }
-        // add more if needed
+        // add more if desired
     };
 
-    // Loop over particle species
-    for (auto& pdef : particle_types) {
-        int pid             = std::get<0>(pdef);
-        std::string name    = std::get<1>(pdef);
-        std::string latex   = std::get<2>(pdef);
+    // data tree readers
+    TTreeReaderValue<int>    pid     (dataReader, "particle_pid");
+    TTreeReaderValue<double> chi2v   (dataReader, "track_chi2_5");
+    TTreeReaderValue<int>    ndfv    (dataReader, "track_ndf_5");
+    TTreeReaderValue<double> phiv    (dataReader, "phi");
 
-        // Prepare hist containers: [layer][phiBin]
-        std::vector<std::vector<TH1D*>> h_sum_data(layers.size(), std::vector<TH1D*>(num_phi_bins,nullptr));
-        std::vector<std::vector<TH1D*>> h_cnt_data(layers.size(), std::vector<TH1D*>(num_phi_bins,nullptr));
-        std::vector<std::vector<TH1D*>> h_sum_mc, h_cnt_mc;
-        if(mcReader){
-            h_sum_mc = h_cnt_mc = std::vector<std::vector<TH1D*>>(layers.size(), std::vector<TH1D*>(num_phi_bins,nullptr));
+    // MC tree readers (if present)
+    TTreeReaderValue<int>*    mc_pidv = nullptr;
+    TTreeReaderValue<double>* mc_chi2 = nullptr;
+    TTreeReaderValue<int>*    mc_ndfv = nullptr;
+    TTreeReaderValue<double>* mc_phiv = nullptr;
+    if (mcReader) {
+        mc_pidv = new TTreeReaderValue<int>   (*mcReader, "particle_pid");
+        mc_chi2 = new TTreeReaderValue<double>(*mcReader, "track_chi2_5");
+        mc_ndfv = new TTreeReaderValue<int>   (*mcReader, "track_ndf_5");
+        mc_phiv = new TTreeReaderValue<double>(*mcReader, "phi");
+    }
+
+    // loop over particle species
+    for (auto& sp : particle_types) {
+        int pid_val      = std::get<0>(sp);
+        std::string name = std::get<1>(sp);
+        std::string latex= std::get<2>(sp);
+
+        // allocate histograms: [layer][phiBin]
+        std::vector<std::vector<TH1D*>> hd_sum(layers.size(), std::vector<TH1D*>(num_phi_bins,nullptr));
+        std::vector<std::vector<TH1D*>> hd_cnt(layers.size(), std::vector<TH1D*>(num_phi_bins,nullptr));
+        std::vector<std::vector<TH1D*>> hm_sum, hm_cnt;
+        if (mcReader) {
+            hm_sum = hm_cnt = std::vector<std::vector<TH1D*>>(layers.size(), std::vector<TH1D*>(num_phi_bins,nullptr));
         }
 
-        // Initialize histograms
-        for(size_t i=0; i<layers.size(); ++i){
-            auto& tup    = layers[i];
-            std::string layer = std::get<1>(tup);
-            double xmin  = std::get<2>(tup);
-            double xmax  = std::get<3>(tup);
-
-            for(int b=0; b<num_phi_bins; ++b){
+        // book histograms
+        for (size_t i = 0; i < layers.size(); ++i) {
+            auto& tup = layers[i];
+            std::string layer_name = std::get<1>(tup);
+            double xmin = std::get<2>(tup);
+            double xmax = std::get<3>(tup);
+            for (int b = 0; b < num_phi_bins; ++b) {
                 auto range = phi_ranges[b];
-                // label: "φ[a,b]"
                 std::string label = (range.first < range.second)
                     ? Form("%.0f<φ<%.0f", range.first, range.second)
                     : Form("φ≥%.0f or φ<%.0f", range.first, range.second);
 
-                h_sum_data[i][b] = new TH1D(
-                    Form("hd_sum_%s_bin%d_%s", layer.c_str(), b+1, name.c_str()),
-                    Form("%s, %s, %s, Sum", latex.c_str(), layer.c_str(), label.c_str()),
+                hd_sum[i][b] = new TH1D(
+                    Form("hd_sum_%s_b%d_%s", layer_name.c_str(), b+1, name.c_str()),
+                    Form("%s, %s, %s, Sum", latex.c_str(), layer_name.c_str(), label.c_str()),
                     nBinsX, xmin, xmax
                 );
-                h_cnt_data[i][b] = new TH1D(
-                    Form("hd_cnt_%s_bin%d_%s", layer.c_str(), b+1, name.c_str()),
+                hd_cnt[i][b] = new TH1D(
+                    Form("hd_cnt_%s_b%d_%s", layer_name.c_str(), b+1, name.c_str()),
                     "", nBinsX, xmin, xmax
                 );
 
-                if(mcReader){
-                    h_sum_mc[i][b] = new TH1D(
-                        Form("hm_sum_%s_bin%d_%s", layer.c_str(), b+1, name.c_str()),
-                        Form("%s MC, %s, %s, Sum", latex.c_str(), layer.c_str(), label.c_str()),
+                if (mcReader) {
+                    hm_sum[i][b] = new TH1D(
+                        Form("hm_sum_%s_b%d_%s", layer_name.c_str(), b+1, name.c_str()),
+                        Form("MC %s, %s, %s, Sum", latex.c_str(), layer_name.c_str(), label.c_str()),
                         nBinsX, xmin, xmax
                     );
-                    h_cnt_mc[i][b] = new TH1D(
-                        Form("hm_cnt_%s_bin%d_%s", layer.c_str(), b+1, name.c_str()),
+                    hm_cnt[i][b] = new TH1D(
+                        Form("hm_cnt_%s_b%d_%s", layer_name.c_str(), b+1, name.c_str()),
                         "", nBinsX, xmin, xmax
                     );
                 }
             }
         }
 
-        // Load tree variables
-        TTreeReaderValue<int>    part_pid(dataReader, "particle_pid");
-        TTreeReaderValue<double> chi2v    (dataReader, "track_chi2_5");
-        TTreeReaderValue<int>    ndfv     (dataReader, "track_ndf_5");
-        TTreeReaderValue<double> phi      (dataReader, "phi");         // load φ
-
-        // MC readers
-        TTreeReaderValue<int>*    mc_pidv = nullptr;
-        TTreeReaderValue<double>* mc_chi2 = nullptr;
-        TTreeReaderValue<int>*    mc_ndfv = nullptr;
-        TTreeReaderValue<double>* mc_phi  = nullptr;
-        if(mcReader){
-            mc_pidv = new TTreeReaderValue<int>(*mcReader,"particle_pid");
-            mc_chi2 = new TTreeReaderValue<double>(*mcReader,"track_chi2_5");
-            mc_ndfv = new TTreeReaderValue<int>(*mcReader,"track_ndf_5");
-            mc_phi  = new TTreeReaderValue<double>(*mcReader,"phi");
-        }
-
-        // Fill DATA
+        // fill data histograms
         dataReader.Restart();
-        while(dataReader.Next()){
-            if(*part_pid != pid) continue;
-            if(*ndfv <= 0)       continue;
-            if(*chi2v >= 1e4)    continue;
-            double val = (*chi2v)/(*ndfv);
-            double ph  = *phi;
-            for(size_t i=0; i<layers.size(); ++i){
-                double edge = *std::get<0>(layers[i]);
-                if(edge == -9999) continue;
-                // find which phi bin
-                for(int b=0; b<num_phi_bins; ++b){
-                    double f = phi_ranges[b].first, s = phi_ranges[b].second;
-                    bool in_bin = (f < s ? (ph>=f && ph< s)
-                                         : (ph>=f || ph< s));
-                    if(in_bin){
-                        h_sum_data[i][b]->Fill(edge, val);
-                        h_cnt_data[i][b]->Fill(edge);
+        while (dataReader.Next()) {
+            if (*pid     != pid_val) continue;
+            if (*ndfv    <= 0)        continue;
+            if (*chi2v   >= 1e4)      continue;
+            double chi2_ndf = *chi2v / *ndfv;
+            double phi_val  = *phiv;
+
+            for (size_t i = 0; i < layers.size(); ++i) {
+                // two‐step dereference: first get the pointer, then get the double
+                auto edgeReader = std::get<0>(layers[i]);   // TTreeReaderValue<double>*
+                double edge     = **edgeReader;             // double value
+                if (edge == -9999) continue;
+
+                for (int b = 0; b < num_phi_bins; ++b) {
+                    auto r = phi_ranges[b];
+                    bool in_bin = (r.first < r.second)
+                        ? (phi_val >= r.first && phi_val < r.second)
+                        : (phi_val >= r.first || phi_val < r.second);
+                    if (in_bin) {
+                        hd_sum[i][b]->Fill(edge, chi2_ndf);
+                        hd_cnt[i][b]->Fill(edge);
                     }
                 }
             }
         }
 
-        // Fill MC
-        if(mcReader){
+        // fill MC histograms
+        if (mcReader) {
             mcReader->Restart();
-            while(mcReader->Next()){
-                if(**mc_pidv != pid) continue;
-                if(**mc_ndfv <= 0)   continue;
-                if(**mc_chi2 >= 1e4) continue;
-                double val = (**mc_chi2)/(**mc_ndfv);
-                double ph  = **mc_phi;
-                for(size_t i=0; i<layers.size(); ++i){
-                    double edge = *std::get<0>(layers[i]);
-                    if(edge == -9999) continue;
-                    for(int b=0; b<num_phi_bins; ++b){
-                        double f = phi_ranges[b].first, s = phi_ranges[b].second;
-                        bool in_bin = (f < s ? (ph>=f && ph< s)
-                                             : (ph>=f || ph< s));
-                        if(in_bin){
-                            h_sum_mc[i][b]->Fill(edge, val);
-                            h_cnt_mc[i][b]->Fill(edge);
+            while (mcReader->Next()) {
+                if (**mc_pidv != pid_val) continue;
+                if (**mc_ndfv <= 0)       continue;
+                if (**mc_chi2 >= 1e4)     continue;
+                double chi2_ndf = **mc_chi2 / **mc_ndfv;
+                double phi_val  = **mc_phiv;
+
+                for (size_t i = 0; i < layers.size(); ++i) {
+                    auto edgeReader = std::get<0>(layers[i]);
+                    double edge     = **edgeReader;
+                    if (edge == -9999) continue;
+
+                    for (int b = 0; b < num_phi_bins; ++b) {
+                        auto r = phi_ranges[b];
+                        bool in_bin = (r.first < r.second)
+                            ? (phi_val >= r.first && phi_val < r.second)
+                            : (phi_val >= r.first || phi_val < r.second);
+                        if (in_bin) {
+                            hm_sum[i][b]->Fill(edge, chi2_ndf);
+                            hm_cnt[i][b]->Fill(edge);
                         }
                     }
                 }
             }
         }
 
-        // Normalize to mean chi2/ndf
-        for(size_t i=0; i<layers.size(); ++i){
-            for(int b=0; b<num_phi_bins; ++b){
-                if(h_cnt_data[i][b]->Integral()>0)
-                    h_sum_data[i][b]->Divide(h_cnt_data[i][b]);
-                if(mcReader && h_cnt_mc[i][b]->Integral()>0)
-                    h_sum_mc[i][b]->Divide(h_cnt_mc[i][b]);
+        // normalize to get mean χ²/ndf
+        for (size_t i = 0; i < layers.size(); ++i) {
+            for (int b = 0; b < num_phi_bins; ++b) {
+                if (hd_cnt[i][b]->Integral() > 0)
+                    hd_sum[i][b]->Divide(hd_cnt[i][b]);
+                if (mcReader && hm_cnt[i][b]->Integral() > 0)
+                    hm_sum[i][b]->Divide(hm_cnt[i][b]);
             }
         }
 
-        // Plotting: 3×2 canvas (5 layers → last pad blank)
+        // draw on a 3×2 canvas
         TCanvas* c = new TCanvas(
             Form("c_phi_%s_%s", name.c_str(), dataset.c_str()),
             Form("Mean #chi^{2}/ndf vs Edge for %s (%s)", latex.c_str(), dataset.c_str()),
-            1800,1200
+            1800, 1200
         );
         c->Divide(3,2,0.005,0.005);
 
-        // Colors & markers
-        std::vector<int> cdat = {kBlack,kBlue,kGreen+2,kOrange+7,kCyan,kMagenta};
-        std::vector<int> mdat = {20,21,22,23,24,25};
-        std::vector<int> cmc  = {kRed,kMagenta,kViolet+1,kPink+1,kAzure+1,kGreen-8};
-        std::vector<int> mmc  = {24,25,26,27,28,29};
+        std::vector<int> colors_data  = {kBlack,kBlue,kGreen+2,kOrange+7,kCyan,kMagenta};
+        std::vector<int> markers_data = {20,21,22,23,24,25};
+        std::vector<int> colors_mc    = {kRed,kMagenta,kViolet+1,kPink+1,kAzure+1,kGreen-8};
+        std::vector<int> markers_mc   = {24,25,26,27,28,29};
 
-        for(size_t i=0; i<layers.size(); ++i){
+        for (size_t i = 0; i < layers.size(); ++i) {
             c->cd(i+1);
             gPad->SetMargin(0.15,0.15,0.15,0.05);
-            auto sum0 = h_sum_data[i][0];
-            sum0->SetMinimum(0); sum0->SetMaximum(100);
-            // draw data bins
-            for(int b=0;b<num_phi_bins;++b){
-                auto h = h_sum_data[i][b];
-                h->SetLineColor(cdat[b]);
-                h->SetMarkerStyle(mdat[b]);
-                h->SetMarkerColor(cdat[b]);
-                h->Draw(b==0?"E1":"E1 SAME");
+
+            // draw data
+            for (int b = 0; b < num_phi_bins; ++b) {
+                auto h = hd_sum[i][b];
+                h->SetLineColor(colors_data[b]);
+                h->SetMarkerStyle(markers_data[b]);
+                h->SetMarkerColor(colors_data[b]);
+                h->Draw(b==0 ? "E1" : "E1 SAME");
             }
-            // draw mc
-            if(mcReader){
-                for(int b=0;b<num_phi_bins;++b){
-                    auto h = h_sum_mc[i][b];
-                    h->SetLineColor(cmc[b]);
-                    h->SetMarkerStyle(mmc[b]);
-                    h->SetMarkerColor(cmc[b]);
+            // draw MC
+            if (mcReader) {
+                for (int b = 0; b < num_phi_bins; ++b) {
+                    auto h = hm_sum[i][b];
+                    h->SetLineColor(colors_mc[b]);
+                    h->SetMarkerStyle(markers_mc[b]);
+                    h->SetMarkerColor(colors_mc[b]);
                     h->Draw("E1 SAME");
                 }
             }
+
             // legend
             TLegend* leg = new TLegend(0.55,0.70,0.85,0.95);
             leg->SetBorderSize(1);
             leg->SetFillStyle(0);
             leg->SetTextSize(0.03);
-            for(int b=0;b<num_phi_bins;++b){
-                std::string lab = (phi_ranges[b].first<phi_ranges[b].second)
-                    ? Form("%.0f<φ<%.0f",phi_ranges[b].first,phi_ranges[b].second)
-                    : Form("φ≥%.0f or φ<%.0f",phi_ranges[b].first,phi_ranges[b].second);
-                leg->AddEntry(h_sum_data[i][b], ("Data "+lab).c_str(), "lep");
-            }
-            if(mcReader){
-                for(int b=0;b<num_phi_bins;++b){
-                    std::string lab = (phi_ranges[b].first<phi_ranges[b].second)
-                        ? Form("%.0f<φ<%.0f",phi_ranges[b].first,phi_ranges[b].second)
-                        : Form("φ≥%.0f or φ<%.0f",phi_ranges[b].first,phi_ranges[b].second);
-                    leg->AddEntry(h_sum_mc[i][b], ("MC "+lab).c_str(), "lep");
-                }
+            for (int b = 0; b < num_phi_bins; ++b) {
+                auto r = phi_ranges[b];
+                std::string lab = (r.first < r.second)
+                    ? Form("%.0f<φ<%.0f", r.first, r.second)
+                    : Form("φ≥%.0f or φ<%.0f", r.first, r.second);
+                leg->AddEntry(hd_sum[i][b], ("Data "+lab).c_str(), "lep");
+                if (mcReader)
+                    leg->AddEntry(hm_sum[i][b], ("MC "+lab).c_str(), "lep");
             }
             leg->Draw("SAME");
         }
 
-        // Save
+        // save and clean up
         c->SaveAs(Form("output/calibration/cvt/determination/mean_chi2_ndf_vs_edge_phi_%s_%s.png",
                        dataset.c_str(), name.c_str()));
         delete c;
 
-        // Cleanup
-        for(size_t i=0;i<layers.size();++i){
-            for(int b=0;b<num_phi_bins;++b){
-                delete h_sum_data[i][b];
-                delete h_cnt_data[i][b];
-                if(mcReader){
-                    delete h_sum_mc[i][b];
-                    delete h_cnt_mc[i][b];
+        // delete histos and readers
+        for (size_t i = 0; i < layers.size(); ++i) {
+            delete std::get<0>(layers[i]);
+            for (int b = 0; b < num_phi_bins; ++b) {
+                delete hd_sum[i][b];
+                delete hd_cnt[i][b];
+                if (mcReader) {
+                    delete hm_sum[i][b];
+                    delete hm_cnt[i][b];
                 }
             }
-            delete std::get<0>(layers[i]);
         }
-        if(mcReader){
+        if (mcReader) {
             delete mc_pidv;
             delete mc_chi2;
             delete mc_ndfv;
-            delete mc_phi;
+            delete mc_phiv;
         }
     }
 }
