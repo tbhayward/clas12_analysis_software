@@ -5022,9 +5022,9 @@ void cvt_fiducial_determination(TTreeReader& dataReader,
     // define six φ-bins (three tight plus three complements)
     const int num_phi_bins = 6;
     std::vector<std::pair<double,double>> phi_ranges = {
-        { 25.0,  40.0},  // tight #1
-        {143.0, 158.0},  // tight #2
-        {265.0, 280.0},  // tight #3
+        // { 25.0,  40.0},  // tight #1
+        // {143.0, 158.0},  // tight #2
+        // {265.0, 280.0},  // tight #3
         { 40.0, 143.0},  // loose between #1 and #2
         {158.0, 265.0},  // loose between #2 and #3
         {280.0,  25.0}   // wrap-around loose (#3 → #1)
@@ -5211,7 +5211,7 @@ void cvt_fiducial_determination(TTreeReader& dataReader,
             }
 
             // legend
-            TLegend* leg = new TLegend(0.55, 0.70, 0.85, 0.95);
+            TLegend* leg = new TLegend(0.55, 0.75, 0.85, 0.95);
             leg->SetBorderSize(1);
             leg->SetFillStyle(0);
             leg->SetTextSize(0.03);
