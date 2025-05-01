@@ -3655,8 +3655,8 @@ static const std::map<std::string, std::vector<std::pair<double,double>>> Polygo
         {27, -150}, {30, -120}, {30, -110}, {35, -100},
         {38, -80}, {50, -73}
         }
-        }}
-};
+        }
+    };
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 2) Rotate (x,y) from any sector back to Sector-1 planar coordinates
