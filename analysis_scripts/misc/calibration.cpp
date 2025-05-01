@@ -3722,7 +3722,7 @@ bool dc_fiducial(double edge6, double edge18, double edge36,
 void plot_dc_data_mc_ratio(TTreeReader& dataReader,
                            TTreeReader* mcReader = nullptr,
                            const std::string& dataset = "rga_fa18_inb",
-                           Long64_t maxEntries = -1, int runnum)
+                           Long64_t maxEntries = -1, int runnum = 5100)
 {
     gStyle->SetOptStat(0);
 
