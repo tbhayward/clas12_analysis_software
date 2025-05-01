@@ -3876,24 +3876,23 @@ void plot_dc_data_mc_ratio(TTreeReader& dataReader,
           1800,600);
         c1->Divide(3,1,0.01,0.01);
         for (int r=0; r<3; ++r) {
+            // inside your ratio+poly loop, for each pad r:
             c1->cd(r+1);
-            gPad->SetLogz(); gPad->SetMargin(0.15,0.15,0.15,0.12);
-            hR[r]->Draw("COLZ");
+            gPad->SetLogz(true);
+            gPad->SetMargin(0.15,0.15,0.15,0.12);
 
-            // Force the pad to paint everything it has so far:
+            hR[r]->Draw("COLZ");
+            gPad->Modified();
             gPad->Update();
 
-            // 2) Try drawing a simple diagonal test line
-            std::cout << "Drawing test line in pad " << r+1
-                      << "  gPad = " << gPad << "\n";
-            c1->cd(r+1);
-            TLine test(-100, -100, +100, +100);
+            // ------ debug line ------
+            TLine test(-100,-100, 100,100);
             test.SetLineColor(kRed);
             test.SetLineWidth(3);
-            test.Draw("SAME");
-            c1->Update();
-            gPad->SetLogz(false);
-            gPad->SetMargin(0.05,0.05,0.05,0.05);
+            test.Draw();             // <- plain Draw()
+            gPad->Modified();
+            gPad->Update();
+            // ------------------------
 
             // overlay six rotated copies
             const char* key = (r==0?"Layer_6__pip": r==1?"Layer_18_pip":"Layer_36_pip");
