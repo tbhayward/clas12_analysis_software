@@ -3848,7 +3848,7 @@ void plot_dc_data_mc_ratio(TTreeReader& dataReader,
             hR[r]->GetZaxis()->SetTitle("MC/Data");
         }
 
-        // Ratio + Polygons Canvas
+        / 2) Ratio + π⁺ polygons
         TCanvas* c1 = new TCanvas(
             Form("c_ratioPoly_%s",name.c_str()),
             Form("DC Ratio+Poly %s (PID %d)",dataset.c_str(),ipid),
@@ -3864,7 +3864,7 @@ void plot_dc_data_mc_ratio(TTreeReader& dataReader,
             // Draw main histogram
             hR[r]->Draw("COLZ");
             
-            // Get axis limits for clipping
+            // Get axis limits for clamping
             auto xaxis = hR[r]->GetXaxis();
             auto yaxis = hR[r]->GetYaxis();
             const double xmin = xaxis->GetXmin();
@@ -3872,10 +3872,7 @@ void plot_dc_data_mc_ratio(TTreeReader& dataReader,
             const double ymin = yaxis->GetXmin();
             const double ymax = yaxis->GetXmax();
 
-            // Set clipping region for this pad
-            gPad->SetClipBox(xmin, ymin, xmax, ymax);
-
-            // Draw polygons with sector rotation
+            // Draw polygons with sector rotation and clamping
             const char* key = (r==0 ? "Layer_6__pip" 
                                   : r==1 ? "Layer_18_pip" 
                                          : "Layer_36_pip");
@@ -3886,19 +3883,23 @@ void plot_dc_data_mc_ratio(TTreeReader& dataReader,
                 double a = TMath::DegToRad() * 60.0 * (sec - 1);
                 double ca = std::cos(a), sa = std::sin(a);
 
-                // Rotate polygon points
+                // Rotate and clamp polygon points
                 for (auto& [px, py] : poly) {
                     double x = px * ca - py * sa;
                     double y = px * sa + py * ca;
+                    
+                    // Manual clamping for C++11 compatibility
+                    x = std::max(xmin, std::min(x, xmax));
+                    y = std::max(ymin, std::min(y, ymax));
+                    
                     rx.push_back(x);
                     ry.push_back(y);
                 }
 
-                // Create and draw polyline with clipping
+                // Create and draw polyline
                 TPolyLine* pl = new TPolyLine(rx.size(), rx.data(), ry.data());
                 pl->SetLineColor(kRed);
                 pl->SetLineWidth(3);
-                pl->SetBit(kClipFrame);  // Enable automatic clipping
                 pl->Draw("L SAME");
             }
 
