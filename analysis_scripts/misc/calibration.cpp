@@ -3717,14 +3717,17 @@ bool dc_polygon_cut(int region_idx,
     return (is_point_in_polygon(xr, yr, it->second));
 }
 
+// Prototype for your fiducial‐cut function
+bool dc_fiducial(double edge6, double edge18, double edge36,
+                 int pid, double theta, int runnum);
+
 void plot_dc_data_mc_ratio(TTreeReader& dataReader,
                            TTreeReader* mcReader = nullptr,
-                           const std::string& dataset = "rga_fa18_inb")
-{
-    // Turn off statistics box
+                           const std::string& dataset = "rga_fa18_inb") {
+    // turn off histogram stats box
     gStyle->SetOptStat(0);
 
-    // Define the three DC regions
+    // define the three DC regions
     struct Region { std::string xBranch, yBranch, name; double min, max; };
     std::vector<Region> regions = {
         {"traj_x_6",  "traj_y_6",  "region_1", -200,  200},
@@ -3732,7 +3735,7 @@ void plot_dc_data_mc_ratio(TTreeReader& dataReader,
         {"traj_x_36", "traj_y_36", "region_3", -450,  450}
     };
 
-    // Particle types (comment/uncomment as desired)
+    // particle types
     std::vector<std::tuple<int,std::string>> particle_types = {
         {  11, "electron"},
         //{-211, "pim"},
@@ -3740,18 +3743,18 @@ void plot_dc_data_mc_ratio(TTreeReader& dataReader,
         {2212, "proton"}
     };
 
-    // --- Data readers ---
-    TTreeReaderValue<double> edge6   (dataReader, "traj_edge_6");
-    TTreeReaderValue<double> edge18  (dataReader, "traj_edge_18");
-    TTreeReaderValue<double> edge36  (dataReader, "traj_edge_36");
-    TTreeReaderValue<double> theta   (dataReader, "theta");
-    TTreeReaderValue<int>    runnum  (dataReader, "config_run");
-    TTreeReaderValue<int>    pid      (dataReader, "particle_pid");
-    TTreeReaderValue<int>    sec6     (dataReader, "track_sector_6");
+    // --- DATA readers ---
+    TTreeReaderValue<double> edge6  (dataReader, "traj_edge_6");
+    TTreeReaderValue<double> edge18 (dataReader, "traj_edge_18");
+    TTreeReaderValue<double> edge36 (dataReader, "traj_edge_36");
+    TTreeReaderValue<double> theta  (dataReader, "theta");
+    TTreeReaderValue<int>    runnum (dataReader, "config_run");
+    TTreeReaderValue<int>    pid     (dataReader, "particle_pid");
+    TTreeReaderValue<int>    sec6    (dataReader, "track_sector_6");
 
-    // region-by-region x,y readers
+    // region-by-region x,y
     std::vector<TTreeReaderValue<double>> xs, ys;
-    for (auto& R : regions) {
+    for (auto& R: regions) {
         xs.emplace_back(dataReader, R.xBranch.c_str());
         ys.emplace_back(dataReader, R.yBranch.c_str());
     }
@@ -3765,7 +3768,6 @@ void plot_dc_data_mc_ratio(TTreeReader& dataReader,
     TTreeReaderValue<int>*    mc_pid   = nullptr;
     TTreeReaderValue<int>*    mc_sec6  = nullptr;
     std::vector<TTreeReaderValue<double>*> mc_x, mc_y;
-
     if (mcReader) {
         mc_e6    = new TTreeReaderValue<double>(*mcReader, "traj_edge_6");
         mc_e18   = new TTreeReaderValue<double>(*mcReader, "traj_edge_18");
@@ -3774,43 +3776,47 @@ void plot_dc_data_mc_ratio(TTreeReader& dataReader,
         mc_run   = new TTreeReaderValue<int>   (*mcReader, "config_run");
         mc_pid   = new TTreeReaderValue<int>   (*mcReader, "particle_pid");
         mc_sec6  = new TTreeReaderValue<int>   (*mcReader, "track_sector_6");
-        for (auto& R : regions) {
+        for (auto& R: regions) {
             mc_x.push_back(new TTreeReaderValue<double>(*mcReader, R.xBranch.c_str()));
             mc_y.push_back(new TTreeReaderValue<double>(*mcReader, R.yBranch.c_str()));
         }
     }
 
-    // Loop over particle types
+    // loop over particle types
     for (auto& pt : particle_types) {
         int ipid       = std::get<0>(pt);
         std::string name = std::get<1>(pt);
 
-        // Arrays to count
+        // arrays to accumulate counts: [sector 0–5][region 0–2]
         double data_counts[6][3] = {{0}};
         double mc_counts  [6][3] = {{0}};
 
-        // --- Fill data counts with fiducial cut ---
+        // --- fill DATA counts with fiducial cut ---
         dataReader.Restart();
         while (dataReader.Next()) {
             if (*pid != ipid) continue;
-            if (!dc_fiducial(*edge6, *edge18, *edge36, ipid, *theta, *runnum)) continue;
+            if (!dc_fiducial(*edge6, *edge18, *edge36,
+                             ipid, *theta, *runnum))
+                continue;
             int s = *sec6;
             if (s < 1 || s > 6) continue;
             int secIdx = s - 1;
             for (int r = 0; r < 3; ++r) {
-                double xv = xs[r];
-                double yv = ys[r];
+                double xv = *xs[r];
+                double yv = *ys[r];
                 if (xv == -9999 || yv == -9999) continue;
                 data_counts[secIdx][r] += 1.0;
             }
         }
 
-        // --- Fill MC counts with fiducial cut ---
+        // --- fill MC counts with fiducial cut ---
         if (mcReader) {
             mcReader->Restart();
             while (mcReader->Next()) {
                 if (**mc_pid != ipid) continue;
-                if (!dc_fiducial(**mc_e6, **mc_e18, **mc_e36, ipid, **mc_theta, **mc_run)) continue;
+                if (!dc_fiducial(**mc_e6, **mc_e18, **mc_e36,
+                                 ipid, **mc_theta, **mc_run))
+                    continue;
                 int s = **mc_sec6;
                 if (s < 1 || s > 6) continue;
                 int secIdx = s - 1;
@@ -3823,10 +3829,12 @@ void plot_dc_data_mc_ratio(TTreeReader& dataReader,
             }
         }
 
-        // --- Compute ratio of normalized integrals ---
+        // --- compute MC/Data ratio of normalized integrals ---
         double ratios[6][3];
         for (int s = 0; s < 6; ++s) {
-            double sum_d = data_counts[s][0] + data_counts[s][1] + data_counts[s][2];
+            double sum_d = data_counts[s][0]
+                         + data_counts[s][1]
+                         + data_counts[s][2];
             double sum_m = mcReader
                          ? (mc_counts[s][0] + mc_counts[s][1] + mc_counts[s][2])
                          : 0.0;
@@ -3841,47 +3849,42 @@ void plot_dc_data_mc_ratio(TTreeReader& dataReader,
             }
         }
 
-        // --- Draw results in 3×2 canvas (one pad per sector) ---
+        // --- draw in 3×2 canvas, one pad per sector ---
         TCanvas* c = new TCanvas(
             Form("c_ratio_%s", name.c_str()),
-            dataset.c_str(),  // use dataset as canvas title
+            dataset.c_str(),
             1800, 1200
         );
         c->Divide(3, 2, 0.01, 0.01);
-
-        // Style arrays
-        std::vector<int> col = {kBlack, kBlack, kBlack};
-        std::vector<int> mkr = {20, 21, 22};
 
         for (int s = 0; s < 6; ++s) {
             c->cd(s+1);
             gPad->SetMargin(0.15, 0.15, 0.15, 0.12);
 
-            // 3-bin histogram for this sector
+            // 3‐bin hist for regions
             TH1D* h = new TH1D(
                 Form("h_ratio_s%d_%s", s+1, name.c_str()),
-                "",    // no auto title
-                3, 0.5, 3.5
+                "", 3, 0.5, 3.5
             );
-            static const char* regionLabels[3] = {"region_1","region_2","region_3"};
+            const char* labels[3] = {"region_1","region_2","region_3"};
             for (int r = 0; r < 3; ++r) {
                 h->SetBinContent(r+1, ratios[s][r]);
-                h->SetBinLabel  (r+1, regionLabels[r]);
+                h->GetXaxis()->SetBinLabel(r+1, labels[r]);
             }
-            h->GetYaxis()->SetTitle("MC/Data (normalized)");
             h->GetXaxis()->LabelsOption("v");
+            h->GetYaxis()->SetTitle("MC/Data (normalized)");
             h->SetMarkerStyle(20);
             h->SetMarkerSize(1.2);
             h->Draw("E1");
 
-            // Manual title at top center
+            // manual title at top
             TLatex title;
             title.SetNDC();
             title.SetTextAlign(23);
             title.SetTextSize(0.04);
             title.DrawLatex(0.5, 0.98, dataset.c_str());
 
-            // Legend flush right
+            // legend in top‐right
             double rm = gPad->GetRightMargin();
             double tm = gPad->GetTopMargin();
             double lw = 0.40, lh = 0.15;
@@ -3897,7 +3900,7 @@ void plot_dc_data_mc_ratio(TTreeReader& dataReader,
             leg->Draw("SAME");
         }
 
-        // Save and cleanup
+        // save and clean up
         c->SaveAs(Form("output/calibration/dc/positions/ratio_%s_%s.png",
                        dataset.c_str(), name.c_str()));
         delete c;
