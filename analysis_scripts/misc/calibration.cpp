@@ -3884,17 +3884,6 @@ void plot_dc_data_mc_ratio(TTreeReader& dataReader,
             // Force the pad to paint everything it has so far:
             gPad->Update();
 
-            // Sanity check 1: draw a simple red diagonal line
-            #include "TLine.h"
-            TLine test(-100,-100, +100,+100);
-            test.SetLineColor(kRed);
-            test.SetLineWidth(4);
-            test.Draw("SAME");
-            gPad->Update();
-            
-            // 1) Force the pad to paint its axes/palette
-            gPad->Update();
-
             // 2) Try drawing a simple diagonal test line
             #include "TLine.h"  // if you need it
             TLine test(-100, -100, +100, +100);
