@@ -3561,82 +3561,89 @@ bool dc_fiducial(double edge_6, double edge_18, double edge_36,
 // ─────────────────────────────────────────────────────────────────────────────
 // 1) Polygon definitions for π⁺ fiducial cuts (in Sector-1 coordinates)
 // ─────────────────────────────────────────────────────────────────────────────
-static const std::map<std::string, std::vector<std::pair<double,double>>> Polygon_Layers = {
-    {"Layer_6__pip", {
-        // six small central loops only
-        {24,   0}, {24,  -6}, {111, -54}, {118, -50}, {122,   0},
-        {120,  20}, {111,  54}, {24,   6}, {24,    0},
+static const std::map<
+    std::string,
+    std::vector<std::vector<std::pair<double,double>>>> Polygon_Layers = {
+  {"Layer_6__pip", {
+    // right‐sector “petal”
+    {{ 24,   0}, { 24,  -6}, {111,  -54}, {118,  -50}, {122,    0},
+     {120,  20}, {111,   54}, { 24,    6}, { 24,     0}},
 
-        {12,  21}, {8,   24}, {10,  120}, {10,  126}, {50,  110},
-        {75, 100}, {100,  75}, {100, 69}, {17,   19}, {12,   21},
+    // upper‐right
+    {{ 12,  21}, {  8,   24}, { 10,  120}, { 10,  126}, { 50,  110},
+     { 75, 100}, {100,    75}, {100,    69}, { 17,   19}, { 12,    21}},
 
-        {-12,  21}, {-17,  18}, {-98,  70}, {-100, 75}, {-78, 100},
-        {-50, 112}, {-15, 125}, {-11, 120}, {-8,   24}, {-12,  21},
+    // upper‐left
+    {{-12,  21}, {-17,    18}, {-98,    70}, {-100,   75}, {-78,   100},
+     {-50, 112}, {-15,   125}, {-11,   120}, { -8,    24}, {-12,    21}},
 
-        {-24,   0}, {-24,  -6}, {-110, -54}, {-120, -54}, {-125,   0},
-        {-120,  58}, {-110,  54}, {-24,   6}, {-24,    0},
+    // left
+    {{-24,   0}, {-24,   -6}, {-110,  -54}, {-120,  -54}, {-125,    0},
+     {-120,  58}, {-110,   54}, {-24,     6}, {-24,      0}},
 
-        {-14,  -20}, {-8,   -25}, {-9,   -80}, {-12, -120}, {-15, -128},
-        {-65, -109}, {-105, -75}, {-100, -70}, {-18,  -18}, {-14,  -20},
+    // lower‐left
+    {{-14,  -20}, { -8,   -25}, { -9,   -80}, {-12,  -120}, {-15,  -128},
+     {-65, -109}, {-105,   -75}, {-100,   -70}, {-18,   -18}, {-14,   -20}},
 
-        {12,  -21}, {17,  -18}, {100, -69}, {100, -75}, {70,  -100},
-        {50, -110}, {14, -125}, {10, -118}, {8,   -24}, {12,   -21}
-    }},
-    {"Layer_18_pip", {
-        // six small central loops only
-        {45,   0}, {47,  -6}, {50,   -6}, {72,  -25}, {100,  -42},
-        {166, -78}, {183, -88}, {185,  -50}, {185,    0}, {180,   80},
-        {166,  78}, {150,  70}, {100,   44}, {50,   11}, {45,     0},
+    // lower‐right
+    {{ 12,  -21}, { 17,   -18}, {100,   -69}, {100,   -75}, { 70,  -100},
+     { 50, -110}, { 14,  -125}, { 10,  -118}, {  8,   -24}, { 12,   -21}}
+  }},
 
-        {22,   38}, {16,   50}, {15,   84}, {15,   175}, {18,   190},
-        {120, 150}, {155,  120}, {155,  110}, {150,  103}, {100,   73},
-        {60,   51}, {50,    49}, {28,   38}, {22,    38},
+  {"Layer_18_pip", {
+    {{ 45,    0}, { 47,   -6}, { 50,   -6}, { 72,  -25}, {100,   -42},
+     {166,  -78}, {183,  -88}, {185,  -50}, {185,     0}, {180,    80},
+     {166,   78}, {150,   70}, {100,    44}, { 50,    11}, { 45,     0}},
 
-        {-22,   38}, {-30,  35}, {-35,   40}, {-50,   45}, {-80,   61},
-        {-150, 105}, {-150, 120}, {-100, 160}, {-20,  190}, {-15,  180},
-        {-15,   80}, {-17,   60}, {-18,   42}, {-22,   38},
+    {{ 22,   38}, { 16,    50}, { 15,    84}, { 15,   175}, { 18,   190},
+     {120,  150}, {155,   120}, {155,   110}, {150,   103}, {100,    73},
+     { 60,   51}, { 50,     49}, { 28,    38}, { 22,     38}},
 
-        {-40,    0}, {-40,   -5}, {-50,    -8}, {-61,   -18}, {-62,   -21},
-        {-166,  -80}, {-185,    0}, {-166,   80}, {-150,   70}, {-100,   43},
-        {-70,    25}, {-65,    20}, {-50,    10}, {-42,     5}, {-40,     0},
+    {{-22,   38}, {-30,    35}, {-35,    40}, {-50,    45}, {-80,    61},
+     {-150,  105}, {-150,   120}, {-100,   160}, { -20,   190}, { -15,   180},
+     { -15,   80}, { -17,    60}, { -18,    42}, { -22,    38}},
 
-        {-21,  -35}, {-16,   -45}, {-15,   -60}, {-15,  -195}, {-50,  -190},
-        {-100, -168}, {-140, -141}, {-160, -115}, {-151, -103}, {-100,  -73},
-        {-50,  -44}, {-30,   -37}, {-21,  -35},
+    {{-40,    0}, {-40,    -5}, {-50,    -8}, {-61,   -18}, {-62,   -21},
+     {-166,  -80}, {-185,     0}, {-166,    80}, {-150,    70}, {-100,    43},
+     { -70,    25}, { -65,    20}, { -50,    10}, { -42,     5}, { -40,      0}},
 
-        {20,   -35}, {30,   -35}, {35,   -38}, {50,   -43}, {80,   -61},
-        {150, -100}, {150,  -120}, {140,  -135}, {100,  -165}, {50,  -185},
-        {15,  -195}, {15,   -80}, {17,   -60}, {18,   -42}, {20,  -35}
-    }},
-    {"Layer_36_pip", {
-        // six small central loops only
-        {80,    0}, {90,   -7}, {115,  -35}, {135,  -47}, {218,   -97},
-        {265, -125}, {285, -138}, {285,   130}, {265,   130}, {213,    98},
-        {200,   90}, {160,   66}, {100,   24}, {81,     6}, {80,      0},
+    {{-21,   -35}, {-16,   -45}, {-15,   -60}, {-15,  -195}, {-50,  -190},
+     {-100, -168}, {-140,  -141}, {-160,  -115}, {-151,  -103}, {-100,   -73},
+     { -50,  -44}, { -30,   -37}, { -21,   -35}},
 
-        {40,   70}, {32,   90}, {28,  100}, {23,  130}, {23,  310},
-        {250, 190}, {255,  180}, {238,  167}, {118,  100}, {108,   97},
-        {48,   72}, {40,    70},
+    {{ 20,   -35}, { 30,   -35}, { 35,   -38}, { 50,   -43}, { 80,   -61},
+     {150,  -100}, {150,  -120}, {140,  -135}, {100,  -165}, { 50,  -185},
+     { 15,  -195}, { 15,   -80}, { 17,   -60}, { 18,   -42}, { 20,   -35}}
+  }},
 
-        {-50,   65}, {-54,   71}, {-100,  87}, {-120, 100}, {-150,  116},
-        {-200, 145}, {-234,  162}, {-250, 180}, {-150,  250}, {-50,   295},
-        {-30,  300}, {-30,   285}, {-30,  250}, {-30,  200}, {-30,   150},
-        {-30,  110}, {-35,   100}, {-38,   80}, {-50,    65},
+  {"Layer_36_pip", {
+    {{ 80,     0}, { 90,    -7}, {115,   -35}, {135,   -47}, {218,    -97},
+     {265,  -125}, {285,  -138}, {285,   130}, {265,    130}, {213,     98},
+     {200,    90}, {160,    66}, {100,    24}, { 81,      6}, { 80,       0}},
 
-        {-85,    0}, {-86,   -7}, {-100,  -10}, {-130,  -45}, {-150, -60},
-        {-160,  -65}, {-200,  -90}, {-213,  -95}, {-265, -125}, {-275, -135},
-        {-285,    0}, {-275,  135}, {-265,  125}, {-220,   95}, {-135,   45},
-        {-115,   35}, {-100,   15}, {-90,    10}, {-85,     0},
+    {{ 40,    70}, { 32,    90}, { 28,   100}, { 23,   130}, { 23,   310},
+     {250,   190}, {255,   180}, {238,   167}, {118,   100}, {108,     97},
+     { 48,    72}, { 40,     70}},
 
-        {-45,   -75}, {-30,  -100}, {-25,  -150}, {-25,  -250}, {-26,  -290},
-        {-35,  -300}, {-45,  -310}, {-260, -180}, {-236, -180}, {-235, -165},
-        {-200, -145}, {-150, -116}, {-100,  -86}, {-80,   -78}, {-45,   -75},
+    {{-50,    65}, {-54,    71}, {-100,   87}, {-120,  100}, {-150,   116},
+     {-200,  145}, {-234,   162}, {-250,  180}, {-150,   250}, { -50,   295},
+     { -30,   300}, { -30,    285}, { -30,   250}, { -30,   200}, { -30,   150},
+     { -30,   110}, { -35,   100}, { -38,    80}, { -50,     65}},
 
-        {50,   -73}, {54,   -73}, {75,   -76}, {100,  -85}, {240,  -160},
-        {240,  -190}, {145,  -260}, {25,   -315}, {25,   -285}, {25,   -250},
-        {26,   -235}, {25,   -200}, {27,   -150}, {30,   -120}, {30,   -110},
-        {35,   -100}, {38,    -80}, {50,    -73}
-    }}
+    {{-85,     0}, {-86,    -7}, {-100,   -10}, {-130,   -45}, {-150,   -60},
+     {-160,   -65}, {-200,   -90}, {-213,   -95}, {-265,  -125}, {-275,  -135},
+     {-285,     0}, {-275,   135}, {-265,   125}, {-220,    95}, {-135,    45},
+     {-115,    35}, {-100,    15}, { -90,    10}, { -85,      0}},
+
+    {{-45,    -75}, {-30,   -100}, {-25,   -150}, {-25,   -250}, { -26,   -290},
+     {-35,   -300}, {-45,   -310}, {-260,  -180}, {-236,  -180}, {-235,  -165},
+     {-200,  -145}, {-150,  -116}, {-100,   -86}, { -80,    -78}, { -45,    -75}},
+
+    {{ 50,    -73}, { 54,    -73}, { 75,    -76}, {100,    -85}, {240,   -160},
+     {240,   -190}, {145,   -260}, { 25,   -315}, { 25,   -285}, { 25,   -250},
+     { 26,   -235}, { 25,   -200}, { 27,   -150}, { 30,   -120}, { 30,   -110},
+     { 35,   -100}, { 38,    -80}, { 50,    -73}}
+  }}
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -3704,10 +3711,10 @@ bool dc_polygon_cut(int region_idx,
 }
 
 void plot_dc_data_mc_ratio(TTreeReader& dataReader,
-                           TTreeReader* mcReader = nullptr,
-                           const std::string& dataset = "rga_fa18_inb",
-                           Long64_t maxEntries = -1,
-                           int mc_runnum = 5100) {
+                           TTreeReader* mcReader /*= nullptr*/,
+                           const std::string& dataset /*= "rga_fa18_inb"*/,
+                           Long64_t maxEntries /*= -1*/,
+                           int mc_runnum /*= 5100*/) {
     gStyle->SetOptStat(0);
     const int nBins = 300;
 
@@ -3748,11 +3755,11 @@ void plot_dc_data_mc_ratio(TTreeReader& dataReader,
     TTreeReaderValue<int>* mc_sec6 = nullptr;
     std::vector<TTreeReaderValue<double>*> mc_x, mc_y;
     if (mcReader) {
-        mc_e6 = new TTreeReaderValue<double>(*mcReader,"traj_edge_6");
-        mc_e18 = new TTreeReaderValue<double>(*mcReader,"traj_edge_18");
-        mc_e36 = new TTreeReaderValue<double>(*mcReader,"traj_edge_36");
-        mc_th = new TTreeReaderValue<double>(*mcReader,"theta");
-        mc_pid = new TTreeReaderValue<int>(*mcReader,"particle_pid");
+        mc_e6   = new TTreeReaderValue<double>(*mcReader,"traj_edge_6");
+        mc_e18  = new TTreeReaderValue<double>(*mcReader,"traj_edge_18");
+        mc_e36  = new TTreeReaderValue<double>(*mcReader,"traj_edge_36");
+        mc_th   = new TTreeReaderValue<double>(*mcReader,"theta");
+        mc_pid  = new TTreeReaderValue<int>(*mcReader,"particle_pid");
         mc_sec6 = new TTreeReaderValue<int>(*mcReader,"track_sector_6");
         for (auto &R : regions) {
             mc_x.push_back(new TTreeReaderValue<double>(*mcReader, R.xBr));
@@ -3762,26 +3769,27 @@ void plot_dc_data_mc_ratio(TTreeReader& dataReader,
 
     // Main processing loop
     for (auto &tp : PIDS) {
-        int ipid = std::get<0>(tp);
+        int    ipid = std::get<0>(tp);
         std::string name = std::get<1>(tp);
 
-        // Histogram initialization
+        // Histograms
         TH2D* hD[3]; TH2D* hM[3];
         for (int r=0; r<3; ++r) {
             auto &R = regions[r];
-            hD[r] = new TH2D(Form("D_%s_%s",R.name,name.c_str()), "",
-                            nBins,R.lo,R.hi,nBins,R.lo,R.hi);
-            hM[r] = new TH2D(Form("M_%s_%s",R.name,name.c_str()), "",
-                            nBins,R.lo,R.hi,nBins,R.lo,R.hi);
+            hD[r] = new TH2D(Form("D_%s_%s",R.name,name.c_str()),"",
+                             nBins,R.lo,R.hi,nBins,R.lo,R.hi);
+            hM[r] = new TH2D(Form("M_%s_%s",R.name,name.c_str()),"",
+                             nBins,R.lo,R.hi,nBins,R.lo,R.hi);
         }
 
-        // Data filling
+        // Data fill
         Long64_t nD=0;
         dataReader.Restart();
         while (dataReader.Next() && (maxEntries<0 || nD<maxEntries)) {
             ++nD;
             if (*pid != ipid) continue;
-            if (!dc_fiducial(*edge6,*edge18,*edge36, ipid, *theta, *runnum)) continue;
+            if (!dc_fiducial(*edge6,*edge18,*edge36, ipid, *theta, *runnum))
+                continue;
             int s = *sec6; if (s<1||s>6) continue;
             for (int r=0; r<3; ++r) {
                 double xv=*xs[r], yv=*ys[r];
@@ -3790,51 +3798,52 @@ void plot_dc_data_mc_ratio(TTreeReader& dataReader,
             }
         }
 
-        // MC filling
+        // MC fill
         if (mcReader) {
             Long64_t nM=0;
             mcReader->Restart();
             while (mcReader->Next() && (maxEntries<0 || nM<maxEntries)) {
                 ++nM;
                 if (**mc_pid != ipid) continue;
-                if (!dc_fiducial(**mc_e6,**mc_e18,**mc_e36, ipid, **mc_th, mc_runnum)) continue;
+                if (!dc_fiducial(**mc_e6,**mc_e18,**mc_e36, ipid, **mc_th, mc_runnum))
+                    continue;
                 int s = **mc_sec6; if (s<1||s>6) continue;
                 for (int r=0; r<3; ++r) {
-                    double xv = **mc_x[r], yv = **mc_y[r];
+                    double xv=**mc_x[r], yv=**mc_y[r];
                     if (xv==-9999||yv==-9999) continue;
                     hM[r]->Fill(xv,yv);
                 }
             }
         }
 
-        // Normalization
+        // Normalize
         for (int r=0; r<3; ++r) {
             if (hD[r]->Integral()>0) hD[r]->Scale(1./hD[r]->Integral());
             if (hM[r]->Integral()>0) hM[r]->Scale(1./hM[r]->Integral());
         }
 
-        // Ratio calculation
+        // Ratio & range
         TH2D* hR[3];
         double gmin=1e99, gmax=0;
         for (int r=0; r<3; ++r) {
             hR[r] = (TH2D*)hM[r]->Clone(Form("R_%s_%s",regions[r].name,name.c_str()));
             hR[r]->Divide(hD[r]);
             int nx=hR[r]->GetNbinsX(), ny=hR[r]->GetNbinsY();
-            for (int i=1; i<=nx; ++i) for (int j=1; j<=ny; ++j) {
+            for (int i=1;i<=nx;++i) for (int j=1;j<=ny;++j) {
                 double v = hR[r]->GetBinContent(i,j);
                 if (v>0 && v<gmin) gmin=v;
                 if (v>gmax) gmax=v;
             }
         }
         double zmin = std::pow(10,std::floor(std::log10(gmin)));
-        double zmax = std::pow(10,std::ceil(std::log10(gmax)));
+        double zmax = std::pow(10,std::ceil (std::log10(gmax)));
         for (int r=0; r<3; ++r) {
             hR[r]->SetMinimum(zmin);
             hR[r]->SetMaximum(zmax);
             hR[r]->GetZaxis()->SetTitle("MC/Data");
         }
 
-        // 2) Ratio + π⁺ polygons
+        // Draw ratio + π⁺ polygons
         TCanvas* c1 = new TCanvas(
             Form("c_ratioPoly_%s",name.c_str()),
             Form("DC Ratio+Poly %s (PID %d)",dataset.c_str(),ipid),
@@ -3845,76 +3854,76 @@ void plot_dc_data_mc_ratio(TTreeReader& dataReader,
         for (int r=0; r<3; ++r) {
             c1->cd(r+1);
             gPad->SetLogz(true);
-            gPad->SetMargin(0.15, 0.15, 0.15, 0.12);
+            gPad->SetMargin(0.15,0.15,0.15,0.12);
 
-            // Draw main histogram
+            // draw histo
             hR[r]->Draw("COLZ");
-            
-            // Get axis limits for clamping
-            auto xaxis = hR[r]->GetXaxis();
-            auto yaxis = hR[r]->GetYaxis();
-            const double xmin = xaxis->GetXmin();
-            const double xmax = xaxis->GetXmax();
-            const double ymin = yaxis->GetXmin();
-            const double ymax = yaxis->GetXmax();
 
-            // Draw polygons with sector rotation and clamping
-            const char* key = (r==0 ? "Layer_6__pip" 
-                                  : r==1 ? "Layer_18_pip" 
+            // axis limits
+            const double xmin = hR[r]->GetXaxis()->GetXmin();
+            const double xmax = hR[r]->GetXaxis()->GetXmax();
+            const double ymin = hR[r]->GetYaxis()->GetXmin();
+            const double ymax = hR[r]->GetYaxis()->GetXmax();
+
+            // fetch the six petals
+            const char* key = (r==0 ? "Layer_6__pip"
+                                  : r==1 ? "Layer_18_pip"
                                          : "Layer_36_pip");
-            auto& poly = Polygon_Layers.at(key);
+            auto const& petals = Polygon_Layers.at(key);
 
-            for (int sec = 1; sec <= 6; ++sec) {
-                std::vector<double> rx, ry;
-                double a = TMath::DegToRad() * 60.0 * (sec - 1);
-                double ca = std::cos(a), sa = std::sin(a);
+            // draw each petal in each sector
+            for (auto const& petal : petals) {
+                for (int sec=1; sec<=6; ++sec) {
+                    std::vector<double> rx, ry;
+                    rx.reserve(petal.size());
+                    ry.reserve(petal.size());
+                    double a  = TMath::DegToRad()*60.0*(sec-1);
+                    double ca = std::cos(a), sa = std::sin(a);
 
-                // Rotate and clamp polygon points
-                for (auto& [px, py] : poly) {
-                    double x = px * ca - py * sa;
-                    double y = px * sa + py * ca;
-                    
-                    // Manual clamping for C++11 compatibility
-                    x = std::max(xmin, std::min(x, xmax));
-                    y = std::max(ymin, std::min(y, ymax));
-                    
-                    rx.push_back(x);
-                    ry.push_back(y);
+                    for (auto const& pt : petal) {
+                        double x = pt.first*ca - pt.second*sa;
+                        double y = pt.first*sa + pt.second*ca;
+                        x = std::max(xmin, std::min(x, xmax));
+                        y = std::max(ymin, std::min(y, ymax));
+                        rx.push_back(x);
+                        ry.push_back(y);
+                    }
+
+                    TPolyLine* pl = new TPolyLine((Int_t)rx.size(),
+                                                  rx.data(), ry.data());
+                    pl->SetLineColor(kRed);
+                    pl->SetLineWidth(3);
+                    pl->Draw("L SAME");
                 }
-
-                // Create and draw polyline
-                TPolyLine* pl = new TPolyLine(rx.size(), rx.data(), ry.data());
-                pl->SetLineColor(kRed);
-                pl->SetLineWidth(3);
-                pl->Draw("L SAME");
             }
 
-            // Draw title
-            TLatex L; 
-            L.SetNDC(); 
-            L.SetTextAlign(23); 
+            // title
+            TLatex L;
+            L.SetNDC();
+            L.SetTextAlign(23);
             L.SetTextSize(0.04);
-            L.DrawLatex(0.5, 0.96, Form("%s + π⁺ polygon", regions[r].name));
+            L.DrawLatex(0.5,0.96,
+                        Form("%s + π⁺ polygon", regions[r].name));
         }
 
         c1->SaveAs(Form("output/calibration/dc/positions/ratioPoly_%s_%s.png",
                         dataset.c_str(), name.c_str()));
         delete c1;
 
-        // Cleanup
-        for (int r=0; r<3; ++r) {
-            delete hD[r]; 
-            delete hM[r]; 
+        // cleanup
+        for (int r=0;r<3;++r) {
+            delete hD[r];
+            delete hM[r];
             delete hR[r];
         }
     }
 
     // MC reader cleanup
     if (mcReader) {
-        delete mc_e6; delete mc_e18; delete mc_e36;
-        delete mc_th; delete mc_pid; delete mc_sec6;
-        for (auto p : mc_x) delete p;
-        for (auto p : mc_y) delete p;
+        delete mc_e6;   delete mc_e18;  delete mc_e36;
+        delete mc_th;   delete mc_pid;  delete mc_sec6;
+        for (auto p: mc_x) delete p;
+        for (auto p: mc_y) delete p;
     }
 }
 
