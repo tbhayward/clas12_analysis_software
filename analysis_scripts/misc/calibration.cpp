@@ -3891,6 +3891,7 @@ void plot_dc_data_mc_ratio(TTreeReader& dataReader,
             test.SetLineColor(kRed);
             test.SetLineWidth(3);
             test.Draw("SAME");
+            c1->Update();
             gPad->SetLogz(false);
             gPad->SetMargin(0.05,0.05,0.05,0.05);
 
