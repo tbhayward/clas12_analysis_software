@@ -3715,10 +3715,6 @@ bool dc_polygon_cut(int region_idx,
     return (is_point_in_polygon(xr, yr, it->second));
 }
 
-// Prototype for your fiducial‐cut function
-bool dc_fiducial(double edge6, double edge18, double edge36,
-                 int pid, double theta, int runnum);
-
 void plot_dc_data_mc_ratio(TTreeReader& dataReader,
                            TTreeReader* mcReader = nullptr,
                            const std::string& dataset = "rga_fa18_inb",
@@ -3728,174 +3724,195 @@ void plot_dc_data_mc_ratio(TTreeReader& dataReader,
     gStyle->SetOptStat(0);
     const int nBins = 300;
 
-    // Define the three DC regions
-    struct Region { const char* xBranch, *yBranch, *name; double min, max; };
+    // DC regions
+    struct Region { const char* xBr,*yBr,*name; double lo,hi; };
     std::vector<Region> regions = {
-        {"traj_x_6",  "traj_y_6",  "region_1", -200,  200},
-        {"traj_x_18", "traj_y_18", "region_2", -300,  300},
-        {"traj_x_36", "traj_y_36", "region_3", -450,  450}
+        {"traj_x_6","traj_y_6","region_1",-200,200},
+        {"traj_x_18","traj_y_18","region_2",-300,300},
+        {"traj_x_36","traj_y_36","region_3",-450,450}
     };
 
-    // We want one plot each for electrons and protons
-    std::vector<std::tuple<int,std::string>> particle_types = {
-        {  11, "electron"},
-        {2212, "proton"}
+    // electrons & protons
+    std::vector<std::tuple<int,std::string>> PIDS = {
+        {11,"electron"},{2212,"proton"}
     };
 
-    // --- Data readers ---
-    TTreeReaderValue<double> edge6  (dataReader, "traj_edge_6");
-    TTreeReaderValue<double> edge18 (dataReader, "traj_edge_18");
-    TTreeReaderValue<double> edge36 (dataReader, "traj_edge_36");
-    TTreeReaderValue<double> theta  (dataReader, "theta");
-    TTreeReaderValue<int>    runnum (dataReader, "config_run");
-    TTreeReaderValue<int>    pid     (dataReader, "particle_pid");
-    TTreeReaderValue<int>    sec6    (dataReader, "track_sector_6");
+    // Data branches
+    TTreeReaderValue<double> edge6  (dataReader,"traj_edge_6");
+    TTreeReaderValue<double> edge18 (dataReader,"traj_edge_18");
+    TTreeReaderValue<double> edge36 (dataReader,"traj_edge_36");
+    TTreeReaderValue<double> theta  (dataReader,"theta");
+    TTreeReaderValue<int>    runnum (dataReader,"config_run");
+    TTreeReaderValue<int>    pid     (dataReader,"particle_pid");
+    TTreeReaderValue<int>    sec6    (dataReader,"track_sector_6");
 
-    std::vector<TTreeReaderValue<double>> xs, ys;
-    for (auto &R : regions) {
-        xs.emplace_back(dataReader, R.xBranch);
-        ys.emplace_back(dataReader, R.yBranch);
+    std::vector<TTreeReaderValue<double>> xs,ys;
+    for(auto &R:regions){
+        xs.emplace_back(dataReader,R.xBr);
+        ys.emplace_back(dataReader,R.yBr);
     }
 
-    // --- MC readers ---
-    TTreeReaderValue<double>* mc_e6    = nullptr;
-    TTreeReaderValue<double>* mc_e18   = nullptr;
-    TTreeReaderValue<double>* mc_e36   = nullptr;
-    TTreeReaderValue<double>* mc_theta = nullptr;
-    TTreeReaderValue<int>*    mc_pid   = nullptr;
-    TTreeReaderValue<int>*    mc_sec6  = nullptr;
-    std::vector<TTreeReaderValue<double>*> mc_x, mc_y;
-    if (mcReader) {
-        mc_e6    = new TTreeReaderValue<double>(*mcReader, "traj_edge_6");
-        mc_e18   = new TTreeReaderValue<double>(*mcReader, "traj_edge_18");
-        mc_e36   = new TTreeReaderValue<double>(*mcReader, "traj_edge_36");
-        mc_theta = new TTreeReaderValue<double>(*mcReader, "theta");
-        mc_pid   = new TTreeReaderValue<int>   (*mcReader, "particle_pid");
-        mc_sec6  = new TTreeReaderValue<int>   (*mcReader, "track_sector_6");
-        for (auto &R : regions) {
-            mc_x.push_back(new TTreeReaderValue<double>(*mcReader, R.xBranch));
-            mc_y.push_back(new TTreeReaderValue<double>(*mcReader, R.yBranch));
+    // MC branches
+    TTreeReaderValue<double>* mc_e6=nullptr,*mc_e18=nullptr,*mc_e36=nullptr,*mc_th=nullptr;
+    TTreeReaderValue<int>*    mc_pid=nullptr,*mc_sec6=nullptr;
+    std::vector<TTreeReaderValue<double>*> mc_x,mc_y;
+    if(mcReader){
+        mc_e6    = new TTreeReaderValue<double>(*mcReader,"traj_edge_6");
+        mc_e18   = new TTreeReaderValue<double>(*mcReader,"traj_edge_18");
+        mc_e36   = new TTreeReaderValue<double>(*mcReader,"traj_edge_36");
+        mc_th    = new TTreeReaderValue<double>(*mcReader,"theta");
+        mc_pid   = new TTreeReaderValue<int>   (*mcReader,"particle_pid");
+        mc_sec6  = new TTreeReaderValue<int>   (*mcReader,"track_sector_6");
+        for(auto &R:regions){
+            mc_x.push_back(new TTreeReaderValue<double>(*mcReader,R.xBr));
+            mc_y.push_back(new TTreeReaderValue<double>(*mcReader,R.yBr));
         }
     }
 
-    // Loop over electrons and protons
-    for (auto &pt : particle_types) {
-        int ipid        = std::get<0>(pt);
-        const std::string name = std::get<1>(pt);
+    // For each PID: build, normalize, ratio, plot
+    for(auto &tp:PIDS){
+        int ipid    = std::get<0>(tp);
+        auto name   = std::get<1>(tp);
 
-        // Create and fill Data histograms
-        TH2D* h_data[3];
-        for (int r = 0; r < 3; ++r) {
-            auto &R = regions[r];
-            h_data[r] = new TH2D(
-                Form("h_data_%s_%s", R.name, name.c_str()),
-                "", nBins, R.min, R.max, nBins, R.min, R.max
-            );
-            h_data[r]->GetXaxis()->SetTitle("x (cm)");
-            h_data[r]->GetYaxis()->SetTitle("y (cm)");
+        // 2D histos for Data & MC
+        TH2D* hD[3]; TH2D* hM[3];
+        for(int r=0;r<3;++r){
+            auto &R=regions[r];
+            hD[r] = new TH2D(Form("D_%s_%s",R.name,name.c_str()),"",
+                              nBins,R.lo,R.hi,nBins,R.lo,R.hi);
+            hM[r] = new TH2D(Form("M_%s_%s",R.name,name.c_str()),"",
+                              nBins,R.lo,R.hi,nBins,R.lo,R.hi);
         }
 
-        Long64_t nRead=0;
+        // fill Data
+        Long64_t nD=0;
         dataReader.Restart();
-        while (dataReader.Next()) {
-            if (maxEntries>0 && ++nRead>maxEntries) break;
-            if (*pid!=ipid) continue;
-            if (!dc_fiducial(*edge6,*edge18,*edge36,
-                             ipid, *theta, *runnum)) continue;
-            for (int r=0; r<3; ++r) {
-                double xv = *xs[r], yv = *ys[r];
-                if (xv==-9999||yv==-9999) continue;
-                h_data[r]->Fill(xv,yv);
+        while(dataReader.Next() && (maxEntries<0||nD<maxEntries)){
+            ++nD;
+            if(*pid!=ipid) continue;
+            if(!dc_fiducial(*edge6,*edge18,*edge36,
+                           ipid,*theta,*runnum)) continue;
+            int s=*sec6; if(s<1||s>6) continue;
+            for(int r=0;r<3;++r){
+                double xv=*xs[r], yv=*ys[r];
+                if(xv==-9999||yv==-9999) continue;
+                hD[r]->Fill(xv,yv);
             }
-        }
-        // Normalize Data
-        for (int r=0; r<3; ++r) {
-            double I = h_data[r]->Integral();
-            if (I>0) h_data[r]->Scale(1./I);
         }
 
-        // Create and fill MC histograms
-        TH2D* h_mc[3] = {nullptr,nullptr,nullptr};
-        if (mcReader) {
-            for (int r = 0; r < 3; ++r) {
-                auto &R = regions[r];
-                h_mc[r] = new TH2D(
-                    Form("h_mc_%s_%s", R.name, name.c_str()),
-                    "", nBins, R.min, R.max, nBins, R.min, R.max
-                );
-                h_mc[r]->GetXaxis()->SetTitle("x (cm)");
-                h_mc[r]->GetYaxis()->SetTitle("y (cm)");
-            }
-            Long64_t mRead=0;
+        // fill MC
+        if(mcReader){
+            Long64_t nM=0;
             mcReader->Restart();
-            while (mcReader->Next()) {
-                if (maxEntries>0 && ++mRead>maxEntries) break;
-                if (**mc_pid!=ipid) continue;
-                if (!dc_fiducial(**mc_e6,**mc_e18,**mc_e36,
-                                 ipid, **mc_theta, mc_runnum)) continue;
-                for (int r=0; r<3; ++r) {
-                    double xv = **mc_x[r], yv = **mc_y[r];
-                    if (xv==-9999||yv==-9999) continue;
-                    h_mc[r]->Fill(xv,yv);
+            while(mcReader->Next() && (maxEntries<0||nM<maxEntries)){
+                ++nM;
+                if(**mc_pid!=ipid) continue;
+                if(!dc_fiducial(**mc_e6,**mc_e18,**mc_e36,
+                               ipid,**mc_th, mc_runnum)) continue;
+                int s=**mc_sec6; if(s<1||s>6) continue;
+                for(int r=0;r<3;++r){
+                    double xv=**mc_x[r], yv=**mc_y[r];
+                    if(xv==-9999||yv==-9999) continue;
+                    hM[r]->Fill(xv,yv);
                 }
             }
-            // Normalize MC
-            for (int r=0; r<3; ++r) {
-                double I = h_mc[r]->Integral();
-                if (I>0) h_mc[r]->Scale(1./I);
-            }
         }
 
-        // Build ratio histograms
-        TH2D* h_ratio[3];
-        for (int r=0; r<3; ++r) {
-            if (mcReader) {
-                h_ratio[r] = (TH2D*)h_mc[r]->Clone(
-                    Form("h_ratio_%s_%s", regions[r].name, name.c_str())
-                );
-                h_ratio[r]->Divide(h_data[r]);
-                h_ratio[r]->SetTitle("");
-                h_ratio[r]->GetZaxis()->SetTitle("MC/Data");
-            } else {
-                h_ratio[r] = nullptr;
-            }
+        // normalize both
+        for(int r=0;r<3;++r){
+            if(hD[r]->Integral()>0) hD[r]->Scale(1./hD[r]->Integral());
+            if(hM[r]->Integral()>0) hM[r]->Scale(1./hM[r]->Integral());
         }
 
-        // Draw ratio on 1×3 canvas
-        TCanvas* c = new TCanvas(
-            Form("c_ratio_%s", name.c_str()),
-            Form("DC Fiducial MC/Data (%s, PID %d)", dataset.c_str(), ipid),
-            1800,600
-        );
-        c->Divide(3,1,0.01,0.01);
-        for (int r=0; r<3; ++r) {
-            c->cd(r+1);
-            gPad->SetLogz();
-            gPad->SetMargin(0.15,0.15,0.15,0.12);
-            if (h_ratio[r]) h_ratio[r]->Draw("COLZ");
-            TLatex t; t.SetNDC(); t.SetTextAlign(23); t.SetTextSize(0.04);
-            t.DrawLatex(0.5,0.98,
-                Form("%s (%s, PID %d)", regions[r].name, dataset.c_str(), ipid)
+        // build ratio & track global (non-zero) min/max
+        TH2D* hR[3];
+        double gmin=1e99, gmax=0;
+        for(int r=0;r<3;++r){
+            hR[r]=(TH2D*)hM[r]->Clone(Form("R_%s_%s",regions[r].name,name.c_str()));
+            hR[r]->Divide(hD[r]);
+            int nx=hR[r]->GetNbinsX(), ny=hR[r]->GetNbinsY();
+            for(int i=1;i<=nx;i++) for(int j=1;j<=ny;j++){
+                double v=hR[r]->GetBinContent(i,j);
+                if(v>0 && v<gmin) gmin=v;
+                if(v>gmax)       gmax=v;
+            }
+        }
+        // global z-range: nearest powers of ten
+        double zmin = std::pow(10, std::floor(std::log10(gmin)));
+        double zmax = std::pow(10, std::ceil (std::log10(gmax)));
+
+        // apply common z-range
+        for(int r=0;r<3;++r){
+            hR[r]->SetMinimum(zmin);
+            hR[r]->SetMaximum(zmax);
+            hR[r]->GetZaxis()->SetTitle("MC/Data");
+        }
+
+        // 1) Draw ratio alone
+        TCanvas* c0 = new TCanvas(
+          Form("c_ratio_%s",name.c_str()),
+          Form("Ratio %s, PID %d",dataset.c_str(),ipid),
+          1800,600);
+        c0->Divide(3,1,0.01,0.01);
+        for(int r=0;r<3;++r){
+            c0->cd(r+1);
+            gPad->SetLogz(); gPad->SetMargin(0.15,0.15,0.15,0.12);
+            hR[r]->Draw("COLZ");
+            TLatex L; L.SetNDC(); L.SetTextAlign(23); L.SetTextSize(0.04);
+            L.DrawLatex(0.5,0.98,
+              Form("%s (Run=%s, PID=%d)",regions[r].name,
+                   dataset.c_str(), ipid)
             );
         }
-        c->SaveAs(Form("output/calibration/dc/positions/ratio_%s_%s.png",
-                       dataset.c_str(), name.c_str()));
-        delete c;
+        c0->SaveAs(
+          Form("output/calibration/dc/positions/ratio_%s_%s.png",
+               dataset.c_str(), name.c_str()));
+        delete c0;
 
-        // Cleanup
-        for (int r=0; r<3; ++r) {
-            delete h_data[r];
-            if (h_mc[r])    delete h_mc[r];
-            if (h_ratio[r]) delete h_ratio[r];
+        // 2) Draw ratio + π⁺ polygon overlay
+        TCanvas* c1 = new TCanvas(
+          Form("c_ratioPoly_%s",name.c_str()),
+          Form("Ratio+Poly %s, PID %d",dataset.c_str(),ipid),
+          1800,600);
+        c1->Divide(3,1,0.01,0.01);
+        for(int r=0;r<3;++r){
+            c1->cd(r+1);
+            gPad->SetLogz(); gPad->SetMargin(0.15,0.15,0.15,0.12);
+            hR[r]->Draw("COLZ");
+            // overlay polygon
+            auto key = (r==0?"Layer_6__pip":r==1?"Layer_18_pip":"Layer_36_pip");
+            auto& poly = Polygon_Layers.at(key);
+            int N=poly.size();
+            std::vector<double> px(N), py(N);
+            for(int i=0;i<N;i++){
+                px[i]=poly[i].first;
+                py[i]=poly[i].second;
+            }
+            TPolyLine pl(N, &px[0], &py[0]);
+            pl.SetLineColor(kRed);
+            pl.SetLineWidth(3);
+            pl.Draw("L SAME");
+            TLatex L; L.SetNDC(); L.SetTextAlign(23); L.SetTextSize(0.04);
+            L.DrawLatex(0.5,0.98,
+              Form("%s (with π⁺ polygon)",regions[r].name));
+        }
+        c1->SaveAs(
+          Form("output/calibration/dc/positions/ratioPoly_%s_%s.png",
+               dataset.c_str(), name.c_str()));
+        delete c1;
+
+        // cleanup
+        for(int r=0;r<3;++r){
+            delete hD[r]; delete hM[r]; delete hR[r];
         }
     }
 
-    // Cleanup MC readers
-    if (mcReader) {
-        delete mc_e6;    delete mc_e18;   delete mc_e36;
-        delete mc_theta; delete mc_pid;   delete mc_sec6;
-        for (auto p: mc_x) delete p;
-        for (auto p: mc_y) delete p;
+    // delete MC readers
+    if(mcReader){
+        delete mc_e6; delete mc_e18; delete mc_e36;
+        delete mc_th; delete mc_pid; delete mc_sec6;
+        for(auto p:mc_x) delete p;
+        for(auto p:mc_y) delete p;
     }
 }
 
