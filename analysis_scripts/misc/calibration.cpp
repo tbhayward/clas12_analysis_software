@@ -3726,21 +3726,20 @@ void plot_dc_data_mc_ratio(TTreeReader& dataReader,
                            const std::string& dataset = "rga_fa18_inb",
                            Long64_t maxEntries = -1)
 {
-    // disable the little stats box
+    // no stats boxes
     gStyle->SetOptStat(0);
 
-    // number of bins per axis
     const int nBins = 300;
 
-    // define the three DC regions
-    struct Region { std::string xBranch, yBranch, name; double min, max; };
+    // Define the three DC regions
+    struct Region { std::string xBranch,yBranch,name; double min,max; };
     std::vector<Region> regions = {
         {"traj_x_6",  "traj_y_6",  "region_1", -200,  200},
         {"traj_x_18", "traj_y_18", "region_2", -300,  300},
         {"traj_x_36", "traj_y_36", "region_3", -450,  450}
     };
 
-    // define which PID to loop over
+    // Choose PID(s)
     std::vector<std::tuple<int,std::string>> particle_types = {
         {  11, "electron"},
         //{-211, "pim"},
@@ -3748,7 +3747,7 @@ void plot_dc_data_mc_ratio(TTreeReader& dataReader,
         {2212, "proton"}
     };
 
-    // --- set up Data readers ---
+    // --- Data readers ---
     TTreeReaderValue<double> edge6  (dataReader, "traj_edge_6");
     TTreeReaderValue<double> edge18 (dataReader, "traj_edge_18");
     TTreeReaderValue<double> edge36 (dataReader, "traj_edge_36");
@@ -3757,14 +3756,13 @@ void plot_dc_data_mc_ratio(TTreeReader& dataReader,
     TTreeReaderValue<int>    pid     (dataReader, "particle_pid");
     TTreeReaderValue<int>    sec6    (dataReader, "track_sector_6");
 
-    // region‐by‐region X,Y readers
     std::vector<TTreeReaderValue<double>> xs, ys;
     for (auto &R : regions) {
         xs.emplace_back(dataReader, R.xBranch.c_str());
         ys.emplace_back(dataReader, R.yBranch.c_str());
     }
 
-    // --- set up MC readers (if any) ---
+    // --- MC readers ---
     TTreeReaderValue<double>* mc_e6    = nullptr;
     TTreeReaderValue<double>* mc_e18   = nullptr;
     TTreeReaderValue<double>* mc_e36   = nullptr;
@@ -3787,126 +3785,125 @@ void plot_dc_data_mc_ratio(TTreeReader& dataReader,
         }
     }
 
-    // loop over the requested PIDs
+    // Loop over requested particle types
     for (auto &pt : particle_types) {
         int ipid       = std::get<0>(pt);
         std::string name = std::get<1>(pt);
 
-        // 2D count accumulators: [sector 0–5][region 0–2]
-        double data_counts[6][3] = {{0}};
-        double mc_counts  [6][3] = {{0}};
+        // Create 2D histograms for Data and MC
+        TH2D* h_data[3];
+        TH2D* h_mc  [3];
+        for (int r = 0; r < 3; ++r) {
+            h_data[r] = new TH2D(
+                Form("h_data_%s_%s", regions[r].name.c_str(), name.c_str()),
+                Form("Data %s (%s)", regions[r].name.c_str(), name.c_str()),
+                nBins, regions[r].min, regions[r].max,
+                nBins, regions[r].min, regions[r].max
+            );
+            if (mcReader) {
+                h_mc[r] = new TH2D(
+                    Form("h_mc_%s_%s", regions[r].name.c_str(), name.c_str()),
+                    Form("MC   %s (%s)", regions[r].name.c_str(), name.c_str()),
+                    nBins, regions[r].min, regions[r].max,
+                    nBins, regions[r].min, regions[r].max
+                );
+            }
+        }
 
-        // --- fill data_counts ---
+        // Fill Data
         Long64_t nRead = 0;
         dataReader.Restart();
         while (dataReader.Next()) {
-            if (maxEntries > 0 && nRead++ >= maxEntries) break;
+            if (maxEntries > 0 && ++nRead > maxEntries) break;
             if (*pid != ipid) continue;
-            // require fiducial
             if (!dc_fiducial(*edge6, *edge18, *edge36,
                              ipid, *theta, *runnum))
                 continue;
-            int s = *sec6;
-            if (s < 1 || s > 6) continue;
-            int si = s - 1;
-            // fill regions
+            // ignore sector splitting: fill all six sectors combined
             for (int r = 0; r < 3; ++r) {
                 double xv = *xs[r];
                 double yv = *ys[r];
                 if (xv == -9999 || yv == -9999) continue;
-                data_counts[si][r] += 1.0;
+                h_data[r]->Fill(xv, yv);
             }
         }
 
-        // --- fill mc_counts ---
+        // Fill MC
         if (mcReader) {
             Long64_t mRead = 0;
             mcReader->Restart();
             while (mcReader->Next()) {
-                if (maxEntries > 0 && mRead++ >= maxEntries) break;
+                if (maxEntries > 0 && ++mRead > maxEntries) break;
                 if (**mc_pid != ipid) continue;
                 if (!dc_fiducial(**mc_e6, **mc_e18, **mc_e36,
                                  ipid, **mc_theta, **mc_run))
                     continue;
-                int s = **mc_sec6;
-                if (s < 1 || s > 6) continue;
-                int si = s - 1;
                 for (int r = 0; r < 3; ++r) {
                     double xv = **mc_x[r];
                     double yv = **mc_y[r];
                     if (xv == -9999 || yv == -9999) continue;
-                    mc_counts[si][r] += 1.0;
+                    h_mc[r]->Fill(xv, yv);
                 }
             }
         }
 
-        // --- compute ratio of normalized integrals per sector/region ---
-        TH2D* h_ratio[3];  // one ratio‐hist per region
+        // Normalize to unit integral
         for (int r = 0; r < 3; ++r) {
-            // clone a dummy 2D hist for region r
-            h_ratio[r] = new TH2D(
-                Form("h_ratio_%s_%s", regions[r].name.c_str(), name.c_str()),
-                "",
-                6, 0.5, 6.5,    // sectors on X
-                nBins, regions[r].min, regions[r].max // Y axis same as original
+            if (h_data[r]->Integral() > 0)
+                h_data[r]->Scale(1.0 / h_data[r]->Integral());
+            if (mcReader && h_mc[r]->Integral() > 0)
+                h_mc[r]->Scale(1.0 / h_mc[r]->Integral());
+        }
+
+        // Create ratio histograms
+        TH2D* h_ratio[3];
+        for (int r = 0; r < 3; ++r) {
+            h_ratio[r] = (TH2D*)h_mc[r]->Clone(
+                Form("h_ratio_%s_%s", regions[r].name.c_str(), name.c_str())
             );
-            // normalize and fill
-            double sumD = 0, sumM = 0;
-            for (int s = 0; s < 6; ++s) {
-                sumD += data_counts[s][r];
-                sumM += mc_counts[s][r];
-            }
-            for (int s = 0; s < 6; ++s) {
-                double nd = (sumD > 0 ? data_counts[s][r]/sumD : 0.0);
-                double nm = (sumM > 0 ? mc_counts[s][r]/sumM : 0.0);
-                double ratio = (nd > 0 ? nm/nd : 0.0);
-                // fill ratio at sector bin s+1, Y nominally at zero
-                h_ratio[r]->SetBinContent(s+1, 1, ratio);
-            }
-            // label X axis with sector numbers
-            for (int s = 0; s < 6; ++s) {
-                h_ratio[r]->GetXaxis()->SetBinLabel(s+1, Form("S%d",s+1));
-            }
-            h_ratio[r]->GetXaxis()->LabelsOption("v");
-            h_ratio[r]->GetYaxis()->SetTitle("Sector");
+            if (h_data[r]->Integral() > 0)
+                h_ratio[r]->Divide(h_data[r]);
+            h_ratio[r]->SetTitle("");
             h_ratio[r]->GetZaxis()->SetTitle("MC/Data");
         }
 
-        // --- draw 1×3 canvas ---
+        // Draw 1×3 canvas
         TCanvas* c = new TCanvas(
             Form("c_ratio_%s", name.c_str()),
-            Form("DC Data/MC Ratio (%s)", dataset.c_str()),
+            Form("DC Fiducial Ratio (%s)", dataset.c_str()),
             1800, 600
         );
-        c->Divide(3,1, 0.01, 0.01);
+        c->Divide(3, 1, 0.01, 0.01);
 
         for (int r = 0; r < 3; ++r) {
             c->cd(r+1);
             gPad->SetLogz();
-            gPad->SetMargin(0.15,0.15,0.15,0.12);
+            gPad->SetMargin(0.15, 0.15, 0.15, 0.12);
             h_ratio[r]->Draw("COLZ");
-            // draw region title
+
+            // top‐center title
             TLatex t;
             t.SetNDC();
             t.SetTextAlign(23);
             t.SetTextSize(0.04);
             t.DrawLatex(0.5, 0.98,
-                Form("%s, %s", regions[r].name.c_str(), dataset.c_str())
+                Form("%s (%s)", regions[r].name.c_str(), dataset.c_str())
             );
         }
 
-        // save
+        // Save and clean up
         c->SaveAs(Form("output/calibration/dc/positions/ratio_%s_%s.png",
                        dataset.c_str(), name.c_str()));
         delete c;
 
-        // cleanup
         for (int r = 0; r < 3; ++r) {
+            delete h_data[r];
+            if (mcReader) delete h_mc[r];
             delete h_ratio[r];
         }
     }
 
-    // cleanup MC readers
+    // Delete MC readers
     if (mcReader) {
         delete mc_e6;    delete mc_e18;   delete mc_e36;
         delete mc_theta; delete mc_run;   delete mc_pid;   delete mc_sec6;
@@ -9701,7 +9698,7 @@ int main(int argc, char** argv) {
 
     dataReader.Restart();
     if (mcReader) mcReader->Restart();
-    plot_dc_data_mc_ratio(dataReader, mcReader, dataset, 1e5);
+    plot_dc_data_mc_ratio(dataReader, mcReader, dataset, 1e6);
 
     // dataReader.Restart();
     // if (mcReader) mcReader->Restart();
