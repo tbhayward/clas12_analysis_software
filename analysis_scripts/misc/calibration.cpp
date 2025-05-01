@@ -21,6 +21,7 @@
 #include <TGraphErrors.h>
 #include <TH1D.h>
 #include <TH2D.h>
+#include "TPolyLine.h"
 #include <TProfile.h>
 #include <TLegend.h>
 #include <TLine.h>
