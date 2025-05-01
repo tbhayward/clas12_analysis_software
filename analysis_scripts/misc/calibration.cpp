@@ -3722,7 +3722,7 @@ bool dc_fiducial(double edge6, double edge18, double edge36,
 void plot_dc_data_mc_ratio(TTreeReader& dataReader,
                            TTreeReader* mcReader = nullptr,
                            const std::string& dataset = "rga_fa18_inb",
-                           Long64_t maxEntries = -1, int runnum = 5100)
+                           Long64_t maxEntries = -1, int mc_runnum = 5100)
 {
     gStyle->SetOptStat(0);
 
@@ -3849,7 +3849,7 @@ void plot_dc_data_mc_ratio(TTreeReader& dataReader,
             if (maxEntries > 0 && ++mRead > maxEntries) break;
             if (**mc_pid != pidToPlot) continue;
             if (!dc_fiducial(**mc_e6, **mc_e18, **mc_e36,
-                             pidToPlot, **mc_theta, runnum))
+                             pidToPlot, **mc_theta, mc_runnum))
                 continue;
             for (int r = 0; r < 3; ++r) {
                 double xv = **mc_x[r], yv = **mc_y[r];
