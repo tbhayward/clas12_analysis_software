@@ -9690,7 +9690,7 @@ int main(int argc, char** argv) {
 
     dataReader.Restart();
     if (mcReader) mcReader->Restart();
-    plot_dc_data_mc_ratio(dataReader, mcReader, dataset, 1e7, runnum);
+    plot_dc_data_mc_ratio(dataReader, mcReader, dataset, 1e8, runnum);
 
     // dataReader.Restart();
     // if (mcReader) mcReader->Restart();
