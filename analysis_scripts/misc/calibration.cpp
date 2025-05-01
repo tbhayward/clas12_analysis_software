@@ -3721,8 +3721,7 @@ void plot_dc_data_mc_ratio(TTreeReader& dataReader,
                            TTreeReader* mcReader = nullptr,
                            const std::string& dataset = "rga_fa18_inb",
                            Long64_t maxEntries = -1,
-                           int mc_runnum = 5100)
-{
+                           int mc_runnum = 5100) {
     gStyle->SetOptStat(0);
     const int nBins = 300;
 
@@ -3885,11 +3884,15 @@ void plot_dc_data_mc_ratio(TTreeReader& dataReader,
             gPad->Update();
 
             // 2) Try drawing a simple diagonal test line
-            #include "TLine.h"  // if you need it
+            std::cout << "Drawing test line in pad " << r+1
+                      << "  gPad = " << gPad << "\n";
+            c1->cd(r+1);
             TLine test(-100, -100, +100, +100);
             test.SetLineColor(kRed);
             test.SetLineWidth(3);
             test.Draw("SAME");
+            gPad->SetLogz(false);
+            gPad->SetMargin(0.05,0.05,0.05,0.05);
 
             // overlay six rotated copies
             const char* key = (r==0?"Layer_6__pip": r==1?"Layer_18_pip":"Layer_36_pip");
