@@ -3890,32 +3890,34 @@ void plot_dc_data_mc_ratio(TTreeReader& dataReader,
             gPad->Modified();
             gPad->Update();
 
-            // Draw debug line
-            TLine test(-100, -100, +100, +100);
-            test.SetLineColor(kRed);
-            test.SetLineWidth(3);
-            test.Draw("SAME");
+            // Draw debug line (now dynamically allocated)
+            TLine* test = new TLine(-100, -100, +100, +100);
+            test->SetLineColor(kRed);
+            test->SetLineWidth(3);
+            test->Draw("SAME");
+            gPad->Modified();  // Ensure the line is rendered
 
-            // Draw polygons
-            const char* key = (r==0 ? "Layer_6__pip"
-                                : r==1 ? "Layer_18_pip"
-                                       : "Layer_36_pip");
-            auto &poly = Polygon_Layers.at(key);
+            // Draw polygons (dynamically allocated and retained)
+            const char* key = (r==0 ? "Layer_6__pip" : r==1 ? "Layer_18_pip" : "Layer_36_pip");
+            auto& poly = Polygon_Layers.at(key);
             int N = poly.size();
-            std::vector<double> rx(N), ry(N);
 
             for (int sec = 1; sec <= 6; ++sec) {
-                double a  = TMath::DegToRad() * 60.0 * (sec - 1);
+                std::vector<double> rx(N), ry(N);
+                double a = TMath::DegToRad() * 60.0 * (sec - 1);
                 double ca = std::cos(a), sa = std::sin(a);
+
                 for (int i = 0; i < N; ++i) {
                     double px = poly[i].first, py = poly[i].second;
-                    rx[i] = px*ca - py*sa;
-                    ry[i] = px*sa + py*ca;
+                    rx[i] = px * ca - py * sa;  // Rotate into sector coordinates
+                    ry[i] = px * sa + py * ca;
                 }
-                TPolyLine pl(N, rx.data(), ry.data());
-                pl.SetLineColor(kRed);
-                pl.SetLineWidth(3);
-                pl.Draw("L SAME");
+
+                // Create and draw the polyline (dynamically allocated)
+                TPolyLine* pl = new TPolyLine(N, rx.data(), ry.data());
+                pl->SetLineColor(kRed);
+                pl->SetLineWidth(3);
+                pl->Draw("L SAME");
             }
 
             // Draw title
