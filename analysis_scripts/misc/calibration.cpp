@@ -9631,13 +9631,13 @@ int main(int argc, char** argv) {
 
     //// PLOTS ////
 
-    int runnum == 5100;
+    int runnum = 5100;
     std::string dataset = "rga_fa18_inb";
 
-    int runnum = 5600;
+    // int runnum = 5600;
     // std::string dataset = "rga_fa18_out";
 
-    int runnum = 6715;
+    // int runnum = 6715;
     // std::string dataset = "rga_sp19_inb";
 
     // plot_htcc_nphe(dataReader, mcReader, dataset);
