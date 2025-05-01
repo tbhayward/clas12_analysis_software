@@ -3878,15 +3878,17 @@ void plot_dc_data_mc_ratio(TTreeReader& dataReader,
         for (int r=0; r<3; ++r) {
             c1->cd(r+1);
             gPad->SetLogz(); gPad->SetMargin(0.15,0.15,0.15,0.12);
-            std::cout << "Region " << r << " polygon has " << N << " points\n";
             hR[r]->Draw("COLZ");
+            
+            // 1) Force the pad to paint its axes/palette
             gPad->Update();
 
-            // quick check: does a simple diagonal line appear?
-            TLine testLine(-100,-100, +100,+100);
-            testLine.SetLineColor(kRed);
-            testLine.SetLineWidth(3);
-            testLine.Draw("same");
+            // 2) Try drawing a simple diagonal test line
+            #include "TLine.h"  // if you need it
+            TLine test(-100, -100, +100, +100);
+            test.SetLineColor(kRed);
+            test.SetLineWidth(3);
+            test.Draw("SAME");
 
             // overlay six rotated copies
             const char* key = (r==0?"Layer_6__pip": r==1?"Layer_18_pip":"Layer_36_pip");
