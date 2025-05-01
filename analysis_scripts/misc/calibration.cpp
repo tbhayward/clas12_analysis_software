@@ -3730,7 +3730,7 @@ void plot_dc_data_mc_ratio(TTreeReader& dataReader,
 
     const int nBins = 300;
 
-    // The three DC regions
+    // Define the three DC regions
     struct Region { const char* xBranch, *yBranch, *name; double min, max; };
     std::vector<Region> regions = {
         {"traj_x_6",  "traj_y_6",  "region_1", -200,  200},
@@ -3779,7 +3779,7 @@ void plot_dc_data_mc_ratio(TTreeReader& dataReader,
         }
     }
 
-    // Create and fill Data histograms
+    // --- Create Data histograms ---
     TH2D* h_data[3];
     for (int r = 0; r < 3; ++r) {
         auto &R = regions[r];
@@ -3793,6 +3793,7 @@ void plot_dc_data_mc_ratio(TTreeReader& dataReader,
         h_data[r]->GetYaxis()->SetTitle("y (cm)");
     }
 
+    // Fill Data
     Long64_t nRead = 0;
     dataReader.Restart();
     while (dataReader.Next()) {
@@ -3827,8 +3828,10 @@ void plot_dc_data_mc_ratio(TTreeReader& dataReader,
     }
     cData->SaveAs(Form("output/calibration/dc/positions/norm_data_%s.png", dataset.c_str()));
 
-    // If MC provided, create and fill MC histograms
-    TH2D* h_mc[3];
+    // --- Create MC histograms if requested ---
+    TH2D* h_mc[3] = {nullptr,nullptr,nullptr};
+    TCanvas* cMC = nullptr;
+
     if (mcReader) {
         Long64_t mRead = 0;
         for (int r = 0; r < 3; ++r) {
@@ -3864,7 +3867,7 @@ void plot_dc_data_mc_ratio(TTreeReader& dataReader,
         }
 
         // Draw normalized MC
-        TCanvas* cMC = new TCanvas("cMC_norm", dataset.c_str(), 1800, 600);
+        cMC = new TCanvas("cMC_norm", dataset.c_str(), 1800, 600);
         cMC->Divide(3,1,0.01,0.01);
         for (int r = 0; r < 3; ++r) {
             cMC->cd(r+1);
@@ -3880,10 +3883,10 @@ void plot_dc_data_mc_ratio(TTreeReader& dataReader,
     // Cleanup
     for (int r = 0; r < 3; ++r) {
         delete h_data[r];
-        if (mcReader) delete h_mc[r];
+        if (h_mc[r]) delete h_mc[r];
     }
     delete cData;
-    if (mcReader) delete cMC;
+    if (cMC) delete cMC;
 
     // Delete MC readers
     if (mcReader) {
