@@ -3879,6 +3879,17 @@ void plot_dc_data_mc_ratio(TTreeReader& dataReader,
             c1->cd(r+1);
             gPad->SetLogz(); gPad->SetMargin(0.15,0.15,0.15,0.12);
             hR[r]->Draw("COLZ");
+
+            // Force the pad to paint everything it has so far:
+            gPad->Update();
+
+            // Sanity check 1: draw a simple red diagonal line
+            #include "TLine.h"
+            TLine test(-100,-100, +100,+100);
+            test.SetLineColor(kRed);
+            test.SetLineWidth(4);
+            test.Draw("SAME");
+            gPad->Update();
             
             // 1) Force the pad to paint its axes/palette
             gPad->Update();
@@ -3888,9 +3899,6 @@ void plot_dc_data_mc_ratio(TTreeReader& dataReader,
             TLine test(-100, -100, +100, +100);
             test.SetLineColor(kRed);
             test.SetLineWidth(3);
-            gPad->SetMargin(0.05,0.05,0.05,0.05);
-            gPad->Update();
-            test.Draw("SAME");
             test.Draw("SAME");
 
             // overlay six rotated copies
