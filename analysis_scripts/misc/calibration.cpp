@@ -3888,6 +3888,9 @@ void plot_dc_data_mc_ratio(TTreeReader& dataReader,
             TLine test(-100, -100, +100, +100);
             test.SetLineColor(kRed);
             test.SetLineWidth(3);
+            gPad->SetMargin(0.05,0.05,0.05,0.05);
+            gPad->Update();
+            test.Draw("SAME");
             test.Draw("SAME");
 
             // overlay six rotated copies
