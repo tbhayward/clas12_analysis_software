@@ -3852,7 +3852,6 @@ void plot_dc_data_mc_ratio(TTreeReader& dataReader,
             if (**mc_pid != pidToPlot) continue;
             if (!dc_fiducial(**mc_e6, **mc_e18, **mc_e36,
                              pidToPlot, **mc_theta, **mc_run))
-                std::cout << "Hello world" << std::endl;
                 continue;
             for (int r = 0; r < 3; ++r) {
                 double xv = **mc_x[r], yv = **mc_y[r];
@@ -3881,21 +3880,21 @@ void plot_dc_data_mc_ratio(TTreeReader& dataReader,
         cMC->SaveAs(Form("output/calibration/dc/positions/norm_mc_%s.png", dataset.c_str()));
     }
 
-    // Cleanup
-    for (int r = 0; r < 3; ++r) {
-        delete h_data[r];
-        if (h_mc[r]) delete h_mc[r];
-    }
-    delete cData;
-    if (cMC) delete cMC;
+    // // Cleanup
+    // for (int r = 0; r < 3; ++r) {
+    //     delete h_data[r];
+    //     if (h_mc[r]) delete h_mc[r];
+    // }
+    // delete cData;
+    // if (cMC) delete cMC;
 
-    // Delete MC readers
-    if (mcReader) {
-        delete mc_e6;    delete mc_e18;   delete mc_e36;
-        delete mc_theta; delete mc_run;   delete mc_pid;   delete mc_sec6;
-        for (auto p : mc_x) delete p;
-        for (auto p : mc_y) delete p;
-    }
+    // // Delete MC readers
+    // if (mcReader) {
+    //     delete mc_e6;    delete mc_e18;   delete mc_e36;
+    //     delete mc_theta; delete mc_run;   delete mc_pid;   delete mc_sec6;
+    //     for (auto p : mc_x) delete p;
+    //     for (auto p : mc_y) delete p;
+    // }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
