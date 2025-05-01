@@ -3880,6 +3880,12 @@ void plot_dc_data_mc_ratio(TTreeReader& dataReader,
             gPad->SetLogz(); gPad->SetMargin(0.15,0.15,0.15,0.12);
             hR[r]->Draw("COLZ");
 
+            // quick check: does a simple diagonal line appear?
+            TLine testLine(-100,-100, +100,+100);
+            testLine.SetLineColor(kRed);
+            testLine.SetLineWidth(3);
+            testLine.Draw("same");
+
             // overlay six rotated copies
             const char* key = (r==0?"Layer_6__pip": r==1?"Layer_18_pip":"Layer_36_pip");
             auto &poly = Polygon_Layers.at(key);
@@ -9714,7 +9720,7 @@ int main(int argc, char** argv) {
 
     dataReader.Restart();
     if (mcReader) mcReader->Restart();
-    plot_dc_data_mc_ratio(dataReader, mcReader, dataset, 1e8, runnum);
+    plot_dc_data_mc_ratio(dataReader, mcReader, dataset, 1e7, runnum);
 
     // dataReader.Restart();
     // if (mcReader) mcReader->Restart();
