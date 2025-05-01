@@ -3721,10 +3721,9 @@ bool dc_polygon_cut(int region_idx,
 bool dc_fiducial(double edge6, double edge18, double edge36,
                  int pid, double theta, int runnum);
 
-void plot_dc_data_normalized(TTreeReader& dataReader,
+void plot_dc_data_mc_ratio(TTreeReader& dataReader,
                              const std::string& dataset = "rga_fa18_inb",
-                             Long64_t maxEntries = -1)
-{
+                             Long64_t maxEntries = -1) {
     // No stats box on histos
     gStyle->SetOptStat(0);
 
