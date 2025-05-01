@@ -3878,6 +3878,7 @@ void plot_dc_data_mc_ratio(TTreeReader& dataReader,
         for (int r=0; r<3; ++r) {
             c1->cd(r+1);
             gPad->SetLogz(); gPad->SetMargin(0.15,0.15,0.15,0.12);
+            std::cout << "Region " << r << " polygon has " << N << " points\n";
             hR[r]->Draw("COLZ");
             gPad->Update();
 
