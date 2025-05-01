@@ -3864,7 +3864,7 @@ void plot_dc_data_mc_ratio(TTreeReader& dataReader,
         // Draw ratio on 1×3 canvas
         TCanvas* c = new TCanvas(
             Form("c_ratio_%s", name.c_str()),
-            Form("DC Fiducial MC/Data (%s)", dataset.c_str()),
+            Form("DC Fiducial MC/Data (%s, PID %d)", dataset.c_str(), ipid),
             1800,600
         );
         c->Divide(3,1,0.01,0.01);
@@ -3875,7 +3875,7 @@ void plot_dc_data_mc_ratio(TTreeReader& dataReader,
             if (h_ratio[r]) h_ratio[r]->Draw("COLZ");
             TLatex t; t.SetNDC(); t.SetTextAlign(23); t.SetTextSize(0.04);
             t.DrawLatex(0.5,0.98,
-                Form("%s (%s)", regions[r].name, dataset.c_str())
+                Form("%s (%s, PID %d)", regions[r].name, dataset.c_str(), ipid)
             );
         }
         c->SaveAs(Form("output/calibration/dc/positions/ratio_%s_%s.png",
@@ -9690,7 +9690,7 @@ int main(int argc, char** argv) {
 
     dataReader.Restart();
     if (mcReader) mcReader->Restart();
-    plot_dc_data_mc_ratio(dataReader, mcReader, dataset, 1e6, runnum);
+    plot_dc_data_mc_ratio(dataReader, mcReader, dataset, 1e7, runnum);
 
     // dataReader.Restart();
     // if (mcReader) mcReader->Restart();
