@@ -3697,8 +3697,8 @@ bool dc_polygon_cut(int region_idx,
 
     // Select the correct polygon key
     const char* key = (region_idx == 0 ? "Layer_6__pip"
-                    : region_idx == 1 ? "Layer_18_pip"
-                                      : "Layer_36_pip");
+                      : region_idx == 1 ? "Layer_18_pip"
+                                        : "Layer_36_pip");
     auto it = Polygon_Layers.find(key);
     if (it == Polygon_Layers.end()) return true;
 
@@ -3706,8 +3706,13 @@ bool dc_polygon_cut(int region_idx,
     double xr = rotate_x_planar(x, y, sector);
     double yr = rotate_y_planar(x, y, sector);
 
-    // Keep only if the point is _inside_ the polygon
-    return (is_point_in_polygon(xr, yr, it->second));
+    // Now test each “petal” in turn:
+    for (auto const& petal : it->second) {
+        if (is_point_in_polygon(xr, yr, petal)) {
+            return true;    // inside this petal → keep
+        }
+    }
+    return false;           // outside all petals → cut
 }
 
 void plot_dc_data_mc_ratio(TTreeReader& dataReader,
