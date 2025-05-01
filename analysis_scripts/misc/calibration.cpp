@@ -3850,12 +3850,12 @@ void plot_dc_data_mc_ratio(TTreeReader& dataReader,
         while (mcReader->Next()) {
             if (maxEntries > 0 && ++mRead > maxEntries) break;
             if (**mc_pid != pidToPlot) continue;
+            std::cout << **mc_e6 << " " << **mc_e18 << " " << **mc_e36 << std::endl;
             if (!dc_fiducial(**mc_e6, **mc_e18, **mc_e36,
                              pidToPlot, **mc_theta, **mc_run))
                 continue;
             for (int r = 0; r < 3; ++r) {
                 double xv = **mc_x[r], yv = **mc_y[r];
-                std::cout << xv << " " << yv << std::endl;
                 if (xv == -9999 || yv == -9999) continue;
                 h_mc[r]->Fill(xv, yv);
             }
