@@ -3668,8 +3668,7 @@ double rotate_y_planar(double x, double y, int sector) {
 // 3) Point‐in‐polygon (winding‐number) test
 // ─────────────────────────────────────────────────────────────────────────────
 bool is_point_in_polygon(double x, double y,
-                         const std::vector<std::pair<double,double>>& poly)
-{
+                         const std::vector<std::pair<double,double>>& poly) {
     double winding = 0.0;
     size_t n = poly.size();
     for (size_t i = 0; i < n; ++i) {
@@ -3691,8 +3690,7 @@ bool is_point_in_polygon(double x, double y,
 bool dc_polygon_cut(int region_idx,
                     int pid,
                     double x, double y,
-                    int sector)
-{
+                    int sector) {
     // Only apply to π⁺ (pid == 211)
     // if (pid != 211) return true;
 
@@ -3724,7 +3722,7 @@ bool dc_fiducial(double edge6, double edge18, double edge36,
 void plot_dc_data_mc_ratio(TTreeReader& dataReader,
                            TTreeReader* mcReader = nullptr,
                            const std::string& dataset = "rga_fa18_inb",
-                           Long64_t maxEntries = -1)
+                           Long64_t maxEntries = -1, int runnum)
 {
     gStyle->SetOptStat(0);
 
@@ -3850,9 +3848,8 @@ void plot_dc_data_mc_ratio(TTreeReader& dataReader,
         while (mcReader->Next()) {
             if (maxEntries > 0 && ++mRead > maxEntries) break;
             if (**mc_pid != pidToPlot) continue;
-            std::cout << **mc_e6 << " " << **mc_e18 << " " << **mc_e36 << std::endl;
             if (!dc_fiducial(**mc_e6, **mc_e18, **mc_e36,
-                             pidToPlot, **mc_theta, **mc_run))
+                             pidToPlot, **mc_theta, runnum))
                 continue;
             for (int r = 0; r < 3; ++r) {
                 double xv = **mc_x[r], yv = **mc_y[r];
@@ -9634,8 +9631,13 @@ int main(int argc, char** argv) {
 
     //// PLOTS ////
 
+    int runnum == 5100;
     std::string dataset = "rga_fa18_inb";
+
+    int runnum = 5600;
     // std::string dataset = "rga_fa18_out";
+
+    int runnum = 6715;
     // std::string dataset = "rga_sp19_inb";
 
     // plot_htcc_nphe(dataReader, mcReader, dataset);
@@ -9684,7 +9686,7 @@ int main(int argc, char** argv) {
 
     dataReader.Restart();
     if (mcReader) mcReader->Restart();
-    plot_dc_data_mc_ratio(dataReader, mcReader, dataset, 1e6);
+    plot_dc_data_mc_ratio(dataReader, mcReader, dataset, 1e6, runnum);
 
     // dataReader.Restart();
     // if (mcReader) mcReader->Restart();
