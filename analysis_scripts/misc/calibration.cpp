@@ -3871,38 +3871,35 @@ void plot_dc_data_mc_ratio(TTreeReader& dataReader,
 
         // 2) Ratio + π⁺ polygons
         TCanvas* c1 = new TCanvas(
-          Form("c_ratioPoly_%s",name.c_str()),
-          Form("DC Ratio+Poly %s (PID %d)",dataset.c_str(),ipid),
-          1800,600
+            Form("c_ratioPoly_%s",name.c_str()),
+            Form("DC Ratio+Poly %s (PID %d)",dataset.c_str(),ipid),
+            1800,600
         );
         c1->Divide(3,1,0.01,0.01);
 
         for (int r=0; r<3; ++r) {
             c1->cd(r+1);
 
-            // temporarily disable logz so our red line shows
-            gPad->SetLogz(false);
-            // tighten margins so nothing is clipped
-            gPad->SetMargin(0.07, 0.07, 0.07, 0.07);
+            // Enable logz first to prevent redraw issues
+            gPad->SetLogz(true);
+            // Set margins to accommodate the color palette
+            gPad->SetMargin(0.15, 0.15, 0.15, 0.12);
 
-            // draw the ratio
+            // Draw the ratio histogram
             hR[r]->Draw("COLZ");
             gPad->Modified();
             gPad->Update();
 
-            // ——— debug: must use "SAME" ———
+            // Draw debug line
             TLine test(-100, -100, +100, +100);
             test.SetLineColor(kRed);
             test.SetLineWidth(3);
-            test.Draw("SAME");           // IMPORTANT: "SAME"
-            gPad->Modified();
-            gPad->Update();
-            // ————————————————————————
+            test.Draw("SAME");
 
-            // now overlay the six π⁺ polygons, one per sector
+            // Draw polygons
             const char* key = (r==0 ? "Layer_6__pip"
-                            : r==1 ? "Layer_18_pip"
-                                   : "Layer_36_pip");
+                                : r==1 ? "Layer_18_pip"
+                                       : "Layer_36_pip");
             auto &poly = Polygon_Layers.at(key);
             int N = poly.size();
             std::vector<double> rx(N), ry(N);
@@ -3912,7 +3909,6 @@ void plot_dc_data_mc_ratio(TTreeReader& dataReader,
                 double ca = std::cos(a), sa = std::sin(a);
                 for (int i = 0; i < N; ++i) {
                     double px = poly[i].first, py = poly[i].second;
-                    // rotate *into* this sector’s frame
                     rx[i] = px*ca - py*sa;
                     ry[i] = px*sa + py*ca;
                 }
@@ -3922,22 +3918,14 @@ void plot_dc_data_mc_ratio(TTreeReader& dataReader,
                 pl.Draw("L SAME");
             }
 
-            // restore log‐z for the color scale
-            gPad->SetLogz(true);
-
-            // draw our title
+            // Draw title
             TLatex L; 
             L.SetNDC(); L.SetTextAlign(23); L.SetTextSize(0.04);
-            L.DrawLatex(0.5, 0.96,
-                Form("%s + π⁺ polygon", regions[r].name)
-            );
+            L.DrawLatex(0.5, 0.96, Form("%s + π⁺ polygon", regions[r].name));
         }
 
-        // now save *after* all draws have been done
-        c1->SaveAs(
-          Form("output/calibration/dc/positions/ratioPoly_%s_%s.png",
-               dataset.c_str(), name.c_str())
-        );
+        c1->SaveAs(Form("output/calibration/dc/positions/ratioPoly_%s_%s.png",
+                        dataset.c_str(), name.c_str()));
         delete c1;
 
         // cleanup
