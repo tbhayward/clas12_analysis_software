@@ -3848,7 +3848,7 @@ void plot_dc_data_mc_ratio(TTreeReader& dataReader,
             hR[r]->GetZaxis()->SetTitle("MC/Data");
         }
 
-        / 2) Ratio + π⁺ polygons
+        // 2) Ratio + π⁺ polygons
         TCanvas* c1 = new TCanvas(
             Form("c_ratioPoly_%s",name.c_str()),
             Form("DC Ratio+Poly %s (PID %d)",dataset.c_str(),ipid),
