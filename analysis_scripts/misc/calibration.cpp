@@ -3879,6 +3879,7 @@ void plot_dc_data_mc_ratio(TTreeReader& dataReader,
             c1->cd(r+1);
             gPad->SetLogz(); gPad->SetMargin(0.15,0.15,0.15,0.12);
             hR[r]->Draw("COLZ");
+            gPad->Update();
 
             // quick check: does a simple diagonal line appear?
             TLine testLine(-100,-100, +100,+100);
