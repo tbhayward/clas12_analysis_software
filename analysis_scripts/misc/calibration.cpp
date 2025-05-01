@@ -3852,6 +3852,7 @@ void plot_dc_data_mc_ratio(TTreeReader& dataReader,
             if (**mc_pid != pidToPlot) continue;
             if (!dc_fiducial(**mc_e6, **mc_e18, **mc_e36,
                              pidToPlot, **mc_theta, **mc_run))
+                std::cout << "Hello world" << std::endl;
                 continue;
             for (int r = 0; r < 3; ++r) {
                 double xv = **mc_x[r], yv = **mc_y[r];
