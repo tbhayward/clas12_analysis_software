@@ -3793,7 +3793,8 @@ void plot_dc_data_mc_ratio(TTreeReader& dataReader,
 
         // --- fill DATA counts with fiducial cut ---
         dataReader.Restart();
-        while (dataReader.Next()) {
+        // while (dataReader.Next()) {
+        for (int i = 0; i < 1e5; ++i)
             if (*pid != ipid) continue;
             if (!dc_fiducial(*edge6, *edge18, *edge36,
                              ipid, *theta, *runnum))
@@ -3812,7 +3813,8 @@ void plot_dc_data_mc_ratio(TTreeReader& dataReader,
         // --- fill MC counts with fiducial cut ---
         if (mcReader) {
             mcReader->Restart();
-            while (mcReader->Next()) {
+            // while (mcReader->Next()) {
+            for (int i = 0; i < 1e5; ++i)
                 if (**mc_pid != ipid) continue;
                 if (!dc_fiducial(**mc_e6, **mc_e18, **mc_e36,
                                  ipid, **mc_theta, **mc_run))
@@ -9651,9 +9653,9 @@ int main(int argc, char** argv) {
 
     //// PLOTS ////
 
-    // std::string dataset = "rga_fa18_inb";
+    std::string dataset = "rga_fa18_inb";
     // std::string dataset = "rga_fa18_out";
-    std::string dataset = "rga_sp19_inb";
+    // std::string dataset = "rga_sp19_inb";
 
     // plot_htcc_nphe(dataReader, mcReader, dataset);
     // plot_ltcc_nphe(dataReader, mcReader, dataset);
