@@ -5,6 +5,7 @@
 package extended_kinematic_fitters;
 
 import org.jlab.io.hipo.HipoDataBank;
+import extended_kinematic_fitters.generic_tests;
 
 public class fiducial_cuts {
 
@@ -20,7 +21,10 @@ public class fiducial_cuts {
                 double radius = Math.sqrt(ft_x * ft_x + ft_y * ft_y);
 
                 // Check if the radius is within the fiducial range
-                if (radius < 8.5) { // no outer radius enforced
+                if (radius < 8.5) {
+                    return false;
+                }
+                if (radius > 15.5) {
                     return false;
                 }
 
@@ -57,21 +61,19 @@ public class fiducial_cuts {
 
     public boolean pcal_fiducial_cut(int particle_Index, int strictness, HipoDataBank run_Bank,
             HipoDataBank rec_Bank, HipoDataBank cal_Bank) {
-        int runnum = run_Bank.getInt("run", 0);
 
-        // Initialize variables for storing the index and values of the cal bank
-        float lv_1 = 0.0f;
+        int runnum = run_Bank.getInt("run", 0);
+        float lv_1 = 0.0f; // layer 1 = pcal
         float lw_1 = 0.0f;
         float lu_1 = 0.0f;
-        float lv_4 = 0.0f;
+        float lv_4 = 0.0f; // layer 4 = ecin
         float lw_4 = 0.0f;
         float lu_4 = 0.0f;
-        float lv_7 = 0.0f;
+        float lv_7 = 0.0f; // layer 7 = ecout
         float lw_7 = 0.0f;
         float lu_7 = 0.0f;
 
         int sector = 0;
-
         // Loop through each row of the cal bank
         for (int current_Row = 0; current_Row < cal_Bank.rows(); current_Row++) {
             int pindex = cal_Bank.getInt("pindex", current_Row);
@@ -98,21 +100,20 @@ public class fiducial_cuts {
             }
         }
 
-        // Apply strictness levels for additional cuts on PCal (layer 1)
+        // Apply strictness levels for cuts on PCal (layer 1)
         switch (strictness) {
-            case 1:
-                if (lw_1 < 9 || lv_1 < 9 || lu_1 < 0) {
+            case 1: // recommended for electrons in BSAs
+                if (lw_1 < 9 || lv_1 < 9) {
                     return false;
                 }
                 break;
-            case 2:
-                if (lw_1 < 14 || lv_1 < 14 || lu_1 < 29) {
+            case 2: // recommended for photons in BSAs
+                if (lw_1 < 13.5 || lv_1 < 13.5) {
                     return false;
                 }
                 break;
-            case 3:
-//                if ((lw_1 < 19 || lv_1 < 19) || (lu_1 < 39 || lu_1 > 400)) {
-                if ((lw_1 < 19 || lv_1 < 19) || (false || lu_1 > 395)) {
+            case 3: // recommended for all particles in cross sections
+                if (lw_1 < 18 || lv_1 < 18) {
                     return false;
                 }
                 break;
@@ -120,29 +121,60 @@ public class fiducial_cuts {
                 return false;
         }
 
-        // always cut out bad PMT strips (usually already removed from data but enforced here for MC matching)
-        if (runnum >= 3030 && runnum <= 6783) {
+        // don't apply dead PMT removal for data/MC matching for strictness == 1
+        if (strictness < 2) {
+            return true;
+        }
+
+        if (runnum >= 3030 && runnum <= 6783) { // only explicitly checked for RGA
             // RGA, RGK, RGB Sp19
             switch (sector) {
                 case 1:
-                    if ((lw_1 > 85 && lw_1 < 90) || (lw_1 > 223 && lw_1 < 228)) {
+                    if ((lw_1 > 72.0 && lw_1 < 94.5) || (lw_1 > 220.5 && lw_1 < 234.0)) {
                         return false;
                     }
-                    if (lv_4 > 72 && lv_4 < 94) {
+                    if (lv_4 > 67.5 && lv_4 < 94.5) {
+                        return false;
+                    }
+                    if (lv_7 > 0 && lv_7 < 40.5) {
                         return false;
                     }
                     break;
                 case 2:
-                    if ((lv_1 > 103 && lv_1 < 113) || (lu_1 > 108 && lu_1 < 126)) {
+                    if (lv_1 > 99.0 && lv_1 < 117) {
                         return false;
                     }
                     break;
+                case 3:
+                    if (lw_1 > 346.5 && lw_1 < 378.0) {
+                        return false;
+                    }
+                case 4:
+                    if ((lw_1 > 0.0 && lw_1 < 13.5) || (lv_1 > 229.5 && lv_1 < 243.0)) {
+                        return false;
+                    }
                 case 5:
-                    if (lv_7 > 40 && lv_7 < 45) {
+                    if (lv_4 > 0.0 && lv_7 < 23.5) {
+                        return false;
+                    }
+                    if (lu_7 > 193.5 && lu_7 < 216.0) {
                         return false;
                     }
                 case 6:
-                    if (lw_1 > 169 && lw_1 < 198) {
+                    if (lw_1 > 166.5 && lw_1 < 193.5) {
+                        return false;
+                    }
+                    break;
+                default:
+                    break;
+            }
+        }
+
+        if (runnum >= 6616 && runnum <= 6783) {
+            // RGA Sp19 !!only!!, maybe applies to RGB Sp19 but not checked
+            switch (sector) {
+                case 2:
+                    if (lv_1 > 31.5 && lv_1 < 49.5) {
                         return false;
                     }
                     break;
@@ -201,12 +233,20 @@ public class fiducial_cuts {
         }
     }
 
-    public boolean cvt_fiducial_cut(int particle_Index, HipoDataBank rec_Bank, HipoDataBank traj_Bank) {
+    public boolean cvt_fiducial_cut(int particle_Index, HipoDataBank rec_Bank, HipoDataBank traj_Bank, 
+            int strictness) {
+        generic_tests generic_tests = new generic_tests();
+        
         double edge_1 = 1;
         double edge_3 = 1;
         double edge_5 = 1;
         double edge_7 = 1;
         double edge_12 = 1;
+        double x_12 = 0;
+        double y_12 = 0;
+        double z_12 = 0; // x, y and z positions of track in layer 12, used for angle cuts
+        double theta_12 = 0;
+        double phi_12 = 0;
 
         for (int current_Row = 0; current_Row < traj_Bank.rows(); current_Row++) {
             if (traj_Bank.getInt("detector", current_Row) != 5) { // detector = 5 is CVT 
@@ -224,17 +264,58 @@ public class fiducial_cuts {
                     edge_7 = traj_Bank.getFloat("edge", current_Row);
                 } else if (traj_Bank.getInt("layer", current_Row) == 12) {
                     edge_12 = traj_Bank.getFloat("edge", current_Row);
+                    x_12 = traj_Bank.getFloat("x", current_Row);
+                    y_12 = traj_Bank.getFloat("y", current_Row);
+                    z_12 = traj_Bank.getFloat("z", current_Row);
+//                    theta_12 = generic_tests.theta_calculation(x_12, y_12, z_12);
+                    phi_12 = generic_tests.phi_calculation(x_12, y_12);
                 }
             }
         }
-        return edge_1 > 0 && edge_3 > 0 && edge_5 > 0 && edge_7 > -2 && edge_12 > -5;
+        boolean edge_test = edge_1 > 0 && edge_3 > 0 && edge_5 > 0 && edge_7 > 0 && edge_12 > 0;
+        boolean phi_test = !((phi_12 > 25 && phi_12 < 40) || (phi_12 > 143 && phi_12 < 158) ||
+                (phi_12 > 265 && phi_12 < 280));
+        if (strictness == 1) {
+            return edge_test;
+        } else {
+            return edge_test && phi_test;
+        }
+        
     }
 
-    public boolean dc_fiducial_cut(int particle_Index, HipoDataBank rec_Bank, HipoDataBank traj_Bank) {
-        int pid = rec_Bank.getInt("pid", particle_Index); // different cuts for leptons and hadrons
+    public boolean dc_fiducial_cut(int particle_Index, HipoDataBank rec_Bank, HipoDataBank traj_Bank, 
+            HipoDataBank run_Bank) {
+        int pid = rec_Bank.getInt("pid", particle_Index); 
+        // different cuts for inbending and outbending tracks
+        int runnum = run_Bank.getInt("run", 0);
+        boolean inbending = false;
+        boolean outbending = false;
+        if ((runnum >= 4763 && runnum <= 5419) || (runnum >= 6616 && runnum <= 6783)) {
+            // inbending electron torus polarity
+            if (pid == 11 || pid == -211 || pid == -321 || pid == -2212) {
+                inbending = true;
+            } else if (pid == -11 || pid == 211 || pid == 321 || pid == 2212) {
+                outbending = true;
+            }
+        } else if (runnum >= 5423 && runnum <= 5666) {
+            // outbending electron torus polarity
+            if (pid == 11 || pid == -211 || pid == -321 || pid == -2212) {
+                outbending = true;
+            } else if (pid == -11 || pid == 211 || pid == 321 || pid == 2212) {
+                inbending = true;
+            }
+        }
+        
+        generic_tests generic_tests = new generic_tests();
+        float px = rec_Bank.getFloat("px", particle_Index);
+        float py = rec_Bank.getFloat("py", particle_Index);
+        float pz = rec_Bank.getFloat("pz", particle_Index);
+        double theta = generic_tests.theta_calculation(px, py, pz);
+        
         double edge_1 = 0; // region 1 edge value
         double edge_2 = 0; // region 2 edge value
         double edge_3 = 0; // region 3 edge value
+        
         for (int current_Row = 0; current_Row < traj_Bank.rows(); current_Row++) {
             // loop over all entries in the trajectory bank
             if (traj_Bank.getInt("detector", current_Row) != 6) { // detector = 6 is DC 
@@ -251,10 +332,12 @@ public class fiducial_cuts {
                 }
             }
         }
-        if (pid == 11 || pid == -11) {
-            return edge_1 > 5 && edge_2 > 5 && edge_3 > 10;
-        } else if (pid == 211 || pid == -211 || pid == 321 || pid == -321 || pid == 2212 || pid == -2212) {
-            return edge_1 > 3 && edge_2 > 3 && edge_3 > 7;
+        
+        if (inbending) {
+            if (theta*(180/Math.PI) < 10) return edge_1 > 10 && edge_2 > 10 && edge_3 > 10;
+            if (theta*(180/Math.PI) >= 10) return edge_1 > 3 && edge_2 > 3 && edge_3 > 10;
+        } else if (outbending) {
+            return edge_1 > 3 && edge_2 > 3 && edge_3 > 10;
         }
         return false; // no pid match?
     }

@@ -85,7 +85,7 @@ public class Inclusive {
         fiducial_cuts fiducial_cuts = new fiducial_cuts();
 
         boolean electron_pcal_fiducial = fiducial_cuts.pcal_fiducial_cut(0, 1, configBank, rec_Bank, cal_Bank);
-        boolean electron_fd_fiducial = fiducial_cuts.dc_fiducial_cut(0, rec_Bank, traj_Bank);
+        boolean electron_fd_fiducial = fiducial_cuts.dc_fiducial_cut(0, rec_Bank, traj_Bank, configBank);
         boolean e_fiducial_check = electron_pcal_fiducial && electron_fd_fiducial;
 
         // Check if all checks pass
