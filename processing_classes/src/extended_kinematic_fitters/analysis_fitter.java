@@ -32,13 +32,12 @@ public class analysis_fitter extends GenericKinematicFitter {
         return true
                 && p > 2.0 // higher cut ultimately enforced when we cut on y, this speeds processing
                 && generic_tests.forward_detector_cut(particle_Index, rec_Bank)
-                && generic_tests.vertex_cut(particle_Index, rec_Bank, run_Bank)
-                && pid_cuts.calorimeter_energy_cut(particle_Index, cal_Bank, 1)
-                && pid_cuts.calorimeter_sampling_fraction_cut(particle_Index, p, run_Bank, cal_Bank)
-                && pid_cuts.calorimeter_diagonal_cut(particle_Index, p, cal_Bank)
+                //                && generic_tests.vertex_cut(particle_Index, rec_Bank, run_Bank)
+                //                && pid_cuts.calorimeter_energy_cut(particle_Index, cal_Bank, 1)
+                //                && pid_cuts.calorimeter_sampling_fraction_cut(particle_Index, p, run_Bank, cal_Bank)
+                //                && pid_cuts.calorimeter_diagonal_cut(particle_Index, p, cal_Bank)
                 && fiducial_cuts.pcal_fiducial_cut(particle_Index, 1, run_Bank, rec_Bank, cal_Bank)
-                && fiducial_cuts.dc_fiducial_cut(particle_Index, rec_Bank, traj_Bank, run_Bank)
-                ;
+                && fiducial_cuts.dc_fiducial_cut(particle_Index, rec_Bank, traj_Bank, run_Bank);
     }
 
     public boolean pion_test(int particle_Index, int pid, float vz, double trigger_electron_vz, HipoDataBank rec_Bank,
@@ -56,22 +55,22 @@ public class analysis_fitter extends GenericKinematicFitter {
         boolean passesCentralDetector = generic_tests.central_detector_cut(particle_Index, rec_Bank);
 
         return true
-//                                && p > 1.20
-//                            && p < 5.00 
-                && generic_tests.vertex_cut(particle_Index, rec_Bank, run_Bank)
-                && (passesForwardDetector // dedicated PID cuts for forward
-                        //                        ? pid_cuts.charged_hadron_pass2_chi2pid_cut(particle_Index, rec_Bank)
-                        ? pid_cuts.charged_hadron_chi2pid_cut(particle_Index, rec_Bank, run_Bank)
+                //                                && p > 1.20
+                //                            && p < 5.00 
+                //                && generic_tests.vertex_cut(particle_Index, rec_Bank, run_Bank)
+                //                && (passesForwardDetector // dedicated PID cuts for forward
+                //                        //                        ? pid_cuts.charged_hadron_pass2_chi2pid_cut(particle_Index, rec_Bank)
+                //                        ? pid_cuts.charged_hadron_chi2pid_cut(particle_Index, rec_Bank, run_Bank)
+                //                        : true)
+                //                && (passesCentralDetector // generic |chi2pid| < 3.5 for cd
+                //                        ? pid_cuts.charged_hadron_chi2pid_cut(particle_Index, rec_Bank, run_Bank)
+                //                        : true) //                
+                && (passesForwardDetector
+                        ? fiducial_cuts.dc_fiducial_cut(particle_Index, rec_Bank, traj_Bank, run_Bank)
                         : true)
-                && (passesCentralDetector // generic |chi2pid| < 3.5 for cd
-                        ? pid_cuts.charged_hadron_chi2pid_cut(particle_Index, rec_Bank, run_Bank)
-                        : true) //                && (passesForwardDetector
-//                                        ? fiducial_cuts.dc_fiducial_cut(particle_Index, rec_Bank, traj_Bank, run_Bank)
-//                                        : true)
-//                                && (passesCentralDetector
-//                                        ? fiducial_cuts.cvt_fiducial_cut(particle_Index, rec_Bank, traj_Bank, 1)
-//                                        : true)
-                ;
+                && (passesCentralDetector
+                        ? fiducial_cuts.cvt_fiducial_cut(particle_Index, rec_Bank, traj_Bank, 1)
+                        : true);
     }
 
     public boolean kaon_test(int particle_Index, int pid, float vz, double trigger_electron_vz, HipoDataBank rec_Bank,
@@ -126,25 +125,24 @@ public class analysis_fitter extends GenericKinematicFitter {
         boolean passesCentralDetector = generic_tests.central_detector_cut(particle_Index, rec_Bank);
 
         return true
-//                && p > 0.4
-//                && (passesCentralDetector ? p > 0.3 : true)
-//                && (passesForwardDetector && (torus > 0) ? p > 0.42 : true)
-//                && (passesForwardDetector && (torus < 0) ? p > 0.50 : true)
-//                && p < 1.2 // this bound is enforced at p < 1.14 by -t < 1, done here to speed up processing
-//                && generic_tests.theta_calculation(px, py, pz) < 64.23
-                && generic_tests.vertex_cut(particle_Index, rec_Bank, run_Bank)
+                //                && p > 0.4
+                //                && (passesCentralDetector ? p > 0.3 : true)
+                //                && (passesForwardDetector && (torus > 0) ? p > 0.42 : true)
+                //                && (passesForwardDetector && (torus < 0) ? p > 0.50 : true)
+                //                && p < 1.2 // this bound is enforced at p < 1.14 by -t < 1, done here to speed up processing
+                //                && generic_tests.theta_calculation(px, py, pz) < 64.23
+                //                && generic_tests.vertex_cut(particle_Index, rec_Bank, run_Bank)
                 && (passesForwardDetector
                         ? fiducial_cuts.dc_fiducial_cut(particle_Index, rec_Bank, traj_Bank, run_Bank)
                         : true)
                 && (passesCentralDetector
                         ? fiducial_cuts.cvt_fiducial_cut(particle_Index, rec_Bank, traj_Bank, 1)
-                        : true)
-                && (passesForwardDetector // dedicated PID cuts for forward
-                        ? pid_cuts.charged_hadron_chi2pid_cut(particle_Index, rec_Bank, run_Bank)
-                        : true)
-                && (passesCentralDetector
-                        ? pid_cuts.charged_hadron_chi2pid_cut(particle_Index, rec_Bank, run_Bank)
-                        : true) //            && charged_hadron_chi2pid_cut(particle_Index, rec_Bank)
+                        : true) //                && (passesForwardDetector // dedicated PID cuts for forward
+                //                        ? pid_cuts.charged_hadron_chi2pid_cut(particle_Index, rec_Bank, run_Bank)
+                //                        : true)
+                //                && (passesCentralDetector
+                //                        ? pid_cuts.charged_hadron_chi2pid_cut(particle_Index, rec_Bank, run_Bank)
+                //                        : true) //            && charged_hadron_chi2pid_cut(particle_Index, rec_Bank)
                 ;
     }
 
@@ -171,8 +169,7 @@ public class analysis_fitter extends GenericKinematicFitter {
                 && (passesForwardDetector
                         ? fiducial_cuts.pcal_fiducial_cut(particle_Index, 1, run_Bank, rec_Bank, cal_Bank)
                         : fiducial_cuts.forward_tagger_fiducial_cut(particle_Index, rec_Bank, ft_Bank))
-                && pid_cuts.beta_cut(particle_Index, rec_Bank)
-            ;
+                && pid_cuts.beta_cut(particle_Index, rec_Bank);
     }
 
     ////////////////////////////////////////////////////////////////////////////////////////////////
@@ -259,7 +256,7 @@ public class analysis_fitter extends GenericKinematicFitter {
 //                        }
 //                    }
                     float[] momentum = {px, py, pz};
-//                    energy_loss_corrections.proton_energy_loss_corrections(particle_Index, momentum, rec_Bank, run_Bank);
+//                    energy_loss_corrections.sebastian_electron_energy_loss_corrections(particle_Index, momentum, rec_Bank, run_Bank);
 //                    momentum_corrections.momentum_corrections(momentum, sector, 0, runPeriod, runPeriod, 0, 0);
                     px = momentum[0];
                     py = momentum[1];
@@ -274,8 +271,12 @@ public class analysis_fitter extends GenericKinematicFitter {
                     // check for pion PID
 
                     float[] momentum = {px, py, pz};
-                    energy_loss_corrections.piplus_energy_loss_corrections(particle_Index, momentum, rec_Bank, run_Bank, track_Bank);
-                    momentum_corrections.momentum_corrections(momentum, sector, 1, runPeriod, runPeriod, 0, 0);
+//                    if (pid == 211) {
+//                        energy_loss_corrections.stefan_piplus_energy_loss_corrections(particle_Index, momentum, rec_Bank, run_Bank, track_Bank);
+//                    } else if (pid == -211) {
+//                        energy_loss_corrections.krishna_energy_loss_corrections(particle_Index, momentum, rec_Bank, run_Bank);
+//                    }
+//                    momentum_corrections.momentum_corrections(momentum, sector, 1, runPeriod, runPeriod, 0, 0);
                     px = momentum[0];
                     py = momentum[1];
                     pz = momentum[2];
@@ -297,6 +298,8 @@ public class analysis_fitter extends GenericKinematicFitter {
 
                     float[] momentum = {px, py, pz};
 //                    energy_loss_corrections.proton_energy_loss_corrections(particle_Index, momentum, rec_Bank, run_Bank);
+//                    energy_loss_corrections.krishna_energy_loss_corrections(particle_Index, momentum, rec_Bank, run_Bank);
+//                    energy_loss_corrections.mariana_proton_energy_loss_corrections(particle_Index, momentum, rec_Bank, run_Bank);
 
                     px = momentum[0];
                     py = momentum[1];
@@ -308,8 +311,10 @@ public class analysis_fitter extends GenericKinematicFitter {
 
                 if (pid == 22 && photon_test(particle_Index, run_Bank, rec_Bank, cal_Bank, ft_Bank, lv_e, num_photon)) {
 
-//                    float[] momentum = {px, py, pz};
-//                    energy_loss_corrections.proton_energy_loss_corrections(particle_Index, momentum, rec_Bank, run_Bank);
+                    float[] momentum = {px, py, pz};
+//                    energy_loss_corrections.sebastian_photon_energy_loss_corrections(particle_Index, momentum, rec_Bank, run_Bank);
+//                    energy_loss_corrections.krishna_energy_loss_corrections(particle_Index, momentum, rec_Bank, run_Bank);
+//                    energy_loss_corrections.mariana_proton_energy_loss_corrections(particle_Index, momentum, rec_Bank, run_Bank);
 //
 //                    px = momentum[0];
 //                    py = momentum[1];

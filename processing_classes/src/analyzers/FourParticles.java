@@ -73,16 +73,16 @@ public class FourParticles {
     protected double p_gN_pz, p1_gN_pz, p2_gN_pz, p3_gN_pz, p12_gN_pz, p13_gN_pz, p23_gN_pz;
 
     public static boolean channel_test(FourParticles variables) {
-        if (variables.helicity == 0 && variables.runnum != 11) {
-            return false;
-        }
-        if (variables.Q2() < 1) {
-            return false;
-        } else if (variables.W() < 2) {
-            return false;
-        } else if (variables.y() > 0.80) {
-            return false;
-        }
+//        if (variables.helicity == 0 && variables.runnum != 11) {
+//            return false;
+//        }
+//        if (variables.Q2() < 1) {
+//            return false;
+//        } else if (variables.W() < 2) {
+//            return false;
+//        } else if (variables.y() > 0.80) {
+//            return false;
+//        }
         return true;
     }
 
