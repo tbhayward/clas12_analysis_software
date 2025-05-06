@@ -119,7 +119,7 @@ def generate_phase_space_plots(channel, correction, plot_type, parent_dir, outpu
 
 def plot_w_comparison(parent_dir, output_dir):
     """
-    Plot W spectrum comparisons with guaranteed 4 corrections in all subplots
+    Final corrected version with guaranteed 4 visible histograms
     """
     # Hardcoded configurations
     detectors = {
@@ -161,12 +161,12 @@ def plot_w_comparison(parent_dir, output_dir):
             # Create figure with proper subplot grid
             n_total_plots = len(det_config['theta_labels'])
             n_cols = 4
-            n_rows = int(np.ceil(n_total_plots / n_cols)) + 1  # +1 for integrated plot
+            n_rows = int(np.ceil((n_total_plots-1)/n_cols)) + 1  # +1 for integrated plot
             
             fig = plt.figure(figsize=(20, 5*n_rows))
             gs = gridspec.GridSpec(n_rows, n_cols, figure=fig)
             
-            # Load data for all corrections first
+            # Load all data first
             all_data = {}
             for corr in corrections:
                 filename = f"resIncl_{run}_ep_{corr}.root"
@@ -186,59 +186,66 @@ def plot_w_comparison(parent_dir, output_dir):
                             'W': data['W'][mask],
                             'theta': np.degrees(data['p_theta'][mask])
                         }
+                        print(f"Loaded {corr}: {len(all_data[corr]['W'])} events")  # Debug line
                 except Exception as e:
                     print(f"Error loading {filepath}: {str(e)}")
                     continue
             
-            # Plot integrated spectrum (first subplot)
-            ax_int = fig.add_subplot(gs[0, :])  # Full width top row
-            for corr, color, ls in zip(corrections, colors, line_styles):
-                if corr not in all_data: continue
-                ax_int.hist(all_data[corr]['W'], bins=w_bins,
-                           histtype='step', color=color, linestyle=ls, linewidth=1.5,
-                           label=corr_labels[corr], density=False)
+            # Plot integrated spectrum
+            ax_int = fig.add_subplot(gs[0, :])
+            for (corr, color, ls) in zip(corrections, colors, line_styles):
+                if corr not in all_data:
+                    continue
+                ax_int.hist(
+                    all_data[corr]['W'], bins=w_bins,
+                    histtype='step', color=color, linestyle=ls, linewidth=2,
+                    label=corr_labels[corr], density=False
+                )
             
             ax_int.set(xlabel='W (GeV)', ylabel='Counts',
                       title=f"{det_config['name']} Detector - {run} - Integrated",
                       xlim=(0.6, 1.2))
-            ax_int.legend()
+            ax_int.legend(loc='best')
             ax_int.grid(True, alpha=0.3)
             
             # Plot theta-binned spectra
-            theta_bins = det_config['theta_bins']
-            for plot_idx in range(1, n_total_plots):
-                row = (plot_idx-1) // n_cols + 1
-                col = (plot_idx-1) % n_cols
+            for idx in range(1, n_total_plots):
+                row = (idx-1) // n_cols + 1
+                col = (idx-1) % n_cols
                 ax = fig.add_subplot(gs[row, col])
                 
-                # Get theta range (offset by 1 because first label is "All θ")
-                theta_min = theta_bins[plot_idx]
-                theta_max = theta_bins[plot_idx+1] if plot_idx < len(theta_bins)-1 else theta_bins[-1]
+                theta_min = det_config['theta_bins'][idx]
+                theta_max = det_config['theta_bins'][idx+1]
                 
-                for corr, color, ls in zip(corrections, colors, line_styles):
-                    if corr not in all_data: continue
+                # Plot all corrections in this theta bin
+                artists = []
+                for (corr, color, ls) in zip(corrections, colors, line_styles):
+                    if corr not in all_data:
+                        continue
                     
-                    # Special case for first theta bin after integrated
-                    if plot_idx == 1:
-                        mask = (all_data[corr]['theta'] >= theta_min) & (all_data[corr]['theta'] < theta_max)
-                    else:
-                        mask = (all_data[corr]['theta'] >= theta_min) & (all_data[corr]['theta'] < theta_max)
-                    
+                    mask = (all_data[corr]['theta'] >= theta_min) & (all_data[corr]['theta'] < theta_max)
                     w_data = all_data[corr]['W'][mask]
                     
                     if len(w_data) > 0:
-                        ax.hist(w_data, bins=w_bins,
-                               histtype='step', color=color, linestyle=ls, linewidth=1.5,
-                               label=corr_labels[corr], density=False)
+                        n, bins, patches = ax.hist(
+                            w_data, bins=w_bins,
+                            histtype='step', color=color, linestyle=ls, linewidth=2,
+                            label=corr_labels[corr], density=False
+                        )
+                        artists.append(patches[0])
                 
                 ax.set(xlabel='W (GeV)', ylabel='Counts',
-                      title=f'θ: {det_config["theta_labels"][plot_idx]}°',
+                      title=f'θ: {det_config["theta_labels"][idx]}°',
                       xlim=(0.6, 1.2))
                 ax.grid(True, alpha=0.3)
-            
+                
+                # Only add legend if we have artists
+                if artists:
+                    ax.legend(handles=artists, fontsize=8)
+
             plt.tight_layout()
             output_file = os.path.join(output_dir, f'W_comparison_{run}_{det_config["name"]}.pdf')
-            plt.savefig(output_file, bbox_inches='tight')
+            plt.savefig(output_dir, bbox_inches='tight')
             plt.close()
             print(f"Saved: {output_file}")
 
