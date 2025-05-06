@@ -119,7 +119,7 @@ def generate_phase_space_plots(channel, correction, plot_type, parent_dir, outpu
 
 def plot_w_comparison(parent_dir, output_dir):
     """
-    Final corrected version with guaranteed 4 visible histograms
+    Final debugged version with comparison prints and guaranteed 4 corrections
     """
     # Hardcoded configurations
     detectors = {
@@ -152,6 +152,7 @@ def plot_w_comparison(parent_dir, output_dir):
     colors = ['black', 'red', 'green', 'blue']
     line_styles = ['-', '--', ':', '-.']
     run_periods = ['fa18_inb', 'fa18_out', 'sp19_inb']
+    max_debug_events = 5
     
     # W histogram parameters
     w_bins = np.linspace(0.6, 1.2, 100)
@@ -161,14 +162,13 @@ def plot_w_comparison(parent_dir, output_dir):
             # Create figure with proper subplot grid
             n_total_plots = len(det_config['theta_labels'])
             n_cols = 4
-            n_rows = int(np.ceil((n_total_plots-1)/n_cols)) + 1  # +1 for integrated plot
+            n_rows = int(np.ceil((n_total_plots-1)/n_cols)) + 1
             
             fig = plt.figure(figsize=(20, 5*n_rows))
             gs = gridspec.GridSpec(n_rows, n_cols, figure=fig)
             
-            all_p_p = {}
-            max_events = 5  # Number of events to print
-
+            # Load all data first
+            all_data = {}
             for corr in corrections:
                 filename = f"resIncl_{run}_ep_{corr}.root"
                 filepath = os.path.join(parent_dir, filename)
@@ -176,43 +176,44 @@ def plot_w_comparison(parent_dir, output_dir):
                 try:
                     with uproot.open(filepath) as f:
                         tree = f['PhysicsEvents']
-                        data = tree.arrays(['p_p', 'detector'], library='np')
+                        data = tree.arrays(['W', 'p_p', 'p_theta', 'detector'], library='np')
                         mask = (data['detector'] == det_num)
                         
                         if np.sum(mask) == 0:
                             print(f"No events in {filename} for {det_config['name']}")
-                            all_p_p[corr] = None
                             continue
                             
-                        all_p_p[corr] = data['p_p'][mask]
-                        print(f"Loaded {corr}: {len(all_p_p[corr])} events")
+                        all_data[corr] = {
+                            'W': data['W'][mask],
+                            'p_p': data['p_p'][mask],
+                            'theta': np.degrees(data['p_theta'][mask])
+                        }
                         
                 except Exception as e:
                     print(f"Error loading {filepath}: {str(e)}")
-                    all_p_p[corr] = None
                     continue
 
-            # Print comparison header
-            header = "Event | " + " | ".join([f"{corr:^12}" for corr in corrections])
-            print("\nProton Momentum Comparison (GeV)")
-            print(header)
-            print("-"*len(header))
+            # Debug print proton momenta
+            if all_data:
+                print(f"\n{' Proton Momentum Comparison (GeV) ':=^80}")
+                header = "Event | " + " | ".join([f"{corr:^12}" for corr in corrections])
+                print(header)
+                print("-"*len(header))
+                
+                valid_corrections = [corr for corr in corrections if corr in all_data]
+                min_events = min([len(all_data[corr]['p_p']) for corr in valid_corrections]) if valid_corrections else 0
+                n_print = min(max_debug_events, min_events)
+                
+                for i in range(n_print):
+                    line = f"{i:5} | "
+                    for corr in corrections:
+                        if corr in all_data and i < len(all_data[corr]['p_p']):
+                            line += f"{all_data[corr]['p_p'][i]:12.5f} | "
+                        else:
+                            line += f"{'N/A':12} | "
+                    print(line)
+                print("="*80 + "\n")
 
-            # Find minimum number of events available across all loaded corrections
-            valid_corrections = {k: v for k, v in all_p_p.items() if v is not None}
-            min_events = min([len(v) for v in valid_corrections.values()]) if valid_corrections else 0
-            n_print = min(max_events, min_events)
-
-            # Print values for each event
-            for i in range(n_print):
-                line = f"{i:5} | "
-                for corr in corrections:
-                    if all_p_p[corr] is not None and i < len(all_p_p[corr]):
-                        line += f"{all_p_p[corr][i]:12.5f} | "
-                    else:
-                        line += f"{'N/A':12} | "
-                print(line)
-            
             # Plot integrated spectrum
             ax_int = fig.add_subplot(gs[0, :])
             for (corr, color, ls) in zip(corrections, colors, line_styles):
@@ -227,7 +228,7 @@ def plot_w_comparison(parent_dir, output_dir):
             ax_int.set(xlabel='W (GeV)', ylabel='Counts',
                       title=f"{det_config['name']} Detector - {run} - Integrated",
                       xlim=(0.6, 1.2))
-            ax_int.legend(loc='best')
+            ax_int.legend()
             ax_int.grid(True, alpha=0.3)
             
             # Plot theta-binned spectra
@@ -239,7 +240,7 @@ def plot_w_comparison(parent_dir, output_dir):
                 theta_min = det_config['theta_bins'][idx]
                 theta_max = det_config['theta_bins'][idx+1]
                 
-                # Plot all corrections in this theta bin
+                # Plot all corrections
                 artists = []
                 for (corr, color, ls) in zip(corrections, colors, line_styles):
                     if corr not in all_data:
@@ -261,13 +262,12 @@ def plot_w_comparison(parent_dir, output_dir):
                       xlim=(0.6, 1.2))
                 ax.grid(True, alpha=0.3)
                 
-                # Only add legend if we have artists
                 if artists:
                     ax.legend(handles=artists, fontsize=8)
 
             plt.tight_layout()
             output_file = os.path.join(output_dir, f'W_comparison_{run}_{det_config["name"]}.pdf')
-            plt.savefig(output_dir, bbox_inches='tight')
+            plt.savefig(output_file, bbox_inches='tight')
             plt.close()
             print(f"Saved: {output_file}")
 
