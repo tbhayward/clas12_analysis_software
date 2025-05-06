@@ -119,7 +119,7 @@ def generate_phase_space_plots(channel, correction, plot_type, parent_dir, outpu
 
 def plot_w_comparison(parent_dir, output_dir):
     """
-    Final debugged version with comparison prints and guaranteed 4 corrections
+    Final debugged version with proper indentation and syntax
     """
     # Hardcoded configurations
     detectors = {
@@ -155,7 +155,7 @@ def plot_w_comparison(parent_dir, output_dir):
     max_debug_events = 5
     
     # W histogram parameters
-    w_bins = np.linspace(0.6, 1.2, 30)
+    w_bins = np.linspace(0.6, 1.2, 100)
     
     for run in run_periods:
         for det_num, det_config in detectors.items():
@@ -200,17 +200,15 @@ def plot_w_comparison(parent_dir, output_dir):
                 print("-"*130)
                 
                 valid_corrections = [corr for corr in corrections if corr in all_data]
-                min_events = min([len(all_data[corr]['p_p']) for corr in valid_corrections]) if valid_corrections else 0  # Fixed line
-                n_print = min(5, min_events)
-                
-                for i in range(n_print):
+                min_events = min([len(all_data[corr]['p_p']) for corr in valid_corrections]) if valid_corrections else 0
+                n_print = min(max_debug_events, min_events)
                 
                 for i in range(n_print):
                     # Print p_p
                     line_p = f"{i:5} | "
                     for corr in corrections:
                         if corr in all_data and i < len(all_data[corr]['p_p']):
-                            line_p += f"{corr}: {all_data[corr]['p_p'][i]:.3f | "
+                            line_p += f"{corr}: {all_data[corr]['p_p'][i]:.3f} | "
                         else:
                             line_p += f"{corr}: N/A | "
                     
@@ -218,7 +216,7 @@ def plot_w_comparison(parent_dir, output_dir):
                     line_w = f"{' ':<5} | "
                     for corr in corrections:
                         if corr in all_data and i < len(all_data[corr]['W']):
-                            line_w += f"{corr}: {all_data[corr]['W'][i]:.3f | "
+                            line_w += f"{corr}: {all_data[corr]['W'][i]:.3f} | "
                         else:
                             line_w += f"{corr}: N/A | "
                     
