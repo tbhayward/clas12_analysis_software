@@ -2,6 +2,7 @@ import uproot
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.colors import LogNorm
+import matplotlib.gridspec as gridspec
 import os
 
 def generate_phase_space_plots(channel, correction, plot_type, parent_dir, output_dir):
@@ -45,7 +46,7 @@ def generate_phase_space_plots(channel, correction, plot_type, parent_dir, outpu
             'y_label': r'$\theta$ [deg]'
         },
         'theta_p': {
-            'x_range': [0, 6],
+            'x_range': [0, 7],
             'y_range': [0, 140],
             'x_label': 'p [GeV]',
             'y_label': r'$\theta$ [deg]'
