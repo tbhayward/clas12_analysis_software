@@ -43,7 +43,7 @@ for label, path in files.items():
         (data["Mx2_23"]<1.05) &
         (data["Mh23"] > 0.65) &
         (data["Mh23"] < 0.85) 
-        np.ones(len(data["helicity"]), dtype=bool)
+        # np.ones(len(data["helicity"]), dtype=bool)
     )
 
     # print("HELLO WORLD")
