@@ -117,9 +117,9 @@ def generate_phase_space_plots(channel, correction, plot_type, parent_dir, outpu
     print(f"Saved: {output_file}")
 
 
-def plot_w_comparison(parent_dir, output_dir):
+def plot_mx_comparison(parent_dir, output_dir):
     """
-    Final debugged version with proper indentation and syntax
+    Analyzes missing mass (Mx) spectra for different corrections
     """
     # Hardcoded configurations
     detectors = {
@@ -154,8 +154,8 @@ def plot_w_comparison(parent_dir, output_dir):
     run_periods = ['fa18_inb', 'fa18_out', 'sp19_inb']
     max_debug_events = 5
     
-    # W histogram parameters
-    w_bins = np.linspace(0.6, 1.2, 100)
+    # Mx histogram parameters
+    mx_bins = np.linspace(0.6, 1.2, 100)
     
     for run in run_periods:
         for det_num, det_config in detectors.items():
@@ -176,7 +176,7 @@ def plot_w_comparison(parent_dir, output_dir):
                 try:
                     with uproot.open(filepath) as f:
                         tree = f['PhysicsEvents']
-                        data = tree.arrays(['W', 'p_p', 'p_theta', 'detector'], library='np')
+                        data = tree.arrays(['Mx', 'p_p', 'p_theta', 'detector'], library='np')
                         mask = (data['detector'] == det_num)
                         
                         if np.sum(mask) == 0:
@@ -184,7 +184,7 @@ def plot_w_comparison(parent_dir, output_dir):
                             continue
                             
                         all_data[corr] = {
-                            'W': data['W'][mask],
+                            'Mx': data['Mx'][mask],
                             'p_p': data['p_p'][mask],
                             'theta': np.degrees(data['p_theta'][mask])
                         }
@@ -193,10 +193,10 @@ def plot_w_comparison(parent_dir, output_dir):
                     print(f"Error loading {filepath}: {str(e)}")
                     continue
 
-            # Debug print proton momenta AND W values
+            # Debug print proton momenta AND Mx values
             if all_data:
                 print(f"\n{' Event Data Comparison ':=^80}")
-                print(f"{'Event':5} | {'p_p (GeV)':^50} | {'W (GeV)':^50}")
+                print(f"{'Event':5} | {'p_p (GeV)':^50} | {'Mx (GeV)':^50}")
                 print("-"*130)
                 
                 valid_corrections = [corr for corr in corrections if corr in all_data]
@@ -212,16 +212,16 @@ def plot_w_comparison(parent_dir, output_dir):
                         else:
                             line_p += f"{corr}: N/A | "
                     
-                    # Print W
-                    line_w = f"{' ':<5} | "
+                    # Print Mx
+                    line_mx = f"{' ':<5} | "
                     for corr in corrections:
-                        if corr in all_data and i < len(all_data[corr]['W']):
-                            line_w += f"{corr}: {all_data[corr]['W'][i]:.3f} | "
+                        if corr in all_data and i < len(all_data[corr]['Mx']):
+                            line_mx += f"{corr}: {all_data[corr]['Mx'][i]:.3f} | "
                         else:
-                            line_w += f"{corr}: N/A | "
+                            line_mx += f"{corr}: N/A | "
                     
                     print(line_p)
-                    print(line_w)
+                    print(line_mx)
                     print("-"*130)
 
             # Plot integrated spectrum
@@ -230,12 +230,12 @@ def plot_w_comparison(parent_dir, output_dir):
                 if corr not in all_data:
                     continue
                 ax_int.hist(
-                    all_data[corr]['W'], bins=w_bins,
+                    all_data[corr]['Mx'], bins=mx_bins,
                     histtype='step', color=color, linestyle=ls, linewidth=2,
                     label=corr_labels[corr], density=False
                 )
             
-            ax_int.set(xlabel='W (GeV)', ylabel='Counts',
+            ax_int.set(xlabel=r'$M_{x}$ (GeV)', ylabel='Counts',
                       title=f"{det_config['name']} Detector - {run} - Integrated",
                       xlim=(0.6, 1.2))
             ax_int.legend()
@@ -257,17 +257,17 @@ def plot_w_comparison(parent_dir, output_dir):
                         continue
                     
                     mask = (all_data[corr]['theta'] >= theta_min) & (all_data[corr]['theta'] < theta_max)
-                    w_data = all_data[corr]['W'][mask]
+                    mx_data = all_data[corr]['Mx'][mask]
                     
-                    if len(w_data) > 0:
+                    if len(mx_data) > 0:
                         n, bins, patches = ax.hist(
-                            w_data, bins=w_bins,
+                            mx_data, bins=mx_bins,
                             histtype='step', color=color, linestyle=ls, linewidth=2,
                             label=corr_labels[corr], density=False
                         )
                         artists.append(patches[0])
                 
-                ax.set(xlabel='W (GeV)', ylabel='Counts',
+                ax.set(xlabel=r'$M_{x}$ (GeV)', ylabel='Counts',
                       title=f'θ: {det_config["theta_labels"][idx]}°',
                       xlim=(0.6, 1.2))
                 ax.grid(True, alpha=0.3)
@@ -276,7 +276,7 @@ def plot_w_comparison(parent_dir, output_dir):
                     ax.legend(handles=artists, fontsize=8)
 
             plt.tight_layout()
-            output_file = os.path.join(output_dir, f'W_comparison_{run}_{det_config["name"]}.pdf')
+            output_file = os.path.join(output_dir, f'Mx_comparison_{run}_{det_config["name"]}.pdf')
             plt.savefig(output_file, bbox_inches='tight')
             plt.close()
             print(f"Saved: {output_file}")
@@ -298,5 +298,5 @@ if __name__ == "__main__":
     #             output_dir=OUTPUT_DIR
     #         )
 
-    # Generate W comparison plots
-    plot_w_comparison(PARENT_DIR, OUTPUT_DIR)
+    # Generate Mx comparison plots
+    plot_mx_comparison(PARENT_DIR, OUTPUT_DIR)
