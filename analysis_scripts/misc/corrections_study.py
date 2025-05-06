@@ -115,19 +115,106 @@ def generate_phase_space_plots(channel, correction, plot_type, parent_dir, outpu
     plt.close()
     print(f"Saved: {output_file}")
 
+
+def plot_w_comparison(parent_dir, output_dir):
+    """
+    Plot W spectrum comparisons for different corrections and detectors
+    """
+    # Configuration
+    detectors = {
+        1: {'name': 'Forward', 'theta_bins': [0,5] + list(range(5,42,3)) + [60]},
+        2: {'name': 'Central', 'theta_bins': [0,24] + list(range(24,64,3)) + [80]}
+    }
+    
+    corrections = ['noCorrections', 'timothy', 'mariana', 'krishna']
+    colors = ['black', 'red', 'blue', 'green']
+    run_periods = ['fa18_inb', 'fa18_out', 'sp19_inb']
+    
+    # W histogram parameters
+    w_bins = np.linspace(0.4, 1.2, 100)
+    
+    for run in run_periods:
+        for det_num, det_config in detectors.items():
+            # Create figure with GridSpec
+            fig = plt.figure(figsize=(20, 16))
+            gs = gridspec.GridSpec(5, 4, figure=fig)
+            ax_main = fig.add_subplot(gs[0, 0:2])
+            ax_theta = [fig.add_subplot(gs[i//2+1, i%2]) for i in range(8)]
+            
+            # Load data for all corrections
+            all_data = {}
+            for corr in corrections:
+                filename = f"resIncl_{run}_ep_{corr}.root"
+                filepath = os.path.join(parent_dir, filename)
+                
+                try:
+                    with uproot.open(filepath) as f:
+                        tree = f['PhysicsEvents']
+                        # Read required branches
+                        data = tree.arrays(['W', 'p_theta', 'detector'], library='np')
+                        # Apply detector cut
+                        mask = (data['detector'] == det_num)
+                        all_data[corr] = {
+                            'W': data['W'][mask],
+                            'theta': np.degrees(data['p_theta'][mask])
+                        }
+                except Exception as e:
+                    print(f"Error loading {filepath}: {e}")
+                    continue
+            
+            # Plot integrated W spectrum
+            for corr, color in zip(corrections, colors):
+                if corr not in all_data:
+                    continue
+                ax_main.hist(all_data[corr]['W'], bins=w_bins, histtype='step',
+                            color=color, label=corr, density=True)
+            ax_main.set_xlabel('W (GeV)', fontsize=12)
+            ax_main.set_ylabel('Normalized Counts', fontsize=12)
+            ax_main.legend()
+            ax_main.set_title(f'{det_config["name"]} Detector - {run}', fontsize=14)
+            
+            # Plot theta-binned spectra
+            theta_bins = det_config['theta_bins']
+            for idx in range(len(theta_bins)-1):
+                ax = ax_theta[idx]
+                theta_min = theta_bins[idx]
+                theta_max = theta_bins[idx+1]
+                
+                for corr, color in zip(corrections, colors):
+                    if corr not in all_data:
+                        continue
+                    # Apply theta cut
+                    mask = (all_data[corr]['theta'] >= theta_min) & (all_data[corr]['theta'] < theta_max)
+                    ax.hist(all_data[corr]['W'][mask], bins=w_bins, histtype='step',
+                           color=color, label=corr, density=True)
+                
+                ax.set_xlabel('W (GeV)', fontsize=10)
+                ax.set_ylabel('Norm. Counts', fontsize=10)
+                ax.set_title(rf'$\theta$: {theta_min}-{theta_max}°', fontsize=10)
+                ax.tick_params(axis='both', labelsize=8)
+            
+            # Save figure
+            output_file = os.path.join(output_dir, f'W_comparison_{run}_{det_config["name"]}.pdf')
+            plt.savefig(output_file, bbox_inches='tight')
+            plt.close()
+            print(f"Saved: {output_file}")
+
 # Main execution for noCorrections
 if __name__ == "__main__":
     PARENT_DIR = "/volatile/clas12/thayward/corrections_study/results/proton_energy_loss/"
     OUTPUT_DIR = "output/correction_study"
     CORRECTION = 'noCorrections'
 
-    # Generate both plot types for each channel
-    for channel in ['ep', 'eppi+pi-']:
-        for plot_type in ['theta_phi', 'theta_p']:
-            generate_phase_space_plots(
-                channel=channel,
-                correction=CORRECTION,
-                plot_type=plot_type,
-                parent_dir=PARENT_DIR,
-                output_dir=OUTPUT_DIR
-            )
+    # # Generate both plot types for each channel
+    # for channel in ['ep', 'eppi+pi-']:
+    #     for plot_type in ['theta_phi', 'theta_p']:
+    #         generate_phase_space_plots(
+    #             channel=channel,
+    #             correction=CORRECTION,
+    #             plot_type=plot_type,
+    #             parent_dir=PARENT_DIR,
+    #             output_dir=OUTPUT_DIR
+    #         )
+
+    # Generate W comparison plots
+    plot_w_comparison(PARENT_DIR, OUTPUT_DIR)
