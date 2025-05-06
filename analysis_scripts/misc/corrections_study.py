@@ -79,8 +79,8 @@ def generate_phase_space_plots(channel, correction, plot_type, parent_dir, outpu
                 # Get theta values and convert to degrees
                 theta = np.degrees(tree[y_branch].array(library='np'))
                 
-                # Get x-axis values
-                x_data = tree[x_branch].array(library='np'))
+                # Get x-axis values (CORRECTED LINE)
+                x_data = tree[x_branch].array(library='np')  # Removed extra parenthesis
                 
                 # Special processing for phi
                 if plot_type == 'theta_phi':
