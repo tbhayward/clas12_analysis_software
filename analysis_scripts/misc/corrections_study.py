@@ -155,7 +155,7 @@ def plot_w_comparison(parent_dir, output_dir):
     max_debug_events = 5
     
     # W histogram parameters
-    w_bins = np.linspace(0.6, 1.2, 100)
+    w_bins = np.linspace(0.6, 1.2, 30)
     
     for run in run_periods:
         for det_num, det_config in detectors.items():
