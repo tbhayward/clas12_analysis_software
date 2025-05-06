@@ -200,8 +200,10 @@ def plot_w_comparison(parent_dir, output_dir):
                 print("-"*130)
                 
                 valid_corrections = [corr for corr in corrections if corr in all_data]
-                min_events = min([len(all_data[corr]['p_p']) for corr in valid_corrections) if valid_corrections else 0
+                min_events = min([len(all_data[corr]['p_p']) for corr in valid_corrections]) if valid_corrections else 0  # Fixed line
                 n_print = min(5, min_events)
+                
+                for i in range(n_print):
                 
                 for i in range(n_print):
                     # Print p_p
