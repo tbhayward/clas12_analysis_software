@@ -50,6 +50,7 @@ public class processing_beamCharge {
 		float beamChargeMax = 0;
 		float posHelbeamChargeTotal = 0;
 		float negHelbeamChargeTotal = 0;
+		float noHelbeamChargeTotal = 0;
 		int runnum;
 		while (current_file < n_files) {
 			beamChargeMax = 0;
@@ -85,6 +86,9 @@ public class processing_beamCharge {
 					} else if (event.getBank("HEL::scaler").getInt("helicity",0) == -1) {
 						float beamCharge = event.getBank("HEL::scaler").getFloat("fcupgated",0);
     					negHelbeamChargeTotal+=beamCharge;
+					} else if (event.getBank("HEL::scaler").getInt("helicity",0) == 0) {
+						float beamCharge = event.getBank("HEL::scaler").getFloat("fcupgated",0);
+    					noHelbeamChargeTotal+=beamCharge;
 					}
     			}
 
@@ -97,7 +101,8 @@ public class processing_beamCharge {
 			}
 			beamChargeList+=runnum.toString()+","+beamChargeMax.toString()+",";
 			beamChargeList+=posHelbeamChargeTotal.toString()+","
-			beamChargeList+=negHelbeamChargeTotal.toString()+",0,0\n";
+			beamChargeList+=negHelbeamChargeTotal.toString()+","
+			beamChargeList+=noHelbeamChargeTotal.toString()+",0,0\n";
 			println(); println(); println();
 			print(beamChargeList);
 			println();
