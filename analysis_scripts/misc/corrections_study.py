@@ -117,9 +117,9 @@ def generate_phase_space_plots(channel, correction, plot_type, parent_dir, outpu
     print(f"Saved: {output_file}")
 
 
-def plot_Mx2_comparison(parent_dir, output_dir):
+def plot_mx2_comparison(parent_dir, output_dir):
     """
-    Analyzes missing mass (Mx2) spectra for different corrections
+    Analyzes missing mass squared (Mx²) spectra for different corrections
     """
     # Hardcoded configurations
     detectors = {
@@ -154,8 +154,8 @@ def plot_Mx2_comparison(parent_dir, output_dir):
     run_periods = ['fa18_inb', 'fa18_out', 'sp19_inb']
     max_debug_events = 5
     
-    # Mx2 histogram parameters
-    Mx2_bins = np.linspace(0.6, 1.2, 100)
+    # Mx² histogram parameters
+    mx2_bins = np.linspace(0.3, 1.1, 100)
     
     for run in run_periods:
         for det_num, det_config in detectors.items():
@@ -193,10 +193,10 @@ def plot_Mx2_comparison(parent_dir, output_dir):
                     print(f"Error loading {filepath}: {str(e)}")
                     continue
 
-            # Debug print proton momenta AND Mx2 values
+            # Debug print proton momenta AND Mx² values
             if all_data:
                 print(f"\n{' Event Data Comparison ':=^80}")
-                print(f"{'Event':5} | {'p_p (GeV)':^50} | {'Mx2 (GeV)':^50}")
+                print(f"{'Event':5} | {'p_p (GeV)':^50} | {'Mx² (GeV²)':^50}")
                 print("-"*130)
                 
                 valid_corrections = [corr for corr in corrections if corr in all_data]
@@ -212,16 +212,16 @@ def plot_Mx2_comparison(parent_dir, output_dir):
                         else:
                             line_p += f"{corr}: N/A | "
                     
-                    # Print Mx2
-                    line_Mx2 = f"{' ':<5} | "
+                    # Print Mx²
+                    line_mx2 = f"{' ':<5} | "
                     for corr in corrections:
                         if corr in all_data and i < len(all_data[corr]['Mx2']):
-                            line_Mx2 += f"{corr}: {all_data[corr]['Mx2'][i]:.3f} | "
+                            line_mx2 += f"{corr}: {all_data[corr]['Mx2'][i]:.3f} | "
                         else:
-                            line_Mx2 += f"{corr}: N/A | "
+                            line_mx2 += f"{corr}: N/A | "
                     
                     print(line_p)
-                    print(line_Mx2)
+                    print(line_mx2)
                     print("-"*130)
 
             # Plot integrated spectrum
@@ -230,14 +230,14 @@ def plot_Mx2_comparison(parent_dir, output_dir):
                 if corr not in all_data:
                     continue
                 ax_int.hist(
-                    all_data[corr]['Mx2'], bins=Mx2_bins,
+                    all_data[corr]['Mx2'], bins=mx2_bins,
                     histtype='step', color=color, linestyle=ls, linewidth=2,
                     label=corr_labels[corr], density=False
                 )
             
-            ax_int.set(xlabel=r'$M_{x}$ (GeV)', ylabel='Counts',
+            ax_int.set(xlabel=r'$M_{x}^{2}$ (GeV²)', ylabel='Counts',
                       title=f"{det_config['name']} Detector - {run} - Integrated",
-                      xlim=(0.6, 1.2))
+                      xlim=(0.3, 1.1))
             ax_int.legend()
             ax_int.grid(True, alpha=0.3)
             
@@ -257,19 +257,19 @@ def plot_Mx2_comparison(parent_dir, output_dir):
                         continue
                     
                     mask = (all_data[corr]['theta'] >= theta_min) & (all_data[corr]['theta'] < theta_max)
-                    Mx2_data = all_data[corr]['Mx2'][mask]
+                    mx2_data = all_data[corr]['Mx2'][mask]
                     
-                    if len(Mx2_data) > 0:
+                    if len(mx2_data) > 0:
                         n, bins, patches = ax.hist(
-                            Mx2_data, bins=Mx2_bins,
+                            mx2_data, bins=mx2_bins,
                             histtype='step', color=color, linestyle=ls, linewidth=2,
                             label=corr_labels[corr], density=False
                         )
                         artists.append(patches[0])
                 
-                ax.set(xlabel=r'$M_{x}$ (GeV)', ylabel='Counts',
+                ax.set(xlabel=r'$M_{x}^{2}$ (GeV²)', ylabel='Counts',
                       title=f'θ: {det_config["theta_labels"][idx]}°',
-                      xlim=(0.6, 1.2))
+                      xlim=(0.3, 1.1))
                 ax.grid(True, alpha=0.3)
                 
                 if artists:
