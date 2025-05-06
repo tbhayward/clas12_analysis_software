@@ -256,7 +256,7 @@ public class analysis_fitter extends GenericKinematicFitter {
 //                        }
 //                    }
                     float[] momentum = {px, py, pz};
-//                    energy_loss_corrections.sebastian_electron_energy_loss_corrections(particle_Index, momentum, rec_Bank, run_Bank);
+                    energy_loss_corrections.sebastian_electron_energy_loss_corrections(particle_Index, momentum, rec_Bank, run_Bank);
 //                    momentum_corrections.momentum_corrections(momentum, sector, 0, runPeriod, runPeriod, 0, 0);
                     px = momentum[0];
                     py = momentum[1];
@@ -299,7 +299,7 @@ public class analysis_fitter extends GenericKinematicFitter {
                     float[] momentum = {px, py, pz};
 //                    energy_loss_corrections.proton_energy_loss_corrections(particle_Index, momentum, rec_Bank, run_Bank);
 //                    energy_loss_corrections.krishna_energy_loss_corrections(particle_Index, momentum, rec_Bank, run_Bank);
-                    energy_loss_corrections.mariana_proton_energy_loss_corrections(particle_Index, momentum, rec_Bank, run_Bank);
+//                    energy_loss_corrections.mariana_proton_energy_loss_corrections(particle_Index, momentum, rec_Bank, run_Bank);
 
                     px = momentum[0];
                     py = momentum[1];
