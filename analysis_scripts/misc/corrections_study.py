@@ -193,26 +193,36 @@ def plot_w_comparison(parent_dir, output_dir):
                     print(f"Error loading {filepath}: {str(e)}")
                     continue
 
-            # Debug print proton momenta
+            # Debug print proton momenta AND W values
             if all_data:
-                print(f"\n{' Proton Momentum Comparison (GeV) ':=^80}")
-                header = "Event | " + " | ".join([f"{corr:^12}" for corr in corrections])
-                print(header)
-                print("-"*len(header))
+                print(f"\n{' Event Data Comparison ':=^80}")
+                print(f"{'Event':5} | {'p_p (GeV)':^50} | {'W (GeV)':^50}")
+                print("-"*130)
                 
                 valid_corrections = [corr for corr in corrections if corr in all_data]
-                min_events = min([len(all_data[corr]['p_p']) for corr in valid_corrections]) if valid_corrections else 0
-                n_print = min(max_debug_events, min_events)
+                min_events = min([len(all_data[corr]['p_p']) for corr in valid_corrections) if valid_corrections else 0
+                n_print = min(5, min_events)
                 
                 for i in range(n_print):
-                    line = f"{i:5} | "
+                    # Print p_p
+                    line_p = f"{i:5} | "
                     for corr in corrections:
                         if corr in all_data and i < len(all_data[corr]['p_p']):
-                            line += f"{all_data[corr]['p_p'][i]:12.5f} | "
+                            line_p += f"{corr}: {all_data[corr]['p_p'][i]:.3f | "
                         else:
-                            line += f"{'N/A':12} | "
-                    print(line)
-                print("="*80 + "\n")
+                            line_p += f"{corr}: N/A | "
+                    
+                    # Print W
+                    line_w = f"{' ':<5} | "
+                    for corr in corrections:
+                        if corr in all_data and i < len(all_data[corr]['W']):
+                            line_w += f"{corr}: {all_data[corr]['W'][i]:.3f | "
+                        else:
+                            line_w += f"{corr}: N/A | "
+                    
+                    print(line_p)
+                    print(line_w)
+                    print("-"*130)
 
             # Plot integrated spectrum
             ax_int = fig.add_subplot(gs[0, :])
