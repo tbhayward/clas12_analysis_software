@@ -117,9 +117,9 @@ def generate_phase_space_plots(channel, correction, plot_type, parent_dir, outpu
     print(f"Saved: {output_file}")
 
 
-def plot_mx_comparison(parent_dir, output_dir):
+def plot_Mx2_comparison(parent_dir, output_dir):
     """
-    Analyzes missing mass (Mx) spectra for different corrections
+    Analyzes missing mass (Mx2) spectra for different corrections
     """
     # Hardcoded configurations
     detectors = {
@@ -154,8 +154,8 @@ def plot_mx_comparison(parent_dir, output_dir):
     run_periods = ['fa18_inb', 'fa18_out', 'sp19_inb']
     max_debug_events = 5
     
-    # Mx histogram parameters
-    mx_bins = np.linspace(0.6, 1.2, 100)
+    # Mx2 histogram parameters
+    Mx2_bins = np.linspace(0.6, 1.2, 100)
     
     for run in run_periods:
         for det_num, det_config in detectors.items():
@@ -176,7 +176,7 @@ def plot_mx_comparison(parent_dir, output_dir):
                 try:
                     with uproot.open(filepath) as f:
                         tree = f['PhysicsEvents']
-                        data = tree.arrays(['Mx', 'p_p', 'p_theta', 'detector'], library='np')
+                        data = tree.arrays(['Mx2', 'p_p', 'p_theta', 'detector'], library='np')
                         mask = (data['detector'] == det_num)
                         
                         if np.sum(mask) == 0:
@@ -184,7 +184,7 @@ def plot_mx_comparison(parent_dir, output_dir):
                             continue
                             
                         all_data[corr] = {
-                            'Mx': data['Mx'][mask],
+                            'Mx2': data['Mx2'][mask],
                             'p_p': data['p_p'][mask],
                             'theta': np.degrees(data['p_theta'][mask])
                         }
@@ -193,10 +193,10 @@ def plot_mx_comparison(parent_dir, output_dir):
                     print(f"Error loading {filepath}: {str(e)}")
                     continue
 
-            # Debug print proton momenta AND Mx values
+            # Debug print proton momenta AND Mx2 values
             if all_data:
                 print(f"\n{' Event Data Comparison ':=^80}")
-                print(f"{'Event':5} | {'p_p (GeV)':^50} | {'Mx (GeV)':^50}")
+                print(f"{'Event':5} | {'p_p (GeV)':^50} | {'Mx2 (GeV)':^50}")
                 print("-"*130)
                 
                 valid_corrections = [corr for corr in corrections if corr in all_data]
@@ -212,16 +212,16 @@ def plot_mx_comparison(parent_dir, output_dir):
                         else:
                             line_p += f"{corr}: N/A | "
                     
-                    # Print Mx
-                    line_mx = f"{' ':<5} | "
+                    # Print Mx2
+                    line_Mx2 = f"{' ':<5} | "
                     for corr in corrections:
-                        if corr in all_data and i < len(all_data[corr]['Mx']):
-                            line_mx += f"{corr}: {all_data[corr]['Mx'][i]:.3f} | "
+                        if corr in all_data and i < len(all_data[corr]['Mx2']):
+                            line_Mx2 += f"{corr}: {all_data[corr]['Mx2'][i]:.3f} | "
                         else:
-                            line_mx += f"{corr}: N/A | "
+                            line_Mx2 += f"{corr}: N/A | "
                     
                     print(line_p)
-                    print(line_mx)
+                    print(line_Mx2)
                     print("-"*130)
 
             # Plot integrated spectrum
@@ -230,7 +230,7 @@ def plot_mx_comparison(parent_dir, output_dir):
                 if corr not in all_data:
                     continue
                 ax_int.hist(
-                    all_data[corr]['Mx'], bins=mx_bins,
+                    all_data[corr]['Mx2'], bins=Mx2_bins,
                     histtype='step', color=color, linestyle=ls, linewidth=2,
                     label=corr_labels[corr], density=False
                 )
@@ -257,11 +257,11 @@ def plot_mx_comparison(parent_dir, output_dir):
                         continue
                     
                     mask = (all_data[corr]['theta'] >= theta_min) & (all_data[corr]['theta'] < theta_max)
-                    mx_data = all_data[corr]['Mx'][mask]
+                    Mx2_data = all_data[corr]['Mx2'][mask]
                     
-                    if len(mx_data) > 0:
+                    if len(Mx2_data) > 0:
                         n, bins, patches = ax.hist(
-                            mx_data, bins=mx_bins,
+                            Mx2_data, bins=Mx2_bins,
                             histtype='step', color=color, linestyle=ls, linewidth=2,
                             label=corr_labels[corr], density=False
                         )
@@ -276,7 +276,7 @@ def plot_mx_comparison(parent_dir, output_dir):
                     ax.legend(handles=artists, fontsize=8)
 
             plt.tight_layout()
-            output_file = os.path.join(output_dir, f'Mx_comparison_{run}_{det_config["name"]}.pdf')
+            output_file = os.path.join(output_dir, f'Mx2_comparison_{run}_{det_config["name"]}.pdf')
             plt.savefig(output_file, bbox_inches='tight')
             plt.close()
             print(f"Saved: {output_file}")
@@ -298,5 +298,5 @@ if __name__ == "__main__":
     #             output_dir=OUTPUT_DIR
     #         )
 
-    # Generate Mx comparison plots
-    plot_mx_comparison(PARENT_DIR, OUTPUT_DIR)
+    # Generate Mx2 comparison plots
+    plot_Mx2_comparison(PARENT_DIR, OUTPUT_DIR)
