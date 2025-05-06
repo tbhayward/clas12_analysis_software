@@ -166,7 +166,9 @@ def plot_w_comparison(parent_dir, output_dir):
             fig = plt.figure(figsize=(20, 5*n_rows))
             gs = gridspec.GridSpec(n_rows, n_cols, figure=fig)
             
-            all_data = {}
+            all_p_p = {}
+            max_events = 5  # Number of events to print
+
             for corr in corrections:
                 filename = f"resIncl_{run}_ep_{corr}.root"
                 filepath = os.path.join(parent_dir, filename)
@@ -174,27 +176,42 @@ def plot_w_comparison(parent_dir, output_dir):
                 try:
                     with uproot.open(filepath) as f:
                         tree = f['PhysicsEvents']
-                        data = tree.arrays(['W', 'p_p', 'p_theta', 'detector'], library='np')
+                        data = tree.arrays(['p_p', 'detector'], library='np')
                         mask = (data['detector'] == det_num)
                         
                         if np.sum(mask) == 0:
                             print(f"No events in {filename} for {det_config['name']}")
+                            all_p_p[corr] = None
                             continue
                             
-                        all_data[corr] = {
-                            'W': data['W'][mask],
-                            'p_p': data['p_p'][mask],
-                            'theta': np.degrees(data['p_theta'][mask])
-                        }
+                        all_p_p[corr] = data['p_p'][mask]
+                        print(f"Loaded {corr}: {len(all_p_p[corr])} events")
                         
-                        # Print first 5 events' p_p values
-                        print(f"\n{corr} Correction - First 5 events:")
-                        for i in range(min(5, len(all_data[corr]['p_p']))):
-                            print(f"Event {i}: p_p = {all_data[corr]['p_p'][i]:.3f} GeV")
-                            
                 except Exception as e:
                     print(f"Error loading {filepath}: {str(e)}")
+                    all_p_p[corr] = None
                     continue
+
+            # Print comparison header
+            header = "Event | " + " | ".join([f"{corr:^12}" for corr in corrections])
+            print("\nProton Momentum Comparison (GeV)")
+            print(header)
+            print("-"*len(header))
+
+            # Find minimum number of events available across all loaded corrections
+            valid_corrections = {k: v for k, v in all_p_p.items() if v is not None}
+            min_events = min([len(v) for v in valid_corrections.values()]) if valid_corrections else 0
+            n_print = min(max_events, min_events)
+
+            # Print values for each event
+            for i in range(n_print):
+                line = f"{i:5} | "
+                for corr in corrections:
+                    if all_p_p[corr] is not None and i < len(all_p_p[corr]):
+                        line += f"{all_p_p[corr][i]:12.5f} | "
+                    else:
+                        line += f"{'N/A':12} | "
+                print(line)
             
             # Plot integrated spectrum
             ax_int = fig.add_subplot(gs[0, :])
