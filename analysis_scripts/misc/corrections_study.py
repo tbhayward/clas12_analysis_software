@@ -299,4 +299,4 @@ if __name__ == "__main__":
     #         )
 
     # Generate Mx2 comparison plots
-    plot_Mx2_comparison(PARENT_DIR, OUTPUT_DIR)
+    plot_mx2_comparison(PARENT_DIR, OUTPUT_DIR)
