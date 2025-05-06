@@ -136,11 +136,25 @@ def plot_w_comparison(parent_dir, output_dir):
     
     for run in run_periods:
         for det_num, det_config in detectors.items():
-            # Create figure with GridSpec
-            fig = plt.figure(figsize=(20, 16))
-            gs = gridspec.GridSpec(5, 4, figure=fig)
-            ax_main = fig.add_subplot(gs[0, 0:2])
-            ax_theta = [fig.add_subplot(gs[i//2+1, i%2]) for i in range(8)]
+            theta_bins = det_config['theta_bins']
+            n_theta_bins = len(theta_bins) - 1
+            
+            # Dynamically create grid layout
+            n_cols = 4  # Number of columns for theta subplots
+            n_rows = 1 + (n_theta_bins + n_cols - 1) // n_cols  # 1 row for main plot
+            
+            fig = plt.figure(figsize=(20, 4*n_rows))
+            gs = gridspec.GridSpec(n_rows, n_cols, figure=fig)
+            
+            # Main plot
+            ax_main = fig.add_subplot(gs[0, :])
+            
+            # Create subplots for theta bins
+            ax_theta = []
+            for i in range(n_theta_bins):
+                row = 1 + (i // n_cols)
+                col = i % n_cols
+                ax_theta.append(fig.add_subplot(gs[row, col]))
             
             # Load data for all corrections
             all_data = {}
@@ -151,9 +165,7 @@ def plot_w_comparison(parent_dir, output_dir):
                 try:
                     with uproot.open(filepath) as f:
                         tree = f['PhysicsEvents']
-                        # Read required branches
                         data = tree.arrays(['W', 'p_theta', 'detector'], library='np')
-                        # Apply detector cut
                         mask = (data['detector'] == det_num)
                         all_data[corr] = {
                             'W': data['W'][mask],
@@ -169,14 +181,13 @@ def plot_w_comparison(parent_dir, output_dir):
                     continue
                 ax_main.hist(all_data[corr]['W'], bins=w_bins, histtype='step',
                             color=color, label=corr, density=True)
-            ax_main.set_xlabel('W (GeV)', fontsize=12)
-            ax_main.set_ylabel('Normalized Counts', fontsize=12)
-            ax_main.legend()
-            ax_main.set_title(f'{det_config["name"]} Detector - {run}', fontsize=14)
             
-            # Plot theta-binned spectra
-            theta_bins = det_config['theta_bins']
-            for idx in range(len(theta_bins)-1):
+            ax_main.set(xlabel='W (GeV)', ylabel='Normalized Counts',
+                      title=f'{det_config["name"]} Detector - {run}')
+            ax_main.legend()
+            
+            # Plot theta-binned spectra with safety checks
+            for idx in range(n_theta_bins):
                 ax = ax_theta[idx]
                 theta_min = theta_bins[idx]
                 theta_max = theta_bins[idx+1]
@@ -184,17 +195,18 @@ def plot_w_comparison(parent_dir, output_dir):
                 for corr, color in zip(corrections, colors):
                     if corr not in all_data:
                         continue
-                    # Apply theta cut
                     mask = (all_data[corr]['theta'] >= theta_min) & (all_data[corr]['theta'] < theta_max)
-                    ax.hist(all_data[corr]['W'][mask], bins=w_bins, histtype='step',
-                           color=color, label=corr, density=True)
+                    w_data = all_data[corr]['W'][mask]
+                    
+                    if len(w_data) > 0:  # Skip empty bins
+                        ax.hist(w_data, bins=w_bins, histtype='step',
+                               color=color, label=corr, density=True)
                 
-                ax.set_xlabel('W (GeV)', fontsize=10)
-                ax.set_ylabel('Norm. Counts', fontsize=10)
-                ax.set_title(rf'$\theta$: {theta_min}-{theta_max}°', fontsize=10)
-                ax.tick_params(axis='both', labelsize=8)
+                ax.set(xlabel='W (GeV)', ylabel='Norm. Counts',
+                      title=fr'$\theta$: {theta_min}-{theta_max}°')
+                ax.tick_params(labelsize=8)
             
-            # Save figure
+            plt.tight_layout()
             output_file = os.path.join(output_dir, f'W_comparison_{run}_{det_config["name"]}.pdf')
             plt.savefig(output_file, bbox_inches='tight')
             plt.close()
