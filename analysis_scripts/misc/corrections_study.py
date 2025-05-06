@@ -123,38 +123,36 @@ def plot_w_comparison(parent_dir, output_dir):
     """
     # Configuration
     detectors = {
-        1: {'name': 'Forward', 'theta_bins': [0,5] + list(range(5,42,3)) + [60]},
-        2: {'name': 'Central', 'theta_bins': [0,24] + list(range(24,64,3)) + [80]}
+        1: {'name': 'Forward', 'theta_bins': [0,5] + list(range(5, 48, 3)) + [80]},
+        2: {'name': 'Central', 'theta_bins': [0,24] + list(range(24, 64, 3)) + [90]}
     }
     
-    corrections = ['noCorrections', 'timothy', 'mariana', 'krishna']
-    colors = ['black', 'red', 'blue', 'green']
+    corrections = ['noCorrections', 'timothy', 'krishna', 'mariana']
+    corr_labels = {
+        'noCorrections': 'No Corrections',
+        'timothy': "Timothy's",
+        'krishna': "Krishna's",
+        'mariana': "Mariana's"
+    }
+    colors = ['black', 'red', 'green', 'blue']
     run_periods = ['fa18_inb', 'fa18_out', 'sp19_inb']
     
     # W histogram parameters
-    w_bins = np.linspace(0.4, 1.2, 100)
+    w_bins = np.linspace(0.6, 1.2, 100)
     
     for run in run_periods:
         for det_num, det_config in detectors.items():
             theta_bins = det_config['theta_bins']
             n_theta_bins = len(theta_bins) - 1
             
-            # Dynamically create grid layout
-            n_cols = 4  # Number of columns for theta subplots
-            n_rows = 1 + (n_theta_bins + n_cols - 1) // n_cols  # 1 row for main plot
-            
+            # Create dynamic grid layout
+            n_cols = 4
+            n_rows = 1 + (n_theta_bins + n_cols - 1) // n_cols
             fig = plt.figure(figsize=(20, 4*n_rows))
             gs = gridspec.GridSpec(n_rows, n_cols, figure=fig)
             
-            # Main plot
             ax_main = fig.add_subplot(gs[0, :])
-            
-            # Create subplots for theta bins
-            ax_theta = []
-            for i in range(n_theta_bins):
-                row = 1 + (i // n_cols)
-                col = i % n_cols
-                ax_theta.append(fig.add_subplot(gs[row, col]))
+            ax_theta = [fig.add_subplot(gs[i//n_cols+1, i%n_cols]) for i in range(n_theta_bins)]
             
             # Load data for all corrections
             all_data = {}
@@ -180,13 +178,13 @@ def plot_w_comparison(parent_dir, output_dir):
                 if corr not in all_data:
                     continue
                 ax_main.hist(all_data[corr]['W'], bins=w_bins, histtype='step',
-                            color=color, label=corr, density=True)
+                            color=color, label=corr_labels[corr], density=True)
             
             ax_main.set(xlabel='W (GeV)', ylabel='Normalized Counts',
-                      title=f'{det_config["name"]} Detector - {run}')
+                      title=f'{det_config["name"]} Detector - {run}', xlim=(0.6, 1.2))
             ax_main.legend()
             
-            # Plot theta-binned spectra with safety checks
+            # Plot theta-binned spectra
             for idx in range(n_theta_bins):
                 ax = ax_theta[idx]
                 theta_min = theta_bins[idx]
@@ -198,12 +196,12 @@ def plot_w_comparison(parent_dir, output_dir):
                     mask = (all_data[corr]['theta'] >= theta_min) & (all_data[corr]['theta'] < theta_max)
                     w_data = all_data[corr]['W'][mask]
                     
-                    if len(w_data) > 0:  # Skip empty bins
+                    if len(w_data) > 0:
                         ax.hist(w_data, bins=w_bins, histtype='step',
-                               color=color, label=corr, density=True)
+                               color=color, label=corr_labels[corr], density=True)
                 
                 ax.set(xlabel='W (GeV)', ylabel='Norm. Counts',
-                      title=fr'$\theta$: {theta_min}-{theta_max}°')
+                      title=fr'$\theta$: {theta_min}-{theta_max}°', xlim=(0.6, 1.2))
                 ax.tick_params(labelsize=8)
             
             plt.tight_layout()
