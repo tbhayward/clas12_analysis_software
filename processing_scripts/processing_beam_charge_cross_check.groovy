@@ -37,7 +37,7 @@ class processing_beamCharge {
 
         // ————— prepare QA ————— //
         QADB qa = new QADB("latest")
-        // mirror your colleague’s defect cuts:
+        // apply the same defect cuts as your colleague
         qa.checkForDefect("SectorLoss")
         qa.checkForDefect("MarginalOutlier")
 
@@ -54,7 +54,7 @@ class processing_beamCharge {
             qa.resetAccumulatedChargeHL()
             long eventCount = 0
 
-            // ————— process each event once ————— //
+            // ————— process each event exactly once ————— //
             while (reader.hasEvent()) {
                 HipoDataEvent event = reader.getNextEvent()
                 eventCount++
@@ -62,31 +62,31 @@ class processing_beamCharge {
                     print "  processed ${eventCount} events…\r"
                 }
 
-                int runnum = event.getBank("RUN::config").getInt("run", 0)
-                // skip known bleed-through
+                int runnum = event.getBank("RUN::config").getInt("run",  0)
+                // skip Hall C bleed-through
                 if (runnum > 16600 && runnum < 16700) {
-                    println "\n  Bleed-through run ${runnum} → stopping file."
+                    println "\n  Bleed-through run ${runnum}; stopping this file."
                     break
                 }
-                int evnum = event.getBank("RUN::config").getInt("event", 0)
+                int evnum = event.getBank("RUN::config").getInt("event",0)
 
-                // tell QADB about this event
+                // update QA
                 qa.query(runnum, evnum)
 
-                // only if QA cuts pass AND there is a real beam charge:
+                // only accumulate if QA cuts pass
                 if (qa.pass(runnum, evnum)) {
-                    // attempt to fetch the “beam charge” for this helicity;
-                    // if QADB had no data you’d get null, so guard it:
-                    Double bc = qa.getBeamChargeHL()
-                    if (bc != null) {
+                    try {
                         qa.accumulateChargeHL()
+                    } catch (GroovyRuntimeException e) {
+                        // no valid charge for this event → skip it
                     }
                 }
             }
 
             // ————— report per-helicity totals ————— //
-            println "\nTotals for file ${hipofile.name}:"
+            println "\nTotals for ${hipofile.name}:"
             HLstate.each { hel ->
+                // if nothing accumulated, default to 0.0
                 Double tot = qa.getAccumulatedChargeHL(hel) ?: 0.0
                 println "  HL charge(${hel}) = ${tot}"
             }
