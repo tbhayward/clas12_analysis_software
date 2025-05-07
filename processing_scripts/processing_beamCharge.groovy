@@ -99,7 +99,7 @@ public class processing_beamCharge {
 				event = reader.getNextEvent();
 				if (runnum==0) {
 					runnum = event.getBank("RUN::config").getInt('run',0);
-				}
+				} 
 
 			}
 			beamChargeList+=runnum.toString()+","+beamChargeMax.toString()+",";
