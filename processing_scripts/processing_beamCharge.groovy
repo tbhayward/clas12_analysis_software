@@ -73,17 +73,16 @@ public class processing_beamCharge {
 					print("run = "+beamChargeMax+" nC.\n");
 				}
 
-
     			if (event.hasBank("HEL::scaler")) {
     				if (event.getBank("HEL::scaler").getInt("helicity",0) == 1) {
-    					float beamCharge = event.getBank("HEL::scaler").getFloat("fcupgated",0);
-    					posHelbeamChargeTotal+=beamCharge;
+    					float posbeamCharge = event.getBank("HEL::scaler").getFloat("fcupgated",0);
+    					posHelbeamChargeTotal+=posbeamCharge;
 					} else if (event.getBank("HEL::scaler").getInt("helicity",0) == -1) {
-						float beamCharge = event.getBank("HEL::scaler").getFloat("fcupgated",0);
-    					negHelbeamChargeTotal+=beamCharge;
+						float negbeamCharge = event.getBank("HEL::scaler").getFloat("fcupgated",0);
+    					negHelbeamChargeTotal+=negbeamCharge;
 					} else if (event.getBank("HEL::scaler").getInt("helicity",0) == 0) {
-						float beamCharge = event.getBank("HEL::scaler").getFloat("fcupgated",0);
-    					noHelbeamChargeTotal+=beamCharge;
+						float undfbeamCharge = event.getBank("HEL::scaler").getFloat("fcupgated",0);
+    					noHelbeamChargeTotal+=undfbeamCharge;
 					}
     			}
     			beamCharge += posHelbeamChargeTotal + negHelbeamChargeTotal + noHelbeamChargeTotal;
