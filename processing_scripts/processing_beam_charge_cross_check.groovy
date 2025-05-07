@@ -74,13 +74,25 @@ public class processing_beamCharge {
 			int runnum = event.getBank("RUN::config").getInt('run', 0);
 			int evnum = event.getBank("RUN::config").getInt('event', 0);
 
-			while(reader.hasEvent()==true){
-				qa.query(runnum,evnum);
-				qa.accumulateChargeHL();
+			while(reader.hasEvent()) {
+			// read the next event
+			HipoDataEvent event = reader.getNextEvent()
+			int runnum = event.getBank("RUN::config").getInt('run',  0)
+			int evnum   = event.getBank("RUN::config").getInt('event',0)
+
+			// tell QADB which event we're looking at
+			qa.query(runnum, evnum)
+
+			// (optional) only accumulate when QA cuts pass:
+			// if (qa.pass()) {
+			  qa.accumulateChargeHL()
+			// }
+
+			} // end event loop
+
+			// now print out the accumulated charges
+			HLstate.each { value ->
+			println "HL charge($value) = " + qa.getAccumulatedChargeHL(value)
 			}
-		}
-		HLstate.each{ value ->
-		    println "HL charge(" + value + ")= " + qa.getAccumulatedChargeHL(value)
-		}
 	}
 }
