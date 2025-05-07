@@ -61,7 +61,6 @@ public class processing_beamCharge {
 
 		while (current_file < n_files) {
 			beamChargeMax = 0;
-			runnum = 0;
 			println(); println(); println("Opening file "+Integer.toString(current_file+1)
 				+" out of "+n_files); println(); println();
 			// limit to a certain number of files defined by n_files
