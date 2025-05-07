@@ -53,7 +53,7 @@ public class processing_beamCharge {
 		float noHelbeamChargeTotal = 0;
 		int runnum;
 		while (current_file < n_files) {
-			beamChargeMax = 0;
+			beamCharge = 0;
 			runnum = 0;
 			println(); println(); println("Opening file "+Integer.toString(current_file+1)
 				+" out of "+n_files); println(); println();
@@ -73,13 +73,7 @@ public class processing_beamCharge {
 					print("run = "+beamChargeMax+" nC.\n");
 				}
 
-				if (event.hasBank("RUN::scaler")) {
-					float beamCharge = event.getBank("RUN::scaler").getFloat("fcupgated",0);
-					if (beamCharge > beamChargeMax) { beamChargeMax = beamCharge; }
-    			}
 
-    			// if (event.hasBank("HEL::scaler") && 
-    			// 	event.getBank("HEL::scaler").getFloat("clock",0) > 30000) {
     			if (event.hasBank("HEL::scaler")) {
     				if (event.getBank("HEL::scaler").getInt("helicity",0) == 1) {
     					float beamCharge = event.getBank("HEL::scaler").getFloat("fcupgated",0);
@@ -92,8 +86,7 @@ public class processing_beamCharge {
     					noHelbeamChargeTotal+=beamCharge;
 					}
     			}
-    			def total = posHelbeamChargeTotal + negHelbeamChargeTotal + noHelbeamChargeTotal;
-    			println(total);
+    			beamCharge += posHelbeamChargeTotal + negHelbeamChargeTotal + noHelbeamChargeTotal;
 
 				// get run and event numbers
 				event = reader.getNextEvent();
