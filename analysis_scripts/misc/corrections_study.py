@@ -121,7 +121,7 @@ def plot_mx2_comparison(parent_dir, output_dir):
     line_styles = ['-', '--', ':', '-.']
     run_periods = ['fa18_inb', 'fa18_out', 'sp19_inb']
     
-    mx2_bins = np.linspace(0.3, 1.1, 100)
+    mx2_bins = np.linspace(-0.4, 0.4, 100)
     
     for run in run_periods:
         for det_num, det_config in detectors.items():
