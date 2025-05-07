@@ -53,7 +53,7 @@ public class processing_beamCharge {
 		float noHelbeamChargeTotal = 0;
 		int runnum;
 		while (current_file < n_files) {
-			beamCharge = 0;
+			def beamCharge = 0;
 			runnum = 0;
 			println(); println(); println("Opening file "+Integer.toString(current_file+1)
 				+" out of "+n_files); println(); println();
