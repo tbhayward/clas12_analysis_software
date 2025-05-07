@@ -1,94 +1,90 @@
+#!/usr/bin/env groovy
 /*
  * author Timothy B. Hayward
- * 
  */
 
-import java.io.File;
-import org.jlab.io.hipo.*;
-import org.jlab.io.base.DataEvent;
-import org.jlab.clas.physics.*;
-import org.jlab.clas12.physics.*;
-
-// import from hayward_coatjava_extensions
-import extended_kinematic_fitters.*; 
-import analyzers.*;
-
-// filetype for gathering files in directory
-import groovy.io.FileType;
-
-// dilks CLAS QA analysis
+import java.io.File
+import org.jlab.io.hipo.HipoDataSource
+import org.jlab.io.hipo.HipoDataEvent
+import groovy.io.FileType
 import clasqa.QADB
-
 
 public class processing_beamCharge {
 
-	public static void main(String[] args) {
-		// ~~~~~~~~~~~~~~~~ set up input paramaeters ~~~~~~~~~~~~~~~~ //
+    public static void main(String[] args) {
+        // ~~~~~~~~~~~~~~~~ check input directory ~~~~~~~~~~~~~~~~ //
+        if (!args) {
+            System.err.println("ERROR: Please enter a HIPO file directory as the first argument")
+            System.exit(1)
+        }
 
-		// Check if an argument is provided
-		if (!args) {
-		    // Print an error message and exit the program if the input directory is not specified
-		    println("ERROR: Please enter a hipo file directory as the first argument");
-		    System.exit(0);
-		}
-		// If the input directory is provided, iterate through each file recursively
-		def hipo_list = []
-		(args[0] as File).eachFileRecurse(FileType.FILES) 
-			{ if (it.name.endsWith('.hipo')) hipo_list << it }
+        // ~~~~~~~~~~~~~~~~ gather .hipo files ~~~~~~~~~~~~~~~~ //
+        def hipoList = []
+        new File(args[0]).eachFileRecurse(FileType.FILES) { file ->
+            if (file.name.endsWith('.hipo')) {
+                hipoList << file
+            }
+        }
+        if (hipoList.isEmpty()) {
+            System.err.println("ERROR: No .hipo files found in directory ${args[0]}")
+            System.exit(1)
+        }
 
-		// Set the number of files to process based on the provided 4th argument
-		// use the size of the hipo_list if no argument provided
-		int n_files = args.length < 2 || Integer.parseInt(args[1]) > hipo_list.size()
-		    ? hipo_list.size() : Integer.parseInt(args[1]);
-		if (args.length < 2 || Integer.parseInt(args[1]) > hipo_list.size()) {
-		    // Print warnings and information if the number of files is not specified or too large
-		    println("WARNING: Number of files not specified or number too large.")
-		    println("Setting # of files to be equal to number of files in the directory.");
-		    println("There are $hipo_list.size files.");
-		}
+        // ~~~~~~~~~~~~~~~~ limit to requested number of files ~~~~~~~~~~~~~~~~ //
+        int nFiles = args.length >= 2 ? Integer.parseInt(args[1]) : hipoList.size()
+        if (nFiles <= 0 || nFiles > hipoList.size()) {
+            println("WARNING: Invalid file count; processing all ${hipoList.size()} files")
+            nFiles = hipoList.size()
+        }
 
-		int num_events = 0;
-		int current_file = 0;
-		String beamChargeList = '';
-		float beamChargeMax = 0;
-		float posHelbeamChargeTotal = 0;
-		float negHelbeamChargeTotal = 0;
-		float noHelbeamChargeTotal = 0;
-		def HLstate = [-1,0,1]
+        // helicity states to report
+        def HLstate = [-1, 0, 1]
 
-		// setup QA database
-		QADB qa = new QADB("latest");
+        // initialize QA database
+        QADB qa = new QADB("latest")
 
-		for (current_file in 0..<n_files) {
-		// limit to a certain number of files defined by n_files
-		println("\n Opening file "+Integer.toString(current_file+1)
-			+" out of "+n_files+".\n"); 
-		
-		HipoDataSource reader = new HipoDataSource();
-		reader.open(hipo_list[current_file]); // open next hipo file
-		HipoDataEvent event = reader.getNextEvent(); 
+        // ~~~~~~~~~~~~~~~~ loop over each HIPO file ~~~~~~~~~~~~~~~~ //
+        for (int fileIndex = 0; fileIndex < nFiles; fileIndex++) {
+            File hipoFile = hipoList[fileIndex]
+            println("\nOpening file ${fileIndex + 1} of ${nFiles}: ${hipoFile}\n")
 
-		while (reader.hasEvent()) {
-		    ++num_events;
-		    if (num_events % 1000000 == 0) { // not necessary, just updates output
-		        print("processed: " + num_events + " events. ");
-		    }
+            HipoDataSource reader = new HipoDataSource()
+            reader.open(hipoFile)
 
-		    // get run and event numbers
-		    event = reader.getNextEvent();
-		    // collect info for QA
-		    int runnum = userProvidedRun ?: event.getBank("RUN::config").getInt('run', 0);
-		    if (runnum > 16600 && runnum < 16700) break; // Hall C bleedthrough
-		    int evnum = event.getBank("RUN::config").getInt('event', 0);
+            long numEvents = 0
 
-			while(reader.hasEvent()==true){
-				qa.query(runnum,evnum);
-				qa.accumulateChargeHL();
-				event = reader.getNextEvent();
-			}
-		}
-		HLstate.each{ value ->
-		    println "HL charge(" + value + ")= " + qa.getAccumulatedChargeHL(value)
-		}
-	}
+            // process every event exactly once
+            while (reader.hasEvent()) {
+                HipoDataEvent event = reader.getNextEvent()
+                numEvents++
+                if (numEvents % 1_000_000 == 0) {
+                    print("Processed ${numEvents} events... ")
+                }
+
+                int runnum = event.getBank("RUN::config").getInt("run", 0)
+                // skip Hall C bleed-through
+                if (runnum > 16600 && runnum < 16700) {
+                    println("\nBleedthrough run ${runnum} encountered; stopping this file.")
+                    break
+                }
+                int evnum = event.getBank("RUN::config").getInt("event", 0)
+
+                // update QA and accumulate charge by helicity
+                qa.query(runnum, evnum)
+                qa.accumulateChargeHL()
+            }
+
+            // report final totals per helicity
+            HLstate.each { hel ->
+                Double charge = qa.getAccumulatedChargeHL(hel) ?: 0.0
+                println("HL charge(${hel}) = ${charge}")
+            }
+
+            // reset for next file
+            qa.resetAccumulatedChargeHL()
+            reader.close()
+        }
+
+        println("\nProcessing complete.")
+    }
 }
