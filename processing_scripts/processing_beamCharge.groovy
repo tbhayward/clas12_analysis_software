@@ -94,7 +94,7 @@ public class processing_beamCharge {
 				} 
 
 			}
-			beamChargeList+=runnum.toString()+","+beamCharge.toString()+",";
+			beamChargeList+=runnum.toString()+","+(posHelbeamChargeTotal+negHelbeamChargeTotal+noHelbeamChargeTotal).toString()+",";
 			beamChargeList+=posHelbeamChargeTotal.toString()+","
 			beamChargeList+=negHelbeamChargeTotal.toString()+","
 			beamChargeList+=noHelbeamChargeTotal.toString()+",0,0\n";
