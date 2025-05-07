@@ -68,7 +68,7 @@ class processing_beamCharge {
             while (reader.hasEvent()) {
                 HipoDataEvent event = reader.getNextEvent()
                 eventCount++
-                if ((eventCount % 1_000_000) == 0) {
+                if ((eventCount % 1000000) == 0) {
                     print "  processed ${eventCount} events...\r"
                 }
 
@@ -88,23 +88,43 @@ class processing_beamCharge {
                 } catch (GroovyRuntimeException e) {
                     // skip events where QADB had no valid charge
                 }
+
+                double negSum  = qa.getAccumulatedChargeHL(-1) ?: 0.0
+	            double zeroSum = qa.getAccumulatedChargeHL(0)  ?: 0.0
+	            double posSum  = qa.getAccumulatedChargeHL(1)  ?: 0.0
+	            double total   = negSum + zeroSum + posSum
+	            println(total);
             }
 
             reader.close()
 
             // pull out the three helicity sums
-            double negSum  = qa.getAccumulatedChargeHL(-1) ?: 0.0
-            double zeroSum = qa.getAccumulatedChargeHL(0)  ?: 0.0
-            double posSum  = qa.getAccumulatedChargeHL(1)  ?: 0.0
-            double total   = negSum + zeroSum + posSum
+            // double negSum  = qa.getAccumulatedChargeHL(-1) ?: 0.0
+            // double zeroSum = qa.getAccumulatedChargeHL(0)  ?: 0.0
+            // double posSum  = qa.getAccumulatedChargeHL(1)  ?: 0.0
+            // double total   = negSum + zeroSum + posSum
+            negSum  = qa.getAccumulatedChargeHL(-1) ?: 0.0
+            zeroSum = qa.getAccumulatedChargeHL(0)  ?: 0.0
+            posSum  = qa.getAccumulatedChargeHL(1)  ?: 0.0
+            total   = negSum + zeroSum + posSum
 
             // if we never saw a non-zero run, fall back to 0
             if (fileRun < 0) {
                 fileRun = 0
             }
 
+            // format each float to 3 decimal places
+            String line = String.format(
+                "%d,%.3f,%.3f,%.3f,%.3f,0,0%n",
+                fileRun,
+                total,
+                posSum,
+                negSum,
+                zeroSum
+            )
+
             // append the new line
-            beamChargeList += "${fileRun},${total},${posSum},${negSum},${zeroSum},0,0\n"
+            beamChargeList += line
 
             // print *all* accumulated lines so far
             println "\n--- Accumulated summary so far ---"
