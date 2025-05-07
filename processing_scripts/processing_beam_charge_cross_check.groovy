@@ -79,9 +79,9 @@ class processing_beamCharge {
 
                 int runnum = event.getBank("RUN::config").getInt("run",  0)
                 int evnum   = event.getBank("RUN::config").getInt("event",0)
-                if (fileRun < 0) {
+                // if (fileRun < 0) {
                     fileRun = runnum
-                }
+                // }
 
                 qa.query(runnum, evnum)
                 try {
