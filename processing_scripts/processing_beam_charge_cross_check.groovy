@@ -98,7 +98,6 @@ class processing_beamCharge {
 	            zeroSum = qa.getAccumulatedChargeHL(0)  ?: 0.0
 	            posSum  = qa.getAccumulatedChargeHL(1)  ?: 0.0
 	            total   = negSum + zeroSum + posSum
-	            println(total);
             }
 
             reader.close()
