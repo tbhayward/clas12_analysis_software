@@ -100,13 +100,13 @@ def plot_mx2_comparison(parent_dir, output_dir):
     detectors = {
         1: {
             'name': 'Forward',
-            'theta_bins': [0,5,8,11,14,17,20,23,26,29,32,35,38,41,44,47,50,53,80],
-            'theta_labels': ['All θ'] + [f'{x}-{x+3}' for x in range(5,53,3)] + ['53-80']
+            'theta_bins': [0,8,11,14,17,20,23,26,29,32,35,38,41,80],
+            'theta_labels': ['All θ'] + [f'{x}-{x+3}' for x in range(5,53,3)] + ['41-80']
         },
         2: {
             'name': 'Central',
-            'theta_bins': [0,24,27,30,33,36,39,42,45,48,51,54,57,60,63,180],
-            'theta_labels': ['All θ'] + [f'{x}-{x+3}' for x in range(24,63,3)] + ['63-180']
+            'theta_bins': [0,36,39,42,45,48,51,54,57,180],
+            'theta_labels': ['All θ'] + [f'{x}-{x+3}' for x in range(24,63,3)] + ['57-180']
         }
     }
     
@@ -161,7 +161,7 @@ def plot_mx2_comparison(parent_dir, output_dir):
                                label=corr_labels[corr], density=False)
             
             ax_int.set(xlabel=r'$M_{x}^{2}$ (GeV²)', ylabel='Counts',
-                      xlim=(0.3, 1.1), title=f"{det_config['name']} Detector - {run}")
+                      xlim=(-0.4, 0.4), title=f"{det_config['name']} Detector - {run}")
             ax_int.legend()
             ax_int.grid(True, alpha=0.3)
 
