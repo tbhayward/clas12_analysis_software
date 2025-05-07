@@ -65,6 +65,9 @@ public class processing_beamCharge {
 			current_file++;
 			HipoDataEvent event = reader.getNextEvent(); 
 
+			int runnum = userProvidedRun ?: event.getBank("RUN::config").getInt('run', 0);
+			int evnum = event.getBank("RUN::config").getInt('event', 0);
+
 			while(reader.hasEvent()==true){
 				num_events++; 
 				if (num_events%1000000 == 0) { // not necessary, just updates output
