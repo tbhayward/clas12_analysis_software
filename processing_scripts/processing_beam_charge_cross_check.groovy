@@ -16,6 +16,9 @@ import analyzers.*;
 // filetype for gathering files in directory
 import groovy.io.FileType;
 
+// dilks CLAS QA analysis
+import clasqa.QADB
+
 
 public class processing_beamCharge {
 
@@ -52,6 +55,10 @@ public class processing_beamCharge {
 		float negHelbeamChargeTotal = 0;
 		float noHelbeamChargeTotal = 0;
 		int runnum;
+
+		// setup QA database
+		QADB qa = new QADB();
+		
 		while (current_file < n_files) {
 			beamChargeMax = 0;
 			runnum = 0;
