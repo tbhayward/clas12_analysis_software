@@ -51,6 +51,11 @@ class processing_beamCharge {
         // we’ll accumulate one CSV line per file here
         String beamChargeList = ""
 
+        double negSum  = 0;
+        double zeroSum = 0;
+        double posSum  = 0;
+        double total   = negSum + zeroSum + posSum
+
         // process each file in turn
         for (int i = 0; i < nFiles; i++) {
             File hipofile = hipoList[i]
