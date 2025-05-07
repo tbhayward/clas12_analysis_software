@@ -76,7 +76,7 @@ public class processing_beamCharge {
 
 			while(reader.hasEvent()==true){
 				qa.query(runnum,evnum);
-				accumulateChargeHL();
+				qa.accumulateChargeHL();
 			}
 		}
 		HLstate.each{ value ->
