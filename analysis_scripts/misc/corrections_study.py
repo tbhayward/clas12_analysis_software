@@ -185,7 +185,7 @@ def plot_mx2_comparison(parent_dir, output_dir):
                                                    label=corr_labels[corr])
                             artists.append(patches[0])
                 
-                ax.set(xlabel=r'$M_{x}^{2}$ (GeV²)', ylabel='Counts', xlim=(0.3, 1.1),
+                ax.set(xlabel=r'$M_{x}^{2}$ (GeV²)', ylabel='Counts', xlim=(-0.4, 0.4),
                       title=f'θ: {det_config["theta_labels"][idx]}°')
                 if artists:
                     ax.legend(handles=artists, fontsize=8)
