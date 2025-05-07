@@ -54,6 +54,7 @@ public class processing_beamCharge {
 		float posHelbeamChargeTotal = 0;
 		float negHelbeamChargeTotal = 0;
 		float noHelbeamChargeTotal = 0;
+		def HLstate = [-1,0,1]
 
 		// setup QA database
 		QADB qa = new QADB("latest");
