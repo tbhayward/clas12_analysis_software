@@ -127,7 +127,7 @@ def plot_mx2_comparison(parent_dir, output_dir):
     line_styles = ['-', '--', ':', '-.']
     run_periods = ['fa18_inb', 'fa18_out', 'sp19_inb']
 
-    mx2_bins = np.linspace(-0.4, 0.4, 100)
+    mx2_bins = np.linspace(-0.2, 0.2, 100)
 
     for run in run_periods:
         for det_num, det_config in detectors.items():
@@ -174,7 +174,7 @@ def plot_mx2_comparison(parent_dir, output_dir):
 
             ax_int.set(
                 xlabel=r'$M_{x}^{2}$ (GeV²)', ylabel='Counts',
-                xlim=(-0.4, 0.4),
+                xlim=(-0.2, 0.2),
                 title=f"{det_config['name']} Detector - {run}"
             )
             ax_int.legend()
@@ -211,7 +211,7 @@ def plot_mx2_comparison(parent_dir, output_dir):
                 ax.set(
                     xlabel=r'$M_{x}^{2}$ (GeV²)',
                     ylabel='Counts',
-                    xlim=(-0.4, 0.4),
+                    xlim=(-0.2, 0.2),
                     title=f'θ: {det_config["theta_labels"][idx]}°'
                 )
                 if artists:
