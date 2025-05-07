@@ -58,7 +58,7 @@ public class processing_beamCharge {
 
 		// setup QA database
 		QADB qa = new QADB();
-		
+
 		while (current_file < n_files) {
 			beamChargeMax = 0;
 			runnum = 0;
@@ -72,8 +72,11 @@ public class processing_beamCharge {
 			current_file++;
 			HipoDataEvent event = reader.getNextEvent(); 
 
+			int runnum = userProvidedRun ?: event.getBank("RUN::config").getInt('run', 0);
+			int evnum = event.getBank("RUN::config").getInt('event', 0);
+
 			while(reader.hasEvent()==true){
-				qa.query(run,evnum);
+				qa.query(runnum,evnum);
 			}
 		}
 	}
