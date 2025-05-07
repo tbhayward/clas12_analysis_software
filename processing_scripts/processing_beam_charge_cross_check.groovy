@@ -78,6 +78,8 @@ public class processing_beamCharge {
 				accumulateChargeHL();
 			}
 		}
-		print(getAccumulatedChargeHL(-1)+" "+getAccumulatedChargeHL(0)+" "+getAccumulatedChargeHL(1));
+		HLstate.each{ value ->
+		    println "HL charge(" + value + ")= " + qa.getAccumulatedChargeHL(value)
+		}
 	}
 }
