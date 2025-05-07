@@ -59,40 +59,36 @@ public class processing_beamCharge {
 		// setup QA database
 		QADB qa = new QADB("latest");
 
-		while (current_file < n_files) {
-			beamChargeMax = 0;
-			println(); println(); println("Opening file "+Integer.toString(current_file+1)
-				+" out of "+n_files); println(); println();
-			// limit to a certain number of files defined by n_files
+		for (current_file in 0..<n_files) {
+		// limit to a certain number of files defined by n_files
+		println("\n Opening file "+Integer.toString(current_file+1)
+			+" out of "+n_files+".\n"); 
+		
+		HipoDataSource reader = new HipoDataSource();
+		reader.open(hipo_list[current_file]); // open next hipo file
+		HipoDataEvent event = reader.getNextEvent(); 
 
-			HipoDataSource reader = new HipoDataSource();
+		while (reader.hasEvent()) {
+		    ++num_events;
+		    if (num_events % 1000000 == 0) { // not necessary, just updates output
+		        print("processed: " + num_events + " events. ");
+		    }
 
-			reader.open(hipo_list[current_file]); // open next hipo file
-			current_file++;
-			HipoDataEvent event = reader.getNextEvent(); 
+		    // get run and event numbers
+		    event = reader.getNextEvent();
+		    // collect info for QA
+		    int runnum = userProvidedRun ?: event.getBank("RUN::config").getInt('run', 0);
+		    if (runnum > 16600 && runnum < 16700) break; // Hall C bleedthrough
+		    int evnum = event.getBank("RUN::config").getInt('event', 0);
 
-			int runnum = event.getBank("RUN::config").getInt('run', 0);
-			int evnum = event.getBank("RUN::config").getInt('event', 0);
-
-			while(reader.hasEvent()) {
-			// read the next event
-			HipoDataEvent event = reader.getNextEvent()
-			int runnum = event.getBank("RUN::config").getInt('run',  0)
-			int evnum   = event.getBank("RUN::config").getInt('event',0)
-
-			// tell QADB which event we're looking at
-			qa.query(runnum, evnum)
-
-			// (optional) only accumulate when QA cuts pass:
-			// if (qa.pass()) {
-			  qa.accumulateChargeHL()
-			// }
-
-			} // end event loop
-
-			// now print out the accumulated charges
-			HLstate.each { value ->
-			println "HL charge($value) = " + qa.getAccumulatedChargeHL(value)
+			while(reader.hasEvent()==true){
+				qa.query(runnum,evnum);
+				qa.accumulateChargeHL();
+				event = reader.getNextEvent();
 			}
+		}
+		HLstate.each{ value ->
+		    println "HL charge(" + value + ")= " + qa.getAccumulatedChargeHL(value)
+		}
 	}
 }
