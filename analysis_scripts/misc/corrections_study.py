@@ -214,4 +214,13 @@ if __name__ == "__main__":
     #         )
 
     # Generate Mx² comparison plots
-    plot_mx2_comparison(PARENT_DIR, OUTPUT_DIR)
+    try:
+        # Generate plots
+        plot_mx2_comparison(PARENT_DIR, OUTPUT_DIR)
+        
+        # Uncomment to run phase space plots
+        # generate_phase_space_plots(...)
+        
+    finally:
+        # Clean up matplotlib resources
+        plt.close('all')
