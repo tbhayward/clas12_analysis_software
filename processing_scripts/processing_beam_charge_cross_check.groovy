@@ -94,10 +94,10 @@ class processing_beamCharge {
                     // skip events where QADB had no valid charge
                 }
 
-                double negSum  = qa.getAccumulatedChargeHL(-1) ?: 0.0
-	            double zeroSum = qa.getAccumulatedChargeHL(0)  ?: 0.0
-	            double posSum  = qa.getAccumulatedChargeHL(1)  ?: 0.0
-	            double total   = negSum + zeroSum + posSum
+                negSum  = qa.getAccumulatedChargeHL(-1) ?: 0.0
+	            zeroSum = qa.getAccumulatedChargeHL(0)  ?: 0.0
+	            posSum  = qa.getAccumulatedChargeHL(1)  ?: 0.0
+	            total   = negSum + zeroSum + posSum
 	            println(total);
             }
 
