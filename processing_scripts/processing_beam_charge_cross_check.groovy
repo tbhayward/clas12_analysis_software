@@ -54,7 +54,6 @@ public class processing_beamCharge {
 		float posHelbeamChargeTotal = 0;
 		float negHelbeamChargeTotal = 0;
 		float noHelbeamChargeTotal = 0;
-		int runnum;
 
 		// setup QA database
 		QADB qa = new QADB();
