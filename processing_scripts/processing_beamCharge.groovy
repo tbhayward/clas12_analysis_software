@@ -92,6 +92,8 @@ public class processing_beamCharge {
     					noHelbeamChargeTotal+=beamCharge;
 					}
     			}
+    			total = posHelbeamChargeTotal + negHelbeamChargeTotal + noHelbeamChargeTotal;
+    			println(total);
 
 				// get run and event numbers
 				event = reader.getNextEvent();
