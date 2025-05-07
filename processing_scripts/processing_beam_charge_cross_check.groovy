@@ -65,7 +65,7 @@ class processing_beamCharge {
                 int runnum = event.getBank("RUN::config").getInt("run", 0)
                 // skip known bleed-through
                 if (runnum > 16600 && runnum < 16700) {
-                    // println "\n  Bleed-through run ${runnum} → stopping file."
+                    println "\n  Bleed-through run ${runnum} → stopping file."
                     // break
                 }
                 int evnum = event.getBank("RUN::config").getInt("event", 0)
