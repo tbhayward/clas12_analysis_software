@@ -56,7 +56,7 @@ public class processing_beamCharge {
 		float noHelbeamChargeTotal = 0;
 
 		// setup QA database
-		QADB qa = new QADB();
+		QADB qa = new QADB("latest");
 
 		while (current_file < n_files) {
 			beamChargeMax = 0;
