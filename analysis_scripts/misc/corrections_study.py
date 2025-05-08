@@ -277,7 +277,10 @@ def plot_three_particles(parent_dir, output_dir):
             for corr in corrections:
                 fn = f"nSidis_{run}_{corr}.root"
                 fp = os.path.join(parent_dir, fn)
-                print(f"Loading {fp}…")
+                if not os.path.exists(fp):
+                    print(f"  ⚠️ Missing file: {fp}")
+                    continue
+
                 with uproot.open(fp) as froot:
                     tree = froot['PhysicsEvents']
 
@@ -355,7 +358,7 @@ def plot_three_particles(parent_dir, output_dir):
                 if artists:
                     ax.legend(handles=artists, fontsize=8)
                 #endif
-            #endfor
+            #endfor θ‐bins
 
             out = os.path.join(
                 output_dir,
