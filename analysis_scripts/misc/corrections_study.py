@@ -314,7 +314,7 @@ def plot_three_particles(parent_dir, output_dir):
                         
                         # Load data
                         data = tree.arrays(required_branches, library='np')
-                        print(f"Total events in file: {len(data['Mx2']:,}")
+                        print(f"Total events in file: {len(data['Mx2']):,}")
                         
                         # Apply detector selection
                         mask = (data['detector1'] == det_num)
