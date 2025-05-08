@@ -231,142 +231,123 @@ def plot_mx2_comparison(parent_dir, output_dir):
 def plot_three_particles(parent_dir, output_dir):
     """
     Analyzes missing mass squared (Mx²) for eppi+pi- channel
-    with three-particle final state, reading detector1/2/3
-    as unsigned-byte integers so the mask really picks out 0/1/2.
+    with three particle final state
     """
     detectors = {
-        1: {'name': 'Forward',
-            'theta_bins': [0, 8, 11, 14, 17, 20, 23, 26, 29, 32, 35, 38, 41, 80]},
-        2: {'name': 'Central',
-            'theta_bins': [0, 36, 39, 42, 45, 48, 51, 54, 57, 180]}
+        1: {
+            'name': 'Forward',
+            'theta_bins': [0, 8, 11, 14, 17, 20, 23, 26, 29, 32, 35, 38, 41, 80],
+            'theta_labels': ['All θ'] + [f'{b}-{b+3}' for b in [8,11,14,17,20,23,26,29,32,35,38]] + ['38-80']
+        },
+        2: {
+            'name': 'Central',
+            'theta_bins': [0, 36, 39, 42, 45, 48, 51, 54, 57, 180],
+            'theta_labels': ['All θ'] + [f'{b}-{b+3}' for b in [36,39,42,45,48,51,54]] + ['54-180']
+        }
     }
-
-    # Build theta_labels from theta_bins
-    for det in detectors.values():
-        b = det['theta_bins']
-        det['theta_labels'] = ['All θ'] + [f"{b[i]}-{b[i+1]}" for i in range(len(b)-1)]
-    #endfor
 
     corrections = ['noCorrections', 'timothy', 'krishna', 'mariana']
     corr_labels = {
         'noCorrections': 'No Corrections',
-        'timothy':       "Timothy's",
-        'krishna':       "Krishna's",
-        'mariana':       "Mariana's"
+        'timothy': "Timothy's",
+        'krishna': "Krishna's",
+        'mariana': "Mariana's"
     }
-    colors      = ['black', 'red', 'green', 'blue']
+    colors = ['black', 'red', 'green', 'blue']
     line_styles = ['-', '--', ':', '-.']
     run_periods = ['fa18_inb', 'fa18_out', 'sp19_inb']
-
+    
     mx2_bins = np.linspace(-0.2, 0.2, 100)
 
     for run in run_periods:
-        for det_num, det_cfg in detectors.items():
-            bins         = det_cfg['theta_bins']
-            labels       = det_cfg['theta_labels']
-            n_plots      = len(labels)
-            n_cols       = 4
-            n_rows       = int(np.ceil((n_plots-1)/n_cols)) + 1
-
+        for det_num, det_config in detectors.items():
+            n_total_plots = len(det_config['theta_labels'])
+            n_cols = 4
+            n_rows = int(np.ceil((n_total_plots-1)/n_cols)) + 1
+            
             fig = plt.figure(figsize=(20, 5*n_rows))
-            gs  = gridspec.GridSpec(n_rows, n_cols, figure=fig)
-
+            gs = gridspec.GridSpec(n_rows, n_cols, figure=fig)
+            
             all_data = {}
             for corr in corrections:
-                fn = f"nSidis_{run}_{corr}.root"
-                fp = os.path.join(parent_dir, fn)
-                if not os.path.exists(fp):
-                    print(f"  ⚠️ Missing file: {fp}")
+                # CORRECTED FILENAME PATTERN (removed 'ep')
+                filename = f"nSidis_{run}_{corr}.root"
+                filepath = os.path.join(parent_dir, filename)
+                
+                try:
+                    with uproot.open(filepath) as f:
+                        tree = f['PhysicsEvents']
+                        # Using detector1 branch for three-particle case
+                        data = tree.arrays(['Mx2', 'p1_theta', 'detector1'], library='np')
+                        mask = (data['detector1'] == det_num)
+                        
+                        if np.sum(mask) > 0:
+                            all_data[corr] = {
+                                'Mx2': data['Mx2'][mask],
+                                'theta': np.degrees(data['p1_theta'][mask])
+                            }
+                except Exception as e:
+                    print(f"Error loading {filepath}: {e}")
                     continue
 
-                with uproot.open(fp) as froot:
-                    tree = froot['PhysicsEvents']
-
-                    # tell uproot: detector1/2/3 are 1‐byte unsigned ints
-                    data = tree.arrays({
-                        "Mx2":       None,
-                        "p1_theta":  None,
-                        "detector1": "u1",
-                        "detector2": "u1",
-                        "detector3": "u1",
-                    }, library="np")
-
-                    # now they really are ints
-                    det1 = data['detector1'].astype(int)
-                    mask = (det1 == det_num)
-                    if mask.sum() > 0:
-                        all_data[corr] = {
-                            'Mx2':   data['Mx2'][mask],
-                            'theta': np.degrees(data['p1_theta'][mask])
-                        }
-                    #endif
-                #endwith
-            #endfor corrections
-
-            # ---- integrated Mx² ----
-            ax0 = fig.add_subplot(gs[0, :])
-            for corr, col, ls in zip(corrections, colors, line_styles):
+            # Integrated spectrum plot
+            ax_int = fig.add_subplot(gs[0, :])
+            artists = []
+            for corr, color, ls in zip(corrections, colors, line_styles):
                 if corr in all_data:
-                    ax0.hist(
+                    hist = ax_int.hist(
                         all_data[corr]['Mx2'], bins=mx2_bins,
-                        histtype='step', color=col, linestyle=ls,
+                        histtype='step', color=color, linestyle=ls,
                         label=corr_labels[corr]
                     )
-                #endif
-            #endfor
-            ax0.set(
-                xlabel=r'$M_{x}^{2}$ (GeV²)',
-                ylabel='Counts',
-                xlim=(-0.2, 0.2),
-                title=f"{det_cfg['name']} Detector — {run}"
-            )
-            ax0.legend()
-            ax0.grid(True, alpha=0.3)
+                    artists.extend(hist[2])
+            
+            if artists:
+                ax_int.legend()
+            ax_int.set(xlabel=r'$M_{x}^{2}$ (GeV²)', ylabel='Counts',
+                      xlim=(-0.2, 0.2), title=f"{det_config['name']} Detector - {run}")
+            ax_int.grid(True, alpha=0.3)
 
-            # ---- θ‐binned Mx² ----
-            for idx in range(1, n_plots):
-                row, col = divmod(idx-1, n_cols)
-                ax = fig.add_subplot(gs[row+1, col])
-
-                tmin, tmax = bins[idx-1], bins[idx]
-                artists = []
-                for corr, colr, ls in zip(corrections, colors, line_styles):
+            # Theta-binned spectra
+            for idx in range(1, n_total_plots):
+                row = (idx-1) // n_cols + 1
+                col = (idx-1) % n_cols
+                ax = fig.add_subplot(gs[row, col])
+                
+                theta_min = det_config['theta_bins'][idx]
+                theta_max = det_config['theta_bins'][idx+1]
+                
+                sub_artists = []
+                for corr, color, ls in zip(corrections, colors, line_styles):
                     if corr in all_data:
-                        sel = (
-                            (all_data[corr]['theta'] >= tmin) &
-                            (all_data[corr]['theta'] <  tmax)
-                        )
-                        arr = all_data[corr]['Mx2'][sel]
-                        if arr.size:
-                            h = ax.hist(
-                                arr, bins=mx2_bins, histtype='step',
-                                color=colr, linestyle=ls,
-                                label=corr_labels[corr]
-                            )
-                            artists.append(h[2][0])
-                        #endif
-                    #endif
-                #endfor
-                ax.set(
-                    xlabel=r'$M_{x}^{2}$ (GeV²)',
-                    ylabel='Counts',
-                    xlim=(-0.2, 0.2),
-                    title=f'θ: {labels[idx]}°'
-                )
-                if artists:
-                    ax.legend(handles=artists, fontsize=8)
-                #endif
-            #endfor θ‐bins
+                        mask = (all_data[corr]['theta'] >= theta_min) & (all_data[corr]['theta'] < theta_max)
+                        mx2_data = all_data[corr]['Mx2'][mask]
+                        if len(mx2_data) > 0:
+                            hist = ax.hist(mx2_data, bins=mx2_bins,
+                                         histtype='step', color=color, linestyle=ls,
+                                         label=corr_labels[corr])
+                            sub_artists.extend(hist[2])
+                
+                ax.set(xlabel=r'$M_{x}^{2}$ (GeV²)', ylabel='Counts',
+                      xlim=(-0.2, 0.2), title=f'θ: {det_config["theta_labels"][idx]}°')
+                if sub_artists:
+                    ax.legend(handles=sub_artists, fontsize=8)
 
-            out = os.path.join(
-                output_dir,
-                f'Mx2_3particle_{run}_{det_cfg["name"]}.pdf'
-            )
-            plt.savefig(out, bbox_inches='tight')
-            plt.close(fig)
-            print("Saved →", out)
-        #endfor detectors
-    #endfor runs
+            output_file = os.path.join(output_dir, f'Mx2_3particle_{run}_{det_config["name"]}.pdf')
+            plt.savefig(output_file, bbox_inches='tight')
+            plt.close()
+            print(f"Saved: {output_file}")
+
+if __name__ == "__main__":
+    PARENT_DIR = "/volatile/clas12/thayward/corrections_study/results/proton_energy_loss/"
+    OUTPUT_DIR = "output/correction_study"
+    
+    os.makedirs(OUTPUT_DIR, exist_ok=True)
+
+    try:
+        plot_three_particles(PARENT_DIR, OUTPUT_DIR)
+    finally:
+        plt.close('all')
 
 if __name__ == "__main__":
     PARENT_DIR = "/volatile/clas12/thayward/corrections_study/results/proton_energy_loss/"
