@@ -312,16 +312,23 @@ def plot_three_particles(parent_dir, output_dir):
                             print(f"! Missing branches: {missing}")
                             continue
                         
+                        # Inside the data loading try-block:
                         # Load data
                         data = tree.arrays(required_branches, library='np')
                         print(f"Total events in file: {len(data['Mx2']):,}")
-                        
+
+                        # Debug: Check actual detector numbers
+                        unique_detectors = np.unique(data['detector1'])
+                        print(f"Unique detector1 values: {unique_detectors}")
+
                         # Apply detector selection
                         mask = (data['detector1'] == det_num)
                         print(f"Events in detector {det_num}: {np.sum(mask):,}")
-                        
+
                         if np.sum(mask) == 0:
-                            print("! No events for this detector")
+                            print("Detector1 value ranges:")
+                            print(f"Min: {np.min(data['detector1'])}, Max: {np.max(data['detector1'])}")
+                            print("Possible detector numbers:", np.unique(data['detector1']))
                             continue
                             
                         # Store data with debug info
