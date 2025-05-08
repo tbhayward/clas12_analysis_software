@@ -232,14 +232,9 @@ def plot_mx2_comparison(parent_dir, output_dir):
 def plot_three_particles(parent_dir, output_dir):
     """
     Analyzes missing mass squared (Mx²) for eppi+pi- channel
-    with three-particle final state, with debug prints
+    with three-particle final state, including debug prints
+    and forced integer cast of detector1.
     """
-    import os
-    import numpy as np
-    import uproot
-    import matplotlib.pyplot as plt
-    import matplotlib.gridspec as gridspec
-
     detectors = {
         1: {
             'name': 'Forward',
@@ -251,10 +246,9 @@ def plot_three_particles(parent_dir, output_dir):
         }
     }
 
-    # Generate theta_labels from bins
+    # Build theta_labels from theta_bins
     for det_config in detectors.values():
         bins = det_config['theta_bins']
-        # one label for every bin *pair*
         det_config['theta_labels'] = ['All θ'] + [
             f"{bins[i]}-{bins[i+1]}" for i in range(len(bins)-1)
         ]
@@ -278,14 +272,6 @@ def plot_three_particles(parent_dir, output_dir):
             bins = det_config['theta_bins']
             theta_labels = det_config['theta_labels']
             n_total_plots = len(theta_labels)
-
-            # Verify bin/label alignment
-            if len(bins) != n_total_plots:
-                print(f"Bin/Label mismatch in {det_config['name']} detector: "
-                      f"{len(bins)} bins vs {n_total_plots} labels")
-                continue
-            #endif
-
             n_cols = 4
             n_rows = int(np.ceil((n_total_plots-1)/n_cols)) + 1
 
@@ -296,29 +282,40 @@ def plot_three_particles(parent_dir, output_dir):
             for corr in corrections:
                 filename = f"nSidis_{run}_{corr}.root"
                 filepath = os.path.join(parent_dir, filename)
-                print(f"Loading → {filepath}")
+                print(f"\nLoading → {filepath}")
+
                 try:
                     with uproot.open(filepath) as froot:
                         tree = froot['PhysicsEvents']
-                        print("  branches:", tree.keys())
 
+                        # Inspect the ROOT branch type
+                        branch = tree.member('detector1')
+                        print("  ROOT type for detector1:", branch.interpretation)
+
+                        # Read ​all three detector branches plus Mx2 and p1_theta
                         data = tree.arrays(
                             ['Mx2','p1_theta','detector1','detector2','detector3'],
                             library='np'
                         )
 
-                        # 1) Check detector branches
+                        # Debug: show raw detector1 dtype & values
                         print("  detector1 dtype:", data['detector1'].dtype)
                         print("  detector1 first 20:", data['detector1'][:20])
+
+                        # Debug: unique values in all detector branches
                         for i in [1,2,3]:
                             vals = data[f'detector{i}']
                             print(f"  detector{i} uniques (first 10):", np.unique(vals)[:10])
 
-                        # 2) Check Mx2 range
+                        # Debug: Mx2 range
                         print("  Mx2 range:", data['Mx2'].min(), data['Mx2'].max())
 
-                        # Now your mask:
-                        mask = (data['detector1'] == det_num)
+                        # *** Force integer casting of detector1 ***
+                        det1 = data['detector1'].astype(np.uint8)
+                        print("  detector1 after cast uniques:", np.unique(det1)[:10])
+
+                        # Apply the mask using the integer array
+                        mask = (det1 == det_num)
                         print(f"  mask.sum() for det {det_num}:", mask.sum())
 
                         if mask.sum() > 0:
@@ -328,12 +325,13 @@ def plot_three_particles(parent_dir, output_dir):
                             }
                         #endif
                     #endwith
+
                 except Exception as e:
                     print(f"Error loading {filepath}: {e}")
                 #endtry
-            #endfor
+            #endfor corrections
 
-            # Integrated spectrum plot
+            # ---- Make the integrated histogram ----
             ax_int = fig.add_subplot(gs[0, :])
             for corr, color, ls in zip(corrections, colors, line_styles):
                 if corr in all_data:
@@ -352,7 +350,7 @@ def plot_three_particles(parent_dir, output_dir):
             ax_int.legend()
             ax_int.grid(True, alpha=0.3)
 
-            # Theta-binned spectra
+            # ---- Make the θ-binned histograms ----
             for idx in range(1, n_total_plots):
                 row = (idx-1) // n_cols + 1
                 col = (idx-1) % n_cols
@@ -365,8 +363,8 @@ def plot_three_particles(parent_dir, output_dir):
                 for corr, color, ls in zip(corrections, colors, line_styles):
                     if corr in all_data:
                         mask = (
-                            (all_data[corr]['theta'] >= theta_min)
-                            & (all_data[corr]['theta'] < theta_max)
+                            (all_data[corr]['theta'] >= theta_min) &
+                            (all_data[corr]['theta'] < theta_max)
                         )
                         mx2_data = all_data[corr]['Mx2'][mask]
                         if len(mx2_data) > 0:
@@ -388,8 +386,9 @@ def plot_three_particles(parent_dir, output_dir):
                 if sub_artists:
                     ax.legend(handles=sub_artists, fontsize=8)
                 #endif
-            #endfor
+            #endfor θ-bins
 
+            # ---- Save & close ----
             output_file = os.path.join(
                 output_dir,
                 f'Mx2_3particle_{run}_{det_config["name"]}.pdf'
@@ -397,8 +396,8 @@ def plot_three_particles(parent_dir, output_dir):
             plt.savefig(output_file, bbox_inches='tight')
             plt.close(fig)
             print(f"Saved: {output_file}")
-        #endfor
-    #endfor
+        #endfor det_num
+    #endfor run_periods
 
 if __name__ == "__main__":
     PARENT_DIR = "/volatile/clas12/thayward/corrections_study/results/proton_energy_loss/"
