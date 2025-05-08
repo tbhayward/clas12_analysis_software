@@ -1,10 +1,8 @@
-import uproot
-import numpy as np
-import matplotlib.pyplot as plt
-from uproot.interpretation.identify import AsDtype
-from matplotlib.colors import LogNorm
-import matplotlib.gridspec as gridspec
 import os
+import numpy as np
+import uproot
+import matplotlib.pyplot as plt
+import matplotlib.gridspec as gridspec
 
 def generate_phase_space_plots(channel, correction, plot_type, parent_dir, output_dir):
     """
