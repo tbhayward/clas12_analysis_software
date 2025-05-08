@@ -278,8 +278,8 @@ def plot_three_particles(parent_dir, output_dir):
                     with uproot.open(filepath) as f:
                         tree = f['PhysicsEvents']
                         # Using p1 variables for the proton
-                        data = tree.arrays(['Mx2', 'p1_theta', 'detector'], library='np')
-                        mask = (data['detector'] == det_num)
+                        data = tree.arrays(['Mx2', 'p1_theta', 'detector1'], library='np')
+                        mask = (data['detector1'] == det_num)
                         
                         if np.sum(mask) > 0:
                             all_data[corr] = {
