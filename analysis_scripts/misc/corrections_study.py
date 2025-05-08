@@ -233,26 +233,22 @@ def plot_mx2_comparison(parent_dir, output_dir):
 def plot_three_particles(parent_dir, output_dir):
     """
     Analyzes missing mass squared (Mx²) for eppi+pi- channel
-    with three-particle final state, now reading detector1/2/3
-    as unsigned-byte integers so the mask really finds 0/1/2.
+    with three-particle final state, reading detector1/2/3
+    as unsigned-byte integers so the mask finds 0/1/2.
     """
     detectors = {
-        1: {
-            'name': 'Forward',
+        1: {'name': 'Forward',
             'theta_bins': [0, 8, 11, 14, 17, 20, 23, 26, 29, 32, 35, 38, 41, 80]
         },
-        2: {
-            'name': 'Central',
+        2: {'name': 'Central',
             'theta_bins': [0, 36, 39, 42, 45, 48, 51, 54, 57, 180]
         }
     }
 
     # Build theta_labels from theta_bins
-    for det_config in detectors.values():
-        bins = det_config['theta_bins']
-        det_config['theta_labels'] = ['All θ'] + [
-            f"{bins[i]}-{bins[i+1]}" for i in range(len(bins)-1)
-        ]
+    for det in detectors.values():
+        b = det['theta_bins']
+        det['theta_labels'] = ['All θ'] + [f"{b[i]}-{b[i+1]}" for i in range(len(b)-1)]
     #endfor
 
     corrections = ['noCorrections', 'timothy', 'krishna', 'mariana']
@@ -269,10 +265,10 @@ def plot_three_particles(parent_dir, output_dir):
     mx2_bins = np.linspace(-0.2, 0.2, 100)
 
     for run in run_periods:
-        for det_num, det_config in detectors.items():
-            bins         = det_config['theta_bins']
-            theta_labels = det_config['theta_labels']
-            n_plots      = len(theta_labels)
+        for det_num, det_cfg in detectors.items():
+            bins         = det_cfg['theta_bins']
+            labels       = det_cfg['theta_labels']
+            n_plots      = len(labels)
             n_cols       = 4
             n_rows       = int(np.ceil((n_plots-1)/n_cols)) + 1
 
@@ -287,7 +283,7 @@ def plot_three_particles(parent_dir, output_dir):
                 with uproot.open(fp) as froot:
                     tree = froot['PhysicsEvents']
 
-                    # **Override detector interpretation:**
+                    # Override detector interpretation:
                     data = tree.arrays({
                         "Mx2":       None,
                         "p1_theta":  None,
@@ -296,10 +292,8 @@ def plot_three_particles(parent_dir, output_dir):
                         "detector3": AsDtype(">u1"),
                     }, library="np")
 
-                    # Cast to normal ints
+                    # Cast to ints and mask
                     det1 = data['detector1'].astype(int)
-
-                    # Mask on the true integer ID
                     mask = (det1 == det_num)
                     if mask.sum() > 0:
                         all_data[corr] = {
@@ -310,7 +304,7 @@ def plot_three_particles(parent_dir, output_dir):
                 #endwith
             #endfor corrections
 
-            # --- integrated Mx² plot ---
+            # Integrated Mx² plot
             ax0 = fig.add_subplot(gs[0, :])
             for corr, col, ls in zip(corrections, colors, line_styles):
                 if corr in all_data:
@@ -325,14 +319,15 @@ def plot_three_particles(parent_dir, output_dir):
                 xlabel=r'$M_{x}^{2}$ (GeV²)',
                 ylabel='Counts',
                 xlim=(-0.2, 0.2),
-                title=f"{det_config['name']} Detector – {run}"
+                title=f"{det_cfg['name']} Detector — {run}"
             )
             ax0.legend()
             ax0.grid(True, alpha=0.3)
 
-            # --- θ-binned Mx² plots ---
+            # θ-binned Mx² plots
             for idx in range(1, n_plots):
-                row, col = (idx-1)//n_cols + 1, (idx-1)%n_cols
+                row, col = divmod(idx-1, n_cols)
+                row += 1
                 ax = fig.add_subplot(gs[row, col])
 
                 tmin, tmax = bins[idx-1], bins[idx]
@@ -358,16 +353,16 @@ def plot_three_particles(parent_dir, output_dir):
                     xlabel=r'$M_{x}^{2}$ (GeV²)',
                     ylabel='Counts',
                     xlim=(-0.2, 0.2),
-                    title=f'θ: {theta_labels[idx]}°'
+                    title=f'θ: {labels[idx]}°'
                 )
                 if artists:
                     ax.legend(handles=artists, fontsize=8)
                 #endif
-            #endfor θ-bins
+            #endfor
 
             out = os.path.join(
                 output_dir,
-                f'Mx2_3particle_{run}_{det_config["name"]}.pdf'
+                f'Mx2_3particle_{run}_{det_cfg["name"]}.pdf'
             )
             plt.savefig(out, bbox_inches='tight')
             plt.close(fig)
