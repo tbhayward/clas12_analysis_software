@@ -205,6 +205,8 @@ public class FourParticles {
             detector3 = 2; // Central Detector
         }
         
+        System.out.println(detector1+" "+detector2+" "+detector3);
+        
 
         // Set up Lorentz vectors
         // beam electron
