@@ -232,8 +232,14 @@ def plot_mx2_comparison(parent_dir, output_dir):
 def plot_three_particles(parent_dir, output_dir):
     """
     Analyzes missing mass squared (Mx²) for eppi+pi- channel
-    with three-particle final state
+    with three-particle final state, with debug prints
     """
+    import os
+    import numpy as np
+    import uproot
+    import matplotlib.pyplot as plt
+    import matplotlib.gridspec as gridspec
+
     detectors = {
         1: {
             'name': 'Forward',
@@ -248,10 +254,10 @@ def plot_three_particles(parent_dir, output_dir):
     # Generate theta_labels from bins
     for det_config in detectors.values():
         bins = det_config['theta_bins']
-        det_config['theta_labels'] = (
-            ['All θ']
-            + [f"{bins[i]}-{bins[i+1]}" for i in range(len(bins)-1)]
-        )
+        # one label for every bin *pair*
+        det_config['theta_labels'] = ['All θ'] + [
+            f"{bins[i]}-{bins[i+1]}" for i in range(len(bins)-1)
+        ]
     #endfor
 
     corrections = ['noCorrections', 'timothy', 'krishna', 'mariana']
@@ -274,9 +280,11 @@ def plot_three_particles(parent_dir, output_dir):
             n_total_plots = len(theta_labels)
 
             # Verify bin/label alignment
-            if len(bins) != len(theta_labels) + 1:
-                print(f"Bin/Label mismatch in {det_config['name']} detector")
+            if len(bins) != n_total_plots:
+                print(f"Bin/Label mismatch in {det_config['name']} detector: "
+                      f"{len(bins)} bins vs {n_total_plots} labels")
                 continue
+            #endif
 
             n_cols = 4
             n_rows = int(np.ceil((n_total_plots-1)/n_cols)) + 1
@@ -290,8 +298,10 @@ def plot_three_particles(parent_dir, output_dir):
                 filepath = os.path.join(parent_dir, filename)
                 print(f"Loading → {filepath}")
                 try:
-                    with uproot.open(filepath) as f:
-                        tree = f['PhysicsEvents']
+                    with uproot.open(filepath) as froot:
+                        tree = froot['PhysicsEvents']
+                        print("  branches:", tree.keys())
+
                         data = tree.arrays(
                             ['Mx2','p1_theta','detector1','detector2','detector3'],
                             library='np'
@@ -310,6 +320,7 @@ def plot_three_particles(parent_dir, output_dir):
                         # Now your mask:
                         mask = (data['detector1'] == det_num)
                         print(f"  mask.sum() for det {det_num}:", mask.sum())
+
                         if mask.sum() > 0:
                             all_data[corr] = {
                                 'Mx2': data['Mx2'][mask],
@@ -347,8 +358,8 @@ def plot_three_particles(parent_dir, output_dir):
                 col = (idx-1) % n_cols
                 ax = fig.add_subplot(gs[row, col])
 
-                theta_min = bins[idx]
-                theta_max = bins[idx+1]
+                theta_min = bins[idx-1]
+                theta_max = bins[idx]
 
                 sub_artists = []
                 for corr, color, ls in zip(corrections, colors, line_styles):
