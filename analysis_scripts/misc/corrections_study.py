@@ -286,21 +286,25 @@ def plot_three_particles(parent_dir, output_dir):
             for corr in corrections:
                 filename = f"nSidis_{run}_{corr}.root"
                 filepath = os.path.join(parent_dir, filename)
-                
+                print(f"Loading → {filepath}")
                 try:
                     with uproot.open(filepath) as f:
                         tree = f['PhysicsEvents']
-                        data = tree.arrays(['Mx2', 'p1_theta', 'detector1'], library='np')
+                        print("  branches:", tree.keys())
+
+                        data = tree.arrays(['Mx2','p1_theta','detector1'], library='np')
+                        print(f"  loaded {len(data['Mx2'])} events; detector1 IDs: {np.unique(data['detector1'])}")
+
                         mask = (data['detector1'] == det_num)
-                        
-                        if np.sum(mask) > 0:
+                        print(f"  mask.sum() for det {det_num}:", mask.sum())
+
+                        if mask.sum() > 0:
                             all_data[corr] = {
                                 'Mx2': data['Mx2'][mask],
                                 'theta': np.degrees(data['p1_theta'][mask])
                             }
                 except Exception as e:
-                    print(f"Error loading {filepath}: {e}")
-                    continue
+                    print(f"Error loading {filepath}:", e)
 
             # Integrated spectrum plot
             ax_int = fig.add_subplot(gs[0, :])
