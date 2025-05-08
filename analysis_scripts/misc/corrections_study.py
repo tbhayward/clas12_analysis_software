@@ -453,27 +453,6 @@ def inspect_detector1_values(parent_dir, run_period, corrections):
         except Exception as e:
             print(f"Error: {str(e)}")
 
-if __name__ == "__main__":
-    PARENT_DIR = "/volatile/clas12/thayward/corrections_study/results/proton_energy_loss/"
-    OUTPUT_DIR = "output/correction_study"
-    
-    os.makedirs(OUTPUT_DIR, exist_ok=True)
-
-    try:
-        plot_three_particles(PARENT_DIR, OUTPUT_DIR)
-    finally:
-        plt.close('all')
-
-if __name__ == "__main__":
-    PARENT_DIR = "/volatile/clas12/thayward/corrections_study/results/proton_energy_loss/"
-    OUTPUT_DIR = "output/correction_study"
-    
-    os.makedirs(OUTPUT_DIR, exist_ok=True)
-
-    try:
-        plot_three_particles(PARENT_DIR, OUTPUT_DIR)
-    finally:
-        plt.close('all')
 
 if __name__ == "__main__":
     PARENT_DIR = "/volatile/clas12/thayward/corrections_study/results/proton_energy_loss/"
