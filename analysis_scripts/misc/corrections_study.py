@@ -513,15 +513,15 @@ if __name__ == "__main__":
     #     plt.close('all')
 
     # Generate Mx² comparison plots
-    try:
-        # Generate plots
-        # plot_three_particles(PARENT_DIR, OUTPUT_DIR)
+    # try:
+    #     # Generate plots
+    #     plot_three_particles(PARENT_DIR, OUTPUT_DIR)
         
-        # Uncomment to run phase space plots
-        # generate_phase_space_plots(...)
+    #     # Uncomment to run phase space plots
+    #     # generate_phase_space_plots(...)
         
-    finally:
-        # Clean up matplotlib resources
-        plt.close('all')
+    # finally:
+    #     # Clean up matplotlib resources
+    #     plt.close('all')
 
 
