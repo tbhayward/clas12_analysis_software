@@ -273,9 +273,9 @@ def plot_three_particles(parent_dir, output_dir):
             theta_labels = det_config['theta_labels']
             n_total_plots = len(theta_labels)
             n_cols = 4
-            n_rows = int(np.ceil((n_total_plots-1)/n_cols)) + 1
+            n_rows = int(np.ceil((n_total_plots-1) / n_cols)) + 1
 
-            fig = plt.figure(figsize=(20, 5*n_rows))
+            fig = plt.figure(figsize=(20, 5 * n_rows))
             gs = gridspec.GridSpec(n_rows, n_cols, figure=fig)
 
             all_data = {}
@@ -283,38 +283,36 @@ def plot_three_particles(parent_dir, output_dir):
                 filename = f"nSidis_{run}_{corr}.root"
                 filepath = os.path.join(parent_dir, filename)
                 print(f"\nLoading → {filepath}")
-
                 try:
                     with uproot.open(filepath) as froot:
                         tree = froot['PhysicsEvents']
 
-                        # Inspect the ROOT branch type
-                        branch = tree.member('detector1')
-                        print("  ROOT type for detector1:", branch.interpretation)
+                        # 1) List the actual branches
+                        print("  branches:", tree.keys())
 
-                        # Read ​all three detector branches plus Mx2 and p1_theta
+                        # 2) Read only what we need
                         data = tree.arrays(
                             ['Mx2','p1_theta','detector1','detector2','detector3'],
                             library='np'
                         )
 
-                        # Debug: show raw detector1 dtype & values
+                        # 3) Debug: raw detector1 dtype & values
                         print("  detector1 dtype:", data['detector1'].dtype)
                         print("  detector1 first 20:", data['detector1'][:20])
 
-                        # Debug: unique values in all detector branches
+                        # 4) Debug: unique values in each detector#
                         for i in [1,2,3]:
                             vals = data[f'detector{i}']
                             print(f"  detector{i} uniques (first 10):", np.unique(vals)[:10])
 
-                        # Debug: Mx2 range
+                        # 5) Debug: Mx2 range
                         print("  Mx2 range:", data['Mx2'].min(), data['Mx2'].max())
 
-                        # *** Force integer casting of detector1 ***
-                        det1 = data['detector1'].astype(np.uint8)
+                        # 6) Force detector1 back to integers
+                        det1 = data['detector1'].astype(np.int32)
                         print("  detector1 after cast uniques:", np.unique(det1)[:10])
 
-                        # Apply the mask using the integer array
+                        # 7) Apply the mask
                         mask = (det1 == det_num)
                         print(f"  mask.sum() for det {det_num}:", mask.sum())
 
@@ -325,32 +323,35 @@ def plot_three_particles(parent_dir, output_dir):
                             }
                         #endif
                     #endwith
-
                 except Exception as e:
                     print(f"Error loading {filepath}: {e}")
                 #endtry
             #endfor corrections
 
-            # ---- Make the integrated histogram ----
+            # ---- Integrated histogram ----
             ax_int = fig.add_subplot(gs[0, :])
             for corr, color, ls in zip(corrections, colors, line_styles):
                 if corr in all_data:
                     ax_int.hist(
-                        all_data[corr]['Mx2'], bins=mx2_bins,
-                        histtype='step', color=color, linestyle=ls,
+                        all_data[corr]['Mx2'],
+                        bins=mx2_bins,
+                        histtype='step',
+                        color=color,
+                        linestyle=ls,
                         label=corr_labels[corr]
                     )
                 #endif
             #endfor
             ax_int.set(
-                xlabel=r'$M_{x}^{2}$ (GeV²)', ylabel='Counts',
+                xlabel=r'$M_{x}^{2}$ (GeV²)',
+                ylabel='Counts',
                 xlim=(-0.2, 0.2),
                 title=f"{det_config['name']} Detector - {run}"
             )
             ax_int.legend()
             ax_int.grid(True, alpha=0.3)
 
-            # ---- Make the θ-binned histograms ----
+            # ---- Theta-binned histograms ----
             for idx in range(1, n_total_plots):
                 row = (idx-1) // n_cols + 1
                 col = (idx-1) % n_cols
@@ -369,8 +370,11 @@ def plot_three_particles(parent_dir, output_dir):
                         mx2_data = all_data[corr]['Mx2'][mask]
                         if len(mx2_data) > 0:
                             hist = ax.hist(
-                                mx2_data, bins=mx2_bins,
-                                histtype='step', color=color, linestyle=ls,
+                                mx2_data,
+                                bins=mx2_bins,
+                                histtype='step',
+                                color=color,
+                                linestyle=ls,
                                 label=corr_labels[corr]
                             )
                             sub_artists.extend(hist[2])
@@ -379,7 +383,8 @@ def plot_three_particles(parent_dir, output_dir):
                 #endfor
 
                 ax.set(
-                    xlabel=r'$M_{x}^{2}$ (GeV²)', ylabel='Counts',
+                    xlabel=r'$M_{x}^{2}$ (GeV²)',
+                    ylabel='Counts',
                     xlim=(-0.2, 0.2),
                     title=f'θ: {theta_labels[idx]}°'
                 )
