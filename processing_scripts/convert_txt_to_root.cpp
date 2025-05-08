@@ -1360,7 +1360,6 @@ int main(int argc, char *argv[]) {
             // tmin = gettmin(x); 
 
             tree->Fill(); // Fill the tree with the read data
-            std::cout << detector1 << std::endl;
         }
     }
     // DVCS
