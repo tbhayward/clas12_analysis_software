@@ -423,6 +423,36 @@ def plot_three_particles(parent_dir, output_dir):
             plt.close()
             print(f"\nSaved: {output_file}")
 
+def inspect_detector1_values(parent_dir, run_period, corrections):
+    """Prints detector1 values from first 10 events in each file"""
+    for corr in corrections:
+        filename = f"nSidis_{run_period}_{corr}.root"
+        filepath = os.path.join(parent_dir, filename)
+        
+        print(f"\n=== Inspecting {filename} ===")
+        
+        try:
+            with uproot.open(filepath) as f:
+                if 'PhysicsEvents' not in f:
+                    print("No PhysicsEvents tree")
+                    continue
+                    
+                tree = f['PhysicsEvents']
+                if 'detector1' not in tree:
+                    print("No 'detector1' branch in this file")
+                    continue
+                
+                # Load first 10 events
+                data = tree.arrays(['detector1'], entry_stop=10, library='np')
+                detector1_values = data['detector1']
+                
+                print("detector1 values:")
+                for i, val in enumerate(detector1_values):
+                    print(f"Event {i:2}: {val}")
+                    
+        except Exception as e:
+            print(f"Error: {str(e)}")
+
 if __name__ == "__main__":
     PARENT_DIR = "/volatile/clas12/thayward/corrections_study/results/proton_energy_loss/"
     OUTPUT_DIR = "output/correction_study"
@@ -463,6 +493,13 @@ if __name__ == "__main__":
     #             output_dir=OUTPUT_DIR
     #         )
 
+    # Inspect first 10 events of fa18_inb files
+    inspect_detector1_values(
+        parent_dir=PARENT_DIR,
+        run_period='fa18_inb',
+        corrections=CORRECTIONS
+    )
+
     # # Generate Mx² comparison plots
     # try:
     #     # Generate plots
@@ -478,7 +515,7 @@ if __name__ == "__main__":
     # Generate Mx² comparison plots
     try:
         # Generate plots
-        plot_three_particles(PARENT_DIR, OUTPUT_DIR)
+        # plot_three_particles(PARENT_DIR, OUTPUT_DIR)
         
         # Uncomment to run phase space plots
         # generate_phase_space_plots(...)
