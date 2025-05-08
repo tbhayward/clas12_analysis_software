@@ -1343,6 +1343,8 @@ int main(int argc, char *argv[]) {
             Delta_phi12 >> Delta_phi13 >> Delta_phi23 >> 
             DepA >> DepB >> DepC >> DepV >> DepW) {
 
+            std::cout << detector1 << " " << detector2 << " " << detector3 << std::endl;
+
             beam_pol = getPol(runnum);
             if (runnum < 16000) { target_pol = 0; }
             else { 
