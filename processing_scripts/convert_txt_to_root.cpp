@@ -645,9 +645,9 @@ int main(int argc, char *argv[]) {
         tree->Branch("helicity", &helicity, "helicity/I");
         tree->Branch("beam_pol", &beam_pol, "beam_pol/D");
         tree->Branch("target_pol", &target_pol, "target_pol/D");
-        tree->Branch("detector1", &detector1, "detector1/D");
-        tree->Branch("detector2", &detector2, "detector2/D");
-        tree->Branch("detector3", &detector3, "detector3/D");
+        tree->Branch("detector1", &detector1, "detector1/I");
+        tree->Branch("detector2", &detector2, "detector2/I");
+        tree->Branch("detector3", &detector3, "detector3/I");
         tree->Branch("e_p", &e_p, "e_p/D");
         tree->Branch("e_theta", &e_theta, "e_theta/D");
         tree->Branch("e_phi", &e_phi, "e_phi/D");
@@ -1360,6 +1360,7 @@ int main(int argc, char *argv[]) {
             // tmin = gettmin(x); 
 
             tree->Fill(); // Fill the tree with the read data
+            std::cout << detector1 << std::endl;
         }
     }
     // DVCS
@@ -1416,7 +1417,6 @@ int main(int argc, char *argv[]) {
         int rec_flag;  // temporary flag read from the file as the last value of the line (0 or 1)
         int eventCounter = 0;  // event index for debug printing
 
-        std::cout << "HELLO WORLD" << std::endl;
         // Loop while we can read all fields from the text file
         // (Make sure this while loop exactly matches the number and order of fields written by your Groovy script.)
         while ( infile >> gen_e_p >> gen_e_theta >> gen_e_phi
