@@ -284,7 +284,7 @@ def plot_three_particles(parent_dir, output_dir):
             
             all_data = {}
             for corr in corrections:
-                filename = f"nSidis_{run}_ep_{corr}.root"
+                filename = f"nSidis_{run}_{corr}.root"
                 filepath = os.path.join(parent_dir, filename)
                 
                 try:
