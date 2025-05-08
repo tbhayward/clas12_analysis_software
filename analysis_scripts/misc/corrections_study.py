@@ -232,8 +232,7 @@ def plot_mx2_comparison(parent_dir, output_dir):
 def plot_three_particles(parent_dir, output_dir):
     """
     Analyzes missing mass squared (Mx²) for eppi+pi- channel
-    with three-particle final state, including debug prints
-    and forced integer cast of detector1.
+    with three-particle final state, including deep debug.
     """
     detectors = {
         1: {
@@ -246,7 +245,7 @@ def plot_three_particles(parent_dir, output_dir):
         }
     }
 
-    # Build theta_labels from theta_bins
+    # Build theta labels
     for det_config in detectors.values():
         bins = det_config['theta_bins']
         det_config['theta_labels'] = ['All θ'] + [
@@ -270,152 +269,126 @@ def plot_three_particles(parent_dir, output_dir):
     for run in run_periods:
         for det_num, det_config in detectors.items():
             bins = det_config['theta_bins']
-            theta_labels = det_config['theta_labels']
-            n_total_plots = len(theta_labels)
+            labels = det_config['theta_labels']
+            n_plots = len(labels)
             n_cols = 4
-            n_rows = int(np.ceil((n_total_plots-1) / n_cols)) + 1
+            n_rows = int(np.ceil((n_plots-1)/n_cols)) + 1
 
-            fig = plt.figure(figsize=(20, 5 * n_rows))
+            fig = plt.figure(figsize=(20, 5*n_rows))
             gs = gridspec.GridSpec(n_rows, n_cols, figure=fig)
 
             all_data = {}
             for corr in corrections:
                 filename = f"nSidis_{run}_{corr}.root"
-                filepath = os.path.join(parent_dir, filename)
-                print(f"\nLoading → {filepath}")
+                path = os.path.join(parent_dir, filename)
+                print(f"\n--- Loading {path} ---")
                 try:
-                    with uproot.open(filepath) as froot:
+                    with uproot.open(path) as froot:
                         tree = froot['PhysicsEvents']
 
-                        # 1) List the actual branches
-                        print("  branches:", tree.keys())
+                        # 1) List real branches
+                        print("  branches available:", tree.keys())
 
-                        # 2) Read only what we need
-                        data = tree.arrays(
+                        # 2) Inspect the branch interpretation
+                        b1 = froot['PhysicsEvents']['detector1']
+                        print("  detector1 interpretation:", b1.interpretation)
+
+                        # 3) Read via NumPy
+                        data_np = tree.arrays(
                             ['Mx2','p1_theta','detector1','detector2','detector3'],
                             library='np'
                         )
+                        print("  [np] detector1 dtype:", data_np['detector1'].dtype)
+                        print("  [np] detector1 first 20:", data_np['detector1'][:20])
 
-                        # 3) Debug: raw detector1 dtype & values
-                        print("  detector1 dtype:", data['detector1'].dtype)
-                        print("  detector1 first 20:", data['detector1'][:20])
+                        # 4) Read via Awkward
+                        data_ak = tree.arrays(['detector1'], library='ak')
+                        print("  [ak] detector1 type:", data_ak['detector1'].type)
+                        print("  [ak] detector1 first 20:", data_ak['detector1'][:20])
 
-                        # 4) Debug: unique values in each detector#
-                        for i in [1,2,3]:
-                            vals = data[f'detector{i}']
-                            print(f"  detector{i} uniques (first 10):", np.unique(vals)[:10])
+                        # 5) Read via pandas
+                        df = tree.arrays(['detector1'], library='pd')
+                        print("  [pd] detector1 dtype:", df['detector1'].dtype)
+                        print("  [pd] head:\n", df['detector1'].head())
 
-                        # 5) Debug: Mx2 range
-                        print("  Mx2 range:", data['Mx2'].min(), data['Mx2'].max())
+                        # 6) Try flattening if it’s length-1 arrays
+                        det1_flat = None
+                        if data_np['detector1'].ndim == 2:
+                            det1_flat = data_np['detector1'][:,0]
+                            print("  flattened det1 uniques:", np.unique(det1_flat))
+                        else:
+                            det1_flat = data_np['detector1']
 
-                        # 6) Force detector1 back to integers
-                        det1 = data['detector1'].astype(np.int32)
-                        print("  detector1 after cast uniques:", np.unique(det1)[:10])
+                        # 7) Force integer cast
+                        det1_int = det1_flat.astype(int)
+                        print("  det1 after cast uniques:", np.unique(det1_int)[:10])
 
-                        # 7) Apply the mask
-                        mask = (det1 == det_num)
+                        # 8) Mx2 range
+                        print("  Mx2 min/max:", data_np['Mx2'].min(), data_np['Mx2'].max())
+
+                        # 9) Apply the mask
+                        mask = (det1_int == det_num)
                         print(f"  mask.sum() for det {det_num}:", mask.sum())
 
                         if mask.sum() > 0:
                             all_data[corr] = {
-                                'Mx2': data['Mx2'][mask],
-                                'theta': np.degrees(data['p1_theta'][mask])
+                                'Mx2': data_np['Mx2'][mask],
+                                'theta': np.degrees(data_np['p1_theta'][mask])
                             }
                         #endif
                     #endwith
                 except Exception as e:
-                    print(f"Error loading {filepath}: {e}")
+                    print("  ERROR:", e)
                 #endtry
             #endfor corrections
 
-            # ---- Integrated histogram ----
-            ax_int = fig.add_subplot(gs[0, :])
-            for corr, color, ls in zip(corrections, colors, line_styles):
+            # --- integrated plot ---
+            ax0 = fig.add_subplot(gs[0, :])
+            for corr, c, ls in zip(corrections, colors, line_styles):
                 if corr in all_data:
-                    ax_int.hist(
-                        all_data[corr]['Mx2'],
-                        bins=mx2_bins,
-                        histtype='step',
-                        color=color,
-                        linestyle=ls,
+                    ax0.hist(
+                        all_data[corr]['Mx2'], bins=mx2_bins,
+                        histtype='step', color=c, linestyle=ls,
                         label=corr_labels[corr]
                     )
                 #endif
             #endfor
-            ax_int.set(
-                xlabel=r'$M_{x}^{2}$ (GeV²)',
-                ylabel='Counts',
-                xlim=(-0.2, 0.2),
-                title=f"{det_config['name']} Detector - {run}"
-            )
-            ax_int.legend()
-            ax_int.grid(True, alpha=0.3)
+            ax0.set(xlabel=r'$M_x^2$', ylabel='Counts',
+                    xlim=(-0.2,0.2), title=f"{det_config['name']} – {run}")
+            ax0.legend()
+            ax0.grid(alpha=0.3)
 
-            # ---- Theta-binned histograms ----
-            for idx in range(1, n_total_plots):
-                row = (idx-1) // n_cols + 1
-                col = (idx-1) % n_cols
-                ax = fig.add_subplot(gs[row, col])
-
-                theta_min = bins[idx-1]
-                theta_max = bins[idx]
-
-                sub_artists = []
-                for corr, color, ls in zip(corrections, colors, line_styles):
+            # --- theta-binned plots ---
+            for idx in range(1, n_plots):
+                ax = fig.add_subplot(gs[(idx-1)//n_cols + 1, (idx-1)%n_cols])
+                tmin, tmax = bins[idx-1], bins[idx]
+                artists = []
+                for corr, c, ls in zip(corrections, colors, line_styles):
                     if corr in all_data:
-                        mask = (
-                            (all_data[corr]['theta'] >= theta_min) &
-                            (all_data[corr]['theta'] < theta_max)
-                        )
-                        mx2_data = all_data[corr]['Mx2'][mask]
-                        if len(mx2_data) > 0:
-                            hist = ax.hist(
-                                mx2_data,
-                                bins=mx2_bins,
-                                histtype='step',
-                                color=color,
-                                linestyle=ls,
-                                label=corr_labels[corr]
-                            )
-                            sub_artists.extend(hist[2])
+                        m = ((all_data[corr]['theta']>=tmin)
+                             & (all_data[corr]['theta']<tmax))
+                        arr = all_data[corr]['Mx2'][m]
+                        if arr.size:
+                            h = ax.hist(arr, bins=mx2_bins,
+                                        histtype='step', color=c, linestyle=ls,
+                                        label=corr_labels[corr])
+                            artists.append(h[2][0])
                         #endif
                     #endif
                 #endfor
+                ax.set(xlabel=r'$M_x^2$', ylabel='Counts', xlim=(-0.2,0.2),
+                       title=f"θ: {labels[idx]}°")
+                if artists: ax.legend(handles=artists, fontsize=8)
+            #endfor
 
-                ax.set(
-                    xlabel=r'$M_{x}^{2}$ (GeV²)',
-                    ylabel='Counts',
-                    xlim=(-0.2, 0.2),
-                    title=f'θ: {theta_labels[idx]}°'
-                )
-                if sub_artists:
-                    ax.legend(handles=sub_artists, fontsize=8)
-                #endif
-            #endfor θ-bins
-
-            # ---- Save & close ----
-            output_file = os.path.join(
-                output_dir,
-                f'Mx2_3particle_{run}_{det_config["name"]}.pdf'
-            )
-            plt.savefig(output_file, bbox_inches='tight')
+            out = os.path.join(output_dir,
+                               f"Mx2_3particle_{run}_{det_config['name']}.pdf")
+            plt.savefig(out, bbox_inches='tight')
             plt.close(fig)
-            print(f"Saved: {output_file}")
+            print("  Saved →", out)
         #endfor det_num
     #endfor run_periods
-
-if __name__ == "__main__":
-    PARENT_DIR = "/volatile/clas12/thayward/corrections_study/results/proton_energy_loss/"
-    OUTPUT_DIR = "output/correction_study"
     
-    os.makedirs(OUTPUT_DIR, exist_ok=True)
-
-    try:
-        plot_three_particles(PARENT_DIR, OUTPUT_DIR)
-    finally:
-        plt.close('all')
-
-
 if __name__ == "__main__":
     PARENT_DIR = "/volatile/clas12/thayward/corrections_study/results/proton_energy_loss/"
     OUTPUT_DIR = "output/correction_study"
