@@ -234,15 +234,13 @@ def plot_three_particles(parent_dir, output_dir):
     """
     Analyzes missing mass squared (Mx²) for eppi+pi- channel
     with three-particle final state, reading detector1/2/3
-    as unsigned-byte integers so the mask finds 0/1/2.
+    as unsigned-byte integers so the mask really picks out 0/1/2.
     """
     detectors = {
         1: {'name': 'Forward',
-            'theta_bins': [0, 8, 11, 14, 17, 20, 23, 26, 29, 32, 35, 38, 41, 80]
-        },
+            'theta_bins': [0, 8, 11, 14, 17, 20, 23, 26, 29, 32, 35, 38, 41, 80]},
         2: {'name': 'Central',
-            'theta_bins': [0, 36, 39, 42, 45, 48, 51, 54, 57, 180]
-        }
+            'theta_bins': [0, 36, 39, 42, 45, 48, 51, 54, 57, 180]}
     }
 
     # Build theta_labels from theta_bins
@@ -254,9 +252,9 @@ def plot_three_particles(parent_dir, output_dir):
     corrections = ['noCorrections', 'timothy', 'krishna', 'mariana']
     corr_labels = {
         'noCorrections': 'No Corrections',
-        'timothy': "Timothy's",
-        'krishna': "Krishna's",
-        'mariana': "Mariana's"
+        'timothy':       "Timothy's",
+        'krishna':       "Krishna's",
+        'mariana':       "Mariana's"
     }
     colors      = ['black', 'red', 'green', 'blue']
     line_styles = ['-', '--', ':', '-.']
@@ -283,16 +281,16 @@ def plot_three_particles(parent_dir, output_dir):
                 with uproot.open(fp) as froot:
                     tree = froot['PhysicsEvents']
 
-                    # Override detector interpretation:
+                    # tell uproot: detector1/2/3 are 1‐byte unsigned ints
                     data = tree.arrays({
                         "Mx2":       None,
                         "p1_theta":  None,
-                        "detector1": AsDtype(">u1"),
-                        "detector2": AsDtype(">u1"),
-                        "detector3": AsDtype(">u1"),
+                        "detector1": "u1",
+                        "detector2": "u1",
+                        "detector3": "u1",
                     }, library="np")
 
-                    # Cast to ints and mask
+                    # now they really are ints
                     det1 = data['detector1'].astype(int)
                     mask = (det1 == det_num)
                     if mask.sum() > 0:
@@ -304,7 +302,7 @@ def plot_three_particles(parent_dir, output_dir):
                 #endwith
             #endfor corrections
 
-            # Integrated Mx² plot
+            # ---- integrated Mx² ----
             ax0 = fig.add_subplot(gs[0, :])
             for corr, col, ls in zip(corrections, colors, line_styles):
                 if corr in all_data:
@@ -324,11 +322,10 @@ def plot_three_particles(parent_dir, output_dir):
             ax0.legend()
             ax0.grid(True, alpha=0.3)
 
-            # θ-binned Mx² plots
+            # ---- θ‐binned Mx² ----
             for idx in range(1, n_plots):
                 row, col = divmod(idx-1, n_cols)
-                row += 1
-                ax = fig.add_subplot(gs[row, col])
+                ax = fig.add_subplot(gs[row+1, col])
 
                 tmin, tmax = bins[idx-1], bins[idx]
                 artists = []
