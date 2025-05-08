@@ -231,7 +231,7 @@ def plot_mx2_comparison(parent_dir, output_dir):
 def plot_three_particles(parent_dir, output_dir):
     """
     Analyzes missing mass squared (Mx²) for eppi+pi- channel
-    with three particle final state
+    with three particle final state (debug version)
     """
     detectors = {
         1: {
@@ -260,36 +260,108 @@ def plot_three_particles(parent_dir, output_dir):
     mx2_bins = np.linspace(-0.2, 0.2, 100)
 
     for run in run_periods:
+        print(f"\n{'#'*80}")
+        print(f"Processing run period: {run}")
+        print(f"{'#'*80}")
+        
         for det_num, det_config in detectors.items():
-            n_total_plots = len(det_config['theta_labels'])
+            print(f"\n{'='*60}")
+            print(f"Analyzing {det_config['name']} Detector (ID: {det_num})")
+            print(f"Theta bins: {det_config['theta_bins']}")
+            print(f"Theta labels: {det_config['theta_labels']}")
+            print(f"{'='*60}\n")
+
+            # Verify bin/label alignment
+            bins = det_config['theta_bins']
+            labels = det_config['theta_labels']
+            if len(bins) != len(labels) + 1:
+                print(f"! Critical Error: Bin/Label mismatch!")
+                print(f"Bins: {len(bins)} items, Labels: {len(labels)} items")
+                print("Skipping this detector configuration")
+                continue
+
+            n_total_plots = len(labels)
             n_cols = 4
             n_rows = int(np.ceil((n_total_plots-1)/n_cols)) + 1
             
-            fig = plt.figure(figsize=(20, 5*n_rows))
-            gs = gridspec.GridSpec(n_rows, n_cols, figure=fig)
-            
             all_data = {}
+            
+            # Load data for all corrections
             for corr in corrections:
-                # CORRECTED FILENAME PATTERN (removed 'ep')
                 filename = f"nSidis_{run}_{corr}.root"
                 filepath = os.path.join(parent_dir, filename)
+                print(f"\n{'='*40}")
+                print(f"Processing: {filename}")
+                
+                if not os.path.exists(filepath):
+                    print(f"! File not found: {filepath}")
+                    continue
                 
                 try:
                     with uproot.open(filepath) as f:
+                        # Verify PhysicsEvents tree exists
+                        if 'PhysicsEvents' not in f:
+                            print("! Missing PhysicsEvents tree")
+                            continue
                         tree = f['PhysicsEvents']
-                        # Using detector1 branch for three-particle case
-                        data = tree.arrays(['Mx2', 'p1_theta', 'detector1'], library='np')
-                        mask = (data['detector1'] == det_num)
                         
-                        if np.sum(mask) > 0:
-                            all_data[corr] = {
-                                'Mx2': data['Mx2'][mask],
-                                'theta': np.degrees(data['p1_theta'][mask])
-                            }
+                        # Check required branches
+                        required_branches = ['Mx2', 'p1_theta', 'detector1']
+                        missing = [b for b in required_branches if b not in tree]
+                        if missing:
+                            print(f"! Missing branches: {missing}")
+                            continue
+                        
+                        # Load data
+                        data = tree.arrays(required_branches, library='np')
+                        print(f"Total events in file: {len(data['Mx2']:,}")
+                        
+                        # Apply detector selection
+                        mask = (data['detector1'] == det_num)
+                        print(f"Events in detector {det_num}: {np.sum(mask):,}")
+                        
+                        if np.sum(mask) == 0:
+                            print("! No events for this detector")
+                            continue
+                            
+                        # Store data with debug info
+                        all_data[corr] = {
+                            'Mx2': data['Mx2'][mask],
+                            'theta': np.degrees(data['p1_theta'][mask])
+                        }
+                        print("Data ranges:")
+                        print(f"  Mx²: {np.min(all_data[corr]['Mx2']):.3f} to {np.max(all_data[corr]['Mx2']):.3f} GeV²")
+                        print(f"  Theta: {np.min(all_data[corr]['theta']):.1f}° to {np.max(all_data[corr]['theta']):.1f}°")
+                        
                 except Exception as e:
-                    print(f"Error loading {filepath}: {e}")
+                    print(f"! Error loading file: {str(e)}")
                     continue
 
+            # Data summary after loading
+            print(f"\n{'='*40}")
+            print(f"Data Summary for {det_config['name']} Detector")
+            print(f"{'Correction':<15} | {'Events':>10} | {'Mx2 Range':<25} | {'Theta Range':<15}")
+            print(f"{'-'*70}")
+            for corr in corrections:
+                if corr in all_data:
+                    mx2_min = np.min(all_data[corr]['Mx2'])
+                    mx2_max = np.max(all_data[corr]['Mx2'])
+                    theta_min = np.min(all_data[corr]['theta'])
+                    theta_max = np.max(all_data[corr]['theta'])
+                    print(f"{corr:<15} | {len(all_data[corr]['Mx2']):>10,} | {f'{mx2_min:.3f}-{mx2_max:.3f}':<25} | {f'{theta_min:.1f}°-{theta_max:.1f}°':<15}")
+                else:
+                    print(f"{corr:<15} | {'N/A':>10} | {'N/A':<25} | {'N/A':<15}")
+            print(f"{'='*40}\n")
+
+            # Skip plotting if no data
+            if not all_data:
+                print("! No data available for any corrections - skipping plots")
+                continue
+                
+            # Create figure and plot
+            fig = plt.figure(figsize=(20, 5*n_rows))
+            gs = gridspec.GridSpec(n_rows, n_cols, figure=fig)
+            
             # Integrated spectrum plot
             ax_int = fig.add_subplot(gs[0, :])
             artists = []
@@ -304,9 +376,11 @@ def plot_three_particles(parent_dir, output_dir):
             
             if artists:
                 ax_int.legend()
-            ax_int.set(xlabel=r'$M_{x}^{2}$ (GeV²)', ylabel='Counts',
-                      xlim=(-0.2, 0.2), title=f"{det_config['name']} Detector - {run}")
-            ax_int.grid(True, alpha=0.3)
+                ax_int.set(xlabel=r'$M_{x}^{2}$ (GeV²)', ylabel='Counts',
+                          xlim=(-0.2, 0.2), title=f"{det_config['name']} Detector - {run}")
+                ax_int.grid(True, alpha=0.3)
+            else:
+                print("! No data for integrated plot")
 
             # Theta-binned spectra
             for idx in range(1, n_total_plots):
@@ -314,8 +388,9 @@ def plot_three_particles(parent_dir, output_dir):
                 col = (idx-1) % n_cols
                 ax = fig.add_subplot(gs[row, col])
                 
-                theta_min = det_config['theta_bins'][idx]
-                theta_max = det_config['theta_bins'][idx+1]
+                theta_min = bins[idx]
+                theta_max = bins[idx+1]
+                current_label = labels[idx]
                 
                 sub_artists = []
                 for corr, color, ls in zip(corrections, colors, line_styles):
@@ -328,15 +403,29 @@ def plot_three_particles(parent_dir, output_dir):
                                          label=corr_labels[corr])
                             sub_artists.extend(hist[2])
                 
-                ax.set(xlabel=r'$M_{x}^{2}$ (GeV²)', ylabel='Counts',
-                      xlim=(-0.2, 0.2), title=f'θ: {det_config["theta_labels"][idx]}°')
                 if sub_artists:
+                    ax.set(xlabel=r'$M_{x}^{2}$ (GeV²)', ylabel='Counts',
+                          xlim=(-0.2, 0.2), title=f'θ: {current_label}°')
                     ax.legend(handles=sub_artists, fontsize=8)
+                else:
+                    ax.set_title(f'θ: {current_label}° (No Data)')
+                    ax.text(0.5, 0.5, 'No Data', ha='center', va='center')
 
             output_file = os.path.join(output_dir, f'Mx2_3particle_{run}_{det_config["name"]}.pdf')
             plt.savefig(output_file, bbox_inches='tight')
             plt.close()
-            print(f"Saved: {output_file}")
+            print(f"\nSaved: {output_file}")
+
+if __name__ == "__main__":
+    PARENT_DIR = "/volatile/clas12/thayward/corrections_study/results/proton_energy_loss/"
+    OUTPUT_DIR = "output/correction_study"
+    
+    os.makedirs(OUTPUT_DIR, exist_ok=True)
+
+    try:
+        plot_three_particles(PARENT_DIR, OUTPUT_DIR)
+    finally:
+        plt.close('all')
 
 if __name__ == "__main__":
     PARENT_DIR = "/volatile/clas12/thayward/corrections_study/results/proton_energy_loss/"
