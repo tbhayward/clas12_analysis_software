@@ -461,6 +461,9 @@ if __name__ == "__main__":
     # Create output directory if it doesn't exist
     os.makedirs(OUTPUT_DIR, exist_ok=True)
 
+    # Define the corrections list
+    CORRECTIONS = ['noCorrections', 'timothy', 'krishna', 'mariana']
+
     # Generate phase space plots (uncomment to run)
     # for channel in ['ep', 'eppi+pi-']:
     #     for plot_type in ['theta_phi', 'theta_p']:
