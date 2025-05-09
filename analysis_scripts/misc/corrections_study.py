@@ -423,36 +423,6 @@ def plot_three_particles(parent_dir, output_dir):
             plt.close()
             print(f"\nSaved: {output_file}")
 
-def inspect_detector1_values(parent_dir, run_period, corrections):
-    """Prints detector1 values from first 10 events in each file"""
-    for corr in corrections:
-        filename = f"nSidis_{run_period}_{corr}.root"
-        filepath = os.path.join(parent_dir, filename)
-        
-        print(f"\n=== Inspecting {filename} ===")
-        
-        try:
-            with uproot.open(filepath) as f:
-                if 'PhysicsEvents' not in f:
-                    print("No PhysicsEvents tree")
-                    continue
-                    
-                tree = f['PhysicsEvents']
-                if 'detector1' not in tree:
-                    print("No 'detector1' branch in this file")
-                    continue
-                
-                # Load first 10 events
-                data = tree.arrays(['detector1'], entry_stop=10, library='np')
-                detector1_values = data['detector1']
-                
-                print("detector1 values:")
-                for i, val in enumerate(detector1_values):
-                    print(f"Event {i:2}: {val}")
-                    
-        except Exception as e:
-            print(f"Error: {str(e)}")
-
 
 if __name__ == "__main__":
     PARENT_DIR = "/volatile/clas12/thayward/corrections_study/results/proton_energy_loss/"
@@ -460,9 +430,6 @@ if __name__ == "__main__":
     
     # Create output directory if it doesn't exist
     os.makedirs(OUTPUT_DIR, exist_ok=True)
-
-    # Define the corrections list
-    CORRECTIONS = ['noCorrections', 'timothy', 'krishna', 'mariana']
 
     # Generate phase space plots (uncomment to run)
     # for channel in ['ep', 'eppi+pi-']:
@@ -495,15 +462,15 @@ if __name__ == "__main__":
     #     plt.close('all')
 
     # Generate Mx² comparison plots
-    # try:
-    #     # Generate plots
-    #     plot_three_particles(PARENT_DIR, OUTPUT_DIR)
+    try:
+        # Generate plots
+        plot_three_particles(PARENT_DIR, OUTPUT_DIR)
         
-    #     # Uncomment to run phase space plots
-    #     # generate_phase_space_plots(...)
+        # Uncomment to run phase space plots
+        # generate_phase_space_plots(...)
         
-    # finally:
-    #     # Clean up matplotlib resources
-    #     plt.close('all')
+    finally:
+        # Clean up matplotlib resources
+        plt.close('all')
 
 
