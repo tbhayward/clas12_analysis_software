@@ -442,13 +442,6 @@ if __name__ == "__main__":
     #             output_dir=OUTPUT_DIR
     #         )
 
-    # Inspect first 10 events of fa18_inb files
-    inspect_detector1_values(
-        parent_dir=PARENT_DIR,
-        run_period='fa18_inb',
-        corrections=CORRECTIONS
-    )
-
     # # Generate Mx² comparison plots
     # try:
     #     # Generate plots
