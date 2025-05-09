@@ -257,7 +257,8 @@ def plot_three_particles(parent_dir, output_dir):
     line_styles = ['-', '--', ':', '-.']
     run_periods = ['fa18_inb', 'fa18_out', 'sp19_inb']
     
-    mx2_bins = np.linspace(-0.2, 0.2, 100)
+    # mx2_bins = np.linspace(-0.2, 0.2, 100)
+    mx2_bins = np.linspace(-0.4, 0.9, 100)
 
     for run in run_periods:
         print(f"\n{'#'*80}")
@@ -306,7 +307,8 @@ def plot_three_particles(parent_dir, output_dir):
                         tree = f['PhysicsEvents']
                         
                         # Check required branches
-                        required_branches = ['Mx2', 'p1_theta', 'detector1']
+                        # required_branches = ['Mx2', 'p1_theta', 'detector1']
+                        required_branches = ['Mx2_1', 'p1_theta', 'detector1']
                         missing = [b for b in required_branches if b not in tree]
                         if missing:
                             print(f"! Missing branches: {missing}")
@@ -315,7 +317,8 @@ def plot_three_particles(parent_dir, output_dir):
                         # Inside the data loading try-block:
                         # Load data
                         data = tree.arrays(required_branches, library='np')
-                        print(f"Total events in file: {len(data['Mx2']):,}")
+                        # print(f"Total events in file: {len(data['Mx2']):,}")
+                        print(f"Total events in file: {len(data['Mx2_1']):,}")
 
                         # Debug: Check actual detector numbers
                         unique_detectors = np.unique(data['detector1'])
@@ -333,11 +336,13 @@ def plot_three_particles(parent_dir, output_dir):
                             
                         # Store data with debug info
                         all_data[corr] = {
-                            'Mx2': data['Mx2'][mask],
+                            # 'Mx2': data['Mx2'][mask],
+                            'Mx2_1': data['Mx2_1'][mask],
                             'theta': np.degrees(data['p1_theta'][mask])
                         }
                         print("Data ranges:")
-                        print(f"  Mx²: {np.min(all_data[corr]['Mx2']):.3f} to {np.max(all_data[corr]['Mx2']):.3f} GeV²")
+                        # print(f"  Mx²: {np.min(all_data[corr]['Mx2']):.3f} to {np.max(all_data[corr]['Mx2']):.3f} GeV²")
+                        print(f"  Mx²: {np.min(all_data[corr]['Mx2_1']):.3f} to {np.max(all_data[corr]['Mx2_1']):.3f} GeV²")
                         print(f"  Theta: {np.min(all_data[corr]['theta']):.1f}° to {np.max(all_data[corr]['theta']):.1f}°")
                         
                 except Exception as e:
@@ -347,15 +352,19 @@ def plot_three_particles(parent_dir, output_dir):
             # Data summary after loading
             print(f"\n{'='*40}")
             print(f"Data Summary for {det_config['name']} Detector")
-            print(f"{'Correction':<15} | {'Events':>10} | {'Mx2 Range':<25} | {'Theta Range':<15}")
+            # print(f"{'Correction':<15} | {'Events':>10} | {'Mx2 Range':<25} | {'Theta Range':<15}")
+            print(f"{'Correction':<15} | {'Events':>10} | {'Mx2_1 Range':<25} | {'Theta Range':<15}")
             print(f"{'-'*70}")
             for corr in corrections:
                 if corr in all_data:
-                    mx2_min = np.min(all_data[corr]['Mx2'])
-                    mx2_max = np.max(all_data[corr]['Mx2'])
+                    # mx2_min = np.min(all_data[corr]['Mx2'])
+                    # mx2_max = np.max(all_data[corr]['Mx2'])
+                    mx2_min = np.min(all_data[corr]['Mx2_1'])
+                    mx2_max = np.max(all_data[corr]['Mx2_1'])
                     theta_min = np.min(all_data[corr]['theta'])
                     theta_max = np.max(all_data[corr]['theta'])
-                    print(f"{corr:<15} | {len(all_data[corr]['Mx2']):>10,} | {f'{mx2_min:.3f}-{mx2_max:.3f}':<25} | {f'{theta_min:.1f}°-{theta_max:.1f}°':<15}")
+                    # print(f"{corr:<15} | {len(all_data[corr]['Mx2']):>10,} | {f'{mx2_min:.3f}-{mx2_max:.3f}':<25} | {f'{theta_min:.1f}°-{theta_max:.1f}°':<15}")
+                    print(f"{corr:<15} | {len(all_data[corr]['Mx2_1']):>10,} | {f'{mx2_min:.3f}-{mx2_max:.3f}':<25} | {f'{theta_min:.1f}°-{theta_max:.1f}°':<15}")
                 else:
                     print(f"{corr:<15} | {'N/A':>10} | {'N/A':<25} | {'N/A':<15}")
             print(f"{'='*40}\n")
@@ -375,7 +384,8 @@ def plot_three_particles(parent_dir, output_dir):
             for corr, color, ls in zip(corrections, colors, line_styles):
                 if corr in all_data:
                     hist = ax_int.hist(
-                        all_data[corr]['Mx2'], bins=mx2_bins,
+                        # all_data[corr]['Mx2'], bins=mx2_bins,
+                        all_data[corr]['Mx2_1'], bins=mx2_bins,
                         histtype='step', color=color, linestyle=ls,
                         label=corr_labels[corr]
                     )
@@ -383,7 +393,8 @@ def plot_three_particles(parent_dir, output_dir):
             
             if artists:
                 ax_int.legend()
-                ax_int.set(xlabel=r'$M_{x}^{2}$ (GeV²)', ylabel='Counts',
+                # ax_int.set(xlabel=r'$M_{x}^{2}$ (GeV²)', ylabel='Counts',
+                ax_int.set(xlabel=r'$M_{x (ep)}^{2}$ (GeV²)', ylabel='Counts',
                           xlim=(-0.2, 0.2), title=f"{det_config['name']} Detector - {run}")
                 ax_int.grid(True, alpha=0.3)
             else:
@@ -403,7 +414,8 @@ def plot_three_particles(parent_dir, output_dir):
                 for corr, color, ls in zip(corrections, colors, line_styles):
                     if corr in all_data:
                         mask = (all_data[corr]['theta'] >= theta_min) & (all_data[corr]['theta'] < theta_max)
-                        mx2_data = all_data[corr]['Mx2'][mask]
+                        # mx2_data = all_data[corr]['Mx2'][mask]
+                        mx2_data = all_data[corr]['Mx2_1'][mask]
                         if len(mx2_data) > 0:
                             hist = ax.hist(mx2_data, bins=mx2_bins,
                                          histtype='step', color=color, linestyle=ls,
@@ -411,7 +423,8 @@ def plot_three_particles(parent_dir, output_dir):
                             sub_artists.extend(hist[2])
                 
                 if sub_artists:
-                    ax.set(xlabel=r'$M_{x}^{2}$ (GeV²)', ylabel='Counts',
+                    # ax.set(xlabel=r'$M_{x}^{2}$ (GeV²)', ylabel='Counts',
+                    ax.set(xlabel=r'$M_{x (ep)}^{2}$ (GeV²)', ylabel='Counts',
                           xlim=(-0.2, 0.2), title=f'θ: {current_label}°')
                     ax.legend(handles=sub_artists, fontsize=8)
                 else:
