@@ -395,7 +395,8 @@ def plot_three_particles(parent_dir, output_dir):
                 ax_int.legend()
                 # ax_int.set(xlabel=r'$M_{x}^{2}$ (GeV²)', ylabel='Counts',
                 ax_int.set(xlabel=r'$M_{x (ep)}^{2}$ (GeV²)', ylabel='Counts',
-                          xlim=(-0.2, 0.2), title=f"{det_config['name']} Detector - {run}")
+                          # xlim=(-0.2, 0.2), title=f"{det_config['name']} Detector - {run}")
+                          xlim=(0.4, 0.9), title=f"{det_config['name']} Detector - {run}")
                 ax_int.grid(True, alpha=0.3)
             else:
                 print("! No data for integrated plot")
@@ -425,7 +426,8 @@ def plot_three_particles(parent_dir, output_dir):
                 if sub_artists:
                     # ax.set(xlabel=r'$M_{x}^{2}$ (GeV²)', ylabel='Counts',
                     ax.set(xlabel=r'$M_{x (ep)}^{2}$ (GeV²)', ylabel='Counts',
-                          xlim=(-0.2, 0.2), title=f'θ: {current_label}°')
+                          # xlim=(-0.2, 0.2), title=f'θ: {current_label}°')
+                          xlim=(0.4, 0.9), title=f'θ: {current_label}°')
                     ax.legend(handles=sub_artists, fontsize=8)
                 else:
                     ax.set_title(f'θ: {current_label}° (No Data)')
