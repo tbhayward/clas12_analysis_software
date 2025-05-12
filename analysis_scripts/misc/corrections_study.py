@@ -233,6 +233,12 @@ def plot_mx2_comparison(parent_dir, output_dir):
         #endfor
     #endfor
 
+def gauss_poly(x, A, mu, sigma, p2, p1, p0):
+    """Gaussian plus quadratic polynomial."""
+    gauss = A * np.exp(-(x - mu)**2 / (2 * sigma**2))
+    poly = p2*x**2 + p1*x + p0
+    return gauss + poly
+
 def plot_three_particles(parent_dir, output_dir):
     """
     Analyzes missing mass squared (Mx²) for eppi+pi- channel
