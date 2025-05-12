@@ -130,7 +130,7 @@ void plot_dvcs_energy_loss_validation(
     c1->cd(1)->SetLeftMargin(0.15);
     c1->cd(1)->SetBottomMargin(0.15);
     Double_t globalMax=0;
-    for(int i=0;i<nFiles;++i) 
+    for(int i=0;i<nFiles;++i)
         globalMax = std::max(globalMax,h[i][0]->GetMaximum());
     for(int i=0;i<nFiles;++i) {
         h[i][0]->SetMaximum(1.7*globalMax);
@@ -175,7 +175,7 @@ void plot_dvcs_energy_loss_validation(
         c1->cd(b+1)->SetLeftMargin(0.15);
         c1->cd(b+1)->SetBottomMargin(0.15);
         Double_t binMax=0;
-        for(int i=0;i<nFiles;++i) 
+        for(int i=0;i<nFiles;++i)
             binMax = std::max(binMax,h[i][b]->GetMaximum());
         for(int i=0;i<nFiles;++i){
             h[i][b]->SetMaximum(1.7*binMax);
@@ -217,26 +217,26 @@ void plot_dvcs_energy_loss_validation(
         h[0][b]->GetYaxis()->SetTitle("Counts");
     }
 
-    // final pad: mu vs mean Mx2_1
+    // final pad: mu vs mean theta
     c1->cd(12);
     c1->cd(12)->SetLeftMargin(0.20);
     c1->cd(12)->SetBottomMargin(0.15);
     TGraph* gr[nFiles];
     for(int i=0;i<nFiles;++i){
-        gr[i] = new TGraph(nBins, mx2_mean[i], mu[i]);
+        gr[i] = new TGraph(nBins, theta_mean, mu[i]);
         gr[i]->SetMarkerStyle(20+i);
         gr[i]->SetMarkerSize(0.8);
         gr[i]->SetMarkerColor(kBlack+i);
         if(i==0) gr[i]->Draw("AP");
         else     gr[i]->Draw("P SAME");
     }
-    TLine* line = new TLine(mx2_min,0,mx2_max,0);
+    TLine* line = new TLine(0,0,90,0);
     line->SetLineColor(kGray);
     line->SetLineStyle(2);
     line->Draw("SAME");
-    gr[0]->GetXaxis()->SetTitle("Mean M_{x(ep)}^{2} (GeV^{2})");
+    gr[0]->GetXaxis()->SetTitle("#theta (deg)");
     gr[0]->GetYaxis()->SetTitle("#mu (GeV^{2})");
-    gr[0]->GetXaxis()->SetLimits(mx2_min,mx2_max);
+    gr[0]->GetXaxis()->SetLimits(0,90);
     gr[0]->GetYaxis()->SetRangeUser(-0.20,0.20);
 
     TLegend* leg12 = new TLegend(0.6,0.75,0.9,0.9);
