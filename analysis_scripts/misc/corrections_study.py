@@ -5,6 +5,10 @@ import matplotlib.pyplot as plt
 import matplotlib.gridspec as gridspec
 from scipy.optimize import curve_fit
 
+# Rho0 mass and squared mass in GeV²
+m_rho0 = 0.77526
+m_rho0_sq = m_rho0**2
+
 def generate_phase_space_plots(channel, correction, plot_type, parent_dir, output_dir):
     """
     Generate a 1x3 canvas of 2D histograms for proton phase space analysis.
@@ -232,7 +236,7 @@ def plot_mx2_comparison(parent_dir, output_dir):
 def plot_three_particles(parent_dir, output_dir):
     """
     Analyzes missing mass squared (Mx²) for eppi+pi- channel
-    with three particle final state, fits a Gaussian to each distribution,
+    with three particle final state, fits a Gaussian+quadratic to each distribution,
     overlays the fit, and adds μ and σ to the legend.
     """
     detectors = {
@@ -259,8 +263,8 @@ def plot_three_particles(parent_dir, output_dir):
     line_styles = ['-', '--', ':', '-.']
     run_periods = ['fa18_inb', 'fa18_out', 'sp19_inb']
     
-    # Restrict histogram range to [0.4, 0.9]
-    mx2_bins = np.linspace(0.4, 0.9, 100)
+    # Halved number of bins, range [0.4, 0.9]
+    mx2_bins = np.linspace(0.4, 0.9, 50)
 
     for run in run_periods:
         print(f"\n{'#'*80}")
@@ -305,7 +309,7 @@ def plot_three_particles(parent_dir, output_dir):
                             continue
                         data = tree.arrays(required, library='np')
                         mask = (data['detector1'] == det_num)
-                        if np.sum(mask)==0:
+                        if np.sum(mask) == 0:
                             continue
                         all_data[corr] = {
                             'Mx2_1': data['Mx2_1'][mask],
@@ -325,67 +329,89 @@ def plot_three_particles(parent_dir, output_dir):
 
             # Integrated
             ax_int = fig.add_subplot(gs[0, :])
-            patches = []
             for corr, color, ls in zip(corrections, colors, line_styles):
-                if corr not in all_data: continue
+                if corr not in all_data: 
+                    continue
                 vals = all_data[corr]['Mx2_1']
                 counts, edges = np.histogram(vals, bins=mx2_bins)
-                centers = (edges[:-1]+edges[1:])/2
+                centers = (edges[:-1] + edges[1:]) / 2
                 try:
-                    popt, _ = curve_fit(gaussian, centers, counts,
-                                        p0=[counts.max(), np.mean(vals), np.std(vals)])
+                    popt, _ = curve_fit(
+                        gauss_poly, centers, counts,
+                        p0=[counts.max(), m_rho0_sq, 0.1, 0, 0, 0]
+                    )
                     mu, sigma = popt[1], abs(popt[2])
-                except:
+                except Exception as e:
+                    print(f"! Fit failed for {corr}: {e}")
                     mu, sigma = np.nan, np.nan
+
                 label = f"{corr_labels[corr]} (μ={mu:.3f}, σ={sigma:.3f})"
-                _, _, ph = ax_int.hist(vals, bins=mx2_bins,
-                                       histtype='step',
-                                       color=color,
-                                       linestyle=ls,
-                                       label=label)
-                patches.extend(ph)
+                _, _, ph = ax_int.hist(
+                    vals, bins=mx2_bins,
+                    histtype='step',
+                    color=color,
+                    linestyle=ls,
+                    label=label
+                )
+                # overlay full fit
                 x_fit = np.linspace(0.4, 0.9, 200)
-                ax_int.plot(x_fit, gaussian(x_fit, *popt), color=color, linestyle=ls)
-            ax_int.set(xlim=(0.4,0.9), xlabel=r'$M_{x (ep)}^{2}$ (GeV²)', ylabel='Counts',
-                       title=f"{det_config['name']} Detector - {run}")
+                y_fit = gauss_poly(x_fit, *popt)
+                ax_int.plot(x_fit, y_fit, color=color, linestyle=ls)
+
+            ax_int.set(
+                xlim=(0.4, 0.9),
+                xlabel=r'$M_{x (ep)}^{2}$ (GeV²)',
+                ylabel='Counts',
+                title=f"{det_config['name']} Detector - {run}"
+            )
             ax_int.legend()
             ax_int.grid(True, alpha=0.3)
 
             # Theta-binned
             for idx in range(1, n_total_plots):
-                row = (idx-1)//n_cols+1
-                col = (idx-1)%n_cols
-                ax = fig.add_subplot(gs[row, col])
+                ax = fig.add_subplot(gs[(idx-1)//n_cols + 1, (idx-1)%n_cols])
                 tmin, tmax = bins[idx], bins[idx+1]
-                phs = []
                 for corr, color, ls in zip(corrections, colors, line_styles):
-                    if corr not in all_data: continue
-                    mask = ((all_data[corr]['theta']>=tmin)&(all_data[corr]['theta']<tmax))
-                    data_slice = all_data[corr]['Mx2_1'][mask]
-                    if len(data_slice)==0: continue
-                    counts, edges = np.histogram(data_slice, bins=mx2_bins)
-                    centers = (edges[:-1]+edges[1:])/2
+                    if corr not in all_data:
+                        continue
+                    mask = ((all_data[corr]['theta'] >= tmin) &
+                            (all_data[corr]['theta'] < tmax))
+                    slice_vals = all_data[corr]['Mx2_1'][mask]
+                    if len(slice_vals) == 0:
+                        continue
+                    counts, edges = np.histogram(slice_vals, bins=mx2_bins)
+                    centers = (edges[:-1] + edges[1:]) / 2
                     try:
-                        popt, _ = curve_fit(gaussian, centers, counts,
-                                            p0=[counts.max(), np.mean(data_slice), np.std(data_slice)])
+                        popt, _ = curve_fit(
+                            gauss_poly, centers, counts,
+                            p0=[counts.max(), m_rho0_sq, 0.1, 0, 0, 0]
+                        )
                         mu, sigma = popt[1], abs(popt[2])
-                    except:
+                    except Exception as e:
+                        print(f"! Fit failed for {corr} in θ bin {labels[idx]}: {e}")
                         mu, sigma = np.nan, np.nan
+
                     label = f"{corr_labels[corr]} (μ={mu:.3f}, σ={sigma:.3f})"
-                    _, _, ph = ax.hist(data_slice, bins=mx2_bins,
-                                       histtype='step',
-                                       color=color,
-                                       linestyle=ls,
-                                       label=label)
-                    phs.extend(ph)
+                    _, _, ph = ax.hist(
+                        slice_vals, bins=mx2_bins,
+                        histtype='step',
+                        color=color,
+                        linestyle=ls,
+                        label=label
+                    )
                     x_fit = np.linspace(0.4, 0.9, 200)
-                    ax.plot(x_fit, gaussian(x_fit, *popt), color=color, linestyle=ls)
-                ax.set(xlim=(0.4,0.9), xlabel=r'$M_{x (ep)}^{2}$ (GeV²)',
-                       ylabel='Counts', title=f'θ: {labels[idx]}°')
-                if phs:
-                    ax.legend(fontsize=8)
-                else:
-                    ax.text(0.5,0.5,'No Data', ha='center', va='center')
+                    ax.plot(x_fit, gauss_poly(x_fit, *popt), color=color, linestyle=ls)
+
+                ax.set(
+                    xlim=(0.4, 0.9),
+                    xlabel=r'$M_{x (ep)}^{2}$ (GeV²)',
+                    ylabel='Counts',
+                    title=f'θ: {labels[idx]}°'
+                )
+                ax.legend(fontsize=8) if any(ax.get_legend_handles_labels()[0]) else ax.text(
+                    0.5, 0.5, 'No Data', ha='center', va='center'
+                )
+
             plt.tight_layout()
             out = os.path.join(output_dir, f'Mx2_3particle_{run}_{det_config["name"]}.pdf')
             plt.savefig(out, bbox_inches='tight')
