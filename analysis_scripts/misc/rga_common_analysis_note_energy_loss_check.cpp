@@ -111,19 +111,15 @@ void plot_dvcs_energy_loss_validation(
         }
     }
 
-    // compute means using actual theta values
+    // compute means
     for (int b = 0; b < nBins; ++b) {
-        if (theta_count[b] > 0) {
-            theta_mean[b] = theta_sum[b] / theta_count[b];
-        } else {
-            theta_mean[b] = NAN;
-        }
+        theta_mean[b] = (theta_count[b] > 0
+                         ? theta_sum[b] / theta_count[b]
+                         : NAN);
         for (int i = 0; i < nFiles; ++i) {
-            if (mx2_count[i][b] > 0) {
-                mx2_mean[i][b] = mx2_sum[i][b] / mx2_count[i][b];
-            } else {
-                mx2_mean[i][b] = NAN;
-            }
+            mx2_mean[i][b] = (mx2_count[i][b] > 0
+                              ? mx2_sum[i][b] / mx2_count[i][b]
+                              : NAN);
         }
     }
 
@@ -235,7 +231,6 @@ void plot_dvcs_energy_loss_validation(
     c1->cd(12)->SetBottomMargin(0.15);
     TGraph* gr[nFiles];
     for (int i = 0; i < nFiles; ++i) {
-        // only plot bins with valid theta_mean
         std::vector<double> xs, ys;
         for (int b = 0; b < nBins; ++b) {
             if (theta_count[b] > 0) {
@@ -257,7 +252,7 @@ void plot_dvcs_energy_loss_validation(
     gr[0]->GetXaxis()->SetTitle("#theta (deg)");
     gr[0]->GetYaxis()->SetTitle("#mu (GeV^{2})");
     gr[0]->GetXaxis()->SetLimits(0, 90);
-    gr[0]->GetYaxis()->SetRangeUser(-0.20, 0.20);
+    gr[0]->GetYaxis()->SetRangeUser(-0.1, 0.1);
 
     TLegend* leg12 = new TLegend(0.6, 0.75, 0.9, 0.9);
     leg12->SetTextSize(0.03);
