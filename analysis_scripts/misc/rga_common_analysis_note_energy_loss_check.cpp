@@ -288,11 +288,11 @@ void plot_mx2_comparison_elastic(
 
     std::cout << "[Elastic] Starting plot_mx2_comparison_elastic\n";
 
-    // --- open files & get trees
+    // --- Open files & trees
     TFile* f[nFiles];
     TTree* tree[nFiles];
     for (int i = 0; i < nFiles; ++i) {
-        std::cout << "[Elastic] Opening file " << files[i] << "\n";
+        std::cout << "[Elastic] Opening " << files[i] << "\n";
         f[i] = TFile::Open(files[i]);
         if (!f[i] || f[i]->IsZombie()) {
             std::cerr << "[Elastic] ERROR: cannot open " << files[i] << "\n";
@@ -300,25 +300,22 @@ void plot_mx2_comparison_elastic(
             continue;
         }
         tree[i] = dynamic_cast<TTree*>(f[i]->Get("PhysicsEvents"));
-        std::cout << "[Elastic]   -> PhysicsEvents tree = " 
+        std::cout << "[Elastic]   PhysicsEvents: "
                   << (tree[i] ? "found" : "MISSING") << "\n";
     }
 
-    // --- set branch addresses
+    // --- Set branches
     Double_t p_theta[nFiles], Mx2[nFiles];
     Int_t    det[nFiles];
     for (int i = 0; i < nFiles; ++i) {
-        if (!tree[i]) {
-            std::cout << "[Elastic] Skipping branches for file " << i << " (no tree)\n";
-            continue;
-        }
-        std::cout << "[Elastic] Setting branches for file " << corrLabels[i] << "\n";
+        if (!tree[i]) continue;
+        std::cout << "[Elastic] Setting branches for " << corrLabels[i] << "\n";
         tree[i]->SetBranchAddress("p_theta",  &p_theta[i]);
         tree[i]->SetBranchAddress("Mx2",      &Mx2[i]);
         tree[i]->SetBranchAddress("detector", &det[i]);
     }
 
-    // --- detector configuration
+    // --- Detector configuration
     struct DetConfig {
         const char* name;
         std::vector<double> bins;
@@ -330,7 +327,7 @@ void plot_mx2_comparison_elastic(
     };
     for (auto &dc : dets) {
         dc.labels.push_back("All θ");
-        for (size_t j = 1; j + 1 < dc.bins.size(); ++j) {
+        for (size_t j = 1; j+1 < dc.bins.size(); ++j) {
             dc.labels.push_back(
                 std::to_string((int)dc.bins[j]) + "-" +
                 std::to_string((int)dc.bins[j+1])
@@ -338,32 +335,33 @@ void plot_mx2_comparison_elastic(
         }
     }
 
-    // --- histogram parameters
+    // --- Histogram parameters
     const Double_t mx2_min = 0.5, mx2_max = 1.2;
-    const int    nbMx2_hi  = 50, nbMx2_lo = nbMx2_hi / 2;
+    const int    nbMx2_hi  = 50, nbMx2_lo = nbMx2_hi/2;
 
-    // --- loop over detectors
+    // --- Loop over detectors
     for (int d = 0; d < 2; ++d) {
         auto &DC = dets[d];
         int detNum = d + 1;
-        int nPlots = DC.labels.size();
+        int nPlots = DC.labels.size();       // integrated + theta slices
         int nCols  = 4;
-        int nRows  = ((nPlots-1) + nCols - 1) / nCols + 1;
+        int nRows  = ((nPlots-1) + nCols-1)/nCols + 1;
 
-        std::cout << "[Elastic] === Detector: " << DC.name 
+        std::cout << "[Elastic] Detector " << DC.name
                   << " (ID " << detNum << "), " 
-                  << nPlots << " plots ===\n";
+                  << nPlots << " pads\n";
 
         TCanvas* c = new TCanvas(
             Form("c_%s", DC.name),
             Form("Elastic Mx² Comparison - %s", DC.name),
-            1200, 300 * nRows
+            1200, 300*nRows
         );
         c->Divide(nCols, nRows);
 
-        // --- create histograms
         static const int MAXP = 16;
         TH1D* h[nFiles][MAXP];
+
+        // --- Create histograms
         for (int i = 0; i < nFiles; ++i) {
             std::cout << "[Elastic]   Creating integrated hist for " 
                       << corrLabels[i] << "\n";
@@ -372,46 +370,53 @@ void plot_mx2_comparison_elastic(
                 Form("Integrated %s (%s)", DC.name, corrLabels[i]),
                 nbMx2_hi, mx2_min, mx2_max
             );
-            for (int b = 0; b < nPlots - 1; ++b) {
-                int nb = (b < (nPlots-1)/2 ? nbMx2_lo : nbMx2_hi);
-                std::cout << "[Elastic]     Theta bin " << DC.labels[b+1]
+            int nThetaBins = nPlots - 1;  // excludes integrated
+            for (int b = 1; b <= nThetaBins; ++b) {
+                int nb = (b <= nThetaBins/2 ? nbMx2_lo : nbMx2_hi);
+                std::cout << "[Elastic]     Theta bin " << DC.labels[b]
                           << ", nbins=" << nb << "\n";
-                h[i][b+1] = new TH1D(
+                h[i][b] = new TH1D(
                     Form("h_%s_%d_%d", DC.name, b, i),
                     Form("θ[%s] %s (%s)",
-                         DC.labels[b+1].c_str(),
-                         DC.name, corrLabels[i]),
+                         DC.labels[b].c_str(), DC.name, corrLabels[i]),
                     nb, mx2_min, mx2_max
                 );
             }
         }
 
-        // --- fill histograms
+        // --- Fill histograms
         for (int i = 0; i < nFiles; ++i) {
             if (!tree[i]) {
                 std::cout << "[Elastic]   Skipping fill for " 
-                          << corrLabels[i] << " (no tree)\n";
+                          << corrLabels[i] << "\n";
                 continue;
             }
             Long64_t N = tree[i]->GetEntries();
             std::cout << "[Elastic]   Filling " << corrLabels[i] 
                       << ", entries=" << N << "\n";
+
+            int nThetaBins = nPlots - 1;
             for (Long64_t ev = 0; ev < N; ++ev) {
                 tree[i]->GetEntry(ev);
                 if (det[i] != detNum) continue;
-                Double_t θdeg = p_theta[i] * 180.0 / TMath::Pi();
+                Double_t θdeg = p_theta[i]*180.0/TMath::Pi();
+
+                // integrated
                 h[i][0]->Fill(Mx2[i]);
-                for (size_t b = 0; b + 1 < DC.bins.size(); ++b) {
-                    if (θdeg >= DC.bins[b] && θdeg < DC.bins[b+1]) {
-                        h[i][b+1]->Fill(Mx2[i]);
+
+                // theta‐slices 1..nThetaBins
+                for (int slice = 1; slice <= nThetaBins; ++slice) {
+                    double tmin = DC.bins[slice];
+                    double tmax = DC.bins[slice+1];
+                    if (θdeg >= tmin && θdeg < tmax) {
+                        h[i][slice]->Fill(Mx2[i]);
                     }
                 }
             }
             std::cout << "[Elastic]   Done fill for " << corrLabels[i] << "\n";
         }
 
-        // --- draw integrated spectrum in pad 1
-        std::cout << "[Elastic]   Drawing integrated pad\n";
+        // --- Draw integrated in pad 1
         c->cd(1);
         gPad->SetLeftMargin(0.15);
         gPad->SetBottomMargin(0.15);
@@ -420,53 +425,52 @@ void plot_mx2_comparison_elastic(
             if (h[i][0]) gmax = std::max(gmax, h[i][0]->GetMaximum());
         for (int i = 0; i < nFiles; ++i) {
             if (!h[i][0]) continue;
-            h[i][0]->SetMaximum(1.7 * gmax);
+            h[i][0]->SetMaximum(1.7*gmax);
             h[i][0]->SetLineColor(kBlack + i);
             h[i][0]->SetLineStyle(i);
-            h[i][0]->Draw(i == 0 ? "HIST" : "HIST SAME");
+            h[i][0]->Draw(i==0 ? "HIST" : "HIST SAME");
         }
         {
-            auto leg = new TLegend(0.6, 0.7, 0.9, 0.9);
+            auto leg = new TLegend(0.6,0.7,0.9,0.9);
             for (int i = 0; i < nFiles; ++i)
                 if (h[i][0]) leg->AddEntry(h[i][0], corrLabels[i], "l");
             leg->Draw();
         }
-
-        // axis titles
         h[0][0]->GetXaxis()->SetTitle("M_{x}^{2} (GeV^{2})");
         h[0][0]->GetYaxis()->SetTitle("Counts");
 
-        // --- draw theta-binned spectra
-        for (int p = 1; p < nPlots; ++p) {
-            std::cout << "[Elastic]   Drawing theta slice " << DC.labels[p] << "\n";
-            int pad = p + 1;
+        // --- Draw theta‐binned pads
+        int nThetaBins = nPlots - 1;
+        for (int slice = 1; slice <= nThetaBins; ++slice) {
+            std::cout << "[Elastic]   Drawing slice " << DC.labels[slice] << "\n";
+            int pad = slice + 1;
             c->cd(pad);
             gPad->SetLeftMargin(0.15);
             gPad->SetBottomMargin(0.15);
 
             Double_t bmax = 0;
             for (int i = 0; i < nFiles; ++i)
-                if (h[i][p]) bmax = std::max(bmax, h[i][p]->GetMaximum());
+                if (h[i][slice]) bmax = std::max(bmax, h[i][slice]->GetMaximum());
             for (int i = 0; i < nFiles; ++i) {
-                if (!h[i][p]) continue;
-                h[i][p]->SetMaximum(1.7 * bmax);
-                h[i][p]->SetLineColor(kBlack + i);
-                h[i][p]->SetLineStyle(i);
-                h[i][p]->Draw(i == 0 ? "HIST" : "HIST SAME");
+                if (!h[i][slice]) continue;
+                h[i][slice]->SetMaximum(1.7*bmax);
+                h[i][slice]->SetLineColor(kBlack + i);
+                h[i][slice]->SetLineStyle(i);
+                h[i][slice]->Draw(i==0 ? "HIST" : "HIST SAME");
             }
-            if (p < nCols) {
-                auto leg = new TLegend(0.6, 0.7, 0.9, 0.9);
+            if (slice < nCols) {
+                auto leg = new TLegend(0.6,0.7,0.9,0.9);
                 for (int i = 0; i < nFiles; ++i)
-                    if (h[i][p]) leg->AddEntry(h[i][p], corrLabels[i], "l");
+                    if (h[i][slice]) leg->AddEntry(h[i][slice], corrLabels[i], "l");
                 leg->Draw();
             }
-            h[0][p]->GetXaxis()->SetTitle("M_{x}^{2} (GeV^{2})");
-            h[0][p]->GetYaxis()->SetTitle("Counts");
-            h[0][p]->GetXaxis()->SetRangeUser(mx2_min, mx2_max);
-            c->cd(pad)->SetTitle(DC.labels[p].c_str());
+            h[0][slice]->GetXaxis()->SetTitle("M_{x}^{2} (GeV^{2})");
+            h[0][slice]->GetYaxis()->SetTitle("Counts");
+            h[0][slice]->GetXaxis()->SetRangeUser(mx2_min, mx2_max);
+            c->cd(pad)->SetTitle(DC.labels[slice].c_str());
         }
 
-        // --- save and cleanup this canvas
+        // --- Save and cleanup
         std::cout << "[Elastic]   Saving canvas\n";
         TString out = TString::Format(
             "output/Mx2_elastic_comparison_%s_%s.pdf",
@@ -476,13 +480,12 @@ void plot_mx2_comparison_elastic(
         delete c;
     }
 
-    // --- close files
+    // --- Final cleanup
     std::cout << "[Elastic] Cleaning up files\n";
     for (int i = 0; i < nFiles; ++i) {
         if (f[i]) { f[i]->Close(); delete f[i]; }
     }
-
-    std::cout << "[Elastic] Done plot_mx2_comparison_elastic\n";
+    std::cout << "[Elastic] Done\n";
 }
 
 int main(int argc, char** argv) {
