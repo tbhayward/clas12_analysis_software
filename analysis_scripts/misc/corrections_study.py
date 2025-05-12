@@ -303,12 +303,14 @@ def plot_three_particles(parent_dir, output_dir):
                 
                 try:
                     with uproot.open(filepath) as f:
+                        # Verify PhysicsEvents tree exists
                         if 'PhysicsEvents' not in f:
                             print("! Missing PhysicsEvents tree")
                             continue
                         #endif
                         tree = f['PhysicsEvents']
                         
+                        # Check required branches
                         required_branches = ['Mx2_1', 'p1_theta', 'detector1']
                         missing = [b for b in required_branches if b not in tree]
                         if missing:
@@ -316,9 +318,11 @@ def plot_three_particles(parent_dir, output_dir):
                             continue
                         #endif
                         
+                        # Load data
                         data = tree.arrays(required_branches, library='np')
                         print(f"Total events in file: {len(data['Mx2_1']):,}")
 
+                        # Apply detector selection
                         mask = (data['detector1'] == det_num)
                         print(f"Events in detector {det_num}: {np.sum(mask):,}")
 
@@ -328,6 +332,7 @@ def plot_three_particles(parent_dir, output_dir):
                             continue
                         #endif
                             
+                        # Store data
                         all_data[corr] = {
                             'Mx2_1': data['Mx2_1'][mask],
                             'theta': np.degrees(data['p1_theta'][mask])
@@ -341,7 +346,7 @@ def plot_three_particles(parent_dir, output_dir):
                 #endtry
             #endfor
 
-            # Summary
+            # Data summary after loading
             print(f"\n{'='*40}")
             print(f"Data Summary for {det_config['name']} Detector")
             print(f"{'Correction':<15} | {'Events':>10} | {'Mx2_1 Range':<25} | {'Theta Range':<15}")
@@ -352,9 +357,10 @@ def plot_three_particles(parent_dir, output_dir):
                     mx2_max = np.max(all_data[corr]['Mx2_1'])
                     theta_min = np.min(all_data[corr]['theta'])
                     theta_max = np.max(all_data[corr]['theta'])
+                    range_str = f"{mx2_min:.3f}-{mx2_max:.3f}"
+                    theta_str = f"{theta_min:.1f}°-{theta_max:.1f}°"
                     print(f"{corr:<15} | {len(all_data[corr]['Mx2_1']):>10,} | "
-                          f"{mx2_min:.3f}-{mx2_max:.3f:<25} | "
-                          f"{theta_min:.1f}°-{theta_max:.1f}°")
+                          f"{range_str:<25} | {theta_str:<15}")
                 else:
                     print(f"{corr:<15} | {'N/A':>10} | {'N/A':<25} | {'N/A':<15}")
                 #endif
@@ -366,11 +372,11 @@ def plot_three_particles(parent_dir, output_dir):
                 continue
             #endif
 
-            # Create figure/grid
+            # Create figure and gridspec
             fig = plt.figure(figsize=(20, 5*n_rows))
             gs = gridspec.GridSpec(n_rows, n_cols, figure=fig)
             
-            # Integrated spectrum
+            # Integrated spectrum plot
             ax_int = fig.add_subplot(gs[0, :])
             artists = []
             for corr, color, ls in zip(corrections, colors, line_styles):
@@ -379,10 +385,8 @@ def plot_three_particles(parent_dir, output_dir):
                     counts, edges = np.histogram(vals, bins=mx2_bins)
                     centers = (edges[:-1] + edges[1:]) / 2
                     try:
-                        popt, _ = curve_fit(
-                            gaussian, centers, counts,
-                            p0=[counts.max(), np.mean(vals), np.std(vals)]
-                        )
+                        popt, _ = curve_fit(gaussian, centers, counts,
+                                            p0=[counts.max(), np.mean(vals), np.std(vals)])
                         mu, sigma = popt[1], abs(popt[2])
                     except Exception as e:
                         print(f"! Gaussian fit failed for {corr}: {e}")
@@ -390,16 +394,14 @@ def plot_three_particles(parent_dir, output_dir):
                     #endtry
 
                     label = f"{corr_labels[corr]} (μ={mu:.3f}, σ={sigma:.3f})"
-                    _, _, patches = ax_int.hist(
-                        vals, bins=mx2_bins,
-                        histtype='step',
-                        color=color,
-                        linestyle=ls,
-                        label=label
-                    )
+                    _, _, patches = ax_int.hist(vals, bins=mx2_bins,
+                                                histtype='step',
+                                                color=color,
+                                                linestyle=ls,
+                                                label=label)
                     artists.extend(patches)
 
-                    # overlay fit
+                    # Overlay Gaussian fit
                     x_fit = np.linspace(mx2_bins.min(), mx2_bins.max(), 200)
                     y_fit = gaussian(x_fit, *popt)
                     ax_int.plot(x_fit, y_fit, color=color, linestyle=ls)
@@ -437,10 +439,10 @@ def plot_three_particles(parent_dir, output_dir):
                             counts, edges = np.histogram(mx2_data, bins=mx2_bins)
                             centers = (edges[:-1] + edges[1:]) / 2
                             try:
-                                popt, _ = curve_fit(
-                                    gaussian, centers, counts,
-                                    p0=[counts.max(), np.mean(mx2_data), np.std(mx2_data)]
-                                )
+                                popt, _ = curve_fit(gaussian, centers, counts,
+                                                    p0=[counts.max(),
+                                                        np.mean(mx2_data),
+                                                        np.std(mx2_data)])
                                 mu, sigma = popt[1], abs(popt[2])
                             except Exception as e:
                                 print(f"! Gaussian fit failed for {corr} in θ bin {current_label}: {e}")
@@ -448,17 +450,15 @@ def plot_three_particles(parent_dir, output_dir):
                             #endtry
 
                             label = f"{corr_labels[corr]} (μ={mu:.3f}, σ={sigma:.3f})"
-                            _, _, patches = ax.hist(
-                                mx2_data,
-                                bins=mx2_bins,
-                                histtype='step',
-                                color=color,
-                                linestyle=ls,
-                                label=label
-                            )
+                            _, _, patches = ax.hist(mx2_data,
+                                                     bins=mx2_bins,
+                                                     histtype='step',
+                                                     color=color,
+                                                     linestyle=ls,
+                                                     label=label)
                             sub_artists.extend(patches)
 
-                            # overlay fit
+                            # Overlay Gaussian fit
                             x_fit = np.linspace(mx2_bins.min(), mx2_bins.max(), 200)
                             y_fit = gaussian(x_fit, *popt)
                             ax.plot(x_fit, y_fit, color=color, linestyle=ls)
@@ -485,6 +485,7 @@ def plot_three_particles(parent_dir, output_dir):
             print(f"\nSaved: {output_file}")
         #endfor
     #endfor
+#endfor
 
 def gaussian(x, A, mu, sigma):
     """Gaussian function for curve fitting."""
