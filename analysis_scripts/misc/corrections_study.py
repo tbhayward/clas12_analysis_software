@@ -467,7 +467,7 @@ def plot_dvcs(parent_dir, output_dir):
     line_styles = ['-', '--', ':', '-.']
     run_periods = ['fa18_inb', 'fa18_out', 'sp19_inb']
     
-    mx2_bins = np.linspace(-0.2, 0.2, 33)
+    mx2_bins = np.linspace(-0.2, 0.2, 20)
 
     for run in run_periods:
         print(f"\n{'#'*80}")
