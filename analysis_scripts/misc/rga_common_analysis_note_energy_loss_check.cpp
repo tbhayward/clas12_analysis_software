@@ -286,206 +286,170 @@ void plot_mx2_comparison_elastic(
         "Mariana's"
     };
 
-    std::cout << "[Elastic] Starting plot_mx2_comparison_elastic\n";
-
-    // --- Open files & trees
+    // Open input files & get trees
     TFile* f[nFiles];
     TTree* tree[nFiles];
     for (int i = 0; i < nFiles; ++i) {
-        std::cout << "[Elastic] Opening " << files[i] << "\n";
         f[i] = TFile::Open(files[i]);
         if (!f[i] || f[i]->IsZombie()) {
-            std::cerr << "[Elastic] ERROR: cannot open " << files[i] << "\n";
+            std::cerr << "Error: cannot open " << files[i] << "\n";
             tree[i] = nullptr;
             continue;
         }
         tree[i] = dynamic_cast<TTree*>(f[i]->Get("PhysicsEvents"));
-        std::cout << "[Elastic]   PhysicsEvents: "
-                  << (tree[i] ? "found" : "MISSING") << "\n";
+        if (!tree[i]) {
+            std::cerr << "Error: no PhysicsEvents in " << files[i] << "\n";
+        }
     }
 
-    // --- Set branches
+    // Prepare branch variables
     Double_t p_theta[nFiles], Mx2[nFiles];
-    Int_t    det[nFiles];
+    Int_t    detector[nFiles];
     for (int i = 0; i < nFiles; ++i) {
         if (!tree[i]) continue;
-        std::cout << "[Elastic] Setting branches for " << corrLabels[i] << "\n";
         tree[i]->SetBranchAddress("p_theta",  &p_theta[i]);
         tree[i]->SetBranchAddress("Mx2",      &Mx2[i]);
-        tree[i]->SetBranchAddress("detector", &det[i]);
+        tree[i]->SetBranchAddress("detector", &detector[i]);
     }
 
-    // --- Detector configuration
+    // Detector configurations (like DVCS)
     struct DetConfig {
         const char* name;
-        std::vector<double> bins;
-        std::vector<std::string> labels;
+        std::vector<double> theta_bins;
+        std::vector<std::string> theta_labels;
     };
-    DetConfig dets[2] = {
-        { "Forward", {0,8,11,14,17,20,23,26,29,32,35,38,41,80}, {} },
-        { "Central",{0,36,39,42,45,48,51,54,57,180},           {} }
+    std::map<int, DetConfig> detectors = {
+        { 1, { "Forward", {0, 8,11,14,17,20,23,26,29,32,35,38,41,80}, {} } },
+        { 2, { "Central", {0,36,39,42,45,48,51,54,57,180},           {} } }
     };
-    for (auto &dc : dets) {
-        dc.labels.push_back("All θ");
-        for (size_t j = 1; j+1 < dc.bins.size(); ++j) {
-            dc.labels.push_back(
-                std::to_string((int)dc.bins[j]) + "-" +
-                std::to_string((int)dc.bins[j+1])
+    // build theta_labels for each
+    for (auto &kv : detectors) {
+        auto &cfg = kv.second;
+        cfg.theta_labels.push_back("All θ");
+        for (size_t j = 1; j + 1 < cfg.theta_bins.size(); ++j) {
+            cfg.theta_labels.push_back(
+                std::to_string(int(cfg.theta_bins[j])) + "-" +
+                std::to_string(int(cfg.theta_bins[j+1]))
             );
         }
     }
 
-    // --- Histogram parameters
+    // Mx² histogram parameters
     const Double_t mx2_min = 0.5, mx2_max = 1.2;
-    const int    nbMx2_hi  = 50, nbMx2_lo = nbMx2_hi/2;
+    const int    nbMx2     = 50;
 
-    // --- Loop over detectors
-    for (int d = 0; d < 2; ++d) {
-        auto &DC = dets[d];
-        int detNum = d + 1;
-        int nPlots = DC.labels.size();       // integrated + theta slices
-        int nCols  = 4;
-        int nRows  = ((nPlots-1) + nCols-1)/nCols + 1;
+    // Loop over detectors
+    for (auto &kv : detectors) {
+        int det_num = kv.first;
+        auto &cfg = kv.second;
+        int nPlots = cfg.theta_labels.size();
+        int nCols = 4;
+        int nRows = ((nPlots - 1) + nCols - 1) / nCols + 1;
 
-        std::cout << "[Elastic] Detector " << DC.name
-                  << " (ID " << detNum << "), " 
-                  << nPlots << " pads\n";
-
+        // Create canvas/grid
         TCanvas* c = new TCanvas(
-            Form("c_%s", DC.name),
-            Form("Elastic Mx² Comparison - %s", DC.name),
+            Form("c_elastic_%d", det_num),
+            Form("Elastic Mx² Comparison — %s", cfg.name),
             1200, 300*nRows
         );
         c->Divide(nCols, nRows);
 
+        // Allocate histograms: [0]=integrated, [1..]=theta slices
         static const int MAXP = 16;
         TH1D* h[nFiles][MAXP];
-
-        // --- Create histograms
         for (int i = 0; i < nFiles; ++i) {
-            std::cout << "[Elastic]   Creating integrated hist for " 
-                      << corrLabels[i] << "\n";
+            // integrated
             h[i][0] = new TH1D(
-                Form("h_%s_int_%d", DC.name, i),
-                Form("Integrated %s (%s)", DC.name, corrLabels[i]),
-                nbMx2_hi, mx2_min, mx2_max
+                Form("h%d_int", i),
+                Form("Integrated %s (%s)", cfg.name, corrLabels[i]),
+                nbMx2, mx2_min, mx2_max
             );
-            int nThetaBins = nPlots - 1;  // excludes integrated
-            for (int b = 1; b <= nThetaBins; ++b) {
-                int nb = (b <= nThetaBins/2 ? nbMx2_lo : nbMx2_hi);
-                std::cout << "[Elastic]     Theta bin " << DC.labels[b]
-                          << ", nbins=" << nb << "\n";
-                h[i][b] = new TH1D(
-                    Form("h_%s_%d_%d", DC.name, b, i),
-                    Form("θ[%s] %s (%s)",
-                         DC.labels[b].c_str(), DC.name, corrLabels[i]),
-                    nb, mx2_min, mx2_max
+            // theta slices
+            for (int b = 0; b < nPlots-1; ++b) {
+                h[i][b+1] = new TH1D(
+                    Form("h%d_%d", i, b),
+                    Form("θ %s — %s (%s)",
+                         cfg.theta_labels[b+1].c_str(), cfg.name, corrLabels[i]),
+                    nbMx2, mx2_min, mx2_max
                 );
             }
         }
 
-        // --- Fill histograms
+        // Fill histograms
         for (int i = 0; i < nFiles; ++i) {
-            if (!tree[i]) {
-                std::cout << "[Elastic]   Skipping fill for " 
-                          << corrLabels[i] << "\n";
-                continue;
-            }
+            if (!tree[i]) continue;
             Long64_t N = tree[i]->GetEntries();
-            std::cout << "[Elastic]   Filling " << corrLabels[i] 
-                      << ", entries=" << N << "\n";
-
-            int nThetaBins = nPlots - 1;
             for (Long64_t ev = 0; ev < N; ++ev) {
                 tree[i]->GetEntry(ev);
-                if (det[i] != detNum) continue;
-                Double_t θdeg = p_theta[i]*180.0/TMath::Pi();
-
+                if (detector[i] != det_num) continue;
+                double θ = p_theta[i] * 180.0 / TMath::Pi();
                 // integrated
                 h[i][0]->Fill(Mx2[i]);
-
-                // theta‐slices 1..nThetaBins
-                for (int slice = 1; slice <= nThetaBins; ++slice) {
-                    double tmin = DC.bins[slice];
-                    double tmax = DC.bins[slice+1];
-                    if (θdeg >= tmin && θdeg < tmax) {
-                        h[i][slice]->Fill(Mx2[i]);
+                // theta slices
+                for (int b = 0; b < int(cfg.theta_bins.size())-1; ++b) {
+                    if (θ >= cfg.theta_bins[b] && θ < cfg.theta_bins[b+1]) {
+                        h[i][b+1]->Fill(Mx2[i]);
                     }
                 }
             }
-            std::cout << "[Elastic]   Done fill for " << corrLabels[i] << "\n";
         }
 
-        // --- Draw integrated in pad 1
+        // Draw integrated spectrum (pad 1)
         c->cd(1);
         gPad->SetLeftMargin(0.15);
         gPad->SetBottomMargin(0.15);
-        Double_t gmax = 0;
-        for (int i = 0; i < nFiles; ++i)
-            if (h[i][0]) gmax = std::max(gmax, h[i][0]->GetMaximum());
-        for (int i = 0; i < nFiles; ++i) {
+        double gmax=0;
+        for (int i=0; i<nFiles; ++i) if(h[i][0]) gmax = std::max(gmax, h[i][0]->GetMaximum());
+        for (int i=0; i<nFiles; ++i) {
             if (!h[i][0]) continue;
             h[i][0]->SetMaximum(1.7*gmax);
-            h[i][0]->SetLineColor(kBlack + i);
-            h[i][0]->SetLineStyle(i);
-            h[i][0]->Draw(i==0 ? "HIST" : "HIST SAME");
+            h[i][0]->SetMarkerStyle(20+i);
+            h[i][0]->SetMarkerColor(kBlack+i);
+            h[i][0]->Draw(i==0 ? "E" : "E SAME");
         }
         {
-            auto leg = new TLegend(0.6,0.7,0.9,0.9);
-            for (int i = 0; i < nFiles; ++i)
-                if (h[i][0]) leg->AddEntry(h[i][0], corrLabels[i], "l");
+            TLegend* leg = new TLegend(0.6,0.7,0.9,0.9);
+            for (int i=0; i<nFiles; ++i) leg->AddEntry(h[i][0], corrLabels[i], "lep");
             leg->Draw();
         }
         h[0][0]->GetXaxis()->SetTitle("M_{x}^{2} (GeV^{2})");
         h[0][0]->GetYaxis()->SetTitle("Counts");
 
-        // --- Draw theta‐binned pads
-        int nThetaBins = nPlots - 1;
-        for (int slice = 1; slice <= nThetaBins; ++slice) {
-            std::cout << "[Elastic]   Drawing slice " << DC.labels[slice] << "\n";
-            int pad = slice + 1;
-            c->cd(pad);
+        // Draw theta‐binned spectra
+        for (int p = 1; p < nPlots; ++p) {
+            c->cd(p+1);
             gPad->SetLeftMargin(0.15);
             gPad->SetBottomMargin(0.15);
-
-            Double_t bmax = 0;
-            for (int i = 0; i < nFiles; ++i)
-                if (h[i][slice]) bmax = std::max(bmax, h[i][slice]->GetMaximum());
-            for (int i = 0; i < nFiles; ++i) {
-                if (!h[i][slice]) continue;
-                h[i][slice]->SetMaximum(1.7*bmax);
-                h[i][slice]->SetLineColor(kBlack + i);
-                h[i][slice]->SetLineStyle(i);
-                h[i][slice]->Draw(i==0 ? "HIST" : "HIST SAME");
+            double bmax=0;
+            for (int i=0; i<nFiles; ++i) if(h[i][p]) bmax = std::max(bmax, h[i][p]->GetMaximum());
+            for (int i=0; i<nFiles; ++i) {
+                if (!h[i][p]) continue;
+                h[i][p]->SetMaximum(1.7*bmax);
+                h[i][p]->SetMarkerStyle(20+i);
+                h[i][p]->SetMarkerColor(kBlack+i);
+                h[i][p]->Draw(i==0 ? "E" : "E SAME");
             }
-            if (slice < nCols) {
-                auto leg = new TLegend(0.6,0.7,0.9,0.9);
-                for (int i = 0; i < nFiles; ++i)
-                    if (h[i][slice]) leg->AddEntry(h[i][slice], corrLabels[i], "l");
+            if (p < nCols) {
+                TLegend* leg = new TLegend(0.6,0.7,0.9,0.9);
+                for (int i=0; i<nFiles; ++i) leg->AddEntry(h[i][p], corrLabels[i], "lep");
                 leg->Draw();
             }
-            h[0][slice]->GetXaxis()->SetTitle("M_{x}^{2} (GeV^{2})");
-            h[0][slice]->GetYaxis()->SetTitle("Counts");
-            h[0][slice]->GetXaxis()->SetRangeUser(mx2_min, mx2_max);
-            c->cd(pad)->SetTitle(DC.labels[slice].c_str());
+            h[0][p]->GetXaxis()->SetTitle("M_{x}^{2} (GeV^{2})");
+            h[0][p]->GetYaxis()->SetTitle("Counts");
+            h[0][p]->GetXaxis()->SetRangeUser(mx2_min, mx2_max);
+            c->cd(p+1)->SetTitle(cfg.theta_labels[p].c_str());
         }
 
-        // --- Save and cleanup
-        std::cout << "[Elastic]   Saving canvas\n";
-        TString out = TString::Format(
-            "output/Mx2_elastic_comparison_%s_%s.pdf",
-            DC.name, titleSuffix
-        );
-        c->SaveAs(out);
+        // Save PDF
+        c->SaveAs(Form("output/Mx2_elastic_%s_%s.pdf",
+                       cfg.name, titleSuffix));
         delete c;
     }
 
-    // --- Final cleanup
-    std::cout << "[Elastic] Cleaning up files\n";
+    // Cleanup
     for (int i = 0; i < nFiles; ++i) {
         if (f[i]) { f[i]->Close(); delete f[i]; }
     }
-    std::cout << "[Elastic] Done\n";
 }
 
 int main(int argc, char** argv) {
