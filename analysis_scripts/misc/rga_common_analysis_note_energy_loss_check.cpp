@@ -15,8 +15,7 @@ void plot_dvcs_energy_loss_validation(
     const char* file2,
     const char* file3,
     const char* file4,
-    const char* titleSuffix
-) {
+    const char* titleSuffix) {
     const int nFiles = 4;
     const char* files[nFiles] = { file1, file2, file3, file4 };
     const char* corrLabels[nFiles] = {
@@ -271,14 +270,212 @@ void plot_dvcs_energy_loss_validation(
     }
 }
 
+void plot_mx2_comparison_elastic(
+    const char* file1,
+    const char* file2,
+    const char* file3,
+    const char* file4,
+    const char* titleSuffix
+) {
+    const int nFiles = 4;
+    const char* files[nFiles] = { file1, file2, file3, file4 };
+    const char* corrLabels[nFiles] = {
+        "No Corrections",
+        "Timothy's",
+        "Krishna's",
+        "Mariana's"
+    };
+
+    // Open the four ROOT files and get their PhysicsEvents trees
+    TFile* f[nFiles];
+    TTree* tree[nFiles];
+    for (int i = 0; i < nFiles; ++i) {
+        f[i]    = TFile::Open(files[i]);
+        tree[i] = (TTree*)f[i]->Get("PhysicsEvents");
+    }
+
+    // Branch variables
+    Double_t p_theta[nFiles], Mx2[nFiles];
+    Int_t    detector[nFiles];
+    for (int i = 0; i < nFiles; ++i) {
+        tree[i]->SetBranchAddress("p_theta",  &p_theta[i]);
+        tree[i]->SetBranchAddress("Mx2",      &Mx2[i]);
+        tree[i]->SetBranchAddress("detector", &detector[i]);
+    }
+
+    // Detector definitions
+    const int nDets = 2;
+    struct DetConfig {
+        const char* name;
+        std::vector<double> bins;
+        std::vector<std::string> labels;
+    };
+    DetConfig dets[nDets] = {
+        {
+            "Forward",
+            {0,8,11,14,17,20,23,26,29,32,35,38,41,80},
+            {}  // labels to be filled
+        },
+        {
+            "Central",
+            {0,36,39,42,45,48,51,54,57,180},
+            {}
+        }
+    };
+    // Build theta_labels for each
+    for (int d = 0; d < nDets; ++d) {
+        dets[d].labels.push_back("All θ");
+        auto &B = dets[d].bins;
+        for (size_t i = 1; i+1 < B.size(); ++i) {
+            dets[d].labels.push_back(
+                std::to_string((int)B[i]) + "-" + std::to_string((int)B[i+1])
+            );
+        }
+    }
+
+    // Mx2 histogram parameters (elastic peak ~0.88 GeV²)
+    const Double_t mx2_min =  0.5;
+    const Double_t mx2_max =  1.2;
+    const int    nbMx2_hi  = 50;
+    const int    nbMx2_lo  = nbMx2_hi/2;  // half bins for low-theta slices
+
+    // Loop over detectors
+    for (int d = 0; d < nDets; ++d) {
+        auto &det = dets[d];
+        int detNum = d + 1;
+
+        int nPlots = det.labels.size();
+        int nCols  = 4;
+        int nRows  = ((nPlots-1) + nCols-1)/nCols + 1;
+
+        // Canvas for this detector
+        TCanvas* c = new TCanvas(
+            Form("c_%s", det.name),
+            Form("Elastic Mx2 Comparison - %s", det.name),
+            1200, 300*nRows
+        );
+        c->Divide(nCols, nRows);
+
+        // Prepare histograms
+        static const int MAXP = 15;
+        TH1D* h[nFiles][MAXP];
+
+        // Create histograms: [0] = integrated, [1..] = theta bins
+        for (int i = 0; i < nFiles; ++i) {
+            h[i][0] = new TH1D(
+                Form("h_%s_int_%d", det.name, i),
+                Form("Integrated %s (%s)", det.name, corrLabels[i]),
+                nbMx2_hi, mx2_min, mx2_max
+            );
+            for (int b = 0; b < nPlots-1; ++b) {
+                int nbins = (b < (nPlots-1)/2 ? nbMx2_lo : nbMx2_hi);
+                h[i][b+1] = new TH1D(
+                    Form("h_%s_%d_%d", det.name, b, i),
+                    Form("θ[%s] %s (%s)",
+                         det.labels[b+1].c_str(),
+                         det.name, corrLabels[i]),
+                    nbins, mx2_min, mx2_max
+                );
+            }
+        }
+
+        // Fill histograms
+        for (int i = 0; i < nFiles; ++i) {
+            Long64_t N = tree[i]->GetEntries();
+            for (Long64_t ev = 0; ev < N; ++ev) {
+                tree[i]->GetEntry(ev);
+                if (detector[i] != detNum) continue;
+                Double_t thetaDeg = p_theta[i] * 180.0 / TMath::Pi();
+                // integrated
+                h[i][0]->Fill(Mx2[i]);
+                // theta-binned
+                for (size_t b = 0; b+1 < det.bins.size(); ++b) {
+                    if (thetaDeg >= det.bins[b] && thetaDeg < det.bins[b+1]) {
+                        h[i][b+1]->Fill(Mx2[i]);
+                    }
+                }
+            }
+        }
+
+        // Draw integrated spectrum in pad 1
+        c->cd(1)->SetLeftMargin(0.15);
+        c->cd(1)->SetBottomMargin(0.15);
+        Double_t gmax = 0;
+        for (int i = 0; i < nFiles; ++i)
+            gmax = std::max(gmax, h[i][0]->GetMaximum());
+        for (int i = 0; i < nFiles; ++i) {
+            h[i][0]->SetMaximum(1.7*gmax);
+            h[i][0]->SetMinimum(0);
+            h[i][0]->SetLineColor(kBlack + i);
+            h[i][0]->SetLineStyle(i);
+            h[i][0]->Draw(i==0 ? "HIST" : "HIST SAME");
+        }
+        TLegend *legInt = new TLegend(0.6,0.7,0.9,0.9);
+        for (int i = 0; i < nFiles; ++i)
+            legInt->AddEntry(h[i][0], corrLabels[i], "l");
+        legInt->Draw();
+        h[0][0]->GetXaxis()->SetTitle("M_{x}^{2} (GeV^{2})");
+        h[0][0]->GetYaxis()->SetTitle("Counts");
+
+        // Draw theta-binned spectra
+        for (int p = 1; p < nPlots; ++p) {
+            int pad = p+1;
+            c->cd(pad)->SetLeftMargin(0.15);
+            c->cd(pad)->SetBottomMargin(0.15);
+
+            Double_t bmax = 0;
+            for (int i = 0; i < nFiles; ++i)
+                bmax = std::max(bmax, h[i][p]->GetMaximum());
+            for (int i = 0; i < nFiles; ++i) {
+                h[i][p]->SetMaximum(1.7*bmax);
+                h[i][p]->SetMinimum(0);
+                h[i][p]->SetLineColor(kBlack + i);
+                h[i][p]->SetLineStyle(i);
+                h[i][p]->Draw(i==0 ? "HIST" : "HIST SAME");
+            }
+            if (p < nCols) {
+                TLegend *leg = new TLegend(0.6,0.7,0.9,0.9);
+                for (int i = 0; i < nFiles; ++i)
+                    leg->AddEntry(h[i][p], corrLabels[i], "l");
+                leg->Draw();
+            }
+            h[0][p]->GetXaxis()->SetTitle("M_{x}^{2} (GeV^{2})");
+            h[0][p]->GetYaxis()->SetTitle("Counts");
+            h[0][p]->GetXaxis()->SetRangeUser(mx2_min, mx2_max);
+            c->cd(pad)->SetTitle(det.labels[p].c_str());
+        }
+
+        // Save and clean up
+        TString out = TString::Format(
+            "output/Mx2_elastic_comparison_%s_%s.pdf",
+            det.name, titleSuffix
+        );
+        c->SaveAs(out);
+        delete c;
+    }
+
+    // Close files
+    for (int i = 0; i < nFiles; ++i) {
+        f[i]->Close();
+        delete f[i];
+    }
+}
+
 int main(int argc, char** argv) {
     if (argc != 6) {
         std::cerr << "Usage: " << argv[0]
                   << " <file1.root> <file2.root> <file3.root> <file4.root> <titleSuffix>\n";
         return 1;
     }
-    plot_dvcs_energy_loss_validation(
+
+    // plot_dvcs_energy_loss_validation(
+    //     argv[1], argv[2], argv[3], argv[4], argv[5]
+    // );
+
+    plot_mx2_comparison_elastic(
         argv[1], argv[2], argv[3], argv[4], argv[5]
     );
+
+
     return 0;
 }
