@@ -53,13 +53,13 @@ void plot_dvcs_energy_loss_validation(
 
     const int    nBins        = 10;
     Double_t     thetaBins[nBins+1] = {5,15,20,25,30,35,40,45,50,60,100};
-    const int    nbMx2        = 35;
-    const Double_t mx2_min    = -0.2, mx2_max = +0.2;
+    const int    nbMx2_hi     = 35;
+    const int    nbMx2_lo     = nbMx2_hi/2;    // half bins for first half
+    const Double_t mx2_min    = -0.3, mx2_max = +0.3;
 
     TH1D*    h[nFiles][nBins+1];
     TF1*     fitInt[nFiles];
-    Double_t mu[nFiles][nBins];
-    Double_t sigma[nFiles][nBins];
+    Double_t mu[nFiles][nBins], sigma[nFiles][nBins];
     Double_t theta_sum[nBins]     = {0};
     Int_t    theta_count[nBins]   = {0};
     Double_t theta_mean[nBins]    = {0};
@@ -72,15 +72,16 @@ void plot_dvcs_energy_loss_validation(
         h[i][0] = new TH1D(
             Form("h%d_int", i),
             Form("Integrated #theta [5,65] %s (%s)", titleSuffix, corrLabels[i]),
-            nbMx2, mx2_min, mx2_max
+            nbMx2_hi, mx2_min, mx2_max
         );
         for (int b = 0; b < nBins; ++b) {
+            int nb = (b < nBins/2 ? nbMx2_lo : nbMx2_hi);
             h[i][b+1] = new TH1D(
                 Form("h%d_%d", i, b),
                 Form("#theta [%.0f,%.0f] %s (%s)",
                      thetaBins[b], thetaBins[b+1],
                      titleSuffix, corrLabels[i]),
-                nbMx2, mx2_min, mx2_max
+                nb, mx2_min, mx2_max
             );
         }
     }
@@ -97,6 +98,7 @@ void plot_dvcs_energy_loss_validation(
                 theta_gamma_gamma[i]<0.6 &&
                 Emiss2[i]<0.5 &&
                 pTmiss[i]<0.125) {
+
                 h[i][0]->Fill(Mx2_1[i]);
                 for (int b=0; b<nBins; ++b) {
                     if (thetaDeg>=thetaBins[b] && thetaDeg<thetaBins[b+1]) {
@@ -128,7 +130,8 @@ void plot_dvcs_energy_loss_validation(
     c1->cd(1)->SetLeftMargin(0.15);
     c1->cd(1)->SetBottomMargin(0.15);
     Double_t globalMax=0;
-    for(int i=0;i<nFiles;++i) globalMax = std::max(globalMax,h[i][0]->GetMaximum());
+    for(int i=0;i<nFiles;++i) 
+        globalMax = std::max(globalMax,h[i][0]->GetMaximum());
     for(int i=0;i<nFiles;++i) {
         h[i][0]->SetMaximum(1.7*globalMax);
         h[i][0]->SetMinimum(0);
@@ -140,7 +143,11 @@ void plot_dvcs_energy_loss_validation(
         else     h[i][0]->Draw("E SAME");
 
         fitInt[i] = new TF1(Form("fitInt%d",i),"gaus(0)+pol1(3)",mx2_min,mx2_max);
-        fitInt[i]->SetParameters(0.8*h[i][0]->GetMaximum(),0,0.2);
+        fitInt[i]->SetParameters(
+            0.8*h[i][0]->GetMaximum(), // A guess
+            0.0,                       // mu guess
+            0.1                        // sigma guess
+        );
         fitInt[i]->SetParLimits(1,-0.15,0.15);
         fitInt[i]->SetParLimits(2, 0.0,0.3);
         fitInt[i]->SetLineColor(kBlack+i);
@@ -168,7 +175,8 @@ void plot_dvcs_energy_loss_validation(
         c1->cd(b+1)->SetLeftMargin(0.15);
         c1->cd(b+1)->SetBottomMargin(0.15);
         Double_t binMax=0;
-        for(int i=0;i<nFiles;++i) binMax = std::max(binMax,h[i][b]->GetMaximum());
+        for(int i=0;i<nFiles;++i) 
+            binMax = std::max(binMax,h[i][b]->GetMaximum());
         for(int i=0;i<nFiles;++i){
             h[i][b]->SetMaximum(1.7*binMax);
             h[i][b]->SetMinimum(0);
@@ -180,7 +188,11 @@ void plot_dvcs_energy_loss_validation(
             else     h[i][b]->Draw("E SAME");
 
             TF1* fbin = new TF1(Form("fitBin%d_%d",i,b),"gaus(0)+pol1(3)",mx2_min,mx2_max);
-            fbin->SetParameters(0.8*h[i][b]->GetMaximum(),0,0.2);
+            fbin->SetParameters(
+                0.8*h[i][b]->GetMaximum(),
+                0.0,
+                0.1
+            );
             fbin->SetParLimits(1,-0.15,0.15);
             fbin->SetParLimits(2, 0.0,0.3);
             fbin->SetLineColor(kBlack+i);
