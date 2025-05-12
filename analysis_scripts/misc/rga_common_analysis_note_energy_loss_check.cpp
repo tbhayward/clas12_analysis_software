@@ -4,7 +4,7 @@
 #include <TH1D.h>
 #include <TF1.h>
 #include <TLegend.h>
-#include <TGraphErrors.h>
+#include <TGraph.h>
 #include <TLine.h>
 #include <TMath.h>
 #include <iostream>
@@ -22,18 +22,18 @@ void plot_dvcs_energy_loss_validation(
     TFile*    f[nFiles];
     TTree*    tree[nFiles];
 
-    //--- open files and get trees
+    // open files & trees
     for (int i = 0; i < nFiles; ++i) {
         f[i]    = TFile::Open(files[i]);
         tree[i] = (TTree*)f[i]->Get("PhysicsEvents");
     }
 
-    //--- prepare branch variables
+    // branch variables
     Double_t p1_theta[nFiles], Mx2_1[nFiles];
     Double_t eta2[nFiles], t1[nFiles], theta_gamma_gamma[nFiles];
     Double_t Emiss2[nFiles], pTmiss[nFiles];
 
-    //--- set branch addresses
+    // set branch addresses
     for (int i = 0; i < nFiles; ++i) {
         tree[i]->SetBranchAddress("p1_theta",          &p1_theta[i]);
         tree[i]->SetBranchAddress("Mx2_1",             &Mx2_1[i]);
@@ -44,30 +44,33 @@ void plot_dvcs_energy_loss_validation(
         tree[i]->SetBranchAddress("pTmiss",            &pTmiss[i]);
     }
 
-    //--- set up canvas & pads
+    // canvas and pads
     TCanvas* c1 = new TCanvas("c1", "DVCS Energy Loss Validation", 1200, 900);
     c1->Divide(4, 3);
 
-    const int    nBins      = 10;
-    Double_t     thetaBins[nBins+1] = {5,11,17,23,29,35,41,47,53,59,65};
-    const int    nbMx2      = 35;
-    const Double_t mx2_min  = -0.3, mx2_max = +0.3;
+    const int    nBins        = 10;
+    Double_t     thetaBins[nBins+1] = {5,15,20,25,30,35,40,45,50,60,100};
+    const int    nbMx2        = 35;
+    const Double_t mx2_min    = -0.3, mx2_max = +0.3;
 
-    //--- histograms, fit parameters, and theta sums
+    // histograms, fit functions, and theta accumulators
     TH1D*    h[nFiles][nBins+1];
     TF1*     fitInt[nFiles];
-    Double_t mu[nFiles][nBins], sigma[nFiles][nBins];
+    Double_t mu[nFiles][nBins];
+    Double_t sigma[nFiles][nBins];
     Double_t theta_sum[nBins]   = {0};
     Int_t    theta_count[nBins] = {0};
     Double_t theta_mean[nBins]  = {0};
 
-    //--- create histograms
+    // create histograms for each file and bin
     for (int i = 0; i < nFiles; ++i) {
+        // integrated
         h[i][0] = new TH1D(
             Form("h%d_int", i),
             Form("Integrated #theta [5,65] %s (file %d)", titleSuffix, i+1),
             nbMx2, mx2_min, mx2_max
         );
+        // theta bins
         for (int b = 0; b < nBins; ++b) {
             h[i][b+1] = new TH1D(
                 Form("h%d_%d", i, b),
@@ -78,14 +81,12 @@ void plot_dvcs_energy_loss_validation(
         }
     }
 
-    //--- fill histograms with kinematic cuts
+    // fill histograms with kinematic cuts
     for (int i = 0; i < nFiles; ++i) {
         Long64_t nEntries = tree[i]->GetEntries();
         for (Long64_t j = 0; j < nEntries; ++j) {
             tree[i]->GetEntry(j);
             Double_t thetaDeg = p1_theta[i] * 180.0 / TMath::Pi();
-
-            // exactly the same cuts as your C++ version:
             if (thetaDeg >= 5 && thetaDeg < 65 &&
                 eta2[i] < 0 &&
                 t1[i]   > -2 &&
@@ -105,7 +106,7 @@ void plot_dvcs_energy_loss_validation(
         }
     }
 
-    //--- compute mean theta per bin
+    // compute mean theta per bin
     for (int b = 0; b < nBins; ++b) {
         if (theta_count[b] > 0) {
             theta_mean[b] = theta_sum[b] / theta_count[b];
@@ -114,7 +115,7 @@ void plot_dvcs_energy_loss_validation(
         }
     }
 
-    //--- draw integrated comparison in pad 1
+    // integrated pad (pad 1)
     c1->cd(1);
     c1->cd(1)->SetLeftMargin(0.15);
     c1->cd(1)->SetBottomMargin(0.15);
@@ -122,7 +123,7 @@ void plot_dvcs_energy_loss_validation(
     for (int i = 0; i < nFiles; ++i) {
         globalMax = std::max(globalMax, h[i][0]->GetMaximum());
     }
-
+    // draw & fit integrated
     for (int i = 0; i < nFiles; ++i) {
         h[i][0]->SetMaximum(1.7 * globalMax);
         h[i][0]->SetMinimum(0);
@@ -136,13 +137,14 @@ void plot_dvcs_energy_loss_validation(
             h[i][0]->Draw("E SAME");
         }
 
-        // fit gaus+pol1
         fitInt[i] = new TF1(
-          Form("fitInt%d", i),
-          "gaus(0)+pol1(3)",
-          mx2_min, mx2_max
+            Form("fitInt%d", i),
+            "gaus(0)+pol1(3)",
+            mx2_min, mx2_max
         );
-        fitInt[i]->SetParameters(0.8*h[i][0]->GetMaximum(), 0, 0.2);
+        fitInt[i]->SetParameters(
+            0.8 * h[i][0]->GetMaximum(), 0, 0.2
+        );
         fitInt[i]->SetParLimits(1, -0.15, 0.15);
         fitInt[i]->SetParLimits(2,  0.0, 0.3);
         fitInt[i]->SetLineColor(kBlack + i);
@@ -152,36 +154,31 @@ void plot_dvcs_energy_loss_validation(
     }
 
     // legend for integrated
-    TLegend* legInt = new TLegend(0.25,0.75,0.9,0.9);
+    TLegend* legInt = new TLegend(0.25, 0.75, 0.9, 0.9);
     legInt->SetTextSize(0.03);
     for (int i = 0; i < nFiles; ++i) {
         legInt->AddEntry(
-          h[i][0],
-          Form("File %d: #mu=%.3f, #sigma=%.3f",
-               i+1,
-               fitInt[i]->GetParameter(1),
-               fitInt[i]->GetParameter(2)
-          ),
-          "lep"
+            h[i][0],
+            Form("File %d: #mu=%.3f, #sigma=%.3f",
+                 i+1,
+                 fitInt[i]->GetParameter(1),
+                 fitInt[i]->GetParameter(2)),
+            "lep"
         );
     }
     legInt->Draw();
-
     h[0][0]->GetXaxis()->SetTitle("M_{xp}^{2} (GeV^{2})");
     h[0][0]->GetYaxis()->SetTitle("Counts");
 
-    //--- theta-binned pads (2–11)
+    // theta‐binned pads (2–11)
     for (int b = 1; b <= nBins; ++b) {
         c1->cd(b+1);
         c1->cd(b+1)->SetLeftMargin(0.15);
         c1->cd(b+1)->SetBottomMargin(0.15);
-
         Double_t binMax = 0;
         for (int i = 0; i < nFiles; ++i) {
             binMax = std::max(binMax, h[i][b]->GetMaximum());
         }
-
-        // draw & fit each file
         for (int i = 0; i < nFiles; ++i) {
             h[i][b]->SetMaximum(1.7 * binMax);
             h[i][b]->SetMinimum(0);
@@ -189,7 +186,6 @@ void plot_dvcs_energy_loss_validation(
             h[i][b]->SetMarkerSize(0.8);
             h[i][b]->SetMarkerColor(kBlack + i);
             h[i][b]->SetStats(0);
-
             if (i == 0) {
                 h[i][b]->Draw("E");
             } else {
@@ -197,11 +193,13 @@ void plot_dvcs_energy_loss_validation(
             }
 
             TF1* fbin = new TF1(
-              Form("fitBin%d_%d", i, b),
-              "gaus(0)+pol1(3)",
-              mx2_min, mx2_max
+                Form("fitBin%d_%d", i, b),
+                "gaus(0)+pol1(3)",
+                mx2_min, mx2_max
             );
-            fbin->SetParameters(0.8*h[i][b]->GetMaximum(), 0, 0.2);
+            fbin->SetParameters(
+                0.8 * h[i][b]->GetMaximum(), 0, 0.2
+            );
             fbin->SetParLimits(1, -0.15, 0.15);
             fbin->SetParLimits(2,  0.0, 0.3);
             fbin->SetLineColor(kBlack + i);
@@ -213,55 +211,57 @@ void plot_dvcs_energy_loss_validation(
             sigma[i][b-1] = fbin->GetParameter(2);
         }
 
-        TLegend* legB = new TLegend(0.25,0.75,0.9,0.9);
+        TLegend* legB = new TLegend(0.25, 0.75, 0.9, 0.9);
         legB->SetTextSize(0.03);
         for (int i = 0; i < nFiles; ++i) {
             legB->AddEntry(
-              h[i][b],
-              Form("File %d: #mu=%.3f, #sigma=%.3f",
-                   i+1, mu[i][b-1], sigma[i][b-1]
-              ),
-              "lep"
+                h[i][b],
+                Form("File %d: #mu=%.3f, #sigma=%.3f",
+                     i+1, mu[i][b-1], sigma[i][b-1]),
+                "lep"
             );
         }
         legB->Draw();
-
         h[0][b]->GetXaxis()->SetTitle("M_{xp}^{2} (GeV^{2})");
         h[0][b]->GetYaxis()->SetTitle("Counts");
     }
 
-    //--- final pad: mu vs theta
+    // final pad: mu vs theta with no error bars
     c1->cd(12);
     c1->cd(12)->SetLeftMargin(0.20);
     c1->cd(12)->SetBottomMargin(0.15);
 
-    TGraphErrors* gr[nFiles];
+    TGraph* gr[nFiles];
     for (int i = 0; i < nFiles; ++i) {
-        gr[i] = new TGraphErrors(nBins, theta_mean, mu[i], 0, sigma[i]);
+        gr[i] = new TGraph(nBins, theta_mean, mu[i]);
         gr[i]->SetMarkerStyle(20 + i);
         gr[i]->SetMarkerSize(0.8);
         gr[i]->SetMarkerColor(kBlack + i);
-        if (i == 0) gr[i]->Draw("AP");
-        else        gr[i]->Draw("P SAME");
+        if (i == 0) {
+            gr[i]->Draw("AP");
+        } else {
+            gr[i]->Draw("P SAME");
+        }
     }
 
-    TLine* line = new TLine(0,0,70,0);
+    TLine* line = new TLine(0, 0, 100, 0);
     line->SetLineColor(kGray);
     line->SetLineStyle(2);
     line->Draw("SAME");
 
     gr[0]->GetXaxis()->SetTitle("#theta");
     gr[0]->GetYaxis()->SetTitle("#mu (GeV^{2})");
-    gr[0]->GetXaxis()->SetLimits(0,70);
-    gr[0]->GetYaxis()->SetRangeUser(-0.20,0.20);
+    gr[0]->GetXaxis()->SetLimits(0, 100);
+    gr[0]->GetYaxis()->SetRangeUser(-0.20, 0.20);
 
-    TLegend* leg12 = new TLegend(0.6,0.75,0.9,0.9);
+    TLegend* leg12 = new TLegend(0.6, 0.75, 0.9, 0.9);
     leg12->SetTextSize(0.03);
     for (int i = 0; i < nFiles; ++i) {
         leg12->AddEntry(gr[i], Form("File %d", i+1), "lep");
     }
     leg12->Draw();
 
+    // save and clean up
     TString outname = TString::Format("output/dvcs_%s_energy_loss_validation.pdf", titleSuffix);
     c1->SaveAs(outname);
 
