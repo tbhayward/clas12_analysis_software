@@ -286,33 +286,33 @@ void plot_mx2_comparison_elastic(
         "Mariana's"
     };
 
-    // --- open files and get trees, with null checks
+    // --- open files & get trees
     TFile* f[nFiles];
     TTree* tree[nFiles];
     for (int i = 0; i < nFiles; ++i) {
         f[i] = TFile::Open(files[i]);
         if (!f[i] || f[i]->IsZombie()) {
-            std::cerr << "Error: could not open file " << files[i] << "\n";
+            std::cerr << "Error opening " << files[i] << "\n";
             tree[i] = nullptr;
             continue;
         }
         tree[i] = dynamic_cast<TTree*>(f[i]->Get("PhysicsEvents"));
         if (!tree[i]) {
-            std::cerr << "Error: no PhysicsEvents tree in " << files[i] << "\n";
+            std::cerr << "Missing PhysicsEvents in " << files[i] << "\n";
         }
     }
 
-    // --- set up branches only for valid trees
+    // --- set branch addresses
     Double_t p_theta[nFiles], Mx2[nFiles];
     Int_t    det[nFiles];
-    for (int i = 0; i < nFiles; ++i) {
+    for (int i = 0; i < nFiles; ++i++) {
         if (!tree[i]) continue;
         tree[i]->SetBranchAddress("p_theta",  &p_theta[i]);
         tree[i]->SetBranchAddress("Mx2",      &Mx2[i]);
         tree[i]->SetBranchAddress("detector", &det[i]);
     }
 
-    // --- detector definitions
+    // --- detector config
     struct DetConfig { const char* name; std::vector<double> bins; std::vector<std::string> labels; };
     DetConfig dets[2] = {
         { "Forward", {0,8,11,14,17,20,23,26,29,32,35,38,41,80}, {} },
@@ -327,17 +327,17 @@ void plot_mx2_comparison_elastic(
             );
     }
 
-    // --- histogram parameters
+    // --- histogram params
     const Double_t mx2_min = 0.5, mx2_max = 1.2;
     const int    nbMx2_hi  = 50, nbMx2_lo = nbMx2_hi/2;
 
-    // --- loop over detectors
+    // --- loop detectors
     for (int d = 0; d < 2; ++d) {
         auto &DC = dets[d];
         int detNum = d+1;
         int nPlots = DC.labels.size();
         int nCols  = 4;
-        int nRows  = ((nPlots-1) + nCols-1)/nCols + 1;
+        int nRows  = ((nPlots-1)+nCols-1)/nCols + 1;
 
         TCanvas* c = new TCanvas(
             Form("c_%s", DC.name),
@@ -346,16 +346,17 @@ void plot_mx2_comparison_elastic(
         );
         c->Divide(nCols, nRows);
 
-        // --- create histograms
-        static const int MAXP = 16;
+        static const int MAXP=16;
         TH1D* h[nFiles][MAXP];
+
+        // create histograms
         for (int i = 0; i < nFiles; ++i) {
             h[i][0] = new TH1D(
                 Form("h_%s_int_%d", DC.name, i),
                 Form("Integrated %s (%s)", DC.name, corrLabels[i]),
                 nbMx2_hi, mx2_min, mx2_max
             );
-            for (int b=0; b<nPlots-1; ++b) {
+            for (int b = 0; b < nPlots-1; ++b) {
                 int nb = (b < (nPlots-1)/2 ? nbMx2_lo : nbMx2_hi);
                 h[i][b+1] = new TH1D(
                     Form("h_%s_%d_%d", DC.name, b, i),
@@ -366,64 +367,76 @@ void plot_mx2_comparison_elastic(
             }
         }
 
-        // --- fill them
+        // fill
         for (int i = 0; i < nFiles; ++i) {
             if (!tree[i]) continue;
             Long64_t N = tree[i]->GetEntries();
-            for (Long64_t evt=0; evt<N; ++evt) {
-                tree[i]->GetEntry(evt);
+            for (Long64_t ev=0; ev<N; ++ev) {
+                tree[i]->GetEntry(ev);
                 if (det[i] != detNum) continue;
                 double θdeg = p_theta[i]*180.0/TMath::Pi();
                 h[i][0]->Fill(Mx2[i]);
                 for (size_t b=0; b+1<DC.bins.size(); ++b) {
-                    if (θdeg >= DC.bins[b] && θdeg < DC.bins[b+1])
+                    if (θdeg>=DC.bins[b] && θdeg<DC.bins[b+1])
                         h[i][b+1]->Fill(Mx2[i]);
                 }
             }
         }
 
-        // --- draw integrated
-        c->cd(1)->SetLeftMargin(0.15)->SetBottomMargin(0.15);
+        // draw integrated (pad 1)
+        c->cd(1);
+        gPad->SetLeftMargin(0.15);
+        gPad->SetBottomMargin(0.15);
         double gmax=0;
-        for (int i=0; i<nFiles; ++i) if (h[i][0]) gmax = std::max(gmax, h[i][0]->GetMaximum());
-        for (int i=0; i<nFiles; ++i) {
+        for (int i=0;i<nFiles;++i) if(h[i][0]) gmax = std::max(gmax,h[i][0]->GetMaximum());
+        for (int i=0;i<nFiles;++i) {
             if (!h[i][0]) continue;
             h[i][0]->SetMaximum(1.7*gmax);
+            h[i][0]->SetMinimum(0);
             h[i][0]->SetLineColor(kBlack+i);
             h[i][0]->SetLineStyle(i);
-            h[i][0]->Draw(i==0?"HIST":"HIST SAME");
+            h[i][0]->Draw(i==0 ? "HIST" : "HIST SAME");
         }
-        auto legInt = new TLegend(0.6,0.7,0.9,0.9);
-        for (int i=0; i<nFiles; ++i) legInt->AddEntry(h[i][0], corrLabels[i], "l");
-        legInt->Draw();
+        {
+            auto leg = new TLegend(0.6,0.7,0.9,0.9);
+            for (int i=0;i<nFiles;++i)
+                if(h[i][0]) leg->AddEntry(h[i][0],corrLabels[i],"l");
+            leg->Draw();
+        }
         h[0][0]->GetXaxis()->SetTitle("M_{x}^{2} (GeV^{2})");
         h[0][0]->GetYaxis()->SetTitle("Counts");
 
-        // --- draw theta slices
+        // draw slices
         for (int p=1; p<nPlots; ++p) {
             int pad = p+1;
-            c->cd(pad)->SetLeftMargin(0.15)->SetBottomMargin(0.15);
+            c->cd(pad);
+            gPad->SetLeftMargin(0.15);
+            gPad->SetBottomMargin(0.15);
+
             double bmax=0;
-            for (int i=0; i<nFiles; ++i) if (h[i][p]) bmax = std::max(bmax, h[i][p]->GetMaximum());
-            for (int i=0; i<nFiles; ++i) {
-                if (!h[i][p]) continue;
+            for (int i=0;i<nFiles;++i)
+                if(h[i][p]) bmax = std::max(bmax,h[i][p]->GetMaximum());
+            for (int i=0;i<nFiles;++i) {
+                if(!h[i][p]) continue;
                 h[i][p]->SetMaximum(1.7*bmax);
+                h[i][p]->SetMinimum(0);
                 h[i][p]->SetLineColor(kBlack+i);
                 h[i][p]->SetLineStyle(i);
                 h[i][p]->Draw(i==0?"HIST":"HIST SAME");
             }
             if (p < nCols) {
                 auto leg = new TLegend(0.6,0.7,0.9,0.9);
-                for (int i=0; i<nFiles; ++i) leg->AddEntry(h[i][p], corrLabels[i], "l");
+                for (int i=0;i<nFiles;++i)
+                    if(h[i][p]) leg->AddEntry(h[i][p],corrLabels[i],"l");
                 leg->Draw();
             }
             h[0][p]->GetXaxis()->SetTitle("M_{x}^{2} (GeV^{2})");
             h[0][p]->GetYaxis()->SetTitle("Counts");
-            h[0][p]->GetXaxis()->SetRangeUser(mx2_min, mx2_max);
+            h[0][p]->GetXaxis()->SetRangeUser(mx2_min,mx2_max);
             c->cd(pad)->SetTitle(DC.labels[p].c_str());
         }
 
-        // --- save
+        // save
         TString out = TString::Format(
             "output/Mx2_elastic_comparison_%s_%s.pdf",
             DC.name, titleSuffix
@@ -432,7 +445,7 @@ void plot_mx2_comparison_elastic(
         delete c;
     }
 
-    // --- cleanup
+    // cleanup
     for (int i = 0; i < nFiles; ++i) {
         if (f[i]) { f[i]->Close(); delete f[i]; }
     }
