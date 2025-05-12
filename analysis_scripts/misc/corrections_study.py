@@ -718,9 +718,9 @@ if __name__ == "__main__":
     # Generate Mx² comparison plots
     try:
         # Generate plots
-        plot_three_particles(PARENT_DIR, OUTPUT_DIR)
+        # plot_three_particles(PARENT_DIR, OUTPUT_DIR)
 
-        # plot_dvcs(PARENT_DIR, OUTPUT_DIR)
+        plot_dvcs(PARENT_DIR, OUTPUT_DIR)
         
         # Uncomment to run phase space plots
         # generate_phase_space_plots(...)
