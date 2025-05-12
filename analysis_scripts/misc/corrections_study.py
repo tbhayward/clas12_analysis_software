@@ -558,9 +558,11 @@ def plot_dvcs(parent_dir, output_dir):
                             'Mx2_1': mx2[final_mask],
                             'theta': theta[final_mask]
                         }
+                        kept_mx2 = mx2[final_mask]
+                        kept_th = theta[final_mask]
                         print("Kept ranges:",
-                              f"Mx²: {np.min(mx2[final_mask]):.3f}–{np.max(mx2[final_mask]):.3f}",
-                              f"θ: {np.min(theta[final_mask]):.1f}°–{np.max(theta[final_mask]):.1f}°")
+                              f"Mx²: {np.min(kept_mx2):.3f}–{np.max(kept_mx2):.3f}",
+                              f"θ: {np.min(kept_th):.1f}°–{np.max(kept_th):.1f}°")
 
                 except Exception as e:
                     print(f"! Error loading {fname}: {e}")
@@ -581,8 +583,9 @@ def plot_dvcs(parent_dir, output_dir):
                     th  = all_data[corr]['theta']
                     r1, r2 = np.min(arr), np.max(arr)
                     t1_, t2_ = np.min(th), np.max(th)
-                    print(f"{corr:<15} | {len(arr):>10,} | "
-                          f"{r1:.3f}–{r2:.3f:<17} | {t1_:.1f}°–{t2_:.1f}°")
+                    range_str = f"{r1:.3f}–{r2:.3f}"
+                    theta_str = f"{t1_:.1f}°–{t2_:.1f}°"
+                    print(f"{corr:<15} | {len(arr):>10,} | {range_str:<25} | {theta_str:<15}")
                 else:
                     print(f"{corr:<15} | {'N/A':>10} | {'N/A':<25} | {'N/A':<15}")
             print(f"{'='*40}\n")
@@ -610,12 +613,10 @@ def plot_dvcs(parent_dir, output_dir):
                     mu, sigma = np.nan, np.nan
 
                 label = f"{corr_labels[corr]} (μ={mu:.3f}, σ={sigma:.3f})"
-                _, _, patches = ax0.hist(
-                    arr, bins=mx2_bins,
-                    histtype='step',
-                    color=color, linestyle=ls,
-                    label=label
-                )
+                ax0.hist(arr, bins=mx2_bins,
+                         histtype='step',
+                         color=color, linestyle=ls,
+                         label=label)
                 # overlay fit
                 xfit = np.linspace(mx2_bins.min(), mx2_bins.max(), 200)
                 ax0.plot(xfit, gaussian(xfit, *popt), color=color, linestyle=ls)
@@ -656,12 +657,10 @@ def plot_dvcs(parent_dir, output_dir):
                         mu, sigma = np.nan, np.nan
 
                     label = f"{corr_labels[corr]} (μ={mu:.3f}, σ={sigma:.3f})"
-                    _, _, patches = ax.hist(
-                        slice_vals, bins=mx2_bins,
-                        histtype='step',
-                        color=color, linestyle=ls,
-                        label=label
-                    )
+                    ax.hist(slice_vals, bins=mx2_bins,
+                            histtype='step',
+                            color=color, linestyle=ls,
+                            label=label)
                     xfit = np.linspace(mx2_bins.min(), mx2_bins.max(), 200)
                     ax.plot(xfit, gaussian(xfit, *popt), color=color, linestyle=ls)
 
@@ -682,8 +681,6 @@ def plot_dvcs(parent_dir, output_dir):
             plt.savefig(out, bbox_inches='tight')
             plt.close()
             print(f"Saved: {out}")
-        #endfor detectors
-    #endfor run_periods
 
 if __name__ == "__main__":
     PARENT_DIR = "/volatile/clas12/thayward/corrections_study/results/proton_energy_loss/"
