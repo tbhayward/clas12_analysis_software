@@ -3,6 +3,7 @@ import numpy as np
 import uproot
 import matplotlib.pyplot as plt
 import matplotlib.gridspec as gridspec
+from scipy.optimize import curve_fit
 
 def generate_phase_space_plots(channel, correction, plot_type, parent_dir, output_dir):
     """
