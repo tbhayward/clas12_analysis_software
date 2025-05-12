@@ -111,8 +111,8 @@ public static void main(String[] args) {
 	// GenericKinematicFitter fitter = new event_builder_fitter(10.6041);  
 	
 	// set filter for final states
-	// EventFilter filter = new EventFilter("11:"+p1_Str+":X+:X-:Xn");
-	EventFilter filter = new EventFilter("11:"+p1_Str);
+	EventFilter filter = new EventFilter("11:"+p1_Str+":X+:X-:Xn");
+	// EventFilter filter = new EventFilter("11:"+p1_Str);
 	
 	// instantiate QADB
 	QADB qa = new QADB()
