@@ -28,7 +28,6 @@ void plot_dvcs_energy_loss_validation(
 
     TFile* f[nFiles];
     TTree* tree[nFiles];
-
     for (int i = 0; i < nFiles; ++i) {
         f[i]    = TFile::Open(files[i]);
         tree[i] = (TTree*)f[i]->Get("PhysicsEvents");
@@ -37,7 +36,6 @@ void plot_dvcs_energy_loss_validation(
     Double_t p1_theta[nFiles], Mx2_1[nFiles];
     Double_t eta2[nFiles], t1[nFiles], theta_gamma_gamma[nFiles];
     Double_t Emiss2[nFiles], pTmiss[nFiles];
-
     for (int i = 0; i < nFiles; ++i) {
         tree[i]->SetBranchAddress("p1_theta",          &p1_theta[i]);
         tree[i]->SetBranchAddress("Mx2_1",             &Mx2_1[i]);
@@ -54,7 +52,7 @@ void plot_dvcs_energy_loss_validation(
     const int    nBins        = 10;
     Double_t     thetaBins[nBins+1] = {5,15,20,25,30,35,40,45,50,60,100};
     const int    nbMx2_hi     = 35;
-    const int    nbMx2_lo     = nbMx2_hi/2;    // half bins for first half
+    const int    nbMx2_lo     = nbMx2_hi/2;
     const Double_t mx2_min    = -0.3, mx2_max = +0.3;
 
     TH1D*    h[nFiles][nBins+1];
@@ -86,22 +84,22 @@ void plot_dvcs_energy_loss_validation(
         }
     }
 
-    // fill histograms and accumulate sums
+    // fill & accumulate
     for (int i = 0; i < nFiles; ++i) {
         Long64_t nEntries = tree[i]->GetEntries();
         for (Long64_t j = 0; j < nEntries; ++j) {
             tree[i]->GetEntry(j);
-            Double_t thetaDeg = p1_theta[i]*180.0/TMath::Pi();
-            if (thetaDeg>=5 && thetaDeg<65 &&
-                eta2[i]<0 &&
-                t1[i]>-2 &&
-                theta_gamma_gamma[i]<0.6 &&
-                Emiss2[i]<0.5 &&
-                pTmiss[i]<0.125) {
+            Double_t thetaDeg = p1_theta[i] * 180.0 / TMath::Pi();
+            if (thetaDeg >= 5 && thetaDeg < 65 &&
+                eta2[i] < 0 &&
+                t1[i]   > -2 &&
+                theta_gamma_gamma[i] < 0.6 &&
+                Emiss2[i] < 0.5 &&
+                pTmiss[i] < 0.125) {
 
                 h[i][0]->Fill(Mx2_1[i]);
-                for (int b=0; b<nBins; ++b) {
-                    if (thetaDeg>=thetaBins[b] && thetaDeg<thetaBins[b+1]) {
+                for (int b = 0; b < nBins; ++b) {
+                    if (thetaDeg >= thetaBins[b] && thetaDeg < thetaBins[b+1]) {
                         h[i][b+1]->Fill(Mx2_1[i]);
                         theta_sum[b]   += thetaDeg;
                         theta_count[b] += 1;
@@ -113,15 +111,19 @@ void plot_dvcs_energy_loss_validation(
         }
     }
 
-    // compute means
-    for (int b=0; b<nBins; ++b) {
-        theta_mean[b] = (theta_count[b]>0
-                         ? theta_sum[b]/theta_count[b]
-                         : 0.5*(thetaBins[b]+thetaBins[b+1]) );
-        for (int i=0; i<nFiles; ++i) {
-            mx2_mean[i][b] = (mx2_count[i][b]>0
-                              ? mx2_sum[i][b]/mx2_count[i][b]
-                              : 0.5*(mx2_min+mx2_max) );
+    // compute means using actual theta values
+    for (int b = 0; b < nBins; ++b) {
+        if (theta_count[b] > 0) {
+            theta_mean[b] = theta_sum[b] / theta_count[b];
+        } else {
+            theta_mean[b] = NAN;
+        }
+        for (int i = 0; i < nFiles; ++i) {
+            if (mx2_count[i][b] > 0) {
+                mx2_mean[i][b] = mx2_sum[i][b] / mx2_count[i][b];
+            } else {
+                mx2_mean[i][b] = NAN;
+            }
         }
     }
 
@@ -129,88 +131,98 @@ void plot_dvcs_energy_loss_validation(
     c1->cd(1);
     c1->cd(1)->SetLeftMargin(0.15);
     c1->cd(1)->SetBottomMargin(0.15);
-    Double_t globalMax=0;
-    for(int i=0;i<nFiles;++i)
-        globalMax = std::max(globalMax,h[i][0]->GetMaximum());
-    for(int i=0;i<nFiles;++i) {
-        h[i][0]->SetMaximum(1.7*globalMax);
+    Double_t globalMax = 0;
+    for (int i = 0; i < nFiles; ++i) {
+        globalMax = std::max(globalMax, h[i][0]->GetMaximum());
+    }
+    for (int i = 0; i < nFiles; ++i) {
+        h[i][0]->SetMaximum(1.7 * globalMax);
         h[i][0]->SetMinimum(0);
-        h[i][0]->SetMarkerStyle(20+i);
+        h[i][0]->SetMarkerStyle(20 + i);
         h[i][0]->SetMarkerSize(0.8);
-        h[i][0]->SetMarkerColor(kBlack+i);
+        h[i][0]->SetMarkerColor(kBlack + i);
         h[i][0]->SetStats(0);
-        if(i==0) h[i][0]->Draw("E");
-        else     h[i][0]->Draw("E SAME");
+        if (i == 0) h[i][0]->Draw("E");
+        else        h[i][0]->Draw("E SAME");
 
-        fitInt[i] = new TF1(Form("fitInt%d",i),"gaus(0)+pol1(3)",mx2_min,mx2_max);
+        fitInt[i] = new TF1(Form("fitInt%d", i),
+                            "gaus(0)+pol1(3)",
+                            mx2_min, mx2_max);
         fitInt[i]->SetParameters(
-            0.8*h[i][0]->GetMaximum(), // A guess
-            0.0,                       // mu guess
-            0.1                        // sigma guess
+            0.8 * h[i][0]->GetMaximum(),  // A init
+            0.0,                          // mu init
+            0.1                           // sigma init
         );
-        fitInt[i]->SetParLimits(1,-0.15,0.15);
-        fitInt[i]->SetParLimits(2, 0.0,0.3);
-        fitInt[i]->SetLineColor(kBlack+i);
+        fitInt[i]->SetParLimits(1, -0.15, 0.15);
+        fitInt[i]->SetParLimits(2,  0.0, 0.3);
+        fitInt[i]->SetLineColor(kBlack + i);
         fitInt[i]->SetLineWidth(1);
-        h[i][0]->Fit(fitInt[i],"Q");
+        h[i][0]->Fit(fitInt[i], "Q");
         fitInt[i]->Draw("SAME");
     }
-    TLegend* legInt = new TLegend(0.25,0.75,0.9,0.9);
+    TLegend* legInt = new TLegend(0.25, 0.75, 0.9, 0.9);
     legInt->SetTextSize(0.03);
-    for(int i=0;i<nFiles;++i) {
-        legInt->AddEntry(h[i][0],
-                         Form("%s: #mu=%.3f, #sigma=%.3f",
-                              corrLabels[i],
-                              fitInt[i]->GetParameter(1),
-                              fitInt[i]->GetParameter(2)),
-                         "lep");
+    for (int i = 0; i < nFiles; ++i) {
+        legInt->AddEntry(
+            h[i][0],
+            Form("%s: #mu=%.3f, #sigma=%.3f",
+                 corrLabels[i],
+                 fitInt[i]->GetParameter(1),
+                 fitInt[i]->GetParameter(2)),
+            "lep"
+        );
     }
     legInt->Draw();
     h[0][0]->GetXaxis()->SetTitle("M_{xp}^{2} (GeV^{2})");
     h[0][0]->GetYaxis()->SetTitle("Counts");
 
     // theta‐binned pads
-    for(int b=1;b<=nBins;++b){
+    for (int b = 1; b <= nBins; ++b) {
         c1->cd(b+1);
         c1->cd(b+1)->SetLeftMargin(0.15);
         c1->cd(b+1)->SetBottomMargin(0.15);
-        Double_t binMax=0;
-        for(int i=0;i<nFiles;++i)
-            binMax = std::max(binMax,h[i][b]->GetMaximum());
-        for(int i=0;i<nFiles;++i){
-            h[i][b]->SetMaximum(1.7*binMax);
+        Double_t binMax = 0;
+        for (int i = 0; i < nFiles; ++i) {
+            binMax = std::max(binMax, h[i][b]->GetMaximum());
+        }
+        for (int i = 0; i < nFiles; ++i) {
+            h[i][b]->SetMaximum(1.7 * binMax);
             h[i][b]->SetMinimum(0);
-            h[i][b]->SetMarkerStyle(20+i);
+            h[i][b]->SetMarkerStyle(20 + i);
             h[i][b]->SetMarkerSize(0.8);
-            h[i][b]->SetMarkerColor(kBlack+i);
+            h[i][b]->SetMarkerColor(kBlack + i);
             h[i][b]->SetStats(0);
-            if(i==0) h[i][b]->Draw("E");
-            else     h[i][b]->Draw("E SAME");
+            if (i == 0) h[i][b]->Draw("E");
+            else        h[i][b]->Draw("E SAME");
 
-            TF1* fbin = new TF1(Form("fitBin%d_%d",i,b),"gaus(0)+pol1(3)",mx2_min,mx2_max);
+            TF1* fbin = new TF1(Form("fitBin%d_%d", i, b),
+                                "gaus(0)+pol1(3)",
+                                mx2_min, mx2_max);
             fbin->SetParameters(
-                0.8*h[i][b]->GetMaximum(),
+                0.8 * h[i][b]->GetMaximum(),
                 0.0,
                 0.1
             );
-            fbin->SetParLimits(1,-0.15,0.15);
-            fbin->SetParLimits(2, 0.0,0.3);
-            fbin->SetLineColor(kBlack+i);
+            fbin->SetParLimits(1, -0.15, 0.15);
+            fbin->SetParLimits(2,  0.0, 0.3);
+            fbin->SetLineColor(kBlack + i);
             fbin->SetLineWidth(1);
-            h[i][b]->Fit(fbin,"Q");
+            h[i][b]->Fit(fbin, "Q");
             fbin->Draw("SAME");
             mu[i][b-1]    = fbin->GetParameter(1);
             sigma[i][b-1] = fbin->GetParameter(2);
         }
-        TLegend* legB = new TLegend(0.25,0.75,0.9,0.9);
+        TLegend* legB = new TLegend(0.25, 0.75, 0.9, 0.9);
         legB->SetTextSize(0.03);
-        for(int i=0;i<nFiles;++i){
-            legB->AddEntry(h[i][b],
-                           Form("%s: #mu=%.3f, #sigma=%.3f",
-                                corrLabels[i],
-                                mu[i][b-1],
-                                sigma[i][b-1]),
-                           "lep");
+        for (int i = 0; i < nFiles; ++i) {
+            legB->AddEntry(
+                h[i][b],
+                Form("%s: #mu=%.3f, #sigma=%.3f",
+                     corrLabels[i],
+                     mu[i][b-1],
+                     sigma[i][b-1]),
+                "lep"
+            );
         }
         legB->Draw();
         h[0][b]->GetXaxis()->SetTitle("M_{xp}^{2} (GeV^{2})");
@@ -222,27 +234,35 @@ void plot_dvcs_energy_loss_validation(
     c1->cd(12)->SetLeftMargin(0.20);
     c1->cd(12)->SetBottomMargin(0.15);
     TGraph* gr[nFiles];
-    for(int i=0;i<nFiles;++i){
-        gr[i] = new TGraph(nBins, theta_mean, mu[i]);
-        gr[i]->SetMarkerStyle(20+i);
+    for (int i = 0; i < nFiles; ++i) {
+        // only plot bins with valid theta_mean
+        std::vector<double> xs, ys;
+        for (int b = 0; b < nBins; ++b) {
+            if (theta_count[b] > 0) {
+                xs.push_back(theta_mean[b]);
+                ys.push_back(mu[i][b]);
+            }
+        }
+        gr[i] = new TGraph(xs.size(), xs.data(), ys.data());
+        gr[i]->SetMarkerStyle(20 + i);
         gr[i]->SetMarkerSize(0.8);
-        gr[i]->SetMarkerColor(kBlack+i);
-        if(i==0) gr[i]->Draw("AP");
-        else     gr[i]->Draw("P SAME");
+        gr[i]->SetMarkerColor(kBlack + i);
+        if (i == 0) gr[i]->Draw("AP");
+        else        gr[i]->Draw("P SAME");
     }
-    TLine* line = new TLine(0,0,90,0);
+    TLine* line = new TLine(0, 0, 90, 0);
     line->SetLineColor(kGray);
     line->SetLineStyle(2);
     line->Draw("SAME");
     gr[0]->GetXaxis()->SetTitle("#theta (deg)");
     gr[0]->GetYaxis()->SetTitle("#mu (GeV^{2})");
-    gr[0]->GetXaxis()->SetLimits(0,90);
-    gr[0]->GetYaxis()->SetRangeUser(-0.20,0.20);
+    gr[0]->GetXaxis()->SetLimits(0, 90);
+    gr[0]->GetYaxis()->SetRangeUser(-0.20, 0.20);
 
-    TLegend* leg12 = new TLegend(0.6,0.75,0.9,0.9);
+    TLegend* leg12 = new TLegend(0.6, 0.75, 0.9, 0.9);
     leg12->SetTextSize(0.03);
-    for(int i=0;i<nFiles;++i){
-        leg12->AddEntry(gr[i],corrLabels[i],"lep");
+    for (int i = 0; i < nFiles; ++i) {
+        leg12->AddEntry(gr[i], corrLabels[i], "lep");
     }
     leg12->Draw();
 
@@ -250,20 +270,20 @@ void plot_dvcs_energy_loss_validation(
     c1->SaveAs(outname);
 
     delete c1;
-    for(int i=0;i<nFiles;++i){
+    for (int i = 0; i < nFiles; ++i) {
         f[i]->Close();
         delete f[i];
     }
 }
 
 int main(int argc, char** argv) {
-    if (argc!=6) {
-        std::cerr<<"Usage: "<<argv[0]
-                 <<" <file1.root> <file2.root> <file3.root> <file4.root> <titleSuffix>\n";
+    if (argc != 6) {
+        std::cerr << "Usage: " << argv[0]
+                  << " <file1.root> <file2.root> <file3.root> <file4.root> <titleSuffix>\n";
         return 1;
     }
     plot_dvcs_energy_loss_validation(
-        argv[1],argv[2],argv[3],argv[4],argv[5]
+        argv[1], argv[2], argv[3], argv[4], argv[5]
     );
     return 0;
 }
