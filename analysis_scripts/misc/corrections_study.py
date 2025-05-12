@@ -447,7 +447,8 @@ def plot_dvcs(parent_dir, output_dir):
     """
     Analyzes missing mass squared (Mx²) for eppi+pi- channel
     with three particle final state (debug version),
-    fits a Gaussian to each distribution, and adds μ and σ to the legend.
+    fits a Gaussian to each distribution, overlays the fit,
+    and adds μ and σ to the legend.
     """
     detectors = {
         1: {
@@ -473,7 +474,6 @@ def plot_dvcs(parent_dir, output_dir):
     line_styles = ['-', '--', ':', '-.']
     run_periods = ['fa18_inb', 'fa18_out', 'sp19_inb']
 
-    # Define histogram bins for Mx²
     mx2_bins = np.linspace(-0.2, 0.2, 20)
 
     for run in run_periods:
@@ -488,7 +488,6 @@ def plot_dvcs(parent_dir, output_dir):
             print(f"Theta labels: {det_config['theta_labels']}")
             print(f"{'='*60}\n")
 
-            # Verify bin/label alignment
             bins = det_config['theta_bins']
             labels = det_config['theta_labels']
             if len(bins) != len(labels) + 1:
@@ -504,7 +503,6 @@ def plot_dvcs(parent_dir, output_dir):
 
             all_data = {}
 
-            # Load data for all corrections
             for corr in corrections:
                 filename = f"DVCSWagon_{run}_{corr}.root"
                 filepath = os.path.join(parent_dir, filename)
@@ -558,7 +556,11 @@ def plot_dvcs(parent_dir, output_dir):
                 #endtry
             #endfor corrections
 
-            # Summary of loaded data
+            if not all_data:
+                print("! No data available for any corrections - skipping plots")
+                continue
+            #endif
+
             print(f"\n{'='*40}")
             print(f"Data Summary for {det_config['name']} Detector")
             print(f"{'Correction':<15} | {'Events':>10} | {'Mx2_1 Range':<25} | {'Theta Range':<15}")
@@ -575,55 +577,63 @@ def plot_dvcs(parent_dir, output_dir):
                 else:
                     print(f"{corr:<15} | {'N/A':>10} | {'N/A':<25} | {'N/A':<15}")
                 #endif
-            #endfor corrections
+            #endfor summary
             print(f"{'='*40}\n")
 
-            if not all_data:
-                print("! No data available for any corrections - skipping plots")
-                continue
-            #endif
-
-            # Create figure and gridspec
+            # Create figure/grid
             fig = plt.figure(figsize=(20, 5 * n_rows))
             gs = gridspec.GridSpec(n_rows, n_cols, figure=fig)
 
-            # Integrated spectrum plot
+            # Integrated plot
             ax_int = fig.add_subplot(gs[0, :])
             artists = []
             for corr, color, ls in zip(corrections, colors, line_styles):
                 if corr in all_data:
                     vals = all_data[corr]['Mx2_1']
-                    counts, hist_edges = np.histogram(vals, bins=mx2_bins)
-                    centers = (hist_edges[:-1] + hist_edges[1:]) / 2
+                    counts, edges = np.histogram(vals, bins=mx2_bins)
+                    centers = (edges[:-1] + edges[1:]) / 2
                     try:
-                        popt, _ = curve_fit(gaussian, centers, counts,
-                                            p0=[counts.max(), np.mean(vals), np.std(vals)])
+                        popt, _ = curve_fit(
+                            gaussian, centers, counts,
+                            p0=[counts.max(), np.mean(vals), np.std(vals)]
+                        )
                         mu, sigma = popt[1], abs(popt[2])
                     except Exception as e:
                         print(f"! Gaussian fit failed for {corr}: {e}")
                         mu, sigma = np.nan, np.nan
+                    #endtry
 
                     label = f"{corr_labels[corr]} (μ={mu:.3f}, σ={sigma:.3f})"
-                    _, _, patches = ax_int.hist(vals, bins=mx2_bins,
-                                                histtype='step',
-                                                color=color,
-                                                linestyle=ls,
-                                                label=label)
+                    _, _, patches = ax_int.hist(
+                        vals, bins=mx2_bins,
+                        histtype='step',
+                        color=color,
+                        linestyle=ls,
+                        label=label
+                    )
                     artists.extend(patches)
+
+                    # overlay Gaussian fit
+                    x_fit = np.linspace(mx2_bins.min(), mx2_bins.max(), 200)
+                    y_fit = gaussian(x_fit, *popt)
+                    ax_int.plot(x_fit, y_fit, color=color, linestyle=ls)
                 #endif
             #endfor integrated
 
             if artists:
                 ax_int.legend()
-                ax_int.set(xlabel=r'$M_{x (ep)}^{2}$ (GeV²)',
-                           ylabel='Counts',
-                           xlim=(-0.2, 0.2),
-                           title=f"{det_config['name']} Detector - {run}")
+                ax_int.set(
+                    xlabel=r'$M_{x (ep)}^{2}$ (GeV²)',
+                    ylabel='Counts',
+                    xlim=(mx2_bins.min(), mx2_bins.max()),
+                    title=f"{det_config['name']} Detector - {run}"
+                )
                 ax_int.grid(True, alpha=0.3)
             else:
                 print("! No data for integrated plot")
+            #endif integrated legend
 
-            # Theta-binned spectra
+            # Theta-binned subplots
             for idx in range(1, n_total_plots):
                 row = (idx - 1) // n_cols + 1
                 col = (idx - 1) % n_cols
@@ -636,52 +646,67 @@ def plot_dvcs(parent_dir, output_dir):
                 sub_artists = []
                 for corr, color, ls in zip(corrections, colors, line_styles):
                     if corr in all_data:
-                        mask = ((all_data[corr]['theta'] >= theta_min) &
-                                (all_data[corr]['theta'] < theta_max))
+                        mask = (
+                            (all_data[corr]['theta'] >= theta_min) &
+                            (all_data[corr]['theta'] < theta_max)
+                        )
                         mx2_data = all_data[corr]['Mx2_1'][mask]
                         if len(mx2_data) > 0:
-                            counts, hist_edges = np.histogram(mx2_data, bins=mx2_bins)
-                            centers = (hist_edges[:-1] + hist_edges[1:]) / 2
+                            counts, edges = np.histogram(mx2_data, bins=mx2_bins)
+                            centers = (edges[:-1] + edges[1:]) / 2
                             try:
-                                popt, _ = curve_fit(gaussian, centers, counts,
-                                                    p0=[counts.max(),
-                                                        np.mean(mx2_data),
-                                                        np.std(mx2_data)])
+                                popt, _ = curve_fit(
+                                    gaussian, centers, counts,
+                                    p0=[counts.max(), np.mean(mx2_data), np.std(mx2_data)]
+                                )
                                 mu, sigma = popt[1], abs(popt[2])
                             except Exception as e:
                                 print(f"! Gaussian fit failed for {corr} in θ bin {current_label}: {e}")
                                 mu, sigma = np.nan, np.nan
+                            #endtry
 
                             label = f"{corr_labels[corr]} (μ={mu:.3f}, σ={sigma:.3f})"
-                            _, _, patches = ax.hist(mx2_data,
-                                                     bins=mx2_bins,
-                                                     histtype='step',
-                                                     color=color,
-                                                     linestyle=ls,
-                                                     label=label)
+                            _, _, patches = ax.hist(
+                                mx2_data,
+                                bins=mx2_bins,
+                                histtype='step',
+                                color=color,
+                                linestyle=ls,
+                                label=label
+                            )
                             sub_artists.extend(patches)
-                        #endif
-                    #endif
-                #endfor theta subplot
+
+                            # overlay Gaussian fit
+                            x_fit = np.linspace(mx2_bins.min(), mx2_bins.max(), 200)
+                            y_fit = gaussian(x_fit, *popt)
+                            ax.plot(x_fit, y_fit, color=color, linestyle=ls)
+                        #endif data exists
+                    #endif corr in data
+                #endfor corr
 
                 if sub_artists:
-                    ax.set(xlabel=r'$M_{x (ep)}^{2}$ (GeV²)',
-                           ylabel='Counts',
-                           xlim=(-0.2, 0.2),
-                           title=f'θ: {current_label}°')
+                    ax.set(
+                        xlabel=r'$M_{x (ep)}^{2}$ (GeV²)',
+                        ylabel='Counts',
+                        xlim=(mx2_bins.min(), mx2_bins.max()),
+                        title=f'θ: {current_label}°'
+                    )
                     ax.legend(handles=sub_artists, fontsize=8)
                 else:
                     ax.set_title(f'θ: {current_label}° (No Data)')
                     ax.text(0.5, 0.5, 'No Data', ha='center', va='center')
+                #endif subplot legend
             #endfor theta-binned
 
-            output_file = os.path.join(output_dir,
-                                       f'Mx2_dvcs_{run}_{det_config["name"]}.pdf')
+            output_file = os.path.join(
+                output_dir,
+                f'Mx2_dvcs_{run}_{det_config["name"]}.pdf'
+            )
             plt.savefig(output_file, bbox_inches='tight')
             plt.close()
             print(f"\nSaved: {output_file}")
         #endfor detectors
-    #endfor runs
+    #endfor run_periods
 
 if __name__ == "__main__":
     PARENT_DIR = "/volatile/clas12/thayward/corrections_study/results/proton_energy_loss/"
