@@ -485,7 +485,7 @@ void plot_two_pions(
     const char* file2,
     const char* file3,
     const char* file4,
-    const char* titleSuffix) 
+    const char* titleSuffix)
 {
     const int nFiles = 4;
     const char* files[nFiles] = { file1, file2, file3, file4 };
@@ -503,27 +503,30 @@ void plot_two_pions(
         f[i]    = TFile::Open(files[i]);
         tree[i] = f[i] ? static_cast<TTree*>(f[i]->Get("PhysicsEvents")) : nullptr;
         if (!tree[i]) {
-            std::cerr << "[two_pions] ERROR opening PhysicsEvents in " << files[i] << "\n";
+            std::cerr << "[two_pions] ERROR opening PhysicsEvents in "
+                      << files[i] << "\n";
             return;
         }
     }
 
-    // 2) Branches: Mx2_1 and p1_theta
+    // 2) Branches: missing mass² and proton θ
     Double_t Mx2[nFiles], p1_theta[nFiles];
     for (int i = 0; i < nFiles; ++i) {
         tree[i]->SetBranchAddress("Mx2_12",    &Mx2[i]);
         tree[i]->SetBranchAddress("p1_theta", &p1_theta[i]);
     }
 
-    // 3) θ bins
+    // 3) θ-bin edges: [5–10],[10–15],…,[50–100]
     const int nBins = 10;
-    Double_t thetaBins[nBins+1] = {5,15,20,25,30,35,40,45,50,60,100};
+    Double_t thetaBins[nBins+1] = {
+        5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 100
+    };
 
-    // 4) Canvas
-    TCanvas* c1 = new TCanvas("c1","Two-Pion Mx² Validation",1200,900);
+    // 4) Canvas & grid
+    TCanvas* c1 = new TCanvas("c1","Two-Pion M_{x}^{2} Validation",1200,900);
     c1->Divide(4,3);
 
-    // 5) Histogram params
+    // 5) Histogram parameters
     const int    nbMx2   = 25;
     const double mx2_min = -0.06, mx2_max = 0.12;
 
@@ -538,16 +541,18 @@ void plot_two_pions(
 
     // 7) Create histograms
     for (int i = 0; i < nFiles; ++i) {
+        // integrated over all θ
         h[i][0] = new TH1D(
             Form("h%d_int",i),
-            Form("Integrated θ∈[5,100] %s (%s)",
+            Form("Integrated #theta [5,100] %s (%s)",
                  titleSuffix, corrLabels[i]),
             nbMx2, mx2_min, mx2_max
         );
+        // per-θ bins
         for (int b = 0; b < nBins; ++b) {
             h[i][b+1] = new TH1D(
                 Form("h%d_%d",i,b),
-                Form("θ∈[%.0f,%.0f] %s (%s)",
+                Form("#theta [%.0f,%.0f] %s (%s)",
                      thetaBins[b], thetaBins[b+1],
                      titleSuffix, corrLabels[i]),
                 nbMx2, mx2_min, mx2_max
@@ -558,12 +563,12 @@ void plot_two_pions(
     // 8) Fill & accumulate θ
     for (int i = 0; i < nFiles; ++i) {
         Long64_t N = tree[i]->GetEntries();
-        for (Long64_t ev=0; ev<N; ++ev) {
+        for (Long64_t ev = 0; ev < N; ++ev) {
             tree[i]->GetEntry(ev);
             double θ = p1_theta[i]*180.0/TMath::Pi();
             h[i][0]->Fill(Mx2[i]);
             for (int b = 0; b < nBins; ++b) {
-                if (θ>=thetaBins[b] && θ<thetaBins[b+1]) {
+                if (θ >= thetaBins[b] && θ < thetaBins[b+1]) {
                     h[i][b+1]->Fill(Mx2[i]);
                     theta_sum[b]   += θ;
                     theta_count[b] += 1;
@@ -572,10 +577,10 @@ void plot_two_pions(
         }
     }
 
-    // 9) θ means
+    // 9) Compute mean θ per bin
     for (int b = 0; b < nBins; ++b) {
-        theta_mean[b] = (theta_count[b]>0
-                         ? theta_sum[b]/theta_count[b]
+        theta_mean[b] = (theta_count[b] > 0
+                         ? theta_sum[b] / theta_count[b]
                          : NAN);
     }
 
@@ -583,30 +588,30 @@ void plot_two_pions(
     c1->cd(1)->SetLeftMargin(0.15);
     c1->cd(1)->SetBottomMargin(0.15);
     double globalMax = 0;
-    for (int i=0;i<nFiles;++i)
+    for (int i = 0; i < nFiles; ++i)
         globalMax = std::max(globalMax, h[i][0]->GetMaximum());
-    for (int i=0;i<nFiles;++i) {
+    for (int i = 0; i < nFiles; ++i) {
         h[i][0]->SetMaximum(1.7*globalMax);
         h[i][0]->SetMinimum(0);
         h[i][0]->SetMarkerStyle(20+i);
         h[i][0]->SetMarkerSize(0.8);
         h[i][0]->SetMarkerColor(kBlack+i);
-        if(i==0) h[i][0]->Draw("E");
-        else     h[i][0]->Draw("E SAME");
+        if (i==0) h[i][0]->Draw("E");
+        else      h[i][0]->Draw("E SAME");
 
         fitInt[i] = new TF1(
             Form("fitInt%d",i),
             "gaus(0)+pol3(3)",
             mx2_min, mx2_max
         );
-        // μ₀ ≃ m_ρ⁰² ≃ (0.775)²≈0.600, σ₀=0.1
+        // initial μ ≃ m_ρ⁰² ≃ 0.775² ≃ 0.600, σ = 0.1
         fitInt[i]->SetParameters(
             0.8*h[i][0]->GetMaximum(),
-            0.019, 0.1,
+            0.600, 0.1,
             0,0,0,0
         );
-        fitInt[i]->SetParLimits(1, -0.2, 0.3);
-        fitInt[i]->SetParLimits(2,  0.00, 0.2);
+        fitInt[i]->SetParLimits(1, 0.55, 0.65);
+        fitInt[i]->SetParLimits(2, 0.00, 0.20);
         fitInt[i]->SetLineColor(kBlack+i);
         fitInt[i]->SetLineWidth(1);
         h[i][0]->Fit(fitInt[i], "Q");
@@ -615,10 +620,10 @@ void plot_two_pions(
     {
         TLegend* leg = new TLegend(0.25,0.75,0.9,0.9);
         leg->SetTextSize(0.03);
-        for (int i=0;i<nFiles;++i) {
+        for (int i = 0; i < nFiles; ++i) {
             leg->AddEntry(
                 h[i][0],
-                Form("%s: μ=%.3f, σ=%.3f",
+                Form("%s: #mu=%.3f, #sigma=%.3f",
                      corrLabels[i],
                      fitInt[i]->GetParameter(1),
                      fitInt[i]->GetParameter(2)),
@@ -630,21 +635,21 @@ void plot_two_pions(
     h[0][0]->GetXaxis()->SetTitle("M_{x}^{2} (GeV^{2})");
     h[0][0]->GetYaxis()->SetTitle("Counts");
 
-    // 11) Draw & fit θ‐bins
-    for (int b=1; b<=nBins; ++b) {
+    // 11) Draw & fit θ-binned histograms
+    for (int b = 1; b <= nBins; ++b) {
         c1->cd(b+1)->SetLeftMargin(0.15);
         c1->cd(b+1)->SetBottomMargin(0.15);
-        double binMax=0;
-        for(int i=0;i<nFiles;++i)
+        double binMax = 0;
+        for (int i = 0; i < nFiles; ++i)
             binMax = std::max(binMax, h[i][b]->GetMaximum());
-        for(int i=0;i<nFiles;++i) {
+        for (int i = 0; i < nFiles; ++i) {
             h[i][b]->SetMaximum(1.7*binMax);
             h[i][b]->SetMinimum(0);
             h[i][b]->SetMarkerStyle(20+i);
             h[i][b]->SetMarkerSize(0.8);
             h[i][b]->SetMarkerColor(kBlack+i);
-            if(i==0) h[i][b]->Draw("E");
-            else     h[i][b]->Draw("E SAME");
+            if (i==0) h[i][b]->Draw("E");
+            else      h[i][b]->Draw("E SAME");
 
             fitBin[i][b-1] = new TF1(
                 Form("fitBin%d_%d",i,b),
@@ -653,11 +658,11 @@ void plot_two_pions(
             );
             fitBin[i][b-1]->SetParameters(
                 0.8*h[i][b]->GetMaximum(),
-                0.019, 0.1,
+                0.600, 0.1,
                 0,0,0,0
             );
-            fitInt[i]->SetParLimits(1, -0.2, 0.3);
-            fitInt[i]->SetParLimits(2,  0.00, 0.2);
+            fitBin[i][b-1]->SetParLimits(1, 0.55, 0.65);
+            fitBin[i][b-1]->SetParLimits(2, 0.00, 0.20);
             fitBin[i][b-1]->SetLineColor(kBlack+i);
             fitBin[i][b-1]->SetLineWidth(1);
             h[i][b]->Fit(fitBin[i][b-1], "Q");
@@ -668,10 +673,10 @@ void plot_two_pions(
         }
         TLegend* legB = new TLegend(0.25,0.75,0.9,0.9);
         legB->SetTextSize(0.03);
-        for(int i=0;i<nFiles;++i) {
+        for (int i = 0; i < nFiles; ++i) {
             legB->AddEntry(
                 h[i][b],
-                Form("%s: μ=%.3f, σ=%.3f",
+                Form("%s: #mu=%.3f, #sigma=%.3f",
                      corrLabels[i],
                      mu[i][b-1],
                      sigma[i][b-1]),
@@ -683,7 +688,44 @@ void plot_two_pions(
         h[0][b]->GetYaxis()->SetTitle("Counts");
     }
 
-    // 12) Save & cleanup
+    // 12) Final pad: μ vs. <θ>
+    c1->cd(12)->SetLeftMargin(0.20);
+    c1->cd(12)->SetBottomMargin(0.15);
+    TGraph* gr[nFiles];
+    for (int i = 0; i < nFiles; ++i) {
+        std::vector<double> xs, ys;
+        for (int b = 0; b < nBins; ++b) {
+            if (theta_count[b] > 0) {
+                xs.push_back(theta_mean[b]);
+                ys.push_back(mu[i][b]);
+            }
+        }
+        gr[i] = new TGraph(xs.size(), xs.data(), ys.data());
+        gr[i]->SetMarkerStyle(20+i);
+        gr[i]->SetMarkerSize(0.8);
+        gr[i]->SetMarkerColor(kBlack+i);
+        if (i==0) gr[i]->Draw("AP");
+        else      gr[i]->Draw("P SAME");
+    }
+    // dashed zero line
+    TLine* line = new TLine(thetaBins[0],0,thetaBins[nBins],0);
+    line->SetLineColor(kGray);
+    line->SetLineStyle(2);
+    line->Draw("SAME");
+
+    gr[0]->GetXaxis()->SetTitle("#theta (deg)");
+    gr[0]->GetYaxis()->SetTitle("#mu (GeV^{2})");
+    gr[0]->GetXaxis()->SetLimits(thetaBins[0], thetaBins[nBins]);
+    gr[0]->GetYaxis()->SetRangeUser(-0.1, 0.1);
+
+    TLegend* leg12 = new TLegend(0.6,0.75,0.9,0.9);
+    leg12->SetTextSize(0.03);
+    for (int i = 0; i < nFiles; ++i) {
+        leg12->AddEntry(gr[i], corrLabels[i], "lep");
+    }
+    leg12->Draw();
+
+    // 13) Save & cleanup
     c1->SaveAs(Form("output/two_pions_%s.pdf", titleSuffix));
     delete c1;
     for (int i = 0; i < nFiles; ++i) {
