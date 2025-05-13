@@ -88,8 +88,8 @@ public static void main(String[] args) {
 	double Emiss2, theta_gamma_gamma, pTmiss;
 
 	// load my kinematic fitter/PID
-	GenericKinematicFitter fitter = new dvcs_fitter(10.6041); 
-	// GenericKinematicFitter fitter = new monte_carlo_fitter(10.6041);
+	// GenericKinematicFitter fitter = new dvcs_fitter(10.6041); 
+	GenericKinematicFitter fitter = new monte_carlo_fitter(10.6041);
 	// GenericKinematicFitter fitter = new event_builder_fitter(10.6041); 
 	
 	// set filter for final states
