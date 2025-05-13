@@ -286,15 +286,15 @@ void plot_mx2_comparison_elastic(
         "Mariana's"
     };
 
-    //--- 1) Open files & get trees
+    // 1) Open files & trees
     TFile* f[nFiles];
     TTree* tree[nFiles];
     for (int i = 0; i < nFiles; ++i) {
-        f[i] = TFile::Open(files[i]);
+        f[i]    = TFile::Open(files[i]);
         tree[i] = f[i] ? (TTree*)f[i]->Get("PhysicsEvents") : nullptr;
     }
 
-    //--- 2) Branches: p_theta, Mx2, W
+    // 2) Branch variables: p_theta, Mx2, W
     Double_t p_theta[nFiles], Mx2[nFiles], W[nFiles];
     for (int i = 0; i < nFiles; ++i) {
         if (!tree[i]) continue;
@@ -303,27 +303,35 @@ void plot_mx2_comparison_elastic(
         tree[i]->SetBranchAddress("W",       &W[i]);
     }
 
-    //--- 3) θ bins
+    // 3) θ bins: 10 evenly spaced from 15 to 70
     const int nBins = 10;
-    Double_t thetaBins[nBins+1] = {5,15,20,25,30,35,40,45,50,60,100};
+    Double_t thetaBins[nBins+1];
+    for (int b = 0; b <= nBins; ++b) {
+        thetaBins[b] = 15.0 + b * (70.0 - 15.0) / nBins;
+    }
 
-    //--- 4) Canvas & grid
-    TCanvas* c1 = new TCanvas("c1","Elastic Mx^{2} Comparison",1200,900);
-    c1->Divide(4,3);
+    // 4) Canvas and layout
+    TCanvas* c1 = new TCanvas(
+        "c1", "Elastic Mx^{2} Comparison", 1200, 900
+    );
+    c1->Divide(4, 3);
 
-    //--- 5) Histogram setup
+    // 5) Histogram parameters
     const int    nbMx2    = 35;
-    const double mx2_min  = -0.3, mx2_max = +0.3;
+    const double mx2_min  = -0.1, mx2_max = +0.1;
+
+    // 6) Allocate histograms and fit objects
     TH1D* h[nFiles][nBins+1];
     TF1*  fitInt[nFiles];
     TF1*  fitBin[nFiles][nBins];
     Double_t mu[nFiles][nBins], sigma[nFiles][nBins];
 
+    // 7) Create histograms
     for (int i = 0; i < nFiles; ++i) {
         // integrated
         h[i][0] = new TH1D(
             Form("h%d_int", i),
-            Form("Integrated θ [5,100] %s (%s)",
+            Form("Integrated #theta [15,70] %s (%s)",
                  titleSuffix, corrLabels[i]),
             nbMx2, mx2_min, mx2_max
         );
@@ -331,7 +339,7 @@ void plot_mx2_comparison_elastic(
         for (int b = 0; b < nBins; ++b) {
             h[i][b+1] = new TH1D(
                 Form("h%d_%d", i, b),
-                Form("θ [%.0f,%.0f] %s (%s)",
+                Form("#theta [%.1f,%.1f] %s (%s)",
                      thetaBins[b], thetaBins[b+1],
                      titleSuffix, corrLabels[i]),
                 nbMx2, mx2_min, mx2_max
@@ -339,17 +347,17 @@ void plot_mx2_comparison_elastic(
         }
     }
 
-    //--- 6) Fill with W cut [0.7,1.1]
+    // 8) Fill histograms with W cut 0.7–1.1
     for (int i = 0; i < nFiles; ++i) {
         if (!tree[i]) continue;
         Long64_t N = tree[i]->GetEntries();
         for (Long64_t ev = 0; ev < N; ++ev) {
             tree[i]->GetEntry(ev);
-            if (W[i] > 1.2) continue;
+            if (W[i] < 0.7 || W[i] > 1.1) continue;
             double θ = p_theta[i] * 180.0 / TMath::Pi();
             // integrated
             h[i][0]->Fill(Mx2[i]);
-            // θ slices
+            // θ slice
             for (int b = 0; b < nBins; ++b) {
                 if (θ >= thetaBins[b] && θ < thetaBins[b+1]) {
                     h[i][b+1]->Fill(Mx2[i]);
@@ -358,12 +366,12 @@ void plot_mx2_comparison_elastic(
         }
     }
 
-    //--- 7) Draw integrated pad
+    // 9) Draw integrated pad with gaus+pol2 fits
     c1->cd(1);
     c1->cd(1)->SetLeftMargin(0.15);
     c1->cd(1)->SetBottomMargin(0.15);
     double globalMax = 0;
-    for (int i = 0; i < nFiles; i++)
+    for (int i = 0; i < nFiles; ++i)
         globalMax = std::max(globalMax, h[i][0]->GetMaximum());
     for (int i = 0; i < nFiles; ++i) {
         h[i][0]->SetMaximum(1.7 * globalMax);
@@ -375,7 +383,6 @@ void plot_mx2_comparison_elastic(
         if (i == 0) h[i][0]->Draw("E");
         else        h[i][0]->Draw("E SAME");
 
-        // fit: gaus + quadratic
         fitInt[i] = new TF1(
             Form("fitInt%d", i),
             "gaus(0)+pol2(3)",
@@ -383,8 +390,8 @@ void plot_mx2_comparison_elastic(
         );
         fitInt[i]->SetParameters(
             0.8 * h[i][0]->GetMaximum(),  // A
-            0.0,                          // μ init
-            0.1,                          // σ init
+            0.0,                          // μ
+            0.1,                          // σ
             0, 0, 0                       // poly2 coeffs
         );
         fitInt[i]->SetParLimits(1, -0.15, 0.15);
@@ -412,7 +419,7 @@ void plot_mx2_comparison_elastic(
     h[0][0]->GetXaxis()->SetTitle("M_{x}^{2} (GeV^{2})");
     h[0][0]->GetYaxis()->SetTitle("Counts");
 
-    //--- 8) Draw θ‐binned pads
+    // 10) Draw θ‐binned pads with fits
     for (int b = 1; b <= nBins; ++b) {
         c1->cd(b+1);
         c1->cd(b+1)->SetLeftMargin(0.15);
@@ -430,7 +437,6 @@ void plot_mx2_comparison_elastic(
             if (i == 0) h[i][b]->Draw("E");
             else        h[i][b]->Draw("E SAME");
 
-            // fit each slice
             fitBin[i][b-1] = new TF1(
                 Form("fitBin%d_%d", i, b),
                 "gaus(0)+pol2(3)",
@@ -440,7 +446,7 @@ void plot_mx2_comparison_elastic(
                 0.8 * h[i][b]->GetMaximum(),
                 0.0,
                 0.1,
-                0,0,0
+                0, 0, 0
             );
             fitBin[i][b-1]->SetParLimits(1, -0.15, 0.15);
             fitBin[i][b-1]->SetParLimits(2,  0.0,  0.3);
@@ -452,7 +458,6 @@ void plot_mx2_comparison_elastic(
             mu[i][b-1]    = fitBin[i][b-1]->GetParameter(1);
             sigma[i][b-1] = fitBin[i][b-1]->GetParameter(2);
         }
-        // legend per slice
         TLegend* legB = new TLegend(0.25, 0.75, 0.9, 0.9);
         legB->SetTextSize(0.03);
         for (int i = 0; i < nFiles; ++i) {
@@ -471,7 +476,7 @@ void plot_mx2_comparison_elastic(
         h[0][b]->GetXaxis()->SetRangeUser(mx2_min, mx2_max);
     }
 
-    //--- 9) Save & cleanup
+    // 11) Save and clean up
     c1->SaveAs(Form("output/Mx2_elastic_comparison_%s.pdf", titleSuffix));
     delete c1;
     for (int i = 0; i < nFiles; ++i) {
