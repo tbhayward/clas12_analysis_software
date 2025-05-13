@@ -275,8 +275,7 @@ void plot_mx2_comparison_elastic(
     const char* file2,
     const char* file3,
     const char* file4,
-    const char* titleSuffix
-) {
+    const char* titleSuffix) {
     const int nFiles = 4;
     const char* files[nFiles] = { file1, file2, file3, file4 };
     const char* corrLabels[nFiles] = {
@@ -481,6 +480,223 @@ void plot_mx2_comparison_elastic(
     }
 }
 
+void plot_two_pions(
+    const char* file1,
+    const char* file2,
+    const char* file3,
+    const char* file4,
+    const char* titleSuffix
+) {
+    const int nFiles = 4;
+    const char* files[nFiles] = { file1, file2, file3, file4 };
+    const char* corrLabels[nFiles] = {
+        "No Corrections",
+        "Timothy's",
+        "Krishna's",
+        "Mariana's"
+    };
+
+    // 1) Open files and get trees
+    TFile* f[nFiles];
+    TTree* tree[nFiles];
+    for (int i = 0; i < nFiles; ++i) {
+        f[i]    = TFile::Open(files[i]);
+        tree[i] = f[i] ? static_cast<TTree*>(f[i]->Get("PhysicsEvents")) : nullptr;
+        if (!tree[i]) {
+            std::cerr << "[two_pions] ERROR: cannot open PhysicsEvents in " << files[i] << "\n";
+            return;
+        }
+    }
+
+    // 2) Branch variables: missing mass² and theta of leading proton
+    Double_t Mx2[nFiles], p1_theta[nFiles];
+    for (int i = 0; i < nFiles; ++i) {
+        tree[i]->SetBranchAddress("Mx2",      &Mx2[i]);
+        tree[i]->SetBranchAddress("p1_theta", &p1_theta[i]);
+    }
+
+    // 3) θ–bin definitions
+    const int nBins = 10;
+    Double_t thetaBins[nBins+1] = { 5, 15, 20, 25, 30, 35, 40, 45, 50, 60, 100 };
+
+    // 4) Canvas and grid
+    TCanvas* c1 = new TCanvas("c1", "Two-Pion Missing Mass²", 1200, 900);
+    c1->Divide(4,3);
+
+    // 5) Histogram parameters for Mx² ∈ [0.4,0.9]
+    const int    nbMx2    = 35;
+    const double mx2_min  = 0.4;
+    const double mx2_max  = 0.9;
+
+    // 6) Allocate histograms and fit objects
+    TH1D*    h[nFiles][nBins+1];
+    TF1*     fitInt[nFiles];
+    TF1*     fitBin[nFiles][nBins];
+    Double_t mu[nFiles][nBins], sigma[nFiles][nBins];
+    Double_t theta_sum[nBins]   = {0};
+    Int_t    theta_count[nBins] = {0};
+    Double_t theta_mean[nBins]  = {0};
+
+    // 7) Create histograms
+    for (int i = 0; i < nFiles; ++i) {
+        // integrated over all θ
+        h[i][0] = new TH1D(
+            Form("h%d_int", i),
+            Form("Integrated θ∈[5,100] %s (%s)", titleSuffix, corrLabels[i]),
+            nbMx2, mx2_min, mx2_max
+        );
+        // per-θ bins
+        for (int b = 0; b < nBins; ++b) {
+            h[i][b+1] = new TH1D(
+                Form("h%d_%d", i, b),
+                Form("θ∈[%.0f,%.0f] %s (%s)",
+                     thetaBins[b], thetaBins[b+1],
+                     titleSuffix, corrLabels[i]),
+                nbMx2, mx2_min, mx2_max
+            );
+        }
+    }
+
+    // 8) Fill histograms and accumulate θ sums
+    for (int i = 0; i < nFiles; ++i) {
+        Long64_t N = tree[i]->GetEntries();
+        for (Long64_t ev = 0; ev < N; ++ev) {
+            tree[i]->GetEntry(ev);
+            double θ = p1_theta[i]*180.0/TMath::Pi();
+            // no additional cuts for two-pion channel
+            h[i][0]->Fill(Mx2[i]);
+            for (int b = 0; b < nBins; ++b) {
+                if (θ >= thetaBins[b] && θ < thetaBins[b+1]) {
+                    h[i][b+1]->Fill(Mx2[i]);
+                    theta_sum[b]   += θ;
+                    theta_count[b] += 1;
+                }
+            }
+        }
+    }
+
+    // 9) Compute mean θ in each bin
+    for (int b = 0; b < nBins; ++b) {
+        theta_mean[b] = (theta_count[b]>0
+                         ? theta_sum[b]/theta_count[b]
+                         : NAN);
+    }
+
+    // 10) Draw & fit integrated histogram (pad 1)
+    c1->cd(1)->SetLeftMargin(0.15);
+    c1->cd(1)->SetBottomMargin(0.15);
+    double globalMax = 0;
+    for (int i = 0; i < nFiles; ++i)
+        globalMax = std::max(globalMax, h[i][0]->GetMaximum());
+    for (int i = 0; i < nFiles; ++i) {
+        h[i][0]->SetMaximum(1.7*globalMax);
+        h[i][0]->SetMinimum(0);
+        h[i][0]->SetMarkerStyle(20+i);
+        h[i][0]->SetMarkerSize(0.8);
+        h[i][0]->SetMarkerColor(kBlack+i);
+        h[i][0]->SetStats(0);
+        if (i==0) h[i][0]->Draw("E");
+        else      h[i][0]->Draw("E SAME");
+
+        fitInt[i] = new TF1(
+            Form("fitInt%d",i),
+            "gaus(0)+pol2(3)",
+            mx2_min, mx2_max
+        );
+        // initial guess μ = m_ρ⁰² ≃ (0.775)^2 ≃ 0.600, σ ≃ 0.02
+        fitInt[i]->SetParameters(
+            0.8*h[i][0]->GetMaximum(),
+            0.600, 0.02,
+            0., 0., 0.
+        );
+        fitInt[i]->SetParLimits(1, 0.55, 0.65);
+        fitInt[i]->SetParLimits(2, 0.00, 0.05);
+        fitInt[i]->SetLineColor(kBlack+i);
+        fitInt[i]->SetLineWidth(1);
+        h[i][0]->Fit(fitInt[i], "Q");
+        fitInt[i]->Draw("SAME");
+    }
+    {
+        TLegend* leg = new TLegend(0.25,0.75,0.9,0.9);
+        leg->SetTextSize(0.03);
+        for (int i = 0; i < nFiles; ++i) {
+            leg->AddEntry(
+                h[i][0],
+                Form("%s: μ=%.3f, σ=%.3f",
+                     corrLabels[i],
+                     fitInt[i]->GetParameter(1),
+                     fitInt[i]->GetParameter(2)),
+                "lep"
+            );
+        }
+        leg->Draw();
+    }
+    h[0][0]->GetXaxis()->SetTitle("M_{x}^{2} (GeV^{2})");
+    h[0][0]->GetYaxis()->SetTitle("Counts");
+
+    // 11) Draw & fit each θ-binned histogram
+    for (int b = 1; b <= nBins; ++b) {
+        c1->cd(b+1)->SetLeftMargin(0.15);
+        c1->cd(b+1)->SetBottomMargin(0.15);
+        double binMax = 0;
+        for (int i = 0; i < nFiles; ++i)
+            binMax = std::max(binMax, h[i][b]->GetMaximum());
+        for (int i = 0; i < nFiles; ++i) {
+            h[i][b]->SetMaximum(1.7*binMax);
+            h[i][b]->SetMinimum(0);
+            h[i][b]->SetMarkerStyle(20+i);
+            h[i][b]->SetMarkerSize(0.8);
+            h[i][b]->SetMarkerColor(kBlack+i);
+            h[i][b]->SetStats(0);
+            if (i==0) h[i][b]->Draw("E");
+            else      h[i][b]->Draw("E SAME");
+
+            fitBin[i][b-1] = new TF1(
+                Form("fitBin%d_%d", i, b),
+                "gaus(0)+pol2(3)",
+                mx2_min, mx2_max
+            );
+            fitBin[i][b-1]->SetParameters(
+                0.8*h[i][b]->GetMaximum(),
+                0.600, 0.02,
+                0., 0., 0.
+            );
+            fitBin[i][b-1]->SetParLimits(1, 0.55, 0.65);
+            fitBin[i][b-1]->SetParLimits(2, 0.00, 0.05);
+            fitBin[i][b-1]->SetLineColor(kBlack+i);
+            fitBin[i][b-1]->SetLineWidth(1);
+            h[i][b]->Fit(fitBin[i][b-1], "Q");
+            fitBin[i][b-1]->Draw("SAME");
+
+            mu[i][b-1]    = fitBin[i][b-1]->GetParameter(1);
+            sigma[i][b-1] = fitBin[i][b-1]->GetParameter(2);
+        }
+        TLegend* legB = new TLegend(0.25,0.75,0.9,0.9);
+        legB->SetTextSize(0.03);
+        for (int i = 0; i < nFiles; ++i) {
+            legB->AddEntry(
+                h[i][b],
+                Form("%s: μ=%.3f, σ=%.3f",
+                     corrLabels[i],
+                     mu[i][b-1],
+                     sigma[i][b-1]),
+                "lep"
+            );
+        }
+        legB->Draw();
+        h[0][b]->GetXaxis()->SetTitle("M_{x}^{2} (GeV^{2})");
+        h[0][b]->GetYaxis()->SetTitle("Counts");
+    }
+
+    // 12) Save & cleanup
+    c1->SaveAs(Form("output/two_pions_%s.pdf", titleSuffix));
+    delete c1;
+    for (int i = 0; i < nFiles; ++i) {
+        f[i]->Close();
+        delete f[i];
+    }
+}
+
 int main(int argc, char** argv) {
     if (argc != 6) {
         std::cerr << "Usage: " << argv[0]
@@ -492,7 +708,11 @@ int main(int argc, char** argv) {
     //     argv[1], argv[2], argv[3], argv[4], argv[5]
     // );
 
-    plot_mx2_comparison_elastic(
+    // plot_mx2_comparison_elastic(
+    //     argv[1], argv[2], argv[3], argv[4], argv[5]
+    // );
+
+    plot_two_pions(
         argv[1], argv[2], argv[3], argv[4], argv[5]
     );
 
