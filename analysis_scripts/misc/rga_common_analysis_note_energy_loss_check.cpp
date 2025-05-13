@@ -490,7 +490,6 @@ void plot_two_pions(
     const int nFiles = 4;
     const char* files[nFiles] = { file1, file2, file3, file4 };
     const char* corrLabels[nFiles] = {
-        "No Corrections",
         "Timothy's",
         "Krishna's",
         "Mariana's"
@@ -512,28 +511,26 @@ void plot_two_pions(
     // 2) Branches: missing mass² and proton θ
     Double_t Mx2[nFiles], p1_theta[nFiles];
     for (int i = 0; i < nFiles; ++i) {
-        tree[i]->SetBranchAddress("Mx2_12",    &Mx2[i]);
-        tree[i]->SetBranchAddress("p1_theta", &p1_theta[i]);
+        tree[i]->SetBranchAddress("Mx2_12",   &Mx2[i]);
+        tree[i]->SetBranchAddress("p1_theta",&p1_theta[i]);
     }
 
-    // 3) θ-bin edges: [5–10],[10–15],…,[50–100]
+    // 3) θ‐bin edges: [5–10],[10–15],…,[50–100]
     const int nBins = 10;
-    Double_t thetaBins[nBins+1] = {
-        5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 100
-    };
+    Double_t thetaBins[nBins+1] = {5,10,15,20,25,30,35,40,45,50,100};
 
     // 4) Canvas & grid
     TCanvas* c1 = new TCanvas("c1","Two-Pion M_{x}^{2} Validation",1200,900);
     c1->Divide(4,3);
 
-    // 5) Histogram parameters
+    // 5) Histogram range
     const int    nbMx2   = 25;
     const double mx2_min = -0.06, mx2_max = 0.12;
 
     // 6) Storage
-    TH1D* h[nFiles][nBins+1];
-    TF1*  fitInt[nFiles];
-    TF1*  fitBin[nFiles][nBins];
+    TH1D*    h[nFiles][nBins+1];
+    TF1*     fitInt[nFiles];
+    TF1*     fitBin[nFiles][nBins];
     Double_t mu[nFiles][nBins], sigma[nFiles][nBins];
     Double_t theta_sum[nBins]   = {0};
     Int_t    theta_count[nBins] = {0};
@@ -544,26 +541,26 @@ void plot_two_pions(
         // integrated over all θ
         h[i][0] = new TH1D(
             Form("h%d_int",i),
-            Form("Integrated #theta [5,100] %s (%s)",
-                 titleSuffix, corrLabels[i]),
+            Form("Integrated #theta [5,100] %s", titleSuffix),
             nbMx2, mx2_min, mx2_max
         );
-        // per-θ bins
+        h[i][0]->SetStats(0);
+
+        // per‐θ bins
         for (int b = 0; b < nBins; ++b) {
             h[i][b+1] = new TH1D(
                 Form("h%d_%d",i,b),
-                Form("#theta [%.0f,%.0f] %s (%s)",
-                     thetaBins[b], thetaBins[b+1],
-                     titleSuffix, corrLabels[i]),
+                Form("#theta [%.0f,%.0f] %s", thetaBins[b], thetaBins[b+1], titleSuffix),
                 nbMx2, mx2_min, mx2_max
             );
+            h[i][b+1]->SetStats(0);
         }
     }
 
     // 8) Fill & accumulate θ
     for (int i = 0; i < nFiles; ++i) {
         Long64_t N = tree[i]->GetEntries();
-        for (Long64_t ev = 0; ev < N; ++ev) {
+        for (Long64_t ev=0; ev<N; ++ev) {
             tree[i]->GetEntry(ev);
             double θ = p1_theta[i]*180.0/TMath::Pi();
             h[i][0]->Fill(Mx2[i]);
@@ -604,17 +601,17 @@ void plot_two_pions(
             "gaus(0)+pol3(3)",
             mx2_min, mx2_max
         );
-        // initial μ ≃ m_ρ⁰² ≃ 0.775² ≃ 0.600, σ = 0.1
+        // μ₀ ≃ m_{π±}² ≃ (0.1396)² ≃ 0.0195, σ₀ = 0.2
         fitInt[i]->SetParameters(
             0.8*h[i][0]->GetMaximum(),
-            0.600, 0.1,
-            0,0,0,0
+            0.0195, 0.20,
+            0, 0, 0, 0
         );
-        fitInt[i]->SetParLimits(1, 0.55, 0.65);
-        fitInt[i]->SetParLimits(2, 0.00, 0.20);
+        fitInt[i]->SetParLimits(1, 0.00, 0.05);
+        fitInt[i]->SetParLimits(2, 0.10, 0.30);
         fitInt[i]->SetLineColor(kBlack+i);
         fitInt[i]->SetLineWidth(1);
-        h[i][0]->Fit(fitInt[i], "Q");
+        h[i][0]->Fit(fitInt[i],"Q");
         fitInt[i]->Draw("SAME");
     }
     {
@@ -635,7 +632,7 @@ void plot_two_pions(
     h[0][0]->GetXaxis()->SetTitle("M_{x}^{2} (GeV^{2})");
     h[0][0]->GetYaxis()->SetTitle("Counts");
 
-    // 11) Draw & fit θ-binned histograms
+    // 11) θ‐binned pads
     for (int b = 1; b <= nBins; ++b) {
         c1->cd(b+1)->SetLeftMargin(0.15);
         c1->cd(b+1)->SetBottomMargin(0.15);
@@ -658,14 +655,14 @@ void plot_two_pions(
             );
             fitBin[i][b-1]->SetParameters(
                 0.8*h[i][b]->GetMaximum(),
-                0.600, 0.1,
+                0.0195, 0.20,
                 0,0,0,0
             );
-            fitBin[i][b-1]->SetParLimits(1, 0.55, 0.65);
-            fitBin[i][b-1]->SetParLimits(2, 0.00, 0.20);
+            fitBin[i][b-1]->SetParLimits(1, 0.00, 0.05);
+            fitBin[i][b-1]->SetParLimits(2, 0.10, 0.30);
             fitBin[i][b-1]->SetLineColor(kBlack+i);
             fitBin[i][b-1]->SetLineWidth(1);
-            h[i][b]->Fit(fitBin[i][b-1], "Q");
+            h[i][b]->Fit(fitBin[i][b-1],"Q");
             fitBin[i][b-1]->Draw("SAME");
 
             mu[i][b-1]    = fitBin[i][b-1]->GetParameter(1);
