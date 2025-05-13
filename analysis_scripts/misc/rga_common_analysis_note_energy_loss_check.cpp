@@ -653,11 +653,11 @@ void plot_two_pions(
             );
             fitBin[i][b-1]->SetParameters(
                 0.8*h[i][b]->GetMaximum(),
-                0.600, 0.1,
+                0.019, 0.1,
                 0,0,0,0
             );
-            fitBin[i][b-1]->SetParLimits(1, 0.55, 0.65);
-            fitBin[i][b-1]->SetParLimits(2,  0.01, 0.2);
+            fitInt[i]->SetParLimits(1, -0.2, 0.3);
+            fitInt[i]->SetParLimits(2,  0.00, 0.2);
             fitBin[i][b-1]->SetLineColor(kBlack+i);
             fitBin[i][b-1]->SetLineWidth(1);
             h[i][b]->Fit(fitBin[i][b-1], "Q");
