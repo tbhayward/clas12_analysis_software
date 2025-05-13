@@ -511,7 +511,7 @@ void plot_two_pions(
     // 2) Branch variables: missing mass² and theta of leading proton
     Double_t Mx2[nFiles], p1_theta[nFiles];
     for (int i = 0; i < nFiles; ++i) {
-        tree[i]->SetBranchAddress("Mx2",      &Mx2[i]);
+        tree[i]->SetBranchAddress("Mx2_1",      &Mx2[i]);
         tree[i]->SetBranchAddress("p1_theta", &p1_theta[i]);
     }
 
