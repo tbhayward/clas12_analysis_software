@@ -605,7 +605,7 @@ void plot_two_pions(
         // μ₀ ≃ m_{π±}² ≃ (0.1396)² ≃ 0.0195, σ₀ = 0.20
         fitInt[i]->SetParameters(
             0.8*h[i][0]->GetMaximum(),
-            0.0195, 0.20,
+            0.0195, 0.05,
             0,0
         );
         fitInt[i]->SetParLimits(1, 0.00, 0.05);
@@ -656,7 +656,7 @@ void plot_two_pions(
             );
             fitBin[i][b-1]->SetParameters(
                 0.8*h[i][b]->GetMaximum(),
-                0.0195, 0.20,
+                0.0195, 0.05,
                 0,0
             );
             fitBin[i][b-1]->SetParLimits(1, 0.00, 0.05);
