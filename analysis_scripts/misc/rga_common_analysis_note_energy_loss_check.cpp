@@ -602,11 +602,11 @@ void plot_two_pions(
         // μ₀ ≃ m_ρ⁰² ≃ (0.775)²≈0.600, σ₀=0.1
         fitInt[i]->SetParameters(
             0.8*h[i][0]->GetMaximum(),
-            0.0, 0.1,
+            0.019, 0.1,
             0,0,0,0
         );
-        fitInt[i]->SetParLimits(1, -0.2, 0.2);
-        fitInt[i]->SetParLimits(2,  0.01, 0.2);
+        fitInt[i]->SetParLimits(1, -0.2, 0.3);
+        fitInt[i]->SetParLimits(2,  0.00, 0.2);
         fitInt[i]->SetLineColor(kBlack+i);
         fitInt[i]->SetLineWidth(1);
         h[i][0]->Fit(fitInt[i], "Q");
