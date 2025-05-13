@@ -599,14 +599,14 @@ void plot_two_pions(
 
         fitInt[i] = new TF1(
             Form("fitInt%d",i),
-            "gaus(0)+pol1(3)",
+            "gaus(0)+pol2(3)",
             mx2_min, mx2_max
         );
         // μ₀ ≃ m_{π±}² ≃ (0.1396)² ≃ 0.0195, σ₀ = 0.20
         fitInt[i]->SetParameters(
             0.8*h[i][0]->GetMaximum(),
             0.0195, 0.05,
-            0,0
+            0,0,0
         );
         fitInt[i]->SetParLimits(1, 0.00, 0.05);
         fitInt[i]->SetParLimits(2, 0.00, 0.30);
@@ -651,13 +651,13 @@ void plot_two_pions(
 
             fitBin[i][b-1] = new TF1(
                 Form("fitBin%d_%d",i,b),
-                "gaus(0)+pol1(3)",
+                "gaus(0)+pol2(3)",
                 mx2_min, mx2_max
             );
             fitBin[i][b-1]->SetParameters(
                 0.8*h[i][b]->GetMaximum(),
                 0.0195, 0.05,
-                0,0
+                0,0,0
             );
             fitBin[i][b-1]->SetParLimits(1, 0.00, 0.05);
             fitBin[i][b-1]->SetParLimits(2, 0.00, 0.30);
