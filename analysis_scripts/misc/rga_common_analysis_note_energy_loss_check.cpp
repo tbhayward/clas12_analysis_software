@@ -524,8 +524,8 @@ void plot_two_pions(
     c1->Divide(4,3);
 
     // 5) Histogram params
-    const int    nbMx2   = 35;
-    const double mx2_min = -0.06, mx2_max = 0.06;
+    const int    nbMx2   = 50;
+    const double mx2_min = -0.06, mx2_max = 0.12;
 
     // 6) Storage
     TH1D* h[nFiles][nBins+1];
