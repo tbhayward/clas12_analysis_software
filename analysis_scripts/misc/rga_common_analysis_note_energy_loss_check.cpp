@@ -525,7 +525,7 @@ void plot_two_pions(
 
     // 5) Histogram params
     const int    nbMx2   = 35;
-    const double mx2_min = -0.4, mx2_max = 1.9;
+    const double mx2_min = -0.4, mx2_max = 0.4;
 
     // 6) Storage
     TH1D* h[nFiles][nBins+1];
@@ -602,10 +602,10 @@ void plot_two_pions(
         // μ₀ ≃ m_ρ⁰² ≃ (0.775)²≈0.600, σ₀=0.1
         fitInt[i]->SetParameters(
             0.8*h[i][0]->GetMaximum(),
-            0.600, 0.1,
+            0.0, 0.1,
             0,0,0,0
         );
-        fitInt[i]->SetParLimits(1, 0.55, 0.65);
+        fitInt[i]->SetParLimits(1, -0.3, 0.3);
         fitInt[i]->SetParLimits(2,  0.01, 0.2);
         fitInt[i]->SetLineColor(kBlack+i);
         fitInt[i]->SetLineWidth(1);
