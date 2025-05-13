@@ -363,7 +363,7 @@ void plot_mx2_comparison_elastic(
     c1->cd(1)->SetLeftMargin(0.15);
     c1->cd(1)->SetBottomMargin(0.15);
     double globalMax = 0;
-    for (int i = 0; i < nFiles; ++i++)
+    for (int i = 0; i < nFiles; i++)
         globalMax = std::max(globalMax, h[i][0]->GetMaximum());
     for (int i = 0; i < nFiles; ++i) {
         h[i][0]->SetMaximum(1.7 * globalMax);
