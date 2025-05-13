@@ -345,7 +345,7 @@ void plot_mx2_comparison_elastic(
         Long64_t N = tree[i]->GetEntries();
         for (Long64_t ev = 0; ev < N; ++ev) {
             tree[i]->GetEntry(ev);
-            if (W[i] < 0.7 || W[i] > 1.1) continue;
+            if (W[i] > 1.2) continue;
             double θ = p_theta[i] * 180.0 / TMath::Pi();
             // integrated
             h[i][0]->Fill(Mx2[i]);
