@@ -485,8 +485,7 @@ void plot_two_pions(
     const char* file2,
     const char* file3,
     const char* file4,
-    const char* titleSuffix
-) {
+    const char* titleSuffix) {
     const int nFiles = 4;
     const char* files[nFiles] = { file1, file2, file3, file4 };
     const char* corrLabels[nFiles] = {
@@ -525,8 +524,8 @@ void plot_two_pions(
 
     // 5) Histogram parameters for Mx² ∈ [0.4,0.9]
     const int    nbMx2    = 35;
-    const double mx2_min  = 0.4;
-    const double mx2_max  = 0.9;
+    const double mx2_min  = -0.4;
+    const double mx2_max  = 1.9;
 
     // 6) Allocate histograms and fit objects
     TH1D*    h[nFiles][nBins+1];
