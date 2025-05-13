@@ -714,7 +714,7 @@ void plot_two_pions(
     gr[0]->GetXaxis()->SetTitle("#theta (deg)");
     gr[0]->GetYaxis()->SetTitle("#mu (GeV^{2})");
     gr[0]->GetXaxis()->SetLimits(thetaBins[0], thetaBins[nBins]);
-    gr[0]->GetYaxis()->SetRangeUser(-0.02, 0.08);
+    gr[0]->GetYaxis()->SetRangeUser(-0.02, 0.04);
 
     TLegend* leg12 = new TLegend(0.6,0.75,0.9,0.9);
     leg12->SetTextSize(0.03);
