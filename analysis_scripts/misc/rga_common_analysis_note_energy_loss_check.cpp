@@ -294,79 +294,76 @@ void plot_mx2_comparison_elastic(
         tree[i] = f[i] ? (TTree*)f[i]->Get("PhysicsEvents") : nullptr;
     }
 
-    // 2) Branch variables: p_theta, Mx2, W
-    Double_t p_theta[nFiles], Mx2[nFiles], W[nFiles];
+    // 2) Branch variables: p_theta and W
+    Double_t p_theta[nFiles], W[nFiles];
     for (int i = 0; i < nFiles; ++i) {
         if (!tree[i]) continue;
         tree[i]->SetBranchAddress("p_theta", &p_theta[i]);
-        tree[i]->SetBranchAddress("Mx2",     &Mx2[i]);
         tree[i]->SetBranchAddress("W",       &W[i]);
     }
 
-    // 3) θ bins: 10 evenly spaced from 15 to 70
+    // 3) θ–bins: 10 evenly spaced from 15 to 70 deg
     const int nBins = 10;
     Double_t thetaBins[nBins+1];
     for (int b = 0; b <= nBins; ++b) {
-        thetaBins[b] = 15.0 + b * (70.0 - 15.0) / nBins;
+        thetaBins[b] = 15.0 + b * (70.0-15.0)/nBins;
     }
 
-    // 4) Canvas and layout
-    TCanvas* c1 = new TCanvas(
-        "c1", "Elastic Mx^{2} Comparison", 1200, 900
-    );
-    c1->Divide(4, 3);
+    // 4) Canvas & grid
+    TCanvas* c1 = new TCanvas("c1","Elastic W Comparison",1200,900);
+    c1->Divide(4,3);
 
-    // 5) Histogram parameters
-    const int    nbMx2    = 35;
-    const double mx2_min  = -0.1, mx2_max = +0.1;
+    // 5) Histogram parameters for W in [0.7,1.1]
+    const int    nbW     = 35;
+    const double W_min   = 0.7, W_max = 1.1;
 
     // 6) Allocate histograms and fit objects
-    TH1D* h[nFiles][nBins+1];
-    TF1*  fitInt[nFiles];
-    TF1*  fitBin[nFiles][nBins];
+    TH1D*   h[nFiles][nBins+1];
+    TF1*    fitInt[nFiles];
+    TF1*    fitBin[nFiles][nBins];
     Double_t mu[nFiles][nBins], sigma[nFiles][nBins];
 
     // 7) Create histograms
     for (int i = 0; i < nFiles; ++i) {
-        // integrated
+        // integrated over all θ
         h[i][0] = new TH1D(
             Form("h%d_int", i),
-            Form("Integrated #theta [15,70] %s (%s)",
-                 titleSuffix, corrLabels[i]),
-            nbMx2, mx2_min, mx2_max
+            Form("Integrated θ∈[15,70] %s (%s)", titleSuffix, corrLabels[i]),
+            nbW, W_min, W_max
         );
-        // θ slices
+        // per-θ bins
         for (int b = 0; b < nBins; ++b) {
             h[i][b+1] = new TH1D(
                 Form("h%d_%d", i, b),
-                Form("#theta [%.1f,%.1f] %s (%s)",
+                Form("θ∈[%.1f,%.1f] %s (%s)",
                      thetaBins[b], thetaBins[b+1],
                      titleSuffix, corrLabels[i]),
-                nbMx2, mx2_min, mx2_max
+                nbW, W_min, W_max
             );
         }
     }
 
-    // 8) Fill histograms with W cut 0.7–1.1
+    // 8) Fill histograms (no W cut now)
     for (int i = 0; i < nFiles; ++i) {
         if (!tree[i]) continue;
         Long64_t N = tree[i]->GetEntries();
         for (Long64_t ev = 0; ev < N; ++ev) {
             tree[i]->GetEntry(ev);
-            if (W[i] < 0.7 || W[i] > 1.1) continue;
             double θ = p_theta[i] * 180.0 / TMath::Pi();
+            // require θ in [15,70]
+            if (θ < 15.0 || θ >= 70.0) continue;
             // integrated
-            h[i][0]->Fill(Mx2[i]);
-            // θ slice
+            h[i][0]->Fill(W[i]);
+            // per-θ
             for (int b = 0; b < nBins; ++b) {
                 if (θ >= thetaBins[b] && θ < thetaBins[b+1]) {
-                    h[i][b+1]->Fill(Mx2[i]);
+                    h[i][b+1]->Fill(W[i]);
                 }
             }
         }
     }
 
-    // 9) Draw integrated pad with gaus+pol2 fits
+    // 9) Draw integrated pad with Gaussian+quadratic fit
     c1->cd(1);
     c1->cd(1)->SetLeftMargin(0.15);
     c1->cd(1)->SetBottomMargin(0.15);
@@ -386,23 +383,23 @@ void plot_mx2_comparison_elastic(
         fitInt[i] = new TF1(
             Form("fitInt%d", i),
             "gaus(0)+pol2(3)",
-            mx2_min, mx2_max
+            W_min, W_max
         );
         fitInt[i]->SetParameters(
-            0.8 * h[i][0]->GetMaximum(),  // A
-            0.0,                          // μ
-            0.1,                          // σ
-            0, 0, 0                       // poly2 coeffs
+            0.8 * h[i][0]->GetMaximum(),  // amplitude
+            0.938,                        // μ init ≃ proton mass
+            0.02,                         // σ init
+            0, 0, 0                       // polynomial terms
         );
-        fitInt[i]->SetParLimits(1, -0.15, 0.15);
-        fitInt[i]->SetParLimits(2,  0.0,  0.3);
+        fitInt[i]->SetParLimits(1, 0.8, 1.0);
+        fitInt[i]->SetParLimits(2, 0.0,  0.1);
         fitInt[i]->SetLineColor(kBlack + i);
         fitInt[i]->SetLineWidth(1);
         h[i][0]->Fit(fitInt[i], "Q");
         fitInt[i]->Draw("SAME");
     }
     {
-        TLegend* leg = new TLegend(0.25, 0.75, 0.9, 0.9);
+        TLegend* leg = new TLegend(0.25,0.75,0.9,0.9);
         leg->SetTextSize(0.03);
         for (int i = 0; i < nFiles; ++i) {
             leg->AddEntry(
@@ -416,7 +413,7 @@ void plot_mx2_comparison_elastic(
         }
         leg->Draw();
     }
-    h[0][0]->GetXaxis()->SetTitle("M_{x}^{2} (GeV^{2})");
+    h[0][0]->GetXaxis()->SetTitle("W (GeV)");
     h[0][0]->GetYaxis()->SetTitle("Counts");
 
     // 10) Draw θ‐binned pads with fits
@@ -440,16 +437,16 @@ void plot_mx2_comparison_elastic(
             fitBin[i][b-1] = new TF1(
                 Form("fitBin%d_%d", i, b),
                 "gaus(0)+pol2(3)",
-                mx2_min, mx2_max
+                W_min, W_max
             );
             fitBin[i][b-1]->SetParameters(
                 0.8 * h[i][b]->GetMaximum(),
-                0.0,
-                0.1,
+                0.938,
+                0.02,
                 0, 0, 0
             );
-            fitBin[i][b-1]->SetParLimits(1, -0.15, 0.15);
-            fitBin[i][b-1]->SetParLimits(2,  0.0,  0.3);
+            fitBin[i][b-1]->SetParLimits(1, 0.8, 1.0);
+            fitBin[i][b-1]->SetParLimits(2, 0.0,  0.1);
             fitBin[i][b-1]->SetLineColor(kBlack + i);
             fitBin[i][b-1]->SetLineWidth(1);
             h[i][b]->Fit(fitBin[i][b-1], "Q");
@@ -458,7 +455,7 @@ void plot_mx2_comparison_elastic(
             mu[i][b-1]    = fitBin[i][b-1]->GetParameter(1);
             sigma[i][b-1] = fitBin[i][b-1]->GetParameter(2);
         }
-        TLegend* legB = new TLegend(0.25, 0.75, 0.9, 0.9);
+        TLegend* legB = new TLegend(0.25,0.75,0.9,0.9);
         legB->SetTextSize(0.03);
         for (int i = 0; i < nFiles; ++i) {
             legB->AddEntry(
@@ -471,17 +468,16 @@ void plot_mx2_comparison_elastic(
             );
         }
         legB->Draw();
-        h[0][b]->GetXaxis()->SetTitle("M_{x}^{2} (GeV^{2})");
+        h[0][b]->GetXaxis()->SetTitle("W (GeV)");
         h[0][b]->GetYaxis()->SetTitle("Counts");
-        h[0][b]->GetXaxis()->SetRangeUser(mx2_min, mx2_max);
+        h[0][b]->GetXaxis()->SetRangeUser(W_min, W_max);
     }
 
-    // 11) Save and clean up
-    c1->SaveAs(Form("output/Mx2_elastic_comparison_%s.pdf", titleSuffix));
+    // 11) Save & clean up
+    c1->SaveAs(Form("output/W_elastic_comparison_%s.pdf", titleSuffix));
     delete c1;
     for (int i = 0; i < nFiles; ++i) {
-        f[i]->Close();
-        delete f[i];
+        if (f[i]) { f[i]->Close(); delete f[i]; }
     }
 }
 
