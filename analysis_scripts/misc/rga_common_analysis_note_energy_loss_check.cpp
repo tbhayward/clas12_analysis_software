@@ -328,16 +328,16 @@ void plot_eppi0_energy_loss_validation(
     for (int i = 0; i < nFiles; ++i) {
         h[i][0] = new TH1D(
             Form("h%d_int", i),
-            Form("Integrated #theta [5,65] %s (%s)", titleSuffix, corrLabels[i]),
+            Form("Integrated #theta [5,65] %s", titleSuffix),
             nbMx2_hi, mx2_min, mx2_max
         );
         for (int b = 0; b < nBins; ++b) {
             int nb = (b < nBins/2 ? nbMx2_lo : nbMx2_hi);
             h[i][b+1] = new TH1D(
                 Form("h%d_%d", i, b),
-                Form("#theta [%.0f,%.0f] %s (%s)",
+                Form("#theta [%.0f,%.0f] %s",
                      thetaBins[b], thetaBins[b+1],
-                     titleSuffix, corrLabels[i]),
+                     titleSuffix),
                 nb, mx2_min, mx2_max
             );
         }
