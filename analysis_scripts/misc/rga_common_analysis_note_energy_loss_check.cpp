@@ -68,7 +68,7 @@ void plot_dvcs_energy_loss_validation(
     for (int i = 0; i < nFiles; ++i) {
         h[i][0] = new TH1D(
             Form("h%d_int", i),
-            Form("Integrated #theta [5,65] %s (%s)", titleSuffix, corrLabels[i]),
+            Form("Integrated #theta [5,65] %s", titleSuffix, corrLabels[i]),
             nbMx2_hi, mx2_min, mx2_max
         );
         for (int b = 0; b < nBins; ++b) {
