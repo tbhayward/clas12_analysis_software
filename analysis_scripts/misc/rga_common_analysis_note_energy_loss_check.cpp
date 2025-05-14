@@ -771,7 +771,7 @@ void plot_two_pions(
     // 2) Branches: missing mass² and proton θ
     Double_t Mx2[nFiles], p1_theta[nFiles];
     for (int i = 0; i < nFiles; ++i) {
-        tree[i]->SetBranchAddress("Mx2",   &Mx2[i]);
+        tree[i]->SetBranchAddress("Mx2_1",   &Mx2[i]);
         tree[i]->SetBranchAddress("p1_theta",&p1_theta[i]);
     }
 
@@ -785,7 +785,7 @@ void plot_two_pions(
 
     // 5) Histogram range
     const int    nbMx2   = 25;
-    const double mx2_min = -0.4, mx2_max = 0.8;
+    const double mx2_min = 0.45, mx2_max = 0.95;
 
     // 6) Storage
     TH1D*    h[nFiles][nBins+1];
@@ -867,7 +867,7 @@ void plot_two_pions(
             0.775*0.775, 0.05,
             0,0,0
         );
-        fitInt[i]->SetParLimits(1, 0.04, 0.08);
+        fitInt[i]->SetParLimits(1, 0.4, 0.8);
         fitInt[i]->SetParLimits(2, 0.00, 0.30);
         fitInt[i]->SetLineColor(kBlack+i);
         fitInt[i]->SetLineWidth(1);
@@ -918,7 +918,7 @@ void plot_two_pions(
                 0.775*0.775, 0.05,
                 0,0,0
             );
-            fitBin[i][b-1]->SetParLimits(1, 0.04, 0.08);
+            fitBin[i][b-1]->SetParLimits(1, 0.4, 0.8);
             fitBin[i][b-1]->SetParLimits(2, 0.00, 0.30);
             fitBin[i][b-1]->SetLineColor(kBlack+i);
             fitBin[i][b-1]->SetLineWidth(1);
