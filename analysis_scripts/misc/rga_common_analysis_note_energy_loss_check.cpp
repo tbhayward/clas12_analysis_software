@@ -771,7 +771,7 @@ void plot_two_pions(
     // 2) Branches: missing mass² and proton θ
     Double_t Mx2[nFiles], p1_theta[nFiles];
     for (int i = 0; i < nFiles; ++i) {
-        tree[i]->SetBranchAddress("Mx2_13",   &Mx2[i]);
+        tree[i]->SetBranchAddress("Mx2",   &Mx2[i]);
         tree[i]->SetBranchAddress("p1_theta",&p1_theta[i]);
     }
 
@@ -785,7 +785,7 @@ void plot_two_pions(
 
     // 5) Histogram range
     const int    nbMx2   = 25;
-    const double mx2_min = -0.12, mx2_max = 0.20;
+    const double mx2_min = -0.4, mx2_max = 0.8;
 
     // 6) Storage
     TH1D*    h[nFiles][nBins+1];
@@ -864,10 +864,10 @@ void plot_two_pions(
         // μ₀ ≃ m_{π±}² ≃ (0.1396)² ≃ 0.0195, σ₀ = 0.20
         fitInt[i]->SetParameters(
             0.8*h[i][0]->GetMaximum(),
-            0.0195, 0.05,
+            0.775*0.775, 0.05,
             0,0,0
         );
-        fitInt[i]->SetParLimits(1, 0.00, 0.05);
+        fitInt[i]->SetParLimits(1, 0.04, 0.08);
         fitInt[i]->SetParLimits(2, 0.00, 0.30);
         fitInt[i]->SetLineColor(kBlack+i);
         fitInt[i]->SetLineWidth(1);
@@ -915,10 +915,10 @@ void plot_two_pions(
             );
             fitBin[i][b-1]->SetParameters(
                 0.8*h[i][b]->GetMaximum(),
-                0.0195, 0.05,
+                0.775*0.775, 0.05,
                 0,0,0
             );
-            fitBin[i][b-1]->SetParLimits(1, 0.00, 0.05);
+            fitBin[i][b-1]->SetParLimits(1, 0.04, 0.08);
             fitBin[i][b-1]->SetParLimits(2, 0.00, 0.30);
             fitBin[i][b-1]->SetLineColor(kBlack+i);
             fitBin[i][b-1]->SetLineWidth(1);
@@ -1006,13 +1006,13 @@ int main(int argc, char** argv) {
     //     argv[1], argv[2], argv[3], argv[4], argv[5]
     // );
 
-    plot_mx2_comparison_elastic(
-        argv[1], argv[2], argv[3], argv[4], argv[5]
-    );
-
-    // plot_two_pions(
+    // plot_mx2_comparison_elastic(
     //     argv[1], argv[2], argv[3], argv[4], argv[5]
     // );
+
+    plot_two_pions(
+        argv[1], argv[2], argv[3], argv[4], argv[5]
+    );
 
 
     return 0;
