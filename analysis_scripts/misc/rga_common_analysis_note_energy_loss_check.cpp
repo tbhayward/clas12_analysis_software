@@ -574,7 +574,7 @@ void plot_mx2_comparison_elastic(
 
     // 5) Histogram parameters for W in [0.7,1.1]
     const int    nbW     = 35;
-    const double W_min   = -0.1, W_max = 0.1;
+    const double W_min   = -0.04, W_max = 0.04;
 
     // 6) Allocate histograms and fit objects
     TH1D*   h[nFiles][nBins+1];
