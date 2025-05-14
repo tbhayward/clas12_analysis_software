@@ -558,7 +558,7 @@ void plot_mx2_comparison_elastic(
     for (int i = 0; i < nFiles; ++i) {
         if (!tree[i]) continue;
         tree[i]->SetBranchAddress("p_theta", &p_theta[i]);
-        tree[i]->SetBranchAddress("W",       &W[i]);
+        tree[i]->SetBranchAddress("Mx2",       &W[i]);
     }
 
     // 3) θ–bins: 10 evenly spaced from 15 to 70 deg
@@ -574,7 +574,7 @@ void plot_mx2_comparison_elastic(
 
     // 5) Histogram parameters for W in [0.7,1.1]
     const int    nbW     = 35;
-    const double W_min   = 0.7, W_max = 1.1;
+    const double W_min   = 0.1, W_max = 0.1;
 
     // 6) Allocate histograms and fit objects
     TH1D*   h[nFiles][nBins+1];
@@ -646,8 +646,8 @@ void plot_mx2_comparison_elastic(
         );
         fitInt[i]->SetParameters(
             0.8 * h[i][0]->GetMaximum(),  // amplitude
-            0.938,                        // μ init ≃ proton mass
-            0.02,                         // σ init
+            0.0,                        // μ init ≃ proton mass
+            0.005,                         // σ init
             0, 0, 0                       // polynomial terms
         );
         fitInt[i]->SetParLimits(1, 0.8, 1.0);
@@ -663,7 +663,7 @@ void plot_mx2_comparison_elastic(
         for (int i = 0; i < nFiles; ++i) {
             leg->AddEntry(
                 h[i][0],
-                Form("%s: μ=%.3f, σ=%.3f",
+                Form("%s: #mu=%.3f, #sigma=%.3f",
                      corrLabels[i],
                      fitInt[i]->GetParameter(1),
                      fitInt[i]->GetParameter(2)),
@@ -700,8 +700,8 @@ void plot_mx2_comparison_elastic(
             );
             fitBin[i][b-1]->SetParameters(
                 0.8 * h[i][b]->GetMaximum(),
-                0.938,
-                0.02,
+                0.0,
+                0.05,
                 0, 0, 0
             );
             fitBin[i][b-1]->SetParLimits(1, 0.8, 1.0);
