@@ -587,16 +587,16 @@ void plot_mx2_comparison_elastic(
         // integrated over all θ
         h[i][0] = new TH1D(
             Form("h%d_int", i),
-            Form("Integrated θ∈[15,70] %s (%s)", titleSuffix, corrLabels[i]),
+            Form("Integrated #theta [15,70] %s", titleSuffix),
             nbW, W_min, W_max
         );
         // per-θ bins
         for (int b = 0; b < nBins; ++b) {
             h[i][b+1] = new TH1D(
                 Form("h%d_%d", i, b),
-                Form("θ∈[%.1f,%.1f] %s (%s)",
+                Form("#theta [%.1f,%.1f] %s",
                      thetaBins[b], thetaBins[b+1],
-                     titleSuffix, corrLabels[i]),
+                     titleSuffix),
                 nbW, W_min, W_max
             );
         }
