@@ -965,7 +965,7 @@ void plot_two_pions(
         else      gr[i]->Draw("P SAME");
     }
     // dashed zero line
-    TLine* line = new TLine(thetaBins[0],0.775**2,thetaBins[nBins],0.775**2);
+    TLine* line = new TLine(thetaBins[0],0.775*0.775,thetaBins[nBins],0.775**2);
     line->SetLineColor(kGray);
     line->SetLineStyle(2);
     line->Draw("SAME");
