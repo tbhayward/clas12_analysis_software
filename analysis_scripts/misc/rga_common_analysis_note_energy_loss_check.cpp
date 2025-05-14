@@ -650,7 +650,7 @@ void plot_mx2_comparison_elastic(
             0.005,                         // σ init
             0, 0, 0                       // polynomial terms
         );
-        fitInt[i]->SetParLimits(1, 0.8, 1.0);
+        fitInt[i]->SetParLimits(1, -0.02, 0.02);
         fitInt[i]->SetParLimits(2, 0.0,  0.1);
         fitInt[i]->SetLineColor(kBlack + i);
         fitInt[i]->SetLineWidth(1);
@@ -704,7 +704,7 @@ void plot_mx2_comparison_elastic(
                 0.05,
                 0, 0, 0
             );
-            fitBin[i][b-1]->SetParLimits(1, 0.8, 1.0);
+            fitBin[i][b-1]->SetParLimits(1, -0.02, 0.02);
             fitBin[i][b-1]->SetParLimits(2, 0.0,  0.1);
             fitBin[i][b-1]->SetLineColor(kBlack + i);
             fitBin[i][b-1]->SetLineWidth(1);
