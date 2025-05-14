@@ -1002,13 +1002,13 @@ int main(int argc, char** argv) {
     //     argv[1], argv[2], argv[3], argv[4], argv[5]
     // );
 
-    plot_eppi0_energy_loss_validation(
-        argv[1], argv[2], argv[3], argv[4], argv[5]
-    );
-
-    // plot_mx2_comparison_elastic(
+    // plot_eppi0_energy_loss_validation(
     //     argv[1], argv[2], argv[3], argv[4], argv[5]
     // );
+
+    plot_mx2_comparison_elastic(
+        argv[1], argv[2], argv[3], argv[4], argv[5]
+    );
 
     // plot_two_pions(
     //     argv[1], argv[2], argv[3], argv[4], argv[5]
