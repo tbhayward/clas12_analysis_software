@@ -998,13 +998,13 @@ int main(int argc, char** argv) {
         return 1;
     }
 
-    plot_dvcs_energy_loss_validation(
-        argv[1], argv[2], argv[3], argv[4], argv[5]
-    );
-
-    // plot_eppi0_energy_loss_validation(
+    // plot_dvcs_energy_loss_validation(
     //     argv[1], argv[2], argv[3], argv[4], argv[5]
     // );
+
+    plot_eppi0_energy_loss_validation(
+        argv[1], argv[2], argv[3], argv[4], argv[5]
+    );
 
     // plot_mx2_comparison_elastic(
     //     argv[1], argv[2], argv[3], argv[4], argv[5]
