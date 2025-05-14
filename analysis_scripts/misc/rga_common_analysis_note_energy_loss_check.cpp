@@ -719,7 +719,7 @@ void plot_mx2_comparison_elastic(
         for (int i = 0; i < nFiles; ++i) {
             legB->AddEntry(
                 h[i][b],
-                Form("%s: μ=%.3f, σ=%.3f",
+                Form("%s: #mu=%.3f, #sigma=%.3f",
                      corrLabels[i],
                      mu[i][b-1],
                      sigma[i][b-1]),
