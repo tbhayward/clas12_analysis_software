@@ -574,7 +574,7 @@ void plot_mx2_comparison_elastic(
 
     // 5) Histogram parameters for W in [0.7,1.1]
     const int    nbW     = 35;
-    const double W_min   = 0.1, W_max = 0.1;
+    const double W_min   = -0.1, W_max = 0.1;
 
     // 6) Allocate histograms and fit objects
     TH1D*   h[nFiles][nBins+1];
@@ -672,7 +672,7 @@ void plot_mx2_comparison_elastic(
         }
         leg->Draw();
     }
-    h[0][0]->GetXaxis()->SetTitle("W (GeV)");
+    h[0][0]->GetXaxis()->SetTitle("M_{x}^{2} (GeV^{2})");
     h[0][0]->GetYaxis()->SetTitle("Counts");
 
     // 10) Draw θ‐binned pads with fits
@@ -727,7 +727,7 @@ void plot_mx2_comparison_elastic(
             );
         }
         legB->Draw();
-        h[0][b]->GetXaxis()->SetTitle("W (GeV)");
+        h[0][b]->GetXaxis()->SetTitle("M_{x}^{2} (GeV^{2})");
         h[0][b]->GetYaxis()->SetTitle("Counts");
         h[0][b]->GetXaxis()->SetRangeUser(W_min, W_max);
     }
