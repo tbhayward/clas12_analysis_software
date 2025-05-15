@@ -997,6 +997,13 @@ void plot_dvcs_sebastian_energy_loss_validation(
     const char* file3,
     const char* titleSuffix
 ) {
+
+
+    std::cout << "[sebastian] nFiles = " << nFiles << "\n";
+    for (int i = 0; i < nFiles; ++i) {
+      std::cout << "[sebastian] files["<<i<<"] = \"" << files[i] << "\"\n";
+    }
+    
     const int nFiles = 3;
     const char* files[nFiles] = { file1, file2, file3 };
     const char* corrLabels[nFiles] = {
