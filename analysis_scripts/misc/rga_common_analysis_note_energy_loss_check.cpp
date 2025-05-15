@@ -1276,10 +1276,6 @@ void plot_dvcs_sebastian_energy_loss_validation(
 }
 
 int main(int argc, char** argv) {
-    std::cout << "[main] argc = " << argc << "\n";
-    for (int i = 0; i < argc; ++i) {
-      std::cout << "[main] argv["<<i<<"] = \"" << argv[i] << "\"\n";
-    }
     std::cout << std::flush; //test
     if (!(argc == 5 || argc == 6)) {
         std::cerr << "Usage: " << argv[0]
