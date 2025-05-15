@@ -1250,9 +1250,9 @@ void plot_dvcs_sebastian_energy_loss_validation(
 }
 
 int main(int argc, char** argv) {
-    if (argc != 6) {
+    if (!(argc == 5 || argc == 6)) {
         std::cerr << "Usage: " << argv[0]
-                  << " <file1.root> <file2.root> <file3.root> <file4.root> <titleSuffix>\n";
+                  << " <file1.root> <file2.root> <file3.root> (<file4.root>) <titleSuffix>\n";
         return 1;
     }
 
