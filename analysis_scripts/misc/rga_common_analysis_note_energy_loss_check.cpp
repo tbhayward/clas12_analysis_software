@@ -995,15 +995,8 @@ void plot_dvcs_sebastian_energy_loss_validation(
     const char* file1,
     const char* file2,
     const char* file3,
-    const char* titleSuffix
-) {
+    const char* titleSuffix) {
 
-
-    std::cout << "[sebastian] nFiles = " << nFiles << "\n";
-    for (int i = 0; i < nFiles; ++i) {
-      std::cout << "[sebastian] files["<<i<<"] = \"" << files[i] << "\"\n";
-    }
-    
     const int nFiles = 3;
     const char* files[nFiles] = { file1, file2, file3 };
     const char* corrLabels[nFiles] = {
@@ -1011,6 +1004,11 @@ void plot_dvcs_sebastian_energy_loss_validation(
         "SA e^{-} + #gamma",
         "SA e^{-} + #gamma, TBH p"
     };
+
+    std::cout << "[sebastian] nFiles = " << nFiles << "\n";
+    for (int i = 0; i < nFiles; ++i) {
+      std::cout << "[sebastian] files["<<i<<"] = \"" << files[i] << "\"\n";
+    }
 
     // 1) Open files & trees
     TFile* f[nFiles];
