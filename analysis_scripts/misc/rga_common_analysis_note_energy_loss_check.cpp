@@ -1538,7 +1538,7 @@ void plot_eppi0_sebastian_energy_loss_validation(
     gr[0]->GetXaxis()->SetLimits(0,90);
     gr[0]->GetYaxis()->SetRangeUser(-0.1,0.1);
 
-    TLegend* leg12 = new TLegend(0.6,0.75,0.9,0.9);
+    TLegend* leg12 = new TLegend(0.4 ,0.75,0.9,0.9);
     leg12->SetTextSize(0.03);
     for (int i = 0; i < nFiles; ++i) {
         leg12->AddEntry(gr[i], corrLabels[i], "lep");
