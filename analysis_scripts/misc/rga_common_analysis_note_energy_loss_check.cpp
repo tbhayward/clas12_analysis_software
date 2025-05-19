@@ -1568,7 +1568,7 @@ void plot_eppi0_sebastian_energy_loss_validation(
     zero->Draw("SAME");
 
     // π0‐mass line
-    TLine* pi0line = new TLine(thetaBins[0], pi0Mass, 70, pi0Mass);
+    TLine* pi0line = new TLine(thetaBins[0], pi0Mass, 35, pi0Mass);
     pi0line->SetLineColor(kGray);
     pi0line->SetLineStyle(2);
     pi0line->Draw("SAME");
@@ -1576,6 +1576,10 @@ void plot_eppi0_sebastian_energy_loss_validation(
     gr[0]->GetXaxis()->SetTitle("#theta (deg)");
     gr[0]->GetYaxis()->SetTitle("#mu (GeV)");
     gr[0]->GetXaxis()->SetLimits(thetaBins[0], 70);
+    gr[0]->GetXaxis()->SetRangeUser(
+        plotPi0Mass ? 0 : 35,
+        plotPi0Mass ? 0 : 70,
+    );
     gr[0]->GetYaxis()->SetRangeUser(
         plotPi0Mass ? 0.131 : -0.1,
         plotPi0Mass ? 0.137 : 0.1 
@@ -1633,9 +1637,7 @@ int main(int argc, char** argv) {
     //     argv[1], argv[2], argv[3], argv[4], false
     // );
 
-    plot_eppi0_sebastian_energy_loss_validation(
-        argv[1], argv[2], argv[3], argv[4], true
-    );
+    plot_eppi0_seb 
 
 
     return 0;
