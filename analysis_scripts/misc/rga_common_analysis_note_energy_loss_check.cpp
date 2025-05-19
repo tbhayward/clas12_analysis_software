@@ -1576,8 +1576,8 @@ void plot_eppi0_sebastian_energy_loss_validation(
     gr[0]->GetYaxis()->SetTitle("#mu (GeV)");
     gr[0]->GetXaxis()->SetLimits(thetaBins[0], thetaBins[nBins]);
     gr[0]->GetYaxis()->SetRangeUser(
-        plotPi0Mass ? 0.131 : rng_min,
-        plotPi0Mass ? 0.137 : rng_max
+        plotPi0Mass ? 0.131 : -0.1,
+        plotPi0Mass ? 0.137 : 0.1
     );
 
     TLegend* leg12 = new TLegend(0.20, 0.75, 0.95, 0.90);
@@ -1629,7 +1629,7 @@ int main(int argc, char** argv) {
     // );
 
     plot_eppi0_sebastian_energy_loss_validation(
-        argv[1], argv[2], argv[3], argv[4], false
+        argv[1], argv[2], argv[3], argv[4], false 
     );
 
     // plot_eppi0_sebastian_energy_loss_validation(
