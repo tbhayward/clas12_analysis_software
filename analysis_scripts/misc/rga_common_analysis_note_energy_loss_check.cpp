@@ -1547,6 +1547,13 @@ void plot_eppi0_sebastian_energy_loss_validation(
     zero->SetLineStyle(2);
     zero->Draw("SAME");
 
+    // dashed π0‐mass line at y = 0.135 GeV
+    const double pi0Mass = 0.135;
+    TLine* pi0line = new TLine(5, pi0Mass, 100, pi0Mass);
+    pi0line->SetLineColor(kBlue);
+    pi0line->SetLineStyle(2);
+    pi0line->Draw("SAME");
+
     gr[0]->GetXaxis()->SetTitle("#theta (deg)");
     gr[0]->GetYaxis()->SetTitle("#mu (GeV)");
     gr[0]->GetXaxis()->SetLimits(5,100);
