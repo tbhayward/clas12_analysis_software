@@ -1070,6 +1070,7 @@ void plot_dvcs_sebastian_energy_loss_validation(
             Form("Integrated #theta [5,65] %s", titleSuffix),
             nbMx2_hi, mx2_min, mx2_max
         );
+        h[i][0]->SetStats(false);
         // θ‐slices
         for (int b = 0; b < nBins; ++b) {
             int nb = (b < nBins/2 ? nbMx2_lo : nbMx2_hi);
