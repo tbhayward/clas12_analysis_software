@@ -1453,7 +1453,7 @@ void plot_eppi0_sebastian_energy_loss_validation(
     for (int i = 0; i < nFiles; ++i) {
         legInt->AddEntry(
             h[i][0],
-            Form("%s: μ=%.3f, σ=%.3f",
+            Form("%s: #mu=%.3f, #sigma=%.3f",
                  corrLabels[i],
                  fitInt[i]->GetParameter(1),
                  fitInt[i]->GetParameter(2)),
