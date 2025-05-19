@@ -1324,11 +1324,12 @@ void plot_eppi0_sebastian_energy_loss_validation(
     }
 
     // 2) Branch variables
-    Double_t p1_theta[nFiles], mass[nFiles];
+    Double_t p1_theta[nFiles], p2_theta[nFiles], mass[nFiles];
     Double_t eta2[nFiles], t1[nFiles], theta_pi0_pi0[nFiles];
     Double_t Emiss2[nFiles], pTmiss[nFiles];
     for (int i = 0; i < nFiles; ++i) {
         tree[i]->SetBranchAddress("p1_theta",      &p1_theta[i]);
+        tree[i]->SetBranchAddress("p2_theta",      &p2_theta[i]);
         tree[i]->SetBranchAddress(branchName,      &mass[i]);
         tree[i]->SetBranchAddress("eta2",          &eta2[i]);
         tree[i]->SetBranchAddress("t1",            &t1[i]);
@@ -1347,7 +1348,16 @@ void plot_eppi0_sebastian_energy_loss_validation(
 
     // 4) θ‐bins
     const int nBins = 10;
-    Double_t thetaBins[nBins+1] = {5,10,15,20,25,30,35,40,45,50,100};
+    Double_t thetaBins[nBins+1];
+    if (!plotPi0Mass) {
+        // original bins: [5,10],[10,15],…,[50,100]
+        Double_t def[11] = {5,10,15,20,25,30,35,40,45,50,100};
+        for (int b = 0; b <= nBins; ++b) thetaBins[b] = def[b];
+    } else {
+        // equal 10 bins from 5 to 40 deg
+        for (int b = 0; b <= nBins; ++b)
+            thetaBins[b] = 5.0 + b * (40.0 - 5.0) / nBins;
+    }
     const int nbHi = 35, nbLo = nbHi/2;
 
     // 5) Storage
@@ -1363,7 +1373,8 @@ void plot_eppi0_sebastian_energy_loss_validation(
         // integrated over all θ
         h[i][0] = new TH1D(
             Form("h%d_int", i),
-            Form("Integrated #theta [5,100] %s", titleSuffix),
+            Form("Integrated #theta [%.0f,%.0f] %s",
+                 thetaBins[0], thetaBins[nBins], titleSuffix),
             nbHi, rng_min, rng_max
         );
         h[i][0]->SetStats(false);
@@ -1372,7 +1383,7 @@ void plot_eppi0_sebastian_energy_loss_validation(
         for (int b = 0; b < nBins; ++b) {
             h[i][b+1] = new TH1D(
                 Form("h%d_%d", i, b),
-                Form("#theta [%.0f,%.0f] %s",
+                Form("#theta [%.1f,%.1f] %s",
                      thetaBins[b], thetaBins[b+1], titleSuffix),
                 (b < nBins/2 ? nbLo : nbHi),
                 rng_min, rng_max
@@ -1386,8 +1397,10 @@ void plot_eppi0_sebastian_energy_loss_validation(
         Long64_t N = tree[i]->GetEntries();
         for (Long64_t ev = 0; ev < N; ++ev) {
             tree[i]->GetEntry(ev);
-            Double_t θ = p1_theta[i] * 180.0 / TMath::Pi();
-            if (θ >= 5 && θ < 100 &&
+            // choose which theta to use
+            Double_t θ = (plotPi0Mass ? p2_theta[i] : p1_theta[i])
+                         * 180.0 / TMath::Pi();
+            if (θ >= thetaBins[0] && θ < thetaBins[nBins] &&
                 eta2[i] < 0 &&
                 t1[i]   > -1.79 &&
                 theta_pi0_pi0[i] < 0.6 &&
@@ -1435,8 +1448,8 @@ void plot_eppi0_sebastian_energy_loss_validation(
         );
         fitInt[i]->SetParameters(
             0.8 * h[i][0]->GetMaximum(),
-            (plotPi0Mass ? 0.135 : 0.0),  // centre guess
-            0.01                          // σ guess
+            (plotPi0Mass ? 0.135 : 0.0),
+            0.01
         );
         fitInt[i]->SetParLimits(1,
             plotPi0Mass ? 0.11 : -0.15,
@@ -1501,7 +1514,7 @@ void plot_eppi0_sebastian_energy_loss_validation(
             fbin->SetParLimits(2, 0.0, 0.1);
             fbin->SetLineColor(kBlack + i);
             fbin->SetLineWidth(1);
-            h[i][b]->Fit(fbin,"Q");
+            h[i][b]->Fit(fbin, "Q");
             fbin->Draw("SAME");
 
             mu[i][b-1]    = fbin->GetParameter(1);
@@ -1547,21 +1560,21 @@ void plot_eppi0_sebastian_energy_loss_validation(
     }
 
     // zero line
-    TLine* zero = new TLine(5, 0, 100, 0);
+    TLine* zero = new TLine(thetaBins[0], 0, thetaBins[nBins], 0);
     zero->SetLineColor(kGray);
     zero->SetLineStyle(2);
     zero->Draw("SAME");
 
     // π0‐mass line
     const double pi0Mass = 0.135;
-    TLine* pi0line = new TLine(5, pi0Mass, 70, pi0Mass);
+    TLine* pi0line = new TLine(thetaBins[0], pi0Mass, thetaBins[nBins], pi0Mass);
     pi0line->SetLineColor(kGray);
     pi0line->SetLineStyle(2);
     pi0line->Draw("SAME");
 
     gr[0]->GetXaxis()->SetTitle("#theta (deg)");
     gr[0]->GetYaxis()->SetTitle("#mu (GeV)");
-    gr[0]->GetXaxis()->SetLimits(5, 70);
+    gr[0]->GetXaxis()->SetLimits(thetaBins[0], thetaBins[nBins]);
     gr[0]->GetYaxis()->SetRangeUser(
         plotPi0Mass ? 0.131 : rng_min,
         plotPi0Mass ? 0.137 : rng_max
