@@ -1554,7 +1554,7 @@ void plot_eppi0_sebastian_energy_loss_validation(
 
     // π0‐mass line
     const double pi0Mass = 0.135;
-    TLine* pi0line = new TLine(5, pi0Mass, 100, pi0Mass);
+    TLine* pi0line = new TLine(5, pi0Mass, 70, pi0Mass);
     pi0line->SetLineColor(kGray);
     pi0line->SetLineStyle(2);
     pi0line->Draw("SAME");
