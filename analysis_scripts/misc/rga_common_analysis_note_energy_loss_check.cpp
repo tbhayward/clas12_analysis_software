@@ -1153,7 +1153,7 @@ void plot_dvcs_sebastian_energy_loss_validation(
         fitInt[i]->Draw("SAME");
     }
 
-    TLegend* legInt = new TLegend(0.10, 0.75, 0.9, 0.9);
+    TLegend* legInt = new TLegend(0.15, 0.75, 0.9, 0.9);
     legInt->SetTextSize(0.03);
     for (int i = 0; i < nFiles; ++i) {
         legInt->AddEntry(
@@ -1208,7 +1208,7 @@ void plot_dvcs_sebastian_energy_loss_validation(
             sigma[i][b-1] = fbin->GetParameter(2);
         }
 
-        TLegend* legB = new TLegend(0.10, 0.75, 0.9, 0.9);
+        TLegend* legB = new TLegend(0.15, 0.75, 0.9, 0.9);
         legB->SetTextSize(0.03);
         for (int i = 0; i < nFiles; ++i) {
             legB->AddEntry(
