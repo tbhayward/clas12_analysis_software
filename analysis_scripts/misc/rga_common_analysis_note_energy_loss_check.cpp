@@ -1576,8 +1576,8 @@ void plot_eppi0_sebastian_energy_loss_validation(
     gr[0]->GetXaxis()->SetTitle("#theta (deg)");
     gr[0]->GetYaxis()->SetTitle("#mu (GeV)");
     gr[0]->GetXaxis()->SetLimits(
-        plotPi0Mass ? 0 : 35,
-        plotPi0Mass ? 0 : 70
+        plotPi0Mass ? 0 : 0,
+        plotPi0Mass ? 35 : 70
     );
     gr[0]->GetYaxis()->SetRangeUser(
         plotPi0Mass ? 0.131 : -0.1,
