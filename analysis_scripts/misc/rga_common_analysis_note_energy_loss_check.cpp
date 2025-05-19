@@ -1281,7 +1281,7 @@ void plot_eppi0_sebastian_energy_loss_validation(
     const char* file2,
     const char* file3,
     const char* titleSuffix,
-    bool plotPi0Mass = false
+    bool plotPi0Mass /* = false */
 ) {
     const int nFiles = 3;
     const char* files[nFiles] = { file1, file2, file3 };
@@ -1291,16 +1291,19 @@ void plot_eppi0_sebastian_energy_loss_validation(
         "SA e^{-} + #gamma, TBH p"
     };
 
-    // choose branch name, range, axis‐label and output‐filename
+    // choose branch name, range, axis‐label and output filename
     const char* branchName  = plotPi0Mass ? "Mh_gammagamma" : "Mx2_1";
-    const double rng_min    = plotPi0Mass ?  0.11 : -0.30;
-    const double rng_max    = plotPi0Mass ?  0.16 : +0.30;
+    const double rng_min    = plotPi0Mass ? 0.11 : -0.30;
+    const double rng_max    = plotPi0Mass ? 0.16 : +0.30;
     const char* xAxisTitle  = plotPi0Mass
                               ? "M_{#gamma#gamma} (GeV)"
                               : "M_{x (ep)}^{2} (GeV^{2})";
     const char* outPrefix   = plotPi0Mass
                               ? "output/eppi0_sebastian_pi0mass_%s_energy_loss_validation.pdf"
                               : "output/eppi0_sebastian_%s_energy_loss_validation.pdf";
+
+    // how many datasets to draw
+    const int nDraw = plotPi0Mass ? 2 : nFiles;
 
     std::cout << "[sebastian] plotPi0Mass=" << plotPi0Mass
               << "  branch=" << branchName << "\n";
@@ -1343,20 +1346,19 @@ void plot_eppi0_sebastian_energy_loss_validation(
     c1->Divide(4, 3);
 
     // 4) θ‐bins
-    const int    nBins     = 10;
-    Double_t     thetaBins[nBins+1] = {5,10,15,20,25,30,35,40,45,50,100};
-    const int    nbHi  = 35;
-    const int    nbLo  = nbHi/2;
+    const int nBins = 10;
+    Double_t thetaBins[nBins+1] = {5,10,15,20,25,30,35,40,45,50,100};
+    const int nbHi = 35, nbLo = nbHi/2;
 
     // 5) Storage
     TH1D*    h[nFiles][nBins+1];
     TF1*     fitInt[nFiles];
     Double_t mu[nFiles][nBins], sigma[nFiles][nBins];
-    Double_t theta_sum[nBins]     = {0};
-    Int_t    theta_count[nBins]   = {0};
-    Double_t theta_mean[nBins]    = {0};
+    Double_t theta_sum[nBins]   = {0};
+    Int_t    theta_count[nBins] = {0};
+    Double_t theta_mean[nBins]  = {0};
 
-    // 6) Create histograms (no stats box)
+    // 6) Create histograms (no stats)
     for (int i = 0; i < nFiles; ++i) {
         // integrated over all θ
         h[i][0] = new TH1D(
@@ -1404,7 +1406,7 @@ void plot_eppi0_sebastian_energy_loss_validation(
         }
     }
 
-    // 8) Compute <θ> in each bin
+    // 8) Compute <θ>
     for (int b = 0; b < nBins; ++b) {
         theta_mean[b] = theta_count[b] > 0
                        ? theta_sum[b] / theta_count[b]
@@ -1417,40 +1419,40 @@ void plot_eppi0_sebastian_energy_loss_validation(
     Double_t globalMax = 0;
     for (int i = 0; i < nFiles; ++i)
         globalMax = std::max(globalMax, h[i][0]->GetMaximum());
-    for (int i = 0; i < nFiles; ++i) {
-        h[i][0]->SetMaximum(1.7*globalMax);
+    for (int i = 0; i < nDraw; ++i) {
+        h[i][0]->SetMaximum(1.7 * globalMax);
         h[i][0]->SetMinimum(0);
-        h[i][0]->SetMarkerStyle(20+i);
+        h[i][0]->SetMarkerStyle(20 + i);
         h[i][0]->SetMarkerSize(0.8);
-        h[i][0]->SetMarkerColor(kBlack+i);
-        if (i==0) h[i][0]->Draw("E");
-        else      h[i][0]->Draw("E SAME");
+        h[i][0]->SetMarkerColor(kBlack + i);
+        if (i == 0) h[i][0]->Draw("E");
+        else        h[i][0]->Draw("E SAME");
 
         fitInt[i] = new TF1(
-            Form("fitInt%d",i),
+            Form("fitInt%d", i),
             "gaus(0)+pol1(3)",
             rng_min, rng_max
         );
         fitInt[i]->SetParameters(
-            0.8*h[i][0]->GetMaximum(),
-            (plotPi0Mass?0.135:0.0),  // centre guess
-            0.01                       // σ guess
+            0.8 * h[i][0]->GetMaximum(),
+            (plotPi0Mass ? 0.135 : 0.0),  // centre guess
+            0.01                          // σ guess
         );
         fitInt[i]->SetParLimits(1,
-            plotPi0Mass?0.11: -0.15,
-            plotPi0Mass?0.16: +0.15
+            plotPi0Mass ? 0.11 : -0.15,
+            plotPi0Mass ? 0.16 : +0.15
         );
         fitInt[i]->SetParLimits(2, 0.0, 0.1);
-        fitInt[i]->SetLineColor(kBlack+i);
+        fitInt[i]->SetLineColor(kBlack + i);
         fitInt[i]->SetLineWidth(1);
-        h[i][0]->Fit(fitInt[i],"Q");
+        h[i][0]->Fit(fitInt[i], "Q");
         fitInt[i]->Draw("SAME");
     }
 
-    // 10) Legend (wider)
-    TLegend* legInt = new TLegend(0.20,0.75,0.95,0.90);
+    // 10) Integrated legend (wider)
+    TLegend* legInt = new TLegend(0.20, 0.75, 0.95, 0.90);
     legInt->SetTextSize(0.03);
-    for (int i = 0; i < nFiles; ++i) {
+    for (int i = 0; i < nDraw; ++i) {
         legInt->AddEntry(
             h[i][0],
             Form("%s: #mu=%.3f, #sigma=%.3f",
@@ -1472,31 +1474,32 @@ void plot_eppi0_sebastian_energy_loss_validation(
         Double_t binMax = 0;
         for (int i = 0; i < nFiles; ++i)
             binMax = std::max(binMax, h[i][b]->GetMaximum());
-        for (int i = 0; i < nFiles; ++i) {
-            h[i][b]->SetMaximum(1.7*binMax);
+
+        for (int i = 0; i < nDraw; ++i) {
+            h[i][b]->SetMaximum(1.7 * binMax);
             h[i][b]->SetMinimum(0);
-            h[i][b]->SetMarkerStyle(20+i);
+            h[i][b]->SetMarkerStyle(20 + i);
             h[i][b]->SetMarkerSize(0.8);
-            h[i][b]->SetMarkerColor(kBlack+i);
-            if (i==0) h[i][b]->Draw("E");
-            else      h[i][b]->Draw("E SAME");
+            h[i][b]->SetMarkerColor(kBlack + i);
+            if (i == 0) h[i][b]->Draw("E");
+            else        h[i][b]->Draw("E SAME");
 
             TF1* fbin = new TF1(
-                Form("fitBin%d_%d",i,b),
+                Form("fitBin%d_%d", i, b),
                 "gaus(0)+pol1(3)",
                 rng_min, rng_max
             );
             fbin->SetParameters(
-                0.8*h[i][b]->GetMaximum(),
-                (plotPi0Mass?0.135:0.0),
+                0.8 * h[i][b]->GetMaximum(),
+                (plotPi0Mass ? 0.135 : 0.0),
                 0.01
             );
             fbin->SetParLimits(1,
-                plotPi0Mass?0.11:-0.15,
-                plotPi0Mass?0.16:+0.15
+                plotPi0Mass ? 0.11 : -0.15,
+                plotPi0Mass ? 0.16 : +0.15
             );
-            fbin->SetParLimits(2,0.0,0.1);
-            fbin->SetLineColor(kBlack+i);
+            fbin->SetParLimits(2, 0.0, 0.1);
+            fbin->SetLineColor(kBlack + i);
             fbin->SetLineWidth(1);
             h[i][b]->Fit(fbin,"Q");
             fbin->Draw("SAME");
@@ -1505,9 +1508,9 @@ void plot_eppi0_sebastian_energy_loss_validation(
             sigma[i][b-1] = fbin->GetParameter(2);
         }
 
-        TLegend* legB = new TLegend(0.20,0.75,0.95,0.90);
+        TLegend* legB = new TLegend(0.20, 0.75, 0.95, 0.90);
         legB->SetTextSize(0.03);
-        for (int i = 0; i < nFiles; ++i) {
+        for (int i = 0; i < nDraw; ++i) {
             legB->AddEntry(
                 h[i][b],
                 Form("%s: #mu=%.3f, #sigma=%.3f",
@@ -1527,7 +1530,7 @@ void plot_eppi0_sebastian_energy_loss_validation(
     c1->cd(12)->SetLeftMargin(0.20);
     c1->cd(12)->SetBottomMargin(0.15);
     TGraph* gr[nFiles];
-    for (int i = 0; i < nFiles; ++i) {
+    for (int i = 0; i < nDraw; ++i) {
         std::vector<double> xs, ys;
         for (int b = 0; b < nBins; ++b) {
             if (theta_count[b] > 0) {
@@ -1536,18 +1539,20 @@ void plot_eppi0_sebastian_energy_loss_validation(
             }
         }
         gr[i] = new TGraph(xs.size(), xs.data(), ys.data());
-        gr[i]->SetMarkerStyle(20+i);
+        gr[i]->SetMarkerStyle(20 + i);
         gr[i]->SetMarkerSize(0.8);
-        gr[i]->SetMarkerColor(kBlack+i);
-        if (i==0) gr[i]->Draw("AP");
-        else      gr[i]->Draw("P SAME");
+        gr[i]->SetMarkerColor(kBlack + i);
+        if (i == 0) gr[i]->Draw("AP");
+        else        gr[i]->Draw("P SAME");
     }
-    TLine* zero = new TLine(5,0,100,0);
+
+    // zero line
+    TLine* zero = new TLine(5, 0, 100, 0);
     zero->SetLineColor(kGray);
     zero->SetLineStyle(2);
     zero->Draw("SAME");
 
-    // dashed π0‐mass line at y = 0.135 GeV
+    // π0‐mass line
     const double pi0Mass = 0.135;
     TLine* pi0line = new TLine(5, pi0Mass, 100, pi0Mass);
     pi0line->SetLineColor(kGray);
@@ -1556,15 +1561,15 @@ void plot_eppi0_sebastian_energy_loss_validation(
 
     gr[0]->GetXaxis()->SetTitle("#theta (deg)");
     gr[0]->GetYaxis()->SetTitle("#mu (GeV)");
-    gr[0]->GetXaxis()->SetLimits(5,70);
+    gr[0]->GetXaxis()->SetLimits(5, 70);
     gr[0]->GetYaxis()->SetRangeUser(
-        plotPi0Mass?0.131: rng_min,
-        plotPi0Mass?0.137: rng_max
+        plotPi0Mass ? 0.131 : rng_min,
+        plotPi0Mass ? 0.137 : rng_max
     );
 
-    TLegend* leg12 = new TLegend(0.20,0.75,0.95,0.90);
+    TLegend* leg12 = new TLegend(0.20, 0.75, 0.95, 0.90);
     leg12->SetTextSize(0.03);
-    for (int i = 0; i < nFiles; ++i) {
+    for (int i = 0; i < nDraw; ++i) {
         leg12->AddEntry(gr[i], corrLabels[i], "lep");
     }
     leg12->Draw();
