@@ -1510,7 +1510,7 @@ void plot_eppi0_sebastian_energy_loss_validation(
         for (int i = 0; i < nFiles; ++i) {
             legB->AddEntry(
                 h[i][b],
-                Form("%s: μ=%.3f, σ=%.3f",
+                Form("%s: #mu=%.3f, #sigma=%.3f",
                      corrLabels[i],
                      mu[i][b-1],
                      sigma[i][b-1]),
@@ -1551,8 +1551,8 @@ void plot_eppi0_sebastian_energy_loss_validation(
     gr[0]->GetYaxis()->SetTitle("#mu (GeV)");
     gr[0]->GetXaxis()->SetLimits(5,100);
     gr[0]->GetYaxis()->SetRangeUser(
-        plotPi0Mass?0.11: rng_min,
-        plotPi0Mass?0.16: rng_max
+        plotPi0Mass?0.13: rng_min,
+        plotPi0Mass?0.14: rng_max
     );
 
     TLegend* leg12 = new TLegend(0.20,0.75,0.95,0.90);
