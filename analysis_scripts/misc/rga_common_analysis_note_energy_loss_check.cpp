@@ -1542,7 +1542,7 @@ void plot_eppi0_sebastian_energy_loss_validation(
         if (i==0) gr[i]->Draw("AP");
         else      gr[i]->Draw("P SAME");
     }
-    TLine* zero = new TLine(5,0,100,0);
+    TLine* zero = new TLine(5,0,70,0);
     zero->SetLineColor(kGray);
     zero->SetLineStyle(2);
     zero->Draw("SAME");
@@ -1550,7 +1550,7 @@ void plot_eppi0_sebastian_energy_loss_validation(
     // dashed π0‐mass line at y = 0.135 GeV
     const double pi0Mass = 0.135;
     TLine* pi0line = new TLine(5, pi0Mass, 100, pi0Mass);
-    pi0line->SetLineColor(kBlue);
+    pi0line->SetLineColor(kGray);
     pi0line->SetLineStyle(2);
     pi0line->Draw("SAME");
 
