@@ -1542,7 +1542,7 @@ void plot_eppi0_sebastian_energy_loss_validation(
         if (i==0) gr[i]->Draw("AP");
         else      gr[i]->Draw("P SAME");
     }
-    TLine* zero = new TLine(5,0,70,0);
+    TLine* zero = new TLine(5,0,100,0);
     zero->SetLineColor(kGray);
     zero->SetLineStyle(2);
     zero->Draw("SAME");
@@ -1556,7 +1556,7 @@ void plot_eppi0_sebastian_energy_loss_validation(
 
     gr[0]->GetXaxis()->SetTitle("#theta (deg)");
     gr[0]->GetYaxis()->SetTitle("#mu (GeV)");
-    gr[0]->GetXaxis()->SetLimits(5,100);
+    gr[0]->GetXaxis()->SetLimits(5,70);
     gr[0]->GetYaxis()->SetRangeUser(
         plotPi0Mass?0.131: rng_min,
         plotPi0Mass?0.137: rng_max
