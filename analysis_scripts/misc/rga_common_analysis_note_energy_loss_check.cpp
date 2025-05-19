@@ -1389,7 +1389,7 @@ void plot_eppi0_sebastian_energy_loss_validation(
             Double_t θ = p1_theta[i] * 180.0 / TMath::Pi();
             if (θ >= 5 && θ < 100 &&
                 eta2[i] < 0 &&
-                t1[i]   > -2 &&
+                t1[i]   > -1.79 &&
                 theta_pi0_pi0[i] < 0.6 &&
                 Emiss2[i] < 0.5 &&
                 pTmiss[i] < 0.125)
