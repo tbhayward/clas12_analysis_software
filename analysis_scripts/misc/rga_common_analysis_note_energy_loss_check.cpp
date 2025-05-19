@@ -1354,9 +1354,9 @@ void plot_eppi0_sebastian_energy_loss_validation(
         Double_t def[11] = {5,10,15,20,25,30,35,40,45,50,100};
         for (int b = 0; b <= nBins; ++b) thetaBins[b] = def[b];
     } else {
-        // equal 10 bins from 5 to 40 deg
+        // equal 10 bins from 5 to 32 deg
         for (int b = 0; b <= nBins; ++b)
-            thetaBins[b] = 5.0 + b * (40.0 - 5.0) / nBins;
+            thetaBins[b] = 5.0 + b * (32.0 - 5.0) / nBins;
     }
     const int nbHi = 35, nbLo = nbHi/2;
 
