@@ -1560,14 +1560,14 @@ void plot_eppi0_sebastian_energy_loss_validation(
         else        gr[i]->Draw("P SAME");
     }
 
+    const double pi0Mass = 0.135;
     // zero line
-    TLine* zero = new TLine(thetaBins[0], 0, thetaBins[nBins], 0);
+    TLine* zero = new TLine(thetaBins[0], pi0Mass*pi0Mass, thetaBins[nBins], pi0Mass*pi0Mass);
     zero->SetLineColor(kGray);
     zero->SetLineStyle(2);
     zero->Draw("SAME");
 
     // π0‐mass line
-    const double pi0Mass = 0.135;
     TLine* pi0line = new TLine(thetaBins[0], pi0Mass, thetaBins[nBins], pi0Mass);
     pi0line->SetLineColor(kGray);
     pi0line->SetLineStyle(2);
