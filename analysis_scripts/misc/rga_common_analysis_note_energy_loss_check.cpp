@@ -1256,7 +1256,7 @@ void plot_dvcs_sebastian_energy_loss_validation(
     gr[0]->GetXaxis()->SetLimits(0,90);
     gr[0]->GetYaxis()->SetRangeUser(-0.1,0.1);
 
-    TLegend* leg12 = new TLegend(0.6,0.75,0.9,0.9);
+    TLegend* leg12 = new TLegend(0.4,0.75,0.9,0.9);
     leg12->SetTextSize(0.03);
     for (int i = 0; i < nFiles; ++i) {
         leg12->AddEntry(gr[i], corrLabels[i], "lep");
@@ -1282,8 +1282,7 @@ void plot_eppi0_sebastian_energy_loss_validation(
     const char* file2,
     const char* file3,
     const char* titleSuffix,
-    bool plotPi0Mass /* = false */
-) {
+    bool plotPi0Mass /* = false */) {
     const int nFiles = 3;
     const char* files[nFiles] = { file1, file2, file3 };
     const char* corrLabels[nFiles] = {
