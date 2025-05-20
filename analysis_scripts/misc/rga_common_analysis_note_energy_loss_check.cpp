@@ -1292,12 +1292,12 @@ void plot_eppi0_sebastian_energy_loss_validation(
     };
 
     // choose branch name, range, axis‐label and output filename
-    const char* branchName  = plotPi0Mass ? "Mh_gammagamma" : "Mx2_1";
-    const double rng_min    = plotPi0Mass ? 0.11 : -0.30;
-    const double rng_max    = plotPi0Mass ? 0.16 : +0.30;
+    const char* branchName  = plotPi0Mass ? "Mh_gammagamma" : "Mx2_2";
+    const double rng_min    = plotPi0Mass ? 0.11 : 0.40;
+    const double rng_max    = plotPi0Mass ? 0.16 : 1.00;
     const char* xAxisTitle  = plotPi0Mass
                               ? "M_{#gamma#gamma} (GeV)"
-                              : "M_{x (ep)}^{2} (GeV^{2})";
+                              : "M_{x (e#pi^{0})}^{2} (GeV^{2})";
     const char* outPrefix   = plotPi0Mass
                               ? "output/eppi0_sebastian_pi0mass_%s_energy_loss_validation.pdf"
                               : "output/eppi0_sebastian_%s_energy_loss_validation.pdf";
@@ -1448,12 +1448,12 @@ void plot_eppi0_sebastian_energy_loss_validation(
         );
         fitInt[i]->SetParameters(
             0.8 * h[i][0]->GetMaximum(),
-            (plotPi0Mass ? 0.135 : 0.0),
+            (plotPi0Mass ? 0.135 : 0.88),
             0.01
         );
         fitInt[i]->SetParLimits(1,
-            plotPi0Mass ? 0.11 : -0.15,
-            plotPi0Mass ? 0.16 : +0.15
+            plotPi0Mass ? 0.11 : 0.45,
+            plotPi0Mass ? 0.16 : 1.00
         );
         fitInt[i]->SetParLimits(2, 0.0, 0.1);
         fitInt[i]->SetLineColor(kBlack + i);
@@ -1508,8 +1508,8 @@ void plot_eppi0_sebastian_energy_loss_validation(
                 0.01
             );
             fbin->SetParLimits(1,
-                plotPi0Mass ? 0.11 : -0.15,
-                plotPi0Mass ? 0.16 : +0.15
+                plotPi0Mass ? 0.11 : 0.45,
+                plotPi0Mass ? 0.16 : 1.00
             );
             fbin->SetParLimits(2, 0.0, 0.1);
             fbin->SetLineColor(kBlack + i);
@@ -1561,7 +1561,7 @@ void plot_eppi0_sebastian_energy_loss_validation(
 
     const double pi0Mass = 0.135;
     // zero line
-    TLine* zero = new TLine(0, pi0Mass*pi0Mass, 70, pi0Mass*pi0Mass);
+    TLine* zero = new TLine(0, 0.937*0.937, 70, 0.937*0.937);
     zero->SetLineColor(kGray);
     zero->SetLineStyle(2);
     zero->Draw("SAME");
@@ -1579,8 +1579,8 @@ void plot_eppi0_sebastian_energy_loss_validation(
         plotPi0Mass ? 35 : 70
     );
     gr[0]->GetYaxis()->SetRangeUser(
-        plotPi0Mass ? 0.131 : -0.1,
-        plotPi0Mass ? 0.139 : 0.1 
+        plotPi0Mass ? 0.131 : 0.4,
+        plotPi0Mass ? 0.139 : 1.0 
     );
 
     TLegend* leg12 = new TLegend(0.20, 0.75, 0.95, 0.90);
