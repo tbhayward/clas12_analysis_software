@@ -1564,7 +1564,7 @@ void plot_eppi0_sebastian_energy_loss_validation(
 
     const double pi0Mass = 0.135;
     // zero line
-    TLine* zero = new TLine(0, 0.937*0.937, 70, 0.937*0.937);
+    TLine* zero = new TLine(0, 0.937*0.937, 35, 0.937*0.937);
     zero->SetLineColor(kGray);
     zero->SetLineStyle(2);
     zero->Draw("SAME");
