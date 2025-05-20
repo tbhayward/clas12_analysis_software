@@ -1361,7 +1361,7 @@ void plot_eppi0_sebastian_energy_loss_validation(
         for (int b = 0; b <= nBins; ++b)
             thetaBins[b] = 5.0 + b * (32.0 - 5.0) / nBins;
     }
-    const int nbHi = 35/2, nbLo = nbHi/2;
+    const int nbHi = 35/2, nbLo = 35/2;
 
     // 5) Storage
     TH1D*    h[nFiles][nBins+1];
