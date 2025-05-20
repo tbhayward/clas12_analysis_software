@@ -1294,7 +1294,7 @@ void plot_eppi0_sebastian_energy_loss_validation(
     // choose branch name, range, axis‐label and output filename
     const char* branchName  = plotPi0Mass ? "Mh_gammagamma" : "Mx2_2";
     const double rng_min    = plotPi0Mass ? 0.11 : 0.40;
-    const double rng_max    = plotPi0Mass ? 0.16 : 1.20;
+    const double rng_max    = plotPi0Mass ? 0.16 : 1.40;
     const char* xAxisTitle  = plotPi0Mass
                               ? "M_{#gamma#gamma} (GeV)"
                               : "M_{x (e#pi^{0})}^{2} (GeV^{2})";
@@ -1361,7 +1361,7 @@ void plot_eppi0_sebastian_energy_loss_validation(
         for (int b = 0; b <= nBins; ++b)
             thetaBins[b] = 5.0 + b * (32.0 - 5.0) / nBins;
     }
-    const int nbHi = 35, nbLo = nbHi/2;
+    const int nbHi = 35/2, nbLo = nbHi/2;
 
     // 5) Storage
     TH1D*    h[nFiles][nBins+1];
