@@ -1583,7 +1583,7 @@ void plot_eppi0_sebastian_energy_loss_validation(
     );
     gr[0]->GetYaxis()->SetRangeUser(
         plotPi0Mass ? 0.131 : 0.4,
-        plotPi0Mass ? 0.139 : 1.0 
+        plotPi0Mass ? 0.139 : 1.4 
     );
 
     TLegend* leg12 = new TLegend(0.20, 0.75, 0.95, 0.90);
