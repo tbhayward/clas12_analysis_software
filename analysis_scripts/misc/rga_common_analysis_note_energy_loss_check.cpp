@@ -1294,7 +1294,7 @@ void plot_eppi0_sebastian_energy_loss_validation(
     // choose branch name, range, axis‐label and output filename
     const char* branchName  = plotPi0Mass ? "Mh_gammagamma" : "Mx2_2";
     const double rng_min    = plotPi0Mass ? 0.11 : 0.40;
-    const double rng_max    = plotPi0Mass ? 0.16 : 1.00;
+    const double rng_max    = plotPi0Mass ? 0.16 : 1.20;
     const char* xAxisTitle  = plotPi0Mass
                               ? "M_{#gamma#gamma} (GeV)"
                               : "M_{x (e#pi^{0})}^{2} (GeV^{2})";
@@ -1456,7 +1456,7 @@ void plot_eppi0_sebastian_energy_loss_validation(
         );
         fitInt[i]->SetParLimits(1,
             plotPi0Mass ? 0.11 : 0.45,
-            plotPi0Mass ? 0.16 : 1.00
+            plotPi0Mass ? 0.16 : 1.20
         );
         fitInt[i]->SetParLimits(2, 0.0, 0.1);
         fitInt[i]->SetLineColor(kBlack + i);
@@ -1512,7 +1512,7 @@ void plot_eppi0_sebastian_energy_loss_validation(
             );
             fbin->SetParLimits(1,
                 plotPi0Mass ? 0.11 : 0.45,
-                plotPi0Mass ? 0.16 : 1.00
+                plotPi0Mass ? 0.16 : 1.20
             );
             fbin->SetParLimits(2, 0.0, 0.1);
             fbin->SetLineColor(kBlack + i);
@@ -1582,8 +1582,8 @@ void plot_eppi0_sebastian_energy_loss_validation(
         plotPi0Mass ? 35 : 35
     );
     gr[0]->GetYaxis()->SetRangeUser(
-        plotPi0Mass ? 0.131 : 0.4,
-        plotPi0Mass ? 0.139 : 1.4 
+        plotPi0Mass ? 0.131 : 0.5,
+        plotPi0Mass ? 0.139 : 1.3 
     );
 
     TLegend* leg12 = new TLegend(0.20, 0.75, 0.95, 0.90);
