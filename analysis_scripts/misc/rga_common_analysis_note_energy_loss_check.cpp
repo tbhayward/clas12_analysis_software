@@ -1351,8 +1351,11 @@ void plot_eppi0_sebastian_energy_loss_validation(
     Double_t thetaBins[nBins+1];
     if (!plotPi0Mass) {
         // original bins: [5,10],[10,15],…,[50,100]
-        Double_t def[11] = {5,10,15,20,25,30,35,40,45,50,100};
-        for (int b = 0; b <= nBins; ++b) thetaBins[b] = def[b];
+        // Double_t def[11] = {5,10,15,20,25,30,35,40,45,50,100};
+        // for (int b = 0; b <= nBins; ++b) thetaBins[b] = def[b];
+        // equal 10 bins from 5 to 32 deg
+        for (int b = 0; b <= nBins; ++b)
+            thetaBins[b] = 5.0 + b * (32.0 - 5.0) / nBins;
     } else {
         // equal 10 bins from 5 to 32 deg
         for (int b = 0; b <= nBins; ++b)
@@ -1504,7 +1507,7 @@ void plot_eppi0_sebastian_energy_loss_validation(
             );
             fbin->SetParameters(
                 0.8 * h[i][b]->GetMaximum(),
-                (plotPi0Mass ? 0.135 : 0.0),
+                (plotPi0Mass ? 0.135 : 0.88),
                 0.01
             );
             fbin->SetParLimits(1,
@@ -1576,7 +1579,7 @@ void plot_eppi0_sebastian_energy_loss_validation(
     gr[0]->GetYaxis()->SetTitle("#mu (GeV)");
     gr[0]->GetXaxis()->SetLimits(
         plotPi0Mass ? 0 : 0,
-        plotPi0Mass ? 35 : 70
+        plotPi0Mass ? 35 : 35
     );
     gr[0]->GetYaxis()->SetRangeUser(
         plotPi0Mass ? 0.131 : 0.4,
