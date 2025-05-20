@@ -1452,7 +1452,7 @@ void plot_eppi0_sebastian_energy_loss_validation(
         fitInt[i]->SetParameters(
             0.8 * h[i][0]->GetMaximum(),
             (plotPi0Mass ? 0.135 : 0.88),
-            0.01
+            0.1
         );
         fitInt[i]->SetParLimits(1,
             plotPi0Mass ? 0.11 : 0.45,
@@ -1508,7 +1508,7 @@ void plot_eppi0_sebastian_energy_loss_validation(
             fbin->SetParameters(
                 0.8 * h[i][b]->GetMaximum(),
                 (plotPi0Mass ? 0.135 : 0.88),
-                0.01
+                0.1
             );
             fbin->SetParLimits(1,
                 plotPi0Mass ? 0.11 : 0.45,
