@@ -1632,7 +1632,7 @@ void plot_exclusive_pip_energy_loss_validation(
     // 2) Branch variables: only p1_theta and Mx2
     Double_t p1_theta[nFiles], Mx2[nFiles];
     for (int i = 0; i < nFiles; ++i) {
-        tree[i]->SetBranchAddress("p1_theta", &p1_theta[i]);
+        tree[i]->SetBranchAddress("p_theta", &p1_theta[i]);
         tree[i]->SetBranchAddress("Mx2",       &Mx2[i]);
     }
 
