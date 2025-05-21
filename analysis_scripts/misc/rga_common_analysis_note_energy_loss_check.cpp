@@ -1607,8 +1607,7 @@ void plot_eppi0_sebastian_energy_loss_validation(
 void plot_exclusive_pip_energy_loss_validation(
     const char* file1,
     const char* file2,
-    const char* titleSuffix)
-{
+    const char* titleSuffix){
     // 0) Labels for our two datasets
     const int nFiles = 2;
     const char* files[nFiles] = { file1, file2 };
@@ -1905,7 +1904,7 @@ int main(int argc, char** argv) {
 
     /////////
 
-    plot_dvcs_sebastian_energy_loss_validation(
+    plot_exclusive_pip_energy_loss_validation(
         argv[1], argv[2], argv[3]
     );
 
