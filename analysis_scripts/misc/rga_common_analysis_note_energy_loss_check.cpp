@@ -2128,7 +2128,7 @@ void plot_exclusive_twopion_energy_loss_validation(
     gr[0]->GetXaxis()->SetLimits(5, 40);
     gr[0]->GetYaxis()->SetRangeUser(0.75, 1.05);
 
-    TLegend* leg12 = new TLegend(0.45, 0.75, 0.9, 0.9);
+    TLegend* leg12 = new TLegend(0.35, 0.75, 0.9, 0.9);
     leg12->SetTextSize(0.03);
     for (int i = 0; i < nFiles; ++i) {
         leg12->AddEntry(gr[i], corrLabels[i], "lep");
