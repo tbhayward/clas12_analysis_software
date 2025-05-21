@@ -271,12 +271,12 @@ public class analysis_fitter extends GenericKinematicFitter {
                     // check for pion PID
 
                     float[] momentum = {px, py, pz};
-//                    if (pid == 211) {
-//                        energy_loss_corrections.stefan_piplus_energy_loss_corrections(particle_Index, momentum, rec_Bank, run_Bank, track_Bank);
-//                    } else if (pid == -211) {
-//                        energy_loss_corrections.krishna_energy_loss_corrections(particle_Index, momentum, rec_Bank, run_Bank);
-//                    }
-//                    momentum_corrections.momentum_corrections(momentum, sector, 1, runPeriod, runPeriod, 0, 0);
+                    if (pid == 211) {
+                        energy_loss_corrections.stefan_piplus_energy_loss_corrections(particle_Index, momentum, rec_Bank, run_Bank, track_Bank);
+                    } else if (pid == -211) {
+                        energy_loss_corrections.krishna_energy_loss_corrections(particle_Index, momentum, rec_Bank, run_Bank);
+                    }
+                    momentum_corrections.momentum_corrections(momentum, sector, 1, runPeriod, runPeriod, 0, 0);
                     px = momentum[0];
                     py = momentum[1];
                     pz = momentum[2];
