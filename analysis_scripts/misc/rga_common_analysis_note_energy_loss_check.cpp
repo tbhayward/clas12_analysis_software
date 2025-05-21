@@ -1854,7 +1854,7 @@ void plot_exclusive_pip_energy_loss_validation(
     gr[0]->GetXaxis()->SetTitle("#theta (deg)");
     gr[0]->GetYaxis()->SetTitle("#mu (GeV^{2})");
     gr[0]->GetXaxis()->SetLimits(5, 40);
-    gr[0]->GetYaxis()->SetRangeUser(0.75, 1.25);
+    gr[0]->GetYaxis()->SetRangeUser(0.75, 1.05);
 
     TLegend* leg12 = new TLegend(0.6, 0.75, 0.9, 0.9);
     leg12->SetTextSize(0.03);
