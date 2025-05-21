@@ -1607,8 +1607,9 @@ void plot_eppi0_sebastian_energy_loss_validation(
 void plot_exclusive_pip_energy_loss_validation(
     const char* file1,
     const char* file2,
-    const char* titleSuffix){
-    // 0) Labels for our two datasets
+    const char* titleSuffix)
+{
+    // labels for our two datasets
     const int nFiles = 2;
     const char* files[nFiles] = { file1, file2 };
     const char* corrLabels[nFiles] = {
@@ -1616,27 +1617,27 @@ void plot_exclusive_pip_energy_loss_validation(
         "#pi^{+} energy loss"
     };
 
-    // 1) Open files & trees
+    // 1) open files & trees
     TFile* f[nFiles];
     TTree* tree[nFiles];
     for (int i = 0; i < nFiles; ++i) {
         f[i]    = TFile::Open(files[i]);
         tree[i] = f[i] ? (TTree*)f[i]->Get("PhysicsEvents") : nullptr;
         if (!tree[i]) {
-            std::cerr << "[exclusive π+] ERROR opening PhysicsEvents in "
+            std::cerr << "[exclusive π⁺] ERROR opening PhysicsEvents in "
                       << files[i] << "\n";
             return;
         }
     }
 
-    // 2) Branch variables: only p1_theta and Mx2
-    Double_t p1_theta[nFiles], Mx2[nFiles];
+    // 2) branch variables: use p_theta now
+    Double_t p_theta[nFiles], Mx2[nFiles];
     for (int i = 0; i < nFiles; ++i) {
-        tree[i]->SetBranchAddress("p_theta", &p1_theta[i]);
-        tree[i]->SetBranchAddress("Mx2",       &Mx2[i]);
+        tree[i]->SetBranchAddress("p_theta", &p_theta[i]);
+        tree[i]->SetBranchAddress("Mx2",     &Mx2[i]);
     }
 
-    // 3) Make a 4×3 canvas
+    // 3) make canvas & divide
     TCanvas* c1 = new TCanvas(
         "c1",
         "exclusive #pi^{+} Energy Loss Validation",
@@ -1644,17 +1645,20 @@ void plot_exclusive_pip_energy_loss_validation(
     );
     c1->Divide(4, 3);
 
-    // 4) θ‐bin edges
+    // 4) θ-bins from 5 to 40° in 10 equal bins
     const int nBins = 10;
-    Double_t thetaBins[nBins+1] = {5,15,20,25,30,35,40,45,50,60,100};
+    Double_t thetaBins[nBins+1];
+    for (int b = 0; b <= nBins; ++b) {
+        thetaBins[b] = 5.0 + b * 3.5;  // (40 - 5) / 10 = 3.5
+    }
 
-    // 5) Mx2 histogram parameters
+    // 5) Mx2 histogram params
     const int    nbHi  = 35;
-    const int    nbLo  = nbHi/2;   // 17
+    const int    nbLo  = nbHi/2; // 17
     const double xMin  = 0.5;
     const double xMax  = 1.2;
 
-    // 6) Storage
+    // 6) storage
     TH1D*    h[nFiles][nBins+1];
     TF1*     fitInt[nFiles];
     Double_t mu[nFiles][nBins], sigma[nFiles][nBins];
@@ -1662,36 +1666,36 @@ void plot_exclusive_pip_energy_loss_validation(
     Int_t    theta_count[nBins] = {0};
     Double_t theta_mean[nBins]  = {0};
 
-    // 7) Create histograms (stats box off)
+    // 7) create histograms (no stats box)
     for (int i = 0; i < nFiles; ++i) {
-        // integrated over θ∈[5,65]
+        // integrated over θ
         h[i][0] = new TH1D(
-            Form("h%d_int",i),
-            Form("Integrated #theta [5,65] %s (exclusive #pi^{+})", titleSuffix),
+            Form("h%d_int", i),
+            Form("Integrated #theta [5,40] %s (exclusive #pi^{+})", titleSuffix),
             nbHi, xMin, xMax
         );
         h[i][0]->SetStats(false);
 
-        // per‐θ slices
+        // per-θ slices
         for (int b = 0; b < nBins; ++b) {
-            int nb = (b < nBins/2 ? nbLo : nbHi);
             h[i][b+1] = new TH1D(
-                Form("h%d_%d",i,b),
-                Form("#theta [%.0f,%.0f] %s (exclusive #pi^{+})",
+                Form("h%d_%d", i, b),
+                Form("#theta [%.1f,%.1f] %s (exclusive #pi^{+})",
                      thetaBins[b], thetaBins[b+1], titleSuffix),
-                nb, xMin, xMax
+                (b < nBins/2 ? nbLo : nbHi),
+                xMin, xMax
             );
             h[i][b+1]->SetStats(false);
         }
     }
 
-    // 8) Fill & accumulate θ
+    // 8) fill & accumulate θ sums
     for (int i = 0; i < nFiles; ++i) {
         Long64_t N = tree[i]->GetEntries();
         for (Long64_t ev = 0; ev < N; ++ev) {
             tree[i]->GetEntry(ev);
-            double θ = p1_theta[i]*180.0/TMath::Pi();
-            if (θ < 5 || θ >= 65) continue;
+            double θ = p_theta[i] * 180.0 / TMath::Pi();
+            if (θ < 5.0 || θ >= 40.0) continue;
 
             h[i][0]->Fill(Mx2[i]);
             for (int b = 0; b < nBins; ++b) {
@@ -1704,48 +1708,48 @@ void plot_exclusive_pip_energy_loss_validation(
         }
     }
 
-    // 9) Compute <θ> per bin
+    // 9) compute <θ>
     for (int b = 0; b < nBins; ++b) {
-        theta_mean[b] = theta_count[b]>0
-                       ? theta_sum[b]/theta_count[b]
+        theta_mean[b] = (theta_count[b] > 0)
+                       ? theta_sum[b] / theta_count[b]
                        : NAN;
     }
 
-    // 10) Draw & fit the integrated pad (pad 1)
+    // 10) draw & fit integrated pad (1)
     c1->cd(1)->SetLeftMargin(0.15);
     c1->cd(1)->SetBottomMargin(0.15);
     double globalMax = 0;
     for (int i = 0; i < nFiles; ++i)
         globalMax = std::max(globalMax, h[i][0]->GetMaximum());
     for (int i = 0; i < nFiles; ++i) {
-        h[i][0]->SetMaximum(1.7*globalMax);
+        h[i][0]->SetMaximum(1.7 * globalMax);
         h[i][0]->SetMinimum(0);
-        h[i][0]->SetMarkerStyle(20+i);
+        h[i][0]->SetMarkerStyle(20 + i);
         h[i][0]->SetMarkerSize(0.8);
-        h[i][0]->SetMarkerColor(kBlack+i);
-        if (i==0) h[i][0]->Draw("E");
-        else      h[i][0]->Draw("E SAME");
+        h[i][0]->SetMarkerColor(kBlack + i);
+        if (i == 0) h[i][0]->Draw("E");
+        else        h[i][0]->Draw("E SAME");
 
         fitInt[i] = new TF1(
-            Form("fitInt%d",i),
+            Form("fitInt%d", i),
             "gaus(0)+pol1(3)",
             xMin, xMax
         );
         fitInt[i]->SetParameters(
-            0.8*h[i][0]->GetMaximum(),
-            (xMin+xMax)/2.0,  // μ init
-            0.1               // σ init
+            0.8 * h[i][0]->GetMaximum(),
+            (xMin + xMax)/2.0,  // μ init
+            0.1                 // σ init
         );
         fitInt[i]->SetParLimits(1, xMin, xMax);
-        fitInt[i]->SetParLimits(2, 0.0, (xMax-xMin)/2.0);
-        fitInt[i]->SetLineColor(kBlack+i);
+        fitInt[i]->SetParLimits(2, 0.0, (xMax - xMin)/2.0);
+        fitInt[i]->SetLineColor(kBlack + i);
         fitInt[i]->SetLineWidth(1);
-        h[i][0]->Fit(fitInt[i],"Q");
+        h[i][0]->Fit(fitInt[i], "Q");
         fitInt[i]->Draw("SAME");
     }
 
-    // 11) Integrated legend
-    TLegend* legInt = new TLegend(0.25,0.75,0.9,0.9);
+    // 11) integrated legend
+    TLegend* legInt = new TLegend(0.25, 0.75, 0.9, 0.9);
     legInt->SetTextSize(0.03);
     for (int i = 0; i < nFiles; ++i) {
         legInt->AddEntry(
@@ -1761,96 +1765,105 @@ void plot_exclusive_pip_energy_loss_validation(
     h[0][0]->GetXaxis()->SetTitle("M_{x}^{2} (GeV^{2})");
     h[0][0]->GetYaxis()->SetTitle("Counts");
 
-    // 12) θ‐binned pads & fits (pads 2–11)
+    // 12) θ-binned pads & fits (2–11)
     for (int b = 1; b <= nBins; ++b) {
         c1->cd(b+1)->SetLeftMargin(0.15);
         c1->cd(b+1)->SetBottomMargin(0.15);
-        double binMax=0;
-        for (int i=0;i<nFiles;++i)
+        double binMax = 0;
+        for (int i = 0; i < nFiles; ++i)
             binMax = std::max(binMax, h[i][b]->GetMaximum());
-        for (int i=0;i<nFiles;++i) {
-            h[i][b]->SetMaximum(1.7*binMax);
+        for (int i = 0; i < nFiles; ++i) {
+            h[i][b]->SetMaximum(1.7 * binMax);
             h[i][b]->SetMinimum(0);
-            h[i][b]->SetMarkerStyle(20+i);
+            h[i][b]->SetMarkerStyle(20 + i);
             h[i][b]->SetMarkerSize(0.8);
-            h[i][b]->SetMarkerColor(kBlack+i);
-            if (i==0) h[i][b]->Draw("E");
-            else      h[i][b]->Draw("E SAME");
+            h[i][b]->SetMarkerColor(kBlack + i);
+            if (i == 0) h[i][b]->Draw("E");
+            else        h[i][b]->Draw("E SAME");
 
             TF1* fbin = new TF1(
-                Form("fitBin%d_%d",i,b),
+                Form("fitBin%d_%d", i, b),
                 "gaus(0)+pol1(3)",
                 xMin, xMax
             );
             fbin->SetParameters(
-                0.8*h[i][b]->GetMaximum(),
-                (xMin+xMax)/2.0,
+                0.8 * h[i][b]->GetMaximum(),
+                (xMin + xMax)/2.0,
                 0.1
             );
             fbin->SetParLimits(1, xMin, xMax);
-            fbin->SetParLimits(2, 0.0, (xMax-xMin)/2.0);
-            fbin->SetLineColor(kBlack+i);
+            fbin->SetParLimits(2, 0.0, (xMax - xMin)/2.0);
+            fbin->SetLineColor(kBlack + i);
             fbin->SetLineWidth(1);
-            h[i][b]->Fit(fbin,"Q");
+            h[i][b]->Fit(fbin, "Q");
             fbin->Draw("SAME");
+            mu[i][b-1]    = fbin->GetParameter(1);
+            sigma[i][b-1] = fbin->GetParameter(2);
         }
 
-        TLegend* legB = new TLegend(0.25,0.75,0.9,0.9);
+        TLegend* legB = new TLegend(0.25, 0.75, 0.9, 0.9);
         legB->SetTextSize(0.03);
         for (int i = 0; i < nFiles; ++i) {
-            Double_t mu_b   = ((TF1*)h[i][b]->GetFunction(Form("fitBin%d_%d",i,b)))->GetParameter(1);
-            Double_t sig_b  = ((TF1*)h[i][b]->GetFunction(Form("fitBin%d_%d",i,b)))->GetParameter(2);
             legB->AddEntry(
                 h[i][b],
                 Form("%s: #mu=%.3f, #sigma=%.3f",
-                     corrLabels[i], mu_b, sig_b),
+                     corrLabels[i],
+                     mu[i][b-1],
+                     sigma[i][b-1]),
                 "lep"
             );
         }
         legB->Draw();
-
         h[0][b]->GetXaxis()->SetTitle("M_{x}^{2} (GeV^{2})");
         h[0][b]->GetYaxis()->SetTitle("Counts");
     }
 
-    // 13) Final pad: μ vs <θ> (pad 12)
+    // 13) final pad: μ vs. <θ> (pad 12)
     c1->cd(12)->SetLeftMargin(0.20);
     c1->cd(12)->SetBottomMargin(0.15);
     TGraph* gr[nFiles];
-    for (int i=0;i<nFiles;++i) {
+    for (int i = 0; i < nFiles; ++i) {
         std::vector<double> xs, ys;
-        for (int b=0; b<nBins; ++b) {
-            if (theta_count[b]>0) {
+        for (int b = 0; b < nBins; ++b) {
+            if (theta_count[b] > 0) {
                 xs.push_back(theta_mean[b]);
                 ys.push_back(mu[i][b]);
             }
         }
         gr[i] = new TGraph(xs.size(), xs.data(), ys.data());
-        gr[i]->SetMarkerStyle(20+i);
+        gr[i]->SetMarkerStyle(20 + i);
         gr[i]->SetMarkerSize(0.8);
-        gr[i]->SetMarkerColor(kBlack+i);
-        if (i==0) gr[i]->Draw("AP");
-        else      gr[i]->Draw("P SAME");
+        gr[i]->SetMarkerColor(kBlack + i);
+        if (i == 0) gr[i]->Draw("AP");
+        else        gr[i]->Draw("P SAME");
     }
+
     // dashed zero line
-    TLine* zero = new TLine(0,0,90,0);
+    TLine* zero = new TLine(5, 0, 40, 0);
     zero->SetLineColor(kGray);
     zero->SetLineStyle(2);
     zero->Draw("SAME");
 
+    // horizontal line at neutron mass² ≃ (0.9396 GeV)²
+    const double neutron2 = 0.9396*0.9396;
+    TLine* neutronLine = new TLine(5, neutron2, 40, neutron2);
+    neutronLine->SetLineColor(kGray);
+    neutronLine->SetLineStyle(2);
+    neutronLine->Draw("SAME");
+
     gr[0]->GetXaxis()->SetTitle("#theta (deg)");
     gr[0]->GetYaxis()->SetTitle("#mu (GeV^{2})");
-    gr[0]->GetXaxis()->SetLimits(0,90);
-    gr[0]->GetYaxis()->SetRangeUser(-0.1,0.1);
+    gr[0]->GetXaxis()->SetLimits(5, 40);
+    gr[0]->GetYaxis()->SetRangeUser(0.7, 1.0);
 
-    TLegend* leg12 = new TLegend(0.6,0.75,0.9,0.9);
+    TLegend* leg12 = new TLegend(0.6, 0.75, 0.9, 0.9);
     leg12->SetTextSize(0.03);
-    for (int i=0;i<nFiles;++i) {
+    for (int i = 0; i < nFiles; ++i) {
         leg12->AddEntry(gr[i], corrLabels[i], "lep");
     }
     leg12->Draw();
 
-    // 14) Save & cleanup
+    // 14) save & cleanup
     TString outname = TString::Format(
         "output/exclusive_pip_%s_energy_loss_validation.pdf",
         titleSuffix
