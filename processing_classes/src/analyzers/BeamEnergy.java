@@ -89,9 +89,15 @@ public class BeamEnergy {
         else if (runnum >= 11323 && runnum <= 11571) {
             Eb = 10.3894;
         } // RGB Spring 2020
-        else if (runnum >= 16042 && runnum <= 17811) {
+        else if (runnum >= 16042 && runnum <= 17065) {
             Eb = 10.5473;
         } // RGC Summer 2022
+        else if (runnum >= 17067 && runnum <= 17724) {
+            Eb = 10.5563;
+        } // RGC Fa 2022
+        else if (runnum >= 17725 && runnum <= 17811) {
+            Eb = 10.5593;
+        } // RGC Fa 2022 / Sp 2023
 
         // determine a minimum energy the electron must have in order to create the particles in the event
         int num_elec = recEvent.countByPid(11); // returns number of electrons
