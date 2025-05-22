@@ -2157,9 +2157,9 @@ int main(int argc, char** argv) {
         return 1;
     }
 
-    // plot_dvcs_energy_loss_validation(
-    //     argv[1], argv[2], argv[3], argv[4], argv[5]
-    // );
+    plot_dvcs_energy_loss_validation(
+        argv[1], argv[2], argv[3], argv[4], argv[5]
+    );
 
     // plot_eppi0_energy_loss_validation(
     //     argv[1], argv[2], argv[3], argv[4], argv[5]
@@ -2189,9 +2189,9 @@ int main(int argc, char** argv) {
 
     /////////
 
-    plot_exclusive_pip_energy_loss_validation(
-        argv[1], argv[2], argv[3]
-    );
+    // plot_exclusive_pip_energy_loss_validation(
+    //     argv[1], argv[2], argv[3]
+    // );
 
     // plot_exclusive_twopion_energy_loss_validation(
     //     argv[1], argv[2], argv[3]
