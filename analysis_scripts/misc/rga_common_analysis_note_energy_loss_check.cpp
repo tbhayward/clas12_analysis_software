@@ -405,7 +405,7 @@ void plot_eppi0_energy_loss_validation(
                             mx2_min, mx2_max);
         fitInt[i]->SetParameters(
             0.8 * h[i][0]->GetMaximum(),  // A init
-            0.13497*13497,                          // mu init
+            0.13497*0.13497,                          // mu init
             0.1                           // sigma init
         );
         fitInt[i]->SetParLimits(1, -0.15, 0.2);
@@ -455,7 +455,7 @@ void plot_eppi0_energy_loss_validation(
                                 mx2_min, mx2_max);
             fbin->SetParameters(
                 0.8 * h[i][b]->GetMaximum(),
-                0.13497*13497,
+                0.13497*0.13497,
                 0.1
             );
             fbin->SetParLimits(1, -0.15, 0.2);
@@ -504,7 +504,7 @@ void plot_eppi0_energy_loss_validation(
         if (i == 0) gr[i]->Draw("AP");
         else        gr[i]->Draw("P SAME");
     }
-    TLine* line = new TLine(0, 0.13497*13497, 90, 0.13497*13497);
+    TLine* line = new TLine(0, 0.13497*0.13497, 90, 0.13497*0.13497);
     line->SetLineColor(kGray);
     line->SetLineStyle(2);
     line->Draw("SAME");
