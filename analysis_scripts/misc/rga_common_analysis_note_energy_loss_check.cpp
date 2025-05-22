@@ -1879,8 +1879,7 @@ void plot_exclusive_pip_energy_loss_validation(
 void plot_exclusive_twopion_energy_loss_validation(
     const char* file1,
     const char* file2,
-    const char* titleSuffix)
-{
+    const char* titleSuffix) {
     // labels for our two datasets
     const int nFiles = 2;
     const char* files[nFiles] = { file1, file2 };
@@ -2161,13 +2160,13 @@ int main(int argc, char** argv) {
     //     argv[1], argv[2], argv[3], argv[4], argv[5]
     // );
 
-    plot_eppi0_energy_loss_validation(
-        argv[1], argv[2], argv[3], argv[4], argv[5]
-    );
-
-    // plot_mx2_comparison_elastic(
+    // plot_eppi0_energy_loss_validation(
     //     argv[1], argv[2], argv[3], argv[4], argv[5]
     // );
+
+    plot_mx2_comparison_elastic(
+        argv[1], argv[2], argv[3], argv[4], argv[5]
+    );
 
     // plot_two_pions(
     //     argv[1], argv[2], argv[3], argv[4], argv[5]
