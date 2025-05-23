@@ -991,25 +991,12 @@ void plot_two_pions(
     }
 }
 
-#include <TFile.h>
-#include <TTree.h>
-#include <TCanvas.h>
-#include <TH1D.h>
-#include <TF1.h>
-#include <TLegend.h>
-#include <TGraph.h>
-#include <TLine.h>
-#include <TMath.h>
-#include <iostream>
-#include <vector>
-#include <algorithm>
 
 void plot_dvcs_sebastian_energy_loss_validation(
     const char* file1,
     const char* file2,
     const char* file3,
-    const char* titleSuffix
-) {
+    const char* titleSuffix) {
     // 0) Setup
     const int nFiles = 3;
     const char* files[nFiles] = { file1, file2, file3 };
@@ -1286,7 +1273,6 @@ void plot_dvcs_sebastian_energy_loss_validation(
         delete f[i];
     }
 }
-
 
 void plot_eppi0_sebastian_energy_loss_validation(
     const char* file1,
@@ -2185,13 +2171,13 @@ int main(int argc, char** argv) {
 
     /////////
 
-    plot_dvcs_sebastian_energy_loss_validation(
-        argv[1], argv[2], argv[3], argv[4]
-    );
-
-    // plot_eppi0_sebastian_energy_loss_validation(
-    //     argv[1], argv[2], argv[3], argv[4], false
+    // plot_dvcs_sebastian_energy_loss_validation(
+    //     argv[1], argv[2], argv[3], argv[4]
     // );
+
+    plot_eppi0_sebastian_energy_loss_validation(
+        argv[1], argv[2], argv[3], argv[4], false
+    );
 
     // plot_eppi0_sebastian_energy_loss_validation(
     //     argv[1], argv[2], argv[3], argv[4], true
