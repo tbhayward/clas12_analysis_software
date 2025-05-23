@@ -1010,7 +1010,7 @@ void plot_dvcs_sebastian_energy_loss_validation(
     const char* file3,
     const char* titleSuffix
 ) {
-    // --- 0) setup
+    // 0) Setup
     const int nFiles = 3;
     const char* files[nFiles] = { file1, file2, file3 };
     const char* corrLabels[nFiles] = {
@@ -1019,8 +1019,8 @@ void plot_dvcs_sebastian_energy_loss_validation(
         "SA e^{-} + #gamma, TBH p"
     };
 
-    // --- 1) open files & trees
-    TFile*   f[nFiles];
+    // 1) Open files & trees
+    TFile* f[nFiles];
     TTree* tree[nFiles];
     for (int i = 0; i < nFiles; ++i) {
         f[i]    = TFile::Open(files[i]);
@@ -1034,21 +1034,21 @@ void plot_dvcs_sebastian_energy_loss_validation(
         }
     }
 
-    // --- 2) branch variables: p2_theta & Mx2_1
+    // 2) Branch variables
     Double_t p2_theta[nFiles], Mx2_1[nFiles];
     Double_t eta2[nFiles], t1[nFiles], theta_gamma_gamma[nFiles];
     Double_t Emiss2[nFiles], pTmiss[nFiles];
     for (int i = 0; i < nFiles; ++i) {
-        tree[i]->SetBranchAddress("p2_theta",          &p2_theta[i]);
-        tree[i]->SetBranchAddress("Mx2_1",             &Mx2_1[i]);
-        tree[i]->SetBranchAddress("eta2",              &eta2[i]);
-        tree[i]->SetBranchAddress("t1",                &t1[i]);
-        tree[i]->SetBranchAddress("theta_gamma_gamma", &theta_gamma_gamma[i]);
-        tree[i]->SetBranchAddress("Emiss2",            &Emiss2[i]);
-        tree[i]->SetBranchAddress("pTmiss",            &pTmiss[i]);
+        tree[i]->SetBranchAddress("p2_theta",           &p2_theta[i]);
+        tree[i]->SetBranchAddress("Mx2_1",              &Mx2_1[i]);
+        tree[i]->SetBranchAddress("eta2",               &eta2[i]);
+        tree[i]->SetBranchAddress("t1",                 &t1[i]);
+        tree[i]->SetBranchAddress("theta_gamma_gamma",  &theta_gamma_gamma[i]);
+        tree[i]->SetBranchAddress("Emiss2",             &Emiss2[i]);
+        tree[i]->SetBranchAddress("pTmiss",             &pTmiss[i]);
     }
 
-    // --- 3) canvas & layout
+    // 3) Canvas & layout
     TCanvas* c1 = new TCanvas(
         "c1",
         "DVCS Energy Loss Validation (Sebastian)",
@@ -1056,20 +1056,20 @@ void plot_dvcs_sebastian_energy_loss_validation(
     );
     c1->Divide(4, 3);
 
-    // --- 4) θ bins: 5 → 32 deg, 10 equal bins
-    const int    nBins     = 10;
+    // 4) θ bins: 5 → 32 deg, 10 equal bins
+    const int    nBins = 10;
     Double_t     thetaBins[nBins+1];
     for (int b = 0; b <= nBins; ++b) {
         thetaBins[b] = 5.0 + b * (32.0 - 5.0) / nBins;
     }
 
-    // --- 5) histogram parameters
+    // 5) Histogram parameters
     const int    nbHi     = 35;
     const int    nbLo     = nbHi/2;  // 17
     const double mx2_min  = -0.3;
     const double mx2_max  = +0.3;
 
-    // --- 6) storage
+    // 6) Storage
     TH1D*    h[nFiles][nBins+1];
     TF1*     fitInt[nFiles];
     Double_t mu[nFiles][nBins], sigma[nFiles][nBins];
@@ -1077,7 +1077,7 @@ void plot_dvcs_sebastian_energy_loss_validation(
     Int_t    theta_count[nBins] = {0};
     Double_t theta_mean[nBins]  = {0};
 
-    // --- 7) create histograms (no stats box)
+    // 7) Create histograms (no stats box)
     for (int i = 0; i < nFiles; ++i) {
         // integrated
         h[i][0] = new TH1D(
@@ -1100,33 +1100,39 @@ void plot_dvcs_sebastian_energy_loss_validation(
         }
     }
 
-    // --- 8) fill & accumulate θ
+    // 8) Fill & accumulate (with kinematic cuts)
     for (int i = 0; i < nFiles; ++i) {
         Long64_t N = tree[i]->GetEntries();
         for (Long64_t ev = 0; ev < N; ++ev) {
             tree[i]->GetEntry(ev);
             double θ = p2_theta[i] * 180.0 / TMath::Pi();
-            if (θ < 5.0 || θ >= 32.0) continue;
-
-            h[i][0]->Fill(Mx2_1[i]);
-            for (int b = 0; b < nBins; ++b) {
-                if (θ >= thetaBins[b] && θ < thetaBins[b+1]) {
-                    h[i][b+1]->Fill(Mx2_1[i]);
-                    theta_sum[b]   += θ;
-                    theta_count[b] += 1;
+            if (θ >= 5.0 && θ < 32.0 &&
+                eta2[i] <  0    &&
+                t1[i]   > -2    &&
+                theta_gamma_gamma[i] < 0.6 &&
+                Emiss2[i] < 0.5 &&
+                pTmiss[i] < 0.125)
+            {
+                h[i][0]->Fill(Mx2_1[i]);
+                for (int b = 0; b < nBins; ++b) {
+                    if (θ >= thetaBins[b] && θ < thetaBins[b+1]) {
+                        h[i][b+1]->Fill(Mx2_1[i]);
+                        theta_sum[b]   += θ;
+                        theta_count[b] += 1;
+                    }
                 }
             }
         }
     }
 
-    // --- 9) compute <θ>
+    // 9) Compute <θ>
     for (int b = 0; b < nBins; ++b) {
         theta_mean[b] = (theta_count[b] > 0)
                        ? theta_sum[b] / theta_count[b]
                        : NAN;
     }
 
-    // --- 10) draw & fit integrated pad (1)
+    // 10) Draw & fit integrated pad (1)
     c1->cd(1)->SetLeftMargin(0.15);
     c1->cd(1)->SetBottomMargin(0.15);
     double globalMax = 0;
@@ -1175,7 +1181,7 @@ void plot_dvcs_sebastian_energy_loss_validation(
     h[0][0]->GetXaxis()->SetTitle("M_{x}^{2} (GeV^{2})");
     h[0][0]->GetYaxis()->SetTitle("Counts");
 
-    // --- 11) θ‐binned pads & fits (2–11)
+    // 11) θ‐binned pads & fits (2–11)
     for (int b = 1; b <= nBins; ++b) {
         c1->cd(b+1)->SetLeftMargin(0.15);
         c1->cd(b+1)->SetBottomMargin(0.15);
@@ -1230,7 +1236,7 @@ void plot_dvcs_sebastian_energy_loss_validation(
         h[0][b]->GetYaxis()->SetTitle("Counts");
     }
 
-    // --- 12) final pad: μ vs. <θ> (pad 12)
+    // 12) final pad: μ vs. <θ>
     c1->cd(12)->SetLeftMargin(0.20);
     c1->cd(12)->SetBottomMargin(0.15);
     TGraph* gr[nFiles];
@@ -1249,7 +1255,6 @@ void plot_dvcs_sebastian_energy_loss_validation(
         if (i == 0) gr[i]->Draw("AP");
         else        gr[i]->Draw("P SAME");
     }
-    // zero line
     TLine* zero = new TLine(5, 0, 32, 0);
     zero->SetLineColor(kGray);
     zero->SetLineStyle(2);
@@ -1268,7 +1273,7 @@ void plot_dvcs_sebastian_energy_loss_validation(
     }
     leg12->Draw();
 
-    // --- 13) save & cleanup
+    // 13) Save & cleanup
     TString outname = TString::Format(
         "output/dvcs_sebastian_%s_energy_loss_validation.pdf",
         titleSuffix
