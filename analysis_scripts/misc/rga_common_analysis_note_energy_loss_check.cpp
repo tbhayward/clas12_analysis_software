@@ -1005,11 +1005,6 @@ void plot_dvcs_sebastian_energy_loss_validation(
         "SA e^{-} + #gamma, TBH p"
     };
 
-    std::cout << "[sebastian] nFiles = " << nFiles << "\n";
-    for (int i = 0; i < nFiles; ++i) {
-        std::cout << "[sebastian] files[" << i << "] = \"" << files[i] << "\"\n";
-    }
-
     // 1) Open files & trees
     TFile* f[nFiles];
     TTree* tree[nFiles];
@@ -1023,7 +1018,7 @@ void plot_dvcs_sebastian_energy_loss_validation(
         }
     }
 
-    // 2) Branch variables (use p2_theta instead of p1_theta)
+    // 2) Branch variables: use p2_theta now
     Double_t p2_theta[nFiles], Mx2_1[nFiles];
     Double_t eta2[nFiles], t1[nFiles], theta_gamma_gamma[nFiles];
     Double_t Emiss2[nFiles], pTmiss[nFiles];
@@ -1067,20 +1062,17 @@ void plot_dvcs_sebastian_energy_loss_validation(
 
     // 7) Create histograms (no stats boxes)
     for (int i = 0; i < nFiles; ++i) {
-        // integrated over all θ
         h[i][0] = new TH1D(
             Form("h%d_int", i),
-            Form("Integrated #theta [%.0f,%.0f] %s",
+            Form("Integrated #theta [%.0f,%.0f] %s", 
                  thetaBins[0], thetaBins[nBins], titleSuffix),
             nbMx2_hi, mx2_min, mx2_max
         );
         h[i][0]->SetStats(false);
-
-        // per‐θ slices
         for (int b = 0; b < nBins; ++b) {
             h[i][b+1] = new TH1D(
                 Form("h%d_%d", i, b),
-                Form("#theta [%.1f,%.1f] %s",
+                Form("#theta [%.1f,%.1f] %s", 
                      thetaBins[b], thetaBins[b+1], titleSuffix),
                 (b < nBins/2 ? nbMx2_lo : nbMx2_hi),
                 mx2_min, mx2_max
@@ -1116,9 +1108,9 @@ void plot_dvcs_sebastian_energy_loss_validation(
 
     // 9) Compute <θ>
     for (int b = 0; b < nBins; ++b) {
-        theta_mean[b] = (theta_count[b] > 0
-                         ? theta_sum[b] / theta_count[b]
-                         : NAN);
+        theta_mean[b] = theta_count[b] > 0
+                       ? theta_sum[b] / theta_count[b]
+                       : NAN;
     }
 
     // 10) Draw & fit integrated pad (1)
@@ -1143,8 +1135,8 @@ void plot_dvcs_sebastian_energy_loss_validation(
         );
         fitInt[i]->SetParameters(
             0.8 * h[i][0]->GetMaximum(),  // A
-            0.0,                          // μ init
-            0.1                           // σ init
+            0.0,                          // #mu init
+            0.1                           // #sigma init
         );
         fitInt[i]->SetParLimits(1, -0.15, 0.15);
         fitInt[i]->SetParLimits(2, 0.0, 0.3);
@@ -1168,7 +1160,6 @@ void plot_dvcs_sebastian_energy_loss_validation(
         );
     }
     legInt->Draw();
-
     h[0][0]->GetXaxis()->SetTitle("M_{x}^{2} (GeV^{2})");
     h[0][0]->GetYaxis()->SetTitle("Counts");
 
@@ -1204,10 +1195,13 @@ void plot_dvcs_sebastian_energy_loss_validation(
             fbin->SetLineWidth(1);
             h[i][b]->Fit(fbin, "Q");
             fbin->Draw("SAME");
+
+            mu[i][b-1]    = fbin->GetParameter(1);
+            sigma[i][b-1] = fbin->GetParameter(2);
         }
     }
 
-    // 13) Final pad: μ vs. <θ>
+    // 13) Final pad: #mu vs. <#theta>
     c1->cd(12)->SetLeftMargin(0.20);
     c1->cd(12)->SetBottomMargin(0.15);
     TGraph* gr[nFiles];
@@ -1258,6 +1252,7 @@ void plot_dvcs_sebastian_energy_loss_validation(
         delete f[i];
     }
 }
+
 
 void plot_eppi0_sebastian_energy_loss_validation(
     const char* file1,
