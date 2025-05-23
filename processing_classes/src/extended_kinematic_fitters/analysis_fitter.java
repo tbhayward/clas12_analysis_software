@@ -298,7 +298,7 @@ public class analysis_fitter extends GenericKinematicFitter {
                         traj_Bank, run_Bank)) {
 
                     float[] momentum = {px, py, pz};
-                    energy_loss_corrections.proton_energy_loss_corrections(particle_Index, momentum, rec_Bank, run_Bank);
+//                    energy_loss_corrections.proton_energy_loss_corrections(particle_Index, momentum, rec_Bank, run_Bank);
 //                    energy_loss_corrections.krishna_energy_loss_corrections(particle_Index, momentum, rec_Bank, run_Bank);
 //                    energy_loss_corrections.mariana_proton_energy_loss_corrections(particle_Index, momentum, rec_Bank, run_Bank);
 
@@ -313,7 +313,7 @@ public class analysis_fitter extends GenericKinematicFitter {
                 if (pid == 22 && photon_test(particle_Index, run_Bank, rec_Bank, cal_Bank, ft_Bank, lv_e, num_photon)) {
 
                     float[] momentum = {px, py, pz};
-                    energy_loss_corrections.sebastian_photon_energy_loss_corrections(particle_Index, momentum, rec_Bank, run_Bank);
+//                    energy_loss_corrections.sebastian_photon_energy_loss_corrections(particle_Index, momentum, rec_Bank, run_Bank);
 //                  
                     px = momentum[0];
                     py = momentum[1];
