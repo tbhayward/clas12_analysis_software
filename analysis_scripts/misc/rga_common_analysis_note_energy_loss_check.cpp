@@ -1443,7 +1443,7 @@ void plot_eppi0_sebastian_energy_loss_validation(
 
         fitInt[i] = new TF1(
             Form("fitInt%d", i),
-            "gaus(0)+pol1(0)",
+            "gaus(0)+pol1(3)",
             rng_min, rng_max
         );
         fitInt[i]->SetParameters(
@@ -1499,7 +1499,7 @@ void plot_eppi0_sebastian_energy_loss_validation(
 
             TF1* fbin = new TF1(
                 Form("fitBin%d_%d", i, b),
-                "gaus(0)+pol1(0)",
+                "gaus(0)+pol1(3)",
                 rng_min, rng_max
             );
             fbin->SetParameters(
