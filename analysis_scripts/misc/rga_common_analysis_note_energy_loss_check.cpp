@@ -1454,7 +1454,7 @@ void plot_eppi0_sebastian_energy_loss_validation(
             plotPi0Mass ? 0.11 : 0.75,
             plotPi0Mass ? 0.16 : 1.00
         );
-        fitInt[i]->SetParLimits(2, 0.00, 0.5);
+        fitInt[i]->SetParLimits(2, 0.00, 0.02);
         fitInt[i]->SetLineColor(kBlack + i);
         fitInt[i]->SetLineWidth(1);
         h[i][0]->Fit(fitInt[i], "Q");
@@ -1510,7 +1510,7 @@ void plot_eppi0_sebastian_energy_loss_validation(
                 plotPi0Mass ? 0.11 : 0.75,
                 plotPi0Mass ? 0.16 : 1.00
             );
-            fbin->SetParLimits(2, 0.00, 0.5);
+            fbin->SetParLimits(2, 0.00, 0.02);
             fbin->SetLineColor(kBlack + i);
             fbin->SetLineWidth(1);
             h[i][b]->Fit(fbin, "Q");
