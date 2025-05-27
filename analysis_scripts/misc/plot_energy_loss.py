@@ -56,7 +56,7 @@ def krishna_fd(theta, p):
 
 def mariana_fd(theta_vals, p):
     dp_vals = -p*(ag_matrix[0] + ag_matrix[1]*p + ag_matrix[2]/p + ag_matrix[3]/(p**2))
-    interp = interp1d(mariana_theta_list, dp_vals, kind='quadratic',
+    interp = interp1d(mariana_theta_list, dp_vals, kind='linear',
                       bounds_error=False, fill_value='extrapolate')
     return interp(theta_vals)
 
@@ -71,7 +71,7 @@ def main():
     os.makedirs(out_dir, exist_ok=True)
 
     fig_fd, axs_fd = plt.subplots(1, 3, figsize=(12, 4), sharey=True, gridspec_kw={'wspace': 0})
-    for ax, p in zip(axs_fd, [1.0, 2.0, 2.9]):
+    for ax, p in zip(axs_fd, [1.0, 2.0, 3.0]):
         ax.plot(theta_fd, timothy_fd(theta_fd, p), label='Timothy', linewidth=2)
         ax.plot(theta_fd, [krishna_fd(t, p) for t in theta_fd], label='Krishna', linewidth=2, linestyle='--')
         ax.plot(theta_fd, mariana_fd(theta_fd, p), label='Mariana', linewidth=2, linestyle=':')
