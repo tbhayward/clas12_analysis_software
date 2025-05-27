@@ -34,10 +34,25 @@ def timothy_fd(theta, p):
     return A + B/p + C/p**2
 
 def krishna_fd(theta, p):
-    if theta < 27:
-        return 0.001046*p**4 - 0.010446*p**3 + 0.036945*p**2 - 0.055368*p + 0.034539
+    """
+    Returns Δp = p_new − p for Krishna's proton correction,
+    with theta in degrees and p in GeV.
+    """
+    # forward-only
+    if theta < 27.0:
+        if p < 2.4:
+            # polynomial piece for θ<27°, p<2.4
+            return (0.001046)*p**4  + (-0.010446)*p**3  + (0.036945)*p**2 + (-0.055368)*p + 0.034539
+        else:
+            # constant kick for θ<27°, p>=2.4
+            return 0.004741
     else:
-        return 0.005519*p**4 - 0.046289*p**3 + 0.137504*p**2 - 0.177027*p + 0.094555
+        if p < 2.4:
+            # polynomial piece for θ>=27°, p<2.4
+            return (0.005519)*p**4 + (-0.046289)*p**3 + (0.137504)*p**2 + (-0.177027)*p + 0.094555
+        else:
+            # constant kick for θ>=27°, p>=2.4
+            return 0.004899
 
 def mariana_fd(theta_vals, p):
     dp_vals = -p*(ag_matrix[0] + ag_matrix[1]*p + ag_matrix[2]/p + ag_matrix[3]/(p**2))
