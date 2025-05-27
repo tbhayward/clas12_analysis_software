@@ -71,7 +71,7 @@ def main():
     os.makedirs(out_dir, exist_ok=True)
 
     fig_fd, axs_fd = plt.subplots(1, 3, figsize=(12, 4), sharey=True, gridspec_kw={'wspace': 0})
-    for ax, p in zip(axs_fd, [1.0, 2.0, 3.0]):
+    for ax, p in zip(axs_fd, [1.0, 2.0, 2.9]):
         ax.plot(theta_fd, timothy_fd(theta_fd, p), label='Timothy', linewidth=2)
         ax.plot(theta_fd, [krishna_fd(t, p) for t in theta_fd], label='Krishna', linewidth=2, linestyle='--')
         ax.plot(theta_fd, mariana_fd(theta_fd, p), label='Mariana', linewidth=2, linestyle=':')
