@@ -611,7 +611,7 @@ public class energy_loss_corrections {
                 if (theta * Math.PI / 180 <= 5) {
                     p = p - p * (ag[1][0] + ag[2][0] * p + ag[3][0] / p + ag[4][0] / (p * p));
                 } else if (theta * Math.PI / 180 >= 33) {
-                    p = p - p * (ag[1][14] + ag[2][14] * p + ag[3][14] / p + ag[4][14]  / (p * p));
+                    p = p - p * (ag[1][14] + ag[2][14] * p + ag[3][14] / p + ag[4][14] / (p * p));
                 } else {
                     for (int i = 0; i < 10; i++) {
                         p = p - p * (ag[1][i] + ag[2][i] * p + ag[3][i] / p + ag[4][i] / (p * p));
@@ -690,14 +690,12 @@ public class energy_loss_corrections {
             }
         }
 
-
         // Update the px, py, pz values
         p_array[0] = (float) x_calculation(p, theta, phi);
         p_array[1] = (float) y_calculation(p, theta, phi);
         p_array[2] = (float) z_calculation(p, theta);
     }
 
-    
     public static void mariana_electron_energy_loss_corrections(int particle_Index, float[] p_array,
             HipoDataBank rec_Bank, HipoDataBank run_Bank) {
 
@@ -730,15 +728,15 @@ public class energy_loss_corrections {
         if (isForwardTagger) {
             // Apply spring19 fit correction for forward tagger
             E_new = E + 0.085643 - 0.0288063 * E + 0.00894691 * E * E - 0.000725449 * E * E * E;
-            
+
             if ((runnum >= 4763 && runnum <= 5419) || (runnum >= 5423 && runnum <= 5666)) {
-                E_new = E + 0.0208922 + 0.050158 * Math.pow(E,1) - 0.0181107 * Math.pow(E,2) + 
-                        0.00305671 * Math.pow(E,3) - 0.000178235 * Math.pow(E,4);
+                E_new = E + 0.0208922 + 0.050158 * Math.pow(E, 1) - 0.0181107 * Math.pow(E, 2)
+                        + 0.00305671 * Math.pow(E, 3) - 0.000178235 * Math.pow(E, 4);
             } else if (runnum >= 6616 && runnum <= 6783) {
-                E_new = E + 0.085643 - 0.0288063 * Math.pow(E,1) + 0.00894691 * Math.pow(E,2) - 
-                        0.000725449 * Math.pow(E,3);
+                E_new = E + 0.085643 - 0.0288063 * Math.pow(E, 1) + 0.00894691 * Math.pow(E, 2)
+                        - 0.000725449 * Math.pow(E, 3);
             }
-        } 
+        }
 
         // Calculate new momentum magnitude (approximated as E_new)
         double new_p = (E_new);
@@ -753,7 +751,7 @@ public class energy_loss_corrections {
         p_array[1] = (float) py_new;
         p_array[2] = (float) pz_new;
     }
-    
+
     // needs further validation, seems to not improve anything
     public static void sebastian_electron_energy_loss_corrections(int particle_Index, float[] p_array,
             HipoDataBank rec_Bank, HipoDataBank run_Bank) {
@@ -879,7 +877,6 @@ public class energy_loss_corrections {
             }
         }
 
-           
         // Scale the momentum components to preserve direction
         if (p != 0) {
             double scale = (new_p) / p;
