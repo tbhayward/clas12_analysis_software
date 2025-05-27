@@ -74,7 +74,7 @@ def main():
         ax.set_xlabel(r'$\theta$ (deg)')
         if ax is axs_fd[0]:
             ax.set_ylabel(r'$\Delta p$ (GeV)')
-        ax.legend(loc='bottom right', frameon=True)
+        ax.legend(loc='lower right', frameon=True)
 
     fig_fd.suptitle('Forward Detector Proton Energy Loss Corrections', fontsize=14)
     fig_fd.tight_layout(rect=[0, 0, 1, 0.95])
