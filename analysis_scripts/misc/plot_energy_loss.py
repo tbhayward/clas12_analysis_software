@@ -5,7 +5,7 @@ import matplotlib.pyplot as plt
 
 # === θ ranges ===
 theta_fd = np.linspace(5, 39, 500)   # Forward Detector: 5–39°
-theta_cd = np.linspace(25, 70, 500)  # Central Detector: 25–70°
+theta_cd = np.linspace(25, 69, 500)  # Central Detector: 25–70°
 
 # === Mariana ag matrix ===
 mariana_theta_list = np.array([
@@ -46,8 +46,8 @@ def timothy_fd_sp19_inb(theta, p):
     C = 0.01175256 - 0.00053407*theta + 0.00000742*theta**2
     return A + B/p + C/p**2
 
-# Default Timothy FD uses Inb
 def timothy_fd(theta, p):
+    # default forward-detector uses Fa18 Inb
     return timothy_fd_fa18_inb(theta, p)
 
 # === Krishna FD correction ===
@@ -81,32 +81,18 @@ def timothy_cd(theta, p):
     C = -0.44080146 + 0.02209857*theta - 0.00028224*theta**2
     return A + B*p + C*p**2
 
-def plot_timothy_run_periods(theta, p, out_dir):
-    fig, ax = plt.subplots(figsize=(8,5))
-    ax.plot(theta, timothy_fd_fa18_inb(theta, p), label='RGA Fa18 Inb', linewidth=2)
-    ax.plot(theta, timothy_fd_fa18_out(theta, p), label='RGA Fa18 Out', linewidth=2, linestyle='--')
-    ax.plot(theta, timothy_fd_sp19_inb(theta, p), label='RGA Sp19 Inb', linewidth=2, linestyle=':')
-    ax.axhline(0, linestyle='--', color='gray', linewidth=1)
-    ax.set_xlim(theta[0], theta[-1])
-    ax.set_ylim(-0.02, 0.02)
-    ax.set_xlabel(r'$\theta$ (deg)')
-    ax.set_ylabel(r'$\Delta p$ (GeV)')
-    ax.legend(frameon=True)
-    ax.set_title(f'Timothy FD Corrections (p = {p:.1f} GeV)', fontsize=14)
-    fig.tight_layout()
-    fig.savefig(os.path.join(out_dir, 'timothy_run_periods.png'))
-    plt.close(fig)
-
 def main():
     out_dir = 'output'
     os.makedirs(out_dir, exist_ok=True)
 
-    # Forward Detector subplots
-    fig_fd, axs_fd = plt.subplots(1, 3, figsize=(12,4), sharey=True, gridspec_kw={'wspace':0})
+    # === Forward Detector subplots ===
+    fig_fd, axs_fd = plt.subplots(1, 3, figsize=(12, 4), sharey=True, gridspec_kw={'wspace': 0})
     for ax, p in zip(axs_fd, [0.75, 1.75, 2.75]):
         ax.plot(theta_fd, timothy_fd(theta_fd, p), label='Timothy', linewidth=2)
-        ax.plot(theta_fd, [krishna_fd(t, p) for t in theta_fd], label='Krishna', linewidth=2, linestyle='--')
-        ax.plot(theta_fd, mariana_fd(theta_fd, p), label='Mariana', linewidth=2, linestyle=':')
+        ax.plot(theta_fd, [krishna_fd(t, p) for t in theta_fd],
+                label='Krishna', linewidth=2, linestyle='--')
+        ax.plot(theta_fd, mariana_fd(theta_fd, p),
+                label='Mariana', linewidth=2, linestyle=':')
         ax.axhline(0, linestyle='--', color='gray', linewidth=1)
         ax.set_xlim(5, 39)
         ax.set_ylim(-0.02, 0.03)
@@ -116,12 +102,12 @@ def main():
             ax.set_ylabel(r'$\Delta p$ (GeV)')
         ax.legend(loc='lower left', frameon=True)
     fig_fd.suptitle('Forward Detector Energy Loss Corrections', fontsize=14)
-    fig_fd.tight_layout(rect=[0,0,1,0.95])
+    fig_fd.tight_layout(rect=[0, 0, 1, 0.95])
     fig_fd.savefig(os.path.join(out_dir, 'forward_detector.png'))
     plt.close(fig_fd)
 
-    # Central Detector subplots
-    fig_cd, axs_cd = plt.subplots(1, 3, figsize=(12,4), sharey=True, gridspec_kw={'wspace':0})
+    # === Central Detector subplots ===
+    fig_cd, axs_cd = plt.subplots(1, 3, figsize=(12, 4), sharey=True, gridspec_kw={'wspace': 0})
     for ax, p in zip(axs_cd, [0.4, 0.75, 1.1]):
         ax.plot(theta_cd, timothy_cd(theta_cd, p), label='Timothy', linewidth=2)
         ax.axhline(0, linestyle='--', color='gray', linewidth=1)
@@ -133,12 +119,31 @@ def main():
             ax.set_ylabel(r'$\Delta p$ (GeV)')
         ax.legend(loc='upper right', frameon=True)
     fig_cd.suptitle('Central Detector Energy Loss Corrections', fontsize=14)
-    fig_cd.tight_layout(rect=[0,0,1,0.95])
+    fig_cd.tight_layout(rect=[0, 0, 1, 0.95])
     fig_cd.savefig(os.path.join(out_dir, 'central_detector.png'))
     plt.close(fig_cd)
 
-    # Plot Timothy run periods
-    plot_timothy_run_periods(theta_fd, p=2.0, out_dir=out_dir)
+    # === Timothy run-periods subplots ===
+    fig_rp, axs_rp = plt.subplots(1, 3, figsize=(12, 4), sharey=True, gridspec_kw={'wspace': 0})
+    for ax, p in zip(axs_rp, [0.75, 1.75, 2.75]):
+        ax.plot(theta_fd, timothy_fd_fa18_inb(theta_fd, p),
+                label='RGA Fa18 Inb', linewidth=2)
+        ax.plot(theta_fd, timothy_fd_fa18_out(theta_fd, p),
+                label='RGA Fa18 Out', linewidth=2, linestyle='--')
+        ax.plot(theta_fd, timothy_fd_sp19_inb(theta_fd, p),
+                label='RGA Sp19 Inb', linewidth=2, linestyle=':')
+        ax.axhline(0, linestyle='--', color='gray', linewidth=1)
+        ax.set_xlim(5, 39)
+        ax.set_ylim(-0.02, 0.02)
+        ax.set_title(f'p = {p:.2f} GeV', fontsize=12)
+        ax.set_xlabel(r'$\theta$ (deg)')
+        if ax is axs_rp[0]:
+            ax.set_ylabel(r'$\Delta p$ (GeV)')
+        ax.legend(loc='lower left', frameon=True)
+    fig_rp.suptitle("Timothy's FD Corrections Across Run Periods", fontsize=14)
+    fig_rp.tight_layout(rect=[0, 0, 1, 0.95])
+    fig_rp.savefig(os.path.join(out_dir, 'timothy_run_periods.png'))
+    plt.close(fig_rp)
 
     print(f'Saved figures to {out_dir}/')
 
