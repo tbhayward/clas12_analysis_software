@@ -111,7 +111,7 @@ def main():
     for ax, p in zip(axs_cd, [0.4, 0.75, 1.1]):
         ax.plot(theta_cd, timothy_cd(theta_cd, p), label='Timothy', linewidth=2)
         ax.axhline(0, linestyle='--', color='gray', linewidth=1)
-        ax.set_xlim(25, 70)
+        ax.set_xlim(25, 69)
         ax.set_ylim(-0.03, 0.03)
         ax.set_title(f'p = {p:.2f} GeV', fontsize=12)
         ax.set_xlabel(r'$\theta$ (deg)')
