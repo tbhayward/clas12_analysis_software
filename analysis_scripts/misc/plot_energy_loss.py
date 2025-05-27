@@ -69,12 +69,12 @@ def main():
         ax.plot(theta_fd, mariana_fd(theta_fd, p),
                 label='Mariana', linewidth=2, linestyle=':')
         ax.set_xlim(5, 33)
-        ax.set_ylim(-0.01, 0.03)
+        ax.set_ylim(-0.01, 0.02)
         ax.set_title(f'p = {p:.1f} GeV', fontsize=12)
         ax.set_xlabel(r'$\theta$ (deg)')
         if ax is axs_fd[0]:
             ax.set_ylabel(r'$\Delta p$ (GeV)')
-        ax.legend(loc='lower right', frameon=True)
+        ax.legend(loc='lower left', frameon=True)
 
     fig_fd.suptitle('Forward Detector Proton Energy Loss Corrections', fontsize=14)
     fig_fd.tight_layout(rect=[0, 0, 1, 0.95])
