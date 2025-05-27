@@ -2193,7 +2193,7 @@ int main(int argc, char** argv) {
     // );
 
     plot_exclusive_twopion_energy_loss_validation(
-        argv[1], argv[2], argv[3]
+        argv[1], argv[2], argv[3], argv[4]
     );
 
 
