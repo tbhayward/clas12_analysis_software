@@ -4,8 +4,9 @@ import numpy as np
 import matplotlib.pyplot as plt
 from scipy.interpolate import interp1d
 
-# === θ range ===
-theta_deg = np.linspace(5, 33, 500)
+# === θ ranges ===
+theta_fd = np.linspace(5, 33, 500)   # Forward Detector: 5–33°
+theta_cd = np.linspace(25, 70, 500)  # Central Detector: 25–70°
 
 # === Mariana ag matrix ===
 mariana_theta_list = np.array([5.00, 7.00, 9.00, 11.00, 13.00, 15.00,
@@ -61,19 +62,20 @@ def main():
                                   sharey=True,
                                   gridspec_kw={'wspace': 0})
     for ax, p in zip(axs_fd, [1.0, 2.0, 3.0]):
-        ax.plot(theta_deg, timothy_fd(theta_deg, p),
+        ax.plot(theta_fd, timothy_fd(theta_fd, p),
                 label='Timothy', linewidth=2)
-        ax.plot(theta_deg, [krishna_fd(t, p) for t in theta_deg],
+        ax.plot(theta_fd, [krishna_fd(t, p) for t in theta_fd],
                 label='Krishna', linewidth=2, linestyle='--')
-        ax.plot(theta_deg, mariana_fd(theta_deg, p),
+        ax.plot(theta_fd, mariana_fd(theta_fd, p),
                 label='Mariana', linewidth=2, linestyle=':')
         ax.set_xlim(5, 33)
-        ax.set_ylim(-0.06, 0.06)
+        ax.set_ylim(-0.02, 0.02)
         ax.set_title(f'p = {p:.1f} GeV', fontsize=12)
         ax.set_xlabel(r'$\theta$ (deg)')
         if ax is axs_fd[0]:
             ax.set_ylabel(r'$\Delta p$ (GeV)')
         ax.legend(loc='upper right', frameon=True)
+
     fig_fd.suptitle('Forward Detector Proton Energy Loss Corrections', fontsize=14)
     fig_fd.tight_layout(rect=[0, 0, 1, 0.95])
     fig_fd.savefig(f'{out_dir}/forward_detector.png')
@@ -83,15 +85,16 @@ def main():
                                   sharey=True,
                                   gridspec_kw={'wspace': 0})
     for ax, p in zip(axs_cd, [0.4, 0.75, 1.1]):
-        ax.plot(theta_deg, timothy_cd(theta_deg, p),
+        ax.plot(theta_cd, timothy_cd(theta_cd, p),
                 label='Timothy', linewidth=2)
-        ax.set_xlim(5, 33)
-        ax.set_ylim(-0.06, 0.06)
+        ax.set_xlim(25, 70)
+        ax.set_ylim(-0.02, 0.02)
         ax.set_title(f'p = {p:.2f} GeV', fontsize=12)
         ax.set_xlabel(r'$\theta$ (deg)')
         if ax is axs_cd[0]:
             ax.set_ylabel(r'$\Delta p$ (GeV)')
         ax.legend(loc='upper right', frameon=True)
+
     fig_cd.suptitle('Central Detector Proton Energy Loss Corrections', fontsize=14)
     fig_cd.tight_layout(rect=[0, 0, 1, 0.95])
     fig_cd.savefig(f'{out_dir}/central_detector.png')
