@@ -1351,11 +1351,11 @@ void plot_eppi0_sebastian_energy_loss_validation(
         // for (int b = 0; b <= nBins; ++b) thetaBins[b] = def[b];
         // equal 10 bins from 5 to 32 deg
         for (int b = 0; b <= nBins; ++b)
-            thetaBins[b] = 5.0 + b * (32.0 - 5.0) / nBins;
+            thetaBins[b] = 0.0 + b * (32.0 - 0.0) / nBins;
     } else {
         // equal 10 bins from 5 to 32 deg
         for (int b = 0; b <= nBins; ++b)
-            thetaBins[b] = 5.0 + b * (32.0 - 5.0) / nBins;
+            thetaBins[b] = 0.0 + b * (32.0 - 0.0) / nBins;
     }
     const int nbHi = 35/2, nbLo = 35/2;
 
@@ -1746,7 +1746,7 @@ void plot_exclusive_pip_energy_loss_validation(
     }
 
     // 11) integrated legend
-    TLegend* legInt = new TLegend(0.25, 0.75, 0.9, 0.9);
+    TLegend* legInt = new TLegend(0.15, 0.75, 0.9, 0.9);
     legInt->SetTextSize(0.03);
     for (int i = 0; i < nFiles; ++i) {
         legInt->AddEntry(
@@ -1798,7 +1798,7 @@ void plot_exclusive_pip_energy_loss_validation(
             sigma[i][b-1] = fbin->GetParameter(2);
         }
 
-        TLegend* legB = new TLegend(0.25, 0.75, 0.9, 0.9);
+        TLegend* legB = new TLegend(0.15, 0.75, 0.9, 0.9);
         legB->SetTextSize(0.03);
         for (int i = 0; i < nFiles; ++i) {
             legB->AddEntry(
@@ -1853,7 +1853,7 @@ void plot_exclusive_pip_energy_loss_validation(
     gr[0]->GetXaxis()->SetLimits(5, 40);
     gr[0]->GetYaxis()->SetRangeUser(0.75, 1.05);
 
-    TLegend* leg12 = new TLegend(0.6, 0.75, 0.9, 0.9);
+    TLegend* leg12 = new TLegend(0.4, 0.75, 0.9, 0.9);
     leg12->SetTextSize(0.03);
     for (int i = 0; i < nFiles; ++i) {
         leg12->AddEntry(gr[i], corrLabels[i], "lep");
