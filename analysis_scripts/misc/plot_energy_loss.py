@@ -5,7 +5,7 @@ import matplotlib.pyplot as plt
 
 # === θ ranges ===
 theta_fd = np.linspace(5, 39, 500)   # Forward Detector: 5–39°
-theta_cd = np.linspace(25, 69, 500)  # Central Detector: 25–70°
+theta_cd = np.linspace(25, 70, 500)  # Central Detector: 25–70°
 
 # === Mariana ag matrix ===
 mariana_theta_list = np.array([
@@ -28,7 +28,6 @@ ag_matrix = np.array([
      -0.01574, -0.02646, -0.02820, -0.03000, -0.03259]
 ])
 
-# === Timothy FD corrections for different runs ===
 def timothy_fd_fa18_inb(theta, p):
     A = 0.0099626 - 0.0002414*theta - 0.0000020*theta**2
     B = -0.01428267 + 0.00042833*theta + 0.00001081*theta**2
@@ -38,7 +37,7 @@ def timothy_fd_fa18_inb(theta, p):
 def timothy_fd_fa18_out(theta, p):
     A = 0.0135790 - 0.0005303*theta
     B = -0.02165929 + 0.00121123*theta
-    return A + B/p  # C=0
+    return A + B/p
 
 def timothy_fd_sp19_inb(theta, p):
     A = 0.0095205 - 0.0001914*theta - 0.0000031*theta**2
@@ -47,10 +46,8 @@ def timothy_fd_sp19_inb(theta, p):
     return A + B/p + C/p**2
 
 def timothy_fd(theta, p):
-    # default forward-detector uses Fa18 Inb
     return timothy_fd_fa18_inb(theta, p)
 
-# === Krishna FD correction ===
 def krishna_fd(theta, p):
     if theta < 27.0:
         if p < 2.4:
@@ -63,7 +60,6 @@ def krishna_fd(theta, p):
         else:
             return 0.004899
 
-# === Mariana FD correction (nearest neighbor) ===
 def mariana_fd(theta_vals, p):
     dp_table = -p * (
         ag_matrix[0] +
@@ -74,76 +70,93 @@ def mariana_fd(theta_vals, p):
     idx = np.abs(theta_vals[:, None] - mariana_theta_list[None, :]).argmin(axis=1)
     return dp_table[idx]
 
-# === Timothy CD correction ===
 def timothy_cd(theta, p):
     A = -0.2383991 + 0.0124992*theta - 0.0001646*theta**2
     B = 0.60123885 - 0.03128464*theta + 0.00041314*theta**2
     C = -0.44080146 + 0.02209857*theta - 0.00028224*theta**2
     return A + B*p + C*p**2
 
+def stefan_pi_plus_fd(theta, p):
+    if theta < 27:
+        p_cut = min(p, 2.5)
+        return 0.00342646 - 0.00282934*p_cut + 0.00205983*p_cut**2 - 0.00043158*p_cut**3
+    elif theta < 28:
+        p_cut = min(p, 1.83)
+        return 0.00328565 - 0.00376042*p_cut + 0.00433886*p_cut**2 - 0.00141614*p_cut**3
+    elif theta < 29:
+        p_cut = min(p, 2.0)
+        return 0.00328579 - 0.00281121*p_cut + 0.00342749*p_cut**2 - 0.000932614*p_cut**3
+    else:
+        return 0.0
+
+def krishna_pi_minus_fd(theta, p):
+    if theta < 27.0:
+        if p < 2.4:
+            return 0.00046571 + 0.00322164
+        else:
+            return 0.006199071
+    else:
+        if p < 1.7:
+            return -0.0024313*p**3 + 0.0094416*p**2 - 0.01257967*p + 0.0122432
+        else:
+            return 0.006199071
+
 def main():
     out_dir = 'output'
     os.makedirs(out_dir, exist_ok=True)
 
-    # === Forward Detector subplots ===
-    fig_fd, axs_fd = plt.subplots(1, 3, figsize=(12, 4), sharey=True, gridspec_kw={'wspace': 0})
+    fig_fd, axs_fd = plt.subplots(1, 3, figsize=(12,4), sharey=True, gridspec_kw={'wspace':0})
     for ax, p in zip(axs_fd, [0.75, 1.75, 2.75]):
         ax.plot(theta_fd, timothy_fd(theta_fd, p), label='Timothy', linewidth=2)
-        ax.plot(theta_fd, [krishna_fd(t, p) for t in theta_fd],
-                label='Krishna', linewidth=2, linestyle='--')
-        ax.plot(theta_fd, mariana_fd(theta_fd, p),
-                label='Mariana', linewidth=2, linestyle=':')
+        ax.plot(theta_fd, [krishna_fd(t, p) for t in theta_fd], label='Krishna', linestyle='--', linewidth=2)
+        ax.plot(theta_fd, mariana_fd(theta_fd, p), label='Mariana', linestyle=':', linewidth=2)
         ax.axhline(0, linestyle='--', color='gray', linewidth=1)
-        ax.set_xlim(5, 39)
-        ax.set_ylim(-0.02, 0.03)
-        ax.set_title(f'p = {p:.2f} GeV', fontsize=12)
-        ax.set_xlabel(r'$\theta$ (deg)')
-        if ax is axs_fd[0]:
-            ax.set_ylabel(r'$\Delta p$ (GeV)')
+        ax.set_xlim(5, 39); ax.set_ylim(-0.02, 0.03)
+        ax.set_title(f'p = {p:.2f} GeV'); ax.set_xlabel(r'$\theta$ (deg)')
+        if ax is axs_fd[0]: ax.set_ylabel(r'$\Delta p$ (GeV)')
         ax.legend(loc='lower left', frameon=True)
-    fig_fd.suptitle('Forward Detector Energy Loss Corrections', fontsize=14)
-    fig_fd.tight_layout(rect=[0, 0, 1, 0.95])
-    fig_fd.savefig(os.path.join(out_dir, 'forward_detector.png'))
+    fig_fd.suptitle('Forward Detector Proton Corrections')
+    fig_fd.tight_layout(rect=[0,0,1,0.95]); fig_fd.savefig(f'{out_dir}/forward_detector.png')
     plt.close(fig_fd)
 
-    # === Central Detector subplots ===
-    fig_cd, axs_cd = plt.subplots(1, 3, figsize=(12, 4), sharey=True, gridspec_kw={'wspace': 0})
+    fig_cd, axs_cd = plt.subplots(1, 3, figsize=(12,4), sharey=True, gridspec_kw={'wspace':0})
     for ax, p in zip(axs_cd, [0.4, 0.75, 1.1]):
         ax.plot(theta_cd, timothy_cd(theta_cd, p), label='Timothy', linewidth=2)
         ax.axhline(0, linestyle='--', color='gray', linewidth=1)
-        ax.set_xlim(25, 69)
-        ax.set_ylim(-0.03, 0.03)
-        ax.set_title(f'p = {p:.2f} GeV', fontsize=12)
-        ax.set_xlabel(r'$\theta$ (deg)')
-        if ax is axs_cd[0]:
-            ax.set_ylabel(r'$\Delta p$ (GeV)')
+        ax.set_xlim(25, 70); ax.set_ylim(-0.03, 0.03)
+        ax.set_title(f'p = {p:.2f} GeV'); ax.set_xlabel(r'$\theta$ (deg)')
+        if ax is axs_cd[0]: ax.set_ylabel(r'$\Delta p$ (GeV)')
         ax.legend(loc='upper right', frameon=True)
-    fig_cd.suptitle('Central Detector Energy Loss Corrections', fontsize=14)
-    fig_cd.tight_layout(rect=[0, 0, 1, 0.95])
-    fig_cd.savefig(os.path.join(out_dir, 'central_detector.png'))
+    fig_cd.suptitle('Central Detector Proton Corrections')
+    fig_cd.tight_layout(rect=[0,0,1,0.95]); fig_cd.savefig(f'{out_dir}/central_detector.png')
     plt.close(fig_cd)
 
-    # === Timothy run-periods subplots ===
-    fig_rp, axs_rp = plt.subplots(1, 3, figsize=(12, 4), sharey=True, gridspec_kw={'wspace': 0})
+    fig_rp, axs_rp = plt.subplots(1, 3, figsize=(12,4), sharey=True, gridspec_kw={'wspace':0})
     for ax, p in zip(axs_rp, [0.75, 1.75, 2.75]):
-        ax.plot(theta_fd, timothy_fd_fa18_inb(theta_fd, p),
-                label='RGA Fa18 Inb', linewidth=2)
-        ax.plot(theta_fd, timothy_fd_fa18_out(theta_fd, p),
-                label='RGA Fa18 Out', linewidth=2, linestyle='--')
-        ax.plot(theta_fd, timothy_fd_sp19_inb(theta_fd, p),
-                label='RGA Sp19 Inb', linewidth=2, linestyle=':')
+        ax.plot(theta_fd, timothy_fd_fa18_inb(theta_fd, p), label='Fa18 Inb', linewidth=2)
+        ax.plot(theta_fd, timothy_fd_fa18_out(theta_fd, p), label='Fa18 Out', linestyle='--', linewidth=2)
+        ax.plot(theta_fd, timothy_fd_sp19_inb(theta_fd, p), label='Sp19 Inb', linestyle=':', linewidth=2)
         ax.axhline(0, linestyle='--', color='gray', linewidth=1)
-        ax.set_xlim(5, 39)
-        ax.set_ylim(-0.02, 0.03)
-        ax.set_title(f'p = {p:.2f} GeV', fontsize=12)
-        ax.set_xlabel(r'$\theta$ (deg)')
-        if ax is axs_rp[0]:
-            ax.set_ylabel(r'$\Delta p$ (GeV)')
+        ax.set_xlim(5, 39); ax.set_ylim(-0.02, 0.02)
+        ax.set_title(f'p = {p:.2f} GeV'); ax.set_xlabel(r'$\theta$ (deg)')
+        if ax is axs_rp[0]: ax.set_ylabel(r'$\Delta p$ (GeV)')
         ax.legend(loc='lower left', frameon=True)
-    fig_rp.suptitle("Timothy's FD Corrections Across Run Periods", fontsize=14)
-    fig_rp.tight_layout(rect=[0, 0, 1, 0.95])
-    fig_rp.savefig(os.path.join(out_dir, 'timothy_run_periods.png'))
+    fig_rp.suptitle("Timothy's FD Corrections Across Run Periods")
+    fig_rp.tight_layout(rect=[0,0,1,0.95]); fig_rp.savefig(f'{out_dir}/timothy_run_periods.png')
     plt.close(fig_rp)
+
+    fig_pi, axs_pi = plt.subplots(1, 3, figsize=(12,4), sharey=True, gridspec_kw={'wspace':0})
+    for ax, p in zip(axs_pi, [0.5, 1.0, 1.5]):
+        ax.plot(theta_fd, [stefan_pi_plus_fd(t, p) for t in theta_fd], label='Stefan π⁺ (Outb)', linewidth=2)
+        ax.plot(theta_fd, [krishna_pi_minus_fd(t, p) for t in theta_fd], label='Krishna π⁻ (Inb)', linestyle='--', linewidth=2)
+        ax.axhline(0, linestyle='--', color='gray', linewidth=1)
+        ax.set_xlim(5, 39); ax.set_ylim(-0.01, 0.01)
+        ax.set_title(f'p = {p:.2f} GeV'); ax.set_xlabel(r'$\theta$ (deg)')
+        if ax is axs_pi[0]: ax.set_ylabel(r'$\Delta p$ (GeV)')
+        ax.legend(loc='lower left', frameon=True)
+    fig_pi.suptitle('π⁺ vs π⁻ Energy Loss (FD)')
+    fig_pi.tight_layout(rect=[0,0,1,0.95]); fig_pi.savefig(f'{out_dir}/pi_comparison_fd.png')
+    plt.close(fig_pi)
 
     print(f'Saved figures to {out_dir}/')
 
