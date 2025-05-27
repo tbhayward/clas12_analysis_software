@@ -76,7 +76,7 @@ def main():
         ax.plot(theta_fd, [krishna_fd(t, p) for t in theta_fd], label='Krishna', linewidth=2, linestyle='--')
         ax.plot(theta_fd, mariana_fd(theta_fd, p), label='Mariana', linewidth=2, linestyle=':')
         ax.axhline(0, linestyle='--', color='gray', linewidth=1)
-        ax.set_xlim(5, 40)
+        ax.set_xlim(5, 39)
         ax.set_ylim(-0.02, 0.02)
         ax.set_title(f'p = {p:.1f} GeV', fontsize=12)
         ax.set_xlabel(r'$\theta$ (deg)')
