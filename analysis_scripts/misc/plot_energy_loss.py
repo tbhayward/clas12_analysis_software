@@ -91,10 +91,7 @@ def stefan_pi_plus_fd(theta, p):
 
 def krishna_pi_minus_fd(theta, p):
     if theta < 27.0:
-        if p < 2.4:
-            return 0.00046571 + 0.00322164
-        else:
-            return 0.006199071
+        return p*0.00046571 + 0.00322164
     else:
         if p < 1.7:
             return -0.0024313*p**3 + 0.0094416*p**2 - 0.01257967*p + 0.0122432
