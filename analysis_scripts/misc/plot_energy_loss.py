@@ -93,13 +93,13 @@ def main():
     os.makedirs(out_dir, exist_ok=True)
 
     fig_fd, axs_fd = plt.subplots(1, 3, figsize=(12, 4), sharey=True, gridspec_kw={'wspace': 0})
-    for ax, p in zip(axs_fd, [0.5, 1.5, 2.5]):
+    for ax, p in zip(axs_fd, [0.75, 1.75, 2.75]):
         ax.plot(theta_fd, timothy_fd(theta_fd, p), label='Timothy', linewidth=2)
         ax.plot(theta_fd, [krishna_fd(t, p) for t in theta_fd], label='Krishna', linewidth=2, linestyle='--')
         ax.plot(theta_fd, mariana_fd(theta_fd, p), label='Mariana', linewidth=2, linestyle=':')
         ax.axhline(0, linestyle='--', color='gray', linewidth=1)
         ax.set_xlim(5, 39)
-        ax.set_ylim(-0.02, 0.02)
+        ax.set_ylim(-0.02, 0.03)
         ax.set_title(f'p = {p:.1f} GeV', fontsize=12)
         ax.set_xlabel(r'$\theta$ (deg)')
         if ax is axs_fd[0]:
