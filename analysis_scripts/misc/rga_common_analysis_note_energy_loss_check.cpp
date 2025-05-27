@@ -1603,13 +1603,15 @@ void plot_eppi0_sebastian_energy_loss_validation(
 void plot_exclusive_pip_energy_loss_validation(
     const char* file1,
     const char* file2,
+    const char* file3,
     const char* titleSuffix) {
-    // labels for our two datasets
-    const int nFiles = 2;
-    const char* files[nFiles] = { file1, file2 };
+    // labels for our three datasets
+    const int nFiles = 3;
+    const char* files[nFiles] = { file1, file2, file3 };
     const char* corrLabels[nFiles] = {
         "No Corrections",
-        "#pi^{+} energy loss"
+        "e^{-} Corrections",
+        "e^{-} + #pi Corrections"
     };
 
     // 1) open files & trees
@@ -1644,7 +1646,7 @@ void plot_exclusive_pip_energy_loss_validation(
     const int nBins = 10;
     Double_t thetaBins[nBins+1];
     for (int b = 0; b <= nBins; ++b) {
-        thetaBins[b] = 5.0 + b * 3.5;  // (40 - 5) / 10 = 3.5
+        thetaBins[b] = 5.0 + b * (40.0 - 5.0) / nBins;
     }
 
     // 5) Mx2 histogram params
@@ -1690,7 +1692,7 @@ void plot_exclusive_pip_energy_loss_validation(
         for (Long64_t ev = 0; ev < N; ++ev) {
             tree[i]->GetEntry(ev);
             double θ = p_theta[i] * 180.0 / TMath::Pi();
-            if (θ < 5.0 || θ >= 40.0) continue;
+            if (θ < thetaBins[0] || θ >= thetaBins[nBins]) continue;
 
             h[i][0]->Fill(Mx2[i]);
             for (int b = 0; b < nBins; ++b) {
@@ -2178,15 +2180,15 @@ int main(int argc, char** argv) {
     //     argv[1], argv[2], argv[3], argv[4], false
     // );
 
-    plot_eppi0_sebastian_energy_loss_validation(
-        argv[1], argv[2], argv[3], argv[4], true
-    );
+    // plot_eppi0_sebastian_energy_loss_validation(
+    //     argv[1], argv[2], argv[3], argv[4], true
+    // );
 
     /////////
 
-    // plot_exclusive_pip_energy_loss_validation(
-    //     argv[1], argv[2], argv[3]
-    // );
+    plot_exclusive_pip_energy_loss_validation(
+        argv[1], argv[2], argv[3], argv[4]
+    );
 
     // plot_exclusive_twopion_energy_loss_validation(
     //     argv[1], argv[2], argv[3]
