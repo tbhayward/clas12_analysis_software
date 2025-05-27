@@ -134,7 +134,7 @@ def main():
                 label='RGA Sp19 Inb', linewidth=2, linestyle=':')
         ax.axhline(0, linestyle='--', color='gray', linewidth=1)
         ax.set_xlim(5, 39)
-        ax.set_ylim(-0.02, 0.02)
+        ax.set_ylim(-0.02, 0.03)
         ax.set_title(f'p = {p:.2f} GeV', fontsize=12)
         ax.set_xlabel(r'$\theta$ (deg)')
         if ax is axs_rp[0]:
