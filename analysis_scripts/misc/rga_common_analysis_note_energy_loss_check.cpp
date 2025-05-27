@@ -1442,7 +1442,7 @@ void plot_eppi0_sebastian_energy_loss_validation(
 
         fitInt[i] = new TF1(
             Form("fitInt%d", i),
-            "gaus(0)+pol3(3)",
+            "gaus(0)+pol1(3)",
             rng_min, rng_max
         );
         fitInt[i]->SetParameters(
@@ -1454,7 +1454,7 @@ void plot_eppi0_sebastian_energy_loss_validation(
             plotPi0Mass ? 0.11 : 0.16,
             plotPi0Mass ? 0.75 : 1.00
         );
-        fitInt[i]->SetParLimits(2, 0.08, 0.5);
+        fitInt[i]->SetParLimits(2, 0.00, 0.5);
         fitInt[i]->SetLineColor(kBlack + i);
         fitInt[i]->SetLineWidth(1);
         h[i][0]->Fit(fitInt[i], "Q");
@@ -1498,7 +1498,7 @@ void plot_eppi0_sebastian_energy_loss_validation(
 
             TF1* fbin = new TF1(
                 Form("fitBin%d_%d", i, b),
-                "gaus(0)+pol3(3)",
+                "gaus(0)+pol1(3)",
                 rng_min, rng_max
             );
             fbin->SetParameters(
@@ -1510,7 +1510,7 @@ void plot_eppi0_sebastian_energy_loss_validation(
                 plotPi0Mass ? 0.11 : 0.16,
                 plotPi0Mass ? 0.75 : 1.00
             );
-            fbin->SetParLimits(2, 0.08, 0.5);
+            fbin->SetParLimits(2, 0.00, 0.5);
             fbin->SetLineColor(kBlack + i);
             fbin->SetLineWidth(1);
             h[i][b]->Fit(fbin, "Q");
