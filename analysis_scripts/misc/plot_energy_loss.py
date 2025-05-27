@@ -54,11 +54,33 @@ def krishna_fd(theta, p):
             # constant kick for θ>=27°, p>=2.4
             return 0.004899
 
+# def mariana_fd(theta_vals, p):
+#     dp_vals = -p*(ag_matrix[0] + ag_matrix[1]*p + ag_matrix[2]/p + ag_matrix[3]/(p**2))
+#     interp = interp1d(mariana_theta_list, dp_vals, kind='linear',
+#                       bounds_error=False, fill_value='extrapolate')
+#     return interp(theta_vals)
+
 def mariana_fd(theta_vals, p):
-    dp_vals = -p*(ag_matrix[0] + ag_matrix[1]*p + ag_matrix[2]/p + ag_matrix[3]/(p**2))
-    interp = interp1d(mariana_theta_list, dp_vals, kind='linear',
-                      bounds_error=False, fill_value='extrapolate')
-    return interp(theta_vals)
+    """
+    Compute Δp by nearest‐neighbor lookup from Mariana's table,
+    for a fixed momentum p (GeV).
+    theta_vals: 1D array of angles in degrees
+    p: reference momentum in GeV
+    Returns: 1D array of Δp values matching theta_vals
+    """
+    # Precompute Δp at the discrete table angles
+    dp_table = -p * (
+        ag_matrix[0] +
+        ag_matrix[1] * p +
+        ag_matrix[2] / p +
+        ag_matrix[3] / (p**2)
+    )
+
+    # For each theta in theta_vals, pick the nearest table value
+    idx = np.abs(theta_vals[:, None] - mariana_theta_list[None, :]) \
+              .argmin(axis=1)
+
+    return dp_table[idx]
 
 def timothy_cd(theta, p):
     A = -0.2383991 + 0.0124992*theta - 0.0001646*theta**2
