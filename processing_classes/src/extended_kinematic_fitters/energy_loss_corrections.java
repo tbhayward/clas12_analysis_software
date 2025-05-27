@@ -674,9 +674,7 @@ public class energy_loss_corrections {
         if (pid == -211) { // pi minus, from Krishna
             if (isForwardDetector) {
                 if (theta < 27 * Math.PI / 180) {
-                    if (p < 2.4) {
-                        p = p + (0.00046571 + 0.00322164);
-                    }
+                    p = p + p*0.00046571 + 0.00322164;
                 } else if (theta >= 27 * Math.PI / 180) {
                     if (p < 1.7) {
                         p = p + (-0.0024313) * Math.pow(p, 3) + (0.0094416) * Math.pow(p, 2)
