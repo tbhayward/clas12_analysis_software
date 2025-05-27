@@ -68,14 +68,13 @@ def main():
         ax.plot(theta_deg, mariana_fd(theta_deg, p),
                 label='Mariana', linewidth=2, linestyle=':')
         ax.set_xlim(5, 33)
-        ax.set_ylim(0.06, 0.6)
+        ax.set_ylim(-0.06, 0.06)
         ax.set_title(f'p = {p:.1f} GeV', fontsize=12)
         ax.set_xlabel(r'$\theta$ (deg)')
         if ax is axs_fd[0]:
             ax.set_ylabel(r'$\Delta p$ (GeV)')
-    fig_fd.legend(loc='upper right', frameon=True, title='FD Corrections')
-    fig_fd.suptitle('Forward Detector Proton Energy Loss Corrections',
-                    fontsize=14)
+        ax.legend(loc='upper right', frameon=True)
+    fig_fd.suptitle('Forward Detector Proton Energy Loss Corrections', fontsize=14)
     fig_fd.tight_layout(rect=[0, 0, 1, 0.95])
     fig_fd.savefig(f'{out_dir}/forward_detector.png')
 
@@ -87,14 +86,13 @@ def main():
         ax.plot(theta_deg, timothy_cd(theta_deg, p),
                 label='Timothy', linewidth=2)
         ax.set_xlim(5, 33)
-        ax.set_ylim(0.06, 0.6)
+        ax.set_ylim(-0.06, 0.06)
         ax.set_title(f'p = {p:.2f} GeV', fontsize=12)
         ax.set_xlabel(r'$\theta$ (deg)')
         if ax is axs_cd[0]:
             ax.set_ylabel(r'$\Delta p$ (GeV)')
-    fig_cd.legend(loc='upper right', frameon=True, title='CD Corrections')
-    fig_cd.suptitle('Central Detector Proton Energy Loss Corrections',
-                    fontsize=14)
+        ax.legend(loc='upper right', frameon=True)
+    fig_cd.suptitle('Central Detector Proton Energy Loss Corrections', fontsize=14)
     fig_cd.tight_layout(rect=[0, 0, 1, 0.95])
     fig_cd.savefig(f'{out_dir}/central_detector.png')
 
