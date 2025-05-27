@@ -5,7 +5,7 @@ import matplotlib.pyplot as plt
 from scipy.interpolate import interp1d
 
 # === θ ranges ===
-theta_fd = np.linspace(5, 33, 500)   # Forward Detector: 5–33°
+theta_fd = np.linspace(5, 40, 500)   # Forward Detector: 5–33°
 theta_cd = np.linspace(25, 70, 500)  # Central Detector: 25–70°
 
 # === Mariana ag matrix ===
