@@ -388,7 +388,7 @@ def plot_electron_comparison_inb(out_dir):
                 [jpsi_inb(p)]*len(phi_local),
                 label='jpsi inbending', linestyle='--', linewidth=2)
         ax.axhline(0, linestyle='--', color='gray', linewidth=1)
-        ax.set_xlim(0, 59.99); ax.set_ylim(-0.06, 0.26)
+        ax.set_xlim(0, 59.99); ax.set_ylim(-0.06, 0.026)
         ax.set_title(f'p = {p:.0f} GeV')
         ax.set_xlabel(r'$\phi_{\mathrm{local}}$ (deg)')
         if ax is axs[0]:
@@ -411,7 +411,7 @@ def plot_electron_comparison_outb(out_dir):
                 [jpsi_out(p)]*len(phi_local),
                 label='jpsi outbending', linestyle='--', linewidth=2)
         ax.axhline(0, linestyle='--', color='gray', linewidth=1)
-        ax.set_xlim(0, 59.99); ax.set_ylim(-0.06, 0.26)
+        ax.set_xlim(0, 59.99); ax.set_ylim(-0.06, 0.026)
         ax.set_title(f'p = {p:.0f} GeV')
         ax.set_xlabel(r'$\phi_{\mathrm{local}}$ (deg)')
         if ax is axs[0]:
