@@ -1,5 +1,11 @@
 package extended_kinematic_fitters;
 
+import static extended_kinematic_fitters.energy_loss_corrections.p_calculation;
+import static extended_kinematic_fitters.energy_loss_corrections.phi_calculation;
+import static extended_kinematic_fitters.energy_loss_corrections.theta_calculation;
+import static extended_kinematic_fitters.energy_loss_corrections.x_calculation;
+import static extended_kinematic_fitters.energy_loss_corrections.y_calculation;
+import static extended_kinematic_fitters.energy_loss_corrections.z_calculation;
 import org.jlab.io.hipo.HipoDataBank;
 
 /**
@@ -430,6 +436,35 @@ public class momentum_corrections {
             p_array[1] = (float) (Py * scale);
             p_array[2] = (float) (Pz * scale);
         }
+    }
+
+
+    public void jpsi_momentum_corrections(int particle_Index, float[] p_array,
+            HipoDataBank rec_Bank, HipoDataBank run_Bank, HipoDataBank track_Bank) {
+        
+        double px = p_array[0];
+        double py = p_array[1];
+        double pz = p_array[2];
+
+        double p = p_calculation(px, py, pz);
+        double theta = theta_calculation(px, py, pz);
+        double phi = phi_calculation(px, py);
+        
+        boolean inbending  = run_Bank.getFloat("torus", 0) == -1, outbending = !inbending;
+        
+        double dp = 0;
+        if (inbending) {
+            dp = 0.0093796*p + (-0.0007808)*p*p + (0.000163)*p*p*p + (-0.02029) + 0.04121/p;
+        } else {
+            dp = (-0.06520)*p + 0.007099*p*p + (-0.00005929)*p*p*p + 0.2145 + -(0.1153)/p;
+        }
+        
+        p =+ dp;
+        // Update the px, py, pz values
+        p_array[0] = (float) x_calculation(p, theta, phi);
+        p_array[1] = (float) y_calculation(p, theta, phi);
+        p_array[2] = (float) z_calculation(p, theta);
+        
     }
 
 }
