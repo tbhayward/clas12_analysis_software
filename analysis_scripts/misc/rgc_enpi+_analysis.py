@@ -75,17 +75,23 @@ def make_normalized_Mx2_plots(nh3_info, c_info, run_charges, output_path):
 
     fig, axes = plt.subplots(1, 2, figsize=(12, 6), sharey=True)
 
+    # Function to compute Q_tot given a tree
+    def compute_total_charge(tree, label):
+        runnum_arr = tree.arrays("runnum", library="np")["runnum"]
+        # convert to integer run numbers
+        runnums_int = runnum_arr.astype(int)
+        uniques     = np.unique(runnums_int)
+        Q_tot       = sum(run_charges.get(int(r), 0.0) for r in uniques)
+        print(f"  {label}: number of unique runs = {len(uniques)}, Q_tot = {Q_tot:.3f} nC")
+        return Q_tot
+    #enddef
+
     # Left: NH3
     print("[DEBUG] NH3 total charges:")
     for entry in nh3_info:
         tree  = entry['tree']
         label = entry['label']
-
-        runnums = tree.arrays("runnum", library="np")["runnum"]
-        uniques = np.unique(runnums)
-        Q_tot   = sum(run_charges.get(r, 0.0) for r in uniques)
-        print(f"  {label}: Q_tot = {Q_tot:.3f} nC")
-
+        Q_tot = compute_total_charge(tree, label)
         if Q_tot <= 0:
             print(f"[WARNING] Skipping {label} (Q_tot={Q_tot:.3f})")
             continue
@@ -93,13 +99,13 @@ def make_normalized_Mx2_plots(nh3_info, c_info, run_charges, output_path):
 
         Mx2_arr = tree.arrays("Mx2", library="np")["Mx2"]
         counts, _ = np.histogram(Mx2_arr, bins=bins)
-        counts = counts.astype(float)      # ensure float dtype
-        counts /= Q_tot                    # normalize by total charge
+        counts = counts.astype(float)
+        counts /= Q_tot
 
         axes[0].step(bins[:-1], counts, where="post", label=label)
     #endfor
     axes[0].set_title("NH₃")
-    axes[0].set_xlabel(r"$M_x^2$ [GeV$^2$")
+    axes[0].set_xlabel(r"$M_x^2$ [GeV$^2$]")
     axes[0].set_ylabel("events / nC")
     axes[0].set_xlim(x_min, x_max)
     axes[0].legend(loc="upper right")
@@ -109,12 +115,7 @@ def make_normalized_Mx2_plots(nh3_info, c_info, run_charges, output_path):
     for entry in c_info:
         tree  = entry['tree']
         label = entry['label']
-
-        runnums = tree.arrays("runnum", library="np")["runnum"]
-        uniques = np.unique(runnums)
-        Q_tot   = sum(run_charges.get(r, 0.0) for r in uniques)
-        print(f"  {label}: Q_tot = {Q_tot:.3f} nC")
-
+        Q_tot = compute_total_charge(tree, label)
         if Q_tot <= 0:
             print(f"[WARNING] Skipping {label} (Q_tot={Q_tot:.3f})")
             continue
@@ -128,7 +129,7 @@ def make_normalized_Mx2_plots(nh3_info, c_info, run_charges, output_path):
         axes[1].step(bins[:-1], counts, where="post", label=label)
     #endfor
     axes[1].set_title("C")
-    axes[1].set_xlabel(r"$M_x^2$ [GeV$^2$")
+    axes[1].set_xlabel(r"$M_x^2$ [GeV$^2$]")
     axes[1].set_xlim(x_min, x_max)
     axes[1].legend(loc="upper right")
 
@@ -152,7 +153,7 @@ def main():
 
     # 4) Generate & save the Mx2 plots
     make_normalized_Mx2_plots(nh3_info, c_info, run_charges, OUTPUT_FILE)
-#endfor
+#endif
 
 if __name__ == "__main__":
     main()
