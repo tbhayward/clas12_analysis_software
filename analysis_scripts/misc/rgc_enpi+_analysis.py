@@ -77,12 +77,14 @@ def make_normalized_Mx2_plots(nh3_info, c_info, run_charges, output_path):
     for entry in nh3_info:
         tree  = entry['tree']
         label = entry['label']
-        runnums = tree.array("runnum", library="np")
+
+        # use .arrays(...) and then extract the branch
+        runnums = tree.arrays("runnum", library="np")["runnum"]
         uniques = np.unique(runnums)
         Q_tot   = sum(run_charges.get(r, 0.0) for r in uniques)
 
-        Mx2     = tree.array("Mx2", library="np")
-        counts, _ = np.histogram(Mx2, bins=bins)
+        Mx2_arr = tree.arrays("Mx2", library="np")["Mx2"]
+        counts, _ = np.histogram(Mx2_arr, bins=bins)
         counts /= Q_tot
 
         axes[0].step(bins[:-1], counts, where="post", label=label)
@@ -97,12 +99,13 @@ def make_normalized_Mx2_plots(nh3_info, c_info, run_charges, output_path):
     for entry in c_info:
         tree  = entry['tree']
         label = entry['label']
-        runnums = tree.array("runnum", library="np")
+
+        runnums = tree.arrays("runnum", library="np")["runnum"]
         uniques = np.unique(runnums)
         Q_tot   = sum(run_charges.get(r, 0.0) for r in uniques)
 
-        Mx2     = tree.array("Mx2", library="np")
-        counts, _ = np.histogram(Mx2, bins=bins)
+        Mx2_arr = tree.arrays("Mx2", library="np")["Mx2"]
+        counts, _ = np.histogram(Mx2_arr, bins=bins)
         counts /= Q_tot
 
         axes[1].step(bins[:-1], counts, where="post", label=label)
@@ -126,13 +129,12 @@ def main():
     # 3) Open all the trees
     nh3_info = load_trees(NH3_FILES)
     c_info   = load_trees(C_FILES)
-    h2_info  = load_trees(H2_FILES)
-    d2_info  = load_trees(D2_FILES)
-    # (h2_info and d2_info loaded for future use)
-    
+    h2_info  = load_trees(H2_FILES)  # for future hydrogen plots
+    d2_info  = load_trees(D2_FILES)  # for future deuterium plots
+
     # 4) Generate & save the Mx2 plots
     make_normalized_Mx2_plots(nh3_info, c_info, run_charges, OUTPUT_FILE)
-#endfor
+#endif
 
 if __name__ == "__main__":
     main()
