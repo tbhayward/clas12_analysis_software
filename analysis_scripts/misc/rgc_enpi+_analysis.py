@@ -59,7 +59,7 @@ def load_trees(files):
             print(f"[ERROR] ROOT file missing: {fp}")
             continue
         tree = uproot.open(fp)["PhysicsEvents"]
-        print(f"[DEBUG] loaded tree for {label}: {tree}")
+        print(f"[DEBUG] loaded tree for {label}: {tree}, entries={tree.num_entries}")
         info.append({'tree': tree, 'label': label})
     return info
 
@@ -68,14 +68,9 @@ def make_normalized_Mx2_plots(nh3_info, c_info, run_charges, outpath):
     bins = np.linspace(-1.0, 2.0, 101)
     fig, axes = plt.subplots(1, 2, figsize=(12, 6), sharey=True)
 
-    def inspect_branches(tree, label):
-        keys = tree.keys()
-        print(f"[DEBUG] branches in {label}: {keys}")
-        return keys
-
     def compute_charge(tree, label):
-        # Read runnum branch correctly
-        run_arr = tree.arrays(["runnum"], library="np")["runnum"].astype(int)
+        run_arr = tree["runnum"].array(library="np").astype(int)
+        print(f"    {label}: loaded runnum array length = {run_arr.size}")
         if run_arr.size == 0:
             print(f"[WARNING] runnum array empty for {label}")
             return 0
@@ -86,12 +81,11 @@ def make_normalized_Mx2_plots(nh3_info, c_info, run_charges, outpath):
 
     print("[DEBUG] NH3 processing:")
     for entry in nh3_info:
-        t, lbl = entry['tree'], entry['label']
-        inspect_branches(t, lbl)
-        Qtot = compute_charge(t, lbl)
+        tree, lbl = entry['tree'], entry['label']
+        Qtot = compute_charge(tree, lbl)
         if Qtot <= 0:
             continue
-        arr = t.arrays(["Mx2"], library="np")["Mx2"]
+        arr = tree["Mx2"].array(library="np")
         cts, _ = np.histogram(arr, bins=bins)
         axes[0].step(bins[:-1], cts.astype(float)/Qtot, where='post', label=lbl)
     axes[0].set(title="NH₃", xlabel=r"$M_x^2$ [GeV$^2$]", ylabel="events/nC")
@@ -99,12 +93,11 @@ def make_normalized_Mx2_plots(nh3_info, c_info, run_charges, outpath):
 
     print("[DEBUG] C processing:")
     for entry in c_info:
-        t, lbl = entry['tree'], entry['label']
-        inspect_branches(t, lbl)
-        Qtot = compute_charge(t, lbl)
+        tree, lbl = entry['tree'], entry['label']
+        Qtot = compute_charge(tree, lbl)
         if Qtot <= 0:
             continue
-        arr = t.arrays(["Mx2"], library="np")["Mx2"]
+        arr = tree["Mx2"].array(library="np")
         cts, _ = np.histogram(arr, bins=bins)
         axes[1].step(bins[:-1], cts.astype(float)/Qtot, where='post', label=lbl)
     axes[1].set(title="C", xlabel=r"$M_x^2$ [GeV$^2$]")
