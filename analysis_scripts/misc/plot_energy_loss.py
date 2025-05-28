@@ -354,7 +354,7 @@ def plot_electron_comparison(out_dir, bending):
                 label=f'jpsi {bending}', linestyle='--', linewidth=2)
         ax.axhline(0, linestyle='--', color='gray', linewidth=1)
         ax.set_xlim(0, 59.99)
-        ax.set_ylim(-0.016, 0.016)
+        ax.set_ylim(-0.3, 0.3)
         ax.set_title(f'p = {p:.0f} GeV')
         ax.set_xlabel(r'$\phi_{\mathrm{local}}$ (deg)')
         if ax is axs[0]:
