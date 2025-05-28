@@ -454,7 +454,7 @@ def plot_electron_comparison_outb(out_dir):
         ax.set_ylim(-0.06, 0.026)
         ax.autoscale(enable=False)
 
-    fig.suptitle('Electron Corrections: Fall 2018 Pass 2 (out-bending) vs J/ψ')
+    fig.suptitle('Electron Corrections: Fall 2018 Pass 2 TESTS (out-bending) vs J/#psi')
     fig.tight_layout(rect=[0,0,1,0.95])
     fig.savefig(f'{out_dir}/electron_corrections_outbending.png')
     plt.close(fig)
