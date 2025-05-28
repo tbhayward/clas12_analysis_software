@@ -23,13 +23,6 @@ C_FILES = [
     ("/work/clas12/thayward/CLAS12_exclusive/enpi+/data/pass2/data/enpi+/rgc_sp23_inb_C_epi+.root",  "Sp23"),
 ]
 
-H2_FILES = [
-    ("/work/clas12/thayward/CLAS12_exclusive/enpi+/data/pass2/data/enpi+/rga_sp19_inb_H2_epi+.root", "Sp19"),
-]
-D2_FILES = [
-    ("/work/clas12/thayward/CLAS12_exclusive/enpi+/data/pass2/data/enpi+/rgb_sp19_inb_D2_epi+.root", "Sp19"),
-]
-
 
 def parse_run_charges(csv_path):
     print(f"[DEBUG] parse_run_charges: opening '{csv_path}'")
@@ -66,7 +59,7 @@ def load_trees(files):
             print(f"[ERROR] ROOT file missing: {fp}")
             continue
         tree = uproot.open(fp)["PhysicsEvents"]
-        print(f"[DEBUG] loaded tree for {label}: {tree} ")
+        print(f"[DEBUG] loaded tree for {label}: {tree}")
         info.append({'tree': tree, 'label': label})
     return info
 
@@ -81,7 +74,8 @@ def make_normalized_Mx2_plots(nh3_info, c_info, run_charges, outpath):
         return keys
 
     def compute_charge(tree, label):
-        run_arr = tree.arrays(tracks=["runnum"], library="np")["runnum"].astype(int)
+        # Read runnum branch correctly
+        run_arr = tree.arrays(["runnum"], library="np")["runnum"].astype(int)
         if run_arr.size == 0:
             print(f"[WARNING] runnum array empty for {label}")
             return 0
@@ -113,7 +107,7 @@ def make_normalized_Mx2_plots(nh3_info, c_info, run_charges, outpath):
         arr = t.arrays(["Mx2"], library="np")["Mx2"]
         cts, _ = np.histogram(arr, bins=bins)
         axes[1].step(bins[:-1], cts.astype(float)/Qtot, where='post', label=lbl)
-    axes[1].set(title="C", xlabel=r"$M_x^2$ [GeV$^2$")
+    axes[1].set(title="C", xlabel=r"$M_x^2$ [GeV$^2$]")
     axes[1].legend(loc='upper right')
 
     os.makedirs(os.path.dirname(outpath), exist_ok=True)
