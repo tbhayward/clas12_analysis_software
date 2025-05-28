@@ -78,14 +78,14 @@ def make_normalized_Mx2_plots(nh3_info, c_info, run_charges, output_path):
         tree  = entry['tree']
         label = entry['label']
 
-        # use .arrays(...) and then extract the branch
         runnums = tree.arrays("runnum", library="np")["runnum"]
         uniques = np.unique(runnums)
         Q_tot   = sum(run_charges.get(r, 0.0) for r in uniques)
 
         Mx2_arr = tree.arrays("Mx2", library="np")["Mx2"]
         counts, _ = np.histogram(Mx2_arr, bins=bins)
-        counts /= Q_tot
+        counts = counts.astype(float)        # ensure float dtype
+        counts /= Q_tot                      # normalize by total charge
 
         axes[0].step(bins[:-1], counts, where="post", label=label)
     #endfor
@@ -106,7 +106,8 @@ def make_normalized_Mx2_plots(nh3_info, c_info, run_charges, output_path):
 
         Mx2_arr = tree.arrays("Mx2", library="np")["Mx2"]
         counts, _ = np.histogram(Mx2_arr, bins=bins)
-        counts /= Q_tot
+        counts = counts.astype(float)        # ensure float dtype
+        counts /= Q_tot                      # normalize by total charge
 
         axes[1].step(bins[:-1], counts, where="post", label=label)
     #endfor
@@ -129,12 +130,12 @@ def main():
     # 3) Open all the trees
     nh3_info = load_trees(NH3_FILES)
     c_info   = load_trees(C_FILES)
-    h2_info  = load_trees(H2_FILES)  # for future hydrogen plots
-    d2_info  = load_trees(D2_FILES)  # for future deuterium plots
+    h2_info  = load_trees(H2_FILES)  
+    d2_info  = load_trees(D2_FILES)  
 
     # 4) Generate & save the Mx2 plots
     make_normalized_Mx2_plots(nh3_info, c_info, run_charges, OUTPUT_FILE)
-#endif
+#endfor
 
 if __name__ == "__main__":
     main()
