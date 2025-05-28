@@ -405,7 +405,7 @@ def plot_electron_comparison_inb(out_dir):
         if ax is axs[0]:
             ax.set_ylabel(r'$\Delta p$ (GeV)')
 
-        ax.legend(loc='upper right', frameon=True, fontsize='small')
+        ax.legend(loc='upper left', frameon=True, fontsize='small')
 
         # clamp view and disable any further autoscaling
         ax.set_xlim(0, 59.99)
@@ -447,7 +447,7 @@ def plot_electron_comparison_outb(out_dir):
         if ax is axs[0]:
             ax.set_ylabel(r'$\Delta p$ (GeV)')
 
-        ax.legend(loc='upper right', frameon=True, fontsize='small')
+        ax.legend(loc='upper left', frameon=True, fontsize='small')
 
         # clamp view and disable any further autoscaling
         ax.set_xlim(0, 59.99)
