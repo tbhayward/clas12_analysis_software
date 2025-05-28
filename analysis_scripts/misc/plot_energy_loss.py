@@ -463,12 +463,21 @@ def main():
     out_dir = 'output'
     os.makedirs(out_dir, exist_ok=True)
 
-    plot_forward_detector_protons(out_dir)
-    plot_central_detector_protons(out_dir)
-    plot_run_periods(out_dir)
-    plot_pion_comparison(out_dir)
-    plot_electron_comparison_inb(out_dir)
-    plot_electron_comparison_outb(out_dir)
+    plotters = [
+      plot_forward_detector_protons,
+      plot_central_detector_protons,
+      plot_run_periods,
+      plot_pion_comparison,
+      plot_electron_comparison_inb,
+      plot_electron_comparison_outb,
+    ]
+    for func in plotters:
+        print(f"→ running {func.__name__}()")
+        try:
+            func(out_dir)
+            print(f"   ✔️ {func.__name__} succeeded")
+        except Exception as err:
+            print(f"   ❌ {func.__name__} failed: {err!r}")
 
 if __name__ == '__main__':
     main()
