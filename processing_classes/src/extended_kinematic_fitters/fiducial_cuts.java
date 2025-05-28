@@ -233,10 +233,10 @@ public class fiducial_cuts {
         }
     }
 
-    public boolean cvt_fiducial_cut(int particle_Index, HipoDataBank rec_Bank, HipoDataBank traj_Bank, 
+    public boolean cvt_fiducial_cut(int particle_Index, HipoDataBank rec_Bank, HipoDataBank traj_Bank,
             int strictness) {
         generic_tests generic_tests = new generic_tests();
-        
+
         double edge_1 = 1;
         double edge_3 = 1;
         double edge_5 = 1;
@@ -273,49 +273,56 @@ public class fiducial_cuts {
             }
         }
         boolean edge_test = edge_1 > 0 && edge_3 > 0 && edge_5 > 0 && edge_7 > 0 && edge_12 > 0;
-        boolean phi_test = !((phi_12 > 25 && phi_12 < 40) || (phi_12 > 143 && phi_12 < 158) ||
-                (phi_12 > 265 && phi_12 < 280));
+        boolean phi_test = !((phi_12 > 25 && phi_12 < 40) || (phi_12 > 143 && phi_12 < 158)
+                || (phi_12 > 265 && phi_12 < 280));
         if (strictness == 1) {
             return edge_test;
         } else {
             return edge_test && phi_test;
         }
-        
+
     }
 
-    public boolean dc_fiducial_cut(int particle_Index, HipoDataBank rec_Bank, HipoDataBank traj_Bank, 
+    public boolean dc_fiducial_cut(int particle_Index, HipoDataBank rec_Bank, HipoDataBank traj_Bank,
             HipoDataBank run_Bank) {
-        int pid = rec_Bank.getInt("pid", particle_Index); 
+        int pid = rec_Bank.getInt("pid", particle_Index);
         // different cuts for inbending and outbending tracks
         int runnum = run_Bank.getInt("run", 0);
         boolean inbending = false;
         boolean outbending = false;
-        if ((runnum >= 4763 && runnum <= 5419) || (runnum >= 6616 && runnum <= 6783)) {
-            // inbending electron torus polarity
-            if (pid == 11 || pid == -211 || pid == -321 || pid == -2212) {
-                inbending = true;
-            } else if (pid == -11 || pid == 211 || pid == 321 || pid == 2212) {
-                outbending = true;
-            }
-        } else if (runnum >= 5423 && runnum <= 5666) {
-            // outbending electron torus polarity
-            if (pid == 11 || pid == -211 || pid == -321 || pid == -2212) {
-                outbending = true;
-            } else if (pid == -11 || pid == 211 || pid == 321 || pid == 2212) {
-                inbending = true;
-            }
+        if (run_Bank.getFloat("torus", 0) == 1) {
+            outbending = true;
+        } else {
+            inbending = true;
         }
-        
+//        if ((runnum >= 4763 && runnum <= 5419) || (runnum >= 6616 && runnum <= 6783)) {
+//            // inbending electron torus polarity
+//            if (pid == 11 || pid == -211 || pid == -321 || pid == -2212) {
+//                inbending = true;
+//            } else if (pid == -11 || pid == 211 || pid == 321 || pid == 2212) {
+//                outbending = true;
+//            }
+//        } else if (runnum >= 5423 && runnum <= 5666) {
+//            // outbending electron torus polarity
+//            if (pid == 11 || pid == -211 || pid == -321 || pid == -2212) {
+//                outbending = true;
+//            } else if (pid == -11 || pid == 211 || pid == 321 || pid == 2212) {
+//                inbending = true;
+//            }
+//        } else {
+//            inbending = true;
+//        }
+
         generic_tests generic_tests = new generic_tests();
         float px = rec_Bank.getFloat("px", particle_Index);
         float py = rec_Bank.getFloat("py", particle_Index);
         float pz = rec_Bank.getFloat("pz", particle_Index);
         double theta = generic_tests.theta_calculation(px, py, pz);
-        
+
         double edge_1 = 0; // region 1 edge value
         double edge_2 = 0; // region 2 edge value
         double edge_3 = 0; // region 3 edge value
-        
+
         for (int current_Row = 0; current_Row < traj_Bank.rows(); current_Row++) {
             // loop over all entries in the trajectory bank
             if (traj_Bank.getInt("detector", current_Row) != 6) { // detector = 6 is DC 
@@ -332,10 +339,14 @@ public class fiducial_cuts {
                 }
             }
         }
-        
+
         if (inbending) {
-            if (theta*(180/Math.PI) < 10) return edge_1 > 10 && edge_2 > 10 && edge_3 > 10;
-            if (theta*(180/Math.PI) >= 10) return edge_1 > 3 && edge_2 > 3 && edge_3 > 10;
+            if (theta * (180 / Math.PI) < 10) {
+                return edge_1 > 10 && edge_2 > 10 && edge_3 > 10;
+            }
+            if (theta * (180 / Math.PI) >= 10) {
+                return edge_1 > 3 && edge_2 > 3 && edge_3 > 10;
+            }
         } else if (outbending) {
             return edge_1 > 3 && edge_2 > 3 && edge_3 > 10;
         }
