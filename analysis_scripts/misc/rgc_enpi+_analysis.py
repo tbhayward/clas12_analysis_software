@@ -4,7 +4,7 @@ import uproot
 import numpy as np
 import matplotlib.pyplot as plt
 
-# Path to the CSV of run charges
+# Path to the CSV of run charges (update this if the file is elsewhere)
 CSV_PATH = "/home/thayward/clas12_analysis_software/analysis_scripts/asymmetry_extraction/imports/clas12_run_info.csv"
 
 # Output settings
@@ -36,28 +36,41 @@ def parse_run_charges(csv_path):
     """
     Read the CSV and return a dict { runnum: charge }.
     Lines beginning with '#' are skipped.
+    Includes debug prints to verify file loading.
     """
+    print(f"[DEBUG] parse_run_charges: opening CSV file '{csv_path}'")
+    if not os.path.exists(csv_path):
+        print(f"[ERROR] CSV file not found at '{csv_path}'. Please check CSV_PATH.")
+        return {}
     run_charges = {}
+    line_count = 0
     with open(csv_path, 'r') as f:
         for line in f:
-            line = line.strip()
-            if not line or line.startswith("#"):
+            line_count += 1
+            raw = line.strip()
+            if not raw or raw.startswith('#'):
                 continue
-            parts = line.split(",")
-            run    = int(parts[0])
-            charge = float(parts[1])
+            parts = raw.split(',')
+            try:
+                run    = int(parts[0])
+                charge = float(parts[1])
+            except Exception as e:
+                print(f"[WARNING] failed to parse line {line_count}: '{raw}' -> {e}")
+                continue
             run_charges[run] = charge
-    #endfor
+            if len(run_charges) <= 5:
+                print(f"  [DEBUG] parsed run {run} -> charge {charge}")
+        #endfor
+    print(f"[DEBUG] total runs parsed: {len(run_charges)}")
     return run_charges
 
 
 def load_trees(file_list):
-    """
-    Given list of (filepath, label), return list of dicts each containing
-    the opened uproot tree plus its label.
-    """
     info = []
     for fp, label in file_list:
+        if not os.path.exists(fp):
+            print(f"[ERROR] ROOT file not found: {fp}")
+            continue
         tree = uproot.open(fp)["PhysicsEvents"]
         info.append({'tree': tree, 'label': label})
     #endfor
@@ -65,72 +78,51 @@ def load_trees(file_list):
 
 
 def make_normalized_Mx2_plots(nh3_info, c_info, run_charges, output_path):
-    """
-    Build and save a 1×2 figure of normalized Mx^2 histograms for NH3 and C.
-    """
-    # Histogram settings
     n_bins      = 100
     x_min, x_max = -1.0, 2.0
     bins        = np.linspace(x_min, x_max, n_bins + 1)
 
     fig, axes = plt.subplots(1, 2, figsize=(12, 6), sharey=True)
 
-    # Function to compute Q_tot given a tree
     def compute_total_charge(tree, label):
-        runnum_arr = tree.arrays("runnum", library="np")["runnum"]
-        # convert to integer run numbers
-        runnums_int = runnum_arr.astype(int)
-        uniques     = np.unique(runnums_int)
-        Q_tot       = sum(run_charges.get(int(r), 0.0) for r in uniques)
-        print(f"  {label}: number of unique runs = {len(uniques)}, Q_tot = {Q_tot:.3f} nC")
+        runnum_arr = tree.arrays("runnum", library="np")["runnum"].astype(int)
+        uniques     = np.unique(runnum_arr)
+        Q_tot       = sum(run_charges.get(r, 0.0) for r in uniques)
+        print(f"    [DEBUG] {label}: unique runs={len(uniques)}, Q_tot={Q_tot:.3f}")
         return Q_tot
-    #enddef
 
-    # Left: NH3
     print("[DEBUG] NH3 total charges:")
     for entry in nh3_info:
-        tree  = entry['tree']
         label = entry['label']
+        tree  = entry['tree']
         Q_tot = compute_total_charge(tree, label)
         if Q_tot <= 0:
-            print(f"[WARNING] Skipping {label} (Q_tot={Q_tot:.3f})")
+            print(f"    [WARNING] skipping {label} (Q_tot={Q_tot:.3f})")
             continue
-        #endif
-
         Mx2_arr = tree.arrays("Mx2", library="np")["Mx2"]
         counts, _ = np.histogram(Mx2_arr, bins=bins)
         counts = counts.astype(float)
         counts /= Q_tot
-
         axes[0].step(bins[:-1], counts, where="post", label=label)
     #endfor
-    axes[0].set_title("NH₃")
-    axes[0].set_xlabel(r"$M_x^2$ [GeV$^2$]")
-    axes[0].set_ylabel("events / nC")
-    axes[0].set_xlim(x_min, x_max)
+    axes[0].set(title="NH₃", xlabel=r"$M_x^2$ [GeV$^2$]", ylabel="events / nC", xlim=(x_min, x_max))
     axes[0].legend(loc="upper right")
 
-    # Right: C
     print("[DEBUG] C total charges:")
     for entry in c_info:
-        tree  = entry['tree']
         label = entry['label']
+        tree  = entry['tree']
         Q_tot = compute_total_charge(tree, label)
         if Q_tot <= 0:
-            print(f"[WARNING] Skipping {label} (Q_tot={Q_tot:.3f})")
+            print(f"    [WARNING] skipping {label} (Q_tot={Q_tot:.3f})")
             continue
-        #endif
-
         Mx2_arr = tree.arrays("Mx2", library="np")["Mx2"]
         counts, _ = np.histogram(Mx2_arr, bins=bins)
         counts = counts.astype(float)
         counts /= Q_tot
-
         axes[1].step(bins[:-1], counts, where="post", label=label)
     #endfor
-    axes[1].set_title("C")
-    axes[1].set_xlabel(r"$M_x^2$ [GeV$^2$]")
-    axes[1].set_xlim(x_min, x_max)
+    axes[1].set(title="C", xlabel=r"$M_x^2$ [GeV$^2$]", xlim=(x_min, x_max))
     axes[1].legend(loc="upper right")
 
     plt.tight_layout()
@@ -139,19 +131,11 @@ def make_normalized_Mx2_plots(nh3_info, c_info, run_charges, output_path):
 
 
 def main():
-    # 1) Ensure output directory exists
     os.makedirs(OUTPUT_DIR, exist_ok=True)
-
-    # 2) Load run → charge map
     run_charges = parse_run_charges(CSV_PATH)
-
-    # 3) Open all the trees
     nh3_info = load_trees(NH3_FILES)
     c_info   = load_trees(C_FILES)
-    h2_info  = load_trees(H2_FILES)  # for future hydrogen plots
-    d2_info  = load_trees(D2_FILES)  # for future deuterium plots
-
-    # 4) Generate & save the Mx2 plots
+    # for future use: h2_info = load_trees(H2_FILES); d2_info = load_trees(D2_FILES)
     make_normalized_Mx2_plots(nh3_info, c_info, run_charges, OUTPUT_FILE)
 #endif
 
