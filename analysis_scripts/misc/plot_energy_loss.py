@@ -409,7 +409,7 @@ def plot_electron_comparison_inb(out_dir):
 
         # clamp view and disable any further autoscaling
         ax.set_xlim(0, 59.99)
-        ax.set_ylim(-0.019, 0.049)
+        ax.set_ylim(-0.04, 0.1)
         ax.autoscale(enable=False)
 
     fig.suptitle('Electron Corrections: Fall 2018 Pass 2 (in-bending) vs J/ψ')
@@ -451,7 +451,7 @@ def plot_electron_comparison_outb(out_dir):
 
         # clamp view and disable any further autoscaling
         ax.set_xlim(0, 59.99)
-        ax.set_ylim(-0.019, 0.049)
+        ax.set_ylim(-0.04, 0.1)
         ax.autoscale(enable=False)
 
     fig.suptitle('Electron Corrections: Fall 2018 Pass 2 (out-bending) vs J/#psi')
