@@ -50,6 +50,7 @@ def parse_run_charges(csv_path):
     #endfor
     return run_charges
 
+
 def load_trees(file_list):
     """
     Given list of (filepath, label), return list of dicts each containing
@@ -61,6 +62,7 @@ def load_trees(file_list):
         info.append({'tree': tree, 'label': label})
     #endfor
     return info
+
 
 def make_normalized_Mx2_plots(nh3_info, c_info, run_charges, output_path):
     """
@@ -74,6 +76,7 @@ def make_normalized_Mx2_plots(nh3_info, c_info, run_charges, output_path):
     fig, axes = plt.subplots(1, 2, figsize=(12, 6), sharey=True)
 
     # Left: NH3
+    print("[DEBUG] NH3 total charges:")
     for entry in nh3_info:
         tree  = entry['tree']
         label = entry['label']
@@ -81,21 +84,28 @@ def make_normalized_Mx2_plots(nh3_info, c_info, run_charges, output_path):
         runnums = tree.arrays("runnum", library="np")["runnum"]
         uniques = np.unique(runnums)
         Q_tot   = sum(run_charges.get(r, 0.0) for r in uniques)
+        print(f"  {label}: Q_tot = {Q_tot:.3f} nC")
+
+        if Q_tot <= 0:
+            print(f"[WARNING] Skipping {label} (Q_tot={Q_tot:.3f})")
+            continue
+        #endif
 
         Mx2_arr = tree.arrays("Mx2", library="np")["Mx2"]
         counts, _ = np.histogram(Mx2_arr, bins=bins)
-        counts = counts.astype(float)        # ensure float dtype
-        counts /= Q_tot                      # normalize by total charge
+        counts = counts.astype(float)      # ensure float dtype
+        counts /= Q_tot                    # normalize by total charge
 
         axes[0].step(bins[:-1], counts, where="post", label=label)
     #endfor
     axes[0].set_title("NH₃")
-    axes[0].set_xlabel(r"$M_x^2$ [GeV$^2$]")
+    axes[0].set_xlabel(r"$M_x^2$ [GeV$^2$")
     axes[0].set_ylabel("events / nC")
     axes[0].set_xlim(x_min, x_max)
     axes[0].legend(loc="upper right")
 
     # Right: C
+    print("[DEBUG] C total charges:")
     for entry in c_info:
         tree  = entry['tree']
         label = entry['label']
@@ -103,22 +113,29 @@ def make_normalized_Mx2_plots(nh3_info, c_info, run_charges, output_path):
         runnums = tree.arrays("runnum", library="np")["runnum"]
         uniques = np.unique(runnums)
         Q_tot   = sum(run_charges.get(r, 0.0) for r in uniques)
+        print(f"  {label}: Q_tot = {Q_tot:.3f} nC")
+
+        if Q_tot <= 0:
+            print(f"[WARNING] Skipping {label} (Q_tot={Q_tot:.3f})")
+            continue
+        #endif
 
         Mx2_arr = tree.arrays("Mx2", library="np")["Mx2"]
         counts, _ = np.histogram(Mx2_arr, bins=bins)
-        counts = counts.astype(float)        # ensure float dtype
-        counts /= Q_tot                      # normalize by total charge
+        counts = counts.astype(float)
+        counts /= Q_tot
 
         axes[1].step(bins[:-1], counts, where="post", label=label)
     #endfor
     axes[1].set_title("C")
-    axes[1].set_xlabel(r"$M_x^2$ [GeV$^2$]")
+    axes[1].set_xlabel(r"$M_x^2$ [GeV$^2$")
     axes[1].set_xlim(x_min, x_max)
     axes[1].legend(loc="upper right")
 
     plt.tight_layout()
     plt.savefig(output_path)
     plt.close(fig)
+
 
 def main():
     # 1) Ensure output directory exists
@@ -130,8 +147,8 @@ def main():
     # 3) Open all the trees
     nh3_info = load_trees(NH3_FILES)
     c_info   = load_trees(C_FILES)
-    h2_info  = load_trees(H2_FILES)  
-    d2_info  = load_trees(D2_FILES)  
+    h2_info  = load_trees(H2_FILES)  # for future hydrogen plots
+    d2_info  = load_trees(D2_FILES)  # for future deuterium plots
 
     # 4) Generate & save the Mx2 plots
     make_normalized_Mx2_plots(nh3_info, c_info, run_charges, OUTPUT_FILE)
