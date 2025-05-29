@@ -1544,7 +1544,7 @@ void plot_dvcs_sebastian_energy_loss_Emiss2_validation(
 
     // 13) Save & cleanup
     TString outname = TString::Format(
-        "output/dvcs_sebastian_%s_energy_loss_validation.pdf",
+        "output/dvcs_sebastian_%s_energy_loss_Emiss2_validation.pdf",
         titleSuffix
     );
     c1->SaveAs(outname);
