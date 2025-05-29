@@ -1047,7 +1047,7 @@ void plot_dvcs_sebastian_energy_loss_validation(
     const int    nBins = 10;
     Double_t     thetaBins[nBins+1];
     for (int b = 0; b <= nBins; ++b) {
-        thetaBins[b] = 5.0 + b * (32.0 - 5.0) / nBins;
+        thetaBins[b] = 0.0 + b * (32.0 - 0.0) / nBins;
     }
 
     // 5) Histogram parameters
