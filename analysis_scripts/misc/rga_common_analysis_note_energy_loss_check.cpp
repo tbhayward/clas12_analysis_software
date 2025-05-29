@@ -1479,8 +1479,8 @@ void plot_dvcs_sebastian_energy_loss_Emiss2_validation(
                 0.0,
                 0.1
             );
-            fbin->SetParLimits(1, -0.15, 0.15);
-            fbin->SetParLimits(2,  0.0, 0.3);
+            fbin->SetParLimits(1, -1, 1);
+            fbin->SetParLimits(2,  0.0, 0.8);
             fbin->SetLineColor(kBlack + i);
             fbin->SetLineWidth(1);
             h[i][b]->Fit(fbin, "Q");
