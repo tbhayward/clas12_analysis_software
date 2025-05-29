@@ -2438,7 +2438,7 @@ int main(int argc, char** argv) {
     //     argv[1], argv[2], argv[3], argv[4]
     // );
 
-    plot_dvcs_sebastian_energy_loss_Emiss2_validation(
+    plot_dvcs_energy_loss_Emiss2_validation(
         argv[1], argv[2], argv[3], argv[4]
     );
 
