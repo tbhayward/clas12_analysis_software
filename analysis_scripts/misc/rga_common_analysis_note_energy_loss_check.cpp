@@ -1376,9 +1376,9 @@ void plot_dvcs_sebastian_energy_loss_Emiss2_validation(
             tree[i]->GetEntry(ev);
             double θ = p2_theta[i] * 180.0 / TMath::Pi();
             if (θ >= 5.0 && θ < 32.0 
-                // &&
-                // eta2[i] <  0    &&
-                // t1[i]   > -2    &&
+                &&
+                eta2[i] <  0    &&
+                t1[i]   > -2    &&
                 // theta_gamma_gamma[i] < 0.6 &&
                 // Emiss2[i] < 0.5 &&
                 // pTmiss[i] < 0.125
