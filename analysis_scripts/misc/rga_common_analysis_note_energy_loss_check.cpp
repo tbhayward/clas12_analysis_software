@@ -1335,8 +1335,8 @@ void plot_dvcs_sebastian_energy_loss_Emiss2_validation(
     // 5) Histogram parameters
     const int    nbHi     = 35;
     const int    nbLo     = nbHi/2;  // 17
-    const double mx2_min  = -0.3;
-    const double mx2_max  = +0.3;
+    const double mx2_min  = -1;
+    const double mx2_max  = +1;
 
     // 6) Storage
     TH1D*    h[nFiles][nBins+1];
