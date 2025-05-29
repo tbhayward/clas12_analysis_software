@@ -265,7 +265,7 @@ def jpsi_inb(p):
 
 def java_el_fall2018_pass2_out(phi_local, p, sec):
     """
-    Electron momentum correction, Fall 2018 Pass 2 out-bending,
+    Electron momentum correction, Fall 2018 Pass 2 outbending,
     translated from your C++ corEl==2 block.
     """
     phi = phi_local - 30.0/p
@@ -445,7 +445,7 @@ def plot_pion_comparison(out_dir):
 
 def plot_electron_comparison_inb(out_dir):
     """
-    Electron Corrections: in-bending (Fall 2018 Pass 2 vs J/ψ)
+    Electron Corrections: inbending (Fall 2018 Pass 2 vs J/ψ)
     """
     phi_local = np.linspace(0, 60, 500)
     fig, axs = plt.subplots(1, 3, figsize=(12,4), sharey=True, gridspec_kw={'wspace':0})
@@ -474,7 +474,7 @@ def plot_electron_comparison_inb(out_dir):
             ax.set_ylabel(r'$\Delta p$ (GeV)')
         ax.legend(loc='upper left', frameon=True, fontsize='small')
 
-    fig.suptitle(r'Electron Corrections: Fall 2018 Pass 2 (in-bending) vs $J/\psi$')
+    fig.suptitle(r'Electron Corrections: Fall 2018 Pass 2 (inbending) vs $J/\psi$')
     fig.tight_layout(rect=[0,0,1,0.95])
     fig.savefig(f'{out_dir}/electron_corrections_inbending.png')
     plt.close(fig)
@@ -482,7 +482,7 @@ def plot_electron_comparison_inb(out_dir):
 
 def plot_electron_comparison_outb(out_dir):
     """
-    Electron Corrections: out-bending (Fall 2018 Pass 2 vs J/ψ)
+    Electron Corrections: outbending (Fall 2018 Pass 2 vs J/ψ)
     """
     phi_local = np.linspace(0, 60, 500)
     fig, axs = plt.subplots(1, 3, figsize=(12,4), sharey=True, gridspec_kw={'wspace':0})
@@ -495,7 +495,7 @@ def plot_electron_comparison_outb(out_dir):
 
         ax.plot(phi_local,
                 [jpsi_out(p)] * len(phi_local),
-                label=r'$J/\psi$ (out-bending)',
+                label=r'$J/\psi$ (outbending)',
                 linestyle='--', linewidth=2)
 
         ax.axhline(0, linestyle='--', color='gray', linewidth=1)
@@ -509,7 +509,7 @@ def plot_electron_comparison_outb(out_dir):
             ax.set_ylabel(r'$\Delta p$ (GeV)')
         ax.legend(loc='upper left', frameon=True, fontsize='small')
 
-    fig.suptitle(r'Electron Corrections: Fall 2018 Pass 2 (out-bending) vs $J/\psi$')
+    fig.suptitle(r'Electron Corrections: Fall 2018 Pass 2 (outbending) vs $J/\psi$')
     fig.tight_layout(rect=[0,0,1,0.95])
     fig.savefig(f'{out_dir}/electron_corrections_outbending.png')
     plt.close(fig)
