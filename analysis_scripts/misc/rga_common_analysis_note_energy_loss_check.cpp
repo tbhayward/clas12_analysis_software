@@ -1428,8 +1428,8 @@ void plot_dvcs_sebastian_energy_loss_Emiss2_validation(
             0.0,                          // μ init
             0.1                           // σ init
         );
-        fitInt[i]->SetParLimits(1, -0.15, 0.15);
-        fitInt[i]->SetParLimits(2,  0.0, 0.3);
+        fitInt[i]->SetParLimits(1, -1, 1);
+        fitInt[i]->SetParLimits(2,  0.0, 0.8);
         fitInt[i]->SetLineColor(kBlack + i);
         fitInt[i]->SetLineWidth(1);
         h[i][0]->Fit(fitInt[i], "Q");
