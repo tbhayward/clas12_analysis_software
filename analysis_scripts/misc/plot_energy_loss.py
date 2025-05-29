@@ -162,7 +162,7 @@ def krishna_pi_minus_fd(theta, p):
 
 def java_el_fall2018_pass2(phi_local, p, sec):
     """
-    Electron momentum correction, Fall 2018 Pass 2 in-bending,
+    Electron momentum correction, Fall 2018 Pass 2 inbending,
     translated from your Java code.
     """
     phi = phi_local - 30.0/p
@@ -260,12 +260,12 @@ def java_el_fall2018_pass2(phi_local, p, sec):
     return dp
 
 def jpsi_inb(p):
-    """J/ψ-style in-bending electron correction (second Java function)."""
+    """J/ψ-style inbending electron correction (second Java function)."""
     return 0.0093796*p + (-0.0007808)*p*p + 0.000163*p*p*p + (-0.02029) + 0.04121/p
 
 def java_el_fall2018_pass2_out(phi_local, p, sec):
     """
-    Electron momentum correction, Fall 2018 Pass 2 out-bending,
+    Electron momentum correction, Fall 2018 Pass 2 outbending,
     translated from your C++ corEl==2 block.
     """
     phi = phi_local - 30.0/p
@@ -306,7 +306,7 @@ def java_el_fall2018_pass2_out(phi_local, p, sec):
     return dp
 
 def jpsi_out(p):
-    """J/ψ-style out-bending electron correction."""
+    """J/ψ-style outbending electron correction."""
     return (-0.06520)*p + 0.007099*p*p + (-0.00005929)*p*p*p + 0.2145 + (-0.1153)/p
 
 def plot_forward_detector_protons(out_dir):
@@ -378,14 +378,14 @@ def plot_pion_comparison(out_dir):
 
 def plot_electron_comparison_inb(out_dir):
     """
-    Electron Corrections: in-bending (Fall 2018 Pass 2 vs J/ψ)
+    Electron Corrections: inbending (Fall 2018 Pass 2 vs J/ψ)
     """
     phi_local = np.linspace(0, 60, 500)
     fig, axs = plt.subplots(1, 3, figsize=(12,4),
                             sharey=True,
                             gridspec_kw={'wspace':0})
 
-    for ax, p in zip(axs, [2.0, 4.0, 6.0]):
+    for ax, p in zip(axs, [3.0, 4.0, 5.0]):
         # plot sector corrections
         for sec in range(1, 7):
             ax.plot(phi_local,
@@ -395,7 +395,7 @@ def plot_electron_comparison_inb(out_dir):
         # plot J/ψ inbending reference
         ax.plot(phi_local,
                 [jpsi_inb(p)] * len(phi_local),
-                label='jpsi inbending',
+                label='J/#psi group',
                 linestyle='--',
                 linewidth=2)
 
@@ -412,7 +412,7 @@ def plot_electron_comparison_inb(out_dir):
         ax.set_ylim(-0.1, 0.3)
         ax.autoscale(enable=False)
 
-    fig.suptitle('Electron Corrections: Fall 2018 Pass 2 (in-bending) vs J/ψ')
+    fig.suptitle('Electron Corrections: Fall 2018 Pass 2 (inbending) vs J/ψ')
     fig.tight_layout(rect=[0,0,1,0.95])
     fig.savefig(f'{out_dir}/electron_corrections_inbending.png')
     plt.close(fig)
@@ -420,14 +420,14 @@ def plot_electron_comparison_inb(out_dir):
 
 def plot_electron_comparison_outb(out_dir):
     """
-    Electron Corrections: out-bending (Fall 2018 Pass 2 vs J/ψ)
+    Electron Corrections: outbending (Fall 2018 Pass 2 vs J/ψ)
     """
     phi_local = np.linspace(0, 60, 500)
     fig, axs = plt.subplots(1, 3, figsize=(12,4),
                             sharey=True,
                             gridspec_kw={'wspace':0})
 
-    for ax, p in zip(axs, [2.0, 4.0, 6.0]):
+    for ax, p in zip(axs, [3.0, 4.0, 5.0]):
         # plot sector corrections
         for sec in range(1, 7):
             ax.plot(phi_local,
@@ -437,7 +437,7 @@ def plot_electron_comparison_outb(out_dir):
         # plot J/ψ outbending reference
         ax.plot(phi_local,
                 [jpsi_out(p)] * len(phi_local),
-                label='jpsi outbending',
+                label='J/#psi group',
                 linestyle='--',
                 linewidth=2)
 
@@ -454,7 +454,7 @@ def plot_electron_comparison_outb(out_dir):
         ax.set_ylim(-0.1, 0.3)
         ax.autoscale(enable=False)
 
-    fig.suptitle('Electron Corrections: Fall 2018 Pass 2 (out-bending) vs J/#psi')
+    fig.suptitle('Electron Corrections: Fall 2018 Pass 2 (outbending) vs J/#psi')
     fig.tight_layout(rect=[0,0,1,0.95])
     fig.savefig(f'{out_dir}/electron_corrections_outbending.png')
     plt.close(fig)
