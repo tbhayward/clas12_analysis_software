@@ -1447,7 +1447,7 @@ void plot_dvcs_sebastian_energy_loss_Emiss2_validation(
         );
     }
     legInt->Draw();
-    h[0][0]->GetXaxis()->SetTitle("M_{x}^{2} (GeV^{2})");
+    h[0][0]->GetXaxis()->SetTitle("E_{miss}^{2} (GeV^{2})");
     h[0][0]->GetYaxis()->SetTitle("Counts");
 
     // 11) θ‐binned pads & fits (2–11)
@@ -1501,7 +1501,7 @@ void plot_dvcs_sebastian_energy_loss_Emiss2_validation(
             );
         }
         legB->Draw();
-        h[0][b]->GetXaxis()->SetTitle("M_{x}^{2} (GeV^{2})");
+        h[0][b]->GetXaxis()->SetTitle("E_{miss}^{2} (GeV^{2})");
         h[0][b]->GetYaxis()->SetTitle("Counts");
     }
 
