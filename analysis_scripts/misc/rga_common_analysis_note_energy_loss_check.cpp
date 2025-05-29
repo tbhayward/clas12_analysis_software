@@ -292,12 +292,12 @@ void plot_dvcs_energy_loss_Emiss2_validation(
         tree[i] = (TTree*)f[i]->Get("PhysicsEvents");
     }
 
-    Double_t p1_theta[nFiles], Emiss2[nFiles];
+    Double_t p1_theta[nFiles], Mx2_1[nFiles];
     Double_t eta2[nFiles], t1[nFiles], theta_gamma_gamma[nFiles];
     Double_t Emiss2[nFiles], pTmiss[nFiles];
     for (int i = 0; i < nFiles; ++i) {
         tree[i]->SetBranchAddress("p1_theta",          &p1_theta[i]);
-        tree[i]->SetBranchAddress("Emiss2",             &Emiss2[i]);
+        tree[i]->SetBranchAddress("Mx2_1",             &Mx2_1[i]);
         tree[i]->SetBranchAddress("eta2",              &eta2[i]);
         tree[i]->SetBranchAddress("t1",                &t1[i]);
         tree[i]->SetBranchAddress("theta_gamma_gamma", &theta_gamma_gamma[i]);
@@ -353,7 +353,7 @@ void plot_dvcs_energy_loss_Emiss2_validation(
                 eta2[i] < 0 &&
                 t1[i]   > -2 &&
                 theta_gamma_gamma[i] < 0.6 &&
-                Emiss2[i] < 0.5 &&
+                // Emiss2[i] < 0.5 &&
                 pTmiss[i] < 0.125) {
 
                 h[i][0]->Fill(Emiss2[i]);
