@@ -16,7 +16,6 @@ CSV_PATH = "/home/thayward/clas12_analysis_software/analysis_scripts/asymmetry_e
 # Output directory and filenames
 OUTPUT_DIR        = "output/enpi+"
 NORMALIZED_OUTPUT = os.path.join(OUTPUT_DIR, "normalized_Mx2_charges.pdf")
-# PER_RUN_OUTPUT = os.path.join(OUTPUT_DIR, "per_run_Fa22_Sp23_Mx2.pdf")  # per-run is commented out
 
 # File lists: (filepath, label)
 NH3_FILES = [
@@ -103,9 +102,9 @@ def make_normalized_Mx2_plots(nh3_info, c_info, h2_info, run_charges, outpath):
             return 0.0, np.array([], dtype=float)
 
         # Filter out runs > MAX_RUNNUM
-        valid = run_arr <= MAX_RUNNUM
-        run_arr = run_arr[valid]
-        mx2_arr = mx2_arr[valid]
+        valid_mask = (run_arr <= MAX_RUNNUM)
+        run_arr = run_arr[valid_mask]
+        mx2_arr = mx2_arr[valid_mask]
         if run_arr.size == 0:
             return 0.0, np.array([], dtype=float)
 
@@ -124,9 +123,7 @@ def make_normalized_Mx2_plots(nh3_info, c_info, h2_info, run_charges, outpath):
         mask = np.isin(run_arr, list(selected_runs)) & (mx2_arr <= 2.0)
         return Q_tot, mx2_arr[mask]
 
-    # -------------------
-    # LEFT SUBPLOT: NH3 + H2
-    # -------------------
+    # Left subplot: NH3 + H2
     for entry in nh3_info:
         tree, lbl = entry['tree'], entry['label']
         Q, mx2_vals = compute_charge_and_mask(tree, run_charges, quick=QUICK_RUN)
@@ -146,9 +143,7 @@ def make_normalized_Mx2_plots(nh3_info, c_info, h2_info, run_charges, outpath):
     axes[0].set(xlabel=r"$M_x^2$ [GeV$^2$]", ylabel="events / nC", xlim=(0.0, 1.5))
     axes[0].legend(loc='upper right', fontsize='small')
 
-    # -------------------
-    # RIGHT SUBPLOT: C + H2
-    # -------------------
+    # Right subplot: C + H2
     for entry in c_info:
         tree, lbl = entry['tree'], entry['label']
         Q, mx2_vals = compute_charge_and_mask(tree, run_charges, quick=QUICK_RUN)
@@ -175,17 +170,46 @@ def make_normalized_Mx2_plots(nh3_info, c_info, h2_info, run_charges, outpath):
 #enddef
 
 
-# def make_per_run_Fa22_Sp23_plot(nh3_info, run_charges, outpath):
-#     """
-#     Build per-run histograms for Fa22-NH3 and Sp23-NH3.
-#     (Commented out as requested.)
-#     """
-#     pass
-# #enddef
+def print_flagged_carbon_runs(c_info, run_charges):
+    """
+    For each run in each C tree, build a histogram of Mx2 (with Mx2 ≤ 2.0),
+    normalized by that run's charge, and print runnums whose histogram
+    has any bin exceeding 0.07 events/nC.
+    """
+    bins = np.linspace(0.0, 1.5, 101)
+    for entry in c_info:
+        tree, lbl = entry['tree'], entry['label']
+        run_arr = tree["runnum"].array(library="np").astype(int)
+        mx2_arr = tree["Mx2"].array(library="np")
+
+        # Filter by run <= MAX_RUNNUM
+        valid_mask = run_arr <= MAX_RUNNUM
+        run_arr = run_arr[valid_mask]
+        mx2_arr = mx2_arr[valid_mask]
+
+        if run_arr.size == 0:
+            continue
+
+        # Unique runnums in encounter order (or sorted)
+        unique_runs = sorted(np.unique(run_arr))
+
+        for run in unique_runs:
+            # Mask for this run and Mx2 <= 2.0
+            mask = (run_arr == run) & (mx2_arr <= 2.0)
+            vals = mx2_arr[mask]
+            Q_run = run_charges.get(run, 0.0)
+            if Q_run <= 0 or vals.size == 0:
+                continue
+
+            counts, _ = np.histogram(vals, bins=bins)
+            counts = counts.astype(float) / Q_run
+            if np.any(counts > 0.07):
+                print(f"{lbl}: run {run} exceeds 0.07 events/nC")
+#enddef
 
 
 def main():
-    # Load run charges (skipping runs > MAX_RUNNUM)
+    # Load run charges (skips runs > MAX_RUNNUM)
     run_charges = parse_run_charges(CSV_PATH)
 
     # Load trees
@@ -193,11 +217,11 @@ def main():
     c_info   = load_trees(C_FILES)
     h2_info  = load_trees(H2_FILES)
 
+    # Print any carbon runs exceeding 0.07 events/nC
+    print_flagged_carbon_runs(c_info, run_charges)
+
     # Generate normalized Mx2 histograms, skipping runs > MAX_RUNNUM
     make_normalized_Mx2_plots(nh3_info, c_info, h2_info, run_charges, NORMALIZED_OUTPUT)
-
-    # Per-run plotting is no longer used
-    # make_per_run_Fa22_Sp23_plot(nh3_info, run_charges, PER_RUN_OUTPUT)
 #enddef
 
 
