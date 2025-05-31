@@ -170,46 +170,22 @@ def make_normalized_Mx2_plots(nh3_info, c_info, h2_info, run_charges, outpath):
 #enddef
 
 
-def print_flagged_carbon_runs(c_info, run_charges):
+def print_unique_carbon_runs(c_info):
     """
-    For each run in each C tree, build a histogram of Mx2 (with Mx2 ≤ 2.0),
-    normalized by that run's charge, and print runnums whose histogram
-    has any bin exceeding 0.07 events/nC.
+    Print every unique run number found in the carbon trees (≤ MAX_RUNNUM).
     """
-    bins = np.linspace(0.0, 1.5, 101)
     for entry in c_info:
         tree, lbl = entry['tree'], entry['label']
         run_arr = tree["runnum"].array(library="np").astype(int)
-        mx2_arr = tree["Mx2"].array(library="np")
-
-        # Filter by run <= MAX_RUNNUM
-        valid_mask = run_arr <= MAX_RUNNUM
-        run_arr = run_arr[valid_mask]
-        mx2_arr = mx2_arr[valid_mask]
-
-        if run_arr.size == 0:
-            continue
-
-        # Unique runnums in encounter order (or sorted)
+        # Filter by MAX_RUNNUM
+        run_arr = run_arr[run_arr <= MAX_RUNNUM]
         unique_runs = sorted(np.unique(run_arr))
-
-        for run in unique_runs:
-            # Mask for this run and Mx2 <= 2.0
-            mask = (run_arr == run) & (mx2_arr <= 2.0)
-            vals = mx2_arr[mask]
-            Q_run = run_charges.get(run, 0.0)
-            if Q_run <= 0 or vals.size == 0:
-                continue
-
-            counts, _ = np.histogram(vals, bins=bins)
-            counts = counts.astype(float) / Q_run
-            if np.any(counts > 0.07):
-                print(f"{lbl}: run {run} exceeds 0.07 events/nC")
+        print(f"{lbl} unique runs (≤ {MAX_RUNNUM}): {unique_runs}")
 #enddef
 
 
 def main():
-    # Load run charges (skips runs > MAX_RUNNUM)
+    # Load run charges (skipping runs > MAX_RUNNUM)
     run_charges = parse_run_charges(CSV_PATH)
 
     # Load trees
@@ -217,8 +193,8 @@ def main():
     c_info   = load_trees(C_FILES)
     h2_info  = load_trees(H2_FILES)
 
-    # Print any carbon runs exceeding 0.07 events/nC
-    print_flagged_carbon_runs(c_info, run_charges)
+    # Print every unique carbon run number (≤ MAX_RUNNUM)
+    print_unique_carbon_runs(c_info)
 
     # Generate normalized Mx2 histograms, skipping runs > MAX_RUNNUM
     make_normalized_Mx2_plots(nh3_info, c_info, h2_info, run_charges, NORMALIZED_OUTPUT)
