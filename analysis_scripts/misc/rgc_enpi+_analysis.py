@@ -4,6 +4,9 @@ import uproot
 import numpy as np
 import matplotlib.pyplot as plt
 
+# Toggle for quick debugging: if True, process only first 5 unique runnums per file
+QUICK_RUN = True
+
 # Path to the CSV of run charges (update if needed)
 CSV_PATH = "/home/thayward/clas12_analysis_software/analysis_scripts/asymmetry_extraction/imports/clas12_run_info.csv"
 
@@ -22,12 +25,8 @@ C_FILES = [
     ("/work/clas12/thayward/CLAS12_exclusive/enpi+/data/pass2/data/enpi+/rgc_fa22_inb_C_epi+.root",  "Fa22-C"),
     ("/work/clas12/thayward/CLAS12_exclusive/enpi+/data/pass2/data/enpi+/rgc_sp23_inb_C_epi+.root",  "Sp23-C"),
 ]
-# Add "Sp19" to H2 and D2 labels
 H2_FILES = [
     ("/work/clas12/thayward/CLAS12_exclusive/enpi+/data/pass2/data/enpi+/rga_sp19_inb_H2_epi+.root", "Sp19-H2"),
-]
-D2_FILES = [
-    ("/work/clas12/thayward/CLAS12_exclusive/enpi+/data/pass2/data/enpi+/rgb_sp19_inb_D2_epi+.root", "Sp19-D2"),
 ]
 
 def parse_run_charges(csv_path):
@@ -55,6 +54,7 @@ def parse_run_charges(csv_path):
                 print(f"[WARNING] parsing error on line {i}: {e}")
                 continue
             run_charges[run] = charge
+        #endfor
     return run_charges
 
 def load_trees(files):
@@ -69,107 +69,112 @@ def load_trees(files):
             continue
         tree = uproot.open(fp)["PhysicsEvents"]
         info.append({'tree': tree, 'label': label})
+    #endfor
     return info
 
-def make_normalized_Mx2_plots(nh3_info, c_info, h2_info, d2_info, run_charges, outpath):
+def make_normalized_Mx2_plots(nh3_info, c_info, h2_info, run_charges, outpath):
     """
     Build and save a 1×2 figure of normalized Mx^2 histograms:
-    - Left: NH3 (3 periods) + H2 + D2
-    - Right: C    (3 periods) + H2 + D2
+    - Left: NH3 (3 periods) + H2
+    - Right: C    (3 periods) + H2
+    If QUICK_RUN is True, only use first 5 unique runnums per file.
     """
+    # Binning from 0 to 1.5 GeV^2, 100 bins
     bins = np.linspace(0.0, 1.5, 101)
     fig, axes = plt.subplots(1, 2, figsize=(12, 6), sharey=True)
 
-    def compute_charge(tree, label):
+    def compute_charge_and_mask(tree, label):
         """
-        Sum total charge by unique runnum values in the tree.
+        Returns (total_charge, mask) where:
+         - total_charge = sum of charges for unique runs (limited if QUICK_RUN)
+         - mask = boolean array to select events:
+             True where runnum is in the first N unique runs (N=5 if QUICK_RUN else all)
+             AND Mx2 <= 2.0 (global cut for speed)
         """
+        # Read full runnum and Mx2 arrays
         run_arr = tree["runnum"].array(library="np").astype(int)
+        mx2_arr = tree["Mx2"].array(library="np")
         if run_arr.size == 0:
             print(f"[WARNING] runnum array empty for {label}")
-            return 0.0
-        uniques = np.unique(run_arr)
-        Q = sum(run_charges.get(r, 0.0) for r in uniques)
-        return Q
+            return 0.0, np.zeros_like(mx2_arr, dtype=bool)
 
-    # Plot NH3 (left subplot)
+        # Identify unique runnums (in order encountered)
+        if QUICK_RUN:
+            # find the first 5 unique runnums
+            seen = []
+            for r in run_arr:
+                if r not in seen:
+                    seen.append(r)
+                if len(seen) >= 5:
+                    break
+            selected_runs = set(seen)
+        else:
+            selected_runs = set(np.unique(run_arr))
+
+        # Compute total charge over selected_runs
+        Q = sum(run_charges.get(r, 0.0) for r in selected_runs)
+
+        # Build mask: (runnum in selected_runs) & (Mx2 <= 2.0)
+        mask = np.isin(run_arr, list(selected_runs)) & (mx2_arr <= 2.0)
+        return Q, mask
+
+    # -----------------------------------
+    # LEFT SUBPLOT: NH3 + H2
+    # -----------------------------------
     for entry in nh3_info:
         tree, lbl = entry['tree'], entry['label']
-        Qtot = compute_charge(tree, lbl)
+        Qtot, mask = compute_charge_and_mask(tree, lbl)
         if Qtot <= 0:
             continue
-        arr = tree["Mx2"].array(library="np")
-        counts, _ = np.histogram(arr, bins=bins)
+        arr_masked = tree["Mx2"].array(library="np")[mask]
+        counts, _ = np.histogram(arr_masked, bins=bins)
         counts = counts.astype(float) / Qtot
         axes[0].step(bins[:-1], counts, where='post', label=lbl)
     #endfor
 
-    # Plot H2 on left
     for entry in h2_info:
         tree, lbl = entry['tree'], entry['label']
-        Qtot = compute_charge(tree, lbl)
+        Qtot, mask = compute_charge_and_mask(tree, lbl)
         if Qtot <= 0:
             continue
-        arr = tree["Mx2"].array(library="np")
-        counts, _ = np.histogram(arr, bins=bins)
+        arr_masked = tree["Mx2"].array(library="np")[mask]
+        counts, _ = np.histogram(arr_masked, bins=bins)
         counts = counts.astype(float) / Qtot
         axes[0].step(bins[:-1], counts, where='post', color='k', linestyle='-', label=lbl)
-    #endfor
-
-    # Plot D2 on left
-    for entry in d2_info:
-        tree, lbl = entry['tree'], entry['label']
-        Qtot = compute_charge(tree, lbl)
-        if Qtot <= 0:
-            continue
-        arr = tree["Mx2"].array(library="np")
-        counts, _ = np.histogram(arr, bins=bins)
-        counts = counts.astype(float) / Qtot
-        axes[0].step(bins[:-1], counts, where='post', color='k', linestyle='--', label=lbl)
     #endfor
 
     axes[0].set(xlabel=r"$M_x^2$ [GeV$^2$]", ylabel="events / nC", xlim=(0.0, 1.5))
     axes[0].legend(loc='upper right')
 
-    # Plot C (right subplot)
+    # -----------------------------------
+    # RIGHT SUBPLOT: C + H2
+    # -----------------------------------
     for entry in c_info:
         tree, lbl = entry['tree'], entry['label']
-        Qtot = compute_charge(tree, lbl)
+        Qtot, mask = compute_charge_and_mask(tree, lbl)
         if Qtot <= 0:
             continue
-        arr = tree["Mx2"].array(library="np")
-        counts, _ = np.histogram(arr, bins=bins)
+        arr_masked = tree["Mx2"].array(library="np")[mask]
+        counts, _ = np.histogram(arr_masked, bins=bins)
         counts = counts.astype(float) / Qtot
         axes[1].step(bins[:-1], counts, where='post', label=lbl)
     #endfor
 
-    # Plot H2 on right
     for entry in h2_info:
         tree, lbl = entry['tree'], entry['label']
-        Qtot = compute_charge(tree, lbl)
+        Qtot, mask = compute_charge_and_mask(tree, lbl)
         if Qtot <= 0:
             continue
-        arr = tree["Mx2"].array(library="np")
-        counts, _ = np.histogram(arr, bins=bins)
+        arr_masked = tree["Mx2"].array(library="np")[mask]
+        counts, _ = np.histogram(arr_masked, bins=bins)
         counts = counts.astype(float) / Qtot
         axes[1].step(bins[:-1], counts, where='post', color='k', linestyle='-', label=lbl)
-    #endfor
-
-    # Plot D2 on right
-    for entry in d2_info:
-        tree, lbl = entry['tree'], entry['label']
-        Qtot = compute_charge(tree, lbl)
-        if Qtot <= 0:
-            continue
-        arr = tree["Mx2"].array(library="np")
-        counts, _ = np.histogram(arr, bins=bins)
-        counts = counts.astype(float) / Qtot
-        axes[1].step(bins[:-1], counts, where='post', color='k', linestyle='--', label=lbl)
     #endfor
 
     axes[1].set(xlabel=r"$M_x^2$ [GeV$^2$]", xlim=(0.0, 1.5))
     axes[1].legend(loc='upper right')
 
+    # Save figure
     os.makedirs(os.path.dirname(outpath), exist_ok=True)
     plt.tight_layout()
     plt.savefig(outpath)
@@ -181,8 +186,7 @@ def main():
     nh3 = load_trees(NH3_FILES)
     c   = load_trees(C_FILES)
     h2  = load_trees(H2_FILES)
-    d2  = load_trees(D2_FILES)
-    make_normalized_Mx2_plots(nh3, c, h2, d2, run_charges, OUTPUT_FILE)
+    make_normalized_Mx2_plots(nh3, c, h2, run_charges, OUTPUT_FILE)
 #enddef
 
 if __name__ == '__main__':
