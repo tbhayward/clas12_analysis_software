@@ -7,8 +7,8 @@ import matplotlib.pyplot as plt
 # Toggle for quick debugging (process only first 5 runs per period)
 QUICK_RUN = False
 
-# List of runnums to exclude entirely (partial torus field)
-EXCLUDED_RUNS = {17769, 17770, 17771, 17772, 17773, 17774, 17775, 17776, 17777, 17778}
+# Maximum run number to include
+MAX_RUNNUM = 17768
 
 # Path to the CSV of run charges
 CSV_PATH = "/home/thayward/clas12_analysis_software/analysis_scripts/asymmetry_extraction/imports/clas12_run_info.csv"
@@ -16,7 +16,7 @@ CSV_PATH = "/home/thayward/clas12_analysis_software/analysis_scripts/asymmetry_e
 # Output directory and filenames
 OUTPUT_DIR        = "output/enpi+"
 NORMALIZED_OUTPUT = os.path.join(OUTPUT_DIR, "normalized_Mx2_charges.pdf")
-# PER_RUN_OUTPUT = os.path.join(OUTPUT_DIR, "per_run_Fa22_Sp23_Mx2.pdf")  # we will comment out per-run
+# PER_RUN_OUTPUT = os.path.join(OUTPUT_DIR, "per_run_Fa22_Sp23_Mx2.pdf")  # per-run is commented out
 
 # File lists: (filepath, label)
 NH3_FILES = [
@@ -37,7 +37,8 @@ H2_FILES = [
 def parse_run_charges(csv_path):
     """
     Read the CSV and return a dict { runnum: charge }.
-    Skip lines beginning with '#'.
+    Skip any run > MAX_RUNNUM.
+    Lines beginning with '#' are ignored.
     """
     run_charges = {}
     if not os.path.exists(csv_path):
@@ -57,8 +58,7 @@ def parse_run_charges(csv_path):
                 charge = float(parts[1])
             except:
                 continue
-            # Skip excluded runs
-            if run in EXCLUDED_RUNS:
+            if run > MAX_RUNNUM:
                 continue
             run_charges[run] = charge
     return run_charges
@@ -84,7 +84,7 @@ def make_normalized_Mx2_plots(nh3_info, c_info, h2_info, run_charges, outpath):
     Build a 1×2 figure:
     - Left: NH3 periods (Su22, Fa22, Sp23) + H2
     - Right: C periods   (Su22, Fa22, Sp23) + H2
-    Exclude runs in EXCLUDED_RUNS. Apply mask Mx2 <= 2.0.
+    Exclude runs > MAX_RUNNUM. Apply mask Mx2 <= 2.0.
     If QUICK_RUN is True, only first 5 unique runnums per tree are used.
     """
     bins = np.linspace(0.0, 1.5, 101)
@@ -93,8 +93,8 @@ def make_normalized_Mx2_plots(nh3_info, c_info, h2_info, run_charges, outpath):
     def compute_charge_and_mask(tree, run_charges, quick=False):
         """
         Returns (Q_tot, masked_Mx2_array) where:
-         - Q_tot = sum of charges for unique runs not in EXCLUDED_RUNS
-                   (first 5 if quick=True)
+         - Q_tot = sum of charges for unique runs ≤ MAX_RUNNUM
+                   (only first 5 if quick=True)
          - masked_Mx2_array = Mx2 values for those runs with Mx2 <= 2.0
         """
         run_arr = tree["runnum"].array(library="np").astype(int)
@@ -102,11 +102,10 @@ def make_normalized_Mx2_plots(nh3_info, c_info, h2_info, run_charges, outpath):
         if run_arr.size == 0:
             return 0.0, np.array([], dtype=float)
 
-        # Exclude unwanted runnums
-        valid_indices = ~np.isin(run_arr, list(EXCLUDED_RUNS))
-        run_arr = run_arr[valid_indices]
-        mx2_arr = mx2_arr[valid_indices]
-
+        # Filter out runs > MAX_RUNNUM
+        valid = run_arr <= MAX_RUNNUM
+        run_arr = run_arr[valid]
+        mx2_arr = mx2_arr[valid]
         if run_arr.size == 0:
             return 0.0, np.array([], dtype=float)
 
@@ -125,7 +124,9 @@ def make_normalized_Mx2_plots(nh3_info, c_info, h2_info, run_charges, outpath):
         mask = np.isin(run_arr, list(selected_runs)) & (mx2_arr <= 2.0)
         return Q_tot, mx2_arr[mask]
 
+    # -------------------
     # LEFT SUBPLOT: NH3 + H2
+    # -------------------
     for entry in nh3_info:
         tree, lbl = entry['tree'], entry['label']
         Q, mx2_vals = compute_charge_and_mask(tree, run_charges, quick=QUICK_RUN)
@@ -145,7 +146,9 @@ def make_normalized_Mx2_plots(nh3_info, c_info, h2_info, run_charges, outpath):
     axes[0].set(xlabel=r"$M_x^2$ [GeV$^2$]", ylabel="events / nC", xlim=(0.0, 1.5))
     axes[0].legend(loc='upper right', fontsize='small')
 
+    # -------------------
     # RIGHT SUBPLOT: C + H2
+    # -------------------
     for entry in c_info:
         tree, lbl = entry['tree'], entry['label']
         Q, mx2_vals = compute_charge_and_mask(tree, run_charges, quick=QUICK_RUN)
@@ -172,9 +175,17 @@ def make_normalized_Mx2_plots(nh3_info, c_info, h2_info, run_charges, outpath):
 #enddef
 
 
+# def make_per_run_Fa22_Sp23_plot(nh3_info, run_charges, outpath):
+#     """
+#     Build per-run histograms for Fa22-NH3 and Sp23-NH3.
+#     (Commented out as requested.)
+#     """
+#     pass
+# #enddef
+
 
 def main():
-    # Load run charges, skipping EXCLUDED_RUNS
+    # Load run charges (skipping runs > MAX_RUNNUM)
     run_charges = parse_run_charges(CSV_PATH)
 
     # Load trees
@@ -182,9 +193,11 @@ def main():
     c_info   = load_trees(C_FILES)
     h2_info  = load_trees(H2_FILES)
 
-    # Generate normalized Mx2 histograms, skipping excluded runs
+    # Generate normalized Mx2 histograms, skipping runs > MAX_RUNNUM
     make_normalized_Mx2_plots(nh3_info, c_info, h2_info, run_charges, NORMALIZED_OUTPUT)
 
+    # Per-run plotting is no longer used
+    # make_per_run_Fa22_Sp23_plot(nh3_info, run_charges, PER_RUN_OUTPUT)
 #enddef
 
 
