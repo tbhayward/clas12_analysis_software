@@ -32,7 +32,7 @@ SP23C_FILE = "/work/clas12/thayward/CLAS12_exclusive/enpi+/data/pass2/data/enpi+
 def parse_run_charges(csv_path):
     """
     Read clas12_run_info.csv and return a dict { runnum: charge }, skipping any run > MAX_RUNNUM.
-    Lines beginning with '#' are ignored.  
+    Lines beginning with '#' are ignored.
     """
     run_charges = {}
     if not os.path.exists(csv_path):
@@ -112,7 +112,7 @@ def compute_runbyrun_hist(tree, run_charges, bins, quick=False):
     """
     Build run-by-run Mx² histograms for Sp23-C:
       1) Mask to runnum ≤ MAX_RUNNUM and Mx² ≤ 2.0
-      2) For each unique run, histogram that run's events and normalize by that run's charge
+      2) For each unique run, histogram that run’s events and normalize by that run’s charge
       3) Return dict { runnum: (normalized_counts, bin_edges) } and print debug info.
       If quick=True, only first 5 unique runs encountered.
     """
@@ -228,7 +228,7 @@ def make_normalized_Mx2_plots(nh3_files, c_files, h2_files, run_charges, outpath
       - Left: NH3 (Su22, Fa22, Sp23) + H2
       - Right: C   (Su22, Fa22, Sp23) + H2
     Exclude runs > MAX_RUNNUM, apply Mx² ≤ 2.0 mask.
-    If QUICK_RUN=True, only first 5 unique runs per tree are used.
+    If QUICK_RUN=True, only first 5 unique runnums per tree are used.
     """
     bins = np.linspace(0.0, 1.5, 101)
     fig, axes = plt.subplots(1, 2, figsize=(12, 6), sharey=True)
@@ -291,7 +291,7 @@ def make_normalized_Mx2_plots(nh3_files, c_files, h2_files, run_charges, outpath
     )
     axes[0].legend(loc='upper right', fontsize='small')
 
-    # --- Right subplot:  C + H2 ---
+    # --- Right subplot:  C + H₂ ---
     for filepath, label in c_files:
         tree = load_tree(filepath)
         Q, mx2_vals = compute_charge_and_mask(tree, run_charges, quick=QUICK_RUN)
