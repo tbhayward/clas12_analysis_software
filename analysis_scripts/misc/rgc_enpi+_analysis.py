@@ -13,7 +13,7 @@ MAX_RUNNUM = 17768
 # Path to the CSV of run charges
 CSV_PATH = "/home/thayward/clas12_analysis_software/analysis_scripts/asymmetry_extraction/imports/clas12_run_info.csv"
 
-# Output directory and filenames
+# Output directory and filename
 OUTPUT_DIR        = "output/enpi+"
 NORMALIZED_OUTPUT = os.path.join(OUTPUT_DIR, "normalized_Mx2_charges.pdf")
 
@@ -170,9 +170,10 @@ def make_normalized_Mx2_plots(nh3_info, c_info, h2_info, run_charges, outpath):
 #enddef
 
 
-def print_unique_carbon_runs(c_info):
+def print_unique_carbon_runs_included(c_info):
     """
-    Print every unique run number found in the carbon trees (≤ MAX_RUNNUM).
+    Print every unique carbon run number that actually gets included in the histograms:
+    i.e., runs ≤ MAX_RUNNUM.
     """
     for entry in c_info:
         tree, lbl = entry['tree'], entry['label']
@@ -180,7 +181,7 @@ def print_unique_carbon_runs(c_info):
         # Filter by MAX_RUNNUM
         run_arr = run_arr[run_arr <= MAX_RUNNUM]
         unique_runs = sorted(np.unique(run_arr))
-        print(f"{lbl} unique runs (≤ {MAX_RUNNUM}): {unique_runs}")
+        print(f"{lbl} included runs (≤ {MAX_RUNNUM}): {unique_runs}")
 #enddef
 
 
@@ -193,8 +194,8 @@ def main():
     c_info   = load_trees(C_FILES)
     h2_info  = load_trees(H2_FILES)
 
-    # Print every unique carbon run number (≤ MAX_RUNNUM)
-    print_unique_carbon_runs(c_info)
+    # Print every unique carbon run number that is included (≤ MAX_RUNNUM)
+    print_unique_carbon_runs_included(c_info)
 
     # Generate normalized Mx2 histograms, skipping runs > MAX_RUNNUM
     make_normalized_Mx2_plots(nh3_info, c_info, h2_info, run_charges, NORMALIZED_OUTPUT)
