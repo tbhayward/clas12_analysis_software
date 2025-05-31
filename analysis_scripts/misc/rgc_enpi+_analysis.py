@@ -22,11 +22,12 @@ C_FILES = [
     ("/work/clas12/thayward/CLAS12_exclusive/enpi+/data/pass2/data/enpi+/rgc_fa22_inb_C_epi+.root",  "Fa22-C"),
     ("/work/clas12/thayward/CLAS12_exclusive/enpi+/data/pass2/data/enpi+/rgc_sp23_inb_C_epi+.root",  "Sp23-C"),
 ]
+# Add "Sp19" to H2 and D2 labels
 H2_FILES = [
-    ("/work/clas12/thayward/CLAS12_exclusive/enpi+/data/pass2/data/enpi+/rga_sp19_inb_H2_epi+.root", "H2"),
+    ("/work/clas12/thayward/CLAS12_exclusive/enpi+/data/pass2/data/enpi+/rga_sp19_inb_H2_epi+.root", "Sp19-H2"),
 ]
 D2_FILES = [
-    ("/work/clas12/thayward/CLAS12_exclusive/enpi+/data/pass2/data/enpi+/rgb_sp19_inb_D2_epi+.root", "D2"),
+    ("/work/clas12/thayward/CLAS12_exclusive/enpi+/data/pass2/data/enpi+/rgb_sp19_inb_D2_epi+.root", "Sp19-D2"),
 ]
 
 def parse_run_charges(csv_path):
@@ -54,7 +55,6 @@ def parse_run_charges(csv_path):
                 print(f"[WARNING] parsing error on line {i}: {e}")
                 continue
             run_charges[run] = charge
-        #endfor
     return run_charges
 
 def load_trees(files):
@@ -69,7 +69,6 @@ def load_trees(files):
             continue
         tree = uproot.open(fp)["PhysicsEvents"]
         info.append({'tree': tree, 'label': label})
-    #endfor
     return info
 
 def make_normalized_Mx2_plots(nh3_info, c_info, h2_info, d2_info, run_charges, outpath):
