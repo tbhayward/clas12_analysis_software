@@ -18,10 +18,8 @@ MAX_RUNNUM = 17768
 CSV_PATH = "/home/thayward/clas12_analysis_software/analysis_scripts/asymmetry_extraction/imports/clas12_run_info.csv"
 
 # Output directory and filenames
-OUTPUT_DIR             = "output/enpi+"
-THREE_PANEL_OUTPUT     = os.path.join(OUTPUT_DIR, "three_panel_Mx2_comparison.pdf")
-NORMALIZED_OUTPUT      = os.path.join(OUTPUT_DIR, "normalized_Mx2_charges.pdf")
-SP23C_COMPARE_PLOT     = os.path.join(OUTPUT_DIR, "Sp23C_period_vs_runbyrun.pdf")
+OUTPUT_DIR         = "output/enpi+"
+THREE_PANEL_OUTPUT = os.path.join(OUTPUT_DIR, "three_panel_Mx2_comparison.pdf")
 
 # File lists: (filepath, label)
 NH3_FILES = [
@@ -37,9 +35,6 @@ C_FILES = [
 H2_FILES = [
     ("/work/clas12/thayward/CLAS12_exclusive/enpi+/data/pass2/data/enpi+/rga_sp19_inb_H2_epi+.root", "Sp19-H2"),
 ]
-
-# Sp23-C ROOT file path (for the comparison plot)
-SP23C_FILE = "/work/clas12/thayward/CLAS12_exclusive/enpi+/data/pass2/data/enpi+/rgc_sp23_inb_C_epi+.root"
 
 # -----------------------------------------------------------------------------
 # FUNCTIONS
@@ -206,14 +201,14 @@ def make_normalized_Mx2_plots(nh3_files, c_files, h2_files, run_charges, outpath
     # -------------------------------------------------------------
     # Panel 3: (NH₃ – C) differences, plus H₂
     # -------------------------------------------------------------
-    # First, build period-level NH₃ and C histograms for each period
+    # Build period-level NH₃ and C histograms for each period
     period_names = ["Su22", "Fa22", "Sp23"]
     nh3_hist_dict = {}
     c_hist_dict = {}
     for period_label in period_names:
         # Find corresponding NH₃ and C filepaths
         nh3_fp = next(fp for fp, lbl in nh3_files if lbl.startswith(period_label))
-        c_fp   = next(fp for fp, lbl in c_files  if lbl.startswith(period_label))
+        c_fp   = next(fp for fp, lbl in c_files   if lbl.startswith(period_label))
 
         # NH₃
         tree_n = load_tree(nh3_fp)
@@ -233,7 +228,7 @@ def make_normalized_Mx2_plots(nh3_files, c_files, h2_files, run_charges, outpath
         else:
             c_hist_dict[period_label] = np.zeros(len(bins)-1)
 
-    # Next, compute H₂ histogram once
+    # Compute H₂ histogram once
     h2_label = h2_files[0][1]
     tree_h2  = load_tree(h2_files[0][0])
     Q_h2, mx2_h2 = compute_charge_and_mask(tree_h2, run_charges, quick=QUICK_RUN)
@@ -243,28 +238,27 @@ def make_normalized_Mx2_plots(nh3_files, c_files, h2_files, run_charges, outpath
     else:
         h2_norm = np.zeros(len(bins)-1)
 
-    # Now, for each period, scale C→match NH₃ on [0,0.5], then subtract
+    # Compute differences NH₃ – scaled C for each period
     diff_dict = {}
     for period_label in period_names:
         nh3_vals = nh3_hist_dict[period_label]
         c_vals   = c_hist_dict[period_label]
 
-        # Select bins with bin center < 0.5
+        # Select bins with center < 0.5
         mask_0_5 = (bin_centers >= 0.0) & (bin_centers < 0.5)
         nh3_sum = nh3_vals[mask_0_5].sum()
         c_sum   = c_vals[mask_0_5].sum()
 
-        if c_sum > 0:
+        if c_sum > 0.0:
             scale = nh3_sum / c_sum
         else:
             scale = 0.0
-        print(f"[DEBUG] Period {period_label}: NH₃ sum(0-0.5)={nh3_sum:.3f}, C sum(0-0.5)={c_sum:.3f}, scale={scale:.3f}")
+        print(f"[DEBUG] Period {period_label}: NH₃ sum(0–0.5)={nh3_sum:.3f}, C sum(0–0.5)={c_sum:.3f}, scale={scale:.3f}")
 
-        # Subtract: NH₃ – (scale × C)
         diff = nh3_vals - (c_vals * scale)
         diff_dict[period_label] = diff
 
-    # Finally, plot differences and H₂ on panel 3
+    # Plot differences and H₂ on panel 3
     linestyles = ['-', '--', '-.', ':']
     for idx, period_label in enumerate(period_names):
         diff = diff_dict[period_label]
@@ -283,7 +277,8 @@ def make_normalized_Mx2_plots(nh3_files, c_files, h2_files, run_charges, outpath
     axes[2].set(
         title="(NH₃ – C) per period, and H₂",
         xlabel=r"$M_x^2$ [GeV$^2$]",
-        xlim=(0.0, 1.5)
+        xlim=(0.0, 1.5),
+        ylim=(0.0, 0.03)
     )
     axes[2].legend(loc='upper right', fontsize='small')
 
@@ -293,172 +288,16 @@ def make_normalized_Mx2_plots(nh3_files, c_files, h2_files, run_charges, outpath
     plt.savefig(outpath)
     plt.close()
 
-
-def compute_period_hist(tree, run_charges, bins):
-    """
-    Build a single “period-level” Mx² histogram for Sp23-C:
-      1) Mask to runnum ≤ MAX_RUNNUM and Mx² ≤ 2.0
-      2) Combine all selected events, sum all corresponding run charges
-      3) Return (normalized_counts, bin_edges) and print debug info.
-    """
-    run_arr = tree["runnum"].array(library="np").astype(int)
-    mx2_arr = tree["Mx2"].array(library="np")
-
-    # 1) Filter out runs > MAX_RUNNUM and Mx² > 2.0
-    mask = (run_arr <= MAX_RUNNUM) & (mx2_arr <= 2.0)
-    run_filtered = run_arr[mask]
-    mx2_filtered = mx2_arr[mask]
-
-    if run_filtered.size == 0:
-        print("[WARNING] No events remain after filtering for period-level.")
-        return np.zeros(len(bins)-1), bins
-
-    # 2) Identify unique runs, sum their charges
-    unique_runs = np.unique(run_filtered)
-    print("Sp23-C period includes runs:", unique_runs.tolist())
-
-    Q_tot = 0.0
-    for r in unique_runs:
-        q = run_charges.get(r, 0.0)
-        if q <= 0.0:
-            print(f"  → WARNING: run {r} has zero or missing charge in CSV.")
-        Q_tot += q
-    print(f"Total combined charge for Sp23-C period: {Q_tot:.3f} nC")
-
-    # 3) Histogram all selected Mx² values
-    counts, edges = np.histogram(mx2_filtered, bins=bins)
-    norm_counts = counts.astype(float) / Q_tot
-    return norm_counts, edges
-
-
-def compute_runbyrun_hist(tree, run_charges, bins, quick=False):
-    """
-    Build run-by-run Mx² histograms for Sp23-C:
-      1) Mask to runnum ≤ MAX_RUNNUM and Mx² ≤ 2.0
-      2) For each unique run, histogram that run’s events and normalize by that run’s charge
-      3) Return dict { runnum: (normalized_counts, bin_edges) } and print debug info.
-      If quick=True, only first 5 unique runnums encountered.
-    """
-    run_arr = tree["runnum"].array(library="np").astype(int)
-    mx2_arr = tree["Mx2"].array(library="np")
-
-    # 1) Apply same filter
-    mask = (run_arr <= MAX_RUNNUM) & (mx2_arr <= 2.0)
-    run_filtered = run_arr[mask]
-    mx2_filtered = mx2_arr[mask]
-
-    if run_filtered.size == 0:
-        print("[WARNING] No events remain after filtering for run-by-run.")
-        return {}
-
-    # Determine unique runs in encountered order
-    if quick:
-        seen = []
-        for r in run_filtered:
-            if r not in seen:
-                seen.append(r)
-            if len(seen) >= 5:
-                break
-        unique_runs = seen
-    else:
-        unique_runs = sorted(np.unique(run_filtered))
-
-    print("Sp23-C run-by-run will process runs:", unique_runs)
-
-    result = {}
-    for runnum in unique_runs:
-        mask_run = (run_filtered == runnum)
-        vals = mx2_filtered[mask_run]
-        Q_run = run_charges.get(runnum, 0.0)
-        if Q_run <= 0.0:
-            print(f"  → WARNING: run {runnum} has zero or missing charge, skipping.")
-            continue
-        if vals.size == 0:
-            print(f"  → WARNING: run {runnum} has no events in Mx² ≤ 2.0, skipping.")
-            continue
-
-        counts, edges = np.histogram(vals, bins=bins)
-        norm_counts = counts.astype(float) / Q_run
-        result[runnum] = (norm_counts, edges)
-
-    return result
-
-
-def make_sp23c_comparison_plot(tree, run_charges, output_path):
-    """
-    Create a figure comparing:
-       * Left: period-level Sp23-C Mx² (all runs combined)
-       * Right: run-by-run Sp23-C Mx²
-    Saves to output_path and prints the peak values.
-    """
-    bins = np.linspace(0.0, 1.5, 101)
-
-    # 1) Compute period-level histogram
-    period_norm, _ = compute_period_hist(tree, run_charges, bins)
-    max_period = period_norm.max() if period_norm.size > 0 else 0.0
-
-    # 2) Compute run-by-run histograms
-    runbyrun_dict = compute_runbyrun_hist(tree, run_charges, bins, quick=QUICK_RUN)
-    if runbyrun_dict:
-        max_runbyrun = max(norm.max() for norm, _ in runbyrun_dict.values())
-    else:
-        max_runbyrun = 0.0
-
-    # 3) Plot side-by-side
-    fig, (ax_p, ax_r) = plt.subplots(1, 2, figsize=(12, 6), sharey=True)
-
-    # Period-level on the left (solid red)
-    ax_p.step(
-        bins[:-1], period_norm, where='post',
-        color='red', linewidth=2, label="Sp23-C (period)"
-    )
-    ax_p.set(
-        title="Sp23-C: Period-Level Mx²",
-        xlabel=r"$M_x^2$ [GeV$^2$]",
-        ylabel="events / nC",
-        xlim=(0.0, 1.5)
-    )
-    ax_p.legend(loc='upper right', fontsize='small')
-
-    # Run-by-run on the right (various linestyles)
-    linestyles = ['-', '--', '-.', ':', (0, (3, 1, 1, 1)), (0, (5, 2)), (0, (3, 5, 1, 5))]
-    for idx, (runnum, (norm_counts, _)) in enumerate(runbyrun_dict.items()):
-        style = linestyles[idx % len(linestyles)]
-        ax_r.step(
-            bins[:-1], norm_counts, where='post',
-            linestyle=style, label=str(runnum)
-        )
-    ax_r.set(
-        title="Sp23-C: Run-by-Run Mx²",
-        xlabel=r"$M_x^2$ [GeV$^2$]",
-        xlim=(0.0, 1.5)
-    )
-    ax_r.legend(loc='upper left', fontsize='xx-small', ncol=3)
-
-    plt.tight_layout()
-    plt.savefig(output_path)
-    plt.close()
-
-    # 4) Print the numerical maxima
-    print(f"Max (Sp23-C period)     = {max_period:.3f} events/nC")
-    print(f"Max (Sp23-C run-by-run) = {max_runbyrun:.3f} events/nC")
-
-
 # -----------------------------------------------------------------------------
 # MAIN
 # -----------------------------------------------------------------------------
 
 def main():
-    # 1) Load run charges, skipping runnum > MAX_RUNNUM
+    # Load run charges, skipping runnum > MAX_RUNNUM
     run_charges = parse_run_charges(CSV_PATH)
 
-    # 2) Create the period vs. run-by-run comparison plot for Sp23-C
-    sp23c_tree = load_tree(SP23C_FILE)
-    make_sp23c_comparison_plot(sp23c_tree, run_charges, SP23C_COMPARE_PLOT)
-
-    # 3) Create the three‐panel comparison plot (NH₃ vs C vs NH₃–C + H₂)
+    # Create the three‐panel comparison plot
     make_normalized_Mx2_plots(NH3_FILES, C_FILES, H2_FILES, run_charges, THREE_PANEL_OUTPUT)
-
 
 if __name__ == "__main__":
     main()
