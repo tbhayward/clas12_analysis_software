@@ -166,26 +166,27 @@ def make_per_run_Fa22_Sp23_plot(nh3_info, run_charges, outpath):
     - Left: Fa22-NH3, with one histogram per unique runnum
     - Right: Sp23-NH3, with one histogram per unique runnum
     Legends are placed in 3 columns at top-left, sorted numerically by run.
-    Each line has a unique linestyle.
+    Each line has a unique linestyle. Print any runnum whose histogram
+    has a bin > 0.10 events / nC.
     """
     bins = np.linspace(0.0, 1.5, 101)
     fig, axes = plt.subplots(1, 2, figsize=(12, 6), sharey=True)
 
-    # Predefined linestyles for variety
-    linestyles = ['-', '--', '-.', ':', (0, (5, 1, 1, 1)), (0, (3, 5, 1, 5))]
-
+    # Linestyles to cycle through
+    linestyles = ['-', '--', '-.', ':', (0, (3, 1, 1, 1)), (0, (5, 2))]
+    
     def per_run_data(tree, run_charges, quick=False):
         """
         Returns a dict { runnum: (Q_run, masked_Mx2_array) }.
         - Masks Mx2 <= 2.0
-        - If quick=True, only first 5 unique runnums in encountered order.
+        - If quick=True, only first 5 unique runnums encountered.
         """
         run_arr = tree["runnum"].array(library="np").astype(int)
         mx2_arr = tree["Mx2"].array(library="np")
         if run_arr.size == 0:
             return {}
 
-        # Unique runs in order encountered
+        # Collect unique runnums in order
         unique_runs = []
         for r in run_arr:
             if r not in unique_runs:
@@ -209,12 +210,17 @@ def make_per_run_Fa22_Sp23_plot(nh3_info, run_charges, outpath):
     # Fa22-NH3 per-run
     if fa22_entry:
         fa22_data = per_run_data(fa22_entry['tree'], run_charges, quick=QUICK_RUN)
+        flagged_fa22 = []
         for idx, runnum in enumerate(sorted(fa22_data.keys())):
             Q_run, vals = fa22_data[runnum]
             counts, _ = np.histogram(vals, bins=bins)
             counts = counts.astype(float) / Q_run
+            if np.any(counts > 0.10):
+                flagged_fa22.append(runnum)
             style = linestyles[idx % len(linestyles)]
             axes[0].step(bins[:-1], counts, where='post', linestyle=style, label=str(runnum))
+        if flagged_fa22:
+            print("Fa22-NH3 runs with bin >0.10 events/nC:", sorted(flagged_fa22))
     else:
         print("[WARNING] Fa22-NH3 entry not found!")
 
@@ -227,12 +233,17 @@ def make_per_run_Fa22_Sp23_plot(nh3_info, run_charges, outpath):
     # Sp23-NH3 per-run
     if sp23_entry:
         sp23_data = per_run_data(sp23_entry['tree'], run_charges, quick=QUICK_RUN)
+        flagged_sp23 = []
         for idx, runnum in enumerate(sorted(sp23_data.keys())):
             Q_run, vals = sp23_data[runnum]
             counts, _ = np.histogram(vals, bins=bins)
             counts = counts.astype(float) / Q_run
+            if np.any(counts > 0.10):
+                flagged_sp23.append(runnum)
             style = linestyles[idx % len(linestyles)]
             axes[1].step(bins[:-1], counts, where='post', linestyle=style, label=str(runnum))
+        if flagged_sp23:
+            print("Sp23-NH3 runs with bin >0.10 events/nC:", sorted(flagged_sp23))
     else:
         print("[WARNING] Sp23-NH3 entry not found!")
 
