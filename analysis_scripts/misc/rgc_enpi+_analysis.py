@@ -13,9 +13,10 @@ MAX_RUNNUM = 17768
 # Path to the CSV of run charges
 CSV_PATH = "/home/thayward/clas12_analysis_software/analysis_scripts/asymmetry_extraction/imports/clas12_run_info.csv"
 
-# Output directory and filename
-OUTPUT_DIR        = "output/enpi+"
-NORMALIZED_OUTPUT = os.path.join(OUTPUT_DIR, "normalized_Mx2_charges.pdf")
+# Output directory and filenames
+OUTPUT_DIR               = "output/enpi+"
+NORMALIZED_OUTPUT        = os.path.join(OUTPUT_DIR, "normalized_Mx2_charges.pdf")
+RUNBYRUN_SP23C_OUTPUT    = os.path.join(OUTPUT_DIR, "runbyrun_Sp23C_Mx2.pdf")
 
 # File lists: (filepath, label)
 NH3_FILES = [
@@ -170,23 +171,66 @@ def make_normalized_Mx2_plots(nh3_info, c_info, h2_info, run_charges, outpath):
 #enddef
 
 
-def print_unique_carbon_runs_included(c_info):
+def make_runbyrun_Sp23C_plot(c_info, run_charges, outpath):
     """
-    Print every unique carbon run number that actually gets included in the histograms:
-    i.e., runs ≤ MAX_RUNNUM.
+    Build a run-by-run histogram plot for the Spring 2023 Carbon dataset (Sp23-C):
+    - One panel only, with one histogram per unique runnum.
+    - Exclude runs > MAX_RUNNUM, apply Mx2 <= 2.0 mask.
+    - Each run line has a unique linestyle. Legend at top-left, 3 columns, small font.
     """
-    for entry in c_info:
-        tree, lbl = entry['tree'], entry['label']
-        run_arr = tree["runnum"].array(library="np").astype(int)
-        # Filter by MAX_RUNNUM
-        run_arr = run_arr[run_arr <= MAX_RUNNUM]
-        unique_runs = sorted(np.unique(run_arr))
-        print(f"{lbl} included runs (≤ {MAX_RUNNUM}): {unique_runs}")
+    bins = np.linspace(0.0, 1.5, 101)
+    fig, ax = plt.subplots(1, 1, figsize=(8, 6))
+
+    # Predefined linestyles to cycle through
+    linestyles = ['-', '--', '-.', ':', (0, (3, 1, 1, 1)), (0, (5, 2)), (0, (3, 5, 1, 5))]
+
+    # Find the Sp23-C entry
+    sp23_entry = next((e for e in c_info if e['label'] == "Sp23-C"), None)
+    if sp23_entry is None:
+        print("[ERROR] Sp23-C not found in C_FILES.")
+        return
+
+    tree = sp23_entry['tree']
+
+    # Extract runnum and Mx2 arrays
+    run_arr = tree["runnum"].array(library="np").astype(int)
+    mx2_arr = tree["Mx2"].array(library="np")
+
+    # Filter by MAX_RUNNUM and Mx2 <= 2.0
+    valid_mask = (run_arr <= MAX_RUNNUM) & (mx2_arr <= 2.0)
+    run_arr = run_arr[valid_mask]
+    mx2_arr = mx2_arr[valid_mask]
+    if run_arr.size == 0:
+        print("[WARNING] No valid events for Sp23-C after filtering.")
+        return
+
+    # Unique runs in ascending order
+    unique_runs = sorted(np.unique(run_arr))
+
+    # For each run, build histogram normalized by that run's charge
+    for idx, runnum in enumerate(unique_runs):
+        run_mask = run_arr == runnum
+        vals = mx2_arr[run_mask]
+        Q_run = run_charges.get(runnum, 0.0)
+        if Q_run <= 0 or vals.size == 0:
+            continue
+        counts, _ = np.histogram(vals, bins=bins)
+        counts = counts.astype(float) / Q_run
+        style = linestyles[idx % len(linestyles)]
+        ax.step(bins[:-1], counts, where='post', linestyle=style, label=str(runnum))
+
+    ax.set(title="Sp23-C per run", xlabel=r"$M_x^2$ [GeV$^2$]", ylabel="events / nC", xlim=(0.0, 1.5))
+    ax.legend(loc='upper left', fontsize='xx-small', ncol=3)
+
+    os.makedirs(os.path.dirname(outpath), exist_ok=True)
+    plt.tight_layout()
+    plt.savefig(outpath)
+    plt.close()
 #enddef
 
 
 def main():
-    # Load run charges (skipping runs > MAX_RUNNUM)
+    # Load run charges (excluding run > MAX_RUNNUM)
     run_charges = parse_run_charges(CSV_PATH)
 
     # Load trees
@@ -194,11 +238,11 @@ def main():
     c_info   = load_trees(C_FILES)
     h2_info  = load_trees(H2_FILES)
 
-    # Print every unique carbon run number that is included (≤ MAX_RUNNUM)
-    print_unique_carbon_runs_included(c_info)
-
-    # Generate normalized Mx2 histograms, skipping runs > MAX_RUNNUM
+    # Generate normalized Mx2 histograms
     make_normalized_Mx2_plots(nh3_info, c_info, h2_info, run_charges, NORMALIZED_OUTPUT)
+
+    # Generate run-by-run plot for Sp23-C
+    make_runbyrun_Sp23C_plot(c_info, run_charges, RUNBYRUN_SP23C_OUTPUT)
 #enddef
 
 
