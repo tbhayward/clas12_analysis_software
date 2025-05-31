@@ -1093,7 +1093,9 @@ void plot_dvcs_sebastian_energy_loss_validation(
         for (Long64_t ev = 0; ev < N; ++ev) {
             tree[i]->GetEntry(ev);
             double θ = p2_theta[i] * 180.0 / TMath::Pi();
-            if (θ >= 5.0 && θ < 32.0 &&
+            if (
+                // θ >= 5.0 && 
+                θ < 32.0 &&
                 eta2[i] <  0    &&
                 t1[i]   > -2    &&
                 theta_gamma_gamma[i] < 0.6 &&
