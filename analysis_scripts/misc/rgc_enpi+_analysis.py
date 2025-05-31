@@ -13,19 +13,27 @@ OUTPUT_FILE = os.path.join(OUTPUT_DIR, "normalized_Mx2_charges.pdf")
 
 # --- File lists: (filepath, label) ---
 NH3_FILES = [
-    ("/work/clas12/thayward/CLAS12_exclusive/enpi+/data/pass2/data/enpi+/rgc_su22_inb_NH3_epi+.root", "Su22"),
-    ("/work/clas12/thayward/CLAS12_exclusive/enpi+/data/pass2/data/enpi+/rgc_fa22_inb_NH3_epi+.root", "Fa22"),
-    ("/work/clas12/thayward/CLAS12_exclusive/enpi+/data/pass2/data/enpi+/rgc_sp23_inb_NH3_epi+.root", "Sp23"),
+    ("/work/clas12/thayward/CLAS12_exclusive/enpi+/data/pass2/data/enpi+/rgc_su22_inb_NH3_epi+.root", "Su22-NH3"),
+    ("/work/clas12/thayward/CLAS12_exclusive/enpi+/data/pass2/data/enpi+/rgc_fa22_inb_NH3_epi+.root", "Fa22-NH3"),
+    ("/work/clas12/thayward/CLAS12_exclusive/enpi+/data/pass2/data/enpi+/rgc_sp23_inb_NH3_epi+.root", "Sp23-NH3"),
 ]
 C_FILES = [
-    ("/work/clas12/thayward/CLAS12_exclusive/enpi+/data/pass2/data/enpi+/rgc_su22_inb_C_epi+.root",  "Su22"),
-    ("/work/clas12/thayward/CLAS12_exclusive/enpi+/data/pass2/data/enpi+/rgc_fa22_inb_C_epi+.root",  "Fa22"),
-    ("/work/clas12/thayward/CLAS12_exclusive/enpi+/data/pass2/data/enpi+/rgc_sp23_inb_C_epi+.root",  "Sp23"),
+    ("/work/clas12/thayward/CLAS12_exclusive/enpi+/data/pass2/data/enpi+/rgc_su22_inb_C_epi+.root",  "Su22-C"),
+    ("/work/clas12/thayward/CLAS12_exclusive/enpi+/data/pass2/data/enpi+/rgc_fa22_inb_C_epi+.root",  "Fa22-C"),
+    ("/work/clas12/thayward/CLAS12_exclusive/enpi+/data/pass2/data/enpi+/rgc_sp23_inb_C_epi+.root",  "Sp23-C"),
+]
+H2_FILES = [
+    ("/work/clas12/thayward/CLAS12_exclusive/enpi+/data/pass2/data/enpi+/rga_sp19_inb_H2_epi+.root", "H2"),
+]
+D2_FILES = [
+    ("/work/clas12/thayward/CLAS12_exclusive/enpi+/data/pass2/data/enpi+/rgb_sp19_inb_D2_epi+.root", "D2"),
 ]
 
-
 def parse_run_charges(csv_path):
-    print(f"[DEBUG] parse_run_charges: opening '{csv_path}'")
+    """
+    Read the CSV and return a dict { runnum: charge }.
+    Lines beginning with '#' are skipped.
+    """
     if not os.path.exists(csv_path):
         print(f"[ERROR] CSV not found: {csv_path}")
         return {}
@@ -46,74 +54,138 @@ def parse_run_charges(csv_path):
                 print(f"[WARNING] parsing error on line {i}: {e}")
                 continue
             run_charges[run] = charge
-            if i <= 5:
-                print(f"  parsed: run={run}, charge={charge}")
-    print(f"[DEBUG] parsed total runs: {len(run_charges)}")
+        #endfor
     return run_charges
 
-
 def load_trees(files):
+    """
+    Given list of (filepath, label), return list of dicts each containing
+    the opened uproot tree plus its label.
+    """
     info = []
     for fp, label in files:
         if not os.path.exists(fp):
             print(f"[ERROR] ROOT file missing: {fp}")
             continue
         tree = uproot.open(fp)["PhysicsEvents"]
-        print(f"[DEBUG] loaded tree for {label}: {tree}, entries={tree.num_entries}")
         info.append({'tree': tree, 'label': label})
+    #endfor
     return info
 
-
-def make_normalized_Mx2_plots(nh3_info, c_info, run_charges, outpath):
-    bins = np.linspace(-1.0, 2.0, 101)
+def make_normalized_Mx2_plots(nh3_info, c_info, h2_info, d2_info, run_charges, outpath):
+    """
+    Build and save a 1×2 figure of normalized Mx^2 histograms:
+    - Left: NH3 (3 periods) + H2 + D2
+    - Right: C    (3 periods) + H2 + D2
+    """
+    bins = np.linspace(0.0, 1.5, 101)
     fig, axes = plt.subplots(1, 2, figsize=(12, 6), sharey=True)
 
     def compute_charge(tree, label):
+        """
+        Sum total charge by unique runnum values in the tree.
+        """
         run_arr = tree["runnum"].array(library="np").astype(int)
-        print(f"    {label}: loaded runnum array length = {run_arr.size}")
         if run_arr.size == 0:
             print(f"[WARNING] runnum array empty for {label}")
-            return 0
-        uni = np.unique(run_arr)
-        Q = sum(run_charges.get(r, 0.0) for r in uni)
-        print(f"    {label}: unique runs={len(uni)}, Q={Q:.3f}")
+            return 0.0
+        uniques = np.unique(run_arr)
+        Q = sum(run_charges.get(r, 0.0) for r in uniques)
         return Q
 
-    print("[DEBUG] NH3 processing:")
+    # Plot NH3 (left subplot)
     for entry in nh3_info:
         tree, lbl = entry['tree'], entry['label']
         Qtot = compute_charge(tree, lbl)
         if Qtot <= 0:
             continue
         arr = tree["Mx2"].array(library="np")
-        cts, _ = np.histogram(arr, bins=bins)
-        axes[0].step(bins[:-1], cts.astype(float)/Qtot, where='post', label=lbl)
-    axes[0].set(title="NH₃", xlabel=r"$M_x^2$ [GeV$^2$]", ylabel="events/nC")
+        counts, _ = np.histogram(arr, bins=bins)
+        counts = counts.astype(float) / Qtot
+        axes[0].step(bins[:-1], counts, where='post', label=lbl)
+    #endfor
+
+    # Plot H2 on left
+    for entry in h2_info:
+        tree, lbl = entry['tree'], entry['label']
+        Qtot = compute_charge(tree, lbl)
+        if Qtot <= 0:
+            continue
+        arr = tree["Mx2"].array(library="np")
+        counts, _ = np.histogram(arr, bins=bins)
+        counts = counts.astype(float) / Qtot
+        axes[0].step(bins[:-1], counts, where='post', color='k', linestyle='-', label=lbl)
+    #endfor
+
+    # Plot D2 on left
+    for entry in d2_info:
+        tree, lbl = entry['tree'], entry['label']
+        Qtot = compute_charge(tree, lbl)
+        if Qtot <= 0:
+            continue
+        arr = tree["Mx2"].array(library="np")
+        counts, _ = np.histogram(arr, bins=bins)
+        counts = counts.astype(float) / Qtot
+        axes[0].step(bins[:-1], counts, where='post', color='k', linestyle='--', label=lbl)
+    #endfor
+
+    axes[0].set(xlabel=r"$M_x^2$ [GeV$^2$]", ylabel="events / nC", xlim=(0.0, 1.5))
     axes[0].legend(loc='upper right')
 
-    print("[DEBUG] C processing:")
+    # Plot C (right subplot)
     for entry in c_info:
         tree, lbl = entry['tree'], entry['label']
         Qtot = compute_charge(tree, lbl)
         if Qtot <= 0:
             continue
         arr = tree["Mx2"].array(library="np")
-        cts, _ = np.histogram(arr, bins=bins)
-        axes[1].step(bins[:-1], cts.astype(float)/Qtot, where='post', label=lbl)
-    axes[1].set(title="C", xlabel=r"$M_x^2$ [GeV$^2$]")
+        counts, _ = np.histogram(arr, bins=bins)
+        counts = counts.astype(float) / Qtot
+        axes[1].step(bins[:-1], counts, where='post', label=lbl)
+    #endfor
+
+    # Plot H2 on right
+    for entry in h2_info:
+        tree, lbl = entry['tree'], entry['label']
+        Qtot = compute_charge(tree, lbl)
+        if Qtot <= 0:
+            continue
+        arr = tree["Mx2"].array(library="np")
+        counts, _ = np.histogram(arr, bins=bins)
+        counts = counts.astype(float) / Qtot
+        axes[1].step(bins[:-1], counts, where='post', color='k', linestyle='-', label=lbl)
+    #endfor
+
+    # Plot D2 on right
+    for entry in d2_info:
+        tree, lbl = entry['tree'], entry['label']
+        Qtot = compute_charge(tree, lbl)
+        if Qtot <= 0:
+            continue
+        arr = tree["Mx2"].array(library="np")
+        counts, _ = np.histogram(arr, bins=bins)
+        counts = counts.astype(float) / Qtot
+        axes[1].step(bins[:-1], counts, where='post', color='k', linestyle='--', label=lbl)
+    #endfor
+
+    axes[1].set(xlabel=r"$M_x^2$ [GeV$^2$]", xlim=(0.0, 1.5))
     axes[1].legend(loc='upper right')
 
     os.makedirs(os.path.dirname(outpath), exist_ok=True)
     plt.tight_layout()
     plt.savefig(outpath)
     plt.close()
-
+#enddef
 
 def main():
     run_charges = parse_run_charges(CSV_PATH)
     nh3 = load_trees(NH3_FILES)
     c   = load_trees(C_FILES)
-    make_normalized_Mx2_plots(nh3, c, run_charges, OUTPUT_FILE)
+    h2  = load_trees(H2_FILES)
+    d2  = load_trees(D2_FILES)
+    make_normalized_Mx2_plots(nh3, c, h2, d2, run_charges, OUTPUT_FILE)
+#enddef
 
 if __name__ == '__main__':
     main()
+#endif
