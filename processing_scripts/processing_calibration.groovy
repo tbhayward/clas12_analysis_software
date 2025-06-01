@@ -286,7 +286,7 @@ class CalibrationScript {
                 // do not use the qa if it is MC (runnum = 11)
                 // do not use the qa if the run is from RGC (until QA is produced!)
                 // boolean process_event = filter.isValid(research_Event)
-                boolean process_event = filter.isValid(research_Event) && (config_run == 11 || config_run < 5020 || config_run > 16772 ||
+                boolean process_event = (config_run == 11 || config_run < 5020 || config_run > 16772 ||
 		    		qa.pass(config_run, evnum));
 		    	if (config_run > 17768) process_event == false; // outbending RGC Sp23
 
