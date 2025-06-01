@@ -289,6 +289,10 @@ class CalibrationScript {
                 boolean process_event = (config_run == 11 || config_run < 5020 ||
                 	qa.pass(config_run, config_event))
 
+                boolean process_event = filter.isValid(research_Event) && (runnum == 11 || runnum < 5020 || runnum > 16772 ||
+		    		qa.pass(runnum, evnum));
+		    	if (runnum > 17768) process_event == false; // outbending RGC Sp23
+
                 if (process_event && banks_test(event)) {
 
                     event_helicity = event_Bank.getInt('helicity',0);
