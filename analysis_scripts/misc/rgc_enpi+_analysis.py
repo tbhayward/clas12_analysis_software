@@ -164,10 +164,11 @@ def process_file(args):
     args = (filepath, label, run_charges, quick_flag)
     """
     filepath, label, run_charges, quick = args
+
     # 1) Open TTree
     tree = uproot.open(filepath)["PhysicsEvents"]
 
-    # 2) Extract arrays
+    # 2) Extract arrays from the TTree
     run_arr  = tree["runnum"].array(library="np").astype(int)
     mx2_arr  = tree["Mx2"].array(library="np")
     e_p_arr  = tree["e_p"].array(library="np")
@@ -177,7 +178,7 @@ def process_file(args):
     p_th_arr = tree["p_theta"].array(library="np")
     p_ph_arr = tree["p_phi"].array(library="np")
 
-    # 3) Base filter: run ≤ MAX_RUNNUM & Mx² ≤ 2.0
+    # 3) Base filter: keep only events with run <= MAX_RUNNUM and Mx² <= 2.0
     mask_base = (run_arr <= MAX_RUNNUM) & (mx2_arr <= 2.0)
     run_base  = run_arr[mask_base]
     mx2_base  = mx2_arr[mask_base]
@@ -188,24 +189,28 @@ def process_file(args):
     p_th_base = p_th_arr[mask_base]
     p_ph_base = p_ph_arr[mask_base]
 
-    # Prepare output histograms (100 bins)
+    # DEBUG #1: For H2, show how many events passed the base filter
+    if label == "Sp19-H2":
+        print(f"[DEBUG][H₂] after base filter: run_base.size = {run_base.size}, mx2_base.size = {mx2_base.size}")
+
+    # Prepare output histograms (100 bins from 0.0 → 1.5)
     bins = np.linspace(0.0, 1.5, 101)
 
-    # Initialize with zeros
-    hist_no_t = np.zeros(len(bins)-1, dtype=float)
-    hist_t    = np.zeros(len(bins)-1, dtype=float)
+    # Initialize both histograms to zero
+    hist_no_t = np.zeros(len(bins) - 1, dtype=float) 
+    hist_t    = np.zeros(len(bins) - 1, dtype=float)
 
-    # If no events pass the base filter, return zeros
+    # If no events survive the base filter, return zeros immediately
     if run_base.size == 0:
         return (label, hist_no_t, hist_t)
 
-    # --- Compute no-t-cut histogram ---
+    # --- Compute “no‐t‐cut” histogram (just run/Mx² filter) ---
 
-    # 4a) Determine which runs to include (no-t): run_final_no_t = run_base
+    # 4a) Choose all events from run_base
     run_final_no_t = run_base.copy()
     mx2_final_no_t = mx2_base.copy()
 
-    # 5a) Select unique runs (first 5 if quick)
+    # 5a) Select which runs contribute: if QUICK, take first 5 unique runnums; else take all unique
     if quick:
         seen = []
         for r in run_final_no_t:
@@ -217,44 +222,54 @@ def process_file(args):
     else:
         selected_runs_no_t = set(np.unique(run_final_no_t))
 
-    # 6a) Sum total charge Q_no_t
+    # 6a) Sum total beam charge for those selected runs (Q_no_t)
     Q_no_t = 0.0
     for r in selected_runs_no_t:
         q = run_charges.get(r, 0.0)
         if q <= 0.0:
-            print(f"    [WARNING] (no-t) run {r} has zero or missing charge.")
+            print(f"    [WARNING] (no‐t) run {r} has zero or missing charge.")
         Q_no_t += q
 
-    # 7a) Mask events to only those runs
+    # DEBUG #2: For H2, print Q_no_t and how many runs
+    if label == "Sp19-H2":
+        print(f"[DEBUG][H₂]   Q_no_t = {Q_no_t:.3f}   (#runs={len(selected_runs_no_t)})")
+
+    # 7a) Mask events so that only events from those selected runs remain
     mask_runs_no_t = np.isin(run_final_no_t, list(selected_runs_no_t))
     mx2_use_no_t   = mx2_final_no_t[mask_runs_no_t]
 
+    # Build the normalized no‐t histogram
     if Q_no_t > 0.0 and mx2_use_no_t.size > 0:
         counts_no_t, _ = np.histogram(mx2_use_no_t, bins=bins)
-        hist_no_t = counts_no_t.astype(float) / Q_no_t
+        hist_no_t      = counts_no_t.astype(float) / Q_no_t
 
-    # --- Compute t-cut histogram ---
+    # --- Compute “t‐cut” histogram (additionally require |t| < 1) ---
 
-    # 4b) Compute t-array for base-filtered events
+    # 4b) Compute t for every base‐filtered event
     t_vals = compute_t_array(
         run_base,
         e_p_base, e_th_base, e_ph_base,
         p_p_base, p_th_base, p_ph_base
     )
-    # DEBUG: if this is H2, print out a few t‐values before masking
+
+    # DEBUG #3: For H2, print first few t_vals and count how many events satisfy |t|<1
     if label == "Sp19-H2":
-        # Show the first 10 computed t_values for H2 (or fewer if there are <10 events)
-        sample_size = min(100, t_vals.size)
-        print(f"[DEBUG][H2] first {sample_size} t‐values:", t_vals[:sample_size])
+        sample_size = min(10, t_vals.size)
+        print(f"[DEBUG][H₂] first {sample_size} raw t_vals: {t_vals[:sample_size]}")
+        num_t_pass = np.sum(np.abs(t_vals) < 1.0)
+        print(f"[DEBUG][H₂]   #{num_t_pass} of {t_vals.size} events satisfy |t|<1")
+
+    # Apply |t| < 1 mask
     mask_t = np.abs(t_vals) < 1.0
 
-    run_t     = run_base[mask_t]
-    mx2_t     = mx2_base[mask_t]
+    run_t = run_base[mask_t]
+    mx2_t = mx2_base[mask_t]
 
+    # If no events survive the t‐cut, return what we have so far for hist_no_t plus zero for hist_t
     if run_t.size == 0:
         return (label, hist_no_t, hist_t)
 
-    # 5b) Select unique runs for t-cut
+    # 5b) Select which runs now contribute under the t‐cut condition
     if quick:
         seen = []
         for r in run_t:
@@ -266,7 +281,7 @@ def process_file(args):
     else:
         selected_runs_t = set(np.unique(run_t))
 
-    # 6b) Sum total charge Q_t
+    # 6b) Sum total beam charge for those runs (Q_t)
     Q_t = 0.0
     for r in selected_runs_t:
         q = run_charges.get(r, 0.0)
@@ -274,16 +289,20 @@ def process_file(args):
             print(f"    [WARNING] (t) run {r} has zero or missing charge.")
         Q_t += q
 
-    # 7b) Mask events to only those runs
+    # DEBUG #4: For H2, print Q_t and how many runs
+    if label == "Sp19-H2":
+        print(f"[DEBUG][H₂]   Q_t    = {Q_t:.3f}   (#runs={len(selected_runs_t)})")
+
+    # 7b) Mask t‐filtered events so that only events from selected_runs_t remain
     mask_runs_t = np.isin(run_t, list(selected_runs_t))
     mx2_use_t   = mx2_t[mask_runs_t]
 
+    # Build the normalized t‐cut histogram
     if Q_t > 0.0 and mx2_use_t.size > 0:
         counts_t, _ = np.histogram(mx2_use_t, bins=bins)
-        hist_t = counts_t.astype(float) / Q_t
+        hist_t      = counts_t.astype(float) / Q_t
 
     return (label, hist_no_t, hist_t)
-
 
 # -----------------------------------------------------------------------------
 # PLOTTING FUNCTION
