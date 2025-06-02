@@ -92,9 +92,9 @@ def get_beam_energy(runnums):
     """
     Eb = np.zeros_like(runnums, dtype=float)
     mask_h2 = (runnums >= 6616) & (runnums <= 6783)
-    mask1  = (runnums >= 16042) & (runnums <= 17065)
-    mask2  = (runnums >= 17067) & (runnums <= 17724)
-    mask3  = (runnums >= 17725) & (runnums <= 17811)
+    mask1   = (runnums >= 16042) & (runnums <= 17065)
+    mask2   = (runnums >= 17067) & (runnums <= 17724)
+    mask3   = (runnums >= 17725) & (runnums <= 17811)
     Eb[mask_h2] = 10.1998
     Eb[mask1]   = 10.5473
     Eb[mask2]   = 10.5563
@@ -324,6 +324,12 @@ def make_normalized_Mx2_plots(nh3_files, c_files, h2_files, run_charges, outpath
     # 4) Start plotting: 2 rows × 3 columns
     fig, axes = plt.subplots(2, 3, figsize=(18, 12), sharey=True)
 
+    # Prepare lists of all histograms for each row
+    # Top row: collect NH₃ no-t, C no-t, diff no-t, H₂ no-t
+    top_row_vals = []
+    # Bottom row: collect NH₃ with-t, C with-t, diff with-t, H₂ with-t
+    bottom_row_vals = []
+
     # ===========================
     # Top row: no |t| < 1 cut
     # ===========================
@@ -332,12 +338,14 @@ def make_normalized_Mx2_plots(nh3_files, c_files, h2_files, run_charges, outpath
     for _, lbl in nh3_files:
         hist_no_t, _ = results.get(lbl, (np.zeros(100), np.zeros(100)))
         axes[0, 0].step(bins[:-1], hist_no_t, where='post', label=lbl)
+        top_row_vals.append(hist_no_t.max())
     h2_label = h2_files[0][1]
     hist_h2_no_t, _ = results.get(h2_label, (np.zeros(100), np.zeros(100)))
     axes[0, 0].step(
         bins[:-1], hist_h2_no_t, where='post',
         color='k', linestyle='-', label=h2_label
     )
+    top_row_vals.append(hist_h2_no_t.max())
     axes[0, 0].set(
         title="NH₃ + H₂: Normalized Mx² (no t-cut)",
         xlabel=r"$M_x^2$ (GeV$^2$)",
@@ -350,10 +358,12 @@ def make_normalized_Mx2_plots(nh3_files, c_files, h2_files, run_charges, outpath
     for _, lbl in c_files:
         hist_no_t, _ = results.get(lbl, (np.zeros(100), np.zeros(100)))
         axes[0, 1].step(bins[:-1], hist_no_t, where='post', label=lbl)
+        top_row_vals.append(hist_no_t.max())
     axes[0, 1].step(
         bins[:-1], hist_h2_no_t, where='post',
         color='k', linestyle='-', label=h2_label
     )
+    top_row_vals.append(hist_h2_no_t.max())
     axes[0, 1].set(
         title="C + H₂: Normalized Mx² (no t-cut)",
         xlabel=r"$M_x^2$ (GeV$^2$)",
@@ -380,27 +390,30 @@ def make_normalized_Mx2_plots(nh3_files, c_files, h2_files, run_charges, outpath
         print(f"[DEBUG] (no-t) {period_label}: NH₃ sum(0–0.5)={nh3_sum:.3f}, C sum(0–0.5)={c_sum:.3f}, scale={scale:.3f}")
         diff_no_t[period_label] = nh3_vals - (c_vals * scale)
 
-    linestyles = ['-', '--', '-.', ':']
     for idx, period_label in enumerate(period_names):
         diff = diff_no_t.get(period_label, np.zeros(100))
-        style = linestyles[idx % len(linestyles)]
+        style = ['-', '--', '-.', ':'][idx % 4]
         axes[0, 2].step(
             bins[:-1], diff, where='post',
             linestyle=style, label=f"{period_label} NH₃–C"
         )
+        top_row_vals.append(diff.max())
+
     axes[0, 2].step(
         bins[:-1], hist_h2_no_t, where='post',
         color='k', linestyle='-', label=h2_label
     )
-    # Determine y-limit as half of max(axes[0,0], axes[0,1]) for top row, third column
-    y_max_00 = axes[0, 0].get_ylim()[1]
-    y_max_01 = axes[0, 1].get_ylim()[1]
-    y_lim_top = 0.5 * max(y_max_00, y_max_01)
+    top_row_vals.append(hist_h2_no_t.max())
+
+    # Determine top row y-limit = 1.1 × maximum of top_row_vals
+    y_top = 1.1 * max(top_row_vals) if top_row_vals else 0.1
+    for col in range(3):
+        axes[0, col].set(ylim=(0.0, y_top))
+
     axes[0, 2].set(
         title="(NH₃ – C) + H₂ (no t-cut)",
         xlabel=r"$M_x^2$ (GeV$^2$)",
-        xlim=(0.0, 1.5),
-        ylim=(0.0, y_lim_top)
+        xlim=(0.0, 1.5)
     )
     axes[0, 2].legend(loc='upper right', fontsize='small')
 
@@ -408,15 +421,20 @@ def make_normalized_Mx2_plots(nh3_files, c_files, h2_files, run_charges, outpath
     # Bottom row: with |t| < 1 cut
     # ===========================
 
+    # Reset lists for bottom row maxima
+    bottom_row_vals = []
+
     # Panel (1,0): NH₃ + H₂   (with-t)
     for _, lbl in nh3_files:
         _, hist_t = results.get(lbl, (np.zeros(100), np.zeros(100)))
         axes[1, 0].step(bins[:-1], hist_t, where='post', label=lbl)
+        bottom_row_vals.append(hist_t.max())
     _, hist_h2_t = results.get(h2_label, (np.zeros(100), np.zeros(100)))
     axes[1, 0].step(
         bins[:-1], hist_h2_t, where='post',
         color='k', linestyle='-', label=h2_label
     )
+    bottom_row_vals.append(hist_h2_t.max())
     axes[1, 0].set(
         title="NH₃ + H₂: Normalized Mx² (|t|<1)",
         xlabel=r"$M_x^2$ (GeV$^2$)",
@@ -429,10 +447,12 @@ def make_normalized_Mx2_plots(nh3_files, c_files, h2_files, run_charges, outpath
     for _, lbl in c_files:
         _, hist_t = results.get(lbl, (np.zeros(100), np.zeros(100)))
         axes[1, 1].step(bins[:-1], hist_t, where='post', label=lbl)
+        bottom_row_vals.append(hist_t.max())
     axes[1, 1].step(
         bins[:-1], hist_h2_t, where='post',
         color='k', linestyle='-', label=h2_label
     )
+    bottom_row_vals.append(hist_h2_t.max())
     axes[1, 1].set(
         title="C + H₂: Normalized Mx² (|t|<1)",
         xlabel=r"$M_x^2$ (GeV$^2$)",
@@ -460,24 +480,27 @@ def make_normalized_Mx2_plots(nh3_files, c_files, h2_files, run_charges, outpath
 
     for idx, period_label in enumerate(period_names):
         diff = diff_t.get(period_label, np.zeros(100))
-        style = linestyles[idx % len(linestyles)]
+        style = ['-', '--', '-.', ':'][idx % 4]
         axes[1, 2].step(
             bins[:-1], diff, where='post',
             linestyle=style, label=f"{period_label} NH₃–C"
         )
+        bottom_row_vals.append(diff.max())
     axes[1, 2].step(
         bins[:-1], hist_h2_t, where='post',
         color='k', linestyle='-', label=h2_label
     )
-    # Determine y-limit as half of max(axes[1,0], axes[1,1]) for bottom row, third column
-    y_max_10 = axes[1, 0].get_ylim()[1]
-    y_max_11 = axes[1, 1].get_ylim()[1]
-    y_lim_bottom = 0.5 * max(y_max_10, y_max_11)
+    bottom_row_vals.append(hist_h2_t.max())
+
+    # Determine bottom row y-limit = 1.1 × maximum of bottom_row_vals
+    y_bottom = 1.1 * max(bottom_row_vals) if bottom_row_vals else 0.1
+    for col in range(3):
+        axes[1, col].set(ylim=(0.0, y_bottom))
+
     axes[1, 2].set(
         title="(NH₃ – C) + H₂ (|t|<1)",
         xlabel=r"$M_x^2$ (GeV$^2$)",
-        xlim=(0.0, 1.5),
-        ylim=(0.0, y_lim_bottom)
+        xlim=(0.0, 1.5)
     )
     axes[1, 2].legend(loc='upper right', fontsize='small')
 
