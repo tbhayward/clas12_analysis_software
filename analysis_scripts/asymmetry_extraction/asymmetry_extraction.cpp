@@ -232,7 +232,8 @@ int main(int argc, char *argv[]) {
   cout<< endl << endl <<"-- Loaded information from run_info_rgc.csv" << endl;
   cout << "Found " << run_info_list.size() << " runs in list." << endl;
   // charge_acuumulation determines the total charges from the runs in supplied dataFile
-  // by comparing to master list of CLAS12 runs 
+  // by comparing to master list of CLAS12 runs
+  std::cout << "HELLO WORLD!!!" << std::endl; 
   charge_accumulation(dataReader, run_info_list);
   cout << "Total pos-pos (beam-target) charge: " << cpp << " (nC). ";
   cout << "Total pos-neg charge: " << cpm << " (nC). ";
