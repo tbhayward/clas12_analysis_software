@@ -368,7 +368,7 @@ std::vector<std::pair<double, double>> calculate_dilution_factors() {
 
             while (reader.Next()) {
                 bool passedKinematicCuts = cuts->applyCuts(currentFits, false);
-                std::cout << passedKinematicCuts << " " << *runnum << " " << min_run << " " << max_run << std::endl;
+                // std::cout << passedKinematicCuts << " " << *runnum << " " << min_run << " " << max_run << std::endl;
                 if (is_nh3) {
                     if (*runnum < min_run || *runnum > max_run) continue;
                 }
