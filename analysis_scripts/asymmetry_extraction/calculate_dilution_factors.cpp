@@ -56,11 +56,11 @@
 
 
 // Fractional charge values for Total -- RGC Sp23
-const double xAtotal = 0.407245;
-const double xCtotal = 0.115530;
-const double xCHtotal = 0.383238;
-const double xHetotal = 0.082005;
-const double xftotal = 0.011982;
+const double xAtotal = 0.402456;
+const double xCtotal = 0.414446;
+const double xCHtotal = 0.090216;
+const double xHetotal = 0.081041;
+const double xftotal = 0.011841;
 
 
 // NH3 periods defined as a pair of run numbers (start, end)
@@ -220,8 +220,8 @@ std::vector<std::pair<double, double>> calculate_dilution_factors() {
     // TFile* emptyFile = TFile::Open("/work/clas12/thayward/CLAS12_exclusive/enpi+/data/pass2/data/enpi+/rgc_fa22_inb_ET_epi+.root");
 
     TFile* nh3File = TFile::Open("/work/clas12/thayward/CLAS12_exclusive/enpi+/data/pass2/data/enpi+/rgc_sp23_inb_NH3_epi+.root");
-    TFile* cFile = TFile::Open("/work/clas12/thayward/CLAS12_exclusive/enpi+/data/pass2/data/enpi+/rgc_sp23_inb_C_epi+.root");
-    TFile* chFile = TFile::Open("/work/clas12/thayward/CLAS12_exclusive/enpi+/data/pass2/data/enpi+/rgc_fa22_inb_CH2_epi+.root");
+    TFile* cFile = TFile::Open("/work/clas12/thayward/CLAS12_exclusive/enpi+/data/pass2/data/enpi+/rgc_fa22_inb_C_epi+.root");
+    TFile* chFile = TFile::Open("/work/clas12/thayward/CLAS12_exclusive/enpi+/data/pass2/data/enpi+/rgc_sp23_inb_CH2_epi+.root");
     TFile* heFile = TFile::Open("/work/clas12/thayward/CLAS12_exclusive/enpi+/data/pass2/data/enpi+/rgc_fa22_inb_He_epi+.root");
     TFile* emptyFile = TFile::Open("/work/clas12/thayward/CLAS12_exclusive/enpi+/data/pass2/data/enpi+/rgc_fa22_inb_ET_epi+.root");
 
