@@ -373,7 +373,7 @@ std::vector<std::pair<double, double>> calculate_dilution_factors() {
                 }
                 if (*currentVariable >= varMin && *currentVariable < varMax && passedKinematicCuts) {
                     hist->Fill(*currentVariable);
-                    std::cout << *currentVariable << std::endl
+                    std::cout << *currentVariable << std::endl;
                     sumCurrentVariable += *currentVariable;
                     ++count;
 
