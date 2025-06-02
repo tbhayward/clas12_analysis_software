@@ -157,7 +157,7 @@ def process_file(args):
     Worker for parallel histogramming:
     Returns (label, hist_no_t, hist_t) where:
       - hist_no_t: normalized Mx² histogram with just (runnum ≤ MAX_RUNNUM, Mx² ≤ 2.0).
-      - hist_t:    normalized Mx² histogram with |t| < 1.0 added.
+      - hist_t:    normalized Mx² histogram with additional |t| < 1.0 cut.
     Both histograms use 100 bins from 0 → 1.5.
 
     args = (filepath, label, run_charges, quick_flag)
@@ -174,7 +174,7 @@ def process_file(args):
     # 1) Open TTree
     tree = uproot.open(filepath)["PhysicsEvents"]
 
-    # 2) Extract entire arrays (NumPy) from the TTree
+    # 2) Extract entire arrays from the TTree
     run_arr  = tree["runnum"].array(library="np").astype(int)
     mx2_arr  = tree["Mx2"].array(library="np")
     e_p_arr  = tree["e_p"].array(library="np")
@@ -195,8 +195,9 @@ def process_file(args):
     p_th_base = p_th_arr[mask_base]
     p_ph_base = p_ph_arr[mask_base]
 
-    # (Optionally) debug how many events passed the base filter
-    # print(f"[DEBUG][{label}] after base filter: {run_base.size} events remain.")
+    # Print how many events remain after the base filter
+    num_base_events = run_base.size
+    print(f"[DEBUG][{label}] after base filter: {num_base_events} events")
 
     # Prepare output histograms (100 bins: 0.0 → 1.5)
     bins = np.linspace(0.0, 1.5, 101)
@@ -204,23 +205,23 @@ def process_file(args):
     hist_t    = np.zeros(len(bins) - 1, dtype=float)
 
     # If no events survive the base filter, return zeroed histograms
-    if run_base.size == 0:
-        print(f"[DEBUG][{label}] no events pass base filter → Q_no_t = Q_t = 0")
+    if num_base_events == 0:
+        print(f"[DEBUG][{label}] no events remain after base filter → all histograms zero")
         return (label, hist_no_t, hist_t)
 
-    # --- Compute “no-t-cut” histogram (only run/Mx² filter) ---
+    # --- Compute “no‐t‐cut” histogram (only run/Mx² filter) ---
     run_final_no_t = run_base.copy()
     mx2_final_no_t = mx2_base.copy()
 
     # 5a) Select which runs contribute: all unique runs (quick=False)
     selected_runs_no_t = set(np.unique(run_final_no_t))
 
-    # 6a) Sum total beam charge for those runs (Q_no_t)
+    # 6a) Sum total beam charge for those runs (Q_no_t) – still needed for normalization
     Q_no_t = 0.0
     for r in selected_runs_no_t:
         q = run_charges.get(r, 0.0)
         if q <= 0.0:
-            print(f"    [WARNING] (no-t) run {r} has zero or missing charge.")
+            print(f"    [WARNING] (no‐t) run {r} has zero or missing charge.")
         Q_no_t += q
 
     # 7a) Mask events so that only those runs remain
@@ -231,9 +232,9 @@ def process_file(args):
         counts_no_t, _ = np.histogram(mx2_use_no_t, bins=bins)
         hist_no_t = counts_no_t.astype(float) / Q_no_t
     else:
-        hist_no_t = np.zeros(len(bins)-1, dtype=float)
+        hist_no_t = np.zeros(len(bins) - 1, dtype=float)
 
-    # --- Compute “t-cut” histogram (also require |t|<1) ---
+    # --- Compute “t‐cut” histogram (also require |t|<1) ---
     t_vals = compute_t_array(
         run_base,
         e_p_base, e_th_base, e_ph_base,
@@ -244,8 +245,14 @@ def process_file(args):
     run_t = run_base[mask_t]
     mx2_t = mx2_base[mask_t]
 
-    if run_t.size == 0:
-        Q_t = 0.0
+    # Count how many survive |t|<1
+    num_t_events = run_t.size
+    print(f"[DEBUG][{label}] after |t|<1 cut: {num_t_events} events")
+
+    if num_t_events == 0:
+        # No events survive the t-cut
+        # hist_t is already zeroed
+        pass
     else:
         # 5b) Select which runs now contribute under |t|<1
         selected_runs_t = set(np.unique(run_t))
@@ -266,15 +273,11 @@ def process_file(args):
             counts_t, _ = np.histogram(mx2_use_t, bins=bins)
             hist_t      = counts_t.astype(float) / Q_t
         else:
-            hist_t = np.zeros(len(bins)-1, dtype=float)
+            hist_t = np.zeros(len(bins) - 1, dtype=float)
 
-    # Compute survival fraction (avoid division by zero)
-    if Q_no_t > 0.0:
-        survival = 100.0 * Q_t / Q_no_t
-    else:
-        survival = 0.0
-
-    print(f"[DEBUG][{label}] Q_no_t = {Q_no_t:.3f}  |  Q_t = {Q_t:.3f}  |  survival = {survival:.1f}%")
+    # Compute survival fraction in terms of event count
+    survival_frac = 100.0 * num_t_events / num_base_events if num_base_events > 0 else 0.0
+    print(f"[DEBUG][{label}] event survival = {survival_frac:.1f}% ({num_t_events}/{num_base_events})")
 
     return (label, hist_no_t, hist_t)
 
@@ -283,7 +286,7 @@ def process_file_quick_stop(filepath, label, run_charges):
     """
     Quick‐stop version of process_file():
     - Only process the FIRST 5 unique runs to build both histograms.
-    - Uses uproot.iterate() to read in chunks of events, stops as soon as 5 distinct runs are found.
+    - Uses uproot.iterate() to read chunks of events, stops as soon as 5 distinct runs are found.
     - Returns (label, hist_no_t, hist_t).
     """
     bins = np.linspace(0.0, 1.5, 101)
@@ -295,7 +298,10 @@ def process_file_quick_stop(filepath, label, run_charges):
     mx2_acc_no_t = []
     mx2_acc_t    = []
 
-    # Read in “chunks” of 100k events, stop once each set has 5 distinct runs
+    total_base_events = 0
+    total_t_events    = 0
+
+    # Iterate in chunks of 100k events, stop once each set has 5 distinct runs
     for chunk in uproot.iterate(
             filepath + ":PhysicsEvents",
             ["runnum", "Mx2", "e_p", "e_theta", "e_phi", "p_p", "p_theta", "p_phi"],
@@ -320,6 +326,9 @@ def process_file_quick_stop(filepath, label, run_charges):
         p_p_base_chunk  = p_p_chunk[mask_base]
         p_th_base_chunk = p_th_chunk[mask_base]
         p_ph_base_chunk = p_ph_chunk[mask_base]
+
+        # Accumulate the count of base-filtered events
+        total_base_events += run_base_chunk.size
 
         # Loop event-by-event until we have 5 distinct runs in each category
         for (rnum, mx2_val, ep, eth, eph, pp, pth, pph) in zip(
@@ -348,35 +357,44 @@ def process_file_quick_stop(filepath, label, run_charges):
                     if rnum in seen_runs_t:
                         mx2_acc_t.append(mx2_val)
 
-            # Once both sets have 5 runs, stop reading further events
+            # If both categories already have 5 runs, stop reading further events
             if len(seen_runs_no_t) >= 5 and len(seen_runs_t) >= 5:
                 break
 
         if len(seen_runs_no_t) >= 5 and len(seen_runs_t) >= 5:
             break
 
-    # Build “no-t” histogram
-    Q_no_t = sum(run_charges.get(r, 0.0) for r in seen_runs_no_t)
-    if Q_no_t > 0.0 and len(mx2_acc_no_t) > 0:
+    # Now we know how many base‐filtered events we saw (though we only recorded Mx² from the first 5 runs)
+    num_base_events = total_base_events
+    # The “no‐t” event count is total length of mx2_acc_no_t (but some events may belong to the same run; 
+    # for a quick sanity-check we’ll treat each appended Mx² as one event)
+    num_no_t_events = len(mx2_acc_no_t)
+
+    # The “t‐cut” event count is total length of mx2_acc_t
+    num_t_events = len(mx2_acc_t)
+
+    # Build “no‐t” histogram
+    seen_runs_list_no_t = list(seen_runs_no_t)
+    Q_no_t = sum(run_charges.get(r, 0.0) for r in seen_runs_list_no_t)
+    if Q_no_t > 0.0 and num_no_t_events > 0:
         counts_no_t, _ = np.histogram(np.array(mx2_acc_no_t), bins=bins)
         hist_no_t      = counts_no_t.astype(float) / Q_no_t
     else:
-        hist_no_t = np.zeros(len(bins)-1, dtype=float)
+        hist_no_t = np.zeros(len(bins) - 1, dtype=float)
 
-    # Build “t-cut” histogram
-    Q_t = sum(run_charges.get(r, 0.0) for r in seen_runs_t)
-    if Q_t > 0.0 and len(mx2_acc_t) > 0:
+    # Build “t‐cut” histogram
+    seen_runs_list_t = list(seen_runs_t)
+    Q_t = sum(run_charges.get(r, 0.0) for r in seen_runs_list_t)
+    if Q_t > 0.0 and num_t_events > 0:
         counts_t, _ = np.histogram(np.array(mx2_acc_t), bins=bins)
         hist_t      = counts_t.astype(float) / Q_t
     else:
-        hist_t = np.zeros(len(bins)-1, dtype=float)
+        hist_t = np.zeros(len(bins) - 1, dtype=float)
 
-    # Print out “no-t” vs “t-cut” charges and survival
-    if Q_no_t > 0.0:
-        survival = 100.0 * Q_t / Q_no_t
-    else:
-        survival = 0.0
-    print(f"[DEBUG][{label}, quick] Q_no_t = {Q_no_t:.3f}   |   Q_t = {Q_t:.3f}   |   survival = {survival:.1f}%")
+    # Print out counts and survival fraction
+    survival_frac = 100.0 * num_t_events / num_base_events if num_base_events > 0 else 0.0
+    print(f"[DEBUG][{label}, quick] base_e = {num_base_events}  |  t_e = {num_t_events}  |  "
+          f"survival = {survival_frac:.1f}% ({num_t_events}/{num_base_events})")
 
     return (label, hist_no_t, hist_t)
 
@@ -421,16 +439,16 @@ def make_normalized_Mx2_plots(nh3_files, c_files, h2_files, run_charges, outpath
     bins = np.linspace(0.0, 1.5, 101)
     bin_centers = 0.5 * (bins[:-1] + bins[1:])
 
-    # 4) Plot: 2 rows × 3 columns (no shared y between rows)
+    # 4) Create the 2×3 figure (no shared y between rows)
     fig, axes = plt.subplots(2, 3, figsize=(18, 12), sharey=False)
 
-    # Keep track of maxima in each row to set dynamic y-limits
+    # Keep track of maxima in each row to set dynamic y‐limits
     top_row_vals = []
     bottom_row_vals = []
 
-    ## ─────────────────────────────────────────────────────────────────────────────
+    ## ────────────────────────────────────────────────────────────────────────────
     # Top row: no |t| < 1 cut
-    ## ─────────────────────────────────────────────────────────────────────────────
+    ## ────────────────────────────────────────────────────────────────────────────
 
     # Panel (0,0): NH₃ + H₂ (no-t)
     for _, lbl in nh3_files:
@@ -507,7 +525,7 @@ def make_normalized_Mx2_plots(nh3_files, c_files, h2_files, run_charges, outpath
     )
     top_row_vals.append(hist_h2_no_t.max())
 
-    # Determine top-row y-limit = 1.1 × maximum of top_row_vals
+    # Determine top‐row y‐limit = 1.1 × maximum of top_row_vals
     y_top = 1.1 * max(top_row_vals) if top_row_vals else 0.1
     for col in range(3):
         axes[0, col].set(ylim=(0.0, y_top))
@@ -519,9 +537,9 @@ def make_normalized_Mx2_plots(nh3_files, c_files, h2_files, run_charges, outpath
     )
     axes[0, 2].legend(loc='upper right', fontsize='small')
 
-    ## ─────────────────────────────────────────────────────────────────────────────
+    ## ────────────────────────────────────────────────────────────────────────────
     # Bottom row: with |t| < 1 cut
-    ## ─────────────────────────────────────────────────────────────────────────────
+    ## ────────────────────────────────────────────────────────────────────────────
 
     bottom_row_vals = []
 
@@ -598,7 +616,7 @@ def make_normalized_Mx2_plots(nh3_files, c_files, h2_files, run_charges, outpath
     )
     bottom_row_vals.append(hist_h2_t.max())
 
-    # Determine bottom-row y-limit = 1.1 × maximum of bottom_row_vals
+    # Determine bottom‐row y‐limit = 1.1 × maximum of bottom_row_vals
     y_bottom = 1.1 * max(bottom_row_vals) if bottom_row_vals else 0.1
     for col in range(3):
         axes[1, col].set(ylim=(0.0, y_bottom))
