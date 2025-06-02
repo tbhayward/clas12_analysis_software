@@ -130,7 +130,7 @@ bool SingleHadronKinematicCuts::applyCuts(int currentFits, bool isMC)
     // if (*xF  < 0.0    ) return false;
     // if (*Mx2 < 3.24   ) return false;
 
-    // 2) If the property is “enpi+,” impose |t| < 1.0 as well:
+    // 2) If the property is “enpi,” impose |t| < 1.0 as well:
     if (property == "enpi") {
         // compute t from the branches
         int    rn     = *runnum;

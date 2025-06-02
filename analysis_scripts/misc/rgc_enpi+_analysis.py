@@ -241,6 +241,11 @@ def process_file(args):
         e_p_base, e_th_base, e_ph_base,
         p_p_base, p_th_base, p_ph_base
     )
+    # DEBUG: if this is H2, print out a few t‐values before masking
+    if label == "Sp19-H2":
+        # Show the first 10 computed t_values for H2 (or fewer if there are <10 events)
+        sample_size = min(100, t_vals.size)
+        print(f"[DEBUG][H2] first {sample_size} t‐values:", t_vals[:sample_size])
     mask_t = np.abs(t_vals) < 1.0
 
     run_t     = run_base[mask_t]
