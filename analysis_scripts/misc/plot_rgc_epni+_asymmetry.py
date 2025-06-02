@@ -132,7 +132,7 @@ if not os.path.isdir(out_dir):
 # -----------------------------------------------------------------------------
 plt.figure(figsize=(15, 5))
 plt.suptitle(
-    r"$ep \rightarrow en\pi^{+}$",
+    r"$ep \rightarrow en\pi^{+}$, $|t| < 1$, $M_{x}^{2} < 1.1\ (\mathrm{GeV}^{2})$",
     fontsize=16,
     y=0.96
 )
