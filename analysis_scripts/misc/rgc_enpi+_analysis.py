@@ -321,13 +321,11 @@ def make_normalized_Mx2_plots(nh3_files, c_files, h2_files, run_charges, outpath
     bins = np.linspace(0.0, 1.5, 101)
     bin_centers = 0.5 * (bins[:-1] + bins[1:])
 
-    # 4) Start plotting: 2 rows × 3 columns
-    fig, axes = plt.subplots(2, 3, figsize=(18, 12), sharey=True)
+    # 4) Start plotting: 2 rows × 3 columns (remove sharey)
+    fig, axes = plt.subplots(2, 3, figsize=(18, 12), sharey=False)
 
-    # Prepare lists of all histograms for each row
-    # Top row: collect NH₃ no-t, C no-t, diff no-t, H₂ no-t
+    # Prepare lists of maxima for each row
     top_row_vals = []
-    # Bottom row: collect NH₃ with-t, C with-t, diff with-t, H₂ with-t
     bottom_row_vals = []
 
     # ===========================
