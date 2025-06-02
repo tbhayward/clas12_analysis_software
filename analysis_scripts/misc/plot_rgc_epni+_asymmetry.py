@@ -125,6 +125,13 @@ if not os.path.isdir(out_dir):
 # -----------------------------------------------------------------------------
 plt.figure(figsize=(15, 5))
 
+# Super-title for the entire figure
+plt.suptitle(
+    rf"{run_period_name}: $ep \rightarrow en\pi^+$",
+    fontsize=16,
+    y=1.02
+)
+
 # Subplot 1: F_LU^{sinφ} / F_UU
 ax1 = plt.subplot(1, 3, 1)
 ax1.errorbar(
@@ -139,8 +146,9 @@ ax1.errorbar(
 )
 ax1.set_xlim(0, 0.7)
 ax1.set_ylim(-0.2, 0.2)
-ax1.set_xlabel(r"$x_{B}$")
-ax1.set_ylabel(r"$F_{LU}^{\sin\phi}/F_{UU}$")
+ax1.set_xlabel(r"$x_{B}$", fontsize=12)
+ax1.set_ylabel(r"$F_{LU}^{\sin\phi}/F_{UU}$", fontsize=12)
+ax1.axhline(0, color="black", linestyle="--", linewidth=1)
 ax1.grid(True, linestyle="--", alpha=0.6)
 
 # Subplot 2: F_UL^{sin n φ} / F_UU, n=1,2
@@ -166,9 +174,12 @@ ax2.errorbar(
     label="n=2"
 )
 ax2.set_xlim(0, 0.7)
-ax2.set_xlabel(r"$x_{B}$")
-ax2.set_ylabel(r"$F_{UL}^{\sin\,n\phi}/F_{UU}$")
-ax2.legend(frameon=False)
+ax2.set_ylim(-0.2, 0.2)
+ax2.set_xlabel(r"$x_{B}$", fontsize=12)
+ax2.set_ylabel(r"$F_{UL}^{\sin\,n\phi}/F_{UU}$", fontsize=12)
+legend2 = ax2.legend(frameon=True, edgecolor="black")
+legend2.get_frame().set_alpha(0.9)
+ax2.axhline(0, color="black", linestyle="--", linewidth=1)
 ax2.grid(True, linestyle="--", alpha=0.6)
 
 # Subplot 3: F_LL^{cos n φ} / F_UU, n=0,1
@@ -195,12 +206,14 @@ ax3.errorbar(
 )
 ax3.set_xlim(0, 0.7)
 ax3.set_ylim(-0.8, 0.8)
-ax3.set_xlabel(r"$x_{B}$")
-ax3.set_ylabel(r"$F_{LL}^{\cos\,n\phi}/F_{UU}$")
-ax3.legend(frameon=False)
+ax3.set_xlabel(r"$x_{B}$", fontsize=12)
+ax3.set_ylabel(r"$F_{LL}^{\cos\,n\phi}/F_{UU}$", fontsize=12)
+legend3 = ax3.legend(frameon=True, edgecolor="black")
+legend3.get_frame().set_alpha(0.9)
+ax3.axhline(0, color="black", linestyle="--", linewidth=1)
 ax3.grid(True, linestyle="--", alpha=0.6)
 
-plt.tight_layout()
+plt.tight_layout(rect=[0, 0, 1, 0.95])
 
 # Save the figure
 output_filename = os.path.join(out_dir, f"rgc_enpi+_{run_period_name}.pdf")
