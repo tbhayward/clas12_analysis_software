@@ -329,7 +329,7 @@ def process_file_quick_stop(filepath, label, run_charges):
     for chunk in uproot.iterate(
             filepath + ":PhysicsEvents",
             ["runnum", "Mx2", "e_p", "e_theta", "e_phi", "p_p", "p_theta", "p_phi"],
-            step_size="100k"
+            step_size=100_000
         ):
         run_chunk = chunk["runnum"].astype(int)
         mx2_chunk = chunk["Mx2"]
