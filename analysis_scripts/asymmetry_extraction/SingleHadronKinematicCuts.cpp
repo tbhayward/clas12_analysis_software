@@ -126,13 +126,14 @@ bool SingleHadronKinematicCuts::applyCuts(int currentFits, bool isMC)
     if (*Q2 <  1.0    ) return false;
     if (*W  <  2.0    ) return false;
     if (*y  >  0.75   ) return false;
-    if (*fiducial_status != 2) return false;
+    // if (*fiducial_status != 2) return false;
     // if (*p_p < 1.2    ) return false;
     // if (*xF  < 0.0    ) return false;
     // if (*Mx2 < 3.24   ) return false;
 
     // 2) If the property is “enpi+,” impose |t| < 1.0 as well:
     if (property == "enpi+") {
+        std::cout << "hello" << std::endl;
         // compute t from the branches
         int    rn     = *runnum;
         double ec_p   = *e_p;
