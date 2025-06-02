@@ -120,6 +120,8 @@ bool SingleHadronKinematicCuts::applyCuts(int currentFits, bool isMC)
     // Basic naming lookup
     string property = binNames[currentFits];
 
+    bool goodEvent = true;
+
     // 1) Standard DIS/Hadron cuts (common to almost everything):
     if (*Q2 <  1.0    ) return false;
     if (*W  <  2.0    ) return false;
@@ -147,11 +149,6 @@ bool SingleHadronKinematicCuts::applyCuts(int currentFits, bool isMC)
         }
     }
 
-    // 3) The original code had a `return true;` prematurely; remove that so we
-    //    can still enter the property‐specific regions below.  Instead, we now
-    //    only return true if we match whichever named “property” bucket applies.
-
-    // 4) For historical “Fall18xB”, etc. properties, copy over exactly:
     if (property == "Fall18xB" || property == "Fall18pT" ||
         property == "Spring18xB" || property == "Spring18pT")
     {
@@ -280,7 +277,7 @@ bool SingleHadronKinematicCuts::applyCuts(int currentFits, bool isMC)
                           *Mx2 > 1.8225 && (*e_phi > 4.4 && *e_phi < 5.5));
         return goodEvent;
     }
-    
+
     // if (property == "pTsector0") { // meant to be all six sectors
     //   goodEvent = *Q2 > 1 && *W > 2 && *y < 0.80 && *Mx2 > 1.8225;
     //   return goodEvent;
