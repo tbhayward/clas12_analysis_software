@@ -52,7 +52,7 @@ m_n    = 0.939565   # neutron mass (GeV)
 
 def parse_run_charges(csv_path):
     """
-    Read clas12_run_info.csv and return a dict { runnum: charge }, skipping run > MAX_RUNNUM.
+    Read clas12_run_info.csv and return a dict { runnum: charge }, skipping runs > MAX_RUNNUM.
     Lines beginning with '#' are ignored.
     """
     run_charges = {}
@@ -119,7 +119,7 @@ def compute_t_array(run_arr, e_p_arr, e_th_arr, e_ph_arr, p_p_arr, p_th_arr, p_p
     """
     Eb_arr = get_beam_energy(run_arr)
 
-    # Scattered electron e' 4-vector
+    # 1) Scattered electron e' 4-vector
     E_e   = np.sqrt(e_p_arr**2 + m_e**2)
     sin_e = np.sin(e_th_arr)
     cos_e = np.cos(e_th_arr)
@@ -127,7 +127,7 @@ def compute_t_array(run_arr, e_p_arr, e_th_arr, e_ph_arr, p_p_arr, p_th_arr, p_p
     ey =  e_p_arr * sin_e * np.sin(e_ph_arr)
     ez =  e_p_arr * cos_e
 
-    # Pion 4-vector
+    # 2) Pion 4-vector
     E_pi = np.sqrt(p_p_arr**2 + m_pi**2)
     sin_p = np.sin(p_th_arr)
     cos_p = np.cos(p_th_arr)
@@ -135,19 +135,19 @@ def compute_t_array(run_arr, e_p_arr, e_th_arr, e_ph_arr, p_p_arr, p_th_arr, p_p
     py =  p_p_arr * sin_p * np.sin(p_ph_arr)
     pz =  p_p_arr * cos_p
 
-    # Virtual photon q 4-vector: q = p_beam − p_e'
+    # 3) Virtual photon q 4-vector: q = p_beam – p_e'
     E_q = Eb_arr - E_e
     qx  = -ex
     qy  = -ey
     qz  = Eb_arr - ez
 
-    # Compute Δ = q − p_π
+    # 4) Δ = q – p_π
     dE = E_q - E_pi
     dx = qx - px
     dy = qy - py
     dz = qz - pz
 
-    # t = (ΔE)² − (Δp)²
+    # 5) t = (ΔE)² – (Δp)²
     t_array = dE**2 - (dx**2 + dy**2 + dz**2)
     return t_array
 
@@ -164,18 +164,18 @@ def process_file(args):
     """
     filepath, label, run_charges, quick = args
 
-    # In quick mode, we will stop reading further events after we have seen 5 unique runs.
     if quick:
+        # If QUICK_RUN=True, use the chunk‐by‐chunk “quick” implementation:
         return process_file_quick_stop(filepath, label, run_charges)
 
-    # ----------------------------
-    # Full‐array version (no early stop)
-    # ----------------------------
+    # -----------------------------------------------------------------------------
+    # Full‐array version (quick=False)
+    # -----------------------------------------------------------------------------
 
-    # 1) Open TTree
+    # 1) Open TTree (entirely at once)
     tree = uproot.open(filepath)["PhysicsEvents"]
 
-    # 2) Extract arrays from the TTree
+    # 2) Extract entire arrays (NumPy) from the TTree
     run_arr  = tree["runnum"].array(library="np").astype(int)
     mx2_arr  = tree["Mx2"].array(library="np")
     e_p_arr  = tree["e_p"].array(library="np")
@@ -196,7 +196,7 @@ def process_file(args):
     p_th_base = p_th_arr[mask_base]
     p_ph_base = p_ph_arr[mask_base]
 
-    # DEBUG #1: For H₂, show how many events passed the base filter
+    # DEBUG #1: For H₂, print how many events passed the base filter
     if label == "Sp19-H2":
         print(f"[DEBUG][H₂] after base filter: run_base.size = {run_base.size}, mx2_base.size = {mx2_base.size}")
 
@@ -211,23 +211,14 @@ def process_file(args):
 
     # --- Compute “no‐t‐cut” histogram (only run/Mx² filter) ---
 
-    # 4a) All events from run_base
+    # 4a) All base‐filtered events
     run_final_no_t = run_base.copy()
     mx2_final_no_t = mx2_base.copy()
 
-    # 5a) Select which runs contribute: first 5 unique runnums if quick, else all unique
-    if quick:  # NOTE: We never reach here because quick was handled above
-        seen = []
-        for r in run_final_no_t:
-            if r not in seen:
-                seen.append(r)
-            if len(seen) >= 5:
-                break
-        selected_runs_no_t = set(seen)
-    else:
-        selected_runs_no_t = set(np.unique(run_final_no_t))
+    # 5a) Select which runs contribute: all unique (quick=False)
+    selected_runs_no_t = set(np.unique(run_final_no_t))
 
-    # 6a) Sum total charge for those runs (Q_no_t)
+    # 6a) Sum total beam‐charge for those runs (Q_no_t)
     Q_no_t = 0.0
     for r in selected_runs_no_t:
         q = run_charges.get(r, 0.0)
@@ -239,7 +230,7 @@ def process_file(args):
     if label == "Sp19-H2":
         print(f"[DEBUG][H₂]   Q_no_t = {Q_no_t:.3f}   (#runs={len(selected_runs_no_t)})")
 
-    # 7a) Mask events so only those runs remain
+    # 7a) Mask events so that only those runs remain
     mask_runs_no_t = np.isin(run_final_no_t, list(selected_runs_no_t))
     mx2_use_no_t   = mx2_final_no_t[mask_runs_no_t]
 
@@ -247,7 +238,7 @@ def process_file(args):
         counts_no_t, _ = np.histogram(mx2_use_no_t, bins=bins)
         hist_no_t = counts_no_t.astype(float) / Q_no_t
 
-    # --- Compute “t‐cut” histogram (additionally require |t| < 1.0) ---
+    # --- Compute “t‐cut” histogram (additionally require |t| < 1) ---
 
     # 4b) Compute t for every base‐filtered event
     t_vals = compute_t_array(
@@ -267,22 +258,14 @@ def process_file(args):
     run_t = run_base[mask_t]
     mx2_t = mx2_base[mask_t]
 
+    # If no events survive the t‐cut, return what we have for hist_no_t and zero for hist_t
     if run_t.size == 0:
         return (label, hist_no_t, hist_t)
 
     # 5b) Select which runs now contribute under the t‐cut
-    if quick:  # NOTE: We never reach here because quick was handled above
-        seen = []
-        for r in run_t:
-            if r not in seen:
-                seen.append(r)
-            if len(seen) >= 5:
-                break
-        selected_runs_t = set(seen)
-    else:
-        selected_runs_t = set(np.unique(run_t))
+    selected_runs_t = set(np.unique(run_t))
 
-    # 6b) Sum total charge for those runs (Q_t)
+    # 6b) Sum total beam‐charge for those runs (Q_t)
     Q_t = 0.0
     for r in selected_runs_t:
         q = run_charges.get(r, 0.0)
@@ -325,20 +308,21 @@ def process_file_quick_stop(filepath, label, run_charges):
     mx2_acc_no_t = []
     mx2_acc_t    = []
 
-    # We will read the tree in chunks of 100k events
+    # Read the tree in chunks of 100 000 entries at a time
     for chunk in uproot.iterate(
             filepath + ":PhysicsEvents",
             ["runnum", "Mx2", "e_p", "e_theta", "e_phi", "p_p", "p_theta", "p_phi"],
             step_size=100_000
         ):
-        run_chunk = chunk["runnum"].astype(int)
-        mx2_chunk = chunk["Mx2"]
-        e_p_chunk = chunk["e_p"]
-        e_th_chunk = chunk["e_theta"]
-        e_ph_chunk = chunk["e_phi"]
-        p_p_chunk = chunk["p_p"]
-        p_th_chunk = chunk["p_theta"]
-        p_ph_chunk = chunk["p_phi"]
+        # Convert each awkward array to a NumPy array before using .astype(...)
+        run_chunk = np.array(chunk["runnum"], dtype=int)
+        mx2_chunk = np.array(chunk["Mx2"], dtype=float)
+        e_p_chunk = np.array(chunk["e_p"], dtype=float)
+        e_th_chunk = np.array(chunk["e_theta"], dtype=float)
+        e_ph_chunk = np.array(chunk["e_phi"], dtype=float)
+        p_p_chunk = np.array(chunk["p_p"], dtype=float)
+        p_th_chunk = np.array(chunk["p_theta"], dtype=float)
+        p_ph_chunk = np.array(chunk["p_phi"], dtype=float)
 
         # Apply base filter: run ≤ MAX_RUNNUM & Mx² ≤ 2.0
         mask_base = (run_chunk <= MAX_RUNNUM) & (mx2_chunk <= 2.0)
@@ -351,7 +335,7 @@ def process_file_quick_stop(filepath, label, run_charges):
         p_th_base_chunk = p_th_chunk[mask_base]
         p_ph_base_chunk = p_ph_chunk[mask_base]
 
-        # Loop event‐by‐event (in this chunk) until we have 5 distinct runs for no‐t and t
+        # Loop event‐by‐event in this filtered chunk until we have 5 distinct runs
         for (rnum, mx2_val, ep, eth, eph, pp, pth, pph) in zip(
                 run_base_chunk, mx2_base_chunk,
                 e_p_base_chunk, e_th_base_chunk, e_ph_base_chunk,
@@ -362,63 +346,53 @@ def process_file_quick_stop(filepath, label, run_charges):
             if len(seen_runs_no_t) < 5:
                 if rnum not in seen_runs_no_t:
                     seen_runs_no_t.add(rnum)
-                # If the run is one of the first 5, record its Mx²
                 if rnum in seen_runs_no_t:
                     mx2_acc_no_t.append(mx2_val)
 
-            # (2) Compute t for this event only if this run is desired for t‐cut
-            # But we only decide which runs to keep for t‐cut once we know t < 1
-            # So:
+            # (2) Compute t for this single event only if we still need runs for t‐cut
             if len(seen_runs_t) < 5:
-                # Compute t for this single event:
                 t_val = compute_t_array(
-                    np.array([rnum]), 
+                    np.array([rnum]),
                     np.array([ep]), np.array([eth]), np.array([eph]),
                     np.array([pp]), np.array([pth]), np.array([pph])
                 )[0]
                 if abs(t_val) < 1.0:
-                    # This event’s run survived |t|<1. Add run to seen_runs_t if not already
                     if rnum not in seen_runs_t:
                         seen_runs_t.add(rnum)
-                    # If the run is one of the first 5 t‐runs, record Mx²
                     if rnum in seen_runs_t:
                         mx2_acc_t.append(mx2_val)
 
-            # If we have now gathered 5 distinct runs for both no‐t and t, we can stop entirely
+            # If we have now gathered 5 distinct runs for both no‐t and t, break
             if len(seen_runs_no_t) >= 5 and len(seen_runs_t) >= 5:
                 break
 
-        # End of event loop in this chunk
+        # End of loop over events
         if len(seen_runs_no_t) >= 5 and len(seen_runs_t) >= 5:
             break
 
-    # End of chunk loop
-
-    # Now build histograms for no‐t
+    # Now build histogram for no‐t
     Q_no_t = sum(run_charges.get(r, 0.0) for r in seen_runs_no_t)
     if Q_no_t > 0.0 and len(mx2_acc_no_t) > 0:
         counts_no_t, _ = np.histogram(np.array(mx2_acc_no_t), bins=bins)
         hist_no_t = counts_no_t.astype(float) / Q_no_t
 
-    # DEBUG #1 & #2 & #3 & #4 for H₂ in quick mode
+    # DEBUG prints for H₂ in quick mode
     if label == "Sp19-H2":
         print(f"[DEBUG][H₂, quick] seen_runs_no_t = {sorted(seen_runs_no_t)}")
         print(f"[DEBUG][H₂, quick] Q_no_t = {Q_no_t:.3f}")
-        # Show a few t‐values for these runs (recompute quickly from mx2_acc_t’s underlying events is hard here).
-        # Instead, just show how many events we recorded for t‐cut vs no‐t:
         print(f"[DEBUG][H₂, quick] base‐filtered events collected (no‐t) = {len(mx2_acc_no_t)}")
         print(f"[DEBUG][H₂, quick] base‐filtered events collected (t‐cut) = {len(mx2_acc_t)}")
 
-    # Now build histograms for t‐cut
+    # Now build histogram for t‐cut
     Q_t = sum(run_charges.get(r, 0.0) for r in seen_runs_t)
     if Q_t > 0.0 and len(mx2_acc_t) > 0:
         counts_t, _ = np.histogram(np.array(mx2_acc_t), bins=bins)
         hist_t = counts_t.astype(float) / Q_t
 
-    # DEBUG #4 for H₂ quick mode
+    # DEBUG for H₂ in quick mode
     if label == "Sp19-H2":
         print(f"[DEBUG][H₂, quick] seen_runs_t = {sorted(seen_runs_t)}")
-        print(f"[DEBUG][H₂, quick] Q_t    = {Q_t:.3f}")
+        print(f"[DEBUG][H₂, quick] Q_t = {Q_t:.3f}")
 
     return (label, hist_no_t, hist_t)
 
@@ -464,10 +438,10 @@ def make_normalized_Mx2_plots(nh3_files, c_files, h2_files, run_charges, outpath
     bins = np.linspace(0.0, 1.5, 101)
     bin_centers = 0.5 * (bins[:-1] + bins[1:])
 
-    # 4) Start plotting: 2 rows × 3 columns (no sharey between rows)
+    # 4) Start plotting: 2 rows × 3 columns (no shared y between rows)
     fig, axes = plt.subplots(2, 3, figsize=(18, 12), sharey=False)
 
-    # Prepare lists of maxima for each row
+    # Prepare lists of maxima for each row (to set dynamic y‐limits)
     top_row_vals = []
     bottom_row_vals = []
 
@@ -514,8 +488,8 @@ def make_normalized_Mx2_plots(nh3_files, c_files, h2_files, run_charges, outpath
 
     # Panel (0,2): Differences [NH₃ – C] + H₂   (no‐t)
     period_names = ["Su22", "Fa22", "Sp23"]
-    nh3_hist_no_t = {lbl: results.get(lbl, (np.zeros(100), np.zeros(100)))[0] for _, lbl in nh3_files}
-    c_hist_no_t   = {lbl: results.get(lbl, (np.zeros(100), np.zeros(100)))[0] for _, lbl in c_files}
+    nh3_hist_no_t = {lbl: results.get(lbl, (np.zeros(100), np.zeros(100)))[0] for _, lbl in nh3_FILES}
+    c_hist_no_t   = {lbl: results.get(lbl, (np.zeros(100), np.zeros(100)))[0] for _, lbl in C_FILES}
 
     diff_no_t = {}
     for period_label in period_names:
@@ -546,7 +520,7 @@ def make_normalized_Mx2_plots(nh3_files, c_files, h2_files, run_charges, outpath
     )
     top_row_vals.append(hist_h2_no_t.max())
 
-    # Determine top row y‐limit = 1.1 × maximum
+    # Determine top‐row y‐limit = 1.1 × maximum of top_row_vals
     y_top = 1.1 * max(top_row_vals) if top_row_vals else 0.1
     for col in range(3):
         axes[0, col].set(ylim=(0.0, y_top))
@@ -565,7 +539,7 @@ def make_normalized_Mx2_plots(nh3_files, c_files, h2_files, run_charges, outpath
     bottom_row_vals = []
 
     # Panel (1,0): NH₃ + H₂   (|t|<1)
-    for _, lbl in nh3_files:
+    for _, lbl in nh3_FILES:
         _, hist_t = results.get(lbl, (np.zeros(100), np.zeros(100)))
         axes[1, 0].step(bins[:-1], hist_t, where='post', label=lbl)
         bottom_row_vals.append(hist_t.max())
@@ -584,7 +558,7 @@ def make_normalized_Mx2_plots(nh3_files, c_files, h2_files, run_charges, outpath
     axes[1, 0].legend(loc='upper right', fontsize='small')
 
     # Panel (1,1): C + H₂   (|t|<1)
-    for _, lbl in c_files:
+    for _, lbl in C_FILES:
         _, hist_t = results.get(lbl, (np.zeros(100), np.zeros(100)))
         axes[1, 1].step(bins[:-1], hist_t, where='post', label=lbl)
         bottom_row_vals.append(hist_t.max())
@@ -601,8 +575,8 @@ def make_normalized_Mx2_plots(nh3_files, c_files, h2_files, run_charges, outpath
     axes[1, 1].legend(loc='upper right', fontsize='small')
 
     # Panel (1,2): Differences [NH₃ – C] + H₂   (|t|<1)
-    nh3_hist_t = {lbl: results.get(lbl, (np.zeros(100), np.zeros(100)))[1] for _, lbl in nh3_files}
-    c_hist_t   = {lbl: results.get(lbl, (np.zeros(100), np.zeros(100)))[1] for _, lbl in c_files}
+    nh3_hist_t = {lbl: results.get(lbl, (np.zeros(100), np.zeros(100)))[1] for _, lbl in nh3_FILES}
+    c_hist_t   = {lbl: results.get(lbl, (np.zeros(100), np.zeros(100)))[1] for _, lbl in C_FILES}
 
     diff_t = {}
     for period_label in period_names:
@@ -632,7 +606,7 @@ def make_normalized_Mx2_plots(nh3_files, c_files, h2_files, run_charges, outpath
     )
     bottom_row_vals.append(hist_h2_t.max())
 
-    # Determine bottom row y‐limit = 1.1 × maximum
+    # Determine bottom‐row y‐limit = 1.1 × maximum of bottom_row_vals
     y_bottom = 1.1 * max(bottom_row_vals) if bottom_row_vals else 0.1
     for col in range(3):
         axes[1, col].set(ylim=(0.0, y_bottom))
