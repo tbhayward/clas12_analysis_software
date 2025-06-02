@@ -372,6 +372,10 @@ std::vector<std::pair<double, double>> calculate_dilution_factors() {
                 if (is_nh3) {
                     if (*runnum < min_run || *runnum > max_run) continue;
                 }
+                if (passedKinematicCuts)
+                {
+                    std::cout << varMin << " " << *currentVariable << " " << varMax << std::endl;
+                }
                 if (*currentVariable >= varMin && *currentVariable < varMax && passedKinematicCuts) {
                     hist->Fill(*currentVariable);
                     sumCurrentVariable += *currentVariable;
