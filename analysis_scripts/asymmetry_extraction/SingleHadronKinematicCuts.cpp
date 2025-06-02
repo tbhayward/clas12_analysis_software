@@ -146,7 +146,6 @@ bool SingleHadronKinematicCuts::applyCuts(int currentFits, bool isMC)
         double t_val = compute_t_scalar(rn, ec_p, ec_th, ec_ph,
                                           pi_p, pi_th, pi_ph);
 
-        std::cout << t_val << std::endl;
         if (std::fabs(t_val) >= 1.0) {
             return false;
         }
