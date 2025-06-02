@@ -374,6 +374,7 @@ std::vector<std::pair<double, double>> calculate_dilution_factors() {
                 if (*currentVariable >= varMin && *currentVariable < varMax && passedKinematicCuts) {
                     hist->Fill(*currentVariable);
                     sumCurrentVariable += *currentVariable;
+                    std::cout << sumCurrentVariable :: std::endl
                     ++count;
 
                 }
@@ -399,7 +400,7 @@ std::vector<std::pair<double, double>> calculate_dilution_factors() {
         double nf = h_empty->GetBinContent(1);
 
         /// Calculate dilution factors for the general case
-        std::cout << nA << " " << nC << " " << nCH << " " << nMT << " " << nf << std::endl;
+        // std::cout << nA << " " << nC << " " << nCH << " " << nMT << " " << nf << std::endl;
         auto [dilution, error] = calculate_dilution_and_error(nA, nC, nCH, nMT, nf, xAtotal, xCtotal, xCHtotal, xHetotal, xftotal);
         // Add the dilution factor and error to the TGraphErrors
         gr_dilution[0]->SetPoint(binIndex, meanCurrentVariable, dilution);
