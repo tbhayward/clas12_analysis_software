@@ -132,7 +132,7 @@ if not os.path.isdir(out_dir):
 # -----------------------------------------------------------------------------
 plt.figure(figsize=(15, 5))
 plt.suptitle(
-    r"$ep \rightarrow en\pi^{+}$: Su22, Fa22, Sp23",
+    r"$ep \rightarrow en\pi^{+}$",
     fontsize=16,
     y=0.96
 )
