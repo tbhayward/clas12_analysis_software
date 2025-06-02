@@ -38,20 +38,20 @@
 // const double xftotal = 0.09280;
 
 
-// Fractional charge values for Total -- RGC Fa22
-const double xAtotal = 0.6643;
-const double xCtotal = 0.2187;
-const double xCHtotal = 0.1057;
-const double xHetotal = 0.0669;
-const double xftotal = 0.0096;
+// // Fractional charge values for Total -- RGC Fa22
+// const double xAtotal = 0.6643;
+// const double xCtotal = 0.2187;
+// const double xCHtotal = 0.1057;
+// const double xHetotal = 0.0669;
+// const double xftotal = 0.0096;
 
 
-// // Fractional charge values for Total -- RGC Sp23
-// const double xAtotal = 0.6117;
-// const double xCtotal = 0.2196;
-// const double xCHtotal = 0.1362;
-// const double xHetotal = 0.0562;
-// const double xftotal = 0.0231;
+// Fractional charge values for Total -- RGC Sp23
+const double xAtotal = 0.6117;
+const double xCtotal = 0.2196;
+const double xCHtotal = 0.1362;
+const double xHetotal = 0.0562;
+const double xftotal = 0.0231;
 
 
 // NH3 periods defined as a pair of run numbers (start, end)
