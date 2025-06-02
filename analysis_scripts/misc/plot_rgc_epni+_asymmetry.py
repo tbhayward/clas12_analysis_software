@@ -109,7 +109,6 @@ for p in periods:
         data_list = periods[p][key]
         if len(data_list) > 0:
             arr = np.array(data_list)
-            # Split into columns: x, y, yerr
             x = arr[:, 0]
             y = arr[:, 1]
             yerr = arr[:, 2]
@@ -123,7 +122,7 @@ for p in periods:
 # -----------------------------------------------------------------------------
 # Create output directory if it does not exist
 # -----------------------------------------------------------------------------
-out_dir = "output"
+out_dir = os.path.join("output", "enpi+")
 if not os.path.isdir(out_dir):
     os.makedirs(out_dir, exist_ok=True)
 # endif
@@ -155,7 +154,7 @@ for p in ["Su22", "Fa22", "Sp23"]:
             yerr=data["yerr"],
             fmt="o",
             color=colors[p],
-            ecolor="gray",
+            ecolor=colors[p],
             capsize=3,
             label=p
         )
@@ -184,7 +183,6 @@ legend1.get_frame().set_alpha(0.9)
 # -------------------------
 ax2 = plt.subplot(1, 3, 2, sharex=ax1)
 
-# Plot n=1 (open circles) and n=2 (filled circles) in matching colors
 for p in ["Su22", "Fa22", "Sp23"]:
     d1 = periods[p]["AULsinphi"]
     d2 = periods[p]["AULsin2phi"]
@@ -196,7 +194,7 @@ for p in ["Su22", "Fa22", "Sp23"]:
             fmt="o",
             mfc="none",        # open circle
             mec=colors[p],
-            ecolor="gray",
+            ecolor=colors[p],
             capsize=3,
             label=f"{p}, n=1"
         )
@@ -208,7 +206,7 @@ for p in ["Su22", "Fa22", "Sp23"]:
             yerr=d2["yerr"],
             fmt="o",
             color=colors[p],   # filled circle
-            ecolor="gray",
+            ecolor=colors[p],
             capsize=3,
             label=f"{p}, n=2"
         )
@@ -269,7 +267,7 @@ for p in ["Su22", "Fa22", "Sp23"]:
             fmt="o",
             mfc="none",        # open circle for n=0
             mec=colors[p],
-            ecolor="gray",
+            ecolor=colors[p],
             capsize=3,
             label=f"{p}, n=0"
         )
@@ -281,7 +279,7 @@ for p in ["Su22", "Fa22", "Sp23"]:
             yerr=d1["yerr"],
             fmt="o",
             color=colors[p],   # filled circle for n=1
-            ecolor="gray",
+            ecolor=colors[p],
             capsize=3,
             label=f"{p}, n=1"
         )
@@ -328,7 +326,7 @@ legend_runs3.get_frame().set_alpha(0.9)
 
 plt.tight_layout(rect=[0, 0, 1, 0.93])
 
-# Save the figure
+# Save the figure under output/enpi+/
 output_filename = os.path.join(out_dir, "rgc_enpi+_AllPeriods.pdf")
 plt.savefig(output_filename)
 print(f"Plot saved to '{output_filename}'")
