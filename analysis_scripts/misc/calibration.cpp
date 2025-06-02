@@ -9668,8 +9668,8 @@ int main(int argc, char** argv) {
 
     //// PLOTS ////
 
-    int runnum = 5100;
-    std::string dataset = "rga_fa18_inb";
+    // int runnum = 5100;
+    // std::string dataset = "rga_fa18_inb";
 
     // int runnum = 5600;
     // std::string dataset = "rga_fa18_out";
@@ -9677,49 +9677,58 @@ int main(int argc, char** argv) {
     // int runnum = 6715;
     // std::string dataset = "rga_sp19_inb";
 
-    // plot_htcc_nphe(dataReader, mcReader, dataset);
-    // plot_ltcc_nphe(dataReader, mcReader, dataset);
-    // dataReader.Restart();
-    // if (mcReader) mcReader->Restart();
+    // int runnum = 16043;
+    // std::string dataset = "rgc_su22_inb";
 
-    // plot_pcal_energy(dataReader, mcReader, dataset);
-    // dataReader.Restart();
-    // if (mcReader) mcReader->Restart();
+    int runnum = 17068;
+    std::string dataset = "rgc_fa22_inb";
 
-    // plot_sampling_fraction(dataReader, mcReader, dataset);
-    // dataReader.Restart();
-    // if (mcReader) mcReader->Restart();
+    // int runnum = 17726;
+    // std::string dataset = "rgc_sp23_inb";
 
-    // plot_diagonal_cut(dataReader, mcReader, dataset);
-    // dataReader.Restart();
-    // if (mcReader) mcReader->Restart();
+    plot_htcc_nphe(dataReader, mcReader, dataset);
+    plot_ltcc_nphe(dataReader, mcReader, dataset);
+    dataReader.Restart();
+    if (mcReader) mcReader->Restart();
 
-    // plot_ft_xy_energy(dataReader, mcReader, dataset);
-    // dataReader.Restart();
-    // if (mcReader) mcReader->Restart();
-    // plot_ft_hit_position(dataReader, mcReader, dataset);
+    plot_pcal_energy(dataReader, mcReader, dataset);
+    dataReader.Restart();
+    if (mcReader) mcReader->Restart();
 
-    // dataReader.Restart();
-    // if (mcReader) mcReader->Restart();
-    // plot_pcal_fiducial_determination(dataReader, mcReader, dataset);
-    // dataReader.Restart();
-    // if (mcReader) mcReader->Restart();
-    // plot_ecin_fiducial_determination(dataReader, mcReader, dataset);
-    // dataReader.Restart();
-    // if (mcReader) mcReader->Restart();
-    // plot_ecout_fiducial_determination(dataReader, mcReader, dataset);
+    plot_sampling_fraction(dataReader, mcReader, dataset);
+    dataReader.Restart();
+    if (mcReader) mcReader->Restart();
 
-    // dataReader.Restart();
-    // if (mcReader) mcReader->Restart();
-    // plot_cal_hit_position(dataReader, mcReader, dataset);
+    plot_diagonal_cut(dataReader, mcReader, dataset);
+    dataReader.Restart();
+    if (mcReader) mcReader->Restart();
 
-    // dataReader.Restart();
-    // if (mcReader) mcReader->Restart();
-    // dc_fiducial_determination(dataReader, mcReader, dataset);
+    plot_ft_xy_energy(dataReader, mcReader, dataset);
+    dataReader.Restart();
+    if (mcReader) mcReader->Restart();
+    plot_ft_hit_position(dataReader, mcReader, dataset);
 
-    // dataReader.Restart();
-    // if (mcReader) mcReader->Restart();
-    // plot_dc_hit_position(dataReader, mcReader, dataset);
+    dataReader.Restart();
+    if (mcReader) mcReader->Restart();
+    plot_pcal_fiducial_determination(dataReader, mcReader, dataset);
+    dataReader.Restart();
+    if (mcReader) mcReader->Restart();
+    plot_ecin_fiducial_determination(dataReader, mcReader, dataset);
+    dataReader.Restart();
+    if (mcReader) mcReader->Restart();
+    plot_ecout_fiducial_determination(dataReader, mcReader, dataset);
+
+    dataReader.Restart();
+    if (mcReader) mcReader->Restart();
+    plot_cal_hit_position(dataReader, mcReader, dataset);
+
+    dataReader.Restart();
+    if (mcReader) mcReader->Restart();
+    dc_fiducial_determination(dataReader, mcReader, dataset);
+
+    dataReader.Restart();
+    if (mcReader) mcReader->Restart();
+    plot_dc_hit_position(dataReader, mcReader, dataset);
 
     dataReader.Restart();
     if (mcReader) mcReader->Restart();
