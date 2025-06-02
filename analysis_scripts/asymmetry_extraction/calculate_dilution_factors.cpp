@@ -374,11 +374,9 @@ std::vector<std::pair<double, double>> calculate_dilution_factors() {
                 }
                 
                 if (*currentVariable >= varMin && *currentVariable < varMax && passedKinematicCuts) {
-                    std::cout << varMin << " " << *currentVariable << " " << varMax << std::endl;
                     hist->Fill(*currentVariable);
                     sumCurrentVariable += *currentVariable;
                     ++count;
-
                 }
             }
             reader.Restart();
@@ -393,6 +391,7 @@ std::vector<std::pair<double, double>> calculate_dilution_factors() {
 
         // Calculate the mean value of currentVariable in this bin
         double meanCurrentVariable = (count > 0) ? (sumCurrentVariable / count) : (varMin + varMax) / 2.0;
+        std::cout << meanCurrentVariable << std::endl;
 
         // Retrieve bin contents
         double nA = h_nh3[0]->GetBinContent(1);
