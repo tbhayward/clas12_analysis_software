@@ -148,6 +148,8 @@ bool SingleHadronKinematicCuts::applyCuts(int currentFits, bool isMC)
 
         if (std::fabs(t_val) >= 1.0) {
             return false;
+        } else  {
+            return true;
         }
     }
 
