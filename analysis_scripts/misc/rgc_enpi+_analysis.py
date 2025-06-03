@@ -10,7 +10,7 @@ from concurrent.futures import ProcessPoolExecutor, as_completed
 # -----------------------------------------------------------------------------
 
 # Toggle for quick debugging (process only first 5 runs per period)
-QUICK_RUN = False
+QUICK_RUN = True
 
 # Maximum run number to include
 MAX_RUNNUM = 17768
@@ -230,7 +230,7 @@ def process_file(args):
 
     if Q_no_t > 0.0 and mx2_use_no_t.size > 0:
         counts_no_t, _ = np.histogram(mx2_use_no_t, bins=bins)
-        hist_no_t = counts_no_t.astype(float) / Q_no_t
+        hist_no_t      = counts_no_t.astype(float) / Q_no_t
     else:
         hist_no_t = np.zeros(len(bins) - 1, dtype=float)
 
@@ -242,8 +242,8 @@ def process_file(args):
     )
 
     mask_t = np.abs(t_vals) < 1.0
-    run_t = run_base[mask_t]
-    mx2_t = mx2_base[mask_t]
+    run_t  = run_base[mask_t]
+    mx2_t  = mx2_base[mask_t]
 
     # Count how many survive |t|<1
     num_t_events = run_t.size
@@ -295,8 +295,8 @@ def process_file_quick_stop(filepath, label, run_charges):
 
     seen_runs_no_t = set()
     seen_runs_t    = set()
-    mx2_acc_no_t = []
-    mx2_acc_t    = []
+    mx2_acc_no_t   = []
+    mx2_acc_t      = []
 
     total_base_events = 0
     total_t_events    = 0
@@ -409,11 +409,11 @@ def make_normalized_Mx2_plots(nh3_files, c_files, h2_files, run_charges, outpath
       - Top row: no |t| < 1 cut           (runnum ≤ MAX_RUNNUM, Mx² ≤ 2.0)
         • Panel(0,0): NH₃ + H₂
         • Panel(0,1):  C   + H₂
-        • Panel(0,2): Differences [NH₃–C] + H₂
+        • Panel(0,2): Differences [NH₃–s·C] + H₂
       - Bottom row: with |t| < 1 cut     (in addition to above)
         • Panel(1,0): NH₃ + H₂ (|t|<1)
         • Panel(1,1):  C   + H₂ (|t|<1)
-        • Panel(1,2): Differences [NH₃–C] + H₂ (|t|<1)
+        • Panel(1,2): Differences [NH₃–s·C] + H₂ (|t|<1)
 
     Uses ProcessPoolExecutor to parallelize histogramming of each file.
     """
@@ -491,12 +491,13 @@ def make_normalized_Mx2_plots(nh3_files, c_files, h2_files, run_charges, outpath
     )
     axes[0, 1].legend(loc='upper right', fontsize='small')
 
-    # Panel (0,2): Differences [NH₃ – C] + H₂ (no-t)
+    # Panel (0,2): Differences [NH₃–s·C] + H₂ (no-t)
     period_names = ["Su22", "Fa22", "Sp23"]
     nh3_hist_no_t = {lbl: results.get(lbl, (np.zeros(100), np.zeros(100)))[0] for _, lbl in nh3_files}
     c_hist_no_t   = {lbl: results.get(lbl, (np.zeros(100), np.zeros(100)))[0] for _, lbl in c_files}
 
-    diff_no_t = {}
+    diff_no_t    = {}
+    scale_dict_no = {}
     for period_label in period_names:
         nh3_lbl = f"{period_label}-NH3"
         c_lbl   = f"{period_label}-C"
@@ -507,15 +508,18 @@ def make_normalized_Mx2_plots(nh3_files, c_files, h2_files, run_charges, outpath
         nh3_sum = nh3_vals[mask_0_5].sum()
         c_sum   = c_vals[mask_0_5].sum()
         scale = (nh3_sum / c_sum) if c_sum > 0.0 else 0.0
+        scale_dict_no[period_label] = scale
         print(f"[DEBUG] (no-t) {period_label}: NH₃ sum(0–0.5)={nh3_sum:.3f}, C sum(0–0.5)={c_sum:.3f}, scale={scale:.3f}")
         diff_no_t[period_label] = nh3_vals - (c_vals * scale)
 
     for idx, period_label in enumerate(period_names):
         diff = diff_no_t.get(period_label, np.zeros(100))
+        scale = scale_dict_no[period_label]
         style = ['-', '--', '-.', ':'][idx % 4]
         axes[0, 2].step(
             bins[:-1], diff, where='post',
-            linestyle=style, label=f"{period_label} NH₃–C"
+            linestyle=style,
+            label=f"{period_label} NH3 – {scale:.3f}·C"
         )
         top_row_vals.append(diff.max())
 
@@ -531,7 +535,7 @@ def make_normalized_Mx2_plots(nh3_files, c_files, h2_files, run_charges, outpath
         axes[0, col].set(ylim=(0.0, y_top))
 
     axes[0, 2].set(
-        title="(NH₃ – C) + H₂ (no t-cut)",
+        title="(NH₃ – s·C) + H₂ (no t-cut)",
         xlabel=r"$M_x^2$ (GeV$^2$)",
         xlim=(0.0, 1.5)
     )
@@ -583,11 +587,12 @@ def make_normalized_Mx2_plots(nh3_files, c_files, h2_files, run_charges, outpath
     )
     axes[1, 1].legend(loc='upper right', fontsize='small')
 
-    # Panel (1,2): Differences [NH₃ – C] + H₂ (|t|<1)
+    # Panel (1,2): Differences [NH₃ – s·C] + H₂ (|t|<1)
     nh3_hist_t = {lbl: results.get(lbl, (np.zeros(100), np.zeros(100)))[1] for _, lbl in nh3_files}
     c_hist_t   = {lbl: results.get(lbl, (np.zeros(100), np.zeros(100)))[1] for _, lbl in c_files}
 
-    diff_t = {}
+    diff_t    = {}
+    scale_dict_t = {}
     for period_label in period_names:
         nh3_lbl = f"{period_label}-NH3"
         c_lbl   = f"{period_label}-C"
@@ -598,15 +603,18 @@ def make_normalized_Mx2_plots(nh3_files, c_files, h2_files, run_charges, outpath
         nh3_sum = nh3_vals[mask_0_5].sum()
         c_sum   = c_vals[mask_0_5].sum()
         scale = (nh3_sum / c_sum) if c_sum > 0.0 else 0.0
+        scale_dict_t[period_label] = scale
         print(f"[DEBUG] (|t|<1) {period_label}: NH₃ sum(0–0.5)={nh3_sum:.3f}, C sum(0–0.5)={c_sum:.3f}, scale={scale:.3f}")
         diff_t[period_label] = nh3_vals - (c_vals * scale)
 
     for idx, period_label in enumerate(period_names):
-        diff = diff_t.get(period_label, np.zeros(100))
+        diff  = diff_t.get(period_label, np.zeros(100))
+        scale = scale_dict_t[period_label]
         style = ['-', '--', '-.', ':'][idx % 4]
         axes[1, 2].step(
             bins[:-1], diff, where='post',
-            linestyle=style, label=f"{period_label} NH₃–C"
+            linestyle=style,
+            label=f"{period_label} NH3 – {scale:.3f}·C"
         )
         bottom_row_vals.append(diff.max())
 
@@ -622,7 +630,7 @@ def make_normalized_Mx2_plots(nh3_files, c_files, h2_files, run_charges, outpath
         axes[1, col].set(ylim=(0.0, y_bottom))
 
     axes[1, 2].set(
-        title="(NH₃ – C) + H₂ (|t|<1)",
+        title="(NH₃ – s·C) + H₂ (|t|<1)",
         xlabel=r"$M_x^2$ (GeV$^2$)",
         xlim=(0.0, 1.5)
     )
