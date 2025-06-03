@@ -38,20 +38,20 @@
 // const double xftotal = 0.09280;
 
 
-// // Fractional charge values for Total -- RGC Fa22
-// const double xAtotal = 0.562214;
-// const double xCtotal = 0.204770;
-// const double xCHtotal = 0.187124;
-// const double xHetotal = 0.040041;
-// const double xftotal = 0.00585;
+// Fractional charge values for Total -- RGC Fa22
+const double xAtotal = 0.562214;
+const double xCtotal = 0.204770;
+const double xCHtotal = 0.187124;
+const double xHetotal = 0.040041;
+const double xftotal = 0.00585;
 
 
-// Fractional charge values for Total -- RGC Sp23
-const double xAtotal = 0.558987;
-const double xCtotal = 0.158577;
-const double xCHtotal = 0.125305;
-const double xHetotal = 0.140685;
-const double xftotal = 0.016446;
+// // Fractional charge values for Total -- RGC Sp23
+// const double xAtotal = 0.558987;
+// const double xCtotal = 0.158577;
+// const double xCHtotal = 0.125305;
+// const double xHetotal = 0.140685;
+// const double xftotal = 0.016446;
 
 
 
@@ -219,17 +219,17 @@ std::vector<std::pair<double, double>> calculate_dilution_factors() {
     // TFile* heFile = TFile::Open("/work/clas12/thayward/CLAS12_exclusive/enpi+/data/pass2/data/enpi+/rgc_fa22_inb_He_epi+.root");
     // TFile* emptyFile = TFile::Open("/work/clas12/thayward/CLAS12_exclusive/enpi+/data/pass2/data/enpi+/rgc_fa22_inb_ET_epi+.root");
 
-    // TFile* nh3File = TFile::Open("/work/clas12/thayward/CLAS12_exclusive/enpi+/data/pass2/data/enpi+/rgc_sp23_inb_NH3_epi+.root");
-    // TFile* cFile = TFile::Open("/work/clas12/thayward/CLAS12_exclusive/enpi+/data/pass2/data/enpi+/rgc_fa22_inb_C_epi+.root");
-    // TFile* chFile = TFile::Open("/work/clas12/thayward/CLAS12_exclusive/enpi+/data/pass2/data/enpi+/rgc_sp23_inb_CH2_epi+.root");
-    // TFile* heFile = TFile::Open("/work/clas12/thayward/CLAS12_exclusive/enpi+/data/pass2/data/enpi+/rgc_fa22_inb_He_epi+.root");
-    // TFile* emptyFile = TFile::Open("/work/clas12/thayward/CLAS12_exclusive/enpi+/data/pass2/data/enpi+/rgc_fa22_inb_ET_epi+.root");
-
     TFile* nh3File = TFile::Open("/work/clas12/thayward/CLAS12_exclusive/enpi+/data/pass2/data/enpi+/rgc_sp23_inb_NH3_epi+.root");
-    TFile* cFile = TFile::Open("/work/clas12/thayward/CLAS12_exclusive/enpi+/data/pass2/data/enpi+/rgc_sp23_inb_C_epi+.root");
+    TFile* cFile = TFile::Open("/work/clas12/thayward/CLAS12_exclusive/enpi+/data/pass2/data/enpi+/rgc_fa22_inb_C_epi+.root");
     TFile* chFile = TFile::Open("/work/clas12/thayward/CLAS12_exclusive/enpi+/data/pass2/data/enpi+/rgc_sp23_inb_CH2_epi+.root");
-    TFile* heFile = TFile::Open("/work/clas12/thayward/CLAS12_exclusive/enpi+/data/pass2/data/enpi+/rgc_sp23_inb_He_epi+.root");
+    TFile* heFile = TFile::Open("/work/clas12/thayward/CLAS12_exclusive/enpi+/data/pass2/data/enpi+/rgc_fa22_inb_He_epi+.root");
     TFile* emptyFile = TFile::Open("/work/clas12/thayward/CLAS12_exclusive/enpi+/data/pass2/data/enpi+/rgc_fa22_inb_ET_epi+.root");
+
+    // TFile* nh3File = TFile::Open("/work/clas12/thayward/CLAS12_exclusive/enpi+/data/pass2/data/enpi+/rgc_sp23_inb_NH3_epi+.root");
+    // TFile* cFile = TFile::Open("/work/clas12/thayward/CLAS12_exclusive/enpi+/data/pass2/data/enpi+/rgc_sp23_inb_C_epi+.root");
+    // TFile* chFile = TFile::Open("/work/clas12/thayward/CLAS12_exclusive/enpi+/data/pass2/data/enpi+/rgc_sp23_inb_CH2_epi+.root");
+    // TFile* heFile = TFile::Open("/work/clas12/thayward/CLAS12_exclusive/enpi+/data/pass2/data/enpi+/rgc_sp23_inb_He_epi+.root");
+    // TFile* emptyFile = TFile::Open("/work/clas12/thayward/CLAS12_exclusive/enpi+/data/pass2/data/enpi+/rgc_fa22_inb_ET_epi+.root");
 
     TTree* nh3 = (TTree*)nh3File->Get("PhysicsEvents");
     TTree* c = (TTree*)cFile->Get("PhysicsEvents");
