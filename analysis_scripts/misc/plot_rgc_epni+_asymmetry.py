@@ -370,7 +370,7 @@ for p in ["Su22", "Fa22", "Sp23"]:
 # end for
 
 ax3.set_xlim(0, 0.7)
-ax3.set_ylim(-0.8, 0.8)
+ax3.set_ylim(-1, 1)
 ax3.set_xlabel(r"$x_{B}$", fontsize=label_fontsize)
 ax3.set_ylabel(r"$F_{LL}^{\cos\,n\phi}/F_{UU}$", fontsize=label_fontsize)
 ax3.axhline(0, color="black", linestyle="--", linewidth=1.2)
