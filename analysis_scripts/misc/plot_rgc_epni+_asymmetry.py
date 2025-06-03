@@ -1,56 +1,17 @@
 #!/usr/bin/env python3
+
 import os
-import uproot
 import numpy as np
 import matplotlib.pyplot as plt
-from concurrent.futures import ProcessPoolExecutor, as_completed
+from matplotlib.lines import Line2D
 
 # -----------------------------------------------------------------------------
-# CONFIGURATION
+# Hard-coded data for all three run periods
+#
+# Updated Su22, Fa22, and Sp23 data
 # -----------------------------------------------------------------------------
 
-# Toggle for quick debugging (process only first 5 runs per period)
-QUICK_RUN = True
-
-# Maximum run number to include
-MAX_RUNNUM = 17768
-
-# Path to the CSV of run charges
-CSV_PATH = "/home/thayward/clas12_analysis_software/analysis_scripts/asymmetry_extraction/imports/clas12_run_info.csv"
-
-# Output directory and filename
-OUTPUT_DIR         = "output/enpi+"
-FOUR_PANEL_OUTPUT  = os.path.join(OUTPUT_DIR, "four_panel_Mx2_xB_comparison.pdf")
-
-# File lists: (filepath, label)
-NH3_FILES = [
-    ("/work/clas12/thayward/CLAS12_exclusive/enpi+/data/pass2/data/enpi+/rgc_su22_inb_NH3_epi+.root", "Su22-NH3"),
-    ("/work/clas12/thayward/CLAS12_exclusive/enpi+/data/pass2/data/enpi+/rgc_fa22_inb_NH3_epi+.root", "Fa22-NH3"),
-    ("/work/clas12/thayward/CLAS12_exclusive/enpi+/data/pass2/data/enpi+/rgc_sp23_inb_NH3_epi+.root", "Sp23-NH3"),
-]
-C_FILES = [
-    ("/work/clas12/thayward/CLAS12_exclusive/enpi+/data/pass2/data/enpi+/rgc_su22_inb_C_epi+.root", "Su22-C"),
-    ("/work/clas12/thayward/CLAS12_exclusive/enpi+/data/pass2/data/enpi+/rgc_fa22_inb_C_epi+.root", "Fa22-C"),
-    ("/work/clas12/thayward/CLAS12_exclusive/enpi+/data/pass2/data/enpi+/rgc_sp23_inb_C_epi+.root", "Sp23-C"),
-]
-H2_FILES = [
-    ("/work/clas12/thayward/CLAS12_exclusive/enpi+/data/pass2/data/enpi+/rga_sp19_inb_H2_epi+.root", "Sp19-H2"),
-]
-
-# -----------------------------------------------------------------------------
-# PHYSICAL CONSTANTS
-# -----------------------------------------------------------------------------
-
-m_e    = 0.000511   # electron mass (GeV)
-m_pi   = 0.13957    # charged pion mass (GeV)
-m_p    = 0.938272   # proton mass (GeV)
-m_n    = 0.939565   # neutron mass (GeV)
-
-# -----------------------------------------------------------------------------
-# HARD‐CODED DILUTION DATA (for bottom‐right overlay)
-# -----------------------------------------------------------------------------
-
-# Su22 dilution points
+# RGC Su22 data (new iteration)
 enpichi2FitsALUsinphi_Su22 = [
     [0.094266731, 1.184739999, 0.126228827],
     [0.168622194, 0.082358508, 0.012946927],
@@ -59,11 +20,44 @@ enpichi2FitsALUsinphi_Su22 = [
     [0.441277333, 0.117431442, 0.012353808],
     [0.535009222, 0.094723130, 0.021626204]
 ]
-x_Su22      = np.array([row[0] for row in enpichi2FitsALUsinphi_Su22])
-dil_Su22    = np.array([0.711119, 0.376873, 0.390790, 0.401177, 0.410563, 0.416077])
-dil_err_Su22= np.array([0.173083, 0.0175818, 0.00942491, 0.00801711, 0.0108668, 0.0225813])
 
-# Fa22 dilution points
+enpichi2FitsAULsinphi_Su22 = [
+    [0.094266731, -0.184631847, 0.191657162],
+    [0.168622194, -0.044874584, 0.009740722],
+    [0.254887003, -0.003269898, 0.004667702],
+    [0.348247742,  0.026541647, 0.004654548],
+    [0.441277333,  0.034840513, 0.006110932],
+    [0.535009222,  0.037791240, 0.010864224]
+]
+
+enpichi2FitsAULsin2phi_Su22 = [
+    [0.094266731, -0.571432390, 0.500337273],
+    [0.168622194, -0.019945862, 0.019491545],
+    [0.254887003, -0.056427290, 0.010940032],
+    [0.348247742, -0.072941551, 0.010565592],
+    [0.441277333, -0.047906347, 0.012682486],
+    [0.535009222, -0.056154311, 0.022573166]
+]
+
+enpichi2FitsALL_Su22 = [
+    [0.094266731, -0.306180156, 0.310512623],
+    [0.168622194,  0.143004808, 0.020412174],
+    [0.254887003,  0.247780646, 0.020903540],
+    [0.348247742,  0.360906216, 0.028176244],
+    [0.441277333,  0.455831998, 0.035994583],
+    [0.535009222,  0.561823491, 0.047924768]
+]
+
+enpichi2FitsALLcosphi_Su22 = [
+    [0.094266731, -0.527234710, 0.538136648],
+    [0.168622194,  0.134872856, 0.032581310],
+    [0.254887003,  0.046520308, 0.032689097],
+    [0.348247742, -0.009177298, 0.043351783],
+    [0.441277333,  0.006301889, 0.055863447],
+    [0.535009222, -0.033540762, 0.074341147]
+]
+
+# RGC Fa22 data (updated results)
 enpichi2FitsALUsinphi_Fa22 = [
     [0.094825648, 1.221850467, 0.095501230],
     [0.168249360, 0.081525475, 0.009989312],
@@ -72,11 +66,44 @@ enpichi2FitsALUsinphi_Fa22 = [
     [0.441201661, 0.140928523, 0.009773392],
     [0.534977263, 0.110737425, 0.016852914]
 ]
-x_Fa22      = np.array([row[0] for row in enpichi2FitsALUsinphi_Fa22])
-dil_Fa22    = np.array([0.374532, 0.406101, 0.386122, 0.397153, 0.415526, 0.428239])
-dil_err_Fa22= np.array([0.117283, 0.00608866, 0.00354573, 0.00301186, 0.00400862, 0.00824607])
 
-# Sp23 dilution points (if/when available)
+enpichi2FitsAULsinphi_Fa22 = [
+    [0.094825648, -0.376535201, 0.252579804],
+    [0.168249360, -0.011194402, 0.014338757],
+    [0.255099359,  0.030969050, 0.009579115],
+    [0.348334763,  0.095187183, 0.012142933],
+    [0.441201661,  0.127867020, 0.015579627],
+    [0.534977263,  0.070995111, 0.017459805]
+]
+
+enpichi2FitsAULsin2phi_Fa22 = [
+    [0.094825648, -0.566783688, 0.642963670],
+    [0.168249360, -0.064458370, 0.031522996],
+    [0.255099359, -0.129267858, 0.020633944],
+    [0.348334763, -0.119990899, 0.022631878],
+    [0.441201661, -0.113559008, 0.029206404],
+    [0.534977263, -0.094101903, 0.035253298]
+]
+
+enpichi2FitsALL_Fa22 = [
+    [0.094825648, -0.546842875, 0.408630452],
+    [0.168249360,  0.313595957, 0.040341377],
+    [0.255099359,  0.569087259, 0.054423104],
+    [0.348334763,  0.808403830, 0.074378557],
+    [0.441201661,  0.992470352, 0.092141843],
+    [0.534977263,  1.031841668, 0.101904623]
+]
+
+enpichi2FitsALLcosphi_Fa22 = [
+    [0.094825648, -0.768732651, 0.736339894],
+    [0.168249360,  0.307734777, 0.061169664],
+    [0.255099359,  0.154402005, 0.081141362],
+    [0.348334763, -0.002871614, 0.113740856],
+    [0.441201661, -0.080422036, 0.139703117],
+    [0.534977263,  0.054939778, 0.155383940]
+]
+
+# RGC Sp23 data (newly provided)
 enpichi2FitsALUsinphi_Sp23 = [
     [0.091314751, 0.060825979, 0.081001615],
     [0.166606555, 0.070263513, 0.012697034],
@@ -85,462 +112,460 @@ enpichi2FitsALUsinphi_Sp23 = [
     [0.441235552, 0.118073067, 0.014919450],
     [0.535187978, 0.115828125, 0.026600146]
 ]
-x_Sp23      = np.array([row[0] for row in enpichi2FitsALUsinphi_Sp23])
-dil_Sp23    = np.array([0.0]*6)       # Placeholder; fill in when ready
-dil_err_Sp23= np.array([0.0]*6)
+
+enpichi2FitsAULsinphi_Sp23 = [
+    [0.091314751, -0.162890858, 0.168725297],
+    [0.166606555, -0.048730818, 0.014200007],
+    [0.251219557,  0.021636751, 0.008788846],
+    [0.346388218,  0.061416533, 0.011107487],
+    [0.441235552,  0.083394476, 0.015168372],
+    [0.535187978,  0.054499349, 0.024740870]
+]
+
+enpichi2FitsAULsin2phi_Sp23 = [
+    [0.091314751, -0.457165997, 0.391519108],
+    [0.166606555, -0.085380031, 0.031549856],
+    [0.251219557, -0.144550462, 0.021494309],
+    [0.346388218, -0.136857506, 0.023524901],
+    [0.441235552, -0.111260784, 0.031197954],
+    [0.535187978, -0.028997084, 0.053477696]
+]
+
+enpichi2FitsALL_Sp23 = [
+    [0.091314751, -0.304360525, 0.346625601],
+    [0.166606555,  0.225550203, 0.041348592],
+    [0.251219557,  0.467703808, 0.049215221],
+    [0.346388218,  0.682918822, 0.066882965],
+    [0.441235552,  0.755524113, 0.077509172],
+    [0.535187978,  1.030950644, 0.113721860]
+]
+
+enpichi2FitsALLcosphi_Sp23 = [
+    [0.091314751, -0.201466363, 0.561259035],
+    [0.166606555,  0.210346307, 0.063563879],
+    [0.251219557,  0.113239109, 0.078644153],
+    [0.346388218, -0.020487997, 0.105744642],
+    [0.441235552, -0.090960470, 0.117496619],
+    [0.535187978, -0.216175985, 0.175101458]
+]
 
 # -----------------------------------------------------------------------------
-# UTILITY FUNCTIONS
+# Organize data by run period
 # -----------------------------------------------------------------------------
+periods = {
+    "Su22": {
+        "ALUsinphi": enpichi2FitsALUsinphi_Su22,
+        "AULsinphi": enpichi2FitsAULsinphi_Su22,
+        "AULsin2phi": enpichi2FitsAULsin2phi_Su22,
+        "ALL_n0": enpichi2FitsALL_Su22,
+        "ALLcosphi": enpichi2FitsALLcosphi_Su22
+    },
+    "Fa22": {
+        "ALUsinphi": enpichi2FitsALUsinphi_Fa22,
+        "AULsinphi": enpichi2FitsAULsinphi_Fa22,
+        "AULsin2phi": enpichi2FitsAULsin2phi_Fa22,
+        "ALL_n0": enpichi2FitsALL_Fa22,
+        "ALLcosphi": enpichi2FitsALLcosphi_Fa22
+    },
+    "Sp23": {
+        "ALUsinphi": enpichi2FitsALUsinphi_Sp23,
+        "AULsinphi": enpichi2FitsAULsinphi_Sp23,
+        "AULsin2phi": enpichi2FitsAULsin2phi_Sp23,
+        "ALL_n0": enpichi2FitsALL_Sp23,
+        "ALLcosphi": enpichi2FitsALLcosphi_Sp23
+    }
+}
 
-def parse_run_charges(csv_path):
-    """
-    Read clas12_run_info.csv and return a dict { runnum: charge }, skipping runs > MAX_RUNNUM.
-    Lines beginning with '#' are ignored.
-    """
-    run_charges = {}
-    if not os.path.exists(csv_path):
-        print(f"[ERROR] CSV not found: {csv_path}")
-        return run_charges
+# Colors for each run period
+colors = {
+    "Su22": "tab:blue",
+    "Fa22": "tab:orange",
+    "Sp23": "tab:green"
+}
 
-    with open(csv_path, "r") as f:
-        for line in f:
-            s = line.strip()
-            if not s or s.startswith('#'):
-                continue
-            parts = s.split(',')
-            if len(parts) < 2:
-                continue
-            try:
-                runnum = int(parts[0])
-                charge = float(parts[1])
-            except ValueError:
-                continue
-            if runnum > MAX_RUNNUM:
-                continue
-            run_charges[runnum] = charge
-
-    print(f"[DEBUG] Parsed {len(run_charges)} runs ≤ {MAX_RUNNUM} from CSV.")
-    return run_charges
-
-
-def get_beam_energy(runnums):
-    """
-    Given a NumPy array of run numbers, return a NumPy array of beam energies Eb (in GeV):
-      • 6616 ≤ run ≤ 6783 → Eb = 10.1998         (RGA Spring 2019, H₂ data)
-      • 16042 ≤ run ≤ 17065 → Eb = 10.5473        (RGC Summer 2022)
-      • 17067 ≤ run ≤ 17724 → Eb = 10.5563        (RGC Fall 2022)
-      • 17725 ≤ run ≤ 17811 → Eb = 10.5593        (RGC Sp 2023)
-    Runs outside these → Eb = 0.
-    """
-    Eb = np.zeros_like(runnums, dtype=float)
-    mask_h2 = (runnums >= 6616) & (runnums <= 6783)
-    mask1   = (runnums >= 16042) & (runnums <= 17065)
-    mask2   = (runnums >= 17067) & (runnums <= 17724)
-    mask3   = (runnums >= 17725) & (runnums <= 17811)
-    Eb[mask_h2] = 10.1998
-    Eb[mask1]   = 10.5473
-    Eb[mask2]   = 10.5563
-    Eb[mask3]   = 10.5593
-    return Eb
-
-
-def compute_t_array(run_arr, e_p_arr, e_th_arr, e_ph_arr, p_p_arr, p_th_arr, p_ph_arr):
-    """
-    Compute Mandelstam t event‐by‐event for ep → e' n π⁺, assuming exclusivity:
-    t = (q - p_π)², where q = p_beam - p_e'.
-
-    Arguments are identical‐length NumPy arrays:
-      run_arr, e_p_arr, e_th_arr, e_ph_arr, p_p_arr, p_th_arr, p_ph_arr
-    Returns t_array (in GeV²).
-    """
-    Eb_arr = get_beam_energy(run_arr)
-
-    # 1) Scattered electron e' 4-vector
-    E_e   = np.sqrt(e_p_arr**2 + m_e**2)
-    sin_e = np.sin(e_th_arr)
-    cos_e = np.cos(e_th_arr)
-    ex =  e_p_arr * sin_e * np.cos(e_ph_arr)
-    ey =  e_p_arr * sin_e * np.sin(e_ph_arr)
-    ez =  e_p_arr * cos_e
-
-    # 2) Pion 4-vector
-    E_pi = np.sqrt(p_p_arr**2 + m_pi**2)
-    sin_p = np.sin(p_th_arr)
-    cos_p = np.cos(p_th_arr)
-    px =  p_p_arr * sin_p * np.cos(p_ph_arr)
-    py =  p_p_arr * sin_p * np.sin(p_ph_arr)
-    pz =  p_p_arr * cos_p
-
-    # 3) Virtual photon q 4-vector: q = p_beam - p_e'
-    E_q = Eb_arr - E_e
-    qx  = -ex
-    qy  = -ey
-    qz  = Eb_arr - ez
-
-    # 4) Δ = q - p_π
-    dE = E_q - E_pi
-    dx = qx - px
-    dy = qy - py
-    dz = qz - pz
-
-    # 5) t = (ΔE)² - (Δp)²
-    t_array = dE**2 - (dx**2 + dy**2 + dz**2)
-    return t_array
-
-
-def process_file(args):
-    """
-    Worker for parallel histogramming in Mx².  Returns:
-      (label, hist_Mx2_t, counts_base, counts_t)
-    where:
-      hist_Mx2_t = charge‐normalized Mx² histogram (|t|<1),
-      counts_base = number of events surviving run/Mx² ≤2.0 filter,
-      counts_t    = number of events surviving also |t|<1.
-    Both histograms use 100 bins on [0,1.5].
-    """
-    filepath, label, run_charges = args
-
-    # 1) Open TTree
-    tree = uproot.open(filepath)["PhysicsEvents"]
-
-    # 2) Extract arrays
-    run_arr  = tree["runnum"].array(library="np").astype(int)
-    mx2_arr  = tree["Mx2"].array(library="np")
-    e_p_arr  = tree["e_p"].array(library="np")
-    e_th_arr = tree["e_theta"].array(library="np")
-    e_ph_arr = tree["e_phi"].array(library="np")
-    p_p_arr  = tree["p_p"].array(library="np")
-    p_th_arr = tree["p_theta"].array(library="np")
-    p_ph_arr = tree["p_phi"].array(library="np")
-
-    # 3) Base filter: run ≤ MAX_RUNNUM & Mx² ≤ 2.0
-    mask_base  = (run_arr <= MAX_RUNNUM) & (mx2_arr <= 2.0)
-    run_base   = run_arr[mask_base]
-    mx2_base   = mx2_arr[mask_base]
-    e_p_base   = e_p_arr[mask_base]
-    e_th_base  = e_th_arr[mask_base]
-    e_ph_base  = e_ph_arr[mask_base]
-    p_p_base   = p_p_arr[mask_base]
-    p_th_base  = p_th_arr[mask_base]
-    p_ph_base  = p_ph_arr[mask_base]
-
-    # Number of events after base filter
-    num_base_events = run_base.size
-    print(f"[DEBUG][{label}] after base filter: {num_base_events} events")
-
-    # If no events survive base filter, return zeros
-    bins = np.linspace(0.0, 1.5, 101)
-    hist_Mx2_t = np.zeros(len(bins)-1, dtype=float)
-    if num_base_events == 0:
-        return (label, hist_Mx2_t, 0, 0)
-
-    # Compute t_array on base‐filtered events
-    t_vals = compute_t_array(
-        run_base,
-        e_p_base, e_th_base, e_ph_base,
-        p_p_base, p_th_base, p_ph_base
-    )
-    mask_t    = np.abs(t_vals) < 1.0
-    run_t     = run_base[mask_t]
-    mx2_t     = mx2_base[mask_t]
-
-    num_t_events = run_t.size
-    print(f"[DEBUG][{label}] after |t|<1 cut: {num_t_events} events")
-
-    # Build charge‐normalized |t|<1 Mx² histogram
-    if num_t_events > 0:
-        unique_runs_t = set(np.unique(run_t))
-        Q_t = 0.0
-        for r in unique_runs_t:
-            q = run_charges.get(r, 0.0)
-            if q <= 0.0:
-                print(f"    [WARNING] (t) run {r} has zero or missing charge.")
-            Q_t += q
-
-        if Q_t > 0.0 and mx2_t.size > 0:
-            counts_t, _   = np.histogram(mx2_t, bins=bins)
-            hist_Mx2_t    = counts_t.astype(float) / Q_t
-
-    return (label, hist_Mx2_t, num_base_events, num_t_events)
-
-
-def make_four_panel_plot(nh3_files, c_files, h2_files, run_charges, outpath):
-    """
-    Build a 2×2 figure:
-      ┌─────────────────────────┬─────────────────────────┐
-      │ (0,0): NH₃ + H₂         │ (0,1): C + H₂           │
-      │         (|t|<1, Mx²≤2)  │         (|t|<1, Mx²≤2)  │
-      ├─────────────────────────┼─────────────────────────┤
-      │ (1,0): (NH₃ – C)/HQ_n   │ (1,1): [ (H_n – s·H_c) / H_n ] (in x_B) │
-      │          (|t|<1)        │        (0.75<Mx²<1.05,|t|<1)            │
-      └─────────────────────────┴────────────────────────────────────────────┘
-
-    Here:
-     • H_n(Mx²): NH₃ charge‐normalized Mx² histogram (|t|<1).
-     • H_c(Mx²): C   charge‐normalized Mx² histogram (|t|<1).
-     • scale := ∫_{0→0.5} H_n(Mx²)  /  ∫_{0→0.5} H_c(Mx²).
-     • Panel (1,1) reuses that same “scale” and plots [H_n(x_B) – scale·H_c(x_B)]/H_n(x_B),
-       using events restricted to 0.75<Mx²<1.05, |t|<1.
-    """
-
-    # 1) In parallel, build charge‐normalized Mx² histograms (|t|<1) and event counts
-    tasks = []
-    for fp, lbl in nh3_files + c_files + h2_files:
-        tasks.append((fp, lbl, run_charges))
-
-    results = {}  # label → (hist_Mx2_t, num_base, num_t)
-    with ProcessPoolExecutor() as executor:
-        future_to_label = {executor.submit(process_file, args): args[1] for args in tasks}
-        for future in as_completed(future_to_label):
-            lbl = future_to_label[future]
-            try:
-                label, hist_Mx2_t, num_base, num_t = future.result()
-                results[label] = (hist_Mx2_t, num_base, num_t)
-            except Exception as e:
-                print(f"[ERROR] processing {lbl}: {e}")
-                results[lbl] = (np.zeros(100, dtype=float), 0, 0)
-
-    # 2) Compute Mx²‐based scale for each period (using bins 0→0.5)
-    bins_Mx2 = np.linspace(0.0, 1.5, 101)
-    bin_centers_Mx2 = 0.5 * (bins_Mx2[:-1] + bins_Mx2[1:])
-    mask_0_5 = (bin_centers_Mx2 >= 0.0) & (bin_centers_Mx2 < 0.5)
-
-    period_names = ["Su22", "Fa22", "Sp23"]
-    scale_dict = {}
-    for period in period_names:
-        h_n = results[f"{period}-NH3"][0]
-        h_c = results[f"{period}-C"][0]
-        sum_n = h_n[mask_0_5].sum()
-        sum_c = h_c[mask_0_5].sum()
-        scale = (sum_n / sum_c) if (sum_c > 0.0) else 0.0
-        scale_dict[period] = scale
-        print(f"[DEBUG] scale({period}) = {scale:.4f}  [∑H_n(0-0.5)={sum_n:.4f}, ∑H_c(0-0.5)={sum_c:.4f}]")
-
-    # 3) Now build x_B histograms (|t|<1, 0.75<Mx²<1.05) for NH₃ and C (per period)
-    #    We do this inside a small helper loop (no parallelization needed because NH₃/C are just 3+3 files).
-    def build_xB_hist(filepath, run_charges):
-        """
-        Returns (hist_xB_t, edges_xB) for events satisfying:
-          run ≤ MAX_RUNNUM, 0.75<Mx²<1.05, |t|<1.
-        Normalized by total charge from unique runs passing that selection.
-        """
-        tree = uproot.open(filepath)["PhysicsEvents"]
-        run_arr  = tree["runnum"].array(library="np").astype(int)
-        mx2_arr  = tree["Mx2"].array(library="np")
-        e_p_arr  = tree["e_p"].array(library="np")
-        e_th_arr = tree["e_theta"].array(library="np")
-        e_ph_arr = tree["e_phi"].array(library="np")
-        p_p_arr  = tree["p_p"].array(library="np")
-        p_th_arr = tree["p_theta"].array(library="np")
-        p_ph_arr = tree["p_phi"].array(library="np")
-        xB_arr   = tree["x"].array(library="np")
-
-        # 1) Base filter: run ≤ MAX_RUNNUM & 0.75 < Mx² < 1.05
-        mask_base_xB = (run_arr <= MAX_RUNNUM) & (mx2_arr > 0.75) & (mx2_arr < 1.05)
-        run_base_xB  = run_arr[mask_base_xB]
-        mx2_base_xB  = mx2_arr[mask_base_xB]
-        e_p_base_xB  = e_p_arr[mask_base_xB]
-        e_th_base_xB = e_th_arr[mask_base_xB]
-        e_ph_base_xB = e_ph_arr[mask_base_xB]
-        p_p_base_xB  = p_p_arr[mask_base_xB]
-        p_th_base_xB = p_th_arr[mask_base_xB]
-        p_ph_base_xB = p_ph_arr[mask_base_xB]
-        xB_base      = xB_arr[mask_base_xB]
-
-        if run_base_xB.size == 0:
-            return np.zeros(100, dtype=float), np.linspace(0.0,1.0,101)
-
-        # 2) Compute t and mask |t|<1
-        t_vals_xB = compute_t_array(
-            run_base_xB,
-            e_p_base_xB, e_th_base_xB, e_ph_base_xB,
-            p_p_base_xB, p_th_base_xB, p_ph_base_xB
-        )
-        mask_t_xB = np.abs(t_vals_xB) < 1.0
-        run_t_xB  = run_base_xB[mask_t_xB]
-        xB_t      = xB_base[mask_t_xB]
-
-        if run_t_xB.size == 0:
-            return np.zeros(100, dtype=float), np.linspace(0.0,1.0,101)
-
-        # 3) Sum charge over unique runs in this selection
-        uniq_runs_t_xB = set(np.unique(run_t_xB))
-        Q_t_xB = sum(run_charges.get(r, 0.0) for r in uniq_runs_t_xB)
-
-        # 4) Build histogram in x_B (we choose 100 bins on [0,1])
-        edges_xB = np.linspace(0.0, 1.0, 101)
-        counts_xB, _ = np.histogram(xB_t, bins=edges_xB)
-
-        if Q_t_xB > 0.0:
-            hist_xB_t = counts_xB.astype(float) / Q_t_xB
+# -----------------------------------------------------------------------------
+# Convert each list in each period to NumPy arrays
+# -----------------------------------------------------------------------------
+for p in periods:
+    for key in periods[p]:
+        data_list = periods[p][key]
+        if len(data_list) > 0:
+            arr = np.array(data_list)
+            x = arr[:, 0]
+            y = arr[:, 1]
+            yerr = arr[:, 2]
+            periods[p][key] = {"x": x, "y": y, "yerr": yerr}
         else:
-            hist_xB_t = np.zeros(len(edges_xB)-1, dtype=float)
-
-        return hist_xB_t, edges_xB
-
-    # Build x_B histograms for each NH₃/C file
-    xB_hist_n = {}
-    xB_hist_c = {}
-    edges_xB   = None
-    for (fp, lbl) in nh3_files:
-        hist, edges = build_xB_hist(fp, run_charges)
-        xB_hist_n[lbl] = hist
-        edges_xB = edges
-    for (fp, lbl) in c_files:
-        hist, _      = build_xB_hist(fp, run_charges)
-        xB_hist_c[lbl] = hist
-
-    # 4) Begin plotting: 2 rows × 2 columns
-    fig, axes = plt.subplots(2, 2, figsize=(16, 12), sharey=False)
-
-    # ──────────────────────────────────────────────────────────────────────────────
-    # Panel (0,0): NH₃ + H₂ (|t|<1, Mx²≤2)
-    # ──────────────────────────────────────────────────────────────────────────────
-    top0_vals = []
-    for _, lbl in NH3_FILES:
-        h_n = results[lbl][0]
-        axes[0, 0].step(bins_Mx2[:-1], h_n, where='post', label=lbl)
-        top0_vals.append(h_n.max())
-
-    h2_lbl = H2_FILES[0][1]
-    h2_curve = results[h2_lbl][0]
-    axes[0, 0].step(
-        bins_Mx2[:-1], h2_curve, where='post',
-        color='k', linestyle='-', label=h2_lbl
-    )
-    top0_vals.append(h2_curve.max())
-
-    axes[0, 0].set(
-        title="NH₃ + H₂: Normalized Mₓ² (|t|<1)",
-        xlabel=r"$M_x^2$ (GeV$^2$)",
-        ylabel="events / nC",
-        xlim=(0.0, 1.5)
-    )
-    # dynamic y‐limit
-    y0 = 1.1 * max(top0_vals) if top0_vals else 0.1
-    axes[0, 0].set(ylim=(0.0, y0))
-    axes[0, 0].legend(loc='upper right', fontsize='small')
-
-    # ──────────────────────────────────────────────────────────────────────────────
-    # Panel (0,1): C + H₂ (|t|<1, Mx²≤2)
-    # ──────────────────────────────────────────────────────────────────────────────
-    top1_vals = []
-    for _, lbl in C_FILES:
-        h_c = results[lbl][0]
-        axes[0, 1].step(bins_Mx2[:-1], h_c, where='post', label=lbl)
-        top1_vals.append(h_c.max())
-
-    axes[0, 1].step(
-        bins_Mx2[:-1], h2_curve, where='post',
-        color='k', linestyle='-', label=h2_lbl
-    )
-    top1_vals.append(h2_curve.max())
-
-    axes[0, 1].set(
-        title="C + H₂: Normalized Mₓ² (|t|<1)",
-        xlabel=r"$M_x^2$ (GeV$^2$)",
-        xlim=(0.0, 1.5)
-    )
-    y1 = 1.1 * max(top1_vals) if top1_vals else 0.1
-    axes[0, 1].set(ylim=(0.0, y1))
-    axes[0, 1].legend(loc='upper right', fontsize='small')
-
-    # ──────────────────────────────────────────────────────────────────────────────
-    # Panel (1,0): (NH₃ – C) using same Mx² histograms (|t|<1)
-    # ──────────────────────────────────────────────────────────────────────────────
-    bot0_vals = []
-    for period in period_names:
-        h_n = results[f"{period}-NH3"][0]
-        h_c = results[f"{period}-C"][0]
-        scale = scale_dict[period]
-        diff = h_n - scale * h_c
-        style = ['-', '--', '-.', ':'][period_names.index(period) % 4]
-        axes[1, 0].step(
-            bins_Mx2[:-1], diff, where='post',
-            linestyle=style, label=f"{period} NH₃–C"
-        )
-        bot0_vals.append(diff.max())
-
-    axes[1, 0].step(
-        bins_Mx2[:-1], h2_curve, where='post',
-        color='k', linestyle='-', label=h2_lbl
-    )
-    bot0_vals.append(h2_curve.max())
-
-    axes[1, 0].set(
-        title="(NH₃ – C) + H₂ (|t|<1)",
-        xlabel=r"$M_x^2$ (GeV$^2$)",
-        xlim=(0.0, 1.5)
-    )
-    y2 = 1.1 * max(bot0_vals) if bot0_vals else 0.1
-    axes[1, 0].set(ylim=(0.0, y2))
-    axes[1, 0].legend(loc='upper right', fontsize='small')
-
-    # ──────────────────────────────────────────────────────────────────────────────
-    # Panel (1,1): [H_n(x_B) – scale·H_c(x_B)] / H_n(x_B) (|t|<1, 0.75<Mx²<1.05)
-    # ──────────────────────────────────────────────────────────────────────────────
-    bot1_vals = []
-    for period in period_names:
-        h_n_xB = xB_hist_n[f"{period}-NH3"]
-        h_c_xB = xB_hist_c[f"{period}-C"]
-        scale  = scale_dict[period]
-        # Avoid division by zero: mask bins where H_n(xB)==0
-        ratio = np.zeros_like(h_n_xB)
-        mask_nonzero = h_n_xB > 0
-        ratio[mask_nonzero] = (h_n_xB[mask_nonzero] - scale * h_c_xB[mask_nonzero]) / h_n_xB[mask_nonzero]
-        style = ['-', '--', '-.', ':'][period_names.index(period) % 4]
-        axes[1, 1].step(
-            edges_xB[:-1], ratio, where='post',
-            linestyle=style, label=f"{period} (Hₙ–s·H_c)/Hₙ"
-        )
-        bot1_vals.append(np.nanmax(ratio))
-
-    # Overlay dilution‐factor points in same color
-    # Su22:
-    axes[1, 1].errorbar(
-        x_Su22, dil_Su22, yerr=dil_err_Su22,
-        fmt='o', color=axes[1, 1].lines[0].get_color(), label="Su22 dilution"
-    )
-    # Fa22:
-    axes[1, 1].errorbar(
-        x_Fa22, dil_Fa22, yerr=dil_err_Fa22,
-        fmt='o', color=axes[1, 1].lines[1].get_color(), label="Fa22 dilution"
-    )
-    # Sp23 (if data exists):
-    if np.any(dil_Sp23):
-        axes[1, 1].errorbar(
-            x_Sp23, dil_Sp23, yerr=dil_err_Sp23,
-            fmt='o', color=axes[1, 1].lines[2].get_color(), label="Sp23 dilution"
-        )
-
-    axes[1, 1].set(
-        title=r"(H$_n$–s·H$_c$)/H$_n$ vs. $x_B$ (|t|<1, 0.75<M$_x^2$<1.05)",
-        xlabel=r"$x_B$",
-        xlim=(0.0, 1.0)
-    )
-    y3 = 1.1 * max(bot1_vals + [np.nanmax(dil_Su22), np.nanmax(dil_Fa22), np.nanmax(dil_Sp23)]) if bot1_vals else 1.0
-    axes[1, 1].set(ylim=(0.0, y3))
-    axes[1, 1].legend(loc='upper right', fontsize='small')
-
-    # 5) Finalize & save
-    os.makedirs(os.path.dirname(outpath), exist_ok=True)
-    plt.tight_layout()
-    plt.savefig(outpath)
-    plt.close()
-
+            periods[p][key] = None
+        # endif
+    # end for key
+# end for p
 
 # -----------------------------------------------------------------------------
-# MAIN
+# Create output directory if it does not exist
+# -----------------------------------------------------------------------------
+out_dir = os.path.join("output", "enpi+")
+if not os.path.isdir(out_dir):
+    os.makedirs(out_dir, exist_ok=True)
+# endif
+
+# -----------------------------------------------------------------------------
+# Plotting: 1×3 figure, all three run periods on each subplot
+# -----------------------------------------------------------------------------
+plt.figure(figsize=(15, 5))
+plt.suptitle(
+    r"$ep \rightarrow en\pi^{+}$, $|t| < 1$, $0.75 < M_{x}^{2} < 1.05\ (\mathrm{GeV}^{2})$",
+    fontsize=16,
+    y=0.96
+)
+
+# Increase base font size for axes labels
+label_fontsize = 13
+
+# -------------------------
+# Subplot 1: ALU sinφ (all 3 periods)
+# -------------------------
+ax1 = plt.subplot(1, 3, 1)
+
+for p in ["Su22", "Fa22", "Sp23"]:
+    data = periods[p]["ALUsinphi"]
+    if data is not None:
+        ax1.errorbar(
+            data["x"],
+            data["y"],
+            yerr=data["yerr"],
+            fmt="o",
+            color=colors[p],
+            ecolor=colors[p],
+            capsize=3,
+            label=p
+        )
+    # endif
+# end for
+
+ax1.set_xlim(0, 0.7)
+ax1.set_ylim(-0.2, 0.2)
+ax1.set_xlabel(r"$x_{B}$", fontsize=label_fontsize)
+ax1.set_ylabel(r"$F_{LU}^{\sin\phi}/F_{UU}$", fontsize=label_fontsize)
+ax1.axhline(0, color="black", linestyle="--", linewidth=1.2)
+ax1.grid(True, linestyle="--", alpha=0.6)
+
+# Legend for run periods (Su22, Fa22, Sp23)
+legend1 = ax1.legend(
+    title="Run Period",
+    frameon=True,
+    edgecolor="black",
+    fontsize=11,
+    title_fontsize=12
+)
+legend1.get_frame().set_alpha(0.9)
+
+# -------------------------
+# Subplot 2: AUL sinφ (n=1, open) & sin2φ (n=2, closed) for all periods
+# -------------------------
+ax2 = plt.subplot(1, 3, 2, sharex=ax1)
+
+for p in ["Su22", "Fa22", "Sp23"]:
+    d1 = periods[p]["AULsinphi"]
+    d2 = periods[p]["AULsin2phi"]
+    if d1 is not None:
+        ax2.errorbar(
+            d1["x"],
+            d1["y"],
+            yerr=d1["yerr"],
+            fmt="o",
+            mfc="none",        # open circle for n=1
+            mec=colors[p],
+            ecolor=colors[p],
+            capsize=3,
+            label=f"{p}, n=1"
+        )
+    # endif
+    if d2 is not None:
+        ax2.errorbar(
+            d2["x"],
+            d2["y"],
+            yerr=d2["yerr"],
+            fmt="o",
+            color=colors[p],   # filled circle for n=2
+            ecolor=colors[p],
+            capsize=3,
+            label=f"{p}, n=2"
+        )
+    # endif
+# end for
+
+ax2.set_xlim(0, 0.7)
+ax2.set_ylim(-0.2, 0.2)
+ax2.set_xlabel(r"$x_{B}$", fontsize=label_fontsize)
+ax2.set_ylabel(r"$F_{UL}^{\sin\,n\phi}/F_{UU}$", fontsize=label_fontsize)
+ax2.axhline(0, color="black", linestyle="--", linewidth=1.2)
+ax2.grid(True, linestyle="--", alpha=0.6)
+
+# Legend for harmonic n (subplot 2)
+legend_n2 = ax2.legend(
+    handles=[
+        Line2D([0], [0], marker='o', mfc='none', mec='black', linestyle='', label='n=1'),
+        Line2D([0], [0], marker='o', color='black', linestyle='', label='n=2')
+    ],
+    title="Harmonic n",
+    frameon=True,
+    edgecolor="black",
+    loc='upper right',
+    fontsize=11,
+    title_fontsize=12
+)
+legend_n2.get_frame().set_alpha(0.9)
+ax2.add_artist(legend_n2)
+
+# Legend for run periods (subplot 2)
+legend_runs2 = ax2.legend(
+    handles=[
+        Line2D([0], [0], marker='o', color=colors["Su22"], linestyle='', label='Su22'),
+        Line2D([0], [0], marker='o', color=colors["Fa22"], linestyle='', label='Fa22'),
+        Line2D([0], [0], marker='o', color=colors["Sp23"], linestyle='', label='Sp23')
+    ],
+    title="Run Period",
+    frameon=True,
+    edgecolor="black",
+    loc='lower right',
+    fontsize=11,
+    title_fontsize=12
+)
+legend_runs2.get_frame().set_alpha(0.9)
+
+# -------------------------
+# Subplot 3: ALL n=0 (open) & cosφ (n=1, closed) for all periods
+# -------------------------
+ax3 = plt.subplot(1, 3, 3, sharex=ax1)
+
+for p in ["Su22", "Fa22", "Sp23"]:
+    d0 = periods[p]["ALL_n0"]
+    d1 = periods[p]["ALLcosphi"]
+    if d0 is not None:
+        ax3.errorbar(
+            d0["x"],
+            d0["y"],
+            yerr=d0["yerr"],
+            fmt="o",
+            mfc="none",        # open circle for n=0
+            mec=colors[p],
+            ecolor=colors[p],
+            capsize=3,
+            label=f"{p}, n=0"
+        )
+    # endif
+    if d1 is not None:
+        ax3.errorbar(
+            d1["x"],
+            d1["y"],
+            yerr=d1["yerr"],
+            fmt="o",
+            color=colors[p],   # filled circle for n=1
+            ecolor=colors[p],
+            capsize=3,
+            label=f"{p}, n=1"
+        )
+    # endif
+# end for
+
+ax3.set_xlim(0, 0.7)
+ax3.set_ylim(-1, 1)
+ax3.set_xlabel(r"$x_{B}$", fontsize=label_fontsize)
+ax3.set_ylabel(r"$F_{LL}^{\cos\,n\phi}/F_{UU}$", fontsize=label_fontsize)
+ax3.axhline(0, color="black", linestyle="--", linewidth=1.2)
+ax3.grid(True, linestyle="--", alpha=0.6)
+
+# Legend for harmonic n (subplot 3)
+legend_n3 = ax3.legend(
+    handles=[
+        Line2D([0], [0], marker='o', mfc='none', mec='black', linestyle='', label='n=0'),
+        Line2D([0], [0], marker='o', color='black', linestyle='', label='n=1')
+    ],
+    title="Harmonic n",
+    frameon=True,
+    edgecolor="black",
+    loc='upper right',
+    fontsize=11,
+    title_fontsize=12
+)
+legend_n3.get_frame().set_alpha(0.9)
+ax3.add_artist(legend_n3)
+
+# Legend for run periods (subplot 3)
+legend_runs3 = ax3.legend(
+    handles=[
+        Line2D([0], [0], marker='o', color=colors["Su22"], linestyle='', label='Su22'),
+        Line2D([0], [0], marker='o', color=colors["Fa22"], linestyle='', label='Fa22'),
+        Line2D([0], [0], marker='o', color=colors["Sp23"], linestyle='', label='Sp23')
+    ],
+    title="Run Period",
+    frameon=True,
+    edgecolor="black",
+    loc='lower right',
+    fontsize=11,
+    title_fontsize=12
+)
+legend_runs3.get_frame().set_alpha(0.9)
+
+plt.tight_layout(rect=[0, 0, 1, 0.93])
+
+# Save the asymmetry figure under output/enpi+/
+asymmetry_filename = os.path.join(out_dir, "rgc_enpi+_AllPeriods.pdf")
+plt.savefig(asymmetry_filename)
+print(f"Asymmetry plot saved to '{asymmetry_filename}'")
+
+# -----------------------------------------------------------------------------
+# New functionality: Plot dilution factor vs xB for Su22 and Fa22
 # -----------------------------------------------------------------------------
 
-def main():
-    # 1) Load run charges (only runs ≤ MAX_RUNNUM)
-    run_charges = parse_run_charges(CSV_PATH)
+# Dilution factor data for Su22
+x_Su22 = np.array([row[0] for row in enpichi2FitsALUsinphi_Su22])
+dil_Su22 = np.array([0.711119, 0.376873, 0.390790, 0.401177, 0.410563, 0.416077])
+dil_err_Su22 = np.array([0.173083, 0.0175818, 0.00942491, 0.00801711, 0.0108668, 0.0225813])
 
-    # 2) Create the 2×2 comparison plot
-    make_four_panel_plot(NH3_FILES, C_FILES, H2_FILES, run_charges, FOUR_PANEL_OUTPUT)
+# Dilution factor data for Fa22
+x_Fa22 = np.array([row[0] for row in enpichi2FitsALUsinphi_Fa22])
+dil_Fa22 = np.array([0.374532, 0.406101, 0.386122, 0.397153, 0.415526, 0.428239])
+dil_err_Fa22 = np.array([0.117283, 0.00608866, 0.00354573, 0.00301186, 0.00400862, 0.00824607])
 
+plt.figure(figsize=(6, 5))
+plt.errorbar(
+    x_Su22,
+    dil_Su22,
+    yerr=dil_err_Su22,
+    fmt="o",
+    color=colors["Su22"],
+    ecolor=colors["Su22"],
+    capsize=3,
+    label="Su22"
+)
+plt.errorbar(
+    x_Fa22,
+    dil_Fa22,
+    yerr=dil_err_Fa22,
+    fmt="o",
+    color=colors["Fa22"],
+    ecolor=colors["Fa22"],
+    capsize=3,
+    label="Fa22"
+)
 
-if __name__ == "__main__":
-    main()
+plt.xlabel(r"$x_{B}$", fontsize=label_fontsize)
+plt.ylabel(r"$D_{f}$", fontsize=label_fontsize)
+plt.ylim(0, 1)
+plt.xlim(0, 0.7)
+plt.grid(True, linestyle="--", alpha=0.6)
+plt.legend(frameon=True, edgecolor="black", fontsize=11, title="Run Period", title_fontsize=12)
+
+plt.tight_layout()
+dilution_filename = os.path.join(out_dir, "dilution_vs_xB.pdf")
+plt.savefig(dilution_filename)
+print(f"Dilution factor plot saved to '{dilution_filename}'")
+
+# -----------------------------------------------------------------------------
+# New functionality: Plot mean Q², W, z, and x_F vs x_B for Su22, Fa22, and Sp23
+# -----------------------------------------------------------------------------
+
+# Mean kinematic values for Su22
+xB_Su22 = np.array([0.094, 0.169, 0.255, 0.348, 0.441, 0.535])
+Q2_Su22 = np.array([1.325, 1.862, 2.240, 2.592, 3.374, 4.589])
+W_Su22  = np.array([3.689, 3.179, 2.722, 2.381, 2.256, 2.197])
+z_Su22  = np.array([0.972, 0.971, 0.955, 0.932, 0.919, 0.912])
+xF_Su22 = np.array([0.883, 0.862, 0.812, 0.756, 0.745, 0.757])
+
+# Mean kinematic values for Fa22
+xB_Fa22 = np.array([0.095, 0.168, 0.255, 0.348, 0.441, 0.535])
+Q2_Fa22 = np.array([1.341, 1.874, 2.254, 2.612, 3.388, 4.607])
+W_Fa22  = np.array([3.698, 3.193, 2.728, 2.389, 2.261, 2.200])
+z_Fa22  = np.array([0.973, 0.969, 0.953, 0.930, 0.918, 0.912])
+xF_Fa22 = np.array([0.886, 0.861, 0.810, 0.755, 0.744, 0.756])
+
+# Mean kinematic values for Sp23
+xB_Sp23 = np.array([0.091, 0.167, 0.251, 0.346, 0.441, 0.535])
+Q2_Sp23 = np.array([1.132, 1.502, 1.864, 2.513, 3.379, 4.607])
+W_Sp23  = np.array([3.487, 2.896, 2.517, 2.356, 2.258, 2.199])
+z_Sp23  = np.array([0.961, 0.960, 0.943, 0.929, 0.919, 0.912])
+xF_Sp23 = np.array([0.854, 0.824, 0.771, 0.750, 0.745, 0.757])
+
+# Create a 2×2 figure
+fig, axes = plt.subplots(2, 2, figsize=(10, 8))
+
+# Common plot settings
+marker_Su22 = 'o'
+marker_Fa22 = '^'
+marker_Sp23 = 's'
+color_Su22 = colors["Su22"]
+color_Fa22 = colors["Fa22"]
+color_Sp23 = colors["Sp23"]
+label_fontsize = 12
+tick_fontsize = 10
+
+# Top-left: Q² vs x_B
+ax = axes[0, 0]
+ax.plot(xB_Su22, Q2_Su22, marker_Su22, color=color_Su22, markersize=6, linestyle='', label='Su22')
+ax.plot(xB_Fa22, Q2_Fa22, marker_Fa22, color=color_Fa22, markersize=6, linestyle='', label='Fa22')
+ax.plot(xB_Sp23, Q2_Sp23, marker_Sp23, color=color_Sp23, markersize=6, linestyle='', label='Sp23')
+ax.set_xlabel(r"$x_{B}$", fontsize=label_fontsize)
+ax.set_ylabel(r"$\langle Q^{2} \rangle\ \mathrm{(GeV^{2})}$", fontsize=label_fontsize)
+ax.set_xlim(0.08, 0.56)
+ax.grid(True, linestyle="--", alpha=0.5)
+ax.tick_params(axis='both', labelsize=tick_fontsize)
+
+# Top-right: W vs x_B
+ax = axes[0, 1]
+ax.plot(xB_Su22, W_Su22, marker_Su22, color=color_Su22, markersize=6, linestyle='', label='Su22')
+ax.plot(xB_Fa22, W_Fa22, marker_Fa22, color=color_Fa22, markersize=6, linestyle='', label='Fa22')
+ax.plot(xB_Sp23, W_Sp23, marker_Sp23, color=color_Sp23, markersize=6, linestyle='', label='Sp23')
+ax.set_xlabel(r"$x_{B}$", fontsize=label_fontsize)
+ax.set_ylabel(r"$\langle W \rangle\ \mathrm{(GeV)}$", fontsize=label_fontsize)
+ax.set_xlim(0.08, 0.56)
+ax.grid(True, linestyle="--", alpha=0.5)
+ax.tick_params(axis='both', labelsize=tick_fontsize)
+
+# Bottom-left: z vs x_B
+ax = axes[1, 0]
+ax.plot(xB_Su22, z_Su22, marker_Su22, color=color_Su22, markersize=6, linestyle='', label='Su22')
+ax.plot(xB_Fa22, z_Fa22, marker_Fa22, color=color_Fa22, markersize=6, linestyle='', label='Fa22')
+ax.plot(xB_Sp23, z_Sp23, marker_Sp23, color=color_Sp23, markersize=6, linestyle='', label='Sp23')
+ax.set_xlabel(r"$x_{B}$", fontsize=label_fontsize)
+ax.set_ylabel(r"$\langle z \rangle$", fontsize=label_fontsize)
+ax.set_xlim(0.08, 0.56)
+ax.set_ylim(0.90, 1.0)
+ax.grid(True, linestyle="--", alpha=0.5)
+ax.tick_params(axis='both', labelsize=tick_fontsize)
+
+# Bottom-right: x_F vs x_B
+ax = axes[1, 1]
+ax.plot(xB_Su22, xF_Su22, marker_Su22, color=color_Su22, markersize=6, linestyle='', label='Su22')
+ax.plot(xB_Fa22, xF_Fa22, marker_Fa22, color=color_Fa22, markersize=6, linestyle='', label='Fa22')
+ax.plot(xB_Sp23, xF_Sp23, marker_Sp23, color=color_Sp23, markersize=6, linestyle='', label='Sp23')
+ax.set_xlabel(r"$x_{B}$", fontsize=label_fontsize)
+ax.set_ylabel(r"$\langle x_{F} \rangle$", fontsize=label_fontsize)
+ax.set_xlim(0.08, 0.56)
+ax.grid(True, linestyle="--", alpha=0.5)
+ax.tick_params(axis='both', labelsize=tick_fontsize)
+
+# Add a single legend for the entire figure
+handles = [
+    Line2D([0], [0], marker=marker_Su22, color=color_Su22, linestyle='', label='Su22', markersize=6),
+    Line2D([0], [0], marker=marker_Fa22, color=color_Fa22, linestyle='', label='Fa22', markersize=6),
+    Line2D([0], [0], marker=marker_Sp23, color=color_Sp23, linestyle='', label='Sp23', markersize=6)
+]
+fig.legend(
+    handles=handles,
+    loc='upper center',
+    ncol=3,
+    frameon=True,
+    edgecolor="black",
+    fontsize=11,
+    title="Data Set",
+    title_fontsize=12
+)
+
+plt.tight_layout(rect=[0, 0, 1, 0.95])
+
+# Save the kinematic comparison figure
+kinematic_filename = os.path.join(out_dir, "kinematic_comparison_Su22_Fa22_Sp23.pdf")
+plt.savefig(kinematic_filename)
+print(f"Kinematic comparison plot saved as '{kinematic_filename}'")
