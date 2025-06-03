@@ -10,7 +10,7 @@ from concurrent.futures import ProcessPoolExecutor, as_completed
 # -----------------------------------------------------------------------------
 
 # Toggle for quick debugging (process only first 5 runs per period)
-QUICK_RUN = True
+QUICK_RUN = False
 
 # Maximum run number to include
 MAX_RUNNUM = 17768
@@ -20,7 +20,7 @@ CSV_PATH = "/home/thayward/clas12_analysis_software/analysis_scripts/asymmetry_e
 
 # Output directory and filename
 OUTPUT_DIR         = "output/enpi+"
-FOUR_PANEL_OUTPUT  = os.path.join(OUTPUT_DIR, "four_panel_Mx2_x_comparison.pdf")
+THREE_PANEL_OUTPUT = os.path.join(OUTPUT_DIR, "three_panel_Mx2_comparison.pdf")
 
 # File lists: (filepath, label)
 NH3_FILES = [
@@ -52,7 +52,7 @@ m_n    = 0.939565   # neutron mass (GeV)
 
 def parse_run_charges(csv_path):
     """
-    Read clas12_run_info.csv and return a dict { runnum: charge }, skipping any run > MAX_RUNNUM.
+    Read clas12_run_info.csv and return a dict { runnum: charge }, skipping runs > MAX_RUNNUM.
     Lines beginning with '#' are ignored.
     """
     run_charges = {}
@@ -63,7 +63,7 @@ def parse_run_charges(csv_path):
     with open(csv_path, "r") as f:
         for line in f:
             s = line.strip()
-            if (not s) or s.startswith('#'):
+            if not s or s.startswith('#'):
                 continue
             parts = s.split(',')
             if len(parts) < 2:
@@ -135,32 +135,28 @@ def compute_t_array(run_arr, e_p_arr, e_th_arr, e_ph_arr, p_p_arr, p_th_arr, p_p
     py =  p_p_arr * sin_p * np.sin(p_ph_arr)
     pz =  p_p_arr * cos_p
 
-    # 3) Virtual photon q 4-vector: q = p_beam - p_e'
+    # 3) Virtual photon q 4-vector: q = p_beam – p_e'
     E_q = Eb_arr - E_e
     qx  = -ex
     qy  = -ey
     qz  = Eb_arr - ez
 
-    # 4) Δ = q - p_π
+    # 4) Δ = q – p_π
     dE = E_q - E_pi
     dx = qx - px
     dy = qy - py
     dz = qz - pz
 
-    # 5) t = (ΔE)² - (Δp)²
+    # 5) t = (ΔE)² – (Δp)²
     t_array = dE**2 - (dx**2 + dy**2 + dz**2)
     return t_array
 
 
-# -----------------------------------------------------------------------------
-# PROCESSING FUNCTIONS
-# -----------------------------------------------------------------------------
-
 def process_file(args):
     """
-    Worker for parallel histogramming of Mx²:
+    Worker for parallel histogramming:
     Returns (label, hist_no_t, hist_t) where:
-      - hist_no_t: normalized Mx² histogram with just (run ≤ MAX_RUNNUM, Mx² ≤ 2.0).
+      - hist_no_t: normalized Mx² histogram with just (runnum ≤ MAX_RUNNUM, Mx² ≤ 2.0).
       - hist_t:    normalized Mx² histogram with additional |t| < 1.0 cut.
     Both histograms use 100 bins from 0 → 1.5.
 
@@ -199,6 +195,7 @@ def process_file(args):
     p_th_base = p_th_arr[mask_base]
     p_ph_base = p_ph_arr[mask_base]
 
+    # Print how many events remain after the base filter
     num_base_events = run_base.size
     print(f"[DEBUG][{label}] after base filter: {num_base_events} events")
 
@@ -212,19 +209,19 @@ def process_file(args):
         print(f"[DEBUG][{label}] no events remain after base filter → all histograms zero")
         return (label, hist_no_t, hist_t)
 
-    # --- Compute “no-t-cut” histogram (run/Mx² filter only) ---
+    # --- Compute “no‐t‐cut” histogram (only run/Mx² filter) ---
     run_final_no_t = run_base.copy()
     mx2_final_no_t = mx2_base.copy()
 
-    # 5a) Which runs contribute (quick=False ⇒ all unique)
+    # 5a) Select which runs contribute: all unique runs (quick=False)
     selected_runs_no_t = set(np.unique(run_final_no_t))
 
-    # 6a) Sum total beam charge for those runs (Q_no_t)
+    # 6a) Sum total beam charge for those runs (Q_no_t) – still needed for normalization
     Q_no_t = 0.0
     for r in selected_runs_no_t:
         q = run_charges.get(r, 0.0)
         if q <= 0.0:
-            print(f"    [WARNING] (no-t) run {r} has zero or missing charge.")
+            print(f"    [WARNING] (no‐t) run {r} has zero or missing charge.")
         Q_no_t += q
 
     # 7a) Mask events so that only those runs remain
@@ -233,9 +230,11 @@ def process_file(args):
 
     if Q_no_t > 0.0 and mx2_use_no_t.size > 0:
         counts_no_t, _ = np.histogram(mx2_use_no_t, bins=bins)
-        hist_no_t      = counts_no_t.astype(float) / Q_no_t
+        hist_no_t = counts_no_t.astype(float) / Q_no_t
+    else:
+        hist_no_t = np.zeros(len(bins) - 1, dtype=float)
 
-    # --- Compute “t-cut” histogram (also require |t|<1) ---
+    # --- Compute “t‐cut” histogram (also require |t|<1) ---
     t_vals = compute_t_array(
         run_base,
         e_p_base, e_th_base, e_ph_base,
@@ -243,14 +242,19 @@ def process_file(args):
     )
 
     mask_t = np.abs(t_vals) < 1.0
-    run_t  = run_base[mask_t]
-    mx2_t  = mx2_base[mask_t]
+    run_t = run_base[mask_t]
+    mx2_t = mx2_base[mask_t]
 
+    # Count how many survive |t|<1
     num_t_events = run_t.size
     print(f"[DEBUG][{label}] after |t|<1 cut: {num_t_events} events")
 
-    if num_t_events > 0:
-        # 5b) Which runs survive under |t|<1
+    if num_t_events == 0:
+        # No events survive the t-cut
+        # hist_t is already zeroed
+        pass
+    else:
+        # 5b) Select which runs now contribute under |t|<1
         selected_runs_t = set(np.unique(run_t))
 
         # 6b) Sum total beam charge for those runs (Q_t)
@@ -261,15 +265,17 @@ def process_file(args):
                 print(f"    [WARNING] (t) run {r} has zero or missing charge.")
             Q_t += q
 
-        # 7b) Mask t-filtered events so that only those runs remain
+        # 7b) Mask events so that only those runs remain
         mask_runs_t = np.isin(run_t, list(selected_runs_t))
         mx2_use_t   = mx2_t[mask_runs_t]
 
         if Q_t > 0.0 and mx2_use_t.size > 0:
             counts_t, _ = np.histogram(mx2_use_t, bins=bins)
             hist_t      = counts_t.astype(float) / Q_t
+        else:
+            hist_t = np.zeros(len(bins) - 1, dtype=float)
 
-    # Compute survival fraction in terms of raw event count
+    # Compute survival fraction in terms of event count
     survival_frac = 100.0 * num_t_events / num_base_events if num_base_events > 0 else 0.0
     print(f"[DEBUG][{label}] event survival = {survival_frac:.1f}% ({num_t_events}/{num_base_events})")
 
@@ -278,9 +284,9 @@ def process_file(args):
 
 def process_file_quick_stop(filepath, label, run_charges):
     """
-    “Quick-stop” version of process_file():
+    Quick‐stop version of process_file():
     - Only process the FIRST 5 unique runs to build both histograms.
-    - Uses uproot.iterate() to read in chunks, stops once 5 distinct runs appear in each category.
+    - Uses uproot.iterate() to read chunks of events, stops as soon as 5 distinct runs are found.
     - Returns (label, hist_no_t, hist_t).
     """
     bins = np.linspace(0.0, 1.5, 101)
@@ -289,13 +295,13 @@ def process_file_quick_stop(filepath, label, run_charges):
 
     seen_runs_no_t = set()
     seen_runs_t    = set()
-    mx2_acc_no_t   = []
-    mx2_acc_t      = []
+    mx2_acc_no_t = []
+    mx2_acc_t    = []
 
     total_base_events = 0
     total_t_events    = 0
 
-    # Iterate in chunks of 100 k events, stop once each set has 5 distinct runs
+    # Iterate in chunks of 100k events, stop once each set has 5 distinct runs
     for chunk in uproot.iterate(
             filepath + ":PhysicsEvents",
             ["runnum", "Mx2", "e_p", "e_theta", "e_phi", "p_p", "p_theta", "p_phi"],
@@ -321,9 +327,10 @@ def process_file_quick_stop(filepath, label, run_charges):
         p_th_base_chunk = p_th_chunk[mask_base]
         p_ph_base_chunk = p_ph_chunk[mask_base]
 
+        # Accumulate the count of base-filtered events
         total_base_events += run_base_chunk.size
 
-        # Now loop event-by-event until 5 distinct runs appear in both categories
+        # Loop event-by-event until we have 5 distinct runs in each category
         for (rnum, mx2_val, ep, eth, eph, pp, pth, pph) in zip(
                 run_base_chunk, mx2_base_chunk,
                 e_p_base_chunk, e_th_base_chunk, e_ph_base_chunk,
@@ -337,7 +344,7 @@ def process_file_quick_stop(filepath, label, run_charges):
                 if rnum in seen_runs_no_t:
                     mx2_acc_no_t.append(mx2_val)
 
-            # (2) Compute t for this event if we still need runs for the t-cut
+            # (2) Compute t for this event only if we still need runs for the t-cut
             if len(seen_runs_t) < 5:
                 t_val = compute_t_array(
                     np.array([rnum]),
@@ -350,21 +357,23 @@ def process_file_quick_stop(filepath, label, run_charges):
                     if rnum in seen_runs_t:
                         mx2_acc_t.append(mx2_val)
 
-            # If both categories already have 5 runs, break
-            if (len(seen_runs_no_t) >= 5) and (len(seen_runs_t) >= 5):
+            # If both categories already have 5 runs, stop reading further events
+            if len(seen_runs_no_t) >= 5 and len(seen_runs_t) >= 5:
                 break
 
-        if (len(seen_runs_no_t) >= 5) and (len(seen_runs_t) >= 5):
+        if len(seen_runs_no_t) >= 5 and len(seen_runs_t) >= 5:
             break
 
-    # We know total_base_events (though we only recorded Mx² from—at most—the first 5 runs),
-    # and mx2_acc_no_t, mx2_acc_t hold Mx² from “those first 5 runs” in each category.
-
+    # Now we know how many base‐filtered events we saw (though we only recorded Mx² from the first 5 runs)
     num_base_events = total_base_events
+    # The “no‐t” event count is total length of mx2_acc_no_t (but some events may belong to the same run; 
+    # for a quick sanity-check we’ll treat each appended Mx² as one event)
     num_no_t_events = len(mx2_acc_no_t)
-    num_t_events    = len(mx2_acc_t)
 
-    # Build “no-t” histogram
+    # The “t‐cut” event count is total length of mx2_acc_t
+    num_t_events = len(mx2_acc_t)
+
+    # Build “no‐t” histogram
     seen_runs_list_no_t = list(seen_runs_no_t)
     Q_no_t = sum(run_charges.get(r, 0.0) for r in seen_runs_list_no_t)
     if Q_no_t > 0.0 and num_no_t_events > 0:
@@ -373,7 +382,7 @@ def process_file_quick_stop(filepath, label, run_charges):
     else:
         hist_no_t = np.zeros(len(bins) - 1, dtype=float)
 
-    # Build “t-cut” histogram
+    # Build “t‐cut” histogram
     seen_runs_list_t = list(seen_runs_t)
     Q_t = sum(run_charges.get(r, 0.0) for r in seen_runs_list_t)
     if Q_t > 0.0 and num_t_events > 0:
@@ -382,6 +391,7 @@ def process_file_quick_stop(filepath, label, run_charges):
     else:
         hist_t = np.zeros(len(bins) - 1, dtype=float)
 
+    # Print out counts and survival fraction
     survival_frac = 100.0 * num_t_events / num_base_events if num_base_events > 0 else 0.0
     print(f"[DEBUG][{label}, quick] base_e = {num_base_events}  |  t_e = {num_t_events}  |  "
           f"survival = {survival_frac:.1f}% ({num_t_events}/{num_base_events})")
@@ -390,25 +400,24 @@ def process_file_quick_stop(filepath, label, run_charges):
 
 
 # -----------------------------------------------------------------------------
-# PLOTTING FUNCTION: 2×2 canvas
+# PLOTTING FUNCTION
 # -----------------------------------------------------------------------------
 
-def make_four_panel_plots(nh3_files, c_files, h2_files, run_charges, outpath):
+def make_normalized_Mx2_plots(nh3_files, c_files, h2_files, run_charges, outpath):
     """
-    Build a 2×2 figure (no shared y):
-      ┌─────────────────────────────────────────┐ ┌─────────────────────────────────────────┐
-      │ (0,0) NH₃ + H₂: Mx² (no t-cut)         │ │ (0,1)  C + H₂: Mx² (no t-cut)          │
-      │               (step(hist_no_t))        │ │               (step(hist_no_t))        │
-      └─────────────────────────────────────────┘ └─────────────────────────────────────────┘
-      ┌─────────────────────────────────────────┐ ┌─────────────────────────────────────────┐
-      │ (1,0) [NH₃ – s·C] + H₂: Mx² (no t-cut) │ │ (1,1) [NH₃(x)−C(x)] / NH₃(x)            │
-      │               (step(diff_no_t))        │ │   0.75<Mx²<1.05, |t|<1, bin in x        │
-      └─────────────────────────────────────────┘ └─────────────────────────────────────────┘
+    Build a 2×3 figure (two rows, three columns):
+      - Top row: no |t| < 1 cut           (runnum ≤ MAX_RUNNUM, Mx² ≤ 2.0)
+        • Panel(0,0): NH₃ + H₂
+        • Panel(0,1):  C   + H₂
+        • Panel(0,2): Differences [NH₃–C] + H₂
+      - Bottom row: with |t| < 1 cut     (in addition to above)
+        • Panel(1,0): NH₃ + H₂ (|t|<1)
+        • Panel(1,1):  C   + H₂ (|t|<1)
+        • Panel(1,2): Differences [NH₃–C] + H₂ (|t|<1)
 
-    Uses ProcessPoolExecutor to parallelize the first three Mx² histograms,
-    then does a separate x–distribution for panel (1,1).
+    Uses ProcessPoolExecutor to parallelize histogramming of each file.
     """
-    # 1) Build tasks for parallel Mx² histogramming
+    # 1) Prepare tasks
     tasks = []
     for fp, lbl in nh3_files + c_files + h2_files:
         tasks.append((fp, lbl, run_charges, QUICK_RUN))
@@ -424,81 +433,66 @@ def make_four_panel_plots(nh3_files, c_files, h2_files, run_charges, outpath):
                 results[label] = (hist_no_t, hist_t)
             except Exception as e:
                 print(f"[ERROR] processing {lbl}: {e}")
-                # On error, store zero arrays
                 results[lbl] = (np.zeros(100, dtype=float), np.zeros(100, dtype=float))
 
-    # 3) Prepare bins & bin centers for Mx²
-    bins_mx2     = np.linspace(0.0, 1.5, 101)
-    centers_mx2  = 0.5 * (bins_mx2[:-1] + bins_mx2[1:])
+    # 3) Prepare bins & bin centers
+    bins = np.linspace(0.0, 1.5, 101)
+    bin_centers = 0.5 * (bins[:-1] + bins[1:])
 
-    # 4) Start the 2×2 figure (no shared y)
-    fig, axes = plt.subplots(2, 2, figsize=(16, 12), sharey=False)
-    axes = axes.flatten()
+    # 4) Create the 2×3 figure (no shared y between rows)
+    fig, axes = plt.subplots(2, 3, figsize=(18, 12), sharey=False)
 
-    # Keep track of maxima to set dynamic y‐limits:
-    top_row_vals     = []
-    bottom_left_vals = []
+    # Keep track of maxima in each row to set dynamic y‐limits
+    top_row_vals = []
+    bottom_row_vals = []
 
     ## ────────────────────────────────────────────────────────────────────────────
-    # Panel (0,0): NH₃ + H₂ (no t-cut)
+    # Top row: no |t| < 1 cut
     ## ────────────────────────────────────────────────────────────────────────────
-    ax00 = axes[0]
+
+    # Panel (0,0): NH₃ + H₂ (no-t)
     for _, lbl in nh3_files:
         hist_no_t, _ = results.get(lbl, (np.zeros(100), np.zeros(100)))
-        ax00.step(bins_mx2[:-1], hist_no_t, where='post', label=lbl)
+        axes[0, 0].step(bins[:-1], hist_no_t, where='post', label=lbl)
         top_row_vals.append(hist_no_t.max())
 
     h2_label = h2_files[0][1]
     hist_h2_no_t, _ = results.get(h2_label, (np.zeros(100), np.zeros(100)))
-    ax00.step(
-        bins_mx2[:-1], hist_h2_no_t, where='post',
+    axes[0, 0].step(
+        bins[:-1], hist_h2_no_t, where='post',
         color='k', linestyle='-', label=h2_label
     )
     top_row_vals.append(hist_h2_no_t.max())
 
-    ax00.set(
-        title="NH₃ + H₂: Normalized $M_{x}^2$ (no $t$-cut)",
-        xlabel=r"$M_{x}^2$ (GeV$^2$)",
+    axes[0, 0].set(
+        title="NH₃ + H₂: Normalized Mx² (no t-cut)",
+        xlabel=r"$M_x^2$ (GeV$^2$)",
         ylabel="events / nC",
         xlim=(0.0, 1.5)
     )
-    ax00.legend(loc='upper right', fontsize='small')
+    axes[0, 0].legend(loc='upper right', fontsize='small')
 
-    ## ────────────────────────────────────────────────────────────────────────────
-    # Panel (0,1): C + H₂ (no t-cut)
-    ## ────────────────────────────────────────────────────────────────────────────
-    ax01 = axes[1]
+    # Panel (0,1): C + H₂ (no-t)
     for _, lbl in c_files:
         hist_no_t, _ = results.get(lbl, (np.zeros(100), np.zeros(100)))
-        ax01.step(bins_mx2[:-1], hist_no_t, where='post', label=lbl)
+        axes[0, 1].step(bins[:-1], hist_no_t, where='post', label=lbl)
         top_row_vals.append(hist_no_t.max())
 
-    ax01.step(
-        bins_mx2[:-1], hist_h2_no_t, where='post',
+    axes[0, 1].step(
+        bins[:-1], hist_h2_no_t, where='post',
         color='k', linestyle='-', label=h2_label
     )
     top_row_vals.append(hist_h2_no_t.max())
 
-    ax01.set(
-        title="C + H₂: Normalized $M_{x}^2$ (no $t$-cut)",
-        xlabel=r"$M_{x}^2$ (GeV$^2$)",
+    axes[0, 1].set(
+        title="C + H₂: Normalized Mx² (no t-cut)",
+        xlabel=r"$M_x^2$ (GeV$^2$)",
         xlim=(0.0, 1.5)
     )
-    ax01.legend(loc='upper right', fontsize='small')
+    axes[0, 1].legend(loc='upper right', fontsize='small')
 
-    # Determine a common y‐limit for the entire top row:
-    y_top = 1.1 * max(top_row_vals) if top_row_vals else 0.1
-    ax00.set(ylim=(0.0, y_top))
-    ax01.set(ylim=(0.0, y_top))
-
-    ## ────────────────────────────────────────────────────────────────────────────
-    # Panel (1,0): [NH₃ – s·C] + H₂ (no t-cut)
-    ## ────────────────────────────────────────────────────────────────────────────
-    ax10 = axes[2]
+    # Panel (0,2): Differences [NH₃ – C] + H₂ (no-t)
     period_names = ["Su22", "Fa22", "Sp23"]
-    scale_dict   = {}
-
-    # Gather NH₃ and C no-t histograms into dictionaries
     nh3_hist_no_t = {lbl: results.get(lbl, (np.zeros(100), np.zeros(100)))[0] for _, lbl in nh3_files}
     c_hist_no_t   = {lbl: results.get(lbl, (np.zeros(100), np.zeros(100)))[0] for _, lbl in c_files}
 
@@ -509,207 +503,132 @@ def make_four_panel_plots(nh3_files, c_files, h2_files, run_charges, outpath):
         nh3_vals = nh3_hist_no_t.get(nh3_lbl, np.zeros(100))
         c_vals   = c_hist_no_t.get(c_lbl,   np.zeros(100))
 
-        # Scale C so that NH₃ and C match in 0 ≤ Mx² < 0.5
-        mask_0_5 = (centers_mx2 >= 0.0) & (centers_mx2 < 0.5)
+        mask_0_5 = (bin_centers >= 0.0) & (bin_centers < 0.5)
         nh3_sum = nh3_vals[mask_0_5].sum()
         c_sum   = c_vals[mask_0_5].sum()
         scale = (nh3_sum / c_sum) if c_sum > 0.0 else 0.0
-        scale_dict[period_label] = scale
-        print(f"[DEBUG][no-t] {period_label}: NH₃ sum(0–0.5)={nh3_sum:.3f}, C sum(0–0.5)={c_sum:.3f}, scale={scale:.3f}")
+        print(f"[DEBUG] (no-t) {period_label}: NH₃ sum(0–0.5)={nh3_sum:.3f}, C sum(0–0.5)={c_sum:.3f}, scale={scale:.3f}")
         diff_no_t[period_label] = nh3_vals - (c_vals * scale)
 
     for idx, period_label in enumerate(period_names):
         diff = diff_no_t.get(period_label, np.zeros(100))
         style = ['-', '--', '-.', ':'][idx % 4]
-        ax10.step(
-            bins_mx2[:-1], diff, where='post',
-            linestyle=style, label=f"{period_label} NH₃–s·C"
+        axes[0, 2].step(
+            bins[:-1], diff, where='post',
+            linestyle=style, label=f"{period_label} NH₃–C"
         )
-        bottom_left_vals.append(diff.max())
+        top_row_vals.append(diff.max())
 
-    # Overplot H₂ (no-t) on the same panel
-    ax10.step(
-        bins_mx2[:-1], hist_h2_no_t, where='post',
+    axes[0, 2].step(
+        bins[:-1], hist_h2_no_t, where='post',
         color='k', linestyle='-', label=h2_label
     )
-    bottom_left_vals.append(hist_h2_no_t.max())
+    top_row_vals.append(hist_h2_no_t.max())
 
-    # Annotate the scale values on this panel
-    text_y = y_top * 0.9
-    x_text = 0.02
-    y_offset = (y_top * 0.07)
-    for i, period_label in enumerate(period_names):
-        s = scale_dict[period_label]
-        ax10.text(x_text, text_y - i * y_offset,
-                  f"{period_label} scale s = {s:.3f}",
-                  color=ax10.lines[i].get_color(),
-                  fontsize='small')
+    # Determine top‐row y‐limit = 1.1 × maximum of top_row_vals
+    y_top = 1.1 * max(top_row_vals) if top_row_vals else 0.1
+    for col in range(3):
+        axes[0, col].set(ylim=(0.0, y_top))
 
-    ax10.set(
-        title=r"(NH₃ – $s\cdot$C) + H₂ (no $t$-cut)",
-        xlabel=r"$M_{x}^2$ (GeV$^2$)",
+    axes[0, 2].set(
+        title="(NH₃ – C) + H₂ (no t-cut)",
+        xlabel=r"$M_x^2$ (GeV$^2$)",
         xlim=(0.0, 1.5)
     )
-    ax10.legend(loc='upper right', fontsize='small')
+    axes[0, 2].legend(loc='upper right', fontsize='small')
 
     ## ────────────────────────────────────────────────────────────────────────────
-    # Panel (1,1): [NH₃(x)–C(x)]/NH₃(x) under 0.75<Mx²<1.05, |t|<1
+    # Bottom row: with |t| < 1 cut
     ## ────────────────────────────────────────────────────────────────────────────
-    ax11 = axes[3]
 
-    # We will build NH₃(x) and C(x) histograms under:
-    #   0.75 < Mx² < 1.05,   |t| < 1.0,   run ≤ MAX_RUNNUM.
-    # Then plot [NH₃(x) – C(x)]/NH₃(x) vs x.
-    #
-    # Use 50 uniform bins in x ∈ [0,1].
-    x_bins     = np.linspace(0.0, 1.0, 51)
-    x_centers  = 0.5 * (x_bins[:-1] + x_bins[1:])
+    bottom_row_vals = []
 
-    # Initialize accumulators:
-    nh3_counts_x = np.zeros(len(x_bins) - 1, dtype=float)
-    c_counts_x   = np.zeros(len(x_bins) - 1, dtype=float)
-    nh3_charge_total = 0.0
-    c_charge_total   = 0.0
+    # Panel (1,0): NH₃ + H₂ (|t|<1)
+    for _, lbl in nh3_files:
+        _, hist_t = results.get(lbl, (np.zeros(100), np.zeros(100)))
+        axes[1, 0].step(bins[:-1], hist_t, where='post', label=lbl)
+        bottom_row_vals.append(hist_t.max())
 
-    # ---- Build NH₃(x) ----
-    for filepath, label in nh3_files:
-        tree = uproot.open(filepath)["PhysicsEvents"]
-        run_arr  = tree["runnum"].array(library="np").astype(int)
-        mx2_arr  = tree["Mx2"].array(library="np")
-        x_arr    = tree["x"].array(library="np")
-        e_p_arr  = tree["e_p"].array(library="np")
-        e_th_arr = tree["e_theta"].array(library="np")
-        e_ph_arr = tree["e_phi"].array(library="np")
-        p_p_arr  = tree["p_p"].array(library="np")
-        p_th_arr = tree["p_theta"].array(library="np")
-        p_ph_arr = tree["p_phi"].array(library="np")
-
-        # 1) Baseline filter: run ≤ MAX_RUNNUM AND 0.75 < Mx² < 1.05
-        mask_base_x = (run_arr <= MAX_RUNNUM) & (mx2_arr > 0.75) & (mx2_arr < 1.05)
-        run_base_x  = run_arr[mask_base_x]
-        mx2_base_x  = mx2_arr[mask_base_x]
-        x_base_x    = x_arr[mask_base_x]
-        e_p_base_x  = e_p_arr[mask_base_x]
-        e_th_base_x = e_th_arr[mask_base_x]
-        e_ph_base_x = e_ph_arr[mask_base_x]
-        p_p_base_x  = p_p_arr[mask_base_x]
-        p_th_base_x = p_th_arr[mask_base_x]
-        p_ph_base_x = p_ph_arr[mask_base_x]
-
-        if run_base_x.size == 0:
-            continue
-
-        # 2) Compute t-array for these base-filtered events
-        t_vals_x = compute_t_array(
-            run_base_x,
-            e_p_base_x, e_th_base_x, e_ph_base_x,
-            p_p_base_x, p_th_base_x, p_ph_base_x
-        )
-        mask_t_x = np.abs(t_vals_x) < 1.0
-
-        run_t_x = run_base_x[mask_t_x]
-        x_t_x   = x_base_x[mask_t_x]
-
-        if run_t_x.size == 0:
-            continue
-
-        # 3) Sum charge over unique runs in this selection
-        unique_runs = np.unique(run_t_x)
-        for r in unique_runs:
-            q = run_charges.get(r, 0.0)
-            if q <= 0.0:
-                print(f"    [WARNING][NH₃,x] run {r} has zero or missing charge.")
-            nh3_charge_total += q
-
-        # 4) Fill “x” histogram for events whose run ∈ unique_runs
-        mask_run_select = np.isin(run_t_x, unique_runs)
-        x_select = x_t_x[mask_run_select]
-        if x_select.size > 0:
-            counts_x, _ = np.histogram(x_select, bins=x_bins)
-            nh3_counts_x += counts_x
-
-    # ---- Build C(x) ----
-    for filepath, label in c_files:
-        tree = uproot.open(filepath)["PhysicsEvents"]
-        run_arr  = tree["runnum"].array(library="np").astype(int)
-        mx2_arr  = tree["Mx2"].array(library="np")
-        x_arr    = tree["x"].array(library="np")
-        e_p_arr  = tree["e_p"].array(library="np")
-        e_th_arr = tree["e_theta"].array(library="np")
-        e_ph_arr = tree["e_phi"].array(library="np")
-        p_p_arr  = tree["p_p"].array(library="np")
-        p_th_arr = tree["p_theta"].array(library="np")
-        p_ph_arr = tree["p_phi"].array(library="np")
-
-        mask_base_x = (run_arr <= MAX_RUNNUM) & (mx2_arr > 0.75) & (mx2_arr < 1.05)
-        run_base_x  = run_arr[mask_base_x]
-        mx2_base_x  = mx2_arr[mask_base_x]
-        x_base_x    = x_arr[mask_base_x]
-        e_p_base_x  = e_p_arr[mask_base_x]
-        e_th_base_x = e_th_arr[mask_base_x]
-        e_ph_base_x = e_ph_arr[mask_base_x]
-        p_p_base_x  = p_p_arr[mask_base_x]
-        p_th_base_x = p_th_arr[mask_base_x]
-        p_ph_base_x = p_ph_arr[mask_base_x]
-
-        if run_base_x.size == 0:
-            continue
-
-        t_vals_x = compute_t_array(
-            run_base_x,
-            e_p_base_x, e_th_base_x, e_ph_base_x,
-            p_p_base_x, p_th_base_x, p_ph_base_x
-        )
-        mask_t_x = np.abs(t_vals_x) < 1.0
-
-        run_t_x = run_base_x[mask_t_x]
-        x_t_x   = x_base_x[mask_t_x]
-
-        if run_t_x.size == 0:
-            continue
-
-        unique_runs = np.unique(run_t_x)
-        for r in unique_runs:
-            q = run_charges.get(r, 0.0)
-            if q <= 0.0:
-                print(f"    [WARNING][C,x] run {r} has zero or missing charge.")
-            c_charge_total += q
-
-        mask_run_select = np.isin(run_t_x, unique_runs)
-        x_select = x_t_x[mask_run_select]
-        if x_select.size > 0:
-            counts_x, _ = np.histogram(x_select, bins=x_bins)
-            c_counts_x += counts_x
-
-    # 5) Now build charge‐normalized NH₃(x) and C(x):
-    nh3_norm_x = np.zeros_like(nh3_counts_x, dtype=float)
-    c_norm_x   = np.zeros_like(c_counts_x, dtype=float)
-
-    if nh3_charge_total > 0.0:
-        nh3_norm_x = nh3_counts_x.astype(float) / nh3_charge_total
-    if c_charge_total > 0.0:
-        c_norm_x = c_counts_x.astype(float) / c_charge_total
-
-    # 6) Finally compute ratio:  [NH₃(x) – C(x)] / NH₃(x)  bin‐by‐bin
-    ratio_x = np.zeros_like(nh3_norm_x, dtype=float)
-    for i in range(len(ratio_x)):
-        if nh3_norm_x[i] > 0.0:
-            ratio_x[i] = (nh3_norm_x[i] - c_norm_x[i]) / nh3_norm_x[i]
-        else:
-            ratio_x[i] = 0.0
-
-    # Plot ratio on ax11
-    ax11.step(x_centers, ratio_x, where='mid', color='m', label=r"$(\mathrm{NH_3}-\mathrm{C})/\mathrm{NH_3}$")
-    ax11.set(
-        title=r"$(\mathrm{NH_3}(x)-\mathrm{C}(x))\,/\,\mathrm{NH_3}(x)$, $0.75<M_x^2<1.05$, $|t|<1$",
-        xlabel=r"$x_{B}$",
-        ylabel="ratio",
-        xlim=(0.0, 1.0),
-        ylim=(0.0, 1.0)
+    _, hist_h2_t = results.get(h2_label, (np.zeros(100), np.zeros(100)))
+    axes[1, 0].step(
+        bins[:-1], hist_h2_t, where='post',
+        color='k', linestyle='-', label=h2_label
     )
-    ax11.legend(loc='upper right', fontsize='small')
+    bottom_row_vals.append(hist_h2_t.max())
 
-    # 7) Save the 2×2 figure
+    axes[1, 0].set(
+        title="NH₃ + H₂: Normalized Mx² (|t|<1)",
+        xlabel=r"$M_x^2$ (GeV$^2$)",
+        ylabel="events / nC",
+        xlim=(0.0, 1.5)
+    )
+    axes[1, 0].legend(loc='upper right', fontsize='small')
+
+    # Panel (1,1): C + H₂ (|t|<1)
+    for _, lbl in c_files:
+        _, hist_t = results.get(lbl, (np.zeros(100), np.zeros(100)))
+        axes[1, 1].step(bins[:-1], hist_t, where='post', label=lbl)
+        bottom_row_vals.append(hist_t.max())
+
+    axes[1, 1].step(
+        bins[:-1], hist_h2_t, where='post',
+        color='k', linestyle='-', label=h2_label
+    )
+    bottom_row_vals.append(hist_h2_t.max())
+
+    axes[1, 1].set(
+        title="C + H₂: Normalized Mx² (|t|<1)",
+        xlabel=r"$M_x^2$ (GeV$^2$)",
+        xlim=(0.0, 1.5)
+    )
+    axes[1, 1].legend(loc='upper right', fontsize='small')
+
+    # Panel (1,2): Differences [NH₃ – C] + H₂ (|t|<1)
+    nh3_hist_t = {lbl: results.get(lbl, (np.zeros(100), np.zeros(100)))[1] for _, lbl in nh3_files}
+    c_hist_t   = {lbl: results.get(lbl, (np.zeros(100), np.zeros(100)))[1] for _, lbl in c_files}
+
+    diff_t = {}
+    for period_label in period_names:
+        nh3_lbl = f"{period_label}-NH3"
+        c_lbl   = f"{period_label}-C"
+        nh3_vals = nh3_hist_t.get(nh3_lbl, np.zeros(100))
+        c_vals   = c_hist_t.get(c_lbl,   np.zeros(100))
+
+        mask_0_5 = (bin_centers >= 0.0) & (bin_centers < 0.5)
+        nh3_sum = nh3_vals[mask_0_5].sum()
+        c_sum   = c_vals[mask_0_5].sum()
+        scale = (nh3_sum / c_sum) if c_sum > 0.0 else 0.0
+        print(f"[DEBUG] (|t|<1) {period_label}: NH₃ sum(0–0.5)={nh3_sum:.3f}, C sum(0–0.5)={c_sum:.3f}, scale={scale:.3f}")
+        diff_t[period_label] = nh3_vals - (c_vals * scale)
+
+    for idx, period_label in enumerate(period_names):
+        diff = diff_t.get(period_label, np.zeros(100))
+        style = ['-', '--', '-.', ':'][idx % 4]
+        axes[1, 2].step(
+            bins[:-1], diff, where='post',
+            linestyle=style, label=f"{period_label} NH₃–C"
+        )
+        bottom_row_vals.append(diff.max())
+
+    axes[1, 2].step(
+        bins[:-1], hist_h2_t, where='post',
+        color='k', linestyle='-', label=h2_label
+    )
+    bottom_row_vals.append(hist_h2_t.max())
+
+    # Determine bottom‐row y‐limit = 1.1 × maximum of bottom_row_vals
+    y_bottom = 1.1 * max(bottom_row_vals) if bottom_row_vals else 0.1
+    for col in range(3):
+        axes[1, col].set(ylim=(0.0, y_bottom))
+
+    axes[1, 2].set(
+        title="(NH₃ – C) + H₂ (|t|<1)",
+        xlabel=r"$M_x^2$ (GeV$^2$)",
+        xlim=(0.0, 1.5)
+    )
+    axes[1, 2].legend(loc='upper right', fontsize='small')
+
+    # 5) Save the 2×3 figure
     os.makedirs(os.path.dirname(outpath), exist_ok=True)
     plt.tight_layout()
     plt.savefig(outpath)
@@ -721,11 +640,11 @@ def make_four_panel_plots(nh3_files, c_files, h2_files, run_charges, outpath):
 # -----------------------------------------------------------------------------
 
 def main():
-    # 1) Load run charges (only runs ≤ MAX_RUNNUM)
+    # Load run charges (only runs ≤ MAX_RUNNUM)
     run_charges = parse_run_charges(CSV_PATH)
 
-    # 2) Make the 2×2 comparison plot
-    make_four_panel_plots(NH3_FILES, C_FILES, H2_FILES, run_charges, FOUR_PANEL_OUTPUT)
+    # Generate the 2×3 comparison plot (parallelized)
+    make_normalized_Mx2_plots(NH3_FILES, C_FILES, H2_FILES, run_charges, THREE_PANEL_OUTPUT)
 
 
 if __name__ == "__main__":
