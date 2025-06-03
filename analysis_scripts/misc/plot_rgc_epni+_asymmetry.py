@@ -496,8 +496,8 @@ tick_fontsize = 10
 
 # Top-left: Q² vs x_B
 ax = axes[0, 0]
-ax.plot(xB_Su22, Q2_Su22, marker_Su22, color=color_Su22, markersize=6, linestyle='-', label='Su22')
-ax.plot(xB_Sp23, Q2_Sp23, marker_Sp23, color=color_Sp23, markersize=6, linestyle='--', label='Sp23')
+ax.plot(xB_Su22, Q2_Su22, marker_Su22, color=color_Su22, markersize=6, linestyle='', label='Su22')
+ax.plot(xB_Sp23, Q2_Sp23, marker_Sp23, color=color_Sp23, markersize=6, linestyle='', label='Sp23')
 ax.set_xlabel(r"$x_{B}$", fontsize=label_fontsize)
 ax.set_ylabel(r"$\langle Q^{2} \rangle\ \mathrm{(GeV^{2})}$", fontsize=label_fontsize)
 ax.set_xlim(0.08, 0.56)
@@ -506,8 +506,8 @@ ax.tick_params(axis='both', labelsize=tick_fontsize)
 
 # Top-right: W vs x_B
 ax = axes[0, 1]
-ax.plot(xB_Su22, W_Su22, marker_Su22, color=color_Su22, markersize=6, linestyle='-', label='Su22')
-ax.plot(xB_Sp23, W_Sp23, marker_Sp23, color=color_Sp23, markersize=6, linestyle='--', label='Sp23')
+ax.plot(xB_Su22, W_Su22, marker_Su22, color=color_Su22, markersize=6, linestyle='', label='Su22')
+ax.plot(xB_Sp23, W_Sp23, marker_Sp23, color=color_Sp23, markersize=6, linestyle='', label='Sp23')
 ax.set_xlabel(r"$x_{B}$", fontsize=label_fontsize)
 ax.set_ylabel(r"$\langle W \rangle\ \mathrm{(GeV)}$", fontsize=label_fontsize)
 ax.set_xlim(0.08, 0.56)
@@ -516,8 +516,8 @@ ax.tick_params(axis='both', labelsize=tick_fontsize)
 
 # Bottom-left: z vs x_B
 ax = axes[1, 0]
-ax.plot(xB_Su22, z_Su22, marker_Su22, color=color_Su22, markersize=6, linestyle='-', label='Su22')
-ax.plot(xB_Sp23, z_Sp23, marker_Sp23, color=color_Sp23, markersize=6, linestyle='--', label='Sp23')
+ax.plot(xB_Su22, z_Su22, marker_Su22, color=color_Su22, markersize=6, linestyle='', label='Su22')
+ax.plot(xB_Sp23, z_Sp23, marker_Sp23, color=color_Sp23, markersize=6, linestyle='', label='Sp23')
 ax.set_xlabel(r"$x_{B}$", fontsize=label_fontsize)
 ax.set_ylabel(r"$\langle z \rangle$", fontsize=label_fontsize)
 ax.set_xlim(0.08, 0.56)
@@ -527,8 +527,8 @@ ax.tick_params(axis='both', labelsize=tick_fontsize)
 
 # Bottom-right: x_F vs x_B
 ax = axes[1, 1]
-ax.plot(xB_Su22, xF_Su22, marker_Su22, color=color_Su22, markersize=6, linestyle='-', label='Su22')
-ax.plot(xB_Sp23, xF_Sp23, marker_Sp23, color=color_Sp23, markersize=6, linestyle='--', label='Sp23')
+ax.plot(xB_Su22, xF_Su22, marker_Su22, color=color_Su22, markersize=6, linestyle='', label='Su22')
+ax.plot(xB_Sp23, xF_Sp23, marker_Sp23, color=color_Sp23, markersize=6, linestyle='', label='Sp23')
 ax.set_xlabel(r"$x_{B}$", fontsize=label_fontsize)
 ax.set_ylabel(r"$\langle x_{F} \rangle$", fontsize=label_fontsize)
 ax.set_xlim(0.08, 0.56)
@@ -537,8 +537,8 @@ ax.tick_params(axis='both', labelsize=tick_fontsize)
 
 # Add a single legend for the entire figure
 handles = [
-    Line2D([0], [0], marker=marker_Su22, color=color_Su22, linestyle='-', label='Su22', markersize=6),
-    Line2D([0], [0], marker=marker_Sp23, color=color_Sp23, linestyle='--', label='Sp23', markersize=6)
+    Line2D([0], [0], marker=marker_Su22, color=color_Su22, linestyle='', label='Su22', markersize=6),
+    Line2D([0], [0], marker=marker_Sp23, color=color_Sp23, linestyle='', label='Sp23', markersize=6)
 ]
 fig.legend(
     handles=handles,
