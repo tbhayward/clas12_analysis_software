@@ -263,7 +263,7 @@ ax2.set_ylabel(r"$F_{UL}^{\sin\,n\phi}/F_{UU}$", fontsize=label_fontsize)
 ax2.axhline(0, color="black", linestyle="--", linewidth=1.2)
 ax2.grid(True, linestyle="--", alpha=0.6)
 
-# Legend for harmonic n
+# Legend for harmonic n (subplot 2)
 legend_n2 = ax2.legend(
     handles=[
         Line2D([0], [0], marker='o', mfc='none', mec='black', linestyle='', label='n=1'),
@@ -277,8 +277,9 @@ legend_n2 = ax2.legend(
     title_fontsize=12
 )
 legend_n2.get_frame().set_alpha(0.9)
+ax2.add_artist(legend_n2)
 
-# Legend for run periods
+# Legend for run periods (subplot 2)
 legend_runs2 = ax2.legend(
     handles=[
         Line2D([0], [0], marker='o', color=colors["Su22"], linestyle='', label='Su22'),
@@ -336,7 +337,7 @@ ax3.set_ylabel(r"$F_{LL}^{\cos\,n\phi}/F_{UU}$", fontsize=label_fontsize)
 ax3.axhline(0, color="black", linestyle="--", linewidth=1.2)
 ax3.grid(True, linestyle="--", alpha=0.6)
 
-# Legend for harmonic n
+# Legend for harmonic n (subplot 3)
 legend_n3 = ax3.legend(
     handles=[
         Line2D([0], [0], marker='o', mfc='none', mec='black', linestyle='', label='n=0'),
@@ -350,8 +351,9 @@ legend_n3 = ax3.legend(
     title_fontsize=12
 )
 legend_n3.get_frame().set_alpha(0.9)
+ax3.add_artist(legend_n3)
 
-# Legend for run periods
+# Legend for run periods (subplot 3)
 legend_runs3 = ax3.legend(
     handles=[
         Line2D([0], [0], marker='o', color=colors["Su22"], linestyle='', label='Su22'),
