@@ -10,7 +10,7 @@ from concurrent.futures import ProcessPoolExecutor, as_completed
 # -----------------------------------------------------------------------------
 
 # Toggle for quick debugging (process only first 5 runs per period)
-QUICK_RUN = False
+QUICK_RUN = True
 
 # Maximum run number to include
 MAX_RUNNUM = 17768
@@ -401,7 +401,7 @@ def make_four_panel_plots(nh3_files, c_files, h2_files, run_charges, outpath):
       │               (step(hist_no_t))        │ │               (step(hist_no_t))        │
       └─────────────────────────────────────────┘ └─────────────────────────────────────────┘
       ┌─────────────────────────────────────────┐ ┌─────────────────────────────────────────┐
-      │ (1,0) [NH₃–C] + H₂: Mx² (no t-cut)     │ │ (1,1) [NH₃(x)−C(x)] / NH₃(x)            │
+      │ (1,0) [NH₃ – s·C] + H₂: Mx² (no t-cut) │ │ (1,1) [NH₃(x)−C(x)] / NH₃(x)            │
       │               (step(diff_no_t))        │ │   0.75<Mx²<1.05, |t|<1, bin in x        │
       └─────────────────────────────────────────┘ └─────────────────────────────────────────┘
 
@@ -436,7 +436,7 @@ def make_four_panel_plots(nh3_files, c_files, h2_files, run_charges, outpath):
     axes = axes.flatten()
 
     # Keep track of maxima to set dynamic y‐limits:
-    top_row_vals    = []
+    top_row_vals     = []
     bottom_left_vals = []
 
     ## ────────────────────────────────────────────────────────────────────────────
@@ -492,10 +492,11 @@ def make_four_panel_plots(nh3_files, c_files, h2_files, run_charges, outpath):
     ax01.set(ylim=(0.0, y_top))
 
     ## ────────────────────────────────────────────────────────────────────────────
-    # Panel (1,0): [NH₃ – C] + H₂ (no t-cut)
+    # Panel (1,0): [NH₃ – s·C] + H₂ (no t-cut)
     ## ────────────────────────────────────────────────────────────────────────────
     ax10 = axes[2]
     period_names = ["Su22", "Fa22", "Sp23"]
+    scale_dict   = {}
 
     # Gather NH₃ and C no-t histograms into dictionaries
     nh3_hist_no_t = {lbl: results.get(lbl, (np.zeros(100), np.zeros(100)))[0] for _, lbl in nh3_files}
@@ -513,6 +514,7 @@ def make_four_panel_plots(nh3_files, c_files, h2_files, run_charges, outpath):
         nh3_sum = nh3_vals[mask_0_5].sum()
         c_sum   = c_vals[mask_0_5].sum()
         scale = (nh3_sum / c_sum) if c_sum > 0.0 else 0.0
+        scale_dict[period_label] = scale
         print(f"[DEBUG][no-t] {period_label}: NH₃ sum(0–0.5)={nh3_sum:.3f}, C sum(0–0.5)={c_sum:.3f}, scale={scale:.3f}")
         diff_no_t[period_label] = nh3_vals - (c_vals * scale)
 
@@ -521,7 +523,7 @@ def make_four_panel_plots(nh3_files, c_files, h2_files, run_charges, outpath):
         style = ['-', '--', '-.', ':'][idx % 4]
         ax10.step(
             bins_mx2[:-1], diff, where='post',
-            linestyle=style, label=f"{period_label} NH₃–C"
+            linestyle=style, label=f"{period_label} NH₃–s·C"
         )
         bottom_left_vals.append(diff.max())
 
@@ -532,40 +534,46 @@ def make_four_panel_plots(nh3_files, c_files, h2_files, run_charges, outpath):
     )
     bottom_left_vals.append(hist_h2_no_t.max())
 
+    # Annotate the scale values on this panel
+    text_y = y_top * 0.9
+    x_text = 0.02
+    y_offset = (y_top * 0.07)
+    for i, period_label in enumerate(period_names):
+        s = scale_dict[period_label]
+        ax10.text(x_text, text_y - i * y_offset,
+                  f"{period_label} scale s = {s:.3f}",
+                  color=ax10.lines[i].get_color(),
+                  fontsize='small')
+
     ax10.set(
-        title="(NH₃ – C) + H₂ (no $t$-cut)",
+        title=r"(NH₃ – $s\cdot$C) + H₂ (no $t$-cut)",
         xlabel=r"$M_{x}^2$ (GeV$^2$)",
         xlim=(0.0, 1.5)
     )
     ax10.legend(loc='upper right', fontsize='small')
 
     ## ────────────────────────────────────────────────────────────────────────────
-    # Panel (1,1): Ratio versus xB under 0.75<Mx²<1.05, |t|<1
+    # Panel (1,1): [NH₃(x)–C(x)]/NH₃(x) under 0.75<Mx²<1.05, |t|<1
     ## ────────────────────────────────────────────────────────────────────────────
     ax11 = axes[3]
 
-    # We will build NH₃(x) and C(x) histograms in the same run, under the simultaneous cuts:
-    #   0.75 < Mx² < 1.05,   |t| < 1.0
-    # Then plot [NH₃(x) - C(x)]/NH₃(x)  vs  x.
+    # We will build NH₃(x) and C(x) histograms under:
+    #   0.75 < Mx² < 1.05,   |t| < 1.0,   run ≤ MAX_RUNNUM.
+    # Then plot [NH₃(x) – C(x)]/NH₃(x) vs x.
     #
-    # We'll use 50 uniform bins in x ∈ [0,1].  (You may adjust as needed.)
-    x_bins = np.linspace(0.0, 1.0, 51)
-    x_centers = 0.5 * (x_bins[:-1] + x_bins[1:])
+    # Use 50 uniform bins in x ∈ [0,1].
+    x_bins     = np.linspace(0.0, 1.0, 51)
+    x_centers  = 0.5 * (x_bins[:-1] + x_bins[1:])
 
-    # Initialize “accumulated” arrays for NH₃ and C
-    #   – We want counts per x-bin, then normalize by total charge so that NH₃(x), C(x) 
-    #     each become “events / nC”.
+    # Initialize accumulators:
     nh3_counts_x = np.zeros(len(x_bins) - 1, dtype=float)
     c_counts_x   = np.zeros(len(x_bins) - 1, dtype=float)
-
     nh3_charge_total = 0.0
     c_charge_total   = 0.0
 
-    # ---- Build NH₃(x) under 0.75<Mx²<1.05, |t|<1 ----
+    # ---- Build NH₃(x) ----
     for filepath, label in nh3_files:
         tree = uproot.open(filepath)["PhysicsEvents"]
-
-        # Extract all arrays in one go
         run_arr  = tree["runnum"].array(library="np").astype(int)
         mx2_arr  = tree["Mx2"].array(library="np")
         x_arr    = tree["x"].array(library="np")
@@ -605,7 +613,7 @@ def make_four_panel_plots(nh3_files, c_files, h2_files, run_charges, outpath):
         if run_t_x.size == 0:
             continue
 
-        # 3) Among those |t|<1 events, find the unique runs that contribute
+        # 3) Sum charge over unique runs in this selection
         unique_runs = np.unique(run_t_x)
         for r in unique_runs:
             q = run_charges.get(r, 0.0)
@@ -613,17 +621,16 @@ def make_four_panel_plots(nh3_files, c_files, h2_files, run_charges, outpath):
                 print(f"    [WARNING][NH₃,x] run {r} has zero or missing charge.")
             nh3_charge_total += q
 
-        # 4) Now fill “x” histogram *only* for events whose run ∈ unique_runs
+        # 4) Fill “x” histogram for events whose run ∈ unique_runs
         mask_run_select = np.isin(run_t_x, unique_runs)
         x_select = x_t_x[mask_run_select]
         if x_select.size > 0:
             counts_x, _ = np.histogram(x_select, bins=x_bins)
             nh3_counts_x += counts_x
 
-    # ---- Build C(x) under 0.75<Mx²<1.05, |t|<1 ----
+    # ---- Build C(x) ----
     for filepath, label in c_files:
         tree = uproot.open(filepath)["PhysicsEvents"]
-
         run_arr  = tree["runnum"].array(library="np").astype(int)
         mx2_arr  = tree["Mx2"].array(library="np")
         x_arr    = tree["x"].array(library="np")
@@ -674,7 +681,7 @@ def make_four_panel_plots(nh3_files, c_files, h2_files, run_charges, outpath):
             counts_x, _ = np.histogram(x_select, bins=x_bins)
             c_counts_x += counts_x
 
-    # 5) Now build “normalized” NH₃(x) and C(x):
+    # 5) Now build charge‐normalized NH₃(x) and C(x):
     nh3_norm_x = np.zeros_like(nh3_counts_x, dtype=float)
     c_norm_x   = np.zeros_like(c_counts_x, dtype=float)
 
@@ -683,7 +690,7 @@ def make_four_panel_plots(nh3_files, c_files, h2_files, run_charges, outpath):
     if c_charge_total > 0.0:
         c_norm_x = c_counts_x.astype(float) / c_charge_total
 
-    # 6) Finally compute ratio:  [NH₃(x) – C(x)] / NH₃(x)  bin-by-bin
+    # 6) Finally compute ratio:  [NH₃(x) – C(x)] / NH₃(x)  bin‐by‐bin
     ratio_x = np.zeros_like(nh3_norm_x, dtype=float)
     for i in range(len(ratio_x)):
         if nh3_norm_x[i] > 0.0:
@@ -698,7 +705,7 @@ def make_four_panel_plots(nh3_files, c_files, h2_files, run_charges, outpath):
         xlabel=r"$x_{B}$",
         ylabel="ratio",
         xlim=(0.0, 1.0),
-        ylim=(0.0, 1.0)  # or adjust if you expect >1
+        ylim=(0.0, 1.0)
     )
     ax11.legend(loc='upper right', fontsize='small')
 
