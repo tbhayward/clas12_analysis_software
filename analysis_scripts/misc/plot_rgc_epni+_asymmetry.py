@@ -8,11 +8,10 @@ from matplotlib.lines import Line2D
 # -----------------------------------------------------------------------------
 # Hard-coded data for all three run periods
 #
-# Note: Fill in the Fa22 and Sp23 lists once you have those results.
+# Updated Su22 and Fa22 data; Sp23 placeholders remain empty
 # -----------------------------------------------------------------------------
 
-# RGC Su22 data
-# Updated Su22 data for the new iteration
+# RGC Su22 data (new iteration)
 enpichi2FitsALUsinphi_Su22 = [
     [0.094266731, 1.184739999, 0.126228827],
     [0.168622194, 0.082358508, 0.012946927],
@@ -58,14 +57,53 @@ enpichi2FitsALLcosphi_Su22 = [
     [0.535009222, -0.033540762, 0.074341147]
 ]
 
-# RGC Fa22 data (PLACEHOLDER: Replace with your actual Fa22 results)
-enpichi2FitsALUsinphi_Fa22 = []
-enpichi2FitsAULsinphi_Fa22 = []
-enpichi2FitsAULsin2phi_Fa22 = []
-enpichi2FitsALL_Fa22 = []
-enpichi2FitsALLcosphi_Fa22 = []
+# RGC Fa22 data (provided results)
+enpichi2FitsALUsinphi_Fa22 = [
+    [0.094966860, 0.088849922, 0.106975085],
+    [0.168066023, 0.081631789, 0.008575724],
+    [0.255206095, 0.118256405, 0.006004346],
+    [0.348425967, 0.136728129, 0.006193895],
+    [0.441160429, 0.136960408, 0.008198898],
+    [0.535321960, 0.110125916, 0.014290167]
+]
 
-# RGC Sp23 data (PLACEHOLDER: Replace with your actual Sp23 results)
+enpichi2FitsAULsinphi_Fa22 = [
+    [0.094966860, -0.000000000, 0.233786675],
+    [0.168066023,  0.000000000, 0.186512620],
+    [0.255206095,  0.000000000, 0.167596555],
+    [0.348425967,  0.000000000, 0.160513528],
+    [0.441160429,  0.000000000, 0.161808987],
+    [0.535321960,  0.000000000, 0.167676741]
+]
+
+enpichi2FitsAULsin2phi_Fa22 = [
+    [0.094966860,  0.000000000, 0.583557686],
+    [0.168066023, -0.000000000, 0.408975916],
+    [0.255206095, -0.000000000, 0.352490621],
+    [0.348425967, -0.000000000, 0.332332824],
+    [0.441160429, -0.000000000, 0.336012223],
+    [0.535321960, -0.000000000, 0.352811957]
+]
+
+enpichi2FitsALL_Fa22 = [
+    [0.094966860, 0.245869621, 0.274476863],
+    [0.168066023, 0.011443390, 0.019760262],
+    [0.255206095, 0.013521409, 0.018272795],
+    [0.348425967, 0.024734125, 0.018401430],
+    [0.441160429, 0.009835744, 0.022337638],
+    [0.535321960, 0.039381503, 0.030368159]
+]
+
+enpichi2FitsALLcosphi_Fa22 = [
+    [0.094966860,  0.149000765, 0.501680893],
+    [0.168066023, -0.006541656, 0.031406204],
+    [0.255206095,  0.025607394, 0.024171661],
+    [0.348425967, -0.001640641, 0.022943155],
+    [0.441160429, -0.001361157, 0.029325971],
+    [0.535321960,  0.025618792, 0.043025987]
+]
+
+# RGC Sp23 data (still placeholders)
 enpichi2FitsALUsinphi_Sp23 = []
 enpichi2FitsAULsinphi_Sp23 = []
 enpichi2FitsAULsin2phi_Sp23 = []
@@ -197,7 +235,7 @@ for p in ["Su22", "Fa22", "Sp23"]:
             d1["y"],
             yerr=d1["yerr"],
             fmt="o",
-            mfc="none",        # open circle
+            mfc="none",        # open circle for n=1
             mec=colors[p],
             ecolor=colors[p],
             capsize=3,
@@ -210,7 +248,7 @@ for p in ["Su22", "Fa22", "Sp23"]:
             d2["y"],
             yerr=d2["yerr"],
             fmt="o",
-            color=colors[p],   # filled circle
+            color=colors[p],   # filled circle for n=2
             ecolor=colors[p],
             capsize=3,
             label=f"{p}, n=2"
@@ -225,7 +263,7 @@ ax2.set_ylabel(r"$F_{UL}^{\sin\,n\phi}/F_{UU}$", fontsize=label_fontsize)
 ax2.axhline(0, color="black", linestyle="--", linewidth=1.2)
 ax2.grid(True, linestyle="--", alpha=0.6)
 
-# Legend for n-values
+# Legend for harmonic n
 legend_n2 = ax2.legend(
     handles=[
         Line2D([0], [0], marker='o', mfc='none', mec='black', linestyle='', label='n=1'),
@@ -240,7 +278,7 @@ legend_n2 = ax2.legend(
 )
 legend_n2.get_frame().set_alpha(0.9)
 
-# A second legend for run periods (placed in lower right)
+# Legend for run periods
 legend_runs2 = ax2.legend(
     handles=[
         Line2D([0], [0], marker='o', color=colors["Su22"], linestyle='', label='Su22'),
@@ -298,7 +336,7 @@ ax3.set_ylabel(r"$F_{LL}^{\cos\,n\phi}/F_{UU}$", fontsize=label_fontsize)
 ax3.axhline(0, color="black", linestyle="--", linewidth=1.2)
 ax3.grid(True, linestyle="--", alpha=0.6)
 
-# Legend for n-values
+# Legend for harmonic n
 legend_n3 = ax3.legend(
     handles=[
         Line2D([0], [0], marker='o', mfc='none', mec='black', linestyle='', label='n=0'),
@@ -313,7 +351,7 @@ legend_n3 = ax3.legend(
 )
 legend_n3.get_frame().set_alpha(0.9)
 
-# Second legend for run periods (lower right)
+# Legend for run periods
 legend_runs3 = ax3.legend(
     handles=[
         Line2D([0], [0], marker='o', color=colors["Su22"], linestyle='', label='Su22'),
@@ -331,7 +369,55 @@ legend_runs3.get_frame().set_alpha(0.9)
 
 plt.tight_layout(rect=[0, 0, 1, 0.93])
 
-# Save the figure under output/enpi+/
-output_filename = os.path.join(out_dir, "rgc_enpi+_AllPeriods.pdf")
-plt.savefig(output_filename)
-print(f"Plot saved to '{output_filename}'")
+# Save the asymmetry figure under output/enpi+/
+asymmetry_filename = os.path.join(out_dir, "rgc_enpi+_AllPeriods.pdf")
+plt.savefig(asymmetry_filename)
+print(f"Asymmetry plot saved to '{asymmetry_filename}'")
+
+# -----------------------------------------------------------------------------
+# New functionality: Plot dilution factor vs xB for Su22 and Fa22
+# -----------------------------------------------------------------------------
+
+# Dilution factor data for Su22
+x_Su22 = np.array([row[0] for row in enpichi2FitsALUsinphi_Su22])
+dil_Su22 = np.array([0.711119, 0.376873, 0.390790, 0.401177, 0.410563, 0.416077])
+dil_err_Su22 = np.array([0.173083, 0.0175818, 0.00942491, 0.00801711, 0.0108668, 0.0225813])
+
+# Dilution factor data for Fa22
+x_Fa22 = np.array([row[0] for row in enpichi2FitsALUsinphi_Fa22])
+dil_Fa22 = np.array([0.374532, 0.406101, 0.386122, 0.397153, 0.415526, 0.428239])
+dil_err_Fa22 = np.array([0.117283, 0.00608866, 0.00354573, 0.00301186, 0.00400862, 0.00824607])
+
+plt.figure(figsize=(6, 5))
+plt.errorbar(
+    x_Su22,
+    dil_Su22,
+    yerr=dil_err_Su22,
+    fmt="o",
+    color=colors["Su22"],
+    ecolor=colors["Su22"],
+    capsize=3,
+    label="Su22"
+)
+plt.errorbar(
+    x_Fa22,
+    dil_Fa22,
+    yerr=dil_err_Fa22,
+    fmt="o",
+    color=colors["Fa22"],
+    ecolor=colors["Fa22"],
+    capsize=3,
+    label="Fa22"
+)
+
+plt.xlabel(r"$x_{B}$", fontsize=label_fontsize)
+plt.ylabel(r"$D_{f}$", fontsize=label_fontsize)
+plt.ylim(0, 1)
+plt.xlim(0, 0.7)
+plt.grid(True, linestyle="--", alpha=0.6)
+plt.legend(frameon=True, edgecolor="black", fontsize=11, title="Run Period", title_fontsize=12)
+
+plt.tight_layout()
+dilution_filename = os.path.join(out_dir, "dilution_vs_xB.pdf")
+plt.savefig(dilution_filename)
+print(f"Dilution factor plot saved to '{dilution_filename}'")
