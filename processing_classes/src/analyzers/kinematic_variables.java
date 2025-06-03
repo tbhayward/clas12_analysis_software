@@ -29,9 +29,9 @@ public class kinematic_variables {
             return 0.0005109989461;
         } else if (pid == 22) {
             return 0;
-        } else if (pid == 111) {
+        } else if (pid == 111) { // pi0
             return 0.1349768;
-        } else if (pid == 211 || pid == -211) { // pions
+        } else if (pid == 211 || pid == -211) { // charged pions
             return 0.139570;
         } else if (pid == 321 || pid == -321) { // kaons
             return 0.493677;
