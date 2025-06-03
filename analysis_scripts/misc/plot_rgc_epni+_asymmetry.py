@@ -244,7 +244,7 @@ for p in ["Su22", "Fa22", "Sp23"]:
 # end for
 
 ax1.set_xlim(0, 0.7)
-ax1.set_ylim(-0.3, 0.3)
+ax1.set_ylim(-0.2, 0.2)
 ax1.set_xlabel(r"$x_{B}$", fontsize=label_fontsize)
 ax1.set_ylabel(r"$F_{LU}^{\sin\phi}/F_{UU}$", fontsize=label_fontsize)
 ax1.axhline(0, color="black", linestyle="--", linewidth=1.2)
@@ -296,7 +296,7 @@ for p in ["Su22", "Fa22", "Sp23"]:
 # end for
 
 ax2.set_xlim(0, 0.7)
-ax2.set_ylim(-0.3, 0.3)
+ax2.set_ylim(-0.2, 0.2)
 ax2.set_xlabel(r"$x_{B}$", fontsize=label_fontsize)
 ax2.set_ylabel(r"$F_{UL}^{\sin\,n\phi}/F_{UU}$", fontsize=label_fontsize)
 ax2.axhline(0, color="black", linestyle="--", linewidth=1.2)
@@ -463,10 +463,8 @@ dilution_filename = os.path.join(out_dir, "dilution_vs_xB.pdf")
 plt.savefig(dilution_filename)
 print(f"Dilution factor plot saved to '{dilution_filename}'")
 
-
-
 # -----------------------------------------------------------------------------
-# New functionality: Plot mean Q², W, z, and x_F vs x_B for Su22 and Sp23
+# New functionality: Plot mean Q², W, z, and x_F vs x_B for Su22, Fa22, and Sp23
 # -----------------------------------------------------------------------------
 
 # Mean kinematic values for Su22
@@ -475,6 +473,13 @@ Q2_Su22 = np.array([1.325, 1.862, 2.240, 2.592, 3.374, 4.589])
 W_Su22  = np.array([3.689, 3.179, 2.722, 2.381, 2.256, 2.197])
 z_Su22  = np.array([0.972, 0.971, 0.955, 0.932, 0.919, 0.912])
 xF_Su22 = np.array([0.883, 0.862, 0.812, 0.756, 0.745, 0.757])
+
+# Mean kinematic values for Fa22
+xB_Fa22 = np.array([0.095, 0.168, 0.255, 0.348, 0.441, 0.535])
+Q2_Fa22 = np.array([1.341, 1.874, 2.254, 2.612, 3.388, 4.607])
+W_Fa22  = np.array([3.698, 3.193, 2.728, 2.389, 2.261, 2.200])
+z_Fa22  = np.array([0.973, 0.969, 0.953, 0.930, 0.918, 0.912])
+xF_Fa22 = np.array([0.886, 0.861, 0.810, 0.755, 0.744, 0.756])
 
 # Mean kinematic values for Sp23
 xB_Sp23 = np.array([0.091, 0.167, 0.251, 0.346, 0.441, 0.535])
@@ -488,8 +493,10 @@ fig, axes = plt.subplots(2, 2, figsize=(10, 8))
 
 # Common plot settings
 marker_Su22 = 'o'
+marker_Fa22 = '^'
 marker_Sp23 = 's'
 color_Su22 = colors["Su22"]
+color_Fa22 = colors["Fa22"]
 color_Sp23 = colors["Sp23"]
 label_fontsize = 12
 tick_fontsize = 10
@@ -497,6 +504,7 @@ tick_fontsize = 10
 # Top-left: Q² vs x_B
 ax = axes[0, 0]
 ax.plot(xB_Su22, Q2_Su22, marker_Su22, color=color_Su22, markersize=6, linestyle='', label='Su22')
+ax.plot(xB_Fa22, Q2_Fa22, marker_Fa22, color=color_Fa22, markersize=6, linestyle='', label='Fa22')
 ax.plot(xB_Sp23, Q2_Sp23, marker_Sp23, color=color_Sp23, markersize=6, linestyle='', label='Sp23')
 ax.set_xlabel(r"$x_{B}$", fontsize=label_fontsize)
 ax.set_ylabel(r"$\langle Q^{2} \rangle\ \mathrm{(GeV^{2})}$", fontsize=label_fontsize)
@@ -507,6 +515,7 @@ ax.tick_params(axis='both', labelsize=tick_fontsize)
 # Top-right: W vs x_B
 ax = axes[0, 1]
 ax.plot(xB_Su22, W_Su22, marker_Su22, color=color_Su22, markersize=6, linestyle='', label='Su22')
+ax.plot(xB_Fa22, W_Fa22, marker_Fa22, color=color_Fa22, markersize=6, linestyle='', label='Fa22')
 ax.plot(xB_Sp23, W_Sp23, marker_Sp23, color=color_Sp23, markersize=6, linestyle='', label='Sp23')
 ax.set_xlabel(r"$x_{B}$", fontsize=label_fontsize)
 ax.set_ylabel(r"$\langle W \rangle\ \mathrm{(GeV)}$", fontsize=label_fontsize)
@@ -517,6 +526,7 @@ ax.tick_params(axis='both', labelsize=tick_fontsize)
 # Bottom-left: z vs x_B
 ax = axes[1, 0]
 ax.plot(xB_Su22, z_Su22, marker_Su22, color=color_Su22, markersize=6, linestyle='', label='Su22')
+ax.plot(xB_Fa22, z_Fa22, marker_Fa22, color=color_Fa22, markersize=6, linestyle='', label='Fa22')
 ax.plot(xB_Sp23, z_Sp23, marker_Sp23, color=color_Sp23, markersize=6, linestyle='', label='Sp23')
 ax.set_xlabel(r"$x_{B}$", fontsize=label_fontsize)
 ax.set_ylabel(r"$\langle z \rangle$", fontsize=label_fontsize)
@@ -528,6 +538,7 @@ ax.tick_params(axis='both', labelsize=tick_fontsize)
 # Bottom-right: x_F vs x_B
 ax = axes[1, 1]
 ax.plot(xB_Su22, xF_Su22, marker_Su22, color=color_Su22, markersize=6, linestyle='', label='Su22')
+ax.plot(xB_Fa22, xF_Fa22, marker_Fa22, color=color_Fa22, markersize=6, linestyle='', label='Fa22')
 ax.plot(xB_Sp23, xF_Sp23, marker_Sp23, color=color_Sp23, markersize=6, linestyle='', label='Sp23')
 ax.set_xlabel(r"$x_{B}$", fontsize=label_fontsize)
 ax.set_ylabel(r"$\langle x_{F} \rangle$", fontsize=label_fontsize)
@@ -538,12 +549,13 @@ ax.tick_params(axis='both', labelsize=tick_fontsize)
 # Add a single legend for the entire figure
 handles = [
     Line2D([0], [0], marker=marker_Su22, color=color_Su22, linestyle='', label='Su22', markersize=6),
+    Line2D([0], [0], marker=marker_Fa22, color=color_Fa22, linestyle='', label='Fa22', markersize=6),
     Line2D([0], [0], marker=marker_Sp23, color=color_Sp23, linestyle='', label='Sp23', markersize=6)
 ]
 fig.legend(
     handles=handles,
     loc='upper center',
-    ncol=2,
+    ncol=3,
     frameon=True,
     edgecolor="black",
     fontsize=11,
@@ -554,6 +566,6 @@ fig.legend(
 plt.tight_layout(rect=[0, 0, 1, 0.95])
 
 # Save the kinematic comparison figure
-kinematic_filename = os.path.join(out_dir, "kinematic_comparison_Su22_Sp23.pdf")
+kinematic_filename = os.path.join(out_dir, "kinematic_comparison_Su22_Fa22_Sp23.pdf")
 plt.savefig(kinematic_filename)
 print(f"Kinematic comparison plot saved as '{kinematic_filename}'")
