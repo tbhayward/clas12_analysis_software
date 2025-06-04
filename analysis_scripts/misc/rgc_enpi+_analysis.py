@@ -462,7 +462,7 @@ def make_normalized_Mx2_plots(nh3_files, c_files, h2_files, run_charges, outpath
 
     Uses ProcessPoolExecutor to parallelize histogramming of each file,
     then also makes a separate 1×3 figure comparing NH₃ vs C for each period (no t-cut),
-    and finally a single-panel xB–ratio plot with dilution factors.
+    and finally a single-panel xB–ratio plot with dilution factors overlay.
     """
     # 1) Prepare tasks for Mx² histograms
     tasks = []
@@ -830,7 +830,7 @@ def make_normalized_Mx2_plots(nh3_files, c_files, h2_files, run_charges, outpath
             else:
                 ratio_x[period][i] = 0.0
 
-    # 7) Plot single‐panel xB–ratio
+    # 7) Plot single‐panel xB‐ratio
     fig3, ax3 = plt.subplots(1, 1, figsize=(8, 6))
 
     # We will plot lines for each period, capture their colors
@@ -838,7 +838,7 @@ def make_normalized_Mx2_plots(nh3_files, c_files, h2_files, run_charges, outpath
     for period in period_names:
         line, = ax3.step(
             x_centers, ratio_x[period], where='mid',
-            label=f"{period} $(N - {scale_dict_t[period]:.3f}C)/N$", lw=2
+            label=f"{period} (NH₃ – {scale_dict_t[period]:.3f}·C)/NH₃", lw=2
         )
         line_handles[period] = line
     ax3.set(
