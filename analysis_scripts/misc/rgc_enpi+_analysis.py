@@ -10,7 +10,7 @@ from concurrent.futures import ProcessPoolExecutor, as_completed
 # -----------------------------------------------------------------------------
 
 # Toggle for quick debugging (process only first 5 runs per period)
-QUICK_RUN = True
+QUICK_RUN = False
 
 # Maximum run number to include
 MAX_RUNNUM = 17768
