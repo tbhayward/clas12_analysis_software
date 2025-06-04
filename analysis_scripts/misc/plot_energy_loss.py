@@ -447,7 +447,7 @@ def plot_electron_comparison_inb(out_dir):
     """
     Electron Corrections: inbending (Fall 2018 Pass 2 vs J/ψ)
     """
-    phi_local = np.linspace(0, 60, 500)
+    phi_local = np.linspace(-30, 30, 500)
     fig, axs = plt.subplots(1, 3, figsize=(12,4), sharey=True, gridspec_kw={'wspace':0})
 
     for ax, p in zip(axs, [3.0, 4.0, 5.0]):
@@ -464,7 +464,7 @@ def plot_electron_comparison_inb(out_dir):
                 linestyle='--', linewidth=2)
 
         ax.axhline(0, linestyle='--', color='gray', linewidth=1)
-        ax.set_xlim(0, 59.99)
+        ax.set_xlim(-30, 30)
         ax.set_ylim(-0.1, 0.3)
         ax.autoscale(enable=False)
 
@@ -484,7 +484,7 @@ def plot_electron_comparison_outb(out_dir):
     """
     Electron Corrections: outbending (Fall 2018 Pass 2 vs J/ψ)
     """
-    phi_local = np.linspace(0, 60, 500)
+    phi_local = np.linspace(-30, 30, 500)
     fig, axs = plt.subplots(1, 3, figsize=(12,4), sharey=True, gridspec_kw={'wspace':0})
 
     for ax, p in zip(axs, [3.0, 4.0, 5.0]):
@@ -499,7 +499,7 @@ def plot_electron_comparison_outb(out_dir):
                 linestyle='--', linewidth=2)
 
         ax.axhline(0, linestyle='--', color='gray', linewidth=1)
-        ax.set_xlim(0, 59.99)
+        ax.set_xlim(-30, 30)
         ax.set_ylim(-0.1, 0.3)
         ax.autoscale(enable=False)
 
