@@ -22,6 +22,7 @@ CSV_PATH = "/home/thayward/clas12_analysis_software/analysis_scripts/asymmetry_e
 OUTPUT_DIR            = "output/enpi+"
 THREE_PANEL_OUTPUT    = os.path.join(OUTPUT_DIR, "three_panel_Mx2_comparison.pdf")
 PERIOD_COMPARISON_OUT = os.path.join(OUTPUT_DIR, "period_NH3_C_Mx2_comparison.pdf")
+XB_RATIO_OUTPUT       = os.path.join(OUTPUT_DIR, "xB_ratio_comparison.pdf")
 
 # File lists: (filepath, label)
 NH3_FILES = [
@@ -46,6 +47,55 @@ m_e    = 0.000511   # electron mass (GeV)
 m_pi   = 0.13957    # charged pion mass (GeV)
 m_p    = 0.938272   # proton mass (GeV)
 m_n    = 0.939565   # neutron mass (GeV)
+
+# -----------------------------------------------------------------------------
+# ASYMMETRY FIT DATA & DILUTION FACTORS
+# -----------------------------------------------------------------------------
+
+# RGC Su22 data (new iteration)
+enpichi2FitsALUsinphi_Su22 = [
+    [0.094266731, 1.184739999, 0.126228827],
+    [0.168622194, 0.082358508, 0.012946927],
+    [0.254887003, 0.115297657, 0.008854289],
+    [0.348247742, 0.144713802, 0.009273995],
+    [0.441277333, 0.117431442, 0.012353808],
+    [0.535009222, 0.094723130, 0.021626204]
+]
+
+# RGC Fa22 data (updated results)
+enpichi2FitsALUsinphi_Fa22 = [
+    [0.094825648, 1.221850467, 0.095501230],
+    [0.168249360, 0.081525475, 0.009989312],
+    [0.255099359, 0.118300134, 0.007065332],
+    [0.348334763, 0.140055462, 0.007378878],
+    [0.441201661, 0.140928523, 0.009773392],
+    [0.534977263, 0.110737425, 0.016852914]
+]
+
+# RGC Sp23 data (newly provided)
+enpichi2FitsALUsinphi_Sp23 = [
+    [0.091314751, 0.060825979, 0.081001615],
+    [0.166606555, 0.070263513, 0.012697034],
+    [0.251219557, 0.107175756, 0.009614248],
+    [0.346388218, 0.141913308, 0.010857952],
+    [0.441235552, 0.118073067, 0.014919450],
+    [0.535187978, 0.115828125, 0.026600146]
+]
+
+# Dilution factor data for Su22
+x_Su22 = np.array([row[0] for row in enpichi2FitsALUsinphi_Su22])
+dil_Su22 = np.array([0.711119, 0.376873, 0.390790, 0.401177, 0.410563, 0.416077])
+dil_err_Su22 = np.array([0.173083, 0.0175818, 0.00942491, 0.00801711, 0.0108668, 0.0225813])
+
+# Dilution factor data for Fa22
+x_Fa22 = np.array([row[0] for row in enpichi2FitsALUsinphi_Fa22])
+dil_Fa22 = np.array([0.374532, 0.406101, 0.386122, 0.397153, 0.415526, 0.428239])
+dil_err_Fa22 = np.array([0.117283, 0.00608866, 0.00354573, 0.00301186, 0.00400862, 0.00824607])
+
+# For Sp23, leave blank arrays (will overlay when available)
+x_Sp23 = np.array([])
+dil_Sp23 = np.array([])
+dil_err_Sp23 = np.array([])
 
 # -----------------------------------------------------------------------------
 # UTILITY FUNCTIONS
@@ -411,9 +461,10 @@ def make_normalized_Mx2_plots(nh3_files, c_files, h2_files, run_charges, outpath
         • Panel(1,2): Differences [NH₃–s·C] + H₂ (|t|<1)
 
     Uses ProcessPoolExecutor to parallelize histogramming of each file,
-    then also makes a separate 1×3 figure comparing NH₃ vs C for each period.
+    then also makes a separate 1×3 figure comparing NH₃ vs C for each period (no t-cut),
+    and finally a single-panel xB–ratio plot with dilution factors.
     """
-    # 1) Prepare tasks
+    # 1) Prepare tasks for Mx² histograms
     tasks = []
     for fp, lbl in nh3_files + c_files + h2_files:
         tasks.append((fp, lbl, run_charges, QUICK_RUN))
@@ -495,8 +546,8 @@ def make_normalized_Mx2_plots(nh3_files, c_files, h2_files, run_charges, outpath
     scale_dict_no   = {}
 
     for period_label in period_names:
-        nh3_lbl = f"{period_label}-NH3"
-        c_lbl   = f"{period_label}-C"
+        nh3_lbl  = f"{period_label}-NH3"
+        c_lbl    = f"{period_label}-C"
         nh3_vals = nh3_hist_no_t.get(nh3_lbl, np.zeros(100))
         c_vals   = c_hist_no_t.get(c_lbl,   np.zeros(100))
 
@@ -590,15 +641,15 @@ def make_normalized_Mx2_plots(nh3_files, c_files, h2_files, run_charges, outpath
     scale_dict_t   = {}
 
     for period_label in period_names:
-        nh3_lbl    = f"{period_label}-NH3"
-        c_lbl      = f"{period_label}-C"
-        nh3_vals   = nh3_hist_t.get(nh3_lbl, np.zeros(100))
-        c_vals     = c_hist_t.get(c_lbl,   np.zeros(100))
+        nh3_lbl  = f"{period_label}-NH3"
+        c_lbl    = f"{period_label}-C"
+        nh3_vals = nh3_hist_t.get(nh3_lbl, np.zeros(100))
+        c_vals   = c_hist_t.get(c_lbl,   np.zeros(100))
 
-        mask_0_5   = (centers >= 0.0) & (centers < 0.5)
-        nh3_sum    = nh3_vals[mask_0_5].sum()
-        c_sum      = c_vals[mask_0_5].sum()
-        scale      = (nh3_sum / c_sum) if c_sum > 0.0 else 0.0
+        mask_0_5 = (centers >= 0.0) & (centers < 0.5)
+        nh3_sum  = nh3_vals[mask_0_5].sum()
+        c_sum    = c_vals[mask_0_5].sum()
+        scale    = (nh3_sum / c_sum) if c_sum > 0.0 else 0.0
         scale_dict_t[period_label] = scale
         print(f"[DEBUG] (|t|<1) {period_label}: NH₃ sum(0–0.5)={nh3_sum:.3f}, C sum(0–0.5)={c_sum:.3f}, scale={scale:.3f}")
         diff_t[period_label] = nh3_vals - (c_vals * scale)
@@ -642,7 +693,6 @@ def make_normalized_Mx2_plots(nh3_files, c_files, h2_files, run_charges, outpath
     # 1×3 “period-by-period” NH₃ vs C comparison (no t-cut)
     # -----------------------------------------------------------------------------
 
-    # We will plot NH₃ and C.hist_no_t side by side for each period (Su22, Fa22, Sp23)
     bins_mx2    = bins
     centers_mx2 = centers
 
@@ -673,16 +723,164 @@ def make_normalized_Mx2_plots(nh3_files, c_files, h2_files, run_charges, outpath
     plt.savefig(PERIOD_COMPARISON_OUT)
     plt.close()
 
+    # -----------------------------------------------------------------------------
+    # Single‐panel xB‐ratio plot with dilution factors overlay
+    # -----------------------------------------------------------------------------
+
+    # We'll reuse s·C scales from the |t|<1 bottom row: scale_dict_t
+    # Build NH₃(x) and C(x) histograms under cuts: 0.75 < Mx² < 1.05, |t| < 1.
+    x_bins = np.linspace(0.0, 1.0, 51)
+    x_centers = 0.5 * (x_bins[:-1] + x_bins[1:])
+
+    # Containers for normalized counts
+    nh3_counts = { "Su22": np.zeros(len(x_bins)-1, dtype=float),
+                   "Fa22": np.zeros(len(x_bins)-1, dtype=float),
+                   "Sp23": np.zeros(len(x_bins)-1, dtype=float) }
+    c_counts   = { "Su22": np.zeros(len(x_bins)-1, dtype=float),
+                   "Fa22": np.zeros(len(x_bins)-1, dtype=float),
+                   "Sp23": np.zeros(len(x_bins)-1, dtype=float) }
+    nh3_charge = { "Su22": 0.0, "Fa22": 0.0, "Sp23": 0.0 }
+    c_charge   = { "Su22": 0.0, "Fa22": 0.0, "Sp23": 0.0 }
+
+    # Helper to fill counts for one set of files (NH3 or C)
+    def fill_x_counts(files, counts_dict, charge_dict, prefix):
+        for filepath, label in files:
+            period = label.split('-')[0]  # e.g. "Su22"
+            tree = uproot.open(filepath)["PhysicsEvents"]
+
+            run_arr  = tree["runnum"].array(library="np").astype(int)
+            mx2_arr  = tree["Mx2"].array(library="np")
+            x_arr    = tree["x"].array(library="np")
+            e_p_arr  = tree["e_p"].array(library="np")
+            e_th_arr = tree["e_theta"].array(library="np")
+            e_ph_arr = tree["e_phi"].array(library="np")
+            p_p_arr  = tree["p_p"].array(library="np")
+            p_th_arr = tree["p_theta"].array(library="np")
+            p_ph_arr = tree["p_phi"].array(library="np")
+
+            # 1) Cut: run ≤ MAX_RUNNUM, 0.75 < Mx² < 1.05
+            mask_base_x = (run_arr <= MAX_RUNNUM) & (mx2_arr > 0.75) & (mx2_arr < 1.05)
+            run_bx  = run_arr[mask_base_x]
+            mx2_bx  = mx2_arr[mask_base_x]
+            x_bx    = x_arr[mask_base_x]
+            e_p_bx  = e_p_arr[mask_base_x]
+            e_th_bx = e_th_arr[mask_base_x]
+            e_ph_bx = e_ph_arr[mask_base_x]
+            p_p_bx  = p_p_arr[mask_base_x]
+            p_th_bx = p_th_arr[mask_base_x]
+            p_ph_bx = p_ph_arr[mask_base_x]
+
+            if run_bx.size == 0:
+                continue
+
+            # 2) Compute t-array, then cut |t|<1
+            t_vals_x = compute_t_array(
+                run_bx,
+                e_p_bx, e_th_bx, e_ph_bx,
+                p_p_bx, p_th_bx, p_ph_bx
+            )
+            mask_t_x = np.abs(t_vals_x) < 1.0
+            run_tx = run_bx[mask_t_x]
+            x_tx   = x_bx[mask_t_x]
+
+            if run_tx.size == 0:
+                continue
+
+            # 3) Determine unique runs, sum charges
+            unique_runs = np.unique(run_tx)
+            for r in unique_runs:
+                q = run_charges.get(r, 0.0)
+                if q <= 0.0:
+                    print(f"    [WARNING][{prefix},{period}] run {r} has zero or missing charge.")
+                charge_dict[period] += q
+
+            # 4) Fill x histogram only for events whose run ∈ unique_runs
+            mask_select = np.isin(run_tx, unique_runs)
+            x_select = x_tx[mask_select]
+            if x_select.size > 0:
+                counts_x, _ = np.histogram(x_select, bins=x_bins)
+                counts_dict[period] += counts_x
+
+    # Fill NH₃ counts
+    fill_x_counts(NH3_FILES, nh3_counts, nh3_charge, "NH₃")
+    # Fill C counts
+    fill_x_counts(C_FILES, c_counts, c_charge, "C")
+
+    # 5) Build normalized NH₃(x) and C(x)
+    nh3_norm = {}
+    c_norm   = {}
+    for period in period_names:
+        nh3_norm[period] = np.zeros_like(nh3_counts[period], dtype=float)
+        c_norm[period]   = np.zeros_like(c_counts[period], dtype=float)
+        if nh3_charge[period] > 0.0:
+            nh3_norm[period] = nh3_counts[period].astype(float) / nh3_charge[period]
+        if c_charge[period] > 0.0:
+            c_norm[period] = c_counts[period].astype(float) / c_charge[period]
+
+    # 6) Compute (NH₃(x) - s·C(x)) / NH₃(x) for each period, using scale from scale_dict_t
+    ratio_x = {}
+    for period in period_names:
+        ratio_x[period] = np.zeros_like(nh3_norm[period], dtype=float)
+        s = scale_dict_t.get(period, 0.0)
+        for i in range(len(ratio_x[period])):
+            nh3_val = nh3_norm[period][i]
+            c_val   = c_norm[period][i]
+            if nh3_val > 0.0:
+                ratio_x[period][i] = (nh3_val - s * c_val) / nh3_val
+            else:
+                ratio_x[period][i] = 0.0
+
+    # 7) Plot single‐panel xB–ratio
+    fig3, ax3 = plt.subplots(1, 1, figsize=(8, 6))
+
+    # We will plot lines for each period, capture their colors
+    line_handles = {}
+    for period in period_names:
+        line, = ax3.step(
+            x_centers, ratio_x[period], where='mid',
+            label=f"{period} $(N - {scale_dict_t[period]:.3f}C)/N$", lw=2
+        )
+        line_handles[period] = line
+    ax3.set(
+        title=r"$(\mathrm{NH_3}(x) - s\,\mathrm{C}(x))\,/\,\mathrm{NH_3}(x)$, $0.75<M_x^2<1.05$, $|t|<1$",
+        xlabel=r"$x_{B}$",
+        ylabel="ratio",
+        xlim=(0.0, 1.0),
+        ylim=(0.0, 1.0)
+    )
+
+    # 8) Overlay dilution factor data points with error bars, matching colors
+    # Su22
+    handle_su22 = line_handles["Su22"]
+    color_su22 = handle_su22.get_color()
+    ax3.errorbar(
+        x_Su22, dil_Su22, yerr=dil_err_Su22,
+        fmt='o', color=color_su22, label="Su22 dilution"
+    )
+    # Fa22
+    handle_fa22 = line_handles["Fa22"]
+    color_fa22 = handle_fa22.get_color()
+    ax3.errorbar(
+        x_Fa22, dil_Fa22, yerr=dil_err_Fa22,
+        fmt='o', color=color_fa22, label="Fa22 dilution"
+    )
+    # Sp23: no data yet, so skip
+
+    ax3.legend(loc='upper right', fontsize='small')
+    plt.tight_layout()
+    plt.savefig(XB_RATIO_OUTPUT)
+    plt.close()
+
 
 # -----------------------------------------------------------------------------
 # MAIN
 # -----------------------------------------------------------------------------
 
 def main():
-    # Load run charges (only runs ≤ MAX_RUNNUM)
+    # 1) Load run charges (only runs ≤ MAX_RUNNUM)
     run_charges = parse_run_charges(CSV_PATH)
 
-    # Generate the 2×3 comparison plot and the 1×3 period-by-period comparison
+    # 2) Generate the 2×3 comparison plot and the 1×3 period-by-period comparison
     make_normalized_Mx2_plots(NH3_FILES, C_FILES, H2_FILES, run_charges, THREE_PANEL_OUTPUT)
 
 
