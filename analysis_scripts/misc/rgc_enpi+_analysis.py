@@ -19,8 +19,9 @@ MAX_RUNNUM = 17768
 CSV_PATH = "/home/thayward/clas12_analysis_software/analysis_scripts/asymmetry_extraction/imports/clas12_run_info.csv"
 
 # Output directory and filename
-OUTPUT_DIR         = "output/enpi+"
-THREE_PANEL_OUTPUT = os.path.join(OUTPUT_DIR, "three_panel_Mx2_comparison.pdf")
+OUTPUT_DIR            = "output/enpi+"
+THREE_PANEL_OUTPUT    = os.path.join(OUTPUT_DIR, "three_panel_Mx2_comparison.pdf")
+PERIOD_COMPARISON_OUT = os.path.join(OUTPUT_DIR, "period_NH3_C_Mx2_comparison.pdf")
 
 # File lists: (filepath, label)
 NH3_FILES = [
@@ -152,6 +153,10 @@ def compute_t_array(run_arr, e_p_arr, e_th_arr, e_ph_arr, p_p_arr, p_th_arr, p_p
     return t_array
 
 
+# -----------------------------------------------------------------------------
+# PROCESSING FUNCTIONS
+# -----------------------------------------------------------------------------
+
 def process_file(args):
     """
     Worker for parallel histogramming:
@@ -249,11 +254,7 @@ def process_file(args):
     num_t_events = run_t.size
     print(f"[DEBUG][{label}] after |t|<1 cut: {num_t_events} events")
 
-    if num_t_events == 0:
-        # No events survive the t-cut
-        # hist_t is already zeroed
-        pass
-    else:
+    if num_t_events != 0:
         # 5b) Select which runs now contribute under |t|<1
         selected_runs_t = set(np.unique(run_t))
 
@@ -299,7 +300,6 @@ def process_file_quick_stop(filepath, label, run_charges):
     mx2_acc_t      = []
 
     total_base_events = 0
-    total_t_events    = 0
 
     # Iterate in chunks of 100k events, stop once each set has 5 distinct runs
     for chunk in uproot.iterate(
@@ -327,7 +327,6 @@ def process_file_quick_stop(filepath, label, run_charges):
         p_th_base_chunk = p_th_chunk[mask_base]
         p_ph_base_chunk = p_ph_chunk[mask_base]
 
-        # Accumulate the count of base-filtered events
         total_base_events += run_base_chunk.size
 
         # Loop event-by-event until we have 5 distinct runs in each category
@@ -366,12 +365,8 @@ def process_file_quick_stop(filepath, label, run_charges):
 
     # Now we know how many base‐filtered events we saw (though we only recorded Mx² from the first 5 runs)
     num_base_events = total_base_events
-    # The “no‐t” event count is total length of mx2_acc_no_t (but some events may belong to the same run; 
-    # for a quick sanity-check we’ll treat each appended Mx² as one event)
     num_no_t_events = len(mx2_acc_no_t)
-
-    # The “t‐cut” event count is total length of mx2_acc_t
-    num_t_events = len(mx2_acc_t)
+    num_t_events    = len(mx2_acc_t)
 
     # Build “no‐t” histogram
     seen_runs_list_no_t = list(seen_runs_no_t)
@@ -415,7 +410,8 @@ def make_normalized_Mx2_plots(nh3_files, c_files, h2_files, run_charges, outpath
         • Panel(1,1):  C   + H₂ (|t|<1)
         • Panel(1,2): Differences [NH₃–s·C] + H₂ (|t|<1)
 
-    Uses ProcessPoolExecutor to parallelize histogramming of each file.
+    Uses ProcessPoolExecutor to parallelize histogramming of each file,
+    then also makes a separate 1×3 figure comparing NH₃ vs C for each period.
     """
     # 1) Prepare tasks
     tasks = []
@@ -435,15 +431,15 @@ def make_normalized_Mx2_plots(nh3_files, c_files, h2_files, run_charges, outpath
                 print(f"[ERROR] processing {lbl}: {e}")
                 results[lbl] = (np.zeros(100, dtype=float), np.zeros(100, dtype=float))
 
-    # 3) Prepare bins & bin centers
-    bins = np.linspace(0.0, 1.5, 101)
-    bin_centers = 0.5 * (bins[:-1] + bins[1:])
+    # 3) Prepare bins & bin centers for Mx²
+    bins     = np.linspace(0.0, 1.5, 101)
+    centers  = 0.5 * (bins[:-1] + bins[1:])
 
     # 4) Create the 2×3 figure (no shared y between rows)
     fig, axes = plt.subplots(2, 3, figsize=(18, 12), sharey=False)
 
     # Keep track of maxima in each row to set dynamic y‐limits
-    top_row_vals = []
+    top_row_vals    = []
     bottom_row_vals = []
 
     ## ────────────────────────────────────────────────────────────────────────────
@@ -465,7 +461,7 @@ def make_normalized_Mx2_plots(nh3_files, c_files, h2_files, run_charges, outpath
     top_row_vals.append(hist_h2_no_t.max())
 
     axes[0, 0].set(
-        title="NH₃ + H₂: Normalized Mx² (no t-cut)",
+        title="NH₃ + H₂: Normalized $M_x^2$ (no t-cut)",
         xlabel=r"$M_x^2$ (GeV$^2$)",
         ylabel="events / nC",
         xlim=(0.0, 1.5)
@@ -485,41 +481,41 @@ def make_normalized_Mx2_plots(nh3_files, c_files, h2_files, run_charges, outpath
     top_row_vals.append(hist_h2_no_t.max())
 
     axes[0, 1].set(
-        title="C + H₂: Normalized Mx² (no t-cut)",
+        title="C + H₂: Normalized $M_x^2$ (no t-cut)",
         xlabel=r"$M_x^2$ (GeV$^2$)",
         xlim=(0.0, 1.5)
     )
     axes[0, 1].legend(loc='upper right', fontsize='small')
 
-    # Panel (0,2): Differences [NH₃–s·C] + H₂ (no-t)
-    period_names = ["Su22", "Fa22", "Sp23"]
-    nh3_hist_no_t = {lbl: results.get(lbl, (np.zeros(100), np.zeros(100)))[0] for _, lbl in nh3_files}
-    c_hist_no_t   = {lbl: results.get(lbl, (np.zeros(100), np.zeros(100)))[0] for _, lbl in c_files}
+    # Panel (0,2): Differences [NH₃ – s·C] + H₂ (no-t)
+    period_names    = ["Su22", "Fa22", "Sp23"]
+    nh3_hist_no_t   = {lbl: results.get(lbl, (np.zeros(100), np.zeros(100)))[0] for _, lbl in nh3_files}
+    c_hist_no_t     = {lbl: results.get(lbl, (np.zeros(100), np.zeros(100)))[0] for _, lbl in c_files}
+    diff_no_t       = {}
+    scale_dict_no   = {}
 
-    diff_no_t    = {}
-    scale_dict_no = {}
     for period_label in period_names:
         nh3_lbl = f"{period_label}-NH3"
         c_lbl   = f"{period_label}-C"
         nh3_vals = nh3_hist_no_t.get(nh3_lbl, np.zeros(100))
         c_vals   = c_hist_no_t.get(c_lbl,   np.zeros(100))
 
-        mask_0_5 = (bin_centers >= 0.0) & (bin_centers < 0.5)
-        nh3_sum = nh3_vals[mask_0_5].sum()
-        c_sum   = c_vals[mask_0_5].sum()
-        scale = (nh3_sum / c_sum) if c_sum > 0.0 else 0.0
+        mask_0_5 = (centers >= 0.0) & (centers < 0.5)
+        nh3_sum  = nh3_vals[mask_0_5].sum()
+        c_sum    = c_vals[mask_0_5].sum()
+        scale    = (nh3_sum / c_sum) if c_sum > 0.0 else 0.0
         scale_dict_no[period_label] = scale
         print(f"[DEBUG] (no-t) {period_label}: NH₃ sum(0–0.5)={nh3_sum:.3f}, C sum(0–0.5)={c_sum:.3f}, scale={scale:.3f}")
         diff_no_t[period_label] = nh3_vals - (c_vals * scale)
 
     for idx, period_label in enumerate(period_names):
-        diff = diff_no_t.get(period_label, np.zeros(100))
+        diff  = diff_no_t.get(period_label, np.zeros(100))
         scale = scale_dict_no[period_label]
         style = ['-', '--', '-.', ':'][idx % 4]
         axes[0, 2].step(
             bins[:-1], diff, where='post',
             linestyle=style,
-            label=f"{period_label} NH3 – {scale:.3f}·C"
+            label=f"{period_label} NH₃ – {scale:.3f}·C"
         )
         top_row_vals.append(diff.max())
 
@@ -561,7 +557,7 @@ def make_normalized_Mx2_plots(nh3_files, c_files, h2_files, run_charges, outpath
     bottom_row_vals.append(hist_h2_t.max())
 
     axes[1, 0].set(
-        title="NH₃ + H₂: Normalized Mx² (|t|<1)",
+        title="NH₃ + H₂: Normalized $M_x^2$ (|t|<1)",
         xlabel=r"$M_x^2$ (GeV$^2$)",
         ylabel="events / nC",
         xlim=(0.0, 1.5)
@@ -581,28 +577,28 @@ def make_normalized_Mx2_plots(nh3_files, c_files, h2_files, run_charges, outpath
     bottom_row_vals.append(hist_h2_t.max())
 
     axes[1, 1].set(
-        title="C + H₂: Normalized Mx² (|t|<1)",
+        title="C + H₂: Normalized $M_x^2$ (|t|<1)",
         xlabel=r"$M_x^2$ (GeV$^2$)",
         xlim=(0.0, 1.5)
     )
     axes[1, 1].legend(loc='upper right', fontsize='small')
 
     # Panel (1,2): Differences [NH₃ – s·C] + H₂ (|t|<1)
-    nh3_hist_t = {lbl: results.get(lbl, (np.zeros(100), np.zeros(100)))[1] for _, lbl in nh3_files}
-    c_hist_t   = {lbl: results.get(lbl, (np.zeros(100), np.zeros(100)))[1] for _, lbl in c_files}
+    nh3_hist_t     = {lbl: results.get(lbl, (np.zeros(100), np.zeros(100)))[1] for _, lbl in nh3_files}
+    c_hist_t       = {lbl: results.get(lbl, (np.zeros(100), np.zeros(100)))[1] for _, lbl in c_files}
+    diff_t         = {}
+    scale_dict_t   = {}
 
-    diff_t    = {}
-    scale_dict_t = {}
     for period_label in period_names:
-        nh3_lbl = f"{period_label}-NH3"
-        c_lbl   = f"{period_label}-C"
-        nh3_vals = nh3_hist_t.get(nh3_lbl, np.zeros(100))
-        c_vals   = c_hist_t.get(c_lbl,   np.zeros(100))
+        nh3_lbl    = f"{period_label}-NH3"
+        c_lbl      = f"{period_label}-C"
+        nh3_vals   = nh3_hist_t.get(nh3_lbl, np.zeros(100))
+        c_vals     = c_hist_t.get(c_lbl,   np.zeros(100))
 
-        mask_0_5 = (bin_centers >= 0.0) & (bin_centers < 0.5)
-        nh3_sum = nh3_vals[mask_0_5].sum()
-        c_sum   = c_vals[mask_0_5].sum()
-        scale = (nh3_sum / c_sum) if c_sum > 0.0 else 0.0
+        mask_0_5   = (centers >= 0.0) & (centers < 0.5)
+        nh3_sum    = nh3_vals[mask_0_5].sum()
+        c_sum      = c_vals[mask_0_5].sum()
+        scale      = (nh3_sum / c_sum) if c_sum > 0.0 else 0.0
         scale_dict_t[period_label] = scale
         print(f"[DEBUG] (|t|<1) {period_label}: NH₃ sum(0–0.5)={nh3_sum:.3f}, C sum(0–0.5)={c_sum:.3f}, scale={scale:.3f}")
         diff_t[period_label] = nh3_vals - (c_vals * scale)
@@ -614,7 +610,7 @@ def make_normalized_Mx2_plots(nh3_files, c_files, h2_files, run_charges, outpath
         axes[1, 2].step(
             bins[:-1], diff, where='post',
             linestyle=style,
-            label=f"{period_label} NH3 – {scale:.3f}·C"
+            label=f"{period_label} NH₃ – {scale:.3f}·C"
         )
         bottom_row_vals.append(diff.max())
 
@@ -642,6 +638,41 @@ def make_normalized_Mx2_plots(nh3_files, c_files, h2_files, run_charges, outpath
     plt.savefig(outpath)
     plt.close()
 
+    # -----------------------------------------------------------------------------
+    # 1×3 “period-by-period” NH₃ vs C comparison (no t-cut)
+    # -----------------------------------------------------------------------------
+
+    # We will plot NH₃ and C.hist_no_t side by side for each period (Su22, Fa22, Sp23)
+    bins_mx2    = bins
+    centers_mx2 = centers
+
+    fig2, axs2 = plt.subplots(1, 3, figsize=(18, 6), sharey=False)
+    for idx, period_label in enumerate(period_names):
+        ax = axs2[idx]
+        nh3_lbl = f"{period_label}-NH3"
+        c_lbl   = f"{period_label}-C"
+
+        hist_nh3, _ = results.get(nh3_lbl, (np.zeros(100), np.zeros(100)))
+        hist_c,   _ = results.get(c_lbl,   (np.zeros(100), np.zeros(100)))
+
+        ax.step(bins_mx2[:-1], hist_nh3, where='post', label=f"{period_label}-NH₃")
+        ax.step(bins_mx2[:-1], hist_c,   where='post', label=f"{period_label}-C", linestyle='--')
+
+        ax.set(
+            title=f"{period_label}: NH₃ vs C (no t-cut)",
+            xlabel=r"$M_x^2$ (GeV$^2$)",
+            xlim=(0.0, 1.5)
+        )
+        # set y-limit to encompass both histograms
+        ymax = max(hist_nh3.max(), hist_c.max()) * 1.1 if (hist_nh3.size and hist_c.size) else 0.1
+        ax.set_ylim(0.0, ymax)
+        ax.legend(loc='upper right', fontsize='small')
+
+    axs2[0].set_ylabel("events / nC")
+    plt.tight_layout()
+    plt.savefig(PERIOD_COMPARISON_OUT)
+    plt.close()
+
 
 # -----------------------------------------------------------------------------
 # MAIN
@@ -651,7 +682,7 @@ def main():
     # Load run charges (only runs ≤ MAX_RUNNUM)
     run_charges = parse_run_charges(CSV_PATH)
 
-    # Generate the 2×3 comparison plot (parallelized)
+    # Generate the 2×3 comparison plot and the 1×3 period-by-period comparison
     make_normalized_Mx2_plots(NH3_FILES, C_FILES, H2_FILES, run_charges, THREE_PANEL_OUTPUT)
 
 
