@@ -708,11 +708,11 @@ void plot_sampling_fraction(TTreeReader& dataReader, TTreeReader* mcReader = nul
         std::vector<TH2D*> histsData(6);
         for (int i = 0; i < 6; ++i) {
             histsData[i] = new TH2D(Form("hData_sector%d", i+1), Form("%s Sector %d %s Data", dataset.c_str(), i+1, track_type.c_str()),
-                                     100, 2, 8, 100, 0.12, 0.45);  // X-axis from 2 to 8, Y-axis from 0.14 to 0.40
+                                     100, 2, 8.5, 100, 0.12, 0.45);  // X-axis from 2 to 8, Y-axis from 0.14 to 0.40
         }
 
         // Fill data 2D histograms
-        for (int i = 0; i < 1e8; i++) {
+        for (int i = 0; i < 1e10; i++) {
             if (!dataReader.Next()) break;
             double nphe = *cc_nphe_15;
             int pid = *particle_pid;
@@ -750,8 +750,8 @@ void plot_sampling_fraction(TTreeReader& dataReader, TTreeReader* mcReader = nul
             hSigma = (TH1D*)gROOT->FindObject(Form("%s_2", histsData[i]->GetName()));
 
             // Fit mean and sigma to quadratic polynomials
-            TF1* meanFit = new TF1(Form("meanFit_sector%d", i+1), "pol2", 2.0, 8.0);
-            TF1* sigmaFit = new TF1(Form("sigmaFit_sector%d", i+1), "pol2", 2.0, 8.0);
+            TF1* meanFit = new TF1(Form("meanFit_sector%d", i+1), "pol2", 2.0, 8.5);
+            TF1* sigmaFit = new TF1(Form("sigmaFit_sector%d", i+1), "pol2", 2.0, 8.5);
 
             hMean->Fit(meanFit, "QNR");   // Fit mean vs momentum
             hSigma->Fit(sigmaFit, "QNR"); // Fit sigma vs momentum
@@ -761,7 +761,7 @@ void plot_sampling_fraction(TTreeReader& dataReader, TTreeReader* mcReader = nul
 
             int nPoints = 100;
             double pMin = 2.0;
-            double pMax = 8.0;
+            double pMax = 8.5;
             double dp = (pMax - pMin) / (nPoints - 1);
 
             for (int j = 0; j < nPoints; ++j) {
