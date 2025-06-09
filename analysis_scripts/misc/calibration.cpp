@@ -9680,11 +9680,11 @@ int main(int argc, char** argv) {
     // int runnum = 16043;
     // std::string dataset = "rgc_su22_inb";
 
-    int runnum = 17068;
-    std::string dataset = "rgc_fa22_inb";
+    // int runnum = 17068;
+    // std::string dataset = "rgc_fa22_inb";
 
-    // int runnum = 17726;
-    // std::string dataset = "rgc_sp23_inb";
+    int runnum = 17726;
+    std::string dataset = "rgc_sp23_inb";
 
     plot_htcc_nphe(dataReader, mcReader, dataset);
     plot_ltcc_nphe(dataReader, mcReader, dataset);
