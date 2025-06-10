@@ -36,8 +36,8 @@ RUNS = [
 
 # Branches with updated ranges and axis labels
 BRANCH_SETTINGS = [
-    ("Mx2_1", (-0.5,  0.5), r"$M_{x (p)}^{2}$ (GeV$^{2}$)"),
-    ("Mx2_2", (0.4,   1.6), r"$M_{x (\gamma)}^{2}$ (GeV$^{2}$)"),
+    ("Mx2_1", (-0.5,  0.5),    r"$M_{x (p)}^{2}$ (GeV$^{2}$)"),
+    ("Mx2_2", (0.4,   1.6),    r"$M_{x (\gamma)}^{2}$ (GeV$^{2}$)"),
 ]
 
 # Detector topologies to split by
@@ -66,7 +66,12 @@ def process_run(run):
     t1           = tree_dt['t1'].array(library='np')
     theta_gg     = tree_dt['theta_gamma_gamma'].array(library='np')
     pt_miss      = tree_dt['pTmiss'].array(library='np')
-    mask_cuts_dt = (np.abs(t1) < 1) & (theta_gg < 0.4) & (pt_miss < 0.05)
+    emiss2       = tree_dt['Emiss2'].array(library='np')
+    # apply cuts: |t1|<1, theta_gg<0.4, pTmiss<0.05, Emiss2<1
+    mask_cuts_dt = (
+        (np.abs(t1) < 1) & (theta_gg < 0.4) &
+        (pt_miss < 0.05) & (emiss2 < 1)
+    )
 
     for branch, xlim, _ in BRANCH_SETTINGS:
         # Read branch and topology arrays
