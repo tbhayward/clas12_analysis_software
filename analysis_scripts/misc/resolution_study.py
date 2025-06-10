@@ -35,9 +35,9 @@ RUNS = [
 
 # Branches and their updated plot ranges
 BRANCH_SETTINGS = [
-    ("Mx2",   (-0.05, 0.05)),
-    ("Mx2_1", (-0.3, 0.3)),
-    ("Mx2_2", (0.6, 1.2)),
+    ("Mx2",   (-0.04, 0.04)),
+    ("Mx2_1", (-0.4, 0.4)),
+    ("Mx2_2", (0.5, 1.5)),
 ]
 
 def plot_before_smearing(runs, branch, xlim, output_path):
@@ -61,20 +61,22 @@ def plot_before_smearing(runs, branch, xlim, output_path):
         mc_vals   = tree_mc[branch].array(library="np")
         data_vals = tree_dt[branch].array(library="np")
 
-        # clip data for stats within xlim
+        # clip for statistics
         dv = data_vals[(data_vals >= xlim[0]) & (data_vals <= xlim[1])]
-        mu, sigma = np.mean(dv), np.std(dv)
+        mv = mc_vals[(mc_vals       >= xlim[0]) & (mc_vals       <= xlim[1])]
+        mu_dt, sigma_dt = np.mean(dv), np.std(dv)
+        mu_mc, sigma_mc = np.mean(mv), np.std(mv)
 
         ax = axes[i, 0]
         ax.hist(data_vals, bins=100, range=xlim, density=True,
                 histtype="step",
-                label=f"Data (μ={mu:.3f}, σ={sigma:.3f})")
+                label=f"Data (μ={mu_dt:.3f}, σ={sigma_dt:.3f})")
         ax.hist(mc_vals,   bins=100, range=xlim, density=True,
                 histtype="step",
-                label="MC")
+                label=f"MC   (μ={mu_mc:.3f}, σ={sigma_mc:.3f})")
         ax.set_xlim(xlim)
         ax.set_title(run["title"])
-        ax.legend()
+        ax.legend(loc="upper right")
     #endfor
 
     # hide the right-hand column for now
