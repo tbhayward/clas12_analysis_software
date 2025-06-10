@@ -69,8 +69,8 @@ def process_run(run):
     emiss2       = tree_dt['Emiss2'].array(library='np')
     # apply cuts: |t1|<1, theta_gg<0.4, pTmiss<0.05, Emiss2<1
     mask_cuts_dt = (
-        (np.abs(t1) < 1) & (theta_gg < 0.4) &
-        (pt_miss < 0.05) & (emiss2 < 1)
+        # (np.abs(t1) < 1) & (theta_gg < 0.4) &
+        # (pt_miss < 0.05) & (emiss2 < 1)
     )
 
     for branch, xlim, _ in BRANCH_SETTINGS:
