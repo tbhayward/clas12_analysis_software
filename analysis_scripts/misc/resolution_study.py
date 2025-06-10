@@ -33,65 +33,92 @@ RUNS = [
     },
 ]
 
-# Branches with updated ranges and axis labels
+# Only Mx2_1 and Mx2_2, with updated ranges and axis labels
 BRANCH_SETTINGS = [
-    ("Mx2",   (-0.04, 0.04),   r"$M_{x}^{2}$ (GeV$^{2}$)"),
-    ("Mx2_1", (-0.4,  0.4),    r"$M_{x (p)}^{2}$ (GeV$^{2}$)"),
-    ("Mx2_2", (0.5,  1.5),     r"$M_{x (\gamma)}^{2}$ (GeV$^{2}$)"),
+    ("Mx2_1", (-0.4, 0.4),    r"$M_{x (p)}^{2}$ (GeV$^{2}$)"),
+    ("Mx2_2", (0.5,  1.5),    r"$M_{x (\gamma)}^{2}$ (GeV$^{2}$)"),
 ]
 
-def plot_before_smearing(runs, branch, xlim, xlabel, output_path):
+# Detector topologies to split by
+TOPOLOGIES = [
+    {"det1": 1, "det2": 0, "label": "FD–FT"},
+    {"det1": 1, "det2": 1, "label": "FD–FD"},
+    {"det1": 2, "det2": 0, "label": "CD–FT"},
+    {"det1": 2, "det2": 1, "label": "CD–FD"},
+]
+
+def plot_by_topology(runs, topologies, branch, xlim, xlabel, output_path):
     """
-    For a given missing-mass branch, make a 3x2 grid of histograms:
+    For a given branch, make a 3x4 grid of histograms:
       - rows = each run
-      - left column = Data vs MC overlay (normalized, with μ & σ)
-      - right column = blank (reserved for 'after' plots)
+      - columns = each detector topology
+      - Data vs MC overlay (normalized, with μ & σ)
       - apply cuts to DATA: |t1|<1, theta_gamma_gamma<0.4, pTmiss<0.05
     """
-    # ensure output directory exists
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
 
-    fig, axes = plt.subplots(nrows=3, ncols=2, figsize=(10, 12), sharex=True)
+    n_runs = len(runs)
+    n_topo = len(topologies)
+    fig, axes = plt.subplots(n_runs, n_topo,
+                             figsize=(4 * n_topo, 3 * n_runs),
+                             sharex=True, sharey=True)
 
     for i, run in enumerate(runs):
-        # open trees
+        # load both trees once
         tree_mc = uproot.open(run["mc_file"])["PhysicsEvents"]
         tree_dt = uproot.open(run["data_file"])["PhysicsEvents"]
 
-        # extract arrays
-        mc_vals = tree_mc[branch].array(library="np")
+        # extract branch arrays
+        mc_vals_full   = tree_mc[branch].array(library="np")
+        dt_vals_full   = tree_dt[branch].array(library="np")
+        t1             = tree_dt["t1"].array(library="np")
+        theta_gg       = tree_dt["theta_gamma_gamma"].array(library="np")
+        pt_miss        = tree_dt["pTmiss"].array(library="np")
 
-        # apply rudimentary cuts to data
-        dt_vals_full = tree_dt[branch].array(library="np")
-        t1            = tree_dt["t1"].array(library="np")
-        theta_gg      = tree_dt["theta_gamma_gamma"].array(library="np")
-        pt_miss       = tree_dt["pTmiss"].array(library="np")
-        mask_cuts = (np.abs(t1) < 1) & (theta_gg < 0.4) & (pt_miss < 0.05)
-        data_vals = dt_vals_full[mask_cuts]
+        # apply global DATA cuts
+        data_mask_cuts = (np.abs(t1) < 1) & (theta_gg < 0.4) & (pt_miss < 0.05)
 
-        # clip for statistics within xlim
-        dv = data_vals[(data_vals >= xlim[0]) & (data_vals <= xlim[1])]
-        mv = mc_vals[(mc_vals       >= xlim[0]) & (mc_vals       <= xlim[1])]
-        mu_dt, sigma_dt = np.mean(dv), np.std(dv)
-        mu_mc, sigma_mc = np.mean(mv), np.std(mv)
+        for j, topo in enumerate(topologies):
+            ax = axes[i, j]
 
-        ax = axes[i, 0]
-        ax.hist(data_vals, bins=100, range=xlim, density=True,
-                histtype="step",
-                label=f"Data (μ={mu_dt:.3f}, σ={sigma_dt:.3f})")
-        ax.hist(mc_vals,   bins=100, range=xlim, density=True,
-                histtype="step",
-                label=f"MC   (μ={mu_mc:.3f}, σ={sigma_mc:.3f})")
-        ax.set_xlim(xlim)
-        ax.set_title(run["title"])
-        ax.set_xlabel(xlabel)
-        ax.set_ylabel("normalized counts")
-        ax.legend(loc="upper right")
-    #endfor
+            # topology masks
+            mc_mask = (
+                (tree_mc["detector1"].array(library="np") == topo["det1"]) &
+                (tree_mc["detector2"].array(library="np") == topo["det2"])
+            )
+            dt_mask = data_mask_cuts & (
+                (tree_dt["detector1"].array(library="np") == topo["det1"]) &
+                (tree_dt["detector2"].array(library="np") == topo["det2"])
+            )
 
-    # hide the right-hand column for now
-    for ax in axes[:, 1]:
-        ax.axis("off")
+            mc_vals = mc_vals_full[mc_mask]
+            data_vals = dt_vals_full[dt_mask]
+
+            # restrict to plotting range for stats
+            mv = mc_vals[(mc_vals >= xlim[0]) & (mc_vals <= xlim[1])]
+            dv = data_vals[(data_vals >= xlim[0]) & (data_vals <= xlim[1])]
+
+            mu_mc, sigma_mc = np.mean(mv), np.std(mv)
+            mu_dt, sigma_dt = np.mean(dv), np.std(dv)
+
+            # plot
+            ax.hist(data_vals, bins=100, range=xlim, density=True,
+                    histtype="step",
+                    label=f"Data (μ={mu_dt:.3f}, σ={sigma_dt:.3f})")
+            ax.hist(mc_vals,   bins=100, range=xlim, density=True,
+                    histtype="step",
+                    label=f"MC   (μ={mu_mc:.3f}, σ={sigma_mc:.3f})")
+
+            ax.set_xlim(xlim)
+            ax.set_title(f"{run['title']}\n{topo['label']}", fontsize=10)
+            ax.legend(loc="upper right", fontsize=8)
+
+            # only label outer axes
+            if i == n_runs - 1:
+                ax.set_xlabel(xlabel)
+            if j == 0:
+                ax.set_ylabel("normalized counts")
+        #endfor
     #endfor
 
     fig.tight_layout()
@@ -100,10 +127,9 @@ def plot_before_smearing(runs, branch, xlim, xlabel, output_path):
 
 
 def main():
-    # loop over branches, produce one PDF each
     for branch, xlim, xlabel in BRANCH_SETTINGS:
-        out_pdf = f"output/resolution_study/{branch}_before_smearing.pdf"
-        plot_before_smearing(RUNS, branch, xlim, xlabel, out_pdf)
+        out_pdf = f"output/resolution_study/{branch}_by_topology.pdf"
+        plot_by_topology(RUNS, TOPOLOGIES, branch, xlim, xlabel, out_pdf)
     #endfor
 
 
