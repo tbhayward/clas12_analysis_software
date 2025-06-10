@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import os
+import numpy as np
 import uproot
 import matplotlib.pyplot as plt
 
@@ -32,18 +33,18 @@ RUNS = [
     },
 ]
 
-# Branches and their plot ranges
+# Branches and their updated plot ranges
 BRANCH_SETTINGS = [
-    ("Mx2",   (-0.2, 0.2)),
-    ("Mx2_1", (-0.2, 0.2)),
-    ("Mx2_2", (0.6, 1.0))
+    ("Mx2",   (-0.05, 0.05)),
+    ("Mx2_1", (-0.3, 0.3)),
+    ("Mx2_2", (0.6, 1.2)),
 ]
 
 def plot_before_smearing(runs, branch, xlim, output_path):
     """
     For a given missing-mass branch, make a 3x2 grid of histograms:
       - rows = each run
-      - left column = Data vs MC overlay
+      - left column = Data vs MC overlay (normalized)
       - right column = blank (reserved for 'after' plots)
     """
     # ensure output directory exists
@@ -60,9 +61,17 @@ def plot_before_smearing(runs, branch, xlim, output_path):
         mc_vals   = tree_mc[branch].array(library="np")
         data_vals = tree_dt[branch].array(library="np")
 
+        # clip data for stats within xlim
+        dv = data_vals[(data_vals >= xlim[0]) & (data_vals <= xlim[1])]
+        mu, sigma = np.mean(dv), np.std(dv)
+
         ax = axes[i, 0]
-        ax.hist(data_vals, bins=100, range=xlim, histtype="step", label="Data")
-        ax.hist(mc_vals,   bins=100, range=xlim, histtype="step", label="MC")
+        ax.hist(data_vals, bins=100, range=xlim, density=True,
+                histtype="step",
+                label=f"Data (μ={mu:.3f}, σ={sigma:.3f})")
+        ax.hist(mc_vals,   bins=100, range=xlim, density=True,
+                histtype="step",
+                label="MC")
         ax.set_xlim(xlim)
         ax.set_title(run["title"])
         ax.legend()
