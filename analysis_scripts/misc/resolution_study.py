@@ -34,7 +34,7 @@ RUNS = [
     },
 ]
 
-# Branches with updated ranges and axis labels
+# Branches with final ranges and axis labels
 BRANCH_SETTINGS = [
     ("Mx2_1", (-0.5,  0.5),    r"$M_{x (p)}^{2}$ (GeV$^{2}$)"),
     ("Mx2_2", (0.4,   1.6),    r"$M_{x (\gamma)}^{2}$ (GeV$^{2}$)"),
@@ -60,49 +60,55 @@ def process_run(run):
     tree_mc = uproot.open(run['mc_file'])['PhysicsEvents']
     tree_dt = uproot.open(run['data_file'])['PhysicsEvents']
 
-    # Pre-read data arrays for cuts and topology masks
+    # Pre-read arrays for cuts and topology masks (DATA)
     det1_dt      = tree_dt['detector1'].array(library='np')
     det2_dt      = tree_dt['detector2'].array(library='np')
-    t1           = tree_dt['t1'].array(library='np')
-    theta_gg     = tree_dt['theta_gamma_gamma'].array(library='np')
-    pt_miss      = tree_dt['pTmiss'].array(library='np')
-    emiss2       = tree_dt['Emiss2'].array(library='np')
-    # apply cuts: |t1|<1, theta_gg<0.4, pTmiss<0.05, Emiss2<1
+    t1_dt        = tree_dt['t1'].array(library='np')
+    theta_gg_dt  = tree_dt['theta_gamma_gamma'].array(library='np')
+    pt_miss_dt   = tree_dt['pTmiss'].array(library='np')
+    emiss2_dt    = tree_dt['Emiss2'].array(library='np')
     mask_cuts_dt = (
-        (np.abs(t1) < 1) & (theta_gg < 0.4) &
-        (pt_miss < 0.05) & (emiss2 < 1)
+        (np.abs(t1_dt) < 1) & (theta_gg_dt < 0.4) &
+        (pt_miss_dt < 0.05) & (emiss2_dt < 1)
     )
-    # mask_cuts_dt = (
-    #     (np.abs(t1) < 100) & (theta_gg < 100) &
-    #     (pt_miss < 100) & (emiss2 < 100)
-    # )
+
+    # Pre-read arrays for cuts and topology masks (MC)
+    det1_mc      = tree_mc['detector1'].array(library='np')
+    det2_mc      = tree_mc['detector2'].array(library='np')
+    t1_mc        = tree_mc['t1'].array(library='np')
+    theta_gg_mc  = tree_mc['theta_gamma_gamma'].array(library='np')
+    pt_miss_mc   = tree_mc['pTmiss'].array(library='np')
+    emiss2_mc    = tree_mc['Emiss2'].array(library='np')
+    mask_cuts_mc = (
+        (np.abs(t1_mc) < 1) & (theta_gg_mc < 0.4) &
+        (pt_miss_mc < 0.05) & (emiss2_mc < 1)
+    )
 
     for branch, xlim, _ in BRANCH_SETTINGS:
-        # Read branch and topology arrays
-        mc_vals  = tree_mc[branch].array(library='np')
-        dt_vals  = tree_dt[branch].array(library='np')
-        det1_mc  = tree_mc['detector1'].array(library='np')
-        det2_mc  = tree_mc['detector2'].array(library='np')
+        # Read branch arrays once
+        mc_vals_full = tree_mc[branch].array(library='np')
+        dt_vals_full = tree_dt[branch].array(library='np')
 
-        # Define common bins
+        # Define histogram bins
         bins = np.linspace(xlim[0], xlim[1], 101)
 
         for topo in TOPOLOGIES:
-            # Masks
-            mask_mc = (det1_mc == topo['det1']) & (det2_mc == topo['det2'])
-            mask_dt = mask_cuts_dt & \
-                      (det1_dt == topo['det1']) & (det2_dt == topo['det2'])
+            # Combined mask: topology + kinematic cuts
+            mask_mc_topo = mask_cuts_mc &
+                           (det1_mc == topo['det1']) & (det2_mc == topo['det2'])
+            mask_dt_topo = mask_cuts_dt &
+                           (det1_dt == topo['det1']) & (det2_dt == topo['det2'])
 
-            mc_sel = mc_vals[mask_mc]
-            dt_sel = dt_vals[mask_dt]
+            mc_sel = mc_vals_full[mask_mc_topo]
+            dt_sel = dt_vals_full[mask_dt_topo]
 
-            # Compute stats within x-range
+            # Statistics within range
             mv = mc_sel[(mc_sel >= xlim[0]) & (mc_sel <= xlim[1])]
             dv = dt_sel[(dt_sel >= xlim[0]) & (dt_sel <= xlim[1])]
-            mu_mc,    sigma_mc    = mv.mean(),     mv.std()
-            mu_dt,    sigma_dt    = dv.mean(),     dv.std()
+            mu_mc, sigma_mc = mv.mean(), mv.std()
+            mu_dt, sigma_dt = dv.mean(), dv.std()
 
-            # Fill normalized histograms
+            # Normalized histograms
             counts_mc, _ = np.histogram(mc_sel, bins=bins, density=True)
             counts_dt, _ = np.histogram(dt_sel, bins=bins, density=True)
 
@@ -128,13 +134,12 @@ def plot_results(all_results):
     for branch, xlim, xlabel in BRANCH_SETTINGS:
         fig, axes = plt.subplots(
             len(RUNS), len(TOPOLOGIES),
-            figsize=(4*len(TOPOLOGIES), 3*len(RUNS)),
+            figsize=(4 * len(TOPOLOGIES), 3 * len(RUNS)),
             sharex=True, sharey=True
         )
 
         for i, run in enumerate(RUNS):
-            run_name = run['name']
-            res = all_results[run_name][branch]
+            res = all_results[run['name']][branch]
 
             for j, topo in enumerate(TOPOLOGIES):
                 ax = axes[i, j]
@@ -169,7 +174,7 @@ def main():
     # Parallel processing per run
     with ProcessPoolExecutor() as executor:
         futures     = [executor.submit(process_run, run) for run in RUNS]
-        all_results = {ret[0]: ret[1] for ret in (f.result() for f in futures)}
+        all_results = {name: res for name, res in (f.result() for f in futures)}
     #endfor
 
     # Plot once all data is processed
