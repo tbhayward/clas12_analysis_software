@@ -60,7 +60,7 @@ def process_run(run):
     tree_mc = uproot.open(run['mc_file'])['PhysicsEvents']
     tree_dt = uproot.open(run['data_file'])['PhysicsEvents']
 
-    # Pre-read arrays for cuts and topology masks (DATA)
+    # Pre-read arrays for DATA cuts
     det1_dt      = tree_dt['detector1'].array(library='np')
     det2_dt      = tree_dt['detector2'].array(library='np')
     t1_dt        = tree_dt['t1'].array(library='np')
@@ -68,11 +68,13 @@ def process_run(run):
     pt_miss_dt   = tree_dt['pTmiss'].array(library='np')
     emiss2_dt    = tree_dt['Emiss2'].array(library='np')
     mask_cuts_dt = (
-        (np.abs(t1_dt) < 1) & (theta_gg_dt < 0.4) &
-        (pt_miss_dt < 0.05) & (emiss2_dt < 1)
+        (np.abs(t1_dt) < 1) &
+        (theta_gg_dt < 0.4) &
+        (pt_miss_dt < 0.05) &
+        (emiss2_dt < 1)
     )
 
-    # Pre-read arrays for cuts and topology masks (MC)
+    # Pre-read arrays for MC cuts
     det1_mc      = tree_mc['detector1'].array(library='np')
     det2_mc      = tree_mc['detector2'].array(library='np')
     t1_mc        = tree_mc['t1'].array(library='np')
@@ -80,8 +82,10 @@ def process_run(run):
     pt_miss_mc   = tree_mc['pTmiss'].array(library='np')
     emiss2_mc    = tree_mc['Emiss2'].array(library='np')
     mask_cuts_mc = (
-        (np.abs(t1_mc) < 1) & (theta_gg_mc < 0.4) &
-        (pt_miss_mc < 0.05) & (emiss2_mc < 1)
+        (np.abs(t1_mc) < 1) &
+        (theta_gg_mc < 0.4) &
+        (pt_miss_mc < 0.05) &
+        (emiss2_mc < 1)
     )
 
     for branch, xlim, _ in BRANCH_SETTINGS:
@@ -94,10 +98,16 @@ def process_run(run):
 
         for topo in TOPOLOGIES:
             # Combined mask: topology + kinematic cuts
-            mask_mc_topo = mask_cuts_mc &
-                           (det1_mc == topo['det1']) & (det2_mc == topo['det2'])
-            mask_dt_topo = mask_cuts_dt &
-                           (det1_dt == topo['det1']) & (det2_dt == topo['det2'])
+            mask_mc_topo = (
+                mask_cuts_mc &
+                (det1_mc == topo['det1']) &
+                (det2_mc == topo['det2'])
+            )
+            mask_dt_topo = (
+                mask_cuts_dt &
+                (det1_dt == topo['det1']) &
+                (det2_dt == topo['det2'])
+            )
 
             mc_sel = mc_vals_full[mask_mc_topo]
             dt_sel = dt_vals_full[mask_dt_topo]
@@ -113,13 +123,13 @@ def process_run(run):
             counts_dt, _ = np.histogram(dt_sel, bins=bins, density=True)
 
             results[branch][topo['label']] = {
-                'bins':       bins,
-                'mc_counts':  counts_mc,
-                'dt_counts':  counts_dt,
-                'mu_mc':      mu_mc,
-                'sigma_mc':   sigma_mc,
-                'mu_dt':      mu_dt,
-                'sigma_dt':   sigma_dt
+                'bins':      bins,
+                'mc_counts': counts_mc,
+                'dt_counts': counts_dt,
+                'mu_mc':     mu_mc,
+                'sigma_mc':  sigma_mc,
+                'mu_dt':     mu_dt,
+                'sigma_dt':  sigma_dt
             }
         #endfor
     #endfor
