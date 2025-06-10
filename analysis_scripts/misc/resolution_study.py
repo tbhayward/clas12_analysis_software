@@ -4,6 +4,7 @@ import os
 import numpy as np
 import uproot
 import matplotlib.pyplot as plt
+from concurrent.futures import ProcessPoolExecutor
 
 # List of runs with titles and file paths
 RUNS = [
@@ -33,10 +34,10 @@ RUNS = [
     },
 ]
 
-# Only Mx2_1 and Mx2_2, with updated ranges and axis labels
+# Branches with updated ranges and axis labels
 BRANCH_SETTINGS = [
-    ("Mx2_1", (-0.4, 0.4),    r"$M_{x (p)}^{2}$ (GeV$^{2}$)"),
-    ("Mx2_2", (0.5,  1.5),    r"$M_{x (\gamma)}^{2}$ (GeV$^{2}$)"),
+    ("Mx2_1", (-0.5,  0.5), r"$M_{x (p)}^{2}$ (GeV$^{2}$)"),
+    ("Mx2_2", (0.4,   1.6), r"$M_{x (\gamma)}^{2}$ (GeV$^{2}$)"),
 ]
 
 # Detector topologies to split by
@@ -47,90 +48,123 @@ TOPOLOGIES = [
     {"det1": 2, "det2": 1, "label": "CD–FD"},
 ]
 
-def plot_by_topology(runs, topologies, branch, xlim, xlabel, output_path):
+def process_run(run):
     """
-    For a given branch, make a 3x4 grid of histograms:
-      - rows = each run
-      - columns = each detector topology
-      - Data vs MC overlay (normalized, with μ & σ)
-      - apply cuts to DATA: |t1|<1, theta_gamma_gamma<0.4, pTmiss<0.05
+    Read MC and data for one run, fill histograms & stats for all branches and topologies.
+    Returns (run_name, results_dict).
     """
-    os.makedirs(os.path.dirname(output_path), exist_ok=True)
+    # Prepare result container
+    results = {branch: {} for branch, _, _ in BRANCH_SETTINGS}
 
-    n_runs = len(runs)
-    n_topo = len(topologies)
-    fig, axes = plt.subplots(n_runs, n_topo,
-                             figsize=(4 * n_topo, 3 * n_runs),
-                             sharex=True, sharey=True)
+    # Open trees once
+    tree_mc = uproot.open(run['mc_file'])['PhysicsEvents']
+    tree_dt = uproot.open(run['data_file'])['PhysicsEvents']
 
-    for i, run in enumerate(runs):
-        # load both trees once
-        tree_mc = uproot.open(run["mc_file"])["PhysicsEvents"]
-        tree_dt = uproot.open(run["data_file"])["PhysicsEvents"]
+    # Pre-read data arrays for cuts and topology masks
+    det1_dt      = tree_dt['detector1'].array(library='np')
+    det2_dt      = tree_dt['detector2'].array(library='np')
+    t1           = tree_dt['t1'].array(library='np')
+    theta_gg     = tree_dt['theta_gamma_gamma'].array(library='np')
+    pt_miss      = tree_dt['pTmiss'].array(library='np')
+    mask_cuts_dt = (np.abs(t1) < 1) & (theta_gg < 0.4) & (pt_miss < 0.05)
 
-        # extract branch arrays
-        mc_vals_full   = tree_mc[branch].array(library="np")
-        dt_vals_full   = tree_dt[branch].array(library="np")
-        t1             = tree_dt["t1"].array(library="np")
-        theta_gg       = tree_dt["theta_gamma_gamma"].array(library="np")
-        pt_miss        = tree_dt["pTmiss"].array(library="np")
+    for branch, xlim, _ in BRANCH_SETTINGS:
+        # Read branch and topology arrays
+        mc_vals  = tree_mc[branch].array(library='np')
+        dt_vals  = tree_dt[branch].array(library='np')
+        det1_mc  = tree_mc['detector1'].array(library='np')
+        det2_mc  = tree_mc['detector2'].array(library='np')
 
-        # apply global DATA cuts
-        data_mask_cuts = (np.abs(t1) < 1) & (theta_gg < 0.4) & (pt_miss < 0.05)
+        # Define common bins
+        bins = np.linspace(xlim[0], xlim[1], 101)
 
-        for j, topo in enumerate(topologies):
-            ax = axes[i, j]
+        for topo in TOPOLOGIES:
+            # Masks
+            mask_mc = (det1_mc == topo['det1']) & (det2_mc == topo['det2'])
+            mask_dt = mask_cuts_dt & \
+                      (det1_dt == topo['det1']) & (det2_dt == topo['det2'])
 
-            # topology masks
-            mc_mask = (
-                (tree_mc["detector1"].array(library="np") == topo["det1"]) &
-                (tree_mc["detector2"].array(library="np") == topo["det2"])
-            )
-            dt_mask = data_mask_cuts & (
-                (tree_dt["detector1"].array(library="np") == topo["det1"]) &
-                (tree_dt["detector2"].array(library="np") == topo["det2"])
-            )
+            mc_sel = mc_vals[mask_mc]
+            dt_sel = dt_vals[mask_dt]
 
-            mc_vals = mc_vals_full[mc_mask]
-            data_vals = dt_vals_full[dt_mask]
+            # Compute stats within x-range
+            mv = mc_sel[(mc_sel >= xlim[0]) & (mc_sel <= xlim[1])]
+            dv = dt_sel[(dt_sel >= xlim[0]) & (dt_sel <= xlim[1])]
+            mu_mc,    sigma_mc    = mv.mean(),     mv.std()
+            mu_dt,    sigma_dt    = dv.mean(),     dv.std()
 
-            # restrict to plotting range for stats
-            mv = mc_vals[(mc_vals >= xlim[0]) & (mc_vals <= xlim[1])]
-            dv = data_vals[(data_vals >= xlim[0]) & (data_vals <= xlim[1])]
+            # Fill normalized histograms
+            counts_mc, _ = np.histogram(mc_sel, bins=bins, density=True)
+            counts_dt, _ = np.histogram(dt_sel, bins=bins, density=True)
 
-            mu_mc, sigma_mc = np.mean(mv), np.std(mv)
-            mu_dt, sigma_dt = np.mean(dv), np.std(dv)
-
-            # plot
-            ax.hist(data_vals, bins=100, range=xlim, density=True,
-                    histtype="step",
-                    label=f"Data (μ={mu_dt:.3f}, σ={sigma_dt:.3f})")
-            ax.hist(mc_vals,   bins=100, range=xlim, density=True,
-                    histtype="step",
-                    label=f"MC   (μ={mu_mc:.3f}, σ={sigma_mc:.3f})")
-
-            ax.set_xlim(xlim)
-            ax.set_title(f"{run['title']}\n{topo['label']}", fontsize=10)
-            ax.legend(loc="upper right", fontsize=8)
-
-            # only label outer axes
-            if i == n_runs - 1:
-                ax.set_xlabel(xlabel)
-            if j == 0:
-                ax.set_ylabel("normalized counts")
+            results[branch][topo['label']] = {
+                'bins':       bins,
+                'mc_counts':  counts_mc,
+                'dt_counts':  counts_dt,
+                'mu_mc':      mu_mc,
+                'sigma_mc':   sigma_mc,
+                'mu_dt':      mu_dt,
+                'sigma_dt':   sigma_dt
+            }
         #endfor
     #endfor
 
-    fig.tight_layout()
-    fig.savefig(output_path)
-    plt.close(fig)
+    return run['name'], results
+
+
+def plot_results(all_results):
+    """
+    Generate combined plots for all runs, branches, and topologies.
+    """
+    for branch, xlim, xlabel in BRANCH_SETTINGS:
+        fig, axes = plt.subplots(
+            len(RUNS), len(TOPOLOGIES),
+            figsize=(4*len(TOPOLOGIES), 3*len(RUNS)),
+            sharex=True, sharey=True
+        )
+
+        for i, run in enumerate(RUNS):
+            run_name = run['name']
+            res = all_results[run_name][branch]
+
+            for j, topo in enumerate(TOPOLOGIES):
+                ax = axes[i, j]
+                r  = res[topo['label']]
+                centers = 0.5 * (r['bins'][:-1] + r['bins'][1:])
+
+                ax.step(centers, r['dt_counts'], where='mid',
+                        label=f"Data (μ={r['mu_dt']:.3f}, σ={r['sigma_dt']:.3f})")
+                ax.step(centers, r['mc_counts'], where='mid',
+                        label=f"MC   (μ={r['mu_mc']:.3f}, σ={r['sigma_mc']:.3f})")
+
+                ax.set_xlim(xlim)
+                ax.set_title(f"{run['title']}\n{topo['label']}", fontsize=10)
+                ax.legend(loc='upper right', fontsize=8)
+
+                if i == len(RUNS) - 1:
+                    ax.set_xlabel(xlabel)
+                if j == 0:
+                    ax.set_ylabel("normalized counts")
+            #endfor
+        #endfor
+
+        fig.tight_layout()
+        out_pdf = f"output/resolution_study/{branch}_by_topology.pdf"
+        os.makedirs(os.path.dirname(out_pdf), exist_ok=True)
+        fig.savefig(out_pdf)
+        plt.close(fig)
+    #endfor
 
 
 def main():
-    for branch, xlim, xlabel in BRANCH_SETTINGS:
-        out_pdf = f"output/resolution_study/{branch}_by_topology.pdf"
-        plot_by_topology(RUNS, TOPOLOGIES, branch, xlim, xlabel, out_pdf)
+    # Parallel processing per run
+    with ProcessPoolExecutor() as executor:
+        futures     = [executor.submit(process_run, run) for run in RUNS]
+        all_results = {ret[0]: ret[1] for ret in (f.result() for f in futures)}
     #endfor
+
+    # Plot once all data is processed
+    plot_results(all_results)
 
 
 if __name__ == "__main__":
