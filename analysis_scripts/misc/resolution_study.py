@@ -20,15 +20,30 @@ BEAM_ENERGIES = {
 
 # List of runs
 RUNS = [
-    { 'name': 'rga_fa18_inb', 'title': 'RGA Fa18 Inb',
-      'mc_file':  '/work/clas12/.../rec_dvcsgen_rga_fa18_inb_..._epgamma.root',
-      'data_file':'/work/clas12/.../rga_fa18_inb_epgamma.root' },
-    { 'name': 'rga_fa18_out', 'title': 'RGA Fa18 Out',
-      'mc_file':  '/work/clas12/.../rec_dvcsgen_rga_fa18_out_..._epgamma.root',
-      'data_file':'/work/clas12/.../rga_fa18_out_epgamma.root' },
-    { 'name': 'rga_sp19_inb', 'title': 'RGA Sp19 Inb',
-      'mc_file':  '/work/clas12/.../rec_dvcsgen_rga_sp19_inb_..._epgamma.root',
-      'data_file':'/work/clas12/.../rga_sp19_inb_epgamma.root' }
+    {
+        "name": "rga_fa18_inb",
+        "title": "RGA Fa18 Inb",
+        "mc_file":  "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/mc/"
+                    "dvcsgen/rec_dvcsgen_rga_fa18_inb_50nA_10604MeV_epgamma.root",
+        "data_file":"/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/data/"
+                    "dvcs/rga_fa18_inb_epgamma.root"
+    },
+    {
+        "name": "rga_fa18_out",
+        "title": "RGA Fa18 Out",
+        "mc_file":  "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/mc/"
+                    "dvcsgen/rec_dvcsgen_rga_fa18_out_50nA_10604MeV_epgamma.root",
+        "data_file":"/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/data/"
+                    "dvcs/rga_fa18_out_epgamma.root"
+    },
+    {
+        "name": "rga_sp19_inb",
+        "title": "RGA Sp19 Inb",
+        "mc_file":  "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/mc/"
+                    "dvcsgen/rec_dvcsgen_rga_sp19_inb_50nA_10200MeV_epgamma.root",
+        "data_file":"/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/data/"
+                    "dvcs/rga_sp19_inb_epgamma.root"
+    },
 ]
 
 # Branches to compute: missing mass types
