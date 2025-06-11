@@ -47,9 +47,13 @@ RUNS = [
 ]
 
 # Branches to compute: missing mass types
+# BRANCH_SETTINGS = [
+#     ('Mx2_1', (-0.5, 0.5), r'$M_{x(p)}^2$ (GeV$^2$)', 'proton'),
+#     ('Mx2_2', (0.4,  1.6), r'$M_{x(\gamma)}^2$ (GeV$^2$)', 'photon')
+# ]
 BRANCH_SETTINGS = [
-    ('Mx2_1', (-0.5, 0.5), r'$M_{x(p)}^2$ (GeV$^2$)', 'proton'),
-    ('Mx2_2', (0.4,  1.6), r'$M_{x(\gamma)}^2$ (GeV$^2$)', 'photon')
+    ('Mx2_1', (-3, 3), r'$M_{x(p)}^2$ (GeV$^2$)', 'proton'),
+    ('Mx2_2', (-3,  3), r'$M_{x(\gamma)}^2$ (GeV$^2$)', 'photon')
 ]
 
 # Detector topology definitions
