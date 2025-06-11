@@ -57,20 +57,19 @@ public class analysis_fitter extends GenericKinematicFitter {
         return true
                 //                                && p > 1.20
                 //                            && p < 5.00 
-                                && generic_tests.vertex_cut(particle_Index, rec_Bank, run_Bank)
-//                                && (passesForwardDetector // dedicated PID cuts for forward
-//                                        //                        ? pid_cuts.charged_hadron_pass2_chi2pid_cut(particle_Index, rec_Bank)
-//                                        ? pid_cuts.charged_hadron_chi2pid_cut(particle_Index, rec_Bank, run_Bank)
-//                                        : true)
-//                                && (passesCentralDetector // generic |chi2pid| < 3.5 for cd
-//                                        ? pid_cuts.charged_hadron_chi2pid_cut(particle_Index, rec_Bank, run_Bank)
-//                                        : true) //                
-//                && (passesForwardDetector
-//                        ? fiducial_cuts.dc_fiducial_cut(particle_Index, rec_Bank, traj_Bank, run_Bank)
-//                        : true)
-//                && (passesCentralDetector
-//                        ? fiducial_cuts.cvt_fiducial_cut(particle_Index, rec_Bank, traj_Bank, 1)
-//                        : true)
+                && generic_tests.vertex_cut(particle_Index, rec_Bank, run_Bank) //                                && (passesForwardDetector // dedicated PID cuts for forward
+                //                                        //                        ? pid_cuts.charged_hadron_pass2_chi2pid_cut(particle_Index, rec_Bank)
+                //                                        ? pid_cuts.charged_hadron_chi2pid_cut(particle_Index, rec_Bank, run_Bank)
+                //                                        : true)
+                //                                && (passesCentralDetector // generic |chi2pid| < 3.5 for cd
+                //                                        ? pid_cuts.charged_hadron_chi2pid_cut(particle_Index, rec_Bank, run_Bank)
+                //                                        : true) //                
+                //                && (passesForwardDetector
+                //                        ? fiducial_cuts.dc_fiducial_cut(particle_Index, rec_Bank, traj_Bank, run_Bank)
+                //                        : true)
+                //                && (passesCentralDetector
+                //                        ? fiducial_cuts.cvt_fiducial_cut(particle_Index, rec_Bank, traj_Bank, 1)
+                //                        : true)
                 ;
     }
 
@@ -231,6 +230,13 @@ public class analysis_fitter extends GenericKinematicFitter {
                 else if (runnum >= 6616 && runnum <= 6783) {
                     runPeriod = 2;
                 } // RGA Sp19 
+                boolean inbending = false;
+                boolean outbending = false;
+                if (run_Bank.getFloat("torus", 0) == 1) {
+                    outbending = true;
+                } else {
+                    inbending = true;
+                }
 
                 energy_loss_corrections energy_loss_corrections = new energy_loss_corrections();
                 momentum_corrections momentum_corrections = new momentum_corrections();
@@ -256,10 +262,13 @@ public class analysis_fitter extends GenericKinematicFitter {
 //                            }
 //                        }
 //                    }
+                    
                     float[] momentum = {px, py, pz};
-//                    energy_loss_corrections.sebastian_electron_energy_loss_corrections(particle_Index, momentum, rec_Bank, run_Bank);
-//                    momentum_corrections.momentum_corrections(momentum, sector, 0, runPeriod, runPeriod, 0, 0);
-//                    momentum_corrections.jpsi_momentum_corrections(particle_Index, momentum, rec_Bank, run_Bank, track_Bank);
+                    if (inbending) {
+                        momentum_corrections.inbending_momentum_corrections(momentum, sector, 0, runPeriod, runPeriod, 0, 0);
+                    } else if (outbending) {
+                        momentum_corrections.outbending_momentum_corrections(momentum, sector, 0, runPeriod, runPeriod, 0, 0);
+                    }
                     px = momentum[0];
                     py = momentum[1];
                     pz = momentum[2];

@@ -353,8 +353,8 @@ int main(int argc, char** argv)
         if (particle_pid != 11) continue; // electron
         // if (particle_pid != 2212) continue; // proton
 
-        if (traj_edge_6 <= 5 || traj_edge_18 <= 5 || traj_edge_36 <= 10) continue; // #endif
-        // if (traj_edge_6 <= 3 || traj_edge_18 <= 3 || traj_edge_36 <= 7) continue; // #endif
+        if (traj_edge_6 <= 3 || traj_edge_18 <= 3 || traj_edge_36 <= 10) continue; // #endif
+        // if (traj_edge_6 <= 3 || traj_edge_18 <= 3 || traj_edge_36 <= 10) continue; // #endif
 
         // Region 1 (x_6,y_6)
         if (traj_x_6 != -9999) {
@@ -419,8 +419,8 @@ int main(int argc, char** argv)
         if (particle_pid != 11) continue; // electron
         // if (particle_pid != 2212) continue; // proton
 
-        if (traj_edge_6 <= 5 || traj_edge_18 <= 5 || traj_edge_36 <= 10) continue; // #endif
-        // if (traj_edge_6 <= 3 || traj_edge_18 <= 3 || traj_edge_36 <= 7) continue; // #endif
+        if (traj_edge_6 <= 3 || traj_edge_18 <= 3 || traj_edge_36 <= 10) continue; // #endif
+        // if (traj_edge_6 <= 3 || traj_edge_18 <= 3 || traj_edge_36 <= 10) continue; // #endif
 
         // Region 1
         if (traj_x_6 != -9999) {
