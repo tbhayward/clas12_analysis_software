@@ -16,8 +16,8 @@ import analyzers.*
 
 import groovy.io.FileType
 
-// // dilks CLAS QA analysis
-// import clasqa.QADB 
+// dilks CLAS QA analysis
+import clasqa.QADB 
 
 public static double phi_calculation(double x, double y) {
     double phi = Math.toDegrees(Math.atan2(x, y))
@@ -51,12 +51,8 @@ public static void main(String[] args) {
         System.exit(1)
     }
 
-    // parse PID list from second argument, default to 211,321,2212 if missing
-    String pidArg = args.length < 2 ? "211,321,2212" : args[1]
-    if (args.length < 2) {
-        println("WARNING: No PID list provided; defaulting to '$pidArg'.")
-    }
-    List<Integer> targetPids = pidArg.split(',').collect { it.trim().toInteger() }
+    // list of hadron PDG codes to process
+    List<Integer> targetPids = [211, 321, 2212]
     println("Processing PIDs: $targetPids")
 
     // build one EventFilter per PID
@@ -64,36 +60,36 @@ public static void main(String[] args) {
         [ (pid): new EventFilter("11:${pid}:X+:X-:Xn") ]
     }
 
-    // output file (third argument)
-    String output_file = args.length < 3 ? "hadron_dummy_out.txt" : args[2]
-    if (args.length < 3) {
+    // output file
+    String output_file = args.length < 2 ? "hadron_dummy_out.txt" : args[1]
+    if (args.length < 2) {
         println("WARNING: No output file specified; defaulting to '$output_file'.")
     }
     File file = new File(output_file)
     file.delete()
 
-    // number of files to process (fourth argument)
-    int n_files = (args.length < 4 ||
-                   Integer.parseInt(args[3]) == 0 ||
-                   Integer.parseInt(args[3]) > hipo_list.size())
+    // number of files to process
+    int n_files = (args.length < 3 ||
+                   Integer.parseInt(args[2]) == 0 ||
+                   Integer.parseInt(args[2]) > hipo_list.size())
                   ? hipo_list.size()
-                  : Integer.parseInt(args[3])
-    if (args.length < 4 ||
-        Integer.parseInt(args[3]) == 0 ||
-        Integer.parseInt(args[3]) > hipo_list.size()) {
+                  : Integer.parseInt(args[2])
+    if (args.length < 3 ||
+        Integer.parseInt(args[2]) == 0 ||
+        Integer.parseInt(args[2]) > hipo_list.size()) {
         println("WARNING: Invalid or missing file-count; processing all ${hipo_list.size()} files.")
     }
 
-    // beam energy (fifth argument)
-    double beam_energy = args.length < 5 ? 10.6 : Double.parseDouble(args[4])
-    if (args.length < 5) {
+    // beam energy
+    double beam_energy = args.length < 4 ? 10.6 : Double.parseDouble(args[3])
+    if (args.length < 4) {
         println("No beam energy provided; defaulting to 10.6 GeV.")
     }
 
-    // optional run override (sixth argument)
+    // optional run override
     Integer userProvidedRun = null
-    if (args.length >= 6) {
-        userProvidedRun = Integer.parseInt(args[5])
+    if (args.length >= 5) {
+        userProvidedRun = Integer.parseInt(args[4])
     } else {
         println("Run number not provided; pulling from hipo files.")
     }
@@ -114,17 +110,17 @@ public static void main(String[] args) {
     // kinematic fitter
     GenericKinematicFitter fitter = new analysis_fitter(10.6041)
 
-    // // QADB setup
-    // QADB qa = new QADB()
-    // ['TotalOutlier','TerminalOutlier','MarginalOutlier',
-    //  'SectorLoss','LowLiveTime','Misc','ChargeHigh',
-    //  'ChargeNegative','ChargeUnknown','PossiblyNoBeam']
-    // .each { qa.checkForDefect(it) }
-    // [5046,5047,5051,5128,5129,5130,5158,5159,5160,5163,5165,5166,5167,5168,
-    //  5169,5180,5181,5182,5183,5400,5448,5495,5496,5505,5567,5610,5617,5621,
-    //  5623,6736,6737,6738,6739,6740,6741,6742,6743,6744,6746,6747,6748,6749,
-    //  6750,6751,6753,6754,6755,6756,6757,16194,16089,16185,16308,16184,16307,16309]
-    // .each { qa.allowMiscBit(it) }
+    // QADB setup
+    QADB qa = new QADB()
+    ['TotalOutlier','TerminalOutlier','MarginalOutlier',
+     'SectorLoss','LowLiveTime','Misc','ChargeHigh',
+     'ChargeNegative','ChargeUnknown','PossiblyNoBeam']
+    .each { qa.checkForDefect(it) }
+    [5046,5047,5051,5128,5129,5130,5158,5159,5160,5163,5165,5166,5167,5168,
+     5169,5180,5181,5182,5183,5400,5448,5495,5496,5505,5567,5610,5617,5621,
+     5623,6736,6737,6738,6739,6740,6741,6742,6743,6744,6746,6747,6748,6749,
+     6750,6751,6753,6754,6755,6756,6757,16194,16089,16185,16308,16184,16307,16309]
+    .each { qa.allowMiscBit(it) }
 
     StringBuilder batchLines = new StringBuilder()
     int num_events = 0, max_lines = 1000, lineCount = 0
@@ -135,7 +131,6 @@ public static void main(String[] args) {
         reader.open(hipo_list[current_file])
 
         while (reader.hasEvent()) {
-
             ++num_events
             if (num_events % 500000 == 0) print("processed: $num_events events. ")
 
@@ -146,31 +141,25 @@ public static void main(String[] args) {
 
             PhysicsEvent research_Event = fitter.getPhysicsEvent(event)
 
-            // boolean baseEvent = (runnum == 11 ||
-            //                      runnum < 5020 ||
-            //                      runnum > 16772 ||
-            //                      qa.pass(runnum, evnum))
-            boolean baseEvent = (runnum == 11 || runnum < 5020 || runnum > 16772)
+            boolean baseEvent = (runnum == 11 ||
+                                 runnum < 5020 ||
+                                 runnum > 16772 ||
+                                 qa.pass(runnum, evnum))
             if (runnum > 17768) baseEvent = false
             if (!baseEvent) continue
 
             // loop over each hadron PID
             for (int pidValue : targetPids) {
-                EventFilter f = new EventFilter("11:${pidValue}:X+:X-:Xn")
-                println(f);
-			    if (!f.isValid(research_Event)) continue
-                println(pidValue);
-                int num_hadrons = research_Event.countByPid(pidValue)
+                EventFilter f = filterMap[pidValue]
+                if (!f.isValid(research_Event)) continue
 
+                int num_hadrons = research_Event.countByPid(pidValue)
                 for (int idx = 0; idx < num_hadrons; idx++) {
-                	println("HELLO WORLD")
                     BeamEnergy Eb = new BeamEnergy(research_Event, runnum, false)
                     double energy = (runnum == 11) ? beam_energy : Eb.Eb()
                     TwoParticles variables = new TwoParticles(event, research_Event, pidValue, idx, energy)
 
                     if (!variables.channel_test(variables)) continue
-                    
-
 
                     // retrieve event quantities
                     int fiducial_status = variables.get_fiducial_status()
