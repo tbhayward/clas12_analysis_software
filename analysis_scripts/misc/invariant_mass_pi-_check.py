@@ -136,7 +136,7 @@ def analyze_period(period_name, file_path, branches, edges):
             sel_i = (bin_idx == i)
             count_i = np.count_nonzero(sel_i)
             print(f"  Bin {i+1}/{n_bins} ({edges[i]:.2f}<x<{edges[i+1]:.2f}): {count_i} events")
-            ax.hist(inv_mass[sel_i], bins=50, range=(0, 1.5))
+            ax.hist(inv_mass[sel_i], bins=50, range=(0, 3.5))
             ax.set_title(f"{edges[i]:.2f} < x < {edges[i+1]:.2f}")
             ax.set_xlim(0, 1.5)
         else:
