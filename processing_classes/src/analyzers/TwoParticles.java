@@ -50,6 +50,7 @@ public class TwoParticles {
 
     protected double p_Breit_pz, p_gN_pz;
 
+    // RICH variables
     protected int emilay = -9999;
     protected int emico = -9999;
     protected int emqua = -9999;
