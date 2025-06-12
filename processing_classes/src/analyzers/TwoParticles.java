@@ -113,23 +113,23 @@ public class TwoParticles {
         if (event.hasBank("RICH::Particle")) {
             rich_Bank = (HipoDataBank) event.getBank("RICH::Particle");
 
-            for (int current_Row = 0; current_Row < cal_Bank.rows(); current_Row++) {
-                int pindex = cal_Bank.getInt("pindex", current_Row);
+            for (int current_Row = 0; current_Row < rich_Bank.rows(); current_Row++) {
+                int pindex = rich_Bank.getInt("pindex", current_Row);
                 if (pindex == p_rec_index) {
-                    emilay = cal_Bank.getInt("emilay", current_Row);
-                    emico = cal_Bank.getInt("emico", current_Row);
-                    emqua = cal_Bank.getInt("emqua", current_Row);
-                    best_PID = cal_Bank.getInt("best_PID", current_Row);
-                    RQ = cal_Bank.getFloat("RQ", current_Row);
-                    ReQ = cal_Bank.getFloat("ReQ", current_Row);
-                    el_logl = cal_Bank.getFloat("el_logl", current_Row);
-                    pi_logl = cal_Bank.getFloat("pi_logl", current_Row);
-                    k_logl = cal_Bank.getFloat("k_logl", current_Row);
-                    pr_logl = cal_Bank.getFloat("pr_logl", current_Row);
-                    best_ch = cal_Bank.getFloat("best_ch", current_Row);
-                    best_c2 = cal_Bank.getFloat("best_c2", current_Row);
-                    best_RL = cal_Bank.getFloat("best_RL", current_Row);
-                    best_ntot = cal_Bank.getFloat("best_ntot", current_Row);
+                    emilay = rich_Bank.getInt("emilay", current_Row);
+                    emico = rich_Bank.getInt("emico", current_Row);
+                    emqua = rich_Bank.getInt("emqua", current_Row);
+                    best_PID = rich_Bank.getInt("best_PID", current_Row);
+                    RQ = rich_Bank.getFloat("RQ", current_Row);
+                    ReQ = rich_Bank.getFloat("ReQ", current_Row);
+                    el_logl = rich_Bank.getFloat("el_logl", current_Row);
+                    pi_logl = rich_Bank.getFloat("pi_logl", current_Row);
+                    k_logl = rich_Bank.getFloat("k_logl", current_Row);
+                    pr_logl = rich_Bank.getFloat("pr_logl", current_Row);
+                    best_ch = rich_Bank.getFloat("best_ch", current_Row);
+                    best_c2 = rich_Bank.getFloat("best_c2", current_Row);
+                    best_RL = rich_Bank.getFloat("best_RL", current_Row);
+                    best_ntot = rich_Bank.getFloat("best_ntot", current_Row);
                 }
             }
         }
