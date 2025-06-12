@@ -201,7 +201,6 @@ public static void main(String[] args) {
                     emico    = variables.emico()
                     emqua    = variables.emqua()
                     best_PID = variables.best_PID()
-                    println(best_PID);
                     RQ       = variables.RQ()
                     ReQ      = variables.ReQ()
                     el_logl  = variables.el_logl()
