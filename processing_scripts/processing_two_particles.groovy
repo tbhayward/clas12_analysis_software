@@ -16,8 +16,8 @@ import analyzers.*
 
 import groovy.io.FileType
 
-// dilks CLAS QA analysis
-import clasqa.QADB 
+// // dilks CLAS QA analysis
+// import clasqa.QADB 
 
 public static double phi_calculation(double x, double y) {
     double phi = Math.toDegrees(Math.atan2(x, y))
