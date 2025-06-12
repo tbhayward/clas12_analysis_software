@@ -261,6 +261,7 @@ public static void main(String[] args) {
 				    	best_c2 = variables.best_c2();
 				    	best_RL = variables.best_RL();
 				    	best_ntot = variables.best_ntot();
+				    	println(emilay+" "+emico+" "+best_PID);
 
 		                // Use a StringBuilder to append all data in a single call
 		                StringBuilder line = new StringBuilder();

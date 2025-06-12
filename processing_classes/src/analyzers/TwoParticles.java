@@ -130,7 +130,6 @@ public class TwoParticles {
                     best_c2 = rich_Bank.getFloat("best_c2", current_Row);
                     best_RL = rich_Bank.getFloat("best_RL", current_Row);
                     best_ntot = rich_Bank.getFloat("best_ntot", current_Row);
-                    System.out.println(emilay+" "+emico);
                 }
             }
         }
