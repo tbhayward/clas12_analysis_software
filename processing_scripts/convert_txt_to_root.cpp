@@ -185,7 +185,7 @@ int main(int argc, char *argv[]) {
     int is_mc = atoi(argv[4]);
 
     // rich variables
-    int emilay, emico, emqua, best_PID, EB_PID;
+    int emilay, emico, emqua, best_PID, EB_pid;
     double RQ, ReQ, el_logl, pi_logl, k_logl, pr_logl, best_ch, best_c2, best_RL, best_ntot;
 
     // Declare common variables
