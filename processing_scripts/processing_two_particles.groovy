@@ -112,6 +112,7 @@ public static void main(String[] args) {
 	
 	// set filter for final states
 	EventFilter filter = new EventFilter("11:"+p1_Str+":X+:X-:Xn");
+	// EventFilter filter = new EventFilter("11:"+p1_Str+":Xn");
 	
 	// instantiate QADB
 	QADB qa = new QADB()
@@ -245,22 +246,6 @@ public static void main(String[] args) {
 		                Depolarization_V = variables.Depolarization_V();
 				    	Depolarization_W = variables.Depolarization_W();
 
-				    	// RICH variables 
-				    	emilay = variables.emilay();
-				    	emico = variables.emico();
-				    	emqua = variables.emqua();
-				    	best_PID = variables.best_PID();
-				    	RQ = variables.RQ();
-				    	ReQ = variables.ReQ();
-				    	el_logl = variables.el_logl();
-				    	pi_logl = variables.pi_logl();
-				    	k_logl = variables.k_logl();
-				    	pr_logl = variables.pr_logl();
-				    	best_ch = variables.best_ch();
-				    	best_c2 = variables.best_c2();
-				    	best_RL = variables.best_RL();
-				    	best_ntot = variables.best_ntot();
-
 		                // Use a StringBuilder to append all data in a single call
 		                StringBuilder line = new StringBuilder();
 		                line.append(fiducial_status).append(" ")
@@ -297,22 +282,7 @@ public static void main(String[] args) {
 		                    .append(Depolarization_B).append(" ")
 		                    .append(Depolarization_C).append(" ")
 		                    .append(Depolarization_V).append(" ")
-		                    .append(Depolarization_W).append(" ")
-		                    .append(emilay).append(" ")
-		                    .append(emico).append(" ")
-		                    .append(emqua).append(" ")
-		                    .append(best_PID).append(" ")
-		                    .append(RQ).append(" ")
-		                    .append(ReQ).append(" ")
-		                    .append(el_logl).append(" ")
-		                    .append(pi_logl).append(" ")
-		                    .append(k_logl).append(" ")
-		                    .append(pr_logl).append(" ")
-		                    .append(best_ch).append(" ")
-		                    .append(best_c2).append(" ")
-		                    .append(best_RL).append(" ")
-		                    .append(best_ntot).append(" ")
-		                    .append(EB_pid).append("\n");
+		                    .append(Depolarization_W).append("\n");
 
 		                // Append the line to the batchLines StringBuilder
 		                batchLines.append(line.toString());
@@ -336,18 +306,11 @@ public static void main(String[] args) {
 		    batchLines.setLength(0);
 		}
 
-		println(
-	      "1: fiducial_status, 2: num_pos, 3: num_neg, 4: num_neutrals, " +
-	      "5: runnum, 6: evnum, 7: helicity, 8: detector, " +
-	      "9: e_p, 10: e_theta, 11: e_phi, 12: vz_e, 13: open_angle, " +
-	      "14: p_p, 15: p_theta, 16: p_phi, 17: vz_p, " +
-	      "18: Q2, 19: W, 20: Mx2, 21: x, 22: t, 23: tmin, " +
-	      "24: y, 25: z, 26: xF, 27: pT, 28: xi, 29: eta, 30: phi, " +
-	      "31: DepA, 32: DepB, 33: DepC, 34: DepV, 35: DepW, " +
-	      "36: emilay, 37: emico, 38: emqua, 39: best_PID, 40: RQ, " +
-	      "41: ReQ, 42: el_logl, 43: pi_logl, 44: k_logl, 45: pr_logl, " +
-	      "46: best_ch, 47: best_c2, 48: best_RL, 49: best_ntot, 50: EB_pid"
-	    )
+		println("1: fiducial_status, 2: num_pos, 3: num_neg, 4: num_neutrals, " +
+		"5: runnum, 6: evnum, 7: helicity, 8: detector, 9: e_p, 10: e_theta, 11: e_phi, 12: vz_e, " +
+		"13: open_angle, 14: p_p, 15: p_theta, 16: p_phi, 17: vz_p, 18: Q2, 19: W, 20: Mx2, " +
+		"21: x, 22: t, 23: tmin, 24: y, 25: z, 26: xF, 27: pT, 28: xi, 29: eta, 30: phi (trento), " +
+		"31: DepA, 32: DepB, 33: DepC, 34: DepV, 35: DepW");
 
 		println("Set p1 PID = $p1_Str");
 		println("output text file is: $file");
