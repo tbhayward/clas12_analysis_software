@@ -153,11 +153,11 @@ public static void main(String[] args) {
             boolean baseEvent = (runnum == 11 || runnum < 5020 || runnum > 16772)
             if (runnum > 17768) baseEvent = false
             if (!baseEvent) continue
-            println("HELLO WORLD")
 
             // loop over each hadron PID
             for (int pidValue : targetPids) {
                 EventFilter f = filterMap[pidValue]
+                println(f)
                 if (!f.isValid(research_Event)) continue
 
                 int num_hadrons = research_Event.countByPid(pidValue)
