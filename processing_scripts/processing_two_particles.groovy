@@ -161,14 +161,15 @@ public static void main(String[] args) {
                 if (!f.isValid(research_Event)) continue
                 println(pidValue);
                 int num_hadrons = research_Event.countByPid(pidValue)
-                
+
                 for (int idx = 0; idx < num_hadrons; idx++) {
+                	println("HELLO WORLD")
                     BeamEnergy Eb = new BeamEnergy(research_Event, runnum, false)
                     double energy = (runnum == 11) ? beam_energy : Eb.Eb()
                     TwoParticles variables = new TwoParticles(event, research_Event, pidValue, idx, energy)
 
                     if (!variables.channel_test(variables)) continue
-                    println("HELLO WORLD")
+                    
 
 
                     // retrieve event quantities
