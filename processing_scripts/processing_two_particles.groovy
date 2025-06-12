@@ -157,7 +157,7 @@ public static void main(String[] args) {
             // loop over each hadron PID
             for (int pidValue : targetPids) {
                 EventFilter f = filterMap[pidValue]
-                println(f)
+                f.clear()
                 if (!f.isValid(research_Event)) continue
 
                 int num_hadrons = research_Event.countByPid(pidValue)
