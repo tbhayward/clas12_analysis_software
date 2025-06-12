@@ -214,7 +214,7 @@ if not os.path.isdir(out_dir):
 # -----------------------------------------------------------------------------
 plt.figure(figsize=(15, 5))
 plt.suptitle(
-    r"$ep \rightarrow en\pi^{+}$, $|t| < 1$, $0.75 < M_{x}^{2} < 1.05\ (\mathrm{GeV}^{2})$",
+    r"$ep \rightarrow en\pi^{+}$, $0.07 < |t| < 0.7$, $z > 0.55$, $y < 0.65$, $0.75 < M_{x}^{2} < 1.05\ (\mathrm{GeV}^{2})$",
     fontsize=16,
     y=0.96
 )

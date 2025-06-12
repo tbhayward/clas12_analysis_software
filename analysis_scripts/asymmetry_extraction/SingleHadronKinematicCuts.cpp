@@ -130,6 +130,18 @@ bool SingleHadronKinematicCuts::applyCuts(int currentFits, bool isMC)
     // if (*xF  < 0.0    ) return false;
     // if (*Mx2 < 3.24   ) return false;
 
+    // if (*runnum == 16234 || *runnum == 16235 || *runnum == 16236 || *runnum == 16243 ||
+    //     *runnum == 16250 || *runnum == 16251 || *runnum == 16317 || *runnum == 16325 ||
+    //     *runnum == 16658 || *runnum == 16659 || *runnum == 16660 || *runnum == 16664 || 
+    //     *runnum == 16665 || *runnum == 16666 || *runnum == 16671 || *runnum == 16672 || 
+    //     *runuum == 16673 || *runnum == 16674 || *runnum == 16675 || *runnum == 16676 ||
+    //     *runnum == 16678 || *runnum == 16679 || *runnum == 16681 || *runnum == 16682 || 
+    //     *runnum == 16683 || *runnum == 16685 || *runnum == 16686 || *runnum == 16687 || 
+    //     *runnum == 16688 || *runnum == 16689 || *runnum == 16690 || *runnum == 16692 ||
+    //     *runnum == 16693 || *runnum == 16695 || *runnum == 16721 || *runnum == 16722 || 
+    //     *runnum == 16733 || *runnum == 16734 || *runnum == 16736) { return false; }
+
+
     // 2) If the property is “enpi,” impose |t| < 1.0 as well:
     if (property == "enpi") {
         // compute t from the branches
