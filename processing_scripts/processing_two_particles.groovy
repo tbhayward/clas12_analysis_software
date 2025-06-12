@@ -159,8 +159,9 @@ public static void main(String[] args) {
                 EventFilter f = filterMap[pidValue]
                 f.clear()
                 if (!f.isValid(research_Event)) continue
-                
+
                 int num_hadrons = research_Event.countByPid(pidValue)
+                println(num_hadrons);
                 for (int idx = 0; idx < num_hadrons; idx++) {
                     BeamEnergy Eb = new BeamEnergy(research_Event, runnum, false)
                     double energy = (runnum == 11) ? beam_energy : Eb.Eb()
