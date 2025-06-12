@@ -557,36 +557,34 @@ print(f"Asymmetry plot saved to '{asymmetry_filename}'")
 # New functionality: Plot dilution factor vs xB for Su22 and Fa22
 # -----------------------------------------------------------------------------
 
-# Dilution factor data for Su22
+# x–values from the Su22 sinφ asymmetries (10 bins)
 x_Su22 = np.array([row[0] for row in enpichi2FitsALUsinphi_Su22])
-dil_Su22 = np.array([0.711119, 0.376873, 0.390790, 0.401177, 0.410563, 0.416077])
-dil_err_Su22 = np.array([0.173083, 0.0175818, 0.00942491, 0.00801711, 0.0108668, 0.0225813])
 
-# Dilution factor data for Fa22
+# New Su22 dilution factors (10 bins)
+dil_Su22     = np.array([0.482784, 0.311356, 0.325547, 0.354333, 0.355804,
+                         0.362807, 0.374695, 0.394802, 0.331315, 0.398176])
+dil_err_Su22 = np.array([0.11728,  0.0380967, 0.0195395, 0.0139435, 0.0118704,
+                         0.0113884, 0.012495,  0.015489,  0.0263908, 0.0381037])
+
+# x–values from the Fa22 sinφ asymmetries (10 bins)
 x_Fa22 = np.array([row[0] for row in enpichi2FitsALUsinphi_Fa22])
-dil_Fa22 = np.array([0.374532, 0.406101, 0.386122, 0.397153, 0.415526, 0.428239])
-dil_err_Fa22 = np.array([0.117283, 0.00608866, 0.00354573, 0.00301186, 0.00400862, 0.00824607])
+
+# New Fa22 dilution factors (10 bins)
+dil_Fa22     = np.array([0.387857, 0.360117, 0.348367, 0.3514,   0.343512,
+                         0.360489, 0.353206, 0.366436, 0.343407, 0.358797])
+dil_err_Fa22 = np.array([0.056521, 0.0125693, 0.00699825, 0.00527699, 0.00469843,
+                         0.0043642,  0.00512107, 0.00646144, 0.0100004,  0.0164314])
 
 plt.figure(figsize=(6, 5))
 plt.errorbar(
-    x_Su22,
-    dil_Su22,
-    yerr=dil_err_Su22,
-    fmt="o",
-    color=colors["Su22"],
-    ecolor=colors["Su22"],
-    capsize=3,
-    label="Su22"
+    x_Su22, dil_Su22, yerr=dil_err_Su22,
+    fmt="o", color=colors["Su22"], ecolor=colors["Su22"],
+    capsize=3, label="Su22"
 )
 plt.errorbar(
-    x_Fa22,
-    dil_Fa22,
-    yerr=dil_err_Fa22,
-    fmt="o",
-    color=colors["Fa22"],
-    ecolor=colors["Fa22"],
-    capsize=3,
-    label="Fa22"
+    x_Fa22, dil_Fa22, yerr=dil_err_Fa22,
+    fmt="o", color=colors["Fa22"], ecolor=colors["Fa22"],
+    capsize=3, label="Fa22"
 )
 
 plt.xlabel(r"$x_{B}$", fontsize=label_fontsize)
@@ -594,7 +592,8 @@ plt.ylabel(r"$D_{f}$", fontsize=label_fontsize)
 plt.ylim(0, 1)
 plt.xlim(0, 0.7)
 plt.grid(True, linestyle="--", alpha=0.6)
-plt.legend(frameon=True, edgecolor="black", fontsize=11, title="Run Period", title_fontsize=12)
+plt.legend(frameon=True, edgecolor="black",
+           fontsize=11, title="Run Period", title_fontsize=12)
 
 plt.tight_layout()
 dilution_filename = os.path.join(out_dir, "dilution_vs_xB.pdf")
