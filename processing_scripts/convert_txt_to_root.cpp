@@ -1198,7 +1198,9 @@ int main(int argc, char *argv[]) {
         while (infile >> fiducial_status >> num_pos >> num_neg >> num_neutral >> 
             runnum >> evnum >> helicity >> detector >> e_p >> e_theta >> e_phi >> vz_e >> 
             p_p >> p_theta >> p_phi >> vz_p >> open_angle >> Q2 >> W >> Mx2 >> x >> t >> tmin >> y >> z >> xF >> 
-            pT >> xi >> eta >> phi >> DepA >> DepB >> DepC >> DepV >> DepW) {
+            pT >> xi >> eta >> phi >> DepA >> DepB >> DepC >> DepV >> DepW >> emilay >> emico >> emqua >> best_PID >> 
+            RQ >> ReQ >> el_logl >> pi_logl >> k_logl >> pr_logl >> best_ch >> best_c2 >> best_RL >>
+            best_ntot >> EB_pid) {
 
             beam_pol = getPol(runnum);
             if (runnum < 16000) { target_pol = 0; }
@@ -1248,9 +1250,7 @@ int main(int argc, char *argv[]) {
             z >> z1 >> z2 >> Mh >> xF >> xF1 >> xF2 >> 
             pT >> pT1 >> pT2 >> pTpT >> xi >> xi1 >> xi2 >> eta >> eta1 >> eta2 >> Delta_eta>> 
             eta1_gN >> eta2_gN >> phi1 >> phi2 >> Delta_phi >> phi >> phiR >> theta >> 
-            DepA >> DepB >> DepC >> DepV >> DepW >> emilay >> emico >> emqua >> best_PID >> 
-            RQ >> ReQ >> el_logl >> pi_logl >> k_logl >> pr_logl >> best_ch >> best_c2 >> best_RL >>
-            best_ntot >> EB_pid) {
+            DepA >> DepB >> DepC >> DepV >> DepW) {
 
             beam_pol = getPol(runnum);
             if (runnum < 16000) { target_pol = 0; }
