@@ -159,7 +159,7 @@ public static void main(String[] args) {
                 EventFilter f = filterMap[pidValue]
                 f.clear()
                 if (!f.isValid(research_Event)) continue
-                println("HELLO WORLD")
+                
                 int num_hadrons = research_Event.countByPid(pidValue)
                 for (int idx = 0; idx < num_hadrons; idx++) {
                     BeamEnergy Eb = new BeamEnergy(research_Event, runnum, false)
@@ -167,6 +167,7 @@ public static void main(String[] args) {
                     TwoParticles variables = new TwoParticles(event, research_Event, pidValue, idx, energy)
 
                     if (!variables.channel_test(variables)) continue
+                    println("HELLO WORLD")
 
 
                     // retrieve event quantities
