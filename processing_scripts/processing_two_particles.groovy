@@ -166,6 +166,7 @@ public static void main(String[] args) {
 
                     if (!variables.channel_test(variables)) continue
 
+                    println("HELLO WORLD")
                     // retrieve event quantities
                     int fiducial_status = variables.get_fiducial_status()
                     helicity      = variables.get_helicity()
