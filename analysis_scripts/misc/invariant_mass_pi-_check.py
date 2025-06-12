@@ -3,7 +3,7 @@
 Script: invariant_mass_pi-_check.py
 Compute and plot the invariant mass of the scattered electron and #pi^{+}
 for ep -> enpi+ candidates, in parallel for RGC Su22, RGC Fa22, and RGC Sp23,
-with progress updates.
+with progress updates and single-pass histogram filling.
 """
 import os
 import sys
@@ -60,75 +60,89 @@ def compute_t(runnum, e_p, e_th, e_ph, p_p, p_th, p_ph):
 def analyze_period(period_name, file_path, branches, edges):
     """Analyze one run period and save the invariant mass canvas with progress."""
     start_time = time.time()
-    print(f"Starting {period_name} analysis...")
+    print(f"Starting {period_name}...")
 
+    # Load data
     with uproot.open(file_path) as f:
         if "PhysicsEvents" not in f:
             raise KeyError(f"Tree 'PhysicsEvents' not found in {file_path}")
-        tree = f["PhysicsEvents"]
-        data = tree.arrays(branches, library="np")
+        data = f["PhysicsEvents"].arrays(branches, library="np")
 
+    # Extract arrays
     runnum = data["runnum"]
+    e_p    = data["e_p"];    e_th = data["e_theta"]; e_ph = data["e_phi"]
+    p_p_   = data["p_p"];    p_th = data["p_theta"]; p_ph = data["p_phi"]
+    x      = data["x"]
+    y      = data["y"]
+    z      = data["z"]
+    Q2     = data["Q2"]
+    Mx2    = data["Mx2"]
     n_events = len(runnum)
-    print(f"Loaded {n_events} events for {period_name}.")
+    print(f"Loaded {n_events} events.")
 
-    # extract arrays
-    e_p  = data["e_p"];    e_th = data["e_theta"]; e_ph = data["e_phi"]
-    p_p_ = data["p_p"];    p_th = data["p_theta"]; p_ph = data["p_phi"]
-    x    = data["x"];      y    = data["y"]
-    z    = data["z"];      Q2   = data["Q2"]
-    Mx2  = data["Mx2"]
-
-    # Vectorize t computation
-    compute_t_vec = np.vectorize(compute_t)
+    # Compute t-values
     print("Computing t-values...")
+    compute_t_vec = np.vectorize(compute_t)
     t_vals = compute_t_vec(runnum, e_p, e_th, e_ph, p_p_, p_th, p_ph)
 
-    # Kinematic cuts
+    # Apply kinematic cuts
     mask = (
         (np.abs(t_vals) > 0.07) & (np.abs(t_vals) < 0.7) &
         (y < 0.65) & (z > 0.55) &
         (Q2 < 8.0) & (Mx2 > 0.75) & (Mx2 < 1.05)
     )
-    n_selected = np.count_nonzero(mask)
-    print(f"After cuts, {n_selected} events remain ({n_selected/n_events*100:.1f}%).")
+    n_sel = np.count_nonzero(mask)
+    print(f"Events after cuts: {n_sel} ({n_sel/n_events*100:.1f}%)")
 
-    # Prepare canvas
-    fig, axes = plt.subplots(3, 4, figsize=(16, 12), sharex=True, sharey=True)
-    axes_flat = axes.flatten()
+    # Pre-calculate invariant mass and x for all selected events (single pass)
+    e_p_m  = e_p[mask];    e_th_m = e_th[mask];    e_ph_m = e_ph[mask]
+    p_p_m  = p_p_[mask];   p_th_m = p_th[mask];    p_ph_m = p_ph[mask]
+    x_m    = x[mask]
+
+    # Electron 4-vector
+    E_e_m = np.sqrt(e_p_m**2 + m_e**2)
+    sin_e_m = np.sin(e_th_m); cos_e_m = np.cos(e_th_m)
+    ex_m = e_p_m * sin_e_m * np.cos(e_ph_m)
+    ey_m = e_p_m * sin_e_m * np.sin(e_ph_m)
+    ez_m = e_p_m * cos_e_m
+
+    # Pion 4-vector
+    E_pi_m = np.sqrt(p_p_m**2 + m_pi**2)
+    sin_p_m = np.sin(p_th_m); cos_p_m = np.cos(p_th_m)
+    px_m = p_p_m * sin_p_m * np.cos(p_ph_m)
+    py_m = p_p_m * sin_p_m * np.sin(p_ph_m)
+    pz_m = p_p_m * cos_p_m
+
+    # Compute invariant mass
+    E_tot   = E_e_m + E_pi_m
+    px_tot  = ex_m + px_m
+    py_tot  = ey_m + py_m
+    pz_tot  = ez_m + pz_m
+    inv_mass = np.sqrt(E_tot**2 - (px_tot**2 + py_tot**2 + pz_tot**2))
+
+    # Assign events to xB bins
+    bin_idx = np.digitize(x_m, edges) - 1  # indices 0..n_bins-1
     n_bins = len(edges) - 1
 
-    for i, ax in enumerate(axes_flat):  # loop over pads #endfor
+    # Prepare canvas and hist settings
+    fig, axes = plt.subplots(3, 4, figsize=(16, 12), sharex=True, sharey=True)
+    axes_flat = axes.flatten()
+
+    # Fill and plot histograms per bin
+    for i, ax in enumerate(axes_flat):  # loop pads #endfor
         if i < n_bins:
-            x_min, x_max = edges[i], edges[i+1]
-            sel = mask & (x > x_min) & (x <= x_max)
-            print(f"  Processing bin {i+1}/{n_bins}: x in [{x_min}, {x_max}] ({np.count_nonzero(sel)} evts)")
-
-            # Compute invariant mass
-            E_e    = np.sqrt(e_p[sel]**2 + m_e**2)
-            sin_e  = np.sin(e_th[sel]); cos_e = np.cos(e_th[sel])
-            ex = e_p[sel] * sin_e * np.cos(e_ph[sel])
-            ey = e_p[sel] * sin_e * np.sin(e_ph[sel])
-            ez = e_p[sel] * cos_e
-
-            E_pi   = np.sqrt(p_p_[sel]**2 + m_pi**2)
-            sin_p  = np.sin(p_th[sel]); cos_p = np.cos(p_th[sel])
-            px = p_p_[sel] * sin_p * np.cos(p_ph[sel])
-            py = p_p_[sel] * sin_p * np.sin(p_ph[sel])
-            pz = p_p_[sel] * cos_p
-
-            E_tot  = E_e + E_pi
-            px_tot = ex + px; py_tot = ey + py; pz_tot = ez + pz
-            inv_mass = np.sqrt(E_tot**2 - (px_tot**2 + py_tot**2 + pz_tot**2))
-
-            ax.hist(inv_mass, bins=50, range=(0, 1.5))
-            ax.set_title(f"{x_min:.2f} < x < {x_max:.2f}")
+            # select events for this bin
+            sel_mask = (bin_idx == i)
+            count_i = np.count_nonzero(sel_mask)
+            print(f"  Bin {i+1}/{n_bins} ({edges[i]:.2f}<x<{edges[i+1]:.2f}): {count_i} events")
+            masses_i = inv_mass[sel_mask]
+            ax.hist(masses_i, bins=50, range=(0, 1.5))
+            ax.set_title(f"{edges[i]:.2f} < x < {edges[i+1]:.2f}")
             ax.set_xlim(0, 1.5)
         else:
             ax.axis('off')
         ax.set_xlabel(r"$M_{e\pi}$ (GeV)")
         ax.set_ylabel("Counts")
-    #endfor
 
     plt.suptitle(
         fr"{period_name}: $ep \rightarrow en\pi^{{+}}$,"
@@ -138,15 +152,16 @@ def analyze_period(period_name, file_path, branches, edges):
     )
     plt.tight_layout(rect=[0,0,1,0.94])
 
+    # Save output
     out_dir = "output/enpi+"
     os.makedirs(out_dir, exist_ok=True)
-    safe_name = period_name.lower().replace(' ', '_')
-    out_path = os.path.join(out_dir, f"invariant_mass_{safe_name}.pdf")
+    safe = period_name.lower().replace(' ', '_')
+    out_path = os.path.join(out_dir, f"invariant_mass_{safe}.pdf")
     fig.savefig(out_path)
     plt.close(fig)
 
     elapsed = time.time() - start_time
-    print(f"Finished {period_name} in {elapsed:.1f}s, output: {out_path}")
+    print(f"Completed {period_name} in {elapsed:.1f}s, saved to {out_path}")
 
 #===============================================================================
 def main():
