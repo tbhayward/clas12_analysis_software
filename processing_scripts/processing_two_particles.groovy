@@ -5,86 +5,87 @@
  */
 
 // import CLAS12 physics classes
-import org.jlab.io.hipo.*
-import org.jlab.io.base.DataEvent
-import org.jlab.clas.physics.*
-import org.jlab.clas12.physics.*
+import org.jlab.io.hipo.*;
+import org.jlab.io.base.DataEvent;
+import org.jlab.clas.physics.*;
+import org.jlab.clas12.physics.*;
 
 // import from hayward_coatjava_extensions
-import extended_kinematic_fitters.* 
-import analyzers.*
+import extended_kinematic_fitters.*; 
+import analyzers.*;
 
-import groovy.io.FileType
+// filetype for gathering files in directory
+import groovy.io.FileType;
 
 // dilks CLAS QA analysis
-import clasqa.QADB 
+import clasqa.QADB // access QADB
 
-public static double phi_calculation(double x, double y) {
-    double phi = Math.toDegrees(Math.atan2(x, y))
-    phi -= 90
-    if (phi < 0) phi += 360
-    phi = 360 - phi
-    return phi
+public static double phi_calculation (double x, double y) {
+	// tracks are given with Cartesian values and so must be converted to cylindrical
+	double phi = Math.toDegrees(Math.atan2(x,y));
+	phi = phi - 90;
+	if (phi < 0) {
+		phi = 360 + phi;
+	}
+	phi = 360 - phi;
+	return phi;	
 }
 
-public static double theta_calculation(double x, double y, double z) {
-    double r = Math.sqrt(x*x + y*y + z*z)
-    return Math.toDegrees(Math.acos(z / r))
+public static double theta_calculation (double x, double y, double z) {
+	// convert cartesian coordinates to polar angle
+	double r = Math.pow(Math.pow(x,2)+Math.pow(y,2)+Math.pow(z,2),0.5);
+	return (double) (180/Math.PI)*Math.acos(z/r);
 }
 
 public static void main(String[] args) {
 
-    long startTime = System.currentTimeMillis()
+	// Start time
+	long startTime = System.currentTimeMillis();
 
-    if (!args) {
-        println("ERROR: Please enter a hipo file directory as the first argument")
-        System.exit(1)
-    }
+	// ~~~~~~~~~~~~~~~~ set up input parameters ~~~~~~~~~~~~~~~~ //
 
-    // collect all .hipo files under input directory
-    def hipo_list = []
-    (args[0] as File).eachFileRecurse(FileType.FILES) {
-        if (it.name.endsWith('.hipo')) hipo_list << it
-    }
-    if (hipo_list.isEmpty()) {
-        println("ERROR: No .hipo files found in ${args[0]}")
-        System.exit(1)
-    }
+	// Check if an argument is provided
+	if (!args) {
+	    // Print an error message and exit the program if the input directory is not specified
+	    println("ERROR: Please enter a hipo file directory as the first argument");
+	    System.exit(0);
+	}
+	// If the input directory is provided, iterate through each file recursively
+	def hipo_list = []
+	(args[0] as File).eachFileRecurse(FileType.FILES) 
+		{ if (it.name.endsWith('.hipo')) hipo_list << it }
 
-    // list of hadron PDG codes to process
-    List<Integer> targetPids = [211, 321, 2212]
-    println("Processing PIDs: $targetPids")
+	// Set the PDG PID for p1 based on the provided 2nd argument or default to 211 (pi+)
+	String p1_Str = args.length < 2 ? "211" : args[1];
+	if (args.length < 2) println("WARNING: Specify a PDG PID for p1! Set to pi+ (211).");
+	println("Set p1 PID = $p1_Str");
+	int p1_int = p1_Str.toInteger(); // Convert p1_Str to integer
 
-    // build one EventFilter per PID
-    Map<Integer,EventFilter> filterMap = targetPids.collectEntries { pid ->
-        [ (pid): new EventFilter("11:${pid}:X+:X-:Xn") ]
-    }
+	// Set the output file name based on the provided 3rd argument or use the default name
+	String output_file = args.length < 3 ? "hadron_dummy_out.txt" : args[2];
+	if (args.length < 3) 
+	    println("WARNING: Specify an output file name. Set to \"hadron_dummy_out.txt\".");
+	File file = new File(output_file);
+	file.delete();
+	BufferedWriter writer = new BufferedWriter(new FileWriter(file));
 
-    // output file
-    String output_file = args.length < 2 ? "hadron_dummy_out.txt" : args[1]
-    if (args.length < 2) {
-        println("WARNING: No output file specified; defaulting to '$output_file'.")
-    }
-    File file = new File(output_file)
-    file.delete()
+	// Set the number of files to process based on the provided 4th argument
+	// If the argument is "0", default to the full list size
+	int n_files = args.length < 4 || Integer.parseInt(args[3]) == 0 || Integer.parseInt(args[3]) > hipo_list.size()
+	    ? hipo_list.size() : Integer.parseInt(args[3]);
+	if (args.length < 4 || Integer.parseInt(args[3]) == 0 || Integer.parseInt(args[3]) > hipo_list.size()) {
+	    // Print warnings and information if the number of files is not specified, set to 0, or too large
+	    println("WARNING: Number of files not specified, set to 0, or number too large.")
+	    println("Setting # of files to be equal to number of files in the directory.");
+	    println("There are $hipo_list.size files.");
+	}
 
-    // number of files to process
-    int n_files = (args.length < 3 ||
-                   Integer.parseInt(args[2]) == 0 ||
-                   Integer.parseInt(args[2]) > hipo_list.size())
-                  ? hipo_list.size()
-                  : Integer.parseInt(args[2])
-    if (args.length < 3 ||
-        Integer.parseInt(args[2]) == 0 ||
-        Integer.parseInt(args[2]) > hipo_list.size()) {
-        println("WARNING: Invalid or missing file-count; processing all ${hipo_list.size()} files.")
-    }
-
-    // beam energy
-    double beam_energy = args.length < 4 ? 10.6 : Double.parseDouble(args[3])
-    if (args.length < 4) {
-        println("No beam energy provided; defaulting to 10.6 GeV.")
-    }
+	// Set the beam energy based on the provided 5th argument or default to 10.6
+	double beam_energy = args.length < 5 ? 10.6 : Double.parseDouble(args[4]);
+	if (args.length < 5) {
+	    println("No beam energy provided, defaulting to 10.6 GeV.");
+	    println("All MC will use 10.604 GeV. You must manually enter a beam energy to change this.")
+	}
 
     // optional run override
     Integer userProvidedRun = null
