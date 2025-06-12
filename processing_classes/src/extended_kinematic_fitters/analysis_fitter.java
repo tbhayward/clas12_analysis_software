@@ -191,9 +191,6 @@ public class analysis_fitter extends GenericKinematicFitter {
             if (event.hasBank("REC::ForwardTagger")) {
                 ft_Bank = (HipoDataBank) event.getBank("REC::ForwardTagger");
             }
-            if (event.hasBank("RICH::Particle")) {
-                rich_Bank = (HipoDataBank) event.getBank("RICH::Particle");
-            }
 
             double vz_e = -999;
 

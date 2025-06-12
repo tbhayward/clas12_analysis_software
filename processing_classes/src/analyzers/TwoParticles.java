@@ -112,7 +112,7 @@ public class TwoParticles {
         HipoDataBank rich_Bank = null;
         if (event.hasBank("RICH::Particle")) {
             rich_Bank = (HipoDataBank) event.getBank("RICH::Particle");
-            
+
             for (int current_Row = 0; current_Row < cal_Bank.rows(); current_Row++) {
                 int pindex = cal_Bank.getInt("pindex", current_Row);
                 if (pindex == p_rec_index) {
@@ -594,62 +594,61 @@ public class TwoParticles {
     public double open_angle() {
         return ((int) (open_angle * 100000)) / 100000.0;
     }
-    
+
     public int emilay() {
         return emilay;
-    } 
-    
+    }
+
     public int emico() {
         return emico;
-    } 
-    
+    }
+
     public int emqua() {
         return emqua;
-    } 
-    
+    }
+
     public int best_PID() {
         return best_PID;
-    } 
-    
+    }
+
     public float RQ() {
         return RQ;
     }
-    
+
     public float ReQ() {
         return ReQ;
     }
-    
+
     public float el_logl() {
         return el_logl;
     }
-    
+
     public float pi_logl() {
         return pi_logl;
     }
-    
+
     public float k_logl() {
         return k_logl;
     }
-    
+
     public float pr_logl() {
         return pr_logl;
     }
-    
+
     public float best_ch() {
         return best_ch;
     }
-    
+
     public float best_c2() {
         return best_c2;
     }
-    
+
     public float best_RL() {
         return best_RL;
     }
-    
+
     public float best_ntot() {
         return best_ntot;
     }
-    
 
 }
