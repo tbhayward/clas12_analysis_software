@@ -20,7 +20,7 @@ from concurrent.futures import ProcessPoolExecutor, as_completed
 
 # Check for test mode
 TEST_MODE   = 'test' in sys.argv
-ENTRY_STOP  = 1000000 if TEST_MODE else None
+ENTRY_STOP  = 100000 if TEST_MODE else None
 
 # Physical masses (GeV)
 m_e  = 0.000511
@@ -48,7 +48,7 @@ def compute_t(runnum, e_p, e_th, e_ph, p_p, p_th, p_ph):
         return np.nan
 
     # scattered electron
-    E_e   = np.sqrt(e_p**2 + m_pi**2)
+    E_e   = np.sqrt(e_p**2 + 10*m_pi**2)
     sin_e = np.sin(e_th); cos_e = np.cos(e_th)
     ex = e_p * sin_e * np.cos(e_ph)
     ey = e_p * sin_e * np.sin(e_ph)
