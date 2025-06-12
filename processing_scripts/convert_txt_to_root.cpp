@@ -184,6 +184,10 @@ int main(int argc, char *argv[]) {
     int script_index = atoi(argv[3]);
     int is_mc = atoi(argv[4]);
 
+    // rich variables
+    int emilay, emico, emqua, best_PID, EB_PID;
+    double RQ, ReQ, el_logl, pi_logl, k_logl, pr_logl, best_ch, best_c2, best_RL, best_ntot;
+
     // Declare common variables
     int fiducial_status;
     int num_pos, num_neg, num_neutral;
@@ -375,6 +379,21 @@ int main(int argc, char *argv[]) {
         tree->Branch("DepC", &DepC, "DepC/D");
         tree->Branch("DepV", &DepV, "DepV/D");
         tree->Branch("DepW", &DepW, "DepW/D");
+        tree->Branch("emilay", &emilay, "emilay/I");
+        tree->Branch("emico", &emico, "emico/I");
+        tree->Branch("emqua", &emqua, "emqua/I");
+        tree->Branch("best_PID", &best_PID, "best_PID/I");
+        tree->Branch("RQ", &RQ, "RQ/D");
+        tree->Branch("ReQ", &ReQ, "ReQ/D");
+        tree->Branch("el_logl", &el_logl, "el_logl/D");
+        tree->Branch("pi_logl", &pi_logl, "pi_logl/D");
+        tree->Branch("k_logl", &k_logl, "k_logl/D");
+        tree->Branch("pr_logl", &pr_logl, "pr_logl/D");
+        tree->Branch("best_ch", &best_ch, "best_ch/D");
+        tree->Branch("best_c2", &best_c2, "best_c2/D");
+        tree->Branch("best_RL", &best_RL, "best_RL/D");
+        tree->Branch("best_ntot", &best_ntot, "best_ntot/D");
+        tree->Branch("EB_pid", &EB_pid, "EB_pid/I");
     }
     // Case for one hadron and is monte carlo
     else if (script_index == 1 && is_mc == 1) {
@@ -1229,7 +1248,9 @@ int main(int argc, char *argv[]) {
             z >> z1 >> z2 >> Mh >> xF >> xF1 >> xF2 >> 
             pT >> pT1 >> pT2 >> pTpT >> xi >> xi1 >> xi2 >> eta >> eta1 >> eta2 >> Delta_eta>> 
             eta1_gN >> eta2_gN >> phi1 >> phi2 >> Delta_phi >> phi >> phiR >> theta >> 
-            DepA >> DepB >> DepC >> DepV >> DepW) {
+            DepA >> DepB >> DepC >> DepV >> DepW >> emilay >> emico >> emqua >> best_PID >> 
+            RQ >> ReQ >> el_logl >> pi_logl >> k_logl >> pr_logl >> best_ch >> best_c2 >> best_RL >>
+            best_ntot >> EB_pid) {
 
             beam_pol = getPol(runnum);
             if (runnum < 16000) { target_pol = 0; }
