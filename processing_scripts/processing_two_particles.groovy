@@ -114,17 +114,17 @@ public static void main(String[] args) {
     // kinematic fitter
     GenericKinematicFitter fitter = new analysis_fitter(10.6041)
 
-    // QADB setup
-    QADB qa = new QADB()
-    ['TotalOutlier','TerminalOutlier','MarginalOutlier',
-     'SectorLoss','LowLiveTime','Misc','ChargeHigh',
-     'ChargeNegative','ChargeUnknown','PossiblyNoBeam']
-    .each { qa.checkForDefect(it) }
-    [5046,5047,5051,5128,5129,5130,5158,5159,5160,5163,5165,5166,5167,5168,
-     5169,5180,5181,5182,5183,5400,5448,5495,5496,5505,5567,5610,5617,5621,
-     5623,6736,6737,6738,6739,6740,6741,6742,6743,6744,6746,6747,6748,6749,
-     6750,6751,6753,6754,6755,6756,6757,16194,16089,16185,16308,16184,16307,16309]
-    .each { qa.allowMiscBit(it) }
+    // // QADB setup
+    // QADB qa = new QADB()
+    // ['TotalOutlier','TerminalOutlier','MarginalOutlier',
+    //  'SectorLoss','LowLiveTime','Misc','ChargeHigh',
+    //  'ChargeNegative','ChargeUnknown','PossiblyNoBeam']
+    // .each { qa.checkForDefect(it) }
+    // [5046,5047,5051,5128,5129,5130,5158,5159,5160,5163,5165,5166,5167,5168,
+    //  5169,5180,5181,5182,5183,5400,5448,5495,5496,5505,5567,5610,5617,5621,
+    //  5623,6736,6737,6738,6739,6740,6741,6742,6743,6744,6746,6747,6748,6749,
+    //  6750,6751,6753,6754,6755,6756,6757,16194,16089,16185,16308,16184,16307,16309]
+    // .each { qa.allowMiscBit(it) }
 
     StringBuilder batchLines = new StringBuilder()
     int num_events = 0, max_lines = 1000, lineCount = 0
@@ -145,10 +145,11 @@ public static void main(String[] args) {
 
             PhysicsEvent research_Event = fitter.getPhysicsEvent(event)
 
-            boolean baseEvent = (runnum == 11 ||
-                                 runnum < 5020 ||
-                                 runnum > 16772 ||
-                                 qa.pass(runnum, evnum))
+            // boolean baseEvent = (runnum == 11 ||
+            //                      runnum < 5020 ||
+            //                      runnum > 16772 ||
+            //                      qa.pass(runnum, evnum))
+            boolean baseEvent = (runnum == 11 || runnum < 5020 || runnum > 16772)
             if (runnum > 17768) baseEvent = false
             if (!baseEvent) continue
 
