@@ -96,7 +96,7 @@ def analyze_period(period_name, file_path, branches, edges):
     mask = (
         # (np.abs(t_vals) > 0.07) & (np.abs(t_vals) < 0.7) &
         # (y < 0.65) & (z > 0.55) &
-        (Q2 < 8.0) & 
+        (Q2 < 8.0)  
         # (Mx2 < 1.1)
     )
     n_sel = np.count_nonzero(mask)
