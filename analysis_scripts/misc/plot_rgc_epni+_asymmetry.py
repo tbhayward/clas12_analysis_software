@@ -710,14 +710,15 @@ print(f"Kinematic comparison plot saved as '{kinematic_filename}'")
 
 #########
 def compare_fa22_versions():
+    import os
     import numpy as np
     import matplotlib.pyplot as plt
     from matplotlib.lines import Line2D
 
-    # New, high-contrast colors
-    cmp_colors = {"on": "tab:purple", "off": "tab:cyan"}
+    # reuse your original run-period colors
+    cmp_colors = {"on": colors["Fa22"], "off": colors["Su22"]}
 
-    # The two Fa22 configurations
+    # two Fa22 configurations
     fa22_on = {
         "ALUsinphi": enpichi2FitsALUsinphi_Fa22,
         "AULsinphi": enpichi2FitsAULsinphi_Fa22,
@@ -741,14 +742,14 @@ def compare_fa22_versions():
         "AULsinphi": [
             [0.113810624, -0.173630451, 0.135281218],
             [0.152990304, -0.041016757, 0.022578625],
-            [0.198503925, 0.014087512, 0.011434166],
-            [0.246596319, 0.058831967, 0.009079952],
-            [0.295736697, 0.087451423, 0.008763746],
-            [0.344508054, 0.105809831, 0.008747582],
-            [0.393387120, 0.123913717, 0.009818065],
-            [0.442375088, 0.136204431, 0.012202708],
-            [0.491252516, 0.071706367, 0.015237049],
-            [0.539338687, 0.044687045, 0.026092727]
+            [0.198503925,  0.014087512, 0.011434166],
+            [0.246596319,  0.058831967, 0.009079952],
+            [0.295736697,  0.087451423, 0.008763746],
+            [0.344508054,  0.105809831, 0.008747582],
+            [0.393387120,  0.123913717, 0.009818065],
+            [0.442375088,  0.136204431, 0.012202708],
+            [0.491252516,  0.071706367, 0.015237049],
+            [0.539338687,  0.044687045, 0.026092727]
         ],
         "AULsin2phi": [
             [0.113810624, -0.176545812, 0.377457035],
@@ -764,15 +765,15 @@ def compare_fa22_versions():
         ],
         "ALL_n0": [
             [0.113810624, -0.028578533, 0.296795894],
-            [0.152990304, 0.177588470, 0.048784416],
-            [0.198503925, 0.400180058, 0.033003491],
-            [0.246596319, 0.453029971, 0.030200450],
-            [0.295736697, 0.591420857, 0.033664672],
-            [0.344508054, 0.708929957, 0.037813759],
-            [0.393387120, 0.716648913, 0.040078956],
-            [0.442375088, 0.789795414, 0.046697140],
-            [0.491252516, 0.897801126, 0.058778724],
-            [0.539338687, 0.777727415, 0.078360736]
+            [0.152990304,  0.177588470, 0.048784416],
+            [0.198503925,  0.400180058, 0.033003491],
+            [0.246596319,  0.453029971, 0.030200450],
+            [0.295736697,  0.591420857, 0.033664672],
+            [0.344508054,  0.708929957, 0.037813759],
+            [0.393387120,  0.716648913, 0.040078956],
+            [0.442375088,  0.789795414, 0.046697140],
+            [0.491252516,  0.897801126, 0.058778724],
+            [0.539338687,  0.777727415, 0.078360736]
         ],
         "ALLcosphi": [
             [0.113810624, 1.192146786, 0.553554921],
@@ -780,15 +781,14 @@ def compare_fa22_versions():
             [0.198503925, 0.300263142, 0.050320471],
             [0.246596319, 0.171827757, 0.045498535],
             [0.295736697, 0.141019633, 0.049337298],
-            [0.344508054, -0.012470967, 0.055330505],
-            [0.393387120, -0.044620314, 0.060446715],
-            [0.442375088, -0.070996241, 0.068981120],
-            [0.491252516, -0.132769930, 0.087742825],
+            [0.344508054,-0.012470967, 0.055330505],
+            [0.393387120,-0.044620314, 0.060446715],
+            [0.442375088,-0.070996241, 0.068981120],
+            [0.491252516,-0.132769930, 0.087742825],
             [0.539338687, 0.030052764, 0.117432841]
         ]
     }
 
-    # helper: list-of-lists → dict with x,y,yerr
     def to_dict(data):
         a = np.array(data)
         return {"x": a[:,0], "y": a[:,1], "yerr": a[:,2]}
@@ -800,36 +800,32 @@ def compare_fa22_versions():
     plt.suptitle("Fa22: Fiducial Cuts ON vs OFF", fontsize=16, y=0.97)
     fs = 13
 
-    # --- 1) ALU sinφ ---
+    # ALU sinφ
     ax = axes[0]
-    ax.errorbar(on["ALUsinphi"]["x"], on["ALUsinphi"]["y"],  yerr=on["ALUsinphi"]["yerr"],
-                fmt="o", color=cmp_colors["on"],  capsize=3, label="cuts ON")
+    ax.errorbar(on["ALUsinphi"]["x"], on["ALUsinphi"]["y"],   yerr=on["ALUsinphi"]["yerr"],
+                fmt="o", color=cmp_colors["on"], capsize=3, label="cuts ON")
     ax.errorbar(off["ALUsinphi"]["x"], off["ALUsinphi"]["y"], yerr=off["ALUsinphi"]["yerr"],
                 fmt="o", color=cmp_colors["off"], capsize=3, label="cuts OFF")
     ax.set(xlim=(0,0.7), ylim=(-0.2,0.2),
            xlabel=r"$x_B$", ylabel=r"$F_{LU}^{\sin\phi}/F_{UU}$")
-    ax.axhline(0, linestyle="--", color="black")
-    ax.grid(True,linestyle="--",alpha=0.5)
-    ax.legend(title="Configuration", frameon=True)
+    ax.axhline(0, linestyle="--", color="black");  ax.grid(True,linestyle="--",alpha=0.5)
+    ax.legend(title="Config", frameon=True)
 
-    # --- 2) AUL sinφ (open) & sin2φ (filled) ---
+    # AUL sinφ & sin2φ
     ax = axes[1]
-    # ON
+    # ON (circles)
     ax.errorbar(on["AULsinphi"]["x"], on["AULsinphi"]["y"], yerr=on["AULsinphi"]["yerr"],
                 fmt="o", mfc="none", mec=cmp_colors["on"], capsize=3)
-    ax.errorbar(on["AULsin2phi"]["x"],on["AULsin2phi"]["y"],yerr=on["AULsin2phi"]["yerr"],
+    ax.errorbar(on["AULsin2phi"]["x"], on["AULsin2phi"]["y"], yerr=on["AULsin2phi"]["yerr"],
                 fmt="o", color=cmp_colors["on"], capsize=3)
-    # OFF
+    # OFF (squares)
     ax.errorbar(off["AULsinphi"]["x"], off["AULsinphi"]["y"], yerr=off["AULsinphi"]["yerr"],
                 fmt="s", mfc="none", mec=cmp_colors["off"], capsize=3)
     ax.errorbar(off["AULsin2phi"]["x"],off["AULsin2phi"]["y"],yerr=off["AULsin2phi"]["yerr"],
                 fmt="s", color=cmp_colors["off"], capsize=3)
-
     ax.set(xlim=(0,0.7), ylim=(-0.2,0.2),
            xlabel=r"$x_B$", ylabel=r"$F_{UL}^{\sin n\phi}/F_{UU}$")
-    ax.axhline(0, linestyle="--", color="black")
-    ax.grid(True,linestyle="--",alpha=0.5)
-    # harmonic legend
+    ax.axhline(0, linestyle="--", color="black");  ax.grid(True,linestyle="--",alpha=0.5)
     harm = ax.legend(
         handles=[
             Line2D([0],[0], marker='o', mfc='none', mec='black', linestyle='', label='n=1'),
@@ -838,7 +834,6 @@ def compare_fa22_versions():
         title="Harmonic", loc='upper right', frameon=True
     )
     ax.add_artist(harm)
-    # config legend
     ax.legend(
         handles=[
             Line2D([0],[0], marker='o', color=cmp_colors["on"], linestyle='', label='cuts ON'),
@@ -847,24 +842,19 @@ def compare_fa22_versions():
         title="Config", loc='lower right', frameon=True
     )
 
-    # --- 3) ALL n=0 (open) & cosφ (filled) ---
+    # ALL n=0 & cosφ
     ax = axes[2]
-    # ON
-    ax.errorbar(on["ALL_n0"]["x"], on["ALL_n0"]["y"], yerr=on["ALL_n0"]["yerr"],
+    ax.errorbar(on["ALL_n0"]["x"], on["ALL_n0"]["y"],   yerr=on["ALL_n0"]["yerr"],
                 fmt="o", mfc="none", mec=cmp_colors["on"], capsize=3)
     ax.errorbar(on["ALLcosphi"]["x"], on["ALLcosphi"]["y"], yerr=on["ALLcosphi"]["yerr"],
                 fmt="o", color=cmp_colors["on"], capsize=3)
-    # OFF
     ax.errorbar(off["ALL_n0"]["x"], off["ALL_n0"]["y"], yerr=off["ALL_n0"]["yerr"],
                 fmt="s", mfc="none", mec=cmp_colors["off"], capsize=3)
-    ax.errorbar(off["ALLcosphi"]["x"], off["ALLcosphi"]["y"], yerr=off["ALLcosphi"]["yerr"],
+    ax.errorbar(off["ALLcosphi"]["x"],off["ALLcosphi"]["y"],yerr=off["ALLcosphi"]["yerr"],
                 fmt="s", color=cmp_colors["off"], capsize=3)
-
     ax.set(xlim=(0,0.7), ylim=(-1,1),
            xlabel=r"$x_B$", ylabel=r"$F_{LL}^{\cos n\phi}/F_{UU}$")
-    ax.axhline(0, linestyle="--", color="black")
-    ax.grid(True,linestyle="--",alpha=0.5)
-    # harmonic legend
+    ax.axhline(0, linestyle="--", color="black");  ax.grid(True,linestyle="--",alpha=0.5)
     harm3 = ax.legend(
         handles=[
             Line2D([0],[0], marker='o', mfc='none', mec='black', linestyle='', label='n=0'),
@@ -873,7 +863,6 @@ def compare_fa22_versions():
         title="Harmonic", loc='upper right', frameon=True
     )
     ax.add_artist(harm3)
-    # config legend
     ax.legend(
         handles=[
             Line2D([0],[0], marker='o', color=cmp_colors["on"], linestyle='', label='cuts ON'),
@@ -884,12 +873,10 @@ def compare_fa22_versions():
 
     plt.tight_layout(rect=[0,0,1,0.94])
 
-    # <-- Save before showing -->
+    # Save but don't show
     cmp_file = os.path.join(out_dir, "fa22_cuts_on_vs_off.pdf")
     plt.savefig(cmp_file)
     print(f"Saved comparison plot to '{cmp_file}'")
 
-    plt.show()
-
-# Call it at the end
+# call it at script end
 compare_fa22_versions()
