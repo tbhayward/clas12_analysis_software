@@ -18,7 +18,7 @@ from concurrent.futures import ProcessPoolExecutor, as_completed
 
 # Check for test mode
 TEST_MODE = 'test' in sys.argv
-ENTRY_STOP = 20000 if TEST_MODE else None
+ENTRY_STOP = 1000000 if TEST_MODE else None
 
 # Physical masses (GeV)
 m_e  = 0.000511
@@ -94,10 +94,9 @@ def analyze_period(period_name, file_path, branches, edges):
 
     # Apply kinematic cuts
     mask = (
-        # (np.abs(t_vals) > 0.07) & (np.abs(t_vals) < 0.7) &
-        # (y < 0.65) & (z > 0.55) &
-        (Q2 < 8.0)  
-        # (Mx2 < 1.1)
+        (np.abs(t_vals) > 0.07) & (np.abs(t_vals) < 0.7) &
+        (y < 0.65) & (z > 0.55) &
+        (Q2 < 8.0) & (Mx2 < 1.1)
     )
     n_sel = np.count_nonzero(mask)
     print(f"Events after cuts: {n_sel} ({n_sel/n_events*100:.1f}%)")
