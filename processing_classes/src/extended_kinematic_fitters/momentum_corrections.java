@@ -61,7 +61,7 @@ public class momentum_corrections {
         return p * Math.cos(theta);
     }
 
-    public void momentum_corrections(float[] p_array, int sec, int ivec,
+    public void inbending_momentum_corrections(float[] p_array, int sec, int ivec,
             int corEl, int corPip, int corPim, int corPro) {
         // 'Px'/'Py'/'Pz'   ==> Corresponds to the Cartesian Components of the particle momentum being corrected
         // 'sec'            ==> Corresponds to the Forward Detector Sectors where the given particle is detected (6 total)
@@ -438,10 +438,217 @@ public class momentum_corrections {
         }
     }
 
+    public void outbending_momentum_corrections(
+            float[] p_array,
+            int sec,
+            int ivec,
+            int corEl,
+            int corPip,
+            int corPim,
+            int corPro
+    ) {
+        /**
+         * Apply outbending torus momentum corrections to a particle's momentum.
+         *
+         * @param p_array float[3] holding {Px, Py, Pz}; updated in place
+         * @param sec Forward detector sector (1–6)
+         * @param ivec particle index: 0=electron, 1=π⁺, 2=π⁻, 3=proton
+         * @param corEl electron correction flag (0=off, 1=Fall18-P1, 2=Fall18-P2)
+         * @param corPip π⁺ correction flag (0=off, 1=Fall18-P1, 2=Fall18-P2)
+         * @param corPim π⁻ correction flag (0=off, 1=Fall18-P1)
+         * @param corPro proton correction flag (0=off; outbending not available)
+         */
+        // Cartesian components
+        double Px = p_array[0];
+        double Py = p_array[1];
+        double Pz = p_array[2];
+        // Momentum magnitude
+        double pp = Math.sqrt(Px * Px + Py * Py + Pz * Pz);
+        // Correction factor
+        double dp = 0;
+
+        // Phi angle in degrees
+        double Phi = (180.0 / 3.1415926) * Math.atan2(Py, Px);
+        // Sector realignment
+        if (((sec == 4 || sec == 3) && Phi < 0) || (sec > 4 && Phi < 90)) {
+            Phi += 360;
+        }
+        // Local phi
+        double phi = Phi - (sec - 1) * 60;
+        // Shifts
+        if (ivec == 0) {
+            phi -= 30 / pp;
+        } else if (ivec == 1 || ivec == 3) {
+            phi += 32 / (pp - 0.05);
+        } else if (ivec == 2) {
+            phi -= 32 / (pp - 0.05);
+        }
+
+        // Electron corrections (outbending)
+        if (ivec == 0 && corEl != 0) {
+            if (corEl == 1) { // Fall 2018 - Pass 1
+                switch (sec) {
+                    case 1:
+                        dp = ((1.3189e-06) * phi * phi + (4.26057e-05) * phi + (-0.002322628)) * pp * pp
+                                + ((-1.1409e-05) * phi * phi + (2.2188e-05) * phi + (0.02878927)) * pp
+                                + ((2.4950e-05) * phi * phi + (1.6170e-06) * phi + (-0.061816275));
+                        break;
+                    case 2:
+                        dp = ((-2.9240e-07) * phi * phi + (3.2448e-07) * phi + (-0.001848308)) * pp * pp
+                                + ((4.4500e-07) * phi * phi + (4.76324e-04) * phi + (0.02219469)) * pp
+                                + ((6.9220e-06) * phi * phi + (-0.00153517) * phi + (-0.0479058));
+                        break;
+                    case 3:
+                        dp = ((2.71911e-06) * phi * phi + (1.657148e-05) * phi + (-0.001822211)) * pp * pp
+                                + ((-4.96814e-05) * phi * phi + (-3.761117e-04) * phi + (0.02564148)) * pp
+                                + ((1.97748e-04) * phi * phi + (9.58259e-04) * phi + (-0.05818292));
+                        break;
+                    case 4:
+                        dp = ((1.90966e-06) * phi * phi + (-2.4761e-05) * phi + (-0.00231562)) * pp * pp
+                                + ((-2.3927e-05) * phi * phi + (2.25262e-04) * phi + (0.0291831)) * pp
+                                + ((8.0515e-05) * phi * phi + (-6.42098e-04) * phi + (-0.06159197));
+                        break;
+                    case 5:
+                        dp = ((-3.6760323e-06) * phi * phi + (4.04398e-05) * phi + (-0.0021967515)) * pp * pp
+                                + ((4.90857e-05) * phi * phi + (-4.37437e-04) * phi + (0.02494339)) * pp
+                                + ((-1.08257e-04) * phi * phi + (0.00146111) * phi + (-0.0648485));
+                        break;
+                    case 6:
+                        dp = ((-6.2488e-08) * phi * phi + (2.23173e-05) * phi + (-0.00227522)) * pp * pp
+                                + ((1.8372e-05) * phi * phi + (-7.5227e-05) * phi + (0.032636)) * pp
+                                + ((-6.6566e-05) * phi * phi + (-2.4450e-04) * phi + (-0.072293));
+                        break;
+                }
+            }
+            if (corEl == 2) { // Fall 2018 - Pass 2
+                switch (sec) {
+                    case 1:
+                        dp = ((-5.74868e-06) * phi * phi + (2.2331e-06) * phi + (0.00025487)) * pp * pp
+                                + ((8.18043e-05) * phi * phi + (9.8383e-05) * phi + (-0.0056062)) * pp
+                                + ((-0.0002393096) * phi * phi + (-0.001175548) * phi + (0.0486792));
+                        if (pp < 6.5) {
+                            dp += ((-1.18269e-05) * phi * phi + (-3.33e-05) * phi + (0.0002424)) * pp * pp
+                                    + ((8.541e-05) * phi * phi + (0.0002206) * phi + (0.000609)) * pp
+                                    + ((-0.00012801) * phi * phi + (-0.0002079) * phi + (-0.007417));
+                        } else {
+                            dp += ((-1.1703e-06) * phi * phi + (-9.8669e-05) * phi + (-0.002884)) * pp * pp
+                                    + ((2.591e-05) * phi * phi + (0.00169554) * phi + (0.045387)) * pp
+                                    + ((-0.00012285) * phi * phi + (-0.00710292) * phi + (-0.17897));
+                        }
+                        break;
+                    case 2:
+                        dp = ((-4.29711e-06) * phi * phi + (1.36105e-05) * phi + (0.00040706)) * pp * pp
+                                + ((6.264498e-05) * phi * phi + (9.8981e-05) * phi + (-0.0059589)) * pp
+                                + ((-0.000175865) * phi * phi + (-0.001329597) * phi + (0.030682));
+                        if (pp < 6.5) {
+                            dp += (1.42031e-05) * phi * phi + (-4.3073e-05) * phi + (-0.0013709);
+                            dp *= pp;
+                        } else {
+                            dp += (-7.3709e-06) * phi * phi + (3.0237e-05) * phi + (-0.00556253);
+                            dp *= pp;
+                        }
+                        break;
+                    case 3:
+                        dp = ((-3.54616e-06) * phi * phi + (2.1382e-05) * phi + (-0.00029815)) * pp * pp
+                                + ((4.09174e-05) * phi * phi + (-0.000258372) * phi + (0.0028638)) * pp
+                                + ((-9.1374e-05) * phi * phi + (0.00082102) * phi + (0.00818));
+                        if (pp < 4.75) {
+                            dp += ((-4.1035e-05) * phi * phi + (-0.00034997) * phi + (0.0037639)) * pp * pp
+                                    + ((0.00027659) * phi * phi + (0.0025883) * phi + (-0.027382)) * pp
+                                    + ((-0.0004434) * phi * phi + (-0.0047757) * phi + (0.049737));
+                        } else {
+                            dp += (8.0625e-06) * phi * phi + (-1.5445e-05) * phi + (-0.00213057);
+                            dp *= pp * pp;
+                        }
+                        break;
+                    case 4:
+                        dp = ((2.43038e-06) * phi * phi + (-6.4715e-06) * phi + (-0.00076198)) * pp * pp
+                                + ((-2.606703e-05) * phi * phi + (7.1258e-05) * phi + (0.00984946)) * pp
+                                + ((6.69394e-05) * phi * phi + (-0.000264164) * phi + (-0.0021348));
+                        if (pp < 6.5) {
+                            dp += (4.3553e-06) * phi * phi + (-5.2965e-05) * phi + (0.0005391);
+                            dp *= pp * pp;
+                        } else {
+                            dp += (-1.6976e-05) * phi * phi + (0.00011328) * phi + (-0.0032102);
+                            dp *= pp * pp;
+                        }
+                        break;
+                    case 5:
+                        dp = ((-1.7474881e-06) * phi * phi + (5.20199e-05) * phi + (0.00056946)) * pp * pp
+                                + ((2.579126e-05) * phi * phi + (-0.00049884) * phi + (-0.00743872)) * pp
+                                + ((-5.9489e-05) * phi * phi + (0.00070898) * phi + (0.0312296));
+                        if (pp < 4.75) {
+                            dp += (-9.6494e-05) * phi * phi + (-0.00051529) * phi + (0.0157187);
+                            dp *= pp * pp;
+                        } else {
+                            dp += (1.3183e-06) * phi * phi + (5.7112e-05) * phi + (-0.002674);
+                            dp *= pp * pp;
+                        }
+                        break;
+                    case 6:
+                        dp = ((-7.1587e-07) * phi * phi + (3.31516e-05) * phi + (-8.785999e-05)) * pp * pp
+                                + ((1.21201e-05) * phi * phi + (-0.000229416) * phi + (0.001413)) * pp
+                                + ((1.222e-05) * phi * phi + (0.000154449) * phi + (0.011577));
+                        if (pp < 4.75) {
+                            dp += (5.3238e-05) * phi * phi + (-0.000348957) * phi + (-0.0047347);
+                            dp *= pp * pp;
+                        } else {
+                            dp += (-2.6885e-06) * phi * phi + (1.43847e-05) * phi + (-0.00193047);
+                            dp *= pp * pp;
+                        }
+                        break;
+                }
+            }
+        }
+
+        // π- corrections (Fall 2018 - Pass 1 only)
+        if (ivec == 2 && corPim != 0) {
+            switch (sec) {
+                case 1:
+                    dp = ((2.7123584594392597e-06) * phi * phi + (-5.468601175954242e-05) * phi + (0.002313330256974031)) * pp * pp
+                            + ((-8.039703360516874e-06) * phi * phi + (0.00044464879674067275) * phi + (-0.02546911446157775)) * pp
+                            + ((3.5973669277966655e-06) * phi * phi + (-0.0003856844699023182) * phi + (0.05496480659602064) - 0.015);
+                    break;
+                case 2:
+                    dp = ((1.9081500905303347e-06) * phi * phi + (3.310647986349362e-05) * phi + (-0.0003264357817968204)) * pp * pp
+                            + ((-1.2306311457915714e-05) * phi * phi + (-6.404982516446639e-05) * phi + (-0.01287404671840319)) * pp
+                            + ((9.746651642120768e-06) * phi * phi + (6.1503461629194e-05) * phi + (0.04249861359511857) - 0.015);
+                    break;
+                case 3:
+                    dp = ((3.467960715633796e-06) * phi * phi + (-0.00011427345789836184) * phi + (0.004780571116355615)) * pp * pp
+                            + ((-1.2639455891842017e-05) * phi * phi + (0.00044737258600913664) * phi + (-0.03827009444373719)) * pp
+                            + ((5.8243648992776484e-06) * phi * phi + (-0.0004240381542174731) * phi + (0.06589846610477122) - 0.015);
+                    break;
+                case 4:
+                    dp = ((-7.97757466039691e-06) * phi * phi + (-0.00011075801628158914) * phi + (0.006505144041475733)) * pp * pp
+                            + ((3.570788801587046e-05) * phi * phi + (0.0005835525352273808) * phi + (-0.045031773715754606)) * pp
+                            + ((-3.223327114068019e-05) * phi * phi + (-0.0006144362450858762) * phi + (0.07280937684254037) - 0.015);
+                    break;
+                case 5:
+                    dp = ((1.990802625607816e-06) * phi * phi + (7.057771450607931e-05) * phi + (0.005399025205722829)) * pp * pp
+                            + ((-7.670376562908147e-06) * phi * phi + (-0.00032508260930191955) * phi + (-0.044439500813069875)) * pp
+                            + ((7.599354976329091e-06) * phi * phi + (0.0002562152836894338) * phi + (0.07195292224032898) - 0.015);
+                    break;
+                case 6:
+                    dp = ((1.9247834787602347e-06) * phi * phi + (7.638857332736951e-05) * phi + (0.005271258583881754)) * pp * pp
+                            + ((-2.7349724034956845e-06) * phi * phi + (-0.00016130256163798413) * phi + (-0.03668300882287307)) * pp
+                            + ((7.40942843287096e-07) * phi * phi + (-5.785254680184232e-05) * phi + (0.06282320712979896) - 0.015);
+                    break;
+            }
+        }
+
+        // Apply correction
+        if (pp != 0) {
+            double scale = (pp + dp) / pp;
+            p_array[0] = (float) (Px * scale);
+            p_array[1] = (float) (Py * scale);
+            p_array[2] = (float) (Pz * scale);
+        }
+    }
 
     public void jpsi_momentum_corrections(int particle_Index, float[] p_array,
             HipoDataBank rec_Bank, HipoDataBank run_Bank, HipoDataBank track_Bank) {
-        
+
         double px = p_array[0];
         double py = p_array[1];
         double pz = p_array[2];
@@ -449,22 +656,22 @@ public class momentum_corrections {
         double p = p_calculation(px, py, pz);
         double theta = theta_calculation(px, py, pz);
         double phi = phi_calculation(px, py);
-        
-        boolean inbending  = run_Bank.getFloat("torus", 0) == -1, outbending = !inbending;
-        
+
+        boolean inbending = run_Bank.getFloat("torus", 0) == -1, outbending = !inbending;
+
         double dp = 0;
         if (inbending) {
-            dp = 0.0093796*p + (-0.0007808)*p*p + (0.000163)*p*p*p + (-0.02029) + 0.04121/p;
+            dp = 0.0093796 * p + (-0.0007808) * p * p + (0.000163) * p * p * p + (-0.02029) + 0.04121 / p;
         } else {
-            dp = (-0.06520)*p + 0.007099*p*p + (-0.00005929)*p*p*p + 0.2145 + -(0.1153)/p;
+            dp = (-0.06520) * p + 0.007099 * p * p + (-0.00005929) * p * p * p + 0.2145 + -(0.1153) / p;
         }
-        
-        p =+ dp;
+
+        p = +dp;
         // Update the px, py, pz values
         p_array[0] = (float) x_calculation(p, theta, phi);
         p_array[1] = (float) y_calculation(p, theta, phi);
         p_array[2] = (float) z_calculation(p, theta);
-        
+
     }
 
 }
