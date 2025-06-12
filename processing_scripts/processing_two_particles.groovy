@@ -135,6 +135,7 @@ public static void main(String[] args) {
         reader.open(hipo_list[current_file])
 
         while (reader.hasEvent()) {
+        	println("HELLO WORLD")
             ++num_events
             if (num_events % 500000 == 0) print("processed: $num_events events. ")
 
@@ -166,7 +167,7 @@ public static void main(String[] args) {
 
                     if (!variables.channel_test(variables)) continue
 
-                    println("HELLO WORLD")
+
                     // retrieve event quantities
                     int fiducial_status = variables.get_fiducial_status()
                     helicity      = variables.get_helicity()
