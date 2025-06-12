@@ -20,7 +20,7 @@ from concurrent.futures import ProcessPoolExecutor, as_completed
 
 # Check for test mode
 TEST_MODE   = 'test' in sys.argv
-ENTRY_STOP  = 1000000 if TEST_MODE else None
+ENTRY_STOP  = 10000 if TEST_MODE else None
 
 # Physical mass (GeV) for charged pions
 m_pi = 0.13957
