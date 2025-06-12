@@ -135,7 +135,7 @@ public static void main(String[] args) {
         reader.open(hipo_list[current_file])
 
         while (reader.hasEvent()) {
-        	println("HELLO WORLD")
+
             ++num_events
             if (num_events % 500000 == 0) print("processed: $num_events events. ")
 
@@ -153,6 +153,7 @@ public static void main(String[] args) {
             boolean baseEvent = (runnum == 11 || runnum < 5020 || runnum > 16772)
             if (runnum > 17768) baseEvent = false
             if (!baseEvent) continue
+            println("HELLO WORLD")
 
             // loop over each hadron PID
             for (int pidValue : targetPids) {
