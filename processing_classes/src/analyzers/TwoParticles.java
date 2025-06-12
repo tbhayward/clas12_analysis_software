@@ -50,20 +50,29 @@ public class TwoParticles {
 
     protected double p_Breit_pz, p_gN_pz;
 
-    protected int RICH_pid;
-    protected double chi2pid, beta, RQ_prob, el_prob, pi_prob, k_prob, pr_prob;
+    protected int emilay = -9999;
+    protected int emico = -9999;
+    protected int emqua = -9999;
+    protected int best_PID = -9999;
+    protected float RQ = -9999;
+    protected float ReQ = -9999;
+    protected float el_logl = -9999;
+    protected float pi_logl = -9999;
+    protected float k_logl = -9999;
+    protected float pr_logl = -9999;
+    protected float best_ch = -9999;
+    protected float best_c2 = -9999;
+    protected float best_RL = -9999;
+    protected float best_ntot = -9999;
 
     public static boolean channel_test(TwoParticles variables) {
         if (variables.helicity == 0 && variables.runnum != 11) {
             return false;
-        }
-        else if (variables.Q2() < 1.00) {
+        } else if (variables.Q2() < 1.00) {
             return false;
-        }
-        else if (variables.W() < 2) {
+        } else if (variables.W() < 2) {
             return false;
-        } 
-        else if (variables.y() > 0.80) {
+        } else if (variables.y() > 0.80) {
             return false;
         }
 //        else if (variables.Mx2() < 0) {
@@ -96,8 +105,33 @@ public class TwoParticles {
         HipoDataBank eventBank = (HipoDataBank) event.getBank("REC::Event");
         HipoDataBank configBank = (HipoDataBank) event.getBank("RUN::config");
         HipoDataBank rec_Bank = (HipoDataBank) event.getBank("REC::Particle");
+        int p_rec_index = getIndex(rec_Bank, pPID, pIndex);
         HipoDataBank cal_Bank = (HipoDataBank) event.getBank("REC::Calorimeter");
         HipoDataBank traj_Bank = (HipoDataBank) event.getBank("REC::Traj");
+        HipoDataBank rich_Bank = null;
+        if (event.hasBank("RICH::Particle")) {
+            rich_Bank = (HipoDataBank) event.getBank("RICH::Particle");
+            
+            for (int current_Row = 0; current_Row < cal_Bank.rows(); current_Row++) {
+                int pindex = cal_Bank.getInt("pindex", current_Row);
+                if (pindex == p_rec_index) {
+                    emilay = cal_Bank.getInt("emilay", current_Row);
+                    emico = cal_Bank.getInt("emico", current_Row);
+                    emqua = cal_Bank.getInt("emqua", current_Row);
+                    best_PID = cal_Bank.getInt("best_PID", current_Row);
+                    RQ = cal_Bank.getFloat("RQ", current_Row);
+                    ReQ = cal_Bank.getFloat("ReQ", current_Row);
+                    el_logl = cal_Bank.getFloat("el_logl", current_Row);
+                    pi_logl = cal_Bank.getFloat("pi_logl", current_Row);
+                    k_logl = cal_Bank.getFloat("k_logl", current_Row);
+                    pr_logl = cal_Bank.getFloat("pr_logl", current_Row);
+                    best_ch = cal_Bank.getFloat("best_ch", current_Row);
+                    best_c2 = cal_Bank.getFloat("best_c2", current_Row);
+                    best_RL = cal_Bank.getFloat("best_RL", current_Row);
+                    best_ntot = cal_Bank.getFloat("best_ntot", current_Row);
+                }
+            }
+        }
 
         helicity = eventBank.getByte("helicity", 0);
         runnum = configBank.getInt("run", 0); // used for beam energy and polarization
@@ -122,7 +156,6 @@ public class TwoParticles {
         boolean electron_fd_fiducial = fiducial_cuts.dc_fiducial_cut(0, rec_Bank, traj_Bank, configBank);
         boolean e_fiducial_check = electron_pcal_fiducial && electron_fd_fiducial;
 
-        int p_rec_index = getIndex(rec_Bank, pPID, pIndex);
         boolean passesForwardDetector_1 = generic_tests.forward_detector_cut(p_rec_index, rec_Bank)
                 ? fiducial_cuts.dc_fiducial_cut(p_rec_index, rec_Bank, traj_Bank, configBank) : true;
         boolean passesCentralDetector_1 = generic_tests.central_detector_cut(p_rec_index, rec_Bank)
@@ -560,5 +593,62 @@ public class TwoParticles {
     public double open_angle() {
         return ((int) (open_angle * 100000)) / 100000.0;
     }
+    
+    public int emilay() {
+        return emilay;
+    } 
+    
+    public int emico() {
+        return emico;
+    } 
+    
+    public int emqua() {
+        return emqua;
+    } 
+    
+    public int best_PID() {
+        return best_PID;
+    } 
+    
+    public float RQ() {
+        return RQ;
+    }
+    
+    public float ReQ() {
+        return ReQ;
+    }
+    
+    public float el_logl() {
+        return el_logl;
+    }
+    
+    public float pi_logl() {
+        return pi_logl;
+    }
+    
+    public float k_logl() {
+        return k_logl;
+    }
+    
+    public float pr_logl() {
+        return pr_logl;
+    }
+    
+    public float best_ch() {
+        return best_ch;
+    }
+    
+    public float best_c2() {
+        return best_c2;
+    }
+    
+    public float best_RL() {
+        return best_RL;
+    }
+    
+    public float best_ntot() {
+        return best_ntot;
+    }
+    
 
 }
