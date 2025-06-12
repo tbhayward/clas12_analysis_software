@@ -20,7 +20,7 @@ from concurrent.futures import ProcessPoolExecutor, as_completed
 
 # Check for test mode
 TEST_MODE   = 'test' in sys.argv
-ENTRY_STOP  = 1000000 if TEST_MODE else None
+ENTRY_STOP  = 10000000 if TEST_MODE else None
 
 # Physical masses (GeV)
 m_e  = 0.000511
