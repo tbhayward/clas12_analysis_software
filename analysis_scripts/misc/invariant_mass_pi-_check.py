@@ -55,10 +55,13 @@ def compute_t(runnum, e_p, e_th, e_ph, p_p, p_th, p_ph):
 
 #===============================================================================
 def analyze_period(period_name, file_path, branches, edges):
-    # Load data
-    data = uproot.concatenate(
-        file_path, "PhysicsEvents", branches, library="np"
-    )
+    # Open file and get tree
+    with uproot.open(file_path) as f:
+        if "PhysicsEvents" not in f:
+            raise KeyError(f"Tree 'PhysicsEvents' not found in {file_path}")
+        tree = f["PhysicsEvents"]
+        data = tree.arrays(branches, library="np")
+
     runnum = data["runnum"]
     e_p    = data["e_p"];    e_th = data["e_theta"]; e_ph = data["e_phi"]
     p_p_   = data["p_p"];    p_th = data["p_theta"]; p_ph = data["p_phi"]
@@ -133,7 +136,6 @@ def analyze_period(period_name, file_path, branches, edges):
 
 #===============================================================================
 def main():
-    # Define periods and file paths
     periods = [
         ("RGC Su22", "/work/clas12/thayward/CLAS12_exclusive/enpi+/data/pass2/data/enpi+/rgc_su22_inb_NH3_epi+.root"),
         ("RGC Fa22", "/work/clas12/thayward/CLAS12_exclusive/enpi+/data/pass2/data/enpi+/rgc_fa22_inb_NH3_epi+.root"),
