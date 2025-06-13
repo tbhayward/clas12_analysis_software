@@ -200,6 +200,7 @@ public static void main(String[] args) {
 
 			            if (variables.channel_test(variables)) {
 			                fiducial_status = variables.get_fiducial_status(); // fiducial_status of track
+			                e_pid_status = variables.e_pid_status()
 			                helicity = variables.get_helicity(); // helicity of event
 			                detector1 = variables.get_detector1(); 
 			                detector2 = variables.get_detector2(); 

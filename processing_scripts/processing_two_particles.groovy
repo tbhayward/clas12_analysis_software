@@ -100,7 +100,7 @@ public static void main(String[] args) {
 
     // declare physics and RICH variables
     int helicity, detector
-    int fiducial_status, num_pos, num_neg, num_neutrals
+    int e_pid_status, fiducial_status, num_pos, num_neg, num_neutrals
     double e_p, e_theta, e_phi, p_phi, p_p, p_theta, open_angle
     double vz_e, vz_p
     double Q2, W, x, y, Mx2, t, tmin, z, xF, pT, eta, xi, phi
@@ -163,6 +163,7 @@ public static void main(String[] args) {
                     if (!variables.channel_test(variables)) continue
 
                     fiducial_status = variables.get_fiducial_status()
+                    e_pid_status = variables.e_pid_status()
                     helicity        = variables.get_helicity()
                     detector        = variables.get_detector()
                     num_pos         = variables.get_num_pos()
@@ -289,16 +290,16 @@ public static void main(String[] args) {
 
     // final header mapping
     println(
-      "1: fiducial_status, 2: num_pos, 3: num_neg, 4: num_neutrals, " +
-      "5: runnum, 6: evnum, 7: helicity, 8: detector, " +
-      "9: e_p, 10: e_theta, 11: e_phi, 12: vz_e, 13: open_angle, " +
+      "1: fiducial_status, 2: e_pid_status, 3: num_pos, 4: num_neg, 5: num_neutrals, " +
+      "6: runnum, 7: evnum, 8: helicity, 9: detector, " +
+      "10: e_p, 11: e_theta, 12: e_phi, 13: vz_e, " +
       "14: p_p, 15: p_theta, 16: p_phi, 17: vz_p, " +
-      "18: Q2, 19: W, 20: Mx2, 21: x, 22: t, 23: tmin, " +
-      "24: y, 25: z, 26: xF, 27: pT, 28: xi, 29: eta, 30: phi, " +
-      "31: DepA, 32: DepB, 33: DepC, 34: DepV, 35: DepW, " +
-      "36: emilay, 37: emico, 38: emqua, 39: best_PID, 40: RQ, " +
-      "41: ReQ, 42: el_logl, 43: pi_logl, 44: k_logl, 45: pr_logl, " +
-      "46: best_ch, 47: best_c2, 48: best_RL, 49: best_ntot, 50: EB_pid"
+      "18: open_angle, 19: Q2, 20: W, 21: Mx2, 22: x, 23: t, 24: tmin, " +
+      "25: y, 26: z, 27: xF, 28: pT, 29: xi, 30: eta, 31: phi, " +
+      "32: DepA, 33: DepB, 34: DepC, 35: DepV, 36: DepW, " +
+      "37: emilay, 38: emico, 39: emqua, 40: best_PID, 41: RQ, " +
+      "42: ReQ, 43: el_logl, 44: pi_logl, 45: k_logl, 46: pr_logl, " +
+      "47: best_ch, 48: best_c2, 49: best_RL, 50: best_ntot, 51: EB_pid"
     )
 
     println("Output file: $file")
