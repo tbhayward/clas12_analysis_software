@@ -72,13 +72,41 @@ public class ThreeParticles {
     // defined as the sampling fraction for electron candidates and the distance away from the 
     // mean beta(p) value from the TOF for hadron candidates
 
-    protected double p1_beta, p1_RQ_prob, p1_el_prob, p1_pi_prob, p1_k_prob, p1_pr_prob;
-    protected double p2_beta, p2_RQ_prob, p2_el_prob, p2_pi_prob, p2_k_prob, p2_pr_prob;
-
     protected double p1_COM_phi, p1_COM_theta, p2_COM_phi, p2_COM_theta, COM_Delta_phi, COM_Delta_theta;
     protected double COM_open_angle;
 
     protected double gN_angle_p1_p2, gN_angle_p1_X, gN_angle_p2_X;
+    
+    // RICH variables
+    protected int emilay1 = -9999;
+    protected int emico1 = -9999;
+    protected int emqua1 = -9999;
+    protected int best_PID1 = -9999;
+    protected float RQ1 = -9999;
+    protected float ReQ1 = -9999;
+    protected float el_logl1 = -9999;
+    protected float pi_logl1 = -9999;
+    protected float k_logl1 = -9999;
+    protected float pr_logl1 = -9999;
+    protected float best_ch1 = -9999;
+    protected float best_c21 = -9999;
+    protected float best_RL1 = -9999;
+    protected float best_ntot1 = -9999;
+    
+    protected int emilay2 = -9999;
+    protected int emico2 = -9999;
+    protected int emqua2 = -9999;
+    protected int best_PID2 = -9999;
+    protected float RQ2 = -9999;
+    protected float ReQ2 = -9999;
+    protected float el_logl2 = -9999;
+    protected float pi_logl2 = -9999;
+    protected float k_logl2 = -9999;
+    protected float pr_logl2 = -9999;
+    protected float best_ch2 = -9999;
+    protected float best_c22 = -9999;
+    protected float best_RL2 = -9999;
+    protected float best_ntot2 = -9999;
 
     public static boolean channel_test(ThreeParticles variables) {
 //        if (variables.helicity == 0 && variables.runnum != 11) {
@@ -1048,4 +1076,62 @@ public class ThreeParticles {
     public double pTmiss() {
         return Double.valueOf(Math.round(pTmiss * 100000)) / 100000;
     }// returns pTmiss
+    
+    public int emilay1() {
+        return emilay1;
+    }
+
+    public int emico1() {
+        return emico1;
+    }
+
+    public int emqua1() {
+        return emqua1;
+    }
+
+    public int best_PID1() {
+        return best_PID1;
+    }
+
+    public float RQ1() {
+        return RQ1;
+    }
+
+    public float ReQ1() {
+        return ReQ1;
+    }
+
+    public float el_logl1() {
+        return el_logl1;
+    }
+
+    public float pi_logl1() {
+        return pi_logl1;
+    }
+
+    public float k_logl1() {
+        return k_logl1;
+    }
+
+    public float pr_logl1() {
+        return pr_logl1;
+    }
+
+    public float best_ch1() {
+        return best_ch1;
+    }
+
+    public float best_c2() {
+        return best_c2;
+    }
+
+    public float best_RL() {
+        return best_RL;
+    }
+
+    public float best_ntot() {
+        return best_ntot;
+    }
 }
+
+

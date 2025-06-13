@@ -51,10 +51,10 @@ public class TwoParticles {
     protected double p_Breit_pz, p_gN_pz;
 
     // RICH variables
-    protected int emilay = -9999;
-    protected int emico = -9999;
-    protected int emqua = -9999;
-    protected int best_PID = -9999;
+    protected byte emilay = -9999;
+    protected byte emico = -9999;
+    protected short emqua = -9999;
+    protected short best_PID = -9999;
     protected float RQ = -9999;
     protected float ReQ = -9999;
     protected float el_logl = -9999;
@@ -595,19 +595,19 @@ public class TwoParticles {
         return ((int) (open_angle * 100000)) / 100000.0;
     }
 
-    public int emilay() {
+    public byte emilay() {
         return emilay;
     }
 
-    public int emico() {
+    public byte emico() {
         return emico;
     }
 
-    public int emqua() {
+    public short emqua() {
         return emqua;
     }
 
-    public int best_PID() {
+    public short best_PID() {
         return best_PID;
     }
 
