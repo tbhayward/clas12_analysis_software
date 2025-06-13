@@ -16,7 +16,7 @@ public class TwoParticles {
     protected byte helicity;
     protected int runnum;
 
-    protected int e_pid_cuts = 0;
+    protected int e_pid_status = 0;
     protected int fiducial_status = -1;
     protected int detector = -1;
     protected int pid_status = -1;
@@ -281,7 +281,7 @@ public class TwoParticles {
         if (pid_cuts.calorimeter_energy_cut(0, cal_Bank, 1)
                 && pid_cuts.calorimeter_sampling_fraction_cut(0, lv_e.p(), configBank, cal_Bank)
                 && pid_cuts.calorimeter_diagonal_cut(0, lv_e.p(), cal_Bank)) {
-            e_pid_cuts = 1;
+            e_pid_status = 1;
         }
         
         z = kinematic_variables.z(lv_p, lv_q);
@@ -413,8 +413,8 @@ public class TwoParticles {
         return fiducial_status;
     }
 
-    public int e_pid_cuts() {
-        return e_pid_cuts;
+    public int e_pid_status() {
+        return e_pid_status;
     }
 
     public int num_elec() {
