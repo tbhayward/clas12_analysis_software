@@ -175,6 +175,7 @@ int main(int argc, char** argv) {
 
     // 6) Fill MC
     Long64_t nM = mcCh.GetEntries();
+    if (maxEvents>0 && maxEvents<nM) nM = maxEvents;
     for (Long64_t i=0; i<nM; ++i) {
         mcCh.GetEntry(i);
         if (pid!=11) continue;
