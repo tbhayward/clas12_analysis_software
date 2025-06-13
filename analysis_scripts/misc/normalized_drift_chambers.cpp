@@ -285,27 +285,28 @@ int main(int argc, char** argv) {
         // normalize data
         {
             TH1* dataHists[] = {
-                d.r1,  d.r2,  d.r3,
-                d.r1c, d.r2c, d.r3c,
-                d.e1,  d.e2,  d.e3,
-                d.rp1, d.rp2, d.rp3
+                h.d_r1,  h.d_r2,  h.d_r3,
+                h.d_r1c, h.d_r2c, h.d_r3c,
+                h.d_e1,  h.d_e2,  h.d_e3,
+                h.d_rp1, h.d_rp2, h.d_rp3
             };
-            for (TH1* h : dataHists) {
-                double I = h->Integral();
-                if (I > 0) h->Scale(1.0/I);
+            for (TH1* hh : dataHists) {
+                double I = hh->Integral();
+                if (I > 0) hh->Scale(1.0/I);
             }
         }
+
         // normalize MC
         {
             TH1* mcHists[] = {
-                m.r1,  m.r2,  m.r3,
-                m.r1c, m.r2c, m.r3c,
-                m.e1,  m.e2,  m.e3,
-                m.rp1, m.rp2, m.rp3
+                h.m_r1,  h.m_r2,  h.m_r3,
+                h.m_r1c, h.m_r2c, h.m_r3c,
+                h.m_e1,  h.m_e2,  h.m_e3,
+                h.m_rp1, h.m_rp2, h.m_rp3
             };
-            for (TH1* h : mcHists) {
-                double I = h->Integral();
-                if (I > 0) h->Scale(1.0/I);
+            for (TH1* hh : mcHists) {
+                double I = hh->Integral();
+                if (I > 0) hh->Scale(1.0/I);
             }
         }
 
