@@ -116,10 +116,10 @@ public class TwoParticles {
             for (int current_Row = 0; current_Row < rich_Bank.rows(); current_Row++) {
                 int pindex = rich_Bank.getInt("pindex", current_Row);
                 if (pindex == p_rec_index) {
-                    emilay = rich_Bank.getInt("emilay", current_Row);
-                    emico = rich_Bank.getInt("emico", current_Row);
-                    emqua = rich_Bank.getInt("emqua", current_Row);
-                    best_PID = rich_Bank.getInt("best_PID", current_Row);
+                    emilay = rich_Bank.getByte("emilay", current_Row);
+                    emico = rich_Bank.getByte("emico", current_Row);
+                    emqua = rich_Bank.getShort("emqua", current_Row);
+                    best_PID = rich_Bank.getShort("best_PID", current_Row);
                     RQ = rich_Bank.getFloat("RQ", current_Row);
                     ReQ = rich_Bank.getFloat("ReQ", current_Row);
                     el_logl = rich_Bank.getFloat("el_logl", current_Row);
