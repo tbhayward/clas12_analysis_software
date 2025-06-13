@@ -38,18 +38,24 @@ public static void main(String[] args) {
 	(args[0] as File).eachFileRecurse(FileType.FILES) 
 		{ if (it.name.endsWith('.hipo')) hipo_list << it }
 
-	// Set the PDG PID for p1 based on the provided 2nd argument or default to 211 (pi+)
-	String p1_Str = args.length < 2 ? "211" : args[1];
-	if (args.length < 2) println("WARNING: Specify a PDG PID for p1! Set to pi+ (211).");
-	println("Set p1 PID = $p1_Str");
-	int p1_int = p1_Str.toInteger(); // Convert p1_Str to integer
+	// Set the PDG PID for p1 based on the provided 2nd argument or default to 2212 (proton)
+	String p1_Str = args.length < 2 ? "2212" : args[1]
+	if (args.length < 2) println("WARNING: Specify a PDG PID for p1! Set to default p (2212).")
+	println("Set p1 PID = $p1_Str")
+	int p1_int = p1_Str.toInteger()  // Convert to int
 
-	// Set the PDG PID for p2 based on the provided 3rd argument or default to -211 (pi-)
-	String p2_Str = args.length < 3 ? "-211" : args[2];
-	if (args.length < 3) println("WARNING: Specify a PDG PID for p2! Set to pi- (-211).");
-	println("Set p2 PID = $p2_Str");
-	int p2_int = p2_Str.toInteger(); // Convert p2_Str to integer
+	// parse PID list from third argument, default to "211"
+	String pidArg = args.length < 3 ? "211" : args[2]
+	if (args.length < 3) {
+	    println("WARNING: No PID(s) provided for second hadron; defaulting to '$pidArg'.")
+	}
+	List<Integer> pids = pidArg.split(',').collect { it.trim().toInteger() }
+	println("Processing PID(s): $pids")
 
+	// build one EventFilter per PID
+	Map<Integer,EventFilter> filterMap = pids.collectEntries { pid ->
+	    [ (pid) : new EventFilter("11:${p1_int}:${pid}:X+:X-:Xn") ]
+	}
 	// Set the output file name based on the provided 4th argument or use the default name
 	String output_file = args.length < 4 ? "hadron_dummy_out.txt" : args[3];
 	if (args.length < 4) 
@@ -98,18 +104,15 @@ public static void main(String[] args) {
 	double phi1, phi2, Delta_phi, phih, phiR, theta;
 	double Depolarization_A, Depolarization_B, Depolarization_C;
 	double Depolarization_V, Depolarization_W;
-	int emilay1, emico1, emqua1, best_PID1, emilay1, emico1, emqua1, best_PID1
-    float RQ1, ReQ1, el_logl1, pi_logl1, k_logl1, pr_logl1, best_ch1, best_c21, best_RL1, best_ntot1
-    float RQ2, ReQ2, el_logl2, pi_logl2, k_logl2, pr_logl2, best_ch2, best_c22, best_RL2, best_ntot2
+	int emilay1, emico1, emqua1, best_PID1, emilay2, emico2, emqua2, best_PID2;
+    float RQ1, ReQ1, el_logl1, pi_logl1, k_logl1, pr_logl1, best_ch1, best_c21, best_RL1, best_ntot1;
+    float RQ2, ReQ2, el_logl2, pi_logl2, k_logl2, pr_logl2, best_ch2, best_c22, best_RL2, best_ntot2;
     int EB_pid1, EB_pid2
 
 	// load my kinematic fitter/PID
 	// GenericKinematicFitter fitter = new analysis_fitter(10.6041); 
 	// GenericKinematicFitter fitter = new monte_carlo_fitter(10.6041);
 	GenericKinematicFitter fitter = new event_builder_fitter(10.6041);  
-	
-	// set filter for final states
-	EventFilter filter = new EventFilter("11:"+p1_Str+":"+p2_Str+":X+:X-:Xn");
 	
 	// setup QA database
 	QADB qa = new QADB();
@@ -164,8 +167,6 @@ public static void main(String[] args) {
 		    PhysicsEvent research_Event = fitter.getPhysicsEvent(event);
 
 		    // do not use the qa if it is MC (runnum = 11) 
-		    // do not use the qa if the run is from RGC (until QA is produced!)
-		    // boolean process_event = filter.isValid(research_Event);
 		    // boolean process_event = filter.isValid(research_Event) && 
 		    // 	(runnum == 11 || runnum == 16194 || runnum == 16089 || runnum == 16185 ||
 	    	// 	runnum == 16308 || runnum == 16184 || runnum == 16307 || runnum == 16309 ||
@@ -176,215 +177,260 @@ public static void main(String[] args) {
 		    if (process_event) {
 
 		        // get # of particles 
-		        int num_p1 = research_Event.countByPid(p1_Str.toInteger());
-		        int num_p2 = research_Event.countByPid(p2_Str.toInteger()); 
+		        int num_p1 = research_Event.countByPid(p1_int)
 
 		        // cycle over all hadrons
 		        for (int current_p1 = 0; current_p1 < num_p1; current_p1++) { 
-		        	for (int current_p2 = 0; current_p2 < num_p2; current_p2++) { 
-		        		if (current_p1 == current_p2 && p1_int == p2_int) {continue; }
 
-		        		// supply runnum and boolean for radiative simulation or not
-						BeamEnergy Eb = new BeamEnergy(research_Event, runnum, false);
-						// Use the input beam energy if runnum == 11, otherwise use Eb.Eb()
-						double energy = (runnum == 11) ? beam_energy : Eb.Eb();
-			            ThreeParticles variables = new ThreeParticles(event, research_Event, 
-							p1_int, current_p1, p2_int, current_p2, energy);
-			            // this is my class for defining all relevant kinematic variables
+		        	// now loop over each requested second‐hadron PID
+			        for (int p2_int : pids) {
+			            // apply the per‐PID filter
+			            EventFilter f = filterMap[p2_int]
+			            if (!f.isValid(research_Event)) continue
 
-			            if (variables.channel_test(variables)) {
-			                fiducial_status = variables.get_fiducial_status(); // fiducial_status of track
-			                helicity = variables.get_helicity(); // helicity of event
-			                detector1 = variables.get_detector1(); 
-			                detector2 = variables.get_detector2(); 
-			                num_pos = variables.get_num_pos();
-			                num_neg = variables.get_num_neg();
-			                num_neutrals = variables.get_num_neutrals();
+			            // count tracks of this second PID
+			            int num_p2 = research_Event.countByPid(p2_int)
 
-			                // lab kinematics
-			                e_p = variables.e_p(); // lab frame momentum
-			                e_theta = variables.e_theta(); // lab polar angle
-			                e_phi = variables.e_phi(); // lab azimuthal angle
-			                p1_phi = variables.p1_phi(); // lab azimuthal angle
-			                p1_p = variables.p1_p(); // lab momentum
-			                p1_theta = variables.p1_theta(); // lab polar angle
-			                p2_phi = variables.p2_phi(); // lab azimuthal angle
-			                p2_p = variables.p2_p(); // lab momentum
-			                p2_theta = variables.p2_theta(); // lab polar angle
-			                open_angle_ep = variables.open_angle_ep(); 
-			                open_angle_ep1 = variables.open_angle_ep1(); 
-			                open_angle_ep2 = variables.open_angle_ep2(); 
-			                open_angle_p1p2 = variables.open_angle_p1p2(); 
+			            // loop over each of those hadrons
+			            for (int current_p2 = 0; current_p2 < num_p2; current_p2++) {
+			                // if it’s the same track, skip
+			                if (p1_int == p2_int && current_p1 == current_p2) continue
 
-			                // vertices
-			                vz_e = variables.vz_e();
-			                vz_p1 = variables.vz_p1();
-			                vz_p2 = variables.vz_p2();
+			        		// supply runnum and boolean for radiative simulation or not
+							BeamEnergy Eb = new BeamEnergy(research_Event, runnum, false);
+							// Use the input beam energy if runnum == 11, otherwise use Eb.Eb()
+							double energy = (runnum == 11) ? beam_energy : Eb.Eb();
+				            ThreeParticles variables = new ThreeParticles(event, research_Event, 
+								p1_int, current_p1, p2_int, current_p2, energy);
+				            // this is my class for defining all relevant kinematic variables
 
-			                // DIS variables
-			                Q2 = variables.Q2(); // exchanged virtual photon energy
-			                W = variables.W(); // hadronic mass
-			                x = variables.x(); // Bjorken-x
-			                t = variables.t();
-			                t1 = variables.t1();
-			                t2 = variables.t2();
-			                tmin = variables.tmin();
-			                y = variables.y(); // E_scat/E_beam
-			                Mx2 = variables.Mx2(); // missing mass squared
-			                Mx2_1 = variables.Mx2_1(); // missing mass squared calculated with p1
-			                Mx2_2 = variables.Mx2_2(); // missing mass squared calculated with p2
+				            if (variables.channel_test(variables)) {
+				                fiducial_status = variables.get_fiducial_status(); // fiducial_status of track
+				                helicity = variables.get_helicity(); // helicity of event
+				                detector1 = variables.get_detector1(); 
+				                detector2 = variables.get_detector2(); 
+				                num_pos = variables.get_num_pos();
+				                num_neg = variables.get_num_neg();
+				                num_neutrals = variables.get_num_neutrals();
 
-			                // SIDIS variables
-			                z = variables.z(); // fractional hadron energy wrt virtual photon
-			                xF = variables.xF(); // Feynman-x
-			                pT = variables.pT(); // transverse momentum of hadron
-			                eta = variables.eta(); // rapidity
-			                eta_gN = variables.eta_gN();
-			                xi = variables.xi(); // longitudinal momentum of hadron (fracture functions)
+				                // lab kinematics
+				                e_p = variables.e_p(); // lab frame momentum
+				                e_theta = variables.e_theta(); // lab polar angle
+				                e_phi = variables.e_phi(); // lab azimuthal angle
+				                p1_phi = variables.p1_phi(); // lab azimuthal angle
+				                p1_p = variables.p1_p(); // lab momentum
+				                p1_theta = variables.p1_theta(); // lab polar angle
+				                p2_phi = variables.p2_phi(); // lab azimuthal angle
+				                p2_p = variables.p2_p(); // lab momentum
+				                p2_theta = variables.p2_theta(); // lab polar angle
+				                open_angle_ep = variables.open_angle_ep(); 
+				                open_angle_ep1 = variables.open_angle_ep1(); 
+				                open_angle_ep2 = variables.open_angle_ep2(); 
+				                open_angle_p1p2 = variables.open_angle_p1p2(); 
 
-			                // SIDIS dihadron variables
-							z1 = variables.z1();
-							z2 = variables.z2();
-							xF1 = variables.xF1();
-							xF2 = variables.xF2();
-							xi1 = variables.xi1();
-							xi2 = variables.xi2(); 
-							Mh = variables.Mh();
-							pT1 = variables.pT1();
-							pT2 = variables.pT2();
-							pTpT = variables.pTpT();
-							eta1 = variables.eta1();
-							eta2 = variables.eta2();
-							Delta_eta = variables.Delta_eta();
-							eta1_gN = variables.eta1_gN();
-							eta2_gN = variables.eta2_gN();
+				                // vertices
+				                vz_e = variables.vz_e();
+				                vz_p1 = variables.vz_p1();
+				                vz_p2 = variables.vz_p2();
 
-			                // angles
-							phi1 = variables.phi1(); // trento phi of the p1
-							phi2 = variables.phi2(); // trento phi of the p2
-							Delta_phi = variables.Delta_phi();
-							phih = variables.phih(); // trento phi of the dihadron
-							phiR = variables.phiR(); // second azimuthal angle of dihadron
-							theta = variables.theta(); // decay angle of dihadron
+				                // DIS variables
+				                Q2 = variables.Q2(); // exchanged virtual photon energy
+				                W = variables.W(); // hadronic mass
+				                x = variables.x(); // Bjorken-x
+				                t = variables.t();
+				                t1 = variables.t1();
+				                t2 = variables.t2();
+				                tmin = variables.tmin();
+				                y = variables.y(); // E_scat/E_beam
+				                Mx2 = variables.Mx2(); // missing mass squared
+				                Mx2_1 = variables.Mx2_1(); // missing mass squared calculated with p1
+				                Mx2_2 = variables.Mx2_2(); // missing mass squared calculated with p2
 
-			                // depolarization factors
-			                Depolarization_A = variables.Depolarization_A();
-			                Depolarization_B = variables.Depolarization_B();
-			                Depolarization_C = variables.Depolarization_C();
-			                Depolarization_V = variables.Depolarization_V();
-					    	Depolarization_W = variables.Depolarization_W();
+				                // SIDIS variables
+				                z = variables.z(); // fractional hadron energy wrt virtual photon
+				                xF = variables.xF(); // Feynman-x
+				                pT = variables.pT(); // transverse momentum of hadron
+				                eta = variables.eta(); // rapidity
+				                eta_gN = variables.eta_gN();
+				                xi = variables.xi(); // longitudinal momentum of hadron (fracture functions)
 
-					    	// RICH variables
-					    	emilay1   = variables.emilay1()
-		                    emico1    = variables.emico1()
-		                    emqua1    = variables.emqua1()
-		                    best_PID1 = variables.best_PID1()
-		                    RQ1       = variables.RQ1()
-		                    ReQ1      = variables.ReQ1()
-		                    el_logl1  = variables.el_logl1()
-		                    pi_logl1  = variables.pi_logl1()
-		                    k_logl1   = variables.k_logl1()
-		                    pr_logl1  = variables.pr_logl1()
-		                    best_ch1  = variables.best_ch1()
-		                    best_c21  = variables.best_c21()
-		                    best_RL1  = variables.best_RL1()
-		                    best_ntot1= variables.best_ntot1()
-		                    emilay2   = variables.emilay()
-		                    emico2    = variables.emico()
-		                    emqua2    = variables.emqua()
-		                    best_PID2 = variables.best_PID()
-		                    RQ2       = variables.RQ()
-		                    ReQ2      = variables.ReQ()
-		                    el_logl2  = variables.el_logl2()
-		                    pi_logl2  = variables.pi_logl2()
-		                    k_logl2   = variables.k_logl2()
-		                    pr_logl2  = variables.pr_logl2()
-		                    best_ch2  = variables.best_ch2()
-		                    best_c22  = variables.best_c22()
-		                    best_RL2  = variables.best_RL2()
-		                    best_ntot2= variables.best_ntot2()
+				                // SIDIS dihadron variables
+								z1 = variables.z1();
+								z2 = variables.z2();
+								xF1 = variables.xF1();
+								xF2 = variables.xF2();
+								xi1 = variables.xi1();
+								xi2 = variables.xi2(); 
+								Mh = variables.Mh();
+								pT1 = variables.pT1();
+								pT2 = variables.pT2();
+								pTpT = variables.pTpT();
+								eta1 = variables.eta1();
+								eta2 = variables.eta2();
+								Delta_eta = variables.Delta_eta();
+								eta1_gN = variables.eta1_gN();
+								eta2_gN = variables.eta2_gN();
 
-			                // Use a StringBuilder to append all data in a single call
-			                StringBuilder line = new StringBuilder();
-			                line.append(fiducial_status).append(" ")
-								.append(num_pos).append(" ")
-								.append(num_neg).append(" ")
-								.append(num_neutrals).append(" ")
-								.append(runnum).append(" ")
-			                	.append(evnum).append(" ")
-			                	.append(helicity).append(" ")
-			                	.append(detector1).append(" ")
-			                	.append(detector2).append(" ")
-			                	.append(e_p).append(" ")
-			                	.append(e_theta).append(" ")
-			                	.append(e_phi).append(" ")
-			                	.append(vz_e).append(" ")
-			                	.append(p1_p).append(" ")
-			                	.append(p1_theta).append(" ")
-			                	.append(p1_phi).append(" ")
-			                	.append(vz_p1).append(" ")
-			                	.append(p2_p).append(" ")
-			                	.append(p2_theta).append(" ")
-			                	.append(p2_phi).append(" ")
-			                	.append(vz_p2).append(" ")
-			                	.append(open_angle_ep).append(" ")
-			                	.append(open_angle_ep1).append(" ")
-			                	.append(open_angle_ep2).append(" ")
-			                	.append(open_angle_p1p2).append(" ")
-			                	.append(Q2).append(" ")
-			                	.append(W).append(" ")
-			                	.append(Mx2).append(" ")
-			                	.append(Mx2_1).append(" ")
-			                	.append(Mx2_2).append(" ")
-			                	.append(x).append(" ")
-			                	.append(t).append(" ")
-			                	.append(t1).append(" ")
-			                	.append(t2).append(" ")
-			                	.append(tmin).append(" ")
-			                	.append(y).append(" ")
-			                	.append(z).append(" ")
-			                	.append(z1).append(" ")
-			                	.append(z2).append(" ")
-			                	.append(Mh).append(" ")
-			                	.append(xF).append(" ")
-			                	.append(xF1).append(" ")
-			                	.append(xF2).append(" ")
-			                	.append(pT).append(" ")
-			                	.append(pT1).append(" ")
-			                	.append(pT2).append(" ")
-			                	.append(pTpT).append(" ")
-			                	.append(xi).append(" ")
-			                	.append(xi1).append(" ")
-			                	.append(xi2).append(" ")
-			                	.append(eta).append(" ")
-			                	.append(eta1).append(" ")
-			                	.append(eta2).append(" ")
-			                	.append(Delta_eta).append(" ")
-			                	.append(eta1_gN).append(" ")
-			                	.append(eta2_gN).append(" ")
-			                	.append(phi1).append(" ")
-			                	.append(phi2).append(" ")
-			                	.append(Delta_phi).append(" ")
-			                	.append(phih).append(" ")
-			                	.append(phiR).append(" ")
-			                	.append(theta).append(" ")
-			                	.append(Depolarization_A).append(" ")
-			                    .append(Depolarization_B).append(" ")
-			                    .append(Depolarization_C).append(" ")
-			                    .append(Depolarization_V).append(" ")
-			                    .append(Depolarization_W).append("\n");
+				                // angles
+								phi1 = variables.phi1(); // trento phi of the p1
+								phi2 = variables.phi2(); // trento phi of the p2
+								Delta_phi = variables.Delta_phi();
+								phih = variables.phih(); // trento phi of the dihadron
+								phiR = variables.phiR(); // second azimuthal angle of dihadron
+								theta = variables.theta(); // decay angle of dihadron
 
-			                // Append the line to the batchLines StringBuilder
-			                batchLines.append(line.toString());
-			                lineCount++; // Increment the line count
+				                // depolarization factors
+				                Depolarization_A = variables.Depolarization_A();
+				                Depolarization_B = variables.Depolarization_B();
+				                Depolarization_C = variables.Depolarization_C();
+				                Depolarization_V = variables.Depolarization_V();
+						    	Depolarization_W = variables.Depolarization_W();
 
-			                // If the line count reaches 1000, write to the file and reset
-			                if (lineCount >= max_lines) {
-			                    file.append(batchLines.toString());
-			                    batchLines.setLength(0);
-			                    lineCount = 0;
-			                }
-			            }
+						    	// RICH variables
+						    	emilay1   = variables.emilay1()
+			                    emico1    = variables.emico1()
+			                    emqua1    = variables.emqua1()
+			                    best_PID1 = variables.best_PID1()
+			                    RQ1       = variables.RQ1()
+			                    ReQ1      = variables.ReQ1()
+			                    el_logl1  = variables.el_logl1()
+			                    pi_logl1  = variables.pi_logl1()
+			                    k_logl1   = variables.k_logl1()
+			                    pr_logl1  = variables.pr_logl1()
+			                    best_ch1  = variables.best_ch1()
+			                    best_c21  = variables.best_c21()
+			                    best_RL1  = variables.best_RL1()
+			                    best_ntot1= variables.best_ntot1()
+			                    emilay2   = variables.emilay()
+			                    emico2    = variables.emico()
+			                    emqua2    = variables.emqua()
+			                    best_PID2 = variables.best_PID()
+			                    RQ2       = variables.RQ()
+			                    ReQ2      = variables.ReQ()
+			                    el_logl2  = variables.el_logl2()
+			                    pi_logl2  = variables.pi_logl2()
+			                    k_logl2   = variables.k_logl2()
+			                    pr_logl2  = variables.pr_logl2()
+			                    best_ch2  = variables.best_ch2()
+			                    best_c22  = variables.best_c22()
+			                    best_RL2  = variables.best_RL2()
+			                    best_ntot2= variables.best_ntot2()
+
+			                    EB_pid1 = p1_int;
+			                    EB_pid2 = p2_int;
+
+				                // Use a StringBuilder to append all data in a single call
+				                StringBuilder line = new StringBuilder();
+				                line.append(fiducial_status).append(" ")
+									.append(num_pos).append(" ")
+									.append(num_neg).append(" ")
+									.append(num_neutrals).append(" ")
+									.append(runnum).append(" ")
+				                	.append(evnum).append(" ")
+				                	.append(helicity).append(" ")
+				                	.append(detector1).append(" ")
+				                	.append(detector2).append(" ")
+				                	.append(e_p).append(" ")
+				                	.append(e_theta).append(" ")
+				                	.append(e_phi).append(" ")
+				                	.append(vz_e).append(" ")
+				                	.append(p1_p).append(" ")
+				                	.append(p1_theta).append(" ")
+				                	.append(p1_phi).append(" ")
+				                	.append(vz_p1).append(" ")
+				                	.append(p2_p).append(" ")
+				                	.append(p2_theta).append(" ")
+				                	.append(p2_phi).append(" ")
+				                	.append(vz_p2).append(" ")
+				                	.append(open_angle_ep).append(" ")
+				                	.append(open_angle_ep1).append(" ")
+				                	.append(open_angle_ep2).append(" ")
+				                	.append(open_angle_p1p2).append(" ")
+				                	.append(Q2).append(" ")
+				                	.append(W).append(" ")
+				                	.append(Mx2).append(" ")
+				                	.append(Mx2_1).append(" ")
+				                	.append(Mx2_2).append(" ")
+				                	.append(x).append(" ")
+				                	.append(t).append(" ")
+				                	.append(t1).append(" ")
+				                	.append(t2).append(" ")
+				                	.append(tmin).append(" ")
+				                	.append(y).append(" ")
+				                	.append(z).append(" ")
+				                	.append(z1).append(" ")
+				                	.append(z2).append(" ")
+				                	.append(Mh).append(" ")
+				                	.append(xF).append(" ")
+				                	.append(xF1).append(" ")
+				                	.append(xF2).append(" ")
+				                	.append(pT).append(" ")
+				                	.append(pT1).append(" ")
+				                	.append(pT2).append(" ")
+				                	.append(pTpT).append(" ")
+				                	.append(xi).append(" ")
+				                	.append(xi1).append(" ")
+				                	.append(xi2).append(" ")
+				                	.append(eta).append(" ")
+				                	.append(eta1).append(" ")
+				                	.append(eta2).append(" ")
+				                	.append(Delta_eta).append(" ")
+				                	.append(eta1_gN).append(" ")
+				                	.append(eta2_gN).append(" ")
+				                	.append(phi1).append(" ")
+				                	.append(phi2).append(" ")
+				                	.append(Delta_phi).append(" ")
+				                	.append(phih).append(" ")
+				                	.append(phiR).append(" ")
+				                	.append(theta).append(" ")
+				                	.append(Depolarization_A).append(" ")
+				                    .append(Depolarization_B).append(" ")
+				                    .append(Depolarization_C).append(" ")
+				                    .append(Depolarization_V).append(" ")
+				                    .append(Depolarization_W).append(" ")
+				                    .append(emilay1).append(" ")
+			                        .append(emico1).append(" ")
+			                        .append(emqua1).append(" ")
+			                        .append(best_PID1).append(" ")
+			                        .append(RQ1).append(" ")
+			                        .append(ReQ1).append(" ")
+			                        .append(el_logl1).append(" ")
+			                        .append(pi_logl1).append(" ")
+			                        .append(k_logl1).append(" ")
+			                        .append(pr_logl1).append(" ")
+			                        .append(best_ch1).append(" ")
+			                        .append(best_c21).append(" ")
+			                        .append(best_RL1).append(" ")
+			                        .append(best_ntot1).append(" ")
+			                        .append(EB_pid1).append(" ")
+			                        .append(emilay2).append(" ")
+			                        .append(emico2).append(" ")
+			                        .append(emqua2).append(" ")
+			                        .append(best_PID2).append(" ")
+			                        .append(RQ2).append(" ")
+			                        .append(ReQ2).append(" ")
+			                        .append(el_logl2).append(" ")
+			                        .append(pi_logl2).append(" ")
+			                        .append(k_logl2).append(" ")
+			                        .append(pr_logl2).append(" ")
+			                        .append(best_ch2).append(" ")
+			                        .append(best_c22).append(" ")
+			                        .append(best_RL2).append(" ")
+			                        .append(best_ntot2).append(" ")
+			                        .append(EB_pid2).append("\n");
+
+				                // Append the line to the batchLines StringBuilder
+				                batchLines.append(line.toString());
+				                lineCount++; // Increment the line count
+
+				                // If the line count reaches 1000, write to the file and reset
+				                if (lineCount >= max_lines) {
+				                    file.append(batchLines.toString());
+				                    batchLines.setLength(0);
+				                    lineCount = 0;
+				                }
+				            }
+				        }
 			        }
 		        }
 		    }
