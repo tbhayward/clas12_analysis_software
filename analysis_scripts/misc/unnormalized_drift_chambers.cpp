@@ -137,7 +137,6 @@ int main(int argc, char** argv) {
         { 11,   "electron" },
         { 2212, "proton"   }
     };
-    std::cout << " HELLO WORLD " << std::endl;
 
     std::map<int,HistoSet> Hdata, Hmc;
 
