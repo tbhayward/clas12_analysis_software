@@ -166,13 +166,9 @@ public static void main(String[] args) {
 
 		    PhysicsEvent research_Event = fitter.getPhysicsEvent(event);
 
-		    // do not use the qa if it is MC (runnum = 11) 
-		    // boolean process_event = filter.isValid(research_Event) && 
-		    // 	(runnum == 11 || runnum == 16194 || runnum == 16089 || runnum == 16185 ||
-	    	// 	runnum == 16308 || runnum == 16184 || runnum == 16307 || runnum == 16309 ||
-	    	// 	qa.OkForAsymmetry(runnum, evnum));
-	    	boolean process_event = filter.isValid(research_Event) && (runnum == 11 || runnum < 5020 || runnum > 17000 ||
-	    	qa.pass(runnum, evnum) );
+		    boolean passQA = (runnum == 11 || runnum < 5020 || runnum > 16772 || qa.pass(runnum, evnum))
+            if (runnum > 17768) passQA = false
+            if (!passQA) continue
 
 		    if (process_event) {
 
