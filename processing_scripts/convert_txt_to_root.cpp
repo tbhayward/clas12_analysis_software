@@ -187,6 +187,10 @@ int main(int argc, char *argv[]) {
     // rich variables
     int emilay, emico, emqua, best_PID, EB_pid;
     double RQ, ReQ, el_logl, pi_logl, k_logl, pr_logl, best_ch, best_c2, best_RL, best_ntot;
+    int emilay1, emico1, emqua1, best_PID1, EB_pid1;
+    double RQ1, ReQ1, el_logl1, pi_logl1, k_logl1, pr_logl1, best_ch1, best_c21, best_RL1, best_ntot1;
+    int emilay2, emico2, emqua2, best_PID2, EB_pid2;
+    double RQ2, ReQ2, el_logl2, pi_logl2, k_logl2, pr_logl2, best_ch2, best_c22, best_RL2, best_ntot2;
 
     // Declare common variables
     int fiducial_status;
@@ -531,6 +535,36 @@ int main(int argc, char *argv[]) {
         tree->Branch("DepC", &DepC, "DepC/D");
         tree->Branch("DepV", &DepV, "DepV/D");
         tree->Branch("DepW", &DepW, "DepW/D");
+        tree->Branch("emilay1", &emilay1, "emilay1/I");
+        tree->Branch("emico1", &emico1, "emico1/I");
+        tree->Branch("emqua1", &emqua1, "emqua1/I");
+        tree->Branch("best_PID1", &best_PID1, "best_PID1/I");
+        tree->Branch("RQ1", &RQ1, "RQ1/D");
+        tree->Branch("ReQ1", &ReQ1, "ReQ1/D");
+        tree->Branch("el_logl1", &el_logl1, "el_logl1/D");
+        tree->Branch("pi_logl1", &pi_logl1, "pi_logl1/D");
+        tree->Branch("k_logl1", &k_logl1, "k_logl1/D");
+        tree->Branch("pr_logl1", &pr_logl1, "pr_logl1/D");
+        tree->Branch("best_ch1", &best_ch1, "best_ch1/D");
+        tree->Branch("best_c21", &best_c21, "best_c21/D");
+        tree->Branch("best_RL1", &best_RL1, "best_RL1/D");
+        tree->Branch("best_ntot1", &best_ntot1, "best_ntot1/D");
+        tree->Branch("EB_pid1", &EB_pid1, "EB_pid1/I");
+        tree->Branch("emilay2", &emilay2, "emilay2/I");
+        tree->Branch("emico2", &emico2, "emico2/I");
+        tree->Branch("emqua2", &emqua2, "emqua2/I");
+        tree->Branch("best_PID2", &best_PID2, "best_PID2/I");
+        tree->Branch("RQ2", &RQ2, "RQ2/D");
+        tree->Branch("ReQ2", &ReQ2, "ReQ2/D");
+        tree->Branch("el_logl2", &el_logl2, "el_logl2/D");
+        tree->Branch("pi_logl2", &pi_logl2, "pi_logl2/D");
+        tree->Branch("k_logl2", &k_logl2, "k_logl2/D");
+        tree->Branch("pr_logl2", &pr_logl2, "pr_logl2/D");
+        tree->Branch("best_ch2", &best_ch2, "best_ch2/D");
+        tree->Branch("best_c22", &best_c22, "best_c22/D");
+        tree->Branch("best_RL2", &best_RL2, "best_RL2/D");
+        tree->Branch("best_ntot2", &best_ntot2, "best_ntot2/D");
+        tree->Branch("EB_pid2", &EB_pid2, "EB_pid2/I");
     }
     // Case for two hadrons (dihadrons) and is mc
     else if (script_index == 2 && is_mc == 1) {
@@ -1250,7 +1284,11 @@ int main(int argc, char *argv[]) {
             z >> z1 >> z2 >> Mh >> xF >> xF1 >> xF2 >> 
             pT >> pT1 >> pT2 >> pTpT >> xi >> xi1 >> xi2 >> eta >> eta1 >> eta2 >> Delta_eta>> 
             eta1_gN >> eta2_gN >> phi1 >> phi2 >> Delta_phi >> phi >> phiR >> theta >> 
-            DepA >> DepB >> DepC >> DepV >> DepW) {
+            DepA >> DepB >> DepC >> DepV >> DepW >> emilay1 >> emico1 >> emqua1 >> best_PID1 >> 
+            RQ1 >> ReQ1 >> el_logl1 >> pi_logl1 >> k_logl1 >> pr_logl1 >> best_ch1 >> best_c21 >> best_RL1 >>
+            best_ntot1 >> EB_pid1 >> emilay2 >> emico2 >> emqua2 >> best_PID2 >> 
+            RQ2 >> ReQ2 >> el_logl2 >> pi_logl2 >> k_logl2 >> pr_logl2 >> best_ch2 >> best_c22 >> best_RL2 >>
+            best_ntot2 >> EB_pid2) {
 
             beam_pol = getPol(runnum);
             if (runnum < 16000) { target_pol = 0; }

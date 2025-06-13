@@ -111,7 +111,9 @@ public static void main(String[] args) {
     int EB_pid
 
     // kinematic fitter
-    GenericKinematicFitter fitter = new analysis_fitter(10.6041)
+    // GenericKinematicFitter fitter = new analysis_fitter(10.6041); 
+    // GenericKinematicFitter fitter = new monte_carlo_fitter(10.6041);
+    GenericKinematicFitter fitter = new event_builder_fitter(10.6041);
 
     // QADB setup
     QADB qa = new QADB()

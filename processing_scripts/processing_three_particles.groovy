@@ -98,11 +98,15 @@ public static void main(String[] args) {
 	double phi1, phi2, Delta_phi, phih, phiR, theta;
 	double Depolarization_A, Depolarization_B, Depolarization_C;
 	double Depolarization_V, Depolarization_W;
+	int emilay1, emico1, emqua1, best_PID1, emilay1, emico1, emqua1, best_PID1
+    float RQ1, ReQ1, el_logl1, pi_logl1, k_logl1, pr_logl1, best_ch1, best_c21, best_RL1, best_ntot1
+    float RQ2, ReQ2, el_logl2, pi_logl2, k_logl2, pr_logl2, best_ch2, best_c22, best_RL2, best_ntot2
+    int EB_pid1, EB_pid2
 
 	// load my kinematic fitter/PID
-	GenericKinematicFitter fitter = new analysis_fitter(10.6041); 
+	// GenericKinematicFitter fitter = new analysis_fitter(10.6041); 
 	// GenericKinematicFitter fitter = new monte_carlo_fitter(10.6041);
-	// GenericKinematicFitter fitter = new event_builder_fitter(10.6041);  
+	GenericKinematicFitter fitter = new event_builder_fitter(10.6041);  
 	
 	// set filter for final states
 	EventFilter filter = new EventFilter("11:"+p1_Str+":"+p2_Str+":X+:X-:Xn");
@@ -269,6 +273,36 @@ public static void main(String[] args) {
 			                Depolarization_C = variables.Depolarization_C();
 			                Depolarization_V = variables.Depolarization_V();
 					    	Depolarization_W = variables.Depolarization_W();
+
+					    	// RICH variables
+					    	emilay1   = variables.emilay1()
+		                    emico1    = variables.emico1()
+		                    emqua1    = variables.emqua1()
+		                    best_PID1 = variables.best_PID1()
+		                    RQ1       = variables.RQ1()
+		                    ReQ1      = variables.ReQ1()
+		                    el_logl1  = variables.el_logl1()
+		                    pi_logl1  = variables.pi_logl1()
+		                    k_logl1   = variables.k_logl1()
+		                    pr_logl1  = variables.pr_logl1()
+		                    best_ch1  = variables.best_ch1()
+		                    best_c21  = variables.best_c21()
+		                    best_RL1  = variables.best_RL1()
+		                    best_ntot1= variables.best_ntot1()
+		                    emilay2   = variables.emilay()
+		                    emico2    = variables.emico()
+		                    emqua2    = variables.emqua()
+		                    best_PID2 = variables.best_PID()
+		                    RQ2       = variables.RQ()
+		                    ReQ2      = variables.ReQ()
+		                    el_logl2  = variables.el_logl2()
+		                    pi_logl2  = variables.pi_logl2()
+		                    k_logl2   = variables.k_logl2()
+		                    pr_logl2  = variables.pr_logl2()
+		                    best_ch2  = variables.best_ch2()
+		                    best_c22  = variables.best_c22()
+		                    best_RL2  = variables.best_RL2()
+		                    best_ntot2= variables.best_ntot2()
 
 			                // Use a StringBuilder to append all data in a single call
 			                StringBuilder line = new StringBuilder();
