@@ -6,6 +6,7 @@ package analyzers;
  */
 import extended_kinematic_fitters.fiducial_cuts;
 import extended_kinematic_fitters.generic_tests;
+import extended_kinematic_fitters.pid_cuts;
 import org.jlab.io.base.DataEvent;
 import org.jlab.io.hipo.HipoDataBank;
 import org.jlab.clas.physics.*;
@@ -15,8 +16,10 @@ public class TwoParticles {
     protected byte helicity;
     protected int runnum;
 
+    protected int e_pid_cuts = 0;
     protected int fiducial_status = -1;
     protected int detector = -1;
+    protected int pid_status = -1;
 
     protected int num_elec, num_piplus, num_piminus, num_kplus, num_kminus, num_protons, num_particles;
     protected int num_pos, num_neg, num_neutrals;
@@ -152,6 +155,7 @@ public class TwoParticles {
 
         generic_tests generic_tests = new generic_tests();
         fiducial_cuts fiducial_cuts = new fiducial_cuts();
+        pid_cuts pid_cuts = new pid_cuts();
 
         boolean electron_pcal_fiducial = fiducial_cuts.pcal_fiducial_cut(0, 1, configBank, rec_Bank, cal_Bank);
         boolean electron_fd_fiducial = fiducial_cuts.dc_fiducial_cut(0, rec_Bank, traj_Bank, configBank);
@@ -274,6 +278,12 @@ public class TwoParticles {
             p_phi = 2 * Math.PI + p_phi;
         }
 
+        if (pid_cuts.calorimeter_energy_cut(0, cal_Bank, 1)
+                && pid_cuts.calorimeter_sampling_fraction_cut(0, lv_e.p(), configBank, cal_Bank)
+                && pid_cuts.calorimeter_diagonal_cut(0, lv_e.p(), cal_Bank)) {
+            e_pid_cuts = 1;
+        }
+        
         z = kinematic_variables.z(lv_p, lv_q);
 
         // missing mass calculations
@@ -401,6 +411,10 @@ public class TwoParticles {
 
     public int get_fiducial_status() {
         return fiducial_status;
+    }
+
+    public int e_pid_cuts() {
+        return e_pid_cuts;
     }
 
     public int num_elec() {

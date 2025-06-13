@@ -193,7 +193,7 @@ int main(int argc, char *argv[]) {
     double RQ2, ReQ2, el_logl2, pi_logl2, k_logl2, pr_logl2, best_ch2, best_c22, best_RL2, best_ntot2;
 
     // Declare common variables
-    int fiducial_status;
+    int fiducial_status, e_pid_status;
     int num_pos, num_neg, num_neutral;
     int runnum, evnum, helicity;
     int detector, detector1, detector2, detector3, detector_gamma1, detector_gamma2;
@@ -346,6 +346,7 @@ int main(int argc, char *argv[]) {
     else if (script_index == 1 && is_mc == 0) {
         // Link TTree branches to variables for one hadron
         tree->Branch("fiducial_status", &fiducial_status, "fiducial_status/I");
+        tree->Branch("e_pid_status", &e_pid_status, "e_pid_status/I");
         tree->Branch("runnum", &runnum, "runnum/I");
         tree->Branch("num_pos", &num_pos, "num_pos/I");
         tree->Branch("num_neg", &num_neg, "num_neg/I");
@@ -466,6 +467,7 @@ int main(int argc, char *argv[]) {
     else if (script_index == 2 && is_mc == 0) {
         // Link TTree branches to variables for two hadrons
         tree->Branch("fiducial_status", &fiducial_status, "fiducial_status/I");
+        tree->Branch("e_pid_status", &e_pid_status, "e_pid_status/I");
         tree->Branch("runnum", &runnum, "runnum/I");
         tree->Branch("num_pos", &num_pos, "num_pos/I");
         tree->Branch("num_neg", &num_neg, "num_neg/I");
@@ -1229,7 +1231,7 @@ int main(int argc, char *argv[]) {
     } 
     if (script_index == 1 && is_mc == 0) {
         // double helicity_double;
-        while (infile >> fiducial_status >> num_pos >> num_neg >> num_neutral >> 
+        while (infile >> fiducial_status >> e_pid_status >> num_pos >> num_neg >> num_neutral >> 
             runnum >> evnum >> helicity >> detector >> e_p >> e_theta >> e_phi >> vz_e >> 
             p_p >> p_theta >> p_phi >> vz_p >> open_angle >> Q2 >> W >> Mx2 >> x >> t >> tmin >> y >> z >> xF >> 
             pT >> xi >> eta >> phi >> DepA >> DepB >> DepC >> DepV >> DepW >> emilay >> emico >> emqua >> best_PID >> 
@@ -1276,7 +1278,7 @@ int main(int argc, char *argv[]) {
         }
     } 
     if (script_index == 2 && is_mc == 0) {
-        while (infile >> fiducial_status >> num_pos >> num_neg >> num_neutral >>
+        while (infile >> fiducial_status >> e_pid_status >> num_pos >> num_neg >> num_neutral >>
             runnum >> evnum >> helicity >> detector1 >> detector2 >> e_p >> e_theta >> e_phi >> vz_e >> 
             p1_p >> p1_theta >> p1_phi >> vz_p1 >> p2_p >> p2_theta >> p2_phi >> vz_p2 >> 
             open_angle_ep >> open_angle_ep1 >> open_angle_ep2 >> open_angle_p1p2 >> 

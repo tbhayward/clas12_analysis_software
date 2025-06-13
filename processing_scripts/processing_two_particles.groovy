@@ -219,6 +219,7 @@ public static void main(String[] args) {
                     // build and batch the output line
                     StringBuilder line = new StringBuilder()
                     line.append(fiducial_status).append(" ")
+                        .append(e_pid_status).append(" ")
                         .append(num_pos).append(" ")
                         .append(num_neg).append(" ")
                         .append(num_neutrals).append(" ")
