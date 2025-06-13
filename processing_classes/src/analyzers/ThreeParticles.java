@@ -1,4 +1,4 @@
- package analyzers;
+package analyzers;
 
 /**
  *
@@ -76,7 +76,7 @@ public class ThreeParticles {
     protected double COM_open_angle;
 
     protected double gN_angle_p1_p2, gN_angle_p1_X, gN_angle_p2_X;
-    
+
     // RICH variables
     protected int emilay1 = -9999;
     protected int emico1 = -9999;
@@ -92,7 +92,7 @@ public class ThreeParticles {
     protected float best_c21 = -9999;
     protected float best_RL1 = -9999;
     protected float best_ntot1 = -9999;
-    
+
     protected int emilay2 = -9999;
     protected int emico2 = -9999;
     protected int emqua2 = -9999;
@@ -123,7 +123,7 @@ public class ThreeParticles {
 //        }
         return true;
     }
-    
+
     public static int getIndex(HipoDataBank rec_Bank, int input_pid, int input_index) {
         int index = -1;
         for (int particle_Index = 0; particle_Index < rec_Bank.rows(); particle_Index++) {
@@ -150,6 +150,55 @@ public class ThreeParticles {
         HipoDataBank rec_Bank = (HipoDataBank) event.getBank("REC::Particle");
         HipoDataBank cal_Bank = (HipoDataBank) event.getBank("REC::Calorimeter");
         HipoDataBank traj_Bank = (HipoDataBank) event.getBank("REC::Traj");
+        int p1_rec_index = getIndex(rec_Bank, p1PID, p1Index);
+        int p2_rec_index = getIndex(rec_Bank, p2PID, p2Index);
+        HipoDataBank rich_Bank = null;
+        if (event.hasBank("RICH::Particle")) {
+            rich_Bank = (HipoDataBank) event.getBank("RICH::Particle");
+
+            for (int row = 0; row < rich_Bank.rows(); row++) {
+                int pindex = rich_Bank.getInt("pindex", row);
+
+                // proceed if this row is for p1 or p2
+                if (pindex == p1_rec_index || pindex == p2_rec_index) {
+                    // choose suffix: 1 for p1, 2 for p2
+                    boolean isFirst = (pindex == p1_rec_index);
+
+                    //  assign into either the “1” variables or the “2” variables
+                    if (isFirst) {
+                        emilay1 = rich_Bank.getByte("emilay", row);
+                        emico1 = rich_Bank.getByte("emico", row);
+                        emqua1 = rich_Bank.getShort("emqua", row);
+                        best_PID1 = rich_Bank.getShort("best_PID", row);
+                        RQ1 = rich_Bank.getFloat("RQ", row);
+                        ReQ1 = rich_Bank.getFloat("ReQ", row);
+                        el_logl1 = rich_Bank.getFloat("el_logl", row);
+                        pi_logl1 = rich_Bank.getFloat("pi_logl", row);
+                        k_logl1 = rich_Bank.getFloat("k_logl", row);
+                        pr_logl1 = rich_Bank.getFloat("pr_logl", row);
+                        best_ch1 = rich_Bank.getFloat("best_ch", row);
+                        best_c21 = rich_Bank.getFloat("best_c2", row);
+                        best_RL1 = rich_Bank.getFloat("best_RL", row);
+                        best_ntot1 = rich_Bank.getFloat("best_ntot", row);
+                    } else {
+                        emilay2 = rich_Bank.getByte("emilay", row);
+                        emico2 = rich_Bank.getByte("emico", row);
+                        emqua2 = rich_Bank.getShort("emqua", row);
+                        best_PID2 = rich_Bank.getShort("best_PID", row);
+                        RQ2 = rich_Bank.getFloat("RQ", row);
+                        ReQ2 = rich_Bank.getFloat("ReQ", row);
+                        el_logl2 = rich_Bank.getFloat("el_logl", row);
+                        pi_logl2 = rich_Bank.getFloat("pi_logl", row);
+                        k_logl2 = rich_Bank.getFloat("k_logl", row);
+                        pr_logl2 = rich_Bank.getFloat("pr_logl", row);
+                        best_ch2 = rich_Bank.getFloat("best_ch", row);
+                        best_c22 = rich_Bank.getFloat("best_c2", row);
+                        best_RL2 = rich_Bank.getFloat("best_RL", row);
+                        best_ntot2 = rich_Bank.getFloat("best_ntot", row);
+                    }
+                }
+            }
+        }
 
         helicity = eventBank.getByte("helicity", 0);
         runnum = configBank.getInt("run", 0); // used for beam energy and polarization
@@ -166,32 +215,30 @@ public class ThreeParticles {
         num_pos = num_positrons + num_piplus + num_kplus + num_protons;
         num_neg = num_elec + num_piminus + num_kminus + num_antiprotons;
         num_neutrals = recEvent.countByPid(22) + recEvent.countByPid(2112);
-        
+
         generic_tests generic_tests = new generic_tests();
         fiducial_cuts fiducial_cuts = new fiducial_cuts();
 
         boolean electron_pcal_fiducial = fiducial_cuts.pcal_fiducial_cut(0, 1, configBank, rec_Bank, cal_Bank);
         boolean electron_fd_fiducial = fiducial_cuts.dc_fiducial_cut(0, rec_Bank, traj_Bank, configBank);
         boolean e_fiducial_check = electron_pcal_fiducial && electron_fd_fiducial;
-        
-        int p1_rec_index = getIndex(rec_Bank, p1PID, p1Index);
+
         boolean passesForwardDetector_1 = generic_tests.forward_detector_cut(p1_rec_index, rec_Bank)
                 ? fiducial_cuts.dc_fiducial_cut(p1_rec_index, rec_Bank, traj_Bank, configBank) : true;
         boolean passesCentralDetector_1 = generic_tests.central_detector_cut(p1_rec_index, rec_Bank)
                 ? fiducial_cuts.cvt_fiducial_cut(p1_rec_index, rec_Bank, traj_Bank, 1) : true;
-        boolean passesForwardTagger_1 = generic_tests.forward_tagger_cut(p1_rec_index, rec_Bank) ? 
-                fiducial_cuts.forward_tagger_fiducial_cut(p1_rec_index, rec_Bank, cal_Bank): true;
+        boolean passesForwardTagger_1 = generic_tests.forward_tagger_cut(p1_rec_index, rec_Bank)
+                ? fiducial_cuts.forward_tagger_fiducial_cut(p1_rec_index, rec_Bank, cal_Bank) : true;
         boolean p1_fiducial_check = passesForwardTagger_1 && passesForwardDetector_1 && passesCentralDetector_1;
 
-        int p2_rec_index = getIndex(rec_Bank, p2PID, p2Index);
         boolean passesForwardDetector_2 = generic_tests.forward_detector_cut(p2_rec_index, rec_Bank)
                 ? fiducial_cuts.dc_fiducial_cut(p2_rec_index, rec_Bank, traj_Bank, configBank) : true;
         boolean passesCentralDetector_2 = generic_tests.central_detector_cut(p2_rec_index, rec_Bank)
                 ? fiducial_cuts.cvt_fiducial_cut(p2_rec_index, rec_Bank, traj_Bank, 1) : true;
-        boolean passesForwardTagger_2 = generic_tests.forward_tagger_cut(p2_rec_index, rec_Bank) ? 
-                fiducial_cuts.forward_tagger_fiducial_cut(p2_rec_index, rec_Bank, cal_Bank): true;
+        boolean passesForwardTagger_2 = generic_tests.forward_tagger_cut(p2_rec_index, rec_Bank)
+                ? fiducial_cuts.forward_tagger_fiducial_cut(p2_rec_index, rec_Bank, cal_Bank) : true;
         boolean p2_fiducial_check = passesForwardTagger_2 && passesForwardDetector_2 && passesCentralDetector_2;
-        
+
         // Check if all checks pass
         if (e_fiducial_check && p1_fiducial_check && p2_fiducial_check) {
             fiducial_status = 3; // Set to 3 if all checks pass
@@ -203,10 +250,10 @@ public class ThreeParticles {
                 fiducial_status = 1; // Set to 1 if only p1 check is false
             } else if (e_fiducial_check && p1_fiducial_check && !p2_fiducial_check) {
                 fiducial_status = 2; // Set to 2 if only p2 check is false (same status as p1)
-            } 
+            }
             // If more than one is false, fiducial_status remains -1 (default)
         }
-        
+
         if (generic_tests.forward_tagger_cut(p1_rec_index, rec_Bank)) {
             detector1 = 0; // Forward Tagger
         } else if (generic_tests.forward_detector_cut(p1_rec_index, rec_Bank)) {
@@ -214,7 +261,7 @@ public class ThreeParticles {
         } else if (generic_tests.central_detector_cut(p1_rec_index, rec_Bank)) {
             detector1 = 2; // Central Detector
         }
-        
+
         if (generic_tests.forward_tagger_cut(p2_rec_index, rec_Bank)) {
             detector2 = 0; // Forward Tagger
         } else if (generic_tests.forward_detector_cut(p2_rec_index, rec_Bank)) {
@@ -316,7 +363,7 @@ public class ThreeParticles {
         t1 = kinematic_variables.t(lv_p1.p(), lv_p1.theta());
         t2 = kinematic_variables.t(lv_p2.p(), lv_p2.theta());
         tmin = kinematic_variables.tmin(x);
-        
+
         open_angle_ep = kinematic_variables.open_angle(lv_e, lv_p);
         open_angle_ep1 = kinematic_variables.open_angle(lv_e, lv_p1);
         open_angle_ep2 = kinematic_variables.open_angle(lv_e, lv_p2);
@@ -469,13 +516,13 @@ public class ThreeParticles {
         zeta = lv_p_gN.e() / lv_target_gN.e();
         zeta1 = lv_p1_gN.e() / lv_target_gN.e();
         zeta2 = lv_p2_gN.e() / lv_target_gN.e();
-        
-        xi = kinematic_variables.Lorentz_vector_inner_product(lv_p_gN, lv_q_gN)/
-                kinematic_variables.Lorentz_vector_inner_product(lv_target_gN, lv_q_gN);
-        xi1 = kinematic_variables.Lorentz_vector_inner_product(lv_p1_gN, lv_q_gN)/
-                kinematic_variables.Lorentz_vector_inner_product(lv_target_gN, lv_q_gN);
-        xi2 = kinematic_variables.Lorentz_vector_inner_product(lv_p2_gN, lv_q_gN)/
-                kinematic_variables.Lorentz_vector_inner_product(lv_target_gN, lv_q_gN);
+
+        xi = kinematic_variables.Lorentz_vector_inner_product(lv_p_gN, lv_q_gN)
+                / kinematic_variables.Lorentz_vector_inner_product(lv_target_gN, lv_q_gN);
+        xi1 = kinematic_variables.Lorentz_vector_inner_product(lv_p1_gN, lv_q_gN)
+                / kinematic_variables.Lorentz_vector_inner_product(lv_target_gN, lv_q_gN);
+        xi2 = kinematic_variables.Lorentz_vector_inner_product(lv_p2_gN, lv_q_gN)
+                / kinematic_variables.Lorentz_vector_inner_product(lv_target_gN, lv_q_gN);
 
         p_gN_pz = lv_p_gN.vect().dot(lv_q_gN.vect()) / lv_q_gN.vect().mag();
         p1_gN_pz = lv_p1_gN.vect().dot(lv_q_gN.vect()) / lv_q_gN.vect().mag();
@@ -595,11 +642,11 @@ public class ThreeParticles {
     public int get_runnum() {
         return runnum;
     }
-    
+
     public int get_detector1() {
         return detector1;
     }
-    
+
     public int get_detector2() {
         return detector2;
     }
@@ -607,19 +654,19 @@ public class ThreeParticles {
     public int get_num_pos() {
         return num_pos;
     }
-    
+
     public int get_num_neg() {
         return num_neg;
     }
-    
+
     public int get_num_neutrals() {
         return num_neutrals;
     }
-    
+
     public int get_fiducial_status() {
         return fiducial_status;
     }
-    
+
     public int num_elec() {
         return num_elec;
     } // returns number of electrons
@@ -751,7 +798,7 @@ public class ThreeParticles {
     public double zeta2() {
         return Double.valueOf(Math.round(zeta2 * 100000)) / 100000;
     }// returns zeta2
-    
+
     public double xi() {
         return Double.valueOf(Math.round(xi * 100000)) / 100000;
     }
@@ -1008,19 +1055,19 @@ public class ThreeParticles {
     public double vz_p2() {
         return Double.valueOf(Math.round(vz_p2 * 100000)) / 100000;
     }// returns p2 z vertex
-    
+
     public double open_angle_ep() {
         return Double.valueOf(Math.round(open_angle_ep * 100000)) / 100000;
     }
-    
+
     public double open_angle_ep1() {
         return Double.valueOf(Math.round(open_angle_ep1 * 100000)) / 100000;
     }
-    
+
     public double open_angle_ep2() {
         return Double.valueOf(Math.round(open_angle_ep2 * 100000)) / 100000;
     }
-    
+
     public double open_angle_p1p2() {
         return Double.valueOf(Math.round(open_angle_p1p2 * 100000)) / 100000;
     }
@@ -1076,7 +1123,7 @@ public class ThreeParticles {
     public double pTmiss() {
         return Double.valueOf(Math.round(pTmiss * 100000)) / 100000;
     }// returns pTmiss
-    
+
     public int emilay1() {
         return emilay1;
     }
@@ -1121,17 +1168,71 @@ public class ThreeParticles {
         return best_ch1;
     }
 
-    public float best_c2() {
-        return best_c2;
+    public float best_c21() {
+        return best_c21;
     }
 
-    public float best_RL() {
-        return best_RL;
+    public float best_RL1() {
+        return best_RL1;
     }
 
-    public float best_ntot() {
-        return best_ntot;
+    public float best_ntot1() {
+        return best_ntot1;
+    }
+
+    public int emilay2() {
+        return emilay2;
+    }
+
+    public int emico2() {
+        return emico2;
+    }
+
+    public int emqua2() {
+        return emqua2;
+    }
+
+    public int best_PID2() {
+        return best_PID2;
+    }
+
+    public float RQ2() {
+        return RQ2;
+    }
+
+    public float ReQ2() {
+        return ReQ2;
+    }
+
+    public float el_logl2() {
+        return el_logl2;
+    }
+
+    public float pi_logl2() {
+        return pi_logl2;
+    }
+
+    public float k_logl2() {
+        return k_logl2;
+    }
+
+    public float pr_logl2() {
+        return pr_logl2;
+    }
+
+    public float best_ch2() {
+        return best_ch2;
+    }
+
+    public float best_c22() {
+        return best_c22;
+    }
+
+    public float best_RL2() {
+        return best_RL2;
+    }
+
+    public float best_ntot2() {
+        return best_ntot2;
     }
 }
-
-
