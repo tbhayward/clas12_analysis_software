@@ -12,12 +12,12 @@ import matplotlib.pyplot as plt
 rga_epiX_atRest   = "/volatile/clas12/thayward/fermi_motion/rga_fa18_inb_epi+_atRest.root"
 rga_epiX_fermi    = "/volatile/clas12/thayward/fermi_motion/rga_fa18_inb_epi+_fermiMotion.root"
 
-rga_epiPiX_atRest = "/volatile/clas12/thayward/fermi_motion/rga_fa18_inb_epi+pi-_atRest.root"
+rga_epiPiX_atRest = "/volatile/clas12/thayward/fermi_motion/rga_fa22_inb_epi+pi-_atRest.root"
 rga_epiPiX_fermi  = "/volatile/clas12/thayward/fermi_motion/rga_fa18_inb_epi+_pi-_fermiMotion.root"
 
 # Uncomment and set real RGC paths when they’re ready:
-rgc_epiX_atRest   = "/volatile/clas12/thayward/fermi_motion/rgc_fa22_inb_epi+_atRest.root"
-rgc_epiPiX_atRest = "/volatile/clas12/thayward/fermi_motion/rgc_fa22_inb_epi+pi-_atRest.root"
+rgc_epiX_atRest   = "/volatile/clas12/thayward/fermi_motion/rgc_su22_inb_epi+_atRest.root"
+rgc_epiPiX_atRest = "/volatile/clas12/thayward/fermi_motion/rgc_su22_inb_epi+pi-_atRest.root"
 
 # Ensure output directory exists
 os.makedirs("output", exist_ok=True)
