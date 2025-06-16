@@ -43,9 +43,12 @@ versions_epiPipiX = [
 # -----------------------------------------------------------------------------
 # Load data arrays
 # -----------------------------------------------------------------------------
-epiX_Mx2    = [(lbl, load_array(path, "Mx2"))  for lbl, path in versions_epiX]
-epiPipi_Mx2 = [(lbl, load_array(path, "Mx2"))  for lbl, path in versions_epiPipiX]
-epiPipi_Mh  = [(lbl, load_array(path, "Mh"))   for lbl, path in versions_epiPipiX]
+# eπ⁺X → Mx²
+epiX_Mx2      = [(lbl, load_array(path, "Mx2"))    for lbl, path in versions_epiX]
+# eπ⁺π⁻X → Mx²
+epiPipi_Mx2   = [(lbl, load_array(path, "Mx2"))    for lbl, path in versions_epiPipiX]
+# eπ⁺π⁻X → Mx²_1 (target‐dependent missing mass for the π⁺)
+epiPipi_Mx2_1 = [(lbl, load_array(path, "Mx2_1"))  for lbl, path in versions_epiPipiX]
 
 # -----------------------------------------------------------------------------
 # Plot in a 1×3 figure
@@ -70,13 +73,13 @@ axes[1].set_xlabel(r"$M_x^2\ \mathrm{(GeV^2)}$")
 axes[1].set_title(r"$e\,\pi^{+}\pi^{-}X:\ M_x^2$")
 axes[1].legend()
 
-# Subplot 3: e π⁺π⁻ X → Mh
-for lbl, data in epiPipi_Mh:
-    axes[2].hist(data, bins=100, range=(0, 2), density=True,
+# Subplot 3: e π⁺π⁻ X → Mx²_1 (π⁺ missing mass)
+for lbl, data in epiPipi_Mx2_1:
+    axes[2].hist(data, bins=100, range=(-1, 3), density=True,
                  histtype="step", label=lbl)
-axes[2].set_xlim(0, 2)
-axes[2].set_xlabel(r"$M_h\ \mathrm{(GeV)}$")
-axes[2].set_title(r"$e\,\pi^{+}\pi^{-}X:\ M_h$")
+axes[2].set_xlim(-1, 3)
+axes[2].set_xlabel(r"$M_{x(\pi^{+})}^2\ \mathrm{(GeV^2)}$")
+axes[2].set_title(r"$e\,\pi^{+}\pi^{-}X:\ M_{x(\pi^{+})}^2$")
 axes[2].legend()
 
 plt.tight_layout()
