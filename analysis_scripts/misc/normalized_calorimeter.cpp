@@ -15,8 +15,9 @@
  *   3) Makes two unnormalized 2D plots (data vs. MC) with three panels (PCal/ECin/ECout).
  *   4) Normalizes each histogram and computes data/MC ratio.
  *   5) Creates a 3-panel ratio plot with mean (μ) and stddev (σ) in a legend box.
- *   6) Creates a second 3-panel plot "ratio_outliers" using a 2-color map:
+ *   6) Creates a second 3-panel plot "ratio_outliers" using a two-color map:
  *      blue where 0.5 ≤ ratio ≤ 2, red otherwise.
+ *   7) Adds padding margins so y-axis labels are not clipped.
  */
 
 #include <iostream>
@@ -95,7 +96,7 @@ int main(int argc, char** argv) {
         int pidVal = sp.first;
         std::string label = sp.second;
 
-        // Book histograms
+        // Histograms
         std::vector<TH2D*> hD(3), hM(3), hR(3), hMap(3);
         for (int i=0; i<3; ++i) {
             hD[i] = new TH2D(Form("hD_%s_%s",label.c_str(),layers[i].c_str()),
@@ -125,14 +126,30 @@ int main(int argc, char** argv) {
 
         gStyle->SetOptStat(0);
 
-        // Unnormalized
-        TCanvas c1("c_data_uncut","Data Uncut",1800,600); c1.Divide(3,1);
+        // Unnormalized Data
+        TCanvas c1("c_data_uncut","Data Uncut",1800,600);
+        c1.Divide(3,1);
         SetSame2DScale(hD[0],hD[1],hD[2]);
-        for(int i=0;i<3;i++){ c1.cd(i+1); gPad->SetLogz(); hD[i]->Draw("COLZ"); }
+        for(int i=0;i<3;i++){
+            c1.cd(i+1);
+            gPad->SetLeftMargin(0.15);
+            gPad->SetRightMargin(0.15);
+            gPad->SetLogz();
+            hD[i]->Draw("COLZ");
+        }
         c1.SaveAs(Form("output/cal/data_uncut_%s.png",label.c_str()));
-        TCanvas c2("c_mc_uncut","MC Uncut",1800,600); c2.Divide(3,1);
+
+        // Unnormalized MC
+        TCanvas c2("c_mc_uncut","MC Uncut",1800,600);
+        c2.Divide(3,1);
         SetSame2DScale(hM[0],hM[1],hM[2]);
-        for(int i=0;i<3;i++){ c2.cd(i+1); gPad->SetLogz(); hM[i]->Draw("COLZ"); }
+        for(int i=0;i<3;i++){
+            c2.cd(i+1);
+            gPad->SetLeftMargin(0.15);
+            gPad->SetRightMargin(0.15);
+            gPad->SetLogz();
+            hM[i]->Draw("COLZ");
+        }
         c2.SaveAs(Form("output/cal/mc_uncut_%s.png",label.c_str()));
 
         // Normalize & ratio
@@ -157,14 +174,21 @@ int main(int argc, char** argv) {
         }
 
         // Ratio canvas
-        TCanvas c3("c_ratio","Data/MC Ratio",1800,600); c3.Divide(3,1);
+        TCanvas c3("c_ratio","Data/MC Ratio",1800,600);
+        c3.Divide(3,1);
         SetSame2DScale(hR[0],hR[1],hR[2]);
         for(int i=0;i<3;i++){
-            c3.cd(i+1); gPad->SetLogz(); hR[i]->Draw("COLZ");
+            c3.cd(i+1);
+            gPad->SetLeftMargin(0.15);
+            gPad->SetRightMargin(0.15);
+            gPad->SetLogz();
+            hR[i]->Draw("COLZ");
             TLegend leg(0.6,0.7,0.9,0.9);
-            leg.SetFillColor(kWhite); leg.SetBorderSize(1); leg.SetTextSize(0.03);
-            leg.AddEntry((TObject*)0, Form("Mean=%.3f",mu[i]), "");
-            leg.AddEntry((TObject*)0, Form("StdDev=%.3f",sigma[i]), "");
+            leg.SetFillColor(kWhite);
+            leg.SetBorderSize(1);
+            leg.SetTextSize(0.03);
+            leg.AddEntry((TObject*)0, Form("Mean = %.3f", mu[i]), "");
+            leg.AddEntry((TObject*)0, Form("StdDev = %.3f", sigma[i]), "");
             leg.Draw();
         }
         c3.SaveAs(Form("output/cal/ratio_%s.png",label.c_str()));
@@ -174,7 +198,9 @@ int main(int argc, char** argv) {
         c4.Divide(3,1);
         for(int i=0;i<3;i++){
             c4.cd(i+1);
-            // build map
+            gPad->SetLeftMargin(0.15);
+            gPad->SetRightMargin(0.15);
+            gPad->SetLogz(0);
             hMap[i] = (TH2D*)hR[i]->Clone(Form("hMap_%s_%s",label.c_str(),layers[i].c_str()));
             hMap[i]->Reset();
             for(int ix=1; ix<=NB; ix++){
@@ -185,7 +211,6 @@ int main(int argc, char** argv) {
                     hMap[i]->SetBinContent(ix,iy,lvl);
                 }
             }
-            // palette: 1->blue, 2->red
             int pal[2] = {kBlue, kRed};
             gStyle->SetPalette(2,pal);
             hMap[i]->SetContour(2);
