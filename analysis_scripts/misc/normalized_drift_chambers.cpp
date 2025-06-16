@@ -121,7 +121,7 @@ int main(int argc, char** argv) {
     mcCh .SetBranchAddress("theta",        &theta);
 
     // constants
-    const int NB2=150;
+    const int NB2=200;
     const double xmins[3]={-180,-280,-450}, xmaxs[3]={180,280,450};
     std::vector<std::pair<int,std::string>> species = {{11,"electron"},{2212,"proton"}};
 
