@@ -1,28 +1,27 @@
 /*
- * File: calorimeter_comparison.cpp
+ * File: forward_tagger_comparison.cpp
  *
  * Compile with:
- *   g++ calorimeter_comparison.cpp -o calorimeter_comparison `root-config --cflags --libs`
+ *   g++ forward_tagger_comparison.cpp -o forward_tagger_comparison \
+ *       `root-config --cflags --libs`
  *
  * Run with:
- *   ./calorimeter_comparison [Nevents] [dataFile] [mcFile]
+ *   ./forward_tagger_comparison [Nevents] [dataFile] [mcFile]
  *
  * What it does:
- *   1) Creates output/ and output/cal/ if they do not exist.
- *   2) Loops over data and MC, filling photon (PID=22) and electron (PID=11)
- *      calorimeter hit-position histograms for PCal, ECin, and ECout.
- *   3) Makes unnormalized 2D plots (data vs. MC) with three panels (PCal/ECin/ECout).
- *   4) Normalizes each histogram and computes data/MC ratio.
- *   5) Creates a 3-panel ratio plot with mean (μ) and stddev (σ) in a legend box.
- *   6) Creates a second 3-panel "ratio_outliers" by drawing each bin as a box:
- *      red if ratio<0.5 or >2.0, blue otherwise.
- *   7) Adds padding margins so y-axis labels are not clipped.
+ *   1) Creates output/ and output/ft/ if they do not exist.
+ *   2) Applies fiducial cuts to forward tagger hits.
+ *   3) Loops over data and MC, filling photon (PID=22) FT hit-position histograms.
+ *   4) Makes two unnormalized 2D plots (data vs. MC).
+ *   5) Normalizes each histogram to unit integral.
+ *   6) Computes and plots the ratio (data/MC) as "ft_ratio.png" with mean/stddev in a legend box.
+ *   7) Creates a second plot "ft_ratio_outliers.png" showing a two-color map:
+ *      blue where 0.5≤ratio≤2, red otherwise.
  */
 
 #include <iostream>
 #include <string>
 #include <cmath>
-#include <vector>
 #include "TChain.h"
 #include "TH2D.h"
 #include "TCanvas.h"
@@ -30,193 +29,179 @@
 #include "TPad.h"
 #include "TSystem.h"
 #include "TLegend.h"
-#include "TBox.h"
 
 // ----------------------------------------------------------------------------
-// Helper to unify the color scale of three TH2D histograms
+// Forward Tagger fiducial cut
+// ----------------------------------------------------------------------------
+bool forward_tagger_fiducial_cut(double x, double y) {
+    double r = std::hypot(x, y);
+    // radial acceptance
+    if (r < 8.5 || r > 15.5) return false;
+    // holes defined by {radius, center_x, center_y}
+    const double holes[4][3] = {
+        {1.60, -8.42,  9.89},
+        {1.60, -9.89, -5.33},
+        {2.30, -6.15,-13.00},
+        {2.00,  3.70, -6.50}
+    };
+    for (auto& h : holes) {
+        double hr = h[0], cx = h[1], cy = h[2];
+        if (std::hypot(x - cx, y - cy) < hr) return false;
+    }
+    return true;
+}
+
+// ----------------------------------------------------------------------------
+// Helper to unify the color scale
 // ----------------------------------------------------------------------------
 void SetSame2DScale(TH2D* a, TH2D* b, TH2D* c) {
-    double mn = 1e9, mx = -1e9;
-    for (auto* h : {a,b,c}) {
+    double mn =  1e9, mx = -1e9;
+    for (auto* h : {a, b, c}) {
         mn = std::min(mn, h->GetMinimum());
         mx = std::max(mx, h->GetMaximum());
     }
-    for (auto* h : {a,b,c}) {
+    for (auto* h : {a, b, c}) {
         h->SetMinimum(mn);
         h->SetMaximum(mx);
     }
 }
 
 int main(int argc, char** argv) {
-    // Create output directories
+    // Create output directories if needed
     gSystem->mkdir("output",    kTRUE);
-    gSystem->mkdir("output/cal",kTRUE);
+    gSystem->mkdir("output/ft", kTRUE);
 
-    // Parse arguments
+    // 1) Parse arguments
     Long64_t maxEvents = -1;
-    if (argc > 1) { maxEvents = std::stoll(argv[1]); if (maxEvents == 0) maxEvents = -1; }
-    bool useData = (argc > 2);
-    bool useMC   = (argc > 3);
-    std::string dataFile = useData ? argv[2] : "";
-    std::string mcFile   = useMC   ? argv[3] : "";
+    if (argc > 1) {
+        maxEvents = std::stoll(argv[1]);
+        if (maxEvents == 0) maxEvents = -1;
+    }
+    bool useDataFile = (argc > 2);
+    bool useMCFile   = (argc > 3);
+    std::string dataFile = useDataFile ? argv[2] : "";
+    std::string mcFile   = useMCFile   ? argv[3] : "";
 
-    // Set up TChains
+    // 2) Set up TChains
     TChain dataCh("PhysicsEvents"), mcCh("PhysicsEvents");
-    if (useData) dataCh.Add(dataFile.c_str()); else dataCh.Add("/work/clas12/thayward/.../cal_data.root");
-    if (useMC)   mcCh.Add(mcFile.c_str());   else mcCh.Add("/work/clas12/thayward/.../cal_mc.root");
+    if (useDataFile) dataCh.Add(dataFile.c_str());
+    else             dataCh.Add("/work/clas12/thayward/.../ft_data.root");
+    if (useMCFile)   mcCh.Add(mcFile.c_str());
+    else             mcCh.Add("/work/clas12/thayward/.../ft_mc.root");
 
-    // Branch addresses
+    // 3) Branch addresses
     Int_t    pid;
-    Double_t cal_x_1,cal_y_1,cal_x_4,cal_y_4,cal_x_7,cal_y_7;
+    Double_t ft_x, ft_y, ft_energy;
     dataCh.SetBranchAddress("particle_pid", &pid);
-    dataCh.SetBranchAddress("cal_x_1",      &cal_x_1);
-    dataCh.SetBranchAddress("cal_y_1",      &cal_y_1);
-    dataCh.SetBranchAddress("cal_x_4",      &cal_x_4);
-    dataCh.SetBranchAddress("cal_y_4",      &cal_y_4);
-    dataCh.SetBranchAddress("cal_x_7",      &cal_x_7);
-    dataCh.SetBranchAddress("cal_y_7",      &cal_y_7);
-    mcCh .SetBranchAddress("particle_pid", &pid);
-    mcCh .SetBranchAddress("cal_x_1",      &cal_x_1);
-    mcCh .SetBranchAddress("cal_y_1",      &cal_y_1);
-    mcCh .SetBranchAddress("cal_x_4",      &cal_x_4);
-    mcCh .SetBranchAddress("cal_y_4",      &cal_y_4);
-    mcCh .SetBranchAddress("cal_x_7",      &cal_x_7);
-    mcCh .SetBranchAddress("cal_y_7",      &cal_y_7);
+    dataCh.SetBranchAddress("ft_x",         &ft_x);
+    dataCh.SetBranchAddress("ft_y",         &ft_y);
+    dataCh.SetBranchAddress("ft_energy",    &ft_energy);
+    mcCh.SetBranchAddress("particle_pid",   &pid);
+    mcCh.SetBranchAddress("ft_x",           &ft_x);
+    mcCh.SetBranchAddress("ft_y",           &ft_y);
+    mcCh.SetBranchAddress("ft_energy",      &ft_energy);
 
-    // Config
+    // 4) Book histograms
     const int NB = 200;
-    const double xmin=-450, xmax=450, ymin=-450, ymax=450;
-    std::vector<std::pair<int,std::string>> species = {{22,"photon"},{11,"electron"}};
-    std::vector<std::string> layers = {"PCal","ECin","ECout"};
+    TH2D* h_data = new TH2D("h_ft_data",
+      "FT Hit Position (data); x_{FT} (cm); y_{FT} (cm)",
+      NB, -20, 20, NB, -20, 20);
+    TH2D* h_mc   = new TH2D("h_ft_mc",
+      "FT Hit Position (mc);   x_{FT} (cm); y_{FT} (cm)",
+      NB, -20, 20, NB, -20, 20);
 
-    // Define two-color palette array for outliers
-    int outPal[2] = { kBlue, kRed };
+    gStyle->SetOptStat(0);
 
-    for (auto& sp : species) {
-        int pidVal = sp.first;
-        std::string label = sp.second;
+    // 5) Fill DATA with fiducial cut
+    Long64_t nD = dataCh.GetEntries();
+    if (maxEvents > 0 && maxEvents < nD) nD = maxEvents;
+    for (Long64_t i = 0; i < nD; ++i) {
+        dataCh.GetEntry(i);
+        if (pid != 22 || ft_energy == -9999) continue;
+        if (!forward_tagger_fiducial_cut(ft_x, ft_y)) continue;
+        h_data->Fill(ft_x, ft_y);
+    }
 
-        // Prepare style
-        gStyle->SetOptStat(0);
+    // 6) Fill MC with fiducial cut
+    Long64_t nM = mcCh.GetEntries();
+    if (maxEvents > 0 && maxEvents < nM) nM = maxEvents;
+    for (Long64_t i = 0; i < nM; ++i) {
+        mcCh.GetEntry(i);
+        if (pid != 22 || ft_energy == -9999) continue;
+        if (!forward_tagger_fiducial_cut(ft_x, ft_y)) continue;
+        h_mc->Fill(ft_x, ft_y);
+    }
 
-        // Book histograms
-        std::vector<TH2D*> hD(3), hM(3), hR(3);
-        for (int i = 0; i < 3; ++i) {
-            hD[i] = new TH2D(Form("hD_%s_%s", label.c_str(), layers[i].c_str()),
-                             Form("%s Data %s; x (cm); y (cm)", label.c_str(), layers[i].c_str()),
-                             NB, xmin, xmax, NB, ymin, ymax);
-            hM[i] = (TH2D*)hD[i]->Clone(Form("hM_%s_%s", label.c_str(), layers[i].c_str()));
+    // 7) Draw unnormalized plots
+    {
+        TCanvas c("c_ft_data","FT Data Unnormalized",600,600);
+        c.cd(); gPad->SetLeftMargin(0.15); gPad->SetRightMargin(0.15);
+        h_data->Draw("COLZ");
+        c.SaveAs("output/ft/ft_data.png");
+    }
+    {
+        TCanvas c("c_ft_mc","FT MC Unnormalized",600,600);
+        c.cd(); gPad->SetLeftMargin(0.15); gPad->SetRightMargin(0.15);
+        h_mc->Draw("COLZ");
+        c.SaveAs("output/ft/ft_mc.png");
+    }
+
+    // 8) Normalize histograms
+    double Idata = h_data->Integral(); if (Idata>0) h_data->Scale(1.0/Idata);
+    double Imc   = h_mc->Integral();   if (Imc  >0) h_mc->Scale(1.0/Imc);
+
+    // 9) Compute ratio
+    TH2D* h_ratio = (TH2D*)h_data->Clone("h_ft_ratio");
+    h_ratio->SetTitle("FT Hit Position Data/MC; x_{FT} (cm); y_{FT} (cm)");
+    h_ratio->Divide(h_mc);
+
+    // compute mean and stddev of non-zero bins
+    int cnt = 0; double sum=0, sum2=0;
+    for (int ix=1; ix<=h_ratio->GetNbinsX(); ++ix) {
+      for (int iy=1; iy<=h_ratio->GetNbinsY(); ++iy) {
+        double v = h_ratio->GetBinContent(ix, iy);
+        if (v == 0) continue;
+        sum += v; sum2 += v*v; ++cnt;
+      }
+    }
+    double mean = cnt? sum/cnt : 0;
+    double sigma = cnt? std::sqrt(sum2/cnt - mean*mean) : 0;
+
+    // 10) Draw ratio with legend box
+    SetSame2DScale(h_data, h_mc, h_ratio);
+    {
+        TCanvas c("c_ft_ratio","FT Data/MC Ratio",600,600);
+        c.cd(); gPad->SetLeftMargin(0.15); gPad->SetRightMargin(0.15);
+        h_ratio->Draw("COLZ");
+        TLegend leg(0.6, 0.7, 0.9, 0.9);
+        leg.SetFillColor(kWhite); leg.SetBorderSize(1); leg.SetTextSize(0.03);
+        leg.AddEntry((TObject*)0, Form("Mean = %.4f", mean), "");
+        leg.AddEntry((TObject*)0, Form("StdDev = %.4f", sigma), "");
+        leg.Draw();
+        c.SaveAs("output/ft/ft_ratio.png");
+    }
+
+    // 11) Draw outliers map
+    {
+        TCanvas c("c_ft_outliers","FT Ratio Outliers",600,600);
+        c.cd(); gPad->SetLogz(0);
+        TH2D* h_map = (TH2D*)h_ratio->Clone("h_ft_map"); h_map->Reset();
+        int nX = h_ratio->GetNbinsX(), nY = h_ratio->GetNbinsY();
+        for (int ix=1; ix<=nX; ++ix) {
+          for (int iy=1; iy<=nY; ++iy) {
+            double v = h_ratio->GetBinContent(ix, iy);
+            if (v == 0) continue;
+            int lvl = (v < 0.5 || v > 2.0) ? 2 : 1;
+            h_map->SetBinContent(ix, iy, lvl);
+          }
         }
-
-        // Fill DATA
-        Long64_t nD = dataCh.GetEntries(); if (maxEvents>0 && maxEvents<nD) nD = maxEvents;
-        for (Long64_t ev = 0; ev < nD; ++ev) {
-            dataCh.GetEntry(ev);
-            if (pid != pidVal) continue;
-            double xs[3] = {cal_x_1, cal_x_4, cal_x_7};
-            double ys[3] = {cal_y_1, cal_y_4, cal_y_7};
-            for (int i = 0; i < 3; ++i) if (xs[i] != -9999 && ys[i] != -9999) hD[i]->Fill(xs[i], ys[i]);
-        }
-        // Fill MC
-        Long64_t nM = mcCh.GetEntries(); if (maxEvents>0 && maxEvents<nM) nM = maxEvents;
-        for (Long64_t ev = 0; ev < nM; ++ev) {
-            mcCh.GetEntry(ev);
-            if (pid != pidVal) continue;
-            double xs[3] = {cal_x_1, cal_x_4, cal_x_7};
-            double ys[3] = {cal_y_1, cal_y_4, cal_y_7};
-            for (int i = 0; i < 3; ++i) if (xs[i] != -9999 && ys[i] != -9999) hM[i]->Fill(xs[i], ys[i]);
-        }
-
-        // DRAW UNNORMALIZED DATA
-        gStyle->SetPalette(1); // default palette
-        TCanvas c1("c_data_uncut", Form("%s Data Uncut", label.c_str()), 1800, 600);
-        c1.Divide(3,1);
-        SetSame2DScale(hD[0], hD[1], hD[2]);
-        for (int i = 0; i < 3; ++i) {
-            c1.cd(i+1);
-            gPad->SetLeftMargin(0.15); gPad->SetRightMargin(0.15);
-            gPad->SetLogz();
-            hD[i]->Draw("COLZ");
-        }
-        c1.SaveAs(Form("output/cal/data_uncut_%s.png", label.c_str()));
-
-        // DRAW UNNORMALIZED MC
-        gStyle->SetPalette(1);
-        TCanvas c2("c_mc_uncut", Form("%s MC Uncut", label.c_str()), 1800, 600);
-        c2.Divide(3,1);
-        SetSame2DScale(hM[0], hM[1], hM[2]);
-        for (int i = 0; i < 3; ++i) {
-            c2.cd(i+1);
-            gPad->SetLeftMargin(0.15); gPad->SetRightMargin(0.15);
-            gPad->SetLogz();
-            hM[i]->Draw("COLZ");
-        }
-        c2.SaveAs(Form("output/cal/mc_uncut_%s.png", label.c_str()));
-
-        // NORMALIZE & RATIO
-        for (int i = 0; i < 3; ++i) {
-            double Idata = hD[i]->Integral(); if (Idata > 0) hD[i]->Scale(1.0/Idata);
-            double IMC   = hM[i]->Integral(); if (IMC   > 0) hM[i]->Scale(1.0/IMC);
-            hR[i] = (TH2D*)hD[i]->Clone(Form("hR_%s_%s", label.c_str(), layers[i].c_str()));
-            hR[i]->Divide(hM[i]);
-        }
-
-        // COMPUTE STATS
-        std::vector<double> mu(3), sigma(3);
-        for (int i = 0; i < 3; ++i) {
-            int cnt = 0; double s = 0, s2 = 0;
-            for (int ix = 1; ix <= NB; ++ix)
-                for (int iy = 1; iy <= NB; ++iy) {
-                    double v = hR[i]->GetBinContent(ix, iy);
-                    if (v <= 0) continue;
-                    s += v; s2 += v*v; cnt++;
-                }
-            mu[i]    = cnt ? s/cnt : 0;
-            sigma[i] = cnt ? sqrt(s2/cnt - mu[i]*mu[i]) : 0;
-        }
-
-        // DRAW RATIO
-        gStyle->SetPalette(1);
-        TCanvas c3("c_ratio", Form("%s Data/MC Ratio", label.c_str()), 1800, 600);
-        c3.Divide(3,1);
-        SetSame2DScale(hR[0], hR[1], hR[2]);
-        for (int i = 0; i < 3; ++i) {
-            c3.cd(i+1);
-            gPad->SetLeftMargin(0.15); gPad->SetRightMargin(0.15);
-            gPad->SetLogz();
-            hR[i]->Draw("COLZ");
-            TLegend leg(0.6, 0.7, 0.9, 0.9);
-            leg.SetFillColor(kWhite); leg.SetBorderSize(1); leg.SetTextSize(0.03);
-            leg.AddEntry((TObject*)0, Form("Mean=%.3f", mu[i]), "");
-            leg.AddEntry((TObject*)0, Form("StdDev=%.3f", sigma[i]), "");
-            leg.Draw();
-        }
-        c3.SaveAs(Form("output/cal/ratio_%s.png", label.c_str()));
-
-        // DRAW OUTLIERS MAP
-        gStyle->SetPalette(2, outPal);
-        TCanvas c4("c_outliers", Form("%s Ratio Outliers", label.c_str()), 1800, 600);
-        c4.Divide(3,1);
-        for (int i = 0; i < 3; ++i) {
-            c4.cd(i+1);
-            gPad->SetLeftMargin(0.15); gPad->SetRightMargin(0.15);
-            gPad->SetLogz(0);
-            TH2D* hMap = (TH2D*)hR[i]->Clone(Form("hMap_%s_%s", label.c_str(), layers[i].c_str()));
-            hMap->Reset();
-            for (int ix = 1; ix <= NB; ++ix) {
-                for (int iy = 1; iy <= NB; ++iy) {
-                    double v = hR[i]->GetBinContent(ix, iy);
-                    if (v <= 0) continue;
-                    int lvl = (v < 0.5 || v > 2.0) ? 2 : 1;
-                    hMap->SetBinContent(ix, iy, lvl);
-                }
-            }
-            hMap->SetContour(2);
-            hMap->SetContourLevel(0, 1);
-            hMap->SetContourLevel(1, 2);
-            hMap->Draw("COLZ");
-        }
-        c4.SaveAs(Form("output/cal/ratio_%s_outliers.png", label.c_str()));
+        int palette[2] = {kBlue, kRed};
+        gStyle->SetPalette(2, palette);
+        h_map->SetContour(2);
+        h_map->SetContourLevel(0, 1);
+        h_map->SetContourLevel(1, 2);
+        h_map->Draw("COLZ");
+        c.SaveAs("output/ft/ft_ratio_outliers.png");
     }
     return 0;
 }
