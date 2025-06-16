@@ -75,7 +75,7 @@ axes[1].legend()
 
 # Subplot 3: e π⁺π⁻ X → Mx²_1 (π⁺ missing mass)
 for lbl, data in epiPipi_Mx2_1:
-    axes[2].hist(data, bins=100, range=(-1, 3), density=True,
+    axes[2].hist(data, bins=100, range=(-1, 5), density=True,
                  histtype="step", label=lbl)
 axes[2].set_xlim(-1, 3)
 axes[2].set_xlabel(r"$M_{x(\pi^{+})}^2\ \mathrm{(GeV^2)}$")
