@@ -47,7 +47,7 @@ epiX_Mx2    = [(lbl, load_array(path, "Mx2")) for lbl, path in versions_epiX]
 epiPipi_Mx2 = [(lbl, load_array(path, "Mx2")) for lbl, path in versions_epiPipiX]
 
 # -----------------------------------------------------------------------------
-# Plot in a 1×2 figure
+# Plot in a 1×2 figure with bottom padding
 # -----------------------------------------------------------------------------
 fig, axes = plt.subplots(1, 2, figsize=(12, 5))
 
@@ -69,6 +69,10 @@ axes[1].set_xlabel(r"$M_x^2\ \mathrm{(GeV^2)}$")
 axes[1].set_title(r"$e\,\pi^{+}\pi^{-}X:\ M_x^2$")
 axes[1].legend()
 
+# Tight layout and add bottom padding to avoid clipping
 plt.tight_layout()
+plt.subplots_adjust(bottom=0.15)
+
+# Save figure
 plt.savefig("output/fermi_motion.pdf")
 plt.close()
