@@ -9,10 +9,11 @@
  *   ./forward_tagger_comparison [Nevents] [dataFile] [mcFile]
  *
  * What it does:
- *   1) Loops over data and MC, filling photon (PID=22) FT hit‐position histograms.
- *   2) Makes two unnormalized 2D plots (data vs. MC).
- *   3) Normalizes each histogram to unit integral.
- *   4) Computes and plots the ratio (data/MC) in a third canvas.
+ *   1) Creates output/ and output/ft/ if they do not exist.
+ *   2) Loops over data and MC, filling photon (PID=22) FT hit‐position histograms.
+ *   3) Makes two unnormalized 2D plots (data vs. MC).
+ *   4) Normalizes each histogram to unit integral.
+ *   5) Computes and plots the ratio (data/MC) in a third canvas.
  *****************************************************************************/
 
 #include <iostream>
@@ -23,6 +24,7 @@
 #include "TCanvas.h"
 #include "TStyle.h"
 #include "TPad.h"
+#include "TSystem.h"
 #include "TString.h"
 
 // ----------------------------------------------------------------------------
@@ -41,6 +43,10 @@ void SetSame2DScale(TH2D* a, TH2D* b, TH2D* c) {
 }
 
 int main(int argc, char** argv) {
+    // --- Create output directories if needed ---
+    gSystem->mkdir("output",    kTRUE);
+    gSystem->mkdir("output/ft", kTRUE);
+
     // 1) Parse arguments
     Long64_t maxEvents = -1;
     if (argc > 1) {
@@ -54,10 +60,10 @@ int main(int argc, char** argv) {
 
     // 2) Set up TChains
     TChain dataCh("PhysicsEvents"), mcCh("PhysicsEvents");
-    if (useDataFile)    dataCh.Add(dataFile.c_str());
-    else                dataCh.Add("/work/clas12/thayward/.../ft_data.root");
-    if (useMCFile)      mcCh.Add(mcFile.c_str());
-    else                mcCh.Add("/work/clas12/thayward/.../ft_mc.root");
+    if (useDataFile) dataCh.Add(dataFile.c_str());
+    else             dataCh.Add("/work/clas12/thayward/.../ft_data.root");
+    if (useMCFile)   mcCh.Add(mcFile.c_str());
+    else             mcCh.Add("/work/clas12/thayward/.../ft_mc.root");
 
     // 3) Branch addresses
     Int_t    pid;
