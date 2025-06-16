@@ -13,9 +13,8 @@
  *   2) Loops over data and MC, filling photon (PID=22) FT hit-position histograms.
  *   3) Makes two unnormalized 2D plots (data vs. MC).
  *   4) Normalizes each histogram to unit integral.
- *   5) Computes and plots the ratio (data/MC) in a third canvas.
- *   6) Adds mean and standard deviation labels to the ratio plot.
- *   7) Creates a fourth plot highlighting bins >3σ from the mean in red.
+ *   5) Computes and plots the ratio (data/MC) as "ft_ratio.png" with mean/stddev.
+ *   6) Creates a second plot "ft_ratio_outliers.png" highlighting bins >1σ.
  */
 
 #include <iostream>
@@ -27,7 +26,7 @@
 #include "TStyle.h"
 #include "TPad.h"
 #include "TSystem.h"
-#include "TLatex.h"
+#include "TPaveText.h"
 #include "TBox.h"
 
 // ----------------------------------------------------------------------------
@@ -140,22 +139,23 @@ int main(int argc, char** argv) {
     h_ratio->SetTitle("FT Hit Position Data/MC; x_{FT} (cm); y_{FT} (cm)");
     h_ratio->Divide(h_mc);
 
-    // compute mean and stddev of bin contents
+    // compute mean and stddev of non-zero bins
     int nX = h_ratio->GetNbinsX(), nY = h_ratio->GetNbinsY();
     int    count = 0;
     double sum = 0, sum2 = 0;
     for (int ix=1; ix<=nX; ix++) {
       for (int iy=1; iy<=nY; iy++) {
         double c = h_ratio->GetBinContent(ix, iy);
+        if (c == 0) continue;
         sum  += c;
         sum2 += c*c;
         ++count;
       }
     }
-    double mean = sum / count;
-    double sigma = std::sqrt(sum2/ count - mean*mean);
+    double mean = (count>0? sum / count : 0);
+    double sigma = (count>0? std::sqrt(sum2/ count - mean*mean) : 0);
 
-    // 10) Draw ratio with labels
+    // 10) Draw ratio with boxed labels (1)
     SetSame2DScale(h_data, h_mc, h_ratio);
     {
         TCanvas c("c_ft_ratio","FT Data/MC Ratio",600,600);
@@ -164,16 +164,17 @@ int main(int argc, char** argv) {
         gPad->SetRightMargin(0.15);
         h_ratio->Draw("COLZ");
 
-        TLatex tex;
-        tex.SetNDC();
-        tex.SetTextSize(0.03);
-        tex.DrawLatex(0.15, 0.92, TString::Format("Mean = %.4f", mean));
-        tex.DrawLatex(0.15, 0.88, TString::Format("StdDev = %.4f", sigma));
+        TPaveText* pt = new TPaveText(0.15, 0.15, 0.45, 0.25, "NDC");
+        pt->SetFillColor(kWhite);
+        pt->SetBorderSize(1);
+        pt->AddText(TString::Format("Mean = %.4f", mean));
+        pt->AddText(TString::Format("StdDev = %.4f", sigma));
+        pt->Draw();
 
-        c.SaveAs("output/ft/ft_ratio_annotated.png");
+        c.SaveAs("output/ft/ft_ratio.png");
     }
 
-    // 11) Draw outliers (>3 sigma) overlay
+    // 11) Draw outliers (>1 sigma) overlay (2)
     {
         TCanvas c("c_ft_outliers","FT Ratio Outliers",600,600);
         c.cd();
@@ -185,7 +186,8 @@ int main(int argc, char** argv) {
         for (int ix=1; ix<=nX; ix++) {
           for (int iy=1; iy<=nY; iy++) {
             double cval = h_ratio->GetBinContent(ix, iy);
-            if (std::fabs(cval - mean) > 3*sigma) {
+            if (cval == 0) continue;
+            if (std::fabs(cval - mean) > sigma) {
               double x1 = h_ratio->GetXaxis()->GetBinLowEdge(ix);
               double x2 = h_ratio->GetXaxis()->GetBinUpEdge(ix);
               double y1 = h_ratio->GetYaxis()->GetBinLowEdge(iy);
