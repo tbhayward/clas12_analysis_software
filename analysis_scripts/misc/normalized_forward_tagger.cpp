@@ -1,39 +1,43 @@
 /*
- * File: forward_tagger_comparison.cpp
+ * File: calorimeter_comparison.cpp
  *
  * Compile with:
- *   g++ forward_tagger_comparison.cpp -o forward_tagger_comparison \
+ *   g++ calorimeter_comparison.cpp -o calorimeter_comparison \
  *       `root-config --cflags --libs`
  *
  * Run with:
- *   ./forward_tagger_comparison [Nevents] [dataFile] [mcFile]
+ *   ./calorimeter_comparison [Nevents] [dataFile] [mcFile]
  *
  * What it does:
- *   1) Creates output/ and output/ft/ if they do not exist.
- *   2) Loops over data and MC, filling photon (PID=22) FT hit-position histograms.
- *   3) Makes two unnormalized 2D plots (data vs. MC).
- *   4) Normalizes each histogram to unit integral.
- *   5) Computes and plots the ratio (data/MC) as "ft_ratio.png" with mean/stddev in top-right legend.
- *   6) Creates a second plot "ft_ratio_outliers.png" highlighting bins >1σ.
+ *   1) Creates output/ and output/cal/ if they do not exist.
+ *   2) Loops over data and MC, filling photon (PID=22) and electron (PID=11)
+ *      calorimeter hit-position histograms for PCal, ECin, and ECout.
+ *   3) Makes unnormalized 2D plots (data vs. MC) with all three layers on one canvas.
+ *   4) Normalizes each histogram and computes data/MC ratio.
+ *   5) Creates a 3-panel ratio plot with mean (μ) and stddev (σ) annotated per layer.
+ *   6) Creates a second 3-panel plot highlighting bins with ratio >2 or <0.5 in red.
  */
 
 #include <iostream>
 #include <string>
 #include <cmath>
+#include <vector>
+#include <utility>
 #include "TChain.h"
 #include "TH2D.h"
 #include "TCanvas.h"
 #include "TStyle.h"
 #include "TPad.h"
 #include "TSystem.h"
-#include "TLegend.h"
+#include "TLatex.h"
 #include "TBox.h"
+#include "TString.h"
 
 // ----------------------------------------------------------------------------
-// Helper to unify the color scale of three TH2D histograms
+// Helper to unify color scale for three TH2D histograms
 // ----------------------------------------------------------------------------
 void SetSame2DScale(TH2D* a, TH2D* b, TH2D* c) {
-    double mn =  1e9, mx = -1e9;
+    double mn = 1e9, mx = -1e9;
     for (auto* h : {a, b, c}) {
         mn = std::min(mn, h->GetMinimum());
         mx = std::max(mx, h->GetMaximum());
@@ -45,141 +49,205 @@ void SetSame2DScale(TH2D* a, TH2D* b, TH2D* c) {
 }
 
 int main(int argc, char** argv) {
-    // Create output directories if needed
+    // 1) Create output directories
     gSystem->mkdir("output",    kTRUE);
-    gSystem->mkdir("output/ft", kTRUE);
+    gSystem->mkdir("output/cal",kTRUE);
 
-    // 1) Parse arguments
+    // 2) Parse arguments
     Long64_t maxEvents = -1;
     if (argc > 1) {
         maxEvents = std::stoll(argv[1]);
         if (maxEvents == 0) maxEvents = -1;
     }
-    bool useDataFile = (argc > 2);
-    std::string dataFile = useDataFile ? argv[2] : "";
-    bool useMCFile   = (argc > 3);
-    std::string mcFile      = useMCFile   ? argv[3]   : "";
+    bool useData = (argc > 2);
+    bool useMC   = (argc > 3);
+    std::string dataFile = useData ? argv[2] : "";
+    std::string mcFile   = useMC   ? argv[3] : "";
 
-    // 2) Set up TChains
+    // 3) Set up TChains
     TChain dataCh("PhysicsEvents"), mcCh("PhysicsEvents");
-    if (useDataFile) dataCh.Add(dataFile.c_str());
-    else             dataCh.Add("/work/clas12/thayward/.../ft_data.root");
-    if (useMCFile)   mcCh.Add(mcFile.c_str());
-    else             mcCh.Add("/work/clas12/thayward/.../ft_mc.root");
+    if (useData) dataCh.Add(dataFile.c_str());
+    else         dataCh.Add("/work/clas12/thayward/.../cal_data.root");
+    if (useMC)   mcCh.Add(mcFile.c_str());
+    else         mcCh.Add("/work/clas12/thayward/.../cal_mc.root");
 
-    // 3) Branch addresses
+    // 4) Branch addresses
     Int_t    pid;
-    Double_t ft_x, ft_y, ft_energy;
+    Double_t cal_x_1, cal_y_1;
+    Double_t cal_x_4, cal_y_4;
+    Double_t cal_x_7, cal_y_7;
     dataCh.SetBranchAddress("particle_pid", &pid);
-    dataCh.SetBranchAddress("ft_x",         &ft_x);
-    dataCh.SetBranchAddress("ft_y",         &ft_y);
-    dataCh.SetBranchAddress("ft_energy",    &ft_energy);
-    mcCh.SetBranchAddress("particle_pid",   &pid);
-    mcCh.SetBranchAddress("ft_x",           &ft_x);
-    mcCh.SetBranchAddress("ft_y",           &ft_y);
-    mcCh.SetBranchAddress("ft_energy",      &ft_energy);
+    dataCh.SetBranchAddress("cal_x_1",      &cal_x_1);
+    dataCh.SetBranchAddress("cal_y_1",      &cal_y_1);
+    dataCh.SetBranchAddress("cal_x_4",      &cal_x_4);
+    dataCh.SetBranchAddress("cal_y_4",      &cal_y_4);
+    dataCh.SetBranchAddress("cal_x_7",      &cal_x_7);
+    dataCh.SetBranchAddress("cal_y_7",      &cal_y_7);
+    mcCh.SetBranchAddress("particle_pid",    &pid);
+    mcCh.SetBranchAddress("cal_x_1",         &cal_x_1);
+    mcCh.SetBranchAddress("cal_y_1",         &cal_y_1);
+    mcCh.SetBranchAddress("cal_x_4",         &cal_x_4);
+    mcCh.SetBranchAddress("cal_y_4",         &cal_y_4);
+    mcCh.SetBranchAddress("cal_x_7",         &cal_x_7);
+    mcCh.SetBranchAddress("cal_y_7",         &cal_y_7);
 
-    // 4) Book histograms
+    // 5) Configuration
     const int NB = 200;
-    TH2D* h_data = new TH2D("h_ft_data",
-      "FT Hit Position (data); x_{FT} (cm); y_{FT} (cm)",
-      NB, -20, 20, NB, -20, 20);
-    TH2D* h_mc   = new TH2D("h_ft_mc",
-      "FT Hit Position (mc);   x_{FT} (cm); y_{FT} (cm)",
-      NB, -20, 20, NB, -20, 20);
+    const double xmin = -450.0, xmax = 450.0;
+    const double ymin = -450.0, ymax = 450.0;
 
-    gStyle->SetOptStat(0);
+    std::vector<std::pair<int,std::string>> species = {{22,"photon"},{11,"electron"}};
+    std::vector<std::string> layerLabels = {"PCal","ECin","ECout"};
 
-    // 5) Fill DATA
-    Long64_t nD = dataCh.GetEntries();
-    if (maxEvents > 0 && maxEvents < nD) nD = maxEvents;
-    for (Long64_t i = 0; i < nD; ++i) {
-        dataCh.GetEntry(i);
-        if (pid != 22 || ft_energy == -9999) continue;
-        h_data->Fill(ft_x, ft_y);
-    }
+    for (auto& sp : species) {
+        int pidVal = sp.first;
+        std::string label = sp.second;
 
-    // 6) Fill MC
-    Long64_t nM = mcCh.GetEntries();
-    if (maxEvents > 0 && maxEvents < nM) nM = maxEvents;
-    for (Long64_t i = 0; i < nM; ++i) {
-        mcCh.GetEntry(i);
-        if (pid != 22 || ft_energy == -9999) continue;
-        h_mc->Fill(ft_x, ft_y);
-    }
-
-    // 7) Draw unnormalized plots
-    {
-        TCanvas c("c_ft_data","FT Data Unnormalized",600,600);
-        c.cd(); gPad->SetLeftMargin(0.15); gPad->SetRightMargin(0.15);
-        h_data->Draw("COLZ");
-        c.SaveAs("output/ft/ft_data.png");
-    }
-    {
-        TCanvas c("c_ft_mc","FT MC Unnormalized",600,600);
-        c.cd(); gPad->SetLeftMargin(0.15); gPad->SetRightMargin(0.15);
-        h_mc->Draw("COLZ");
-        c.SaveAs("output/ft/ft_mc.png");
-    }
-
-    // 8) Normalize histograms
-    double Idata = h_data->Integral(); if (Idata>0) h_data->Scale(1.0/Idata);
-    double Imc   = h_mc->Integral();   if (Imc  >0) h_mc->Scale(1.0/Imc);
-
-    // 9) Compute ratio
-    TH2D* h_ratio = (TH2D*)h_data->Clone("h_ft_ratio");
-    h_ratio->SetTitle("FT Hit Position Data/MC; x_{FT} (cm); y_{FT} (cm)");
-    h_ratio->Divide(h_mc);
-
-    // compute mean and stddev of non-zero bins
-    int count=0; double sum=0, sum2=0;
-    for(int ix=1; ix<=h_ratio->GetNbinsX(); ix++){
-      for(int iy=1; iy<=h_ratio->GetNbinsY(); iy++){
-        double c = h_ratio->GetBinContent(ix,iy);
-        if(c==0) continue;
-        sum+=c; sum2+=c*c; count++;
-      }
-    }
-    double mean = count? sum/count:0;
-    double sigma = count? sqrt(sum2/count - mean*mean):0;
-
-    // 10) Draw ratio with legend box in top-right
-    SetSame2DScale(h_data,h_mc,h_ratio);
-    {
-        TCanvas c("c_ft_ratio","FT Data/MC Ratio",600,600);
-        c.cd(); gPad->SetLeftMargin(0.15); gPad->SetRightMargin(0.15);
-        h_ratio->Draw("COLZ");
-        TLegend leg(0.65,0.75,0.9,0.9);
-        leg.SetFillColor(kWhite);
-        leg.SetBorderSize(1);
-        leg.AddEntry((TObject*)0,Form("Mean = %.4f",mean),"");
-        leg.AddEntry((TObject*)0,Form("StdDev = %.4f",sigma),"");
-        leg.Draw();
-        c.SaveAs("output/ft/ft_ratio.png");
-    }
-
-    // 11) Draw outliers (>1 sigma) overlay
-    {
-        TCanvas c("c_ft_outliers","FT Ratio Outliers",600,600);
-        c.cd(); gPad->SetLeftMargin(0.15); gPad->SetRightMargin(0.15);
-        SetSame2DScale(h_data,h_mc,h_ratio);
-        h_ratio->Draw("COLZ");
-        for(int ix=1; ix<=h_ratio->GetNbinsX(); ix++){
-          for(int iy=1; iy<=h_ratio->GetNbinsY(); iy++){
-            double cv=h_ratio->GetBinContent(ix,iy);
-            if(cv==0) continue;
-            if(fabs(cv-mean)>sigma){
-              double x1=h_ratio->GetXaxis()->GetBinLowEdge(ix),
-                     x2=h_ratio->GetXaxis()->GetBinUpEdge(ix),
-                     y1=h_ratio->GetYaxis()->GetBinLowEdge(iy),
-                     y2=h_ratio->GetYaxis()->GetBinUpEdge(iy);
-              TBox box(x1,y1,x2,y2);
-              box.SetFillColor(kRed); box.SetFillStyle(1001); box.SetLineColor(kRed);
-              box.Draw("same");
-            }
-          }
+        // Histograms for data, MC, and ratio
+        std::vector<TH2D*> hData(3), hMC(3), hRatio(3);
+        for (int i = 0; i < 3; ++i) {
+            hData[i] = new TH2D(
+                Form("h_data_%s_%s", label.c_str(), layerLabels[i].c_str()),
+                Form("%s Data %s; x (cm); y (cm)", label.c_str(), layerLabels[i].c_str()),
+                NB, xmin, xmax, NB, ymin, ymax);
+            hMC[i] = (TH2D*)hData[i]->Clone(
+                Form("h_mc_%s_%s", label.c_str(), layerLabels[i].c_str()));
+            hMC[i]->SetTitle(
+                Form("%s MC %s", label.c_str(), layerLabels[i].c_str()));
         }
-        c.SaveAs("output/ft/ft_ratio_outliers.png");
+
+        // 6) Fill data
+        Long64_t nD = dataCh.GetEntries();
+        if (maxEvents > 0 && maxEvents < nD) nD = maxEvents;
+        for (Long64_t ev = 0; ev < nD; ++ev) {
+            dataCh.GetEntry(ev);
+            if (pid != pidVal) continue;
+            double xs[3] = {cal_x_1, cal_x_4, cal_x_7};
+            double ys[3] = {cal_y_1, cal_y_4, cal_y_7};
+            for (int i = 0; i < 3; ++i) {
+                if (xs[i] == -9999 || ys[i] == -9999) continue;
+                hData[i]->Fill(xs[i], ys[i]);
+            }
+        }
+        // 7) Fill MC
+        Long64_t nM = mcCh.GetEntries();
+        if (maxEvents > 0 && maxEvents < nM) nM = maxEvents;
+        for (Long64_t ev = 0; ev < nM; ++ev) {
+            mcCh.GetEntry(ev);
+            if (pid != pidVal) continue;
+            double xs[3] = {cal_x_1, cal_x_4, cal_x_7};
+            double ys[3] = {cal_y_1, cal_y_4, cal_y_7};
+            for (int i = 0; i < 3; ++i) {
+                if (xs[i] == -9999 || ys[i] == -9999) continue;
+                hMC[i]->Fill(xs[i], ys[i]);
+            }
+        }
+
+        gStyle->SetOptStat(0);
+
+        // 8) Unnormalized plots
+        {
+            TCanvas c("c_data_uncut", "Data Uncut", 1800, 600);
+            c.Divide(3,1);
+            SetSame2DScale(hData[0], hData[1], hData[2]);
+            for (int i = 0; i < 3; ++i) {
+                c.cd(i+1);
+                gPad->SetLeftMargin(.15);
+                gPad->SetRightMargin(.15);
+                gPad->SetLogz();
+                hData[i]->Draw("COLZ");
+            }
+            c.SaveAs(Form("output/cal/data_uncut_%s.png", label.c_str()));
+        }
+        {
+            TCanvas c("c_mc_uncut", "MC Uncut", 1800, 600);
+            c.Divide(3,1);
+            SetSame2DScale(hMC[0], hMC[1], hMC[2]);
+            for (int i = 0; i < 3; ++i) {
+                c.cd(i+1);
+                gPad->SetLeftMargin(.15);
+                gPad->SetRightMargin(.15);
+                gPad->SetLogz();
+                hMC[i]->Draw("COLZ");
+            }
+            c.SaveAs(Form("output/cal/mc_uncut_%s.png", label.c_str()));
+        }
+
+        // 9) Normalize
+        for (int i = 0; i < 3; ++i) {
+            double id = hData[i]->Integral(); if (id > 0) hData[i]->Scale(1.0/id);
+            double im = hMC[i]->Integral();   if (im > 0) hMC[i]->Scale(1.0/im);
+        }
+        // 10) Compute ratio and stats
+        std::vector<double> mean(3), sigma(3);
+        for (int i = 0; i < 3; ++i) {
+            hRatio[i] = (TH2D*)hData[i]->Clone(
+                Form("h_ratio_%s_%s", label.c_str(), layerLabels[i].c_str()));
+            hRatio[i]->SetTitle(
+                Form("%s Data/MC %s", label.c_str(), layerLabels[i].c_str()));
+            hRatio[i]->Divide(hMC[i]);
+            int cnt = 0; double s = 0, s2 = 0;
+            for (int ix = 1; ix <= hRatio[i]->GetNbinsX(); ++ix) {
+                for (int iy = 1; iy <= hRatio[i]->GetNbinsY(); ++iy) {
+                    double v = hRatio[i]->GetBinContent(ix, iy);
+                    if (v == 0) continue;
+                    s += v; s2 += v*v; cnt++;
+                }
+            }
+            mean[i]  = cnt ? s/cnt : 0;
+            sigma[i] = cnt ? sqrt(s2/cnt - mean[i]*mean[i]) : 0;
+        }
+
+        // 11) Ratio canvas with stats
+        {
+            TCanvas c("c_ratio", "Data/MC Ratio", 1800, 600);
+            c.Divide(3,1);
+            SetSame2DScale(hRatio[0], hRatio[1], hRatio[2]);
+            for (int i = 0; i < 3; ++i) {
+                c.cd(i+1);
+                gPad->SetLeftMargin(.15);
+                gPad->SetRightMargin(.15);
+                gPad->SetLogz();
+                hRatio[i]->Draw("COLZ");
+                TLatex tex;
+                tex.SetNDC(); tex.SetTextAlign(31); tex.SetTextSize(0.03);
+                tex.DrawLatex(0.95, 0.95, Form("μ=%.3f", mean[i]));
+                tex.DrawLatex(0.95, 0.90, Form("σ=%.3f", sigma[i]));
+            }
+            c.SaveAs(Form("output/cal/ratio_%s.png", label.c_str()));
+        }
+
+        // 12) Outliers canvas: highlight bins with ratio >2 or <0.5
+        {
+            TCanvas c("c_outliers", "Outliers (r>2 or r<0.5)", 1800, 600);
+            c.Divide(3,1);
+            SetSame2DScale(hRatio[0], hRatio[1], hRatio[2]);
+            for (int i = 0; i < 3; ++i) {
+                c.cd(i+1);
+                gPad->SetLeftMargin(.15);
+                gPad->SetRightMargin(.15);
+                gPad->SetLogz();
+                hRatio[i]->Draw("COLZ");
+                for (int ix = 1; ix <= hRatio[i]->GetNbinsX(); ++ix) {
+                    for (int iy = 1; iy <= hRatio[i]->GetNbinsY(); ++iy) {
+                        double v = hRatio[i]->GetBinContent(ix, iy);
+                        if (v == 0) continue;
+                        if (v > 2.0 || v < 0.5) {
+                            double x1 = hRatio[i]->GetXaxis()->GetBinLowEdge(ix);
+                            double x2 = hRatio[i]->GetXaxis()->GetBinUpEdge(ix);
+                            double y1 = hRatio[i]->GetYaxis()->GetBinLowEdge(iy);
+                            double y2 = hRatio[i]->GetYaxis()->GetBinUpEdge(iy);
+                            TBox box(x1, y1, x2, y2);
+                            box.SetFillColor(kRed);
+                            box.SetFillStyle(1001);
+                            box.SetLineColor(kRed);
+                            box.Draw("same");
+                        }
+                    }
+                }
+            }
+            c.SaveAs(Form("output/cal/ratio_%s_outliers.png", label.c_str()));
+        }
     }
     return 0;
 }
