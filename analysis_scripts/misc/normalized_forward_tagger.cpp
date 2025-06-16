@@ -1,4 +1,4 @@
-/*****************************************************************************
+/*
  * File: forward_tagger_comparison.cpp
  *
  * Compile with:
@@ -10,11 +10,13 @@
  *
  * What it does:
  *   1) Creates output/ and output/ft/ if they do not exist.
- *   2) Loops over data and MC, filling photon (PID=22) FT hit‐position histograms.
+ *   2) Loops over data and MC, filling photon (PID=22) FT hit-position histograms.
  *   3) Makes two unnormalized 2D plots (data vs. MC).
  *   4) Normalizes each histogram to unit integral.
  *   5) Computes and plots the ratio (data/MC) in a third canvas.
- *****************************************************************************/
+ *   6) Adds mean and standard deviation labels to the ratio plot.
+ *   7) Creates a fourth plot highlighting bins >3σ from the mean in red.
+ */
 
 #include <iostream>
 #include <string>
@@ -25,7 +27,8 @@
 #include "TStyle.h"
 #include "TPad.h"
 #include "TSystem.h"
-#include "TString.h"
+#include "TLatex.h"
+#include "TBox.h"
 
 // ----------------------------------------------------------------------------
 // Helper to unify the color scale of three TH2D histograms
@@ -43,7 +46,7 @@ void SetSame2DScale(TH2D* a, TH2D* b, TH2D* c) {
 }
 
 int main(int argc, char** argv) {
-    // --- Create output directories if needed ---
+    // Create output directories if needed
     gSystem->mkdir("output",    kTRUE);
     gSystem->mkdir("output/ft", kTRUE);
 
@@ -137,7 +140,22 @@ int main(int argc, char** argv) {
     h_ratio->SetTitle("FT Hit Position Data/MC; x_{FT} (cm); y_{FT} (cm)");
     h_ratio->Divide(h_mc);
 
-    // 10) Draw ratio with unified color scale
+    // compute mean and stddev of bin contents
+    int nX = h_ratio->GetNbinsX(), nY = h_ratio->GetNbinsY();
+    int    count = 0;
+    double sum = 0, sum2 = 0;
+    for (int ix=1; ix<=nX; ix++) {
+      for (int iy=1; iy<=nY; iy++) {
+        double c = h_ratio->GetBinContent(ix, iy);
+        sum  += c;
+        sum2 += c*c;
+        ++count;
+      }
+    }
+    double mean = sum / count;
+    double sigma = std::sqrt(sum2/ count - mean*mean);
+
+    // 10) Draw ratio with labels
     SetSame2DScale(h_data, h_mc, h_ratio);
     {
         TCanvas c("c_ft_ratio","FT Data/MC Ratio",600,600);
@@ -145,7 +163,43 @@ int main(int argc, char** argv) {
         gPad->SetLeftMargin(0.15);
         gPad->SetRightMargin(0.15);
         h_ratio->Draw("COLZ");
-        c.SaveAs("output/ft/ft_ratio.png");
+
+        TLatex tex;
+        tex.SetNDC();
+        tex.SetTextSize(0.03);
+        tex.DrawLatex(0.15, 0.92, TString::Format("Mean = %.4f", mean));
+        tex.DrawLatex(0.15, 0.88, TString::Format("StdDev = %.4f", sigma));
+
+        c.SaveAs("output/ft/ft_ratio_annotated.png");
+    }
+
+    // 11) Draw outliers (>3 sigma) overlay
+    {
+        TCanvas c("c_ft_outliers","FT Ratio Outliers",600,600);
+        c.cd();
+        gPad->SetLeftMargin(0.15);
+        gPad->SetRightMargin(0.15);
+        SetSame2DScale(h_data, h_mc, h_ratio);
+        h_ratio->Draw("COLZ");
+
+        for (int ix=1; ix<=nX; ix++) {
+          for (int iy=1; iy<=nY; iy++) {
+            double cval = h_ratio->GetBinContent(ix, iy);
+            if (std::fabs(cval - mean) > 3*sigma) {
+              double x1 = h_ratio->GetXaxis()->GetBinLowEdge(ix);
+              double x2 = h_ratio->GetXaxis()->GetBinUpEdge(ix);
+              double y1 = h_ratio->GetYaxis()->GetBinLowEdge(iy);
+              double y2 = h_ratio->GetYaxis()->GetBinUpEdge(iy);
+              TBox box(x1, y1, x2, y2);
+              box.SetFillColor(kRed);
+              box.SetFillStyle(1001);
+              box.SetLineColor(kRed);
+              box.Draw("same");
+            }
+          }
+        }
+
+        c.SaveAs("output/ft/ft_ratio_outliers.png");
     }
 
     return 0;
