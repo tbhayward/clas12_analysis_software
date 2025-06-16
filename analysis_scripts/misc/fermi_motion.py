@@ -77,7 +77,7 @@ axes[1].legend()
 for lbl, data in epiPipi_Mx2_1:
     axes[2].hist(data, bins=100, range=(-1, 5), density=True,
                  histtype="step", label=lbl)
-axes[2].set_xlim(-1, 3)
+axes[2].set_xlim(-1, 5)
 axes[2].set_xlabel(r"$M_{x(\pi^{+})}^2\ \mathrm{(GeV^2)}$")
 axes[2].set_title(r"$e\,\pi^{+}\pi^{-}X:\ M_{x(\pi^{+})}^2$")
 axes[2].legend()
