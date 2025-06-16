@@ -338,7 +338,6 @@ int main(int argc, char *argv[]) {
     else if (script_index == 1 && is_mc == 0) {
         // Link TTree branches to variables for one hadron
         tree->Branch("fiducial_status", &fiducial_status, "fiducial_status/I");
-        tree->Branch("runnum", &runnum, "runnum/I");
         tree->Branch("num_pos", &num_pos, "num_pos/I");
         tree->Branch("num_neg", &num_neg, "num_neg/I");
         tree->Branch("num_neutral", &num_neutral, "num_neutral/I");
