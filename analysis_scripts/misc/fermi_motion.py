@@ -31,13 +31,13 @@ def load_array(path, branch):
 versions_epiX = [
     ("RGA at rest",           rga_epiX_atRest),
     ("RGA sim. Fermi Motion", rga_epiX_fermi),
-    # ("RGC", rgc_epiX_atRest),
+    ("RGC", rgc_epiX_atRest),
 ]
 
 versions_epiPiX = [
     ("RGA at rest",           rga_epiPiX_atRest),
     ("RGA sim. Fermi Motion", rga_epiPiX_fermi),
-    # ("RGC", rgc_epiPiX_atRest),
+    ("RGC", rgc_epiPiX_atRest),
 ]
 
 # Load Mx2 and Mh arrays
