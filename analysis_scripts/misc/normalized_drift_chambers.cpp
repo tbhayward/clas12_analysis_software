@@ -271,8 +271,8 @@ int main(int argc, char** argv) {
         chain_sidisdvcs.GetEntry(i);
 
         // // Filter line (commented out so we can revert):
-        // if (particle_pid != 11) continue; // electron
-        if (particle_pid != 2212) continue; // proton
+        if (particle_pid != 11) continue; // electron
+        // if (particle_pid != 2212) continue; // proton
 
         if (traj_edge_6 <= 3 || traj_edge_18 <= 3 || traj_edge_36 <= 10) continue; // #endif
         // if (traj_edge_6 <= 3 || traj_edge_18 <= 3 || traj_edge_36 <= 10) continue; // #endif
@@ -332,8 +332,8 @@ int main(int argc, char** argv) {
         chain_clasdis.GetEntry(i);
 
         // // Filter line (commented out so we can revert):
-        // if (particle_pid != 11) continue; // electron
-        if (particle_pid != 2212) continue; // proton
+        if (particle_pid != 11) continue; // electron
+        // if (particle_pid != 2212) continue; // proton
 
         if (traj_edge_6 <= 3 || traj_edge_18 <= 3 || traj_edge_36 <= 10) continue; // #endif
         // if (traj_edge_6 <= 3 || traj_edge_18 <= 3 || traj_edge_36 <= 10) continue; // #endif
