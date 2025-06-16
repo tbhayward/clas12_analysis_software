@@ -135,13 +135,13 @@ int main(int argc, char** argv) {
     // 7) Draw unnormalized plots
     {
         TCanvas c("c_ft_data","FT Data Unnormalized",600,600);
-        c.cd(); gPad->SetLeftMargin(0.35); gPad->SetRightMargin(0.15);
+        c.cd(); gPad->SetLeftMargin(0.20); gPad->SetRightMargin(0.15);
         h_data->Draw("COLZ");
         c.SaveAs("output/ft/ft_data.png");
     }
     {
         TCanvas c("c_ft_mc","FT MC Unnormalized",600,600);
-        c.cd(); gPad->SetLeftMargin(0.35); gPad->SetRightMargin(0.15);
+        c.cd(); gPad->SetLeftMargin(0.20); gPad->SetRightMargin(0.15);
         h_mc->Draw("COLZ");
         c.SaveAs("output/ft/ft_mc.png");
     }
@@ -171,7 +171,7 @@ int main(int argc, char** argv) {
     SetSame2DScale(h_data, h_mc, h_ratio);
     {
         TCanvas c("c_ft_ratio","FT Data/MC Ratio",600,600);
-        c.cd(); gPad->SetLeftMargin(0.35); gPad->SetRightMargin(0.15);
+        c.cd(); gPad->SetLeftMargin(0.20); gPad->SetRightMargin(0.15);
         h_ratio->Draw("COLZ");
         TLegend leg(0.6, 0.7, 0.9, 0.9);
         leg.SetFillColor(kWhite); leg.SetBorderSize(1); leg.SetTextSize(0.03);
@@ -185,6 +185,7 @@ int main(int argc, char** argv) {
     {
         TCanvas c("c_ft_outliers","FT Ratio Outliers",600,600);
         c.cd(); gPad->SetLogz(0);
+        gPad->SetLeftMargin(0.20); gPad->SetRightMargin(0.15);
         TH2D* h_map = (TH2D*)h_ratio->Clone("h_ft_map"); h_map->Reset();
         int nX = h_ratio->GetNbinsX(), nY = h_ratio->GetNbinsY();
         for (int ix=1; ix<=nX; ++ix) {
