@@ -9,7 +9,7 @@
  *
  * What it does:
  *   1) Creates output/ and output/cal/ if they do not exist.
- *   2) Applies strict calorimeter fiducial cuts (strictness=3, runnum=5000).
+ *   2) Applies strict calorimeter fiducial cuts (strictness=3, assume runnum=5000).
  *   3) Loops once over data and once over MC, filling photon (PID=22)
  *      and electron (PID=11) hit-position histograms for PCal (layer1), ECin (layer4), ECout (layer7).
  *   4) Normalizes each histogram and computes data/MC ratio.
@@ -31,21 +31,19 @@
 #include "TLegend.h"
 
 // ----------------------------------------------------------------------------
-// Strict calorimeter fiducial cut (strictness=3, runnum=5000)
+// Strict calorimeter fiducial cut (strictness=3, assume runnum=5000)
 // ----------------------------------------------------------------------------
 bool cal_fiducial_cut(int sector,
-                      int runnum,
                       double lv1, double lw1,
                       double /*lu1*/, double lv4, double /*lw4*/,
                       double /*lu4*/, double lv7, double /*lw7*/,
                       double /*lu7*/) {
     const int strictness = 3;
+    const int runnum = 5000;
     // PCal (layer1) strict cut
-    if (strictness == 3) {
-        if (lw1 < 18.0 || lv1 < 18.0) return false;
-    }
-    // For strictness>=2, apply dead PMT removal for RGA/RGK/RGB Sp19 (run 3030–6783)
-    if (strictness >= 2 && runnum >= 3030 && runnum <= 6783) {
+    if (lw1 < 18.0 || lv1 < 18.0) return false;
+    // dead PMT removal for RGA/RGK/RGB Sp19 (runnum 3030–6783)
+    if (runnum >= 3030 && runnum <= 6783) {
         switch (sector) {
             case 1:
                 if ((lw1 > 72.0 && lw1 < 94.5) || (lw1 > 220.5 && lw1 < 234.0)) return false;
@@ -71,7 +69,6 @@ bool cal_fiducial_cut(int sector,
                 break;
         }
     }
-    // No additional RGA Sp19 only cuts for strictness=3
     return true;
 }
 
@@ -97,7 +94,7 @@ int main(int argc, char** argv) {
 
     // parse args
     Long64_t maxEvents = -1;
-    if (argc>1) { maxEvents = std::stoll(argv[1]); if (maxEvents==0) maxEvents=-1; }
+    if (argc>1) { maxEvents = std::stoll(argv[1]); if(maxEvents==0) maxEvents=-1; }
     bool useData = (argc>2), useMC = (argc>3);
     std::string dataFile = useData? argv[2] : "";
     std::string mcFile   = useMC?   argv[3] : "";
@@ -109,12 +106,10 @@ int main(int argc, char** argv) {
 
     // branches
     Int_t pid, sector;
-    Double_t runnum;
     Double_t x1,y1,x4,y4,x7,y7;
     Double_t lu1, lv1, lw1, lu4, lv4, lw4, lu7, lv7, lw7;
     dataCh.SetBranchAddress("particle_pid", &pid);
     dataCh.SetBranchAddress("cal_sector",   &sector);
-    dataCh.SetBranchAddress("runnum",       &runnum);
     dataCh.SetBranchAddress("cal_x_1",      &x1);
     dataCh.SetBranchAddress("cal_y_1",      &y1);
     dataCh.SetBranchAddress("cal_x_4",      &x4);
@@ -132,7 +127,6 @@ int main(int argc, char** argv) {
     dataCh.SetBranchAddress("cal_lw_7",     &lw7);
     mcCh .SetBranchAddress("particle_pid", &pid);
     mcCh .SetBranchAddress("cal_sector",   &sector);
-    mcCh .SetBranchAddress("runnum",       &runnum);
     mcCh .SetBranchAddress("cal_x_1",      &x1);
     mcCh .SetBranchAddress("cal_y_1",      &y1);
     mcCh .SetBranchAddress("cal_x_4",      &x4);
@@ -173,7 +167,7 @@ int main(int argc, char** argv) {
             double xs[3]={x1,x4,x7}, ys[3]={y1,y4,y7};
             for(int i=0;i<3;i++) {
                 if(xs[i]==-9999 || ys[i]==-9999) continue;
-                if(!cal_fiducial_cut(sector, runnum, lv1, lw1, lu1, lv4, lw4, lu4, lv7, lw7, lu7)) continue;
+                if(!cal_fiducial_cut(sector, lv1, lw1, lu1, lv4, lw4, lu4, lv7, lw7, lu7)) continue;
                 hData[s][i]->Fill(xs[i], ys[i]);
             }
         }
@@ -187,7 +181,7 @@ int main(int argc, char** argv) {
             double xs[3]={x1,x4,x7}, ys[3]={y1,y4,y7};
             for(int i=0;i<3;i++) {
                 if(xs[i]==-9999 || ys[i]==-9999) continue;
-                if(!cal_fiducial_cut(sector, runnum, lv1, lw1, lu1, lv4, lw4, lu4, lv7, lw7, lu7)) continue;
+                if(!cal_fiducial_cut(sector, lv1, lw1, lu1, lv4, lw4, lu4, lv7, lw7, lu7)) continue;
                 hMC[s][i]->Fill(xs[i], ys[i]);
             }
         }
