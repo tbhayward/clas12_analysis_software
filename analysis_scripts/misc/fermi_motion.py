@@ -31,23 +31,21 @@ def load_array(path, branch):
 versions_epiX = [
     ("RGA Fa18 at rest",           rga_epiX_atRest),
     ("RGA Fa18 sim. Fermi Motion", rga_epiX_fermi),
-    ("RGC Su22",           rgc_epiX_atRest),
+    ("RGC Su22 at rest",           rgc_epiX_atRest),
 ]
 
 versions_epiPipiX = [
-    ("RGA at rest",           rga_epiPipi_atRest),
+    ("RGA Fa18 at rest",           rga_epiPipi_atRest),
     ("RGA Fa18 sim. Fermi Motion", rga_epiPipi_fermi),
-    ("RGC Su22",           rgc_epiPipi_atRest),
+    ("RGC Su22 at rest",           rgc_epiPipi_atRest),
 ]
 
 # -----------------------------------------------------------------------------
 # Load data arrays
 # -----------------------------------------------------------------------------
-# eπ⁺X → Mx²
-epiX_Mx2    = [(lbl, load_array(path, "Mx2")) for lbl, path in versions_epiX]
-# eπ⁺π⁻X → Mx² and Mh
-epiPipi_Mx2 = [(lbl, load_array(path, "Mx2")) for lbl, path in versions_epiPipiX]
-epiPipi_Mh  = [(lbl, load_array(path, "Mh"))  for lbl, path in versions_epiPipiX]
+epiX_Mx2    = [(lbl, load_array(path, "Mx2"))  for lbl, path in versions_epiX]
+epiPipi_Mx2 = [(lbl, load_array(path, "Mx2"))  for lbl, path in versions_epiPipiX]
+epiPipi_Mh  = [(lbl, load_array(path, "Mh"))   for lbl, path in versions_epiPipiX]
 
 # -----------------------------------------------------------------------------
 # Plot in a 1×3 figure
