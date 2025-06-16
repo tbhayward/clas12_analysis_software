@@ -89,16 +89,15 @@ int main(int argc, char** argv) {
     std::vector<std::pair<int,std::string>> species = {{22,"photon"},{11,"electron"}};
     std::vector<std::string> layers = {"PCal","ECin","ECout"};
 
-    // Define two-color palette array
+    // Two-color palette array for outliers
     int outPal[2] = { kBlue, kRed };
 
     for (auto& sp : species) {
         int pidVal = sp.first;
         std::string label = sp.second;
 
-        // Use default palette for regular plots
+        // Use default FT-style palette (don't call SetPalette here)
         gStyle->SetOptStat(0);
-        gStyle->SetPalette(1);
 
         // Book histograms
         std::vector<TH2D*> hD(3), hM(3), hR(3);
@@ -129,24 +128,24 @@ int main(int argc, char** argv) {
         }
 
         // Draw unnormalized DATA
-        TCanvas c1("c_data_uncut","Data Uncut",1800,600); c1.Divide(3,1);
+        TCanvas c1("c_data_uncut","Data Uncut",1800,600);
+        c1.Divide(3,1);
         SetSame2DScale(hD[0],hD[1],hD[2]);
         for (int i=0; i<3; ++i) {
             c1.cd(i+1);
-            gPad->SetLeftMargin(0.15);
-            gPad->SetRightMargin(0.15);
+            gPad->SetLeftMargin(0.15); gPad->SetRightMargin(0.15);
             gPad->SetLogz();
             hD[i]->Draw("COLZ");
         }
         c1.SaveAs(Form("output/cal/data_uncut_%s.png",label.c_str()));
 
         // Draw unnormalized MC
-        TCanvas c2("c_mc_uncut","MC Uncut",1800,600); c2.Divide(3,1);
+        TCanvas c2("c_mc_uncut","MC Uncut",1800,600);
+        c2.Divide(3,1);
         SetSame2DScale(hM[0],hM[1],hM[2]);
         for (int i=0; i<3; ++i) {
             c2.cd(i+1);
-            gPad->SetLeftMargin(0.15);
-            gPad->SetRightMargin(0.15);
+            gPad->SetLeftMargin(0.15); gPad->SetRightMargin(0.15);
             gPad->SetLogz();
             hM[i]->Draw("COLZ");
         }
@@ -173,15 +172,13 @@ int main(int argc, char** argv) {
             sigma[i] = cnt? sqrt(s2/cnt - mu[i]*mu[i]) : 0;
         }
 
-        // Draw ratio with default palette
-        gStyle->SetOptStat(0);
-        gStyle->SetPalette(1);
-        TCanvas c3("c_ratio","Data/MC Ratio",1800,600); c3.Divide(3,1);
+        // Draw ratio with default FT-style palette
+        TCanvas c3("c_ratio","Data/MC Ratio",1800,600);
+        c3.Divide(3,1);
         SetSame2DScale(hR[0],hR[1],hR[2]);
         for (int i=0; i<3; ++i) {
             c3.cd(i+1);
-            gPad->SetLeftMargin(0.15);
-            gPad->SetRightMargin(0.15);
+            gPad->SetLeftMargin(0.15); gPad->SetRightMargin(0.15);
             gPad->SetLogz();
             hR[i]->Draw("COLZ");
             TLegend leg(0.6, 0.7, 0.9, 0.9);
@@ -193,13 +190,12 @@ int main(int argc, char** argv) {
         c3.SaveAs(Form("output/cal/ratio_%s.png",label.c_str()));
 
         // Draw outliers map with two-color palette
-        gStyle->SetOptStat(0);
         gStyle->SetPalette(2, outPal);
-        TCanvas c4("c_outliers","Outliers Map",1800,600); c4.Divide(3,1);
+        TCanvas c4("c_outliers","Outliers Map",1800,600);
+        c4.Divide(3,1);
         for (int i=0; i<3; ++i) {
             c4.cd(i+1);
-            gPad->SetLeftMargin(0.15);
-            gPad->SetRightMargin(0.15);
+            gPad->SetLeftMargin(0.15); gPad->SetRightMargin(0.15);
             gPad->SetLogz(0);
             TH2D* hMap = (TH2D*)hR[i]->Clone(Form("hMap_%s_%s",label.c_str(),layers[i].c_str()));
             hMap->Reset();
