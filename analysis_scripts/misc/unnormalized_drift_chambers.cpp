@@ -8,10 +8,15 @@
  * Run with:
  *   ./unnormalized_drift_chambers [Nevents] [dataFile] [mcFile]
  *
- * This version:
- *   • Loops once over data and once over MC, filling both electron (PID=11)
- *     and proton (PID=2212) histograms in a single pass.
- *   • Normalizes and draws separate canvases for electrons and protons.
+ * Arguments:
+ *   Nevents  – maximum number of entries to process (0 or omitted = unlimited)
+ *   dataFile – if provided, use this ROOT file for data
+ *   mcFile   – if provided, use this ROOT file for MC
+ *
+ * Behavior:
+ *   • If Nevents>0, both data and MC will be limited to the same number of entries
+ *     (the minimum of Nevents and each chain’s actual entry count).
+ *   • If Nevents≤0 or omitted, data and MC are each processed to their full lengths.
  *****************************************************************************/
 
 #include <iostream>
@@ -132,50 +137,31 @@ int main(int argc, char** argv) {
     const int NB2 = 200, NB1 = 125;
     const int nbR1 = 150, nbR2 = 230, nbR3 = 400, nbPhi = 180;
 
-    // We will build histograms for electrons (11) and protons (2212)
     std::vector<std::pair<int,const char*>> species = {
         { 11,   "electron" },
         { 2212, "proton"   }
     };
-
     std::map<int,HistoSet> Hdata, Hmc;
 
     // Create and clone histograms
     for (auto& sp : species) {
         int pidval   = sp.first;
         const char* label = sp.second;
-
-        // Data histos
         HistoSet &d = Hdata[pidval];
-        d.r1  = new TH2D(Form("r1_%s_data", label), Form("Data R1 (%s); x; y", label),
-                         NB2, -180, 180, NB2, -180, 180);
-        d.r2  = new TH2D(Form("r2_%s_data", label), Form("Data R2 (%s); x; y", label),
-                         NB2, -280, 280, NB2, -280, 280);
-        d.r3  = new TH2D(Form("r3_%s_data", label), Form("Data R3 (%s); x; y", label),
-                         NB2, -450, 450, NB2, -450, 450);
 
-        d.r1c = new TH2D(Form("r1c_%s_data", label), Form("Data R1 cut (%s); x; y", label),
-                         NB2, -180, 180, NB2, -180, 180);
-        d.r2c = new TH2D(Form("r2c_%s_data", label), Form("Data R2 cut (%s); x; y", label),
-                         NB2, -280, 280, NB2, -280, 280);
-        d.r3c = new TH2D(Form("r3c_%s_data", label), Form("Data R3 cut (%s); x; y", label),
-                         NB2, -450, 450, NB2, -450, 450);
+        d.r1  = new TH2D(Form("r1_%s_data",  label), Form("Data R1 (%s); x; y",            label), NB2, -180, 180, NB2, -180, 180);
+        d.r2  = new TH2D(Form("r2_%s_data",  label), Form("Data R2 (%s); x; y",            label), NB2, -280, 280, NB2, -280, 280);
+        d.r3  = new TH2D(Form("r3_%s_data",  label), Form("Data R3 (%s); x; y",            label), NB2, -450, 450, NB2, -450, 450);
+        d.r1c = new TH2D(Form("r1c_%s_data", label), Form("Data R1 cut (%s); x; y",        label), NB2, -180, 180, NB2, -180, 180);
+        d.r2c = new TH2D(Form("r2c_%s_data", label), Form("Data R2 cut (%s); x; y",        label), NB2, -280, 280, NB2, -280, 280);
+        d.r3c = new TH2D(Form("r3c_%s_data", label), Form("Data R3 cut (%s); x; y",        label), NB2, -450, 450, NB2, -450, 450);
+        d.e1  = new TH1D(Form("e1_%s_data",  label), Form("Data edge R1 (%s); edge (cm)",  label), NB1,   0, 125);
+        d.e2  = new TH1D(Form("e2_%s_data",  label), Form("Data edge R2 (%s); edge (cm)",  label), NB1,   0, 125);
+        d.e3  = new TH1D(Form("e3_%s_data",  label), Form("Data edge R3 (%s); edge (cm)",  label), NB1,   0, 125);
+        d.rp1 = new TH2D(Form("rp1_%s_data", label), Form("Data R1 ρ-φ (%s); ρ; φ (deg)", label), nbR1, 20, 170, nbPhi, 0, 360);
+        d.rp2 = new TH2D(Form("rp2_%s_data", label), Form("Data R2 ρ-φ (%s); ρ; φ (deg)", label), nbR2, 20, 250, nbPhi, 0, 360);
+        d.rp3 = new TH2D(Form("rp3_%s_data", label), Form("Data R3 ρ-φ (%s); ρ; φ (deg)", label), nbR3, 20, 420, nbPhi, 0, 360);
 
-        d.e1  = new TH1D(Form("e1_%s_data", label), Form("Data edge R1 (%s); edge (cm)", label),
-                         NB1, 0, 125);
-        d.e2  = new TH1D(Form("e2_%s_data", label), Form("Data edge R2 (%s); edge (cm)", label),
-                         NB1, 0, 125);
-        d.e3  = new TH1D(Form("e3_%s_data", label), Form("Data edge R3 (%s); edge (cm)", label),
-                         NB1, 0, 125);
-
-        d.rp1 = new TH2D(Form("rp1_%s_data", label), Form("Data R1 ρ-φ (%s); ρ; φ (deg)", label),
-                         nbR1, 20, 170, nbPhi, 0, 360);
-        d.rp2 = new TH2D(Form("rp2_%s_data", label), Form("Data R2 ρ-φ (%s); ρ; φ (deg)", label),
-                         nbR2, 20, 250, nbPhi, 0, 360);
-        d.rp3 = new TH2D(Form("rp3_%s_data", label), Form("Data R3 ρ-φ (%s); ρ; φ (deg)", label),
-                         nbR3, 20, 420, nbPhi, 0, 360);
-
-        // MC histos: clone each Data histogram into MC version
         HistoSet &m = Hmc[pidval];
         m.r1  = (TH2D*)d.r1 ->Clone(Form("r1_%s_mc",  label));
         m.r2  = (TH2D*)d.r2 ->Clone(Form("r2_%s_mc",  label));
@@ -194,21 +180,29 @@ int main(int argc, char** argv) {
     gStyle->SetOptStat(0);
 
     // ------------------------------------------------------------------------
-    // 5) Fill DATA histograms in one pass
+    // 5) Determine how many events to process
     // ------------------------------------------------------------------------
-    Long64_t nD = dataCh.GetEntries();
-    if (maxEvents > 0 && maxEvents < nD) nD = maxEvents;
-    for (Long64_t i = 0; i < nD; ++i) {
-        dataCh.GetEntry(i);
+    Long64_t nData = dataCh.GetEntries();
+    Long64_t nMC   = mcCh.GetEntries();
+    Long64_t nLimit = -1;
 
-        // only electrons or protons
+    if (maxEvents > 0) {
+        // if limiting, use the same number for both data and MC
+        nLimit = std::min({ maxEvents, nData, nMC });
+        std::cout << "Limiting to " << nLimit << " events for both data and MC\n";
+    }
+
+    // ------------------------------------------------------------------------
+    // 6) Fill DATA histograms
+    // ------------------------------------------------------------------------
+    Long64_t nFillData = (nLimit > 0 ? nLimit : nData);
+    for (Long64_t i = 0; i < nFillData; ++i) {
+        dataCh.GetEntry(i);
         if (!Hdata.count(pid)) continue;
         HistoSet &h = Hdata[pid];
 
-        // edge cuts
         if (e6 <= 3 || e18 <= 3 || e36 <= 10) continue;
 
-        // Region 1
         if (x6 != -9999) {
             h.r1->Fill(x6, y6);
             double r = std::hypot(x6, y6);
@@ -216,7 +210,6 @@ int main(int argc, char** argv) {
             double phi = std::atan2(y6, x6) - M_PI; if (phi < 0) phi += 2*M_PI;
             h.rp1->Fill(r, phi * 180.0 / M_PI);
         }
-        // Region 2
         if (x18 != -9999) {
             h.r2->Fill(x18, y18);
             double r = std::hypot(x18, y18);
@@ -224,7 +217,6 @@ int main(int argc, char** argv) {
             double phi = std::atan2(y18, x18) - M_PI; if (phi < 0) phi += 2*M_PI;
             h.rp2->Fill(r, phi * 180.0 / M_PI);
         }
-        // Region 3
         if (x36 != -9999) {
             h.r3->Fill(x36, y36);
             double r = std::hypot(x36, y36);
@@ -239,13 +231,11 @@ int main(int argc, char** argv) {
     }
 
     // ------------------------------------------------------------------------
-    // 6) Fill MC histograms in one pass
+    // 7) Fill MC histograms
     // ------------------------------------------------------------------------
-    Long64_t nM = mcCh.GetEntries();
-    if (maxEvents > 0 && maxEvents < nM) nM = maxEvents;
-    for (Long64_t i = 0; i < nM; ++i) {
+    Long64_t nFillMC = (nLimit > 0 ? nLimit : nMC);
+    for (Long64_t i = 0; i < nFillMC; ++i) {
         mcCh.GetEntry(i);
-
         if (!Hmc.count(pid)) continue;
         HistoSet &h = Hmc[pid];
 
@@ -279,7 +269,7 @@ int main(int argc, char** argv) {
     }
 
     // ------------------------------------------------------------------------
-    // 7) Normalize & draw for each species
+    // 8) Normalize & draw for each species (unchanged)
     // ------------------------------------------------------------------------
     for (auto& sp : species) {
         int pidval    = sp.first;
