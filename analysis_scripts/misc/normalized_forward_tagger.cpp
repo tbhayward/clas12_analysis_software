@@ -13,9 +13,9 @@
  *   2) Loops over data and MC, filling photon (PID=22) FT hit-position histograms.
  *   3) Makes two unnormalized 2D plots (data vs. MC).
  *   4) Normalizes each histogram to unit integral.
- *   5) Computes and plots the ratio (data/MC) as "ft_ratio.png" with mean/stddev in top-right.
- *   6) Creates a second plot "ft_ratio_outliers.png" filling each bin in full:
- *      red if ratio<0.5 or >2, blue otherwise.
+ *   5) Computes and plots the ratio (data/MC) as "ft_ratio.png" with mean/stddev in a legend box.
+ *   6) Creates a second plot "ft_ratio_outliers.png" showing a two-color map:
+ *      blue where 0.5≤ratio≤2, red otherwise.
  */
 
 #include <iostream>
@@ -28,7 +28,7 @@
 #include "TPad.h"
 #include "TSystem.h"
 #include "TLatex.h"
-#include "TBox.h"
+#include "TLegend.h"
 
 // ----------------------------------------------------------------------------
 // Helper to unify the color scale of three TH2D histograms
@@ -59,7 +59,7 @@ int main(int argc, char** argv) {
     bool useDataFile = (argc > 2);
     std::string dataFile = useDataFile ? argv[2] : "";
     bool useMCFile   = (argc > 3);
-    std::string mcFile      = useMCFile   ? argv[3]   : "";
+    std::string mcFile   = useMCFile   ? argv[3]   : "";
 
     // 2) Set up TChains
     TChain dataCh("PhysicsEvents"), mcCh("PhysicsEvents");
@@ -134,8 +134,8 @@ int main(int argc, char** argv) {
 
     // compute mean and stddev of non-zero bins
     int cnt = 0; double sum=0, sum2=0;
-    for (int ix=1; ix<=NB; ++ix) {
-      for (int iy=1; iy<=NB; ++iy) {
+    for (int ix=1; ix<=h_ratio->GetNbinsX(); ++ix) {
+      for (int iy=1; iy<=h_ratio->GetNbinsY(); ++iy) {
         double v = h_ratio->GetBinContent(ix, iy);
         if (v == 0) continue;
         sum += v; sum2 += v*v; ++cnt;
@@ -144,45 +144,45 @@ int main(int argc, char** argv) {
     double mean = cnt? sum/cnt : 0;
     double sigma = cnt? std::sqrt(sum2/cnt - mean*mean) : 0;
 
-    // 10) Draw ratio with TLatex in top-right
+    // 10) Draw ratio with legend box in top-right
     SetSame2DScale(h_data, h_mc, h_ratio);
     {
         TCanvas c("c_ft_ratio","FT Data/MC Ratio",600,600);
         c.cd(); gPad->SetLeftMargin(0.15); gPad->SetRightMargin(0.15);
         h_ratio->Draw("COLZ");
-        TLatex tex;
-        tex.SetNDC(); tex.SetTextAlign(31); tex.SetTextSize(0.03);
-        tex.DrawLatex(0.95, 0.95, Form("Mean=%.4f", mean));
-        tex.DrawLatex(0.95, 0.90, Form("StdDev=%.4f", sigma));
+        TLegend leg(0.6, 0.7, 0.9, 0.9);
+        leg.SetFillColor(kWhite);
+        leg.SetBorderSize(1);
+        leg.SetTextSize(0.03);
+        leg.AddEntry((TObject*)0, Form("Mean = %.4f", mean), "");
+        leg.AddEntry((TObject*)0, Form("StdDev = %.4f", sigma), "");
+        leg.Draw();
         c.SaveAs("output/ft/ft_ratio.png");
     }
 
-    // 11) Draw outliers by filling each bin area
+    // 11) Draw outliers by coloring bins red/blue
     {
         TCanvas c("c_ft_outliers","FT Ratio Outliers",600,600);
         c.cd(); gPad->SetLogz(0);
-        // draw axes only
-        h_ratio->Draw("axis");
-        // loop bins and fill boxes
-        for (int ix=1; ix<=NB; ++ix) {
-          double x1 = h_ratio->GetXaxis()->GetBinLowEdge(ix);
-          double x2 = h_ratio->GetXaxis()->GetBinUpEdge(ix);
-          for (int iy=1; iy<=NB; ++iy) {
+        // Create map histogram with two levels
+        TH2D* h_map = (TH2D*)h_ratio->Clone("h_ft_map");
+        h_map->Reset();
+        int nX = h_ratio->GetNbinsX(), nY = h_ratio->GetNbinsY();
+        for (int ix=1; ix<=nX; ++ix) {
+          for (int iy=1; iy<=nY; ++iy) {
             double v = h_ratio->GetBinContent(ix, iy);
-            if (v == 0) continue;
-            double y1 = h_ratio->GetYaxis()->GetBinLowEdge(iy);
-            double y2 = h_ratio->GetYaxis()->GetBinUpEdge(iy);
-            TBox box(x1, y1, x2, y2);
-            if (v < 0.5 || v > 2.0) {
-              box.SetFillColor(kRed);
-            } else {
-              box.SetFillColor(kBlue);
-            }
-            box.SetFillStyle(1001);
-            box.SetLineColor(0);
-            box.Draw("same");
+            if (v==0) continue;
+            int colorLevel = (v < 0.5 || v > 2.0) ? 2 : 1;
+            h_map->SetBinContent(ix, iy, colorLevel);
           }
         }
+        // Set two-color palette: index 1→blue, 2→red
+        int palette[2] = {kBlue, kRed};
+        gStyle->SetPalette(2, palette);
+        h_map->SetContour(2);
+        h_map->SetContourLevel(0, 1);
+        h_map->SetContourLevel(1, 2);
+        h_map->Draw("COLZ");
         c.SaveAs("output/ft/ft_ratio_outliers.png");
     }
     return 0;
