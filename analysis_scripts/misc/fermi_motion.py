@@ -16,8 +16,8 @@ rga_epiPiX_atRest = "/volatile/clas12/thayward/fermi_motion/rga_fa18_inb_epi+pi-
 rga_epiPiX_fermi  = "/volatile/clas12/thayward/fermi_motion/rga_fa18_inb_epi+_pi-_fermiMotion.root"
 
 # Uncomment and set real RGC paths when they’re ready:
-# rgc_epiX_atRest   = "/volatile/clas12/thayward/fermi_motion/rgc_fa22_inb_epi+_atRest.root"
-# rgc_epiPiX_atRest = "/volatile/clas12/thayward/fermi_motion/rgc_fa22_inb_epi+pi-_atRest.root"
+rgc_epiX_atRest   = "/volatile/clas12/thayward/fermi_motion/rgc_fa22_inb_epi+_atRest.root"
+rgc_epiPiX_atRest = "/volatile/clas12/thayward/fermi_motion/rgc_fa22_inb_epi+pi-_atRest.root"
 
 # Ensure output directory exists
 os.makedirs("output", exist_ok=True)
@@ -58,7 +58,7 @@ for lbl, data in epiX_Mx2:
                  label=lbl)
 axes[0].set_xlim(-1, 3)
 axes[0].set_xlabel(r"$M_x^2$ (GeV$^2$)")
-axes[0].set_title("epi+X: $M_x^2$")
+axes[0].set_title("eπ+X: $M_x^2$")
 axes[0].legend()
 
 # Subplot 2: epi+π⁻X Mx²
@@ -71,7 +71,7 @@ for lbl, data in epiPiX_Mx2:
                  label=lbl)
 axes[1].set_xlim(-1, 3)
 axes[1].set_xlabel(r"$M_x^2$ (GeV$^2$)")
-axes[1].set_title("epi+π⁻X: $M_x^2$")
+axes[1].set_title("eπ+π⁻X: $M_x^2$")
 axes[1].legend()
 
 # Subplot 3: epi+π⁻X Mh
@@ -84,7 +84,7 @@ for lbl, data in epiPiX_Mh:
                  label=lbl)
 axes[2].set_xlim(0, 2)
 axes[2].set_xlabel(r"$M_h$ (GeV)")
-axes[2].set_title("epi+π⁻X: $M_h$")
+axes[2].set_title("eπ+π⁻X: $M_h$")
 axes[2].legend()
 
 plt.tight_layout()
