@@ -89,130 +89,134 @@ int main(int argc, char** argv) {
     std::vector<std::pair<int,std::string>> species = {{22,"photon"},{11,"electron"}};
     std::vector<std::string> layers = {"PCal","ECin","ECout"};
 
-    // Two-color palette array for outliers
+    // Define two-color palette array for outliers
     int outPal[2] = { kBlue, kRed };
 
     for (auto& sp : species) {
         int pidVal = sp.first;
         std::string label = sp.second;
 
-        // Use default FT-style palette (don't call SetPalette here)
+        // Prepare style
         gStyle->SetOptStat(0);
 
         // Book histograms
         std::vector<TH2D*> hD(3), hM(3), hR(3);
-        for (int i=0; i<3; ++i) {
-            hD[i] = new TH2D(Form("hD_%s_%s",label.c_str(),layers[i].c_str()),
-                Form("%s Data %s; x (cm); y (cm)",label.c_str(),layers[i].c_str()),
-                NB,xmin,xmax,NB,ymin,ymax);
-            hM[i] = (TH2D*)hD[i]->Clone(Form("hM_%s_%s",label.c_str(),layers[i].c_str()));
+        for (int i = 0; i < 3; ++i) {
+            hD[i] = new TH2D(Form("hD_%s_%s", label.c_str(), layers[i].c_str()),
+                             Form("%s Data %s; x (cm); y (cm)", label.c_str(), layers[i].c_str()),
+                             NB, xmin, xmax, NB, ymin, ymax);
+            hM[i] = (TH2D*)hD[i]->Clone(Form("hM_%s_%s", label.c_str(), layers[i].c_str()));
         }
 
         // Fill DATA
         Long64_t nD = dataCh.GetEntries(); if (maxEvents>0 && maxEvents<nD) nD = maxEvents;
-        for (Long64_t ev=0; ev<nD; ++ev) {
+        for (Long64_t ev = 0; ev < nD; ++ev) {
             dataCh.GetEntry(ev);
             if (pid != pidVal) continue;
-            double xs[3] = {cal_x_1,cal_x_4,cal_x_7};
-            double ys[3] = {cal_y_1,cal_y_4,cal_y_7};
-            for (int i=0; i<3; ++i) if (xs[i]!=-9999 && ys[i]!=-9999) hD[i]->Fill(xs[i],ys[i]);
+            double xs[3] = {cal_x_1, cal_x_4, cal_x_7};
+            double ys[3] = {cal_y_1, cal_y_4, cal_y_7};
+            for (int i = 0; i < 3; ++i) if (xs[i] != -9999 && ys[i] != -9999) hD[i]->Fill(xs[i], ys[i]);
         }
         // Fill MC
         Long64_t nM = mcCh.GetEntries(); if (maxEvents>0 && maxEvents<nM) nM = maxEvents;
-        for (Long64_t ev=0; ev<nM; ++ev) {
+        for (Long64_t ev = 0; ev < nM; ++ev) {
             mcCh.GetEntry(ev);
             if (pid != pidVal) continue;
-            double xs[3] = {cal_x_1,cal_x_4,cal_x_7};
-            double ys[3] = {cal_y_1,cal_y_4,cal_y_7};
-            for (int i=0; i<3; ++i) if (xs[i]!=-9999 && ys[i]!=-9999) hM[i]->Fill(xs[i],ys[i]);
+            double xs[3] = {cal_x_1, cal_x_4, cal_x_7};
+            double ys[3] = {cal_y_1, cal_y_4, cal_y_7};
+            for (int i = 0; i < 3; ++i) if (xs[i] != -9999 && ys[i] != -9999) hM[i]->Fill(xs[i], ys[i]);
         }
 
-        // Draw unnormalized DATA
-        TCanvas c1("c_data_uncut","Data Uncut",1800,600);
+        // DRAW UNNORMALIZED DATA
+        gStyle->SetPalette(1); // default palette
+        TCanvas c1("c_data_uncut", Form("%s Data Uncut", label.c_str()), 1800, 600);
         c1.Divide(3,1);
-        SetSame2DScale(hD[0],hD[1],hD[2]);
-        for (int i=0; i<3; ++i) {
+        SetSame2DScale(hD[0], hD[1], hD[2]);
+        for (int i = 0; i < 3; ++i) {
             c1.cd(i+1);
             gPad->SetLeftMargin(0.15); gPad->SetRightMargin(0.15);
             gPad->SetLogz();
             hD[i]->Draw("COLZ");
         }
-        c1.SaveAs(Form("output/cal/data_uncut_%s.png",label.c_str()));
+        c1.SaveAs(Form("output/cal/data_uncut_%s.png", label.c_str()));
 
-        // Draw unnormalized MC
-        TCanvas c2("c_mc_uncut","MC Uncut",1800,600);
+        // DRAW UNNORMALIZED MC
+        gStyle->SetPalette(1);
+        TCanvas c2("c_mc_uncut", Form("%s MC Uncut", label.c_str()), 1800, 600);
         c2.Divide(3,1);
-        SetSame2DScale(hM[0],hM[1],hM[2]);
-        for (int i=0; i<3; ++i) {
+        SetSame2DScale(hM[0], hM[1], hM[2]);
+        for (int i = 0; i < 3; ++i) {
             c2.cd(i+1);
             gPad->SetLeftMargin(0.15); gPad->SetRightMargin(0.15);
             gPad->SetLogz();
             hM[i]->Draw("COLZ");
         }
-        c2.SaveAs(Form("output/cal/mc_uncut_%s.png",label.c_str()));
+        c2.SaveAs(Form("output/cal/mc_uncut_%s.png", label.c_str()));
 
-        // Normalize & ratio
-        for (int i=0; i<3; ++i) {
-            double Idata = hD[i]->Integral(); if (Idata>0) hD[i]->Scale(1.0/Idata);
-            double IMC   = hM[i]->Integral(); if (IMC>0)   hM[i]->Scale(1.0/IMC);
-            hR[i] = (TH2D*)hD[i]->Clone(Form("hR_%s_%s",label.c_str(),layers[i].c_str()));
+        // NORMALIZE & RATIO
+        for (int i = 0; i < 3; ++i) {
+            double Idata = hD[i]->Integral(); if (Idata > 0) hD[i]->Scale(1.0/Idata);
+            double IMC   = hM[i]->Integral(); if (IMC   > 0) hM[i]->Scale(1.0/IMC);
+            hR[i] = (TH2D*)hD[i]->Clone(Form("hR_%s_%s", label.c_str(), layers[i].c_str()));
             hR[i]->Divide(hM[i]);
         }
 
-        // Compute stats
+        // COMPUTE STATS
         std::vector<double> mu(3), sigma(3);
-        for (int i=0; i<3; ++i) {
-            int cnt=0; double s=0, s2=0;
-            for (int ix=1; ix<=NB; ++ix) for (int iy=1; iy<=NB; ++iy) {
-                double v = hR[i]->GetBinContent(ix,iy);
-                if (v <= 0) continue;
-                s += v; s2 += v*v; cnt++;
-            }
-            mu[i]    = cnt? s/cnt : 0;
-            sigma[i] = cnt? sqrt(s2/cnt - mu[i]*mu[i]) : 0;
+        for (int i = 0; i < 3; ++i) {
+            int cnt = 0; double s = 0, s2 = 0;
+            for (int ix = 1; ix <= NB; ++ix)
+                for (int iy = 1; iy <= NB; ++iy) {
+                    double v = hR[i]->GetBinContent(ix, iy);
+                    if (v <= 0) continue;
+                    s += v; s2 += v*v; cnt++;
+                }
+            mu[i]    = cnt ? s/cnt : 0;
+            sigma[i] = cnt ? sqrt(s2/cnt - mu[i]*mu[i]) : 0;
         }
 
-        // Draw ratio with default FT-style palette
-        TCanvas c3("c_ratio","Data/MC Ratio",1800,600);
+        // DRAW RATIO
+        gStyle->SetPalette(1);
+        TCanvas c3("c_ratio", Form("%s Data/MC Ratio", label.c_str()), 1800, 600);
         c3.Divide(3,1);
-        SetSame2DScale(hR[0],hR[1],hR[2]);
-        for (int i=0; i<3; ++i) {
+        SetSame2DScale(hR[0], hR[1], hR[2]);
+        for (int i = 0; i < 3; ++i) {
             c3.cd(i+1);
             gPad->SetLeftMargin(0.15); gPad->SetRightMargin(0.15);
             gPad->SetLogz();
             hR[i]->Draw("COLZ");
             TLegend leg(0.6, 0.7, 0.9, 0.9);
             leg.SetFillColor(kWhite); leg.SetBorderSize(1); leg.SetTextSize(0.03);
-            leg.AddEntry((TObject*)0,Form("Mean=%.3f",mu[i]),"");
-            leg.AddEntry((TObject*)0,Form("StdDev=%.3f",sigma[i]),"");
+            leg.AddEntry((TObject*)0, Form("Mean=%.3f", mu[i]), "");
+            leg.AddEntry((TObject*)0, Form("StdDev=%.3f", sigma[i]), "");
             leg.Draw();
         }
-        c3.SaveAs(Form("output/cal/ratio_%s.png",label.c_str()));
+        c3.SaveAs(Form("output/cal/ratio_%s.png", label.c_str()));
 
-        // Draw outliers map with two-color palette
+        // DRAW OUTLIERS MAP
         gStyle->SetPalette(2, outPal);
-        TCanvas c4("c_outliers","Outliers Map",1800,600);
+        TCanvas c4("c_outliers", Form("%s Ratio Outliers", label.c_str()), 1800, 600);
         c4.Divide(3,1);
-        for (int i=0; i<3; ++i) {
+        for (int i = 0; i < 3; ++i) {
             c4.cd(i+1);
             gPad->SetLeftMargin(0.15); gPad->SetRightMargin(0.15);
             gPad->SetLogz(0);
-            TH2D* hMap = (TH2D*)hR[i]->Clone(Form("hMap_%s_%s",label.c_str(),layers[i].c_str()));
+            TH2D* hMap = (TH2D*)hR[i]->Clone(Form("hMap_%s_%s", label.c_str(), layers[i].c_str()));
             hMap->Reset();
-            for (int ix=1; ix<=NB; ++ix) {
-                for (int iy=1; iy<=NB; ++iy) {
-                    double v = hR[i]->GetBinContent(ix,iy);
+            for (int ix = 1; ix <= NB; ++ix) {
+                for (int iy = 1; iy <= NB; ++iy) {
+                    double v = hR[i]->GetBinContent(ix, iy);
                     if (v <= 0) continue;
                     int lvl = (v < 0.5 || v > 2.0) ? 2 : 1;
-                    hMap->SetBinContent(ix,iy,lvl);
+                    hMap->SetBinContent(ix, iy, lvl);
                 }
             }
             hMap->SetContour(2);
-            hMap->SetContourLevel(0,1);
-            hMap->SetContourLevel(1,2);
+            hMap->SetContourLevel(0, 1);
+            hMap->SetContourLevel(1, 2);
             hMap->Draw("COLZ");
         }
-        c4.SaveAs(Form("output/cal/ratio_%s_outliers.png",label.c_str()));
+        c4.SaveAs(Form("output/cal/ratio_%s_outliers.png", label.c_str()));
     }
     return 0;
 }
