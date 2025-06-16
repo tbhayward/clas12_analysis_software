@@ -167,7 +167,7 @@ int main(int argc, char** argv) {
     // 4. Book all histograms
     //--------------------------------------------------------------------------
     // 4a) 2D uncut
-    int nbins2D = 100;
+    int nbins2D = 150;
     TH2D* h2_r1_sidisdvcs = new TH2D("h2_r1_sidisdvcs", "Region 1; x; y",
                                      nbins2D, -180.0, 180.0, nbins2D, -180.0, 180.0);
     TH2D* h2_r2_sidisdvcs = new TH2D("h2_r2_sidisdvcs", "Region 2; x; y",
