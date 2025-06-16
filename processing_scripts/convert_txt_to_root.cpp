@@ -347,7 +347,6 @@ int main(int argc, char *argv[]) {
         // Link TTree branches to variables for one hadron
         tree->Branch("fiducial_status", &fiducial_status, "fiducial_status/I");
         tree->Branch("e_pid_status", &e_pid_status, "e_pid_status/I");
-        tree->Branch("runnum", &runnum, "runnum/I");
         tree->Branch("num_pos", &num_pos, "num_pos/I");
         tree->Branch("num_neg", &num_neg, "num_neg/I");
         tree->Branch("num_neutral", &num_neutral, "num_neutral/I");
