@@ -167,7 +167,7 @@ int main(int argc, char** argv) {
     // 4. Book all histograms
     //--------------------------------------------------------------------------
     // 4a) 2D uncut
-    int nbins2D = 200;
+    int nbins2D = 100;
     TH2D* h2_r1_sidisdvcs = new TH2D("h2_r1_sidisdvcs", "Region 1; x; y",
                                      nbins2D, -180.0, 180.0, nbins2D, -180.0, 180.0);
     TH2D* h2_r2_sidisdvcs = new TH2D("h2_r2_sidisdvcs", "Region 2; x; y",
@@ -198,7 +198,7 @@ int main(int argc, char** argv) {
                                        nbins2D, -450.0, 450.0, nbins2D, -450.0, 450.0);
 
     // 4c) 1D edge histograms
-    int nbins1D = 125;
+    int nbins1D = 75;
     double edgeMin = 0.0, edgeMax = 125.0;
     TH1D* h1_edge_r1_sidis = new TH1D("h1_edge_r1_sidis", "Region 1; edge (cm); counts",
                                       nbins1D, edgeMin, edgeMax);
@@ -215,7 +215,7 @@ int main(int argc, char** argv) {
                                      nbins1D, edgeMin, edgeMax);
 
     // 4d) 2D rad-phi histograms
-    int nbinsR1 = 150, nbinsR2 = 230, nbinsR3 = 400, nbinsPhi = 180;
+    int nbinsR1 = 100, nbinsR2 = 170, nbinsR3 = 250, nbinsPhi = 180;
     double rMin1 = 20.0, rMax1 = 170.0;
     double rMin2 = 20.0, rMax2 = 250.0;
     double rMin3 = 20.0, rMax3 = 420.0;
