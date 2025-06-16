@@ -14,8 +14,8 @@
  *   3) Makes unnormalized 2D plots (data vs. MC) with three panels (PCal/ECin/ECout).
  *   4) Normalizes each histogram and computes data/MC ratio.
  *   5) Creates a 3-panel ratio plot with mean (μ) and stddev (σ) in a legend box.
- *   6) Creates a second 3-panel "ratio_outliers" map histogram using two colors:
- *      blue where 0.5 ≤ ratio ≤ 2, red otherwise.
+ *   6) Creates a second 3-panel "ratio_outliers" by drawing each bin as a box:
+ *      red if ratio<0.5 or >2.0, blue otherwise.
  *   7) Adds padding margins so y-axis labels are not clipped.
  */
 
@@ -30,6 +30,7 @@
 #include "TPad.h"
 #include "TSystem.h"
 #include "TLegend.h"
+#include "TBox.h"
 
 // ----------------------------------------------------------------------------
 // Helper to unify the color scale of three TH2D histograms
@@ -88,11 +89,14 @@ int main(int argc, char** argv) {
     std::vector<std::pair<int,std::string>> species = {{22,"photon"},{11,"electron"}};
     std::vector<std::string> layers = {"PCal","ECin","ECout"};
 
+    // Define two-color palette array
+    int outPal[2] = { kBlue, kRed };
+
     for (auto& sp : species) {
         int pidVal = sp.first;
         std::string label = sp.second;
 
-        // Default palette for regular plots
+        // Use default palette for regular plots
         gStyle->SetOptStat(0);
         gStyle->SetPalette(1);
 
@@ -160,12 +164,11 @@ int main(int argc, char** argv) {
         std::vector<double> mu(3), sigma(3);
         for (int i=0; i<3; ++i) {
             int cnt=0; double s=0, s2=0;
-            for (int ix=1; ix<=NB; ++ix)
-                for (int iy=1; iy<=NB; ++iy) {
-                    double v = hR[i]->GetBinContent(ix,iy);
-                    if (v <= 0) continue;
-                    s += v; s2 += v*v; cnt++;
-                }
+            for (int ix=1; ix<=NB; ++ix) for (int iy=1; iy<=NB; ++iy) {
+                double v = hR[i]->GetBinContent(ix,iy);
+                if (v <= 0) continue;
+                s += v; s2 += v*v; cnt++;
+            }
             mu[i]    = cnt? s/cnt : 0;
             sigma[i] = cnt? sqrt(s2/cnt - mu[i]*mu[i]) : 0;
         }
@@ -182,9 +185,7 @@ int main(int argc, char** argv) {
             gPad->SetLogz();
             hR[i]->Draw("COLZ");
             TLegend leg(0.6, 0.7, 0.9, 0.9);
-            leg.SetFillColor(kWhite);
-            leg.SetBorderSize(1);
-            leg.SetTextSize(0.03);
+            leg.SetFillColor(kWhite); leg.SetBorderSize(1); leg.SetTextSize(0.03);
             leg.AddEntry((TObject*)0,Form("Mean=%.3f",mu[i]),"");
             leg.AddEntry((TObject*)0,Form("StdDev=%.3f",sigma[i]),"");
             leg.Draw();
@@ -192,7 +193,8 @@ int main(int argc, char** argv) {
         c3.SaveAs(Form("output/cal/ratio_%s.png",label.c_str()));
 
         // Draw outliers map with two-color palette
-        gStyle->SetPalette(2, (int[]){kBlue,kRed});
+        gStyle->SetOptStat(0);
+        gStyle->SetPalette(2, outPal);
         TCanvas c4("c_outliers","Outliers Map",1800,600); c4.Divide(3,1);
         for (int i=0; i<3; ++i) {
             c4.cd(i+1);
