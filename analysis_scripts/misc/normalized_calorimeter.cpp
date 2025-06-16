@@ -96,7 +96,7 @@ int main(int argc, char** argv) {
         int pidVal = sp.first;
         std::string label = sp.second;
 
-        // Histograms
+        // Book histograms
         std::vector<TH2D*> hD(3), hM(3), hR(3), hMap(3);
         for (int i=0; i<3; ++i) {
             hD[i] = new TH2D(Form("hD_%s_%s",label.c_str(),layers[i].c_str()),
@@ -125,6 +125,8 @@ int main(int argc, char** argv) {
         }
 
         gStyle->SetOptStat(0);
+        // Ensure default palette
+        gStyle->SetPalette(1);
 
         // Unnormalized Data
         TCanvas c1("c_data_uncut","Data Uncut",1800,600);
@@ -174,6 +176,7 @@ int main(int argc, char** argv) {
         }
 
         // Ratio canvas
+        gStyle->SetPalette(1);
         TCanvas c3("c_ratio","Data/MC Ratio",1800,600);
         c3.Divide(3,1);
         SetSame2DScale(hR[0],hR[1],hR[2]);
