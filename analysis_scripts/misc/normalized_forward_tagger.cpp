@@ -13,7 +13,7 @@
  *   2) Loops over data and MC, filling photon (PID=22) FT hit-position histograms.
  *   3) Makes two unnormalized 2D plots (data vs. MC).
  *   4) Normalizes each histogram to unit integral.
- *   5) Computes and plots the ratio (data/MC) as "ft_ratio.png" with mean/stddev in the top-right.
+ *   5) Computes and plots the ratio (data/MC) as "ft_ratio.png" with mean/stddev in top-right legend.
  *   6) Creates a second plot "ft_ratio_outliers.png" highlighting bins >1σ.
  */
 
@@ -26,7 +26,7 @@
 #include "TStyle.h"
 #include "TPad.h"
 #include "TSystem.h"
-#include "TLatex.h"
+#include "TLegend.h"
 #include "TBox.h"
 
 // ----------------------------------------------------------------------------
@@ -123,8 +123,8 @@ int main(int argc, char** argv) {
     }
 
     // 8) Normalize histograms
-    double Idata = h_data->Integral(); if (Idata > 0) h_data->Scale(1.0/Idata);
-    double Imc   = h_mc->Integral();   if (Imc   > 0) h_mc->Scale(1.0/Imc);
+    double Idata = h_data->Integral(); if (Idata>0) h_data->Scale(1.0/Idata);
+    double Imc   = h_mc->Integral();   if (Imc  >0) h_mc->Scale(1.0/Imc);
 
     // 9) Compute ratio
     TH2D* h_ratio = (TH2D*)h_data->Clone("h_ft_ratio");
@@ -132,34 +132,29 @@ int main(int argc, char** argv) {
     h_ratio->Divide(h_mc);
 
     // compute mean and stddev of non-zero bins
-    int    count = 0;
-    double sum = 0, sum2 = 0;
-    for (int ix = 1; ix <= h_ratio->GetNbinsX(); ++ix) {
-        for (int iy = 1; iy <= h_ratio->GetNbinsY(); ++iy) {
-            double c = h_ratio->GetBinContent(ix, iy);
-            if (c == 0) continue;
-            sum  += c;
-            sum2 += c * c;
-            ++count;
-        }
+    int count=0; double sum=0, sum2=0;
+    for(int ix=1; ix<=h_ratio->GetNbinsX(); ix++){
+      for(int iy=1; iy<=h_ratio->GetNbinsY(); iy++){
+        double c = h_ratio->GetBinContent(ix,iy);
+        if(c==0) continue;
+        sum+=c; sum2+=c*c; count++;
+      }
     }
-    double mean  = count ? sum / count : 0;
-    double sigma = count ? std::sqrt(sum2 / count - mean * mean) : 0;
+    double mean = count? sum/count:0;
+    double sigma = count? sqrt(sum2/count - mean*mean):0;
 
-    // 10) Draw ratio with TLatex in top-right
-    SetSame2DScale(h_data, h_mc, h_ratio);
+    // 10) Draw ratio with legend box in top-right
+    SetSame2DScale(h_data,h_mc,h_ratio);
     {
         TCanvas c("c_ft_ratio","FT Data/MC Ratio",600,600);
         c.cd(); gPad->SetLeftMargin(0.15); gPad->SetRightMargin(0.15);
         h_ratio->Draw("COLZ");
-
-        TLatex tex;
-        tex.SetNDC();
-        tex.SetTextAlign(31); // right aligned
-        tex.SetTextSize(0.03);
-        tex.DrawLatex(0.95, 0.95, Form("Mean=%.4f",  mean));
-        tex.DrawLatex(0.95, 0.90, Form("StdDev=%.4f", sigma));
-
+        TLegend leg(0.65,0.75,0.9,0.9);
+        leg.SetFillColor(kWhite);
+        leg.SetBorderSize(1);
+        leg.AddEntry((TObject*)0,Form("Mean = %.4f",mean),"");
+        leg.AddEntry((TObject*)0,Form("StdDev = %.4f",sigma),"");
+        leg.Draw();
         c.SaveAs("output/ft/ft_ratio.png");
     }
 
@@ -167,27 +162,24 @@ int main(int argc, char** argv) {
     {
         TCanvas c("c_ft_outliers","FT Ratio Outliers",600,600);
         c.cd(); gPad->SetLeftMargin(0.15); gPad->SetRightMargin(0.15);
-        SetSame2DScale(h_data, h_mc, h_ratio);
+        SetSame2DScale(h_data,h_mc,h_ratio);
         h_ratio->Draw("COLZ");
-        for (int ix = 1; ix <= h_ratio->GetNbinsX(); ++ix) {
-            for (int iy = 1; iy <= h_ratio->GetNbinsY(); ++iy) {
-                double cv = h_ratio->GetBinContent(ix, iy);
-                if (cv == 0) continue;
-                if (std::fabs(cv - mean) > sigma) {
-                    double x1 = h_ratio->GetXaxis()->GetBinLowEdge(ix);
-                    double x2 = h_ratio->GetXaxis()->GetBinUpEdge(ix);
-                    double y1 = h_ratio->GetYaxis()->GetBinLowEdge(iy);
-                    double y2 = h_ratio->GetYaxis()->GetBinUpEdge(iy);
-                    TBox box(x1, y1, x2, y2);
-                    box.SetFillColor(kRed);
-                    box.SetFillStyle(1001);
-                    box.SetLineColor(kRed);
-                    box.Draw("same");
-                }
+        for(int ix=1; ix<=h_ratio->GetNbinsX(); ix++){
+          for(int iy=1; iy<=h_ratio->GetNbinsY(); iy++){
+            double cv=h_ratio->GetBinContent(ix,iy);
+            if(cv==0) continue;
+            if(fabs(cv-mean)>sigma){
+              double x1=h_ratio->GetXaxis()->GetBinLowEdge(ix),
+                     x2=h_ratio->GetXaxis()->GetBinUpEdge(ix),
+                     y1=h_ratio->GetYaxis()->GetBinLowEdge(iy),
+                     y2=h_ratio->GetYaxis()->GetBinUpEdge(iy);
+              TBox box(x1,y1,x2,y2);
+              box.SetFillColor(kRed); box.SetFillStyle(1001); box.SetLineColor(kRed);
+              box.Draw("same");
             }
+          }
         }
         c.SaveAs("output/ft/ft_ratio_outliers.png");
     }
-
     return 0;
 }
