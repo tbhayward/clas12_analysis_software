@@ -188,6 +188,6 @@ int main(int argc, char** argv) {
         }
         c.SaveAs("output/ft/ft_ratio_outliers.png");
     }
-
+    std::cout << "HELLO WORLD" << std::endl;
     return 0;
 }
