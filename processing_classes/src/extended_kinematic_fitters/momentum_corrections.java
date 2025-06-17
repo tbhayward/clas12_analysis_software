@@ -448,7 +448,7 @@ public class momentum_corrections {
             int corEl,
             int corPip,
             int corPim,
-            int corPro ) {
+            int corPro) {
         /**
          * Apply outbending torus momentum corrections to a particle's momentum.
          *
@@ -676,84 +676,96 @@ public class momentum_corrections {
 
     }
 
-    
     //––––––––––– Fermi-motion tables for N14 –––––––––––
-  private static final double[] kfm_fm = {
-    0.0,   0.1,   0.2,   0.3,   0.4,   0.5,   0.6,   0.7,   0.8,   0.9,
-    1.0,   1.1,   1.2,   1.3,   1.4,   1.5,   1.6,   1.7,   1.8,   1.9,
-    2.0,   2.1,   2.2,   2.3,   2.4,   2.5,   2.6,   2.7,   2.8,   2.9,
-    3.0,   3.1,   3.2,   3.3,   3.4,   3.5,   3.6,   3.7,   3.8,   3.9,
-    4.0,   4.1,   4.2,   4.3,   4.4,   4.5,   4.6,   4.7,   4.8,   4.9,
-    5.0,   5.1,   5.2,   5.3,   5.4,   5.5,   5.6,   5.7,   5.8,   5.9,
-    6.0
-  };
+    private static final double[] kfm_fm = {
+        0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9,
+        1.0, 1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 1.7, 1.8, 1.9,
+        2.0, 2.1, 2.2, 2.3, 2.4, 2.5, 2.6, 2.7, 2.8, 2.9,
+        3.0, 3.1, 3.2, 3.3, 3.4, 3.5, 3.6, 3.7, 3.8, 3.9,
+        4.0, 4.1, 4.2, 4.3, 4.4, 4.5, 4.6, 4.7, 4.8, 4.9,
+        5.0, 5.1, 5.2, 5.3, 5.4, 5.5, 5.6, 5.7, 5.8, 5.9,
+        6.0
+    };
 
-  private static final double[] nk_n14 = {
-    0.163119, 0.183235, 0.225102, 0.262783, 0.276924, 0.263379, 0.228534, 0.183451, 0.137812, 0.097877,
-    0.066275, 0.043066, 0.026994, 0.016454, 0.009841, 0.005874, 0.003586, 0.002312, 0.001622, 0.001247,
-    0.001036, 0.000903, 0.000805, 0.000724, 0.000652, 0.000585, 0.000523, 0.000465, 0.000412, 0.000364,
-    0.000320, 0.000281, 0.000246, 0.000216, 0.000188, 0.000164, 0.000143, 0.000124, 0.000107, 0.000092,
-    0.000079, 0.000067, 0.000057, 0.000048, 0.000040, 0.000034, 0.000029, 0.000024, 0.000020, 0.000017,
-    0.000014, 0.000012, 0.000010, 0.000008, 0.000006, 0.000005, 0.000005, 0.000004, 0.000003, 0.000003,
-    0.000002
-  };
+    private static final double[] nk_n14 = {
+        0.163119, 0.183235, 0.225102, 0.262783, 0.276924, 0.263379, 0.228534, 0.183451, 0.137812, 0.097877,
+        0.066275, 0.043066, 0.026994, 0.016454, 0.009841, 0.005874, 0.003586, 0.002312, 0.001622, 0.001247,
+        0.001036, 0.000903, 0.000805, 0.000724, 0.000652, 0.000585, 0.000523, 0.000465, 0.000412, 0.000364,
+        0.000320, 0.000281, 0.000246, 0.000216, 0.000188, 0.000164, 0.000143, 0.000124, 0.000107, 0.000092,
+        0.000079, 0.000067, 0.000057, 0.000048, 0.000040, 0.000034, 0.000029, 0.000024, 0.000020, 0.000017,
+        0.000014, 0.000012, 0.000010, 0.000008, 0.000006, 0.000005, 0.000005, 0.000004, 0.000003, 0.000003,
+        0.000002
+    };
 
-  private static final double   HBARC = 0.19732;  // GeV·fm
-  private static final Random   rand  = new Random();
-  private static       double[] cdfN;             // cumulative 4π k² n(k) dk
-  private static       boolean  fermiInit = false;
+    private static final double HBARC = 0.19732;  // GeV·fm
+    private static final Random rand = new Random();
+    private static double[] cdfN;             // cumulative 4π k² n(k) dk
+    private static boolean fermiInit = false;
 
-  //––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––
-  private static void initFermi() {
-    if (fermiInit) return;
-    int N = kfm_fm.length;
-    // build un-normalized PDF: F_i = 4π k_i^2 n(k_i)
-    double[] F = new double[N];
-    for (int i = 0; i < N; i++) {
-      F[i] = 4 * Math.PI * kfm_fm[i]*kfm_fm[i] * nk_n14[i];
+    private static double fermiScale = 0.7;
+
+    /**
+     * Call this at startup to shrink (or grow) your sampled momenta scale = 1.0 means “no change”, scale = 0.7 means
+     * “30% smaller” etc.
+     */
+    public static void setFermiScale(double scale) {
+        fermiScale = scale;
     }
-    // trapezoidal integration → CDF
-    cdfN = new double[N];
-    cdfN[0] = 0;
-    double integral = 0;
-    for (int i = 0; i < N-1; i++) {
-      double dk = kfm_fm[i+1] - kfm_fm[i];
-      integral += 0.5*(F[i]+F[i+1])*dk;
-      cdfN[i+1] = integral;
-    }
-    // normalize so CDF(max)=1
-    for (int i = 0; i < N; i++) {
-      cdfN[i] /= integral;
-    }
-    fermiInit = true;
-  }
 
-  /**
-   * @return A Vector3(px,py,pz) drawn from the N14 Fermi distribution (GeV/c).
-   */
-  public static Vector3 sampleFermiMomentum() {
-    initFermi();
-    // 1) draw uniform in [0,1]
-    double r = rand.nextDouble();
-    // 2) binary‐search CDF
-    int idx = Arrays.binarySearch(cdfN, r);
-    if (idx < 0) idx = -idx - 2;
-    idx = Math.max(0, Math.min(idx, cdfN.length-2));
-    // 3) linear interp for k (in fm⁻¹)
-    double k1 = kfm_fm[idx],  k2 = kfm_fm[idx+1];
-    double c1 = cdfN[idx],    c2 = cdfN[idx+1];
-    double kfm = k1 + (r - c1)*(k2 - k1)/(c2 - c1);
-    // 4) convert → |p| in GeV/c
-    double pMag = kfm * HBARC;
-    // 5) random direction
-    double cosT = 2*rand.nextDouble() - 1;
-    double sinT = Math.sqrt(1 - cosT*cosT);
-    double phi  = 2*Math.PI * rand.nextDouble();
-    double px = pMag * sinT * Math.cos(phi);
-    double py = pMag * sinT * Math.sin(phi);
-    double pz = pMag * cosT;
-    return new Vector3(px, py, pz);
-  }
+    //––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––
+    private static void initFermi() {
+        if (fermiInit) {
+            return;
+        }
+        int N = kfm_fm.length;
+        // build un-normalized PDF: F_i = 4π k_i^2 n(k_i)
+        double[] F = new double[N];
+        for (int i = 0; i < N; i++) {
+            F[i] = 4 * Math.PI * kfm_fm[i] * kfm_fm[i] * nk_n14[i];
+        }
+        // trapezoidal integration → CDF
+        cdfN = new double[N];
+        cdfN[0] = 0;
+        double integral = 0;
+        for (int i = 0; i < N - 1; i++) {
+            double dk = kfm_fm[i + 1] - kfm_fm[i];
+            integral += 0.5 * (F[i] + F[i + 1]) * dk;
+            cdfN[i + 1] = integral;
+        }
+        // normalize so CDF(max)=1
+        for (int i = 0; i < N; i++) {
+            cdfN[i] /= integral;
+        }
+        fermiInit = true;
+    }
 
-    
+    /**
+     * @return A Vector3(px,py,pz) drawn from the N14 Fermi distribution (GeV/c).
+     */
+    public static Vector3 sampleFermiMomentum() {
+        initFermi();
+        // 1) draw uniform in [0,1]
+        double r = rand.nextDouble();
+        // 2) binary‐search CDF
+        int idx = Arrays.binarySearch(cdfN, r);
+        if (idx < 0) {
+            idx = -idx - 2;
+        }
+        idx = Math.max(0, Math.min(idx, cdfN.length - 2));
+        // 3) linear interp for k (in fm⁻¹)
+        double k1 = kfm_fm[idx], k2 = kfm_fm[idx + 1];
+        double c1 = cdfN[idx], c2 = cdfN[idx + 1];
+        double kfm = k1 + (r - c1) * (k2 - k1) / (c2 - c1);
+        // 4) convert → |p| in GeV/c and apply your scale
+        double pMag = kfm * HBARC * fermiScale;
+        // 5) random direction
+        double cosT = 2 * rand.nextDouble() - 1;
+        double sinT = Math.sqrt(1 - cosT * cosT);
+        double phi = 2 * Math.PI * rand.nextDouble();
+        double px = pMag * sinT * Math.cos(phi);
+        double py = pMag * sinT * Math.sin(phi);
+        double pz = pMag * cosT;
+        return new Vector3(px, py, pz);
+    }
+
 }
