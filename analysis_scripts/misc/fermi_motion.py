@@ -90,8 +90,8 @@ for ax, versions, title in panel_configs:
         data   = load_array(path, "Mx2")
         counts, _ = np.histogram(data, bins=bins)
         centers   = 0.5 * (bins[:-1] + bins[1:])
-        norm      = 1.0 / (data.size * bin_width)
-        density   = counts * norm
+        norm = 1.0/(counts.sum() * bin_width)
+        density = counts * norm
         errors    = np.sqrt(counts) * norm
 
         # Fit range [0.4, 1.2]
