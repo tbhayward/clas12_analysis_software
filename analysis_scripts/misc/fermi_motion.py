@@ -5,6 +5,7 @@ import numpy as np
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
+from scipy.optimize import curve_fit
 
 # -----------------------------------------------------------------------------
 # File paths for RGA and RGC datasets
@@ -26,67 +27,106 @@ def load_array(path, branch):
         return f["PhysicsEvents"][branch].array(library="np")
 
 # -----------------------------------------------------------------------------
-# Version lists for each channel
+# Version lists for each channel (labels without "at rest")
 # -----------------------------------------------------------------------------
 versions_epiX = [
-    ("RGA Fa18 at rest",           rga_epiX_atRest),
+    ("RGA Fa18",                   rga_epiX_atRest),
     ("RGA Fa18 sim. Fermi Motion", rga_epiX_fermi),
-    ("RGC Su22 at rest",           rgc_epiX_atRest),
+    ("RGC Su22",                   rgc_epiX_atRest),
 ]
 
 versions_epiPipiX = [
-    ("RGA Fa18 at rest",           rga_epiPipi_atRest),
+    ("RGA Fa18",                   rga_epiPipi_atRest),
     ("RGA Fa18 sim. Fermi Motion", rga_epiPipi_fermi),
-    ("RGC Su22 at rest",           rgc_epiPipi_atRest),
+    ("RGC Su22",                   rgc_epiPipi_atRest),
 ]
 
 # -----------------------------------------------------------------------------
-# Load data arrays
+# Fit function: Gaussian + quadratic background
 # -----------------------------------------------------------------------------
-epiX_Mx2    = [(lbl, load_array(path, "Mx2")) for lbl, path in versions_epiX]
-epiPipi_Mx2 = [(lbl, load_array(path, "Mx2")) for lbl, path in versions_epiPipiX]
+def gauss_quad(x, A, mu, sigma, a0, a1, a2):
+    return A * np.exp(-(x - mu)**2 / (2 * sigma**2)) + a0 + a1*x + a2*x**2
 
 # -----------------------------------------------------------------------------
 # Histogram settings
 # -----------------------------------------------------------------------------
 bins = np.linspace(-1, 3, 101)  # 100 bins from -1 to 3
 bin_width = bins[1] - bins[0]
+m_p2 = 0.93827**2               # proton mass squared for initial guess
 
 # -----------------------------------------------------------------------------
-# Plot in a 1×2 figure with bottom padding
+# Prepare figure
 # -----------------------------------------------------------------------------
 fig, axes = plt.subplots(1, 2, figsize=(12, 5))
 
-# Subplot 1: e π⁺ X → Mx² with error bars
-for lbl, data in epiX_Mx2:
+# -----------------------------------------------------------------------------
+# 1) e π⁺ X → Mx², fit neutron peak
+# -----------------------------------------------------------------------------
+for lbl, path in versions_epiX:
+    data = load_array(path, "Mx2")
     counts, _ = np.histogram(data, bins=bins)
     centers = 0.5 * (bins[:-1] + bins[1:])
     norm = 1.0 / (data.size * bin_width)
     density = counts * norm
     errors = np.sqrt(counts) * norm
-    axes[0].errorbar(centers, density, yerr=errors, fmt='o', label=lbl)
+
+    # mask for fit range 0.4–1.2
+    mask = (centers >= 0.4) & (centers <= 1.2)
+    xfit = centers[mask]
+    yfit = density[mask]
+    errfit = errors[mask]
+
+    # initial parameter guesses and bounds
+    p0 = [yfit.max(), m_p2, 0.02, 0.0, 0.0, 0.0]
+    bounds = ([0.0, 0.0, 0.0, -np.inf, -np.inf, -np.inf],
+              [np.inf, np.inf, np.inf, np.inf,  np.inf,  np.inf])
+
+    popt, _ = curve_fit(gauss_quad, xfit, yfit,
+                        p0=p0, sigma=errfit, bounds=bounds)
+    mu, sigma = popt[1], popt[2]
+
+    # plot data points with error bars, small marker
+    axes[0].errorbar(centers, density, yerr=errors,
+                     fmt='o', markersize=2, label=rf"{lbl} ($\mu={mu:.3f},\ \sigma={sigma:.3f}$)")
+
 axes[0].set_xlim(-1, 3)
 axes[0].set_xlabel(r"$M_x^2\ \mathrm{(GeV^2)}$")
 axes[0].set_title(r"$e\,\pi^{+}X:\ M_x^2$")
 axes[0].legend()
 
-# Subplot 2: e π⁺π⁻ X → Mx² with error bars
-for lbl, data in epiPipi_Mx2:
+# -----------------------------------------------------------------------------
+# 2) e π⁺π⁻ X → Mx², fit proton peak
+# -----------------------------------------------------------------------------
+for lbl, path in versions_epiPipiX:
+    data = load_array(path, "Mx2")
     counts, _ = np.histogram(data, bins=bins)
     centers = 0.5 * (bins[:-1] + bins[1:])
     norm = 1.0 / (data.size * bin_width)
     density = counts * norm
     errors = np.sqrt(counts) * norm
-    axes[1].errorbar(centers, density, yerr=errors, fmt='o', label=lbl)
+
+    mask = (centers >= 0.4) & (centers <= 1.2)
+    xfit = centers[mask]
+    yfit = density[mask]
+    errfit = errors[mask]
+
+    p0 = [yfit.max(), m_p2, 0.02, 0.0, 0.0, 0.0]
+    popt, _ = curve_fit(gauss_quad, xfit, yfit,
+                        p0=p0, sigma=errfit, bounds=bounds)
+    mu, sigma = popt[1], popt[2]
+
+    axes[1].errorbar(centers, density, yerr=errors,
+                     fmt='o', markersize=2, label=rf"{lbl} ($\mu={mu:.3f},\ \sigma={sigma:.3f}$)")
+
 axes[1].set_xlim(-1, 3)
 axes[1].set_xlabel(r"$M_x^2\ \mathrm{(GeV^2)}$")
 axes[1].set_title(r"$e\,\pi^{+}\pi^{-}X:\ M_x^2$")
 axes[1].legend()
 
-# Tight layout and add bottom padding to avoid clipping
+# finalize layout
 plt.tight_layout()
 plt.subplots_adjust(bottom=0.15)
 
 # Save figure
-plt.savefig("output/fermi_motion.pdf")
+plt.savefig("output/fermi_motion_fitted.pdf")
 plt.close()
