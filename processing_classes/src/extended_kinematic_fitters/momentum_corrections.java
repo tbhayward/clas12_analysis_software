@@ -703,7 +703,7 @@ public class momentum_corrections {
     private static boolean fermiInit = false;
 
     private static double fermiScale = 1.0;
-    private static double smearProb = 14.0 / 17.0;  // fraction of events to smear
+    private static double smearProb = 0.65; //14.0 / 17.0;  // fraction of events to smear
 
     /**
      * Set the overall momentum scale factor.
