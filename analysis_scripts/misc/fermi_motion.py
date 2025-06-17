@@ -29,15 +29,15 @@ def load_array(path, branch):
 # Version lists for each channel
 # -----------------------------------------------------------------------------
 versions_epiX = [
-    ("RGA Fa18",           rga_epiX_atRest),
+    ("RGA Fa18 at rest",           rga_epiX_atRest),
     ("RGA Fa18 sim. Fermi Motion", rga_epiX_fermi),
-    ("RGC Su22",           rgc_epiX_atRest),
+    ("RGC Su22 at rest",           rgc_epiX_atRest),
 ]
 
 versions_epiPipiX = [
-    ("RGA Fa18",           rga_epiPipi_atRest),
+    ("RGA Fa18 at rest",           rga_epiPipi_atRest),
     ("RGA Fa18 sim. Fermi Motion", rga_epiPipi_fermi),
-    ("RGC Su22",           rgc_epiPipi_atRest),
+    ("RGC Su22 at rest",           rgc_epiPipi_atRest),
 ]
 
 # -----------------------------------------------------------------------------
@@ -47,23 +47,37 @@ epiX_Mx2    = [(lbl, load_array(path, "Mx2")) for lbl, path in versions_epiX]
 epiPipi_Mx2 = [(lbl, load_array(path, "Mx2")) for lbl, path in versions_epiPipiX]
 
 # -----------------------------------------------------------------------------
+# Histogram settings
+# -----------------------------------------------------------------------------
+bins = np.linspace(-1, 3, 101)  # 100 bins from -1 to 3
+bin_width = bins[1] - bins[0]
+
+# -----------------------------------------------------------------------------
 # Plot in a 1×2 figure with bottom padding
 # -----------------------------------------------------------------------------
 fig, axes = plt.subplots(1, 2, figsize=(12, 5))
 
-# Subplot 1: e π⁺ X → Mx²
+# Subplot 1: e π⁺ X → Mx² with error bars
 for lbl, data in epiX_Mx2:
-    axes[0].hist(data, bins=100, range=(-1, 3), density=True,
-                 histtype="step", label=lbl)
+    counts, _ = np.histogram(data, bins=bins)
+    centers = 0.5 * (bins[:-1] + bins[1:])
+    norm = 1.0 / (data.size * bin_width)
+    density = counts * norm
+    errors = np.sqrt(counts) * norm
+    axes[0].errorbar(centers, density, yerr=errors, fmt='o', label=lbl)
 axes[0].set_xlim(-1, 3)
 axes[0].set_xlabel(r"$M_x^2\ \mathrm{(GeV^2)}$")
 axes[0].set_title(r"$e\,\pi^{+}X:\ M_x^2$")
 axes[0].legend()
 
-# Subplot 2: e π⁺π⁻ X → Mx²
+# Subplot 2: e π⁺π⁻ X → Mx² with error bars
 for lbl, data in epiPipi_Mx2:
-    axes[1].hist(data, bins=100, range=(-1, 3), density=True,
-                 histtype="step", label=lbl)
+    counts, _ = np.histogram(data, bins=bins)
+    centers = 0.5 * (bins[:-1] + bins[1:])
+    norm = 1.0 / (data.size * bin_width)
+    density = counts * norm
+    errors = np.sqrt(counts) * norm
+    axes[1].errorbar(centers, density, yerr=errors, fmt='o', label=lbl)
 axes[1].set_xlim(-1, 3)
 axes[1].set_xlabel(r"$M_x^2\ \mathrm{(GeV^2)}$")
 axes[1].set_title(r"$e\,\pi^{+}\pi^{-}X:\ M_x^2$")
