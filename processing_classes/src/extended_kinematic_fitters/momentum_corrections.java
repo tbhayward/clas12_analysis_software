@@ -702,28 +702,36 @@ public class momentum_corrections {
     private static double[] cdfN;             // cumulative 4π k² n(k) dk
     private static boolean fermiInit = false;
 
-    private static double fermiScale = 0.7;
+    private static double fermiScale = 1.0;
+    private static double smearProb = 14.0 / 17.0;  // fraction of events to smear
 
     /**
-     * Call this at startup to shrink (or grow) your sampled momenta scale = 1.0 means “no change”, scale = 0.7 means
-     * “30% smaller” etc.
+     * Set the overall momentum scale factor.
+     *
+     * @param scale 1.0 = no change; <1 = narrower; >1 = wider
      */
     public static void setFermiScale(double scale) {
         fermiScale = scale;
     }
+    /**
+     * Set the fraction of events that get Fermi smearing.
+     *
+     * @param p probability in [0,1] that a nucleon is given Fermi motion
+     */
+    public static void setSmearProbability(double p) {
+        smearProb = Math.max(0.0, Math.min(1.0, p));
+    }
 
-    //––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––
+//––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––
     private static void initFermi() {
         if (fermiInit) {
             return;
         }
         int N = kfm_fm.length;
-        // build un-normalized PDF: F_i = 4π k_i^2 n(k_i)
         double[] F = new double[N];
         for (int i = 0; i < N; i++) {
             F[i] = 4 * Math.PI * kfm_fm[i] * kfm_fm[i] * nk_n14[i];
         }
-        // trapezoidal integration → CDF
         cdfN = new double[N];
         cdfN[0] = 0;
         double integral = 0;
@@ -732,7 +740,6 @@ public class momentum_corrections {
             integral += 0.5 * (F[i] + F[i + 1]) * dk;
             cdfN[i + 1] = integral;
         }
-        // normalize so CDF(max)=1
         for (int i = 0; i < N; i++) {
             cdfN[i] /= integral;
         }
@@ -740,25 +747,32 @@ public class momentum_corrections {
     }
 
     /**
-     * @return A Vector3(px,py,pz) drawn from the N14 Fermi distribution (GeV/c).
+     * @return A Vector3(px,py,pz) drawn from the N14 Fermi distribution (GeV/c), or (0,0,0) if this event is not
+     * smeared.
      */
     public static Vector3 sampleFermiMomentum() {
         initFermi();
+
+        // decide whether to smear or leave at rest
+        if (rand.nextDouble() > smearProb) {
+            return new Vector3(0.0, 0.0, 0.0);
+        }
+
         // 1) draw uniform in [0,1]
         double r = rand.nextDouble();
-        // 2) binary‐search CDF
+        // 2) find CDF bin
         int idx = Arrays.binarySearch(cdfN, r);
         if (idx < 0) {
             idx = -idx - 2;
         }
         idx = Math.max(0, Math.min(idx, cdfN.length - 2));
-        // 3) linear interp for k (in fm⁻¹)
+        // 3) linear interp for k in fm^-1
         double k1 = kfm_fm[idx], k2 = kfm_fm[idx + 1];
         double c1 = cdfN[idx], c2 = cdfN[idx + 1];
         double kfm = k1 + (r - c1) * (k2 - k1) / (c2 - c1);
-        // 4) convert → |p| in GeV/c and apply your scale
+        // 4) convert to |p| in GeV/c and apply scale
         double pMag = kfm * HBARC * fermiScale;
-        // 5) random direction
+        // 5) random isotropic direction
         double cosT = 2 * rand.nextDouble() - 1;
         double sinT = Math.sqrt(1 - cosT * cosT);
         double phi = 2 * Math.PI * rand.nextDouble();
