@@ -204,10 +204,10 @@ public class ThreeParticles {
         
         LorentzVector lv_target = new LorentzVector();
         momentum_corrections momentum_corrections = new momentum_corrections();
-//        lv_target.setPxPyPzM(0,0,0,kinematic_variables.particle_mass(2212));
+        lv_target.setPxPyPzM(0,0,0,kinematic_variables.particle_mass(2212));
         // Simulate Fermi motion
-        org.jlab.clas.physics.Vector3 fermiP = momentum_corrections.sampleFermiMomentum();
-        lv_target.setPxPyPzM(fermiP.x(),fermiP.y(),fermiP.z(),kinematic_variables.particle_mass(2212));
+//        org.jlab.clas.physics.Vector3 fermiP = momentum_corrections.sampleFermiMomentum();
+//        lv_target.setPxPyPzM(fermiP.x(),fermiP.y(),fermiP.z(),kinematic_variables.particle_mass(2212));
 //        
         // pull from rec banks for outgoing particles
         // electron

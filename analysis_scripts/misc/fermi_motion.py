@@ -12,22 +12,22 @@ from scipy.optimize import curve_fit
 # -----------------------------------------------------------------------------
 rga_epiX_atRest    = "/volatile/clas12/thayward/fermi_motion/rga_fa18_inb_epi+_atRest.root"
 # rga_epiX_fermi     = "/volatile/clas12/thayward/fermi_motion/rga_fa18_inb_epi+_fermiMotion.root"
-rga_epiX_fermi     = "/volatile/clas12/thayward/fermi_motion/rga_fa18_inb_epi+_fermiMotion.root"
+rga_epiX_fermi     = "/volatile/clas12/thayward/fermi_motion/rga_fa18_inb_epi+_dilutionFactor.root"
 rgc_epiX_atRest    = "/volatile/clas12/thayward/fermi_motion/rgc_su22_inb_epi+_atRest.root"
 
 rga_epiPipi_atRest = "/volatile/clas12/thayward/fermi_motion/rga_fa18_inb_epi+pi-_atRest.root"
 # rga_epiPipi_fermi  = "/volatile/clas12/thayward/fermi_motion/rga_fa18_inb_epi+_pi-_fermiMotion.root"
-rga_epiPipi_fermi  = "/volatile/clas12/thayward/fermi_motion/rga_fa18_inb_epi+_pi-_fermiMotion.root"
+rga_epiPipi_fermi  = "/volatile/clas12/thayward/fermi_motion/rga_fa18_inb_epi+_pi-_dilutionFactor.root"
 rgc_epiPipi_atRest = "/volatile/clas12/thayward/fermi_motion/rgc_su22_inb_epi+pi-_atRest.root"
 
 rgb_epiX_atRest    = "/volatile/clas12/thayward/fermi_motion/rgb_sp19_inb_epi+_atRest.root"
-# rgb_epiX_fermi     = "/volatile/clas12/thayward/fermi_motion/rgb_sp19_inb_epi+_fermiMotion.root"
+rgb_epiX_fermi     = "/volatile/clas12/thayward/fermi_motion/rgb_sp19_inb_epi+_fermiMotion.root"
 # rgb_epiX_fermi     = "/volatile/clas12/thayward/fermi_motion/rgb_sp19_inb_epi+_fermiMotion_scaled30.root"
-rgb_epiX_fermi     = "/volatile/clas12/thayward/fermi_motion/rgb_sp19_inb_epi+_fermiMotion_nitrogenOnly.root"
+# rgb_epiX_fermi     = "/volatile/clas12/thayward/fermi_motion/rgb_sp19_inb_epi+_fermiMotion_nitrogenOnly.root"
 rgb_epiPipi_atRest = "/volatile/clas12/thayward/fermi_motion/rgb_sp19_inb_epi+pi-_atRest.root"
-# rgb_epiPipi_fermi  = "/volatile/clas12/thayward/fermi_motion/rgb_sp19_inb_epi+pi-_fermiMotion.root"
+rgb_epiPipi_fermi  = "/volatile/clas12/thayward/fermi_motion/rgb_sp19_inb_epi+pi-_fermiMotion.root"
 # rgb_epiPipi_fermi  = "/volatile/clas12/thayward/fermi_motion/rgb_sp19_inb_epi+pi-_fermiMotion_scaled30.root"
-rgb_epiPipi_fermi  = "/volatile/clas12/thayward/fermi_motion/rgb_sp19_inb_epi+pi-_fermiMotion_nitrogenOnly.root"
+# rgb_epiPipi_fermi  = "/volatile/clas12/thayward/fermi_motion/rgb_sp19_inb_epi+pi-_fermiMotion_nitrogenOnly.root"
 
 # Ensure output directory exists
 os.makedirs("output", exist_ok=True)
