@@ -52,7 +52,7 @@ def gauss_quad(x, A, mu, sigma, a0, a1, a2):
 # -----------------------------------------------------------------------------
 bins      = np.linspace(-1, 3, 101)                 # 100 bins from -1 to 3
 bin_width = bins[1] - bins[0]
-m_p2       = 0.93827**2                             # proton mass squared for initial guess
+m_p2       = 0.93827**2                              # proton mass squared for initial guess
 colors     = plt.rcParams['axes.prop_cycle'].by_key()['color']
 
 # -----------------------------------------------------------------------------
@@ -66,7 +66,7 @@ fig, axes = plt.subplots(1, 2, figsize=(12, 5))
 for ax, versions in zip(axes, (versions_epiX, versions_epiPipiX)):
     for idx, (lbl, path) in enumerate(versions):
         # Load and histogram data
-        data = load_array(path, "Mx2")
+        data   = load_array(path, "Mx2")
         counts, _ = np.histogram(data, bins=bins)
         centers   = 0.5 * (bins[:-1] + bins[1:])
         norm      = 1.0 / (data.size * bin_width)
@@ -74,10 +74,10 @@ for ax, versions in zip(axes, (versions_epiX, versions_epiPipiX)):
         errors    = np.sqrt(counts) * norm
 
         # Mask for fit range [0.4, 1.2]
-        mask  = (centers >= 0.4) & (centers <= 1.2)
-        xfit  = centers[mask]
-        yfit  = density[mask]
-        errfit= errors[mask]
+        mask   = (centers >= 0.4) & (centers <= 1.2)
+        xfit   = centers[mask]
+        yfit   = density[mask]
+        errfit = errors[mask]
 
         # Initial guesses and bounds
         p0     = [yfit.max(), m_p2, 0.02, 0.0, 0.0, 0.0]
@@ -85,27 +85,24 @@ for ax, versions in zip(axes, (versions_epiX, versions_epiPipiX)):
                   [np.inf, np.inf, np.inf,  np.inf,  np.inf,  np.inf])
 
         # Perform the fit
-        popt, _ = curve_fit(gauss_quad, xfit, yfit, p0=p0, sigma=errfit, bounds=bounds)
+        popt, _ = curve_fit(gauss_quad, xfit, yfit,
+                            p0=p0, sigma=errfit, bounds=bounds)
         mu, sigma = popt[1], popt[2]
 
         # Select color
         color = colors[idx % len(colors)]
         label = rf"{lbl} ($\mu={mu:.3f},\,\sigma={sigma:.3f}$)"
 
-        # Plot histogram as solid step line
-        ax.plot(centers, density,
-                drawstyle='steps-mid',
-                linestyle='-',
-                color=color,
-                label=label)
+        # Plot data points with error bars
+        ax.errorbar(centers, density, yerr=errors,
+                    fmt='o', markersize=3, color=color,
+                    label=label)
 
-        # Overlay fit as thin dashed line only over [0.4,1.2]
+        # Overlay fit as solid line only over [0.4,1.2]
         xcurve = np.linspace(0.4, 1.2, 200)
         ycurve = gauss_quad(xcurve, *popt)
         ax.plot(xcurve, ycurve,
-                linestyle='--',
-                linewidth=1,
-                color=color)
+                linestyle='-', linewidth=1.5, color=color)
 
     # Axes labels and limits
     ax.set_xlim(-1, 3)
