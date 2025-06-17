@@ -50,68 +50,77 @@ def gauss_quad(x, A, mu, sigma, a0, a1, a2):
 # -----------------------------------------------------------------------------
 # Histogram settings
 # -----------------------------------------------------------------------------
-bins     = np.linspace(-1, 3, 101)  # 100 bins from -1 to 3
+bins      = np.linspace(-1, 3, 101)                 # 100 bins from -1 to 3
 bin_width = bins[1] - bins[0]
-m_p2      = 0.93827**2             # proton mass squared for initial guess
+m_p2       = 0.93827**2                             # proton mass squared for initial guess
+colors     = plt.rcParams['axes.prop_cycle'].by_key()['color']
 
 # -----------------------------------------------------------------------------
-# Prepare figure
+# Prepare figure with two panels
 # -----------------------------------------------------------------------------
 fig, axes = plt.subplots(1, 2, figsize=(12, 5))
 
 # -----------------------------------------------------------------------------
-# Loop over panels: (axes[0], epiX) and (axes[1], epiPipiX)
+# Loop over panels: (axes[0], versions_epiX) and (axes[1], versions_epiPipiX)
 # -----------------------------------------------------------------------------
 for ax, versions in zip(axes, (versions_epiX, versions_epiPipiX)):
-    for lbl, path in versions:
-        # load data & histogram
-        data   = load_array(path, "Mx2")
+    for idx, (lbl, path) in enumerate(versions):
+        # Load and histogram data
+        data = load_array(path, "Mx2")
         counts, _ = np.histogram(data, bins=bins)
         centers   = 0.5 * (bins[:-1] + bins[1:])
         norm      = 1.0 / (data.size * bin_width)
         density   = counts * norm
         errors    = np.sqrt(counts) * norm
 
-        # mask for fit range [0.4, 1.2]
-        mask = (centers >= 0.4) & (centers <= 1.2)
-        xfit, yfit, errfit = centers[mask], density[mask], errors[mask]
+        # Mask for fit range [0.4, 1.2]
+        mask  = (centers >= 0.4) & (centers <= 1.2)
+        xfit  = centers[mask]
+        yfit  = density[mask]
+        errfit= errors[mask]
 
-        # initial guesses and bounds
-        p0 = [yfit.max(), m_p2, 0.02, 0.0, 0.0, 0.0]
+        # Initial guesses and bounds
+        p0     = [yfit.max(), m_p2, 0.02, 0.0, 0.0, 0.0]
         bounds = ([0.0, 0.0, 0.0, -np.inf, -np.inf, -np.inf],
                   [np.inf, np.inf, np.inf,  np.inf,  np.inf,  np.inf])
 
-        # perform fit
-        popt, _ = curve_fit(gauss_quad, xfit, yfit,
-                            p0=p0, sigma=errfit, bounds=bounds)
+        # Perform the fit
+        popt, _ = curve_fit(gauss_quad, xfit, yfit, p0=p0, sigma=errfit, bounds=bounds)
         mu, sigma = popt[1], popt[2]
 
-        # capture next color
-        color = next(ax._get_lines.prop_cycler)['color']
+        # Select color
+        color = colors[idx % len(colors)]
+        label = rf"{lbl} ($\mu={mu:.3f},\,\sigma={sigma:.3f}$)"
 
-        # plot data with error bars
-        ax.errorbar(centers, density, yerr=errors,
-                    fmt='o', markersize=2, color=color,
-                    label=rf"{lbl} ($\mu={mu:.3f},\,\sigma={sigma:.3f}$)")
+        # Plot histogram as solid step line
+        ax.plot(centers, density,
+                drawstyle='steps-mid',
+                linestyle='-',
+                color=color,
+                label=label)
 
-        # overlay fit curve only over [0.4, 1.2]
+        # Overlay fit as thin dashed line only over [0.4,1.2]
         xcurve = np.linspace(0.4, 1.2, 200)
         ycurve = gauss_quad(xcurve, *popt)
-        ax.plot(xcurve, ycurve, '-', color=color)
+        ax.plot(xcurve, ycurve,
+                linestyle='--',
+                linewidth=1,
+                color=color)
 
+    # Axes labels and limits
     ax.set_xlim(-1, 3)
     ax.set_xlabel(r"$M_x^2\ \mathrm{(GeV^2)}$")
 
-# set titles
+# Titles and legends
 axes[0].set_title(r"$e\,\pi^{+}X:\ M_x^2$")
 axes[1].set_title(r"$e\,\pi^{+}\pi^{-}X:\ M_x^2$")
 axes[0].legend()
 axes[1].legend()
 
-# finalize layout and padding
+# Final layout adjustments
 plt.tight_layout()
 plt.subplots_adjust(bottom=0.15)
 
-# Save figure 
+# Save under original filename
 plt.savefig("output/fermi_motion.pdf")
 plt.close()
