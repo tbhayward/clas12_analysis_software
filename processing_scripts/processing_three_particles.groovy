@@ -440,27 +440,27 @@ public static void main(String[] args) {
 		}
 
 		println(
-		  "1: fiducial_status, 2: num_pos, 3: num_neg, 4: num_neutrals, " +
-		  "5: runnum, 6: evnum, 7: helicity, 8: detector1, 9: detector2, " +
-		  "10: e_p, 11: e_theta, 12: e_phi, 13: vz_e, " +
-		  "14: p1_p, 15: p1_theta, 16: p1_phi, 17: vz_p1, " +
-		  "18: p2_p, 19: p2_theta, 20: p2_phi, 21: vz_p2, " +
-		  "22: open_angle_ep, 23: open_angle_ep1, 24: open_angle_ep2, 25: open_angle_p1p2, " +
-		  "26: Q2, 27: W, 28: Mx2, 29: Mx2_1, 30: Mx2_2, " +
-		  "31: x, 32: t, 33: t1, 34: t2, 35: tmin, " +
-		  "36: y, 37: z, 38: z1, 39: z2, 40: Mh, " +
-		  "41: xF, 42: xF1, 43: xF2, 44: pT, 45: pT1, 46: pT2, 47: pTpT, " +
-		  "48: xi, 49: xi1, 50: xi2, 51: eta, 52: eta1, 53: eta2, " +
-		  "54: Delta_eta, 55: eta1_gN, 56: eta2_gN, " +
-		  "57: phi1, 58: phi2, 59: Delta_phi, 60: phih, 61: phiR, 62: theta, " +
-		  "63: DepA, 64: DepB, 65: DepC, 66: DepV, 67: DepW, " +
-		  "68: emilay1, 69: emico1, 70: emqua1, 71: best_PID1, " +
-		  "72: RQ1, 73: ReQ1, 74: el_logl1, 75: pi_logl1, 76: k_logl1, 77: pr_logl1, " +
-		  "78: best_ch1, 79: best_c21, 80: best_RL1, 81: best_ntot1, 82: EB_pid1, " +
-		  "83: emilay2, 84: emico2, 85: emqua2, 86: best_PID2, " +
-		  "87: RQ2, 88: ReQ2, 89: el_logl2, 90: pi_logl2, 91: k_logl2, 92: pr_logl2, " +
-		  "93: best_ch2, 94: best_c22, 95: best_RL2, 96: best_ntot2, 97: EB_pid2"
-		)
+		    "1: fiducial_status, 2: e_pid_status, 3: num_pos, 4: num_neg, 5: num_neutrals, " +
+		    "6: runnum, 7: evnum, 8: helicity, 9: detector1, 10: detector2, " +
+		    "11: e_p, 12: e_theta, 13: e_phi, 14: vz_e, " +
+		    "15: p1_p, 16: p1_theta, 17: p1_phi, 18: vz_p1, " +
+		    "19: p2_p, 20: p2_theta, 21: p2_phi, 22: vz_p2, " +
+		    "23: open_angle_ep, 24: open_angle_ep1, 25: open_angle_ep2, 26: open_angle_p1p2, " +
+		    "27: Q2, 28: W, 29: Mx2, 30: Mx2_1, 31: Mx2_2, " +
+		    "32: x, 33: t, 34: t1, 35: t2, 36: tmin, " +
+		    "37: y, 38: z, 39: z1, 40: z2, 41: Mh, " +
+		    "42: xF, 43: xF1, 44: xF2, 45: pT, 46: pT1, 47: pT2, 48: pTpT, " +
+		    "49: xi, 50: xi1, 51: xi2, 52: eta, 53: eta1, 54: eta2, " +
+		    "55: Delta_eta, 56: eta1_gN, 57: eta2_gN, " +
+		    "58: phi1, 59: phi2, 60: Delta_phi, 61: phih, 62: phiR, 63: theta, " +
+		    "64: DepA, 65: DepB, 66: DepC, 67: DepV, 68: DepW, " +
+		    "69: emilay1, 70: emico1, 71: emqua1, 72: best_PID1, " +
+		    "73: RQ1, 74: ReQ1, 75: el_logl1, 76: pi_logl1, 77: k_logl1, 78: pr_logl1, " +
+		    "79: best_ch1, 80: best_c21, 81: best_RL1, 82: best_ntot1, 83: EB_pid1, " +
+		    "84: emilay2, 85: emico2, 86: emqua2, 87: best_PID2, " +
+		    "88: RQ2, 89: ReQ2, 90: el_logl2, 91: pi_logl2, 92: k_logl2, 93: pr_logl2, " +
+		    "94: best_ch2, 95: best_c22, 96: best_RL2, 97: best_ntot2, 98: EB_pid2"
+		);
 
 		println("output text file is: $file");
 	}
