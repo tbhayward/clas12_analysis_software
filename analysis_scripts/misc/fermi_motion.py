@@ -49,11 +49,13 @@ versions_epiPipiX    = [
 versions_rgb_epiX    = [
     ("RGB Sp19",                   rgb_epiX_atRest),
     ("RGB Sp19 sim. Fermi Motion", rgb_epiX_fermi),
+    ("RGC Su22",                   rgc_epiX_atRest),
 ]
 
 versions_rgb_epiPipiX = [
     ("RGB Sp19",                   rgb_epiPipi_atRest),
     ("RGB Sp19 sim. Fermi Motion", rgb_epiPipi_fermi),
+    ("RGC Su22",                   rgc_epiPipi_atRest),
 ]
 
 # -----------------------------------------------------------------------------
