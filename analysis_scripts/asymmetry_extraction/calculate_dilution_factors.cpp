@@ -30,20 +30,20 @@
 #include "fitting_process.h"
 
 
-// // // Fractional charge values for Total -- RGC Su22
-// const double xAtotal = 0.72104;
-// const double xCtotal = 0.07181;
-// const double xCHtotal = 0.03746;
-// const double xHetotal = 0.07688;
-// const double xftotal = 0.09280;
+// // Fractional charge values for Total -- RGC Su22
+const double xAtotal = 0.72104;
+const double xCtotal = 0.07181;
+const double xCHtotal = 0.03746;
+const double xHetotal = 0.07688;
+const double xftotal = 0.09280;
 
 
-// Fractional charge values for Total -- RGC Fa22
-const double xAtotal = 0.562214;
-const double xCtotal = 0.204770;
-const double xCHtotal = 0.187124;
-const double xHetotal = 0.040041;
-const double xftotal = 0.00585;
+// // Fractional charge values for Total -- RGC Fa22
+// const double xAtotal = 0.562214;
+// const double xCtotal = 0.204770;
+// const double xCHtotal = 0.187124;
+// const double xHetotal = 0.040041;
+// const double xftotal = 0.00585;
 
 
 // // Fractional charge values for Total -- RGC Sp23
