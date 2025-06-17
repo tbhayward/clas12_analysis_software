@@ -29,15 +29,15 @@ def load_array(path, branch):
 # Version lists for each channel
 # -----------------------------------------------------------------------------
 versions_epiX = [
-    ("RGA Fa18 at rest",           rga_epiX_atRest),
+    ("RGA Fa18",           rga_epiX_atRest),
     ("RGA Fa18 sim. Fermi Motion", rga_epiX_fermi),
-    ("RGC Su22 at rest",           rgc_epiX_atRest),
+    ("RGC Su22",           rgc_epiX_atRest),
 ]
 
 versions_epiPipiX = [
-    ("RGA Fa18 at rest",           rga_epiPipi_atRest),
+    ("RGA Fa18",           rga_epiPipi_atRest),
     ("RGA Fa18 sim. Fermi Motion", rga_epiPipi_fermi),
-    ("RGC Su22 at rest",           rgc_epiPipi_atRest),
+    ("RGC Su22",           rgc_epiPipi_atRest),
 ]
 
 # -----------------------------------------------------------------------------
