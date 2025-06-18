@@ -760,7 +760,6 @@ public class momentum_corrections {
         double pSmear = 1.0 - dilutionFactor(mx2);
         if (rand.nextDouble() < pSmear) {
             // leave at rest
-            System.out.println("leaving at rest");
             return new Vector3(0.0, 0.0, 0.0);
         }
         // now sample k from CDF
