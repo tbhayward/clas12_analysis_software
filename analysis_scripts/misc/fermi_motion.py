@@ -108,7 +108,7 @@ for ax, versions, title in panel_configs:
         yfit   = density[mask]
         errfit = errors[mask]
 
-        # Initial guesses and bounds
+        # Initial guesses and bounds for Gaussian+quad
         p0     = [yfit.max(), m_p2, 0.02, 0.0, 0.0, 0.0]
         bounds = ([0.0, 0.0, 0.0, -np.inf, -np.inf, -np.inf],
                   [np.inf, np.inf, np.inf,  np.inf,  np.inf,  np.inf])
@@ -132,7 +132,7 @@ for ax, versions, title in panel_configs:
                 linestyle='-', linewidth=1.5, color=color)
 
     ax.set_xlim(-1, 3)
-    ax.set_xlabel(r"$M_x^2\ \mathrm{(Gev^2)}$")
+    ax.set_xlabel(r"$M_x^2\ \mathrm{(GeV^2)}$")
     ax.set_title(title)
     ax.legend()
 
@@ -168,32 +168,34 @@ dil_err     = np.array([
 
 plt.figure()
 plt.errorbar(mx2_centers, dilution, yerr=dil_err,
-             fmt='o', markersize=5, color='k')
-plt.xlabel(r"$M_{x}^{2}\ \mathrm{(GeV^2)}$")
-plt.ylabel(r"$D_{f}$")
-plt.tight_layout()
-plt.savefig("output/dilution_factor.pdf")
-
-# -----------------------------------------------------------------------------
-# 9th-order polynomial fit to dilution factor
-# -----------------------------------------------------------------------------
-coeffs = np.polyfit(mx2_centers, dilution, 9)
-poly9  = np.poly1d(coeffs)
-
-# print the fit function in the terminal
-print("9th-order polynomial fit for dilution factor D_f(Mx2):")
-print(poly9)
-
-# overlay the fit on the dilution‐factor plot
-x_fit = np.linspace(mx2_centers.min(), mx2_centers.max(), 300)
-y_fit = poly9(x_fit)
-plt.figure()
-plt.errorbar(mx2_centers, dilution, yerr=dil_err,
              fmt='o', markersize=5, color='k', label='data')
-plt.plot(x_fit, y_fit, '-', linewidth=1.5, label='9th-order poly fit')
 plt.xlabel(r"$M_{x}^{2}\ \mathrm{(GeV^2)}$")
 plt.ylabel(r"$D_{f}$")
+
+# -----------------------------------------------------------------------------
+# 4th-order polynomial + Gaussian fit to dilution factor
+# -----------------------------------------------------------------------------
+def poly4_gauss(x, a0, a1, a2, a3, a4, A, mu, sigma):
+    return (a0 + a1*x + a2*x**2 + a3*x**3 + a4*x**4
+            + A * np.exp(- (x - mu)**2 / (2 * sigma**2)))
+
+# initial guess from 4th-order polyfit
+poly4_coeffs = np.polyfit(mx2_centers, dilution, 4)
+p0 = list(poly4_coeffs[::-1]) + [0.1, 0.9, 0.1]  # [a0..a4, A, mu, sigma]
+bounds = (
+    [-np.inf, -np.inf, -np.inf, -np.inf, -np.inf,  0.0, 0.7, 0.0],
+    [ np.inf,  np.inf,  np.inf,  np.inf,  np.inf,  np.inf, 1.0, np.inf]
+)
+
+popt, _ = curve_fit(poly4_gauss, mx2_centers, dilution,
+                    sigma=dil_err, p0=p0, bounds=bounds)
+
+# overlay the fit
+x_fit = np.linspace(mx2_centers.min(), mx2_centers.max(), 300)
+y_fit = poly4_gauss(x_fit, *popt)
+plt.plot(x_fit, y_fit, '-', linewidth=1.5, label='4th-order poly + Gauss fit')
 plt.legend()
+
 plt.tight_layout()
 plt.savefig("output/dilution_factor.pdf")
 plt.close()
