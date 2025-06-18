@@ -173,4 +173,15 @@ plt.xlabel(r"$M_{x}^{2}\ \mathrm{(GeV^2)}$")
 plt.ylabel(r"$D_{f}$")
 plt.tight_layout()
 plt.savefig("output/dilution_factor.pdf")
+
+# -----------------------------------------------------------------------------
+# 9th-order polynomial fit to dilution factor
+# -----------------------------------------------------------------------------
+coeffs = np.polyfit(mx2_centers, dilution, 9)
+poly9  = np.poly1d(coeffs)
+
+# print the fit function in the terminal
+print("9th-order polynomial fit for dilution factor D_f(Mx2):")
+print(poly9)
+
 plt.close()
