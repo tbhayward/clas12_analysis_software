@@ -13,6 +13,7 @@ endif
 # Initialize to 0 as default value
 set convert_arg3 = 0
 
+echo $arg1
 echo "HELLO WORLD"
 # Set convert_arg3 based on the value of arg1
 if ($arg1 == "processing_scripts/processing_inclusive.groovy") then
