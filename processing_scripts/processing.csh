@@ -13,6 +13,7 @@ endif
 # Initialize to 0 as default value
 set convert_arg3 = 0
 
+echo "HELLO WORLD"
 # Set convert_arg3 based on the value of arg1
 if ($arg1 == "processing_scripts/processing_inclusive.groovy") then
     set convert_arg3 = 0
@@ -33,7 +34,6 @@ else if ($arg1 == "processing_scripts/processing_dvcs.groovy") then
 else if ($arg1 == "processing_scripts/processing_mc_dvcs.groovy") then
     set convert_arg3 = 4 # dvcs
 else if ($arg1 == "processing_scripts/processing_exclusive_pi0.groovy") then
-    echo "HELLO WORLD"
     set convert_arg3 = 5 # eppi0
 else if ($arg1 == "processing_scripts/processing_calibration.groovy") then
     set convert_arg3 = 6 # calibration
