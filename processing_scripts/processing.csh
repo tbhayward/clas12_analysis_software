@@ -59,7 +59,7 @@ else
     set arg2 = "$2"
 endif
 
-echo "Pulling the latest changes from the repository..."
+echo "Pulling the latest changes from the repository...!"
 git pull
 echo "Sourcing qadb..."
 module load qadb/2.0.0
