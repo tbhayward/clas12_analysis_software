@@ -39,6 +39,8 @@ else if ($arg1 == "processing_scripts/processing_exclusive_pi0.groovy") then
 else if ($arg1 == "processing_scripts/processing_calibration.groovy") then
     set convert_arg3 = 6 # calibration
 endif
+echo convert_arg3
+echo "HELLO WORLD"
 
 # determine if Monte Carlo
 set is_mc = 0;
