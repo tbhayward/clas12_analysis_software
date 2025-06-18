@@ -38,6 +38,8 @@ public static void main(String[] args) {
 	(args[0] as File).eachFileRecurse(FileType.FILES) 
 		{ if (it.name.endsWith('.hipo')) hipo_list << it }
 
+		println("HELLO WORLD");
+
 	// Set the output file name based on the provided 2nd argument or use the default name
 	String output_file = args.length < 2 ? "hadron_dummy_out.txt" : args[1];
 	if (args.length < 2) 
@@ -92,8 +94,6 @@ public static void main(String[] args) {
 	// load my kinematic fitter/PID
 	// Initialize the fitter
 	GenericKinematicFitter fitter;
-
-	println("HELLO WORLD");
 
 	// Uncomment the desired fitter
 	fitter = new analysis_fitter(10.6041); 
