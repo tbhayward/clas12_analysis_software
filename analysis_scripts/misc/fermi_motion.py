@@ -107,9 +107,9 @@ for ax, versions, title in panel_configs:
         errfit = errors[mask]
 
         # Initial guesses and bounds for Gaussian+quad
-        p0     = [yfit.max(), m_p2, 0.02, 0.0, 0.0, 0.0]
+        p0     = [yfit.max(), m_p2, 0.02, 0.0, 0.0]
         bounds = ([0.0, 0.0, 0.0, -np.inf, -np.inf, -np.inf],
-                  [np.inf, np.inf, np.inf,  np.inf,  np.inf,  np.inf])
+                  [np.inf, np.inf, np.inf,  np.inf])
 
         popt, _ = curve_fit(gauss_quad, xfit, yfit,
                             p0=p0, sigma=errfit, bounds=bounds)
