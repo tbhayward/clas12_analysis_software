@@ -2,7 +2,6 @@
 
 source source_file.txt
 
-echo "HELLO WORLD"
 # Set the first argument to be processing two particles if not provided
 if ( $#argv < 1 ) then
     set arg1 = "processing_scripts/processing_two_particles.groovy"
@@ -34,6 +33,7 @@ else if ($arg1 == "processing_scripts/processing_dvcs.groovy") then
 else if ($arg1 == "processing_scripts/processing_mc_dvcs.groovy") then
     set convert_arg3 = 4 # dvcs
 else if ($arg1 == "processing_scripts/processing_exclusive_pi0.groovy") then
+    echo "HELLO WORLD"
     set convert_arg3 = 5 # eppi0
 else if ($arg1 == "processing_scripts/processing_calibration.groovy") then
     set convert_arg3 = 6 # calibration
@@ -59,7 +59,7 @@ else
     set arg2 = "$2"
 endif
 
-echo "Pulling the latest changes from the repository...!"
+echo "Pulling the latest changes from the repository..."
 git pull
 echo "Sourcing qadb..."
 module load qadb/2.0.0
