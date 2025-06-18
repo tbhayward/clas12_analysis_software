@@ -190,6 +190,17 @@ bounds = (
 popt, _ = curve_fit(poly4_gauss, mx2_centers, dilution,
                     sigma=dil_err, p0=p0, bounds=bounds)
 
+# print fit parameters for later use
+print("4th-order poly + Gaussian fit parameters for D_f(Mx2):")
+print(f"a0 = {popt[0]:.6g}")
+print(f"a1 = {popt[1]:.6g}")
+print(f"a2 = {popt[2]:.6g}")
+print(f"a3 = {popt[3]:.6g}")
+print(f"a4 = {popt[4]:.6g}")
+print(f"A  = {popt[5]:.6g}")
+print(f"mu = {popt[6]:.6g}")
+print(f"sigma = {popt[7]:.6g}")
+
 # overlay the fit
 x_fit = np.linspace(mx2_centers.min(), mx2_centers.max(), 300)
 y_fit = poly4_gauss(x_fit, *popt)
