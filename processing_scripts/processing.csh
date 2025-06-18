@@ -13,8 +13,6 @@ endif
 # Initialize to 0 as default value
 set convert_arg3 = 0
 
-echo $arg1
-echo "HELLO WORLD"
 # Set convert_arg3 based on the value of arg1
 if ($arg1 == "processing_scripts/processing_inclusive.groovy") then
     set convert_arg3 = 0
@@ -38,9 +36,10 @@ else if ($arg1 == "processing_scripts/processing_exclusive_pi0.groovy") then
     set convert_arg3 = 5 # eppi0
 else if ($arg1 == "processing_scripts/processing_calibration.groovy") then
     set convert_arg3 = 6 # calibration
+else
+    echo "Error: unrecognized processing script: $arg1"
+    exit 1
 endif
-echo $convert_arg3
-echo "HELLO WORLD"
 
 # determine if Monte Carlo
 set is_mc = 0;
