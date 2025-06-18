@@ -95,11 +95,11 @@ panel_configs = [
 for ax, versions, title in panel_configs:
     for idx, (lbl, path) in enumerate(versions):
         # Load data and histogram
-        data   = load_array(path, "Mx2")
+        data      = load_array(path, "Mx2")
         counts, _ = np.histogram(data, bins=bins)
         centers   = 0.5 * (bins[:-1] + bins[1:])
-        norm = 1.0/(counts.sum() * bin_width)
-        density = counts * norm
+        norm      = 1.0/(counts.sum() * bin_width)
+        density   = counts * norm
         errors    = np.sqrt(counts) * norm
 
         # Fit range [0.4, 1.2]
@@ -132,7 +132,7 @@ for ax, versions, title in panel_configs:
                 linestyle='-', linewidth=1.5, color=color)
 
     ax.set_xlim(-1, 3)
-    ax.set_xlabel(r"$M_x^2\ \mathrm{(GeV^2)}$")
+    ax.set_xlabel(r"$M_x^2\ \mathrm{(Gev^2)}$")
     ax.set_title(title)
     ax.legend()
 
@@ -180,12 +180,6 @@ plt.savefig("output/dilution_factor.pdf")
 coeffs = np.polyfit(mx2_centers, dilution, 9)
 poly9  = np.poly1d(coeffs)
 
-# -----------------------------------------------------------------------------
-# 9th-order polynomial fit to dilution factor
-# -----------------------------------------------------------------------------
-coeffs = np.polyfit(mx2_centers, dilution, 9)
-poly9  = np.poly1d(coeffs)
-
 # print the fit function in the terminal
 print("9th-order polynomial fit for dilution factor D_f(Mx2):")
 print(poly9)
@@ -202,9 +196,4 @@ plt.ylabel(r"$D_{f}$")
 plt.legend()
 plt.tight_layout()
 plt.savefig("output/dilution_factor_with_fit.pdf")
-
-# print the fit function in the terminal
-print("9th-order polynomial fit for dilution factor D_f(Mx2):")
-print(poly9)
-
 plt.close()
