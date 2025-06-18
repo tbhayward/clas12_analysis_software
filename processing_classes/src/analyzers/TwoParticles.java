@@ -57,14 +57,11 @@ public class TwoParticles {
     public static boolean channel_test(TwoParticles variables) {
         if (variables.helicity == 0 && variables.runnum != 11) {
             return false;
-        }
-        else if (variables.Q2() < 1.00) {
+        } else if (variables.Q2() < 1.00) {
             return false;
-        }
-        else if (variables.W() < 2) {
+        } else if (variables.W() < 2) {
             return false;
-        } 
-        else if (variables.y() > 0.80) {
+        } else if (variables.y() > 0.80) {
             return false;
         }
 //        else if (variables.Mx2() < 0) {
@@ -87,7 +84,7 @@ public class TwoParticles {
         }
         return -1;
     }
- 
+
     public TwoParticles(DataEvent event, PhysicsEvent recEvent, int pPID, int pIndex, double Eb) {
         // provide the PDG PID of the two hadrons
 
@@ -158,14 +155,7 @@ public class TwoParticles {
         LorentzVector lv_beam = new LorentzVector();
         lv_beam.setPxPyPzM(0, 0, Math.pow(Eb * Eb - kinematic_variables.particle_mass(11) * kinematic_variables.particle_mass(11), 0.5),
                 kinematic_variables.particle_mass(11));
-        
-        LorentzVector lv_target = new LorentzVector();
-        momentum_corrections momentum_corrections = new momentum_corrections();
-        lv_target.setPxPyPzM(0,0,0,kinematic_variables.particle_mass(2212));
-        // Simulate Fermi motion
-//        org.jlab.clas.physics.Vector3 fermiP = momentum_corrections.sampleFermiMomentum();
-//        lv_target.setPxPyPzM(fermiP.x(),fermiP.y(),fermiP.z(),kinematic_variables.particle_mass(2212));
-//        
+
         // pull from rec banks for outgoing particles
         // electron
         String electron_index = "[11,0]"; // highest p, kinematic fitter should require FD etc
@@ -174,6 +164,30 @@ public class TwoParticles {
         lv_e.setPxPyPzM(scattered_electron.px(), scattered_electron.py(),
                 scattered_electron.pz(), kinematic_variables.particle_mass(11));
         // hadrons set up below (to allow for iteration over more than two hadrons in an event)
+        LorentzVector lv_q = new LorentzVector(lv_beam);
+        lv_q.sub(lv_e);
+
+        // set up hadrons 
+        String pIndex_string = "[" + pPID + "," + pIndex + "]";
+        Particle hadron = recEvent.getParticle(pIndex_string);
+
+        vz_e = scattered_electron.vz();
+        vz_p = hadron.vz();
+
+        LorentzVector lv_p = new LorentzVector();
+        lv_p.setPxPyPzM(hadron.px(), hadron.py(), hadron.pz(), hadron.mass());
+
+        LorentzVector lv_target = new LorentzVector();
+        momentum_corrections momentum_corrections = new momentum_corrections();
+        lv_target.setPxPyPzM(0, 0, 0, kinematic_variables.particle_mass(2212));
+        // missing mass calculations
+        Mx = kinematic_variables.Mx(lv_q, lv_target, lv_p);
+        Mx2 = kinematic_variables.Mx2(lv_q, lv_target, lv_p); // missing mass squared
+        
+        /* TOGGLE ON OR OFF IF FERMI MOTION DESIRED */
+        // Simulate Fermi motion
+        org.jlab.clas.physics.Vector3 fermiP = momentum_corrections.sampleFermiMomentum(Mx2);
+        lv_target.setPxPyPzM(fermiP.x(), fermiP.y(), fermiP.z(), kinematic_variables.particle_mass(2212));
 
         // kinematics of electron
         e_px = lv_e.px();
@@ -188,8 +202,6 @@ public class TwoParticles {
         }
 
         // DIS variables
-        LorentzVector lv_q = new LorentzVector(lv_beam);
-        lv_q.sub(lv_e);
         Q2 = kinematic_variables.Q2(lv_q);
         nu = kinematic_variables.nu(lv_beam, lv_e);
         x = kinematic_variables.x(Q2, nu);
@@ -218,15 +230,6 @@ public class TwoParticles {
         Vector3 BreitBoost = Breit.boostVector();
         BreitBoost.negative();
 
-        // set up hadrons 
-        String pIndex_string = "[" + pPID + "," + pIndex + "]";
-        Particle hadron = recEvent.getParticle(pIndex_string);
-
-        vz_e = scattered_electron.vz();
-        vz_p = hadron.vz();
-
-        LorentzVector lv_p = new LorentzVector();
-        lv_p.setPxPyPzM(hadron.px(), hadron.py(), hadron.pz(), hadron.mass());
         open_angle = kinematic_variables.open_angle(lv_e, lv_p);
         t = kinematic_variables.t(lv_p.p(), lv_p.theta());
         tmin = kinematic_variables.tmin(x);
@@ -244,10 +247,6 @@ public class TwoParticles {
         }
 
         z = kinematic_variables.z(lv_p, lv_q);
-
-        // missing mass calculations
-        Mx = kinematic_variables.Mx(lv_q, lv_target, lv_p);
-        Mx2 = kinematic_variables.Mx2(lv_q, lv_target, lv_p); // missing mass squared
 
         // boost to gamma*-nucleon center of mass frame
         LorentzVector lv_p_gN = new LorentzVector(lv_p);

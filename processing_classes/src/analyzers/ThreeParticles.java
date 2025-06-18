@@ -201,14 +201,7 @@ public class ThreeParticles {
         LorentzVector lv_beam = new LorentzVector();
         lv_beam.setPxPyPzM(0, 0, Math.pow(Eb * Eb - kinematic_variables.particle_mass(11) * kinematic_variables.particle_mass(11), 0.5),
                 kinematic_variables.particle_mass(11));
-        
-        LorentzVector lv_target = new LorentzVector();
-        momentum_corrections momentum_corrections = new momentum_corrections();
-        lv_target.setPxPyPzM(0,0,0,kinematic_variables.particle_mass(2212));
-        // Simulate Fermi motion
-//        org.jlab.clas.physics.Vector3 fermiP = momentum_corrections.sampleFermiMomentum();
-//        lv_target.setPxPyPzM(fermiP.x(),fermiP.y(),fermiP.z(),kinematic_variables.particle_mass(2212));
-//        
+        LorentzVector lv_q = new LorentzVector(lv_beam);
         // pull from rec banks for outgoing particles
         // electron
         String electron_index = "[11,0]"; // highest p, kinematic fitter should require FD etc
@@ -217,6 +210,48 @@ public class ThreeParticles {
         lv_e.setPxPyPzM(scattered_electron.px(), scattered_electron.py(),
                 scattered_electron.pz(), kinematic_variables.particle_mass(11));
         // hadrons set up below (to allow for iteration over more than two hadrons in an event)
+        lv_q.sub(lv_e);
+        
+        // set up hadrons and dihadron
+        String p1Index_string = "[" + p1PID + "," + p1Index + "]";
+        Particle p1 = recEvent.getParticle(p1Index_string);
+        String p2Index_string = "[" + p2PID + "," + p2Index + "]";
+        Particle p2 = recEvent.getParticle(p2Index_string);
+        String combined_index_string = "[" + p1PID + "," + p1Index + "]+[" + p2PID + "," + p2Index + "]";
+        Particle dihadron = recEvent.getParticle(combined_index_string);
+        Mh = dihadron.mass();
+
+        vx_e = scattered_electron.vx();
+        vx_p1 = p1.vx();
+        vx_p2 = p2.vx();
+        vy_e = scattered_electron.vy();
+        vy_p1 = p1.vy();
+        vy_p2 = p2.vy();
+        vz_e = scattered_electron.vz();
+        vz_p1 = p1.vz();
+        vz_p2 = p2.vz();
+
+        LorentzVector lv_p = new LorentzVector();
+        lv_p.setPxPyPzM(dihadron.px(), dihadron.py(), dihadron.pz(), dihadron.mass());
+        LorentzVector lv_p1 = new LorentzVector();
+        lv_p1.setPxPyPzM(p1.px(), p1.py(), p1.pz(), p1.mass());
+        LorentzVector lv_p2 = new LorentzVector();
+        lv_p2.setPxPyPzM(p2.px(), p2.py(), p2.pz(), p2.mass());
+        
+        LorentzVector lv_target = new LorentzVector();
+        momentum_corrections momentum_corrections = new momentum_corrections();
+        lv_target.setPxPyPzM(0,0,0,kinematic_variables.particle_mass(2212));
+        
+        // missing mass calculations
+        Mx2 = kinematic_variables.Mx2(lv_q, lv_target, lv_p1, lv_p2);
+        Mx2_1 = kinematic_variables.Mx2(lv_q, lv_target, lv_p1);
+        Mx2_2 = kinematic_variables.Mx2(lv_q, lv_target, lv_p2);
+        
+        /* TOGGLE ON OR OFF IF FERMI MOTION DESIRED */
+        // Simulate Fermi motion
+        org.jlab.clas.physics.Vector3 fermiP = momentum_corrections.sampleFermiMomentum(Mx2);
+        lv_target.setPxPyPzM(fermiP.x(),fermiP.y(),fermiP.z(),kinematic_variables.particle_mass(2212));
+
 
         // kinematics of electron
         e_px = lv_e.px();
@@ -231,8 +266,6 @@ public class ThreeParticles {
         }
 
         // DIS variables
-        LorentzVector lv_q = new LorentzVector(lv_beam);
-        lv_q.sub(lv_e);
         Q2 = kinematic_variables.Q2(lv_q);
         nu = kinematic_variables.nu(lv_beam, lv_e);
         x = kinematic_variables.x(Q2, nu);
@@ -261,31 +294,6 @@ public class ThreeParticles {
         Vector3 BreitBoost = Breit.boostVector();
         BreitBoost.negative();
 
-        // set up hadrons and dihadron
-        String p1Index_string = "[" + p1PID + "," + p1Index + "]";
-        Particle p1 = recEvent.getParticle(p1Index_string);
-        String p2Index_string = "[" + p2PID + "," + p2Index + "]";
-        Particle p2 = recEvent.getParticle(p2Index_string);
-        String combined_index_string = "[" + p1PID + "," + p1Index + "]+[" + p2PID + "," + p2Index + "]";
-        Particle dihadron = recEvent.getParticle(combined_index_string);
-        Mh = dihadron.mass();
-
-        vx_e = scattered_electron.vx();
-        vx_p1 = p1.vx();
-        vx_p2 = p2.vx();
-        vy_e = scattered_electron.vy();
-        vy_p1 = p1.vy();
-        vy_p2 = p2.vy();
-        vz_e = scattered_electron.vz();
-        vz_p1 = p1.vz();
-        vz_p2 = p2.vz();
-
-        LorentzVector lv_p = new LorentzVector();
-        lv_p.setPxPyPzM(dihadron.px(), dihadron.py(), dihadron.pz(), dihadron.mass());
-        LorentzVector lv_p1 = new LorentzVector();
-        lv_p1.setPxPyPzM(p1.px(), p1.py(), p1.pz(), p1.mass());
-        LorentzVector lv_p2 = new LorentzVector();
-        lv_p2.setPxPyPzM(p2.px(), p2.py(), p2.pz(), p2.mass());
 
         t = kinematic_variables.t(lv_p.p(), lv_p.theta());
         t1 = kinematic_variables.t(lv_p1.p(), lv_p1.theta());
@@ -332,11 +340,6 @@ public class ThreeParticles {
         z = kinematic_variables.z(lv_p, lv_q);
         z1 = kinematic_variables.z(lv_p1, lv_q);
         z2 = kinematic_variables.z(lv_p2, lv_q);
-
-        // missing mass calculations
-        Mx2 = kinematic_variables.Mx2(lv_q, lv_target, lv_p1, lv_p2);
-        Mx2_1 = kinematic_variables.Mx2(lv_q, lv_target, lv_p1);
-        Mx2_2 = kinematic_variables.Mx2(lv_q, lv_target, lv_p2);
 
         // boost to gamma*-nucleon center of mass frame
         LorentzVector lv_p_gN = new LorentzVector(lv_p);
