@@ -760,7 +760,6 @@ public class momentum_corrections {
         double pSmear = 1.0 - dilutionFactor(mx2);
         if (rand.nextDouble() < pSmear) {
             // leave at rest
-            System.out.println("leave at rest");
             return new Vector3(0.0, 0.0, 0.0);
         }
         // now sample k from CDF
@@ -782,7 +781,6 @@ public class momentum_corrections {
         double px = pMag * sinT * Math.cos(phi);
         double py = pMag * sinT * Math.sin(phi);
         double pz = pMag * cosT;
-        System.out.println("Fermi smearing");
         return new Vector3(px, py, pz);
     }
 
