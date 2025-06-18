@@ -721,6 +721,7 @@ public class momentum_corrections {
      * Dilution factor D_f(Mx2) = a0 + a1 x + ... + a4 x⁴ + GA·exp[-(x–GM)²/(2·GS²)]
      */
     private static double dilutionFactor(double mx2) {
+        if (mx2 > 3) { return 0.2; }
         double poly = a0 + a1 * mx2 + a2 * mx2 * mx2 + a3 * mx2 * mx2 * mx2 + a4 * Math.pow(mx2, 4);
         double gauss = GA * Math.exp(-(mx2 - GM) * (mx2 - GM) / (2 * GS * GS));
         return poly + gauss;
