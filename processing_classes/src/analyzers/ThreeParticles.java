@@ -249,7 +249,7 @@ public class ThreeParticles {
         
         /* TOGGLE ON OR OFF IF FERMI MOTION DESIRED */
         // Simulate Fermi motion
-        org.jlab.clas.physics.Vector3 fermiP = momentum_corrections.sampleFermiMomentum(Mx2);
+        org.jlab.clas.physics.Vector3 fermiP = momentum_corrections.sampleFermiMomentum();
         lv_target.setPxPyPzM(fermiP.x(),fermiP.y(),fermiP.z(),kinematic_variables.particle_mass(2212));
 
 
