@@ -93,6 +93,8 @@ public static void main(String[] args) {
 	// Initialize the fitter
 	GenericKinematicFitter fitter;
 
+	println("HELLO WORLD");
+
 	// Uncomment the desired fitter
 	fitter = new analysis_fitter(10.6041); 
 	// fitter = new monte_carlo_fitter(10.6041);
