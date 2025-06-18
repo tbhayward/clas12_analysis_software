@@ -67,8 +67,8 @@ versions_rgb_epiPipiX = [
 # -----------------------------------------------------------------------------
 # Fit function: Gaussian + quadratic background
 # -----------------------------------------------------------------------------
-def gauss_quad(x, A, mu, sigma, a0, a1, a2):
-    return A * np.exp(- (x - mu)**2 / (2 * sigma**2)) + a0 + a1*x + a2*x**2
+def gauss_quad(x, A, mu, sigma, a0, a1):
+    return A * np.exp(- (x - mu)**2 / (2 * sigma**2)) + a0 + a1*x 
 
 # -----------------------------------------------------------------------------
 # Histogram settings
@@ -101,7 +101,7 @@ for ax, versions, title in panel_configs:
         errors    = np.sqrt(counts) * norm
 
         # Fit range [0.4, 1.2]
-        mask   = (centers >= 0.4) & (centers <= 1.2)
+        mask   = (centers >= 0.5) & (centers <= 1.15)
         xfit   = centers[mask]
         yfit   = density[mask]
         errfit = errors[mask]
@@ -124,7 +124,7 @@ for ax, versions, title in panel_configs:
                     label=label)
 
         # Overlay fit as solid line only over [0.4,1.2]
-        xcurve = np.linspace(0.4, 1.2, 200)
+        xcurve = np.linspace(0.5, 1.15, 200)
         ycurve = gauss_quad(xcurve, *popt)
         ax.plot(xcurve, ycurve,
                 linestyle='-', linewidth=1.5, color=color)
