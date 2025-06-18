@@ -703,7 +703,7 @@ public class momentum_corrections {
     private static boolean fermiInit = false;
     private static double fermiScale = 1.0;
 
-//––– fit parameters for D_f(Mx2)=poly₄+Gauss from your python result
+//––– fit parameters for D_f(Mx2)=poly₄+Gauss from python result
     private static final double a0 = -0.0236548;
     private static final double a1 = 0.355323;
     private static final double a2 = -0.210453;
@@ -760,6 +760,7 @@ public class momentum_corrections {
         double pSmear = 1.0 - dilutionFactor(mx2);
         if (rand.nextDouble() > pSmear) {
             // leave at rest
+            System.out.println("leave at rest");
             return new Vector3(0.0, 0.0, 0.0);
         }
         // now sample k from CDF
@@ -781,6 +782,7 @@ public class momentum_corrections {
         double px = pMag * sinT * Math.cos(phi);
         double py = pMag * sinT * Math.sin(phi);
         double pz = pMag * cosT;
+        System.out.println("Fermi smearing");
         return new Vector3(px, py, pz);
     }
 
