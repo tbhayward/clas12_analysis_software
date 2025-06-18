@@ -71,7 +71,7 @@ def gauss_quad(x, A, mu, sigma, a0, a1, a2):
 # -----------------------------------------------------------------------------
 # Histogram settings
 # -----------------------------------------------------------------------------
-bins      = np.linspace(-1, 3, 101)                 # 100 bins from -1 to 3
+bins      = np.linspace(-1, 12, 101)                 # 100 bins from -1 to 3
 bin_width = bins[1] - bins[0]
 m_p2      = 0.93827**2                              # proton mass squared for initial guess
 colors    = plt.rcParams['axes.prop_cycle'].by_key()['color']
@@ -127,7 +127,7 @@ for ax, versions, title in panel_configs:
         ax.plot(xcurve, ycurve,
                 linestyle='-', linewidth=1.5, color=color)
 
-    ax.set_xlim(-1, 3)
+    ax.set_xlim(-1, 12)
     ax.set_xlabel(r"$M_x^2\ \mathrm{(GeV^2)}$")
     ax.set_title(title)
     ax.legend()
