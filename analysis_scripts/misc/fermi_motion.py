@@ -142,3 +142,35 @@ plt.subplots_adjust(bottom=0.15, hspace=0.3)
 # Save under original filename
 plt.savefig("output/fermi_motion.pdf")
 plt.close()
+
+# -----------------------------------------------------------------------------
+# Plot dilution factor vs Mx2
+# -----------------------------------------------------------------------------
+# bin edges for Mx2
+mx2_edges   = np.array([0.2, 0.4, 0.6, 0.7, 0.8, 0.9,
+                        1.0, 1.1, 1.2, 1.3, 1.4, 1.5,
+                        1.6, 1.7, 1.8, 1.9, 2.0, 2.5, 3.0])
+mx2_centers = 0.5 * (mx2_edges[:-1] + mx2_edges[1:])
+dilution    = np.array([
+    0.0875895, 0.0858209, 0.112782, 0.180683,
+    0.322474, 0.303501, 0.197981, 0.185084,
+    0.181473, 0.173468, 0.203505, 0.188717,
+    0.174217, 0.177695, 0.184985, 0.171676,
+    0.190922, 0.208126
+])
+dil_err     = np.array([
+    0.0131908, 0.0117119, 0.0138437, 0.0107054,
+    0.00696578,0.00666437,0.00804998,0.00804589,
+    0.00781989,0.00762175,0.00689467,0.00679758,
+    0.00676546,0.00652095,0.00622921,0.0061906,
+    0.00240898,0.00198573
+])
+
+plt.figure()
+plt.errorbar(mx2_centers, dilution, yerr=dil_err,
+             fmt='o', markersize=5, color='k')
+plt.xlabel(r"$M_{x}^{2}\ \mathrm{(GeV^2)}$")
+plt.ylabel(r"$D_{f}$")
+plt.tight_layout()
+plt.savefig("output/dilution_factor.pdf")
+plt.close()
