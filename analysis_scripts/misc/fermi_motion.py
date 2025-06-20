@@ -23,7 +23,7 @@ rgb_epiX_atRest    = "/volatile/clas12/thayward/fermi_motion/rgb_sp19_inb_epi+_a
 rgb_epiX_fermi     = "/volatile/clas12/thayward/fermi_motion/rgb_sp19_inb_epi+_dilutionFactor.root"
 
 rgb_epiPipi_atRest = "/volatile/clas12/thayward/fermi_motion/rgb_sp19_inb_epi+pi-_atRest.root"
-rgb_epiPipi_fermi  = "/volatile/clas12/thayward/fermi_motion/rgb_sp19_inb_epi+pi-_fermiMotion.root"
+rgb_epiPipi_fermi  = "/volatile/clas12/thayward/fermi_motion/rgb_sp19_inb_epi+pi-_dilutionFactor.root"
 
 # Ensure output directory exists
 os.makedirs("output", exist_ok=True)
@@ -67,9 +67,9 @@ def gauss_quad(x, A, mu, sigma, a0, a1, a2):
     return A * np.exp(- (x - mu)**2 / (2 * sigma**2)) + a0 + a1*x + a2*x**2
 
 # -----------------------------------------------------------------------------
-# Histogram settings (now from -2 to 4)
+# Histogram settings
 # -----------------------------------------------------------------------------
-bins      = np.linspace(-2, 4, 101)   # 100 bins from -2 to 4
+bins      = np.linspace(-2, 4, 101)   # 100 bins from -1 to 3
 bin_width = bins[1] - bins[0]
 m_p2      = 0.93827**2                # proton mass squared for initial guess
 colors    = plt.rcParams['axes.prop_cycle'].by_key()['color']
@@ -81,10 +81,10 @@ fig, axes = plt.subplots(2, 2, figsize=(12, 10))
 
 # panel_configs entries: (axis, versions, title, low, high)
 panel_configs = [
-    (axes[0,0], versions_epiX,         r"$e\,\pi^{+}X:\ M_x^2$",        0.653, 1.145),
-    (axes[0,1], versions_epiPipiX,     r"$e\,\pi^{+}\pi^{-}X:\ M_x^2$",  0.685, 1.141),
-    (axes[1,0], versions_rgb_epiX,     r"$e\,\pi^{+}X\ (\mathrm{RGB}):\ M_x^2$",        0.653, 1.145),
-    (axes[1,1], versions_rgb_epiPipiX, r"$e\,\pi^{+}\pi^{-}X\ (\mathrm{RGB}):\ M_x^2$",  0.685, 1.141),
+    (axes[0,0], versions_epiX,        r"$e\,\pi^{+}X:\ M_x^2$",        0.653, 1.145),
+    (axes[0,1], versions_epiPipiX,    r"$e\,\pi^{+}\pi^{-}X:\ M_x^2$",  0.685, 1.141),
+    (axes[1,0], versions_rgb_epiX,    r"$e\,\pi^{+}X\ (\mathrm{RGB}):\ M_x^2$",        0.653, 1.145),
+    (axes[1,1], versions_rgb_epiPipiX,r"$e\,\pi^{+}\pi^{-}X\ (\mathrm{RGB}):\ M_x^2$",  0.685, 1.141),
 ]
 
 for ax, versions, title, low, high in panel_configs:
@@ -115,10 +115,10 @@ for ax, versions, title, low, high in panel_configs:
 
         popt, _ = curve_fit(gauss_quad, xfit, yfit,
                             p0=p0, sigma=errfit, bounds=bounds)
-        mu, sigma_val = popt[1], popt[2]
+        mu, sigma = popt[1], popt[2]
 
         color = colors[idx % len(colors)]
-        label = rf"{lbl} ($\mu={mu:.3f},\,\sigma={sigma_val:.3f}$)"
+        label = rf"{lbl} ($\mu={mu:.3f},\,\sigma={sigma:.3f}$)"
 
         # Plot data points with error bars
         ax.errorbar(centers, density, yerr=errors,
@@ -134,9 +134,12 @@ for ax, versions, title, low, high in panel_configs:
         # For the simulated-Fermi case, find events that moved into [low,high]
         if idx == 1:
             in_peak_f  = (mx2_f >= low) & (mx2_f <= high)
-            ev_in_f    = set(ev_f[in_peak_f])
-            mask_at_out = np.isin(ev_at, list(ev_in_f)) & ((mx2_at < low) | (mx2_at > high))
+            ev_in_f    = ev_f[in_peak_f]
+            # those evnos in fermi-peak that were outside at rest
+            mask_at_out = np.isin(ev_at, ev_in_f) & ((mx2_at < low) | (mx2_at > high))
+            ev_moved    = ev_at[mask_at_out]
             mx2_start   = mx2_at[mask_at_out]
+
             if mx2_start.size > 0:
                 counts_s, _ = np.histogram(mx2_start, bins=bins)
                 density_s   = counts_s * norm
@@ -152,6 +155,8 @@ for ax, versions, title, low, high in panel_configs:
 
 plt.tight_layout()
 plt.subplots_adjust(bottom=0.15, hspace=0.3)
+
+# Save under original filename
 plt.savefig("output/fermi_motion.pdf")
 plt.close()
 
@@ -217,40 +222,68 @@ x_fit = np.linspace(mx2_centers.min(), mx2_centers.max(), 300)
 y_fit = poly4_gauss(x_fit, *popt)
 plt.plot(x_fit, y_fit, '-', linewidth=1.5, label='4th-order poly + Gauss fit')
 plt.legend()
+
 plt.tight_layout()
 plt.savefig("output/dilution_factor.pdf")
 plt.close()
 
+
+
 # -----------------------------------------------------------------------------
-# Compute and plot shifted-percentages canvas
+# Compute and plot, per Mx2 bin, the fraction of events that were
+# outside the peak at rest but end up inside the peak after Fermi smearing
+# with a uniform y-axis limit = 1.2×global max
 # -----------------------------------------------------------------------------
 fig, axes = plt.subplots(2, 2, figsize=(12, 10))
 
-# reuse panel_configs and centers from above
+panel_configs = [
+    (axes[0,0], versions_epiX,         r"$e\,\pi^{+}X:\ M_x^2$",        0.653, 1.145),
+    (axes[0,1], versions_epiPipiX,     r"$e\,\pi^{+}\pi^{-}X:\ M_x^2$",  0.685, 1.141),
+    (axes[1,0], versions_rgb_epiX,     r"$e\,\pi^{+}X\ (\mathrm{RGB}):\ M_x^2$",        0.653, 1.145),
+    (axes[1,1], versions_rgb_epiPipiX, r"$e\,\pi^{+}\pi^{-}X\ (\mathrm{RGB}):\ M_x^2$",  0.685, 1.141),
+]
+
+# bin centers for plotting
+centers = 0.5 * (bins[:-1] + bins[1:])
+
+# first pass: compute all fractions and track the global maximum
 fracs_list = []
 global_max = 0.0
 
 for ax, versions, title, low, high in panel_configs:
-    mx2_at = load_array(versions[0][1], "Mx2")
-    ev_at  = load_array(versions[0][1], "evnum")
-    mx2_f  = load_array(versions[1][1], "Mx2")
-    ev_f   = load_array(versions[1][1], "evnum")
+    # at-rest values
+    at_path = versions[0][1]
+    mx2_at  = load_array(at_path, "Mx2")
+    ev_at   = load_array(at_path, "evnum")
+    # smeared values
+    f_path = versions[1][1]
+    mx2_f  = load_array(f_path, "Mx2")
+    ev_f   = load_array(f_path, "evnum")
 
+    # identify events that end up inside the peak after smearing
     in_peak_f = (mx2_f >= low) & (mx2_f <= high)
     ev_in_f   = set(ev_f[in_peak_f])
 
+    # find which of those started outside the peak
     mask_out_at = [((m < low or m > high) and (e in ev_in_f))
                    for m, e in zip(mx2_at, ev_at)]
     mx2_start = mx2_at[mask_out_at]
 
+    # histogram of their starting bins
     counts_shift, _ = np.histogram(mx2_start, bins=bins)
+
+    # total moved into peak
     N_peak = len(ev_in_f)
     frac   = counts_shift / N_peak if N_peak > 0 else np.zeros_like(counts_shift)
-    fracs_list.append(frac)
-    global_max = max(global_max, frac.max())
 
+    fracs_list.append(frac)
+    if frac.max() > global_max:
+        global_max = frac.max()
+
+# set uniform y-limit
 y_lim = global_max * 1.2
 
+# second pass: actually draw them
 for (ax, versions, title, low, high), frac in zip(panel_configs, fracs_list):
     ax.plot(centers, frac, '-o', markersize=4, color='gray')
     ax.set_xlim(-2, 4)
