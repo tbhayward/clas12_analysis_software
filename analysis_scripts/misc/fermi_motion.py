@@ -226,3 +226,62 @@ plt.legend()
 plt.tight_layout()
 plt.savefig("output/dilution_factor.pdf")
 plt.close()
+
+
+
+# -----------------------------------------------------------------------------
+# Compute and plot, per Mx2 bin, the fraction of events that were
+# outside the peak at rest but end up inside the peak after Fermi smearing
+# -----------------------------------------------------------------------------
+fig, axes = plt.subplots(2, 2, figsize=(12, 10))
+
+# same panel_configs as above, each with (ax, versions, title, low, high)
+panel_configs = [
+    (axes[0,0], versions_epiX,         r"$e\,\pi^{+}X:\ M_x^2$",        0.653, 1.145),
+    (axes[0,1], versions_epiPipiX,     r"$e\,\pi^{+}\pi^{-}X:\ M_x^2$",  0.685, 1.141),
+    (axes[1,0], versions_rgb_epiX,     r"$e\,\pi^{+}X\ (\mathrm{RGB}):\ M_x^2$",        0.653, 1.145),
+    (axes[1,1], versions_rgb_epiPipiX, r"$e\,\pi^{+}\pi^{-}X\ (\mathrm{RGB}):\ M_x^2$",  0.685, 1.141),
+]
+
+# bin centers for plotting
+centers = 0.5 * (bins[:-1] + bins[1:])
+
+for ax, versions, title, low, high in panel_configs:
+    # load at-rest Mx2 and evnum once
+    at_path   = versions[0][1]
+    mx2_at    = load_array(at_path, "Mx2")
+    ev_at     = load_array(at_path, "evnum")
+
+    # simulated-Fermi is always the 2nd entry in versions
+    _, f_path = versions[1]
+    mx2_f     = load_array(f_path, "Mx2")
+    ev_f      = load_array(f_path, "evnum")
+
+    # identify events that end up inside the peak after smearing
+    in_peak_f = (mx2_f >= low) & (mx2_f <= high)
+    ev_in_f   = set(ev_f[in_peak_f])
+
+    # find which of those started outside the peak
+    mask_out_at = [( (m<low or m>high) and e in ev_in_f )
+                   for m,e in zip(mx2_at, ev_at)]
+    mx2_start    = mx2_at[mask_out_at]
+
+    # histogram of their starting bins
+    counts_shift, _ = np.histogram(mx2_start, bins=bins)
+
+    # total number of events that moved into the peak
+    N_peak = len(ev_in_f)
+    # avoid division by zero
+    frac = counts_shift / N_peak if N_peak>0 else np.zeros_like(counts_shift)
+
+    # plot fraction vs Mx2 bin
+    ax.plot(centers, frac, '-o', markersize=4, color='gray')
+    ax.set_xlim(-1, 3)
+    ax.set_ylim(0, frac.max()*1.1)
+    ax.set_xlabel(r"$M_x^2\ \mathrm{(GeV^2)}$")
+    ax.set_ylabel("shifted fraction")
+    ax.set_title(title)
+
+plt.tight_layout()
+plt.savefig("output/shifted_percentages.pdf")
+plt.close()
