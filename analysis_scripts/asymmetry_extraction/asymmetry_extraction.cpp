@@ -123,7 +123,7 @@ int main(int argc, char *argv[]) {
           kinematicCuts = new SingleHadronKinematicCuts(dataReader);
           mckinematicCuts = new SingleHadronKinematicCuts(mcReader);
           break;
-      case 2:
+      case 2: 
           kinematicCuts = new B2BDihadronKinematicCuts(dataReader);
           mckinematicCuts = new B2BDihadronKinematicCuts(mcReader);
           break;

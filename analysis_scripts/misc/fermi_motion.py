@@ -18,7 +18,7 @@ rga_epiX_atRest    = "/volatile/clas12/thayward/fermi_motion/rga_fa18_inb_epi+_a
 rga_epiX_fermi     = "/volatile/clas12/thayward/fermi_motion/rga_fa18_inb_epi+_dilutionFactor.root"
 
 rga_epiPipi_atRest = "/volatile/clas12/thayward/fermi_motion/rga_fa18_inb_epi+pi-_atRest.root"
-# rga_epiPipi_fermi  = "/volatile/clas12/thayward/fermi_motion/rgb_sp19_inb_epi+pi-_fermiMotion.root"
+# rga_epiPipi_fermi  = "/volatile/clas12/thayward/fermi_motion/rga_fa18_inb_epi+_pi-_fermiMotion.root"
 rga_epiPipi_fermi  = "/volatile/clas12/thayward/fermi_motion/rga_fa18_inb_epi+pi-_dilutionFactor.root"
 
 rgb_epiX_atRest    = "/volatile/clas12/thayward/fermi_motion/rgb_sp19_inb_epi+_atRest.root"
@@ -84,13 +84,13 @@ colors    = plt.rcParams['axes.prop_cycle'].by_key()['color']
 fig, axes = plt.subplots(2, 2, figsize=(12, 10))
 
 panel_configs = [
-    (axes[0,0], versions_epiX,         r"$e\,\pi^{+}X:\ M_x^2$"),
-    (axes[0,1], versions_epiPipiX,     r"$e\,\pi^{+}\pi^{-}X:\ M_x^2$"),
-    (axes[1,0], versions_rgb_epiX,     r"$e\,\pi^{+}X\ (\mathrm{RGB}):\ M_x^2$"),
-    (axes[1,1], versions_rgb_epiPipiX, r"$e\,\pi^{+}\pi^{-}X\ (\mathrm{RGB}):\ M_x^2$"),
+    (axes[0,0], versions_epiX,         r"$e\,\pi^{+}X:\ M_x^2$",        0.653, 1.145),
+    (axes[0,1], versions_epiPipiX,     r"$e\,\pi^{+}\pi^{-}X:\ M_x^2$",  0.685, 1.141),
+    (axes[1,0], versions_rgb_epiX,     r"$e\,\pi^{+}X\ (\mathrm{RGB}):\ M_x^2$",        0.653, 1.145),
+    (axes[1,1], versions_rgb_epiPipiX, r"$e\,\pi^{+}\pi^{-}X\ (\mathrm{RGB}):\ M_x^2$",  0.685, 1.141),
 ]
 
-for ax, versions, title in panel_configs:
+for ax, versions, title, low, high in panel_configs:
     for idx, (lbl, path) in enumerate(versions):
         # Load data and histogram
         data      = load_array(path, "Mx2")
@@ -128,6 +128,38 @@ for ax, versions, title in panel_configs:
         ycurve = gauss_quad(xcurve, *popt)
         ax.plot(xcurve, ycurve,
                 linestyle='-', linewidth=1.5, color=color)
+
+        # If this is the "sim. Fermi Motion" version (idx==1), find and plot
+        # events that moved into the exclusive peak [low, high]
+        if idx == 1:
+            # load at-rest arrays
+            _, at_rest_path = versions[0]
+            mx2_at    = load_array(at_rest_path, "Mx2")
+            ev_at     = load_array(at_rest_path, "evnum")
+            # fermi arrays
+            mx2_f     = data
+            ev_f      = load_array(path, "evnum")
+
+            # which evnumbers are in peak in fermi but were outside at rest?
+            in_peak_f = (mx2_f >= low) & (mx2_f <= high)
+            ev_in_f   = ev_f[in_peak_f]
+            # find their indices in at-rest
+            mask_at   = np.isin(ev_at, ev_in_f)
+            ev_in_at  = ev_at[mask_at]
+            mx2_in_at = mx2_at[mask_at]
+            # select only those that were outside the peak at rest
+            moved_ev  = ev_in_at[(mx2_in_at < low) | (mx2_in_at > high)]
+            # now get their Mx2 in fermi
+            moved_mask = np.isin(ev_f, moved_ev)
+            mx2_moved = mx2_f[moved_mask]
+
+            if mx2_moved.size > 0:
+                counts_m, _ = np.histogram(mx2_moved, bins=bins)
+                density_m   = counts_m * norm
+                # plot as thin dashed gray line
+                ax.plot(centers, density_m,
+                        linestyle='--', linewidth=1.0, color='gray',
+                        label=f"{lbl} migrated")
 
     ax.set_xlim(-1, 3)
     ax.set_xlabel(r"$M_x^2\ \mathrm{(GeV^2)}$")

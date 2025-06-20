@@ -16,7 +16,7 @@ static constexpr double m_pi = 0.13957;   // charged pion
 SingleHadronKinematicCuts::SingleHadronKinematicCuts(TTreeReader& reader)
     : BaseKinematicCuts(reader),
       runnum       (reader, "runnum"),
-      // fiducial_status(reader, "fiducial_status"),
+      fiducial_status(reader, "fiducial_status"),
 
       // Electron‐side branches (added e_p, e_theta)
       e_p          (reader, "e_p"),
@@ -126,7 +126,7 @@ bool SingleHadronKinematicCuts::applyCuts(int currentFits, bool isMC)
     if (*Q2 <  1.0    ) return false;
     if (*W  <  2.0    ) return false;
     if (*y  >  0.75   ) return false;
-    // if (*fiducial_status != 2) return false;
+    if (*fiducial_status != 2) return false;
     // return true;
     // if (*p_p < 1.2    ) return false;
     // if (*xF  < 0.0    ) return false;
@@ -143,11 +143,6 @@ bool SingleHadronKinematicCuts::applyCuts(int currentFits, bool isMC)
     //     *runnum == 16693 || *runnum == 16695 || *runnum == 16721 || *runnum == 16722 || 
     //     *runnum == 16733 || *runnum == 16734 || *runnum == 16736) { return false; }
 
-    if (property == "DVCSt1") {
-        goodEvent = *Mx2 < -0.1;
-        goodEvent = goodEvent && *Mx2 > 0.1;
-        return goodEvent;
-    }
 
     // 2) If the property is “enpi,” impose |t| < 1.0 as well:
     if (property == "enpi") {
