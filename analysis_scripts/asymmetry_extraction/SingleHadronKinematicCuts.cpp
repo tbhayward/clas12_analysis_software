@@ -40,6 +40,7 @@ SingleHadronKinematicCuts::SingleHadronKinematicCuts(TTreeReader& reader)
       phi          (reader, "phi"),
       z            (reader, "z"),
       t            (reader, "t"),
+      t1            (reader, "t1"),
       tmin         (reader, "tmin"),
       target_pol   (reader, "target_pol")
 {}
