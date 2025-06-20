@@ -251,20 +251,17 @@ fracs_list = []
 global_max = 0.0
 
 for ax, versions, title, low, high in panel_configs:
-    # at-rest values
-    at_path = versions[0][1]
-    mx2_at  = load_array(at_path, "Mx2")
-    ev_at   = load_array(at_path, "evnum")
-    # smeared values
-    f_path = versions[1][1]
-    mx2_f  = load_array(f_path, "Mx2")
-    ev_f   = load_array(f_path, "evnum")
+    # load at-rest and smeared data
+    mx2_at = load_array(versions[0][1], "Mx2")
+    ev_at  = load_array(versions[0][1], "evnum")
+    mx2_f  = load_array(versions[1][1], "Mx2")
+    ev_f   = load_array(versions[1][1], "evnum")
 
-    # identify events that end up inside the peak after smearing
+    # events in the peak after smearing
     in_peak_f = (mx2_f >= low) & (mx2_f <= high)
     ev_in_f   = set(ev_f[in_peak_f])
 
-    # find which of those started outside the peak
+    # events that moved in: started outside but ended inside
     mask_out_at = [((m < low or m > high) and (e in ev_in_f))
                    for m, e in zip(mx2_at, ev_at)]
     mx2_start = mx2_at[mask_out_at]
@@ -272,25 +269,29 @@ for ax, versions, title, low, high in panel_configs:
     # histogram of their starting bins
     counts_shift, _ = np.histogram(mx2_start, bins=bins)
 
-    # total moved into peak
+    # compute fraction per bin and total percentage
     N_peak = len(ev_in_f)
     frac   = counts_shift / N_peak if N_peak > 0 else np.zeros_like(counts_shift)
+    pct_total = (len(mx2_start) / N_peak * 100) if N_peak > 0 else 0.0
 
     fracs_list.append(frac)
+    totals_pct.append(pct_total)
     if frac.max() > global_max:
         global_max = frac.max()
 
 # set uniform y-limit
 y_lim = global_max * 1.2
 
-# second pass: actually draw them
-for (ax, versions, title, low, high), frac in zip(panel_configs, fracs_list):
-    ax.plot(centers, frac, '-o', markersize=4, color='gray')
+# second pass: draw and add legend with total percentage
+for (ax, versions, title, low, high), frac, pct in zip(panel_configs, fracs_list, totals_pct):
+    ax.plot(centers, frac, '-o', markersize=4, color='gray',
+            label=f"shift fraction ({pct:.1f}%)")
     ax.set_xlim(-2, 4)
     ax.set_ylim(0, y_lim)
     ax.set_xlabel(r"$M_x^2\ \mathrm{(GeV^2)}$")
     ax.set_ylabel("shifted fraction")
     ax.set_title(title)
+    ax.legend()
 
 plt.tight_layout()
 plt.savefig("output/shifted_percentages.pdf")
