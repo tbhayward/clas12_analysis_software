@@ -232,10 +232,10 @@ plt.close()
 # -----------------------------------------------------------------------------
 # Compute and plot, per Mx2 bin, the fraction of events that were
 # outside the peak at rest but end up inside the peak after Fermi smearing
+# with a uniform y-axis limit = 1.2×global max
 # -----------------------------------------------------------------------------
 fig, axes = plt.subplots(2, 2, figsize=(12, 10))
 
-# same panel_configs as above, each with (ax, versions, title, low, high)
 panel_configs = [
     (axes[0,0], versions_epiX,         r"$e\,\pi^{+}X:\ M_x^2$",        0.653, 1.145),
     (axes[0,1], versions_epiPipiX,     r"$e\,\pi^{+}\pi^{-}X:\ M_x^2$",  0.685, 1.141),
@@ -246,38 +246,48 @@ panel_configs = [
 # bin centers for plotting
 centers = 0.5 * (bins[:-1] + bins[1:])
 
-for ax, versions, title, low, high in panel_configs:
-    # load at-rest Mx2 and evnum once
-    at_path   = versions[0][1]
-    mx2_at    = load_array(at_path, "Mx2")
-    ev_at     = load_array(at_path, "evnum")
+# first pass: compute all fractions and track the global maximum
+fracs_list = []
+global_max = 0.0
 
-    # simulated-Fermi is always the 2nd entry in versions
-    _, f_path = versions[1]
-    mx2_f     = load_array(f_path, "Mx2")
-    ev_f      = load_array(f_path, "evnum")
+for ax, versions, title, low, high in panel_configs:
+    # at-rest values
+    at_path = versions[0][1]
+    mx2_at  = load_array(at_path, "Mx2")
+    ev_at   = load_array(at_path, "evnum")
+    # smeared values
+    f_path = versions[1][1]
+    mx2_f  = load_array(f_path, "Mx2")
+    ev_f   = load_array(f_path, "evnum")
 
     # identify events that end up inside the peak after smearing
     in_peak_f = (mx2_f >= low) & (mx2_f <= high)
     ev_in_f   = set(ev_f[in_peak_f])
 
     # find which of those started outside the peak
-    mask_out_at = [( (m<low or m>high) and e in ev_in_f )
-                   for m,e in zip(mx2_at, ev_at)]
-    mx2_start    = mx2_at[mask_out_at]
+    mask_out_at = [((m < low or m > high) and (e in ev_in_f))
+                   for m, e in zip(mx2_at, ev_at)]
+    mx2_start = mx2_at[mask_out_at]
 
     # histogram of their starting bins
     counts_shift, _ = np.histogram(mx2_start, bins=bins)
 
-    # total number of events that moved into the peak
+    # total moved into peak
     N_peak = len(ev_in_f)
-    # avoid division by zero
-    frac = counts_shift / N_peak if N_peak>0 else np.zeros_like(counts_shift)
+    frac   = counts_shift / N_peak if N_peak > 0 else np.zeros_like(counts_shift)
 
-    # plot fraction vs Mx2 bin
+    fracs_list.append(frac)
+    if frac.max() > global_max:
+        global_max = frac.max()
+
+# set uniform y-limit
+y_lim = global_max * 1.2
+
+# second pass: actually draw them
+for (ax, versions, title, low, high), frac in zip(panel_configs, fracs_list):
     ax.plot(centers, frac, '-o', markersize=4, color='gray')
     ax.set_xlim(-1, 3)
-    ax.set_ylim(0, frac.max()*1.1)
+    ax.set_ylim(0, y_lim)
     ax.set_xlabel(r"$M_x^2\ \mathrm{(GeV^2)}$")
     ax.set_ylabel("shifted fraction")
     ax.set_title(title)
