@@ -69,7 +69,7 @@ def gauss_quad(x, A, mu, sigma, a0, a1, a2):
 # -----------------------------------------------------------------------------
 # Histogram settings
 # -----------------------------------------------------------------------------
-bins      = np.linspace(-2, 4, 101)   # 100 bins from -1 to 3
+bins      = np.linspace(-3, 6, 201)   # 100 bins from -1 to 3
 bin_width = bins[1] - bins[0]
 m_p2      = 0.93827**2                # proton mass squared for initial guess
 colors    = plt.rcParams['axes.prop_cycle'].by_key()['color']
@@ -148,7 +148,7 @@ for ax, versions, title, low, high in panel_configs:
                         linestyle='--', linewidth=1.0, color='gray',
                         label=f"{lbl} outside peak → peak")
 
-    ax.set_xlim(-2, 4)
+    ax.set_xlim(-1, 3)
     ax.set_xlabel(r"$M_x^2\ \mathrm{(GeV^2)}$")
     ax.set_title(title)
     ax.legend()
@@ -287,7 +287,7 @@ y_lim = global_max * 1.2
 for (ax, versions, title, low, high), frac, pct in zip(panel_configs, fracs_list, totals_pct):
     ax.plot(centers, frac, '-o', markersize=4, color='gray',
             label=f"shift fraction ({pct:.1f}%)")
-    ax.set_xlim(-2, 4)
+    ax.set_xlim(-2, 6)
     ax.set_ylim(0, y_lim)
     ax.set_xlabel(r"$M_x^2\ \mathrm{(GeV^2)}$")
     ax.set_ylabel("shifted fraction")
