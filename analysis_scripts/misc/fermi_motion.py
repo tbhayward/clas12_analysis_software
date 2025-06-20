@@ -14,19 +14,15 @@ rgc_epiX_atRest    = "/volatile/clas12/thayward/fermi_motion/rgc_su22_inb_epi+_a
 rgc_epiPipi_atRest = "/volatile/clas12/thayward/fermi_motion/rgc_su22_inb_epi+pi-_atRest.root"
 
 rga_epiX_atRest    = "/volatile/clas12/thayward/fermi_motion/rga_fa18_inb_epi+_atRest.root"
-# rga_epiX_fermi     = "/volatile/clas12/thayward/fermi_motion/rga_fa18_inb_epi+_fermiMotion.root"
 rga_epiX_fermi     = "/volatile/clas12/thayward/fermi_motion/rga_fa18_inb_epi+_dilutionFactor.root"
 
 rga_epiPipi_atRest = "/volatile/clas12/thayward/fermi_motion/rga_fa18_inb_epi+pi-_atRest.root"
-# rga_epiPipi_fermi  = "/volatile/clas12/thayward/fermi_motion/rga_fa18_inb_epi+_pi-_fermiMotion.root"
 rga_epiPipi_fermi  = "/volatile/clas12/thayward/fermi_motion/rga_fa18_inb_epi+pi-_dilutionFactor.root"
 
 rgb_epiX_atRest    = "/volatile/clas12/thayward/fermi_motion/rgb_sp19_inb_epi+_atRest.root"
-# rgb_epiX_fermi     = "/volatile/clas12/thayward/fermi_motion/rgb_sp19_inb_epi+_fermiMotion.root"
 rgb_epiX_fermi     = "/volatile/clas12/thayward/fermi_motion/rgb_sp19_inb_epi+_dilutionFactor.root"
 
 rgb_epiPipi_atRest = "/volatile/clas12/thayward/fermi_motion/rgb_sp19_inb_epi+pi-_atRest.root"
-# rgb_epiPipi_fermi  = "/volatile/clas12/thayward/fermi_motion/rgb_sp19_inb_epi+pi-_fermiMotion.root"
 rgb_epiPipi_fermi  = "/volatile/clas12/thayward/fermi_motion/rgb_sp19_inb_epi+pi-_dilutionFactor.root"
 
 # Ensure output directory exists
@@ -73,9 +69,9 @@ def gauss_quad(x, A, mu, sigma, a0, a1, a2):
 # -----------------------------------------------------------------------------
 # Histogram settings
 # -----------------------------------------------------------------------------
-bins      = np.linspace(-1, 3, 101)                 # 100 bins from -1 to 3
+bins      = np.linspace(-1, 3, 101)   # 100 bins from -1 to 3
 bin_width = bins[1] - bins[0]
-m_p2      = 0.93827**2                              # proton mass squared for initial guess
+m_p2      = 0.93827**2                # proton mass squared for initial guess
 colors    = plt.rcParams['axes.prop_cycle'].by_key()['color']
 
 # -----------------------------------------------------------------------------
@@ -83,22 +79,28 @@ colors    = plt.rcParams['axes.prop_cycle'].by_key()['color']
 # -----------------------------------------------------------------------------
 fig, axes = plt.subplots(2, 2, figsize=(12, 10))
 
+# panel_configs entries: (axis, versions, title, low, high)
 panel_configs = [
-    (axes[0,0], versions_epiX,         r"$e\,\pi^{+}X:\ M_x^2$",        0.653, 1.145),
-    (axes[0,1], versions_epiPipiX,     r"$e\,\pi^{+}\pi^{-}X:\ M_x^2$",  0.685, 1.141),
-    (axes[1,0], versions_rgb_epiX,     r"$e\,\pi^{+}X\ (\mathrm{RGB}):\ M_x^2$",        0.653, 1.145),
-    (axes[1,1], versions_rgb_epiPipiX, r"$e\,\pi^{+}\pi^{-}X\ (\mathrm{RGB}):\ M_x^2$",  0.685, 1.141),
+    (axes[0,0], versions_epiX,        r"$e\,\pi^{+}X:\ M_x^2$",        0.653, 1.145),
+    (axes[0,1], versions_epiPipiX,    r"$e\,\pi^{+}\pi^{-}X:\ M_x^2$",  0.685, 1.141),
+    (axes[1,0], versions_rgb_epiX,    r"$e\,\pi^{+}X\ (\mathrm{RGB}):\ M_x^2$",        0.653, 1.145),
+    (axes[1,1], versions_rgb_epiPipiX,r"$e\,\pi^{+}\pi^{-}X\ (\mathrm{RGB}):\ M_x^2$",  0.685, 1.141),
 ]
 
 for ax, versions, title, low, high in panel_configs:
+    # pre-load at-rest evnums and Mx2 once per panel
+    at_rest_path = versions[0][1]
+    mx2_at       = load_array(at_rest_path, "Mx2")
+    ev_at        = load_array(at_rest_path, "evnum")
+
     for idx, (lbl, path) in enumerate(versions):
         # Load data and histogram
-        data      = load_array(path, "Mx2")
-        counts, _ = np.histogram(data, bins=bins)
-        centers   = 0.5 * (bins[:-1] + bins[1:])
-        norm      = 1.0/(counts.sum() * bin_width)
-        density   = counts * norm
-        errors    = np.sqrt(counts) * norm
+        mx2_f, ev_f = load_array(path, "Mx2"), load_array(path, "evnum")
+        counts, _   = np.histogram(mx2_f, bins=bins)
+        centers     = 0.5 * (bins[:-1] + bins[1:])
+        norm        = 1.0/(counts.sum() * bin_width)
+        density     = counts * norm
+        errors      = np.sqrt(counts) * norm
 
         # Fit range [0.4, 1.2]
         mask   = (centers >= 0.4) & (centers <= 1.2)
@@ -129,37 +131,22 @@ for ax, versions, title, low, high in panel_configs:
         ax.plot(xcurve, ycurve,
                 linestyle='-', linewidth=1.5, color=color)
 
-        # If this is the "sim. Fermi Motion" version (idx==1), find and plot
-        # events that moved into the exclusive peak [low, high]
+        # For the simulated-Fermi case, find events that moved into [low,high]
         if idx == 1:
-            # load at-rest arrays
-            _, at_rest_path = versions[0]
-            mx2_at    = load_array(at_rest_path, "Mx2")
-            ev_at     = load_array(at_rest_path, "evnum")
-            # fermi arrays
-            mx2_f     = data
-            ev_f      = load_array(path, "evnum")
+            in_peak_f  = (mx2_f >= low) & (mx2_f <= high)
+            ev_in_f    = ev_f[in_peak_f]
+            # those evnos in fermi-peak that were outside at rest
+            mask_at_out = np.isin(ev_at, ev_in_f) & ((mx2_at < low) | (mx2_at > high))
+            ev_moved    = ev_at[mask_at_out]
+            mx2_start   = mx2_at[mask_at_out]
 
-            # which evnumbers are in peak in fermi but were outside at rest?
-            in_peak_f = (mx2_f >= low) & (mx2_f <= high)
-            ev_in_f   = ev_f[in_peak_f]
-            # find their indices in at-rest
-            mask_at   = np.isin(ev_at, ev_in_f)
-            ev_in_at  = ev_at[mask_at]
-            mx2_in_at = mx2_at[mask_at]
-            # select only those that were outside the peak at rest
-            moved_ev  = ev_in_at[(mx2_in_at < low) | (mx2_in_at > high)]
-            # now get their Mx2 in fermi
-            moved_mask = np.isin(ev_f, moved_ev)
-            mx2_moved = mx2_f[moved_mask]
-
-            if mx2_moved.size > 0:
-                counts_m, _ = np.histogram(mx2_moved, bins=bins)
-                density_m   = counts_m * norm
-                # plot as thin dashed gray line
-                ax.plot(centers, density_m,
+            if mx2_start.size > 0:
+                counts_s, _ = np.histogram(mx2_start, bins=bins)
+                density_s   = counts_s * norm
+                # plot original positions as dashed gray
+                ax.plot(centers, density_s,
                         linestyle='--', linewidth=1.0, color='gray',
-                        label=f"{lbl} migrated")
+                        label=f"{lbl} orig→peak")
 
     ax.set_xlim(-1, 3)
     ax.set_xlabel(r"$M_x^2\ \mathrm{(GeV^2)}$")
@@ -211,16 +198,15 @@ def poly4_gauss(x, a0, a1, a2, a3, a4, A, mu, sigma):
 
 # initial guess from 4th-order polyfit
 poly4_coeffs = np.polyfit(mx2_centers, dilution, 4)
-p0 = list(poly4_coeffs[::-1]) + [0.1, 0.9, 0.1]  # [a0..a4, A, mu, sigma]
+p0 = list(poly4_coeffs[::-1]) + [0.1, 0.9, 0.1]
 bounds = (
-    [-np.inf, -np.inf, -np.inf, -np.inf, -np.inf,  0.0, 0.7, 0.0],
-    [ np.inf,  np.inf,  np.inf,  np.inf,  np.inf,  np.inf, 1.0, np.inf]
+    [-np.inf]*5 + [0.0, 0.7, 0.0],
+    [ np.inf]*5 + [np.inf, 1.0, np.inf]
 )
 
 popt, _ = curve_fit(poly4_gauss, mx2_centers, dilution,
                     sigma=dil_err, p0=p0, bounds=bounds)
 
-# print fit parameters for later use
 print("4th-order poly + Gaussian fit parameters for D_f(Mx2):")
 print(f"a0 = {popt[0]:.6g}")
 print(f"a1 = {popt[1]:.6g}")
