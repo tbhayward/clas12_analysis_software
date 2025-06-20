@@ -146,7 +146,7 @@ for ax, versions, title, low, high in panel_configs:
                 # plot original positions as dashed gray
                 ax.plot(centers, density_s,
                         linestyle='--', linewidth=1.0, color='gray',
-                        label=f"{lbl} orig→peak")
+                        label=f"{lbl} outside peak → peak")
 
     ax.set_xlim(-2, 4)
     ax.set_xlabel(r"$M_x^2\ \mathrm{(GeV^2)}$")
@@ -248,6 +248,7 @@ centers = 0.5 * (bins[:-1] + bins[1:])
 
 # first pass: compute all fractions and track the global maximum
 fracs_list = []
+totals_pct = []
 global_max = 0.0
 
 for ax, versions, title, low, high in panel_configs:
