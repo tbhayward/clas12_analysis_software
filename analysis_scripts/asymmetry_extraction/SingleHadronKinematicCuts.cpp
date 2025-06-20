@@ -144,8 +144,8 @@ bool SingleHadronKinematicCuts::applyCuts(int currentFits, bool isMC)
     //     *runnum == 16733 || *runnum == 16734 || *runnum == 16736) { return false; }
 
     if (property == "DVCSt1") {
-        goodEvent = Mx2 < -0.1;
-        goodEvent = goodEvent && Mx2 > 0.1;
+        goodEvent = *Mx2 < -0.1;
+        goodEvent = goodEvent && *Mx2 > 0.1;
         return goodEvent;
     }
 
