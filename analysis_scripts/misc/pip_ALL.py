@@ -25,25 +25,34 @@ pipHERMES = [
     [0.675, 0.7879175, 0.311453]
 ]
 
+meanx = [0.1175, 0.1925, 0.2675, 0.3425, 0.4175, 0.4925, 0.5675, 0.6425]
 pip = [
-    [0.1175, 0.2257, 0.0157],
-    [0.1925, 0.3294, 0.0134],
-    [0.2675, 0.4268, 0.0152],
-    [0.3425, 0.5141, 0.0204],
-    [0.4175, 0.5964, 0.0277],
-    [0.4925, 0.6494, 0.0416],
-    [0.5675, 0.7270, 0.0684],
-    [0.6425, 0.8008, 0.1570]
+    [meanx[0], 0.2257, 0.0157],
+    [meanx[1], 0.3294, 0.0134],
+    [meanx[2], 0.4268, 0.0152],
+    [meanx[3], 0.5141, 0.0204],
+    [meanx[4], 0.5964, 0.0277],
+    [meanx[5], 0.6494, 0.0416],
+    [meanx[6], 0.7270, 0.0684],
+    [meanx[7], 0.8008, 0.1570]
+]
+
+pipp = [
+    [0.144881754, 0.279487685, 0.011047009],
+    [0.223757471, 0.407836967, 0.010338185],
+    [0.319545878, 0.561530186, 0.015820949],
+    [0.319545878, 0.561530186, 0.015820949],
+    [0.510505127, 0.877989016, 0.071471465]
 ]
 
 # Convert to numpy arrays for convenience
-h_x    = np.array([row[0] for row in pipHERMES])
-h_y    = np.array([row[1] for row in pipHERMES])
-h_yerr = np.array([row[2] for row in pipHERMES])
+def to_arrays(data):
+    arr = np.array(data)
+    return arr[:,0], arr[:,1], arr[:,2]
 
-p_x    = np.array([row[0] for row in pip])
-p_y    = np.array([row[1] for row in pip])
-p_yerr = np.array([row[2] for row in pip])
+h_x,  h_y,  h_yerr  = to_arrays(pipHERMES)
+p_x,  p_y,  p_yerr  = to_arrays(pip)
+pp_x, pp_y, pp_yerr = to_arrays(pipp)
 
 # -----------------------------------------------------------------------------
 # Plot
@@ -51,8 +60,9 @@ p_yerr = np.array([row[2] for row in pip])
 fig, ax = plt.subplots(figsize=(8, 6))
 
 for x, y, yerr, label, color, marker in [
-    (p_x,    p_y,    p_yerr,    "CLAS12 preliminary", "red",  "o"),
-    (h_x,    h_y,    h_yerr,    "HERMES",             "blue", "s"),
+    (p_x,  p_y,  p_yerr,  r"$e\pi^{+}X$",  "red",   "o"),
+    (pp_x, pp_y, pp_yerr, r"$e\pi^{+}pX$", "green", "^"),
+    (h_x,  h_y,  h_yerr,  "HERMES",        "blue",  "s"),
 ]:
     ax.errorbar(
         x, y, yerr=yerr,
@@ -67,8 +77,8 @@ for x, y, yerr, label, color, marker in [
     )
 #endfor
 
-ax.set_xlabel(r"$x_{B}$",            fontsize=16)
-ax.set_ylabel(r"$F_{LL}/F_{UU}$",    fontsize=16)
+ax.set_xlabel(r"$x_{B}$",         fontsize=16)
+ax.set_ylabel(r"$F_{LL}/F_{UU}$", fontsize=16)
 
 ax.set_xlim(0.06, 0.7)
 ax.set_ylim(0.0, 1.0)
@@ -77,4 +87,4 @@ ax.grid(True, which='both', linestyle='--', linewidth=0.5, alpha=0.7)
 ax.legend(frameon=True, fontsize=14)
 
 plt.tight_layout()
-plt.savefig("/u/home/thayward/pip_ALL.pdf")
+plt.savefig("/Users/tbhayward/Desktop/pip_ALL.pdf")
