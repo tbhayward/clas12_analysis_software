@@ -89,13 +89,13 @@ for x, y, yerr, label, color, marker in [
 ax.fill_between(
     h_x, h_min100, h_max100,
     color='blue', alpha=0.2,
-    label=r"HERMES $e\pi^{+}X$ 100\% band"
+    label=r"HERMES $e\pi^{+}X$ 100\% CL"
 )
 #    - darker blue: 68% band
 ax.fill_between(
     h_x, h_min68, h_max68,
     color='blue', alpha=0.4,
-    label=r"HERMES $e\pi^{+}X$ 68\% band"
+    label=r"HERMES $e\pi^{+}X$ 68\% CL"
 )
 
 # Axes, labels, limits
