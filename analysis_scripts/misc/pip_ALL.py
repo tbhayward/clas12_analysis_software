@@ -10,21 +10,31 @@ plt.rc('font', family='serif', size=14)
 # -----------------------------------------------------------------------------
 # Data
 # -----------------------------------------------------------------------------
-pipHERMES = [
-    [0.125, 0.2793365, 0.046871],
-    [0.175, 0.3581215, 0.047101],
-    [0.225, 0.4251460, 0.057284],
-    [0.275, 0.4908145, 0.073295],
-    [0.325, 0.5718890, 0.112882],
-    [0.375, 0.6697575, 0.149005],
-    [0.425, 0.7695995, 0.192307],
-    [0.475, 0.8077495, 0.263439],
-    [0.525, 0.7962190, 0.302924],
-    [0.575, 0.7963785, 0.322581],
-    [0.625, 0.7974055, 0.334877],
-    [0.675, 0.7879175, 0.311453]
-]
 
+# HERMES "100%" and 68% bands for Pip, 0.4<z<0.5
+hermes_data = [
+    # x,    Min100,    Max100,    Min68,     Max68
+    [0.125, 0.237413,  0.313158,  0.255901,  0.302772],
+    [0.175, 0.323555,  0.392161,  0.334571,  0.381672],
+    [0.225, 0.373040,  0.469157,  0.396504,  0.453788],
+    [0.275, 0.405763,  0.555878,  0.454167,  0.527462],
+    [0.325, 0.441736,  0.693701,  0.515448,  0.628330],
+    [0.375, 0.446821,  0.813321,  0.595255,  0.744260],
+    [0.425, 0.493661,  0.926293,  0.673446,  0.865753],
+    [0.475, 0.498619,  0.951409,  0.676030,  0.939469],
+    [0.525, 0.504007,  0.966825,  0.644757,  0.947681],
+    [0.575, 0.509595,  1.004663,  0.635088,  0.957669],
+    [0.625, 0.512737,  1.012946,  0.629967,  0.964844],
+    [0.675, 0.480661,  1.004594,  0.632191,  0.943644]
+]
+hermes = np.array(hermes_data)
+h_x      = hermes[:, 0]
+h_min100 = hermes[:, 1]
+h_max100 = hermes[:, 2]
+h_min68  = hermes[:, 3]
+h_max68  = hermes[:, 4]
+
+# CLAS12 pip and pipp datasets
 meanx = [0.1175, 0.1925, 0.2675, 0.3425, 0.4175, 0.4925, 0.5675, 0.6425]
 pip = [
     [meanx[0], 0.2257, 0.0157],
@@ -36,7 +46,6 @@ pip = [
     [meanx[6], 0.7270, 0.0684],
     [meanx[7], 0.8008, 0.1570]
 ]
-
 pipp = [
     [0.144881754, 0.279487685, 0.011047009],
     [0.223757471, 0.407836967, 0.010338185],
@@ -45,12 +54,10 @@ pipp = [
     [0.510505127, 0.877989016, 0.071471465]
 ]
 
-# Convert to numpy arrays for convenience
 def to_arrays(data):
     arr = np.array(data)
     return arr[:,0], arr[:,1], arr[:,2]
 
-h_x,  h_y,  h_yerr  = to_arrays(pipHERMES)
 p_x,  p_y,  p_yerr  = to_arrays(pip)
 pp_x, pp_y, pp_yerr = to_arrays(pipp)
 
@@ -59,10 +66,10 @@ pp_x, pp_y, pp_yerr = to_arrays(pipp)
 # -----------------------------------------------------------------------------
 fig, ax = plt.subplots(figsize=(8, 6))
 
-# 1) Plot CLAS12 datasets as error bars
+# 1) CLAS12 error‐bar data
 for x, y, yerr, label, color, marker in [
-    (p_x,  p_y,  p_yerr,  r"CLAS12 preliminary, $e\pi^{+}X$",  "red",   "o"),
-    (pp_x, pp_y, pp_yerr, r"CLAS12 preliminary, $e\pi^{+}pX$", "green", "^"),
+    (p_x,  p_y,  p_yerr,  r"CLAS12 preliminary, $e\pi^{+}X$",   "red",   "o"),
+    (pp_x, pp_y, pp_yerr, r"CLAS12 preliminary, $e\pi^{+}pX$",  "green", "^"),
 ]:
     ax.errorbar(
         x, y, yerr=yerr,
@@ -77,24 +84,30 @@ for x, y, yerr, label, color, marker in [
     )
 #endfor
 
-# 2) Plot HERMES as translucent band spanning [y-yerr, y+yerr]
+# 2) HERMES bands
+#    - lighter blue: 100% band
 ax.fill_between(
-    h_x,
-    h_y - h_yerr,
-    h_y + h_yerr,
-    color='blue',
-    alpha=0.3,
-    label=r"HERMES, $0.4 < z < 0.5$"
+    h_x, h_min100, h_max100,
+    color='blue', alpha=0.2,
+    label=r"HERMES $e\pi^{+}X$ 100\% band"
+)
+#    - darker blue: 68% band
+ax.fill_between(
+    h_x, h_min68, h_max68,
+    color='blue', alpha=0.4,
+    label=r"HERMES $e\pi^{+}X$ 68\% band"
 )
 
+# Axes, labels, limits
 ax.set_xlabel(r"$x_{B}$",         fontsize=16)
 ax.set_ylabel(r"$F_{LL}/F_{UU}$", fontsize=16)
-
 ax.set_xlim(0.06, 0.7)
 ax.set_ylim(0.0, 1.0)
 
+# Grid and legend
 ax.grid(True, which='both', linestyle='--', linewidth=0.5, alpha=0.7)
 ax.legend(frameon=True, fontsize=14)
 
+# Save
 plt.tight_layout()
 plt.savefig("/u/home/thayward/pip_ALL.pdf")
