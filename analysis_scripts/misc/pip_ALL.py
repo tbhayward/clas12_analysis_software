@@ -77,4 +77,4 @@ ax.grid(True, which='both', linestyle='--', linewidth=0.5, alpha=0.7)
 ax.legend(frameon=True, fontsize=14)
 
 plt.tight_layout()
-plt.savefig("/Users/tbhayward/Desktop/pip_ALL.pdf")
+plt.savefig("/u/thayward/pip_ALL.pdf")
