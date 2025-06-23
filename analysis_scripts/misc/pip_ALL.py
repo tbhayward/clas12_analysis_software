@@ -62,7 +62,7 @@ fig, ax = plt.subplots(figsize=(8, 6))
 for x, y, yerr, label, color, marker in [
     (p_x,  p_y,  p_yerr,  r"CLAS12 preliminary, $e\pi^{+}X$",  "red",   "o"),
     (pp_x, pp_y, pp_yerr, r"CLAS12 preliminary, $e\pi^{+}pX$", "green", "^"),
-    (h_x,  h_y,  h_yerr,  "HERMES, 0.4 < z < 0.5",        "blue",  "s"),
+    (h_x,  h_y,  h_yerr,  "HERMES, 0.4 \< z \< 0.5",        "blue",  "s"),
 ]:
     ax.errorbar(
         x, y, yerr=yerr,
