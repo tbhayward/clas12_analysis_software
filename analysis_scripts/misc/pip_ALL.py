@@ -66,10 +66,10 @@ pp_x, pp_y, pp_yerr = to_arrays(pipp)
 # -----------------------------------------------------------------------------
 fig, ax = plt.subplots(figsize=(8, 6))
 
-# 1) CLAS12 error‐bar data
+# 1) CLAS12 error‐bar data, swapped colors
 for x, y, yerr, label, color, marker in [
-    (p_x,  p_y,  p_yerr,  r"CLAS12 preliminary, $e\pi^{+}X$",   "red",   "o"),
-    (pp_x, pp_y, pp_yerr, r"CLAS12 preliminary, $e\pi^{+}pX$",  "green", "^"),
+    (p_x,  p_y,  p_yerr,  r"CLAS12 preliminary, $e\pi^{+}X$",   "black", "o"),
+    (pp_x, pp_y, pp_yerr, r"CLAS12 preliminary, $e\pi^{+}pX$",  "red",   "^"),
 ]:
     ax.errorbar(
         x, y, yerr=yerr,
@@ -89,13 +89,13 @@ for x, y, yerr, label, color, marker in [
 ax.fill_between(
     h_x, h_min100, h_max100,
     color='blue', alpha=0.2,
-    label=r"HERMES $e\pi^{+}X$ 100\% CL"
+    label=r"HERMES $e\pi^{+}X$ 100\% band"
 )
 #    - darker blue: 68% band
 ax.fill_between(
     h_x, h_min68, h_max68,
     color='blue', alpha=0.4,
-    label=r"HERMES $e\pi^{+}X$ 68\% CL"
+    label=r"HERMES $e\pi^{+}X$ 68\% band"
 )
 
 # Axes, labels, limits
