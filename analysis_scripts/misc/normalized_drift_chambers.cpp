@@ -12,16 +12,17 @@
  *
  * What it does:
  *   1) Creates output/ and output/dc/ if they do not exist.
- *   2) Parses torus to apply DC fiducial cuts.
+ *   2) Parses torus to apply original and strict DC fiducial cuts.
  *   3) Loops over data and MC, filling per-region 2D histograms for
- *      electrons (PID=11) and protons (PID=2212), applying fiducial cuts.
- *   4) Normalizes each histogram and computes data/MC ratio.
- *   5) Draws “COLZ” canvases for Data, MC, Ratio (with mean/std in legend).
- *   6) Draws outlier maps with 4-color palette:
- *        • 0.5–2     → blue
- *        • 1/3–0.5 & 2–3   → light red (orange)
- *        • 1/5–1/3 & 3–5   → dark red
- *        • <1/5 or >5 → pink
+ *      electrons (PID=11) and protons (PID=2212):
+ *        • no cuts
+ *        • original cuts
+ *        • strict cuts
+ *   4) Normalizes each histogram and computes data/MC ratio for
+ *      both original- and strict-cut sets.
+ *   5) Draws “COLZ” canvases for Data, MC, and two ratio versions
+ *      (original and strict) with mean/stddev and survival-percentage legends.
+ *   6) Draws outlier maps (4-color) for both ratio versions.
  *****************************************************************************/
 
 #include <iostream>
@@ -38,21 +39,75 @@
 #include "TLegend.h"
 
 // ----------------------------------------------------------------------------
-// DC fiducial cut based on torus polarity and track theta (deg)
+// Original DC fiducial cut based on torus polarity and track theta (deg)
 // ----------------------------------------------------------------------------
 bool dc_fiducial_cut(int torus, double theta_deg,
                      double edge1, double edge2, double edge3) {
     bool inbending  = (torus < 0);
     bool outbending = (torus > 0);
     if (inbending) {
-        if (theta_deg < 10.0) {
+        if (theta_deg < 10.0)
             return edge1 > 10.0 && edge2 > 10.0 && edge3 > 10.0;
-        } else {
+        else
             return edge1 > 3.0 && edge2 > 3.0 && edge3 > 10.0;
-        }
     }
     else if (outbending) {
         return edge1 > 3.0 && edge2 > 3.0 && edge3 > 10.0;
+    }
+    return false;
+}
+
+// ----------------------------------------------------------------------------
+// Strict DC fiducial cut: adds radial restrictions per region
+// ----------------------------------------------------------------------------
+bool dc_fiducial_cut_strict(int torus, int pid, double theta_deg,
+                            double edge1, double edge2, double edge3,
+                            double x6, double x18, double x36,
+                            double y6, double y18, double y36) {
+    // compute radii
+    double r6  = std::sqrt(x6*x6   + y6*y6);
+    double r18 = std::sqrt(x18*x18 + y18*y18);
+    double r36 = std::sqrt(x36*x36 + y36*y36);
+
+    // inbending, electron
+    if (torus<0 && pid==11) {
+        bool pass = (theta_deg<10.0
+                     ? (edge1>10.0 && edge2>10.0 && edge3>14.0)
+                     : (edge1>3.0  && edge2>3.0  && edge3>14.0));
+        if (!pass) return false;
+        if (r6  <  50) return false;
+        if (r18 <  70) return false;
+        if (r36 <  60) return false;
+        return true;
+    }
+    // inbending, proton
+    else if (torus<0 && pid==2212) {
+        bool pass = (theta_deg<10.0
+                     ? (edge1>10.0 && edge2>10.0 && edge3>10.0)
+                     : (edge1>3.0  && edge2>3.0  && edge3>10.0));
+        if (!pass) return false;
+        if (r6  <  60 || r6  > 150) return false;
+        if (r18 < 120 || r18 > 210) return false;
+        if (r36 < 260 || r36 > 380) return false;
+        return true;
+    }
+    // outbending, electron
+    else if (torus>0 && pid==11) {
+        bool pass = (edge1>3.0 && edge2>3.0 && edge3>14.0);
+        if (!pass) return false;
+        if (r6  <  35 || r6  >  60) return false;
+        if (r18 <  78 || r18 >  98) return false;
+        if (r36 < 100 || r36 > 180) return false;
+        return true;
+    }
+    // outbending, proton
+    else if (torus>0 && pid==2212) {
+        bool pass = (edge1>3.0 && edge2>3.0 && edge3>14.0);
+        if (!pass) return false;
+        if (r6  <  85 || r6  > 145) return false;
+        if (r18 < 120 || r18 > 190) return false;
+        if (r36 <  90 || r36 > 250) return false;
+        return true;
     }
     return false;
 }
@@ -76,7 +131,7 @@ int main(int argc, char** argv) {
     if (argc < 5) {
         std::cerr << "Usage: " << argv[0]
                   << " [Nevents] [dataFile] [mcFile] [torus]\n"
-                  << "  torus: +1 for outbending, -1 for inbending" << std::endl;
+                  << "  torus: +1 for outbending, -1 for inbending\n";
         return 1;
     }
 
@@ -84,207 +139,371 @@ int main(int argc, char** argv) {
     gSystem->mkdir("output",    kTRUE);
     gSystem->mkdir("output/dc", kTRUE);
 
-    // parse args
+    // parse arguments
     Long64_t maxEvents = std::stoll(argv[1]);
     if (maxEvents == 0) maxEvents = -1;
-    std::string dataFile = argv[2];
-    std::string mcFile   = argv[3];
+    std::string dataFile = argv[2], mcFile = argv[3];
     int torus = std::stoi(argv[4]);
 
-    // setup chains
+    // set up chains
     TChain dataCh("PhysicsEvents"), mcCh("PhysicsEvents");
     dataCh.Add(dataFile.c_str());
-    mcCh .Add(mcFile  .c_str());
+    mcCh .Add(mcFile .c_str());
 
     // branches
     Int_t    pid;
     Double_t x6,y6,x18,y18,x36,y36;
-    Double_t edge6,edge18,edge36;
-    Double_t theta;
-    dataCh.SetBranchAddress("particle_pid", &pid);
-    dataCh.SetBranchAddress("traj_x_6",     &x6);
-    dataCh.SetBranchAddress("traj_y_6",     &y6);
-    dataCh.SetBranchAddress("traj_x_18",    &x18);
-    dataCh.SetBranchAddress("traj_y_18",    &y18);
-    dataCh.SetBranchAddress("traj_x_36",    &x36);
-    dataCh.SetBranchAddress("traj_y_36",    &y36);
-    dataCh.SetBranchAddress("traj_edge_6",  &edge6);
-    dataCh.SetBranchAddress("traj_edge_18", &edge18);
-    dataCh.SetBranchAddress("traj_edge_36", &edge36);
-    dataCh.SetBranchAddress("theta",        &theta);
-    mcCh .SetBranchAddress("particle_pid", &pid);
-    mcCh .SetBranchAddress("traj_x_6",     &x6);
-    mcCh .SetBranchAddress("traj_y_6",     &y6);
-    mcCh .SetBranchAddress("traj_x_18",    &x18);
-    mcCh .SetBranchAddress("traj_y_18",    &y18);
-    mcCh .SetBranchAddress("traj_x_36",    &x36);
-    mcCh .SetBranchAddress("traj_y_36",    &y36);
-    mcCh .SetBranchAddress("traj_edge_6",  &edge6);
-    mcCh .SetBranchAddress("traj_edge_18", &edge18);
-    mcCh .SetBranchAddress("traj_edge_36", &edge36);
-    mcCh .SetBranchAddress("theta",        &theta);
+    Double_t edge6,edge18,edge36, theta;
+    dataCh.SetBranchAddress("particle_pid",&pid);
+    dataCh.SetBranchAddress("traj_x_6",    &x6);
+    dataCh.SetBranchAddress("traj_y_6",    &y6);
+    dataCh.SetBranchAddress("traj_x_18",   &x18);
+    dataCh.SetBranchAddress("traj_y_18",   &y18);
+    dataCh.SetBranchAddress("traj_x_36",   &x36);
+    dataCh.SetBranchAddress("traj_y_36",   &y36);
+    dataCh.SetBranchAddress("traj_edge_6", &edge6);
+    dataCh.SetBranchAddress("traj_edge_18",&edge18);
+    dataCh.SetBranchAddress("traj_edge_36",&edge36);
+    dataCh.SetBranchAddress("theta",       &theta);
+    mcCh .SetBranchAddress("particle_pid",&pid);
+    mcCh .SetBranchAddress("traj_x_6",    &x6);
+    mcCh .SetBranchAddress("traj_y_6",    &y6);
+    mcCh .SetBranchAddress("traj_x_18",   &x18);
+    mcCh .SetBranchAddress("traj_y_18",   &y18);
+    mcCh .SetBranchAddress("traj_x_36",   &x36);
+    mcCh .SetBranchAddress("traj_y_36",   &y36);
+    mcCh .SetBranchAddress("traj_edge_6", &edge6);
+    mcCh .SetBranchAddress("traj_edge_18",&edge18);
+    mcCh .SetBranchAddress("traj_edge_36",&edge36);
+    mcCh .SetBranchAddress("theta",       &theta);
 
     // constants
-    const int NB2=200;
-    const double xmins[3]={-180,-280,-450}, xmaxs[3]={180,280,450};
+    const int NB2 = 200;
+    const double xmins[3] = {-180, -280, -450},
+                 xmaxs[3] = { 180,  280,  450};
     std::vector<std::pair<int,std::string>> species = {{11,"electron"},{2212,"proton"}};
 
-    // book histograms
-    std::vector<std::vector<TH2D*>> hData(species.size()), hMC(species.size()), hRatio(species.size());
-    for(size_t s=0;s<species.size();++s){
-        auto &lab=species[s].second;
-        for(int r=0;r<3;++r){
-            hData[s].push_back(new TH2D(Form("hD_%s_r%d", lab.c_str(), r+1),
-                Form("%s Data R%d; x; y", lab.c_str(), r+1),
-                NB2, xmins[r], xmaxs[r], NB2, xmins[r], xmaxs[r]));
-            hMC  [s].push_back((TH2D*)hData[s][r]->Clone(Form("hM_%s_r%d", lab.c_str(), r+1)));
+    // histograms for original and strict cuts
+    std::vector<std::vector<TH2D*>> 
+      hDataOrig(species.size()), hMCOrig(species.size()), hRatioOrig(species.size()),
+      hDataStr(species.size()), hMCStr(species.size()), hRatioStr(species.size());
+
+    for (size_t s = 0; s < species.size(); ++s) {
+        auto &lab = species[s].second;
+        for (int r = 0; r < 3; ++r) {
+            // original
+            hDataOrig[s].push_back(new TH2D(
+              Form("hD_orig_%s_r%d", lab.c_str(), r+1),
+              Form("%s Data Orig R%d; x; y", lab.c_str(), r+1),
+              NB2, xmins[r], xmaxs[r], NB2, xmins[r], xmaxs[r]
+            ));
+            hMCOrig[s].push_back((TH2D*)hDataOrig[s][r]->Clone(
+              Form("hM_orig_%s_r%d", lab.c_str(), r+1)
+            ));
+            // strict
+            hDataStr[s].push_back(new TH2D(
+              Form("hD_strict_%s_r%d", lab.c_str(), r+1),
+              Form("%s Data Strict R%d; x; y", lab.c_str(), r+1),
+              NB2, xmins[r], xmaxs[r], NB2, xmins[r], xmaxs[r]
+            ));
+            hMCStr[s].push_back((TH2D*)hDataStr[s][r]->Clone(
+              Form("hM_strict_%s_r%d", lab.c_str(), r+1)
+            ));
         }
     }
 
-    // fill data
-    Long64_t nD=dataCh.GetEntries(); if(maxEvents>0 && maxEvents<nD) nD=maxEvents;
-    for(Long64_t i=0;i<nD;++i){ dataCh.GetEntry(i);
-        if (!dc_fiducial_cut(torus, theta*180.0/M_PI, edge6, edge18, edge36)) continue;
-        for(size_t s=0;s<species.size();++s){
-            if(pid!=species[s].first) continue;
-            double xs[3]={x6,x18,x36}, ys[3]={y6,y18,y36};
-            for(int r=0;r<3;++r) if(xs[r]!=-9999) hData[s][r]->Fill(xs[r], ys[r]);
-        }
-    }
+    // counters for data survival
+    std::vector<std::vector<Long64_t>>
+      nNoCut(species.size(), std::vector<Long64_t>(3,0)),
+      nOrig (species.size(), std::vector<Long64_t>(3,0)),
+      nStr  (species.size(), std::vector<Long64_t>(3,0));
 
-    // fill MC
-    Long64_t nM=mcCh.GetEntries(); if(maxEvents>0 && maxEvents<nM) nM=maxEvents;
-    for(Long64_t i=0;i<nM;++i){ mcCh.GetEntry(i);
-        if (!dc_fiducial_cut(torus, theta*180.0/M_PI, edge6, edge18, edge36)) continue;
-        for(size_t s=0;s<species.size();++s){
-            if(pid!=species[s].first) continue;
-            double xs[3]={x6,x18,x36}, ys[3]={y6,y18,y36};
-            for(int r=0;r<3;++r) if(xs[r]!=-9999) hMC[s][r]->Fill(xs[r], ys[r]);
-        }
-    }
+    // --- fill DATA ---
+    Long64_t nD = dataCh.GetEntries();
+    if (maxEvents>0 && maxEvents<nD) nD = maxEvents;
+    for (Long64_t i = 0; i < nD; ++i) {
+        dataCh.GetEntry(i);
+        for (size_t s = 0; s < species.size(); ++s) {
+            if (pid != species[s].first) continue;
+            double xs[3] = {x6, x18, x36}, ys[3] = {y6, y18, y36};
+            for (int r = 0; r < 3; ++r) {
+                if (xs[r]==-9999 || ys[r]==-9999) continue;
+                nNoCut[s][r]++;  // no cuts base count
 
-    // normalize, ratio, stats
-    std::vector<std::vector<double>> meanV(species.size(), std::vector<double>(3)), sigmaV=meanV;
-    for(size_t s=0;s<species.size();++s){
-        for(int r=0;r<3;++r){
-            double id=hData[s][r]->Integral(); if(id>0) hData[s][r]->Scale(1./id);
-            double im=hMC  [s][r]->Integral(); if(im>0) hMC  [s][r]->Scale(1./im);
-            hRatio[s].push_back((TH2D*)hData[s][r]->Clone(Form("hR_%s_r%d", species[s].second.c_str(), r+1)));
-            hRatio[s][r]->Divide(hMC[s][r]);
-            int cnt=0; double sum=0,sum2=0;
-            for(int ix=1;ix<=NB2;++ix) for(int iy=1;iy<=NB2;++iy){
-                double v=hRatio[s][r]->GetBinContent(ix,iy);
-                if(v<=0) continue;
-                sum+=v; sum2+=v*v; cnt++;
+                // original fiducial
+                if (dc_fiducial_cut(torus,
+                                    theta*180.0/M_PI,
+                                    edge6, edge18, edge36)) {
+                    hDataOrig[s][r]->Fill(xs[r], ys[r]);
+                    nOrig[s][r]++;
+                }
+                // strict fiducial
+                if (dc_fiducial_cut_strict(torus, pid,
+                                           theta*180.0/M_PI,
+                                           edge6, edge18, edge36,
+                                           x6, x18, x36,
+                                           y6, y18, y36)) {
+                    hDataStr[s][r]->Fill(xs[r], ys[r]);
+                    nStr[s][r]++;
+                }
             }
-            if(cnt>0){
-                meanV[s][r]=sum/cnt;
-                sigmaV[s][r]=std::sqrt(sum2/cnt - meanV[s][r]*meanV[s][r]);
+        }
+    }
+
+    // --- fill MC ---
+    Long64_t nM = mcCh.GetEntries();
+    if (maxEvents>0 && maxEvents<nM) nM = maxEvents;
+    for (Long64_t i = 0; i < nM; ++i) {
+        mcCh.GetEntry(i);
+        for (size_t s = 0; s < species.size(); ++s) {
+            if (pid != species[s].first) continue;
+            double xs[3] = {x6, x18, x36}, ys[3] = {y6, y18, y36};
+            for (int r = 0; r < 3; ++r) {
+                if (xs[r]==-9999 || ys[r]==-9999) continue;
+                // original
+                if (dc_fiducial_cut(torus,
+                                    theta*180.0/M_PI,
+                                    edge6, edge18, edge36)) {
+                    hMCOrig[s][r]->Fill(xs[r], ys[r]);
+                }
+                // strict
+                if (dc_fiducial_cut_strict(torus, pid,
+                                           theta*180.0/M_PI,
+                                           edge6, edge18, edge36,
+                                           x6, x18, x36,
+                                           y6, y18, y36)) {
+                    hMCStr[s][r]->Fill(xs[r], ys[r]);
+                }
+            }
+        }
+    }
+
+    // normalize, ratios, stats
+    std::vector<std::vector<double>> meanOrig(species.size(), std::vector<double>(3)),
+                                sigmaOrig(meanOrig),
+                                meanStr (meanOrig),
+                                sigmaStr(meanOrig);
+
+    for (size_t s = 0; s < species.size(); ++s) {
+        for (int r = 0; r < 3; ++r) {
+            // original
+            double dI = hDataOrig[s][r]->Integral();
+            if (dI>0) hDataOrig[s][r]->Scale(1./dI);
+            double mI = hMCOrig  [s][r]->Integral();
+            if (mI>0) hMCOrig[s][r]->Scale(1./mI);
+            hRatioOrig[s].push_back((TH2D*)hDataOrig[s][r]->Clone(
+              Form("hR_orig_%s_r%d", species[s].second.c_str(), r+1)));
+            hRatioOrig[s][r]->Divide(hMCOrig[s][r]);
+            // stats original
+            int cnt=0; double sum=0,sum2=0;
+            for (int ix=1; ix<=NB2; ++ix) for (int iy=1; iy<=NB2; ++iy){
+                double v = hRatioOrig[s][r]->GetBinContent(ix,iy);
+                if (v<=0) continue;
+                sum += v; sum2 += v*v; cnt++;
+            }
+            if (cnt>0) {
+                meanOrig[s][r]  = sum/cnt;
+                sigmaOrig[s][r] = std::sqrt(sum2/cnt - meanOrig[s][r]*meanOrig[s][r]);
+            }
+            // strict
+            double dI2 = hDataStr[s][r]->Integral();
+            if (dI2>0) hDataStr[s][r]->Scale(1./dI2);
+            double mI2 = hMCStr  [s][r]->Integral();
+            if (mI2>0) hMCStr[s][r]->Scale(1./mI2);
+            hRatioStr[s].push_back((TH2D*)hDataStr[s][r]->Clone(
+              Form("hR_strict_%s_r%d", species[s].second.c_str(), r+1)));
+            hRatioStr[s][r]->Divide(hMCStr[s][r]);
+            // stats strict
+            cnt=0; sum=0; sum2=0;
+            for (int ix=1; ix<=NB2; ++ix) for (int iy=1; iy<=NB2; ++iy){
+                double v = hRatioStr[s][r]->GetBinContent(ix,iy);
+                if (v<=0) continue;
+                sum += v; sum2 += v*v; cnt++;
+            }
+            if (cnt>0) {
+                meanStr[s][r]  = sum/cnt;
+                sigmaStr[s][r] = std::sqrt(sum2/cnt - meanStr[s][r]*meanStr[s][r]);
             }
         }
     }
 
     gStyle->SetOptStat(0);
-    // draw Data, MC, Ratio
-    for(size_t s=0;s<species.size();++s){
-        auto &lab=species[s].second;
 
-        // Data
-        TCanvas cD(Form("cD_%s", lab.c_str()), Form("%s Data", lab.c_str()), 1800,600);
-        cD.Divide(3,1);
-        SetSame2DScale(hData[s][0],hData[s][1],hData[s][2]);
-        for(int r=0;r<3;++r){
-            cD.cd(r+1);
-            gPad->SetLeftMargin(.15);
-            gPad->SetRightMargin(.15);
-            gPad->SetLogz();
-            hData[s][r]->Draw("COLZ");
+    // draw Data & MC (original)
+    for (size_t s = 0; s < species.size(); ++s) {
+        auto &lab = species[s].second;
+        // Data orig
+        {
+            TCanvas cD(Form("cD_%s", lab.c_str()),
+                       Form("%s Data Orig", lab.c_str()), 1800,600);
+            cD.Divide(3,1);
+            SetSame2DScale(hDataOrig[s][0],hDataOrig[s][1],hDataOrig[s][2]);
+            for (int r=0; r<3; ++r) {
+                cD.cd(r+1);
+                gPad->SetLeftMargin(.15);
+                gPad->SetRightMargin(.15);
+                gPad->SetLogz();
+                hDataOrig[s][r]->Draw("COLZ");
+            }
+            cD.SaveAs(Form("output/dc/data_orig_%s.png", lab.c_str()));
         }
-        cD.SaveAs(Form("output/dc/data_%s.png", lab.c_str()));
+        // MC orig
+        {
+            TCanvas cM(Form("cM_%s", lab.c_str()),
+                       Form("%s MC Orig", lab.c_str()), 1800,600);
+            cM.Divide(3,1);
+            SetSame2DScale(hMCOrig[s][0],hMCOrig[s][1],hMCOrig[s][2]);
+            for (int r=0; r<3; ++r) {
+                cM.cd(r+1);
+                gPad->SetLeftMargin(.15);
+                gPad->SetRightMargin(.15);
+                gPad->SetLogz();
+                hMCOrig[s][r]->Draw("COLZ");
+            }
+            cM.SaveAs(Form("output/dc/mc_orig_%s.png", lab.c_str()));
+        }
+    }
 
-        // MC
-        TCanvas cM(Form("cM_%s", lab.c_str()), Form("%s MC", lab.c_str()), 1800,600);
-        cM.Divide(3,1);
-        SetSame2DScale(hMC[s][0],hMC[s][1],hMC[s][2]);
-        for(int r=0;r<3;++r){
-            cM.cd(r+1);
-            gPad->SetLeftMargin(.15);
-            gPad->SetRightMargin(.15);
-            gPad->SetLogz();
-            hMC[s][r]->Draw("COLZ");
+    // draw ratio (original vs strict) with legends
+    for (size_t s = 0; s < species.size(); ++s) {
+        auto &lab = species[s].second;
+        // original ratio
+        {
+            TCanvas cR(Form("cR_orig_%s", lab.c_str()),
+                       Form("%s Ratio Orig", lab.c_str()), 1800,600);
+            cR.Divide(3,1);
+            SetSame2DScale(hRatioOrig[s][0],hRatioOrig[s][1],hRatioOrig[s][2]);
+            for (int r=0; r<3; ++r) {
+                cR.cd(r+1);
+                gPad->SetLeftMargin(.15);
+                gPad->SetRightMargin(.15);
+                gPad->SetLogz();
+                hRatioOrig[s][r]->Draw("COLZ");
+                // survival percentages
+                double pOrig = nNoCut[s][r] ? 100.0 * nOrig[s][r] / nNoCut[s][r] : 0;
+                double pStr  = nNoCut[s][r] ? 100.0 * nStr [s][r] / nNoCut[s][r] : 0;
+                TLegend legF(0.15,0.75,0.45,0.93);
+                legF.SetFillColor(kWhite);
+                legF.SetBorderSize(1);
+                legF.SetTextSize(0.03);
+                legF.AddEntry((TObject*)0, "No cuts: 100%", "");
+                legF.AddEntry((TObject*)0, Form("Orig cuts: %.1f%%", pOrig), "");
+                legF.AddEntry((TObject*)0, Form("Strict cuts: %.1f%%", pStr ), "");
+                legF.Draw();
+                // stats legend
+                TLegend legS(0.6,0.7,0.9,0.9);
+                legS.SetFillColor(kWhite);
+                legS.SetBorderSize(1);
+                legS.SetTextSize(0.03);
+                legS.AddEntry((TObject*)0, Form("Mean=%.3f",  meanOrig[s][r]), "");
+                legS.AddEntry((TObject*)0, Form("Std=%.3f",   sigmaOrig[s][r]), "");
+                legS.Draw();
+            }
+            cR.SaveAs(Form("output/dc/ratio_orig_%s.png", lab.c_str()));
         }
-        cM.SaveAs(Form("output/dc/mc_%s.png", lab.c_str()));
-
-        // Ratio
-        TCanvas cR(Form("cR_%s", lab.c_str()), Form("%s Data/MC Ratio", lab.c_str()), 1800,600);
-        cR.Divide(3,1);
-        SetSame2DScale(hRatio[s][0],hRatio[s][1],hRatio[s][2]);
-        for(int r=0;r<3;++r){
-            cR.cd(r+1);
-            gPad->SetLeftMargin(.15);
-            gPad->SetRightMargin(.15);
-            gPad->SetLogz();
-            hRatio[s][r]->Draw("COLZ");
-            TLegend leg(0.6,0.7,0.9,0.9);
-            leg.SetFillColor(kWhite);
-            leg.SetBorderSize(1);
-            leg.SetTextSize(0.03);
-            leg.AddEntry((TObject*)0, Form("Mean=%.3f", meanV[s][r]), "");
-            leg.AddEntry((TObject*)0, Form("StdDev=%.3f", sigmaV[s][r]), "");
-            leg.Draw();
+        // strict ratio
+        {
+            TCanvas cR(Form("cR_strict_%s", lab.c_str()),
+                       Form("%s Ratio Strict", lab.c_str()), 1800,600);
+            cR.Divide(3,1);
+            SetSame2DScale(hRatioStr[s][0],hRatioStr[s][1],hRatioStr[s][2]);
+            for (int r=0; r<3; ++r) {
+                cR.cd(r+1);
+                gPad->SetLeftMargin(.15);
+                gPad->SetRightMargin(.15);
+                gPad->SetLogz();
+                hRatioStr[s][r]->Draw("COLZ");
+                // same survival percentages
+                double pOrig = nNoCut[s][r] ? 100.0 * nOrig[s][r] / nNoCut[s][r] : 0;
+                double pStr  = nNoCut[s][r] ? 100.0 * nStr [s][r] / nNoCut[s][r] : 0;
+                TLegend legF(0.15,0.75,0.45,0.93);
+                legF.SetFillColor(kWhite);
+                legF.SetBorderSize(1);
+                legF.SetTextSize(0.03);
+                legF.AddEntry((TObject*)0, "No cuts: 100%", "");
+                legF.AddEntry((TObject*)0, Form("Orig cuts: %.1f%%", pOrig), "");
+                legF.AddEntry((TObject*)0, Form("Strict cuts: %.1f%%", pStr ), "");
+                legF.Draw();
+                // stats legend
+                TLegend legS(0.6,0.7,0.9,0.9);
+                legS.SetFillColor(kWhite);
+                legS.SetBorderSize(1);
+                legS.SetTextSize(0.03);
+                legS.AddEntry((TObject*)0, Form("Mean=%.3f",  meanStr[s][r]), "");
+                legS.AddEntry((TObject*)0, Form("Std=%.3f",   sigmaStr[s][r]), "");
+                legS.Draw();
+            }
+            cR.SaveAs(Form("output/dc/ratio_strict_%s.png", lab.c_str()));
         }
-        cR.SaveAs(Form("output/dc/ratio_%s.png", lab.c_str()));
     }
 
     // four-color palette for outliers
     Int_t pal[4] = { kBlue, kOrange, kRed, kPink };
     gStyle->SetPalette(4, pal);
 
-    // draw outlier maps with new scaling
-    for(size_t s=0;s<species.size();++s){
-        auto &lab=species[s].second;
-        TCanvas cO(Form("cO_%s", lab.c_str()), Form("%s Ratio Outliers", lab.c_str()), 1800,600);
-        cO.Divide(3,1);
-        for(int r=0;r<3;++r){
-            cO.cd(r+1);
-            gPad->SetLeftMargin(.15);
-            gPad->SetRightMargin(.15);
-            gPad->SetLogz(0);
-
-            // clone & reset for map
-            TH2D* m = (TH2D*)hRatio[s][r]->Clone(Form("m_%s_r%d", lab.c_str(), r+1));
-            m->Reset();
-
-            // fill with category integers
-            for(int ix=1; ix<=NB2; ++ix){
-                for(int iy=1; iy<=NB2; ++iy){
-                    double v = hRatio[s][r]->GetBinContent(ix, iy);
-                    if(v <= 0) continue;
-                    int binCat = 4; // default: <1/5 or >5 (pink)
-                    if(v >= 0.5 && v <= 2.0) {
-                        binCat = 1; // blue
-                    }
-                    else if((v >= 1.0/3.0 && v < 0.5) || (v > 2.0   && v <= 3.0)) {
-                        binCat = 2; // light red (orange)
-                    }
-                    else if((v >= 1.0/5.0 && v < 1.0/3.0) || (v > 3.0 && v <= 5.0)) {
-                        binCat = 3; // dark red
-                    }
-                    m->SetBinContent(ix, iy, binCat);
+    // draw outlier maps for both ratio versions
+    for (size_t s = 0; s < species.size(); ++s) {
+        auto &lab = species[s].second;
+        // original outliers
+        {
+            TCanvas cO(Form("cO_orig_%s", lab.c_str()),
+                       Form("%s Outliers Orig", lab.c_str()), 1800,600);
+            cO.Divide(3,1);
+            for (int r=0; r<3; ++r) {
+                cO.cd(r+1);
+                gPad->SetLeftMargin(.15);
+                gPad->SetRightMargin(.15);
+                gPad->SetLogz(0);
+                TH2D* m = (TH2D*)hRatioOrig[s][r]->Clone(Form("m_orig_%s_r%d", lab.c_str(), r+1));
+                m->Reset();
+                for (int ix=1; ix<=NB2; ++ix) for (int iy=1; iy<=NB2; ++iy) {
+                    double v = hRatioOrig[s][r]->GetBinContent(ix,iy);
+                    if (v<=0) continue;
+                    int cat = 4;
+                    if (v>=0.5 && v<=2.0) cat = 1;
+                    else if ((v>=1.0/3.0 && v<0.5) || (v>2.0 && v<=3.0)) cat = 2;
+                    else if ((v>=1.0/5.0 && v<1.0/3.0) || (v>3.0 && v<=5.0)) cat = 3;
+                    m->SetBinContent(ix,iy,cat);
                 }
+                m->SetContour(4);
+                m->SetContourLevel(0,1);
+                m->SetContourLevel(1,2);
+                m->SetContourLevel(2,3);
+                m->SetContourLevel(3,4);
+                m->Draw("COLZ");
             }
-
-            // set discrete contour levels
-            m->SetContour(4);
-            m->SetContourLevel(0, 1);
-            m->SetContourLevel(1, 2);
-            m->SetContourLevel(2, 3);
-            m->SetContourLevel(3, 4);
-
-            // draw
-            m->Draw("COLZ");
+            cO.SaveAs(Form("output/dc/outliers_orig_%s.png", lab.c_str()));
         }
-        cO.SaveAs(Form("output/dc/outliers_%s.png", lab.c_str()));
+        // strict outliers
+        {
+            TCanvas cO(Form("cO_strict_%s", lab.c_str()),
+                       Form("%s Outliers Strict", lab.c_str()), 1800,600);
+            cO.Divide(3,1);
+            for (int r=0; r<3; ++r) {
+                cO.cd(r+1);
+                gPad->SetLeftMargin(.15);
+                gPad->SetRightMargin(.15);
+                gPad->SetLogz(0);
+                TH2D* m = (TH2D*)hRatioStr[s][r]->Clone(Form("m_strict_%s_r%d", lab.c_str(), r+1));
+                m->Reset();
+                for (int ix=1; ix<=NB2; ++ix) for (int iy=1; iy<=NB2; ++iy) {
+                    double v = hRatioStr[s][r]->GetBinContent(ix,iy);
+                    if (v<=0) continue;
+                    int cat = 4;
+                    if (v>=0.5 && v<=2.0) cat = 1;
+                    else if ((v>=1.0/3.0 && v<0.5) || (v>2.0 && v<=3.0)) cat = 2;
+                    else if ((v>=1.0/5.0 && v<1.0/3.0) || (v>3.0 && v<=5.0)) cat = 3;
+                    m->SetBinContent(ix,iy,cat);
+                }
+                m->SetContour(4);
+                m->SetContourLevel(0,1);
+                m->SetContourLevel(1,2);
+                m->SetContourLevel(2,3);
+                m->SetContourLevel(3,4);
+                m->Draw("COLZ");
+            }
+            cO.SaveAs(Form("output/dc/outliers_strict_%s.png", lab.c_str()));
+        }
     }
 
     return 0;
