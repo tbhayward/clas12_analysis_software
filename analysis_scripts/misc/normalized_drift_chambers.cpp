@@ -132,22 +132,18 @@ int main(int argc, char** argv) {
         return 1;
     }
 
-    // create output directories
     gSystem->mkdir("output",    kTRUE);
     gSystem->mkdir("output/dc", kTRUE);
 
-    // parse arguments
     Long64_t maxEvents = std::stoll(argv[1]);
     if (maxEvents == 0) maxEvents = -1;
     std::string dataFile = argv[2], mcFile = argv[3];
     int torus = std::stoi(argv[4]);
 
-    // setup chains
     TChain dataCh("PhysicsEvents"), mcCh("PhysicsEvents");
     dataCh.Add(dataFile.c_str());
     mcCh .Add(mcFile .c_str());
 
-    // branches
     Int_t    pid;
     Double_t x6,y6,x18,y18,x36,y36;
     Double_t edge6,edge18,edge36, theta;
@@ -174,12 +170,10 @@ int main(int argc, char** argv) {
     mcCh .SetBranchAddress("traj_edge_36",&edge36);
     mcCh .SetBranchAddress("theta",       &theta);
 
-    // constants
     const int NB2 = 200;
     const double xmins[3] = {-180,-280,-450}, xmaxs[3] = {180,280,450};
     std::vector<std::pair<int,std::string>> species = {{11,"electron"},{2212,"proton"}};
 
-    // histograms
     std::vector<std::vector<TH2D*>> 
       hDataOrig(species.size()), hMCOrig(species.size()), hRatioOrig(species.size()),
       hDataStr (species.size()), hMCStr  (species.size()), hRatioStr (species.size());
@@ -202,13 +196,11 @@ int main(int argc, char** argv) {
       }
     }
 
-    // counters
     std::vector<std::vector<Long64_t>> 
       nNoCut(species.size(), std::vector<Long64_t>(3,0)),
       nOrig (species.size(), std::vector<Long64_t>(3,0)),
       nStr  (species.size(), std::vector<Long64_t>(3,0));
 
-    // fill data
     Long64_t nD = dataCh.GetEntries();
     if (maxEvents>0 && maxEvents<nD) nD=maxEvents;
     for (Long64_t i=0;i<nD;++i) {
@@ -233,7 +225,6 @@ int main(int argc, char** argv) {
       }
     }
 
-    // fill MC
     Long64_t nM = mcCh.GetEntries();
     if (maxEvents>0 && maxEvents<nM) nM=maxEvents;
     for (Long64_t i=0;i<nM;++i) {
@@ -253,7 +244,6 @@ int main(int argc, char** argv) {
       }
     }
 
-    // normalize, ratios, stats
     std::vector<std::vector<double>> meanOrig(species.size(), std::vector<double>(3)),
                                 sigmaOrig(meanOrig),
                                 meanStr (meanOrig),
@@ -309,23 +299,19 @@ int main(int argc, char** argv) {
       SetSame2DScale(hRatioOrig[s][0],hRatioOrig[s][1],hRatioOrig[s][2]);
       for (int r=0;r<3;++r) {
         cR.cd(r+1);
-        gPad->SetLeftMargin(.15);
-        gPad->SetRightMargin(.15);
-        gPad->SetLogz();
+        gPad->SetLeftMargin(.15); gPad->SetRightMargin(.15); gPad->SetLogz();
         hRatioOrig[s][r]->Draw("COLZ");
         gPad->Update();
         double pO = nNoCut[s][r] ? 100.0*nOrig[s][r]/nNoCut[s][r] : 0;
         double pS = nNoCut[s][r] ? 100.0*nStr [s][r]/nNoCut[s][r] : 0;
-        // survival legend top-left
         TLegend legF(0.15,0.75,0.45,0.90);
-        legF.SetNDC(); legF.SetFillColor(kWhite); legF.SetBorderSize(1); legF.SetTextSize(0.03);
-        legF.AddEntry((TObject*)0,"No cuts: 100%","");
-        legF.AddEntry((TObject*)0,Form("Orig cuts: %.1f%%",pO),"");
-        legF.AddEntry((TObject*)0,Form("Strict cuts: %.1f%%",pS),"");
+        legF.SetFillColor(kWhite); legF.SetBorderSize(1); legF.SetTextSize(0.03);
+        legF.AddEntry((TObject*)0,"No cuts: 100%","");  
+        legF.AddEntry((TObject*)0,Form("Orig cuts: %.1f%%",pO),"");  
+        legF.AddEntry((TObject*)0,Form("Strict cuts: %.1f%%",pS),"");  
         legF.Draw();
-        // stats legend top-right
         TLegend legS(0.60,0.75,0.90,0.90);
-        legS.SetNDC(); legS.SetFillColor(kWhite); legS.SetBorderSize(1); legS.SetTextSize(0.03);
+        legS.SetFillColor(kWhite); legS.SetBorderSize(1); legS.SetTextSize(0.03);
         legS.AddEntry((TObject*)0,Form("Mean=%.3f", meanOrig[s][r]),"");
         legS.AddEntry((TObject*)0,Form("Std=%.3f",  sigmaOrig[s][r]),"");
         legS.Draw();
@@ -342,21 +328,19 @@ int main(int argc, char** argv) {
       SetSame2DScale(hRatioStr[s][0],hRatioStr[s][1],hRatioStr[s][2]);
       for (int r=0;r<3;++r) {
         cR.cd(r+1);
-        gPad->SetLeftMargin(.15);
-        gPad->SetRightMargin(.15);
-        gPad->SetLogz();
+        gPad->SetLeftMargin(.15); gPad->SetRightMargin(.15); gPad->SetLogz();
         hRatioStr[s][r]->Draw("COLZ");
         gPad->Update();
         double pO = nNoCut[s][r] ? 100.0*nOrig[s][r]/nNoCut[s][r] : 0;
         double pS = nNoCut[s][r] ? 100.0*nStr [s][r]/nNoCut[s][r] : 0;
         TLegend legF(0.15,0.75,0.45,0.90);
-        legF.SetNDC(); legF.SetFillColor(kWhite); legF.SetBorderSize(1); legF.SetTextSize(0.03);
+        legF.SetFillColor(kWhite); legF.SetBorderSize(1); legF.SetTextSize(0.03);
         legF.AddEntry((TObject*)0,"No cuts: 100%","");
         legF.AddEntry((TObject*)0,Form("Orig cuts: %.1f%%",pO),"");
         legF.AddEntry((TObject*)0,Form("Strict cuts: %.1f%%",pS),"");
         legF.Draw();
         TLegend legS(0.60,0.75,0.90,0.90);
-        legS.SetNDC(); legS.SetFillColor(kWhite); legS.SetBorderSize(1); legS.SetTextSize(0.03);
+        legS.SetFillColor(kWhite); legS.SetBorderSize(1); legS.SetTextSize(0.03);
         legS.AddEntry((TObject*)0,Form("Mean=%.3f", meanStr [s][r]),"");
         legS.AddEntry((TObject*)0,Form("Std=%.3f",  sigmaStr[s][r]),"");
         legS.Draw();
