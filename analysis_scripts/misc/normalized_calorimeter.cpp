@@ -14,7 +14,7 @@
  *      and electron (PID=11) hit-position histograms for PCal (layer1), ECin (layer4), ECout (layer7).
  *   4) Normalizes each histogram and computes data/MC ratio.
  *   5) Draws all regular "COLZ" canvases for both species: Data, MC, Ratio.
- *   6) Switches to two-color palette and draws outlier maps for both species.
+ *   6) Switches to four-color palette and draws outlier maps for both species.
  */
 
 #include <iostream>
@@ -94,18 +94,23 @@ int main(int argc, char** argv) {
 
     // parse args
     Long64_t maxEvents = -1;
-    if (argc>1) { maxEvents = std::stoll(argv[1]); if(maxEvents==0) maxEvents=-1; }
-    bool useData = (argc>2), useMC = (argc>3);
-    std::string dataFile = useData? argv[2] : "";
-    std::string mcFile   = useMC?   argv[3] : "";
+    if (argc > 1) {
+        maxEvents = std::stoll(argv[1]);
+        if (maxEvents == 0) maxEvents = -1;
+    }
+    bool useData = (argc > 2), useMC = (argc > 3);
+    std::string dataFile = useData ? argv[2] : "";
+    std::string mcFile   = useMC   ? argv[3] : "";
 
     // setup chains
     TChain dataCh("PhysicsEvents"), mcCh("PhysicsEvents");
-    if(useData) dataCh.Add(dataFile.c_str()); else dataCh.Add("/work/clas12/.../cal_data.root");
-    if(useMC)   mcCh.Add(mcFile.c_str());   else mcCh.Add("/work/clas12/.../cal_mc.root");
+    if (useData) dataCh.Add(dataFile.c_str());
+    else          dataCh.Add("/work/clas12/.../cal_data.root");
+    if (useMC)   mcCh.Add(mcFile.c_str());
+    else         mcCh.Add("/work/clas12/.../cal_mc.root");
 
     // branches
-    Int_t pid, sector;
+    Int_t    pid, sector;
     Double_t x1,y1,x4,y4,x7,y7;
     Double_t lu1, lv1, lw1, lu4, lv4, lw4, lu7, lv7, lw7;
     dataCh.SetBranchAddress("particle_pid", &pid);
@@ -144,118 +149,212 @@ int main(int argc, char** argv) {
     mcCh .SetBranchAddress("cal_lw_7",     &lw7);
 
     const int NB = 200;
-    const double xmin=-450, xmax=450, ymin=-450, ymax=450;
+    const double xmin = -450, xmax = 450, ymin = -450, ymax = 450;
     std::vector<std::pair<int,std::string>> speciesVec = {{22,"photon"},{11,"electron"}};
     std::vector<std::string> layers = {"PCal","ECin","ECout"};
 
-    // histos
+    // histograms
     std::vector<std::vector<TH2D*>> hData(2), hMC(2), hRatio(2);
-    for(int s=0; s<2; ++s) {
-        for(int i=0; i<3; ++i) {
+    for (int s = 0; s < 2; ++s) {
+        for (int i = 0; i < 3; ++i) {
             auto lbl = Form("%s_%s", speciesVec[s].second.c_str(), layers[i].c_str());
-            hData[s].push_back(new TH2D(Form("hD_%s", lbl), Form("%s Data %s; x; y", speciesVec[s].second.c_str(), layers[i].c_str()), NB, xmin, xmax, NB, ymin, ymax));
-            hMC  [s].push_back((TH2D*)hData[s][i]->Clone(Form("hM_%s", lbl)));
+            hData[s].push_back(new TH2D(Form("hD_%s", lbl.c_str()),
+                                        Form("%s Data %s; x; y",
+                                             speciesVec[s].second.c_str(),
+                                             layers[i].c_str()),
+                                        NB, xmin, xmax, NB, ymin, ymax));
+            hMC[s].push_back((TH2D*)hData[s][i]->Clone(Form("hM_%s", lbl.c_str())));
         }
     }
 
     // fill data
-    Long64_t nD = dataCh.GetEntries(); if(maxEvents>0 && maxEvents<nD) nD=maxEvents;
-    for(Long64_t ev=0; ev<nD; ++ev) {
+    Long64_t nD = dataCh.GetEntries();
+    if (maxEvents > 0 && maxEvents < nD) nD = maxEvents;
+    for (Long64_t ev = 0; ev < nD; ++ev) {
         dataCh.GetEntry(ev);
-        for(int s=0; s<2; ++s) {
-            if(pid != speciesVec[s].first) continue;
-            double xs[3]={x1,x4,x7}, ys[3]={y1,y4,y7};
-            for(int i=0;i<3;i++) {
-                if(xs[i]==-9999 || ys[i]==-9999) continue;
-                if(!cal_fiducial_cut(sector, lv1, lw1, lu1, lv4, lw4, lu4, lv7, lw7, lu7)) continue;
+        for (int s = 0; s < 2; ++s) {
+            if (pid != speciesVec[s].first) continue;
+            double xs[3] = {x1, x4, x7}, ys[3] = {y1, y4, y7};
+            for (int i = 0; i < 3; ++i) {
+                if (xs[i] == -9999 || ys[i] == -9999) continue;
+                if (!cal_fiducial_cut(sector,
+                                      lv1, lw1,
+                                      lu1, lv4, lw4,
+                                      lu4, lv7, lw7,
+                                      lu7)) continue;
                 hData[s][i]->Fill(xs[i], ys[i]);
             }
         }
     }
+
     // fill MC
-    Long64_t nM = mcCh.GetEntries(); if(maxEvents>0 && maxEvents<nM) nM=maxEvents;
-    for(Long64_t ev=0; ev<nM; ++ev) {
+    Long64_t nM = mcCh.GetEntries();
+    if (maxEvents > 0 && maxEvents < nM) nM = maxEvents;
+    for (Long64_t ev = 0; ev < nM; ++ev) {
         mcCh.GetEntry(ev);
-        for(int s=0; s<2; ++s) {
-            if(pid != speciesVec[s].first) continue;
-            double xs[3]={x1,x4,x7}, ys[3]={y1,y4,y7};
-            for(int i=0;i<3;i++) {
-                if(xs[i]==-9999 || ys[i]==-9999) continue;
-                if(!cal_fiducial_cut(sector, lv1, lw1, lu1, lv4, lw4, lu4, lv7, lw7, lu7)) continue;
+        for (int s = 0; s < 2; ++s) {
+            if (pid != speciesVec[s].first) continue;
+            double xs[3] = {x1, x4, x7}, ys[3] = {y1, y4, y7};
+            for (int i = 0; i < 3; ++i) {
+                if (xs[i] == -9999 || ys[i] == -9999) continue;
+                if (!cal_fiducial_cut(sector,
+                                      lv1, lw1,
+                                      lu1, lv4, lw4,
+                                      lu4, lv7, lw7,
+                                      lu7)) continue;
                 hMC[s][i]->Fill(xs[i], ys[i]);
             }
         }
     }
 
-    // normalize & ratio
-    std::vector<std::vector<double>> mu(2, std::vector<double>(3)), sigma(2, std::vector<double>(3));
-    for(int s=0;s<2;++s) {
-        for(int i=0;i<3;++i) {
-            double id = hData[s][i]->Integral(); if(id>0) hData[s][i]->Scale(1.0/id);
-            double im = hMC  [s][i]->Integral(); if(im>0) hMC  [s][i]->Scale(1.0/im);
-            hRatio[s].push_back((TH2D*)hData[s][i]->Clone(Form("hR_%s_%s", speciesVec[s].second.c_str(), layers[i].c_str())));
+    // normalize & compute ratio + stats
+    std::vector<std::vector<double>> mu(2, std::vector<double>(3)),
+                               sigma(2, std::vector<double>(3));
+    for (int s = 0; s < 2; ++s) {
+        for (int i = 0; i < 3; ++i) {
+            double id = hData[s][i]->Integral();
+            if (id > 0) hData[s][i]->Scale(1.0 / id);
+            double im = hMC[s][i]->Integral();
+            if (im > 0) hMC[s][i]->Scale(1.0 / im);
+            hRatio[s].push_back((TH2D*)hData[s][i]->Clone(
+                                   Form("hR_%s_%s",
+                                        speciesVec[s].second.c_str(),
+                                        layers[i].c_str())));
             hRatio[s][i]->Divide(hMC[s][i]);
-            int cnt=0; double sum=0,sum2=0;
-            for(int ix=1;ix<=NB;++ix) for(int iy=1;iy<=NB;++iy) {
-                double v=hRatio[s][i]->GetBinContent(ix,iy);
-                if(v<=0) continue;
-                sum += v;
-                sum2 += v*v;
-                cnt++;
+
+            int cnt = 0;
+            double sum = 0, sum2 = 0;
+            for (int ix = 1; ix <= NB; ++ix) {
+                for (int iy = 1; iy <= NB; ++iy) {
+                    double v = hRatio[s][i]->GetBinContent(ix, iy);
+                    if (v <= 0) continue;
+                    sum  += v;
+                    sum2 += v*v;
+                    cnt++;
+                }
             }
-            mu[s][i]    = cnt? sum/cnt:0;
-            sigma[s][i] = cnt? std::sqrt(sum2/cnt - mu[s][i]*mu[s][i]):0;
+            if (cnt > 0) {
+                mu[s][i]    = sum / cnt;
+                sigma[s][i] = std::sqrt(sum2 / cnt - mu[s][i]*mu[s][i]);
+            }
         }
     }
 
     gStyle->SetOptStat(0);
-    // draw regular for both species
-    for(int s=0;s<2;++s) {
-        TCanvas cD(Form("c_data_%s", speciesVec[s].second.c_str()), Form("%s Data Uncut", speciesVec[s].second.c_str()), 1800,600);
+    // draw Data, MC, Ratio
+    for (int s = 0; s < 2; ++s) {
+        // Data
+        TCanvas cD(Form("cD_%s", speciesVec[s].second.c_str()),
+                   Form("%s Data", speciesVec[s].second.c_str()),
+                   1800,600);
         cD.Divide(3,1);
-        SetSame2DScale(hData[s][0],hData[s][1],hData[s][2]);
-        for(int i=0;i<3;++i) { cD.cd(i+1); gPad->SetLeftMargin(.15); gPad->SetRightMargin(.15); gPad->SetLogz(); hData[s][i]->Draw("COLZ"); }
-        cD.SaveAs(Form("output/cal/data_uncut_%s.png", speciesVec[s].second.c_str()));
+        SetSame2DScale(hData[s][0], hData[s][1], hData[s][2]);
+        for (int i = 0; i < 3; ++i) {
+            cD.cd(i+1);
+            gPad->SetLeftMargin(.15);
+            gPad->SetRightMargin(.15);
+            gPad->SetLogz();
+            hData[s][i]->Draw("COLZ");
+        }
+        cD.SaveAs(Form("output/cal/data_%s.png", speciesVec[s].second.c_str()));
 
-        TCanvas cM(Form("c_mc_%s", speciesVec[s].second.c_str()), Form("%s MC Uncut", speciesVec[s].second.c_str()), 1800,600);
+        // MC
+        TCanvas cM(Form("cM_%s", speciesVec[s].second.c_str()),
+                   Form("%s MC", speciesVec[s].second.c_str()),
+                   1800,600);
         cM.Divide(3,1);
-        SetSame2DScale(hMC[s][0],hMC[s][1],hMC[s][2]);
-        for(int i=0;i<3;++i) { cM.cd(i+1); gPad->SetLeftMargin(.15); gPad->SetRightMargin(.15); gPad->SetLogz(); hMC[s][i]->Draw("COLZ"); }
-        cM.SaveAs(Form("output/cal/mc_uncut_%s.png", speciesVec[s].second.c_str()));
+        SetSame2DScale(hMC[s][0], hMC[s][1], hMC[s][2]);
+        for (int i = 0; i < 3; ++i) {
+            cM.cd(i+1);
+            gPad->SetLeftMargin(.15);
+            gPad->SetRightMargin(.15);
+            gPad->SetLogz();
+            hMC[s][i]->Draw("COLZ");
+        }
+        cM.SaveAs(Form("output/cal/mc_%s.png", speciesVec[s].second.c_str()));
 
-        TCanvas cR(Form("c_ratio_%s", speciesVec[s].second.c_str()), Form("%s Data/MC Ratio", speciesVec[s].second.c_str()), 1800,600);
+        // Ratio
+        TCanvas cR(Form("cR_%s", speciesVec[s].second.c_str()),
+                   Form("%s Ratio", speciesVec[s].second.c_str()),
+                   1800,600);
         cR.Divide(3,1);
-        SetSame2DScale(hRatio[s][0],hRatio[s][1],hRatio[s][2]);
-        for(int i=0;i<3;++i) {
-            cR.cd(i+1); gPad->SetLeftMargin(.15); gPad->SetRightMargin(.15); gPad->SetLogz();
+        SetSame2DScale(hRatio[s][0], hRatio[s][1], hRatio[s][2]);
+        for (int i = 0; i < 3; ++i) {
+            cR.cd(i+1);
+            gPad->SetLeftMargin(.15);
+            gPad->SetRightMargin(.15);
+            gPad->SetLogz();
             hRatio[s][i]->Draw("COLZ");
-            TLegend leg(0.6,0.7,0.9,0.9); leg.SetFillColor(kWhite); leg.SetBorderSize(1); leg.SetTextSize(0.03);
-            leg.AddEntry((TObject*)0,Form("Mean=%.3f", mu[s][i]),"");
-            leg.AddEntry((TObject*)0,Form("StdDev=%.3f", sigma[s][i]),"");
+            TLegend leg(0.6,0.7,0.9,0.9);
+            leg.SetFillColor(kWhite);
+            leg.SetBorderSize(1);
+            leg.SetTextSize(0.03);
+            leg.AddEntry((TObject*)0,
+                         Form("Mean=%.3f", mu[s][i]), "");
+            leg.AddEntry((TObject*)0,
+                         Form("StdDev=%.3f", sigma[s][i]), "");
             leg.Draw();
         }
         cR.SaveAs(Form("output/cal/ratio_%s.png", speciesVec[s].second.c_str()));
     }
 
-    // two-color palette for outliers
-    int outPal[2]={kBlue,kRed};
-    gStyle->SetPalette(2,outPal);
-    for(int s=0;s<2;++s) {
-        TCanvas cO(Form("c_outliers_%s", speciesVec[s].second.c_str()), Form("%s Ratio Outliers", speciesVec[s].second.c_str()), 1800,600);
-        cO.Divide(3,1);
-        for(int i=0;i<3;++i) {
-            cO.cd(i+1); gPad->SetLeftMargin(.15); gPad->SetRightMargin(.15); gPad->SetLogz(0);
-            TH2D* map=(TH2D*)hRatio[s][i]->Clone("map"); map->Reset();
-            for(int ix=1;ix<=NB;++ix) for(int iy=1;iy<=NB;++iy) {
-                double v=hRatio[s][i]->GetBinContent(ix,iy);
-                if(v<=0) continue;
-                int lvl=(v<0.5||v>2.0)?2:1;
-                map->SetBinContent(ix,iy,lvl);
+    // four-color palette for outliers
+    Int_t pal[4] = { kBlue, kOrange, kRed, kPink };
+    gStyle->SetPalette(4, pal);
+
+    // draw outlier maps with new scaling
+    for (int s = 0; s < 2; ++s) {
+        for (int i = 0; i < 3; ++i) {
+            TCanvas cO(Form("cO_%s_%s",
+                            speciesVec[s].second.c_str(),
+                            layers[i].c_str()),
+                       Form("%s Ratio Outliers %s",
+                            speciesVec[s].second.c_str(),
+                            layers[i].c_str()),
+                       600,600);
+            gPad->SetLeftMargin(.15);
+            gPad->SetRightMargin(.15);
+            gPad->SetLogz(0);
+
+            // clone & reset
+            TH2D* m = (TH2D*)hRatio[s][i]->Clone(Form("m_%s_%s",
+                                                      speciesVec[s].second.c_str(),
+                                                      layers[i].c_str()));
+            m->Reset();
+
+            // categorize bins
+            for (int ix = 1; ix <= NB; ++ix) {
+                for (int iy = 1; iy <= NB; ++iy) {
+                    double v = hRatio[s][i]->GetBinContent(ix, iy);
+                    if (v <= 0) continue;
+                    int cat = 4; // default: <1/5 or >5 → pink
+                    if (v >= 0.5 && v <= 2.0) {
+                        cat = 1; // blue
+                    }
+                    else if ((v >= 1.0/3.0 && v < 0.5)
+                          || (v > 2.0   && v <= 3.0)) {
+                        cat = 2; // light red (orange)
+                    }
+                    else if ((v >= 1.0/5.0 && v < 1.0/3.0)
+                          || (v > 3.0   && v <= 5.0)) {
+                        cat = 3; // dark red
+                    }
+                    m->SetBinContent(ix, iy, cat);
+                }
             }
-            map->SetContour(2); map->SetContourLevel(0,1); map->SetContourLevel(1,2);
-            map->Draw("COLZ");
+
+            // set discrete contours
+            m->SetContour(4);
+            m->SetContourLevel(0, 1);
+            m->SetContourLevel(1, 2);
+            m->SetContourLevel(2, 3);
+            m->SetContourLevel(3, 4);
+
+            m->Draw("COLZ");
+            cO.SaveAs(Form("output/cal/outliers_%s_%s.png",
+                           speciesVec[s].second.c_str(),
+                           layers[i].c_str()));
         }
-        cO.SaveAs(Form("output/cal/ratio_%s_outliers.png", speciesVec[s].second.c_str()));
     }
 
     return 0;
