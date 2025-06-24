@@ -132,18 +132,22 @@ int main(int argc, char** argv) {
         return 1;
     }
 
+    // create output directories
     gSystem->mkdir("output",    kTRUE);
     gSystem->mkdir("output/dc", kTRUE);
 
+    // parse arguments
     Long64_t maxEvents = std::stoll(argv[1]);
     if (maxEvents == 0) maxEvents = -1;
     std::string dataFile = argv[2], mcFile = argv[3];
     int torus = std::stoi(argv[4]);
 
+    // setup chains
     TChain dataCh("PhysicsEvents"), mcCh("PhysicsEvents");
     dataCh.Add(dataFile.c_str());
     mcCh .Add(mcFile .c_str());
 
+    // branches
     Int_t    pid;
     Double_t x6,y6,x18,y18,x36,y36;
     Double_t edge6,edge18,edge36, theta;
@@ -170,17 +174,15 @@ int main(int argc, char** argv) {
     mcCh .SetBranchAddress("traj_edge_36",&edge36);
     mcCh .SetBranchAddress("theta",       &theta);
 
+    // constants
     const int NB2 = 200;
     const double xmins[3] = {-180,-280,-450}, xmaxs[3] = {180,280,450};
     std::vector<std::pair<int,std::string>> species = {{11,"electron"},{2212,"proton"}};
 
-    // Histograms
-    std::vector<std::vector<TH2D*>> hDataOrig(species.size()),
-                                 hMCOrig  (species.size()),
-                                 hRatioOrig(species.size()),
-                                 hDataStr (species.size()),
-                                 hMCStr   (species.size()),
-                                 hRatioStr(species.size());
+    // histograms
+    std::vector<std::vector<TH2D*>> 
+      hDataOrig(species.size()), hMCOrig(species.size()), hRatioOrig(species.size()),
+      hDataStr (species.size()), hMCStr  (species.size()), hRatioStr (species.size());
 
     for (size_t s=0; s<species.size(); ++s) {
       auto &lab=species[s].second;
@@ -200,13 +202,13 @@ int main(int argc, char** argv) {
       }
     }
 
-    // Counters
+    // counters
     std::vector<std::vector<Long64_t>> 
       nNoCut(species.size(), std::vector<Long64_t>(3,0)),
       nOrig (species.size(), std::vector<Long64_t>(3,0)),
       nStr  (species.size(), std::vector<Long64_t>(3,0));
 
-    // Fill DATA
+    // fill data
     Long64_t nD = dataCh.GetEntries();
     if (maxEvents>0 && maxEvents<nD) nD=maxEvents;
     for (Long64_t i=0;i<nD;++i) {
@@ -231,7 +233,7 @@ int main(int argc, char** argv) {
       }
     }
 
-    // Fill MC
+    // fill MC
     Long64_t nM = mcCh.GetEntries();
     if (maxEvents>0 && maxEvents<nM) nM=maxEvents;
     for (Long64_t i=0;i<nM;++i) {
@@ -251,7 +253,7 @@ int main(int argc, char** argv) {
       }
     }
 
-    // Normalize & ratios & stats
+    // normalize, ratios, stats
     std::vector<std::vector<double>> meanOrig(species.size(), std::vector<double>(3)),
                                 sigmaOrig(meanOrig),
                                 meanStr (meanOrig),
@@ -259,7 +261,6 @@ int main(int argc, char** argv) {
 
     for (size_t s=0;s<species.size();++s) {
       for (int r=0;r<3;++r) {
-        // original
         double dI = hDataOrig[s][r]->Integral();
         if (dI>0) hDataOrig[s][r]->Scale(1./dI);
         double mI = hMCOrig  [s][r]->Integral();
@@ -268,7 +269,7 @@ int main(int argc, char** argv) {
           Form("hR_orig_%s_r%d", species[s].second.c_str(), r+1)
         ));
         hRatioOrig[s][r]->Divide(hMCOrig[s][r]);
-        int cnt=0; double sum=0, sum2=0;
+        int cnt=0; double sum=0,sum2=0;
         for (int ix=1; ix<=NB2; ++ix) for (int iy=1; iy<=NB2; ++iy){
           double v=hRatioOrig[s][r]->GetBinContent(ix,iy);
           if (v>0) { sum+=v; sum2+=v*v; cnt++; }
@@ -277,7 +278,6 @@ int main(int argc, char** argv) {
           meanOrig[s][r]  = sum/cnt;
           sigmaOrig[s][r] = std::sqrt(sum2/cnt - meanOrig[s][r]*meanOrig[s][r]);
         }
-        // strict
         double dI2 = hDataStr[s][r]->Integral();
         if (dI2>0) hDataStr[s][r]->Scale(1./dI2);
         double mI2 = hMCStr  [s][r]->Integral();
@@ -300,7 +300,7 @@ int main(int argc, char** argv) {
 
     gStyle->SetOptStat(0);
 
-    // Draw original ratio with survival legend top-left and stats top-right
+    // draw original ratio
     for (size_t s=0;s<species.size();++s) {
       auto &lab=species[s].second;
       TCanvas cR(Form("cR_orig_%s", lab.c_str()),
@@ -309,20 +309,23 @@ int main(int argc, char** argv) {
       SetSame2DScale(hRatioOrig[s][0],hRatioOrig[s][1],hRatioOrig[s][2]);
       for (int r=0;r<3;++r) {
         cR.cd(r+1);
-        gPad->SetLeftMargin(.15); gPad->SetRightMargin(.15); gPad->SetLogz();
+        gPad->SetLeftMargin(.15);
+        gPad->SetRightMargin(.15);
+        gPad->SetLogz();
         hRatioOrig[s][r]->Draw("COLZ");
-        // survival legend top-left
+        gPad->Update();
         double pO = nNoCut[s][r] ? 100.0*nOrig[s][r]/nNoCut[s][r] : 0;
         double pS = nNoCut[s][r] ? 100.0*nStr [s][r]/nNoCut[s][r] : 0;
+        // survival legend top-left
         TLegend legF(0.15,0.75,0.45,0.90);
-        legF.SetFillColor(kWhite); legF.SetBorderSize(1); legF.SetTextSize(0.03);
+        legF.SetNDC(); legF.SetFillColor(kWhite); legF.SetBorderSize(1); legF.SetTextSize(0.03);
         legF.AddEntry((TObject*)0,"No cuts: 100%","");
         legF.AddEntry((TObject*)0,Form("Orig cuts: %.1f%%",pO),"");
         legF.AddEntry((TObject*)0,Form("Strict cuts: %.1f%%",pS),"");
         legF.Draw();
         // stats legend top-right
         TLegend legS(0.60,0.75,0.90,0.90);
-        legS.SetFillColor(kWhite); legS.SetBorderSize(1); legS.SetTextSize(0.03);
+        legS.SetNDC(); legS.SetFillColor(kWhite); legS.SetBorderSize(1); legS.SetTextSize(0.03);
         legS.AddEntry((TObject*)0,Form("Mean=%.3f", meanOrig[s][r]),"");
         legS.AddEntry((TObject*)0,Form("Std=%.3f",  sigmaOrig[s][r]),"");
         legS.Draw();
@@ -330,7 +333,7 @@ int main(int argc, char** argv) {
       cR.SaveAs(Form("output/dc/ratio_orig_%s.png", lab.c_str()));
     }
 
-    // Draw strict ratio similarly
+    // draw strict ratio
     for (size_t s=0;s<species.size();++s) {
       auto &lab=species[s].second;
       TCanvas cR(Form("cR_strict_%s", lab.c_str()),
@@ -339,18 +342,21 @@ int main(int argc, char** argv) {
       SetSame2DScale(hRatioStr[s][0],hRatioStr[s][1],hRatioStr[s][2]);
       for (int r=0;r<3;++r) {
         cR.cd(r+1);
-        gPad->SetLeftMargin(.15); gPad->SetRightMargin(.15); gPad->SetLogz();
+        gPad->SetLeftMargin(.15);
+        gPad->SetRightMargin(.15);
+        gPad->SetLogz();
         hRatioStr[s][r]->Draw("COLZ");
+        gPad->Update();
         double pO = nNoCut[s][r] ? 100.0*nOrig[s][r]/nNoCut[s][r] : 0;
         double pS = nNoCut[s][r] ? 100.0*nStr [s][r]/nNoCut[s][r] : 0;
         TLegend legF(0.15,0.75,0.45,0.90);
-        legF.SetFillColor(kWhite); legF.SetBorderSize(1); legF.SetTextSize(0.03);
+        legF.SetNDC(); legF.SetFillColor(kWhite); legF.SetBorderSize(1); legF.SetTextSize(0.03);
         legF.AddEntry((TObject*)0,"No cuts: 100%","");
         legF.AddEntry((TObject*)0,Form("Orig cuts: %.1f%%",pO),"");
         legF.AddEntry((TObject*)0,Form("Strict cuts: %.1f%%",pS),"");
         legF.Draw();
         TLegend legS(0.60,0.75,0.90,0.90);
-        legS.SetFillColor(kWhite); legS.SetBorderSize(1); legS.SetTextSize(0.03);
+        legS.SetNDC(); legS.SetFillColor(kWhite); legS.SetBorderSize(1); legS.SetTextSize(0.03);
         legS.AddEntry((TObject*)0,Form("Mean=%.3f", meanStr [s][r]),"");
         legS.AddEntry((TObject*)0,Form("Std=%.3f",  sigmaStr[s][r]),"");
         legS.Draw();
@@ -358,14 +364,14 @@ int main(int argc, char** argv) {
       cR.SaveAs(Form("output/dc/ratio_strict_%s.png", lab.c_str()));
     }
 
-    // Four-color palette for outliers
+    // four-color palette for outliers
     Int_t pal[4] = { kBlue, kOrange, kRed, kPink };
     gStyle->SetPalette(4,pal);
 
-    // Outlier maps
+    // draw outlier maps for orig and strict
     for (size_t s=0;s<species.size();++s) {
       auto &lab=species[s].second;
-      // orig
+      // orig outliers
       {
         TCanvas cO(Form("cO_orig_%s", lab.c_str()),
                    Form("%s Outliers Orig", lab.c_str()), 1800,600);
@@ -379,9 +385,9 @@ int main(int argc, char** argv) {
             double v=hRatioOrig[s][r]->GetBinContent(ix,iy);
             if (v<=0) continue;
             int cat=4;
-            if      (v>=0.5&&v<=2.0)                         cat=1;
-            else if ((v>=1.0/3.0&&v<0.5)||(v>2.0&&v<=3.0))    cat=2;
-            else if ((v>=1.0/5.0&&v<1.0/3.0)||(v>3.0&&v<=5.0))cat=3;
+            if      (v>=0.5&&v<=2.0)                          cat=1;
+            else if ((v>=1.0/3.0&&v<0.5)||(v>2.0&&v<=3.0))     cat=2;
+            else if ((v>=1.0/5.0&&v<1.0/3.0)||(v>3.0&&v<=5.0)) cat=3;
             m->SetBinContent(ix,iy,cat);
           }
           m->SetContour(4);
@@ -390,7 +396,7 @@ int main(int argc, char** argv) {
         }
         cO.SaveAs(Form("output/dc/outliers_orig_%s.png", lab.c_str()));
       }
-      // strict
+      // strict outliers
       {
         TCanvas cO(Form("cO_strict_%s", lab.c_str()),
                    Form("%s Outliers Strict", lab.c_str()), 1800,600);
@@ -404,9 +410,9 @@ int main(int argc, char** argv) {
             double v=hRatioStr[s][r]->GetBinContent(ix,iy);
             if (v<=0) continue;
             int cat=4;
-            if      (v>=0.5&&v<=2.0)                         cat=1;
-            else if ((v>=1.0/3.0&&v<0.5)||(v>2.0&&v<=3.0))    cat=2;
-            else if ((v>=1.0/5.0&&v<1.0/3.0)||(v>3.0&&v<=5.0))cat=3;
+            if      (v>=0.5&&v<=2.0)                          cat=1;
+            else if ((v>=1.0/3.0&&v<0.5)||(v>2.0&&v<=3.0))     cat=2;
+            else if ((v>=1.0/5.0&&v<1.0/3.0)||(v>3.0&&v<=5.0)) cat=3;
             m->SetBinContent(ix,iy,cat);
           }
           m->SetContour(4);
