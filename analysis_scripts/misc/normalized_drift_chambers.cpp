@@ -11,13 +11,17 @@
  *   torus: +1 for outbending, -1 for inbending
  *
  * What it does:
- *   1) Creates output/ and output/normalization/ if they do not exist.
+ *   1) Creates output/ and output/dc/ if they do not exist.
  *   2) Parses torus to apply DC fiducial cuts.
  *   3) Loops over data and MC, filling per-region 2D histograms for
  *      electrons (PID=11) and protons (PID=2212), applying fiducial cuts.
  *   4) Normalizes each histogram and computes data/MC ratio.
  *   5) Draws “COLZ” canvases for Data, MC, Ratio (with mean/std in legend).
- *   6) Draws outlier maps (ratio<0.5 or >2) in two-color palette.
+ *   6) Draws outlier maps with 4-color palette:
+ *        • 0.5–2     → blue
+ *        • 1/3–0.5 & 2–3   → light red (orange)
+ *        • 1/5–1/3 & 3–5   → dark red
+ *        • <1/5 or >5 → pink
  *****************************************************************************/
 
 #include <iostream>
@@ -57,7 +61,7 @@ bool dc_fiducial_cut(int torus, double theta_deg,
 // Ensure same color scale across three TH2D histograms
 // ----------------------------------------------------------------------------
 void SetSame2DScale(TH2D* h1, TH2D* h2, TH2D* h3) {
-    double mn = 1e9, mx = -1e9;
+    double mn =  1e9, mx = -1e9;
     for (auto* h : {h1,h2,h3}) {
         mn = std::min(mn, h->GetMinimum());
         mx = std::max(mx, h->GetMaximum());
@@ -141,16 +145,19 @@ int main(int argc, char** argv) {
     Long64_t nD=dataCh.GetEntries(); if(maxEvents>0 && maxEvents<nD) nD=maxEvents;
     for(Long64_t i=0;i<nD;++i){ dataCh.GetEntry(i);
         if (!dc_fiducial_cut(torus, theta*180.0/M_PI, edge6, edge18, edge36)) continue;
-        for(size_t s=0;s<species.size();++s){ if(pid!=species[s].first) continue;
+        for(size_t s=0;s<species.size();++s){
+            if(pid!=species[s].first) continue;
             double xs[3]={x6,x18,x36}, ys[3]={y6,y18,y36};
             for(int r=0;r<3;++r) if(xs[r]!=-9999) hData[s][r]->Fill(xs[r], ys[r]);
         }
     }
+
     // fill MC
     Long64_t nM=mcCh.GetEntries(); if(maxEvents>0 && maxEvents<nM) nM=maxEvents;
     for(Long64_t i=0;i<nM;++i){ mcCh.GetEntry(i);
         if (!dc_fiducial_cut(torus, theta*180.0/M_PI, edge6, edge18, edge36)) continue;
-        for(size_t s=0;s<species.size();++s){ if(pid!=species[s].first) continue;
+        for(size_t s=0;s<species.size();++s){
+            if(pid!=species[s].first) continue;
             double xs[3]={x6,x18,x36}, ys[3]={y6,y18,y36};
             for(int r=0;r<3;++r) if(xs[r]!=-9999) hMC[s][r]->Fill(xs[r], ys[r]);
         }
@@ -165,9 +172,15 @@ int main(int argc, char** argv) {
             hRatio[s].push_back((TH2D*)hData[s][r]->Clone(Form("hR_%s_r%d", species[s].second.c_str(), r+1)));
             hRatio[s][r]->Divide(hMC[s][r]);
             int cnt=0; double sum=0,sum2=0;
-            for(int ix=1;ix<=NB2;++ix) for(int iy=1;iy<=NB2;++iy){ double v=hRatio[s][r]->GetBinContent(ix,iy);
-                if(v<=0) continue; sum+=v; sum2+=v*v; cnt++; }
-            if(cnt>0){ meanV[s][r]=sum/cnt; sigmaV[s][r]=std::sqrt(sum2/cnt - meanV[s][r]*meanV[s][r]); }
+            for(int ix=1;ix<=NB2;++ix) for(int iy=1;iy<=NB2;++iy){
+                double v=hRatio[s][r]->GetBinContent(ix,iy);
+                if(v<=0) continue;
+                sum+=v; sum2+=v*v; cnt++;
+            }
+            if(cnt>0){
+                meanV[s][r]=sum/cnt;
+                sigmaV[s][r]=std::sqrt(sum2/cnt - meanV[s][r]*meanV[s][r]);
+            }
         }
     }
 
@@ -175,23 +188,42 @@ int main(int argc, char** argv) {
     // draw Data, MC, Ratio
     for(size_t s=0;s<species.size();++s){
         auto &lab=species[s].second;
+
+        // Data
         TCanvas cD(Form("cD_%s", lab.c_str()), Form("%s Data", lab.c_str()), 1800,600);
         cD.Divide(3,1);
         SetSame2DScale(hData[s][0],hData[s][1],hData[s][2]);
-        for(int r=0;r<3;++r){ cD.cd(r+1); gPad->SetLeftMargin(.15); gPad->SetRightMargin(.15); gPad->SetLogz(); hData[s][r]->Draw("COLZ"); }
+        for(int r=0;r<3;++r){
+            cD.cd(r+1);
+            gPad->SetLeftMargin(.15);
+            gPad->SetRightMargin(.15);
+            gPad->SetLogz();
+            hData[s][r]->Draw("COLZ");
+        }
         cD.SaveAs(Form("output/dc/data_%s.png", lab.c_str()));
 
+        // MC
         TCanvas cM(Form("cM_%s", lab.c_str()), Form("%s MC", lab.c_str()), 1800,600);
         cM.Divide(3,1);
         SetSame2DScale(hMC[s][0],hMC[s][1],hMC[s][2]);
-        for(int r=0;r<3;++r){ cM.cd(r+1); gPad->SetLeftMargin(.15); gPad->SetRightMargin(.15); gPad->SetLogz(); hMC[s][r]->Draw("COLZ"); }
+        for(int r=0;r<3;++r){
+            cM.cd(r+1);
+            gPad->SetLeftMargin(.15);
+            gPad->SetRightMargin(.15);
+            gPad->SetLogz();
+            hMC[s][r]->Draw("COLZ");
+        }
         cM.SaveAs(Form("output/dc/mc_%s.png", lab.c_str()));
 
+        // Ratio
         TCanvas cR(Form("cR_%s", lab.c_str()), Form("%s Data/MC Ratio", lab.c_str()), 1800,600);
         cR.Divide(3,1);
         SetSame2DScale(hRatio[s][0],hRatio[s][1],hRatio[s][2]);
         for(int r=0;r<3;++r){
-            cR.cd(r+1); gPad->SetLeftMargin(.15); gPad->SetRightMargin(.15); gPad->SetLogz();
+            cR.cd(r+1);
+            gPad->SetLeftMargin(.15);
+            gPad->SetRightMargin(.15);
+            gPad->SetLogz();
             hRatio[s][r]->Draw("COLZ");
             TLegend leg(0.6,0.7,0.9,0.9);
             leg.SetFillColor(kWhite);
@@ -204,23 +236,52 @@ int main(int argc, char** argv) {
         cR.SaveAs(Form("output/dc/ratio_%s.png", lab.c_str()));
     }
 
-    // two-color palette for outliers
-    int pal[2]={kBlue,kRed};
-    gStyle->SetPalette(2,pal);
+    // four-color palette for outliers
+    Int_t pal[4] = { kBlue, kOrange, kRed, kPink };
+    gStyle->SetPalette(4, pal);
+
+    // draw outlier maps with new scaling
     for(size_t s=0;s<species.size();++s){
         auto &lab=species[s].second;
         TCanvas cO(Form("cO_%s", lab.c_str()), Form("%s Ratio Outliers", lab.c_str()), 1800,600);
         cO.Divide(3,1);
         for(int r=0;r<3;++r){
-            cO.cd(r+1); gPad->SetLeftMargin(.15); gPad->SetRightMargin(.15); gPad->SetLogz(0);
-            TH2D* m=(TH2D*)hRatio[s][r]->Clone("map"); m->Reset();
-            for(int ix=1;ix<=NB2;++ix) for(int iy=1;iy<=NB2;++iy){ double v=hRatio[s][r]->GetBinContent(ix,iy);
-                if(v<=0) continue;
-                m->SetBinContent(ix,iy, (v<0.5||v>2.0)?2:1);
+            cO.cd(r+1);
+            gPad->SetLeftMargin(.15);
+            gPad->SetRightMargin(.15);
+            gPad->SetLogz(0);
+
+            // clone & reset for map
+            TH2D* m = (TH2D*)hRatio[s][r]->Clone(Form("m_%s_r%d", lab.c_str(), r+1));
+            m->Reset();
+
+            // fill with category integers
+            for(int ix=1; ix<=NB2; ++ix){
+                for(int iy=1; iy<=NB2; ++iy){
+                    double v = hRatio[s][r]->GetBinContent(ix, iy);
+                    if(v <= 0) continue;
+                    int binCat = 4; // default: <1/5 or >5 (pink)
+                    if(v >= 0.5 && v <= 2.0) {
+                        binCat = 1; // blue
+                    }
+                    else if((v >= 1.0/3.0 && v < 0.5) || (v > 2.0   && v <= 3.0)) {
+                        binCat = 2; // light red (orange)
+                    }
+                    else if((v >= 1.0/5.0 && v < 1.0/3.0) || (v > 3.0 && v <= 5.0)) {
+                        binCat = 3; // dark red
+                    }
+                    m->SetBinContent(ix, iy, binCat);
+                }
             }
-            m->SetContour(2);
-            m->SetContourLevel(0,1);
-            m->SetContourLevel(1,2);
+
+            // set discrete contour levels
+            m->SetContour(4);
+            m->SetContourLevel(0, 1);
+            m->SetContourLevel(1, 2);
+            m->SetContourLevel(2, 3);
+            m->SetContourLevel(3, 4);
+
+            // draw
             m->Draw("COLZ");
         }
         cO.SaveAs(Form("output/dc/outliers_%s.png", lab.c_str()));
