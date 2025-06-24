@@ -15,8 +15,11 @@
  *   4) Makes two unnormalized 2D plots (data vs. MC).
  *   5) Normalizes each histogram to unit integral.
  *   6) Computes and plots the ratio (data/MC) as "ft_ratio.png" with mean/stddev in a legend box.
- *   7) Creates a second plot "ft_ratio_outliers.png" showing a two-color map:
- *      blue where 0.5≤ratio≤2, red otherwise.
+ *   7) Creates a second plot "ft_ratio_outliers.png" showing a four-color map:
+ *        • 0.5 ≤ ratio ≤ 2       → blue
+ *        • 1/3 ≤ ratio < 0.5 and 2 < ratio ≤ 3   → light red (kOrange)
+ *        • 1/5 ≤ ratio < 1/3 and 3 < ratio ≤ 5   → dark red (kRed)
+ *        • ratio < 1/5 or ratio > 5  → pink (kPink)
  */
 
 #include <iostream>
@@ -52,7 +55,7 @@ bool forward_tagger_fiducial_cut(double x, double y) {
 }
 
 // ----------------------------------------------------------------------------
-// Helper to unify the color scale
+// Helper to unify the color scale of three TH2D histograms
 // ----------------------------------------------------------------------------
 void SetSame2DScale(TH2D* a, TH2D* b, TH2D* c) {
     double mn =  1e9, mx = -1e9;
@@ -96,10 +99,10 @@ int main(int argc, char** argv) {
     dataCh.SetBranchAddress("ft_x",         &ft_x);
     dataCh.SetBranchAddress("ft_y",         &ft_y);
     dataCh.SetBranchAddress("ft_energy",    &ft_energy);
-    mcCh.SetBranchAddress("particle_pid",   &pid);
-    mcCh.SetBranchAddress("ft_x",           &ft_x);
-    mcCh.SetBranchAddress("ft_y",           &ft_y);
-    mcCh.SetBranchAddress("ft_energy",      &ft_energy);
+    mcCh .SetBranchAddress("particle_pid",  &pid);
+    mcCh .SetBranchAddress("ft_x",          &ft_x);
+    mcCh .SetBranchAddress("ft_y",          &ft_y);
+    mcCh .SetBranchAddress("ft_energy",     &ft_energy);
 
     // 4) Book histograms
     const int NB = 200;
@@ -147,8 +150,8 @@ int main(int argc, char** argv) {
     }
 
     // 8) Normalize histograms
-    double Idata = h_data->Integral(); if (Idata>0) h_data->Scale(1.0/Idata);
-    double Imc   = h_mc->Integral();   if (Imc  >0) h_mc->Scale(1.0/Imc);
+    double Idata = h_data->Integral(); if (Idata > 0) h_data->Scale(1.0/Idata);
+    double Imc   = h_mc->Integral();   if (Imc   > 0) h_mc->Scale(1.0/Imc);
 
     // 9) Compute ratio
     TH2D* h_ratio = (TH2D*)h_data->Clone("h_ft_ratio");
@@ -156,16 +159,18 @@ int main(int argc, char** argv) {
     h_ratio->Divide(h_mc);
 
     // compute mean and stddev of non-zero bins
-    int cnt = 0; double sum=0, sum2=0;
-    for (int ix=1; ix<=h_ratio->GetNbinsX(); ++ix) {
-      for (int iy=1; iy<=h_ratio->GetNbinsY(); ++iy) {
-        double v = h_ratio->GetBinContent(ix, iy);
-        if (v == 0) continue;
-        sum += v; sum2 += v*v; ++cnt;
-      }
+    int cnt = 0; double sum = 0, sum2 = 0;
+    for (int ix = 1; ix <= h_ratio->GetNbinsX(); ++ix) {
+        for (int iy = 1; iy <= h_ratio->GetNbinsY(); ++iy) {
+            double v = h_ratio->GetBinContent(ix, iy);
+            if (v == 0) continue;
+            sum  += v; 
+            sum2 += v*v; 
+            ++cnt;
+        }
     }
-    double mean = cnt? sum/cnt : 0;
-    double sigma = cnt? std::sqrt(sum2/cnt - mean*mean) : 0;
+    double mean  = cnt ? sum/cnt : 0;
+    double sigma = cnt ? std::sqrt(sum2/cnt - mean*mean) : 0;
 
     // 10) Draw ratio with legend box
     SetSame2DScale(h_data, h_mc, h_ratio);
@@ -174,35 +179,62 @@ int main(int argc, char** argv) {
         c.cd(); gPad->SetLeftMargin(0.15); gPad->SetRightMargin(0.15);
         h_ratio->Draw("COLZ");
         TLegend leg(0.6, 0.7, 0.9, 0.9);
-        leg.SetFillColor(kWhite); leg.SetBorderSize(1); leg.SetTextSize(0.03);
-        leg.AddEntry((TObject*)0, Form("Mean = %.4f", mean), "");
+        leg.SetFillColor(kWhite);
+        leg.SetBorderSize(1);
+        leg.SetTextSize(0.03);
+        leg.AddEntry((TObject*)0, Form("Mean = %.4f",  mean), "");
         leg.AddEntry((TObject*)0, Form("StdDev = %.4f", sigma), "");
         leg.Draw();
         c.SaveAs("output/ft/ft_ratio.png");
     }
 
-    // 11) Draw outliers map
+    // 11) Draw outliers map with four-color categories
     {
         TCanvas c("c_ft_outliers","FT Ratio Outliers",600,600);
-        c.cd(); gPad->SetLogz(0);
-        gPad->SetLeftMargin(0.15); gPad->SetRightMargin(0.15);
-        TH2D* h_map = (TH2D*)h_ratio->Clone("h_ft_map"); h_map->Reset();
+        c.cd(); 
+        gPad->SetLeftMargin(0.15);
+        gPad->SetRightMargin(0.15);
+        gPad->SetLogz(0);
+
+        // clone & reset
+        TH2D* h_map = (TH2D*)h_ratio->Clone("h_ft_map");
+        h_map->Reset();
+
         int nX = h_ratio->GetNbinsX(), nY = h_ratio->GetNbinsY();
-        for (int ix=1; ix<=nX; ++ix) {
-          for (int iy=1; iy<=nY; ++iy) {
-            double v = h_ratio->GetBinContent(ix, iy);
-            if (v == 0) continue;
-            int lvl = (v < 0.5 || v > 2.0) ? 2 : 1;
-            h_map->SetBinContent(ix, iy, lvl);
-          }
+        for (int ix = 1; ix <= nX; ++ix) {
+            for (int iy = 1; iy <= nY; ++iy) {
+                double v = h_ratio->GetBinContent(ix, iy);
+                if (v <= 0) continue;
+                int cat = 4; // default: <1/5 or >5 → pink
+                if (v >= 0.5 && v <= 2.0) {
+                    cat = 1; // blue
+                }
+                else if ((v >= 1.0/3.0 && v < 0.5) ||
+                         (v > 2.0   && v <= 3.0)) {
+                    cat = 2; // light red (orange)
+                }
+                else if ((v >= 1.0/5.0 && v < 1.0/3.0) ||
+                         (v > 3.0   && v <= 5.0)) {
+                    cat = 3; // dark red
+                }
+                h_map->SetBinContent(ix, iy, cat);
+            }
         }
-        int palette[2] = {kBlue, kRed};
-        gStyle->SetPalette(2, palette);
-        h_map->SetContour(2);
+
+        // set four-color palette
+        Int_t palette[4] = { kBlue, kOrange, kRed, kPink };
+        gStyle->SetPalette(4, palette);
+
+        // discrete contours
+        h_map->SetContour(4);
         h_map->SetContourLevel(0, 1);
         h_map->SetContourLevel(1, 2);
+        h_map->SetContourLevel(2, 3);
+        h_map->SetContourLevel(3, 4);
+
         h_map->Draw("COLZ");
         c.SaveAs("output/ft/ft_ratio_outliers.png");
     }
+
     return 0;
 }

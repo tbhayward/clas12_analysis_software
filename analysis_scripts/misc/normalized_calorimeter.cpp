@@ -9,7 +9,7 @@
  *
  * What it does:
  *   1) Creates output/ and output/cal/ if they do not exist.
- *   2) Applies strict calorimeter fiducial cuts (strictness=3, assume runnum=5000).
+ *   2) Applies strict calorimeter fiducial cuts (assume runnum=5000).
  *   3) Loops once over data and once over MC, filling photon (PID=22)
  *      and electron (PID=11) hit-position histograms for PCal (layer1), ECin (layer4), ECout (layer7).
  *   4) Normalizes each histogram and computes data/MC ratio.
@@ -31,14 +31,13 @@
 #include "TLegend.h"
 
 // ----------------------------------------------------------------------------
-// Strict calorimeter fiducial cut (strictness=3, assume runnum=5000)
+// Strict calorimeter fiducial cut (assume runnum=5000)
 // ----------------------------------------------------------------------------
 bool cal_fiducial_cut(int sector,
                       double lv1, double lw1,
                       double /*lu1*/, double lv4, double /*lw4*/,
                       double /*lu4*/, double lv7, double /*lw7*/,
                       double /*lu7*/) {
-    const int strictness = 3;
     const int runnum = 5000;
     // PCal (layer1) strict cut
     if (lw1 < 18.0 || lv1 < 18.0) return false;
@@ -76,7 +75,7 @@ bool cal_fiducial_cut(int sector,
 // Helper to unify the color scale of three TH2D histograms
 // ----------------------------------------------------------------------------
 void SetSame2DScale(TH2D* a, TH2D* b, TH2D* c) {
-    double mn = 1e9, mx = -1e9;
+    double mn =  1e9, mx = -1e9;
     for (auto* h : {a,b,c}) {
         mn = std::min(mn, h->GetMinimum());
         mx = std::max(mx, h->GetMaximum());
@@ -89,7 +88,7 @@ void SetSame2DScale(TH2D* a, TH2D* b, TH2D* c) {
 
 int main(int argc, char** argv) {
     // create output directories
-    gSystem->mkdir("output", kTRUE);
+    gSystem->mkdir("output",    kTRUE);
     gSystem->mkdir("output/cal", kTRUE);
 
     // parse args
@@ -157,13 +156,15 @@ int main(int argc, char** argv) {
     std::vector<std::vector<TH2D*>> hData(2), hMC(2), hRatio(2);
     for (int s = 0; s < 2; ++s) {
         for (int i = 0; i < 3; ++i) {
-            auto lbl = Form("%s_%s", speciesVec[s].second.c_str(), layers[i].c_str());
-            hData[s].push_back(new TH2D(Form("hD_%s", lbl.c_str()),
+            const char* lbl = Form("%s_%s",
+                                   speciesVec[s].second.c_str(),
+                                   layers[i].c_str());
+            hData[s].push_back(new TH2D(Form("hD_%s", lbl),
                                         Form("%s Data %s; x; y",
                                              speciesVec[s].second.c_str(),
                                              layers[i].c_str()),
                                         NB, xmin, xmax, NB, ymin, ymax));
-            hMC[s].push_back((TH2D*)hData[s][i]->Clone(Form("hM_%s", lbl.c_str())));
+            hMC[s].push_back((TH2D*)hData[s][i]->Clone(Form("hM_%s", lbl)));
         }
     }
 
@@ -207,7 +208,7 @@ int main(int argc, char** argv) {
         }
     }
 
-    // normalize & compute ratio + stats
+    // normalize & ratio + stats
     std::vector<std::vector<double>> mu(2, std::vector<double>(3)),
                                sigma(2, std::vector<double>(3));
     for (int s = 0; s < 2; ++s) {
@@ -241,6 +242,7 @@ int main(int argc, char** argv) {
     }
 
     gStyle->SetOptStat(0);
+
     // draw Data, MC, Ratio
     for (int s = 0; s < 2; ++s) {
         // Data
@@ -302,7 +304,7 @@ int main(int argc, char** argv) {
     Int_t pal[4] = { kBlue, kOrange, kRed, kPink };
     gStyle->SetPalette(4, pal);
 
-    // draw outlier maps with new scaling
+    // draw outlier maps
     for (int s = 0; s < 2; ++s) {
         for (int i = 0; i < 3; ++i) {
             TCanvas cO(Form("cO_%s_%s",
@@ -316,13 +318,11 @@ int main(int argc, char** argv) {
             gPad->SetRightMargin(.15);
             gPad->SetLogz(0);
 
-            // clone & reset
             TH2D* m = (TH2D*)hRatio[s][i]->Clone(Form("m_%s_%s",
                                                       speciesVec[s].second.c_str(),
                                                       layers[i].c_str()));
             m->Reset();
 
-            // categorize bins
             for (int ix = 1; ix <= NB; ++ix) {
                 for (int iy = 1; iy <= NB; ++iy) {
                     double v = hRatio[s][i]->GetBinContent(ix, iy);
@@ -331,19 +331,18 @@ int main(int argc, char** argv) {
                     if (v >= 0.5 && v <= 2.0) {
                         cat = 1; // blue
                     }
-                    else if ((v >= 1.0/3.0 && v < 0.5)
-                          || (v > 2.0   && v <= 3.0)) {
+                    else if ((v >= 1.0/3.0 && v < 0.5) ||
+                             (v > 2.0   && v <= 3.0)) {
                         cat = 2; // light red (orange)
                     }
-                    else if ((v >= 1.0/5.0 && v < 1.0/3.0)
-                          || (v > 3.0   && v <= 5.0)) {
+                    else if ((v >= 1.0/5.0 && v < 1.0/3.0) ||
+                             (v > 3.0   && v <= 5.0)) {
                         cat = 3; // dark red
                     }
                     m->SetBinContent(ix, iy, cat);
                 }
             }
 
-            // set discrete contours
             m->SetContour(4);
             m->SetContourLevel(0, 1);
             m->SetContourLevel(1, 2);
