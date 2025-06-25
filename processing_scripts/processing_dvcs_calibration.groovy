@@ -315,17 +315,6 @@ class CalibrationScript {
 		            // this is my class for defining all relevant kinematic variables
 		            if (variables.channel_test(variables)) {
 
-		            	inbending = false;
-		            	outbending = false;
-		            	if (runnum >= 4763 && runnum <= 5419) {
-		            		inbending = false;
-		            	} else if (runnum >= 5423 && runnum <= 5666) {
-		            		outbending = false;
-		            	} else if (runnum == 1) {
-		            		inbending = true;
-		            		// outbending = true;
-		            	}
-
 		            	detector1 = variables.get_detector1();
 		                detector2 = variables.get_detector2();	
 
