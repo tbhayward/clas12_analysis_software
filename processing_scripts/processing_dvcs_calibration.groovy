@@ -701,6 +701,6 @@ class CalibrationScript {
 	}
 }
 
-// // Create an instance of the script and run it
-// def script = new CalibrationScript()
-// script.run(args)
+// Create an instance of the script and run it
+def script = new CalibrationScript()
+script.run(args)
