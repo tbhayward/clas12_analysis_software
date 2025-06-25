@@ -10,6 +10,10 @@ import org.jlab.io.base.DataEvent
 import org.jlab.clas.physics.*
 import org.jlab.clas12.physics.*
 
+// import from hayward_coatjava_extensions
+import extended_kinematic_fitters.*; 
+import analyzers.*;
+
 // filetype for gathering files in directory
 import groovy.io.FileType
 
