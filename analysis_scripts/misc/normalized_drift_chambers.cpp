@@ -397,26 +397,41 @@ int main(int argc, char** argv) {
         // orig
         {
             TCanvas c(Form("OutlOrig_%s", lab.c_str()),
-                     Form("%s Outliers Orig", lab.c_str()), 1800,600);
+                     Form("%s Outliers Orig", lab.c_str()),
+                     1800,600);
             c.Divide(3,1);
             for (int r=0; r<3; ++r) {
                 c.cd(r+1);
                 gPad->SetLeftMargin(.15);
                 gPad->SetRightMargin(.15);
+                // ensure linear z
                 gPad->SetLogz(0);
+
                 TH2D* m = (TH2D*)Rorig[s][r]->Clone();
                 m->Reset();
-                for (int ix=1; ix<=NB2; ++ix) for (int iy=1; iy<=NB2; ++iy) {
-                    double v = Rorig[s][r]->GetBinContent(ix,iy);
-                    if (v<=0) continue;
-                    int cat = 4;
-                    if      (v>=0.5 && v<=2.0)                        cat=1;
-                    else if ((v>=1./3 && v<0.5)  || (v>2.0  && v<=3.0)) cat=2;
-                    else if ((v>=1./5 && v<1./3) || (v>3.0  && v<=5.0)) cat=3;
-                    m->SetBinContent(ix,iy,cat);
+
+                // fill categorical bins 1–4
+                for (int ix=1; ix<=NB2; ++ix) {
+                    for (int iy=1; iy<=NB2; ++iy) {
+                        double v = Rorig[s][r]->GetBinContent(ix,iy);
+                        if (v <= 0) continue;
+                        int cat = 4;
+                        if      (v >= 0.5  && v <= 2.0)                        cat = 1;
+                        else if ((v >= 1./3 && v <  0.5) || (v > 2.0   && v <= 3.0)) cat = 2;
+                        else if ((v >= 1./5 && v < 1./3) || (v > 3.0   && v <= 5.0)) cat = 3;
+                        m->SetBinContent(ix, iy, cat);
+                    }
                 }
+
+                // force z-range 1–4 with one bin per category
+                m->SetMinimum(1.);
+                m->SetMaximum(4.);
+                m->GetZaxis()->SetRangeUser(1.,4.);
+                m->GetZaxis()->SetNdivisions(4, kFALSE);
+
                 m->SetContour(4);
-                for(int i=0;i<4;++i) m->SetContourLevel(i,i+1);
+                for (int i=0; i<4; ++i) m->SetContourLevel(i, i+1);
+
                 m->Draw("COLZ");
             }
             c.SaveAs(Form("output/dc/outliers_orig_%s.png", lab.c_str()));
@@ -424,26 +439,38 @@ int main(int argc, char** argv) {
         // strict
         {
             TCanvas c(Form("OutlStr_%s", lab.c_str()),
-                     Form("%s Outliers Strict", lab.c_str()), 1800,600);
+                     Form("%s Outliers Strict", lab.c_str()),
+                     1800,600);
             c.Divide(3,1);
             for (int r=0; r<3; ++r) {
                 c.cd(r+1);
                 gPad->SetLeftMargin(.15);
                 gPad->SetRightMargin(.15);
                 gPad->SetLogz(0);
+
                 TH2D* m = (TH2D*)Rstr[s][r]->Clone();
                 m->Reset();
-                for (int ix=1; ix<=NB2; ++ix) for (int iy=1; iy<=NB2; ++iy) {
-                    double v = Rstr[s][r]->GetBinContent(ix,iy);
-                    if (v<=0) continue;
-                    int cat = 4;
-                    if      (v>=0.5 && v<=2.0)                        cat=1;
-                    else if ((v>=1./3 && v<0.5)  || (v>2.0  && v<=3.0)) cat=2;
-                    else if ((v>=1./5 && v<1./3) || (v>3.0  && v<=5.0)) cat=3;
-                    m->SetBinContent(ix,iy,cat);
+
+                for (int ix=1; ix<=NB2; ++ix) {
+                    for (int iy=1; iy<=NB2; ++iy) {
+                        double v = Rstr[s][r]->GetBinContent(ix,iy);
+                        if (v <= 0) continue;
+                        int cat = 4;
+                        if      (v >= 0.5  && v <= 2.0)                        cat = 1;
+                        else if ((v >= 1./3 && v <  0.5) || (v > 2.0   && v <= 3.0)) cat = 2;
+                        else if ((v >= 1./5 && v < 1./3) || (v > 3.0   && v <= 5.0)) cat = 3;
+                        m->SetBinContent(ix, iy, cat);
+                    }
                 }
+
+                m->SetMinimum(1.);
+                m->SetMaximum(4.);
+                m->GetZaxis()->SetRangeUser(1.,4.);
+                m->GetZaxis()->SetNdivisions(4, kFALSE);
+
                 m->SetContour(4);
-                for(int i=0;i<4;++i) m->SetContourLevel(i,i+1);
+                for (int i=0; i<4; ++i) m->SetContourLevel(i, i+1);
+
                 m->Draw("COLZ");
             }
             c.SaveAs(Form("output/dc/outliers_strict_%s.png", lab.c_str()));
