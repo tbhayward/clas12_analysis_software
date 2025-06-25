@@ -21,6 +21,20 @@ import groovy.io.FileType
 import clasqa.QADB
 
 class CalibrationScript {
+	// dvcs variables
+	int detector1 = -9999;
+	int detector2 = -9999;
+	int t1 = -9999;
+	int open_angle_ep2 = -9999;
+	int Mx2 = -9999;
+	int Mx2_1 = -9999;
+	int Mx2_2 = -9999;
+	int xF = -9999;
+	int Emiss2 = -9999;
+	int pTmiss = -9999;
+	int theta_gamma_gamma = -9999;
+
+
     // Define instance variables with default values
     int config_run = -9999
     int config_event = -9999
@@ -95,6 +109,19 @@ class CalibrationScript {
         // config_trigger = -9999
         // torus = -9999
         // solenoid = -9999
+
+        // dvcs variables
+		detector1 = -9999;
+		detector2 = -9999;
+		t1 = -9999;
+		open_angle_ep2 = -9999;
+		Mx2 = -9999;
+		Mx2_1 = -9999;
+		Mx2_2 = -9999;
+		xF = -9999;
+		Emiss2 = -9999;
+		pTmiss = -9999;
+		theta_gamma_gamma = -9999;
 
         // event_helicity = 0
 
