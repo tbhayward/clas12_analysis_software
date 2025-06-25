@@ -336,6 +336,7 @@ class CalibrationScript {
 	        		// supply runnum and boolean for radiative simulation or not
 					BeamEnergy Eb = new BeamEnergy(research_Event, config_run, false);
 					// Use the input beam energy if runnum == 11, otherwise use Eb.Eb()
+					beam_energy = 10.604;
 					double b_energy = (config_run == 11) ? beam_energy : Eb.Eb();
 		            ThreeParticles variables = new ThreeParticles(event, research_Event, 
 						2212, 0, 22, 0, b_energy);
