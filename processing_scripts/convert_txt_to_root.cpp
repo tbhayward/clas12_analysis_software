@@ -133,7 +133,7 @@ double gett(double p, double theta) {
 double getPol(int runnum) {
   double pol = 0.83; 
     if (runnum == 11 ) { pol = 0.86; } // runnum == 11 indicates Monte Carlo in CLAS12
-    else if (runnum <= 4325) {pol = 0.8882}
+    else if (runnum <= 4325) {pol = 0.8882; }
     else if (runnum >= 5032 && runnum < 5333) { pol = 0.8592; } 
     else if (runnum >= 5333 && runnum <= 5666) { pol = 0.8922; }
     else if (runnum >= 6616 && runnum <= 6783) { pol = 0.8453; }
