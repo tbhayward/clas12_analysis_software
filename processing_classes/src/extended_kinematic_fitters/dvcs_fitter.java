@@ -37,7 +37,7 @@ public class dvcs_fitter extends GenericKinematicFitter {
                 && pid_cuts.calorimeter_energy_cut(particle_Index, cal_Bank, 1)
                 && pid_cuts.calorimeter_sampling_fraction_cut(particle_Index, p, run_Bank, cal_Bank)
                 && pid_cuts.calorimeter_diagonal_cut(particle_Index, p, cal_Bank)
-                && fiducial_cuts.pcal_fiducial_cut(particle_Index, 1, run_Bank, rec_Bank, cal_Bank)
+                && fiducial_cuts.pcal_fiducial_cut(particle_Index, 2, run_Bank, rec_Bank, cal_Bank)
                 && fiducial_cuts.dc_fiducial_cut(particle_Index, rec_Bank, traj_Bank, run_Bank)
                 ;
     }
@@ -160,11 +160,18 @@ public class dvcs_fitter extends GenericKinematicFitter {
                 int runnum = run_Bank.getInt("run", 0);
                 int runPeriod = -1;
                 if (runnum >= 4763 && runnum <= 5666) {
-                    runPeriod = 1;
+                    runPeriod = 3; // this is how Richard Capobianco labeled them in his momentum corrections
                 } // RGA Fa18
                 else if (runnum >= 6616 && runnum <= 6783) {
                     runPeriod = 2;
                 } // RGA Sp19 
+                boolean inbending = false;
+                boolean outbending = false;
+                if (run_Bank.getFloat("torus", 0) == 1) {
+                    outbending = true;
+                } else {
+                    inbending = true;
+                }
 
                 energy_loss_corrections energy_loss_corrections = new energy_loss_corrections();
                 momentum_corrections momentum_corrections = new momentum_corrections();
@@ -173,23 +180,24 @@ public class dvcs_fitter extends GenericKinematicFitter {
                         traj_Bank, run_Bank, cc_Bank)) {
 
                     float[] momentum = {px, py, pz};
-//                    energy_loss_corrections.sebastian_electron_energy_loss_corrections(particle_Index, momentum, rec_Bank, run_Bank);
-//                    momentum_corrections.momentum_corrections(momentum, sector, 0, runPeriod, runPeriod, 0, 0);
+                    if (inbending) {
+                        momentum_corrections.inbending_momentum_corrections(momentum, sector, 0, runPeriod, runPeriod, 0, 0);
+                    } else if (outbending) {
+                        momentum_corrections.outbending_momentum_corrections(momentum, sector, 0, runPeriod, runPeriod, 0, 0);
+                    }
                     px = momentum[0];
                     py = momentum[1];
                     pz = momentum[2];
 
-                    // this checks all of the PID requirements, if it passes all of them the electron is 
-                    // added to the event below
-                    Particle part = new Particle(pid, px, py, pz, vx, vy, vz_e);
-                    physEvent.addParticle(part);
+                    Particle electron = new Particle(pid, px, py, pz, vx, vy, vz_e);
+                    physEvent.addParticle(electron);
                 }
 
                 if (pid == 2212 && proton_test(particle_Index, pid, vz, vz_e, rec_Bank, cal_Bank,
                         traj_Bank, run_Bank)) {
 
                     float[] momentum = {px, py, pz};
-//                    energy_loss_corrections.proton_energy_loss_corrections(particle_Index, momentum, rec_Bank, run_Bank);
+                    energy_loss_corrections.proton_energy_loss_corrections(particle_Index, momentum, rec_Bank, run_Bank);
 //                    energy_loss_corrections.krishna_energy_loss_corrections(particle_Index, momentum, rec_Bank, run_Bank);
 //                    energy_loss_corrections.mariana_proton_energy_loss_corrections(particle_Index, momentum, rec_Bank, run_Bank);
 
@@ -203,7 +211,7 @@ public class dvcs_fitter extends GenericKinematicFitter {
                 if (pid == 22 && photon_test(particle_Index, run_Bank, rec_Bank, cal_Bank, ft_Bank, lv_e)) {
 
                     float[] momentum = {px, py, pz};
-//                    energy_loss_corrections.sebastian_photon_energy_loss_corrections(particle_Index, momentum, rec_Bank, run_Bank);
+                    energy_loss_corrections.sebastian_photon_energy_loss_corrections(particle_Index, momentum, rec_Bank, run_Bank);
 //
                     px = momentum[0];
                     py = momentum[1];

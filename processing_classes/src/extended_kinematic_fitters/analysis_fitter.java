@@ -36,7 +36,7 @@ public class analysis_fitter extends GenericKinematicFitter {
                 && pid_cuts.calorimeter_energy_cut(particle_Index, cal_Bank, 1)
                 && pid_cuts.calorimeter_sampling_fraction_cut(particle_Index, p, run_Bank, cal_Bank)
                 && pid_cuts.calorimeter_diagonal_cut(particle_Index, p, cal_Bank)
-                && fiducial_cuts.pcal_fiducial_cut(particle_Index, 1, run_Bank, rec_Bank, cal_Bank)
+                && fiducial_cuts.pcal_fiducial_cut(particle_Index, 2, run_Bank, rec_Bank, cal_Bank)
                 && fiducial_cuts.dc_fiducial_cut(particle_Index, rec_Bank, traj_Bank, run_Bank);
     }
 
@@ -126,23 +126,24 @@ public class analysis_fitter extends GenericKinematicFitter {
 
         return true
                 //                && p > 0.4
-                //                && (passesCentralDetector ? p > 0.3 : true)
-                //                && (passesForwardDetector && (torus > 0) ? p > 0.42 : true)
-                //                && (passesForwardDetector && (torus < 0) ? p > 0.50 : true)
-                //                && p < 1.2 // this bound is enforced at p < 1.14 by -t < 1, done here to speed up processing
-                //                && generic_tests.theta_calculation(px, py, pz) < 64.23
-                //                && generic_tests.vertex_cut(particle_Index, rec_Bank, run_Bank)
+                                && (passesCentralDetector ? p > 0.3 : true)
+                                && (passesForwardDetector && (torus > 0) ? p > 0.42 : true)
+                                && (passesForwardDetector && (torus < 0) ? p > 0.50 : true)
+                                && p < 1.2 // this bound is enforced at p < 1.14 by -t < 1, done here to speed up processing
+                                && generic_tests.theta_calculation(px, py, pz) < 64.23
+                                && generic_tests.vertex_cut(particle_Index, rec_Bank, run_Bank)
                 && (passesForwardDetector
                         ? fiducial_cuts.dc_fiducial_cut(particle_Index, rec_Bank, traj_Bank, run_Bank)
                         : true)
                 && (passesCentralDetector
-                        ? fiducial_cuts.cvt_fiducial_cut(particle_Index, rec_Bank, traj_Bank, 1)
-                        : true) //                && (passesForwardDetector // dedicated PID cuts for forward
-                //                        ? pid_cuts.charged_hadron_chi2pid_cut(particle_Index, rec_Bank, run_Bank)
-                //                        : true)
-                //                && (passesCentralDetector
-                //                        ? pid_cuts.charged_hadron_chi2pid_cut(particle_Index, rec_Bank, run_Bank)
-                //                        : true) //            && charged_hadron_chi2pid_cut(particle_Index, rec_Bank)
+                        ? fiducial_cuts.cvt_fiducial_cut(particle_Index, rec_Bank, traj_Bank, 2)
+                        : true) //               
+                && (passesForwardDetector // dedicated PID cuts for forward
+                                        ? pid_cuts.charged_hadron_chi2pid_cut(particle_Index, rec_Bank, run_Bank)
+                                        : true)
+                                && (passesCentralDetector
+                                        ? pid_cuts.charged_hadron_chi2pid_cut(particle_Index, rec_Bank, run_Bank)
+                                        : true) //            && charged_hadron_chi2pid_cut(particle_Index, rec_Bank)
                 ;
     }
 
@@ -264,11 +265,11 @@ public class analysis_fitter extends GenericKinematicFitter {
 //                    }
                     
                     float[] momentum = {px, py, pz};
-//                    if (inbending) {
-//                        momentum_corrections.inbending_momentum_corrections(momentum, sector, 0, runPeriod, runPeriod, 0, 0);
-//                    } else if (outbending) {
-//                        momentum_corrections.outbending_momentum_corrections(momentum, sector, 0, runPeriod, runPeriod, 0, 0);
-//                    }
+                    if (inbending) {
+                        momentum_corrections.inbending_momentum_corrections(momentum, sector, 0, runPeriod, runPeriod, 0, 0);
+                    } else if (outbending) {
+                        momentum_corrections.outbending_momentum_corrections(momentum, sector, 0, runPeriod, runPeriod, 0, 0);
+                    }
                     px = momentum[0];
                     py = momentum[1];
                     pz = momentum[2];
@@ -309,7 +310,7 @@ public class analysis_fitter extends GenericKinematicFitter {
                         traj_Bank, run_Bank)) {
 
                     float[] momentum = {px, py, pz};
-//                    energy_loss_corrections.proton_energy_loss_corrections(particle_Index, momentum, rec_Bank, run_Bank);
+                    energy_loss_corrections.proton_energy_loss_corrections(particle_Index, momentum, rec_Bank, run_Bank);
 //                    energy_loss_corrections.krishna_energy_loss_corrections(particle_Index, momentum, rec_Bank, run_Bank);
 //                    energy_loss_corrections.mariana_proton_energy_loss_corrections(particle_Index, momentum, rec_Bank, run_Bank);
 
