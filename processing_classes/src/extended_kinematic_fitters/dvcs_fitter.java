@@ -73,12 +73,12 @@ public class dvcs_fitter extends GenericKinematicFitter {
                 && (passesCentralDetector
                         ? fiducial_cuts.cvt_fiducial_cut(particle_Index, rec_Bank, traj_Bank, 2)
                         : true)
-                && (passesForwardDetector // dedicated PID cuts for forward
-                        ? pid_cuts.charged_hadron_chi2pid_cut(particle_Index, rec_Bank, run_Bank)
-                        : true)
-                && (passesCentralDetector
-                        ? pid_cuts.charged_hadron_chi2pid_cut(particle_Index, rec_Bank, run_Bank)
-                        : true) //            && charged_hadron_chi2pid_cut(particle_Index, rec_Bank)
+//                && (passesForwardDetector // dedicated PID cuts for forward
+//                        ? pid_cuts.charged_hadron_chi2pid_cut(particle_Index, rec_Bank, run_Bank)
+//                        : true)
+//                && (passesCentralDetector
+//                        ? pid_cuts.charged_hadron_chi2pid_cut(particle_Index, rec_Bank, run_Bank)
+//                        : true) //            && charged_hadron_chi2pid_cut(particle_Index, rec_Bank)
                 ;
     }
 
