@@ -180,11 +180,11 @@ public class dvcs_fitter extends GenericKinematicFitter {
                         traj_Bank, run_Bank, cc_Bank)) {
 
                     float[] momentum = {px, py, pz};
-//                    if (inbending) {
-//                        momentum_corrections.inbending_momentum_corrections(momentum, sector, 0, runPeriod, runPeriod, 0, 0);
-//                    } else if (outbending) {
-//                        momentum_corrections.outbending_momentum_corrections(momentum, sector, 0, runPeriod, runPeriod, 0, 0);
-//                    }
+                    if (inbending) {
+                        momentum_corrections.inbending_momentum_corrections(momentum, sector, 0, runPeriod, runPeriod, 0, 0);
+                    } else if (outbending) {
+                        momentum_corrections.outbending_momentum_corrections(momentum, sector, 0, runPeriod, runPeriod, 0, 0);
+                    }
                     px = momentum[0];
                     py = momentum[1];
                     pz = momentum[2];
