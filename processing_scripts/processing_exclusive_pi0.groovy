@@ -174,6 +174,7 @@ public static void main(String[] args) {
 	    	qa.pass(runnum, evnum));
 	    	
 		    if (process_event) {
+		    	println("hey");
 
 		    	int num_photons = research_Event.countByPid(22);
 		    	for (int current_gamma1 = 0; current_gamma1 < num_photons; current_gamma1++) {
