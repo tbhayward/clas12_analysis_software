@@ -125,7 +125,7 @@ def combine_periods(periods, final_dir):
 
 def determine_final_bsa(contamination_dir="contamination", bsa_dir="bsa_results", final_dir="final_results"):
     os.makedirs(final_dir, exist_ok=True)
-    periods = ["DVCS_Fa18_inb", "DVCS_Fa18_out", "DVCS_Sp19_inb"]
+    periods = ["DVCS_Fa18_inb", "DVCS_Fa18_out", "DVCS_Sp19_inb", "DVCS_Sp18_inb", "DVCS_Sp18_out"]
     
     for period in periods:
         try:

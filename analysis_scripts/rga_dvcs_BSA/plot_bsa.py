@@ -31,7 +31,9 @@ PLOT_STYLE = {
 PERIOD_LABELS = {
     'DVCS_Fa18_inb': 'Fa18 Inb',
     'DVCS_Fa18_out': 'Fa18 Out',
-    'DVCS_Sp19_inb': 'Sp19 Inb'
+    'DVCS_Sp19_inb': 'Sp19 Inb',
+    'DVCS_Sp18_inb': 'Sp18 Inb',
+    'DVCS_Sp18_out': 'Sp18 Out'
 }
 
 def load_bsa_data(file_path):
@@ -194,7 +196,7 @@ def plot_adjusted_bsa(binning_csv, final_dir="final_results", output_dir="bsa_pl
     # For example, PERIOD_LABELS might be:
     # {"Fa18 Inb": "Fa18 Inb", "Fa18 Out": "Fa18 Out", "Sp19 Inb": "Sp19 Inb"}
     period_list = list(PERIOD_LABELS.keys())
-    colors = ['C0', 'C1', 'C2']  # Extend if you have more than three periods.
+    colors = ['C0', 'C1', 'C2', 'C3', 'C4']  # Extend if you have more than three periods.
     period_colors = {period: colors[i % len(colors)] for i, period in enumerate(period_list)}
     
     all_p_values = []
