@@ -173,6 +173,7 @@ public static void main(String[] args) {
 	    	boolean process_event = filter.isValid(research_Event) && (runnum == 11 || runnum < 5020 ||
 	    	qa.pass(runnum, evnum));
 	    	
+	    	try {
 		    if (process_event) {
 
 
@@ -388,7 +389,7 @@ public static void main(String[] args) {
 	                    lineCount = 0;
 	                }
 	            }
-		    }
+		    } }
 		reader.close();
 		}
 
