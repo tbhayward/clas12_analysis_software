@@ -27,7 +27,7 @@ def process_period_multi_stage(period, output_dir, analysis_type):
         "DVCS_Fa18_out":  ("RGA Fa18 Out DVCS",  "Fa18 Out DVCS"),
         "DVCS_Sp19_inb":  ("RGA Sp19 Inb DVCS",  "Sp19 Inb DVCS"),
         "DVCS_Sp18_inb":  ("RGA Sp18 Inb DVCS",  "Sp18 Inb DVCS"),
-        "DVCS_Sp18_out":  ("RGA Sp18 Out DVCS",  "Sp19 Out DVCS"),
+        "DVCS_Sp18_out":  ("RGA Sp18 Out DVCS",  "Sp18 Out DVCS"),
         "eppi0_Fa18_inb": ("RGA Fa18 Inb eppi0", "Fa18 Inb eppi0"),
         "eppi0_Fa18_out": ("RGA Fa18 Out eppi0", "Fa18 Out eppi0"),
         "eppi0_Sp19_inb": ("RGA Sp19 Inb eppi0", "Sp19 Inb eppi0"),
