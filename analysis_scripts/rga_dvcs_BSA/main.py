@@ -179,7 +179,7 @@ def main():
     #     print(f"Saved combined contamination for {period} to {json_path}")
 
     # --- Plotting contamination for each run period ---
-    run_periods = ["DVCS_Fa18_inb", "DVCS_Fa18_out", "DVCS_Sp19_inb", "DVCS_Sp18_inb", "DVCS_Sp18_"]
+    run_periods = ["DVCS_Fa18_inb", "DVCS_Fa18_out", "DVCS_Sp19_inb", "DVCS_Sp18_inb", "DVCS_Sp18_out"]
     plots_dir = os.path.join("contamination", "contamination_plots")
     os.makedirs(plots_dir, exist_ok=True)
     csv_file_path = os.path.join("imports", "integrated_bin_v2.csv")
