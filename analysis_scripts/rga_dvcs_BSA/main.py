@@ -48,7 +48,7 @@ def main():
     
     print("🚀 Starting multi-stage analysis with parallel processing\n")
     
-    # --- Exclusivity processing (commented out) ---
+    # --- Exclusivity processing ---
     periods_to_run = [
         ("DVCS_Fa18_inb",  "dvcs"),
         ("DVCS_Fa18_out",  "dvcs"),
