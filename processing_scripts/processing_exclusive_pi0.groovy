@@ -185,9 +185,10 @@ public static void main(String[] args) {
 						BeamEnergy Eb = new BeamEnergy(research_Event, runnum, false);
 						// Use the input beam energy if runnum == 11, otherwise use Eb.Eb()
 						double energy = (runnum == 11) ? beam_energy : Eb.Eb();
-						println("hey");
+						println(current_gamma1+" "+current_gamma2);
 			            ThreeParticles variables = new ThreeParticles(event, research_Event, 
 							22, current_gamma1, 22, current_gamma2, energy);
+			            println("hey");
 
 			            Mh_gammagamma = variables.Mh();
 			            if (Mh_gammagamma < 0.11 || Mh_gammagamma > 0.16) continue;
