@@ -183,9 +183,9 @@ public static void main(String[] args) {
 
 		    			// supply runnum and boolean for radiative simulation or not
 						BeamEnergy Eb = new BeamEnergy(research_Event, runnum, false);
-						println("hey");
 						// Use the input beam energy if runnum == 11, otherwise use Eb.Eb()
 						double energy = (runnum == 11) ? beam_energy : Eb.Eb();
+						println("hey");
 			            ThreeParticles variables = new ThreeParticles(event, research_Event, 
 							22, current_gamma1, 22, current_gamma2, energy);
 
