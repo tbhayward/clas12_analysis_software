@@ -180,14 +180,15 @@ public static void main(String[] args) {
 		    	for (int current_gamma1 = 0; current_gamma1 < num_photons; current_gamma1++) {
 		    		for (int current_gamma2 = 0; current_gamma2 < num_photons; current_gamma2++) {
 		    			if (current_gamma1 == current_gamma2) continue;
-		    			
+
 		    			// supply runnum and boolean for radiative simulation or not
 						BeamEnergy Eb = new BeamEnergy(research_Event, runnum, false);
+						println("hey");
 						// Use the input beam energy if runnum == 11, otherwise use Eb.Eb()
 						double energy = (runnum == 11) ? beam_energy : Eb.Eb();
 			            ThreeParticles variables = new ThreeParticles(event, research_Event, 
 							22, current_gamma1, 22, current_gamma2, energy);
-			            println("hey");
+
 			            Mh_gammagamma = variables.Mh();
 			            if (Mh_gammagamma < 0.11 || Mh_gammagamma > 0.16) continue;
 			            detector_gamma1 = variables.get_detector1();
