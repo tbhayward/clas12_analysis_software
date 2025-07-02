@@ -209,7 +209,7 @@ public static void main(String[] args) {
 	            // this is my class for defining all relevant kinematic variables
 
 	            if (variables.channel_test(variables)) {
-	            	println("Hey")
+
 	                fiducial_status = variables.get_fiducial_status(); // fiducial_status of track
 	                helicity = variables.get_helicity(); // helicity of event
 	                detector1 = variables.get_detector1(); 
@@ -296,6 +296,8 @@ public static void main(String[] args) {
 			    	Emiss2 = variables.Emiss2();
 			    	theta_pi0_pi0 = variables.theta_gamma_gamma();
 			    	pTmiss = variables.pTmiss();
+
+			    	println(Emiss2);
 
 	                // Use a StringBuilder to append all data in a single call
 	                StringBuilder line = new StringBuilder();
