@@ -697,9 +697,9 @@ public class FourParticles {
     }
 
     public int get_helicity() { // -1, 0, or 1. 0 equals unassigned by EventBuilder
-        if (runnum <= 5666) {
+        if (runnum >= 4326 && runnum <= 5666) {
             return -1 * helicity;
-        } else if (runnum >= 6616 && runnum <= 6783) {
+        }  else if (runnum >= 6616 && runnum <= 6783) {
             return -1 * helicity;
         } else if (runnum >= 6120 && runnum <= 6604) {
             return -1 * helicity;
