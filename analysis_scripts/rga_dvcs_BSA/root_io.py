@@ -67,7 +67,7 @@ def load_root_files(period):
         "eppi0_bkg_Sp18_inb": {
             "mc":   "/work/clas12/thayward/CLAS12_exclusive/eppi0/data/pass2/mc/hipo_files/eppi0_bkg_aaogen_norad_rga_sp18_inb_epgamma.root"
         },
-        "eppi0_bkg_Sp19_out": {
+        "eppi0_bkg_Sp18_out": {
             "mc":   "/work/clas12/thayward/CLAS12_exclusive/eppi0/data/pass2/mc/hipo_files/eppi0_bkg_aaogen_norad_rga_sp18_out_epgamma.root"
         }
     }
