@@ -297,8 +297,6 @@ public static void main(String[] args) {
 			    	theta_pi0_pi0 = variables.theta_gamma_gamma();
 			    	pTmiss = variables.pTmiss();
 
-			    	println(Emiss2);
-
 	                // Use a StringBuilder to append all data in a single call
 	                StringBuilder line = new StringBuilder();
 	                line.append(fiducial_status).append(" ")
