@@ -177,11 +177,10 @@ public static void main(String[] args) {
 
 
 		    	int num_photons = research_Event.countByPid(22);
-		    	println("hey");
 		    	for (int current_gamma1 = 0; current_gamma1 < num_photons; current_gamma1++) {
 		    		for (int current_gamma2 = 0; current_gamma2 < num_photons; current_gamma2++) {
 		    			if (current_gamma1 == current_gamma2) continue;
-
+		    			println("hey");
 		    			// supply runnum and boolean for radiative simulation or not
 						BeamEnergy Eb = new BeamEnergy(research_Event, runnum, false);
 						// Use the input beam energy if runnum == 11, otherwise use Eb.Eb()
