@@ -389,7 +389,7 @@ public static void main(String[] args) {
 	                    lineCount = 0;
 	                }
 	            }
-		    } }
+		    } } finally {}
 		reader.close();
 		}
 
