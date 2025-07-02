@@ -178,66 +178,66 @@ def main():
     #         json.dump(filtered_results, f, indent=2)
     #     print(f"Saved combined contamination for {period} to {json_path}")
 
-    # --- Plotting contamination for each run period ---
-    run_periods = ["DVCS_Fa18_inb", "DVCS_Fa18_out", "DVCS_Sp19_inb", "DVCS_Sp18_inb", "DVCS_Sp18_out"]
-    plots_dir = os.path.join("contamination", "contamination_plots")
-    os.makedirs(plots_dir, exist_ok=True)
-    csv_file_path = os.path.join("imports", "integrated_bin_v2.csv")
+    # # --- Plotting contamination for each run period ---
+    # run_periods = ["DVCS_Fa18_inb", "DVCS_Fa18_out", "DVCS_Sp19_inb", "DVCS_Sp18_inb", "DVCS_Sp18_out"]
+    # plots_dir = os.path.join("contamination", "contamination_plots")
+    # os.makedirs(plots_dir, exist_ok=True)
+    # csv_file_path = os.path.join("imports", "integrated_bin_v2.csv")
 
-    with ProcessPoolExecutor(max_workers=8) as executor:
-        future_to_rp = {executor.submit(plot_contamination_for_run,
-                                        run_period=rp,
-                                        binning_csv=csv_file_path,
-                                        contamination_dir="contamination",
-                                        output_dir=plots_dir): rp for rp in run_periods}
-        for future in as_completed(future_to_rp):
-            rp = future_to_rp[future]
-            try:
-                future.result()
-                print(f"Finished plotting contamination for {rp}")
-            except Exception as exc:
-                print(f"Plotting for {rp} generated an exception: {exc}")
-
-        
-    # # --- Raw BSA calculation ---
-    # print("\n🚀 Calculating raw BSA values...")
-    # csv_path = os.path.join("imports", "integrated_bin_v2.csv")
-    # bsa_output = os.path.join("bsa_results")
-
-    # # Create tasks using EXACT file_map keys
-    # bsa_tasks = [
-    #     # DVCS periods
-    #     ("DVCS_Fa18_inb", "dvcs", csv_path, bsa_output),
-    #     ("DVCS_Fa18_out", "dvcs", csv_path, bsa_output),
-    #     ("DVCS_Sp19_inb", "dvcs", csv_path, bsa_output),
-    #     ("DVCS_Sp18_inb", "dvcs", csv_path, bsa_output),
-    #     ("DVCS_Sp18_out", "dvcs", csv_path, bsa_output),
-    #     # eppi0 periods
-    #     ("eppi0_Fa18_inb", "eppi0", csv_path, bsa_output),
-    #     ("eppi0_Fa18_out", "eppi0", csv_path, bsa_output),
-    #     ("eppi0_Sp19_inb", "eppi0", csv_path, bsa_output),
-    #     ("eppi0_Sp18_inb", "eppi0", csv_path, bsa_output),
-    #     ("eppi0_Sp18_out", "eppi0", csv_path, bsa_output)
-    # ]
-
-    # with ProcessPoolExecutor(max_workers=6) as executor:
-    #     futures = {executor.submit(calculate_raw_bsa, *task): task for task in bsa_tasks}
-    #     for future in as_completed(futures):
-    #         task = futures[future]
+    # with ProcessPoolExecutor(max_workers=8) as executor:
+    #     future_to_rp = {executor.submit(plot_contamination_for_run,
+    #                                     run_period=rp,
+    #                                     binning_csv=csv_file_path,
+    #                                     contamination_dir="contamination",
+    #                                     output_dir=plots_dir): rp for rp in run_periods}
+    #     for future in as_completed(future_to_rp):
+    #         rp = future_to_rp[future]
     #         try:
     #             future.result()
-    #             print(f"Finished BSA for {task[0]}")
+    #             print(f"Finished plotting contamination for {rp}")
     #         except Exception as exc:
-    #             print(f"BSA failed for {task[0]}: {exc}")
+    #             print(f"Plotting for {rp} generated an exception: {exc}")
 
-    # # --- Final BSA calculation and combination ---
-    # print("\n🔧 Calculating final adjusted BSA values...")
-    # determine_final_bsa(
-    #     contamination_dir="contamination",
-    #     bsa_dir="bsa_results",
-    #     final_dir="final_results"
-    # )
-    # print("✅ Final BSA results saved to final_results/ directory")
+        
+    # --- Raw BSA calculation ---
+    print("\n🚀 Calculating raw BSA values...")
+    csv_path = os.path.join("imports", "integrated_bin_v2.csv")
+    bsa_output = os.path.join("bsa_results")
+
+    # Create tasks using EXACT file_map keys
+    bsa_tasks = [
+        # DVCS periods
+        ("DVCS_Fa18_inb", "dvcs", csv_path, bsa_output),
+        ("DVCS_Fa18_out", "dvcs", csv_path, bsa_output),
+        ("DVCS_Sp19_inb", "dvcs", csv_path, bsa_output),
+        ("DVCS_Sp18_inb", "dvcs", csv_path, bsa_output),
+        ("DVCS_Sp18_out", "dvcs", csv_path, bsa_output),
+        # eppi0 periods
+        ("eppi0_Fa18_inb", "eppi0", csv_path, bsa_output),
+        ("eppi0_Fa18_out", "eppi0", csv_path, bsa_output),
+        ("eppi0_Sp19_inb", "eppi0", csv_path, bsa_output),
+        ("eppi0_Sp18_inb", "eppi0", csv_path, bsa_output),
+        ("eppi0_Sp18_out", "eppi0", csv_path, bsa_output)
+    ]
+
+    with ProcessPoolExecutor(max_workers=6) as executor:
+        futures = {executor.submit(calculate_raw_bsa, *task): task for task in bsa_tasks}
+        for future in as_completed(futures):
+            task = futures[future]
+            try:
+                future.result()
+                print(f"Finished BSA for {task[0]}")
+            except Exception as exc:
+                print(f"BSA failed for {task[0]}: {exc}")
+
+    # --- Final BSA calculation and combination ---
+    print("\n🔧 Calculating final adjusted BSA values...")
+    determine_final_bsa(
+        contamination_dir="contamination",
+        bsa_dir="bsa_results",
+        final_dir="final_results"
+    )
+    print("✅ Final BSA results saved to final_results/ directory")
 
     # #  # --- Plotting ---
     # print("\n📊 Generating BSA plots...")
