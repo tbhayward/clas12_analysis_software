@@ -50,16 +50,16 @@ def main():
     
     # --- Exclusivity processing (commented out) ---
     periods_to_run = [
-        # ("DVCS_Fa18_inb",  "dvcs"),
-        # ("DVCS_Fa18_out",  "dvcs"),
+        ("DVCS_Fa18_inb",  "dvcs"),
+        ("DVCS_Fa18_out",  "dvcs"),
         ("DVCS_Sp19_inb",  "dvcs"),
-        # ("DVCS_Sp18_inb",  "dvcs"),
-        # ("DVCS_Sp18_out",  "dvcs"),
-        # ("eppi0_Fa18_inb", "eppi0"),
-        # ("eppi0_Fa18_out", "eppi0"),
+        ("DVCS_Sp18_inb",  "dvcs"),
+        ("DVCS_Sp18_out",  "dvcs"),
+        ("eppi0_Fa18_inb", "eppi0"),
+        ("eppi0_Fa18_out", "eppi0"),
         ("eppi0_Sp19_inb", "eppi0"),
-        # ("eppi0_Sp18_inb", "eppi0"),
-        # ("eppi0_Sp18_out", "eppi0")
+        ("eppi0_Sp18_inb", "eppi0"),
+        ("eppi0_Sp18_out", "eppi0")
     ]
     tasks = [(period, analysis_type, output_dir) for period, analysis_type in periods_to_run]
     with ProcessPoolExecutor(max_workers=6) as executor:

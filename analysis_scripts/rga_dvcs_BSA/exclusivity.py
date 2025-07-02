@@ -378,8 +378,8 @@ def combine_results(output_dir):
 
     combined = {}
     all_periods = [
-        "DVCS_Fa18_inb", "DVCS_Fa18_out", "DVCS_Sp19_inb",
-        "eppi0_Fa18_inb", "eppi0_Fa18_out", "eppi0_Sp19_inb"
+        "DVCS_Fa18_inb", "DVCS_Fa18_out", "DVCS_Sp19_inb", "DVCS_Sp18_inb", "DVCS_Sp18_out",
+        "eppi0_Fa18_inb", "eppi0_Fa18_out", "eppi0_Sp19_inb", "eppi0_Sp18_inb", "eppi0_Sp18_out"
     ]
     topologies = ["FD_FD", "CD_FD", "CD_FT"]
 
