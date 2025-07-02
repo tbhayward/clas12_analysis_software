@@ -26,9 +26,13 @@ def process_period_multi_stage(period, output_dir, analysis_type):
         "DVCS_Fa18_inb":  ("RGA Fa18 Inb DVCS",  "Fa18 Inb DVCS"),
         "DVCS_Fa18_out":  ("RGA Fa18 Out DVCS",  "Fa18 Out DVCS"),
         "DVCS_Sp19_inb":  ("RGA Sp19 Inb DVCS",  "Sp19 Inb DVCS"),
+        "DVCS_Sp18_inb":  ("RGA Sp18 Inb DVCS",  "Sp18 Inb DVCS"),
+        "DVCS_Sp18_out":  ("RGA Sp18 Out DVCS",  "Sp19 Out DVCS"),
         "eppi0_Fa18_inb": ("RGA Fa18 Inb eppi0", "Fa18 Inb eppi0"),
         "eppi0_Fa18_out": ("RGA Fa18 Out eppi0", "Fa18 Out eppi0"),
-        "eppi0_Sp19_inb": ("RGA Sp19 Inb eppi0", "Sp19 Inb eppi0")
+        "eppi0_Sp19_inb": ("RGA Sp19 Inb eppi0", "Sp19 Inb eppi0"),
+        "eppi0_Sp18_inb": ("RGA Sp18 Inb eppi0", "Sp18 Inb eppi0"),
+        "eppi0_Sp18_out": ("RGA Sp18 Out eppi0", "Sp18 Out eppi0")
     }
     run_info = run_info_map.get(period_code, (period_code, period_code))
 
@@ -36,7 +40,7 @@ def process_period_multi_stage(period, output_dir, analysis_type):
     stage_vars = [
         ["Mx2", "Mx2_1"],      # Stage 0
         ["Emiss2", "Mx2_2"],   # Stage 1
-        ["pTmiss", "xF"]       # Stage 2 => we append the correct theta below
+        ["pTmiss", "xF"]       # Stage 2 => append the correct theta below
     ]
     if analysis_type == "dvcs":
         stage_vars[-1].append("theta_gamma_gamma")
