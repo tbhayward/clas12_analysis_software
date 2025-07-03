@@ -298,7 +298,6 @@ def plot_fully_integrated_bsa(json_filepath, output_dir="bsa_plots/integrated"):
     print(f"Fully integrated BSA plot saved to {output_dir}")
 
 
-
 def plot_fully_integrated_bsa_period_comparison(
     sp18_in_json: str,
     fa18_in_json: str,
@@ -307,102 +306,114 @@ def plot_fully_integrated_bsa_period_comparison(
     output_dir: str = "bsa_plots/integrated"
 ):
     """
-    Create a 1×2 panel comparing fully–integrated BSA:
-      - Left:  Sp18 vs Fa18, inbending
-      - Right: Sp18 vs Fa18, outbending
-
-    sp18_in_json, fa18_in_json, sp18_out_json, fa18_out_json should be paths
-    to the per-period fully integrated JSON files (phi_idx -> {bsa, bsa_err}).
+    1×2 panel comparing fully–integrated BSA per φ-bin:
+      • Left:  Sp18 vs Fa18 inbending
+      • Right: Sp18 vs Fa18 outbending
     """
-    os.makedirs(output_dir, exist_ok=True)
+    import math, os, json
+    import numpy as np
+    import matplotlib.pyplot as plt
+    from scipy.optimize import curve_fit
+
+    N_PHI_BINS = 12
+
+    def load_combined_bsa_json(json_filepath):
+        with open(json_filepath) as f:
+            data = json.load(f)
+        return {
+            tuple(map(int, k.strip("()").replace(" ", "").split(","))): v
+            for k, v in data.items()
+        }
+
+    def bsa_fit_function(phi, c0, a1, b1):
+        b1 = np.clip(b1, -0.99999, 0.999999)
+        a1 = np.clip(a1, -0.99999, 0.999999)
+        return c0 + (a1 * np.sin(phi)) / (1 + b1 * np.cos(phi))
 
     def load_and_integrate(json_path):
-        data = load_combined_bsa_json(json_path)
+        combined = load_combined_bsa_json(json_path)
+        bin_groups = {}
+        for (_ix, _iq, _it, iph), vals in combined.items():
+            bsa, berr = vals["bsa"], vals["bsa_err"]
+            # only require a non-zero error
+            if berr > 0:
+                bin_groups.setdefault(iph, []).append((bsa, berr))
+
         xs, ys, errs = [], [], []
-        for phi_idx in range(N_PHI_BINS):
-            key = (phi_idx,)
-            if key in data:
-                bsa_val = data[key]["bsa"]
-                bsa_err = data[key]["bsa_err"]
-                # only plot sensible points
-                if -0.5 <= bsa_val <= 0.5 and bsa_err > 0:
-                    phi_center = (phi_idx + 0.5) * 360.0 / N_PHI_BINS
-                    xs.append(phi_center)
-                    ys.append(bsa_val)
-                    errs.append(bsa_err)
-                #endif
-            #endif
-        #endfor
+        for iph in sorted(bin_groups):
+            meas = bin_groups[iph]
+            weights = [1.0/(e**2) for _, e in meas]
+            W = sum(weights)
+            avg = sum(w*v for (v,_), w in zip(meas, weights)) / W
+            err = math.sqrt(1.0 / W)
+            phi_center = (iph + 0.5) * 360.0 / N_PHI_BINS
+            xs.append(phi_center)
+            ys.append(avg)
+            errs.append(err)
+
         return np.array(xs), np.array(ys), np.array(errs)
+    #end load_and_integrate
 
-    # load & integrate each
-    xi_in,  yi_in,  err_in  = load_and_integrate(sp18_in_json)
-    xf_in,  yf_in,  erf_in  = load_and_integrate(fa18_in_json)
-    xi_out, yi_out, err_out = load_and_integrate(sp18_out_json)
-    xf_out, yf_out, erf_out = load_and_integrate(fa18_out_json)
+    # load the four JSONs
+    xi_in, yi_in, err_in   = load_and_integrate(sp18_in_json)
+    xf_in, yf_in, erf_in   = load_and_integrate(fa18_in_json)
+    xi_out, yi_out, err_out= load_and_integrate(sp18_out_json)
+    xf_out, yf_out, erf_out= load_and_integrate(fa18_out_json)
 
-    # set up 1×2 figure
+    os.makedirs(output_dir, exist_ok=True)
     fig, (ax_in, ax_out) = plt.subplots(1, 2, figsize=(16, 6), sharey=True)
 
-    # helper to plot & fit one dataset
     def plot_and_fit(ax, x, y, yerr, color, label):
-        ax.errorbar(
-            x, y, yerr,
-            fmt='o', color=color, markersize=6, capsize=3,
-            label=label
-        )
-        # only fit if enough points
+        ax.errorbar(x, y, yerr,
+                    fmt='o', color=color,
+                    markersize=6, capsize=3,
+                    label=label)
         if len(x) >= 4:
-            popt, pcov = curve_fit(
+            popt, _ = curve_fit(
                 bsa_fit_function,
                 np.radians(x),
                 y,
                 sigma=yerr,
-                p0=[0, 0.2, -0.4],
-                bounds=([-np.inf, -0.6, -0.7], [np.inf, 0.6, 0.7])
+                p0=[0,0.2,-0.4],
+                bounds=([-np.inf,-0.6,-0.7],[np.inf,0.6,0.7])
             )
-            fit_x = np.linspace(0, 360, 200)
-            fit_y = bsa_fit_function(np.radians(fit_x), *popt)
-            ax.plot(
-                fit_x, fit_y, linestyle='--', color=color,
-                linewidth=2, label=f"{label} fit"
-            )
-        #endif
+            fx = np.linspace(0, 360, 200)
+            fy = bsa_fit_function(np.radians(fx), *popt)
+            ax.plot(fx, fy,
+                    linestyle='--',
+                    color=color,
+                    linewidth=2,
+                    label=f"{label} fit")
+    #end plot_and_fit
 
-    # left: inbending
-    plot_and_fit(ax_in, xi_in, yi_in, err_in, 'red',   'Sp18 inb')
-    plot_and_fit(ax_in, xf_in, yf_in, erf_in, 'blue',  'Fa18 inb')
-    ax_in.set_title("Inbending", fontsize=14)
-    ax_in.set_xlabel(r"$\phi$ (deg)")
-    ax_in.set_ylabel(r"$A_{LU}$")
-    ax_in.set_xlim(0, 360)
-    ax_in.set_ylim(-0.4, 0.4)
-    ax_in.set_xticks([0, 90, 180, 270, 360])
-    ax_in.set_yticks([-0.4, -0.2, 0, 0.2, 0.4])
+    # Inbending
+    plot_and_fit(ax_in, xi_in, yi_in, err_in, 'red',  'Sp18 inb')
+    plot_and_fit(ax_in, xf_in, yf_in, erf_in, 'blue', 'Fa18 inb')
+    ax_in.set(title="Inbending",
+              xlabel=r"$\phi$ (deg)",
+              ylabel=r"$A_{LU}$",
+              xlim=(0,360),
+              ylim=(-0.5,0.5))
+    ax_in.set_xticks([0,90,180,270,360])
     ax_in.grid(True, alpha=0.3)
     ax_in.legend()
 
-    # right: outbending
-    plot_and_fit(ax_out, xi_out, yi_out, err_out, 'red',  'Sp18 outb')
-    plot_and_fit(ax_out, xf_out, yf_out, erf_out, 'blue', 'Fa18 outb')
-    ax_out.set_title("Outbending", fontsize=14)
-    ax_out.set_xlabel(r"$\phi$ (deg)")
-    ax_out.set_xlim(0, 360)
-    ax_out.set_xticks([0, 90, 180, 270, 360])
+    # Outbending
+    plot_and_fit(ax_out, xi_out, yi_out, err_out, 'red',  'Sp18 out')
+    plot_and_fit(ax_out, xf_out, yf_out, erf_out, 'blue', 'Fa18 out')
+    ax_out.set(title="Outbending",
+               xlabel=r"$\phi$ (deg)",
+               xlim=(0,360))
+    ax_out.set_xticks([0,90,180,270,360])
     ax_out.grid(True, alpha=0.3)
     ax_out.legend()
 
-    # overall equation (optional)
-    fig.text(
-        0.95, 0.02,
-        r"$A_{LU} = c_0 + \frac{a_1 \sin\phi}{1 + b_1 \cos\phi}$",
-        ha='right', va='bottom', fontsize=16
-    )
+    # --- removed the big formula text here ---
 
-    plt.tight_layout(rect=[0, 0.03, 1, 0.95])
-    # save both PDF and PNG
-    fig.savefig(os.path.join(output_dir, "bsa_period_comparison.pdf"), bbox_inches='tight')
-    fig.savefig(os.path.join(output_dir, "bsa_period_comparison.png"), bbox_inches='tight')
+    plt.tight_layout()
+    fig.savefig(os.path.join(output_dir, "bsa_period_comparison.pdf"),
+                bbox_inches='tight')
+    fig.savefig(os.path.join(output_dir, "bsa_period_comparison.png"),
+                bbox_inches='tight')
     plt.close()
-
-#enddef
+#end plot_fully_integrated_bsa_period_comparison
