@@ -329,7 +329,7 @@ def plot_fully_integrated_bsa_period_comparison(
         b1 = np.clip(b1, -0.99999, 0.999999)
         a1 = np.clip(a1, -0.99999, 0.999999)
         return c0 + (a1 * np.sin(phi)) / (1 + b1 * np.cos(phi))
-    #endif
+    #enddef
 
     def load_and_integrate(json_path):
         combined = load_combined_bsa_json(json_path)
@@ -359,21 +359,17 @@ def plot_fully_integrated_bsa_period_comparison(
     #enddef
 
     # load & t-integrate each period
-    xi_in, yi_in, err_in   = load_and_integrate(sp18_in_json)
-    xf_in, yf_in, erf_in   = load_and_integrate(fa18_in_json)
-    xi_out, yi_out, err_out= load_and_integrate(sp18_out_json)
-    xf_out, yf_out, erf_out= load_and_integrate(fa18_out_json)
+    xi_in, yi_in, err_in    = load_and_integrate(sp18_in_json)
+    xf_in, yf_in, erf_in    = load_and_integrate(fa18_in_json)
+    xi_out, yi_out, err_out = load_and_integrate(sp18_out_json)
+    xf_out, yf_out, erf_out = load_and_integrate(fa18_out_json)
 
     os.makedirs(output_dir, exist_ok=True)
     fig, (ax_in, ax_out) = plt.subplots(1, 2, figsize=(16, 6), sharey=True)
 
     def plot_and_fit(ax, x, y, yerr, color, label):
-        ax.errorbar(
-            x, y, yerr,
-            fmt='o', color=color,
-            markersize=6, capsize=3,
-            label=label
-        )
+        # attempt fit first, to build legend label
+        label_text = label
         if len(x) >= 4:
             popt, pcov = curve_fit(
                 bsa_fit_function,
@@ -382,25 +378,31 @@ def plot_fully_integrated_bsa_period_comparison(
                 sigma=yerr,
                 p0=[0, 0.2, -0.4],
                 bounds=(
-                    [-np.inf, 0.15, -np.inf],  # force 0.15 ≤ a1
-                    [ np.inf, 0.35,  np.inf]   #        a1 ≤ 0.35
+                    [-np.inf, 0.15, -np.inf],  # 0.15 ≤ a1
+                    [ np.inf, 0.35,  np.inf]   # a1 ≤ 0.35
                 )
             )
             a1, a1_err = popt[1], math.sqrt(pcov[1,1])
-            ax.text(
-                0.05, 0.95,
-                fr"$a_1={a1:.3f}\pm{a1_err:.3f}$",
-                transform=ax.transAxes,
-                ha='left', va='top',
-                fontsize='small'
-            )
+            label_text = rf"{label}, $a_1={a1:.3f}\pm{a1_err:.3f}$"
+            # plot fit curve
             fx = np.linspace(0, 360, 200)
             fy = bsa_fit_function(np.radians(fx), *popt)
-            ax.plot(fx, fy, '--', color=color, linewidth=2)
+            ax.plot(fx, fy,
+                    linestyle='--',
+                    color=color,
+                    linewidth=2)
         #endif
+
+        # now plot markers with the full legend entry
+        ax.errorbar(
+            x, y, yerr,
+            fmt='o', color=color,
+            markersize=6, capsize=3,
+            label=label_text
+        )
     #enddef
 
-    # Inbending
+    # Inbending panel
     plot_and_fit(ax_in, xi_in, yi_in, err_in,  'red',  'Sp18 Inb')
     plot_and_fit(ax_in, xf_in, yf_in, erf_in,  'blue', 'Fa18 Inb')
     ax_in.set(
@@ -414,7 +416,7 @@ def plot_fully_integrated_bsa_period_comparison(
     ax_in.grid(True, alpha=0.3)
     ax_in.legend()
 
-    # Outbending
+    # Outbending panel
     plot_and_fit(ax_out, xi_out, yi_out, err_out, 'red',  'Sp18 Out')
     plot_and_fit(ax_out, xf_out, yf_out, erf_out, 'blue', 'Fa18 Out')
     ax_out.set(
@@ -427,13 +429,7 @@ def plot_fully_integrated_bsa_period_comparison(
     ax_out.legend()
 
     plt.tight_layout()
-    fig.savefig(
-        os.path.join(output_dir, "bsa_period_comparison.pdf"),
-        bbox_inches='tight'
-    )
-    fig.savefig(
-        os.path.join(output_dir, "bsa_period_comparison.png"),
-        bbox_inches='tight'
-    )
+    fig.savefig(os.path.join(output_dir, "bsa_period_comparison.pdf"), bbox_inches='tight')
+    fig.savefig(os.path.join(output_dir, "bsa_period_comparison.png"), bbox_inches='tight')
     plt.close()
 #enddef
