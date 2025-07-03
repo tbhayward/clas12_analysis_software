@@ -325,10 +325,10 @@ def plot_fully_integrated_bsa_period_comparison(
         }
     #enddef
 
-    def bsa_fit_function(phi, c0, a1, b1):
+    def bsa_fit_noc(phi, a1, b1):
         b1 = np.clip(b1, -0.99999, 0.999999)
         a1 = np.clip(a1, -0.99999, 0.999999)
-        return c0 + (a1 * np.sin(phi)) / (1 + b1 * np.cos(phi))
+        return (a1 * np.sin(phi)) / (1 + b1 * np.cos(phi))
     #enddef
 
     def load_and_integrate(json_path):
@@ -358,7 +358,7 @@ def plot_fully_integrated_bsa_period_comparison(
         return np.array(xs), np.array(ys), np.array(errs)
     #enddef
 
-    # load & t-integrate each period
+    # load & integrate each period
     xi_in, yi_in, err_in    = load_and_integrate(sp18_in_json)
     xf_in, yf_in, erf_in    = load_and_integrate(fa18_in_json)
     xi_out, yi_out, err_out = load_and_integrate(sp18_out_json)
@@ -372,25 +372,22 @@ def plot_fully_integrated_bsa_period_comparison(
         label_text = label
         if len(x) >= 4:
             popt, pcov = curve_fit(
-                bsa_fit_function,
+                bsa_fit_noc,
                 np.radians(x),
                 y,
                 sigma=yerr,
-                p0=[0, 0.2, -0.4],
+                p0=[0.2, -0.4],            # a1, b1
                 bounds=(
-                    [-np.inf, 0.15, -np.inf],  # 0.15 ≤ a1
-                    [ np.inf, 0.35,  np.inf]   # a1 ≤ 0.35
+                    [0.15, -0.999],         # 0.15 ≤ a1
+                    [0.35,  0.999]          # a1 ≤ 0.35
                 )
             )
-            a1, a1_err = popt[1], math.sqrt(pcov[1,1])
+            a1, a1_err = popt[0], math.sqrt(pcov[0,0])
             label_text = rf"{label}, $a_1={a1:.3f}\pm{a1_err:.3f}$"
-            # plot fit curve
+            # plot the fit curve
             fx = np.linspace(0, 360, 200)
-            fy = bsa_fit_function(np.radians(fx), *popt)
-            ax.plot(fx, fy,
-                    linestyle='--',
-                    color=color,
-                    linewidth=2)
+            fy = bsa_fit_noc(np.radians(fx), *popt)
+            ax.plot(fx, fy, '--', color=color, linewidth=2)
         #endif
 
         # now plot markers with the full legend entry
@@ -402,7 +399,7 @@ def plot_fully_integrated_bsa_period_comparison(
         )
     #enddef
 
-    # Inbending panel
+    # Inbending
     plot_and_fit(ax_in, xi_in, yi_in, err_in,  'red',  'Sp18 Inb')
     plot_and_fit(ax_in, xf_in, yf_in, erf_in,  'blue', 'Fa18 Inb')
     ax_in.set(
@@ -416,7 +413,7 @@ def plot_fully_integrated_bsa_period_comparison(
     ax_in.grid(True, alpha=0.3)
     ax_in.legend()
 
-    # Outbending panel
+    # Outbending
     plot_and_fit(ax_out, xi_out, yi_out, err_out, 'red',  'Sp18 Out')
     plot_and_fit(ax_out, xf_out, yf_out, erf_out, 'blue', 'Fa18 Out')
     ax_out.set(
