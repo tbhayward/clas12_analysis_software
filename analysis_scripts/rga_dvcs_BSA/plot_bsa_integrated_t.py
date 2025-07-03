@@ -297,7 +297,6 @@ def plot_fully_integrated_bsa(json_filepath, output_dir="bsa_plots/integrated"):
     plt.close()
     print(f"Fully integrated BSA plot saved to {output_dir}")
 
-
 def plot_fully_integrated_bsa_period_comparison(
     sp18_in_json: str,
     fa18_in_json: str,
@@ -307,7 +306,7 @@ def plot_fully_integrated_bsa_period_comparison(
 ):
     """
     1×2 panel comparing fully–integrated BSA per φ-bin:
-      • Left:  Sp18 vs Fa18 inbending
+      • Left : Sp18 vs Fa18 inbending
       • Right: Sp18 vs Fa18 outbending
     """
     import math, os, json
@@ -324,20 +323,24 @@ def plot_fully_integrated_bsa_period_comparison(
             tuple(map(int, k.strip("()").replace(" ", "").split(","))): v
             for k, v in data.items()
         }
+    #enddef
 
     def bsa_fit_function(phi, c0, a1, b1):
         b1 = np.clip(b1, -0.99999, 0.999999)
         a1 = np.clip(a1, -0.99999, 0.999999)
         return c0 + (a1 * np.sin(phi)) / (1 + b1 * np.cos(phi))
+    #endif
 
     def load_and_integrate(json_path):
         combined = load_combined_bsa_json(json_path)
         bin_groups = {}
+
         for (_ix, _iq, _it, iph), vals in combined.items():
             bsa, berr = vals["bsa"], vals["bsa_err"]
-            # only require a non-zero error
-            if berr > 0:
+            if berr > 0 and abs(bsa) < 0.5:
                 bin_groups.setdefault(iph, []).append((bsa, berr))
+            #endif
+        #endfor
 
         xs, ys, errs = [], [], []
         for iph in sorted(bin_groups):
@@ -350,11 +353,12 @@ def plot_fully_integrated_bsa_period_comparison(
             xs.append(phi_center)
             ys.append(avg)
             errs.append(err)
+        #endfor
 
         return np.array(xs), np.array(ys), np.array(errs)
-    #end load_and_integrate
+    #enddef
 
-    # load the four JSONs
+    # load & t-integrate each period
     xi_in, yi_in, err_in   = load_and_integrate(sp18_in_json)
     xf_in, yf_in, erf_in   = load_and_integrate(fa18_in_json)
     xi_out, yi_out, err_out= load_and_integrate(sp18_out_json)
@@ -364,56 +368,72 @@ def plot_fully_integrated_bsa_period_comparison(
     fig, (ax_in, ax_out) = plt.subplots(1, 2, figsize=(16, 6), sharey=True)
 
     def plot_and_fit(ax, x, y, yerr, color, label):
-        ax.errorbar(x, y, yerr,
-                    fmt='o', color=color,
-                    markersize=6, capsize=3,
-                    label=label)
+        ax.errorbar(
+            x, y, yerr,
+            fmt='o', color=color,
+            markersize=6, capsize=3,
+            label=label
+        )
         if len(x) >= 4:
-            popt, _ = curve_fit(
+            popt, pcov = curve_fit(
                 bsa_fit_function,
                 np.radians(x),
                 y,
                 sigma=yerr,
-                p0=[0,0.2,-0.4],
-                bounds=([-np.inf,-0.6,-0.7],[np.inf,0.6,0.7])
+                p0=[0, 0.2, -0.4],
+                bounds=(
+                    [-np.inf, 0.15, -np.inf],  # force 0.15 ≤ a1
+                    [ np.inf, 0.35,  np.inf]   #        a1 ≤ 0.35
+                )
+            )
+            a1, a1_err = popt[1], math.sqrt(pcov[1,1])
+            ax.text(
+                0.05, 0.95,
+                fr"$a_1={a1:.3f}\pm{a1_err:.3f}$",
+                transform=ax.transAxes,
+                ha='left', va='top',
+                fontsize='small'
             )
             fx = np.linspace(0, 360, 200)
             fy = bsa_fit_function(np.radians(fx), *popt)
-            ax.plot(fx, fy,
-                    linestyle='--',
-                    color=color,
-                    linewidth=2,
-                    label=f"{label} fit")
-    #end plot_and_fit
+            ax.plot(fx, fy, '--', color=color, linewidth=2)
+        #endif
+    #enddef
 
     # Inbending
-    plot_and_fit(ax_in, xi_in, yi_in, err_in, 'red',  'Sp18 inb')
-    plot_and_fit(ax_in, xf_in, yf_in, erf_in, 'blue', 'Fa18 inb')
-    ax_in.set(title="Inbending",
-              xlabel=r"$\phi$ (deg)",
-              ylabel=r"$A_{LU}$",
-              xlim=(0,360),
-              ylim=(-0.5,0.5))
+    plot_and_fit(ax_in, xi_in, yi_in, err_in,  'red',  'Sp18 Inb')
+    plot_and_fit(ax_in, xf_in, yf_in, erf_in,  'blue', 'Fa18 Inb')
+    ax_in.set(
+        title="Inbending",
+        xlabel=r"$\phi$ (deg)",
+        ylabel=r"$A_{LU}$",
+        xlim=(0,360),
+        ylim=(-0.5,0.5)
+    )
     ax_in.set_xticks([0,90,180,270,360])
     ax_in.grid(True, alpha=0.3)
     ax_in.legend()
 
     # Outbending
-    plot_and_fit(ax_out, xi_out, yi_out, err_out, 'red',  'Sp18 out')
-    plot_and_fit(ax_out, xf_out, yf_out, erf_out, 'blue', 'Fa18 out')
-    ax_out.set(title="Outbending",
-               xlabel=r"$\phi$ (deg)",
-               xlim=(0,360))
+    plot_and_fit(ax_out, xi_out, yi_out, err_out, 'red',  'Sp18 Out')
+    plot_and_fit(ax_out, xf_out, yf_out, erf_out, 'blue', 'Fa18 Out')
+    ax_out.set(
+        title="Outbending",
+        xlabel=r"$\phi$ (deg)",
+        xlim=(0,360)
+    )
     ax_out.set_xticks([0,90,180,270,360])
     ax_out.grid(True, alpha=0.3)
     ax_out.legend()
 
-    # --- removed the big formula text here ---
-
     plt.tight_layout()
-    fig.savefig(os.path.join(output_dir, "bsa_period_comparison.pdf"),
-                bbox_inches='tight')
-    fig.savefig(os.path.join(output_dir, "bsa_period_comparison.png"),
-                bbox_inches='tight')
+    fig.savefig(
+        os.path.join(output_dir, "bsa_period_comparison.pdf"),
+        bbox_inches='tight'
+    )
+    fig.savefig(
+        os.path.join(output_dir, "bsa_period_comparison.png"),
+        bbox_inches='tight'
+    )
     plt.close()
-#end plot_fully_integrated_bsa_period_comparison
+#enddef
