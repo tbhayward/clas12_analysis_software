@@ -17,7 +17,7 @@ from determine_final_bsa import determine_final_bsa
 from plot_bsa import plot_raw_bsa, plot_adjusted_bsa, plot_combined_bsa
 from plot_bsa import plot_a1_vs_t_by_Q2, plot_a1_vs_t_grid_full, plot_a1_vs_t_grid_top, plot_a1_vs_t_grid_bottom
 from plot_bsa import plot_pass_comparison
-from plot_bsa_integrated_t import integrate_t_bins, plot_integrated_bsa, integrate_all_bins, plot_fully_integrated_bsa
+from plot_bsa_integrated_t import integrate_t_bins, plot_integrated_bsa, integrate_all_bins, plot_fully_integrated_bsa, plot_fully_integrated_bsa_period_comparison
 
 def run_period(args):
     """
@@ -265,10 +265,10 @@ def main():
 
     # assuming final_results contains per-period fully integrated JSONs:
     plot_fully_integrated_bsa_period_comparison(
-        sp18_in_json  = "final_results/combined_bsa_fully_integrated_DVCS_Sp18_inb.json",
-        fa18_in_json  = "final_results/combined_bsa_fully_integrated_DVCS_Fa18_inb.json",
-        sp18_out_json = "final_results/combined_bsa_fully_integrated_DVCS_Sp18_outb.json",
-        fa18_out_json = "final_results/combined_bsa_fully_integrated_DVCS_Fa18_outb.json",
+        sp18_in_json  = "final_results/adjusted_bsa_DVCS_Sp18_inb.json",
+        fa18_in_json  = "final_results/adjusted_bsa_DVCS_Fa18_inb.json",
+        sp18_out_json = "final_results/adjusted_bsa_DVCS_Sp18_out.json",
+        fa18_out_json = "final_results/adjusted_bsa_DVCS_Fa18_out.json",
         output_dir    = "bsa_plots/integrated"
     )
 
