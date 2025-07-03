@@ -296,3 +296,113 @@ def plot_fully_integrated_bsa(json_filepath, output_dir="bsa_plots/integrated"):
     plt.savefig(os.path.join(output_dir, "bsa_fully_integrated.png"))
     plt.close()
     print(f"Fully integrated BSA plot saved to {output_dir}")
+
+
+
+def plot_fully_integrated_bsa_period_comparison(
+    sp18_in_json: str,
+    fa18_in_json: str,
+    sp18_out_json: str,
+    fa18_out_json: str,
+    output_dir: str = "bsa_plots/integrated"
+):
+    """
+    Create a 1×2 panel comparing fully–integrated BSA:
+      - Left:  Sp18 vs Fa18, inbending
+      - Right: Sp18 vs Fa18, outbending
+
+    sp18_in_json, fa18_in_json, sp18_out_json, fa18_out_json should be paths
+    to the per-period fully integrated JSON files (phi_idx -> {bsa, bsa_err}).
+    """
+    os.makedirs(output_dir, exist_ok=True)
+
+    def load_and_integrate(json_path):
+        data = load_combined_bsa_json(json_path)
+        xs, ys, errs = [], [], []
+        for phi_idx in range(N_PHI_BINS):
+            key = (phi_idx,)
+            if key in data:
+                bsa_val = data[key]["bsa"]
+                bsa_err = data[key]["bsa_err"]
+                # only plot sensible points
+                if -0.5 <= bsa_val <= 0.5 and bsa_err > 0:
+                    phi_center = (phi_idx + 0.5) * 360.0 / N_PHI_BINS
+                    xs.append(phi_center)
+                    ys.append(bsa_val)
+                    errs.append(bsa_err)
+                #endif
+            #endif
+        #endfor
+        return np.array(xs), np.array(ys), np.array(errs)
+
+    # load & integrate each
+    xi_in,  yi_in,  err_in  = load_and_integrate(sp18_in_json)
+    xf_in,  yf_in,  erf_in  = load_and_integrate(fa18_in_json)
+    xi_out, yi_out, err_out = load_and_integrate(sp18_out_json)
+    xf_out, yf_out, erf_out = load_and_integrate(fa18_out_json)
+
+    # set up 1×2 figure
+    fig, (ax_in, ax_out) = plt.subplots(1, 2, figsize=(16, 6), sharey=True)
+
+    # helper to plot & fit one dataset
+    def plot_and_fit(ax, x, y, yerr, color, label):
+        ax.errorbar(
+            x, y, yerr,
+            fmt='o', color=color, markersize=6, capsize=3,
+            label=label
+        )
+        # only fit if enough points
+        if len(x) >= 4:
+            popt, pcov = curve_fit(
+                bsa_fit_function,
+                np.radians(x),
+                y,
+                sigma=yerr,
+                p0=[0, 0.2, -0.4],
+                bounds=([-np.inf, -0.6, -0.7], [np.inf, 0.6, 0.7])
+            )
+            fit_x = np.linspace(0, 360, 200)
+            fit_y = bsa_fit_function(np.radians(fit_x), *popt)
+            ax.plot(
+                fit_x, fit_y, linestyle='--', color=color,
+                linewidth=2, label=f"{label} fit"
+            )
+        #endif
+
+    # left: inbending
+    plot_and_fit(ax_in, xi_in, yi_in, err_in, 'red',   'Sp18 inb')
+    plot_and_fit(ax_in, xf_in, yf_in, erf_in, 'blue',  'Fa18 inb')
+    ax_in.set_title("Inbending", fontsize=14)
+    ax_in.set_xlabel(r"$\phi$ (deg)")
+    ax_in.set_ylabel(r"$A_{LU}$")
+    ax_in.set_xlim(0, 360)
+    ax_in.set_ylim(-0.4, 0.4)
+    ax_in.set_xticks([0, 90, 180, 270, 360])
+    ax_in.set_yticks([-0.4, -0.2, 0, 0.2, 0.4])
+    ax_in.grid(True, alpha=0.3)
+    ax_in.legend()
+
+    # right: outbending
+    plot_and_fit(ax_out, xi_out, yi_out, err_out, 'red',  'Sp18 outb')
+    plot_and_fit(ax_out, xf_out, yf_out, erf_out, 'blue', 'Fa18 outb')
+    ax_out.set_title("Outbending", fontsize=14)
+    ax_out.set_xlabel(r"$\phi$ (deg)")
+    ax_out.set_xlim(0, 360)
+    ax_out.set_xticks([0, 90, 180, 270, 360])
+    ax_out.grid(True, alpha=0.3)
+    ax_out.legend()
+
+    # overall equation (optional)
+    fig.text(
+        0.95, 0.02,
+        r"$A_{LU} = c_0 + \frac{a_1 \sin\phi}{1 + b_1 \cos\phi}$",
+        ha='right', va='bottom', fontsize=16
+    )
+
+    plt.tight_layout(rect=[0, 0.03, 1, 0.95])
+    # save both PDF and PNG
+    fig.savefig(os.path.join(output_dir, "bsa_period_comparison.pdf"), bbox_inches='tight')
+    fig.savefig(os.path.join(output_dir, "bsa_period_comparison.png"), bbox_inches='tight')
+    plt.close()
+
+#enddef

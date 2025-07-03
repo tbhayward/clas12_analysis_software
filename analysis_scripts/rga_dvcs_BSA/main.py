@@ -243,25 +243,34 @@ def main():
     print("\n📊 Generating BSA plots...")
     csv_path = os.path.join("imports", "integrated_bin_v2.csv")
     
-    plot_raw_bsa(csv_path)
-    plot_adjusted_bsa(csv_path)
-    plot_combined_bsa(csv_path)
+    # plot_raw_bsa(csv_path)
+    # plot_adjusted_bsa(csv_path)
+    # plot_combined_bsa(csv_path)
     # plot_a1_vs_t_by_Q2(csv_path)
     # plot_a1_vs_t_grid_full(csv_path)
     # plot_a1_vs_t_grid_top(csv_path)
     # plot_a1_vs_t_grid_bottom(csv_path)
-    plot_pass_comparison(csv_path)
+    # plot_pass_comparison(csv_path)
 
-    combined_bsa_json = os.path.join("final_results", "combined_bsa.json")
-    output_integrated_json = os.path.join("final_results", "combined_bsa_integrated_t.json")
-    output_fully_integrated_json = os.path.join("final_results", "combined_bsa_fully_integrated.json")
+    # combined_bsa_json = os.path.join("final_results", "combined_bsa.json")
+    # output_integrated_json = os.path.join("final_results", "combined_bsa_integrated_t.json")
+    # output_fully_integrated_json = os.path.join("final_results", "combined_bsa_fully_integrated.json")
 
-    integrate_t_bins(combined_bsa_json, output_integrated_json)
-    integrate_all_bins(combined_bsa_json, output_fully_integrated_json)
+    # integrate_t_bins(combined_bsa_json, output_integrated_json)
+    # integrate_all_bins(combined_bsa_json, output_fully_integrated_json)
 
-    plot_integrated_bsa(output_integrated_json, output_dir="bsa_plots/integrated")
+    # plot_integrated_bsa(output_integrated_json, output_dir="bsa_plots/integrated")
 
-    plot_fully_integrated_bsa(output_fully_integrated_json, output_dir="bsa_plots/integrated")    
+    # plot_fully_integrated_bsa(output_fully_integrated_json, output_dir="bsa_plots/integrated")    
+
+    # assuming final_results contains per-period fully integrated JSONs:
+    plot_fully_integrated_bsa_period_comparison(
+        sp18_in_json  = "final_results/combined_bsa_fully_integrated_DVCS_Sp18_inb.json",
+        fa18_in_json  = "final_results/combined_bsa_fully_integrated_DVCS_Fa18_inb.json",
+        sp18_out_json = "final_results/combined_bsa_fully_integrated_DVCS_Sp18_outb.json",
+        fa18_out_json = "final_results/combined_bsa_fully_integrated_DVCS_Fa18_outb.json",
+        output_dir    = "bsa_plots/integrated"
+    )
 
     print("✅ All plots saved to bsa_plots/ directory")
 
