@@ -383,7 +383,8 @@ def plot_fully_integrated_bsa_period_comparison(
                 )
             )
             a1, a1_err = popt[0], math.sqrt(pcov[0,0])
-            label_text = rf"{label}, $a_1={a1:.3f}\pm{a1_err:.3f}$"
+            label_text = rf"{label}"
+            # label_text = rf"{label}, $a_1={a1:.3f}\pm{a1_err:.3f}$"
             # plot the fit curve
             fx = np.linspace(0, 360, 200)
             fy = bsa_fit_noc(np.radians(fx), *popt)
