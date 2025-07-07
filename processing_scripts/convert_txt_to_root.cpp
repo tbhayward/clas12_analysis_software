@@ -203,7 +203,7 @@ int main(int argc, char *argv[]) {
     double eta1, eta2, Delta_eta, eta1_gN, eta2_gN;
     double phi1, phi2, Delta_phi, phih, phiR, theta;
     double Emiss2, theta_gamma_gamma, theta_pi0_pi0, pTmiss;
-    double Mh_gammagamma, open_angle_egamma1, open_angle_egamma2;
+    double Mh_gammagamma, open_angle_egamma1, open_angle_egamma2, gamma_phi1, gamma_phi2;
     // Additional variables for three hadrons
     double p3_p, p3_theta, p3_phi, vz_p3;
     double open_angle_ep3, open_angle_p1p3, open_angle_p2p3;
@@ -1486,7 +1486,7 @@ int main(int argc, char *argv[]) {
             eta1_gN >> eta2_gN >> phi1 >> phi2 >> Delta_phi >> phi >> phiR >> theta >> 
             DepA >> DepB >> DepC >> DepV >> DepW >> Mh_gammagamma >> 
             detector_gamma1 >> detector_gamma2 >>
-            open_angle_egamma1 >> open_angle_egamma2 >> Emiss2 >> theta_pi0_pi0 >> pTmiss) {
+            open_angle_egamma1 >> open_angle_egamma2 >> gamma_phi1 >> gamma_phi2 >> Emiss2 >> theta_pi0_pi0 >> pTmiss) {
 
             beam_pol = getPol(runnum);
             if (runnum < 16000) { target_pol = 0; }

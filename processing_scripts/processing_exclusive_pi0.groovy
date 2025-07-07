@@ -79,7 +79,7 @@ public static void main(String[] args) {
 	double e_p, e_theta, e_phi, p1_phi, p1_p, p1_theta, p2_phi, p2_p, p2_theta; 
 	double vz_e, vz_p1, vz_p2;
 	double open_angle_ep, open_angle_ep1, open_angle_ep2, open_angle_p1p2;
-	double open_angle_egamma1, open_angle_egamma2;
+	double open_angle_egamma1, open_angle_egamma2, gamma_phi1, gamma_phi2;
 	double Q2, W, y, Mx2, Mx2_1, Mx2_2; 
 	double x, t, t1, t2, tmin, z, xF, pT, eta, eta_gN, xi;
 	double z1, z2, xF1, xF2, Mh, Mh_gammagamma;
@@ -190,11 +190,13 @@ public static void main(String[] args) {
 
 			            Mh_gammagamma = variables.Mh();
 			            if (Mh_gammagamma < 0.11 || Mh_gammagamma > 0.16) continue;
+			            if (detector_gamma1 == 2 || detector_gamma2 == 2) continue;
 			            detector_gamma1 = variables.get_detector1();
 			            detector_gamma2 = variables.get_detector2();
-			            if (detector_gamma1 == 2 || detector_gamma2 == 2) continue;
 			            open_angle_egamma1 = variables.open_angle_ep1();
 			            open_angle_egamma2 = variables.open_angle_ep2();
+			            gamma_phi1 = variables.phi1();
+			            gamma_phi2 = variables.phi2();
 		    		}
 		    	}
 		    	if (Mh_gammagamma < 0.11 || Mh_gammagamma > 0.16) continue;
@@ -371,6 +373,8 @@ public static void main(String[] args) {
 	                    .append(detector_gamma2).append(" ")
 	                    .append(open_angle_egamma1).append(" ")
 	                    .append(open_angle_egamma2).append(" ")
+	                    .append(gamma_phi1).append(" ")
+	                    .append(gamma_phi2).append(" ")
 	                    .append(Emiss2).append(" ")
 	                    .append(theta_pi0_pi0).append(" ")
 	                    .append(pTmiss).append("\n");
