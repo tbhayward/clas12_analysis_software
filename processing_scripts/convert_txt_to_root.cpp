@@ -1010,6 +1010,8 @@ int main(int argc, char *argv[]) {
         tree->Branch("detector_gamma2", &detector_gamma2, "detector_gamma2/I");
         tree->Branch("open_angle_egamma1", &open_angle_egamma1, "open_angle_egamma1/D");
         tree->Branch("open_angle_egamma2", &open_angle_egamma2, "open_angle_egamma2/D");
+        tree->Branch("gamma_phi1", &gamma_phi1, "gamma_phi1/D");
+        tree->Branch("gamma_phi2", &gamma_phi2, "gamma_phi2/D");
         tree->Branch("Emiss2", &Emiss2, "Emiss2/D");
         tree->Branch("theta_pi0_pi0", &theta_pi0_pi0, "theta_pi0_pi0/D");
         tree->Branch("pTmiss", &pTmiss, "pTmiss/D");
