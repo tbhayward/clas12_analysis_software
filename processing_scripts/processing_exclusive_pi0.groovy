@@ -409,8 +409,8 @@ public static void main(String[] args) {
 	    "48: xi, 49: xi1, 50: xi2, 51: eta, 52: eta1, 53: eta2, 54: Delta_eta, 55: eta1_gN, 56: eta2_gN, " +
 	    "57: phi1, 58: phi2, 59: Delta_phi, 60: phih, 61: phiR, 62: theta, " +
 	    "63: DepA, 64: DepB, 65: DepC, 66: DepV, 67: DepW, 68: Mh_gammagamma, " +
-	    "69: detector_gamma1, 70: detector_gamma2, 71: open_angle_egamma1, 72: open_angle_egamma2, " +
-	    "73: Emiss2, 74: theta_pi0_pi0, 75: pTmiss.");
+	    "69: detector_gamma1, 70: detector_gamma2, 71: open_angle_egamma1, 72: open_angle_egamma2, 73: gamma_phi1, 74: gamma_phi2" +
+	    "75: Emiss2, 76: theta_pi0_pi0, 77: pTmiss.");
 
 		println("output text file is: $file");
 	}
