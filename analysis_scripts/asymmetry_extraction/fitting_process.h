@@ -40,4 +40,11 @@ void plotHistogramAndFit_dvcs(TH1D* histogram, TF1* fitFunction, int binIndex, i
 TH1D* createHistogramForBin_dvcs(const char* histName, int binIndex, const std::string& prefix, int asymmetry_index);
 void performChi2Fits_dvcs(const char* output_file, const char* kinematic_file, const char* kinematicPlot_file, const std::string& prefix, int asymmetry_index);
 
+
+// eppi0
+void plotHistogramAndFit_eppi0(TH1D* histogram, TF1* fitFunction, int binIndex, int asymmetryIndex, const std::string& prefix);
+TH1D* createHistogramForBin_eppi0(const char* histName, int binIndex, const std::string& prefix, int asymmetry_index);
+void performChi2Fits_eppi0(const char* output_file, const char* kinematic_file, const char* kinematicPlot_file, const std::string& prefix, int asymmetry_index);
+
+
 #endif // FITTING_PROCESS_H
