@@ -99,10 +99,10 @@ int main(int argc, char *argv[]) {
   cout << endl << endl;
   // Set default channel to 1
   channel = 1;  // Default value
-  if (argc >= 4) {
+  if (argc >= 5) {
       try {
           channel = std::stoi(argv[3]);
-          if (channel < 0 || channel > 4) {
+          if (channel < 0 || channel > 5) {
               cout << "Invalid channel specified. Defaulting to single hadron." << endl;
               channel = 1;
           }
