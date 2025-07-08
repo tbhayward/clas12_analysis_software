@@ -8,7 +8,7 @@ LFLAGS = -L/site/12gev_phys/2.4/Linux_CentOS7.9.2009-gcc9.2.0/root/6.20.04/lib $
 TARGET = asymmetry_extraction
 
 # Source files
-SRC = asymmetry_extraction.cpp load_bins_from_csv.cpp load_run_info_from_csv.cpp dilution_factor.cpp calculate_dilution_factors.cpp asymmetry_fits.cpp KinematicCuts.cpp InclusiveKinematicCuts.cpp SingleHadronKinematicCuts.cpp B2BDihadronKinematicCuts.cpp DihadronKinematicCuts.cpp dvcsKinematicCuts.cpp formatLabelName.cpp readChi2Fits.cpp histConfigs.cpp charge_accumulation.cpp plot_data.cpp modifyTree.cpp fitting_process.cpp setup_directories.cpp
+SRC = asymmetry_extraction.cpp load_bins_from_csv.cpp load_run_info_from_csv.cpp dilution_factor.cpp calculate_dilution_factors.cpp asymmetry_fits.cpp KinematicCuts.cpp InclusiveKinematicCuts.cpp SingleHadronKinematicCuts.cpp B2BDihadronKinematicCuts.cpp DihadronKinematicCuts.cpp dvcsKinematicCuts.cpp eppi0KinematicCuts.cpp formatLabelName.cpp readChi2Fits.cpp histConfigs.cpp charge_accumulation.cpp plot_data.cpp modifyTree.cpp fitting_process.cpp setup_directories.cpp
 
 # Object files
 OBJ = $(SRC:.cpp=.o)

@@ -45,6 +45,7 @@
 #include "B2BDihadronKinematicCuts.h"
 #include "DihadronKinematicCuts.h"
 #include "dvcsKinematicCuts.h"
+#include "eppi0KinematicCuts.h"
 #include "formatLabelName.h"
 #include "readChi2Fits.h"
 #include "histConfigs.h"
@@ -134,6 +135,10 @@ int main(int argc, char *argv[]) {
       case 4:
           kinematicCuts = new dvcsKinematicCuts(dataReader);
           mckinematicCuts = new dvcsKinematicCuts(mcReader);
+          break;
+      case 5:
+          kinematicCuts = new eppi0KinematicCuts(dataReader);
+          mckinematicCuts = new eppi0KinematicCuts(mcReader);
           break;
   }
 
@@ -295,6 +300,8 @@ int main(int argc, char *argv[]) {
             case 2: performChi2Fits_b2b_dihadron(output_file.c_str(), kinematic_file.c_str(), 
               binNames[i], asymmetry); break;
             case 4: performChi2Fits_dvcs(output_file.c_str(), kinematic_file.c_str(), 
+              kinematicPlot_file.c_str(), binNames[i], asymmetry); break;
+            case 5: performChi2Fits_eppi0(output_file.c_str(), kinematic_file.c_str(), 
               kinematicPlot_file.c_str(), binNames[i], asymmetry); break;
         }
     }
