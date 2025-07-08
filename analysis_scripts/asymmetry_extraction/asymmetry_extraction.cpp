@@ -35,6 +35,7 @@
 #include "common_vars.h"  // Include the common header
 #include "load_bins_from_csv.h"
 #include "load_run_info_from_csv.h"
+#include "fitting_process.h"
 #include "dilution_factor.h"
 #include "calculate_dilution_factors.h"
 #include "asymmetry_fits.h"
@@ -52,7 +53,6 @@
 #include "charge_accumulation.h"
 #include "plot_data.h"
 #include "modifyTree.h"
-#include "fitting_process.h"
 #include "setup_directories.h"
 
 // Using namespace declaration
@@ -99,7 +99,7 @@ int main(int argc, char *argv[]) {
   cout << endl << endl;
   // Set default channel to 1
   channel = 1;  // Default value
-  if (argc >= 5) {
+  if (argc >= 4) {
       try {
           channel = std::stoi(argv[3]);
           if (channel < 0 || channel > 5) {
