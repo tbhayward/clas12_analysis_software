@@ -2913,8 +2913,8 @@ TH1D* createHistogramForBin_eppi0(const char* histName, int binIndex,
   TTreeReaderValue<double> x(dataReader, "x");
   TTreeReaderValue<double> z(dataReader, "z");
   TTreeReaderValue<double> pT(dataReader, "pT");
-  // TTreeReaderValue<double> phi(dataReader, "phi2"); 
-  TTreeReaderValue<double> phi(dataReader, "gamma_phi1"); 
+  TTreeReaderValue<double> phi(dataReader, "phi2"); 
+  // TTreeReaderValue<double> phi(dataReader, "gamma_phi1"); 
   // this is phi2 because we're using processing_dihadron to identify proton and photon/eppi0 
   // (which isn't really a hadron of course)
   // so phi2 is the dvcs/eppi0 photon angle
@@ -3005,8 +3005,6 @@ void performChi2Fits_eppi0(const char* output_file, const char* kinematic_file,
   chi2FitsBStream << std::fixed << std::setprecision(9);
   chi2FitsCStream << std::fixed << std::setprecision(9);
 
-  std::cout << "HELLO WORLD HI HELLO I AM HERE" << std::endl;
-
   // Initialize string stream to store the kinematics in each bin for use in LaTeX 
   std::ostringstream meanVariablesStream;
   meanVariablesStream << "\\begin{table}[h]" << endl;
@@ -3056,10 +3054,10 @@ void performChi2Fits_eppi0(const char* output_file, const char* kinematic_file,
     snprintf(histName, sizeof(histName), "hist_%zu", i);
 
     // Create a histogram for the current bin
-    TH1D* hist = createHistogramForBin_dvcs(histName, i, prefix, asymmetry_index);
+    TH1D* hist = createHistogramForBin_eppi0(histName, i, prefix, asymmetry_index);
     // Fit the histogram using the fitFunction and get the fit result
     hist->Fit(fitFunction, "QS");
-    plotHistogramAndFit_dvcs(hist, fitFunction, i, asymmetry_index, prefix);
+    plotHistogramAndFit_eppi0(hist, fitFunction, i, asymmetry_index, prefix);
 
     // Initialize variables to store the sums and event counts
     double sumVariable = 0;
