@@ -2915,7 +2915,6 @@ TH1D* createHistogramForBin_eppi0(const char* histName, int binIndex,
   TTreeReaderValue<double> pT(dataReader, "pT");
   // TTreeReaderValue<double> phi(dataReader, "phi2"); 
   TTreeReaderValue<double> phi(dataReader, "gamma_phi1"); 
-  std::cout << "HELLO WORLD HI HELLO I AM HERE" << std::endl;
   // this is phi2 because we're using processing_dihadron to identify proton and photon/eppi0 
   // (which isn't really a hadron of course)
   // so phi2 is the dvcs/eppi0 photon angle
@@ -3005,6 +3004,8 @@ void performChi2Fits_eppi0(const char* output_file, const char* kinematic_file,
   chi2FitsAStream << std::fixed << std::setprecision(9);
   chi2FitsBStream << std::fixed << std::setprecision(9);
   chi2FitsCStream << std::fixed << std::setprecision(9);
+
+  std::cout << "HELLO WORLD HI HELLO I AM HERE" << std::endl;
 
   // Initialize string stream to store the kinematics in each bin for use in LaTeX 
   std::ostringstream meanVariablesStream;
