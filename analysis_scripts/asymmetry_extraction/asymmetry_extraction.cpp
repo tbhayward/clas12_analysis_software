@@ -294,15 +294,15 @@ int main(int argc, char *argv[]) {
         }
         switch (channel) {
             case 0: calculate_inclusive(output_file.c_str(), kinematic_file.c_str(), 
-              binNames[i], asymmetry); break;
+              binNames[i], asymmetry); std::cout << "Starting eX" << std::endl; break;
             case 1: performChi2Fits_single_hadron(output_file.c_str(), kinematic_file.c_str(), 
-              kinematicPlot_file.c_str(), binNames[i], asymmetry); break;
+              kinematicPlot_file.c_str(), binNames[i], asymmetry); std::cout << "Starting ehX" << std::endl; break;
             case 2: performChi2Fits_b2b_dihadron(output_file.c_str(), kinematic_file.c_str(), 
-              binNames[i], asymmetry); break;
+              binNames[i], asymmetry); std::cout << "Starting b2b" << std::endl; break;
             case 4: performChi2Fits_dvcs(output_file.c_str(), kinematic_file.c_str(), 
-              kinematicPlot_file.c_str(), binNames[i], asymmetry); break;
+              kinematicPlot_file.c_str(), binNames[i], asymmetry); std::cout << "Starting dvcs" << std::endl; break;
             case 5: performChi2Fits_eppi0(output_file.c_str(), kinematic_file.c_str(), 
-              kinematicPlot_file.c_str(), binNames[i], asymmetry); std::cout << "HELLO WORLD" << std::endl; break;
+              kinematicPlot_file.c_str(), binNames[i], asymmetry); std::cout << "Starting eppi0" << std::endl; break;
         }
     }
     cout << endl << "     Completed " << binNames[i] << " chi2 fits." << endl;
