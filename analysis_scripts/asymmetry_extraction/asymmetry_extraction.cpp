@@ -302,7 +302,7 @@ int main(int argc, char *argv[]) {
             case 4: performChi2Fits_dvcs(output_file.c_str(), kinematic_file.c_str(), 
               kinematicPlot_file.c_str(), binNames[i], asymmetry); break;
             case 5: performChi2Fits_eppi0(output_file.c_str(), kinematic_file.c_str(), 
-              kinematicPlot_file.c_str(), binNames[i], asymmetry); break;
+              kinematicPlot_file.c_str(), binNames[i], asymmetry); std::cout << "HELLO WORLD" << std::endl; break;
         }
     }
     cout << endl << "     Completed " << binNames[i] << " chi2 fits." << endl;
