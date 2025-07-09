@@ -2913,10 +2913,11 @@ TH1D* createHistogramForBin_eppi0(const char* histName, int binIndex,
   TTreeReaderValue<double> x(dataReader, "x");
   TTreeReaderValue<double> z(dataReader, "z");
   TTreeReaderValue<double> pT(dataReader, "pT");
-  TTreeReaderValue<double> phi(dataReader, "phi2"); 
-  // this is phi2 because we're using processing_dihadron to identify proton and photon 
+  // TTreeReaderValue<double> phi(dataReader, "phi2"); 
+  TTreeReaderValue<double> phi(dataReader, "gamma_phi1"); 
+  // this is phi2 because we're using processing_dihadron to identify proton and photon/eppi0 
   // (which isn't really a hadron of course)
-  // so phi2 is the dvcs photon angle
+  // so phi2 is the dvcs/eppi0 photon angle
   TTreeReaderValue<double> currentVariable(dataReader, propertyNames[currentFits].c_str());
 
   // Counter to limit the number of processed entries
