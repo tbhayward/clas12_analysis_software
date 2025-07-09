@@ -2915,6 +2915,7 @@ TH1D* createHistogramForBin_eppi0(const char* histName, int binIndex,
   TTreeReaderValue<double> pT(dataReader, "pT");
   // TTreeReaderValue<double> phi(dataReader, "phi2"); 
   TTreeReaderValue<double> phi(dataReader, "gamma_phi1"); 
+  std::cout << phi << std::endl;
   // this is phi2 because we're using processing_dihadron to identify proton and photon/eppi0 
   // (which isn't really a hadron of course)
   // so phi2 is the dvcs/eppi0 photon angle
