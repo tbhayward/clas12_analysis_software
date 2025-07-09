@@ -11,7 +11,7 @@ eppi0KinematicCuts::eppi0KinematicCuts(TTreeReader& reader)
     : BaseKinematicCuts(reader), // Initialize BaseKinematicCuts
       runnum(reader, "runnum"), Q2(reader, "Q2"), W(reader, "W"), 
       x(reader, "x"), y(reader, "y"), t1(reader, "t1"), eta2(reader, "eta2"),
-      Emiss2(reader, "Emiss2"), theta_gamma_gamma(reader, "theta_pi0_pi0"),
+      Emiss2(reader, "Emiss2"), theta_pi0_pi0(reader, "theta_pi0_pi0"),
       pTmiss(reader, "pTmiss"), open_angle_ep2(reader, "open_angle_ep2") {}
 
 bool eppi0KinematicCuts::applyCuts(int currentFits, bool isMC) {
