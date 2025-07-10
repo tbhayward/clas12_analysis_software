@@ -22,10 +22,10 @@ def apply_kinematic_cuts(t_value, open_angle_ep2_value, theta_neutral_neutral_va
         return False
     #endif
 
-    # 3) universal missing pt cut
-    if pTmiss_value > 0.20:
-        return False
-    #endif
+    # # 3) universal missing pt cut
+    # if pTmiss_value > 0.20:
+    #     return False
+    # #endif
 
     # If all checks pass:
     return True
