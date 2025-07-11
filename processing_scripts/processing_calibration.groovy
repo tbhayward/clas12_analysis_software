@@ -281,6 +281,7 @@ class CalibrationScript {
                 // collect info for QA
                 config_run = run_Bank.getInt('run', 0)
                 if (config_run > 16600 && config_run < 16700) break; // Hall C bleedthrough
+                if (config_run > 17768) break; // outbending RGC Sp23
                 config_event = run_Bank.getInt('event', 0)
 
                 // do not use the qa if it is MC (runnum = 11)
