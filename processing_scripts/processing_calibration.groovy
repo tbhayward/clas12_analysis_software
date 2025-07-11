@@ -253,6 +253,7 @@ class CalibrationScript {
         int num_events = 0
         int max_lines = 1000
         int lineCount = 0
+        int linesPerRun = 0;
         for (current_file in 0..<n_files) {
             // limit to a certain number of files defined by n_files
             println("\n Opening file "+Integer.toString(current_file+1)
@@ -264,6 +265,7 @@ class CalibrationScript {
 
             while (reader.hasEvent()) {
                 ++num_events
+                if (linesPerRun>=1000000) { break; }
                 if (num_events % 500000 == 0) { // not necessary, just updates output
                     print("processed: " + num_events + " events. ")
                 }
@@ -292,6 +294,7 @@ class CalibrationScript {
 		    	if (config_run > 17768) process_event == false; // outbending RGC Sp23
 
                 if (process_event && banks_test(event)) {
+                	if (config_run != 11) { ++linesPerRun }
 
                     event_helicity = event_Bank.getInt('helicity',0);
 
