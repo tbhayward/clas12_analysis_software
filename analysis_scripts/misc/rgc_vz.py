@@ -52,10 +52,10 @@ def main():
     # draw electron vertex cuts with 50% opacity
     for ax in axes:
         ax.axvline(-7, color='red', linestyle='-', alpha=0.3)
-        ax.axvline(0,  color='red', linestyle='-', alpha=0.3)
+        ax.axvline(-0.5,  color='red', linestyle='-', alpha=0.3)
         ax.axvline(-6, color='red', linestyle='--', alpha=0.3)
-        ax.axvline(1,  color='red', linestyle='--', alpha=0.3)
-        ax.set_xlim(-10, 15)
+        ax.axvline(0.5,  color='red', linestyle='--', alpha=0.3)
+        ax.set_xlim(-15, 15)
 
     # annotate panels
     axes[0].set_xlabel(r"$v_{z}$ (cm)")
@@ -84,10 +84,10 @@ def main():
     # draw proton vertex cuts with 50% opacity
     for ax in axes:
         ax.axvline(-8,   color='red', linestyle='-', alpha=0.3)
-        ax.axvline(0,    color='red', linestyle='-', alpha=0.3)
+        ax.axvline(-0.5,    color='red', linestyle='-', alpha=0.3)
         ax.axvline(-7.5, color='red', linestyle='--', alpha=0.3)
-        ax.axvline(0.5,  color='red', linestyle='--', alpha=0.3)
-        ax.set_xlim(-10, 15)
+        ax.axvline(0.0,  color='red', linestyle='--', alpha=0.3)
+        ax.set_xlim(-15, 15)
 
     # annotate panels
     axes[0].set_xlabel(r"$v_{z}$ (cm)")
