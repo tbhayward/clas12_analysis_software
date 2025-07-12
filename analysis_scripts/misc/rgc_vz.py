@@ -70,37 +70,52 @@ def main():
     p_su_left,  p_su_right  = find_thresholds(proton_vz[0],   bins, threshold)
     p_c_left,   p_c_right   = find_thresholds(proton_comb,     bins, threshold)
 
-    print("Electron thresholds:")
-    print(f"  Su22 left = {e_su_left:.3f} cm, right = {e_su_right:.3f} cm")
-    print(f"  Fa22+Sp23 combined left = {e_c_left:.3f} cm, right = {e_c_right:.3f} cm")
-    print("Proton thresholds:")
-    print(f"  Su22 left = {p_su_left:.3f} cm, right = {p_su_right:.3f} cm")
-    print(f"  Fa22+Sp23 combined left = {p_c_left:.3f} cm, right = {p_c_right:.3f} cm")
+    print("Threshold positions (density ~ 0.025):")
+    print(f"  Electron Su22:     left = {e_su_left:.3f}, right = {e_su_right:.3f}")
+    print(f"  Electron Fa22+Sp23: left = {e_c_left:.3f}, right = {e_c_right:.3f}")
+    print(f"  Proton   Su22:      left = {p_su_left:.3f}, right = {p_su_right:.3f}")
+    print(f"  Proton   Fa22+Sp23: left = {p_c_left:.3f}, right = {p_c_right:.3f}")
 
-    # calculate percentage outside thresholds
+    # Calculate percentage outside thresholds via histogram integration
     # Electron Su22
-    total_e_su = len(electron_vz[0])
-    out_e_su   = np.sum((electron_vz[0] < e_su_left) | (electron_vz[0] > e_su_right))
-    pct_e_su   = 100 * out_e_su / total_e_su
+    counts_e_su, edges = np.histogram(electron_vz[0], bins=bins, density=False)
+    centers = 0.5 * (edges[:-1] + edges[1:])
+    total_e_su = counts_e_su.sum()
+    iL = np.searchsorted(centers, e_su_left)
+    iR = np.searchsorted(centers, e_su_right)
+    outside_e_su = counts_e_su[:iL].sum() + counts_e_su[iR+1:].sum()
+    pct_e_su = 100 * outside_e_su / total_e_su
+
     # Electron combined
-    total_e_c  = len(electron_comb)
-    out_e_c    = np.sum((electron_comb < e_c_left) | (electron_comb > e_c_right))
-    pct_e_c    = 100 * out_e_c / total_e_c
+    counts_e_c, edges = np.histogram(electron_comb, bins=bins, density=False)
+    # reuse 'centers'
+    total_e_c = counts_e_c.sum()
+    iL = np.searchsorted(centers, e_c_left)
+    iR = np.searchsorted(centers, e_c_right)
+    outside_e_c = counts_e_c[:iL].sum() + counts_e_c[iR+1:].sum()
+    pct_e_c = 100 * outside_e_c / total_e_c
 
     # Proton Su22
-    total_p_su = len(proton_vz[0])
-    out_p_su   = np.sum((proton_vz[0] < p_su_left) | (proton_vz[0] > p_su_right))
-    pct_p_su   = 100 * out_p_su / total_p_su
+    counts_p_su, edges = np.histogram(proton_vz[0], bins=bins, density=False)
+    total_p_su = counts_p_su.sum()
+    iL = np.searchsorted(centers, p_su_left)
+    iR = np.searchsorted(centers, p_su_right)
+    outside_p_su = counts_p_su[:iL].sum() + counts_p_su[iR+1:].sum()
+    pct_p_su = 100 * outside_p_su / total_p_su
+
     # Proton combined
-    total_p_c  = len(proton_comb)
-    out_p_c    = np.sum((proton_comb < p_c_left) | (proton_comb > p_c_right))
-    pct_p_c    = 100 * out_p_c / total_p_c
+    counts_p_c, edges = np.histogram(proton_comb, bins=bins, density=False)
+    total_p_c = counts_p_c.sum()
+    iL = np.searchsorted(centers, p_c_left)
+    iR = np.searchsorted(centers, p_c_right)
+    outside_p_c = counts_p_c[:iL].sum() + counts_p_c[iR+1:].sum()
+    pct_p_c = 100 * outside_p_c / total_p_c
 
     print("\nPercentage outside thresholds:")
-    print(f"  Electron Su22: {pct_e_su:.2f}% outside")
-    print(f"  Electron Fa22+Sp23 combined: {pct_e_c:.2f}% outside")
-    print(f"  Proton Su22: {pct_p_su:.2f}% outside")
-    print(f"  Proton Fa22+Sp23 combined: {pct_p_c:.2f}% outside")
+    print(f"  Electron Su22:     {pct_e_su:.2f}%")
+    print(f"  Electron Fa22+Sp23: {pct_e_c:.2f}%")
+    print(f"  Proton   Su22:      {pct_p_su:.2f}%")
+    print(f"  Proton   Fa22+Sp23: {pct_p_c:.2f}%")
 
     # Ensure output directory exists
     outdir = "output/rgc_studies"
@@ -114,6 +129,8 @@ def main():
                          histtype="step", color=color, label=label)
             axes[1].hist(data, bins=bins, density=True,
                          histtype="step", color=color, label=label)
+        #endfor
+
         # Plot original hard-coded lines (commented out)
         for ax in axes:
             # ax.axvline(-7,  color='red', linestyle='-',  alpha=0.25)
