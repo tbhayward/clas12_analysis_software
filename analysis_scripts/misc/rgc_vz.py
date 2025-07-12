@@ -33,12 +33,11 @@ def main():
 
             electron_vz.append(vz[mask_e])
             proton_vz.append(vz[mask_p])
-    #endfor
 
-    # histogram bin edges from -20 to 15
-    bins = np.linspace(-20, 15, 100)
+    # histogram bin edges from -10 to 15
+    bins = np.linspace(-10, 15, 100)
 
-    # ensure output dir
+    # ensure output dir exists
     outdir = "output/rgc_studies"
     os.makedirs(outdir, exist_ok=True)
 
@@ -49,14 +48,14 @@ def main():
                      histtype="step", color=color, label=label)
         axes[1].hist(data, bins=bins, density=True,
                      histtype="step", color=color, label=label)
-    #endfor
 
-    # draw electron vertex cuts
+    # draw electron vertex cuts with 50% opacity
     for ax in axes:
-        ax.axvline(-7, color='red', linestyle='-')
-        ax.axvline(0,  color='red', linestyle='-')
-        ax.axvline(-6, color='red', linestyle='--')
-        ax.axvline(1,  color='red', linestyle='--')
+        ax.axvline(-7, color='red', linestyle='-', alpha=0.5)
+        ax.axvline(0,  color='red', linestyle='-', alpha=0.5)
+        ax.axvline(-6, color='red', linestyle='--', alpha=0.5)
+        ax.axvline(1,  color='red', linestyle='--', alpha=0.5)
+        ax.set_xlim(-10, 15)
 
     # annotate panels
     axes[0].set_xlabel(r"$v_{z}$ (cm)")
@@ -81,14 +80,14 @@ def main():
                      histtype="step", color=color, label=label)
         axes[1].hist(data, bins=bins, density=True,
                      histtype="step", color=color, label=label)
-    #endfor
 
-    # draw proton vertex cuts
+    # draw proton vertex cuts with 50% opacity
     for ax in axes:
-        ax.axvline(-8,   color='red', linestyle='-')
-        ax.axvline(0,    color='red', linestyle='-')
-        ax.axvline(-7.5, color='red', linestyle='--')
-        ax.axvline(0.5,  color='red', linestyle='--')
+        ax.axvline(-8,   color='red', linestyle='-', alpha=0.5)
+        ax.axvline(0,    color='red', linestyle='-', alpha=0.5)
+        ax.axvline(-7.5, color='red', linestyle='--', alpha=0.5)
+        ax.axvline(0.5,  color='red', linestyle='--', alpha=0.5)
+        ax.set_xlim(-10, 15)
 
     # annotate panels
     axes[0].set_xlabel(r"$v_{z}$ (cm)")
@@ -108,4 +107,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-# endif
