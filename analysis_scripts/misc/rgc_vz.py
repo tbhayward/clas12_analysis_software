@@ -49,6 +49,16 @@ def main():
                      histtype="step", color=color, label=label)
         axes[1].hist(data, bins=bins, density=True,
                      histtype="step", color=color, label=label)
+    #endfor
+
+    # draw electron vertex cuts
+    for ax in axes:
+        ax.axvline(-7, color='red', linestyle='-')
+        ax.axvline(0,  color='red', linestyle='-')
+        ax.axvline(-6, color='red', linestyle='--')
+        ax.axvline(1,  color='red', linestyle='--')
+
+    # annotate panels
     axes[0].set_xlabel(r"$v_{z}$ (cm)")
     axes[0].set_ylabel("Normalized Counts")
     axes[0].set_title("Electron Vertex Distribution")
@@ -71,6 +81,16 @@ def main():
                      histtype="step", color=color, label=label)
         axes[1].hist(data, bins=bins, density=True,
                      histtype="step", color=color, label=label)
+    #endfor
+
+    # draw proton vertex cuts
+    for ax in axes:
+        ax.axvline(-8,   color='red', linestyle='-')
+        ax.axvline(0,    color='red', linestyle='-')
+        ax.axvline(-7.5, color='red', linestyle='--')
+        ax.axvline(0.5,  color='red', linestyle='--')
+
+    # annotate panels
     axes[0].set_xlabel(r"$v_{z}$ (cm)")
     axes[0].set_ylabel("Normalized Counts")
     axes[0].set_title("Proton Vertex Distribution")
@@ -88,3 +108,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+# endif
