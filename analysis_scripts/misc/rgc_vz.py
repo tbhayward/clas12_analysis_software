@@ -38,7 +38,7 @@ def main():
     ]
     labels = ["Su22", "Fa22", "Sp23"]
     tree_name = "PhysicsEvents"
-    threshold = 0.03
+    threshold = 0.025
 
     # Collect vz arrays
     electron_vz = []
@@ -77,6 +77,31 @@ def main():
     print(f"  Su22 left = {p_su_left:.3f} cm, right = {p_su_right:.3f} cm")
     print(f"  Fa22+Sp23 combined left = {p_c_left:.3f} cm, right = {p_c_right:.3f} cm")
 
+    # calculate percentage outside thresholds
+    # Electron Su22
+    total_e_su = len(electron_vz[0])
+    out_e_su   = np.sum((electron_vz[0] < e_su_left) | (electron_vz[0] > e_su_right))
+    pct_e_su   = 100 * out_e_su / total_e_su
+    # Electron combined
+    total_e_c  = len(electron_comb)
+    out_e_c    = np.sum((electron_comb < e_c_left) | (electron_comb > e_c_right))
+    pct_e_c    = 100 * out_e_c / total_e_c
+
+    # Proton Su22
+    total_p_su = len(proton_vz[0])
+    out_p_su   = np.sum((proton_vz[0] < p_su_left) | (proton_vz[0] > p_su_right))
+    pct_p_su   = 100 * out_p_su / total_p_su
+    # Proton combined
+    total_p_c  = len(proton_comb)
+    out_p_c    = np.sum((proton_comb < p_c_left) | (proton_comb > p_c_right))
+    pct_p_c    = 100 * out_p_c / total_p_c
+
+    print("\nPercentage outside thresholds:")
+    print(f"  Electron Su22: {pct_e_su:.2f}% outside")
+    print(f"  Electron Fa22+Sp23 combined: {pct_e_c:.2f}% outside")
+    print(f"  Proton Su22: {pct_p_su:.2f}% outside")
+    print(f"  Proton Fa22+Sp23 combined: {pct_p_c:.2f}% outside")
+
     # Ensure output directory exists
     outdir = "output/rgc_studies"
     os.makedirs(outdir, exist_ok=True)
@@ -89,14 +114,12 @@ def main():
                          histtype="step", color=color, label=label)
             axes[1].hist(data, bins=bins, density=True,
                          histtype="step", color=color, label=label)
-        #endfor
-
+        # Plot original hard-coded lines (commented out)
         for ax in axes:
-            # original hard-coded lines (commented out)
             # ax.axvline(-7,  color='red', linestyle='-',  alpha=0.25)
-            # ax.axvline(-0.5, color='red', linestyle='-',  alpha=0.25)
+            # ax.axvline(-0.5,color='red', linestyle='-',  alpha=0.25)
             # ax.axvline(-6,  color='red', linestyle='--', alpha=0.25)
-            # ax.axvline(0.5,  color='red', linestyle='--', alpha=0.25)
+            # ax.axvline(0.5, color='red', linestyle='--', alpha=0.25)
 
             # calculated Su22 thresholds
             ax.axvline(su_left,  color='red', linestyle='-',  alpha=0.25)
@@ -131,4 +154,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-#endif
