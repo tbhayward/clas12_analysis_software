@@ -34,8 +34,8 @@ def main():
             electron_vz.append(vz[mask_e])
             proton_vz.append(vz[mask_p])
 
-    # histogram bin edges from -10 to 15
-    bins = np.linspace(-10, 15, 100)
+    # histogram bin edges from -15 to 15
+    bins = np.linspace(-15, 15, 100)
 
     # ensure output dir exists
     outdir = "output/rgc_studies"
@@ -51,10 +51,10 @@ def main():
 
     # draw electron vertex cuts with 50% opacity
     for ax in axes:
-        ax.axvline(-7, color='red', linestyle='-', alpha=0.5)
-        ax.axvline(0,  color='red', linestyle='-', alpha=0.5)
-        ax.axvline(-6, color='red', linestyle='--', alpha=0.5)
-        ax.axvline(1,  color='red', linestyle='--', alpha=0.5)
+        ax.axvline(-7, color='red', linestyle='-', alpha=0.3)
+        ax.axvline(0,  color='red', linestyle='-', alpha=0.3)
+        ax.axvline(-6, color='red', linestyle='--', alpha=0.3)
+        ax.axvline(1,  color='red', linestyle='--', alpha=0.3)
         ax.set_xlim(-10, 15)
 
     # annotate panels
@@ -83,10 +83,10 @@ def main():
 
     # draw proton vertex cuts with 50% opacity
     for ax in axes:
-        ax.axvline(-8,   color='red', linestyle='-', alpha=0.5)
-        ax.axvline(0,    color='red', linestyle='-', alpha=0.5)
-        ax.axvline(-7.5, color='red', linestyle='--', alpha=0.5)
-        ax.axvline(0.5,  color='red', linestyle='--', alpha=0.5)
+        ax.axvline(-8,   color='red', linestyle='-', alpha=0.3)
+        ax.axvline(0,    color='red', linestyle='-', alpha=0.3)
+        ax.axvline(-7.5, color='red', linestyle='--', alpha=0.3)
+        ax.axvline(0.5,  color='red', linestyle='--', alpha=0.3)
         ax.set_xlim(-10, 15)
 
     # annotate panels
