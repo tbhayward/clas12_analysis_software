@@ -18,8 +18,8 @@ def main():
     labels = ["Su22", "Fa22", "Sp23"]
     colors = ["C0", "C1", "C2"]
 
-    # Name of the TTree inside each file (adjust if needed)
-    tree_name = "T"
+    # Name of the TTree inside each file
+    tree_name = "PhysicsEvents"
 
     # Containers for vertex z data
     electron_vz = []
