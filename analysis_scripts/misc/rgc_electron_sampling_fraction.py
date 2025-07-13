@@ -31,7 +31,7 @@ def compute_means_sigmas(p_vals, sf_vals, p_bins):
 def make_sampling_fraction_plot(filename, label, vz_cut, outdir):
     """
     Create a 2x3 sampling fraction plot for one run,
-    enforcing PCal energy > 0.07 GeV, and print fit cuts.
+    enforcing PCal energy > 0.08 GeV, and print fit cuts.
     """
     # open tree
     tree = uproot.open(filename)["PhysicsEvents"]
@@ -63,7 +63,7 @@ def make_sampling_fraction_plot(filename, label, vz_cut, outdir):
     fig, axes = plt.subplots(2, 3, figsize=(15, 10), constrained_layout=True)
 
     # histogram & fit ranges 1 to 9 GeV
-    p_bins = np.linspace(1.0, 9.0, 40)  # momentum bins from 1 to 9
+    p_bins = np.linspace(2.0, 8.0, 40)  # momentum bins from 1 to 9
     sf_range = (0.12, 0.45)
 
     print(f"\nSampling fraction cuts for {label}:")
@@ -107,8 +107,8 @@ def make_sampling_fraction_plot(filename, label, vz_cut, outdir):
             f"&& sf < ({a_plus:.6f} + {b_plus:.6f}*p + {c_plus:.6f}*p*p);"
         )
 
-        # evaluate fits over 1–9 GeV
-        p_fit = np.linspace(1.0, 9.0, 200)
+        # evaluate fits over 2–8 GeV
+        p_fit = np.linspace(2.0, 8.0, 200)
         mean_fit = poly_mean(p_fit)
         plus3 = mean_fit + 3 * poly_sigma(p_fit)
         minus3 = mean_fit - 3 * poly_sigma(p_fit)
@@ -119,7 +119,7 @@ def make_sampling_fraction_plot(filename, label, vz_cut, outdir):
         ax.plot(p_fit, minus3,     color='red',   linestyle='--', linewidth=2, label='mean-3σ')
 
         # aesthetics
-        ax.set_xlim(1.0, 9.0)
+        ax.set_xlim(2.0, 8.0)
         ax.set_ylim(*sf_range)
         ax.set_title(f"Sector {sec}")
         ax.set_xlabel("p (GeV)")
