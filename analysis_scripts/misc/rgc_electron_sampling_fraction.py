@@ -31,7 +31,7 @@ def compute_means_sigmas(p_vals, sf_vals, p_bins):
 def make_sampling_fraction_plot(filename, label, vz_cut, outdir):
     """
     Create a 2x3 sampling fraction plot for one run,
-    enforcing PCal energy > 0.07 GeV.
+    enforcing PCal energy > 0.07 GeV, and print fit cuts.
     """
     # open tree
     tree = uproot.open(filename)["PhysicsEvents"]
@@ -59,11 +59,12 @@ def make_sampling_fraction_plot(filename, label, vz_cut, outdir):
     p_vals = p[mask]
     sf     = (e1[mask] + e4[mask] + e7[mask]) / p_vals
 
-    # set up 2x3 figure
+    # set up 2x3 figure with constrained_layout
     fig, axes = plt.subplots(2, 3, figsize=(15, 10), constrained_layout=True)
     p_bins = np.linspace(2.0, 8.0, 40)  # momentum bins
     sf_range = (0.12, 0.45)
 
+    print(f"\nSampling fraction cuts for {label}:")
     for sec in range(1, 7):
         ax = axes.flat[sec-1]
         # select sector
@@ -72,9 +73,12 @@ def make_sampling_fraction_plot(filename, label, vz_cut, outdir):
         sf_sector = sf[mask_sec]
 
         # draw 2D histogram
-        h = ax.hist2d(p_sector, sf_sector,
-                      bins=[p_bins, np.linspace(*sf_range, 80)],
-                      cmap="viridis", norm=matplotlib.colors.LogNorm())
+        h = ax.hist2d(
+            p_sector, sf_sector,
+            bins=[p_bins, np.linspace(*sf_range, 80)],
+            cmap="viridis",
+            norm=matplotlib.colors.LogNorm()
+        )
 
         # compute means and sigmas
         centers, means, sigmas = compute_means_sigmas(p_sector, sf_sector, p_bins)
@@ -85,6 +89,24 @@ def make_sampling_fraction_plot(filename, label, vz_cut, outdir):
         coef_sigma = np.polyfit(centers[good], sigmas[good], 2)
         poly_mean = np.poly1d(coef_mean)
         poly_sigma = np.poly1d(coef_sigma)
+
+        # compute mean ± 3 sigma coefficients
+        # coef arrays: [c2, c1, c0] for c2*x^2 + c1*x + c0
+        c2_m, c1_m, c0_m = coef_mean
+        c2_s, c1_s, c0_s = coef_sigma
+        # minus3
+        a_minus = c0_m - 3*c0_s
+        b_minus = c1_m - 3*c1_s
+        c_minus = c2_m - 3*c2_s
+        # plus3
+        a_plus  = c0_m + 3*c0_s
+        b_plus  = c1_m + 3*c1_s
+        c_plus  = c2_m + 3*c2_s
+
+        print(
+            f"Sector {sec}: sf > ({a_minus:.6f} + {b_minus:.6f}*p + {c_minus:.6f}*p*p) "
+            f"&& sf < ({a_plus:.6f} + {b_plus:.6f}*p + {c_plus:.6f}*p*p);"
+        )
 
         # evaluate fits
         p_fit = np.linspace(2.0, 8.0, 200)
@@ -109,8 +131,10 @@ def make_sampling_fraction_plot(filename, label, vz_cut, outdir):
     cbar = fig.colorbar(h[3], ax=axes.ravel().tolist(), shrink=0.9)
     cbar.set_label("Counts (log scale)")
 
+    # add suptitle
     fig.suptitle(f"Electron Sampling Fraction - {label}", fontsize=16)
-    fig.tight_layout(rect=[0, 0, 1, 0.96])
+
+    # save
     os.makedirs(outdir, exist_ok=True)
     outpath = os.path.join(outdir, f"electron_sampling_fraction_{label}.pdf")
     fig.savefig(outpath)
