@@ -61,7 +61,9 @@ def make_sampling_fraction_plot(filename, label, vz_cut, outdir):
 
     # set up 2x3 figure with constrained_layout
     fig, axes = plt.subplots(2, 3, figsize=(15, 10), constrained_layout=True)
-    p_bins = np.linspace(2.0, 8.0, 40)  # momentum bins
+
+    # histogram & fit ranges 1 to 9 GeV
+    p_bins = np.linspace(1.0, 9.0, 40)  # momentum bins from 1 to 9
     sf_range = (0.12, 0.45)
 
     print(f"\nSampling fraction cuts for {label}:")
@@ -91,14 +93,11 @@ def make_sampling_fraction_plot(filename, label, vz_cut, outdir):
         poly_sigma = np.poly1d(coef_sigma)
 
         # compute mean ± 3 sigma coefficients
-        # coef arrays: [c2, c1, c0] for c2*x^2 + c1*x + c0
         c2_m, c1_m, c0_m = coef_mean
         c2_s, c1_s, c0_s = coef_sigma
-        # minus3
         a_minus = c0_m - 3*c0_s
         b_minus = c1_m - 3*c1_s
         c_minus = c2_m - 3*c2_s
-        # plus3
         a_plus  = c0_m + 3*c0_s
         b_plus  = c1_m + 3*c1_s
         c_plus  = c2_m + 3*c2_s
@@ -108,19 +107,19 @@ def make_sampling_fraction_plot(filename, label, vz_cut, outdir):
             f"&& sf < ({a_plus:.6f} + {b_plus:.6f}*p + {c_plus:.6f}*p*p);"
         )
 
-        # evaluate fits
-        p_fit = np.linspace(2.0, 8.0, 200)
+        # evaluate fits over 1–9 GeV
+        p_fit = np.linspace(1.0, 9.0, 200)
         mean_fit = poly_mean(p_fit)
         plus3 = mean_fit + 3 * poly_sigma(p_fit)
         minus3 = mean_fit - 3 * poly_sigma(p_fit)
 
         # overlay fits
-        ax.plot(p_fit, mean_fit,   color='white', linestyle='-',  linewidth=2, label='mean(p)')
+        ax.plot(p_fit, mean_fit,   color='red',   linestyle='-',  linewidth=2, label='mean(p)')
         ax.plot(p_fit, plus3,      color='red',   linestyle='--', linewidth=2, label='mean+3σ')
         ax.plot(p_fit, minus3,     color='red',   linestyle='--', linewidth=2, label='mean-3σ')
 
         # aesthetics
-        ax.set_xlim(2.0, 8.0)
+        ax.set_xlim(1.0, 9.0)
         ax.set_ylim(*sf_range)
         ax.set_title(f"Sector {sec}")
         ax.set_xlabel("p (GeV)")
