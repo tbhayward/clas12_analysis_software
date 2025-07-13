@@ -59,6 +59,10 @@ def make_sampling_fraction_plot(filename, label, vz_cut, outdir):
     p_vals = p[mask]
     sf     = (e1[mask] + e4[mask] + e7[mask]) / p_vals
 
+    n_total = len(pid)
+    n_after = np.count_nonzero(mask)
+    print(f"{label}:  total entries = {n_total:,},  after cuts = {n_after:,}")
+
     # set up 2x3 figure with constrained_layout
     fig, axes = plt.subplots(2, 3, figsize=(15, 10), constrained_layout=True)
 
