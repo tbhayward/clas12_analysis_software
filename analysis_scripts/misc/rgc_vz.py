@@ -38,7 +38,7 @@ def main():
     ]
     labels = ["Su22", "Fa22", "Sp23"]
     tree_name = "PhysicsEvents"
-    threshold = 0.025
+    threshold = 0.01
 
     # Collect vz arrays
     electron_vz = []
@@ -70,7 +70,7 @@ def main():
     p_su_left,  p_su_right  = find_thresholds(proton_vz[0],   bins, threshold)
     p_c_left,   p_c_right   = find_thresholds(proton_comb,     bins, threshold)
 
-    print("Threshold positions (density ~ 0.025):")
+    print("Threshold positions (density ~ 0.01):")
     print(f"  Electron Su22:     left = {e_su_left:.3f}, right = {e_su_right:.3f}")
     print(f"  Electron Fa22+Sp23: left = {e_c_left:.3f}, right = {e_c_right:.3f}")
     print(f"  Proton   Su22:      left = {p_su_left:.3f}, right = {p_su_right:.3f}")
