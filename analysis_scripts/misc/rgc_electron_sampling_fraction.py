@@ -64,7 +64,7 @@ def make_sampling_fraction_plot(filename, label, vz_cut, outdir):
 
     # histogram & fit ranges 1 to 9 GeV
     p_bins = np.linspace(2.0, 8.0, 40)  # momentum bins from 1 to 9
-    sf_range = (0.12, 0.45)
+    sf_range = (0.10, 0.40)
 
     print(f"\nSampling fraction cuts for {label}:")
     for sec in range(1, 7):
