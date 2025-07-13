@@ -60,8 +60,7 @@ def make_sampling_fraction_plot(filename, label, vz_cut, outdir):
     sf     = (e1[mask] + e4[mask] + e7[mask]) / p_vals
 
     # set up 2x3 figure
-    fig, axes = plt.subplots(2, 3, figsize=(15, 10),
-                             gridspec_kw={'wspace':0.3, 'hspace':0.3})
+    fig, axes = plt.subplots(2, 3, figsize=(15, 10), constrained_layout=True)
     p_bins = np.linspace(2.0, 8.0, 40)  # momentum bins
     sf_range = (0.12, 0.45)
 
