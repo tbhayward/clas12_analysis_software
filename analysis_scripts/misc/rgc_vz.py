@@ -38,7 +38,7 @@ def main():
     ]
     labels = ["Su22", "Fa22", "Sp23"]
     tree_name = "PhysicsEvents"
-    threshold = 0.01
+    threshold = 0.02
 
     # Collect vz arrays
     electron_vz = []
