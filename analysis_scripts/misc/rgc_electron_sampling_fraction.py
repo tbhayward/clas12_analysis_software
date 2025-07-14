@@ -18,7 +18,7 @@ def compute_means_sigmas(p_vals, sf_vals, p_bins):
     means = np.zeros_like(centers)
     sigmas = np.zeros_like(centers)
     for i in range(len(centers)):
-        mask = bin_indices == i
+        mask = (bin_indices == i)
         if np.count_nonzero(mask) > 2:
             data = sf_vals[mask]
             means[i] = data.mean()
@@ -31,7 +31,7 @@ def compute_means_sigmas(p_vals, sf_vals, p_bins):
 def make_sampling_fraction_plot(filename, label, vz_cut, outdir):
     """
     Create a 2x3 sampling fraction plot for one run,
-    enforcing PCal energy > 0.08 GeV, and print fit cuts.
+    enforcing PCal energy > 0.07 GeV, and print fit cuts.
     """
     # open tree
     tree = uproot.open(filename)["PhysicsEvents"]
@@ -66,23 +66,23 @@ def make_sampling_fraction_plot(filename, label, vz_cut, outdir):
     # set up 2x3 figure with constrained_layout
     fig, axes = plt.subplots(2, 3, figsize=(15, 10), constrained_layout=True)
 
-    # histogram & fit ranges 1 to 9 GeV
-    p_bins = np.linspace(2.0, 8.0, 40)  # momentum bins from 1 to 9
+    # histogram & fit ranges 2 to 8 GeV
+    p_bins = np.linspace(2.0, 8.0, 40)  # momentum bins from 2 to 8
     sf_range = (0.10, 0.40)
 
     print(f"\nSampling fraction cuts for {label}:")
     for sec in range(1, 7):
         ax = axes.flat[sec-1]
         # select sector
-        mask_sec = sector == sec
+        mask_sec = (sector == sec)
         p_sector = p_vals[mask_sec]
         sf_sector = sf[mask_sec]
 
-        # draw 2D histogram
+        # draw 2D histogram with ROOT-like colormap
         h = ax.hist2d(
             p_sector, sf_sector,
             bins=[p_bins, np.linspace(*sf_range, 80)],
-            cmap="viridis",
+            cmap="jet",
             norm=matplotlib.colors.LogNorm()
         )
 
@@ -90,9 +90,9 @@ def make_sampling_fraction_plot(filename, label, vz_cut, outdir):
         centers, means, sigmas = compute_means_sigmas(p_sector, sf_sector, p_bins)
 
         # fit means and sigmas to degree-2 polynomials
-        good = ~np.isnan(means)
-        coef_mean = np.polyfit(centers[good], means[good], 2)
-        coef_sigma = np.polyfit(centers[good], sigmas[good], 2)
+        valid = ~np.isnan(means)
+        coef_mean = np.polyfit(centers[valid], means[valid], 2)
+        coef_sigma = np.polyfit(centers[valid], sigmas[valid], 2)
         poly_mean = np.poly1d(coef_mean)
         poly_sigma = np.poly1d(coef_sigma)
 
@@ -117,10 +117,10 @@ def make_sampling_fraction_plot(filename, label, vz_cut, outdir):
         plus3 = mean_fit + 3 * poly_sigma(p_fit)
         minus3 = mean_fit - 3 * poly_sigma(p_fit)
 
-        # overlay fits
-        ax.plot(p_fit, mean_fit,   color='red',   linestyle='-',  linewidth=2, label='mean(p)')
-        ax.plot(p_fit, plus3,      color='red',   linestyle='--', linewidth=2, label='mean+3σ')
-        ax.plot(p_fit, minus3,     color='red',   linestyle='--', linewidth=2, label='mean-3σ')
+        # overlay fits: mean solid red, ±3σ dashed red
+        ax.plot(p_fit, mean_fit,   color='red', linestyle='-',  linewidth=2, label='mean(p)')
+        ax.plot(p_fit, plus3,      color='red', linestyle='--', linewidth=2, label='mean+3σ')
+        ax.plot(p_fit, minus3,     color='red', linestyle='--', linewidth=2, label='mean-3σ')
 
         # aesthetics
         ax.set_xlim(2.0, 8.0)
