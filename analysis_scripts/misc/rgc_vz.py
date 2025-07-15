@@ -32,96 +32,87 @@ def find_thresholds(data, bins, threshold):
 def main():
     # Paths to your ROOT files
     files = [
-        "/work/clas12/thayward/CLAS12_SIDIS/processed_data/pass2/calibration/sidisdvcs_rgc_su22_inb_calibration.root",
-        "/work/clas12/thayward/CLAS12_SIDIS/processed_data/pass2/calibration/sidisdvcs_rgc_fa22_inb_calibration.root",
-        "/work/clas12/thayward/CLAS12_SIDIS/processed_data/pass2/calibration/sidisdvcs_rgc_sp23_inb_calibration.root",
+        "/work/clas12/thayward/CLAS12_SIDIS/processed_data/pass2/calibration/"
+        "sidisdvcs_rgc_su22_inb_calibration.root",
+        "/work/clas12/thayward/CLAS12_SIDIS/processed_data/pass2/calibration/"
+        "sidisdvcs_rgc_fa22_inb_calibration.root",
+        "/work/clas12/thayward/CLAS12_SIDIS/processed_data/pass2/calibration/"
+        "sidisdvcs_rgc_sp23_inb_calibration.root",
     ]
     labels = ["Su22", "Fa22", "Sp23"]
     tree_name = "PhysicsEvents"
     threshold = 0.02
 
     # Collect vz arrays
-    electron_vz = []
-    proton_vz   = []
+    negative_vz = []
+    positive_vz = []
 
     for fname in files:
         with uproot.open(fname)[tree_name] as tree:
-            pid    = tree["particle_pid"].array(library="np")
-            vz     = tree["particle_vz"].array(library="np")
-            sector = tree["track_sector_6"].array(library="np")
+            pid     = tree["particle_pid"].array(library="np")
+            vz      = tree["particle_vz"].array(library="np")
+            sector  = tree["track_sector_6"].array(library="np")
 
-            mask_e = (pid == 11)   & (sector != -9999)
-            mask_p = (pid == 2212) & (sector != -9999)
+            # negative particles: electron (11), pi- (-211), K- (-321)
+            mask_neg = (
+                ((pid == 11) | (pid == -211) | (pid == -321))
+                & (sector != -9999)
+            )
+            # positive particles: proton (2212), positron (-11), pi+ (211), K+ (321)
+            mask_pos = (
+                ((pid == 2212) | (pid == -11) | (pid == 211) | (pid == 321))
+                & (sector != -9999)
+            )
 
-            electron_vz.append(vz[mask_e])
-            proton_vz.append(vz[mask_p])
+            negative_vz.append(vz[mask_neg])
+            positive_vz.append(vz[mask_pos])
     #endfor
 
     # Combine Fa22 and Sp23 into a "secret" fourth distribution
-    electron_comb = np.concatenate([electron_vz[1], electron_vz[2]])
-    proton_comb   = np.concatenate([proton_vz[1],   proton_vz[2]])
+    neg_comb = np.concatenate([negative_vz[1], negative_vz[2]])
+    pos_comb = np.concatenate([positive_vz[1], positive_vz[2]])
 
     # Histogram settings: -15 to 15
     bins = np.linspace(-15, 15, 100)
 
     # Calculate thresholds for Su22 and combined Fa22+Sp23
-    e_su_left,  e_su_right  = find_thresholds(electron_vz[0], bins, threshold)
-    e_c_left,   e_c_right   = find_thresholds(electron_comb,   bins, threshold)
-    p_su_left,  p_su_right  = find_thresholds(proton_vz[0],   bins, threshold)
-    p_c_left,   p_c_right   = find_thresholds(proton_comb,     bins, threshold)
+    n_su_l, n_su_r = find_thresholds(negative_vz[0], bins, threshold)
+    n_c_l, n_c_r   = find_thresholds(neg_comb,      bins, threshold)
+    p_su_l, p_su_r = find_thresholds(positive_vz[0], bins, threshold)
+    p_c_l, p_c_r   = find_thresholds(pos_comb,      bins, threshold)
 
-    print("Threshold positions (density ~ 0.01):")
-    print(f"  Electron Su22:     left = {e_su_left:.3f}, right = {e_su_right:.3f}")
-    print(f"  Electron Fa22+Sp23: left = {e_c_left:.3f}, right = {e_c_right:.3f}")
-    print(f"  Proton   Su22:      left = {p_su_left:.3f}, right = {p_su_right:.3f}")
-    print(f"  Proton   Fa22+Sp23: left = {p_c_left:.3f}, right = {p_c_right:.3f}")
+    print("Threshold positions (density ~ 0.02):")
+    print(f"  Negative Su22:     left = {n_su_l:.3f}, right = {n_su_r:.3f}")
+    print(f"  Negative Fa22+Sp23:left = {n_c_l:.3f}, right = {n_c_r:.3f}")
+    print(f"  Positive Su22:     left = {p_su_l:.3f}, right = {p_su_r:.3f}")
+    print(f"  Positive Fa22+Sp23:left = {p_c_l:.3f}, right = {p_c_r:.3f}")
 
     # Calculate percentage outside thresholds via histogram integration
-    # Electron Su22
-    counts_e_su, edges = np.histogram(electron_vz[0], bins=bins, density=False)
-    centers = 0.5 * (edges[:-1] + edges[1:])
-    total_e_su = counts_e_su.sum()
-    iL = np.searchsorted(centers, e_su_left)
-    iR = np.searchsorted(centers, e_su_right)
-    outside_e_su = counts_e_su[:iL].sum() + counts_e_su[iR+1:].sum()
-    pct_e_su = 100 * outside_e_su / total_e_su
+    def pct_outside(data, left, right):
+        counts, edges = np.histogram(data, bins=bins, density=False)
+        centers = 0.5 * (edges[:-1] + edges[1:])
+        total = counts.sum()
+        iL = np.searchsorted(centers, left)
+        iR = np.searchsorted(centers, right)
+        outside = counts[:iL].sum() + counts[iR+1:].sum()
+        return 100 * outside / total
 
-    # Electron combined
-    counts_e_c, edges = np.histogram(electron_comb, bins=bins, density=False)
-    # reuse 'centers'
-    total_e_c = counts_e_c.sum()
-    iL = np.searchsorted(centers, e_c_left)
-    iR = np.searchsorted(centers, e_c_right)
-    outside_e_c = counts_e_c[:iL].sum() + counts_e_c[iR+1:].sum()
-    pct_e_c = 100 * outside_e_c / total_e_c
-
-    # Proton Su22
-    counts_p_su, edges = np.histogram(proton_vz[0], bins=bins, density=False)
-    total_p_su = counts_p_su.sum()
-    iL = np.searchsorted(centers, p_su_left)
-    iR = np.searchsorted(centers, p_su_right)
-    outside_p_su = counts_p_su[:iL].sum() + counts_p_su[iR+1:].sum()
-    pct_p_su = 100 * outside_p_su / total_p_su
-
-    # Proton combined
-    counts_p_c, edges = np.histogram(proton_comb, bins=bins, density=False)
-    total_p_c = counts_p_c.sum()
-    iL = np.searchsorted(centers, p_c_left)
-    iR = np.searchsorted(centers, p_c_right)
-    outside_p_c = counts_p_c[:iL].sum() + counts_p_c[iR+1:].sum()
-    pct_p_c = 100 * outside_p_c / total_p_c
+    pct_neg_su = pct_outside(negative_vz[0], n_su_l, n_su_r)
+    pct_neg_c  = pct_outside(neg_comb,      n_c_l,  n_c_r)
+    pct_pos_su = pct_outside(positive_vz[0], p_su_l, p_su_r)
+    pct_pos_c  = pct_outside(pos_comb,      p_c_l,  p_c_r)
 
     print("\nPercentage outside thresholds:")
-    print(f"  Electron Su22:     {pct_e_su:.2f}%")
-    print(f"  Electron Fa22+Sp23: {pct_e_c:.2f}%")
-    print(f"  Proton   Su22:      {pct_p_su:.2f}%")
-    print(f"  Proton   Fa22+Sp23: {pct_p_c:.2f}%")
+    print(f"  Negative Su22:     {pct_neg_su:.2f}%")
+    print(f"  Negative Fa22+Sp23:{pct_neg_c:.2f}%")
+    print(f"  Positive Su22:     {pct_pos_su:.2f}%")
+    print(f"  Positive Fa22+Sp23:{pct_pos_c:.2f}%")
 
     # Ensure output directory exists
     outdir = "output/rgc_studies"
     os.makedirs(outdir, exist_ok=True)
 
-    def plot_vz(data_list, combined, pname, su_left, su_right, c_left, c_right):
+    def plot_vz(data_list, combined, pname, left, right, c_left, c_right):
         fig, axes = plt.subplots(1, 2, figsize=(12, 6))
         colors = ["C0", "C1", "C2"]
         for data, label, color in zip(data_list, labels, colors):
@@ -133,41 +124,41 @@ def main():
 
         # Plot original hard-coded lines (commented out)
         for ax in axes:
-            # ax.axvline(-7,  color='red', linestyle='-',  alpha=0.25)
-            # ax.axvline(-0.5,color='red', linestyle='-',  alpha=0.25)
-            # ax.axvline(-6,  color='red', linestyle='--', alpha=0.25)
-            # ax.axvline(0.5, color='red', linestyle='--', alpha=0.25)
+            # ax.axvline(-7,  color='red', linestyle='-',  alpha=0.5)
+            # ax.axvline(0,   color='red', linestyle='-',  alpha=0.5)
+            # ax.axvline(-6,  color='red', linestyle='--', alpha=0.5)
+            # ax.axvline(1,   color='red', linestyle='--', alpha=0.5)
 
             # calculated Su22 thresholds
-            ax.axvline(su_left,  color='red', linestyle='-',  alpha=0.25)
-            ax.axvline(su_right, color='red', linestyle='-',  alpha=0.25)
+            ax.axvline(left,   color='red', linestyle='-',  alpha=0.5)
+            ax.axvline(right,  color='red', linestyle='-',  alpha=0.5)
             # calculated Fa22+Sp23 thresholds
-            ax.axvline(c_left,   color='red', linestyle='--', alpha=0.25)
-            ax.axvline(c_right,  color='red', linestyle='--', alpha=0.25)
+            ax.axvline(c_left, color='red', linestyle='--', alpha=0.5)
+            ax.axvline(c_right,color='red', linestyle='--', alpha=0.5)
 
             ax.set_xlim(-15, 15)
         #endfor
 
-        axes[0].set_xlabel(r"$v_{z}$ (cm)")
+        axes[0].set_xlabel(r"$v_z$ (cm)")
         axes[0].set_ylabel("Normalized Counts")
         axes[0].set_title(f"{pname} Vertex Distribution")
         axes[0].legend()
 
         axes[1].set_yscale("log")
-        axes[1].set_xlabel(r"$v_{z}$ (cm)")
+        axes[1].set_xlabel(r"$v_z$ (cm)")
         axes[1].set_ylabel("Normalized Counts")
         axes[1].set_title(f"{pname} Vertex Distribution (log scale)")
         axes[1].legend()
 
         fig.tight_layout()
-        fig.savefig(f"{outdir}/{pname.lower()}_vz.pdf")
+        fig.savefig(f"{outdir}/{pname.lower().replace(' ', '_')}_vz.pdf")
         plt.close(fig)
 
-    # Plot electrons and protons
-    plot_vz(electron_vz, electron_comb, "Electron",
-            e_su_left, e_su_right, e_c_left, e_c_right)
-    plot_vz(proton_vz,   proton_comb,   "Proton",
-            p_su_left, p_su_right, p_c_left, p_c_right)
+    # Plot negative and positive
+    plot_vz(negative_vz, neg_comb, "Negative Particles",
+            n_su_l, n_su_r, n_c_l, n_c_r)
+    plot_vz(positive_vz, pos_comb, "Positive Particles",
+            p_su_l, p_su_r, p_c_l, p_c_r)
 
 if __name__ == "__main__":
     main()
