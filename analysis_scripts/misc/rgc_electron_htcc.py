@@ -20,62 +20,84 @@ def main():
     labels = ["Su22", "Fa22", "Sp23"]
     tree_name = "PhysicsEvents"
 
-    # vertex cuts for negative tracks
+    # vertex cuts for negative tracks (electron PID study)
     vz_cuts = {
         "Su22": (-7.576, 0.303),
         "Fa22": (-5.758, 1.515),
         "Sp23": (-5.758, 1.515),
     }
 
-    # bins for nphe
-    bins = np.linspace(0, 40, 100)
+    # bins for HTCC nphe: 50 bins from 0 to 40
+    bins = np.linspace(0, 40, 51)
 
-    # collect per-period cc_nphe arrays
-    nphe_data = []
+    outdir = "output/rgc_studies"
+    os.makedirs(outdir, exist_ok=True)
 
-    for fname, label in zip(files, labels):
+    # prepare figure: 1x2 panels
+    fig, axes = plt.subplots(1, 2, figsize=(12, 6))
+    colors = ["C0", "C1", "C2"]
+
+    # loop over each run period
+    for fname, label, color in zip(files, labels, colors):
         tree = uproot.open(fname)[tree_name]
-        pid       = tree["particle_pid"].array(library="np")
-        vz        = tree["particle_vz"].array(library="np")
-        p         = tree["p"].array(library="np")
-        nphe      = tree["cc_nphe_15"].array(library="np")
-        sector6   = tree["track_sector_6"].array(library="np")
+        n_entries = tree.num_entries
 
-        # mask negative tracks, vertex, momentum, valid sector, valid nphe
-        mask = (
-            ((pid == 11)  | (pid == -211) | (pid == -321)) &
-            (sector6 != -9999) &
-            (vz >= vz_cuts[label][0]) &
-            (vz <= vz_cuts[label][1]) &
-            (p > 2.0) &
-            (nphe != -9999)
-        )
-        nphe_data.append(nphe[mask])
-    # endfor
+        # initialize histogram counts
+        counts = np.zeros(len(bins) - 1, dtype=float)
+        processed = 0
 
-    # prepare figure
-    fig, axes = plt.subplots(1, 2, figsize=(12,6))
-    colors = ["C0","C1","C2"]
+        # iterate in chunks to combine I/O and compute
+        for arrays in tree.iterate(
+            ["particle_pid", "particle_vz", "track_sector_6", "p", "cc_nphe_15"],
+            step_size="100 MB",
+            library="np"
+        ):
+            pid     = arrays["particle_pid"]
+            vz      = arrays["particle_vz"]
+            sector6 = arrays["track_sector_6"]
+            p       = arrays["p"]
+            nphe    = arrays["cc_nphe_15"]
 
-    # plot histograms
-    for data, label, color in zip(nphe_data, labels, colors):
-        axes[0].hist(data, bins=bins, density=True,
-                     histtype="step", color=color, label=label)
-        axes[1].hist(data, bins=bins, density=True,
-                     histtype="step", color=color, label=label)
-    # endfor
+            # apply mask: negative tracks, valid sector, vertex cuts, momentum > 2 GeV, valid nphe
+            mask = (
+                ((pid == 11)   | (pid == -211) | (pid == -321)) &
+                (sector6 != -9999) &
+                (vz >= vz_cuts[label][0]) &
+                (vz <= vz_cuts[label][1]) &
+                (p > 2.0) &
+                (nphe != -9999)
+            )
+            selected = nphe[mask]
 
-    # add vertical line at nphe = 2
+            # accumulate histogram counts
+            counts += np.histogram(selected, bins=bins)[0]
+
+            # progress update
+            processed += len(pid)
+            pct = 100 * processed / n_entries
+            print(f"{label}: processed {processed}/{n_entries} entries ({pct:.1f}%)", flush=True)
+
+        # normalize to density
+        total = counts.sum()
+        densities = counts / total
+        centers = 0.5 * (bins[:-1] + bins[1:])
+
+        # plot on both panels
+        axes[0].step(centers, densities, where="mid", color=color, label=label)
+        axes[1].step(centers, densities, where="mid", color=color, label=label)
+
+    # draw vertical cut line at nphe = 2
     for ax in axes:
         ax.axvline(2, color='red', linestyle='-', linewidth=2)
+        ax.set_xlim(0, 40)
 
-    # left panel: linear
+    # left panel: linear scale
     axes[0].set_xlabel("HTCC nphe")
     axes[0].set_ylabel("Normalized Counts")
     axes[0].set_title("Negative Tracks: HTCC nphe")
     axes[0].legend()
 
-    # right panel: log
+    # right panel: log scale
     axes[1].set_yscale("log")
     axes[1].set_xlabel("HTCC nphe")
     axes[1].set_ylabel("Normalized Counts")
@@ -83,8 +105,6 @@ def main():
     axes[1].legend()
 
     fig.tight_layout()
-    outdir = "output/rgc_studies"
-    os.makedirs(outdir, exist_ok=True)
     fig.savefig(f"{outdir}/electron_htcc.pdf")
     plt.close(fig)
 
