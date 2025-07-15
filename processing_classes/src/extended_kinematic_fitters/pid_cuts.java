@@ -239,29 +239,48 @@ public class pid_cuts {
         }
     }
 
-    public boolean calorimeter_diagonal_cut(int particle_Index, double p, HipoDataBank cal_Bank) {
+    public boolean calorimeter_diagonal_cut(int particle_Index, double p, HipoDataBank cal_Bank, HipoDataBank run_Bank) {
         // Only apply diagonal cut above 4.5 GeV
         if (p < 4.9) {
             return true;
         }
+        
+        int runnum = run_Bank.getInt("run", 0);
+        if (!(runnum >= 16043 && runnum <= 17811)) {
+            
 
-        // Initialize the sum of energy for PCAL and ECAL inner layers
-        double pcal_plus_ecal_inner = 0;
+            // Initialize the sum of energy for PCAL and ECAL inner layers
+            double pcal_plus_ecal_inner = 0;
 
-        // Iterate through the rows of the data bank
-        for (int current_Row = 0; current_Row < cal_Bank.rows(); current_Row++) {
-            // Check if the current row corresponds to the particle index and the required layer (1 or 4)
-            int pindex = cal_Bank.getInt("pindex", current_Row);
-            int layer = cal_Bank.getInt("layer", current_Row);
+            // Iterate through the rows of the data bank
+            for (int current_Row = 0; current_Row < cal_Bank.rows(); current_Row++) {
+                // Check if the current row corresponds to the particle index and the required layer (1 or 4)
+                int pindex = cal_Bank.getInt("pindex", current_Row);
+                int layer = cal_Bank.getInt("layer", current_Row);
 
-            if (pindex == particle_Index && (layer == 1 || layer == 4)) {
-                // Add the energy value to the sum
-                pcal_plus_ecal_inner += cal_Bank.getFloat("energy", current_Row);
+                if (pindex == particle_Index && (layer == 1 || layer == 4)) {
+                    // Add the energy value to the sum
+                    pcal_plus_ecal_inner += cal_Bank.getFloat("energy", current_Row);
+                }
             }
-        }
 
-        // Check if the energy ratio is above the threshold
-        return 0.19 < pcal_plus_ecal_inner / p;
+            // Check if the energy ratio is above the threshold
+            return 0.19 < pcal_plus_ecal_inner / p;
+        } else {
+            double pcal_energy = 0;
+            double ecin_energy = 0;
+            // Iterate through the rows of the data bank
+            for (int current_Row = 0; current_Row < cal_Bank.rows(); current_Row++) {
+                int pindex = cal_Bank.getInt("pindex", current_Row);
+                int layer = cal_Bank.getInt("layer", current_Row);
+                if (pindex == particle_Index && layer == 1) {
+                    pcal_energy += cal_Bank.getFloat("energy", current_Row);
+                } else if (pindex == particle_Index && layer == 4) {
+                    ecin_energy += cal_Bank.getFloat("energy", current_Row);
+                }
+            }
+            return (ecin_energy/p) >= -0.625*(pcal_energy/p) + 0.15; 
+        }
     }
 
     /*~~~~~~~~~~~~~~~~~ Charged Hadrons ~~~~~~~~~~~~~~~~~*/
