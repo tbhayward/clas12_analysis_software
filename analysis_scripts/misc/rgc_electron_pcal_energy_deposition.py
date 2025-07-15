@@ -37,7 +37,6 @@ def main():
     # collect PCal energies per run
     pcal_energies = []
     for fname, label in zip(files, labels):
-        # read all needed branches at once
         arr = uproot.open(fname)[tree_name].arrays([
             "particle_pid",
             "particle_vz",
@@ -77,19 +76,18 @@ def main():
                 ((theta <= 10) & (te6 > 10))
             )
         )
-
         valid_sector = (sector6 != -9999)
 
-        # selection mask: electrons only
+        # mask: all negative particles e⁻, π⁻, K⁻, p̄
         mask = (
-            (pid == 11) &            # electron
-            valid_sector &           # good sector
+            ((pid == 11)   | (pid == -211) | (pid == -321) | (pid == -2212)) &
+            valid_sector &
             (vz >= vz_cuts[label][0]) &
-            (vz <= vz_cuts[label][1]) &  # vertex within thresholds
-            (p > 2.0) &              # momentum > 2 GeV
-            (nphe >= 2) &            # HTCC nphe >= 2
-            (e1 >= 0) &              # valid PCal energy
-            fid                      # fiducial cuts
+            (vz <= vz_cuts[label][1]) &  # vertex window
+            (p > 2.0) &                   # momentum > 2 GeV
+            (nphe >= 2) &                 # HTCC veto nphe>=2
+            (e1 >= 0) &                   # valid PCal energy
+            fid                            # fiducial cuts
         )
 
         pcal_energies.append(e1[mask])
@@ -104,20 +102,20 @@ def main():
         axes[1].hist(data, bins=bins, density=True,
                      histtype="step", color=color, label=label)
 
-    # formatting
+    # formatting panels
     axes[0].set_xlabel(r"$E_{\mathrm{PCal}}$ (GeV)")
     axes[0].set_ylabel("Normalized Counts")
-    axes[0].set_title("Electron PCal Energy Deposition")
+    axes[0].set_title("Negative Particles: PCal Energy Deposition")
     axes[0].legend()
 
     axes[1].set_yscale("log")
     axes[1].set_xlabel(r"$E_{\mathrm{PCal}}$ (GeV)")
     axes[1].set_ylabel("Normalized Counts")
-    axes[1].set_title("Electron PCal Energy Deposition (log scale)")
+    axes[1].set_title("Negative Particles: PCal Energy Deposition (log scale)")
     axes[1].legend()
 
     fig.tight_layout()
-    fig.savefig(f"{outdir}/electron_pcal_deposition.pdf")
+    fig.savefig(f"{outdir}/negative_particles_pcal_deposition.pdf")
     plt.close(fig)
 
 if __name__ == "__main__":
