@@ -265,7 +265,7 @@ class CalibrationScript {
 
             while (reader.hasEvent()) {
                 ++num_events
-                if (linesPerRun>=100000) { linesPerRun = 0; break; }
+                if (linesPerRun>=10000) { linesPerRun = 0; break; }
                 if (num_events % 500000 == 0) { // not necessary, just updates output
                     print("processed: " + num_events + " events. ")
                 }
