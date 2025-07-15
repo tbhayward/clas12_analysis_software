@@ -81,7 +81,7 @@ def main():
 
     # Additional SF < 0.28 cut for sector 1
     sf_sec1 = (e1[sec1] + e4[sec1] + e7[sec1]) / p[sec1]
-    sec1 = sec1[sf_sec1 < 0.28]
+    sec1 = sec1[sf_sec1 < 0.50]
 
     # Final arrays
     p1  = p[sec1]
