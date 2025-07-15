@@ -95,7 +95,8 @@ def make_sampling_fraction_plot(filename, label, vz_cut, outdir):
     frac_ecin = e4_base / p_base
 
     # Diagonal cut: y >= -0.625*x + 0.15
-    mask_diag = frac_ecin >= (-0.625 * frac_pcal + 0.15)
+    # mask_diag = frac_ecin >= (-0.625 * frac_pcal + 0.15)
+    mask_diag = frac_ecin >= 0
 
     # Final indices
     idx_base = np.nonzero(base_mask)[0]
