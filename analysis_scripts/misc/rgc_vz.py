@@ -45,7 +45,7 @@ def main():
         # iterate in chunks to avoid loading entire arrays
         for arrays in tree.iterate(
             ["particle_pid", "particle_vz", "track_sector_6", "p", "cc_nphe_15"],
-            step_size=1_000_000,
+            step_size=1_000,
             library="np"
         ):
             pid     = arrays["particle_pid"]
