@@ -83,14 +83,14 @@ def main():
         )
         valid_sector = (sector6 != -9999)
 
-        # Combined selection mask
+        # Combined selection mask, with momentum > 4.5 GeV
         mask_all = (
             ((pid == 11)   | (pid == -211) | (pid == -321) | (pid == -2212)) &
             valid_sector &
             fid &
             (vz >= vz_cuts[label][0]) &
             (vz <= vz_cuts[label][1]) &
-            (p > 2.0) &
+            (p > 4.5) &               # only above 4.5 GeV
             (nphe >= 2) &
             (e1 >= 0.15) &
             (e4 >= 0)
@@ -105,7 +105,7 @@ def main():
         fig, axes = plt.subplots(2, 3, figsize=(15, 10), constrained_layout=True)
         for sec in range(1, 7):
             ax = axes.flat[sec-1]
-            sel = sectors == sec
+            sel = (sectors == sec)
             x = frac_pcal[sel]
             y = frac_ecin[sel]
             h = ax.hist2d(
@@ -117,8 +117,8 @@ def main():
             ax.set_title(f"{label} Sector {sec}")
             ax.set_xlabel(r"$E_{\mathrm{PCal}}/p$")
             ax.set_ylabel(r"$E_{\mathrm{ECin}}/p$")
-            ax.set_xlim(0, 1)
-            ax.set_ylim(0, 1)
+            ax.set_xlim(0, 0.35)
+            ax.set_ylim(0, 0.35)
 
         # Shared colorbar
         cb = fig.colorbar(h[3], ax=axes.ravel().tolist(), shrink=0.9)
