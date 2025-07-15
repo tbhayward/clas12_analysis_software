@@ -115,7 +115,7 @@ def main():
                 norm=LogNorm()
             )
             # Diagonal cut line from (0,0.15) to (0.23,0)
-            ax.plot([0, 0.25], [0.15, 0], color="red", linestyle="-", linewidth=2, zorder=10)
+            ax.plot([0, 0.24], [0.15, 0], color="red", linestyle="-", linewidth=2, zorder=10)
 
             ax.set_title(f"{label} Sector {sec}")
             ax.set_xlabel(r"$E_{\mathrm{PCal}}/p$")
