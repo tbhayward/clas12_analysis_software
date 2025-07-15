@@ -67,7 +67,7 @@ def main():
         te18   = arr["traj_edge_18"]
         te36   = arr["traj_edge_36"]
         te6    = arr["traj_edge_6"]
-        theta  = arr["particle_theta"]
+        theta  = arr["theta"]
 
         # fiducial mask
         fid = (
