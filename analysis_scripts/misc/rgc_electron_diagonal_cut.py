@@ -28,7 +28,7 @@ def main():
         "Sp23": (-5.758, 1.515),
     }
 
-    # Binning for diagonal cut: x 0–0.25 with 150 bins, y 0–0.2 with 150 bins
+    # Binning for diagonal cut: x 0–0.25 with 150 bins, y 0–0.20 with 150 bins
     x_bins = np.linspace(0, 0.25, 150)
     y_bins = np.linspace(0, 0.20, 150)
 
@@ -114,8 +114,8 @@ def main():
                 cmap="jet",
                 norm=LogNorm()
             )
-            # Diagonal cut line from (0,0.2) to (0.2,0)
-            ax.plot([0, 0.2], [0.2, 0], color="red", linestyle="-", linewidth=2, zorder=10)
+            # Diagonal cut line from (0,0.15) to (0.23,0)
+            ax.plot([0, 0.23], [0.15, 0], color="red", linestyle="-", linewidth=2, zorder=10)
 
             ax.set_title(f"{label} Sector {sec}")
             ax.set_xlabel(r"$E_{\mathrm{PCal}}/p$")
