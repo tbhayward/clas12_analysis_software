@@ -90,7 +90,7 @@ def main():
             fid &
             (vz >= vz_cuts[label][0]) &
             (vz <= vz_cuts[label][1]) &
-            (p > 4.5) &               # only above 4.5 GeV
+            (p > 4.9) &               # only above 4.5 GeV
             (nphe >= 2) &
             (e1 >= 0.15) &
             (e4 >= 0)
