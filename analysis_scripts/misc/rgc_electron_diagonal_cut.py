@@ -28,9 +28,9 @@ def main():
         "Sp23": (-5.758, 1.515),
     }
 
-    # Increase binning for diagonal cut: 200 bins from 0–0.25 fraction
-    x_bins = np.linspace(0, 0.25, 200)
-    y_bins = np.linspace(0, 0.25, 200)
+    # Binning for diagonal cut: x 0–0.25 with 150 bins, y 0–0.2 with 150 bins
+    x_bins = np.linspace(0, 0.25, 150)
+    y_bins = np.linspace(0, 0.20, 150)
 
     outdir = "output/rgc_studies"
     os.makedirs(outdir, exist_ok=True)
@@ -114,11 +114,14 @@ def main():
                 cmap="jet",
                 norm=LogNorm()
             )
+            # Diagonal cut line from (0,0.2) to (0.2,0)
+            ax.plot([0, 0.2], [0.2, 0], color="red", linestyle="-", linewidth=2, zorder=10)
+
             ax.set_title(f"{label} Sector {sec}")
             ax.set_xlabel(r"$E_{\mathrm{PCal}}/p$")
             ax.set_ylabel(r"$E_{\mathrm{ECin}}/p$")
             ax.set_xlim(0, 0.25)
-            ax.set_ylim(0, 0.25)
+            ax.set_ylim(0, 0.20)
 
         # Shared colorbar
         cb = fig.colorbar(h[3], ax=axes.ravel().tolist(), shrink=0.9)
