@@ -28,9 +28,9 @@ def main():
         "Sp23": (-5.758, 1.515),
     }
 
-    # Binning for diagonal cut: 0–1.0 fraction
-    x_bins = np.linspace(0, 1.0, 100)
-    y_bins = np.linspace(0, 1.0, 100)
+    # Increase binning for diagonal cut: 200 bins from 0–0.25 fraction
+    x_bins = np.linspace(0, 0.25, 200)
+    y_bins = np.linspace(0, 0.25, 200)
 
     outdir = "output/rgc_studies"
     os.makedirs(outdir, exist_ok=True)
@@ -83,14 +83,14 @@ def main():
         )
         valid_sector = (sector6 != -9999)
 
-        # Combined selection mask, with momentum > 4.5 GeV
+        # Combined selection mask, with momentum > 4.9 GeV
         mask_all = (
             ((pid == 11)   | (pid == -211) | (pid == -321) | (pid == -2212)) &
             valid_sector &
             fid &
             (vz >= vz_cuts[label][0]) &
             (vz <= vz_cuts[label][1]) &
-            (p > 4.9) &               # only above 4.5 GeV
+            (p > 4.9) &               # only above 4.9 GeV
             (nphe >= 2) &
             (e1 >= 0.15) &
             (e4 >= 0)
@@ -117,8 +117,8 @@ def main():
             ax.set_title(f"{label} Sector {sec}")
             ax.set_xlabel(r"$E_{\mathrm{PCal}}/p$")
             ax.set_ylabel(r"$E_{\mathrm{ECin}}/p$")
-            ax.set_xlim(0, 0.35)
-            ax.set_ylim(0, 0.35)
+            ax.set_xlim(0, 0.25)
+            ax.set_ylim(0, 0.25)
 
         # Shared colorbar
         cb = fig.colorbar(h[3], ax=axes.ravel().tolist(), shrink=0.9)
