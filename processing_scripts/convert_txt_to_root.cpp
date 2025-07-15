@@ -150,8 +150,10 @@ double getPol(int runnum) {
     else if (runnum >= 11323 && runnum <= 11334) { pol = 0.87135; }
     else if (runnum >= 11335 && runnum <= 11387) { pol = 0.85048; }
     else if (runnum >= 11389 && runnum <= 11571) { pol = 0.84262; }
-    else if ((runnum >= 16042 && runnum < 16658) || (runnum > 16695 && runnum <= 17811)) { pol = 0.82513; } // RGC +/- 0.015
     else if (runnum >= 16658 && runnum <= 16695) { pol = 0.74052; } // RGC bleedthrough +/- 0.0149
+    else if (runnum >= 16043 && runnum < 16772) { pol = 83.84; }
+    else if (runnum >= 16843 && runnum < 17408) { pol = 83.72; }
+    else if (runnum >= 17477 && runnum < 17811) { pol = 80.40; }
   return pol;
 }
 
