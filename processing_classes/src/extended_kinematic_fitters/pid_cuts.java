@@ -12,9 +12,9 @@ public class pid_cuts {
 
     /*~~~~~~~~~~~~~~~~~ Electrons ~~~~~~~~~~~~~~~~~*/
     public boolean calorimeter_energy_cut(int particle_Index, HipoDataBank cal_Bank, HipoDataBank run_Bank) {
-        
+
         int runnum = run_Bank.getInt("run", 0);
-        
+
         // Iterate through the rows of the data bank
         for (int current_Row = 0; current_Row < cal_Bank.rows(); current_Row++) {
             // Get the pindex and layer values for the current row
@@ -44,129 +44,152 @@ public class pid_cuts {
         int sector = -1;
         double max_energy = 0;
 
-        // Loop over the calorimeter bank to sum the energy and determine the sector
-        for (int current_Row = 0; current_Row < cal_Bank.rows(); current_Row++) {
-            if (cal_Bank.getInt("pindex", current_Row) == particle_Index) {
-                double energy = cal_Bank.getFloat("energy", current_Row);
-                cal_energy += energy;
-                // Determine the sector based on the hit with the maximum energy deposition
-                if (energy > max_energy) {
-                    max_energy = energy;
-                    sector = cal_Bank.getInt("sector", current_Row);
+        // Sum calorimeter energy & find sector
+        for (int i = 0; i < cal_Bank.rows(); i++) {
+            if (cal_Bank.getInt("pindex", i) == particle_Index) {
+                double e = cal_Bank.getFloat("energy", i);
+                cal_energy += e;
+                if (e > max_energy) {
+                    max_energy = e;
+                    sector = cal_Bank.getInt("sector", i);
                 }
             }
         }
 
-        // Compute the sampling fraction
         double sf = cal_energy / p;
-
-        // Retrieve the run number
         int runnum = run_Bank.getInt("run", 0);
 
-        // Check if the sector is valid
+        // Sector must be valid
         if (sector < 1 || sector > 6) {
-            // Invalid sector, cannot apply the cut
             return false;
         }
+        int idx = sector - 1;
 
-        // Adjust sector index to zero-based array indexing
-        int sector_index = sector - 1;
-
-        // Define coefficient arrays within the function
-        // Each array is [6][3], for 6 sectors and 3 coefficients per limit (a, b, c)
+        // Prepare coefficient arrays
         double[][] lowerCoeffs = new double[6][3];
         double[][] upperCoeffs = new double[6][3];
 
-        // Determine the run period based on the run number and populate coefficients
+        // RGA Fall 2018 Inbending
         if (runnum >= 4991 && runnum <= 5419) {
-            // RGA Fall 2018 Inbending
             lowerCoeffs[0] = new double[]{0.167070, 0.010930, -0.001085};
             upperCoeffs[0] = new double[]{0.302129, -0.000735, -0.000409};
-
             lowerCoeffs[1] = new double[]{0.146344, 0.023547, -0.002660};
             upperCoeffs[1] = new double[]{0.313502, -0.004386, 0.000036};
-
             lowerCoeffs[2] = new double[]{0.136665, 0.031226, -0.003705};
             upperCoeffs[2] = new double[]{0.310201, -0.001985, -0.000242};
-
             lowerCoeffs[3] = new double[]{0.152493, 0.018234, -0.001604};
             upperCoeffs[3] = new double[]{0.315967, -0.004037, 0.000058};
-
             lowerCoeffs[4] = new double[]{0.143086, 0.023846, -0.002510};
             upperCoeffs[4] = new double[]{0.321858, -0.009117, 0.000657};
-
             lowerCoeffs[5] = new double[]{0.152500, 0.021085, -0.002384};
             upperCoeffs[5] = new double[]{0.313124, -0.003053, -0.000193};
-        } else if (runnum >= 5423 && runnum <= 5666) {
+
             // RGA Fall 2018 Outbending
+        } else if (runnum >= 5423 && runnum <= 5666) {
             lowerCoeffs[0] = new double[]{0.168531, 0.013221, -0.001070};
             upperCoeffs[0] = new double[]{0.305273, -0.002978, -0.000101};
-
             lowerCoeffs[1] = new double[]{0.166549, 0.013526, -0.001129};
             upperCoeffs[1] = new double[]{0.298919, -0.000799, -0.000253};
-
             lowerCoeffs[2] = new double[]{0.165926, 0.016098, -0.001352};
             upperCoeffs[2] = new double[]{0.301111, -0.000298, -0.000414};
-
             lowerCoeffs[3] = new double[]{0.172671, 0.009819, -0.000641};
             upperCoeffs[3] = new double[]{0.303462, -0.002267, -0.000161};
-
             lowerCoeffs[4] = new double[]{0.166557, 0.010846, -0.000709};
             upperCoeffs[4] = new double[]{0.297885, -0.001656, -0.000110};
-
             lowerCoeffs[5] = new double[]{0.168393, 0.012321, -0.000936};
             upperCoeffs[5] = new double[]{0.298590, -0.000390, -0.000383};
-        } else if (runnum >= 6616 && runnum <= 6783) {
+
             // RGA Spring 2019 Inbending
+        } else if (runnum >= 6616 && runnum <= 6783) {
             lowerCoeffs[0] = new double[]{0.159840, 0.016237, -0.001594};
             upperCoeffs[0] = new double[]{0.309811, -0.003301, -0.000171};
-
             lowerCoeffs[1] = new double[]{0.138572, 0.026177, -0.003200};
             upperCoeffs[1] = new double[]{0.306967, -0.000238, -0.000421};
-
             lowerCoeffs[2] = new double[]{0.123413, 0.038137, -0.004472};
             upperCoeffs[2] = new double[]{0.312705, -0.003361, -0.000150};
-
             lowerCoeffs[3] = new double[]{0.142108, 0.023657, -0.002314};
             upperCoeffs[3] = new double[]{0.312121, -0.004128, 0.000035};
-
             lowerCoeffs[4] = new double[]{0.134147, 0.029226, -0.003312};
             upperCoeffs[4] = new double[]{0.307159, -0.001868, -0.000248};
-
             lowerCoeffs[5] = new double[]{0.144287, 0.024536, -0.002842};
             upperCoeffs[5] = new double[]{0.311596, -0.002988, -0.000228};
+
+            // Monte Carlo
         } else if (runnum == 11) {
-            // Monte Carlo data
             lowerCoeffs[0] = new double[]{0.182342, 0.010612, -0.000989};
             upperCoeffs[0] = new double[]{0.316417, -0.007887, 0.000497};
-
             lowerCoeffs[1] = new double[]{0.174139, 0.015019, -0.001926};
             upperCoeffs[1] = new double[]{0.319061, -0.009477, 0.000800};
-
             lowerCoeffs[2] = new double[]{0.168963, 0.017387, -0.002206};
             upperCoeffs[2] = new double[]{0.318202, -0.008970, 0.000741};
-
             lowerCoeffs[3] = new double[]{0.176921, 0.012012, -0.001191};
             upperCoeffs[3] = new double[]{0.315149, -0.008103, 0.000559};
-
             lowerCoeffs[4] = new double[]{0.177276, 0.013250, -0.001440};
             upperCoeffs[4] = new double[]{0.316444, -0.008119, 0.000571};
-
             lowerCoeffs[5] = new double[]{0.180294, 0.011205, -0.001183};
             upperCoeffs[5] = new double[]{0.317384, -0.008433, 0.000605};
+
+            // New Su22 (16043–16772)
+        } else if (runnum >= 16043 && runnum <= 16772) {
+            lowerCoeffs[0] = new double[]{0.193134, 0.005244, -0.000566};
+            upperCoeffs[0] = new double[]{0.302522, -0.005450, 0.000329};
+            lowerCoeffs[1] = new double[]{0.189430, 0.006233, -0.000609};
+            upperCoeffs[1] = new double[]{0.303987, -0.000174, -0.000490};
+            lowerCoeffs[2] = new double[]{0.189653, 0.007051, -0.000707};
+            upperCoeffs[2] = new double[]{0.302645, 0.002085, -0.000874};
+            lowerCoeffs[3] = new double[]{0.178332, 0.010998, -0.001015};
+            upperCoeffs[3] = new double[]{0.307951, -0.001060, -0.000424};
+            lowerCoeffs[4] = new double[]{0.181131, 0.008697, -0.000784};
+            upperCoeffs[4] = new double[]{0.310068, -0.003615, -0.000236};
+            lowerCoeffs[5] = new double[]{0.185641, 0.008087, -0.000799};
+            upperCoeffs[5] = new double[]{0.304876, 0.000195, -0.000638};
+
+            // New Fa22 (16843–17408)
+        } else if (runnum >= 16843 && runnum <= 17408) {
+            lowerCoeffs[0] = new double[]{0.176355, 0.011013, -0.001184};
+            upperCoeffs[0] = new double[]{0.321309, -0.012014, 0.001052};
+            lowerCoeffs[1] = new double[]{0.183261, 0.007594, -0.000720};
+            upperCoeffs[1] = new double[]{0.310003, -0.003690, -0.000113};
+            lowerCoeffs[2] = new double[]{0.193621, 0.004625, -0.000448};
+            upperCoeffs[2] = new double[]{0.309858, -0.002373, -0.000340};
+            lowerCoeffs[3] = new double[]{0.185285, 0.007387, -0.000686};
+            upperCoeffs[3] = new double[]{0.314824, -0.002479, -0.000235};
+            lowerCoeffs[4] = new double[]{0.184573, 0.006317, -0.000532};
+            upperCoeffs[4] = new double[]{0.312326, -0.005413, 0.000004};
+            lowerCoeffs[5] = new double[]{0.182386, 0.008435, -0.000777};
+            upperCoeffs[5] = new double[]{0.316822, -0.006715, 0.000075};
+
+            // New Sp23 (17477–17811)
+        } else if (runnum >= 17477 && runnum <= 17811) {
+            lowerCoeffs[0] = new double[]{0.190334, 0.004279, -0.000448};
+            upperCoeffs[0] = new double[]{0.307456, -0.006925, 0.000473};
+            lowerCoeffs[1] = new double[]{0.185558, 0.007610, -0.000723};
+            upperCoeffs[1] = new double[]{0.309016, -0.002613, -0.000219};
+            lowerCoeffs[2] = new double[]{0.187881, 0.007244, -0.000712};
+            upperCoeffs[2] = new double[]{0.309075, -0.004073, -0.000147};
+            lowerCoeffs[3] = new double[]{0.179524, 0.010042, -0.000902};
+            upperCoeffs[3] = new double[]{0.314158, -0.003706, -0.000116};
+            lowerCoeffs[4] = new double[]{0.182893, 0.006639, -0.000552};
+            upperCoeffs[4] = new double[]{0.311758, -0.006891, 0.000130};
+            lowerCoeffs[5] = new double[]{0.188799, 0.004953, -0.000454};
+            upperCoeffs[5] = new double[]{0.309367, -0.004730, -0.000132};
+
         } else {
-            // For runs outside specified periods, use the default cut
             return sf > 0.19;
         }
 
-        // Compute the lower and upper limits using the quadratic functions
-        double[] coeff_lower = lowerCoeffs[sector_index];
-        double[] coeff_upper = upperCoeffs[sector_index];
+        // Compute the quadratic limits
+        double[] lo = lowerCoeffs[idx];
+        double[] hi = upperCoeffs[idx];
+        double lower_limit = lo[0] + lo[1] * p + lo[2] * p * p;
+        double upper_limit = hi[0] + hi[1] * p + hi[2] * p * p;
 
-        double lower_limit = coeff_lower[0] + coeff_lower[1] * p + coeff_lower[2] * p * p;
-        double upper_limit = coeff_upper[0] + coeff_upper[1] * p + coeff_upper[2] * p * p;
+        // Su22 sector 1 extra cap at 0.28
+        if (runnum >= 16043 && runnum <= 16772 && idx == 0) {
+            upper_limit = Math.min(upper_limit, 0.28);
+        }
 
-        // Apply the sampling fraction cut based on the computed limits
+        // Final cut
         return sf > lower_limit && sf < upper_limit;
     }
 
@@ -244,10 +267,9 @@ public class pid_cuts {
         if (p < 4.9) {
             return true;
         }
-        
+
         int runnum = run_Bank.getInt("run", 0);
         if (!(runnum >= 16043 && runnum <= 17811)) {
-            
 
             // Initialize the sum of energy for PCAL and ECAL inner layers
             double pcal_plus_ecal_inner = 0;
@@ -279,7 +301,7 @@ public class pid_cuts {
                     ecin_energy += cal_Bank.getFloat("energy", current_Row);
                 }
             }
-            return (ecin_energy/p) >= -0.625*(pcal_energy/p) + 0.15; 
+            return (ecin_energy / p) >= -0.625 * (pcal_energy / p) + 0.15;
         }
     }
 
