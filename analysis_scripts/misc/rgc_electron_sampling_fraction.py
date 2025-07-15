@@ -35,9 +35,9 @@ def make_sampling_fraction_plot(filename, label, vz_cut, outdir):
     2×3 sampling-fraction vs p:
     apply fiducial, vertex, p>2, nphe>=2,
     e1>=0.15, e4>=0, e7>=0, diagonal cut,
-    then profile & fit, and print mean/σ @ 2–8 GeV.
+    then profile & fit and print Java-style cut lines.
     """
-    # load
+    # load entire tree into numpy arrays
     tree = uproot.open(filename)["PhysicsEvents"]
     arr = tree.arrays([
         "particle_pid", "particle_vz", "cal_sector",
@@ -63,7 +63,7 @@ def make_sampling_fraction_plot(filename, label, vz_cut, outdir):
     te6    = arr["traj_edge_6"]
     theta  = arr["theta"]
 
-    # fiducial + valid sector
+    # fiducial + valid sector mask
     fid = (
         (lv1 > 9) & (lw1 > 9) &
         (te18 > 3) & (te36 > 10) &
@@ -74,7 +74,7 @@ def make_sampling_fraction_plot(filename, label, vz_cut, outdir):
     )
     good_sector = (sector != -9999)
 
-    # base cuts + must also have e7>=0
+    # base cuts
     base_mask = (
         (pid == 11) &
         good_sector &
@@ -84,7 +84,7 @@ def make_sampling_fraction_plot(filename, label, vz_cut, outdir):
         (nphe >= 2) &
         (e1 >= 0.15) &
         (e4 >= 0)      &
-        (e7 >= 0)         # ← NEW: drop all -9999 from layer 7
+        (e7 >= 0)
     )
 
     # diagonal cut on e4/p vs e1/p
@@ -100,12 +100,9 @@ def make_sampling_fraction_plot(filename, label, vz_cut, outdir):
     sf_vals = (e1[keep] + e4[keep] + e7[keep]) / p_vals
     secs    = sector[keep]
 
-    print(f"{label}: total entries = {len(pid):,}, after all cuts = {len(keep):,}")
-
-    # binning & eval points
+    # prepare binning
     p_bins   = np.linspace(2.0, 8.0, 40)
     sf_range = (0.10, 0.40)
-    p_eval   = [2,3,4,5,6,7,8]
 
     fig, axes = plt.subplots(2,3, figsize=(15,10), constrained_layout=True)
 
@@ -115,34 +112,48 @@ def make_sampling_fraction_plot(filename, label, vz_cut, outdir):
         p_sec = p_vals[mask]
         sf_sec= sf_vals[mask]
 
-        # raw 2D
+        # 2D histogram
         counts2d, xedges, yedges, im = ax.hist2d(
             p_sec, sf_sec,
             bins=[p_bins, np.linspace(*sf_range,80)],
             cmap="jet", norm=LogNorm()
         )
 
-        # profile
+        # profile calculation
         centers, means, sigmas = compute_means_sigmas(p_sec, sf_sec, p_bins)
 
-        # print mean/σ @ each p_eval
-        m_interp = np.interp(p_eval, centers, means)
-        s_interp = np.interp(p_eval, centers, sigmas)
-        for pv,mv,sv in zip(p_eval, m_interp, s_interp):
-            print(f"{label} Sector {sec}, p={pv} GeV: mean={mv:.4f}, σ={sv:.4f}")
-
-        # fit & draw ±3σ
+        # fit quadratic to mean and sigma
         good = ~np.isnan(means)
         cm = np.polyfit(centers[good], means[good], 2)
         cs = np.polyfit(centers[good], sigmas[good],2)
-        pm = np.poly1d(cm); ps = np.poly1d(cs)
 
-        pf = np.linspace(2.0,8.0,200)
-        mf = pm(pf); sf3 = ps(pf)
+        # extract coefficients (cm[0]*p^2 + cm[1]*p + cm[2])
+        c2_m, c1_m, c0_m = cm
+        c2_s, c1_s, c0_s = cs
 
-        ax.plot(pf, mf,    'r-',  lw=2)
-        ax.plot(pf, mf+3*sf3, 'r--', lw=2)
-        ax.plot(pf, mf-3*sf3, 'r--', lw=2)
+        a_minus = c0_m - 3*c0_s
+        b_minus = c1_m - 3*c1_s
+        c_minus = c2_m - 3*c2_s
+        a_plus  = c0_m + 3*c0_s
+        b_plus  = c1_m + 3*c1_s
+        c_plus  = c2_m + 3*c2_s
+
+        # Java‐compatible output
+        print(
+            f"Sector {sec}: sf > ({a_minus:.6f} + {b_minus:.6f}*p + {c_minus:.6f}*p*p) "
+            f"&& sf < ({a_plus:.6f} + {b_plus:.6f}*p + {c_plus:.6f}*p*p);"
+        )
+
+        # overlay fits
+        p_fit = np.linspace(2.0,8.0,200)
+        pm   = np.poly1d(cm)
+        ps   = np.poly1d(cs)
+        m_fit = pm(p_fit)
+        s_fit = ps(p_fit)
+
+        ax.plot(p_fit, m_fit,      'r-',  lw=2)
+        ax.plot(p_fit, m_fit+3*s_fit, 'r--', lw=2)
+        ax.plot(p_fit, m_fit-3*s_fit, 'r--', lw=2)
 
         ax.set_xlim(2.0,8.0)
         ax.set_ylim(*sf_range)
@@ -158,6 +169,7 @@ def make_sampling_fraction_plot(filename, label, vz_cut, outdir):
     fig.suptitle(f"Final Sampling Fraction – {label}", fontsize=16)
     fig.savefig(outpath)
     plt.close(fig)
+
 
 def main():
     files = [
@@ -178,6 +190,7 @@ def main():
 
     for fname, label in zip(files, labels):
         make_sampling_fraction_plot(fname, label, vz_cuts[label], outdir)
+
 
 if __name__ == "__main__":
     main()
