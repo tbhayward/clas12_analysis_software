@@ -56,7 +56,7 @@ def main():
             "particle_pid", "particle_vz", "track_sector_6",
             "cal_lv_1", "cal_lw_1",
             "traj_edge_18", "traj_edge_36", "traj_edge_6",
-            "particle_theta"
+            "theta"
         ], library="np")
 
         pid    = arr["particle_pid"]
