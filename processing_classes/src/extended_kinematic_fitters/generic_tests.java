@@ -130,15 +130,15 @@ public class generic_tests {
             }
         } else if (runnum >= 16043 && runnum <= 16772) { // RGC Su22
             if (charge > 0) {
-               return -9.394 < vz && vz < 0.000; 
+               return -9.394 < vz && vz < -0.606; 
             } else if (charge < 0) {
                return -7.576 < vz && vz < 0.303;
             }
         } else if (runnum >= 16843 && runnum <=  17811) { // RGC Fa22 & RGC Sp23
             if (charge > 0) {
-               return -8.788 < vz && vz < 0.606; 
+               return -8.788 < vz && vz < 0.303; 
             } else if (charge < 0) {
-               return -9.394 < vz && vz < 0.000;
+               return -5.758 < vz && vz < 1.515;
             }
         }
         
