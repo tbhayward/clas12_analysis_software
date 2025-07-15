@@ -6,6 +6,7 @@ import numpy as np
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
+from matplotlib.colors import LogNorm
 
 def compute_means_sigmas(p_vals, sf_vals, p_bins):
     """
@@ -95,8 +96,7 @@ def make_sampling_fraction_plot(filename, label, vz_cut, outdir):
     frac_ecin = e4_base / p_base
 
     # Diagonal cut: y >= -0.625*x + 0.15
-    # mask_diag = frac_ecin >= (-0.625 * frac_pcal + 0.15)
-    mask_diag = frac_ecin >= 0
+    mask_diag = frac_ecin >= (-0.625 * frac_pcal + 0.15)
 
     # Final indices
     idx_base = np.nonzero(base_mask)[0]
@@ -126,15 +126,15 @@ def make_sampling_fraction_plot(filename, label, vz_cut, outdir):
         p_sec = p_vals[sel]
         sf_sec = sf_vals[sel]
 
-        # 2D histogram
-        h = ax.hist2d(
+        # 2D histogram and unpack counts (unused for fits)
+        counts2d, xedges, yedges, im = ax.hist2d(
             p_sec, sf_sec,
             bins=[p_bins, np.linspace(*sf_range, 80)],
             cmap="jet",
-            norm=matplotlib.colors.LogNorm()
+            norm=LogNorm()
         )
 
-        # Compute profile
+        # Compute profile on sf_sec
         centers, means, sigmas = compute_means_sigmas(p_sec, sf_sec, p_bins)
 
         # Print mean & sigma at each p_eval
@@ -165,7 +165,7 @@ def make_sampling_fraction_plot(filename, label, vz_cut, outdir):
         ax.set_ylabel("Sampling Fraction")
 
     # Shared colorbar
-    fig.colorbar(h[3], ax=axes.ravel().tolist(), shrink=0.9).set_label("Counts (log scale)")
+    fig.colorbar(im, ax=axes.ravel().tolist(), shrink=0.9).set_label("Counts (log scale)")
 
     # Save
     os.makedirs(outdir, exist_ok=True)
