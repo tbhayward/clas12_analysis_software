@@ -102,6 +102,10 @@ def main():
         axes[1].hist(data, bins=bins, density=True,
                      histtype="step", color=color, label=label)
 
+    # add vertical red line at 0.15 GeV
+    for ax in axes:
+        ax.axvline(0.15, color="red", linestyle="-", linewidth=2)
+
     # formatting panels
     axes[0].set_xlabel(r"$E_{\mathrm{PCal}}$ (GeV)")
     axes[0].set_ylabel("Normalized Counts")
