@@ -159,23 +159,25 @@ def make_sampling_fraction_plot(filename, label, vz_cut, outdir):
     fig.savefig(outpath)
     plt.close(fig)
 
-
 def main():
     files = [
-      "/work/clas12/thayward/…/sidisdvcs_rgc_su22_inb_calibration.root",
-      "/work/clas12/thayward/…/sidisdvcs_rgc_fa22_inb_calibration.root",
-      "/work/clas12/thayward/…/sidisdvcs_rgc_sp23_inb_calibration.root",
+        "/work/clas12/thayward/CLAS12_SIDIS/processed_data/pass2/calibration/"
+        "sidisdvcs_rgc_su22_inb_calibration.root",
+        "/work/clas12/thayward/CLAS12_SIDIS/processed_data/pass2/calibration/"
+        "sidisdvcs_rgc_fa22_inb_calibration.root",
+        "/work/clas12/thayward/CLAS12_SIDIS/processed_data/pass2/calibration/"
+        "sidisdvcs_rgc_sp23_inb_calibration.root",
     ]
-    labels = ["Su22","Fa22","Sp23"]
+    labels = ["Su22", "Fa22", "Sp23"]
     vz_cuts = {
-      "Su22":(-7.576,0.303),
-      "Fa22":(-5.758,1.515),
-      "Sp23":(-5.758,1.515),
+        "Su22": (-7.576, 0.303),
+        "Fa22": (-5.758, 1.515),
+        "Sp23": (-5.758, 1.515),
     }
     outdir = "output/rgc_studies"
 
-    for fn,lbl in zip(files,labels):
-        make_sampling_fraction_plot(fn,lbl,vz_cuts[lbl],outdir)
+    for fname, label in zip(files, labels):
+        make_sampling_fraction_plot(fname, label, vz_cuts[label], outdir)
 
-if __name__=="__main__":
+if __name__ == "__main__":
     main()
