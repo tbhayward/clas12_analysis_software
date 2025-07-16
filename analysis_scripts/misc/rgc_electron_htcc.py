@@ -85,7 +85,7 @@ def main():
                 (sector6 != -9999) &
                 (vz >= vz_cuts[label][0]) &
                 (vz <= vz_cuts[label][1]) &
-                (p > 2.0) &
+                # (p > 2.0) &
                 (nphe != -9999) &
                 fid
             )
