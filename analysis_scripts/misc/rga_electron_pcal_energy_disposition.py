@@ -126,7 +126,7 @@ def main():
 
     fig.tight_layout()
     # keep the same save filename
-    fig.savefig(f"{outdir}/negative_particles_pcal_deposition.pdf")
+    fig.savefig(f"{outdir}/negative_particles_pcal_deposition_rga.pdf")
     plt.close(fig)
 
 if __name__ == "__main__":

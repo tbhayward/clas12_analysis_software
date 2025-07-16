@@ -17,8 +17,12 @@ def main():
         "nSidis_rga_fa18_out_calibration.root",
         "/work/clas12/thayward/CLAS12_SIDIS/processed_data/pass2/calibration/"
         "nSidis_rga_sp19_inb_calibration.root",
+        "/work/clas12/thayward/CLAS12_SIDIS/processed_data/pass2/calibration/"
+        "nSidis_rga_sp18_inb_calibration.root",
+        "/work/clas12/thayward/CLAS12_SIDIS/processed_data/pass2/calibration/"
+        "nSidis_rga_sp18_out_calibration.root",
     ]
-    labels = ["Fa18 Inb", "Fa18 Out", "Sp19 Inb"]
+    labels = ["Fa18 Inb", "Fa18 Out", "Sp19 Inb", "Sp18 Inb", "Sp18 Out"]
     tree_name = "PhysicsEvents"
 
     # Vertex cuts for negative tracks (RGA)
@@ -26,6 +30,8 @@ def main():
         "Fa18 Inb": (-6.364, 1.515),
         "Fa18 Out": (-7.879, 0.303),
         "Sp19 Inb": (-6.364, 1.515),
+        "Sp18 Inb": (-6.06060606060606, 1.8181818181818183),
+        "Sp18 Out": (-7.2727272727272725, 0.9090909090909101),
     }
 
     # Binning for diagonal cut: 150×150 over [0,0.25] × [0,0.20]
@@ -61,7 +67,7 @@ def main():
         theta   = arr["theta"]
 
         # fiducial cuts differ for Out vs Inbending
-        if label == "Fa18 Out":
+        if "Out" in label:
             fid = (
                 (lv1 > 9) & (lw1 > 9) &
                 (te18 > 3) & (te36 > 10) &
@@ -71,14 +77,16 @@ def main():
             fid = (
                 (lv1 > 9) & (lw1 > 9) &
                 (te18 > 3) & (te36 > 10) &
-                (((theta > 10) & (te6 > 3)) |
-                 ((theta <= 10) & (te6 > 10)))
+                (
+                    ((theta > 10) & (te6 > 3)) |
+                    ((theta <= 10) & (te6 > 10))
+                )
             )
         valid_sector = (sector6 != -9999)
 
         # full selection mask
         mask_all = (
-            ((pid==11)|(pid==-211)|(pid==-321)|(pid==-2212)) &
+            ((pid == 11) | (pid == -211) | (pid == -321) | (pid == -2212)) &
             valid_sector & fid &
             (vz >= vz_cuts[label][0]) & (vz <= vz_cuts[label][1]) &
             (p > 4.9) &
@@ -120,7 +128,7 @@ def main():
             last_quadmesh = quadmesh
 
             # diagonal cut line
-            ax.plot([0,0.24], [0.15,0], 'r-', lw=2, zorder=10)
+            ax.plot([0, 0.24], [0.15, 0], 'r-', lw=2, zorder=10)
 
             ax.set_title(f"{label}, Sector {sec}")
             ax.set_xlabel(r"$E_{\mathrm{PCal}}/p$")
