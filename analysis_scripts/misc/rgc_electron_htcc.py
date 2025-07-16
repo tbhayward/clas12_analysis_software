@@ -47,7 +47,7 @@ def main():
         for arrays in tree.iterate(
             [
                 "particle_pid", "particle_vz", "track_sector_6",
-                "p", "cc_nphe_15",
+                "p", "cc_nphe_16",
                 "cal_lv_1", "cal_lw_1",
                 "traj_edge_18", "traj_edge_36", "traj_edge_6",
                 "theta"
@@ -59,7 +59,7 @@ def main():
             vz      = arrays["particle_vz"]
             sector6 = arrays["track_sector_6"]
             p       = arrays["p"]
-            nphe    = arrays["cc_nphe_15"]
+            nphe    = arrays["cc_nphe_16"]
             lv1     = arrays["cal_lv_1"]
             lw1     = arrays["cal_lw_1"]
             te18    = arrays["traj_edge_18"]
@@ -85,7 +85,7 @@ def main():
                 (sector6 != -9999) &
                 (vz >= vz_cuts[label][0]) &
                 (vz <= vz_cuts[label][1]) &
-                # (p > 2.0) &
+                (p > 2.0) &
                 (nphe != -9999) &
                 fid
             )
