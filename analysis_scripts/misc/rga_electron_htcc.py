@@ -16,15 +16,21 @@ def main():
         "nSidis_rga_fa18_out_calibration.root",
         "/work/clas12/thayward/CLAS12_SIDIS/processed_data/pass2/calibration/"
         "nSidis_rga_sp19_inb_calibration.root",
+        "/work/clas12/thayward/CLAS12_SIDIS/processed_data/pass2/calibration/"
+        "nSidis_rga_sp18_inb_calibration.root",
+        "/work/clas12/thayward/CLAS12_SIDIS/processed_data/pass2/calibration/"
+        "nSidis_rga_sp18_out_calibration.root",
     ]
-    labels = ["Fa18 Inb", "Fa18 Out", "Sp19 Inb"]
+    labels = ["Fa18 Inb", "Fa18 Out", "Sp19 Inb", "Sp18 Inb", "Sp18 Out"]
     tree_name = "PhysicsEvents"
 
     # RGA vertex cuts for negative particles
     vz_cuts = {
-        "Fa18 Inb":    (-6.364, 1.515),
-        "Fa18 Out":    (-7.879, 0.303),
-        "Sp19 Inb":    (-6.364, 1.515),
+        "Fa18 Inb": (-6.364, 1.515),
+        "Fa18 Out": (-7.879, 0.303),
+        "Sp19 Inb": (-6.364, 1.515),
+        "Sp18 Inb": (-6.06060606060606, 1.8181818181818183),
+        "Sp18 Out": (-7.2727272727272725, 0.9090909090909101),
     }
 
     # HTCC nphe histogram bins
@@ -35,7 +41,7 @@ def main():
 
     # prepare figure with linear and log panels
     fig, axes = plt.subplots(1, 2, figsize=(12, 6))
-    colors = ["C0", "C1", "C2"]
+    colors = ["C0", "C1", "C2", "C3", "C4"]
 
     for fname, label, color in zip(files, labels, colors):
         tree = uproot.open(fname)[tree_name]
@@ -67,8 +73,8 @@ def main():
             te6     = arrays["traj_edge_6"]
             theta   = arrays["theta"]
 
-            # fiducial cuts differ for out‑bending vs in‑bending
-            if label == "Fa18 Out":
+            # fiducial cuts differ for out-bending vs in-bending
+            if label.endswith("Out"):
                 # always require te6 > 3
                 fid = (
                     (lv1 > 9) &
@@ -78,7 +84,7 @@ def main():
                     (te6 > 3)
                 )
             else:
-                # in‑bending: theta‑dependent
+                # in-bending: theta-dependent
                 fid = (
                     (lv1 > 9) &
                     (lw1 > 9) &
@@ -137,7 +143,7 @@ def main():
     axes[1].legend()
 
     fig.tight_layout()
-    fig.savefig(f"{outdir}/negative_particles_htcc_rga.pdf")
+    fig.savefig(f"{outdir}/negative_particles_htcc_rga_all5.pdf")
     plt.close(fig)
 
 if __name__ == "__main__":
