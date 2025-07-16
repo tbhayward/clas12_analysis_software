@@ -8,28 +8,6 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 from matplotlib.colors import LogNorm
 
-def find_thresholds(data, bins, threshold):
-    """
-    Find left/right bin centers where the density histogram
-    crosses the given threshold around the peak.
-    """
-    hist, edges = np.histogram(data, bins=bins, density=True)
-    centers = 0.5 * (edges[:-1] + edges[1:])
-    peak = np.argmax(hist)
-    # left side
-    left = None
-    if peak > 0:
-        il = np.argmin(np.abs(hist[:peak] - threshold))
-        left = centers[il]
-    # right side
-    right = None
-    if peak < len(hist) - 1:
-        hr = hist[peak+1:]
-        cr = centers[peak+1:]
-        ir = np.argmin(np.abs(hr - threshold))
-        right = cr[ir]
-    return left, right
-
 def compute_means_sigmas(p_vals, sf_vals, p_bins):
     """
     Given arrays of momenta and sampling fractions,
@@ -40,7 +18,7 @@ def compute_means_sigmas(p_vals, sf_vals, p_bins):
     centers = 0.5 * (p_bins[:-1] + p_bins[1:])
     means = np.full_like(centers, np.nan)
     sigmas = np.full_like(centers, np.nan)
-    for i, c in enumerate(centers):
+    for i in range(len(centers)):
         mask = (bin_indices == i)
         if np.count_nonzero(mask) > 2:
             vals = sf_vals[mask]
@@ -51,9 +29,13 @@ def compute_means_sigmas(p_vals, sf_vals, p_bins):
 def make_sampling_fraction_plot(filename, label, vz_cut, outdir):
     """
     2×3 sampling-fraction vs p:
-      fiducial, vertex, p>2, nphe>=2,
-      e1>=0.15, e4>=0, e7>=0, diagonal cut,
-      profile & fit → print Java‐style sf cuts.
+      - fiducial,
+      - vertex,
+      - p>2,
+      - nphe>=2,
+      - e1>=0.15, e4>=0, e7>=0,
+      - diagonal HTCC cut,
+      then profile & fit and print Java‐style sf cuts.
     """
     tree = uproot.open(filename)["PhysicsEvents"]
     arr = tree.arrays([
@@ -91,9 +73,10 @@ def make_sampling_fraction_plot(filename, label, vz_cut, outdir):
     )
     good_sector = (sector != -9999)
 
-    # base mask: all negative-track species + prior cuts
+    # base mask: all negative‐track species + prior cuts
     base = (
-        ((pid == 11) | (pid == -211) | (pid == -321) | (pid == -2212)) &
+        ((pid == 11)   | (pid == -211) |
+         (pid == -321) | (pid == -2212)) &
         good_sector & fid &
         (vz >= vz_cut[0]) & (vz <= vz_cut[1]) &
         (p > 2.0) &
@@ -101,7 +84,7 @@ def make_sampling_fraction_plot(filename, label, vz_cut, outdir):
         (e1 >= 0.15) & (e4 >= 0) & (e7 >= 0)
     )
 
-    # diagonal HTCC/ecin vs pcal cut: ecin/p ≥ -0.625*(pcal/p) + 0.15
+    # diagonal HTCC cut on e4/p vs e1/p
     p_base    = p[base]
     frac_pcal = e1[base] / p_base
     frac_ecin = e4[base] / p_base
@@ -114,7 +97,7 @@ def make_sampling_fraction_plot(filename, label, vz_cut, outdir):
     sf_vals = (e1[keep] + e4[keep] + e7[keep]) / p_vals
     secs    = sector[keep]
 
-    # prepare binning
+    # binning
     p_bins   = np.linspace(2.0, 8.0, 40)
     sf_range = (0.10, 0.40)
 
@@ -133,24 +116,24 @@ def make_sampling_fraction_plot(filename, label, vz_cut, outdir):
             cmap="jet", norm=LogNorm()
         )
 
-        # profile
         centers, means, sigmas = compute_means_sigmas(p_sec, sf_sec, p_bins)
-
-        # fit quadratic → mean & sigma
         valid = ~np.isnan(means)
+
+        # fit quadratic to mean & sigma
         cm = np.polyfit(centers[valid], means[valid], 2)
         cs = np.polyfit(centers[valid], sigmas[valid],2)
 
-        # extract 3σ‐coefficients
-        a_m, b_m, c_m = cm[::-1]
-        a_s, b_s, c_s = cs[::-1]
-        # lower = (a_m - 3*a_s) + (b_m - 3*b_s)*p + (c_m - 3*c_s)*p^2
-        # upper = (a_m + 3*a_s) + (b_m + 3*b_s)*p + (c_m + 3*c_s)*p^2
+        c2_m, c1_m, c0_m = cm
+        c2_s, c1_s, c0_s = cs
 
-        low0 = a_m - 3*a_s;  low1 = b_m - 3*b_s;  low2 = c_m - 3*c_s
-        up0  = a_m + 3*a_s;  up1  = b_m + 3*b_s;  up2  = c_m + 3*c_s
+        low0 = c0_m - 3*c0_s
+        low1 = c1_m - 3*c1_s
+        low2 = c2_m - 3*c2_s
+        up0  = c0_m + 3*c0_s
+        up1  = c1_m + 3*c1_s
+        up2  = c2_m + 3*c2_s
 
-        # print Java‐compatible cut
+        # Java‐compatible output
         print(
             f"Sector {sec}: sf > ({low0:.6f} + {low1:.6f}*p + {low2:.6f}*p*p) "
             f"&& sf < ({up0:.6f} + {up1:.6f}*p + {up2:.6f}*p*p);"
@@ -163,9 +146,9 @@ def make_sampling_fraction_plot(filename, label, vz_cut, outdir):
         mf  = pm(pf)
         sf3 = ps(pf)
 
-        ax.plot(pf, mf,       'r-',  lw=2)
-        ax.plot(pf, mf+3*sf3, 'r--', lw=2)
-        ax.plot(pf, mf-3*sf3, 'r--', lw=2)
+        ax.plot(pf, mf,        'r-',  lw=2)
+        ax.plot(pf, mf + 3*sf3, 'r--', lw=2)
+        ax.plot(pf, mf - 3*sf3, 'r--', lw=2)
 
         ax.set_xlim(2.0, 8.0)
         ax.set_ylim(*sf_range)
@@ -173,7 +156,6 @@ def make_sampling_fraction_plot(filename, label, vz_cut, outdir):
         ax.set_xlabel("p (GeV)")
         ax.set_ylabel("Sampling Fraction")
 
-    # shared colorbar
     fig.colorbar(im, ax=axes.ravel().tolist(), shrink=0.9)\
        .set_label("Counts (log scale)")
 
@@ -184,17 +166,22 @@ def make_sampling_fraction_plot(filename, label, vz_cut, outdir):
 
 def main():
     files = [
-        "/work/clas12/thayward/CLAS12_SIDIS/processed_data/pass2/calibration/nSidis_rga_fa18_inb_calibration.root",
-        "/work/clas12/thayward/CLAS12_SIDIS/processed_data/pass2/calibration/nSidis_rga_fa18_out_calibration.root",
-        "/work/clas12/thayward/CLAS12_SIDIS/processed_data/pass2/calibration/nSidis_rga_sp19_inb_calibration.root",
+        "/work/clas12/thayward/CLAS12_SIDIS/processed_data/pass2/calibration/"
+        "nSidis_rga_fa18_inb_calibration.root",
+        "/work/clas12/thayward/CLAS12_SIDIS/processed_data/pass2/calibration/"
+        "nSidis_rga_fa18_out_calibration.root",
+        "/work/clas12/thayward/CLAS12_SIDIS/processed_data/pass2/calibration/"
+        "nSidis_rga_sp19_inb_calibration.root",
     ]
     labels = ["Fa18 Inb", "Fa18 Out", "Sp19 Inb"]
-    # vertex cuts determined previously for RGA negative tracks:
+
+    # your actual RGA vertex cuts:
     vz_cuts = {
-        "Fa18 Inb": (<left1>, <right1>),
-        "Fa18 Out": (<left2>, <right2>),
-        "Sp19 Inb": (<left3>, <right3>),
+        "Fa18 Inb": (-6.364, 1.515),
+        "Fa18 Out": (-7.879, 0.303),
+        "Sp19 Inb": (-6.364, 1.515),
     }
+
     global outdir
     outdir = "output/rga_studies"
 
