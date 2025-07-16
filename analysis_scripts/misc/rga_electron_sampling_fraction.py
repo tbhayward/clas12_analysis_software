@@ -81,7 +81,7 @@ def make_sampling_fraction_plot(filename, label, vz_cut, outdir):
         (vz >= vz_cut[0]) & (vz <= vz_cut[1]) &
         (p > 2.0) &
         (nphe >= 2) &
-        (e1 >= 0.15) & (e4 >= 0) & (e7 >= 0)
+        (e1 >= 0.06) & (e4 >= 0) & (e7 >= 0)
     )
 
     # diagonal HTCC cut on e4/p vs e1/p
