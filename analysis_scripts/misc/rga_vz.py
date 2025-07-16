@@ -15,10 +15,12 @@ def find_thresholds(data, bins, threshold):
     hist, edges = np.histogram(data, bins=bins, density=True)
     centers = 0.5 * (edges[:-1] + edges[1:])
     peak = np.argmax(hist)
+    # left
     left = None
     if peak > 0:
         il = np.argmin(np.abs(hist[:peak] - threshold))
         left = centers[il]
+    # right
     right = None
     if peak < len(hist) - 1:
         hr = hist[peak+1:]
@@ -27,34 +29,49 @@ def find_thresholds(data, bins, threshold):
         right = cr[ir]
     return left, right
 
-def plot_vz(data_list, labels, title, bins, lefts, rights, outpath):
+def plot_vz(data_list, labels, title, bins, inb_thr, out_thr, outpath):
+    """
+    Plot two panels (linear and log) of the given vz distributions;
+    draw in‑bending thresholds in solid red, out‑bending in dashed red.
+    """
     fig, axs = plt.subplots(1, 2, figsize=(12, 6))
     colors = ["C0", "C1", "C2"]
-    for data, label, c in zip(data_list, labels, colors):
+
+    # left: linear, right: log
+    for data, lab, c in zip(data_list, labels, colors):
         axs[0].hist(data, bins=bins, density=True,
-                    histtype="step", color=c, label=label)
+                    histtype="step", color=c, label=lab)
         axs[1].hist(data, bins=bins, density=True,
-                    histtype="step", color=c, label=label)
-    for left, right, c in zip(lefts, rights, colors):
-        for ax in axs:
-            ax.axvline(left,  color=c, linestyle="-",  alpha=0.5)
-            ax.axvline(right, color=c, linestyle="--", alpha=0.5)
-            ax.set_xlim(bins[0], bins[-1])
+                    histtype="step", color=c, label=lab)
+
+    # draw thresholds
+    (l_in, r_in), (l_out, r_out) = inb_thr, out_thr
+    for ax in axs:
+        # in‑bending (solid)
+        ax.axvline(l_in, color='red', linestyle='-', alpha=0.7)
+        ax.axvline(r_in, color='red', linestyle='-', alpha=0.7)
+        # out‑bending (dashed)
+        ax.axvline(l_out, color='red', linestyle='--', alpha=0.7)
+        ax.axvline(r_out, color='red', linestyle='--', alpha=0.7)
+        ax.set_xlim(bins[0], bins[-1])
+
     axs[0].set_xlabel(r"$v_z$ (cm)")
     axs[0].set_ylabel("Normalized Counts")
     axs[0].set_title(f"{title} Vertex Distribution")
     axs[0].legend()
+
     axs[1].set_yscale("log")
     axs[1].set_xlabel(r"$v_z$ (cm)")
     axs[1].set_ylabel("Normalized Counts")
     axs[1].set_title(f"{title} Vertex Distribution (log scale)")
     axs[1].legend()
+
     fig.tight_layout()
     fig.savefig(outpath)
     plt.close(fig)
 
 def main():
-    # RGA run files and labels
+    # file paths and run labels
     files = [
         "/work/clas12/thayward/CLAS12_SIDIS/processed_data/pass2/calibration/"
         "nSidis_rga_fa18_inb_calibration.root",
@@ -71,12 +88,12 @@ def main():
     negative_vz = []
     positive_vz = []
 
-    # Loop over each period, apply appropriate fiducial cuts
-    for fname, label in zip(files, labels):
-        arr = uproot.open(fname)[tree_name].arrays([
-            "particle_pid","particle_vz","track_sector_6",
-            "cal_lv_1","cal_lw_1",
-            "traj_edge_18","traj_edge_36","traj_edge_6",
+    for fname in files:
+        tree = uproot.open(fname)[tree_name]
+        arr = tree.arrays([
+            "particle_pid", "particle_vz", "track_sector_6",
+            "cal_lv_1", "cal_lw_1",
+            "traj_edge_18", "traj_edge_36", "traj_edge_6",
             "theta"
         ], library="np")
 
@@ -90,55 +107,66 @@ def main():
         te6    = arr["traj_edge_6"]
         theta  = arr["theta"]
 
-        # always require lv1>9, lw1>9, te18>3, te36>10
-        fid_basic = (lv1 > 9) & (lw1 > 9) & (te18 > 3) & (te36 > 10)
-        # for Fa18 Out: require te6 > 3 for all theta
-        if label == "Fa18 Out":
-            fid = fid_basic & (te6 > 3)
-        else:
-            # for inbending periods: te6 cut depends on theta
-            fid = fid_basic & (
+        # fiducial cuts
+        fid = (
+            (lv1 > 9) &
+            (lw1 > 9) &
+            (te18 > 3) &
+            (te36 > 10) &
+            (
                 ((theta > 10) & (te6 > 3)) |
                 ((theta <= 10) & (te6 > 10))
             )
-
+        )
         valid_sec = (sector != -9999)
 
-        # negative: e⁻, π⁻, K⁻, p̄
-        mask_neg = ((pid == 11)|(pid == -211)|(pid == -321)|(pid == -2212)) \
-                   & valid_sec & fid
-        # positive: e⁺, π⁺, K⁺, p
-        mask_pos = ((pid == -11)|(pid == 211)|(pid == 321)|(pid == 2212)) \
-                   & valid_sec & fid
+        # negative tracks: e⁻, π⁻, K⁻, p̄
+        mask_neg = (
+            ((pid == 11)   | (pid == -211) |
+             (pid == -321) | (pid == -2212)) &
+            valid_sec & fid
+        )
+        # positive tracks: e⁺, π⁺, K⁺, p
+        mask_pos = (
+            ((pid == -11)  | (pid == 211)  |
+             (pid == 321)  | (pid == 2212)) &
+            valid_sec & fid
+        )
 
         negative_vz.append(vz[mask_neg])
         positive_vz.append(vz[mask_pos])
 
-    # compute thresholds per period
-    neg_thr = [find_thresholds(v, bins, threshold) for v in negative_vz]
-    pos_thr = [find_thresholds(v, bins, threshold) for v in positive_vz]
-    neg_lefts,  neg_rights  = zip(*neg_thr)
-    pos_lefts,  pos_rights  = zip(*pos_thr)
+    # combine the two inbending periods (first + third)
+    inbending_neg = np.concatenate([negative_vz[0], negative_vz[2]])
+    inbending_pos = np.concatenate([positive_vz[0], positive_vz[2]])
 
-    # print out
-    print("Negative-particle vz thresholds (density~0.02):")
-    for lab, l, r in zip(labels, neg_lefts, neg_rights):
-        print(f"  {lab}: left = {l:.3f}, right = {r:.3f}")
-    print("Positive-particle vz thresholds (density~0.02):")
-    for lab, l, r in zip(labels, pos_lefts, pos_rights):
-        print(f"  {lab}: left = {l:.3f}, right = {r:.3f}")
+    # compute thresholds
+    thr_neg_in  = find_thresholds(inbending_neg, bins, threshold)
+    thr_neg_out = find_thresholds(negative_vz[1],   bins, threshold)
+    thr_pos_in  = find_thresholds(inbending_pos, bins, threshold)
+    thr_pos_out = find_thresholds(positive_vz[1],   bins, threshold)
 
-    # output plots
-    outdir = "output/rga_studies"
+    # make output dir
+    outdir = "output/rgc_studies"
     os.makedirs(outdir, exist_ok=True)
 
-    plot_vz(negative_vz, labels, "Negative Particles", bins,
-            neg_lefts, neg_rights,
-            os.path.join(outdir, "negative_particles_vz.pdf"))
+    # plot negative tracks
+    plot_vz(
+        negative_vz, labels,
+        "Negative Particles",
+        bins,
+        thr_neg_in, thr_neg_out,
+        os.path.join(outdir, "negative_particles_vz_rga.pdf")
+    )
 
-    plot_vz(positive_vz, labels, "Positive Particles", bins,
-            pos_lefts, pos_rights,
-            os.path.join(outdir, "positive_particles_vz.pdf"))
+    # plot positive tracks
+    plot_vz(
+        positive_vz, labels,
+        "Positive Particles",
+        bins,
+        thr_pos_in, thr_pos_out,
+        os.path.join(outdir, "positive_particles_vz_rga.pdf")
+    )
 
 if __name__ == "__main__":
     main()
