@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 
-from collections import defaultdict, OrderedDict
+from collections import OrderedDict, defaultdict
 
 def main():
     # Path to your CSV file
@@ -20,13 +20,11 @@ def main():
             # Header lines define a new group
             if line.startswith('#'):
                 header = line.lstrip('#').strip()
-                # Skip ND3 sections entirely
+                # Skip any ND3 sections
                 if 'ND3' in header:
                     current_group = None
                     continue
-                # Remove trailing "runs" if present
-                if header.lower().endswith('runs'):
-                    header = header[:-len('runs')].strip()
+                #endif
                 current_group = header
                 group_totals[current_group] = 0.0
             #endif
@@ -35,13 +33,19 @@ def main():
                 # Only accumulate if we're inside a valid group
                 if current_group is None:
                     continue
+                #endif
+
                 parts = [p.strip() for p in line.split(',')]
                 if len(parts) < 2:
                     continue
+                #endif
+
                 try:
                     charge = float(parts[1])
                 except ValueError:
                     continue
+                #endif
+
                 group_totals[current_group] += charge
         #endfor
 
@@ -49,22 +53,31 @@ def main():
     filtered_totals = OrderedDict(
         (grp, total)
         for grp, total in group_totals.items()
-        if grp.startswith('RGC Su22 ') or grp.startswith('RGC Fa22 ')
+        if grp in (
+            'RGC Su22 NH3',
+            'RGC Su22 C',
+            'RGC Su22 CH2',
+            'RGC Su22 He',
+            'RGC Su22 ET',
+            'RGC Fa22 NH3',
+            'RGC Fa22 C',
+            'RGC Fa22 CH2',
+            'RGC Fa22 He',
+            'RGC Fa22 ET',
+        )
     )
 
-    # Compute total per run‐period (RGC Su22 vs RGC Fa22)
+    # Compute total per run‐period ("RGC Su22" vs "RGC Fa22")
     period_totals = defaultdict(float)
     for grp, total in filtered_totals.items():
-        parts = grp.split()
-        period = ' '.join(parts[:2])    # "RGC Su22" or "RGC Fa22"
+        period = ' '.join(grp.split()[:2])  # e.g. "RGC Su22" or "RGC Fa22"
         period_totals[period] += total
     #endfor
 
-    # Print summary
+    # Print summary using the exact names provided
     print(f"{'Target Type':<25}{'Total Charge':>15}{'Fraction (%)':>15}")
     for grp, total in filtered_totals.items():
-        parts = grp.split()
-        period = ' '.join(parts[:2])
+        period = ' '.join(grp.split()[:2])
         frac = (total / period_totals[period] * 100) if period_totals[period] > 0 else 0
         print(f"{grp:<25}{total:15.6f}{frac:15.2f}%")
     #endfor
