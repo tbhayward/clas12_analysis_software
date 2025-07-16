@@ -33,23 +33,16 @@ def km15_model(xB, Q2, t_pos, phi_deg, beam_E=10.604):
     return th_KM15.predict(pt)
 
 def main():
-    # Read the full data file
     data_file = '/u/home/thayward/clas12_analysis_software/analysis_scripts/misc/import/rga_dvcs_prl/ALL18.txt'
     cols = ['phi_rad', 'Q2', 'xB', 't', 'Eb', 'A', 'sigA']
-    df = pd.read_csv(
-        data_file,
-        sep=r'\s+',
-        comment='#',
-        header=None,
-        names=cols
-    )
+    df = pd.read_csv(data_file, sep=r'\s+', comment='#', header=None, names=cols)
 
-    # Detect where phi resets → new (Q2,xB,t) bin
+    # detect bin boundaries where phi resets
     phi = df['phi_rad'].to_numpy()
     reset_idxs = np.where(phi[1:] < phi[:-1])[0] + 1
     idx_groups = np.split(np.arange(len(df)), reset_idxs)
 
-    # Collect info for each bin
+    # collect info per (Q2, xB, t) segment
     seg_info = []
     for idxs in idx_groups:
         seg = df.iloc[idxs]
@@ -62,7 +55,7 @@ def main():
         A_vals  = seg['A'].to_numpy()
         sigA    = seg['sigA'].to_numpy()
 
-        # Model on fine phi grid
+        # model on a fine phi grid
         phi_grid = np.linspace(0, 360, 100)
         model_vals = np.array([
             km15_model(mean_xB, mean_Q2, mean_t, phi, beam_E=mean_Eb)
@@ -80,14 +73,16 @@ def main():
             'model':    model_vals
         })
 
-    # Prepare output directory
     out_dir = 'output/rga_dvcs_BSA_model_comparison'
     os.makedirs(out_dir, exist_ok=True)
 
-    # Loop over each unique t-value to create one canvas per t
-    t_values = sorted({round(si['mean_t'],6) for si in seg_info})
-    for tval in t_values:
-        group = [si for si in seg_info if abs(si['mean_t'] - tval) < 1e-6]
+    # group by t in 0.1 steps
+    by_tbin = {}
+    for si in seg_info:
+        tbin = round(si['mean_t'], 1)  # 0.1 GeV^2 bins
+        by_tbin.setdefault(tbin, []).append(si)
+
+    for tbin, group in sorted(by_tbin.items()):
         Q2_vals = sorted({round(si['mean_Q2'],6) for si in group})
         xB_vals = sorted({round(si['mean_xB'],6) for si in group})
 
@@ -103,21 +98,15 @@ def main():
         for si in group:
             i = Q2_vals.index(round(si['mean_Q2'],6))
             j = xB_vals.index(round(si['mean_xB'],6))
-            ax = axes[nrows-1-i, j]  # Q2 increases upward
+            ax = axes[nrows-1-i, j]
 
-            # Plot data and model
-            h_data = ax.errorbar(si['phi_deg'], si['A_vals'],
-                                 yerr=si['sigA'], fmt='o')
+            h_data = ax.errorbar(si['phi_deg'], si['A_vals'], yerr=si['sigA'], fmt='o')
             h_model, = ax.plot(si['phi_grid'], si['model'], '-')
 
-            # Add legend only once
             if first_legend:
-                ax.legend([h_data, h_model],
-                          ['RGA Fa18 Data', 'KM15 Model'],
-                          loc='upper right')
+                ax.legend([h_data, h_model], ['RGA Fa18 Data', 'KM15 Model'], loc='upper right')
                 first_legend = False
 
-            # Axis labels and limits
             if j == 0:
                 ax.set_ylabel(rf"$Q^2={si['mean_Q2']:.2f}\,\mathrm{{GeV}}^2$")
             if nrows-1-i == nrows-1:
@@ -126,14 +115,12 @@ def main():
             ax.set_xlim(0, 360)
             ax.set_ylim(-0.6, 0.6)
 
-            # Column titles for xB on bottom row
             if nrows-1-i == nrows-1:
                 ax.set_title(rf"$x_B={si['mean_xB']:.3f}$")
 
-        # Overall title for the t-bin
-        fig.suptitle(rf"$t={tval:.3f}\,\mathrm{{GeV}}^2$", fontsize=10)
+        fig.suptitle(rf"$t\approx{tbin:.1f}\,\mathrm{{GeV}}^2$", fontsize=10)
         plt.tight_layout(rect=[0,0,1,0.95])
-        fig.savefig(os.path.join(out_dir, f"t_{tval:.3f}.pdf"))
+        fig.savefig(os.path.join(out_dir, f"tbin_{tbin:.1f}.pdf"))
         plt.close(fig)
 
 if __name__ == '__main__':
