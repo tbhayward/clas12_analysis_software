@@ -26,11 +26,7 @@ public class pid_cuts {
                 // Get the energy value for the current row
                 float energy = cal_Bank.getFloat("energy", current_Row);
 
-                // Check if the energy is greater than the threshold value
-                if (runnum >= 16043 && runnum <= 17811) {
-                    return energy > 0.15;
-                }
-                return energy > 0.07;
+                return energy > 0.06;
             }
         }
 
@@ -113,9 +109,35 @@ public class pid_cuts {
             upperCoeffs[4] = new double[]{0.300202, 0.001455, -0.000786};
             lowerCoeffs[5] = new double[]{0.183544, 0.007833, -0.000789};
             upperCoeffs[5] = new double[]{0.303698, 0.000896, -0.000796};
-
-            // Monte Carlo
-        } else if (runnum == 11) {
+            // RGA Spring 2018 Inbending
+        } else if (runnum >= 4003 && runnum <= 4325) {
+            lowerCoeffs[0] = new double[]{0.187361, 0.002859, -0.000360};
+            upperCoeffs[0] = new double[]{0.291145, 0.010578, -0.001185};
+            lowerCoeffs[1] = new double[]{0.184836, 0.005616, -0.000512};
+            upperCoeffs[1] = new double[]{0.303975, 0.003104, -0.000616};
+            lowerCoeffs[2] = new double[]{0.176353, 0.013075, -0.001351};
+            upperCoeffs[2] = new double[]{0.310923, -0.001850, -0.000212};
+            lowerCoeffs[3] = new double[]{0.189493, 0.002891, -0.000338};
+            upperCoeffs[3] = new double[]{0.326210, -0.010605, 0.001433};
+            lowerCoeffs[4] = new double[]{0.167201, 0.015198, -0.001506};
+            upperCoeffs[4] = new double[]{0.325967, -0.009674, 0.000799};
+            lowerCoeffs[5] = new double[]{0.178730, 0.010864, -0.001048};
+            upperCoeffs[5] = new double[]{0.311884, -0.002032, -0.000310};
+            // RGA Spring 2018 Outbending
+        } else if ((runnum >= 3173 && runnum <= 3293) || (runnum >= 3863 && runnum <= 3987)) {
+            lowerCoeffs[0] = new double[]{0.181450, 0.007710, -0.000542};
+            upperCoeffs[0] = new double[]{0.297929, -0.003157, 0.000260};
+            lowerCoeffs[1] = new double[]{0.189908, 0.004218, -0.000162};
+            upperCoeffs[1] = new double[]{0.295094, -0.001258, -0.000010};
+            lowerCoeffs[2] = new double[]{0.184224, 0.008849, -0.000674};
+            upperCoeffs[2] = new double[]{0.297369, -0.000138, -0.000264};
+            lowerCoeffs[3] = new double[]{0.181792, 0.008900, -0.000568};
+            upperCoeffs[3] = new double[]{0.294249, 0.001436, -0.000410};
+            lowerCoeffs[4] = new double[]{0.183149, 0.006206, -0.000264};
+            upperCoeffs[4] = new double[]{0.301745, -0.004616, 0.000288};
+            lowerCoeffs[5] = new double[]{0.170606, 0.013561, -0.001025};
+            upperCoeffs[5] = new double[]{0.294579, 0.001291, -0.000489};
+        } else if (runnum == 11) { // Monte Carlo
             lowerCoeffs[0] = new double[]{0.182342, 0.010612, -0.000989};
             upperCoeffs[0] = new double[]{0.316417, -0.007887, 0.000497};
             lowerCoeffs[1] = new double[]{0.174139, 0.015019, -0.001926};
@@ -268,40 +290,40 @@ public class pid_cuts {
         }
 
         int runnum = run_Bank.getInt("run", 0);
-        if (!(runnum >= 16043 && runnum <= 17811)) {
-
-            // Initialize the sum of energy for PCAL and ECAL inner layers
-            double pcal_plus_ecal_inner = 0;
-
-            // Iterate through the rows of the data bank
-            for (int current_Row = 0; current_Row < cal_Bank.rows(); current_Row++) {
-                // Check if the current row corresponds to the particle index and the required layer (1 or 4)
-                int pindex = cal_Bank.getInt("pindex", current_Row);
-                int layer = cal_Bank.getInt("layer", current_Row);
-
-                if (pindex == particle_Index && (layer == 1 || layer == 4)) {
-                    // Add the energy value to the sum
-                    pcal_plus_ecal_inner += cal_Bank.getFloat("energy", current_Row);
-                }
+//        if (!(runnum >= 16043 && runnum <= 17811) ) {
+//
+//            // Initialize the sum of energy for PCAL and ECAL inner layers
+//            double pcal_plus_ecal_inner = 0;
+//
+//            // Iterate through the rows of the data bank
+//            for (int current_Row = 0; current_Row < cal_Bank.rows(); current_Row++) {
+//                // Check if the current row corresponds to the particle index and the required layer (1 or 4)
+//                int pindex = cal_Bank.getInt("pindex", current_Row);
+//                int layer = cal_Bank.getInt("layer", current_Row);
+//
+//                if (pindex == particle_Index && (layer == 1 || layer == 4)) {
+//                    // Add the energy value to the sum
+//                    pcal_plus_ecal_inner += cal_Bank.getFloat("energy", current_Row);
+//                }
+//            }
+//
+//            // Check if the energy ratio is above the threshold
+//            return 0.19 < pcal_plus_ecal_inner / p;
+//        } else {
+        double pcal_energy = 0;
+        double ecin_energy = 0;
+        // Iterate through the rows of the data bank
+        for (int current_Row = 0; current_Row < cal_Bank.rows(); current_Row++) {
+            int pindex = cal_Bank.getInt("pindex", current_Row);
+            int layer = cal_Bank.getInt("layer", current_Row);
+            if (pindex == particle_Index && layer == 1) {
+                pcal_energy += cal_Bank.getFloat("energy", current_Row);
+            } else if (pindex == particle_Index && layer == 4) {
+                ecin_energy += cal_Bank.getFloat("energy", current_Row);
             }
-
-            // Check if the energy ratio is above the threshold
-            return 0.19 < pcal_plus_ecal_inner / p;
-        } else {
-            double pcal_energy = 0;
-            double ecin_energy = 0;
-            // Iterate through the rows of the data bank
-            for (int current_Row = 0; current_Row < cal_Bank.rows(); current_Row++) {
-                int pindex = cal_Bank.getInt("pindex", current_Row);
-                int layer = cal_Bank.getInt("layer", current_Row);
-                if (pindex == particle_Index && layer == 1) {
-                    pcal_energy += cal_Bank.getFloat("energy", current_Row);
-                } else if (pindex == particle_Index && layer == 4) {
-                    ecin_energy += cal_Bank.getFloat("energy", current_Row);
-                }
-            }
-            return (ecin_energy / p) >= -0.625 * (pcal_energy / p) + 0.15;
         }
+        return (ecin_energy / p) >= -0.625 * (pcal_energy / p) + 0.15;
+//        }
     }
 
     /*~~~~~~~~~~~~~~~~~ Charged Hadrons ~~~~~~~~~~~~~~~~~*/

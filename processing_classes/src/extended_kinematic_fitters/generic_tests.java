@@ -129,6 +129,18 @@ public class generic_tests {
             } else if (charge < 0) {
                 return -9 < vz && vz < 2;
             }
+        } else if (runnum >= 4003 && runnum <= 4325) { // RGA Sp18 Inb
+            if (charge > 0) {
+                return -7.879 < vz && vz < 1.515;
+            } else if (charge < 0) {
+                return -6.0606 < vz && vz < 1.8182;
+            }
+        } else if ((runnum >= 3173 && runnum <= 3293) || (runnum >= 3863 && runnum <= 3987)) { // RGA Sp18 Out
+            if (charge > 0) {
+                return -6.6667 < vz && vz < 2.7273;
+            } else if (charge < 0) {
+                return -7.273 < vz && vz < 0.9091;
+            }
         } else if ((runnum >= 5032 && runnum <= 5419) || (runnum >= 6616 && runnum <= 6783)) { // RGA Fa18 Inb and RGA Sp19 Inb
             if (charge > 0) {
                 return -8.485 < vz && vz < 0.606;
