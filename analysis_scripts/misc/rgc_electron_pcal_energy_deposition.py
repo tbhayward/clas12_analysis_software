@@ -102,9 +102,9 @@ def main():
         axes[1].hist(data, bins=bins, density=True,
                      histtype="step", color=color, label=label)
 
-    # add vertical red line at 0.15 GeV
+    # add vertical red line at 0.06 GeV
     for ax in axes:
-        ax.axvline(0.07, color="red", linestyle="-", linewidth=2)
+        ax.axvline(0.06, color="red", linestyle="-", linewidth=2)
 
     # formatting panels
     axes[0].set_xlabel(r"$E_{\mathrm{PCal}}$ (GeV)")
