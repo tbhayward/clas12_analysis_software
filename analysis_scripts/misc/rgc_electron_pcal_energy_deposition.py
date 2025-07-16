@@ -42,7 +42,7 @@ def main():
             "particle_vz",
             "track_sector_6",
             "p",
-            "cc_nphe_16",
+            "cc_nphe_15",
             "cal_energy_1",
             "cal_lv_1",
             "cal_lw_1",
@@ -56,7 +56,7 @@ def main():
         vz      = arr["particle_vz"]
         sector6 = arr["track_sector_6"]
         p       = arr["p"]
-        nphe    = arr["cc_nphe_16"]
+        nphe    = arr["cc_nphe_15"]
         e1      = arr["cal_energy_1"]
         lv1     = arr["cal_lv_1"]
         lw1     = arr["cal_lw_1"]

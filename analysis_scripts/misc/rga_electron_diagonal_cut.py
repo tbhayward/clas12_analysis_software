@@ -39,7 +39,7 @@ def main():
         # load all needed branches in one go
         arr = uproot.open(fname)[tree_name].arrays([
             "particle_pid","particle_vz","track_sector_6",
-            "p","cc_nphe_16",
+            "p","cc_nphe_15",
             "cal_energy_1","cal_energy_4",
             "cal_lv_1","cal_lw_1",
             "traj_edge_18","traj_edge_36","traj_edge_6",
@@ -50,7 +50,7 @@ def main():
         vz      = arr["particle_vz"]
         sector6 = arr["track_sector_6"]
         p       = arr["p"]
-        nphe    = arr["cc_nphe_16"]
+        nphe    = arr["cc_nphe_15"]
         e1      = arr["cal_energy_1"]
         e4      = arr["cal_energy_4"]
         lv1     = arr["cal_lv_1"]
@@ -82,7 +82,7 @@ def main():
             valid_sector & fid &
             (vz >= vz_cuts[label][0]) & (vz <= vz_cuts[label][1]) &
             (p > 4.9) &
-            # (nphe >= 2) &
+            (nphe >= 2) &
             (e1 >= 0.06) &
             (e4 >= 0)
         )
