@@ -33,10 +33,11 @@ def make_sampling_fraction_plot(filename, label, vz_cut, outdir):
       - vertex,
       - p>2,
       - nphe>=2,
-      - e1>=0.15, e4>=0, e7>=0,
+      - e1>=0.06, e4>=0, e7>=0,
       - diagonal HTCC cut,
       then profile & fit and print Java‐style sf cuts.
     """
+    # load tree
     tree = uproot.open(filename)["PhysicsEvents"]
     arr = tree.arrays([
         "particle_pid","particle_vz","cal_sector",
@@ -135,7 +136,7 @@ def make_sampling_fraction_plot(filename, label, vz_cut, outdir):
 
         # Java‐compatible output
         print(
-            f"Sector {sec}: sf > ({low0:.6f} + {low1:.6f}*p + {low2:.6f}*p*p) "
+            f"{label} Sector {sec}: sf > ({low0:.6f} + {low1:.6f}*p + {low2:.6f}*p*p) "
             f"&& sf < ({up0:.6f} + {up1:.6f}*p + {up2:.6f}*p*p);"
         )
 
@@ -172,18 +173,25 @@ def main():
         "nSidis_rga_fa18_out_calibration.root",
         "/work/clas12/thayward/CLAS12_SIDIS/processed_data/pass2/calibration/"
         "nSidis_rga_sp19_inb_calibration.root",
+        "/work/clas12/thayward/CLAS12_SIDIS/processed_data/pass2/calibration/"
+        "nSidis_rga_sp18_inb_calibration.root",
+        "/work/clas12/thayward/CLAS12_SIDIS/processed_data/pass2/calibration/"
+        "nSidis_rga_sp18_out_calibration.root",
     ]
-    labels = ["Fa18 Inb", "Fa18 Out", "Sp19 Inb"]
+    labels = ["Fa18 Inb", "Fa18 Out", "Sp19 Inb", "Sp18 Inb", "Sp18 Out"]
 
-    # your actual RGA vertex cuts:
+    # RGA vertex cuts for negative tracks
     vz_cuts = {
         "Fa18 Inb": (-6.364, 1.515),
         "Fa18 Out": (-7.879, 0.303),
         "Sp19 Inb": (-6.364, 1.515),
+        "Sp18 Inb": (-6.06060606060606, 1.8181818181818183),
+        "Sp18 Out": (-7.2727272727272725, 0.9090909090909101),
     }
 
     global outdir
     outdir = "output/rga_studies"
+    os.makedirs(outdir, exist_ok=True)
 
     for fname, label in zip(files, labels):
         make_sampling_fraction_plot(fname, label, vz_cuts[label], outdir)
