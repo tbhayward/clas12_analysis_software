@@ -42,7 +42,7 @@ def main():
         comment='#',
         header=None,
         names=cols
-    ).iloc[:29]  # <-- updated to 29 points
+    ).iloc[:29]  # 29 points
 
     # Compute bin-averaged kinematics
     mean_xB = df['xB'].mean()
@@ -55,7 +55,7 @@ def main():
     A_vals  = df['A'].values
     sigA    = df['sigA'].values
 
-    # Create a fine phi grid 0–360°
+    # Create a phi grid (100 points) from 0–360°
     phi_grid = np.linspace(0, 360, 100)
 
     # Compute KM15 model on that grid using mean kinematics
@@ -74,10 +74,12 @@ def main():
     plt.xlabel(r'$\phi$ (deg)')
     plt.ylabel(r'$A_{LU}$')
     plt.xlim(0, 360)
+    plt.ylim(-0.6, 0.6)
     plt.legend(loc='upper right')
     plt.title(
         rf"$\langle x_B\rangle={mean_xB:.3f},\ \langle Q^2\rangle={mean_Q2:.3f}\,\mathrm{{GeV}}^2,\ "
-        rf"\langle t\rangle={mean_t:.3f}\,\mathrm{{GeV}}^2,\ E_b={mean_Eb:.3f}\,\mathrm{{GeV}}$"
+        rf"\langle t\rangle={mean_t:.3f}\,\mathrm{{GeV}}^2,\ E_b={mean_Eb:.3f}\,\mathrm{{GeV}}$",
+        fontsize=10
     )
 
     # Save figure
