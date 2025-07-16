@@ -8,30 +8,36 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
 def main():
-    # Paths to your ROOT files and run labels
+    # Paths to your ROOT files and run labels (RGA)
     files = [
         "/work/clas12/thayward/CLAS12_SIDIS/processed_data/pass2/calibration/"
-        "sidisdvcs_rgc_su22_inb_calibration.root",
+        "nSidis_rga_fa18_inb_calibration.root",
         "/work/clas12/thayward/CLAS12_SIDIS/processed_data/pass2/calibration/"
-        "sidisdvcs_rgc_fa22_inb_calibration.root",
+        "nSidis_rga_fa18_out_calibration.root",
         "/work/clas12/thayward/CLAS12_SIDIS/processed_data/pass2/calibration/"
-        "sidisdvcs_rgc_sp23_inb_calibration.root",
+        "nSidis_rga_sp19_inb_calibration.root",
+        "/work/clas12/thayward/CLAS12_SIDIS/processed_data/pass2/calibration/"
+        "nSidis_rga_sp18_inb_calibration.root",
+        "/work/clas12/thayward/CLAS12_SIDIS/processed_data/pass2/calibration/"
+        "nSidis_rga_sp18_out_calibration.root",
     ]
-    labels = ["Su22", "Fa22", "Sp23"]
+    labels = ["Fa18 Inb", "Fa18 Out", "Sp19 Inb", "Sp18 Inb", "Sp18 Out"]
     tree_name = "PhysicsEvents"
 
-    # vertex‐cut thresholds for negative‐particle sample
+    # vertex‐cut thresholds for negative‐particle sample (new RGA cuts)
     vz_cuts = {
-        "Su22":    (-7.576,  0.303),
-        "Fa22":    (-5.758,  1.515),
-        "Sp23":    (-5.758,  1.515),
+        "Fa18 Inb": (-6.364, 1.515),
+        "Fa18 Out": (-7.879, 0.303),
+        "Sp19 Inb": (-6.364, 1.515),
+        "Sp18 Inb": (-6.06060606060606, 1.8181818181818183),
+        "Sp18 Out": (-7.2727272727272725, 0.9090909090909101),
     }
 
     # histogram settings for PCal: 100 bins 0–1.5 GeV
     bins = np.linspace(0, 1.5, 100)
 
     # prepare output directory
-    outdir = "output/rgc_studies"
+    outdir = "output/rga_studies"
     os.makedirs(outdir, exist_ok=True)
 
     # collect PCal energies per run
@@ -42,7 +48,7 @@ def main():
             "particle_vz",
             "track_sector_6",
             "p",
-            "cc_nphe_15",
+            "cc_nphe_16",
             "cal_energy_1",
             "cal_lv_1",
             "cal_lw_1",
@@ -56,7 +62,7 @@ def main():
         vz      = arr["particle_vz"]
         sector6 = arr["track_sector_6"]
         p       = arr["p"]
-        nphe    = arr["cc_nphe_15"]
+        nphe    = arr["cc_nphe_16"]
         e1      = arr["cal_energy_1"]
         lv1     = arr["cal_lv_1"]
         lw1     = arr["cal_lw_1"]
@@ -92,9 +98,9 @@ def main():
 
         pcal_energies.append(e1[mask])
 
-    # now plot
+    # now plot all five on the same canvas
     fig, axes = plt.subplots(1, 2, figsize=(12, 6))
-    colors = ["C0", "C1", "C2"]
+    colors = ["C0", "C1", "C2", "C3", "C4"]
 
     for data, label, color in zip(pcal_energies, labels, colors):
         axes[0].hist(data, bins=bins, density=True,
@@ -119,6 +125,7 @@ def main():
     axes[1].legend()
 
     fig.tight_layout()
+    # keep the same save filename
     fig.savefig(f"{outdir}/negative_particles_pcal_deposition.pdf")
     plt.close(fig)
 
