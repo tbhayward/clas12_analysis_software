@@ -44,23 +44,25 @@ def main():
         names=cols
     )
 
-    # Detect where phi resets (new (Q2,xB,t) bin)
-    phi = df['phi_rad'].values
+    # Detect bin boundaries where phi resets
+    phi = df['phi_rad'].to_numpy()
     reset_idxs = np.where(phi[1:] < phi[:-1])[0] + 1
-    segments = np.split(df, reset_idxs)
+    idx_groups = np.split(np.arange(len(df)), reset_idxs)
 
-    # Precompute segment info
+    # Gather segment info per (Q2, xB, t) bin
     seg_info = []
-    for seg in segments:
+    for idxs in idx_groups:
+        seg = df.iloc[idxs]
         mean_xB = seg['xB'].mean()
         mean_Q2 = seg['Q2'].mean()
         mean_t  = seg['t'].mean()
         mean_Eb = seg['Eb'].mean()
-        phi_deg = np.degrees(seg['phi_rad'].values)
-        A_vals  = seg['A'].values
-        sigA    = seg['sigA'].values
 
-        # Model on fine phi grid
+        phi_deg = np.degrees(seg['phi_rad'].to_numpy())
+        A_vals  = seg['A'].to_numpy()
+        sigA    = seg['sigA'].to_numpy()
+
+        # Model on a fine phi grid
         phi_grid = np.linspace(0, 360, 100)
         model_vals = np.array([
             km15_model(mean_xB, mean_Q2, mean_t, phi, beam_E=mean_Eb)
@@ -68,43 +70,52 @@ def main():
         ])
 
         seg_info.append({
-            'mean_xB': mean_xB,
-            'mean_Q2': mean_Q2,
-            'mean_t':  mean_t,
-            'phi_deg': phi_deg,
-            'A_vals':  A_vals,
-            'sigA':    sigA,
-            'phi_grid':phi_grid,
-            'model':   model_vals
+            'mean_xB':  mean_xB,
+            'mean_Q2':  mean_Q2,
+            'mean_t':   mean_t,
+            'phi_deg':  phi_deg,
+            'A_vals':   A_vals,
+            'sigA':     sigA,
+            'phi_grid': phi_grid,
+            'model':    model_vals
         })
 
-    # Group by t-value
+    # Prepare output directory
     out_dir = 'output/rga_dvcs_BSA_model_comparison'
     os.makedirs(out_dir, exist_ok=True)
-    t_values = sorted({round(si['mean_t'], 6) for si in seg_info})
 
+    # Loop over each unique t and create one canvas of subplots
+    t_values = sorted({round(si['mean_t'],6) for si in seg_info})
     for tval in t_values:
         group = [si for si in seg_info if abs(si['mean_t'] - tval) < 1e-6]
         Q2_vals = sorted({round(si['mean_Q2'],6) for si in group})
         xB_vals = sorted({round(si['mean_xB'],6) for si in group})
 
         nrows, ncols = len(Q2_vals), len(xB_vals)
-        fig, axes = plt.subplots(nrows, ncols, figsize=(3*ncols,3*nrows),
-                                 sharex=True, sharey=True)
-        if nrows == 1 and ncols == 1:
-            axes = np.array([[axes]])
-        elif nrows == 1:
-            axes = axes[np.newaxis, :]
-        elif ncols == 1:
-            axes = axes[:, np.newaxis]
+        fig, axes = plt.subplots(
+            nrows, ncols,
+            figsize=(3*ncols, 3*nrows),
+            sharex=True, sharey=True
+        )
+        axes = np.atleast_2d(axes)
 
+        first_legend = True
         for si in group:
             i = Q2_vals.index(round(si['mean_Q2'],6))
             j = xB_vals.index(round(si['mean_xB'],6))
             ax = axes[nrows-1-i, j]  # Q2 increases upward
 
-            ax.errorbar(si['phi_deg'], si['A_vals'], yerr=si['sigA'], fmt='o')
-            ax.plot(si['phi_grid'], si['model'], '-')
+            # plot data and model, capturing handles for legend
+            h_data = ax.errorbar(si['phi_deg'], si['A_vals'],
+                                 yerr=si['sigA'], fmt='o')
+            h_model, = ax.plot(si['phi_grid'], si['model'], '-')
+
+            if first_legend:
+                # explicitly assign legend handles so colors match
+                ax.legend([h_data, h_model],
+                          ['RGA Fa18 Data', 'KM15 Model'],
+                          loc='upper right')
+                first_legend = False
 
             if j == 0:
                 ax.set_ylabel(rf"$Q^2={si['mean_Q2']:.2f}\,\mathrm{{GeV}}^2$")
@@ -113,9 +124,6 @@ def main():
 
             ax.set_xlim(0, 360)
             ax.set_ylim(-0.6, 0.6)
-
-            if j == 0 and nrows-1-i == nrows-1:
-                ax.legend(['Data','KM15'], loc='upper right')
 
             if nrows-1-i == nrows-1:
                 ax.set_title(rf"$x_B={si['mean_xB']:.3f}$")
