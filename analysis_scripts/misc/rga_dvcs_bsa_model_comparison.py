@@ -33,7 +33,7 @@ def km15_model(xB, Q2, t_pos, phi_deg, beam_E=10.604):
     return th_KM15.predict(pt)
 
 def main():
-    # Read first 19 points from ALL18.txt
+    # Read first 29 points from ALL18.txt
     data_file = '/u/home/thayward/clas12_analysis_software/analysis_scripts/misc/import/rga_dvcs_prl/ALL18.txt'
     cols = ['phi_rad', 'Q2', 'xB', 't', 'Eb', 'A', 'sigA']
     df = pd.read_csv(
@@ -42,7 +42,7 @@ def main():
         comment='#',
         header=None,
         names=cols
-    ).iloc[:19]
+    ).iloc[:29]  # <-- updated to 29 points
 
     # Compute bin-averaged kinematics
     mean_xB = df['xB'].mean()
@@ -51,8 +51,7 @@ def main():
     mean_Eb = df['Eb'].mean()
 
     # Data for plotting
-    phi_rad = df['phi_rad'].values
-    phi_deg = np.degrees(phi_rad)
+    phi_deg = np.degrees(df['phi_rad'].values)
     A_vals  = df['A'].values
     sigA    = df['sigA'].values
 
