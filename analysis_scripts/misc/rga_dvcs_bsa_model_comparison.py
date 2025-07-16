@@ -33,51 +33,55 @@ def km15_model(xB, Q2, t_pos, phi_deg, beam_E=10.604):
     return th_KM15.predict(pt)
 
 def main():
-    # path to the ALL18.txt file
+    # Read first 19 points from ALL18.txt
     data_file = '/u/home/thayward/clas12_analysis_software/analysis_scripts/misc/import/rga_dvcs_prl/ALL18.txt'
-
-    # columns: phi(rad), Q2, xB, t, Eb, A, sigA
     cols = ['phi_rad', 'Q2', 'xB', 't', 'Eb', 'A', 'sigA']
     df = pd.read_csv(
         data_file,
-        delim_whitespace=True,
+        sep=r'\s+',
         comment='#',
         header=None,
         names=cols
-    )
+    ).iloc[:19]
 
-    # select the first 19 points
-    df = df.iloc[:19]
+    # Compute bin-averaged kinematics
+    mean_xB = df['xB'].mean()
+    mean_Q2 = df['Q2'].mean()
+    mean_t  = df['t'].mean()
+    mean_Eb = df['Eb'].mean()
 
-    # extract arrays
+    # Data for plotting
     phi_rad = df['phi_rad'].values
     phi_deg = np.degrees(phi_rad)
-    Q2_vals = df['Q2'].values
-    xB_vals = df['xB'].values
-    t_vals  = df['t'].values
-    Eb_vals = df['Eb'].values
     A_vals  = df['A'].values
     sigA    = df['sigA'].values
 
-    # compute KM15 predictions
-    model_vals = [
-        km15_model(xb, q2, t0, phi, beam_E=Eb)
-        for xb, q2, t0, phi, Eb in zip(xB_vals, Q2_vals, t_vals, phi_deg, Eb_vals)
-    ]
-    model_vals = np.array(model_vals)
+    # Create a fine phi grid 0–360°
+    phi_grid = np.linspace(0, 360, 1000)
 
-    # sort by phi for a smooth line
-    sort_idx = np.argsort(phi_deg)
+    # Compute KM15 model on that grid using mean kinematics
+    model_vals = np.array([
+        km15_model(mean_xB, mean_Q2, mean_t, phi, beam_E=mean_Eb)
+        for phi in phi_grid
+    ])
 
-    # plotting
+    # Plot data points with error bars
     plt.errorbar(phi_deg, A_vals, yerr=sigA, fmt='o', label='RGA Fa18 Data')
-    plt.plot(phi_deg[sort_idx], model_vals[sort_idx], '-', label='KM15 Model')
 
+    # Plot KM15 model curve
+    plt.plot(phi_grid, model_vals, '-', label='KM15 Model')
+
+    # Labels, limits, legend, title
     plt.xlabel(r'$\phi$ (deg)')
     plt.ylabel(r'$A_{LU}$')
+    plt.xlim(0, 360)
     plt.legend(loc='upper right')
+    plt.title(
+        rf"$\langle x_B\rangle={mean_xB:.3f},\ \langle Q^2\rangle={mean_Q2:.3f}\,\mathrm{{GeV}}^2,\ "
+        rf"\langle t\rangle={mean_t:.3f}\,\mathrm{{GeV}}^2,\ E_b={mean_Eb:.3f}\,\mathrm{{GeV}}$"
+    )
 
-    # save output
+    # Save figure
     out_dir = 'output/rga_dvcs_BSA_model_comparison'
     os.makedirs(out_dir, exist_ok=True)
     plt.tight_layout()
