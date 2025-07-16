@@ -82,7 +82,7 @@ def main():
             valid_sector & fid &
             (vz >= vz_cuts[label][0]) & (vz <= vz_cuts[label][1]) &
             (p > 4.9) &
-            (nphe >= 2) &
+            # (nphe >= 2) &
             (e1 >= 0.06) &
             (e4 >= 0)
         )
