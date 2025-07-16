@@ -143,7 +143,8 @@ def main():
     axes[1].legend()
 
     fig.tight_layout()
-    fig.savefig(f"{outdir}/negative_particles_htcc_rga_all5.pdf")
+    # save with the original filename
+    fig.savefig(f"{outdir}/negative_particles_htcc_rga.pdf")
     plt.close(fig)
 
 if __name__ == "__main__":
