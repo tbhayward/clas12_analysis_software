@@ -59,7 +59,7 @@ def main():
             vz      = arrays["particle_vz"]
             sector6 = arrays["track_sector_6"]
             p       = arrays["p"]
-            nphe    = arrays["cc_nphe_15"]
+            nphe    = arrays["cc_nphe_16"]
             lv1     = arrays["cal_lv_1"]
             lw1     = arrays["cal_lw_1"]
             te18    = arrays["traj_edge_18"]
