@@ -56,7 +56,7 @@ def main():
     sigA    = df['sigA'].values
 
     # Create a fine phi grid 0–360°
-    phi_grid = np.linspace(0, 360, 1000)
+    phi_grid = np.linspace(0, 360, 100)
 
     # Compute KM15 model on that grid using mean kinematics
     model_vals = np.array([
