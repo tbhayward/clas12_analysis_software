@@ -3,24 +3,11 @@
 from collections import defaultdict, OrderedDict
 
 def main():
+    # Path to your CSV file
     filepath = '/u/home/thayward/clas12_analysis_software/analysis_scripts/asymmetry_extraction/imports/clas12_run_info.csv'
 
-    # The exact group names, in the order you provided:
-    groups = [
-        'RGC Su22 NH3',
-        'RGC Su22 C',
-        'RGC Su22 CH2',
-        'RGC Su22 He',
-        'RGC Su22 ET',
-        'RGC Fa22 NH3',
-        'RGC Fa22 C',
-        'RGC Fa22 CH2',
-        'RGC Fa22 He',
-        'RGC Fa22 ET',
-    ]
-
-    # initialize totals
-    group_totals = OrderedDict((g, 0.0) for g in groups)
+    # Sum of accumulated charge per target‐type group
+    group_totals = OrderedDict()
     current_group = None
 
     with open(filepath, 'r') as f:
@@ -28,45 +15,60 @@ def main():
             line = line.strip()
             if not line:
                 continue
+            #endif
 
+            # Header lines define a new group
             if line.startswith('#'):
                 header = line.lstrip('#').strip()
-                # skip ND3 sections
+                # Skip ND3 sections entirely
                 if 'ND3' in header:
                     current_group = None
                     continue
-                # strip trailing "runs"
+                # Remove trailing "runs" if present
                 if header.lower().endswith('runs'):
                     header = header[:-len('runs')].strip()
-                # only track if in our list
-                if header in group_totals:
-                    current_group = header
-                else:
-                    current_group = None
-                continue
+                current_group = header
+                group_totals[current_group] = 0.0
+            #endif
 
-            if current_group:
+            else:
+                # Only accumulate if we're inside a valid group
+                if current_group is None:
+                    continue
                 parts = [p.strip() for p in line.split(',')]
-                if len(parts) >= 2:
-                    try:
-                        charge = float(parts[1])
-                        group_totals[current_group] += charge
-                    except ValueError:
-                        pass
+                if len(parts) < 2:
+                    continue
+                try:
+                    charge = float(parts[1])
+                except ValueError:
+                    continue
+                group_totals[current_group] += charge
+        #endfor
 
-    # compute period totals
+    # Only keep the 5 RGC Su22 and 5 RGC Fa22 groups
+    filtered_totals = OrderedDict(
+        (grp, total)
+        for grp, total in group_totals.items()
+        if grp.startswith('RGC Su22 ') or grp.startswith('RGC Fa22 ')
+    )
+
+    # Compute total per run‐period (RGC Su22 vs RGC Fa22)
     period_totals = defaultdict(float)
-    for grp, tot in group_totals.items():
-        period = ' '.join(grp.split()[:2])  # "RGC Su22" or "RGC Fa22"
-        period_totals[period] += tot
+    for grp, total in filtered_totals.items():
+        parts = grp.split()
+        period = ' '.join(parts[:2])    # "RGC Su22" or "RGC Fa22"
+        period_totals[period] += total
+    #endfor
 
-    # print results in exact order & names
-    print(f"{'Target Type':<20}{'Total Charge':>15}{'Fraction (%)':>15}")
-    for grp in groups:
-        tot = group_totals[grp]
-        period = ' '.join(grp.split()[:2])
-        frac = (tot / period_totals[period] * 100) if period_totals[period] else 0
-        print(f"{grp:<20}{tot:15.6f}{frac:15.2f}%")
+    # Print summary
+    print(f"{'Target Type':<25}{'Total Charge':>15}{'Fraction (%)':>15}")
+    for grp, total in filtered_totals.items():
+        parts = grp.split()
+        period = ' '.join(parts[:2])
+        frac = (total / period_totals[period] * 100) if period_totals[period] > 0 else 0
+        print(f"{grp:<25}{total:15.6f}{frac:15.2f}%")
+    #endfor
 
 if __name__ == '__main__':
     main()
+#endif
