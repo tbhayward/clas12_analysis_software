@@ -108,15 +108,16 @@ def main():
             x   = frac_pcal[sel]
             y   = frac_ecin[sel]
 
+            # 2D histogram with a safe vmin so LogNorm never fails
             h = ax.hist2d(
                 x, y,
                 bins=[x_bins, y_bins],
                 cmap="jet",
-                norm=LogNorm()
+                norm=LogNorm(vmin=1)
             )
 
             # diagonal cut line tuned: from (0,0.15) to (0.24,0)
-            ax.plot([0, 0.24], [0.15, 0], 'r-', lw=2)
+            ax.plot([0, 0.24], [0.15, 0], 'r-', lw=2, zorder=10)
 
             ax.set_title(f"{label}, Sector {sec}")
             ax.set_xlabel(r"$E_{\mathrm{PCal}}/p$")
