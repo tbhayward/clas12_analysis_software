@@ -104,7 +104,7 @@ def main():
 
     # add vertical red line at 0.15 GeV
     for ax in axes:
-        ax.axvline(0.15, color="red", linestyle="-", linewidth=2)
+        ax.axvline(0.07, color="red", linestyle="-", linewidth=2)
 
     # formatting panels
     axes[0].set_xlabel(r"$E_{\mathrm{PCal}}$ (GeV)")
