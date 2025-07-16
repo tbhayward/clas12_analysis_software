@@ -71,48 +71,48 @@ public class pid_cuts {
 
         // RGA Fall 2018 Inbending
         if (runnum >= 4991 && runnum <= 5419) {
-            lowerCoeffs[0] = new double[]{0.184412, 0.006707, -0.000697};
-            upperCoeffs[0] = new double[]{0.302726, -0.001538, -0.000335};
-            lowerCoeffs[1] = new double[]{0.181938, 0.009022, -0.000912};
-            upperCoeffs[1] = new double[]{0.305542, -0.000778, -0.000450};
-            lowerCoeffs[2] = new double[]{0.181951, 0.010474, -0.001046};
-            upperCoeffs[2] = new double[]{0.303130, 0.001289, -0.000752};
-            lowerCoeffs[3] = new double[]{0.181513, 0.009215, -0.000785};
-            upperCoeffs[3] = new double[]{0.308791, -0.002064, -0.000147};
-            lowerCoeffs[4] = new double[]{0.177466, 0.010251, -0.000932};
-            upperCoeffs[4] = new double[]{0.314246, -0.005952, 0.000229};
-            lowerCoeffs[5] = new double[]{0.185028, 0.007765, -0.000786};
-            upperCoeffs[5] = new double[]{0.306182, -0.000280, -0.000584};
+            lowerCoeffs[0] = new double[]{0.182257, 0.007442, -0.000758};
+            upperCoeffs[0] = new double[]{0.304421, -0.002123, -0.000286};
+            lowerCoeffs[1] = new double[]{0.179615, 0.009837, -0.000981};
+            upperCoeffs[1] = new double[]{0.306626, -0.001156, -0.000418};
+            lowerCoeffs[2] = new double[]{0.179768, 0.011258, -0.001113};
+            upperCoeffs[2] = new double[]{0.304496, 0.000808, -0.000712};
+            lowerCoeffs[3] = new double[]{0.179226, 0.010001, -0.000851};
+            upperCoeffs[3] = new double[]{0.310082, -0.002499, -0.000111};
+            lowerCoeffs[4] = new double[]{0.174914, 0.011152, -0.001008};
+            upperCoeffs[4] = new double[]{0.315217, -0.006281, 0.000256};
+            lowerCoeffs[5] = new double[]{0.182785, 0.008533, -0.000850};
+            upperCoeffs[5] = new double[]{0.307112, -0.000586, -0.000559};
 
             // RGA Fall 2018 Outbending
         } else if (runnum >= 5423 && runnum <= 5666) {
-            lowerCoeffs[0] = new double[]{0.188051, 0.006192, -0.000392};
-            upperCoeffs[0] = new double[]{0.302094, -0.002649, -0.000012};
-            lowerCoeffs[1] = new double[]{0.187233, 0.005805, -0.000354};
-            upperCoeffs[1] = new double[]{0.297650, -0.001304, -0.000109};
-            lowerCoeffs[2] = new double[]{0.187084, 0.008012, -0.000531};
-            upperCoeffs[2] = new double[]{0.299357, -0.000421, -0.000329};
-            lowerCoeffs[3] = new double[]{0.187629, 0.006156, -0.000343};
-            upperCoeffs[3] = new double[]{0.298130, -0.000598, -0.000281};
-            lowerCoeffs[4] = new double[]{0.189102, 0.003918, -0.000063};
-            upperCoeffs[4] = new double[]{0.296507, -0.002387, 0.000059};
-            lowerCoeffs[5] = new double[]{0.182654, 0.007789, -0.000476};
-            upperCoeffs[5] = new double[]{0.296493, -0.000304, -0.000304};
+            lowerCoeffs[0] = new double[]{0.186279, 0.006740, -0.000434};
+            upperCoeffs[0] = new double[]{0.303829, -0.003178, 0.000029};
+            lowerCoeffs[1] = new double[]{0.186446, 0.006058, -0.000374};
+            upperCoeffs[1] = new double[]{0.298393, -0.001543, -0.000090};
+            lowerCoeffs[2] = new double[]{0.186023, 0.008322, -0.000555};
+            upperCoeffs[2] = new double[]{0.300515, -0.000776, -0.000302};
+            lowerCoeffs[3] = new double[]{0.186014, 0.006690, -0.000387};
+            upperCoeffs[3] = new double[]{0.299888, -0.001181, -0.000234};
+            lowerCoeffs[4] = new double[]{0.187277, 0.004536, -0.000115};
+            upperCoeffs[4] = new double[]{0.297246, -0.002602, 0.000075};
+            lowerCoeffs[5] = new double[]{0.181060, 0.008314, -0.000519};
+            upperCoeffs[5] = new double[]{0.297379, -0.000577, -0.000283};
 
             // RGA Spring 2019 Inbending
         } else if (runnum >= 6616 && runnum <= 6783) {
-            lowerCoeffs[0] = new double[]{0.167990, 0.016334, -0.001743};
-            upperCoeffs[0] = new double[]{0.322046, -0.010473, 0.000643};
-            lowerCoeffs[1] = new double[]{0.189974, 0.004015, -0.000444};
-            upperCoeffs[1] = new double[]{0.295116, 0.004713, -0.001045};
-            lowerCoeffs[2] = new double[]{0.179905, 0.011817, -0.001223};
-            upperCoeffs[2] = new double[]{0.301690, 0.001465, -0.000813};
-            lowerCoeffs[3] = new double[]{0.177609, 0.011180, -0.001030};
-            upperCoeffs[3] = new double[]{0.293354, 0.004035, -0.000924};
-            lowerCoeffs[4] = new double[]{0.175096, 0.011724, -0.001149};
-            upperCoeffs[4] = new double[]{0.300022, 0.001487, -0.000787};
-            lowerCoeffs[5] = new double[]{0.185011, 0.007337, -0.000748};
-            upperCoeffs[5] = new double[]{0.303323, 0.001008, -0.000804};
+            lowerCoeffs[0] = new double[]{0.166035, 0.017046, -0.001806};
+            upperCoeffs[0] = new double[]{0.323043, -0.010838, 0.000676};
+            lowerCoeffs[1] = new double[]{0.187470, 0.004908, -0.000521};
+            upperCoeffs[1] = new double[]{0.296504, 0.004220, -0.001003};
+            lowerCoeffs[2] = new double[]{0.178773, 0.012186, -0.001253};
+            upperCoeffs[2] = new double[]{0.302329, 0.001279, -0.000800};
+            lowerCoeffs[3] = new double[]{0.176627, 0.011507, -0.001057};
+            upperCoeffs[3] = new double[]{0.293717, 0.003929, -0.000917};
+            lowerCoeffs[4] = new double[]{0.173851, 0.012135, -0.001183};
+            upperCoeffs[4] = new double[]{0.300202, 0.001455, -0.000786};
+            lowerCoeffs[5] = new double[]{0.183544, 0.007833, -0.000789};
+            upperCoeffs[5] = new double[]{0.303698, 0.000896, -0.000796};
 
             // Monte Carlo
         } else if (runnum == 11) {
@@ -129,51 +129,50 @@ public class pid_cuts {
             lowerCoeffs[5] = new double[]{0.180294, 0.011205, -0.001183};
             upperCoeffs[5] = new double[]{0.317384, -0.008433, 0.000605};
 
-            // New Su22 (16043–16772)
+            // RGC Su22 (16043-16772)
         } else if (runnum >= 16043 && runnum <= 16772) {
-            lowerCoeffs[0] = new double[]{0.193134, 0.005244, -0.000566};
-            upperCoeffs[0] = new double[]{0.302522, -0.005450, 0.000329};
-            lowerCoeffs[1] = new double[]{0.189430, 0.006233, -0.000609};
-            upperCoeffs[1] = new double[]{0.303987, -0.000174, -0.000490};
-            lowerCoeffs[2] = new double[]{0.189653, 0.007051, -0.000707};
-            upperCoeffs[2] = new double[]{0.302645, 0.002085, -0.000874};
-            lowerCoeffs[3] = new double[]{0.178332, 0.010998, -0.001015};
-            upperCoeffs[3] = new double[]{0.307951, -0.001060, -0.000424};
-            lowerCoeffs[4] = new double[]{0.181131, 0.008697, -0.000784};
-            upperCoeffs[4] = new double[]{0.310068, -0.003615, -0.000236};
-            lowerCoeffs[5] = new double[]{0.185641, 0.008087, -0.000799};
-            upperCoeffs[5] = new double[]{0.304876, 0.000195, -0.000638};
+            lowerCoeffs[0] = new double[]{0.190837, 0.005999, -0.000627};
+            upperCoeffs[0] = new double[]{0.303454, -0.005738, 0.000352};
+            lowerCoeffs[1] = new double[]{0.187330, 0.006956, -0.000670};
+            upperCoeffs[1] = new double[]{0.305030, -0.000522, -0.000462};
+            lowerCoeffs[2] = new double[]{0.186403, 0.008207, -0.000806};
+            upperCoeffs[2] = new double[]{0.304494, 0.001433, -0.000819};
+            lowerCoeffs[3] = new double[]{0.176055, 0.011733, -0.001074};
+            upperCoeffs[3] = new double[]{0.309051, -0.001400, -0.000397};
+            lowerCoeffs[4] = new double[]{0.178196, 0.009725, -0.000872};
+            upperCoeffs[4] = new double[]{0.311447, -0.004086, -0.000196};
+            lowerCoeffs[5] = new double[]{0.183186, 0.008936, -0.000870};
+            upperCoeffs[5] = new double[]{0.306155, -0.000247, -0.000602};
 
-            // New Fa22 (16843–17408)
+            // RGC Fa22 (16843-17408)
         } else if (runnum >= 16843 && runnum <= 17408) {
-            lowerCoeffs[0] = new double[]{0.176355, 0.011013, -0.001184};
-            upperCoeffs[0] = new double[]{0.321309, -0.012014, 0.001052};
-            lowerCoeffs[1] = new double[]{0.183261, 0.007594, -0.000720};
-            upperCoeffs[1] = new double[]{0.310003, -0.003690, -0.000113};
-            lowerCoeffs[2] = new double[]{0.193621, 0.004625, -0.000448};
-            upperCoeffs[2] = new double[]{0.309858, -0.002373, -0.000340};
-            lowerCoeffs[3] = new double[]{0.185285, 0.007387, -0.000686};
-            upperCoeffs[3] = new double[]{0.314824, -0.002479, -0.000235};
-            lowerCoeffs[4] = new double[]{0.184573, 0.006317, -0.000532};
-            upperCoeffs[4] = new double[]{0.312326, -0.005413, 0.000004};
-            lowerCoeffs[5] = new double[]{0.182386, 0.008435, -0.000777};
-            upperCoeffs[5] = new double[]{0.316822, -0.006715, 0.000075};
+            lowerCoeffs[0] = new double[]{0.173820, 0.011899, -0.001259};
+            upperCoeffs[0] = new double[]{0.322944, -0.012585, 0.001100};
+            lowerCoeffs[1] = new double[]{0.180660, 0.008456, -0.000790};
+            upperCoeffs[1] = new double[]{0.311690, -0.004250, -0.000068};
+            lowerCoeffs[2] = new double[]{0.190434, 0.005721, -0.000539};
+            upperCoeffs[2] = new double[]{0.311784, -0.003025, -0.000286};
+            lowerCoeffs[3] = new double[]{0.182037, 0.008472, -0.000775};
+            upperCoeffs[3] = new double[]{0.316576, -0.003039, -0.000191};
+            lowerCoeffs[4] = new double[]{0.181404, 0.007415, -0.000624};
+            upperCoeffs[4] = new double[]{0.313592, -0.005845, 0.000040};
+            lowerCoeffs[5] = new double[]{0.179893, 0.009279, -0.000846};
+            upperCoeffs[5] = new double[]{0.318022, -0.007117, 0.000108};
 
-            // New Sp23 (17477–17811)
+            // RGC Sp23 (17477-17811)
         } else if (runnum >= 17477 && runnum <= 17811) {
-            lowerCoeffs[0] = new double[]{0.190334, 0.004279, -0.000448};
-            upperCoeffs[0] = new double[]{0.307456, -0.006925, 0.000473};
-            lowerCoeffs[1] = new double[]{0.185558, 0.007610, -0.000723};
-            upperCoeffs[1] = new double[]{0.309016, -0.002613, -0.000219};
-            lowerCoeffs[2] = new double[]{0.187881, 0.007244, -0.000712};
-            upperCoeffs[2] = new double[]{0.309075, -0.004073, -0.000147};
-            lowerCoeffs[3] = new double[]{0.179524, 0.010042, -0.000902};
-            upperCoeffs[3] = new double[]{0.314158, -0.003706, -0.000116};
-            lowerCoeffs[4] = new double[]{0.182893, 0.006639, -0.000552};
-            upperCoeffs[4] = new double[]{0.311758, -0.006891, 0.000130};
-            lowerCoeffs[5] = new double[]{0.188799, 0.004953, -0.000454};
-            upperCoeffs[5] = new double[]{0.309367, -0.004730, -0.000132};
-
+            lowerCoeffs[0] = new double[]{0.188243, 0.004928, -0.000498};
+            upperCoeffs[0] = new double[]{0.308340, -0.007150, 0.000487};
+            lowerCoeffs[1] = new double[]{0.183701, 0.008171, -0.000765};
+            upperCoeffs[1] = new double[]{0.310391, -0.003058, -0.000184};
+            lowerCoeffs[2] = new double[]{0.185788, 0.007974, -0.000773};
+            upperCoeffs[2] = new double[]{0.310277, -0.004496, -0.000111};
+            lowerCoeffs[3] = new double[]{0.177398, 0.010710, -0.000954};
+            upperCoeffs[3] = new double[]{0.314889, -0.003913, -0.000101};
+            lowerCoeffs[4] = new double[]{0.181192, 0.007219, -0.000601};
+            upperCoeffs[4] = new double[]{0.312211, -0.007023, 0.000140};
+            lowerCoeffs[5] = new double[]{0.187191, 0.005478, -0.000496};
+            upperCoeffs[5] = new double[]{0.309825, -0.004853, -0.000123};
         } else {
             return sf > 0.19;
         }
