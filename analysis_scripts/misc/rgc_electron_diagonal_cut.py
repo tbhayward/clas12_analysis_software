@@ -92,7 +92,7 @@ def main():
             (vz <= vz_cuts[label][1]) &
             (p > 4.9) &               # only above 4.9 GeV
             (nphe >= 2) &
-            (e1 >= 0.15) &
+            (e1 >= 0.06) &
             (e4 >= 0)
         )
 
