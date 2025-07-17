@@ -17,17 +17,16 @@ import os
 
 # Updated charge fractions for each run period based on measured totals:
 # RGC Su22: NH3=72.39%, C=7.14%, CH2=3.73%, He=7.51%, ET=9.23%
-# RGC Fa22: NH3=56.30%, C=20.51%, CH2=18.74%, He=3.86%, ET=0.59%
-# or
 # RGC Fa22: NH3=56.05%, C=20.42%, CH2=18.66%, He=4.29%, ET=0.58%
 CHARGE_FRAC = {
     "RGC_Su22": {"xNH3": 0.7239, "xC": 0.0714, "xCH2": 0.0373, "xHe": 0.0751, "xET": 0.0923},
-    # "RGC_Fa22": {"xNH3": 0.5530, "xC": 0.2051, "xCH2": 0.1874, "xHe": 0.0386, "xET": 0.0059},
+    # "RGC_Fa22": {"xNH3": 0.5630, "xC": 0.2051, "xCH2": 0.1874, "xHe": 0.0386, "xET": 0.0059},
     "RGC_Fa22": {"xNH3": 0.5605, "xC": 0.2042, "xCH2": 0.1866, "xHe": 0.0429, "xET": 0.0058},
 }
 
 # y-cut threshold
 Y_CUT = 0.75
+
 
 def calculate_dilution_error(nNH3, nC, nCH2, nHe, nET, xNH3, xC, xCH2, xHe, xET):
     """
@@ -123,3 +122,73 @@ def calculate_and_save(trees, xB_bins):
     plt.errorbar(df_fa["x_mean"],df_fa["Df"],yerr=df_fa["Df_sigma"],fmt="o",label="Fa22")
     plt.xlabel("$x_B$");plt.ylabel("$D_f$");plt.legend(loc="upper right");plt.tight_layout()
     pdf="output/dilution_factor.pdf"; plt.savefig(pdf); plt.close(); print(f"Saved PDF {pdf}\nDone.")
+
+# ------------------------------------------------------------------
+# Temporary routine using manual dilution values provided by user
+# ------------------------------------------------------------------
+
+def calculate_dilution_factor_temp(trees, xB_bins):
+    """
+    Use manually provided Df values for Su22 & Fa22, compute combined
+    weighted average, uncertainty, and std, then save CSV and plot.
+    Mean xB per bin is calculated from the NH3 tree with y<Y_CUT.
+    """
+    # Load x and y data for NH3 only to get x_mean
+    x = trees["RGC_Su22"]["NH3"]["x"].array(library="np")  # placeholder, will override per bin
+    # Instead, compute for each period identically
+    data_x = {p: trees[p]["NH3"]["x"].array(library="np") for p in ["RGC_Su22","RGC_Fa22"]}
+    data_y = {p: trees[p]["NH3"]["y"].array(library="np") for p in ["RGC_Su22","RGC_Fa22"]}
+    nbins = len(xB_bins) - 1
+
+    # Manual values
+    su22_df  = np.array([0.158602, 0.167616, 0.182210, 0.197940, 0.212699, 0.221855, 0.211423])
+    su22_err = np.array([0.000968365, 0.000509438, 0.000585569, 0.000768288, 0.001218250, 0.002342010, 0.006085550])
+    fa22_df  = np.array([0.132883, 0.132428, 0.147291, 0.163236, 0.176245, 0.186880, 0.182911])
+    fa22_err = np.array([0.000352774, 0.000192123, 0.000221481, 0.000291376, 0.000466075, 0.000892341, 0.002286010])
+
+    # Compute mean xB per bin using NH3 from Su22 (or Fa22—they should be identical binning)
+    x_mean = []
+    mask = data_x["RGC_Su22"][data_y["RGC_Su22"] < Y_CUT]
+    bidx = np.digitize(mask, xB_bins) - 1
+    for i in range(nbins):
+        sel = mask[bidx == i]
+        x_mean.append(np.mean(sel) if sel.size > 0 else 0.0)
+    x_mean = np.array(x_mean)
+
+    # Weighted average
+    w_su = 1.0 / su22_err**2
+    w_fa = 1.0 / fa22_err**2
+    df_avg = (su22_df*w_su + fa22_df*w_fa) / (w_su + w_fa)
+    err_avg = np.sqrt(1.0 / (w_su + w_fa))
+
+    # Population std
+    df_std = np.sqrt(((su22_df - df_avg)**2 + (fa22_df - df_avg)**2) / 2.0)
+
+    # Assemble DataFrame
+    df_temp = pd.DataFrame({
+        'x_mean':    x_mean,
+        'Df_Su22':   su22_df,
+        'Err_Su22':  su22_err,
+        'Df_Fa22':   fa22_df,
+        'Err_Fa22':  fa22_err,
+        'Df_avg':    df_avg,
+        'Err_avg':   err_avg,
+        'Df_std':    df_std,
+    })
+
+    os.makedirs('output', exist_ok=True)
+    csv_path = 'output/dilution_factor.csv'
+    df_temp.to_csv(csv_path, index=False)
+    print(f"[Temp] Saved manual dilution factors CSV to {csv_path}")
+
+    # Plot
+    plt.errorbar(x_mean, su22_df, yerr=su22_err, fmt='o', label='Su22')
+    plt.errorbar(x_mean, fa22_df, yerr=fa22_err, fmt='s', label='Fa22')
+    plt.xlabel('$x_{B}$')
+    plt.ylabel('$D_{f}$')
+    plt.legend(loc='upper right')
+    plt.tight_layout()
+    pdf_path = 'output/dilution_factor.pdf'
+    plt.savefig(pdf_path)
+    plt.close()
+    print(f"[Temp] Saved manual dilution factors plot to {pdf_path}")
