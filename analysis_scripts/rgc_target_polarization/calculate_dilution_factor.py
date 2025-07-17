@@ -5,7 +5,7 @@ calculate_dilution_factor.py
 Module to compute dilution factor Df(xB) and its uncertainty
 for each xB bin for RGC Su22 and RGC Fa22 datasets.
 Saves CSV and PDF outputs, with verbose logging for progress tracking.
-Includes guards against negative variance in error calculation.
+Includes debug output of intermediate terms for diagnostics.
 """
 
 import numpy as np
@@ -15,55 +15,50 @@ from concurrent.futures import ProcessPoolExecutor, as_completed
 import matplotlib.pyplot as plt
 import os
 
-# Hard-coded charge fractions (decimal) for each run period
+# Charge fractions matching the C++ implementation exactly
 CHARGE_FRAC = {
-    "RGC_Su22": {"xNH3": 0.7239, "xC": 0.0714, "xCH2": 0.0373, "xHe": 0.0751, "xET": 0.0923},
-    "RGC_Fa22": {"xNH3": 0.5849, "xC": 0.2130, "xCH2": 0.1947, "xHe": 0.0013, "xET": 0.0061},
+    # RGC Su22: xAtotal=0.72104, xCtotal=0.07181, xCHtotal=0.03746, xHetotal=0.07688, xftotal=0.09280
+    "RGC_Su22": {"xNH3": 0.72104, "xC": 0.07181, "xCH2": 0.03746, "xHe": 0.07688, "xET": 0.09280},
+    # RGC Fa22: xAtotal=0.562214, xCtotal=0.204770, xCHtotal=0.187124, xHetotal=0.040041, xftotal=0.00585
+    "RGC_Fa22": {"xNH3": 0.562214, "xC": 0.204770, "xCH2": 0.187124, "xHe": 0.040041, "xET": 0.00585},
 }
 
 def calculate_dilution_error(nNH3, nC, nCH2, nHe, nET, xNH3, xC, xCH2, xHe, xET):
     """
     Compute the uncertainty sigma_Df for the dilution factor Df,
-    with guard against negative argument to sqrt.
+    providing detailed term-level debug output.
     """
-    print(f"[Error] Computing sigma_Df with counts nNH3={nNH3}, nC={nC}, nCH2={nCH2}, nHe={nHe}, nET={nET}")
-    # common factor a = (-nHe*xNH3 + nNH3*xHe)
     a = -1.0 * nHe * xNH3 + nNH3 * xHe
 
-    # compute each term
-    term1 = 5438.81 * nNH3 * nET * xC**2 * xCH2**2 * xET**2 * xHe**2 \
-            * a**2 \
-            * (1.0 * nHe * xC * xCH2 - 1.19655 * nCH2 * xC * xHe + 0.196547 * nC * xCH2 * xHe)**2
-    term2 = 85044.9 * nNH3 * nCH2 * xC**2 * xCH2**2 * xET**2 * xHe**2 \
-            * a**2 \
-            * (1.0 * nHe * xC * xET - 0.302592 * nET * xC * xHe - 0.697408 * nC * xET * xHe)**2
-    term3 = 47470.0 * nNH3 * nC * xC**2 * xCH2**2 * xET**2 * xHe**2 \
-            * a**2 \
-            * (1.0 * nHe * xCH2 * xET - 0.0665285 * nET * xCH2 * xHe - 0.933472 * nCH2 * xET * xHe)**2
-    term4 = 1371.83 * nHe**2 * xNH3**2 \
-            * (1.0 * nHe * xC * xCH2 * xET + (-1.97748 * nET * xC * xCH2 + 6.62306 * nCH2 * xC * xET - 5.64558 * nC * xCH2 * xET) * xHe)**2 \
-            * (1.0 * nHe * xC * xCH2 * xET + (0.0136533 * nET * xC * xCH2 - 1.25054 * nCH2 * xC * xET + 0.236883 * nC * xCH2 * xET) * xHe)**2
+    # compute each squared term
+    term1 = 5438.81 * nNH3 * nET * xC**2 * xCH2**2 * xET**2 * xHe**2 * a**2 * \
+            (1.0 * nHe * xC * xCH2 - 1.19655 * nCH2 * xC * xHe + 0.196547 * nC * xCH2 * xHe)**2
+    term2 = 85044.9 * nNH3 * nCH2 * xC**2 * xCH2**2 * xET**2 * xHe**2 * a**2 * \
+            (1.0 * nHe * xC * xET - 0.302592 * nET * xC * xHe - 0.697408 * nC * xET * xHe)**2
+    term3 = 47470.0 * nNH3 * nC * xC**2 * xCH2**2 * xET**2 * xHe**2 * a**2 * \
+            (1.0 * nHe * xCH2 * xET - 0.0665285 * nET * xCH2 * xHe - 0.933472 * nCH2 * xET * xHe)**2
+    term4 = 1371.83 * nHe**2 * xNH3**2 * \
+            (1.0 * nHe * xC * xCH2 * xET + (-1.97748 * nET * xC * xCH2 + 6.62306 * nCH2 * xC * xET - 5.64558 * nC * xCH2 * xET) * xHe)**2 * \
+            (1.0 * nHe * xC * xCH2 * xET + (0.0136533 * nET * xC * xCH2 - 1.25054 * nCH2 * xC * xET + 0.236883 * nC * xCH2 * xET) * xHe)**2
     t5_p1 = 73.2426 * nHe**2 * xNH3 * xC**2 * xCH2**2 * xET**2
-    t5_p2 = nHe * xC * xCH2 * xET \
-            * (2.0 * nET * xNH3 * xC * xCH2 \
-               + (-183.185 * nCH2 * xNH3 * xC + 34.6998 * nC * xNH3 * xCH2 + 1.42109e-14 * nNH3 * xC * xCH2) * xET)
-    t5_p3 = (-1.97748 * nET**2 * xNH3 * xC**2 * xCH2**2) \
-            + nET * xC * xCH2 * (187.746 * nCH2 * xNH3 * xC - 39.9547 * nC * xNH3 * xCH2 - 145.836 * nNH3 * xC * xCH2) * xET \
-            + (-606.623 * nCH2**2 * xNH3 * xC**2 \
-               + nCH2 * xC * (632.002 * nC * xNH3 + 576.683 * nNH3 * xC) * xCH2 \
-               + nC * (-97.9502 * nC * xNH3 - 430.847 * nNH3 * xC) * xCH2**2) * xET**2
+    t5_p2 = nHe * xC * xCH2 * xET * \
+            (2.0 * nET * xNH3 * xC * xCH2 + (-183.185 * nCH2 * xNH3 * xC + 34.6998 * nC * xNH3 * xCH2 + 1.42109e-14 * nNH3 * xC * xCH2) * xET)
+    t5_p3 = (-1.97748 * nET**2 * xNH3 * xC**2 * xCH2**2) + \
+             nET * xC * xCH2 * (187.746 * nCH2 * xNH3 * xC - 39.9547 * nC * xNH3 * xCH2 - 145.836 * nNH3 * xC * xCH2) * xET + \
+             (-606.623 * nCH2**2 * xNH3 * xC**2 + nCH2 * xC * (632.002 * nC * xNH3 + 576.683 * nNH3 * xC) * xCH2 + \
+             nC * (-97.9502 * nC * xNH3 - 430.847 * nNH3 * xC) * xCH2**2) * xET**2
     term5 = 0.255725 * nNH3 * nHe * (t5_p1 + t5_p2 * xHe + t5_p3 * xHe**2)**2
 
-    denom = nNH3**3 * xHe**2 \
-            * (73.2426 * nHe * xC * xCH2 * xET \
-               + 1.0 * nET * xC * xCH2 * xHe \
-               - 91.5925 * nCH2 * xC * xET * xHe \
-               + 17.3499 * nC * xCH2 * xET * xHe)**4
+    denom = nNH3**3 * xHe**2 * \
+            (73.2426 * nHe * xC * xCH2 * xET + 1.0 * nET * xC * xCH2 * xHe - 91.5925 * nCH2 * xC * xET * xHe + 17.3499 * nC * xCH2 * xET * xHe)**4
 
-    # variance must be non-negative
-    var = (term1 + term2 + term3 + term4 + term5) / denom if denom != 0 else 0.0
+    total_terms = term1 + term2 + term3 + term4 + term5
+    print(f"[Debug ErrorTerms] term1={term1:.4e}, term2={term2:.4e}, term3={term3:.4e}, term4={term4:.4e}, term5={term5:.4e}")
+    print(f"[Debug Error] sum_terms={total_terms:.4e}, denom={denom:.4e}")
+
+    var = total_terms / denom if denom != 0 else 0.0
     if var < 0:
-        print(f"[Warning] Negative variance {var:.4e}; setting to zero.")
+        print(f"[Warning] Negative variance var={var:.4e}; setting to zero.")
         var = 0.0
 
     sigma_df = 27.3473 * math.sqrt(var)
@@ -75,15 +70,16 @@ def calculate_dilution_and_error(nNH3, nC, nCH2, nHe, nET, xNH3, xC, xCH2, xHe, 
     """
     Compute the dilution factor Df and its uncertainty for given counts and charge fractions.
     """
-    print(f"[Dilution] Calculating Df for counts NH3={nNH3}, C={nC}, CH2={nCH2}, He={nHe}, ET={nET}")
+    print(f"[Dilution] Computing Df for nNH3={nNH3}, nC={nC}, nCH2={nCH2}, nHe={nHe}, nET={nET}")
     numerator = (27.3473 * (-1.0 * nHe * xNH3 + nNH3 * xHe)
-                 * (-0.505693 * nHe * nC * nCH2 * xET
+                 * (-0.505693 * nHe * xC * xCH2 * xET
                     + (1.0 * nET * xC * xCH2 - 3.34924 * nCH2 * xC * xET + 2.85493 * nC * xCH2 * xET) * xHe))
     denominator = (nNH3 * xHe
                    * (73.2426 * nHe * xC * xCH2 * xET
                       + 1.0 * nET * xC * xCH2 * xHe
                       - 91.5925 * nCH2 * xC * xET * xHe
                       + 17.3499 * nC * xCH2 * xET * xHe))
+    print(f"[Debug Dilution] numerator={numerator:.4e}, denominator={denominator:.4e}")
     df = numerator / denominator if denominator != 0 else 0.0
     print(f"[Dilution] Df = {df:.4e}")
     err = calculate_dilution_error(nNH3, nC, nCH2, nHe, nET, xNH3, xC, xCH2, xHe, xET)
