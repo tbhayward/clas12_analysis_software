@@ -51,6 +51,8 @@ def load_root_trees():
             tree = root_file["PhysicsEvents"]
             trees[period][target] = tree
 
+            # Print confirmation of successful import
+            print(f"Successfully loaded PhysicsEvents tree for period '{period}', target '{target}' from file: {path}")
         #endfor inner loop
     #endfor outer loop
 
