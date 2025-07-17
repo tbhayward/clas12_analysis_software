@@ -12,6 +12,9 @@ def main():
     Main entry point: load ROOT trees, then compute dilution factors,
     double‐spin asymmetry ALL, and solve for Pt (target polarization).
     """
+    # Define xB bin edges for dilution‐factor and ALL calculations
+    xB_bins = [0.0, 0.14, 0.24, 0.34, 0.44, 0.54, 0.64, 1.00]
+
     # Load all PhysicsEvents trees for each period and target
     trees = data_loader.load_root_trees()
 
@@ -19,11 +22,6 @@ def main():
     #   Su22 NH3 tree: trees["RGC_Su22"]["NH3"]
     #   Fa22 C   tree: trees["RGC_Fa22"]["C"]
     #   Sp23 NH3 tree: trees["RGC_Sp23"]["NH3"]
-
-    # TODO: Step 1: calculate Df (dilution factors) for Su22 & Fa22
-    # TODO: Step 2: compute ALL = (N+ - N-)/(N+ + N-) for each period
-    # TODO: Step 3: solve Pt = (N+ - N-) / [(N+ + N-) * Df * Pb]
-    # TODO: Step 4: output results & generate summary plots
     pass
 
 if __name__ == "__main__":
