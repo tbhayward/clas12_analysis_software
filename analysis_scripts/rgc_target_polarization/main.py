@@ -2,11 +2,12 @@
 """
 main.py
 
-Main script to load ROOT trees and compute dilution factors, ALL, and Pt.
+Main script to load ROOT trees and run the temporary dilution-factor routine,
+ALL, and Pt calculations.
 """
 
 import data_loader
-import calculate_dilution_factor, calculate_dilution_factor_temp
+import calculate_dilution_factor as cdf
 
 
 def main():
@@ -19,14 +20,12 @@ def main():
     # Load PhysicsEvents trees for all periods
     trees = data_loader.load_root_trees()
 
-    # Calculate and save dilution-factor CSV + PDF
-    # calculate_dilution_factor.calculate_and_save(trees, xB_bins)
-    calculate_dilution_factor_temp.calculate_and_save(trees, xB_bins)
+    # Use the temporary manual Df routine
+    cdf.calculate_dilution_factor_temp(trees, xB_bins)
 
     # TODO: compute ALL(xB_bins) and solve for Pt using Df from CSV
     # end TODO
-#end main
+
 
 if __name__ == "__main__":
     main()
-#endif
