@@ -63,8 +63,8 @@ def calculate_dilution_error(nNH3, nC, nCH2, nHe, nET, xNH3, xC, xCH2, xHe, xET)
 
 def calculate_dilution_and_error(nNH3, nC, nCH2, nHe, nET, xNH3, xC, xCH2, xHe, xET):
     print(f"[Dilution] Df counts: NH3={nNH3}, C={nC}, CH2={nCH2}, He={nHe}, ET={nET}")
-    num = (27.3473 * (-1.0 * nHe * xNH3 + nNH3 * xHe)
-           * (-0.505693 * nHe * nC * nCH2 * xET
+    num = (27.3473 * (-1.0 * nHe * xNH3 + nNH3 * xHe) *
+           (-0.505693 * nHe * xC * xCH2 * xET
               + (1.0 * nET * xC * xCH2 - 3.34924 * nCH2 * xC * xET + 2.85493 * nC * xCH2 * xET) * xHe))
     denom = (nNH3 * xHe
              * (73.2426 * nHe * xC * xCH2 * xET
