@@ -34,7 +34,7 @@ private:
     TTreeReaderValue<double> phi;
     TTreeReaderValue<double> z;
     TTreeReaderValue<double> t;
-    TTreeReaderValue<double> t1;        
+    // TTreeReaderValue<double> t1;        
     TTreeReaderValue<double> tmin;
     TTreeReaderValue<double>    target_pol;
 };
