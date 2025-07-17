@@ -157,9 +157,17 @@ std::pair<double, double> calculate_dilution_and_error(double nA, double nC, dou
     //                     1.0 * nf * xC * xCH * xHe - 91.5925 * nCH * xC * xf * xHe + 17.3499 * nC * xCH * xf * xHe)
     //                   );
 
-    // double packing_fraction = (0.699832)*(nA/xA-nMT/xHe)/(1.25055*nCH/xCH-0.23688*nC/xC-0.013668*nf/xf-nMT/xHe);
-    double dilution = (0.699832)*(nA/xA-nMT/xHe)/(1.25055*nCH/xCH-0.23688*nC/xC-0.013668*nf/xf-nMT/xHe);
-    
+    double rho_A = 0.05091;
+    double rho_C = 0.1494;
+    double rho_CH = 0.06719;
+    double L = 5.86;
+    double lCH = 3.18;
+    double lC = 1.678;
+    double packing_fraction = (0.699832)*(nA/xA-nMT/xHe)/(1.25055*nCH/xCH-0.23688*nC/xC-0.013668*nf/xf-nMT/xHe);
+    double dilution = ((3*packing_fraction*rho_A)/(2*nA*rho_C*rho_CH)) *
+        ((L/lCH)*rho_C*(nCH-nMT)+(rho_C-rho_CH)*(nMT-nf)-(L/lC)*rho_CH*(nC-nMT));
+
+
     double error = calculate_dilution_error(nA, nC, nCH, nMT, nf, xA, xC, xCH, xHe, xf);
     
     return std::make_pair(dilution, error);
