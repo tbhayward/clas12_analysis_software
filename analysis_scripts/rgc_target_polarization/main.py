@@ -6,7 +6,7 @@ Main script to load ROOT trees and compute dilution factors, ALL, and Pt.
 """
 
 import data_loader
-import calculate_dilution_factor
+import calculate_dilution_factor, calculate_dilution_factor_temp
 
 
 def main():
