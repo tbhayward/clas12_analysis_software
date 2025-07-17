@@ -91,37 +91,40 @@ def _compute_period(period, trees, xB_bins):
     rows = []
     fr = CHARGE_FRAC[period]
     for i in range(nbins):
-        # mask y
         idx = {t: np.digitize(data_x[t][data_y[t]<Y_CUT], xB_bins)-1 for t in data_x}
         x_mean = np.mean(data_x["NH3"][data_y["NH3"]<Y_CUT][idx["NH3"]==i]) if np.any(idx["NH3"]==i) else 0.0
         counts = {t: np.sum(idx[t]==i) for t in idx}
         print(f"[Period {period}] Bin{i+1}/{nbins} x_mean={x_mean:.4f} counts={counts}")
         Df, Df_s = calculate_dilution_and_error(
-            counts["NH3"],counts["C"],counts["CH2"],counts["He"],counts["ET"],
-            fr["xNH3"],fr["xC"],fr["xCH2"],fr["xHe"],fr["xET"]
+            counts["NH3"], counts["C"], counts["CH2"], counts["He"], counts["ET"],
+            fr["xNH3"], fr["xC"], fr["xCH2"], fr["xHe"], fr["xET"]
         )
-        rows.append({"x_mean":x_mean,"Df":Df,"Df_sigma":Df_s})
-    df = pd.DataFrame(rows); df["period"]=period
+        rows.append({"x_mean": x_mean, "Df": Df, "Df_sigma": Df_s})
+    df = pd.DataFrame(rows)
+    df["period"] = period
     print(f"[Period {period}] Done.\n")
     return df
 
 
 def calculate_and_save(trees, xB_bins):
     print("[Main] Begin dilution calculation")
-    os.makedirs("output",exist_ok=True)
-    per = ["RGC_Su22","RGC_Fa22"]
+    os.makedirs("output", exist_ok=True)
+    per = ["RGC_Su22", "RGC_Fa22"]
     with ProcessPoolExecutor() as ex:
-        futs={ex.submit(_compute_period,p,trees[p],xB_bins):p for p in per}
-        res={futs[f]:f.result() for f in as_completed(futs)}
-    df_su,df_fa=res["RGC_Su22"],res["RGC_Fa22"]
-    wsu=1/df_su["Df_sigma"]**2; wfa=1/df_fa["Df_sigma"]**2
-    df_avg=pd.DataFrame({"x_mean":df_su["x_mean"],"Df":(df_su["Df"]*wsu+df_fa["Df"]*wfa)/(wsu+wfa),"Df_sigma":np.sqrt(1/(wsu+wfa)),"period":"weighted"})
-    df_all=pd.concat([df_su,df_fa,df_avg],ignore_index=True)
-    csv="output/dilution_factor.csv"; df_all.to_csv(csv,index=False); print(f"Saved CSV {csv}")
-    plt.errorbar(df_su["x_mean"],df_su["Df"],yerr=df_su["Df_sigma"],fmt="o",label="Su22")
-    plt.errorbar(df_fa["x_mean"],df_fa["Df"],yerr=df_fa["Df_sigma"],fmt="o",label="Fa22")
-    plt.xlabel("$x_B$");plt.ylabel("$D_f$");plt.legend(loc="upper right");plt.tight_layout()
-    pdf="output/dilution_factor.pdf"; plt.savefig(pdf); plt.close(); print(f"Saved PDF {pdf}\nDone.")
+        futs = {ex.submit(_compute_period, p, trees[p], xB_bins): p for p in per}
+        res = {futs[f]: f.result() for f in as_completed(futs)}
+    df_su, df_fa = res["RGC_Su22"], res["RGC_Fa22"]
+    wsu = 1/df_su["Df_sigma"]**2; wfa = 1/df_fa["Df_sigma"]**2
+    df_avg = pd.DataFrame({"x_mean": df_su["x_mean"],
+                           "Df": (df_su["Df"]*wsu + df_fa["Df"]*wfa)/(wsu+wfa),
+                           "Df_sigma": np.sqrt(1/(wsu+wfa)),
+                           "period": "weighted"})
+    df_all = pd.concat([df_su, df_fa, df_avg], ignore_index=True)
+    csv = "output/dilution_factor.csv"; df_all.to_csv(csv, index=False); print(f"Saved CSV {csv}")
+    plt.errorbar(df_su["x_mean"], df_su["Df"], yerr=df_su["Df_sigma"], fmt="o", label="Su22")
+    plt.errorbar(df_fa["x_mean"], df_fa["Df"], yerr=df_fa["Df_sigma"], fmt="o", label="Fa22")
+    plt.xlabel("$x_B$"); plt.ylabel("$D_f$"); plt.legend(loc="upper right"); plt.xlim(0,0.8); plt.ylim(0.1,0.3); plt.tight_layout()
+    pdf = "output/dilution_factor.pdf"; plt.savefig(pdf); plt.close(); print(f"Saved PDF {pdf}\nDone.")
 
 # ------------------------------------------------------------------
 # Temporary routine using manual dilution values provided by user
@@ -133,9 +136,7 @@ def calculate_dilution_factor_temp(trees, xB_bins):
     weighted average, uncertainty, and std, then save CSV and plot.
     Mean xB per bin is calculated from the NH3 tree with y<Y_CUT.
     """
-    # Load x and y data for NH3 only to get x_mean
-    x = trees["RGC_Su22"]["NH3"]["x"].array(library="np")  # placeholder, will override per bin
-    # Instead, compute for each period identically
+    # Load NH3 x and y for Su22
     data_x = {p: trees[p]["NH3"]["x"].array(library="np") for p in ["RGC_Su22","RGC_Fa22"]}
     data_y = {p: trees[p]["NH3"]["y"].array(library="np") for p in ["RGC_Su22","RGC_Fa22"]}
     nbins = len(xB_bins) - 1
@@ -146,14 +147,10 @@ def calculate_dilution_factor_temp(trees, xB_bins):
     fa22_df  = np.array([0.132883, 0.132428, 0.147291, 0.163236, 0.176245, 0.186880, 0.182911])
     fa22_err = np.array([0.000352774, 0.000192123, 0.000221481, 0.000291376, 0.000466075, 0.000892341, 0.002286010])
 
-    # Compute mean xB per bin using NH3 from Su22 (or Fa22—they should be identical binning)
-    x_mean = []
+    # Compute mean xB per bin using Su22 NH3
     mask = data_x["RGC_Su22"][data_y["RGC_Su22"] < Y_CUT]
     bidx = np.digitize(mask, xB_bins) - 1
-    for i in range(nbins):
-        sel = mask[bidx == i]
-        x_mean.append(np.mean(sel) if sel.size > 0 else 0.0)
-    x_mean = np.array(x_mean)
+    x_mean = np.array([np.mean(mask[bidx == i]) if np.any(bidx == i) else 0.0 for i in range(nbins)])
 
     # Weighted average
     w_su = 1.0 / su22_err**2
@@ -186,6 +183,8 @@ def calculate_dilution_factor_temp(trees, xB_bins):
     plt.errorbar(x_mean, fa22_df, yerr=fa22_err, fmt='s', label='Fa22')
     plt.xlabel('$x_{B}$')
     plt.ylabel('$D_{f}$')
+    plt.xlim(0, 0.8)
+    plt.ylim(0.1, 0.3)
     plt.legend(loc='upper right')
     plt.tight_layout()
     pdf_path = 'output/dilution_factor.pdf'
