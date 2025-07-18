@@ -15,13 +15,36 @@ import os
 
 # Absolute accumulated charge (in nC) per period and target
 CHARGE = {
-    "RGC_Su22": {"NH3": 3686969.636627, "C": 363715.413199, "CH2": 189723.230200, "He": 382585.145820, "ET": 470011.187943},
-    "RGC_Fa22": {"NH3": 5509572.178076, "C": 2006703.362768, "CH2": 1833777.957336, "He": 378165.719362, "ET":  57332.748981},
-    "RGC_Sp23": {"NH3": 1948649.296492, "C":  552805.225420, "CH2":  436816.389755, "He": 279407.815704, "ET": 171738.938831},
+    "RGC_Su22": {
+        "NH3": 3686969.636627,
+        "C":   363715.413199,
+        "CH2": 189723.230200,
+        "He":  382585.145820,
+        "ET":  470011.187943,
+    },
+    "RGC_Fa22": {
+        "NH3": 5509572.178076,
+        "C":   2006703.362768,
+        "CH2": 1833777.957336,
+        "He":  378165.719362,
+        "ET":   57332.748981,
+    },
+    "RGC_Sp23": {
+        # Updated Sp23 totals:
+        "NH3": 1620599.347496,
+        "C":    383030.166502,
+        "CH2":  436816.389755,
+        "He":   279407.815704,
+        "ET":   171738.938831,
+    },
 }
 
 # Styling parameters
-PERIOD_COLORS = {"RGC_Su22": "C0", "RGC_Fa22": "C1", "RGC_Sp23": "C2"}
+PERIOD_COLORS = {
+    "RGC_Su22": "C0",
+    "RGC_Fa22": "C1",
+    "RGC_Sp23": "C2",
+}
 LINE_WIDTH = 1.8
 N_BINS = 100  # fine binning for smooth shapes
 Y_MAX_RATIO = 2.0  # fixed y-axis upper limit for ratio plot
@@ -56,15 +79,17 @@ def plot_normalized_yields(trees, xB_bins):
     axes1 = axes1.flatten()
     for idx, t in enumerate(targets):
         ax = axes1[idx]
-        # determine dynamic peak across periods
         peak = 0.0
         for p in periods:
             y = norm_hist[p][t]
             peak = max(peak, y.max() if y.size > 0 else 0)
-            ax.step(centers, y,
-                    where='mid', color=PERIOD_COLORS[p], linewidth=LINE_WIDTH,
-                    label=p.replace('RGC_', ''))
-        # set y from 0 to 120% of peak
+            ax.step(
+                centers, y,
+                where='mid',
+                color=PERIOD_COLORS[p],
+                linewidth=LINE_WIDTH,
+                label=p.replace('RGC_', '')
+            )
         ax.set_ylim(0, 1.2 * peak)
         ax.set_xlabel(r'$x_{B}$')
         ax.set_ylabel('counts / nC')
@@ -89,9 +114,13 @@ def plot_normalized_yields(trees, xB_bins):
         for p in periods:
             vals = norm_hist[p][t]
             ratio = np.where(base_vals > 0, vals / base_vals, np.nan)
-            ax.step(centers, ratio,
-                    where='mid', color=PERIOD_COLORS[p], linewidth=LINE_WIDTH,
-                    label=p.replace('RGC_', ''))
+            ax.step(
+                centers, ratio,
+                where='mid',
+                color=PERIOD_COLORS[p],
+                linewidth=LINE_WIDTH,
+                label=p.replace('RGC_', '')
+            )
         ax.set_ylim(0, Y_MAX_RATIO)
         ax.set_xlabel(r'$x_{B}$')
         ax.set_ylabel('ratio / Su22')
