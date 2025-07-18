@@ -52,11 +52,11 @@
 // const double xftotal = 0.00585;
 
 // Fractional charge values for Total -- RGC Fa22
-const double xAtotal = 0.5605;
-const double xCtotal = 0.2042;
-const double xCHtotal = 0.1866;
-const double xHetotal = 0.0429;
-const double xftotal = 0.0058;
+const double xAtotal = 0.5630;
+const double xCtotal = 0.2051;
+const double xCHtotal = 0.1874;
+const double xHetotal = 0.0386;
+const double xftotal = 0.0059;
 
 
 // // Fractional charge values for Total -- RGC Sp23
