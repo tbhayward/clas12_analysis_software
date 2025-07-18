@@ -96,8 +96,8 @@ def _compute_period(period, trees, xB_bins):
         counts = {t: np.sum(idx[t]==i) for t in idx}
         print(f"[Period {period}] Bin{i+1}/{nbins} x_mean={x_mean:.4f} counts={counts}")
         Df, Df_s = calculate_dilution_and_error(
-            counts["NH3"], counts["C"], counts["CH2"], counts["He"], counts["ET"],
-            fr["xNH3"], fr["xC"], fr["xCH2"], fr["xHe"], fr["xET"]
+            counts["NH3"],counts["C"],counts["CH2"],counts["He"],counts["ET"],
+            fr["xNH3"],fr["xC"],fr["xCH2"],fr["xHe"],fr["xET"]
         )
         rows.append({"x_mean": x_mean, "Df": Df, "Df_sigma": Df_s})
     df = pd.DataFrame(rows)
@@ -115,10 +115,12 @@ def calculate_and_save(trees, xB_bins):
         res = {futs[f]: f.result() for f in as_completed(futs)}
     df_su, df_fa = res["RGC_Su22"], res["RGC_Fa22"]
     wsu = 1/df_su["Df_sigma"]**2; wfa = 1/df_fa["Df_sigma"]**2
-    df_avg = pd.DataFrame({"x_mean": df_su["x_mean"],
-                           "Df": (df_su["Df"]*wsu + df_fa["Df"]*wfa)/(wsu+wfa),
-                           "Df_sigma": np.sqrt(1/(wsu+wfa)),
-                           "period": "weighted"})
+    df_avg = pd.DataFrame({
+        "x_mean": df_su["x_mean"],
+        "Df": (df_su["Df"]*wsu + df_fa["Df"]*wfa)/(wsu+wfa),
+        "Df_sigma": np.sqrt(1/(wsu+wfa)),
+        "period": "weighted"
+    })
     df_all = pd.concat([df_su, df_fa, df_avg], ignore_index=True)
     csv = "output/dilution_factor.csv"; df_all.to_csv(csv, index=False); print(f"Saved CSV {csv}")
     plt.errorbar(df_su["x_mean"], df_su["Df"], yerr=df_su["Df_sigma"], fmt="o", label="Su22")
@@ -129,6 +131,7 @@ def calculate_and_save(trees, xB_bins):
 # ------------------------------------------------------------------
 # Temporary routine using manual dilution values provided by user
 # ------------------------------------------------------------------
+
 
 def calculate_dilution_factor_temp(trees, xB_bins):
     """
@@ -144,8 +147,8 @@ def calculate_dilution_factor_temp(trees, xB_bins):
     # Manual values
     su22_df  = np.array([0.158602, 0.167616, 0.182210, 0.197940, 0.212699, 0.221855, 0.211423])
     su22_err = np.array([0.000968365, 0.000509438, 0.000585569, 0.000768288, 0.001218250, 0.002342010, 0.006085550])
-    fa22_df  = np.array([0.132883, 0.132428, 0.147291, 0.163236, 0.176245, 0.186880, 0.182911])
-    fa22_err = np.array([0.000352774, 0.000192123, 0.000221481, 0.000291376, 0.000466075, 0.000892341, 0.002286010])
+    fa22_df  = np.array([0.133595, 0.133263, 0.148191, 0.164181, 0.177190, 0.187865, 0.183863])
+    fa22_err = np.array([0.000352140, 0.000191744, 0.000220967, 0.000290596, 0.000464770, 0.000889612, 0.002279690])
 
     # Compute mean xB per bin using Su22 NH3
     mask = data_x["RGC_Su22"][data_y["RGC_Su22"] < Y_CUT]
