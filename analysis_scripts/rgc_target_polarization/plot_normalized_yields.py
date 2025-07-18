@@ -4,7 +4,7 @@ plot_normalized_yields.py
 
 Module to plot high-quality normalized x_B yield histograms for three run periods
 (RGC_Su22, RGC_Fa22, RGC_Sp23) and five target types.
-Generates two figures:
+Generates two figures using precomputed normalized histograms:
   1) Absolute normalization (counts/nC)
   2) Relative to Su22 yields
 """
@@ -21,57 +21,56 @@ CHARGE = {
 }
 
 # Styling parameters
-PERIOD_COLORS = {
-    "RGC_Su22": "C0",
-    "RGC_Fa22": "C1",
-    "RGC_Sp23": "C2",
-}
+PERIOD_COLORS = {"RGC_Su22": "C0", "RGC_Fa22": "C1", "RGC_Sp23": "C2"}
 LINE_WIDTH = 1.8
 N_BINS = 100  # fine binning for smooth shapes
 
 
 def plot_normalized_yields(trees, xB_bins):
     """
-    Generate two multi-panel plots:
-      - normalized yields (counts/nC)
-      - relative yields (each period / Su22)
+    Generate two multi-panel plots using precomputed histograms:
+      1) Absolute normalization (counts/nC)
+      2) Relative to Su22 (ratio)
     Saves to 'output/normalized_yields.pdf' and 'output/normalized_yields_ratio.pdf'.
 
     Args:
-        trees (dict): nested dict trees[period][target] with uproot trees
-        xB_bins (list): [xmin, ..., xmax] for histogram extent
+        trees (dict): nested dict trees[period][target]
+        xB_bins (list): bin edges for x_B
     """
     periods = ["RGC_Su22", "RGC_Fa22", "RGC_Sp23"]
     targets = ["NH3", "C", "CH2", "He", "ET"]
 
-    # define uniform bins over xB
+    # Create uniform bins and bin centers
     xmin, xmax = xB_bins[0], xB_bins[-1]
     bins = np.linspace(xmin, xmax, N_BINS + 1)
+    centers = 0.5 * (bins[:-1] + bins[1:])
+
+    # Precompute normalized histograms for all period-target combinations
+    norm_hist = {period: {} for period in periods}
+    for period in periods:
+        for target in targets:
+            x = trees[period][target]["x"].array(library="np")
+            counts, _ = np.histogram(x, bins=bins)
+            norm_counts = counts / CHARGE[period][target]
+            norm_hist[period][target] = norm_counts
 
     # --------------------------------------------------
     # FIGURE 1: Absolute normalization (counts / nC)
     # --------------------------------------------------
     fig1, axes1 = plt.subplots(2, 3, figsize=(15, 8), sharex=True, sharey=False)
     axes1 = axes1.flatten()
-
     for idx, target in enumerate(targets):
         ax = axes1[idx]
-        max_count = 0.0
+        max_c = 0.0
         for period in periods:
-            x = trees[period][target]["x"].array(library="np")
-            counts, edges = np.histogram(x, bins=bins)
-            centers = 0.5 * (edges[:-1] + edges[1:])
-            norm_counts = counts / CHARGE[period][target]
-            ax.step(
-                centers, norm_counts,
-                where='mid',
-                color=PERIOD_COLORS[period],
-                linewidth=LINE_WIDTH,
-                label=period.replace('RGC_', '')
-            )
-            if norm_counts.size > 0:
-                max_count = max(max_count, norm_counts.max())
-        ax.set_ylim(0, 1.2 * max_count)
+            counts = norm_hist[period][target]
+            ax.step(centers, counts,
+                    where='mid',
+                    color=PERIOD_COLORS[period],
+                    linewidth=LINE_WIDTH,
+                    label=period.replace('RGC_', ''))
+            max_c = max(max_c, counts.max() if counts.size>0 else 0)
+        ax.set_ylim(0, 1.2 * max_c)
         ax.set_xlabel(r'$x_{B}$')
         ax.set_ylabel('counts / nC')
         ax.set_title(target)
@@ -84,38 +83,28 @@ def plot_normalized_yields(trees, xB_bins):
     print("[Plot] Saved 'output/normalized_yields.pdf'")
 
     # --------------------------------------------------
-    # FIGURE 2: Relative to Su22 (ratio of normalized yields)
+    # FIGURE 2: Relative to Su22 (ratio)
     # --------------------------------------------------
     fig2, axes2 = plt.subplots(2, 3, figsize=(15, 8), sharex=True, sharey=False)
     axes2 = axes2.flatten()
-
+    base_period = 'RGC_Su22'
     for idx, target in enumerate(targets):
         ax = axes2[idx]
-        # compute base (Su22) normalized counts
-        x_su = trees['RGC_Su22'][target]['x'].array(library='np')
-        counts_su, _ = np.histogram(x_su, bins=bins)
-        norm_su = counts_su / CHARGE['RGC_Su22'][target]
-        centers = 0.5 * (bins[:-1] + bins[1:])
-        max_ratio = 0.0
+        base = norm_hist[base_period][target]
+        max_r = 0.0
         for period in periods:
-            x = trees[period][target]['x'].array(library='np')
-            counts, _ = np.histogram(x, bins=bins)
-            norm = counts / CHARGE[period][target]
-            # avoid zero-division
-            ratio = norm / np.where(norm_su>0, norm_su, np.nan)
-            ax.step(
-                centers, ratio,
-                where='mid',
-                color=PERIOD_COLORS[period],
-                linewidth=LINE_WIDTH,
-                label=period.replace('RGC_', '')
-            )
-            # track peak ratio (exclude NaN)
-            if np.isfinite(ratio).any():
-                max_ratio = max(max_ratio, np.nanmax(ratio))
-        ax.set_ylim(0, 1.2 * max_ratio)
+            counts = norm_hist[period][target]
+            # avoid division by zero
+            ratio = np.where(base>0, counts/base, np.nan)
+            ax.step(centers, ratio,
+                    where='mid',
+                    color=PERIOD_COLORS[period],
+                    linewidth=LINE_WIDTH,
+                    label=period.replace('RGC_', ''))
+            max_r = max(max_r, np.nanmax(ratio))
+        ax.set_ylim(0, 1.2 * max_r)
         ax.set_xlabel(r'$x_{B}$')
-        ax.set_ylabel('Relative to Su22')
+        ax.set_ylabel('ratio / Su22')
         ax.set_title(target)
         ax.legend(frameon=False, fontsize='small')
     axes2[-1].axis('off')
