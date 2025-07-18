@@ -5,9 +5,8 @@ plot_normalized_yields.py
 Module to plot high-quality normalized x_B yield histograms for three run periods
 (RGC_Su22, RGC_Fa22, RGC_Sp23) and five target types.
 Generates two figures:
-  1) Absolute normalization (counts/nC)
-  2) Relative to Su22 yields
-Both use a fixed y-axis range [0, 2] for clarity.
+  1) Absolute normalization (counts/nC) with dynamic y-limits
+  2) Relative to Su22 yields with fixed y-axis [0,2]
 """
 
 import numpy as np
@@ -25,24 +24,19 @@ CHARGE = {
 PERIOD_COLORS = {"RGC_Su22": "C0", "RGC_Fa22": "C1", "RGC_Sp23": "C2"}
 LINE_WIDTH = 1.8
 N_BINS = 100  # fine binning for smooth shapes
+Y_MAX_RATIO = 2.0  # fixed y-axis upper limit for ratio plot
 
 
 def plot_normalized_yields(trees, xB_bins):
     """
     Generate two multi-panel plots using precomputed histograms:
-      1) Absolute normalization (counts/nC)
-      2) Relative to Su22 (ratio)
-    Both force y-axis range [0, 2].
-    Saves to 'output/normalized_yields.pdf' and 'output/normalized_yields_ratio.pdf'.
-
-    Args:
-        trees (dict): nested dict trees[period][target]
-        xB_bins (list): bin edges for x_B
+      1) Absolute normalization (counts/nC) with dynamic autoscaling
+      2) Relative to Su22 (ratio) with y-axis [0, Y_MAX_RATIO]
     """
     periods = ["RGC_Su22", "RGC_Fa22", "RGC_Sp23"]
     targets = ["NH3", "C", "CH2", "He", "ET"]
 
-    # Create uniform bins and bin centers
+    # Uniform bins and centers
     xmin, xmax = xB_bins[0], xB_bins[-1]
     bins = np.linspace(xmin, xmax, N_BINS + 1)
     centers = 0.5 * (bins[:-1] + bins[1:])
@@ -62,11 +56,16 @@ def plot_normalized_yields(trees, xB_bins):
     axes1 = axes1.flatten()
     for idx, t in enumerate(targets):
         ax = axes1[idx]
+        # determine dynamic peak across periods
+        peak = 0.0
         for p in periods:
-            ax.step(centers, norm_hist[p][t], where='mid',
-                    color=PERIOD_COLORS[p], linewidth=LINE_WIDTH,
+            y = norm_hist[p][t]
+            peak = max(peak, y.max() if y.size > 0 else 0)
+            ax.step(centers, y,
+                    where='mid', color=PERIOD_COLORS[p], linewidth=LINE_WIDTH,
                     label=p.replace('RGC_', ''))
-        ax.set_ylim(0, 2)
+        # set y from 0 to 120% of peak
+        ax.set_ylim(0, 1.2 * peak)
         ax.set_xlabel(r'$x_{B}$')
         ax.set_ylabel('counts / nC')
         ax.set_title(t)
@@ -83,18 +82,17 @@ def plot_normalized_yields(trees, xB_bins):
     # --------------------------------------------------
     fig2, axes2 = plt.subplots(2, 3, figsize=(15, 8), sharex=True)
     axes2 = axes2.flatten()
-    base = "RGC_Su22"
-
+    base = 'RGC_Su22'
     for idx, t in enumerate(targets):
         ax = axes2[idx]
         base_vals = norm_hist[base][t]
         for p in periods:
             vals = norm_hist[p][t]
-            ratio = np.where(base_vals>0, vals/base_vals, np.nan)
-            ax.step(centers, ratio, where='mid',
-                    color=PERIOD_COLORS[p], linewidth=LINE_WIDTH,
+            ratio = np.where(base_vals > 0, vals / base_vals, np.nan)
+            ax.step(centers, ratio,
+                    where='mid', color=PERIOD_COLORS[p], linewidth=LINE_WIDTH,
                     label=p.replace('RGC_', ''))
-        ax.set_ylim(0, 2)
+        ax.set_ylim(0, Y_MAX_RATIO)
         ax.set_xlabel(r'$x_{B}$')
         ax.set_ylabel('ratio / Su22')
         ax.set_title(t)
