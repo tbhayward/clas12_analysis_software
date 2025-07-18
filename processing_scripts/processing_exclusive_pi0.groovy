@@ -172,6 +172,7 @@ public static void main(String[] args) {
 	    	// 	qa.OkForAsymmetry(runnum, evnum));
 	    	boolean process_event = filter.isValid(research_Event) && (runnum == 11 || runnum < 5020 ||
 	    	qa.pass(runnum, evnum));
+	    	if (runnum > 17768) process_event = false; // outbending RGC Sp23
 	    	
 		    if (process_event) {
 
