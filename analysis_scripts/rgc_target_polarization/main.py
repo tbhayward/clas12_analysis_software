@@ -8,6 +8,7 @@ ALL, and Pt calculations.
 
 import data_loader
 import calculate_dilution_factor as cdf
+import plot_normalized_yields as pny
 
 
 def main():
@@ -20,8 +21,11 @@ def main():
     # Load PhysicsEvents trees for all periods
     trees = data_loader.load_root_trees()
 
+    # Plot normalized yields
+    pny.plot_normalized_yields(trees, xB_bins)
+
     # Use the temporary manual Df routine
-    cdf.calculate_dilution_factor_temp(trees, xB_bins)
+    # cdf.calculate_dilution_factor_temp(trees, xB_bins)
 
     # TODO: compute ALL(xB_bins) and solve for Pt using Df from CSV
     # end TODO
