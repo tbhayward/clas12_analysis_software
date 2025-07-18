@@ -4,7 +4,7 @@ plot_normalized_yields.py
 
 Module to plot high-quality normalized x_B yield histograms for three run periods
 (RGC_Su22, RGC_Fa22, RGC_Sp23) and five target types.
-Improved styling: fine binning, step histograms, no grid lines, dynamic y-axis scaling.
+Improved styling: fine binning, step histograms, dynamic y-axis per subplot.
 """
 
 import numpy as np
@@ -46,12 +46,12 @@ def plot_normalized_yields(trees, xB_bins):
     xmin, xmax = xB_bins[0], xB_bins[-1]
     bins = np.linspace(xmin, xmax, N_BINS + 1)
 
-    fig, axes = plt.subplots(2, 3, figsize=(15, 8), sharex=True, sharey=True)
+    # Create canvas without shared y-axis so each subplot auto-scales
+    fig, axes = plt.subplots(2, 3, figsize=(15, 8), sharex=True, sharey=False)
     axes = axes.flatten()
 
     for idx, target in enumerate(targets):
         ax = axes[idx]
-        # track maximum normalized count for dynamic y-limits
         max_count = 0.0
         for period in periods:
             tree = trees[period][target]
@@ -68,13 +68,13 @@ def plot_normalized_yields(trees, xB_bins):
             )
             if norm_counts.size > 0:
                 max_count = max(max_count, norm_counts.max())
-        # set dynamic y-axis: 0 to 120% of peak
+
+        # dynamic y-axis: [0, 1.2*peak]
         ax.set_ylim(0, 1.2 * max_count)
         ax.set_xlabel(r'$x_{B}$')
         ax.set_ylabel('counts / nC')
         ax.set_title(target)
         ax.legend(frameon=False, fontsize='small')
-        # no grid lines for cleaner look
 
     # hide the unused 6th subplot
     axes[-1].axis('off')
