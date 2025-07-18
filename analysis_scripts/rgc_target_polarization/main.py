@@ -21,7 +21,7 @@ def main():
     # Load PhysicsEvents trees for all periods
     trees = data_loader.load_root_trees()
 
-    # Plot normalized yields
+    # plot normalized yields for NH3, C, CH2, He, ET
     pny.plot_normalized_yields(trees, xB_bins)
 
     # Use the temporary manual Df routine
