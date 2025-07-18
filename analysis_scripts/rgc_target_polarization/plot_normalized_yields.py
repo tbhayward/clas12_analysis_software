@@ -4,9 +4,10 @@ plot_normalized_yields.py
 
 Module to plot high-quality normalized x_B yield histograms for three run periods
 (RGC_Su22, RGC_Fa22, RGC_Sp23) and five target types.
-Generates two figures using precomputed normalized histograms:
+Generates two figures:
   1) Absolute normalization (counts/nC)
   2) Relative to Su22 yields
+Both use a fixed y-axis range [0, 2] for clarity.
 """
 
 import numpy as np
@@ -31,6 +32,7 @@ def plot_normalized_yields(trees, xB_bins):
     Generate two multi-panel plots using precomputed histograms:
       1) Absolute normalization (counts/nC)
       2) Relative to Su22 (ratio)
+    Both force y-axis range [0, 2].
     Saves to 'output/normalized_yields.pdf' and 'output/normalized_yields_ratio.pdf'.
 
     Args:
@@ -45,35 +47,29 @@ def plot_normalized_yields(trees, xB_bins):
     bins = np.linspace(xmin, xmax, N_BINS + 1)
     centers = 0.5 * (bins[:-1] + bins[1:])
 
-    # Precompute normalized histograms for all period-target combinations
-    norm_hist = {period: {} for period in periods}
-    for period in periods:
-        for target in targets:
-            x = trees[period][target]["x"].array(library="np")
+    # Precompute normalized histograms
+    norm_hist = {p: {} for p in periods}
+    for p in periods:
+        for t in targets:
+            x = trees[p][t]["x"].array(library="np")
             counts, _ = np.histogram(x, bins=bins)
-            norm_counts = counts / CHARGE[period][target]
-            norm_hist[period][target] = norm_counts
+            norm_hist[p][t] = counts / CHARGE[p][t]
 
     # --------------------------------------------------
     # FIGURE 1: Absolute normalization (counts / nC)
     # --------------------------------------------------
-    fig1, axes1 = plt.subplots(2, 3, figsize=(15, 8), sharex=True, sharey=False)
+    fig1, axes1 = plt.subplots(2, 3, figsize=(15, 8), sharex=True)
     axes1 = axes1.flatten()
-    for idx, target in enumerate(targets):
+    for idx, t in enumerate(targets):
         ax = axes1[idx]
-        max_c = 0.0
-        for period in periods:
-            counts = norm_hist[period][target]
-            ax.step(centers, counts,
-                    where='mid',
-                    color=PERIOD_COLORS[period],
-                    linewidth=LINE_WIDTH,
-                    label=period.replace('RGC_', ''))
-            max_c = max(max_c, counts.max() if counts.size>0 else 0)
-        ax.set_ylim(0, 1.2 * max_c)
+        for p in periods:
+            ax.step(centers, norm_hist[p][t], where='mid',
+                    color=PERIOD_COLORS[p], linewidth=LINE_WIDTH,
+                    label=p.replace('RGC_', ''))
+        ax.set_ylim(0, 2)
         ax.set_xlabel(r'$x_{B}$')
         ax.set_ylabel('counts / nC')
-        ax.set_title(target)
+        ax.set_title(t)
         ax.legend(frameon=False, fontsize='small')
     axes1[-1].axis('off')
     plt.tight_layout(pad=2.0)
@@ -85,27 +81,23 @@ def plot_normalized_yields(trees, xB_bins):
     # --------------------------------------------------
     # FIGURE 2: Relative to Su22 (ratio)
     # --------------------------------------------------
-    fig2, axes2 = plt.subplots(2, 3, figsize=(15, 8), sharex=True, sharey=False)
+    fig2, axes2 = plt.subplots(2, 3, figsize=(15, 8), sharex=True)
     axes2 = axes2.flatten()
-    base_period = 'RGC_Su22'
-    for idx, target in enumerate(targets):
+    base = "RGC_Su22"
+
+    for idx, t in enumerate(targets):
         ax = axes2[idx]
-        base = norm_hist[base_period][target]
-        max_r = 0.0
-        for period in periods:
-            counts = norm_hist[period][target]
-            # avoid division by zero
-            ratio = np.where(base>0, counts/base, np.nan)
-            ax.step(centers, ratio,
-                    where='mid',
-                    color=PERIOD_COLORS[period],
-                    linewidth=LINE_WIDTH,
-                    label=period.replace('RGC_', ''))
-            max_r = max(max_r, np.nanmax(ratio))
-        ax.set_ylim(0, 1.2 * max_r)
+        base_vals = norm_hist[base][t]
+        for p in periods:
+            vals = norm_hist[p][t]
+            ratio = np.where(base_vals>0, vals/base_vals, np.nan)
+            ax.step(centers, ratio, where='mid',
+                    color=PERIOD_COLORS[p], linewidth=LINE_WIDTH,
+                    label=p.replace('RGC_', ''))
+        ax.set_ylim(0, 2)
         ax.set_xlabel(r'$x_{B}$')
         ax.set_ylabel('ratio / Su22')
-        ax.set_title(target)
+        ax.set_title(t)
         ax.legend(frameon=False, fontsize='small')
     axes2[-1].axis('off')
     plt.tight_layout(pad=2.0)
