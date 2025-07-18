@@ -37,12 +37,12 @@
 // const double xHetotal = 0.07688;
 // const double xftotal = 0.09280;
 
-// // Fractional charge values for Total -- RGC Su22
-const double xAtotal = 0.7239;
-const double xCtotal = 0.0714;
-const double xCHtotal = 0.0373;
-const double xHetotal = 0.0751;
-const double xftotal = 0.0923;
+// // // Fractional charge values for Total -- RGC Su22
+// const double xAtotal = 0.7239;
+// const double xCtotal = 0.0714;
+// const double xCHtotal = 0.0373;
+// const double xHetotal = 0.0751;
+// const double xftotal = 0.0923;
 
 // // Fractional charge values for Total -- RGC Fa22
 // const double xAtotal = 0.562214;
@@ -51,12 +51,12 @@ const double xftotal = 0.0923;
 // const double xHetotal = 0.040041;
 // const double xftotal = 0.00585;
 
-// // Fractional charge values for Total -- RGC Fa22
-// const double xAtotal = 0.5605;
-// const double xCtotal = 0.2042;
-// const double xCHtotal = 0.1866;
-// const double xHetotal = 0.0429;
-// const double xftotal = 0.0058;
+// Fractional charge values for Total -- RGC Fa22
+const double xAtotal = 0.5605;
+const double xCtotal = 0.2042;
+const double xCHtotal = 0.1866;
+const double xHetotal = 0.0429;
+const double xftotal = 0.0058;
 
 
 // // Fractional charge values for Total -- RGC Sp23
@@ -148,25 +148,25 @@ double calculate_dilution_error(double nA, double nC, double nCH, double nMT, do
 std::pair<double, double> calculate_dilution_and_error(double nA, double nC, double nCH, double nMT, double nf, 
                                                        double xA, double xC, double xCH, double xHe, double xf) {
 
-    // double dilution = (27.3473 * (-1.0 * nMT * xA + nA * xHe) *
-    //                (-0.505693 * nMT * xC * xCH * xf +
-    //                 (1.0 * nf * xC * xCH - 3.34924 * nCH * xC * xf + 2.85493 * nC * xCH * xf) * xHe)
-    //               ) / (nA * xHe *
-    //                    (73.2426 * nMT * xC * xCH * xf +
-    //                     1.0 * nf * xC * xCH * xHe - 91.5925 * nCH * xC * xf * xHe + 17.3499 * nC * xCH * xf * xHe)
-    //                   );
+    double dilution = (27.3473 * (-1.0 * nMT * xA + nA * xHe) *
+                   (-0.505693 * nMT * xC * xCH * xf +
+                    (1.0 * nf * xC * xCH - 3.34924 * nCH * xC * xf + 2.85493 * nC * xCH * xf) * xHe)
+                  ) / (nA * xHe *
+                       (73.2426 * nMT * xC * xCH * xf +
+                        1.0 * nf * xC * xCH * xHe - 91.5925 * nCH * xC * xf * xHe + 17.3499 * nC * xCH * xf * xHe)
+                      );
 
-    double rho_A = 0.05091;
-    double rho_C = 0.1494;
-    double rho_CH = 0.06719;
-    double L = 5.86;
-    double lCH = 3.18;
-    double lC = 1.678;
-    double packing_fraction = (0.699832)*(nA/xA-nMT/xHe)/(1.25055*nCH/xCH-0.23688*nC/xC-0.013668*nf/xf-nMT/xHe);
+    // double rho_A = 0.05091;
+    // double rho_C = 0.1494;
+    // double rho_CH = 0.06719;
+    // double L = 5.86;
+    // double lCH = 3.18;
+    // double lC = 1.678;
+    // double packing_fraction = (0.699832)*(nA/xA-nMT/xHe)/(1.25055*nCH/xCH-0.23688*nC/xC-0.013668*nf/xf-nMT/xHe);
     // double dilution = ((3*packing_fraction*rho_A)/(2*nA*rho_C*rho_CH)) *
     //     ((L/lCH)*rho_C*(nCH-nMT)+(rho_C-rho_CH)*(nMT-nf)-(L/lC)*rho_CH*(nC-nMT));
-    double dilution = 1.42574*(packing_fraction/nA)*
-        (1.46891*(nCH-nMT)+0.43859*(nMT-nf)-1.25208*(nC-nMT));
+    // double dilution = 1.42574*(packing_fraction/nA)*
+    //     (1.46891*(nCH-nMT)+0.43859*(nMT-nf)-1.25208*(nC-nMT));
 
     double error = calculate_dilution_error(nA, nC, nCH, nMT, nf, xA, xC, xCH, xHe, xf);
     
@@ -182,17 +182,17 @@ std::vector<std::pair<double, double>> calculate_dilution_factors() {
     // TFile* heFile = TFile::Open("/work/clas12/thayward/CLAS12_SIDIS/processed_data/pass2/data/epX/dilution_factor/rgc_su22_inb_He_epX.root");
     // TFile* emptyFile = TFile::Open("/work/clas12/thayward/CLAS12_SIDIS/processed_data/pass2/data/epX/dilution_factor/rgc_su22_inb_ET_epX.root");
 
-    TFile* nh3File = TFile::Open("/work/clas12/thayward/CLAS12_SIDIS/processed_data/pass2/data/eX/rgc_su22_inb_NH3_eX.root");
-    TFile* cFile = TFile::Open("/work/clas12/thayward/CLAS12_SIDIS/processed_data/pass2/data/eX/rgc_su22_inb_C_eX.root");
-    TFile* chFile = TFile::Open("/work/clas12/thayward/CLAS12_SIDIS/processed_data/pass2/data/eX/rgc_su22_inb_CH2_eX.root");
-    TFile* heFile = TFile::Open("/work/clas12/thayward/CLAS12_SIDIS/processed_data/pass2/data/eX/rgc_su22_inb_He_eX.root");
-    TFile* emptyFile = TFile::Open("/work/clas12/thayward/CLAS12_SIDIS/processed_data/pass2/data/eX/rgc_su22_inb_ET_eX.root");
+    // TFile* nh3File = TFile::Open("/work/clas12/thayward/CLAS12_SIDIS/processed_data/pass2/data/eX/rgc_su22_inb_NH3_eX.root");
+    // TFile* cFile = TFile::Open("/work/clas12/thayward/CLAS12_SIDIS/processed_data/pass2/data/eX/rgc_su22_inb_C_eX.root");
+    // TFile* chFile = TFile::Open("/work/clas12/thayward/CLAS12_SIDIS/processed_data/pass2/data/eX/rgc_su22_inb_CH2_eX.root");
+    // TFile* heFile = TFile::Open("/work/clas12/thayward/CLAS12_SIDIS/processed_data/pass2/data/eX/rgc_su22_inb_He_eX.root");
+    // TFile* emptyFile = TFile::Open("/work/clas12/thayward/CLAS12_SIDIS/processed_data/pass2/data/eX/rgc_su22_inb_ET_eX.root");
 
-    // TFile* nh3File = TFile::Open("/work/clas12/thayward/CLAS12_SIDIS/processed_data/pass2/data/eX/rgc_fa22_inb_NH3_eX.root");
-    // TFile* cFile = TFile::Open("/work/clas12/thayward/CLAS12_SIDIS/processed_data/pass2/data/eX/rgc_fa22_inb_C_eX.root");
-    // TFile* chFile = TFile::Open("/work/clas12/thayward/CLAS12_SIDIS/processed_data/pass2/data/eX/rgc_fa22_inb_CH2_eX.root");
-    // TFile* heFile = TFile::Open("/work/clas12/thayward/CLAS12_SIDIS/processed_data/pass2/data/eX/rgc_fa22_inb_He_eX.root");
-    // TFile* emptyFile = TFile::Open("/work/clas12/thayward/CLAS12_SIDIS/processed_data/pass2/data/eX/rgc_fa22_inb_ET_eX.root");
+    TFile* nh3File = TFile::Open("/work/clas12/thayward/CLAS12_SIDIS/processed_data/pass2/data/eX/rgc_fa22_inb_NH3_eX.root");
+    TFile* cFile = TFile::Open("/work/clas12/thayward/CLAS12_SIDIS/processed_data/pass2/data/eX/rgc_fa22_inb_C_eX.root");
+    TFile* chFile = TFile::Open("/work/clas12/thayward/CLAS12_SIDIS/processed_data/pass2/data/eX/rgc_fa22_inb_CH2_eX.root");
+    TFile* heFile = TFile::Open("/work/clas12/thayward/CLAS12_SIDIS/processed_data/pass2/data/eX/rgc_fa22_inb_He_eX.root");
+    TFile* emptyFile = TFile::Open("/work/clas12/thayward/CLAS12_SIDIS/processed_data/pass2/data/eX/rgc_fa22_inb_ET_eX.root");
 
     // TFile* nh3File = TFile::Open("/work/clas12/thayward/CLAS12_exclusive/enpi+/data/pass2/data/enpi+/rgc_su22_inb_NH3_epi+.root");
     // TFile* cFile = TFile::Open("/work/clas12/thayward/CLAS12_exclusive/enpi+/data/pass2/data/enpi+/rgc_su22_inb_C_epi+.root");
