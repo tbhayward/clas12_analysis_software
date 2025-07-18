@@ -52,6 +52,6 @@ def load_root_trees():
             trees[period][target] = tree
 
             # Print confirmation of successful import
-            print(f"Successfully loaded PhysicsEvents tree for period '{period}', target '{target}' from {path}.")
+            print(f"Successfully loaded PhysicsEvents tree for period '{period}', target '{target}'.")
 
     return trees
