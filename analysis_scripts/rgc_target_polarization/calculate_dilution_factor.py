@@ -135,34 +135,40 @@ def calculate_and_save(trees, xB_bins):
 
 def calculate_dilution_factor_temp(trees, xB_bins):
     """
-    Use manually provided Df values for Su22 & Fa22, compute combined
-    weighted average, uncertainty, and std, then save CSV and plot.
+    Use manually provided Df values for Su22, Fa22, Sp23,
+    compute combined weighted average, uncertainty, and std,
+    then save CSV and plot.
     Mean xB per bin is calculated from the NH3 tree with y<Y_CUT.
     """
-    # Load NH3 x and y for Su22
-    data_x = {p: trees[p]["NH3"]["x"].array(library="np") for p in ["RGC_Su22","RGC_Fa22"]}
-    data_y = {p: trees[p]["NH3"]["y"].array(library="np") for p in ["RGC_Su22","RGC_Fa22"]}
+    # Load NH3 x and y for all three periods
+    periods = ["RGC_Su22", "RGC_Fa22", "RGC_Sp23"]
+    data_x = {p: trees[p]["NH3"]["x"].array(library="np") for p in periods}
+    data_y = {p: trees[p]["NH3"]["y"].array(library="np") for p in periods}
     nbins = len(xB_bins) - 1
 
-    # Manual values
+    # Manual values for each period and bin
     su22_df  = np.array([0.158602, 0.167616, 0.182210, 0.197940, 0.212699, 0.221855, 0.211423])
     su22_err = np.array([0.000968365, 0.000509438, 0.000585569, 0.000768288, 0.001218250, 0.002342010, 0.006085550])
     fa22_df  = np.array([0.133595, 0.133263, 0.148191, 0.164181, 0.177190, 0.187865, 0.183863])
     fa22_err = np.array([0.000352140, 0.000191744, 0.000220967, 0.000290596, 0.000464770, 0.000889612, 0.002279690])
+    sp23_df  = np.array([0.176449, 0.186785, 0.200395, 0.212982, 0.225124, 0.238852, 0.242985])
+    sp23_err = np.array([0.000674556, 0.000353466, 0.000405716, 0.000534021, 0.000846860, 0.001606140, 0.004022570])
 
     # Compute mean xB per bin using Su22 NH3
     mask = data_x["RGC_Su22"][data_y["RGC_Su22"] < Y_CUT]
     bidx = np.digitize(mask, xB_bins) - 1
     x_mean = np.array([np.mean(mask[bidx == i]) if np.any(bidx == i) else 0.0 for i in range(nbins)])
 
-    # Weighted average
+    # Weighted average across three periods
     w_su = 1.0 / su22_err**2
     w_fa = 1.0 / fa22_err**2
-    df_avg = (su22_df*w_su + fa22_df*w_fa) / (w_su + w_fa)
-    err_avg = np.sqrt(1.0 / (w_su + w_fa))
+    w_sp = 1.0 / sp23_err**2
+    w_sum = w_su + w_fa + w_sp
+    df_avg = (su22_df*w_su + fa22_df*w_fa + sp23_df*w_sp) / w_sum
+    err_avg = np.sqrt(1.0 / w_sum)
 
-    # Population std
-    df_std = np.sqrt(((su22_df - df_avg)**2 + (fa22_df - df_avg)**2) / 2.0)
+    # Population std across the three
+    df_std = np.sqrt(( (su22_df - df_avg)**2 + (fa22_df - df_avg)**2 + (sp23_df - df_avg)**2 ) / 3.0)
 
     # Assemble DataFrame
     df_temp = pd.DataFrame({
@@ -171,19 +177,23 @@ def calculate_dilution_factor_temp(trees, xB_bins):
         'Err_Su22':  su22_err,
         'Df_Fa22':   fa22_df,
         'Err_Fa22':  fa22_err,
+        'Df_Sp23':   sp23_df,
+        'Err_Sp23':  sp23_err,
         'Df_avg':    df_avg,
         'Err_avg':   err_avg,
         'Df_std':    df_std,
     })
 
+    # Save CSV
     os.makedirs('output', exist_ok=True)
     csv_path = 'output/dilution_factor.csv'
     df_temp.to_csv(csv_path, index=False)
     print(f"[Temp] Saved manual dilution factors CSV to {csv_path}")
 
-    # Plot
+    # Plot all three
     plt.errorbar(x_mean, su22_df, yerr=su22_err, fmt='o', label='Su22')
     plt.errorbar(x_mean, fa22_df, yerr=fa22_err, fmt='s', label='Fa22')
+    plt.errorbar(x_mean, sp23_df, yerr=sp23_err, fmt='^', label='Sp23')
     plt.xlabel('$x_{B}$')
     plt.ylabel('$D_{f}$')
     plt.xlim(0, 0.8)
