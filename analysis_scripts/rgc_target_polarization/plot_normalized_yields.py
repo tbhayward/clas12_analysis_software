@@ -122,9 +122,9 @@ def plot_normalized_yields(trees, xB_bins):
         runnums = tree['runnum'].array(library='np')
         xvals   = tree['x'].array(library='np')
         unique_runs = np.unique(runnums)
-        # colormap for runs
-        cmap = plt.get_cmap('tab20', len(unique_runs))
-        for i, run in enumerate(unique_runs):
+        # create distinct colors for each run
+        colors = plt.cm.get_cmap('tab20', len(unique_runs))
+        for idx_run, run in enumerate(unique_runs):
             charge = charge_map.get(run)
             if charge is None:
                 print(f"Warning: missing charge for run {run}, skipping")
@@ -133,7 +133,7 @@ def plot_normalized_yields(trees, xB_bins):
             counts, _ = np.histogram(xvals[mask], bins=bins)
             norm_counts = counts / charge
             ax.step(centers, norm_counts,
-                    where='mid', color=cmap(i), linewidth=1.2,
+                    where='mid', color=colors(idx_run), linewidth=1.5,
                     label=str(run))
         ax.set_xlabel(r'$x_{B}$')
         ax.set_ylabel('counts / nC')
