@@ -4,10 +4,11 @@ plot_normalized_yields.py
 
 Module to plot high-quality normalized x_B yield histograms for three run periods
 (RGC_Su22, RGC_Fa22, RGC_Sp23) and five target types.
-Generates three figures:
+Generates four figures:
   1) Absolute normalization (counts/nC) with dynamic y-limits
   2) Relative to Su22 yields with fixed y-axis [0,2]
   3) Per-run He normalized yields for each period (1×3 grid)
+  4) Per-run ET normalized yields for each period (1×3 grid)
 """
 
 import numpy as np
@@ -28,13 +29,17 @@ LINE_WIDTH = 1.8
 N_BINS = 100           # fine binning for smooth shapes
 Y_MAX_RATIO = 2.0      # fixed y-axis upper limit for ratio plot
 
+# Per-run colors (up to 5 runs)
+PER_RUN_COLORS = ['black', 'blue', 'orange', 'green', 'red']
+
 
 def plot_normalized_yields(trees, xB_bins):
     """
-    Generate three plots:
+    Generate four plots:
       1) Absolute normalization (counts/nC)
       2) Relative to Su22 (ratio)
       3) Per-run He yields for each period
+      4) Per-run ET yields for each period
 
     Args:
         trees (dict): trees[period][target] uproot trees
@@ -109,13 +114,15 @@ def plot_normalized_yields(trees, xB_bins):
     print("[Plot] Saved 'output/normalized_yields_ratio.pdf'")
 
     # --------------------------------------------------
-    # FIGURE 3: Per-run He normalized yields
+    # load run charges for per-run plots
     # --------------------------------------------------
     runinfo = '/u/home/thayward/clas12_analysis_software/analysis_scripts/asymmetry_extraction/imports/clas12_run_info.csv'
     run_df = pd.read_csv(runinfo, header=None, comment='#', usecols=[0,1], names=['run','charge'])
     charge_map = run_df.set_index('run')['charge'].to_dict()
 
-    color_list = ['black', 'blue', 'orange', 'green', 'red']
+    # --------------------------------------------------
+    # FIGURE 3: Per-run He normalized yields
+    # --------------------------------------------------
     fig3, axes3 = plt.subplots(1, 3, figsize=(18, 5), sharex=True, sharey=True)
     for ax, p in zip(axes3, periods):
         tree = trees[p]['He']
@@ -130,7 +137,7 @@ def plot_normalized_yields(trees, xB_bins):
             mask = (runnums == run)
             counts, _ = np.histogram(xvals[mask], bins=bins)
             norm_counts = counts / charge
-            color = color_list[i] if i < len(color_list) else 'gray'
+            color = PER_RUN_COLORS[i] if i < len(PER_RUN_COLORS) else 'gray'
             ax.step(centers, norm_counts,
                     where='mid', color=color, linewidth=1.5,
                     label=str(run))
@@ -142,3 +149,33 @@ def plot_normalized_yields(trees, xB_bins):
     fig3.savefig('output/normalized_yields_runs_he.pdf')
     plt.close(fig3)
     print("[Plot] Saved 'output/normalized_yields_runs_he.pdf'")
+
+    # --------------------------------------------------
+    # FIGURE 4: Per-run ET normalized yields
+    # --------------------------------------------------
+    fig4, axes4 = plt.subplots(1, 3, figsize=(18, 5), sharex=True, sharey=True)
+    for ax, p in zip(axes4, periods):
+        tree = trees[p]['ET']
+        runnums = tree['runnum'].array(library='np')
+        xvals   = tree['x'].array(library='np')
+        unique_runs = np.unique(runnums)
+        for i, run in enumerate(unique_runs):
+            charge = charge_map.get(run)
+            if charge is None:
+                print(f"Warning: missing charge for run {run}, skipping")
+                continue
+            mask = (runnums == run)
+            counts, _ = np.histogram(xvals[mask], bins=bins)
+            norm_counts = counts / charge
+            color = PER_RUN_COLORS[i] if i < len(PER_RUN_COLORS) else 'gray'
+            ax.step(centers, norm_counts,
+                    where='mid', color=color, linewidth=1.5,
+                    label=str(run))
+        ax.set_xlabel(r'$x_{B}$')
+        ax.set_ylabel('counts / nC')
+        ax.set_title(p.replace('RGC_', ''))
+        ax.legend(fontsize='x-small', ncol=2, frameon=False)
+    plt.tight_layout(pad=2.0)
+    fig4.savefig('output/normalized_yields_runs_et.pdf')
+    plt.close(fig4)
+    print("[Plot] Saved 'output/normalized_yields_runs_et.pdf'")
