@@ -12,7 +12,8 @@ Generates five figures:
   5) Per-run CH2 yields
 
 Gracefully handles basket decompression errors, cycles through distinct colors
-for per-run plots using a colormap, and prints the integral of each per-run histogram.
+and linestyles for per-run plots, and prints the integral, mean, and std of each
+per-run histogram per target and run period.
 """
 
 import numpy as np
@@ -30,42 +31,40 @@ CHARGE = {
 # Styling parameters
 PERIOD_COLORS = {"RGC_Su22": "black", "RGC_Fa22": "blue", "RGC_Sp23": "red"}
 LINE_WIDTH    = 1.8
-N_BINS        = 100
-Y_MAX_RATIO   = 2.0
-
+N_BINS        = 100   # fine binning for smooth shapes
+Y_MAX_RATIO   = 2.0   # fixed y-axis upper limit for ratio plot
 
 def safe_array(tree, branch):
     """
     Safely read a branch from an uproot tree, catching decompression errors.
-    Returns an empty array if it fails.
+    Returns an empty array on failure.
     """
     try:
         return tree[branch].array(library="np")
     except Exception as e:
-        print(f"[Warning] Could not read {branch} from {getattr(tree, 'name', 'tree')}: {e}")
+        print(f"[Warning] Could not read '{branch}' from tree: {e}")
         return np.empty(0)
-
 
 def plot_normalized_yields(trees, xB_bins):
     """
-    Generate five different plots of normalized yields and per-run distributions.
-    Prints the integral of each per-run histogram with period, target, and run number.
+    Generate five different plots of normalized yields and per-run distributions,
+    and print integrals, means, and stds per target and run period.
     """
     periods = ["RGC_Su22", "RGC_Fa22", "RGC_Sp23"]
     targets = ["NH3", "C", "CH2", "He", "ET"]
 
-    # prepare bins and bin centers
+    # prepare bins and centers
     xmin, xmax = xB_bins[0], xB_bins[-1]
     bins    = np.linspace(xmin, xmax, N_BINS + 1)
     centers = 0.5 * (bins[:-1] + bins[1:])
 
-    # -------- precompute normalized histograms (counts / total charge) --------
+    # precompute normalized histograms (counts / total charge)
     norm_hist = {p: {} for p in periods}
     for p in periods:
         for t in targets:
             x = safe_array(trees[p][t], "x")
-            cnt = np.histogram(x, bins=bins)[0] if x.size else np.zeros(len(bins)-1)
-            norm_hist[p][t] = cnt / CHARGE[p][t]
+            counts = np.histogram(x, bins=bins)[0] if x.size else np.zeros(len(bins)-1)
+            norm_hist[p][t] = counts / CHARGE[p][t]
 
     # -------- FIGURE 1: Absolute normalization --------
     fig1, axs1 = plt.subplots(2, 3, figsize=(15, 8), sharex=True)
@@ -76,11 +75,13 @@ def plot_normalized_yields(trees, xB_bins):
         for p in periods:
             y = norm_hist[p][t]
             peak = max(peak, y.max() if y.size else 0.0)
-            ax.step(centers, y,
-                    where='mid',
-                    color=PERIOD_COLORS[p],
-                    linewidth=LINE_WIDTH,
-                    label=p.replace("RGC_", ""))
+            ax.step(
+                centers, y,
+                where='mid',
+                color=PERIOD_COLORS[p],
+                linewidth=LINE_WIDTH,
+                label=p.replace("RGC_", "")
+            )
         ax.set_ylim(0, 1.2 * peak)
         ax.set_title(t)
         ax.set_xlabel(r"$x_{B}$")
@@ -103,11 +104,13 @@ def plot_normalized_yields(trees, xB_bins):
         for p in periods:
             y = norm_hist[p][t]
             ratio = np.where(bvals > 0, y / bvals, np.nan)
-            ax.step(centers, ratio,
-                    where='mid',
-                    color=PERIOD_COLORS[p],
-                    linewidth=LINE_WIDTH,
-                    label=p.replace("RGC_", ""))
+            ax.step(
+                centers, ratio,
+                where='mid',
+                color=PERIOD_COLORS[p],
+                linewidth=LINE_WIDTH,
+                label=p.replace("RGC_", "")
+            )
         ax.set_ylim(0, Y_MAX_RATIO)
         ax.set_title(t)
         ax.set_xlabel(r"$x_{B}$")
@@ -130,18 +133,22 @@ def plot_normalized_yields(trees, xB_bins):
     )
     charge_map = run_df.set_index("run")["charge"].to_dict()
 
+    # -------- helper for per-run plotting --------
     def per_run_plot(target):
         """
-        Make a 1×3 grid of per-run normalized yields for the given target.
+        Make a 1×3 grid of per-run normalized yields for the given target,
+        cycle through distinct colors and linestyles, and print integrals,
+        means, and stds per period.
         """
         fig, axes = plt.subplots(1, 3, figsize=(18, 5), sharex=True, sharey=True)
-
         for ax, p in zip(axes, periods):
-            tree  = trees[p][target]
-            rn    = safe_array(tree, "runnum")
-            xv    = safe_array(tree, "x")
-            ur    = np.unique(rn)
-            cmap  = plt.get_cmap("tab20", len(ur))
+            tree = trees[p][target]
+            rn   = safe_array(tree, "runnum")
+            xv   = safe_array(tree, "x")
+            ur   = np.unique(rn)
+            cmap = plt.get_cmap("tab20")
+            linestyles = ['solid', 'dashed', 'dashdot', 'dotted']
+            integrals = []
 
             for i, run in enumerate(ur):
                 ch = charge_map.get(run)
@@ -152,13 +159,23 @@ def plot_normalized_yields(trees, xB_bins):
                 cnt  = np.histogram(xv[mask], bins=bins)[0]
                 norm = cnt / ch
                 integ = norm.sum()
+                integrals.append(integ)
+                color = cmap(i % 20)
+                style = linestyles[(i // 20) % len(linestyles)]
+                ax.step(
+                    centers, norm,
+                    where='mid',
+                    color=color,
+                    linestyle=style,
+                    linewidth=1.5,
+                    label=str(run)
+                )
                 print(f"[Integral] Period={p}, Target={target}, Run={run}, Integral={integ:.4f}")
 
-                ax.step(centers, norm,
-                        where='mid',
-                        color=cmap(i),
-                        linewidth=1.5,
-                        label=str(run))
+            if integrals:
+                mean_int = np.mean(integrals)
+                std_int  = np.std(integrals)
+                print(f"[Stats]  Period={p}, Target={target}, Mean Integral={mean_int:.4f}, Std Integral={std_int:.4f}")
 
             ax.set_title(f"{p.replace('RGC_','')} {target}")
             ax.set_xlabel(r"$x_{B}$")
@@ -169,7 +186,7 @@ def plot_normalized_yields(trees, xB_bins):
         outname = f"output/normalized_yields_runs_{target.lower()}.pdf"
         fig.savefig(outname)
         plt.close(fig)
-        print(f"[Plot] Saved '{outname}'")
+        print(f"[Plot] Saved '{outname}'\n")
 
     # -------- FIGURES 3–5: per-run for He, ET, and CH2 --------
     for T in ("He", "ET", "CH2"):
