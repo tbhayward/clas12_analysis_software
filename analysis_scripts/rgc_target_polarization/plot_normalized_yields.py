@@ -7,7 +7,7 @@ Module to plot high-quality normalized x_B yield histograms for three run period
 Generates three figures:
   1) Absolute normalization (counts/nC) with dynamic y-limits
   2) Relative to Su22 yields with fixed y-axis [0,2]
-  3) Per-run He normalized yields for each period (1x3 grid)
+  3) Per-run He normalized yields for each period (1×3 grid)
 """
 
 import numpy as np
@@ -25,8 +25,8 @@ CHARGE = {
 # Styling parameters
 PERIOD_COLORS = {"RGC_Su22": "C0", "RGC_Fa22": "C1", "RGC_Sp23": "C2"}
 LINE_WIDTH = 1.8
-N_BINS = 100  # fine binning for smooth shapes
-Y_MAX_RATIO = 2.0  # fixed y-axis upper limit for ratio plot
+N_BINS = 100           # fine binning for smooth shapes
+Y_MAX_RATIO = 2.0      # fixed y-axis upper limit for ratio plot
 
 
 def plot_normalized_yields(trees, xB_bins):
@@ -111,7 +111,7 @@ def plot_normalized_yields(trees, xB_bins):
     # --------------------------------------------------
     # FIGURE 3: Per-run He normalized yields
     # --------------------------------------------------
-    # read run info CSV for charges
+    # load run charges
     runinfo = '/u/home/thayward/clas12_analysis_software/analysis_scripts/asymmetry_extraction/imports/clas12_run_info.csv'
     run_df = pd.read_csv(runinfo, header=None, comment='#', usecols=[0,1], names=['run','charge'])
     charge_map = run_df.set_index('run')['charge'].to_dict()
@@ -122,7 +122,9 @@ def plot_normalized_yields(trees, xB_bins):
         runnums = tree['runnum'].array(library='np')
         xvals   = tree['x'].array(library='np')
         unique_runs = np.unique(runnums)
-        for run in unique_runs:
+        # colormap for runs
+        cmap = plt.get_cmap('tab20', len(unique_runs))
+        for i, run in enumerate(unique_runs):
             charge = charge_map.get(run)
             if charge is None:
                 print(f"Warning: missing charge for run {run}, skipping")
@@ -131,7 +133,7 @@ def plot_normalized_yields(trees, xB_bins):
             counts, _ = np.histogram(xvals[mask], bins=bins)
             norm_counts = counts / charge
             ax.step(centers, norm_counts,
-                    where='mid', color='gray', linewidth=0.8, alpha=0.6,
+                    where='mid', color=cmap(i), linewidth=1.2,
                     label=str(run))
         ax.set_xlabel(r'$x_{B}$')
         ax.set_ylabel('counts / nC')
