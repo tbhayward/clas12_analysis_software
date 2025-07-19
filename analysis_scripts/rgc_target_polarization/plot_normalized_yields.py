@@ -13,13 +13,14 @@ Generates five figures:
 
 Gracefully handles basket decompression errors, cycles through distinct colors
 and linestyles for per-run plots, and prints the integral, mean, and std of each
-per-run histogram per target and run period.
+per-run histogram per target and run period.  Per-period work is done in parallel.
 """
 
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 import os
+from concurrent.futures import ProcessPoolExecutor, as_completed
 
 # Absolute accumulated charge (in nC) per period and target
 CHARGE = {
@@ -45,6 +46,44 @@ def safe_array(tree, branch):
         print(f"[Warning] Could not read '{branch}' from tree: {e}")
         return np.empty(0)
 
+def process_period_runs(args):
+    """
+    Worker for per-run plotting: for a given (period, target), compute
+    per-run normalized histograms, integrals, and stats.
+    Returns a dict with all necessary data for plotting.
+    """
+    period, target, bins, centers, charge_map, trees = args
+    tree = trees[period][target]
+    rn   = safe_array(tree, "runnum")
+    xv   = safe_array(tree, "x")
+    ur   = np.unique(rn)
+    results = []
+    for run in ur:
+        ch = charge_map.get(run)
+        if ch is None:
+            continue
+        mask = (rn == run)
+        cnt  = np.histogram(xv[mask], bins=bins)[0]
+        norm = cnt / ch
+        integ = norm.sum()
+        results.append({
+            "run": run,
+            "norm": norm,
+            "integral": integ
+        })
+    # compute stats
+    integrals = [r["integral"] for r in results]
+    mean_int = np.mean(integrals) if integrals else 0.0
+    std_int  = np.std(integrals) if integrals else 0.0
+    return {
+        "period": period,
+        "target": target,
+        "centers": centers,
+        "results": results,
+        "mean": mean_int,
+        "std": std_int
+    }
+
 def plot_normalized_yields(trees, xB_bins):
     """
     Generate five different plots of normalized yields and per-run distributions,
@@ -63,8 +102,8 @@ def plot_normalized_yields(trees, xB_bins):
     for p in periods:
         for t in targets:
             x = safe_array(trees[p][t], "x")
-            counts = np.histogram(x, bins=bins)[0] if x.size else np.zeros(len(bins)-1)
-            norm_hist[p][t] = counts / CHARGE[p][t]
+            cnt = np.histogram(x, bins=bins)[0] if x.size else np.zeros(len(bins)-1)
+            norm_hist[p][t] = cnt / CHARGE[p][t]
 
     # -------- FIGURE 1: Absolute normalization --------
     fig1, axs1 = plt.subplots(2, 3, figsize=(15, 8), sharex=True)
@@ -133,35 +172,36 @@ def plot_normalized_yields(trees, xB_bins):
     )
     charge_map = run_df.set_index("run")["charge"].to_dict()
 
-    # -------- helper for per-run plotting --------
-    def per_run_plot(target):
-        """
-        Make a 1×3 grid of per-run normalized yields for the given target,
-        cycle through distinct colors and linestyles, and print integrals,
-        means, and stds per period.
-        """
+    # -------- FIGURES 3–5: per-run for He, ET, CH2 with parallel processing --------
+    for target in ("He", "ET", "CH2"):
+        # prepare arguments for each period
+        args = [
+            (p, target, bins, centers, charge_map, trees)
+            for p in periods
+        ]
+        # parallelize
+        with ProcessPoolExecutor(max_workers=3) as exe:
+            futures = {exe.submit(process_period_runs, a): a[0] for a in args}
+            results = {}
+            for fut in as_completed(futures):
+                period = futures[fut]
+                res = fut.result()
+                results[period] = res
+
+        # now plot combined figure
         fig, axes = plt.subplots(1, 3, figsize=(18, 5), sharex=True, sharey=True)
         for ax, p in zip(axes, periods):
-            tree = trees[p][target]
-            rn   = safe_array(tree, "runnum")
-            xv   = safe_array(tree, "x")
-            ur   = np.unique(rn)
-            cmap = plt.get_cmap("tab20")
-            linestyles = ['solid', 'dashed', 'dashdot', 'dotted']
-            integrals = []
+            res = results[p]
+            for entry in res["results"]:
+                run = entry["run"]
+                norm = entry["norm"]
+                # find i to assign color/style
+                idx = res["results"].index(entry)
+                cmap = plt.get_cmap("tab20")
+                color = cmap(idx % 20)
+                linestyles = ['solid', 'dashed', 'dashdot', 'dotted']
+                style = linestyles[(idx // 20) % len(linestyles)]
 
-            for i, run in enumerate(ur):
-                ch = charge_map.get(run)
-                if ch is None:
-                    print(f"[Warning] missing charge for run {run}, skipping")
-                    continue
-                mask = (rn == run)
-                cnt  = np.histogram(xv[mask], bins=bins)[0]
-                norm = cnt / ch
-                integ = norm.sum()
-                integrals.append(integ)
-                color = cmap(i % 20)
-                style = linestyles[(i // 20) % len(linestyles)]
                 ax.step(
                     centers, norm,
                     where='mid',
@@ -170,12 +210,9 @@ def plot_normalized_yields(trees, xB_bins):
                     linewidth=1.5,
                     label=str(run)
                 )
-                print(f"[Integral] Period={p}, Target={target}, Run={run}, Integral={integ:.4f}")
-
-            if integrals:
-                mean_int = np.mean(integrals)
-                std_int  = np.std(integrals)
-                print(f"[Stats]  Period={p}, Target={target}, Mean Integral={mean_int:.4f}, Std Integral={std_int:.4f}")
+                print(f"[Integral] Period={p}, Target={target}, Run={run}, Integral={entry['integral']:.4f}")
+            print(f"[Stats]  Period={p}, Target={target}, "
+                  f"Mean Integral={res['mean']:.4f}, Std Integral={res['std']:.4f}")
 
             ax.set_title(f"{p.replace('RGC_','')} {target}")
             ax.set_xlabel(r"$x_{B}$")
@@ -187,7 +224,3 @@ def plot_normalized_yields(trees, xB_bins):
         fig.savefig(outname)
         plt.close(fig)
         print(f"[Plot] Saved '{outname}'\n")
-
-    # -------- FIGURES 3–5: per-run for He, ET, and CH2 --------
-    for T in ("He", "ET", "CH2"):
-        per_run_plot(T)
