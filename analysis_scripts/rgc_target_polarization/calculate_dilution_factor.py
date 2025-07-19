@@ -145,18 +145,23 @@ def calculate_dilution_factor_temp(trees, xB_bins):
     data_y = {p: trees[p]["NH3"]["y"].array(library="np") for p in periods}
     nbins = len(xB_bins) - 1
 
-    # Manual values for each period and bin
-    su22_df  = np.array([0.158602, 0.167616, 0.182210, 0.197940, 0.212699, 0.221855, 0.211423])
-    su22_err = np.array([0.000968365, 0.000509438, 0.000585569, 0.000768288, 0.001218250, 0.002342010, 0.006085550])
-    fa22_df  = np.array([0.133595, 0.133263, 0.148191, 0.164181, 0.177190, 0.187865, 0.183863])
-    fa22_err = np.array([0.000352140, 0.000191744, 0.000220967, 0.000290596, 0.000464770, 0.000889612, 0.002279690])
-    sp23_df  = np.array([0.176449, 0.186785, 0.200395, 0.212982, 0.225124, 0.238852, 0.242985])
-    sp23_err = np.array([0.000674556, 0.000353466, 0.000405716, 0.000534021, 0.000846860, 0.001606140, 0.004022570])
+    # NEW Manual values for each period and bin
+    su22_df  = np.array([0.166709, 0.176158, 0.191176, 0.206910, 0.221360, 0.230502, 0.220180])
+    su22_err = np.array([0.000938862, 0.000491330, 0.000561747, 0.000733391, 0.001159140, 0.002228200, 0.005815470])
 
-    # Compute mean xB per bin using Su22 NH3
+    fa22_df  = np.array([0.139084, 0.139782, 0.155144, 0.171282, 0.184396, 0.194965, 0.191098])
+    fa22_err = np.array([0.000345853, 0.000188008, 0.000215951, 0.000283221, 0.000452165, 0.000864904, 0.002219650])
+
+    sp23_df  = np.array([0.154322, 0.162926, 0.175352, 0.187502, 0.199844, 0.214446, 0.218649])
+    sp23_err = np.array([0.000735081, 0.000389901, 0.000453347, 0.000602108, 0.000960937, 0.001828120, 0.004582990])
+
+    # Compute mean xB per bin using Su22 NH3 and the y<Y_CUT cut
     mask = data_x["RGC_Su22"][data_y["RGC_Su22"] < Y_CUT]
     bidx = np.digitize(mask, xB_bins) - 1
-    x_mean = np.array([np.mean(mask[bidx == i]) if np.any(bidx == i) else 0.0 for i in range(nbins)])
+    x_mean = np.array([
+        np.mean(mask[bidx == i]) if np.any(bidx == i) else 0.0
+        for i in range(nbins)
+    ])
 
     # Weighted average across three periods
     w_su = 1.0 / su22_err**2
@@ -167,24 +172,29 @@ def calculate_dilution_factor_temp(trees, xB_bins):
     err_avg = np.sqrt(1.0 / w_sum)
 
     # Population standard deviation across the three
-    df_std = np.sqrt(((su22_df - df_avg)**2 + (fa22_df - df_avg)**2 + (sp23_df - df_avg)**2) / 3.0)
+    df_std = np.sqrt(
+        ((su22_df - df_avg)**2 +
+         (fa22_df - df_avg)**2 +
+         (sp23_df - df_avg)**2) / 3.0
+    )
 
     # Range (max - min) across three periods for each bin
-    df_range = np.max([su22_df, fa22_df, sp23_df], axis=0) - np.min([su22_df, fa22_df, sp23_df], axis=0)
+    df_range = np.max([su22_df, fa22_df, sp23_df], axis=0) - \
+               np.min([su22_df, fa22_df, sp23_df], axis=0)
 
     # Assemble DataFrame
     df_temp = pd.DataFrame({
-        'x_mean':    x_mean,
-        'Df_Su22':   su22_df,
-        'Err_Su22':  su22_err,
-        'Df_Fa22':   fa22_df,
-        'Err_Fa22':  fa22_err,
-        'Df_Sp23':   sp23_df,
-        'Err_Sp23':  sp23_err,
-        'Df_avg':    df_avg,
-        'Err_avg':   err_avg,
-        'Df_std':    df_std,
-        'Df_range':  df_range,
+        'x_mean':   x_mean,
+        'Df_Su22':  su22_df,
+        'Err_Su22': su22_err,
+        'Df_Fa22':  fa22_df,
+        'Err_Fa22': fa22_err,
+        'Df_Sp23':  sp23_df,
+        'Err_Sp23': sp23_err,
+        'Df_avg':   df_avg,
+        'Err_avg':  err_avg,
+        'Df_std':   df_std,
+        'Df_range': df_range,
     })
 
     # Save CSV
@@ -194,8 +204,8 @@ def calculate_dilution_factor_temp(trees, xB_bins):
     print(f"[Temp] Saved manual dilution factors CSV to {csv_path}")
 
     # Plot all three
-    plt.errorbar(x_mean, su22_df, yerr=su22_err, fmt='o', label='Su22')
-    plt.errorbar(x_mean, fa22_df, yerr=fa22_err, fmt='s', label='Fa22')
+    plt.errorbar(x_mean, su22_df,  yerr=su22_err, fmt='o', label='Su22')
+    plt.errorbar(x_mean, fa22_df,  yerr=fa22_err, fmt='s', label='Fa22')
     plt.errorbar(x_mean, sp23_df, yerr=sp23_err, fmt='^', label='Sp23')
     plt.xlabel('$x_{B}$')
     plt.ylabel('$D_{f}$')
