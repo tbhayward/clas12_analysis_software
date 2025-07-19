@@ -132,12 +132,11 @@ def calculate_and_save(trees, xB_bins):
 # Temporary routine using manual dilution values provided by user
 # ------------------------------------------------------------------
 
-
 def calculate_dilution_factor_temp(trees, xB_bins):
     """
     Use manually provided Df values for Su22, Fa22, Sp23,
-    compute combined weighted average, uncertainty, and std,
-    then save CSV and plot.
+    compute combined weighted average, uncertainty, population std,
+    and range, then save CSV and plot.
     Mean xB per bin is calculated from the NH3 tree with y<Y_CUT.
     """
     # Load NH3 x and y for all three periods
@@ -167,8 +166,11 @@ def calculate_dilution_factor_temp(trees, xB_bins):
     df_avg = (su22_df*w_su + fa22_df*w_fa + sp23_df*w_sp) / w_sum
     err_avg = np.sqrt(1.0 / w_sum)
 
-    # Population std across the three
-    df_std = np.sqrt(( (su22_df - df_avg)**2 + (fa22_df - df_avg)**2 + (sp23_df - df_avg)**2 ) / 3.0)
+    # Population standard deviation across the three
+    df_std = np.sqrt(((su22_df - df_avg)**2 + (fa22_df - df_avg)**2 + (sp23_df - df_avg)**2) / 3.0)
+
+    # Range (max - min) across three periods for each bin
+    df_range = np.max([su22_df, fa22_df, sp23_df], axis=0) - np.min([su22_df, fa22_df, sp23_df], axis=0)
 
     # Assemble DataFrame
     df_temp = pd.DataFrame({
@@ -182,6 +184,7 @@ def calculate_dilution_factor_temp(trees, xB_bins):
         'Df_avg':    df_avg,
         'Err_avg':   err_avg,
         'Df_std':    df_std,
+        'Df_range':  df_range,
     })
 
     # Save CSV
