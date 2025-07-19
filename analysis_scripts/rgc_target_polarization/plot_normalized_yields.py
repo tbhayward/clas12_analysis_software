@@ -6,13 +6,13 @@ Module to plot high-quality normalized x_B yield histograms for three run period
 (RGC_Su22, RGC_Fa22, RGC_Sp23) and five target types.
 Generates five figures:
   1) Absolute normalization (counts/nC) with dynamic y-limits
-  2) Relative to Su22 yields with fixed y-axis [0,2]
-  3) Per-run He normalized yields
-  4) Per-run ET normalized yields
-  5) Per-run CH2 normalized yields
+  2) Relative to Su22 ratio
+  3) Per-run He yields
+  4) Per-run ET yields
+  5) Per-run CH2 yields
 
 Gracefully handles basket decompression errors and cycles through distinct colors
-for per-run plots using a colormap.
+for per-run plots using a colormap, and prints the integral of each per-run histogram.
 """
 
 import numpy as np
@@ -25,9 +25,6 @@ CHARGE = {
     "RGC_Su22": {"NH3": 3686969.636627, "C": 363715.413199, "CH2": 189723.230200, "He": 266575.708348, "ET": 586020.625415},
     "RGC_Fa22": {"NH3": 5509572.178076, "C": 2006703.362768, "CH2": 1833777.957336, "He": 275693.983222, "ET":  57332.748981},
     "RGC_Sp23": {"NH3": 1620599.347496, "C":  383030.166502, "CH2":  436816.389755, "He": 266597.436226, "ET": 171738.938831},
-},
-    "RGC_Fa22": {"NH3": 5509572.178076, "C": 2006703.362768, "CH2": 1833777.957336, "He": 378165.719362, "ET":  57332.748981},
-    "RGC_Sp23": {"NH3": 1620599.347496, "C":  383030.166502, "CH2":  436816.389755, "He": 279407.815704, "ET": 171738.938831},
 }
 
 # Styling parameters
@@ -57,6 +54,8 @@ def plot_normalized_yields(trees, xB_bins):
       3) Per-run He yields
       4) Per-run ET yields
       5) Per-run CH2 yields
+
+    Prints integrals of each per-run histogram indicating period, target, and run.
     """
     periods = ["RGC_Su22","RGC_Fa22","RGC_Sp23"]
     targets = ["NH3","C","CH2","He","ET"]
@@ -79,11 +78,11 @@ def plot_normalized_yields(trees, xB_bins):
     fig1, ax1 = plt.subplots(2,3,figsize=(15,8),sharex=True)
     ax1 = ax1.flatten()
     for i,t in enumerate(targets):
-        ax=ax1[i]
-        peak=0
+        ax = ax1[i]
+        peak = 0
         for p in periods:
-            y=norm_hist[p][t]
-            peak=max(peak, y.max() if y.size>0 else 0)
+            y = norm_hist[p][t]
+            peak = max(peak, y.max() if y.size>0 else 0)
             ax.step(centers,y,where='mid',color=PERIOD_COLORS[p],linewidth=LINE_WIDTH,label=p.replace('RGC_',''))
         ax.set_ylim(0,1.2*peak)
         ax.set_title(t)
@@ -93,17 +92,18 @@ def plot_normalized_yields(trees, xB_bins):
     plt.tight_layout(pad=2)
     os.makedirs('output',exist_ok=True)
     fig1.savefig('output/normalized_yields.pdf'); plt.close(fig1)
+    print("[Plot] Saved 'output/normalized_yields.pdf'")
 
     # -------- FIG 2: ratio ---------
     fig2, ax2 = plt.subplots(2,3,figsize=(15,8),sharex=True)
-    ax2=ax2.flatten()
-    base='RGC_Su22'
+    ax2 = ax2.flatten()
+    base = 'RGC_Su22'
     for i,t in enumerate(targets):
-        ax=ax2[i]
-        bvals=norm_hist[base][t]
+        ax = ax2[i]
+        bvals = norm_hist[base][t]
         for p in periods:
-            y=norm_hist[p][t]
-            r=np.where(bvals>0, y/bvals, np.nan)
+            y = norm_hist[p][t]
+            r = np.where(bvals>0, y/bvals, np.nan)
             ax.step(centers,r,where='mid',color=PERIOD_COLORS[p],linewidth=LINE_WIDTH,label=p.replace('RGC_',''))
         ax.set_ylim(0,Y_MAX_RATIO)
         ax.set_title(t)
@@ -112,11 +112,12 @@ def plot_normalized_yields(trees, xB_bins):
     ax2[-1].axis('off')
     plt.tight_layout(pad=2)
     fig2.savefig('output/normalized_yields_ratio.pdf'); plt.close(fig2)
+    print("[Plot] Saved 'output/normalized_yields_ratio.pdf'")
 
     # load run charges
-    runinfo='/u/home/thayward/clas12_analysis_software/analysis_scripts/asymmetry_extraction/imports/clas12_run_info.csv'
-    run_df=pd.read_csv(runinfo,header=None,comment='#',usecols=[0,1],names=['run','charge'])
-    charge_map=run_df.set_index('run')['charge'].to_dict()
+    runinfo = '/u/home/thayward/clas12_analysis_software/analysis_scripts/asymmetry_extraction/imports/clas12_run_info.csv'
+    run_df = pd.read_csv(runinfo,header=None,comment='#',usecols=[0,1],names=['run','charge'])
+    charge_map = run_df.set_index('run')['charge'].to_dict()
 
     def per_run_plot(target):
         fig, axes = plt.subplots(1,3,figsize=(18,5),sharex=True,sharey=True)
@@ -127,11 +128,16 @@ def plot_normalized_yields(trees, xB_bins):
             ur   = np.unique(rn)
             cmap = plt.get_cmap('tab20', len(ur))
             for i,run in enumerate(ur):
-                ch=charge_map.get(run)
-                if ch is None: continue
+                ch = charge_map.get(run)
+                if ch is None:
+                    print(f"[Warning] missing charge for run {run}, skipping")
+                    continue
                 mask = (rn==run)
-                cnt,_=np.histogram(xv[mask],bins=bins)
-                ax.step(centers, cnt/ch, where='mid', color=cmap(i), linewidth=1.5, label=str(run))
+                cnt,_ = np.histogram(xv[mask],bins=bins)
+                norm = cnt/ch
+                integral = norm.sum()
+                print(f"[Integral] Period={p}, Target={target}, Run={run}, Integral={integral:.4f}")
+                ax.step(centers,norm,where='mid',color=cmap(i),linewidth=1.5,label=str(run))
             ax.set_title(f"{p.replace('RGC_','')} {target}")
             ax.set_xlabel(r'$x_B$'); ax.set_ylabel('counts/nC')
             ax.legend(fontsize='x-small',ncol=2,frameon=False)
