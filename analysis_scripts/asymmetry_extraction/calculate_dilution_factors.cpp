@@ -47,11 +47,11 @@
 
 
 // Fractional charge values for Total -- RGC Sp23
-const double xAtotal = 0.5749;
-const double xCtotal = 0.1631;
-const double xCHtotal = 0.1289;
-const double xHetotal = 0.0824;
-const double xftotal = 0.0507;
+const double xAtotal = 0.5605;
+const double xCtotal = 0.1325;
+const double xCHtotal = 0.1511;
+const double xHetotal = 0.0966;
+const double xftotal = 0.0594;
 
 
 
