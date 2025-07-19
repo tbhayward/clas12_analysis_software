@@ -23,7 +23,7 @@ CHARGE = {
 }
 
 # Styling parameters
-PERIOD_COLORS = {"RGC_Su22": "C0", "RGC_Fa22": "C1", "RGC_Sp23": "C2"}
+PERIOD_COLORS = {"RGC_Su22": "black", "RGC_Fa22": "blue", "RGC_Sp23": "red"}
 LINE_WIDTH = 1.8
 N_BINS = 100           # fine binning for smooth shapes
 Y_MAX_RATIO = 2.0      # fixed y-axis upper limit for ratio plot
@@ -111,20 +111,18 @@ def plot_normalized_yields(trees, xB_bins):
     # --------------------------------------------------
     # FIGURE 3: Per-run He normalized yields
     # --------------------------------------------------
-    # load run charges
     runinfo = '/u/home/thayward/clas12_analysis_software/analysis_scripts/asymmetry_extraction/imports/clas12_run_info.csv'
     run_df = pd.read_csv(runinfo, header=None, comment='#', usecols=[0,1], names=['run','charge'])
     charge_map = run_df.set_index('run')['charge'].to_dict()
 
+    color_list = ['black', 'blue', 'orange', 'green', 'red']
     fig3, axes3 = plt.subplots(1, 3, figsize=(18, 5), sharex=True, sharey=True)
     for ax, p in zip(axes3, periods):
         tree = trees[p]['He']
         runnums = tree['runnum'].array(library='np')
         xvals   = tree['x'].array(library='np')
         unique_runs = np.unique(runnums)
-        # create distinct colors for each run
-        colors = plt.cm.get_cmap('tab20', len(unique_runs))
-        for idx_run, run in enumerate(unique_runs):
+        for i, run in enumerate(unique_runs):
             charge = charge_map.get(run)
             if charge is None:
                 print(f"Warning: missing charge for run {run}, skipping")
@@ -132,8 +130,9 @@ def plot_normalized_yields(trees, xB_bins):
             mask = (runnums == run)
             counts, _ = np.histogram(xvals[mask], bins=bins)
             norm_counts = counts / charge
+            color = color_list[i] if i < len(color_list) else 'gray'
             ax.step(centers, norm_counts,
-                    where='mid', color=colors(idx_run), linewidth=1.5,
+                    where='mid', color=color, linewidth=1.5,
                     label=str(run))
         ax.set_xlabel(r'$x_{B}$')
         ax.set_ylabel('counts / nC')
