@@ -25,7 +25,7 @@ def main():
     pny.plot_normalized_yields(trees, xB_bins)
 
     # Use the temporary manual Df routine
-    cdf.calculate_dilution_factor_temp(trees, xB_bins)
+    # cdf.calculate_dilution_factor_temp(trees, xB_bins)
 
     # TODO: compute ALL(xB_bins) and solve for Pt using Df from CSV
     # end TODO
