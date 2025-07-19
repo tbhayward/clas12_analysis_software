@@ -9,12 +9,15 @@ Generates four figures:
   2) Relative to Su22 yields with fixed y-axis [0,2]
   3) Per-run He normalized yields for each period (1×3 grid)
   4) Per-run ET normalized yields for each period (1×3 grid)
+
+Errors in reading compressed baskets are caught and substituted with zeros.
 """
 
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 import os
+import uproot
 
 # Absolute accumulated charge (in nC) per period and target
 CHARGE = {
@@ -28,9 +31,20 @@ PERIOD_COLORS = {"RGC_Su22": "black", "RGC_Fa22": "blue", "RGC_Sp23": "red"}
 LINE_WIDTH = 1.8
 N_BINS = 100           # fine binning for smooth shapes
 Y_MAX_RATIO = 2.0      # fixed y-axis upper limit for ratio plot
-
 # Per-run colors (up to 5 runs)
 PER_RUN_COLORS = ['black', 'blue', 'orange', 'green', 'red']
+
+
+def safe_array(tree, branch):
+    """Attempt to read branch array; on failure return empty array and print warning."""
+    try:
+        return tree[branch].array(library="np")
+    except AssertionError as e:
+        print(f"[Warning] Could not decompress branch '{branch}' in '{tree.name}': {e}")
+        return np.empty(0)
+    except Exception as e:
+        print(f"[Warning] Error reading branch '{branch}' in '{tree.name}': {e}")
+        return np.empty(0)
 
 
 def plot_normalized_yields(trees, xB_bins):
@@ -57,9 +71,13 @@ def plot_normalized_yields(trees, xB_bins):
     norm_hist = {p: {} for p in periods}
     for p in periods:
         for t in targets:
-            x = trees[p][t]["x"].array(library="np")
-            counts, _ = np.histogram(x, bins=bins)
-            norm_hist[p][t] = counts / CHARGE[p][t]
+            tree = trees[p][t]
+            x = safe_array(tree, "x")
+            if x.size == 0:
+                norm_hist[p][t] = np.zeros(len(bins)-1)
+            else:
+                counts, _ = np.histogram(x, bins=bins)
+                norm_hist[p][t] = counts / CHARGE[p][t]
 
     # --------------------------------------------------
     # FIGURE 1: Absolute normalization
@@ -126,8 +144,8 @@ def plot_normalized_yields(trees, xB_bins):
     fig3, axes3 = plt.subplots(1, 3, figsize=(18, 5), sharex=True, sharey=True)
     for ax, p in zip(axes3, periods):
         tree = trees[p]['He']
-        runnums = tree['runnum'].array(library='np')
-        xvals   = tree['x'].array(library='np')
+        runnums = safe_array(tree, 'runnum')
+        xvals   = safe_array(tree, 'x')
         unique_runs = np.unique(runnums)
         for i, run in enumerate(unique_runs):
             charge = charge_map.get(run)
@@ -156,8 +174,8 @@ def plot_normalized_yields(trees, xB_bins):
     fig4, axes4 = plt.subplots(1, 3, figsize=(18, 5), sharex=True, sharey=True)
     for ax, p in zip(axes4, periods):
         tree = trees[p]['ET']
-        runnums = tree['runnum'].array(library='np')
-        xvals   = tree['x'].array(library='np')
+        runnums = safe_array(tree, 'runnum')
+        xvals   = safe_array(tree, 'x')
         unique_runs = np.unique(runnums)
         for i, run in enumerate(unique_runs):
             charge = charge_map.get(run)
