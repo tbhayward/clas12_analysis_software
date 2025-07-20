@@ -11,9 +11,8 @@ Generates five figures:
   4) Per-run ET yields
   5) Per-run CH2 yields
 
-Gracefully handles basket decompression errors, cycles through distinct colors
-and linestyles for per-run plots, and prints the integral, mean, and std of each
-per-run histogram per target and run period.  Per-period work is done in parallel.
+Optimized to load each branch only once, then reuse arrays for all plots.
+Per-run work is parallelized (max 3 workers), with verbose status prints.
 """
 
 import numpy as np
@@ -25,135 +24,112 @@ from concurrent.futures import ProcessPoolExecutor, as_completed
 # Absolute accumulated charge (in nC) per period and target
 CHARGE = {
     "RGC_Su22": {"NH3": 3686969.636627, "C": 363715.413199, "CH2": 189723.230200, "He": 266575.708348, "ET": 586020.625415},
-    "RGC_Fa22": {"NH3": 5509572.178076, "C": 2006703.362768, "CH2": 1833777.957336, "He": 275693.983222, "ET":  57332.748981},
-    "RGC_Sp23": {"NH3": 1620599.347496, "C":  383030.166502, "CH2":  436816.389755, "He": 266597.436226, "ET": 171738.938831},
+    "RGC_Fa22": {"NH3": 5509572.178076, "C": 2006703.362768, "CH2": 1833777.957336, "He": 275693.983222, "ET": 57332.748981},
+    "RGC_Sp23": {"NH3": 1620599.347496, "C": 383030.166502,  "CH2": 436816.389755,  "He": 266597.436226, "ET": 171738.938831},
 }
 
-# Styling parameters
 PERIOD_COLORS = {"RGC_Su22": "black", "RGC_Fa22": "blue", "RGC_Sp23": "red"}
 LINE_WIDTH    = 1.8
-N_BINS        = 100   # fine binning for smooth shapes
-Y_MAX_RATIO   = 2.0   # fixed y-axis upper limit for ratio plot
+N_BINS        = 100   # Fine binning
+Y_MAX_RATIO   = 2.0   # For ratio plots
 
 def safe_array(tree, branch):
-    """
-    Safely read a branch from an uproot tree, catching decompression errors.
-    Returns an empty array on failure.
-    """
+    """Load a branch into a NumPy array once, catching errors."""
     try:
-        return tree[branch].array(library="np")
+        arr = tree[branch].array(library="np")
+        print(f"[Load] {tree.name}.{branch} => {arr.size} entries")
+        return arr
     except Exception as e:
-        print(f"[Warning] Could not read '{branch}' from tree: {e}")
+        print(f"[Warning] failed to read {branch} from {tree.name}: {e}")
         return np.empty(0)
 
-def process_period_runs(args):
+def process_period_runs(period, target, runnums, xvals, bins, charge_map):
     """
-    Worker for per-run plotting: for a given (period, target), compute
-    per-run normalized histograms, integrals, and stats.
-    Returns a dict with all necessary data for plotting.
+    Compute per-run normalized histograms for a single (period,target).
+    Returns (period, target, list_of_{run,norm,integral}, mean, std).
     """
-    period, target, bins, centers, charge_map, trees = args
-    print(f"[Status] Starting per-run processing for Period={period}, Target={target}")
-    tree = trees[period][target]
-    rn   = safe_array(tree, "runnum")
-    xv   = safe_array(tree, "x")
-    ur   = np.unique(rn)
+    print(f"[Worker] START {period} {target}: grouping by run")
+    ur = np.unique(runnums)
     results = []
     for run in ur:
         ch = charge_map.get(run)
         if ch is None:
-            print(f"[Warning] missing charge for run {run} in {period} {target}, skipping")
+            print(f"[Worker] {period} {target} run={run}: missing charge, skip")
             continue
-        mask = (rn == run)
-        cnt  = np.histogram(xv[mask], bins=bins)[0]
+        mask = (runnums == run)
+        cnt = np.histogram(xvals[mask], bins=bins)[0]
         norm = cnt / ch
         integ = norm.sum()
-        print(f"[Status] Period={period}, Target={target}, Run={run}, Integral={integ:.4f}")
-        results.append({
-            "run": run,
-            "norm": norm,
-            "integral": integ
-        })
-    # compute stats
-    integrals = [r["integral"] for r in results]
-    mean_int = np.mean(integrals) if integrals else 0.0
-    std_int  = np.std(integrals) if integrals else 0.0
-    print(f"[Stats] Completed {period} {target}: Mean integral={mean_int:.4f}, Std integral={std_int:.4f}\n")
-    return {
-        "period": period,
-        "target": target,
-        "centers": centers,
-        "results": results,
-        "mean": mean_int,
-        "std": std_int
-    }
+        print(f"[Worker] {period} {target} run={run}: Integral={integ:.4f}")
+        results.append((run, norm, integ))
+    integrals = [r[2] for r in results]
+    mean_int = float(np.mean(integrals)) if integrals else 0.0
+    std_int  = float(np.std(integrals)) if integrals else 0.0
+    print(f"[Worker] DONE  {period} {target}: Mean={mean_int:.4f}, Std={std_int:.4f}")
+    return period, target, results, mean_int, std_int
 
 def plot_normalized_yields(trees, xB_bins):
-    """
-    Generate five different plots of normalized yields and per-run distributions,
-    and print integrals, means, and stds per target and run period.
-    """
+    os.makedirs("output", exist_ok=True)
     periods = ["RGC_Su22", "RGC_Fa22", "RGC_Sp23"]
     targets = ["NH3", "C", "CH2", "He", "ET"]
 
-    # prepare bins and centers
+    # prepare bins
     xmin, xmax = xB_bins[0], xB_bins[-1]
     bins    = np.linspace(xmin, xmax, N_BINS + 1)
-    centers = 0.5 * (bins[:-1] + bins[1:])
+    centers = 0.5*(bins[:-1] + bins[1:])
 
-    # precompute normalized histograms (counts / total charge)
-    norm_hist = {p: {} for p in periods}
+    # 1) LOAD all needed arrays ONCE
+    print("[Main] Loading all branches into memory...")
+    data_x      = { (p,t): safe_array(trees[p][t], "x")       for p in periods for t in targets }
+    data_runnum = { (p,t): safe_array(trees[p][t], "runnum")  for p in periods for t in targets }
+
+    # 2) Precompute normalized histograms for absolute & ratio plots
+    print("[Main] Computing absolute and ratio histograms...")
+    norm_hist = { p: {} for p in periods }
     for p in periods:
         for t in targets:
-            x = safe_array(trees[p][t], "x")
+            x = data_x[(p,t)]
             cnt = np.histogram(x, bins=bins)[0] if x.size else np.zeros(len(bins)-1)
             norm_hist[p][t] = cnt / CHARGE[p][t]
 
-    # -------- FIGURE 1: Absolute normalization --------
-    fig1, axs1 = plt.subplots(2, 3, figsize=(15, 8), sharex=True)
+    # FIGURE 1: Absolute normalization
+    print("[Plot] Drawing absolute normalization...")
+    fig1, axs1 = plt.subplots(2,3,figsize=(15,8), sharex=True)
     axs1 = axs1.flatten()
-    for i, t in enumerate(targets):
+    for i,t in enumerate(targets):
         ax = axs1[i]
         peak = 0.0
         for p in periods:
             y = norm_hist[p][t]
             peak = max(peak, y.max() if y.size else 0.0)
-            ax.step(
-                centers, y,
-                where='mid',
-                color=PERIOD_COLORS[p],
-                linewidth=LINE_WIDTH,
-                label=p.replace("RGC_", "")
-            )
-        ax.set_ylim(0, 1.2 * peak)
+            ax.step(centers, y, where='mid',
+                    color=PERIOD_COLORS[p], linewidth=LINE_WIDTH,
+                    label=p.replace("RGC_",""))
+        ax.set_ylim(0, 1.2*peak)
         ax.set_title(t)
         ax.set_xlabel(r"$x_{B}$")
         ax.set_ylabel("counts / nC")
         ax.legend(frameon=False, fontsize="small")
     axs1[-1].axis("off")
     plt.tight_layout(pad=2.0)
-    os.makedirs("output", exist_ok=True)
     fig1.savefig("output/normalized_yields.pdf")
     plt.close(fig1)
-    print("[Plot] Saved 'output/normalized_yields.pdf'")
+    print("[Save] output/normalized_yields.pdf")
 
-    # -------- FIGURE 2: Relative to Su22 --------
-    fig2, axs2 = plt.subplots(2, 3, figsize=(15, 8), sharex=True)
+    # FIGURE 2: Relative to Su22
+    print("[Plot] Drawing Su22-relative ratios...")
+    fig2, axs2 = plt.subplots(2,3,figsize=(15,8), sharex=True)
     axs2 = axs2.flatten()
     base = "RGC_Su22"
-    for i, t in enumerate(targets):
+    for i,t in enumerate(targets):
         ax = axs2[i]
         bvals = norm_hist[base][t]
         for p in periods:
             y = norm_hist[p][t]
-            ratio = np.where(bvals > 0, y / bvals, np.nan)
-            ax.step(
-                centers, ratio,
-                where='mid',
-                color=PERIOD_COLORS[p],
-                linewidth=LINE_WIDTH,
-                label=p.replace("RGC_", "")
-            )
+            ratio = np.where(bvals>0, y/bvals, np.nan)
+            ax.step(centers, ratio, where='mid',
+                    color=PERIOD_COLORS[p], linewidth=LINE_WIDTH,
+                    label=p.replace("RGC_",""))
         ax.set_ylim(0, Y_MAX_RATIO)
         ax.set_title(t)
         ax.set_xlabel(r"$x_{B}$")
@@ -163,57 +139,51 @@ def plot_normalized_yields(trees, xB_bins):
     plt.tight_layout(pad=2.0)
     fig2.savefig("output/normalized_yields_ratio.pdf")
     plt.close(fig2)
-    print("[Plot] Saved 'output/normalized_yields_ratio.pdf'")
+    print("[Save] output/normalized_yields_ratio.pdf")
 
-    # -------- load per-run accumulated charges --------
-    runinfo = (
-        "/u/home/thayward/clas12_analysis_software/analysis_scripts/"
-        "asymmetry_extraction/imports/clas12_run_info.csv"
-    )
-    run_df = pd.read_csv(
-        runinfo, header=None, comment="#",
-        usecols=[0,1], names=["run","charge"]
-    )
+    # load per-run charges once
+    print("[Main] Loading per-run accumulated charges...")
+    runinfo = "/u/home/thayward/clas12_analysis_software/analysis_scripts/asymmetry_extraction/imports/clas12_run_info.csv"
+    run_df = pd.read_csv(runinfo, header=None, comment="#", usecols=[0,1], names=["run","charge"])
     charge_map = run_df.set_index("run")["charge"].to_dict()
 
-    # -------- FIGURES 3–5: per-run for He, ET, CH2 with parallel processing --------
-    for target in ("He", "ET", "CH2"):
+    # per-run targets
+    for target in ("He","ET","CH2"):
+        print(f"[Main] Plotting per-run distributions for {target}...")
+        # dispatch each period in parallel
         args = [
-            (p, target, bins, centers, charge_map, trees)
+            (p, target,
+             data_runnum[(p,target)],
+             data_x[(p,target)],
+             bins, charge_map)
             for p in periods
         ]
+        results = {}
         with ProcessPoolExecutor(max_workers=3) as exe:
-            futures = {exe.submit(process_period_runs, a): a[0] for a in args}
-            results = {}
-            for fut in as_completed(futures):
-                period = futures[fut]
-                results[period] = fut.result()
+            fut2period = { exe.submit(process_period_runs, *arg): arg[0] for arg in args }
+            for fut in as_completed(fut2period):
+                p = fut2period[fut]
+                period, tgt, res_list, mean_int, std_int = fut.result()
+                results[p] = (res_list, mean_int, std_int)
 
-        fig, axes = plt.subplots(1, 3, figsize=(18, 5), sharex=True, sharey=True)
+        # now draw the figure
+        fig, axes = plt.subplots(1,3,figsize=(18,5), sharex=True, sharey=True)
         for ax, p in zip(axes, periods):
-            res = results[p]
-            for idx, entry in enumerate(res["results"]):
-                run = entry["run"]
-                norm = entry["norm"]
-                cmap = plt.get_cmap("tab20")
-                color = cmap(idx % 20)
-                linestyles = ['solid', 'dashed', 'dashdot', 'dotted']
-                style = linestyles[(idx // 20) % len(linestyles)]
-                ax.step(
-                    centers, norm,
-                    where='mid',
-                    color=color,
-                    linestyle=style,
-                    linewidth=1.5,
-                    label=str(run)
-                )
+            res_list, mean_int, std_int = results[p]
+            for idx,(run,norm,integ) in enumerate(res_list):
+                color     = plt.get_cmap("tab20")(idx % 20)
+                linestyle = ["solid","dashed","dashdot","dotted"][(idx//20) % 4]
+                ax.step(centers, norm, where='mid',
+                        color=color, linestyle=linestyle, linewidth=1.5,
+                        label=str(run))
+                # Already printed integrals in worker
+            print(f"[Stats] {p} {target}: mean integral={mean_int:.4f}, std={std_int:.4f}")
             ax.set_title(f"{p.replace('RGC_','')} {target}")
             ax.set_xlabel(r"$x_{B}$")
             ax.set_ylabel("counts / nC")
             ax.legend(fontsize="x-small", ncol=2, frameon=False)
-
         plt.tight_layout(pad=2.0)
-        outname = f"output/normalized_yields_runs_{target.lower()}.pdf"
-        fig.savefig(outname)
+        fname = f"output/normalized_yields_runs_{target.lower()}.pdf"
+        fig.savefig(fname)
         plt.close(fig)
-        print(f"[Plot] Saved '{outname}'\n")
+        print(f"[Save] {fname}\n")
