@@ -10,8 +10,7 @@ Generates:
   3–7) Per-run yields for each target (NH3, C, CH2, He, ET), one 1×3 canvas each
 
 Handles basket decompression errors, parallel per-period work, distinct colors/
-linestyles, and writes every run’s integral + per-period mean/σ to both console
-and a single log file.
+linestyles, and logs every run’s integral immediately when computed.
 """
 
 import numpy as np
@@ -31,7 +30,7 @@ CHARGE = {
 PERIOD_COLORS = {"RGC_Su22": "black", "RGC_Fa22": "blue", "RGC_Sp23": "red"}
 LINE_WIDTH    = 1.8
 N_BINS        = 100   # fine binning
-Y_MAX_RATIO   = 2.0   # ratio plot y‐limit
+Y_MAX_RATIO   = 2.0   # ratio‐plot y‐limit
 
 # Location of per-run charge info
 RUNINFO = (
@@ -53,12 +52,13 @@ def safe_array(tree, branch):
         print(f"[Warning] failed to read '{branch}' from {tree.name}: {e}")
         return np.empty(0)
 
-def process_period_runs(period, target, bins, centers, charge_map, trees):
+def process_period_runs(period, target, bins, centers, charge_map, trees, log):
     """
-    Worker for per-run plotting. Collects each run’s normalized histogram + integral,
-    then computes that period’s mean & std of integrals.
+    Worker for per-run plotting. As soon as each run’s integral is computed,
+    it is printed and logged. Then the per-period mean/std are printed/logged.
     """
-    print(f"[Worker] Start processing runs for Period={period}, Target={target}")
+    print(f"[Worker] Start processing runs for {period}/{target}")
+    log.write(f"=== Period {period}, Target {target} ===\n")
     tree = trees[period][target]
     rn   = safe_array(tree, "runnum")
     xv   = safe_array(tree, "x")
@@ -67,18 +67,23 @@ def process_period_runs(period, target, bins, centers, charge_map, trees):
     for run in runs:
         ch = charge_map.get(run)
         if ch is None:
-            print(f"[Worker]  skip run {run} (no charge info)")
+            print(f"[Worker]  skip run {run} (no charge)")
+            log.write(f"  skip run {run} (no charge)\n")
             continue
         mask = (rn == run)
         cnt  = np.histogram(xv[mask], bins=bins)[0]
         norm = cnt / ch
         integ = float(norm.sum())
-        print(f"[Worker]   Run={run}: integral={integ:.4f}")
+        # **immediate** print + log
+        print(f"[Worker]   {period}/{target} Run={run}, integral={integ:.4f}")
+        log.write(f"  Run={run}, integral={integ:.4f}\n")
         entries.append({"run": run, "norm": norm, "integral": integ})
     ints = [e["integral"] for e in entries]
     mean = float(np.mean(ints)) if ints else 0.0
     std  = float(np.std(ints))  if ints else 0.0
+    # print + log mean/std
     print(f"[Worker] Finished {period}/{target}: mean={mean:.4f}, std={std:.4f}")
+    log.write(f" Mean={mean:.4f}, Std={std:.4f}\n\n")
     return {"period":period, "target":target,
             "centers":centers, "entries":entries,
             "mean":mean, "std":std}
@@ -86,7 +91,6 @@ def process_period_runs(period, target, bins, centers, charge_map, trees):
 # ---------- Main Plotting Function ----------
 def plot_normalized_yields(trees, xB_bins):
     print("[Start] plot_normalized_yields()")
-    # ensure output dir & open log file
     os.makedirs("output", exist_ok=True)
     log_path = "output/per_run_integrals.txt"
     log = open(log_path, "w", buffering=1)
@@ -96,31 +100,31 @@ def plot_normalized_yields(trees, xB_bins):
     periods = ["RGC_Su22", "RGC_Fa22", "RGC_Sp23"]
     targets = ["NH3", "C", "CH2", "He", "ET"]
 
-    # prepare bins & centers
+    # bins & centers
     xmin, xmax = xB_bins[0], xB_bins[-1]
     bins    = np.linspace(xmin, xmax, N_BINS+1)
     centers = 0.5*(bins[:-1]+bins[1:])
-    print(f"[Setup] xB bins: {xmin} → {xmax}, {N_BINS} bins")
+    print(f"[Setup] xB range {xmin}–{xmax} with {N_BINS} bins")
 
-    # load per-run charge info
-    print(f"[Load] Reading runinfo from {RUNINFO}")
+    # load run charges
+    print(f"[Load] reading runinfo from {RUNINFO}")
     run_df = pd.read_csv(RUNINFO, header=None, comment="#",
                          usecols=[0,1], names=["run","charge"])
     charge_map = run_df.set_index("run")["charge"].to_dict()
-    print(f"[Load] {len(charge_map)} runs with charge found")
+    print(f"[Load] {len(charge_map)} runs loaded")
 
-    # precompute absolute normalized histograms
-    print("[Compute] Precomputing absolute normalized histograms")
+    # compute absolute histograms
+    print("[Compute] absolute normalized histograms")
     norm_hist = {p:{} for p in periods}
     for p in periods:
         for t in targets:
-            print(f"[Compute]   Period={p}, Target={t}")
+            print(f"[Compute]   {p}/{t}")
             x = safe_array(trees[p][t], "x")
             cnt = np.histogram(x, bins=bins)[0] if x.size else np.zeros(len(bins)-1)
             norm_hist[p][t] = cnt / CHARGE[p][t]
 
-    # ---------- FIGURE 1: Absolute normalization ----------
-    print("[Figure] Generating absolute normalization plot")
+    # FIGURE 1: absolute
+    print("[Figure] absolute normalization")
     fig1, axs1 = plt.subplots(2,3,figsize=(15,8), sharex=True)
     axs1 = axs1.flatten()
     for i, t in enumerate(targets):
@@ -142,8 +146,8 @@ def plot_normalized_yields(trees, xB_bins):
     fig1.savefig(out1); plt.close(fig1)
     print(f"[Saved] {out1}")
 
-    # ---------- FIGURE 2: Ratio to Su22 ----------
-    print("[Figure] Generating ratio-to-Su22 plot")
+    # FIGURE 2: ratio to Su22
+    print("[Figure] ratio to Su22")
     fig2, axs2 = plt.subplots(2,3,figsize=(15,8), sharex=True)
     axs2 = axs2.flatten()
     base = "RGC_Su22"
@@ -166,12 +170,10 @@ def plot_normalized_yields(trees, xB_bins):
     fig2.savefig(out2); plt.close(fig2)
     print(f"[Saved] {out2}")
 
-    # ---------- FIGUREs 3–7: per-run for each target ----------
+    # FIGs 3–7: per-run for each target
     for target in targets:
-        print(f"[Per-run] Starting per-run panels for target {target}")
-        # assemble args
-        args = [(p, target, bins, centers, charge_map, trees) for p in periods]
-        print(f"[Parallel] scheduling {len(args)} tasks for per-run {target}")
+        print(f"[Per-run] scheduling per-run for {target}")
+        args = [(p, target, bins, centers, charge_map, trees, log) for p in periods]
         with ProcessPoolExecutor(max_workers=3) as exe:
             futures = {exe.submit(process_period_runs, *a): a[0] for a in args}
             results = {}
@@ -179,28 +181,19 @@ def plot_normalized_yields(trees, xB_bins):
                 period = futures[fut]
                 res = fut.result()
                 results[period] = res
-                print(f"[Parallel] Completed data for {period}/{target}")
+                print(f"[Parallel] done data for {period}/{target}")
 
-        # now draw the 1×3 canvas
-        print(f"[Figure] Plotting per-run yields for {target}")
+        print(f"[Figure] plotting per-run yields for {target}")
         fig, axes = plt.subplots(1,3,figsize=(18,5), sharex=True, sharey=True)
         for ax, p in zip(axes, periods):
             res = results[p]
-            log.write(f"=== Period {p}, Target {target} ===\n")
-            log.write(f" Mean={res['mean']:.4f}, Std={res['std']:.4f}\n")
             for idx, e in enumerate(res["entries"]):
-                run   = e["run"]
-                norm  = e["norm"]
-                integ = e["integral"]
-                print(f"[Plot]   {p}/{target} run={run}, integral={integ:.4f}")
-                log.write(f"  Run={run}, Integral={integ:.4f}\n")
                 cmap  = plt.get_cmap("tab20")
                 style = ['solid','dashed','dashdot','dotted'][(idx//20)%4]
                 color = cmap(idx%20)
-                ax.step(centers, norm, where='mid',
+                ax.step(centers, e["norm"], where='mid',
                         color=color, linestyle=style, linewidth=1.5,
-                        label=str(run))
-            log.write("\n")
+                        label=str(e["run"]))
             ax.set_title(f"{p.replace('RGC_','')} {target}")
             ax.set_xlabel(r"$x_{B}$"); ax.set_ylabel("counts / nC")
             ax.legend(fontsize="x-small", ncol=2, frameon=False)
@@ -211,5 +204,5 @@ def plot_normalized_yields(trees, xB_bins):
         print(f"[Saved] {out}\n")
 
     log.close()
-    print(f"[Finished] All per-run integrals & stats logged to {log_path}")
-    print("[Done] plot_normalized_yields()")
+    print(f"[Done] All per-run integrals & stats logged to {log_path}")
+    print("[Finished] plot_normalized_yields()")
