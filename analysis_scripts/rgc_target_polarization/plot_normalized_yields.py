@@ -53,6 +53,7 @@ def process_period_runs(args):
     Returns a dict with all necessary data for plotting.
     """
     period, target, bins, centers, charge_map, trees = args
+    print(f"[Status] Starting per-run processing for Period={period}, Target={target}")
     tree = trees[period][target]
     rn   = safe_array(tree, "runnum")
     xv   = safe_array(tree, "x")
@@ -61,11 +62,13 @@ def process_period_runs(args):
     for run in ur:
         ch = charge_map.get(run)
         if ch is None:
+            print(f"[Warning] missing charge for run {run} in {period} {target}, skipping")
             continue
         mask = (rn == run)
         cnt  = np.histogram(xv[mask], bins=bins)[0]
         norm = cnt / ch
         integ = norm.sum()
+        print(f"[Status] Period={period}, Target={target}, Run={run}, Integral={integ:.4f}")
         results.append({
             "run": run,
             "norm": norm,
@@ -75,6 +78,7 @@ def process_period_runs(args):
     integrals = [r["integral"] for r in results]
     mean_int = np.mean(integrals) if integrals else 0.0
     std_int  = np.std(integrals) if integrals else 0.0
+    print(f"[Stats] Completed {period} {target}: Mean integral={mean_int:.4f}, Std integral={std_int:.4f}\n")
     return {
         "period": period,
         "target": target,
@@ -174,34 +178,27 @@ def plot_normalized_yields(trees, xB_bins):
 
     # -------- FIGURES 3–5: per-run for He, ET, CH2 with parallel processing --------
     for target in ("He", "ET", "CH2"):
-        # prepare arguments for each period
         args = [
             (p, target, bins, centers, charge_map, trees)
             for p in periods
         ]
-        # parallelize
         with ProcessPoolExecutor(max_workers=3) as exe:
             futures = {exe.submit(process_period_runs, a): a[0] for a in args}
             results = {}
             for fut in as_completed(futures):
                 period = futures[fut]
-                res = fut.result()
-                results[period] = res
+                results[period] = fut.result()
 
-        # now plot combined figure
         fig, axes = plt.subplots(1, 3, figsize=(18, 5), sharex=True, sharey=True)
         for ax, p in zip(axes, periods):
             res = results[p]
-            for entry in res["results"]:
+            for idx, entry in enumerate(res["results"]):
                 run = entry["run"]
                 norm = entry["norm"]
-                # find i to assign color/style
-                idx = res["results"].index(entry)
                 cmap = plt.get_cmap("tab20")
                 color = cmap(idx % 20)
                 linestyles = ['solid', 'dashed', 'dashdot', 'dotted']
                 style = linestyles[(idx // 20) % len(linestyles)]
-
                 ax.step(
                     centers, norm,
                     where='mid',
@@ -210,10 +207,6 @@ def plot_normalized_yields(trees, xB_bins):
                     linewidth=1.5,
                     label=str(run)
                 )
-                print(f"[Integral] Period={p}, Target={target}, Run={run}, Integral={entry['integral']:.4f}")
-            print(f"[Stats]  Period={p}, Target={target}, "
-                  f"Mean Integral={res['mean']:.4f}, Std Integral={res['std']:.4f}")
-
             ax.set_title(f"{p.replace('RGC_','')} {target}")
             ax.set_xlabel(r"$x_{B}$")
             ax.set_ylabel("counts / nC")
