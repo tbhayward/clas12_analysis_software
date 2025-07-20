@@ -18,8 +18,8 @@ import os
 
 # Updated charge fractions for each run period based on measured totals:
 CHARGE_FRAC = {
-    "RGC_Su22": {"xNH3": 0.7239, "xC": 0.0714, "xCH2": 0.0373, "xHe": 0.0523, "xET": 0.1151},
-    "RGC_Fa22": {"xNH3": 0.5690, "xC": 0.2072, "xCH2": 0.1894, "xHe": 0.0285, "xET": 0.0059},
+    "RGC_Su22": {"xNH3": 0.7452, "xC": 0.0735, "xCH2": 0.0383, "xHe": 0.0245, "xET": 0.1184},
+    "RGC_Fa22": {"xNH3": 0.5736, "xC": 0.2089, "xCH2": 0.1829, "xHe": 0.0287, "xET": 0.0060},
     "RGC_Sp23": {"xNH3": 0.5629, "xC": 0.1331, "xCH2": 0.1517, "xHe": 0.0926, "xET": 0.0597},
 }
 
