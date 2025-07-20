@@ -12,7 +12,7 @@
 
 int main() {
     std::cout << "[Start] C++ per-run normalization\n";
-    // make sure output directory exists
+    // ensure output directory
     gSystem->mkdir("output", true);
 
     // --- hard-coded ROOT file paths ---
@@ -45,7 +45,7 @@ int main() {
                           "asymmetry_extraction/imports/clas12_run_info.csv";
     std::ifstream csv(runinfo);
     if(!csv) {
-        std::cerr << "[Error] could not open " << runinfo << "\n";
+        std::cerr << "[Error] cannot open " << runinfo << "\n";
         return 1;
     }
     std::map<int,double> chargeMap;
@@ -53,8 +53,7 @@ int main() {
     while(std::getline(csv, line)) {
         if(line.empty() || line[0]=='#') continue;
         std::stringstream ss(line);
-        int run; double charge;
-        char comma;
+        int run; double charge; char comma;
         ss >> run >> comma >> charge;
         chargeMap[run] = charge;
     }
@@ -69,70 +68,71 @@ int main() {
     const int    nBins = 100;
     const double xmin  = 0.0;
     const double xmax  = 1.0;
-    const double wBin  = (xmax - xmin)/nBins;
+    const double binWidth = (xmax - xmin)/nBins;
 
     // loop periods & targets
     for(auto const& [period, targets] : filePaths) {
       for(auto const& [target, path] : targets) {
-        std::cout << "[Process] " << period << " / " << target 
-                  << "  ("<< path <<")\n";
+        std::cout << "[Process] " << period << " / " << target << "\n";
 
         // open file & tree
         TFile f(path.c_str());
         if(!f.IsOpen()) {
-          std::cerr<<" [Error] could not open "<<path<<"\n"; 
+          std::cerr<<" [Error] cannot open "<<path<<"\n"; 
           continue;
         }
         TTree* tree = (TTree*)f.Get("PhysicsEvents");
         if(!tree) {
           std::cerr<<" [Error] no PhysicsEvents in "<<path<<"\n"; 
+          f.Close();
           continue;
         }
 
         // first pass: collect unique runs
         std::set<int> runs;
-        int runnum; float x;
+        Int_t   runnum;
+        Double_t x;
         tree->SetBranchAddress("runnum",&runnum);
-        tree->SetBranchAddress("x",&x);
+        tree->SetBranchAddress("x",     &x);
         Long64_t nEntries = tree->GetEntries();
-        std::cout<<"  [Scan1] "<<nEntries<<" entries for run list\n";
+        std::cout<<"  [Scan1] "<<nEntries<<" entries\n";
         for(Long64_t i=0;i<nEntries;++i){
           tree->GetEntry(i);
           runs.insert(runnum);
         }
         std::cout<<"  [Found] "<<runs.size()<<" unique runs\n";
 
-        // prepare histograms: map run->bin counts
+        // prepare per-run count vectors
         std::map<int,std::vector<long long>> hist;
         for(int r : runs){
           hist[r] = std::vector<long long>(nBins,0);
         }
 
-        // second pass: fill counts
-        std::cout<<"  [Scan2] filling histograms\n";
+        // second pass: fill
+        std::cout<<"  [Scan2] filling counts\n";
         for(Long64_t i=0;i<nEntries;++i){
           tree->GetEntry(i);
           if(x < xmin || x>=xmax) continue;
-          int bin = int((x - xmin)/wBin);
-          hist[runnum][bin] += 1;
+          int bin = int((x - xmin)/binWidth);
+          hist[runnum][bin]++;
         }
 
-        // compute integrals & collect them
+        // compute & log integrals
         std::vector<double> integrals;
         log<<"=== Period "<<period<<", Target "<<target<<" ===\n";
-        for(auto const& [r, binsVec] : hist){
+        for(auto const& [r, vec] : hist){
           auto it = chargeMap.find(r);
           if(it==chargeMap.end()) {
             std::cerr<<"   [Warn] no charge for run "<<r<<"\n";
             continue;
           }
-          double totalCounts = 0;
-          for(auto c : binsVec) totalCounts += c;
-          double integ = totalCounts / it->second;
+          double sumCounts = 0;
+          for(auto c: vec) sumCounts += c;
+          double integ = sumCounts / it->second;
           integrals.push_back(integ);
           log<<"Run="<<r<<", Integral="<<integ<<"\n";
         }
-        // compute mean & stddev
+        // mean & std
         double mean=0, stddev=0;
         if(!integrals.empty()){
           for(auto v: integrals) mean += v;
@@ -147,6 +147,6 @@ int main() {
     }
 
     log.close();
-    std::cout << "[Done] written output/per_run_integrals.txt\n";
+    std::cout << "[Done] wrote output/per_run_integrals.txt\n";
     return 0;
 }
