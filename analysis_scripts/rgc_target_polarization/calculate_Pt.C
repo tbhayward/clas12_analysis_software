@@ -17,7 +17,7 @@
 // 0 = all three periods, 1 = RGC_Su22 only, 2 = RGC_Fa22 only, 3 = RGC_Sp23 only
 const int runMode = 1;
 // testRun: 0 means process all runs, >0 will restrict to that single run number
-const int testRun = 16156;  // set to your run of interest, or 0 to do all
+const int testRun = 16137;  // set to your run of interest, or 0 to do all
 
 // xB bin edges
 static const std::vector<double> xB_bins = {
@@ -196,12 +196,15 @@ int main() {
             size_t ridx = it->second;
             int sgn = signMap[runnum];
 
+            // ** flip helicity sign here **
+            int hel = -helicity;
+
             int bin = std::upper_bound(xB_bins.begin(), xB_bins.end(), x)
                     - xB_bins.begin() - 1;
             if (bin < 0 || bin >= (int)nBins) continue;
 
-            if (helicity * sgn > 0) Np[ridx][bin]++;
-            else                    Nm[ridx][bin]++;
+            if (hel * sgn > 0) Np[ridx][bin]++;
+            else               Nm[ridx][bin]++;
         }
         f.Close();
         std::cout << "  [Done] filled histograms for " << period << "\n\n";
@@ -264,7 +267,6 @@ int main() {
                 double var_g = dPg_p*dPg_p * var_p
                              + dPg_n*dPg_n * var_m;
                 double err_g = std::sqrt(var_g);
-                // add Df and Pb contributions
                 err_g = std::sqrt(err_g*err_g
                     + std::pow(Pt_g*s_df/df,2)
                     + std::pow(Pt_g*s_pb/pb,2));
