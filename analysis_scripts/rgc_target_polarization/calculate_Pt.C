@@ -74,32 +74,36 @@ int main() {
     for (auto& p : periods) std::cout << " " << p;
     std::cout << "\n\n";
 
-    // --- 1) Read runinfo CSV, build chargeMap and signMap ---
+    // --- 1) Read runinfo CSV, build chargeMap, chargePlusMap, chargeMinusMap and signMap ---
     std::ifstream runinfo(RUNINFO);
     if (!runinfo) {
         std::cerr << "[Error] cannot open " << RUNINFO << "\n";
         return 1;
     }
-    std::map<int,double> chargeMap;
-    std::map<int,int>   signMap;
+    std::map<int,double>    chargeMap;
+    std::map<int,double>    chargePlusMap;
+    std::map<int,double>    chargeMinusMap;
+    std::map<int,int>       signMap;
     {
         std::string line;
         while (std::getline(runinfo, line)) {
             if (line.empty() || line[0]=='#') continue;
             std::stringstream ss(line);
-            int run; double ch, d1, d2, pol_s, pol_e; char comma;
+            int run; double chTotal, chPlus, chMinus, pol_s, pol_e; char comma;
             ss >> run >> comma
-               >> ch   >> comma
-               >> d1   >> comma
-               >> d2   >> comma
-               >> pol_s>> comma
+               >> chTotal >> comma
+               >> chPlus  >> comma
+               >> chMinus >> comma
+               >> pol_s   >> comma
                >> pol_e;
-            chargeMap[run] = ch;
-            signMap[run]   = (pol_s > 0 ? +1 : -1);
+            chargeMap[run]       = chTotal;
+            chargePlusMap[run]   = chPlus;
+            chargeMinusMap[run]  = chMinus;
+            signMap[run]         = (pol_s > 0 ? +1 : -1);
         }
     }
     std::cout << "[Loaded] " << chargeMap.size()
-              << " runs with charge & sign info\n\n";
+              << " runs with total/± charge & sign info\n\n";
 
     // --- 2) Load dilution factors and x_mean from CSV ---
     std::ifstream dfcsv("output/dilution_factor.csv");
@@ -154,7 +158,7 @@ int main() {
         std::vector<std::vector<long>> Np(nRuns, std::vector<long>(nBins, 0));
         std::vector<std::vector<long>> Nm(nRuns, std::vector<long>(nBins, 0));
 
-        // set branches (now including y)
+        // set branches (including y)
         Int_t    runnum;
         Double_t x, y;
         Int_t    helicity;
@@ -211,13 +215,22 @@ int main() {
 
             std::vector<double> xv, yg, ye_g, ya, ye_a;
             std::cout << "  [Compute] Run " << run << "\n";
+            double cp = chargePlusMap[run];
+            double cm = chargeMinusMap[run];
             for (size_t b = 0; b < nBins; ++b) {
-                long p = Np[i][b], m = Nm[i][b], S = p + m;
-                if (S < 1) {
-                    std::cout << "    bin " << b << ": S=0, skip\n";
+                long raw_p = Np[i][b], raw_m = Nm[i][b];
+                if (cp <= 0 || cm <= 0) {
+                    std::cout << "    bin " << b << ": missing charge info, skip\n";
                     continue;
                 }
-                double Δ  = double(p) - double(m);
+                double p = raw_p / cp;
+                double m = raw_m / cm;
+                double S = p + m;
+                if (S < 1e-12) {
+                    std::cout << "    bin " << b << ": S≈0, skip\n";
+                    continue;
+                }
+                double Δ  = p - m;
                 double xm = xMean[b];
                 double df = Df[b], s_df = sDf[b];
                 double pb = Pb.at(period), s_pb = sigma_Pb.at(period);
@@ -232,9 +245,10 @@ int main() {
 
                 std::cout
                   << "    bin " << b
-                  << ": Np=" << p
-                  << ", Nm=" << m
-                  << ", y-cut OK"
+                  << ": Np=" << raw_p
+                  << ", Nm=" << raw_m
+                  << ", normNp=" << p
+                  << ", normNm=" << m
                   << ", Df=" << df
                   << ", Pb=" << pb
                   << ", A_GRV=" << a_grv
