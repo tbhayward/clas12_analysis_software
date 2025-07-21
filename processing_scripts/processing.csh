@@ -16,7 +16,6 @@ set convert_arg3 = 0
 # Set convert_arg3 based on the value of arg1
 if ($arg1 == "processing_scripts/processing_inclusive.groovy") then
     set convert_arg3 = 0
-    echo "HELLO WORLD"
 else if ($arg1 == "processing_scripts/processing_mc_inclusive.groovy") then
     set convert_arg3 = 0
 else if ($arg1 == "processing_scripts/processing_two_particles.groovy") then
