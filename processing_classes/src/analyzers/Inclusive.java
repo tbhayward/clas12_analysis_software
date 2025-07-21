@@ -152,7 +152,7 @@ public class Inclusive {
     }
 
     public int get_helicity() { // -1, 0, or 1. 0 equals unassigned by EventBuilder
-        if (runnum <= 5666) {
+        if (runnum >= 4326 && runnum <= 5666) {
             return -1 * helicity;
         } else if (runnum >= 6616 && runnum <= 6783) {
             return -1 * helicity;
@@ -165,7 +165,7 @@ public class Inclusive {
         } else if (runnum >= 11323 && runnum < 11571) {
             return helicity;
         }
-        return -1 * helicity;
+        return helicity;
     }
 
     public int get_runnum() {
