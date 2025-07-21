@@ -1129,13 +1129,13 @@ int main(int argc, char *argv[]) {
     // Load run info from the CSV file
     load_run_info_from_csv(package_location + csv_location);
     
-    std::cout << "before" << std::endl;
+    
     // Loop to read each line from the text file and fill the TTree based on script_index
     if (script_index == 0 && is_mc == 0) {
         while (infile >> fiducial_status >> num_pos >> num_neg >> num_neutral >> 
             runnum >> evnum >> helicity >> e_p >> e_theta >> e_phi >> vz_e >> 
             Q2 >> W >> Mx2 >> x >> y >> DepA >> DepB >> DepC >> DepV >> DepW) {
-            std::cout << "after" << std::endl;
+
             beam_pol = getPol(runnum);
             if (runnum < 16000) { target_pol = 0; }
             else { 
