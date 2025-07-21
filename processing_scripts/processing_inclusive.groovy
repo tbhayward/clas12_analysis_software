@@ -154,7 +154,7 @@ public static void main(String[] args) {
 	    	if (runnum = 17331) process_event = false; // low live time
 
 		    if (process_event) {
-
+		    	println("hello world");
 				// supply runnum and boolean for radiative simulation or not
 				BeamEnergy Eb = new BeamEnergy(research_Event, runnum, false);
 				// Use the input beam energy if runnum == 11, otherwise use Eb.Eb()
