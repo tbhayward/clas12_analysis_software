@@ -1,5 +1,4 @@
 // plot_Pt_by_run.C
-
 #include <TFile.h>
 #include <TTree.h>
 #include <TSystem.h>
@@ -17,7 +16,7 @@
 // 0 = all three periods, 1 = RGC_Su22 only, 2 = RGC_Fa22 only, 3 = RGC_Sp23 only
 const int runMode = 1;
 // testRun: 0 means process all runs, >0 will restrict to that single run number
-const int testRun = 16137;
+const int testRun = 16137;  // set to your run of interest, or 0 to do all
 
 // xB bin edges
 static const std::vector<double> xB_bins = {
@@ -127,7 +126,7 @@ int main() {
     std::ofstream out("output/Pt_by_run.txt");
     out << "Run\tPt_GRV\tsigma_GRV\tPt_ABD\tsigma_ABD\n";
 
-    // --- 4) Single-pass per-period loop ---
+    // --- 4) Single-pass per-period loop with early exit for testRun ---
     const size_t nBins = xB_bins.size() - 1;
     for (auto& period : periods) {
         std::cout << "[Period] " << period << "\n";
@@ -146,13 +145,10 @@ int main() {
         std::map<int,size_t> runToIdx;
         std::vector<int>     runs;
         for (auto& kv : chargeMap) {
-            runToIdx[kv.first] = runs.size();
             runs.push_back(kv.first);
+            runToIdx[kv.first] = runs.size() - 1;
         }
         const size_t nRuns = runs.size();
-        std::cout << "  Allocating histograms for "
-                  << nRuns << " runs × " << nBins << " bins\n";
-
         std::vector<std::vector<long>> Np(nRuns, std::vector<long>(nBins, 0));
         std::vector<std::vector<long>> Nm(nRuns, std::vector<long>(nBins, 0));
 
@@ -165,11 +161,27 @@ int main() {
         tree->SetBranchAddress("helicity", &helicity);
 
         Long64_t N = tree->GetEntries();
+        bool inTest = false;
         std::cout << "  [Scan] " << N << " events\n";
         for (Long64_t i = 0; i < N; ++i) {
             tree->GetEntry(i);
-            if (i % 50000000 == 0 && i>0)
+            if (i % 50000000 == 0 && i > 0)
                 std::cout << "    event " << i << "/" << N << "\n";
+
+            // early exit logic for single-run test
+            if (testRun > 0) {
+                if (!inTest) {
+                    if (runnum == testRun) {
+                        inTest = true;
+                        std::cout << "    [Entering run " << testRun << "]\n";
+                    } else {
+                        continue;
+                    }
+                } else if (runnum != testRun) {
+                    std::cout << "    [Leaving run " << testRun << "]\n";
+                    break;
+                }
+            }
 
             auto it = runToIdx.find(runnum);
             if (it == runToIdx.end()) continue;
@@ -192,17 +204,27 @@ int main() {
             if (testRun > 0 && run != testRun) continue;
 
             std::vector<double> xv, yg, ye_g, ya, ye_a;
+            std::cout << "[Compute] Run " << run << " bins:\n";
             for (size_t b = 0; b < nBins; ++b) {
                 long p = Np[i][b], m = Nm[i][b];
                 long S = p + m;
                 if (S < 1) continue;
                 double Δ = double(p) - double(m);
                 double xm = 0.5*(xB_bins[b] + xB_bins[b+1]);
-                double df   = Df[b], s_df = sDf[b];
+                double df   = Df[b],   s_df = sDf[b];
                 double pb   = Pb.at(period), s_pb = sigma_Pb.at(period);
+                double all_grv = ALL_GRV(xm), all_abd = ALL_ABD(xm);
 
-                double Ag   = ALL_GRV(xm) * df * pb;
-                double Aa   = ALL_ABD(xm) * df * pb;
+                // debug print for each bin
+                std::cout << "    bin " << b
+                          << "  Np=" << p << "  Nm=" << m
+                          << "  Df=" << df << "  Pb=" << pb
+                          << "  A_GRV=" << all_grv
+                          << "  A_ABD=" << all_abd
+                          << "\n";
+
+                double Ag   = all_grv * df * pb;
+                double Aa   = all_abd * df * pb;
                 double Pt_g = Δ / (Ag * S);
                 double Pt_a = Δ / (Aa * S);
 
@@ -222,6 +244,9 @@ int main() {
                 err_a = std::sqrt(err_a*err_a
                     + std::pow(Pt_a*s_df/df,2)
                     + std::pow(Pt_a*s_pb/pb,2));
+
+                std::cout << "      -> Pt_GRV(bin)=" << Pt_g << " ± " << err_g
+                          << "  Pt_ABD(bin)=" << Pt_a << " ± " << err_a << "\n";
 
                 xv .push_back(xm);
                 yg .push_back(Pt_g); ye_g.push_back(err_g);
@@ -246,9 +271,8 @@ int main() {
                 << Pt_abd << "\t" << s_abd << "\n";
             std::cout << "    Run=" << run
                       << "  Pt_GRV=" << Pt_grv << "±" << s_grv
-                      << "  Pt_ABD=" << Pt_abd << "±" << s_abd << "\n";
+                      << "  Pt_ABD=" << Pt_abd << "±" << s_abd << "\n\n";
         }
-        std::cout << "\n";
     }
 
     out.close();
