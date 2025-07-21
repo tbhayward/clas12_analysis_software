@@ -260,6 +260,7 @@ int main() {
                           << ", asym="  << asym
                           << ", Df="    << df
                           << ", Pb="    << pb
+                          << ", asym/(Df*Pb)=" << asym/(df*pb)
                           << ", pol_tgt="<< targPol
                           << ", A_GRV=" << a_grv
                           << ", A_ABD=" << a_abd
