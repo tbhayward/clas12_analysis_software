@@ -169,7 +169,7 @@ public static void main(String[] args) {
 	    	boolean process_event = filter.isValid(research_Event) && (runnum == 11 || runnum < 5020 || runnum > 17000 ||
 	    	qa.pass(runnum, evnum) );
 	    	if (runnum > 17768) process_event = false; // outbending RGC Sp23
-	    	if (runnum == 17331) process_event = false; // low live time
+	    	if (runnum == 17331 || runnum == 16987 || runnum == 17079) process_event = false; // low live time
 
 		    if (process_event) {
 
