@@ -16,6 +16,8 @@
 // ---------- CONFIGURATION ----------
 // 0 = all three periods, 1 = RGC_Su22 only, 2 = RGC_Fa22 only, 3 = RGC_Sp23 only
 const int runMode = 1;
+// testRun: 0 means process all runs, >0 will restrict to that single run number
+const int testRun = 16137;
 
 // xB bin edges
 static const std::vector<double> xB_bins = {
@@ -187,6 +189,8 @@ int main() {
         // compute Pt per run
         for (size_t i = 0; i < nRuns; ++i) {
             int run = runs[i];
+            if (testRun > 0 && run != testRun) continue;
+
             std::vector<double> xv, yg, ye_g, ya, ye_a;
             for (size_t b = 0; b < nBins; ++b) {
                 long p = Np[i][b], m = Nm[i][b];
