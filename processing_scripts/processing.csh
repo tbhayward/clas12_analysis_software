@@ -12,11 +12,11 @@ endif
 # Determine the third argument for ./convert_txt_to_root based on arg1
 # Initialize to 0 as default value
 set convert_arg3 = 0
-echo $convert_arg3
 
 # Set convert_arg3 based on the value of arg1
 if ($arg1 == "processing_scripts/processing_inclusive.groovy") then
     set convert_arg3 = 0
+    echo "HELLO WORLD"
 else if ($arg1 == "processing_scripts/processing_mc_inclusive.groovy") then
     set convert_arg3 = 0
 else if ($arg1 == "processing_scripts/processing_two_particles.groovy") then
