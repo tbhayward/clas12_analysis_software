@@ -5,7 +5,6 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 # Data: beam current (nA), counts, charge (nC)
-# Removed the 10 nA point
 currents = np.array([2, 4, 6, 8])
 counts   = np.array([656206, 1321205, 1729427, 1167246])
 charges  = np.array([5969.59, 12153.266, 16195.799, 11276.1231])
@@ -17,7 +16,6 @@ for cnt, q in zip(counts, charges):
     counts_per_nC.append(cnt / q)
     uncertainties.append(np.sqrt(cnt) / q)
 #endfor
-
 counts_per_nC = np.array(counts_per_nC)
 uncertainties = np.array(uncertainties)
 
@@ -33,15 +31,13 @@ for I in currents:
     drop_percentages.append(drop_pct)
 #endfor
 
-# Prepare table data: first row is fitted value, then drops
-row_labels = [
-    "0 nA (counts/nC)",
-    "2 nA drop (%)",
-    "4 nA drop (%)",
-    "6 nA drop (%)",
-    "8 nA drop (%)",
-]
-table_data = [[f"{y0:.2f}"]] + [[f"{dp:.2f}%"] for dp in drop_percentages]
+# Prepare table data
+row_labels = ["y(0 nA)", "Δ @2 nA", "Δ @4 nA", "Δ @6 nA", "Δ @8 nA"]
+table_data = []
+table_data.append([f"{y0:.1f}"])
+for dp in drop_percentages:
+    table_data.append([f"{dp:.1f}%"])
+#endfor
 
 # Ensure output directory exists
 os.makedirs("output", exist_ok=True)
@@ -49,11 +45,16 @@ os.makedirs("output", exist_ok=True)
 # Create plot
 fig, ax = plt.subplots()
 ax.errorbar(currents, counts_per_nC, yerr=uncertainties, fmt='o', label='Data')
-x_fit = np.linspace(currents.min(), currents.max(), 100)
+
+# Plot the fit line from 0 nA to max current
+x_fit = np.linspace(0, currents.max(), 100)
 y_fit = m * x_fit + b
 ax.plot(x_fit, y_fit, '-', label=f'Fit: y = {m:.2f} x + {b:.2f}')
 
-# Add table in the top right
+# Start x-axis at 0
+ax.set_xlim(0, currents.max())
+
+# Add a small table like a second legend in the upper right
 table = ax.table(
     cellText=table_data,
     rowLabels=row_labels,
@@ -61,10 +62,11 @@ table = ax.table(
     cellLoc='center',
     rowLoc='center',
     loc='upper right',
+    bbox=[0.60, 0.60, 0.30, 0.30]  # [left, bottom, width, height] in axes fraction
 )
 table.auto_set_font_size(False)
-table.set_fontsize(8)
-table.scale(1, 1.5)
+table.set_fontsize(6)
+table.scale(1, 1.1)
 
 # Labels and legend
 ax.set_xlabel("nA")
