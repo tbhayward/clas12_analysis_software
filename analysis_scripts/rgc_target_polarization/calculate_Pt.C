@@ -9,15 +9,16 @@
 #include <iostream>
 #include <fstream>
 #include <sstream>
+#include <iomanip>       // for std::fixed, std::setprecision
 #include <map>
 #include <vector>
 #include <cmath>
 
 // ---------- CONFIGURATION ----------
 // 0 = all three periods, 1 = RGC_Su22 only, 2 = RGC_Fa22 only, 3 = RGC_Sp23 only
-const int runMode = 3;
+const int runMode = 1;
 // testRun: 0 means process all runs, >0 will restrict to that single run number
-const int testRun = 17598;  // set to your run of interest, or 0 to do all
+const int testRun = 16317;  // set to your run of interest, or 0 to do all
 
 // xB bin edges
 static const std::vector<double> xB_bins = {
@@ -48,12 +49,12 @@ double ALL_ABD(double x) {
          - 1.22263*x*x*x*x;
 }
 
-// path to per-run charge & target-polarity CSV
+// path to per-run charge & target‐polarity CSV
 const char* RUNINFO =
     "/u/home/thayward/clas12_analysis_software/analysis_scripts/"
     "asymmetry_extraction/imports/clas12_run_info.csv";
 
-// hard-coded NH3 ROOT file paths per period
+// hard‐coded NH3 ROOT file paths per period
 static const std::map<std::string,std::string> filePaths = {
     {"RGC_Su22", "/work/clas12/thayward/CLAS12_SIDIS/processed_data/pass2/data/eX/rgc_su22_inb_NH3_eX.root"},
     {"RGC_Fa22", "/work/clas12/thayward/CLAS12_SIDIS/processed_data/pass2/data/eX/rgc_fa22_inb_NH3_eX.root"},
@@ -74,7 +75,7 @@ int main() {
     for (auto& p : periods) std::cout << " " << p;
     std::cout << "\n\n";
 
-    // --- 1) Read runinfo CSV, build chargeMap, chargePlusMap, chargeMinusMap, signMap ---
+    // --- 1) Read runinfo CSV, build chargeMap, chargePlusMap, chargeMinusMap, signMap, targetPolMap ---
     std::ifstream runinfo(RUNINFO);
     if (!runinfo) {
         std::cerr << "[Error] cannot open " << RUNINFO << "\n";
@@ -82,6 +83,7 @@ int main() {
     }
     std::map<int,double> chargeMap, chargePlusMap, chargeMinusMap;
     std::map<int,int>    signMap;
+    std::map<int,double> targetPolMap;
     {
         std::string line;
         while (std::getline(runinfo, line)) {
@@ -98,10 +100,11 @@ int main() {
             chargePlusMap[run]  = chPlus;
             chargeMinusMap[run] = chMinus;
             signMap[run]        = (pol_s > 0 ? +1 : -1);
+            targetPolMap[run]   = pol_s;
         }
     }
     std::cout << "[Loaded] " << chargeMap.size()
-              << " runs with total/± charge & sign info\n\n";
+              << " runs with total/± charge & sign/pol info\n\n";
 
     // --- 2) Load dilution factors and x_mean from CSV ---
     std::ifstream dfcsv("output/dilution_factor.csv");
@@ -196,7 +199,7 @@ int main() {
             size_t ridx = it->second;
             int sgn = signMap[runnum];
 
-            // ** flip helicity sign here **
+            // flip helicity sign
             int hel = -helicity;
 
             int bin = std::upper_bound(xB_bins.begin(), xB_bins.end(), x)
@@ -216,8 +219,10 @@ int main() {
 
             std::vector<double> xv, yg, ye_g, ya, ye_a;
             std::cout << "  [Compute] Run " << run << "\n";
-            double cp = chargePlusMap[run];
-            double cm = chargeMinusMap[run];
+            double cp      = chargePlusMap[run];
+            double cm      = chargeMinusMap[run];
+            double targPol = targetPolMap[run];
+            double pb      = Pb.at(period);
 
             for (size_t b = 0; b < nBins; ++b) {
                 long raw_p = Np[i][b], raw_m = Nm[i][b];
@@ -232,31 +237,35 @@ int main() {
                     std::cout << "    bin " << b << ": S≈0, skip\n";
                     continue;
                 }
-                double Δ  = p - m;
-                double xm = xMean[b];
-                double df = Df[b], s_df = sDf[b];
-                double pb = Pb.at(period), s_pb = sigma_Pb.at(period);
+                double Δ     = p - m;
+                double asym  = Δ / S;
+                double xm    = xMean[b];
+                double df    = Df[b], s_df = sDf[b];
 
                 double a_grv = ALL_GRV(xm);
                 double a_abd = ALL_ABD(xm);
 
-                double Ag   = a_grv * df * pb;
-                double Aa   = a_abd * df * pb;
-                double Pt_g = Δ / (Ag * S);
-                double Pt_a = Δ / (Aa * S);
+                double Ag    = a_grv * df * pb;
+                double Aa    = a_abd * df * pb;
+                double Pt_g  = Δ / (Ag * S);
+                double Pt_a  = Δ / (Aa * S);
 
-                std::cout
-                  << "    bin " << b
-                  << ": Np=" << raw_p
-                  << ", Nm=" << raw_m
-                  << ", normNp=" << p
-                  << ", normNm=" << m
-                  << ", Df=" << df
-                  << ", Pb=" << pb
-                  << ", A_GRV=" << a_grv
-                  << ", A_ABD=" << a_abd
-                  << ", Pt_GRV_bin=" << Pt_g
-                  << ", Pt_ABD_bin=" << Pt_a << "\n";
+                // print everything to 3 decimals
+                std::cout << std::fixed << std::setprecision(3)
+                          << "    bin " << b
+                          << ": Np="    << raw_p
+                          << ", Nm="    << raw_m
+                          << ", normNp="<< p
+                          << ", normNm="<< m
+                          << ", asym="  << asym
+                          << ", Df="    << df
+                          << ", Pb="    << pb
+                          << ", pol_tgt="<< targPol
+                          << ", A_GRV=" << a_grv
+                          << ", A_ABD=" << a_abd
+                          << ", Pt_GRV_bin="<< Pt_g
+                          << ", Pt_ABD_bin="<< Pt_a
+                          << "\n";
 
                 // propagate stats using sqrt(N)/Q
                 double var_p = raw_p / (cp*cp);
@@ -269,7 +278,7 @@ int main() {
                 double err_g = std::sqrt(var_g);
                 err_g = std::sqrt(err_g*err_g
                     + std::pow(Pt_g*s_df/df,2)
-                    + std::pow(Pt_g*s_pb/pb,2));
+                    + std::pow(Pt_g*sigma_Pb.at(period)/pb,2));
 
                 double dPa_p = (S - Δ)/(Aa*S*S);
                 double dPa_n = -(S + Δ)/(Aa*S*S);
@@ -278,12 +287,13 @@ int main() {
                 double err_a = std::sqrt(var_a);
                 err_a = std::sqrt(err_a*err_a
                     + std::pow(Pt_a*s_df/df,2)
-                    + std::pow(Pt_a*s_pb/pb,2));
+                    + std::pow(Pt_a*sigma_Pb.at(period)/pb,2));
 
                 xv .push_back(xm);
                 yg .push_back(Pt_g); ye_g.push_back(err_g);
                 ya .push_back(Pt_a); ye_a.push_back(err_a);
             }
+
             if (xv.empty()) {
                 std::cout << "    [No valid bins for run " << run << "]\n\n";
                 continue;
@@ -302,9 +312,11 @@ int main() {
             double Pt_abd = fit1.GetParameter(0), s_abd = fit1.GetParError(0);
 
             out << run << "\t"
+                << std::fixed << std::setprecision(3)
                 << Pt_grv << "\t" << s_grv << "\t"
                 << Pt_abd << "\t" << s_abd << "\n";
-            std::cout << "    -> Fit Pt_GRV=" << Pt_grv << "±" << s_grv
+            std::cout << std::fixed << std::setprecision(3)
+                      << "    -> Fit Pt_GRV=" << Pt_grv << "±" << s_grv
                       << ", Pt_ABD=" << Pt_abd << "±" << s_abd << "\n\n";
         }
     }
