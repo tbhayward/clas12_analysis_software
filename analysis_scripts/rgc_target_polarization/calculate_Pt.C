@@ -48,12 +48,12 @@ double ALL_ABD(double x) {
          - 1.22263*x*x*x*x;
 }
 
-// path to per-run charge & target‐polarity CSV
+// path to per-run charge & target-polarity CSV
 const char* RUNINFO =
     "/u/home/thayward/clas12_analysis_software/analysis_scripts/"
     "asymmetry_extraction/imports/clas12_run_info.csv";
 
-// hard‐coded NH3 ROOT file paths per period
+// hard-coded NH3 ROOT file paths per period
 static const std::map<std::string,std::string> filePaths = {
     {"RGC_Su22", "/work/clas12/thayward/CLAS12_SIDIS/processed_data/pass2/data/eX/rgc_su22_inb_NH3_eX.root"},
     {"RGC_Fa22", "/work/clas12/thayward/CLAS12_SIDIS/processed_data/pass2/data/eX/rgc_fa22_inb_NH3_eX.root"},
@@ -74,16 +74,14 @@ int main() {
     for (auto& p : periods) std::cout << " " << p;
     std::cout << "\n\n";
 
-    // --- 1) Read runinfo CSV, build chargeMap, chargePlusMap, chargeMinusMap and signMap ---
+    // --- 1) Read runinfo CSV, build chargeMap, chargePlusMap, chargeMinusMap, signMap ---
     std::ifstream runinfo(RUNINFO);
     if (!runinfo) {
         std::cerr << "[Error] cannot open " << RUNINFO << "\n";
         return 1;
     }
-    std::map<int,double>    chargeMap;
-    std::map<int,double>    chargePlusMap;
-    std::map<int,double>    chargeMinusMap;
-    std::map<int,int>       signMap;
+    std::map<int,double> chargeMap, chargePlusMap, chargeMinusMap;
+    std::map<int,int>    signMap;
     {
         std::string line;
         while (std::getline(runinfo, line)) {
@@ -91,15 +89,15 @@ int main() {
             std::stringstream ss(line);
             int run; double chTotal, chPlus, chMinus, pol_s, pol_e; char comma;
             ss >> run >> comma
-               >> chTotal >> comma
-               >> chPlus  >> comma
-               >> chMinus >> comma
-               >> pol_s   >> comma
+               >> chTotal  >> comma
+               >> chPlus   >> comma
+               >> chMinus  >> comma
+               >> pol_s    >> comma
                >> pol_e;
-            chargeMap[run]       = chTotal;
-            chargePlusMap[run]   = chPlus;
-            chargeMinusMap[run]  = chMinus;
-            signMap[run]         = (pol_s > 0 ? +1 : -1);
+            chargeMap[run]      = chTotal;
+            chargePlusMap[run]  = chPlus;
+            chargeMinusMap[run] = chMinus;
+            signMap[run]        = (pol_s > 0 ? +1 : -1);
         }
     }
     std::cout << "[Loaded] " << chargeMap.size()
@@ -217,6 +215,7 @@ int main() {
             std::cout << "  [Compute] Run " << run << "\n";
             double cp = chargePlusMap[run];
             double cm = chargeMinusMap[run];
+
             for (size_t b = 0; b < nBins; ++b) {
                 long raw_p = Np[i][b], raw_m = Nm[i][b];
                 if (cp <= 0 || cm <= 0) {
@@ -256,16 +255,24 @@ int main() {
                   << ", Pt_GRV_bin=" << Pt_g
                   << ", Pt_ABD_bin=" << Pt_a << "\n";
 
-                // propagate stats
-                double dPg_p = (S - Δ)/(Ag*S*S), dPg_n = -(S + Δ)/(Ag*S*S);
-                double var_g = dPg_p*dPg_p*p + dPg_n*dPg_n*m;
+                // propagate stats using sqrt(N)/Q
+                double var_p = raw_p / (cp*cp);
+                double var_m = raw_m / (cm*cm);
+
+                double dPg_p = (S - Δ)/(Ag*S*S);
+                double dPg_n = -(S + Δ)/(Ag*S*S);
+                double var_g = dPg_p*dPg_p * var_p
+                             + dPg_n*dPg_n * var_m;
                 double err_g = std::sqrt(var_g);
+                // add Df and Pb contributions
                 err_g = std::sqrt(err_g*err_g
                     + std::pow(Pt_g*s_df/df,2)
                     + std::pow(Pt_g*s_pb/pb,2));
 
-                double dPa_p = (S - Δ)/(Aa*S*S), dPa_n = -(S + Δ)/(Aa*S*S);
-                double var_a = dPa_p*dPa_p*p + dPa_n*dPa_n*m;
+                double dPa_p = (S - Δ)/(Aa*S*S);
+                double dPa_n = -(S + Δ)/(Aa*S*S);
+                double var_a = dPa_p*dPa_p * var_p
+                             + dPa_n*dPa_n * var_m;
                 double err_a = std::sqrt(var_a);
                 err_a = std::sqrt(err_a*err_a
                     + std::pow(Pt_a*s_df/df,2)
