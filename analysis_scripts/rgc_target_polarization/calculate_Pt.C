@@ -193,6 +193,9 @@ int main() {
             if (i % 10000000 == 0 && i > 0)
                 std::cout << "    event " << i << "/" << N << "\n";
 
+            // skip zero‐helicity entirely
+            if (helicity == 0) continue;
+
             // apply y-cut
             if (y >= 0.75) continue;
 
@@ -214,10 +217,10 @@ int main() {
             auto it = runToIdx.find(runnum);
             if (it == runToIdx.end()) continue;
             size_t ridx = it->second;
-            int sgn = signMap[runnum];
 
-            // flip helicity sign
+            // flip helicity sign and combine with target‐sign
             int hel = -helicity;
+            int sgn = signMap[runnum];
 
             int bin = std::upper_bound(xB_bins.begin(), xB_bins.end(), x)
                     - xB_bins.begin() - 1;
