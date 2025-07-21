@@ -100,26 +100,27 @@ int main() {
     std::cout << "[Loaded] " << chargeMap.size()
               << " runs with charge & sign info\n\n";
 
-    // --- 2) Load dilution factors from CSV ---
+    // --- 2) Load dilution factors and x_mean from CSV ---
     std::ifstream dfcsv("output/dilution_factor.csv");
     if (!dfcsv) {
         std::cerr << "[Error] cannot open output/dilution_factor.csv\n";
         return 1;
     }
-    std::vector<double> Df, sDf;
+    std::vector<double> xMean, Df, sDf;
     {
         std::string hdr; std::getline(dfcsv, hdr);
         std::string ln;
-        while (std::getline(dfcsv, ln) && Df.size() < xB_bins.size()-1) {
+        while (std::getline(dfcsv, ln) && xMean.size() < xB_bins.size()-1) {
             std::stringstream ss(ln);
             double xm, df, dfs; char comma;
             ss >> xm >> comma >> df >> comma >> dfs;
-            Df .push_back(df);
-            sDf.push_back(dfs);
+            xMean.push_back(xm);
+            Df   .push_back(df);
+            sDf  .push_back(dfs);
         }
     }
-    std::cout << "[Loaded] " << Df.size()
-              << " dilution factors for xB bins\n\n";
+    std::cout << "[Loaded] " << xMean.size()
+              << " x_mean & dilution entries\n\n";
 
     // --- 3) Prepare output ---
     gSystem->mkdir("output", true);
@@ -143,7 +144,7 @@ int main() {
 
         // build run-index map and allocate counters
         std::map<int,size_t> runToIdx;
-        std::vector<int>     runs;
+        std::vector<int> runs;
         for (auto& kv : chargeMap) {
             runs.push_back(kv.first);
             runToIdx[kv.first] = runs.size() - 1;
@@ -204,49 +205,33 @@ int main() {
             if (testRun > 0 && run != testRun) continue;
 
             std::vector<double> xv, yg, ye_g, ya, ye_a;
-            std::cout << "[Compute] Run " << run << " bins:\n";
             for (size_t b = 0; b < nBins; ++b) {
-                long p = Np[i][b], m = Nm[i][b];
-                long S = p + m;
+                long p = Np[i][b], m = Nm[i][b], S = p + m;
                 if (S < 1) continue;
                 double Δ = double(p) - double(m);
-                double xm = 0.5*(xB_bins[b] + xB_bins[b+1]);
-                double df   = Df[b],   s_df = sDf[b];
+                double xm   = xMean[b];       // use actual mean x from CSV
+                double df   = Df[b], s_df = sDf[b];
                 double pb   = Pb.at(period), s_pb = sigma_Pb.at(period);
-                double all_grv = ALL_GRV(xm), all_abd = ALL_ABD(xm);
 
-                // debug print for each bin
-                std::cout << "    bin " << b
-                          << "  Np=" << p << "  Nm=" << m
-                          << "  Df=" << df << "  Pb=" << pb
-                          << "  A_GRV=" << all_grv
-                          << "  A_ABD=" << all_abd
-                          << "\n";
-
-                double Ag   = all_grv * df * pb;
-                double Aa   = all_abd * df * pb;
+                double Ag   = ALL_GRV(xm) * df * pb;
+                double Aa   = ALL_ABD(xm) * df * pb;
                 double Pt_g = Δ / (Ag * S);
                 double Pt_a = Δ / (Aa * S);
 
                 // propagate stats
-                double dPg_p = (S - Δ)/(Ag*S*S);
-                double dPg_n = -(S + Δ)/(Ag*S*S);
+                double dPg_p = (S - Δ)/(Ag*S*S), dPg_n = -(S + Δ)/(Ag*S*S);
                 double var_g = dPg_p*dPg_p*p + dPg_n*dPg_n*m;
                 double err_g = std::sqrt(var_g);
                 err_g = std::sqrt(err_g*err_g
                     + std::pow(Pt_g*s_df/df,2)
                     + std::pow(Pt_g*s_pb/pb,2));
 
-                double dPa_p = (S - Δ)/(Aa*S*S);
-                double dPa_n = -(S + Δ)/(Aa*S*S);
+                double dPa_p = (S - Δ)/(Aa*S*S), dPa_n = -(S + Δ)/(Aa*S*S);
                 double var_a = dPa_p*dPa_p*p + dPa_n*dPa_n*m;
                 double err_a = std::sqrt(var_a);
                 err_a = std::sqrt(err_a*err_a
                     + std::pow(Pt_a*s_df/df,2)
                     + std::pow(Pt_a*s_pb/pb,2));
-
-                std::cout << "      -> Pt_GRV(bin)=" << Pt_g << " ± " << err_g
-                          << "  Pt_ABD(bin)=" << Pt_a << " ± " << err_a << "\n";
 
                 xv .push_back(xm);
                 yg .push_back(Pt_g); ye_g.push_back(err_g);
@@ -271,8 +256,9 @@ int main() {
                 << Pt_abd << "\t" << s_abd << "\n";
             std::cout << "    Run=" << run
                       << "  Pt_GRV=" << Pt_grv << "±" << s_grv
-                      << "  Pt_ABD=" << Pt_abd << "±" << s_abd << "\n\n";
+                      << "  Pt_ABD=" << Pt_abd << "±" << s_abd << "\n";
         }
+        std::cout << "\n";
     }
 
     out.close();
