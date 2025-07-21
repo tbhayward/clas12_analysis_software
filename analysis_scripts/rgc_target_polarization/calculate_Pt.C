@@ -1,4 +1,5 @@
 // plot_Pt_by_run.C
+
 #include <TFile.h>
 #include <TTree.h>
 #include <TSystem.h>
@@ -153,12 +154,13 @@ int main() {
         std::vector<std::vector<long>> Np(nRuns, std::vector<long>(nBins, 0));
         std::vector<std::vector<long>> Nm(nRuns, std::vector<long>(nBins, 0));
 
-        // set branches
+        // set branches (now including y)
         Int_t    runnum;
-        Double_t x;
+        Double_t x, y;
         Int_t    helicity;
         tree->SetBranchAddress("runnum",   &runnum);
         tree->SetBranchAddress("x",        &x);
+        tree->SetBranchAddress("y",        &y);
         tree->SetBranchAddress("helicity", &helicity);
 
         Long64_t N = tree->GetEntries();
@@ -166,8 +168,11 @@ int main() {
         std::cout << "  [Scan] " << N << " events\n";
         for (Long64_t i = 0; i < N; ++i) {
             tree->GetEntry(i);
-            if (i % 50000000 == 0 && i > 0)
+            if (i % 10000000 == 0 && i > 0)
                 std::cout << "    event " << i << "/" << N << "\n";
+
+            // apply y-cut
+            if (y >= 0.75) continue;
 
             // early exit logic for single-run test
             if (testRun > 0) {
@@ -205,18 +210,37 @@ int main() {
             if (testRun > 0 && run != testRun) continue;
 
             std::vector<double> xv, yg, ye_g, ya, ye_a;
+            std::cout << "  [Compute] Run " << run << "\n";
             for (size_t b = 0; b < nBins; ++b) {
                 long p = Np[i][b], m = Nm[i][b], S = p + m;
-                if (S < 1) continue;
-                double Δ = double(p) - double(m);
-                double xm   = xMean[b];       // use actual mean x from CSV
-                double df   = Df[b], s_df = sDf[b];
-                double pb   = Pb.at(period), s_pb = sigma_Pb.at(period);
+                if (S < 1) {
+                    std::cout << "    bin " << b << ": S=0, skip\n";
+                    continue;
+                }
+                double Δ  = double(p) - double(m);
+                double xm = xMean[b];
+                double df = Df[b], s_df = sDf[b];
+                double pb = Pb.at(period), s_pb = sigma_Pb.at(period);
 
-                double Ag   = ALL_GRV(xm) * df * pb;
-                double Aa   = ALL_ABD(xm) * df * pb;
+                double a_grv = ALL_GRV(xm);
+                double a_abd = ALL_ABD(xm);
+
+                double Ag   = a_grv * df * pb;
+                double Aa   = a_abd * df * pb;
                 double Pt_g = Δ / (Ag * S);
                 double Pt_a = Δ / (Aa * S);
+
+                std::cout
+                  << "    bin " << b
+                  << ": Np=" << p
+                  << ", Nm=" << m
+                  << ", y-cut OK"
+                  << ", Df=" << df
+                  << ", Pb=" << pb
+                  << ", A_GRV=" << a_grv
+                  << ", A_ABD=" << a_abd
+                  << ", Pt_GRV_bin=" << Pt_g
+                  << ", Pt_ABD_bin=" << Pt_a << "\n";
 
                 // propagate stats
                 double dPg_p = (S - Δ)/(Ag*S*S), dPg_n = -(S + Δ)/(Ag*S*S);
@@ -237,7 +261,10 @@ int main() {
                 yg .push_back(Pt_g); ye_g.push_back(err_g);
                 ya .push_back(Pt_a); ye_a.push_back(err_a);
             }
-            if (xv.empty()) continue;
+            if (xv.empty()) {
+                std::cout << "    [No valid bins for run " << run << "]\n\n";
+                continue;
+            }
 
             // fit GRV constant
             TGraphErrors g_grv(xv.size(), &xv[0], &yg[0], nullptr, &ye_g[0]);
@@ -254,11 +281,9 @@ int main() {
             out << run << "\t"
                 << Pt_grv << "\t" << s_grv << "\t"
                 << Pt_abd << "\t" << s_abd << "\n";
-            std::cout << "    Run=" << run
-                      << "  Pt_GRV=" << Pt_grv << "±" << s_grv
-                      << "  Pt_ABD=" << Pt_abd << "±" << s_abd << "\n";
+            std::cout << "    -> Fit Pt_GRV=" << Pt_grv << "±" << s_grv
+                      << ", Pt_ABD=" << Pt_abd << "±" << s_abd << "\n\n";
         }
-        std::cout << "\n";
     }
 
     out.close();
