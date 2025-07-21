@@ -40,7 +40,7 @@ int main() {
         }}
     };
 
-    // --- read run‐by‐run charge map from CSV ---
+    // --- read run-by-run charge map from CSV ---
     const char* runinfo = "/u/home/thayward/clas12_analysis_software/analysis_scripts/"
                           "asymmetry_extraction/imports/clas12_run_info.csv";
     std::ifstream csv(runinfo);
@@ -96,7 +96,7 @@ int main() {
         tree->SetBranchAddress("x",     &x);
         Long64_t nEntries = tree->GetEntries();
         std::cout<<"  [Scan1] "<<nEntries<<" entries\n";
-        for(Long64_t i=0;i<nEntries;++i){
+        for(Long64_t i=0; i<nEntries; ++i){
           tree->GetEntry(i);
           runs.insert(runnum);
         }
@@ -110,7 +110,7 @@ int main() {
 
         // second pass: fill
         std::cout<<"  [Scan2] filling counts\n";
-        for(Long64_t i=0;i<nEntries;++i){
+        for(Long64_t i=0; i<nEntries; ++i){
           tree->GetEntry(i);
           if(x < xmin || x>=xmax) continue;
           int bin = int((x - xmin)/binWidth);
@@ -140,7 +140,23 @@ int main() {
           for(auto v: integrals) stddev += (v-mean)*(v-mean);
           stddev = std::sqrt(stddev/integrals.size());
         }
-        log<<"Mean="<<mean<<", Std="<<stddev<<"\n\n";
+        log<<"Mean="<<mean<<", Std="<<stddev<<"\n";
+
+        // list outliers >2σ
+        log<<"Outliers (>2σ):\n";
+        for(auto const& [r, vec] : hist){
+          auto it = chargeMap.find(r);
+          if(it==chargeMap.end()) continue;
+          double sumCounts = 0;
+          for(auto c: vec) sumCounts += c;
+          double integ = sumCounts / it->second;
+          if(stddev > 0 && std::fabs(integ - mean) > 2*stddev) {
+            log<<"  Run="<<r
+               <<", Integral="<<integ
+               <<", Δ="<<((integ-mean)/stddev)<<"σ\n";
+          }
+        }
+        log<<"\n";
 
         f.Close();
       }
