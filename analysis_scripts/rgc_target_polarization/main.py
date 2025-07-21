@@ -25,10 +25,10 @@ def main():
     trees = data_loader.load_root_trees()
 
     # plot normalized yields for NH3, C, CH2, He, ET
-    pny.plot_normalized_yields(trees, xB_bins)
+    # pny.plot_normalized_yields(trees, xB_bins)
 
     # run the temporary manual Df routine, optionally using cached x_mean
-    # cdf.calculate_dilution_factor_temp(trees, xB_bins, use_cached)
+    cdf.calculate_dilution_factor_temp(trees, xB_bins, use_cached)
 
     # TODO: compute ALL(xB_bins) and solve for Pt using Df from CSV
     # end TODO
