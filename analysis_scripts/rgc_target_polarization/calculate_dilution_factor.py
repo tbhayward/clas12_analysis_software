@@ -200,9 +200,9 @@ def calculate_dilution_factor_temp(trees, xB_bins, use_cached=False):
     then save CSV and plot.
     If use_cached==True, pull x_mean from existing CSV instead of recalculating.
     """
-    # manual values
-    su22_df  = np.array([0.166709, 0.176158, 0.191176, 0.206910, 0.221360, 0.230502, 0.220180])
-    su22_err = np.array([0.000938862, 0.000491330, 0.000561747, 0.000733391, 0.001159140, 0.002228200, 0.005815470])
+    # manual values (updated)
+    su22_df  = np.array([0.171112, 0.180644, 0.195561, 0.211246, 0.225397, 0.234519, 0.224291])
+    su22_err = np.array([0.000927088, 0.000484202, 0.000552962, 0.000720490, 0.001138660, 0.002188790, 0.005721290])
 
     fa22_df  = np.array([0.139084, 0.139782, 0.155144, 0.171282, 0.184396, 0.194965, 0.191098])
     fa22_err = np.array([0.000345853, 0.000188008, 0.000215951, 0.000283221, 0.000452165, 0.000864904, 0.002219650])
