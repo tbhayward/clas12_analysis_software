@@ -48,25 +48,25 @@ const char* RUNINFO =
 // hard‐coded ROOT file paths for each period and target
 std::map<std::string,std::map<std::string,std::string>> filePaths = {
   {"RGC_Su22", {
-      {"NH3","/work/clas12/thayward/.../rgc_su22_inb_NH3_eX.root"},
-      {"C",  "/work/clas12/thayward/.../rgc_su22_inb_C_eX.root"},
-      {"CH2","/work/clas12/thayward/.../rgc_su22_inb_CH2_eX.root"},
-      {"He", "/work/clas12/thayward/.../rgc_su22_inb_He_eX.root"},
-      {"ET", "/work/clas12/thayward/.../rgc_su22_inb_ET_eX.root"}
+      {"NH3", "/work/clas12/thayward/CLAS12_SIDIS/processed_data/pass2/data/eX/rgc_su22_inb_NH3_eX.root"},
+      {"C",   "/work/clas12/thayward/CLAS12_SIDIS/processed_data/pass2/data/eX/rgc_su22_inb_C_eX.root"},
+      {"CH2", "/work/clas12/thayward/CLAS12_SIDIS/processed_data/pass2/data/eX/rgc_su22_inb_CH2_eX.root"},
+      {"He",  "/work/clas12/thayward/CLAS12_SIDIS/processed_data/pass2/data/eX/rgc_su22_inb_He_eX.root"},
+      {"ET",  "/work/clas12/thayward/CLAS12_SIDIS/processed_data/pass2/data/eX/rgc_su22_inb_ET_eX.root"}
   }},
   {"RGC_Fa22", {
-      {"NH3","/work/clas12/thayward/.../rgc_fa22_inb_NH3_eX.root"},
-      {"C",  "/work/clas12/thayward/.../rgc_fa22_inb_C_eX.root"},
-      {"CH2","/work/clas12/thayward/.../rgc_fa22_inb_CH2_eX.root"},
-      {"He", "/work/clas12/thayward/.../rgc_fa22_inb_He_eX.root"},
-      {"ET", "/work/clas12/thayward/.../rgc_fa22_inb_ET_eX.root"}
+      {"NH3", "/work/clas12/thayward/CLAS12_SIDIS/processed_data/pass2/data/eX/rgc_fa22_inb_NH3_eX.root"},
+      {"C",   "/work/clas12/thayward/CLAS12_SIDIS/processed_data/pass2/data/eX/rgc_fa22_inb_C_eX.root"},
+      {"CH2", "/work/clas12/thayward/CLAS12_SIDIS/processed_data/pass2/data/eX/rgc_fa22_inb_CH2_eX.root"},
+      {"He",  "/work/clas12/thayward/CLAS12_SIDIS/processed_data/pass2/data/eX/rgc_fa22_inb_He_eX.root"},
+      {"ET",  "/work/clas12/thayward/CLAS12_SIDIS/processed_data/pass2/data/eX/rgc_fa22_inb_ET_eX.root"}
   }},
   {"RGC_Sp23", {
-      {"NH3","/work/clas12/thayward/.../rgc_sp23_inb_NH3_eX.root"},
-      {"C",  "/work/clas12/thayward/.../rgc_sp23_inb_C_eX.root"},
-      {"CH2","/work/clas12/thayward/.../rgc_sp23_inb_CH2_eX.root"},
-      {"He", "/work/clas12/thayward/.../rgc_sp23_inb_He_eX.root"},
-      {"ET", "/work/clas12/thayward/.../rgc_sp23_inb_ET_eX.root"}
+      {"NH3", "/work/clas12/thayward/CLAS12_SIDIS/processed_data/pass2/data/eX/rgc_sp23_inb_NH3_eX.root"},
+      {"C",   "/work/clas12/thayward/CLAS12_SIDIS/processed_data/pass2/data/eX/rgc_sp23_inb_C_eX.root"},
+      {"CH2", "/work/clas12/thayward/CLAS12_SIDIS/processed_data/pass2/data/eX/rgc_sp23_inb_CH2_eX.root"},
+      {"He",  "/work/clas12/thayward/CLAS12_SIDIS/processed_data/pass2/data/eX/rgc_sp23_inb_He_eX.root"},
+      {"ET",  "/work/clas12/thayward/CLAS12_SIDIS/processed_data/pass2/data/eX/rgc_sp23_inb_ET_eX.root"}
   }}
 };
 
