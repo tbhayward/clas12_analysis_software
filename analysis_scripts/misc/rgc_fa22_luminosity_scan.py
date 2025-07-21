@@ -24,27 +24,52 @@ uncertainties = np.array(uncertainties)
 # Fit a straight line y = m*x + b
 m, b = np.polyfit(currents, counts_per_nC, 1)
 
-# Print fitted value at 0 nA and percentage drops
+# Compute fitted value at 0 nA and percentage drops
 y0 = b  # value at 0 nA
-print(f"Fitted value at 0 nA: {y0:.2f} counts/nC")
+drop_percentages = []
 for I in currents:
     yI = m * I + b
     drop_pct = (y0 - yI) / y0 * 100
-    print(f"At {I} nA: {drop_pct:.2f}% drop")
+    drop_percentages.append(drop_pct)
 #endfor
+
+# Prepare table data: first row is fitted value, then drops
+row_labels = [
+    "0 nA (counts/nC)",
+    "2 nA drop (%)",
+    "4 nA drop (%)",
+    "6 nA drop (%)",
+    "8 nA drop (%)",
+]
+table_data = [[f"{y0:.2f}"]] + [[f"{dp:.2f}%"] for dp in drop_percentages]
 
 # Ensure output directory exists
 os.makedirs("output", exist_ok=True)
 
-# Plot
-plt.errorbar(currents, counts_per_nC, yerr=uncertainties, fmt='o', label='Data')
+# Create plot
+fig, ax = plt.subplots()
+ax.errorbar(currents, counts_per_nC, yerr=uncertainties, fmt='o', label='Data')
 x_fit = np.linspace(currents.min(), currents.max(), 100)
 y_fit = m * x_fit + b
-plt.plot(x_fit, y_fit, '-', label=f'Fit: y = {m:.2f} x + {b:.2f}')
+ax.plot(x_fit, y_fit, '-', label=f'Fit: y = {m:.2f} x + {b:.2f}')
 
-plt.xlabel("nA")
-plt.ylabel("counts/nC")
-plt.legend(loc="best")
+# Add table in the top right
+table = ax.table(
+    cellText=table_data,
+    rowLabels=row_labels,
+    colLabels=["Value"],
+    cellLoc='center',
+    rowLoc='center',
+    loc='upper right',
+)
+table.auto_set_font_size(False)
+table.set_fontsize(8)
+table.scale(1, 1.5)
+
+# Labels and legend
+ax.set_xlabel("nA")
+ax.set_ylabel("counts/nC")
+ax.legend(loc="lower left")
 
 plt.tight_layout()
 plt.savefig("output/rgc_fa22_luminosity_scan.pdf")
