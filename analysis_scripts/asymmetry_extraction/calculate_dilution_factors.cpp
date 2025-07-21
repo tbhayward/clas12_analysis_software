@@ -7,6 +7,8 @@
 #include <vector>
 #include <numeric>
 #include <TLatex.h>
+#include <string>
+
 // tbhayward libraries
 #include "common_vars.h"
 #include "load_bins_from_csv.h"
@@ -29,33 +31,55 @@
 #include "modifyTree.h"
 #include "fitting_process.h"
 
+// Select dataset: 1 = RGC Su22, 2 = RGC Fa22, 3 = RGC Sp23
+const int data_set = 3;
 
-// // // Fractional charge values for Total -- RGC Su22
-// const double xAtotal = 0.7452;
-// const double xCtotal = 0.0735;
-// const double xCHtotal = 0.0383;
-// const double xHetotal = 0.0245;
-// const double xftotal = 0.1184;
+struct DataSetConfig {
+    std::string name;
+    double xA, xC, xCH, xHe, xf;
+    std::string nh3File;
+    std::string cFile;
+    std::string chFile;
+    std::string heFile;
+    std::string emptyFile;
+};
 
+const std::vector<DataSetConfig> dataSetConfigs = {
+    {
+        "RGC_Su22",
+        0.7452, 0.0735, 0.0383, 0.0245, 0.1184,
+        "/work/clas12/thayward/CLAS12_SIDIS/processed_data/pass2/data/eX/rgc_su22_inb_NH3_eX.root",
+        "/work/clas12/thayward/CLAS12_SIDIS/processed_data/pass2/data/eX/rgc_su22_inb_C_eX.root",
+        "/work/clas12/thayward/CLAS12_SIDIS/processed_data/pass2/data/eX/rgc_su22_inb_CH2_eX.root",
+        "/work/clas12/thayward/CLAS12_SIDIS/processed_data/pass2/data/eX/rgc_su22_inb_He_eX.root",
+        "/work/clas12/thayward/CLAS12_SIDIS/processed_data/pass2/data/eX/rgc_su22_inb_ET_eX.root"
+    },
+    {
+        "RGC_Fa22",
+        0.5737, 0.2057, 0.1855, 0.0291, 0.0061,
+        "/work/clas12/thayward/CLAS12_SIDIS/processed_data/pass2/data/eX/rgc_fa22_inb_NH3_eX.root",
+        "/work/clas12/thayward/CLAS12_SIDIS/processed_data/pass2/data/eX/rgc_fa22_inb_C_eX.root",
+        "/work/clas12/thayward/CLAS12_SIDIS/processed_data/pass2/data/eX/rgc_fa22_inb_CH2_eX.root",
+        "/work/clas12/thayward/CLAS12_SIDIS/processed_data/pass2/data/eX/rgc_fa22_inb_He_eX.root",
+        "/work/clas12/thayward/CLAS12_SIDIS/processed_data/pass2/data/eX/rgc_fa22_inb_ET_eX.root"
+    },
+    {
+        "RGC_Sp23",
+        0.5632, 0.1331, 0.1514, 0.9260, 0.0597,
+        "/work/clas12/thayward/CLAS12_SIDIS/processed_data/pass2/data/eX/rgc_sp23_inb_NH3_eX.root",
+        "/work/clas12/thayward/CLAS12_SIDIS/processed_data/pass2/data/eX/rgc_sp23_inb_C_eX.root",
+        "/work/clas12/thayward/CLAS12_SIDIS/processed_data/pass2/data/eX/rgc_sp23_inb_CH2_eX.root",
+        "/work/clas12/thayward/CLAS12_SIDIS/processed_data/pass2/data/eX/rgc_sp23_inb_He_eX.root",
+        "/work/clas12/thayward/CLAS12_SIDIS/processed_data/pass2/data/eX/rgc_sp23_inb_ET_eX.root"
+    }
+};
 
-// // Fractional charge values for Total -- RGC Fa22
-// const double xAtotal = 0.5737;
-// const double xCtotal = 0.2057;
-// const double xCHtotal = 0.1855;
-// const double xHetotal = 0.0291;
-// const double xftotal = 0.0061;
-
-
-// Fractional charge values for Total -- RGC Sp23
-const double xAtotal = 0.5632;
-const double xCtotal = 0.1331;
-const double xCHtotal = 0.1514;
-const double xHetotal = 0.926;
-const double xftotal = 0.0597;
-
-
-
-
+if (data_set < 1 || data_set > (int)dataSetConfigs.size()) {
+  std::cerr<<"ERROR: data_set="<<data_set
+           <<" is invalid; must be 1–"<<dataSetConfigs.size()<<"\n";
+  return {};
+}
+const auto& dsCfg = dataSetConfigs[data_set-1];
 
 // NH3 periods defined as a pair of run numbers (start, end)
 std::vector<std::pair<int, int>> nh3_periods = {
@@ -67,8 +91,11 @@ std::vector<std::pair<int, int>> nh3_periods = {
 double calculate_standard_deviation(const std::vector<double>& values) {
     if (values.size() < 2) return 0.0;
     double mean = std::accumulate(values.begin(), values.end(), 0.0) / values.size();
-    double sq_sum = std::inner_product(values.begin(), values.end(), values.begin(), 0.0,
-                                       std::plus<double>(), [&](double a, double b) { return (b - mean) * (b - mean); });
+    double sq_sum = std::inner_product(
+        values.begin(), values.end(), values.begin(), 0.0,
+        std::plus<double>(),
+        [&](double a, double b) { return (b - mean) * (b - mean); }
+    );
     return std::sqrt(sq_sum / (values.size() - 1));
 }
 
@@ -137,17 +164,7 @@ std::pair<double, double> calculate_dilution_and_error(double nA, double nC, dou
                         1.0 * nf * xC * xCH * xHe - 91.5925 * nCH * xC * xf * xHe + 17.3499 * nC * xCH * xf * xHe)
                       );
 
-    // double rho_A = 0.05091;
-    // double rho_C = 0.1494;
-    // double rho_CH = 0.06719;
-    // double L = 5.86;
-    // double lCH = 3.18;
-    // double lC = 1.678;
     // double packing_fraction = (0.699832)*(nA/xA-nMT/xHe)/(1.25055*nCH/xCH-0.23688*nC/xC-0.013668*nf/xf-nMT/xHe);
-    // double dilution = ((3*packing_fraction*rho_A)/(2*nA*rho_C*rho_CH)) *
-    //     ((L/lCH)*rho_C*(nCH-nMT)+(rho_C-rho_CH)*(nMT-nf)-(L/lC)*rho_CH*(nC-nMT));
-    // double dilution = 1.42574*(packing_fraction/nA)*
-    //     (1.46891*(nCH-nMT)+0.43859*(nMT-nf)-1.25208*(nC-nMT));
 
     double error = calculate_dilution_error(nA, nC, nCH, nMT, nf, xA, xC, xCH, xHe, xf);
     
@@ -155,358 +172,147 @@ std::pair<double, double> calculate_dilution_and_error(double nA, double nC, dou
 }
 
 std::vector<std::pair<double, double>> calculate_dilution_factors() {
+    // Load ROOT files and trees based on selected dataset
+    TFile* nh3File   = TFile::Open(dsCfg.nh3File.c_str());
+    TFile* cFile     = TFile::Open(dsCfg.cFile.c_str());
+    TFile* chFile    = TFile::Open(dsCfg.chFile.c_str());
+    TFile* heFile    = TFile::Open(dsCfg.heFile.c_str());
+    TFile* emptyFile = TFile::Open(dsCfg.emptyFile.c_str());
 
-    // Load ROOT files and trees
-    // TFile* nh3File = TFile::Open("/work/clas12/thayward/CLAS12_SIDIS/processed_data/pass2/data/epX/rgc_su22_inb_NH3_epX.root");
-    // TFile* cFile = TFile::Open("/work/clas12/thayward/CLAS12_SIDIS/processed_data/pass2/data/epX/rgc_su22_inb_C_epX.root");
-    // TFile* chFile = TFile::Open("/work/clas12/thayward/CLAS12_SIDIS/processed_data/pass2/data/epX/dilution_factor/rgc_su22_inb_CH2_epX.root");
-    // TFile* heFile = TFile::Open("/work/clas12/thayward/CLAS12_SIDIS/processed_data/pass2/data/epX/dilution_factor/rgc_su22_inb_He_epX.root");
-    // TFile* emptyFile = TFile::Open("/work/clas12/thayward/CLAS12_SIDIS/processed_data/pass2/data/epX/dilution_factor/rgc_su22_inb_ET_epX.root");
+    TTree* nh3   = static_cast<TTree*>(nh3File->Get("PhysicsEvents"));
+    TTree* c     = static_cast<TTree*>(cFile->Get("PhysicsEvents"));
+    TTree* ch    = static_cast<TTree*>(chFile->Get("PhysicsEvents"));
+    TTree* he    = static_cast<TTree*>(heFile->Get("PhysicsEvents"));
+    TTree* empty = static_cast<TTree*>(emptyFile->Get("PhysicsEvents"));
 
-    // TFile* nh3File = TFile::Open("/work/clas12/thayward/CLAS12_SIDIS/processed_data/pass2/data/eX/rgc_su22_inb_NH3_eX.root");
-    // TFile* cFile = TFile::Open("/work/clas12/thayward/CLAS12_SIDIS/processed_data/pass2/data/eX/rgc_su22_inb_C_eX.root");
-    // TFile* chFile = TFile::Open("/work/clas12/thayward/CLAS12_SIDIS/processed_data/pass2/data/eX/rgc_su22_inb_CH2_eX.root");
-    // TFile* heFile = TFile::Open("/work/clas12/thayward/CLAS12_SIDIS/processed_data/pass2/data/eX/rgc_su22_inb_He_eX.root");
-    // TFile* emptyFile = TFile::Open("/work/clas12/thayward/CLAS12_SIDIS/processed_data/pass2/data/eX/rgc_su22_inb_ET_eX.root");
-
-    // TFile* nh3File = TFile::Open("/work/clas12/thayward/CLAS12_SIDIS/processed_data/pass2/data/eX/rgc_fa22_inb_NH3_eX.root");
-    // TFile* cFile = TFile::Open("/work/clas12/thayward/CLAS12_SIDIS/processed_data/pass2/data/eX/rgc_fa22_inb_C_eX.root");
-    // TFile* chFile = TFile::Open("/work/clas12/thayward/CLAS12_SIDIS/processed_data/pass2/data/eX/rgc_fa22_inb_CH2_eX.root");
-    // TFile* heFile = TFile::Open("/work/clas12/thayward/CLAS12_SIDIS/processed_data/pass2/data/eX/rgc_fa22_inb_He_eX.root");
-    // TFile* emptyFile = TFile::Open("/work/clas12/thayward/CLAS12_SIDIS/processed_data/pass2/data/eX/rgc_fa22_inb_ET_eX.root");
-
-    TFile* nh3File = TFile::Open("/work/clas12/thayward/CLAS12_SIDIS/processed_data/pass2/data/eX/rgc_sp23_inb_NH3_eX.root");
-    TFile* cFile = TFile::Open("/work/clas12/thayward/CLAS12_SIDIS/processed_data/pass2/data/eX/rgc_sp23_inb_C_eX.root");
-    TFile* chFile = TFile::Open("/work/clas12/thayward/CLAS12_SIDIS/processed_data/pass2/data/eX/rgc_sp23_inb_CH2_eX.root");
-    TFile* heFile = TFile::Open("/work/clas12/thayward/CLAS12_SIDIS/processed_data/pass2/data/eX/rgc_sp23_inb_He_eX.root");
-    TFile* emptyFile = TFile::Open("/work/clas12/thayward/CLAS12_SIDIS/processed_data/pass2/data/eX/rgc_sp23_inb_ET_eX.root");
-
-    // TFile* nh3File = TFile::Open("/work/clas12/thayward/CLAS12_exclusive/enpi+/data/pass2/data/enpi+/rgc_su22_inb_NH3_epi+.root");
-    // TFile* cFile = TFile::Open("/work/clas12/thayward/CLAS12_exclusive/enpi+/data/pass2/data/enpi+/rgc_su22_inb_C_epi+.root");
-    // TFile* chFile = TFile::Open("/work/clas12/thayward/CLAS12_exclusive/enpi+/data/pass2/data/enpi+/rgc_su22_inb_CH2_epi+.root");
-    // TFile* heFile = TFile::Open("/work/clas12/thayward/CLAS12_exclusive/enpi+/data/pass2/data/enpi+/rgc_su22_inb_He_epi+.root");
-    // TFile* emptyFile = TFile::Open("/work/clas12/thayward/CLAS12_exclusive/enpi+/data/pass2/data/enpi+/rgc_su22_inb_ET_epi+.root");
-
-    // TFile* nh3File = TFile::Open("/work/clas12/thayward/CLAS12_exclusive/enpi+/data/pass2/data/enpi+/rgc_fa22_inb_NH3_epi+.root");
-    // TFile* cFile = TFile::Open("/work/clas12/thayward/CLAS12_exclusive/enpi+/data/pass2/data/enpi+/rgc_fa22_inb_C_epi+.root");
-    // TFile* chFile = TFile::Open("/work/clas12/thayward/CLAS12_exclusive/enpi+/data/pass2/data/enpi+/rgc_fa22_inb_CH2_epi+.root");
-    // TFile* heFile = TFile::Open("/work/clas12/thayward/CLAS12_exclusive/enpi+/data/pass2/data/enpi+/rgc_fa22_inb_He_epi+.root");
-    // TFile* emptyFile = TFile::Open("/work/clas12/thayward/CLAS12_exclusive/enpi+/data/pass2/data/enpi+/rgc_fa22_inb_ET_epi+.root");
-
-    // TFile* nh3File = TFile::Open("/work/clas12/thayward/CLAS12_exclusive/enpi+/data/pass2/data/enpi+/rgc_sp23_inb_NH3_epi+.root");
-    // TFile* cFile = TFile::Open("/work/clas12/thayward/CLAS12_exclusive/enpi+/data/pass2/data/enpi+/rgc_fa22_inb_C_epi+.root");
-    // TFile* chFile = TFile::Open("/work/clas12/thayward/CLAS12_exclusive/enpi+/data/pass2/data/enpi+/rgc_sp23_inb_CH2_epi+.root");
-    // TFile* heFile = TFile::Open("/work/clas12/thayward/CLAS12_exclusive/enpi+/data/pass2/data/enpi+/rgc_fa22_inb_He_epi+.root");
-    // TFile* emptyFile = TFile::Open("/work/clas12/thayward/CLAS12_exclusive/enpi+/data/pass2/data/enpi+/rgc_fa22_inb_ET_epi+.root");
-
-    // TFile* nh3File = TFile::Open("/work/clas12/thayward/CLAS12_exclusive/enpi+/data/pass2/data/enpi+/rgc_sp23_inb_NH3_epi+.root");
-    // TFile* cFile = TFile::Open("/work/clas12/thayward/CLAS12_exclusive/enpi+/data/pass2/data/enpi+/rgc_sp23_inb_C_epi+.root");
-    // TFile* chFile = TFile::Open("/work/clas12/thayward/CLAS12_exclusive/enpi+/data/pass2/data/enpi+/rgc_fa22_inb_CH2_epi+.root");
-    // TFile* heFile = TFile::Open("/work/clas12/thayward/CLAS12_exclusive/enpi+/data/pass2/data/enpi+/rgc_fa22_inb_He_epi+.root");
-    // TFile* emptyFile = TFile::Open("/work/clas12/thayward/CLAS12_exclusive/enpi+/data/pass2/data/enpi+/rgc_fa22_inb_ET_epi+.root");
-
-    TTree* nh3 = (TTree*)nh3File->Get("PhysicsEvents");
-    TTree* c = (TTree*)cFile->Get("PhysicsEvents");
-    TTree* ch = (TTree*)chFile->Get("PhysicsEvents");
-    TTree* he = (TTree*)heFile->Get("PhysicsEvents");
-    TTree* empty = (TTree*)emptyFile->Get("PhysicsEvents");
-
-    // Create local TTreeReader objects for each tree
-    TTreeReader nh3Reader(nh3);
-    TTreeReader cReader(c);
-    TTreeReader chReader(ch);
-    TTreeReader heReader(he);
-    TTreeReader emptyReader(empty);
-
-    // Read helicity and target polarization
+    TTreeReader nh3Reader(nh3), cReader(c), chReader(ch), heReader(he), emptyReader(empty);
     TTreeReaderValue<int> runnum(nh3Reader, "runnum");
-    TTreeReaderValue<int> helicity(nh3Reader, "helicity");
-    TTreeReaderValue<double> target_pol(nh3Reader, "target_pol");
 
-    // Pointers for local kinematic cuts, dynamically allocated based on the channel
+    // Allocate kinematic cuts based on channel
     BaseKinematicCuts* nh3Cuts = nullptr;
-    BaseKinematicCuts* cCuts = nullptr;
-    BaseKinematicCuts* chCuts = nullptr;
-    BaseKinematicCuts* heCuts = nullptr;
+    BaseKinematicCuts* cCuts   = nullptr;
+    BaseKinematicCuts* chCuts  = nullptr;
+    BaseKinematicCuts* heCuts  = nullptr;
     BaseKinematicCuts* emptyCuts = nullptr;
-
-    // Allocate the appropriate kinematic cuts based on the channel
     switch (channel) {
         case 0:
             nh3Cuts = new InclusiveKinematicCuts(nh3Reader);
-            cCuts = new InclusiveKinematicCuts(cReader);
-            chCuts = new InclusiveKinematicCuts(chReader);
-            heCuts = new InclusiveKinematicCuts(heReader);
+            cCuts   = new InclusiveKinematicCuts(cReader);
+            chCuts  = new InclusiveKinematicCuts(chReader);
+            heCuts  = new InclusiveKinematicCuts(heReader);
             emptyCuts = new InclusiveKinematicCuts(emptyReader);
             break;
         case 1:
             nh3Cuts = new SingleHadronKinematicCuts(nh3Reader);
-            cCuts = new SingleHadronKinematicCuts(cReader);
-            chCuts = new SingleHadronKinematicCuts(chReader);
-            heCuts = new SingleHadronKinematicCuts(heReader);
+            cCuts   = new SingleHadronKinematicCuts(cReader);
+            chCuts  = new SingleHadronKinematicCuts(chReader);
+            heCuts  = new SingleHadronKinematicCuts(heReader);
             emptyCuts = new SingleHadronKinematicCuts(emptyReader);
             break;
         case 2:
             nh3Cuts = new B2BDihadronKinematicCuts(nh3Reader);
-            cCuts = new B2BDihadronKinematicCuts(cReader);
-            chCuts = new B2BDihadronKinematicCuts(chReader);
-            heCuts = new B2BDihadronKinematicCuts(heReader);
+            cCuts   = new B2BDihadronKinematicCuts(cReader);
+            chCuts  = new B2BDihadronKinematicCuts(chReader);
+            heCuts  = new B2BDihadronKinematicCuts(heReader);
             emptyCuts = new B2BDihadronKinematicCuts(emptyReader);
             break;
         case 3:
             nh3Cuts = new DihadronKinematicCuts(nh3Reader);
-            cCuts = new DihadronKinematicCuts(cReader);
-            chCuts = new DihadronKinematicCuts(chReader);
-            heCuts = new DihadronKinematicCuts(heReader);
+            cCuts   = new DihadronKinematicCuts(cReader);
+            chCuts  = new DihadronKinematicCuts(chReader);
+            heCuts  = new DihadronKinematicCuts(heReader);
             emptyCuts = new DihadronKinematicCuts(emptyReader);
             break;
         case 4:
             nh3Cuts = new dvcsKinematicCuts(nh3Reader);
-            cCuts = new dvcsKinematicCuts(cReader);
-            chCuts = new dvcsKinematicCuts(chReader);
-            heCuts = new dvcsKinematicCuts(heReader);
+            cCuts   = new dvcsKinematicCuts(cReader);
+            chCuts  = new dvcsKinematicCuts(chReader);
+            heCuts  = new dvcsKinematicCuts(heReader);
             emptyCuts = new dvcsKinematicCuts(emptyReader);
             break;
         default:
             std::cerr << "Invalid channel specified." << std::endl;
-            return {}; // Return an empty vector to indicate failure
-        }
-
-    std::vector<std::pair<double, double>> dilutionResults;
-    TGraphErrors* gr_dilution[10];  // Array of pointers to TGraphErrors
-    for (int i = 0; i < 10; ++i) {
-        gr_dilution[i] = new TGraphErrors();  // Create a new TGraphErrors for each index
+            return {};
     }
 
+    std::vector<std::pair<double, double>> dilutionResults;
+    TGraphErrors* gr_dilution = new TGraphErrors();
+
     // Loop over each bin
-    for (size_t binIndex = 0; binIndex < allBins[currentFits].size() - 1; ++binIndex) {
+    for (size_t binIndex = 0; binIndex + 1 < allBins[currentFits].size(); ++binIndex) {
         double varMin = allBins[currentFits][binIndex];
         double varMax = allBins[currentFits][binIndex + 1];
 
-        // Create histograms for each target type
-        TH1D* h_nh3[10];  // Array of histograms for each NH3 period
-        // Initialize the histograms
-        for (int i = 0; i < 10; ++i) {
-            h_nh3[i] = new TH1D(Form("h_nh3_%d", i), "", 1, varMin, varMax);
-        }
-        TH1D *h_c = new TH1D("h_c", "", 1, varMin, varMax);
-        TH1D *h_ch = new TH1D("h_ch", "", 1, varMin, varMax);
-        TH1D *h_he = new TH1D("h_he", "", 1, varMin, varMax);
-        TH1D *h_empty = new TH1D("h_empty", "", 1, varMin, varMax);
+        // Create histograms
+        TH1D* h_nh3 = new TH1D("h_nh3", "", 1, varMin, varMax);
+        TH1D* h_c   = new TH1D("h_c",   "", 1, varMin, varMax);
+        TH1D* h_ch  = new TH1D("h_ch",  "", 1, varMin, varMax);
+        TH1D* h_he  = new TH1D("h_he",  "", 1, varMin, varMax);
+        TH1D* h_empty = new TH1D("h_empty", "", 1, varMin, varMax);
 
         double sumCurrentVariable = 0.0;
         int count = 0;
 
-        // Helper function to fill histograms based on kinematic cuts and track mean
-        auto fill_histogram = [&](TTreeReader& reader, TH1D* hist, BaseKinematicCuts* cuts, 
-            bool is_nh3, int min_run = 0, int max_run = 1000000) {
-            TTreeReaderValue<double> currentVariable(reader, propertyNames[currentFits].c_str());
-
+        // Helper lambda to fill histograms
+        auto fill_hist = [&](TTreeReader& reader, TH1D* hist, BaseKinematicCuts* cuts, bool isNH3) {
+            TTreeReaderValue<double> var(reader, propertyNames[currentFits].c_str());
             while (reader.Next()) {
-                bool passedKinematicCuts = cuts->applyCuts(currentFits, false);
-                // std::cout << passedKinematicCuts << " " << *runnum << " " << min_run << " " << max_run << std::endl;
-                if (is_nh3) {
-                    if (*runnum < min_run || *runnum > max_run) continue;
-                }
-                
-                if (*currentVariable >= varMin && *currentVariable < varMax && passedKinematicCuts) {
-                    hist->Fill(*currentVariable);
-                    sumCurrentVariable += *currentVariable;
+                if (!cuts->applyCuts(currentFits, false)) continue;
+                if (*var >= varMin && *var < varMax) {
+                    hist->Fill(*var);
+                    sumCurrentVariable += *var;
                     ++count;
                 }
             }
             reader.Restart();
         };
 
-        // Call fill_histogram for each target type
-        fill_histogram(nh3Reader, h_nh3[0], nh3Cuts, true, 0, 1000000);  // NH3 data
-        fill_histogram(cReader, h_c,  cCuts, false, 0, 1000000);  // Carbon data
-        fill_histogram(chReader, h_ch, chCuts, false, 0, 1000000); // CH2 data
-        fill_histogram(heReader, h_he,  heCuts, false, 0, 1000000);  // Helium data
-        fill_histogram(emptyReader, h_empty,  emptyCuts, false, 0, 1000000);  // Empty target data
+        fill_hist(nh3Reader, h_nh3, nh3Cuts, true);
+        fill_hist(cReader,   h_c,   cCuts,   false);
+        fill_hist(chReader,  h_ch,  chCuts,  false);
+        fill_hist(heReader,  h_he,  heCuts,  false);
+        fill_hist(emptyReader, h_empty, emptyCuts, false);
 
-        // Calculate the mean value of currentVariable in this bin
-        double meanCurrentVariable = (count > 0) ? (sumCurrentVariable / count) : (varMin + varMax) / 2.0;
-
-        // Retrieve bin contents
-        double nA = h_nh3[0]->GetBinContent(1);
-        double nC = h_c->GetBinContent(1);
+        double meanVar = (count > 0 ? sumCurrentVariable / count : (varMin + varMax) / 2.0);
+        double nA  = h_nh3->GetBinContent(1);
+        double nC  = h_c->GetBinContent(1);
         double nCH = h_ch->GetBinContent(1);
         double nMT = h_he->GetBinContent(1);
-        double nf = h_empty->GetBinContent(1);
+        double nf  = h_empty->GetBinContent(1);
 
-        /// Calculate dilution factors for the general case
-        auto [dilution, error] = calculate_dilution_and_error(nA, nC, nCH, nMT, nf, xAtotal, xCtotal, xCHtotal, xHetotal, xftotal);
-        // Add the dilution factor and error to the TGraphErrors
-        gr_dilution[0]->SetPoint(binIndex, meanCurrentVariable, dilution);
-        gr_dilution[0]->SetPointError(binIndex, 0, error);
-        // Store the original dilution and error for now
-        dilutionResults.emplace_back(dilution, error);
+        // Calculate dilution & error using selected dataset's fractions
+        auto [dilution, error] = calculate_dilution_and_error(
+            nA, nC, nCH, nMT, nf,
+            dsCfg.xA, dsCfg.xC, dsCfg.xCH, dsCfg.xHe, dsCfg.xf
+        );
 
-        // // Loop over each NH3 period to fill histograms and calculate dilution factors
-        // for (int i = 0; i < nh3_periods.size(); ++i) {
-        //     std::cout << "On period " << (i+1) << "." << std::endl;
-        //     int min_run = nh3_periods[i].first;
-        //     int max_run = nh3_periods[i].second;
-
-        //     // Reset the variables for this NH3 period
-        //     sumCurrentVariable = 0.0;
-        //     count = 0;
-
-        //     // Fill the histogram for the NH3 data only for the current period
-        //     fill_histogram(nh3Reader, h_nh3[i+1], nh3Cuts, true, min_run, max_run);
-
-        //     // Calculate the mean value of currentVariable in this bin
-        //     double meanCurrentVariable = (count > 0) ? (sumCurrentVariable / count) : (varMin + varMax) / 2.0;
-
-        //     // Retrieve bin contents for other target types (already filled outside loop)
-        //     double nA = h_nh3[i+1]->GetBinContent(1);
-
-        //     // Define variables to hold the fractional charge values
-        //     double xA, xC, xCH, xHe, xf;
-
-        //     // Use switch statement to assign the correct fractional charge values for each period
-        //     switch (i + 1) {
-        //         case 1:
-        //             xA = xAperiod_1; xC = xCperiod_1; xCH = xCHperiod_1; xHe = xHeperiod_1; xf = xfperiod_1;
-        //             break;
-        //         case 2:
-        //             xA = xAperiod_2; xC = xCperiod_2; xCH = xCHperiod_2; xHe = xHeperiod_2; xf = xfperiod_2;
-        //             break;
-        //         case 3:
-        //             xA = xAperiod_3; xC = xCperiod_3; xCH = xCHperiod_3; xHe = xHeperiod_3; xf = xfperiod_3;
-        //             break;
-        //         case 4:
-        //             xA = xAperiod_4; xC = xCperiod_4; xCH = xCHperiod_4; xHe = xHeperiod_4; xf = xfperiod_4;
-        //             break;
-        //         case 5:
-        //             xA = xAperiod_5; xC = xCperiod_5; xCH = xCHperiod_5; xHe = xHeperiod_5; xf = xfperiod_5;
-        //             break;
-        //         case 6:
-        //             xA = xAperiod_6; xC = xCperiod_6; xCH = xCHperiod_6; xHe = xHeperiod_6; xf = xfperiod_6;
-        //             break;
-        //         case 7:
-        //             xA = xAperiod_7; xC = xCperiod_7; xCH = xCHperiod_7; xHe = xHeperiod_7; xf = xfperiod_7;
-        //             break;
-        //         case 8:
-        //             xA = xAperiod_8; xC = xCperiod_8; xCH = xCHperiod_8; xHe = xHeperiod_8; xf = xfperiod_8;
-        //             break;
-        //         case 9:
-        //             xA = xAperiod_9; xC = xCperiod_9; xCH = xCHperiod_9; xHe = xHeperiod_9; xf = xfperiod_9;
-        //             break;
-        //         default:
-        //             // Use total values for index 0 or if something goes wrong
-        //             xA = xAtotal; xC = xCtotal; xCH = xCHtotal; xHe = xHetotal; xf = xftotal;
-        //             break;
-        //     }
-
-        //     // Calculate dilution factors for the current NH3 period
-        //     auto [dilution, error] = calculate_dilution_and_error(nA, nC, nCH, nMT, nf, xA, xC, xCH, xHe, xf);
-
-        //     // Add the dilution factor and error to the corresponding TGraphErrors
-        //     gr_dilution[i + 1]->SetPoint(binIndex, meanCurrentVariable, dilution);
-        //     gr_dilution[i + 1]->SetPointError(binIndex, 0, error);
-
-        // }
-
+        gr_dilution->SetPoint(binIndex, meanVar, dilution);
+        gr_dilution->SetPointError(binIndex, 0, error);
+        dilationResults.emplace_back(dilution, error);
     }
 
-    // Plot the original dilution factor
+    // Draw and save
+    TCanvas* c = new TCanvas("c_dilution","Dilution Factor Plot",800,600);
+    c->SetLeftMargin(0.15);
+    c->SetBottomMargin(0.15);
+
     std::string prefix = propertyNames[currentFits];
-    HistConfig config = histConfigs.find(prefix) != histConfigs.end() ? histConfigs[prefix] : HistConfig{100, 0, 1};
+    HistConfig cfg = (histConfigs.count(prefix) ? histConfigs[prefix] : HistConfig{100,0,1});
+    gr_dilution->SetTitle("");
+    gr_dilution->GetXaxis()->SetTitle(formatLabelName(prefix).c_str());
+    gr_dilution->GetXaxis()->SetLimits(cfg.xMin, cfg.xMax);
+    gr_dilution->GetXaxis()->SetTitleSize(0.05);
+    gr_dilution->GetYaxis()->SetTitle("D_{f}");
+    gr_dilution->GetYaxis()->SetTitleSize(0.05);
+    gr_dilution->GetYaxis()->SetTitleOffset(1.6);
+    gr_dilution->GetYaxis()->SetRangeUser(0.10,0.35);
+    gr_dilution->SetMarkerStyle(20);
+    gr_dilution->SetMarkerColor(kBlack);
+    gr_dilution->Draw("AP");
 
-    TCanvas* canvas = new TCanvas("c_dilution", "Dilution Factor Plot", 800, 600);
-    canvas->SetLeftMargin(0.15);
-    canvas->SetBottomMargin(0.15);
-
-    gr_dilution[0]->SetTitle("");
-    gr_dilution[0]->GetXaxis()->SetTitle(formatLabelName(prefix).c_str());
-    gr_dilution[0]->GetXaxis()->SetLimits(config.xMin, config.xMax);
-    gr_dilution[0]->GetXaxis()->SetTitleSize(0.05);
-    gr_dilution[0]->GetYaxis()->SetTitle("D_{f}");
-    gr_dilution[0]->GetYaxis()->SetTitleSize(0.05);
-    gr_dilution[0]->GetYaxis()->SetTitleOffset(1.6);
-    gr_dilution[0]->GetYaxis()->SetRangeUser(0.10, 0.35);
-    gr_dilution[0]->SetMarkerStyle(20);
-    gr_dilution[0]->SetMarkerColor(kBlack);
-    gr_dilution[0]->Draw("AP");
-
-    std::string outputDir = "output/dilution_factor_plots/";
-    std::string outputFileName = outputDir + "df_" + binNames[currentFits] + "_" + prefix + ".pdf";
-    canvas->SaveAs(outputFileName.c_str());
-
-
-    //
-
-    // // Create a new canvas for the period-specific dilution factors
-    // TCanvas* canvas_periods = new TCanvas("c_dilution_periods", "Dilution Factor Plot by Period", 800, 600);
-    // canvas_periods->SetLeftMargin(0.15);
-    // canvas_periods->SetBottomMargin(0.15);
-
-    // // Create a legend in the top right, increasing its size and adding a border
-    // TLegend* legend = new TLegend(0.7, 0.5, 0.90, 0.90);  // Make the legend larger
-    // legend->SetTextSize(0.04);  // Increase text size
-    // legend->SetBorderSize(1);   // Add black border around the legend
-    // legend->SetLineColor(kBlack);  // Set border color to black
-
-    // // Define different marker styles and colors for each period
-    // int markerStyles[9] = {20, 21, 22, 23, 24, 25, 26, 27, 28};  // Different marker styles
-    // int markerColors[9] = {kRed, kBlue, kGreen, kMagenta, kCyan, kOrange, kViolet, kYellow+2, kPink+7};  // Different colors
-
-    // // Vector to store the y-values for standard deviation calculation
-    // std::vector<double> y_values;
-
-    // for (int i = 0; i < 9; ++i) {
-    //     gr_dilution[i + 1]->SetTitle("");  // No title
-    //     gr_dilution[i + 1]->GetXaxis()->SetTitle(formatLabelName(prefix).c_str());
-    //     gr_dilution[i + 1]->GetXaxis()->SetLimits(config.xMin, config.xMax*1.2);
-    //     gr_dilution[i + 1]->GetXaxis()->SetTitleSize(0.05);
-    //     gr_dilution[i + 1]->GetYaxis()->SetTitle("D_{f}");
-    //     gr_dilution[i + 1]->GetYaxis()->SetTitleSize(0.05);
-    //     gr_dilution[i + 1]->GetYaxis()->SetTitleOffset(1.6);
-    //     gr_dilution[i + 1]->GetYaxis()->SetRangeUser(0.15, 0.30);
-        
-    //     // Set marker style and color
-    //     gr_dilution[i + 1]->SetMarkerStyle(markerStyles[i]);
-    //     gr_dilution[i + 1]->SetMarkerColor(markerColors[i]);
-        
-    //     // Add to legend
-    //     legend->AddEntry(gr_dilution[i + 1], Form("Period %d", i + 1), "p");
-
-    //     // Collect y-values for standard deviation calculation
-    //     if (binNames[currentFits] == "integrated") {
-    //         for (int j = 0; j < gr_dilution[i + 1]->GetN(); ++j) {
-    //             double x, y;
-    //             gr_dilution[i + 1]->GetPoint(j, x, y);  // Gets the value of the point, not the error
-    //             y_values.push_back(y);  // Collect y-values
-    //         }
-    //     }
-        
-    //     // Draw on canvas (use "P same" for subsequent plots to overlay them)
-    //     if (i == 0) {
-    //         gr_dilution[i + 1]->Draw("AP");  // Draw the first graph
-    //     } else {
-    //         gr_dilution[i + 1]->Draw("P same");  // Overlay the rest
-    //     }
-    // }
-
-    // // Draw the legend
-    // legend->Draw();
-
-    // // If prefix is "integrated", calculate the standard deviation and display it
-    // if (binNames[currentFits] == "integrated") {
-    //     double stddev = calculate_standard_deviation(y_values);
-
-    //     // Create a TLatex object to draw the standard deviation on the canvas
-    //     TLatex latex;
-    //     latex.SetNDC();  // Set to normalized device coordinates
-    //     latex.SetTextSize(0.04);  // Set text size
-    //     latex.DrawLatex(0.23, 0.65, Form("Std Dev: %.4f", stddev));  // Display stddev in the top left
-    // }
-
-    // // Save the canvas
-    // std::string outputFileNamePeriods = outputDir + "df_periods_" + binNames[currentFits] + "_" + prefix + ".pdf";
-    // canvas_periods->SaveAs(outputFileNamePeriods.c_str());
+    std::string outDir  = "output/dilution_factor_plots/";
+    std::string outFile = outDir + "df_" + binNames[currentFits] + "_" + prefix + ".pdf";
+    c->SaveAs(outFile.c_str());
 
     return dilutionResults;
 }
