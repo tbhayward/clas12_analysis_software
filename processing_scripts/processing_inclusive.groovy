@@ -152,9 +152,9 @@ public static void main(String[] args) {
 	    		qa.pass(runnum, evnum));
 	    	if (runnum > 17768) process_event = false; // outbending RGC Sp23
 	    	if (runnum == 17331) process_event = false; // low live time
-	    	println(process_event);
+	    	
 		    if (process_event) {
-		    	println("hello world");
+
 				// supply runnum and boolean for radiative simulation or not
 				BeamEnergy Eb = new BeamEnergy(research_Event, runnum, false);
 				// Use the input beam energy if runnum == 11, otherwise use Eb.Eb()
