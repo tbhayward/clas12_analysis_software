@@ -3,6 +3,9 @@
 #include <TMath.h>
 #include <TFile.h>
 #include <TH1D.h>
+#include <TCanvas.h>
+#include <TTreeReader.h>
+#include <TTreeReaderValue.h>
 #include <cmath>
 #include <vector>
 #include <numeric>
@@ -32,7 +35,7 @@
 #include "fitting_process.h"
 
 // Select dataset: 1 = RGC Su22, 2 = RGC Fa22, 3 = RGC Sp23
-const int data_set = 3;
+constexpr int data_set = 3;
 
 struct DataSetConfig {
     std::string name;
@@ -74,12 +77,9 @@ const std::vector<DataSetConfig> dataSetConfigs = {
     }
 };
 
-if (data_set < 1 || data_set > (int)dataSetConfigs.size()) {
-  std::cerr<<"ERROR: data_set="<<data_set
-           <<" is invalid; must be 1–"<<dataSetConfigs.size()<<"\n";
-  return {};
-}
-const auto& dsCfg = dataSetConfigs[data_set-1];
+static_assert(data_set >= 1 && data_set <= (int)dataSetConfigs.size(),
+              "ERROR: data_set is invalid; must be 1–3");
+const DataSetConfig& dsCfg = dataSetConfigs[data_set - 1];
 
 // NH3 periods defined as a pair of run numbers (start, end)
 std::vector<std::pair<int, int>> nh3_periods = {
@@ -92,7 +92,8 @@ double calculate_standard_deviation(const std::vector<double>& values) {
     if (values.size() < 2) return 0.0;
     double mean = std::accumulate(values.begin(), values.end(), 0.0) / values.size();
     double sq_sum = std::inner_product(
-        values.begin(), values.end(), values.begin(), 0.0,
+        values.begin(), values.end(),
+        values.begin(), 0.0,
         std::plus<double>(),
         [&](double a, double b) { return (b - mean) * (b - mean); }
     );
@@ -153,42 +154,41 @@ double calculate_dilution_error(double nA, double nC, double nCH, double nMT, do
     return sigma_df;
 }
 
-std::pair<double, double> calculate_dilution_and_error(double nA, double nC, double nCH, double nMT, double nf, 
-                                                       double xA, double xC, double xCH, double xHe, double xf) {
-
+std::pair<double, double> calculate_dilution_and_error(
+    double nA, double nC, double nCH, double nMT, double nf,
+    double xA, double xC, double xCH, double xHe, double xf
+) {
     double dilution = (27.3473 * (-1.0 * nMT * xA + nA * xHe) *
-                   (-0.505693 * nMT * xC * xCH * xf +
-                    (1.0 * nf * xC * xCH - 3.34924 * nCH * xC * xf + 2.85493 * nC * xCH * xf) * xHe)
-                  ) / (nA * xHe *
-                       (73.2426 * nMT * xC * xCH * xf +
-                        1.0 * nf * xC * xCH * xHe - 91.5925 * nCH * xC * xf * xHe + 17.3499 * nC * xCH * xf * xHe)
-                      );
-
-    // double packing_fraction = (0.699832)*(nA/xA-nMT/xHe)/(1.25055*nCH/xCH-0.23688*nC/xC-0.013668*nf/xf-nMT/xHe);
-
+                       (-0.505693 * nMT * xC * xCH * xf +
+                        (1.0 * nf * xC * xCH - 3.34924 * nCH * xC * xf + 2.85493 * nC * xCH * xf) * xHe))
+                      / (nA * xHe *
+                         (73.2426 * nMT * xC * xCH * xf +
+                          1.0 * nf * xC * xCH * xHe - 91.5925 * nCH * xC * xf * xHe + 17.3499 * nC * xCH * xf * xHe));
+    // double packing_fraction = (0.699832)*(nA/xA-nMT/xHe)
+    //     / (1.25055*nCH/xCH - 0.23688*nC/xC - 0.013668*nf/xf - nMT/xHe);
     double error = calculate_dilution_error(nA, nC, nCH, nMT, nf, xA, xC, xCH, xHe, xf);
-    
-    return std::make_pair(dilution, error);
+    return { dilution, error };
 }
 
 std::vector<std::pair<double, double>> calculate_dilution_factors() {
-    // Load ROOT files and trees based on selected dataset
+    // Load ROOT files and trees
     TFile* nh3File   = TFile::Open(dsCfg.nh3File.c_str());
     TFile* cFile     = TFile::Open(dsCfg.cFile.c_str());
     TFile* chFile    = TFile::Open(dsCfg.chFile.c_str());
     TFile* heFile    = TFile::Open(dsCfg.heFile.c_str());
     TFile* emptyFile = TFile::Open(dsCfg.emptyFile.c_str());
 
-    TTree* nh3   = static_cast<TTree*>(nh3File->Get("PhysicsEvents"));
-    TTree* c     = static_cast<TTree*>(cFile->Get("PhysicsEvents"));
-    TTree* ch    = static_cast<TTree*>(chFile->Get("PhysicsEvents"));
-    TTree* he    = static_cast<TTree*>(heFile->Get("PhysicsEvents"));
-    TTree* empty = static_cast<TTree*>(emptyFile->Get("PhysicsEvents"));
+    TTree* nh3      = static_cast<TTree*>(nh3File->Get("PhysicsEvents"));
+    TTree* treeC    = static_cast<TTree*>(cFile->Get("PhysicsEvents"));
+    TTree* treeCh   = static_cast<TTree*>(chFile->Get("PhysicsEvents"));
+    TTree* treeHe   = static_cast<TTree*>(heFile->Get("PhysicsEvents"));
+    TTree* treeEmpty= static_cast<TTree*>(emptyFile->Get("PhysicsEvents"));
 
-    TTreeReader nh3Reader(nh3), cReader(c), chReader(ch), heReader(he), emptyReader(empty);
+    TTreeReader nh3Reader(nh3), cReader(treeC), chReader(treeCh),
+                  heReader(treeHe), emptyReader(treeEmpty);
     TTreeReaderValue<int> runnum(nh3Reader, "runnum");
 
-    // Allocate kinematic cuts based on channel
+    // Allocate kinematic cuts
     BaseKinematicCuts* nh3Cuts = nullptr;
     BaseKinematicCuts* cCuts   = nullptr;
     BaseKinematicCuts* chCuts  = nullptr;
@@ -238,63 +238,55 @@ std::vector<std::pair<double, double>> calculate_dilution_factors() {
     std::vector<std::pair<double, double>> dilutionResults;
     TGraphErrors* gr_dilution = new TGraphErrors();
 
+    // Helper lambda to fill histograms
+    auto fill_hist = [&](TTreeReader& reader, TH1D* hist, BaseKinematicCuts* cuts) {
+        TTreeReaderValue<double> var(reader, propertyNames[currentFits].c_str());
+        while (reader.Next()) {
+            if (!cuts->applyCuts(currentFits, false)) continue;
+            hist->Fill(*var);
+        }
+        reader.Restart();
+    };
+
     // Loop over each bin
-    for (size_t binIndex = 0; binIndex + 1 < allBins[currentFits].size(); ++binIndex) {
-        double varMin = allBins[currentFits][binIndex];
-        double varMax = allBins[currentFits][binIndex + 1];
+    size_t nBins = allBins[currentFits].size() - 1;
+    for (size_t i = 0; i < nBins; ++i) {
+        double varMin = allBins[currentFits][i];
+        double varMax = allBins[currentFits][i + 1];
 
-        // Create histograms
-        TH1D* h_nh3 = new TH1D("h_nh3", "", 1, varMin, varMax);
-        TH1D* h_c   = new TH1D("h_c",   "", 1, varMin, varMax);
-        TH1D* h_ch  = new TH1D("h_ch",  "", 1, varMin, varMax);
-        TH1D* h_he  = new TH1D("h_he",  "", 1, varMin, varMax);
-        TH1D* h_empty = new TH1D("h_empty", "", 1, varMin, varMax);
+        TH1D* h_nh3   = new TH1D("h_nh3",   "", 1, varMin, varMax);
+        TH1D* h_c     = new TH1D("h_c",     "", 1, varMin, varMax);
+        TH1D* h_ch    = new TH1D("h_ch",    "", 1, varMin, varMax);
+        TH1D* h_he    = new TH1D("h_he",    "", 1, varMin, varMax);
+        TH1D* h_empty = new TH1D("h_empty","", 1, varMin, varMax);
 
-        double sumCurrentVariable = 0.0;
-        int count = 0;
+        fill_hist(nh3Reader, h_nh3, nh3Cuts);
+        fill_hist(cReader,   h_c,   cCuts);
+        fill_hist(chReader,  h_ch,  chCuts);
+        fill_hist(heReader,  h_he,  heCuts);
+        fill_hist(emptyReader, h_empty, emptyCuts);
 
-        // Helper lambda to fill histograms
-        auto fill_hist = [&](TTreeReader& reader, TH1D* hist, BaseKinematicCuts* cuts, bool isNH3) {
-            TTreeReaderValue<double> var(reader, propertyNames[currentFits].c_str());
-            while (reader.Next()) {
-                if (!cuts->applyCuts(currentFits, false)) continue;
-                if (*var >= varMin && *var < varMax) {
-                    hist->Fill(*var);
-                    sumCurrentVariable += *var;
-                    ++count;
-                }
-            }
-            reader.Restart();
-        };
-
-        fill_hist(nh3Reader, h_nh3, nh3Cuts, true);
-        fill_hist(cReader,   h_c,   cCuts,   false);
-        fill_hist(chReader,  h_ch,  chCuts,  false);
-        fill_hist(heReader,  h_he,  heCuts,  false);
-        fill_hist(emptyReader, h_empty, emptyCuts, false);
-
-        double meanVar = (count > 0 ? sumCurrentVariable / count : (varMin + varMax) / 2.0);
         double nA  = h_nh3->GetBinContent(1);
         double nC  = h_c->GetBinContent(1);
         double nCH = h_ch->GetBinContent(1);
         double nMT = h_he->GetBinContent(1);
         double nf  = h_empty->GetBinContent(1);
 
-        // Calculate dilution & error using selected dataset's fractions
-        auto [dilution, error] = calculate_dilution_and_error(
+        auto [dil, err] = calculate_dilution_and_error(
             nA, nC, nCH, nMT, nf,
             dsCfg.xA, dsCfg.xC, dsCfg.xCH, dsCfg.xHe, dsCfg.xf
         );
+        dilutionResults.emplace_back(dil, err);
+        gr_dilution->SetPoint(i, (varMin + varMax) / 2.0, dil);
+        gr_dilution->SetPointError(i, 0, err);
 
-        gr_dilution->SetPoint(binIndex, meanVar, dilution);
-        gr_dilution->SetPointError(binIndex, 0, error);
-        dilationResults.emplace_back(dilution, error);
+        delete h_nh3; delete h_c; delete h_ch; delete h_he; delete h_empty;
     }
 
     // Draw and save
-    TCanvas* c = new TCanvas("c_dilution","Dilution Factor Plot",800,600);
-    c->SetLeftMargin(0.15);
-    c->SetBottomMargin(0.15);
+    TCanvas* canvasDF = new TCanvas("c_dilution","Dilution Factor Plot",800,600);
+    canvasDF->SetLeftMargin(0.15);
+    canvasDF->SetBottomMargin(0.15);
 
     std::string prefix = propertyNames[currentFits];
     HistConfig cfg = (histConfigs.count(prefix) ? histConfigs[prefix] : HistConfig{100,0,1});
@@ -305,14 +297,18 @@ std::vector<std::pair<double, double>> calculate_dilution_factors() {
     gr_dilution->GetYaxis()->SetTitle("D_{f}");
     gr_dilution->GetYaxis()->SetTitleSize(0.05);
     gr_dilution->GetYaxis()->SetTitleOffset(1.6);
-    gr_dilution->GetYaxis()->SetRangeUser(0.10,0.35);
+    gr_dilution->GetYaxis()->SetRangeUser(0.10, 0.35);
     gr_dilution->SetMarkerStyle(20);
     gr_dilution->SetMarkerColor(kBlack);
     gr_dilution->Draw("AP");
 
     std::string outDir  = "output/dilution_factor_plots/";
     std::string outFile = outDir + "df_" + binNames[currentFits] + "_" + prefix + ".pdf";
-    c->SaveAs(outFile.c_str());
+    canvasDF->SaveAs(outFile.c_str());
+
+    delete nh3Cuts; delete cCuts; delete chCuts; delete heCuts; delete emptyCuts;
+    delete gr_dilution;
+    delete canvasDF;
 
     return dilutionResults;
 }
