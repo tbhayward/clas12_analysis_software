@@ -39,17 +39,17 @@ const double xftotal = 0.1184;
 
 
 // // Fractional charge values for Total -- RGC Fa22
-// const double xAtotal = 0.5736;
-// const double xCtotal = 0.2089;
-// const double xCHtotal = 0.1829;
-// const double xHetotal = 0.0287;
-// const double xftotal = 0.0060;
+// const double xAtotal = 0.5737;
+// const double xCtotal = 0.2057;
+// const double xCHtotal = 0.1855;
+// const double xHetotal = 0.0291;
+// const double xftotal = 0.0061;
 
 
 // // Fractional charge values for Total -- RGC Sp23
-// const double xAtotal = 0.5629;
+// const double xAtotal = 0.5632;
 // const double xCtotal = 0.1331;
-// const double xCHtotal = 0.1517;
+// const double xCHtotal = 0.1514;
 // const double xHetotal = 0.926;
 // const double xftotal = 0.0597;
 
