@@ -1376,11 +1376,11 @@ double GetImE(double xi, double t) {
     if(!hasE) return 0.0;
     // same valence form as ImH
     double r     = 0.9; 
-    alpha = alpha0 + alpha1 * t;
-    n = 1.35; 
-    b = 0.4; 
-    Mm2 = 0.64; 
-    P = 1.0;
+    double alpha = alpha0 + alpha1 * t;
+    double n = 1.35; 
+    double b = 0.4; 
+    double Mm2 = 0.64; 
+    double P = 1.0;
     double pref  = TMath::Pi()*5.0/9.0 * n * r / (1 + xi);
     double xfac  = TMath::Power(2*xi/(1+xi), -alpha);
     double yfac  = TMath::Power((1 - xi)/(1+xi), b);
