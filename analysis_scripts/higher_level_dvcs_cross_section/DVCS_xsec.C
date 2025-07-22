@@ -12,6 +12,10 @@ double alpha  = 1.0/137.036;             // fine-structure constant α
 double alpha3 = TMath::Power(alpha, 3);  // α³
 double hbarc2 = 0.38938;                 // (ℏc)² in GeV²·mbarn units
 
+// global GPD‐H slope parameters (original VGG values)
+double alpha0 = 0.43;
+double alpha1 = 0.85;
+
 // Particle masses and magnetic moment
 double m   = 0.000511;   // electron mass [GeV]
 double M   = 0.93827;    // proton mass   [GeV]
@@ -1340,7 +1344,7 @@ double GetImH(double xi, double t) {
     if(!hasH) return 0.0;
     // Simple valence ansatz from VGG
     double r     = 0.9;
-    double alpha = 0.43 + 0.85*t;
+    double alpha = alpha0 + alpha1 * t;
     double n     = 1.35;
     double b     = 0.4;
     double Mm2   = 0.64;
@@ -1356,7 +1360,7 @@ double GetImHt(double xi, double t) {
     if(!hasHt) return 0.0;
     // analogous structure with different parameters
     double r     = 7.0;
-    double alpha = 0.43 + 0.85*t;
+    double alpha = alpha0 + alpha1 * t;
     double n     = 0.6;
     double b     = 2.0;
     double Mm2   = 0.8;
@@ -1371,7 +1375,12 @@ double GetImHt(double xi, double t) {
 double GetImE(double xi, double t) {
     if(!hasE) return 0.0;
     // same valence form as ImH
-    double r     = 0.9, alpha = 0.43 + 0.85*t, n = 1.35, b = 0.4, Mm2 = 0.64, P = 1.0;
+    double r     = 0.9; 
+    alpha = alpha0 + alpha1 * t;
+    n = 1.35; 
+    b = 0.4; 
+    Mm2 = 0.64; 
+    P = 1.0;
     double pref  = TMath::Pi()*5.0/9.0 * n * r / (1 + xi);
     double xfac  = TMath::Power(2*xi/(1+xi), -alpha);
     double yfac  = TMath::Power((1 - xi)/(1+xi), b);
