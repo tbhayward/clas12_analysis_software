@@ -99,14 +99,14 @@ void fcn(int & /*npar*/,
         chi2 += res*res;
     }
 
-    // unpolarized cross‐section data
-    for(auto &d : xsData) {
-        BMK_DVCS dvcs(-1, 0, 0,
-                     d.Eb, d.xB, d.Q2, d.t, d.phi);
-        double modelA = dvcs.CrossSection();
-        double res    = (d.A - modelA)/d.sigA;
-        chi2 += res*res;
-    }
+    // // unpolarized cross‐section data
+    // for(auto &d : xsData) {
+    //     BMK_DVCS dvcs(-1, 0, 0,
+    //                  d.Eb, d.xB, d.Q2, d.t, d.phi);
+    //     double modelA = dvcs.CrossSection();
+    //     double res    = (d.A - modelA)/d.sigA;
+    //     chi2 += res*res;
+    // }
 
     f = chi2;
 }
