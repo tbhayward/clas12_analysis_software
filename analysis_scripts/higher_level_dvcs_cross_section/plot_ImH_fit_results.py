@@ -19,19 +19,11 @@ import matplotlib.pyplot as plt
 
 def load_fit(fname):
     """
-    Parse the new style fit_results file:
-      # values: renormImag alpha0 alpha1 n_val b_val Mm2_val P_val renormReal
-      <eight floats>
-      # errors:
-      <eight floats>
-      # chi2 ndof chi2/ndof
-      <chi2> <ndof> <chi2/ndof>
-    Returns:
-      params: dict mapping name→value
-      chi2ndf: float
+    Parse the new style fit_results file and return:
+      params: dict(name->value),
+      chi2ndf: float,
       timestamp: str
     """
-    # extract timestamp
     m = re.search(r'fit_results_(\d{8}_\d{6})\.txt$', fname)
     if not m:
         raise RuntimeError(f"Couldn't extract timestamp from '{fname}'")
@@ -46,28 +38,21 @@ def load_fit(fname):
 
     for i, line in enumerate(lines):
         if line.startswith("# values:"):
-            # pull out the parameter names
             keys = line.split(":",1)[1].split()
-            # next line are the values
             vals = list(map(float, lines[i+1].split()))
         if line.startswith("# chi2"):
             parts = lines[i+1].split()
-            # parts = [chi2, ndof, chi2/ndof]
             chi2ndf = float(parts[2])
 
     if keys is None or vals is None:
-        raise RuntimeError("Failed to parse '# values:' block in fit file")
+        raise RuntimeError("Failed to parse '# values:' block")
     if chi2ndf is None:
-        raise RuntimeError("Failed to parse '# chi2' block in fit file")
-
+        raise RuntimeError("Failed to parse '# chi2' block")
     if len(keys) != len(vals):
-        raise RuntimeError("Number of fit keys != number of fit values")
+        raise RuntimeError("Mismatch between keys and values")
 
-    params = dict(zip(keys, vals))
-    return params, chi2ndf, timestamp
+    return dict(zip(keys, vals)), chi2ndf, timestamp
 
-# ──────────────────────────────────────────────────────────────────────────────
-# ImH ansatz
 def ImH(xi, t, p):
     r   = 0.9
     α   = p['alpha0'] + p['alpha1'] * t
@@ -101,9 +86,9 @@ def main():
         'P_val':      1.0
     }
 
-    # 3) choose ξ panels and t‐points
-    xi_vals = [0.05, 0.10, 0.20, 0.30]       # reasonable DVCS skewness
-    t_vals  = [0.1, 0.4, 0.7]                # fixed -t [GeV^2]
+    # 3) ξ panels and t‐points
+    xi_vals = [0.05, 0.10, 0.20, 0.30]
+    t_vals  = [0.1, 0.4, 0.7]
     colors  = ['tab:blue', 'tab:orange', 'tab:green']
 
     # 4) prepare output dir
@@ -113,11 +98,8 @@ def main():
         f"ImH_dependence_{timestamp}.pdf"
     )
 
-    # 5) set style & LaTeX labels
-    try:
-        plt.style.use('ggplot')
-    except OSError:
-        pass
+    # 5) clean white style
+    plt.style.use('default')
     plt.rc('text', usetex=True)
     plt.rc('font', family='serif', size=12)
 
@@ -127,36 +109,31 @@ def main():
 
     for ax, xi in zip(axes, xi_vals):
         for t, c in zip(t_vals, colors):
-            # plot original
+            # original
             ax.plot(
                 t_vals,
                 [ImH(xi, tt, params_orig) for tt in t_vals],
                 '-', lw=2, color=c,
                 label=rf"orig, $-t={t:.1f}\,\mathrm{{GeV}}^2$"
             )
-            # plot fitted
+            # fit
             ax.plot(
                 t_vals,
                 [ImH(xi, tt, params_fit) for tt in t_vals],
                 '--', lw=2, color=c,
                 label=rf"fit,  $-t={t:.1f}\,\mathrm{{GeV}}^2$"
             )
-        ax.set_title(rf"$\xi = {xi:.2f}$")
+
+        ax.set_title(rf"$\xi={xi:.2f}$")
         ax.set_xlabel(r"$-t\,[\mathrm{GeV}^2]$")
-        ax.grid(True)
+        ax.set_xlim(0, 3)
+        ax.set_ylim(0, 30)
+        ax.legend(loc='upper right', fontsize='small', frameon=False)
 
     axes[0].set_ylabel(r"$\mathrm{Im}\,H(\xi,t)$")
     axes[2].set_ylabel(r"$\mathrm{Im}\,H(\xi,t)$")
 
-    # single legend
-    handles, labels = axes[0].get_legend_handles_labels()
-    fig.legend(
-        handles, labels,
-        loc='upper right', fontsize='small',
-        title=r'\textbf{Original vs. Fit}'
-    )
-
-    fig.tight_layout(rect=[0,0,1,0.95])
+    fig.tight_layout()
     fig.suptitle(r"\textbf{Im$H$ Dependence: Original vs.\ Fitted}", y=0.99)
 
     # 7) save
