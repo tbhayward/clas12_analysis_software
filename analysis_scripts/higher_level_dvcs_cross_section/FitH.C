@@ -1,11 +1,11 @@
 // FitH.C
 // ──────
-// Stand‐alone program to fit the GPD‐H ansatz under three possible strategies:
+//   program to fit the GPD‐H under three possible strategies:
 //   1) fit only ImH parameters to BSA data
 //   2) fit ImH parameters + renormReal to BSA + xsec simultaneously
 //   3) two‐step: (a) fit ImH→BSA, (b) fit renormReal→xsec
 //
-// Usage:  ./FitH <strategy>    where <strategy> ∈ {1,2,3}
+// Usage:  ./FitH <strategy>    where <strategy> \in {1,2,3}
 //
 // Compile:
 //   g++ -O2 FitH.C `root-config --cflags --libs` -lMinuit -o FitH
@@ -23,7 +23,7 @@
 #include "TMinuit.h"
 #include "TMath.h"
 
-// pull in BMK_DVCS implementation (with globals
+//   pull in BMK_DVCS implementation (with globals
 //   renormImag, alpha0, alpha1, n_val, b_val, Mm2_val, P_val, renormReal
 //   and the functions GetImH, GetReH, CrossSection(), BSA(), etc.)
 #include "DVCS_xsec.C"
@@ -66,9 +66,8 @@ void LoadData(){
 }
 
 // -----------------------------------------------------------------------------
-// fcn(): Minuit’s χ² function.  Depending on gStrategy/gStage it
-//         • unpacks par[] → globals
-//         • loops over BSA and/or xsec
+// fcn(): Minuit’s chi² function.  Depending on gStrategy/gStage it
+//         unpacks par[] → globals or loops over BSA and/or xsec
 void fcn(int& /*npar*/, double* /*grad*/, double& f, double* par, int /*iflag*/){
     // 1) unpack parameters
     if(gStrategy==1 || gStrategy==2
@@ -93,9 +92,8 @@ void fcn(int& /*npar*/, double* /*grad*/, double& f, double* par, int /*iflag*/)
 
     double chi2 = 0;
 
-    // 2) BSA?
-    bool doBSA = ( gStrategy==1 || gStrategy==2
-                || (gStrategy==3 && gStage==1) );
+    // 2) BSA
+    bool doBSA = ( gStrategy==1 || gStrategy==2 || (gStrategy==3 && gStage==1) );
     if(doBSA){
         for(auto &d : bsaData){
             BMK_DVCS dvcs(-1,1,0,d.Eb,d.xB,d.Q2,d.t,d.phi);
@@ -105,9 +103,8 @@ void fcn(int& /*npar*/, double* /*grad*/, double& f, double* par, int /*iflag*/)
         }
     }
 
-    // 3) xsec?
-    bool doXS = ( gStrategy==2
-               || (gStrategy==3 && gStage==2) );
+    // 3) xsec
+    bool doXS = ( gStrategy==2 || (gStrategy==3 && gStage==2) );
     if(doXS){
         for(auto &d : xsData){
             BMK_DVCS dvcs(-1,0,0,d.Eb,d.xB,d.Q2,d.t,d.phi);
@@ -177,16 +174,15 @@ int main(int argc, char** argv){
         }
 
         minuit.mnstat(finalChi2, /*edm*/finalChi2, /*errdef*/finalChi2,
-                      /*nvpar*/finalNdf, /*nparx*/finalNdf,
-                      /*icstat*/finalNdf);
-        // above mnstat args overwritten, so re-call properly:
+                      /*nvpar*/finalNdf, /*nparx*/finalNdf, /*icstat*/finalNdf);
+        // above mnstat args overwritten, so re-call:
         double edm, errdef; int nv, nx, ic;
         minuit.mnstat(finalChi2, edm, errdef, nv, nx, ic);
         finalNdf = (gStrategy==1
                   ? int(bsaData.size())-7
                   : int(bsaData.size()+xsData.size())-8);
 
-        // console
+        // print out
         std::cout<<"\n=== Results ===\n"
                  <<" renormImag="<<valIm[0]<<"±"<<errIm[0]<<"\n"
                  <<" alpha0    ="<<valIm[1]<<"±"<<errIm[1]<<"\n"
