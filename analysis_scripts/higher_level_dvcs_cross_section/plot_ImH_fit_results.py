@@ -32,15 +32,13 @@ timestamp = m.group(1)
 
 # ─── Load fit results ─────────────────────────────────────────────────────────
 def parse_fit_results(fname):
-    vals = errs = None
+    vals = None
     chi2 = ndf = chi2ndf = None
     with open(fname) as f:
         lines = [l.strip() for l in f if l.strip()]
     for i, l in enumerate(lines):
         if l.startswith("# values"):
             vals = list(map(float, lines[i+1].split()))
-        if l.startswith("# errors"):
-            errs = list(map(float, lines[i+1].split()))
         if l.startswith("# chi2"):
             parts = lines[i+1].split()
             chi2, ndf, chi2ndf = float(parts[0]), int(parts[1]), float(parts[2])
@@ -80,7 +78,6 @@ def ImH_fit(xi, t):
                n_fit, b_fit, Mm2_fit, P_fit)
 
 # ─── Plot setup ───────────────────────────────────────────────────────────────
-# use a clean white background
 plt.style.use('classic')
 plt.rcParams.update({
     'font.size': 14,
@@ -89,7 +86,6 @@ plt.rcParams.update({
 
 # six −t values equally spaced [0.1, 1.0]
 t_vals = np.linspace(0.1, 1.0, 6)
-
 # ξ range [0, 0.5]
 xi = np.linspace(0, 0.5, 200)
 
@@ -97,23 +93,25 @@ fig, axes = plt.subplots(2, 3, figsize=(12, 8),
                          sharex=True, sharey=True)
 axes = axes.flatten()
 
-# colors & styles
-orig_style = {'color': 'tab:blue', 'linestyle': '-', 'label': 'Original Parameters'}
-fit_style  = {'color': 'tab:red',  'linestyle': '--', 'label': 'RGA pass-1 BSA'}
+# styles
+orig_style = {'color': 'tab:blue', 'linestyle': '-', 'linewidth': 2.5}
+fit_style  = {'color': 'tab:red',  'linestyle': '--','linewidth': 2.5}
 
-for ax, t in zip(axes, t_vals):
+for idx, (ax, t) in enumerate(zip(axes, t_vals)):
     y0 = ImH_orig(xi, -t)
     y1 = ImH_fit(xi, -t)
     ax.plot(xi, y0, **orig_style)
     ax.plot(xi, y1, **fit_style)
-    # legend
-    ax.legend(loc='upper right', fontsize=10)
-    # annotation of t
-    txt = ax.text(0.60, 0.65,
-                  rf"$-t = {t:.2f}\,\mathrm{{GeV}}^2$",
-                  transform=ax.transAxes,
-                  fontsize=12)
-    # set panel limits
+    # only one legend in top-right
+    if idx == 0:
+        ax.legend(["Original Parameters","RGA pass-1 BSA"],
+                  loc='upper right', fontsize=10)
+    # annotation of t moved to (0.65,0.70)
+    ax.text(0.65, 0.70,
+            rf"$-t = {t:.2f}\,\mathrm{{GeV}}^2$",
+            transform=ax.transAxes,
+            fontsize=12)
+    # axes limits
     ax.set_xlim(0, 0.5)
     ax.set_ylim(0, 12)
 
@@ -129,20 +127,15 @@ for ax in (axes[4], axes[5]):
             lbl.set_visible(False)
 
 # ─── Global axis labels & layout ───────────────────────────────────────────────
-# left margin y-label
-fig.text(0.06, 0.5,
+# pad left margin and set y-label
+fig.subplots_adjust(left=0.12, right=0.98, bottom=0.08, top=0.97,
+                    wspace=0, hspace=0)
+fig.text(0.04, 0.5,
          r"$\mathrm{Im}\,H(\xi,\,-t)$",
          va='center', ha='center', rotation='vertical')
-# bottom margin x-label
 fig.text(0.5, 0.02,
          r"$\xi$",
          ha='center', va='center')
-
-# remove any gaps between subplots
-plt.tight_layout()
-fig.subplots_adjust(wspace=0, hspace=0,
-                    left=0.08, right=0.98,
-                    bottom=0.08, top=0.97)
 
 # ─── Save ─────────────────────────────────────────────────────────────────────
 outdir = 'output/plots'
