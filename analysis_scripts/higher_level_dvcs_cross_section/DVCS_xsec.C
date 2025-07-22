@@ -12,12 +12,6 @@ double alpha  = 1.0/137.036;             // fine-structure constant α
 double alpha3 = TMath::Power(alpha, 3);  // α³
 double hbarc2 = 0.38938;                 // (ℏc)² in GeV²·mbarn units
 
-// global GPD‐H parameters (original VGG values)
-double alpha0 = 0.43;
-double alpha1 = 0.85;
-double n_val   = 1.35, b_val    = 0.4;
-double Mm2_val = 0.64,  P_val   = 1.0;
-
 // Particle masses and magnetic moment
 double m   = 0.000511;   // electron mass [GeV]
 double M   = 0.93827;    // proton mass   [GeV]
@@ -1340,7 +1334,12 @@ double GetF2(double T) {
 // -------------------------------------------------------------------------------------------------
 //   Compton Form Factor (CFF) models—imaginary parts
 // -------------------------------------------------------------------------------------------------
+// global GPD‐H parameters (original VGG values)
 double renormImag = 1.0;
+double alpha0 = 0.43;
+double alpha1 = 0.85;
+double n_val   = 1.35, b_val    = 0.4;
+double Mm2_val = 0.64,  P_val   = 1.0;
 
 double GetImH(double xi, double t) {
     if(!hasH) return 0.0;
