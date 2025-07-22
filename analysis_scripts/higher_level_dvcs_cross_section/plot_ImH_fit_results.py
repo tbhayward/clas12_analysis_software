@@ -98,19 +98,20 @@ orig_style = {'color': 'tab:blue', 'linestyle': '-', 'linewidth': 2.5}
 fit_style  = {'color': 'tab:red',  'linestyle': '--','linewidth': 2.5}
 
 for idx, (ax, t) in enumerate(zip(axes, t_vals)):
-    y0 = ImH_orig(xi, -t)
-    y1 = ImH_fit(xi, -t)
-    ax.plot(xi, y0, **orig_style)
-    ax.plot(xi, y1, **fit_style)
-    # only one legend in top-right
-    if idx == 0:
+    ax.plot(xi, ImH_orig(xi, -t), **orig_style)
+    ax.plot(xi, ImH_fit(xi, -t),  **fit_style)
+
+    # legend in top-right subplot (idx==2)
+    if idx == 2:
         ax.legend(["Original Parameters","RGA pass-1 BSA"],
                   loc='upper right', fontsize=10)
+
     # annotation of t moved to (0.65,0.70)
     ax.text(0.65, 0.70,
             rf"$-t = {t:.2f}\,\mathrm{{GeV}}^2$",
             transform=ax.transAxes,
             fontsize=12)
+
     # axes limits
     ax.set_xlim(0, 0.5)
     ax.set_ylim(0, 12)
@@ -127,10 +128,10 @@ for ax in (axes[4], axes[5]):
             lbl.set_visible(False)
 
 # ─── Global axis labels & layout ───────────────────────────────────────────────
-# pad left margin and set y-label
+# pad left margin and set y-label at x=0.02 (halfway from previous 0.04)
 fig.subplots_adjust(left=0.12, right=0.98, bottom=0.08, top=0.97,
                     wspace=0, hspace=0)
-fig.text(0.04, 0.5,
+fig.text(0.02, 0.5,
          r"$\mathrm{Im}\,H(\xi,\,-t)$",
          va='center', ha='center', rotation='vertical')
 fig.text(0.5, 0.02,
