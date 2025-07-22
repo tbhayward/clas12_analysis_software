@@ -12,9 +12,11 @@ double alpha  = 1.0/137.036;             // fine-structure constant α
 double alpha3 = TMath::Power(alpha, 3);  // α³
 double hbarc2 = 0.38938;                 // (ℏc)² in GeV²·mbarn units
 
-// global GPD‐H slope parameters (original VGG values)
+// global GPD‐H parameters (original VGG values)
 double alpha0 = 0.43;
 double alpha1 = 0.85;
+double n_val   = 1.35, b_val    = 0.4;
+double Mm2_val = 0.64,  P_val   = 1.0;
 
 // Particle masses and magnetic moment
 double m   = 0.000511;   // electron mass [GeV]
@@ -1345,10 +1347,10 @@ double GetImH(double xi, double t) {
     // Simple valence ansatz from VGG
     double r     = 0.9;
     double alpha = alpha0 + alpha1 * t;
-    double n     = 1.35;
-    double b     = 0.4;
-    double Mm2   = 0.64;
-    double P     = 1;
+    double n     = n_val;
+    double b     = b_val;
+    double Mm2   = Mm2_val;
+    double P     = P_val;
     double pref  = TMath::Pi()*5.0/9.0 * n * r / (1 + xi);
     double xfac  = TMath::Power(2*xi/(1+xi), -alpha);
     double yfac  = TMath::Power((1 - xi)/(1+xi), b);
@@ -1361,10 +1363,10 @@ double GetImHt(double xi, double t) {
     // analogous structure with different parameters
     double r     = 7.0;
     double alpha = alpha0 + alpha1 * t;
-    double n     = 0.6;
-    double b     = 2.0;
-    double Mm2   = 0.8;
-    double P     = 1.0;
+    double n     = n_val;
+    double b     = b_val;
+    double Mm2   = Mm2_val;
+    double P     = P_val;
     double pref  = TMath::Pi()*5.0/9.0 * n * r / (1 + xi);
     double xfac  = TMath::Power(2*xi/(1+xi), -alpha);
     double yfac  = TMath::Power((1 - xi)/(1+xi), b);
@@ -1377,10 +1379,10 @@ double GetImE(double xi, double t) {
     // same valence form as ImH
     double r     = 0.9; 
     double alpha = alpha0 + alpha1 * t;
-    double n = 1.35; 
-    double b = 0.4; 
-    double Mm2 = 0.64; 
-    double P = 1.0;
+    double n     = n_val;
+    double b     = b_val;
+    double Mm2   = Mm2_val;
+    double P     = P_val;
     double pref  = TMath::Pi()*5.0/9.0 * n * r / (1 + xi);
     double xfac  = TMath::Power(2*xi/(1+xi), -alpha);
     double yfac  = TMath::Power((1 - xi)/(1+xi), b);
