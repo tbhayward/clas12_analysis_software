@@ -263,7 +263,10 @@ int main(int argc, char** argv){
     }
 
     // ──────────────────────────────────────────────────────────────────────────
-    // write out a time‐stamped file in output/:
+    // ensure output directory exists (Linux)
+    system("mkdir -p output");
+
+    // write out a time‐stamped file
     time_t now = time(nullptr);
     tm*    lt  = localtime(&now);
     char   tb[32];
