@@ -96,10 +96,10 @@ def compute_bsa(phi_arr, Q2_arr, xB_arr, t_arr, Eb_arr, params, tag=""):
             print(f"[{tag}] φ={phi:6.1f}°, ξ={dvcs.xi:.3f}, t={t:.3f}, BSA={mA:.4f}")
     return np.array(bsas)
 
-def cluster_bins_by_t(bins, tol=0.01):
+def cluster_bins_by_t(bins, tol=0.1):
     """
-    Group bins by their mean t within tol. Returns list of
-    {'center':t_center, 'indices':[bin_idx,...]}.
+    Group bins by their mean t within tol (now ±0.1 GeV²).
+    Returns list of {'center':t_center, 'indices':[bin_idx,...]}.
     """
     clusters = []
     for idx, b in enumerate(bins):
@@ -108,7 +108,6 @@ def cluster_bins_by_t(bins, tol=0.01):
         for cl in clusters:
             if abs(t0 - cl["center"]) <= tol:
                 cl["indices"].append(idx)
-                # update cluster center
                 cl["center"] = np.mean([bins[i]["tm"] for i in cl["indices"]])
                 placed = True
                 break
@@ -140,8 +139,8 @@ def main():
     bins = load_all_bins(datafile)
     print(f">> Found {len(bins)} φ‐bins")
 
-    # 4) cluster by t
-    clusters = cluster_bins_by_t(bins, tol=0.01)
+    # 4) cluster by t with tol=0.1
+    clusters = cluster_bins_by_t(bins, tol=0.1)
     print(f">> Grouped into {len(clusters)} |t|-clusters")
 
     # 5) loop over t-clusters
@@ -159,7 +158,6 @@ def main():
         fig, axes = plt.subplots(nrows, ncols,
                                  figsize=(4*ncols, 3*nrows),
                                  sharex=True, sharey=True)
-        # unify axes array shape
         if nrows == 1 and ncols == 1:
             axes = np.array([[axes]])
         elif nrows == 1:
@@ -171,7 +169,7 @@ def main():
         fig.suptitle(rf'$\langle -t\rangle = {abs(t_center):.3f}\,\mathrm{{GeV}}^2$',
                      y=0.98, fontsize=14)
 
-        # for each bin in this cluster
+        # plot each bin
         for i in idxs:
             b = bins[i]
             q2m = round(b["Q2m"], 3)
@@ -180,11 +178,9 @@ def main():
             col = xB_vals.index(xbm)
             ax  = axes[row, col]
 
-            # data
             ax.errorbar(b["phi"], b["A"], yerr=b["sigA"],
                         fmt='o', ms=4, color='k')
 
-            # model on fine φ grid
             phi_grid = np.linspace(0, 360, 100)
             Q2g = np.full_like(phi_grid, b["Q2m"])
             xBg = np.full_like(phi_grid, b["xBm"])
@@ -200,11 +196,10 @@ def main():
             ax.plot(phi_grid, bsas_orig,   '-',  lw=2, color='tab:blue')
             ax.plot(phi_grid, bsas_fitted, '--', lw=2, color='tab:red')
 
-            # subplot title
             ax.set_title(rf'$Q^2={b["Q2m"]:.2f},\,x_B={b["xBm"]:.3f}$',
                          pad=6, fontsize=10)
 
-        # label only bottom row & left column
+        # label axes
         for col in range(ncols):
             ax = axes[-1, col]
             ax.set_xlabel(r'$\phi\;[\mathrm{deg}]$')
@@ -214,7 +209,7 @@ def main():
             ax.set_ylabel(r'$A_{LU}(\phi)$')
             ax.set_ylim(-0.6, 0.6)
 
-        # one legend in the top-right subplot
+        # single legend top-right
         leg_ax = axes[0, -1]
         leg_ax.legend(["Data", "Original Model", "Fitted Model"],
                       loc='upper right', frameon=True, edgecolor='k')
@@ -229,7 +224,6 @@ def main():
         fig.savefig(outname)
         print(">> Saved", outname)
         plt.close(fig)
-
 
 if __name__ == '__main__':
     main()
