@@ -61,7 +61,7 @@ void LoadData(){
             vec.push_back(d);
         }
     };
-    readFile("imports/rga_prl_bsa.txt",      bsaData);
+    readFile("imports/rga_prl_bsa.txt",       bsaData);
     readFile("imports/rga_pass1_xsec_2018.txt", xsData);
 }
 
@@ -121,7 +121,7 @@ void fcn(int& /*npar*/, double* /*grad*/, double& f, double* par, int /*iflag*/)
 }
 
 // -----------------------------------------------------------------------------
-// main(): parse strategy, run fits, save results to output/fit_results_*.txt
+// main(): parse strategy, run fits, save results + χ²/ndf to output/fit_results_*.txt
 int main(int argc, char** argv){
     if(argc<2){
         std::cerr<<"Usage: "<<argv[0]<<" <strategy 1|2|3>\n";
@@ -129,8 +129,7 @@ int main(int argc, char** argv){
     }
     gStrategy = std::atoi(argv[1]);
     if(gStrategy<1||gStrategy>3){
-        std::cerr<<"Invalid strategy "<<gStrategy<<"\n";
-        return 1;
+        std::cerr<<"Invalid strategy "<<gStrategy<<"\n"; return 1;
     }
 
     std::cout<<"\n=== FitH Strategy="<<gStrategy<<" ===\n";
@@ -141,6 +140,8 @@ int main(int argc, char** argv){
     // storage for final results
     double valIm[7], errIm[7];
     double valReal=renormReal, errReal=0;
+    double finalChi2=0;
+    int    finalNdf=0;
 
     // ────────────────────────────────
     // Strategy 1 or 2: single Minuit run
@@ -175,15 +176,19 @@ int main(int argc, char** argv){
             errIm[i]=e[i];
         }
 
-        double chi2,edm,errdef; int nv,nx,ic;
-        minuit.mnstat(chi2,edm,errdef,nv,nx,ic);
-        int ndof = (gStrategy==1
+        minuit.mnstat(finalChi2, /*edm*/finalChi2, /*errdef*/finalChi2,
+                      /*nvpar*/finalNdf, /*nparx*/finalNdf,
+                      /*icstat*/finalNdf);
+        // above mnstat args overwritten, so re-call properly:
+        double edm, errdef; int nv, nx, ic;
+        minuit.mnstat(finalChi2, edm, errdef, nv, nx, ic);
+        finalNdf = (gStrategy==1
                   ? int(bsaData.size())-7
                   : int(bsaData.size()+xsData.size())-8);
 
         // console
-        std::cout<<"\n=== Results ===\n";
-        std::cout<<" renormImag="<<valIm[0]<<"±"<<errIm[0]<<"\n"
+        std::cout<<"\n=== Results ===\n"
+                 <<" renormImag="<<valIm[0]<<"±"<<errIm[0]<<"\n"
                  <<" alpha0    ="<<valIm[1]<<"±"<<errIm[1]<<"\n"
                  <<" alpha1    ="<<valIm[2]<<"±"<<errIm[2]<<"\n"
                  <<" n_val     ="<<valIm[3]<<"±"<<errIm[3]<<"\n"
@@ -192,8 +197,8 @@ int main(int argc, char** argv){
                  <<" P_val     ="<<valIm[6]<<"±"<<errIm[6]<<"\n";
         if(gStrategy==2)
             std::cout<<" renormReal="<<valReal<<"±"<<errReal<<"\n";
-        std::cout<<" χ²/ndof   ="<<chi2<<"/"<<ndof
-                 <<" ="<<(chi2/ndof)<<"\n\n";
+        std::cout<<" χ²/ndf   ="<<finalChi2<<"/"<<finalNdf
+                 <<" ="<<(finalChi2/finalNdf)<<"\n\n";
     }
 
     // Strategy 3: two‐step
@@ -222,9 +227,11 @@ int main(int argc, char** argv){
                 errIm[i]=e[i];
             }
 
-            double chi2,edm,errdef; int nv,nx,ic;
-            minuit.mnstat(chi2,edm,errdef,nv,nx,ic);
-            int ndof = int(bsaData.size())-7;
+            double chi2, edm, errdef; int nv, nx, ic;
+            minuit.mnstat(chi2, edm, errdef, nv, nx, ic);
+            finalChi2 = chi2;
+            finalNdf  = int(bsaData.size()) - 7;
+
             std::cout<<"\nStage 1 results:\n"
                      <<" renormImag="<<v[0]<<"±"<<e[0]<<", "
                      <<"alpha0="   <<v[1]<<"±"<<e[1]<<", "
@@ -233,8 +240,8 @@ int main(int argc, char** argv){
                      <<"b_val="    <<v[4]<<"±"<<e[4]<<", "
                      <<"Mm2_val="  <<v[5]<<"±"<<e[5]<<", "
                      <<"P_val="    <<v[6]<<"±"<<e[6]<<"\n"
-                     <<" χ²/ndof=" <<chi2<<"/"<<ndof
-                     <<"="<<(chi2/ndof)<<"\n\n";
+                     <<" χ²/ndf=" <<finalChi2<<"/"<<finalNdf
+                     <<"="<<(finalChi2/finalNdf)<<"\n\n";
         }
 
         // — Stage 2: renormReal→xsec
@@ -252,30 +259,32 @@ int main(int argc, char** argv){
             minuit.GetParameter(0,rR,eR);
             valReal = rR; errReal = eR;
 
-            double chi2,edm,errdef; int nv,nx,ic;
-            minuit.mnstat(chi2,edm,errdef,nv,nx,ic);
-            int ndof = int(xsData.size())-1;
+            double chi2, edm, errdef; int nv, nx, ic;
+            minuit.mnstat(chi2, edm, errdef, nv, nx, ic);
+            finalChi2 = chi2;
+            finalNdf  = int(xsData.size()) - 1;
+
             std::cout<<"\nStage 2 results:\n"
                      <<" renormReal="<<rR<<"±"<<eR<<"\n"
-                     <<" χ²/ndof   ="<<chi2<<"/"<<ndof
-                     <<" ="<<(chi2/ndof)<<"\n\n";
+                     <<" χ²/ndf   ="<<finalChi2<<"/"<<finalNdf
+                     <<"="<<(finalChi2/finalNdf)<<"\n\n";
         }
     }
 
-    // ──────────────────────────────────────────────────────────────────────────
-    // ensure output directory exists (Linux)
+    // make output dir
     system("mkdir -p output");
 
-    // write out a time‐stamped file
+    // time‐stamp
     time_t now = time(nullptr);
     tm*    lt  = localtime(&now);
     char   tb[32];
     strftime(tb,sizeof(tb),"%Y%m%d_%H%M%S",lt);
     std::string fname = std::string("output/fit_results_")+tb+".txt";
     std::ofstream out(fname);
+
     out<<"# FitH results\n";
-    out<<"timestamp "<<tb<<"\n";
-    out<<"strategy "<<gStrategy<<"\n";
+    out<<"timestamp    "<<tb<<"\n";
+    out<<"strategy     "<<gStrategy<<"\n";
     out<<"# values: renormImag alpha0 alpha1 n_val b_val Mm2_val P_val renormReal\n";
     out<<valIm[0]<<" "<<valIm[1]<<" "<<valIm[2]<<" "
        <<valIm[3]<<" "<<valIm[4]<<" "<<valIm[5]<<" "
@@ -284,8 +293,10 @@ int main(int argc, char** argv){
     out<<errIm[0]<<" "<<errIm[1]<<" "<<errIm[2]<<" "
        <<errIm[3]<<" "<<errIm[4]<<" "<<errIm[5]<<" "
        <<errIm[6]<<" "<<errReal<<"\n";
+    out<<"# chi2 ndof chi2/ndof\n";
+    out<<finalChi2<<" "<<finalNdf<<" "<<(finalChi2/finalNdf)<<"\n";
     out.close();
-    std::cout<<"Wrote fit results to "<<fname<<"\n";
 
+    std::cout<<"Wrote fit results to "<<fname<<"\n";
     return 0;
 }
