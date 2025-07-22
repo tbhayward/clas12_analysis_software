@@ -307,6 +307,13 @@ std::vector<std::pair<double, double>> calculate_dilution_factors() {
         double nMT = h_he->GetBinContent(1);
         double nf  = h_empty->GetBinContent(1);
 
+        // only for Sp23, empty target was 20% He → scale its yield
+        if (data_set == 3) {
+            constexpr double fa22_ET = 0.602465;
+            constexpr double sp23_ET = 0.733067;
+            nf *= (fa22_ET / sp23_ET);
+        }
+
         auto [dil, err] = calculate_dilution_and_error(
             nA, nC, nCH, nMT, nf,
             dsCfg.xA, dsCfg.xC, dsCfg.xCH, dsCfg.xHe, dsCfg.xf
