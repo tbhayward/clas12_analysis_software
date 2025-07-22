@@ -36,7 +36,7 @@
 #include "fitting_process.h"
 
 // Select dataset: 1 = RGC Su22, 2 = RGC Fa22, 3 = RGC Sp23
-constexpr int data_set = 3;
+constexpr int data_set = 1;
 
 struct DataSetConfig {
     std::string name;
@@ -51,7 +51,7 @@ struct DataSetConfig {
 const std::vector<DataSetConfig> dataSetConfigs = {
     {
         "RGC_Su22",
-        0.7452, 0.0735, 0.0383, 0.0245, 0.1184,
+        0.7631, 0.0753, 0.0393, 0.0251, 0.0973,
         "/work/clas12/thayward/CLAS12_SIDIS/processed_data/pass2/data/eX/rgc_su22_inb_NH3_eX.root",
         "/work/clas12/thayward/CLAS12_SIDIS/processed_data/pass2/data/eX/rgc_su22_inb_C_eX.root",
         "/work/clas12/thayward/CLAS12_SIDIS/processed_data/pass2/data/eX/rgc_su22_inb_CH2_eX.root",
