@@ -207,9 +207,9 @@ def calculate_dilution_factor_temp(trees, xB_bins, use_cached=False):
     fa22_df  = np.array([0.179409, 0.180448, 0.194467, 0.209186, 0.221101, 0.230978, 0.227747])
     fa22_err = np.array([0.000321577, 0.000174059, 0.000199535, 0.000261494, 0.000417442, 0.000798884, 0.002049570])
 
-    sp23_df  = np.array([0.152989, 0.161562, 0.173973, 0.186086, 0.198482, 0.213089, 0.217349])
-    sp23_err = np.array([0.000735782, 0.000390222, 0.000453654, 0.000602487, 0.000961387, 0.001828930, 0.004584550])
-
+    sp23_df  = np.array([0.153419, 0.162021, 0.174442, 0.186563, 0.198953, 0.213558, 0.217817])
+    sp23_err = np.array([0.000735484, 0.000390053, 0.000453450, 0.000602207, 0.000960939, 0.001828070, 0.004582390])
+    
     nbins = len(xB_bins) - 1
 
     # decide whether to recalc x_mean or load from cache
@@ -266,7 +266,7 @@ def calculate_dilution_factor_temp(trees, xB_bins, use_cached=False):
     plt.errorbar(x_mean, fa22_df,  yerr=fa22_err, fmt='s', label='Fa22')
     plt.errorbar(x_mean, sp23_df, yerr=sp23_err, fmt='^', label='Sp23')
     plt.xlabel('$x_{B}$'); plt.ylabel('$D_{f}$')
-    plt.xlim(0, 0.8); plt.ylim(0.1, 0.3)
+    plt.xlim(0, 0.8); plt.ylim(0.125, 0.275)
     plt.legend(loc='upper right'); plt.tight_layout()
     plt.savefig("output/dilution_factor.pdf"); plt.close()
     print("[Temp] Saved manual dilution factors plot to output/dilution_factor.pdf")
