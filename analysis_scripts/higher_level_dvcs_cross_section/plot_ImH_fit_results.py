@@ -101,12 +101,12 @@ for idx, (ax, t) in enumerate(zip(axes, t_vals)):
     ax.plot(xi, ImH_orig(xi, -t), **orig_style)
     ax.plot(xi, ImH_fit(xi, -t),  **fit_style)
 
-    # legend in top-right subplot (idx==2)
+    # legend only in top-right subplot (idx==2)
     if idx == 2:
         ax.legend(["Original Parameters","RGA pass-1 BSA"],
                   loc='upper right', fontsize=10)
 
-    # annotation of t moved to (0.65,0.70)
+    # annotation of t at (0.65,0.70)
     ax.text(0.65, 0.70,
             rf"$-t = {t:.2f}\,\mathrm{{GeV}}^2$",
             transform=ax.transAxes,
@@ -128,10 +128,10 @@ for ax in (axes[4], axes[5]):
             lbl.set_visible(False)
 
 # ─── Global axis labels & layout ───────────────────────────────────────────────
-# pad left margin and set y-label at x=0.02 (halfway from previous 0.04)
-fig.subplots_adjust(left=0.12, right=0.98, bottom=0.08, top=0.97,
+# shrink left margin, move y-label closer (x=0.06)
+fig.subplots_adjust(left=0.10, right=0.98, bottom=0.08, top=0.97,
                     wspace=0, hspace=0)
-fig.text(0.02, 0.5,
+fig.text(0.06, 0.5,
          r"$\mathrm{Im}\,H(\xi,\,-t)$",
          va='center', ha='center', rotation='vertical')
 fig.text(0.5, 0.02,
