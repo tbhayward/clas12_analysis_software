@@ -4,16 +4,14 @@ plot_ImH_fit_results.py
 
 Load fitted GPD-H parameters from a text file and compare the original (VGG) vs. fitted
 Im H(ξ,t) ansatz. Produces a 2×2 panel for four ξ values, each showing Im H vs. −t
-for three t‐values (0.1, 0.4, 0.7 GeV²), with solid lines for the original parameters
+for three t‐values (0.1,0.4,0.7 GeV²), with solid lines for the original parameters
 and dashed lines for the fit. Saves to output/plots/ImH_dependence_<TIMESTAMP>.pdf.
 
 Usage:
     python plot_ImH_fit_results.py output/fit_results/fit_results_<TIMESTAMP>.txt
 """
 
-import sys
-import os
-import re
+import sys, os, re
 import numpy as np
 import matplotlib.pyplot as plt
 
@@ -31,42 +29,32 @@ def parse_fit_results(fname):
     timestamp = m.group(1)
 
     params = {}
-    chi2 = None
-    ndf  = None
+    chi2_ndf = None
 
-    with open(fname) as f:
+    with open(fname, encoding='utf-8') as f:
         for line in f:
             line = line.strip()
-            # look for lines like " alpha0     = 0.398334 ± 0.0697363"
+            # match lines like " alpha0     = 0.398334 ± 0.0697363"
             mparam = re.match(r'(\w+)\s*=\s*([-\d\.eE]+)\s*±\s*([-\d\.eE]+)', line)
             if mparam:
                 key, val, err = mparam.groups()
                 params[key] = float(val)
-            # look for "χ²/ndof    = 2480.42/2973 = 0.834315"
-            mchi = re.match(r'χ²/ndof\s*=\s*([-\d\.eE]+)/(\d+)\s*=\s*([-\d\.eE]+)', line)
+
+            # match either Unicode χ²/ndof or ASCII chi2/ndof
+            mchi = re.search(
+                r'(?:(?:χ²)|(?:chi2))\s*/\s*ndof\s*=\s*([-\d\.eE]+)\s*/\s*(\d+)\s*=\s*([-\d\.eE]+)',
+                line, flags=re.IGNORECASE
+            )
             if mchi:
-                chi2, ndf, perndf = mchi.groups()
-                chi2 = float(chi2)
-                ndf  = int(ndf)
-    if chi2 is None:
-        raise ValueError("Could not parse χ²/ndof from file")
-    return params, chi2/ndf, timestamp
+                num, denom, perndf = mchi.groups()
+                chi2_ndf = float(perndf)  # this is χ²/ndof already
+
+    if chi2_ndf is None:
+        raise ValueError("Could not parse χ²/ndof (or chi2/ndof) from file")
+
+    return params, chi2_ndf, timestamp
 
 def ImH(xi, t, p):
-    """
-    Im H(ξ,t) ansatz:
-      r = 0.9
-      α = α0 + α1 * t
-      n = n_val
-      b = b_val
-      Mm2 = Mm2_val
-      P = P_val
-      pref = π·5/9·n·r / (1+ξ)
-      ImH = renormImag * pref * (2ξ/(1+ξ))^(−α)
-                       * ((1−ξ)/(1+ξ))^b
-                       * [1 − ((1−ξ)/(1+ξ))·t/Mm2]^(−P)
-                       * 2
-    """
     r   = 0.9
     α   = p['alpha0'] + p['alpha1'] * t
     n   = p['n_val']
@@ -98,55 +86,45 @@ def main():
         'P_val':      1.0
     }
 
-    # four ξ values (e.g. ξ ≃ x_B/(2−x_B) for x_B=0.1,0.2,0.3,0.4 → ξ≈0.053,0.111,0.176,0.242)
+    # four ξ values (common DVCS range)
     xi_vals = [0.05, 0.10, 0.20, 0.30]
+    t_vals  = [0.1, 0.4, 0.7]
+    colors  = ['tab:blue', 'tab:orange', 'tab:green']
 
-    # three -t values (GeV²)
-    t_vals = [0.1, 0.4, 0.7]
-    colors = ['tab:blue', 'tab:orange', 'tab:green']
-
-    # ensure output directory
-    outdir = f"output/plots"
+    outdir = "output/plots"
     os.makedirs(outdir, exist_ok=True)
     outpath = os.path.join(outdir, f"ImH_dependence_{timestamp}.pdf")
 
-    # prepare a fine t-array for smooth curves
     t_plot = np.linspace(0.05, 1.0, 200)
 
-    # Set up LaTeX style
     plt.rc('text', usetex=True)
     plt.rc('font', family='serif')
-    plt.figure(figsize=(8, 8))
-    fig, axes = plt.subplots(2, 2, sharex=True, sharey=True)
+    fig, axes = plt.subplots(2, 2, figsize=(8,8), sharex=True, sharey=True)
 
     for ax, xi in zip(axes.flat, xi_vals):
         for t, c in zip(t_vals, colors):
-            # original (solid)
             ax.plot(t_plot, ImH(xi, t_plot, params_orig),
-                    linestyle='-', color=c,
-                    label=fr'orig, $-\,t={t:.1f}$')
-            # fitted (dashed)
+                    '-', color=c,
+                    label=fr'orig, $-\,t={t:.1f}\,\mathrm{{GeV}}^2$')
             ax.plot(t_plot, ImH(xi, t_plot, params_fit),
-                    linestyle='--', color=c,
-                    label=fr'fit,  $-\,t={t:.1f}$')
-        ax.set_title(rf"$\xi = {xi:.2f}$")
+                    '--', color=c,
+                    label=fr'fit,  $-\,t={t:.1f}\,\mathrm{{GeV}}^2$')
+        ax.set_title(rf"$\xi={xi:.2f}$")
         ax.grid(True)
-        ax.set_xlim(t_plot.min(), t_plot.max())
 
-    # labels & legend
-    fig.text(0.5, 0.04, r"$-\,t\,$[GeV$^2$]", ha='center', va='center')
-    fig.text(0.06, 0.5, r"$\mathrm{Im}\,H(\xi,t)$", ha='center', va='center', rotation='vertical')
+    fig.text(0.5, 0.04, r"$-\,t\ \mathrm{[GeV^2]}$", ha='center')
+    fig.text(0.06, 0.5, r"$\mathrm{Im}\,H(\xi,t)$", va='center', rotation='vertical')
 
-    # one shared legend
     handles, labels = axes[0,0].get_legend_handles_labels()
-    fig.legend(handles, labels, loc='upper right', fontsize='small', ncol=1,
-               title=r'Original vs. Fit')
+    fig.legend(handles, labels, loc='upper right', fontsize='small',
+               title=r'\textbf{Original vs.\ Fit}')
 
-    fig.tight_layout(rect=[0, 0.03, 1, 0.95])
-    fig.suptitle(r"\textbf{Comparison of Original vs. Fitted ImH}", y=0.98)
+    fig.suptitle(r"\textbf{Comparison of Original vs.\ Fitted ImH}", y=0.98)
+    fig.tight_layout(rect=[0,0.03,1,0.95])
 
     plt.savefig(outpath)
     print(f"[+] Saved ImH dependence plot to {outpath}")
+    print(f"[+] Parsed χ²/ndof = {chi2ndf:.3f}")
 
 if __name__ == "__main__":
     main()
