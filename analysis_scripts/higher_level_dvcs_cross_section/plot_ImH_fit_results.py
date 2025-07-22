@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
 """
-plot_ImH.py
+plot_ImH_fit_results.py
 
 Usage:
-    python plot_ImH.py output/fit_results_<TIMESTAMP>.txt
+    python plot_ImH_fit_results.py output/fit_results/fit_results_<TIMESTAMP>.txt
 
-This will read the fitted parameters from the text file, then draw Im H(ξ, t)
-for a 2×2 grid of ξ values, plotting ImH vs. −t for three fixed −t values.
+Reads the fitted parameters from your text file, then draws Im H(ξ,t)
+for a 2×2 grid of ξ values, plotting Im H vs. −t for three fixed −t values.
+Saves to output/plots/ImH_dependence_<TIMESTAMP>.pdf
 """
 
 import os
@@ -17,7 +18,7 @@ import matplotlib.pyplot as plt
 
 # ─── Parse command‐line ────────────────────────────────────────────────────────
 if len(sys.argv) != 2:
-    print("Usage: python plot_ImH.py output/fit_results_<TIMESTAMP>.txt")
+    print("Usage: python plot_ImH_fit_results.py output/fit_results/fit_results_<TIMESTAMP>.txt")
     sys.exit(1)
 
 fitfile = sys.argv[1]
@@ -31,18 +32,21 @@ timestamp = m.group(1)
 def load_fit(fname):
     with open(fname) as f:
         lines = [l.strip() for l in f if l.strip()]
-    # find the "# values:" line
+    vals = errs = None
+    chi2 = ndf = chi2ndf = None
     for i,l in enumerate(lines):
         if l.startswith("# values"):
             vals = list(map(float, lines[i+1].split()))
         if l.startswith("# errors"):
             errs = list(map(float, lines[i+1].split()))
         if l.startswith("# chi2"):
-            c2, ndf, c2ndf = map(float, lines[i+1].split())
-    return np.array(vals), np.array(errs), c2, int(ndf), c2ndf
+            parts = lines[i+1].split()
+            chi2, ndf, chi2ndf = float(parts[0]), int(parts[1]), float(parts[2])
+    if vals is None:
+        raise RuntimeError("Could not find '# values' in fit file")
+    return np.array(vals), np.array(errs), chi2, ndf, chi2ndf
 
 vals, errs, chi2, ndf, chi2ndf = load_fit(fitfile)
-# unpack
 renorm_fit, alpha0_fit, alpha1_fit, n_fit, b_fit, Mm2_fit, P_fit, renormReal_fit = vals
 
 # ─── Original VGG defaults ───────────────────────────────────────────────────
@@ -64,40 +68,45 @@ def ImH(xi, t, renorm, alpha0, alpha1, n_val, b_val, Mm2_val, P_val):
 def ImH_orig(xi, t):
     return ImH(xi, t, renorm0, alpha0_0, alpha1_0, n0, b0, Mm2_0, P0)
 
-def ImH_fit( xi, t):
+def ImH_fit(xi, t):
     return ImH(xi, t, renorm_fit,
                alpha0_fit, alpha1_fit,
                n_fit, b_fit, Mm2_fit, P_fit)
 
 # ─── Plot setup ───────────────────────────────────────────────────────────────
-plt.style.use('seaborn-whitegrid')
+# try ggplot, fallback to default
+try:
+    plt.style.use('ggplot')
+except OSError:
+    pass
+
 plt.rcParams.update({'font.size': 12, 'font.family': 'serif'})
 
-# suggested ξ values in DVCS are typically in [0.05…0.3]
-# (ξ = xB(1 + t/(2Q^2)) / (2 – xB + xB t/Q^2))
+# suggested ξ values in DVCS (ξ ~ xB/(2−xB) at moderate Q2) 
 xi_vals = [0.05, 0.10, 0.20, 0.30]
-t_vals  = [0.1, 0.4, 0.7]   # plotting vs. −t
+t_vals  = [0.1, 0.4, 0.7]   # we'll plot at these −t
 
 fig, axes = plt.subplots(2, 2, figsize=(10, 8), sharey=True)
 axes = axes.flatten()
 
-colors = ['tab:blue','tab:orange','tab:green']
+colors = ['tab:blue', 'tab:orange', 'tab:green']
 
 for ax, xi in zip(axes, xi_vals):
     for t, color in zip(t_vals, colors):
-        x = t_vals  # we’ll plot at the three discrete points
-        y0 = [ImH_orig(xi, -tt) for tt in x]
-        y1 = [ImH_fit( xi, -tt) for tt in x]
-        ax.plot(x, y0, '-',  lw=2, color=color,
+        # we only have three discrete t points, so plot them directly
+        ts = np.array(t_vals)
+        y0 = [ImH_orig(xi, -tt) for tt in ts]
+        y1 = [ImH_fit( xi, -tt) for tt in ts]
+        ax.plot(ts, y0, '-',  lw=2, color=color,
                 label=f'orig, -t={t:.1f}')
-        ax.plot(x, y1, '--', lw=2, color=color,
+        ax.plot(ts, y1, '--', lw=2, color=color,
                 label=f'fit,  -t={t:.1f}')
     ax.set_title(f'ξ = {xi:.2f}')
     ax.set_xlabel('−t [GeV²]')
-    ax.legend(loc='best')
+    ax.legend(fontsize=9)
 
-axes[0].set_ylabel('Im H(ξ, t)')
-axes[2].set_ylabel('Im H(ξ, t)')
+axes[0].set_ylabel('ImH(ξ, t)')
+axes[2].set_ylabel('ImH(ξ, t)')
 
 plt.tight_layout()
 
