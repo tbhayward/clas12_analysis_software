@@ -70,17 +70,17 @@ def ImH_fit(xi, t):
 # ─── Plot style ───────────────────────────────────────────────────────────────
 plt.style.use('classic')
 plt.rcParams.update({
-    'font.size':      14,
-    'font.family':    'serif',
-    'axes.facecolor': 'white',
-    'axes.edgecolor': 'black',
-    'legend.frameon': True,
+    'font.size':       14,
+    'font.family':     'serif',
+    'axes.facecolor':  'white',
+    'axes.edgecolor':  'black',
+    'legend.frameon':  True,
     'legend.framealpha': 1.0,
 })
 
 # ─── Prepare data ─────────────────────────────────────────────────────────────
-t_values = np.linspace(0.1, 1.0, 6)       # six −t values equally spaced
-xi_vals  = np.linspace(0, 0.5, 300)       # ξ range up to 0.5
+t_values = np.linspace(0.1, 1.0, 6)   # six −t values equally spaced
+xi_vals  = np.linspace(0, 0.5, 300)   # ξ range up to 0.5
 
 orig_color = 'tab:blue'
 fit_color  = 'tab:red'
@@ -91,16 +91,18 @@ fig, axes = plt.subplots(2, 3, figsize=(12, 6),
 axes = axes.flatten()
 fig.subplots_adjust(wspace=0, hspace=0)
 
-for idx, (ax, tt) in enumerate(zip(axes, t_values)):
+for ax, tt in zip(axes, t_values):
     neg_t = -tt
     y0 = ImH_orig(xi_vals, neg_t)
     y1 = ImH_fit( xi_vals, neg_t)
+
     ax.plot(xi_vals, y0, '-',  lw=2, color=orig_color,
             label="Original Parameters")
     ax.plot(xi_vals, y1, '--', lw=2, color=fit_color,
             label="RGA pass-1 BSA")
-    # move the -t label below the legend, down and to the right
-    ax.text(0.7, 0.15,
+
+    # reposition the -t label a bit left and up
+    ax.text(0.60, 0.25,
             rf'$-t = {tt:.2f}\,\mathrm{{GeV}}^2$',
             transform=ax.transAxes,
             ha='left', va='bottom',
@@ -109,21 +111,16 @@ for idx, (ax, tt) in enumerate(zip(axes, t_values)):
     ax.set_xlim(0, 0.5)
     ax.set_ylim(0, 12)
 
-    # y-axis only on left column
-    if idx in (0, 3):
-        ax.set_ylabel(r'$\mathrm{Im}\,H(\xi,\,-t)$')
-    else:
-        ax.set_yticklabels([])
-
-    # x-axis only on bottom row
-    if idx >= 3:
-        ax.set_xlabel(r'$\xi$')
-    else:
-        ax.set_xticklabels([])
-
     ax.legend(loc='upper right', fontsize=10)
 
-plt.tight_layout()
+# ─── Global axis labels ───────────────────────────────────────────────────────
+fig.text(0.5, 0.02,
+         r'$\xi$',
+         ha='center', va='center', fontsize=16)
+fig.text(0.06, 0.5,
+         r'$\mathrm{Im}\,H(\xi,\,-t)$',
+         ha='center', va='center',
+         rotation='vertical', fontsize=16)
 
 # ─── Save ─────────────────────────────────────────────────────────────────────
 outdir = 'output/plots'
