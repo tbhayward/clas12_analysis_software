@@ -273,13 +273,14 @@ int main(int argc, char** argv){
 
     // make output dir
     system("mkdir -p output");
+    system("mkdir -p output/fit_results/");
 
     // time‐stamp
     time_t now = time(nullptr);
     tm*    lt  = localtime(&now);
     char   tb[32];
     strftime(tb,sizeof(tb),"%Y%m%d_%H%M%S",lt);
-    std::string fname = std::string("output/fit_results_")+tb+".txt";
+    std::string fname = std::string("output/fit_results/fit_results_")+tb+".txt";
     std::ofstream out(fname);
 
     out<<"# FitH results\n";
