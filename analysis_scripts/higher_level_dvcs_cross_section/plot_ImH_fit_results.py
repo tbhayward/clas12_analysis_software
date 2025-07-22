@@ -1,145 +1,124 @@
 #!/usr/bin/env python3
 """
-plot_ImH_fit_results.py
+plot_ImH_vs_xi.py
 
-Load fitted GPD‐H parameters from a fit_results_<TIMESTAMP>.txt file
-and compare the original (VGG) vs. fitted Im H(ξ,t) ansatz.
-
-Makes a 2×2 panel for four ξ values, each plotting Im H vs. −t at
-three fixed values (0.1, 0.4, 0.7 GeV²). Solid lines = original VGG;
-dashed lines = your fit.
+Reads a FitH output file (fit_results_<TIMESTAMP>.txt), extracts
+the original VGG and fitted ImH parameters, then plots Im H(ξ,−t)
+vs ξ for four fixed −t values in one panel.
 
 Usage:
-    python plot_ImH_fit_results.py output/fit_results/fit_results_<TIMESTAMP>.txt
+    python plot_ImH_vs_xi.py output/fit_results/fit_results_<TIMESTAMP>.txt
 """
 
-import os, sys, re
+import os
+import sys
+import re
 import numpy as np
 import matplotlib.pyplot as plt
 
-def load_fit(fname):
-    """
-    Parse the new style fit_results file and return:
-      params: dict(name->value),
-      chi2ndf: float,
-      timestamp: str
-    """
-    m = re.search(r'fit_results_(\d{8}_\d{6})\.txt$', fname)
-    if not m:
-        raise RuntimeError(f"Couldn't extract timestamp from '{fname}'")
-    timestamp = m.group(1)
+# ─── Parse command‐line ────────────────────────────────────────────────────────
+if len(sys.argv) != 2:
+    print("Usage: python plot_ImH_vs_xi.py output/fit_results/fit_results_<TIMESTAMP>.txt")
+    sys.exit(1)
 
-    keys = None
+fitfile = sys.argv[1]
+m = re.search(r'fit_results_(\d{8}_\d{6})\.txt$', fitfile)
+if not m:
+    print("ERROR: Couldn't extract timestamp from filename:", fitfile)
+    sys.exit(1)
+timestamp = m.group(1)
+
+# ─── Load fit results ─────────────────────────────────────────────────────────
+def load_fit_results(fname):
     vals = None
-    chi2ndf = None
+    chi2 = ndf = chi2ndf = None
+    with open(fname) as f:
+        for line in f:
+            line = line.strip()
+            if line.startswith("# values"):
+                vals = next(f).split()
+            if line.startswith("# chi2"):
+                parts = next(f).split()
+                chi2, ndf, chi2ndf = float(parts[0]), int(parts[1]), float(parts[2])
+    if vals is None:
+        raise RuntimeError("Could not find '# values' in fit file")
+    vals = list(map(float, vals))
+    return np.array(vals), chi2ndf
 
-    with open(fname, 'r', encoding='utf-8') as f:
-        lines = [l.strip() for l in f if l.strip()]
+vals, chi2ndf = load_fit_results(fitfile)
+renorm_fit, alpha0_fit, alpha1_fit, n_fit, b_fit, Mm2_fit, P_fit, renormReal_fit = vals
 
-    for i, line in enumerate(lines):
-        if line.startswith("# values:"):
-            keys = line.split(":",1)[1].split()
-            vals = list(map(float, lines[i+1].split()))
-        if line.startswith("# chi2"):
-            parts = lines[i+1].split()
-            chi2ndf = float(parts[2])
+# ─── Original VGG defaults ───────────────────────────────────────────────────
+renorm0, alpha0_0, alpha1_0 = 1.0, 0.43, 0.85
+n0,   b0,    Mm2_0,   P0    = 1.35, 0.4, 0.64, 1.0
 
-    if keys is None or vals is None:
-        raise RuntimeError("Failed to parse '# values:' block")
-    if chi2ndf is None:
-        raise RuntimeError("Failed to parse '# chi2' block")
-    if len(keys) != len(vals):
-        raise RuntimeError("Mismatch between keys and values")
+# ─── ImH function ────────────────────────────────────────────────────────────
+def ImH(xi, t, renorm, alpha0, alpha1, n_val, b_val, Mm2_val, P_val):
+    r     = 0.9
+    alpha = alpha0 + alpha1 * t
+    n, b  = n_val, b_val
+    Mm2, P= Mm2_val, P_val
+    pref  = np.pi * 5.0/9.0 * n * r / (1 + xi)
+    xfac  = (2*xi/(1+xi))**(-alpha)
+    yfac  = ((1 - xi)/(1+xi))**(b)
+    tfac  = (1 - ((1 - xi)/(1+xi))*t/Mm2)**(-P)
+    return renorm * pref * xfac * yfac * tfac * 2.0
 
-    return dict(zip(keys, vals)), chi2ndf, timestamp
+def ImH_orig(xi, t):
+    return ImH(xi, t,
+               renorm0, alpha0_0, alpha1_0,
+               n0,      b0,      Mm2_0, P0)
 
-def ImH(xi, t, p):
-    r   = 0.9
-    α   = p['alpha0'] + p['alpha1'] * t
-    n   = p['n_val']
-    b   = p['b_val']
-    Mm2 = p['Mm2_val']
-    P   = p['P_val']
-    pref = np.pi * 5.0/9.0 * n * r / (1 + xi)
-    xfac = (2*xi/(1+xi))**(-α)
-    yfac = ((1 - xi)/(1+xi))**( b )
-    tfac = (1 - ((1 - xi)/(1+xi))*t/Mm2 )**(-P)
-    return p['renormImag'] * pref * xfac * yfac * tfac * 2.0
+def ImH_fit(xi, t):
+    return ImH(xi, t,
+               renorm_fit, alpha0_fit, alpha1_fit,
+               n_fit,      b_fit,      Mm2_fit, P_fit)
 
-def main():
-    if len(sys.argv) != 2:
-        print(__doc__)
-        sys.exit(1)
-    fitfile = sys.argv[1]
+# ─── Plot style ───────────────────────────────────────────────────────────────
+plt.style.use('classic')
+plt.rcParams.update({
+    'font.size':       14,
+    'font.family':     'serif',
+    'axes.facecolor':  'white',
+    'axes.edgecolor':  'black',
+    'axes.grid':       True,
+    'grid.linestyle':  '--',
+    'grid.color':      '0.8',
+    'legend.frameon':  True,
+    'legend.framealpha': 1.0,
+})
 
-    # 1) parse fit results
-    params_fit, chi2ndf, timestamp = load_fit(fitfile)
+# ─── Prepare data ─────────────────────────────────────────────────────────────
+# four −t values (GeV²) to compare:
+t_abs = [0.1, 0.4, 0.7, 1.0]
+colors = ['C0','C1','C2','C3']
 
-    # 2) original VGG defaults
-    params_orig = {
-        'renormImag': 1.0,
-        'alpha0':     0.43,
-        'alpha1':     0.85,
-        'n_val':      1.35,
-        'b_val':      0.4,
-        'Mm2_val':    0.64,
-        'P_val':      1.0
-    }
+# xi range:
+xi_vals = np.linspace(0.02, 0.5, 200)
 
-    # 3) ξ panels and t‐points
-    xi_vals = [0.05, 0.10, 0.20, 0.30]
-    t_vals  = [0.1, 0.4, 0.7]
-    colors  = ['tab:blue', 'tab:orange', 'tab:green']
+# ─── Single‐panel plot ────────────────────────────────────────────────────────
+fig, ax = plt.subplots(figsize=(8,6))
 
-    # 4) prepare output dir
-    outdir = "output/plots"
-    os.makedirs(outdir, exist_ok=True)
-    outname = os.path.join(outdir,
-        f"ImH_dependence_{timestamp}.pdf"
-    )
+for tt, col in zip(t_abs, colors):
+    t = -tt  # pass negative t into ImH
+    y0 = ImH_orig( xi_vals, t)
+    y1 = ImH_fit(  xi_vals, t)
+    ax.plot( xi_vals, y0, '-',  lw=2, color=col,
+             label=rf'orig, $-t={tt:.1f}$')
+    ax.plot( xi_vals, y1, '--', lw=2, color=col,
+             label=rf'fit,  $-t={tt:.1f}$')
 
-    # 5) clean white style
-    plt.style.use('default')
-    plt.rc('text', usetex=True)
-    plt.rc('font', family='serif', size=12)
+ax.set_xlim(0, 0.6)
+ax.set_ylim(0, None)        # auto‐scale top
+ax.set_xlabel(r'$\xi$')
+ax.set_ylabel(r'$\mathrm{Im}\,H(\xi,\,-t)$')
+ax.set_title(f'ImH vs ξ (Fit χ²/ndf={chi2ndf:.2f})')
+ax.legend(loc='upper right', fontsize=10)
+plt.tight_layout()
 
-    # 6) draw 2×2 grid
-    fig, axes = plt.subplots(2, 2, figsize=(10,8), sharey=True)
-    axes = axes.flatten()
-
-    for ax, xi in zip(axes, xi_vals):
-        for t, c in zip(t_vals, colors):
-            # original
-            ax.plot(
-                t_vals,
-                [ImH(xi, tt, params_orig) for tt in t_vals],
-                '-', lw=2, color=c,
-                label=rf"orig, $-t={t:.1f}\,\mathrm{{GeV}}^2$"
-            )
-            # fit
-            ax.plot(
-                t_vals,
-                [ImH(xi, tt, params_fit) for tt in t_vals],
-                '--', lw=2, color=c,
-                label=rf"fit,  $-t={t:.1f}\,\mathrm{{GeV}}^2$"
-            )
-
-        ax.set_title(rf"$\xi={xi:.2f}$")
-        ax.set_xlabel(r"$-t\,[\mathrm{GeV}^2]$")
-        ax.set_xlim(0, 3)
-        ax.set_ylim(0, 30)
-        ax.legend(loc='upper right', fontsize='small', frameon=False)
-
-    axes[0].set_ylabel(r"$\mathrm{Im}\,H(\xi,t)$")
-    axes[2].set_ylabel(r"$\mathrm{Im}\,H(\xi,t)$")
-
-    fig.tight_layout()
-    fig.suptitle(r"\textbf{Im$H$ Dependence: Original vs.\ Fitted}", y=0.99)
-
-    # 7) save
-    fig.savefig(outname)
-    print(f"[+] Saved ImH dependence plot to {outname}")
-    print(f"[+] Parsed χ²/ndof = {chi2ndf:.3f}")
-
-if __name__ == "__main__":
-    main()
+# ─── Save ─────────────────────────────────────────────────────────────────────
+outdir = 'output/plots'
+os.makedirs(outdir, exist_ok=True)
+outname = f'{outdir}/ImH_dependence_{timestamp}.pdf'
+fig.savefig(outname)
+print("Saved figure to", outname)
