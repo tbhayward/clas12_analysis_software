@@ -79,8 +79,8 @@ plt.rcParams.update({
 })
 
 # ─── Prepare data ─────────────────────────────────────────────────────────────
-t_values = [0.1, 0.2, 0.4, 0.7, 1.0, 1.3]   # six −t values [GeV²]
-xi_vals  = np.linspace(0.02, 0.5, 300)      # ξ range up to 0.5
+t_values = np.linspace(0.1, 1.0, 6)       # six −t values equally spaced
+xi_vals  = np.linspace(0.02, 0.5, 300)    # ξ range up to 0.5
 
 orig_color = 'tab:blue'
 fit_color  = 'tab:red'
@@ -94,24 +94,26 @@ for idx, (ax, tt) in enumerate(zip(axes, t_values)):
     neg_t = -tt
     y0 = ImH_orig(xi_vals, neg_t)
     y1 = ImH_fit( xi_vals, neg_t)
-    ax.plot(xi_vals, y0, '-',  lw=2, color=orig_color, label='original')
-    ax.plot(xi_vals, y1, '--', lw=2, color=fit_color,  label='fit')
-    # draw panel title inside plot at top
-    ax.text(0.5, 0.92, rf'$-t = {tt:.1f}\ \mathrm{{GeV}}^2$', 
+    ax.plot(xi_vals, y0, '-',  lw=2, color=orig_color,
+            label="Original Parameters")
+    ax.plot(xi_vals, y1, '--', lw=2, color=fit_color,
+            label="RGA pass-1 BSA")
+    # title inside plot
+    ax.text(0.5, 0.92, rf'$-t = {tt:.2f}\ \mathrm{{GeV}}^2$',
             transform=ax.transAxes, ha='center', va='top', fontsize=12)
     ax.set_xlim(0, 0.5)
     ax.set_ylim(0, 12)
-    # only show y-axis on left column
-    if idx not in (0, 3):
-        ax.set_yticklabels([])
-    else:
+    # show y-label only on first column
+    if idx in (0, 3):
         ax.set_ylabel(r'$\mathrm{Im}\,H(\xi,\,-t)$')
-    # only show x-axis on bottom row
-    if idx < 3:
-        ax.set_xticklabels([])
     else:
+        ax.set_yticklabels([])
+    # show x-label only on bottom row
+    if idx >= 3:
         ax.set_xlabel(r'$\xi$')
-    # legend in each panel
+    else:
+        ax.set_xticklabels([])
+    # legend
     ax.legend(loc='upper right', fontsize=10)
 
 plt.tight_layout()
