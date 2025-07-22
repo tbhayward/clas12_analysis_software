@@ -80,13 +80,14 @@ plt.rcParams.update({
 
 # ─── Prepare data ─────────────────────────────────────────────────────────────
 t_values = np.linspace(0.1, 1.0, 6)       # six −t values equally spaced
-xi_vals  = np.linspace(0.02, 0.5, 300)    # ξ range up to 0.5
+xi_vals  = np.linspace(0, 0.5, 300)       # ξ range up to 0.5
 
 orig_color = 'tab:blue'
 fit_color  = 'tab:red'
 
 # ─── Create 2×3 grid ─────────────────────────────────────────────────────────
-fig, axes = plt.subplots(2, 3, figsize=(12, 6), sharex=True, sharey=True)
+fig, axes = plt.subplots(2, 3, figsize=(12, 6),
+                         sharex=True, sharey=True)
 axes = axes.flatten()
 fig.subplots_adjust(wspace=0, hspace=0)
 
@@ -98,22 +99,28 @@ for idx, (ax, tt) in enumerate(zip(axes, t_values)):
             label="Original Parameters")
     ax.plot(xi_vals, y1, '--', lw=2, color=fit_color,
             label="RGA pass-1 BSA")
-    # title inside plot
-    ax.text(0.5, 0.92, rf'$-t = {tt:.2f}\ \mathrm{{GeV}}^2$',
-            transform=ax.transAxes, ha='center', va='top', fontsize=12)
+    # move the -t label below the legend, down and to the right
+    ax.text(0.7, 0.15,
+            rf'$-t = {tt:.2f}\,\mathrm{{GeV}}^2$',
+            transform=ax.transAxes,
+            ha='left', va='bottom',
+            fontsize=12)
+
     ax.set_xlim(0, 0.5)
     ax.set_ylim(0, 12)
-    # show y-label only on first column
+
+    # y-axis only on left column
     if idx in (0, 3):
         ax.set_ylabel(r'$\mathrm{Im}\,H(\xi,\,-t)$')
     else:
         ax.set_yticklabels([])
-    # show x-label only on bottom row
+
+    # x-axis only on bottom row
     if idx >= 3:
         ax.set_xlabel(r'$\xi$')
     else:
         ax.set_xticklabels([])
-    # legend
+
     ax.legend(loc='upper right', fontsize=10)
 
 plt.tight_layout()
