@@ -33,9 +33,15 @@
 // pull in your full BMK_DVCS + CFF code, with globals
 #include "DVCS_xsec.C"
 
-// we only declare the flags here, they are defined in DVCS_xsec.C
+// we only declare the flags & renormalizations here; the rest are in DVCS_xsec.C
 extern bool   hasH, hasHt, hasE, hasEt;
 extern double renormImag, renormReal;
+
+//—and now all of the CFF shape‐parameter globals:
+extern double r_H,      alpha0_H,  alpha1_H,  n_H,   b_H,   Mm2_H,  P_H;
+extern double r_Ht,     alpha0_Ht, alpha1_Ht, n_Ht,  b_Ht,  Mm2_Ht, P_Ht;
+extern double r_E,      alpha0_E,  alpha1_E,  n_E,   b_E,   Mm2_E,  P_E;
+extern double r_Et,     alpha0_Et, alpha1_Et, n_Et,  b_Et,  Mm2_Et, P_Et;
 
 // ──────────────────────────────────────────────────────────────────────────────
 // globals controlling strategy & stage:
@@ -253,8 +259,7 @@ int main(int argc, char** argv){
             if(name.find("b_")==0)   init=0.4,  step=0.05;
             if(name.find("Mm2_")==0) init=0.64, step=0.05;
             if(name.find("P_")==0)   init=1.0,  step=0.05;
-            if(name=="r_Ht")
-                init=7.0,  step=1.0;
+            if(name=="r_Ht")         init=7.0,  step=1.0;
             if(name=="r_H"   || name=="r_E"    || name=="r_Et")
                 init=0.9,  step=0.1;
             if(name=="renormReal")
