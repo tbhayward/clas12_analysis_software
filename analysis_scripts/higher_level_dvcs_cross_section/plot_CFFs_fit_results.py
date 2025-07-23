@@ -51,8 +51,7 @@ def parse_fit_results(fname):
             pnames = lines[i].split()[2:]
             break
     # values and errors
-    vals = None
-    errs = None
+    vals = errs = None
     chi2 = ndf = chi2ndf = None
     for i,l in enumerate(lines):
         if l.startswith("# values"):
@@ -97,7 +96,7 @@ defaults = {
 def make_Im_func(cff, params, renorm):
     d = defaults[cff]
     def Im(xi, t):
-        # use the default n=0 for Et to get a zeros array of the correct shape
+        # pull either fitted or default params
         r     = params.get("r",      d["r"])
         a0    = params.get("alpha0", d["alpha0"])
         a1    = params.get("alpha1", d["alpha1"])
@@ -114,63 +113,46 @@ def make_Im_func(cff, params, renorm):
         return renorm * pref * xfac * yfac * tfac * fac
     return Im
 
-# Function to generate replica parameters
+# ─── Replica helpers ───────────────────────────────────────────────────────────
 def generate_replica_params(central_params, param_errors, n_replicas=100):
     replicas = []
     for _ in range(n_replicas):
         replica = {}
         for param, val in central_params.items():
-            # Generate random value from normal distribution with 95% CI
-            # 95% CI corresponds to ±1.96 sigma
-            sigma = param_errors[param] / 1.96  # Convert 95% CI error to sigma
+            sigma = param_errors[param] / 1.96
             replica[param] = np.random.normal(val, sigma)
         replicas.append(replica)
     return replicas
 
-# Function to compute uncertainty band
 def compute_uncertainty_band(cff, xi_vals, t_vals, n_replicas=100):
-    # Generate replicas for this CFF
     if cff not in fit_params:
         return None, None, None
-    
-    # Generate replica parameters
-    param_replicas = generate_replica_params(fit_params[cff], fit_errors[cff], n_replicas)
-    
-    # Also need to include renorm uncertainty
-    renorm_replicas = np.random.normal(renorm_fit, renorm_err/1.96, n_replicas)
-    
-    # Compute all replica curves
+    param_reps  = generate_replica_params(fit_params[cff], fit_errors[cff], n_replicas)
+    renorm_reps = np.random.normal(renorm_fit, renorm_err/1.96, n_replicas)
     all_curves = []
     for i in range(n_replicas):
-        Im_replica = make_Im_func(cff, param_replicas[i], renorm_replicas[i])
-        curve = Im_replica(xi_vals, -t_vals) if np.isscalar(t_vals) else Im_replica(xi_vals, -t_vals)
+        Im_rep = make_Im_func(cff, param_reps[i], renorm_reps[i])
+        curve  = Im_rep(xi_vals, -t_vals) if np.isscalar(t_vals) else Im_rep(xi_vals, -t_vals)
         all_curves.append(curve)
-    
     all_curves = np.array(all_curves)
-    median = np.median(all_curves, axis=0)
-    lower = np.percentile(all_curves, 2.5, axis=0)
-    upper = np.percentile(all_curves, 97.5, axis=0)
-    
-    return median, lower, upper
+    return (np.median(all_curves, axis=0),
+            np.percentile(all_curves, 2.5, axis=0),
+            np.percentile(all_curves, 97.5, axis=0))
 
-# Create Im_funcs dictionary AFTER all helper functions are defined
-Im_funcs = {
-    cff: make_Im_func(cff, fit_params.get(cff, {}), renorm_fit)
-    for cff in ("H","Ht","E","Et") if flags[cff]
-}
+# ─── Build functions & style ───────────────────────────────────────────────────
+Im_funcs = { cff: make_Im_func(cff, fit_params.get(cff, {}), renorm_fit)
+             for cff in ("H","Ht","E","Et") if flags[cff] }
 
-# ─── Plot styling ───────────────────────────────────────────────────────────────
 plt.style.use('classic')
 plt.rcParams.update({'font.size':14,'font.family':'serif'})
 
 outdir = 'output/plots'
 os.makedirs(outdir, exist_ok=True)
 
-# ─── Grids ─────────────────────────────────────────────────────────────────────
-t_fixed  = np.linspace(0.1, 1.0, 6)
-xi_range = np.linspace(0,   0.5, 200)
-xi_fixed = np.linspace(0.05,0.50,6)
-t_range  = np.linspace(0,   1.0, 200)
+t_fixed   = np.linspace(0.1, 1.0,   6)
+xi_range  = np.linspace(0.0, 0.5, 200)
+xi_fixed  = np.linspace(0.05,0.50,  6)
+t_range   = np.linspace(0.0, 1.0, 200)
 
 orig_style = {'color':'tab:blue','linestyle':'-','linewidth':2.5}
 fit_style  = {'color':'tab:red', 'linestyle':'--','linewidth':2.5}
@@ -178,74 +160,97 @@ band_style = {'color':'tab:red', 'alpha':0.2}
 zero_line  = {'color':'gray','linestyle':'--','linewidth':1}
 
 tex_map = {"H":"H", "Ht":r"\tilde H", "E":"E", "Et":r"\tilde E"}
-
-# Number of replicas for uncertainty estimation
 N_REPLICAS = 100
 
-# ─── Loop CFFs ─────────────────────────────────────────────────────────────────
+# ─── Plot loop ────────────────────────────────────────────────────────────────
+from matplotlib.lines import Line2D
+
+legend_elements = [
+    Line2D([0], [0], color='tab:blue', linestyle='-', lw=2.5, label='Original'),
+    Line2D([0], [0], color='tab:red',  linestyle='--',lw=2.5, label='Fit median'),
+    plt.Rectangle((0,0),1,1,fc='tab:red',alpha=0.2,ec=None,label='95% CI')
+]
+
 for cff, Im_fit in Im_funcs.items():
     Im_orig = make_Im_func(cff, {}, 1.0)
     tex = tex_map[cff]
 
-    # 1) ImCFF vs ξ
-    fig, axes = plt.subplots(2,3,figsize=(12,8),sharex=True,sharey=True)
+    # — Im vs ξ —
+    fig, axes = plt.subplots(2,3,figsize=(12,8), sharex=True, sharey=True)
     axes = axes.flatten()
     fig.suptitle(rf"$\mathrm{{Im}}\,{tex}$", fontsize=16, y=0.98)
+
     for idx, (ax, t) in enumerate(zip(axes, t_fixed)):
         ax.plot(xi_range, Im_orig(xi_range, -t), **orig_style)
-        median, lower, upper = compute_uncertainty_band(cff, xi_range, t, N_REPLICAS)
-        if median is not None:
-            ax.plot(xi_range, median, **fit_style)
-            ax.fill_between(xi_range, lower, upper, **band_style)
+        med, lo, up = compute_uncertainty_band(cff, xi_range, t, N_REPLICAS)
+        if med is not None:
+            ax.plot(xi_range, med, **fit_style)
+            ax.fill_between(xi_range, lo, up, **band_style)
         ax.axhline(0, **zero_line)
-        ax.text(0.60, 0.72, rf"$-t={t:.2f}\,\mathrm{{(GeV^2)}}$",
+        ax.text(0.60, 0.72, rf"$-t={t:.2f}\,\mathrm{{GeV^2}}$",
                 transform=ax.transAxes, fontsize=12)
-        ax.set_xlim(0, 0.5)
-        if idx < 3:
-            ax.set_ylim(0, 12)
-        else:
-            ax.set_ylim(-2, 12)
+        ax.set_xlim(0,0.5)
+        ax.set_ylim(0,12)
 
-    from matplotlib.lines import Line2D
-    legend_elements = [
-        Line2D([0], [0], color='tab:blue', linestyle='-', lw=2.5, label='Original Parameters'),
-        Line2D([0], [0], color='tab:red', linestyle='--', lw=2.5, label='RGA pass-1 fit (median)'),
-        plt.Rectangle((0,0), 1, 1, fc='tab:red', alpha=0.2, ec=None, label='95% CI')
-    ]
+    # hide first y-tick on top row (remove "0" tick)
+    for ax in axes[:3]:
+        ylbls = ax.get_yticklabels()
+        if ylbls:
+            ylbls[0].set_visible(False)
+    # hide x=0 label on bottom middle/right
+    for ax in (axes[4], axes[5]):
+        for lbl in ax.get_xticklabels():
+            if lbl.get_text() in ('0','0.0'):
+                lbl.set_visible(False)
+
     axes[2].legend(handles=legend_elements, loc='upper right', fontsize=10)
-    fig.subplots_adjust(left=0.10,right=0.98,bottom=0.08,top=0.92,wspace=0,hspace=0)
+    fig.subplots_adjust(left=0.10, right=0.98, bottom=0.08, top=0.92, wspace=0, hspace=0)
     fig.text(0.06,0.5, rf"$\mathrm{{Im}}\,{tex}(\xi,\,-t)$",
-             va='center',ha='center',rotation='vertical')
+             va='center', ha='center', rotation='vertical')
     fig.text(0.5,0.02, r"$\xi$", ha='center')
+
     out1 = f"{outdir}/Im{cff}_vs_xi_{timestamp}.pdf"
     fig.savefig(out1, bbox_inches='tight')
     print("Saved:", out1)
     plt.close(fig)
 
-    # 2) ImCFF vs −t
-    fig, axes = plt.subplots(2,3,figsize=(12,8),sharex=True,sharey=True)
+    # — Im vs −t —
+    fig, axes = plt.subplots(2,3,figsize=(12,8), sharex=True, sharey=True)
     axes = axes.flatten()
     fig.suptitle(rf"$\mathrm{{Im}}\,{tex}$", fontsize=16, y=0.98)
+
     for idx, (ax, xi0) in enumerate(zip(axes, xi_fixed)):
         ax.plot(t_range, Im_orig(xi0, -t_range), **orig_style)
-        median, lower, upper = compute_uncertainty_band(cff, xi0, t_range, N_REPLICAS)
-        if median is not None:
-            ax.plot(t_range, median, **fit_style)
-            ax.fill_between(t_range, lower, upper, **band_style)
+        med, lo, up = compute_uncertainty_band(cff, xi0, t_range, N_REPLICAS)
+        if med is not None:
+            ax.plot(t_range, med, **fit_style)
+            ax.fill_between(t_range, lo, up, **band_style)
         ax.axhline(0, **zero_line)
         ax.text(0.60, 0.72, rf"$\xi={xi0:.2f}$",
                 transform=ax.transAxes, fontsize=12)
-        ax.set_xlim(0, 1.0)
+        ax.set_xlim(0,1.0)
         if idx < 3:
-            ax.set_ylim(0, 12)
+            ax.set_ylim(0,12)
         else:
-            ax.set_ylim(-2, 12)
+            ax.set_ylim(-2,12)
+
+    # hide first y-tick on top row (remove "0" tick)
+    for ax in axes[:3]:
+        ylbls = ax.get_yticklabels()
+        if ylbls:
+            ylbls[0].set_visible(False)
+    # hide x=0 label on bottom middle/right
+    for ax in (axes[4], axes[5]):
+        for lbl in ax.get_xticklabels():
+            if lbl.get_text() in ('0','0.0'):
+                lbl.set_visible(False)
 
     axes[2].legend(handles=legend_elements, loc='upper right', fontsize=10)
-    fig.subplots_adjust(left=0.10,right=0.98,bottom=0.08,top=0.92,wspace=0,hspace=0)
+    fig.subplots_adjust(left=0.10, right=0.98, bottom=0.08, top=0.92, wspace=0, hspace=0)
     fig.text(0.06,0.5, rf"$\mathrm{{Im}}\,{tex}(\xi,\,-t)$",
-             va='center',ha='center',rotation='vertical')
+             va='center', ha='center', rotation='vertical')
     fig.text(0.5,0.02, r"$-t\,(\mathrm{GeV^2})$", ha='center')
+
     out2 = f"{outdir}/Im{cff}_vs_t_{timestamp}.pdf"
     fig.savefig(out2, bbox_inches='tight')
     print("Saved:", out2)
