@@ -36,24 +36,20 @@ timestamp = m.group(1)
 
 # ─── Load fit results & flags ─────────────────────────────────────────────────
 def parse_fit_results(fname):
-    params = {}
     with open(fname) as f:
         lines = [l.strip() for l in f if l.strip()]
-    # find flags line: e.g. "H 1  Ht 1  E 0  Et 1"
+    # flags line: e.g. "H 1  Ht 1  E 0  Et 1"
     flag_line = next(l for l in lines if l.startswith("H "))
     toks = flag_line.split()
     flags = { toks[i]: int(toks[i+1]) for i in range(0, len(toks), 2) }
-
     # parameter names
     pnames = []
-    for i,l in enumerate(lines):
+    for l in lines:
         if l.startswith("# parameters"):
-            pnames = lines[i].split()[2:]
+            pnames = l.split()[2:]
             break
-
     # values + χ²
-    vals = None
-    chi2 = ndf = chi2ndf = None
+    vals = None; chi2 = ndf = chi2ndf = None
     for i,l in enumerate(lines):
         if l.startswith("# values"):
             vals = list(map(float, lines[i+1].split()))
@@ -61,22 +57,22 @@ def parse_fit_results(fname):
             parts = lines[i+1].split()
             chi2, ndf, chi2ndf = float(parts[0]), int(parts[1]), float(parts[2])
     if vals is None:
-        raise RuntimeError("Could not parse fit‐values from file")
+        raise RuntimeError("Could not parse fit‐values")
     return flags, pnames, np.array(vals), chi2, ndf, chi2ndf
 
 flags, pnames, vals, chi2, ndf, chi2ndf = parse_fit_results(fitfile)
 
-# index helper
+# helper to look up index
 get_idx = lambda name: pnames.index(name) if name in pnames else None
 renorm_fit = vals[get_idx("renormImag")]
 
-# extract shape‐params
+# collect shape‐params
 fit_params = {}
 for cff in ("H","Ht","E"):
     if flags[cff]:
-        base = { key: get_idx(f"{key}_{cff}") 
-                 for key in ("r","alpha0","alpha1","n","b","Mm2","P") }
-        fit_params[cff] = { k: vals[i] for k,i in base.items() }
+        keys = ("r","alpha0","alpha1","n","b","Mm2","P")
+        idxs = { k: get_idx(f"{k}_{cff}") for k in keys }
+        fit_params[cff] = { k: vals[i] for k,i in idxs.items() }
 
 # Et has no shape params
 if flags["Et"]:
@@ -112,34 +108,29 @@ def make_Im_func(cff, params, renorm):
         return renorm * pref * xfac * yfac * tfac * factor
     return Im
 
-# build one Im‐function per enabled CFF
+# build Im functions for each enabled CFF
 Im_funcs = {}
 for cff in ("H","Ht","E","Et"):
     if flags[cff]:
-        Im_funcs[cff] = make_Im_func(cff,
-                                     fit_params.get(cff,{}),
-                                     renorm_fit)
+        Im_funcs[cff] = make_Im_func(cff, fit_params.get(cff,{}), renorm_fit)
 
-# ─── Common plot styling ───────────────────────────────────────────────────────
+# ─── Plot styling ───────────────────────────────────────────────────────────────
 plt.style.use('classic')
-plt.rcParams.update({
-    'font.size': 14,
-    'font.family': 'serif',
-})
+plt.rcParams.update({'font.size': 14, 'font.family': 'serif'})
 
 outdir = 'output/plots'
 os.makedirs(outdir, exist_ok=True)
 
-# ─── Fixed grids ──────────────────────────────────────────────────────────────
+# ─── Grids ─────────────────────────────────────────────────────────────────────
 t_fixed  = np.linspace(0.1, 1.0, 6)
 xi_range = np.linspace(0.0, 0.5, 200)
 xi_fixed = np.linspace(0.05,0.50,6)
 t_range  = np.linspace(0.0, 1.0, 200)
 
-orig_style = {'color': 'tab:blue', 'linestyle': '-',  'linewidth': 2.5}
-fit_style  = {'color': 'tab:red',  'linestyle': '--', 'linewidth': 2.5}
+orig_style = {'color':'tab:blue', 'linestyle':'-','linewidth':2.5}
+fit_style  = {'color':'tab:red',  'linestyle':'--','linewidth':2.5}
 
-# ─── Loop over each enabled CFF and make its two plots ─────────────────────────
+# ─── Loop over CFFs ─────────────────────────────────────────────────────────────
 for cff, Im_fit in Im_funcs.items():
     Im_orig = make_Im_func(cff, {}, 1.0)
 
@@ -153,10 +144,19 @@ for cff, Im_fit in Im_funcs.items():
             ax.legend(["Original Parameters","RGA pass-1 fit"],
                       loc='upper right', fontsize=10)
         ax.text(0.58, 0.70,
-                rf"$-t={tval:.2f}\,\mathrm{{GeV}}^2$",
+                rf"$-t={tval:.2f}\,(\mathrm{{GeV}}^2)$",
                 transform=ax.transAxes, fontsize=12)
         ax.set_xlim(0,0.5)
-        ax.set_ylim(0,12)
+        ax.set_ylim(-2,12)
+    # hide the "-2" tick on the top-left y-axis
+    for lbl in axes[0].get_yticklabels():
+        if lbl.get_text() == '-2':
+            lbl.set_visible(False)
+    # hide "0.0" ticks on bottom-row x-axes
+    for ax in (axes[4], axes[5]):
+        for lbl in ax.get_xticklabels():
+            if lbl.get_text() == '0.0':
+                lbl.set_visible(False)
 
     fig.suptitle(rf"$\mathrm{{Im}}\,{cff}$", y=0.99, fontsize=16)
     fig.subplots_adjust(left=0.10,right=0.98,bottom=0.08,top=0.92,wspace=0,hspace=0)
@@ -181,7 +181,16 @@ for cff, Im_fit in Im_funcs.items():
                 rf"$\xi={xi0:.2f}$",
                 transform=ax.transAxes, fontsize=12)
         ax.set_xlim(0,1.0)
-        ax.set_ylim(0,12)
+        ax.set_ylim(-2,12)
+    # hide the "-2" tick on the top-left y-axis
+    for lbl in axes[0].get_yticklabels():
+        if lbl.get_text() == '-2':
+            lbl.set_visible(False)
+    # hide "0.0" ticks on bottom-row x-axes
+    for ax in (axes[4], axes[5]):
+        for lbl in ax.get_xticklabels():
+            if lbl.get_text() == '0.0':
+                lbl.set_visible(False)
 
     fig.suptitle(rf"$\mathrm{{Im}}\,{cff}$", y=0.99, fontsize=16)
     fig.subplots_adjust(left=0.10,right=0.98,bottom=0.08,top=0.92,wspace=0,hspace=0)
