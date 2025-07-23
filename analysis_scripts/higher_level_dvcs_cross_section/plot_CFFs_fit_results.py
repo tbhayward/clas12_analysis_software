@@ -94,12 +94,12 @@ defaults = {
 }
 
 # ─── Im-CFF factory ─────────────────────────────────────────────────────────────
+# ─── Im-CFF factory ─────────────────────────────────────────────────────────────
 def make_Im_func(cff, params, renorm):
     d = defaults[cff]
     def Im(xi, t):
-        # Special case for Et - only return zero if we're using original params (empty dict)
-        # and n_Et is zero in defaults
-        if cff == "Et" and not params and d["n"] == 0:
+        # For Et, original model is always zero (n=0 in defaults)
+        if cff == "Et" and not params:
             return np.zeros_like(xi)
             
         r     = params.get("r",      d["r"])
@@ -117,6 +117,41 @@ def make_Im_func(cff, params, renorm):
         tfac  = (1 - ((1 - xi)/(1+xi))*t/Mm2)**(-Pval)
         return renorm * pref * xfac * yfac * tfac * fac
     return Im
+
+# ─── Loop CFFs ─────────────────────────────────────────────────────────────────
+for cff, Im_fit in Im_funcs.items():
+    # For Et, original model is always zero (properly vectorized)
+    if cff == "Et":
+        Im_orig = lambda xi, t: np.zeros_like(xi if isinstance(xi, np.ndarray) else t)
+    else:
+        Im_orig = make_Im_func(cff, {}, 1.0)
+    
+    tex = tex_map[cff]
+
+    # 1) ImCFF vs ξ
+    fig, axes = plt.subplots(2,3,figsize=(12,8),sharex=True,sharey=True)
+    axes = axes.flatten()
+    fig.suptitle(rf"$\mathrm{{Im}}\,{tex}$", fontsize=16, y=0.98)
+    for idx, (ax, t) in enumerate(zip(axes, t_fixed)):
+        # Original model
+        ax.plot(xi_range, Im_orig(xi_range, -t), **orig_style)
+        
+        # Fitted model with uncertainty band
+        median, lower, upper = compute_uncertainty_band(cff, xi_range, t, N_REPLICAS)
+        if median is not None:
+            ax.plot(xi_range, median, **fit_style)
+            ax.fill_between(xi_range, lower, upper, **band_style)
+        
+        ax.axhline(0, **zero_line)
+        ax.text(0.60, 0.72, rf"$-t={t:.2f}\,\mathrm{{(GeV^2)}}$",
+                transform=ax.transAxes, fontsize=12)
+        ax.set_xlim(0, 0.5)
+        if idx < 3:
+            ax.set_ylim(0, 12)
+        else:
+            ax.set_ylim(-2, 12)
+
+    # ... rest of the plotting code remains the same ...
 
 # Function to generate replica parameters
 def generate_replica_params(central_params, param_errors, n_replicas=100):
