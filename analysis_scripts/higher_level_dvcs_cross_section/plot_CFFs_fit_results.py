@@ -97,10 +97,7 @@ defaults = {
 def make_Im_func(cff, params, renorm):
     d = defaults[cff]
     def Im(xi, t):
-        # For Et, original model is always zero (n=0 in defaults)
-        if cff == "Et" and not params:
-            return np.zeros_like(xi)
-            
+        # use the default n=0 for Et to get a zeros array of the correct shape
         r     = params.get("r",      d["r"])
         a0    = params.get("alpha0", d["alpha0"])
         a1    = params.get("alpha1", d["alpha1"])
@@ -158,52 +155,7 @@ def compute_uncertainty_band(cff, xi_vals, t_vals, n_replicas=100):
 
 # Create Im_funcs dictionary AFTER all helper functions are defined
 Im_funcs = {
-    cff: make_Im_func(cff, fit_params.get(cff,{}), renorm_fit)
-    for cff in ("H","Ht","E","Et") if flags[cff]
-}
-
-
-# Function to generate replica parameters
-def generate_replica_params(central_params, param_errors, n_replicas=100):
-    replicas = []
-    for _ in range(n_replicas):
-        replica = {}
-        for param, val in central_params.items():
-            # Generate random value from normal distribution with 95% CI
-            # 95% CI corresponds to ±1.96 sigma
-            sigma = param_errors[param] / 1.96  # Convert 95% CI error to sigma
-            replica[param] = np.random.normal(val, sigma)
-        replicas.append(replica)
-    return replicas
-
-# Function to compute uncertainty band
-def compute_uncertainty_band(cff, xi_vals, t_vals, n_replicas=100):
-    # Generate replicas for this CFF
-    if cff not in fit_params:
-        return None, None, None
-    
-    # Generate replica parameters
-    param_replicas = generate_replica_params(fit_params[cff], fit_errors[cff], n_replicas)
-    
-    # Also need to include renorm uncertainty
-    renorm_replicas = np.random.normal(renorm_fit, renorm_err/1.96, n_replicas)
-    
-    # Compute all replica curves
-    all_curves = []
-    for i in range(n_replicas):
-        Im_replica = make_Im_func(cff, param_replicas[i], renorm_replicas[i])
-        curve = Im_replica(xi_vals, -t_vals) if np.isscalar(t_vals) else Im_replica(xi_vals, -t_vals)
-        all_curves.append(curve)
-    
-    all_curves = np.array(all_curves)
-    median = np.median(all_curves, axis=0)
-    lower = np.percentile(all_curves, 2.5, axis=0)
-    upper = np.percentile(all_curves, 97.5, axis=0)
-    
-    return median, lower, upper
-
-Im_funcs = {
-    cff: make_Im_func(cff, fit_params.get(cff,{}), renorm_fit)
+    cff: make_Im_func(cff, fit_params.get(cff, {}), renorm_fit)
     for cff in ("H","Ht","E","Et") if flags[cff]
 }
 
@@ -240,15 +192,11 @@ for cff, Im_fit in Im_funcs.items():
     axes = axes.flatten()
     fig.suptitle(rf"$\mathrm{{Im}}\,{tex}$", fontsize=16, y=0.98)
     for idx, (ax, t) in enumerate(zip(axes, t_fixed)):
-        # Original model
         ax.plot(xi_range, Im_orig(xi_range, -t), **orig_style)
-        
-        # Fitted model with uncertainty band
         median, lower, upper = compute_uncertainty_band(cff, xi_range, t, N_REPLICAS)
         if median is not None:
             ax.plot(xi_range, median, **fit_style)
             ax.fill_between(xi_range, lower, upper, **band_style)
-        
         ax.axhline(0, **zero_line)
         ax.text(0.60, 0.72, rf"$-t={t:.2f}\,\mathrm{{(GeV^2)}}$",
                 transform=ax.transAxes, fontsize=12)
@@ -257,8 +205,7 @@ for cff, Im_fit in Im_funcs.items():
             ax.set_ylim(0, 12)
         else:
             ax.set_ylim(-2, 12)
-    
-    # Create custom legend handles
+
     from matplotlib.lines import Line2D
     legend_elements = [
         Line2D([0], [0], color='tab:blue', linestyle='-', lw=2.5, label='Original Parameters'),
@@ -266,18 +213,6 @@ for cff, Im_fit in Im_funcs.items():
         plt.Rectangle((0,0), 1, 1, fc='tab:red', alpha=0.2, ec=None, label='95% CI')
     ]
     axes[2].legend(handles=legend_elements, loc='upper right', fontsize=10)
-
-    # hide first y-tick on top row
-    for ax in axes[:3]:
-        ylbls = ax.get_yticklabels()
-        if ylbls:
-            ylbls[0].set_visible(False)
-    # hide x0 on bottom middle/right
-    for ax in (axes[4], axes[5]):
-        for lbl in ax.get_xticklabels():
-            if lbl.get_text() == '0.0':
-                lbl.set_visible(False)
-
     fig.subplots_adjust(left=0.10,right=0.98,bottom=0.08,top=0.92,wspace=0,hspace=0)
     fig.text(0.06,0.5, rf"$\mathrm{{Im}}\,{tex}(\xi,\,-t)$",
              va='center',ha='center',rotation='vertical')
@@ -292,15 +227,11 @@ for cff, Im_fit in Im_funcs.items():
     axes = axes.flatten()
     fig.suptitle(rf"$\mathrm{{Im}}\,{tex}$", fontsize=16, y=0.98)
     for idx, (ax, xi0) in enumerate(zip(axes, xi_fixed)):
-        # Original model
         ax.plot(t_range, Im_orig(xi0, -t_range), **orig_style)
-        
-        # Fitted model with uncertainty band
         median, lower, upper = compute_uncertainty_band(cff, xi0, t_range, N_REPLICAS)
         if median is not None:
             ax.plot(t_range, median, **fit_style)
             ax.fill_between(t_range, lower, upper, **band_style)
-        
         ax.axhline(0, **zero_line)
         ax.text(0.60, 0.72, rf"$\xi={xi0:.2f}$",
                 transform=ax.transAxes, fontsize=12)
@@ -309,19 +240,8 @@ for cff, Im_fit in Im_funcs.items():
             ax.set_ylim(0, 12)
         else:
             ax.set_ylim(-2, 12)
-    
-    # Create custom legend handles
+
     axes[2].legend(handles=legend_elements, loc='upper right', fontsize=10)
-
-    for ax in axes[:3]:
-        ylbls = ax.get_yticklabels()
-        if ylbls:
-            ylbls[0].set_visible(False)
-    for ax in (axes[4], axes[5]):
-        for lbl in ax.get_xticklabels():
-            if lbl.get_text() == '0.0':
-                lbl.set_visible(False)
-
     fig.subplots_adjust(left=0.10,right=0.98,bottom=0.08,top=0.92,wspace=0,hspace=0)
     fig.text(0.06,0.5, rf"$\mathrm{{Im}}\,{tex}(\xi,\,-t)$",
              va='center',ha='center',rotation='vertical')
