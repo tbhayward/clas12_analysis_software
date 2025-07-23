@@ -97,9 +97,11 @@ defaults = {
 def make_Im_func(cff, params, renorm):
     d = defaults[cff]
     def Im(xi, t):
-        if cff=="Et" and "n" not in params:
-            # original uses n=0 → always zero; fitted will pick up n_Et from params
+        # Special case for Et - only return zero if we're using original params (empty dict)
+        # and n_Et is zero in defaults
+        if cff == "Et" and not params and d["n"] == 0:
             return np.zeros_like(xi)
+            
         r     = params.get("r",      d["r"])
         a0    = params.get("alpha0", d["alpha0"])
         a1    = params.get("alpha1", d["alpha1"])
