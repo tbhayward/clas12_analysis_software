@@ -88,7 +88,7 @@ void fcn(int& /*npar*/, double* /*grad*/, double& f, double* par, int /*iflag*/)
 
     // only H‐term
     hasH = true;
-    hasHt = hasE = hasEt = true;
+    hasHt = hasE = hasEt = false;
 
     double chi2 = 0;
 
