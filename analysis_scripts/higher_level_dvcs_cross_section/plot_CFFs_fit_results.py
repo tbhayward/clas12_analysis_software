@@ -60,34 +60,25 @@ def parse_fit_results(fname):
         if l.startswith("# chi2"):
             parts = lines[i+1].split()
             chi2, ndf, chi2ndf = float(parts[0]), int(parts[1]), float(parts[2])
-
     if vals is None:
-        raise RuntimeError("Could not parse fit-values from file")
+        raise RuntimeError("Could not parse fit‐values from file")
     return flags, pnames, np.array(vals), chi2, ndf, chi2ndf
 
 flags, pnames, vals, chi2, ndf, chi2ndf = parse_fit_results(fitfile)
 
-# ─── Extract fit‐parameters for each CFF ───────────────────────────────────────
+# index helper
 get_idx = lambda name: pnames.index(name) if name in pnames else None
-
 renorm_fit = vals[get_idx("renormImag")]
 
-# collect shape‐params for H, Ht, E
+# extract shape‐params
 fit_params = {}
 for cff in ("H","Ht","E"):
     if flags[cff]:
-        base = {
-            "r":      get_idx(f"r_{cff}"),
-            "alpha0": get_idx(f"alpha0_{cff}"),
-            "alpha1": get_idx(f"alpha1_{cff}"),
-            "n":      get_idx(f"n_{cff}"),
-            "b":      get_idx(f"b_{cff}"),
-            "Mm2":    get_idx(f"Mm2_{cff}"),
-            "P":      get_idx(f"P_{cff}")
-        }
-        fit_params[cff] = { key: vals[idx] for key,idx in base.items() }
+        base = { key: get_idx(f"{key}_{cff}") 
+                 for key in ("r","alpha0","alpha1","n","b","Mm2","P") }
+        fit_params[cff] = { k: vals[i] for k,i in base.items() }
 
-# Et has no shape params—just a flag
+# Et has no shape params
 if flags["Et"]:
     fit_params["Et"] = {}
 
@@ -96,15 +87,14 @@ defaults = {
     "H":  dict(r=0.9,   alpha0=0.43, alpha1=0.85, n=1.35, b=0.4,  Mm2=0.64, P=1.0, factor=2.0),
     "Ht": dict(r=7.0,   alpha0=0.43, alpha1=0.85, n=0.6,  b=2.0,  Mm2=0.8,  P=1.0, factor=0.4),
     "E":  dict(r=0.9,   alpha0=0.43, alpha1=0.85, n=1.35, b=0.4,  Mm2=0.64, P=1.0, factor=1.0),
-    "Et": dict(factor=0.0)  # ImEt ≡ 0 in current model
+    "Et": dict(factor=0.0)
 }
 
-# ─── Im CFF factory ────────────────────────────────────────────────────────────
+# ─── Im CFF generator ──────────────────────────────────────────────────────────
 def make_Im_func(cff, params, renorm):
     d = defaults[cff]
     def Im(xi, t):
-        # zero array for Et
-        if cff == "Et":
+        if cff=="Et":
             return np.zeros_like(xi if hasattr(xi,'__iter__') else t)
         r       = params.get("r",      d["r"])
         alpha0  = params.get("alpha0", d["alpha0"])
@@ -114,22 +104,23 @@ def make_Im_func(cff, params, renorm):
         Mm2_val = params.get("Mm2",    d["Mm2"])
         P_val   = params.get("P",      d["P"])
         factor  = d["factor"]
-
-        alpha = alpha0 + alpha1 * t
-        pref  = np.pi * 5.0/9.0 * n_val * r / (1 + xi)
-        xfac  = (2*xi/(1+xi))**(-alpha)
-        yfac  = ((1 - xi)/(1+xi))**(b_val)
-        tfac  = (1 - ((1 - xi)/(1+xi))*t/Mm2_val)**(-P_val)
+        alpha   = alpha0 + alpha1 * t
+        pref    = np.pi * 5.0/9.0 * n_val * r / (1 + xi)
+        xfac    = (2*xi/(1+xi))**(-alpha)
+        yfac    = ((1 - xi)/(1+xi))**(b_val)
+        tfac    = (1 - ((1 - xi)/(1+xi))*t/Mm2_val)**(-P_val)
         return renorm * pref * xfac * yfac * tfac * factor
     return Im
 
-# built Im‐functions for each flagged CFF
+# build one Im‐function per enabled CFF
 Im_funcs = {}
 for cff in ("H","Ht","E","Et"):
     if flags[cff]:
-        Im_funcs[cff] = make_Im_func(cff, fit_params.get(cff,{}), renorm_fit)
+        Im_funcs[cff] = make_Im_func(cff,
+                                     fit_params.get(cff,{}),
+                                     renorm_fit)
 
-# ─── Plot styling ───────────────────────────────────────────────────────────────
+# ─── Common plot styling ───────────────────────────────────────────────────────
 plt.style.use('classic')
 plt.rcParams.update({
     'font.size': 14,
@@ -139,11 +130,11 @@ plt.rcParams.update({
 outdir = 'output/plots'
 os.makedirs(outdir, exist_ok=True)
 
-# fixed grids
-t_fixed  = np.linspace(0.1, 1.0, 6)    # six −t values
-xi_range = np.linspace(0,   0.5, 200)  # ξ range
-xi_fixed = np.linspace(0.05,0.50,6)    # six ξ values
-t_range  = np.linspace(0,   1.0, 200)  # −t range
+# ─── Fixed grids ──────────────────────────────────────────────────────────────
+t_fixed  = np.linspace(0.1, 1.0, 6)
+xi_range = np.linspace(0.0, 0.5, 200)
+xi_fixed = np.linspace(0.05,0.50,6)
+t_range  = np.linspace(0.0, 1.0, 200)
 
 orig_style = {'color': 'tab:blue', 'linestyle': '-',  'linewidth': 2.5}
 fit_style  = {'color': 'tab:red',  'linestyle': '--', 'linewidth': 2.5}
@@ -152,70 +143,52 @@ fit_style  = {'color': 'tab:red',  'linestyle': '--', 'linewidth': 2.5}
 for cff, Im_fit in Im_funcs.items():
     Im_orig = make_Im_func(cff, {}, 1.0)
 
-    # 1) ImCFF vs ξ for fixed −t
-    fig1, axes1 = plt.subplots(2,3,figsize=(12,8),sharex=True,sharey=True)
-    axes1 = axes1.flatten()
-    for idx, (ax, tval) in enumerate(zip(axes1, t_fixed)):
+    # 1) Im CFF vs ξ for fixed −t
+    fig, axes = plt.subplots(2,3,figsize=(12,8),sharex=True,sharey=True)
+    axes = axes.flatten()
+    for idx,(ax,tval) in enumerate(zip(axes,t_fixed)):
         ax.plot(xi_range, Im_orig(xi_range, -tval), **orig_style)
         ax.plot(xi_range, Im_fit(xi_range,  -tval), **fit_style)
-        ax.text(0.65, 0.70, rf"$-t={tval:.2f}\,(\mathrm{{GeV}}^2)$",
+        if idx==2:
+            ax.legend(["Original Parameters","RGA pass-1 fit"],
+                      loc='upper right', fontsize=10)
+        ax.text(0.58, 0.70,
+                rf"$-t={tval:.2f}\,\mathrm{{GeV}}^2$",
                 transform=ax.transAxes, fontsize=12)
         ax.set_xlim(0,0.5)
-        ax.set_ylim(0, None)
+        ax.set_ylim(0,12)
 
-    # hide zero y-tick label in first col
-    for lbl in axes1[0].get_yticklabels():
-        if lbl.get_text() == '0':
-            lbl.set_visible(False)
-    # hide zero x-tick in bottom row
-    for ax in (axes1[4], axes1[5]):
-        for lbl in ax.get_xticklabels():
-            if lbl.get_text() == '0.0':
-                lbl.set_visible(False)
-
-    # legend on the 3rd panel only
-    axes1[2].legend(["Original","Fit"], loc='upper right', fontsize=10)
-
-    fig1.subplots_adjust(left=0.10,right=0.98,bottom=0.08,top=0.97,wspace=0,hspace=0)
-    fig1.text(0.06,0.5, fr"$\mathrm{{Im}}\,{cff}(\xi,\,-t)$",
-              va='center',ha='center',rotation='vertical')
-    fig1.text(0.5,0.02, r"$\xi$", ha='center', va='center')
-
+    fig.suptitle(rf"$\mathrm{{Im}}\,{cff}$", y=0.99, fontsize=16)
+    fig.subplots_adjust(left=0.10,right=0.98,bottom=0.08,top=0.92,wspace=0,hspace=0)
+    fig.text(0.06,0.5, rf"$\mathrm{{Im}}\,{cff}(\xi,\,-t)$",
+             va='center',ha='center',rotation='vertical')
+    fig.text(0.5,0.02, r"$\xi$", ha='center')
     out1 = f"{outdir}/Im{cff}_vs_xi_{timestamp}.pdf"
-    fig1.savefig(out1, bbox_inches='tight')
+    fig.savefig(out1, bbox_inches='tight')
     print("Saved:", out1)
-    plt.close(fig1)
+    plt.close(fig)
 
-    # 2) ImCFF vs −t for fixed ξ
-    fig2, axes2 = plt.subplots(2,3,figsize=(12,8),sharex=True,sharey=True)
-    axes2 = axes2.flatten()
-    for idx, (ax, xi0) in enumerate(zip(axes2, xi_fixed)):
+    # 2) Im CFF vs −t for fixed ξ
+    fig, axes = plt.subplots(2,3,figsize=(12,8),sharex=True,sharey=True)
+    axes = axes.flatten()
+    for idx,(ax,xi0) in enumerate(zip(axes,xi_fixed)):
         ax.plot(t_range, Im_orig(xi0, -t_range), **orig_style)
         ax.plot(t_range, Im_fit(xi0,  -t_range), **fit_style)
-        ax.text(0.65, 0.70, rf"$\xi={xi0:.2f}$",
+        if idx==2:
+            ax.legend(["Original Parameters","RGA pass-1 fit"],
+                      loc='upper right', fontsize=10)
+        ax.text(0.58, 0.70,
+                rf"$\xi={xi0:.2f}$",
                 transform=ax.transAxes, fontsize=12)
         ax.set_xlim(0,1.0)
-        ax.set_ylim(0, None)
+        ax.set_ylim(0,12)
 
-    # hide zero y-tick label
-    for lbl in axes2[0].get_yticklabels():
-        if lbl.get_text() == '0':
-            lbl.set_visible(False)
-    # hide zero x-tick in bottom row
-    for ax in (axes2[4], axes2[5]):
-        for lbl in ax.get_xticklabels():
-            if lbl.get_text() == '0.0':
-                lbl.set_visible(False)
-
-    # legend on the 3rd panel only
-    axes2[2].legend(["Original","Fit"], loc='upper right', fontsize=10)
-
-    fig2.subplots_adjust(left=0.10,right=0.98,bottom=0.08,top=0.97,wspace=0,hspace=0)
-    fig2.text(0.06,0.5, fr"$\mathrm{{Im}}\,{cff}(\xi,\,-t)$",
-              va='center',ha='center',rotation='vertical')
-    fig2.text(0.5,0.02, r"$-t\,(\mathrm{GeV}^2)$", ha='center', va='center')
-
+    fig.suptitle(rf"$\mathrm{{Im}}\,{cff}$", y=0.99, fontsize=16)
+    fig.subplots_adjust(left=0.10,right=0.98,bottom=0.08,top=0.92,wspace=0,hspace=0)
+    fig.text(0.06,0.5, rf"$\mathrm{{Im}}\,{cff}(\xi,\,-t)$",
+             va='center',ha='center',rotation='vertical')
+    fig.text(0.5,0.02, r"$-t\,(\mathrm{GeV}^2)$", ha='center')
     out2 = f"{outdir}/Im{cff}_vs_t_{timestamp}.pdf"
-    fig2.savefig(out2, bbox_inches='tight')
+    fig.savefig(out2, bbox_inches='tight')
     print("Saved:", out2)
-    plt.close(fig2)
+    plt.close(fig)
