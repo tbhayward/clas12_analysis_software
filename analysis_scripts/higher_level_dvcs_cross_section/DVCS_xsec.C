@@ -1373,7 +1373,7 @@ double GetImH(double xi, double t) {
     double xfac = TMath::Power(2*xi/(1+xi), -alphaH);
     double yfac = TMath::Power((1 - xi)/(1+xi), b_H);
     double tfac = TMath::Power(1 - ((1 - xi)/(1+xi))*t/Mm2_H, -P_H);
-    return renormImag * pref * xfac * yfac * tfac * 2.0; // this factor of 2 not in E
+    return renormImag * pref * xfac * yfac * tfac * 2.0; // *2 correction from VGG
 }
 
 double GetImHt(double xi, double t) {
@@ -1383,11 +1383,11 @@ double GetImHt(double xi, double t) {
     double xfac  = TMath::Power(2*xi/(1+xi), -alphaHt);
     double yfac  = TMath::Power((1 - xi)/(1+xi), b_Ht);
     double tfac  = TMath::Power(1 - ((1 - xi)/(1+xi))*t/Mm2_Ht, -P_Ht);
-    return renormImag * pref * xfac * yfac * tfac * 0.4;
+    return renormImag * pref * xfac * yfac * tfac * 0.4; // *0.4 correction from VGG
 }
 
 double GetImE(double xi, double t) {
-    // from HERMES CFF paper 1301.1230 argue ImE = 0.5 x ImH
+    // from HERMES CFF paper 1301.1230 argue ImE = 0.5 x ImH (the factor of 2 is in ImH)
     if(!hasE) return 0.0;
     double alphaE    = alpha0_E + alpha1_E * t;
     double pref  = TMath::Pi()*5.0/9.0 * n_E * r_E / (1 + xi);
