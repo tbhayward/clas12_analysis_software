@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """
-plot_BSA_CFFs_from_fits.py
+plot_BSA_CFFs_from_fit.py
 
 Usage:
-    python plot_BSA_CFFs_from_fits.py output/fit_results/fit_results_<TIMESTAMP>.txt
+    python plot_BSA_CFFs_from_fit.py output/fit_results/fit_results_<TIMESTAMP>.txt
 """
 import os
 import sys
@@ -75,11 +75,15 @@ shape_keys = ["r","alpha0","alpha1","n","b","Mm2","P"]
 
 def compute_bsa(phi_arr, Q2_arr, xB_arr, t_arr, Eb_arr, param_map, flags, tag=""):
     """
-    Set the C++ globals via ProcessLine(), then build BMK_DVCS and return dvcs.BSA().
+    Compile-set the C++ globals via ProcessLine(), then build BMK_DVCS and return dvcs.BSA().
     """
     # renormalizations
-    ROOT.gInterpreter.ProcessLine(f"renormImag = {param_map.get('renormImag', orig_defaults['renormImag'])};")
-    ROOT.gInterpreter.ProcessLine(f"renormReal = {param_map.get('renormReal', orig_defaults['renormReal'])};")
+    ROOT.gInterpreter.ProcessLine(
+        f"renormImag = {param_map.get('renormImag', orig_defaults['renormImag'])};"
+    )
+    ROOT.gInterpreter.ProcessLine(
+        f"renormReal = {param_map.get('renormReal', orig_defaults['renormReal'])};"
+    )
 
     # switch each CFF on/off & set its parameters
     for cff in ("H","Ht","E","Et"):
@@ -91,16 +95,17 @@ def compute_bsa(phi_arr, Q2_arr, xB_arr, t_arr, Eb_arr, param_map, flags, tag=""
                 ROOT.gInterpreter.ProcessLine(f"{key} = {v};")
 
     bsas = []
-    for i, (phi, Q2, xB, t, Eb) in enumerate(zip(phi_arr, Q2_arr, xB_arr, t_arr, Eb_arr)):
-        dvcs = ROOT.BMK_DVCS(-1, 1, 0, Eb, xB, Q2, t, phi)
+    for i, (phi, Q2, xB, t, Eb) in enumerate(zip(
+            phi_arr, Q2_arr, xB_arr, t_arr, Eb_arr)):
+        dvcs = ROOT.BMK_DVCS(-1,1,0,Eb,xB,Q2,t,phi)
         mA   = dvcs.BSA()
         bsas.append(mA)
-        if i < 5:
+        if i<5:
             print(f"[{tag}] φ={phi:6.1f}°, ξ={dvcs.xi:.3f}, t={t:.3f}, BSA={mA:.4f}")
     return np.array(bsas)
 
 def main():
-    if len(sys.argv) != 2:
+    if len(sys.argv)!=2:
         print(__doc__); sys.exit(1)
 
     fitfile = sys.argv[1]
@@ -114,10 +119,9 @@ def main():
     print(">> Flags:", flags)
     print(">> Fitted parameters:", param_map)
 
-    # load your DVCS code
-    ROOT.gSystem.Load('./DVCS_xsec_C.so')
+    # Instead of loading a .so, compile the entire macro into Cling
+    ROOT.gInterpreter.ProcessLine('#include "DVCS_xsec.C"')
 
-    # load data bins
     bins = load_all_bins('imports/rga_prl_bsa.txt')
     print(f">> Found {len(bins)} φ-bins")
 
@@ -125,7 +129,7 @@ def main():
 
     for idx, b in enumerate(bins, start=1):
         phi_data, As, sigAs = b["phi"], b["A"], b["sigA"]
-        phi_grid = np.linspace(0, 360, 100)
+        phi_grid = np.linspace(0,360,100)
         Q2g = np.full_like(phi_grid, b["Q2m"])
         xBg = np.full_like(phi_grid, b["xBm"])
         tg  = np.full_like(phi_grid, b["tm"])
@@ -139,14 +143,14 @@ def main():
         fig, ax = plt.subplots(figsize=(8,5))
         ax.errorbar(phi_data, As, yerr=sigAs, fmt='o', ms=5,
                     color='k', label='Data')
-        ax.plot(phi_grid, bsas_orig, '-', lw=2,
+        ax.plot(phi_grid, bsas_orig, '-',  lw=2,
                 color='tab:blue', label='Original Model')
         ax.plot(phi_grid, bsas_fit,  '--', lw=2,
                 color='tab:red',  label='Fitted Model')
 
-        ax.set_xlim(0, 360)
-        ax.set_xticks([0, 60, 120, 180, 240, 300, 360])
-        ax.set_ylim(-0.6, 0.6)
+        ax.set_xlim(0,360)
+        ax.set_xticks([0,60,120,180,240,300,360])
+        ax.set_ylim(-0.6,0.6)
         ax.set_xlabel(r'$\phi\;[\mathrm{deg}]$')
         ax.set_ylabel(r'$A_{LU}(\phi)$')
 
@@ -167,5 +171,5 @@ def main():
         print(f">> Saved bin {idx} plot to {fname}")
         plt.close(fig)
 
-if __name__ == '__main__':
+if __name__=='__main__':
     main()
