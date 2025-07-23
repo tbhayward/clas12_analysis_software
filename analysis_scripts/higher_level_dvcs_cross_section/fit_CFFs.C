@@ -128,7 +128,12 @@ void build_par_list(){
         parNames.insert(parNames.end(),
             {"r_E","alpha0_E","alpha1_E","n_E","b_E","Mm2_E","P_E"});
     }
-    // Et has no shape params; toggling only
+    if(hasEt){
+        idx_Et = parNames.size();
+        parNames.insert(parNames.end(),
+            {"r_Et","alpha0_Et","alpha1_Et","n_Et","b_Et","Mm2_Et","P_Et"});
+    }
+    // renormReal for combined fits or stage 2 of strategy 3
     if((gStrategy==2) || (gStrategy==3 && gStage==2)){
         idx_R = parNames.size();
         parNames.push_back("renormReal");
@@ -170,7 +175,17 @@ void fcn(int & /*npar*/, double* /*grad*/, double &f, double *par, int /*iflag*/
         Mm2_E    = par[ip++];
         P_E      = par[ip++];
     }
-    // 5) renormReal for combined fits
+    // 5) Et block
+    if(hasEt){
+        r_Et      = par[ip++];
+        alpha0_Et = par[ip++];
+        alpha1_Et = par[ip++];
+        n_Et      = par[ip++];
+        b_Et      = par[ip++];
+        Mm2_Et    = par[ip++];
+        P_Et      = par[ip++];
+    }
+    // 6) renormReal for combined fits
     if(idx_R>=0){
         renormReal = par[ip++];
     }
@@ -228,19 +243,22 @@ int main(int argc, char** argv){
         for(int i=0;i<npar;++i){
             double init=1.0, step=0.1, mn=0, mx=10;
             const auto &name = parNames[i];
-            if(name=="alpha0_H"||name=="alpha0_Ht"||name=="alpha0_E")
-                init=0.43, step=0.05, mn=-5, mx=5;
-            if(name=="alpha1_H"||name=="alpha1_Ht"||name=="alpha1_E")
+            if(name=="alpha0_H"  || name=="alpha0_Ht"  ||
+               name=="alpha0_E"  || name=="alpha0_Et")
+                init=0.43, step=0.05, mn=-5,  mx=5;
+            if(name=="alpha1_H"  || name=="alpha1_Ht"  ||
+               name=="alpha1_E"  || name=="alpha1_Et")
                 init=0.85, step=0.05, mn=-10, mx=10;
-            if(name.find("n_")==0)  init=1.35, step=0.05;
-            if(name.find("b_")==0)  init=0.4,  step=0.05;
-            if(name.find("Mm2_")==0){init=0.64; step=0.05;}
-            if(name.find("P_")==0)  init=1.0,  step=0.05;
-            if(name=="r_Ht")        init=7.0,  step=1.0;
-            if(name=="r_H"||name=="r_E")
-                init=0.9, step=0.1;
+            if(name.find("n_")==0)   init=1.35, step=0.05;
+            if(name.find("b_")==0)   init=0.4,  step=0.05;
+            if(name.find("Mm2_")==0) init=0.64, step=0.05;
+            if(name.find("P_")==0)   init=1.0,  step=0.05;
+            if(name=="r_Ht")
+                init=7.0,  step=1.0;
+            if(name=="r_H"   || name=="r_E"    || name=="r_Et")
+                init=0.9,  step=0.1;
             if(name=="renormReal")
-                init=1.0, step=0.1;
+                init=1.0,  step=0.1;
             minuit.DefineParameter(i, name.c_str(), init, step, mn, mx);
         }
 
@@ -284,16 +302,19 @@ int main(int argc, char** argv){
             for(int i=0;i<npar;++i){
                 double init=1,step=0.1,mn=0,mx=10;
                 const auto &name = parNames[i];
-                if(name=="alpha0_H"||name=="alpha0_Ht"||name=="alpha0_E")
+                if(name=="alpha0_H"  || name=="alpha0_Ht"  ||
+                   name=="alpha0_E"  || name=="alpha0_Et")
                     init=0.43,step=0.05,mn=-5,mx=5;
-                if(name=="alpha1_H"||name=="alpha1_Ht"||name=="alpha1_E")
+                if(name=="alpha1_H"  || name=="alpha1_Ht"  ||
+                   name=="alpha1_E"  || name=="alpha1_Et")
                     init=0.85,step=0.05,mn=-10,mx=10;
-                if(name.find("n_")==0)  init=1.35,step=0.05;
-                if(name.find("b_")==0)  init=0.4, step=0.05;
-                if(name.find("Mm2_")==0){init=0.64;step=0.05;}
-                if(name.find("P_")==0)  init=1.0, step=0.05;
-                if(name=="r_Ht")        init=7.0, step=1.0;
-                if(name=="r_H"||name=="r_E")
+                if(name.find("n_")==0)   init=1.35,step=0.05;
+                if(name.find("b_")==0)   init=0.4, step=0.05;
+                if(name.find("Mm2_")==0) init=0.64,step=0.05;
+                if(name.find("P_")==0)   init=1.0, step=0.05;
+                if(name=="r_Ht")
+                    init=7.0, step=1.0;
+                if(name=="r_H"   || name=="r_E"    || name=="r_Et")
                     init=0.9, step=0.1;
                 minuit.DefineParameter(i, name.c_str(), init, step, mn, mx);
             }
