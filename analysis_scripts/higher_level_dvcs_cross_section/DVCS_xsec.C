@@ -10,11 +10,11 @@
 double PI     = TMath::Pi();             // π
 double alpha  = 1.0/137.036;             // fine-structure constant alpha
 double alpha3 = TMath::Power(alpha, 3);  // alpha³
-double hbarc2 = 0.38938;                 // (ℏc)² in GeV²·mbarn units
+double hbarc2 = 0.38938;                 // (ℏc)² in GeV²*mbarn units
 
 // Particle masses and magnetic moment
-double m   = 0.000511;   // electron mass [GeV]
-double M   = 0.93827;    // proton mass   [GeV]
+double m   = 0.000511;   // electron mass (GeV)
+double M   = 0.93827;    // proton mass   (GeV)
 double muP = 2.79285;    // proton magnetic moment
 
 // Forward declarations for nucleon form factors (Dirac/Pauli & Sachs)
@@ -37,9 +37,9 @@ double GetReEt(double xi, double t);
 
 // Flags to switch on/off particular GPD contributions
 bool hasH  = false;  // include H ?
-bool hasHt = false;  // include Ĥ?
+bool hasHt = false;  // include Htilde ?
 bool hasE  = false;  // include E ?
-bool hasEt = false;  // include Ė?
+bool hasEt = false;  // include Etilde ?
 
 // -------------------------------------------------------------------------------------------------
 //  BMK_DVCS class: encapsulates DVCS/BH kinematics & cross sections
@@ -50,27 +50,27 @@ public:
     double q_beam;     // beam charge  (+1 or -1)
     double L_beam;     // beam helicity (+1, 0, -1)
     double L_target;   // target helicity
-    double EB;         // beam energy [GeV]
+    double EB;         // beam energy (GeV)
     double xB;         // Bjorken x
-    double Q2;         // virtuality [GeV²]
+    double Q2;         // virtuality (GeV²)
     double t;          // momentum transfer (negative)
-    double phi;        // azimuthal angle (°)
+    double phi;        // azimuthal angle (degrees)
     double theta_Tpol, // target polarization polar angle (rad)
            phi_Tpol;   // target polarization azimuthal angle (rad)
 
     // Secondary, derived variables
     double xi;     // skewness
-    double nu;     // ν = Q² / (2 M xB)
+    double nu;     // nu = Q² / (2 M xB)
     double y;      // inelasticity
-    double eps;    // ε parameter
-    double eps2;   // ε²
-    double phi_BMK;// BMK convention: π(1−φ/180°)
+    double eps;    // epsilon parameter (depolarization, ratio of long/tan virtual photon)
+    double eps2;   // epsilon squared
+    double phi_BMK;// BMK convention: pi(1−phi/180°)
     double t_min;  // minimal kinematically allowed t
     double K2, K;  // BH kinematic factor
     double J;      // Jacobian-like combination
     double Ktild2, Ktilda; // another BH factor
 
-    double Jacob; // Jacobian from (xB,y)→(xB,Q2)
+    double Jacob; // Jacobian from (xB,y)->(xB,Q2)
 
     // Electromagnetic form factors
     double F1, F2;
@@ -83,10 +83,9 @@ public:
     bool VERB;   // verbosity flag
 
     // Constructor: set primaries + compute secondaries
-    BMK_DVCS(double rq_beam, double rL_beam, double rL_target,
-             double rEB, double rxB,      double rQ2,
-             double rt,     double rphi,
-             double rtheta_Tpol = 0, double rphi_Tpol = 0);
+    BMK_DVCS(double rq_beam, double rL_beam, double rL_target, double rEB, double rxB,      
+            double rQ2, double rt, double rphi, 
+            double rtheta_Tpol = 0, double rphi_Tpol = 0);
 
     // Re-set primaries after construction, then re-compute all derived
     void setPrimaryVars(double rq_beam,  double rL_beam,  double rL_target,
@@ -102,8 +101,8 @@ public:
     double TPolCrossSection();  // transversely polarized
 
     // Beam-spin asymmetry (BSA) variants
-    double BSA();   // q_beam = -1
-    double pBSA();  // q_beam = +1
+    double BSA();   // q_beam = -1, electron beam
+    double pBSA();  // q_beam = +1, positron beam
 
     // Target-spin asymmetries
     double TLSA();    // Longitudinal target spin asymmetry
@@ -124,9 +123,9 @@ public:
 
     // Underlying squared amplitudes
     double T2();       // BH² + DVCS² − q_beam * 2 Re(BH·DVCS*)
-    double BH2();      // Bethe–Heitler²
-    double DVCS2();    // DVCS²
-    double BHDVCS();   // interference
+    double BH2();      // Bethe–Heitler² term
+    double DVCS2();    // DVCS² term
+    double BHDVCS();   // interference term (drives ALU DVCS asymmetry)
 
     // Harmonically decomposed coefficients for BH, I, DVCS
     double c0_BH();  double c1_BH();  double c2_BH();
@@ -158,7 +157,7 @@ BMK_DVCS::BMK_DVCS(double rq_beam, double rL_beam, double rL_target,
     Q2(rQ2),
     t(-TMath::Abs(rt)),                  // ensure t ≤ 0
     phi(rphi),
-    // convert degree inputs→radians
+    // convert degree inputs->radians
     theta_Tpol(PI * rtheta_Tpol/180.0),
     phi_Tpol( PI * rphi_Tpol/180.0),
     VERB(false)
@@ -189,22 +188,22 @@ void BMK_DVCS::setPrimaryVars(double rq_beam, double rL_beam, double rL_target,
 // Build all secondary variables, form factors, and CFFs
 void BMK_DVCS::setSecondaryVars()
 {
-    // --- Skewness ξ = xB (1 + t/(2Q²)) / (2 − xB + xB t/Q²)
+    // --- Skewness xi = xB (1 + t/(2Q²)) / (2 − xB + xB t/Q²)
     xi = xB * (1 + 0.5*t/Q2) / (2 - xB + xB*t/Q2);
 
-    // BMK azimuth: φ_BMK = π (1 − φ_trento/180)
+    // BMK azimuth: phi_BMK = pi (1 − phi_trento/180)
     phi_BMK = PI*(1 - phi/180.0);
 
-    // Energy transfer ν = Q² / (2 M xB)
+    // Energy transfer nu = Q² / (2 M xB)
     nu = Q2 / (2.0 * M * xB);
 
-    // Inelasticity y = ν / EB
+    // Inelasticity y = nu / EB
     y  = nu / EB;
 
     // Jacobian factor Dy/dQ² = y/Q²
     Jacob = y/Q2;
 
-    // ε = 2 xB M / sqrt(Q²)
+    // epsilon = 2 xB M / sqrt(Q²)
     eps  = 2 * xB * M / TMath::Sqrt(Q2);
     eps2 = eps*eps;
 
@@ -226,7 +225,7 @@ void BMK_DVCS::setSecondaryVars()
     // J factor in BH denominator
     J = (1 - y - 0.5*y*eps2)*(1 + t/Q2) - (1 - xB)*(2 - y)*t/Q2;
 
-    // Another BH factor ĸ̃²
+    // Another BH factor Ktilde²
     if(t_min < t) {
         Ktild2 = 0;
     } else {
@@ -263,10 +262,10 @@ void BMK_DVCS::setSecondaryVars()
             << ", xB=" << xB
             << ", Q2=" << Q2
             << ", t=" << t
-            << ", φ=" << phi << "\n"
-            << " Derived: ξ=" << xi
+            << ", phi=" << phi << "\n"
+            << " Derived: xi=" << xi
             << ", y=" << y
-            << ", ε²=" << eps2
+            << ", epsilon squared=" << eps2
             << ", F1=" << F1
             << ", F2=" << F2 << "\n"
             << " t_min=" << t_min
@@ -279,34 +278,26 @@ void BMK_DVCS::setSecondaryVars()
 //   Cross sections and asymmetries
 // -------------------------------------------------------------------------------------------------
 
-// Unpolarized differential cross section [nb/GeV⁴]
+// Unpolarized differential cross section (nb/GeV⁴)
 double BMK_DVCS::CrossSection()
 {
     if(VERB){
         std::cout << "Prefactor ="
-                  << (1e9 * hbarc2 * 2*PI * Jacob
-                      * alpha3 * xB * y)
-                  / (16*PI*PI * Q2 * TMath::Sqrt(1 + eps2))
-                  << std::endl;
+                  << (1e9 * hbarc2 * 2*PI * Jacob * alpha3 * xB * y)
+                  / (16*PI*PI * Q2 * TMath::Sqrt(1 + eps2)) << std::endl;
     }
     // Master formula × T2 amplitude
-    return 1e6 * hbarc2
-           * alpha3 * xB * y
-           / (16*PI*PI * Q2 * TMath::Sqrt(1 + eps2))
-           * T2();
+    return 1e6 * hbarc2 * alpha3 * xB * y / (16*PI*PI * Q2 * TMath::Sqrt(1 + eps2)) * T2();
 }
 
-// Transversely polarized target cross section [nb/GeV⁴ dφ_Tpol]
+// Transversely polarized target cross section (nb/GeV⁴ dphi_Tpol)
 double BMK_DVCS::TPolCrossSection()
 {
     // see Eq. (1) in 1212.6674
-    return 1e6 * hbarc2
-           * alpha3 * xB * y*y
-           / (16*PI*PI * Q2*Q2 * TMath::Sqrt(1 + eps2))
-           * T2();
+    return 1e6 * hbarc2 * alpha3 * xB * y*y / (16*PI*PI * Q2*Q2 * TMath::Sqrt(1 + eps2)) * T2();
 }
 
-// Beam spin asymmetry BSA = (σ(+) − σ(−)) / (σ(+) + σ(−))
+// Beam spin asymmetry BSA = (sigma(+) − sigma(−)) / (sigma(+) + sigma(−))
 // Here we flip L_beam and q_beam appropriately
 double BMK_DVCS::BSA()
 {
@@ -344,7 +335,7 @@ double BMK_DVCS::TLSA()
     return (X1 - X2)/(X1 + X2);
 }
 
-// Double-spin L-L asymmetry
+// Double-spin LL asymmetry
 double BMK_DVCS::TLLSA()
 {
     q_beam    = -1;
@@ -389,28 +380,29 @@ double BMK_DVCS::TTSAy()
 }
 
 //    Double transverse spin asymmetry along x (twist-three):
-//    A_x^{TTSSA} = (σ(↑↑) + σ(↓↓) − σ(↑↓) − σ(↓↑)) / (σ(↑↑) + σ(↑↓) + σ(↓↑) + σ(↓↓))
+//    A_x^{TTSSA} = (sigma(↑↑) + sigma(↓↓) − sigma(↑↓) − sigma(↓↑)) / 
+//          (sigma(↑↑) + sigma(↑↓) + sigma(↓↑) + sigma(↓↓))
 double BMK_DVCS::TTSSAx() {
-    // set beam charge, beam helicity, target helicity, and transverse-polar angle φ_Tpol=0
+    // set beam charge, beam helicity, target helicity, and transverse-polar angle phi_Tpol=0
     q_beam    = -1;          // electron beam
     L_beam    = +1;          // beam helicity +1
     L_target  = +1;          // target helicity +1
     theta_Tpol = PI/2;       // polarization in x–y plane
     phi_Tpol   = 0;          // along x
 
-    // σ(↑↑)
+    // sigma(↑↑)
     double xsec1 = CrossSection();
 
-    // flip target helicity: σ(↑↓)
+    // flip target helicity: sigma(↑↓)
     L_target = -1;
     double xsec2 = CrossSection();
 
-    // flip beam helicity: σ(↓↑)
+    // flip beam helicity: sigma(↓↑)
     L_beam   = -1;
     L_target = +1;
     double xsec3 = CrossSection();
 
-    // flip only target again: σ(↓↓)
+    // flip only target again: sigma(↓↓)
     L_target = -1;
     double xsec4 = CrossSection();
 
@@ -420,7 +412,7 @@ double BMK_DVCS::TTSSAx() {
 }
 
 //    Double transverse spin asymmetry along y (twist-three):
-//    same structure but φ_Tpol = 90° → y-direction
+//    same structure but phi_Tpol = 90° -> y-direction
 double BMK_DVCS::TTSSAy() {
     q_beam    = -1;
     L_beam    = +1;
@@ -428,22 +420,22 @@ double BMK_DVCS::TTSSAy() {
     theta_Tpol = PI/2;       // still transverse
     phi_Tpol   = PI/2;       // rotated into y
 
-    double xsec1 = CrossSection();  // σ(↑↑)
+    double xsec1 = CrossSection();  // sigma(↑↑)
     L_target = -1;
-    double xsec2 = CrossSection();  // σ(↑↓)
+    double xsec2 = CrossSection();  // sigma(↑↓)
 
     L_beam   = -1;
     L_target = +1;
-    double xsec3 = CrossSection();  // σ(↓↑)
+    double xsec3 = CrossSection();  // sigma(↓↑)
     L_target = -1;
-    double xsec4 = CrossSection();  // σ(↓↓)
+    double xsec4 = CrossSection();  // sigma(↓↓)
 
     return (xsec1 + xsec4 - xsec2 - xsec3)
          / (xsec1 + xsec2 + xsec3 + xsec4);
 }
 
 //    Beam charge asymmetry (unpolarized):
-//    BCA = (σ(e⁺) − σ(e⁻)) / (σ(e⁺) + σ(e⁻))
+//    BCA = (sigma(e⁺) − sigma(e⁻)) / (sigma(e⁺) + sigma(e⁻))
 double BMK_DVCS::BCA() {
     L_beam   = 0;   // no beam helicity
     L_target = 0;   // unpolarized target
@@ -455,7 +447,7 @@ double BMK_DVCS::BCA() {
 }
 
 //    Beam & spin combined asymmetry (BCSA):
-//    (σ(+,+) − σ(−,+) − σ(+,−) + σ(−,−)) / total
+//    (sigma(+,+) − sigma(−,+) − sigma(+,−) + sigma(−,−)) / total
 double BMK_DVCS::BCSA() {
     L_target = 0;    // unpolarized target
     q_beam   = +1;
@@ -477,7 +469,7 @@ double BMK_DVCS::BCSA() {
 }
 
 //    Zero-helicity beam charge & spin asymmetry (BC0SA):
-//    (σ(+,+) − σ(−,+) + σ(+,−) − σ(−,−)) / total
+//    (sigma(+,+) − sigma(−,+) + sigma(+,−) − sigma(−,−)) / total
 double BMK_DVCS::BC0SA() {
     L_target = 0;
     q_beam   = +1;
@@ -499,7 +491,7 @@ double BMK_DVCS::BC0SA() {
 }
 
 //    Beam–charge longitudinal asymmetry (BCLA):
-//    similar pattern but with L_target ≠ 0, L_beam = 0
+//    similar pattern but with L_target != 0, L_beam = 0
 double BMK_DVCS::BCLA() {
     q_beam   = +1;
     L_beam   = 0;    // no beam helicity
@@ -516,7 +508,6 @@ double BMK_DVCS::BCLA() {
     L_target = -1;
     double xsec4 = CrossSection();  // e⁻, ↓
     
-    // note: original code had “-xsec3-+xsec4”—here we keep same pattern
     return ( xsec1 - xsec2 - xsec3 + xsec4 )
          / ( xsec1 + xsec2 + xsec3 + xsec4 );
 }
@@ -611,10 +602,10 @@ double BMK_DVCS::T2()
     return BH2() + DVCS2() - q_beam * BHDVCS();
 }
 
-// BH² term: harmonic decomposition in φ_BMK
+// BH² term: harmonic decomposition in phi_BMK
 double BMK_DVCS::BH2()
 {
-    // Denominator ~ xB² y² t BHP1 BHP2 (1+ε²)²
+    // Denominator ~ xB² y² t BHP1 BHP2 (1+epsilon²)²
     double DENOM = xB*xB * y*y * t * BHP1() * BHP2() * TMath::Power(1 + eps2, 2);
 
     // Build c0, c1, c2 + sin harmonic if target polarized
@@ -635,7 +626,7 @@ double BMK_DVCS::BH2()
     }
     double res_c2 = c2_BH();
 
-    // sin φ term only for transverse target
+    // sin phi term only for transverse target
     double res_s1 = 0;
     if(L_target != 0) {
         res_s1 = L_target * TMath::Sin(theta_Tpol) * s1_BH_TP();
@@ -652,7 +643,7 @@ double BMK_DVCS::BH2()
                   << " c1=" << res_c1
                   << " c2=" << res_c2
                   << " s1=" << res_s1
-                  << " → H=" << H
+                  << " -> H=" << H
                   << " / DEN=" << DENOM
                   << std::endl;
     }
@@ -1073,7 +1064,7 @@ double BMK_DVCS::c1_I_TP(void){
 }
 
 double BMK_DVCS::s1_I(void){
-    // (A.1) from 1005.5209 (unpolarized sin φ interference)
+    // (A.1) from 1005.5209 (unpolarized sin phi interference)
     double S_pp1_unp0 = 8*L_beam*K*(2-y)*y/(1+eps2)
                       * (1 + (1-xB + 0.5*(TMath::Sqrt(1+eps2)-1))
                          /(1+eps2)*(t-t_min)/Q2);
@@ -1099,7 +1090,7 @@ double BMK_DVCS::s1_I(void){
 }
 
 double BMK_DVCS::s1_I_LP(void){
-    // (A.5) from 1005.5209 (polarized sin φ interference)
+    // (A.5) from 1005.5209 (polarized sin phi interference)
     double S_pp1_LP0 = 4*K*(2-2*y+y*y+0.5*eps2*y*y)
                      /TMath::Power(1+eps2,3)
                      *(1+TMath::Sqrt(1+eps2))
@@ -1159,7 +1150,7 @@ double BMK_DVCS::s1_I_LP(void){
 }
 
 double BMK_DVCS::s1_I_TP(void){
-    // (71) from 0112108 (transverse sin φ interference)
+    // (71) from 0112108 (transverse sin phi interference)
     double CI_TPM = (xB*xB*F1 - (1-xB)*t*F2/(M*M))
                   /(2-xB)*ReH
                   + (0.25*t/(M*M)
@@ -1262,7 +1253,7 @@ double BMK_DVCS::c0_DVCS_TP(void){
 double GetGMP(double tau) {
     // tau = Q² / (4 M²)
     double Q2   = 4 * M * M * tau;
-    double tcut = 4 * 0.13957 * 0.13957; // four-pion threshold [GeV²]
+    double tcut = 4 * 0.13957 * 0.13957; // four-pion threshold (GeV²)
     double t0   = -0.7;                 // expansion parameter
 
     // Conformal mapping to z-variable
@@ -1285,7 +1276,7 @@ double GetGMP(double tau) {
     res += -5.706999943750 * TMath::Power(z, 11);
     res +=  1.280814375890 * TMath::Power(z, 12);
 
-    // Return μ_p × expansion result
+    // Return mu_p × expansion result
     return muP * res;
 }
 

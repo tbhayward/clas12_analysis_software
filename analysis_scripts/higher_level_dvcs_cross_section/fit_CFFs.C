@@ -2,8 +2,8 @@
 // ──────────
 // program to fit arbitrary subsets of the DVCS Compton Form Factors (CFFs)
 // under three possible strategies:
-//   1) fit only Im‐parts → BSA data
-//   2) fit Im‐parts + renormReal → BSA + xsec simultaneously
+//   1) fit only Im‐parts -> BSA data
+//   2) fit Im‐parts + renormReal -> BSA + xsec simultaneously
 //   3) two‐step: (a) fit Im‐parts→BSA, (b) fit renormReal→xsec
 //
 // Usage:
@@ -30,14 +30,14 @@
 #include "TMinuit.h"
 #include "TMath.h"
 
-// pull in your full BMK_DVCS + CFF code, with globals
+// pull in full BMK_DVCS + CFF code, with globals
 #include "DVCS_xsec.C"
 
-// we only declare the flags & renormalizations here; the rest are in DVCS_xsec.C
+// only declare the flags & renormalizations here; the rest are in DVCS_xsec.C
 extern bool   hasH, hasHt, hasE, hasEt;
 extern double renormImag, renormReal;
 
-//—and now all of the CFF shape‐parameter globals:
+// all of the CFF shape‐parameter globals:
 extern double r_H,      alpha0_H,  alpha1_H,  n_H,   b_H,   Mm2_H,  P_H;
 extern double r_Ht,     alpha0_Ht, alpha1_Ht, n_Ht,  b_Ht,  Mm2_Ht, P_Ht;
 extern double r_E,      alpha0_E,  alpha1_E,  n_E,   b_E,   Mm2_E,  P_E;
@@ -46,7 +46,7 @@ extern double r_Et,     alpha0_Et, alpha1_Et, n_Et,  b_Et,  Mm2_Et, P_Et;
 // ──────────────────────────────────────────────────────────────────────────────
 // globals controlling strategy & stage:
 static int  gStrategy = 0;   // 1, 2 or 3
-static int  gStage    = 1;   // for Strategy 3: stage=1 (Im→BSA) or 2 (Re→xsec)
+static int  gStage    = 1;   // for Strategy 3: stage=1 (Im->BSA) or 2 (Re->xsec)
 
 // Data structures & loading
 struct DataPoint {
@@ -146,7 +146,7 @@ void build_par_list(){
     }
 }
 
-// fcn(): Minuit’s χ².  Unpack par[] into the global CFF parameters.
+// fcn(): Minuit’s chi2.  Unpack par[] into the global CFF parameters.
 void fcn(int & /*npar*/, double* /*grad*/, double &f, double *par, int /*iflag*/){
     int ip=0;
     // 1) renormImag
@@ -197,7 +197,7 @@ void fcn(int & /*npar*/, double* /*grad*/, double &f, double *par, int /*iflag*/
     }
 
     double chi2 = 0;
-    // BSA?
+    // BSA
     bool doBSA = (gStrategy==1 || gStrategy==2 || (gStrategy==3 && gStage==1));
     if(doBSA){
         for(auto &d : bsaData){
@@ -207,7 +207,7 @@ void fcn(int & /*npar*/, double* /*grad*/, double &f, double *par, int /*iflag*/
             chi2 += r*r;
         }
     }
-    // xsec?
+    // xsec
     bool doXS = (gStrategy==2 || (gStrategy==3 && gStage==2));
     if(doXS){
         for(auto &d : xsData){
@@ -224,13 +224,11 @@ void fcn(int & /*npar*/, double* /*grad*/, double &f, double *par, int /*iflag*/
 int main(int argc, char** argv){
     parse_args(argc, argv);
 
-    std::cout<<"\n=== fit_CFFs Strategy="<<gStrategy
-             <<"  H="<<hasH<<" Ht="<<hasHt
+    std::cout<<"\n=== fit_CFFs Strategy="<<gStrategy<<"  H="<<hasH<<" Ht="<<hasHt
              <<" E="<<hasE<<" Et="<<hasEt<<" ===\n";
 
     LoadData();
-    std::cout<<"  loaded "<<bsaData.size()<<" BSA and "
-             <<xsData.size()<<" xsec points\n\n";
+    std::cout<<"  loaded "<<bsaData.size()<<" BSA and " <<xsData.size()<<" xsec points\n\n";
 
     // decide which parameters to fit for stage 1
     build_par_list();
@@ -274,7 +272,7 @@ int main(int argc, char** argv){
         for(int i=0;i<npar;++i)
             minuit.GetParameter(i,val[i],err[i]);
 
-        // χ² statistics
+        // chi2 statistics
         double edm, errdef; int nv, nx, ic;
         minuit.mnstat(finalChi2,edm,errdef,nv,nx,ic);
         finalNdf = ((gStrategy==1)
@@ -323,7 +321,7 @@ int main(int argc, char** argv){
                     init=0.9, step=0.1;
                 minuit.DefineParameter(i, name.c_str(), init, step, mn, mx);
             }
-            std::cout<<"Stage 1: fitting Im→BSA…\n";
+            std::cout<<"Stage 1: fitting Im->BSA…\n";
             minuit.Migrad();
             for(int i=0;i<npar;++i)
                 minuit.GetParameter(i,val[i],err[i]);
@@ -331,7 +329,7 @@ int main(int argc, char** argv){
             minuit.mnstat(chi2,edm,errdef,nv,nx,ic);
             finalChi2 = chi2;
             finalNdf  = int(bsaData.size()) - npar;
-            std::cout<<"\nStage 1 χ²/ndf = "<<finalChi2<<"/"<<finalNdf
+            std::cout<<"\nStage 1 chi2/ndf = "<<finalChi2<<"/"<<finalNdf
                      <<" = "<<(finalChi2/finalNdf)<<"\n\n";
         }
         // Stage 2: renormReal only
@@ -343,14 +341,14 @@ int main(int argc, char** argv){
             minuit.SetPrintLevel(1);
             minuit.SetFCN(fcn);
             minuit.DefineParameter(0,"renormReal",1.0,0.1,0,10);
-            std::cout<<"Stage 2: fitting renormReal→xsec…\n";
+            std::cout<<"Stage 2: fitting renormReal->xsec…\n";
             minuit.Migrad();
             minuit.GetParameter(0,val[0],err[0]);
             double chi2,edm,errdef; int nv,nx,ic;
             minuit.mnstat(chi2,edm,errdef,nv,nx,ic);
             finalChi2 = chi2;
             finalNdf  = int(xsData.size()) - 1;
-            std::cout<<"\nStage 2 χ²/ndf = "<<finalChi2<<"/"<<finalNdf
+            std::cout<<"\nStage 2 chi2/ndf = "<<finalChi2<<"/"<<finalNdf
                      <<" = "<<(finalChi2/finalNdf)<<"\n\n";
         }
     }
