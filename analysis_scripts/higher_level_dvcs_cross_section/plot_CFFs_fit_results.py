@@ -84,8 +84,7 @@ defaults = {
     "H":  dict(r=0.9,  alpha0=0.43, alpha1=0.85, n=1.35, b=0.4,  Mm2=0.64, P=1.0, factor=2.0),
     "Ht": dict(r=7.0,  alpha0=0.43, alpha1=0.85, n=0.6,  b=2.0,  Mm2=0.8,  P=1.0, factor=0.4),
     "E":  dict(r=0.9,  alpha0=0.43, alpha1=0.85, n=1.35, b=0.4,  Mm2=0.64, P=1.0, factor=1.0),
-    # now default Et‐shape matches E but with its own normalization factor
-    "Et": dict(r=0.9, alpha0=0.43, alpha1=0.85, n=1.35, b=0.4, Mm2=0.64, P=1.0, factor=1.0)
+    "Et": dict(r=0.9, alpha0=0.0, alpha1=0.0, n=0, b=0.0, Mm2=0.0, P=0.0, factor=0.0)
 }
 
 # ─── Im-CFF factory ─────────────────────────────────────────────────────────────
