@@ -5,12 +5,12 @@ plot_ImCFFs_fit_results.py
 Usage:
     python plot_ImCFFs_fit_results.py output/fit_results/fit_results_<TIMESTAMP>.txt
 
-Reads which CFFs were fit from the header of your results file, then for each
+Reads which CFFs were fit from the header of results file, then for each
 enabled Im CFF makes two figures:
-  1) Im CFF vs. ξ for six fixed −t between 0.1 and 1.0 (GeV^{2}) (2×3 grid)
-  2) Im CFF vs. −t for six fixed ξ between 0.05 and 0.50 (2×3 grid)
+  1) Im CFF vs. xi for six fixed −t between 0.1 and 1.0 (GeV^{2}) (2×3 grid)
+  2) Im CFF vs. −t for six fixed xi between 0.05 and 0.50 (2×3 grid)
 
-Now includes uncertainty bands for fitted results using replica method (95% CI).
+includes uncertainty bands for fitted results using replica method (95% CI).
 
 Saves to:
   output/plots/Im{CFF}_vs_xi_<TIMESTAMP>.pdf  
@@ -88,11 +88,11 @@ defaults = {
     "H":  dict(r=0.9,   alpha0=0.43, alpha1=0.85, n=1.35, b=0.4,  Mm2=0.64, P=1.0, factor=2.0),
     "Ht": dict(r=7.0,   alpha0=0.43, alpha1=0.85, n=0.6,  b=2.0,  Mm2=0.8,  P=1.0, factor=0.4),
     "E":  dict(r=0.9,   alpha0=0.43, alpha1=0.85, n=1.35, b=0.4,  Mm2=0.64, P=1.0, factor=1.0),
-    # set n=0 so original Et ≡ 0 everywhere, but still use shape defaults
+    # set n=0 so original Et ≡ 0 everywhere (original model), but still use shape defaults
     "Et": dict(r=0.9,   alpha0=0.43, alpha1=0.85, n=0.0,  b=0.4,  Mm2=0.64, P=1.0, factor=1.0),
 }
 
-# ─── Im-CFF factory ─────────────────────────────────────────────────────────────
+# ─── Im-CFF creation ─────────────────────────────────────────────────────────────
 def make_Im_func(cff, params, renorm):
     d = defaults[cff]
     def Im(xi, t):
@@ -137,7 +137,7 @@ def compute_uncertainty_band(cff, xi_vals, t_vals, n_replicas=100):
     all_curves = np.array(all_curves)
     return (np.median(all_curves, axis=0),
             np.percentile(all_curves, 2.5, axis=0),
-            np.percentile(all_curves, 97.5, axis=0))
+            np.percentile(all_curves, 97.5, axis=0)) # 95% confidence level between 2.5-97.5
 
 # ─── Build functions & style ───────────────────────────────────────────────────
 Im_funcs = { cff: make_Im_func(cff, fit_params.get(cff, {}), renorm_fit)
@@ -160,7 +160,7 @@ band_style = {'color':'tab:red', 'alpha':0.2}
 zero_line  = {'color':'gray','linestyle':'--','linewidth':1}
 
 tex_map = {"H":"H", "Ht":r"\tilde H", "E":"E", "Et":r"\tilde E"}
-N_REPLICAS = 100
+N_REPLICAS = 1000
 
 # ─── Plot loop ────────────────────────────────────────────────────────────────
 from matplotlib.lines import Line2D
@@ -175,7 +175,7 @@ for cff, Im_fit in Im_funcs.items():
     Im_orig = make_Im_func(cff, {}, 1.0)
     tex = tex_map[cff]
 
-    # — Im vs ξ —
+    # — Im vs xi —
     fig, axes = plt.subplots(2,3,figsize=(12,8), sharex=True, sharey=True)
     axes = axes.flatten()
     fig.suptitle(rf"$\mathrm{{Im}}\,{tex}$", fontsize=16, y=0.98)

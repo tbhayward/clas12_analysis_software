@@ -14,7 +14,7 @@ import matplotlib.pyplot as plt
 import ROOT
 
 def parse_fit_results(fname):
-    """Extract the flags, parameter names, and fit values from your text file."""
+    """Extract the flags, parameter names, and fit values from text file."""
     with open(fname) as f:
         lines = [l.strip() for l in f if l.strip()]
     flag_line = next(l for l in lines if l.startswith("H "))
@@ -35,7 +35,7 @@ def parse_fit_results(fname):
     return flags, pnames, vals
 
 def load_all_bins(datafile):
-    """Read imports/rga_prl_bsa.txt, split into φ-bins whenever φ wraps around."""
+    """Read imports/rga_prl_bsa.txt, split into phi-bins whenever phi wraps around."""
     bins = []
     curr = {k: [] for k in ("phi","Q2","xB","t","Eb","A","sigA")}
     prev_phi = None
