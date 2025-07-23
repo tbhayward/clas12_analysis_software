@@ -74,43 +74,165 @@ def compute_bsa(phi_arr, Q2_arr, xB_arr, t_arr, Eb_arr, params, flags, tag=""):
             "r_Et", "alpha0_Et", "alpha1_Et", "n_Et", "b_Et", "Mm2_Et", "P_Et"]
     p = dict(zip(keys, params))
     ROOT.renormImag = p["renormImag"]
-    ROOT.renormReal = 1.0  # Not used for BSA, safe default
+    ROOT.renormReal = 1.0
+
+    # Only set parameters and flags for those that are actually turned on.
     ROOT.hasH  = bool(flags.get("H",0))
-    ROOT.hasHt = bool(flags.get("Ht",0))
-    ROOT.hasE  = bool(flags.get("E",0))
-    ROOT.hasEt = bool(flags.get("Et",0))
     if ROOT.hasH:
-        ROOT.r_H      = p["r_H"]
-        ROOT.alpha0_H = p["alpha0_H"]
-        ROOT.alpha1_H = p["alpha1_H"]
-        ROOT.n_H      = p["n_H"]
-        ROOT.b_H      = p["b_H"]
-        ROOT.Mm2_H    = p["Mm2_H"]
-        ROOT.P_H      = p["P_H"]
+        try: ROOT.r_H = p["r_H"]
+        except AttributeError: pass
+        try: ROOT.alpha0_H = p["alpha0_H"]
+        except AttributeError: pass
+        try: ROOT.alpha1_H = p["alpha1_H"]
+        except AttributeError: pass
+        try: ROOT.n_H = p["n_H"]
+        except AttributeError: pass
+        try: ROOT.b_H = p["b_H"]
+        except AttributeError: pass
+        try: ROOT.Mm2_H = p["Mm2_H"]
+        except AttributeError: pass
+        try: ROOT.P_H = p["P_H"]
+        except AttributeError: pass
+
+    ROOT.hasHt = bool(flags.get("Ht",0))
     if ROOT.hasHt:
-        ROOT.r_Ht      = p["r_Ht"]
-        ROOT.alpha0_Ht = p["alpha0_Ht"]
-        ROOT.alpha1_Ht = p["alpha1_Ht"]
-        ROOT.n_Ht      = p["n_Ht"]
-        ROOT.b_Ht      = p["b_Ht"]
-        ROOT.Mm2_Ht    = p["Mm2_Ht"]
-        ROOT.P_Ht      = p["P_Ht"]
+        try: ROOT.r_Ht = p["r_Ht"]
+        except AttributeError: pass
+        try: ROOT.alpha0_Ht = p["alpha0_Ht"]
+        except AttributeError: pass
+        try: ROOT.alpha1_Ht = p["alpha1_Ht"]
+        except AttributeError: pass
+        try: ROOT.n_Ht = p["n_Ht"]
+        except AttributeError: pass
+        try: ROOT.b_Ht = p["b_Ht"]
+        except AttributeError: pass
+        try: ROOT.Mm2_Ht = p["Mm2_Ht"]
+        except AttributeError: pass
+        try: ROOT.P_Ht = p["P_Ht"]
+        except AttributeError: pass
+
+    ROOT.hasE = bool(flags.get("E",0))
     if ROOT.hasE:
-        ROOT.r_E      = p["r_E"]
-        ROOT.alpha0_E = p["alpha0_E"]
-        ROOT.alpha1_E = p["alpha1_E"]
-        ROOT.n_E      = p["n_E"]
-        ROOT.b_E      = p["b_E"]
-        ROOT.Mm2_E    = p["Mm2_E"]
-        ROOT.P_E      = p["P_E"]
+        try: ROOT.r_E = p["r_E"]
+        except AttributeError: pass
+        try: ROOT.alpha0_E = p["alpha0_E"]
+        except AttributeError: pass
+        try: ROOT.alpha1_E = p["alpha1_E"]
+        except AttributeError: pass
+        try: ROOT.n_E = p["n_E"]
+        except AttributeError: pass
+        try: ROOT.b_E = p["b_E"]
+        except AttributeError: pass
+        try: ROOT.Mm2_E = p["Mm2_E"]
+        except AttributeError: pass
+        try: ROOT.P_E = p["P_E"]
+        except AttributeError: pass
+
+    ROOT.hasEt = bool(flags.get("Et",0))
     if ROOT.hasEt:
-        ROOT.r_Et      = p["r_Et"]
-        ROOT.alpha0_Et = p["alpha0_Et"]
-        ROOT.alpha1_Et = p["alpha1_Et"]
-        ROOT.n_Et      = p["n_Et"]
-        ROOT.b_Et      = p["b_Et"]
-        ROOT.Mm2_Et    = p["Mm2_Et"]
-        ROOT.P_Et      = p["P_Et"]
+        try: ROOT.r_Et = p["r_Et"]
+        except AttributeError: pass
+        try: ROOT.alpha0_Et = p["alpha0_Et"]
+        except AttributeError: pass
+        try: ROOT.alpha1_Et = p["alpha1_Et"]
+        except AttributeError: pass
+        try: ROOT.n_Et = p["n_Et"]
+        except AttributeError: pass
+        try: ROOT.b_Et = p["b_Et"]
+        except AttributeError: pass
+        try: ROOT.Mm2_Et = p["Mm2_Et"]
+        except AttributeError: pass
+        try: ROOT.P_Et = p["P_Et"]
+        except AttributeError: pass
+
+    # rest unchanged...
+    bsas = []
+    for i, (phi, Q2, xB, t, Eb) in enumerate(zip(
+            phi_arr, Q2_arr, xB_arr, t_arr, Eb_arr)):
+        dvcs = ROOT.BMK_DVCS(-1, 1, 0, Eb, xB, Q2, t, phi)
+        mA   = dvcs.BSA()
+        bsas.append(mA)
+        if i < 3:
+            print(f"[{tag}] φ={phi:6.1f}°, ξ={dvcs.xi:.3f}, t={t:.3f}, BSA={mA:.4f}")
+    return np.array(bsas)def compute_bsa(phi_arr, Q2_arr, xB_arr, t_arr, Eb_arr, params, flags, tag=""):
+    keys = ["renormImag", "r_H", "alpha0_H", "alpha1_H", "n_H", "b_H", "Mm2_H", "P_H",
+            "r_Ht", "alpha0_Ht", "alpha1_Ht", "n_Ht", "b_Ht", "Mm2_Ht", "P_Ht",
+            "r_E", "alpha0_E", "alpha1_E", "n_E", "b_E", "Mm2_E", "P_E",
+            "r_Et", "alpha0_Et", "alpha1_Et", "n_Et", "b_Et", "Mm2_Et", "P_Et"]
+    p = dict(zip(keys, params))
+    ROOT.renormImag = p["renormImag"]
+    ROOT.renormReal = 1.0
+
+    # Only set parameters and flags for those that are actually turned on.
+    ROOT.hasH  = bool(flags.get("H",0))
+    if ROOT.hasH:
+        try: ROOT.r_H = p["r_H"]
+        except AttributeError: pass
+        try: ROOT.alpha0_H = p["alpha0_H"]
+        except AttributeError: pass
+        try: ROOT.alpha1_H = p["alpha1_H"]
+        except AttributeError: pass
+        try: ROOT.n_H = p["n_H"]
+        except AttributeError: pass
+        try: ROOT.b_H = p["b_H"]
+        except AttributeError: pass
+        try: ROOT.Mm2_H = p["Mm2_H"]
+        except AttributeError: pass
+        try: ROOT.P_H = p["P_H"]
+        except AttributeError: pass
+
+    ROOT.hasHt = bool(flags.get("Ht",0))
+    if ROOT.hasHt:
+        try: ROOT.r_Ht = p["r_Ht"]
+        except AttributeError: pass
+        try: ROOT.alpha0_Ht = p["alpha0_Ht"]
+        except AttributeError: pass
+        try: ROOT.alpha1_Ht = p["alpha1_Ht"]
+        except AttributeError: pass
+        try: ROOT.n_Ht = p["n_Ht"]
+        except AttributeError: pass
+        try: ROOT.b_Ht = p["b_Ht"]
+        except AttributeError: pass
+        try: ROOT.Mm2_Ht = p["Mm2_Ht"]
+        except AttributeError: pass
+        try: ROOT.P_Ht = p["P_Ht"]
+        except AttributeError: pass
+
+    ROOT.hasE = bool(flags.get("E",0))
+    if ROOT.hasE:
+        try: ROOT.r_E = p["r_E"]
+        except AttributeError: pass
+        try: ROOT.alpha0_E = p["alpha0_E"]
+        except AttributeError: pass
+        try: ROOT.alpha1_E = p["alpha1_E"]
+        except AttributeError: pass
+        try: ROOT.n_E = p["n_E"]
+        except AttributeError: pass
+        try: ROOT.b_E = p["b_E"]
+        except AttributeError: pass
+        try: ROOT.Mm2_E = p["Mm2_E"]
+        except AttributeError: pass
+        try: ROOT.P_E = p["P_E"]
+        except AttributeError: pass
+
+    ROOT.hasEt = bool(flags.get("Et",0))
+    if ROOT.hasEt:
+        try: ROOT.r_Et = p["r_Et"]
+        except AttributeError: pass
+        try: ROOT.alpha0_Et = p["alpha0_Et"]
+        except AttributeError: pass
+        try: ROOT.alpha1_Et = p["alpha1_Et"]
+        except AttributeError: pass
+        try: ROOT.n_Et = p["n_Et"]
+        except AttributeError: pass
+        try: ROOT.b_Et = p["b_Et"]
+        except AttributeError: pass
+        try: ROOT.Mm2_Et = p["Mm2_Et"]
+        except AttributeError: pass
+        try: ROOT.P_Et = p["P_Et"]
+        except AttributeError: pass
+
+    # rest unchanged...
     bsas = []
     for i, (phi, Q2, xB, t, Eb) in enumerate(zip(
             phi_arr, Q2_arr, xB_arr, t_arr, Eb_arr)):
