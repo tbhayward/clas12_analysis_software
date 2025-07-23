@@ -94,7 +94,6 @@ defaults = {
 }
 
 # ─── Im-CFF factory ─────────────────────────────────────────────────────────────
-# ─── Im-CFF factory ─────────────────────────────────────────────────────────────
 def make_Im_func(cff, params, renorm):
     d = defaults[cff]
     def Im(xi, t):
@@ -118,40 +117,51 @@ def make_Im_func(cff, params, renorm):
         return renorm * pref * xfac * yfac * tfac * fac
     return Im
 
-# ─── Loop CFFs ─────────────────────────────────────────────────────────────────
-for cff, Im_fit in Im_funcs.items():
-    # For Et, original model is always zero (properly vectorized)
-    if cff == "Et":
-        Im_orig = lambda xi, t: np.zeros_like(xi if isinstance(xi, np.ndarray) else t)
-    else:
-        Im_orig = make_Im_func(cff, {}, 1.0)
+# Function to generate replica parameters
+def generate_replica_params(central_params, param_errors, n_replicas=100):
+    replicas = []
+    for _ in range(n_replicas):
+        replica = {}
+        for param, val in central_params.items():
+            # Generate random value from normal distribution with 95% CI
+            # 95% CI corresponds to ±1.96 sigma
+            sigma = param_errors[param] / 1.96  # Convert 95% CI error to sigma
+            replica[param] = np.random.normal(val, sigma)
+        replicas.append(replica)
+    return replicas
+
+# Function to compute uncertainty band
+def compute_uncertainty_band(cff, xi_vals, t_vals, n_replicas=100):
+    # Generate replicas for this CFF
+    if cff not in fit_params:
+        return None, None, None
     
-    tex = tex_map[cff]
+    # Generate replica parameters
+    param_replicas = generate_replica_params(fit_params[cff], fit_errors[cff], n_replicas)
+    
+    # Also need to include renorm uncertainty
+    renorm_replicas = np.random.normal(renorm_fit, renorm_err/1.96, n_replicas)
+    
+    # Compute all replica curves
+    all_curves = []
+    for i in range(n_replicas):
+        Im_replica = make_Im_func(cff, param_replicas[i], renorm_replicas[i])
+        curve = Im_replica(xi_vals, -t_vals) if np.isscalar(t_vals) else Im_replica(xi_vals, -t_vals)
+        all_curves.append(curve)
+    
+    all_curves = np.array(all_curves)
+    median = np.median(all_curves, axis=0)
+    lower = np.percentile(all_curves, 2.5, axis=0)
+    upper = np.percentile(all_curves, 97.5, axis=0)
+    
+    return median, lower, upper
 
-    # 1) ImCFF vs ξ
-    fig, axes = plt.subplots(2,3,figsize=(12,8),sharex=True,sharey=True)
-    axes = axes.flatten()
-    fig.suptitle(rf"$\mathrm{{Im}}\,{tex}$", fontsize=16, y=0.98)
-    for idx, (ax, t) in enumerate(zip(axes, t_fixed)):
-        # Original model
-        ax.plot(xi_range, Im_orig(xi_range, -t), **orig_style)
-        
-        # Fitted model with uncertainty band
-        median, lower, upper = compute_uncertainty_band(cff, xi_range, t, N_REPLICAS)
-        if median is not None:
-            ax.plot(xi_range, median, **fit_style)
-            ax.fill_between(xi_range, lower, upper, **band_style)
-        
-        ax.axhline(0, **zero_line)
-        ax.text(0.60, 0.72, rf"$-t={t:.2f}\,\mathrm{{(GeV^2)}}$",
-                transform=ax.transAxes, fontsize=12)
-        ax.set_xlim(0, 0.5)
-        if idx < 3:
-            ax.set_ylim(0, 12)
-        else:
-            ax.set_ylim(-2, 12)
+# Create Im_funcs dictionary AFTER all helper functions are defined
+Im_funcs = {
+    cff: make_Im_func(cff, fit_params.get(cff,{}), renorm_fit)
+    for cff in ("H","Ht","E","Et") if flags[cff]
+}
 
-    # ... rest of the plotting code remains the same ...
 
 # Function to generate replica parameters
 def generate_replica_params(central_params, param_errors, n_replicas=100):
