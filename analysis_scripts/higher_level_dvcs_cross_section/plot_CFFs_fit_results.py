@@ -160,7 +160,7 @@ band_style = {'color':'tab:red', 'alpha':0.2}
 zero_line  = {'color':'gray','linestyle':'--','linewidth':1}
 
 tex_map = {"H":"H", "Ht":r"\tilde H", "E":"E", "Et":r"\tilde E"}
-N_REPLICAS = 1000
+N_REPLICAS = 10000
 
 # ─── Plot loop ────────────────────────────────────────────────────────────────
 from matplotlib.lines import Line2D
