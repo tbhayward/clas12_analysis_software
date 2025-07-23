@@ -5,38 +5,57 @@ plot_BSA_CFFs_from_fit.py
 Usage:
     python plot_BSA_CFFs_from_fit.py output/fit_results/fit_results_<TIMESTAMP>.txt [--CFFs 0|1]
 
-    --CFFs 0 : Plot fit with only ImH turned on (default)
-    --CFFs 1 : Plot dashed red line (fit ImH only) and green dot-dashed (fit all CFFs)
-"""
+Options:
+    --CFFs 0 : Plot "Fitted Model" using only ImH on (all others off)
+    --CFFs 1 : Plot "Fitted Model" using all fitted CFFs that are enabled in the fit file
 
+This script plots BSA data and models for each φ-bin using your fit parameters.
+"""
 import os
 import sys
 import re
+import argparse
 import numpy as np
 import matplotlib.pyplot as plt
-import argparse
 import ROOT
 
-def parse_fit_results(fname):
-    """Extract fit parameter names, values, and flags from your text file."""
+# ------------------- Parse Command-Line Arguments ----------------------
+parser = argparse.ArgumentParser(description="Plot BSA with fit CFFs.")
+parser.add_argument('fitfile', help="fit results file (output/fit_results/fit_results_*.txt)")
+parser.add_argument('--CFFs', type=int, default=1,
+                    help="0: plot fitted model with only ImH; 1: plot fitted model with all fitted CFFs (default=1)")
+args = parser.parse_args()
+
+# ------------------- Parse Fit File ------------------------------------
+def parse_fit_file(fname):
     with open(fname) as f:
         lines = [l.strip() for l in f if l.strip()]
+    # Get flags
     flag_line = next(l for l in lines if l.startswith("H "))
     toks = flag_line.split()
     flags = {toks[i]: int(toks[i+1]) for i in range(0, len(toks), 2)}
+    # Parameter names
     pnames = []
-    for i, l in enumerate(lines):
+    for l in lines:
         if l.startswith("# parameters"):
-            pnames = lines[i].split()[2:]
+            pnames = l.split()[2:]
             break
+    # Values
     vals = None
     for i, l in enumerate(lines):
         if l.startswith("# values"):
             vals = list(map(float, lines[i+1].split()))
+            break
     if vals is None:
-        raise RuntimeError("Could not parse fit-values from file")
-    return flags, pnames, np.array(vals)
+        raise RuntimeError("No '# values' block in fit file!")
+    params = dict(zip(pnames, vals))
+    return flags, params
 
+flags, fit_params = parse_fit_file(args.fitfile)
+print(">> Flags:", flags)
+print(">> Fitted parameters:", fit_params)
+
+# ------------------- Load Data and Bin Info ----------------------------
 def load_all_bins(datafile):
     bins = []
     curr = {k: [] for k in ("phi","Q2","xB","t","Eb","A","sigA")}
@@ -67,175 +86,46 @@ def load_all_bins(datafile):
         bins.append(arr)
     return bins
 
+# ------------------- Default VGG Model Parameters ----------------------
+defaults = {
+    "renormImag": 1.0,
+    "r_H": 0.9, "alpha0_H": 0.43, "alpha1_H": 0.85, "n_H": 1.35, "b_H": 0.4, "Mm2_H": 0.64, "P_H": 1.0,
+    "r_Ht": 7.0, "alpha0_Ht": 0.43, "alpha1_Ht": 0.85, "n_Ht": 0.6, "b_Ht": 2.0, "Mm2_Ht": 0.8, "P_Ht": 1.0,
+    "r_E": 0.9, "alpha0_E": 0.43, "alpha1_E": 0.85, "n_E": 1.35, "b_E": 0.4, "Mm2_E": 0.64, "P_E": 1.0,
+    "r_Et": 1.0, "alpha0_Et": 0.43, "alpha1_Et": 0.85, "n_Et": 1.35, "b_Et": 0.4, "Mm2_Et": 0.64, "P_Et": 1.0,
+    "renormReal": 1.0
+}
+
+# Helper: CFF name blocks and corresponding flag
+CFF_blocks = [
+    ("H",   ["r_H", "alpha0_H", "alpha1_H", "n_H", "b_H", "Mm2_H", "P_H"]),
+    ("Ht",  ["r_Ht", "alpha0_Ht", "alpha1_Ht", "n_Ht", "b_Ht", "Mm2_Ht", "P_Ht"]),
+    ("E",   ["r_E", "alpha0_E", "alpha1_E", "n_E", "b_E", "Mm2_E", "P_E"]),
+    ("Et",  ["r_Et", "alpha0_Et", "alpha1_Et", "n_Et", "b_Et", "Mm2_Et", "P_Et"])
+]
+
+# ------------------- PyROOT CFF Setter Utility -------------------------
+def set_CFFs_in_ROOT(params, active_flags):
+    # Set renormImag, renormReal first
+    if hasattr(ROOT, "renormImag"): ROOT.renormImag = params.get("renormImag", 1.0)
+    if hasattr(ROOT, "renormReal"): ROOT.renormReal = params.get("renormReal", 1.0)
+    # Set CFFs and their on/off flags
+    for blockname, blockvars in CFF_blocks:
+        cff_flag = bool(active_flags.get(blockname, 0))
+        if hasattr(ROOT, f"has{blockname}"): setattr(ROOT, f"has{blockname}", cff_flag)
+        if cff_flag:
+            for v in blockvars:
+                if hasattr(ROOT, v):
+                    try:
+                        setattr(ROOT, v, params[v])
+                    except KeyError:
+                        pass # safe to skip missing
+
+# ------------------- Compute BSA Utility -------------------------------
 def compute_bsa(phi_arr, Q2_arr, xB_arr, t_arr, Eb_arr, params, flags, tag=""):
-    keys = ["renormImag", "r_H", "alpha0_H", "alpha1_H", "n_H", "b_H", "Mm2_H", "P_H",
-            "r_Ht", "alpha0_Ht", "alpha1_Ht", "n_Ht", "b_Ht", "Mm2_Ht", "P_Ht",
-            "r_E", "alpha0_E", "alpha1_E", "n_E", "b_E", "Mm2_E", "P_E",
-            "r_Et", "alpha0_Et", "alpha1_Et", "n_Et", "b_Et", "Mm2_Et", "P_Et"]
-    p = dict(zip(keys, params))
-    ROOT.renormImag = p["renormImag"]
-    ROOT.renormReal = 1.0
-
-    # Only set parameters and flags for those that are actually turned on.
-    ROOT.hasH  = bool(flags.get("H",0))
-    if ROOT.hasH:
-        try: ROOT.r_H = p["r_H"]
-        except AttributeError: pass
-        try: ROOT.alpha0_H = p["alpha0_H"]
-        except AttributeError: pass
-        try: ROOT.alpha1_H = p["alpha1_H"]
-        except AttributeError: pass
-        try: ROOT.n_H = p["n_H"]
-        except AttributeError: pass
-        try: ROOT.b_H = p["b_H"]
-        except AttributeError: pass
-        try: ROOT.Mm2_H = p["Mm2_H"]
-        except AttributeError: pass
-        try: ROOT.P_H = p["P_H"]
-        except AttributeError: pass
-
-    ROOT.hasHt = bool(flags.get("Ht",0))
-    if ROOT.hasHt:
-        try: ROOT.r_Ht = p["r_Ht"]
-        except AttributeError: pass
-        try: ROOT.alpha0_Ht = p["alpha0_Ht"]
-        except AttributeError: pass
-        try: ROOT.alpha1_Ht = p["alpha1_Ht"]
-        except AttributeError: pass
-        try: ROOT.n_Ht = p["n_Ht"]
-        except AttributeError: pass
-        try: ROOT.b_Ht = p["b_Ht"]
-        except AttributeError: pass
-        try: ROOT.Mm2_Ht = p["Mm2_Ht"]
-        except AttributeError: pass
-        try: ROOT.P_Ht = p["P_Ht"]
-        except AttributeError: pass
-
-    ROOT.hasE = bool(flags.get("E",0))
-    if ROOT.hasE:
-        try: ROOT.r_E = p["r_E"]
-        except AttributeError: pass
-        try: ROOT.alpha0_E = p["alpha0_E"]
-        except AttributeError: pass
-        try: ROOT.alpha1_E = p["alpha1_E"]
-        except AttributeError: pass
-        try: ROOT.n_E = p["n_E"]
-        except AttributeError: pass
-        try: ROOT.b_E = p["b_E"]
-        except AttributeError: pass
-        try: ROOT.Mm2_E = p["Mm2_E"]
-        except AttributeError: pass
-        try: ROOT.P_E = p["P_E"]
-        except AttributeError: pass
-
-    ROOT.hasEt = bool(flags.get("Et",0))
-    if ROOT.hasEt:
-        try: ROOT.r_Et = p["r_Et"]
-        except AttributeError: pass
-        try: ROOT.alpha0_Et = p["alpha0_Et"]
-        except AttributeError: pass
-        try: ROOT.alpha1_Et = p["alpha1_Et"]
-        except AttributeError: pass
-        try: ROOT.n_Et = p["n_Et"]
-        except AttributeError: pass
-        try: ROOT.b_Et = p["b_Et"]
-        except AttributeError: pass
-        try: ROOT.Mm2_Et = p["Mm2_Et"]
-        except AttributeError: pass
-        try: ROOT.P_Et = p["P_Et"]
-        except AttributeError: pass
-
-    # rest unchanged...
+    set_CFFs_in_ROOT(params, flags)
     bsas = []
-    for i, (phi, Q2, xB, t, Eb) in enumerate(zip(
-            phi_arr, Q2_arr, xB_arr, t_arr, Eb_arr)):
-        dvcs = ROOT.BMK_DVCS(-1, 1, 0, Eb, xB, Q2, t, phi)
-        mA   = dvcs.BSA()
-        bsas.append(mA)
-        if i < 3:
-            print(f"[{tag}] φ={phi:6.1f}°, ξ={dvcs.xi:.3f}, t={t:.3f}, BSA={mA:.4f}")
-    return np.array(bsas)def compute_bsa(phi_arr, Q2_arr, xB_arr, t_arr, Eb_arr, params, flags, tag=""):
-    keys = ["renormImag", "r_H", "alpha0_H", "alpha1_H", "n_H", "b_H", "Mm2_H", "P_H",
-            "r_Ht", "alpha0_Ht", "alpha1_Ht", "n_Ht", "b_Ht", "Mm2_Ht", "P_Ht",
-            "r_E", "alpha0_E", "alpha1_E", "n_E", "b_E", "Mm2_E", "P_E",
-            "r_Et", "alpha0_Et", "alpha1_Et", "n_Et", "b_Et", "Mm2_Et", "P_Et"]
-    p = dict(zip(keys, params))
-    ROOT.renormImag = p["renormImag"]
-    ROOT.renormReal = 1.0
-
-    # Only set parameters and flags for those that are actually turned on.
-    ROOT.hasH  = bool(flags.get("H",0))
-    if ROOT.hasH:
-        try: ROOT.r_H = p["r_H"]
-        except AttributeError: pass
-        try: ROOT.alpha0_H = p["alpha0_H"]
-        except AttributeError: pass
-        try: ROOT.alpha1_H = p["alpha1_H"]
-        except AttributeError: pass
-        try: ROOT.n_H = p["n_H"]
-        except AttributeError: pass
-        try: ROOT.b_H = p["b_H"]
-        except AttributeError: pass
-        try: ROOT.Mm2_H = p["Mm2_H"]
-        except AttributeError: pass
-        try: ROOT.P_H = p["P_H"]
-        except AttributeError: pass
-
-    ROOT.hasHt = bool(flags.get("Ht",0))
-    if ROOT.hasHt:
-        try: ROOT.r_Ht = p["r_Ht"]
-        except AttributeError: pass
-        try: ROOT.alpha0_Ht = p["alpha0_Ht"]
-        except AttributeError: pass
-        try: ROOT.alpha1_Ht = p["alpha1_Ht"]
-        except AttributeError: pass
-        try: ROOT.n_Ht = p["n_Ht"]
-        except AttributeError: pass
-        try: ROOT.b_Ht = p["b_Ht"]
-        except AttributeError: pass
-        try: ROOT.Mm2_Ht = p["Mm2_Ht"]
-        except AttributeError: pass
-        try: ROOT.P_Ht = p["P_Ht"]
-        except AttributeError: pass
-
-    ROOT.hasE = bool(flags.get("E",0))
-    if ROOT.hasE:
-        try: ROOT.r_E = p["r_E"]
-        except AttributeError: pass
-        try: ROOT.alpha0_E = p["alpha0_E"]
-        except AttributeError: pass
-        try: ROOT.alpha1_E = p["alpha1_E"]
-        except AttributeError: pass
-        try: ROOT.n_E = p["n_E"]
-        except AttributeError: pass
-        try: ROOT.b_E = p["b_E"]
-        except AttributeError: pass
-        try: ROOT.Mm2_E = p["Mm2_E"]
-        except AttributeError: pass
-        try: ROOT.P_E = p["P_E"]
-        except AttributeError: pass
-
-    ROOT.hasEt = bool(flags.get("Et",0))
-    if ROOT.hasEt:
-        try: ROOT.r_Et = p["r_Et"]
-        except AttributeError: pass
-        try: ROOT.alpha0_Et = p["alpha0_Et"]
-        except AttributeError: pass
-        try: ROOT.alpha1_Et = p["alpha1_Et"]
-        except AttributeError: pass
-        try: ROOT.n_Et = p["n_Et"]
-        except AttributeError: pass
-        try: ROOT.b_Et = p["b_Et"]
-        except AttributeError: pass
-        try: ROOT.Mm2_Et = p["Mm2_Et"]
-        except AttributeError: pass
-        try: ROOT.P_Et = p["P_Et"]
-        except AttributeError: pass
-
-    # rest unchanged...
-    bsas = []
-    for i, (phi, Q2, xB, t, Eb) in enumerate(zip(
-            phi_arr, Q2_arr, xB_arr, t_arr, Eb_arr)):
+    for i, (phi, Q2, xB, t, Eb) in enumerate(zip(phi_arr, Q2_arr, xB_arr, t_arr, Eb_arr)):
         dvcs = ROOT.BMK_DVCS(-1, 1, 0, Eb, xB, Q2, t, phi)
         mA   = dvcs.BSA()
         bsas.append(mA)
@@ -243,39 +133,28 @@ def compute_bsa(phi_arr, Q2_arr, xB_arr, t_arr, Eb_arr, params, flags, tag=""):
             print(f"[{tag}] φ={phi:6.1f}°, ξ={dvcs.xi:.3f}, t={t:.3f}, BSA={mA:.4f}")
     return np.array(bsas)
 
+# ------------------- Main Plotting Routine -----------------------------
 def main():
-    parser = argparse.ArgumentParser(description="Plot BSA from fit results, with optional CFF controls.")
-    parser.add_argument("fitfile", type=str,
-                        help="fit results file (output/fit_results/fit_results_<TIMESTAMP>.txt)")
-    parser.add_argument("--CFFs", type=int, default=0,
-                        help="0: show ImH-only fit (default). 1: also plot model with all fitted CFFs.")
-    args = parser.parse_args()
-
-    m_ts = re.search(r'fit_results_(\d{8}_\d{6})\.txt$', args.fitfile)
-    if not m_ts:
+    m = re.search(r'_(\d{8}_\d{6})\.txt$', args.fitfile)
+    if not m:
         print("ERROR: can't extract timestamp from", args.fitfile)
         sys.exit(1)
-    timestamp = m_ts.group(1)
-    flags, pnames, vals = parse_fit_results(args.fitfile)
-    print(">> Flags:", flags)
-    print(">> Fitted parameters:", dict(zip(pnames, vals)))
-
+    timestamp = m.group(1)
     ROOT.gSystem.Load('./DVCS_xsec_C.so')
+
     datafile = 'imports/rga_prl_bsa.txt'
     bins = load_all_bins(datafile)
     print(f">> Found {len(bins)} φ-bins")
+
     outdir = 'output/plots'
     os.makedirs(outdir, exist_ok=True)
 
-    # VGG default (original model), all CFFs on
-    defaults = [
-        1.0, 0.43, 0.85, 1.35, 0.4, 0.64, 1.0, 1.0,   # H
-        7.0, 0.43, 0.85, 0.6, 2.0, 0.8, 1.0,          # Ht
-        0.9, 0.43, 0.85, 1.35, 0.4, 0.64, 1.0,        # E
-        0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0             # Et
-    ]
-    all_on_flags = {'H':1, 'Ht':1, 'E':1, 'Et':1}
-    imh_flags = {'H': 1, 'Ht': 0, 'E': 0, 'Et': 0}
+    # For original model, always turn on all CFFs
+    all_on_flags = {cff: 1 for cff, _ in CFF_blocks}
+    defaults_used = {k: defaults[k] for k in defaults if k in defaults}
+
+    # For ImH only case (fitted), turn on only ImH, set all other flags off
+    onlyH_flags = {"H": 1, "Ht": 0, "E": 0, "Et": 0}
 
     for idx, b in enumerate(bins, start=1):
         phi_data = b["phi"]
@@ -286,35 +165,39 @@ def main():
         tg  = np.full_like(phi_grid, b["tm"])
         Ebg = np.full_like(phi_grid, b["Ebm"])
 
-        # Always plot original model (all CFFs on, VGG default)
+        # (1) Original model: all VGG defaults, all CFFs on
         bsas_orig = compute_bsa(phi_grid, Q2g, xBg, tg, Ebg, defaults, all_on_flags, tag=f"bin{idx}-origVGG")
 
-        # Dashed red: ImH-only, fit value
-        bsas_fitH = None
-        if args.CFFs in [0,1]:
-            fitH = vals.copy()
-            # Zero out non-H CFFs for fitH
-            for key in ["r_Ht", "alpha0_Ht", "alpha1_Ht", "n_Ht", "b_Ht", "Mm2_Ht", "P_Ht",
-                        "r_E", "alpha0_E", "alpha1_E", "n_E", "b_E", "Mm2_E", "P_E",
-                        "r_Et", "alpha0_Et", "alpha1_Et", "n_Et", "b_Et", "Mm2_Et", "P_Et"]:
-                if key in pnames:
-                    fitH[pnames.index(key)] = 0.0
-            bsas_fitH = compute_bsa(phi_grid, Q2g, xBg, tg, Ebg, fitH, imh_flags, tag=f"bin{idx}-fitH")
+        # (2) Fitted model(s)
+        # Choose flags for fit model:
+        if args.CFFs == 0:
+            # Fitted line: only ImH, all others off
+            fit_flags = onlyH_flags
+            # Fit parameters: renormImag + H only, other params fallback to VGG defaults
+            fitH_params = {k: fit_params[k] if k in fit_params else defaults[k] for k in defaults}
+            for cff, block in CFF_blocks:
+                if cff != "H":
+                    for v in block:
+                        fitH_params[v] = defaults[v]
+            bsas_fit = compute_bsa(phi_grid, Q2g, xBg, tg, Ebg, fitH_params, fit_flags, tag=f"bin{idx}-fitH")
+            # Fitted model with all CFFs (for overplot): turn on all CFFs that were fitted
+            all_fit_flags = {cff: int(flags[cff]) for cff, _ in CFF_blocks}
+            bsas_fit_all = compute_bsa(phi_grid, Q2g, xBg, tg, Ebg, fit_params, all_fit_flags, tag=f"bin{idx}-fitALL")
+        else:
+            # Only plot the model with all fitted CFFs
+            all_fit_flags = {cff: int(flags[cff]) for cff, _ in CFF_blocks}
+            bsas_fit = compute_bsa(phi_grid, Q2g, xBg, tg, Ebg, fit_params, all_fit_flags, tag=f"bin{idx}-fitALL")
+            bsas_fit_all = None
 
-        # Green dot-dashed: all CFFs on, fit values
-        bsas_fitAll = None
-        if args.CFFs == 1:
-            all_flags = {k: int(flags.get(k,0)) for k in ['H','Ht','E','Et']}
-            bsas_fitAll = compute_bsa(phi_grid, Q2g, xBg, tg, Ebg, vals, all_flags, tag=f"bin{idx}-fitAll")
-
+        # Plot
         fig, ax = plt.subplots(figsize=(8,5))
         ax.errorbar(phi_data, As, yerr=sigAs, fmt='o', ms=5, color='k', label='Data')
-        ax.plot(phi_grid, bsas_orig, '-', lw=2, color='tab:blue', label='Original Model (VGG)')
-        if bsas_fitH is not None:
-            ax.plot(phi_grid, bsas_fitH, '--', lw=2, color='tab:red', label='Fit ImH only')
-        if bsas_fitAll is not None:
-            ax.plot(phi_grid, bsas_fitAll, '-.', lw=2, color='tab:green', label='Fit all CFFs')
-
+        ax.plot(phi_grid, bsas_orig, '-', lw=2, color='tab:blue', label='Original Model')
+        if args.CFFs == 0:
+            ax.plot(phi_grid, bsas_fit, '--', lw=2, color='tab:red', label='Fit: Only ImH')
+            ax.plot(phi_grid, bsas_fit_all, '-.', lw=2, color='tab:green', label='Fit: All CFFs')
+        else:
+            ax.plot(phi_grid, bsas_fit, '--', lw=2, color='tab:red', label='Fit: All CFFs')
         ax.set_xlim(0, 360)
         ax.set_xticks([0, 60, 120, 180, 240, 300, 360])
         ax.set_ylim(-0.6, 0.6)
