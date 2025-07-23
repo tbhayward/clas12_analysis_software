@@ -1337,6 +1337,8 @@ double GetF2(double T) {
 double renormImag = 1.0;
 double renormReal = 1.0;
 
+// -----------------------------------------------------------------------------
+
 // GPD‐H defaults (VGG valence)
 double r_H      = 0.9;
 double alpha0_H = 0.43;
@@ -1345,26 +1347,6 @@ double n_H      = 1.35;
 double b_H      = 0.4;
 double Mm2_H    = 0.64;
 double P_H      = 1.0;
-
-// GPD‐Ĥ defaults
-double r_Ht      = 7.0;
-double alpha0_Ht = 0.43;
-double alpha1_Ht = 0.85;
-double n_Ht      = 0.6;
-double b_Ht      = 2.0;
-double Mm2_Ht    = 0.8;
-double P_Ht      = 1.0;
-
-// GPD‐E defaults (same as H for valence)
-double r_E      = 0.9;
-double alpha0_E = 0.43;
-double alpha1_E = 0.85;
-double n_E      = 1.35;
-double b_E      = 0.4;
-double Mm2_E    = 0.64;
-double P_E      = 1.0;
-
-// -----------------------------------------------------------------------------
 double GetImH(double xi, double t) {
     if(!hasH) return 0.0;
     // build H‐ansatz
@@ -1376,6 +1358,14 @@ double GetImH(double xi, double t) {
     return renormImag * pref * xfac * yfac * tfac * 2.0; // *2 correction from VGG
 }
 
+// GPD‐Htilde defaults
+double r_Ht      = 7.0;
+double alpha0_Ht = 0.43;
+double alpha1_Ht = 0.85;
+double n_Ht      = 0.6;
+double b_Ht      = 2.0;
+double Mm2_Ht    = 0.8;
+double P_Ht      = 1.0;
 double GetImHt(double xi, double t) {
     if(!hasHt) return 0.0;
     double alphaHt   = alpha0_Ht + alpha1_Ht * t;
@@ -1386,6 +1376,14 @@ double GetImHt(double xi, double t) {
     return renormImag * pref * xfac * yfac * tfac * 0.4; // *0.4 correction from VGG
 }
 
+// GPD‐E defaults (same as H for valence)
+double r_E      = 0.9;
+double alpha0_E = 0.43;
+double alpha1_E = 0.85;
+double n_E      = 1.35;
+double b_E      = 0.4;
+double Mm2_E    = 0.64;
+double P_E      = 1.0;
 double GetImE(double xi, double t) {
     // from HERMES CFF paper 1301.1230 argue ImE = 0.5 x ImH (the factor of 2 is in ImH)
     if(!hasE) return 0.0;
@@ -1397,8 +1395,22 @@ double GetImE(double xi, double t) {
     return renormImag * pref * xfac * yfac * tfac;
 }
 
+// GPD‐Etilde defaults
+double r_Et      = 1;
+double alpha0_Et = 0.0;
+double alpha1_Et = 0.0;
+double n_Et      = 0.0; // this sets ImEt to 0 in default model
+double b_Et      = 0.0;
+double Mm2_Et    = 0.0;
+double P_Et      = 0.0;
 double GetImEt(double xi, double t) {
-    return 0.0 * renormImag;
+    if(!hasEt) return 0.0;
+    double alphaE    = alpha0_Et + alpha1_Et * t;
+    double pref  = TMath::Pi()*5.0/9.0 * n_Et * r_Et / (1 + xi);
+    double xfac  = TMath::Power(2*xi/(1+xi), -alphaEt);
+    double yfac  = TMath::Power((1 - xi)/(1+xi), b_Et);
+    double tfac  = TMath::Power(1 - ((1 - xi)/(1+xi))*t/Mm2_Et, -P_Et);
+    return renormImag * pref * xfac * yfac * tfac;
 }
 
 // -------------------------------------------------------------------------------------------------
