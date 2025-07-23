@@ -66,9 +66,7 @@ fit_params = {}
 for cff in ("H","Ht","E"):
     if flags[cff]:
         keys = ["r","alpha0","alpha1","n","b","Mm2","P"]
-        fit_params[cff] = {
-            k: vals[idx(f"{k}_{cff}")] for k in keys
-        }
+        fit_params[cff] = { k: vals[idx(f"{k}_{cff}")] for k in keys }
 if flags["Et"]:
     fit_params["Et"] = {}
 
@@ -84,7 +82,7 @@ defaults = {
 def make_Im(cff, params, renorm):
     d = defaults[cff]
     def Im(xi, t):
-        if cff=="Et":
+        if cff == "Et":
             return np.zeros_like(xi if hasattr(xi,'__iter__') else t)
         r       = params.get("r",      d["r"])
         a0      = params.get("alpha0", d["alpha0"])
@@ -94,8 +92,8 @@ def make_Im(cff, params, renorm):
         Mm2_val = params.get("Mm2",    d["Mm2"])
         P_val   = params.get("P",      d["P"])
         factor  = d["factor"]
-        alpha    = a0 + a1*t
-        pref     = np.pi*5/9 * n_val*r/(1+xi)
+        alpha    = a0 + a1 * t
+        pref     = np.pi * 5/9 * n_val * r / (1 + xi)
         xfac     = (2*xi/(1+xi))**(-alpha)
         yfac     = ((1-xi)/(1+xi))**b_val
         tfac     = (1 - ((1-xi)/(1+xi))*t/Mm2_val)**(-P_val)
@@ -103,7 +101,7 @@ def make_Im(cff, params, renorm):
     return Im
 
 Im_funcs = {
-    cff: make_Im(cff, fit_params.get(cff,{}), renorm_fit)
+    cff: make_Im(cff, fit_params.get(cff, {}), renorm_fit)
     for cff in ("H","Ht","E","Et") if flags[cff]
 }
 
@@ -124,35 +122,43 @@ zero_line  = {'color':'gray','linestyle':'--','linewidth':1.0}
 
 latex_map = {"H":r"H","Ht":r"\tilde H","E":r"E","Et":r"\tilde E"}
 
-# fixed y‐ticks to remove −2 everywhere
-yticks = [0,2,4,6,8,10,12]
-
+# ─── Loop over each enabled CFF ───────────────────────────────────────────────
 for cff, Im_fit in Im_funcs.items():
-    Im_orig = make_Im(cff,{},1.0)
+    Im_orig = make_Im(cff, {}, 1.0)
 
     # 1) ImCFF vs ξ
     fig, axes = plt.subplots(2,3,figsize=(12,8),
-                             sharex=True,sharey=True)
+                             sharex=True, sharey=True)
     axes = axes.flatten()
-    for ax,tv in zip(axes, t_fixed):
-        ax.plot(xi_range, Im_orig(xi_range,-tv), **orig_style)
-        ax.plot(xi_range, Im_fit(xi_range,-tv),  **fit_style)
+    for idx, (ax, tv) in enumerate(zip(axes, t_fixed)):
+        ax.plot(xi_range, Im_orig(xi_range, -tv), **orig_style)
+        ax.plot(xi_range, Im_fit(xi_range, -tv),  **fit_style)
         ax.axhline(0, **zero_line)
-        ax.text(0.62,0.72, rf"$-t={tv:.2f}\,\mathrm{{(GeV^2)}}$",
+        ax.text(0.62, 0.72,
+                rf"$-t={tv:.2f}\,\mathrm{{(GeV^2)}}$",
                 transform=ax.transAxes, fontsize=12)
         ax.set_xlim(0,0.5)
         ax.set_ylim(-2,12)
-        ax.set_yticks(yticks)
+        # hide -2 on top-left only
+        if idx == 0:
+            for lbl in ax.get_yticklabels():
+                if lbl.get_text() == '-2':
+                    lbl.set_visible(False)
+    # hide '0.0' on bottom-middle/right x‐ticks
+    for ax in (axes[4], axes[5]):
+        for lbl in ax.get_xticklabels():
+            if lbl.get_text() == '0.0':
+                lbl.set_visible(False)
     axes[2].legend(["Original Parameters","RGA pass-1 fit"],
                    loc='upper right', fontsize=10)
-    fig.subplots_adjust(left=0.10,right=0.98,
-                        bottom=0.08,top=0.93,
-                        wspace=0,hspace=0)
+    fig.subplots_adjust(left=0.10, right=0.98,
+                        bottom=0.08, top=0.93,
+                        wspace=0, hspace=0)
     fig.suptitle(rf"$\mathrm{{Im}}\,{latex_map[cff]}(\xi,\,-t)$",
-                 y=0.97,fontsize=16)
-    fig.text(0.06,0.5, rf"$\mathrm{{Im}}\,{latex_map[cff]}(\xi,\,-t)$",
-             va='center',ha='center',rotation='vertical')
-    fig.text(0.5,0.02, r"$\xi$", ha='center')
+                 y=0.97, fontsize=16)
+    fig.text(0.06, 0.5, rf"$\mathrm{{Im}}\,{latex_map[cff]}(\xi,\,-t)$",
+             va='center', ha='center', rotation='vertical')
+    fig.text(0.5, 0.02, r"$\xi$", ha='center')
     out1 = f"{outdir}/Im{cff}_vs_xi_{timestamp}.pdf"
     fig.savefig(out1, bbox_inches='tight')
     print("Saved:", out1)
@@ -160,32 +166,35 @@ for cff, Im_fit in Im_funcs.items():
 
     # 2) ImCFF vs −t
     fig, axes = plt.subplots(2,3,figsize=(12,8),
-                             sharex=True,sharey=True)
+                             sharex=True, sharey=True)
     axes = axes.flatten()
-    for ax,xi0 in zip(axes, xi_fixed):
-        ax.plot(t_range, Im_orig(xi0,-t_range), **orig_style)
-        ax.plot(t_range, Im_fit(xi0,-t_range),  **fit_style)
+    for idx, (ax, xi0) in enumerate(zip(axes, xi_fixed)):
+        ax.plot(t_range, Im_orig(xi0, -t_range), **orig_style)
+        ax.plot(t_range, Im_fit(xi0, -t_range),  **fit_style)
         ax.axhline(0, **zero_line)
-        ax.text(0.62,0.72, rf"$\xi={xi0:.2f}$",
+        ax.text(0.62, 0.72,
+                rf"$\xi={xi0:.2f}$",
                 transform=ax.transAxes, fontsize=12)
         ax.set_xlim(0,1.0)
         ax.set_ylim(-2,12)
-        ax.set_yticks(yticks)
-        # remove “0.0” ticks on bottom‐middle/right
-        if axes.tolist().index(ax) in (4,5):
-            for lbl in ax.get_xticklabels():
-                if lbl.get_text()=="0.0":
+        if idx == 0:
+            for lbl in ax.get_yticklabels():
+                if lbl.get_text() == '-2':
                     lbl.set_visible(False)
+    for ax in (axes[4], axes[5]):
+        for lbl in ax.get_xticklabels():
+            if lbl.get_text() == '0.0':
+                lbl.set_visible(False)
     axes[2].legend(["Original Parameters","RGA pass-1 fit"],
                    loc='upper right', fontsize=10)
-    fig.subplots_adjust(left=0.10,right=0.98,
-                        bottom=0.08,top=0.93,
-                        wspace=0,hspace=0)
+    fig.subplots_adjust(left=0.10, right=0.98,
+                        bottom=0.08, top=0.93,
+                        wspace=0, hspace=0)
     fig.suptitle(rf"$\mathrm{{Im}}\,{latex_map[cff]}(\xi,\,-t)$",
-                 y=0.97,fontsize=16)
-    fig.text(0.06,0.5, rf"$\mathrm{{Im}}\,{latex_map[cff]}(\xi,\,-t)$",
-             va='center',ha='center',rotation='vertical')
-    fig.text(0.5,0.02, r"$-t\ (\mathrm{GeV^2})$", ha='center')
+                 y=0.97, fontsize=16)
+    fig.text(0.06, 0.5, rf"$\mathrm{{Im}}\,{latex_map[cff]}(\xi,\,-t)$",
+             va='center', ha='center', rotation='vertical')
+    fig.text(0.5, 0.02, r"$-t\ (\mathrm{GeV^2})$", ha='center')
     out2 = f"{outdir}/Im{cff}_vs_t_{timestamp}.pdf"
     fig.savefig(out2, bbox_inches='tight')
     print("Saved:", out2)
