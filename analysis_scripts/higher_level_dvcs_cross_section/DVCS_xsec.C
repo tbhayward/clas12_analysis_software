@@ -1405,7 +1405,7 @@ double Mm2_Et    = 0.0;
 double P_Et      = 0.0;
 double GetImEt(double xi, double t) {
     if(!hasEt) return 0.0;
-    double alphaE    = alpha0_Et + alpha1_Et * t;
+    double alphaEt    = alpha0_Et + alpha1_Et * t;
     double pref  = TMath::Pi()*5.0/9.0 * n_Et * r_Et / (1 + xi);
     double xfac  = TMath::Power(2*xi/(1+xi), -alphaEt);
     double yfac  = TMath::Power((1 - xi)/(1+xi), b_Et);
