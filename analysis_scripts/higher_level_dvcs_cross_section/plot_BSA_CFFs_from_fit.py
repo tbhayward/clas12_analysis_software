@@ -3,11 +3,12 @@
 plot_BSA_CFFs_from_fit.py
 
 Usage:
-    python plot_BSA_CFFs_from_fit.py output/fit_results/fit_results_<TIMESTAMP>.txt
+    python plot_BSA_CFFs_from_fit.py output/fit_results/fit_results_<TIMESTAMP>.txt --CFFs [0|1]
 """
 import os
 import sys
 import re
+import argparse
 import numpy as np
 import matplotlib.pyplot as plt
 import ROOT
@@ -71,7 +72,6 @@ orig_defaults = {
     'r_E':0.9,'alpha0_E':0.43,'alpha1_E':0.85,'n_E':1.35,'b_E':0.4,'Mm2_E':0.64,'P_E':1.0,
     'r_Et':1.0,'alpha0_Et':0.0,'alpha1_Et':0.0,'n_Et':0.0,'b_Et':0.0,'Mm2_Et':0.0,'P_Et':0.0,
 }
-shape_keys = ["r","alpha0","alpha1","n","b","Mm2","P"]
 
 def compute_bsa(phi_arr, Q2_arr, xB_arr, t_arr, Eb_arr, param_map, flags, tag=""):
     """
@@ -89,7 +89,7 @@ def compute_bsa(phi_arr, Q2_arr, xB_arr, t_arr, Eb_arr, param_map, flags, tag=""
     for cff in ("H","Ht","E","Et"):
         ROOT.gInterpreter.ProcessLine(f"has{cff} = {int(flags[cff])};")
         if flags[cff]:
-            for k in shape_keys:
+            for k in ("r", "alpha0", "alpha1", "n", "b", "Mm2", "P"):
                 key = f"{k}_{cff}"
                 v = param_map.get(key, orig_defaults[key])
                 ROOT.gInterpreter.ProcessLine(f"{key} = {v};")
@@ -105,16 +105,19 @@ def compute_bsa(phi_arr, Q2_arr, xB_arr, t_arr, Eb_arr, param_map, flags, tag=""
     return np.array(bsas)
 
 def main():
-    if len(sys.argv)!=2:
-        print(__doc__); sys.exit(1)
+    parser = argparse.ArgumentParser(description=__doc__,
+                                     formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument('fitfile', help='Fit results file')
+    parser.add_argument('--CFFs', type=int, choices=[0,1], default=0,
+                        help='0: use only ImH for fitted model, 1: show both ImH-only and full CFF models')
+    args = parser.parse_args()
 
-    fitfile = sys.argv[1]
-    m = re.search(r'fit_results_(\d{8}_\d{6})\.txt$', fitfile)
+    m = re.search(r'fit_results_(\d{8}_\d{6})\.txt$', args.fitfile)
     if not m:
         print("ERROR: can't extract timestamp"); sys.exit(1)
     timestamp = m.group(1)
 
-    flags, pnames, vals = parse_fit_results(fitfile)
+    flags, pnames, vals = parse_fit_results(args.fitfile)
     param_map = dict(zip(pnames, vals))
     print(">> Flags:", flags)
     print(">> Fitted parameters:", param_map)
@@ -135,18 +138,38 @@ def main():
         tg  = np.full_like(phi_grid, b["tm"])
         Ebg = np.full_like(phi_grid, b["Ebm"])
 
+        # Compute original model with all CFFs using VGG defaults
         bsas_orig = compute_bsa(phi_grid, Q2g, xBg, tg, Ebg,
                                 orig_defaults, flags, tag=f"bin{idx}-orig")
-        bsas_fit  = compute_bsa(phi_grid, Q2g, xBg, tg, Ebg,
-                                param_map,    flags, tag=f"bin{idx}-fit")
+
+        # Compute fitted model with flags from fit
+        bsas_fit = compute_bsa(phi_grid, Q2g, xBg, tg, Ebg,
+                               param_map, flags, tag=f"bin{idx}-fit")
 
         fig, ax = plt.subplots(figsize=(8,5))
         ax.errorbar(phi_data, As, yerr=sigAs, fmt='o', ms=5,
                     color='k', label='Data')
         ax.plot(phi_grid, bsas_orig, '-',  lw=2,
                 color='tab:blue', label='Original Model')
-        ax.plot(phi_grid, bsas_fit,  '--', lw=2,
-                color='tab:red',  label='Fitted Model')
+
+        if args.CFFs == 0:
+            # Only show fitted model with ImH
+            ax.plot(phi_grid, bsas_fit,  '--', lw=2,
+                    color='tab:red',  label='Fitted Model (ImH only)')
+        else:
+            # Compute fitted model with only ImH (turn off other CFFs)
+            flags_imh_only = flags.copy()
+            flags_imh_only['Ht'] = 0
+            flags_imh_only['E'] = 0
+            flags_imh_only['Et'] = 0
+            bsas_fit_imh = compute_bsa(phi_grid, Q2g, xBg, tg, Ebg,
+                                       param_map, flags_imh_only, tag=f"bin{idx}-fit-ImH")
+            
+            # Plot both models
+            ax.plot(phi_grid, bsas_fit_imh, '--', lw=2,
+                    color='tab:red',  label='Fitted Model (ImH only)')
+            ax.plot(phi_grid, bsas_fit,  '-.', lw=2,
+                    color='tab:green',  label='Fitted Model (all CFFs)')
 
         ax.set_xlim(0,360)
         ax.set_xticks([0,60,120,180,240,300,360])
