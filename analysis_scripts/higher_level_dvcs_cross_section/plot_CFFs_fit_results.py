@@ -70,28 +70,28 @@ def get_idx(name):
 renorm_fit = vals[get_idx("renormImag")]
 
 fit_params = {}
-for cff in ("H","Ht","E"):
+for cff in ("H","Ht","E","Et"):
     if flags[cff]:
         keys = ["r","alpha0","alpha1","n","b","Mm2","P"]
         base = { k: get_idx(f"{k}_{cff}") for k in keys }
         fit_params[cff] = { k: vals[idx] for k,idx in base.items() }
-if flags["Et"]:
-    # no shape‐params in file, but we still want to allow a fit
-    fit_params["Et"] = {}
 
 # ─── VGG-default params + factors ───────────────────────────────────────────────
 defaults = {
-    "H":  dict(r=0.9,  alpha0=0.43, alpha1=0.85, n=1.35, b=0.4,  Mm2=0.64, P=1.0, factor=2.0),
-    "Ht": dict(r=7.0,  alpha0=0.43, alpha1=0.85, n=0.6,  b=2.0,  Mm2=0.8,  P=1.0, factor=0.4),
-    "E":  dict(r=0.9,  alpha0=0.43, alpha1=0.85, n=1.35, b=0.4,  Mm2=0.64, P=1.0, factor=1.0),
-    "Et": dict(r=0.9, alpha0=0.0, alpha1=0.0, n=0, b=0.0, Mm2=0.0, P=0.0, factor=0.0)
+    "H":  dict(r=0.9,   alpha0=0.43, alpha1=0.85, n=1.35, b=0.4,  Mm2=0.64, P=1.0, factor=2.0),
+    "Ht": dict(r=7.0,   alpha0=0.43, alpha1=0.85, n=0.6,  b=2.0,  Mm2=0.8,  P=1.0, factor=0.4),
+    "E":  dict(r=0.9,   alpha0=0.43, alpha1=0.85, n=1.35, b=0.4,  Mm2=0.64, P=1.0, factor=1.0),
+    # set n=0 so original Et ≡ 0 everywhere, but still use shape defaults
+    "Et": dict(r=0.9,   alpha0=0.43, alpha1=0.85, n=0.0,  b=0.4,  Mm2=0.64, P=1.0, factor=1.0),
 }
 
 # ─── Im-CFF factory ─────────────────────────────────────────────────────────────
 def make_Im_func(cff, params, renorm):
     d = defaults[cff]
     def Im(xi, t):
-        # use the same ansatz for all four CFFs
+        if cff=="Et":
+            # original uses n=0 → always zero; fitted will pick up n_Et from params
+            pass
         r     = params.get("r",      d["r"])
         a0    = params.get("alpha0", d["alpha0"])
         a1    = params.get("alpha1", d["alpha1"])
@@ -108,7 +108,6 @@ def make_Im_func(cff, params, renorm):
         return renorm * pref * xfac * yfac * tfac * fac
     return Im
 
-# build one Im‐function per enabled CFF
 Im_funcs = {
     cff: make_Im_func(cff, fit_params.get(cff,{}), renorm_fit)
     for cff in ("H","Ht","E","Et") if flags[cff]
@@ -138,7 +137,7 @@ for cff, Im_fit in Im_funcs.items():
     Im_orig = make_Im_func(cff, {}, 1.0)
     tex = tex_map[cff]
 
-    # 1) ImCFF vs ξ for fixed −t
+    # 1) ImCFF vs ξ
     fig, axes = plt.subplots(2,3,figsize=(12,8),sharex=True,sharey=True)
     axes = axes.flatten()
     fig.suptitle(rf"$\mathrm{{Im}}\,{tex}$", fontsize=16, y=0.98)
@@ -176,7 +175,7 @@ for cff, Im_fit in Im_funcs.items():
     print("Saved:", out1)
     plt.close(fig)
 
-    # 2) ImCFF vs −t for fixed ξ
+    # 2) ImCFF vs −t
     fig, axes = plt.subplots(2,3,figsize=(12,8),sharex=True,sharey=True)
     axes = axes.flatten()
     fig.suptitle(rf"$\mathrm{{Im}}\,{tex}$", fontsize=16, y=0.98)
