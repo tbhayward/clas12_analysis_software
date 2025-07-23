@@ -8,8 +8,8 @@
 
 // Fundamental constants
 double PI     = TMath::Pi();             // π
-double alpha  = 1.0/137.036;             // fine-structure constant α
-double alpha3 = TMath::Power(alpha, 3);  // α³
+double alpha  = 1.0/137.036;             // fine-structure constant alpha
+double alpha3 = TMath::Power(alpha, 3);  // alpha³
 double hbarc2 = 0.38938;                 // (ℏc)² in GeV²·mbarn units
 
 // Particle masses and magnetic moment
@@ -1334,70 +1334,75 @@ double GetF2(double T) {
 // -------------------------------------------------------------------------------------------------
 //   Compton Form Factor (CFF) models—imaginary parts
 // -------------------------------------------------------------------------------------------------
-// global GPD‐H parameters (original VGG values)
 double renormImag = 1.0;
-double alpha0 = 0.43;
-double alpha1 = 0.85;
-double n_val   = 1.35, b_val    = 0.4;
-double Mm2_val = 0.64,  P_val   = 1.0;
+double renormReal = 1.0;
 
+// GPD‐H defaults (VGG valence)
+double r_H      = 0.9;
+double alpha0_H = 0.43;
+double alpha1_H = 0.85;
+double n_H      = 1.35;
+double b_H      = 0.4;
+double Mm2_H    = 0.64;
+double P_H      = 1.0;
+
+// GPD‐Ĥ defaults
+double r_Ht      = 7.0;
+double alpha0_Ht = 0.43;
+double alpha1_Ht = 0.85;
+double n_Ht      = 0.6;
+double b_Ht      = 2.0;
+double Mm2_Ht    = 0.8;
+double P_Ht      = 1.0;
+
+// GPD‐E defaults (same as H for valence)
+double r_E      = 0.9;
+double alpha0_E = 0.43;
+double alpha1_E = 0.85;
+double n_E      = 1.35;
+double b_E      = 0.4;
+double Mm2_E    = 0.64;
+double P_E      = 1.0;
+
+// -----------------------------------------------------------------------------
 double GetImH(double xi, double t) {
     if(!hasH) return 0.0;
-    // Simple valence ansatz from VGG
-    double r     = 0.9;
-    double alpha = alpha0 + alpha1 * t;
-    double n     = n_val;
-    double b     = b_val;
-    double Mm2   = Mm2_val;
-    double P     = P_val;
-    double pref  = TMath::Pi()*5.0/9.0 * n * r / (1 + xi);
-    double xfac  = TMath::Power(2*xi/(1+xi), -alpha);
-    double yfac  = TMath::Power((1 - xi)/(1+xi), b);
-    double tfac  = TMath::Power(1 - ((1 - xi)/(1+xi))*t/Mm2, -P);
+    // build H‐ansatz
+    double alphaH   = alpha0_H + alpha1_H * t;
+    double pref = TMath::Pi()*5.0/9.0 * n_H * r_H / (1 + xi);
+    double xfac = TMath::Power(2*xi/(1+xi), -alphaH);
+    double yfac = TMath::Power((1 - xi)/(1+xi), b_H);
+    double tfac = TMath::Power(1 - ((1 - xi)/(1+xi))*t/Mm2_H, -P_H);
     return renormImag * pref * xfac * yfac * tfac * 2.0;
 }
 
 double GetImHt(double xi, double t) {
     if(!hasHt) return 0.0;
-    // analogous structure with different parameters
-    double r     = 7.0;
-    double alpha = alpha0 + alpha1 * t;
-    double n     = n_val;
-    double b     = b_val;
-    double Mm2   = Mm2_val;
-    double P     = P_val;
-    double pref  = TMath::Pi()*5.0/9.0 * n * r / (1 + xi);
-    double xfac  = TMath::Power(2*xi/(1+xi), -alpha);
-    double yfac  = TMath::Power((1 - xi)/(1+xi), b);
-    double tfac  = TMath::Power(1 - ((1 - xi)/(1+xi))*t/Mm2, -P);
+    double alphaHt   = alpha0_Ht + alpha1_Ht * t;
+    double pref  = TMath::Pi()*5.0/9.0 * n_Ht * r_Ht / (1 + xi);
+    double xfac  = TMath::Power(2*xi/(1+xi), -alphaHt);
+    double yfac  = TMath::Power((1 - xi)/(1+xi), b_Ht);
+    double tfac  = TMath::Power(1 - ((1 - xi)/(1+xi))*t/Mm2_Ht, -P_Ht);
     return renormImag * pref * xfac * yfac * tfac * 0.4;
 }
 
 double GetImE(double xi, double t) {
     if(!hasE) return 0.0;
-    // same valence form as ImH
-    double r     = 0.9; 
-    double alpha = alpha0 + alpha1 * t;
-    double n     = n_val;
-    double b     = b_val;
-    double Mm2   = Mm2_val;
-    double P     = P_val;
-    double pref  = TMath::Pi()*5.0/9.0 * n * r / (1 + xi);
-    double xfac  = TMath::Power(2*xi/(1+xi), -alpha);
-    double yfac  = TMath::Power((1 - xi)/(1+xi), b);
-    double tfac  = TMath::Power(1 - ((1 - xi)/(1+xi))*t/Mm2, -P);
+    double alphaE    = alpha0_E + alpha1_E * t;
+    double pref  = TMath::Pi()*5.0/9.0 * n_E * r_E / (1 + xi);
+    double xfac  = TMath::Power(2*xi/(1+xi), -alphaE);
+    double yfac  = TMath::Power((1 - xi)/(1+xi), b_E);
+    double tfac  = TMath::Power(1 - ((1 - xi)/(1+xi))*t/Mm2_E, -P_E);
     return renormImag * pref * xfac * yfac * tfac;
 }
 
 double GetImEt(double xi, double t) {
-    // often set to zero in simple models
     return 0.0;
 }
 
 // -------------------------------------------------------------------------------------------------
 //   Compton Form Factor (CFF) models—real parts
 // -------------------------------------------------------------------------------------------------
-double renormReal = 1.0;
 
 double GetReH(double xi, double t) {
     if(!hasH) return 0.0;

@@ -73,12 +73,12 @@ void fcn(int& /*npar*/, double* /*grad*/, double& f, double* par, int /*iflag*/)
     if(gStrategy==1 || gStrategy==2
     || (gStrategy==3 && gStage==1)){
         renormImag = par[0];
-        alpha0     = par[1];
-        alpha1     = par[2];
-        n_val      = par[3];
-        b_val      = par[4];
-        Mm2_val    = par[5];
-        P_val      = par[6];
+        alpha0_H   = par[1];
+        alpha1_H   = par[2];
+        n_H        = par[3];
+        b_H        = par[4];
+        Mm2_H      = par[5];
+        P_H        = par[6];
     }
     if(gStrategy==2){
         renormReal = par[7];
@@ -150,12 +150,12 @@ int main(int argc, char** argv){
 
         // ImH params 0–6
         minuit.DefineParameter(0,"renormImag",1.0,0.1,0,10);
-        minuit.DefineParameter(1,"alpha0",    0.43,0.05,-5,5);
-        minuit.DefineParameter(2,"alpha1",    0.85,0.05,-10,10);
-        minuit.DefineParameter(3,"n_val",     1.35,0.05,0,10);
-        minuit.DefineParameter(4,"b_val",     0.40,0.05,0,10);
-        minuit.DefineParameter(5,"Mm2_val",   0.64,0.05,0,10);
-        minuit.DefineParameter(6,"P_val",     1.00,0.05,0,10);
+        minuit.DefineParameter(1,"alpha0_H",  0.43,0.05,-5,5);
+        minuit.DefineParameter(2,"alpha1_H",  0.85,0.05,-10,10);
+        minuit.DefineParameter(3,"n_H",       1.35,0.05,0,10);
+        minuit.DefineParameter(4,"b_H",       0.40,0.05,0,10);
+        minuit.DefineParameter(5,"Mm2_H",     0.64,0.05,0,10);
+        minuit.DefineParameter(6,"P_H",       1.00,0.05,0,10);
         if(gStrategy==2){
             minuit.DefineParameter(7,"renormReal",1.0,0.1,0,10);
         }
@@ -185,12 +185,12 @@ int main(int argc, char** argv){
         // print out
         std::cout<<"\n=== Results ===\n"
                  <<" renormImag="<<valIm[0]<<"±"<<errIm[0]<<"\n"
-                 <<" alpha0    ="<<valIm[1]<<"±"<<errIm[1]<<"\n"
-                 <<" alpha1    ="<<valIm[2]<<"±"<<errIm[2]<<"\n"
-                 <<" n_val     ="<<valIm[3]<<"±"<<errIm[3]<<"\n"
-                 <<" b_val     ="<<valIm[4]<<"±"<<errIm[4]<<"\n"
-                 <<" Mm2_val   ="<<valIm[5]<<"±"<<errIm[5]<<"\n"
-                 <<" P_val     ="<<valIm[6]<<"±"<<errIm[6]<<"\n";
+                 <<" alpha0_H  ="<<valIm[1]<<"±"<<errIm[1]<<"\n"
+                 <<" alpha1_H  ="<<valIm[2]<<"±"<<errIm[2]<<"\n"
+                 <<" n_H       ="<<valIm[3]<<"±"<<errIm[3]<<"\n"
+                 <<" b_H       ="<<valIm[4]<<"±"<<errIm[4]<<"\n"
+                 <<" Mm2_H     ="<<valIm[5]<<"±"<<errIm[5]<<"\n"
+                 <<" P_H       ="<<valIm[6]<<"±"<<errIm[6]<<"\n";
         if(gStrategy==2)
             std::cout<<" renormReal="<<valReal<<"±"<<errReal<<"\n";
         std::cout<<" χ²/ndf   ="<<finalChi2<<"/"<<finalNdf
@@ -206,12 +206,12 @@ int main(int argc, char** argv){
             minuit.SetPrintLevel(1);
             minuit.SetFCN(fcn);
             minuit.DefineParameter(0,"renormImag",1.0,0.1,0,10);
-            minuit.DefineParameter(1,"alpha0",    0.43,0.05,-5,5);
-            minuit.DefineParameter(2,"alpha1",    0.85,0.05,-10,10);
-            minuit.DefineParameter(3,"n_val",     1.35,0.05,0,10);
-            minuit.DefineParameter(4,"b_val",     0.40,0.05,0,10);
-            minuit.DefineParameter(5,"Mm2_val",   0.64,0.05,0,10);
-            minuit.DefineParameter(6,"P_val",     1.00,0.05,0,10);
+            minuit.DefineParameter(1,"alpha0_H",  0.43,0.05,-5,5);
+            minuit.DefineParameter(2,"alpha1_H",  0.85,0.05,-10,10);
+            minuit.DefineParameter(3,"n_H",       1.35,0.05,0,10);
+            minuit.DefineParameter(4,"b_H",       0.40,0.05,0,10);
+            minuit.DefineParameter(5,"Mm2_H",     0.64,0.05,0,10);
+            minuit.DefineParameter(6,"P_H",       1.00,0.05,0,10);
 
             std::cout<<"Stage 1: fitting ImH→BSA…\n";
             minuit.Migrad();
@@ -230,12 +230,12 @@ int main(int argc, char** argv){
 
             std::cout<<"\nStage 1 results:\n"
                      <<" renormImag="<<v[0]<<"±"<<e[0]<<", "
-                     <<"alpha0="   <<v[1]<<"±"<<e[1]<<", "
-                     <<"alpha1="   <<v[2]<<"±"<<e[2]<<"\n"
-                     <<" n_val="    <<v[3]<<"±"<<e[3]<<", "
-                     <<"b_val="    <<v[4]<<"±"<<e[4]<<", "
-                     <<"Mm2_val="  <<v[5]<<"±"<<e[5]<<", "
-                     <<"P_val="    <<v[6]<<"±"<<e[6]<<"\n"
+                     <<"alpha0_H=" <<v[1]<<"±"<<e[1]<<", "
+                     <<"alpha1_H=" <<v[2]<<"±"<<e[2]<<"\n"
+                     <<" n_H="      <<v[3]<<"±"<<e[3]<<", "
+                     <<"b_H="       <<v[4]<<"±"<<e[4]<<", "
+                     <<"Mm2_H="     <<v[5]<<"±"<<e[5]<<", "
+                     <<"P_H="       <<v[6]<<"±"<<e[6]<<"\n"
                      <<" χ²/ndf=" <<finalChi2<<"/"<<finalNdf
                      <<"="<<(finalChi2/finalNdf)<<"\n\n";
         }
@@ -282,7 +282,7 @@ int main(int argc, char** argv){
     out<<"# FitH results\n";
     out<<"timestamp    "<<tb<<"\n";
     out<<"strategy     "<<gStrategy<<"\n";
-    out<<"# values: renormImag alpha0 alpha1 n_val b_val Mm2_val P_val renormReal\n";
+    out<<"# values: renormImag alpha0_H alpha1_H n_H b_H Mm2_H P_H renormReal\n";
     out<<valIm[0]<<" "<<valIm[1]<<" "<<valIm[2]<<" "
        <<valIm[3]<<" "<<valIm[4]<<" "<<valIm[5]<<" "
        <<valIm[6]<<" "<<valReal<<"\n";
