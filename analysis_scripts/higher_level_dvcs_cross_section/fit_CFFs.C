@@ -39,10 +39,10 @@ extern bool   hasH, hasHt, hasE, hasEt;
 extern double renormImag, renormReal;
 
 // all of the CFF shape‐parameter globals:
-extern double r_H,      alpha0_H,  alpha1_H,  n_H,   b_H,   Mm2_H,  P_H;
-extern double r_Ht,     alpha0_Ht, alpha1_Ht, n_Ht,  b_Ht,  Mm2_Ht, P_Ht;
-extern double r_E,      alpha0_E,  alpha1_E,  n_E,   b_E,   Mm2_E,  P_E;
-extern double r_Et,     alpha0_Et, alpha1_Et, n_Et,  b_Et,  Mm2_Et, P_Et;
+extern double r_H,      alpha0_H,  alpha1_H,  n_H,   b_H,   M2_H,  P_H;
+extern double r_Ht,     alpha0_Ht, alpha1_Ht, n_Ht,  b_Ht,  M2_Ht, P_Ht;
+extern double r_E,      alpha0_E,  alpha1_E,  n_E,   b_E,   M2_E,  P_E;
+extern double r_Et,     alpha0_Et, alpha1_Et, n_Et,  b_Et,  M2_Et, P_Et;
 
 // ──────────────────────────────────────────────────────────────────────────────
 // globals controlling strategy & stage:
@@ -124,22 +124,22 @@ void build_par_list(){
     if(hasH){
         idx_H = parNames.size();
         parNames.insert(parNames.end(),
-            {"r_H","alpha0_H","alpha1_H","n_H","b_H","Mm2_H","P_H"});
+            {"r_H","alpha0_H","alpha1_H","n_H","b_H","M2_H","P_H"});
     }
     if(hasHt){
         idx_Ht = parNames.size();
         parNames.insert(parNames.end(),
-            {"r_Ht","alpha0_Ht","alpha1_Ht","n_Ht","b_Ht","Mm2_Ht","P_Ht"});
+            {"r_Ht","alpha0_Ht","alpha1_Ht","n_Ht","b_Ht","M2_Ht","P_Ht"});
     }
     if(hasE){
         idx_E = parNames.size();
         parNames.insert(parNames.end(),
-            {"r_E","alpha0_E","alpha1_E","n_E","b_E","Mm2_E","P_E"});
+            {"r_E","alpha0_E","alpha1_E","n_E","b_E","M2_E","P_E"});
     }
     if(hasEt){
         idx_Et = parNames.size();
         parNames.insert(parNames.end(),
-            {"r_Et","alpha0_Et","alpha1_Et","n_Et","b_Et","Mm2_Et","P_Et"});
+            {"r_Et","alpha0_Et","alpha1_Et","n_Et","b_Et","M2_Et","P_Et"});
     }
     // renormReal for combined fits or stage 2 of two-step
     if((gStrategy==3) || (gStrategy==4 && gStage==2)){
@@ -154,13 +154,13 @@ void fcn(int & /*npar*/, double* /*grad*/, double &f, double *par, int /*iflag*/
     // 1) renormImag
     renormImag = par[ip++];
     // 2) H block
-    if(hasH){ r_H=par[ip++]; alpha0_H=par[ip++]; alpha1_H=par[ip++]; n_H=par[ip++]; b_H=par[ip++]; Mm2_H=par[ip++]; P_H=par[ip++]; }
+    if(hasH){ r_H=par[ip++]; alpha0_H=par[ip++]; alpha1_H=par[ip++]; n_H=par[ip++]; b_H=par[ip++]; M2_H=par[ip++]; P_H=par[ip++]; }
     // 3) Ht block
-    if(hasHt){ r_Ht=par[ip++]; alpha0_Ht=par[ip++]; alpha1_Ht=par[ip++]; n_Ht=par[ip++]; b_Ht=par[ip++]; Mm2_Ht=par[ip++]; P_Ht=par[ip++]; }
+    if(hasHt){ r_Ht=par[ip++]; alpha0_Ht=par[ip++]; alpha1_Ht=par[ip++]; n_Ht=par[ip++]; b_Ht=par[ip++]; M2_Ht=par[ip++]; P_Ht=par[ip++]; }
     // 4) E block
-    if(hasE){ r_E=par[ip++]; alpha0_E=par[ip++]; alpha1_E=par[ip++]; n_E=par[ip++]; b_E=par[ip++]; Mm2_E=par[ip++]; P_E=par[ip++]; }
+    if(hasE){ r_E=par[ip++]; alpha0_E=par[ip++]; alpha1_E=par[ip++]; n_E=par[ip++]; b_E=par[ip++]; M2_E=par[ip++]; P_E=par[ip++]; }
     // 5) Et block
-    if(hasEt){ r_Et=par[ip++]; alpha0_Et=par[ip++]; alpha1_Et=par[ip++]; n_Et=par[ip++]; b_Et=par[ip++]; Mm2_Et=par[ip++]; P_Et=par[ip++]; }
+    if(hasEt){ r_Et=par[ip++]; alpha0_Et=par[ip++]; alpha1_Et=par[ip++]; n_Et=par[ip++]; b_Et=par[ip++]; M2_Et=par[ip++]; P_Et=par[ip++]; }
     // 6) renormReal for combined fits
     if(idx_R>=0){ renormReal = par[ip++]; }
 
@@ -224,7 +224,7 @@ int main(int argc, char** argv){
             if(name.find("alpha1_")==0)     init=0.85,step=0.05,mn=-10,mx=10;
             if(name.find("n_")==0)          init=1.35,step=0.05;
             if(name.find("b_")==0)          init=0.4, step=0.05;
-            if(name.find("Mm2_")==0)        init=0.64,step=0.05;
+            if(name.find("M2_")==0)        init=0.64,step=0.05;
             if(name.find("P_")==0)          init=1.0, step=0.05;
             if(name=="r_Ht")                init=7.0, step=1.0;
             if(name=="renormReal")          init=1.0, step=0.1;
@@ -257,7 +257,7 @@ int main(int argc, char** argv){
                 if(nm.find("alpha1_")==0) init=0.85,step=0.05,mn=-10,mx=10;
                 if(nm.find("n_")==0)     init=1.35,step=0.05;
                 if(nm.find("b_")==0)     init=0.4, step=0.05;
-                if(nm.find("Mm2_")==0)   init=0.64,step=0.05;
+                if(nm.find("M2_")==0)   init=0.64,step=0.05;
                 if(nm.find("P_")==0)     init=1.0, step=0.05;
                 if(nm=="r_Ht")           init=7.0, step=1.0;
                 m1.DefineParameter(i,nm.c_str(),init,step,mn,mx);
