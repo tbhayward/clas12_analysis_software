@@ -825,46 +825,28 @@ double BMK_DVCS::BHP2(void){
 double BMK_DVCS::c0_I(void){
     // (A.1) from 1005.5209 and (B.1) from 1212.6674 (unpolarized interference)
     double C_pp0_unp0 = Ktild2/Q2
-                      * TMath::Power(2-y,2)
-                      / TMath::Sqrt(1+eps2);
-    C_pp0_unp0 += t/Q2
-                * (1-y-0.25*eps2*y*y)
-                * (2-xB)
+                      * TMath::Power(2-y,2) / TMath::Sqrt(1+eps2);
+    C_pp0_unp0 += t/Q2 * (1-y-0.25*eps2*y*y) * (2-xB)
                 * (1 + (2*xB*(2-xB+0.5*(TMath::Sqrt(1+eps2)-1)+0.5*eps2/xB)*t/Q2+eps2)
                     /((2-xB)*(1+TMath::Sqrt(1+eps2))));
-    C_pp0_unp0 *= -4*(2-y)*(1+TMath::Sqrt(1+eps2))
-                / TMath::Power(1+eps2,2);
+    C_pp0_unp0 *= -4*(2-y)*(1+TMath::Sqrt(1+eps2)) / TMath::Power(1+eps2,2);
 
-    double C_pp0_unpV = (1-y-0.25*y*y*eps2)
-                      * 0.5*(1+TMath::Sqrt(1+eps2))
-                      * (1+t/Q2)
-                      * (1 + (TMath::Sqrt(1+eps2)-1+2*xB)
-                         /(1+TMath::Sqrt(1+eps2))*t/Q2);
-    C_pp0_unpV += TMath::Power(2-y,2)*Ktild2
-                /(TMath::Sqrt(1+eps2)*Q2);
-    C_pp0_unpV *= 8*(2-y)*xB*t
-                /(TMath::Power(1+eps2,2)*Q2);
+    double C_pp0_unpV = (1-y-0.25*y*y*eps2) * 0.5*(1+TMath::Sqrt(1+eps2)) * (1+t/Q2)
+                      * (1 + (TMath::Sqrt(1+eps2)-1+2*xB) /(1+TMath::Sqrt(1+eps2))*t/Q2);
+    C_pp0_unpV += TMath::Power(2-y,2)*Ktild2 /(TMath::Sqrt(1+eps2)*Q2);
+    C_pp0_unpV *= 8*(2-y)*xB*t /(TMath::Power(1+eps2,2)*Q2);
 
-    double C_pp0_unpA = 0.5*(1+TMath::Sqrt(1+eps2))
-                      * (1+TMath::Sqrt(1+eps2)-xB
-                         + (TMath::Sqrt(1+eps2)-1
-                           + xB*(3+TMath::Sqrt(1+eps2)-2*xB)
-                             /(1+TMath::Sqrt(1+eps2)))*t/Q2)
-                      - 2*Ktild2/Q2;
-    C_pp0_unpA = 8*(2-y)/TMath::Power(1+eps2,2)
-                * t/Q2
-                * (TMath::Power(2-y,2)
-                   *Ktild2/(TMath::Sqrt(1+eps2)*Q2)
-                   *0.5*(1+TMath::Sqrt(1+eps2)-2*xB)
+    double C_pp0_unpA = 0.5*(1+TMath::Sqrt(1+eps2)) * (1+TMath::Sqrt(1+eps2)-xB
+                         + (TMath::Sqrt(1+eps2)-1 + xB*(3+TMath::Sqrt(1+eps2)-2*xB)
+                             /(1+TMath::Sqrt(1+eps2)))*t/Q2) - 2*Ktild2/Q2;
+    C_pp0_unpA = 8*(2-y)/TMath::Power(1+eps2,2) * t/Q2 * (TMath::Power(2-y,2)
+                   *Ktild2/(TMath::Sqrt(1+eps2)*Q2) *0.5*(1+TMath::Sqrt(1+eps2)-2*xB)
                    + (1-y-0.25*eps2*y*y)*C_pp0_unpA);
 
     // Compton form factor combinations
-    double CFF_unp0 = F1*ReH - t/(4*M*M)*F2*ReE
-                    + xB*(F1+F2)*ReHt/(2-xB + xB*t/Q2);
-    double CFF_unpV = xB*(F1+F2)*(ReH+ReE)
-                    /(2-xB + xB*t/Q2);
-    double CFF_unpA = xB*(F1+F2)*ReHt
-                    /(2-xB + xB*t/Q2);
+    double CFF_unp0 = F1*ReH - t/(4*M*M)*F2*ReE + xB*(F1+F2)*ReHt/(2-xB + xB*t/Q2);
+    double CFF_unpV = xB*(F1+F2)*(ReH+ReE) /(2-xB + xB*t/Q2);
+    double CFF_unpA = xB*(F1+F2)*ReHt /(2-xB + xB*t/Q2);
 
     return C_pp0_unp0*CFF_unp0
          + C_pp0_unpV*CFF_unpV
@@ -873,51 +855,29 @@ double BMK_DVCS::c0_I(void){
 
 double BMK_DVCS::c0_I_LP(void){
     // (A.5) from 1005.5209 (polarized interference)
-    double C_pp0_LP0 = TMath::Power(2-y,2)*Ktild2/Q2
-                     + (1-y-0.25*eps2*y*y)
-                       *(xB*t/Q2 - (1-t/Q2)*eps2*0.5)
-                       *(1 + (TMath::Sqrt(1+eps2)-1+2*xB)
+    double C_pp0_LP0 = TMath::Power(2-y,2)*Ktild2/Q2 + (1-y-0.25*eps2*y*y)
+                       *(xB*t/Q2 - (1-t/Q2)*eps2*0.5) *(1 + (TMath::Sqrt(1+eps2)-1+2*xB)
                           /(1+TMath::Sqrt(1+eps2))*t/Q2);
-    C_pp0_LP0 = -4*L_beam*y*(1+TMath::Sqrt(1+eps2))
-               /TMath::Power(1+eps2,2.5)*C_pp0_LP0;
+    C_pp0_LP0 = -4*L_beam*y*(1+TMath::Sqrt(1+eps2)) /TMath::Power(1+eps2,2.5)*C_pp0_LP0;
 
-    double C_pp0_LPV = (2-xB+1.5*eps2)
-                     *(1 + (4*(1-xB)*xB+eps2)/(4-2*xB+3*eps2)*t/Q2)
-                     *(1 + (TMath::Sqrt(1+eps2)-1+2*xB)
-                        /(1+TMath::Sqrt(1+eps2))*t/Q2);
-    C_pp0_LPV = TMath::Power(2-y,2)
-               *(1+TMath::Sqrt(1+eps2)+2*xB)
-               /(1+TMath::Sqrt(1+eps2))*Ktild2/Q2
-               + (1-y-0.25*eps2*y*y)*C_pp0_LPV;
-    C_pp0_LPV = 4*L_beam*y*(1+TMath::Sqrt(1+eps2))
-               /TMath::Power(1+eps2,2.5)*t/Q2*C_pp0_LPV;
+    double C_pp0_LPV = (2-xB+1.5*eps2) *(1 + (4*(1-xB)*xB+eps2)/(4-2*xB+3*eps2)*t/Q2)
+                     *(1 + (TMath::Sqrt(1+eps2)-1+2*xB) /(1+TMath::Sqrt(1+eps2))*t/Q2);
+    C_pp0_LPV = TMath::Power(2-y,2) *(1+TMath::Sqrt(1+eps2)+2*xB)
+               /(1+TMath::Sqrt(1+eps2))*Ktild2/Q2 + (1-y-0.25*eps2*y*y)*C_pp0_LPV;
+    C_pp0_LPV = 4*L_beam*y*(1+TMath::Sqrt(1+eps2)) /TMath::Power(1+eps2,2.5)*t/Q2*C_pp0_LPV;
 
-    double C_pp0_LPA = (1+TMath::Sqrt(1+eps2))
-                     *(1-(1-2*xB)*t/Q2)
-                     *(1 + (TMath::Sqrt(1+eps2)-1+2*xB)
-                        /(1+TMath::Sqrt(1+eps2))*t/Q2);
+    double C_pp0_LPA = (1+TMath::Sqrt(1+eps2)) *(1-(1-2*xB)*t/Q2)
+                     *(1 + (TMath::Sqrt(1+eps2)-1+2*xB) /(1+TMath::Sqrt(1+eps2))*t/Q2);
     C_pp0_LPA = 4*L_beam*y/TMath::Power(1+eps2,2.5)
-               *xB*t/Q2
-               *(2*TMath::Power(2-y,2)*Ktild2/Q2
-                 + (1-y-0.25*eps2*y*y)*C_pp0_LPA);
+               *xB*t/Q2 *(2*TMath::Power(2-y,2)*Ktild2/Q2 + (1-y-0.25*eps2*y*y)*C_pp0_LPA);
 
-    double CFF_LP0 = xB/(2-xB+xB*t/Q2)*(F1+F2)
-                   *(ReH + 0.5*xB*(1-t/Q2)*ReE
-                     -(1-2*xB)*t*ReHt/Q2
-                     - 0.25*t*ReEt/(M*M))
-                   + 2/(2-xB+xB*t/Q2)*F1
-                     *((1-xB)*(1+xB*t/Q2)
-                       + 0.5*xB
-                       + xB*xB*M*M*(3+t/Q2)/Q2)
-                     *ReHt
-                   + 0.5*t/(M*M)*xB
-                     *(0.25*t/(M*M)-0.5*xB*(1-t/Q2))
-                     *ReEt;
+    double CFF_LP0 = xB/(2-xB+xB*t/Q2)*(F1+F2) *(ReH + 0.5*xB*(1-t/Q2)*ReE
+                     -(1-2*xB)*t*ReHt/Q2 - 0.25*t*ReEt/(M*M)) + 2/(2-xB+xB*t/Q2)*F1
+                     *((1-xB)*(1+xB*t/Q2) + 0.5*xB + xB*xB*M*M*(3+t/Q2)/Q2)
+                     *ReHt + 0.5*t/(M*M)*xB *(0.25*t/(M*M)-0.5*xB*(1-t/Q2)) *ReEt;
 
-    double CFF_LPV = xB/(2-xB+xB*t/Q2)*(F1+F2)
-                   *(ReH + 0.5*xB*(1-t/Q2)*ReE);
-    double CFF_LPA = xB/(2-xB+xB*t/Q2)*(F1+F2)
-                   *(ReHt + 2*xB*M*M*ReHt/Q2 + 0.5*xB*ReEt);
+    double CFF_LPV = xB/(2-xB+xB*t/Q2)*(F1+F2) *(ReH + 0.5*xB*(1-t/Q2)*ReE);
+    double CFF_LPA = xB/(2-xB+xB*t/Q2)*(F1+F2) *(ReHt + 2*xB*M*M*ReHt/Q2 + 0.5*xB*ReEt);
 
     return C_pp0_LP0*CFF_LP0
          + C_pp0_LPV*CFF_LPV
@@ -1065,25 +1025,19 @@ double BMK_DVCS::c1_I_TP(void){
 
 double BMK_DVCS::s1_I(void){
     // (A.1) from 1005.5209 (unpolarized sin phi interference)
-    double S_pp1_unp0 = 8*L_beam*K*(2-y)*y/(1+eps2)
-                      * (1 + (1-xB + 0.5*(TMath::Sqrt(1+eps2)-1))
+    double S_pp1_unp0 = 8*L_beam*K*(2-y)*y/(1+eps2) * (1 + (1-xB + 0.5*(TMath::Sqrt(1+eps2)-1))
                          /(1+eps2)*(t-t_min)/Q2);
-    double S_pp1_unpV = -8*L_beam*K*(2-y)*y/TMath::Power(1+eps2,2)
-                      * xB*t/Q2
-                      * (TMath::Sqrt(1+eps2)-1
-                         + (1+TMath::Sqrt(1+eps2)-2*xB)*t/Q2);
-    double S_pp1_unpA = 8*L_beam*K*(2-y)*y/(1+eps2)
-                      * t/Q2
+    double S_pp1_unpV = -8*L_beam*K*(2-y)*y/TMath::Power(1+eps2,2) * xB*t/Q2
+                      * (TMath::Sqrt(1+eps2)-1 + (1+TMath::Sqrt(1+eps2)-2*xB)*t/Q2);
+    double S_pp1_unpA = 8*L_beam*K*(2-y)*y/(1+eps2) * t/Q2
                       * (1 - (1-2*xB)*(1+TMath::Sqrt(1+eps2)-2*xB)
                          *0.5/TMath::Sqrt(1+eps2)*(t-t_min)/Q2);
 
-    double CFF_unp0 = F1*ImH - t/(4*M*M)*F2*ImE
-                    + xB*(F1+F2)*ImHt/(2-xB+xB*t/Q2);
-    double CFF_unpV = xB*(F1+F2)*(ImH+ImE)
-                    /(2-xB+xB*t/Q2);
-    double CFF_unpA = xB*(F1+F2)*ImHt
-                    /(2-xB+xB*t/Q2);
+    double CFF_unp0 = F1*ImH - t/(4*M*M)*F2*ImE + xB*(F1+F2)*ImHt/(2-xB+xB*t/Q2);
+    double CFF_unpV = xB*(F1+F2)*(ImH+ImE) /(2-xB+xB*t/Q2);
+    double CFF_unpA = xB*(F1+F2)*ImHt /(2-xB+xB*t/Q2);
 
+    // (2.28-2.30) from 1005.5209 for the CFF_unp0, CFF_unpV, CFF_unpA terms
     return S_pp1_unp0*CFF_unp0
          + S_pp1_unpV*CFF_unpV
          + S_pp1_unpA*CFF_unpA;
@@ -1330,7 +1284,7 @@ double renormReal = 1.0;
 
 // -----------------------------------------------------------------------------
 
-// GPD‐H defaults (VGG valence)
+// GPD‐H defaults (original values, BKM? VGG? not entirely clear)
 double r_H      = 0.9;
 double alpha0_H = 0.43;
 double alpha1_H = 0.85;
