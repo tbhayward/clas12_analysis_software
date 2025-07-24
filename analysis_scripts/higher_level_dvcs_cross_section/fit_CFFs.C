@@ -3,9 +3,9 @@
 // program to fit arbitrary subsets of the DVCS Compton Form Factors (CFFs)
 // under four possible strategies:
 //   1) fit only Im‐parts -> BSA data
-//   2) fit only renormReal -> xsec data
-//   3) fit Im‐parts + renormReal -> BSA + xsec simultaneously
-//   4) two‐step: (a) fit Im‐parts -> BSA, (b) fit renormReal -> xsec
+//   2) fit only Re‐parts (new real‐ansatz parameters + renormReal) -> xsec data
+//   3) fit Im‐parts + Re‐parts -> BSA + xsec simultaneously
+//   4) two‐step: (a) fit Im‐parts -> BSA, (b) fit Re‐parts -> xsec
 //
 // Usage:
 //   ./fit_CFFs -strategy <1|2|3|4> -H <0|1> -Ht <0|1> -E <0|1> -Et <0|1>
@@ -34,15 +34,21 @@
 // pull in full BMK_DVCS + CFF code, with globals
 #include "DVCS_xsec.C"
 
-// only declare the flags & renormalizations here; the rest are in DVCS_xsec.C
+// extern flags & renormalizations
 extern bool   hasH, hasHt, hasE, hasEt;
 extern double renormImag, renormReal;
 
-// all of the CFF shape‐parameter globals:
+// all of the CFF shape‐parameter globals (Im parts)
 extern double r_H,      alpha0_H,  alpha1_H,  n_H,   b_H,   M2_H,  P_H;
 extern double r_Ht,     alpha0_Ht, alpha1_Ht, n_Ht,  b_Ht,  M2_Ht, P_Ht;
 extern double r_E,      alpha0_E,  alpha1_E,  n_E,   b_E,   M2_E,  P_E;
 extern double r_Et,     alpha0_Et, alpha1_Et, n_Et,  b_Et,  M2_Et, P_Et;
+
+// real‐ansatz globals (Re parts)
+extern double A_H, B_H, C_H, D_H, E_H;
+extern double A_Ht, B_Ht;
+extern double A_E, B_E, C_E, D_E;
+extern double A_Et, B_Et;
 
 // ──────────────────────────────────────────────────────────────────────────────
 // globals controlling strategy & stage:
@@ -60,10 +66,7 @@ void LoadData(){
                         std::vector<DataPoint>& vec)
     {
         std::ifstream in(fname);
-        if(!in){
-            std::cerr<<"ERROR: cannot open "<<fname<<"\n";
-            std::exit(1);
-        }
+        if(!in){ std::cerr<<"ERROR: cannot open "<<fname<<"\n"; std::exit(1);}        
         std::string line;
         while(std::getline(in,line)){
             if(line.empty()||line[0]=='#') continue;
@@ -113,36 +116,50 @@ void parse_args(int argc, char** argv){
     }
 }
 
-// build_par_list(): construct the list of Minuit parameters based on flags
+// build_par_list(): construct the list of Minuit parameters based on flags & strategy
 void build_par_list(){
     parNames.clear();
     idx_H = idx_Ht = idx_E = idx_Et = idx_R = -1;
 
-    // always fit renormImag first
-    parNames.push_back("renormImag");
+    // imaginary‐fit stage: BSA
+    bool doImag = (gStrategy==1) || (gStrategy==3) || (gStrategy==4 && gStage==1);
+    if(doImag){
+        parNames.push_back("renormImag");
+        if(hasH){ idx_H = parNames.size();
+            parNames.insert(parNames.end(),
+                {"r_H","alpha0_H","alpha1_H","n_H","b_H","M2_H","P_H"});
+        }
+        if(hasHt){ idx_Ht = parNames.size();
+            parNames.insert(parNames.end(),
+                {"r_Ht","alpha0_Ht","alpha1_Ht","n_Ht","b_Ht","M2_Ht","P_Ht"});
+        }
+        if(hasE){ idx_E = parNames.size();
+            parNames.insert(parNames.end(),
+                {"r_E","alpha0_E","alpha1_E","n_E","b_E","M2_E","P_E"});
+        }
+        if(hasEt){ idx_Et = parNames.size();
+            parNames.insert(parNames.end(),
+                {"r_Et","alpha0_Et","alpha1_Et","n_Et","b_Et","M2_Et","P_Et"});
+        }
+    }
 
-    if(hasH){
-        idx_H = parNames.size();
-        parNames.insert(parNames.end(),
-            {"r_H","alpha0_H","alpha1_H","n_H","b_H","M2_H","P_H"});
-    }
-    if(hasHt){
-        idx_Ht = parNames.size();
-        parNames.insert(parNames.end(),
-            {"r_Ht","alpha0_Ht","alpha1_Ht","n_Ht","b_Ht","M2_Ht","P_Ht"});
-    }
-    if(hasE){
-        idx_E = parNames.size();
-        parNames.insert(parNames.end(),
-            {"r_E","alpha0_E","alpha1_E","n_E","b_E","M2_E","P_E"});
-    }
-    if(hasEt){
-        idx_Et = parNames.size();
-        parNames.insert(parNames.end(),
-            {"r_Et","alpha0_Et","alpha1_Et","n_Et","b_Et","M2_Et","P_Et"});
-    }
-    // renormReal for combined fits or stage 2 of two-step
-    if((gStrategy==3) || (gStrategy==4 && gStage==2)){
+    // real‐fit stage: xsec
+    bool doReal = (gStrategy==2) || (gStrategy==3) || (gStrategy==4 && gStage==2);
+    if(doReal){
+        if(hasH){
+            parNames.insert(parNames.end(),
+                {"A_H","B_H","C_H","D_H","E_H"});
+        }
+        if(hasHt){
+            parNames.insert(parNames.end(), {"A_Ht","B_Ht"});
+        }
+        if(hasE){
+            parNames.insert(parNames.end(),
+                {"A_E","B_E","C_E","D_E"});
+        }
+        if(hasEt){
+            parNames.insert(parNames.end(), {"A_Et","B_Et"});
+        }
         idx_R = parNames.size();
         parNames.push_back("renormReal");
     }
@@ -150,20 +167,32 @@ void build_par_list(){
 
 // fcn(): Minuit’s chi2.  Unpack par[] into the global CFF parameters.
 void fcn(int & /*npar*/, double* /*grad*/, double &f, double *par, int /*iflag*/){
-    int ip=0;
-    // 1) renormImag
-    renormImag = par[ip++];
-    // 2) H block
-    if(hasH){ r_H=par[ip++]; alpha0_H=par[ip++]; alpha1_H=par[ip++]; n_H=par[ip++]; b_H=par[ip++]; M2_H=par[ip++]; P_H=par[ip++]; }
-    // 3) Ht block
-    if(hasHt){ r_Ht=par[ip++]; alpha0_Ht=par[ip++]; alpha1_Ht=par[ip++]; n_Ht=par[ip++]; b_Ht=par[ip++]; M2_Ht=par[ip++]; P_Ht=par[ip++]; }
-    // 4) E block
-    if(hasE){ r_E=par[ip++]; alpha0_E=par[ip++]; alpha1_E=par[ip++]; n_E=par[ip++]; b_E=par[ip++]; M2_E=par[ip++]; P_E=par[ip++]; }
-    // 5) Et block
-    if(hasEt){ r_Et=par[ip++]; alpha0_Et=par[ip++]; alpha1_Et=par[ip++]; n_Et=par[ip++]; b_Et=par[ip++]; M2_Et=par[ip++]; P_Et=par[ip++]; }
-    // 6) renormReal for combined fits
-    if(idx_R>=0){ renormReal = par[ip++]; }
+    int ip = 0;
+    // imaginary stage
+    bool doImag = (gStrategy==1) || (gStrategy==3) || (gStrategy==4 && gStage==1);
+    if(doImag){
+        renormImag = par[ip++];
+        if(hasH){ r_H=par[ip++]; alpha0_H=par[ip++]; alpha1_H=par[ip++];
+                  n_H=par[ip++]; b_H=par[ip++]; M2_H=par[ip++]; P_H=par[ip++]; }
+        if(hasHt){ r_Ht=par[ip++]; alpha0_Ht=par[ip++]; alpha1_Ht=par[ip++];
+                   n_Ht=par[ip++]; b_Ht=par[ip++]; M2_Ht=par[ip++]; P_Ht=par[ip++]; }
+        if(hasE){ r_E=par[ip++]; alpha0_E=par[ip++]; alpha1_E=par[ip++];
+                  n_E=par[ip++]; b_E=par[ip++]; M2_E=par[ip++]; P_E=par[ip++]; }
+        if(hasEt){ r_Et=par[ip++]; alpha0_Et=par[ip++]; alpha1_Et=par[ip++];
+                   n_Et=par[ip++]; b_Et=par[ip++]; M2_Et=par[ip++]; P_Et=par[ip++]; }
+    }
 
+    // real stage
+    bool doReal = (gStrategy==2) || (gStrategy==3) || (gStrategy==4 && gStage==2);
+    if(doReal){
+        if(hasH){ A_H=par[ip++]; B_H=par[ip++]; C_H=par[ip++]; D_H=par[ip++]; E_H=par[ip++]; }
+        if(hasHt){ A_Ht=par[ip++]; B_Ht=par[ip++]; }
+        if(hasE){ A_E=par[ip++]; B_E=par[ip++]; C_E=par[ip++]; D_E=par[ip++]; }
+        if(hasEt){ A_Et=par[ip++]; B_Et=par[ip++]; }
+        renormReal = par[ip++];
+    }
+
+    // compute chi2
     double chi2 = 0;
     bool doBSA = (gStrategy==1) || (gStrategy==3) || (gStrategy==4 && gStage==1);
     if(doBSA){
@@ -187,27 +216,53 @@ void fcn(int & /*npar*/, double* /*grad*/, double &f, double *par, int /*iflag*/
 // main(): orchestrate parsing, fitting, and I/O
 int main(int argc, char** argv){
     parse_args(argc, argv);
-    std::cout<<"\n=== fit_CFFs Strategy="<<gStrategy<<"  H="<<hasH<<" Ht="<<hasHt
+    std::cout<<"\n=== fit_CFFs Strategy="<<gStrategy
+             <<"  H="<<hasH<<" Ht="<<hasHt
              <<" E="<<hasE<<" Et="<<hasEt<<" ===\n";
     LoadData();
-    std::cout<<"  loaded "<<bsaData.size()<<" BSA and "<<xsData.size()<<" xsec points\n\n";
+    std::cout<<"  loaded "<<bsaData.size()
+             <<" BSA and "<<xsData.size()
+             <<" xsec points\n\n";
 
     std::vector<double> val, err;
     double finalChi2=0; int finalNdf=0;
 
-    // Strategy 2: fit renormReal -> xsec only
+    // Strategy 2: fit real parts + renormReal -> xsec only
     if(gStrategy==2){
-        val.assign(1,0); err.assign(1,0);
-        TMinuit minuit(1); minuit.SetPrintLevel(1); minuit.SetFCN(fcn);
-        minuit.DefineParameter(0,"renormReal",1.0,0.1,0,10);
-        std::cout<<"Strategy 2: fitting renormReal -> xsec only...\n";
-        minuit.Migrad(); minuit.GetParameter(0,val[0],err[0]);
+        gStage = 2;
+        build_par_list();
+        int npar = parNames.size();
+        val.assign(npar,0); err.assign(npar,0);
+        TMinuit minuit(npar); minuit.SetPrintLevel(1); minuit.SetFCN(fcn);
+        for(int i=0;i<npar;++i){
+            auto &nm = parNames[i];
+            double init=1.0, step=0.1, mn=0, mx=10;
+            if(nm=="A_H") init = A_H;
+            else if(nm=="B_H") init = B_H;
+            else if(nm=="C_H") init = C_H;
+            else if(nm=="D_H") init = D_H;
+            else if(nm=="E_H") init = E_H;
+            else if(nm=="A_Ht") init = A_Ht;
+            else if(nm=="B_Ht") init = B_Ht;
+            else if(nm=="A_E") init = A_E;
+            else if(nm=="B_E") init = B_E;
+            else if(nm=="C_E") init = C_E;
+            else if(nm=="D_E") init = D_E;
+            else if(nm=="A_Et") init = A_Et;
+            else if(nm=="B_Et") init = B_Et;
+            else if(nm=="renormReal") init = 1.0;
+            minuit.DefineParameter(i, nm.c_str(), init, step, mn, mx);
+        }
+        std::cout<<"Strategy 2: fitting Re parts + renormReal->xsec only...\n";
+        minuit.Migrad();
+        for(int i=0;i<npar;++i) minuit.GetParameter(i,val[i],err[i]);
         double edm,errdef; int nv,nx,ic; double chi2;
         minuit.mnstat(chi2,edm,errdef,nv,nx,ic);
-        finalChi2 = chi2; finalNdf = int(xsData.size()) - 1;
-        std::cout<<"\n=== Results ===\n renormReal = "<<val[0]
-                 <<" ± "<<err[0]
-                 <<"\n χ²/ndf = "<<finalChi2<<"/"<<finalNdf
+        finalChi2 = chi2; finalNdf = int(xsData.size()) - npar;
+        std::cout<<"\n=== Results ===\n";
+        for(int i=0;i<npar;++i)
+            std::cout<<" "<<parNames[i]<<" = "<<val[i]<<" ± "<<err[i]<<"\n";
+        std::cout<<" χ²/ndf = "<<finalChi2<<"/"<<finalNdf
                  <<" = "<<(finalChi2/finalNdf)<<"\n\n";
     }
     // Strategies 1 & 3
@@ -215,6 +270,7 @@ int main(int argc, char** argv){
         bool sim = (gStrategy==3);
         std::cout<<"Strategy "<<(sim?3:1)
                  <<": "<<(sim?"fitting Im+Re -> BSA+xsec simultaneously...":"fitting Im->BSA only...")<<"\n";
+        gStage = 1;
         build_par_list(); int npar = parNames.size();
         val.assign(npar,0); err.assign(npar,0);
         TMinuit minuit(npar); minuit.SetPrintLevel(1); minuit.SetFCN(fcn);
@@ -224,7 +280,7 @@ int main(int argc, char** argv){
             if(name.find("alpha1_")==0)     init=0.85,step=0.05,mn=-10,mx=10;
             if(name.find("n_")==0)          init=1.35,step=0.05;
             if(name.find("b_")==0)          init=0.4, step=0.05;
-            if(name.find("M2_")==0)        init=0.64,step=0.05;
+            if(name.find("M2_")==0)         init=0.64,step=0.05;
             if(name.find("P_")==0)          init=1.0, step=0.05;
             if(name=="r_Ht")                init=7.0, step=1.0;
             if(name=="renormReal")          init=1.0, step=0.1;
@@ -245,19 +301,19 @@ int main(int argc, char** argv){
     }
     // Strategy 4: two-step
     else {
-        std::cout<<"Strategy 4: two-step fit: (1) Im->BSA, (2) renormReal->xsec...\n";
+        std::cout<<"Strategy 4: two-step fit: (1) Im->BSA, (2) Re->xsec...\n";
         // stage 1
         gStage = 1; build_par_list(); if(idx_R>=0) parNames.resize(idx_R);
         int n1 = parNames.size(); val.assign(n1,0); err.assign(n1,0);
         {
             TMinuit m1(n1); m1.SetPrintLevel(1); m1.SetFCN(fcn);
-            for(int i=0;i<n1;++i){ double init=1,step=0.1,mn=0,mx=10;
-                auto &nm=parNames[i];
+            for(int i=0;i<n1;++i){ auto &nm=parNames[i];
+                double init=1,step=0.1,mn=0,mx=10;
                 if(nm.find("alpha0_")==0) init=0.43,step=0.05,mn=-5,mx=5;
                 if(nm.find("alpha1_")==0) init=0.85,step=0.05,mn=-10,mx=10;
                 if(nm.find("n_")==0)     init=1.35,step=0.05;
                 if(nm.find("b_")==0)     init=0.4, step=0.05;
-                if(nm.find("M2_")==0)   init=0.64,step=0.05;
+                if(nm.find("M2_")==0)    init=0.64,step=0.05;
                 if(nm.find("P_")==0)     init=1.0, step=0.05;
                 if(nm=="r_Ht")           init=7.0, step=1.0;
                 m1.DefineParameter(i,nm.c_str(),init,step,mn,mx);
@@ -270,15 +326,39 @@ int main(int argc, char** argv){
                      <<" = "<<(finalChi2/finalNdf)<<"\n\n";
         }
         // stage 2
-        gStage = 2; parNames={"renormReal"}; val.assign(1,0); err.assign(1,0);
+        gStage = 2;
+        build_par_list();
+        int n2 = parNames.size(); val.assign(n2,0); err.assign(n2,0);
         {
-            TMinuit m2(1); m2.SetPrintLevel(1); m2.SetFCN(fcn);
-            m2.DefineParameter(0,"renormReal",1.0,0.1,0,10);
-            std::cout<<"Stage 2: fitting renormReal->xsec...\n";
-            m2.Migrad(); double edm,errdef; int nv,nx,ic; double chi2;
+            TMinuit m2(n2); m2.SetPrintLevel(1); m2.SetFCN(fcn);
+            for(int i=0;i<n2;++i){ auto &nm = parNames[i];
+                double init=1.0,step=0.1,mn=0,mx=10;
+                if(nm=="A_H") init=A_H;
+                else if(nm=="B_H") init=B_H;
+                else if(nm=="C_H") init=C_H;
+                else if(nm=="D_H") init=D_H;
+                else if(nm=="E_H") init=E_H;
+                else if(nm=="A_Ht") init=A_Ht;
+                else if(nm=="B_Ht") init=B_Ht;
+                else if(nm=="A_E") init=A_E;
+                else if(nm=="B_E") init=B_E;
+                else if(nm=="C_E") init=C_E;
+                else if(nm=="D_E") init=D_E;
+                else if(nm=="A_Et") init=A_Et;
+                else if(nm=="B_Et") init=B_Et;
+                else if(nm=="renormReal") init=1.0;
+                m2.DefineParameter(i,nm.c_str(),init,step,mn,mx);
+            }
+            std::cout<<"Stage 2: fitting Re parts + renormReal->xsec...\n";
+            m2.Migrad();
+            for(int i=0;i<n2;++i) m2.GetParameter(i,val[i],err[i]);
+            double edm,errdef; int nv,nx,ic; double chi2;
             m2.mnstat(chi2,edm,errdef,nv,nx,ic);
-            finalChi2=chi2; finalNdf=int(xsData.size())-1;
-            std::cout<<"\nStage 2 χ²/ndf = "<<finalChi2<<"/"<<finalNdf
+            finalChi2=chi2; finalNdf=int(xsData.size())-n2;
+            std::cout<<"\nStage 2 Results:\n";
+            for(int i=0;i<n2;++i)
+                std::cout<<" "<<parNames[i]<<" = "<<val[i]<<" ± "<<err[i]<<"\n";
+            std::cout<<" χ²/ndf = "<<finalChi2<<"/"<<finalNdf
                      <<" = "<<(finalChi2/finalNdf)<<"\n\n";
         }
     }

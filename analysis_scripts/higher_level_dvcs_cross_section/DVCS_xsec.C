@@ -1280,7 +1280,6 @@ double GetF2(double T) {
 //   Compton Form Factor (CFF) models—imaginary parts
 // -------------------------------------------------------------------------------------------------
 double renormImag = 1.0;
-double renormReal = 1.0;
 
 // -----------------------------------------------------------------------------
 
@@ -1361,33 +1360,78 @@ double GetImEt(double xi, double t) {
 // -------------------------------------------------------------------------------------------------
 //   Compton Form Factor (CFF) models—real parts
 // -------------------------------------------------------------------------------------------------
+double renormReal = 1.0;
 
+
+double A_H = -12;
+double B_H = 0.7;
+double C_H = -3;
+double D_H = 1.1;
+double E_H = 0.8;
 double GetReH(double xi, double t) {
     if(!hasH) return 0.0;
     // simple polynomial ansatz
-    double res = -12*xi*TMath::Power(1 - xi, 2) * TMath::Sqrt(TMath::Abs(t))
-               / TMath::Power(1 - t/0.7, 2);
-    res += -3 * TMath::Power(1 - xi, 4) / TMath::Power(1 - t/1.1, 2);
-    return renormReal * res / (1 + TMath::Power(t/0.8, 4));
+    double res = A_H*xi*TMath::Power(1 - xi, 2) * TMath::Sqrt(TMath::Abs(t))
+               / TMath::Power(1 - t/B_H, 2);
+    res += C_H * TMath::Power(1 - xi, 4) / TMath::Power(1 - t/D_H, 2);
+    return renormReal * res / (1 + TMath::Power(t/E_H, 4));
 }
 
+double A_Ht = -12;
+double B_Ht = 1.5;
 double GetReHt(double xi, double t) {
     if(!hasHt) return 0.0;
-    double res = -12*xi*TMath::Power(1 - xi, 2) / TMath::Power(1 - t/1.5, 2);
+    double res = A_Ht*xi*TMath::Power(1 - xi, 2) / TMath::Power(1 - t/B_Ht, 2);
     return renormReal * res;
 }
 
+double A_E = -7;
+double B_E = 0.7;
+double C_E = -3;
+double D_E = 1.2;
 double GetReE(double xi, double t) {
     if(!hasE) return 0.0;
-    double res = -7 * xi*TMath::Power(1 - xi, 2) * TMath::Sqrt(TMath::Abs(t))
-               / TMath::Power(1 - t/0.7, 2);
-    res += -3 * TMath::Power(1 - xi, 2) / TMath::Power(1 - t/1.2, 2);
+    double res = A_E * xi*TMath::Power(1 - xi, 2) * TMath::Sqrt(TMath::Abs(t))
+               / TMath::Power(1 - t/B_E, 2);
+    res += C_E * TMath::Power(1 - xi, 2) / TMath::Power(1 - t/D_E, 2);
     return renormReal * res / (1 + TMath::Power(t, 4));
 }
 
+double A_Et = 10.0;
+double B_Et = 3;
 double GetReEt(double xi, double t) {
     if(!hasEt) return 0.0;
     // small-t behavior ~1/t
-    double res = 10.0/t * 1.0/TMath::Power(1 + TMath::Power(3*xi, 4), 1);
+    double res = A_Et/t * 1.0/TMath::Power(1 + TMath::Power(B_Et*xi, 4), 1);
     return renormReal * res;
 }
+
+// double GetReH(double xi, double t) {
+//     if(!hasH) return 0.0;
+//     // simple polynomial ansatz
+//     double res = -12*xi*TMath::Power(1 - xi, 2) * TMath::Sqrt(TMath::Abs(t))
+//                / TMath::Power(1 - t/0.7, 2);
+//     res += -3 * TMath::Power(1 - xi, 4) / TMath::Power(1 - t/1.1, 2);
+//     return renormReal * res / (1 + TMath::Power(t/0.8, 4));
+// }
+
+// double GetReHt(double xi, double t) {
+//     if(!hasHt) return 0.0;
+//     double res = -12*xi*TMath::Power(1 - xi, 2) / TMath::Power(1 - t/1.5, 2);
+//     return renormReal * res;
+// }
+
+// double GetReE(double xi, double t) {
+//     if(!hasE) return 0.0;
+//     double res = -7 * xi*TMath::Power(1 - xi, 2) * TMath::Sqrt(TMath::Abs(t))
+//                / TMath::Power(1 - t/0.7, 2);
+//     res += -3 * TMath::Power(1 - xi, 2) / TMath::Power(1 - t/1.2, 2);
+//     return renormReal * res / (1 + TMath::Power(t, 4));
+// }
+
+// double GetReEt(double xi, double t) {
+//     if(!hasEt) return 0.0;
+//     // small-t behavior ~1/t
+//     double res = 10.0/t * 1.0/TMath::Power(1 + TMath::Power(3*xi, 4), 1);
+//     return renormReal * res;
+// }
