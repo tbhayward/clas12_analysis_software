@@ -1329,49 +1329,97 @@ double GetImEt(double xi, double t) {
 // -------------------------------------------------------------------------------------------------
 double renormReal = 1.0;
 
-
-double A_H = -12;
-double B_H = 0.7;
-double C_H = -3;
-double D_H = 1.1;
-double E_H = 0.8;
-double GetReH(double xi, double t) {
+double GetReH(double xi, double /*t*/) {
     if(!hasH) return 0.0;
-    // simple polynomial ansatz
-    double res = A_H*xi*TMath::Power(1 - xi, 2) * TMath::Sqrt(TMath::Abs(t))
-               / TMath::Power(1 - t/B_H, 2);
-    res += C_H * TMath::Power(1 - xi, 4) / TMath::Power(1 - t/D_H, 2);
-    return renormReal * res / (1 + TMath::Power(t/E_H, 4));
+    // A_H
+    //  ───────────────────────────────────────────────────────────────
+    //  1 + B_H
+    //      ────────────
+    //      1 + C_H
+    //          ────────
+    //          1 + D_H
+    //              ────
+    //              1 + E_H
+    double doubleE = 1.0 + E_H;
+    double doubleD = 1.0 + D_H/doubleE;
+    double doubleC = 1.0 + C_H/doubleD;
+    double doubleB = 1.0 + B_H/doubleC;
+    double cf      = A_H / doubleB;
+    return renormReal * cf;
 }
 
-double A_Ht = -12;
-double B_Ht = 1.5;
-double GetReHt(double xi, double t) {
+double GetReHt(double xi, double /*t*/) {
     if(!hasHt) return 0.0;
-    double res = A_Ht*xi*TMath::Power(1 - xi, 2) / TMath::Power(1 - t/B_Ht, 2);
-    return renormReal * res;
+    // two‐term continued fraction
+    double cf = A_Ht / (1.0 + B_Ht);
+    return renormReal * cf;
 }
 
-double A_E = -7;
-double B_E = 0.7;
-double C_E = -3;
-double D_E = 1.2;
-double GetReE(double xi, double t) {
+double GetReE(double xi, double /*t*/) {
     if(!hasE) return 0.0;
-    double res = A_E * xi*TMath::Power(1 - xi, 2) * TMath::Sqrt(TMath::Abs(t))
-               / TMath::Power(1 - t/B_E, 2);
-    res += C_E * TMath::Power(1 - xi, 2) / TMath::Power(1 - t/D_E, 2);
-    return renormReal * res / (1 + TMath::Power(t, 4));
+    // A_E
+    //  ─────────────────────────
+    //  1 + B_E
+    //      ───────────
+    //      1 + C_E
+    //          ───────
+    //          1 + D_E
+    double doubleD = 1.0 + D_E;
+    double doubleC = 1.0 + C_E/doubleD;
+    double doubleB = 1.0 + B_E/doubleC;
+    double cf      = A_E / doubleB;
+    return renormReal * cf;
 }
 
-double A_Et = 10.0;
-double B_Et = 3;
-double GetReEt(double xi, double t) {
+double GetReEt(double xi, double /*t*/) {
     if(!hasEt) return 0.0;
-    // small-t behavior ~1/t
-    double res = A_Et/t * 1.0/TMath::Power(1 + TMath::Power(B_Et*xi, 4), 1);
-    return renormReal * res;
+    // two‐term continued fraction
+    double cf = A_Et / (1.0 + B_Et);
+    return renormReal * cf;
 }
+
+// double A_H = -12;
+// double B_H = 0.7;
+// double C_H = -3;
+// double D_H = 1.1;
+// double E_H = 0.8;
+// double GetReH(double xi, double t) {
+//     if(!hasH) return 0.0;
+//     // simple polynomial ansatz
+//     double res = A_H*xi*TMath::Power(1 - xi, 2) * TMath::Sqrt(TMath::Abs(t))
+//                / TMath::Power(1 - t/B_H, 2);
+//     res += C_H * TMath::Power(1 - xi, 4) / TMath::Power(1 - t/D_H, 2);
+//     return renormReal * res / (1 + TMath::Power(t/E_H, 4));
+// }
+
+// double A_Ht = -12;
+// double B_Ht = 1.5;
+// double GetReHt(double xi, double t) {
+//     if(!hasHt) return 0.0;
+//     double res = A_Ht*xi*TMath::Power(1 - xi, 2) / TMath::Power(1 - t/B_Ht, 2);
+//     return renormReal * res;
+// }
+
+// double A_E = -7;
+// double B_E = 0.7;
+// double C_E = -3;
+// double D_E = 1.2;
+// double GetReE(double xi, double t) {
+//     if(!hasE) return 0.0;
+//     double res = A_E * xi*TMath::Power(1 - xi, 2) * TMath::Sqrt(TMath::Abs(t))
+//                / TMath::Power(1 - t/B_E, 2);
+//     res += C_E * TMath::Power(1 - xi, 2) / TMath::Power(1 - t/D_E, 2);
+//     return renormReal * res / (1 + TMath::Power(t, 4));
+// }
+
+// double A_Et = 10.0;
+// double B_Et = 3;
+// double GetReEt(double xi, double t) {
+//     if(!hasEt) return 0.0;
+//     // small-t behavior ~1/t
+//     double res = A_Et/t * 1.0/TMath::Power(1 + TMath::Power(B_Et*xi, 4), 1);
+//     return renormReal * res;
+// }
 
 // double GetReH(double xi, double t) {
 //     if(!hasH) return 0.0;
