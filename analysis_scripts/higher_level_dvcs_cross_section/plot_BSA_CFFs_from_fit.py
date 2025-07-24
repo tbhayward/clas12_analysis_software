@@ -1,19 +1,9 @@
 #!/usr/bin/env python3
 """
-plot_BSA_AUT_from_fit.py
+plot_BSA_CFFs_from_fit.py
 
 Usage:
-    python plot_BSA_AUT_from_fit.py output/fit_results/fit_results_<TIMESTAMP>.txt
-
-Reads the fitted CFF parameters and their uncertainties, loads all BSA data,
-splits it into φ-bins, and for each bin makes a 1×2 figure:
-  - Left: data + original & fitted BSA predictions
-  - Right: two solid‐green lines:
-      • E-only AUT prediction 
-      • H+E AUT prediction (median) with a 95% CI band
-
-Saves to:
-  output/plots/BSA_AUT_bin{BIN:02d}_{TIMESTAMP}.pdf
+    python plot_BSA_CFFs_from_fit.py output/fit_results/fit_results_<TIMESTAMP>.txt --CFFs [0|1]
 """
 import os
 import sys
@@ -23,206 +13,186 @@ import numpy as np
 import matplotlib.pyplot as plt
 import ROOT
 
-# ─── Parse command-line ─────────────────────────────────────────────────────────
-parser = argparse.ArgumentParser(description=__doc__,
-                                 formatter_class=argparse.RawDescriptionHelpFormatter)
-parser.add_argument('fitfile', help='Fit results file')
-args = parser.parse_args()
-
-m = re.search(r'fit_results_(\d{8}_\d{6})\.txt$', args.fitfile)
-if not m:
-    print("ERROR: can't extract timestamp from filename")
-    sys.exit(1)
-timestamp = m.group(1)
-
-# ─── Load fit results & flags ───────────────────────────────────────────────────
 def parse_fit_results(fname):
+    """Extract the flags, parameter names, and fit values from text file."""
     with open(fname) as f:
         lines = [l.strip() for l in f if l.strip()]
     flag_line = next(l for l in lines if l.startswith("H "))
     toks = flag_line.split()
-    flags = { toks[i]: int(toks[i+1]) for i in range(0, len(toks), 2) }
+    flags = {toks[i]: int(toks[i+1]) for i in range(0, len(toks), 2)}
     pnames = []
-    for i,l in enumerate(lines):
+    for i, l in enumerate(lines):
         if l.startswith("# parameters"):
             pnames = lines[i].split()[2:]
             break
-    vals = errs = None
-    for i,l in enumerate(lines):
+    vals = None
+    for i, l in enumerate(lines):
         if l.startswith("# values"):
             vals = list(map(float, lines[i+1].split()))
-        if l.startswith("# errors"):
-            errs = list(map(float, lines[i+1].split()))
-    if vals is None or errs is None:
-        raise RuntimeError("Could not parse fit-values/errors from file")
-    return flags, pnames, np.array(vals), np.array(errs)
+            break
+    if vals is None or not pnames:
+        raise RuntimeError("Couldn't parse fit file")
+    return flags, pnames, vals
 
-flags, pnames, vals, errs = parse_fit_results(args.fitfile)
-
-def get_idx(name):
-    return pnames.index(name) if name in pnames else None
-
-# build central & error dicts
-central = {}
-errors  = {}
-# renormImag
-central["renormImag"] = vals[get_idx("renormImag")]
-errors ["renormImag"] = errs[get_idx("renormImag")]
-# shape parameters
-for cff in ("H","Ht","E","Et"):
-    if flags[cff]:
-        for k in ("r","alpha0","alpha1","n","b","Mm2","P"):
-            key = f"{k}_{cff}"
-            idx = get_idx(key)
-            central[key] = vals[idx]
-            errors [key] = errs[idx]
-
-# ─── Replica generation ─────────────────────────────────────────────────────────
-def generate_replicas(central_params, param_errors, n=100):
-    reps = []
-    for _ in range(n):
-        pm = {}
-        for k,v in central_params.items():
-            sigma = param_errors[k]/1.96
-            pm[k] = np.random.normal(v, sigma)
-        reps.append(pm)
-    return reps
-
-N_REP = 100
-replica_params = generate_replicas(central, errors, n=N_REP)
-
-# ─── Load & bin BSA data ─────────────────────────────────────────────────────────
-def load_all_bins(fname):
+def load_all_bins(datafile):
+    """Read imports/rga_prl_bsa.txt, split into phi-bins whenever phi wraps around."""
     bins = []
     curr = {k: [] for k in ("phi","Q2","xB","t","Eb","A","sigA")}
-    prev = None
-    with open(fname) as f:
+    prev_phi = None
+    with open(datafile) as f:
         for line in f:
-            if not line.strip() or line.startswith("#"): continue
-            φ,Q2,xB,t,Eb,A,σA = map(float, line.split())
-            if prev is not None and φ < prev:
-                arr = {k: np.array(v) for k,v in curr.items()}
-                arr.update({
-                    "Q2m": arr["Q2"].mean(),
-                    "xBm": arr["xB"].mean(),
-                    "tm":  arr["t"].mean(),
-                    "Ebm": arr["Eb"].mean()
-                })
+            if not line.strip() or line.startswith("#"):
+                continue
+            phi, Q2, xB, t, Eb, A, sigA = map(float, line.split())
+            if prev_phi is not None and phi < prev_phi:
+                arr = {k: np.array(v) for k, v in curr.items()}
+                arr["Q2m"], arr["xBm"], arr["tm"], arr["Ebm"] = (
+                    arr["Q2"].mean(), arr["xB"].mean(),
+                    arr["t"].mean(),  arr["Eb"].mean()
+                )
                 bins.append(arr)
                 curr = {k: [] for k in curr}
-            for k,v in zip(curr, (φ,Q2,xB,t,Eb,A,σA)):
+            for k, v in zip(curr.keys(), (phi, Q2, xB, t, Eb, A, sigA)):
                 curr[k].append(v)
-            prev = φ
+            prev_phi = phi
     if curr["phi"]:
-        arr = {k: np.array(v) for k,v in curr.items()}
-        arr.update({
-            "Q2m": arr["Q2"].mean(),
-            "xBm": arr["xB"].mean(),
-            "tm":  arr["t"].mean(),
-            "Ebm": arr["Eb"].mean()
-        })
+        arr = {k: np.array(v) for k, v in curr.items()}
+        arr["Q2m"], arr["xBm"], arr["tm"], arr["Ebm"] = (
+            arr["Q2"].mean(), arr["xB"].mean(),
+            arr["t"].mean(),  arr["Eb"].mean()
+        )
         bins.append(arr)
     return bins
 
-bins = load_all_bins("imports/rga_prl_bsa.txt")
+# VGG defaults for all parameters
+orig_defaults = {
+    'renormImag':1.0, 'renormReal':1.0,
+    'r_H':0.9,'alpha0_H':0.43,'alpha1_H':0.85,'n_H':1.35,'b_H':0.4,'Mm2_H':0.64,'P_H':1.0,
+    'r_Ht':7.0,'alpha0_Ht':0.43,'alpha1_Ht':0.85,'n_Ht':0.6,'b_Ht':2.0,'Mm2_Ht':0.8,'P_Ht':1.0,
+    'r_E':0.9,'alpha0_E':0.43,'alpha1_E':0.85,'n_E':1.35,'b_E':0.4,'Mm2_E':0.64,'P_E':1.0,
+    'r_Et':1.0,'alpha0_Et':0.0,'alpha1_Et':0.0,'n_Et':0.0,'b_Et':0.0,'Mm2_Et':0.0,'P_Et':0.0,
+}
 
-# ─── Prepare ROOT DVCS code ──────────────────────────────────────────────────────
-ROOT.gInterpreter.ProcessLine('#include "DVCS_xsec.C"')
-
-def compute_asymmetry(phi_arr, Q2_arr, xB_arr, t_arr, Eb_arr,
-                      param_map, flags_map, asym="BSA"):
+def compute_bsa(phi_arr, Q2_arr, xB_arr, t_arr, Eb_arr, param_map, flags, tag=""):
+    """
+    Compile-set the C++ globals via ProcessLine(), then build BMK_DVCS and return dvcs.BSA().
+    """
     # renormalizations
-    ROOT.gInterpreter.ProcessLine(f"renormImag = {param_map.get('renormImag',1.0)};")
-    ROOT.gInterpreter.ProcessLine("renormReal = 1.0;")
-    # flags & params
-    for cff in ("H","Ht","E","Et"):
-        ROOT.gInterpreter.ProcessLine(f"has{cff} = {int(flags_map[cff])};")
-        if flags_map[cff]:
-            for k in ("r","alpha0","alpha1","n","b","Mm2","P"):
-                ROOT.gInterpreter.ProcessLine(
-                    f"{k}_{cff} = {param_map[k+'_'+cff]};"
-                )
-    out = []
-    for φ,Q2,xB,t,Eb in zip(phi_arr, Q2_arr, xB_arr, t_arr, Eb_arr):
-        dvcs = ROOT.BMK_DVCS(-1, 0, 0, Eb, xB, Q2, t, φ)
-        out.append(dvcs.BSA() if asym=="BSA" else dvcs.TTSAx())
-    return np.array(out)
-
-phi_grid = np.linspace(0,360,200)
-os.makedirs("output/plots", exist_ok=True)
-
-for ibin, b in enumerate(bins, start=1):
-    # data
-    φ_dat, A_dat, σA = b["phi"], b["A"], b["sigA"]
-    # kinematic grids
-    Q2g = np.full_like(phi_grid, b["Q2m"])
-    xBg = np.full_like(phi_grid, b["xBm"])
-    tg  = np.full_like(phi_grid, b["tm"])
-    Ebg = np.full_like(phi_grid, b["Ebm"])
-
-    # 1) BSA panel
-    # original
-    orig = central.copy()
-    orig["renormImag"] = 1.0
-    bsas_orig = compute_asymmetry(phi_grid, Q2g, xBg, tg, Ebg,
-                                  orig, flags, asym="BSA")
-    # fit central
-    fit_map   = dict(zip(pnames, vals))
-    bsas_fit  = compute_asymmetry(phi_grid, Q2g, xBg, tg, Ebg,
-                                  fit_map, flags, asym="BSA")
-
-    # 2) AUT panel
-    # E-only
-    flags_E = {"H":0,"Ht":0,"E":1,"Et":0}
-    aut_E = compute_asymmetry(phi_grid, Q2g, xBg, tg, Ebg,
-                              fit_map, flags_E, asym="AUT")
-    # H+E
-    flags_HE = {"H":1,"Ht":0,"E":1,"Et":0}
-    aut_med = compute_asymmetry(phi_grid, Q2g, xBg, tg, Ebg,
-                                fit_map, flags_HE, asym="AUT")
-    all_aut = np.array([
-        compute_asymmetry(phi_grid, Q2g, xBg, tg, Ebg, rp, flags_HE, asym="AUT")
-        for rp in replica_params
-    ])
-    aut_lo = np.percentile(all_aut, 2.5,  axis=0)
-    aut_hi = np.percentile(all_aut, 97.5, axis=0)
-
-    # draw
-    fig, (ax1,ax2) = plt.subplots(1,2,figsize=(12,5), sharex=True)
-    # suptitle with kinematics
-    fig.suptitle(
-        (r'$\langle Q^2\rangle={:.2f}\,\mathrm{{GeV}}^2,\;\langle x_B\rangle={:.3f},\;\langle -t\rangle={:.3f}\,\mathrm{{GeV}}^2$'
-         ).format(b["Q2m"], b["xBm"], -b["tm"]),
-        fontsize=14, y=1.02
+    ROOT.gInterpreter.ProcessLine(
+        f"renormImag = {param_map.get('renormImag', orig_defaults['renormImag'])};"
+    )
+    ROOT.gInterpreter.ProcessLine(
+        f"renormReal = {param_map.get('renormReal', orig_defaults['renormReal'])};"
     )
 
-    # left: BSA
-    ax1.errorbar(φ_dat, A_dat, yerr=σA, fmt='o', ms=5, color='k',
-                 label='Data')
-    ax1.plot(phi_grid, bsas_orig, '-',  lw=2, color='tab:blue',
-             label='Original')
-    ax1.plot(phi_grid, bsas_fit,  '--', lw=2, color='tab:red',
-             label='Fit')
-    ax1.set(xlim=(0,360), xticks=np.arange(0,361,60),
-            ylim=(-0.6,0.6), xlabel=r'$\phi\,[°]$', ylabel=r'$A_{LU}$')
-    ax1.set_title("Beam-spin asymmetry")
-    ax1.legend(loc='upper right', frameon=True)
+    # switch each CFF on/off & set its parameters
+    for cff in ("H","Ht","E","Et"):
+        ROOT.gInterpreter.ProcessLine(f"has{cff} = {int(flags[cff])};")
+        if flags[cff]:
+            for k in ("r", "alpha0", "alpha1", "n", "b", "Mm2", "P"):
+                key = f"{k}_{cff}"
+                v = param_map.get(key, orig_defaults[key])
+                ROOT.gInterpreter.ProcessLine(f"{key} = {v};")
 
-    # right: AUT
-    ax2.plot(phi_grid, aut_E,   '-', lw=1.5,
-             color='tab:green', label='AUT, E-only')
-    ax2.plot(phi_grid, aut_med, '-', lw=2.0,
-             color='darkgreen', label='AUT, H+E median')
-    ax2.fill_between(phi_grid, aut_lo, aut_hi,
-                     color='darkgreen', alpha=0.3,
-                     label='95% CI (H+E)')
-    ax2.set(xlim=(0,360), xticks=np.arange(0,361,60),
-            ylim=(-0.6,0.6), xlabel=r'$\phi\,[°]$', ylabel=r'$A_{UT}$')
-    ax2.set_title("Target-spin asymmetry prediction")
-    ax2.legend(loc='upper right', frameon=True)
+    bsas = []
+    for i, (phi, Q2, xB, t, Eb) in enumerate(zip(
+            phi_arr, Q2_arr, xB_arr, t_arr, Eb_arr)):
+        dvcs = ROOT.BMK_DVCS(-1,1,0,Eb,xB,Q2,t,phi)
+        mA   = dvcs.BSA()
+        bsas.append(mA)
+        if i<5:
+            print(f"[{tag}] φ={phi:6.1f}°, ξ={dvcs.xi:.3f}, t={t:.3f}, BSA={mA:.4f}")
+    return np.array(bsas)
 
-    plt.tight_layout()
-    outfn = f"output/plots/BSA_AUT_bin{ibin:02d}_{timestamp}.pdf"
-    fig.savefig(outfn, bbox_inches='tight')
-    print("Saved:", outfn)
-    plt.close(fig)
+def main():
+    parser = argparse.ArgumentParser(description=__doc__,
+                                     formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument('fitfile', help='Fit results file')
+    parser.add_argument('--CFFs', type=int, choices=[0,1], default=0,
+                        help='0: use only ImH for fitted model, 1: show both ImH-only and full CFF models')
+    args = parser.parse_args()
+
+    m = re.search(r'fit_results_(\d{8}_\d{6})\.txt$', args.fitfile)
+    if not m:
+        print("ERROR: can't extract timestamp"); sys.exit(1)
+    timestamp = m.group(1)
+
+    flags, pnames, vals = parse_fit_results(args.fitfile)
+    param_map = dict(zip(pnames, vals))
+    print(">> Flags:", flags)
+    print(">> Fitted parameters:", param_map)
+
+    # Instead of loading a .so, compile the entire macro into Cling
+    ROOT.gInterpreter.ProcessLine('#include "DVCS_xsec.C"')
+
+    bins = load_all_bins('imports/rga_prl_bsa.txt')
+    print(f">> Found {len(bins)} φ-bins")
+
+    os.makedirs('output/plots', exist_ok=True)
+
+    for idx, b in enumerate(bins, start=1):
+        phi_data, As, sigAs = b["phi"], b["A"], b["sigA"]
+        phi_grid = np.linspace(0,360,100)
+        Q2g = np.full_like(phi_grid, b["Q2m"])
+        xBg = np.full_like(phi_grid, b["xBm"])
+        tg  = np.full_like(phi_grid, b["tm"])
+        Ebg = np.full_like(phi_grid, b["Ebm"])
+
+        # Compute original model with all CFFs using VGG defaults
+        bsas_orig = compute_bsa(phi_grid, Q2g, xBg, tg, Ebg,
+                                orig_defaults, flags, tag=f"bin{idx}-orig")
+
+        # Compute fitted model with flags from fit
+        bsas_fit = compute_bsa(phi_grid, Q2g, xBg, tg, Ebg,
+                               param_map, flags, tag=f"bin{idx}-fit")
+
+        fig, ax = plt.subplots(figsize=(8,5))
+        ax.errorbar(phi_data, As, yerr=sigAs, fmt='o', ms=5,
+                    color='k', label='Data')
+        ax.plot(phi_grid, bsas_orig, '-',  lw=2,
+                color='tab:blue', label='Original Model')
+
+        if args.CFFs == 0:
+            # Only show fitted model with ImH
+            ax.plot(phi_grid, bsas_fit,  '--', lw=2,
+                    color='tab:red',  label='Fitted Model (ImH only)')
+        else:
+            # Compute fitted model with only ImH (turn off other CFFs)
+            flags_imh_only = flags.copy()
+            flags_imh_only['Ht'] = 0
+            flags_imh_only['E'] = 0
+            flags_imh_only['Et'] = 0
+            bsas_fit_imh = compute_bsa(phi_grid, Q2g, xBg, tg, Ebg,
+                                       param_map, flags_imh_only, tag=f"bin{idx}-fit-ImH")
+            
+            # Plot both models
+            ax.plot(phi_grid, bsas_fit_imh, '--', lw=2,
+                    color='tab:red',  label='Fitted Model (ImH only)')
+            ax.plot(phi_grid, bsas_fit,  '-.', lw=2,
+                    color='tab:green',  label='Fitted Model (all CFFs)')
+
+        ax.set_xlim(0,360)
+        ax.set_xticks([0,60,120,180,240,300,360])
+        ax.set_ylim(-0.6,0.6)
+        ax.set_xlabel(r'$\phi\;[\mathrm{deg}]$')
+        ax.set_ylabel(r'$A_{LU}(\phi)$')
+
+        Q2m, xBm, tm = b["Q2m"], b["xBm"], b["tm"]
+        ax.set_title(
+            (r'$\langle Q^2\rangle={:.2f}\,\mathrm{{GeV}}^2,\;'
+             r'\langle x_B\rangle={:.3f},\;\langle -t\rangle={:.3f}\,\mathrm{{GeV}}^2$'
+            ).format(Q2m, xBm, -tm),
+            pad=12
+        )
+
+        ax.legend(loc='upper right', frameon=True, edgecolor='k')
+        plt.tight_layout()
+
+        fname = (f'output/plots/BSA_bin{idx:02d}_'
+                 f'{timestamp}_Q2_{Q2m:.2f}_xB_{xBm:.3f}_t_{abs(tm):.3f}.pdf')
+        fig.savefig(fname)
+        print(f">> Saved bin {idx} plot to {fname}")
+        plt.close(fig)
+
+if __name__=='__main__':
+    main()
