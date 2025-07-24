@@ -236,7 +236,7 @@ int main(int argc, char** argv){
         TMinuit minuit(npar); minuit.SetPrintLevel(1); minuit.SetFCN(fcn);
         for(int i=0;i<npar;++i){
             auto &nm = parNames[i];
-            double init=1.0, step=0.1, mn=0, mx=10;
+            double init=1.0, step=0.01;
             if(nm=="A_H") init = A_H;
             else if(nm=="B_H") init = B_H;
             else if(nm=="C_H") init = C_H;
@@ -251,7 +251,7 @@ int main(int argc, char** argv){
             else if(nm=="A_Et") init = A_Et;
             else if(nm=="B_Et") init = B_Et;
             else if(nm=="renormReal") init = 1.0;
-            minuit.DefineParameter(i, nm.c_str(), init, step, mn, mx);
+            minuit.DefineParameter(i, nm.c_str(), init, step);
         }
         std::cout<<"Strategy 2: fitting Re parts + renormReal->xsec only...\n";
         minuit.Migrad();
@@ -274,17 +274,17 @@ int main(int argc, char** argv){
         build_par_list(); int npar = parNames.size();
         val.assign(npar,0); err.assign(npar,0);
         TMinuit minuit(npar); minuit.SetPrintLevel(1); minuit.SetFCN(fcn);
-        for(int i=0;i<npar;++i){ double init=1,step=0.1,mn=0,mx=10;
+        for(int i=0;i<npar;++i){ double init=1,step=0.01;
             auto &name=parNames[i];
-            if(name.find("alpha0_")==0)     init=0.43,step=0.05,mn=-5,mx=5;
-            if(name.find("alpha1_")==0)     init=0.85,step=0.05,mn=-10,mx=10;
-            if(name.find("n_")==0)          init=1.35,step=0.05;
-            if(name.find("b_")==0)          init=0.4, step=0.05;
-            if(name.find("M2_")==0)         init=0.64,step=0.05;
-            if(name.find("P_")==0)          init=1.0, step=0.05;
-            if(name=="r_Ht")                init=7.0, step=1.0;
-            if(name=="renormReal")          init=1.0, step=0.1;
-            minuit.DefineParameter(i,name.c_str(),init,step,mn,mx);
+            if(name.find("alpha0_")==0)     init=0.43,step=0.01;
+            if(name.find("alpha1_")==0)     init=0.85,step=0.01;
+            if(name.find("n_")==0)          init=1.35,step=0.01;
+            if(name.find("b_")==0)          init=0.4, step=0.01;
+            if(name.find("M2_")==0)         init=0.64,step=0.01;
+            if(name.find("P_")==0)          init=1.0, step=0.01;
+            if(name=="r_Ht")                init=7.0, step=0.01;
+            if(name=="renormReal")          init=1.0, step=0.01;
+            minuit.DefineParameter(i,name.c_str(),init,step);
         }
         minuit.Migrad();
         for(int i=0;i<npar;++i) minuit.GetParameter(i,val[i],err[i]);
@@ -308,15 +308,15 @@ int main(int argc, char** argv){
         {
             TMinuit m1(n1); m1.SetPrintLevel(1); m1.SetFCN(fcn);
             for(int i=0;i<n1;++i){ auto &nm=parNames[i];
-                double init=1,step=0.1,mn=0,mx=10;
-                if(nm.find("alpha0_")==0) init=0.43,step=0.05,mn=-5,mx=5;
-                if(nm.find("alpha1_")==0) init=0.85,step=0.05,mn=-10,mx=10;
-                if(nm.find("n_")==0)     init=1.35,step=0.05;
-                if(nm.find("b_")==0)     init=0.4, step=0.05;
-                if(nm.find("M2_")==0)    init=0.64,step=0.05;
-                if(nm.find("P_")==0)     init=1.0, step=0.05;
-                if(nm=="r_Ht")           init=7.0, step=1.0;
-                m1.DefineParameter(i,nm.c_str(),init,step,mn,mx);
+                double init=1,step=0.01;
+                if(nm.find("alpha0_")==0) init=0.43,step=0.01;
+                if(nm.find("alpha1_")==0) init=0.85,step=0.01;
+                if(nm.find("n_")==0)     init=1.35,step=0.01;
+                if(nm.find("b_")==0)     init=0.4, step=0.01;
+                if(nm.find("M2_")==0)    init=0.64,step=0.01;
+                if(nm.find("P_")==0)     init=1.0, step=0.01;
+                if(nm=="r_Ht")           init=7.0, step=0.01;
+                m1.DefineParameter(i,nm.c_str(),init,step);
             }
             std::cout<<"Stage 1: fitting Im->BSA...\n";
             m1.Migrad(); double edm,errdef; int nv,nx,ic; double chi2;
@@ -332,7 +332,7 @@ int main(int argc, char** argv){
         {
             TMinuit m2(n2); m2.SetPrintLevel(1); m2.SetFCN(fcn);
             for(int i=0;i<n2;++i){ auto &nm = parNames[i];
-                double init=1.0,step=0.1,mn=0,mx=10;
+                double init=1.0,step=0.01;
                 if(nm=="A_H") init=A_H;
                 else if(nm=="B_H") init=B_H;
                 else if(nm=="C_H") init=C_H;
