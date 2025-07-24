@@ -1325,57 +1325,55 @@ double GetImEt(double xi, double t) {
 }
 
 // -------------------------------------------------------------------------------------------------
-//   Compton Form Factor (CFF) models—real parts
+//   Compton Form Factor (CFF) models—real parts (two 4-parameter continued fractions in t and ξ)
 // -------------------------------------------------------------------------------------------------
+
 double renormReal = 1.0;
 
-double GetReH(double xi, double /*t*/) {
+// ——————————————————————————————————————————————————————————————————————
+// H
+double A_H = -12.0, B_H = 0.7,  C_H = -3.0,  D_H = 1.1;
+double Y_H =  0.0,  Z_H = 0.0,  W_H = 0.0;
+double GetReH(double xi, double t) {
     if(!hasH) return 0.0;
-    // A_H
-    //  ───────────────────────────────────────────────────────────────
-    //  1 + B_H
-    //      ────────────
-    //      1 + C_H
-    //          ────────
-    //          1 + D_H
-    //              ────
-    //              1 + E_H
-    double doubleE = 1.0 + E_H;
-    double doubleD = 1.0 + D_H/doubleE;
-    double doubleC = 1.0 + C_H/doubleD;
-    double doubleB = 1.0 + B_H/doubleC;
-    double cf      = A_H / doubleB;
-    return renormReal * cf;
+    // continued fraction in t:      A_H / (1 + B_H t/(1 + C_H t/(1 + D_H t)))
+    double cf_t  = A_H / (1.0 + B_H*t / (1.0 + C_H*t / (1.0 + D_H*t)));
+    // continued fraction in xi:     1 / (1 + Y_H xi/(1 + Z_H xi/(1 + W_H xi)))
+    double cf_xi = 1.0 / (1.0 + Y_H*xi / (1.0 + Z_H*xi / (1.0 + W_H*xi)));
+    return renormReal * cf_t * cf_xi;
 }
 
-double GetReHt(double xi, double /*t*/) {
+// ——————————————————————————————————————————————————————————————————————
+// Htilde
+double A_Ht = -12.0, B_Ht = 1.5,  C_Ht = 0.0,  D_Ht = 0.0;
+double Y_Ht =  0.0,  Z_Ht = 0.0,  W_Ht = 0.0;
+double GetReHt(double xi, double t) {
     if(!hasHt) return 0.0;
-    // two‐term continued fraction
-    double cf = A_Ht / (1.0 + B_Ht);
-    return renormReal * cf;
+    double cf_t  = A_Ht / (1.0 + B_Ht*t /(1.0 + C_Ht*t /(1.0 + D_Ht*t)));
+    double cf_xi = 1.0 / (1.0 + Y_Ht*xi/(1.0 + Z_Ht*xi/(1.0 + W_Ht*xi)));
+    return renormReal * cf_t * cf_xi;
 }
 
-double GetReE(double xi, double /*t*/) {
+// ——————————————————————————————————————————————————————————————————————
+// E
+double A_E = -7.0,  B_E = 0.7,  C_E = -3.0,  D_E = 1.2;
+double Y_E =  0.0,  Z_E = 0.0,  W_E = 0.0;
+double GetReE(double xi, double t) {
     if(!hasE) return 0.0;
-    // A_E
-    //  ─────────────────────────
-    //  1 + B_E
-    //      ───────────
-    //      1 + C_E
-    //          ───────
-    //          1 + D_E
-    double doubleD = 1.0 + D_E;
-    double doubleC = 1.0 + C_E/doubleD;
-    double doubleB = 1.0 + B_E/doubleC;
-    double cf      = A_E / doubleB;
-    return renormReal * cf;
+    double cf_t  = A_E / (1.0 + B_E*t / (1.0 + C_E*t / (1.0 + D_E*t)));
+    double cf_xi = 1.0 / (1.0 + Y_E*xi / (1.0 + Z_E*xi / (1.0 + W_E*xi)));
+    return renormReal * cf_t * cf_xi;
 }
 
-double GetReEt(double xi, double /*t*/) {
+// ——————————————————————————————————————————————————————————————————————
+// Et
+double A_Et = 10.0, B_Et = 3.0,  C_Et = 0.0,   D_Et = 0.0;
+double Y_Et =  0.0,  Z_Et = 0.0,  W_Et = 0.0;
+double GetReEt(double xi, double t) {
     if(!hasEt) return 0.0;
-    // two‐term continued fraction
-    double cf = A_Et / (1.0 + B_Et);
-    return renormReal * cf;
+    double cf_t  = A_Et / (1.0 + B_Et*t /(1.0 + C_Et*t /(1.0 + D_Et*t)));
+    double cf_xi = 1.0 / (1.0 + Y_Et*xi/(1.0 + Z_Et*xi/(1.0 + W_Et*xi)));
+    return renormReal * cf_t * cf_xi;
 }
 
 // double A_H = -12;
