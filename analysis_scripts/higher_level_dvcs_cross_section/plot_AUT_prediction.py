@@ -7,8 +7,10 @@ Usage:
 
 Reads the fitted CFF parameters and their uncertainties, loads all BSA data,
 splits it into φ-bins, and for each bin makes a 1×2 figure:
-  - Left: data + original & fitted BSA predictions (as before)
-  - Right: 95% CI prediction for the target-spin asymmetry AUT vs φ
+  - Left: data + original & fitted BSA predictions
+  - Right:  two solid‐green lines:
+      • E­-only AUT prediction 
+      • H+E AUT prediction (median) with a 95 % CI band
 
 Saves to:
   output/plots/BSA_AUT_bin{BIN:02d}_{TIMESTAMP}.pdf
@@ -37,17 +39,14 @@ timestamp = m.group(1)
 def parse_fit_results(fname):
     with open(fname) as f:
         lines = [l.strip() for l in f if l.strip()]
-    # flags line: "H 1  Ht 0  E 1  Et 0"
     flag_line = next(l for l in lines if l.startswith("H "))
     toks = flag_line.split()
     flags = { toks[i]: int(toks[i+1]) for i in range(0, len(toks), 2) }
-    # parameter names
     pnames = []
     for i,l in enumerate(lines):
         if l.startswith("# parameters"):
             pnames = lines[i].split()[2:]
             break
-    # values and errors
     vals = errs = None
     for i,l in enumerate(lines):
         if l.startswith("# values"):
@@ -63,14 +62,14 @@ flags, pnames, vals, errs = parse_fit_results(args.fitfile)
 def get_idx(name):
     return pnames.index(name) if name in pnames else None
 
-# flatten central params & errors for replicas
+# collect central & error maps
 central = {}
 errors  = {}
 # renormImag
-ri_idx = get_idx("renormImag")
-central["renormImag"] = vals[ri_idx]
-errors["renormImag"]  = errs[ri_idx]
-# shape parameters
+ri = get_idx("renormImag")
+central["renormImag"] = vals[ri]
+errors["renormImag"]  = errs[ri]
+# shape params
 for cff in ("H","Ht","E","Et"):
     if flags[cff]:
         for k in ("r","alpha0","alpha1","n","b","Mm2","P"):
@@ -81,7 +80,6 @@ for cff in ("H","Ht","E","Et"):
 
 # ─── Replica generation ─────────────────────────────────────────────────────────
 def generate_replicas(central_params, param_errors, n=100):
-    """Return list of param_map dicts sampled from 95% CI errors."""
     reps = []
     for _ in range(n):
         pm = {}
@@ -91,17 +89,20 @@ def generate_replicas(central_params, param_errors, n=100):
         reps.append(pm)
     return reps
 
-# ─── Load BSA data & split into φ-bins ────────────────────────────────────────────
+N_REP = 100
+replica_params = generate_replicas(central, errors, n=N_REP)
+
+# ─── Load & bin BSA data ─────────────────────────────────────────────────────────
 def load_all_bins(fname):
     bins = []
     curr = {k: [] for k in ("phi","Q2","xB","t","Eb","A","sigA")}
-    prev = None
+    prev_phi = None
     with open(fname) as f:
         for line in f:
             if not line.strip() or line.startswith("#"):
                 continue
             phi,Q2,xB,t,Eb,A,sigA = map(float, line.split())
-            if prev is not None and phi < prev:
+            if prev_phi is not None and phi < prev_phi:
                 arr = {k: np.array(v) for k,v in curr.items()}
                 arr.update({
                     "Q2m": arr["Q2"].mean(),
@@ -113,7 +114,7 @@ def load_all_bins(fname):
                 curr = {k: [] for k in curr}
             for k,v in zip(curr, (phi,Q2,xB,t,Eb,A,sigA)):
                 curr[k].append(v)
-            prev = phi
+            prev_phi = phi
     if curr["phi"]:
         arr = {k: np.array(v) for k,v in curr.items()}
         arr.update({
@@ -132,45 +133,29 @@ ROOT.gInterpreter.ProcessLine('#include "DVCS_xsec.C"')
 
 def compute_asymmetry(phi_arr, Q2_arr, xB_arr, t_arr, Eb_arr,
                       param_map, flags, asym="BSA"):
-    """
-    Set globals in ROOT, then loop over kinematics and return
-    an array of asymmetries ('BSA' or 'AUT' via TTSAx).
-    """
-    # renormalizations
+    # set renorms
     ROOT.gInterpreter.ProcessLine(f"renormImag = {param_map.get('renormImag',1.0)};")
-    # real part left at default=1.0 (not fitted for Im-only fits)
-    ROOT.gInterpreter.ProcessLine(f"renormReal = 1.0;")
-    # flags & parameters
+    ROOT.gInterpreter.ProcessLine("renormReal = 1.0;")
+    # flags & params
     for cff in ("H","Ht","E","Et"):
         ROOT.gInterpreter.ProcessLine(f"has{cff} = {int(flags[cff])};")
         if flags[cff]:
             for k in ("r","alpha0","alpha1","n","b","Mm2","P"):
-                key = f"{k}_{cff}"
-                ROOT.gInterpreter.ProcessLine(f"{key} = {param_map.get(key)};")
+                ROOT.gInterpreter.ProcessLine(f"{k}_{cff} = {param_map[k+'_'+cff]};")
     # compute
-    vals = []
-    for phi, Q2, xB, t, Eb in zip(phi_arr, Q2_arr, xB_arr, t_arr, Eb_arr):
-        dvcs = ROOT.BMK_DVCS(-1, 0, 0, Eb, xB, Q2, t, phi)
-        if asym=="BSA":
-            vals.append(dvcs.BSA())
-        elif asym=="AUT":
-            vals.append(dvcs.TTSAx())
-        else:
-            raise ValueError("Unknown asymmetry type")
-    return np.array(vals)
+    out = []
+    for φ,Q2,xB,t,Eb in zip(phi_arr, Q2_arr, xB_arr, t_arr, Eb_arr):
+        dvcs = ROOT.BMK_DVCS(-1, 0, 0, Eb, xB, Q2, t, φ)
+        out.append(dvcs.BSA() if asym=="BSA" else dvcs.TTSAx())
+    return np.array(out)
 
-# ─── Main plotting loop ─────────────────────────────────────────────────────────
+phi_grid = np.linspace(0,360,200)
+
 os.makedirs("output/plots", exist_ok=True)
-
-# prepare replicas for AUT
-N_REP = 100
-replica_params = generate_replicas(central, errors, n=N_REP)
-
-phi_grid = np.linspace(0, 360, 200)
 
 for ibin, b in enumerate(bins, start=1):
     # data
-    phi_data, As, sigAs = b["phi"], b["A"], b["sigA"]
+    φ_dat, A_dat, σA = b["phi"], b["A"], b["sigA"]
     # kinematic grids
     Q2g = np.full_like(phi_grid, b["Q2m"])
     xBg = np.full_like(phi_grid, b["xBm"])
@@ -178,58 +163,62 @@ for ibin, b in enumerate(bins, start=1):
     Ebg = np.full_like(phi_grid, b["Ebm"])
 
     # left panel: BSA
-    # original = defaults, flags
-    orig_defaults = {**{k: central[k] for k in central}, **{k: 1.0 for k in ("renormImag",)}}
+    # original defaults
+    orig_defaults = {**central}
+    orig_defaults["renormImag"] = 1.0
     bsas_orig = compute_asymmetry(phi_grid, Q2g, xBg, tg, Ebg,
                                   orig_defaults, flags, asym="BSA")
     # fitted central
-    fitted = dict(zip(pnames, vals))
-    bsas_fit  = compute_asymmetry(phi_grid, Q2g, xBg, tg, Ebg,
-                                  fitted, flags, asym="BSA")
+    fitted_map = dict(zip(pnames, vals))
+    bsas_fit   = compute_asymmetry(phi_grid, Q2g, xBg, tg, Ebg,
+                                   fitted_map, flags, asym="BSA")
 
-    # right panel: AUT prediction
-    # central
+    # right panel: AUT predictions
+    # 1) E-only
+    flags_E_only = flags.copy()
+    flags_E_only.update({"H":0, "Ht":0, "E":1, "Et":0})
+    aut_E_only = compute_asymmetry(phi_grid, Q2g, xBg, tg, Ebg,
+                                   fitted_map, flags_E_only, asym="AUT")
+
+    # 2) H+E with replicas
     aut_central = compute_asymmetry(phi_grid, Q2g, xBg, tg, Ebg,
-                                    fitted, flags, asym="AUT")
-    # replicas
+                                    fitted_map, flags, asym="AUT")
     all_aut = np.array([
         compute_asymmetry(phi_grid, Q2g, xBg, tg, Ebg, rp, flags, asym="AUT")
         for rp in replica_params
     ])
-    aut_med   = np.median(all_aut, axis=0)
-    aut_low   = np.percentile(all_aut, 2.5, axis=0)
-    aut_high  = np.percentile(all_aut, 97.5, axis=0)
+    aut_low  = np.percentile(all_aut, 2.5, axis=0)
+    aut_high = np.percentile(all_aut, 97.5, axis=0)
 
-    # make figure
-    fig, axes = plt.subplots(1, 2, figsize=(12, 5), sharex=True)
-    # left: BSA
-    ax = axes[0]
-    ax.errorbar(phi_data, As, yerr=sigAs, fmt='o', ms=5, color='k', label='Data')
-    ax.plot(phi_grid, bsas_orig, '-',  lw=2, color='tab:blue', label='Original Model')
-    ax.plot(phi_grid, bsas_fit,  '--', lw=2, color='tab:red',  label='Fitted Model')
-    ax.set_xlim(0,360)
-    ax.set_xticks([0,60,120,180,240,300,360])
-    ax.set_ylim(-0.6, 0.6)
-    ax.set_xlabel(r'$\phi\;[\mathrm{deg}]$')
-    ax.set_ylabel(r'$A_{LU}(\phi)$')
-    ax.set_title("Beam‐spin asymmetry")
-    ax.legend(loc='upper right', frameon=True)
+    # plot
+    fig, (ax1,ax2) = plt.subplots(1,2,figsize=(12,5), sharex=True)
 
-    # right: AUT
-    ax = axes[1]
-    ax.fill_between(phi_grid, aut_low, aut_high,
-                    color='tab:green', alpha=0.3, label='95% CI')
-    ax.plot(phi_grid, aut_med, '-', lw=2, color='tab:green', label='Median Prediction')
-    ax.set_xlim(0,360)
-    ax.set_xticks([0,60,120,180,240,300,360])
-    ax.set_ylim(-0.6, 0.6)
-    ax.set_xlabel(r'$\phi\;[\mathrm{deg}]$')
-    ax.set_ylabel(r'$A_{UT}(\phi)$')
-    ax.set_title("Target‐spin asymmetry (prediction)")
-    ax.legend(loc='upper right', frameon=True)
+    # BSA panel
+    ax1.errorbar(φ_dat, A_dat, yerr=σA, fmt='o', ms=5, color='k', label='Data')
+    ax1.plot(phi_grid, bsas_orig, '-',  lw=2, color='tab:blue', label='Original')
+    ax1.plot(phi_grid, bsas_fit,  '--', lw=2, color='tab:red',  label='Fit')
+    ax1.set(xlim=(0,360), xticks=np.arange(0,361,60),
+            ylim=(-0.6,0.6), xlabel=r'$\phi\,[°]$', ylabel=r'$A_{LU}$')
+    ax1.set_title("Beam‐spin asymmetry")
+    ax1.legend(loc='upper right', frameon=True)
+
+    # AUT panel
+    # E-only
+    ax2.plot(phi_grid, aut_E_only, '-', lw=1.5,
+             color='tab:green', label='AUT, E-only')
+    # H+E median
+    ax2.plot(phi_grid, aut_central, '-', lw=2.0,
+             color='darkgreen', label='AUT, H+E median')
+    # CI band for H+E
+    ax2.fill_between(phi_grid, aut_low, aut_high,
+                     color='darkgreen', alpha=0.3, label='95% CI (H+E)')
+    ax2.set(xlim=(0,360), xticks=np.arange(0,361,60),
+            ylim=(-0.6,0.6), xlabel=r'$\phi\,[°]$', ylabel=r'$A_{UT}$')
+    ax2.set_title("Target‐spin asymmetry prediction")
+    ax2.legend(loc='upper right', frameon=True)
 
     plt.tight_layout()
-    outname = f"output/plots/BSA_AUT_bin{ibin:02d}_{timestamp}.pdf"
-    fig.savefig(outname, bbox_inches='tight')
-    print(f"Saved: {outname}")
+    outfn = f"output/plots/BSA_AUT_bin{ibin:02d}_{timestamp}.pdf"
+    fig.savefig(outfn, bbox_inches='tight')
+    print("Saved:", outfn)
     plt.close(fig)
