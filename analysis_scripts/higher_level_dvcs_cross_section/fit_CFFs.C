@@ -347,7 +347,7 @@ int main(int argc, char** argv){
                 else if(nm=="A_Et") init=A_Et;
                 else if(nm=="B_Et") init=B_Et;
                 else if(nm=="renormReal") init=1.0;
-                m2.DefineParameter(i,nm.c_str(),init,step,mn,mx);
+                m2.DefineParameter(i,nm.c_str(),init,step);
             }
             std::cout<<"Stage 2: fitting Re parts + renormReal->xsec...\n";
             m2.Migrad();
