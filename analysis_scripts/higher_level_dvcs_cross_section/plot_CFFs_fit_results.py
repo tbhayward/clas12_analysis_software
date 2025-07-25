@@ -90,7 +90,7 @@ defaults = {
     "Et": dict(r=0.9,   alpha0=0.43, alpha1=0.85, n=0.0,  b=0.4,  Mm2=0.64, P=1.0, factor=1.0),
 }
 
-# ─── Im-CFF creation ─────────────────────────────────────────────────────────────
+# ─── Im-CFF creation ────────────────────────────────────────────────────────────
 def make_Im_func(cff, params, renorm):
     d = defaults[cff]
     def Im(xi, t):
@@ -111,7 +111,7 @@ def make_Im_func(cff, params, renorm):
         return renorm * pref * xfac * yfac * tfac * fac
     return Im
 
-# ─── Replica helpers ───────────────────────────────────────────────────────────
+# ─── Replica helpers ────────────────────────────────────────────────────────────
 def generate_replica_params(central_params, param_errors, n_replicas=100):
     replicas = []
     for _ in range(n_replicas):
@@ -122,12 +122,12 @@ def generate_replica_params(central_params, param_errors, n_replicas=100):
         replicas.append(replica)
     return replicas
 
-# ─── This is the **only** changed function ─────────────────────────────────────
+# ─── 🟢 ONLY THIS FUNCTION CHANGED 🟢 ────────────────────────────────────────────
 def compute_uncertainty_band(cff, xi_vals, t_vals, n_replicas=100):
     """
-    Generate N replicas of the fitted parameters, compute Im_CFF for each replica
-    over (xi_vals, t_vals), and return median, 2.5%, 97.5% arrays.
-    Always calls Im(xi_vals, -t_vals) so NumPy can broadcast scalars<>arrays.
+    Build N replicas of the fit, then compute Im(xi, –t) for each, returning
+    median, 2.5% and 97.5% arrays.  We explicitly broadcast xi and t to
+    the same shape so there’s never a (200,) vs (1,22) mismatch.
     """
     if cff not in fit_params:
         return None, None, None
@@ -135,11 +135,15 @@ def compute_uncertainty_band(cff, xi_vals, t_vals, n_replicas=100):
     param_reps  = generate_replica_params(fit_params[cff], fit_errors[cff], n_replicas)
     renorm_reps = np.random.normal(renorm_fit, renorm_err/1.96, n_replicas)
 
+    # turn xi_vals, t_vals into arrays of the same shape
+    xi_arr = np.atleast_1d(xi_vals)
+    t_arr  = np.atleast_1d(t_vals)
+    xi_b, t_b = np.broadcast_arrays(xi_arr, -t_arr)
+
     all_curves = []
     for i in range(n_replicas):
         Im_rep = make_Im_func(cff, param_reps[i], renorm_reps[i])
-        # **always** do this single call—NumPy handles scalar<>array broadcasting
-        curve  = Im_rep(xi_vals, -t_vals)
+        curve  = Im_rep(xi_b, t_b)
         all_curves.append(curve)
 
     all_curves = np.array(all_curves)
@@ -167,23 +171,20 @@ xi_fixed  = np.linspace(0.05,0.50,  6)
 t_range   = np.linspace(0.0, 1.0, 200)
 
 orig_style = {'color':'tab:blue','linestyle':'-','linewidth':2.5}
-fit_style  = {'color':'tab:red', 'linestyle':'--','linewidth':2.5}
-band_style = {'color':'tab:red', 'alpha':0.2}
+fit_style  = {'color':'tab:red','linestyle':'--','linewidth':2.5}
+band_style = {'color':'tab:red','alpha':0.2}
 zero_line  = {'color':'gray','linestyle':'--','linewidth':1}
-
-tex_map = {"H":"H", "Ht":r"\tilde H", "E":"E", "Et":r"\tilde E"}
-N_REPLICAS = 10000
 
 from matplotlib.lines import Line2D
 legend_elements = [
-    Line2D([0],[0], color='tab:blue', linestyle='-', lw=2.5, label='Original Mod'),
-    Line2D([0],[0], color='tab:red',  linestyle='--',lw=2.5, label='RGK preliminary'),
+    Line2D([0],[0],color='tab:blue', linestyle='-', lw=2.5, label='Original Mod'),
+    Line2D([0],[0],color='tab:red',  linestyle='--',lw=2.5, label='RGK preliminary'),
     plt.Rectangle((0,0),1,1,fc='tab:red',alpha=0.2,ec=None,label='95% CI')
 ]
 
 for cff, Im_fit in Im_funcs.items():
     Im_orig = make_Im_func(cff, {}, 1.0)
-    tex = tex_map[cff]
+    tex     = {"H":"H","Ht":r"\tilde H","E":"E","Et":r"\tilde E"}[cff]
 
     # — Im vs ξ —
     fig, axes = plt.subplots(2,3,figsize=(12,8), sharex=True, sharey=True)
@@ -191,7 +192,7 @@ for cff, Im_fit in Im_funcs.items():
     fig.suptitle(rf"$\mathrm{{Im}}\,{tex}$", fontsize=16, y=0.98)
     for ax,t in zip(axes, t_fixed):
         ax.plot(xi_range, Im_orig(xi_range, -t), **orig_style)
-        med, lo, up = compute_uncertainty_band(cff, xi_range, t, N_REPLICAS)
+        med, lo, up = compute_uncertainty_band(cff, xi_range, t, 10000)
         if med is not None:
             ax.plot(xi_range, med, **fit_style)
             ax.fill_between(xi_range, lo, up, **band_style)
@@ -199,7 +200,8 @@ for cff, Im_fit in Im_funcs.items():
         ax.text(0.6,0.72, rf"$-t={t:.2f}\,\mathrm{{GeV^2}}$", transform=ax.transAxes)
         ax.set_xlim(0,0.5); ax.set_ylim(0,12)
     axes[2].legend(handles=legend_elements, loc='upper right', fontsize=10)
-    fig.text(0.06,0.5, rf"$\mathrm{{Im}}\,{tex}(\xi,\,-t)$$", va='center', ha='center', rotation='vertical')
+    fig.text(0.06,0.5, rf"$\mathrm{{Im}}\,{tex}(\xi,\,-t)$",
+             va='center', ha='center', rotation='vertical')
     fig.text(0.5,0.02, r"$\xi$", ha='center')
     fig.subplots_adjust(left=0.10, right=0.98, bottom=0.08, top=0.92, wspace=0, hspace=0)
     fig.savefig(f"{outdir}/Im{cff}_vs_xi_{timestamp}.pdf", bbox_inches='tight')
@@ -211,7 +213,7 @@ for cff, Im_fit in Im_funcs.items():
     fig.suptitle(rf"$\mathrm{{Im}}\,{tex}$", fontsize=16, y=0.98)
     for ax,xi0 in zip(axes, xi_fixed):
         ax.plot(t_range, Im_orig(xi0, -t_range), **orig_style)
-        med, lo, up = compute_uncertainty_band(cff, xi0, t_range, N_REPLICAS)
+        med, lo, up = compute_uncertainty_band(cff, xi0, t_range, 10000)
         if med is not None:
             ax.plot(t_range, med, **fit_style)
             ax.fill_between(t_range, lo, up, **band_style)
@@ -220,7 +222,8 @@ for cff, Im_fit in Im_funcs.items():
         ax.set_xlim(0,1.0)
         ax.set_ylim((0,12) if xi0>0.2 else (-2,12))
     axes[2].legend(handles=legend_elements, loc='upper right', fontsize=10)
-    fig.text(0.06,0.5, rf"$\mathrm{{Im}}\,{tex}(\xi,\,-t)$$", va='center', ha='center', rotation='vertical')
+    fig.text(0.06,0.5, rf"$\mathrm{{Im}}\,{tex}(\xi,\,-t)$",
+             va='center', ha='center', rotation='vertical')
     fig.text(0.5,0.02, r"$-t\,(\mathrm{GeV^2})$", ha='center')
     fig.subplots_adjust(left=0.10, right=0.98, bottom=0.08, top=0.92, wspace=0, hspace=0)
     fig.savefig(f"{outdir}/Im{cff}_vs_t_{timestamp}.pdf", bbox_inches='tight')
