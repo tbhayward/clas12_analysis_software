@@ -8,14 +8,13 @@
 //   4) two‐step: (a) fit Im‐parts -> BSA, (b) fit Re‐parts -> xsec
 //
 // Usage:
-//   ./fit_CFFs -strategy <1|2|3|4> -H <0|1> -Ht <0|1> -E <0|1> -Et <0|1>
+//   ./fit_CFFs -strategy <1|2|3|4> -H <0|1> -Ht <0|1> -E <0|1> -Et <0|1> [--input <BSA_file>]
 //
 // e.g.
-//   ./fit_CFFs -strategy 3 -H 1 -Ht 1 -E 0 -Et 0
+//   ./fit_CFFs --strategy 3 --H 1 --Ht 1 --E 0 --Et 0 --input my_new_alu.txt
 //
 // Compile:
 //   g++ -O2 fit_CFFs.C `root-config --cflags --libs` -lMinuit -o fit_CFFs
-// Run as above.
 
 #include <cmath>
 #include <iostream>
@@ -52,8 +51,10 @@ extern double A_Et, B_Et;
 
 // ──────────────────────────────────────────────────────────────────────────────
 // globals controlling strategy & stage:
-static int  gStrategy = 0;   // 1, 2, 3 or 4
-static int  gStage    = 1;   // for Strategy 4: stage=1 (Im->BSA) or 2 (Re->xsec)
+static int  gStrategy      = 0;   // 1, 2, 3 or 4
+static int  gStage         = 1;   // for Strategy 4: stage=1 (Im->BSA) or 2 (Re->xsec)
+static std::string gBsaFile = "imports/rga_prl_bsa.txt";     // default BSA input
+static const char* gXsFile = "imports/rga_pass1_xsec_2018.txt"; // xsec input
 
 // Data structures & loading
 struct DataPoint {
@@ -66,7 +67,10 @@ void LoadData(){
                         std::vector<DataPoint>& vec)
     {
         std::ifstream in(fname);
-        if(!in){ std::cerr<<"ERROR: cannot open "<<fname<<"\n"; std::exit(1);}        
+        if(!in){
+            std::cerr<<"ERROR: cannot open "<<fname<<"\n";
+            std::exit(1);
+        }
         std::string line;
         while(std::getline(in,line)){
             if(line.empty()||line[0]=='#') continue;
@@ -77,8 +81,8 @@ void LoadData(){
             vec.push_back(d);
         }
     };
-    readFile("imports/rga_prl_bsa.txt",       bsaData);
-    readFile("imports/rga_pass1_xsec_2018.txt", xsData);
+    readFile(gBsaFile.c_str(),      bsaData);
+    readFile(gXsFile,               xsData);
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -86,7 +90,7 @@ void LoadData(){
 static std::vector<std::string> parNames;
 static int idx_H=-1, idx_Ht=-1, idx_E=-1, idx_Et=-1, idx_R=-1;
 
-// parse_args(): read -strategy, -H, -Ht, -E, -Et
+// parse_args(): read -strategy, -H, -Ht, -E, -Et, --input
 void parse_args(int argc, char** argv){
     static struct option long_opts[] = {
         {"strategy", required_argument, nullptr, 's'},
@@ -94,19 +98,22 @@ void parse_args(int argc, char** argv){
         {"Ht",       required_argument, nullptr, 't'},
         {"E",        required_argument, nullptr, 'e'},
         {"Et",       required_argument, nullptr, 'x'},
+        {"input",    required_argument, nullptr, 'i'},
         {nullptr,0,nullptr,0}
     };
     int c;
-    while((c = getopt_long(argc,argv,"s:h:t:e:x:",long_opts,nullptr))!=-1){
+    while((c = getopt_long(argc,argv,"s:h:t:e:x:i:",long_opts,nullptr))!=-1){
         switch(c){
-          case 's': gStrategy = std::atoi(optarg); break;
-          case 'h': hasH       = std::atoi(optarg); break;
-          case 't': hasHt      = std::atoi(optarg); break;
-          case 'e': hasE       = std::atoi(optarg); break;
-          case 'x': hasEt      = std::atoi(optarg); break;
+          case 's': gStrategy = std::atoi(optarg);              break;
+          case 'h': hasH       = std::atoi(optarg);             break;
+          case 't': hasHt      = std::atoi(optarg);             break;
+          case 'e': hasE       = std::atoi(optarg);             break;
+          case 'x': hasEt      = std::atoi(optarg);             break;
+          case 'i': gBsaFile   = std::string(optarg);           break;
           default:
             std::cerr<<"Usage: "<<argv[0]
-                     <<" -strategy <1|2|3|4> -H <0|1> -Ht <0|1> -E <0|1> -Et <0|1>\n";
+                     <<" -strategy <1|2|3|4> -H <0|1> -Ht <0|1>"
+                     <<" -E <0|1> -Et <0|1> [--input <BSA_file>]\n";
             std::exit(1);
         }
     }
@@ -198,7 +205,7 @@ void fcn(int & /*npar*/, double* /*grad*/, double &f, double *par, int /*iflag*/
     if(doBSA){
         for(auto &d : bsaData){
             BMK_DVCS dvcs(-1,1,0,d.Eb,d.xB,d.Q2,d.t,d.phi);
-            double mA = dvcs.BSA(); double r = (d.A - mA)/d.sigA;
+            double mA = dvcs.BSA(),    r = (d.A - mA)/d.sigA;
             chi2 += r*r;
         }
     }
@@ -206,7 +213,7 @@ void fcn(int & /*npar*/, double* /*grad*/, double &f, double *par, int /*iflag*/
     if(doXS){
         for(auto &d : xsData){
             BMK_DVCS dvcs(-1,0,0,d.Eb,d.xB,d.Q2,d.t,d.phi);
-            double mA = dvcs.CrossSection(); double r = (d.A - mA)/d.sigA;
+            double mX = dvcs.CrossSection(), r = (d.A - mX)/d.sigA;
             chi2 += r*r;
         }
     }
@@ -218,11 +225,11 @@ int main(int argc, char** argv){
     parse_args(argc, argv);
     std::cout<<"\n=== fit_CFFs Strategy="<<gStrategy
              <<"  H="<<hasH<<" Ht="<<hasHt
-             <<" E="<<hasE<<" Et="<<hasEt<<" ===\n";
+             <<" E="<<hasE<<" Et="<<hasEt
+             <<"  BSA file="<<gBsaFile<<" ===\n";
     LoadData();
-    std::cout<<"  loaded "<<bsaData.size()
-             <<" BSA and "<<xsData.size()
-             <<" xsec points\n\n";
+    std::cout<<"  loaded "<<bsaData.size()<<" BSA and "
+             <<xsData.size()<<" xsec points\n\n";
 
     std::vector<double> val, err;
     double finalChi2=0; int finalNdf=0;
@@ -233,25 +240,27 @@ int main(int argc, char** argv){
         build_par_list();
         int npar = parNames.size();
         val.assign(npar,0); err.assign(npar,0);
-        TMinuit minuit(npar); minuit.SetPrintLevel(1); minuit.SetFCN(fcn);
+        TMinuit minuit(npar);
+        minuit.SetPrintLevel(1);
+        minuit.SetFCN(fcn);
         for(int i=0;i<npar;++i){
             auto &nm = parNames[i];
             double init=1.0, step=0.01;
-            if(nm=="A_H") init = A_H;
-            else if(nm=="B_H") init = B_H;
-            else if(nm=="C_H") init = C_H;
-            else if(nm=="D_H") init = D_H;
-            else if(nm=="E_H") init = E_H;
-            else if(nm=="A_Ht") init = A_Ht;
-            else if(nm=="B_Ht") init = B_Ht;
-            else if(nm=="A_E") init = A_E;
-            else if(nm=="B_E") init = B_E;
-            else if(nm=="C_E") init = C_E;
-            else if(nm=="D_E") init = D_E;
-            else if(nm=="A_Et") init = A_Et;
-            else if(nm=="B_Et") init = B_Et;
-            else if(nm=="renormReal") init = 1.0;
-            // six-arg DefineParameter: [-1e6, +1e6] bounds
+            if(nm=="A_H") init=A_H;
+            else if(nm=="B_H") init=B_H;
+            else if(nm=="C_H") init=C_H;
+            else if(nm=="D_H") init=D_H;
+            else if(nm=="E_H") init=E_H;
+            else if(nm=="A_Ht") init=A_Ht;
+            else if(nm=="B_Ht") init=B_Ht;
+            else if(nm=="A_E") init=A_E;
+            else if(nm=="B_E") init=B_E;
+            else if(nm=="C_E") init=C_E;
+            else if(nm=="D_E") init=D_E;
+            else if(nm=="A_Et") init=A_Et;
+            else if(nm=="B_Et") init=B_Et;
+            else if(nm=="renormReal") init=1.0;
+            // wide bounds
             minuit.DefineParameter(i, nm.c_str(), init, step, -1e6, 1e6);
         }
         std::cout<<"Strategy 2: fitting Re parts + renormReal->xsec only...\n";
@@ -259,81 +268,98 @@ int main(int argc, char** argv){
         for(int i=0;i<npar;++i) minuit.GetParameter(i,val[i],err[i]);
         double edm,errdef; int nv,nx,ic; double chi2;
         minuit.mnstat(chi2,edm,errdef,nv,nx,ic);
-        finalChi2 = chi2; finalNdf = int(xsData.size()) - npar;
+        finalChi2 = chi2;
+        finalNdf  = int(xsData.size()) - npar;
         std::cout<<"\n=== Results ===\n";
         for(int i=0;i<npar;++i)
             std::cout<<" "<<parNames[i]<<" = "<<val[i]<<" ± "<<err[i]<<"\n";
         std::cout<<" χ²/ndf = "<<finalChi2<<"/"<<finalNdf
                  <<" = "<<(finalChi2/finalNdf)<<"\n\n";
     }
+
     // Strategies 1 & 3
     else if(gStrategy==1 || gStrategy==3){
         bool sim = (gStrategy==3);
         std::cout<<"Strategy "<<(sim?3:1)
-                 <<": "<<(sim?"fitting Im+Re -> BSA+xsec simultaneously...":"fitting Im->BSA only...")<<"\n";
+                 <<": "<<(sim?"fitting Im+Re -> BSA+xsec simultaneously..."
+                         :"fitting Im->BSA only...")<<"\n";
         gStage = 1;
-        build_par_list(); int npar = parNames.size();
+        build_par_list();
+        int npar = parNames.size();
         val.assign(npar,0); err.assign(npar,0);
-        TMinuit minuit(npar); minuit.SetPrintLevel(1); minuit.SetFCN(fcn);
+        TMinuit minuit(npar);
+        minuit.SetPrintLevel(1);
+        minuit.SetFCN(fcn);
         for(int i=0;i<npar;++i){
             double init=1.0, step=0.01;
-            auto &name = parNames[i];
-            if(name.find("alpha0_")==0)     init=0.43;
-            if(name.find("alpha1_")==0)     init=0.85;
-            if(name.find("n_")==0)          init=1.35;
-            if(name.find("b_")==0)          init=0.4;
-            if(name.find("M2_")==0)         init=0.64;
-            if(name.find("P_")==0)          init=1.0;
-            if(name=="r_Ht")                init=7.0;
-            if(name=="renormReal")          init=1.0;
-            minuit.DefineParameter(i, name.c_str(), init, step, -1e6, 1e6);
+            auto &nm = parNames[i];
+            if(nm.find("alpha0_")==0) init=0.43;
+            if(nm.find("alpha1_")==0) init=0.85;
+            if(nm.find("n_")==0)      init=1.35;
+            if(nm.find("b_")==0)      init=0.4;
+            if(nm.find("M2_")==0)     init=0.64;
+            if(nm.find("P_")==0)      init=1.0;
+            if(nm=="r_Ht")            init=7.0;
+            if(nm=="renormReal")      init=1.0;
+            minuit.DefineParameter(i, nm.c_str(), init, step, -1e6, 1e6);
         }
         minuit.Migrad();
         for(int i=0;i<npar;++i) minuit.GetParameter(i,val[i],err[i]);
         double edm,errdef; int nv,nx,ic;
         minuit.mnstat(finalChi2,edm,errdef,nv,nx,ic);
-        finalNdf = (sim
-                   ? int(bsaData.size()+xsData.size()) - npar
-                   : int(bsaData.size()) - npar);
+        finalNdf = sim
+                  ? int(bsaData.size()+xsData.size()) - npar
+                  : int(bsaData.size()) - npar;
         std::cout<<"\n=== Results ===\n";
         for(int i=0;i<npar;++i)
             std::cout<<" "<<parNames[i]<<" = "<<val[i]<<" ± "<<err[i]<<"\n";
         std::cout<<" χ²/ndf = "<<finalChi2<<"/"<<finalNdf
                  <<" = "<<(finalChi2/finalNdf)<<"\n\n";
     }
+
     // Strategy 4: two-step
     else {
         std::cout<<"Strategy 4: two-step fit: (1) Im->BSA, (2) Re->xsec...\n";
         // stage 1
-        gStage = 1; build_par_list(); if(idx_R>=0) parNames.resize(idx_R);
-        int n1 = parNames.size(); val.assign(n1,0); err.assign(n1,0);
+        gStage = 1;
+        build_par_list();
+        if(idx_R>=0) parNames.resize(idx_R);
         {
-            TMinuit m1(n1); m1.SetPrintLevel(1); m1.SetFCN(fcn);
+            int n1 = parNames.size();
+            val.assign(n1,0); err.assign(n1,0);
+            TMinuit m1(n1);
+            m1.SetPrintLevel(1);
+            m1.SetFCN(fcn);
             for(int i=0;i<n1;++i){
                 auto &nm = parNames[i];
                 double init=1.0, step=0.01;
                 if(nm.find("alpha0_")==0) init=0.43;
                 if(nm.find("alpha1_")==0) init=0.85;
-                if(nm.find("n_")==0)     init=1.35;
-                if(nm.find("b_")==0)     init=0.4;
-                if(nm.find("M2_")==0)    init=0.64;
-                if(nm.find("P_")==0)     init=1.0;
-                if(nm=="r_Ht")           init=7.0;
+                if(nm.find("n_")==0)      init=1.35;
+                if(nm.find("b_")==0)      init=0.4;
+                if(nm.find("M2_")==0)     init=0.64;
+                if(nm.find("P_")==0)      init=1.0;
+                if(nm=="r_Ht")            init=7.0;
                 m1.DefineParameter(i, nm.c_str(), init, step, -1e6, 1e6);
             }
             std::cout<<"Stage 1: fitting Im->BSA...\n";
-            m1.Migrad(); double edm,errdef; int nv,nx,ic; double chi2;
+            m1.Migrad();
+            double edm,errdef; int nv,nx,ic; double chi2;
             m1.mnstat(chi2,edm,errdef,nv,nx,ic);
-            finalChi2=chi2; finalNdf=int(bsaData.size())-n1;
+            finalChi2 = chi2;
+            finalNdf  = int(bsaData.size()) - parNames.size();
             std::cout<<"\nStage 1 χ²/ndf = "<<finalChi2<<"/"<<finalNdf
                      <<" = "<<(finalChi2/finalNdf)<<"\n\n";
         }
         // stage 2
         gStage = 2;
         build_par_list();
-        int n2 = parNames.size(); val.assign(n2,0); err.assign(n2,0);
         {
-            TMinuit m2(n2); m2.SetPrintLevel(1); m2.SetFCN(fcn);
+            int n2 = parNames.size();
+            val.assign(n2,0); err.assign(n2,0);
+            TMinuit m2(n2);
+            m2.SetPrintLevel(1);
+            m2.SetFCN(fcn);
             for(int i=0;i<n2;++i){
                 auto &nm = parNames[i];
                 double init=1.0, step=0.01;
@@ -358,7 +384,8 @@ int main(int argc, char** argv){
             for(int i=0;i<n2;++i) m2.GetParameter(i,val[i],err[i]);
             double edm,errdef; int nv,nx,ic; double chi2;
             m2.mnstat(chi2,edm,errdef,nv,nx,ic);
-            finalChi2=chi2; finalNdf=int(xsData.size())-n2;
+            finalChi2 = chi2;
+            finalNdf  = int(xsData.size()) - n2;
             std::cout<<"\nStage 2 Results:\n";
             for(int i=0;i<n2;++i)
                 std::cout<<" "<<parNames[i]<<" = "<<val[i]<<" ± "<<err[i]<<"\n";
