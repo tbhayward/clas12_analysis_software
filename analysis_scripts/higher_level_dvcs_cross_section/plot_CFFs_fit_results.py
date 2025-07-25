@@ -10,7 +10,7 @@ enabled Im CFF makes two figures:
   1) Im CFF vs. xi for six fixed −t between 0.1 and 1.0 (GeV^{2}) (2×3 grid)
   2) Im CFF vs. −t for six fixed xi between 0.05 and 0.50 (2×3 grid)
 
-Includes uncertainty bands for fitted results using replica method (95% CI).
+includes uncertainty bands for fitted results using replica method (95% CI).
 
 Saves to:
   output/plots/Im{CFF}_vs_xi_<TIMESTAMP>.pdf  
@@ -50,7 +50,7 @@ def parse_fit_results(fname):
         if l.startswith("# parameters"):
             pnames = lines[i].split()[2:]
             break
-    # values and errors and chi2
+    # values and errors
     vals = errs = None
     chi2 = ndf = chi2ndf = None
     for i,l in enumerate(lines):
@@ -88,6 +88,7 @@ defaults = {
     "H":  dict(r=0.9,   alpha0=0.43, alpha1=0.85, n=1.35, b=0.4,  Mm2=0.64, P=1.0, factor=2.0),
     "Ht": dict(r=7.0,   alpha0=0.43, alpha1=0.85, n=0.6,  b=2.0,  Mm2=0.8,  P=1.0, factor=0.4),
     "E":  dict(r=0.9,   alpha0=0.43, alpha1=0.85, n=1.35, b=0.4,  Mm2=0.64, P=1.0, factor=1.0),
+    # set n=0 so original Et ≡ 0 everywhere (original model), but still use shape defaults
     "Et": dict(r=0.9,   alpha0=0.43, alpha1=0.85, n=0.0,  b=0.4,  Mm2=0.64, P=1.0, factor=1.0),
 }
 
@@ -104,18 +105,11 @@ def make_Im_func(cff, params, renorm):
         Mm2   = params.get("Mm2",    d["Mm2"])
         Pval  = params.get("P",      d["P"])
         fac   = d["factor"]
-
-        # avoid xi==0 blowups by flooring to a tiny positive
-        xi_arr  = np.array(xi, copy=False)
-        xi_safe = np.where(xi_arr <= 0, 1e-6, xi_arr)
-
         alpha = a0 + a1 * t
-        pref  = np.pi * 5.0/9.0 * nval * r / (1 + xi_safe)
-        base  = 2*xi_safe/(1+xi_safe)
-        xfac  = base**(-alpha)
-        yfac  = ((1 - xi_safe)/(1+xi_safe))**(bval)
-        tfac  = (1 - ((1 - xi_safe)/(1+xi_safe))*t/Mm2)**(-Pval)
-
+        pref  = np.pi * 5.0/9.0 * nval * r / (1 + xi)
+        xfac  = (2*xi/(1+xi))**(-alpha)
+        yfac  = ((1 - xi)/(1+xi))**(bval)
+        tfac  = (1 - ((1 - xi)/(1+xi))*t/Mm2)**(-Pval)
         return renorm * pref * xfac * yfac * tfac * fac
     return Im
 
@@ -131,19 +125,31 @@ def generate_replica_params(central_params, param_errors, n_replicas=100):
     return replicas
 
 def compute_uncertainty_band(cff, xi_vals, t_vals, n_replicas=100):
+    """
+    Generate N replicas of the fitted parameters, compute Im_CFF for each replica
+    over (xi_vals, t_vals), and return median, 2.5%, 97.5% arrays.
+    Works whether xi_vals/t_vals are scalars or arrays of any shape.
+    """
     if cff not in fit_params:
         return None, None, None
+
+    # build replicas
     param_reps  = generate_replica_params(fit_params[cff], fit_errors[cff], n_replicas)
     renorm_reps = np.random.normal(renorm_fit, renorm_err/1.96, n_replicas)
+
     all_curves = []
     for i in range(n_replicas):
         Im_rep = make_Im_func(cff, param_reps[i], renorm_reps[i])
+        # always call Im_rep(xi_vals, -t_vals); numpy will broadcast scalars <> arrays correctly
         curve  = Im_rep(xi_vals, -t_vals)
         all_curves.append(curve)
+
     all_curves = np.array(all_curves)
-    return (np.median(all_curves, axis=0),
-            np.percentile(all_curves, 2.5, axis=0),
-            np.percentile(all_curves, 97.5, axis=0))
+    return (
+        np.median(all_curves, axis=0),
+        np.percentile(all_curves, 2.5, axis=0),
+        np.percentile(all_curves, 97.5, axis=0)
+    )
 
 # ─── Build functions & style ───────────────────────────────────────────────────
 Im_funcs = { cff: make_Im_func(cff, fit_params.get(cff, {}), renorm_fit)
@@ -156,7 +162,7 @@ outdir = 'output/plots'
 os.makedirs(outdir, exist_ok=True)
 
 t_fixed   = np.linspace(0.1, 1.0,   6)
-xi_range  = np.linspace(1e-3, 0.5, 200)  # start at small positive instead of 0
+xi_range  = np.linspace(0.0, 0.5, 200)
 xi_fixed  = np.linspace(0.05,0.50,  6)
 t_range   = np.linspace(0.0, 1.0, 200)
 
@@ -166,18 +172,18 @@ band_style = {'color':'tab:red', 'alpha':0.2}
 zero_line  = {'color':'gray','linestyle':'--','linewidth':1}
 
 tex_map = {"H":"H", "Ht":r"\tilde H", "E":"E", "Et":r"\tilde E"}
-N_REPLICAS = 1000  # you can adjust as needed
+N_REPLICAS = 10000
 
+# ─── Plot loop ────────────────────────────────────────────────────────────────
 from matplotlib.lines import Line2D
+
 legend_elements = [
-    Line2D([0], [0], color='tab:blue', linestyle='-', lw=2.5, label='Original Model'),
-    # Line2D([0], [0], color='tab:red',  linestyle='--',lw=2.5, label='Fitted Model'),
+    Line2D([0], [0], color='tab:blue', linestyle='-', lw=2.5, label='Original Mod'),
     # Line2D([0], [0], color='tab:red',  linestyle='--',lw=2.5, label='RGA pass-1'),
     Line2D([0], [0], color='tab:red',  linestyle='--',lw=2.5, label='RGK preliminary'),
     plt.Rectangle((0,0),1,1,fc='tab:red',alpha=0.2,ec=None,label='95% CI')
 ]
 
-# ─── Plot loop ────────────────────────────────────────────────────────────────
 for cff, Im_fit in Im_funcs.items():
     Im_orig = make_Im_func(cff, {}, 1.0)
     tex = tex_map[cff]
@@ -187,7 +193,7 @@ for cff, Im_fit in Im_funcs.items():
     axes = axes.flatten()
     fig.suptitle(rf"$\mathrm{{Im}}\,{tex}$", fontsize=16, y=0.98)
 
-    for ax, t in zip(axes, t_fixed):
+    for idx, (ax, t) in enumerate(zip(axes, t_fixed)):
         ax.plot(xi_range, Im_orig(xi_range, -t), **orig_style)
         med, lo, up = compute_uncertainty_band(cff, xi_range, t, N_REPLICAS)
         if med is not None:
@@ -199,10 +205,12 @@ for cff, Im_fit in Im_funcs.items():
         ax.set_xlim(0,0.5)
         ax.set_ylim(0,12)
 
+    # hide first y-tick on top row (remove "0" tick)
     for ax in axes[:3]:
         ylbls = ax.get_yticklabels()
         if ylbls:
             ylbls[0].set_visible(False)
+    # hide x=0 label on bottom middle/right
     for ax in (axes[4], axes[5]):
         for lbl in ax.get_xticklabels():
             if lbl.get_text() in ('0','0.0'):
@@ -224,7 +232,7 @@ for cff, Im_fit in Im_funcs.items():
     axes = axes.flatten()
     fig.suptitle(rf"$\mathrm{{Im}}\,{tex}$", fontsize=16, y=0.98)
 
-    for ax, xi0 in zip(axes, xi_fixed):
+    for idx, (ax, xi0) in enumerate(zip(axes, xi_fixed)):
         ax.plot(t_range, Im_orig(xi0, -t_range), **orig_style)
         med, lo, up = compute_uncertainty_band(cff, xi0, t_range, N_REPLICAS)
         if med is not None:
@@ -234,15 +242,17 @@ for cff, Im_fit in Im_funcs.items():
         ax.text(0.60, 0.72, rf"$\xi={xi0:.2f}$",
                 transform=ax.transAxes, fontsize=12)
         ax.set_xlim(0,1.0)
-        if xi0 < xi_fixed[3]:
+        if idx < 3:
             ax.set_ylim(0,12)
         else:
             ax.set_ylim(-2,12)
 
+    # hide first y-tick on top row (remove "0" tick)
     for ax in axes[:3]:
         ylbls = ax.get_yticklabels()
         if ylbls:
             ylbls[0].set_visible(False)
+    # hide x=0 label on bottom middle/right
     for ax in (axes[4], axes[5]):
         for lbl in ax.get_xticklabels():
             if lbl.get_text() in ('0','0.0'):
