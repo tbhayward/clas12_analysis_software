@@ -121,15 +121,23 @@ def generate_replica_params(central, errors, n=100):
         reps.append(r)
     return reps
 
-# ─── Fix: broadcast xi/t to same shape ──────────────────────────────────────────
+# ─── Debugged compute_uncertainty_band ─────────────────────────────────────────
 def compute_uncertainty_band(cff, xi_vals, t_vals, n_reps=100):
+    """
+    Generate N replicas of the fitted parameters, compute Im_CFF for each replica
+    over (xi_vals, t_vals), and return median, 2.5%, 97.5% arrays.
+    """
+    # — diagnostic print —
+    print(f"DBG: compute_uncertainty_band(cff={cff!r}, "
+          f"xi_vals.shape={np.shape(xi_vals)}, t_vals.shape={np.shape(t_vals)})")
+
     if cff not in fit_params:
         return None, None, None
 
     param_reps  = generate_replica_params(fit_params[cff], fit_errors[cff], n_reps)
     renorm_reps = np.random.normal(renorm_fit, renorm_err/1.96, n_reps)
 
-    # make them arrays and broadcast
+    # ensure both are at least 1-d
     xi_a = np.atleast_1d(xi_vals)
     t_a  = np.atleast_1d(t_vals)
     xi_b, t_b = np.broadcast_arrays(xi_a, -t_a)
@@ -176,13 +184,13 @@ for cff, Im_fit in Im_funcs.items():
     Im_orig = make_Im_func(cff, {}, 1.0)
     tex     = tex_map[cff]
 
-    # Im vs ξ
+    # — Im vs ξ —
     fig, axes = plt.subplots(2,3,figsize=(12,8),sharex=True,sharey=True)
     axes = axes.flatten()
     fig.suptitle(rf"$\mathrm{{Im}}\;{tex}$", y=0.98, fontsize=16)
-    for ax,t in zip(axes, t_fixed):
+    for ax, t in zip(axes, t_fixed):
         ax.plot(xi_range, Im_orig(xi_range, -t), color='tab:blue', lw=2.5)
-        med, lo, up = compute_uncertainty_band(cff, xi_range, t, 1000)
+        med, lo, up = compute_uncertainty_band(cff, xi_range, t, 500)
         if med is not None:
             ax.plot(xi_range, med, color='tab:red', lw=2.5, ls='--')
             ax.fill_between(xi_range, lo, up, color='tab:red', alpha=0.2)
@@ -190,19 +198,20 @@ for cff, Im_fit in Im_funcs.items():
         ax.text(0.6, 0.75, rf"$-t={t:.2f}$", transform=ax.transAxes)
         ax.set_xlim(0,0.5); ax.set_ylim(0,12)
     axes[2].legend(handles=legend_elems, loc='upper right')
-    fig.text(0.06,0.5, rf"$\mathrm{{Im}}\;{tex}(\xi,\,-t)$", va='center',ha='center',rotation='vertical')
+    fig.text(0.06,0.5, rf"$\mathrm{{Im}}\;{tex}(\xi,\,-t)$",
+             va='center',ha='center',rotation='vertical')
     fig.text(0.5,0.02, r"$\xi$", ha='center')
     fig.tight_layout(rect=[0,0,1,0.95])
     fig.savefig(f"{outdir}/Im{cff}_vs_xi_{timestamp}.pdf")
     plt.close(fig)
 
-    # Im vs -t
+    # — Im vs −t —
     fig, axes = plt.subplots(2,3,figsize=(12,8),sharex=True,sharey=True)
     axes = axes.flatten()
     fig.suptitle(rf"$\mathrm{{Im}}\;{tex}$", y=0.98, fontsize=16)
-    for ax,xi0 in zip(axes, xi_fixed):
+    for ax, xi0 in zip(axes, xi_fixed):
         ax.plot(t_range, Im_orig(xi0, -t_range), color='tab:blue', lw=2.5)
-        med, lo, up = compute_uncertainty_band(cff, xi0, t_range, 1000)
+        med, lo, up = compute_uncertainty_band(cff, xi0, t_range, 500)
         if med is not None:
             ax.plot(t_range, med, color='tab:red', lw=2.5, ls='--')
             ax.fill_between(t_range, lo, up, color='tab:red', alpha=0.2)
@@ -210,8 +219,11 @@ for cff, Im_fit in Im_funcs.items():
         ax.text(0.6, 0.75, rf"$\xi={xi0:.2f}$", transform=ax.transAxes)
         ax.set_xlim(0,1); ax.set_ylim((0,12) if xi0>0.2 else (-2,12))
     axes[2].legend(handles=legend_elems, loc='upper right')
-    fig.text(0.06,0.5, rf"$\mathrm{{Im}}\;{tex}(\xi,\,-t)$", va='center',ha='center',rotation='vertical')
+    fig.text(0.06,0.5, rf"$\mathrm{{Im}}\;{tex}(\xi,\,-t)$",
+             va='center',ha='center',rotation='vertical')
     fig.text(0.5,0.02, r"$-t$ (GeV$^2$)", ha='center')
     fig.tight_layout(rect=[0,0,1,0.95])
     fig.savefig(f"{outdir}/Im{cff}_vs_t_{timestamp}.pdf")
     plt.close(fig)
+
+print("Done plotting.")
