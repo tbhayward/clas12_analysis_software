@@ -166,8 +166,9 @@ N_REPLICAS = 10000
 from matplotlib.lines import Line2D
 
 legend_elements = [
-    Line2D([0], [0], color='tab:blue', linestyle='-', lw=2.5, label='Original'),
-    Line2D([0], [0], color='tab:red',  linestyle='--',lw=2.5, label='RGA pass-1'),
+    Line2D([0], [0], color='tab:blue', linestyle='-', lw=2.5, label='Original Model'),
+    # Line2D([0], [0], color='tab:red',  linestyle='--',lw=2.5, label='RGA pass-1'),
+    Line2D([0], [0], color='tab:red',  linestyle='--',lw=2.5, label='RGK'),
     plt.Rectangle((0,0),1,1,fc='tab:red',alpha=0.2,ec=None,label='95% CI')
 ]
 
