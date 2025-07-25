@@ -13,7 +13,6 @@ import os, sys, re
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.lines import Line2D
-from matplotlib.patches import Patch
 
 # ─── Number of Monte Carlo replicas for uncertainty bands ───────────────────────
 N_REPLICAS = 1000
@@ -65,8 +64,7 @@ def idx(pn, name):
 def build(flags, pn, vals, errs):
     ren    = vals[idx(pn, "renormImag")]
     renerr = errs[idx(pn, "renormImag")]
-    fp = {}
-    fe = {}
+    fp, fe = {}, {}
     for cff in ("H","Ht","E","Et"):
         if flags[cff]:
             keys = ["r","alpha0","alpha1","n","b","M2","P"]
@@ -79,17 +77,19 @@ ren1, ren1err, fitp1, fite1 = build(flags1, pn1, vals1, errs1)
 if fit2file:
     ren2, ren2err, fitp2, fite2 = build(flags2, pn2, vals2, errs2)
 
-# ─── defaults + Im‐builder ───────────────────────────────────────────────────────
+# ─── defaults + Im‐builder with safety guards ────────────────────────────────────
 defaults = {
-    "H":  dict(r=0.9,  alpha0=0.43, alpha1=0.85, n=1.35, b=0.4, M2=0.64, P=1.0, factor=2.0),
-    "Ht": dict(r=7.0,  alpha0=0.43, alpha1=0.85, n=0.6,  b=2.0, M2=0.8,  P=1.0, factor=0.4),
-    "E":  dict(r=0.9,  alpha0=0.43, alpha1=0.85, n=1.35, b=0.4, M2=0.64, P=1.0, factor=1.0),
-    "Et": dict(r=0.9, alpha0=0.43, alpha1=0.85, n=0.0,  b=0.4, M2=0.64, P=1.0, factor=1.0),
+    "H":  dict(r=0.9,  alpha0=0.43, alpha1=0.85, n=1.35,  b=0.4, M2=0.64, P=1.0, factor=2.0),
+    "Ht": dict(r=7.0,  alpha0=0.43, alpha1=0.85, n=0.6,   b=2.0, M2=0.8,  P=1.0, factor=0.4),
+    "E":  dict(r=0.9,  alpha0=0.43, alpha1=0.85, n=1.35,  b=0.4, M2=0.64, P=1.0, factor=1.0),
+    "Et": dict(r=0.9,  alpha0=0.43, alpha1=0.85, n=0.0,   b=0.4, M2=0.64, P=1.0, factor=1.0),
 }
 
 def make_Im_func(cff, pars, ren):
     d = defaults[cff]
     def Im(xi, t):
+        # --- 1) xi_safe to avoid xi=0 division ---
+        xi_safe = np.maximum(xi, 1e-6)
         r     = pars.get("r",      d["r"])
         a0    = pars.get("alpha0", d["alpha0"])
         a1    = pars.get("alpha1", d["alpha1"])
@@ -98,12 +98,23 @@ def make_Im_func(cff, pars, ren):
         M2    = pars.get("M2",     d["M2"])
         Pval  = pars.get("P",      d["P"])
         fac   = d["factor"]
+
         alpha = a0 + a1 * t
-        pref  = np.pi * 5.0/9.0 * nval * r / (1 + xi)
-        xfac  = (2*xi/(1+xi))**(-alpha)
-        yfac  = ((1 - xi)/(1+xi))**(bval)
-        tfac  = (1 - ((1 - xi)/(1+xi)) * t / M2)**(-Pval)
-        return ren * pref * xfac * yfac * tfac * fac
+        pref  = np.pi * 5.0/9.0 * nval * r / (1 + xi_safe)
+
+        with np.errstate(divide='ignore', invalid='ignore'):
+            xfac = (2*xi_safe/(1+xi_safe))**(-alpha)
+        yfac  = ((1 - xi_safe)/(1+xi_safe))**(bval)
+
+        # --- 2) clip the base of the power to ≥0 before raising to non-int exponent ---
+        base = 1 - ((1 - xi_safe)/(1+xi_safe)) * t / M2
+        base_clipped = np.clip(base, 0.0, None)
+        with np.errstate(invalid='ignore'):
+            tfac = base_clipped**(-Pval)
+
+        result = ren * pref * xfac * yfac * tfac * fac
+        # --- 3) scrub any remaining NaNs → 0 ---
+        return np.nan_to_num(result, nan=0.0, posinf=0.0, neginf=0.0)
     return Im
 
 def gen_reps(cent, err, n=N_REPLICAS):
@@ -138,14 +149,14 @@ t_range   = np.linspace(0.0, 1.0, 200)
 plt.style.use('classic')
 plt.rcParams.update({'font.size':14,'font.family':'serif'})
 
-style1 = {'color':'tab:red',  'ls':'--','lw':2.5}
-band1  = {'color':'tab:red',  'alpha':0.2}
-style2 = {'color':'tab:blue','ls':'-','lw':2.5}
-band2  = {'color':'tab:blue','alpha':0.2}
-zero   = {'color':'gray',     'ls':'--','lw':1}
+style1 = {'color':'tab:red',   'ls':'--','lw':2.5}
+band1  = {'color':'tab:red',   'alpha':0.2}
+style2 = {'color':'tab:blue',  'ls':'-','lw':2.5}
+band2  = {'color':'tab:blue',  'alpha':0.2}
+zero   = {'color':'gray',      'ls':'--','lw':1}
 
-lbl1 = "RGK preliminary"
-lbl2 = "RGA pass-1"
+lbl1   = "RGK preliminary"
+lbl2   = "RGA pass-1"
 tex_map = {"H":"H","Ht":r"\tilde H","E":"E","Et":r"\tilde E"}
 
 # ─── Single RGK only ────────────────────────────────────────────────────────────
@@ -158,15 +169,15 @@ for cff in fitp1:
     fig.suptitle(rf"$\mathrm{{Im}}\,{tex}$", fontsize=16, y=0.98)
     for ax, t in zip(axes, t_fixed):
         m, lo, up = band(cff, xi_range, t, ren1, fitp1, fite1)
-        ax.plot(xi_range, m, **style1)
+        ax.plot( xi_range, m, **style1)
         ax.fill_between(xi_range, lo, up, **band1)
         ax.axhline(0, **zero)
         ax.text(0.6, 0.75, rf"$-t={t:.2f}$", transform=ax.transAxes)
-        ax.set_xlim(0,0.5)
-        ax.set_ylim(0,20)
-        ax.set_yticks([0,5,10,15,20])
+        ax.set_xlim(0,0.5); ax.set_ylim(0,20); ax.set_yticks([0,5,10,15,20])
+    # drop 0 tick in top row
     for ax in axes[:3]:
         ax.set_yticks([5,10,15,20])
+    # hide "0.0" x label bottom-middle/right
     for ax in (axes[4], axes[5]):
         for lbl in ax.get_xticklabels():
             if lbl.get_text() in ('0','0.0'):
@@ -188,19 +199,16 @@ for cff in fitp1:
     fig.suptitle(rf"$\mathrm{{Im}}\,{tex}$", fontsize=16, y=0.98)
     for ax, xi0 in zip(axes, xi_fixed):
         m, lo, up = band(cff, xi0, t_range, ren1, fitp1, fite1)
-        ax.plot(t_range, m, **style1)
+        ax.plot( t_range, m, **style1)
         ax.fill_between(t_range, lo, up, **band1)
         ax.axhline(0, **zero)
         ax.text(0.6, 0.75, rf"$\xi={xi0:.2f}$", transform=ax.transAxes)
-        ax.set_xlim(0,1.0)
-        ax.set_ylim(0,20)
-        ax.set_yticks([0,5,10,15,20])
+        ax.set_xlim(0,1.0); ax.set_ylim(0,20); ax.set_yticks([0,5,10,15,20])
     for ax in axes[:3]:
         ax.set_yticks([5,10,15,20])
     for ax in (axes[4], axes[5]):
         for lbl in ax.get_xticklabels():
-            if lbl.get_text() in ('0','0.0'):
-                lbl.set_visible(False)
+            if lbl.get_text() in ('0','0.0'): lbl.set_visible(False)
     axes[2].legend(handles=[Line2D([0],[0],**style1,label=lbl1)],
                    loc='upper right', fontsize=10)
     fig.text(0.06,0.5, rf"$\mathrm{{Im}}\,{tex}(\xi,\,-t)$",
@@ -224,22 +232,18 @@ if fit2file:
         for ax, t in zip(axes, t_fixed):
             m1, l1, u1 = band(cff, xi_range, t, ren1, fitp1, fite1)
             m2, l2, u2 = band(cff, xi_range, t, ren2, fitp2, fite2)
-            ax.plot(xi_range, m2, **style2)
+            ax.plot( xi_range, m2, **style2)
             ax.fill_between(xi_range, l2, u2, **band2)
-            ax.plot(xi_range, m1, **style1)
+            ax.plot( xi_range, m1, **style1)
             ax.fill_between(xi_range, l1, u1, **band1)
             ax.axhline(0, **zero)
             ax.text(0.6, 0.75, rf"$-t={t:.2f}$", transform=ax.transAxes)
-            ax.set_xlim(0,0.5)
-            ax.set_ylim(0,20)
-            ax.set_yticks([0,5,10,15,20])
+            ax.set_xlim(0,0.5); ax.set_ylim(0,20); ax.set_yticks([0,5,10,15,20])
         for ax in axes[:3]:
             ax.set_yticks([5,10,15,20])
         for ax in (axes[4], axes[5]):
             for lbl in ax.get_xticklabels():
-                if lbl.get_text() in ('0','0.0'):
-                    lbl.set_visible(False)
-        # legend only the two fits
+                if lbl.get_text() in ('0','0.0'): lbl.set_visible(False)
         axes[2].legend(handles=[
             Line2D([0],[0],**style2,label=lbl2),
             Line2D([0],[0],**style1,label=lbl1),
@@ -260,21 +264,18 @@ if fit2file:
         for ax, xi0 in zip(axes, xi_fixed):
             m1, l1, u1 = band(cff, xi0, t_range, ren1, fitp1, fite1)
             m2, l2, u2 = band(cff, xi0, t_range, ren2, fitp2, fite2)
-            ax.plot(t_range, m2, **style2)
+            ax.plot( t_range, m2, **style2)
             ax.fill_between(t_range, l2, u2, **band2)
-            ax.plot(t_range, m1, **style1)
+            ax.plot( t_range, m1, **style1)
             ax.fill_between(t_range, l1, u1, **band1)
             ax.axhline(0, **zero)
             ax.text(0.6, 0.75, rf"$\xi={xi0:.2f}$", transform=ax.transAxes)
-            ax.set_xlim(0,1.0)
-            ax.set_ylim(0,20)
-            ax.set_yticks([0,5,10,15,20])
+            ax.set_xlim(0,1.0); ax.set_ylim(0,20); ax.set_yticks([0,5,10,15,20])
         for ax in axes[:3]:
             ax.set_yticks([5,10,15,20])
         for ax in (axes[4], axes[5]):
             for lbl in ax.get_xticklabels():
-                if lbl.get_text() in ('0','0.0'):
-                    lbl.set_visible(False)
+                if lbl.get_text() in ('0','0.0'): lbl.set_visible(False)
         axes[2].legend(handles=[
             Line2D([0],[0],**style2,label=lbl2),
             Line2D([0],[0],**style1,label=lbl1),
