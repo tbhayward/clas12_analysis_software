@@ -37,10 +37,10 @@ extern bool   hasH, hasHt, hasE, hasEt;
 extern double renormImag, renormReal;
 
 // imaginary‐part model parameters
-extern double alpha0_H,  alpha1_H,  n_H,   b_H,   M2_H,  P_H;
-extern double alpha0_Ht, alpha1_Ht, n_Ht,  b_Ht,  M2_Ht, P_Ht;
-extern double alpha0_E,  alpha1_E,  n_E,   b_E,   M2_E,  P_E;
-extern double alpha0_Et, alpha1_Et, n_Et,  b_Et,  M2_Et, P_Et;
+extern double r_H,      alpha0_H,  alpha1_H,  n_H,   b_H,   M2_H,  P_H;
+extern double r_Ht,     alpha0_Ht, alpha1_Ht, n_Ht,  b_Ht,  M2_Ht, P_Ht;
+extern double r_E,      alpha0_E,  alpha1_E,  n_E,   b_E,   M2_E,  P_E;
+extern double r_Et,     alpha0_Et, alpha1_Et, n_Et,  b_Et,  M2_Et, P_Et;
 
 // ──────────────────────────────────────────────────────────────────────────────
 // control flags
@@ -132,7 +132,7 @@ void parse_args(int argc,char**argv){
           case 'C': gConstraint=atoi(optarg); break;
           default:
             std::cerr<<"Usage: "<<argv[0]
-                     <<" --strategy <1|2> -H<0|1> -Ht<0|1>"
+                     <<" --strategy<1|2> -H<0|1> -Ht<0|1>"
                      <<" -E<0|1> -Et<0|1> [--constraint<0|1>]\n";
             std::exit(1);
         }
@@ -149,13 +149,13 @@ void build_par_list(){
     parNamesIm.clear();
     parNamesIm.push_back("renormImag");
     if(hasH )  parNamesIm.insert(parNamesIm.end(),
-                   {"alpha0_H","alpha1_H","n_H","b_H","M2_H","P_H"});
+                   {"r_H","alpha0_H","alpha1_H","n_H","b_H","M2_H","P_H"});
     if(hasHt)  parNamesIm.insert(parNamesIm.end(),
-                   {"alpha0_Ht","alpha1_Ht","n_Ht","b_Ht","M2_Ht","P_Ht"});
+                   {"r_Ht","alpha0_Ht","alpha1_Ht","n_Ht","b_Ht","M2_Ht","P_Ht"});
     if(hasE )  parNamesIm.insert(parNamesIm.end(),
-                   {"alpha0_E","alpha1_E","n_E","b_E","M2_E","P_E"});
+                   {"r_E","alpha0_E","alpha1_E","n_E","b_E","M2_E","P_E"});
     if(hasEt)  parNamesIm.insert(parNamesIm.end(),
-                   {"alpha0_Et","alpha1_Et","n_Et","b_Et","M2_Et","P_Et"});
+                   {"r_Et","alpha0_Et","alpha1_Et","n_Et","b_Et","M2_Et","P_Et"});
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -165,32 +165,36 @@ void fcn(int&, double*, double &f, double *par, int){
     if(gStage==1){
         renormImag=par[ip++];
         if(hasH ){
-          alpha0_H=par[ip++]; alpha1_H=par[ip++];
-          n_H     =par[ip++]; b_H     =par[ip++];
-          M2_H    =par[ip++]; P_H     =par[ip++];
+          r_H      =par[ip++];
+          alpha0_H =par[ip++]; alpha1_H=par[ip++];
+          n_H      =par[ip++]; b_H     =par[ip++];
+          M2_H     =par[ip++]; P_H     =par[ip++];
         }
         if(hasHt){
+          r_Ht     =par[ip++];
           alpha0_Ht=par[ip++]; alpha1_Ht=par[ip++];
           n_Ht     =par[ip++]; b_Ht    =par[ip++];
           M2_Ht    =par[ip++]; P_Ht    =par[ip++];
         }
         if(hasE ){
-          alpha0_E=par[ip++]; alpha1_E=par[ip++];
-          n_E     =par[ip++]; b_E     =par[ip++];
-          M2_E    =par[ip++]; P_E     =par[ip++];
+          r_E      =par[ip++];
+          alpha0_E =par[ip++]; alpha1_E =par[ip++];
+          n_E      =par[ip++]; b_E      =par[ip++];
+          M2_E     =par[ip++]; P_E      =par[ip++];
         }
         if(hasEt){
+          r_Et     =par[ip++];
           alpha0_Et=par[ip++]; alpha1_Et=par[ip++];
-          n_Et     =par[ip++]; b_Et    =par[ip++];
+          n_Et     =par[ip++]; b_Et     =par[ip++];
           M2_Et    =par[ip++]; P_Et    =par[ip++];
         }
         double chi2=0;
         for(int k=0;k<Nbins;++k){
             BMK_DVCS dvcs(-1,1,0,
                           bin_Eb[k],bin_xB[k],bin_Q2[k],bin_t[k],0.0);
-            double mA=dvcs.s1_I()/dvcs.c0_BH();
-            double r =(bin_A[k]-mA)/bin_dA[k];
-            chi2+=r*r;
+            double mA = dvcs.s1_I()/dvcs.c0_BH();
+            double r  = (bin_A[k]-mA)/bin_dA[k];
+            chi2 += r*r;
         }
         f=chi2;
     }
@@ -199,8 +203,8 @@ void fcn(int&, double*, double &f, double *par, int){
         double chi2=0;
         for(auto &d: xsData){
             BMK_DVCS dvcs(-1,0,0,d.Eb,d.xB,d.Q2,d.t,d.phi);
-            double m=dvcs.CrossSection();
-            double r=(d.A-renormReal*m)/d.sigA;
+            double m = dvcs.CrossSection();
+            double r = (d.A-renormReal*m)/d.sigA;
             chi2+=r*r;
         }
         f=chi2;
@@ -224,58 +228,66 @@ int main(int argc,char**argv){
     build_par_list();
     int nim=parNamesIm.size();
     std::vector<double> imVal(nim), imErr(nim);
-    double chi2_im,edm,errdef; int nv,nx,ic, ndf_im;
+    double chi2_im,edm,errdef; int nv,nx,ic,ndf_im;
 
     {
         TMinuit minu(nim);
         minu.SetPrintLevel(1);
         minu.SetFCN(fcn);
+
         for(int i=0;i<nim;++i){
             const auto &nm=parNamesIm[i];
-            double init=0,step=0.01;
+            double init=0, step=0.01;
             #define GETINIT(NAME) if(nm==#NAME) init=NAME;
             GETINIT(renormImag)
-            GETINIT(alpha0_H)  GETINIT(alpha1_H)
-            GETINIT(n_H)       GETINIT(b_H)
-            GETINIT(M2_H)      GETINIT(P_H)
-            GETINIT(alpha0_Ht) GETINIT(alpha1_Ht)
-            GETINIT(n_Ht)      GETINIT(b_Ht)
-            GETINIT(M2_Ht)     GETINIT(P_Ht)
-            GETINIT(alpha0_E)  GETINIT(alpha1_E)
-            GETINIT(n_E)       GETINIT(b_E)
-            GETINIT(M2_E)      GETINIT(P_E)
-            GETINIT(alpha0_Et) GETINIT(alpha1_Et)
-            GETINIT(n_Et)      GETINIT(b_Et)
-            GETINIT(M2_Et)     GETINIT(P_Et)
+            GETINIT(r_H)        GETINIT(alpha0_H)
+            GETINIT(alpha1_H)   GETINIT(n_H)
+            GETINIT(b_H)        GETINIT(M2_H)
+            GETINIT(P_H)
+            GETINIT(r_Ht)       GETINIT(alpha0_Ht)
+            GETINIT(alpha1_Ht)  GETINIT(n_Ht)
+            GETINIT(b_Ht)       GETINIT(M2_Ht)
+            GETINIT(P_Ht)
+            GETINIT(r_E)        GETINIT(alpha0_E)
+            GETINIT(alpha1_E)   GETINIT(n_E)
+            GETINIT(b_E)        GETINIT(M2_E)
+            GETINIT(P_E)
+            GETINIT(r_Et)       GETINIT(alpha0_Et)
+            GETINIT(alpha1_Et)  GETINIT(n_Et)
+            GETINIT(b_Et)       GETINIT(M2_Et)
+            GETINIT(P_Et)
             #undef GETINIT
 
-            double lo=-1e3,hi=1e3;
+            double lo=-1e3, hi=1e3;
             if(nm.rfind("M2_",0)==0) lo=0.0;
+
             minu.DefineParameter(i,nm.c_str(),init,step,lo,hi);
 
-            // ** fix** renormImag, all alpha0_*, alpha1_*, and all P_* 
-            if(nm=="renormImag" ||
-               nm.rfind("alpha0_",0)==0 ||
-               nm.rfind("alpha1_",0)==0 ||
-               nm.rfind("P_",0)==0)
+            // fix renormImag, alpha0_*, alpha1_*, n_*, and P_*
+            if( nm=="renormImag"
+             || nm.rfind("alpha0_",0)==0
+             || nm.rfind("alpha1_",0)==0
+             || nm.rfind("n_",0)==0
+             || nm.rfind("P_",0)==0 )
             {
                 minu.FixParameter(i);
             }
         }
-        std::cout<<"Stage1: fitting Im–CFFs (only n,b,M2 floated)...\n";
+
+        std::cout<<"Stage1: fitting r_*, b_*, M2_* (all others fixed)...\n";
         minu.Migrad();
         minu.Command("HESSE");
         minu.mnstat(chi2_im,edm,errdef,nv,nx,ic);
         for(int i=0;i<nim;++i)
             minu.GetParameter(i,imVal[i],imErr[i]);
-        ndf_im=Nbins-nim;
+        ndf_im = Nbins - nim;
     }
 
     // collect into maps
-    std::map<std::string,double> valMap,errMap;
+    std::map<std::string,double> valMap, errMap;
     for(int i=0;i<nim;++i){
-        valMap[parNamesIm[i]]=imVal[i];
-        errMap[parNamesIm[i]]=imErr[i];
+        valMap[parNamesIm[i]] = imVal[i];
+        errMap[parNamesIm[i]] = imErr[i];
     }
 
     // ─── Stage 2: renormReal‐fit ────────────────────────────────────────────────
@@ -293,19 +305,19 @@ int main(int argc,char**argv){
             m2.Command("HESSE");
             m2.mnstat(chi2_re,edm2,errdef2,nv2,nx2,ic2);
             m2.GetParameter(0,reVal,reErr);
-            ndf_re=xsData.size()-1;
+            ndf_re = xsData.size() - 1;
         }
         valMap["renormReal"]=reVal;
         errMap["renormReal"]=reErr;
-        chi2_im=chi2_re;
-        ndf_im=ndf_re;
+        chi2_im = chi2_re;
+        ndf_im  = ndf_re;
     }
 
     // prepare output names
-    std::vector<std::string> outNames=parNamesIm;
+    std::vector<std::string> outNames = parNamesIm;
     if(gStrategy==2) outNames.push_back("renormReal");
 
-    // write text file
+    // write results file
     time_t now=time(nullptr);
     char tb[32];
     strftime(tb,sizeof(tb),"%Y%m%d_%H%M%S",localtime(&now));
@@ -327,14 +339,12 @@ int main(int argc,char**argv){
     fout<<chi2_im<<" "<<ndf_im<<" "<<(chi2_im/ndf_im)<<"\n";
     fout.close();
 
-    std::cout<<"Wrote fit results to "<<fname<<"\n";
+    std::cout<<"Wrote fit results to "<<fname<<"\n\n";
 
-    // ─── Print the same summary to stdout ──────────────────────────────────────
-    std::cout<<"\n--- Fit Results ---\n";
+    // echo to stdout
+    std::cout<<"--- Fit Results ---\n";
     for(auto &n: outNames){
-      std::cout<<" "<<n
-               <<" = "<<valMap[n]
-               <<" ± "<<errMap[n]<<"\n";
+      std::cout<<" "<<n<<" = "<<valMap[n]<<" ± "<<errMap[n]<<"\n";
     }
     std::cout<<" χ²/ndf = "<<chi2_im<<"/"<<ndf_im
              <<" = "<<(chi2_im/ndf_im)<<"\n";
