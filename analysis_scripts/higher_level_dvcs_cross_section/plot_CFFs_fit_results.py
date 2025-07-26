@@ -181,7 +181,7 @@ for cff in ("H","Ht","E","Et"):
         ax.axhline(0, **zero_line)
 
         ax.set_xlim(0,0.5)
-        ax.set_ylim(-2,12)
+        ax.set_ylim(-2,30)
         ax.set_xticks([0,0.1,0.2,0.3,0.4,0.5])
         ax.set_yticks([-2,0,3,6,9,12])
 
@@ -219,7 +219,7 @@ for cff in ("H","Ht","E","Et"):
         ax.axhline(0, **zero_line)
 
         ax.set_xlim(0,1.0)
-        ax.set_ylim(-2,12)
+        ax.set_ylim(-2,30)
         ax.set_xticks([0,0.2,0.4,0.6,0.8,1.0])
         ax.set_yticks([-2,0,3,6,9,12])
 
