@@ -10,7 +10,7 @@ enabled Im CFF makes two figures:
   1) Im CFF vs. ξ for six fixed −t between 0.1 and 1.0 (GeV²) (2×3 grid)
   2) Im CFF vs. −t for six fixed ξ between 0.05 and 0.50 (2×3 grid)
 
-Includes uncertainty bands for fitted results using replica method (95% CI).
+Includes uncertainty bands for fitted results using replica method (±1σ).
 
 Saves to:
   output/plots/Im{CFF}_vs_xi_<TIMESTAMP>.pdf  
@@ -104,7 +104,7 @@ def make_Im_func(cff, params, renorm):
         return pref * xfac * yfac * tfac * d["corr"]
     return Im
 
-# ─── Replica‐band support ───────────────────────────────────────────────────────
+# ─── Replica‐band support (now ±1σ) ─────────────────────────────────────────────
 def generate_replicas(central, errors, nrep=10000):
     reps = []
     for _ in range(nrep):
@@ -120,15 +120,15 @@ def compute_uncertainty_band(cff, xi_vals, t_vals, nrep=10000):
         return None, None, None
     param_reps  = generate_replicas(fit_params[cff], fit_errors[cff], nrep)
     renorm_reps = np.random.normal(renorm_fit, renorm_err/1.96, nrep)
-    curves = np.empty((nrep, len(xi_vals) if np.ndim(xi_vals)>0 else len(t_vals)))
+    # build array [nrep × Npoints]
+    N = len(xi_vals) if np.ndim(xi_vals)>0 else len(t_vals)
+    curves = np.empty((nrep, N))
     for i in range(nrep):
         Im_rep = make_Im_func(cff, param_reps[i], renorm_reps[i])
         curves[i] = Im_rep(xi_vals, t_vals) if np.ndim(t_vals)>0 else Im_rep(xi_vals, t_vals)
-    return (
-        np.median(curves, axis=0),
-        np.percentile(curves, 2.5, axis=0),
-        np.percentile(curves, 97.5, axis=0),
-    )
+    mean = curves.mean(axis=0)
+    sigma = curves.std(axis=0)
+    return mean, mean - sigma, mean + sigma
 
 # ─── Plot setup ────────────────────────────────────────────────────────────────
 plt.style.use('classic')
@@ -136,7 +136,7 @@ plt.rcParams.update({'font.size':14,'font.family':'serif'})
 outdir = 'output/plots'
 os.makedirs(outdir, exist_ok=True)
 
-# avoid xi=0 singularity by starting at small epsilon
+# avoid ξ=0 by starting at a tiny ε
 xi_min    = 1e-3
 xi_range  = np.linspace(xi_min, 0.5, 200)
 t_range   = np.linspace(0,1.0,200)
@@ -150,8 +150,8 @@ zero_line  = {'color':'gray','linestyle':'--','linewidth':1}
 
 legend_elems = [
     Line2D([0],[0], color='tab:blue', linestyle='-', lw=2.5, label='Original model'),
-    Line2D([0],[0], color='tab:red',  linestyle='--',lw=2.5, label='Fit median'),
-    Line2D([0],[0], color='tab:red',  lw=6,       alpha=0.2, label='95% CI'),
+    Line2D([0],[0], color='tab:red',  linestyle='--',lw=2.5, label='Fit mean'),
+    Line2D([0],[0], color='tab:red',  lw=6,       alpha=0.2, label='±1σ'),
 ]
 
 tex_map = {"H":"H", "Ht":r"\tilde H", "E":"E", "Et":r"\tilde E"}
@@ -171,14 +171,13 @@ for cff in ("H","Ht","E","Et"):
 
     for i, (ax, t0) in enumerate(zip(axes, t_fixed)):
         ax.plot(xi_range, Im_orig(xi_range, -t0), **orig_style)
-        med, lo, up = compute_uncertainty_band(cff, xi_range, -t0)
-        ax.plot(xi_range, med, **fit_style)
+        mean, lo, up = compute_uncertainty_band(cff, xi_range, -t0)
+        ax.plot(xi_range, mean, **fit_style)
         ax.fill_between(xi_range, lo, up, **band_style)
         ax.axhline(0, **zero_line)
 
         ax.set_xlim(0,0.5)
         ax.set_ylim(-2,12)
-        # drop the 0.0 tick since xi_range starts at 1e-3
         ax.set_xticks([0.1,0.2,0.3,0.4,0.5])
         ax.set_yticks([-2,0,3,6,9,12])
 
@@ -188,8 +187,6 @@ for cff in ("H","Ht","E","Et"):
             ax.tick_params(labelleft=False)
 
         ax.set_xlabel(r"$\xi$")
-
-        # move the label down a bit
         ax.text(0.60, 0.65, rf"$-t={t0:.2f}\,\mathrm{{GeV^2}}$",
                 transform=ax.transAxes, fontsize=12)
 
@@ -198,7 +195,6 @@ for cff in ("H","Ht","E","Et"):
     axes[2].legend(handles=legend_elems, loc='upper right', fontsize=10)
     out1 = f"{outdir}/Im{cff}_vs_xi_{timestamp}.pdf"
     fig.savefig(out1, bbox_inches='tight')
-    print("Saved:", out1)
     plt.close(fig)
 
     # — Im vs −t at fixed ξ —
@@ -208,8 +204,8 @@ for cff in ("H","Ht","E","Et"):
 
     for i, (ax, x0) in enumerate(zip(axes, xi_fixed)):
         ax.plot(t_range, Im_orig(x0, -t_range), **orig_style)
-        med, lo, up = compute_uncertainty_band(cff, x0, -t_range)
-        ax.plot(t_range, med, **fit_style)
+        mean, lo, up = compute_uncertainty_band(cff, x0, -t_range)
+        ax.plot(t_range, mean, **fit_style)
         ax.fill_between(t_range, lo, up, **band_style)
         ax.axhline(0, **zero_line)
 
@@ -224,7 +220,6 @@ for cff in ("H","Ht","E","Et"):
             ax.tick_params(labelleft=False)
 
         ax.set_xlabel(r"$-t\;(\mathrm{GeV^2})$")
-
         ax.text(0.60, 0.65, rf"$\xi={x0:.2f}$",
                 transform=ax.transAxes, fontsize=12)
 
@@ -233,5 +228,4 @@ for cff in ("H","Ht","E","Et"):
     axes[2].legend(handles=legend_elems, loc='upper right', fontsize=10)
     out2 = f"{outdir}/Im{cff}_vs_t_{timestamp}.pdf"
     fig.savefig(out2, bbox_inches='tight')
-    print("Saved:", out2)
     plt.close(fig)
