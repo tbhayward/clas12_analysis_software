@@ -1,16 +1,19 @@
-// fit_CFFs.C
-// ──────────
-// program to fit DVCS Compton Form Factors (CFFs) imaginary then real parts
-//
-// Strategies:
-//   1) fit only Im‐parts -> BSA data
-//   2) two‐step: (a) fit Im‐parts -> BSA, (b) fit Re‐parts -> xsec
-//
-// Usage:
-//   ./fit_CFFs --strategy <1|2> -H <0|1> -Ht <0|1> -E <0|1> -Et <0|1> [--input <BSA_file>]
-//
-// Compile:
-//   g++ -O2 fit_CFFs.C `root-config --cflags --libs` -lMinuit -o fit_CFFs
+#!/usr/bin/env python3
+/**
+ * fit_CFFs.C
+ * ──────────
+ * program to fit DVCS Compton Form Factors (CFFs) imaginary then real parts
+ *
+ * Strategies:
+ *   1) fit only Im–parts -> BSA data
+ *   2) two-step: (a) fit Im–parts -> BSA, (b) fit Re–parts -> xsec
+ *
+ * Usage:
+ *   ./fit_CFFs --strategy <1|2> -H <0|1> -Ht <0|1> -E <0|1> -Et <0|1> [--input <BSA_file>]
+ *
+ * Compile:
+ *   g++ -O2 fit_CFFs.C `root-config --cflags --libs` -lMinuit -o fit_CFFs
+ */
 
 #include <cmath>
 #include <iostream>
@@ -36,10 +39,10 @@ extern double renormImag, renormReal;
 // -------------------------------------------------------------------------------------------------
 //   Compton Form Factor (CFF) models—imaginary parts (r_* removed, factors absorbed)
 // -------------------------------------------------------------------------------------------------
-extern double alpha0_H, alpha1_H, n_H,    b_H,    M2_H,  P_H;
-extern double alpha0_Ht,alpha1_Ht,n_Ht,   b_Ht,   M2_Ht, P_Ht;
-extern double alpha0_E, alpha1_E, n_E,    b_E,    M2_E,  P_E;
-extern double alpha0_Et,alpha1_Et,n_Et,   b_Et,   M2_Et, P_Et;
+extern double alpha0_H,  alpha1_H,  n_H,   b_H,   M2_H,  P_H;
+extern double alpha0_Ht, alpha1_Ht, n_Ht,  b_Ht,  M2_Ht, P_Ht;
+extern double alpha0_E,  alpha1_E,  n_E,   b_E,   M2_E,  P_E;
+extern double alpha0_Et, alpha1_Et, n_Et,  b_Et,  M2_Et, P_Et;
 
 // -------------------------------------------------------------------------------------------------
 //   Compton Form Factor (CFF) models—real parts (dispersion‐relation subtraction)
@@ -50,11 +53,11 @@ extern double C0_E,    MD2_E,    lambda_E;
 extern double C0_Et,   MD2_Et,   lambda_Et;
 
 // ──────────────────────────────────────────────────────────────────────────────
-// global controls
+// global controls (must be before LoadData)
 static int  gStrategy    = 0;       // 1 or 2
 static int  gStage       = 1;       // 1=Im fit, 2=Re fit
 static std::string gBsaFile = "imports/rga_prl_bsa.txt";
-static const char* gXsFile = "imports/rga_pass1_xsec_2018.txt";
+static const char* gXsFile    = "imports/rga_pass1_xsec_2018.txt";
 
 // ──────────────────────────────────────────────────────────────────────────────
 // Data structures & loading
@@ -241,6 +244,7 @@ int main(int argc, char** argv){
     build_par_list();
     int nim = parNamesIm.size();
     std::vector<double> imVal(nim,0), imErr(nim,0);
+    double chi2_im, edm, errdef; int nv,nx,ic, ndf_im;
     {
         TMinuit minu(nim);
         minu.SetPrintLevel(1);
@@ -257,10 +261,15 @@ int main(int argc, char** argv){
         }
         std::cout<<"Stage1: fitting Im→BSA...\n";
         minu.Migrad();
-        double edm, errdef; int nv,nx,ic;
-        minu.mnstat(edm,edm,errdef,nv,nx,ic);
+        minu.mnstat(chi2_im, edm, errdef, nv, nx, ic);
         for(int i=0;i<nim;++i) minu.GetParameter(i, imVal[i], imErr[i]);
+        ndf_im = int(bsaData.size()) - nim;
     }
+    std::cout<<"\n--- Im Results ---\n";
+    for(int i=0;i<nim;++i)
+        std::cout<<" "<<parNamesIm[i]<<" = "<<imVal[i]<<" ± "<<imErr[i]<<"\n";
+    std::cout<<" χ²/ndf = "<<chi2_im<<"/"<<ndf_im
+             <<" = "<<(chi2_im/ndf_im)<<"\n\n";
 
     if(gStrategy==2){
         // Stage 2: Re fit
@@ -268,17 +277,27 @@ int main(int argc, char** argv){
         build_par_list();
         int nre = parNamesRe.size();
         std::vector<double> reVal(nre,0), reErr(nre,0);
-        TMinuit minu2(nre);
-        minu2.SetPrintLevel(1);
-        minu2.SetFCN(fcn);
-        for(int i=0;i<nre;++i){
-            minu2.DefineParameter(i, parNamesRe[i].c_str(), 1.0, 0.01, -1e3, 1e3);
+        double chi2_re; int ndf_re;
+        {
+            TMinuit minu2(nre);
+            minu2.SetPrintLevel(1);
+            minu2.SetFCN(fcn);
+            for(int i=0;i<nre;++i){
+                minu2.DefineParameter(i, parNamesRe[i].c_str(),
+                                      1.0, 0.01, -1e3, 1e3);
+            }
+            std::cout<<"Stage2: fitting Re→xsec (Im fixed)...\n";
+            minu2.Migrad();
+            minu2.mnstat(chi2_re, edm, errdef, nv, nx, ic);
+            for(int i=0;i<nre;++i)
+                minu2.GetParameter(i, reVal[i], reErr[i]);
+            ndf_re = int(xsData.size()) - nre;
         }
-        std::cout<<"Stage2: fitting Re→xsec (Im fixed)...\n";
-        minu2.Migrad();
-        double edm2, errdef2; int nv2,nx2,ic2;
-        minu2.mnstat(edm2,edm2,errdef2,nv2,nx2,ic2);
-        for(int i=0;i<nre;++i) minu2.GetParameter(i, reVal[i], reErr[i]);
+        std::cout<<"\n--- Re Results ---\n";
+        for(int i=0;i<nre;++i)
+            std::cout<<" "<<parNamesRe[i]<<" = "<<reVal[i]<<" ± "<<reErr[i]<<"\n";
+        std::cout<<" χ²/ndf = "<<chi2_re<<"/"<<ndf_re
+                 <<" = "<<(chi2_re/ndf_re)<<"\n\n";
 
         // Write both Im & Re results
         system("mkdir -p output/fit_results/");
@@ -299,26 +318,6 @@ int main(int argc, char** argv){
         out<<"\n# errors:\n";
         for(auto &e: imErr) out<<e<<" ";
         for(auto &e: reErr) out<<e<<" ";
-        out<<"\n";
-        out.close();
-        std::cout<<"Wrote fit results to output/fit_results/fit_results_"<<buf<<".txt\n";
-    } else {
-        // Strategy 1 only: write Im results
-        system("mkdir -p output/fit_results/");
-        time_t now=time(nullptr);
-        char buf[32];
-        strftime(buf,sizeof(buf),"%Y%m%d_%H%M%S",localtime(&now));
-        std::ofstream out(std::string("output/fit_results/fit_results_")+buf+".txt");
-        out<<"# fit_CFFs results\n";
-        out<<"timestamp "<<buf<<"\n";
-        out<<"strategy "<<gStrategy<<"\n";
-        out<<"H "<<hasH<<" Ht "<<hasHt<<" E "<<hasE<<" Et "<<hasEt<<"\n";
-        out<<"# parameters:";
-        for(auto &n: parNamesIm) out<<" "<<n;
-        out<<"\n# values:\n";
-        for(auto &v: imVal) out<<v<<" ";
-        out<<"\n# errors:\n";
-        for(auto &e: imErr) out<<e<<" ";
         out<<"\n";
         out.close();
         std::cout<<"Wrote fit results to output/fit_results/fit_results_"<<buf<<".txt\n";
