@@ -8,7 +8,7 @@
  *   2) two-step: (a) fit Im–parts -> BSA, (b) fit only renormReal -> xsec
  *
  * Usage:
- *   ./fit_CFFs --strategy <1|2> -H <0|1> -Ht <0|1> -E <0|1> -Et <0|1>
+ *   ./fit_CFFs --strategy <1|2> -H <0|1> -Ht <0|1> -E <0|1> -Et <0|1> [--constraint <0|1>]
  *
  * Compile:
  *   g++ -O2 fit_CFFs.C `root-config --cflags --libs` -lMinuit -o fit_CFFs
@@ -42,9 +42,10 @@ extern double alpha0_E,  alpha1_E,  n_E,   b_E,   M2_E,  P_E;
 extern double alpha0_Et, alpha1_Et, n_Et,  b_Et,  M2_Et, P_Et;
 
 // ──────────────────────────────────────────────────────────────────────────────
-// control flags (must be before LoadData)
-static int  gStrategy = 0;    // 1 or 2
-static int  gStage    = 1;    // 1 = Im‐fit, 2 = Re‐fit
+// control flags
+static int  gStrategy    = 0;    // 1 or 2
+static int  gStage       = 1;    // 1 = Im‐fit, 2 = Re‐fit
+static int  gConstraint  = 0;    // 0 = no cut, 1 = apply -t/Q2<0.2
 static std::string gBsaFile = "imports/rga_prl_bsa.txt";
 static const char* gXsFile   = "imports/rga_pass1_xsec_2018.txt";
 
@@ -68,6 +69,11 @@ void LoadData(){
             std::istringstream iss(line);
             DataPoint d;
             iss>>d.phi>>d.Q2>>d.xB>>d.t>>d.Eb>>d.A>>d.sigA;
+            // apply constraint if requested:
+            if(gConstraint==1){
+                // skip if -t/Q2 >= 0.2
+                if( (-d.t / d.Q2) >= 0.2 ) continue;
+            }
             v.push_back(d);
         }
     };
@@ -79,20 +85,22 @@ void LoadData(){
 // Bin the BSA data by phi‐drop bins and extract sinφ amplitudes A_bin ± dA_bin
 void BinBsaData(){
     bin_xB.clear(); bin_Q2.clear(); bin_t.clear(); bin_Eb.clear();
-    bin_A.clear();  bin_dA.clear();
+    bin_A .clear(); bin_dA.clear();
     if(bsaData.empty()) return;
 
-    size_t start=0;
-    auto flush=[&](size_t end){
+    size_t start = 0;
+    auto flush = [&](size_t end){
         double SwA=0, Sw2=0, Sx=0, Sq=0, St=0, Se=0;
         int M = end - start;
         for(size_t i=start;i<end;++i){
-            auto &d=bsaData[i];
-            double rad=d.phi*TMath::Pi()/180.0;
-            double s=std::sin(rad), w=1.0/(d.sigA*d.sigA);
+            auto &d = bsaData[i];
+            double rad = d.phi * TMath::Pi()/180.0;
+            double s   = std::sin(rad);
+            double w   = 1.0/(d.sigA*d.sigA);
             SwA += w*d.A*s;
             Sw2 += w*s*s;
-            Sx += d.xB; Sq += d.Q2; St += d.t; Se += d.Eb;
+            Sx  += d.xB;  Sq += d.Q2;
+            St  += d.t;   Se += d.Eb;
         }
         bin_A .push_back(SwA/Sw2);
         bin_dA.push_back(1.0/std::sqrt(Sw2));
@@ -103,35 +111,41 @@ void BinBsaData(){
     };
 
     for(size_t i=1;i<=bsaData.size();++i){
-        bool newbin = (i==bsaData.size()||bsaData[i].phi < bsaData[i-1].phi);
-        if(newbin){ flush(i); start=i; }
+        bool newbin = (i==bsaData.size()
+                       || bsaData[i].phi < bsaData[i-1].phi);
+        if(newbin){
+            flush(i);
+            start = i;
+        }
     }
     Nbins = bin_A.size();
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
-// parse_args(): read --strategy, -H, -Ht, -E, -Et
+// parse_args(): read --strategy, -H, -Ht, -E, -Et, --constraint
 void parse_args(int argc, char** argv){
     static struct option opts[] = {
-        {"strategy", required_argument,nullptr,'s'},
-        {"H",        required_argument,nullptr,'h'},
-        {"Ht",       required_argument,nullptr,'t'},
-        {"E",        required_argument,nullptr,'e'},
-        {"Et",       required_argument,nullptr,'x'},
+        {"strategy",   required_argument, nullptr, 's'},
+        {"H",          required_argument, nullptr, 'h'},
+        {"Ht",         required_argument, nullptr, 't'},
+        {"E",          required_argument, nullptr, 'e'},
+        {"Et",         required_argument, nullptr, 'x'},
+        {"constraint", required_argument, nullptr, 'C'},
         {nullptr,0,nullptr,0}
     };
     int c;
-    while((c=getopt_long(argc,argv,"s:h:t:e:x:",opts,nullptr))!=-1){
+    while((c=getopt_long(argc,argv,"s:h:t:e:x:C:",opts,nullptr))!=-1){
         switch(c){
-          case 's': gStrategy=atoi(optarg); break;
-          case 'h': hasH     =atoi(optarg); break;
-          case 't': hasHt    =atoi(optarg); break;
-          case 'e': hasE     =atoi(optarg); break;
-          case 'x': hasEt    =atoi(optarg); break;
+          case 's': gStrategy   = std::atoi(optarg); break;
+          case 'h': hasH        = std::atoi(optarg); break;
+          case 't': hasHt       = std::atoi(optarg); break;
+          case 'e': hasE        = std::atoi(optarg); break;
+          case 'x': hasEt       = std::atoi(optarg); break;
+          case 'C': gConstraint = std::atoi(optarg); break;
           default:
             std::cerr<<"Usage: "<<argv[0]
                      <<" --strategy <1|2> -H <0|1> -Ht <0|1>"
-                     <<" -E <0|1> -Et <0|1>\n";
+                     <<" -E <0|1> -Et <0|1> [--constraint <0|1>]\n";
             std::exit(1);
         }
     }
@@ -141,7 +155,7 @@ void parse_args(int argc, char** argv){
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
-// build_par_list(): always include every Im‐parameter
+// build_par_list(): which Im‐parameters to fit
 static std::vector<std::string> parNamesIm;
 void build_par_list(){
     parNamesIm.clear();
@@ -161,42 +175,27 @@ void build_par_list(){
 void fcn(int&, double*, double &f, double *par, int){
     int ip=0;
     if(gStage==1){
-        // renormImag
         renormImag = par[ip++];
-        // α₀, α₁, n, b, M2, P for each CFF
         if(hasH ){
-          alpha0_H  = par[ip++];
-          alpha1_H  = par[ip++];
-          n_H       = par[ip++];
-          b_H       = par[ip++];
-          M2_H      = par[ip++];
-          P_H       = par[ip++];
+          alpha0_H = par[ip++]; alpha1_H = par[ip++];
+          n_H      = par[ip++]; b_H      = par[ip++];
+          M2_H     = par[ip++]; P_H      = par[ip++];
         }
         if(hasHt){
-          alpha0_Ht = par[ip++];
-          alpha1_Ht = par[ip++];
-          n_Ht      = par[ip++];
-          b_Ht      = par[ip++];
-          M2_Ht     = par[ip++];
-          P_Ht      = par[ip++];
+          alpha0_Ht = par[ip++]; alpha1_Ht = par[ip++];
+          n_Ht      = par[ip++]; b_Ht      = par[ip++];
+          M2_Ht     = par[ip++]; P_Ht      = par[ip++];
         }
         if(hasE ){
-          alpha0_E  = par[ip++];
-          alpha1_E  = par[ip++];
-          n_E       = par[ip++];
-          b_E       = par[ip++];
-          M2_E      = par[ip++];
-          P_E       = par[ip++];
+          alpha0_E = par[ip++]; alpha1_E = par[ip++];
+          n_E      = par[ip++]; b_E      = par[ip++];
+          M2_E     = par[ip++]; P_E      = par[ip++];
         }
         if(hasEt){
-          alpha0_Et = par[ip++];
-          alpha1_Et = par[ip++];
-          n_Et      = par[ip++];
-          b_Et      = par[ip++];
-          M2_Et     = par[ip++];
-          P_Et      = par[ip++];
+          alpha0_Et = par[ip++]; alpha1_Et = par[ip++];
+          n_Et      = par[ip++]; b_Et      = par[ip++];
+          M2_Et     = par[ip++]; P_Et      = par[ip++];
         }
-        // compute χ² on BSA
         double chi2=0;
         for(int k=0;k<Nbins;++k){
             BMK_DVCS dvcs(-1,1,0,
@@ -208,7 +207,6 @@ void fcn(int&, double*, double &f, double *par, int){
         f = chi2;
     }
     else {
-        // renormReal fit
         renormReal = par[ip++];
         double chi2=0;
         for(auto &d: xsData){
@@ -226,7 +224,8 @@ int main(int argc, char** argv){
     parse_args(argc,argv);
     std::cout<<"\n=== Strategy="<<gStrategy
              <<"  H="<<hasH<<" Ht="<<hasHt
-             <<" E="<<hasE<<" Et="<<hasEt<<" ===\n";
+             <<" E="<<hasE<<" Et="<<hasEt
+             <<"  constraint="<<gConstraint<<" ===\n";
 
     LoadData();
     BinBsaData();
@@ -234,7 +233,7 @@ int main(int argc, char** argv){
              <<bsaData.size()<<" raw points)\n\n";
 
     // ─── Stage 1: Im fit ────────────────────────────────────────────────────────
-    gStage=1;
+    gStage = 1;
     build_par_list();
     int nim = parNamesIm.size();
     std::vector<double> imVal(nim), imErr(nim);
@@ -245,43 +244,33 @@ int main(int argc, char** argv){
         minu.SetPrintLevel(1);
         minu.SetFCN(fcn);
 
+        // define+fix parameters
         for(int i=0;i<nim;++i){
             const auto &nm = parNamesIm[i];
-            double init = 0;
-            // read initial from the current globals:
-            if     (nm=="renormImag") init=renormImag;
-            else if(nm=="alpha0_H")   init=alpha0_H;
-            else if(nm=="alpha1_H")   init=alpha1_H;
-            else if(nm=="n_H")        init=n_H;
-            else if(nm=="b_H")        init=b_H;
-            else if(nm=="M2_H")       init=M2_H;
-            else if(nm=="P_H")        init=P_H;
-            else if(nm=="alpha0_Ht")  init=alpha0_Ht;
-            else if(nm=="alpha1_Ht")  init=alpha1_Ht;
-            else if(nm=="n_Ht")       init=n_Ht;
-            else if(nm=="b_Ht")       init=b_Ht;
-            else if(nm=="M2_Ht")      init=M2_Ht;
-            else if(nm=="P_Ht")       init=P_Ht;
-            else if(nm=="alpha0_E")   init=alpha0_E;
-            else if(nm=="alpha1_E")   init=alpha1_E;
-            else if(nm=="n_E")        init=n_E;
-            else if(nm=="b_E")        init=b_E;
-            else if(nm=="M2_E")       init=M2_E;
-            else if(nm=="P_E")        init=P_E;
-            else if(nm=="alpha0_Et")  init=alpha0_Et;
-            else if(nm=="alpha1_Et")  init=alpha1_Et;
-            else if(nm=="n_Et")       init=n_Et;
-            else if(nm=="b_Et")       init=b_Et;
-            else if(nm=="M2_Et")      init=M2_Et;
-            else if(nm=="P_Et")       init=P_Et;
+            double init=0, step=0.01;
+            // read starting value from the extern globals:
+            #define GETINIT(NAME) if(nm==#NAME) init = NAME;
+            GETINIT(renormImag)
+            GETINIT(alpha0_H)   GETINIT(alpha1_H)
+            GETINIT(n_H)        GETINIT(b_H)
+            GETINIT(M2_H)       GETINIT(P_H)
+            GETINIT(alpha0_Ht)  GETINIT(alpha1_Ht)
+            GETINIT(n_Ht)       GETINIT(b_Ht)
+            GETINIT(M2_Ht)      GETINIT(P_Ht)
+            GETINIT(alpha0_E)   GETINIT(alpha1_E)
+            GETINIT(n_E)        GETINIT(b_E)
+            GETINIT(M2_E)       GETINIT(P_E)
+            GETINIT(alpha0_Et)  GETINIT(alpha1_Et)
+            GETINIT(n_Et)       GETINIT(b_Et)
+            GETINIT(M2_Et)      GETINIT(P_Et)
+            #undef GETINIT
 
-            minu.DefineParameter(i,
-                                nm.c_str(),
-                                init,
-                                0.01,
-                               -1e3,1e3);
+            double lower=-1e3, upper=1e3;
+            // enforce M2_ > 0
+            if(nm.rfind("M2_",0)==0) lower = 0.0;
 
-            // fix only renormImag and all the P_* parameters:
+            minu.DefineParameter(i, nm.c_str(), init, step, lower, upper);
+            // fix only renormImag and all P_*
             if(nm=="renormImag" || nm.rfind("P_",0)==0){
                 minu.FixParameter(i);
             }
@@ -296,7 +285,7 @@ int main(int argc, char** argv){
         ndf_im = Nbins - nim;
     }
 
-    // write out Im‐fit results
+    // write out Im‐fit results...
     std::vector<std::string> outNames = parNamesIm;
     std::vector<double>      outVal   = imVal;
     std::vector<double>      outErrV  = imErr;
@@ -313,7 +302,7 @@ int main(int argc, char** argv){
 
     // ─── Stage 2: renormReal → xsec, if requested ───────────────────────────────
     if(gStrategy==2){
-        gStage=2;
+        gStage = 2;
         double chi2_re, edm2, errdef2; int nv2,nx2,ic2, ndf_re;
         double reVal,reErr;
 
@@ -321,7 +310,6 @@ int main(int argc, char** argv){
             TMinuit m2(1);
             m2.SetPrintLevel(1);
             m2.SetFCN(fcn);
-
             m2.DefineParameter(0,
                                "renormReal",
                                renormReal,
@@ -345,7 +333,7 @@ int main(int argc, char** argv){
         std::cout<<" renormReal = "<<reVal
                  <<" ± "<<reErr<<"\n";
         std::cout<<" χ²/ndf = "<<finalChi2<<"/"<<finalNdf
-                 <<" = "<<(finalChi2/finalNdf)<<"\n\n";
+                 <<" = "<<(finalChi2/ finalNdf)<<"\n\n";
     }
 
     // ─── Write results to timestamped file ───────────────────────────────────────
@@ -358,11 +346,12 @@ int main(int argc, char** argv){
     out<<"# fit_CFFs results\n";
     out<<"timestamp   "<<tb<<"\n";
     out<<"strategy    "<<gStrategy<<"\n";
+    out<<"constraint  "<<gConstraint<<"\n";
     out<<"H "<<hasH<<"  Ht "<<hasHt<<"  E "<<hasE<<"  Et "<<hasEt<<"\n";
     out<<"# parameters:";
     for(auto &n: outNames) out<<" "<<n;
     out<<"\n# values:\n";
-    for(auto &v: outVal) out<<v<<" ";
+    for(auto &v: outVal ) out<<v<<" ";
     out<<"\n# errors:\n";
     for(auto &e: outErrV) out<<e<<" ";
     out<<"\n# chi2 ndf chi2/ndf\n";
