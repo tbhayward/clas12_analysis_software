@@ -7,7 +7,7 @@
 //   2) two‐step: (a) fit Im‐parts -> BSA, (b) fit Re‐parts -> xsec
 //
 // Usage:
-//   ./fit_CFFs -strategy <1|2> -H <0|1> -Ht <0|1> -E <0|1> -Et <0|1> [--input <BSA_file>]
+//   ./fit_CFFs --strategy <1|2> -H <0|1> -Ht <0|1> -E <0|1> -Et <0|1> [--input <BSA_file>]
 //
 // Compile:
 //   g++ -O2 fit_CFFs.C `root-config --cflags --libs` -lMinuit -o fit_CFFs
@@ -36,10 +36,10 @@ extern double renormImag, renormReal;
 // -------------------------------------------------------------------------------------------------
 //   Compton Form Factor (CFF) models—imaginary parts (r_* removed, factors absorbed)
 // -------------------------------------------------------------------------------------------------
-extern double alpha0_H, alpha1_H, n_H, b_H, M2_H, P_H;
-extern double alpha0_Ht, alpha1_Ht, n_Ht, b_Ht, M2_Ht, P_Ht;
-extern double alpha0_E, alpha1_E, n_E, b_E, M2_E, P_E;
-extern double alpha0_Et, alpha1_Et, n_Et, b_Et, M2_Et, P_Et;
+extern double alpha0_H, alpha1_H, n_H,    b_H,    M2_H,  P_H;
+extern double alpha0_Ht,alpha1_Ht,n_Ht,   b_Ht,   M2_Ht, P_Ht;
+extern double alpha0_E, alpha1_E, n_E,    b_E,    M2_E,  P_E;
+extern double alpha0_Et,alpha1_Et,n_Et,   b_Et,   M2_Et, P_Et;
 
 // -------------------------------------------------------------------------------------------------
 //   Compton Form Factor (CFF) models—real parts (dispersion‐relation subtraction)
@@ -49,12 +49,6 @@ extern double C0_Ht,   MD2_Ht,   lambda_Ht;
 extern double C0_E,    MD2_E,    lambda_E;
 extern double C0_Et,   MD2_Et,   lambda_Et;
 
-// real‐ansatz globals (subtraction constants)
-extern double A_H, B_H, C_H, D_H, E_H;     // note: unused in DR version
-extern double A_Ht, B_Ht;                  // unused
-extern double A_E, B_E, C_E, D_E;          // unused
-extern double A_Et, B_Et;                  // unused
-
 // ──────────────────────────────────────────────────────────────────────────────
 // Data structures & loading
 struct DataPoint { double phi,Q2,xB,t,Eb,A,sigA; };
@@ -63,7 +57,7 @@ static std::vector<DataPoint> bsaData, xsData;
 void LoadData(){
     auto read = [&](const char* fn, std::vector<DataPoint>& v){
         std::ifstream in(fn);
-        if(!in){ std::cerr<<"ERROR: open "<<fn<<"\n"; std::exit(1); }
+        if(!in){ std::cerr<<"ERROR: cannot open "<<fn<<"\n"; std::exit(1); }
         std::string line;
         while(std::getline(in,line)){
             if(line.empty()||line[0]=='#') continue;
@@ -85,7 +79,7 @@ static std::string gBsaFile = "imports/rga_prl_bsa.txt";
 static const char* gXsFile = "imports/rga_pass1_xsec_2018.txt";
 
 // ──────────────────────────────────────────────────────────────────────────────
-// parse_args(): read -strategy, -H, -Ht, -E, -Et, [--input <BSA_file>]
+// parse_args(): read --strategy, -H, -Ht, -E, -Et, [--input <BSA_file>]
 // ──────────────────────────────────────────────────────────────────────────────
 void parse_args(int argc, char** argv){
     static struct option long_opts[] = {
@@ -100,12 +94,12 @@ void parse_args(int argc, char** argv){
     int c;
     while((c = getopt_long(argc, argv, "s:h:t:e:x:i:", long_opts, nullptr)) != -1){
         switch(c){
-          case 's': gStrategy = std::atoi(optarg);      break;
-          case 'h': hasH       = std::atoi(optarg);      break;
-          case 't': hasHt      = std::atoi(optarg);      break;
-          case 'e': hasE       = std::atoi(optarg);      break;
-          case 'x': hasEt      = std::atoi(optarg);      break;
-          case 'i': gBsaFile   = std::string(optarg);    break;  // override BSA file
+          case 's': gStrategy = std::atoi(optarg);   break;
+          case 'h': hasH       = std::atoi(optarg);   break;
+          case 't': hasHt      = std::atoi(optarg);   break;
+          case 'e': hasE       = std::atoi(optarg);   break;
+          case 'x': hasEt      = std::atoi(optarg);   break;
+          case 'i': gBsaFile   = std::string(optarg); break;
           default:
             std::cerr<<"Usage: "<<argv[0]
                      <<" --strategy <1|2> -H <0|1> -Ht <0|1>"
@@ -123,7 +117,6 @@ void parse_args(int argc, char** argv){
 // build_par_list(): list of parameters for Minuit
 static std::vector<std::string> parNamesIm, parNamesRe;
 void build_par_list(){
-    // for gStage: 1→Im, 2→Re
     if(gStage==1){
         parNamesIm.clear();
         parNamesIm.push_back("renormImag");
@@ -193,27 +186,26 @@ void fcn(int& /*npar*/, double* /*grad*/, double &f, double *par, int /*iflag*/)
             M2_Et    = par[ip++]; P_Et     = par[ip++];
         }
     }
-    else if(gStage==2){
+    else { // gStage==2
         if(hasH){
             C0_H      = par[ip++]; MD2_H     = par[ip++];
-            lambda_H = par[ip++];
+            lambda_H  = par[ip++];
         }
         if(hasHt){
             C0_Ht     = par[ip++]; MD2_Ht    = par[ip++];
-            lambda_Ht= par[ip++];
+            lambda_Ht = par[ip++];
         }
         if(hasE){
             C0_E      = par[ip++]; MD2_E     = par[ip++];
-            lambda_E = par[ip++];
+            lambda_E  = par[ip++];
         }
         if(hasEt){
             C0_Et     = par[ip++]; MD2_Et    = par[ip++];
-            lambda_Et= par[ip++];
+            lambda_Et = par[ip++];
         }
         renormReal = par[ip++];
     }
 
-    // compute χ²
     double chi2=0;
     if(gStage==1){
         for(auto &d: bsaData){
@@ -235,6 +227,7 @@ void fcn(int& /*npar*/, double* /*grad*/, double &f, double *par, int /*iflag*/)
 // main(): orchestrate fits
 int main(int argc, char** argv){
     parse_args(argc, argv);
+
     std::cout<<"\n=== Strategy="<<gStrategy
              <<"  H="<<hasH<<" Ht="<<hasHt
              <<" E="<<hasE<<" Et="<<hasEt
@@ -243,100 +236,93 @@ int main(int argc, char** argv){
     std::cout<<" Loaded "<<bsaData.size()<<" BSA and "
              <<xsData.size()<<" xsec points\n\n";
 
-    std::vector<std::string> imNames, reNames;
-    std::vector<double>     imVal,  imErr,  reVal, reErr;
-    double chi2_im=0, chi2_re=0;
-    int    ndf_im=0, ndf_re=0;
-
-    // --- Stage 1: Im fit always for both strategies ---
+    // Stage 1: Im fit
     gStage = 1;
     build_par_list();
     int nim = parNamesIm.size();
-    imNames = parNamesIm;
-    imVal.assign(nim,0); imErr.assign(nim,0);
+    std::vector<double> imVal(nim,0), imErr(nim,0);
     {
         TMinuit minu(nim);
         minu.SetPrintLevel(1);
         minu.SetFCN(fcn);
         for(int i=0;i<nim;++i){
             double init=1.0, step=0.01;
-            auto &nm = imNames[i];
-            if(nm=="alpha0_H"||nm=="alpha0_Ht"||nm=="alpha0_E")
-                init = 0.43;
-            if(nm=="alpha1_H"||nm=="alpha1_Ht"||nm=="alpha1_E")
-                init = 0.85;
-            if(nm=="n_H")   init = 2.43;
-            if(nm=="n_Ht")  init = 1.68;
-            if(nm=="n_E")   init = 1.215;
+            const auto &nm = parNamesIm[i];
+            if(nm.find("alpha0_")==0) init=0.43;
+            if(nm.find("alpha1_")==0) init=0.85;
+            if(nm=="n_H")  init=2.43;
+            if(nm=="n_Ht") init=1.68;
+            if(nm=="n_E")  init=1.215;
             minu.DefineParameter(i, nm.c_str(), init, step, -1e3, 1e3);
         }
         std::cout<<"Stage1: fitting Im→BSA...\n";
         minu.Migrad();
         double edm, errdef; int nv,nx,ic;
+        minu.mnstat(edm,edm,errdef,nv,nx,ic);
         for(int i=0;i<nim;++i) minu.GetParameter(i, imVal[i], imErr[i]);
-        minu.mnstat(chi2_im, edm, errdef, nv, nx, ic);
-        ndf_im = int(bsaData.size()) - nim;
-        std::cout<<"\n--- Im Results ---\n";
-        for(int i=0;i<nim;++i)
-            std::cout<<" "<<imNames[i]<<" = "<<imVal[i]<<" ± "<<imErr[i]<<"\n";
-        std::cout<<" χ²/ndf = "<<chi2_im<<"/"<<ndf_im
-                 <<" = "<<(chi2_im/ndf_im)<<"\n\n";
     }
 
     if(gStrategy==2){
-        // --- Stage 2: Re fit, hold Im fixed ---
+        // Stage 2: Re fit
         gStage = 2;
         build_par_list();
         int nre = parNamesRe.size();
-        reNames = parNamesRe;
-        reVal.assign(nre,0); reErr.assign(nre,0);
-        TMinuit minu(nre);
-        minu.SetPrintLevel(1);
-        minu.SetFCN(fcn);
+        std::vector<double> reVal(nre,0), reErr(nre,0);
+        TMinuit minu2(nre);
+        minu2.SetPrintLevel(1);
+        minu2.SetFCN(fcn);
         for(int i=0;i<nre;++i){
-            double init=1.0, step=0.01;
-            minu.DefineParameter(i, reNames[i].c_str(), init, step, -1e3, 1e3);
+            minu2.DefineParameter(i, parNamesRe[i].c_str(), 1.0, 0.01, -1e3, 1e3);
         }
-        std::cout<<"Stage2: fitting Re→xsec (Im held fixed)...\n";
-        minu.Migrad();
-        double edm,errdef; int nv,nx,ic;
-        for(int i=0;i<nre;++i) minu.GetParameter(i, reVal[i], reErr[i]);
-        minu.mnstat(chi2_re, edm, errdef, nv, nx, ic);
-        ndf_re = int(xsData.size()) - nre;
-        std::cout<<"\n--- Re Results ---\n";
-        for(int i=0;i<nre;++i)
-            std::cout<<" "<<reNames[i]<<" = "<<reVal[i]<<" ± "<<reErr[i]<<"\n";
-        std::cout<<" χ²/ndf = "<<chi2_re<<"/"<<ndf_re
-                 <<" = "<<(chi2_re/ndf_re)<<"\n\n";
+        std::cout<<"Stage2: fitting Re→xsec (Im fixed)...\n";
+        minu2.Migrad();
+        double edm2, errdef2; int nv2,nx2,ic2;
+        minu2.mnstat(edm2,edm2,errdef2,nv2,nx2,ic2);
+        for(int i=0;i<nre;++i) minu2.GetParameter(i, reVal[i], reErr[i]);
+
+        // Write both Im & Re results
+        system("mkdir -p output/fit_results/");
+        time_t now=time(nullptr);
+        char buf[32];
+        strftime(buf,sizeof(buf),"%Y%m%d_%H%M%S",localtime(&now));
+        std::ofstream out(std::string("output/fit_results/fit_results_")+buf+".txt");
+        out<<"# fit_CFFs results\n";
+        out<<"timestamp "<<buf<<"\n";
+        out<<"strategy "<<gStrategy<<"\n";
+        out<<"H "<<hasH<<" Ht "<<hasHt<<" E "<<hasE<<" Et "<<hasEt<<"\n";
+        out<<"# parameters:";
+        for(auto &n: parNamesIm) out<<" "<<n;
+        for(auto &n: parNamesRe) out<<" "<<n;
+        out<<"\n# values:\n";
+        for(auto &v: imVal) out<<v<<" ";
+        for(auto &v: reVal) out<<v<<" ";
+        out<<"\n# errors:\n";
+        for(auto &e: imErr) out<<e<<" ";
+        for(auto &e: reErr) out<<e<<" ";
+        out<<"\n";
+        out.close();
+        std::cout<<"Wrote fit results to output/fit_results/fit_results_"<<buf<<".txt\n";
+    } else {
+        // Strategy 1 only: write Im results
+        system("mkdir -p output/fit_results/");
+        time_t now=time(nullptr);
+        char buf[32];
+        strftime(buf,sizeof(buf),"%Y%m%d_%H%M%S",localtime(&now));
+        std::ofstream out(std::string("output/fit_results/fit_results_")+buf+".txt");
+        out<<"# fit_CFFs results\n";
+        out<<"timestamp "<<buf<<"\n";
+        out<<"strategy "<<gStrategy<<"\n";
+        out<<"H "<<hasH<<" Ht "<<hasHt<<" E "<<hasE<<" Et "<<hasEt<<"\n";
+        out<<"# parameters:";
+        for(auto &n: parNamesIm) out<<" "<<n;
+        out<<"\n# values:\n";
+        for(auto &v: imVal) out<<v<<" ";
+        out<<"\n# errors:\n";
+        for(auto &e: imErr) out<<e<<" ";
+        out<<"\n";
+        out.close();
+        std::cout<<"Wrote fit results to output/fit_results/fit_results_"<<buf<<".txt\n";
     }
 
-    // --- Write combined results ---
-    system("mkdir -p output/fit_results/");
-    time_t now = time(nullptr);
-    char buf[32];
-    strftime(buf,sizeof(buf),"%Y%m%d_%H%M%S",localtime(&now));
-    std::string outfn = std::string("output/fit_results/fit_results_") + buf + ".txt";
-    std::ofstream out(outfn);
-    out<<"# fit_CFFs results\n";
-    out<<"timestamp   "<<buf<<"\n";
-    out<<"strategy    "<<gStrategy<<"\n";
-    out<<"H "<<hasH<<"  Ht "<<hasHt<<"  E "<<hasE<<"  Et "<<hasEt<<"\n";
-    out<<"# parameters:";
-    for(auto &n: imNames) out<<" "<<n;
-    for(auto &n: reNames) out<<" "<<n;
-    out<<"\n# values:\n";
-    for(double v: imVal) out<<v<<" ";
-    for(double v: reVal) out<<v<<" ";
-    out<<"\n# errors:\n";
-    for(double e: imErr) out<<e<<" ";
-    for(double e: reErr) out<<e<<" ";
-    out<<"\n# chi2 ndf chi2/ndf\n";
-    if(gStrategy==1){
-        out<<chi2_im<<" "<<ndf_im<<" "<<(chi2_im/ndf_im)<<"\n";
-    } else {
-        out<<chi2_re<<" "<<ndf_re<<" "<<(chi2_re/ndf_re)<<"\n";
-    }
-    out.close();
-    std::cout<<"Wrote fit results to "<<outfn<<"\n";
     return 0;
 }
