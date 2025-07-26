@@ -1290,16 +1290,16 @@ double alpha0_H = 0.43;
 double alpha1_H = 0.85;
 double n_H      = 1.35;
 double b_H      = 0.4;
-double Mm2_H    = 0.64;
+double M2_H     = 0.64;
 double P_H      = 1.0;
 double GetImH(double xi, double t) {
     if(!hasH) return 0.0;
     // build H‐ansatz
-    double alphaH   = alpha0_H + alpha1_H * t;
-    double pref = TMath::Pi()*5.0/9.0 * n_H * r_H / (1 + xi);
-    double xfac = TMath::Power(2*xi/(1+xi), -alphaH);
-    double yfac = TMath::Power((1 - xi)/(1+xi), b_H);
-    double tfac = TMath::Power(1 - ((1 - xi)/(1+xi))*t/Mm2_H, -P_H);
+    double alphaH = alpha0_H + alpha1_H * t;
+    double pref   = TMath::Pi()*5.0/9.0 * n_H * r_H / (1 + xi);
+    double xfac   = TMath::Power(2*xi/(1+xi), -alphaH);
+    double yfac   = TMath::Power((1 - xi)/(1+xi), b_H);
+    double tfac   = TMath::Power(1 - ((1 - xi)/(1+xi))*t/M2_H,  -P_H);
     return renormImag * pref * xfac * yfac * tfac * 2.0; // *2 correction from VGG
 }
 
@@ -1309,15 +1309,15 @@ double alpha0_Ht = 0.43;
 double alpha1_Ht = 0.85;
 double n_Ht      = 0.6;
 double b_Ht      = 2.0;
-double Mm2_Ht    = 0.8;
+double M2_Ht     = 0.8;
 double P_Ht      = 1.0;
 double GetImHt(double xi, double t) {
     if(!hasHt) return 0.0;
-    double alphaHt   = alpha0_Ht + alpha1_Ht * t;
-    double pref  = TMath::Pi()*5.0/9.0 * n_Ht * r_Ht / (1 + xi);
-    double xfac  = TMath::Power(2*xi/(1+xi), -alphaHt);
-    double yfac  = TMath::Power((1 - xi)/(1+xi), b_Ht);
-    double tfac  = TMath::Power(1 - ((1 - xi)/(1+xi))*t/Mm2_Ht, -P_Ht);
+    double alphaHt = alpha0_Ht + alpha1_Ht * t;
+    double pref    = TMath::Pi()*5.0/9.0 * n_Ht * r_Ht / (1 + xi);
+    double xfac    = TMath::Power(2*xi/(1+xi), -alphaHt);
+    double yfac    = TMath::Power((1 - xi)/(1+xi), b_Ht);
+    double tfac    = TMath::Power(1 - ((1 - xi)/(1+xi))*t/M2_Ht,  -P_Ht);
     return renormImag * pref * xfac * yfac * tfac * 0.4; // *0.4 correction from VGG
 }
 
@@ -1327,16 +1327,15 @@ double alpha0_E = 0.43;
 double alpha1_E = 0.85;
 double n_E      = 1.35;
 double b_E      = 0.4;
-double Mm2_E    = 0.64;
+double M2_E     = 0.64;
 double P_E      = 1.0;
 double GetImE(double xi, double t) {
-    // from HERMES CFF paper 1301.1230 argue ImE = 0.5 x ImH (the factor of 2 is in ImH)
     if(!hasE) return 0.0;
-    double alphaE    = alpha0_E + alpha1_E * t;
-    double pref  = TMath::Pi()*5.0/9.0 * n_E * r_E / (1 + xi);
-    double xfac  = TMath::Power(2*xi/(1+xi), -alphaE);
-    double yfac  = TMath::Power((1 - xi)/(1+xi), b_E);
-    double tfac  = TMath::Power(1 - ((1 - xi)/(1+xi))*t/Mm2_E, -P_E);
+    double alphaE = alpha0_E + alpha1_E * t;
+    double pref   = TMath::Pi()*5.0/9.0 * n_E * r_E / (1 + xi);
+    double xfac   = TMath::Power(2*xi/(1+xi), -alphaE);
+    double yfac   = TMath::Power((1 - xi)/(1+xi), b_E);
+    double tfac   = TMath::Power(1 - ((1 - xi)/(1+xi))*t/M2_E,  -P_E);
     return renormImag * pref * xfac * yfac * tfac;
 }
 
@@ -1346,15 +1345,15 @@ double alpha0_Et = 0.0;
 double alpha1_Et = 0.0;
 double n_Et      = 0.0; // this sets ImEt to 0 in default model
 double b_Et      = 0.0;
-double Mm2_Et    = 0.0;
+double M2_Et     = 0.0;
 double P_Et      = 0.0;
 double GetImEt(double xi, double t) {
     if(!hasEt) return 0.0;
-    double alphaEt    = alpha0_Et + alpha1_Et * t;
-    double pref  = TMath::Pi()*5.0/9.0 * n_Et * r_Et / (1 + xi);
-    double xfac  = TMath::Power(2*xi/(1+xi), -alphaEt);
-    double yfac  = TMath::Power((1 - xi)/(1+xi), b_Et);
-    double tfac  = TMath::Power(1 - ((1 - xi)/(1+xi))*t/Mm2_Et, -P_Et);
+    double alphaEt = alpha0_Et + alpha1_Et * t;
+    double pref    = TMath::Pi()*5.0/9.0 * n_Et * r_Et / (1 + xi);
+    double xfac    = TMath::Power(2*xi/(1+xi), -alphaEt);
+    double yfac    = TMath::Power((1 - xi)/(1+xi), b_Et);
+    double tfac    = TMath::Power(1 - ((1 - xi)/(1+xi))*t/M2_Et,  -P_Et);
     return renormImag * pref * xfac * yfac * tfac;
 }
 
