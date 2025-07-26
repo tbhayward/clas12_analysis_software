@@ -254,76 +254,76 @@ int main(int argc, char** argv){
                 init = renormImag; step=0.01; mn=0;   mx=10;
             }
             else if(nm=="alpha0_H") {
-                init = alpha0_H;  step=0.01; mn=-5;  mx=5;
+                init = alpha0_H;  step=0.001; mn=-5;  mx=5;
             }
             else if(nm=="alpha1_H") {
-                init = alpha1_H;  step=0.01; mn=-10; mx=10;
+                init = alpha1_H;  step=0.001; mn=-10; mx=10;
             }
             else if(nm=="n_H") {
-                init = n_H;       step=0.01; mn=0;   mx=10;
+                init = n_H;       step=0.001; mn=0;   mx=10;
             }
             else if(nm=="b_H") {
-                init = b_H;       step=0.01; mn=0;   mx=10;
+                init = b_H;       step=0.001; mn=0;   mx=10;
             }
             else if(nm=="M2_H") {
-                init = M2_H;      step=0.01; mn=0;   mx=10;
+                init = M2_H;      step=0.001; mn=0;   mx=10;
             }
             else if(nm=="P_H") {
-                init = P_H;       step=0.01; mn=0;   mx=10;
+                init = P_H;       step=0.001; mn=0;   mx=10;
             }
             else if(nm=="alpha0_Ht") {
-                init = alpha0_Ht; step=0.01; mn=-5;  mx=5;
+                init = alpha0_Ht; step=0.001; mn=-5;  mx=5;
             }
             else if(nm=="alpha1_Ht") {
-                init = alpha1_Ht; step=0.01; mn=-10; mx=10;
+                init = alpha1_Ht; step=0.001; mn=-10; mx=10;
             }
             else if(nm=="n_Ht") {
-                init = n_Ht;      step=0.01; mn=0;   mx=10;
+                init = n_Ht;      step=0.001; mn=0;   mx=10;
             }
             else if(nm=="b_Ht") {
-                init = b_Ht;      step=0.01; mn=0;   mx=10;
+                init = b_Ht;      step=0.001; mn=0;   mx=10;
             }
             else if(nm=="M2_Ht") {
-                init = M2_Ht;     step=0.01; mn=0;   mx=10;
+                init = M2_Ht;     step=0.001; mn=0;   mx=10;
             }
             else if(nm=="P_Ht") {
-                init = P_Ht;      step=0.01; mn=0;   mx=10;
+                init = P_Ht;      step=0.001; mn=0;   mx=10;
             }
             else if(nm=="alpha0_E") {
-                init = alpha0_E;  step=0.01; mn=-5;  mx=5;
+                init = alpha0_E;  step=0.001; mn=-5;  mx=5;
             }
             else if(nm=="alpha1_E") {
-                init = alpha1_E;  step=0.01; mn=-10; mx=10;
+                init = alpha1_E;  step=0.001; mn=-10; mx=10;
             }
             else if(nm=="n_E") {
-                init = n_E;       step=0.01; mn=0;   mx=10;
+                init = n_E;       step=0.001; mn=0;   mx=10;
             }
             else if(nm=="b_E") {
-                init = b_E;       step=0.01; mn=0;   mx=10;
+                init = b_E;       step=0.001; mn=0;   mx=10;
             }
             else if(nm=="M2_E") {
-                init = M2_E;      step=0.01; mn=0;   mx=10;
+                init = M2_E;      step=0.001; mn=0;   mx=10;
             }
             else if(nm=="P_E") {
-                init = P_E;       step=0.01; mn=0;   mx=10;
+                init = P_E;       step=0.001; mn=0;   mx=10;
             }
             else if(nm=="alpha0_Et") {
-                init = alpha0_Et; step=0.01; mn=-5;  mx=5;
+                init = alpha0_Et; step=0.001; mn=-5;  mx=5;
             }
             else if(nm=="alpha1_Et") {
-                init = alpha1_Et; step=0.01; mn=-10; mx=10;
+                init = alpha1_Et; step=0.001; mn=-10; mx=10;
             }
             else if(nm=="n_Et") {
-                init = n_Et;      step=0.01; mn=0;   mx=10;
+                init = n_Et;      step=0.001; mn=0;   mx=10;
             }
             else if(nm=="b_Et") {
-                init = b_Et;      step=0.01; mn=0;   mx=10;
+                init = b_Et;      step=0.001; mn=0;   mx=10;
             }
             else if(nm=="M2_Et") {
-                init = M2_Et;     step=0.01; mn=0;   mx=10;
+                init = M2_Et;     step=0.001; mn=0;   mx=10;
             }
             else if(nm=="P_Et") {
-                init = P_Et;      step=0.01; mn=0;   mx=10;
+                init = P_Et;      step=0.001; mn=0;   mx=10;
             }
             else {
                 // fallback
