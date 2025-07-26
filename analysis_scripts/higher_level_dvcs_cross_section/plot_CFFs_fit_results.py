@@ -81,10 +81,10 @@ for cff in ("H","Ht","E","Et"):
 
 # ─── Defaults including the original r and VGG correction factor ────────────────
 defaults = {
-    "H":  dict(r=0.9, alpha0=0.43, alpha1=0.85, n=1.35, b=0.4, M2=0.64, P=1.0, corr=2.0),
-    "Ht": dict(r=7.0, alpha0=0.43, alpha1=0.85, n=0.6,  b=2.0, M2=0.8,  P=1.0, corr=0.4),
-    "E":  dict(r=0.9, alpha0=0.43, alpha1=0.85, n=1.35, b=0.4, M2=0.64, P=1.0, corr=1.0),
-    "Et": dict(r=1.0, alpha0=0.0,  alpha1=0.0,  n=0.0,  b=0.0, M2=0.0,  P=0.0, corr=1.0),
+    "H":  dict(r=0.9, alpha0=0.43, alpha1=0.85, n=1.35, b=0.4,  M2=0.64, P=1.0, corr=2.0),
+    "Ht": dict(r=7.0, alpha0=0.43, alpha1=0.85, n=0.6,  b=2.0,  M2=0.8,  P=1.0, corr=0.4),
+    "E":  dict(r=0.9, alpha0=0.43, alpha1=0.85, n=1.35, b=0.4,  M2=0.64, P=1.0, corr=1.0),
+    "Et": dict(r=1.0, alpha0=0.0,  alpha1=0.0,  n=0.0,  b=0.0,  M2=0.0,  P=0.0, corr=1.0),
 }
 
 # ─── Build the Im‐CFF function exactly matching your C++ code ────────────────────
@@ -134,10 +134,9 @@ def compute_uncertainty_band(cff, xi_vals, t_vals, nrep=200):
         np.percentile(curves, 97.5, axis=0),
     )
 
-# ─── Set up plotting ──────────────────────────────────────────────────────────
+# ─── Plot setup ────────────────────────────────────────────────────────────────
 plt.style.use('classic')
 plt.rcParams.update({'font.size':14,'font.family':'serif'})
-
 outdir = 'output/plots'
 os.makedirs(outdir, exist_ok=True)
 
@@ -146,16 +145,15 @@ t_range   = np.linspace(0,1.0,200)
 t_fixed   = np.linspace(0.1,1.0,6)
 xi_fixed  = np.linspace(0.05,0.50,6)
 
-# styles and legend
 orig_style = {'color':'tab:blue','linestyle':'-','linewidth':2.5}
-fit_style  = {'color':'tab:red', 'linestyle':'--','linewidth':2.5}
-band_style = {'color':'tab:red', 'alpha':0.2}
+fit_style  = {'color':'tab:red',  'linestyle':'--','linewidth':2.5}
+band_style = {'color':'tab:red',  'alpha':0.2}
 zero_line  = {'color':'gray','linestyle':'--','linewidth':1}
 
 legend_elems = [
     Line2D([0],[0], color='tab:blue', linestyle='-', lw=2.5, label='Original model'),
-    Line2D([0],[0], color='tab:red',  linestyle='--', lw=2.5, label='Fit median'),
-    Line2D([0],[0], color='tab:red',  lw=6, alpha=0.2,    label='95% CI'),
+    Line2D([0],[0], color='tab:red',  linestyle='--',lw=2.5, label='Fit median'),
+    Line2D([0],[0], color='tab:red',  lw=6,       alpha=0.2, label='95% CI'),
 ]
 
 tex_map = {"H":"H", "Ht":r"\tilde H", "E":"E", "Et":r"\tilde E"}
@@ -165,14 +163,13 @@ for cff in ("H","Ht","E","Et"):
     if not flags[cff]:
         continue
 
-    Im_fit  = make_Im_func(cff, fit_params.get(cff, {}), renorm_fit)
     Im_orig = make_Im_func(cff, {}, 1.0)
     tex     = tex_map[cff]
 
     # — Im vs ξ at fixed t —
-    fig, axes = plt.subplots(2,3,figsize=(12,8),sharex=True,sharey=True)
+    fig, axes = plt.subplots(2,3, figsize=(12,8), sharex=True, sharey=True)
     axes = axes.flatten()
-    fig.suptitle(rf"$\mathrm{{Im}}\,{tex}$",fontsize=16,y=0.95)
+    fig.suptitle(rf"$\mathrm{{Im}}\,{tex}$", fontsize=16, y=0.95)
 
     for ax, t0 in zip(axes, t_fixed):
         ax.plot(xi_range, Im_orig(xi_range, t0), **orig_style)
@@ -182,27 +179,29 @@ for cff in ("H","Ht","E","Et"):
         ax.axhline(0, **zero_line)
 
         ax.set_xlim(0,0.5)
-        ax.set_ylim(0,None)
-        # ← new styling for xi‐panel:
+        ax.set_ylim(-2,12)          # ← now from −2 to 12
         ax.set_xticks([0.0,0.1,0.2,0.3,0.4,0.5])
-        ax.set_yticks([0,3,6,9,12])
+        ax.set_yticks([ -2, 0, 3, 6, 9, 12])
         ax.set_xlabel(r"$\xi$")
         ax.set_ylabel(r"$\mathrm{Im}\," + tex + r"(\xi,\,-t)$")
 
-        ax.text(0.6,0.75,rf"$-t={t0:.2f}$",transform=ax.transAxes)
+        ax.text(0.6,0.75, rf"$-t={t0:.2f}$", transform=ax.transAxes)
 
-    axes[2].legend(handles=legend_elems,loc='upper right',fontsize=10)
-    plt.tight_layout(rect=[0,0,1,0.95])
+    # no space between subplots:
+    fig.subplots_adjust(left=0.08, right=0.98, bottom=0.08, top=0.92,
+                        wspace=0.0, hspace=0.0)
+
+    axes[2].legend(handles=legend_elems, loc='upper right', fontsize=10)
 
     out1 = f"{outdir}/Im{cff}_vs_xi_{timestamp}.pdf"
-    fig.savefig(out1,bbox_inches='tight')
+    fig.savefig(out1, bbox_inches='tight')
     print("Saved:", out1)
     plt.close(fig)
 
     # — Im vs −t at fixed ξ —
-    fig, axes = plt.subplots(2,3,figsize=(12,8),sharex=True,sharey=True)
+    fig, axes = plt.subplots(2,3, figsize=(12,8), sharex=True, sharey=True)
     axes = axes.flatten()
-    fig.suptitle(rf"$\mathrm{{Im}}\,{tex}$",fontsize=16,y=0.95)
+    fig.suptitle(rf"$\mathrm{{Im}}\,{tex}$", fontsize=16, y=0.95)
 
     for ax, x0 in zip(axes, xi_fixed):
         ax.plot(t_range, Im_orig(x0, t_range), **orig_style)
@@ -212,19 +211,21 @@ for cff in ("H","Ht","E","Et"):
         ax.axhline(0, **zero_line)
 
         ax.set_xlim(0,1.0)
-        ax.set_ylim(0,None)
-        # ← new styling for t‐panel:
+        ax.set_ylim(-2,12)          # ← now from −2 to 12
         ax.set_xticks([0.0,0.2,0.4,0.6,0.8,1.0])
-        ax.set_yticks([0,3,6,9,12])
+        ax.set_yticks([-2,0,3,6,9,12])
         ax.set_xlabel(r"$-t\;(\mathrm{GeV}^2)$")
         ax.set_ylabel(r"$\mathrm{Im}\," + tex + r"(\xi,\,-t)$")
 
-        ax.text(0.6,0.75,rf"$\xi={x0:.2f}$",transform=ax.transAxes)
+        ax.text(0.6,0.75, rf"$\xi={x0:.2f}$", transform=ax.transAxes)
 
-    axes[2].legend(handles=legend_elems,loc='upper right',fontsize=10)
-    plt.tight_layout(rect=[0,0,1,0.95])
+    # no space between subplots:
+    fig.subplots_adjust(left=0.08, right=0.98, bottom=0.08, top=0.92,
+                        wspace=0.0, hspace=0.0)
+
+    axes[2].legend(handles=legend_elems, loc='upper right', fontsize=10)
 
     out2 = f"{outdir}/Im{cff}_vs_t_{timestamp}.pdf"
-    fig.savefig(out2,bbox_inches='tight')
+    fig.savefig(out2, bbox_inches='tight')
     print("Saved:", out2)
     plt.close(fig)
