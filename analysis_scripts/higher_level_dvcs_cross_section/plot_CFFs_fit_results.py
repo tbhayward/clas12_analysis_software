@@ -40,16 +40,13 @@ timestamp = m.group(1)
 def parse_fit_results(fname):
     with open(fname) as f:
         lines = [l.strip() for l in f if l.strip()]
-    # flags line e.g. "H 1  Ht 1  E 0  Et 1"
     flag_line = next(l for l in lines if l.startswith("H "))
     toks = flag_line.split()
     flags = { toks[i]: int(toks[i+1]) for i in range(0, len(toks), 2) }
-    # parameter names
     for i,l in enumerate(lines):
         if l.startswith("# parameters"):
             pnames = l.split()[2:]
             break
-    # values and errors
     vals = errs = None
     chi2 = ndf = chi2ndf = None
     for i,l in enumerate(lines):
@@ -69,7 +66,6 @@ flags, pnames, vals, errs, chi2, ndf, chi2ndf = parse_fit_results(fitfile)
 def get_idx(name):
     return pnames.index(name) if name in pnames else None
 
-# pull out the fitted renormImag
 renorm_fit = vals[get_idx("renormImag")]
 renorm_err = errs[get_idx("renormImag")]
 
@@ -113,11 +109,11 @@ def make_Im_func(cff, params, renorm):
 def generate_replicas(central, errors, nrep=200):
     reps = []
     for _ in range(nrep):
-        r = {}
+        rdict = {}
         for k,v in central.items():
             sigma = errors[k] / 1.96
-            r[k] = np.random.normal(v, sigma)
-        reps.append(r)
+            rdict[k] = np.random.normal(v, sigma)
+        reps.append(rdict)
     return reps
 
 def compute_uncertainty_band(cff, xi_vals, t_vals, nrep=200):
@@ -173,33 +169,37 @@ for cff in ("H","Ht","E","Et"):
     Im_orig = make_Im_func(cff, {}, 1.0)
     tex     = tex_map[cff]
 
-    # — Im vs xi at fixed t —
+    # — Im vs ξ at fixed t —
     fig, axes = plt.subplots(2,3,figsize=(12,8),sharex=True,sharey=True)
     axes = axes.flatten()
     fig.suptitle(rf"$\mathrm{{Im}}\,{tex}$",fontsize=16,y=0.95)
 
     for ax, t0 in zip(axes, t_fixed):
-        # original
         ax.plot(xi_range, Im_orig(xi_range, t0), **orig_style)
-        # fit + band
         med, lo, up = compute_uncertainty_band(cff, xi_range, t0)
         ax.plot(xi_range, med, **fit_style)
         ax.fill_between(xi_range, lo, up, **band_style)
         ax.axhline(0, **zero_line)
-        ax.text(0.6,0.75,rf"$-t={t0:.2f}$",transform=ax.transAxes)
+
         ax.set_xlim(0,0.5)
         ax.set_ylim(0,None)
+        # ← new styling for xi‐panel:
+        ax.set_xticks([0.0,0.1,0.2,0.3,0.4,0.5])
+        ax.set_yticks([0,3,6,9,12])
+        ax.set_xlabel(r"$\xi$")
+        ax.set_ylabel(r"$\mathrm{Im}\," + tex + r"(\xi,\,-t)$")
+
+        ax.text(0.6,0.75,rf"$-t={t0:.2f}$",transform=ax.transAxes)
 
     axes[2].legend(handles=legend_elems,loc='upper right',fontsize=10)
-    fig.text(0.06,0.5,rf"$\mathrm{{Im}}\,{tex}(\xi,\,-t)$$",va='center',ha='center',rotation='vertical')
-    fig.text(0.5,0.02,r"$\xi$",ha='center')
+    plt.tight_layout(rect=[0,0,1,0.95])
 
     out1 = f"{outdir}/Im{cff}_vs_xi_{timestamp}.pdf"
     fig.savefig(out1,bbox_inches='tight')
     print("Saved:", out1)
     plt.close(fig)
 
-    # — Im vs −t at fixed xi —
+    # — Im vs −t at fixed ξ —
     fig, axes = plt.subplots(2,3,figsize=(12,8),sharex=True,sharey=True)
     axes = axes.flatten()
     fig.suptitle(rf"$\mathrm{{Im}}\,{tex}$",fontsize=16,y=0.95)
@@ -210,13 +210,19 @@ for cff in ("H","Ht","E","Et"):
         ax.plot(t_range, med, **fit_style)
         ax.fill_between(t_range, lo, up, **band_style)
         ax.axhline(0, **zero_line)
-        ax.text(0.6,0.75,rf"$\xi={x0:.2f}$",transform=ax.transAxes)
+
         ax.set_xlim(0,1.0)
         ax.set_ylim(0,None)
+        # ← new styling for t‐panel:
+        ax.set_xticks([0.0,0.2,0.4,0.6,0.8,1.0])
+        ax.set_yticks([0,3,6,9,12])
+        ax.set_xlabel(r"$-t\;(\mathrm{GeV}^2)$")
+        ax.set_ylabel(r"$\mathrm{Im}\," + tex + r"(\xi,\,-t)$")
+
+        ax.text(0.6,0.75,rf"$\xi={x0:.2f}$",transform=ax.transAxes)
 
     axes[2].legend(handles=legend_elems,loc='upper right',fontsize=10)
-    fig.text(0.06,0.5,rf"$\mathrm{{Im}}\,{tex}(\xi,\,-t)$$",va='center',ha='center',rotation='vertical')
-    fig.text(0.5,0.02,r"$-t\ (\mathrm{GeV}^2)$$",ha='center')
+    plt.tight_layout(rect=[0,0,1,0.95])
 
     out2 = f"{outdir}/Im{cff}_vs_t_{timestamp}.pdf"
     fig.savefig(out2,bbox_inches='tight')
