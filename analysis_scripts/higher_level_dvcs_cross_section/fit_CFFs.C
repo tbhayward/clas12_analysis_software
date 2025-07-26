@@ -58,8 +58,9 @@ struct DataPoint { double phi, Q2, xB, t, Eb, A, sigA; };
 static std::vector<DataPoint> bsaData, xsData;
 static std::vector<double> bin_xB, bin_Q2, bin_t, bin_Eb;
 static std::vector<double> bin_A, bin_dA, bin_chi2;
+static std::vector<int>    bin_M;                // number of points in each bin
 static int Nbins = 0;
-static double meanAmpChi2 = 0.0;
+static double reducedAmpChi2 = 0.0;
 
 // ──────────────────────────────────────────────────────────────────────────────
 // Load raw BSA + XSC, apply constraint if requested
@@ -85,46 +86,50 @@ void LoadData(){
 // Bin BSA by φ-drop and extract sinφ amplitude + its χ²
 void BinBsaData(){
     bin_xB.clear(); bin_Q2.clear(); bin_t.clear(); bin_Eb.clear();
-    bin_A.clear(); bin_dA.clear(); bin_chi2.clear();
+    bin_A.clear(); bin_dA.clear(); bin_chi2.clear(); bin_M.clear();
     if(bsaData.empty()) return;
 
     size_t start = 0;
     auto flush = [&](size_t end){
-        // compute weighted average amplitude A_bin and its error dA
-        double SwA=0, Sw2=0;
+        double SwA=0, Sw2=0, Sx=0, Sq=0, St=0, Se=0;
         for(size_t i=start;i<end;++i){
-            double s = std::sin(bsaData[i].phi * TMath::Pi()/180.);
-            double w = 1.0/(bsaData[i].sigA * bsaData[i].sigA);
-            SwA += w * bsaData[i].A * s;
+            const auto &d = bsaData[i];
+            double s = std::sin(d.phi * TMath::Pi()/180.);
+            double w = 1.0/(d.sigA * d.sigA);
+            SwA += w * d.A * s;
             Sw2 += w * s*s;
         }
+        int M = end - start;
         double A_bin  = SwA/Sw2;
         double dA_bin = 1.0/std::sqrt(Sw2);
 
-        // compute χ² of the fit A*sinφ
-        double chi2 = 0;
+        // χ² of the A*sinφ fit
+        double chi2=0;
         for(size_t i=start;i<end;++i){
-            double s = std::sin(bsaData[i].phi * TMath::Pi()/180.);
-            double diff = bsaData[i].A - A_bin * s;
-            chi2 += diff*diff / (bsaData[i].sigA * bsaData[i].sigA);
+            const auto &d = bsaData[i];
+            double s = std::sin(d.phi * TMath::Pi()/180.);
+            double diff = d.A - A_bin*s;
+            chi2 += diff*diff / (d.sigA*d.sigA);
         }
 
-        // bin the kinematics and extracted amplitude
-        int M = end - start;
-        double sumxB=0, sumQ2=0, sumt=0, sumEb=0;
+        // average kinematics
+        double Sx=0, Sq=0, Stot=0, Seb=0;
         for(size_t i=start;i<end;++i){
-            sumxB += bsaData[i].xB;
-            sumQ2 += bsaData[i].Q2;
-            sumt  += bsaData[i].t;
-            sumEb += bsaData[i].Eb;
+            const auto &d = bsaData[i];
+            Sx   += d.xB;
+            Sq   += d.Q2;
+            Stot += d.t;
+            Seb  += d.Eb;
         }
+
         bin_A.push_back(A_bin);
         bin_dA.push_back(dA_bin);
         bin_chi2.push_back(chi2);
-        bin_xB.push_back(sumxB/M);
-        bin_Q2.push_back(sumQ2/M);
-        bin_t.push_back(sumt/M);
-        bin_Eb.push_back(sumEb/M);
+        bin_M.push_back(M);
+        bin_xB.push_back(Sx/M);
+        bin_Q2.push_back(Sq/M);
+        bin_t.push_back(Stot/M);
+        bin_Eb.push_back(Seb/M);
     };
 
     for(size_t i=1;i<=bsaData.size();++i){
@@ -136,9 +141,11 @@ void BinBsaData(){
     }
     Nbins = bin_A.size();
 
-    // compute mean χ² per amplitude fit
-    meanAmpChi2 = std::accumulate(bin_chi2.begin(), bin_chi2.end(), 0.0)
-                / double(Nbins ? Nbins : 1);
+    // compute overall reduced χ²
+    double totalChi2 = std::accumulate(bin_chi2.begin(), bin_chi2.end(), 0.0);
+    int totalDof     = std::accumulate(bin_M.begin(),    bin_M.end(),    0)
+                     - Nbins;  // each bin fit has 1 free parameter
+    reducedAmpChi2   = totalChi2 / double(totalDof>0 ? totalDof : 1);
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -258,9 +265,9 @@ int main(int argc, char** argv){
     LoadData();
     BinBsaData();
     std::cout<<" BSA bins="<<Nbins<<" (raw "<<bsaData.size()<<")\n";
-    std::cout<<" Mean χ² per amplitude fit = "<<meanAmpChi2<<"\n\n";
+    std::cout<<" Reduced χ² per amplitude fit = "<<reducedAmpChi2<<"\n\n";
 
-    // ─── Stage 1: Im-fit ───────────────────────────────────────────────────────
+    // ─── Stage 1: Im‐fit ────────────────────────────────────────────────────────
     gStage = 1;
     build_par_list();
     int nim = parNamesIm.size();
@@ -272,7 +279,7 @@ int main(int argc, char** argv){
         minu.SetPrintLevel(1);
         minu.SetFCN(fcn);
         for(int i=0;i<nim;++i){
-            const auto &nm = parNamesIm[i];
+            const auto &nm=parNamesIm[i];
             double init=0, step=0.01;
             #define GETINIT(NAME) if(nm==#NAME) init = NAME;
             GETINIT(renormImag)
@@ -295,7 +302,7 @@ int main(int argc, char** argv){
             #undef GETINIT
 
             double lo=-1e3, hi=1e3;
-            if(nm.rfind("M2_",0)==0 || nm.rfind("r_",0)==0) lo = 0.0;
+            if(nm.rfind("M2_",0)==0 || nm.rfind("r_",0)==0) lo=0.0;
             minu.DefineParameter(i,nm.c_str(),init,step,lo,hi);
 
             if(nm=="renormImag"
@@ -311,22 +318,21 @@ int main(int argc, char** argv){
         minu.Migrad();
         minu.Command("HESSE");
         minu.mnstat(chi2_im,edm,errdef,nv,nx,ic);
-        for(int i=0;i<nim;++i) minu.GetParameter(i, imVal[i], imErr[i]);
+        for(int i=0;i<nim;++i) minu.GetParameter(i,imVal[i],imErr[i]);
         ndf_im = Nbins - nim;
     }
 
-    // collect results
     std::map<std::string,double> valMap, errMap;
     for(int i=0;i<nim;++i){
         valMap[parNamesIm[i]] = imVal[i];
         errMap[parNamesIm[i]] = imErr[i];
     }
 
-    // ─── Stage 2: renormReal-fit ───────────────────────────────────────────────
+    // ─── Stage 2: renormReal‐fit ────────────────────────────────────────────────
     if(gStrategy==2){
         gStage=2;
         double chi2_re, edm2, errdef2; int nv2,nx2,ic2, ndf_re;
-        double reVal, reErr;
+        double reVal,reErr;
         {
             TMinuit m2(1);
             m2.SetPrintLevel(1);
@@ -339,21 +345,19 @@ int main(int argc, char** argv){
             m2.GetParameter(0,reVal,reErr);
             ndf_re = xsData.size() - 1;
         }
-        valMap["renormReal"] = reVal;
-        errMap["renormReal"] = reErr;
+        valMap["renormReal"]=reVal;
+        errMap["renormReal"]=reErr;
         chi2_im = chi2_re;
         ndf_im  = ndf_re;
     }
 
-    // prepare output list
     std::vector<std::string> outNames = parNamesIm;
     if(gStrategy==2) outNames.push_back("renormReal");
 
-    // write results file
-    time_t now = time(nullptr);
+    time_t now=time(nullptr);
     char tb[32];
     strftime(tb,sizeof(tb),"%Y%m%d_%H%M%S",localtime(&now));
-    std::string fname = "output/fit_results/fit_results_" + std::string(tb) + ".txt";
+    std::string fname="output/fit_results/fit_results_"+std::string(tb)+".txt";
     std::ofstream fout(fname);
     fout<<"# fit_CFFs results\n";
     fout<<"timestamp   "<<tb<<"\n";
@@ -371,14 +375,13 @@ int main(int argc, char** argv){
     fout<<chi2_im<<" "<<ndf_im<<" "<<(chi2_im/ndf_im)<<"\n";
     fout.close();
 
-    // echo to stdout
     std::cout<<"\n--- Fit Results ---\n";
     for(auto &n: outNames){
       std::cout<<" "<<n<<" = "<<valMap[n]<<" ± "<<errMap[n]<<"\n";
     }
     std::cout<<" χ²/ndf = "<<chi2_im<<"/"<<ndf_im
              <<" = "<<(chi2_im/ndf_im)<<"\n";
-    std::cout<<"Mean χ² per amplitude fit = "<<meanAmpChi2<<"\n";
+    std::cout<<"Reduced χ² per amplitude fit = "<<reducedAmpChi2<<"\n";
 
     return 0;
 }
