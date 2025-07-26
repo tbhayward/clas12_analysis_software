@@ -4,8 +4,8 @@
  * program to fit DVCS Compton Form Factors (CFFs) imaginary then real parts
  *
  * Strategies:
- *   1) fit only Im–parts -> BSA data
- *   2) two-step: (a) fit Im–parts -> BSA, (b) fit only renormReal -> xsec
+ *   1) fit only Im–parts → BSA data
+ *   2) two-step: (a) fit Im–parts → BSA, (b) fit renormReal → xsec
  *
  * Usage:
  *   ./fit_CFFs --strategy <1|2> -H <0|1> -Ht <0|1> -E <0|1> -Et <0|1> [--constraint <0|1>]
@@ -35,7 +35,7 @@
 extern bool   hasH, hasHt, hasE, hasEt;
 extern double renormImag, renormReal;
 
-// imaginary‐part model parameters
+// imaginary-part model parameters
 extern double alpha0_H,  alpha1_H,  n_H,   b_H,   M2_H,  P_H;
 extern double alpha0_Ht, alpha1_Ht, n_Ht,  b_Ht,  M2_Ht, P_Ht;
 extern double alpha0_E,  alpha1_E,  n_E,   b_E,   M2_E,  P_E;
@@ -43,11 +43,11 @@ extern double alpha0_Et, alpha1_Et, n_Et,  b_Et,  M2_Et, P_Et;
 
 // ──────────────────────────────────────────────────────────────────────────────
 // control flags
-static int  gStrategy    = 0;    // 1 or 2
-static int  gStage       = 1;    // 1 = Im‐fit, 2 = Re‐fit
-static int  gConstraint  = 0;    // 0 = no cut, 1 = apply -t/Q2<0.2
+static int  gStrategy   = 0;    // 1 or 2
+static int  gStage      = 1;    // 1 = Im-fit, 2 = Re-fit
+static int  gConstraint = 0;    // 0 = no cut, 1 = apply -t/Q2 < 0.2
 static std::string gBsaFile = "imports/rga_prl_bsa.txt";
-static const char* gXsFile   = "imports/rga_pass1_xsec_2018.txt";
+static const char* gXsFile  = "imports/rga_pass1_xsec_2018.txt";
 
 // ──────────────────────────────────────────────────────────────────────────────
 // raw data + binned observables
@@ -58,7 +58,7 @@ static std::vector<double> bin_A, bin_dA;
 static int Nbins = 0;
 
 // ──────────────────────────────────────────────────────────────────────────────
-// Load raw BSA and XSC data
+// Load raw BSA and XSC data, optionally applying the -t/Q2 constraint
 void LoadData(){
     auto read = [&](const char* fn, auto &v){
         std::ifstream in(fn);
@@ -69,9 +69,8 @@ void LoadData(){
             std::istringstream iss(line);
             DataPoint d;
             iss>>d.phi>>d.Q2>>d.xB>>d.t>>d.Eb>>d.A>>d.sigA;
-            // apply constraint if requested:
             if(gConstraint==1){
-                // skip if -t/Q2 >= 0.2
+                // skip any single point with -t/Q2 ≥ 0.2
                 if( (-d.t / d.Q2) >= 0.2 ) continue;
             }
             v.push_back(d);
@@ -82,7 +81,7 @@ void LoadData(){
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
-// Bin the BSA data by phi‐drop bins and extract sinφ amplitudes A_bin ± dA_bin
+// Bin the BSA data by phi-drop bins and extract sinφ amplitudes
 void BinBsaData(){
     bin_xB.clear(); bin_Q2.clear(); bin_t.clear(); bin_Eb.clear();
     bin_A .clear(); bin_dA.clear();
@@ -122,7 +121,7 @@ void BinBsaData(){
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
-// parse_args(): read --strategy, -H, -Ht, -E, -Et, --constraint
+// parse_args(): read --strategy, -H, -Ht, -E, -Et, [--constraint]
 void parse_args(int argc, char** argv){
     static struct option opts[] = {
         {"strategy",   required_argument, nullptr, 's'},
@@ -155,7 +154,7 @@ void parse_args(int argc, char** argv){
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
-// build_par_list(): which Im‐parameters to fit
+// build_par_list(): which Im-parameters to fit
 static std::vector<std::string> parNamesIm;
 void build_par_list(){
     parNamesIm.clear();
@@ -171,7 +170,7 @@ void build_par_list(){
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
-// fcn(): Minuit’s χ², for Im‐fit (stage1) or renormReal‐fit (stage2)
+// fcn(): Minuit’s χ² for Im-fit (gStage=1) or renormReal-fit (gStage=2)
 void fcn(int&, double*, double &f, double *par, int){
     int ip=0;
     if(gStage==1){
@@ -244,11 +243,11 @@ int main(int argc, char** argv){
         minu.SetPrintLevel(1);
         minu.SetFCN(fcn);
 
-        // define+fix parameters
+        // define each Im parameter, enforce M2_* ≥ 0
         for(int i=0;i<nim;++i){
             const auto &nm = parNamesIm[i];
             double init=0, step=0.01;
-            // read starting value from the extern globals:
+            // pull starting values from extern globals
             #define GETINIT(NAME) if(nm==#NAME) init = NAME;
             GETINIT(renormImag)
             GETINIT(alpha0_H)   GETINIT(alpha1_H)
@@ -266,17 +265,17 @@ int main(int argc, char** argv){
             #undef GETINIT
 
             double lower=-1e3, upper=1e3;
-            // enforce M2_ > 0
-            if(nm.rfind("M2_",0)==0) lower = 0.0;
+            if(nm.rfind("M2_",0)==0) lower = 0.0;   // M2 must stay ≥0
 
             minu.DefineParameter(i, nm.c_str(), init, step, lower, upper);
-            // fix only renormImag and all P_*
-            if(nm=="renormImag" || nm.rfind("P_",0)==0){
+
+            // fix only renormImag; let everything else (α₀,α₁,n,b,M2,P) float
+            if(nm=="renormImag"){
                 minu.FixParameter(i);
             }
         }
 
-        std::cout<<"Stage1: fitting Im–CFFs (α₀,α₁,n,b,M2 floated; P fixed)...\n";
+        std::cout<<"Stage1: fitting Im–CFFs (all shape + P floated; renormImag fixed)...\n";
         minu.Migrad();
         minu.Command("HESSE");
         minu.mnstat(chi2_im,edm,errdef,nv,nx,ic);
@@ -285,7 +284,7 @@ int main(int argc, char** argv){
         ndf_im = Nbins - nim;
     }
 
-    // write out Im‐fit results...
+    // store Im‐fit results
     std::vector<std::string> outNames = parNamesIm;
     std::vector<double>      outVal   = imVal;
     std::vector<double>      outErrV  = imErr;
@@ -333,7 +332,7 @@ int main(int argc, char** argv){
         std::cout<<" renormReal = "<<reVal
                  <<" ± "<<reErr<<"\n";
         std::cout<<" χ²/ndf = "<<finalChi2<<"/"<<finalNdf
-                 <<" = "<<(finalChi2/ finalNdf)<<"\n\n";
+                 <<" = "<<(finalChi2/finalNdf)<<"\n\n";
     }
 
     // ─── Write results to timestamped file ───────────────────────────────────────
