@@ -8,7 +8,8 @@
  *   2) two-step: (a) fit Im–parts → BSA, (b) fit renormReal → xsec
  *
  * Usage:
- *   ./fit_CFFs --strategy <1|2> -H <0|1> -Ht <0|1> -E <0|1> -Et <0|1> [--constraint <0|1>]
+ *   ./fit_CFFs --strategy <1|2> -H <0|1> -Ht <0|1> -E <0|1> -Et <0|1>
+ *             [--constraint <0|1>] [--input <BSA_file>]
  *
  * Compile:
  *   g++ -O2 fit_CFFs.C `root-config --cflags --libs` -lMinuit -o fit_CFFs
@@ -110,7 +111,7 @@ void BinBsaData(){
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
-// parse_args: --strategy, -H, -Ht, -E, -Et, [--constraint]
+// parse_args: --strategy, -H, -Ht, -E, -Et, [--constraint], [--input]
 void parse_args(int argc,char**argv){
     static struct option opts[]={
         {"strategy",   required_argument,nullptr,'s'},
@@ -119,21 +120,24 @@ void parse_args(int argc,char**argv){
         {"E",          required_argument,nullptr,'e'},
         {"Et",         required_argument,nullptr,'x'},
         {"constraint", required_argument,nullptr,'C'},
+        {"input",      required_argument,nullptr,'i'},
         {nullptr,0,nullptr,0}
     };
     int c;
-    while((c=getopt_long(argc,argv,"s:h:t:e:x:C:",opts,nullptr))!=-1){
+    while((c=getopt_long(argc,argv,"s:h:t:e:x:C:i:",opts,nullptr))!=-1){
         switch(c){
-          case 's': gStrategy  =atoi(optarg); break;
-          case 'h': hasH       =atoi(optarg); break;
-          case 't': hasHt      =atoi(optarg); break;
-          case 'e': hasE       =atoi(optarg); break;
-          case 'x': hasEt      =atoi(optarg); break;
-          case 'C': gConstraint=atoi(optarg); break;
+          case 's': gStrategy   = atoi(optarg); break;
+          case 'h': hasH        = atoi(optarg); break;
+          case 't': hasHt       = atoi(optarg); break;
+          case 'e': hasE        = atoi(optarg); break;
+          case 'x': hasEt       = atoi(optarg); break;
+          case 'C': gConstraint = atoi(optarg); break;
+          case 'i': gBsaFile    = std::string(optarg); break;
           default:
             std::cerr<<"Usage: "<<argv[0]
                      <<" --strategy<1|2> -H<0|1> -Ht<0|1>"
-                     <<" -E<0|1> -Et<0|1> [--constraint<0|1>]\n";
+                     <<" -E<0|1> -Et<0|1> [--constraint<0|1>]"
+                     <<" [--input <BSA_file>]\n";
             std::exit(1);
         }
     }
@@ -163,30 +167,30 @@ void build_par_list(){
 void fcn(int&, double*, double &f, double *par, int){
     int ip=0;
     if(gStage==1){
-        renormImag=par[ip++];
+        renormImag = par[ip++];
         if(hasH ){
-          r_H      =par[ip++];
-          alpha0_H =par[ip++]; alpha1_H=par[ip++];
-          n_H      =par[ip++]; b_H     =par[ip++];
-          M2_H     =par[ip++]; P_H     =par[ip++];
+          r_H      = par[ip++];
+          alpha0_H = par[ip++]; alpha1_H = par[ip++];
+          n_H      = par[ip++]; b_H      = par[ip++];
+          M2_H     = par[ip++]; P_H      = par[ip++];
         }
         if(hasHt){
-          r_Ht     =par[ip++];
-          alpha0_Ht=par[ip++]; alpha1_Ht=par[ip++];
-          n_Ht     =par[ip++]; b_Ht    =par[ip++];
-          M2_Ht    =par[ip++]; P_Ht    =par[ip++];
+          r_Ht     = par[ip++];
+          alpha0_Ht= par[ip++]; alpha1_Ht= par[ip++];
+          n_Ht     = par[ip++]; b_Ht     = par[ip++];
+          M2_Ht    = par[ip++]; P_Ht     = par[ip++];
         }
         if(hasE ){
-          r_E      =par[ip++];
-          alpha0_E =par[ip++]; alpha1_E =par[ip++];
-          n_E      =par[ip++]; b_E      =par[ip++];
-          M2_E     =par[ip++]; P_E      =par[ip++];
+          r_E      = par[ip++];
+          alpha0_E = par[ip++]; alpha1_E = par[ip++];
+          n_E      = par[ip++]; b_E      = par[ip++];
+          M2_E     = par[ip++]; P_E      = par[ip++];
         }
         if(hasEt){
-          r_Et     =par[ip++];
-          alpha0_Et=par[ip++]; alpha1_Et=par[ip++];
-          n_Et     =par[ip++]; b_Et     =par[ip++];
-          M2_Et    =par[ip++]; P_Et    =par[ip++];
+          r_Et     = par[ip++];
+          alpha0_Et= par[ip++]; alpha1_Et= par[ip++];
+          n_Et     = par[ip++]; b_Et     = par[ip++];
+          M2_Et    = par[ip++]; P_Et     = par[ip++];
         }
         double chi2=0;
         for(int k=0;k<Nbins;++k){
@@ -196,18 +200,18 @@ void fcn(int&, double*, double &f, double *par, int){
             double r  = (bin_A[k]-mA)/bin_dA[k];
             chi2 += r*r;
         }
-        f=chi2;
+        f = chi2;
     }
     else {
-        renormReal=par[ip++];
+        renormReal = par[ip++];
         double chi2=0;
         for(auto &d: xsData){
             BMK_DVCS dvcs(-1,0,0,d.Eb,d.xB,d.Q2,d.t,d.phi);
             double m = dvcs.CrossSection();
-            double r = (d.A-renormReal*m)/d.sigA;
-            chi2+=r*r;
+            double r = (d.A - renormReal*m)/d.sigA;
+            chi2 += r*r;
         }
-        f=chi2;
+        f = chi2;
     }
 }
 
@@ -217,7 +221,8 @@ int main(int argc,char**argv){
     std::cout<<"\n=== Strategy="<<gStrategy
              <<"  H="<<hasH<<" Ht="<<hasHt
              <<"  E="<<hasE<<" Et="<<hasEt
-             <<"  constraint="<<gConstraint<<" ===\n";
+             <<"  constraint="<<gConstraint
+             <<"  input="<<gBsaFile<<" ===\n";
 
     LoadData();
     BinBsaData();
@@ -329,6 +334,7 @@ int main(int argc,char**argv){
     fout<<"timestamp   "<<tb<<"\n";
     fout<<"strategy    "<<gStrategy<<"\n";
     fout<<"constraint  "<<gConstraint<<"\n";
+    fout<<"input       "<<gBsaFile<<"\n";
     fout<<"H "<<hasH<<"  Ht "<<hasHt<<"  E "<<hasE<<"  Et "<<hasEt<<"\n";
     fout<<"# parameters:";
     for(auto &n: outNames) fout<<" "<<n;
