@@ -105,7 +105,7 @@ def make_Im_func(cff, params, renorm):
     return Im
 
 # ─── Replica‐band support ───────────────────────────────────────────────────────
-def generate_replicas(central, errors, nrep=200):
+def generate_replicas(central, errors, nrep=10000):
     reps = []
     for _ in range(nrep):
         d = {}
@@ -115,7 +115,7 @@ def generate_replicas(central, errors, nrep=200):
         reps.append(d)
     return reps
 
-def compute_uncertainty_band(cff, xi_vals, t_vals, nrep=200):
+def compute_uncertainty_band(cff, xi_vals, t_vals, nrep=10000):
     if cff not in fit_params:
         return None, None, None
     param_reps  = generate_replicas(fit_params[cff], fit_errors[cff], nrep)
