@@ -36,7 +36,7 @@
 extern bool   hasH, hasHt, hasE, hasEt;
 extern double renormImag, renormReal;
 
-// imaginary‐part model parameters
+// imaginary-part model parameters
 extern double r_H,      alpha0_H,  alpha1_H,  n_H,   b_H,   M2_H,  P_H;
 extern double r_Ht,     alpha0_Ht, alpha1_Ht, n_Ht,  b_Ht,  M2_Ht, P_Ht;
 extern double r_E,      alpha0_E,  alpha1_E,  n_E,   b_E,   M2_E,  P_E;
@@ -45,7 +45,7 @@ extern double r_Et,     alpha0_Et, alpha1_Et, n_Et,  b_Et,  M2_Et, P_Et;
 // ──────────────────────────────────────────────────────────────────────────────
 // control flags
 static int  gStrategy   = 0;    // 1 or 2
-static int  gStage      = 1;    // 1 = Im‐fit, 2 = Re‐fit
+static int  gStage      = 1;    // 1 = Im-fit, 2 = Re-fit
 static int  gConstraint = 0;    // 0 = no cut, 1 = apply -t/Q2<0.2
 static std::string gBsaFile = "imports/rga_prl_bsa.txt";
 static const char* gXsFile  = "imports/rga_pass1_xsec_2018.txt";
@@ -70,7 +70,7 @@ void LoadData(){
             std::istringstream iss(line);
             DataPoint d;
             iss>>d.phi>>d.Q2>>d.xB>>d.t>>d.Eb>>d.A>>d.sigA;
-            if(gConstraint==1 && (-d.t/d.Q2)>=0.2) continue;
+            if(gConstraint==1 && (-d.t/d.Q2) >= 0.2) continue;
             v.push_back(d);
         }
     };
@@ -79,7 +79,7 @@ void LoadData(){
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
-// Bin BSA by φ‐drop and extract sinφ amplitude
+// Bin BSA by φ-drop and extract sinφ amplitude
 void BinBsaData(){
     bin_xB.clear(); bin_Q2.clear(); bin_t.clear(); bin_Eb.clear();
     bin_A .clear(); bin_dA.clear();
@@ -143,7 +143,7 @@ void parse_args(int argc,char**argv){
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
-// build which Im‐parameters to fit
+// build which Im-parameters to fit
 static std::vector<std::string> parNamesIm;
 void build_par_list(){
     parNamesIm.clear();
@@ -159,7 +159,7 @@ void build_par_list(){
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
-// χ² function: Im‐fit (gStage=1) or renormReal‐fit (gStage=2)
+// χ² function: Im-fit (gStage=1) or renormReal-fit (gStage=2)
 void fcn(int&, double*, double &f, double *par, int){
     int ip=0;
     if(gStage==1){
@@ -223,7 +223,7 @@ int main(int argc,char**argv){
     BinBsaData();
     std::cout<<" BSA bins="<<Nbins<<" (raw "<<bsaData.size()<<")\n\n";
 
-    // ─── Stage 1: Im‐fit ─────────────────────────────────────────────────────────
+    // ─── Stage 1: Im-fit ─────────────────────────────────────────────────────────
     gStage=1;
     build_par_list();
     int nim=parNamesIm.size();
@@ -258,8 +258,9 @@ int main(int argc,char**argv){
             GETINIT(P_Et)
             #undef GETINIT
 
-            double lo=-1e3, hi=1e3;
-            if(nm.rfind("M2_",0)==0) lo=0.0;
+            double lo = -1e3, hi = 1e3;
+            // enforce positivity for M2_* and all r_ parameters
+            if(nm.rfind("M2_",0)==0 || nm.rfind("r_",0)==0) lo = 0.0;
 
             minu.DefineParameter(i,nm.c_str(),init,step,lo,hi);
 
@@ -290,7 +291,7 @@ int main(int argc,char**argv){
         errMap[parNamesIm[i]] = imErr[i];
     }
 
-    // ─── Stage 2: renormReal‐fit ────────────────────────────────────────────────
+    // ─── Stage 2: renormReal-fit ────────────────────────────────────────────────
     if(gStrategy==2){
         gStage=2;
         double chi2_re,edm2,errdef2; int nv2,nx2,ic2,ndf_re;
