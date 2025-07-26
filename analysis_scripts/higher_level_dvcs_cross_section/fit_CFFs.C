@@ -41,7 +41,6 @@ extern double alpha0_Et, alpha1_Et, n_Et,  b_Et,  M2_Et, P_Et;
 
 // ──────────────────────────────────────────────────────────────────────────────
 static int  gStrategy = 0;    // 1 or 2
-static int  gStage    = 1;    // unused for Im‐only, but kept for Re‐step
 static std::string gBsaFile = "imports/rga_prl_bsa.txt";
 static const char* gXsFile   = "imports/rga_pass1_xsec_2018.txt";
 
@@ -65,8 +64,8 @@ void LoadData(){
             v.push_back(d);
         }
     };
-    read(gBsaFile, bsaData);
-    read(gXsFile,  xsData);
+    read(gBsaFile.c_str(), bsaData);
+    read(gXsFile,          xsData);
 }
 
 void BinBsaData(){
@@ -84,7 +83,7 @@ void BinBsaData(){
             double s = sin(rad), w = 1./(d.sigA*d.sigA);
             SwA += w * d.A * s;
             Sw2 += w * s*s;
-            Sx+=d.xB; Sq+=d.Q2; St+=d.t; Se+=d.Eb;
+            Sx += d.xB; Sq += d.Q2; St += d.t; Se += d.Eb;
         }
         bin_A .push_back(SwA/Sw2);
         bin_dA.push_back(1./sqrt(Sw2));
@@ -107,10 +106,10 @@ void BinBsaData(){
 void parse_args(int argc, char** argv){
     static struct option opts[] = {
       {"strategy",required_argument,0,'s'},
-      {"H",required_argument,0,'h'},
-      {"Ht",required_argument,0,'t'},
-      {"E",required_argument,0,'e'},
-      {"Et",required_argument,0,'x'},
+      {"H",       required_argument,0,'h'},
+      {"Ht",      required_argument,0,'t'},
+      {"E",       required_argument,0,'e'},
+      {"Et",      required_argument,0,'x'},
       {0,0,0,0}
     };
     int c;
@@ -187,11 +186,10 @@ int main(int argc, char** argv){
              <<" E="<<hasE<<" Et="<<hasEt<<" ===\n";
     LoadData();
     BinBsaData();
-    std::cout<<" BSA bins="<<Nbins<<" ("
-             <<bsaData.size()<<" raw pts)\n\n";
-    gStage=1;
+    std::cout<<" BSA bins="<<Nbins
+             <<" ("<<bsaData.size()<<" raw pts)\n\n";
 
-    // build parameter list for Im‐fit
+    // ─── Stage 1: Im fit ────────────────────────────────────────────────────────
     build_par_list();
     int nim = parNamesIm.size();
     std::vector<double> imVal(nim), imErr(nim);
@@ -202,10 +200,10 @@ int main(int argc, char** argv){
       minu.SetPrintLevel(1);
       minu.SetFCN(fcn);
 
-      // 1) more thorough step‐size strategy
-      minu.SetStrategy(2);
+      // 1) high‐precision strategy
+      minu.Command("SET STRATEGY 2");
 
-      // 2) define all parameters unbounded in [-1e3,1e3]
+      // 2) define each in [-1e3,1e3]
       for(int i=0;i<nim;++i){
         const auto &nm=parNamesIm[i];
         double init=1.0, step=0.01;
@@ -220,20 +218,18 @@ int main(int argc, char** argv){
 
       std::cout<<"Stage1: fitting Im→BSA bins (aggressive)…\n";
 
-      // 3) run a big simplex pre‐scan
+      // 3) long Simplex scan
       minu.Command("SIMPLEX 20000");
 
-      // 4) then Migrad with many calls & tight tol
-      minu.Migrad(50000, 1e-6);
+      // 4) deep Migrad with tight tolerance
+      minu.Command("MIGRAD 50000 1e-6");
 
-      // compute covariance & errors
+      // then robust error estimates
       minu.Command("HESSE");
-
-      // finally get Minos for really robust errors
       minu.Command("MINOS");
 
       minu.mnstat(chi2_im,edm,errdef,nv,nx,ic);
-      for(int i=0;i<nim;++i) minu.GetParameter(i, imVal[i], imErr[i]);
+      for(int i=0;i<nim;++i) minu.GetParameter(i,imVal[i],imErr[i]);
       ndf_im = Nbins - nim;
     }
 
