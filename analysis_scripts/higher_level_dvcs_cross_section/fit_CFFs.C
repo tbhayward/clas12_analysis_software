@@ -35,11 +35,11 @@
 extern bool   hasH, hasHt, hasE, hasEt;
 extern double renormImag, renormReal;
 
-// imaginary-part model parameters
-extern double alpha0_H,  alpha1_H,  n_H,   b_H,   M2_H,  P_H;
-extern double alpha0_Ht, alpha1_Ht, n_Ht,  b_Ht,  M2_Ht, P_Ht;
-extern double alpha0_E,  alpha1_E,  n_E,   b_E,   M2_E,  P_E;
-extern double alpha0_Et, alpha1_Et, n_Et,  b_Et,  M2_Et, P_Et;
+// imaginary-part model parameters (defaults in DVCS_xsec.C)
+extern double r_H,      alpha0_H,  alpha1_H,  n_H,   b_H,   M2_H,  P_H;
+extern double r_Ht,     alpha0_Ht, alpha1_Ht, n_Ht,  b_Ht,  M2_Ht, P_Ht;
+extern double r_E,      alpha0_E,  alpha1_E,  n_E,   b_E,   M2_E,  P_E;
+extern double r_Et,     alpha0_Et, alpha1_Et, n_Et,  b_Et,  M2_Et, P_Et;
 
 // ──────────────────────────────────────────────────────────────────────────────
 // control flags
@@ -155,45 +155,34 @@ void parse_args(int argc, char** argv){
 
 // ──────────────────────────────────────────────────────────────────────────────
 // build_par_list(): which Im-parameters to fit
+//    renormImag, r_*, b_*, M2_* float; α₀,α₁,n,P fixed
 static std::vector<std::string> parNamesIm;
 void build_par_list(){
     parNamesIm.clear();
     parNamesIm.push_back("renormImag");
-    if(hasH ) parNamesIm.insert(parNamesIm.end(),
-                   {"alpha0_H","alpha1_H","n_H","b_H","M2_H","P_H"});
-    if(hasHt) parNamesIm.insert(parNamesIm.end(),
-                   {"alpha0_Ht","alpha1_Ht","n_Ht","b_Ht","M2_Ht","P_Ht"});
-    if(hasE ) parNamesIm.insert(parNamesIm.end(),
-                   {"alpha0_E","alpha1_E","n_E","b_E","M2_E","P_E"});
-    if(hasEt) parNamesIm.insert(parNamesIm.end(),
-                   {"alpha0_Et","alpha1_Et","n_Et","b_Et","M2_Et","P_Et"});
+    if(hasH )  parNamesIm.insert(parNamesIm.end(),{"r_H","b_H","M2_H"});
+    if(hasHt)  parNamesIm.insert(parNamesIm.end(),{"r_Ht","b_Ht","M2_Ht"});
+    if(hasE )  parNamesIm.insert(parNamesIm.end(),{"r_E","b_E","M2_E"});
+    if(hasEt)  parNamesIm.insert(parNamesIm.end(),{"r_Et","b_Et","M2_Et"});
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
-// fcn(): Minuit’s χ² for Im-fit (gStage=1) or renormReal-fit (gStage=2)
+// fcn(): Minuit’s χ² for Im‐fit (gStage=1) or renormReal‐fit (gStage=2)
 void fcn(int&, double*, double &f, double *par, int){
     int ip=0;
     if(gStage==1){
         renormImag = par[ip++];
         if(hasH ){
-          alpha0_H = par[ip++]; alpha1_H = par[ip++];
-          n_H      = par[ip++]; b_H      = par[ip++];
-          M2_H     = par[ip++]; P_H      = par[ip++];
+          r_H  = par[ip++]; b_H  = par[ip++]; M2_H  = par[ip++];
         }
         if(hasHt){
-          alpha0_Ht = par[ip++]; alpha1_Ht = par[ip++];
-          n_Ht      = par[ip++]; b_Ht      = par[ip++];
-          M2_Ht     = par[ip++]; P_Ht      = par[ip++];
+          r_Ht = par[ip++]; b_Ht = par[ip++]; M2_Ht = par[ip++];
         }
         if(hasE ){
-          alpha0_E = par[ip++]; alpha1_E = par[ip++];
-          n_E      = par[ip++]; b_E      = par[ip++];
-          M2_E     = par[ip++]; P_E      = par[ip++];
+          r_E  = par[ip++]; b_E  = par[ip++]; M2_E  = par[ip++];
         }
         if(hasEt){
-          alpha0_Et = par[ip++]; alpha1_Et = par[ip++];
-          n_Et      = par[ip++]; b_Et      = par[ip++];
-          M2_Et     = par[ip++]; P_Et      = par[ip++];
+          r_Et = par[ip++]; b_Et = par[ip++]; M2_Et = par[ip++];
         }
         double chi2=0;
         for(int k=0;k<Nbins;++k){
@@ -206,7 +195,7 @@ void fcn(int&, double*, double &f, double *par, int){
         f = chi2;
     }
     else {
-        renormReal = par[ip++];
+        renormReal = par[0];
         double chi2=0;
         for(auto &d: xsData){
             BMK_DVCS dvcs(-1,0,0,d.Eb,d.xB,d.Q2,d.t,d.phi);
@@ -226,6 +215,12 @@ int main(int argc, char** argv){
              <<" E="<<hasE<<" Et="<<hasEt
              <<"  constraint="<<gConstraint<<" ===\n";
 
+    // lock α₀, α₁, n, P to their default VGG values:
+    alpha0_H = alpha0_Ht = alpha0_E = alpha0_Et = 0.43;
+    alpha1_H = alpha1_Ht = alpha1_E = alpha1_Et = 0.85;
+    P_H = P_Ht = P_E = P_Et = 1.0;
+    // n_H, n_Ht, n_E, n_Et remain their code defaults
+
     LoadData();
     BinBsaData();
     std::cout<<" BSA bins = "<<Nbins<<"  (from "
@@ -243,39 +238,24 @@ int main(int argc, char** argv){
         minu.SetPrintLevel(1);
         minu.SetFCN(fcn);
 
-        // define each Im parameter, enforce M2_* ≥ 0
+        // define each Im parameter, enforce r_*≥0 and M2_*≥0
         for(int i=0;i<nim;++i){
             const auto &nm = parNamesIm[i];
             double init=0, step=0.01;
-            // pull starting values from extern globals
             #define GETINIT(NAME) if(nm==#NAME) init = NAME;
             GETINIT(renormImag)
-            GETINIT(alpha0_H)   GETINIT(alpha1_H)
-            GETINIT(n_H)        GETINIT(b_H)
-            GETINIT(M2_H)       GETINIT(P_H)
-            GETINIT(alpha0_Ht)  GETINIT(alpha1_Ht)
-            GETINIT(n_Ht)       GETINIT(b_Ht)
-            GETINIT(M2_Ht)      GETINIT(P_Ht)
-            GETINIT(alpha0_E)   GETINIT(alpha1_E)
-            GETINIT(n_E)        GETINIT(b_E)
-            GETINIT(M2_E)       GETINIT(P_E)
-            GETINIT(alpha0_Et)  GETINIT(alpha1_Et)
-            GETINIT(n_Et)       GETINIT(b_Et)
-            GETINIT(M2_Et)      GETINIT(P_Et)
+            GETINIT(r_H)  GETINIT(r_Ht)  GETINIT(r_E)  GETINIT(r_Et)
+            GETINIT(b_H)  GETINIT(b_Ht)  GETINIT(b_E)  GETINIT(b_Et)
+            GETINIT(M2_H) GETINIT(M2_Ht) GETINIT(M2_E) GETINIT(M2_Et)
             #undef GETINIT
 
-            double lower=-1e3, upper=1e3;
-            if(nm.rfind("M2_",0)==0) lower = 0.0;   // M2 must stay ≥0
-
+            double lower = 0.0, upper = 1e3;
+            // b_* we allow negative, so override:
+            if(nm.rfind("b_",0)==0) lower = -1e3;
             minu.DefineParameter(i, nm.c_str(), init, step, lower, upper);
-
-            // fix only renormImag; let everything else (α₀,α₁,n,b,M2,P) float
-            if(nm=="renormImag"){
-                minu.FixParameter(i);
-            }
         }
 
-        std::cout<<"Stage1: fitting Im–CFFs (all shape + P floated; renormImag fixed)...\n";
+        std::cout<<"Stage1: fitting Im–CFFs (renormImag + r, b, M2 floated; α₀,α₁,n,P fixed)...\n";
         minu.Migrad();
         minu.Command("HESSE");
         minu.mnstat(chi2_im,edm,errdef,nv,nx,ic);
@@ -284,7 +264,7 @@ int main(int argc, char** argv){
         ndf_im = Nbins - nim;
     }
 
-    // store Im‐fit results
+    // collect Im-fit results
     std::vector<std::string> outNames = parNamesIm;
     std::vector<double>      outVal   = imVal;
     std::vector<double>      outErrV  = imErr;
@@ -309,11 +289,7 @@ int main(int argc, char** argv){
             TMinuit m2(1);
             m2.SetPrintLevel(1);
             m2.SetFCN(fcn);
-            m2.DefineParameter(0,
-                               "renormReal",
-                               renormReal,
-                               0.01,
-                              -1e3,1e3);
+            m2.DefineParameter(0,"renormReal",renormReal,0.01,0.0,1e3);
             std::cout<<"Stage2: fitting renormReal...\n";
             m2.Migrad();
             m2.Command("HESSE");
@@ -332,7 +308,7 @@ int main(int argc, char** argv){
         std::cout<<" renormReal = "<<reVal
                  <<" ± "<<reErr<<"\n";
         std::cout<<" χ²/ndf = "<<finalChi2<<"/"<<finalNdf
-                 <<" = "<<(finalChi2/finalNdf)<<"\n\n";
+                 <<" = "<<(finalChi2/ finalNdf)<<"\n\n";
     }
 
     // ─── Write results to timestamped file ───────────────────────────────────────
