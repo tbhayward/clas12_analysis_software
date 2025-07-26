@@ -59,7 +59,7 @@ static std::vector<double> bin_A, bin_dA;
 static int Nbins = 0;
 
 // ──────────────────────────────────────────────────────────────────────────────
-// Load raw BSA + XSC, apply -t/Q2 constraint if requested
+// Load raw BSA + XSC, apply constraint if requested
 void LoadData(){
     auto read = [&](const char* fn, auto &v){
         std::ifstream in(fn);
@@ -159,7 +159,7 @@ void build_par_list(){
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
-// χ² function for Im‐fit (gStage=1) or renormReal‐fit (gStage=2)
+// χ² function: Im‐fit (gStage=1) or renormReal‐fit (gStage=2)
 void fcn(int&, double*, double &f, double *par, int){
     int ip=0;
     if(gStage==1){
@@ -252,8 +252,17 @@ int main(int argc,char**argv){
             double lo=-1e3,hi=1e3;
             if(nm.rfind("M2_",0)==0) lo=0.0;
             minu.DefineParameter(i,nm.c_str(),init,step,lo,hi);
+
+            // ** fix** renormImag, all alpha0_*, alpha1_*, and all P_* 
+            if(nm=="renormImag" ||
+               nm.rfind("alpha0_",0)==0 ||
+               nm.rfind("alpha1_",0)==0 ||
+               nm.rfind("P_",0)==0)
+            {
+                minu.FixParameter(i);
+            }
         }
-        std::cout<<"Stage1: fitting Im–CFFs...\n";
+        std::cout<<"Stage1: fitting Im–CFFs (only n,b,M2 floated)...\n";
         minu.Migrad();
         minu.Command("HESSE");
         minu.mnstat(chi2_im,edm,errdef,nv,nx,ic);
@@ -320,7 +329,7 @@ int main(int argc,char**argv){
 
     std::cout<<"Wrote fit results to "<<fname<<"\n";
 
-    // ─── Finally, print the same summary to stdout ────────────────────────────
+    // ─── Print the same summary to stdout ──────────────────────────────────────
     std::cout<<"\n--- Fit Results ---\n";
     for(auto &n: outNames){
       std::cout<<" "<<n
