@@ -50,6 +50,13 @@ extern double C0_E,    MD2_E,    lambda_E;
 extern double C0_Et,   MD2_Et,   lambda_Et;
 
 // ──────────────────────────────────────────────────────────────────────────────
+// global controls
+static int  gStrategy    = 0;       // 1 or 2
+static int  gStage       = 1;       // 1=Im fit, 2=Re fit
+static std::string gBsaFile = "imports/rga_prl_bsa.txt";
+static const char* gXsFile = "imports/rga_pass1_xsec_2018.txt";
+
+// ──────────────────────────────────────────────────────────────────────────────
 // Data structures & loading
 struct DataPoint { double phi,Q2,xB,t,Eb,A,sigA; };
 static std::vector<DataPoint> bsaData, xsData;
@@ -70,13 +77,6 @@ void LoadData(){
     read(gBsaFile.c_str(), bsaData);
     read(gXsFile,          xsData);
 }
-
-// ──────────────────────────────────────────────────────────────────────────────
-// global controls
-static int  gStrategy    = 0;       // 1 or 2
-static int  gStage       = 1;       // 1=Im fit, 2=Re fit
-static std::string gBsaFile = "imports/rga_prl_bsa.txt";
-static const char* gXsFile = "imports/rga_pass1_xsec_2018.txt";
 
 // ──────────────────────────────────────────────────────────────────────────────
 // parse_args(): read --strategy, -H, -Ht, -E, -Et, [--input <BSA_file>]
