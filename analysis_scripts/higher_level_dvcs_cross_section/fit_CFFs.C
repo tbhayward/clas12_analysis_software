@@ -247,8 +247,8 @@ int main(int argc, char** argv){
 
         for(int i=0;i<nim;++i){
             const auto &nm = parNamesIm[i];
-            // pick the current global as init:
             double init = 0;
+            // read initial from the current globals:
             if     (nm=="renormImag") init=renormImag;
             else if(nm=="alpha0_H")   init=alpha0_H;
             else if(nm=="alpha1_H")   init=alpha1_H;
@@ -275,25 +275,19 @@ int main(int argc, char** argv){
             else if(nm=="M2_Et")      init=M2_Et;
             else if(nm=="P_Et")       init=P_Et;
 
-            double step = 0.01;
             minu.DefineParameter(i,
                                 nm.c_str(),
                                 init,
-                                step,
-                                -1e3,  // no positivity requirement
-                                 1e3);
+                                0.01,
+                               -1e3,1e3);
 
-            // now fix renormImag, all α₀, all α₁, and all P
-            if(nm=="renormImag" ||
-               nm.rfind("alpha0_",0)==0 ||
-               nm.rfind("alpha1_",0)==0 ||
-               nm.rfind("P_",0)==0 )
-            {
+            // fix only renormImag and all the P_* parameters:
+            if(nm=="renormImag" || nm.rfind("P_",0)==0){
                 minu.FixParameter(i);
             }
         }
 
-        std::cout<<"Stage1: fitting Im–CFFs (n,b,M2 floated; others fixed)...\n";
+        std::cout<<"Stage1: fitting Im–CFFs (α₀,α₁,n,b,M2 floated; P fixed)...\n";
         minu.Migrad();
         minu.Command("HESSE");
         minu.mnstat(chi2_im,edm,errdef,nv,nx,ic);
