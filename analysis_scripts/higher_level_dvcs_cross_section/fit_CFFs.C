@@ -95,11 +95,11 @@ void BinBsaData(){
             Sx+=d.xB; Sq+=d.Q2; St+=d.t; Se+=d.Eb;
         }
         int M=end-start;
-        bin_A.push_back(SwA/Sw2);
+        bin_A .push_back(SwA/Sw2);
         bin_dA.push_back(1.0/std::sqrt(Sw2));
         bin_xB.push_back(Sx/M);
         bin_Q2.push_back(Sq/M);
-        bin_t.push_back(St/M);
+        bin_t .push_back(St/M);
         bin_Eb.push_back(Se/M);
     };
     for(size_t i=1;i<=bsaData.size();++i){
@@ -124,11 +124,11 @@ void parse_args(int argc,char**argv){
     int c;
     while((c=getopt_long(argc,argv,"s:h:t:e:x:C:",opts,nullptr))!=-1){
         switch(c){
-          case 's': gStrategy=atoi(optarg); break;
-          case 'h': hasH     =atoi(optarg); break;
-          case 't': hasHt    =atoi(optarg); break;
-          case 'e': hasE     =atoi(optarg); break;
-          case 'x': hasEt    =atoi(optarg); break;
+          case 's': gStrategy  =atoi(optarg); break;
+          case 'h': hasH       =atoi(optarg); break;
+          case 't': hasHt      =atoi(optarg); break;
+          case 'e': hasE       =atoi(optarg); break;
+          case 'x': hasEt      =atoi(optarg); break;
           case 'C': gConstraint=atoi(optarg); break;
           default:
             std::cerr<<"Usage: "<<argv[0]
@@ -230,7 +230,6 @@ int main(int argc,char**argv){
         TMinuit minu(nim);
         minu.SetPrintLevel(1);
         minu.SetFCN(fcn);
-
         for(int i=0;i<nim;++i){
             const auto &nm=parNamesIm[i];
             double init=0,step=0.01;
@@ -250,11 +249,10 @@ int main(int argc,char**argv){
             GETINIT(M2_Et)     GETINIT(P_Et)
             #undef GETINIT
 
-            double lo=-1e3, hi=1e3;
+            double lo=-1e3,hi=1e3;
             if(nm.rfind("M2_",0)==0) lo=0.0;
             minu.DefineParameter(i,nm.c_str(),init,step,lo,hi);
         }
-
         std::cout<<"Stage1: fitting Im–CFFs...\n";
         minu.Migrad();
         minu.Command("HESSE");
@@ -264,7 +262,7 @@ int main(int argc,char**argv){
         ndf_im=Nbins-nim;
     }
 
-    // collect values/errors
+    // collect into maps
     std::map<std::string,double> valMap,errMap;
     for(int i=0;i<nim;++i){
         valMap[parNamesIm[i]]=imVal[i];
@@ -276,7 +274,6 @@ int main(int argc,char**argv){
         gStage=2;
         double chi2_re,edm2,errdef2; int nv2,nx2,ic2,ndf_re;
         double reVal,reErr;
-
         {
             TMinuit m2(1);
             m2.SetPrintLevel(1);
@@ -295,10 +292,11 @@ int main(int argc,char**argv){
         ndf_im=ndf_re;
     }
 
-    // ─── Write results for only turned‐on CFFs ─────────────────────────────────
+    // prepare output names
     std::vector<std::string> outNames=parNamesIm;
     if(gStrategy==2) outNames.push_back("renormReal");
 
+    // write text file
     time_t now=time(nullptr);
     char tb[32];
     strftime(tb,sizeof(tb),"%Y%m%d_%H%M%S",localtime(&now));
@@ -318,8 +316,19 @@ int main(int argc,char**argv){
     for(auto &n: outNames) fout<<errMap[n]<<" ";
     fout<<"\n# chi2 ndf chi2/ndf\n";
     fout<<chi2_im<<" "<<ndf_im<<" "<<(chi2_im/ndf_im)<<"\n";
-
     fout.close();
+
     std::cout<<"Wrote fit results to "<<fname<<"\n";
+
+    // ─── Finally, print the same summary to stdout ────────────────────────────
+    std::cout<<"\n--- Fit Results ---\n";
+    for(auto &n: outNames){
+      std::cout<<" "<<n
+               <<" = "<<valMap[n]
+               <<" ± "<<errMap[n]<<"\n";
+    }
+    std::cout<<" χ²/ndf = "<<chi2_im<<"/"<<ndf_im
+             <<" = "<<(chi2_im/ndf_im)<<"\n";
+
     return 0;
 }
