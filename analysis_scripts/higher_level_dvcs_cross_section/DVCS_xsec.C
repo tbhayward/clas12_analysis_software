@@ -1274,7 +1274,7 @@ double GetImH(double xi, double t) {
 // GPD‐Htilde defaults (r_Ht removed; n_Ht -> 0.6 * 7.0 = 4.2)
 double alpha0_Ht = 0.43;
 double alpha1_Ht = 0.85;
-double n_Ht      = 4.2;     // was r_Ht * 0.6
+double n_Ht      = 1.68;     // was r_Ht * 0.6 but also * 0.4 from VGG correction
 double b_Ht      = 2.0;
 double M2_Ht     = 0.8;
 double P_Ht      = 1.0;
@@ -1286,7 +1286,7 @@ double GetImHt(double xi, double t) {
     double xfac  = TMath::Power(2*xi/(1+xi), -alphaHt);
     double yfac  = TMath::Power((1 - xi)/(1+xi), b_Ht);
     double tfac  = TMath::Power(1 - ((1 - xi)/(1+xi))*t/M2_Ht, -P_Ht);
-    return renormImag * pref * xfac * yfac * tfac * 0.4; // *0.4 correction from VGG
+    return renormImag * pref * xfac * yfac * tfac;
 }
 
 
