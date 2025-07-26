@@ -77,9 +77,6 @@ void LoadData(){
     read(gXsFile,          xsData);
 }
 
-// ──────────────────────────────────────────────────────────────────────────────
-// Bin the BSA data by φ‐scan bins (detect when φ resets) and extract
-// weighted sin-φ amplitudes A_bin ± dA_bin
 void BinBsaData(){
     bin_A.clear(); bin_dA.clear();
     bin_xB.clear(); bin_Q2.clear(); bin_t.clear(); bin_Eb.clear();
@@ -109,10 +106,8 @@ void BinBsaData(){
         bin_Eb.push_back(sum_Eb/M);
     };
 
-    // detect new bin whenever φ decreases (wraps) or at end of data
     for(size_t i = 1; i <= bsaData.size(); ++i){
-        bool newbin = (i == bsaData.size()
-                    || bsaData[i].phi < bsaData[i-1].phi);
+        bool newbin = (i == bsaData.size() || bsaData[i].phi < bsaData[i-1].phi);
         if(newbin){
             flush_bin(i);
             start = i;
@@ -121,8 +116,6 @@ void BinBsaData(){
     Nbins = bin_A.size();
 }
 
-// ──────────────────────────────────────────────────────────────────────────────
-// parse_args(): read --strategy, -H, -Ht, -E, -Et
 void parse_args(int argc, char** argv){
     static struct option long_opts[] = {
         {"strategy", required_argument, nullptr, 's'},
@@ -153,36 +146,18 @@ void parse_args(int argc, char** argv){
     }
 }
 
-// ──────────────────────────────────────────────────────────────────────────────
-// build_par_list(): list of Im–part parameters for Minuit
 static std::vector<std::string> parNamesIm;
 void build_par_list(){
     parNamesIm.clear();
     parNamesIm.push_back("renormImag");
-    if(hasH){
-        parNamesIm.insert(parNamesIm.end(),
-            {"alpha0_H","alpha1_H","n_H","b_H","M2_H","P_H"});
-    }
-    if(hasHt){
-        parNamesIm.insert(parNamesIm.end(),
-            {"alpha0_Ht","alpha1_Ht","n_Ht","b_Ht","M2_Ht","P_Ht"});
-    }
-    if(hasE){
-        parNamesIm.insert(parNamesIm.end(),
-            {"alpha0_E","alpha1_E","n_E","b_E","M2_E","P_E"});
-    }
-    if(hasEt){
-        parNamesIm.insert(parNamesIm.end(),
-            {"alpha0_Et","alpha1_Et","n_Et","b_Et","M2_Et","P_Et"});
-    }
+    if(hasH)   parNamesIm.insert(parNamesIm.end(), {"alpha0_H","alpha1_H","n_H","b_H","M2_H","P_H"});
+    if(hasHt)  parNamesIm.insert(parNamesIm.end(), {"alpha0_Ht","alpha1_Ht","n_Ht","b_Ht","M2_Ht","P_Ht"});
+    if(hasE)   parNamesIm.insert(parNamesIm.end(), {"alpha0_E","alpha1_E","n_E","b_E","M2_E","P_E"});
+    if(hasEt)  parNamesIm.insert(parNamesIm.end(), {"alpha0_Et","alpha1_Et","n_Et","b_Et","M2_Et","P_Et"});
 }
 
-// ──────────────────────────────────────────────────────────────────────────────
-// fcn(): Minuit’s χ², unpack Im–parameters only, then compare
-//      A_bin  vs  s1_I/c0_BH  for each bin
 void fcn(int& /*npar*/, double* /*grad*/, double &f, double *par, int /*iflag*/){
     int ip = 0;
-    // unpack Im–parameters
     renormImag = par[ip++];
     if(hasH){
       alpha0_H = par[ip++]; alpha1_H = par[ip++];
@@ -206,21 +181,16 @@ void fcn(int& /*npar*/, double* /*grad*/, double &f, double *par, int /*iflag*/)
     }
 
     double chi2 = 0;
-    // only Im‐fit (strategy 1 or first stage of 2)
-    for(int k = 0; k < Nbins; ++k){
+    for(int k=0; k<Nbins; ++k){
         BMK_DVCS dvcs(-1,1,0,
                       bin_Eb[k], bin_xB[k], bin_Q2[k], bin_t[k], 0.0);
-        double num    = dvcs.s1_I();   // sinφ interference ∝ Im CFF
-        double den    = dvcs.c0_BH();  // BH c₀ only
-        double modelA = num/den;
-        double resid  = (bin_A[k] - modelA)/bin_dA[k];
+        double modelA = dvcs.s1_I() / dvcs.c0_BH();
+        double resid  = (bin_A[k] - modelA) / bin_dA[k];
         chi2 += resid*resid;
     }
     f = chi2;
 }
 
-// ──────────────────────────────────────────────────────────────────────────────
-// main(): orchestrate fits
 int main(int argc, char** argv){
     parse_args(argc, argv);
 
@@ -244,91 +214,18 @@ int main(int argc, char** argv){
         minu.SetPrintLevel(1);
         minu.SetFCN(fcn);
 
-        // define each parameter with its true default as the start value
-        for(int i=0;i<nim;++i){
+        // define each parameter with wide bounds [-1e3, 1e3]
+        for(int i=0; i<nim; ++i){
             const auto &nm = parNamesIm[i];
-            double init, step, mn, mx;
-
-            if(nm=="renormImag") {
-                init = renormImag; step=0.01; mn=0;   mx=10;
-            }
-            else if(nm=="alpha0_H") {
-                init = alpha0_H;  step=0.01; mn=-5;  mx=5;
-            }
-            else if(nm=="alpha1_H") {
-                init = alpha1_H;  step=0.01; mn=-10; mx=10;
-            }
-            else if(nm=="n_H") {
-                init = n_H;       step=0.01; mn=0;   mx=10;
-            }
-            else if(nm=="b_H") {
-                init = b_H;       step=0.01; mn=0;   mx=10;
-            }
-            else if(nm=="M2_H") {
-                init = M2_H;      step=0.01; mn=0;   mx=10;
-            }
-            else if(nm=="P_H") {
-                init = P_H;       step=0.01; mn=0;   mx=10;
-            }
-            else if(nm=="alpha0_Ht") {
-                init = alpha0_Ht; step=0.01; mn=-5;  mx=5;
-            }
-            else if(nm=="alpha1_Ht") {
-                init = alpha1_Ht; step=0.01; mn=-10; mx=10;
-            }
-            else if(nm=="n_Ht") {
-                init = n_Ht;      step=0.01; mn=0;   mx=10;
-            }
-            else if(nm=="b_Ht") {
-                init = b_Ht;      step=0.01; mn=0;   mx=10;
-            }
-            else if(nm=="M2_Ht") {
-                init = M2_Ht;     step=0.01; mn=0;   mx=10;
-            }
-            else if(nm=="P_Ht") {
-                init = P_Ht;      step=0.01; mn=0;   mx=10;
-            }
-            else if(nm=="alpha0_E") {
-                init = alpha0_E;  step=0.01; mn=-5;  mx=5;
-            }
-            else if(nm=="alpha1_E") {
-                init = alpha1_E;  step=0.01; mn=-10; mx=10;
-            }
-            else if(nm=="n_E") {
-                init = n_E;       step=0.01; mn=0;   mx=10;
-            }
-            else if(nm=="b_E") {
-                init = b_E;       step=0.01; mn=0;   mx=10;
-            }
-            else if(nm=="M2_E") {
-                init = M2_E;      step=0.01; mn=0;   mx=10;
-            }
-            else if(nm=="P_E") {
-                init = P_E;       step=0.01; mn=0;   mx=10;
-            }
-            else if(nm=="alpha0_Et") {
-                init = alpha0_Et; step=0.01; mn=-5;  mx=5;
-            }
-            else if(nm=="alpha1_Et") {
-                init = alpha1_Et; step=0.01; mn=-10; mx=10;
-            }
-            else if(nm=="n_Et") {
-                init = n_Et;      step=0.01; mn=0;   mx=10;
-            }
-            else if(nm=="b_Et") {
-                init = b_Et;      step=0.01; mn=0;   mx=10;
-            }
-            else if(nm=="M2_Et") {
-                init = M2_Et;     step=0.01; mn=0;   mx=10;
-            }
-            else if(nm=="P_Et") {
-                init = P_Et;      step=0.01; mn=0;   mx=10;
-            }
-            else {
-                init = 0; step=0.1; mn=-1e3; mx=1e3;
-            }
-
-            minu.DefineParameter(i, nm.c_str(), init, step, mn, mx);
+            double init = 1.0, step = 0.01;
+            if      (nm=="alpha0_H"||nm=="alpha0_Ht") init = 0.43;
+            else if (nm=="alpha1_H"||nm=="alpha1_Ht") init = 0.85;
+            else if (nm=="n_H")                       init = 1.35;
+            else if (nm=="n_Ht")                      init = 0.6;
+            else if (nm=="n_E")                       init = 1.35;
+            else if (nm=="alpha0_E"||nm=="alpha0_Et") init = 0.43;
+            else if (nm=="alpha1_E"||nm=="alpha1_Et") init = 0.85;
+            minu.DefineParameter(i, nm.c_str(), init, step, -1e3, 1e3);
         }
 
         std::cout<<"Stage1: fitting Im→BSA bins...\n";
@@ -356,7 +253,7 @@ int main(int argc, char** argv){
             TMinuit m2(1);
             m2.SetPrintLevel(1);
             m2.SetFCN(fcn);
-            m2.DefineParameter(0,"renormReal",renormReal,0.01,0,10);
+            m2.DefineParameter(0,"renormReal",renormReal,0.01, -1e3, 1e3);
             std::cout<<"Stage2: fitting renormReal→xsec...\n";
             m2.Migrad();
             m2.Command("HESSE");
