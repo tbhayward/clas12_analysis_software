@@ -189,12 +189,18 @@ int main(int argc, char** argv){
         TMinuit minu(nim);
         minu.SetPrintLevel(1);
         minu.SetErrorDef(1.0);
-        minu.SetStrategy(2);
+
+        // SLIGHTLY INCREASE STRATEGY
+        {
+          Double_t arglist[1] = { 2 };
+          Int_t ierflg = 0;
+          minu.mnexcm("SET STR", arglist, 1, ierflg);
+        }
+
         minu.SetFCN(fcn);
         for(int i=0;i<nim;++i){
             const auto &nm = parNamesIm[i];
             double init=1.0, step=0.01;
-            // use current global as initial
             if(nm=="renormImag") init=renormImag;
             else if(nm=="alpha0_H")   init=alpha0_H;
             else if(nm=="alpha1_H")   init=alpha1_H;
@@ -222,15 +228,28 @@ int main(int argc, char** argv){
             else if(nm=="P_Et")       init=P_Et;
             minu.DefineParameter(i, nm.c_str(), init, step, -1e3, 1e3);
         }
+
         std::cout<<"Stage1: fitting Im→BSA...\n";
         minu.Migrad();
-        minu.Hesse();              // compute the covariance matrix
-        minu.Migrad();             // refine minimum one more time
-        minu.Hesse();              // final error estimate
+
+        // HESSE → improved errors
+        {
+          Int_t ierflg = 0;
+          minu.mnexcm("HESSE", nullptr, 0, ierflg);
+        }
+
+        // refine
+        minu.Migrad();
+        {
+          Int_t ierflg = 0;
+          minu.mnexcm("HESSE", nullptr, 0, ierflg);
+        }
+
         minu.mnstat(chi2_im, edm, errdef, nv, nx, ic);
         for(int i=0;i<nim;++i) minu.GetParameter(i, imVal[i], imErr[i]);
         ndf_im = int(bsaData.size()) - nim;
     }
+
     std::cout<<"\n--- Im Results ---\n";
     for(int i=0;i<nim;++i)
         std::cout<<" "<<parNamesIm[i]<<" = "<<imVal[i]<<" ± "<<imErr[i]<<"\n";
@@ -248,12 +267,17 @@ int main(int argc, char** argv){
             TMinuit minu2(nre);
             minu2.SetPrintLevel(1);
             minu2.SetErrorDef(1.0);
-            minu2.SetStrategy(2);
+
+            {
+              Double_t arglist[1] = { 2 };
+              Int_t ierflg = 0;
+              minu2.mnexcm("SET STR", arglist, 1, ierflg);
+            }
+
             minu2.SetFCN(fcn);
             for(int i=0;i<nre;++i){
                 const auto &nm = parNamesRe[i];
                 double init=1.0, step=0.01;
-                // use current global as initial
                 if(nm=="C0_H")        init=C0_H;
                 else if(nm=="MD2_H")  init=MD2_H;
                 else if(nm=="lambda_H") init=lambda_H;
@@ -269,15 +293,26 @@ int main(int argc, char** argv){
                 else if(nm=="renormReal") init=renormReal;
                 minu2.DefineParameter(i, nm.c_str(), init, step, -1e3, 1e3);
             }
+
             std::cout<<"Stage2: fitting Re→xsec (Im fixed)...\n";
             minu2.Migrad();
-            minu2.Hesse();
+
+            {
+              Int_t ierflg = 0;
+              minu2.mnexcm("HESSE", nullptr, 0, ierflg);
+            }
+
             minu2.Migrad();
-            minu2.Hesse();
+            {
+              Int_t ierflg = 0;
+              minu2.mnexcm("HESSE", nullptr, 0, ierflg);
+            }
+
             minu2.mnstat(chi2_re, edm, errdef, nv, nx, ic);
             for(int i=0;i<nre;++i) minu2.GetParameter(i, reVal[i], reErr[i]);
             ndf_re = int(xsData.size()) - nre;
         }
+
         std::cout<<"\n--- Re Results ---\n";
         for(int i=0;i<nre;++i)
             std::cout<<" "<<parNamesRe[i]<<" = "<<reVal[i]<<" ± "<<reErr[i]<<"\n";
