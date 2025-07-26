@@ -78,22 +78,22 @@ void LoadData(){
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
-// Bin the BSA data by contiguous (xB, Q2, t) blocks and extract
-// weighted sin-phi amplitudes A_bin ± dA_bin
+// Bin the BSA data by φ‐scan bins (detect when φ resets) and extract
+// weighted sin-φ amplitudes A_bin ± dA_bin
 void BinBsaData(){
     bin_A.clear(); bin_dA.clear();
     bin_xB.clear(); bin_Q2.clear(); bin_t.clear(); bin_Eb.clear();
     if(bsaData.empty()) return;
 
-    size_t start=0;
+    size_t start = 0;
     auto flush_bin = [&](size_t end){
-        double sum_w_sinA=0, sum_w_sin2=0;
-        double sum_xB=0, sum_Q2=0, sum_t=0, sum_Eb=0;
+        double sum_w_sinA = 0, sum_w_sin2 = 0;
+        double sum_xB = 0, sum_Q2 = 0, sum_t = 0, sum_Eb = 0;
         int M = end - start;
-        for(size_t i=start;i<end;++i){
+        for(size_t i = start; i < end; ++i){
             auto &d = bsaData[i];
             double phi_rad = d.phi * TMath::Pi()/180.0;
-            double s = sin(phi_rad);
+            double s = std::sin(phi_rad);
             double w = 1.0/(d.sigA*d.sigA);
             sum_w_sinA += w * d.A * s;
             sum_w_sin2  += w * s*s;
@@ -109,11 +109,10 @@ void BinBsaData(){
         bin_Eb.push_back(sum_Eb/M);
     };
 
-    for(size_t i=1;i<=bsaData.size();++i){
-        bool newbin = (i==bsaData.size()
-                   || bsaData[i].xB != bsaData[i-1].xB
-                   || bsaData[i].Q2 != bsaData[i-1].Q2
-                   || bsaData[i].t  != bsaData[i-1].t);
+    // detect new bin whenever φ decreases (wraps) or at end of data
+    for(size_t i = 1; i <= bsaData.size(); ++i){
+        bool newbin = (i == bsaData.size()
+                    || bsaData[i].phi < bsaData[i-1].phi);
         if(newbin){
             flush_bin(i);
             start = i;
@@ -136,11 +135,11 @@ void parse_args(int argc, char** argv){
     int c;
     while((c = getopt_long(argc, argv, "s:h:t:e:x:", long_opts, nullptr)) != -1){
         switch(c){
-          case 's': gStrategy = std::atoi(optarg);   break;
-          case 'h': hasH       = std::atoi(optarg);   break;
-          case 't': hasHt      = std::atoi(optarg);   break;
-          case 'e': hasE       = std::atoi(optarg);   break;
-          case 'x': hasEt      = std::atoi(optarg);   break;
+          case 's': gStrategy = std::atoi(optarg); break;
+          case 'h': hasH       = std::atoi(optarg); break;
+          case 't': hasHt      = std::atoi(optarg); break;
+          case 'e': hasE       = std::atoi(optarg); break;
+          case 'x': hasEt      = std::atoi(optarg); break;
           default:
             std::cerr<<"Usage: "<<argv[0]
                      <<" --strategy <1|2> -H <0|1> -Ht <0|1>"
@@ -208,7 +207,7 @@ void fcn(int& /*npar*/, double* /*grad*/, double &f, double *par, int /*iflag*/)
 
     double chi2 = 0;
     // only Im‐fit (strategy 1 or first stage of 2)
-    for(int k=0;k<Nbins;++k){
+    for(int k = 0; k < Nbins; ++k){
         BMK_DVCS dvcs(-1,1,0,
                       bin_Eb[k], bin_xB[k], bin_Q2[k], bin_t[k], 0.0);
         double num    = dvcs.s1_I();   // sinφ interference ∝ Im CFF
@@ -326,7 +325,6 @@ int main(int argc, char** argv){
                 init = P_Et;      step=0.01; mn=0;   mx=10;
             }
             else {
-                // fallback
                 init = 0; step=0.1; mn=-1e3; mx=1e3;
             }
 
