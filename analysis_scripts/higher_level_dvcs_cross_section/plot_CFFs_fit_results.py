@@ -21,6 +21,7 @@ import sys
 import re
 import numpy as np
 import matplotlib.pyplot as plt
+from matplotlib.lines import Line2D
 
 # ─── Parse command-line ─────────────────────────────────────────────────────────
 if len(sys.argv) != 2:
@@ -101,7 +102,6 @@ def make_Im_func(cff, params, renorm):
         M2   = params.get("M2",     d["M2"])
         Pval = params.get("P",      d["P"])
         alpha = a0 + a1 * t
-        # identical to: pref = renormImag * pi*5/9 * n*r/(1+xi)
         pref = renorm * np.pi * 5.0/9.0 * nval * d["r"] / (1.0 + xi)
         xfac = (2*xi/(1.0+xi))**(-alpha)
         yfac = ((1.0 - xi)/(1.0+xi))**(bval)
@@ -111,7 +111,6 @@ def make_Im_func(cff, params, renorm):
 
 # ─── Replica‐band support ───────────────────────────────────────────────────────
 def generate_replicas(central, errors, nrep=200):
-    """draw nrep Gaussian replicas from each param (σ=err/1.96 for 95%CI)."""
     reps = []
     for _ in range(nrep):
         r = {}
@@ -151,10 +150,16 @@ t_range   = np.linspace(0,1.0,200)
 t_fixed   = np.linspace(0.1,1.0,6)
 xi_fixed  = np.linspace(0.05,0.50,6)
 
-from matplotlib.lines import Line2D
+# styles and legend
+orig_style = {'color':'tab:blue','linestyle':'-','linewidth':2.5}
+fit_style  = {'color':'tab:red', 'linestyle':'--','linewidth':2.5}
+band_style = {'color':'tab:red', 'alpha':0.2}
+zero_line  = {'color':'gray','linestyle':'--','linewidth':1}
+
 legend_elems = [
-    Line2D([0],[0],color='tab:red', linestyle='--', lw=2.5, label='Fit median'),
-    Line2D([0],[0],color='tab:red', lw=6, alpha=0.2, label='95% CI')
+    Line2D([0],[0], color='tab:blue', linestyle='-', lw=2.5, label='Original model'),
+    Line2D([0],[0], color='tab:red',  linestyle='--', lw=2.5, label='Fit median'),
+    Line2D([0],[0], color='tab:red',  lw=6, alpha=0.2,    label='95% CI'),
 ]
 
 tex_map = {"H":"H", "Ht":r"\tilde H", "E":"E", "Et":r"\tilde E"}
@@ -164,8 +169,9 @@ for cff in ("H","Ht","E","Et"):
     if not flags[cff]:
         continue
 
-    Im_fit = make_Im_func(cff, fit_params.get(cff, {}), renorm_fit)
-    tex    = tex_map[cff]
+    Im_fit  = make_Im_func(cff, fit_params.get(cff, {}), renorm_fit)
+    Im_orig = make_Im_func(cff, {}, 1.0)
+    tex     = tex_map[cff]
 
     # — Im vs xi at fixed t —
     fig, axes = plt.subplots(2,3,figsize=(12,8),sharex=True,sharey=True)
@@ -173,17 +179,20 @@ for cff in ("H","Ht","E","Et"):
     fig.suptitle(rf"$\mathrm{{Im}}\,{tex}$",fontsize=16,y=0.95)
 
     for ax, t0 in zip(axes, t_fixed):
+        # original
+        ax.plot(xi_range, Im_orig(xi_range, t0), **orig_style)
+        # fit + band
         med, lo, up = compute_uncertainty_band(cff, xi_range, t0)
-        ax.plot(xi_range, med, color='tab:red', linestyle='--', lw=2.5)
-        ax.fill_between(xi_range, lo, up, color='tab:red', alpha=0.2)
-        ax.axhline(0, color='gray', linestyle='--', lw=1)
+        ax.plot(xi_range, med, **fit_style)
+        ax.fill_between(xi_range, lo, up, **band_style)
+        ax.axhline(0, **zero_line)
         ax.text(0.6,0.75,rf"$-t={t0:.2f}$",transform=ax.transAxes)
         ax.set_xlim(0,0.5)
         ax.set_ylim(0,None)
 
     axes[2].legend(handles=legend_elems,loc='upper right',fontsize=10)
-    fig.text(0.5,0.02,r"$\xi$",ha='center')
     fig.text(0.06,0.5,rf"$\mathrm{{Im}}\,{tex}(\xi,\,-t)$$",va='center',ha='center',rotation='vertical')
+    fig.text(0.5,0.02,r"$\xi$",ha='center')
 
     out1 = f"{outdir}/Im{cff}_vs_xi_{timestamp}.pdf"
     fig.savefig(out1,bbox_inches='tight')
@@ -196,17 +205,18 @@ for cff in ("H","Ht","E","Et"):
     fig.suptitle(rf"$\mathrm{{Im}}\,{tex}$",fontsize=16,y=0.95)
 
     for ax, x0 in zip(axes, xi_fixed):
+        ax.plot(t_range, Im_orig(x0, t_range), **orig_style)
         med, lo, up = compute_uncertainty_band(cff, x0, t_range)
-        ax.plot(t_range, med, color='tab:red', linestyle='--', lw=2.5)
-        ax.fill_between(t_range, lo, up, color='tab:red', alpha=0.2)
-        ax.axhline(0, color='gray', linestyle='--', lw=1)
+        ax.plot(t_range, med, **fit_style)
+        ax.fill_between(t_range, lo, up, **band_style)
+        ax.axhline(0, **zero_line)
         ax.text(0.6,0.75,rf"$\xi={x0:.2f}$",transform=ax.transAxes)
         ax.set_xlim(0,1.0)
         ax.set_ylim(0,None)
 
     axes[2].legend(handles=legend_elems,loc='upper right',fontsize=10)
-    fig.text(0.5,0.02,r"$-t\ (\mathrm{GeV}^2)$$",ha='center')
     fig.text(0.06,0.5,rf"$\mathrm{{Im}}\,{tex}(\xi,\,-t)$$",va='center',ha='center',rotation='vertical')
+    fig.text(0.5,0.02,r"$-t\ (\mathrm{GeV}^2)$$",ha='center')
 
     out2 = f"{outdir}/Im{cff}_vs_t_{timestamp}.pdf"
     fig.savefig(out2,bbox_inches='tight')
