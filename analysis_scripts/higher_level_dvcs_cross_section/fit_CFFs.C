@@ -34,20 +34,24 @@
 extern bool   hasH, hasHt, hasE, hasEt;
 extern double renormImag, renormReal;
 
-// imaginary‐part globals
-extern double alpha0_H, alpha1_H, n_H,   b_H,   M2_H,  P_H;
-extern double alpha0_Ht,alpha1_Ht,n_Ht,  b_Ht,  M2_Ht, P_Ht;
-extern double alpha0_E, alpha1_E, n_E,   b_E,   M2_E,  P_E;
-extern double alpha0_Et,alpha1_Et,n_Et,  b_Et,  M2_Et, P_Et;
+// -------------------------------------------------------------------------------------------------
+//   Compton Form Factor (CFF) models—imaginary parts (r_* removed, factors absorbed)
+// -------------------------------------------------------------------------------------------------
+extern double alpha0_H,  alpha1_H,  n_H,   b_H,   M2_H,  P_H;
+extern double alpha0_Ht, alpha1_Ht, n_Ht,  b_Ht,  M2_Ht, P_Ht;
+extern double alpha0_E,  alpha1_E,  n_E,   b_E,   M2_E,  P_E;
+extern double alpha0_Et, alpha1_Et, n_Et,  b_Et,  M2_Et, P_Et;
 
-// real‐part globals
-extern double C0_H, MD2_H, lambda_H;
-extern double C0_Ht,MD2_Ht,lambda_Ht;
-extern double C0_E, MD2_E, lambda_E;
-extern double C0_Et,MD2_Et,lambda_Et;
+// -------------------------------------------------------------------------------------------------
+//   Compton Form Factor (CFF) models—real parts (dispersion‐relation subtraction)
+// -------------------------------------------------------------------------------------------------
+extern double C0_H,    MD2_H,    lambda_H;
+extern double C0_Ht,   MD2_Ht,   lambda_Ht;
+extern double C0_E,    MD2_E,    lambda_E;
+extern double C0_Et,   MD2_Et,   lambda_Et;
 
 // ──────────────────────────────────────────────────────────────────────────────
-// global controls
+// global controls (must be before LoadData)
 static int  gStrategy    = 0;       // 1 or 2
 static int  gStage       = 1;       // 1=Im fit, 2=Re fit
 static std::string gBsaFile = "imports/rga_prl_bsa.txt";
@@ -117,17 +121,41 @@ void build_par_list(){
     if(gStage==1){
         parNamesIm.clear();
         parNamesIm.push_back("renormImag");
-        if(hasH)   parNamesIm.insert(parNamesIm.end(),{"alpha0_H","alpha1_H","n_H","b_H","M2_H","P_H"});
-        if(hasHt)  parNamesIm.insert(parNamesIm.end(),{"alpha0_Ht","alpha1_Ht","n_Ht","b_Ht","M2_Ht","P_Ht"});
-        if(hasE)   parNamesIm.insert(parNamesIm.end(),{"alpha0_E","alpha1_E","n_E","b_E","M2_E","P_E"});
-        if(hasEt)  parNamesIm.insert(parNamesIm.end(),{"alpha0_Et","alpha1_Et","n_Et","b_Et","M2_Et","P_Et"});
+        if(hasH){
+            parNamesIm.insert(parNamesIm.end(),
+                {"alpha0_H","alpha1_H","n_H","b_H","M2_H","P_H"});
+        }
+        if(hasHt){
+            parNamesIm.insert(parNamesIm.end(),
+                {"alpha0_Ht","alpha1_Ht","n_Ht","b_Ht","M2_Ht","P_Ht"});
+        }
+        if(hasE){
+            parNamesIm.insert(parNamesIm.end(),
+                {"alpha0_E","alpha1_E","n_E","b_E","M2_E","P_E"});
+        }
+        if(hasEt){
+            parNamesIm.insert(parNamesIm.end(),
+                {"alpha0_Et","alpha1_Et","n_Et","b_Et","M2_Et","P_Et"});
+        }
     }
     else if(gStage==2){
         parNamesRe.clear();
-        if(hasH)   parNamesRe.insert(parNamesRe.end(),{"C0_H","MD2_H","lambda_H"});
-        if(hasHt)  parNamesRe.insert(parNamesRe.end(),{"C0_Ht","MD2_Ht","lambda_Ht"});
-        if(hasE)   parNamesRe.insert(parNamesRe.end(),{"C0_E","MD2_E","lambda_E"});
-        if(hasEt)  parNamesRe.insert(parNamesRe.end(),{"C0_Et","MD2_Et","lambda_Et"});
+        if(hasH){
+            parNamesRe.insert(parNamesRe.end(),
+                {"C0_H","MD2_H","lambda_H"});
+        }
+        if(hasHt){
+            parNamesRe.insert(parNamesRe.end(),
+                {"C0_Ht","MD2_Ht","lambda_Ht"});
+        }
+        if(hasE){
+            parNamesRe.insert(parNamesRe.end(),
+                {"C0_E","MD2_E","lambda_E"});
+        }
+        if(hasEt){
+            parNamesRe.insert(parNamesRe.end(),
+                {"C0_Et","MD2_Et","lambda_Et"});
+        }
         parNamesRe.push_back("renormReal");
     }
 }
@@ -138,15 +166,44 @@ void fcn(int& /*npar*/, double* /*grad*/, double &f, double *par, int /*iflag*/)
     int ip=0;
     if(gStage==1){
         renormImag = par[ip++];
-        if(hasH){   alpha0_H=par[ip++]; alpha1_H=par[ip++]; n_H=par[ip++]; b_H=par[ip++]; M2_H=par[ip++]; P_H=par[ip++]; }
-        if(hasHt){  alpha0_Ht=par[ip++]; alpha1_Ht=par[ip++]; n_Ht=par[ip++]; b_Ht=par[ip++]; M2_Ht=par[ip++]; P_Ht=par[ip++]; }
-        if(hasE){   alpha0_E=par[ip++]; alpha1_E=par[ip++]; n_E=par[ip++]; b_E=par[ip++]; M2_E=par[ip++]; P_E=par[ip++]; }
-        if(hasEt){  alpha0_Et=par[ip++]; alpha1_Et=par[ip++]; n_Et=par[ip++]; b_Et=par[ip++]; M2_Et=par[ip++]; P_Et=par[ip++]; }
-    } else {
-        if(hasH){   C0_H=par[ip++]; MD2_H=par[ip++]; lambda_H=par[ip++]; }
-        if(hasHt){  C0_Ht=par[ip++]; MD2_Ht=par[ip++]; lambda_Ht=par[ip++]; }
-        if(hasE){   C0_E=par[ip++]; MD2_E=par[ip++]; lambda_E=par[ip++]; }
-        if(hasEt){  C0_Et=par[ip++]; MD2_Et=par[ip++]; lambda_Et=par[ip++]; }
+        if(hasH){
+            alpha0_H = par[ip++]; alpha1_H = par[ip++];
+            n_H      = par[ip++]; b_H      = par[ip++];
+            M2_H     = par[ip++]; P_H      = par[ip++];
+        }
+        if(hasHt){
+            alpha0_Ht= par[ip++]; alpha1_Ht= par[ip++];
+            n_Ht     = par[ip++]; b_Ht     = par[ip++];
+            M2_Ht    = par[ip++]; P_Ht     = par[ip++];
+        }
+        if(hasE){
+            alpha0_E = par[ip++]; alpha1_E = par[ip++];
+            n_E      = par[ip++]; b_E      = par[ip++];
+            M2_E     = par[ip++]; P_E      = par[ip++];
+        }
+        if(hasEt){
+            alpha0_Et= par[ip++]; alpha1_Et= par[ip++];
+            n_Et     = par[ip++]; b_Et     = par[ip++];
+            M2_Et    = par[ip++]; P_Et     = par[ip++];
+        }
+    }
+    else { // gStage==2
+        if(hasH){
+            C0_H      = par[ip++]; MD2_H     = par[ip++];
+            lambda_H  = par[ip++];
+        }
+        if(hasHt){
+            C0_Ht     = par[ip++]; MD2_Ht    = par[ip++];
+            lambda_Ht = par[ip++];
+        }
+        if(hasE){
+            C0_E      = par[ip++]; MD2_E     = par[ip++];
+            lambda_E  = par[ip++];
+        }
+        if(hasEt){
+            C0_Et     = par[ip++]; MD2_Et    = par[ip++];
+            lambda_Et = par[ip++];
+        }
         renormReal = par[ip++];
     }
 
@@ -177,7 +234,8 @@ int main(int argc, char** argv){
              <<" E="<<hasE<<" Et="<<hasEt
              <<"  BSA="<<gBsaFile<<" XSEC="<<gXsFile<<" ===\n";
     LoadData();
-    std::cout<<" Loaded "<<bsaData.size()<<" BSA and "<<xsData.size()<<" xsec points\n\n";
+    std::cout<<" Loaded "<<bsaData.size()<<" BSA and "
+             <<xsData.size()<<" xsec points\n\n";
 
     // ─── Stage 1: Im fit ────────────────────────────────────────────────────────
     gStage = 1;
@@ -188,45 +246,39 @@ int main(int argc, char** argv){
     {
         TMinuit minu(nim);
         minu.SetPrintLevel(1);
-        minu.SetErrorDef(1.0);
-        minu.SetStrategy(2);
         minu.SetFCN(fcn);
         for(int i=0;i<nim;++i){
             const auto &nm = parNamesIm[i];
-            double init=1.0, step=0.01;
-            // use current global as initial
-            if(nm=="renormImag") init=renormImag;
-            else if(nm=="alpha0_H")   init=alpha0_H;
-            else if(nm=="alpha1_H")   init=alpha1_H;
-            else if(nm=="n_H")        init=n_H;
-            else if(nm=="b_H")        init=b_H;
-            else if(nm=="M2_H")       init=M2_H;
-            else if(nm=="P_H")        init=P_H;
-            else if(nm=="alpha0_Ht")  init=alpha0_Ht;
-            else if(nm=="alpha1_Ht")  init=alpha1_Ht;
-            else if(nm=="n_Ht")       init=n_Ht;
-            else if(nm=="b_Ht")       init=b_Ht;
-            else if(nm=="M2_Ht")      init=M2_Ht;
-            else if(nm=="P_Ht")       init=P_Ht;
-            else if(nm=="alpha0_E")   init=alpha0_E;
-            else if(nm=="alpha1_E")   init=alpha1_E;
-            else if(nm=="n_E")        init=n_E;
-            else if(nm=="b_E")        init=b_E;
-            else if(nm=="M2_E")       init=M2_E;
-            else if(nm=="P_E")        init=P_E;
-            else if(nm=="alpha0_Et")  init=alpha0_Et;
-            else if(nm=="alpha1_Et")  init=alpha1_Et;
-            else if(nm=="n_Et")       init=n_Et;
-            else if(nm=="b_Et")       init=b_Et;
-            else if(nm=="M2_Et")      init=M2_Et;
-            else if(nm=="P_Et")       init=P_Et;
+            double init = 1.0, step = 0.01;
+            if(nm=="renormImag")   init = 1.0;
+            else if(nm=="alpha0_H") init = alpha0_H;
+            else if(nm=="alpha1_H") init = alpha1_H;
+            else if(nm=="n_H")      init = n_H;
+            else if(nm=="b_H")      init = b_H;
+            else if(nm=="M2_H")     init = M2_H;
+            else if(nm=="P_H")      init = P_H;
+            else if(nm=="alpha0_Ht") init = alpha0_Ht;
+            else if(nm=="alpha1_Ht") init = alpha1_Ht;
+            else if(nm=="n_Ht")      init = n_Ht;
+            else if(nm=="b_Ht")      init = b_Ht;
+            else if(nm=="M2_Ht")     init = M2_Ht;
+            else if(nm=="P_Ht")      init = P_Ht;
+            else if(nm=="alpha0_E")  init = alpha0_E;
+            else if(nm=="alpha1_E")  init = alpha1_E;
+            else if(nm=="n_E")       init = n_E;
+            else if(nm=="b_E")       init = b_E;
+            else if(nm=="M2_E")      init = M2_E;
+            else if(nm=="P_E")       init = P_E;
+            else if(nm=="alpha0_Et") init = alpha0_Et;
+            else if(nm=="alpha1_Et") init = alpha1_Et;
+            else if(nm=="n_Et")      init = n_Et;
+            else if(nm=="b_Et")      init = b_Et;
+            else if(nm=="M2_Et")     init = M2_Et;
+            else if(nm=="P_Et")      init = P_Et;
             minu.DefineParameter(i, nm.c_str(), init, step, -1e3, 1e3);
         }
         std::cout<<"Stage1: fitting Im→BSA...\n";
         minu.Migrad();
-        minu.Hesse();              // compute the covariance matrix
-        minu.Migrad();             // refine minimum one more time
-        minu.Hesse();              // final error estimate
         minu.mnstat(chi2_im, edm, errdef, nv, nx, ic);
         for(int i=0;i<nim;++i) minu.GetParameter(i, imVal[i], imErr[i]);
         ndf_im = int(bsaData.size()) - nim;
@@ -247,33 +299,27 @@ int main(int argc, char** argv){
         {
             TMinuit minu2(nre);
             minu2.SetPrintLevel(1);
-            minu2.SetErrorDef(1.0);
-            minu2.SetStrategy(2);
             minu2.SetFCN(fcn);
             for(int i=0;i<nre;++i){
                 const auto &nm = parNamesRe[i];
-                double init=1.0, step=0.01;
-                // use current global as initial
-                if(nm=="C0_H")        init=C0_H;
-                else if(nm=="MD2_H")  init=MD2_H;
-                else if(nm=="lambda_H") init=lambda_H;
-                else if(nm=="C0_Ht")      init=C0_Ht;
-                else if(nm=="MD2_Ht")     init=MD2_Ht;
-                else if(nm=="lambda_Ht")  init=lambda_Ht;
-                else if(nm=="C0_E")       init=C0_E;
-                else if(nm=="MD2_E")      init=MD2_E;
-                else if(nm=="lambda_E")   init=lambda_E;
-                else if(nm=="C0_Et")      init=C0_Et;
-                else if(nm=="MD2_Et")     init=MD2_Et;
-                else if(nm=="lambda_Et")  init=lambda_Et;
-                else if(nm=="renormReal") init=renormReal;
+                double init = 1.0, step = 0.01;
+                if(nm=="C0_H")       init = C0_H;
+                else if(nm=="MD2_H")    init = MD2_H;
+                else if(nm=="lambda_H") init = lambda_H;
+                else if(nm=="C0_Ht")    init = C0_Ht;
+                else if(nm=="MD2_Ht")   init = MD2_Ht;
+                else if(nm=="lambda_Ht")init = lambda_Ht;
+                else if(nm=="C0_E")     init = C0_E;
+                else if(nm=="MD2_E")    init = MD2_E;
+                else if(nm=="lambda_E") init = lambda_E;
+                else if(nm=="C0_Et")    init = C0_Et;
+                else if(nm=="MD2_Et")   init = MD2_Et;
+                else if(nm=="lambda_Et")init = lambda_Et;
+                else if(nm=="renormReal") init = renormReal;
                 minu2.DefineParameter(i, nm.c_str(), init, step, -1e3, 1e3);
             }
             std::cout<<"Stage2: fitting Re→xsec (Im fixed)...\n";
             minu2.Migrad();
-            minu2.Hesse();
-            minu2.Migrad();
-            minu2.Hesse();
             minu2.mnstat(chi2_re, edm, errdef, nv, nx, ic);
             for(int i=0;i<nre;++i) minu2.GetParameter(i, reVal[i], reErr[i]);
             ndf_re = int(xsData.size()) - nre;
