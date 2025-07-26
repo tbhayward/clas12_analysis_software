@@ -24,6 +24,7 @@
 #include <cstdlib>
 #include <ctime>
 
+// ROOT headers
 #include "TMinuit.h"
 #include "TMath.h"
 
@@ -55,7 +56,7 @@ extern double C0_Et,   MD2_Et,   lambda_Et;
 static int  gStrategy    = 0;       // 1 or 2
 static int  gStage       = 1;       // 1=Im fit, 2=Re fit
 static std::string gBsaFile = "imports/rga_prl_bsa.txt";
-static const char*  gXsFile   = "imports/rga_pass1_xsec_2018.txt";
+static const char* gXsFile    = "imports/rga_pass1_xsec_2018.txt";
 
 // ──────────────────────────────────────────────────────────────────────────────
 // Data structures & loading
@@ -237,7 +238,7 @@ int main(int argc, char** argv){
     std::cout<<" Loaded "<<bsaData.size()<<" BSA and "
              <<xsData.size()<<" xsec points\n\n";
 
-    // ─── Stage 1: Im fit ────────────────────────────────────────────────────────
+    // Stage 1: Im fit
     gStage = 1;
     build_par_list();
     int nim = parNamesIm.size();
@@ -248,33 +249,13 @@ int main(int argc, char** argv){
         minu.SetPrintLevel(1);
         minu.SetFCN(fcn);
         for(int i=0;i<nim;++i){
+            double init=1.0, step=0.01;
             const auto &nm = parNamesIm[i];
-            double init = 1.0, step = 0.01;
-            if(nm=="renormImag")   init = 1.0;
-            else if(nm=="alpha0_H") init = alpha0_H;
-            else if(nm=="alpha1_H") init = alpha1_H;
-            else if(nm=="n_H")      init = n_H;
-            else if(nm=="b_H")      init = b_H;
-            else if(nm=="M2_H")     init = M2_H;
-            else if(nm=="P_H")      init = P_H;
-            else if(nm=="alpha0_Ht") init = alpha0_Ht;
-            else if(nm=="alpha1_Ht") init = alpha1_Ht;
-            else if(nm=="n_Ht")      init = n_Ht;
-            else if(nm=="b_Ht")      init = b_Ht;
-            else if(nm=="M2_Ht")     init = M2_Ht;
-            else if(nm=="P_Ht")      init = P_Ht;
-            else if(nm=="alpha0_E")  init = alpha0_E;
-            else if(nm=="alpha1_E")  init = alpha1_E;
-            else if(nm=="n_E")       init = n_E;
-            else if(nm=="b_E")       init = b_E;
-            else if(nm=="M2_E")      init = M2_E;
-            else if(nm=="P_E")       init = P_E;
-            else if(nm=="alpha0_Et") init = alpha0_Et;
-            else if(nm=="alpha1_Et") init = alpha1_Et;
-            else if(nm=="n_Et")      init = n_Et;
-            else if(nm=="b_Et")      init = b_Et;
-            else if(nm=="M2_Et")     init = M2_Et;
-            else if(nm=="P_Et")      init = P_Et;
+            if(nm.find("alpha0_")==0) init=0.43;
+            if(nm.find("alpha1_")==0) init=0.85;
+            if(nm=="n_H")  init=2.43;
+            if(nm=="n_Ht") init=1.68;
+            if(nm=="n_E")  init=1.215;
             minu.DefineParameter(i, nm.c_str(), init, step, -1e3, 1e3);
         }
         std::cout<<"Stage1: fitting Im→BSA...\n";
@@ -289,8 +270,8 @@ int main(int argc, char** argv){
     std::cout<<" χ²/ndf = "<<chi2_im<<"/"<<ndf_im
              <<" = "<<(chi2_im/ndf_im)<<"\n\n";
 
-    // ─── Stage 2: Re fit (strategy 2) ────────────────────────────────────────────
     if(gStrategy==2){
+        // Stage 2: Re fit
         gStage = 2;
         build_par_list();
         int nre = parNamesRe.size();
@@ -301,27 +282,14 @@ int main(int argc, char** argv){
             minu2.SetPrintLevel(1);
             minu2.SetFCN(fcn);
             for(int i=0;i<nre;++i){
-                const auto &nm = parNamesRe[i];
-                double init = 1.0, step = 0.01;
-                if(nm=="C0_H")       init = C0_H;
-                else if(nm=="MD2_H")    init = MD2_H;
-                else if(nm=="lambda_H") init = lambda_H;
-                else if(nm=="C0_Ht")    init = C0_Ht;
-                else if(nm=="MD2_Ht")   init = MD2_Ht;
-                else if(nm=="lambda_Ht")init = lambda_Ht;
-                else if(nm=="C0_E")     init = C0_E;
-                else if(nm=="MD2_E")    init = MD2_E;
-                else if(nm=="lambda_E") init = lambda_E;
-                else if(nm=="C0_Et")    init = C0_Et;
-                else if(nm=="MD2_Et")   init = MD2_Et;
-                else if(nm=="lambda_Et")init = lambda_Et;
-                else if(nm=="renormReal") init = renormReal;
-                minu2.DefineParameter(i, nm.c_str(), init, step, -1e3, 1e3);
+                minu2.DefineParameter(i, parNamesRe[i].c_str(),
+                                      1.0, 0.01, -1e3, 1e3);
             }
             std::cout<<"Stage2: fitting Re→xsec (Im fixed)...\n";
             minu2.Migrad();
             minu2.mnstat(chi2_re, edm, errdef, nv, nx, ic);
-            for(int i=0;i<nre;++i) minu2.GetParameter(i, reVal[i], reErr[i]);
+            for(int i=0;i<nre;++i)
+                minu2.GetParameter(i, reVal[i], reErr[i]);
             ndf_re = int(xsData.size()) - nre;
         }
         std::cout<<"\n--- Re Results ---\n";
@@ -330,9 +298,9 @@ int main(int argc, char** argv){
         std::cout<<" χ²/ndf = "<<chi2_re<<"/"<<ndf_re
                  <<" = "<<(chi2_re/ndf_re)<<"\n\n";
 
-        // write both Im & Re results
+        // Write both Im & Re results
         system("mkdir -p output/fit_results/");
-        time_t now = time(nullptr);
+        time_t now=time(nullptr);
         char buf[32];
         strftime(buf,sizeof(buf),"%Y%m%d_%H%M%S",localtime(&now));
         std::ofstream out(std::string("output/fit_results/fit_results_")+buf+".txt");
