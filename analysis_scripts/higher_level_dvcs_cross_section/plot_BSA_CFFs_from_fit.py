@@ -64,13 +64,40 @@ def load_all_bins(datafile):
         bins.append(arr)
     return bins
 
-# VGG defaults for all parameters
+# -------------------------------------------------------------------------------------------------
+#   Compton Form Factor (CFF) models—imaginary parts (updated defaults, r-terms removed)
+# -------------------------------------------------------------------------------------------------
 orig_defaults = {
-    'renormImag':1.0, 'renormReal':1.0,
-    'r_H':0.9,'alpha0_H':0.43,'alpha1_H':0.85,'n_H':1.35,'b_H':0.4,'Mm2_H':0.64,'P_H':1.0,
-    'r_Ht':7.0,'alpha0_Ht':0.43,'alpha1_Ht':0.85,'n_Ht':0.6,'b_Ht':2.0,'Mm2_Ht':0.8,'P_Ht':1.0,
-    'r_E':0.9,'alpha0_E':0.43,'alpha1_E':0.85,'n_E':1.35,'b_E':0.4,'Mm2_E':0.64,'P_E':1.0,
-    'r_Et':1.0,'alpha0_Et':0.0,'alpha1_Et':0.0,'n_Et':0.0,'b_Et':0.0,'Mm2_Et':0.0,'P_Et':0.0,
+    'renormImag': 1.0,
+    'renormReal': 1.0,
+    # GPD-H defaults: combined n_H = 2 * (r_H * n_H) = 2 * (0.9 * 1.35) = 2.43
+    'alpha0_H': 0.43,
+    'alpha1_H': 0.85,
+    'n_H':      2.43,
+    'b_H':      0.4,
+    'Mm2_H':    0.64,
+    'P_H':      1.0,
+    # GPD-Htilde defaults: combined n_Ht = factor * r_Ht * n_Ht = 0.4 * 7.0 * 0.6 = 1.68
+    'alpha0_Ht': 0.43,
+    'alpha1_Ht': 0.85,
+    'n_Ht':     1.68,
+    'b_Ht':     2.0,
+    'Mm2_Ht':   0.8,
+    'P_Ht':     1.0,
+    # GPD-E defaults: combined n_E = factor * r_E * n_E = 1.0 * 0.9 * 1.35 = 1.215
+    'alpha0_E': 0.43,
+    'alpha1_E': 0.85,
+    'n_E':      1.215,
+    'b_E':      0.4,
+    'Mm2_E':    0.64,
+    'P_E':      1.0,
+    # GPD-Etilde defaults: still zero
+    'alpha0_Et': 0.0,
+    'alpha1_Et': 0.0,
+    'n_Et':      0.0,
+    'b_Et':      0.0,
+    'Mm2_Et':    0.0,
+    'P_Et':      0.0,
 }
 
 def compute_bsa(phi_arr, Q2_arr, xB_arr, t_arr, Eb_arr, param_map, flags, tag=""):
@@ -89,7 +116,8 @@ def compute_bsa(phi_arr, Q2_arr, xB_arr, t_arr, Eb_arr, param_map, flags, tag=""
     for cff in ("H","Ht","E","Et"):
         ROOT.gInterpreter.ProcessLine(f"has{cff} = {int(flags[cff])};")
         if flags[cff]:
-            for k in ("r", "alpha0", "alpha1", "n", "b", "Mm2", "P"):
+            # only the relevant parameters, r_* removed
+            for k in ("alpha0", "alpha1", "n", "b", "Mm2", "P"):
                 key = f"{k}_{cff}"
                 v = param_map.get(key, orig_defaults[key])
                 ROOT.gInterpreter.ProcessLine(f"{key} = {v};")
@@ -109,7 +137,7 @@ def main():
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument('fitfile', help='Fit results file')
     parser.add_argument('--CFFs', type=int, choices=[0,1], default=0,
-                        help='0: use only ImH for fitted model, 1: show both ImH-only and full CFF models')
+                        help='0: show only ImH fit, 1: compare ImH-only and full CFF fit')
     args = parser.parse_args()
 
     m = re.search(r'fit_results_(\d{8}_\d{6})\.txt$', args.fitfile)
@@ -122,7 +150,6 @@ def main():
     print(">> Flags:", flags)
     print(">> Fitted parameters:", param_map)
 
-    # Instead of loading a .so, compile the entire macro into Cling
     ROOT.gInterpreter.ProcessLine('#include "DVCS_xsec.C"')
 
     bins = load_all_bins('imports/rga_prl_bsa.txt')
@@ -133,48 +160,46 @@ def main():
     for idx, b in enumerate(bins, start=1):
         phi_data, As, sigAs = b["phi"], b["A"], b["sigA"]
         phi_grid = np.linspace(0,360,100)
-        Q2g = np.full_like(phi_grid, b["Q2m"])
-        xBg = np.full_like(phi_grid, b["xBm"])
-        tg  = np.full_like(phi_grid, b["tm"])
-        Ebg = np.full_like(phi_grid, b["Ebm"])
+        Q2g   = np.full_like(phi_grid, b["Q2m"])
+        xBg   = np.full_like(phi_grid, b["xBm"])
+        tg    = np.full_like(phi_grid, b["tm"])
+        Ebg   = np.full_like(phi_grid, b["Ebm"])
 
-        # Compute original model with all CFFs using VGG defaults
+        # original VGG model
         bsas_orig = compute_bsa(phi_grid, Q2g, xBg, tg, Ebg,
                                 orig_defaults, flags, tag=f"bin{idx}-orig")
 
-        # Compute fitted model with flags from fit
+        # fitted model
         bsas_fit = compute_bsa(phi_grid, Q2g, xBg, tg, Ebg,
                                param_map, flags, tag=f"bin{idx}-fit")
 
         fig, ax = plt.subplots(figsize=(8,5))
         ax.errorbar(phi_data, As, yerr=sigAs, fmt='o', ms=5,
                     color='k', label='Data')
-        ax.plot(phi_grid, bsas_orig, '-',  lw=2,
+        ax.plot(phi_grid, bsas_orig, '-', lw=2,
                 color='tab:blue', label='Original Model')
 
         if args.CFFs == 0:
-            # Only show fitted model with ImH
-            ax.plot(phi_grid, bsas_fit,  '--', lw=2,
-                    color='tab:red',  label='Fitted Model (ImH only)')
+            ax.plot(phi_grid, bsas_fit, '--', lw=2,
+                    color='tab:red', label='Fitted Model (ImH)')
         else:
-            # Compute fitted model with only ImH (turn off other CFFs)
+            # ImH-only
             flags_imh_only = flags.copy()
-            flags_imh_only['Ht'] = 0
-            flags_imh_only['E'] = 0
-            flags_imh_only['Et'] = 0
+            for other in ("Ht","E","Et"):
+                flags_imh_only[other] = 0
             bsas_fit_imh = compute_bsa(phi_grid, Q2g, xBg, tg, Ebg,
-                                       param_map, flags_imh_only, tag=f"bin{idx}-fit-ImH")
-            
-            # Plot both models
+                                       param_map, flags_imh_only,
+                                       tag=f"bin{idx}-fit-ImH")
             ax.plot(phi_grid, bsas_fit_imh, '--', lw=2,
-                    color='tab:red',  label='Fitted Model (ImH only)')
-            ax.plot(phi_grid, bsas_fit,  '-.', lw=2,
-                    color='tab:green',  label='Fitted Model (all CFFs)')
+                    color='tab:red', label='Fitted Model (ImH)')
+            # full CFF
+            ax.plot(phi_grid, bsas_fit, '-.', lw=2,
+                    color='tab:green', label='Fitted Model (all CFFs)')
 
         ax.set_xlim(0,360)
         ax.set_xticks([0,60,120,180,240,300,360])
         ax.set_ylim(-0.6,0.6)
-        ax.set_xlabel(r'$\phi\;[\mathrm{deg}]$')
+        ax.set_xlabel(r'$\phi\;\mathrm{[deg]}$')
         ax.set_ylabel(r'$A_{LU}(\phi)$')
 
         Q2m, xBm, tm = b["Q2m"], b["xBm"], b["tm"]

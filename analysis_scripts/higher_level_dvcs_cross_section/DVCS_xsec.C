@@ -1250,74 +1250,78 @@ double renormImag = 1.0;
 
 // -----------------------------------------------------------------------------
 
-// GPD‐H defaults (original values, BKM? VGG? not entirely clear)
-double r_H      = 0.9;
+// GPD‐H defaults (r_H removed; n_H -> original n_H * r_H = 1.35 * 0.9 = 1.215)
 double alpha0_H = 0.43;
 double alpha1_H = 0.85;
-double n_H      = 1.35;
-double b_H      = 0.4;
-double M2_H    = 0.64;
+double n_H      = 2*1.215;   // was r_H * 1.35, 2 correction factor from VGG
+double b_H      = 0.4;       // compared to the value of ImE
+double M2_H     = 0.64;
 double P_H      = 1.0;
+
 double GetImH(double xi, double t) {
     if(!hasH) return 0.0;
     // build H‐ansatz
     double alphaH   = alpha0_H + alpha1_H * t;
-    double pref = TMath::Pi()*5.0/9.0 * n_H * r_H / (1 + xi);
+    // pref now uses combined n_H only
+    double pref = TMath::Pi()*5.0/9.0 * n_H / (1 + xi);
     double xfac = TMath::Power(2*xi/(1+xi), -alphaH);
     double yfac = TMath::Power((1 - xi)/(1+xi), b_H);
     double tfac = TMath::Power(1 - ((1 - xi)/(1+xi))*t/M2_H, -P_H);
-    return renormImag * pref * xfac * yfac * tfac * 2.0; // *2 correction from VGG
+    return renormImag * pref * xfac * yfac * tfac; 
 }
 
-// GPD‐Htilde defaults
-double r_Ht      = 7.0;
+
+// GPD‐Htilde defaults (r_Ht removed; n_Ht -> 0.6 * 7.0 = 4.2)
 double alpha0_Ht = 0.43;
 double alpha1_Ht = 0.85;
-double n_Ht      = 0.6;
+double n_Ht      = 4.2;     // was r_Ht * 0.6
 double b_Ht      = 2.0;
-double M2_Ht    = 0.8;
+double M2_Ht     = 0.8;
 double P_Ht      = 1.0;
+
 double GetImHt(double xi, double t) {
     if(!hasHt) return 0.0;
     double alphaHt   = alpha0_Ht + alpha1_Ht * t;
-    double pref  = TMath::Pi()*5.0/9.0 * n_Ht * r_Ht / (1 + xi);
+    double pref  = TMath::Pi()*5.0/9.0 * n_Ht / (1 + xi);
     double xfac  = TMath::Power(2*xi/(1+xi), -alphaHt);
     double yfac  = TMath::Power((1 - xi)/(1+xi), b_Ht);
     double tfac  = TMath::Power(1 - ((1 - xi)/(1+xi))*t/M2_Ht, -P_Ht);
     return renormImag * pref * xfac * yfac * tfac * 0.4; // *0.4 correction from VGG
 }
 
-// GPD‐E defaults (same as H for valence)
-double r_E      = 0.9;
+
+// GPD‐E defaults (r_E removed; n_E -> 1.35 * 0.9 = 1.215)
 double alpha0_E = 0.43;
 double alpha1_E = 0.85;
-double n_E      = 1.35;
+double n_E      = 1.215;   // was r_E * 1.35
 double b_E      = 0.4;
-double M2_E    = 0.64;
+double M2_E     = 0.64;
 double P_E      = 1.0;
+
 double GetImE(double xi, double t) {
     // from HERMES CFF paper 1301.1230 argue ImE = 0.5 x ImH (the factor of 2 is in ImH)
     if(!hasE) return 0.0;
     double alphaE    = alpha0_E + alpha1_E * t;
-    double pref  = TMath::Pi()*5.0/9.0 * n_E * r_E / (1 + xi);
+    double pref  = TMath::Pi()*5.0/9.0 * n_E / (1 + xi);
     double xfac  = TMath::Power(2*xi/(1+xi), -alphaE);
     double yfac  = TMath::Power((1 - xi)/(1+xi), b_E);
     double tfac  = TMath::Power(1 - ((1 - xi)/(1+xi))*t/M2_E, -P_E);
     return renormImag * pref * xfac * yfac * tfac;
 }
 
-// GPD‐Etilde defaults
-double r_Et      = 1;
+
+// GPD‐Etilde defaults (r_Et removed; n_Et -> 0.0 * 1 = 0.0)
 double alpha0_Et = 0.0;
 double alpha1_Et = 0.0;
-double n_Et      = 0.0; // this sets ImEt to 0 in default model
+double n_Et      = 0.0;    // was r_Et * 0.0
 double b_Et      = 0.0;
-double M2_Et    = 0.0;
+double M2_Et     = 0.0;
 double P_Et      = 0.0;
+
 double GetImEt(double xi, double t) {
     if(!hasEt) return 0.0;
     double alphaEt    = alpha0_Et + alpha1_Et * t;
-    double pref  = TMath::Pi()*5.0/9.0 * n_Et * r_Et / (1 + xi);
+    double pref  = TMath::Pi()*5.0/9.0 * n_Et / (1 + xi);
     double xfac  = TMath::Power(2*xi/(1+xi), -alphaEt);
     double yfac  = TMath::Power((1 - xi)/(1+xi), b_Et);
     double tfac  = TMath::Power(1 - ((1 - xi)/(1+xi))*t/M2_Et, -P_Et);
@@ -1325,51 +1329,79 @@ double GetImEt(double xi, double t) {
 }
 
 // -------------------------------------------------------------------------------------------------
-//   Compton Form Factor (CFF) models—real parts
+//   Compton Form Factor (CFF) models—real parts (via dispersion relations)
 // -------------------------------------------------------------------------------------------------
-double renormReal = 1.0;
 
-double A_H = -12;
-double B_H = 0.7;
-double C_H = -3;
-double D_H = 1.1;
-double E_H = 0.8;
-double GetReH(double xi, double t) {
-    if(!hasH) return 0.0;
-    // simple polynomial ansatz
-    double res = A_H*xi*TMath::Power(1 - xi, 2) * TMath::Sqrt(TMath::Abs(t))
-               / TMath::Power(1 - t/B_H, 2);
-    res += C_H * TMath::Power(1 - xi, 4) / TMath::Power(1 - t/D_H, 2);
-    return renormReal * res / (1 + TMath::Power(t/E_H, 4));
+double renormReal = 1.0;    // overall scale for subtraction term
+
+// — Subtraction‐term parameters (default = 1) —
+//    C0_K    : subtraction constant C_K(0)
+//    MD2_K   : dipole mass‐squared M_{D,K}^2
+//    lambda_K: exponent in (1 − t/MD2_K)^−lambda_K
+double C0_H      = 1.0;
+double MD2_H     = 1.0;
+double lambda_H  = 1.0;
+
+double C0_Ht     = 1.0;
+double MD2_Ht    = 1.0;
+double lambda_Ht = 1.0;
+
+double C0_E      = 1.0;
+double MD2_E     = 1.0;
+double lambda_E  = 1.0;
+
+double C0_Et     = 1.0;
+double MD2_Et    = 1.0;
+double lambda_Et = 1.0;
+
+// — Real CFF H via dispersion relation —
+double GetReH(double x, double t) {
+    if (!hasH) return 0.0;
+    // 1) subtraction term
+    double sub   = C0_H * TMath::Power(1.0 - t/MD2_H, -lambda_H);
+    // 2) principal‐value integral term (analytic), times renormImag = N_i
+    double alpha = alpha0_H + alpha1_H * t;
+    double kfac  = (5.0/9.0) * n_H;
+    double tterm = TMath::Power(1.0 - ((1.0 - x)/(1.0 + x)) * t / M2_H, -P_H);
+    double xterm = (1.0 - x) * (2.0 - x) * TMath::Power(x, -alpha);
+    double integ = kfac * tterm * xterm;
+    return sub + renormImag * integ;
 }
 
-double A_Ht = -12;
-double B_Ht = 1.5;
-double GetReHt(double xi, double t) {
-    if(!hasHt) return 0.0;
-    double res = A_Ht*xi*TMath::Power(1 - xi, 2) / TMath::Power(1 - t/B_Ht, 2);
-    return renormReal * res;
+// — Real CFF Htilde via dispersion relation —
+double GetReHt(double x, double t) {
+    if (!hasHt) return 0.0;
+    double sub   = C0_Ht * TMath::Power(1.0 - t/MD2_Ht, -lambda_Ht);
+    double alpha = alpha0_Ht + alpha1_Ht * t;
+    double kfac  = (5.0/9.0) * n_Ht;
+    double tterm = TMath::Power(1.0 - ((1.0 - x)/(1.0 + x)) * t / M2_Ht, -P_Ht);
+    double xterm = (1.0 - x) * (2.0 - x) * TMath::Power(x, -alpha);
+    double integ = kfac * tterm * xterm;
+    return sub + renormImag * integ;
 }
 
-double A_E = -7;
-double B_E = 0.7;
-double C_E = -3;
-double D_E = 1.2;
-double GetReE(double xi, double t) {
-    if(!hasE) return 0.0;
-    double res = A_E * xi*TMath::Power(1 - xi, 2) * TMath::Sqrt(TMath::Abs(t))
-               / TMath::Power(1 - t/B_E, 2);
-    res += C_E * TMath::Power(1 - xi, 2) / TMath::Power(1 - t/D_E, 2);
-    return renormReal * res / (1 + TMath::Power(t, 4));
+// — Real CFF E via dispersion relation —
+double GetReE(double x, double t) {
+    if (!hasE) return 0.0;
+    double sub   = C0_E * TMath::Power(1.0 - t/MD2_E, -lambda_E);
+    double alpha = alpha0_E + alpha1_E * t;
+    double kfac  = (5.0/9.0) * n_E;
+    double tterm = TMath::Power(1.0 - ((1.0 - x)/(1.0 + x)) * t / M2_E, -P_E);
+    double xterm = (1.0 - x) * (2.0 - x) * TMath::Power(x, -alpha);
+    double integ = kfac * tterm * xterm;
+    return sub + renormImag * integ;
 }
 
-double A_Et = 10.0;
-double B_Et = 3;
-double GetReEt(double xi, double t) {
-    if(!hasEt) return 0.0;
-    // small-t behavior ~1/t
-    double res = A_Et/t * 1.0/TMath::Power(1 + TMath::Power(B_Et*xi, 4), 1);
-    return renormReal * res;
+// — Real CFF Etilde via dispersion relation —
+double GetReEt(double x, double t) {
+    if (!hasEt) return 0.0;
+    double sub   = C0_Et * TMath::Power(1.0 - t/MD2_Et, -lambda_Et);
+    double alpha = alpha0_Et + alpha1_Et * t;
+    double kfac  = (5.0/9.0) * n_Et;
+    double tterm = TMath::Power(1.0 - ((1.0 - x)/(1.0 + x)) * t / M2_Et, -P_Et);
+    double xterm = (1.0 - x) * (2.0 - x) * TMath::Power(x, -alpha);
+    double integ = kfac * tterm * xterm;
+    return sub + renormImag * integ;
 }
 
 // double GetReH(double xi, double t) {

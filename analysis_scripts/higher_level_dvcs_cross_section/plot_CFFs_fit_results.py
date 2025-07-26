@@ -83,13 +83,13 @@ for cff in ("H","Ht","E","Et"):
         fit_params[cff] = { k: vals[idx] for k,idx in base.items() }
         fit_errors[cff] = { k: errs[idx] for k,idx in base.items() }
 
-# ─── VGG-default params + factors ───────────────────────────────────────────────
+# ─── Updated defaults (r removed, factor absorbed into n) ───────────────────────
 defaults = {
-    "H":  dict(r=0.9,   alpha0=0.43, alpha1=0.85, n=1.35, b=0.4,  M2=0.64, P=1.0, factor=2.0),
-    "Ht": dict(r=7.0,   alpha0=0.43, alpha1=0.85, n=0.6,  b=2.0,  M2=0.8,  P=1.0, factor=0.4),
-    "E":  dict(r=0.9,   alpha0=0.43, alpha1=0.85, n=1.35, b=0.4,  M2=0.64, P=1.0, factor=1.0),
-    # set n=0 so original Et ≡ 0 everywhere (original model), but still use shape defaults
-    "Et": dict(r=0.9,   alpha0=0.43, alpha1=0.85, n=0.0,  b=0.4,  M2=0.64, P=1.0, factor=1.0),
+    "H":  dict(alpha0=0.43, alpha1=0.85, n=2.43,   b=0.4, M2=0.64, P=1.0),
+    "Ht": dict(alpha0=0.43, alpha1=0.85, n=1.68,   b=2.0, M2=0.8,  P=1.0),
+    "E":  dict(alpha0=0.43, alpha1=0.85, n=1.215,  b=0.4, M2=0.64, P=1.0),
+    # set n=0 so original Et ≡ 0 everywhere (original model), defaults for shape
+    "Et": dict(alpha0=0.43, alpha1=0.85, n=0.0,    b=0.4, M2=0.64, P=1.0),
 }
 
 # ─── Im-CFF creation ─────────────────────────────────────────────────────────────
@@ -97,20 +97,18 @@ def make_Im_func(cff, params, renorm):
     d = defaults[cff]
     def Im(xi, t):
         # pull either fitted or default params
-        r     = params.get("r",      d["r"])
         a0    = params.get("alpha0", d["alpha0"])
         a1    = params.get("alpha1", d["alpha1"])
         nval  = params.get("n",      d["n"])
         bval  = params.get("b",      d["b"])
-        M2   = params.get("M2",    d["M2"])
+        M2    = params.get("M2",     d["M2"])
         Pval  = params.get("P",      d["P"])
-        fac   = d["factor"]
         alpha = a0 + a1 * t
-        pref  = np.pi * 5.0/9.0 * nval * r / (1 + xi)
+        pref  = np.pi * 5.0/9.0 * nval / (1 + xi)
         xfac  = (2*xi/(1+xi))**(-alpha)
         yfac  = ((1 - xi)/(1+xi))**(bval)
         tfac  = (1 - ((1 - xi)/(1+xi))*t/M2)**(-Pval)
-        return renorm * pref * xfac * yfac * tfac * fac
+        return renorm * pref * xfac * yfac * tfac
     return Im
 
 # ─── Replica helpers ───────────────────────────────────────────────────────────
@@ -137,7 +135,7 @@ def compute_uncertainty_band(cff, xi_vals, t_vals, n_replicas=100):
     all_curves = np.array(all_curves)
     return (np.median(all_curves, axis=0),
             np.percentile(all_curves, 2.5, axis=0),
-            np.percentile(all_curves, 97.5, axis=0)) # 95% confidence level between 2.5-97.5
+            np.percentile(all_curves, 97.5, axis=0)) # 95% CI
 
 # ─── Build functions & style ───────────────────────────────────────────────────
 Im_funcs = { cff: make_Im_func(cff, fit_params.get(cff, {}), renorm_fit)
@@ -166,9 +164,7 @@ N_REPLICAS = 10000
 from matplotlib.lines import Line2D
 
 legend_elements = [
-    Line2D([0], [0], color='tab:blue', linestyle='-', lw=2.5, label='Original'),
-    # Line2D([0], [0], color='tab:red',  linestyle='--',lw=2.5, label='RGA pass-1'),
-    Line2D([0], [0], color='tab:red',  linestyle='--',lw=2.5, label='RGK preliminary'),
+    Line2D([0], [0], color='tab:red',  linestyle='--', lw=2.5, label='RGK preliminary'),
     plt.Rectangle((0,0),1,1,fc='tab:red',alpha=0.2,ec=None,label='95% CI')
 ]
 
@@ -177,28 +173,26 @@ for cff, Im_fit in Im_funcs.items():
     tex = tex_map[cff]
 
     # — Im vs xi —
-    fig, axes = plt.subplots(2,3,figsize=(12,8), sharex=True, sharey=True)
+    fig, axes = plt.subplots(2,3, figsize=(12,8), sharex=True, sharey=True)
     axes = axes.flatten()
     fig.suptitle(rf"$\mathrm{{Im}}\,{tex}$", fontsize=16, y=0.98)
 
-    for idx, (ax, t) in enumerate(zip(axes, t_fixed)):
-        ax.plot(xi_range, Im_orig(xi_range, -t), **orig_style)
+    for ax, t in zip(axes, t_fixed):
+        # original fit removed, only RGK
         med, lo, up = compute_uncertainty_band(cff, xi_range, t, N_REPLICAS)
-        if med is not None:
-            ax.plot(xi_range, med, **fit_style)
-            ax.fill_between(xi_range, lo, up, **band_style)
+        ax.plot(xi_range, med, **fit_style)
+        ax.fill_between(xi_range, lo, up, **band_style)
         ax.axhline(0, **zero_line)
         ax.text(0.60, 0.72, rf"$-t={t:.2f}\,\mathrm{{GeV^2}}$",
                 transform=ax.transAxes, fontsize=12)
         ax.set_xlim(0,0.5)
-        ax.set_ylim(0,12)
+        ax.set_ylim(0,20)
+        ax.set_yticks([0,5,10,15,20])
 
-    # hide first y-tick on top row (remove "0" tick)
+    # hide first y-tick on top row (remove "0")
     for ax in axes[:3]:
-        ylbls = ax.get_yticklabels()
-        if ylbls:
-            ylbls[0].set_visible(False)
-    # hide x=0 label on bottom middle/right
+        ax.set_yticks([5,10,15,20])
+    # hide "0.0" x-label on bottom middle/right
     for ax in (axes[4], axes[5]):
         for lbl in ax.get_xticklabels():
             if lbl.get_text() in ('0','0.0'):
@@ -216,31 +210,23 @@ for cff, Im_fit in Im_funcs.items():
     plt.close(fig)
 
     # — Im vs −t —
-    fig, axes = plt.subplots(2,3,figsize=(12,8), sharex=True, sharey=True)
+    fig, axes = plt.subplots(2,3, figsize=(12,8), sharex=True, sharey=True)
     axes = axes.flatten()
     fig.suptitle(rf"$\mathrm{{Im}}\,{tex}$", fontsize=16, y=0.98)
 
-    for idx, (ax, xi0) in enumerate(zip(axes, xi_fixed)):
-        ax.plot(t_range, Im_orig(xi0, -t_range), **orig_style)
+    for ax, xi0 in zip(axes, xi_fixed):
         med, lo, up = compute_uncertainty_band(cff, xi0, t_range, N_REPLICAS)
-        if med is not None:
-            ax.plot(t_range, med, **fit_style)
-            ax.fill_between(t_range, lo, up, **band_style)
+        ax.plot(t_range, med, **fit_style)
+        ax.fill_between(t_range, lo, up, **band_style)
         ax.axhline(0, **zero_line)
         ax.text(0.60, 0.72, rf"$\xi={xi0:.2f}$",
                 transform=ax.transAxes, fontsize=12)
         ax.set_xlim(0,1.0)
-        if idx < 3:
-            ax.set_ylim(0,12)
-        else:
-            ax.set_ylim(-2,12)
+        ax.set_ylim(0,20)
+        ax.set_yticks([0,5,10,15,20])
 
-    # hide first y-tick on top row (remove "0" tick)
     for ax in axes[:3]:
-        ylbls = ax.get_yticklabels()
-        if ylbls:
-            ylbls[0].set_visible(False)
-    # hide x=0 label on bottom middle/right
+        ax.set_yticks([5,10,15,20])
     for ax in (axes[4], axes[5]):
         for lbl in ax.get_xticklabels():
             if lbl.get_text() in ('0','0.0'):

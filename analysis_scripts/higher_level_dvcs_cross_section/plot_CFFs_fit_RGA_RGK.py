@@ -79,10 +79,10 @@ if fit2file:
 
 # ─── defaults + Im‐builder with safety guards ────────────────────────────────────
 defaults = {
-    "H":  dict(r=0.9,  alpha0=0.43, alpha1=0.85, n=1.35,  b=0.4, M2=0.64, P=1.0, factor=2.0),
-    "Ht": dict(r=7.0,  alpha0=0.43, alpha1=0.85, n=0.6,   b=2.0, M2=0.8,  P=1.0, factor=0.4),
-    "E":  dict(r=0.9,  alpha0=0.43, alpha1=0.85, n=1.35,  b=0.4, M2=0.64, P=1.0, factor=1.0),
-    "Et": dict(r=0.9,  alpha0=0.43, alpha1=0.85, n=0.0,   b=0.4, M2=0.64, P=1.0, factor=1.0),
+    "H":  dict(r=0.9,  alpha0=0.43, alpha1=0.85, n=1.35, b=0.4, M2=0.64, P=1.0, factor=2.0),
+    "Ht": dict(r=7.0,  alpha0=0.43, alpha1=0.85, n=0.6,  b=2.0, M2=0.8,  P=1.0, factor=0.4),
+    "E":  dict(r=0.9,  alpha0=0.43, alpha1=0.85, n=1.35, b=0.4, M2=0.64, P=1.0, factor=1.0),
+    "Et": dict(r=0.9,  alpha0=0.43, alpha1=0.85, n=0.0,  b=0.4, M2=0.64, P=1.0, factor=1.0),
 }
 
 def make_Im_func(cff, pars, ren):
@@ -106,14 +106,14 @@ def make_Im_func(cff, pars, ren):
             xfac = (2*xi_safe/(1+xi_safe))**(-alpha)
         yfac  = ((1 - xi_safe)/(1+xi_safe))**(bval)
 
-        # --- 2) clip the base of the power to ≥0 before raising to non-int exponent ---
+        # --- 2) clip power base to ≥0 before non-int exponent ---
         base = 1 - ((1 - xi_safe)/(1+xi_safe)) * t / M2
         base_clipped = np.clip(base, 0.0, None)
         with np.errstate(invalid='ignore'):
             tfac = base_clipped**(-Pval)
 
         result = ren * pref * xfac * yfac * tfac * fac
-        # --- 3) scrub any remaining NaNs → 0 ---
+        # --- 3) scrub NaNs/inf to 0 ---
         return np.nan_to_num(result, nan=0.0, posinf=0.0, neginf=0.0)
     return Im
 
@@ -132,7 +132,7 @@ def band(cff, xi_vals, t_vals, ren, cent, err, n=N_REPLICAS):
     xi_b, t_b = np.broadcast_arrays(xi, -t)
     reps      = gen_reps(cent[cff], err[cff], n)
     ren_reps  = np.random.normal(ren, ren/np.sqrt(len(xi_b)), n)
-    allA = []
+    allA      = []
     for i in range(n):
         f = make_Im_func(cff, reps[i], ren_reps[i])
         allA.append(f(xi_b, t_b))
@@ -169,19 +169,16 @@ for cff in fitp1:
     fig.suptitle(rf"$\mathrm{{Im}}\,{tex}$", fontsize=16, y=0.98)
     for ax, t in zip(axes, t_fixed):
         m, lo, up = band(cff, xi_range, t, ren1, fitp1, fite1)
-        ax.plot( xi_range, m, **style1)
+        ax.plot(xi_range, m, **style1)
         ax.fill_between(xi_range, lo, up, **band1)
         ax.axhline(0, **zero)
         ax.text(0.6, 0.75, rf"$-t={t:.2f}$", transform=ax.transAxes)
         ax.set_xlim(0,0.5); ax.set_ylim(0,20); ax.set_yticks([0,5,10,15,20])
-    # drop 0 tick in top row
     for ax in axes[:3]:
         ax.set_yticks([5,10,15,20])
-    # hide "0.0" x label bottom-middle/right
     for ax in (axes[4], axes[5]):
         for lbl in ax.get_xticklabels():
-            if lbl.get_text() in ('0','0.0'):
-                lbl.set_visible(False)
+            if lbl.get_text() in ('0','0.0'): lbl.set_visible(False)
     axes[2].legend(handles=[Line2D([0],[0],**style1,label=lbl1)],
                    loc='upper right', fontsize=10)
     fig.text(0.06,0.5, rf"$\mathrm{{Im}}\,{tex}(\xi,\,-t)$",
@@ -199,7 +196,7 @@ for cff in fitp1:
     fig.suptitle(rf"$\mathrm{{Im}}\,{tex}$", fontsize=16, y=0.98)
     for ax, xi0 in zip(axes, xi_fixed):
         m, lo, up = band(cff, xi0, t_range, ren1, fitp1, fite1)
-        ax.plot( t_range, m, **style1)
+        ax.plot(t_range, m, **style1)
         ax.fill_between(t_range, lo, up, **band1)
         ax.axhline(0, **zero)
         ax.text(0.6, 0.75, rf"$\xi={xi0:.2f}$", transform=ax.transAxes)
@@ -232,9 +229,9 @@ if fit2file:
         for ax, t in zip(axes, t_fixed):
             m1, l1, u1 = band(cff, xi_range, t, ren1, fitp1, fite1)
             m2, l2, u2 = band(cff, xi_range, t, ren2, fitp2, fite2)
-            ax.plot( xi_range, m2, **style2)
+            ax.plot(xi_range, m2, **style2)
             ax.fill_between(xi_range, l2, u2, **band2)
-            ax.plot( xi_range, m1, **style1)
+            ax.plot(xi_range, m1, **style1)
             ax.fill_between(xi_range, l1, u1, **band1)
             ax.axhline(0, **zero)
             ax.text(0.6, 0.75, rf"$-t={t:.2f}$", transform=ax.transAxes)
@@ -264,9 +261,9 @@ if fit2file:
         for ax, xi0 in zip(axes, xi_fixed):
             m1, l1, u1 = band(cff, xi0, t_range, ren1, fitp1, fite1)
             m2, l2, u2 = band(cff, xi0, t_range, ren2, fitp2, fite2)
-            ax.plot( t_range, m2, **style2)
+            ax.plot(t_range, m2, **style2)
             ax.fill_between(t_range, l2, u2, **band2)
-            ax.plot( t_range, m1, **style1)
+            ax.plot(t_range, m1, **style1)
             ax.fill_between(t_range, l1, u1, **band1)
             ax.axhline(0, **zero)
             ax.text(0.6, 0.75, rf"$\xi={xi0:.2f}$", transform=ax.transAxes)
