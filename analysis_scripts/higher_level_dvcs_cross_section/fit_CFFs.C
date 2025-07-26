@@ -36,7 +36,7 @@ extern bool   hasH, hasHt, hasE, hasEt;
 extern double renormImag, renormReal;
 
 // -------------------------------------------------------------------------------------------------
-//   Compton Form Factor (CFF) models—imaginary parts (r_* removed, factors absorbed)
+//   Compton Form Factor (CFF) models—imaginary parts
 // -------------------------------------------------------------------------------------------------
 extern double alpha0_H,  alpha1_H,  n_H,   b_H,   M2_H,  P_H;
 extern double alpha0_Ht, alpha1_Ht, n_Ht,  b_Ht,  M2_Ht, P_Ht;
@@ -55,6 +55,11 @@ static const char* gXsFile    = "imports/rga_pass1_xsec_2018.txt";
 struct DataPoint { double phi,Q2,xB,t,Eb,A,sigA; };
 static std::vector<DataPoint> bsaData, xsData;
 
+// Binned observables:
+static std::vector<double> bin_phi, bin_xB, bin_Q2, bin_t, bin_Eb;
+static std::vector<double> bin_A, bin_dA;
+static int Nbins = 0;
+
 void LoadData(){
     auto read = [&](const char* fn, std::vector<DataPoint>& v){
         std::ifstream in(fn);
@@ -70,6 +75,51 @@ void LoadData(){
     };
     read(gBsaFile.c_str(), bsaData);
     read(gXsFile,          xsData);
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Bin the BSA data by contiguous (xB, Q2, t) blocks and extract
+// weighted sin-phi amplitudes A_bin ± dA_bin
+void BinBsaData(){
+    bin_A.clear(); bin_dA.clear();
+    bin_xB.clear(); bin_Q2.clear(); bin_t.clear(); bin_Eb.clear();
+    if(bsaData.empty()) return;
+
+    size_t start=0;
+    auto flush_bin = [&](size_t end){
+        double sum_w_sinA=0, sum_w_sin2=0;
+        double sum_xB=0, sum_Q2=0, sum_t=0, sum_Eb=0;
+        int M = end - start;
+        for(size_t i=start;i<end;++i){
+            auto &d = bsaData[i];
+            double phi_rad = d.phi * TMath::Pi()/180.0;
+            double s = sin(phi_rad);
+            double w = 1.0/(d.sigA*d.sigA);
+            sum_w_sinA += w * d.A * s;
+            sum_w_sin2  += w * s*s;
+            sum_xB += d.xB; sum_Q2 += d.Q2; sum_t += d.t; sum_Eb += d.Eb;
+        }
+        double Abin = sum_w_sinA / sum_w_sin2;
+        double dA   = 1.0/std::sqrt(sum_w_sin2);
+        bin_A.push_back(Abin);
+        bin_dA.push_back(dA);
+        bin_xB.push_back(sum_xB/M);
+        bin_Q2.push_back(sum_Q2/M);
+        bin_t.push_back(sum_t/M);
+        bin_Eb.push_back(sum_Eb/M);
+    };
+
+    for(size_t i=1;i<=bsaData.size();++i){
+        bool newbin = (i==bsaData.size()
+                   || bsaData[i].xB != bsaData[i-1].xB
+                   || bsaData[i].Q2 != bsaData[i-1].Q2
+                   || bsaData[i].t  != bsaData[i-1].t);
+        if(newbin){
+            flush_bin(i);
+            start = i;
+        }
+    }
+    Nbins = bin_A.size();
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -129,48 +179,44 @@ void build_par_list(){
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
-// fcn(): Minuit’s χ², unpack parameters
+// fcn(): Minuit’s χ², unpack Im–parameters only, then compare
+//      A_bin  vs  s1_I/c0_BH  for each bin
 void fcn(int& /*npar*/, double* /*grad*/, double &f, double *par, int /*iflag*/){
-    int ip=0;
-    if(gStage==1){
-        renormImag = par[ip++];
-        if(hasH){
-            alpha0_H = par[ip++]; alpha1_H = par[ip++];
-            n_H      = par[ip++]; b_H      = par[ip++];
-            M2_H     = par[ip++]; P_H      = par[ip++];
-        }
-        if(hasHt){
-            alpha0_Ht= par[ip++]; alpha1_Ht= par[ip++];
-            n_Ht     = par[ip++]; b_Ht     = par[ip++];
-            M2_Ht    = par[ip++]; P_Ht     = par[ip++];
-        }
-        if(hasE){
-            alpha0_E = par[ip++]; alpha1_E = par[ip++];
-            n_E      = par[ip++]; b_E      = par[ip++];
-            M2_E     = par[ip++]; P_E      = par[ip++];
-        }
-        if(hasEt){
-            alpha0_Et= par[ip++]; alpha1_Et= par[ip++];
-            n_Et     = par[ip++]; b_Et     = par[ip++];
-            M2_Et    = par[ip++]; P_Et     = par[ip++];
-        }
+    int ip = 0;
+    // unpack Im–parameters
+    renormImag = par[ip++];
+    if(hasH){
+      alpha0_H = par[ip++]; alpha1_H = par[ip++];
+      n_H      = par[ip++]; b_H      = par[ip++];
+      M2_H     = par[ip++]; P_H      = par[ip++];
     }
-    // for gStage==2 we only use renormReal in the cross‐section routines,
-    // so nothing else to unpack here.
+    if(hasHt){
+      alpha0_Ht= par[ip++]; alpha1_Ht= par[ip++];
+      n_Ht     = par[ip++]; b_Ht     = par[ip++];
+      M2_Ht    = par[ip++]; P_Ht     = par[ip++];
+    }
+    if(hasE){
+      alpha0_E = par[ip++]; alpha1_E = par[ip++];
+      n_E      = par[ip++]; b_E      = par[ip++];
+      M2_E     = par[ip++]; P_E      = par[ip++];
+    }
+    if(hasEt){
+      alpha0_Et= par[ip++]; alpha1_Et= par[ip++];
+      n_Et     = par[ip++]; b_Et     = par[ip++];
+      M2_Et    = par[ip++]; P_Et     = par[ip++];
+    }
 
-    double chi2=0;
-    if(gStage==1){
-        for(auto &d: bsaData){
-            BMK_DVCS dvcs(-1,1,0,d.Eb,d.xB,d.Q2,d.t,d.phi);
-            double r = (d.A - dvcs.BSA())/d.sigA;
-            chi2 += r*r;
-        }
-    } else {  // gStage==2
-        for(auto &d: xsData){
-            BMK_DVCS dvcs(-1,0,0,d.Eb,d.xB,d.Q2,d.t,d.phi);
-            double r = (d.A - dvcs.CrossSection())/d.sigA;
-            chi2 += r*r;
-        }
+    double chi2 = 0;
+    // only Im‐fit (strategy 1 or first stage of 2)
+    for(int k=0;k<Nbins;++k){
+        // build DVCS object (phi doesn't matter for harmonics)
+        BMK_DVCS dvcs(-1, 1, 0,
+                      bin_Eb[k], bin_xB[k], bin_Q2[k], bin_t[k], 0.0);
+        double num    = dvcs.s1_I();        // sinφ interference term ∝ Im CFF
+        double den    = dvcs.c0_BH();       // BH c₀ coefficient
+        double modelA = num/den;
+        double resid  = (bin_A[k] - modelA)/bin_dA[k];
+        chi2 += resid*resid;
     }
     f = chi2;
 }
@@ -184,8 +230,9 @@ int main(int argc, char** argv){
              <<"  H="<<hasH<<" Ht="<<hasHt
              <<" E="<<hasE<<" Et="<<hasEt<<" ===\n";
     LoadData();
-    std::cout<<" Loaded "<<bsaData.size()<<" BSA and "
-             <<xsData.size()<<" xsec points\n\n";
+    BinBsaData();
+    std::cout<<" BSA bins = "<<Nbins<<"  (from "
+             <<bsaData.size()<<" raw points)\n\n";
 
     // ─── Stage 1: Im fit ────────────────────────────────────────────────────────
     gStage = 1;
@@ -198,22 +245,23 @@ int main(int argc, char** argv){
         TMinuit minu(nim);
         minu.SetPrintLevel(1);
         minu.SetFCN(fcn);
+        // define parameters
         for(int i=0;i<nim;++i){
             double init=1.0, step=0.01;
-            const auto &nm = parNamesIm[i];
-            if(nm=="alpha0_H"  || nm=="alpha0_Ht"  ) init=0.43;
-            if(nm=="alpha1_H"  || nm=="alpha1_Ht"  ) init=0.85;
-            if(nm=="n_H"       ) init=2.43;
-            if(nm=="n_Ht"      ) init=1.68;
-            if(nm=="n_E"       ) init=1.215;
+            auto &nm = parNamesIm[i];
+            if(nm=="alpha0_H"||nm=="alpha0_Ht") init=0.43;
+            if(nm=="alpha1_H"||nm=="alpha1_Ht") init=0.85;
+            if(nm=="n_H")   init=1.35;
+            if(nm=="n_Ht")  init=0.6;
+            if(nm=="n_E")   init=1.35;
             minu.DefineParameter(i, nm.c_str(), init, step, -1e3, 1e3);
         }
-        std::cout<<"Stage1: fitting Im→BSA...\n";
+        std::cout<<"Stage1: fitting Im→BSA bins...\n";
         minu.Migrad();
-        minu.Command("HESSE");              // ← compute covariance & errors
+        minu.Command("HESSE");  
         minu.mnstat(chi2_im, edm, errdef, nv, nx, ic);
         for(int i=0;i<nim;++i) minu.GetParameter(i, imVal[i], imErr[i]);
-        ndf_im = int(bsaData.size()) - nim;
+        ndf_im = Nbins - nim;
     }
 
     std::cout<<"\n--- Im Results ---\n";
@@ -224,28 +272,26 @@ int main(int argc, char** argv){
     std::cout<<" χ²/ndf = "<<chi2_im<<"/"<<ndf_im
              <<" = "<<(chi2_im/ndf_im)<<"\n\n";
 
+    // ─── Stage 2: renormReal → xsec, if requested ───────────────────────────────
     if(gStrategy==2){
-        // ─── Stage 2: Re fit ────────────────────────────────────────────────────
         gStage = 2;
-        std::vector<double> reVal(1), reErr(1);
-        double chi2_re; int ndf_re;
-
+        double chi2_re, ndf_re;
+        double reVal, reErr;
         {
-            TMinuit minu2(1);
-            minu2.SetPrintLevel(1);
-            minu2.SetFCN(fcn);
-            minu2.DefineParameter(0,"renormReal",1.0,0.01,-1e3,1e3);
+            TMinuit m2(1);
+            m2.SetPrintLevel(1);
+            m2.SetFCN(fcn);
+            m2.DefineParameter(0,"renormReal",1.0,0.01,-1e3,1e3);
             std::cout<<"Stage2: fitting renormReal→xsec...\n";
-            minu2.Migrad();
-            minu2.Command("HESSE");          // ← compute error on renormReal
-            minu2.mnstat(chi2_re, edm, errdef, nv, nx, ic);
-            minu2.GetParameter(0, reVal[0], reErr[0]);
-            ndf_re = int(xsData.size()) - 1;
+            m2.Migrad();
+            m2.Command("HESSE");
+            m2.mnstat(chi2_re, edm, errdef, nv, nx, ic);
+            m2.GetParameter(0, reVal, reErr);
+            ndf_re = xsData.size() - 1;
         }
-
         std::cout<<"\n--- Re Results ---\n";
-        std::cout<<" renormReal = "<<reVal[0]
-                 <<" ± "<<reErr[0]<<"\n";
+        std::cout<<" renormReal = "<<reVal
+                 <<" ± "<<reErr<<"\n";
         std::cout<<" χ²/ndf = "<<chi2_re<<"/"<<ndf_re
                  <<" = "<<(chi2_re/ndf_re)<<"\n\n";
     }
