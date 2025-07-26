@@ -10,7 +10,7 @@ enabled Im CFF makes two figures:
   1) Im CFF vs. ξ for six fixed −t between 0.1 and 1.0 (GeV²) (2×3 grid)
   2) Im CFF vs. −t for six fixed ξ between 0.05 and 0.50 (2×3 grid)
 
-Includes uncertainty bands for fitted results using replica method (95% CI).
+Includes uncertainty bands for fitted results using replica method (1σ).
 
 Saves to:
   output/plots/Im{CFF}_vs_xi_<TIMESTAMP>.pdf  
@@ -68,7 +68,7 @@ def get_idx(name):
 renorm_fit = vals[get_idx("renormImag")]
 renorm_err = errs[get_idx("renormImag")]
 
-# ─── Extract shape‐parameters only (no “r”) ─────────────────────────────────────
+# ─── Extract shape-parameters only (no “r”) ────────────────────────────────────
 fit_params = {}
 fit_errors = {}
 for cff in ("H","Ht","E","Et"):
@@ -78,7 +78,7 @@ for cff in ("H","Ht","E","Et"):
         fit_params[cff] = { k: vals[idx]  for k,idx in base.items() }
         fit_errors[cff] = { k: errs[idx]  for k,idx in base.items() }
 
-# ─── Defaults including the original r and VGG correction factor ────────────────
+# ─── Defaults including the original r and VGG correction factor ──────────────
 defaults = {
     "H":  dict(r=0.9, alpha0=0.43, alpha1=0.85, n=1.35, b=0.4,  M2=0.64, P=1.0, corr=2.0),
     "Ht": dict(r=7.0, alpha0=0.43, alpha1=0.85, n=0.6,  b=2.0,  M2=0.8,  P=1.0, corr=0.4),
@@ -86,7 +86,7 @@ defaults = {
     "Et": dict(r=1.0, alpha0=0.0,  alpha1=0.0,  n=0.0,  b=0.0,  M2=0.0,  P=0.0, corr=1.0),
 }
 
-# ─── Build Im‐CFF function ─────────────────────────────────────────────────────
+# ─── Build Im-CFF function ────────────────────────────────────────────────────
 def make_Im_func(cff, params, renorm):
     d = defaults[cff]
     def Im(xi, t):
@@ -98,13 +98,13 @@ def make_Im_func(cff, params, renorm):
         Pval = params.get("P",      d["P"])
         alpha = a0 + a1 * t
         pref = renorm * np.pi * 5.0/9.0 * nval * d["r"] / (1.0 + xi)
-        xfac = (2*xi/(1+xi))**(-alpha)
+        xfac = (2*xi/(1.0+xi))**(-alpha)
         yfac = ((1.0 - xi)/(1.0+xi))**(bval)
         tfac = (1.0 - ((1.0 - xi)/(1.0+xi))*t/M2)**(-Pval)
         return pref * xfac * yfac * tfac * d["corr"]
     return Im
 
-# ─── Replica‐band support ───────────────────────────────────────────────────────
+# ─── Replica-band support (now 1σ = 16/84 percentile) ────────────────────────
 def generate_replicas(central, errors, nrep=10000):
     reps = []
     for _ in range(nrep):
@@ -126,11 +126,11 @@ def compute_uncertainty_band(cff, xi_vals, t_vals, nrep=10000):
         curves[i] = Im_rep(xi_vals, t_vals) if np.ndim(t_vals)>0 else Im_rep(xi_vals, t_vals)
     return (
         np.median(curves, axis=0),
-        np.percentile(curves, 2.5, axis=0),
-        np.percentile(curves, 97.5, axis=0),
+        np.percentile(curves, 16, axis=0),
+        np.percentile(curves, 84, axis=0),
     )
 
-# ─── Plot setup ────────────────────────────────────────────────────────────────
+# ─── Plot setup ───────────────────────────────────────────────────────────────
 plt.style.use('classic')
 plt.rcParams.update({'font.size':14,'font.family':'serif'})
 outdir = 'output/plots'
@@ -149,7 +149,7 @@ zero_line  = {'color':'gray','linestyle':'--','linewidth':1}
 legend_elems = [
     Line2D([0],[0], color='tab:blue', linestyle='-', lw=2.5, label='Original model'),
     Line2D([0],[0], color='tab:red',  linestyle='--',lw=2.5, label='Fit median'),
-    Line2D([0],[0], color='tab:red',  lw=6,       alpha=0.2, label='95% CI'),
+    Line2D([0],[0], color='tab:red',  lw=6,       alpha=0.2, label='1σ band'),
 ]
 
 tex_map = {"H":"H", "Ht":r"\tilde H", "E":"E", "Et":r"\tilde E"}
@@ -168,7 +168,6 @@ for cff in ("H","Ht","E","Et"):
     fig.suptitle(rf"$\mathrm{{Im}}\,{tex}$", fontsize=16, y=0.95)
 
     for i, (ax, t0) in enumerate(zip(axes, t_fixed)):
-        # <-- flip sign of t0 here:
         ax.plot(xi_range, Im_orig(xi_range, -t0), **orig_style)
         med, lo, up = compute_uncertainty_band(cff, xi_range, -t0)
         ax.plot(xi_range, med, **fit_style)
@@ -201,9 +200,7 @@ for cff in ("H","Ht","E","Et"):
     fig.subplots_adjust(left=0.08, right=0.98, bottom=0.08, top=0.92,
                         wspace=0.0, hspace=0.0)
     axes[2].legend(handles=legend_elems, loc='upper right', fontsize=10)
-    out1 = f"{outdir}/Im{cff}_vs_xi_{timestamp}.pdf"
-    fig.savefig(out1, bbox_inches='tight')
-    print("Saved:", out1)
+    fig.savefig(f"{outdir}/Im{cff}_vs_xi_{timestamp}.pdf", bbox_inches='tight')
     plt.close(fig)
 
     # — Im vs −t at fixed ξ —
@@ -212,7 +209,6 @@ for cff in ("H","Ht","E","Et"):
     fig.suptitle(rf"$\mathrm{{Im}}\,{tex}$", fontsize=16, y=0.95)
 
     for i, (ax, x0) in enumerate(zip(axes, xi_fixed)):
-        # <-- flip sign of t_range here:
         ax.plot(t_range, Im_orig(x0, -t_range), **orig_style)
         med, lo, up = compute_uncertainty_band(cff, x0, -t_range)
         ax.plot(t_range, med, **fit_style)
@@ -245,7 +241,5 @@ for cff in ("H","Ht","E","Et"):
     fig.subplots_adjust(left=0.08, right=0.98, bottom=0.08, top=0.92,
                         wspace=0.0, hspace=0.0)
     axes[2].legend(handles=legend_elems, loc='upper right', fontsize=10)
-    out2 = f"{outdir}/Im{cff}_vs_t_{timestamp}.pdf"
-    fig.savefig(out2, bbox_inches='tight')
-    print("Saved:", out2)
+    fig.savefig(f"{outdir}/Im{cff}_vs_t_{timestamp}.pdf", bbox_inches='tight')
     plt.close(fig)
