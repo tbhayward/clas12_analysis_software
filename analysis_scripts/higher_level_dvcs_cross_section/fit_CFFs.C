@@ -146,19 +146,20 @@ void parse_args(int argc, char** argv){
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
-// build_par_list(): which Im‐parameters to fit
+// build_par_list(): which Im‐parameters to fit (all >0, P fixed=1)
 static std::vector<std::string> parNamesIm;
 void build_par_list(){
     parNamesIm.clear();
     parNamesIm.push_back("renormImag");
     if(hasH ) parNamesIm.insert(parNamesIm.end(),
-                   {"alpha0_H","alpha1_H","n_H","b_H","M2_H","P_H"});
+                   {"alpha0_H","alpha1_H","n_H","b_H","M2_H"});
     if(hasHt) parNamesIm.insert(parNamesIm.end(),
-                   {"alpha0_Ht","alpha1_Ht","n_Ht","b_Ht","M2_Ht","P_Ht"});
+                   {"alpha0_Ht","alpha1_Ht","n_Ht","b_Ht","M2_Ht"});
     if(hasE ) parNamesIm.insert(parNamesIm.end(),
-                   {"alpha0_E","alpha1_E","n_E","b_E","M2_E","P_E"});
+                   {"alpha0_E","alpha1_E","n_E","b_E","M2_E"});
     if(hasEt) parNamesIm.insert(parNamesIm.end(),
-                   {"alpha0_Et","alpha1_Et","n_Et","b_Et","M2_Et","P_Et"});
+                   {"alpha0_Et","alpha1_Et","n_Et","b_Et","M2_Et"});
+    // P_H, P_Ht, P_E, P_Et remain locked at their default = 1.0
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -168,24 +169,36 @@ void fcn(int&, double*, double &f, double *par, int){
     if(gStage==1){
         renormImag = par[ip++];
         if(hasH ){
-          alpha0_H=par[ip++]; alpha1_H=par[ip++];
-          n_H     =par[ip++]; b_H     =par[ip++];
-          M2_H    =par[ip++]; P_H     =par[ip++];
+          alpha0_H=par[ip++];
+          alpha1_H=par[ip++];
+          n_H     =par[ip++];
+          b_H     =par[ip++];
+          M2_H    =par[ip++];
+          // P_H remains at 1.0
         }
         if(hasHt){
-          alpha0_Ht=par[ip++]; alpha1_Ht=par[ip++];
-          n_Ht     =par[ip++]; b_Ht     =par[ip++];
-          M2_Ht    =par[ip++]; P_Ht     =par[ip++];
+          alpha0_Ht=par[ip++];
+          alpha1_Ht=par[ip++];
+          n_Ht     =par[ip++];
+          b_Ht     =par[ip++];
+          M2_Ht    =par[ip++];
+          // P_Ht remains at 1.0
         }
         if(hasE ){
-          alpha0_E=par[ip++]; alpha1_E=par[ip++];
-          n_E     =par[ip++]; b_E     =par[ip++];
-          M2_E    =par[ip++]; P_E     =par[ip++];
+          alpha0_E=par[ip++];
+          alpha1_E=par[ip++];
+          n_E     =par[ip++];
+          b_E     =par[ip++];
+          M2_E    =par[ip++];
+          // P_E remains at 1.0
         }
         if(hasEt){
-          alpha0_Et=par[ip++]; alpha1_Et=par[ip++];
-          n_Et     =par[ip++]; b_Et     =par[ip++];
-          M2_Et    =par[ip++]; P_Et     =par[ip++];
+          alpha0_Et=par[ip++];
+          alpha1_Et=par[ip++];
+          n_Et     =par[ip++];
+          b_Et     =par[ip++];
+          M2_Et    =par[ip++];
+          // P_Et remains at 1.0
         }
         double chi2=0;
         for(int k=0;k<Nbins;++k){
@@ -223,6 +236,9 @@ int main(int argc, char** argv){
     std::cout<<" BSA bins = "<<Nbins<<"  (from "
              <<bsaData.size()<<" raw points)\n\n";
 
+    // ensure all P_* = 1.0
+    P_H   = P_Ht   = P_E   = P_Et   = 1.0;
+
     // prepare for result‐file output
     std::vector<std::string> outNames;
     std::vector<double>      outVal, outErr;
@@ -241,20 +257,19 @@ int main(int argc, char** argv){
         minu.SetPrintLevel(1);
         minu.SetFCN(fcn);
 
-        // define each Im parameter in [-1e3,1e3]
+        // define each Im parameter with positive bounds [0,1e3]
         for(int i=0;i<nim;++i){
             const auto &nm = parNamesIm[i];
             double init=1.0, step=0.01;
-            if     (nm=="alpha0_H"||nm=="alpha0_Ht") init=0.43;
-            else if(nm=="alpha1_H"||nm=="alpha1_Ht") init=0.85;
-            else if(nm=="n_H")                       init=1.35;
-            else if(nm=="n_Ht")                      init=0.6;
-            else if(nm=="alpha0_E"||nm=="alpha0_Et") init=0.43;
-            else if(nm=="alpha1_E"||nm=="alpha1_Et") init=0.85;
-            minu.DefineParameter(i,nm.c_str(),init,step,-1e3,1e3);
+            if     (nm.find("alpha0")!=std::string::npos) init = 0.43;
+            else if(nm.find("alpha1")!=std::string::npos) init = 0.85;
+            else if(nm.find("n_")     ==0)                init = 1.35;
+            else if(nm.find("b_")     ==0)                init = 0.4;
+            else if(nm.find("M2_")    ==0)                init = 0.64;
+            minu.DefineParameter(i, nm.c_str(), init, step, 0.0, 1e3);
         }
 
-        std::cout<<"Stage1: fitting Im→BSA bins...\n";
+        std::cout<<"Stage1: fitting Im→BSA bins (all parameters ≥0, P fixed=1)...\n";
         minu.Migrad();
         minu.Command("HESSE");
         minu.mnstat(chi2_im,edm,errdef,nv,nx,ic);
@@ -278,28 +293,27 @@ int main(int argc, char** argv){
              <<" = "<<(chi2_im/ndf_im)<<"\n\n";
 
     // ─── Stage 2: renormReal → xsec, if requested ───────────────────────────────
-    double reVal=0, reErr=0;
     if(gStrategy==2){
         gStage = 2;
         double chi2_re, edm2, errdef2; int nv2,nx2,ic2, ndf_re;
+        double reVal, reErr;
 
         {
             TMinuit m2(1);
             m2.SetPrintLevel(1);
             m2.SetFCN(fcn);
-            m2.DefineParameter(0,"renormReal",renormReal,0.01, -1e3,1e3);
-            std::cout<<"Stage2: fitting renormReal→xsec...\n";
+            m2.DefineParameter(0,"renormReal",1.0,0.01,0.0,1e3);
+            std::cout<<"Stage2: fitting renormReal→xsec (≥0)...\n";
             m2.Migrad();
             m2.Command("HESSE");
             m2.mnstat(chi2_re,edm2,errdef2,nv2,nx2,ic2);
             m2.GetParameter(0,reVal,reErr);
             ndf_re = xsData.size() - 1;
         }
-        // append to file‐output vectors
+
         outNames.push_back("renormReal");
         outVal  .push_back(reVal);
         outErr  .push_back(reErr);
-
         finalChi2 = chi2_re;
         finalNdf  = ndf_re;
 
