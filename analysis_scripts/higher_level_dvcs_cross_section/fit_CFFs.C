@@ -60,6 +60,22 @@ static std::vector<double> bin_A, bin_dA;
 static int Nbins = 0;
 
 // ──────────────────────────────────────────────────────────────────────────────
+// temporaries for bin-wise φ–fit
+static std::vector<double> _phis, _As, _sigAs;
+
+// Minuit FCN for A0,B fit: model = A0 * sinφ / (1 + B cosφ)
+void fcn_bin(int&, double*, double &f, double *par, int){
+    double A0 = par[0], B = par[1];
+    double chi2 = 0;
+    for(size_t i=0; i<_phis.size(); ++i){
+        double model = A0 * std::sin(_phis[i]) / (1 + B * std::cos(_phis[i]));
+        double diff  = _As[i] - model;
+        chi2 += diff*diff / (_sigAs[i]*_sigAs[i]);
+    }
+    f = chi2;
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
 // Load raw BSA + XSC, apply constraint if requested
 void LoadData(){
     auto read = [&](const char* fn, auto &v){
@@ -80,34 +96,60 @@ void LoadData(){
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
-// Bin BSA by φ-drop and extract sinφ amplitude
+// Bin BSA by φ‐drop and **fit** A₀ sinφ/(1+B cosφ) to extract A₀ ± σA₀
 void BinBsaData(){
     bin_xB.clear(); bin_Q2.clear(); bin_t.clear(); bin_Eb.clear();
     bin_A .clear(); bin_dA.clear();
     if(bsaData.empty()) return;
-    size_t start=0;
-    auto flush=[&](size_t end){
-        double SwA=0, Sw2=0, Sx=0, Sq=0, St=0, Se=0;
-        for(size_t i=start;i<end;++i){
-            auto &d=bsaData[i];
-            double s = std::sin(d.phi*TMath::Pi()/180.);
-            double w = 1.0/(d.sigA*d.sigA);
-            SwA+=w*d.A*s; Sw2+=w*s*s;
-            Sx+=d.xB; Sq+=d.Q2; St+=d.t; Se+=d.Eb;
+
+    size_t start = 0;
+    for(size_t i=1; i<=bsaData.size(); ++i){
+        bool newbin = (i==bsaData.size() || bsaData[i].phi < bsaData[i-1].phi);
+        if(!newbin) continue;
+
+        // collect this bin's raw points
+        int M = i - start;
+        double Sx=0,Sq=0,St=0,Se=0;
+        _phis.clear(); _As.clear(); _sigAs.clear();
+        for(size_t j=start; j< i; ++j){
+            auto &d = bsaData[j];
+            Sx += d.xB; Sq += d.Q2; St += d.t; Se += d.Eb;
+            double rad = d.phi * TMath::Pi()/180.0;
+            _phis.push_back(rad);
+            _As.push_back(d.A);
+            _sigAs.push_back(d.sigA);
         }
-        int M=end-start;
-        bin_A .push_back(SwA/Sw2);
-        bin_dA.push_back(1.0/std::sqrt(Sw2));
+
+        //AVERAGED kinematics
         bin_xB.push_back(Sx/M);
         bin_Q2.push_back(Sq/M);
         bin_t .push_back(St/M);
         bin_Eb.push_back(Se/M);
-    };
-    for(size_t i=1;i<=bsaData.size();++i){
-        bool newbin=(i==bsaData.size()||bsaData[i].phi<bsaData[i-1].phi);
-        if(newbin){ flush(i); start=i; }
+
+        // now fit A₀,B via Minuit
+        TMinuit minu(2);
+        minu.SetPrintLevel(-1);
+        minu.SetFCN(fcn_bin);
+
+        // initial guesses: A₀ ~ max(A), B~0
+        double A0_init = 0;
+        for(double a:_As) if(std::abs(a)>A0_init) A0_init=std::abs(a);
+        minu.DefineParameter(0, "A0", A0_init, 0.01, 0.0, 1e3);
+        minu.DefineParameter(1, "B",  0.0,      0.1, -10.0,10.0);
+
+        minu.Migrad();
+        minu.Command("HESSE");
+
+        double A0_fit, errA0, B_fit, errB;
+        minu.GetParameter(0, A0_fit, errA0);
+        // (we ignore B_fit here)
+
+        bin_A .push_back(A0_fit);
+        bin_dA.push_back(errA0);
+
+        start = i;
     }
-    Nbins=bin_A.size();
+    Nbins = bin_A.size();
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -126,13 +168,13 @@ void parse_args(int argc,char**argv){
     int c;
     while((c=getopt_long(argc,argv,"s:h:t:e:x:C:i:",opts,nullptr))!=-1){
         switch(c){
-          case 's': gStrategy   = atoi(optarg); break;
-          case 'h': hasH        = atoi(optarg); break;
-          case 't': hasHt       = atoi(optarg); break;
-          case 'e': hasE        = atoi(optarg); break;
-          case 'x': hasEt       = atoi(optarg); break;
-          case 'C': gConstraint = atoi(optarg); break;
-          case 'i': gBsaFile    = std::string(optarg); break;
+          case 's': gStrategy   = atoi(optarg);           break;
+          case 'h': hasH        = atoi(optarg);           break;
+          case 't': hasHt       = atoi(optarg);           break;
+          case 'e': hasE        = atoi(optarg);           break;
+          case 'x': hasEt       = atoi(optarg);           break;
+          case 'C': gConstraint = atoi(optarg);           break;
+          case 'i': gBsaFile    = std::string(optarg);    break;
           default:
             std::cerr<<"Usage: "<<argv[0]
                      <<" --strategy<1|2> -H<0|1> -Ht<0|1>"
@@ -147,7 +189,7 @@ void parse_args(int argc,char**argv){
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
-// build which Im-parameters to fit
+// build which Im‐parameters to fit
 static std::vector<std::string> parNamesIm;
 void build_par_list(){
     parNamesIm.clear();
@@ -163,7 +205,7 @@ void build_par_list(){
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
-// χ² function: Im-fit (gStage=1) or renormReal-fit (gStage=2)
+// χ² function: Im‐fit (gStage=1) or renormReal‐fit (gStage=2)
 void fcn(int&, double*, double &f, double *par, int){
     int ip=0;
     if(gStage==1){
@@ -228,7 +270,7 @@ int main(int argc,char**argv){
     BinBsaData();
     std::cout<<" BSA bins="<<Nbins<<" (raw "<<bsaData.size()<<")\n\n";
 
-    // ─── Stage 1: Im-fit ─────────────────────────────────────────────────────────
+    // ─── Stage 1: Im‐fit ─────────────────────────────────────────────────────────
     gStage=1;
     build_par_list();
     int nim=parNamesIm.size();
@@ -263,21 +305,17 @@ int main(int argc,char**argv){
             GETINIT(P_Et)
             #undef GETINIT
 
-            double lo = -1e3, hi = 1e3;
-            // enforce positivity for M2_* and all r_ parameters
-            if(nm.rfind("M2_",0)==0 || nm.rfind("r_",0)==0) lo = 0.0;
-
+            double lo=-1e3, hi=1e3;
+            if(nm.rfind("M2_",0)==0 || nm.rfind("r_",0)==0) lo=0.0;
             minu.DefineParameter(i,nm.c_str(),init,step,lo,hi);
 
-            // fix renormImag, alpha0_*, alpha1_*, n_*, and P_*
-            if( nm=="renormImag"
-             || nm.rfind("alpha0_",0)==0
-             || nm.rfind("alpha1_",0)==0
-             || nm.rfind("n_",0)==0
-             || nm.rfind("P_",0)==0 )
-            {
-                minu.FixParameter(i);
-            }
+            // fix the ones we never float
+            if(nm=="renormImag"
+            || nm.rfind("alpha0_",0)==0
+            || nm.rfind("alpha1_",0)==0
+            || nm.rfind("n_",0)==0
+            || nm.rfind("P_",0)==0)
+              minu.FixParameter(i);
         }
 
         std::cout<<"Stage1: fitting r_*, b_*, M2_* (all others fixed)...\n";
