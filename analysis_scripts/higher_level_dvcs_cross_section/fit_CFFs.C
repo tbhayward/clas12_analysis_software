@@ -209,11 +209,10 @@ void fcn(int& /*npar*/, double* /*grad*/, double &f, double *par, int /*iflag*/)
     double chi2 = 0;
     // only Im‐fit (strategy 1 or first stage of 2)
     for(int k=0;k<Nbins;++k){
-        // build DVCS object (phi doesn't matter for harmonics)
-        BMK_DVCS dvcs(-1, 1, 0,
+        BMK_DVCS dvcs(-1,1,0,
                       bin_Eb[k], bin_xB[k], bin_Q2[k], bin_t[k], 0.0);
-        double num    = dvcs.s1_I();        // sinφ interference term ∝ Im CFF
-        double den    = dvcs.c0_BH();       // BH c₀ coefficient
+        double num    = dvcs.s1_I();   // sinφ interference ∝ Im CFF
+        double den    = dvcs.c0_BH();  // BH c₀ only
         double modelA = num/den;
         double resid  = (bin_A[k] - modelA)/bin_dA[k];
         chi2 += resid*resid;
@@ -245,20 +244,98 @@ int main(int argc, char** argv){
         TMinuit minu(nim);
         minu.SetPrintLevel(1);
         minu.SetFCN(fcn);
-        // define parameters
+
+        // define each parameter with its true default as the start value
         for(int i=0;i<nim;++i){
-            double init=1.0, step=0.01;
-            auto &nm = parNamesIm[i];
-            if(nm=="alpha0_H"||nm=="alpha0_Ht") init=0.43;
-            if(nm=="alpha1_H"||nm=="alpha1_Ht") init=0.85;
-            if(nm=="n_H")   init=1.35;
-            if(nm=="n_Ht")  init=0.6;
-            if(nm=="n_E")   init=1.35;
-            minu.DefineParameter(i, nm.c_str(), init, step, -1e3, 1e3);
+            const auto &nm = parNamesIm[i];
+            double init, step, mn, mx;
+
+            if(nm=="renormImag") {
+                init = renormImag; step=0.01; mn=0;   mx=10;
+            }
+            else if(nm=="alpha0_H") {
+                init = alpha0_H;  step=0.01; mn=-5;  mx=5;
+            }
+            else if(nm=="alpha1_H") {
+                init = alpha1_H;  step=0.01; mn=-10; mx=10;
+            }
+            else if(nm=="n_H") {
+                init = n_H;       step=0.01; mn=0;   mx=10;
+            }
+            else if(nm=="b_H") {
+                init = b_H;       step=0.01; mn=0;   mx=10;
+            }
+            else if(nm=="M2_H") {
+                init = M2_H;      step=0.01; mn=0;   mx=10;
+            }
+            else if(nm=="P_H") {
+                init = P_H;       step=0.01; mn=0;   mx=10;
+            }
+            else if(nm=="alpha0_Ht") {
+                init = alpha0_Ht; step=0.01; mn=-5;  mx=5;
+            }
+            else if(nm=="alpha1_Ht") {
+                init = alpha1_Ht; step=0.01; mn=-10; mx=10;
+            }
+            else if(nm=="n_Ht") {
+                init = n_Ht;      step=0.01; mn=0;   mx=10;
+            }
+            else if(nm=="b_Ht") {
+                init = b_Ht;      step=0.01; mn=0;   mx=10;
+            }
+            else if(nm=="M2_Ht") {
+                init = M2_Ht;     step=0.01; mn=0;   mx=10;
+            }
+            else if(nm=="P_Ht") {
+                init = P_Ht;      step=0.01; mn=0;   mx=10;
+            }
+            else if(nm=="alpha0_E") {
+                init = alpha0_E;  step=0.01; mn=-5;  mx=5;
+            }
+            else if(nm=="alpha1_E") {
+                init = alpha1_E;  step=0.01; mn=-10; mx=10;
+            }
+            else if(nm=="n_E") {
+                init = n_E;       step=0.01; mn=0;   mx=10;
+            }
+            else if(nm=="b_E") {
+                init = b_E;       step=0.01; mn=0;   mx=10;
+            }
+            else if(nm=="M2_E") {
+                init = M2_E;      step=0.01; mn=0;   mx=10;
+            }
+            else if(nm=="P_E") {
+                init = P_E;       step=0.01; mn=0;   mx=10;
+            }
+            else if(nm=="alpha0_Et") {
+                init = alpha0_Et; step=0.01; mn=-5;  mx=5;
+            }
+            else if(nm=="alpha1_Et") {
+                init = alpha1_Et; step=0.01; mn=-10; mx=10;
+            }
+            else if(nm=="n_Et") {
+                init = n_Et;      step=0.01; mn=0;   mx=10;
+            }
+            else if(nm=="b_Et") {
+                init = b_Et;      step=0.01; mn=0;   mx=10;
+            }
+            else if(nm=="M2_Et") {
+                init = M2_Et;     step=0.01; mn=0;   mx=10;
+            }
+            else if(nm=="P_Et") {
+                init = P_Et;      step=0.01; mn=0;   mx=10;
+            }
+            else {
+                // fallback
+                init = 0; step=0.1; mn=-1e3; mx=1e3;
+            }
+
+            minu.DefineParameter(i, nm.c_str(), init, step, mn, mx);
         }
+
         std::cout<<"Stage1: fitting Im→BSA bins...\n";
         minu.Migrad();
-        minu.Command("HESSE");  
+        minu.Command("HESSE");
         minu.mnstat(chi2_im, edm, errdef, nv, nx, ic);
         for(int i=0;i<nim;++i) minu.GetParameter(i, imVal[i], imErr[i]);
         ndf_im = Nbins - nim;
@@ -281,7 +358,7 @@ int main(int argc, char** argv){
             TMinuit m2(1);
             m2.SetPrintLevel(1);
             m2.SetFCN(fcn);
-            m2.DefineParameter(0,"renormReal",1.0,0.01,-1e3,1e3);
+            m2.DefineParameter(0,"renormReal",renormReal,0.01,0,10);
             std::cout<<"Stage2: fitting renormReal→xsec...\n";
             m2.Migrad();
             m2.Command("HESSE");
