@@ -7,8 +7,8 @@ Usage:
 
 Reads which CFFs were fit from the header of results file, then for each
 enabled Im CFF makes two figures:
-  1) Im CFF vs. xi for six fixed −t between 0.1 and 1.0 (GeV^{2}) (2×3 grid)
-  2) Im CFF vs. −t for six fixed xi between 0.05 and 0.50 (2×3 grid)
+  1) Im CFF vs. ξ for six fixed −t between 0.1 and 1.0 (GeV²) (2×3 grid)
+  2) Im CFF vs. −t for six fixed ξ between 0.05 and 0.50 (2×3 grid)
 
 Includes uncertainty bands for fitted results using replica method (95% CI).
 
@@ -62,7 +62,6 @@ def parse_fit_results(fname):
     return flags, pnames, np.array(vals), np.array(errs), chi2, ndf, chi2ndf
 
 flags, pnames, vals, errs, chi2, ndf, chi2ndf = parse_fit_results(fitfile)
-
 def get_idx(name):
     return pnames.index(name) if name in pnames else None
 
@@ -87,7 +86,7 @@ defaults = {
     "Et": dict(r=1.0, alpha0=0.0,  alpha1=0.0,  n=0.0,  b=0.0,  M2=0.0,  P=0.0, corr=1.0),
 }
 
-# ─── Build the Im‐CFF function exactly matching your C++ code ────────────────────
+# ─── Build Im‐CFF function ─────────────────────────────────────────────────────
 def make_Im_func(cff, params, renorm):
     d = defaults[cff]
     def Im(xi, t):
@@ -99,7 +98,7 @@ def make_Im_func(cff, params, renorm):
         Pval = params.get("P",      d["P"])
         alpha = a0 + a1 * t
         pref = renorm * np.pi * 5.0/9.0 * nval * d["r"] / (1.0 + xi)
-        xfac = (2*xi/(1.0+xi))**(-alpha)
+        xfac = (2*xi/(1+xi))**(-alpha)
         yfac = ((1.0 - xi)/(1.0+xi))**(bval)
         tfac = (1.0 - ((1.0 - xi)/(1.0+xi))*t/M2)**(-Pval)
         return pref * xfac * yfac * tfac * d["corr"]
@@ -109,11 +108,11 @@ def make_Im_func(cff, params, renorm):
 def generate_replicas(central, errors, nrep=200):
     reps = []
     for _ in range(nrep):
-        rdict = {}
+        d = {}
         for k,v in central.items():
             sigma = errors[k] / 1.96
-            rdict[k] = np.random.normal(v, sigma)
-        reps.append(rdict)
+            d[k] = np.random.normal(v, sigma)
+        reps.append(d)
     return reps
 
 def compute_uncertainty_band(cff, xi_vals, t_vals, nrep=200):
@@ -124,10 +123,7 @@ def compute_uncertainty_band(cff, xi_vals, t_vals, nrep=200):
     curves = np.empty((nrep, len(xi_vals) if np.ndim(xi_vals)>0 else len(t_vals)))
     for i in range(nrep):
         Im_rep = make_Im_func(cff, param_reps[i], renorm_reps[i])
-        if np.ndim(t_vals)>0:
-            curves[i] = Im_rep(xi_vals, t_vals)
-        else:
-            curves[i] = Im_rep(xi_vals, t_vals)
+        curves[i] = Im_rep(xi_vals, t_vals) if np.ndim(t_vals)>0 else Im_rep(xi_vals, t_vals)
     return (
         np.median(curves, axis=0),
         np.percentile(curves, 2.5, axis=0),
@@ -171,7 +167,7 @@ for cff in ("H","Ht","E","Et"):
     axes = axes.flatten()
     fig.suptitle(rf"$\mathrm{{Im}}\,{tex}$", fontsize=16, y=0.95)
 
-    for ax, t0 in zip(axes, t_fixed):
+    for i, (ax, t0) in enumerate(zip(axes, t_fixed)):
         ax.plot(xi_range, Im_orig(xi_range, t0), **orig_style)
         med, lo, up = compute_uncertainty_band(cff, xi_range, t0)
         ax.plot(xi_range, med, **fit_style)
@@ -179,15 +175,36 @@ for cff in ("H","Ht","E","Et"):
         ax.axhline(0, **zero_line)
 
         ax.set_xlim(0,0.5)
-        ax.set_ylim(-2,12)          # ← now from −2 to 12
+        ax.set_ylim(-2,12)
+
         ax.set_xticks([0.0,0.1,0.2,0.3,0.4,0.5])
-        ax.set_yticks([ -2, 0, 3, 6, 9, 12])
+        ax.set_yticks([-2,0,3,6,9,12])
+
+        # only far-left column gets y-label
+        if i % 3 == 0:
+            ax.set_ylabel(r"$\mathrm{Im}\," + tex + r"(\xi,\,-t)$")
+        else:
+            ax.set_ylabel("")
+            ax.tick_params(labelleft=False)
+
         ax.set_xlabel(r"$\xi$")
-        ax.set_ylabel(r"$\mathrm{Im}\," + tex + r"(\xi,\,-t)$")
 
-        ax.text(0.6,0.75, rf"$-t={t0:.2f}$", transform=ax.transAxes)
+        # remove the “-2” tick on the top-left
+        if i == 0:
+            yt = ax.get_yticklabels()
+            if yt:
+                yt[0].set_visible(False)
 
-    # no space between subplots:
+        # remove “0.0” x-tick on bottom middle/right
+        if i in (4,5):
+            for lbl in ax.get_xticklabels():
+                if lbl.get_text() in ('0','0.0'):
+                    lbl.set_visible(False)
+
+        # move the text label down by ~10%
+        ax.text(0.60, 0.65, rf"$-t={t0:.2f}\,\mathrm{{GeV^2}}$",
+                transform=ax.transAxes, fontsize=12)
+
     fig.subplots_adjust(left=0.08, right=0.98, bottom=0.08, top=0.92,
                         wspace=0.0, hspace=0.0)
 
@@ -203,7 +220,7 @@ for cff in ("H","Ht","E","Et"):
     axes = axes.flatten()
     fig.suptitle(rf"$\mathrm{{Im}}\,{tex}$", fontsize=16, y=0.95)
 
-    for ax, x0 in zip(axes, xi_fixed):
+    for i, (ax, x0) in enumerate(zip(axes, xi_fixed)):
         ax.plot(t_range, Im_orig(x0, t_range), **orig_style)
         med, lo, up = compute_uncertainty_band(cff, x0, t_range)
         ax.plot(t_range, med, **fit_style)
@@ -211,15 +228,31 @@ for cff in ("H","Ht","E","Et"):
         ax.axhline(0, **zero_line)
 
         ax.set_xlim(0,1.0)
-        ax.set_ylim(-2,12)          # ← now from −2 to 12
+        ax.set_ylim(-2,12)
         ax.set_xticks([0.0,0.2,0.4,0.6,0.8,1.0])
         ax.set_yticks([-2,0,3,6,9,12])
+
+        if i % 3 == 0:
+            ax.set_ylabel(r"$\mathrm{Im}\," + tex + r"(\xi,\,-t)$")
+        else:
+            ax.set_ylabel("")
+            ax.tick_params(labelleft=False)
+
         ax.set_xlabel(r"$-t\;(\mathrm{GeV}^2)$")
-        ax.set_ylabel(r"$\mathrm{Im}\," + tex + r"(\xi,\,-t)$")
 
-        ax.text(0.6,0.75, rf"$\xi={x0:.2f}$", transform=ax.transAxes)
+        if i == 0:
+            yt = ax.get_yticklabels()
+            if yt:
+                yt[0].set_visible(False)
 
-    # no space between subplots:
+        if i in (4,5):
+            for lbl in ax.get_xticklabels():
+                if lbl.get_text() in ('0','0.0'):
+                    lbl.set_visible(False)
+
+        ax.text(0.60, 0.65, rf"$\xi={x0:.2f}$",
+                transform=ax.transAxes, fontsize=12)
+
     fig.subplots_adjust(left=0.08, right=0.98, bottom=0.08, top=0.92,
                         wspace=0.0, hspace=0.0)
 
