@@ -423,7 +423,8 @@ int main(int argc, char** argv){
 void PlotBinFit(int ibin, const std::string &timestamp) {
     if (!gPlotBinFits) return;
 
-    // turn off ROOT’s auto‐fit stats box
+    // ── disable ROOT histogram stats and fit stats boxes ─────────────────────
+    gStyle->SetOptStat(0);
     gStyle->SetOptFit(0);
 
     // regroup raw points into φ‐bins
@@ -436,23 +437,22 @@ void PlotBinFit(int ibin, const std::string &timestamp) {
             start = i;
         }
     }
-    if (ibin < 0 || ibin >= (int)bins.size()) return;
+    if (ibin<0 || ibin>=(int)bins.size()) return;
     auto &dp = bins[ibin];
     int n = dp.size();
-    if (n < 2) return;
+    if (n<2) return;
 
-    // ensure output dir exists
     system("mkdir -p output/plots/binned_fits");
 
-    // 1) build graph of A_LU vs φ
+    // ── build graph ──────────────────────────────────────────────────────────
     TGraphErrors *gr = new TGraphErrors(n);
-    for (int i = 0; i < n; ++i) {
+    for (int i=0; i<n; ++i) {
         gr->SetPoint(i, dp[i].phi, dp[i].A);
         gr->SetPointError(i, 0.0, dp[i].sigA);
     }
     gr->SetMarkerStyle(20);
 
-    // 2) prepare fit function, make it red & a bit thicker
+    // ── fit function ────────────────────────────────────────────────────────
     TF1 *f1 = new TF1(Form("f_bin%d", ibin),
         "[0]*sin(x*TMath::Pi()/180)/(1+[1]*cos(x*TMath::Pi()/180))",
         0, 360);
@@ -460,37 +460,32 @@ void PlotBinFit(int ibin, const std::string &timestamp) {
     f1->SetParameter(1, 0.0);
     f1->SetLineColor(kRed);
     f1->SetLineWidth(2);
+    gr->Fit(f1, "RQN");  // R:range, Q:quiet, N:no drawing of its own fit
 
-    // 3) perform fit quietly (R: use range, Q: quiet, N: do NOT draw)
-    gr->Fit(f1, "RQN");
-
-    // 4) set up canvas
+    // ── draw everything ──────────────────────────────────────────────────────
     TCanvas *c = new TCanvas(Form("c_bin%d", ibin), "", 600, 500);
 
-    // 5) draw an empty frame to lock axes
+    // draw only the border axes (no zero‐line)
     TH1F *frame = new TH1F(Form("frame%d", ibin),
-        "",          // no histogram‐title box
-        360, 0, 360);
+                            "",    // no title
+                            360, 0, 360);
     frame->SetMinimum(-0.6);
     frame->SetMaximum( 0.6);
     frame->GetXaxis()->SetTitle("#phi (deg)");
     frame->GetYaxis()->SetTitle("A_{LU}");
-    frame->Draw();
+    frame->Draw("AXIS");            // <— this draws only the 4 border axes
 
-    // lock X‐axis exactly 0→360
-    frame->GetXaxis()->SetLimits(0, 360);
-    frame->GetXaxis()->SetRangeUser(0, 360);
-    // lock Y‐axis is already done via SetMinimum/SetMaximum
+    // now lock them
+    frame->GetXaxis()->SetRangeUser(0,360);
+    frame->GetYaxis()->SetRangeUser(-0.6,0.6);
+    gPad->Modified(); gPad->Update();
 
-    gPad->Modified();
-    gPad->Update();
-
-    // 6) draw data & your red fit
+    // data + fit
     gr->Draw("P same");
     f1->Draw("L same");
 
-    // 7) draw legend (you can omit or style as you wish)
-    TLegend *leg = new TLegend(0.60, 0.75, 0.90, 0.90);
+    // ── legend ───────────────────────────────────────────────────────────────
+    TLegend *leg = new TLegend(0.60,0.75,0.90,0.90);
     leg->SetBorderSize(1);
     leg->SetFillStyle(1001);
     leg->SetFillColor(0);
@@ -504,16 +499,14 @@ void PlotBinFit(int ibin, const std::string &timestamp) {
     double chi2 = f1->GetChisquare();
     int    ndf  = f1->GetNDF();
     leg->AddEntry((TObject*)0,
-                  Form("#chi^{2}/ndf = %.2f",
-                       ndf>0 ? chi2/ndf : chi2),
+                  Form("#chi^{2}/ndf = %.2f", ndf>0?chi2/ndf:chi2),
                   "");
     leg->Draw();
 
-    // 8) save to your binned_fits folder
+    // ── save & clean ─────────────────────────────────────────────────────────
     c->SaveAs(Form("output/plots/binned_fits/BinFit_%s_bin%d.pdf",
                    timestamp.c_str(), ibin));
 
-    // cleanup
     delete leg;
     delete frame;
     delete c;
