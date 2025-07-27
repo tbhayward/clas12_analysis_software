@@ -416,11 +416,11 @@ int main(int argc, char** argv){
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
-// helper: plot the φ‐distribution and fit it to A sinφ/(1+B cosφ)
+// helper: plot the phi‐distribution and fit it to A sinphi/(1+B cosphi)
 void PlotBinFit(int ibin, const std::string &timestamp) {
     if (!gPlotBinFits) return;
 
-    // 1) Reconstruct the grouping of raw DataPoints into bins
+    // Re‐apply binning logic to group raw points
     std::vector<std::vector<DataPoint>> bins;
     bins.reserve(100);
     size_t start = 0;
@@ -429,9 +429,7 @@ void PlotBinFit(int ibin, const std::string &timestamp) {
                        || bsaData[i].phi < bsaData[i-1].phi);
         if (newbin) {
             bins.emplace_back();
-            for (size_t j = start; j < i; ++j) {
-                bins.back().push_back(bsaData[j]);
-            }
+            for (size_t j = start; j < i; ++j) bins.back().push_back(bsaData[j]);
             start = i;
         }
     }
@@ -440,34 +438,37 @@ void PlotBinFit(int ibin, const std::string &timestamp) {
     int n = dp.size();
     if (n < 2) return;
 
-    // 2) Build a TGraphErrors of A vs φ
+    // Build graph of A vs φ
     TGraphErrors *gr = new TGraphErrors(n);
     for (int i = 0; i < n; ++i) {
         gr->SetPoint(i, dp[i].phi, dp[i].A);
         gr->SetPointError(i, 0.0, dp[i].sigA);
     }
+    // standardize y‐axis
+    gr->SetMinimum(-0.6);
+    gr->SetMaximum( 0.6);
 
-    // 3) Define and perform the fit: A*sin(phi)/(1 + B*cos(phi))
+    // Fit function A·sin(φ)/(1 + B·cos(φ))
     TF1 *f1 = new TF1(Form("f_bin%d", ibin),
         "[0]*sin(x*TMath::Pi()/180)/(1+[1]*cos(x*TMath::Pi()/180))",
         0, 360);
-    // initialize parameters from binned result
     f1->SetParameter(0, bin_A[ibin]);
-    f1->SetParameter(1, 0.1);
-    gr->Fit(f1, "RQ");  // quiet, use range
+    f1->SetParameter(1, 0.0);
+    gr->Fit(f1, "RQ");  // quiet fit
 
-    // 4) Draw to canvas
+    // Draw canvas
     TCanvas *c = new TCanvas(Form("c_bin%d", ibin), "", 600, 500);
-    // embed axis labels and bin info into title
     gr->SetTitle(Form("xB=%.3f, Q^{2}=%.3f, -t=%.3f;#phi (deg);A_{LU}",
                       bin_xB[ibin], bin_Q2[ibin], bin_t[ibin]));
     gr->SetMarkerStyle(20);
     gr->Draw("AP");
     f1->Draw("Same");
 
-    // 5) Legend with fit parameters and reduced χ²
+    // Legend with box
     TLegend *leg = new TLegend(0.60, 0.75, 0.90, 0.90);
-    leg->SetBorderSize(0);
+    leg->SetBorderSize(1);
+    leg->SetFillStyle(1001);
+    leg->SetFillColor(0);
     leg->AddEntry(gr, "data", "p");
     leg->AddEntry(f1, Form("A = %.3f #pm %.3f",
                            f1->GetParameter(0),
@@ -485,12 +486,12 @@ void PlotBinFit(int ibin, const std::string &timestamp) {
                   "");
     leg->Draw();
 
-    // 6) Save as PDF
-    system("mkdir -p output/plots");
-    c->SaveAs(Form("output/plots/BinFit_%s_bin%d.pdf",
+    // Ensure output directory exists and save PDF
+    system("mkdir -p output/plots/binned_fits");
+    c->SaveAs(Form("output/plots/binned_fits/BinFit_%s_bin%d.pdf",
                    timestamp.c_str(), ibin));
 
-    // clean up
+    // Clean up
     delete leg;
     delete c;
     delete gr;
