@@ -446,7 +446,7 @@ void PlotBinFit(int ibin, const std::string &timestamp) {
     }
     gr->SetMarkerStyle(20);
 
-    // fit function A·sinφ/(1 + B·cosφ)
+    // fit function A·sinφ/(1 + B·cosφ) over 0→360
     TF1 *f1 = new TF1(Form("f_bin%d", ibin),
         "[0]*sin(x*TMath::Pi()/180)/(1+[1]*cos(x*TMath::Pi()/180))",
         0, 360);
@@ -454,12 +454,12 @@ void PlotBinFit(int ibin, const std::string &timestamp) {
     f1->SetParameter(1, 0.0);
     gr->Fit(f1, "RQ");
 
-    // draw on canvas with fixed axes
+    // draw on canvas with *fixed* axes
     TCanvas *c = new TCanvas(Form("c_bin%d", ibin), "", 600, 500);
 
-    // draw an empty frame from 0→360 and -0.6→0.6
+    // 1) draw an empty frame from 0→360 and -0.6→0.6
     TH1F *frame = new TH1F(Form("frame%d", ibin),
-        "",
+        "",      // no title on histogram itself; we'll set canvas title later
         360, 0, 360);
     frame->SetMinimum(-0.6);
     frame->SetMaximum( 0.6);
@@ -467,8 +467,15 @@ void PlotBinFit(int ibin, const std::string &timestamp) {
     frame->GetYaxis()->SetTitle("A_{LU}");
     frame->Draw();
 
-    gr->Draw("P SAME");
-    f1->Draw("Same");
+    // 2) *Lock* the X‐axis to exactly [0,360]
+    frame->GetXaxis()->SetLimits(0, 360);
+    frame->GetXaxis()->SetRangeUser(0, 360);
+    gPad->Modified();  // force the pad to pick up the new limits
+    gPad->Update();
+
+    // 3) draw data & fit *without* touching the axes again
+    gr->Draw("P same");
+    f1->Draw("L same");
 
     // legend with box
     TLegend *leg = new TLegend(0.60, 0.75, 0.90, 0.90);
@@ -485,11 +492,12 @@ void PlotBinFit(int ibin, const std::string &timestamp) {
     double chi2 = f1->GetChisquare();
     int    ndf  = f1->GetNDF();
     leg->AddEntry((TObject*)0,
-                  Form("#chi^{2}/ndf = %.2f", ndf>0 ? chi2/ndf : chi2),
+                  Form("#chi^{2}/ndf = %.2f",
+                       ndf>0 ? chi2/ndf : chi2),
                   "");
     leg->Draw();
 
-    // title with weighted kinematics
+    // set canvas title to weighted kinematics
     c->SetTitle(
       Form("xB=%.3f, Q^{2}=%.3f, -t=%.3f",
            bin_xB[ibin], bin_Q2[ibin], bin_t[ibin])
