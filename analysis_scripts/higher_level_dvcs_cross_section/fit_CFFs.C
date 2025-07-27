@@ -35,6 +35,8 @@
 #include "TF1.h"
 #include "TLegend.h"
 #include "TDatime.h"
+#include "TH1F.h"
+#include "TAxis.h"
 
 // pull in full BMK_DVCS + CFF code, with globals
 #include "DVCS_xsec.C"
