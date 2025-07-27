@@ -485,7 +485,16 @@ void PlotBinFit(int ibin, const std::string &ts) {
     leg->AddEntry(f1, Form("A = %.3f ± %.3f", f1->GetParameter(0), f1->GetParError(0)), "l");
     leg->AddEntry(f1, Form("B = %.3f ± %.3f", f1->GetParameter(1), f1->GetParError(1)), "l");
     double chi2 = f1->GetChisquare(), ndf = f1->GetNDF();
-    leg->AddEntry((TObject*)0, Form("#chi^{2}/ndf = %.2f", ndf>0?chi2/ndf:chi2), "");
+    leg->AddEntry(f1,
+    Form("A = %.3f +/- %.3f",
+         f1->GetParameter(0),
+         f1->GetParError(0)),
+    "l");
+    leg->AddEntry(f1,
+    Form("B = %.3f +/- %.3f",
+         f1->GetParameter(1),
+         f1->GetParError(1)),
+    "l");
     leg->Draw();
 
     // save with same timestamp format
