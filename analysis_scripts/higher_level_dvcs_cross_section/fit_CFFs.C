@@ -55,7 +55,7 @@ extern double r_Et,     alpha0_Et, alpha1_Et, n_Et,  b_Et,  M2_Et, P_Et;
 static int   gStrategy     = 0;        // 1 or 2
 static int   gStage        = 1;        // 1 = Im-fit, 2 = Re-fit
 static int   gConstraint   = 0;        // 0 = no cut, 1 = apply -t/Q2<0.2
-static bool  gPlotBinFits  = true;    // toggle per-bin φ-fits plotting
+static bool  gPlotBinFits  = true;     // toggle per-bin φ-fits plotting
 static std::string gBsaFile = "imports/rga_prl_bsa.txt";
 static const char* gXsFile  = "imports/rga_pass1_xsec_2018.txt";
 
@@ -144,7 +144,6 @@ void BinBsaData(){
     for(size_t i=1; i<=bsaData.size(); ++i){
         bool newbin = (i==bsaData.size() || bsaData[i].phi < bsaData[i-1].phi);
         if(newbin){
-            // collect points in this bin
             auto pts = std::vector<DataPoint>(
                 bsaData.begin()+start, bsaData.begin()+i
             );
@@ -162,7 +161,7 @@ void BinBsaData(){
             double A_bin  = SwA / Sw2;
             double dA_bin = 1.0/std::sqrt(Sw2);
 
-            // compute χ² of that sinφ fit
+            // χ² of that sinφ fit
             double chi2=0;
             for(auto &d: pts){
                 double s    = std::sin(d.phi * TMath::Pi()/180.);
@@ -170,7 +169,7 @@ void BinBsaData(){
                 chi2 += diff*diff/(d.sigA*d.sigA);
             }
 
-            // weighted kinematics by w = 1/σ²
+            // weighted kinematics
             double sumw=0, Sx=0, Sq=0, St=0, Se=0;
             for(auto &d: pts){
                 double w = 1.0/(d.sigA*d.sigA);
@@ -195,11 +194,10 @@ void BinBsaData(){
     }
     Nbins = bin_A.size();
 
-    // compute reduced χ² per amplitude-fit
+    // reduced χ² per amplitude-fit
     double totalChi2 = std::accumulate(bin_chi2.begin(), bin_chi2.end(), 0.0);
-    int totalDof     = std::accumulate(bin_M.begin(),    bin_M.end(),    0)
-                     - Nbins;  // one parameter per bin
-    reducedAmpChi2   = totalDof>0 ? totalChi2/totalDof : 0;
+    int totalDof     = std::accumulate(bin_M.begin(), bin_M.end(), 0) - Nbins;
+    reducedAmpChi2   = totalDof>0 ? totalChi2/totalDof : 0.0;
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -219,7 +217,7 @@ void build_par_list(){
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
-// χ² function: Im-fit (gStage=1) or renormReal-fit (gStage=2)
+// χ² function for Im-fit (gStage=1) or renormReal-fit (gStage=2)
 void fcn(int&, double*, double &f, double *par, int){
     int ip = 0;
     if(gStage==1){
@@ -275,10 +273,10 @@ void fcn(int&, double*, double &f, double *par, int){
 int main(int argc, char** argv){
     parse_args(argc,argv);
 
-    // compute timestamp once, in same format as results file
+    // one timestamp for both text + plots
     time_t now = time(nullptr);
     char tb[32];
-    strftime(tb, sizeof(tb), "%Y%m%d_%H%M%S", localtime(&now));
+    strftime(tb,sizeof(tb),"%Y%m%d_%H%M%S",localtime(&now));
 
     std::cout<<"\n=== Strategy="<<gStrategy
              <<"  H="<<hasH<<" Ht="<<hasHt
@@ -286,20 +284,17 @@ int main(int argc, char** argv){
              <<"  constraint="<<gConstraint
              <<"  input="<<gBsaFile
              <<"  plot-fits="<<(gPlotBinFits?"ON":"OFF")
-             <<"  timestamp="<<tb<<" ===\n";
+             <<"  ts="<<tb<<" ===\n";
 
     LoadData();
     BinBsaData();
-    std::cout<<" BSA bins="<<Nbins
-             <<"  (raw="<<bsaData.size()<<")\n";
+    std::cout<<" BSA bins="<<Nbins<<"  (raw="<<bsaData.size()<<")\n";
     std::cout<<" Reduced χ² per amplitude-fit = "<<reducedAmpChi2<<"\n\n";
 
     if(gPlotBinFits){
-        // turn off default stats box
-        gStyle->SetOptStat(0);
-        for(int ib=0; ib<Nbins; ++ib){
+        gStyle->SetOptStat(0);            // turn off stat box
+        for(int ib=0; ib<Nbins; ++ib)    // one plot per bin
             PlotBinFit(ib, tb);
-        }
         std::cout<<" Wrote amplitude-fit plots to output/plots/binned_fits/\n\n";
     }
 
@@ -341,18 +336,17 @@ int main(int argc, char** argv){
             if(nm.rfind("M2_",0)==0 || nm.rfind("r_",0)==0) lo=0.0;
             minu.DefineParameter(i, nm.c_str(), init, step, lo, hi);
 
-            if(nm=="renormImag"
-             || nm.rfind("alpha0_",0)==0
-             || nm.rfind("alpha1_",0)==0
-             || nm.rfind("n_",0)==0
-             || nm.rfind("P_",0)==0)
+            if(nm=="renormImag" ||
+               nm.rfind("alpha0_",0)==0 ||
+               nm.rfind("alpha1_",0)==0 ||
+               nm.rfind("n_",0)==0 ||
+               nm.rfind("P_",0)==0 )
             {
                 minu.FixParameter(i);
             }
         }
         std::cout<<" Stage1: fitting r_*, b_*, M2_* (others fixed)...\n";
-        minu.Migrad();
-        minu.Command("HESSE");
+        minu.Migrad(); minu.Command("HESSE");
         minu.mnstat(chi2_im,edm,errdef,nv,nx,ic);
         for(int i=0;i<nim;++i) minu.GetParameter(i, imVal[i], imErr[i]);
         ndf_im = Nbins - nim;
@@ -380,8 +374,8 @@ int main(int argc, char** argv){
             m2.GetParameter(0, reVal, reErr);
             ndf_re = xsData.size() - 1;
         }
-        valMap["renormReal"] = reVal;
-        errMap["renormReal"] = reErr;
+        valMap["renormReal"]=reVal;
+        errMap["renormReal"]=reErr;
         chi2_im = chi2_re;
         ndf_im  = ndf_re;
     }
@@ -391,8 +385,7 @@ int main(int argc, char** argv){
     if(gStrategy==2) outNames.push_back("renormReal");
 
     std::string fname = "output/fit_results/fit_results_";
-    fname += tb;
-    fname += ".txt";
+    fname += tb;  fname += ".txt";
     system("mkdir -p output/fit_results");
     std::ofstream fout(fname);
     fout<<"# fit_CFFs results\n"
@@ -412,7 +405,6 @@ int main(int argc, char** argv){
         <<chi2_im<<" "<<ndf_im<<" "<<(chi2_im/ndf_im)<<"\n";
     fout.close();
 
-    // echo to stdout
     std::cout<<"\n--- Fit Results ---\n";
     for(auto &n: outNames){
         std::cout<<" "<<n<<" = "<<valMap[n]<<" ± "<<errMap[n]<<"\n";
@@ -432,25 +424,25 @@ void PlotBinFit(int ibin, const std::string &ts) {
     // regroup raw points into φ-bins
     std::vector<std::vector<DataPoint>> bins;
     size_t start = 0;
-    for (size_t i = 1; i <= bsaData.size(); ++i) {
-        bool newbin = (i == bsaData.size() || bsaData[i].phi < bsaData[i-1].phi);
-        if (newbin) {
+    for(size_t i=1; i<=bsaData.size(); ++i){
+        bool newbin = (i==bsaData.size() || bsaData[i].phi < bsaData[i-1].phi);
+        if(newbin){
             bins.emplace_back(bsaData.begin()+start, bsaData.begin()+i);
             start = i;
         }
     }
-    if (ibin<0 || ibin>=int(bins.size())) return;
+    if(ibin<0||ibin>=int(bins.size())) return;
     auto &dp = bins[ibin];
     int n = dp.size();
-    if (n<2) return;
+    if(n<2) return;
 
-    // ensure output directory
+    // ensure directory
     system("mkdir -p output/plots/binned_fits");
 
-    // disable default stats box
+    // disable default stat box & grid
     gStyle->SetOptStat(0);
 
-    // build graph of A_LU vs φ
+    // graph
     TGraphErrors *gr = new TGraphErrors(n);
     for(int i=0;i<n;++i){
         gr->SetPoint(i, dp[i].phi, dp[i].A);
@@ -458,7 +450,7 @@ void PlotBinFit(int ibin, const std::string &ts) {
     }
     gr->SetMarkerStyle(20);
 
-    // fit function A·sinφ/(1+B·cosφ)
+    // fit
     TF1 *f1 = new TF1(Form("f_bin%d",ibin),
         "[0]*sin(x*TMath::Pi()/180)/(1+[1]*cos(x*TMath::Pi()/180))",
         0,360);
@@ -466,40 +458,38 @@ void PlotBinFit(int ibin, const std::string &ts) {
     f1->SetParameter(1, 0.);
     f1->SetLineColor(kRed);
     f1->SetLineWidth(2);
-    gr->Fit(f1, "RQN"); // range, quiet, no draw
+    gr->Fit(f1, "RQN");
 
-    // draw
-    TCanvas *c = new TCanvas(Form("c_bin%d",ibin), "", 600,500);
-    TH1F *frame = new TH1F(Form("frame%d",ibin),
-                           "", 360,0,360);
+    // canvas + frame
+    TCanvas *c = new TCanvas(Form("c_bin%d",ibin),"",600,500);
+    TH1F *frame = new TH1F(Form("frame%d",ibin),"",360,0,360);
     frame->SetMinimum(-0.6);
     frame->SetMaximum( 0.6);
     frame->GetXaxis()->SetTitle("#phi (deg)");
     frame->GetYaxis()->SetTitle("A_{LU}");
     frame->Draw();
-
-    // lock axes
     frame->GetXaxis()->SetLimits(0,360);
     frame->GetXaxis()->SetRangeUser(0,360);
     gPad->Modified(); gPad->Update();
 
+    // draw points + fit
     gr->Draw("P same");
     f1->Draw("L same");
 
-    // legend without frame box
+    // **legend WITH box**
     TLegend *leg = new TLegend(0.60,0.75,0.90,0.90);
-    leg->SetBorderSize(0);
-    leg->SetFillStyle(0);
+    leg->SetBorderSize(1);      // **box on**
+    leg->SetFillStyle(1001);    // white fill
+    leg->SetFillColor(0);
     leg->AddEntry(gr, "data", "p");
-    leg->AddEntry(f1, Form("A = %.3f #pm %.3f", f1->GetParameter(0), f1->GetParError(0)), "l");
-    leg->AddEntry(f1, Form("B = %.3f #pm %.3f", f1->GetParameter(1), f1->GetParError(1)), "l");
+    leg->AddEntry(f1, Form("A = %.3f ± %.3f", f1->GetParameter(0), f1->GetParError(0)), "l");
+    leg->AddEntry(f1, Form("B = %.3f ± %.3f", f1->GetParameter(1), f1->GetParError(1)), "l");
     double chi2 = f1->GetChisquare(), ndf = f1->GetNDF();
     leg->AddEntry((TObject*)0, Form("#chi^{2}/ndf = %.2f", ndf>0?chi2/ndf:chi2), "");
     leg->Draw();
 
     // save with same timestamp format
-    c->SaveAs(Form("output/plots/binned_fits/BinFit_%s_bin%d.pdf",
-                   ts.c_str(), ibin));
+    c->SaveAs(Form("output/plots/binned_fits/BinFit_%s_bin%d.pdf", ts.c_str(), ibin));
 
     // cleanup
     delete leg;
