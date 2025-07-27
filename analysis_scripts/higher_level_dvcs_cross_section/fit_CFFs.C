@@ -467,7 +467,7 @@ void PlotBinFit(int ibin, const std::string &ts) {
     frame->SetMaximum( 0.6);
     frame->GetXaxis()->SetTitle("#phi (deg)");
     frame->GetYaxis()->SetTitle("A_{LU}");
-    frame->Draw();
+    frame->Draw("AXIS");
     frame->GetXaxis()->SetLimits(0,360);
     frame->GetXaxis()->SetRangeUser(0,360);
     gPad->Modified(); gPad->Update();
@@ -482,8 +482,6 @@ void PlotBinFit(int ibin, const std::string &ts) {
     leg->SetFillStyle(1001);    // white fill
     leg->SetFillColor(0);
     leg->AddEntry(gr, "data", "p");
-    leg->AddEntry(f1, Form("A = %.3f ± %.3f", f1->GetParameter(0), f1->GetParError(0)), "l");
-    leg->AddEntry(f1, Form("B = %.3f ± %.3f", f1->GetParameter(1), f1->GetParError(1)), "l");
     double chi2 = f1->GetChisquare(), ndf = f1->GetNDF();
     leg->AddEntry(f1,
     Form("A = %.3f +/- %.3f",
