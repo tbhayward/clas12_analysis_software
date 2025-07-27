@@ -435,6 +435,9 @@ void PlotBinFit(int ibin, const std::string &timestamp) {
     int n = dp.size();
     if (n < 2) return;
 
+    // make output dir
+    system("mkdir -p output/plots/binned_fits");
+
     // build graph of A_LU vs φ
     TGraphErrors *gr = new TGraphErrors(n);
     for (int i = 0; i < n; ++i) {
@@ -443,15 +446,7 @@ void PlotBinFit(int ibin, const std::string &timestamp) {
     }
     gr->SetMarkerStyle(20);
 
-    // enforce x‐axis from 0° to 360°
-    gr->GetXaxis()->SetLimits(0, 360);
-    gr->GetXaxis()->SetRangeUser(0, 360);
-
-    // enforce y‐axis from -0.6 to 0.6
-    gr->SetMinimum(-0.6);
-    gr->SetMaximum( 0.6);
-
-    // fit function: A·sinφ/(1 + B·cosφ)
+    // fit function A·sinφ/(1 + B·cosφ)
     TF1 *f1 = new TF1(Form("f_bin%d", ibin),
         "[0]*sin(x*TMath::Pi()/180)/(1+[1]*cos(x*TMath::Pi()/180))",
         0, 360);
@@ -459,13 +454,20 @@ void PlotBinFit(int ibin, const std::string &timestamp) {
     f1->SetParameter(1, 0.0);
     gr->Fit(f1, "RQ");
 
-    // draw on canvas
+    // draw on canvas with fixed axes
     TCanvas *c = new TCanvas(Form("c_bin%d", ibin), "", 600, 500);
-    gr->SetTitle(
-      Form("xB=%.3f, Q^{2}=%.3f, -t=%.3f;#phi (deg);A_{LU}",
-           bin_xB[ibin], bin_Q2[ibin], bin_t[ibin])
-    );
-    gr->Draw("AP");
+
+    // draw an empty frame from 0→360 and -0.6→0.6
+    TH1F *frame = new TH1F(Form("frame%d", ibin),
+        "",
+        360, 0, 360);
+    frame->SetMinimum(-0.6);
+    frame->SetMaximum( 0.6);
+    frame->GetXaxis()->SetTitle("#phi (deg)");
+    frame->GetYaxis()->SetTitle("A_{LU}");
+    frame->Draw();
+
+    gr->Draw("P SAME");
     f1->Draw("Same");
 
     // legend with box
@@ -487,12 +489,19 @@ void PlotBinFit(int ibin, const std::string &timestamp) {
                   "");
     leg->Draw();
 
-    // save to binned_fits subdirectory
-    system("mkdir -p output/plots/binned_fits");
+    // title with weighted kinematics
+    c->SetTitle(
+      Form("xB=%.3f, Q^{2}=%.3f, -t=%.3f",
+           bin_xB[ibin], bin_Q2[ibin], bin_t[ibin])
+    );
+
+    // save
     c->SaveAs(Form("output/plots/binned_fits/BinFit_%s_bin%d.pdf",
                    timestamp.c_str(), ibin));
 
+    // clean up
     delete leg;
+    delete frame;
     delete c;
     delete gr;
     delete f1;
