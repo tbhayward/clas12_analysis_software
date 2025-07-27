@@ -91,35 +91,34 @@ void BinBsaData(){
 
     size_t start = 0;
     auto flush = [&](size_t end){
-        double SwA=0, Sw2=0, Sx=0, Sq=0, St=0, Se=0;
+        // first: fit A*sinφ
+        double SwA=0, Sw2=0;
         for(size_t i=start;i<end;++i){
             const auto &d = bsaData[i];
             double s = std::sin(d.phi * TMath::Pi()/180.);
             double w = 1.0/(d.sigA * d.sigA);
             SwA += w * d.A * s;
-            Sw2 += w * s*s;
+            Sw2 += w * s * s;
         }
         int M = end - start;
         double A_bin  = SwA/Sw2;
         double dA_bin = 1.0/std::sqrt(Sw2);
 
-        // χ² of the A*sinφ fit
-        double chi2=0;
+        // compute χ² of that fit
+        double chi2 = 0;
         for(size_t i=start;i<end;++i){
             const auto &d = bsaData[i];
-            double s = std::sin(d.phi * TMath::Pi()/180.);
-            double diff = d.A - A_bin*s;
+            double s    = std::sin(d.phi * TMath::Pi()/180.);
+            double diff = d.A - A_bin * s;
             chi2 += diff*diff / (d.sigA*d.sigA);
         }
 
-        // average kinematics
-        double Sx=0, Sq=0, Stot=0, Seb=0;
+        // then: average kinematics
+        double Sx=0, Sq=0, St=0, Se=0;
         for(size_t i=start;i<end;++i){
             const auto &d = bsaData[i];
-            Sx   += d.xB;
-            Sq   += d.Q2;
-            Stot += d.t;
-            Seb  += d.Eb;
+            Sx += d.xB;  Sq += d.Q2;
+            St += d.t;   Se += d.Eb;
         }
 
         bin_A.push_back(A_bin);
@@ -128,8 +127,8 @@ void BinBsaData(){
         bin_M.push_back(M);
         bin_xB.push_back(Sx/M);
         bin_Q2.push_back(Sq/M);
-        bin_t.push_back(Stot/M);
-        bin_Eb.push_back(Seb/M);
+        bin_t.push_back(St/M);
+        bin_Eb.push_back(Se/M);
     };
 
     for(size_t i=1;i<=bsaData.size();++i){
@@ -144,7 +143,7 @@ void BinBsaData(){
     // compute overall reduced χ²
     double totalChi2 = std::accumulate(bin_chi2.begin(), bin_chi2.end(), 0.0);
     int totalDof     = std::accumulate(bin_M.begin(),    bin_M.end(),    0)
-                     - Nbins;  // each bin fit has 1 free parameter
+                     - Nbins;  // one free parameter per bin
     reducedAmpChi2   = totalChi2 / double(totalDof>0 ? totalDof : 1);
 }
 
