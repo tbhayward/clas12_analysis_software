@@ -37,6 +37,7 @@
 #include "TDatime.h"
 #include "TH1F.h"
 #include "TAxis.h"
+#include "TStyle.h"
 
 // pull in full BMK_DVCS + CFF code, with globals
 #include "DVCS_xsec.C"
@@ -422,6 +423,9 @@ int main(int argc, char** argv){
 void PlotBinFit(int ibin, const std::string &timestamp) {
     if (!gPlotBinFits) return;
 
+    // turn off ROOT’s auto‐fit stats box
+    gStyle->SetOptFit(0);
+
     // regroup raw points into φ‐bins
     std::vector<std::vector<DataPoint>> bins;
     size_t start = 0;
@@ -437,10 +441,10 @@ void PlotBinFit(int ibin, const std::string &timestamp) {
     int n = dp.size();
     if (n < 2) return;
 
-    // make output dir
+    // ensure output dir exists
     system("mkdir -p output/plots/binned_fits");
 
-    // build graph of A_LU vs φ
+    // 1) build graph of A_LU vs φ
     TGraphErrors *gr = new TGraphErrors(n);
     for (int i = 0; i < n; ++i) {
         gr->SetPoint(i, dp[i].phi, dp[i].A);
@@ -448,20 +452,24 @@ void PlotBinFit(int ibin, const std::string &timestamp) {
     }
     gr->SetMarkerStyle(20);
 
-    // fit function A·sinφ/(1 + B·cosφ) over 0→360
+    // 2) prepare fit function, make it red & a bit thicker
     TF1 *f1 = new TF1(Form("f_bin%d", ibin),
         "[0]*sin(x*TMath::Pi()/180)/(1+[1]*cos(x*TMath::Pi()/180))",
         0, 360);
     f1->SetParameter(0, bin_A[ibin]);
     f1->SetParameter(1, 0.0);
-    gr->Fit(f1, "RQ");
+    f1->SetLineColor(kRed);
+    f1->SetLineWidth(2);
 
-    // draw on canvas with *fixed* axes
+    // 3) perform fit quietly (R: use range, Q: quiet, N: do NOT draw)
+    gr->Fit(f1, "RQN");
+
+    // 4) set up canvas
     TCanvas *c = new TCanvas(Form("c_bin%d", ibin), "", 600, 500);
 
-    // 1) draw an empty frame from 0→360 and -0.6→0.6
+    // 5) draw an empty frame to lock axes
     TH1F *frame = new TH1F(Form("frame%d", ibin),
-        "",      // no title on histogram itself; we'll set canvas title later
+        "",          // no histogram‐title box
         360, 0, 360);
     frame->SetMinimum(-0.6);
     frame->SetMaximum( 0.6);
@@ -469,17 +477,19 @@ void PlotBinFit(int ibin, const std::string &timestamp) {
     frame->GetYaxis()->SetTitle("A_{LU}");
     frame->Draw();
 
-    // 2) *Lock* the X‐axis to exactly [0,360]
+    // lock X‐axis exactly 0→360
     frame->GetXaxis()->SetLimits(0, 360);
     frame->GetXaxis()->SetRangeUser(0, 360);
-    gPad->Modified();  // force the pad to pick up the new limits
+    // lock Y‐axis is already done via SetMinimum/SetMaximum
+
+    gPad->Modified();
     gPad->Update();
 
-    // 3) draw data & fit *without* touching the axes again
+    // 6) draw data & your red fit
     gr->Draw("P same");
     f1->Draw("L same");
 
-    // legend with box
+    // 7) draw legend (you can omit or style as you wish)
     TLegend *leg = new TLegend(0.60, 0.75, 0.90, 0.90);
     leg->SetBorderSize(1);
     leg->SetFillStyle(1001);
@@ -499,17 +509,11 @@ void PlotBinFit(int ibin, const std::string &timestamp) {
                   "");
     leg->Draw();
 
-    // set canvas title to weighted kinematics
-    c->SetTitle(
-      Form("xB=%.3f, Q^{2}=%.3f, -t=%.3f",
-           bin_xB[ibin], bin_Q2[ibin], bin_t[ibin])
-    );
-
-    // save
+    // 8) save to your binned_fits folder
     c->SaveAs(Form("output/plots/binned_fits/BinFit_%s_bin%d.pdf",
                    timestamp.c_str(), ibin));
 
-    // clean up
+    // cleanup
     delete leg;
     delete frame;
     delete c;
