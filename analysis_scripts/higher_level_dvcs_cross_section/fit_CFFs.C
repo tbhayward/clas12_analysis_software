@@ -300,66 +300,72 @@ int main(int argc,char**argv){
         std::cout<<" Wrote plots to output/plots/binned_fits/\n\n";
     }
 
-    // Stage 1: Im-fit
-    gStage=1;
+    // ─── Stage 1: Im-fit ─────────────────────────────────────────────────────────
+    gStage = 1;
     build_par_list();
     int nim = parNamesIm.size();
     std::vector<double> imVal(nim), imErr(nim);
-    double chi2_im,edm,errdef; int nv,nx,ic, ndf_im;
+    double chi2_im, edm, errdef; int nv,nx,ic, ndf_im;
     {
         TMinuit minu(nim);
         minu.SetPrintLevel(1);
         minu.SetFCN(fcn);
-        for(int i=0;i<nim;++i){
+        for(int i=0; i<nim; ++i){
             const auto &nm = parNamesIm[i];
-            double init=0, step=0.01, lo=-1e3, hi= 1e3;
-            // bounds:
+            double init = 0, step = 0.01;
+            // default to totally unbounded:
+            double lo = -1e6, hi = +1e6;
+
+            // only bound these four:
             if(nm.rfind("alpha0_",0)==0 ||
                nm.rfind("alpha1_",0)==0 ||
-               nm.rfind("b_",0)==0) lo=0.0;
-            if(nm.rfind("M2_",0)==0) lo=0.5; hi=1.5;
-            if(nm.rfind("P_",0)==0)  hi=3.0;
-            // pick default init from globals:
-            if      (nm=="r_H"     ) init = r_H;
-            else if (nm=="alpha0_H") init = alpha0_H;
-            else if (nm=="alpha1_H") init = alpha1_H;
-            else if (nm=="b_H"     ) init = b_H;
-            else if (nm=="M2_H"    ) init = M2_H;
-            else if (nm=="P_H"     ) init = P_H;
+               nm.rfind("b_",0)==0) {
+                lo = 0.0;      // alpha0, alpha1, b ≥ 0
+            }
+            if(nm.rfind("M2_",0)==0) {
+                lo = 0.5;     // 0.5 ≤ M2 ≤ 1.5
+                hi = 1.5;
+            }
 
-            else if (nm=="r_Ht"     ) init = r_Ht;
-            else if (nm=="alpha0_Ht") init = alpha0_Ht;
-            else if (nm=="alpha1_Ht") init = alpha1_Ht;
-            else if (nm=="b_Ht"     ) init = b_Ht;
-            else if (nm=="M2_Ht"    ) init = M2_Ht;
-            else if (nm=="P_Ht"     ) init = P_Ht;
+            // pick the initial value from the global defaults:
+            if      (nm == "r_H"      ) init = r_H;
+            else if (nm == "alpha0_H" ) init = alpha0_H;
+            else if (nm == "alpha1_H" ) init = alpha1_H;
+            else if (nm == "b_H"      ) init = b_H;
+            else if (nm == "M2_H"     ) init = M2_H;
+            else if (nm == "P_H"      ) init = P_H;
 
-            else if (nm=="r_E"     ) init = r_E;
-            else if (nm=="alpha0_E") init = alpha0_E;
-            else if (nm=="alpha1_E") init = alpha1_E;
-            else if (nm=="b_E"     ) init = b_E;
-            else if (nm=="M2_E"    ) init = M2_E;
-            else if (nm=="P_E"     ) init = P_E;
+            else if (nm == "r_Ht"     ) init = r_Ht;
+            else if (nm == "alpha0_Ht") init = alpha0_Ht;
+            else if (nm == "alpha1_Ht") init = alpha1_Ht;
+            else if (nm == "b_Ht"     ) init = b_Ht;
+            else if (nm == "M2_Ht"    ) init = M2_Ht;
+            else if (nm == "P_Ht"     ) init = P_Ht;
 
-            else if (nm=="r_Et"     ) init = r_Et;
-            else if (nm=="alpha0_Et") init = alpha0_Et;
-            else if (nm=="alpha1_Et") init = alpha1_Et;
-            else if (nm=="b_Et"     ) init = b_Et;
-            else if (nm=="M2_Et"    ) init = M2_Et;
-            else if (nm=="P_Et"     ) init = P_Et;
+            else if (nm == "r_E"      ) init = r_E;
+            else if (nm == "alpha0_E" ) init = alpha0_E;
+            else if (nm == "alpha1_E" ) init = alpha1_E;
+            else if (nm == "b_E"      ) init = b_E;
+            else if (nm == "M2_E"     ) init = M2_E;
+            else if (nm == "P_E"      ) init = P_E;
+
+            else if (nm == "r_Et"     ) init = r_Et;
+            else if (nm == "alpha0_Et") init = alpha0_Et;
+            else if (nm == "alpha1_Et") init = alpha1_Et;
+            else if (nm == "b_Et"     ) init = b_Et;
+            else if (nm == "M2_Et"    ) init = M2_Et;
+            else if (nm == "P_Et"     ) init = P_Et;
 
             minu.DefineParameter(i, nm.c_str(), init, step, lo, hi);
         }
-        std::cout<<" Stage1: fitting Im-CFF parameters...\n";
-        minu.Migrad(); minu.Command("HESSE");
+
+        std::cout<<" Stage1: fitting Im-CFF parameters…\n";
+        minu.Migrad();
+        minu.Command("HESSE");
         minu.mnstat(chi2_im,edm,errdef,nv,nx,ic);
-        for(int i=0;i<nim;++i) minu.GetParameter(i, imVal[i], imErr[i]);
+        for(int i=0;i<nim;++i)
+            minu.GetParameter(i, imVal[i], imErr[i]);
         ndf_im = Nbins - nim;
-    }
-    std::map<std::string,double> valMap, errMap;
-    for(int i=0;i<nim;++i){
-        valMap[parNamesIm[i]] = imVal[i];
-        errMap[parNamesIm[i]] = imErr[i];
     }
 
     // Stage 2: renormReal-fit
