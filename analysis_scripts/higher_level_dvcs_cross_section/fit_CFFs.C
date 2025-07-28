@@ -54,7 +54,7 @@ extern double b_H;
 extern double beta_H;
 extern double M2_H;
 extern double P_H;
-extern double A0, A1, A2, B0, B1, B2;
+// extern double A0, A1, A2, B0, B1, B2;
 
 // GPD–Htilde
 extern double r_Ht;
