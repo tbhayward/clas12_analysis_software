@@ -320,7 +320,7 @@ int main(int argc, char** argv) {
             double init = 0.0, lo = -1e3, hi = 1e3;
 
             if      (nm == "r_H")       init = r_H;
-            else if (nm == "alpha0_H")  { init = alpha0_H; }
+            else if (nm == "alpha0_H")  { init = alpha0_H; step = 0.00;}
             else if (nm == "alpha1_H")  init = alpha1_H;
             else if (nm == "b_H")       init = b_H;
 
