@@ -337,8 +337,8 @@ int main(int argc, char** argv){
             minu.DefineParameter(i, nm.c_str(), init, step, lo, hi);
 
             if(nm=="renormImag" 
-               || nm.rfind("alpha0_",0)==0 
-               || nm.rfind("alpha1_",0)==0 
+               // || nm.rfind("alpha0_",0)==0 
+               // || nm.rfind("alpha1_",0)==0 
                || nm.rfind("n_",0)==0 
                // || nm.rfind("P_",0)==0 
                )
