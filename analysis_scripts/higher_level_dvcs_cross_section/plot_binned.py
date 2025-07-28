@@ -1,8 +1,9 @@
 import numpy as np
 import matplotlib.pyplot as plt
 import os
+from matplotlib.backends.backend_pdf import PdfPages
 
-# Create output directory if it doesn't exist
+# Create output directory
 os.makedirs('output/plots', exist_ok=True)
 
 # Read data from file
@@ -12,7 +13,6 @@ with open(data_file, 'r') as f:
     for line in f:
         if 'Point' in line:
             parts = line.split(',')
-            # Extract relevant values
             xB = float(parts[1].split('=')[1])
             Q2 = float(parts[2].split('=')[1])
             t_minus = float(parts[3].split('=')[1])
@@ -29,66 +29,86 @@ t_minus = data[:, 2]
 Amp = data[:, 3]
 sigma = data[:, 4]
 
-# Define binning scheme
+# Define bin ranges
 xi_bins = [(0.04, 0.1), (0.1, 0.2), (0.2, 0.45)]
 Q2_bins = [(1, 2), (2, 4), (4, 8)]
 t_bins = [(0.1, 0.3), (0.3, 0.6), (0.6, 3.0)]
 
-# Create figure with 3 subplots
-fig, axs = plt.subplots(1, 3, figsize=(18, 6))
-plt.subplots_adjust(wspace=0.3)
+# Function to create subplots for each bin combination
+def create_subplots(x_var, y_var, fixed_var1_bins, fixed_var2_bins, 
+                   x_label, fixed_var1_name, fixed_var2_name):
+    fig, axs = plt.subplots(len(fixed_var1_bins), len(fixed_var2_bins), 
+                           figsize=(15, 12), sharey=True)
+    fig.subplots_adjust(hspace=0.15, wspace=0.1)
+    
+    for i, bin1 in enumerate(fixed_var1_bins):
+        for j, bin2 in enumerate(fixed_var2_bins):
+            ax = axs[i, j] if len(fixed_var1_bins) > 1 else axs[j]
+            
+            # Create mask for current bins
+            if fixed_var1_name == "Q²":
+                mask = (Q2 >= bin1[0]) & (Q2 < bin1[1]) & (t_minus >= bin2[0]) & (t_minus < bin2[1])
+            elif fixed_var1_name == "ξ":
+                mask = (xi >= bin1[0]) & (xi < bin1[1]) & (Q2 >= bin2[0]) & (Q2 < bin2[1])
+            else:  # -t
+                mask = (t_minus >= bin1[0]) & (t_minus < bin1[1]) & (xi >= bin2[0]) & (xi < bin2[1])
+            
+            if np.sum(mask) > 0:
+                ax.errorbar(x_var[mask], y_var[mask], yerr=sigma[mask], 
+                           fmt='o', color='b', ms=6, capsize=4, alpha=0.8)
+            
+            # Set titles for first row and first column
+            if i == 0:
+                ax.set_title(f"{fixed_var2_name} = {bin2[0]}-{bin2[1]}", fontsize=10)
+            if j == 0:
+                ax.set_ylabel(f"{fixed_var1_name} = {bin1[0]}-{bin1[1]}\n$A_{{LU}}$", fontsize=10)
+            
+            ax.grid(True, linestyle='--', alpha=0.5)
+            ax.set_xlabel(x_label, fontsize=10)
+    
+    return fig
 
-# Color and marker scheme for bins
-colors = ['#1f77b4', '#ff7f0e', '#2ca02c']
-markers = ['o', 's', '^']
+# Create PDF for ξ dependence
+with PdfPages('output/plots/xi_dependence.pdf') as pdf:
+    fig = create_subplots(
+        x_var=xi, 
+        y_var=Amp,
+        fixed_var1_bins=Q2_bins,
+        fixed_var2_bins=t_bins,
+        x_label="ξ",
+        fixed_var1_name="Q² (GeV²)",
+        fixed_var2_name="-t (GeV²)"
+    )
+    fig.suptitle("Beam Spin Asymmetry vs ξ", fontsize=16)
+    pdf.savefig(fig, bbox_inches='tight')
+    plt.close(fig)
 
-# Plot 1: Amp vs xi (grouped by Q2 and t)
-for i, q_bin in enumerate(Q2_bins):
-    for j, t_bin in enumerate(t_bins):
-        mask = (Q2 >= q_bin[0]) & (Q2 < q_bin[1]) & (t_minus >= t_bin[0]) & (t_minus < t_bin[1])
-        if np.any(mask):
-            label = f'Q²: {q_bin[0]}-{q_bin[1]} GeV²\n-t: {t_bin[0]}-{t_bin[1]} GeV²'
-            axs[0].errorbar(xi[mask], Amp[mask], yerr=sigma[mask], 
-                            fmt=markers[j], color=colors[i], mec='k', ms=8, capsize=4, label=label)
+# Create PDF for -t dependence
+with PdfPages('output/plots/t_dependence.pdf') as pdf:
+    fig = create_subplots(
+        x_var=t_minus, 
+        y_var=Amp,
+        fixed_var1_bins=xi_bins,
+        fixed_var2_bins=Q2_bins,
+        x_label="$-t$ (GeV$^{2}$)",
+        fixed_var1_name="ξ",
+        fixed_var2_name="Q² (GeV²)"
+    )
+    fig.suptitle("Beam Spin Asymmetry vs $-t$", fontsize=16)
+    pdf.savefig(fig, bbox_inches='tight')
+    plt.close(fig)
 
-axs[0].set_xlabel('ξ', fontsize=14)
-axs[0].set_ylabel('$A_{LU}$', fontsize=14)
-axs[0].grid(True, linestyle='--', alpha=0.7)
-axs[0].legend(loc='upper right', fontsize=9, framealpha=0.95)
-
-# Plot 2: Amp vs -t (grouped by xi and Q2)
-for i, x_bin in enumerate(xi_bins):
-    for j, q_bin in enumerate(Q2_bins):
-        mask = (xi >= x_bin[0]) & (xi < x_bin[1]) & (Q2 >= q_bin[0]) & (Q2 < q_bin[1])
-        if np.any(mask):
-            label = f'ξ: {x_bin[0]:.2f}-{x_bin[1]:.2f}\nQ²: {q_bin[0]}-{q_bin[1]} GeV²'
-            axs[1].errorbar(t_minus[mask], Amp[mask], yerr=sigma[mask], 
-                            fmt=markers[j], color=colors[i], mec='k', ms=8, capsize=4, label=label)
-
-axs[1].set_xlabel('$-t$ (GeV$^{2}$)', fontsize=14)
-axs[1].grid(True, linestyle='--', alpha=0.7)
-axs[1].legend(loc='upper right', fontsize=9, framealpha=0.95)
-
-# Plot 3: Amp vs Q² (grouped by xi and t)
-for i, x_bin in enumerate(xi_bins):
-    for j, t_bin in enumerate(t_bins):
-        mask = (xi >= x_bin[0]) & (xi < x_bin[1]) & (t_minus >= t_bin[0]) & (t_minus < t_bin[1])
-        if np.any(mask):
-            label = f'ξ: {x_bin[0]:.2f}-{x_bin[1]:.2f}\n-t: {t_bin[0]}-{t_bin[1]} GeV²'
-            axs[2].errorbar(Q2[mask], Amp[mask], yerr=sigma[mask], 
-                            fmt=markers[j], color=colors[i], mec='k', ms=8, capsize=4, label=label)
-
-axs[2].set_xlabel('$Q^{2}$ (GeV$^{2}$)', fontsize=14)
-axs[2].grid(True, linestyle='--', alpha=0.7)
-axs[2].legend(loc='upper right', fontsize=9, framealpha=0.95)
-
-# Set common y-axis limits
-all_amps = np.concatenate([Amp + sigma, Amp - sigma])
-y_min, y_max = np.min(all_amps), np.max(all_amps)
-y_padding = 0.1 * (y_max - y_min)
-for ax in axs:
-    ax.set_ylim(y_min - y_padding, y_max + y_padding)
-
-plt.tight_layout()
-plt.savefig('output/plots/binned_rga_results.pdf', bbox_inches='tight')
-plt.close()
+# Create PDF for Q² dependence
+with PdfPages('output/plots/Q2_dependence.pdf') as pdf:
+    fig = create_subplots(
+        x_var=Q2, 
+        y_var=Amp,
+        fixed_var1_bins=xi_bins,
+        fixed_var2_bins=t_bins,
+        x_label="$Q^{2}$ (GeV$^{2}$)",
+        fixed_var1_name="ξ",
+        fixed_var2_name="-t (GeV²)"
+    )
+    fig.suptitle("Beam Spin Asymmetry vs $Q^{2}$", fontsize=16)
+    pdf.savefig(fig, bbox_inches='tight')
+    plt.close(fig)
