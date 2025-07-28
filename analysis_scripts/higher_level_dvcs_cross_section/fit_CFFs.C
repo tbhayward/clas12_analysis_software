@@ -338,7 +338,7 @@ int main(int argc, char** argv) {
         else if(nm=="alpha0_E")   { init=alpha0_E;  }
         else if(nm=="alpha1_E")   init=alpha1_E;
         else if(nm=="b_E")        init=b_E;
-        else if(nm=="M2_E")       { init=M2_E;  lo=0.0; hi=1.0; }
+        else if(nm=="M2_E")       { init=0;  step = 0; }
         else if(nm=="P_E")        { init=P_E;  }
         else if(nm=="r_Et")       init=r_Et;
         else if(nm=="alpha0_Et")  { init=alpha0_Et;  }
