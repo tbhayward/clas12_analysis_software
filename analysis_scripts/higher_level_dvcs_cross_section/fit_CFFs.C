@@ -54,6 +54,7 @@ extern double b_H;
 extern double beta_H;
 extern double M2_H;
 extern double P_H;
+extern double A0, A1, A2, B0, B1, B2;
 
 // GPD–Htilde
 extern double r_Ht;
@@ -209,7 +210,7 @@ void build_par_list(){
     parNamesIm.clear();
     if(hasH )  parNamesIm.insert(parNamesIm.end(),
                // {"r_H","alpha0_H","alpha1_H","b_H","M2_H","P_H"});
-                {"r_H","alpha0_H","alpha1_H", "b_H", "beta_H"});
+                {"r_H","A0", "A1", "A2", "B0", "B1", "B2", });
     if(hasHt)  parNamesIm.insert(parNamesIm.end(),
                {"r_Ht","alpha0_Ht","alpha1_Ht","b_Ht","M2_Ht","P_Ht"});
     if(hasE )  parNamesIm.insert(parNamesIm.end(),
