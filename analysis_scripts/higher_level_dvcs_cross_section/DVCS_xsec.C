@@ -1296,7 +1296,7 @@ double P_H       = 1.0;
 double beta_H    = 0.0;
 
 double A0 = 1; double A1 = 1; double A2 = 1; 
-double B0 = 1; double B1 = 1; double B2 = 1;
+double B0 = 1; double B1 = 1; double B2 = 1, double B3 = 1;
 double GetImH(double xi, double t) {
     double prefactor = (n_H * r_H);
 
@@ -1304,7 +1304,7 @@ double GetImH(double xi, double t) {
     double xiSup = TMath::Exp(-B0*xi);
 
     double tFrac = 1/(1+A1*t/(1+A2*t));
-    double xiFrac = 1/(1+B1*xi/(1+B2*xi));
+    double xiFrac = 1/(1+B1*xi/(1+B2*xi/(1+B3*xi)));
 
     return renormImag * prefactor * tSup * xiSup * tFrac * xiFrac;
 }

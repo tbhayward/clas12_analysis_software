@@ -54,7 +54,7 @@ extern double b_H;
 extern double beta_H;
 extern double M2_H;
 extern double P_H;
-extern double A0, A1, A2, B0, B1, B2;
+extern double A0, A1, A2, B0, B1, B2, B3;
 
 // GPD–Htilde
 extern double r_Ht;
@@ -211,7 +211,7 @@ void build_par_list(){
     if(hasH )  parNamesIm.insert(parNamesIm.end(),
                // {"r_H","alpha0_H","alpha1_H","b_H","M2_H","P_H"});
                 // {"r_H","alpha0_H","alpha1_H","b_H","beta_H"});
-                {"r_H","A0", "A1", "A2", "B0", "B1", "B2"});
+                {"r_H","A0", "A1", "A2", "B0", "B1", "B2", "B3"});
     if(hasHt)  parNamesIm.insert(parNamesIm.end(),
                {"r_Ht","alpha0_Ht","alpha1_Ht","b_Ht","M2_Ht","P_Ht"});
     if(hasE )  parNamesIm.insert(parNamesIm.end(),
@@ -239,6 +239,7 @@ void fcn(int&, double*, double &f, double *par, int){
           B0   = par[ip++];
           B1   = par[ip++];
           B2   = par[ip++];
+          B3   = par[ip++];
         }
         if(hasHt){
           r_Ht      = par[ip++];
@@ -342,6 +343,7 @@ int main(int argc, char** argv) {
             else if (nm == "B0")    { init = B0;  }
             else if (nm == "B1")    { init = B1;  }
             else if (nm == "B2")    { init = B2;  }
+            else if (nm == "B3")    { init = B3;  }
 
             else if (nm == "r_Ht")      init = r_Ht;
             else if (nm == "alpha0_Ht") { init = alpha0_Ht; lo = 0.2; hi = 1.0; }
