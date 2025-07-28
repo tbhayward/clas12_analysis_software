@@ -327,6 +327,13 @@ int main(int argc, char** argv) {
             else if (nm == "b_H")       { init = b_H; lo = 0.0; }
             else if (nm == "beta_H")    { init = beta_H;  }
 
+            else if (nm == "A0")    { init = A0;  }
+            else if (nm == "A1")    { init = A1;  }
+            else if (nm == "A2")    { init = A2;  }
+            else if (nm == "B0")    { init = B0;  }
+            else if (nm == "B1")    { init = B1;  }
+            else if (nm == "B2")    { init = B2;  }
+
             else if (nm == "r_Ht")      init = r_Ht;
             else if (nm == "alpha0_Ht") { init = alpha0_Ht; lo = 0.2; hi = 1.0; }
             else if (nm == "alpha1_Ht") init = alpha1_Ht;
