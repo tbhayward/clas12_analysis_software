@@ -328,7 +328,7 @@ int main(int argc, char** argv) {
             // else if (nm == "P_H")       { init = P_H;       lo = 0.0; hi = 5.0; }
             // GPD–H parameters (minimal model)
             if      (nm == "r_H")       { init = r_H;       lo = 0.5; hi = 2.5; }
-            else if (nm == "alpha0_H")  { init = alpha0_H;  lo = 0.2; hi = 1.0; }
+            else if (nm == "alpha0_H")  { init = alpha0_H;  lo = 0.0; hi = 1.0; }
             else if (nm == "alpha1_H")  { init = alpha1_H;  lo = 0.5; hi = 2.5; }
             // GPD–Htilde parameters
             else if (nm == "r_Ht")      init = r_Ht;
