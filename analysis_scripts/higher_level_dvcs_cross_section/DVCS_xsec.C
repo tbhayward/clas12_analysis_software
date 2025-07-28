@@ -1288,12 +1288,13 @@ double renormReal = 1.0;
 
 double r_H       = 0.9;
 double n_H       = 1.25;
-double alpha0_H;
-double alpha1_H;
+double alpha0_H  = 0.43;
+double alpha1_H  = 0.85;
 double beta_H;
 double B0_H;
 double B1_H;
 double Q0sq;
+double pQ_H;
 double GetImH(double xi, double t, double Q2) {
     if (!hasH) return 0.0;
 
@@ -1322,8 +1323,8 @@ double GetImH(double xi, double t, double Q2) {
 // GPD–H
 // double r_H       = 0.9;
 // double n_H       = 1.25;
-double alpha0_H  = 0.43;
-double alpha1_H  = 0.85;
+// double alpha0_H  = 0.43;
+// double alpha1_H  = 0.85;
 double b_H       = 0.4;    // now the single b–slope
 double M2_H      = 0.64;
 double P_H       = 1.0;
