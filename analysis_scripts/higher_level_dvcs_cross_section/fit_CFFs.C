@@ -51,6 +51,7 @@ extern double n_H;
 extern double alpha0_H;
 extern double alpha1_H;
 extern double b_H;
+extern double beta_H;
 extern double M2_H;
 extern double P_H;
 
@@ -208,7 +209,7 @@ void build_par_list(){
     parNamesIm.clear();
     if(hasH )  parNamesIm.insert(parNamesIm.end(),
                // {"r_H","alpha0_H","alpha1_H","b_H","M2_H","P_H"});
-                {"r_H","alpha0_H","alpha1_H", "b_h", "beta_h"});
+                {"r_H","alpha0_H","alpha1_H", "b_H", "beta_H"});
     if(hasHt)  parNamesIm.insert(parNamesIm.end(),
                {"r_Ht","alpha0_Ht","alpha1_Ht","b_Ht","M2_Ht","P_Ht"});
     if(hasE )  parNamesIm.insert(parNamesIm.end(),
@@ -322,7 +323,7 @@ int main(int argc, char** argv) {
             if      (nm == "r_H")       init = r_H;
             else if (nm == "alpha0_H")  { init = alpha0_H; }
             else if (nm == "alpha1_H")  init = alpha1_H;
-            else if (nm == "b_H")       init = b_H;
+            else if (nm == "b_H")       { init = b_H; lo = 0.0; }
             else if (nm == "beta_H")    { init = beta_H;  }
 
             else if (nm == "r_Ht")      init = r_Ht;
