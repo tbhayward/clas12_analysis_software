@@ -317,53 +317,37 @@ int main(int argc, char** argv) {
         for (int i = 0; i < nim; ++i) {
             const auto &nm = parNamesIm[i];
             double step = 0.01;
+            double init = 0, lo = 0.0, hi = 1e6;
 
-            // freeze alpha0_* at their model defaults
-            if (nm.rfind("alpha0_", 0) == 0) {
-                double fixed =
-                    (nm == "alpha0_H"  ? alpha0_H  :
-                     nm == "alpha0_Ht" ? alpha0_Ht :
-                     nm == "alpha0_E"  ? alpha0_E  :
-                                         alpha0_Et);
-                minu.DefineParameter(i, nm.c_str(), fixed, 0.0, fixed, fixed);
-                minu.FixParameter(i);
-            }
+            // Allow alpha0_* to float
+            if      (nm == "alpha0_H")  { init = alpha0_H;  lo = 0.2; hi = 1.0; }
+            else if (nm == "alpha0_Ht") { init = alpha0_Ht; lo = 0.2; hi = 1.0; }
+            else if (nm == "alpha0_E")  { init = alpha0_E;  lo = 0.2; hi = 1.0; }
+            else if (nm == "alpha0_Et") { init = alpha0_Et; lo = 0.2; hi = 1.0; }
+            // Q²–slope pQ_H for H
+            else if (nm == "pQ_H")      { init = pQ_H;      lo = 0.0; hi = 2.0; }
+            // H‐specific Regge & skew parameters
+            else if (nm == "r_H")       { init = r_H;       lo = 0.5; hi = 2.5; }
+            else if (nm == "alpha1_H")  { init = alpha1_H;  lo = 0.5; hi = 2.5; }
+            else if (nm == "beta_H")    { init = beta_H;    lo = 0.0; hi = 5.0; }
+            else if (nm == "B0_H")      { init = B0_H;      lo = 3.0; hi = 12.0; }
+            else if (nm == "B1_H")      { init = B1_H;      lo = -10.0; hi = 10.0; }
+            // the remaining parameters keep their original bounds
             else {
-                // floating parameters: r_, alpha1_, b_, M2_, P_
-                double init = 0, lo = 0.0, hi = 1e6;
-                // M2 in [0,2]
-                if (nm.rfind("M2_", 0) == 0)    hi = 2.0;
-                // P in [0,3]
-                if (nm.rfind("P_", 0)  == 0)    hi = 3.0;
-
-                // set init from globals
-                if      (nm == "r_H")       init = r_H;
-                else if (nm == "r_Ht")      init = r_Ht;
+                if      (nm == "r_Ht")      init = r_Ht;
                 else if (nm == "r_E")       init = r_E;
                 else if (nm == "r_Et")      init = r_Et;
-
-                else if (nm == "alpha1_H")  init = alpha1_H;
                 else if (nm == "alpha1_Ht") init = alpha1_Ht;
                 else if (nm == "alpha1_E")  init = alpha1_E;
                 else if (nm == "alpha1_Et") init = alpha1_Et;
-
-                else if (nm == "b_H")       init = b_H;
                 else if (nm == "b_Ht")      init = b_Ht;
                 else if (nm == "b_E")       init = b_E;
                 else if (nm == "b_Et")      init = b_Et;
-
-                else if (nm == "M2_H")      init = M2_H;
-                else if (nm == "M2_Ht")     init = M2_Ht;
-                else if (nm == "M2_E")      init = M2_E;
-                else if (nm == "M2_Et")     init = M2_Et;
-
-                else if (nm == "P_H")       init = P_H;
-                else if (nm == "P_Ht")      init = P_Ht;
-                else if (nm == "P_E")       init = P_E;
-                else if (nm == "P_Et")      init = P_Et;
-
-                minu.DefineParameter(i, nm.c_str(), init, step, lo, hi);
+                else if (nm.rfind("M2_",0)==0) { init = (nm=="M2_Ht"?M2_Ht:(nm=="M2_E"?M2_E:M2_Et)); hi=2.0; }
+                else if (nm.rfind("P_",0)==0)  { init = (nm=="P_Ht"?P_Ht:(nm=="P_E"?P_E:P_Et)); hi=3.0; }
             }
+
+            minu.DefineParameter(i, nm.c_str(), init, step, lo, hi);
         }
 
         std::cout << " Stage1: fitting Im-CFF parameters…\n";
