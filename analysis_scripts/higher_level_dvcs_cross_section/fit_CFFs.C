@@ -276,30 +276,30 @@ void fcn(int&, double*, double &f, double *par, int){
     }
 }
 
-int main(int argc, char** argv){
-    parse_args(argc,argv);
+int main(int argc, char** argv) {
+    parse_args(argc, argv);
 
     // timestamp
     time_t now = time(nullptr);
     char tb[32];
     strftime(tb, sizeof(tb), "%Y%m%d_%H%M%S", localtime(&now));
-    std::cout<<"\n=== Strategy="<<gStrategy
-             <<"  H="<<hasH<<" Ht="<<hasHt
-             <<"  E="<<hasE<<" Et="<<hasEt
-             <<"  constraint="<<gConstraint
-             <<"  input="<<gBsaFile
-             <<"  plot-fits="<<(gPlotBinFits?"ON":"OFF")
-             <<"  ts="<<tb<<" ===\n";
+    std::cout << "\n=== Strategy=" << gStrategy
+              << "  H=" << hasH << " Ht=" << hasHt
+              << "  E=" << hasE  << " Et=" << hasEt
+              << "  constraint=" << gConstraint
+              << "  input=" << gBsaFile
+              << "  plot-fits=" << (gPlotBinFits?"ON":"OFF")
+              << "  ts=" << tb << " ===\n";
 
     LoadData();
     BinBsaData();
-    std::cout<<" BSA bins="<<Nbins<<" (raw="<<bsaData.size()<<")\n";
-    std::cout<<" Reduced χ² per amp-fit = "<<reducedAmpChi2<<"\n\n";
+    std::cout << " BSA bins=" << Nbins << " (raw=" << bsaData.size() << ")\n";
+    std::cout << " Reduced χ² per amp-fit = " << reducedAmpChi2 << "\n\n";
 
-    if(gPlotBinFits){
+    if (gPlotBinFits) {
         gStyle->SetOptStat(0);
-        for(int ib=0; ib<Nbins; ++ib) PlotBinFit(ib,tb);
-        std::cout<<" Wrote plots to output/plots/binned_fits/\n\n";
+        for (int ib = 0; ib < Nbins; ++ib) PlotBinFit(ib, tb);
+        std::cout << " Wrote plots to output/plots/binned_fits/\n\n";
     }
 
     // ─── Stage 1: Im-fit ─────────────────────────────────────────────────────────
@@ -308,75 +308,69 @@ int main(int argc, char** argv){
     int nim = parNamesIm.size();
     std::vector<double> imVal(nim), imErr(nim);
     double chi2_im, edm, errdef;
-    int nv,nx,ic, ndf_im;
+    int nv, nx, ic, ndf_im;
     {
         TMinuit minu(nim);
         minu.SetPrintLevel(1);
         minu.SetFCN(fcn);
 
-        for(int i=0; i<nim; ++i){
+        for (int i = 0; i < nim; ++i) {
             const auto &nm = parNamesIm[i];
-            double init = 0.0, step = 0.01;
-            double lo = 0.0, hi = 0.0;
+            double step = 0.01;
 
-            if(nm.rfind("alpha0_",0)==0){
-                // fix alpha0 to its default
-                if      (nm=="alpha0_H" )  init = alpha0_H;
-                else if (nm=="alpha0_Ht")  init = alpha0_Ht;
-                else if (nm=="alpha0_E" )  init = alpha0_E;
-                else if (nm=="alpha0_Et")  init = alpha0_Et;
-                minu.DefineParameter(i, nm.c_str(), init, step, init, init);
+            // freeze alpha0_* at their model defaults
+            if (nm.rfind("alpha0_", 0) == 0) {
+                double fixed =
+                    (nm == "alpha0_H"  ? alpha0_H  :
+                     nm == "alpha0_Ht" ? alpha0_Ht :
+                     nm == "alpha0_E"  ? alpha0_E  :
+                                         alpha0_Et);
+                minu.DefineParameter(i, nm.c_str(), fixed, 0.0, fixed, fixed);
                 minu.FixParameter(i);
-            } else {
-                // these five groups float, all ≥ 0
-                if(nm.rfind("r_",0)==0 ||
-                   nm.rfind("alpha1_",0)==0 ||
-                   nm.rfind("b_",0)==0){
-                    lo = 0.0; hi = +1e6;
-                }
+            }
+            else {
+                // floating parameters: r_, alpha1_, b_, M2_, P_
+                double init = 0, lo = 0.0, hi = 1e6;
                 // M2 in [0,2]
-                if(nm.rfind("M2_",0)==0){
-                    lo = 0.0; hi = 2.0;
-                }
+                if (nm.rfind("M2_", 0) == 0)    hi = 2.0;
                 // P in [0,3]
-                if(nm.rfind("P_",0)==0){
-                    lo = 0.0; hi = 3.0;
-                }
-                // pick init from the defaults in DVCS_xsec.C
-                if      (nm=="r_H"     ) init = r_H;
-                else if (nm=="r_Ht"    ) init = r_Ht;
-                else if (nm=="r_E"     ) init = r_E;
-                else if (nm=="r_Et"    ) init = r_Et;
+                if (nm.rfind("P_", 0)  == 0)    hi = 3.0;
 
-                else if (nm=="alpha1_H" ) init = alpha1_H;
-                else if (nm=="alpha1_Ht") init = alpha1_Ht;
-                else if (nm=="alpha1_E" ) init = alpha1_E;
-                else if (nm=="alpha1_Et") init = alpha1_Et;
+                // set init from globals
+                if      (nm == "r_H")       init = r_H;
+                else if (nm == "r_Ht")      init = r_Ht;
+                else if (nm == "r_E")       init = r_E;
+                else if (nm == "r_Et")      init = r_Et;
 
-                else if (nm=="b_H"    ) init = b_H;
-                else if (nm=="b_Ht"   ) init = b_Ht;
-                else if (nm=="b_E"    ) init = b_E;
-                else if (nm=="b_Et"   ) init = b_Et;
+                else if (nm == "alpha1_H")  init = alpha1_H;
+                else if (nm == "alpha1_Ht") init = alpha1_Ht;
+                else if (nm == "alpha1_E")  init = alpha1_E;
+                else if (nm == "alpha1_Et") init = alpha1_Et;
 
-                else if (nm=="M2_H"   ) init = M2_H;
-                else if (nm=="M2_Ht"  ) init = M2_Ht;
-                else if (nm=="M2_E"   ) init = M2_E;
-                else if (nm=="M2_Et"  ) init = M2_Et;
+                else if (nm == "b_H")       init = b_H;
+                else if (nm == "b_Ht")      init = b_Ht;
+                else if (nm == "b_E")       init = b_E;
+                else if (nm == "b_Et")      init = b_Et;
 
-                else if (nm=="P_H"    ) init = P_H;
-                else if (nm=="P_Ht"   ) init = P_Ht;
-                else if (nm=="P_E"    ) init = P_E;
-                else if (nm=="P_Et"   ) init = P_Et;
+                else if (nm == "M2_H")      init = M2_H;
+                else if (nm == "M2_Ht")     init = M2_Ht;
+                else if (nm == "M2_E")      init = M2_E;
+                else if (nm == "M2_Et")     init = M2_Et;
+
+                else if (nm == "P_H")       init = P_H;
+                else if (nm == "P_Ht")      init = P_Ht;
+                else if (nm == "P_E")       init = P_E;
+                else if (nm == "P_Et")      init = P_Et;
 
                 minu.DefineParameter(i, nm.c_str(), init, step, lo, hi);
             }
         }
 
-        std::cout<<" Stage1: fitting Im-CFF parameters…\n";
+        std::cout << " Stage1: fitting Im-CFF parameters…\n";
         minu.Migrad();
         minu.Command("HESSE");
         minu.mnstat(chi2_im, edm, errdef, nv, nx, ic);
-        for(int i=0; i<nim; ++i){
+        for (int i = 0; i < nim; ++i) {
             minu.GetParameter(i, imVal[i], imErr[i]);
         }
         ndf_im = Nbins - nim;
@@ -384,24 +378,23 @@ int main(int argc, char** argv){
 
     // collect Stage1 results
     std::map<std::string,double> valMap, errMap;
-    for(int i=0; i<nim; ++i){
+    for (int i = 0; i < nim; ++i) {
         valMap[parNamesIm[i]] = imVal[i];
         errMap[parNamesIm[i]] = imErr[i];
     }
 
-    // ─── Stage 2: renormReal-fit ─────────────────────────────────────────────────
-    if(gStrategy==2){
+    // ─── Stage 2: RenormReal-fit ────────────────────────────────────────────────
+    if (gStrategy == 2) {
         gStage = 2;
         double chi2_re, edm2, errdef2;
-        int nv2,nx2,ic2,ndf_re;
+        int nv2, nx2, ic2, ndf_re;
         double reVal, reErr;
         {
             TMinuit m2(1);
             m2.SetPrintLevel(1);
             m2.SetFCN(fcn);
-            // define but don’t float
             m2.DefineParameter(0, "renormReal", renormReal, 0.01, -1e3, 1e3);
-            std::cout<<" Stage2: fitting renormReal...\n";
+            std::cout << " Stage2: fitting renormReal...\n";
             m2.Migrad();
             m2.Command("HESSE");
             m2.mnstat(chi2_re, edm2, errdef2, nv2, nx2, ic2);
@@ -416,12 +409,9 @@ int main(int argc, char** argv){
 
     // ─── Write out results ───────────────────────────────────────────────────────
     std::vector<std::string> outNames = parNamesIm;
-    if(gStrategy==2) outNames.push_back("renormReal");
-
+    if (gStrategy == 2) outNames.push_back("renormReal");
     system("mkdir -p output/fit_results");
-    std::string fname = "output/fit_results/fit_results_" + std::string(tb) + ".txt";
-    std::ofstream fout(fname);
-
+    std::ofstream fout(std::string("output/fit_results/fit_results_") + tb + ".txt");
     fout << "# fit_CFFs results\n"
          << "timestamp   " << tb << "\n"
          << "strategy    " << gStrategy << "\n"
@@ -430,22 +420,23 @@ int main(int argc, char** argv){
          << "H " << hasH << "  Ht " << hasHt
          << "  E " << hasE << "  Et " << hasEt << "\n"
          << "# parameters:";
-    for(auto &n: outNames) fout << " " << n;
+    for (auto &n : outNames) fout << " " << n;
     fout << "\n# values:\n";
-    for(auto &n: outNames) fout << valMap[n] << " ";
+    for (auto &n : outNames) fout << valMap[n] << " ";
     fout << "\n# errors:\n";
-    for(auto &n: outNames) fout << errMap[n] << " ";
+    for (auto &n : outNames) fout << errMap[n] << " ";
     fout << "\n# chi2 ndf chi2/ndf\n"
          << chi2_im << " " << ndf_im << " " << (chi2_im/ndf_im) << "\n";
     fout.close();
 
-    std::cout<<"\n--- Fit Results ---\n";
-    for(auto &n: outNames){
-        std::cout<<" "<<n<<" = "<<valMap[n]<<" ± "<<errMap[n]<<"\n";
+    std::cout << "\n--- Fit Results ---\n";
+    for (auto &n : outNames) {
+        std::cout << " " << n << " = " << valMap[n]
+                  << " ± " << errMap[n] << "\n";
     }
-    std::cout<<" χ²/ndf = "<<chi2_im<<"/"<<ndf_im
-             <<" = "<<(chi2_im/ndf_im)<<"\n";
-    std::cout<<" Reduced χ² per amp-fit = "<<reducedAmpChi2<<"\n";
+    std::cout << " χ²/ndf = " << chi2_im << "/" << ndf_im
+              << " = " << (chi2_im/ndf_im) << "\n";
+    std::cout << " Reduced χ² per amp-fit = " << reducedAmpChi2 << "\n";
 
     return 0;
 }
