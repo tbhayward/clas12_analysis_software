@@ -332,7 +332,7 @@ int main(int argc, char** argv) {
         else if(nm=="alpha0_Ht")  { init=alpha0_Ht; lo=0.0; hi=1.0; }
         else if(nm=="alpha1_Ht")  init=alpha1_Ht;
         else if(nm=="b_Ht")       init=b_Ht;
-        else if(nm=="M2_Ht")      { init=M2_Ht;  }
+        else if(nm=="M2_Ht")      { init=M2_Ht;  lo=0.0; hi=1.0; }
         else if(nm=="P_Ht")       { init=P_Ht;   }
         else if(nm=="r_E")        init=r_E;
         else if(nm=="alpha0_E")   { init=alpha0_E;  }
