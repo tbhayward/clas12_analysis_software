@@ -323,7 +323,7 @@ int main(int argc, char** argv) {
         auto &nm = parNamesIm[i];
         double init=0, lo=-1e3, hi=1e3, step=0.01;
         if(nm=="r_H")         init=r_H;
-        else if(nm=="alpha0_H"){ init=alpha0_H; }
+        else if(nm=="alpha0_H"){ init=alpha0_H; lo=0.0; hi=1.0; }
         else if(nm=="alpha1_H") init=alpha1_H;
         else if(nm=="b_H")      { init=b_H;  }
         else if(nm=="M2_H")     { init=M2_H;  }
@@ -345,7 +345,7 @@ int main(int argc, char** argv) {
         else if(nm=="alpha1_Et")  init=alpha1_Et;
         else if(nm=="b_Et")       init=b_Et;
         else if(nm=="M2_Et")      { init=M2_Et; }
-        else if(nm=="P_Et")       { init=P_Et;  }
+        else if(nm=="P_Et")       { init=P_Et; }
         minu.DefineParameter(i, nm.c_str(), init, step, lo, hi);
       }
       std::cout<<" Stage1: fitting Im-CFF parameters…\n";
