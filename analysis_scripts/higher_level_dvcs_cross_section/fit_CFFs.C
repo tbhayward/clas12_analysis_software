@@ -287,7 +287,7 @@ int main(int argc, char** argv) {
               << "  E=" << hasE  << " Et=" << hasEt
               << "  constraint=" << gConstraint
               << "  input=" << gBsaFile
-              << "  plot-fits=" << (gPlotBinFits?"ON":"OFF")
+              << "  plot-fits=" << (gPlotBinFits ? "ON" : "OFF")
               << "  ts=" << tb << " ===\n";
 
     LoadData();
@@ -313,38 +313,31 @@ int main(int argc, char** argv) {
         minu.SetPrintLevel(1);
         minu.SetFCN(fcn);
 
-        // ── define all Im–fit parameters, including alpha0_* as floats ─────────
+        // ── define all Im–fit parameters ─────────
         for (int i = 0; i < nim; ++i) {
             const auto &nm = parNamesIm[i];
             double step = 0.01;
-            double init = 0.0, lo = 0.0, hi = 1e6;
+            double init = 0.0, lo = -1e3, hi = 1e3;
 
-            // // GPD–H parameters
-            // if      (nm == "r_H")       { init = r_H;       lo = 0.5; hi = 2.5; }
-            // else if (nm == "alpha0_H")  { init = alpha0_H;  lo = 0.2; hi = 1.0; }
-            // else if (nm == "alpha1_H")  { init = alpha1_H;  lo = 0.5; hi = 2.5; }
-            // else if (nm == "b_H")       { init = b_H;       lo = 0.0; hi = 5.0; }
-            // else if (nm == "M2_H")      { init = M2_H;      lo = 0.0; hi = 2.0; }
-            // else if (nm == "P_H")       { init = P_H;       lo = 0.0; hi = 5.0; }
-            // GPD–H parameters (minimal model)
-            if      (nm == "r_H")       { init = r_H;       lo = -1e3; hi = 1e3; }
-            else if (nm == "alpha0_H")  { init = alpha0_H;  lo = -1e3; hi = 1e3; }
-            else if (nm == "alpha1_H")  { init = alpha1_H;  lo = -1e3; hi = 1e3; }
-            // GPD–Htilde parameters
+            if      (nm == "r_H")       init = r_H;
+            else if (nm == "alpha0_H")  init = alpha0_H;
+            else if (nm == "alpha1_H")  init = alpha1_H;
+            else if (nm == "b_H")       init = b_H;
+
             else if (nm == "r_Ht")      init = r_Ht;
             else if (nm == "alpha0_Ht") { init = alpha0_Ht; lo = 0.2; hi = 1.0; }
             else if (nm == "alpha1_Ht") init = alpha1_Ht;
             else if (nm == "b_Ht")      init = b_Ht;
             else if (nm == "M2_Ht")     { init = M2_Ht;    lo = 0.0; hi = 2.0; }
             else if (nm == "P_Ht")      { init = P_Ht;     lo = 0.0; hi = 5.0; }
-            // GPD–E parameters
+
             else if (nm == "r_E")       init = r_E;
             else if (nm == "alpha0_E")  { init = alpha0_E; lo = 0.2; hi = 1.0; }
             else if (nm == "alpha1_E")  init = alpha1_E;
             else if (nm == "b_E")       init = b_E;
             else if (nm == "M2_E")      { init = M2_E;     lo = 0.0; hi = 2.0; }
             else if (nm == "P_E")       { init = P_E;      lo = 0.0; hi = 5.0; }
-            // GPD–Etilde parameters
+
             else if (nm == "r_Et")      init = r_Et;
             else if (nm == "alpha0_Et") { init = alpha0_Et;lo = 0.2; hi = 1.0; }
             else if (nm == "alpha1_Et") init = alpha1_Et;
@@ -365,7 +358,6 @@ int main(int argc, char** argv) {
         ndf_im = Nbins - nim;
     }
 
-    // collect Stage1 results
     std::map<std::string,double> valMap, errMap;
     for (int i = 0; i < nim; ++i) {
         valMap[parNamesIm[i]] = imVal[i];
@@ -415,7 +407,7 @@ int main(int argc, char** argv) {
     fout << "\n# errors:\n";
     for (auto &n : outNames) fout << errMap[n] << " ";
     fout << "\n# chi2 ndf chi2/ndf\n"
-         << chi2_im << " " << ndf_im << " " << (chi2_im/ndf_im) << "\n";
+         << chi2_im << " " << ndf_im << " " << (chi2_im / ndf_im) << "\n";
     fout.close();
 
     std::cout << "\n--- Fit Results ---\n";
@@ -424,7 +416,7 @@ int main(int argc, char** argv) {
                   << " ± " << errMap[n] << "\n";
     }
     std::cout << " χ²/ndf = " << chi2_im << "/" << ndf_im
-              << " = " << (chi2_im/ndf_im) << "\n";
+              << " = " << (chi2_im / ndf_im) << "\n";
     std::cout << " Reduced χ² per amp-fit = " << reducedAmpChi2 << "\n";
 
     return 0;
