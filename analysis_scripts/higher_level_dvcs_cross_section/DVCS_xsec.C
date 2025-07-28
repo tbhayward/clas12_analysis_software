@@ -1293,6 +1293,7 @@ double alpha1_H  = 0.85;
 double b_H       = 0.4;    // now the single b–slope
 double M2_H      = 0.64;
 double P_H       = 1.0;
+double beta_H    = 0.0
 
 
 double GetImH(double xi, double t) {
@@ -1308,8 +1309,10 @@ double GetImH(double xi, double t) {
     // ─── t-dependence via exponential form factor ─────
     double tDep = TMath::Exp(b_H * t);
 
+    double skewTerm = TMath::Power((1.0 - xi) / (1.0 + xi), beta_H);
+
     // ─── Final ImH expression ──────────────────
-    return renormImag * prefactor * xiTerm * tDep;
+    return renormImag * prefactor * xiTerm * tDep * skewTerm;
 }
 
 

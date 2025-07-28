@@ -208,7 +208,7 @@ void build_par_list(){
     parNamesIm.clear();
     if(hasH )  parNamesIm.insert(parNamesIm.end(),
                // {"r_H","alpha0_H","alpha1_H","b_H","M2_H","P_H"});
-                {"r_H","alpha0_H","alpha1_H", "b_h"});
+                {"r_H","alpha0_H","alpha1_H", "b_h", "beta_h"});
     if(hasHt)  parNamesIm.insert(parNamesIm.end(),
                {"r_Ht","alpha0_Ht","alpha1_Ht","b_Ht","M2_Ht","P_Ht"});
     if(hasE )  parNamesIm.insert(parNamesIm.end(),
@@ -320,9 +320,10 @@ int main(int argc, char** argv) {
             double init = 0.0, lo = -1e3, hi = 1e3;
 
             if      (nm == "r_H")       init = r_H;
-            else if (nm == "alpha0_H")  { init = alpha0_H; step = 0.00;}
+            else if (nm == "alpha0_H")  { init = alpha0_H }
             else if (nm == "alpha1_H")  init = alpha1_H;
             else if (nm == "b_H")       init = b_H;
+            else if (nm == "beta_H")    init = beta_H;
 
             else if (nm == "r_Ht")      init = r_Ht;
             else if (nm == "alpha0_Ht") { init = alpha0_Ht; lo = 0.2; hi = 1.0; }
