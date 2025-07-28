@@ -1306,7 +1306,7 @@ double GetImH(double xi, double t) {
     double tFrac = 1/(1+A1*t/(1+A2*t));
     double xiFrac = 1/(1+B1*xi/(1+B2*xi));
 
-    return renormImag * pref * tSup * xiSup * tFrac * xiFrac;
+    return renormImag * prefactor * tSup * xiSup * tFrac * xiFrac;
 }
 
 // double GetImH(double xi, double t) {
