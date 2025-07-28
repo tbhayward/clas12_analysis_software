@@ -320,55 +320,53 @@ int main(int argc, char** argv){
             double lo = -1e6, hi = +1e6;
 
             // apply bounds only to alpha0, alpha1, b and M2:
-            if(nm.rfind("alpha0_",0)==0 ||
-               nm.rfind("alpha1_",0)==0 ||
+            if(nm.rfind("alpha0_",0)==0){
+                lo = 0.2;
+                hi = 0.7;
+            }
+            if(nm.rfind("alpha1_",0)==0 ||
                nm.rfind("b_",0)==0){
                 lo = 0.0;
             }
             if(nm.rfind("M2_",0)==0){
+                lo = 0.5;
+                hi = 1.5;
+            }
+            if(nm.rfind("P_",0)==0){
                 lo = 0.0;
-                hi = 2.0;
+                hi = 10;
             }
 
             // set initial value from global defaults:
             if      (nm=="r_H"      ) init = r_H;
-            // else if (nm=="alpha0_H" ) init = alpha0_H;
-            else if (nm=="alpha0_H"  ) { init = 0.0; lo = hi = 0.0; }
+            else if (nm=="alpha0_H" ) init = alpha0_H;
             else if (nm=="alpha1_H" ) init = alpha1_H;
             else if (nm=="b_H"      ) init = b_H;
             else if (nm=="M2_H"     ) init = M2_H;
             else if (nm=="P_H"      ) init = P_H;
 
             else if (nm=="r_Ht"     ) init = r_Ht;
-            // else if (nm=="alpha0_Ht") init = alpha0_Ht;
-            else if (nm=="alpha0_Ht"  ) { init = 0.0; lo = hi = 0.0; }
+            else if (nm=="alpha0_Ht") init = alpha0_Ht;
             else if (nm=="alpha1_Ht") init = alpha1_Ht;
             else if (nm=="b_Ht"     ) init = b_Ht;
             else if (nm=="M2_Ht"    ) init = M2_Ht;
             else if (nm=="P_Ht"     ) init = P_Ht;
 
             else if (nm=="r_E"      ) init = r_E;
-            // else if (nm=="alpha0_E" ) init = alpha0_E;
-            else if (nm=="alpha0_E"  ) { init = 0.0; lo = hi = 0.0; }
+            else if (nm=="alpha0_E" ) init = alpha0_E;
             else if (nm=="alpha1_E" ) init = alpha1_E;
             else if (nm=="b_E"      ) init = b_E;
             else if (nm=="M2_E"     ) init = M2_E;
             else if (nm=="P_E"      ) init = P_E;
 
             else if (nm=="r_Et"     ) init = r_Et;
-            // else if (nm=="alpha0_Et") init = alpha0_Et;
-            else if (nm=="alpha0_Et"  ) { init = 0.0; lo = hi = 0.0; }
+            else if (nm=="alpha0_Et") init = alpha0_Et;
             else if (nm=="alpha1_Et") init = alpha1_Et;
             else if (nm=="b_Et"     ) init = b_Et;
             else if (nm=="M2_Et"    ) init = M2_Et;
             else if (nm=="P_Et"     ) init = P_Et;
 
             minu.DefineParameter(i, nm.c_str(), init, step, lo, hi);
-            // if this is an alpha0, fix it at init
-            if(nm.rfind("alpha0_",0)==0){
-                minu.FixParameter(i);
-            }
-        }
 
         std::cout<<" Stage1: fitting Im-CFF parameters…\n";
         minu.Migrad();
