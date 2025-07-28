@@ -1290,23 +1290,17 @@ double r_H       = 0.9;
 double n_H       = 1.25;
 double alpha0_H  = 0.43;
 double alpha1_H  = 0.85;
-double beta0_H   = 0.4;   // replaces the old single b_H
-double beta1_H   = 0.0;   // new xi–dependent slope
+double b_H       = 0.4;    // now the single b–slope
 double M2_H      = 0.64;
 double P_H       = 1.0;
 
 double GetImH(double xi, double t) {
     if (!hasH) return 0.0;
-    // build exponents
     double aExp  = alpha0_H + alpha1_H * t;
-    double bExp  = beta0_H  + beta1_H  * xi;
-    // prefactor
+    double bExp  = b_H;
     double pref  = (n_H * r_H) / (1.0 + xi);
-    // xi–dependence
     double term1 = TMath::Power(2*xi/(1+xi), -aExp);
-    // (1–xi)(1+xi)–dependence
     double term2 = TMath::Power((1 - xi)*(1 + xi), bExp);
-    // t–dependence
     double term3 = TMath::Power(1 - ((1 - xi)/(1 + xi))*t/M2_H, -P_H);
     return renormImag * pref * term1 * term2 * term3;
 }
@@ -1318,15 +1312,14 @@ double r_Ht      = 7.0;
 double n_Ht      = 0.6;
 double alpha0_Ht = 0.43;
 double alpha1_Ht = 0.85;
-double beta0_Ht  = 2.0;   // replaces b_Ht
-double beta1_Ht  = 0.0;
+double b_Ht      = 2.0;    // single b–slope
 double M2_Ht     = 0.8;
 double P_Ht      = 1.0;
 
 double GetImHt(double xi, double t) {
     if (!hasHt) return 0.0;
     double aExp  = alpha0_Ht + alpha1_Ht * t;
-    double bExp  = beta0_Ht  + beta1_Ht  * xi;
+    double bExp  = b_Ht;
     double pref  = (n_Ht * r_Ht) / (1.0 + xi);
     double term1 = TMath::Power(2*xi/(1+xi), -aExp);
     double term2 = TMath::Power((1 - xi)*(1 + xi), bExp);
@@ -1341,15 +1334,14 @@ double r_E       = 0.9;
 double n_E       = 1.25;
 double alpha0_E  = 0.43;
 double alpha1_E  = 0.85;
-double beta0_E   = 0.4;
-double beta1_E   = 0.0;
+double b_E       = 0.4;
 double M2_E      = 0.64;
 double P_E       = 1.0;
 
 double GetImE(double xi, double t) {
     if (!hasE) return 0.0;
     double aExp  = alpha0_E + alpha1_E * t;
-    double bExp  = beta0_E  + beta1_E  * xi;
+    double bExp  = b_E;
     double pref  = (n_E * r_E) / (1.0 + xi);
     double term1 = TMath::Power(2*xi/(1+xi), -aExp);
     double term2 = TMath::Power((1 - xi)*(1 + xi), bExp);
@@ -1364,15 +1356,14 @@ double r_Et      = 1.0;
 double n_Et      = 0.6;
 double alpha0_Et = 0.0;
 double alpha1_Et = 0.0;
-double beta0_Et  = 0.0;
-double beta1_Et  = 0.0;
+double b_Et      = 0.0;
 double M2_Et     = 0.0;
 double P_Et      = 0.0;
 
 double GetImEt(double xi, double t) {
     if (!hasEt) return 0.0;
     double aExp  = alpha0_Et + alpha1_Et * t;
-    double bExp  = beta0_Et  + beta1_Et  * xi;
+    double bExp  = b_Et;
     double pref  = (n_Et * r_Et) / (1.0 + xi);
     double term1 = TMath::Power(2*xi/(1+xi), -aExp);
     double term2 = TMath::Power((1 - xi)*(1 + xi), bExp);
