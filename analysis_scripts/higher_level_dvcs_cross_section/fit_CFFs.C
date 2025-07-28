@@ -45,14 +45,15 @@ extern bool   hasH, hasHt, hasE, hasEt;
 extern double renormImag, renormReal;
 
 // ----------------------------------------------------------------------------
-// GPD–H parameters (live in DVCS_xsec.C; referenced here)
+// GPD–H defaults
+// (these live in DVCS_xsec.C as globals; we just reference them here)
 extern double r_H;
+extern double n_H;
 extern double alpha0_H;
 extern double alpha1_H;
-extern double beta_H;
-extern double B0_H;
-extern double B1_H;
-extern double pQ_H;
+extern double b_H;
+extern double M2_H;
+extern double P_H;
 
 // GPD–Htilde
 extern double r_Ht;
@@ -207,60 +208,51 @@ void BinBsaData(){
 static std::vector<std::string> parNamesIm;
 void build_par_list(){
     parNamesIm.clear();
-    if(hasH){
-        parNamesIm.insert(parNamesIm.end(),
-          {"r_H","alpha0_H","alpha1_H","beta_H","B0_H","B1_H","pQ_H"});
-    }
-    if(hasHt){
-        parNamesIm.insert(parNamesIm.end(),
-          {"r_Ht","alpha0_Ht","alpha1_Ht","b_Ht","M2_Ht","P_Ht"});
-    }
-    if(hasE){
-        parNamesIm.insert(parNamesIm.end(),
-          {"r_E","alpha0_E","alpha1_E","b_E","M2_E","P_E"});
-    }
-    if(hasEt){
-        parNamesIm.insert(parNamesIm.end(),
-          {"r_Et","alpha0_Et","alpha1_Et","b_Et","M2_Et","P_Et"});
-    }
+    if(hasH )  parNamesIm.insert(parNamesIm.end(),
+               {"r_H","alpha0_H","alpha1_H","b_H","M2_H","P_H"});
+    if(hasHt)  parNamesIm.insert(parNamesIm.end(),
+               {"r_Ht","alpha0_Ht","alpha1_Ht","b_Ht","M2_Ht","P_Ht"});
+    if(hasE )  parNamesIm.insert(parNamesIm.end(),
+               {"r_E","alpha0_E","alpha1_E","b_E","M2_E","P_E"});
+    if(hasEt)  parNamesIm.insert(parNamesIm.end(),
+               {"r_Et","alpha0_Et","alpha1_Et","b_Et","M2_Et","P_Et"});
 }
 
 // χ² function for Im-fit and RenormReal-fit
 void fcn(int&, double*, double &f, double *par, int){
     int ip=0;
     if(gStage==1){
-        if(hasH){
-            r_H       = par[ip++];
-            alpha0_H  = par[ip++];
-            alpha1_H  = par[ip++];
-            beta_H    = par[ip++];
-            B0_H      = par[ip++];
-            B1_H      = par[ip++];
-            pQ_H      = par[ip++];
+        if(hasH ){
+          r_H       = par[ip++];
+          alpha0_H  = par[ip++];
+          alpha1_H  = par[ip++];
+          b_H       = par[ip++];
+          M2_H      = par[ip++];
+          P_H       = par[ip++];
         }
         if(hasHt){
-            r_Ht      = par[ip++];
-            alpha0_Ht = par[ip++];
-            alpha1_Ht = par[ip++];
-            b_Ht      = par[ip++];
-            M2_Ht     = par[ip++];
-            P_Ht      = par[ip++];
+          r_Ht      = par[ip++];
+          alpha0_Ht = par[ip++];
+          alpha1_Ht = par[ip++];
+          b_Ht      = par[ip++];
+          M2_Ht     = par[ip++];
+          P_Ht      = par[ip++];
         }
-        if(hasE){
-            r_E       = par[ip++];
-            alpha0_E  = par[ip++];
-            alpha1_E  = par[ip++];
-            b_E       = par[ip++];
-            M2_E      = par[ip++];
-            P_E       = par[ip++];
+        if(hasE ){
+          r_E       = par[ip++];
+          alpha0_E  = par[ip++];
+          alpha1_E  = par[ip++];
+          b_E       = par[ip++];
+          M2_E      = par[ip++];
+          P_E       = par[ip++];
         }
         if(hasEt){
-            r_Et      = par[ip++];
-            alpha0_Et = par[ip++];
-            alpha1_Et = par[ip++];
-            b_Et      = par[ip++];
-            M2_Et     = par[ip++];
-            P_Et      = par[ip++];
+          r_Et      = par[ip++];
+          alpha0_Et = par[ip++];
+          alpha1_Et = par[ip++];
+          b_Et      = par[ip++];
+          M2_Et     = par[ip++];
+          P_Et      = par[ip++];
         }
         double chi2=0;
         for(int k=0;k<Nbins;++k){
@@ -324,26 +316,54 @@ int main(int argc, char** argv) {
 
         for (int i = 0; i < nim; ++i) {
             const auto &nm = parNamesIm[i];
-            double init = 0, lo = 0, hi = 1e6, step = 0.01;
+            double step = 0.01;
 
-            // H-specific bounds
-            if      (nm == "r_H")      { init = r_H;      lo = 0.5;   hi = 2.5;   }
-            else if (nm == "alpha0_H") { init = alpha0_H; lo = 0.2;   hi = 1.0;   }
-            else if (nm == "alpha1_H") { init = alpha1_H; lo = 0.5;   hi = 2.5;   }
-            else if (nm == "beta_H")   { init = beta_H;   lo = 0.0;   hi = 5.0;   }
-            else if (nm == "B0_H")     { init = B0_H;     lo = 3.0;   hi = 12.0;  }
-            else if (nm == "B1_H")     { init = B1_H;     lo = -10.0; hi = 10.0;  }
-            else if (nm == "pQ_H")     { init = pQ_H;     lo = 0.0;   hi = 2.0;   }
-            // fallback for Ht, E, Et (original bounds)
-            else {
-                if      (nm.rfind("r_",0)==0)        init = (nm=="r_Ht"?r_Ht:(nm=="r_E"?r_E:r_Et));
-                else if (nm.rfind("alpha1_",0)==0)  init = (nm=="alpha1_Ht"?alpha1_Ht:(nm=="alpha1_E"?alpha1_E:alpha1_Et));
-                else if (nm.rfind("b_",0)==0)       init = (nm=="b_Ht"?b_Ht:(nm=="b_E"?b_E:b_Et));
-                else if (nm.rfind("M2_",0)==0)      init = (nm=="M2_Ht"?M2_Ht:(nm=="M2_E"?M2_E:M2_Et)), hi=2.0;
-                else if (nm.rfind("P_",0)==0)       init = (nm=="P_Ht"?P_Ht:(nm=="P_E"?P_E:P_Et)), hi=3.0;
+            // freeze alpha0_* at their model defaults
+            if (nm.rfind("alpha0_", 0) == 0) {
+                double fixed =
+                    (nm == "alpha0_H"  ? alpha0_H  :
+                     nm == "alpha0_Ht" ? alpha0_Ht :
+                     nm == "alpha0_E"  ? alpha0_E  :
+                                         alpha0_Et);
+                minu.DefineParameter(i, nm.c_str(), fixed, 0.0, fixed, fixed);
+                minu.FixParameter(i);
             }
+            else {
+                // floating parameters: r_, alpha1_, b_, M2_, P_
+                double init = 0, lo = 0.0, hi = 1e6;
+                // M2 in [0,2]
+                if (nm.rfind("M2_", 0) == 0)    hi = 2.0;
+                // P in [0,3]
+                if (nm.rfind("P_", 0)  == 0)    hi = 3.0;
 
-            minu.DefineParameter(i, nm.c_str(), init, step, lo, hi);
+                // set init from globals
+                if      (nm == "r_H")       init = r_H;
+                else if (nm == "r_Ht")      init = r_Ht;
+                else if (nm == "r_E")       init = r_E;
+                else if (nm == "r_Et")      init = r_Et;
+
+                else if (nm == "alpha1_H")  init = alpha1_H;
+                else if (nm == "alpha1_Ht") init = alpha1_Ht;
+                else if (nm == "alpha1_E")  init = alpha1_E;
+                else if (nm == "alpha1_Et") init = alpha1_Et;
+
+                else if (nm == "b_H")       init = b_H;
+                else if (nm == "b_Ht")      init = b_Ht;
+                else if (nm == "b_E")       init = b_E;
+                else if (nm == "b_Et")      init = b_Et;
+
+                else if (nm == "M2_H")      init = M2_H;
+                else if (nm == "M2_Ht")     init = M2_Ht;
+                else if (nm == "M2_E")      init = M2_E;
+                else if (nm == "M2_Et")     init = M2_Et;
+
+                else if (nm == "P_H")       init = P_H;
+                else if (nm == "P_Ht")      init = P_Ht;
+                else if (nm == "P_E")       init = P_E;
+                else if (nm == "P_Et")      init = P_Et;
+
+                minu.DefineParameter(i, nm.c_str(), init, step, lo, hi);
+            }
         }
 
         std::cout << " Stage1: fitting Im-CFF parameters…\n";
@@ -420,7 +440,6 @@ int main(int argc, char** argv) {
 
     return 0;
 }
-
 
 // ──────────────────────────────────────────────────────────────────────────────
 // ──────────────────────────────────────────────────────────────────────────────

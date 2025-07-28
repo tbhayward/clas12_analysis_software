@@ -25,8 +25,7 @@ double GetGEP(double tau);
 
 // Forward declarations for Compton Form Factors (CFFs)
 // Imaginary parts
-double GetImH_base(double xi, double t);
-double GetImH(double xi, double t, double Q2);
+double GetImH(double xi, double t);
 double GetImHt(double xi, double t);
 double GetImE(double xi, double t);
 double GetImEt(double xi, double t);
@@ -246,7 +245,7 @@ void BMK_DVCS::setSecondaryVars()
     FF_comb3 = F1 + t*F2/(4*M*M);
 
     // --- Compton form factors (CFFs)
-    ImH  = GetImH(xi, t, Q2);
+    ImH  = GetImH(xi, t);
     ImHt = GetImHt(xi, t);
     ImE  = GetImE(xi, t);
     ImEt = GetImEt(xi, t);
@@ -1286,50 +1285,16 @@ double renormReal = 1.0;
 
 // -----------------------------------------------------------------------------
 
+// GPD–H
 double r_H       = 0.9;
 double n_H       = 1.25;
 double alpha0_H  = 0.43;
 double alpha1_H  = 0.85;
-double beta_H;
-double B0_H;
-double B1_H;
-double Q0sq;
-double pQ_H;
-double GetImH(double xi, double t, double Q2) {
-    if (!hasH) return 0.0;
-
-    // ─── Regge exponent α(t) = α0 + α1 * t ───────────────
-    double aExp = alpha0_H + alpha1_H * t;
-
-    // ─── Skewness suppression: exp(-β * ξ / (1 - ξ)) ──────
-    double skewFactor = TMath::Exp(-beta_H * xi / (1.0 - xi));
-
-    // ─── t-dependence: exp(B(ξ) * t), B(ξ) = B0 + B1 * ξ ──
-    double B_xi = B0_H + B1_H * xi;
-    double tFactor = TMath::Exp(B_xi * t);
-
-    // ─── Q²-dependence: (Q₀² / (Q² + Q₀²))^p_Q ─────────────
-    double Q0sq = 1.0; // GeV²
-    double Q2Factor = TMath::Power(Q0sq / (Q0sq + Q2), pQ_H);
-
-    // ─── Normalization and ξ-term ────────────────────────
-    double prefactor = renormImag * (n_H * r_H) / (1.0 + xi);
-    double xiTerm = TMath::Power((2.0 * xi) / (1.0 + xi), -aExp);
-
-    // ─── Final expression for ImH(ξ, t, Q²) ───────────────
-    return prefactor * xiTerm * skewFactor * tFactor * Q2Factor;
-}
-
-// GPD–H
-// double r_H       = 0.9;
-// double n_H       = 1.25;
-// double alpha0_H  = 0.43;
-// double alpha1_H  = 0.85;
 double b_H       = 0.4;    // now the single b–slope
 double M2_H      = 0.64;
 double P_H       = 1.0;
 
-double GetImH_base(double xi, double t) {
+double GetImH(double xi, double t) {
     if (!hasH) return 0.0;
     double aExp  = alpha0_H + alpha1_H * t;
     double bExp  = b_H;
