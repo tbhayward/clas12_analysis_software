@@ -2,6 +2,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import os
 from matplotlib.backends.backend_pdf import PdfPages
+from matplotlib.ticker import MaxNLocator
 
 # Create output directory
 os.makedirs('output/plots', exist_ok=True)
@@ -35,118 +36,126 @@ print(f"xi range: {xi.min():.4f} - {xi.max():.4f}")
 print(f"Q² range: {Q2.min():.4f} - {Q2.max():.4f} GeV²")
 print(f"-t range: {t_minus.min():.4f} - {t_minus.max():.4f} GeV²")
 
-# Define bin ranges based on data distribution
-xi_bins = [(0.04, 0.11), (0.11, 0.22), (0.22, 0.45)]
-Q2_bins = [(1.0, 1.8), (1.8, 2.5), (2.5, 8.0)]
-t_bins = [(0.14, 0.25), (0.25, 0.45), (0.45, 1.2), (1.2, 3.0)]
+# Define 5 bins for each variable based on data distribution
+xi_edges = np.percentile(xi, [0, 20, 40, 60, 80, 100])
+Q2_edges = np.percentile(Q2, [0, 20, 40, 60, 80, 100])
+t_edges = np.percentile(t_minus, [0, 20, 40, 60, 80, 100])
 
-# Function to create subplots for each bin combination
-def create_subplots(x_var, y_var, fixed_var1_bins, fixed_var2_bins, 
-                   x_label, fixed_var1_name, fixed_var2_name, title):
-    # Count total data points that will be plotted
+# Create bin ranges from edges
+xi_bins = [(xi_edges[i], xi_edges[i+1]) for i in range(5)]
+Q2_bins = [(Q2_edges[i], Q2_edges[i+1]) for i in range(5)]
+t_bins = [(t_edges[i], t_edges[i+1]) for i in range(5)]
+
+# Print bin definitions for verification
+print("\nξ bins:")
+for i, bin in enumerate(xi_bins):
+    print(f"Bin {i+1}: {bin[0]:.4f} - {bin[1]:.4f}")
+    
+print("\nQ² bins:")
+for i, bin in enumerate(Q2_bins):
+    print(f"Bin {i+1}: {bin[0]:.4f} - {bin[1]:.4f} GeV²")
+    
+print("\n-t bins:")
+for i, bin in enumerate(t_bins):
+    print(f"Bin {i+1}: {bin[0]:.4f} - {bin[1]:.4f} GeV²")
+
+# Function to create 5x5 subplot grid
+def create_5x5_grid(x_var, y_var, row_bins, col_bins, 
+                   x_label, row_label, col_label, title):
+    fig, axs = plt.subplots(5, 5, figsize=(25, 20), 
+                           sharey=True, squeeze=True)
+    fig.subplots_adjust(hspace=0.3, wspace=0.2)
+    fig.suptitle(title, fontsize=24, y=0.98)
+    
+    # Plot data in each subplot
     total_points = 0
-    
-    # Calculate how many subplots we need (only bins with data)
-    valid_subplots = []
-    for i, bin1 in enumerate(fixed_var1_bins):
-        for j, bin2 in enumerate(fixed_var2_bins):
-            # Create mask for current bins
-            if fixed_var1_name == "Q² (GeV²)":
-                mask = (Q2 >= bin1[0]) & (Q2 < bin1[1]) & (t_minus >= bin2[0]) & (t_minus < bin2[1])
-            elif fixed_var1_name == "ξ":
-                mask = (xi >= bin1[0]) & (xi < bin1[1]) & (Q2 >= bin2[0]) & (Q2 < bin2[1])
-            else:  # -t
-                mask = (t_minus >= bin1[0]) & (t_minus < bin1[1]) & (xi >= bin2[0]) & (xi < bin2[1])
+    for i in range(5):
+        for j in range(5):
+            ax = axs[i, j]
             
-            if np.sum(mask) > 0:
-                valid_subplots.append((i, j, bin1, bin2, mask))
-                total_points += np.sum(mask)
-    
-    # Create figure with appropriate grid
-    rows = len(fixed_var1_bins)
-    cols = len(fixed_var2_bins)
-    fig, axs = plt.subplots(rows, cols, figsize=(4*cols, 4*rows), 
-                           sharey=True, squeeze=False)
-    fig.subplots_adjust(hspace=0.25, wspace=0.15)
-    fig.suptitle(title, fontsize=16, y=0.98)
-    
-    # Plot data in valid subplots
-    for i, j, bin1, bin2, mask in valid_subplots:
-        ax = axs[i, j]
-        x_vals = x_var[mask]
-        y_vals = y_var[mask]
-        y_err = sigma[mask]
-        
-        # Plot with error bars
-        ax.errorbar(x_vals, y_vals, yerr=y_err, fmt='o', color='b', 
-                   ms=6, capsize=4, alpha=0.8)
-        
-        # Add bin information and count
-        bin1_label = f"{fixed_var1_name}: {bin1[0]:.2f}-{bin1[1]:.2f}"
-        bin2_label = f"{fixed_var2_name}: {bin2[0]:.2f}-{bin2[1]:.2f}"
-        count_label = f"N = {len(x_vals)}"
-        ax.text(0.05, 0.95, bin1_label, transform=ax.transAxes, 
-               fontsize=10, va='top')
-        ax.text(0.05, 0.88, bin2_label, transform=ax.transAxes, 
-               fontsize=10, va='top')
-        ax.text(0.95, 0.95, count_label, transform=ax.transAxes, 
-               fontsize=10, ha='right', va='top')
-        
-        ax.grid(True, linestyle='--', alpha=0.5)
-        ax.set_xlabel(x_label, fontsize=12)
-        if j == 0:
-            ax.set_ylabel('$A_{LU}$', fontsize=12)
-    
-    # Hide empty subplots
-    for i in range(rows):
-        for j in range(cols):
-            if (i, j) not in [(idx[0], idx[1]) for idx in valid_subplots]:
-                axs[i, j].axis('off')
+            # Create mask for current bins
+            if row_label == "Q² (GeV²)":
+                row_mask = (Q2 >= row_bins[i][0]) & (Q2 < row_bins[i][1])
+                col_mask = (t_minus >= col_bins[j][0]) & (t_minus < col_bins[j][1])
+            elif row_label == "ξ":
+                row_mask = (xi >= row_bins[i][0]) & (xi < row_bins[i][1])
+                col_mask = (Q2 >= col_bins[j][0]) & (Q2 < col_bins[j][1])
+            else:  # -t
+                row_mask = (t_minus >= row_bins[i][0]) & (t_minus < row_bins[i][1])
+                col_mask = (xi >= col_bins[j][0]) & (xi < col_bins[j][1])
+                
+            mask = row_mask & col_mask
+            
+            # Plot data if available
+            if np.any(mask):
+                x_vals = x_var[mask]
+                y_vals = y_var[mask]
+                y_err = sigma[mask]
+                
+                # Plot with error bars
+                ax.errorbar(x_vals, y_vals, yerr=y_err, fmt='o', color='blue', 
+                           ms=8, capsize=5, alpha=0.8, markeredgecolor='black')
+                
+                # Add bin information
+                bin_info = (f"{row_label}: {row_bins[i][0]:.3f}-{row_bins[i][1]:.3f}\n"
+                            f"{col_label}: {col_bins[j][0]:.3f}-{col_bins[j][1]:.3f}\n"
+                            f"N = {len(x_vals)}")
+                ax.text(0.05, 0.95, bin_info, transform=ax.transAxes, 
+                       fontsize=12, va='top', bbox=dict(facecolor='white', alpha=0.8))
+                
+                total_points += len(x_vals)
+            
+            # Configure axes
+            ax.grid(True, linestyle='--', alpha=0.5)
+            ax.set_xlabel(x_label, fontsize=14)
+            ax.xaxis.set_major_locator(MaxNLocator(5))
+            if j == 0:
+                ax.set_ylabel('$A_{LU}$', fontsize=14)
     
     print(f"Plotted {total_points} points for {title}")
     return fig
 
 # Create PDF for ξ dependence
-with PdfPages('output/plots/xi_dependence.pdf') as pdf:
-    fig = create_subplots(
+with PdfPages('output/plots/xi_dependence_5x5.pdf') as pdf:
+    fig = create_5x5_grid(
         x_var=xi, 
         y_var=Amp,
-        fixed_var1_bins=Q2_bins,
-        fixed_var2_bins=t_bins,
+        row_bins=Q2_bins,
+        col_bins=t_bins,
         x_label="ξ",
-        fixed_var1_name="Q² (GeV²)",
-        fixed_var2_name="-t (GeV²)",
-        title="Beam Spin Asymmetry vs ξ"
+        row_label="Q² (GeV²)",
+        col_label="-t (GeV²)",
+        title="Beam Spin Asymmetry vs ξ (Grouped by Q² and -t)"
     )
     pdf.savefig(fig, bbox_inches='tight')
     plt.close(fig)
 
 # Create PDF for -t dependence
-with PdfPages('output/plots/t_dependence.pdf') as pdf:
-    fig = create_subplots(
+with PdfPages('output/plots/t_dependence_5x5.pdf') as pdf:
+    fig = create_5x5_grid(
         x_var=t_minus, 
         y_var=Amp,
-        fixed_var1_bins=xi_bins,
-        fixed_var2_bins=Q2_bins,
+        row_bins=xi_bins,
+        col_bins=Q2_bins,
         x_label="$-t$ (GeV$^{2}$)",
-        fixed_var1_name="ξ",
-        fixed_var2_name="Q² (GeV²)",
-        title="Beam Spin Asymmetry vs $-t$"
+        row_label="ξ",
+        col_label="Q² (GeV²)",
+        title="Beam Spin Asymmetry vs $-t$ (Grouped by ξ and Q²)"
     )
     pdf.savefig(fig, bbox_inches='tight')
     plt.close(fig)
 
 # Create PDF for Q² dependence
-with PdfPages('output/plots/Q2_dependence.pdf') as pdf:
-    fig = create_subplots(
+with PdfPages('output/plots/Q2_dependence_5x5.pdf') as pdf:
+    fig = create_5x5_grid(
         x_var=Q2, 
         y_var=Amp,
-        fixed_var1_bins=xi_bins,
-        fixed_var2_bins=t_bins,
+        row_bins=xi_bins,
+        col_bins=t_bins,
         x_label="$Q^{2}$ (GeV$^{2}$)",
-        fixed_var1_name="ξ",
-        fixed_var2_name="-t (GeV²)",
-        title="Beam Spin Asymmetry vs $Q^{2}$"
+        row_label="ξ",
+        col_label="-t (GeV²)",
+        title="Beam Spin Asymmetry vs $Q^{2}$ (Grouped by ξ and -t)"
     )
     pdf.savefig(fig, bbox_inches='tight')
     plt.close(fig)
