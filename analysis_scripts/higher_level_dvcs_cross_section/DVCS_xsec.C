@@ -1305,6 +1305,16 @@ double GetImH(double xi, double t) {
     return renormImag * pref * term1 * term2 * term3;
 }
 
+// double GetImH(double xi, double t) {
+//     if (!hasH) return 0.0;
+//     double aExp  = alpha0_H + alpha1_H * t;
+//     double pref  = (n_H * r_H) / (1.0 + xi);
+//     double term1 = TMath::Power((2.0 * xi) / (1.0 + xi), -aExp);
+//     double skewFactor = TMath::Exp(-b_H * xi / (1.0 - xi));
+//     double term3 = TMath::Power(1 - ((1 - xi) / (1 + xi)) * t / M2_H, -P_H);
+//     return renormImag * pref * term1 * skewFactor * term3;
+// }
+
 // -----------------------------------------------------------------------------
 
 // GPD–Htilde
