@@ -210,8 +210,8 @@ void build_par_list(){
     parNamesIm.clear();
     if(hasH )  parNamesIm.insert(parNamesIm.end(),
                // {"r_H","alpha0_H","alpha1_H","b_H","M2_H","P_H"});
-                {"r_H","alpha0_H","alpha1_H","b_H","beta_H"});
-                // {"r_H","A0", "A1", "A2", "B0", "B1", "B2"});
+                // {"r_H","alpha0_H","alpha1_H","b_H","beta_H"});
+                {"r_H","A0", "A1", "A2", "B0", "B1", "B2"});
     if(hasHt)  parNamesIm.insert(parNamesIm.end(),
                {"r_Ht","alpha0_Ht","alpha1_Ht","b_Ht","M2_Ht","P_Ht"});
     if(hasE )  parNamesIm.insert(parNamesIm.end(),
@@ -224,22 +224,22 @@ void build_par_list(){
 void fcn(int&, double*, double &f, double *par, int){
     int ip=0;
     if(gStage==1){
-        if(hasH ){
-          r_H       = par[ip++];
-          alpha0_H  = par[ip++];
-          alpha1_H  = par[ip++];
-          b_H       = par[ip++];
-          beta_H       = par[ip++];
-        }
-        // if (gStage==1 && hasH) {
-        //   r_H  = par[ip++];
-        //   A0   = par[ip++];
-        //   A1   = par[ip++];
-        //   A2   = par[ip++];
-        //   B0   = par[ip++];
-        //   B1   = par[ip++];
-        //   B2   = par[ip++];
+        // if(hasH ){
+        //   r_H       = par[ip++];
+        //   alpha0_H  = par[ip++];
+        //   alpha1_H  = par[ip++];
+        //   b_H       = par[ip++];
+        //   beta_H       = par[ip++];
         // }
+        if (hasH) {
+          r_H  = par[ip++];
+          A0   = par[ip++];
+          A1   = par[ip++];
+          A2   = par[ip++];
+          B0   = par[ip++];
+          B1   = par[ip++];
+          B2   = par[ip++];
+        }
         if(hasHt){
           r_Ht      = par[ip++];
           alpha0_Ht = par[ip++];
@@ -336,12 +336,12 @@ int main(int argc, char** argv) {
             else if (nm == "b_H")       { init = b_H; lo = 0.0; }
             else if (nm == "beta_H")    { init = beta_H;  }
 
-            // else if (nm == "A0")    { init = A0;  }
-            // else if (nm == "A1")    { init = A1;  }
-            // else if (nm == "A2")    { init = A2;  }
-            // else if (nm == "B0")    { init = B0;  }
-            // else if (nm == "B1")    { init = B1;  }
-            // else if (nm == "B2")    { init = B2;  }
+            else if (nm == "A0")    { init = A0;  }
+            else if (nm == "A1")    { init = A1;  }
+            else if (nm == "A2")    { init = A2;  }
+            else if (nm == "B0")    { init = B0;  }
+            else if (nm == "B1")    { init = B1;  }
+            else if (nm == "B2")    { init = B2;  }
 
             else if (nm == "r_Ht")      init = r_Ht;
             else if (nm == "alpha0_Ht") { init = alpha0_Ht; lo = 0.2; hi = 1.0; }
