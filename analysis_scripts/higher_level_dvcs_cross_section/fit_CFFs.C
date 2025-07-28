@@ -319,55 +319,61 @@ int main(int argc, char** argv){
             double init = 0, step = 0.01;
             double lo = -1e6, hi = +1e6;
 
-            // apply bounds only to alpha0, alpha1, b and M2:
-            if(nm.rfind("alpha0_",0)==0){
-                lo = 0.2;
-                hi = 0.7;
-            }
-            if(nm.rfind("alpha1_",0)==0 ||
-               nm.rfind("b_",0)==0){
-                lo = 0.0;
-            }
-            if(nm.rfind("M2_",0)==0){
-                lo = 0.5;
-                hi = 1.5;
-            }
-            if(nm.rfind("P_",0)==0){
-                lo = 0.0;
-                hi = 10;
+            // fix alpha0 at its model default
+            if(nm.rfind("alpha0_", 0) == 0){
+                if      (nm=="alpha0_H")  init = alpha0_H;
+                else if (nm=="alpha0_Ht") init = alpha0_Ht;
+                else if (nm=="alpha0_E")  init = alpha0_E;
+                else if (nm=="alpha0_Et") init = alpha0_Et;
+                minu.DefineParameter(i, nm.c_str(), init, step, init, init);
+                minu.FixParameter(i);
+                continue;
             }
 
-            // set initial value from global defaults:
+            // all other CFF parameters must be ≥ 0
+            if(nm.rfind("r_",0)==0 ||
+               nm.rfind("alpha1_",0)==0 ||
+               nm.rfind("b_",0)==0) {
+                lo = 0.0;
+            }
+            // M2 between 0 and 2
+            if(nm.rfind("M2_",0)==0){
+                lo = 0.0;
+                hi = 2.0;
+            }
+            // P between 0 and 3
+            if(nm.rfind("P_",0)==0){
+                lo = 0.0;
+                hi = 3.0;
+            }
+
+            // set initial value from the global defaults
             if      (nm=="r_H"      ) init = r_H;
-            else if (nm=="alpha0_H" ) init = alpha0_H;
             else if (nm=="alpha1_H" ) init = alpha1_H;
             else if (nm=="b_H"      ) init = b_H;
             else if (nm=="M2_H"     ) init = M2_H;
             else if (nm=="P_H"      ) init = P_H;
 
             else if (nm=="r_Ht"     ) init = r_Ht;
-            else if (nm=="alpha0_Ht") init = alpha0_Ht;
             else if (nm=="alpha1_Ht") init = alpha1_Ht;
             else if (nm=="b_Ht"     ) init = b_Ht;
             else if (nm=="M2_Ht"    ) init = M2_Ht;
             else if (nm=="P_Ht"     ) init = P_Ht;
 
             else if (nm=="r_E"      ) init = r_E;
-            else if (nm=="alpha0_E" ) init = alpha0_E;
             else if (nm=="alpha1_E" ) init = alpha1_E;
             else if (nm=="b_E"      ) init = b_E;
             else if (nm=="M2_E"     ) init = M2_E;
             else if (nm=="P_E"      ) init = P_E;
 
             else if (nm=="r_Et"     ) init = r_Et;
-            else if (nm=="alpha0_Et") init = alpha0_Et;
             else if (nm=="alpha1_Et") init = alpha1_Et;
             else if (nm=="b_Et"     ) init = b_Et;
             else if (nm=="M2_Et"    ) init = M2_Et;
             else if (nm=="P_Et"     ) init = P_Et;
 
             minu.DefineParameter(i, nm.c_str(), init, step, lo, hi);
-        }
+        }  // end for
 
         std::cout<<" Stage1: fitting Im-CFF parameters…\n";
         minu.Migrad();
@@ -397,7 +403,7 @@ int main(int argc, char** argv){
             TMinuit m2(1);
             m2.SetPrintLevel(1);
             m2.SetFCN(fcn);
-            // renormReal fixed at 1 — still define but will not be floated
+            // still define but not float
             m2.DefineParameter(0, "renormReal", renormReal, 0.01, -1e3, 1e3);
             std::cout<<" Stage2: fitting renormReal...\n";
             m2.Migrad();
@@ -409,7 +415,6 @@ int main(int argc, char** argv){
 
         valMap["renormReal"] = reVal;
         errMap["renormReal"] = reErr;
-
         chi2_im = chi2_re;
         ndf_im  = ndf_re;
     }
