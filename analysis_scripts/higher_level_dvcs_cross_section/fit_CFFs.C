@@ -332,28 +332,32 @@ int main(int argc, char** argv){
 
             // set initial value from global defaults:
             if      (nm=="r_H"      ) init = r_H;
-            else if (nm=="alpha0_H" ) init = alpha0_H;
+            // else if (nm=="alpha0_H" ) init = alpha0_H;
+            else if (nm=="alpha0_H"  ) { init = 0.0; lo = hi = 0.0; }
             else if (nm=="alpha1_H" ) init = alpha1_H;
             else if (nm=="b_H"      ) init = b_H;
             else if (nm=="M2_H"     ) init = M2_H;
             else if (nm=="P_H"      ) init = P_H;
 
             else if (nm=="r_Ht"     ) init = r_Ht;
-            else if (nm=="alpha0_Ht") init = alpha0_Ht;
+            // else if (nm=="alpha0_Ht") init = alpha0_Ht;
+            else if (nm=="alpha0_Ht"  ) { init = 0.0; lo = hi = 0.0; }
             else if (nm=="alpha1_Ht") init = alpha1_Ht;
             else if (nm=="b_Ht"     ) init = b_Ht;
             else if (nm=="M2_Ht"    ) init = M2_Ht;
             else if (nm=="P_Ht"     ) init = P_Ht;
 
             else if (nm=="r_E"      ) init = r_E;
-            else if (nm=="alpha0_E" ) init = alpha0_E;
+            // else if (nm=="alpha0_E" ) init = alpha0_E;
+            else if (nm=="alpha0_E"  ) { init = 0.0; lo = hi = 0.0; }
             else if (nm=="alpha1_E" ) init = alpha1_E;
             else if (nm=="b_E"      ) init = b_E;
             else if (nm=="M2_E"     ) init = M2_E;
             else if (nm=="P_E"      ) init = P_E;
 
             else if (nm=="r_Et"     ) init = r_Et;
-            else if (nm=="alpha0_Et") init = alpha0_Et;
+            // else if (nm=="alpha0_Et") init = alpha0_Et;
+            else if (nm=="alpha0_Et"  ) { init = 0.0; lo = hi = 0.0; }
             else if (nm=="alpha1_Et") init = alpha1_Et;
             else if (nm=="b_Et"     ) init = b_Et;
             else if (nm=="M2_Et"    ) init = M2_Et;
