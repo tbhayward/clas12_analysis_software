@@ -208,7 +208,7 @@ void build_par_list(){
     parNamesIm.clear();
     if(hasH )  parNamesIm.insert(parNamesIm.end(),
                // {"r_H","alpha0_H","alpha1_H","b_H","M2_H","P_H"});
-                {"r_H","alpha0_H","alpha1_H"});
+                {"r_H","alpha0_H","alpha1_H", "b_h"});
     if(hasHt)  parNamesIm.insert(parNamesIm.end(),
                {"r_Ht","alpha0_Ht","alpha1_Ht","b_Ht","M2_Ht","P_Ht"});
     if(hasE )  parNamesIm.insert(parNamesIm.end(),
