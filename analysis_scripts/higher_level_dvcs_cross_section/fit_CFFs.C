@@ -360,6 +360,10 @@ int main(int argc, char** argv){
             else if (nm=="P_Et"     ) init = P_Et;
 
             minu.DefineParameter(i, nm.c_str(), init, step, lo, hi);
+            // if this is an alpha0, fix it at init
+            if(nm.rfind("alpha0_",0)==0){
+                minu.FixParameter(i);
+            }
         }
 
         std::cout<<" Stage1: fitting Im-CFF parameters…\n";
