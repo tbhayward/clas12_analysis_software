@@ -1295,38 +1295,38 @@ double M2_H      = 0.64;
 double P_H       = 1.0;
 double beta_H    = 0.0;
 
-double A0 = 1; double A1 = 1; double A2 = 1; 
-double B0 = 1; double B1 = 1; double B2 = 1;
-double GetImH(double xi, double t) {
-    double prefactor = (n_H * r_H);
-
-    double tSup = TMath::Exp(-A0*t);
-    double xiSup = TMath::Exp(-B0*xi);
-
-    double tFrac = 1/(1+A1*t/(1+A2*t));
-    double xiFrac = 1/(1+B1*xi/(1+B2*xi));
-
-    return renormImag * prefactor * tSup * xiSup * tFrac * xiFrac;
-}
-
+// double A0 = 1; double A1 = 1; double A2 = 1; 
+// double B0 = 1; double B1 = 1; double B2 = 1;
 // double GetImH(double xi, double t) {
-//     if (!hasH) return 0.0;
+//     double prefactor = (n_H * r_H);
 
-//     // ─── Regge exponent α(t) = α0 + α1 * t ─────
-//     double aExp = alpha0_H + alpha1_H * t;
+//     double tSup = TMath::Exp(-A0*t);
+//     double xiSup = TMath::Exp(-B0*xi);
 
-//     // ─── Normalization and ξ dependence ────────
-//     double prefactor = (n_H * r_H) / (1.0 + xi);
-//     double xiTerm    = TMath::Power((2.0 * xi) / (1.0 + xi), -aExp);
+//     double tFrac = 1/(1+A1*t/(1+A2*t));
+//     double xiFrac = 1/(1+B1*xi/(1+B2*xi));
 
-//     // ─── t-dependence via exponential form factor ─────
-//     double tDep = TMath::Exp(-b_H * t);
-
-//     double skewTerm = TMath::Power((1.0 - xi) / (1.0 + xi), beta_H);
-
-//     // ─── Final ImH expression ──────────────────
-//     return renormImag * prefactor * xiTerm * tDep * skewTerm;
+//     return renormImag * prefactor * tSup * xiSup * tFrac * xiFrac;
 // }
+
+double GetImH(double xi, double t) {
+    if (!hasH) return 0.0;
+
+    // ─── Regge exponent α(t) = α0 + α1 * t ─────
+    double aExp = alpha0_H + alpha1_H * t;
+
+    // ─── Normalization and ξ dependence ────────
+    double prefactor = (n_H * r_H) / (1.0 + xi);
+    double xiTerm    = TMath::Power((2.0 * xi) / (1.0 + xi), -aExp);
+
+    // ─── t-dependence via exponential form factor ─────
+    double tDep = TMath::Exp(-b_H * t);
+
+    double skewTerm = TMath::Power((1.0 - xi) / (1.0 + xi), beta_H);
+
+    // ─── Final ImH expression ──────────────────
+    return renormImag * prefactor * xiTerm * tDep * skewTerm;
+}
 
 
 // double GetImH(double xi, double t) {

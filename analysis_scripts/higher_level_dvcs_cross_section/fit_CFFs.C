@@ -210,7 +210,8 @@ void build_par_list(){
     parNamesIm.clear();
     if(hasH )  parNamesIm.insert(parNamesIm.end(),
                // {"r_H","alpha0_H","alpha1_H","b_H","M2_H","P_H"});
-                {"r_H","A0", "A1", "A2", "B0", "B1", "B2"});
+                {"r_H","alpha0_H","alpha1_H","b_H","beta_H","P_H"});
+                // {"r_H","A0", "A1", "A2", "B0", "B1", "B2"});
     if(hasHt)  parNamesIm.insert(parNamesIm.end(),
                {"r_Ht","alpha0_Ht","alpha1_Ht","b_Ht","M2_Ht","P_Ht"});
     if(hasE )  parNamesIm.insert(parNamesIm.end(),
@@ -228,9 +229,17 @@ void fcn(int&, double*, double &f, double *par, int){
           alpha0_H  = par[ip++];
           alpha1_H  = par[ip++];
           b_H       = par[ip++];
-          M2_H      = par[ip++];
-          P_H       = par[ip++];
+          beta_H       = par[ip++];
         }
+        // if (gStage==1 && hasH) {
+        //   r_H  = par[ip++];
+        //   A0   = par[ip++];
+        //   A1   = par[ip++];
+        //   A2   = par[ip++];
+        //   B0   = par[ip++];
+        //   B1   = par[ip++];
+        //   B2   = par[ip++];
+        // }
         if(hasHt){
           r_Ht      = par[ip++];
           alpha0_Ht = par[ip++];
