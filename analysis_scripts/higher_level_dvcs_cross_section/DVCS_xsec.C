@@ -1293,7 +1293,7 @@ double alpha1_H  = 0.85;
 double b_H       = 0.4;    // now the single b–slope
 double M2_H      = 0.64;
 double P_H       = 1.0;
-double beta_H    = 0.0
+double beta_H    = 0.0;
 
 
 double GetImH(double xi, double t) {
