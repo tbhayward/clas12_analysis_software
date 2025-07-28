@@ -1295,6 +1295,12 @@ double M2_H      = 0.64;
 double P_H       = 1.0;
 double beta_H    = 0.0;
 
+// double GetImH(double xi, double t) {
+//     double prefactor = (n_H * r_H);
+
+//     double tSup = TMath::Exp(-t0*t);
+//     double xiSup = TMath::Exp(-xi0*xi);
+// }
 
 double GetImH(double xi, double t) {
     if (!hasH) return 0.0;
@@ -1307,7 +1313,7 @@ double GetImH(double xi, double t) {
     double xiTerm    = TMath::Power((2.0 * xi) / (1.0 + xi), -aExp);
 
     // ─── t-dependence via exponential form factor ─────
-    double tDep = TMath::Exp(b_H * t);
+    double tDep = TMath::Exp(-b_H * t);
 
     double skewTerm = TMath::Power((1.0 - xi) / (1.0 + xi), beta_H);
 
