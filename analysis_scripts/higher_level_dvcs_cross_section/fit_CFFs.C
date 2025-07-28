@@ -207,7 +207,8 @@ static std::vector<std::string> parNamesIm;
 void build_par_list(){
     parNamesIm.clear();
     if(hasH )  parNamesIm.insert(parNamesIm.end(),
-               {"r_H","alpha0_H","alpha1_H","b_H","M2_H","P_H"});
+               // {"r_H","alpha0_H","alpha1_H","b_H","M2_H","P_H"});
+                {"r_H","alpha0_H","alpha1_H"});
     if(hasHt)  parNamesIm.insert(parNamesIm.end(),
                {"r_Ht","alpha0_Ht","alpha1_Ht","b_Ht","M2_Ht","P_Ht"});
     if(hasE )  parNamesIm.insert(parNamesIm.end(),
@@ -318,13 +319,17 @@ int main(int argc, char** argv) {
             double step = 0.01;
             double init = 0.0, lo = 0.0, hi = 1e6;
 
-            // GPD–H parameters
+            // // GPD–H parameters
+            // if      (nm == "r_H")       { init = r_H;       lo = 0.5; hi = 2.5; }
+            // else if (nm == "alpha0_H")  { init = alpha0_H;  lo = 0.2; hi = 1.0; }
+            // else if (nm == "alpha1_H")  { init = alpha1_H;  lo = 0.5; hi = 2.5; }
+            // else if (nm == "b_H")       { init = b_H;       lo = 0.0; hi = 5.0; }
+            // else if (nm == "M2_H")      { init = M2_H;      lo = 0.0; hi = 2.0; }
+            // else if (nm == "P_H")       { init = P_H;       lo = 0.0; hi = 5.0; }
+            // GPD–H parameters (minimal model)
             if      (nm == "r_H")       { init = r_H;       lo = 0.5; hi = 2.5; }
             else if (nm == "alpha0_H")  { init = alpha0_H;  lo = 0.2; hi = 1.0; }
             else if (nm == "alpha1_H")  { init = alpha1_H;  lo = 0.5; hi = 2.5; }
-            else if (nm == "b_H")       { init = b_H;       lo = 0.0; hi = 5.0; }
-            else if (nm == "M2_H")      { init = M2_H;      lo = 0.0; hi = 2.0; }
-            else if (nm == "P_H")       { init = P_H;       lo = 0.0; hi = 5.0; }
             // GPD–Htilde parameters
             else if (nm == "r_Ht")      init = r_Ht;
             else if (nm == "alpha0_Ht") { init = alpha0_Ht; lo = 0.2; hi = 1.0; }
