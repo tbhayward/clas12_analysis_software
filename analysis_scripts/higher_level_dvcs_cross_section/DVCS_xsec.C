@@ -1294,19 +1294,6 @@ double b_H       = 0.4;
 double M2_H      = 0.64;
 double P_H       = 1.0;
 
-// double GetImH(double xi, double t) {
-//     if (!hasH) return 0.0;
-//     double xBjorken = 2*xi/(1+xi);
-//     double aExp  = alpha0_H + alpha1_H * t;
-//     double bExp  = b_H;
-//     double pref  = (n_H * r_H) / (1.0 + xBjorken);
-//     double term1 = TMath::Power(2*xBjorken/(1+xBjorken), -aExp);
-//     double term2 = TMath::Power((1 - xBjorken)*(1 + xBjorken), bExp);
-//     double term3 = TMath::Power(1 - ((1 - xBjorken)/(1 + xBjorken))*t/M2_H, -P_H);
-//     return renormImag * pref * term1 * term2 * term3;
-// }
-
-
 
 double GetImH(double xi, double t) {
     if (!hasH) return 0.0;

@@ -50,7 +50,7 @@ extern double renormImag, renormReal;
 
 // ----------------------------------------------------------------------------
 // GPD–H defaults (in DVCS_xsec.C)
-extern double r_H,   n_H,   alpha0_H,   alpha1_H,   b_H,   beta_H,   M2_H,   P_H;
+extern double r_H,   n_H,   alpha0_H,   alpha1_H,   b_H,   M2_H,   P_H;
 // GPD–Htilde
 extern double r_Ht,  n_Ht,  alpha0_Ht,  alpha1_Ht,  b_Ht,  M2_Ht,  P_Ht;
 // GPD–E
@@ -128,6 +128,7 @@ void LoadData(){
             std::istringstream iss(line);
             DataPoint d; iss>>d.phi>>d.Q2>>d.xB>>d.t>>d.Eb>>d.A>>d.sigA;
             if(gConstraint>=1 && (-d.t/d.Q2)>=0.2) continue;
+            if(gConstraint>=1 && (-d.t)>=1) continue;
             v.push_back(d);
         }
     };
