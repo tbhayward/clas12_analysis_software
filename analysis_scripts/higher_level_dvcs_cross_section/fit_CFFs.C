@@ -50,13 +50,13 @@ extern double renormImag, renormReal;
 
 // ----------------------------------------------------------------------------
 // GPD–H defaults (in DVCS_xsec.C)
-extern double r_H, n_H, alpha0_H, alpha1_H, b_H, beta_H, M2_H, P_H;
+extern double r_H,   n_H,   alpha0_H,   alpha1_H,   b_H,   beta_H,   M2_H,   P_H;
 // GPD–Htilde
-extern double r_Ht, n_Ht, alpha0_Ht, alpha1_Ht, b_Ht, M2_Ht, P_Ht;
+extern double r_Ht,  n_Ht,  alpha0_Ht,  alpha1_Ht,  b_Ht,  M2_Ht,  P_Ht;
 // GPD–E
-extern double r_E, n_E, alpha0_E, alpha1_E, b_E, M2_E, P_E;
+extern double r_E,   n_E,   alpha0_E,   alpha1_E,   b_E,   M2_E,   P_E;
 // GPD–Etilde
-extern double r_Et, n_Et, alpha0_Et, alpha1_Et, b_Et, M2_Et, P_Et;
+extern double r_Et,  n_Et,  alpha0_Et,  alpha1_Et,  b_Et,  M2_Et,  P_Et;
 
 // control flags
 static int   gStrategy    = 0;
@@ -150,7 +150,8 @@ void BinBsaData(){
         start = i;
         int M = pts.size();
         if(M<2) continue;
-        // compute A, dA, chi2
+
+        // fit sin(phi) → A_bin
         double SwA=0, Sw2=0;
         for(auto &d: pts){
             double s = std::sin(d.phi*TMath::Pi()/180.);
@@ -159,6 +160,8 @@ void BinBsaData(){
             Sw2+= w*s*s;
         }
         double A_bin=SwA/Sw2, dA_bin=1./std::sqrt(Sw2);
+
+        // chi2
         double chi2=0;
         for(auto &d: pts){
             double s = std::sin(d.phi*TMath::Pi()/180.);
@@ -166,13 +169,15 @@ void BinBsaData(){
             chi2 += diff*diff/(d.sigA*d.sigA);
         }
         double redchi2 = chi2 / (M-1);
-        // drop this bin if constraint==2 and redχ²≥1.25
+        // drop bin if requested
         if(gConstraint==2 && redchi2>=1.25) continue;
+
         // store
         bin_M.push_back(M);
         bin_A.push_back(A_bin);
         bin_dA.push_back(dA_bin);
         bin_chi2.push_back(chi2);
+
         double sumw=0, Sx=0, Sq=0, St=0, Se=0;
         for(auto &d: pts){
             double w = 1./(d.sigA*d.sigA);
@@ -279,7 +284,19 @@ int main(int argc, char** argv) {
 
     LoadData();
     BinBsaData();
-    std::cout<<" BSA bins="<<Nbins<<" (raw="<<bsaData.size()<<")\n"
+
+    // — print out binned points before fitting —
+    std::cout<<"Data points entering Im-fit:\n";
+    for(int k=0; k<Nbins; ++k){
+      std::cout<<" Point "<<(k+1)
+               <<", xB="<<bin_xB[k]
+               <<", Q2="<<bin_Q2[k]
+               <<", -t="<<-bin_t[k]
+               <<", Amp="<<bin_A[k]
+               <<"\n";
+    }
+    std::cout<<"\n BSA bins="<<Nbins
+             <<" (raw="<<bsaData.size()<<")\n"
              <<" Reduced χ² per amp-fit = "<<reducedAmpChi2<<"\n\n";
 
     if(gPlotBinFits){
@@ -288,7 +305,7 @@ int main(int argc, char** argv) {
       std::cout<<" Wrote plots to output/plots/binned_fits/\n\n";
     }
 
-    // ─── Stage 1: Im‐fit
+    // ─── Stage 1: Im-fit ─────────────────────────────────────────────────────────
     gStage = 1;
     build_par_list();
     int nim = parNamesIm.size();
@@ -299,37 +316,37 @@ int main(int argc, char** argv) {
       TMinuit minu(nim);
       minu.SetPrintLevel(1);
       minu.SetFCN(fcn);
-      // define & initial‐guess each Im parameter
+      // define & initial-guess each Im parameter
       for(int i=0;i<nim;++i){
         auto &nm = parNamesIm[i];
         double init=0, lo=-1e3, hi=1e3, step=0.01;
-        if(nm=="r_H")       init=r_H;
-        else if(nm=="alpha0_H") init=alpha0_H, lo=0.0, hi=2.0;
+        if(nm=="r_H")         init=r_H;
+        else if(nm=="alpha0_H"){ init=alpha0_H; lo=0.0; hi=2.0; }
         else if(nm=="alpha1_H") init=alpha1_H;
-        else if(nm=="b_H")      init=b_H, lo=0;
-        else if(nm=="M2_H")     init=M2_H, lo=0, hi=2;
-        else if(nm=="P_H")      init=P_H, lo=0, hi=5, step = 0;
+        else if(nm=="b_H")      { init=b_H; lo=0.0; }
+        else if(nm=="M2_H")     { init=M2_H; lo=0.0; hi=2.0; }
+        else if(nm=="P_H")      { init=P_H;  lo=0.0; hi=5.0; }
         else if(nm=="r_Ht")       init=r_Ht;
-        else if(nm=="alpha0_Ht")  init=alpha0_Ht;
+        else if(nm=="alpha0_Ht")  { init=alpha0_Ht; lo=0.0; hi=2.0; }
         else if(nm=="alpha1_Ht")  init=alpha1_Ht;
         else if(nm=="b_Ht")       init=b_Ht;
-        else if(nm=="M2_Ht")      init=M2_Ht, lo=0, hi=2;
-        else if(nm=="P_Ht")       init=P_Ht, lo=0, hi=5;
+        else if(nm=="M2_Ht")      { init=M2_Ht; lo=0.0; hi=2.0; }
+        else if(nm=="P_Ht")       { init=P_Ht;  lo=0.0; hi=5.0; }
         else if(nm=="r_E")        init=r_E;
-        else if(nm=="alpha0_E")   init=alpha0_E;
+        else if(nm=="alpha0_E")   { init=alpha0_E; lo=0.0; hi=2.0; }
         else if(nm=="alpha1_E")   init=alpha1_E;
         else if(nm=="b_E")        init=b_E;
-        else if(nm=="M2_E")       init=M2_E, lo=0, hi=2;
-        else if(nm=="P_E")        init=P_E, lo=0, hi=5;
+        else if(nm=="M2_E")       { init=M2_E; lo=0.0; hi=2.0; }
+        else if(nm=="P_E")        { init=P_E;  lo=0.0; hi=5.0; }
         else if(nm=="r_Et")       init=r_Et;
-        else if(nm=="alpha0_Et")  init=alpha0_Et;
+        else if(nm=="alpha0_Et")  { init=alpha0_Et; lo=0.0; hi=2.0; }
         else if(nm=="alpha1_Et")  init=alpha1_Et;
         else if(nm=="b_Et")       init=b_Et;
-        else if(nm=="M2_Et")      init=M2_Et, lo=0, hi=2;
-        else if(nm=="P_Et")       init=P_Et, lo=0, hi=5;
+        else if(nm=="M2_Et")      { init=M2_Et; lo=0.0; hi=2.0; }
+        else if(nm=="P_Et")       { init=P_Et;  lo=0.0; hi=5.0; }
         minu.DefineParameter(i, nm.c_str(), init, step, lo, hi);
       }
-      std::cout<<" Stage1: fitting Im‐CFF parameters…\n";
+      std::cout<<" Stage1: fitting Im-CFF parameters…\n";
       minu.Migrad();
       minu.Command("HESSE");
       minu.mnstat(chi2_im,edm,errdef,nv,nx,ic);
@@ -344,7 +361,7 @@ int main(int argc, char** argv) {
       errMap[parNamesIm[i]] = imErr[i];
     }
 
-    // ─── Stage 2: renormReal
+    // ─── Stage 2: renormReal ─────────────────────────────────────────────────────
     if(gStrategy==2){
       gStage=2;
       double chi2_re, edm2, errdef2;
