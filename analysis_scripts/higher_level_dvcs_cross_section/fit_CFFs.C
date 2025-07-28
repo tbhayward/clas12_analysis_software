@@ -418,7 +418,8 @@ int main(int argc, char** argv){
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
-// helper: plot the phi-distribution and fit it to A sinφ/(1+B cosφ)
+// ──────────────────────────────────────────────────────────────────────────────
+// helper: plot the phi-distribution and fit it to C + A sinφ/(1+B cosφ)
 void PlotBinFit(int ibin, const std::string &ts) {
     if (!gPlotBinFits) return;
 
@@ -458,9 +459,16 @@ void PlotBinFit(int ibin, const std::string &ts) {
     f1->SetParameter(0, 0.0);               // C initial
     f1->SetParameter(1, bin_A[ibin]);       // A initial
     f1->SetParameter(2, 0.0);               // B initial
+    // **constrain A and B**
+    f1->SetParLimits(1, -1.0, 1.0);
+    f1->SetParLimits(2, -1.0, 1.0);
     f1->SetLineColor(kRed);
     f1->SetLineWidth(2);
     gr->Fit(f1, "RQN");
+
+    // get chi2 and ndf
+    double chi2 = f1->GetChisquare();
+    double ndf  = f1->GetNDF();
 
     // canvas + frame
     TCanvas *c = new TCanvas(Form("c_bin%d", ibin), "", 600, 500);
@@ -493,6 +501,10 @@ void PlotBinFit(int ibin, const std::string &ts) {
     leg->AddEntry(f1,
         Form("B = %.3f ± %.3f", f1->GetParameter(2), f1->GetParError(2)),
         "l");
+    // **add chi2/ndf text**
+    leg->AddEntry((TObject*)0,
+        Form("#chi^{2}/ndf = %.2f", chi2/ndf),
+        "");
     leg->Draw();
 
     // save with timestamp format
