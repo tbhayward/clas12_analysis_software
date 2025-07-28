@@ -317,7 +317,7 @@ int main(int argc,char**argv){
             if(nm.rfind("alpha0_",0)==0 ||
                nm.rfind("alpha1_",0)==0 ||
                nm.rfind("b_",0)==0) lo=0.0;
-            if(nm.rfind("M2_",0)==0) hi=2.0;
+            if(nm.rfind("M2_",0)==0) lo=0.5; hi=1.5;
             if(nm.rfind("P_",0)==0)  hi=3.0;
             // pick default init from globals:
             if      (nm=="r_H"     ) init = r_H;
