@@ -293,6 +293,7 @@ int main(int argc, char** argv) {
                <<", Q2="<<bin_Q2[k]
                <<", -t="<<-bin_t[k]
                <<", Amp="<<bin_A[k]
+               <<", sigma="<<bin_dA[k]
                <<"\n";
     }
     std::cout<<"\n BSA bins="<<Nbins
