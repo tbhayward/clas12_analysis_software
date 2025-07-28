@@ -493,13 +493,13 @@ void PlotBinFit(int ibin, const std::string &ts) {
     leg->SetFillColor(0);
     leg->AddEntry(gr, "data", "p");
     leg->AddEntry(f1,
-        Form("C = %.3f ± %.3f", f1->GetParameter(0), f1->GetParError(0)),
+        Form("C = %.3f +/- %.3f", f1->GetParameter(0), f1->GetParError(0)),
         "l");
     leg->AddEntry(f1,
-        Form("A = %.3f ± %.3f", f1->GetParameter(1), f1->GetParError(1)),
+        Form("A = %.3f +/- %.3f", f1->GetParameter(1), f1->GetParError(1)),
         "l");
     leg->AddEntry(f1,
-        Form("B = %.3f ± %.3f", f1->GetParameter(2), f1->GetParError(2)),
+        Form("B = %.3f +/- %.3f", f1->GetParameter(2), f1->GetParError(2)),
         "l");
     // **add chi2/ndf text**
     leg->AddEntry((TObject*)0,
@@ -516,4 +516,4 @@ void PlotBinFit(int ibin, const std::string &ts) {
     delete c;
     delete gr;
     delete f1;
-}
+} 
