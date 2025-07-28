@@ -326,8 +326,8 @@ int main(int argc, char** argv){
                 lo = 0.0;
             }
             if(nm.rfind("M2_",0)==0){
-                lo = 0.5;
-                hi = 1.5;
+                lo = 0.0;
+                hi = 2.0;
             }
 
             // set initial value from global defaults:
