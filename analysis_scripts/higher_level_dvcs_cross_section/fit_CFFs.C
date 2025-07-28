@@ -425,17 +425,17 @@ void PlotBinFit(int ibin, const std::string &ts) {
     // regroup raw points into φ-bins
     std::vector<std::vector<DataPoint>> bins;
     size_t start = 0;
-    for(size_t i=1; i<=bsaData.size(); ++i){
-        bool newbin = (i==bsaData.size() || bsaData[i].phi < bsaData[i-1].phi);
-        if(newbin){
-            bins.emplace_back(bsaData.begin()+start, bsaData.begin()+i);
+    for (size_t i = 1; i <= bsaData.size(); ++i) {
+        bool newbin = (i == bsaData.size() || bsaData[i].phi < bsaData[i-1].phi);
+        if (newbin) {
+            bins.emplace_back(bsaData.begin() + start, bsaData.begin() + i);
             start = i;
         }
     }
-    if(ibin<0||ibin>=int(bins.size())) return;
+    if (ibin < 0 || ibin >= int(bins.size())) return;
     auto &dp = bins[ibin];
     int n = dp.size();
-    if(n<2) return;
+    if (n < 2) return;
 
     // ensure directory
     system("mkdir -p output/plots/binned_fits");
@@ -445,58 +445,57 @@ void PlotBinFit(int ibin, const std::string &ts) {
 
     // graph
     TGraphErrors *gr = new TGraphErrors(n);
-    for(int i=0;i<n;++i){
+    for (int i = 0; i < n; ++i) {
         gr->SetPoint(i, dp[i].phi, dp[i].A);
         gr->SetPointError(i, 0.0, dp[i].sigA);
     }
     gr->SetMarkerStyle(20);
 
-    // fit
-    TF1 *f1 = new TF1(Form("f_bin%d",ibin),
-        "[0]*sin(x*TMath::Pi()/180)/(1+[1]*cos(x*TMath::Pi()/180))",
-        0,360);
-    f1->SetParameter(0, bin_A[ibin]);
-    f1->SetParameter(1, 0.);
+    // fit with offset C + A sinφ/(1+B cosφ)
+    TF1 *f1 = new TF1(Form("f_bin%d", ibin),
+        "[0] + [1]*sin(x*TMath::Pi()/180)/(1+[2]*cos(x*TMath::Pi()/180))",
+        0, 360);
+    f1->SetParameter(0, 0.0);               // C initial
+    f1->SetParameter(1, bin_A[ibin]);       // A initial
+    f1->SetParameter(2, 0.0);               // B initial
     f1->SetLineColor(kRed);
     f1->SetLineWidth(2);
     gr->Fit(f1, "RQN");
 
     // canvas + frame
-    TCanvas *c = new TCanvas(Form("c_bin%d",ibin),"",600,500);
-    TH1F *frame = new TH1F(Form("frame%d",ibin),"",360,0,360);
+    TCanvas *c = new TCanvas(Form("c_bin%d", ibin), "", 600, 500);
+    TH1F *frame = new TH1F(Form("frame%d", ibin), "", 360, 0, 360);
     frame->SetMinimum(-0.6);
-    frame->SetMaximum( 0.6);
+    frame->SetMaximum(0.6);
     frame->GetXaxis()->SetTitle("#phi (deg)");
     frame->GetYaxis()->SetTitle("A_{LU}");
     frame->Draw("AXIS");
-    frame->GetXaxis()->SetLimits(0,360);
-    frame->GetXaxis()->SetRangeUser(0,360);
+    frame->GetXaxis()->SetLimits(0, 360);
+    frame->GetXaxis()->SetRangeUser(0, 360);
     gPad->Modified(); gPad->Update();
 
     // draw points + fit
     gr->Draw("P same");
     f1->Draw("L same");
 
-    // **legend WITH box**
-    TLegend *leg = new TLegend(0.60,0.75,0.90,0.90);
-    leg->SetBorderSize(1);      // **box on**
-    leg->SetFillStyle(1001);    // white fill
+    // legend
+    TLegend *leg = new TLegend(0.60, 0.75, 0.90, 0.90);
+    leg->SetBorderSize(1);
+    leg->SetFillStyle(1001);
     leg->SetFillColor(0);
     leg->AddEntry(gr, "data", "p");
-    double chi2 = f1->GetChisquare(), ndf = f1->GetNDF();
     leg->AddEntry(f1,
-    Form("A = %.3f +/- %.3f",
-         f1->GetParameter(0),
-         f1->GetParError(0)),
-    "l");
+        Form("C = %.3f ± %.3f", f1->GetParameter(0), f1->GetParError(0)),
+        "l");
     leg->AddEntry(f1,
-    Form("B = %.3f +/- %.3f",
-         f1->GetParameter(1),
-         f1->GetParError(1)),
-    "l");
+        Form("A = %.3f ± %.3f", f1->GetParameter(1), f1->GetParError(1)),
+        "l");
+    leg->AddEntry(f1,
+        Form("B = %.3f ± %.3f", f1->GetParameter(2), f1->GetParError(2)),
+        "l");
     leg->Draw();
 
-    // save with same timestamp format
+    // save with timestamp format
     c->SaveAs(Form("output/plots/binned_fits/BinFit_%s_bin%d.pdf", ts.c_str(), ibin));
 
     // cleanup
