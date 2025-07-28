@@ -45,8 +45,7 @@ extern bool   hasH, hasHt, hasE, hasEt;
 extern double renormImag, renormReal;
 
 // ----------------------------------------------------------------------------
-// GPD–H defaults
-// (these live in DVCS_xsec.C as globals; we just reference them here)
+// GPD–H defaults (in DVCS_xsec.C)
 extern double r_H;
 extern double n_H;
 extern double alpha0_H;
@@ -93,7 +92,6 @@ static const char* gXsFile  = "imports/rga_pass1_xsec_2018.txt";
 // raw data + binned observables
 struct DataPoint { double phi,Q2,xB,t,Eb,A,sigA; };
 static std::vector<DataPoint> bsaData, xsData;
-static std::vector<std::vector<DataPoint>> binnedPoints;
 static std::vector<double> bin_xB, bin_Q2, bin_t, bin_Eb;
 static std::vector<double> bin_A, bin_dA, bin_chi2;
 static std::vector<int>    bin_M;
@@ -314,38 +312,40 @@ int main(int argc, char** argv) {
         minu.SetPrintLevel(1);
         minu.SetFCN(fcn);
 
+        // ── define all Im–fit parameters, including alpha0_* as floats ─────────
         for (int i = 0; i < nim; ++i) {
             const auto &nm = parNamesIm[i];
             double step = 0.01;
-            double init = 0, lo = 0.0, hi = 1e6;
+            double init = 0.0, lo = 0.0, hi = 1e6;
 
-            // Allow alpha0_* to float
-            if      (nm == "alpha0_H")  { init = alpha0_H;  lo = 0.2; hi = 1.0; }
-            else if (nm == "alpha0_Ht") { init = alpha0_Ht; lo = 0.2; hi = 1.0; }
-            else if (nm == "alpha0_E")  { init = alpha0_E;  lo = 0.2; hi = 1.0; }
-            else if (nm == "alpha0_Et") { init = alpha0_Et; lo = 0.2; hi = 1.0; }
-            // Q²–slope pQ_H for H
-            else if (nm == "pQ_H")      { init = pQ_H;      lo = 0.0; hi = 2.0; }
-            // H‐specific Regge & skew parameters
-            else if (nm == "r_H")       { init = r_H;       lo = 0.5; hi = 2.5; }
+            // GPD–H parameters
+            if      (nm == "r_H")       { init = r_H;       lo = 0.5; hi = 2.5; }
+            else if (nm == "alpha0_H")  { init = alpha0_H;  lo = 0.2; hi = 1.0; }
             else if (nm == "alpha1_H")  { init = alpha1_H;  lo = 0.5; hi = 2.5; }
-            else if (nm == "beta_H")    { init = beta_H;    lo = 0.0; hi = 5.0; }
-            else if (nm == "B0_H")      { init = B0_H;      lo = 3.0; hi = 12.0; }
-            else if (nm == "B1_H")      { init = B1_H;      lo = -10.0; hi = 10.0; }
-            // the remaining parameters keep their original bounds
-            else {
-                if      (nm == "r_Ht")      init = r_Ht;
-                else if (nm == "r_E")       init = r_E;
-                else if (nm == "r_Et")      init = r_Et;
-                else if (nm == "alpha1_Ht") init = alpha1_Ht;
-                else if (nm == "alpha1_E")  init = alpha1_E;
-                else if (nm == "alpha1_Et") init = alpha1_Et;
-                else if (nm == "b_Ht")      init = b_Ht;
-                else if (nm == "b_E")       init = b_E;
-                else if (nm == "b_Et")      init = b_Et;
-                else if (nm.rfind("M2_",0)==0) { init = (nm=="M2_Ht"?M2_Ht:(nm=="M2_E"?M2_E:M2_Et)); hi=2.0; }
-                else if (nm.rfind("P_",0)==0)  { init = (nm=="P_Ht"?P_Ht:(nm=="P_E"?P_E:P_Et)); hi=3.0; }
-            }
+            else if (nm == "b_H")       { init = b_H;       lo = 0.0; hi = 5.0; }
+            else if (nm == "M2_H")      { init = M2_H;      lo = 0.0; hi = 2.0; }
+            else if (nm == "P_H")       { init = P_H;       lo = 0.0; hi = 5.0; }
+            // GPD–Htilde parameters
+            else if (nm == "r_Ht")      init = r_Ht;
+            else if (nm == "alpha0_Ht") { init = alpha0_Ht; lo = 0.2; hi = 1.0; }
+            else if (nm == "alpha1_Ht") init = alpha1_Ht;
+            else if (nm == "b_Ht")      init = b_Ht;
+            else if (nm == "M2_Ht")     { init = M2_Ht;    lo = 0.0; hi = 2.0; }
+            else if (nm == "P_Ht")      { init = P_Ht;     lo = 0.0; hi = 5.0; }
+            // GPD–E parameters
+            else if (nm == "r_E")       init = r_E;
+            else if (nm == "alpha0_E")  { init = alpha0_E; lo = 0.2; hi = 1.0; }
+            else if (nm == "alpha1_E")  init = alpha1_E;
+            else if (nm == "b_E")       init = b_E;
+            else if (nm == "M2_E")      { init = M2_E;     lo = 0.0; hi = 2.0; }
+            else if (nm == "P_E")       { init = P_E;      lo = 0.0; hi = 5.0; }
+            // GPD–Etilde parameters
+            else if (nm == "r_Et")      init = r_Et;
+            else if (nm == "alpha0_Et") { init = alpha0_Et;lo = 0.2; hi = 1.0; }
+            else if (nm == "alpha1_Et") init = alpha1_Et;
+            else if (nm == "b_Et")      init = b_Et;
+            else if (nm == "M2_Et")     { init = M2_Et;    lo = 0.0; hi = 2.0; }
+            else if (nm == "P_Et")      { init = P_Et;     lo = 0.0; hi = 5.0; }
 
             minu.DefineParameter(i, nm.c_str(), init, step, lo, hi);
         }
@@ -426,8 +426,6 @@ int main(int argc, char** argv) {
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
-// ──────────────────────────────────────────────────────────────────────────────
-// helper: plot the phi-distribution and fit it to C + A sinφ/(1+B cosφ)
 void PlotBinFit(int ibin, const std::string &ts) {
     if (!gPlotBinFits) return;
 
@@ -464,10 +462,9 @@ void PlotBinFit(int ibin, const std::string &ts) {
     TF1 *f1 = new TF1(Form("f_bin%d", ibin),
         "[0] + [1]*sin(x*TMath::Pi()/180)/(1+[2]*cos(x*TMath::Pi()/180))",
         0, 360);
-    f1->SetParameter(0, 0.0);               // C initial
-    f1->SetParameter(1, bin_A[ibin]);       // A initial
-    f1->SetParameter(2, 0.0);               // B initial
-    // **constrain A and B**
+    f1->SetParameter(0, 0.0);
+    f1->SetParameter(1, bin_A[ibin]);
+    f1->SetParameter(2, 0.0);
     f1->SetParLimits(1, -1.0, 1.0);
     f1->SetParLimits(2, -1.0, 1.0);
     f1->SetLineColor(kRed);
@@ -490,11 +487,9 @@ void PlotBinFit(int ibin, const std::string &ts) {
     frame->GetXaxis()->SetRangeUser(0, 360);
     gPad->Modified(); gPad->Update();
 
-    // draw points + fit
     gr->Draw("P same");
     f1->Draw("L same");
 
-    // legend
     TLegend *leg = new TLegend(0.60, 0.75, 0.90, 0.90);
     leg->SetBorderSize(1);
     leg->SetFillStyle(1001);
@@ -509,19 +504,16 @@ void PlotBinFit(int ibin, const std::string &ts) {
     leg->AddEntry(f1,
         Form("B = %.3f +/- %.3f", f1->GetParameter(2), f1->GetParError(2)),
         "l");
-    // **add chi2/ndf text**
     leg->AddEntry((TObject*)0,
         Form("#chi^{2}/ndf = %.2f", chi2/ndf),
         "");
     leg->Draw();
 
-    // save with timestamp format
     c->SaveAs(Form("output/plots/binned_fits/BinFit_%s_bin%d.pdf", ts.c_str(), ibin));
 
-    // cleanup
     delete leg;
     delete frame;
     delete c;
     delete gr;
     delete f1;
-} 
+}
