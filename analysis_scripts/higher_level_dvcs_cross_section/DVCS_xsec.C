@@ -1296,7 +1296,7 @@ double P_H       = 1.0;
 double beta_H    = 0.0;
 
 double A0 = 1; double A1 = 1; double A2 = 1; 
-double B0 = 1; double B1 = 1; double B2 = 1, double B3 = 1;
+double B0 = 1; double B1 = 1; double B2 = 1; double B3 = 1;
 double GetImH(double xi, double t) {
     double prefactor = (n_H * r_H);
 
