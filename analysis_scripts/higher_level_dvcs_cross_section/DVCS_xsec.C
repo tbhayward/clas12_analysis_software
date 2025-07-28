@@ -1290,55 +1290,19 @@ double r_H       = 0.9;
 double n_H       = 1.25;
 double alpha0_H  = 0.43;
 double alpha1_H  = 0.85;
-double b_H       = 0.4;    // now the single b–slope
+double b_H       = 0.4;   
 double M2_H      = 0.64;
 double P_H       = 1.0;
-double beta_H    = 0.0;
-
-double A0 = 1; double A1 = 1; double A2 = 1; 
-double B0 = 1; double B1 = 1; double B2 = 1; double B3 = 1;
 double GetImH(double xi, double t) {
-    double prefactor = (n_H * r_H);
-
-    double tSup = TMath::Exp(-A0*t);
-    double xiSup = TMath::Exp(-B0*xi);
-
-    double tFrac = 1/(1+A1*t/(1+A2*t));
-    double xiFrac = 1/(1+B1*xi/(1+B2*xi/(1+B3*xi)));
-
-    return renormImag * prefactor * tSup * xiSup * tFrac * xiFrac;
+    if (!hasH) return 0.0;
+    double aExp  = alpha0_H + alpha1_H * t;
+    double bExp  = b_H;
+    double pref  = (n_H * r_H) / (1.0 + xi);
+    double term1 = TMath::Power(2*xi/(1+xi), -aExp);
+    double term2 = TMath::Power((1 - xi)*(1 + xi), bExp);
+    double term3 = TMath::Power(1 - ((1 - xi)/(1 + xi))*t/M2_H, -P_H);
+    return renormImag * pref * term1 * term2 * term3;
 }
-
-// double GetImH(double xi, double t) {
-//     if (!hasH) return 0.0;
-
-//     // ─── Regge exponent α(t) = α0 + α1 * t ─────
-//     double aExp = alpha0_H + alpha1_H * t;
-
-//     // ─── Normalization and ξ dependence ────────
-//     double prefactor = (n_H * r_H) / (1.0 + xi);
-//     double xiTerm    = TMath::Power((2.0 * xi) / (1.0 + xi), -aExp);
-
-//     // ─── t-dependence via exponential form factor ─────
-//     double tDep = TMath::Exp(-b_H * t);
-
-//     double skewTerm = TMath::Power((1.0 - xi) / (1.0 + xi), beta_H);
-
-//     // ─── Final ImH expression ──────────────────
-//     return renormImag * prefactor * xiTerm * tDep * skewTerm;
-// }
-
-
-// double GetImH(double xi, double t) {
-//     if (!hasH) return 0.0;
-//     double aExp  = alpha0_H + alpha1_H * t;
-//     double bExp  = b_H;
-//     double pref  = (n_H * r_H) / (1.0 + xi);
-//     double term1 = TMath::Power(2*xi/(1+xi), -aExp);
-//     double term2 = TMath::Power((1 - xi)*(1 + xi), bExp);
-//     double term3 = TMath::Power(1 - ((1 - xi)/(1 + xi))*t/M2_H, -P_H);
-//     return renormImag * pref * term1 * term2 * term3;
-// }
 
 
 // -----------------------------------------------------------------------------

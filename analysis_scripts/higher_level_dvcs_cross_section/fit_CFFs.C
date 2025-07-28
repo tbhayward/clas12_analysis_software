@@ -54,7 +54,6 @@ extern double b_H;
 extern double beta_H;
 extern double M2_H;
 extern double P_H;
-extern double A0, A1, A2, B0, B1, B2, B3;
 
 // GPD–Htilde
 extern double r_Ht;
@@ -209,9 +208,7 @@ static std::vector<std::string> parNamesIm;
 void build_par_list(){
     parNamesIm.clear();
     if(hasH )  parNamesIm.insert(parNamesIm.end(),
-               // {"r_H","alpha0_H","alpha1_H","b_H","M2_H","P_H"});
-                // {"r_H","alpha0_H","alpha1_H","b_H","beta_H"});
-                {"r_H","A0", "A1", "A2", "B0", "B1", "B2", "B3"});
+               {"r_H","alpha0_H","alpha1_H","b_H","M2_H","P_H"});
     if(hasHt)  parNamesIm.insert(parNamesIm.end(),
                {"r_Ht","alpha0_Ht","alpha1_Ht","b_Ht","M2_Ht","P_Ht"});
     if(hasE )  parNamesIm.insert(parNamesIm.end(),
@@ -224,22 +221,13 @@ void build_par_list(){
 void fcn(int&, double*, double &f, double *par, int){
     int ip=0;
     if(gStage==1){
-        // if(hasH ){
-        //   r_H       = par[ip++];
-        //   alpha0_H  = par[ip++];
-        //   alpha1_H  = par[ip++];
-        //   b_H       = par[ip++];
-        //   beta_H       = par[ip++];
-        // }
-        if (hasH) {
-          r_H  = par[ip++];
-          A0   = par[ip++];
-          A1   = par[ip++];
-          A2   = par[ip++];
-          B0   = par[ip++];
-          B1   = par[ip++];
-          B2   = par[ip++];
-          B3   = par[ip++];
+        if(hasH ){
+          r_H       = par[ip++];
+          alpha0_H  = par[ip++];
+          alpha1_H  = par[ip++];
+          b_H       = par[ip++];
+          M2_H       = par[ip++];
+          P_H       = par[ip++];
         }
         if(hasHt){
           r_Ht      = par[ip++];
@@ -335,15 +323,8 @@ int main(int argc, char** argv) {
             else if (nm == "alpha0_H")  { init = alpha0_H; }
             else if (nm == "alpha1_H")  init = alpha1_H;
             else if (nm == "b_H")       { init = b_H; lo = 0.0; }
-            else if (nm == "beta_H")    { init = beta_H;  }
-
-            else if (nm == "A0")    { init = A0;  }
-            else if (nm == "A1")    { init = A1;  }
-            else if (nm == "A2")    { init = A2;  }
-            else if (nm == "B0")    { init = B0;  }
-            else if (nm == "B1")    { init = B1;  }
-            else if (nm == "B2")    { init = B2;  }
-            else if (nm == "B3")    { init = B3;  }
+            else if (nm == "M2_H")     { init = M2_H;    lo = 0.0; hi = 2.0; }
+            else if (nm == "P_H")      { init = P_H;     lo = 0.0; hi = 5.0; }
 
             else if (nm == "r_Ht")      init = r_Ht;
             else if (nm == "alpha0_Ht") { init = alpha0_Ht; lo = 0.2; hi = 1.0; }
