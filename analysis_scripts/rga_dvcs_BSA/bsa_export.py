@@ -1,19 +1,3 @@
-# bsa_export.py
-
-import os
-import json
-import math
-
-def export_bsa_to_text(periods,
-                       bin_means_json,
-                       final_results_dir,
-                       output_file):
-    """
-    (unchanged)
-    Writes one line per period+bin into final_results/output_file
-    """
-    # … your existing code here, unchanged …
-
 def export_bsa_grouped_to_text(bin_means_json,
                                final_results_dir,
                                output_file):
@@ -23,14 +7,11 @@ def export_bsa_grouped_to_text(bin_means_json,
       - FA18_inb & FA18_out → “Fa18”
       - SP19_inb           → “Sp19”
 
-    For each bin‐index present in all periods of a group, does a
-    weighted average of A (and σA) with weights = 1/σA², and uses the
-    same global φ, Q², xB, t from bin_means_json.  Writes one file
-    final_results/output_file with three blocks in order:
-      Sp18 combined
-      Fa18 combined
-      Sp19_inb
+    Uses weighted averages of A with weights=1/σA², skipping any bin
+    where σA==0 in any period.
     """
+    import os, json, math
+
     # 1) load bin‐means
     with open(bin_means_json) as f:
         bin_means = json.load(f)
@@ -39,14 +20,14 @@ def export_bsa_grouped_to_text(bin_means_json,
     os.makedirs(final_results_dir, exist_ok=True)
     output_path = os.path.join(final_results_dir, output_file)
 
-    # 3) grouping definitions in the order you requested
+    # 3) grouping definitions in desired order
     group_defs = [
         ("Sp18", ["DVCS_Sp18_out", "DVCS_Sp18_inb"]),
         ("Fa18", ["DVCS_Fa18_inb", "DVCS_Fa18_out"]),
         ("Sp19", ["DVCS_Sp19_inb"]),
     ]
 
-    # 4) beam energies (they’re identical within each pair)
+    # 4) beam energies
     beam_energies = {
         "DVCS_Fa18_inb": 10.604,
         "DVCS_Fa18_out": 10.604,
@@ -88,14 +69,14 @@ def export_bsa_grouped_to_text(bin_means_json,
             # pick Eb from the first period
             Eb = beam_energies[periods[0]]
 
-            # separator/comment for this block
+            # block header
             out.write(f"\n# {group_name} combined\n")
 
             for key_str in sorted(common, key=key_to_tuple):
                 # gather A_i, σA_i for each period
-                As     = []
-                sigAs  = []
-                valid  = True
+                As    = []
+                sigAs = []
+                valid = True
                 for d in adjs:
                     v = d[key_str]
                     if not v.get("valid", True):
@@ -106,11 +87,15 @@ def export_bsa_grouped_to_text(bin_means_json,
                 if not valid:
                     continue
 
+                # **NEW** skip bins where any σA == 0
+                if any(s <= 0 for s in sigAs):
+                    continue
+
                 # weighted average of A
-                weights = [1.0/(s**2) for s in sigAs]
+                weights = [1.0/(s*s) for s in sigAs]
                 Wsum    = sum(weights)
                 A_avg   = sum(w*a for w,a in zip(weights, As)) / Wsum
-                sigA    = math.sqrt(1.0/Wsum)
+                sigA    = math.sqrt(1.0 / Wsum)
 
                 # kinematics from global bin_means
                 m = bin_means.get(key_str)
