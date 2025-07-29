@@ -62,7 +62,7 @@ extern double r_Et,  n_Et,  alpha0_Et,  alpha1_Et,  b_Et,  M2_Et,  P_Et;
 static int   gStrategy    = 0;
 static int   gStage       = 1;
 static int   gConstraint  = 0;  // 0 or 1
-static bool  gPlotBinFits = true;
+static bool  gPlotBinFits = false;
 static std::string gBsaFile = "imports/rga_prl_bsa.txt";
 static const char* gXsFile  = "imports/rga_pass1_xsec_2018.txt";
 
