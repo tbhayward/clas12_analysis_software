@@ -8,65 +8,78 @@ def export_bsa_to_text(periods,
                        final_results_dir,
                        output_file):
     """
-    periods            : list of strings, e.g. ["DVCS_Fa18_inb", …]
-    bin_means_json     : path to the global bin‐means JSON
-    final_results_dir  : directory containing adjusted_bsa_{period}.json
-    output_file        : full path to the single .txt you want written
-
-    Produces one text file with a header and then one line per (period,bin):
-      # phi(rad) q2(GeV2) xb t(GeV2) Eb(GeV) A sigA
+    periods            : list of DVCS‐period strings
+    bin_means_json     : path to global bin‐means JSON
+    final_results_dir  : path to 'final_results' dir (contains the adjusted_bsa_*.json and will hold the .txt)
+    output_file        : filename for the combined .txt (e.g. "bsa_all_periods.txt")
     """
-    # load the per‐bin mean kinematics
+    # 1) load the per‐bin mean kinematics
     with open(bin_means_json) as f:
         bin_means = json.load(f)
 
-    # beam energies by period
+    # 2) ensure final_results folder exists
+    os.makedirs(final_results_dir, exist_ok=True)
+    output_path = os.path.join(final_results_dir, output_file)
+
+    # 3) fix our desired chronological order
+    desired_order = [
+        "DVCS_Sp18_out",
+        "DVCS_Sp18_inb",
+        "DVCS_Fa18_inb",
+        "DVCS_Fa18_out",
+        "DVCS_Sp19_inb",
+    ]
+    # only keep those present in `periods`
+    period_list = [p for p in desired_order if p in periods]
+
+    # 4) beam energies lookup
     beam_energies = {
-        "DVCS_Fa18_inb": 10.604,
-        "DVCS_Fa18_out": 10.604,
-        "DVCS_Sp19_inb": 10.200,
-        "DVCS_Sp18_inb": 10.594,
-        "DVCS_Sp18_out": 10.594,
+        "DVCS_Fa18_inb":  10.604,
+        "DVCS_Fa18_out":  10.604,
+        "DVCS_Sp19_inb":  10.200,
+        "DVCS_Sp18_inb":  10.594,
+        "DVCS_Sp18_out":  10.594,
     }
 
-    # ensure parent folder exists
-    parent = os.path.dirname(output_file)
-    if parent:
-        os.makedirs(parent, exist_ok=True)
+    # helper to turn a key‐string into a tuple of ints
+    def key_to_tuple(k):
+        return tuple(map(int, k.strip("()").replace(" ", "").split(",")))
 
-    with open(output_file, "w") as out:
+    # 5) write the single combined text file
+    with open(output_path, "w") as out:
         out.write("# phi(rad) q2(GeV2) xb t(GeV2) Eb(GeV) A sigA\n")
 
-        for period in periods:
+        for period in period_list:
             Eb = beam_energies.get(period)
             if Eb is None:
                 print(f"[export] no Eb defined for {period}, skipping")
                 continue
 
-            # load that period's adjusted BSA
-            fname = f"adjusted_bsa_{period}.json"
-            path  = os.path.join(final_results_dir, fname)
+            json_path = os.path.join(final_results_dir,
+                                     f"adjusted_bsa_{period}.json")
             try:
-                with open(path) as f:
+                with open(json_path) as f:
                     adj = json.load(f)
             except FileNotFoundError:
-                print(f"[export] missing {path}, skipping")
+                print(f"[export] missing {json_path}, skipping")
                 continue
 
-            for key, vals in adj.items():
+            # sort the bin‐keys by their integer tuples
+            for key_str in sorted(adj.keys(), key=key_to_tuple):
+                vals = adj[key_str]
                 if not vals.get("valid", True):
                     continue
-                mean = bin_means.get(key)
+                mean = bin_means.get(key_str)
                 if mean is None:
                     continue
 
-                φ   = mean["phi_avg"]
-                Q2  = mean["Q2_avg"]
-                xB  = mean["xB_avg"]
-                t   = -mean["t_avg"]        # write –t
-                A   = vals["bsa"]
-                σA  = vals["bsa_err"]
+                phi    = mean["phi_avg"]
+                q2     = mean["Q2_avg"]
+                xb     = mean["xB_avg"]
+                t_val  = -mean["t_avg"]       # write –t
+                A      = vals["bsa"]
+                sigmaA = vals["bsa_err"]
 
-                out.write(f"{φ} {Q2} {xB} {t} {Eb:.3f} {A} {σA}\n")
+                out.write(f"{phi} {q2} {xb} {t_val} {Eb:.3f} {A} {sigmaA}\n")
 
-    print(f"[export] wrote combined file → {output_file}")
+    print(f"[export] wrote combined file → {output_path}")
