@@ -319,42 +319,47 @@ int main(int argc, char** argv) {
       minu.SetPrintLevel(1);
       minu.SetFCN(fcn);
       // define & initial-guess each Im parameter
-      for(int i=0;i<nim;++i){
+      for(int i = 0; i < nim; ++i) {
         auto &nm = parNamesIm[i];
-        double init=0, lo=-1e3, hi=1e3, step=0.01;
-        if(nm=="r_H")         { init=r_H; lo=0.0; hi=5.0; }
-        else if(nm=="alpha0_H"){ init=alpha0_H; lo=0.0; hi=1.0; }
-        else if(nm=="alpha1_H") init=alpha1_H;
-        else if(nm=="b_H")      { init=b_H;  }
-        else if(nm=="M2_H")     { init=M2_H;  lo=0.0; hi=1.0; }
-        else if(nm=="P_H")      { init=P_H;   }
-        else if(nm=="r_Ht")       init=r_Ht;
-        else if(nm=="alpha0_Ht")  { init=alpha0_Ht; lo=0.0; hi=1.0; }
-        else if(nm=="alpha1_Ht")  init=alpha1_Ht;
-        else if(nm=="b_Ht")       init=b_Ht;
-        else if(nm=="M2_Ht")      { init=M2_Ht;  lo=0.0; hi=1.0; }
-        else if(nm=="P_Ht")       { init=P_Ht;   }
-        else if(nm=="r_E")        init=r_E;
-        else if(nm=="alpha0_E")   { init=alpha0_E;  }
-        else if(nm=="alpha1_E")   init=alpha1_E;
-        else if(nm=="b_E")        init=b_E;
-        else if(nm=="M2_E")       { init=M2_E;   }
-        else if(nm=="P_E")        { init=P_E;  }
-        else if(nm=="r_Et")       init=r_Et;
-        else if(nm=="alpha0_Et")  { init=alpha0_Et;  }
-        else if(nm=="alpha1_Et")  init=alpha1_Et;
-        else if(nm=="b_Et")       init=b_Et;
-        else if(nm=="M2_Et")      { init=M2_Et; }
-        else if(nm=="P_Et")       { init=P_Et; }
+        double init = 0.0, lo = -1e3, hi = 1e3, step = 0.0;  // step=0 fixes the parameter
+
+        if      (nm == "r_H")       { init = 0.387246;    lo = 0.0;    hi = 5.0;    }
+        else if (nm == "alpha0_H")  { init = 0.0529603;   lo = 0.0;    hi = 1.0;    }
+        else if (nm == "alpha1_H")  { init = 2.63389;                              }
+        else if (nm == "b_H")       { init = -5.53313;                             }
+        else if (nm == "M2_H")      { init = 0.0213466;  lo = 0.0;    hi = 1.0;    }
+        else if (nm == "P_H")       { init = 2.12812;                             }
+
+        else if (nm == "r_Ht")      { init = 34.5883;                             }
+        else if (nm == "alpha0_Ht") { init = 0.000729799; lo = 0.0;    hi = 1.0;    }
+        else if (nm == "alpha1_Ht") { init = 3.81708;                             }
+        else if (nm == "b_Ht")      { init = 3.90862;                             }
+        else if (nm == "M2_Ht")     { init = 0.0897422;  lo = 0.0;    hi = 1.0;    }
+        else if (nm == "P_Ht")      { init = -0.0910127;                          }
+
+        else if (nm == "r_E")       { init = 8.88651;                              }
+        else if (nm == "alpha0_E")  { init = 0.230698;                             }
+        else if (nm == "alpha1_E")  { init = 1.09458;                              }
+        else if (nm == "b_E")       { init = 3.81528;                              }
+        else if (nm == "M2_E")      { init = 1.03684;    step = 0.01; lo = 0.8;    hi = 1.5;    }  // allow a bit of room above 1 if you like
+        else if (nm == "P_E")       { init = 1.36585;                             }
+
+        else if (nm == "r_Et")      { init = r_Et;          }
+        else if (nm == "alpha0_Et") { init = alpha0_Et;                }
+        else if (nm == "alpha1_Et") { init = alpha1_Et;                           }
+        else if (nm == "b_Et")      { init = b_Et;                                }
+        else if (nm == "M2_Et")     { init = M2_Et;    lo = 0.0;    hi = 1.0;    }
+        else if (nm == "P_Et")      { init = P_Et;                               }
+
         minu.DefineParameter(i, nm.c_str(), init, step, lo, hi);
-      }
-      std::cout<<" Stage1: fitting Im-CFF parameters…\n";
-      minu.Migrad();
-      minu.Command("HESSE");
-      minu.mnstat(chi2_im,edm,errdef,nv,nx,ic);
-      for(int i=0;i<nim;++i) minu.GetParameter(i,imVal[i],imErr[i]);
-      ndf_im = Nbins - nim;
     }
+
+    std::cout << " Stage1: fitting Im-CFF parameters…\n";
+    minu.Migrad();
+    minu.Command("HESSE");
+    minu.mnstat(chi2_im, edm, errdef, nv, nx, ic);
+    for(int i = 0; i < nim; ++i) minu.GetParameter(i, imVal[i], imErr[i]);
+    ndf_im = Nbins - nim;
 
     // collect results
     std::map<std::string,double> valMap, errMap;
