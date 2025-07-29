@@ -1304,7 +1304,7 @@ double GetImH(double xi, double t) {
     double term2 = TMath::Power((1 - xi)/(1 + xi), bExp);
     // double term3 = TMath::Power(1 - ((1 - xi)/(1 + xi))*t/M2_H, -P_H);
     double term3 = TMath::Power(1 - t/M2_H, -P_H);
-    return renormImag * pref * term1 * term2 * term3;
+    return renormImag * pref * term1 * term2 * term3 * 2;
 }
 
 
@@ -1329,7 +1329,7 @@ double GetImHt(double xi, double t) {
     double term2 = TMath::Power((1 - xi)/(1 + xi), bExp);
     // double term3 = TMath::Power(1 - ((1 - xi)/(1 + xi))*t/M2_Ht, -P_Ht);
     double term3 = TMath::Power(1 - t/M2_Ht, -P_Ht);
-    return renormImag * pref * term1 * term2 * term3;
+    return renormImag * pref * term1 * term2 * term3 * 0.4;
 }
 
 // -----------------------------------------------------------------------------
