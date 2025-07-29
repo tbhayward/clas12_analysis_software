@@ -353,7 +353,7 @@ int main(int argc, char** argv) {
       minu.Command("HESSE");
       // profile M2_E from 0.8 to 1.2 in 40 steps
         minu.Command("SET ERR 1");
-        minu.Command("SCAN 17 0.8 1.2 40");
+        minu.Command("SCAN 17 0.8 1.2 40 FIT");
       minu.mnstat(chi2_im,edm,errdef,nv,nx,ic);
       for(int i=0;i<nim;++i) minu.GetParameter(i,imVal[i],imErr[i]);
       ndf_im = Nbins - nim;
