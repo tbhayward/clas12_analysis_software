@@ -69,9 +69,14 @@ static const char* gXsFile  = "imports/rga_pass1_xsec_2018.txt";
 // raw data + binned observables
 struct DataPoint { double phi,Q2,xB,t,Eb,A,sigA; };
 static std::vector<DataPoint> bsaData, xsData;
-static std::vector<double>    bin_xB, bin_Q2, bin_t, bin_Eb;
-static std::vector<double>    bin_A, bin_dA, bin_redChi2;
-static std::vector<int>       bin_M;
+
+// only the *kept* bins (after cuts) go here:
+static std::vector<std::vector<DataPoint>> keptBins;
+
+static std::vector<double> bin_xB, bin_Q2, bin_t, bin_Eb;
+static std::vector<double> bin_A, bin_dA, bin_redChi2;
+static std::vector<int>    bin_M;
+
 static int     Nbins          = 0;
 static double  reducedAmpChi2 = 0.0;
 
@@ -138,56 +143,61 @@ void LoadData(){
     read(gXsFile,          xsData);
 }
 
-// Bin & sinφ fit → bin_A,bin_dA; then drop bad bins if constraint==1
+// Bin & 3-parameter sinφ fit → keep only those bins passing the cuts
 void BinBsaData(){
+    // clear old
+    keptBins.clear();
     bin_xB.clear(); bin_Q2.clear(); bin_t.clear(); bin_Eb.clear();
-    bin_A.clear(); bin_dA.clear(); bin_M.clear(); bin_redChi2.clear();
-    if(bsaData.empty()) return;
+    bin_A.clear();  bin_dA.clear();  bin_redChi2.clear(); bin_M.clear();
 
+    if(bsaData.empty()) return;
     size_t start=0;
+
     for(size_t i=1;i<=bsaData.size();++i){
-        bool newbin = (i==bsaData.size() || bsaData[i].phi < bsaData[i-1].phi);
+        bool newbin = (i==bsaData.size()|| bsaData[i].phi < bsaData[i-1].phi);
         if(!newbin) continue;
+
         auto pts = std::vector<DataPoint>(bsaData.begin()+start,
                                           bsaData.begin()+i);
         start = i;
         int M = pts.size();
-        if(M<3) continue;  // need ≥3 points to fit C,A,B
+        if(M<3) continue;     // need at least 3 points for C,A,B
 
-        // 1) estimate A_bin, dA_bin
-        double SwA=0, Sw2=0;
-        for(auto &d: pts){
-            double s = std::sin(d.phi*TMath::Pi()/180.);
-            double w = 1./(d.sigA*d.sigA);
-            SwA += w*d.A*s;
-            Sw2+= w*s*s;
-        }
-        double A_bin = SwA/Sw2;
-        double dA_bin = 1./std::sqrt(Sw2);
-
-        // 2) quick 3-param fit for C,A,B
-        TF1 ftmp("ftmp",
-          "[0] + [1]*sin(x*TMath::Pi()/180.)/(1+[2]*cos(x*TMath::Pi()/180.))",
-          0,360);
-        ftmp.SetParameters(0, A_bin, 0.);
+        // build graph
         TGraphErrors gr(M);
         for(int j=0;j<M;++j){
-            gr.SetPoint(j, pts[j].phi, pts[j].A );
+            gr.SetPoint(j, pts[j].phi, pts[j].A);
             gr.SetPointError(j,0,pts[j].sigA);
         }
-        gr.Fit(&ftmp,"Q0R");
-        double Bfit    = ftmp.GetParameter(2);
-        double chi2    = ftmp.GetChisquare();
-        double redchi2 = chi2 / (M-3); // two fit params: C and B
 
-        // 3) apply per-bin cuts
+        // 3-parameter fit: C + A sinφ/(1+B cosφ)
+        TF1 ftmp("ftmp",
+          "[0] + [1]*sin(x*TMath::Pi()/180.)"
+               "/(1 + [2]*cos(x*TMath::Pi()/180.))",
+          0,360);
+        ftmp.SetParameters(0.,  /*C*/ 
+                           0.5, /*A init*/ 
+                           0.); /*B init*/
+        gr.Fit(&ftmp,"Q0R");  // quiet, no print, use full range
+
+        double Cfit    = ftmp.GetParameter(0);
+        double dC      = ftmp.GetParError(0);
+        double Afit    = ftmp.GetParameter(1);
+        double dA      = ftmp.GetParError(1);
+        double Bfit    = ftmp.GetParameter(2);
+        double dB      = ftmp.GetParError(2);
+        double chi2    = ftmp.GetChisquare();
+        double redchi2 = chi2 / (M - 3);
+
+        // cut on per-bin quality
         if(gConstraint==1 && (redchi2>=2.0 || std::fabs(Bfit)>=0.9))
             continue;
 
-        // 4) store bin
+        // store only this “good” bin
+        keptBins.push_back(pts);
         bin_M.push_back(M);
-        bin_A.push_back(A_bin);
-        bin_dA.push_back(dA_bin);
+        bin_A.push_back(Afit);
+        bin_dA.push_back(dA);
         bin_redChi2.push_back(redchi2);
 
         double sumw=0, Sx=0, Sq=0, St=0, Se=0;
@@ -195,34 +205,36 @@ void BinBsaData(){
             double w = 1./(d.sigA*d.sigA);
             sumw+=w; Sx+=w*d.xB; Sq+=w*d.Q2; St+=w*d.t; Se+=w*d.Eb;
         }
-        bin_xB.push_back(Sx/sumw);
-        bin_Q2.push_back(Sq/sumw);
-        bin_t .push_back(St/sumw);
-        bin_Eb.push_back(Se/sumw);
+        bin_xB .push_back(Sx/sumw);
+        bin_Q2 .push_back(Sq/sumw);
+        bin_t  .push_back(St/sumw);
+        bin_Eb .push_back(Se/sumw);
     }
 
+    // finalize
     Nbins = bin_A.size();
-    // overall reduced χ² per amp-fit
-    double totChi2=0; int totDof=0;
+    // overall reduced χ² per–amp
+    double totChi2=0; 
+    int totDof=0;
     for(int k=0;k<Nbins;++k){
         totChi2 += std::pow(bin_A[k]/bin_dA[k],2);
-        totDof += (bin_M[k]-1);
+        totDof  += (bin_M[k] - 1);
     }
     reducedAmpChi2 = totDof>0 ? totChi2/totDof : 0.0;
 }
 
-// prepare list of Im-fitting parameters
+// prepare list of Im‐fitting parameters
 static std::vector<std::string> parNamesIm;
 void build_par_list(){
     parNamesIm.clear();
     if(hasH )  parNamesIm.insert(parNamesIm.end(),
-                {"r_H","alpha0_H","alpha1_H","b_H","M2_H","P_H"});
+               {"r_H","alpha0_H","alpha1_H","b_H","M2_H","P_H"});
     if(hasHt)  parNamesIm.insert(parNamesIm.end(),
-                {"r_Ht","alpha0_Ht","alpha1_Ht","b_Ht","M2_Ht","P_Ht"});
+               {"r_Ht","alpha0_Ht","alpha1_Ht","b_Ht","M2_Ht","P_Ht"});
     if(hasE )  parNamesIm.insert(parNamesIm.end(),
-                {"r_E","alpha0_E","alpha1_E","b_E","M2_E","P_E"});
+               {"r_E","alpha0_E","alpha1_E","b_E","M2_E","P_E"});
     if(hasEt)  parNamesIm.insert(parNamesIm.end(),
-                {"r_Et","alpha0_Et","alpha1_Et","b_Et","M2_Et","P_Et"});
+               {"r_Et","alpha0_Et","alpha1_Et","b_Et","M2_Et","P_Et"});
 }
 
 // χ² function for Im-fit and RenormReal-fit
@@ -230,12 +242,12 @@ void fcn(int&, double*, double &f, double *par, int){
     int ip=0;
     if(gStage==1){
         if(hasH){
-          r_H      = par[ip++];
-          alpha0_H = par[ip++];
-          alpha1_H = par[ip++];
-          b_H      = par[ip++];
-          M2_H     = par[ip++];
-          P_H      = par[ip++];
+          r_H       = par[ip++];
+          alpha0_H  = par[ip++];
+          alpha1_H  = par[ip++];
+          b_H       = par[ip++];
+          M2_H      = par[ip++];
+          P_H       = par[ip++];
         }
         if(hasHt){
           r_Ht      = par[ip++];
@@ -246,12 +258,12 @@ void fcn(int&, double*, double &f, double *par, int){
           P_Ht      = par[ip++];
         }
         if(hasE){
-          r_E      = par[ip++];
-          alpha0_E = par[ip++];
-          alpha1_E = par[ip++];
-          b_E      = par[ip++];
-          M2_E     = par[ip++];
-          P_E      = par[ip++];
+          r_E       = par[ip++];
+          alpha0_E  = par[ip++];
+          alpha1_E  = par[ip++];
+          b_E       = par[ip++];
+          M2_E      = par[ip++];
+          P_E       = par[ip++];
         }
         if(hasEt){
           r_Et      = par[ip++];
@@ -265,7 +277,7 @@ void fcn(int&, double*, double &f, double *par, int){
         for(int k=0;k<Nbins;++k){
             BMK_DVCS dvcs(-1,1,0,
                           bin_Eb[k],bin_xB[k],bin_Q2[k],bin_t[k],0.0);
-            double modelA = dvcs.s1_I()/dvcs.c0_BH();
+            double modelA = dvcs.s1_I() / dvcs.c0_BH();
             double resid  = (bin_A[k] - modelA)/bin_dA[k];
             chi2 += resid*resid;
         }
@@ -291,6 +303,7 @@ int main(int argc, char** argv) {
     time_t now = time(nullptr);
     char tb[32];
     strftime(tb,sizeof(tb),"%Y%m%d_%H%M%S",localtime(&now));
+
     std::cout<<"\n=== Strategy="<<gStrategy
              <<"  H="<<hasH<<" Ht="<<hasHt
              <<"  E="<<hasE<<" Et="<<hasEt
@@ -310,8 +323,8 @@ int main(int argc, char** argv) {
                <<", xB="<<bin_xB[k]
                <<", Q2="<<bin_Q2[k]
                <<", -t="<<-bin_t[k]
-               <<", Amp="<<bin_A[k]
-               <<"+/-"<<bin_dA[k]
+               <<", A="<<bin_A[k]
+               <<" ±"<<bin_dA[k]
                <<", χ²_red="<<bin_redChi2[k]
                <<"\n";
     }
@@ -319,8 +332,11 @@ int main(int argc, char** argv) {
     // summary of bin fits
     double avgBinChi2 = bin_redChi2.empty()
                       ? 0.0
-                      : std::accumulate(bin_redChi2.begin(),bin_redChi2.end(),0.0)
+                      : std::accumulate(bin_redChi2.begin(),
+                                        bin_redChi2.end(),
+                                        0.0)
                         / bin_redChi2.size();
+
     std::cout<<"\n BSA bins="<<Nbins
              <<" (raw="<<bsaData.size()<<")\n"
              <<" Average χ² per bin-fit = "<<avgBinChi2<<"\n"
@@ -332,44 +348,46 @@ int main(int argc, char** argv) {
       std::cout<<" Wrote plots to output/plots/binned_fits/\n\n";
     }
 
-    // ─── Stage 1: Im-fit ─────────────────────────────────────────────────────────
+    // ─── Stage 1: Im‐fit ─────────────────────────────────────────────────────────
     gStage = 1;
     build_par_list();
     int nim = parNamesIm.size();
     std::vector<double> imVal(nim), imErr(nim);
     double chi2_im, edm, errdef;
     int nv,nx,ic, ndf_im;
+
     {
       TMinuit minu(nim);
       minu.SetPrintLevel(1);
       minu.SetFCN(fcn);
       for(int i=0;i<nim;++i){
         const auto &nm = parNamesIm[i];
-        double init=0, lo=0, hi=1e3, step=0.01;
+        double init=0, lo=-1e3, hi=+1e3, step=0.01;
         if      (nm=="r_H")       init=r_H;
         else if (nm=="alpha0_H")  init=alpha0_H;
         else if (nm=="alpha1_H")  init=alpha1_H;
-        else if (nm=="b_H")       init=b_H, lo=0;
+        else if (nm=="b_H")       init=b_H;
         else if (nm=="M2_H")      init=M2_H;
         else if (nm=="P_H")       init=P_H;
         else if (nm=="r_Ht")      init=r_Ht;
         else if (nm=="alpha0_Ht") init=alpha0_Ht;
         else if (nm=="alpha1_Ht") init=alpha1_Ht;
-        else if (nm=="b_Ht")      init=b_Ht, lo=0;
+        else if (nm=="b_Ht")      init=b_Ht;
         else if (nm=="M2_Ht")     init=M2_Ht;
         else if (nm=="P_Ht")      init=P_Ht;
         else if (nm=="r_E")       init=r_E;
         else if (nm=="alpha0_E")  init=alpha0_E;
         else if (nm=="alpha1_E")  init=alpha1_E;
-        else if (nm=="b_E")       init=b_E, lo=0;
+        else if (nm=="b_E")       init=b_E;
         else if (nm=="M2_E")      init=M2_E;
         else if (nm=="P_E")       init=P_E;
         else if (nm=="r_Et")      init=r_Et;
         else if (nm=="alpha0_Et") init=alpha0_Et;
         else if (nm=="alpha1_Et") init=alpha1_Et;
-        else if (nm=="b_Et")      init=b_Et, lo=0;
+        else if (nm=="b_Et")      init=b_Et;
         else if (nm=="M2_Et")     init=M2_Et;
         else if (nm=="P_Et")      init=P_Et;
+
         minu.DefineParameter(i, nm.c_str(), init, step, lo, hi);
       }
       std::cout<<" Stage1: fitting Im-CFF parameters…\n";
@@ -389,7 +407,7 @@ int main(int argc, char** argv) {
 
     // ─── Stage 2: renormReal ─────────────────────────────────────────────────────
     if(gStrategy==2){
-      gStage=2;
+      gStage = 2;
       double chi2_re, edm2, errdef2;
       int nv2,nx2,ic2, ndf_re;
       double reVal,reErr;
@@ -403,19 +421,19 @@ int main(int argc, char** argv) {
         m2.Command("HESSE");
         m2.mnstat(chi2_re,edm2,errdef2,nv2,nx2,ic2);
         m2.GetParameter(0,reVal,reErr);
-        ndf_re = xsData.size()-1;
+        ndf_re = xsData.size() - 1;
       }
-      valMap["renormReal"]=reVal;
-      errMap["renormReal"]=reErr;
-      chi2_im=chi2_re;
-      ndf_im =ndf_re;
+      valMap["renormReal"] = reVal;
+      errMap["renormReal"] = reErr;
+      chi2_im = chi2_re;
+      ndf_im  = ndf_re;
     }
 
     // ─── Output results ─────────────────────────────────────────────────────────
-    std::vector<std::string> outNames=parNamesIm;
+    std::vector<std::string> outNames = parNamesIm;
     if(gStrategy==2) outNames.push_back("renormReal");
     system("mkdir -p output/fit_results");
-    std::ofstream fout(std::string("output/fit_results/fit_results_")+tb+".txt");
+    std::ofstream fout("output/fit_results/fit_results_"+std::string(tb)+".txt");
     fout<<"# fit_CFFs results\n"
         <<"timestamp   "<<tb<<"\n"
         <<"strategy    "<<gStrategy<<"\n"
@@ -423,24 +441,24 @@ int main(int argc, char** argv) {
         <<"input       "<<gBsaFile<<"\n"
         <<"H "<<hasH<<" Ht "<<hasHt<<" E "<<hasE<<" Et "<<hasEt<<"\n"
         <<"# parameters:";
-    for(auto &n:outNames) fout<<" "<<n;
+    for(auto &n: outNames) fout<<" "<<n;
     fout<<"\n# values:\n";
-    for(auto &n:outNames) fout<<valMap[n]<<" ";
+    for(auto &n: outNames) fout<<valMap[n]<<" ";
     fout<<"\n# errors:\n";
-    for(auto &n:outNames) fout<<errMap[n]<<" ";
+    for(auto &n: outNames) fout<<errMap[n]<<" ";
     fout<<"\n# chi2 ndf chi2/ndf\n"
         <<chi2_im<<" "<<ndf_im<<" "<<(chi2_im/ndf_im)<<"\n";
     fout.close();
 
     std::cout<<"\n--- Fit Results ---\n";
-    for(auto &n:outNames){
+    for(auto &n: outNames){
       std::cout<<" "<<n<<" = "<<valMap[n]
                <<" ± "<<errMap[n]<<"\n";
     }
     std::cout<<" χ²/ndf = "<<chi2_im<<"/"<<ndf_im
              <<" = "<<(chi2_im/ndf_im)<<"\n";
     std::cout<<" Average χ² per bin-fit = "<<avgBinChi2<<"\n";
-    std::cout<<" Reduced χ² per amp-fit = "<<reducedAmpChi2<<"\n";
+    std::cout<<" Reduced χ² per amp-fit = "<<reducedAmpChi2<<"\n\n";
 
     return 0;
 }
@@ -449,45 +467,38 @@ int main(int argc, char** argv) {
 void PlotBinFit(int ibin, const std::string &ts) {
     if (!gPlotBinFits) return;
 
-    // regroup raw points into φ-bins
-    std::vector<std::vector<DataPoint>> bins;
-    size_t start=0;
-    for(size_t i=1;i<=bsaData.size();++i){
-      bool newbin=(i==bsaData.size()||bsaData[i].phi<bsaData[i-1].phi);
-      if(newbin){
-        bins.emplace_back(bsaData.begin()+start,bsaData.begin()+i);
-        start=i;
-      }
-    }
-    if(ibin<0||ibin>=int(bins.size())) return;
-    auto &dp=bins[ibin];
-    int n=dp.size(); if(n<3) return;   // skip if <3 points
+    auto &pts = keptBins[ibin];
+    int n = pts.size();
+    if(n<3) return;  // safety
 
     system("mkdir -p output/plots/binned_fits");
     gStyle->SetOptStat(0);
 
-    // draw data points
+    // data points
     TGraphErrors gr(n);
-    gr.SetMarkerStyle(20);
-    gr.SetMarkerSize(1.0);
     for(int i=0;i<n;++i){
-      gr.SetPoint(i, dp[i].phi, dp[i].A);
-      gr.SetPointError(i,0,dp[i].sigA);
+      gr.SetPoint(i, pts[i].phi, pts[i].A);
+      gr.SetPointError(i,0,pts[i].sigA);
     }
+    gr.SetMarkerStyle(20);
 
-    // fit C + A sinφ/(1 + B cosφ)
+    // full 3-param fit
     TF1 f1(Form("f_bin%d",ibin),
-      "[0] + [1]*sin(x*TMath::Pi()/180.)/(1+[2]*cos(x*TMath::Pi()/180.))",
+      "[0] + [1]*sin(x*TMath::Pi()/180.)"
+           "/(1 + [2]*cos(x*TMath::Pi()/180.))",
       0,360);
-    f1.SetParameters(0, bin_A[ibin], 0);
-    f1.SetParLimits(1,-1,1);
-    f1.SetParLimits(2,-1,1);
+    f1.SetParameters(0., bin_A[ibin], 0.);
     f1.SetLineColor(kRed);
     f1.SetLineWidth(2);
-    gr.Fit(&f1,"RQN");
+    gr.Fit(&f1,"RQ0");  // quiet
 
     double chi2 = f1.GetChisquare();
     double ndf  = f1.GetNDF();
+    double Bfit = f1.GetParameter(2);
+
+    // re‐check cuts
+    if(gConstraint==1 && (chi2/ndf>=2.0 || std::fabs(Bfit)>=0.9))
+      return;
 
     // draw
     TCanvas c(Form("c_bin%d",ibin),"",600,500);
@@ -500,15 +511,25 @@ void PlotBinFit(int ibin, const std::string &ts) {
     gr.Draw("P same");
     f1.Draw("L same");
 
-    // legend (including C)
+    // legend with border
     TLegend leg(0.6,0.75,0.9,0.9);
-    leg.SetBorderSize(0);
-    leg.AddEntry(&gr,"data","p");
-    leg.AddEntry(&f1,Form("C = %.3f #pm %.3f", f1.GetParameter(0), f1.GetParError(0)),"l");
-    leg.AddEntry(&f1,Form("A = %.3f #pm %.3f", f1.GetParameter(1), f1.GetParError(1)),"l");
-    leg.AddEntry(&f1,Form("B = %.3f #pm %.3f", f1.GetParameter(2), f1.GetParError(2)),"l");
-    leg.AddEntry((TObject*)0, Form("#chi^{2}/ndf = %.2f", chi2/ndf),"");
+    leg.SetBorderSize(1);
+    leg.SetFillStyle(1001);
+    leg.SetFillColor(0);
+    leg.AddEntry(&gr, "data", "p");
+    leg.AddEntry(&f1,
+      Form("C = %.3f #pm %.3f",
+           f1.GetParameter(0),f1.GetParError(0)), "l");
+    leg.AddEntry(&f1,
+      Form("A = %.3f #pm %.3f",
+           f1.GetParameter(1),f1.GetParError(1)), "l");
+    leg.AddEntry(&f1,
+      Form("B = %.3f #pm %.3f",
+           Bfit, f1.GetParError(2)), "l");
+    leg.AddEntry((TObject*)0,
+      Form("#chi^{2}/ndf = %.2f", chi2/ndf), "");
     leg.Draw();
 
-    c.SaveAs(Form("output/plots/binned_fits/BinFit_%s_bin%d.pdf",ts.c_str(),ibin));
+    c.SaveAs(Form("output/plots/binned_fits/BinFit_%s_bin%d.pdf",
+                  ts.c_str(), ibin));
 }
