@@ -353,6 +353,7 @@ int main(int argc, char** argv) {
 
         minu.DefineParameter(i, nm.c_str(), init, step, lo, hi);
     }
+}
 
     std::cout << " Stage1: fitting Im-CFF parameters…\n";
     minu.Migrad();
