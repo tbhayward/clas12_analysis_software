@@ -1303,7 +1303,7 @@ double GetImH(double xi, double t) {
     double term1 = TMath::Power(2*xi/(1+xi), -aExp);
     double term2 = TMath::Power((1 - xi)/(1 + xi), bExp);
     // double term3 = TMath::Power(1 - ((1 - xi)/(1 + xi))*t/M2_H, -P_H);
-    double term3 = TMath::Exp( B_H_slope * t );
+    double term3 = TMath::Power(1 - t/M2_H, -P_H);
     return renormImag * pref * term1 * term2 * term3;
 }
 
