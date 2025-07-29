@@ -48,7 +48,6 @@ def export_bsa_to_text(periods,
 
     # 5) write the single combined text file
     with open(output_path, "w") as out:
-        # note header now lists phi(deg)
         out.write("# phi(deg) q2(GeV2) xb t(GeV2) Eb(GeV) A sigA\n")
 
         for period in period_list:
@@ -76,15 +75,22 @@ def export_bsa_to_text(periods,
                     continue
 
                 # convert phi from radians to degrees
-                phi_rad = mean["phi_avg"]
-                phi_deg = math.degrees(phi_rad)
+                phi_deg = math.degrees(mean["phi_avg"])
+                q2      = mean["Q2_avg"]
+                xb      = mean["xB_avg"]
+                t_val   = -mean["t_avg"]       # write –t
+                A       = vals["bsa"]
+                sigmaA  = vals["bsa_err"]
 
-                q2     = mean["Q2_avg"]
-                xb     = mean["xB_avg"]
-                t_val  = -mean["t_avg"]       # write –t
-                A      = vals["bsa"]
-                sigmaA = vals["bsa_err"]
-
-                out.write(f"{phi_deg} {q2} {xb} {t_val} {Eb:.3f} {A} {sigmaA}\n")
+                # round everything to 3 decimals
+                out.write(
+                    f"{phi_deg:.3f} "
+                    f"{q2:.3f} "
+                    f"{xb:.3f} "
+                    f"{t_val:.3f} "
+                    f"{Eb:.3f} "
+                    f"{A:.3f} "
+                    f"{sigmaA:.3f}\n"
+                )
 
     print(f"[export] wrote combined file → {output_path}")
