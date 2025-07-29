@@ -346,7 +346,13 @@ int main(int argc, char** argv) {
         else if(nm=="b_Et")       init=b_Et;
         else if(nm=="M2_Et")      { init=M2_Et; }
         else if(nm=="P_Et")       { init=P_Et; }
-        minu.DefineParameter(i, nm.c_str(), init, step, lo, hi);
+        if(nm=="M2_E"){
+    step = 0.0;                             // freeze at scan value
+    minu.DefineParameter(i,nm.c_str(),init,step,lo,hi);
+    minu.FixParameter(i);                   // explicitly lock it
+  } else {
+    minu.DefineParameter(i,nm.c_str(),init,step,lo,hi);
+  }
       }
       std::cout<<" Stage1: fitting Im-CFF parameters…\n";
       minu.Migrad();
