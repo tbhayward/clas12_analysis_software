@@ -290,6 +290,7 @@ int main(int argc, char** argv) {
     std::cout<<"Data points entering Im-fit:\n";
     for(int k=0; k<Nbins; ++k){
       std::cout<<" Point "<<(k+1)
+               <<", Eb="<<bin_Eb[k]
                <<", xB="<<bin_xB[k]
                <<", Q2="<<bin_Q2[k]
                <<", -t="<<-bin_t[k]
