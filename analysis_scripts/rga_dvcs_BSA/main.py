@@ -290,6 +290,11 @@ def main():
         final_results_dir = "final_results",
         output_file       = "bsa_all_periods.txt"
     )
+    export_bsa_grouped_to_text(
+        bin_means_json     = "bin_means_global.json",
+        final_results_dir  = "final_results",
+        output_file        = "bsa_grouped_periods.txt"
+    )
 
     print("\n🎉 Analysis complete!")
 
