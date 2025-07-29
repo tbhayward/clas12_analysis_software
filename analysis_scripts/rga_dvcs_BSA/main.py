@@ -18,7 +18,7 @@ from plot_bsa import plot_raw_bsa, plot_adjusted_bsa, plot_combined_bsa
 from plot_bsa import plot_a1_vs_t_by_Q2, plot_a1_vs_t_grid_full, plot_a1_vs_t_grid_top, plot_a1_vs_t_grid_bottom
 from plot_bsa import plot_pass_comparison
 from plot_bsa_integrated_t import integrate_t_bins, plot_integrated_bsa, integrate_all_bins, plot_fully_integrated_bsa, plot_fully_integrated_bsa_period_comparison
-from bsa_export import export_bsa_to_text, export_bsa_grouped_to_text
+from bsa_export import export_bsa_to_text, export_bsa_grouped_to_text, export_bsa_spfa_combined_to_text
 
 def run_period(args):
     """
@@ -294,6 +294,11 @@ def main():
         bin_means_json     = "bin_means_global.json",
         final_results_dir  = "final_results",
         output_file        = "bsa_grouped_periods.txt"
+    )
+    export_bsa_spfa_combined_to_text(
+        bin_means_json     = "bin_means_global.json",
+        final_results_dir  = "final_results",
+        output_file        = "bsa_grouped_spfa_periods.txt"
     )
 
     print("\n🎉 Analysis complete!")
