@@ -346,20 +346,11 @@ int main(int argc, char** argv) {
         else if(nm=="b_Et")       init=b_Et;
         else if(nm=="M2_Et")      { init=M2_Et; }
         else if(nm=="P_Et")       { init=P_Et; }
-        if(nm=="M2_E"){
-    step = 0.0;                             // freeze at scan value
-    minu.DefineParameter(i,nm.c_str(),init,step,lo,hi);
-    minu.FixParameter(i);                   // explicitly lock it
-  } else {
-    minu.DefineParameter(i,nm.c_str(),init,step,lo,hi);
-  }
+        minu.DefineParameter(i, nm.c_str(), init, step, lo, hi);
       }
       std::cout<<" Stage1: fitting Im-CFF parameters…\n";
       minu.Migrad();
       minu.Command("HESSE");
-      // profile M2_E from 0.8 to 1.2 in 40 steps
-        minu.Command("SET ERR 1");
-        minu.Command("SCAN 17 0.8 1.2 40 FIT");
       minu.mnstat(chi2_im,edm,errdef,nv,nx,ic);
       for(int i=0;i<nim;++i) minu.GetParameter(i,imVal[i],imErr[i]);
       ndf_im = Nbins - nim;
