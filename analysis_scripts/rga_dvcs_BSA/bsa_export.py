@@ -185,9 +185,11 @@ def export_bsa_grouped_to_text(bin_means_json,
                 if not valid:
                     continue
 
-                # **NEW** skip bins where any σA == 0
-                if any(s <= 0 for s in sigAs):
-                    continue
+                # filter out any zero‐error entries and only average the rest
+                good = [(A,s) for A,s in zip(As,sigAs) if s>0]
+                if not good:
+                    continue        # nothing to average
+                As, sigAs = zip(*good)
 
                 # weighted average of A
                 weights = [1.0/(s*s) for s in sigAs]
