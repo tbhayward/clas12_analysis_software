@@ -1293,7 +1293,7 @@ double alpha1_H  = 0.85;
 double b_H       = 0.4;   
 double M2_H      = 0.64;
 // double P_H       = 1.0;
-double P_H       = 2.0;
+double P_H       = 1.0;
 
 double GetImH(double xi, double t) {
     if (!hasH) return 0.0;
@@ -1318,7 +1318,7 @@ double alpha1_Ht = 0.85;
 double b_Ht      = 2.0;    // single b–slope
 double M2_Ht     = 0.8;
 // double P_Ht      = 1.0;
-double P_Ht      = 2.0;
+double P_Ht      = 1.0;
 
 double GetImHt(double xi, double t) {
     if (!hasHt) return 0.0;
@@ -1342,7 +1342,7 @@ double alpha1_E  = 0.85;
 double b_E       = 0.4;
 double M2_E      = 0.64;
 // double P_E       = 1.0;
-double P_E       = 2.0;
+double P_E       = 1.0;
 
 double GetImE(double xi, double t) {
     if (!hasE) return 0.0;
