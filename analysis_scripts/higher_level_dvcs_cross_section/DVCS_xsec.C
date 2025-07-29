@@ -1292,8 +1292,8 @@ double alpha0_H  = 0.43;
 double alpha1_H  = 0.85;
 double b_H       = 0.4;   
 double M2_H      = 0.64;
-// double P_H       = 1.0;
 double P_H       = 1.0;
+double B_H_slope = 1;
 
 double GetImH(double xi, double t) {
     if (!hasH) return 0.0;
@@ -1303,7 +1303,7 @@ double GetImH(double xi, double t) {
     double term1 = TMath::Power(2*xi/(1+xi), -aExp);
     double term2 = TMath::Power((1 - xi)/(1 + xi), bExp);
     // double term3 = TMath::Power(1 - ((1 - xi)/(1 + xi))*t/M2_H, -P_H);
-    double term3 = TMath::Power(1 - t/M2_H, -P_H);
+    double term3 = TMath::Exp( B_H_slope * t );
     return renormImag * pref * term1 * term2 * term3;
 }
 
@@ -1317,7 +1317,6 @@ double alpha0_Ht = 0.43;
 double alpha1_Ht = 0.85;
 double b_Ht      = 2.0;    // single b–slope
 double M2_Ht     = 0.8;
-// double P_Ht      = 1.0;
 double P_Ht      = 1.0;
 
 double GetImHt(double xi, double t) {
@@ -1341,7 +1340,6 @@ double alpha0_E  = 0.43;
 double alpha1_E  = 0.85;
 double b_E       = 0.4;
 double M2_E      = 0.64;
-// double P_E       = 1.0;
 double P_E       = 1.0;
 
 double GetImE(double xi, double t) {
