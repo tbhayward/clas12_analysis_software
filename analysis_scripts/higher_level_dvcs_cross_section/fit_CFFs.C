@@ -62,7 +62,7 @@ extern double r_Et,  n_Et,  alpha0_Et,  alpha1_Et,  b_Et,  M2_Et,  P_Et;
 static int   gStrategy    = 0;
 static int   gStage       = 1;
 static int   gConstraint  = 0;  // 0 or 1
-static bool  gPlotBinFits = false;
+static bool  gPlotBinFits = true;
 static std::string gBsaFile = "imports/rga_prl_bsa.txt";
 static const char* gXsFile  = "imports/rga_pass1_xsec_2018.txt";
 
@@ -70,9 +70,8 @@ static const char* gXsFile  = "imports/rga_pass1_xsec_2018.txt";
 struct DataPoint { double phi,Q2,xB,t,Eb,A,sigA; };
 static std::vector<DataPoint> bsaData, xsData;
 static std::vector<double>    bin_xB, bin_Q2, bin_t, bin_Eb;
-static std::vector<double>    bin_A, bin_dA;
+static std::vector<double>    bin_A, bin_dA, bin_redChi2;
 static std::vector<int>       bin_M;
-static std::vector<double>    bin_redChi2;       // <— store each bin’s red χ²
 static int     Nbins          = 0;
 static double  reducedAmpChi2 = 0.0;
 
@@ -153,7 +152,7 @@ void BinBsaData(){
                                           bsaData.begin()+i);
         start = i;
         int M = pts.size();
-        if(M<3) continue;              // <– need ≥3 points
+        if(M<3) continue;  // need ≥3 points to fit C,A,B
 
         // 1) estimate A_bin, dA_bin
         double SwA=0, Sw2=0;
@@ -163,22 +162,23 @@ void BinBsaData(){
             SwA += w*d.A*s;
             Sw2+= w*s*s;
         }
-        double A_bin=SwA/Sw2, dA_bin=1./std::sqrt(Sw2);
+        double A_bin = SwA/Sw2;
+        double dA_bin = 1./std::sqrt(Sw2);
 
-        // 2) quick fit for B and χ²_red
+        // 2) quick 3-param fit for C,A,B
         TF1 ftmp("ftmp",
-          "[0]*sin(x*TMath::Pi()/180.)/(1+[1]*cos(x*TMath::Pi()/180.))",
+          "[0] + [1]*sin(x*TMath::Pi()/180.)/(1+[2]*cos(x*TMath::Pi()/180.))",
           0,360);
-        ftmp.SetParameters(A_bin,0.);
+        ftmp.SetParameters(0, A_bin, 0.);
         TGraphErrors gr(M);
         for(int j=0;j<M;++j){
             gr.SetPoint(j, pts[j].phi, pts[j].A );
             gr.SetPointError(j,0,pts[j].sigA);
         }
         gr.Fit(&ftmp,"Q0R");
-        double Bfit    = ftmp.GetParameter(1);
+        double Bfit    = ftmp.GetParameter(2);
         double chi2    = ftmp.GetChisquare();
-        double redchi2 = chi2 / (M-1);
+        double redchi2 = chi2 / (M-3); // two fit params: C and B
 
         // 3) apply per-bin cuts
         if(gConstraint==1 && (redchi2>=2.0 || std::fabs(Bfit)>=0.9))
@@ -345,32 +345,31 @@ int main(int argc, char** argv) {
       minu.SetFCN(fcn);
       for(int i=0;i<nim;++i){
         const auto &nm = parNamesIm[i];
-        double init=0, lo=0, hi=1e6, step=0.01;
+        double init=0, lo=0, hi=1e3, step=0.01;
         if      (nm=="r_H")       init=r_H;
-        else if (nm=="alpha0_H")  init=alpha0_H, lo=0, hi=1.0;
+        else if (nm=="alpha0_H")  init=alpha0_H;
         else if (nm=="alpha1_H")  init=alpha1_H;
         else if (nm=="b_H")       init=b_H, lo=0;
-        else if (nm=="M2_H")      init=M2_H, lo=0, hi=2;
-        else if (nm=="P_H")       init=P_H, lo=0, hi=5;
-        // Ht, E, Et analogous...
+        else if (nm=="M2_H")      init=M2_H;
+        else if (nm=="P_H")       init=P_H;
         else if (nm=="r_Ht")      init=r_Ht;
-        else if (nm=="alpha0_Ht") init=alpha0_Ht, lo=0, hi=1;
+        else if (nm=="alpha0_Ht") init=alpha0_Ht;
         else if (nm=="alpha1_Ht") init=alpha1_Ht;
         else if (nm=="b_Ht")      init=b_Ht, lo=0;
-        else if (nm=="M2_Ht")     init=M2_Ht, lo=0, hi=2;
-        else if (nm=="P_Ht")      init=P_Ht, lo=0, hi=5;
+        else if (nm=="M2_Ht")     init=M2_Ht;
+        else if (nm=="P_Ht")      init=P_Ht;
         else if (nm=="r_E")       init=r_E;
-        else if (nm=="alpha0_E")  init=alpha0_E, lo=0, hi=1;
+        else if (nm=="alpha0_E")  init=alpha0_E;
         else if (nm=="alpha1_E")  init=alpha1_E;
         else if (nm=="b_E")       init=b_E, lo=0;
-        else if (nm=="M2_E")      init=M2_E, lo=0, hi=2;
-        else if (nm=="P_E")       init=P_E, lo=0, hi=5;
+        else if (nm=="M2_E")      init=M2_E;
+        else if (nm=="P_E")       init=P_E;
         else if (nm=="r_Et")      init=r_Et;
-        else if (nm=="alpha0_Et") init=alpha0_Et,lo=0, hi=1;
+        else if (nm=="alpha0_Et") init=alpha0_Et;
         else if (nm=="alpha1_Et") init=alpha1_Et;
         else if (nm=="b_Et")      init=b_Et, lo=0;
-        else if (nm=="M2_Et")     init=M2_Et, lo=0, hi=2;
-        else if (nm=="P_Et")      init=P_Et, lo=0, hi=5;
+        else if (nm=="M2_Et")     init=M2_Et;
+        else if (nm=="P_Et")      init=P_Et;
         minu.DefineParameter(i, nm.c_str(), init, step, lo, hi);
       }
       std::cout<<" Stage1: fitting Im-CFF parameters…\n";
@@ -467,12 +466,16 @@ void PlotBinFit(int ibin, const std::string &ts) {
     system("mkdir -p output/plots/binned_fits");
     gStyle->SetOptStat(0);
 
+    // draw data points
     TGraphErrors gr(n);
+    gr.SetMarkerStyle(20);
+    gr.SetMarkerSize(1.0);
     for(int i=0;i<n;++i){
       gr.SetPoint(i, dp[i].phi, dp[i].A);
       gr.SetPointError(i,0,dp[i].sigA);
     }
 
+    // fit C + A sinφ/(1 + B cosφ)
     TF1 f1(Form("f_bin%d",ibin),
       "[0] + [1]*sin(x*TMath::Pi()/180.)/(1+[2]*cos(x*TMath::Pi()/180.))",
       0,360);
@@ -483,8 +486,10 @@ void PlotBinFit(int ibin, const std::string &ts) {
     f1.SetLineWidth(2);
     gr.Fit(&f1,"RQN");
 
-    double chi2=f1.GetChisquare(), ndf=f1.GetNDF();
+    double chi2 = f1.GetChisquare();
+    double ndf  = f1.GetNDF();
 
+    // draw
     TCanvas c(Form("c_bin%d",ibin),"",600,500);
     TH1F frame(Form("frame%d",ibin),"",360,0,360);
     frame.SetMinimum(-0.6);
@@ -495,11 +500,14 @@ void PlotBinFit(int ibin, const std::string &ts) {
     gr.Draw("P same");
     f1.Draw("L same");
 
+    // legend (including C)
     TLegend leg(0.6,0.75,0.9,0.9);
+    leg.SetBorderSize(0);
     leg.AddEntry(&gr,"data","p");
-    leg.AddEntry(&f1,Form("A=%.3f#pm%.3f",f1.GetParameter(1),f1.GetParError(1)),"l");
-    leg.AddEntry(&f1,Form("B=%.3f#pm%.3f",f1.GetParameter(2),f1.GetParError(2)),"l");
-    leg.AddEntry((TObject*)0,Form("#chi^{2}/ndf=%.2f",chi2/ndf),"");
+    leg.AddEntry(&f1,Form("C = %.3f #pm %.3f", f1.GetParameter(0), f1.GetParError(0)),"l");
+    leg.AddEntry(&f1,Form("A = %.3f #pm %.3f", f1.GetParameter(1), f1.GetParError(1)),"l");
+    leg.AddEntry(&f1,Form("B = %.3f #pm %.3f", f1.GetParameter(2), f1.GetParError(2)),"l");
+    leg.AddEntry((TObject*)0, Form("#chi^{2}/ndf = %.2f", chi2/ndf),"");
     leg.Draw();
 
     c.SaveAs(Form("output/plots/binned_fits/BinFit_%s_bin%d.pdf",ts.c_str(),ibin));
