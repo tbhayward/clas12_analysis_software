@@ -1302,7 +1302,10 @@ double GetImH(double xi, double t) {
     double pref  = (n_H * r_H) / (1.0 + xi);
     double term1 = TMath::Power(2*xi/(1+xi), -aExp);
     double term2 = TMath::Power((1 - xi)/(1 + xi), bExp);
-    double term3 = TMath::Power(1 - ((1 - xi)/(1 + xi))*t/M2_H, -P_H);
+    // double term3 = TMath::Power(1 - ((1 - xi)/(1 + xi))*t/M2_H, -P_H);
+    // new exponential shape
+    double factor = ((1 - xi)/(1 + xi)) * t;
+    double term3  = std::exp( - P_H * factor / M2_H );
     return renormImag * pref * term1 * term2 * term3;
 }
 
