@@ -18,22 +18,25 @@ def export_bsa_to_text(periods,
     Writes one file with header plus one line per period+bin,
     two-decimal rounding, skips |A|>1 or |σA|>1.
     """
-    # load bin means
+    # 1) load global bin kinematics
     with open(bin_means_json) as f:
         bin_means = json.load(f)
 
+    # 2) ensure output directory exists
     os.makedirs(final_results_dir, exist_ok=True)
     output_path = os.path.join(final_results_dir, output_file)
 
-    # periods in desired order
-    desired = [
-        "DVCS_Sp18_out", "DVCS_Sp18_inb",
-        "DVCS_Fa18_inb", "DVCS_Fa18_out",
-        "DVCS_Sp19_inb"
+    # 3) define desired period order
+    desired_order = [
+        "DVCS_Sp18_out",
+        "DVCS_Sp18_inb",
+        "DVCS_Fa18_inb",
+        "DVCS_Fa18_out",
+        "DVCS_Sp19_inb",
     ]
-    period_list = [p for p in desired if p in periods]
+    period_list = [p for p in desired_order if p in periods]
 
-    # beam energies
+    # 4) beam energies lookup
     beam_energies = {
         "DVCS_Fa18_inb":  10.604,
         "DVCS_Fa18_out":  10.604,
@@ -42,62 +45,74 @@ def export_bsa_to_text(periods,
         "DVCS_Sp18_out":  10.594,
     }
 
+    # helper to sort keys
     def key_to_tuple(k):
         return tuple(map(int, k.strip("()").split(",")))
 
+    # 5) write header and data
     with open(output_path, "w") as out:
         out.write("# phi(deg) q2(GeV2) xb t(GeV2) Eb(GeV) A sigA\n")
         for period in period_list:
             Eb = beam_energies.get(period)
             if Eb is None:
                 continue
-            path = os.path.join(final_results_dir, f"adjusted_bsa_{period}.json")
+            json_path = os.path.join(final_results_dir, f"adjusted_bsa_{period}.json")
             try:
-                with open(path) as f:
+                with open(json_path) as f:
                     data = json.load(f)
             except FileNotFoundError:
                 continue
 
             for key in sorted(data.keys(), key=key_to_tuple):
-                vals = data[key]
-                if not vals.get("valid", True):
+                record = data[key]
+                if not record.get("valid", True):
                     continue
-                A = vals["bsa"]
-                sigmaA = vals["bsa_err"]
-                # skip out-of-range
-                if abs(A) > 1 or abs(sigmaA) > 1:
+                A = record.get("bsa")
+                sigmaA = record.get("bsa_err")
+                # skip if outside [-1,1]
+                if A is None or sigmaA is None or abs(A) > 1 or abs(sigmaA) > 1:
                     continue
-                m = bin_means.get(key)
-                if m is None:
+
+                mean = bin_means.get(key)
+                if mean is None:
                     continue
-                phi_deg = math.degrees(m["phi_avg"])
-                q2 = m["Q2_avg"]
-                xb = m["xB_avg"]
-                t_val = -m["t_avg"]
+                phi_deg = math.degrees(mean.get("phi_avg", 0))
+                q2      = mean.get("Q2_avg", 0)
+                xb      = mean.get("xB_avg", 0)
+                t_val   = -mean.get("t_avg", 0)
+
                 out.write(
-                    f"{phi_deg:.2f} {q2:.2f} {xb:.2f} {t_val:.2f} {Eb:.2f} {A:.2f} {sigmaA:.2f}\n"
+                    f"{phi_deg:.2f} {q2:.2f} {xb:.2f} {t_val:.2f} {Eb:.2f} "
+                    f"{A:.2f} {sigmaA:.2f}\n"
                 )
-    print(f"[export] wrote → {output_path}")
+    print(f"[export_bsa_to_text] wrote → {output_path}")
+
 
 
 def export_bsa_grouped_to_text(bin_means_json,
                                final_results_dir,
                                output_file):
     """
-    Groups: [Sp18_out,Sp18_inb], [Fa18_inb,Fa18_out], [Sp19_inb].
-    Union of keys; for each key average over available periods,
-    skipping zero or invalid entries, two-decimal rounding,
-    skip |A|>1 or |σA|>1.
+    Groups:
+      - SP18_out & SP18_inb
+      - FA18_inb & FA18_out
+      - SP19_inb
+
+    Uses union of all bins within each group; if a bin
+    appears in only one period, it is still output.
+    Weighted average of A over available periods, weights=1/sigmaA^2.
+    Skips entries with sigmaA<=0 or |A|>1 or |sigmaA|>1.
+    Rounds to two decimals.
     """
     with open(bin_means_json) as f:
         bin_means = json.load(f)
     os.makedirs(final_results_dir, exist_ok=True)
-    out_path = os.path.join(final_results_dir, output_file)
+    output_path = os.path.join(final_results_dir, output_file)
 
     groups = [
-        ["DVCS_Sp18_out","DVCS_Sp18_inb"],
-        ["DVCS_Fa18_inb","DVCS_Fa18_out"],
-        ["DVCS_Sp19_inb"]
+        ["DVCS_Sp18_out", "DVCS_Sp18_inb"],
+        ["DVCS_Fa18_inb", "DVCS_Fa18_out"],
+        ["DVCS_Sp19_inb"],
     ]
     beam_energies = {
         "DVCS_Sp18_out": 10.594,
@@ -109,10 +124,10 @@ def export_bsa_grouped_to_text(bin_means_json,
     def key_to_tuple(k):
         return tuple(map(int, k.strip("()").split(",")))
 
-    with open(out_path, "w") as out:
+    with open(output_path, "w") as out:
         out.write("# phi(deg) q2(GeV2) xb t(GeV2) Eb(GeV) A sigA\n")
         for periods in groups:
-            # load JSONs
+            # load all JSONs in this group
             adjs = []
             for p in periods:
                 pth = os.path.join(final_results_dir, f"adjusted_bsa_{p}.json")
@@ -123,29 +138,124 @@ def export_bsa_grouped_to_text(bin_means_json,
                     continue
             if not adjs:
                 continue
-            # union keys
-            keys = set().union(*[d.keys() for d in adjs])
+
+            # union of all keys
+            keys = set().union(*(d.keys() for d in adjs))
             Eb = beam_energies.get(periods[0], 0)
+
             for key in sorted(keys, key=key_to_tuple):
-                As, sigAs = [], []
+                # collect available A, sigmaA
+                As = []
+                sigAs = []
                 for d in adjs:
-                    if key in d and d[key].get("valid",True):
-                        a = d[key]["bsa"]
-                        sa= d[key]["bsa_err"]
-                        if sa>0 and abs(a)<=1 and abs(sa)<=1:
-                            As.append(a); sigAs.append(sa)
+                    rec = d.get(key)
+                    if not rec or not rec.get("valid", True):
+                        continue
+                    a = rec.get("bsa")
+                    sa = rec.get("bsa_err")
+                    # require sa>0 and within bounds
+                    if sa and sa>0 and abs(a)<=1 and abs(sa)<=1:
+                        As.append(a)
+                        sigAs.append(sa)
                 if not As:
                     continue
+
                 # weighted average
-                ws = [1/(s*s) for s in sigAs]
-                W = sum(ws)
-                A_avg = sum(w*a for w,a in zip(ws,As))/W
-                sigmaA = math.sqrt(1.0/W)
-                m = bin_means.get(key)
-                if not m:
+                weights = [1.0/(s*s) for s in sigAs]
+                Wsum = sum(weights)
+                A_avg = sum(w*a for w,a in zip(weights, As)) / Wsum
+                sigmaA = math.sqrt(1.0 / Wsum)
+
+                mean = bin_means.get(key)
+                if not mean:
                     continue
-                phi_deg = math.degrees(m["phi_avg"])
-                q2 = m["Q2_avg"]; xb = m["xB_avg"]
-                t_val = -m["t_avg"]
+                phi_deg = math.degrees(mean.get("phi_avg", 0))
+                q2      = mean.get("Q2_avg", 0)
+                xb      = mean.get("xB_avg", 0)
+                t_val   = -mean.get("t_avg", 0)
+
                 out.write(
-                    f"{phi_deg:.2f} {q2:.2f} {xb:.2f} {t_val:.2f} {Eb:.2f} 
+                    f"{phi_deg:.2f} {q2:.2f} {xb:.2f} {t_val:.2f} {Eb:.2f} "
+                    f"{A_avg:.2f} {sigmaA:.2f}\n"
+                )
+    print(f"[export_bsa_grouped_to_text] wrote → {output_path}")
+
+
+
+def export_bsa_spfa_combined_to_text(bin_means_json,
+                                      final_results_dir,
+                                      output_file):
+    """
+    Combines SP18 & FA18 into a single group (Eb=10.60 GeV),
+    then SP19_inb separately.
+
+    Union of keys across all periods; averages available
+    values with weights=1/sigmaA^2; skips invalid.
+    Rounds to two decimals, skip |A|>1 or |σA|>1.
+    """
+    with open(bin_means_json) as f:
+        bin_means = json.load(f)
+    os.makedirs(final_results_dir, exist_ok=True)
+    output_path = os.path.join(final_results_dir, output_file)
+
+    groups = [
+        ["DVCS_Sp18_out", "DVCS_Sp18_inb",
+         "DVCS_Fa18_inb", "DVCS_Fa18_out"],
+        ["DVCS_Sp19_inb"],
+    ]
+    Eb_values = [10.60, None]
+    beam_energies = {"DVCS_Sp19_inb": 10.200}
+
+    def key_to_tuple(k):
+        return tuple(map(int, k.strip("()").split(",")))
+
+    with open(output_path, "w") as out:
+        out.write("# phi(deg) q2(GeV2) xb t(GeV2) Eb(GeV) A sigA\n")
+        for idx, periods in enumerate(groups):
+            adjs = []
+            for p in periods:
+                pth = os.path.join(final_results_dir, f"adjusted_bsa_{p}.json")
+                try:
+                    with open(pth) as f:
+                        adjs.append(json.load(f))
+                except FileNotFoundError:
+                    continue
+            if not adjs:
+                continue
+
+            keys = set().union(*(d.keys() for d in adjs))
+            Eb = Eb_values[idx] if Eb_values[idx] else beam_energies.get(periods[0],0)
+
+            for key in sorted(keys, key=key_to_tuple):
+                As = []
+                sigAs = []
+                for d in adjs:
+                    rec = d.get(key)
+                    if not rec or not rec.get("valid", True):
+                        continue
+                    a = rec.get("bsa")
+                    sa = rec.get("bsa_err")
+                    if sa and sa>0 and abs(a)<=1 and abs(sa)<=1:
+                        As.append(a)
+                        sigAs.append(sa)
+                if not As:
+                    continue
+
+                weights = [1.0/(s*s) for s in sigAs]
+                Wsum = sum(weights)
+                A_avg = sum(w*a for w,a in zip(weights, As)) / Wsum
+                sigmaA = math.sqrt(1.0 / Wsum)
+
+                mean = bin_means.get(key)
+                if not mean:
+                    continue
+                phi_deg = math.degrees(mean.get("phi_avg", 0))
+                q2      = mean.get("Q2_avg", 0)
+                xb      = mean.get("xB_avg", 0)
+                t_val   = -mean.get("t_avg", 0)
+
+                out.write(
+                    f"{phi_deg:.2f} {q2:.2f} {xb:.2f} {t_val:.2f} {Eb:.2f} "
+                    f"{A_avg:.2f} {sigmaA:.2f}\n"
+                )
+    print(f"[export_bsa_spfa_combined_to_text] wrote → {output_path}")
