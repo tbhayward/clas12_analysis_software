@@ -1324,7 +1324,7 @@ double GetImHt(double xi, double t) {
     double bExp  = b_Ht;
     double pref  = (n_Ht * r_Ht) / (1.0 + xi);
     double term1 = TMath::Power(2*xi/(1+xi), -aExp);
-    double term2 = TMath::Power((1 - xi)*(1 + xi), bExp);
+    double term2 = TMath::Power((1 - xi)/(1 + xi), bExp);
     double term3 = TMath::Power(1 - ((1 - xi)/(1 + xi))*t/M2_Ht, -P_Ht);
     return renormImag * pref * term1 * term2 * term3;
 }
@@ -1346,7 +1346,7 @@ double GetImE(double xi, double t) {
     double bExp  = b_E;
     double pref  = (n_E * r_E) / (1.0 + xi);
     double term1 = TMath::Power(2*xi/(1+xi), -aExp);
-    double term2 = TMath::Power((1 - xi)*(1 + xi), bExp);
+    double term2 = TMath::Power((1 - xi)/(1 + xi), bExp);
     double term3 = TMath::Power(1 - ((1 - xi)/(1 + xi))*t/M2_E, -P_E);
     return renormImag * pref * term1 * term2 * term3;
 }
@@ -1368,7 +1368,7 @@ double GetImEt(double xi, double t) {
     double bExp  = b_Et;
     double pref  = (n_Et * r_Et) / (1.0 + xi);
     double term1 = TMath::Power(2*xi/(1+xi), -aExp);
-    double term2 = TMath::Power((1 - xi)*(1 + xi), bExp);
+    double term2 = TMath::Power((1 - xi)/(1 + xi), bExp);
     double term3 = TMath::Power(1 - ((1 - xi)/(1 + xi))*t/M2_Et, -P_Et);
     return renormImag * pref * term1 * term2 * term3;
 }
