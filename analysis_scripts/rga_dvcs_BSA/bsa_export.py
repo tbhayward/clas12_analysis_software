@@ -2,6 +2,7 @@
 
 import os
 import json
+import math
 
 def export_bsa_to_text(periods,
                        bin_means_json,
@@ -47,7 +48,8 @@ def export_bsa_to_text(periods,
 
     # 5) write the single combined text file
     with open(output_path, "w") as out:
-        out.write("# phi(rad) q2(GeV2) xb t(GeV2) Eb(GeV) A sigA\n")
+        # note header now lists phi(deg)
+        out.write("# phi(deg) q2(GeV2) xb t(GeV2) Eb(GeV) A sigA\n")
 
         for period in period_list:
             Eb = beam_energies.get(period)
@@ -73,13 +75,16 @@ def export_bsa_to_text(periods,
                 if mean is None:
                     continue
 
-                phi    = mean["phi_avg"]
+                # convert phi from radians to degrees
+                phi_rad = mean["phi_avg"]
+                phi_deg = math.degrees(phi_rad)
+
                 q2     = mean["Q2_avg"]
                 xb     = mean["xB_avg"]
                 t_val  = -mean["t_avg"]       # write –t
                 A      = vals["bsa"]
                 sigmaA = vals["bsa_err"]
 
-                out.write(f"{phi} {q2} {xb} {t_val} {Eb:.3f} {A} {sigmaA}\n")
+                out.write(f"{phi_deg} {q2} {xb} {t_val} {Eb:.3f} {A} {sigmaA}\n")
 
     print(f"[export] wrote combined file → {output_path}")
