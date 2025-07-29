@@ -324,7 +324,7 @@ int main(int argc, char** argv) {
         double init=0, lo=-1e3, hi=1e3, step=0.01;
         if(nm=="r_H")         { init=r_H; lo=0.0; hi=5.0; }
         else if(nm=="alpha0_H"){ init=alpha0_H; lo=0.0; hi=1.0; }
-        else if(nm=="alpha1_H") init=alpha1_H;
+        else if(nm=="alpha1_H") {init = 0; step = 0; }//init=alpha1_H;
         else if(nm=="b_H")      { init=b_H;  }
         else if(nm=="M2_H")     { init=M2_H;  lo=0.0; hi=1.0; }
         else if(nm=="P_H")      { init=P_H;   }
