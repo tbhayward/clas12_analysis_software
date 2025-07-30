@@ -503,11 +503,12 @@ int main(int argc, char** argv) {
           const auto &nm = parNamesAll[i];
           double init=0, lo=-1e3, hi=+1e3, step=0.01;
 
-          if(nm.find("alpha0_")==0 || nm.find("alpha1_")==0){
-            lo = 0.0;
+          if(nm.find("alpha0_")==0){
+            lo = 0.0; hi = 0.999999;
           }
           // enforce other positivity
-          if(nm.find("b_")==0
+          if(nm.find("alpha1_")==0
+          || nm.find("b_")==0
           || nm.find("M2_")==0){
             lo = 0.0;
           }
