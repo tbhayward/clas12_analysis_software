@@ -1412,7 +1412,7 @@ double PV_integral(std::function<double(double)> f, double xi, double t) {
         }
         double I = sum * (h/3.0);
         std::cout<<"  --> Result ["<<tag<<"] = "<<I<<"\n";
-        std::cout<<"alpha0 = " << alpha0 << ", alpha1 = " << alpha1 << std::endl;
+        std::cout<<"alpha0 = " << alpha0_H << ", alpha1 = " << alpha1_H << std::endl;
         return I;
     };
 
