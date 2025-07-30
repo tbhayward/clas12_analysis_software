@@ -1382,22 +1382,46 @@ double C0_Ht,   MD2_Ht,   lambda_Ht;
 double C0_E,    MD2_E,    lambda_E;
 double C0_Et,   MD2_Et,   lambda_Et;
 
-// Helpers for PV integration (simple two-interval Simpson)
-#include <functional>
 double PV_integral(std::function<double(double)> f, double xi, double t) {
     const double eps = 1e-6;
-    auto integrate = [&](double a, double b){
-        int N = 1000; double h = (b-a)/N; double sum = 0;
-        for(int i=0; i<=N; ++i){
-            double x = a + i*h;
-            double w = (i==0||i==N)?1:((i%2)?4:2);
-            sum += w * f(x);
+
+    auto integrate = [&](double a, double b, const char* label){
+        std::cout << "--- Integrating " << label 
+                  << " over [" << a << ", " << b << "]\n";
+        int N = 1000;
+        double h = (b - a) / N;
+        double sum = 0;
+        for(int i = 0; i <= N; ++i){
+            double x = a + i * h;
+            double denom = xi*xi - x*x;
+            if (std::fabs(denom) < 1e-8) {
+                std::cout << "  >> small denom at x=" << x 
+                          << "  denom=" << denom << "\n";
+            }
+            double fx = f(x);
+            if (!std::isfinite(fx)) {
+                std::cout << "  !! f("<< x <<") = " << fx 
+                          << "  (denom="<< denom <<")\n";
+            }
+            int w = (i==0 || i==N) ? 1 : ((i%2)?4:2);
+            sum += w * fx;
         }
-        return sum * h/3;
+        double res = sum * h / 3.0;
+        std::cout << "  " << label << " = " << res << "\n\n";
+        return res;
     };
-    double I1 = integrate(0.0, std::max(0.0, xi - eps));
-    double I2 = integrate(std::min(1.0, xi + eps), 1.0);
-    return I1 + I2;
+
+    std::cout << "\n>>> PV_integral called with xi=" << xi 
+              << ", t=" << t << "\n";
+    std::cout << "    skipping singular region [" 
+              << xi - eps << ", " << xi + eps << "]\n";
+
+    double I1 = integrate(0.0, std::max(0.0, xi - eps), "I1");
+    double I2 = integrate(std::min(1.0, xi + eps), 1.0,             "I2");
+    double total = I1 + I2;
+
+    std::cout << ">>> PV_integral total = " << total << "\n\n";
+    return total;
 }
 
 // Real part of H via dispersion relation
@@ -1411,9 +1435,6 @@ double GetReH(double xi, double t) {
         return (2.0*xi/denom) * GetImH(x, t);
     };
     double pv = PV_integral(integrand, xi, t) / M_PI;
-    std::cout << "THE sub VALUE IS " << sub << std::endl;
-    std::cout << "THE pv VALUE IS " << pv << std::endl;
-    std::cout << std::endl;
     return renormReal * (sub + pv);
 }
 
