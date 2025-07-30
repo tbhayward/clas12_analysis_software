@@ -438,13 +438,11 @@ int main(int argc, char** argv) {
           if(nm=="alpha0_H"  || nm=="alpha0_Ht"
           || nm=="alpha0_E"  || nm=="alpha0_Et"){
             lo = 0.0;
-            hi = 0.9999999;           // < 1
           }
           // enforce alpha1 ≥ 0
           if(nm=="alpha1_H"  || nm=="alpha1_Ht"
           || nm=="alpha1_E"  || nm=="alpha1_Et"){
             lo = 0.0;
-            hi = 0.9999999;
           }
           // enforce b ≥ 0
           if(nm=="b_H"  || nm=="b_Ht"
@@ -505,14 +503,11 @@ int main(int argc, char** argv) {
           const auto &nm = parNamesAll[i];
           double init=0, lo=-1e3, hi=+1e3, step=0.01;
 
-          // enforce alpha0 < 1
-          if(nm.find("alpha0_")==0){
+          if(nm.find("alpha0_")==0 || nm.find("alpha1_")==0){
             lo = 0.0;
-            hi = 0.999;
           }
           // enforce other positivity
-          if(nm.find("alpha1_")==0
-          || nm.find("b_")==0
+          if(nm.find("b_")==0
           || nm.find("M2_")==0){
             lo = 0.0;
           }

@@ -1422,7 +1422,7 @@ double PV_integral(std::function<double(double)> f, double ξ, double t) {
     double numeric = I1 + I2;
 
     // 3) return combined result
-    return (numeric + analytic_tail) / M_PI;
+    return (numeric + analytic_tail);
 }
 
 // Real part of H via dispersion relation
