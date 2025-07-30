@@ -1387,7 +1387,7 @@ double C0_Et,   MD2_Et,   lambda_Et;
 double PV_integral(std::function<double(double)> f, double xi, double t) {
     const double eps = 1e-6;
     auto integrate = [&](double a, double b){
-        int N = 200; double h = (b-a)/N; double sum = 0;
+        int N = 1000; double h = (b-a)/N; double sum = 0;
         for(int i=0; i<=N; ++i){
             double x = a + i*h;
             double w = (i==0||i==N)?1:((i%2)?4:2);
@@ -1405,6 +1405,7 @@ double GetReH(double xi, double t) {
     if(!hasH) return 0.0;
     // subtraction piece
     double sub = C0_H * TMath::Power(1.0 - t/MD2_H, -lambda_H);
+    std::cout << "THE sub VALUE IS " << sub << std::endl;
     // principal-value integral
     auto integrand = [&](double x){
         double denom = xi*xi - x*x;
