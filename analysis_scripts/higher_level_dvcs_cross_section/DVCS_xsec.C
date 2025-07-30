@@ -1387,49 +1387,42 @@ double C0_Et,   MD2_Et,   lambda_Et;
 #include <limits>
 #include <cmath>
 #include <iostream>
-double PV_integral(std::function<double(double)> f, double xi, double t) {
-    const double eps   = 1e-6;    // skip region around x=xi
+double PV_integral(std::function<double(double)> f, double ξ, double t) {
+    const double eps   = 1e-8;
+    const double x_min = 1e-8;
     const int    N     = 1000;
-    auto integrate = [&](double a, double b, const char* tag){
-        double h = (b - a) / N;
-        double sum = 0.0;
-        std::cout << "\n--- Integrating ["<<tag<<"] over ["<<a<<","<<b<<"]  (N="<<N<<")\n";
-        for(int i = 0; i <= N; ++i){
-            double x = a + i*h;
-            // Simpson weight
-            double w = (i==0||i==N) ? 1.0 : ((i&1) ? 4.0 : 2.0);
 
-            // evaluate integrand
-            double fx = f(x);
-            double denom = xi*xi - x*x;
-            if (!std::isfinite(fx)){
-                std::cout<<"  !! f("<<x<<") = "<<fx
-                         <<"   denom="<<denom
-                         <<"   |GetImH|="<<( (denom!=0.0)? fx * denom/(2.0*xi) : std::nan("") )
-                         <<"\n";
-            }
-            sum += w * fx;
-        }
-        double I = sum * (h/3.0);
-        std::cout<<"  --> Result ["<<tag<<"] = "<<I<<"\n";
-        std::cout<<"alpha0 = " << alpha0_H << ", alpha1 = " << alpha1_H << std::endl;
-        return I;
+    // 1) compute analytic tail 0→x_min
+    double p = alpha0_H + alpha1_H * t;
+    double C = renormImag
+             * n_H * r_H
+             * std::pow(2.0,  -p)
+             * std::pow(1.0 - t/M2_H, -P_H);
+    double analytic_tail = 0.0;
+    if (p < 1.0) {
+      analytic_tail = 2.0 * C
+                    / (ξ * (1.0 - p))
+                    * std::pow(x_min, 1.0 - p);
+    }
+
+    // 2) numeric Simpson integrals from x_min→ξ−eps and ξ+eps→1
+    auto integrate = [&](double a, double b){
+      double h = (b - a)/N, sum = 0.0;
+      for(int i=0; i<=N; ++i){
+        double x = a + i*h;
+        double w = (i==0||i==N) ? 1.0 : ((i&1)?4.0:2.0);
+        sum += w * f(x);
+      }
+      return sum * (h/3.0);
     };
 
-    // build integrand for diagnostics
-    auto integrand = [&](double x){
-        double denom = xi*xi - x*x;
-        return (2.0*xi/denom) * f(x);
-    };
+    // the usual PV weight is inside f(x), so we just integrate f(x)=2ξ/(ξ²−x²)*ImH(x)
+    double I1 = integrate(x_min, std::max(x_min, ξ - eps));
+    double I2 = integrate(std::min(1.0, ξ + eps), 1.0);
+    double numeric = I1 + I2;
 
-    // I1: [0, xi-eps]
-    double I1 = integrate(0.0, std::max(0.0, xi - eps), "I1");
-    // I2: [xi+eps, 1]
-    double I2 = integrate(std::min(1.0, xi + eps), 1.0, "I2");
-    double total = (I1 + I2) / M_PI;
-
-    std::cout<<"\n>>> PV_integral total = "<<total<< "\n\n";
-    return total;
+    // 3) return combined result
+    return (numeric + analytic_tail) / M_PI;
 }
 
 // Real part of H via dispersion relation
