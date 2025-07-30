@@ -1398,10 +1398,10 @@ double PV_integral(std::function<double(double)> f, double xi, double t) {
         for(int i = 0; i <= N; ++i){
             double x = a + i*h;
             // skip near x=0
-            if (x < zmin) {
-                std::cout<<"   skipping x~0 (x="<<x<<")\n";
-                continue;
-            }
+            // if (x < zmin) {
+            //     std::cout<<"   skipping x~0 (x="<<x<<")\n";
+            //     continue;
+            // }
             // Simpson weight
             double w = (i==0||i==N) ? 1.0 : ((i&1) ? 4.0 : 2.0);
 
