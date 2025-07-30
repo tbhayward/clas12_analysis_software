@@ -9,11 +9,10 @@
  *
  * Usage:
  *   ./fit_CFFs --strategy <1|2> -H <0|1> -Ht <0|1> -E <0|1> -Et <0|1>
- *             [--constraint <0|1>] [--input <BSA_file>] [--plot-fits]
+ *             [--constraint <0|1>] [--input <BSA_file> [XSEC_file]] [--plot-fits]
  *
- *   constraint=0 : no cuts
- *   constraint=1 : per-point (-t/Q2>=0.2 or -t>=1) AND per-bin
- *                  (χ²_red>=2 or |B|>=0.9) cuts
+ *   If only BSA_file is given, xsec uses the built-in default.  If neither
+ *   is given, both defaults are used.
  *
  * Compile:
  *   g++ -O2 fit_CFFs.C `root-config --cflags --libs` -lMinuit -o fit_CFFs
@@ -68,11 +67,13 @@ extern double C0_Et,   MD2_Et,   lambda_Et;
 // ----------------------------------------------------------------------------
 // Control flags & data containers
 static int   gStrategy    = 0;
-static int   gStage       = 1;  // 1 = Im‐only, 0 = global simultaneous
+static int   gStage       = 1;  // 1 = Im-only, 0 = global simultaneous
 static int   gConstraint  = 0;  // 0 or 1
 static bool  gPlotBinFits = false;
+
+// default data files:
 static std::string gBsaFile = "imports/rga_prl_bsa.txt";
-static const char* gXsFile  = "imports/rga_pass1_xsec_2018.txt";
+static std::string gXsFile  = "imports/rga_pass1_xsec_2018.txt";
 
 struct DataPoint { double phi, Q2, xB, t, Eb, A, sigA; };
 static std::vector<DataPoint> bsaData, xsData;
@@ -110,13 +111,22 @@ void parse_args(int argc, char** argv){
           case 'e': hasE        = std::atoi(optarg); break;
           case 'x': hasEt       = std::atoi(optarg); break;
           case 'C': gConstraint = std::atoi(optarg); break;
-          case 'i': gBsaFile    = optarg;            break;
           case 'p': gPlotBinFits= true;              break;
+          case 'i':
+            // first arg → BSA file
+            gBsaFile = optarg;
+            // if there's another non-option arg, treat it as the xsec file:
+            if(optind<argc && argv[optind][0] != '-') {
+              gXsFile = argv[optind++];
+            }
+            break;
           default:
             std::cerr<<"Usage: "<<argv[0]
                      <<" --strategy<1|2> -H<0|1> -Ht<0|1>"
-                     <<" -E<0|1> -Et<0|1> [--constraint<0|1>]"
-                     <<" [--input <BSA_file>] [--plot-fits]\n";
+                     <<" -E<0|1> -Et<0|1>"
+                     <<" [--constraint<0|1>]"
+                     <<" [--input <BSA_file> [XSEC_file]]"
+                     <<" [--plot-fits]\n";
             std::exit(1);
         }
     }
@@ -128,7 +138,7 @@ void parse_args(int argc, char** argv){
 }
 
 void LoadData(){
-    auto read=[&](const char* fn, auto &v){
+    auto read=[&](const std::string &fn, auto &v){
         std::ifstream in(fn);
         if(!in){ std::cerr<<"ERROR: cannot open "<<fn<<"\n"; std::exit(1); }
         std::string line;
@@ -143,8 +153,66 @@ void LoadData(){
             v.push_back(d);
         }
     };
-    read(gBsaFile.c_str(), bsaData);
-    read(gXsFile,          xsData);
+    read(gBsaFile, bsaData);
+    read(gXsFile,  xsData);
+}
+
+void BinBsaData(){
+    keptBins.clear();
+    bin_xB.clear(); bin_Q2.clear(); bin_t.clear(); bin_Eb.clear();
+    bin_A.clear();  bin_dA.clear();  bin_redChi2.clear(); bin_M.clear();
+
+    if(bsaData.empty()) return;
+    size_t start=0;
+    for(size_t i=1;i<=bsaData.size();++i){
+        bool newbin = (i==bsaData.size() || bsaData[i].phi < bsaData[i-1].phi);
+        if(!newbin) continue;
+        auto pts = std::vector<DataPoint>(bsaData.begin()+start,
+                                          bsaData.begin()+i);
+        start = i;
+        int M = pts.size();
+        if(M<3) continue;
+        // fit A*sin φ + … → bin_A, bin_dA, bin_redChi2, etc.
+        TGraphErrors gr(M);
+        for(int j=0;j<M;++j){
+            gr.SetPoint(j, pts[j].phi, pts[j].A);
+            gr.SetPointError(j,0,pts[j].sigA);
+        }
+        TF1 ftmp("ftmp",
+          "[0] + [1]*sin(x*TMath::Pi()/180.)"
+               "/(1 + [2]*cos(x*TMath::Pi()/180.))",
+          0,360);
+        ftmp.SetParameters(0.,0.5,0.);
+        gr.Fit(&ftmp,"Q0R");
+        double Afit    = ftmp.GetParameter(1);
+        double dA      = ftmp.GetParError(1);
+        double Bfit    = ftmp.GetParameter(2);
+        double chi2    = ftmp.GetChisquare();
+        double redchi2 = chi2 / (M - 3);
+        if(gConstraint==1 && (redchi2>=2.0 || std::fabs(Bfit)>=0.9))
+            continue;
+        keptBins.push_back(pts);
+        bin_M   .push_back(M);
+        bin_A   .push_back(Afit);
+        bin_dA  .push_back(dA);
+        bin_redChi2.push_back(redchi2);
+        double sumw=0, Sx=0, Sq=0, St=0, Se=0;
+        for(auto &d: pts){
+            double w = 1./(d.sigA*d.sigA);
+            sumw+=w; Sx+=w*d.xB; Sq+=w*d.Q2; St+=w*d.t; Se+=w*d.Eb;
+        }
+        bin_xB .push_back(Sx/sumw);
+        bin_Q2 .push_back(Sq/sumw);
+        bin_t  .push_back(St/sumw);
+        bin_Eb .push_back(Se/sumw);
+    }
+    Nbins = bin_A.size();
+    double totChi2=0; int totDof=0;
+    for(int k=0;k<Nbins;++k){
+        totChi2 += std::pow(bin_A[k]/bin_dA[k],2);
+        totDof  += (bin_M[k] - 1);
+    }
+    reducedAmpChi2 = totDof>0 ? totChi2/totDof : 0.0;
 }
 
 void BinBsaData(){
