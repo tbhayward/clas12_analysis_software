@@ -62,7 +62,7 @@ extern double r_Et,  n_Et,  alpha0_Et,  alpha1_Et,  b_Et,  M2_Et,  P_Et;
 static int   gStrategy    = 0;
 static int   gStage       = 1;
 static int   gConstraint  = 0;  // 0 or 1
-static bool  gPlotBinFits = true;
+static bool  gPlotBinFits = false;
 static std::string gBsaFile = "imports/rga_prl_bsa.txt";
 static const char* gXsFile  = "imports/rga_pass1_xsec_2018.txt";
 
@@ -230,7 +230,7 @@ void build_par_list(){
     if(hasH )  parNamesIm.insert(parNamesIm.end(),
                {"r_H","alpha0_H","alpha1_H","b_H","M2_H","P_H"});
     if(hasHt)  parNamesIm.insert(parNamesIm.end(),
-               {"r_Ht","alpha0_Ht","alpha1_Ht","b_Ht","M2_Ht","P_Ht"});
+               {"renormImag", "r_Ht","alpha0_Ht","alpha1_Ht","b_Ht","M2_Ht","P_Ht"});
     if(hasE )  parNamesIm.insert(parNamesIm.end(),
                {"r_E","alpha0_E","alpha1_E","b_E","M2_E","P_E"});
     if(hasEt)  parNamesIm.insert(parNamesIm.end(),
@@ -250,6 +250,7 @@ void fcn(int&, double*, double &f, double *par, int){
           P_H       = par[ip++];
         }
         if(hasHt){
+          renormImag      = par[ip++];
           r_Ht      = par[ip++];
           alpha0_Ht = par[ip++];
           alpha1_Ht = par[ip++];
@@ -369,6 +370,7 @@ int main(int argc, char** argv) {
         else if (nm=="b_H")       init=b_H;
         else if (nm=="M2_H")      init=M2_H;
         else if (nm=="P_H")       init=P_H;
+        else if (nm=="renormImag")      init=r_Ht;
         else if (nm=="r_Ht")      init=r_Ht;
         else if (nm=="alpha0_Ht") init=alpha0_Ht;
         else if (nm=="alpha1_Ht") init=alpha1_Ht;
