@@ -517,6 +517,8 @@ int main(int argc, char** argv) {
             init = 1.0; lo = 1.0; hi = 1.0; step = 0.0;
           }
 
+          if (num=="C0_H") hi = 0.0; // D-term should be negative
+
           // subtraction‐term parameters ≥ 0
           if(nm=="MD2_H"    || nm=="lambda_H"
           || nm=="MD2_Ht"   || nm=="lambda_Ht"
