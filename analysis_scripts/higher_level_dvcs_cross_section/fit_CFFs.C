@@ -433,27 +433,40 @@ int main(int argc, char** argv) {
         for(int i=0;i<nim;++i){
           const auto &nm = parNamesIm[i];
           double init=0, lo=-1e3, hi=+1e3, step=0.01;
-          // impose positivity
-          if(nm=="alpha0_H"  || nm=="alpha1_H"
-          || nm=="alpha0_Ht" || nm=="alpha1_Ht"
-          || nm=="alpha0_E"  || nm=="alpha1_E"
-          || nm=="alpha0_Et" || nm=="alpha1_Et"
-          || nm=="b_H"  || nm=="b_Ht"
-          || nm=="b_E"  || nm=="b_Et"
-          || nm=="M2_H" || nm=="M2_Ht"
+
+          // enforce alpha0 < 1
+          if(nm=="alpha0_H"  || nm=="alpha0_Ht"
+          || nm=="alpha0_E"  || nm=="alpha0_Et"){
+            lo = 0.0;
+            hi = 0.999;           // < 1
+          }
+          // enforce alpha1 ≥ 0
+          if(nm=="alpha1_H"  || nm=="alpha1_Ht"
+          || nm=="alpha1_E"  || nm=="alpha1_Et"){
+            lo = 0.0;
+          }
+          // enforce b ≥ 0
+          if(nm=="b_H"  || nm=="b_Ht"
+          || nm=="b_E"  || nm=="b_Et"){
+            lo = 0.0;
+          }
+          // enforce M2 ≥ 0
+          if(nm=="M2_H" || nm=="M2_Ht"
           || nm=="M2_E" || nm=="M2_Et"){
             lo = 0.0;
           }
-          // fix P parameters
+          // fix P = 1
           if(nm=="P_H"  || nm=="P_Ht"
           || nm=="P_E"  || nm=="P_Et"){
             init = 1.0; lo = 1.0; hi = 1.0; step = 0.0;
           }
-          // defaults
-          if     (nm=="r_H")       init=r_H;
-          else if(nm=="r_Ht")      init=r_Ht;
-          else if(nm=="r_E")       init=r_E;
-          else if(nm=="r_Et")      init=r_Et;
+
+          // defaults for the rest
+          if     (nm=="r_H")        init = r_H;
+          else if(nm=="r_Ht")       init = r_Ht;
+          else if(nm=="r_E")        init = r_E;
+          else if(nm=="r_Et")       init = r_Et;
+
           minu.DefineParameter(i, nm.c_str(), init, step, lo, hi);
           if(step==0.0) minu.FixParameter(i);
         }
@@ -490,19 +503,33 @@ int main(int argc, char** argv) {
         for(int i=0;i<nAll;++i){
           const auto &nm = parNamesAll[i];
           double init=0, lo=-1e3, hi=+1e3, step=0.01;
-          // positivity for all shape parameters:
-          if(nm.find("alpha0")!=std::string::npos
-          || nm.find("alpha1")!=std::string::npos
-          || nm.find("b_")!=std::string::npos
-          || nm.find("M2_")!=std::string::npos){
+
+          // enforce alpha0 < 1
+          if(nm.find("alpha0_")==0){
+            lo = 0.0;
+            hi = 0.999;
+          }
+          // enforce other positivity
+          if(nm.find("alpha1_")==0
+          || nm.find("b_")==0
+          || nm.find("M2_")==0){
             lo = 0.0;
           }
-          // fix P's:
+          // fix P = 1
           if(nm=="P_H"  || nm=="P_Ht"
           || nm=="P_E"  || nm=="P_Et"){
             init = 1.0; lo = 1.0; hi = 1.0; step = 0.0;
           }
-          // initialize
+
+          // subtraction‐term parameters ≥ 0
+          if(nm=="MD2_H"    || nm=="lambda_H"
+          || nm=="MD2_Ht"   || nm=="lambda_Ht"
+          || nm=="MD2_E"    || nm=="lambda_E"
+          || nm=="MD2_Et"   || nm=="lambda_Et"){
+            lo = 0.0;
+          }
+
+          // initialize everything
           if     (nm=="r_H")        init=r_H;
           else if(nm=="alpha0_H")   init=alpha0_H;
           else if(nm=="alpha1_H")   init=alpha1_H;
@@ -529,17 +556,18 @@ int main(int argc, char** argv) {
           else if(nm=="P_Et")       init=P_Et;
           else if(nm=="renormReal") init=renormReal;
           else if(nm=="C0_H")       init=C0_H;
-          else if(nm=="MD2_H")      init=MD2_H, lo=0.0;
-          else if(nm=="lambda_H")   init=lambda_H, lo=0.0;
+          else if(nm=="MD2_H")      init=MD2_H;
+          else if(nm=="lambda_H")   init=lambda_H;
           else if(nm=="C0_Ht")      init=C0_Ht;
-          else if(nm=="MD2_Ht")     init=MD2_Ht, lo=0.0;
-          else if(nm=="lambda_Ht")  init=lambda_Ht, lo=0.0;
+          else if(nm=="MD2_Ht")     init=MD2_Ht;
+          else if(nm=="lambda_Ht")  init=lambda_Ht;
           else if(nm=="C0_E")       init=C0_E;
-          else if(nm=="MD2_E")      init=MD2_E, lo=0.0;
-          else if(nm=="lambda_E")   init=lambda_E, lo=0.0;
+          else if(nm=="MD2_E")      init=MD2_E;
+          else if(nm=="lambda_E")   init=lambda_E;
           else if(nm=="C0_Et")      init=C0_Et;
-          else if(nm=="MD2_Et")     init=MD2_Et, lo=0.0;
-          else if(nm=="lambda_Et")  init=lambda_Et, lo=0.0;
+          else if(nm=="MD2_Et")     init=MD2_Et;
+          else if(nm=="lambda_Et")  init=lambda_Et;
+
           minu.DefineParameter(i, nm.c_str(), init, step, lo, hi);
           if(step==0.0) minu.FixParameter(i);
         }
@@ -554,7 +582,6 @@ int main(int argc, char** argv) {
         errMap[parNamesAll[i]] = allErr[i];
       }
       chi2_total = chi2_glob;
-      // degrees of freedom = N_bsa_bins + N_xs_points - N_pars
       ndf_total = Nbins + xsData.size() - parNamesAll.size();
     }
 
