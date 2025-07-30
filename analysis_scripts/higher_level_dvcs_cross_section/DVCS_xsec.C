@@ -1382,45 +1382,58 @@ double C0_Ht,   MD2_Ht,   lambda_Ht;
 double C0_E,    MD2_E,    lambda_E;
 double C0_Et,   MD2_Et,   lambda_Et;
 
+// Helpers for PV integration (simple two-interval Simpson with debug)
+#include <functional>
+#include <limits>
+#include <cmath>
+#include <iostream>
 double PV_integral(std::function<double(double)> f, double xi, double t) {
-    const double eps = 1e-6;
-
-    auto integrate = [&](double a, double b, const char* label){
-        std::cout << "--- Integrating " << label 
-                  << " over [" << a << ", " << b << "]\n";
-        int N = 1000;
+    const double eps   = 1e-6;    // skip region around x=xi
+    const double zmin  = 1e-5;    // skip region around x=0 if needed
+    const int    N     = 1000;
+    auto integrate = [&](double a, double b, const char* tag){
         double h = (b - a) / N;
-        double sum = 0;
+        double sum = 0.0;
+        std::cout << "\n--- Integrating ["<<tag<<"] over ["<<a<<","<<b<<"]  (N="<<N<<")\n";
         for(int i = 0; i <= N; ++i){
-            double x = a + i * h;
-            double denom = xi*xi - x*x;
-            if (std::fabs(denom) < 1e-8) {
-                std::cout << "  >> small denom at x=" << x 
-                          << "  denom=" << denom << "\n";
+            double x = a + i*h;
+            // skip near x=0
+            if (x < zmin) {
+                std::cout<<"   skipping x~0 (x="<<x<<")\n";
+                continue;
             }
+            // Simpson weight
+            double w = (i==0||i==N) ? 1.0 : ((i&1) ? 4.0 : 2.0);
+
+            // evaluate integrand
             double fx = f(x);
-            if (!std::isfinite(fx)) {
-                std::cout << "  !! f("<< x <<") = " << fx 
-                          << "  (denom="<< denom <<")\n";
+            double denom = xi*xi - x*x;
+            if (!std::isfinite(fx)){
+                std::cout<<"  !! f("<<x<<") = "<<fx
+                         <<"   denom="<<denom
+                         <<"   |GetImH|="<<( (denom!=0.0)? fx * denom/(2.0*xi) : std::nan("") )
+                         <<"\n";
             }
-            int w = (i==0 || i==N) ? 1 : ((i%2)?4:2);
             sum += w * fx;
         }
-        double res = sum * h / 3.0;
-        std::cout << "  " << label << " = " << res << "\n\n";
-        return res;
+        double I = sum * (h/3.0);
+        std::cout<<"  --> Result ["<<tag<<"] = "<<I<<"\n";
+        return I;
     };
 
-    std::cout << "\n>>> PV_integral called with xi=" << xi 
-              << ", t=" << t << "\n";
-    std::cout << "    skipping singular region [" 
-              << xi - eps << ", " << xi + eps << "]\n";
+    // build integrand for diagnostics
+    auto integrand = [&](double x){
+        double denom = xi*xi - x*x;
+        return (2.0*xi/denom) * f(x);
+    };
 
+    // I1: [0, xi-eps]
     double I1 = integrate(0.0, std::max(0.0, xi - eps), "I1");
-    double I2 = integrate(std::min(1.0, xi + eps), 1.0,             "I2");
-    double total = I1 + I2;
+    // I2: [xi+eps, 1]
+    double I2 = integrate(std::min(1.0, xi + eps), 1.0, "I2");
+    double total = (I1 + I2) / M_PI;
 
-    std::cout << ">>> PV_integral total = " << total << "\n\n";
+    std::cout<<"\n>>> PV_integral total = "<<total<< "\n\n";
     return total;
 }
 
