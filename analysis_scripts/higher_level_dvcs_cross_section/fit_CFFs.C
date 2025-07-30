@@ -384,7 +384,7 @@ int main(int argc, char** argv) {
         else if (nm=="r_Et")      init=r_Et;
         else if (nm=="alpha0_Et") init=alpha0_Et;
         else if (nm=="alpha1_Et") init=alpha1_Et;
-        else if (nm=="b_Et")      init=b_Et; lo = 0;
+        else if (nm=="b_Et")      {init=b_Et; lo = 0;}
         else if (nm=="M2_Et")     init=M2_Et;
         else if (nm=="P_Et")      init=P_Et;
 
