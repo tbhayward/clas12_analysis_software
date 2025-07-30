@@ -157,63 +157,6 @@ void LoadData(){
     read(gXsFile,  xsData);
 }
 
-void BinBsaData(){
-    keptBins.clear();
-    bin_xB.clear(); bin_Q2.clear(); bin_t.clear(); bin_Eb.clear();
-    bin_A.clear();  bin_dA.clear();  bin_redChi2.clear(); bin_M.clear();
-
-    if(bsaData.empty()) return;
-    size_t start=0;
-    for(size_t i=1;i<=bsaData.size();++i){
-        bool newbin = (i==bsaData.size() || bsaData[i].phi < bsaData[i-1].phi);
-        if(!newbin) continue;
-        auto pts = std::vector<DataPoint>(bsaData.begin()+start,
-                                          bsaData.begin()+i);
-        start = i;
-        int M = pts.size();
-        if(M<3) continue;
-        // fit A*sin φ + … → bin_A, bin_dA, bin_redChi2, etc.
-        TGraphErrors gr(M);
-        for(int j=0;j<M;++j){
-            gr.SetPoint(j, pts[j].phi, pts[j].A);
-            gr.SetPointError(j,0,pts[j].sigA);
-        }
-        TF1 ftmp("ftmp",
-          "[0] + [1]*sin(x*TMath::Pi()/180.)"
-               "/(1 + [2]*cos(x*TMath::Pi()/180.))",
-          0,360);
-        ftmp.SetParameters(0.,0.5,0.);
-        gr.Fit(&ftmp,"Q0R");
-        double Afit    = ftmp.GetParameter(1);
-        double dA      = ftmp.GetParError(1);
-        double Bfit    = ftmp.GetParameter(2);
-        double chi2    = ftmp.GetChisquare();
-        double redchi2 = chi2 / (M - 3);
-        if(gConstraint==1 && (redchi2>=2.0 || std::fabs(Bfit)>=0.9))
-            continue;
-        keptBins.push_back(pts);
-        bin_M   .push_back(M);
-        bin_A   .push_back(Afit);
-        bin_dA  .push_back(dA);
-        bin_redChi2.push_back(redchi2);
-        double sumw=0, Sx=0, Sq=0, St=0, Se=0;
-        for(auto &d: pts){
-            double w = 1./(d.sigA*d.sigA);
-            sumw+=w; Sx+=w*d.xB; Sq+=w*d.Q2; St+=w*d.t; Se+=w*d.Eb;
-        }
-        bin_xB .push_back(Sx/sumw);
-        bin_Q2 .push_back(Sq/sumw);
-        bin_t  .push_back(St/sumw);
-        bin_Eb .push_back(Se/sumw);
-    }
-    Nbins = bin_A.size();
-    double totChi2=0; int totDof=0;
-    for(int k=0;k<Nbins;++k){
-        totChi2 += std::pow(bin_A[k]/bin_dA[k],2);
-        totDof  += (bin_M[k] - 1);
-    }
-    reducedAmpChi2 = totDof>0 ? totChi2/totDof : 0.0;
-}
 
 void BinBsaData(){
     keptBins.clear();
