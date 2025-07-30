@@ -1405,13 +1405,15 @@ double GetReH(double xi, double t) {
     if(!hasH) return 0.0;
     // subtraction piece
     double sub = C0_H * TMath::Power(1.0 - t/MD2_H, -lambda_H);
-    std::cout << "THE sub VALUE IS " << sub << std::endl;
     // principal-value integral
     auto integrand = [&](double x){
         double denom = xi*xi - x*x;
         return (2.0*xi/denom) * GetImH(x, t);
     };
     double pv = PV_integral(integrand, xi, t) / M_PI;
+    std::cout << "THE sub VALUE IS " << sub << std::endl;
+    std::cout << "THE pv VALUE IS " << pv << std::endl;
+    std::cout << std::endl;
     return renormReal * (sub + pv);
 }
 
