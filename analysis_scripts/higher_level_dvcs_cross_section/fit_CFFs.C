@@ -207,28 +207,38 @@ void BinBsaData(){
 // ----------------------------------------------------------------------------
 // Build parameter-lists for MINUIT
 static std::vector<std::string> parNamesIm, parNamesRe, parNamesAll;
+
 void build_par_listIm(){
     parNamesIm.clear();
-    if(hasH )  parNamesIm.insert(parNamesIm.end(),
-               {"r_H","alpha0_H","alpha1_H","b_H","M2_H","P_H"});
-    if(hasHt)  parNamesIm.insert(parNamesIm.end(),
-               {"r_Ht","alpha0_Ht","alpha1_Ht","b_Ht","M2_Ht","P_Ht"});
-    if(hasE )  parNamesIm.insert(parNamesIm.end(),
-               {"r_E","alpha0_E","alpha1_E","b_E","M2_E","P_E"});
-    if(hasEt)  parNamesIm.insert(parNamesIm.end(),
-               {"r_Et","alpha0_Et","alpha1_Et","b_Et","M2_Et","P_Et"});
+    if(hasH )
+      parNamesIm.insert(parNamesIm.end(),
+        {"r_H","alpha0_H","alpha1_H","b_H","M2_H","P_H"});
+    if(hasHt)
+      parNamesIm.insert(parNamesIm.end(),
+        {"r_Ht","alpha0_Ht","alpha1_Ht","b_Ht","M2_Ht","P_Ht"});
+    if(hasE )
+      parNamesIm.insert(parNamesIm.end(),
+        {"r_E","alpha0_E","alpha1_E","b_E","M2_E","P_E"});
+    if(hasEt)
+      parNamesIm.insert(parNamesIm.end(),
+        {"r_Et","alpha0_Et","alpha1_Et","b_Et","M2_Et","P_Et"});
 }
+
 void build_par_listRe(){
     parNamesRe.clear();
     parNamesRe.push_back("renormReal");
-    if(hasH )  parNamesRe.insert(parNamesRe.end(),
-               {"C0_H","MD2_H","lambda_H"});
-    if(hasHt)  parNamesRe.insert(parNamesRe.end(),
-               {"C0_Ht","MD2_Ht","lambda_Ht"});
-    if(hasE )  parNamesRe.insert(parNamesRe.end(),
-               {"C0_E","MD2_E","lambda_E"});
-    if(hasEt)  parNamesRe.insert(parNamesRe.end(),
-               {"C0_Et","MD2_Et","lambda_Et"});
+    if(hasH )
+      parNamesRe.insert(parNamesRe.end(),
+        {"C0_H","MD2_H","lambda_H"});
+    if(hasHt)
+      parNamesRe.insert(parNamesRe.end(),
+        {"C0_Ht","MD2_Ht","lambda_Ht"});
+    if(hasE )
+      parNamesRe.insert(parNamesRe.end(),
+        {"C0_E","MD2_E","lambda_E"});
+    if(hasEt)
+      parNamesRe.insert(parNamesRe.end(),
+        {"C0_Et","MD2_Et","lambda_Et"});
 }
 
 // ----------------------------------------------------------------------------
@@ -280,9 +290,8 @@ void fcn(int&, double*, double &f, double *par, int){
         }
         f = chi2;
     }
-    else if(gStage==0){
-        // global simultaneous fit
-        // first Im params
+    else { // global simultaneous
+        // assign Im-part parameters
         if(hasH){
           r_H       = par[ip++];
           alpha0_H  = par[ip++];
@@ -315,7 +324,7 @@ void fcn(int&, double*, double &f, double *par, int){
           M2_Et     = par[ip++];
           P_Et      = par[ip++];
         }
-        // then renormReal + subtraction constants
+        // assign Re-part parameters
         renormReal = par[ip++];
         if(hasH){
           C0_H      = par[ip++];
@@ -424,31 +433,29 @@ int main(int argc, char** argv) {
         for(int i=0;i<nim;++i){
           const auto &nm = parNamesIm[i];
           double init=0, lo=-1e3, hi=+1e3, step=0.01;
-          if      (nm=="r_H")       init=r_H;
-          else if (nm=="alpha0_H")  {init=alpha0_H; lo = 0;}
-          else if (nm=="alpha1_H")  {init=alpha1_H; lo = 0;}
-          else if (nm=="b_H")       {init=b_H; lo=0;}
-          else if (nm=="M2_H")      {init=M2_H; lo=0;}
-          else if (nm=="P_H")       {init=P_H; step = 0; }
-          else if (nm=="r_Ht")      init=r_Ht;
-          else if (nm=="alpha0_Ht") {init=alpha0_Ht; lo = 0;}
-          else if (nm=="alpha1_Ht") {init=alpha1_Ht; lo = 0;}
-          else if (nm=="b_Ht")      {init=b_Ht; lo=0;}
-          else if (nm=="M2_Ht")     {init=M2_Ht; lo=0;}
-          else if (nm=="P_Ht")      {init=P_Ht; step = 0; }
-          else if (nm=="r_E")       init=r_E;
-          else if (nm=="alpha0_E")  {init=alpha0_E; lo = 0;}
-          else if (nm=="alpha1_E")  {init=alpha1_E; lo = 0;}
-          else if (nm=="b_E")       {init=b_E; lo=0;}
-          else if (nm=="M2_E")      {init=M2_E; lo=0;}
-          else if (nm=="P_E")       {init=P_E; step = 0; }
-          else if (nm=="r_Et")      init=r_Et;
-          else if (nm=="alpha0_Et") {init=alpha0_Et; lo = 0;}
-          else if (nm=="alpha1_Et") {init=alpha1_Et; lo = 0;}
-          else if (nm=="b_Et")      {init=b_Et; lo=0;}
-          else if (nm=="M2_Et")     {init=M2_Et; lo=0;}
-          else if (nm=="P_Et")      {init=P_Et; step = 0; }
+          // impose positivity
+          if(nm=="alpha0_H"  || nm=="alpha1_H"
+          || nm=="alpha0_Ht" || nm=="alpha1_Ht"
+          || nm=="alpha0_E"  || nm=="alpha1_E"
+          || nm=="alpha0_Et" || nm=="alpha1_Et"
+          || nm=="b_H"  || nm=="b_Ht"
+          || nm=="b_E"  || nm=="b_Et"
+          || nm=="M2_H" || nm=="M2_Ht"
+          || nm=="M2_E" || nm=="M2_Et"){
+            lo = 0.0;
+          }
+          // fix P parameters
+          if(nm=="P_H"  || nm=="P_Ht"
+          || nm=="P_E"  || nm=="P_Et"){
+            init = 1.0; lo = 1.0; hi = 1.0; step = 0.0;
+          }
+          // defaults
+          if     (nm=="r_H")       init=r_H;
+          else if(nm=="r_Ht")      init=r_Ht;
+          else if(nm=="r_E")       init=r_E;
+          else if(nm=="r_Et")      init=r_Et;
           minu.DefineParameter(i, nm.c_str(), init, step, lo, hi);
+          if(step==0.0) minu.FixParameter(i);
         }
         std::cout<<" Stage1: fitting Im-CFF parameters…\n";
         minu.Migrad();
@@ -457,7 +464,7 @@ int main(int argc, char** argv) {
         for(int i=0;i<nim;++i) minu.GetParameter(i,imVal[i],imErr[i]);
         ndf_im = Nbins - nim;
       }
-      for(int i=0;i<(int)parNamesIm.size();++i){
+      for(int i=0;i<nim;++i){
         valMap[parNamesIm[i]] = imVal[i];
         errMap[parNamesIm[i]] = imErr[i];
       }
@@ -483,45 +490,58 @@ int main(int argc, char** argv) {
         for(int i=0;i<nAll;++i){
           const auto &nm = parNamesAll[i];
           double init=0, lo=-1e3, hi=+1e3, step=0.01;
-          // initialize both Im and Re parameters
-          if      (nm=="r_H")        init=r_H;
-          else if (nm=="alpha0_H")   {init=alpha0_H; lo = 0;}
-          else if (nm=="alpha1_H")   {init=alpha1_H; lo = 0;}
-          else if (nm=="b_H")        {init=b_H; lo=0;}
-          else if (nm=="M2_H")       {init=M2_H; lo=0;}
-          else if (nm=="P_H")        {init=P_H; step = 0;}
-          else if (nm=="r_Ht")       init=r_Ht;
-          else if (nm=="alpha0_Ht")  {init=alpha0_Ht; lo = 0;}
-          else if (nm=="alpha1_Ht")  {init=alpha1_Ht; lo = 0;}
-          else if (nm=="b_Ht")       {init=b_Ht; lo=0;}
-          else if (nm=="M2_Ht")      {init=M2_Ht; lo=0;}
-          else if (nm=="P_Ht")       {init=P_Ht; step = 0;}
-          else if (nm=="r_E")        init=r_E;
-          else if (nm=="alpha0_E")   {init=alpha0_E; lo = 0;}
-          else if (nm=="alpha1_E")   {init=alpha1_E; lo = 0;}
-          else if (nm=="b_E")        {init=b_E; lo=0;}
-          else if (nm=="M2_E")       {init=M2_E; lo=0;}
-          else if (nm=="P_E")        {init=P_E; step = 0;}
-          else if (nm=="r_Et")       init=r_Et;
-          else if (nm=="alpha0_Et")  {init=alpha0_Et; lo = 0;}
-          else if (nm=="alpha1_Et")  {init=alpha1_Et; lo = 0;}
-          else if (nm=="b_Et")       {init=b_Et; lo=0;}
-          else if (nm=="M2_Et")      {init=M2_Et; lo=0;}
-          else if (nm=="P_Et")       {init=P_Et; step = 0;}
-          else if (nm=="renormReal") init=renormReal;
-          else if (nm=="C0_H")       init=C0_H;
-          else if (nm=="MD2_H")      {init=MD2_H; lo=0;}
-          else if (nm=="lambda_H")   {init=lambda_H; lo=0;}
-          else if (nm=="C0_Ht")      init=C0_Ht;
-          else if (nm=="MD2_Ht")     {init=MD2_Ht; lo=0;}
-          else if (nm=="lambda_Ht")  {init=lambda_Ht; lo=0;}
-          else if (nm=="C0_E")       init=C0_E;
-          else if (nm=="MD2_E")      {init=MD2_E; lo=0;}
-          else if (nm=="lambda_E")   {init=lambda_E; lo=0;}
-          else if (nm=="C0_Et")      init=C0_Et;
-          else if (nm=="MD2_Et")     {init=MD2_Et; lo=0;}
-          else if (nm=="lambda_Et")  {init=lambda_Et; lo=0;}
+          // positivity for all shape parameters:
+          if(nm.find("alpha0")!=std::string::npos
+          || nm.find("alpha1")!=std::string::npos
+          || nm.find("b_")!=std::string::npos
+          || nm.find("M2_")!=std::string::npos){
+            lo = 0.0;
+          }
+          // fix P's:
+          if(nm=="P_H"  || nm=="P_Ht"
+          || nm=="P_E"  || nm=="P_Et"){
+            init = 1.0; lo = 1.0; hi = 1.0; step = 0.0;
+          }
+          // initialize
+          if     (nm=="r_H")        init=r_H;
+          else if(nm=="alpha0_H")   init=alpha0_H;
+          else if(nm=="alpha1_H")   init=alpha1_H;
+          else if(nm=="b_H")        init=b_H;
+          else if(nm=="M2_H")       init=M2_H;
+          else if(nm=="P_H")        init=P_H;
+          else if(nm=="r_Ht")       init=r_Ht;
+          else if(nm=="alpha0_Ht")  init=alpha0_Ht;
+          else if(nm=="alpha1_Ht")  init=alpha1_Ht;
+          else if(nm=="b_Ht")       init=b_Ht;
+          else if(nm=="M2_Ht")      init=M2_Ht;
+          else if(nm=="P_Ht")       init=P_Ht;
+          else if(nm=="r_E")        init=r_E;
+          else if(nm=="alpha0_E")   init=alpha0_E;
+          else if(nm=="alpha1_E")   init=alpha1_E;
+          else if(nm=="b_E")        init=b_E;
+          else if(nm=="M2_E")       init=M2_E;
+          else if(nm=="P_E")        init=P_E;
+          else if(nm=="r_Et")       init=r_Et;
+          else if(nm=="alpha0_Et")  init=alpha0_Et;
+          else if(nm=="alpha1_Et")  init=alpha1_Et;
+          else if(nm=="b_Et")       init=b_Et;
+          else if(nm=="M2_Et")      init=M2_Et;
+          else if(nm=="P_Et")       init=P_Et;
+          else if(nm=="renormReal") init=renormReal;
+          else if(nm=="C0_H")       init=C0_H;
+          else if(nm=="MD2_H")      init=MD2_H, lo=0.0;
+          else if(nm=="lambda_H")   init=lambda_H, lo=0.0;
+          else if(nm=="C0_Ht")      init=C0_Ht;
+          else if(nm=="MD2_Ht")     init=MD2_Ht, lo=0.0;
+          else if(nm=="lambda_Ht")  init=lambda_Ht, lo=0.0;
+          else if(nm=="C0_E")       init=C0_E;
+          else if(nm=="MD2_E")      init=MD2_E, lo=0.0;
+          else if(nm=="lambda_E")   init=lambda_E, lo=0.0;
+          else if(nm=="C0_Et")      init=C0_Et;
+          else if(nm=="MD2_Et")     init=MD2_Et, lo=0.0;
+          else if(nm=="lambda_Et")  init=lambda_Et, lo=0.0;
           minu.DefineParameter(i, nm.c_str(), init, step, lo, hi);
+          if(step==0.0) minu.FixParameter(i);
         }
         std::cout<<" Stage global: fitting Im + renormReal + subtraction constants…\n";
         minu.Migrad();
@@ -535,14 +555,12 @@ int main(int argc, char** argv) {
       }
       chi2_total = chi2_glob;
       // degrees of freedom = N_bsa_bins + N_xs_points - N_pars
-      int n_xs = xsData.size();
-      ndf_total = Nbins + n_xs - parNamesAll.size();
+      ndf_total = Nbins + xsData.size() - parNamesAll.size();
     }
 
     // ─── Output results ─────────────────────────────────────────────────────────
-    std::vector<std::string> outNames;
-    if(gStrategy==1) outNames = parNamesIm;
-    else             outNames = parNamesAll;
+    std::vector<std::string> outNames =
+      (gStrategy==1 ? parNamesIm : parNamesAll);
 
     system("mkdir -p output/fit_results");
     std::ofstream fout("output/fit_results/fit_results_"+std::string(tb)+".txt");

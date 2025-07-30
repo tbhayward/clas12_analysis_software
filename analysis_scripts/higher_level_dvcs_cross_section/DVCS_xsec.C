@@ -1372,15 +1372,15 @@ double GetImEt(double xi, double t) {
     return renormImag * pref * term1 * term2 * term3;
 }
 
-double C0_H,    MD2_H,    lambda_H;
-double C0_Ht,   MD2_Ht,   lambda_Ht;
-double C0_E,    MD2_E,    lambda_E;
-double C0_Et,   MD2_Et,   lambda_Et;
-
 
 // -------------------------------------------------------------------------------------------------
 //   Compton Form Factor (CFF) models—real parts
 // -------------------------------------------------------------------------------------------------
+
+double C0_H = -2.27; double MD2_H = 1.02; double lambda_H = 2.76;
+double C0_Ht,   MD2_Ht,   lambda_Ht;
+double C0_E,    MD2_E,    lambda_E;
+double C0_Et,   MD2_Et,   lambda_Et;
 
 // Helpers for PV integration (simple two-interval Simpson)
 #include <functional>
