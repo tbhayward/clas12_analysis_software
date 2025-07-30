@@ -1389,7 +1389,6 @@ double C0_Et,   MD2_Et,   lambda_Et;
 #include <iostream>
 double PV_integral(std::function<double(double)> f, double xi, double t) {
     const double eps   = 1e-6;    // skip region around x=xi
-    const double zmin  = 1e-5;    // skip region around x=0 if needed
     const int    N     = 1000;
     auto integrate = [&](double a, double b, const char* tag){
         double h = (b - a) / N;
@@ -1397,11 +1396,6 @@ double PV_integral(std::function<double(double)> f, double xi, double t) {
         std::cout << "\n--- Integrating ["<<tag<<"] over ["<<a<<","<<b<<"]  (N="<<N<<")\n";
         for(int i = 0; i <= N; ++i){
             double x = a + i*h;
-            // skip near x=0
-            // if (x < zmin) {
-            //     std::cout<<"   skipping x~0 (x="<<x<<")\n";
-            //     continue;
-            // }
             // Simpson weight
             double w = (i==0||i==N) ? 1.0 : ((i&1) ? 4.0 : 2.0);
 
@@ -1418,6 +1412,7 @@ double PV_integral(std::function<double(double)> f, double xi, double t) {
         }
         double I = sum * (h/3.0);
         std::cout<<"  --> Result ["<<tag<<"] = "<<I<<"\n";
+        std::cout<<"alpha0 = " << alpha0 << ", alpha1 = " << alpha1 << std::endl;
         return I;
     };
 
