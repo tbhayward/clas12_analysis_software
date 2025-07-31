@@ -443,7 +443,7 @@ int main(int argc, char** argv) {
         minu.SetFCN(fcn);
         for(int i=0;i<nim;++i){
           const auto &nm = parNamesIm[i];
-          double init=0, lo=-1e3, hi=+1e3, step=0.01;
+          double init=0, lo=-1e3, hi=+1e3, step=0.00;
 
           // enforce alpha0 < 1
           if(nm=="alpha0_H"  || nm=="alpha0_Ht"
