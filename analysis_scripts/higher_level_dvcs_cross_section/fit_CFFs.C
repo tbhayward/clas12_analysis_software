@@ -448,12 +448,12 @@ int main(int argc, char** argv) {
           // enforce alpha0 < 1
           if(nm=="alpha0_H"  || nm=="alpha0_Ht"
           || nm=="alpha0_E"  || nm=="alpha0_Et"){
-            lo = 0.0; hi = 2.0;
+            lo = 0.0; hi = 3.0;
           }
           // enforce alpha1 ≥ 0
           if(nm=="alpha1_H"  || nm=="alpha1_Ht"
           || nm=="alpha1_E"  || nm=="alpha1_Et"){
-            lo = 0.0; hi = 2.0;
+            lo = 0.0; hi = 3.0;
           }
           // enforce b ≥ 0
           if(nm=="b_H"  || nm=="b_Ht"
