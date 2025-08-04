@@ -115,9 +115,8 @@ for cff in ("H", "Ht", "E", "Et"):
             central[k] = vals[idx]
             error[k] = errs[idx]
         else:
-            # fallback to default
             central[k] = defaults[cff][k]
-            error[k] = 0.0  # no uncertainty if not fitted
+            error[k] = 0.0
     fit_params[cff] = central
     fit_errors[cff] = error
 
@@ -125,7 +124,6 @@ for cff in ("H", "Ht", "E", "Et"):
 def make_Im_func(cff, params, renorm):
     d = defaults[cff]
     def Im(xi, t):
-        # broadcast xi and t
         xi_arr = np.array(xi, copy=False)
         t_arr = np.array(t, copy=False)
         a0 = params.get("alpha0", d["alpha0"])
@@ -139,7 +137,6 @@ def make_Im_func(cff, params, renorm):
         pref = renorm * (nval * rval) / (1.0 + xi_arr)
         xfac = (2 * xi_arr / (1.0 + xi_arr)) ** (-alpha)
         yfac = ((1.0 - xi_arr) / (1.0 + xi_arr)) ** (bval)
-        # protect against division by zero in the third term if M2==0
         with np.errstate(divide='ignore', invalid='ignore'):
             tfac = (1.0 - ((1.0 - xi_arr) / (1.0 + xi_arr)) * t_arr / M2) ** (-Pval) if M2 != 0 else np.ones_like(xi_arr + t_arr)
         return pref * xfac * yfac * tfac
@@ -164,11 +161,9 @@ def compute_uncertainty_band(cff, xi_vals, t_vals, nrep=5000):
         return None, None, None
     central = fit_params[cff]
     errors_dict = fit_errors[cff]
-    # build replicas of shape parameters
     param_reps = generate_replicas(central, errors_dict, nrep)
-    renorm_reps = np.full(nrep, renorm_imag)  # fixed here; adjust if you fit it
+    renorm_reps = np.full(nrep, renorm_imag)
 
-    # decide output length
     if np.ndim(xi_vals) > 0 and np.ndim(t_vals) == 0:
         N = len(xi_vals)
     elif np.ndim(t_vals) > 0 and np.ndim(xi_vals) == 0:
@@ -183,9 +178,8 @@ def compute_uncertainty_band(cff, xi_vals, t_vals, nrep=5000):
     for i in range(nrep):
         Im_rep = make_Im_func(cff, param_reps[i], renorm_reps[i])
         val = Im_rep(xi_vals, t_vals)
-        curves[i] = np.array(val).reshape(-1)[:N]  # ensure shape matches
+        curves[i] = np.array(val).reshape(-1)[:N]
 
-    # handle non-finite
     curves = np.where(np.isfinite(curves), curves, np.nan)
     med = np.nanmedian(curves, axis=0)
     lo  = np.nanpercentile(curves, 16, axis=0)
@@ -221,7 +215,6 @@ for cff in ("H","Ht","E","Et"):
     if not flags.get(cff, 0):
         continue
 
-    # default (central) Im function and fitted one
     Im_default = make_Im_func(cff, defaults[cff], renorm_imag)
     Im_fit_central = make_Im_func(cff, fit_params.get(cff, defaults[cff]), renorm_imag)
     tex = tex_map[cff]
@@ -239,6 +232,8 @@ for cff in ("H","Ht","E","Et"):
             ax.fill_between(xi_range, lo, up, **band_style)
         ax.axhline(0, **zero_line)
 
+        ax.set_xscale('linear')
+        ax.set_yscale('symlog', linthresh=0.1)
         ax.set_xlim(0,0.5)
         ax.set_ylim(-2,10)
         ax.set_xticks([0,0.1,0.2,0.3,0.4,0.5])
@@ -250,7 +245,7 @@ for cff in ("H","Ht","E","Et"):
             ax.tick_params(labelleft=False)
         ax.set_xlabel(r"$\xi$")
 
-        # hide the "-2" tick label on top-left
+        # hide the "-2" tick label on top-left explicitly
         if i == 0:
             for lbl in ax.get_yticklabels():
                 if lbl.get_text() in ('-2','-2.0'):
@@ -283,6 +278,8 @@ for cff in ("H","Ht","E","Et"):
             ax.fill_between(t_range, lo, up, **band_style)
         ax.axhline(0, **zero_line)
 
+        ax.set_xscale('linear')
+        ax.set_yscale('symlog', linthresh=0.1)
         ax.set_xlim(0,1.0)
         ax.set_ylim(-2,10)
         ax.set_xticks([0,0.2,0.4,0.6,0.8,1.0])
