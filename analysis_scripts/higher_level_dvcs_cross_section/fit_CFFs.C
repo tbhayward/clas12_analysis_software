@@ -503,9 +503,7 @@ int main(int argc, char** argv) {
           // fix P = 1
           if(nm=="P_H"  || nm=="P_Ht"
           || nm=="P_E"  || nm=="P_Et"){
-            init = 1.0; 
-            // lo = 1.0; hi = 1.0; 
-            // step = 0.0;
+            init = 1.0; lo = 1.0; hi = 1.0; step = 0.0;
           }
 
           if     (nm=="r_H")        init = r_H;
