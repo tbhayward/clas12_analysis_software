@@ -475,10 +475,10 @@ int main(int argc, char** argv) {
           const auto &nm = parNamesIm[i];
           double init=0, lo=-1e3, hi=+1e3, step=0.001;
 
-          // enforce r < 4
+          // enforce r < 2
           if(nm=="r_H"  || nm=="r_Ht"
           || nm=="r_E"  || nm=="r_Et"){
-            lo = 0.0; hi = 4.0;
+            lo = 0.0; hi = 2.0;
           }
           // enforce alpha0 < 1
           if(nm=="alpha0_H"  || nm=="alpha0_Ht"
