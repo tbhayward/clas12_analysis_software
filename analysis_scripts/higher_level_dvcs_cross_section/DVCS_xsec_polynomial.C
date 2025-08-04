@@ -1384,6 +1384,92 @@ double GetImEt(double xi, double t) {
 }
 
 // -------------------------------------------------------------------------------------------------
+//   Real parts: subtraction (D-term) plus dispersion integral over Im* (no separate empirical C_Re*)
+// -------------------------------------------------------------------------------------------------
+
+double C0_H    = -2.27; double MD2_H    = 1.02; double lambda_H    = 2.76;
+double C0_Ht   = 0.0;   double MD2_Ht   = 1.0;  double lambda_Ht   = 1.0;
+double C0_E    = 0.0;   double MD2_E    = 1.0;  double lambda_E    = 1.0;
+double C0_Et   = 0.0;   double MD2_Et   = 1.0;  double lambda_Et   = 1.0;
+
+// Helpers for PV integration (as before)
+#include <functional>
+#include <limits>
+double PV_integral(std::function<double(double)> f, double ξ, double t) {
+    const double eps   = 1e-8;
+    const double x_min = 1e-8;
+    const int    N     = 1000;
+
+    // analytic tail for small x (optional; here kept similar to previous H implementation)
+    double p = /* for the tail we need the relevant power behavior for ImH */
+        // approximate effective power in x: since ImH ~ exp(-A x - B t)*(c1 x + c2 x^2 + c3 x^3)*(...),
+        // for small x the dominant is ~ c1 x * (d1 t + ...) so p ~ 1 ; to avoid overcomplicating, skip analytic tail:
+        0.0;
+    double analytic_tail = 0.0;
+
+    auto integrate = [&](double a, double b){
+      double h = (b - a)/N;
+      double sum = 0.0;
+      for(int i=0; i<=N; ++i){
+        double x = a + i*h;
+        double w = (i==0||i==N) ? 1.0 : ((i&1)?4.0:2.0);
+        sum += w * f(x);
+      }
+      return sum * (h/3.0);
+    };
+
+    double I1 = integrate(x_min, std::max(x_min, ξ - eps));
+    double I2 = integrate(std::min(1.0, ξ + eps), 1.0);
+    double numeric = I1 + I2;
+    return numeric + analytic_tail;
+}
+
+// ReH via dispersion with subtraction
+double GetReH(double xi, double t) {
+    if (!hasH) return 0.0;
+    double sub = C0_H * TMath::Power(1.0 - t/MD2_H, -lambda_H);
+    auto integrand = [&](double x){
+        double denom = xi*xi - x*x;
+        return (2.0*xi/denom) * GetImH(x, t);
+    };
+    double pv = PV_integral(integrand, xi, t) / M_PI;
+    return renormReal * (sub + pv);
+}
+
+double GetReHt(double xi, double t) {
+    if (!hasHt) return 0.0;
+    double sub = C0_Ht * TMath::Power(1.0 - t/MD2_Ht, -lambda_Ht);
+    auto integrand = [&](double x){
+        double denom = xi*xi - x*x;
+        return (2.0*xi/denom) * GetImHt(x, t);
+    };
+    double pv = PV_integral(integrand, xi, t) / M_PI;
+    return renormReal * (sub + pv);
+}
+
+double GetReE(double xi, double t) {
+    if (!hasE) return 0.0;
+    double sub = C0_E * TMath::Power(1.0 - t/MD2_E, -lambda_E);
+    auto integrand = [&](double x){
+        double denom = xi*xi - x*x;
+        return (2.0*xi/denom) * GetImE(x, t);
+    };
+    double pv = PV_integral(integrand, xi, t) / M_PI;
+    return renormReal * (sub + pv);
+}
+
+double GetReEt(double xi, double t) {
+    if (!hasEt) return 0.0;
+    double sub = C0_Et * TMath::Power(1.0 - t/MD2_Et, -lambda_Et);
+    auto integrand = [&](double x){
+        double denom = xi*xi - x*x;
+        return (2.0*xi/denom) * GetImEt(x, t);
+    };
+    double pv = PV_integral(integrand, xi, t) / M_PI;
+    return renormReal * (sub + pv);
+}
+
+// -------------------------------------------------------------------------------------------------
 //   Compton Form Factor (CFF) models—real parts
 // -------------------------------------------------------------------------------------------------
 
