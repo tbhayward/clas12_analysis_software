@@ -535,12 +535,12 @@ int main(int argc, char** argv) {
           // enforce b ≥ 0
           if(nm=="b_H"  || nm=="b_Ht"
           || nm=="b_E"  || nm=="b_Et"){
-            lo = 0.0; hi = 5.0;
+            lo = 1e-6; hi = 1e6;
           }
           // enforce M2 ≥ 0
           if(nm=="M2_H" || nm=="M2_Ht"
           || nm=="M2_E" || nm=="M2_Et"){
-            lo = 0.2; hi = 2.0;
+            lo = 0.0; hi = 1e6;
           }
           // fix P = 1
           if(nm=="P_H"  || nm=="P_Ht"
