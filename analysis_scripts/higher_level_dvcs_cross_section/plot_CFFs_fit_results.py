@@ -233,7 +233,6 @@ for cff in ("H","Ht","E","Et"):
         ax.axhline(0, **zero_line)
 
         ax.set_xscale('linear')
-        ax.set_yscale('symlog', linthresh=0.1)
         ax.set_xlim(0,0.5)
         ax.set_ylim(-2,10)
         ax.set_xticks([0,0.1,0.2,0.3,0.4,0.5])
@@ -279,7 +278,6 @@ for cff in ("H","Ht","E","Et"):
         ax.axhline(0, **zero_line)
 
         ax.set_xscale('linear')
-        ax.set_yscale('symlog', linthresh=0.1)
         ax.set_xlim(0,1.0)
         ax.set_ylim(-2,10)
         ax.set_xticks([0,0.2,0.4,0.6,0.8,1.0])
