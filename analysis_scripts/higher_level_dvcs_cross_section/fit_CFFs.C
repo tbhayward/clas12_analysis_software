@@ -261,7 +261,7 @@ void build_par_listRe(){
 }
 
 // ----------------------------------------------------------------------------
-// χ² function with additional alpha1 >= |alpha1 * t| enforcement as penalty
+// χ² function with additional alpha0 >= |alpha1 * t| enforcement as a hard penalty
 void fcn(int&, double*, double &f, double *par, int){
     int ip=0;
     if(gStage==1){
@@ -306,24 +306,24 @@ void fcn(int&, double*, double &f, double *par, int){
             double modelA = dvcs.s1_I() / dvcs.c0_BH();
             double resid  = (bin_A[k] - modelA)/bin_dA[k];
             chi2 += resid*resid;
-            // impose alpha1 >= |alpha1 * t| as penalty (effectively ensures |bin_t[k]| <= 1)
+            // enforce alpha0 >= |alpha1 * t| penalty
             if(hasH){
-                if(alpha1_H < std::fabs(alpha1_H * bin_t[k])){
+                if(alpha0_H < std::fabs(alpha1_H * bin_t[k])){
                     chi2 += 1e6;
                 }
             }
             if(hasHt){
-                if(alpha1_Ht < std::fabs(alpha1_Ht * bin_t[k])){
+                if(alpha0_Ht < std::fabs(alpha1_Ht * bin_t[k])){
                     chi2 += 1e6;
                 }
             }
             if(hasE){
-                if(alpha1_E < std::fabs(alpha1_E * bin_t[k])){
+                if(alpha0_E < std::fabs(alpha1_E * bin_t[k])){
                     chi2 += 1e6;
                 }
             }
             if(hasEt){
-                if(alpha1_Et < std::fabs(alpha1_Et * bin_t[k])){
+                if(alpha0_Et < std::fabs(alpha1_Et * bin_t[k])){
                     chi2 += 1e6;
                 }
             }
@@ -388,31 +388,31 @@ void fcn(int&, double*, double &f, double *par, int){
         }
         // χ² total = χ²_BSA + χ²_xsec
         double chi2 = 0;
-        // BSA part
+        // BSA part with constraint
         for(int k=0;k<Nbins;++k){
             BMK_DVCS dvcs(-1,1,0,
                           bin_Eb[k],bin_xB[k],bin_Q2[k],bin_t[k],0.0);
             double modelA = dvcs.s1_I() / dvcs.c0_BH();
             double resid  = (bin_A[k] - modelA)/bin_dA[k];
             chi2 += resid*resid;
-            // alpha1 constraint penalties
+            // enforce alpha0 >= |alpha1 * t| penalty
             if(hasH){
-                if(alpha1_H < std::fabs(alpha1_H * bin_t[k])){
+                if(alpha0_H < std::fabs(alpha1_H * bin_t[k])){
                     chi2 += 1e6;
                 }
             }
             if(hasHt){
-                if(alpha1_Ht < std::fabs(alpha1_Ht * bin_t[k])){
+                if(alpha0_Ht < std::fabs(alpha1_Ht * bin_t[k])){
                     chi2 += 1e6;
                 }
             }
             if(hasE){
-                if(alpha1_E < std::fabs(alpha1_E * bin_t[k])){
+                if(alpha0_E < std::fabs(alpha1_E * bin_t[k])){
                     chi2 += 1e6;
                 }
             }
             if(hasEt){
-                if(alpha1_Et < std::fabs(alpha1_Et * bin_t[k])){
+                if(alpha0_Et < std::fabs(alpha1_Et * bin_t[k])){
                     chi2 += 1e6;
                 }
             }
@@ -522,15 +522,15 @@ int main(int argc, char** argv) {
           const auto &nm = parNamesIm[i];
           double init=0, lo=-1e3, hi=+1e3, step=0.001;
 
-          // enforce alpha0 bounds (0 <= alpha0 < 1)
+          // enforce alpha0 > 0 (no upper limit)
           if(nm=="alpha0_H"  || nm=="alpha0_Ht"
           || nm=="alpha0_E"  || nm=="alpha0_Et"){
-            lo = 0.0; hi = 0.999999;
+            lo = 1e-6; // positive
           }
-          // enforce alpha1 ≥ 0
+          // enforce alpha1 > 0 (no upper limit)
           if(nm=="alpha1_H"  || nm=="alpha1_Ht"
           || nm=="alpha1_E"  || nm=="alpha1_Et"){
-            lo = 0.0; hi = 3.0;
+            lo = 1e-6;
           }
           // enforce b ≥ 0
           if(nm=="b_H"  || nm=="b_Ht"
@@ -612,7 +612,7 @@ int main(int argc, char** argv) {
           reducedAmpChi2 = totDof>0 ? totChi2/totDof : 0.0;
 
           // rerun fit
-          run_im_fit(); // updates chi2_total2, ndf_total2 into chi2_total1, ndf_total1 again
+          run_im_fit();
           chi2_total2 = chi2_total1;
           ndf_total2  = ndf_total1;
           std::cout<<"CFF fit (Im-only) χ²/ndf after scaling amplitude uncertainties = "
@@ -654,11 +654,11 @@ int main(int argc, char** argv) {
           double init=0, lo=-1e3, hi=+1e3, step=0.01;
 
           if(nm.find("alpha0_")==0){
-            lo = 0.0; hi = 0.999999;
+            lo = 1e-6; // strictly positive, no upper cap
           }
-          // enforce alpha1 ≥ 0
+          // enforce alpha1 > 0
           if(nm.find("alpha1_")==0){
-            lo = 0.0;
+            lo = 1e-6;
           }
           // enforce other positivity
           if(nm.find("b_")==0
