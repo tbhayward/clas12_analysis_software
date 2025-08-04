@@ -17,7 +17,7 @@
  *                  (χ²_red>=2 or |B|>=0.9) cuts applied to the sine fits
  *
  * Compile:
- *   g++ -O2 fit_CFFs_polynomial.cpp `root-config --cflags --libs` -lMinuit -o fit_CFFs
+ *   g++ -O2 fit_CFFs_polynomial.cpp `root-config --cflags --libs` -lMinuit -o fit_CFFs_polynomial
  */
 
 #include <cmath>
