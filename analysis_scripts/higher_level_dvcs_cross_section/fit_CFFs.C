@@ -9,7 +9,7 @@
  *
  * Usage:
  *   ./fit_CFFs --strategy <1|2> -H <0|1> -Ht <0|1> -E <0|1> -Et <0|1>
- *             [--constraint <0|1>] [--input <BSA_file> [XSEC_file]] [--plot-fits]
+ *             [--constraint <0|1>] [--scale <0|1>] [--input <BSA_file> [XSEC_file]] [--plot-fits]
  *
  *   If only BSA_file is given, xsec uses the built-in default.  If neither
  *   is given, both defaults are used.
@@ -70,6 +70,7 @@ static int   gStrategy    = 0;
 static int   gStage       = 1;  // 1 = Im-only, 0 = global simultaneous
 static int   gConstraint  = 0;  // 0 or 1
 static bool  gPlotBinFits = false;
+static int   gScale       = 0;  // 0 off, 1 on
 
 // default data files:
 static std::string gBsaFile = "imports/rga_prl_bsa.txt";
@@ -98,12 +99,13 @@ void parse_args(int argc, char** argv){
       {"E",          required_argument,nullptr,'e'},
       {"Et",         required_argument,nullptr,'x'},
       {"constraint", required_argument,nullptr,'C'},
+      {"scale",      required_argument,nullptr,'S'},
       {"input",      required_argument,nullptr,'i'},
       {"plot-fits",  no_argument,      nullptr,'p'},
       {nullptr,0,nullptr,0}
     };
     int c;
-    while((c=getopt_long(argc,argv,"s:h:t:e:x:C:i:p",opts,nullptr))!=-1){
+    while((c=getopt_long(argc,argv,"s:h:t:e:x:C:S:i:p",opts,nullptr))!=-1){
         switch(c){
           case 's': gStrategy   = std::atoi(optarg); break;
           case 'h': hasH        = std::atoi(optarg); break;
@@ -111,6 +113,7 @@ void parse_args(int argc, char** argv){
           case 'e': hasE        = std::atoi(optarg); break;
           case 'x': hasEt       = std::atoi(optarg); break;
           case 'C': gConstraint = std::atoi(optarg); break;
+          case 'S': gScale      = std::atoi(optarg); break;
           case 'p': gPlotBinFits= true;              break;
           case 'i':
             // first arg → BSA file
@@ -124,15 +127,16 @@ void parse_args(int argc, char** argv){
             std::cerr<<"Usage: "<<argv[0]
                      <<" --strategy<1|2> -H<0|1> -Ht<0|1>"
                      <<" -E<0|1> -Et<0|1>"
-                     <<" [--constraint<0|1>]"
+                     <<" [--constraint<0|1>] [--scale<0|1>]"
                      <<" [--input <BSA_file> [XSEC_file]]"
                      <<" [--plot-fits]\n";
             std::exit(1);
         }
     }
     if(gStrategy<1||gStrategy>2
-     ||gConstraint<0||gConstraint>1){
-        std::cerr<<"Invalid strategy or constraint\n";
+     ||gConstraint<0||gConstraint>1
+     ||(gScale!=0 && gScale!=1)){
+        std::cerr<<"Invalid strategy, constraint, or scale flag\n";
         std::exit(1);
     }
 }
@@ -156,7 +160,6 @@ void LoadData(){
     read(gBsaFile, bsaData);
     read(gXsFile,  xsData);
 }
-
 
 void BinBsaData(){
     keptBins.clear();
@@ -391,12 +394,34 @@ int main(int argc, char** argv) {
              <<"  H="<<hasH<<" Ht="<<hasHt
              <<"  E="<<hasE<<" Et="<<hasEt
              <<"  constraint="<<gConstraint
+             <<"  scale="<<gScale
              <<"  input="<<gBsaFile
              <<"  plot-fits="<<(gPlotBinFits?"ON":"OFF")
              <<"  ts="<<tb<<" ===\n\n";
 
+    // load and initial binning
     LoadData();
     BinBsaData();
+
+    // compute average per-bin reduced chi2 before any amplitude scaling
+    double avgBinChi2_before = bin_redChi2.empty()?0.0:
+            std::accumulate(bin_redChi2.begin(), bin_redChi2.end(), 0.0) / bin_redChi2.size();
+    std::cout<<"Average χ²/bin-fit before amplitude scaling = "<<avgBinChi2_before<<"\n";
+    double reducedAmpChi2_before = reducedAmpChi2;
+
+    if(gScale==1){
+        // scale the original BSA point uncertainties by sqrt(mean bin reduced chi2)
+        double scale_amp = std::sqrt(avgBinChi2_before > 0 ? avgBinChi2_before : 1.0);
+        std::cout<<"Scaling BSA point uncertainties by sqrt("<<avgBinChi2_before<<") = "<<scale_amp<<"\n";
+        for(auto &d: bsaData){
+            d.sigA *= scale_amp;
+        }
+        // redo binning / amplitude fits
+        BinBsaData();
+        double avgBinChi2_after = bin_redChi2.empty()?0.0:
+            std::accumulate(bin_redChi2.begin(), bin_redChi2.end(), 0.0) / bin_redChi2.size();
+        std::cout<<"Average χ²/bin-fit after amplitude scaling = "<<avgBinChi2_after<<"\n";
+    }
 
     // report binned fits
     std::cout<<"Data points entering Im-fit:\n";
@@ -422,12 +447,17 @@ int main(int argc, char** argv) {
     if(gPlotBinFits){
       gStyle->SetOptStat(0);
       for(int ib=0; ib<Nbins; ++ib) PlotBinFit(ib,tb);
-      std::cout<<" Wrote per-bin fits to output/plots/binned_fits/\n\n";
+      std::cout<<"Wrote per-bin fits to output/plots/binned_fits/\n\n";
     }
 
-    std::map<std::string,double> valMap, errMap;
+    std::map<std::string,double> finalValMap, finalErrMap;
     double chi2_total=0;
     int    ndf_total=0;
+
+    // We'll store intermediate results if scaling CFF-fit is turned on
+    std::map<std::string,double> interimValMap, interimErrMap;
+    double chi2_total1=0, ndf_total1=0;
+    double chi2_total2=0, ndf_total2=0;
 
     if(gStrategy==1){
       // ─── Stage 1: Im-fit only ────────────────────────────────────────────────
@@ -437,7 +467,7 @@ int main(int argc, char** argv) {
       std::vector<double> imVal(nim), imErr(nim);
       double chi2_im, edm, errdef;
       int nv,nx,ic, ndf_im;
-      {
+      auto run_im_fit = [&](){
         TMinuit minu(nim);
         minu.SetPrintLevel(1);
         minu.SetFCN(fcn);
@@ -471,11 +501,30 @@ int main(int argc, char** argv) {
             init = 1.0; lo = 1.0; hi = 1.0; step = 0.0;
           }
 
-          // defaults for the rest
           if     (nm=="r_H")        init = r_H;
           else if(nm=="r_Ht")       init = r_Ht;
           else if(nm=="r_E")        init = r_E;
           else if(nm=="r_Et")       init = r_Et;
+          else if(nm=="alpha0_H")   init = alpha0_H;
+          else if(nm=="alpha1_H")   init = alpha1_H;
+          else if(nm=="b_H")        init = b_H;
+          else if(nm=="M2_H")       init = M2_H;
+          else if(nm=="P_H")        init = P_H;
+          else if(nm=="alpha0_Ht")  init = alpha0_Ht;
+          else if(nm=="alpha1_Ht")  init = alpha1_Ht;
+          else if(nm=="b_Ht")       init = b_Ht;
+          else if(nm=="M2_Ht")      init = M2_Ht;
+          else if(nm=="P_Ht")       init = P_Ht;
+          else if(nm=="alpha0_E")   init = alpha0_E;
+          else if(nm=="alpha1_E")   init = alpha1_E;
+          else if(nm=="b_E")        init = b_E;
+          else if(nm=="M2_E")       init = M2_E;
+          else if(nm=="P_E")        init = P_E;
+          else if(nm=="alpha0_Et")  init = alpha0_Et;
+          else if(nm=="alpha1_Et")  init = alpha1_Et;
+          else if(nm=="b_Et")       init = b_Et;
+          else if(nm=="M2_Et")      init = M2_Et;
+          else if(nm=="P_Et")       init = P_Et;
 
           minu.DefineParameter(i, nm.c_str(), init, step, lo, hi);
           if(step==0.0) minu.FixParameter(i);
@@ -486,13 +535,55 @@ int main(int argc, char** argv) {
         minu.mnstat(chi2_im,edm,errdef,nv,nx,ic);
         for(int i=0;i<nim;++i) minu.GetParameter(i,imVal[i],imErr[i]);
         ndf_im = Nbins - nim;
+        // capture
+        interimValMap.clear(); interimErrMap.clear();
+        for(int i=0;i<nim;++i){
+          interimValMap[parNamesIm[i]] = imVal[i];
+          interimErrMap[parNamesIm[i]] = imErr[i];
+        }
+        chi2_total1 = chi2_im;
+        ndf_total1  = ndf_im;
+      };
+
+      // first CFF fit (Im-only)
+      run_im_fit();
+      std::cout<<"CFF fit (Im-only) χ²/ndf before scaling amplitude uncertainties = "
+               <<chi2_total1<<"/"<<ndf_total1
+               <<" = "<<(ndf_total1>0?chi2_total1/ndf_total1:0)<<"\n";
+
+      // if scale flagged, scale bin_dA by sqrt(chi2/ndf) and redo Im-fit
+      if(gScale==1){
+          double scale_cff = std::sqrt((ndf_total1>0?chi2_total1/ndf_total1:1.0));
+          std::cout<<"Scaling amplitude uncertainties (bin_dA) by sqrt("<<chi2_total1<<"/"<<ndf_total1<<") = "<<scale_cff<<"\n";
+          for(auto &dA : bin_dA) dA *= scale_cff;
+          // recompute reducedAmpChi2 with new bin_dA
+          double totChi2=0; int totDof=0;
+          for(int k=0;k<Nbins;++k){
+              totChi2 += std::pow(bin_A[k]/bin_dA[k],2);
+              totDof  += (bin_M[k]-1);
+          }
+          reducedAmpChi2 = totDof>0 ? totChi2/totDof : 0.0;
+
+          // rerun fit
+          run_im_fit(); // updates chi2_total2, ndf_total2 into chi2_total1, ndf_total1 again
+          chi2_total2 = chi2_total1;
+          ndf_total2  = ndf_total1;
+          std::cout<<"CFF fit (Im-only) χ²/ndf after scaling amplitude uncertainties = "
+                   <<chi2_total2<<"/"<<ndf_total2
+                   <<" = "<<(ndf_total2>0?chi2_total2/ndf_total2:0)<<"\n";
+          // final results from second fit
+          finalValMap = interimValMap;
+          finalErrMap = interimErrMap;
+          chi2_total = chi2_total2;
+          ndf_total  = ndf_total2;
+      } else {
+          // without second scaling
+          finalValMap = interimValMap;
+          finalErrMap = interimErrMap;
+          chi2_total = chi2_total1;
+          ndf_total  = ndf_total1;
       }
-      for(int i=0;i<nim;++i){
-        valMap[parNamesIm[i]] = imVal[i];
-        errMap[parNamesIm[i]] = imErr[i];
-      }
-      chi2_total = chi2_im;
-      ndf_total  = ndf_im;
+
     }
     else {
       // ─── Strategy 2: global simultaneous fit ────────────────────────────────
@@ -506,7 +597,8 @@ int main(int argc, char** argv) {
       std::vector<double> allVal(nAll), allErr(nAll);
       double chi2_glob, edm, errdef;
       int nv,nx,ic;
-      {
+
+      auto run_global_fit = [&](){
         TMinuit minu(nAll);
         minu.SetPrintLevel(1);
         minu.SetFCN(fcn);
@@ -586,18 +678,57 @@ int main(int argc, char** argv) {
         minu.Command("HESSE");
         minu.mnstat(chi2_glob,edm,errdef,nv,nx,ic);
         for(int i=0;i<nAll;++i) minu.GetParameter(i,allVal[i],allErr[i]);
+        // capture
+        interimValMap.clear(); interimErrMap.clear();
+        for(int i=0;i<nAll;++i){
+          interimValMap[parNamesAll[i]] = allVal[i];
+          interimErrMap[parNamesAll[i]] = allErr[i];
+        }
+        chi2_total1 = chi2_glob;
+        ndf_total1  = Nbins + xsData.size() - parNamesAll.size();
+      };
+
+      // first global fit
+      run_global_fit();
+      std::cout<<"CFF global fit χ²/ndf before scaling amplitude uncertainties = "
+               <<chi2_total1<<"/"<<ndf_total1
+               <<" = "<<(ndf_total1>0?chi2_total1/ndf_total1:0)<<"\n";
+
+      if(gScale==1){
+          double scale_cff = std::sqrt((ndf_total1>0?chi2_total1/ndf_total1:1.0));
+          std::cout<<"Scaling amplitude uncertainties (bin_dA) by sqrt("<<chi2_total1<<"/"<<ndf_total1<<") = "<<scale_cff<<"\n";
+          for(auto &dA : bin_dA) dA *= scale_cff;
+          // recompute reducedAmpChi2 after scaling
+          double totChi2=0; int totDof=0;
+          for(int k=0;k<Nbins;++k){
+              totChi2 += std::pow(bin_A[k]/bin_dA[k],2);
+              totDof  += (bin_M[k]-1);
+          }
+          reducedAmpChi2 = totDof>0 ? totChi2/totDof : 0.0;
+
+          // rerun global fit with updated bin_dA
+          run_global_fit();
+          chi2_total2 = chi2_total1;
+          ndf_total2  = Nbins + xsData.size() - parNamesAll.size();
+          std::cout<<"CFF global fit χ²/ndf after scaling amplitude uncertainties = "
+                   <<chi2_total2<<"/"<<ndf_total2
+                   <<" = "<<(ndf_total2>0?chi2_total2/ndf_total2:0)<<"\n";
+          finalValMap = interimValMap;
+          finalErrMap = interimErrMap;
+          chi2_total = chi2_total2;
+          ndf_total  = ndf_total2;
+      } else {
+          finalValMap = interimValMap;
+          finalErrMap = interimErrMap;
+          chi2_total = chi2_total1;
+          ndf_total  = ndf_total1;
       }
-      for(int i=0;i<(int)parNamesAll.size();++i){
-        valMap[parNamesAll[i]] = allVal[i];
-        errMap[parNamesAll[i]] = allErr[i];
-      }
-      chi2_total = chi2_glob;
-      ndf_total = Nbins + xsData.size() - parNamesAll.size();
     }
 
     // ─── Output results ─────────────────────────────────────────────────────────
     std::vector<std::string> outNames =
-      (gStrategy==1 ? parNamesIm : parNamesAll);
+      (gStrategy==1 ? (std::vector<std::string>(finalValMap.size()?parNamesIm:parNamesIm))
+                    : parNamesAll);
 
     system("mkdir -p output/fit_results");
     std::ofstream fout("output/fit_results/fit_results_"+std::string(tb)+".txt");
@@ -605,25 +736,26 @@ int main(int argc, char** argv) {
         <<"timestamp   "<<tb<<"\n"
         <<"strategy    "<<gStrategy<<"\n"
         <<"constraint  "<<gConstraint<<"\n"
+        <<"scale       "<<gScale<<"\n"
         <<"input       "<<gBsaFile<<"\n"
         <<"H "<<hasH<<" Ht "<<hasHt<<" E "<<hasE<<" Et "<<hasEt<<"\n"
         <<"# parameters:";
     for(auto &n: outNames) fout<<" "<<n;
     fout<<"\n# values:\n";
-    for(auto &n: outNames) fout<<valMap[n]<<" ";
+    for(auto &n: outNames) fout<<finalValMap[n]<<" ";
     fout<<"\n# errors:\n";
-    for(auto &n: outNames) fout<<errMap[n]<<" ";
+    for(auto &n: outNames) fout<<finalErrMap[n]<<" ";
     fout<<"\n# chi2 ndf chi2/ndf\n"
-        <<chi2_total<<" "<<ndf_total<<" "<<(chi2_total/ndf_total)<<"\n";
+        <<chi2_total<<" "<<ndf_total<<" "<<(ndf_total>0?chi2_total/ndf_total:0)<<"\n";
     fout.close();
 
     std::cout<<"\n--- Fit Results ---\n";
     for(auto &n: outNames){
-      std::cout<<" "<<n<<" = "<<valMap[n]
-               <<" ± "<<errMap[n]<<"\n";
+      std::cout<<" "<<n<<" = "<<finalValMap[n]
+               <<" ± "<<finalErrMap[n]<<"\n";
     }
     std::cout<<" χ²/ndf = "<<chi2_total<<"/"<<ndf_total
-             <<" = "<<(chi2_total/ndf_total)<<"\n";
+             <<" = "<<(ndf_total>0?chi2_total/ndf_total:0)<<"\n";
     std::cout<<" Average χ²/bin-fit = "<<avgBinChi2<<"\n";
     std::cout<<" χ²_per_amp-fit = "<<reducedAmpChi2<<"\n\n";
     return 0;
