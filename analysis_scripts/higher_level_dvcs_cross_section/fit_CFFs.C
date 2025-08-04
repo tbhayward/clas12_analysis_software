@@ -498,7 +498,7 @@ int main(int argc, char** argv) {
           // enforce M2 ≥ 0
           if(nm=="M2_H" || nm=="M2_Ht"
           || nm=="M2_E" || nm=="M2_Et"){
-            lo = 0.2; hi = 2.0;
+            // lo = 0.2; hi = 2.0;
           }
           // fix P = 1
           if(nm=="P_H"  || nm=="P_Ht"
