@@ -1286,19 +1286,21 @@ double renormReal = 1.0;
 // ----------------------------------------------------------------------------
 // Utility: polynomial in ξ and t with constant terms and exponential damping
 inline double PolyExp_Im(double A, double B,
-                         double c0, double c1, double c2, double c3, double c4,
-                         double d0, double d1, double d2, double d3, double d4,
+                         double c0, double c1, double c2, double c3, double c4, double c5,
+                         double d0, double d1, double d2, double d3, double d4, double d5,
                          double xi, double t) {
     double poly_xi = c0
                    + c1 * xi
                    + c2 * xi * xi
                    + c3 * xi * xi * xi
-                   + c4 * xi * xi * xi * xi;
+                   + c4 * xi * xi * xi * xi
+                   + c5 * xi * xi * xi * xi * xi;
     double poly_t  = d0
                    + d1 * t
                    + d2 * t * t
                    + d3 * t * t * t
-                   + d4 * t * t * t * t;
+                   + d4 * t * t * t * t
+                   + d5 * t * t * t * t * t;
     double decay   = std::exp( - (A * xi + B * t) );
     return decay * poly_xi * poly_t;
 }
@@ -1313,17 +1315,19 @@ double c1_ImH     = 1.0;
 double c2_ImH     = 0.0;
 double c3_ImH     = 0.0;
 double c4_ImH     = 0.0;
+double c5_ImH     = 0.0;
 double d0_ImH     = 0.0;
 double d1_ImH     = 1.0;
 double d2_ImH     = 0.0;
 double d3_ImH     = 0.0;
 double d4_ImH     = 0.0;
+double d5_ImH     = 0.0;
 
 double GetImH(double xi, double t) {
     if (!hasH) return 0.0;
     return renormImag * PolyExp_Im(A_ImH, B_ImH,
-                                   c0_ImH, c1_ImH, c2_ImH, c3_ImH, c4_ImH,
-                                   d0_ImH, d1_ImH, d2_ImH, d3_ImH, d4_ImH,
+                                   c0_ImH, c1_ImH, c2_ImH, c3_ImH, c4_ImH, c5_ImH,
+                                   d0_ImH, d1_ImH, d2_ImH, d3_ImH, d4_ImH, d5_ImH,
                                    xi, t);
 }
 
@@ -1335,17 +1339,19 @@ double c1_ImHt    = 1.0;
 double c2_ImHt    = 0.0;
 double c3_ImHt    = 0.0;
 double c4_ImHt    = 0.0;
+double c5_ImHt    = 0.0;
 double d0_ImHt    = 0.0;
 double d1_ImHt    = 1.0;
 double d2_ImHt    = 0.0;
 double d3_ImHt    = 0.0;
 double d4_ImHt    = 0.0;
+double d5_ImHt    = 0.0;
 
 double GetImHt(double xi, double t) {
     if (!hasHt) return 0.0;
     return renormImag * PolyExp_Im(A_ImHt, B_ImHt,
-                                   c0_ImHt, c1_ImHt, c2_ImHt, c3_ImHt, c4_ImHt,
-                                   d0_ImHt, d1_ImHt, d2_ImHt, d3_ImHt, d4_ImHt,
+                                   c0_ImHt, c1_ImHt, c2_ImHt, c3_ImHt, c4_ImHt, c5_ImHt,
+                                   d0_ImHt, d1_ImHt, d2_ImHt, d3_ImHt, d4_ImHt, d5_ImHt,
                                    xi, t);
 }
 
@@ -1357,17 +1363,19 @@ double c1_ImE     = 1.0;
 double c2_ImE     = 0.0;
 double c3_ImE     = 0.0;
 double c4_ImE     = 0.0;
+double c5_ImE     = 0.0;
 double d0_ImE     = 0.0;
 double d1_ImE     = 1.0;
 double d2_ImE     = 0.0;
 double d3_ImE     = 0.0;
 double d4_ImE     = 0.0;
+double d5_ImE     = 0.0;
 
 double GetImE(double xi, double t) {
     if (!hasE) return 0.0;
     return renormImag * PolyExp_Im(A_ImE, B_ImE,
-                                   c0_ImE, c1_ImE, c2_ImE, c3_ImE, c4_ImE,
-                                   d0_ImE, d1_ImE, d2_ImE, d3_ImE, d4_ImE,
+                                   c0_ImE, c1_ImE, c2_ImE, c3_ImE, c4_ImE, c5_ImE,
+                                   d0_ImE, d1_ImE, d2_ImE, d3_ImE, d4_ImE, d5_ImE,
                                    xi, t);
 }
 
@@ -1379,17 +1387,19 @@ double c1_ImEt    = 1.0;
 double c2_ImEt    = 0.0;
 double c3_ImEt    = 0.0;
 double c4_ImEt    = 0.0;
+double c5_ImEt    = 0.0;
 double d0_ImEt    = 0.0;
 double d1_ImEt    = 1.0;
 double d2_ImEt    = 0.0;
 double d3_ImEt    = 0.0;
 double d4_ImEt    = 0.0;
+double d5_ImEt    = 0.0;
 
 double GetImEt(double xi, double t) {
     if (!hasEt) return 0.0;
     return renormImag * PolyExp_Im(A_ImEt, B_ImEt,
-                                   c0_ImEt, c1_ImEt, c2_ImEt, c3_ImEt, c4_ImEt,
-                                   d0_ImEt, d1_ImEt, d2_ImEt, d3_ImEt, d4_ImEt,
+                                   c0_ImEt, c1_ImEt, c2_ImEt, c3_ImEt, c4_ImEt, c5_ImEt,
+                                   d0_ImEt, d1_ImEt, d2_ImEt, d3_ImEt, d4_ImEt, d5_ImEt,
                                    xi, t);
 }
 
