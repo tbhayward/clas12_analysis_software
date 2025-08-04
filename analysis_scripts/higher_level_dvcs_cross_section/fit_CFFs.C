@@ -261,7 +261,7 @@ void build_par_listRe(){
 }
 
 // ----------------------------------------------------------------------------
-// χ² function with additional alpha0 >= |alpha1 * t| enforcement as a hard penalty
+// χ² function with conditional alpha0 >= |alpha1 * t| enforcement when constraint>0
 void fcn(int&, double*, double &f, double *par, int){
     int ip=0;
     if(gStage==1){
@@ -306,25 +306,27 @@ void fcn(int&, double*, double &f, double *par, int){
             double modelA = dvcs.s1_I() / dvcs.c0_BH();
             double resid  = (bin_A[k] - modelA)/bin_dA[k];
             chi2 += resid*resid;
-            // enforce alpha0 >= |alpha1 * t| penalty
-            if(hasH){
-                if(alpha0_H < std::fabs(alpha1_H * bin_t[k])){
-                    chi2 += 1e6;
+            if(gConstraint > 0){
+                // enforce alpha0 >= |alpha1 * t| penalty
+                if(hasH){
+                    if(alpha0_H < std::fabs(alpha1_H * bin_t[k])){
+                        chi2 += 1e6;
+                    }
                 }
-            }
-            if(hasHt){
-                if(alpha0_Ht < std::fabs(alpha1_Ht * bin_t[k])){
-                    chi2 += 1e6;
+                if(hasHt){
+                    if(alpha0_Ht < std::fabs(alpha1_Ht * bin_t[k])){
+                        chi2 += 1e6;
+                    }
                 }
-            }
-            if(hasE){
-                if(alpha0_E < std::fabs(alpha1_E * bin_t[k])){
-                    chi2 += 1e6;
+                if(hasE){
+                    if(alpha0_E < std::fabs(alpha1_E * bin_t[k])){
+                        chi2 += 1e6;
+                    }
                 }
-            }
-            if(hasEt){
-                if(alpha0_Et < std::fabs(alpha1_Et * bin_t[k])){
-                    chi2 += 1e6;
+                if(hasEt){
+                    if(alpha0_Et < std::fabs(alpha1_Et * bin_t[k])){
+                        chi2 += 1e6;
+                    }
                 }
             }
         }
@@ -388,32 +390,34 @@ void fcn(int&, double*, double &f, double *par, int){
         }
         // χ² total = χ²_BSA + χ²_xsec
         double chi2 = 0;
-        // BSA part with constraint
+        // BSA part with conditional constraint
         for(int k=0;k<Nbins;++k){
             BMK_DVCS dvcs(-1,1,0,
                           bin_Eb[k],bin_xB[k],bin_Q2[k],bin_t[k],0.0);
             double modelA = dvcs.s1_I() / dvcs.c0_BH();
             double resid  = (bin_A[k] - modelA)/bin_dA[k];
             chi2 += resid*resid;
-            // enforce alpha0 >= |alpha1 * t| penalty
-            if(hasH){
-                if(alpha0_H < std::fabs(alpha1_H * bin_t[k])){
-                    chi2 += 1e6;
+            if(gConstraint > 0){
+                // enforce alpha0 >= |alpha1 * t| penalty
+                if(hasH){
+                    if(alpha0_H < std::fabs(alpha1_H * bin_t[k])){
+                        chi2 += 1e6;
+                    }
                 }
-            }
-            if(hasHt){
-                if(alpha0_Ht < std::fabs(alpha1_Ht * bin_t[k])){
-                    chi2 += 1e6;
+                if(hasHt){
+                    if(alpha0_Ht < std::fabs(alpha1_Ht * bin_t[k])){
+                        chi2 += 1e6;
+                    }
                 }
-            }
-            if(hasE){
-                if(alpha0_E < std::fabs(alpha1_E * bin_t[k])){
-                    chi2 += 1e6;
+                if(hasE){
+                    if(alpha0_E < std::fabs(alpha1_E * bin_t[k])){
+                        chi2 += 1e6;
+                    }
                 }
-            }
-            if(hasEt){
-                if(alpha0_Et < std::fabs(alpha1_Et * bin_t[k])){
-                    chi2 += 1e6;
+                if(hasEt){
+                    if(alpha0_Et < std::fabs(alpha1_Et * bin_t[k])){
+                        chi2 += 1e6;
+                    }
                 }
             }
         }
