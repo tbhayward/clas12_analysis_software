@@ -478,22 +478,22 @@ int main(int argc, char** argv) {
           // enforce alpha0 < 1
           if(nm=="alpha0_H"  || nm=="alpha0_Ht"
           || nm=="alpha0_E"  || nm=="alpha0_Et"){
-            lo = 0.0; hi = 3.0;
+            // lo = 0.0; hi = 3.0;
           }
           // enforce alpha1 ≥ 0
           if(nm=="alpha1_H"  || nm=="alpha1_Ht"
           || nm=="alpha1_E"  || nm=="alpha1_Et"){
-            lo = 0.0; hi = 3.0;
+            // lo = 0.0; hi = 3.0;
           }
           // enforce b ≥ 0
           if(nm=="b_H"  || nm=="b_Ht"
           || nm=="b_E"  || nm=="b_Et"){
-            lo = 0.0; hi = 5.0;
+            // lo = 0.0; hi = 5.0;
           }
           // enforce M2 ≥ 0
           if(nm=="M2_H" || nm=="M2_Ht"
           || nm=="M2_E" || nm=="M2_Et"){
-            lo = 0.2; hi = 2.0;
+            // lo = 0.2; hi = 2.0;
           }
           // fix P = 1
           if(nm=="P_H"  || nm=="P_Ht"
