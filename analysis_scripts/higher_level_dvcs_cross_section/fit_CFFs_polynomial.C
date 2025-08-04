@@ -52,11 +52,11 @@
 extern bool hasH, hasHt, hasE, hasEt;
 extern double renormImag, renormReal;
 
-// Imaginary part polynomial parameters (now including 4th powers)
-extern double A_ImH, B_ImH, c1_ImH, c2_ImH, c3_ImH, c4_ImH, d1_ImH, d2_ImH, d3_ImH, d4_ImH;
-extern double A_ImHt, B_ImHt, c1_ImHt, c2_ImHt, c3_ImHt, c4_ImHt, d1_ImHt, d2_ImHt, d3_ImHt, d4_ImHt;
-extern double A_ImE, B_ImE, c1_ImE, c2_ImE, c3_ImE, c4_ImE, d1_ImE, d2_ImE, d3_ImE, d4_ImE;
-extern double A_ImEt, B_ImEt, c1_ImEt, c2_ImEt, c3_ImEt, c4_ImEt, d1_ImEt, d2_ImEt, d3_ImEt, d4_ImEt;
+// Imaginary part polynomial parameters (including constant terms c0 and d0)
+extern double A_ImH, B_ImH, c0_ImH, c1_ImH, c2_ImH, c3_ImH, c4_ImH, d0_ImH, d1_ImH, d2_ImH, d3_ImH, d4_ImH;
+extern double A_ImHt, B_ImHt, c0_ImHt, c1_ImHt, c2_ImHt, c3_ImHt, c4_ImHt, d0_ImHt, d1_ImHt, d2_ImHt, d3_ImHt, d4_ImHt;
+extern double A_ImE, B_ImE, c0_ImE, c1_ImE, c2_ImE, c3_ImE, c4_ImE, d0_ImE, d1_ImE, d2_ImE, d3_ImE, d4_ImE;
+extern double A_ImEt, B_ImEt, c0_ImEt, c1_ImEt, c2_ImEt, c3_ImEt, c4_ImEt, d0_ImEt, d1_ImEt, d2_ImEt, d3_ImEt, d4_ImEt;
 
 // Real-part subtraction constants (D-term-like)
 extern double C0_H, MD2_H, lambda_H;
@@ -64,7 +64,7 @@ extern double C0_Ht, MD2_Ht, lambda_Ht;
 extern double C0_E, MD2_E, lambda_E;
 extern double C0_Et, MD2_Et, lambda_Et;
 
-// Forward declarations (redundant but explicit)
+// Forward declarations (explicit)
 double GetImH(double xi, double t);
 double GetImHt(double xi, double t);
 double GetImE(double xi, double t);
@@ -227,33 +227,33 @@ void BinBsaData(){
     reducedAmpChi2 = totDof>0 ? totChi2 / totDof : 0.0;
 }
 
-// build parameter list including new c4/d4 and d4 terms
+// build parameter list including c0/d0 and up to fourth powers
 static std::vector<std::string> parNamesIm;
 void build_par_list(){
     parNamesIm.clear();
     if(hasH){
         parNamesIm.insert(parNamesIm.end(),
             {"A_ImH","B_ImH",
-             "c1_ImH","c2_ImH","c3_ImH","c4_ImH",
-             "d1_ImH","d2_ImH","d3_ImH","d4_ImH"});
+             "c0_ImH","c1_ImH","c2_ImH","c3_ImH","c4_ImH",
+             "d0_ImH","d1_ImH","d2_ImH","d3_ImH","d4_ImH"});
     }
     if(hasHt){
         parNamesIm.insert(parNamesIm.end(),
             {"A_ImHt","B_ImHt",
-             "c1_ImHt","c2_ImHt","c3_ImHt","c4_ImHt",
-             "d1_ImHt","d2_ImHt","d3_ImHt","d4_ImHt"});
+             "c0_ImHt","c1_ImHt","c2_ImHt","c3_ImHt","c4_ImHt",
+             "d0_ImHt","d1_ImHt","d2_ImHt","d3_ImHt","d4_ImHt"});
     }
     if(hasE){
         parNamesIm.insert(parNamesIm.end(),
             {"A_ImE","B_ImE",
-             "c1_ImE","c2_ImE","c3_ImE","c4_ImE",
-             "d1_ImE","d2_ImE","d3_ImE","d4_ImE"});
+             "c0_ImE","c1_ImE","c2_ImE","c3_ImE","c4_ImE",
+             "d0_ImE","d1_ImE","d2_ImE","d3_ImE","d4_ImE"});
     }
     if(hasEt){
         parNamesIm.insert(parNamesIm.end(),
             {"A_ImEt","B_ImEt",
-             "c1_ImEt","c2_ImEt","c3_ImEt","c4_ImEt",
-             "d1_ImEt","d2_ImEt","d3_ImEt","d4_ImEt"});
+             "c0_ImEt","c1_ImEt","c2_ImEt","c3_ImEt","c4_ImEt",
+             "d0_ImEt","d1_ImEt","d2_ImEt","d3_ImEt","d4_ImEt"});
     }
 }
 
@@ -264,10 +264,12 @@ void fcn(int&, double*, double &f, double *par, int){
         if(hasH){
             A_ImH   = par[ip++];
             B_ImH   = par[ip++];
+            c0_ImH  = par[ip++];
             c1_ImH  = par[ip++];
             c2_ImH  = par[ip++];
             c3_ImH  = par[ip++];
             c4_ImH  = par[ip++];
+            d0_ImH  = par[ip++];
             d1_ImH  = par[ip++];
             d2_ImH  = par[ip++];
             d3_ImH  = par[ip++];
@@ -276,10 +278,12 @@ void fcn(int&, double*, double &f, double *par, int){
         if(hasHt){
             A_ImHt   = par[ip++];
             B_ImHt   = par[ip++];
+            c0_ImHt  = par[ip++];
             c1_ImHt  = par[ip++];
             c2_ImHt  = par[ip++];
             c3_ImHt  = par[ip++];
             c4_ImHt  = par[ip++];
+            d0_ImHt  = par[ip++];
             d1_ImHt  = par[ip++];
             d2_ImHt  = par[ip++];
             d3_ImHt  = par[ip++];
@@ -288,10 +292,12 @@ void fcn(int&, double*, double &f, double *par, int){
         if(hasE){
             A_ImE   = par[ip++];
             B_ImE   = par[ip++];
+            c0_ImE  = par[ip++];
             c1_ImE  = par[ip++];
             c2_ImE  = par[ip++];
             c3_ImE  = par[ip++];
             c4_ImE  = par[ip++];
+            d0_ImE  = par[ip++];
             d1_ImE  = par[ip++];
             d2_ImE  = par[ip++];
             d3_ImE  = par[ip++];
@@ -300,10 +306,12 @@ void fcn(int&, double*, double &f, double *par, int){
         if(hasEt){
             A_ImEt   = par[ip++];
             B_ImEt   = par[ip++];
+            c0_ImEt  = par[ip++];
             c1_ImEt  = par[ip++];
             c2_ImEt  = par[ip++];
             c3_ImEt  = par[ip++];
             c4_ImEt  = par[ip++];
+            d0_ImEt  = par[ip++];
             d1_ImEt  = par[ip++];
             d2_ImEt  = par[ip++];
             d3_ImEt  = par[ip++];
@@ -391,49 +399,57 @@ int main(int argc, char** argv) {
 
         for (int i = 0; i < nim; ++i) {
             const auto &nm = parNamesIm[i];
-            double init = 1.0;
+            double init = 0.0;
             double step = 0.01;
             double lo = -10.0, hi = 10.0;
 
-            if (nm == "A_ImH")       init = A_ImH, lo = 0.0, hi = 10.0;
-            else if (nm == "B_ImH")  init = B_ImH, lo = 0.0, hi = 10.0;
+            if (nm == "A_ImH")       { init = A_ImH; lo = 0.0; hi = 10.0; }
+            else if (nm == "B_ImH")  { init = B_ImH; lo = 0.0; hi = 10.0; }
+            else if (nm == "c0_ImH") init = c0_ImH;
             else if (nm == "c1_ImH") init = c1_ImH;
             else if (nm == "c2_ImH") init = c2_ImH;
             else if (nm == "c3_ImH") init = c3_ImH;
             else if (nm == "c4_ImH") init = c4_ImH;
+            else if (nm == "d0_ImH") init = d0_ImH;
             else if (nm == "d1_ImH") init = d1_ImH;
             else if (nm == "d2_ImH") init = d2_ImH;
             else if (nm == "d3_ImH") init = d3_ImH;
             else if (nm == "d4_ImH") init = d4_ImH;
 
-            else if (nm == "A_ImHt")       init = A_ImHt, lo = 0.0, hi = 10.0;
-            else if (nm == "B_ImHt")       init = B_ImHt, lo = 0.0, hi = 10.0;
+            else if (nm == "A_ImHt")       { init = A_ImHt; lo = 0.0; hi = 10.0; }
+            else if (nm == "B_ImHt")       { init = B_ImHt; lo = 0.0; hi = 10.0; }
+            else if (nm == "c0_ImHt")      init = c0_ImHt;
             else if (nm == "c1_ImHt")      init = c1_ImHt;
             else if (nm == "c2_ImHt")      init = c2_ImHt;
             else if (nm == "c3_ImHt")      init = c3_ImHt;
             else if (nm == "c4_ImHt")      init = c4_ImHt;
+            else if (nm == "d0_ImHt")      init = d0_ImHt;
             else if (nm == "d1_ImHt")      init = d1_ImHt;
             else if (nm == "d2_ImHt")      init = d2_ImHt;
             else if (nm == "d3_ImHt")      init = d3_ImHt;
             else if (nm == "d4_ImHt")      init = d4_ImHt;
 
-            else if (nm == "A_ImE")       init = A_ImE, lo = 0.0, hi = 10.0;
-            else if (nm == "B_ImE")       init = B_ImE, lo = 0.0, hi = 10.0;
+            else if (nm == "A_ImE")       { init = A_ImE; lo = 0.0; hi = 10.0; }
+            else if (nm == "B_ImE")       { init = B_ImE; lo = 0.0; hi = 10.0; }
+            else if (nm == "c0_ImE")      init = c0_ImE;
             else if (nm == "c1_ImE")      init = c1_ImE;
             else if (nm == "c2_ImE")      init = c2_ImE;
             else if (nm == "c3_ImE")      init = c3_ImE;
             else if (nm == "c4_ImE")      init = c4_ImE;
+            else if (nm == "d0_ImE")      init = d0_ImE;
             else if (nm == "d1_ImE")      init = d1_ImE;
             else if (nm == "d2_ImE")      init = d2_ImE;
             else if (nm == "d3_ImE")      init = d3_ImE;
             else if (nm == "d4_ImE")      init = d4_ImE;
 
-            else if (nm == "A_ImEt")       init = A_ImEt, lo = 0.0, hi = 10.0;
-            else if (nm == "B_ImEt")       init = B_ImEt, lo = 0.0, hi = 10.0;
+            else if (nm == "A_ImEt")       { init = A_ImEt; lo = 0.0; hi = 10.0; }
+            else if (nm == "B_ImEt")       { init = B_ImEt; lo = 0.0; hi = 10.0; }
+            else if (nm == "c0_ImEt")      init = c0_ImEt;
             else if (nm == "c1_ImEt")      init = c1_ImEt;
             else if (nm == "c2_ImEt")      init = c2_ImEt;
             else if (nm == "c3_ImEt")      init = c3_ImEt;
             else if (nm == "c4_ImEt")      init = c4_ImEt;
+            else if (nm == "d0_ImEt")      init = d0_ImEt;
             else if (nm == "d1_ImEt")      init = d1_ImEt;
             else if (nm == "d2_ImEt")      init = d2_ImEt;
             else if (nm == "d3_ImEt")      init = d3_ImEt;
