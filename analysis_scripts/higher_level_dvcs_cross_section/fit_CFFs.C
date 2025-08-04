@@ -9,7 +9,7 @@
  *
  * Usage:
  *   ./fit_CFFs --strategy <1|2> -H <0|1> -Ht <0|1> -E <0|1> -Et <0|1>
- *             [--constraint <0|1>] [--scale <0|1>] [--input <BSA_file> [XSEC_file]] [--plot-fits]
+ *             [--constraint <0|1|2>] [--scale <0|1>] [--input <BSA_file> [XSEC_file]] [--plot-fits]
  *
  *   If only BSA_file is given, xsec uses the built-in default.  If neither
  *   is given, both defaults are used.
@@ -68,7 +68,7 @@ extern double C0_Et,   MD2_Et,   lambda_Et;
 // Control flags & data containers
 static int   gStrategy    = 0;
 static int   gStage       = 1;  // 1 = Im-only, 0 = global simultaneous
-static int   gConstraint  = 0;  // 0 or 1
+static int   gConstraint  = 0;  // 0,1,2
 static bool  gPlotBinFits = false;
 static int   gScale       = 0;  // 0 off, 1 on
 
@@ -127,14 +127,14 @@ void parse_args(int argc, char** argv){
             std::cerr<<"Usage: "<<argv[0]
                      <<" --strategy<1|2> -H<0|1> -Ht<0|1>"
                      <<" -E<0|1> -Et<0|1>"
-                     <<" [--constraint<0|1>] [--scale<0|1>]"
+                     <<" [--constraint<0|1|2>] [--scale<0|1>]"
                      <<" [--input <BSA_file> [XSEC_file]]"
                      <<" [--plot-fits]\n";
             std::exit(1);
         }
     }
     if(gStrategy<1||gStrategy>2
-     ||gConstraint<0||gConstraint>1
+     ||gConstraint<0||gConstraint>2
      ||(gScale!=0 && gScale!=1)){
         std::cerr<<"Invalid strategy, constraint, or scale flag\n";
         std::exit(1);
@@ -153,6 +153,9 @@ void LoadData(){
             if(gConstraint==1){
               if((-d.t/d.Q2)>=0.2) continue;
               if((-d.t)    >=1.0) continue;
+            } else if (gConstraint==2){
+              if((-d.t/d.Q2)>=0.2) continue;
+              if((-d.t)    >=0.45) continue;
             }
             v.push_back(d);
         }
@@ -193,6 +196,8 @@ void BinBsaData(){
         double chi2    = ftmp.GetChisquare();
         double redchi2 = chi2 / (M - 3);
         if(gConstraint==1 && (redchi2>=2.0 || std::fabs(Bfit)>=0.9))
+            continue;
+        if(gConstraint==2 && (redchi2>=2.0 || std::fabs(Bfit)>=0.9))
             continue;
         keptBins.push_back(pts);
         bin_M.push_back(M);
@@ -256,7 +261,7 @@ void build_par_listRe(){
 }
 
 // ----------------------------------------------------------------------------
-// χ² function
+// χ² function with additional alpha1 >= |alpha1 * t| enforcement as penalty
 void fcn(int&, double*, double &f, double *par, int){
     int ip=0;
     if(gStage==1){
@@ -301,6 +306,27 @@ void fcn(int&, double*, double &f, double *par, int){
             double modelA = dvcs.s1_I() / dvcs.c0_BH();
             double resid  = (bin_A[k] - modelA)/bin_dA[k];
             chi2 += resid*resid;
+            // impose alpha1 >= |alpha1 * t| as penalty (effectively ensures |bin_t[k]| <= 1)
+            if(hasH){
+                if(alpha1_H < std::fabs(alpha1_H * bin_t[k])){
+                    chi2 += 1e6;
+                }
+            }
+            if(hasHt){
+                if(alpha1_Ht < std::fabs(alpha1_Ht * bin_t[k])){
+                    chi2 += 1e6;
+                }
+            }
+            if(hasE){
+                if(alpha1_E < std::fabs(alpha1_E * bin_t[k])){
+                    chi2 += 1e6;
+                }
+            }
+            if(hasEt){
+                if(alpha1_Et < std::fabs(alpha1_Et * bin_t[k])){
+                    chi2 += 1e6;
+                }
+            }
         }
         f = chi2;
     }
@@ -369,6 +395,27 @@ void fcn(int&, double*, double &f, double *par, int){
             double modelA = dvcs.s1_I() / dvcs.c0_BH();
             double resid  = (bin_A[k] - modelA)/bin_dA[k];
             chi2 += resid*resid;
+            // alpha1 constraint penalties
+            if(hasH){
+                if(alpha1_H < std::fabs(alpha1_H * bin_t[k])){
+                    chi2 += 1e6;
+                }
+            }
+            if(hasHt){
+                if(alpha1_Ht < std::fabs(alpha1_Ht * bin_t[k])){
+                    chi2 += 1e6;
+                }
+            }
+            if(hasE){
+                if(alpha1_E < std::fabs(alpha1_E * bin_t[k])){
+                    chi2 += 1e6;
+                }
+            }
+            if(hasEt){
+                if(alpha1_Et < std::fabs(alpha1_Et * bin_t[k])){
+                    chi2 += 1e6;
+                }
+            }
         }
         // xsec part
         for(auto &d: xsData){
@@ -475,30 +522,25 @@ int main(int argc, char** argv) {
           const auto &nm = parNamesIm[i];
           double init=0, lo=-1e3, hi=+1e3, step=0.001;
 
-          // enforce r < 2
-          if(nm=="r_H"  || nm=="r_Ht"
-          || nm=="r_E"  || nm=="r_Et"){
-            // lo = 0.0; hi = 4.0;
-          }
-          // enforce alpha0 < 1
+          // enforce alpha0 bounds (0 <= alpha0 < 1)
           if(nm=="alpha0_H"  || nm=="alpha0_Ht"
           || nm=="alpha0_E"  || nm=="alpha0_Et"){
-            // lo = 0.0; hi = 3.0;
+            lo = 0.0; hi = 0.999999;
           }
           // enforce alpha1 ≥ 0
           if(nm=="alpha1_H"  || nm=="alpha1_Ht"
           || nm=="alpha1_E"  || nm=="alpha1_Et"){
-            // lo = 0.0; hi = 3.0;
+            lo = 0.0; hi = 3.0;
           }
           // enforce b ≥ 0
           if(nm=="b_H"  || nm=="b_Ht"
           || nm=="b_E"  || nm=="b_Et"){
-            // lo = 0.0; hi = 5.0;
+            lo = 0.0; hi = 5.0;
           }
           // enforce M2 ≥ 0
           if(nm=="M2_H" || nm=="M2_Ht"
           || nm=="M2_E" || nm=="M2_Et"){
-            // lo = 0.2; hi = 2.0;
+            lo = 0.2; hi = 2.0;
           }
           // fix P = 1
           if(nm=="P_H"  || nm=="P_Ht"
@@ -614,9 +656,12 @@ int main(int argc, char** argv) {
           if(nm.find("alpha0_")==0){
             lo = 0.0; hi = 0.999999;
           }
+          // enforce alpha1 ≥ 0
+          if(nm.find("alpha1_")==0){
+            lo = 0.0;
+          }
           // enforce other positivity
-          if(nm.find("alpha1_")==0
-          || nm.find("b_")==0
+          if(nm.find("b_")==0
           || nm.find("M2_")==0){
             lo = 0.0;
           }
@@ -794,6 +839,7 @@ void PlotBinFit(int ibin, const std::string &ts) {
     double ndf  = f1.GetNDF();
     double Bfit = f1.GetParameter(2);
     if(gConstraint==1 && (chi2/ndf>=2.0 || std::fabs(Bfit)>=0.9)) return;
+    if(gConstraint==2 && (chi2/ndf>=2.0 || std::fabs(Bfit)>=0.9)) return;
 
     TCanvas c(Form("c_bin%d",ibin),"",600,500);
     TH1F frame(Form("frame%d",ibin),"",360,0,360);
