@@ -52,11 +52,11 @@
 extern bool hasH, hasHt, hasE, hasEt;
 extern double renormImag, renormReal;
 
-// Imaginary part polynomial parameters
-extern double A_ImH, B_ImH, c1_ImH, c2_ImH, c3_ImH, d1_ImH, d2_ImH, d3_ImH;
-extern double A_ImHt, B_ImHt, c1_ImHt, c2_ImHt, c3_ImHt, d1_ImHt, d2_ImHt, d3_ImHt;
-extern double A_ImE, B_ImE, c1_ImE, c2_ImE, c3_ImE, d1_ImE, d2_ImE, d3_ImE;
-extern double A_ImEt, B_ImEt, c1_ImEt, c2_ImEt, c3_ImEt, d1_ImEt, d2_ImEt, d3_ImEt;
+// Imaginary part polynomial parameters (now including 4th powers)
+extern double A_ImH, B_ImH, c1_ImH, c2_ImH, c3_ImH, c4_ImH, d1_ImH, d2_ImH, d3_ImH, d4_ImH;
+extern double A_ImHt, B_ImHt, c1_ImHt, c2_ImHt, c3_ImHt, c4_ImHt, d1_ImHt, d2_ImHt, d3_ImHt, d4_ImHt;
+extern double A_ImE, B_ImE, c1_ImE, c2_ImE, c3_ImE, c4_ImE, d1_ImE, d2_ImE, d3_ImE, d4_ImE;
+extern double A_ImEt, B_ImEt, c1_ImEt, c2_ImEt, c3_ImEt, c4_ImEt, d1_ImEt, d2_ImEt, d3_ImEt, d4_ImEt;
 
 // Real-part subtraction constants (D-term-like)
 extern double C0_H, MD2_H, lambda_H;
@@ -64,7 +64,7 @@ extern double C0_Ht, MD2_Ht, lambda_Ht;
 extern double C0_E, MD2_E, lambda_E;
 extern double C0_Et, MD2_Et, lambda_Et;
 
-// Forward declarations for CFF access (should already be visible via include)
+// Forward declarations (redundant but explicit)
 double GetImH(double xi, double t);
 double GetImHt(double xi, double t);
 double GetImE(double xi, double t);
@@ -93,10 +93,10 @@ static std::vector<double>    bin_redChi2; // per-bin sine reduced chi2
 static int     Nbins          = 0;
 static double  reducedAmpChi2 = 0.0;
 
-// helper forward
+// forward
 void PlotBinFit(int ibin, const std::string &ts);
 
-// parse command-line arguments
+// parse args
 void parse_args(int argc, char** argv){
     static struct option opts[] = {
       {"strategy",   required_argument,nullptr,'s'},
@@ -134,7 +134,7 @@ void parse_args(int argc, char** argv){
     }
 }
 
-// Load BSA + XSC, apply per-point cuts when constraint==1
+// Load data with per-point constraint
 void LoadData(){
     auto read=[&](const char* fn, auto &v){
         std::ifstream in(fn);
@@ -155,7 +155,7 @@ void LoadData(){
     read(gXsFile,          xsData);
 }
 
-// Bin & sinφ fit → bin_A,bin_dA; then drop bins failing the per-bin cuts
+// Bin and perform sine fits with post-fit cuts
 void BinBsaData(){
     bin_xB.clear(); bin_Q2.clear(); bin_t.clear(); bin_Eb.clear();
     bin_A.clear(); bin_dA.clear(); bin_M.clear(); bin_redChi2.clear();
@@ -168,9 +168,8 @@ void BinBsaData(){
         std::vector<DataPoint> pts(bsaData.begin()+start, bsaData.begin()+i);
         start = i;
         int M = pts.size();
-        if(M<3) continue; // need at least 3 points
+        if(M<3) continue;
 
-        // weighted estimate for A and its uncertainty
         double SwA=0, Sw2=0;
         for(auto &d: pts){
             double s = std::sin(d.phi * TMath::Pi()/180.);
@@ -181,31 +180,28 @@ void BinBsaData(){
         double A_bin = SwA / Sw2;
         double dA_bin = 1.0 / std::sqrt(Sw2);
 
-        // perform three-parameter fit: C + A sinφ/(1 + B cosφ)
         TF1 ftmp("ftmp",
                  "[0] + [1]*sin(x*TMath::Pi()/180.)/(1+[2]*cos(x*TMath::Pi()/180.))",
                  0, 360);
-        ftmp.SetParameter(0, 0.0);     // C
-        ftmp.SetParameter(1, A_bin);   // A
-        ftmp.SetParameter(2, 0.0);     // B
+        ftmp.SetParameter(0, 0.0);
+        ftmp.SetParameter(1, A_bin);
+        ftmp.SetParameter(2, 0.0);
         TGraphErrors gr(M);
         for(int j=0;j<M;++j){
             gr.SetPoint(j, pts[j].phi, pts[j].A);
             gr.SetPointError(j, 0, pts[j].sigA);
         }
         gr.SetMarkerStyle(20);
-        gr.Fit(&ftmp, "Q0R"); // quiet, no range restriction beyond [0,360]
+        gr.Fit(&ftmp, "Q0R");
 
         double Bfit    = ftmp.GetParameter(2);
         double chi2    = ftmp.GetChisquare();
         double redchi2 = (M>1) ? chi2 / (M - 1) : 1e9;
 
-        // apply per-bin cuts after the fit
         if(gConstraint==1){
           if(redchi2 >= 2.0 || std::fabs(Bfit) >= 0.9) continue;
         }
 
-        // store surviving bin (use weighted A_bin, not fitted A to preserve original definition)
         bin_M.push_back(M);
         bin_A.push_back(A_bin);
         bin_dA.push_back(dA_bin);
@@ -223,8 +219,6 @@ void BinBsaData(){
     }
 
     Nbins = bin_A.size();
-
-    // compute overall reduced χ² per amp-fit: sum((A/dA)^2) over total degrees of freedom
     double totChi2=0; int totDof=0;
     for(int k=0;k<Nbins;++k){
         totChi2 += std::pow(bin_A[k]/bin_dA[k],2);
@@ -233,60 +227,63 @@ void BinBsaData(){
     reducedAmpChi2 = totDof>0 ? totChi2 / totDof : 0.0;
 }
 
-// build list of parameters to float in Im-fit (polynomial coefficients) depending on active CFFs
+// build parameter list including new c4/d4 and d4 terms
 static std::vector<std::string> parNamesIm;
 void build_par_list(){
     parNamesIm.clear();
     if(hasH){
         parNamesIm.insert(parNamesIm.end(),
             {"A_ImH","B_ImH",
-             "c1_ImH","c2_ImH","c3_ImH",
-             "d1_ImH","d2_ImH","d3_ImH"});
+             "c1_ImH","c2_ImH","c3_ImH","c4_ImH",
+             "d1_ImH","d2_ImH","d3_ImH","d4_ImH"});
     }
     if(hasHt){
         parNamesIm.insert(parNamesIm.end(),
             {"A_ImHt","B_ImHt",
-             "c1_ImHt","c2_ImHt","c3_ImHt",
-             "d1_ImHt","d2_ImHt","d3_ImHt"});
+             "c1_ImHt","c2_ImHt","c3_ImHt","c4_ImHt",
+             "d1_ImHt","d2_ImHt","d3_ImHt","d4_ImHt"});
     }
     if(hasE){
         parNamesIm.insert(parNamesIm.end(),
             {"A_ImE","B_ImE",
-             "c1_ImE","c2_ImE","c3_ImE",
-             "d1_ImE","d2_ImE","d3_ImE"});
+             "c1_ImE","c2_ImE","c3_ImE","c4_ImE",
+             "d1_ImE","d2_ImE","d3_ImE","d4_ImE"});
     }
     if(hasEt){
         parNamesIm.insert(parNamesIm.end(),
             {"A_ImEt","B_ImEt",
-             "c1_ImEt","c2_ImEt","c3_ImEt",
-             "d1_ImEt","d2_ImEt","d3_ImEt"});
+             "c1_ImEt","c2_ImEt","c3_ImEt","c4_ImEt",
+             "d1_ImEt","d2_ImEt","d3_ImEt","d4_ImEt"});
     }
 }
 
-// χ² function used by TMinuit
+// χ² function
 void fcn(int&, double*, double &f, double *par, int){
     int ip=0;
     if(gStage==1){
-        // assign polynomial parameters in the same order as build_par_list()
         if(hasH){
             A_ImH   = par[ip++];
             B_ImH   = par[ip++];
             c1_ImH  = par[ip++];
             c2_ImH  = par[ip++];
             c3_ImH  = par[ip++];
+            c4_ImH  = par[ip++];
             d1_ImH  = par[ip++];
             d2_ImH  = par[ip++];
             d3_ImH  = par[ip++];
+            d4_ImH  = par[ip++];
         }
         if(hasHt){
-            A_ImHt  = par[ip++];
-            B_ImHt  = par[ip++];
-            c1_ImHt = par[ip++];
-            c2_ImHt = par[ip++];
-            c3_ImHt = par[ip++];
-            d1_ImHt = par[ip++];
-            d2_ImHt = par[ip++];
-            d3_ImHt = par[ip++];
+            A_ImHt   = par[ip++];
+            B_ImHt   = par[ip++];
+            c1_ImHt  = par[ip++];
+            c2_ImHt  = par[ip++];
+            c3_ImHt  = par[ip++];
+            c4_ImHt  = par[ip++];
+            d1_ImHt  = par[ip++];
+            d2_ImHt  = par[ip++];
+            d3_ImHt  = par[ip++];
+            d4_ImHt  = par[ip++];
         }
         if(hasE){
             A_ImE   = par[ip++];
@@ -294,19 +291,23 @@ void fcn(int&, double*, double &f, double *par, int){
             c1_ImE  = par[ip++];
             c2_ImE  = par[ip++];
             c3_ImE  = par[ip++];
+            c4_ImE  = par[ip++];
             d1_ImE  = par[ip++];
             d2_ImE  = par[ip++];
             d3_ImE  = par[ip++];
+            d4_ImE  = par[ip++];
         }
         if(hasEt){
-            A_ImEt  = par[ip++];
-            B_ImEt  = par[ip++];
-            c1_ImEt = par[ip++];
-            c2_ImEt = par[ip++];
-            c3_ImEt = par[ip++];
-            d1_ImEt = par[ip++];
-            d2_ImEt = par[ip++];
-            d3_ImEt = par[ip++];
+            A_ImEt   = par[ip++];
+            B_ImEt   = par[ip++];
+            c1_ImEt  = par[ip++];
+            c2_ImEt  = par[ip++];
+            c3_ImEt  = par[ip++];
+            c4_ImEt  = par[ip++];
+            d1_ImEt  = par[ip++];
+            d2_ImEt  = par[ip++];
+            d3_ImEt  = par[ip++];
+            d4_ImEt  = par[ip++];
         }
 
         double chi2=0;
@@ -319,7 +320,6 @@ void fcn(int&, double*, double &f, double *par, int){
         }
         f = chi2;
     } else {
-        // Stage 2: fit renormReal to cross-section data
         renormReal = par[ip++];
         double chi2=0;
         for(auto &d: xsData){
@@ -335,7 +335,6 @@ void fcn(int&, double*, double &f, double *par, int){
 int main(int argc, char** argv) {
     parse_args(argc, argv);
 
-    // timestamp
     time_t now = time(nullptr);
     char tb[32];
     strftime(tb,sizeof(tb),"%Y%m%d_%H%M%S",localtime(&now));
@@ -350,7 +349,6 @@ int main(int argc, char** argv) {
     LoadData();
     BinBsaData();
 
-    // print binned points
     std::cout<<"Data points entering Im-fit:\n";
     for(int k=0;k<Nbins;++k){
       std::cout<<" Point "<<(k+1)
@@ -379,7 +377,7 @@ int main(int argc, char** argv) {
       std::cout<<" Wrote plots to output/plots/binned_fits/\n\n";
     }
 
-    // ─── Stage 1: Im-fit ─────────────────────────────────────────────────────────
+    // Stage 1: Im-fit
     gStage = 1;
     build_par_list();
     int nim = parNamesIm.size();
@@ -397,42 +395,49 @@ int main(int argc, char** argv) {
             double step = 0.01;
             double lo = -10.0, hi = 10.0;
 
-            // sensible starting values from current globals
             if (nm == "A_ImH")       init = A_ImH, lo = 0.0, hi = 10.0;
             else if (nm == "B_ImH")  init = B_ImH, lo = 0.0, hi = 10.0;
             else if (nm == "c1_ImH") init = c1_ImH;
             else if (nm == "c2_ImH") init = c2_ImH;
             else if (nm == "c3_ImH") init = c3_ImH;
+            else if (nm == "c4_ImH") init = c4_ImH;
             else if (nm == "d1_ImH") init = d1_ImH;
             else if (nm == "d2_ImH") init = d2_ImH;
             else if (nm == "d3_ImH") init = d3_ImH;
+            else if (nm == "d4_ImH") init = d4_ImH;
 
             else if (nm == "A_ImHt")       init = A_ImHt, lo = 0.0, hi = 10.0;
             else if (nm == "B_ImHt")       init = B_ImHt, lo = 0.0, hi = 10.0;
             else if (nm == "c1_ImHt")      init = c1_ImHt;
             else if (nm == "c2_ImHt")      init = c2_ImHt;
             else if (nm == "c3_ImHt")      init = c3_ImHt;
+            else if (nm == "c4_ImHt")      init = c4_ImHt;
             else if (nm == "d1_ImHt")      init = d1_ImHt;
             else if (nm == "d2_ImHt")      init = d2_ImHt;
             else if (nm == "d3_ImHt")      init = d3_ImHt;
+            else if (nm == "d4_ImHt")      init = d4_ImHt;
 
             else if (nm == "A_ImE")       init = A_ImE, lo = 0.0, hi = 10.0;
             else if (nm == "B_ImE")       init = B_ImE, lo = 0.0, hi = 10.0;
             else if (nm == "c1_ImE")      init = c1_ImE;
             else if (nm == "c2_ImE")      init = c2_ImE;
             else if (nm == "c3_ImE")      init = c3_ImE;
+            else if (nm == "c4_ImE")      init = c4_ImE;
             else if (nm == "d1_ImE")      init = d1_ImE;
             else if (nm == "d2_ImE")      init = d2_ImE;
             else if (nm == "d3_ImE")      init = d3_ImE;
+            else if (nm == "d4_ImE")      init = d4_ImE;
 
             else if (nm == "A_ImEt")       init = A_ImEt, lo = 0.0, hi = 10.0;
             else if (nm == "B_ImEt")       init = B_ImEt, lo = 0.0, hi = 10.0;
             else if (nm == "c1_ImEt")      init = c1_ImEt;
             else if (nm == "c2_ImEt")      init = c2_ImEt;
             else if (nm == "c3_ImEt")      init = c3_ImEt;
+            else if (nm == "c4_ImEt")      init = c4_ImEt;
             else if (nm == "d1_ImEt")      init = d1_ImEt;
             else if (nm == "d2_ImEt")      init = d2_ImEt;
             else if (nm == "d3_ImEt")      init = d3_ImEt;
+            else if (nm == "d4_ImEt")      init = d4_ImEt;
 
             minu.DefineParameter(i, nm.c_str(), init, step, lo, hi);
         }
@@ -447,14 +452,12 @@ int main(int argc, char** argv) {
         ndf_im = Nbins - nim;
     }
 
-    // collect Im-fit results
     std::map<std::string,double> valMap, errMap;
     for (int i = 0; i < nim; ++i) {
         valMap[parNamesIm[i]] = imVal[i];
         errMap[parNamesIm[i]] = imErr[i];
     }
 
-    // ─── Stage 2: renormReal-fit ────────────────────────────────────────────────
     if (gStrategy == 2) {
         gStage = 2;
         double chi2_re, edm2, errdef2;
@@ -478,7 +481,6 @@ int main(int argc, char** argv) {
         ndf_im = ndf_re;
     }
 
-    // ─── Output results ─────────────────────────────────────────────────────────
     std::vector<std::string> outNames = parNamesIm;
     if (gStrategy == 2) outNames.push_back("renormReal");
     system("mkdir -p output/fit_results");
@@ -499,7 +501,6 @@ int main(int argc, char** argv) {
         <<chi2_im<<" "<<ndf_im<<" "<<(ndf_im>0?chi2_im/ndf_im:0)<<"\n";
     fout.close();
 
-    // print to stdout
     std::cout<<"\n--- Fit Results ---\n";
     for(auto &n: outNames){
       std::cout<<" "<<n<<" = "<<valMap[n]
@@ -517,7 +518,6 @@ int main(int argc, char** argv) {
 void PlotBinFit(int ibin, const std::string &ts) {
     if (!gPlotBinFits) return;
 
-    // regroup raw points into φ-bins
     std::vector<std::vector<DataPoint>> bins;
     size_t start=0;
     for(size_t i=1;i<=bsaData.size();++i){
@@ -529,12 +529,11 @@ void PlotBinFit(int ibin, const std::string &ts) {
     }
     if(ibin<0||ibin>=int(bins.size())) return;
     auto &dp=bins[ibin];
-    int n=dp.size(); if(n<3) return;   // skip if insufficient points
+    int n=dp.size(); if(n<3) return;
 
     system("mkdir -p output/plots/binned_fits");
     gStyle->SetOptStat(0);
 
-    // graph with errors and visible marker
     TGraphErrors *gr=new TGraphErrors(n);
     for(int i=0;i<n;++i){
       gr->SetPoint(i, dp[i].phi, dp[i].A);
@@ -543,7 +542,6 @@ void PlotBinFit(int ibin, const std::string &ts) {
     gr->SetMarkerStyle(20);
     gr->SetMarkerSize(1.2);
 
-    // perform full three-parameter fit for display: C + A sinφ/(1+B cosφ)
     TF1 *f1=new TF1(Form("f_bin%d",ibin),
       "[0] + [1]*sin(x*TMath::Pi()/180.)/(1+[2]*cos(x*TMath::Pi()/180.))",
       0,360);
