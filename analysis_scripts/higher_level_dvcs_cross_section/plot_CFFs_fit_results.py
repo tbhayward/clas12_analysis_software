@@ -214,11 +214,10 @@ for cff in ("H","Ht","E","Et"):
         continue
 
     Im_default = make_Im_func(cff, defaults[cff], renorm_imag)
-    Im_fit_central = make_Im_func(cff, fit_params.get(cff, defaults[cff]), renorm_imag)
     tex = tex_map[cff]
 
     # — Im vs ξ at fixed t —
-    fig, axes = plt.subplots(2,3, figsize=(12,8), sharex=True, sharey=True)
+    fig, axes = plt.subplots(2,3, figsize=(12,8), sharex=True, sharey=False)
     axes = axes.flatten()
     fig.suptitle(rf"$\mathrm{{Im}}\,{tex}$", fontsize=16, y=0.95)
 
@@ -232,19 +231,21 @@ for cff in ("H","Ht","E","Et"):
 
         ax.set_xlim(0,0.5)
         ax.set_ylim(-2,10)
+
         if i == 0:
             ax.set_yticks([0,2,4,6,8,10])
+        elif i%3==0:
+            ax.set_yticks([-2,0,2,4,6,8,10])
         else:
             ax.set_yticks([-2,0,2,4,6,8,10])
-        ax.set_xticks([0,0.1,0.2,0.3,0.4,0.5])
+            ax.tick_params(labelleft=False)
 
+        ax.set_xticks([0,0.1,0.2,0.3,0.4,0.5])
+        ax.set_xlabel(r"$\xi$")
         if i%3==0:
             ax.set_ylabel(r"$\mathrm{Im}\,"+tex+r"(\xi,\,-t)$")
-        else:
-            ax.tick_params(labelleft=False)
-        ax.set_xlabel(r"$\xi$")
 
-        # avoid clutter from "0.0" on bottom center and right
+        # remove overlapping "0.0" labels on bottom center/right
         if i in (4,5):
             for lbl in ax.get_xticklabels():
                 if lbl.get_text() in ('0','0.0'):
@@ -260,7 +261,7 @@ for cff in ("H","Ht","E","Et"):
     plt.close(fig)
 
     # — Im vs −t at fixed ξ —
-    fig, axes = plt.subplots(2,3, figsize=(12,8), sharex=True, sharey=True)
+    fig, axes = plt.subplots(2,3, figsize=(12,8), sharex=True, sharey=False)
     axes = axes.flatten()
     fig.suptitle(rf"$\mathrm{{Im}}\,{tex}$", fontsize=16, y=0.95)
 
@@ -274,17 +275,19 @@ for cff in ("H","Ht","E","Et"):
 
         ax.set_xlim(0,0.6)
         ax.set_ylim(-2,10)
+
         if i == 0:
             ax.set_yticks([0,2,4,6,8,10])
+        elif i%3==0:
+            ax.set_yticks([-2,0,2,4,6,8,10])
         else:
             ax.set_yticks([-2,0,2,4,6,8,10])
-        ax.set_xticks([0,0.2,0.4,0.6])
+            ax.tick_params(labelleft=False)
 
+        ax.set_xticks([0,0.2,0.4,0.6])
+        ax.set_xlabel(r"$-t\;(\mathrm{GeV^2})$")
         if i%3==0:
             ax.set_ylabel(r"$\mathrm{Im}\,"+tex+r"(\xi,\,-t)$")
-        else:
-            ax.tick_params(labelleft=False)
-        ax.set_xlabel(r"$-t\;(\mathrm{GeV^2})$")
 
         if i in (4,5):
             for lbl in ax.get_xticklabels():
