@@ -7,7 +7,7 @@ Usage:
 
 Reads which CFFs were fit from the header of results file, then for each
 enabled Im CFF makes two figures:
-  1) Im CFF vs. ξ for six fixed −t between 0.1 and 1.0 (GeV²) (2×3 grid)
+  1) Im CFF vs. ξ for six fixed −t between 0.1 and 0.6 (GeV²) (2×3 grid)
   2) Im CFF vs. −t for six fixed ξ between 0.05 and 0.50 (2×3 grid)
 
 Includes uncertainty bands for fitted results using replica method (1σ).
@@ -40,7 +40,6 @@ timestamp = m.group(1)
 def parse_fit_results(fname):
     with open(fname) as f:
         lines = [l.strip() for l in f if l.strip()]
-    # flags line: e.g., "H 1 Ht 1 E 1 Et 0"
     flag_line = next((l for l in lines if re.match(r'^H\s+\d+', l)), None)
     if flag_line is None:
         raise RuntimeError("Could not find flags line (e.g., 'H 1 Ht 1 ...') in fit file")
@@ -104,7 +103,6 @@ fit_errors = {}
 for cff in ("H", "Ht", "E", "Et"):
     if flags.get(cff, 0) != 1:
         continue
-    # expected parameter names with suffix
     param_keys = ["r", "n", "alpha0", "alpha1", "b", "M2", "P"]
     central = {}
     error = {}
@@ -193,8 +191,8 @@ outdir = 'output/plots'
 os.makedirs(outdir, exist_ok=True)
 
 xi_range  = np.linspace(0,0.5,200)
-t_range   = np.linspace(0,1.0,200)
-t_fixed   = np.linspace(0.1,1.0,6)
+t_range   = np.linspace(0,0.6,200)
+t_fixed   = np.linspace(0.1,0.6,6)
 xi_fixed  = np.linspace(0.05,0.50,6)
 
 orig_style = {'color':'tab:blue','linestyle':'-','linewidth':2.5}
@@ -232,11 +230,13 @@ for cff in ("H","Ht","E","Et"):
             ax.fill_between(xi_range, lo, up, **band_style)
         ax.axhline(0, **zero_line)
 
-        ax.set_xscale('linear')
         ax.set_xlim(0,0.5)
         ax.set_ylim(-2,10)
+        if i == 0:
+            ax.set_yticks([0,2,4,6,8,10])
+        else:
+            ax.set_yticks([-2,0,2,4,6,8,10])
         ax.set_xticks([0,0.1,0.2,0.3,0.4,0.5])
-        ax.set_yticks([-2,0,2,4,6,8,10])
 
         if i%3==0:
             ax.set_ylabel(r"$\mathrm{Im}\,"+tex+r"(\xi,\,-t)$")
@@ -244,11 +244,6 @@ for cff in ("H","Ht","E","Et"):
             ax.tick_params(labelleft=False)
         ax.set_xlabel(r"$\xi$")
 
-        # hide the "-2" tick label on top-left explicitly
-        if i == 0:
-            for lbl in ax.get_yticklabels():
-                if lbl.get_text() in ('-2','-2.0'):
-                    lbl.set_visible(False)
         # avoid clutter from "0.0" on bottom center and right
         if i in (4,5):
             for lbl in ax.get_xticklabels():
@@ -277,11 +272,13 @@ for cff in ("H","Ht","E","Et"):
             ax.fill_between(t_range, lo, up, **band_style)
         ax.axhline(0, **zero_line)
 
-        ax.set_xscale('linear')
-        ax.set_xlim(0,1.0)
+        ax.set_xlim(0,0.6)
         ax.set_ylim(-2,10)
-        ax.set_xticks([0,0.2,0.4,0.6,0.8,1.0])
-        ax.set_yticks([-2,0,2,4,6,8,10])
+        if i == 0:
+            ax.set_yticks([0,2,4,6,8,10])
+        else:
+            ax.set_yticks([-2,0,2,4,6,8,10])
+        ax.set_xticks([0,0.2,0.4,0.6])
 
         if i%3==0:
             ax.set_ylabel(r"$\mathrm{Im}\,"+tex+r"(\xi,\,-t)$")
@@ -289,10 +286,6 @@ for cff in ("H","Ht","E","Et"):
             ax.tick_params(labelleft=False)
         ax.set_xlabel(r"$-t\;(\mathrm{GeV^2})$")
 
-        if i == 0:
-            for lbl in ax.get_yticklabels():
-                if lbl.get_text() in ('-2','-2.0'):
-                    lbl.set_visible(False)
         if i in (4,5):
             for lbl in ax.get_xticklabels():
                 if lbl.get_text() in ('0','0.0'):
