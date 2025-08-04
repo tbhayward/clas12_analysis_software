@@ -14,7 +14,7 @@ Includes uncertainty bands for fitted results using replica method (1σ).
 
 Saves to:
   output/plots/Im{CFF}_vs_xi_<TIMESTAMP>.pdf  
-  output/plots/Im{CFF}_vs_t_<TIMESTAMP}.pdf
+  output/plots/Im{CFF}_vs_t_<TIMESTAMP>.pdf
 """
 import os
 import sys
@@ -169,15 +169,11 @@ def compute_uncertainty_band(cff, xi_vals, t_vals, nrep=5000):
     renorm_reps = np.full(nrep, renorm_imag)  # fixed here; adjust if you fit it
 
     # decide output length
-    # if xi_vals is array and t_vals scalar: vary over xi
-    # if t_vals is array and xi_vals scalar: vary over t
-    sample = None
     if np.ndim(xi_vals) > 0 and np.ndim(t_vals) == 0:
         N = len(xi_vals)
     elif np.ndim(t_vals) > 0 and np.ndim(xi_vals) == 0:
         N = len(t_vals)
     else:
-        # both arrays: take broadcasted shape
         xi_arr = np.array(xi_vals)
         t_arr = np.array(t_vals)
         broadcast = np.broadcast(xi_arr, t_arr)
@@ -244,15 +240,27 @@ for cff in ("H","Ht","E","Et"):
         ax.axhline(0, **zero_line)
 
         ax.set_xlim(0,0.5)
-        ax.set_ylim(-2,12)
+        ax.set_ylim(-2,10)
         ax.set_xticks([0,0.1,0.2,0.3,0.4,0.5])
-        ax.set_yticks([-2,0,3,6,9,12])
+        ax.set_yticks([-2,0,2,4,6,8,10])
 
         if i%3==0:
             ax.set_ylabel(r"$\mathrm{Im}\,"+tex+r"(\xi,\,-t)$")
         else:
             ax.tick_params(labelleft=False)
         ax.set_xlabel(r"$\xi$")
+
+        # hide the "-2" tick label on top-left
+        if i == 0:
+            for lbl in ax.get_yticklabels():
+                if lbl.get_text() in ('-2','-2.0'):
+                    lbl.set_visible(False)
+        # avoid clutter from "0.0" on bottom center and right
+        if i in (4,5):
+            for lbl in ax.get_xticklabels():
+                if lbl.get_text() in ('0','0.0'):
+                    lbl.set_visible(False)
+
         ax.text(0.60,0.65, rf"$-t={t0:.2f}\,\mathrm{{GeV^2}}$",
                 transform=ax.transAxes, fontsize=12)
 
@@ -276,15 +284,25 @@ for cff in ("H","Ht","E","Et"):
         ax.axhline(0, **zero_line)
 
         ax.set_xlim(0,1.0)
-        ax.set_ylim(-2,12)
+        ax.set_ylim(-2,10)
         ax.set_xticks([0,0.2,0.4,0.6,0.8,1.0])
-        ax.set_yticks([-2,0,3,6,9,12])
+        ax.set_yticks([-2,0,2,4,6,8,10])
 
         if i%3==0:
             ax.set_ylabel(r"$\mathrm{Im}\,"+tex+r"(\xi,\,-t)$")
         else:
             ax.tick_params(labelleft=False)
         ax.set_xlabel(r"$-t\;(\mathrm{GeV^2})$")
+
+        if i == 0:
+            for lbl in ax.get_yticklabels():
+                if lbl.get_text() in ('-2','-2.0'):
+                    lbl.set_visible(False)
+        if i in (4,5):
+            for lbl in ax.get_xticklabels():
+                if lbl.get_text() in ('0','0.0'):
+                    lbl.set_visible(False)
+
         ax.text(0.60,0.65, rf"$\xi={x0:.2f}$",
                 transform=ax.transAxes, fontsize=12)
 
