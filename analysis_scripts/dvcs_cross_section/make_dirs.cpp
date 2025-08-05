@@ -7,8 +7,8 @@
 namespace fs = std::filesystem;
 
 void makeOutputDirs() {
-    struct Category { std::string base; std::vector<std::string> subs; };
-    // All categories and their subdirs
+    struct Category { std::string base;
+                       std::vector<std::string> subs; };
     std::vector<Category> cats = {
         {"output/jsons", {}},
         {"output/exclusivity_plots", {}},
@@ -22,26 +22,24 @@ void makeOutputDirs() {
             {"fa18_inb","fa18_out","sp19_inb"}}
     };
 
-    for (auto& cat : cats) {
+    for (const auto& cat : cats) {
         std::vector<std::string> created;
-        // create base
         if (!fs::exists(cat.base)) {
             fs::create_directories(cat.base);
             created.push_back(cat.base);
         }
-        // create subs
-        for (auto& sub : cat.subs) {
+        for (const auto& sub : cat.subs) {
             std::string path = cat.base + "/" + sub;
             if (!fs::exists(path)) {
                 fs::create_directories(path);
                 created.push_back(path);
             }
         }
-        // print one line
         if (!created.empty()) {
             std::cout << "[Created] ";
             for (size_t i = 0; i < created.size(); ++i) {
-                std::cout << created[i] << (i+1<created.size()?",":"");
+                std::cout << created[i];
+                if (i + 1 < created.size()) std::cout << ",";
             }
             std::cout << "
 ";
