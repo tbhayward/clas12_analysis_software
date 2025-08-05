@@ -165,12 +165,12 @@ def get_hist_configs(analysis_type):
             # "open_angle_ep2":    (100, 0, 60),
             "Delta_phi":    (50, 2.84159, 3.44159),
             "theta_gamma_gamma": (50, 0, 2),
-            "pTmiss":            (50, 0, 0.3),
-            "xF":                (50, -0.4, 0.2),
-            "Emiss2":            (50, -1, 2),
+            "pTmiss":            (50, 0, 0.2),
+            "xF":                (50, -0.2, 0.2),
+            "Emiss2":            (50, -1, 1),
             "Mx2":               (50, -0.03, 0.03),
-            "Mx2_1":             (50, -1.5, 1.5),
-            "Mx2_2":             (50, 0, 3)
+            "Mx2_1":             (50, -1.0, 1.0),
+            "Mx2_2":             (50, 0, 2)
         }
     elif analysis_type == "eppi0":
         return {
@@ -318,7 +318,7 @@ def plot_results(data_hists, mc_hists, plot_title, topology, output_dir, suffix=
         mh.GetYaxis().SetTitle("Normalized Counts")
         mh.GetXaxis().SetTitle(format_label_name(var, "dvcs"))
 
-        max_val = max(dh.GetMaximum(), mh.GetMaximum()) * 1.2
+        max_val = max(dh.GetMaximum(), mh.GetMaximum()) * 1.4
         dh.SetMaximum(max_val)
         mh.SetMaximum(max_val)
 
