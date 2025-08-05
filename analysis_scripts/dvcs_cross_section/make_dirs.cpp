@@ -2,6 +2,7 @@
 #include <iostream>
 #include <filesystem>
 #include <vector>
+#include <string>
 
 namespace fs = std::filesystem;
 
@@ -42,8 +43,8 @@ void makeOutputDirs() {
             for (size_t i = 0; i < created.size(); ++i) {
                 std::cout << created[i] << (i+1<created.size()?",":"");
             }
-            std::cout << '
-';
+            std::cout << "
+";
         }
     }
 }
