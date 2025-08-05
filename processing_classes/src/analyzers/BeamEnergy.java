@@ -98,7 +98,10 @@ public class BeamEnergy {
         else if (runnum >= 17725 && runnum <= 17811) {
             Eb = 10.5593;
         } // RGC Fa 2022 / Sp 2023
-
+        else if (runnum >= 19249 && runnum <= 19250) {
+            Eb = 6.39463;
+        }
+        
         // determine a minimum energy the electron must have in order to create the particles in the event
         int num_elec = recEvent.countByPid(11); // returns number of electrons
         int num_positrons = recEvent.countByPid(-11); // returns number of positrons
