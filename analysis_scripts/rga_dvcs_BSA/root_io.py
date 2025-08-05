@@ -23,14 +23,14 @@ def load_root_files(period):
         #     "data": "/volatile/clas12/thayward/rgk_dc_study/dvcs/dvcs_cj11.root",
         #     "mc":   "/volatile/clas12/thayward/rgk_dc_study/dvcs/dvcs_cj13.root"
         # },
-        "DVCS_Fa18_inb": {
-            "data": "/volatile/clas12/thayward/rgk_dc_study/dvcs/dvcs_pass2.root",
-            "mc":   "/volatile/clas12/thayward/rgk_dc_study/dvcs/dvcs_cj11.root"
-        },
         # "DVCS_Fa18_inb": {
         #     "data": "/volatile/clas12/thayward/rgk_dc_study/dvcs/dvcs_pass2.root",
-        #     "mc":   "/volatile/clas12/thayward/rgk_dc_study/dvcs/dvcs_cj13.root"
+        #     "mc":   "/volatile/clas12/thayward/rgk_dc_study/dvcs/dvcs_cj11.root"
         # },
+        "DVCS_Fa18_inb": {
+            "data": "/volatile/clas12/thayward/rgk_dc_study/dvcs/dvcs_pass2.root",
+            "mc":   "/volatile/clas12/thayward/rgk_dc_study/dvcs/dvcs_cj13.root"
+        },
         "DVCS_Fa18_out": {
             "data": "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/data/dvcs/rga_fa18_out_epgamma.root",
             "mc":   "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/mc/dvcsgen/rec_dvcsgen_rga_fa18_out_10604MeV.root"
