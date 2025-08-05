@@ -23,7 +23,7 @@ def process_period_multi_stage(period, output_dir, analysis_type):
     period_code, trees = load_root_files(period)
 
     run_info_map = {
-        "DVCS_Fa18_inb":  (" ",  " "),
+        "DVCS_Fa18_inb":  ("RGA Fa18 Inb DVCS",  "Fa18 Inb DVCS"),
         "DVCS_Fa18_out":  ("RGA Fa18 Out DVCS",  "Fa18 Out DVCS"),
         "DVCS_Sp19_inb":  ("RGA Sp19 Inb DVCS",  "Sp19 Inb DVCS"),
         "DVCS_Sp18_inb":  ("RGA Sp18 Inb DVCS",  "Sp18 Inb DVCS"),
@@ -163,14 +163,14 @@ def get_hist_configs(analysis_type):
     if analysis_type == "dvcs":
         return {
             # "open_angle_ep2":    (100, 0, 60),
-            "Delta_phi":    (50, 2.84159, 3.44159),
-            "theta_gamma_gamma": (50, 0, 2),
-            "pTmiss":            (50, 0, 0.2),
-            "xF":                (50, -0.2, 0.2),
-            "Emiss2":            (50, -1, 1),
-            "Mx2":               (50, -0.03, 0.03),
-            "Mx2_1":             (50, -1.0, 1.0),
-            "Mx2_2":             (50, 0, 2)
+            "Delta_phi":    (100, 2.84159, 3.44159),
+            "theta_gamma_gamma": (100, 0, 2),
+            "pTmiss":            (100, 0, 0.3),
+            "xF":                (100, -0.4, 0.2),
+            "Emiss2":            (100, -1, 2),
+            "Mx2":               (100, -0.03, 0.03),
+            "Mx2_1":             (100, -1.5, 1.5),
+            "Mx2_2":             (100, 0, 3)
         }
     elif analysis_type == "eppi0":
         return {
@@ -272,7 +272,7 @@ def plot_results(data_hists, mc_hists, plot_title, topology, output_dir, suffix=
     canvas = ROOT.TCanvas("canvas", "", 2400, 1200)
     canvas.Divide(4, 2, 0.002, 0.002)
 
-    base_legend = ROOT.TLegend(0.35, 0.75, 0.92, 0.89)
+    base_legend = ROOT.TLegend(0.45, 0.75, 0.92, 0.89)
     base_legend.SetFillStyle(0)
     base_legend.SetTextFont(42)
     base_legend.SetBorderSize(1)
@@ -318,7 +318,7 @@ def plot_results(data_hists, mc_hists, plot_title, topology, output_dir, suffix=
         mh.GetYaxis().SetTitle("Normalized Counts")
         mh.GetXaxis().SetTitle(format_label_name(var, "dvcs"))
 
-        max_val = max(dh.GetMaximum(), mh.GetMaximum()) * 1.4
+        max_val = max(dh.GetMaximum(), mh.GetMaximum()) * 1.2
         dh.SetMaximum(max_val)
         mh.SetMaximum(max_val)
 
@@ -330,18 +330,18 @@ def plot_results(data_hists, mc_hists, plot_title, topology, output_dir, suffix=
             dh.Draw("E1")
             mh.Draw("E1 SAME")
 
-            # # Draw the fitted Gaussian over the histogram
-            # fgaus_data.SetNpx(1000)
-            # fgaus_data.SetLineColor(ROOT.kBlue + 1)
-            # fgaus_data.SetLineStyle(2)   # dashed
-            # fgaus_data.SetLineWidth(2)
-            # fgaus_data.Draw("SAME")
+            # Draw the fitted Gaussian over the histogram
+            fgaus_data.SetNpx(1000)
+            fgaus_data.SetLineColor(ROOT.kBlue + 1)
+            fgaus_data.SetLineStyle(2)   # dashed
+            fgaus_data.SetLineWidth(2)
+            fgaus_data.Draw("SAME")
 
-            # fgaus_mc.SetNpx(1000)
-            # fgaus_mc.SetLineColor(ROOT.kRed + 1)
-            # fgaus_mc.SetLineStyle(2)    # dashed
-            # fgaus_mc.SetLineWidth(2)
-            # fgaus_mc.Draw("SAME")
+            fgaus_mc.SetNpx(1000)
+            fgaus_mc.SetLineColor(ROOT.kRed + 1)
+            fgaus_mc.SetLineStyle(2)    # dashed
+            fgaus_mc.SetLineWidth(2)
+            fgaus_mc.Draw("SAME")
         else:
             # If not in gaussian_vars, just draw the hist
             mu_data    = dh.GetMean()
@@ -355,10 +355,10 @@ def plot_results(data_hists, mc_hists, plot_title, topology, output_dir, suffix=
 
         # Legend
         pad_leg = base_legend.Clone()
-        # pad_leg.AddEntry(dh, f"Data (#mu={mu_data:.3f}, #sigma={sigma_data:.3f})", "lep")
-        # pad_leg.AddEntry(mh, f"MC (#mu={mu_mc:.3f}, #sigma={sigma_mc:.3f})", "lep")
-        pad_leg.AddEntry(dh, f"cj 11.2.0 (#mu={mu_data:.3f}, #sigma={sigma_data:.3f})", "lep")
-        pad_leg.AddEntry(mh, f"cj 13.0.3 (#mu={mu_mc:.3f}, #sigma={sigma_mc:.3f})", "lep")
+        pad_leg.AddEntry(dh, f"Data (#mu={mu_data:.3f}, #sigma={sigma_data:.3f})", "lep")
+        pad_leg.AddEntry(mh, f"MC (#mu={mu_mc:.3f}, #sigma={sigma_mc:.3f})", "lep")
+        # pad_leg.AddEntry(dh, f"pass2 (#mu={mu_data:.3f}, #sigma={sigma_data:.3f})", "lep")
+        # pad_leg.AddEntry(mh, f"cj11.1 (#mu={mu_mc:.3f}, #sigma={sigma_mc:.3f})", "lep")
         pad_leg.Draw()
     #endfor
 
