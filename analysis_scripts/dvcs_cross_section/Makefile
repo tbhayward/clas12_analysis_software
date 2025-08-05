@@ -4,7 +4,7 @@ CXXFLAGS = `root-config --cflags` -O2 -std=c++17
 LDFLAGS = `root-config --libs`
 
 # Source files
-SRC = main.cpp load_trees.cpp
+SRC = main.cpp load_trees.cpp make_dirs.cpp
 OBJ = $(SRC:.cpp=.o)
 TARGET = dvcs_analysis
 
