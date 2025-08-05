@@ -15,9 +15,13 @@ def load_root_files(period):
     # Mapping from period -> file paths
     # We'll prefix them with "DVCS_" or "eppi0_" to differentiate
     file_map = {
+        # "DVCS_Fa18_inb": {
+        #     "data": "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/data/dvcs/rga_fa18_inb_epgamma.root",
+        #     "mc":   "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/mc/dvcsgen/rec_dvcsgen_rga_fa18_inb_10604MeV.root"
+        # },
         "DVCS_Fa18_inb": {
-            "data": "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/data/dvcs/rga_fa18_inb_epgamma.root",
-            "mc":   "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/mc/dvcsgen/rec_dvcsgen_rga_fa18_inb_10604MeV.root"
+            "data": "/volatile/clas12/thayward/rgk_dc_study/dvcs/dvcs_cj11.root",
+            "mc":   "/volatile/clas12/thayward/rgk_dc_study/dvcs/dvcs_cj13.root"
         },
         "DVCS_Fa18_out": {
             "data": "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/data/dvcs/rga_fa18_out_epgamma.root",

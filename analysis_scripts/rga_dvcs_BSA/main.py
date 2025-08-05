@@ -277,30 +277,30 @@ def main():
 
     # print("✅ All plots saved to bsa_plots/ directory")
 
-    # --- Export all DVCS‐period BSA into one text file ---
-    dvcs_periods = [
-        "DVCS_Fa18_inb",
-        "DVCS_Fa18_out",
-        "DVCS_Sp19_inb",
-        "DVCS_Sp18_inb",
-        "DVCS_Sp18_out",
-    ]
-    export_bsa_to_text(
-        periods=dvcs_periods,
-        bin_means_json    = "bin_means_global.json",
-        final_results_dir = "final_results",
-        output_file       = "bsa_all_periods.txt"
-    )
-    export_bsa_grouped_to_text(
-        bin_means_json     = "bin_means_global.json",
-        final_results_dir  = "final_results",
-        output_file        = "bsa_grouped_periods.txt"
-    )
-    export_bsa_spfa_combined_to_text(
-        bin_means_json     = "bin_means_global.json",
-        final_results_dir  = "final_results",
-        output_file        = "bsa_grouped_spfa_periods.txt"
-    )
+    # # --- Export all DVCS‐period BSA into one text file ---
+    # dvcs_periods = [
+    #     "DVCS_Fa18_inb",
+    #     "DVCS_Fa18_out",
+    #     "DVCS_Sp19_inb",
+    #     "DVCS_Sp18_inb",
+    #     "DVCS_Sp18_out",
+    # ]
+    # export_bsa_to_text(
+    #     periods=dvcs_periods,
+    #     bin_means_json    = "bin_means_global.json",
+    #     final_results_dir = "final_results",
+    #     output_file       = "bsa_all_periods.txt"
+    # )
+    # export_bsa_grouped_to_text(
+    #     bin_means_json     = "bin_means_global.json",
+    #     final_results_dir  = "final_results",
+    #     output_file        = "bsa_grouped_periods.txt"
+    # )
+    # export_bsa_spfa_combined_to_text(
+    #     bin_means_json     = "bin_means_global.json",
+    #     final_results_dir  = "final_results",
+    #     output_file        = "bsa_grouped_spfa_periods.txt"
+    # )
 
     print("\n🎉 Analysis complete!")
 
