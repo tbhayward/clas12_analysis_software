@@ -23,12 +23,21 @@ def process_file(filename):
     rows.sort(key=lambda x: x[0])
     sorted_rows = [r for _, r in rows]
 
-    # Write sorted data back to a new file
+    # Write sorted data back to a new file, rounding floats to 4 decimals
     base, ext = os.path.splitext(filename)
     outname = f"{base}_sorted{ext}"
     with open(outname, 'w', newline='') as outcsv:
         writer = csv.writer(outcsv)
-        writer.writerows(sorted_rows)
+        for r in sorted_rows:
+            formatted = [ str(int(r[0])) ]
+            for item in r[1:]:
+                try:
+                    num = float(item)
+                    formatted.append(f"{num:.4f}")
+                except ValueError:
+                    formatted.append(item)
+            writer.writerow(formatted)
+        #endfor
 
     # Compute sums of columns 2, 3, and 4
     sum_col2 = sum(float(r[1]) for _, r in rows)
