@@ -8,9 +8,7 @@ namespace fs = std::filesystem;
 void makeOutputDirs() {
     // Base output folders
     std::vector<std::string> bases = {
-        "output/jsons",
-        "output/exclusivity_plots",
-        "output/mean_kinematic_plots"
+        "output/jsons", "output/exclusivity_plots", "output/mean_kinematic_plots"
     };
     for (auto& dir : bases) {
         if (!fs::exists(dir)) {
@@ -37,7 +35,8 @@ void makeOutputDirs() {
     std::string bsaBase = "output/bsa_plots";
     if (!fs::exists(bsaBase)) fs::create_directories(bsaBase);
     std::vector<std::string> bsaSubs = {
-        "sp18_inb", "sp18_out", "fa18_inb_supplemental", "fa18_inb", "fa18_out", "10.6GeV", "sp19_inb"
+        "sp18_inb", "sp18_out", "fa18_inb_supplemental", "fa18_inb", "fa18_out", "10.6GeV", 
+        "sp19_inb"
     };
     for (auto& sub : bsaSubs) {
         std::string path = bsaBase + "/" + sub;
