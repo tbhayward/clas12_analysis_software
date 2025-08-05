@@ -163,14 +163,14 @@ def get_hist_configs(analysis_type):
     if analysis_type == "dvcs":
         return {
             # "open_angle_ep2":    (100, 0, 60),
-            "Delta_phi":    (30, 2.84159, 3.44159),
-            "theta_gamma_gamma": (30, 0, 2),
-            "pTmiss":            (30, 0, 0.3),
-            "xF":                (30, -0.4, 0.2),
-            "Emiss2":            (30, -1, 2),
-            "Mx2":               (30, -0.03, 0.03),
-            "Mx2_1":             (30, -1.5, 1.5),
-            "Mx2_2":             (30, 0, 3)
+            "Delta_phi":    (50, 2.84159, 3.44159),
+            "theta_gamma_gamma": (50, 0, 2),
+            "pTmiss":            (50, 0, 0.3),
+            "xF":                (50, -0.4, 0.2),
+            "Emiss2":            (50, -1, 2),
+            "Mx2":               (50, -0.03, 0.03),
+            "Mx2_1":             (50, -1.5, 1.5),
+            "Mx2_2":             (50, 0, 3)
         }
     elif analysis_type == "eppi0":
         return {
@@ -330,18 +330,18 @@ def plot_results(data_hists, mc_hists, plot_title, topology, output_dir, suffix=
             dh.Draw("E1")
             mh.Draw("E1 SAME")
 
-            # Draw the fitted Gaussian over the histogram
-            fgaus_data.SetNpx(1000)
-            fgaus_data.SetLineColor(ROOT.kBlue + 1)
-            fgaus_data.SetLineStyle(2)   # dashed
-            fgaus_data.SetLineWidth(2)
-            fgaus_data.Draw("SAME")
+            # # Draw the fitted Gaussian over the histogram
+            # fgaus_data.SetNpx(1000)
+            # fgaus_data.SetLineColor(ROOT.kBlue + 1)
+            # fgaus_data.SetLineStyle(2)   # dashed
+            # fgaus_data.SetLineWidth(2)
+            # fgaus_data.Draw("SAME")
 
-            fgaus_mc.SetNpx(1000)
-            fgaus_mc.SetLineColor(ROOT.kRed + 1)
-            fgaus_mc.SetLineStyle(2)    # dashed
-            fgaus_mc.SetLineWidth(2)
-            fgaus_mc.Draw("SAME")
+            # fgaus_mc.SetNpx(1000)
+            # fgaus_mc.SetLineColor(ROOT.kRed + 1)
+            # fgaus_mc.SetLineStyle(2)    # dashed
+            # fgaus_mc.SetLineWidth(2)
+            # fgaus_mc.Draw("SAME")
         else:
             # If not in gaussian_vars, just draw the hist
             mu_data    = dh.GetMean()
