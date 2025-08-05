@@ -42,7 +42,7 @@ void makeOutputDirs() {
                 if (i + 1 < created.size()) std::cout << ",";
             }
             std::cout << "
-";
+"; 
         }
     }
 }
