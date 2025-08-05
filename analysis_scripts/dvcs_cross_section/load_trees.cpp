@@ -87,7 +87,7 @@ void loadTrees(std::map<std::string, TTree*>& dataTrees,
     std::vector<FileDef> eppi0Rec = {
         {"sp18_inb_rec_mc", "/work/clas12/thayward/CLAS12_exclusive/eppi0/data/pass2/mc/hipo_files/rec_aaogen_norad_sp18_inb_10594MeV.root"},
         {"sp18_out_rec_mc", "/work/clas12/thayward/CLAS12_exclusive/eppi0/data/pass2/mc/hipo_files/rec_aaogen_norad_sp18_out_10594MeV.root"},
-        {"fa18_inb_rec_mc", "/work/clas12/thayward/CLAS12_extributive/eppi0/data/pass2/mc/hipo_files/rec_aaogen_norad_fa18_inb_10604MeV.root"},
+        {"fa18_inb_rec_mc", "/work/clas12/thayward/CLAS12_exclusive/eppi0/data/pass2/mc/hipo_files/rec_aaogen_norad_fa18_inb_10604MeV.root"},
         {"fa18_out_rec_mc", "/work/clas12/thayward/CLAS12_exclusive/eppi0/data/pass2/mc/hipo_files/rec_aaogen_norad_fa18_out_10604MeV.root"},
         {"sp19_inb_rec_mc", "/work/clas12/thayward/CLAS12_exclusive/eppi0/data/pass2/mc/hipo_files/rec_aaogen_norad_sp19_inb_10200MeV.root"}
     };
