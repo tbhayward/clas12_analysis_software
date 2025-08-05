@@ -158,7 +158,8 @@ public static void main(String[] args) {
 	    	if (runnum == 17331 || runnum == 16987 || runnum == 17079 || runnum == 17190 || runnum == 17639) process_event = false; // low live time
 	    	if (runnum == 16850 || runnum == 16851 || runnum == 16852 || runnum == 16855 || runnum == 16879) process_event = false; // luminosity scans
 	    	
-		    if (process_event) {
+		    if (true) {
+		    	println("hello world");
 
 		        // get # of particles 
 		        int num_p1 = research_Event.countByPid(2212);
