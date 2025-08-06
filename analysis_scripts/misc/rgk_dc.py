@@ -19,9 +19,9 @@ arrays11 = f11["PhysicsEvents"].arrays(["Mx2", "e_theta"], library="np")
 arrays13 = f13["PhysicsEvents"].arrays(["Mx2", "e_theta"], library="np")
 
 Mx2_11     = arrays11["Mx2"]
-e_theta_11 = arrays11["e_theta"] * (180.0 / np.pi)  # radians -> degrees
+e_theta_11 = arrays11["e_theta"] * (180.0 / np.pi)  # convert to degrees
 Mx2_13     = arrays13["Mx2"]
-e_theta_13 = arrays13["e_theta"] * (180.0 / np.pi)  # radians -> degrees
+e_theta_13 = arrays13["e_theta"] * (180.0 / np.pi)  # convert to degrees
 
 # Fixed e_theta bins: [5,14], [14,18], [18,22], [22,26], [26,30] degrees
 edges_deg = [5, 14, 18, 22, 26, 30]
@@ -80,7 +80,7 @@ for i, (low_deg, high_deg) in enumerate(bins_deg):
     # Plot data with error bars
     ax.errorbar(centers, counts11, yerr=errs11, fmt='o', color='blue',
                 label=f'cj 11.2.0, μ={mu11:.3f}, σ={sigma11:.3f}')
-    ax.errorbar(centers, counts13, yerr=errs13, fmt='o', color='red',
+    ax.errorbar(centers + 0.001, counts13, yerr=errs13, fmt='o', color='red',
                 label=f'cj 13.0.3, μ={mu13:.3f}, σ={sigma13:.3f}')
     # Overlay fits as dashed lines
     ax.plot(centers, gauss_quad(centers, *popt11), '--', color='blue')
@@ -90,15 +90,22 @@ for i, (low_deg, high_deg) in enumerate(bins_deg):
     ax.set_ylabel('counts')
     ax.set_title(f'$e_θ$ ∈ [{low_deg}°, {high_deg}°]')
     ax.legend()
+#endfor
 
-# Final subplot (index 5): μ vs e_theta with σ as error bars
+# Turn off the unused subplot (index 4)
+axes_flat[4].axis('off')
+
+# Final subplot (index 5): μ vs e_theta with σ as error bars, no connecting line, second set offset by 0.1
 ax = axes_flat[5]
-ax.errorbar(angle_means, mu11_list, yerr=sigma11_list, fmt='o-', color='blue',
+ax.errorbar(angle_means, mu11_list, yerr=sigma11_list, fmt='o', color='blue',
             label='cj 11.2.0')
-ax.errorbar(angle_means, mu13_list, yerr=sigma13_list, fmt='s--', color='red',
+ax.errorbar(np.array(angle_means) + 0.1, mu13_list, yerr=sigma13_list, fmt='s', color='red',
             label='cj 13.0.3')
+# Horizontal line at proton mass squared
+ax.axhline(M_p2, color='grey', linestyle='--', linewidth=1)
 ax.set_xlabel(r'$e_θ$ (deg)')
 ax.set_ylabel(r'$\mu$ (GeV$^{2}$)')
+ax.set_ylim(0.8, 1.1)
 ax.legend()
 
 fig.tight_layout()
