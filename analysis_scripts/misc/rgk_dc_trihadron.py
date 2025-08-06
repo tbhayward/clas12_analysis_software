@@ -19,13 +19,13 @@ arrays11 = f11["PhysicsEvents"].arrays(["Mx2", "e_theta"], library="np")
 arrays13 = f13["PhysicsEvents"].arrays(["Mx2", "e_theta"], library="np")
 
 Mx2_11     = arrays11["Mx2"]
-e_theta_11 = arrays11["e_theta"] * (180.0 / np.pi)  # convert to degrees
+e_theta_11 = arrays11["e_theta"]
 Mx2_13     = arrays13["Mx2"]
-e_theta_13 = arrays13["e_theta"] * (180.0 / np.pi)  # convert to degrees
+e_theta_13 = arrays13["e_theta"]
 
-# Define e_theta bins in degrees
-edges_deg = [5, 10, 15, 20, 25, 40]
-bins_deg  = list(zip(edges_deg[:-1], edges_deg[1:]))
+# Define e_theta bins
+edges = [5, 10, 15, 20, 25, 40]
+bins  = list(zip(edges[:-1], edges[1:]))
 
 # Prepare lists to store fit results
 angle_means  = []
@@ -38,14 +38,14 @@ sigma13_list = []
 fig, axes = plt.subplots(2, 3, figsize=(18, 12))
 axes_flat = axes.flatten()
 
-for i, (low_deg, high_deg) in enumerate(bins_deg):
+for i, (low, high) in enumerate(bins):
     ax = axes_flat[i]
-    # Select events in this e_theta range (in degrees)
-    mask11 = (e_theta_11 >= low_deg) & (e_theta_11 < high_deg)
-    mask13 = (e_theta_13 >= low_deg) & (e_theta_13 < high_deg)
+    # Select events in this e_theta range
+    mask11 = (e_theta_11 >= low) & (e_theta_11 < high)
+    mask13 = (e_theta_13 >= low) & (e_theta_13 < high)
     M11 = Mx2_11[mask11]
     M13 = Mx2_13[mask13]
-    # Compute the actual mean e_theta for this bin (in degrees)
+    # Compute the actual mean e_theta for this bin
     angle_mean = np.mean(np.concatenate([e_theta_11[mask11], e_theta_13[mask13]]))
     angle_means.append(angle_mean)
     # Histogram Mx2 from 0.4 to 1.1 in 70 bins
@@ -61,7 +61,7 @@ for i, (low_deg, high_deg) in enumerate(bins_deg):
     p0 = [counts11[fit_mask].max(), M_p2, 0.02]
     try:
         popt11, _ = curve_fit(gauss, centers[fit_mask], counts11[fit_mask], p0=p0)
-    except Exception:
+    except:
         popt11 = [np.nan, np.nan, np.nan]
     mu11, sigma11 = popt11[1], abs(popt11[2])
     mu11_list.append(mu11)
@@ -70,7 +70,7 @@ for i, (low_deg, high_deg) in enumerate(bins_deg):
     p0 = [counts13[fit_mask].max(), M_p2, 0.02]
     try:
         popt13, _ = curve_fit(gauss, centers[fit_mask], counts13[fit_mask], p0=p0)
-    except Exception:
+    except:
         popt13 = [np.nan, np.nan, np.nan]
     mu13, sigma13 = popt13[1], abs(popt13[2])
     mu13_list.append(mu13)
@@ -86,7 +86,7 @@ for i, (low_deg, high_deg) in enumerate(bins_deg):
     ax.set_ylabel('counts')
 #endfor
 
-# Final subplot: mu and sigma vs e_theta (degrees)
+# Final subplot: mu and sigma vs e_theta
 ax = axes_flat[5]
 ax.plot(angle_means, mu11_list, 'o-',  label=r'$\mu$ cj 11.2.0')
 ax.plot(angle_means, mu13_list, 's--', label=r'$\mu$ cj 13.0.3')
