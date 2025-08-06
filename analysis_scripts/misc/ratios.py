@@ -13,13 +13,13 @@ file2 = ROOT.TFile.Open("/volatile/clas12/thayward/rgk_dc_study/dipion/dipion_cj
 tree1 = file1.Get("PhysicsEvents")
 tree2 = file2.Get("PhysicsEvents")
 
-# Create histograms for e_p from 1 to 4.5 GeV (35 bins of 0.1 GeV each)
-h1 = ROOT.TH1F("h1", "e_{p} distribution; e_{p} (GeV); counts", 35, 1.0, 4.5)
-h2 = ROOT.TH1F("h2", "e_{p} distribution; e_{p} (GeV); counts", 35, 1.0, 4.5)
+# Create histograms for e_p from 1 to 4.5 GeV (105 bins)
+h1 = ROOT.TH1F("h1", "e_{p} distribution; e_{p} (GeV); counts", 105, 1.0, 4.5)
+h2 = ROOT.TH1F("h2", "e_{p} distribution; e_{p} (GeV); counts", 105, 1.0, 4.5)
 
-# Create histograms for e_theta in degrees from 5 to 35 (30 bins of 1° each)
-h_e1 = ROOT.TH1F("h_e1", "e_{θ} distribution; e_{θ} (deg); counts", 30, 5.0, 35.0)
-h_e2 = ROOT.TH1F("h_e2", "e_{θ} distribution; e_{θ} (deg); counts", 30, 5.0, 35.0)
+# Create histograms for e_theta in degrees from 5 to 35 (90 bins)
+h_e1 = ROOT.TH1F("h_e1", "e_{θ} distribution; e_{θ} (deg); counts", 90, 5.0, 35.0)
+h_e2 = ROOT.TH1F("h_e2", "e_{θ} distribution; e_{θ} (deg); counts", 90, 5.0, 35.0)
 
 # Fill the e_p histograms
 tree1.Draw("e_p >> h1")
@@ -29,11 +29,11 @@ tree2.Draw("e_p >> h2")
 tree1.Draw("e_theta*180./TMath::Pi() >> h_e1")
 tree2.Draw("e_theta*180./TMath::Pi() >> h_e2")
 
-# Style the histograms
-for hist, color in [(h1, ROOT.kBlack), (h_e1, ROOT.kBlue)]:
+# Style the histograms: blue for cj11, red for cj13
+for hist, color in [(h1, ROOT.kBlue), (h_e1, ROOT.kBlue)]:
     hist.SetLineColor(color)
     hist.SetLineWidth(2)
-for hist, color in [(h2, ROOT.kRed), (h_e2, ROOT.kGreen+2)]:
+for hist, color in [(h2, ROOT.kRed), (h_e2, ROOT.kRed)]:
     hist.SetLineColor(color)
     hist.SetLineWidth(2)
 
@@ -43,8 +43,9 @@ total2 = h2.Integral()
 total_e1 = h_e1.Integral()
 total_e2 = h_e2.Integral()
 
-# Create a 2x2 canvas
+# Create a 2x2 canvas with extra left margin
 c = ROOT.TCanvas("c", "comparison", 1200, 1000)
+c.SetLeftMargin(0.15)
 c.Divide(2, 2)
 
 # --- Top-left: e_p histograms ---
@@ -60,15 +61,15 @@ leg1.Draw()
 
 # --- Top-right: e_p ratio ---
 c.cd(2)
-h_ratio = ROOT.TH1F("h_ratio", "Ratio; e_{p} (GeV); cj13.0.3 / cj11.2.0", 35, 1.0, 4.5)
-for i in range(1, h1.GetNbinsX()+1):
+h_ratio = ROOT.TH1F("h_ratio", "Ratio; e_{p} (GeV); cj13.0.3 / cj11.2.0", 105, 1.0, 4.5)
+for i in range(1, h1.GetNbinsX() + 1):
     n1 = h1.GetBinContent(i)
     n2 = h2.GetBinContent(i)
     if n1 > 0:
         err1 = math.sqrt(n1)
         err2 = math.sqrt(n2)
-        r = n2/n1
-        err = math.sqrt((err2/n1)**2 + (n2*err1/(n1*n1))**2)
+        r = n2 / n1
+        err = math.sqrt((err2 / n1)**2 + (n2 * err1 / (n1**2))**2)
     else:
         r, err = 0.0, 0.0
     h_ratio.SetBinContent(i, r)
@@ -91,15 +92,15 @@ leg2.Draw()
 
 # --- Bottom-right: e_theta ratio ---
 c.cd(4)
-h_ratio_t = ROOT.TH1F("h_ratio_t", "Ratio; e_{θ} (deg); cj13.0.3 / cj11.2.0", 30, 5.0, 35.0)
-for i in range(1, h_e1.GetNbinsX()+1):
+h_ratio_t = ROOT.TH1F("h_ratio_t", "Ratio; e_{θ} (deg); cj13.0.3 / cj11.2.0", 90, 5.0, 35.0)
+for i in range(1, h_e1.GetNbinsX() + 1):
     n1 = h_e1.GetBinContent(i)
     n2 = h_e2.GetBinContent(i)
     if n1 > 0:
         err1 = math.sqrt(n1)
         err2 = math.sqrt(n2)
-        r = n2/n1
-        err = math.sqrt((err2/n1)**2 + (n2*err1/(n1*n1))**2)
+        r = n2 / n1
+        err = math.sqrt((err2 / n1)**2 + (n2 * err1 / (n1**2))**2)
     else:
         r, err = 0.0, 0.0
     h_ratio_t.SetBinContent(i, r)
