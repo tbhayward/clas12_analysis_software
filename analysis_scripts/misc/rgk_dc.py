@@ -23,7 +23,7 @@ angle_vars = [
 ]
 
 # Bin definitions
-edges_e  = [5, 12, 16, 20, 24, 30]
+edges_e  = [5, 13, 16, 20, 24, 30]
 edges_pi = [5, 15, 21, 27, 33, 40]
 
 # Mx² histogram: 0.80–1.10 with 40 bins → 41 edges
