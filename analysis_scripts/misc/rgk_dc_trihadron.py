@@ -17,8 +17,8 @@ det_configs = {
     2: ("trihadron_cd.pdf", "#pi in FD, p in CD")
 }
 
-# e_theta bins: [5,12], [12,16], [16,20], [20,24], [24,32] degrees
-edges_deg = [5, 12, 16, 20, 24, 32]
+# Collapsed e_theta bins: [5,13.33], [13.33,21.66], [21.66,35] degrees
+edges_deg = [5, 13.33, 21.66, 35]
 bins_deg  = list(zip(edges_deg[:-1], edges_deg[1:]))
 
 # Histogram settings: Mx2_23 from 0.7 to 1.1 in 40 bins
@@ -48,9 +48,10 @@ for det_val, (outname, title_suffix) in det_configs.items():
     mu13_list    = []
     sigma13_list = []
 
-    fig, axes = plt.subplots(2, 3, figsize=(18, 12))
+    fig, axes = plt.subplots(2, 2, figsize=(14, 10))
     axes_flat = axes.flatten()
 
+    # First three panels: histograms in collapsed bins
     for i, (low_deg, high_deg) in enumerate(bins_deg):
         ax = axes_flat[i]
         # Select events in e_theta bin & detector1
@@ -118,11 +119,11 @@ for det_val, (outname, title_suffix) in det_configs.items():
 
         ax.set_xlabel(r'$M_{x}^{2}$ (GeV$^{2}$)')
         ax.set_ylabel('counts')
-        ax.set_title(f'$e_θ$ ∈ [{low_deg}°, {high_deg}°] {title_suffix}')
+        ax.set_title(f'$e_θ$ ∈ [{low_deg:.1f}°, {high_deg:.1f}°] {title_suffix}')
         ax.legend()
 
-    # Final μ vs e_theta plot (no connecting line, second offset)
-    ax = axes_flat[5]
+    # Fourth panel: μ vs e_theta
+    ax = axes_flat[3]
     ax.errorbar(angle_means,
                 mu11_list,
                 yerr=sigma11_list,
