@@ -17,20 +17,16 @@ file13 = "/volatile/clas12/thayward/rgk_dc_study/dipion/dipion_cj13.root"
 
 # Branches: (branch name, LaTeX label, output filename)
 angle_vars = [
-    ("e_theta", r"$e_θ$", "dipion_e_theta.pdf"),
+    ("e_theta",  r"$e_θ$",        "dipion_e_theta.pdf"),
     ("p1_theta", r"$\theta_{\pi+}$", "dipion_p1_theta.pdf"),
     ("p2_theta", r"$\theta_{\pi-}$", "dipion_p2_theta.pdf"),
 ]
 
-# e_theta bin edges (degrees)
-edges_deg = [5, 14, 18, 22, 26, 30]
-bins_deg  = list(zip(edges_deg[:-1], edges_deg[1:]))
-
-# Histogram settings for Mx2
+# Common histogram settings for Mx2
 bins_M  = np.linspace(0.7, 1.1, 41)
 centers = 0.5 * (bins_M[:-1] + bins_M[1:])
 
-# Fit parameter bounds: A ≥ 0, μ ∈ [0.8, 0.95], σ ≥ 0, background free
+# Fit parameter bounds: A ≥ 0, μ ∈ [0.8,0.95], σ ≥ 0, background free
 lower_bounds = [0.0, 0.8,  0.0, -np.inf, -np.inf, -np.inf]
 upper_bounds = [np.inf,0.95, np.inf,  np.inf,  np.inf,  np.inf]
 
@@ -39,17 +35,24 @@ tree11 = uproot.open(file11)["PhysicsEvents"]
 tree13 = uproot.open(file13)["PhysicsEvents"]
 
 # Preload arrays
-Mx2_11_all   = tree11["Mx2"].array(library="np")
-Mx2_13_all   = tree13["Mx2"].array(library="np")
-det1_11_all  = tree11["detector1"].array(library="np")
-det2_11_all  = tree11["detector2"].array(library="np")
-det1_13_all  = tree13["detector1"].array(library="np")
-det2_13_all  = tree13["detector2"].array(library="np")
+Mx2_11   = tree11["Mx2"].array(library="np")
+Mx2_13   = tree13["Mx2"].array(library="np")
+det1_11  = tree11["detector1"].array(library="np")
+det2_11  = tree11["detector2"].array(library="np")
+det1_13  = tree13["detector1"].array(library="np")
+det2_13  = tree13["detector2"].array(library="np")
 
 for branch, angle_label, outname in angle_vars:
     # load theta and convert to degrees
     theta11 = tree11[branch].array(library="np") * (180.0/np.pi)
     theta13 = tree13[branch].array(library="np") * (180.0/np.pi)
+
+    # choose bins per branch
+    if branch == "e_theta":
+        edges = [5, 14, 18, 22, 26, 30]
+    else:
+        edges = [5, 15, 21, 27, 33, 40]
+    bins_deg = list(zip(edges[:-1], edges[1:]))
 
     angle_means  = []
     mu11_list    = []
@@ -63,18 +66,18 @@ for branch, angle_label, outname in angle_vars:
     for i, (low_deg, high_deg) in enumerate(bins_deg):
         ax = axes_flat[i]
 
-        # selection: angle in range AND detectors both == 1
+        # select angle range and detectors both == 1
         mask11 = (
             (theta11 >= low_deg) & (theta11 < high_deg) &
-            (det1_11_all == 1) & (det2_11_all == 1)
+            (det1_11 == 1) & (det2_11 == 1)
         )
         mask13 = (
             (theta13 >= low_deg) & (theta13 < high_deg) &
-            (det1_13_all == 1) & (det2_13_all == 1)
+            (det1_13 == 1) & (det2_13 == 1)
         )
 
-        M11 = Mx2_11_all[mask11]
-        M13 = Mx2_13_all[mask13]
+        M11 = Mx2_11[mask11]
+        M13 = Mx2_13[mask13]
 
         angle_mean = np.mean(np.concatenate([theta11[mask11], theta13[mask13]]))
         angle_means.append(angle_mean)
@@ -135,6 +138,7 @@ for branch, angle_label, outname in angle_vars:
         ax.set_ylabel('counts')
         ax.set_title(f'{angle_label} ∈ [{low_deg}°, {high_deg}°]')
         ax.legend()
+    #endfor
 
     # Final μ vs angle plot
     ax = axes_flat[5]
@@ -154,3 +158,4 @@ for branch, angle_label, outname in angle_vars:
 
     fig.tight_layout()
     fig.savefig(f"/u/home/thayward/{outname}")
+#endfor
