@@ -28,7 +28,6 @@ def draw_ratio(h_num, h_den, n_bins, x_min, x_max, xlabel):
         hr.SetBinError(i, err)
     hr.SetLineColor(ROOT.kBlue)
     hr.SetLineWidth(2)
-    # Title format: "hist title; x-axis title; y-axis title"
     hr.SetTitle(f"Ratio; {xlabel}; ratio")
     hr.GetYaxis().SetRangeUser(0.8, 1.2)
     return hr
@@ -112,31 +111,31 @@ def make_canvas(p_branch, theta_branch, p_label, theta_label, canvas_name, out_p
     c.SaveAs(out_pdf)
 
 
-# Electron: use e_p and e_theta with "#theta_e"
+# Electron: use e_p and theta_e
 make_canvas(
     p_branch="e_p",
     theta_branch="e_theta",
     p_label="e_{p}",
-    theta_label="#theta_e",
+    theta_label="#theta_{e}",
     canvas_name="c_electron",
     out_pdf="/u/home/thayward/ep_comparison.pdf"
 )
 
-# Pi+: use p1_p and p1_theta with "#pi^{+}"
+# Pi+: use p1_p and p1_theta
 make_canvas(
     p_branch="p1_p",
     theta_branch="p1_theta",
-    p_label="#pi^{+}_p",
+    p_label="#pi^{+}_{p}",
     theta_label="#theta_{#pi^{+}}",
     canvas_name="c_pi_plus",
     out_pdf="/u/home/thayward/p1_comparison.pdf"
 )
 
-# Pi-: use p2_p and p2_theta with "#pi^{-}"
+# Pi-: use p2_p and p2_theta
 make_canvas(
     p_branch="p2_p",
     theta_branch="p2_theta",
-    p_label="#pi^{-}_p",
+    p_label="#pi^{-}_{p}",
     theta_label="#theta_{#pi^{-}}",
     canvas_name="c_pi_minus",
     out_pdf="/u/home/thayward/p2_comparison.pdf"
