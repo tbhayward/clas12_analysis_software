@@ -51,7 +51,7 @@ struct DataSetConfig {
 const std::vector<DataSetConfig> dataSetConfigs = {
     {
         "RGC_Su22",
-        0.7631, 0.0753, 0.0393, 0.0251, 0.0973,
+        0.7624, 0.0747, 0.0390, 0.0249, 0.0989,
         "/work/clas12/thayward/CLAS12_SIDIS/processed_data/pass2/data/eX/rgc_su22_inb_NH3_eX.root",
         "/work/clas12/thayward/CLAS12_SIDIS/processed_data/pass2/data/eX/rgc_su22_inb_C_eX.root",
         "/work/clas12/thayward/CLAS12_SIDIS/processed_data/pass2/data/eX/rgc_su22_inb_CH2_eX.root",
@@ -60,7 +60,7 @@ const std::vector<DataSetConfig> dataSetConfigs = {
     },
     {
         "RGC_Fa22",
-        0.5737, 0.2057, 0.1855, 0.0291, 0.0061,
+        0.5984, 0.1782, 0.1855, 0.0310, 0.0068,
         "/work/clas12/thayward/CLAS12_SIDIS/processed_data/pass2/data/eX/rgc_fa22_inb_NH3_eX.root",
         "/work/clas12/thayward/CLAS12_SIDIS/processed_data/pass2/data/eX/rgc_fa22_inb_C_eX.root",
         "/work/clas12/thayward/CLAS12_SIDIS/processed_data/pass2/data/eX/rgc_fa22_inb_CH2_eX.root",
@@ -69,7 +69,7 @@ const std::vector<DataSetConfig> dataSetConfigs = {
     },
     {
         "RGC_Sp23",
-        0.5632, 0.1331, 0.1514, 0.9260, 0.0597,
+        0.4543, 0.1509, 0.1966, 0.1205, 0.0777,
         "/work/clas12/thayward/CLAS12_SIDIS/processed_data/pass2/data/eX/rgc_sp23_inb_NH3_eX.root",
         "/work/clas12/thayward/CLAS12_SIDIS/processed_data/pass2/data/eX/rgc_sp23_inb_C_eX.root",
         "/work/clas12/thayward/CLAS12_SIDIS/processed_data/pass2/data/eX/rgc_sp23_inb_CH2_eX.root",
@@ -180,8 +180,7 @@ double calculate_dilution_error(double nA, double nC, double nCH, double nMT, do
 
 std::pair<double, double> calculate_dilution_and_error(
     double nA, double nC, double nCH, double nMT, double nf,
-    double xA, double xC, double xCH, double xHe, double xf
-) {
+    double xA, double xC, double xCH, double xHe, double xf) {
     double dilution = (27.3473 * (-1.0 * nMT * xA + nA * xHe)
                        * (-0.505693 * nMT * xC * xCH * xf
                           + (1.0 * nf * xC * xCH
