@@ -19,12 +19,14 @@ arrays11 = f11["PhysicsEvents"].arrays(["Mx2", "e_theta"], library="np")
 arrays13 = f13["PhysicsEvents"].arrays(["Mx2", "e_theta"], library="np")
 
 Mx2_11     = arrays11["Mx2"]
-e_theta_11 = arrays11["e_theta"] * (180.0 / np.pi)  # convert to degrees
+e_theta_11 = arrays11["e_theta"] * (180.0 / np.pi)  # radians -> degrees
 Mx2_13     = arrays13["Mx2"]
-e_theta_13 = arrays13["e_theta"] * (180.0 / np.pi)  # convert to degrees
+e_theta_13 = arrays13["e_theta"] * (180.0 / np.pi)  # radians -> degrees
 
-# Define e_theta bins in degrees
-edges_deg = [5, 10, 15, 20, 25, 40]
+# Determine bin edges from min to max of e_theta (deg), 5 bins
+min_deg = min(e_theta_11.min(), e_theta_13.min())
+max_deg = max(e_theta_11.max(), e_theta_13.max())
+edges_deg = np.linspace(min_deg, max_deg, 6)
 bins_deg  = list(zip(edges_deg[:-1], edges_deg[1:]))
 
 # Prepare lists to store fit results
@@ -40,16 +42,16 @@ axes_flat = axes.flatten()
 
 for i, (low_deg, high_deg) in enumerate(bins_deg):
     ax = axes_flat[i]
-    # Select events in this e_theta range (in degrees)
+    # Select events in this e_theta range (deg)
     mask11 = (e_theta_11 >= low_deg) & (e_theta_11 < high_deg)
     mask13 = (e_theta_13 >= low_deg) & (e_theta_13 < high_deg)
     M11 = Mx2_11[mask11]
     M13 = Mx2_13[mask13]
-    # Compute the actual mean e_theta for this bin (in degrees)
+    # Compute the actual mean e_theta for this bin
     angle_mean = np.mean(np.concatenate([e_theta_11[mask11], e_theta_13[mask13]]))
     angle_means.append(angle_mean)
-    # Histogram Mx2 from 0.4 to 1.1 in 70 bins
-    bins_M = np.linspace(0.4, 1.1, 71)
+    # Histogram Mx2 from 0.6 to 1.2 in 60 bins
+    bins_M = np.linspace(0.6, 1.2, 61)
     centers = 0.5 * (bins_M[:-1] + bins_M[1:])
     counts11, _ = np.histogram(M11, bins=bins_M)
     counts13, _ = np.histogram(M13, bins=bins_M)
@@ -76,24 +78,26 @@ for i, (low_deg, high_deg) in enumerate(bins_deg):
     mu13_list.append(mu13)
     sigma13_list.append(sigma13)
     # Plot data points with errors
-    ax.errorbar(centers, counts11, yerr=errs11, fmt='o', color='black',
-                label=f'cj 11.2.0 (N={len(M11)})')
+    ax.errorbar(centers, counts11, yerr=errs11, fmt='o', color='blue',
+                label=f'cj 11.2.0, μ={mu11:.3f}, σ={sigma11:.3f}')
     ax.errorbar(centers, counts13, yerr=errs13, fmt='o', color='red',
-                label=f'cj 13.0.3 (N={len(M13)})')
-    # Add mu and sigma to legend
-    ax.legend(title=f'μ11={mu11:.3f}, σ11={sigma11:.3f}\nμ13={mu13:.3f}, σ13={sigma13:.3f}')
+                label=f'cj 13.0.3, μ={mu13:.3f}, σ={sigma13:.3f}')
+    # Add Gaussian fits as dashed lines
+    ax.plot(centers, gauss(centers, *popt11), '--', color='blue')
+    ax.plot(centers, gauss(centers, *popt13), '--', color='red')
+    ax.legend()
     ax.set_xlabel(r'$M_{x}^{2}$ (GeV$^{2}$)')
     ax.set_ylabel('counts')
 #endfor
 
-# Final subplot: mu and sigma vs e_theta (degrees)
+# Final subplot: μ vs e_theta (deg) with error bars = σ
 ax = axes_flat[5]
-ax.plot(angle_means, mu11_list, 'o-',  label=r'$\mu$ cj 11.2.0')
-ax.plot(angle_means, mu13_list, 's--', label=r'$\mu$ cj 13.0.3')
-ax.plot(angle_means, sigma11_list, '^-',  label=r'$\sigma$ cj 11.2.0')
-ax.plot(angle_means, sigma13_list, 'x--', label=r'$\sigma$ cj 13.0.3')
+ax.errorbar(angle_means, mu11_list, yerr=sigma11_list, fmt='o-', color='blue',
+            label='cj 11.2.0')
+ax.errorbar(angle_means, mu13_list, yerr=sigma13_list, fmt='s--', color='red',
+            label='cj 13.0.3')
 ax.set_xlabel(r'$e_\theta$ (deg)')
-ax.set_ylabel('Fit parameters')
+ax.set_ylabel(r'$\mu$ (GeV$^{2}$)')
 ax.legend()
 
 fig.tight_layout()
