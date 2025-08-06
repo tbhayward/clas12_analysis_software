@@ -6,21 +6,24 @@ import math
 ROOT.gStyle.SetOptStat(0)
 
 # Open the two ROOT files (dipion)
-file1 = ROOT.TFile.Open("/volatile/clas12/thayward/rgk_dc_study/dipion/dipion_cj11.root")
-file2 = ROOT.TFile.Open("/volatile/clas12/thayward/rgk_dc_study/dipion/dipion_cj13.root")
-tree1 = file1.Get("PhysicsEvents")
-tree2 = file2.Get("PhysicsEvents")
+file11 = ROOT.TFile.Open("/volatile/clas12/thayward/rgk_dc_study/dipion/dipion_cj11.root")
+file13 = ROOT.TFile.Open("/volatile/clas12/thayward/rgk_dc_study/dipion/dipion_cj13.root")
+tree11 = file11.Get("PhysicsEvents")
+tree13 = file13.Get("PhysicsEvents")
 
-# Helper to draw ratio with labels
-def draw_ratio(h_num, h_den, n_bins, x_min, x_max, xlabel):
-    hr = ROOT.TH1F("", "", n_bins, x_min, x_max)
-    for i in range(1, n_bins+1):
+def draw_ratio(h_num, h_den, xlabel):
+    """Return a ratio histogram with Poisson errors and axis labels."""
+    nb = h_den.GetNbinsX()
+    xmin = h_den.GetXaxis().GetXmin()
+    xmax = h_den.GetXaxis().GetXmax()
+    hr = ROOT.TH1F("", f"Ratio; {xlabel}; cj13.0.3 / cj11.2.0", nb, xmin, xmax)
+    for i in range(1, nb+1):
         n = h_num.GetBinContent(i)
         d = h_den.GetBinContent(i)
         if d > 0:
             err_n = math.sqrt(n)
             err_d = math.sqrt(d)
-            r = n/d
+            r = n / d
             err = math.sqrt((err_n/d)**2 + (n*err_d/(d*d))**2)
         else:
             r, err = 0.0, 0.0
@@ -28,134 +31,83 @@ def draw_ratio(h_num, h_den, n_bins, x_min, x_max, xlabel):
         hr.SetBinError(i, err)
     hr.SetLineColor(ROOT.kBlue)
     hr.SetLineWidth(2)
-    hr.SetTitle(f"Ratio; {xlabel}; cj13.0.3 / cj11.2.0")
     hr.GetYaxis().SetRangeUser(0.8, 1.2)
     return hr
 
-# Create all histograms (70 bins each)
-h_ep1  = ROOT.TH1F("h_ep1",  "e_{p}; e_{p} (GeV); counts", 70, 1.0, 4.5)
-h_ep2  = ROOT.TH1F("h_ep2",  "e_{p}; e_{p} (GeV); counts", 70, 1.0, 4.5)
-h_e1   = ROOT.TH1F("h_e1",   "e_{θ}; e_{θ} (deg); counts", 70, 5.0, 35.0)
-h_e2   = ROOT.TH1F("h_e2",   "e_{θ}; e_{θ} (deg); counts", 70, 5.0, 35.0)
+def make_canvas(p_branch, theta_branch, p_label, theta_label, c_name, out_pdf):
+    """Create a 2×2 canvas: momentum hist/ratio top row, theta hist/ratio bottom row."""
+    # Hist settings
+    p_bins, p_min, p_max = 70, 1.0, 4.5
+    t_bins, t_min, t_max = 70, 5.0, 35.0
 
-h_p1p1 = ROOT.TH1F("h_p1p1", "p1_{p}; p1_{p} (GeV); counts", 70, 1.0, 4.5)
-h_p1p2 = ROOT.TH1F("h_p1p2", "p1_{p}; p1_{p} (GeV); counts", 70, 1.0, 4.5)
-h_p11  = ROOT.TH1F("h_p11",  "#theta_{π+}; #theta_{π+} (deg); counts", 70, 5.0, 35.0)
-h_p12  = ROOT.TH1F("h_p12",  "#theta_{π+}; #theta_{π+} (deg); counts", 70, 5.0, 35.0)
+    # Create histograms
+    h_p11 = ROOT.TH1F("h_p11",  f"{p_label}; {p_label}; counts", p_bins, p_min, p_max)
+    h_p13 = ROOT.TH1F("h_p13",  f"{p_label}; {p_label}; counts", p_bins, p_min, p_max)
+    h_t11 = ROOT.TH1F("h_t11",  f"{theta_label}; {theta_label}; counts", t_bins, t_min, t_max)
+    h_t13 = ROOT.TH1F("h_t13",  f"{theta_label}; {theta_label}; counts", t_bins, t_min, t_max)
 
-h_p2p1 = ROOT.TH1F("h_p2p1", "p2_{p}; p2_{p} (GeV); counts", 70, 1.0, 4.5)
-h_p2p2 = ROOT.TH1F("h_p2p2", "p2_{p}; p2_{p} (GeV); counts", 70, 1.0, 4.5)
-h_p21  = ROOT.TH1F("h_p21",  "#theta_{π-}; #theta_{π-} (deg); counts", 70, 5.0, 35.0)
-h_p22  = ROOT.TH1F("h_p22",  "#theta_{π-}; #theta_{π-} (deg); counts", 70, 5.0, 35.0)
+    # Fill histograms
+    tree11.Draw(f"{p_branch} >> h_p11")
+    tree13.Draw(f"{p_branch} >> h_p13")
+    tree11.Draw(f"{theta_branch}*180./TMath::Pi() >> h_t11")
+    tree13.Draw(f"{theta_branch}*180./TMath::Pi() >> h_t13")
 
-# Fill histograms
-tree1.Draw("e_p >> h_ep1")
-tree2.Draw("e_p >> h_ep2")
-tree1.Draw("e_theta*180./TMath::Pi() >> h_e1")
-tree2.Draw("e_theta*180./TMath::Pi() >> h_e2")
+    # Style: blue for cj11, red for cj13
+    for h in (h_p11, h_t11):
+        h.SetLineColor(ROOT.kBlue)
+        h.SetLineWidth(2)
+    for h in (h_p13, h_t13):
+        h.SetLineColor(ROOT.kRed)
+        h.SetLineWidth(2)
 
-tree1.Draw("p1_p >> h_p1p1")
-tree2.Draw("p1_p >> h_p1p2")
-tree1.Draw("p1_theta*180./TMath::Pi() >> h_p11")
-tree2.Draw("p1_theta*180./TMath::Pi() >> h_p12")
+    # Integrals for legend
+    tot_p11 = int(h_p11.Integral())
+    tot_p13 = int(h_p13.Integral())
+    tot_t11 = int(h_t11.Integral())
+    tot_t13 = int(h_t13.Integral())
 
-tree1.Draw("p2_p >> h_p2p1")
-tree2.Draw("p2_p >> h_p2p2")
-tree1.Draw("p2_theta*180./TMath::Pi() >> h_p21")
-tree2.Draw("p2_theta*180./TMath::Pi() >> h_p22")
+    # Precompute maxima
+    max_p = max(h_p11.GetMaximum(), h_p13.GetMaximum())
+    max_t = max(h_t11.GetMaximum(), h_t13.GetMaximum())
 
-# Style: blue for cj11, red for cj13
-for h in (h_ep1, h_e1, h_p1p1, h_p11, h_p2p1, h_p21):
-    h.SetLineColor(ROOT.kBlue); h.SetLineWidth(2)
-for h in (h_ep2, h_e2, h_p1p2, h_p12, h_p2p2, h_p22):
-    h.SetLineColor(ROOT.kRed);  h.SetLineWidth(2)
+    # Create canvas
+    c = ROOT.TCanvas(c_name, c_name, 1200, 1000)
+    c.Divide(2, 2)
 
-# Integrals
-I = lambda h: int(h.Integral())
-tot_ep1, tot_ep2 = I(h_ep1), I(h_ep2)
-tot_e1,  tot_e2  = I(h_e1),  I(h_e2)
-tot_p1p1, tot_p1p2 = I(h_p1p1), I(h_p1p2)
-tot_p11, tot_p12 = I(h_p11), I(h_p12)
-tot_p2p1, tot_p2p2 = I(h_p2p1), I(h_p2p2)
-tot_p21, tot_p22 = I(h_p21), I(h_p22)
+    # Top-left: momentum histograms
+    c.cd(1)
+    ROOT.gPad.SetLeftMargin(0.15)
+    h_p11.Draw("HIST")
+    h_p13.Draw("HIST SAME")
+    h_p11.GetYaxis().SetRangeUser(0, 1.2 * max_p)
+    leg = ROOT.TLegend(0.6, 0.65, 0.88, 0.88)
+    leg.AddEntry(h_p11, f"cj11.2.0 (N={tot_p11})", "l")
+    leg.AddEntry(h_p13, f"cj13.0.3 (N={tot_p13})", "l")
+    leg.Draw()
 
-# Precompute maxima
-max_ep  = max(h_ep1.GetMaximum(), h_ep2.GetMaximum())
-max_e   = max(h_e1.GetMaximum(),  h_e2.GetMaximum())
-max_p1p = max(h_p1p1.GetMaximum(),h_p1p2.GetMaximum())
-max_p11 = max(h_p11.GetMaximum(), h_p12.GetMaximum())
-max_p2p = max(h_p2p1.GetMaximum(),h_p2p2.GetMaximum())
-max_p21 = max(h_p21.GetMaximum(), h_p22.GetMaximum())
+    # Top-right: momentum ratio
+    c.cd(2)
+    draw_ratio(h_p13, h_p11, p_label + " (GeV)").Draw("E1")
 
-# Canvas 1: electron
-c1 = ROOT.TCanvas("c1","electron",1200,1000); c1.Divide(2,2)
-c1.cd(1); ROOT.gPad.SetLeftMargin(0.15)
-h_ep1.Draw("HIST"); h_ep2.Draw("HIST SAME")
-h_ep1.GetYaxis().SetRangeUser(0,1.2*max_ep)
-leg = ROOT.TLegend(0.6,0.65,0.88,0.88)
-leg.AddEntry(h_ep1,f"cj11.2.0 (N={tot_ep1})","l")
-leg.AddEntry(h_ep2,f"cj13.0.3 (N={tot_ep2})","l"); leg.Draw()
-c1.cd(2)
-draw_ratio(h_ep2,h_ep1,70,1.0,4.5,"e_{p} (GeV)").Draw("E1")
-c1.cd(3); ROOT.gPad.SetLeftMargin(0.15)
-h_e1.Draw("HIST"); h_e2.Draw("HIST SAME")
-h_e1.GetYaxis().SetRangeUser(0,1.2*max_e)
-leg = ROOT.TLegend(0.6,0.65,0.88,0.88)
-leg.AddEntry(h_e1,f"cj11.2.0 (N={tot_e1})","l")
-leg.AddEntry(h_e2,f"cj13.0.3 (N={tot_e2})","l"); leg.Draw()
-c1.cd(4)
-draw_ratio(h_e2,h_e1,70,5.0,35.0,"e_{θ} (deg)").Draw("E1")
-c1.SaveAs("/u/home/thayward/ep_comparison.pdf")
+    # Bottom-left: theta histograms
+    c.cd(3)
+    ROOT.gPad.SetLeftMargin(0.15)
+    h_t11.Draw("HIST")
+    h_t13.Draw("HIST SAME")
+    h_t11.GetYaxis().SetRangeUser(0, 1.2 * max_t)
+    leg = ROOT.TLegend(0.6, 0.65, 0.88, 0.88)
+    leg.AddEntry(h_t11, f"cj11.2.0 (N={tot_t11})", "l")
+    leg.AddEntry(h_t13, f"cj13.0.3 (N={tot_t13})", "l")
+    leg.Draw()
 
-# --- Canvas 2: pi+ ---
-c2 = ROOT.TCanvas("c2", "#pi+ comparison", 1200, 1000)
-c2.Divide(2, 2)
+    # Bottom-right: theta ratio
+    c.cd(4)
+    draw_ratio(h_t13, h_t11, theta_label + " (deg)").Draw("E1")
 
-c2.cd(1); ROOT.gPad.SetLeftMargin(0.15)
-h_p1p1.Draw("HIST"); h_p1p2.Draw("HIST SAME")
-h_p1p1.GetYaxis().SetRangeUser(0,1.2*max_p1p)
-leg = ROOT.TLegend(0.6,0.65,0.88,0.88)
-leg.AddEntry(h_p1p1,f"cj11.2.0 (N={tot_p1p1})","l")
-leg.AddEntry(h_p1p2,f"cj13.0.3 (N={tot_p1p2})","l"); leg.Draw()
-
-c2.cd(2)
-draw_ratio(h_p1p2,h_p1p1,70,1.0,4.5,"p1_{p} (GeV)").Draw("E1")
-
-c2.cd(3); ROOT.gPad.SetLeftMargin(0.15)
-h_p11.Draw("HIST"); h_p12.Draw("HIST SAME")
-h_p11.GetYaxis().SetRangeUser(0,1.2*max_p11)
-leg = ROOT.TLegend(0.6,0.65,0.88,0.88)
-leg.AddEntry(h_p11,f"cj11.2.0 (N={tot_p11})","l")
-leg.AddEntry(h_p12,f"cj13.0.3 (N={tot_p12})","l"); leg.Draw()
-
-c2.cd(4)
-draw_ratio(h_p12,h_p11,70,5.0,35.0,"#theta_{π+} (deg)").Draw("E1")
-
-c2.SaveAs("/u/home/thayward/p1_comparison.pdf")
+    c.SaveAs(out_pdf)
 
 
-# --- Canvas 3: pi- ---
-c3 = ROOT.TCanvas("c3", "#pi- comparison", 1200, 1000)
-c3.Divide(2, 2)
-
-c3.cd(1); ROOT.gPad.SetLeftMargin(0.15)
-h_p2p1.Draw("HIST"); h_p2p2.Draw("HIST SAME")
-h_p2p1.GetYaxis().SetRangeUser(0,1.2*max_p2p)
-leg = ROOT.TLegend(0.6,0.65,0.88,0.88)
-leg.AddEntry(h_p2p1,f"cj11.2.0 (N={tot_p2p1})","l")
-leg.AddEntry(h_p2p2,f"cj13.0.3 (N={tot_p2p2})","l"); leg.Draw()
-
-c3.cd(2)
-draw_ratio(h_p2p2,h_p2p1,70,1.0,4.5,"p2_{p} (GeV)").Draw("E1")
-
-c3.cd(3); ROOT.gPad.SetLeftMargin(0.15)
-h_p21.Draw("HIST"); h_p22.Draw("HIST SAME")
-h_p21.GetYaxis().SetRangeUser(0,1.2*max_p21)
-leg = ROOT.TLegend(0.6,0.65,0.88,0.88)
-leg.AddEntry(h_p21,f"cj11.2.0 (N={tot_p21})","l")
-leg.AddEntry(h_p22,f"cj13.0.3 (N={tot_p22})","l"); leg.Draw()
-
-c3.cd(4)
-draw_ratio(h_p22,h_p21,70,5.0,35.0,"#theta_{π-} (deg)").Draw("E1")
-
-c3.SaveAs("/u/home/thayward/p2_comparison.pdf")
+# Make the three canvases
+make_canvas("e_p", "e_theta", r"e_{p}", r"e_{θ}", "c_electron", "/u/home/thayward/ep_comparison.pdf")
+make_canvas("p1_p", "p1_theta", r"p_{1p}", r"#theta_{\pi+}", "c_pi_plus", "/u/home/thayward/p1_comparison.pdf")
+make_canvas("p2_p", "p2_theta", r"p_{2p}", r"#theta_{\pi-}", "c_pi_minus", "/u/home/thayward/p2_comparison.pdf")
