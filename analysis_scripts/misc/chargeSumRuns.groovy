@@ -32,7 +32,7 @@ new File(csvPath).eachLine { lineRaw ->
        line.startsWith("# RGC Sp23") ) {
     inBlock = true
     currentHeader = line.substring(1).trim()    // drop the leading ‘#’
-    println "\n*** ${currentHeader} ***"
+    println "\n# ${currentHeader}"
     return
   }
 
