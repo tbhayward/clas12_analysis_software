@@ -36,28 +36,43 @@ println "Output columns:"
 println "  runnum, totalCharge(nC), posCharge(nC), negCharge(nC), pol, polErr"
 println ""
 
-// control flags
+// state for buffering and block management
 boolean inBlock = false
-String currentHeader = ""
+String currentHeader = null
+def buffer = []  // list of [runnum:int, line:String]
 
-// process CSV
+// method to flush the buffer for the current block
+def flushBlock = {
+  if (currentHeader && buffer) {
+    println "# ${currentHeader}"
+    buffer.sort { a, b -> a.runnum <=> b.runnum }
+          .each { println it.line }
+    buffer.clear()
+  }
+}
+
 new File(csvPath).eachLine { raw ->
   String line = raw.trim()
 
-  // start of a relevant block
+  // detect start of a new RGC block
   if (line.startsWith("# RGC Su22") ||
       line.startsWith("# RGC Fa22") ||
       line.startsWith("# RGC Sp23")) {
+    // flush previous block
+    flushBlock()
     inBlock = true
     currentHeader = line.substring(1).trim()
-    println "# ${currentHeader}"
     return
   }
-  // end marker
+
+  // detect end of RGC blocks
   if (line.startsWith("# RGA Fa18")) {
+    // flush final block
+    flushBlock()
     inBlock = false
     return
   }
+
   if (!inBlock || line.startsWith("#") || line.isEmpty()) return
 
   // parse CSV fields
@@ -66,17 +81,17 @@ new File(csvPath).eachLine { raw ->
   String pol    = parts[4]
   String polErr = parts[5]
 
-  // instantiate QADB for exactly this run
+  // instantiate QADB for this run
   QADB qa = new QADB("latest", runnum, runnum)
   defectList.each { qa.checkForDefect(it) }
   allowMiscRuns.each { qa.allowMiscBit(it) }
 
-  // snapshot before accumulation
+  // snapshot before
   double beforeTot = qa.getAccumulatedCharge()
   double beforeP   = qa.getAccumulatedChargeHL(1)
   double beforeM   = qa.getAccumulatedChargeHL(-1)
 
-  // accumulate over this run's files
+  // accumulate
   def runTree = qa.getQaTree().get(runnum.toString())
   if (runTree) {
     runTree.each { _, fileTree ->
@@ -95,10 +110,16 @@ new File(csvPath).eachLine { raw ->
   double runP   = qa.getAccumulatedChargeHL(1)  - beforeP
   double runM   = qa.getAccumulatedChargeHL(-1) - beforeM
 
-  // print with 4-decimal precision
-  println "${runnum}," +
-          "${fmt4(runTot)}," +
-          "${fmt4(runP)}," +
-          "${fmt4(runM)}," +
-          "${pol},${polErr}"
+  // format line
+  String outLine = "${runnum}," +
+                   "${fmt4(runTot)}," +
+                   "${fmt4(runP)}," +
+                   "${fmt4(runM)}," +
+                   "${pol},${polErr}"
+
+  // buffer it
+  buffer << [runnum: runnum, line: outLine]
 }
+
+// after file end, flush any remaining block
+flushBlock()
