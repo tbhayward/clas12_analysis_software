@@ -226,7 +226,7 @@ class CalibrationScript {
         // ~~~~~~~~~~~~~~~~ prepare physics analysis ~~~~~~~~~~~~~~~~ //
 
         // instantiate QADB
-		QADB qa = new QADB()
+		QADB qa = new QADB("latest")
 		qa.checkForDefect('TotalOutlier')    
 		qa.checkForDefect('TerminalOutlier')
 		qa.checkForDefect('MarginalOutlier')

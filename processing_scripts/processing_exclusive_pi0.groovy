@@ -113,7 +113,7 @@ public static void main(String[] args) {
 	}
 	
 	// setup QA database
-	QADB qa = new QADB();
+	QADB qa = new QADB("latest");
 	qa.checkForDefect('TotalOutlier')    
 	qa.checkForDefect('TerminalOutlier')
 	qa.checkForDefect('MarginalOutlier')

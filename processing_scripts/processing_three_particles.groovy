@@ -108,7 +108,7 @@ public static void main(String[] args) {
 	EventFilter filter = new EventFilter("11:"+p1_Str+":"+p2_Str+":X+:X-:Xn");
 	
 	// setup QA database
-	QADB qa = new QADB();
+	QADB qa = new QADB("latest");
 	qa.checkForDefect('TotalOutlier')    
 	qa.checkForDefect('TerminalOutlier')
 	qa.checkForDefect('MarginalOutlier')
