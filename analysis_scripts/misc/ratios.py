@@ -128,7 +128,7 @@ make_canvas(
     "#pi^{+}_{p}", "#theta_{#pi^{+}}",
     "c_pi_plus", "/u/home/thayward/p1_comparison.pdf",
     pmin=0.5, pmax=3.5,
-    tmin=0.0, tmax=35.0
+    tmin=0.0, tmax=60.0
 )
 
 # π⁻: p 0.5→3.5 GeV, θ 0→35°
