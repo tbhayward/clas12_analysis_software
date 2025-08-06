@@ -92,8 +92,6 @@ for i, (low_deg, high_deg) in enumerate(bins_deg):
     ax.legend()
 #endfor
 
-# Turn off the unused subplot (index 4)
-axes_flat[4].axis('off')
 
 # Final subplot (index 5): μ vs e_theta with σ as error bars, no connecting line, second set offset by 0.1
 ax = axes_flat[5]
