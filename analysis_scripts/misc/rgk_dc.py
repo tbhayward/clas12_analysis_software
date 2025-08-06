@@ -30,9 +30,9 @@ bins_deg  = list(zip(edges_deg[:-1], edges_deg[1:]))
 bins_M  = np.linspace(0.7, 1.1, 41)
 centers = 0.5 * (bins_M[:-1] + bins_M[1:])
 
-# Fit parameter bounds: A ≥ 0, μ ∈ [0.85, 1.00], σ ≥ 0, background free
-lower_bounds = [0.0, 0.85, 0.0, -np.inf, -np.inf, -np.inf]
-upper_bounds = [np.inf, 1.00, np.inf,  np.inf,  np.inf,  np.inf]
+# Fit parameter bounds: A ≥ 0, μ ∈ [0.8, 0.95], σ ≥ 0, background free
+lower_bounds = [0.0, 0.8,  0.0, -np.inf, -np.inf, -np.inf]
+upper_bounds = [np.inf,0.95, np.inf, np.inf,  np.inf,  np.inf]
 
 # Load trees once
 f11 = uproot.open(file11)["PhysicsEvents"]
