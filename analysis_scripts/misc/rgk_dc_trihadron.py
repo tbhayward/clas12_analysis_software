@@ -21,8 +21,8 @@ det_configs = {
 edges_deg = [5, 14, 18, 22, 26, 30]
 bins_deg  = list(zip(edges_deg[:-1], edges_deg[1:]))
 
-# Histogram settings: Mx2_23 from -0.2 to 0.2 in 40 bins
-bins_M = np.linspace(-0.2, 0.2, 41)
+# Histogram settings: Mx2_23 from 0.7 to 1.1 in 40 bins
+bins_M  = np.linspace(0.7, 1.1, 41)
 centers = 0.5 * (bins_M[:-1] + bins_M[1:])
 
 # Open both ROOT files
@@ -67,16 +67,16 @@ for det_val, (outname, title_suffix) in det_configs.items():
                                              e_theta_13[mask13]]))
         angle_means.append(angle_mean)
 
-        # Histograms and errors
+        # Histogram counts and errors
         counts11, _ = np.histogram(M11, bins=bins_M)
         counts13, _ = np.histogram(M13, bins=bins_M)
         errs11 = np.sqrt(counts11)
         errs13 = np.sqrt(counts13)
 
-        # Fit over -0.2 to 0.2
-        fit_mask = (centers >= -0.2) & (centers <= 0.2)
-        p0_11 = [counts11.max(), 0.0, 0.02, 0, 0, np.median(counts11)]
-        p0_13 = [counts13.max(), 0.0, 0.02, 0, 0, np.median(counts13)]
+        # Fit over full range 0.7–1.1
+        fit_mask = (centers >= 0.7) & (centers <= 1.1)
+        p0_11 = [counts11.max(), M_p2, 0.02, 0, 0, np.median(counts11)]
+        p0_13 = [counts13.max(), M_p2, 0.02, 0, 0, np.median(counts13)]
         try:
             popt11, _ = curve_fit(gauss_quad,
                                   centers[fit_mask],
@@ -99,7 +99,7 @@ for det_val, (outname, title_suffix) in det_configs.items():
         mu13_list.append(mu13)
         sigma13_list.append(sigma13)
 
-        # Plot data
+        # Plot data with error bars
         ax.errorbar(centers,
                     counts11,
                     yerr=errs11,
@@ -121,7 +121,7 @@ for det_val, (outname, title_suffix) in det_configs.items():
         ax.set_title(f'$e_θ$ ∈ [{low_deg}°, {high_deg}°] {title_suffix}')
         ax.legend()
 
-    # Final μ vs e_theta plot
+    # Final μ vs e_theta plot (no connecting line, second offset)
     ax = axes_flat[5]
     ax.errorbar(angle_means,
                 mu11_list,
@@ -135,10 +135,10 @@ for det_val, (outname, title_suffix) in det_configs.items():
                 fmt='s',
                 color='red',
                 label='cj 13.0.3')
-    ax.axhline(0.0, color='grey', linestyle='--', linewidth=1)
+    ax.axhline(M_p2, color='grey', linestyle='--', linewidth=1)
     ax.set_xlabel(r'$e_θ$ (deg)')
     ax.set_ylabel(r'$\mu$ (GeV$^{2}$)')
-    ax.set_ylim(-0.2, 0.2)
+    ax.set_ylim(0.8, 1.1)
     ax.legend()
 
     fig.tight_layout()
