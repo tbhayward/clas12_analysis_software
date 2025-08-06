@@ -12,7 +12,8 @@ t11 = f11.Get("PhysicsEvents")
 t13 = f13.Get("PhysicsEvents")
 
 _ratio_counter = 0
-def make_ratio(hn, hd, nbins, xmin, xmax, xlabel):
+
+def make_ratio(h_num, h_den, nbins, xmin, xmax, xlabel):
     """Return a uniquely named ratio histogram with Poisson errors and axis labels."""
     global _ratio_counter
     name = f"ratio_{_ratio_counter}"
@@ -20,8 +21,8 @@ def make_ratio(hn, hd, nbins, xmin, xmax, xlabel):
 
     hr = ROOT.TH1F(name, f"Ratio; {xlabel}; ratio", nbins, xmin, xmax)
     for i in range(1, nbins+1):
-        n = hn.GetBinContent(i)
-        d = hd.GetBinContent(i)
+        n = h_num.GetBinContent(i)
+        d = h_den.GetBinContent(i)
         if d > 0:
             err_n = math.sqrt(n)
             err_d = math.sqrt(d)
@@ -46,22 +47,20 @@ def make_canvas(p_branch, th_branch, plabel, tlabel,
       pad3: theta histograms,
       pad4: theta ratio.
     """
-    # Use 50 bins everywhere
+    # 50 bins everywhere
     p_bins = 50
     t_bins = 50
+
+    # Selection: require detector1==1 and detector2==1
     sel = "detector1==1 && detector2==1"
 
-    # Create histograms
-    hp11 = ROOT.TH1F("hp11",  f"{plabel}; {plabel} (GeV); counts",
-                      p_bins, pmin, pmax)
-    hp13 = ROOT.TH1F("hp13",  f"{plabel}; {plabel} (GeV); counts",
-                      p_bins, pmin, pmax)
-    ht11 = ROOT.TH1F("ht11",  f"{tlabel}; {tlabel} (deg); counts",
-                      t_bins, tmin, tmax)
-    ht13 = ROOT.TH1F("ht13",  f"{tlabel}; {tlabel} (deg); counts",
-                      t_bins, tmin, tmax)
+    # Histograms
+    hp11 = ROOT.TH1F("hp11", f"{plabel}; {plabel} (GeV); counts", p_bins, pmin, pmax)
+    hp13 = ROOT.TH1F("hp13", f"{plabel}; {plabel} (GeV); counts", p_bins, pmin, pmax)
+    ht11 = ROOT.TH1F("ht11", f"{tlabel}; {tlabel} (deg); counts",  t_bins, tmin, tmax)
+    ht13 = ROOT.TH1F("ht13", f"{tlabel}; {tlabel} (deg); counts",  t_bins, tmin, tmax)
 
-    # Fill with selection on detector1 AND detector2
+    # Fill with selection
     t11.Draw(f"{p_branch} >> hp11", sel)
     t13.Draw(f"{p_branch} >> hp13", sel)
     t11.Draw(f"{th_branch}*180./TMath::Pi() >> ht11", sel)
@@ -76,40 +75,46 @@ def make_canvas(p_branch, th_branch, plabel, tlabel,
     # Integrals & maxima
     tot11_p = int(hp11.Integral()); tot13_p = int(hp13.Integral())
     tot11_t = int(ht11.Integral()); tot13_t = int(ht13.Integral())
-    max_p = max(hp11.GetMaximum(), hp13.GetMaximum())
-    max_t = max(ht11.GetMaximum(), ht13.GetMaximum())
+    max_p   = max(hp11.GetMaximum(), hp13.GetMaximum())
+    max_t   = max(ht11.GetMaximum(), ht13.GetMaximum())
 
     # Canvas
     c = ROOT.TCanvas(cname, cname, 1200, 1000)
     c.Divide(2, 2)
 
     # Pad 1: momentum histograms
-    c.cd(1); ROOT.gPad.SetLeftMargin(0.15)
-    hp11.Draw("HIST"); hp13.Draw("HIST SAME")
-    hp11.GetYaxis().SetRangeUser(0, 1.2*max_p)
-    leg = ROOT.TLegend(0.6, 0.65, 0.88, 0.88)
-    leg.AddEntry(hp11, f"cj11.2.0 (N={tot11_p})", "l")
-    leg.AddEntry(hp13, f"cj13.0.3 (N={tot13_p})", "l")
-    leg.Draw()
+    c.cd(1)
+    ROOT.gPad.SetLeftMargin(0.15)
+    hp11.Draw("HIST")
+    hp13.Draw("HIST SAME")
+    hp11.GetYaxis().SetRangeUser(0, 1.2 * max_p)
+    leg1 = ROOT.TLegend(0.6, 0.65, 0.88, 0.88)
+    leg1.AddEntry(hp11, f"cj 11.2.0 (N={tot11_p})", "l")
+    leg1.AddEntry(hp13, f"cj 13.0.3 (N={tot13_p})", "l")
+    leg1.Draw()
 
     # Pad 2: momentum ratio
-    c.cd(2); ROOT.gPad.SetLeftMargin(0.15)
-    make_ratio(hp13, hp11, p_bins, pmin, pmax,
-               f"{plabel} (GeV)").Draw("E1")
+    c.cd(2)
+    ROOT.gPad.SetLeftMargin(0.15)
+    r_p = make_ratio(hp13, hp11, p_bins, pmin, pmax, f"{plabel} (GeV)")
+    r_p.Draw("E1")
 
     # Pad 3: theta histograms
-    c.cd(3); ROOT.gPad.SetLeftMargin(0.15)
-    ht11.Draw("HIST"); ht13.Draw("HIST SAME")
-    ht11.GetYaxis().SetRangeUser(0, 1.2*max_t)
+    c.cd(3)
+    ROOT.gPad.SetLeftMargin(0.15)
+    ht11.Draw("HIST")
+    ht13.Draw("HIST SAME")
+    ht11.GetYaxis().SetRangeUser(0, 1.2 * max_t)
     leg2 = ROOT.TLegend(0.6, 0.65, 0.88, 0.88)
-    leg2.AddEntry(ht11, f"cj11.2.0 (N={tot11_t})", "l")
-    leg2.AddEntry(ht13, f"cj13.0.3 (N={tot13_t})", "l")
+    leg2.AddEntry(ht11, f"cj 11.2.0 (N={tot11_t})", "l")
+    leg2.AddEntry(ht13, f"cj 13.0.3 (N={tot13_t})", "l")
     leg2.Draw()
 
     # Pad 4: theta ratio
-    c.cd(4); ROOT.gPad.SetLeftMargin(0.15)
-    make_ratio(ht13, ht11, t_bins, tmin, tmax,
-               f"{tlabel} (deg)").Draw("E1")
+    c.cd(4)
+    ROOT.gPad.SetLeftMargin(0.15)
+    r_t = make_ratio(ht13, ht11, t_bins, tmin, tmax, f"{tlabel} (deg)")
+    r_t.Draw("E1")
 
     c.SaveAs(outfile)
 
@@ -122,20 +127,20 @@ make_canvas(
     tmin=5.0, tmax=35.0
 )
 
-# π⁺: p 0.5→3.5 GeV, θ 0→35°
+# π⁺: p 0.5→3.5 GeV, θ 0→40°
 make_canvas(
     "p1_p", "p1_theta",
     "#pi^{+}_{p}", "#theta_{#pi^{+}}",
     "c_pi_plus", "/u/home/thayward/p1_comparison.pdf",
     pmin=0.5, pmax=3.5,
-    tmin=0.0, tmax=60.0
+    tmin=0.0, tmax=40.0
 )
 
-# π⁻: p 0.5→3.5 GeV, θ 0→35°
+# π⁻: p 0.5→3.5 GeV, θ 0→40°
 make_canvas(
     "p2_p", "p2_theta",
     "#pi^{-}_{p}", "#theta_{#pi^{-}}",
     "c_pi_minus", "/u/home/thayward/p2_comparison.pdf",
     pmin=0.5, pmax=3.5,
-    tmin=0.0, tmax=35.0
+    tmin=0.0, tmax=40.0
 )
