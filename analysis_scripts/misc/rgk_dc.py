@@ -19,12 +19,12 @@ arrays11 = f11["PhysicsEvents"].arrays(["Mx2", "e_theta"], library="np")
 arrays13 = f13["PhysicsEvents"].arrays(["Mx2", "e_theta"], library="np")
 
 Mx2_11     = arrays11["Mx2"]
-e_theta_11 = arrays11["e_theta"] * (180.0 / np.pi)  # convert to degrees
+e_theta_11 = arrays11["e_theta"] * (180.0 / np.pi)  # radians -> degrees
 Mx2_13     = arrays13["Mx2"]
-e_theta_13 = arrays13["e_theta"] * (180.0 / np.pi)  # convert to degrees
+e_theta_13 = arrays13["e_theta"] * (180.0 / np.pi)  # radians -> degrees
 
-# Fixed e_theta bins: [5,15], [15,20], [20,25], [25,30] degrees
-edges_deg = [5, 15, 20, 25, 30]
+# Fixed e_theta bins: [5,14], [14,18], [18,22], [22,26], [26,30] degrees
+edges_deg = [5, 14, 18, 22, 26, 30]
 bins_deg  = list(zip(edges_deg[:-1], edges_deg[1:]))
 
 # Prepare lists to store fit results
@@ -38,8 +38,8 @@ sigma13_list = []
 fig, axes = plt.subplots(2, 3, figsize=(18, 12))
 axes_flat = axes.flatten()
 
-# Histogram settings
-bins_M = np.linspace(0.6, 1.2, 61)
+# Histogram settings: Mx2 from 0.7 to 1.1 in 40 bins
+bins_M = np.linspace(0.7, 1.1, 41)
 centers = 0.5 * (bins_M[:-1] + bins_M[1:])
 
 for i, (low_deg, high_deg) in enumerate(bins_deg):
@@ -57,8 +57,8 @@ for i, (low_deg, high_deg) in enumerate(bins_deg):
     counts13, _ = np.histogram(M13, bins=bins_M)
     errs11 = np.sqrt(counts11)
     errs13 = np.sqrt(counts13)
-    # Fit over full range 0.6–1.2
-    fit_mask = (centers >= 0.6) & (centers <= 1.2)
+    # Fit over full range 0.7–1.1
+    fit_mask = (centers >= 0.7) & (centers <= 1.1)
     # Initial guesses [A, mu, sigma, a, b, c]
     p0_11 = [counts11.max(), M_p2, 0.02, 0, 0, np.median(counts11)]
     p0_13 = [counts13.max(), M_p2, 0.02, 0, 0, np.median(counts13)]
@@ -90,9 +90,6 @@ for i, (low_deg, high_deg) in enumerate(bins_deg):
     ax.set_ylabel('counts')
     ax.set_title(f'$e_θ$ ∈ [{low_deg}°, {high_deg}°]')
     ax.legend()
-
-# Turn off the unused subplot (index 4)
-axes_flat[4].axis('off')
 
 # Final subplot (index 5): μ vs e_theta with σ as error bars
 ax = axes_flat[5]
