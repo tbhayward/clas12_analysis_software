@@ -42,10 +42,9 @@ new File(csvPath).eachLine { lineRaw ->
     return
   }
 
-  if (!inBlock) return             // skip outside blocks
-  if (line.startsWith("#") || line.isEmpty()) return
+  if (!inBlock || line.startsWith("#") || line.isEmpty()) return
 
-  // parse CSV fields
+  // parse the CSV
   def parts = line.split(",")
   int runnum    = parts[0].toInteger()
   String pol    = parts[4]
@@ -64,8 +63,8 @@ new File(csvPath).eachLine { lineRaw ->
   double beforeM   = qa.getAccumulatedChargeHL(-1)
 
   // loop over files for this run
-  qa.getQaTree().each { _, runTree ->
-    runTree.each { _, fileTree ->
+  qa.getQaTree().each { runKey, runTree ->
+    runTree.each { fileKey, fileTree ->
       int evnum = fileTree['evnumMin']
       if (qa.pass(runnum, evnum)) {
         qa.accumulateCharge()
