@@ -32,19 +32,24 @@ centers = 0.5 * (bins_M[:-1] + bins_M[1:])
 
 # Fit parameter bounds: A ≥ 0, μ ∈ [0.8, 0.95], σ ≥ 0, background free
 lower_bounds = [0.0, 0.8,  0.0, -np.inf, -np.inf, -np.inf]
-upper_bounds = [np.inf,0.95, np.inf, np.inf,  np.inf,  np.inf]
+upper_bounds = [np.inf,0.95, np.inf,  np.inf,  np.inf,  np.inf]
 
 # Load trees once
-f11 = uproot.open(file11)["PhysicsEvents"]
-f13 = uproot.open(file13)["PhysicsEvents"]
+tree11 = uproot.open(file11)["PhysicsEvents"]
+tree13 = uproot.open(file13)["PhysicsEvents"]
 
-# Preload constant branches
-Mx2_11_all = f11["Mx2"].array(library="np")
-Mx2_13_all = f13["Mx2"].array(library="np")
+# Preload arrays
+Mx2_11_all   = tree11["Mx2"].array(library="np")
+Mx2_13_all   = tree13["Mx2"].array(library="np")
+det1_11_all  = tree11["detector1"].array(library="np")
+det2_11_all  = tree11["detector2"].array(library="np")
+det1_13_all  = tree13["detector1"].array(library="np")
+det2_13_all  = tree13["detector2"].array(library="np")
 
 for branch, angle_label, outname in angle_vars:
-    theta11 = f11[branch].array(library="np") * (180.0/np.pi)
-    theta13 = f13[branch].array(library="np") * (180.0/np.pi)
+    # load theta and convert to degrees
+    theta11 = tree11[branch].array(library="np") * (180.0/np.pi)
+    theta13 = tree13[branch].array(library="np") * (180.0/np.pi)
 
     angle_means  = []
     mu11_list    = []
@@ -58,8 +63,15 @@ for branch, angle_label, outname in angle_vars:
     for i, (low_deg, high_deg) in enumerate(bins_deg):
         ax = axes_flat[i]
 
-        mask11 = (theta11 >= low_deg) & (theta11 < high_deg)
-        mask13 = (theta13 >= low_deg) & (theta13 < high_deg)
+        # selection: angle in range AND detectors both == 1
+        mask11 = (
+            (theta11 >= low_deg) & (theta11 < high_deg) &
+            (det1_11_all == 1) & (det2_11_all == 1)
+        )
+        mask13 = (
+            (theta13 >= low_deg) & (theta13 < high_deg) &
+            (det1_13_all == 1) & (det2_13_all == 1)
+        )
 
         M11 = Mx2_11_all[mask11]
         M13 = Mx2_13_all[mask13]
@@ -105,17 +117,19 @@ for branch, angle_label, outname in angle_vars:
         mu13_list.append(mu13)
         sigma13_list.append(sigma13)
 
-        ax.errorbar(centers, counts11, yerr=errs11,
-                    fmt='o', color='blue',
-                    label=f'cj11.2.0, μ={mu11:.3f}, σ={sigma11:.3f}')
-        ax.errorbar(centers+0.001, counts13, yerr=errs13,
-                    fmt='o', color='red',
-                    label=f'cj13.0.3, μ={mu13:.3f}, σ={sigma13:.3f}')
+        ax.errorbar(
+            centers, counts11, yerr=errs11,
+            fmt='o', color='blue',
+            label=f'cj11.2.0, μ={mu11:.3f}, σ={sigma11:.3f}'
+        )
+        ax.errorbar(
+            centers+0.001, counts13, yerr=errs13,
+            fmt='o', color='red',
+            label=f'cj13.0.3, μ={mu13:.3f}, σ={sigma13:.3f}'
+        )
 
-        ax.plot(centers, gauss_quad(centers, *popt11),
-                '--', color='blue')
-        ax.plot(centers, gauss_quad(centers, *popt13),
-                '--', color='red')
+        ax.plot(centers, gauss_quad(centers, *popt11), '--', color='blue')
+        ax.plot(centers, gauss_quad(centers, *popt13), '--', color='red')
 
         ax.set_xlabel(r'$M_{x}^{2}$ (GeV$^{2}$)')
         ax.set_ylabel('counts')
@@ -124,10 +138,14 @@ for branch, angle_label, outname in angle_vars:
 
     # Final μ vs angle plot
     ax = axes_flat[5]
-    ax.errorbar(angle_means, mu11_list, yerr=sigma11_list,
-                fmt='o', color='blue', label='cj11.2.0')
-    ax.errorbar(np.array(angle_means)+0.1, mu13_list, yerr=sigma13_list,
-                fmt='s', color='red', label='cj13.0.3')
+    ax.errorbar(
+        angle_means, mu11_list, yerr=sigma11_list,
+        fmt='o', color='blue', label='cj11.2.0'
+    )
+    ax.errorbar(
+        np.array(angle_means)+0.1, mu13_list, yerr=sigma13_list,
+        fmt='s', color='red', label='cj13.0.3'
+    )
     ax.axhline(M_p2, color='grey', linestyle='--', linewidth=1)
     ax.set_xlabel(f'{angle_label} (deg)')
     ax.set_ylabel(r'$\mu$ (GeV$^{2}$)')
