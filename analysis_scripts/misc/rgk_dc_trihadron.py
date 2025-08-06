@@ -25,6 +25,10 @@ bins_deg  = list(zip(edges_deg[:-1], edges_deg[1:]))
 bins_M  = np.linspace(0.7, 1.1, 41)
 centers = 0.5 * (bins_M[:-1] + bins_M[1:])
 
+# Fit parameter bounds: A>0, mu∈[0.8,1.0], sigma>0, quadratic coeffs free
+lower_bounds = [0,    0.8,  0,     -np.inf, -np.inf, -np.inf]
+upper_bounds = [np.inf,1.0, np.inf,  np.inf,  np.inf,  np.inf]
+
 # Open both ROOT files
 f11 = uproot.open("/volatile/clas12/thayward/rgk_dc_study/eppi+pi-/eppi+pi-_cj11.root")
 f13 = uproot.open("/volatile/clas12/thayward/rgk_dc_study/eppi+pi-/eppi+pi-_cj13.root")
@@ -41,7 +45,6 @@ e_theta_13 = arrays13["e_theta"] * (180.0 / np.pi)  # radians → degrees
 det1_13    = arrays13["detector1"]
 
 for det_val, (outname, title_suffix) in det_configs.items():
-    # Prepare lists for fit results
     angle_means  = []
     mu11_list    = []
     sigma11_list = []
@@ -54,42 +57,43 @@ for det_val, (outname, title_suffix) in det_configs.items():
     # First three panels: histograms in collapsed bins
     for i, (low_deg, high_deg) in enumerate(bins_deg):
         ax = axes_flat[i]
-        # Select events in e_theta bin & detector1
-        mask11 = ((e_theta_11 >= low_deg) & (e_theta_11 < high_deg) &
-                  (det1_11 == det_val))
-        mask13 = ((e_theta_13 >= low_deg) & (e_theta_13 < high_deg) &
-                  (det1_13 == det_val))
+        mask11 = ((e_theta_11 >= low_deg) & (e_theta_11 < high_deg) & (det1_11 == det_val))
+        mask13 = ((e_theta_13 >= low_deg) & (e_theta_13 < high_deg) & (det1_13 == det_val))
 
         M11 = Mx2_23_11[mask11]
         M13 = Mx2_23_13[mask13]
 
-        # Mean e_theta
-        angle_mean = np.mean(np.concatenate([e_theta_11[mask11],
-                                             e_theta_13[mask13]]))
+        angle_mean = np.mean(np.concatenate([e_theta_11[mask11], e_theta_13[mask13]]))
         angle_means.append(angle_mean)
 
-        # Histogram counts and errors
         counts11, _ = np.histogram(M11, bins=bins_M)
         counts13, _ = np.histogram(M13, bins=bins_M)
         errs11 = np.sqrt(counts11)
         errs13 = np.sqrt(counts13)
 
-        # Fit over full range 0.7–1.1
         fit_mask = (centers >= 0.7) & (centers <= 1.1)
         p0_11 = [counts11.max(), M_p2, 0.02, 0, 0, np.median(counts11)]
         p0_13 = [counts13.max(), M_p2, 0.02, 0, 0, np.median(counts13)]
+
         try:
-            popt11, _ = curve_fit(gauss_quad,
-                                  centers[fit_mask],
-                                  counts11[fit_mask],
-                                  p0=p0_11)
+            popt11, _ = curve_fit(
+                gauss_quad,
+                centers[fit_mask],
+                counts11[fit_mask],
+                p0=p0_11,
+                bounds=(lower_bounds, upper_bounds)
+            )
         except:
             popt11 = [np.nan]*6
+
         try:
-            popt13, _ = curve_fit(gauss_quad,
-                                  centers[fit_mask],
-                                  counts13[fit_mask],
-                                  p0=p0_13)
+            popt13, _ = curve_fit(
+                gauss_quad,
+                centers[fit_mask],
+                counts13[fit_mask],
+                p0=p0_13,
+                bounds=(lower_bounds, upper_bounds)
+            )
         except:
             popt13 = [np.nan]*6
 
@@ -100,20 +104,10 @@ for det_val, (outname, title_suffix) in det_configs.items():
         mu13_list.append(mu13)
         sigma13_list.append(sigma13)
 
-        # Plot data with error bars
-        ax.errorbar(centers,
-                    counts11,
-                    yerr=errs11,
-                    fmt='o',
-                    color='blue',
+        ax.errorbar(centers, counts11, yerr=errs11, fmt='o', color='blue',
                     label=f'cj 11.2.0, μ={mu11:.3f}, σ={sigma11:.3f}')
-        ax.errorbar(centers + 0.001,
-                    counts13,
-                    yerr=errs13,
-                    fmt='o',
-                    color='red',
+        ax.errorbar(centers + 0.001, counts13, yerr=errs13, fmt='o', color='red',
                     label=f'cj 13.0.3, μ={mu13:.3f}, σ={sigma13:.3f}')
-        # Overlay fits
         ax.plot(centers, gauss_quad(centers, *popt11), '--', color='blue')
         ax.plot(centers, gauss_quad(centers, *popt13), '--', color='red')
 
@@ -124,18 +118,8 @@ for det_val, (outname, title_suffix) in det_configs.items():
 
     # Fourth panel: μ vs e_theta
     ax = axes_flat[3]
-    ax.errorbar(angle_means,
-                mu11_list,
-                yerr=sigma11_list,
-                fmt='o',
-                color='blue',
-                label='cj 11.2.0')
-    ax.errorbar(np.array(angle_means) + 0.1,
-                mu13_list,
-                yerr=sigma13_list,
-                fmt='s',
-                color='red',
-                label='cj 13.0.3')
+    ax.errorbar(angle_means, mu11_list, yerr=sigma11_list, fmt='o', color='blue', label='cj 11.2.0')
+    ax.errorbar(np.array(angle_means) + 0.1, mu13_list, yerr=sigma13_list, fmt='s', color='red', label='cj 13.0.3')
     ax.axhline(M_p2, color='grey', linestyle='--', linewidth=1)
     ax.set_xlabel(r'$e_θ$ (deg)')
     ax.set_ylabel(r'$\mu$ (GeV$^{2}$)')
