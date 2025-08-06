@@ -99,98 +99,182 @@ double calculate_standard_deviation(const std::vector<double>& values) {
 
 double calculate_dilution_error(double nA, double nC, double nCH, double nMT, double nf,
                                 double xA, double xC, double xCH, double xHe, double xf) {
-    // First part of the expression (term1)
-    double term1 = 5438.81 * nA * nf * std::pow(xC, 2) * std::pow(xCH, 2)
-                   * std::pow(xf, 2) * std::pow(xHe, 2)
-                   * std::pow((-1.0 * nMT * xA + nA * xHe), 2)
-                   * std::pow((1.0 * nMT * xC * xCH
-                               - 1.19655 * nCH * xC * xHe
-                               + 0.196547 * nC * xCH * xHe), 2);
+    // // First part of the expression (term1)
+    // double term1 = 5438.81 * nA * nf * std::pow(xC, 2) * std::pow(xCH, 2)
+    //                * std::pow(xf, 2) * std::pow(xHe, 2)
+    //                * std::pow((-1.0 * nMT * xA + nA * xHe), 2)
+    //                * std::pow((1.0 * nMT * xC * xCH
+    //                            - 1.19655 * nCH * xC * xHe
+    //                            + 0.196547 * nC * xCH * xHe), 2);
 
-    // Second part of the expression (term2)
-    double term2 = 85044.9 * nA * nCH * std::pow(xC, 2) * std::pow(xCH, 2)
-                   * std::pow(xf, 2) * std::pow(xHe, 2)
-                   * std::pow((-1.0 * nMT * xA + nA * xHe), 2)
-                   * std::pow((1.0 * nMT * xC * xf
-                               - 0.302592 * nf * xC * xHe
-                               - 0.697408 * nC * xf * xHe), 2);
+    // // Second part of the expression (term2)
+    // double term2 = 85044.9 * nA * nCH * std::pow(xC, 2) * std::pow(xCH, 2)
+    //                * std::pow(xf, 2) * std::pow(xHe, 2)
+    //                * std::pow((-1.0 * nMT * xA + nA * xHe), 2)
+    //                * std::pow((1.0 * nMT * xC * xf
+    //                            - 0.302592 * nf * xC * xHe
+    //                            - 0.697408 * nC * xf * xHe), 2);
 
-    // Third part of the expression (term3)
-    double term3 = 47470.0 * nA * nC * std::pow(xC, 2) * std::pow(xCH, 2)
-                   * std::pow(xf, 2) * std::pow(xHe, 2)
-                   * std::pow((-1.0 * nMT * xA + nA * xHe), 2)
-                   * std::pow((1.0 * nMT * xCH * xf
-                               - 0.0665285 * nf * xCH * xHe
-                               - 0.933472 * nCH * xf * xHe), 2);
+    // // Third part of the expression (term3)
+    // double term3 = 47470.0 * nA * nC * std::pow(xC, 2) * std::pow(xCH, 2)
+    //                * std::pow(xf, 2) * std::pow(xHe, 2)
+    //                * std::pow((-1.0 * nMT * xA + nA * xHe), 2)
+    //                * std::pow((1.0 * nMT * xCH * xf
+    //                            - 0.0665285 * nf * xCH * xHe
+    //                            - 0.933472 * nCH * xf * xHe), 2);
 
-    // Fourth part of the expression (term4)
-    double term4 = 1371.83 * std::pow(nMT, 2) * std::pow(xA, 2)
-                   * std::pow((1.0 * nMT * xC * xCH * xf
-                               + (-1.97748 * nf * xC * xCH
-                                  + 6.62306 * nCH * xC * xf
-                                  - 5.64558 * nC * xCH * xf) * xHe), 2)
-                   * std::pow((1.0 * nMT * xC * xCH * xf
-                               + (0.0136533 * nf * xC * xCH
-                                  - 1.25054 * nCH * xC * xf
-                                  + 0.236883 * nC * xCH * xf) * xHe), 2);
+    // // Fourth part of the expression (term4)
+    // double term4 = 1371.83 * std::pow(nMT, 2) * std::pow(xA, 2)
+    //                * std::pow((1.0 * nMT * xC * xCH * xf
+    //                            + (-1.97748 * nf * xC * xCH
+    //                               + 6.62306 * nCH * xC * xf
+    //                               - 5.64558 * nC * xCH * xf) * xHe), 2)
+    //                * std::pow((1.0 * nMT * xC * xCH * xf
+    //                            + (0.0136533 * nf * xC * xCH
+    //                               - 1.25054 * nCH * xC * xf
+    //                               + 0.236883 * nC * xCH * xf) * xHe), 2);
 
-    // Fifth part of the expression (term5)
-    double term5_numerator_part1 = 73.2426 * std::pow(nMT, 2) * xA
-                                   * std::pow(xC, 2) * std::pow(xCH, 2)
-                                   * std::pow(xf, 2);
+    // // Fifth part of the expression (term5)
+    // double term5_numerator_part1 = 73.2426 * std::pow(nMT, 2) * xA
+    //                                * std::pow(xC, 2) * std::pow(xCH, 2)
+    //                                * std::pow(xf, 2);
 
-    double term5_numerator_part2 = nMT * xC * xCH * xf
-                                   * (2.0 * nf * xA * xC * xCH
-                                      + (-183.185 * nCH * xA * xC
-                                         + 34.6998 * nC * xA * xCH
-                                         + 1.42109e-14 * nA * xC * xCH) * xf);
+    // double term5_numerator_part2 = nMT * xC * xCH * xf
+    //                                * (2.0 * nf * xA * xC * xCH
+    //                                   + (-183.185 * nCH * xA * xC
+    //                                      + 34.6998 * nC * xA * xCH
+    //                                      + 1.42109e-14 * nA * xC * xCH) * xf);
 
-    double term5_numerator_part3 = (-1.97748 * std::pow(nf, 2) * xA
-                                   * std::pow(xC, 2) * std::pow(xCH, 2))
-                                   + nf * xC * xCH
-                                     * (187.746 * nCH * xA * xC
-                                        - 39.9547 * nC * xA * xCH
-                                        - 145.836 * nA * xC * xCH) * xf
-                                   + (-606.623 * std::pow(nCH, 2) * xA
-                                      * std::pow(xC, 2)
-                                      + nCH * xC
-                                        * (632.002 * nC * xA
-                                           + 576.683 * nA * xC) * xCH
-                                      + nC
-                                        * (-97.9502 * nC * xA
-                                           - 430.847 * nA * xC)
-                                        * std::pow(xCH, 2)) * std::pow(xf, 2);
+    // double term5_numerator_part3 = (-1.97748 * std::pow(nf, 2) * xA
+    //                                * std::pow(xC, 2) * std::pow(xCH, 2))
+    //                                + nf * xC * xCH
+    //                                  * (187.746 * nCH * xA * xC
+    //                                     - 39.9547 * nC * xA * xCH
+    //                                     - 145.836 * nA * xC * xCH) * xf
+    //                                + (-606.623 * std::pow(nCH, 2) * xA
+    //                                   * std::pow(xC, 2)
+    //                                   + nCH * xC
+    //                                     * (632.002 * nC * xA
+    //                                        + 576.683 * nA * xC) * xCH
+    //                                   + nC
+    //                                     * (-97.9502 * nC * xA
+    //                                        - 430.847 * nA * xC)
+    //                                     * std::pow(xCH, 2)) * std::pow(xf, 2);
 
-    double term5_numerator = term5_numerator_part1
-                             + term5_numerator_part2 * xHe
-                             + term5_numerator_part3 * std::pow(xHe, 2);
+    // double term5_numerator = term5_numerator_part1
+    //                          + term5_numerator_part2 * xHe
+    //                          + term5_numerator_part3 * std::pow(xHe, 2);
 
-    double term5 = 0.255725 * nA * nMT * std::pow(term5_numerator, 2);
+    // double term5 = 0.255725 * nA * nMT * std::pow(term5_numerator, 2);
 
-    double denominator = std::pow(nA, 3) * std::pow(xHe, 2)
-                         * std::pow((73.2426 * nMT * xC * xCH * xf
-                                     + 1.0 * nf * xC * xCH * xHe
-                                     - 91.5925 * nCH * xC * xf * xHe
-                                     + 17.3499 * nC * xCH * xf * xHe), 4);
+    // double denominator = std::pow(nA, 3) * std::pow(xHe, 2)
+    //                      * std::pow((73.2426 * nMT * xC * xCH * xf
+    //                                  + 1.0 * nf * xC * xCH * xHe
+    //                                  - 91.5925 * nCH * xC * xf * xHe
+    //                                  + 17.3499 * nC * xCH * xf * xHe), 4);
 
-    double sigma_df = 27.3473
-                      * std::sqrt((term1 + term2 + term3 + term4 + term5) / denominator);
-    return sigma_df;
+    // double sigma_df = 27.3473
+    //                   * std::sqrt((term1 + term2 + term3 + term4 + term5) / denominator);
+    // return sigma_df;
+    // pre thermal contraction calculations
+
+    // Precompute common factors
+    double commonFactor = -1.0 * nMT * xA + nA * xHe;
+    double xC2 = std::pow(xC, 2);
+    double xCH2 = std::pow(xCH, 2);
+    double xf2 = std::pow(xf, 2);
+    double xHe2 = std::pow(xHe, 2);
+
+    // Term 1: Remove erroneous 12.3729 factor
+    double factor1b = nMT * xC * xCH - 1.32754 * nCH * xC * xHe + 0.327539 * nC * xCH * xHe;
+    double term1 = 1246.13 * nA * nf * xC2 * xCH2 * xf2 * xHe2 * 
+                   std::pow(commonFactor, 2) * std::pow(factor1b, 2);
+
+    // Term 2 (unchanged)
+    double factor2b = nMT * xC * xf - 0.31065 * nf * xC * xHe - 0.68935 * nC * xf * xHe;
+    double term2 = 22757.0 * nA * nCH * xC2 * xCH2 * xf2 * xHe2 * 
+                   std::pow(commonFactor, 2) * std::pow(factor2b, 2);
+
+    // Term 3 (unchanged)
+    double factor3b = nMT * xCH * xf - 0.10006 * nf * xCH * xHe - 0.89994 * nCH * xf * xHe;
+    double term3 = 13352.7 * nA * nC * xC2 * xCH2 * xf2 * xHe2 * 
+                   std::pow(commonFactor, 2) * std::pow(factor3b, 2);
+
+    // Term 4 (unchanged)
+    double factor4a = nMT * xC * xCH * xf + 
+                     xHe * (-1.72606 * nf * xC * xCH + 6.04866 * nCH * xC * xf - 5.3226 * nC * xCH * xf);
+    double factor4b = nMT * xC * xCH * xf + 
+                     xHe * (-0.0278707 * nf * xC * xCH - 1.20844 * nCH * xC * xf + 0.236306 * nC * xCH * xf);
+    double term4 = 432.106 * std::pow(nMT, 2) * std::pow(xA, 2) * 
+                   std::pow(factor4a, 2) * std::pow(factor4b, 2);
+
+    // Term 5 (unchanged)
+    double inner5 = 
+        35.88 * std::pow(nMT, 2) * xA * xC2 * xCH2 * xf2 +
+        nMT * xA * xC * xCH * xf * xHe * 
+            (-2.0 * nf * xC * xCH - 86.7173 * nCH * xC * xf + 16.9573 * nC * xCH * xf) +
+        xHe2 * (
+            1.72606 * std::pow(nf, 2) * xA * xC2 * xCH2 +
+            nf * xC * xCH * xf * 
+                (68.7911 * nCH * xA * xC - 9.31212 * nC * xA * xCH - 60.9311 * nA * xC * xCH) +
+            xf2 * (
+                -262.262 * std::pow(nCH, 2) * xA * xC2 +
+                nCH * xC * xCH * (282.065 * nC * xA + 260.384 * nA * xC) +
+                nC * xCH2 * (-45.1285 * nC * xA - 199.453 * nA * xC)
+            )
+        );
+    double term5 = 0.33565 * nA * nMT * std::pow(inner5, 2);
+
+    // Combine numerator terms
+    double numerator = term1 + term2 + term3 + term4 + term5;
+
+    // Compute denominator polynomial
+    double poly = 
+        35.88 * nMT * xC * xCH * xf -
+        1.0 * nf * xC * xCH * xHe -
+        43.3586 * nCH * xC * xf * xHe +
+        8.47866 * nC * xCH * xf * xHe;
+
+    // Handle potential division by zero
+    if (std::abs(poly) < 1e-10) {
+        return std::numeric_limits<double>::quiet_NaN();
+    }
+
+    // Compute full denominator
+    double denominator = std::pow(nA, 3) * xHe2 * std::pow(poly, 4);
+
+    // Apply global multiplicative factor 12.3729 AFTER sqrt
+    double result = std::sqrt(numerator / denominator);
+    return 12.3729 * result;
+}
 }
 
 std::pair<double, double> calculate_dilution_and_error(
     double nA, double nC, double nCH, double nMT, double nf,
     double xA, double xC, double xCH, double xHe, double xf) {
-    double dilution = (27.3473 * (-1.0 * nMT * xA + nA * xHe)
-                       * (-0.505693 * nMT * xC * xCH * xf
+    // double dilution = (27.3473 * (-1.0 * nMT * xA + nA * xHe)
+    //                    * (-0.505693 * nMT * xC * xCH * xf
+    //                       + (1.0 * nf * xC * xCH
+    //                          - 3.34924 * nCH * xC * xf
+    //                          + 2.85493 * nC * xCH * xf) * xHe))
+    //                   / (nA * xHe
+    //                      * (73.2426 * nMT * xC * xCH * xf
+    //                         + 1.0 * nf * xC * xCH * xHe
+    //                         - 91.5925 * nCH * xC * xf * xHe
+    //                         + 17.3499 * nC * xCH * xf * xHe));
+    // the above is the calculation for the old numbers before the thermal contraction was 
+    // considered
+
+    double dilution = (12.3729 * (-1.0 * nMT * xA + nA * xHe)
+                       * (-0.579353 * nMT * xC * xCH * xf
                           + (1.0 * nf * xC * xCH
-                             - 3.34924 * nCH * xC * xf
-                             + 2.85493 * nC * xCH * xf) * xHe))
+                             - 3.50431 * nCH * xC * xf
+                             + 3.08366 * nC * xCH * xf) * xHe))
                       / (nA * xHe
-                         * (73.2426 * nMT * xC * xCH * xf
-                            + 1.0 * nf * xC * xCH * xHe
-                            - 91.5925 * nCH * xC * xf * xHe
-                            + 17.3499 * nC * xCH * xf * xHe));
+                         * (35.88 * nMT * xC * xCH * xf
+                            - 1.0 * nf * xC * xCH * xHe
+                            - 43.3586 * nCH * xC * xf * xHe
+                            + 8.47866 * nC * xCH * xf * xHe));
 
     // double packing_fraction = (0.699832)*(nA/xA - nMT/xHe)
     //     / (1.25055*nCH/xCH - 0.23688*nC/xC - 0.013668*nf/xf - nMT/xHe);
