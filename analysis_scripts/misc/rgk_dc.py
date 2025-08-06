@@ -27,7 +27,7 @@ edges_e  = [5, 14, 18, 22, 26, 30]
 edges_pi = [5, 15, 21, 27, 33, 40]
 
 # Mx² histogram: 0.80–1.10 with 40 bins → 41 edges
-bins_M  = np.linspace(0.80, 1.10, 41)
+bins_M  = np.linspace(0.80, 1.15, 41)
 centers = 0.5 * (bins_M[:-1] + bins_M[1:])
 
 # Fit bounds: enforce 0.8 ≤ μ ≤ 0.95
@@ -118,7 +118,7 @@ for branch, angle_label, outname in angle_vars:
         ax.plot(centers, gauss_quad(centers, *popt11), '--', color='blue')
         ax.plot(centers, gauss_quad(centers, *popt13), '--', color='red')
 
-        ax.set_xlim(0.80, 1.10)
+        ax.set_xlim(0.80, 1.15)
         ax.set_ylim(0, np.max([c11.max(), c13.max()])*1.2)
         ax.set_xlabel(r'$M_{x}^{2}$ (GeV$^{2}$)')
         ax.set_ylabel('counts')
