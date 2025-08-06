@@ -107,42 +107,55 @@ c1.cd(4)
 draw_ratio(h_e2,h_e1,70,5.0,35.0,"e_{θ} (deg)").Draw("E1")
 c1.SaveAs("/u/home/thayward/ep_comparison.pdf")
 
-# Canvas 2: pi+
-c2 = ROOT.TCanvas("c2","#pi+","c2",1200,1000); c2.Divide(2,2)
+# --- Canvas 2: pi+ ---
+c2 = ROOT.TCanvas("c2", "#pi+ comparison", 1200, 1000)
+c2.Divide(2, 2)
+
 c2.cd(1); ROOT.gPad.SetLeftMargin(0.15)
 h_p1p1.Draw("HIST"); h_p1p2.Draw("HIST SAME")
 h_p1p1.GetYaxis().SetRangeUser(0,1.2*max_p1p)
 leg = ROOT.TLegend(0.6,0.65,0.88,0.88)
 leg.AddEntry(h_p1p1,f"cj11.2.0 (N={tot_p1p1})","l")
 leg.AddEntry(h_p1p2,f"cj13.0.3 (N={tot_p1p2})","l"); leg.Draw()
+
 c2.cd(2)
 draw_ratio(h_p1p2,h_p1p1,70,1.0,4.5,"p1_{p} (GeV)").Draw("E1")
+
 c2.cd(3); ROOT.gPad.SetLeftMargin(0.15)
 h_p11.Draw("HIST"); h_p12.Draw("HIST SAME")
 h_p11.GetYaxis().SetRangeUser(0,1.2*max_p11)
 leg = ROOT.TLegend(0.6,0.65,0.88,0.88)
 leg.AddEntry(h_p11,f"cj11.2.0 (N={tot_p11})","l")
 leg.AddEntry(h_p12,f"cj13.0.3 (N={tot_p12})","l"); leg.Draw()
+
 c2.cd(4)
 draw_ratio(h_p12,h_p11,70,5.0,35.0,"#theta_{π+} (deg)").Draw("E1")
+
 c2.SaveAs("/u/home/thayward/p1_comparison.pdf")
 
-# Canvas 3: pi-
-c3 = ROOT.TCanvas("c3","#pi-","c3",1200,1000); c3.Divide(2,2)
+
+# --- Canvas 3: pi- ---
+c3 = ROOT.TCanvas("c3", "#pi- comparison", 1200, 1000)
+c3.Divide(2, 2)
+
 c3.cd(1); ROOT.gPad.SetLeftMargin(0.15)
 h_p2p1.Draw("HIST"); h_p2p2.Draw("HIST SAME")
 h_p2p1.GetYaxis().SetRangeUser(0,1.2*max_p2p)
 leg = ROOT.TLegend(0.6,0.65,0.88,0.88)
 leg.AddEntry(h_p2p1,f"cj11.2.0 (N={tot_p2p1})","l")
 leg.AddEntry(h_p2p2,f"cj13.0.3 (N={tot_p2p2})","l"); leg.Draw()
+
 c3.cd(2)
 draw_ratio(h_p2p2,h_p2p1,70,1.0,4.5,"p2_{p} (GeV)").Draw("E1")
+
 c3.cd(3); ROOT.gPad.SetLeftMargin(0.15)
 h_p21.Draw("HIST"); h_p22.Draw("HIST SAME")
 h_p21.GetYaxis().SetRangeUser(0,1.2*max_p21)
 leg = ROOT.TLegend(0.6,0.65,0.88,0.88)
 leg.AddEntry(h_p21,f"cj11.2.0 (N={tot_p21})","l")
 leg.AddEntry(h_p22,f"cj13.0.3 (N={tot_p22})","l"); leg.Draw()
+
 c3.cd(4)
 draw_ratio(h_p22,h_p21,70,5.0,35.0,"#theta_{π-} (deg)").Draw("E1")
+
 c3.SaveAs("/u/home/thayward/p2_comparison.pdf")
