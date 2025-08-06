@@ -17,8 +17,8 @@ det_configs = {
     2: ("trihadron_cd.pdf", "#pi in FD, p in CD")
 }
 
-# e_theta bins: [5,14], [14,18], [18,22], [22,26], [26,30] degrees
-edges_deg = [5, 14, 18, 22, 26, 30]
+# e_theta bins: [5,12], [12,16], [16,20], [20,24], [24,32] degrees
+edges_deg = [5, 12, 16, 20, 24, 32]
 bins_deg  = list(zip(edges_deg[:-1], edges_deg[1:]))
 
 # Histogram settings: Mx2_23 from 0.7 to 1.1 in 40 bins
