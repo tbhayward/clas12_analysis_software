@@ -49,18 +49,23 @@ def make_canvas(p_branch, th_branch, plabel, tlabel,
     # Use 50 bins everywhere
     p_bins = 50
     t_bins = 50
+    sel = "detector1==1 && detector2==1"
 
     # Create histograms
-    hp11 = ROOT.TH1F("hp11",  f"{plabel}; {plabel} (GeV); counts", p_bins, pmin, pmax)
-    hp13 = ROOT.TH1F("hp13",  f"{plabel}; {plabel} (GeV); counts", p_bins, pmin, pmax)
-    ht11 = ROOT.TH1F("ht11",  f"{tlabel}; {tlabel} (deg); counts", t_bins, tmin, tmax)
-    ht13 = ROOT.TH1F("ht13",  f"{tlabel}; {tlabel} (deg); counts", t_bins, tmin, tmax)
+    hp11 = ROOT.TH1F("hp11",  f"{plabel}; {plabel} (GeV); counts",
+                      p_bins, pmin, pmax)
+    hp13 = ROOT.TH1F("hp13",  f"{plabel}; {plabel} (GeV); counts",
+                      p_bins, pmin, pmax)
+    ht11 = ROOT.TH1F("ht11",  f"{tlabel}; {tlabel} (deg); counts",
+                      t_bins, tmin, tmax)
+    ht13 = ROOT.TH1F("ht13",  f"{tlabel}; {tlabel} (deg); counts",
+                      t_bins, tmin, tmax)
 
-    # Fill
-    t11.Draw(f"{p_branch} >> hp11")
-    t13.Draw(f"{p_branch} >> hp13")
-    t11.Draw(f"{th_branch}*180./TMath::Pi() >> ht11")
-    t13.Draw(f"{th_branch}*180./TMath::Pi() >> ht13")
+    # Fill with selection on detector1 AND detector2
+    t11.Draw(f"{p_branch} >> hp11", sel)
+    t13.Draw(f"{p_branch} >> hp13", sel)
+    t11.Draw(f"{th_branch}*180./TMath::Pi() >> ht11", sel)
+    t13.Draw(f"{th_branch}*180./TMath::Pi() >> ht13", sel)
 
     # Style
     for h in (hp11, ht11):
@@ -89,8 +94,8 @@ def make_canvas(p_branch, th_branch, plabel, tlabel,
 
     # Pad 2: momentum ratio
     c.cd(2); ROOT.gPad.SetLeftMargin(0.15)
-    r_p = make_ratio(hp13, hp11, p_bins, pmin, pmax, f"{plabel} (GeV)")
-    r_p.Draw("E1")
+    make_ratio(hp13, hp11, p_bins, pmin, pmax,
+               f"{plabel} (GeV)").Draw("E1")
 
     # Pad 3: theta histograms
     c.cd(3); ROOT.gPad.SetLeftMargin(0.15)
@@ -103,8 +108,8 @@ def make_canvas(p_branch, th_branch, plabel, tlabel,
 
     # Pad 4: theta ratio
     c.cd(4); ROOT.gPad.SetLeftMargin(0.15)
-    r_t = make_ratio(ht13, ht11, t_bins, tmin, tmax, f"{tlabel} (deg)")
-    r_t.Draw("E1")
+    make_ratio(ht13, ht11, t_bins, tmin, tmax,
+               f"{tlabel} (deg)").Draw("E1")
 
     c.SaveAs(outfile)
 
@@ -117,20 +122,20 @@ make_canvas(
     tmin=5.0, tmax=35.0
 )
 
-# π⁺: p 0.5→3.5 GeV, θ 0→70°
+# π⁺: p 0.5→3.5 GeV, θ 0→35°
 make_canvas(
     "p1_p", "p1_theta",
     "#pi^{+}_{p}", "#theta_{#pi^{+}}",
     "c_pi_plus", "/u/home/thayward/p1_comparison.pdf",
     pmin=0.5, pmax=3.5,
-    tmin=0.0, tmax=70.0
+    tmin=0.0, tmax=35.0
 )
 
-# π⁻: p 0.5→3.5 GeV, θ 0→70°
+# π⁻: p 0.5→3.5 GeV, θ 0→35°
 make_canvas(
     "p2_p", "p2_theta",
     "#pi^{-}_{p}", "#theta_{#pi^{-}}",
     "c_pi_minus", "/u/home/thayward/p2_comparison.pdf",
     pmin=0.5, pmax=3.5,
-    tmin=0.0, tmax=70.0
+    tmin=0.0, tmax=35.0
 )
