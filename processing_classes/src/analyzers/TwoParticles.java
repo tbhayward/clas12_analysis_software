@@ -121,6 +121,14 @@ public class TwoParticles {
         boolean e_fiducial_check = electron_pcal_fiducial && electron_fd_fiducial;
 
         int p_rec_index = getIndex(rec_Bank, pPID, pIndex);
+        if (generic_tests.forward_tagger_cut(p_rec_index, rec_Bank)) {
+            detector = 0; // Forward Tagger
+        } else if (generic_tests.forward_detector_cut(p_rec_index, rec_Bank)) {
+            detector = 1; // Forward Detector
+        } else if (generic_tests.central_detector_cut(p_rec_index, rec_Bank)) {
+            detector = 2; // Central Detector
+        }
+        
         boolean passesForwardDetector_1 = generic_tests.forward_detector_cut(p_rec_index, rec_Bank)
                 ? fiducial_cuts.dc_fiducial_cut(p_rec_index, rec_Bank, traj_Bank, configBank) : true;
         boolean passesCentralDetector_1 = generic_tests.central_detector_cut(p_rec_index, rec_Bank)
@@ -129,26 +137,22 @@ public class TwoParticles {
                 ? fiducial_cuts.forward_tagger_fiducial_cut(p_rec_index, rec_Bank, cal_Bank) : true;
         boolean p_fiducial_check = passesForwardTagger_1 && passesForwardDetector_1 && passesCentralDetector_1;
 
-        if (generic_tests.forward_tagger_cut(p_rec_index, rec_Bank)) {
-            detector = 0; // Forward Tagger
-        } else if (generic_tests.forward_detector_cut(p_rec_index, rec_Bank)) {
-            detector = 1; // Forward Detector
-        } else if (generic_tests.central_detector_cut(p_rec_index, rec_Bank)) {
-            detector = 2; // Central Detector
-        }
-
+        fiducial_status = 0;
+        if(electron_pcal_fiducial) fiducial_status+=1;
+        if(electron_fd_fiducial) fiducial_status+=10;
+        if(p_fiducial_check) fiducial_status+=100;
         // Check if all checks pass
-        if (e_fiducial_check && p_fiducial_check) {
-            fiducial_status = 2; // Set to 2 if all checks pass
-        } else {
-            // Now check for specific cases where only one is false
-            if (!e_fiducial_check && p_fiducial_check) {
-                fiducial_status = 0; // Set to 0 if only electron check is false
-            } else if (e_fiducial_check && !p_fiducial_check) {
-                fiducial_status = 1; // Set to 1 if only p1 check is false
-            }
-            // If more than one is false, fiducial_status remains -1 (default)
-        }
+//        if (e_fiducial_check && p_fiducial_check) {
+//            fiducial_status = 2; // Set to 2 if all checks pass
+//        } else {
+//            // Now check for specific cases where only one is false
+//            if (!e_fiducial_check && p_fiducial_check) {
+//                fiducial_status = 0; // Set to 0 if only electron check is false
+//            } else if (e_fiducial_check && !p_fiducial_check) {
+//                fiducial_status = 1; // Set to 1 if only p1 check is false
+//            }
+//            // If more than one is false, fiducial_status remains -1 (default)
+//        }
 
         // Set up Lorentz vectors
         // beam electron
