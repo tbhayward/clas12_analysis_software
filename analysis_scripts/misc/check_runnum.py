@@ -2,6 +2,7 @@
 import sys
 import uproot
 import numpy as np
+from collections import Counter
 
 CSV_PATH = "/u/home/thayward/clas12_analysis_software/analysis_scripts/asymmetry_extraction/imports/clas12_run_info.csv"
 
@@ -29,17 +30,17 @@ def main():
 
     with uproot.open(rootfile) as f:
         tree = f["PhysicsEvents"]
-        # <-- use `arrays` and pull out the "runnum" array
         data = tree.arrays(["runnum"], library="np")
         runnums = data["runnum"]
 
-    unique_runnums = np.unique(runnums)
-    missing = [int(r) for r in unique_runnums if int(r) not in csv_runnums]
+    # count how many entries of each runnum
+    counts = Counter(int(r) for r in runnums)
+    missing = [r for r in counts if r not in csv_runnums]
 
     if missing:
-        print("The following runnum values appear in the ROOT tree but are NOT in the CSV:")
-        for r in missing:
-            print(r)
+        print("Run numbers in ROOT tree not found in CSV:")
+        for r in sorted(missing):
+            print(f"  Run {r}: {counts[r]} entries")
         sys.exit(1)
     else:
         print("All runnum entries in the ROOT file are present in the CSV.")
