@@ -22,8 +22,8 @@ def main():
 
     # Plot
     plt.figure(figsize=(8, 6))
-    plt.hist(t_base,   bins=bins, histtype='step', label='base')
-    plt.hist(t_recalc, bins=bins, histtype='step', label='recalculated')
+    plt.hist(t_base,   bins=bins, histtype='step', label='base', color='blue')
+    plt.hist(t_recalc, bins=bins, histtype='step', label='recalculated', color='red')
 
     plt.xlabel(r'$t$')
     plt.ylabel('Counts')
