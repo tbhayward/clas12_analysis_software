@@ -16,7 +16,6 @@ def load_csv_runnums(path):
             try:
                 runnums.add(int(parts[0]))
             except ValueError:
-                # skip lines that don't have an integer in column 0
                 pass
     return runnums
 
@@ -26,13 +25,13 @@ def main():
         sys.exit(1)
 
     rootfile = sys.argv[1]
-    # load allowed runnums from CSV
     csv_runnums = load_csv_runnums(CSV_PATH)
 
-    # open the ROOT file and grab the runnum branch
     with uproot.open(rootfile) as f:
         tree = f["PhysicsEvents"]
-        runnums = tree.array("runnum", library="np")
+        # <-- use `arrays` and pull out the "runnum" array
+        data = tree.arrays(["runnum"], library="np")
+        runnums = data["runnum"]
 
     unique_runnums = np.unique(runnums)
     missing = [int(r) for r in unique_runnums if int(r) not in csv_runnums]
