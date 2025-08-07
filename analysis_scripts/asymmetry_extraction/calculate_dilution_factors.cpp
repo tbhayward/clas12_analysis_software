@@ -252,29 +252,29 @@ double calculate_dilution_error(double nA, double nC, double nCH, double nMT, do
 std::pair<double, double> calculate_dilution_and_error(
     double nA, double nC, double nCH, double nMT, double nf,
     double xA, double xC, double xCH, double xHe, double xf) {
-    double dilution = (27.3473 * (-1.0 * nMT * xA + nA * xHe)
-                       * (-0.505693 * nMT * xC * xCH * xf
-                          + (1.0 * nf * xC * xCH
-                             - 3.34924 * nCH * xC * xf
-                             + 2.85493 * nC * xCH * xf) * xHe))
-                      / (nA * xHe
-                         * (73.2426 * nMT * xC * xCH * xf
-                            + 1.0 * nf * xC * xCH * xHe
-                            - 91.5925 * nCH * xC * xf * xHe
-                            + 17.3499 * nC * xCH * xf * xHe));
+    // double dilution = (27.3473 * (-1.0 * nMT * xA + nA * xHe)
+    //                    * (-0.505693 * nMT * xC * xCH * xf
+    //                       + (1.0 * nf * xC * xCH
+    //                          - 3.34924 * nCH * xC * xf
+    //                          + 2.85493 * nC * xCH * xf) * xHe))
+    //                   / (nA * xHe
+    //                      * (73.2426 * nMT * xC * xCH * xf
+    //                         + 1.0 * nf * xC * xCH * xHe
+    //                         - 91.5925 * nCH * xC * xf * xHe
+    //                         + 17.3499 * nC * xCH * xf * xHe));
     // the above is the calculation for the old numbers before the thermal contraction was 
     // considered
 
-    // double dilution = (12.3729 * (-1.0 * nMT * xA + nA * xHe)
-    //                    * (-0.579353 * nMT * xC * xCH * xf
-    //                       + (1.0 * nf * xC * xCH
-    //                          - 3.50431 * nCH * xC * xf
-    //                          + 3.08366 * nC * xCH * xf) * xHe))
-    //                   / (nA * xHe
-    //                      * (35.88 * nMT * xC * xCH * xf
-    //                         - 1.0 * nf * xC * xCH * xHe
-    //                         - 43.3586 * nCH * xC * xf * xHe
-    //                         + 8.47866 * nC * xCH * xf * xHe));
+    double dilution = (12.3729 * (-1.0 * nMT * xA + nA * xHe)
+                       * (-0.579353 * nMT * xC * xCH * xf
+                          + (1.0 * nf * xC * xCH
+                             - 3.50431 * nCH * xC * xf
+                             + 3.08366 * nC * xCH * xf) * xHe))
+                      / (nA * xHe
+                         * (35.88 * nMT * xC * xCH * xf
+                            - 1.0 * nf * xC * xCH * xHe
+                            - 43.3586 * nCH * xC * xf * xHe
+                            + 8.47866 * nC * xCH * xf * xHe));
 
     // double packing_fraction = (0.699832)*(nA/xA - nMT/xHe)
     //     / (1.25055*nCH/xCH - 0.23688*nC/xC - 0.013668*nf/xf - nMT/xHe);
