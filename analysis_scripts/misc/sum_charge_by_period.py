@@ -38,7 +38,8 @@ def parse_csv(path):
             except (IndexError, ValueError):
                 continue
 
-            data[current_period][current_species] += (pos + neg)
+            # data[current_period][current_species] += (pos + neg)
+            data[current_period][current_species] += (parts[1])
 
     return data, periods, species_list
 
