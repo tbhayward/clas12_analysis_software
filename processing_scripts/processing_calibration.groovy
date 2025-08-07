@@ -248,6 +248,8 @@ class CalibrationScript {
 	  		16194, 16089, 16185, 16308, 16184, 16307, 16309, // RGC Su22 He/ET
 	  		16872, 16975, 									 // RGC Fa22 He/ET
 	  		17763, 17764, 17765, 17766, 17767, 17768		 // RGC Sp23 He/ET
+	  		17179, 17180, 17181, 17182, 17183, 17188, 17189, // RICH off/partially down
+	  		17252
 		].each{ run -> qa.allowMiscBit(run) }
 
         // create a StringBuilder for accumulating lines
@@ -292,7 +294,7 @@ class CalibrationScript {
                 // do not use the qa if it is MC (runnum = 11)
                 // do not use the qa if the run is from RGC (until QA is produced!)
                 // boolean process_event = filter.isValid(research_Event)
-                boolean process_event = (config_run == 11 || config_run < 5020 || config_run > 16772 ||
+                boolean process_event = (config_run == 11 || config_run < 5020 || 
 		    		qa.pass(config_run, config_event));
 		    	if (config_run > 17768) process_event == false; // outbending RGC Sp23
 

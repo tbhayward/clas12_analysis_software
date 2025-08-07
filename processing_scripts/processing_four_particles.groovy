@@ -143,6 +143,8 @@ public static void main(String[] args) {
   		16194, 16089, 16185, 16308, 16184, 16307, 16309, // RGC Su22 He/ET
   		16872, 16975, 									 // RGC Fa22 He/ET
   		17763, 17764, 17765, 17766, 17767, 17768		 // RGC Sp23 He/ET
+  		17179, 17180, 17181, 17182, 17183, 17188, 17189, // RICH off/partially down
+  		17252
 	].each{ run -> qa.allowMiscBit(run) }
 
 	// create a StringBuilder for accumulating lines
@@ -182,7 +184,7 @@ public static void main(String[] args) {
 		    // 	(runnum == 11 || runnum == 16194 || runnum == 16089 || runnum == 16185 ||
 	    	// 	runnum == 16308 || runnum == 16184 || runnum == 16307 || runnum == 16309 ||
 	    	// 	qa.OkForAsymmetry(runnum, evnum));
-	    	boolean process_event = filter.isValid(research_Event) && (runnum == 11 || runnum < 5020 || runnum > 16772 ||
+	    	boolean process_event = filter.isValid(research_Event) && (runnum == 11 || runnum < 5020 || 
 	    	qa.pass(runnum, evnum));
 	    	if (runnum > 17768) process_event = false; // outbending RGC Sp23
 	    	if (runnum == 17331 || runnum == 16987 || runnum == 17079 || runnum == 17190 || runnum == 17639) process_event = false; // low live time
