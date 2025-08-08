@@ -17,7 +17,7 @@ bool InclusiveKinematicCuts::applyCuts(int currentFits, bool isMC) {
     string property = binNames[currentFits];
 
 
-    if (*fiducial_status != 111) return false; // fiducial cuts
+    if (*fiducial_status != 1) return false; // fiducial cuts
 
     if (property == "eX") {
         goodEvent = *Q2 > 1 && *W > 2 && *y < 0.75;
