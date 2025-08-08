@@ -11,33 +11,44 @@ def main():
     tree_name = "PhysicsEvents"
     branch = "Mh"
 
-    # Histogram settings
-    xmin, xmax = 0.2, 1.4
-    nbins = 100
-    bins = np.linspace(xmin, xmax, nbins + 1)
-
     # Load arrays
     with uproot.open(file_cj11) as f1:
         mh_cj11 = f1[tree_name].arrays(branch, library="np")[branch]
-    #endif
     with uproot.open(file_cj13) as f2:
         mh_cj13 = f2[tree_name].arrays(branch, library="np")[branch]
-    #endif
 
     # Optional: filter out NaNs/Infs
     mh_cj11 = mh_cj11[np.isfinite(mh_cj11)]
     mh_cj13 = mh_cj13[np.isfinite(mh_cj13)]
 
-    # Plot
-    plt.figure(figsize=(8, 6))
-    plt.hist(mh_cj11, bins=bins, histtype="step", label="cj11", color="blue", linewidth=1.5, range=(xmin, xmax))
-    plt.hist(mh_cj13, bins=bins, histtype="step", label="cj13", color="red", linewidth=1.5, range=(xmin, xmax))
+    # Create figure with 1x2 subplots
+    fig, axes = plt.subplots(1, 2, figsize=(12, 5))
 
-    plt.xlim(xmin, xmax)
-    plt.xlabel(r"$M_{h}$ (GeV)")
-    plt.ylabel("Counts")
-    plt.legend()
+    # ---------- Left Panel: Full range ----------
+    xmin_full, xmax_full = 0.2, 1.4
+    nbins_full = 200  # doubled from previous 100
+    bins_full = np.linspace(xmin_full, xmax_full, nbins_full + 1)
 
+    axes[0].hist(mh_cj11, bins=bins_full, histtype="step", label="cj11", color="blue", linewidth=1.5)
+    axes[0].hist(mh_cj13, bins=bins_full, histtype="step", label="cj13", color="red", linewidth=1.5)
+    axes[0].set_xlim(xmin_full, xmax_full)
+    axes[0].set_xlabel(r"$M_{h}$ (GeV)")
+    axes[0].set_ylabel("Counts")
+    axes[0].legend()
+
+    # ---------- Right Panel: Zoomed range ----------
+    xmin_zoom, xmax_zoom = 0.3, 0.6
+    nbins_zoom = 60  # finer binning for zoom
+    bins_zoom = np.linspace(xmin_zoom, xmax_zoom, nbins_zoom + 1)
+
+    axes[1].hist(mh_cj11, bins=bins_zoom, histtype="step", label="cj11", color="blue", linewidth=1.5)
+    axes[1].hist(mh_cj13, bins=bins_zoom, histtype="step", label="cj13", color="red", linewidth=1.5)
+    axes[1].set_xlim(xmin_zoom, xmax_zoom)
+    axes[1].set_xlabel(r"$M_{h}$ (GeV)")
+    axes[1].set_ylabel("Counts")
+    axes[1].legend()
+
+    # ---------- Save ----------
     plt.tight_layout()
     outpath = "/u/home/thayward/two_pion_mass.pdf"
     plt.savefig(outpath)
