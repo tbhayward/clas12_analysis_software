@@ -1,5 +1,5 @@
 void list_runs() {
-    TFile f("/work/clas12/thayward/CLAS12_SIDIS/processed_data/pass2/data/eX/rgc_fa22_inb_C_eX.root");
+    TFile f("/work/clas12/thayward/CLAS12_SIDIS/processed_data/pass2/data/eX/rgc_fa22_inb_NH3_eX.root");
     TTree *t = (TTree*)f.Get("PhysicsEvents");
     if(!t) { std::cerr << "Tree not found\n"; return; }
 
