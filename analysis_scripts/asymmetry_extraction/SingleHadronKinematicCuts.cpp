@@ -68,7 +68,7 @@ static double beamEnergy(int run)
 //    Given arrays of runnum, e_p, e_theta, e_phi, p_p, p_theta, p_phi (all scalars
 //    for one event), return t = (q – p_pi)^2 = (ΔE)^2 – (Δp)^2.  We assume the beam
 //    travels +z with energy Eb(run).  “q” is virtual photon four‐vector: p_beam – p_e'.
-//    Then p_pi = (E_pi, p_vec_pi).  Finally t = (ΔE)^2 – |Δ→p|^2.
+//    Then p_pi = (E_pi, p_vec_pi).  
 //================================================================================
 static double compute_t_scalar(int run,
                                double e_p, double e_theta, double e_phi,
@@ -158,9 +158,8 @@ bool SingleHadronKinematicCuts::applyCuts(int currentFits, bool isMC)
         double t_val = compute_t_scalar(rn, ec_p, ec_th, ec_ph,
                                           pi_p, pi_th, pi_ph);
 
-        // if (std::fabs(t_val) >= 1.0 || *Mx2 < 0.75 || *Mx2 > 1.050625) {
-        if (std::fabs(t_val) < 0.07 || std::fabs(t_val) > 0.7 ||
-            *y > 0.65 || *z < 0.55 || *Q2 > 8 || *Mx2 > 1.1) {
+    if (std::fabs(t_val) >= 1.0 || *Mx2 < 0.75 || *Mx2 > 1.050625) {
+        if (*fiducial_status != 110) {
             return false;
         } else  {
             return true;
