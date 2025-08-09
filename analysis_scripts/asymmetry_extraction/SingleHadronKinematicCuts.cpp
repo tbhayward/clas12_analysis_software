@@ -144,7 +144,7 @@ bool SingleHadronKinematicCuts::applyCuts(int currentFits, bool isMC)
 
         double t_val = compute_t_scalar(rn, ec_p, ec_th, ec_ph, pi_p, pi_th, pi_ph);
 
-        if (std::fabs(t_val) >= 1.0 || *Mx2 < 0.75 || *Mx2 > 1.050625) {
+        if (std::fabs(t_val) <= 1.0 && *Mx2 > 0.75 && *Mx2 < 1.050625) {
             if (*fiducial_status != 111) {
                 return false;
             } else  {
