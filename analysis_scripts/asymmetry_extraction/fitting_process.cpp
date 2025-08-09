@@ -373,9 +373,9 @@ void negLogLikelihood_single_hadron(Int_t &npar, Double_t *gin, Double_t &f,
   // Initial definitions (move outside the loop)
   double dilution_factor = dilutionFactors[currentBin].first;
   double sigmaDf = dilutionFactors[currentBin].second;
-  double sigmaPb = 0.015;
-  double sigmaPtp = 0.025;
-  double sigmaPtm = 0.025;
+  double sigmaPb = 0.0086;
+  double sigmaPtp = 0.0368;
+  double sigmaPtm = 0.03542;
 
   // Random number generation setup (outside the loop)
   std::random_device rd;
@@ -552,9 +552,9 @@ void performMLMFits_single_hadron(const char* output_file, const char* kinematic
 
     // std::vector<double> chi2Result = chi2Fits[key][currentFits];
     // Define the parameters with initial values and limits
-    minuit.DefineParameter(0, "ALU_sinphi", -0.02, 0.01, -1, 1);
-    minuit.DefineParameter(1, "AUL_sinphi", -0.02, 0.01, -1, 1);
-    minuit.DefineParameter(2, "AUL_sin2phi", -0.02, 0.01, -1, 1);
+    minuit.DefineParameter(0, "ALU_sinphi", 0.02, 0.01, -1, 1);
+    minuit.DefineParameter(1, "AUL_sinphi", 0.02, 0.01, -1, 1);
+    minuit.DefineParameter(2, "AUL_sin2phi", 0.02, 0.01, -1, 1);
     minuit.DefineParameter(3, "ALL", 0.30, 0.01, -1, 1);
     minuit.DefineParameter(4, "ALL_cosphi", 0.01, 0.01, -1, 1);
     minuit.DefineParameter(5, "AUU_cosphi", 0.00, 0.00, -1, 1);
@@ -564,9 +564,9 @@ void performMLMFits_single_hadron(const char* output_file, const char* kinematic
     minuit.Migrad(); cout << endl; // First attempt to find the minimum
 
     // If you decide to use MINImize, replace Migrad with the following lines:
-    // arglist[0] = 500; // Max calls
-    // arglist[1] = 1.;  // Tolerance
-    // minuit.mnexcm("MINImize", arglist, 2, ierflg);
+    arglist[0] = 500; // Max calls
+    arglist[1] = 1.;  // Tolerance
+    minuit.mnexcm("MINImize", arglist, 2, ierflg);
 
 
     // Extract the fitted parameter values and errors
@@ -621,7 +621,7 @@ void performMLMFits_single_hadron(const char* output_file, const char* kinematic
     asymmetryStream << "$" << 100*AUU_cos2phi << "_{" << TMath::Abs(100*0.5*AUU_cos2phi) << "}^{";
     asymmetryStream << 100*AUU_cos2phi_error << "}$ &";
     // ALU sinphi
-    asymmetryStream << "$" << 100*ALU_sinphi << "_{" << TMath::Abs(100*0.068*ALU_sinphi) << "}^{";
+    asymmetryStream << "$" << 100*ALU_sinphi << "_{" << TMath::Abs(100*0.022*ALU_sinphi) << "}^{";
     asymmetryStream << 100*ALU_sinphi_error << "}$ &";
     // AUL sinphi
     asymmetryStream << "$" << 100*AUL_sinphi << "_{" << TMath::Abs(100*0.092*AUL_sinphi) << "}^{";
