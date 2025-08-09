@@ -381,7 +381,7 @@ void negLogLikelihood_single_hadron(Int_t &npar, Double_t *gin, Double_t &f,
   // double sigmaPb = 0.0045;
   // double sigmaPtp = 0.0272;
   // double sigmaPtm = 0.0404;
-  Sp23
+  // Sp23
   double sigmaPb = 0.0061;
   double sigmaPtp = 0.0404;
   double sigmaPtm = 0.0376;
