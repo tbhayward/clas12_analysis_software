@@ -300,9 +300,10 @@ double asymmetry_error_calculation(double currentVariable,
   int asymmetry_index) {
   double Df = dilutionFactors[currentBin].first;
   double sigmaDf = dilutionFactors[currentBin].second;
-  double sigmaPb = 0.015;
-  double sigmaPtp = 0.025;
-  double sigmaPtm = 0.025;
+  // Su22
+  double sigmaPb = 0.0086;
+  double sigmaPtp = 0.0368;
+  double sigmaPtm = 0.03542;
 
   double Npp = npp;
   double Npm = npm;
