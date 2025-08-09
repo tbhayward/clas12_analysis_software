@@ -377,14 +377,14 @@ void negLogLikelihood_single_hadron(Int_t &npar, Double_t *gin, Double_t &f,
   // double sigmaPb = 0.0086;
   // double sigmaPtp = 0.0368;
   // double sigmaPtm = 0.03542;
-  // // Fa22
-  // double sigmaPb = 0.0045;
-  // double sigmaPtp = 0.0272;
-  // double sigmaPtm = 0.0404;
-  // Sp23
-  double sigmaPb = 0.0061;
-  double sigmaPtp = 0.0404;
-  double sigmaPtm = 0.0376;
+  // Fa22
+  double sigmaPb = 0.0045;
+  double sigmaPtp = 0.0272;
+  double sigmaPtm = 0.0404;
+  // // Sp23
+  // double sigmaPb = 0.0061;
+  // double sigmaPtp = 0.0404;
+  // double sigmaPtm = 0.0376;
 
   // Random number generation setup (outside the loop)
   std::random_device rd;
