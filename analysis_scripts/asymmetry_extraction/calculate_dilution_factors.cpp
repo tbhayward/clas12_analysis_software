@@ -36,7 +36,7 @@
 #include "fitting_process.h"
 
 // Select dataset: 1 = RGC Su22, 2 = RGC Fa22, 3 = RGC Sp23
-constexpr int data_set = 1;
+constexpr int data_set = 4;
 
 struct DataSetConfig {
     std::string name;
@@ -77,14 +77,32 @@ const std::vector<DataSetConfig> dataSetConfigs = {
         "/work/clas12/thayward/CLAS12_SIDIS/processed_data/pass2/data/eX/rgc_sp23_inb_ET_eX.root"
     },
     {
+        "RGC_Su22_enpi+",
+        0.7624, 0.0747, 0.0390, 0.0249, 0.0989,
+        "/work/clas12/thayward/CLAS12_exclusive/enpi+/data/pass2/data/enpi+/rgc_su22_inb_NH3_epi+_2.root",
+        "/work/clas12/thayward/CLAS12_exclusive/enpi+/data/pass2/data/enpi+/rgc_su22_inb_C_epi+.root",
+        "/work/clas12/thayward/CLAS12_exclusive/enpi+/data/pass2/data/enpi+/rgc_su22_inb_CH2_epi+.root",
+        "/work/clas12/thayward/CLAS12_exclusive/enpi+/data/pass2/data/enpi+/rgc_su22_inb_He_epi+.root",
+        "/work/clas12/thayward/CLAS12_exclusive/enpi+/data/pass2/data/enpi+/rgc_su22_inb_ET_epi+.root"
+    },
+    {
         "RGC_Fa22_enpi+",
         0.5984, 0.1782, 0.1855, 0.0310, 0.0068,
-        "/work/clas12/thayward/CLAS12_exclusive/enpi+/data/pass2/data/enpi+/rgc_fa22_inb_NH3_epi+.root",
+        "/work/clas12/thayward/CLAS12_exclusive/enpi+/data/pass2/data/enpi+/rgc_fa22_inb_NH3_epi+_2.root",
         "/work/clas12/thayward/CLAS12_exclusive/enpi+/data/pass2/data/enpi+/rgc_fa22_inb_C_epi+.root",
         "/work/clas12/thayward/CLAS12_exclusive/enpi+/data/pass2/data/enpi+/rgc_fa22_inb_CH2_epi+.root",
         "/work/clas12/thayward/CLAS12_exclusive/enpi+/data/pass2/data/enpi+/rgc_fa22_inb_He_epi+.root",
         "/work/clas12/thayward/CLAS12_exclusive/enpi+/data/pass2/data/enpi+/rgc_fa22_inb_ET_epi+.root"
-    }
+    },
+    {
+        "RGC_Fa22_enpi+",
+        0.4543, 0.1509, 0.1966, 0.1205, 0.0777,
+        "/work/clas12/thayward/CLAS12_exclusive/enpi+/data/pass2/data/enpi+/rgc_sp23_inb_NH3_epi+_2.root",
+        "/work/clas12/thayward/CLAS12_exclusive/enpi+/data/pass2/data/enpi+/rgc_sp23_inb_C_epi+.root",
+        "/work/clas12/thayward/CLAS12_exclusive/enpi+/data/pass2/data/enpi+/rgc_sp23_inb_CH2_epi+.root",
+        "/work/clas12/thayward/CLAS12_exclusive/enpi+/data/pass2/data/enpi+/rgc_sp23_inb_He_epi+.root",
+        "/work/clas12/thayward/CLAS12_exclusive/enpi+/data/pass2/data/enpi+/rgc_sp23_inb_ET_epi+.root"
+    },
 };
 
 // NH3 periods defined as a pair of run numbers (start, end)
