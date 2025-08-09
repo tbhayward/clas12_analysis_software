@@ -99,7 +99,7 @@ const std::vector<DataSetConfig> dataSetConfigs = {
         0.4543, 0.1509, 0.1966, 0.1205, 0.0777,
         "/work/clas12/thayward/CLAS12_exclusive/enpi+/data/pass2/data/enpi+/rgc_sp23_inb_NH3_epi+_2.root",
         "/work/clas12/thayward/CLAS12_exclusive/enpi+/data/pass2/data/enpi+/rgc_sp23_inb_C_epi+_2.root",
-        "/work/clas12/thayward/CLAS12_exclusive/enpi+/data/pass2/data/enpi+/rgc_sp23_inb_CH2_epi+._2root",
+        "/work/clas12/thayward/CLAS12_exclusive/enpi+/data/pass2/data/enpi+/rgc_sp23_inb_CH2_epi+_2.root",
         "/work/clas12/thayward/CLAS12_exclusive/enpi+/data/pass2/data/enpi+/rgc_sp23_inb_He_epi+_2.root",
         "/work/clas12/thayward/CLAS12_exclusive/enpi+/data/pass2/data/enpi+/rgc_sp23_inb_ET_epi+_2.root"
     },
