@@ -70,7 +70,7 @@ def main():
     label = "MC Fa22"
 
     # -------------------------------------------------------------------------
-    # Vertex cuts & binning (re-using your Fa22/Sp23 window and original bins)
+    # Vertex cuts & binning
     # -------------------------------------------------------------------------
     vz_min, vz_max = (-5.758, 1.515)
 
@@ -82,27 +82,60 @@ def main():
     os.makedirs(outdir, exist_ok=True)
 
     # -------------------------------------------------------------------------
-    # Read branches (same variables as before + mc_particle_id)
+    # Open tree and auto-detect the MC truth PID branch
     # -------------------------------------------------------------------------
-    branches = [
-        "particle_pid",
-        "particle_vz",
-        "track_sector_6",
-        "p",
-        "cc_nphe_15",
-        "cal_energy_1",
-        "cal_energy_4",
-        "cal_lv_1",
-        "cal_lw_1",
-        "traj_edge_18",
-        "traj_edge_36",
-        "traj_edge_6",
-        "theta",
-        "mc_particle_id",   # <- MC truth categorization
-    ]
-
     with uproot.open(mc_file) as f:
-        arr = f[tree_name].arrays(branches, library="np")
+        tree = f[tree_name]
+        available = set(tree.keys())
+
+        # Candidates in priority order
+        mc_truth_candidates = [
+            "mc_particle_id",
+            "mc_matching_pid",
+            "mc_pdg",
+            "mc_true_pid",
+        ]
+
+        mc_truth_branch = None
+        for cand in mc_truth_candidates:
+            if cand in available:
+                mc_truth_branch = cand
+                break
+        # endfor
+
+        if mc_truth_branch is None:
+            # help the user by listing any keys that look like MC truth
+            mc_like = sorted([k for k in available if "mc" in k.lower() or "truth" in k.lower() or "pdg" in k.lower()])
+            raise RuntimeError(
+                "Could not find an MC truth PID branch. "
+                f"Tried {mc_truth_candidates}. "
+                f"Available MC-like keys: {mc_like}"
+            )
+        # endif
+
+        print(f"[INFO] Using MC truth PID branch: {mc_truth_branch}")
+
+        # ---------------------------------------------------------------------
+        # Read branches
+        # ---------------------------------------------------------------------
+        branches = [
+            "particle_pid",
+            "particle_vz",
+            "track_sector_6",
+            "p",
+            "cc_nphe_15",
+            "cal_energy_1",
+            "cal_energy_4",
+            "cal_lv_1",
+            "cal_lw_1",
+            "traj_edge_18",
+            "traj_edge_36",
+            "traj_edge_6",
+            "theta",
+            mc_truth_branch,   # <- the detected truth branch
+        ]
+
+        arr = tree.arrays(branches, library="np")
     # endif
 
     # Unpack
@@ -119,7 +152,7 @@ def main():
     te36    = arr["traj_edge_36"]
     te6     = arr["traj_edge_6"]
     theta   = arr["theta"]
-    mc_id   = arr["mc_matching_pid"]
+    mc_id   = arr[mc_truth_branch]
 
     # -------------------------------------------------------------------------
     # Fiducial & quality cuts (same logic as your original)
@@ -153,8 +186,8 @@ def main():
 
     # -------------------------------------------------------------------------
     # Split by MC truth:
-    #  - True electrons: mc_particle_id == 11
-    #  - "False electrons": mc_particle_id in {-211, -321}
+    #  - True electrons: mc_id == 11
+    #  - "False electrons": mc_id in {-211, -321}
     # -------------------------------------------------------------------------
     mask_true_e  = mask_common & (mc_id == 11)
     mask_false_e = mask_common & ((mc_id == -211) | (mc_id == -321))
@@ -168,19 +201,25 @@ def main():
     frac_ecin_false = e4[mask_false_e] / p[mask_false_e]
     sectors_false   = sector6[mask_false_e]
 
-    # (Optional) quick stats to sanity check counts
+    # Quick stats to sanity check counts
     print(f"[INFO] Events after common cuts: {mask_common.sum()}")
-    print(f"[INFO]   True electrons (mc_id==11): {mask_true_e.sum()}")
-    print(f"[INFO]   False electrons (mc_id in -211,-321): {mask_false_e.sum()}")
+    print(f"[INFO]   True electrons (mc==11): {mask_true_e.sum()}")
+    print(f"[INFO]   False electrons (mc in -211,-321): {mask_false_e.sum()}")
 
     # -------------------------------------------------------------------------
     # Make the two figures
     # -------------------------------------------------------------------------
-    title_true  = f"Diagonal Cut: PCal vs ECin Fractions - {label} (True electrons: mc_particle_id == 11)"
+    title_true  = (
+        f"Diagonal Cut: PCal vs ECin Fractions - {label} "
+        f"(True electrons: {mc_truth_branch} == 11)"
+    )
     out_true    = os.path.join(outdir, "diagonal_cut_MC_true_electrons.pdf")
     plot_by_sector(frac_pcal_true, frac_ecin_true, sectors_true, x_bins, y_bins, title_true, out_true)
 
-    title_false = f"Diagonal Cut: PCal vs ECin Fractions - {label} (False electrons: mc_particle_id ∈ {{-211, -321}})"
+    title_false = (
+        f"Diagonal Cut: PCal vs ECin Fractions - {label} "
+        f"(False electrons: {mc_truth_branch} ∈ {{-211, -321}})"
+    )
     out_false   = os.path.join(outdir, "diagonal_cut_MC_false_electrons.pdf")
     plot_by_sector(frac_pcal_false, frac_ecin_false, sectors_false, x_bins, y_bins, title_false, out_false)
 
