@@ -383,7 +383,7 @@ for p in ["Su22", "Fa22", "Sp23"]:
 # end for
 
 ax1.set_xlim(0, 0.7)
-ax1.set_ylim(-0.02, 0.02)
+ax1.set_ylim(-0.006, 0.006)
 ax1.set_xlabel(r"$x_{B}$", fontsize=label_fontsize)
 ax1.set_ylabel(r"$F_{LU}^{\sin\phi}/F_{UU}$", fontsize=label_fontsize)
 ax1.axhline(0, color="black", linestyle="--", linewidth=1.2)
