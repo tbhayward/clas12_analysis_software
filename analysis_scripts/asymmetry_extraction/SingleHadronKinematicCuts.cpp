@@ -144,7 +144,7 @@ bool SingleHadronKinematicCuts::applyCuts(int currentFits, bool isMC)
 
         // goodEvent = goodEvent && *fiducial_status == 111 && std::fabs(*t) <= 1.0 &&
         //     *Mx2 > 0.80 && *Mx2 < 1.00;
-        goodEvent = goodEvent && std::fabs(*t_val) <= 1.0 && *Mx2 > 0.80 && *Mx2 < 1.00;
+        goodEvent = goodEvent && std::fabs(t_val) <= 1.0 && *Mx2 > 0.80 && *Mx2 < 1.00;
         return goodEvent;
     }
 
