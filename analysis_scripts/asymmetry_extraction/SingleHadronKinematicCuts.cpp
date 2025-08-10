@@ -120,37 +120,32 @@ bool SingleHadronKinematicCuts::applyCuts(int currentFits, bool isMC)
 {
     // Basic naming lookup
     string property = binNames[currentFits];
-    
+
     bool goodEvent = true;
     // 1) Standard DIS/Hadron cuts (common to almost everything):
     if (*Q2 <  1.0    ) return false;
     if (*W  <  2.0    ) return false;
     if (*y  >  0.75   ) return false;
-    // if (*fiducial_status != 2) return false;
     // if (*p_p < 1.2    ) return false;
     // if (*xF  < 0.0    ) return false;
     // if (*Mx2 < 3.24   ) return false;
 
     // 2) If the property is “enpi,” impose |t| < 1.0 as well:
     if (property == "enpi") {
-        // compute t from the branches
-        int    rn     = *runnum;
-        double ec_p   = *e_p;
-        double ec_th  = *e_theta;
-        double ec_ph  = *e_phi;
-        double pi_p   = *p_p;
-        double pi_th  = *p_theta;
-        double pi_ph  = *p_phi;
+        // // compute t from the branches
+        // int    rn     = *runnum;
+        // double ec_p   = *e_p;
+        // double ec_th  = *e_theta;
+        // double ec_ph  = *e_phi;
+        // double pi_p   = *p_p;
+        // double pi_th  = *p_theta;
+        // double pi_ph  = *p_phi;
+        // double t_val = compute_t_scalar(rn, ec_p, ec_th, ec_ph, pi_p, pi_th, pi_ph);
 
-        double t_val = compute_t_scalar(rn, ec_p, ec_th, ec_ph, pi_p, pi_th, pi_ph);
-
-        if (std::fabs(t_val) <= 1.0 && *Mx2 > 0.75 && *Mx2 < 1.050625) {
-            if (*fiducial_status != 111) {
-                return false;
-            } else  {
-                return true;
-            }
-        }
+        // goodEvent = goodEvent && *fiducial_status == 111 && std::fabs(*t) <= 1.0 &&
+        //     *Mx2 > 0.80 && *Mx2 < 1.00;
+        goodEvent = goodEvent && std::fabs(*t) <= 1.0 && *Mx2 > 0.80 && *Mx2 < 1.00;
+        return goodEvent;
     }
 
     if (property == "Fall18xB" || property == "Fall18pT" ||
