@@ -74,9 +74,13 @@ def main():
     # -------------------------------------------------------------------------
     # Input file / tree
     # -------------------------------------------------------------------------
+    # mc_file = (
+    #     "/work/clas12/thayward/CLAS12_SIDIS/processed_data/pass2/calibration/"
+    #     "clasdis_rgc_fa22_inb_calibration.root"
+    # )
     mc_file = (
         "/work/clas12/thayward/CLAS12_SIDIS/processed_data/pass2/calibration/"
-        "clasdis_rgc_fa22_inb_calibration.root"
+        "sidisdvcs_rgc_fa22_inb_calibration.root"
     )
     tree_name = "PhysicsEvents"
 
