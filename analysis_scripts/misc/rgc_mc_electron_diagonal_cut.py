@@ -119,7 +119,7 @@ def main():
     te36    = arr["traj_edge_36"]
     te6     = arr["traj_edge_6"]
     theta   = arr["theta"]
-    mc_id   = arr["mc_particle_id"]
+    mc_id   = arr["mc_matching_pid"]
 
     # -------------------------------------------------------------------------
     # Fiducial & quality cuts (same logic as your original)
