@@ -8,6 +8,69 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 from matplotlib.colors import LogNorm
 
+def plot_1d_by_sector(chi2_sel, sector_sel, chi2_bins, chi2_xlim, outpath):
+    """
+    Per-sector 1D histograms of track_chi2_6 with shared x-range and bins.
+    """
+    fig, axes = plt.subplots(2, 3, figsize=(15, 9), constrained_layout=True)
+    for sec in range(1, 7):
+        ax = axes.flat[sec-1]
+        m = (sector_sel == sec)
+        data = chi2_sel[m]
+        ax.hist(data, bins=chi2_bins, histtype="stepfilled", alpha=0.85)
+        ax.set_xlim(*chi2_xlim)
+        ax.set_xlabel("track_chi2_6")
+        ax.set_ylabel("Counts")
+        ax.set_title(f"Sector {sec} (N={data.size:,})")
+        ax.grid(True, linestyle="--", alpha=0.4)
+    # endfor
+
+    plt.suptitle("MC electrons (pid==11), $\\theta\\leq 10^\\circ$, traj_edge_6 $\\leq$ 10: track_chi2_6", fontsize=14)
+    fig.savefig(outpath)
+    plt.close(fig)
+    print(f"[OK] Saved per-sector 1D chi2 hist to: {outpath}")
+# endif
+
+def plot_2d_by_sector(theta_sel, chi2_sel, sector_sel, theta_bins, chi2_bins, theta_xlim, chi2_ylim, outpath):
+    """
+    Per-sector 2D histograms of track_chi2_6 vs theta with shared colorbar.
+    """
+    fig, axes = plt.subplots(2, 3, figsize=(15, 10), constrained_layout=True)
+    last_h = None
+
+    for sec in range(1, 7):
+        ax = axes.flat[sec-1]
+        m = (sector_sel == sec)
+        x = theta_sel[m]
+        y = chi2_sel[m]
+        if x.size and y.size:
+            h = ax.hist2d(x, y, bins=[theta_bins, chi2_bins], norm=LogNorm(), cmap="jet")
+            last_h = h
+        else:
+            # empty container to keep axes consistent
+            h = ax.hist2d([], [], bins=[theta_bins, chi2_bins], norm=LogNorm(), cmap="jet")
+            last_h = h
+        # endif
+
+        ax.set_xlim(*theta_xlim)
+        ax.set_ylim(*chi2_ylim)
+        ax.set_xlabel(r"$\theta$ [deg]")
+        ax.set_ylabel("track_chi2_6")
+        ax.set_title(f"Sector {sec} (N={x.size:,})")
+        ax.grid(True, linestyle="--", alpha=0.3)
+    # endfor
+
+    if last_h is not None:
+        cb = fig.colorbar(last_h[3], ax=axes.ravel().tolist(), shrink=0.9)
+        cb.set_label("Counts (log scale)")
+    # endif
+
+    plt.suptitle("MC electrons (pid==11), $\\theta\\leq 10^\\circ$, traj_edge_6 $\\leq$ 10:  track_chi2_6 vs $\\theta$", fontsize=14)
+    fig.savefig(outpath)
+    plt.close(fig)
+    print(f"[OK] Saved per-sector 2D chi2 vs theta to: {outpath}")
+# endif
+
 def main():
     # -------------------------------------------------------------------------
     # Input file / tree
@@ -18,52 +81,52 @@ def main():
     )
     tree_name = "PhysicsEvents"
 
-    # Output paths (same directory as previous scripts)
+    # Output (same place as before)
     outdir = "output/rgc_studies"
     os.makedirs(outdir, exist_ok=True)
-    out_hist_1d = os.path.join(outdir, "mc_track_chi2_theta_le10_te6_le10_electrons.pdf")
-    out_hist_2d = os.path.join(outdir, "mc_track_chi2_vs_theta_le10_te6_le10_electrons.pdf")
+    out_hist_1d = os.path.join(outdir, "mc_track_chi2_theta_le10_te6_le10_electrons_by_sector.pdf")
+    out_hist_2d = os.path.join(outdir, "mc_track_chi2_vs_theta_le10_te6_le10_electrons_by_sector.pdf")
 
     # -------------------------------------------------------------------------
-    # Read only the branches we need
+    # Read only needed branches
     # -------------------------------------------------------------------------
-    branches = ["particle_pid", "theta", "traj_edge_6", "track_chi2_6"]
-
+    branches = ["particle_pid", "theta", "traj_edge_6", "track_chi2_6", "track_sector_6"]
     with uproot.open(mc_file) as f:
         tree = f[tree_name]
         arr = tree.arrays(branches, library="np")
     # endif
 
-    pid   = arr["particle_pid"]
-    theta = arr["theta"]
-    te6   = arr["traj_edge_6"]
-    chi2  = arr["track_chi2_6"]
+    pid     = arr["particle_pid"]
+    theta   = arr["theta"]
+    te6     = arr["traj_edge_6"]
+    chi2    = arr["track_chi2_6"]
+    sector6 = arr["track_sector_6"]
 
     # -------------------------------------------------------------------------
-    # Selection: electrons (pid == 11) with theta <= 10 degrees AND traj_edge_6 <= 10
+    # Selection: pid==11, theta <= 10 deg, traj_edge_6 <= 10, valid sector 1..6
     # -------------------------------------------------------------------------
-    sel = (pid == 11) & (theta <= 10.0) & (te6 <= 10.0)
-    chi2_sel  = chi2[sel]
-    theta_sel = theta[sel]
+    valid_sector = (sector6 >= 1) & (sector6 <= 6)
+    sel = (pid == 11) & (theta <= 10.0) & (te6 <= 10.0) & valid_sector
 
-    # Guard against NaN/inf just in case
-    good = np.isfinite(chi2_sel) & np.isfinite(theta_sel)
-    chi2_sel  = chi2_sel[good]
-    theta_sel = theta_sel[good]
+    chi2_sel   = chi2[sel]
+    theta_sel  = theta[sel]
+    sector_sel = sector6[sel]
 
-    n_total = len(pid)
-    n_pass  = chi2_sel.size
-    print(f"[INFO] Total entries: {n_total}")
-    print(f"[INFO] Selected electrons (pid==11) with theta <= 10° and traj_edge_6 <= 10: {n_pass}")
+    # Clean NaN/inf just in case
+    good = np.isfinite(chi2_sel) & np.isfinite(theta_sel) & np.isfinite(sector_sel)
+    chi2_sel   = chi2_sel[good]
+    theta_sel  = theta_sel[good]
+    sector_sel = sector_sel[good].astype(int)
 
-    # -------------------------------------------------------------------------
-    # If no entries, write an empty placeholder plot for both outputs and exit
-    # -------------------------------------------------------------------------
-    if n_pass == 0:
+    print(f"[INFO] Total entries: {len(pid):,}")
+    print(f"[INFO] Selected electrons with theta <= 10° and traj_edge_6 <= 10 and valid sector: {chi2_sel.size:,}")
+
+    if chi2_sel.size == 0:
+        # Write empty placeholders and exit
         for out in (out_hist_1d, out_hist_2d):
             fig, ax = plt.subplots(figsize=(7, 5))
             ax.text(0.5, 0.5, "No events with criteria:\n"
-                              "pid==11, θ≤10°, traj_edge_6≤10",
+                              "pid==11, θ≤10°, traj_edge_6≤10, valid sector",
                     ha="center", va="center", fontsize=14)
             ax.set_axis_off()
             fig.savefig(out, bbox_inches="tight")
@@ -74,62 +137,41 @@ def main():
     # endif
 
     # -------------------------------------------------------------------------
-    # Determine robust chi2 plotting range using 99th percentile
+    # Common binning/ranges
     # -------------------------------------------------------------------------
+    # Robust chi2 max from 99th percentile (shared across sectors for comparability)
     p99 = np.percentile(chi2_sel, 99)
-    chi2_upper = float(np.clip(p99 * 1.1, 5.0, 500.0))
-    chi2_lower = 0.0
-    if chi2_upper <= chi2_lower + 1e-9:
-        chi2_upper = chi2_lower + 1.0
+    chi2_max = float(np.clip(p99 * 1.1, 5.0, 500.0))
+    chi2_min = 0.0
+    if chi2_max <= chi2_min + 1e-9:
+        chi2_max = chi2_min + 1.0
     # endif
 
-    # -------------------------------------------------------------------------
-    # 1D histogram of track_chi2_6
-    # -------------------------------------------------------------------------
-    fig, ax = plt.subplots(figsize=(8, 5))
-    bins_1d = 100
-    ax.hist(chi2_sel, bins=bins_1d, range=(chi2_lower, chi2_upper),
-            histtype="stepfilled", alpha=0.85)
-    ax.set_xlabel(r"track$\_\chi^2$ (sector 6 fit)", fontsize=12)
-    ax.set_ylabel("Counts", fontsize=12)
-    ax.set_title(r"MC electrons (pid==11), $\theta\le 10^\circ$, traj\_edge\_6 $\le 10$: track$\_\chi^2\_6$", fontsize=13)
-    ax.grid(True, linestyle="--", alpha=0.4)
-
-    ax.annotate(f"Entries: {n_pass:,}\n"
-                f"χ² range: [{chi2_lower:.2f}, {chi2_upper:.2f}]",
-                xy=(0.98, 0.97), xycoords="axes fraction",
-                ha="right", va="top", fontsize=10,
-                bbox=dict(boxstyle="round,pad=0.3", fc="white", ec="gray", alpha=0.85))
-    plt.tight_layout()
-    fig.savefig(out_hist_1d)
-    plt.close(fig)
-    print(f"[OK] Saved 1D χ² histogram to: {out_hist_1d}")
+    chi2_bins_1d = np.linspace(chi2_min, chi2_max, 101)
+    theta_bins   = np.linspace(0.0, 10.0, 101)
+    chi2_bins_2d = np.linspace(chi2_min, chi2_max, 101)
 
     # -------------------------------------------------------------------------
-    # 2D histogram: chi2 vs theta (theta on x, chi2 on y)
+    # Plot per-sector 1D and 2D
     # -------------------------------------------------------------------------
-    # Binning: theta from 0→10 (since we cut), chi2 using the same robust upper
-    th_lo, th_hi = 0.0, 10.0
-    th_bins = 100
-    chi2_bins = 100
+    plot_1d_by_sector(
+        chi2_sel=chi2_sel,
+        sector_sel=sector_sel,
+        chi2_bins=chi2_bins_1d,
+        chi2_xlim=(chi2_min, chi2_max),
+        outpath=out_hist_1d,
+    )
 
-    fig, ax = plt.subplots(figsize=(8, 6))
-    h = ax.hist2d(theta_sel, chi2_sel,
-                  bins=[np.linspace(th_lo, th_hi, th_bins+1),
-                        np.linspace(chi2_lower, chi2_upper, chi2_bins+1)],
-                  norm=LogNorm(), cmap="jet")
-    cb = fig.colorbar(h[3], ax=ax)
-    cb.set_label("Counts (log scale)")
-
-    ax.set_xlabel(r"$\theta$ [deg]", fontsize=12)
-    ax.set_ylabel(r"track$\_\chi^2\_6$", fontsize=12)
-    ax.set_title(r"MC electrons (pid==11), $\theta\le 10^\circ$, traj\_edge\_6 $\le 10$:  $\chi^2$ vs $\theta$", fontsize=13)
-    ax.grid(True, linestyle="--", alpha=0.3)
-
-    plt.tight_layout()
-    fig.savefig(out_hist_2d)
-    plt.close(fig)
-    print(f"[OK] Saved 2D χ² vs θ histogram to: {out_hist_2d}")
+    plot_2d_by_sector(
+        theta_sel=theta_sel,
+        chi2_sel=chi2_sel,
+        sector_sel=sector_sel,
+        theta_bins=theta_bins,
+        chi2_bins=chi2_bins_2d,
+        theta_xlim=(0.0, 10.0),
+        chi2_ylim=(chi2_min, chi2_max),
+        outpath=out_hist_2d,
+    )
 
 # endif
 
