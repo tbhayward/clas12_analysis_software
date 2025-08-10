@@ -25,7 +25,7 @@ def plot_1d_by_sector(chi2_sel, sector_sel, chi2_bins, chi2_xlim, outpath):
         ax.grid(True, linestyle="--", alpha=0.4)
     # endfor
 
-    plt.suptitle("MC electrons (pid==11), $\\theta\\leq 10^\\circ$, traj_edge_6 $\\leq$ 10: track_chi2_6", fontsize=14)
+    plt.suptitle("MC electrons (pid==11), $\\theta\\leq 10^\\circ$, traj\\_edge\\_6 $\\leq$ 10: track\\_chi2\\_6", fontsize=14)
     fig.savefig(outpath)
     plt.close(fig)
     print(f"[OK] Saved per-sector 1D chi2 hist to: {outpath}")
@@ -47,12 +47,11 @@ def plot_2d_by_sector(theta_sel, chi2_sel, sector_sel, theta_bins, chi2_bins, th
             h = ax.hist2d(x, y, bins=[theta_bins, chi2_bins], norm=LogNorm(), cmap="jet")
             last_h = h
         else:
-            # empty container to keep axes consistent
             h = ax.hist2d([], [], bins=[theta_bins, chi2_bins], norm=LogNorm(), cmap="jet")
             last_h = h
         # endif
 
-        ax.set_xlim(*theta_xlim)
+        ax.set_xlim(*theta_xlim)   # 4° → 20°
         ax.set_ylim(*chi2_ylim)
         ax.set_xlabel(r"$\theta$ [deg]")
         ax.set_ylabel("track_chi2_6")
@@ -65,7 +64,7 @@ def plot_2d_by_sector(theta_sel, chi2_sel, sector_sel, theta_bins, chi2_bins, th
         cb.set_label("Counts (log scale)")
     # endif
 
-    plt.suptitle("MC electrons (pid==11), $\\theta\\leq 10^\\circ$, traj_edge_6 $\\leq$ 10:  track_chi2_6 vs $\\theta$", fontsize=14)
+    plt.suptitle("MC electrons (pid==11), $\\theta\\leq 20^\\circ$, traj\\_edge\\_6 $\\leq$ 10:  track\\_chi2\\_6 vs $\\theta$", fontsize=14)
     fig.savefig(outpath)
     plt.close(fig)
     print(f"[OK] Saved per-sector 2D chi2 vs theta to: {outpath}")
@@ -85,7 +84,7 @@ def main():
     outdir = "output/rgc_studies"
     os.makedirs(outdir, exist_ok=True)
     out_hist_1d = os.path.join(outdir, "mc_track_chi2_theta_le10_te6_le10_electrons_by_sector.pdf")
-    out_hist_2d = os.path.join(outdir, "mc_track_chi2_vs_theta_le10_te6_le10_electrons_by_sector.pdf")
+    out_hist_2d = os.path.join(outdir, "mc_track_chi2_vs_theta_le20_te6_le10_electrons_by_sector.pdf")
 
     # -------------------------------------------------------------------------
     # Read only needed branches
@@ -103,75 +102,101 @@ def main():
     sector6 = arr["track_sector_6"]
 
     # -------------------------------------------------------------------------
-    # Selection: pid==11, theta <= 10 deg, traj_edge_6 <= 10, valid sector 1..6
+    # Selections:
+    #   - 1D: pid==11, theta <= 10, traj_edge_6 <= 10, valid sector 1..6
+    #   - 2D: pid==11, theta <= 20, traj_edge_6 <= 10, valid sector 1..6
     # -------------------------------------------------------------------------
     valid_sector = (sector6 >= 1) & (sector6 <= 6)
-    sel = (pid == 11) & (theta <= 10.0) & (te6 <= 10.0) & valid_sector
 
-    chi2_sel   = chi2[sel]
-    theta_sel  = theta[sel]
-    sector_sel = sector6[sel]
+    sel_1d = (pid == 11) & (theta <= 10.0) & (te6 <= 10.0) & valid_sector
+    sel_2d = (pid == 11) & (theta <= 20.0) & (te6 <= 10.0) & valid_sector
+
+    chi2_sel_1d   = chi2[sel_1d]
+    theta_sel_1d  = theta[sel_1d]
+    sector_sel_1d = sector6[sel_1d]
+
+    chi2_sel_2d   = chi2[sel_2d]
+    theta_sel_2d  = theta[sel_2d]
+    sector_sel_2d = sector6[sel_2d]
 
     # Clean NaN/inf just in case
-    good = np.isfinite(chi2_sel) & np.isfinite(theta_sel) & np.isfinite(sector_sel)
-    chi2_sel   = chi2_sel[good]
-    theta_sel  = theta_sel[good]
-    sector_sel = sector_sel[good].astype(int)
+    good1 = np.isfinite(chi2_sel_1d) & np.isfinite(theta_sel_1d) & np.isfinite(sector_sel_1d)
+    chi2_sel_1d   = chi2_sel_1d[good1]
+    theta_sel_1d  = theta_sel_1d[good1]
+    sector_sel_1d = sector_sel_1d[good1].astype(int)
+
+    good2 = np.isfinite(chi2_sel_2d) & np.isfinite(theta_sel_2d) & np.isfinite(sector_sel_2d)
+    chi2_sel_2d   = chi2_sel_2d[good2]
+    theta_sel_2d  = theta_sel_2d[good2]
+    sector_sel_2d = sector_sel_2d[good2].astype(int)
 
     print(f"[INFO] Total entries: {len(pid):,}")
-    print(f"[INFO] Selected electrons with theta <= 10° and traj_edge_6 <= 10 and valid sector: {chi2_sel.size:,}")
+    print(f"[INFO] 1D selection (θ≤10°, te6≤10): {chi2_sel_1d.size:,}")
+    print(f"[INFO] 2D selection (θ≤20°, te6≤10): {chi2_sel_2d.size:,}")
 
-    if chi2_sel.size == 0:
-        # Write empty placeholders and exit
-        for out in (out_hist_1d, out_hist_2d):
-            fig, ax = plt.subplots(figsize=(7, 5))
-            ax.text(0.5, 0.5, "No events with criteria:\n"
-                              "pid==11, θ≤10°, traj_edge_6≤10, valid sector",
-                    ha="center", va="center", fontsize=14)
-            ax.set_axis_off()
-            fig.savefig(out, bbox_inches="tight")
-            plt.close(fig)
-            print(f"[WARN] No matching events. Wrote empty plot to {out}")
-        # endfor
-        return
+    # -------------------------------------------------------------------------
+    # Handle empty cases with placeholder plots
+    # -------------------------------------------------------------------------
+    if chi2_sel_1d.size == 0:
+        fig, ax = plt.subplots(figsize=(7, 5))
+        ax.text(0.5, 0.5, "No events (1D selection):\n"
+                          "pid==11, θ≤10°, traj_edge_6≤10, valid sector",
+                ha="center", va="center", fontsize=14)
+        ax.set_axis_off()
+        fig.savefig(out_hist_1d, bbox_inches="tight")
+        plt.close(fig)
+        print(f"[WARN] No 1D-selection events. Wrote placeholder to {out_hist_1d}")
+    else:
+        # Robust chi2 range for 1D (from 99th percentile)
+        p99_1d = np.percentile(chi2_sel_1d, 99)
+        chi2_max_1d = float(np.clip(p99_1d * 1.1, 5.0, 500.0))
+        chi2_min_1d = 0.0
+        if chi2_max_1d <= chi2_min_1d + 1e-9:
+            chi2_max_1d = chi2_min_1d + 1.0
+        # endif
+        chi2_bins_1d = np.linspace(chi2_min_1d, chi2_max_1d, 101)
+
+        plot_1d_by_sector(
+            chi2_sel=chi2_sel_1d,
+            sector_sel=sector_sel_1d,
+            chi2_bins=chi2_bins_1d,
+            chi2_xlim=(chi2_min_1d, chi2_max_1d),
+            outpath=out_hist_1d,
+        )
     # endif
 
-    # -------------------------------------------------------------------------
-    # Common binning/ranges
-    # -------------------------------------------------------------------------
-    # Robust chi2 max from 99th percentile (shared across sectors for comparability)
-    p99 = np.percentile(chi2_sel, 99)
-    chi2_max = float(np.clip(p99 * 1.1, 5.0, 500.0))
-    chi2_min = 0.0
-    if chi2_max <= chi2_min + 1e-9:
-        chi2_max = chi2_min + 1.0
+    if chi2_sel_2d.size == 0:
+        fig, ax = plt.subplots(figsize=(7, 5))
+        ax.text(0.5, 0.5, "No events (2D selection):\n"
+                          "pid==11, θ≤20°, traj_edge_6≤10, valid sector",
+                ha="center", va="center", fontsize=14)
+        ax.set_axis_off()
+        fig.savefig(out_hist_2d, bbox_inches="tight")
+        plt.close(fig)
+        print(f"[WARN] No 2D-selection events. Wrote placeholder to {out_hist_2d}")
+    else:
+        # Robust chi2 range for 2D (from 99th percentile)
+        p99_2d = np.percentile(chi2_sel_2d, 99)
+        chi2_max_2d = float(np.clip(p99_2d * 1.1, 5.0, 500.0))
+        chi2_min_2d = 0.0
+        if chi2_max_2d <= chi2_min_2d + 1e-9:
+            chi2_max_2d = chi2_min_2d + 1.0
+        # endif
+
+        theta_bins = np.linspace(4.0, 20.0, 101)     # 4° → 20° as requested
+        chi2_bins  = np.linspace(chi2_min_2d, chi2_max_2d, 101)
+
+        plot_2d_by_sector(
+            theta_sel=theta_sel_2d,
+            chi2_sel=chi2_sel_2d,
+            sector_sel=sector_sel_2d,
+            theta_bins=theta_bins,
+            chi2_bins=chi2_bins,
+            theta_xlim=(4.0, 20.0),                  # x-limits 4° → 20°
+            chi2_ylim=(chi2_min_2d, chi2_max_2d),
+            outpath=out_hist_2d,
+        )
     # endif
-
-    chi2_bins_1d = np.linspace(chi2_min, chi2_max, 101)
-    theta_bins   = np.linspace(0.0, 10.0, 101)
-    chi2_bins_2d = np.linspace(chi2_min, chi2_max, 101)
-
-    # -------------------------------------------------------------------------
-    # Plot per-sector 1D and 2D
-    # -------------------------------------------------------------------------
-    plot_1d_by_sector(
-        chi2_sel=chi2_sel,
-        sector_sel=sector_sel,
-        chi2_bins=chi2_bins_1d,
-        chi2_xlim=(chi2_min, chi2_max),
-        outpath=out_hist_1d,
-    )
-
-    plot_2d_by_sector(
-        theta_sel=theta_sel,
-        chi2_sel=chi2_sel,
-        sector_sel=sector_sel,
-        theta_bins=theta_bins,
-        chi2_bins=chi2_bins_2d,
-        theta_xlim=(0.0, 10.0),
-        chi2_ylim=(chi2_min, chi2_max),
-        outpath=out_hist_2d,
-    )
 
 # endif
 
