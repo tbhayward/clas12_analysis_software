@@ -39,7 +39,7 @@ print("[INFO] Saved output/models_plot.pdf")
 # 2) Load run-by-run extraction data from C++ output
 # (Assumes output file format: run,Pt_grv,s_grv,Pt_abd,s_abd,Pt_avg,avg_sig,avg_sys)
 # ===============================
-extractions_file = "output/pt_extractions.txt"  # <-- adjust path if needed
+extractions_file = "output/Pt_by_run.txt"  
 runnum, Pt_grv, s_grv, Pt_abd, s_abd, Pt_avg, avg_sig, avg_sys = [], [], [], [], [], [], [], []
 
 with open(extractions_file) as f:
