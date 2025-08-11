@@ -20,7 +20,7 @@
 // 0 = all three periods, 1 = RGC_Su22 only, 2 = RGC_Fa22 only, 3 = RGC_Sp23 only
 const int runMode = 1;
 // testRun: 0 means process all runs, >0 will restrict to that single run number
-const int testRun = 16156;  // set to your run of interest, or 0 to do all
+const int testRun = 16137;  // set to your run of interest, or 0 to do all
 
 // xB bin edges
 static const std::vector<double> xB_bins = {
@@ -95,9 +95,9 @@ int main() {
             chargeMinusMap[run] = chMinus;
             signMap[run]        = (pol_s > 0 ? +1 : -1);
             targetPolMap[run]   = pol_s;
-            // Debug: print loaded polarity sign
-            std::cout << "[Debug] run " << run << "  pol_s=" << pol_s << "  signMap=" <<
-                signMap[run] << "\n";
+            // // Debug: print loaded polarity sign
+            // std::cout << "[Debug] run " << run << "  pol_s=" << pol_s << "  signMap=" <<
+            //     signMap[run] << "\n";
         }
     }
     std::cout << "[Loaded] " << chargeMap.size()
@@ -224,135 +224,139 @@ int main() {
         f.Close();
         std::cout << "  [Done] filled histograms for " << period << "\n\n";
 
-        for (size_t b = 0; b < nBins; ++b) {
-            long raw_p = Np[i][b], raw_m = Nm[i][b];
-            if (cp <= 0 || cm <= 0) {
-                std::cout << "    bin " << b << ": missing charge info, skip\n";
+        for (size_t i = 0; i < runs.size(); ++i) {
+            int run = runs[i];
+            double cp = chargePlusMap[run];
+            double cm = chargeMinusMap[run];
+            double pb = Pb.at(period);
+            double targPol = targetPolMap[run];
+
+            std::vector<double> xv, yg, ye_g, ya, ye_a;
+
+            for (size_t b = 0; b < nBins; ++b) {
+                long raw_p = Np[i][b], raw_m = Nm[i][b];
+                if (cp <= 0 || cm <= 0) {
+                    std::cout << "    bin " << b << ": missing charge info, skip\n";
+                    continue;
+                }
+                double p = raw_p / cp;
+                double m = raw_m / cm;
+                double S = p + m;
+                if (S < 1e-12) {
+                    std::cout << "    bin " << b << ": S≈0, skip\n";
+                    continue;
+                }
+                double delta = p - m;
+                double asym  = delta / S;
+
+                // depolarization averages for this run/bin
+                double dep_mean_A = 0.0, dep_mean_C = 0.0, depRatio = 1.0;
+                if (dep_cnt[i][b] > 0) {
+                    dep_mean_A = depA_sum[i][b] / (double)dep_cnt[i][b];
+                    dep_mean_C = depC_sum[i][b] / (double)dep_cnt[i][b];
+                    if (std::abs(dep_mean_C) > 0.0) depRatio = dep_mean_A / dep_mean_C;
+                }
+
+                // model A_LL and effective scale
+                double xm    = xMean[b];
+                double df    = Df[b], s_df = sDf[b];
+                double a_grv = ALL_GRV(xm);
+                double a_abd = ALL_ABD(xm);
+
+                double Ag    = a_grv * df * pb;
+                double Aa    = a_abd * df * pb;
+
+                // depolarization-corrected Pt from asymmetry
+                double Pt_g  = (asym * depRatio) / Ag;
+                double Pt_a  = (asym * depRatio) / Aa;
+
+                // print bin details
+                std::cout << std::fixed << std::setprecision(3)
+                          << "    bin " << b
+                          << ": Np="    << raw_p
+                          << ", Nm="    << raw_m
+                          << ", normNp="<< p
+                          << ", normNm="<< m
+                          << ", asym="  << asym
+                          << ", Df="    << df
+                          << ", Pb="    << pb
+                          << ", DepA="  << dep_mean_A
+                          << ", DepC="  << dep_mean_C
+                          << ", DepA/DepC=" << depRatio
+                          << ", asym/(Df*Pb*DepRatio)=" << asym/(df*pb*depRatio)
+                          << ", pol_tgt="<< targPol
+                          << ", A_GRV=" << a_grv
+                          << ", A_ABD=" << a_abd
+                          << ", Pt_GRV_bin="<< Pt_g
+                          << ", Pt_ABD_bin="<< Pt_a
+                          << "\n";
+
+                // propagate stats
+                double var_p = raw_p / (cp*cp);
+                double var_m = raw_m / (cm*cm);
+
+                double dPg_p = (S - delta)/(Ag*S*S);
+                double dPg_n = -(S + delta)/(Ag*S*S);
+                double var_g = (depRatio*depRatio) * (dPg_p*dPg_p * var_p
+                                                    + dPg_n*dPg_n * var_m);
+                double err_g = std::sqrt(var_g);
+                err_g = std::sqrt(err_g*err_g
+                    + std::pow(Pt_g*s_df/df,2)
+                    + std::pow(Pt_g*sigma_Pb.at(period)/pb,2));
+
+                double dPa_p = (S - delta)/(Aa*S*S);
+                double dPa_n = -(S + delta)/(Aa*S*S);
+                double var_a = (depRatio*depRatio) * (dPa_p*dPa_p * var_p
+                                                    + dPa_n*dPa_n * var_m);
+                double err_a = std::sqrt(var_a);
+                err_a = std::sqrt(err_a*err_a
+                    + std::pow(Pt_a*s_df/df,2)
+                    + std::pow(Pt_a*sigma_Pb.at(period)/pb,2));
+
+                xv .push_back(xm);
+                yg .push_back(Pt_g); ye_g.push_back(err_g);
+                ya .push_back(Pt_a); ye_a.push_back(err_a);
+            }
+
+            if (xv.empty()) {
+                std::cout << "    [No valid bins for run " << run << "]\n\n";
                 continue;
             }
-            double p = raw_p / cp;
-            double m = raw_m / cm;
-            double S = p + m;
-            if (S < 1e-12) {
-                std::cout << "    bin " << b << ": S≈0, skip\n";
-                continue;
-            }
-            double delta = p - m;
-            double asym  = delta / S;
 
-            // depolarization averages for this run/bin
-            double dep_mean_A = 0.0, dep_mean_C = 0.0, depRatio = 1.0;
-            if (dep_cnt[i][b] > 0) {
-                dep_mean_A = depA_sum[i][b] / (double)dep_cnt[i][b];
-                dep_mean_C = depC_sum[i][b] / (double)dep_cnt[i][b];
-                if (std::abs(dep_mean_C) > 0.0) depRatio = dep_mean_A / dep_mean_C;
-            }
+            // fit GRV constant
+            TGraphErrors g_grv(xv.size(), &xv[0], &yg[0], nullptr, &ye_g[0]);
+            TF1 fit0("fit0","[0]",0,1);
+            g_grv.Fit(&fit0,"Q");
+            double Pt_grv = fit0.GetParameter(0), s_grv = fit0.GetParError(0);
 
-            // model A_LL and effective scale
-            double xm    = xMean[b];
-            double df    = Df[b], s_df = sDf[b];
-            double a_grv = ALL_GRV(xm);
-            double a_abd = ALL_ABD(xm);
+            // fit ABD constant
+            TGraphErrors g_abd(xv.size(), &xv[0], &ya[0], nullptr, &ye_a[0]);
+            TF1 fit1("fit1","[0]",0,1);
+            g_abd.Fit(&fit1,"Q");
+            double Pt_abd = fit1.GetParameter(0), s_abd = fit1.GetParError(0);
 
-            double Ag    = a_grv * df * pb;    // constant scale (bin)
-            double Aa    = a_abd * df * pb;
+            // enforce sign from signMap
+            double signCorr = signMap.count(run) ? signMap.at(run) : 1.0;
+            Pt_grv *= signCorr;
+            Pt_abd *= signCorr;
 
-            // depolarization-corrected Pt from asymmetry
-            double Pt_g  = (asym * depRatio) / Ag;
-            double Pt_a  = (asym * depRatio) / Aa;
+            // extra output columns
+            double Pt_avg  = 0.5 * (Pt_grv + Pt_abd);
+            double avg_sig = std::max(s_grv, s_abd);
+            double avg_sys = std::sqrt(std::pow(Pt_grv - Pt_abd, 2) / 2.0);
 
-            // print everything to 3 decimals (now includes depRatio term next to Pb, and in asym term)
+            out << run << "\t"
+                << std::fixed << std::setprecision(3)
+                << Pt_grv << "\t" << s_grv << "\t"
+                << Pt_abd << "\t" << s_abd << "\t"
+                << Pt_avg << "\t" << avg_sig << "\t" << avg_sys << "\n";
+
             std::cout << std::fixed << std::setprecision(3)
-                      << "    bin " << b
-                      << ": Np="    << raw_p
-                      << ", Nm="    << raw_m
-                      << ", normNp="<< p
-                      << ", normNm="<< m
-                      << ", asym="  << asym
-                      << ", Df="    << df
-                      << ", Pb="    << pb
-                      << ", DepA/DepC=" << depRatio
-                      << ", asym*(DepA/DepC)/(Df*Pb)=" << (asym*depRatio)/(df*pb)
-                      << ", pol_tgt="<< targPol
-                      << ", A_GRV=" << a_grv
-                      << ", A_ABD=" << a_abd
-                      << ", DepA="  << dep_mean_A
-                      << ", DepC="  << dep_mean_C
-                      << ", Pt_GRV_bin="<< Pt_g
-                      << ", Pt_ABD_bin="<< Pt_a
-                      << "\n";
-
-            // propagate stats using sqrt(N)/Q; scale by depRatio^2
-            double var_p = raw_p / (cp*cp);
-            double var_m = raw_m / (cm*cm);
-
-            double dPg_p = (S - delta)/(Ag*S*S);
-            double dPg_n = -(S + delta)/(Ag*S*S);
-            double var_g = (depRatio*depRatio) * (dPg_p*dPg_p * var_p
-                                                + dPg_n*dPg_n * var_m);
-            double err_g = std::sqrt(var_g);
-            err_g = std::sqrt(err_g*err_g
-                + std::pow(Pt_g*s_df/df,2)
-                + std::pow(Pt_g*sigma_Pb.at(period)/pb,2));
-
-            double dPa_p = (S - delta)/(Aa*S*S);
-            double dPa_n = -(S + delta)/(Aa*S*S);
-            double var_a = (depRatio*depRatio) * (dPa_p*dPa_p * var_p
-                                                + dPa_n*dPa_n * var_m);
-            double err_a = std::sqrt(var_a);
-            err_a = std::sqrt(err_a*err_a
-                + std::pow(Pt_a*s_df/df,2)
-                + std::pow(Pt_a*sigma_Pb.at(period)/pb,2));
-
-            xv .push_back(xm);
-            yg .push_back(Pt_g); ye_g.push_back(err_g);
-            ya .push_back(Pt_a); ye_a.push_back(err_a);
-        }
-
-        if (xv.empty()) {
-            std::cout << "    [No valid bins for run " << run << "]\n\n";
-            continue;
-        }
-
-        // fit GRV constant
-        TGraphErrors g_grv(xv.size(), &xv[0], &yg[0], nullptr, &ye_g[0]);
-        TF1 fit0("fit0","[0]",0,1);
-        g_grv.Fit(&fit0,"Q");
-        double Pt_grv = fit0.GetParameter(0), s_grv = fit0.GetParError(0);
-
-        // fit ABD constant
-        TGraphErrors g_abd(xv.size(), &xv[0], &ya[0], nullptr, &ye_a[0]);
-        TF1 fit1("fit1","[0]",0,1);
-        g_abd.Fit(&fit1,"Q");
-        double Pt_abd = fit1.GetParameter(0), s_abd = fit1.GetParError(0);
-
-        // enforce run sign from signMap
-        {
-            int sgn_final = signMap[run];
-            Pt_grv *= sgn_final;
-            Pt_abd *= sgn_final;
-        }
-
-        // derived averages for output
-        double Pt_avg = 0.5*(Pt_grv + Pt_abd);
-        double avg_sig = (s_grv > s_abd ? s_grv : s_abd);
-        // sample stddev of two values
-        double diff_ab = Pt_grv - Pt_abd;
-        double avg_sys = std::sqrt( ((Pt_grv - Pt_avg)*(Pt_grv - Pt_avg)
-                                   + (Pt_abd - Pt_avg)*(Pt_abd - Pt_avg)) / 1.0 );
-
-        out << run << "\t"
-            << std::fixed << std::setprecision(3)
-            << Pt_grv << "\t" << s_grv << "\t"
-            << Pt_abd << "\t" << s_abd << "\t"
-            << Pt_avg << "\t" << avg_sig << "\t" << avg_sys << "\n";
-
-        std::cout << std::fixed << std::setprecision(3)
-                  << "    -> Fit Pt_GRV=" << Pt_grv << "±" << s_grv
-                  << ", Pt_ABD=" << Pt_abd << "±" << s_abd
-                  << ", Pt_avg=" << Pt_avg
-                  << ", avg_sig=" << avg_sig
-                  << ", avg_sys=" << avg_sys << "\n\n";
+                      << "    -> Fit Pt_GRV=" << Pt_grv << "±" << s_grv
+                      << ", Pt_ABD=" << Pt_abd << "±" << s_abd
+                      << ", Pt_avg=" << Pt_avg
+                      << ", avg_sig=" << avg_sig
+                      << ", avg_sys=" << avg_sys << "\n\n";
         }
     }
 
