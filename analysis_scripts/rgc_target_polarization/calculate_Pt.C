@@ -357,28 +357,24 @@ int main() {
                 }
                 return std::sqrt(ss / (double)(v.size()-1));
             };
-            double Pt_GRV_sys = sample_std(grv_bins);
-            double Pt_ABD_sys = sample_std(abd_bins);
+            double sys_grv = sample_std(grv_bins);
+            double sys_abd = sample_std(abd_bins);
 
             // extra output columns
             double Pt_avg  = 0.5 * (Pt_grv + Pt_abd);
             double avg_sig = std::max(s_grv, s_abd);
 
-            // compute avg_sys as sqrt( (avg_bin_sys)^2 + (stddev_two_final)^2 )
-            double avg_bin_sys = (Pt_GRV_sys + Pt_ABD_sys) / 2.0;
-            double mean_val = Pt_avg;
-            double var_two_final = ((Pt_grv - mean_val)*(Pt_grv - mean_val) +
-                                    (Pt_abd - mean_val)*(Pt_abd - mean_val)) / 1.0; // N-1=1
-            double stddev_two_final = std::sqrt(var_two_final);
-            double avg_sys = std::sqrt( std::pow(avg_bin_sys, 2) +
-                                        std::pow(stddev_two_final, 2) );
+            // avg_sys = sqrt( mean(sys_GRV, sys_ABD)^2 + std(sys_GRV, sys_ABD)^2 )
+            double sys_mean = 0.5 * (sys_grv + sys_abd);
+            double sys_std  = std::sqrt( ((sys_grv - sys_mean) * (sys_grv - sys_mean) +
+                                          (sys_abd - sys_mean) * (sys_abd - sys_mean)) / 1.0 ); // N-1=1 for 2 samples
+            double avg_sys  = std::sqrt(std::pow(sys_mean, 2) + std::pow(sys_std, 2));
 
+            // write to output in new order
             out << run << "\t"
-                << std::fixed << std::setprecision(3)
-                << Pt_grv << "\t" << s_grv << "\t"
-                << Pt_abd << "\t" << s_abd << "\t"
-                << Pt_avg << "\t" << avg_sig << "\t" << avg_sys << "\t"
-                << Pt_GRV_sys << "\t" << Pt_ABD_sys << "\n";
+                << Pt_grv << "\t" << s_grv << "\t" << sys_grv << "\t"
+                << Pt_abd << "\t" << s_abd << "\t" << sys_abd << "\t"
+                << Pt_avg << "\t" << avg_sig << "\t" << avg_sys << "\n";
 
             std::cout << std::fixed << std::setprecision(3)
                       << "    -> Fit Pt_GRV=" << Pt_grv << "±" << s_grv
