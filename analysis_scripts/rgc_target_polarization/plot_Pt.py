@@ -498,4 +498,5 @@ for period, runs_in_period in period_to_runs.items():
 
 ax.set_xlabel("run index × 5", fontsize=14)
 ax.set_ylim(0.0, 1.2)
-ax.set_xlim(0, max
+x_right = max(run_index_scaled.max(), run_index_np_scaled.max() if run_index_np.size > 0 else 0) + 5
+ax.set_xlim(0, x_right)
