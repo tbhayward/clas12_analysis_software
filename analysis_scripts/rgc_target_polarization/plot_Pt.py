@@ -102,6 +102,25 @@ def draw_mean_band(ax, x0, x1, mean, stat, sys,
                     alpha=(alpha_inner_pos if pos else alpha_inner_neg),
                     label=label_inner)
 
+def segment_sign_ranges(run_x, sign_values):
+    """
+    From arrays (run_x, sign_values), return list of contiguous sign segments.
+    Each segment is (x_start, x_end, is_positive, runs_in_segment_array).
+    sign_values determine sign: >=0 -> positive, <0 -> negative.
+    """
+    segments = []
+    if len(run_x) == 0:
+        return segments
+    start = 0
+    curr_pos = (sign_values[0] >= 0)
+    for i in range(1, len(run_x)):
+        if (sign_values[i] >= 0) != curr_pos:
+            segments.append((run_x[start], run_x[i-1], curr_pos, run_x[start:i].copy()))
+            start = i
+            curr_pos = (sign_values[i] >= 0)
+    segments.append((run_x[start], run_x[-1], curr_pos, run_x[start:].copy()))
+    return segments
+
 # ===============================
 # 1) Model curves plot
 # ===============================
@@ -176,6 +195,7 @@ xmin = runnum.min() - 10
 xmax = runnum.max() + 10
 run_index = np.arange(1, len(runnum)+1)
 run_index_scaled = run_index * 5  # scaled x-axis for visibility
+run_to_index_scaled = {int(r): int(i*5) for r, i in zip(runnum, run_index)}  # for mapping segments
 
 # ===============================
 # 3) 1x2: Pt per run (GRV + ABD), with stat and stat+sys (per-model)
@@ -323,7 +343,7 @@ plt.close()
 print("[INFO] Saved output/method_comparison.pdf")
 
 # ===============================
-# 6) Method comparison (means): add DIS mean bands (stat and stat+sys), keep Elastic bands
+# 6) Method comparison (means): DIS mean bands split by sign segments within each period, keep Elastic bands
 # ===============================
 # Read period means (from the helper script you ran earlier)
 means_path = "output/period_pt_sign_means.txt"
@@ -348,7 +368,7 @@ if os.path.exists(means_path):
                 "neg": (N_neg, Mean_Neg, Stat_Neg, Sys_Neg),
             }
 
-# Build period -> (runnum_min, runnum_max) using NH3 sections from RUNINFO
+# Parse RUNINFO to gather runs per NH3 period
 RUNINFO = "/u/home/thayward/clas12_analysis_software/analysis_scripts/asymmetry_extraction/imports/clas12_run_info.csv"
 PERIOD_KEYS = {
     "rgc su22 nh3": "RGC_Su22",
@@ -373,58 +393,51 @@ with open(RUNINFO) as f:
             continue
         period_to_runs[current_period].append(int(row[0]))
 
-period_to_range = {}
-for p, arr in period_to_runs.items():
-    if len(arr) == 0:
-        continue
-    period_to_range[p] = (min(arr), max(arr))
+# For sign segmentation of DIS means, we’ll use the NH3 Elastic per-run sign (pol_csv)
+# restricted to each period, then lay down the DIS mean (pos/neg) only across those sign ranges.
+fig, axes = plt.subplots(1, 2, figsize=(16,6), sharey=True)
 
-# For right panel (run index ×5), map periods to index ranges based on DIS run list we actually plotted
-period_to_index_range = {}
-for p, runs in period_to_runs.items():
-    if len(runs) == 0:
-        continue
-    # find which of these runs appear in our DIS runnum list
-    mask = np.isin(runnum, runs)
-    if np.any(mask):
-        idxs = np.where(mask)[0] + 1  # 1-based run index
-        period_to_index_range[p] = (idxs.min()*5, idxs.max()*5)  # scaled
-
-# Prepare colors for bands
-# Elastic: green (already), positive darker, negative lighter
-# DIS means: purple bands, positive darker, negative lighter
 elastic_color = "green"
 dis_color     = "purple"
 
-fig, axes = plt.subplots(1, 2, figsize=(16,6), sharey=True)
-
-# Left: vs runnum
+# Left: runnum axis
 ax = axes[0]
-# Draw Elastic segmented bands (per-run constants)
+# Elastic segmented bands for context
 if elastic_bands_runnum:
     draw_bands(ax, elastic_bands_runnum, color=elastic_color, alpha_pos=0.25, alpha_neg=0.12, label="Elastic (NP)")
 
-# Draw DIS mean bands per-period and per sign (inner=stat, outer=stat+sys)
-legend_flags = {"Elastic (NP)": True, "DIS mean (stat)": True, "DIS mean (stat+sys)": True}
-for period, stats in period_means.items():
-    if period not in period_to_range:
+# DIS mean bands split by sign ranges inside each period
+legend_flags = {"DIS mean (stat)": True, "DIS mean (stat+sys)": True}
+for period, runs_in_period in period_to_runs.items():
+    if period not in period_means or len(runs_in_period) == 0:
         continue
-    x0, x1 = period_to_range[period]
-    # Positive mean band
-    npos, mpos, spos, upos = stats["pos"]
-    if npos > 0 and np.isfinite(mpos):
-        draw_mean_band(ax, x0, x1, mpos, spos, upos,
+    # Mask elastic arrays to this period's runs
+    mask = np.isin(run_csv_nums, runs_in_period)
+    runs_p = run_csv_nums[mask]
+    vals_p = pol_csv[mask]
+    if runs_p.size == 0:
+        continue
+    # Ensure sorted by run number
+    order_p = np.argsort(runs_p)
+    runs_p  = runs_p[order_p]
+    vals_p  = vals_p[order_p]
+    # Build sign segments
+    sign_segments = segment_sign_ranges(runs_p, vals_p)  # (x0, x1, is_pos, runs_segment)
+    # Draw DIS mean bands over each sign segment using that period's pos/neg mean
+    stats = period_means[period]
+    for (x0, x1, is_pos, _runs_seg) in sign_segments:
+        if is_pos:
+            n, m, s, u = stats["pos"]
+        else:
+            n, m, s, u = stats["neg"]
+        if n <= 0 or not np.isfinite(m):
+            continue
+        draw_mean_band(ax, x0, x1, m, s, u,
                        base_color=dis_color,
                        label_inner=("DIS mean (stat)" if legend_flags["DIS mean (stat)"] else None),
                        label_outer=("DIS mean (stat+sys)" if legend_flags["DIS mean (stat+sys)"] else None))
         legend_flags["DIS mean (stat)"] = False
         legend_flags["DIS mean (stat+sys)"] = False
-    # Negative mean band
-    nneg, mneg, sneg, uneg = stats["neg"]
-    if nneg > 0 and np.isfinite(mneg):
-        draw_mean_band(ax, x0, x1, mneg, sneg, uneg,
-                       base_color=dis_color,
-                       label_inner=None, label_outer=None)
 
 ax.set_xlabel("runnum", fontsize=14)
 ax.set_ylabel(r"$|P_{t}|$", fontsize=14)
@@ -435,31 +448,46 @@ else:
     ax.set_xlim(xmin, xmax)
 ax.legend(fontsize=10)
 
-# Right: vs run index × 5
+# Right: run index × 5 axis
 ax = axes[1]
-# Elastic segmented bands by run index
+# Elastic bands in index space
 if elastic_bands_index:
     draw_bands(ax, elastic_bands_index, color=elastic_color, alpha_pos=0.25, alpha_neg=0.12, label="Elastic (NP)")
 
-# DIS mean bands per period in index space
 legend_flags = {"DIS mean (stat)": True, "DIS mean (stat+sys)": True}
-for period, stats in period_means.items():
-    if period not in period_to_index_range:
+for period, runs_in_period in period_to_runs.items():
+    if period not in period_means or len(runs_in_period) == 0:
         continue
-    x0, x1 = period_to_index_range[period]
-    npos, mpos, spos, upos = stats["pos"]
-    if npos > 0 and np.isfinite(mpos):
-        draw_mean_band(ax, x0, x1, mpos, spos, upos,
+    # Mask elastic arrays to this period's runs
+    mask = np.isin(run_csv_nums, runs_in_period)
+    runs_p = run_csv_nums[mask]
+    vals_p = pol_csv[mask]
+    if runs_p.size == 0:
+        continue
+    order_p = np.argsort(runs_p)
+    runs_p  = runs_p[order_p]
+    vals_p  = vals_p[order_p]
+    # Build sign segments in run number space
+    sign_segments = segment_sign_ranges(runs_p, vals_p)  # (x0, x1, is_pos, runs_segment)
+    stats = period_means[period]
+    for (_x0, _x1, is_pos, runs_seg) in sign_segments:
+        # Map this segment to DIS run index × 5 using our plotted DIS run list
+        seg_indices = [run_to_index_scaled[r] for r in runs_seg if r in run_to_index_scaled]
+        if len(seg_indices) == 0:
+            continue  # no overlap with plotted DIS runs
+        x0i, x1i = min(seg_indices), max(seg_indices)
+        if is_pos:
+            n, m, s, u = stats["pos"]
+        else:
+            n, m, s, u = stats["neg"]
+        if n <= 0 or not np.isfinite(m):
+            continue
+        draw_mean_band(ax, x0i, x1i, m, s, u,
                        base_color=dis_color,
                        label_inner=("DIS mean (stat)" if legend_flags["DIS mean (stat)"] else None),
                        label_outer=("DIS mean (stat+sys)" if legend_flags["DIS mean (stat+sys)"] else None))
         legend_flags["DIS mean (stat)"] = False
         legend_flags["DIS mean (stat+sys)"] = False
-    nneg, mneg, sneg, uneg = stats["neg"]
-    if nneg > 0 and np.isfinite(mneg):
-        draw_mean_band(ax, x0, x1, mneg, sneg, uneg,
-                       base_color=dis_color,
-                       label_inner=None, label_outer=None)
 
 ax.set_xlabel("run index × 5", fontsize=14)
 ax.set_ylim(0.0, 1.2)
