@@ -118,7 +118,7 @@ def draw_mean_band(ax, x0, x1, mean, stat, sys,
                     label=label_inner)
 
 # ===============================
-# 1) Model curves plot
+# 1) Model curves plot (single-axes figure; unchanged legend)
 # ===============================
 
 def ALL_GRV(x):
@@ -139,7 +139,7 @@ plt.xlabel(r"$x_{B}$", fontsize=14)
 plt.ylabel(r"$F_{LL}/F_{UU}$", fontsize=14)
 plt.ylim(-0.2, 0.80)
 plt.xlim(0.0, 0.7)
-plt.legend(fontsize=11)
+plt.legend(fontsize=11)  # single plot: keep default placement
 plt.tight_layout()
 plt.savefig("output/models_plot.pdf")
 plt.close()
@@ -147,8 +147,6 @@ print("[INFO] Saved output/models_plot.pdf")
 
 # ===============================
 # 2) Load run-by-run extraction data from C++ output
-# New format:
-# Run Pt_GRV sigma_GRV sys_GRV Pt_ABD sigma_ABD sys_ABD Pt_avg avg_sig avg_sys
 # ===============================
 extractions_file = "output/Pt_by_run.txt"
 runnum, Pt_grv, s_grv, sys_grv, Pt_abd, s_abd, sys_abd, Pt_avg, avg_sig, avg_sys = ([] for _ in range(10))
@@ -190,18 +188,18 @@ Pt_avg   = Pt_avg[order];  avg_sig = avg_sig[order]; avg_sys = avg_sys[order]
 xmin = runnum.min() - 10
 xmax = runnum.max() + 10
 run_index = np.arange(1, len(runnum)+1)
-run_index_scaled = run_index * 5  # scaled x-axis for visibility
-run_to_index_scaled = {int(r): int(i*5) for r, i in zip(runnum, run_index)}  # for mapping segments
+run_index_scaled = run_index * 5
+run_to_index_scaled = {int(r): int(i*5) for r, i in zip(runnum, run_index)}
 
 # ===============================
-# 3) 1x2: Pt per run (GRV + ABD), with stat and stat+sys (per-model)
+# 3) 1x2: Pt per run (GRV + ABD)
 # ===============================
 tot_grv = np.sqrt(s_grv**2 + sys_grv**2)
 tot_abd = np.sqrt(s_abd**2 + sys_abd**2)
 
 fig, axes = plt.subplots(1, 2, figsize=(16,6), sharey=True)
 
-# Left: vs runnum (offset ±0.005)
+# Left: vs runnum
 ax = axes[0]
 plot_pos_neg(ax, runnum, Pt_grv, s_grv,  color='blue', label="GRSV [stat]",      xoffset=-0.005)
 plot_pos_neg(ax, runnum, Pt_grv, tot_grv, color='blue', label="GRSV [stat+sys]", xoffset=-0.005, alpha=0.4)
@@ -211,9 +209,9 @@ ax.set_xlabel("runnum", fontsize=14)
 ax.set_ylabel(r"$P_{t}$", fontsize=14)
 ax.set_ylim(0.0, 1.2)
 ax.set_xlim(xmin, xmax)
-ax.legend(fontsize=10)
+ax.legend(fontsize=10, loc="lower right")
 
-# Right: vs run index × 5 (offsets multiplied by 5 -> ±1.25)
+# Right: vs run index × 5
 ax = axes[1]
 plot_pos_neg(ax, run_index_scaled, Pt_grv, s_grv,  color='blue', label="GRSV [stat]",      xoffset=-1.25)
 plot_pos_neg(ax, run_index_scaled, Pt_grv, tot_grv, color='blue', label="GRSV [stat+sys]", xoffset=-1.25, alpha=0.4)
@@ -222,6 +220,7 @@ plot_pos_neg(ax, run_index_scaled, Pt_abd, tot_abd, color='red', label="ABDY [st
 ax.set_xlabel("run index × 5", fontsize=14)
 ax.set_ylim(0.0, 1.2)
 ax.set_xlim(0, run_index_scaled.max() + 5)
+ax.legend(fontsize=10, loc="lower right")
 
 plt.tight_layout()
 plt.savefig("output/model_extractions.pdf")
@@ -229,7 +228,7 @@ plt.close()
 print("[INFO] Saved output/model_extractions.pdf")
 
 # ===============================
-# 4) 1x2: Average Pt with stat and stat+sys (avg_sys from file)
+# 4) 1x2: Average Pt with stat and stat+sys
 # ===============================
 stat_plus_sys = np.sqrt(avg_sig**2 + avg_sys**2)
 
@@ -243,7 +242,7 @@ ax.set_xlabel("runnum", fontsize=14)
 ax.set_ylabel(r"$P_{t}$", fontsize=14)
 ax.set_ylim(0.0, 1.2)
 ax.set_xlim(xmin, xmax)
-ax.legend(fontsize=10)
+ax.legend(fontsize=10, loc="lower right")
 
 # Right: vs run index × 5
 ax = axes[1]
@@ -252,6 +251,7 @@ plot_pos_neg(ax, run_index_scaled, Pt_avg, stat_plus_sys, color='black', label="
 ax.set_xlabel("run index × 5", fontsize=14)
 ax.set_ylim(0.0, 1.2)
 ax.set_xlim(0, run_index_scaled.max() + 5)
+ax.legend(fontsize=10, loc="lower right")
 
 plt.tight_layout()
 plt.savefig("output/avg_pt_plot.pdf")
@@ -259,7 +259,7 @@ plt.close()
 print("[INFO] Saved output/avg_pt_plot.pdf")
 
 # ===============================
-# 5) 1x2: Method comparison (NH3-only from CSV) with Elastic bands
+# 5) 1x2: Method comparison with Elastic bands
 # ===============================
 run_csv_file = "/u/home/thayward/clas12_analysis_software/analysis_scripts/asymmetry_extraction/imports/clas12_run_info.csv"
 
@@ -308,7 +308,7 @@ elastic_bands_index  = segment_bands_by_value(run_index_np_scaled, pol_csv, pol_
 
 fig, axes = plt.subplots(1, 2, figsize=(16,6), sharey=True)
 
-# Left: vs runnum (DIS points; Elastic band)
+# Left: vs runnum
 ax = axes[0]
 plot_pos_neg(ax, runnum, Pt_avg, avg_sig,       color='orange', label="DIS (TBH)", xoffset=-0.005)
 plot_pos_neg(ax, runnum, Pt_avg, stat_plus_sys, color='orange', label=None,       xoffset=-0.005, alpha=0.4)
@@ -322,9 +322,9 @@ if run_csv_nums.size > 0:
     ax.set_xlim(min(xmin, run_csv_nums.min()-10), max(xmax, run_csv_nums.max()+10))
 else:
     ax.set_xlim(xmin, xmax)
-ax.legend(fontsize=10)
+ax.legend(fontsize=10, loc="lower right")
 
-# Right: vs run index × 5 (DIS xoffset -1.25; Elastic bands across index)
+# Right: vs run index × 5
 ax = axes[1]
 plot_pos_neg(ax, run_index_scaled, Pt_avg, avg_sig,       color='orange', label="DIS (TBH)", xoffset=-1.25)
 plot_pos_neg(ax, run_index_scaled, Pt_avg, stat_plus_sys, color='orange', label=None,       xoffset=-1.25, alpha=0.4)
@@ -334,6 +334,7 @@ if elastic_bands_index:
 ax.set_xlabel("run index × 5", fontsize=14)
 ax.set_ylim(0.0, 1.2)
 ax.set_xlim(0, max(run_index_scaled.max(), run_index_np_scaled.max() if run_index_np.size > 0 else 0) + 5)
+ax.legend(fontsize=10, loc="lower right")
 
 plt.tight_layout()
 plt.savefig("output/method_comparison.pdf")
@@ -343,9 +344,9 @@ print("[INFO] Saved output/method_comparison.pdf")
 # ===============================
 # 6) Method comparison (means): DIS mean bands split like Elastic blocks; keep Elastic bands
 # ===============================
-# Read period means (from the helper script you ran earlier)
+# Read period means
 means_path = "output/period_pt_sign_means.txt"
-period_means = {}  # period -> dict with pos/neg (N, mean, stat, sys)
+period_means = {}
 if os.path.exists(means_path):
     with open(means_path) as f:
         for line in f:
@@ -412,17 +413,14 @@ dis_color     = "purple"
 
 # --- Left: runnum axis ---
 ax = axes[0]
-# Elastic segmented bands for context
 if elastic_bands_runnum:
     draw_bands(ax, elastic_bands_runnum, color=elastic_color, alpha_pos=0.25, alpha_neg=0.12, label=label_elastic)
 
-# DIS mean bands follow same segmentation style (by elastic mean changes) PER PERIOD
 legend_needed_stat = True
 legend_needed_statsys = True
 for period, runs_in_period in period_to_runs.items():
     if period not in period_means or len(runs_in_period) == 0:
         continue
-    # Restrict Elastic per-run arrays to this NH3 period
     mask = np.isin(run_csv_nums, runs_in_period)
     runs_p = run_csv_nums[mask]
     vals_p = pol_csv[mask]
@@ -431,8 +429,7 @@ for period, runs_in_period in period_to_runs.items():
     order_p = np.argsort(runs_p)
     runs_p  = runs_p[order_p]
     vals_p  = vals_p[order_p]
-    # Build contiguous blocks where Elastic value (and therefore sign) is constant
-    blocks = blocks_by_value(runs_p, vals_p)  # (x0, x1, is_pos, runs_block)
+    blocks = blocks_by_value(runs_p, vals_p)
     stats = period_means[period]
     for (x0, x1, is_pos, _runs_blk) in blocks:
         n, m, s, u = stats["pos"] if is_pos else stats["neg"]
@@ -454,17 +451,15 @@ if run_csv_nums.size > 0:
     ax.set_xlim(min(xmin, run_csv_nums.min()-10), max(xmax, run_csv_nums.max()+10))
 else:
     ax.set_xlim(xmin, xmax)
-ax.legend(fontsize=10)
+ax.legend(fontsize=10, loc="lower right")
 
 # --- Right: run index × 5 axis ---
 ax = axes[1]
-# Elastic bands in index×5 space
 if elastic_bands_index:
     draw_bands(ax, elastic_bands_index, color=elastic_color, alpha_pos=0.25, alpha_neg=0.12, label=label_elastic)
 
 legend_needed_stat = True
 legend_needed_statsys = True
-# Map DIS mean bands over the same elastic-style blocks, but to index×5 using DIS run coverage
 for period, runs_in_period in period_to_runs.items():
     if period not in period_means or len(runs_in_period) == 0:
         continue
@@ -476,10 +471,9 @@ for period, runs_in_period in period_to_runs.items():
     order_p = np.argsort(runs_p)
     runs_p  = runs_p[order_p]
     vals_p  = vals_p[order_p]
-    blocks = blocks_by_value(runs_p, vals_p)  # (x0, x1, is_pos, runs_block)
+    blocks = blocks_by_value(runs_p, vals_p)
     stats = period_means[period]
     for (_x0, _x1, is_pos, runs_blk) in blocks:
-        # Only use runs that exist in the DIS extraction set to define the span
         seg_idx = [run_to_index_scaled[r] for r in runs_blk if r in run_to_index_scaled]
         if len(seg_idx) == 0:
             continue
@@ -500,3 +494,9 @@ ax.set_xlabel("run index × 5", fontsize=14)
 ax.set_ylim(0.0, 1.2)
 x_right = max(run_index_scaled.max(), run_index_np_scaled.max() if run_index_np.size > 0 else 0) + 5
 ax.set_xlim(0, x_right)
+ax.legend(fontsize=10, loc="lower right")
+
+plt.tight_layout()
+plt.savefig("output/method_comparison_means.pdf")
+plt.close()
+print("[INFO] Saved output/method_comparison_means.pdf")
