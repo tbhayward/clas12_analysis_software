@@ -168,8 +168,8 @@ int main() {
         tree->SetBranchAddress("x",        &x);
         tree->SetBranchAddress("y",        &y);
         tree->SetBranchAddress("helicity", &helicity);
-        tree->SetBranchAddress("Depolarization_A", &depA);
-        tree->SetBranchAddress("Depolarization_C", &depC);
+        tree->SetBranchAddress("DepA", &depA);
+        tree->SetBranchAddress("DepC", &depC);
 
         Long64_t N = tree->GetEntries();
         bool inTest = false;
