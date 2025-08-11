@@ -18,7 +18,7 @@
 
 // ---------- CONFIGURATION ----------
 // 0 = all three periods, 1 = RGC_Su22 only, 2 = RGC_Fa22 only, 3 = RGC_Sp23 only
-const int runMode = 0;
+const int runMode = 1;
 // testRun: 0 means process all runs, >0 will restrict to that single run number
 const int testRun = 0;  // set to your run of interest, or 0 to do all
 
