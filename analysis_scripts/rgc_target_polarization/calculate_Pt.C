@@ -364,11 +364,11 @@ int main() {
             double Pt_avg  = 0.5 * (Pt_grv + Pt_abd);
             double avg_sig = std::max(s_grv, s_abd);
 
-            // avg_sys = sqrt( mean(sys_GRV, sys_ABD)^2 + std(sys_GRV, sys_ABD)^2 )
+            // avg_sys = sqrt( max(sys_GRV, sys_ABD)^2 + std(sys_GRV, sys_ABD)^2 )
             double sys_mean = 0.5 * (sys_grv + sys_abd);
             double sys_std  = std::sqrt( ((sys_grv - sys_mean) * (sys_grv - sys_mean) +
                                           (sys_abd - sys_mean) * (sys_abd - sys_mean)) / 1.0 ); // N-1=1 for 2 samples
-            double avg_sys  = std::sqrt(std::pow(sys_mean, 2) + std::pow(sys_std, 2));
+            double avg_sys  = std::sqrt(std::pow(std::max(sys_grv, sys_abd), 2) + std::pow(sys_std, 2));
 
             // write to output in requested order
             out << run << "\t"
