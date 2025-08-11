@@ -447,8 +447,8 @@ for period, runs_in_period in period_to_runs.items():
             continue
         draw_mean_band(ax, x0, x1, m, s, u,
                        base_color=dis_color,
-                       label_inner=("DIS mean (stat)" if legend_flags["DIS mean (stat)"] else None),
-                       label_outer=("DIS mean (stat+sys)" if legend_flags["DIS mean (stat+sys)"] else None))
+                       label_inner=("DIS mean+/-stat" if legend_flags["DIS mean (stat)"] else None),
+                       label_outer=("DIS mean+/stat+sys)" if legend_flags["DIS mean (stat+sys)"] else None))
         legend_flags["DIS mean (stat)"] = False
         legend_flags["DIS mean (stat+sys)"] = False
 
@@ -468,7 +468,7 @@ run_index_np = np.arange(1, len(run_csv_nums)+1) if run_csv_nums.size > 0 else n
 run_index_np_scaled = run_index_np * 5
 elastic_bands_index  = segment_bands_by_value(run_index_np_scaled, pol_csv, pol_csv_err)
 if elastic_bands_index:
-    draw_bands(ax, elastic_bands_index, color=elastic_color, alpha_pos=0.25, alpha_neg=0.12, label="Elastic (NP)")
+    draw_bands(ax, elastic_bands_index, color=elastic_color, alpha_pos=0.25, alpha_neg=0.12, label="elastic (NP)")
 
 legend_flags = {"DIS mean (stat)": True, "DIS mean (stat+sys)": True}
 # Map DIS run numbers to the index×5 axis
@@ -498,8 +498,8 @@ for period, runs_in_period in period_to_runs.items():
             continue
         draw_mean_band(ax, x0i, x1i, m, s, u,
                        base_color=dis_color,
-                       label_inner=("DIS mean (stat)" if legend_flags["DIS mean (stat)"] else None),
-                       label_outer=("DIS mean (stat+sys)" if legend_flags["DIS mean (stat+sys)"] else None))
+                       label_inner=("DIS #mu +/- #sigma_{stat} (TBH)" if legend_flags["DIS mean (stat)"] else None),
+                       label_outer=("DIS #mu +/- #sigma_{stat+sys}" if legend_flags["DIS mean (stat+sys)"] else None))
         legend_flags["DIS mean (stat)"] = False
         legend_flags["DIS mean (stat+sys)"] = False
 
