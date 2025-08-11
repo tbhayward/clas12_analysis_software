@@ -101,7 +101,7 @@ Pt_avg   = Pt_avg[order];  avg_sig = avg_sig[order]; avg_sys = avg_sys[order]
 
 xmin = runnum.min() - 10
 xmax = runnum.max() + 10
-run_index = np.arange(1, len(runnum)+1)
+run_index = np.arange(1, len(runnum)+1) * 2  # multiply by 2 for spacing
 
 # ===============================
 # 3) 1x2: Pt per run (GRV + ABD), with stat and stat+sys (per-model)
@@ -123,15 +123,15 @@ ax.set_ylim(0.0, 1.2)
 ax.set_xlim(xmin, xmax)
 ax.legend(fontsize=10)
 
-# Right: vs run index
+# Right: vs run index (×2)
 ax = axes[1]
 plot_pos_neg(ax, run_index, Pt_grv, s_grv,  color='blue', label="GRSV [stat]",      xoffset=-0.05)
 plot_pos_neg(ax, run_index, Pt_grv, tot_grv, color='blue', label="GRSV [stat+sys]", xoffset=-0.05, alpha=0.4)
 plot_pos_neg(ax, run_index, Pt_abd, s_abd,  color='red',  label="ABDY [stat]",      xoffset=+0.05)
 plot_pos_neg(ax, run_index, Pt_abd, tot_abd, color='red', label="ABDY [stat+sys]",  xoffset=+0.05, alpha=0.4)
-ax.set_xlabel("run index", fontsize=14)
+ax.set_xlabel("run index (×2)", fontsize=14)
 ax.set_ylim(0.0, 1.2)
-ax.set_xlim(0.5, len(run_index)+0.5)
+ax.set_xlim(0.5, (run_index[-1] if run_index.size else 0) + 0.5)
 
 plt.tight_layout()
 plt.savefig("output/model_extractions.pdf")
@@ -155,13 +155,13 @@ ax.set_ylim(0.0, 1.2)
 ax.set_xlim(xmin, xmax)
 ax.legend(fontsize=10)
 
-# Right: vs run index
+# Right: vs run index (×2)
 ax = axes[1]
 plot_pos_neg(ax, run_index, Pt_avg, avg_sig,       color='black', label="Avg $P_{t}$ (stat)")
 plot_pos_neg(ax, run_index, Pt_avg, stat_plus_sys, color='black', label="Avg $P_{t}$ (stat+sys)", alpha=0.4)
-ax.set_xlabel("run index", fontsize=14)
+ax.set_xlabel("run index (×2)", fontsize=14)
 ax.set_ylim(0.0, 1.2)
-ax.set_xlim(0.5, len(run_index)+0.5)
+ax.set_xlim(0.5, (run_index[-1] if run_index.size else 0) + 0.5)
 
 plt.tight_layout()
 plt.savefig("output/avg_pt_plot.pdf")
@@ -209,7 +209,7 @@ if run_csv_nums.size > 0:
     run_csv_nums = run_csv_nums[order_np]
     pol_csv      = pol_csv[order_np]
     pol_csv_err  = pol_csv_err[order_np]
-run_index_np = np.arange(1, len(run_csv_nums)+1) if run_csv_nums.size > 0 else np.array([])
+run_index_np = (np.arange(1, len(run_csv_nums)+1) * 2) if run_csv_nums.size > 0 else np.array([])
 
 fig, axes = plt.subplots(1, 2, figsize=(16,6), sharey=True)
 
@@ -228,15 +228,17 @@ else:
     ax.set_xlim(xmin, xmax)
 ax.legend(fontsize=10)
 
-# Right: vs run index (independent indices, offset ±0.05)
+# Right: vs run index (×2; independent indices, offset ±0.05)
 ax = axes[1]
 plot_pos_neg(ax, run_index,   Pt_avg, avg_sig,       color='orange', label="DIS (TBH)", xoffset=-0.05)
 plot_pos_neg(ax, run_index,   Pt_avg, stat_plus_sys, color='orange', label=None,       xoffset=-0.05, alpha=0.4)
 if run_index_np.size > 0:
     plot_pos_neg(ax, run_index_np, pol_csv, pol_csv_err, color='green',  label="Elastic (NP)", xoffset=+0.05)
-ax.set_xlabel("run index", fontsize=14)
+ax.set_xlabel("run index (×2)", fontsize=14)
 ax.set_ylim(0.0, 1.2)
-ax.set_xlim(0.5, max(len(run_index), len(run_index_np)) + 0.5 if run_index_np.size > 0 else len(run_index) + 0.5)
+right_xlim_max = max(run_index[-1] if run_index.size else 0,
+                     run_index_np[-1] if run_index_np.size else 0) + 0.5
+ax.set_xlim(0.5, right_xlim_max)
 
 plt.tight_layout()
 plt.savefig("output/method_comparison.pdf")
