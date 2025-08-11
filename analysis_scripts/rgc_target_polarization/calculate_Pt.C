@@ -14,6 +14,7 @@
 #include <vector>
 #include <set>
 #include <cmath>
+#include <algorithm>
 
 // ---------- CONFIGURATION ----------
 // 0 = all three periods, 1 = RGC_Su22 only, 2 = RGC_Fa22 only, 3 = RGC_Sp23 only
@@ -87,15 +88,15 @@ int main() {
             if (line.empty() || line[0]=='#') continue;
             std::stringstream ss(line);
             int run; double chTotal, chPlus, chMinus, pol_s, pol_e; char comma;
-            ss >> run >> comma >> chTotal  >> comma >> chPlus   >> comma >> chMinus  >> comma >> 
+            ss >> run >> comma >> chTotal  >> comma >> chPlus   >> comma >> chMinus  >> comma >>
                 pol_s >> comma >> pol_e;
             chargeMap[run]      = chTotal;
             chargePlusMap[run]  = chPlus;
             chargeMinusMap[run] = chMinus;
             signMap[run]        = (pol_s > 0 ? +1 : -1);
             targetPolMap[run]   = pol_s;
-            // Debug suggestion #2: print loaded polarity sign
-            std::cout << "[Debug] run " << run << "  pol_s=" << pol_s << "  signMap=" << 
+            // Debug: print loaded polarity sign
+            std::cout << "[Debug] run " << run << "  pol_s=" << pol_s << "  signMap=" <<
                 signMap[run] << "\n";
         }
     }
@@ -152,29 +153,23 @@ int main() {
             runToIdx[kv.first] = runs.size() - 1;
         }
         const size_t nRuns = runs.size();
-        std::vector<std::vector<long>> Np(nRuns, std::vector<long>(nBins, 0));
-        std::vector<std::vector<long>> Nm(nRuns, std::vector<long>(nBins, 0));
+        std::vector<std::vector<long>>   Np(nRuns, std::vector<long>(nBins, 0));
+        std::vector<std::vector<long>>   Nm(nRuns, std::vector<long>(nBins, 0));
+        std::vector<std::vector<double>> depA_sum(nRuns, std::vector<double>(nBins, 0.0));
+        std::vector<std::vector<double>> depC_sum(nRuns, std::vector<double>(nBins, 0.0));
+        std::vector<std::vector<long>>   dep_cnt  (nRuns, std::vector<long>(nBins, 0));
 
         // set branches 
         Int_t    runnum;
         Double_t x, y;
         Int_t    helicity;
+        Double_t depA, depC;
         tree->SetBranchAddress("runnum",   &runnum);
         tree->SetBranchAddress("x",        &x);
         tree->SetBranchAddress("y",        &y);
         tree->SetBranchAddress("helicity", &helicity);
-
-        // Debug suggestion #1: peek first 100 helicity values
-        {
-            std::set<int> uniqueHel;
-            for (int i=0; i<100 && i<tree->GetEntries(); ++i) {
-                tree->GetEntry(i);
-                uniqueHel.insert(helicity);
-            }
-            std::cout << "[Debug] raw helicity values in first 100 events:";
-            for (int h : uniqueHel) std::cout << " " << h;
-            std::cout << "\n";
-        }
+        tree->SetBranchAddress("Depolarization_A", &depA);
+        tree->SetBranchAddress("Depolarization_C", &depC);
 
         Long64_t N = tree->GetEntries();
         bool inTest = false;
@@ -209,7 +204,7 @@ int main() {
             if (it == runToIdx.end()) continue;
             size_t ridx = it->second;
 
-            // flip helicity sign and combine with target‐sign
+            // flip helicity sign and combine with target‐sign (current convention: no flip)
             int hel = helicity;
             int sgn = signMap[runnum];
 
@@ -217,119 +212,147 @@ int main() {
                     - xB_bins.begin() - 1;
             if (bin < 0 || bin >= (int)nBins) continue;
 
+            // fill yields
             if (hel * sgn > 0) Np[ridx][bin]++;
             else               Nm[ridx][bin]++;
+
+            // accumulate depolarization averages (over all accepted events)
+            depA_sum[ridx][bin] += depA;
+            depC_sum[ridx][bin] += depC;
+            dep_cnt  [ridx][bin] += 1;
         }
         f.Close();
         std::cout << "  [Done] filled histograms for " << period << "\n\n";
 
-        // compute Pt per run
-        for (size_t i = 0; i < nRuns; ++i) {
-            int run = runs[i];
-            if (testRun > 0 && run != testRun) continue;
-
-            std::vector<double> xv, yg, ye_g, ya, ye_a;
-            std::cout << "  [Compute] Run " << run << "\n";
-            double cp      = chargePlusMap[run];
-            double cm      = chargeMinusMap[run];
-            double targPol = targetPolMap[run];
-            double pb      = Pb.at(period);
-
-            for (size_t b = 0; b < nBins; ++b) {
-                long raw_p = Np[i][b], raw_m = Nm[i][b];
-                if (cp <= 0 || cm <= 0) {
-                    std::cout << "    bin " << b << ": missing charge info, skip\n";
-                    continue;
-                }
-                double p = raw_p / cp;
-                double m = raw_m / cm;
-                double S = p + m;
-                if (S < 1e-12) {
-                    std::cout << "    bin " << b << ": S≈0, skip\n";
-                    continue;
-                }
-                double Δ     = p - m;
-                double asym  = Δ / S;
-                double xm    = xMean[b];
-                double df    = Df[b], s_df = sDf[b];
-
-                double a_grv = ALL_GRV(xm);
-                double a_abd = ALL_ABD(xm);
-
-                double Ag    = a_grv * df * pb;
-                double Aa    = a_abd * df * pb;
-                double Pt_g  = Δ / (Ag * S);
-                double Pt_a  = Δ / (Aa * S);
-
-                // print everything to 3 decimals
-                std::cout << std::fixed << std::setprecision(3)
-                          << "    bin " << b
-                          << ": Np="    << raw_p
-                          << ", Nm="    << raw_m
-                          << ", normNp="<< p
-                          << ", normNm="<< m
-                          << ", asym="  << asym
-                          << ", Df="    << df
-                          << ", Pb="    << pb
-                          << ", asym/(Df*Pb)=" << asym/(df*pb)
-                          << ", pol_tgt="<< targPol
-                          << ", A_GRV=" << a_grv
-                          << ", A_ABD=" << a_abd
-                          << ", Pt_GRV_bin="<< Pt_g
-                          << ", Pt_ABD_bin="<< Pt_a
-                          << "\n";
-
-                // propagate stats using sqrt(N)/Q
-                double var_p = raw_p / (cp*cp);
-                double var_m = raw_m / (cm*cm);
-
-                double dPg_p = (S - Δ)/(Ag*S*S);
-                double dPg_n = -(S + Δ)/(Ag*S*S);
-                double var_g = dPg_p*dPg_p * var_p
-                             + dPg_n*dPg_n * var_m;
-                double err_g = std::sqrt(var_g);
-                err_g = std::sqrt(err_g*err_g
-                    + std::pow(Pt_g*s_df/df,2)
-                    + std::pow(Pt_g*sigma_Pb.at(period)/pb,2));
-
-                double dPa_p = (S - Δ)/(Aa*S*S);
-                double dPa_n = -(S + Δ)/(Aa*S*S);
-                double var_a = dPa_p*dPa_p * var_p
-                             + dPa_n*dPa_n * var_m;
-                double err_a = std::sqrt(var_a);
-                err_a = std::sqrt(err_a*err_a
-                    + std::pow(Pt_a*s_df/df,2)
-                    + std::pow(Pt_a*sigma_Pb.at(period)/pb,2));
-
-                xv .push_back(xm);
-                yg .push_back(Pt_g); ye_g.push_back(err_g);
-                ya .push_back(Pt_a); ye_a.push_back(err_a);
-            }
-
-            if (xv.empty()) {
-                std::cout << "    [No valid bins for run " << run << "]\n\n";
+        for (size_t b = 0; b < nBins; ++b) {
+            long raw_p = Np[i][b], raw_m = Nm[i][b];
+            if (cp <= 0 || cm <= 0) {
+                std::cout << "    bin " << b << ": missing charge info, skip\n";
                 continue;
             }
+            double p = raw_p / cp;
+            double m = raw_m / cm;
+            double S = p + m;
+            if (S < 1e-12) {
+                std::cout << "    bin " << b << ": S≈0, skip\n";
+                continue;
+            }
+            double delta = p - m;
+            double asym  = delta / S;
 
-            // fit GRV constant
-            TGraphErrors g_grv(xv.size(), &xv[0], &yg[0], nullptr, &ye_g[0]);
-            TF1 fit0("fit0","[0]",0,1);
-            g_grv.Fit(&fit0,"Q");
-            double Pt_grv = fit0.GetParameter(0), s_grv = fit0.GetParError(0);
+            // depolarization averages for this run/bin
+            double dep_mean_A = 0.0, dep_mean_C = 0.0, depRatio = 1.0;
+            if (dep_cnt[i][b] > 0) {
+                dep_mean_A = depA_sum[i][b] / (double)dep_cnt[i][b];
+                dep_mean_C = depC_sum[i][b] / (double)dep_cnt[i][b];
+                if (std::abs(dep_mean_C) > 0.0) depRatio = dep_mean_A / dep_mean_C;
+            }
 
-            // fit ABD constant
-            TGraphErrors g_abd(xv.size(), &xv[0], &ya[0], nullptr, &ye_a[0]);
-            TF1 fit1("fit1","[0]",0,1);
-            g_abd.Fit(&fit1,"Q");
-            double Pt_abd = fit1.GetParameter(0), s_abd = fit1.GetParError(0);
+            // model A_LL and effective scale
+            double xm    = xMean[b];
+            double df    = Df[b], s_df = sDf[b];
+            double a_grv = ALL_GRV(xm);
+            double a_abd = ALL_ABD(xm);
 
-            out << run << "\t"
-                << std::fixed << std::setprecision(3)
-                << Pt_grv << "\t" << s_grv << "\t"
-                << Pt_abd << "\t" << s_abd << "\n";
+            double Ag    = a_grv * df * pb;    // constant scale (bin)
+            double Aa    = a_abd * df * pb;
+
+            // depolarization-corrected Pt from asymmetry
+            double Pt_g  = (asym * depRatio) / Ag;
+            double Pt_a  = (asym * depRatio) / Aa;
+
+            // print everything to 3 decimals (now includes depRatio term next to Pb, and in asym term)
             std::cout << std::fixed << std::setprecision(3)
-                      << "    -> Fit Pt_GRV=" << Pt_grv << "±" << s_grv
-                      << ", Pt_ABD=" << Pt_abd << "±" << s_abd << "\n\n";
+                      << "    bin " << b
+                      << ": Np="    << raw_p
+                      << ", Nm="    << raw_m
+                      << ", normNp="<< p
+                      << ", normNm="<< m
+                      << ", asym="  << asym
+                      << ", Df="    << df
+                      << ", Pb="    << pb
+                      << ", DepA/DepC=" << depRatio
+                      << ", asym*(DepA/DepC)/(Df*Pb)=" << (asym*depRatio)/(df*pb)
+                      << ", pol_tgt="<< targPol
+                      << ", A_GRV=" << a_grv
+                      << ", A_ABD=" << a_abd
+                      << ", DepA="  << dep_mean_A
+                      << ", DepC="  << dep_mean_C
+                      << ", Pt_GRV_bin="<< Pt_g
+                      << ", Pt_ABD_bin="<< Pt_a
+                      << "\n";
+
+            // propagate stats using sqrt(N)/Q; scale by depRatio^2
+            double var_p = raw_p / (cp*cp);
+            double var_m = raw_m / (cm*cm);
+
+            double dPg_p = (S - delta)/(Ag*S*S);
+            double dPg_n = -(S + delta)/(Ag*S*S);
+            double var_g = (depRatio*depRatio) * (dPg_p*dPg_p * var_p
+                                                + dPg_n*dPg_n * var_m);
+            double err_g = std::sqrt(var_g);
+            err_g = std::sqrt(err_g*err_g
+                + std::pow(Pt_g*s_df/df,2)
+                + std::pow(Pt_g*sigma_Pb.at(period)/pb,2));
+
+            double dPa_p = (S - delta)/(Aa*S*S);
+            double dPa_n = -(S + delta)/(Aa*S*S);
+            double var_a = (depRatio*depRatio) * (dPa_p*dPa_p * var_p
+                                                + dPa_n*dPa_n * var_m);
+            double err_a = std::sqrt(var_a);
+            err_a = std::sqrt(err_a*err_a
+                + std::pow(Pt_a*s_df/df,2)
+                + std::pow(Pt_a*sigma_Pb.at(period)/pb,2));
+
+            xv .push_back(xm);
+            yg .push_back(Pt_g); ye_g.push_back(err_g);
+            ya .push_back(Pt_a); ye_a.push_back(err_a);
+        }
+
+        if (xv.empty()) {
+            std::cout << "    [No valid bins for run " << run << "]\n\n";
+            continue;
+        }
+
+        // fit GRV constant
+        TGraphErrors g_grv(xv.size(), &xv[0], &yg[0], nullptr, &ye_g[0]);
+        TF1 fit0("fit0","[0]",0,1);
+        g_grv.Fit(&fit0,"Q");
+        double Pt_grv = fit0.GetParameter(0), s_grv = fit0.GetParError(0);
+
+        // fit ABD constant
+        TGraphErrors g_abd(xv.size(), &xv[0], &ya[0], nullptr, &ye_a[0]);
+        TF1 fit1("fit1","[0]",0,1);
+        g_abd.Fit(&fit1,"Q");
+        double Pt_abd = fit1.GetParameter(0), s_abd = fit1.GetParError(0);
+
+        // enforce run sign from signMap
+        {
+            int sgn_final = signMap[run];
+            Pt_grv *= sgn_final;
+            Pt_abd *= sgn_final;
+        }
+
+        // derived averages for output
+        double Pt_avg = 0.5*(Pt_grv + Pt_abd);
+        double avg_sig = (s_grv > s_abd ? s_grv : s_abd);
+        // sample stddev of two values
+        double diff_ab = Pt_grv - Pt_abd;
+        double avg_sys = std::sqrt( ((Pt_grv - Pt_avg)*(Pt_grv - Pt_avg)
+                                   + (Pt_abd - Pt_avg)*(Pt_abd - Pt_avg)) / 1.0 );
+
+        out << run << "\t"
+            << std::fixed << std::setprecision(3)
+            << Pt_grv << "\t" << s_grv << "\t"
+            << Pt_abd << "\t" << s_abd << "\t"
+            << Pt_avg << "\t" << avg_sig << "\t" << avg_sys << "\n";
+
+        std::cout << std::fixed << std::setprecision(3)
+                  << "    -> Fit Pt_GRV=" << Pt_grv << "±" << s_grv
+                  << ", Pt_ABD=" << Pt_abd << "±" << s_abd
+                  << ", Pt_avg=" << Pt_avg
+                  << ", avg_sig=" << avg_sig
+                  << ", avg_sys=" << avg_sys << "\n\n";
         }
     }
 

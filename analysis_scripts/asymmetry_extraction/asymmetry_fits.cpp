@@ -24,7 +24,7 @@ double Legendre_P(int ell, int m, float theta) {
 double BSA_inclusive(double* par) {
   // Retrieve the parameters 
   double ALU_offset = par[0];
-  // Calculate and return the value of the function for the given phi and parameters 
+  // Calculate and return the value of the function for the given parameters 
   return ALU_offset;
 }
 
