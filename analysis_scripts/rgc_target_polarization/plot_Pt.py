@@ -3,6 +3,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import csv
 import os
+from matplotlib.patches import Patch
 
 # Ensure output directory exists
 os.makedirs("output", exist_ok=True)
@@ -27,6 +28,48 @@ def plot_pos_neg(ax, x, y, yerr, color, label, xoffset=0.0, alpha=1.0, zorder=No
     if neg.any():
         ax.errorbar(x[neg], y_abs[neg], yerr=None if yerr is None else yerr[neg],
                     fmt='o', color=color, mfc='none', label=None, alpha=alpha, zorder=zorder)
+
+def segment_bands_by_value(run_x, mean, err):
+    """
+    Given arrays (run_x, mean, err) for NH3 elastic values,
+    return list of segments where (mean, err) is constant.
+    Each segment is (x_start, x_end, y_low, y_high), with y_low/high using |mean| ± err.
+    Segmentation is only by change in (mean, err), not by run contiguity.
+    """
+    bands = []
+    if len(run_x) == 0:
+        return bands
+    start = 0
+    current_val = mean[0]
+    current_err = err[0]
+    for i in range(1, len(run_x)):
+        if (mean[i] != current_val) or (err[i] != current_err):
+            x0 = run_x[start]
+            x1 = run_x[i-1]
+            m  = abs(current_val)
+            e  = current_err
+            bands.append((x0, x1, max(0.0, m - e), m + e))
+            start = i
+            current_val = mean[i]
+            current_err = err[i]
+    # last segment
+    x0 = run_x[start]
+    x1 = run_x[-1]
+    m  = abs(current_val)
+    e  = current_err
+    bands.append((x0, x1, max(0.0, m - e), m + e))
+    return bands
+
+def draw_bands(ax, bands, color='green', alpha=0.2, label=None):
+    """
+    Draw a list of (x0, x1, y0, y1) bands as filled rectangles.
+    Adds a legend entry once if 'label' provided.
+    """
+    first = True
+    for (x0, x1, y0, y1) in bands:
+        ax.fill_between([x0, x1], [y0, y0], [y1, y1],
+                        color=color, alpha=alpha, label=label if first else None)
+        first = False
 
 # ===============================
 # 1) Model curves plot
@@ -101,7 +144,8 @@ Pt_avg   = Pt_avg[order];  avg_sig = avg_sig[order]; avg_sys = avg_sys[order]
 
 xmin = runnum.min() - 10
 xmax = runnum.max() + 10
-run_index = np.arange(1, len(runnum)+1) * 2  # multiply by 2 for spacing
+run_index = np.arange(1, len(runnum)+1)
+run_index_scaled = run_index * 5  # scaled x-axis for visibility
 
 # ===============================
 # 3) 1x2: Pt per run (GRV + ABD), with stat and stat+sys (per-model)
@@ -111,7 +155,7 @@ tot_abd = np.sqrt(s_abd**2 + sys_abd**2)
 
 fig, axes = plt.subplots(1, 2, figsize=(16,6), sharey=True)
 
-# Left: vs runnum
+# Left: vs runnum (offset ±0.005)
 ax = axes[0]
 plot_pos_neg(ax, runnum, Pt_grv, s_grv,  color='blue', label="GRSV [stat]",      xoffset=-0.005)
 plot_pos_neg(ax, runnum, Pt_grv, tot_grv, color='blue', label="GRSV [stat+sys]", xoffset=-0.005, alpha=0.4)
@@ -123,15 +167,15 @@ ax.set_ylim(0.0, 1.2)
 ax.set_xlim(xmin, xmax)
 ax.legend(fontsize=10)
 
-# Right: vs run index (×2)
+# Right: vs run index × 5 (offsets multiplied by 5 -> ±1.25)
 ax = axes[1]
-plot_pos_neg(ax, run_index, Pt_grv, s_grv,  color='blue', label="GRSV [stat]",      xoffset=-0.05)
-plot_pos_neg(ax, run_index, Pt_grv, tot_grv, color='blue', label="GRSV [stat+sys]", xoffset=-0.05, alpha=0.4)
-plot_pos_neg(ax, run_index, Pt_abd, s_abd,  color='red',  label="ABDY [stat]",      xoffset=+0.05)
-plot_pos_neg(ax, run_index, Pt_abd, tot_abd, color='red', label="ABDY [stat+sys]",  xoffset=+0.05, alpha=0.4)
-ax.set_xlabel("run index (×2)", fontsize=14)
+plot_pos_neg(ax, run_index_scaled, Pt_grv, s_grv,  color='blue', label="GRSV [stat]",      xoffset=-1.25)
+plot_pos_neg(ax, run_index_scaled, Pt_grv, tot_grv, color='blue', label="GRSV [stat+sys]", xoffset=-1.25, alpha=0.4)
+plot_pos_neg(ax, run_index_scaled, Pt_abd, s_abd,  color='red',  label="ABDY [stat]",      xoffset=+1.25)
+plot_pos_neg(ax, run_index_scaled, Pt_abd, tot_abd, color='red', label="ABDY [stat+sys]",  xoffset=+1.25, alpha=0.4)
+ax.set_xlabel("run index × 5", fontsize=14)
 ax.set_ylim(0.0, 1.2)
-ax.set_xlim(0.5, (run_index[-1] if run_index.size else 0) + 0.5)
+ax.set_xlim(0, run_index_scaled.max() + 5)
 
 plt.tight_layout()
 plt.savefig("output/model_extractions.pdf")
@@ -155,13 +199,13 @@ ax.set_ylim(0.0, 1.2)
 ax.set_xlim(xmin, xmax)
 ax.legend(fontsize=10)
 
-# Right: vs run index (×2)
+# Right: vs run index × 5 (offsets multiplied by 5 where used; here no offset needed)
 ax = axes[1]
-plot_pos_neg(ax, run_index, Pt_avg, avg_sig,       color='black', label="Avg $P_{t}$ (stat)")
-plot_pos_neg(ax, run_index, Pt_avg, stat_plus_sys, color='black', label="Avg $P_{t}$ (stat+sys)", alpha=0.4)
-ax.set_xlabel("run index (×2)", fontsize=14)
+plot_pos_neg(ax, run_index_scaled, Pt_avg, avg_sig,       color='black', label="Avg $P_{t}$ (stat)")
+plot_pos_neg(ax, run_index_scaled, Pt_avg, stat_plus_sys, color='black', label="Avg $P_{t}$ (stat+sys)", alpha=0.4)
+ax.set_xlabel("run index × 5", fontsize=14)
 ax.set_ylim(0.0, 1.2)
-ax.set_xlim(0.5, (run_index[-1] if run_index.size else 0) + 0.5)
+ax.set_xlim(0, run_index_scaled.max() + 5)
 
 plt.tight_layout()
 plt.savefig("output/avg_pt_plot.pdf")
@@ -169,7 +213,7 @@ plt.close()
 print("[INFO] Saved output/avg_pt_plot.pdf")
 
 # ===============================
-# 5) 1x2: Method comparison (NH3-only from CSV)
+# 5) 1x2: Method comparison (NH3-only from CSV) with Elastic bands
 # ===============================
 run_csv_file = "/u/home/thayward/clas12_analysis_software/analysis_scripts/asymmetry_extraction/imports/clas12_run_info.csv"
 
@@ -194,8 +238,8 @@ with open(run_csv_file, newline='') as csvfile:
             continue
         try:
             run_csv_nums.append(int(row[0]))
-            pol_csv.append(float(row[-2]))      # polarization column
-            pol_csv_err.append(float(row[-1]))  # stat err column
+            pol_csv.append(float(row[-2]))      # mean polarization (Elastic method)
+            pol_csv_err.append(float(row[-1]))  # its stat uncertainty
         except ValueError:
             continue
 
@@ -209,16 +253,21 @@ if run_csv_nums.size > 0:
     run_csv_nums = run_csv_nums[order_np]
     pol_csv      = pol_csv[order_np]
     pol_csv_err  = pol_csv_err[order_np]
-run_index_np = (np.arange(1, len(run_csv_nums)+1) * 2) if run_csv_nums.size > 0 else np.array([])
+run_index_np = np.arange(1, len(run_csv_nums)+1) if run_csv_nums.size > 0 else np.array([])
+run_index_np_scaled = run_index_np * 5
+
+# Build band segments where (pol, err) is constant
+elastic_bands_runnum = segment_bands_by_value(run_csv_nums, pol_csv, pol_csv_err)
+elastic_bands_index  = segment_bands_by_value(run_index_np_scaled, pol_csv, pol_csv_err)
 
 fig, axes = plt.subplots(1, 2, figsize=(16,6), sharey=True)
 
-# Left: vs runnum (offset ±0.005)
+# Left: vs runnum (DIS points; Elastic band)
 ax = axes[0]
-plot_pos_neg(ax, runnum, Pt_avg, avg_sig,           color='orange', label="DIS (TBH)", xoffset=-0.005)
-plot_pos_neg(ax, runnum, Pt_avg, stat_plus_sys,     color='orange', label=None,       xoffset=-0.005, alpha=0.4)
-if run_csv_nums.size > 0:
-    plot_pos_neg(ax, run_csv_nums, pol_csv, pol_csv_err, color='green',  label="Elastic (NP)", xoffset=+0.005)
+plot_pos_neg(ax, runnum, Pt_avg, avg_sig,       color='orange', label="DIS (TBH)", xoffset=-0.005)
+plot_pos_neg(ax, runnum, Pt_avg, stat_plus_sys, color='orange', label=None,       xoffset=-0.005, alpha=0.4)
+if elastic_bands_runnum:
+    draw_bands(ax, elastic_bands_runnum, color='green', alpha=0.2, label="Elastic (NP)")
 ax.set_xlabel("runnum", fontsize=14)
 ax.set_ylabel(r"$|P_{t}|$", fontsize=14)
 ax.set_ylim(0.0, 1.2)
@@ -228,17 +277,15 @@ else:
     ax.set_xlim(xmin, xmax)
 ax.legend(fontsize=10)
 
-# Right: vs run index (×2; independent indices, offset ±0.05)
+# Right: vs run index × 5 (offsets multiplied by 5 -> DIS xoffset -1.25; Elastic band across index)
 ax = axes[1]
-plot_pos_neg(ax, run_index,   Pt_avg, avg_sig,       color='orange', label="DIS (TBH)", xoffset=-0.05)
-plot_pos_neg(ax, run_index,   Pt_avg, stat_plus_sys, color='orange', label=None,       xoffset=-0.05, alpha=0.4)
-if run_index_np.size > 0:
-    plot_pos_neg(ax, run_index_np, pol_csv, pol_csv_err, color='green',  label="Elastic (NP)", xoffset=+0.05)
-ax.set_xlabel("run index (×2)", fontsize=14)
+plot_pos_neg(ax, run_index_scaled, Pt_avg, avg_sig,       color='orange', label="DIS (TBH)", xoffset=-1.25)
+plot_pos_neg(ax, run_index_scaled, Pt_avg, stat_plus_sys, color='orange', label=None,       xoffset=-1.25, alpha=0.4)
+if elastic_bands_index:
+    draw_bands(ax, elastic_bands_index, color='green', alpha=0.2, label="Elastic (NP)")
+ax.set_xlabel("run index × 5", fontsize=14)
 ax.set_ylim(0.0, 1.2)
-right_xlim_max = max(run_index[-1] if run_index.size else 0,
-                     run_index_np[-1] if run_index_np.size else 0) + 0.5
-ax.set_xlim(0.5, right_xlim_max)
+ax.set_xlim(0, max(run_index_scaled.max(), run_index_np_scaled.max() if run_index_np.size > 0 else 0) + 5)
 
 plt.tight_layout()
 plt.savefig("output/method_comparison.pdf")
