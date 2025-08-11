@@ -219,7 +219,7 @@ int main() {
             size_t ridx = it->second;
 
             // flip helicity sign and combine with target‐sign
-            int hel = -helicity;
+            int hel = helicity;
             int sgn = signMap[runnum];
 
             int bin = std::upper_bound(xB_bins.begin(), xB_bins.end(), x)
