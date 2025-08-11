@@ -332,10 +332,10 @@ fig, axes = plt.subplots(1, 2, figsize=(16,6), sharey=True)
 
 # Left: vs runnum (DIS points; Elastic band)
 ax = axes[0]
-plot_pos_neg(ax, runnum, Pt_avg, avg_sig,       color='orange', label="DIS (TBH)", xoffset=-0.005)
-plot_pos_neg(ax, runnum, Pt_avg, stat_plus_sys, color='orange', label=None,       xoffset=-0.005, alpha=0.4)
+plot_pos_neg(ax, runnum, Pt_avg, avg_sig,       color='orange', label=r"DIS $\mu \pm \sigma_{\mathrm{stat}}$ (TBH)", xoffset=-0.005)
+plot_pos_neg(ax, runnum, Pt_avg, stat_plus_sys, color='orange', label=r"DIS $\mu \pm \sigma_{\mathrm{stat+sys}}$",   xoffset=-0.005, alpha=0.4)
 if elastic_bands_runnum:
-    draw_bands(ax, elastic_bands_runnum, color='green', alpha_pos=0.25, alpha_neg=0.12, label="Elastic (NP)")
+    draw_bands(ax, elastic_bands_runnum, color='green', alpha_pos=0.25, alpha_neg=0.12, label="elastic (NP)")
 ax.set_xlabel("runnum", fontsize=14)
 ax.set_ylabel(r"$|P_{t}|$", fontsize=14)
 ax.set_ylim(0.0, 1.2)
@@ -347,10 +347,10 @@ ax.legend(fontsize=10)
 
 # Right: vs run index × 5 (DIS xoffset -1.25; Elastic bands across index)
 ax = axes[1]
-plot_pos_neg(ax, run_index_scaled, Pt_avg, avg_sig,       color='orange', label="DIS (TBH)", xoffset=-1.25)
-plot_pos_neg(ax, run_index_scaled, Pt_avg, stat_plus_sys, color='orange', label=None,       xoffset=-1.25, alpha=0.4)
+plot_pos_neg(ax, run_index_scaled, Pt_avg, avg_sig,       color='orange', label=r"DIS $\mu \pm \sigma_{\mathrm{stat}}$ (TBH)", xoffset=-1.25)
+plot_pos_neg(ax, run_index_scaled, Pt_avg, stat_plus_sys, color='orange', label=r"DIS $\mu \pm \sigma_{\mathrm{stat+sys}}$",   xoffset=-1.25, alpha=0.4)
 if elastic_bands_index:
-    draw_bands(ax, elastic_bands_index, color='green', alpha_pos=0.25, alpha_neg=0.12, label="Elastic (NP)")
+    draw_bands(ax, elastic_bands_index, color='green', alpha_pos=0.25, alpha_neg=0.12, label="elastic (NP)")
 ax.set_xlabel("run index × 5", fontsize=14)
 ax.set_ylim(0.0, 1.2)
 ax.set_xlim(0, max(run_index_scaled.max(), run_index_np_scaled.max() if run_index_np.size > 0 else 0) + 5)
@@ -359,55 +359,6 @@ plt.tight_layout()
 plt.savefig("output/method_comparison.pdf")
 plt.close()
 print("[INFO] Saved output/method_comparison.pdf")
-
-# Section 6: Plotting
-fig, axes = plt.subplots(1, 2, figsize=(14, 6), sharey=True)
-
-# Left plot: runnum on x-axis
-for method, color, yvals, yerrs, sys_errs in [
-    ("elastic", "green", elastic_vals, elastic_stat, elastic_sys),
-    ("DIS", "purple", dis_vals, dis_stat, dis_sys)
-]:
-    if method == "elastic":
-        axes[0].errorbar(runnums_offset_elastic, yvals, yerr=yerrs, fmt='s', color=color,
-                         alpha=0.5, label="elastic (NP)")
-        draw_mean_band(axes[0], runnums, yvals, yerrs, sys_errs, color,
-                       label_inner=("DIS #mu +/- #sigma_{stat} (TBH)" if method == "DIS" else None),
-                       label_outer=("DIS #mu +/- #sigma_{stat+sys}" if method == "DIS" else None))
-    else:
-        axes[0].errorbar(runnums_offset_dis, yvals, yerr=yerrs, fmt='s', color=color,
-                         alpha=0.5)
-        draw_mean_band(axes[0], runnums, yvals, yerrs, sys_errs, color,
-                       label_inner="DIS #mu +/- #sigma_{stat} (TBH)",
-                       label_outer="DIS #mu +/- #sigma_{stat+sys}")
-
-axes[0].set_xlabel("runnum")
-axes[0].set_ylabel(r"$|P_t|$")
-axes[0].set_ylim(0, 1.2)
-
-# Right plot: run index * 5 on x-axis
-for method, color, yvals, yerrs, sys_errs in [
-    ("elastic", "green", elastic_vals, elastic_stat, elastic_sys),
-    ("DIS", "purple", dis_vals, dis_stat, dis_sys)
-]:
-    if method == "elastic":
-        axes[1].errorbar(run_indices_offset_elastic, yvals, yerr=yerrs, fmt='s', color=color,
-                         alpha=0.5, label="elastic (NP)")
-        draw_mean_band(axes[1], run_indices_times5, yvals, yerrs, sys_errs, color,
-                       label_inner=("DIS #mu +/- #sigma_{stat} (TBH)" if method == "DIS" else None),
-                       label_outer=("DIS #mu +/- #sigma_{stat+sys}" if method == "DIS" else None))
-    else:
-        axes[1].errorbar(run_indices_offset_dis, yvals, yerr=yerrs, fmt='s', color=color,
-                         alpha=0.5)
-        draw_mean_band(axes[1], run_indices_times5, yvals, yerrs, sys_errs, color,
-                       label_inner="DIS #mu +/- #sigma_{stat} (TBH)",
-                       label_outer="DIS #mu +/- #sigma_{stat+sys}")
-
-axes[1].set_xlabel("run index × 5")
-
-axes[0].legend()
-plt.tight_layout()
-plt.show()
 
 # ===============================
 # 6) Method comparison (means): DIS mean bands split like Elastic blocks;
