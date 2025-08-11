@@ -19,7 +19,7 @@
 // 0 = all three periods, 1 = RGC_Su22 only, 2 = RGC_Fa22 only, 3 = RGC_Sp23 only
 const int runMode = 1;
 // testRun: 0 means process all runs, >0 will restrict to that single run number
-const int testRun = 16156;  // set to your run of interest, or 0 to do all
+const int testRun = 16137;  // set to your run of interest, or 0 to do all
 
 // xB bin edges
 static const std::vector<double> xB_bins = {
@@ -40,14 +40,10 @@ static const std::map<std::string,double> sigma_Pb = {
 
 // A_LL models
 double ALL_GRV(double x) {
-    return 0.00823729 + 1.62853*x
-         - 1.38493*x*x + 1.07047*x*x*x
-         - 0.747653*x*x*x*x;
+    return 0.00823729 + 1.62853*x - 1.38493*x*x + 1.07047*x*x*x - 0.747653*x*x*x*x;
 }
 double ALL_ABD(double x) {
-    return 0.0558035 + 1.23137*x
-         - 1.05596*x*x + 1.95783*x*x*x
-         - 1.22263*x*x*x*x;
+    return 0.0558035 + 1.23137*x - 1.05596*x*x + 1.95783*x*x*x - 1.22263*x*x*x*x;
 }
 
 // path to per-run charge & target‐polarity CSV
@@ -91,21 +87,16 @@ int main() {
             if (line.empty() || line[0]=='#') continue;
             std::stringstream ss(line);
             int run; double chTotal, chPlus, chMinus, pol_s, pol_e; char comma;
-            ss >> run >> comma
-               >> chTotal  >> comma
-               >> chPlus   >> comma
-               >> chMinus  >> comma
-               >> pol_s    >> comma
-               >> pol_e;
+            ss >> run >> comma >> chTotal  >> comma >> chPlus   >> comma >> chMinus  >> comma >> 
+                pol_s >> comma >> pol_e;
             chargeMap[run]      = chTotal;
             chargePlusMap[run]  = chPlus;
             chargeMinusMap[run] = chMinus;
             signMap[run]        = (pol_s > 0 ? +1 : -1);
             targetPolMap[run]   = pol_s;
-            // // Debug suggestion #2: print loaded polarity sign
-            // std::cout << "[Debug] run " << run
-            //           << "  pol_s=" << pol_s
-            //           << "  signMap=" << signMap[run] << "\n";
+            // Debug suggestion #2: print loaded polarity sign
+            std::cout << "[Debug] run " << run << "  pol_s=" << pol_s << "  signMap=" << 
+                signMap[run] << "\n";
         }
     }
     std::cout << "[Loaded] " << chargeMap.size()
