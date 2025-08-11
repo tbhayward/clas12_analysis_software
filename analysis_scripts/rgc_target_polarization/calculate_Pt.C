@@ -128,7 +128,7 @@ int main() {
     // --- 3) Prepare output ---
     gSystem->mkdir("output", true);
     std::ofstream out("output/Pt_by_run.txt");
-    out << "Run\tPt_GRV\tsigma_GRV\tPt_ABD\tsigma_ABD\n";
+    out << "Run\tPt_GRV\tsigma_GRV\tPt_ABD\tsigma_ABD\tPt_avg\tavg_sig\tavg_sys\n";
 
     // --- 4) Single-pass per-period loop with early exit for testRun ---
     const size_t nBins = xB_bins.size() - 1;
