@@ -142,9 +142,9 @@ bool SingleHadronKinematicCuts::applyCuts(int currentFits, bool isMC)
         double pi_ph  = *p_phi;
         double t_val = compute_t_scalar(rn, ec_p, ec_th, ec_ph, pi_p, pi_th, pi_ph);
 
-        // goodEvent = goodEvent && *fiducial_status == 111 && std::fabs(*t) <= 1.0 &&
-        //     *Mx2 > 0.80 && *Mx2 < 1.00;
-        goodEvent = goodEvent && std::fabs(t_val) <= 1.0 && *Mx2 > 0.80 && *Mx2 < 1.00;
+        goodEvent = goodEvent && *fiducial_status == 111 && std::fabs(*t) <= 1.0 &&
+            *Mx2 > 0.80 && *Mx2 < 1.00;
+        // goodEvent = goodEvent && std::fabs(t_val) <= 1.0 && *Mx2 > 0.80 && *Mx2 < 1.00;
         return goodEvent;
     }
 

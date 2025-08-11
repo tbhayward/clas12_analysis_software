@@ -102,10 +102,10 @@ int main() {
             chargeMinusMap[run] = chMinus;
             signMap[run]        = (pol_s > 0 ? +1 : -1);
             targetPolMap[run]   = pol_s;
-            // Debug suggestion #2: print loaded polarity sign
-            std::cout << "[Debug] run " << run
-                      << "  pol_s=" << pol_s
-                      << "  signMap=" << signMap[run] << "\n";
+            // // Debug suggestion #2: print loaded polarity sign
+            // std::cout << "[Debug] run " << run
+            //           << "  pol_s=" << pol_s
+            //           << "  signMap=" << signMap[run] << "\n";
         }
     }
     std::cout << "[Loaded] " << chargeMap.size()
