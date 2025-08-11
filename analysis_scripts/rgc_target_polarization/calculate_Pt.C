@@ -128,7 +128,7 @@ int main() {
     // --- 3) Prepare output ---
     gSystem->mkdir("output", true);
     std::ofstream out("output/Pt_by_run.txt");
-    out << "Run\tPt_GRV\tsigma_GRV\tPt_ABD\tsigma_ABD\tPt_avg\tavg_sig\tavg_sys\tPt_GRV_sys\tPt_ABD_sys\n";
+    out << "Run\tPt_GRV\tsigma_GRV\tsys_GRV\tPt_ABD\tsigma_ABD\tsys_ABD\tPt_avg\tavg_sig\tavg_sys\n";
 
     // --- 4) Single-pass per-period loop with early exit for testRun ---
     const size_t nBins = xB_bins.size() - 1;
@@ -284,7 +284,7 @@ int main() {
                           << ", DepA="  << dep_mean_A
                           << ", DepC="  << dep_mean_C
                           << ", DepA/DepC=" << depRatio
-                          << ", asym/(Df*Pb*DepRatio)=" << asym/(df*pb*depRatio)
+                          << ", asym*(DepA/DepC)/(Df*Pb)=" << (asym*depRatio)/(df*pb)
                           << ", pol_tgt="<< targPol
                           << ", A_GRV=" << a_grv
                           << ", A_ABD=" << a_abd
@@ -370,8 +370,9 @@ int main() {
                                           (sys_abd - sys_mean) * (sys_abd - sys_mean)) / 1.0 ); // N-1=1 for 2 samples
             double avg_sys  = std::sqrt(std::pow(sys_mean, 2) + std::pow(sys_std, 2));
 
-            // write to output in new order
+            // write to output in requested order
             out << run << "\t"
+                << std::fixed << std::setprecision(3)
                 << Pt_grv << "\t" << s_grv << "\t" << sys_grv << "\t"
                 << Pt_abd << "\t" << s_abd << "\t" << sys_abd << "\t"
                 << Pt_avg << "\t" << avg_sig << "\t" << avg_sys << "\n";
@@ -382,8 +383,8 @@ int main() {
                       << ", Pt_avg=" << Pt_avg
                       << ", avg_sig=" << avg_sig
                       << ", avg_sys=" << avg_sys
-                      << ", Pt_GRV_sys=" << Pt_GRV_sys
-                      << ", Pt_ABD_sys=" << Pt_ABD_sys << "\n\n";
+                      << ", sys_GRV=" << sys_grv
+                      << ", sys_ABD=" << sys_abd << "\n\n";
         }
     }
 
