@@ -18,9 +18,9 @@
 
 // ---------- CONFIGURATION ----------
 // 0 = all three periods, 1 = RGC_Su22 only, 2 = RGC_Fa22 only, 3 = RGC_Sp23 only
-const int runMode = 0;
+const int runMode = 1;
 // testRun: 0 means process all runs, >0 will restrict to that single run number
-const int testRun = 0;  // set to your run of interest, or 0 to do all
+const int testRun = 16137;  // set to your run of interest, or 0 to do all
 
 // xB bin edges
 static const std::vector<double> xB_bins = {
@@ -128,7 +128,7 @@ int main() {
     // --- 3) Prepare output ---
     gSystem->mkdir("output", true);
     std::ofstream out("output/Pt_by_run.txt");
-    out << "Run\tPt_GRV\tsigma_GRV\tPt_ABD\tsigma_ABD\tPt_avg\tavg_sig\tavg_sys\n";
+    out << "Run\tPt_GRV\tsigma_GRV\tPt_ABD\tsigma_ABD\tPt_avg\tavg_sig\tavg_sys\tPt_GRV_sys\tPt_ABD_sys\n";
 
     // --- 4) Single-pass per-period loop with early exit for testRun ---
     const size_t nBins = xB_bins.size() - 1;
@@ -232,8 +232,9 @@ int main() {
             double targPol = targetPolMap[run];
 
             std::vector<double> xv, yg, ye_g, ya, ye_a;
+            std::vector<double> grv_bins, abd_bins;  // store per-bin Pt for model sys calc
 
-            for (size_t b = 0; b < nBins; ++b) {
+            for (size_t b = 0; b < nBins - 1; ++b) {  // skip the last xB bin
                 long raw_p = Np[i][b], raw_m = Nm[i][b];
                 if (cp <= 0 || cm <= 0) {
                     std::cout << "    bin " << b << ": missing charge info, skip\n";
@@ -316,6 +317,9 @@ int main() {
                 xv .push_back(xm);
                 yg .push_back(Pt_g); ye_g.push_back(err_g);
                 ya .push_back(Pt_a); ye_a.push_back(err_a);
+
+                grv_bins.push_back(Pt_g);
+                abd_bins.push_back(Pt_a);
             }
 
             if (xv.empty()) {
@@ -340,23 +344,50 @@ int main() {
             Pt_grv *= signCorr;
             Pt_abd *= signCorr;
 
+            // per-model bin-to-bin systematics (sample stddev over bins)
+            auto sample_std = [](const std::vector<double>& v)->double {
+                if (v.size() < 2) return 0.0;
+                double mean = 0.0;
+                for (double val : v) mean += val;
+                mean /= (double)v.size();
+                double ss = 0.0;
+                for (double val : v) {
+                    double d = val - mean;
+                    ss += d*d;
+                }
+                return std::sqrt(ss / (double)(v.size()-1));
+            };
+            double Pt_GRV_sys = sample_std(grv_bins);
+            double Pt_ABD_sys = sample_std(abd_bins);
+
             // extra output columns
             double Pt_avg  = 0.5 * (Pt_grv + Pt_abd);
             double avg_sig = std::max(s_grv, s_abd);
-            double avg_sys = std::sqrt(std::pow(Pt_grv - Pt_abd, 2) / 2.0);
+
+            // compute avg_sys as sqrt( (avg_bin_sys)^2 + (stddev_two_final)^2 )
+            double avg_bin_sys = (Pt_GRV_sys + Pt_ABD_sys) / 2.0;
+            double mean_val = Pt_avg;
+            double var_two_final = ((Pt_grv - mean_val)*(Pt_grv - mean_val) +
+                                    (Pt_abd - mean_val)*(Pt_abd - mean_val)) / 1.0; // N-1=1
+            double stddev_two_final = std::sqrt(var_two_final);
+            double avg_sys = std::sqrt( std::pow(avg_bin_sys, 2) +
+                                        std::pow(stddev_two_final, 2) );
 
             out << run << "\t"
                 << std::fixed << std::setprecision(3)
                 << Pt_grv << "\t" << s_grv << "\t"
                 << Pt_abd << "\t" << s_abd << "\t"
-                << Pt_avg << "\t" << avg_sig << "\t" << avg_sys << "\n";
+                << Pt_avg << "\t" << avg_sig << "\t" << avg_sys << "\t"
+                << Pt_GRV_sys << "\t" << Pt_ABD_sys << "\n";
 
             std::cout << std::fixed << std::setprecision(3)
                       << "    -> Fit Pt_GRV=" << Pt_grv << "±" << s_grv
                       << ", Pt_ABD=" << Pt_abd << "±" << s_abd
                       << ", Pt_avg=" << Pt_avg
                       << ", avg_sig=" << avg_sig
-                      << ", avg_sys=" << avg_sys << "\n\n";
+                      << ", avg_sys=" << avg_sys
+                      << ", Pt_GRV_sys=" << Pt_GRV_sys
+                      << ", Pt_ABD_sys=" << Pt_ABD_sys << "\n\n";
         }
     }
 
