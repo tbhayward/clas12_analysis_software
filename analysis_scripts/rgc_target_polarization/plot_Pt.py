@@ -1,9 +1,7 @@
 #!/usr/bin/env python3
 import numpy as np
 import matplotlib.pyplot as plt
-import csv
 import os
-from matplotlib.patches import Patch
 
 # Ensure output directory exists
 os.makedirs("output", exist_ok=True)
@@ -17,7 +15,6 @@ def plot_pos_neg(ax, x, y, yerr, color, label, xoffset=0.0, alpha=1.0, zorder=No
     x = np.asarray(x) + xoffset
     y = np.asarray(y)
     yerr = None if yerr is None else np.asarray(yerr)
-
     pos = y >= 0
     neg = ~pos
     y_abs = np.abs(y)
@@ -119,25 +116,6 @@ def draw_mean_band(ax, x0, x1, mean, stat, sys,
                     color=base_color,
                     alpha=(alpha_inner_pos if pos else alpha_inner_neg),
                     label=label_inner)
-
-def segment_sign_ranges(run_x, sign_values):
-    """
-    From arrays (run_x, sign_values), return list of contiguous sign segments.
-    Each segment is (x_start, x_end, is_positive, runs_in_segment_array).
-    sign_values determine sign: >=0 -> positive, <0 -> negative.
-    """
-    segments = []
-    if len(run_x) == 0:
-        return segments
-    start = 0
-    curr_pos = (sign_values[0] >= 0)
-    for i in range(1, len(run_x)):
-        if (sign_values[i] >= 0) != curr_pos:
-            segments.append((run_x[start], run_x[i-1], curr_pos, run_x[start:i].copy()))
-            start = i
-            curr_pos = (sign_values[i] >= 0)
-    segments.append((run_x[start], run_x[-1], curr_pos, run_x[start:].copy()))
-    return segments
 
 # ===============================
 # 1) Model curves plot
@@ -332,10 +310,11 @@ fig, axes = plt.subplots(1, 2, figsize=(16,6), sharey=True)
 
 # Left: vs runnum (DIS points; Elastic band)
 ax = axes[0]
-plot_pos_neg(ax, runnum, Pt_avg, avg_sig,       color='orange', label=r"DIS $\mu \pm \sigma_{\mathrm{stat}}$ (TBH)", xoffset=-0.005)
-plot_pos_neg(ax, runnum, Pt_avg, stat_plus_sys, color='orange', label=r"DIS $\mu \pm \sigma_{\mathrm{stat+sys}}$",   xoffset=-0.005, alpha=0.4)
+plot_pos_neg(ax, runnum, Pt_avg, avg_sig,       color='orange', label="DIS (TBH)", xoffset=-0.005)
+plot_pos_neg(ax, runnum, Pt_avg, stat_plus_sys, color='orange', label=None,       xoffset=-0.005, alpha=0.4)
 if elastic_bands_runnum:
-    draw_bands(ax, elastic_bands_runnum, color='green', alpha_pos=0.25, alpha_neg=0.12, label="elastic (NP)")
+    draw_bands(ax, elastic_bands_runnum, color='green', alpha_pos=0.25, alpha_neg=0.12,
+               label=r"elastic $\mu \pm \sigma_{\mathrm{stat}}$ (NP)")
 ax.set_xlabel("runnum", fontsize=14)
 ax.set_ylabel(r"$|P_{t}|$", fontsize=14)
 ax.set_ylim(0.0, 1.2)
@@ -347,10 +326,11 @@ ax.legend(fontsize=10)
 
 # Right: vs run index × 5 (DIS xoffset -1.25; Elastic bands across index)
 ax = axes[1]
-plot_pos_neg(ax, run_index_scaled, Pt_avg, avg_sig,       color='orange', label=r"DIS $\mu \pm \sigma_{\mathrm{stat}}$ (TBH)", xoffset=-1.25)
-plot_pos_neg(ax, run_index_scaled, Pt_avg, stat_plus_sys, color='orange', label=r"DIS $\mu \pm \sigma_{\mathrm{stat+sys}}$",   xoffset=-1.25, alpha=0.4)
+plot_pos_neg(ax, run_index_scaled, Pt_avg, avg_sig,       color='orange', label="DIS (TBH)", xoffset=-1.25)
+plot_pos_neg(ax, run_index_scaled, Pt_avg, stat_plus_sys, color='orange', label=None,       xoffset=-1.25, alpha=0.4)
 if elastic_bands_index:
-    draw_bands(ax, elastic_bands_index, color='green', alpha_pos=0.25, alpha_neg=0.12, label="elastic (NP)")
+    draw_bands(ax, elastic_bands_index, color='green', alpha_pos=0.25, alpha_neg=0.12,
+               label=r"elastic $\mu \pm \sigma_{\mathrm{stat}}$ (NP)")
 ax.set_xlabel("run index × 5", fontsize=14)
 ax.set_ylim(0.0, 1.2)
 ax.set_xlim(0, max(run_index_scaled.max(), run_index_np_scaled.max() if run_index_np.size > 0 else 0) + 5)
@@ -361,8 +341,7 @@ plt.close()
 print("[INFO] Saved output/method_comparison.pdf")
 
 # ===============================
-# 6) Method comparison (means): DIS mean bands split like Elastic blocks;
-#    keep Elastic bands for reference
+# 6) Method comparison (means): DIS mean bands split like Elastic blocks; keep Elastic bands
 # ===============================
 # Read period means (from the helper script you ran earlier)
 means_path = "output/period_pt_sign_means.txt"
@@ -413,8 +392,8 @@ with open(RUNINFO) as f:
         period_to_runs[current_period].append(int(row[0]))
 
 # Helper labels (TeX)
-label_elastic = "elastic (NP)"
-label_dis_stat = r"DIS $\mu \pm \sigma_{\mathrm{stat}}$ (TBH)"
+label_elastic     = r"elastic $\mu \pm \sigma_{\mathrm{stat}}$ (NP)"
+label_dis_stat    = r"DIS $\mu \pm \sigma_{\mathrm{stat}}$ (TBH)"
 label_dis_statsys = r"DIS $\mu \pm \sigma_{\mathrm{stat+sys}}$"
 
 # Rebuild elastic bands (by value) in runnum and index×5 spaces
@@ -519,9 +498,4 @@ for period, runs_in_period in period_to_runs.items():
 
 ax.set_xlabel("run index × 5", fontsize=14)
 ax.set_ylim(0.0, 1.2)
-ax.set_xlim(0, max(run_index_scaled.max(), run_index_np_scaled.max() if run_index_np.size > 0 else 0) + 5)
-
-plt.tight_layout()
-plt.savefig("output/method_comparison_means.pdf")
-plt.close()
-print("[INFO] Saved output/method_comparison_means.pdf")
+ax.set_xlim(0, max
