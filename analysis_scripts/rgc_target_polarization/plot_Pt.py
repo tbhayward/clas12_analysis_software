@@ -408,3 +408,169 @@ axes[1].set_xlabel("run index × 5")
 axes[0].legend()
 plt.tight_layout()
 plt.show()
+
+# ===============================
+# 6) Method comparison (means): DIS mean bands split like Elastic blocks;
+#    keep Elastic bands for reference
+# ===============================
+# Read period means (from the helper script you ran earlier)
+means_path = "output/period_pt_sign_means.txt"
+period_means = {}  # period -> dict with pos/neg (N, mean, stat, sys)
+if os.path.exists(means_path):
+    with open(means_path) as f:
+        for line in f:
+            line = line.strip()
+            if (not line) or line.lower().startswith("period"):
+                continue
+            parts = line.split()
+            if len(parts) < 9:
+                continue
+            period = parts[0]
+            try:
+                N_pos   = int(parts[1]); Mean_Pos = float(parts[2]); Stat_Pos = float(parts[3]); Sys_Pos = float(parts[4])
+                N_neg   = int(parts[5]); Mean_Neg = float(parts[6]); Stat_Neg = float(parts[7]); Sys_Neg = float(parts[8])
+            except ValueError:
+                continue
+            period_means[period] = {
+                "pos": (N_pos, Mean_Pos, Stat_Pos, Sys_Pos),
+                "neg": (N_neg, Mean_Neg, Stat_Neg, Sys_Neg),
+            }
+
+# Parse RUNINFO to gather runs per NH3 period
+RUNINFO = "/u/home/thayward/clas12_analysis_software/analysis_scripts/asymmetry_extraction/imports/clas12_run_info.csv"
+PERIOD_KEYS = {
+    "rgc su22 nh3": "RGC_Su22",
+    "rgc fa22 nh3": "RGC_Fa22",
+    "rgc sp23 nh3": "RGC_Sp23",
+}
+period_to_runs = { "RGC_Su22": [], "RGC_Fa22": [], "RGC_Sp23": [] }
+current_period = None
+with open(RUNINFO) as f:
+    for raw in f:
+        line = raw.strip()
+        if not line:
+            continue
+        if line.startswith("#"):
+            key = line.lower().strip("# ").strip()
+            current_period = PERIOD_KEYS.get(key, None)
+            continue
+        if current_period is None:
+            continue
+        row = [p.strip() for p in line.split(",")]
+        if not row or not row[0].isdigit():
+            continue
+        period_to_runs[current_period].append(int(row[0]))
+
+# Helper labels (TeX)
+label_elastic = "elastic (NP)"
+label_dis_stat = r"DIS $\mu \pm \sigma_{\mathrm{stat}}$ (TBH)"
+label_dis_statsys = r"DIS $\mu \pm \sigma_{\mathrm{stat+sys}}$"
+
+# Rebuild elastic bands (by value) in runnum and index×5 spaces
+elastic_bands_runnum = segment_bands_by_value(run_csv_nums, pol_csv, pol_csv_err)
+run_index_np = np.arange(1, len(run_csv_nums)+1) if run_csv_nums.size > 0 else np.array([])
+run_index_np_scaled = run_index_np * 5
+elastic_bands_index  = segment_bands_by_value(run_index_np_scaled, pol_csv, pol_csv_err)
+
+# Map DIS run numbers -> index×5 for right panel
+run_to_index_scaled = {int(r): int(i*5) for r, i in zip(runnum, np.arange(1, len(runnum)+1))}
+
+fig, axes = plt.subplots(1, 2, figsize=(16,6), sharey=True)
+
+elastic_color = "green"
+dis_color     = "purple"
+
+# --- Left: runnum axis ---
+ax = axes[0]
+# Elastic segmented bands for context
+if elastic_bands_runnum:
+    draw_bands(ax, elastic_bands_runnum, color=elastic_color, alpha_pos=0.25, alpha_neg=0.12, label=label_elastic)
+
+# DIS mean bands follow same segmentation style (by elastic mean changes) PER PERIOD
+legend_needed_stat = True
+legend_needed_statsys = True
+for period, runs_in_period in period_to_runs.items():
+    if period not in period_means or len(runs_in_period) == 0:
+        continue
+    # Restrict Elastic per-run arrays to this NH3 period
+    mask = np.isin(run_csv_nums, runs_in_period)
+    runs_p = run_csv_nums[mask]
+    vals_p = pol_csv[mask]
+    if runs_p.size == 0:
+        continue
+    order_p = np.argsort(runs_p)
+    runs_p  = runs_p[order_p]
+    vals_p  = vals_p[order_p]
+    # Build contiguous blocks where Elastic value (and therefore sign) is constant
+    blocks = blocks_by_value(runs_p, vals_p)  # (x0, x1, is_pos, runs_block)
+    stats = period_means[period]
+    for (x0, x1, is_pos, _runs_blk) in blocks:
+        n, m, s, u = stats["pos"] if is_pos else stats["neg"]
+        if n <= 0 or not np.isfinite(m):
+            continue
+        draw_mean_band(
+            ax, x0, x1, m, s, u,
+            base_color=dis_color,
+            label_inner=(label_dis_stat if legend_needed_stat else None),
+            label_outer=(label_dis_statsys if legend_needed_statsys else None)
+        )
+        legend_needed_stat = False
+        legend_needed_statsys = False
+
+ax.set_xlabel("runnum", fontsize=14)
+ax.set_ylabel(r"$|P_{t}|$", fontsize=14)
+ax.set_ylim(0.0, 1.2)
+if run_csv_nums.size > 0:
+    ax.set_xlim(min(xmin, run_csv_nums.min()-10), max(xmax, run_csv_nums.max()+10))
+else:
+    ax.set_xlim(xmin, xmax)
+ax.legend(fontsize=10)
+
+# --- Right: run index × 5 axis ---
+ax = axes[1]
+# Elastic bands in index×5 space
+if elastic_bands_index:
+    draw_bands(ax, elastic_bands_index, color=elastic_color, alpha_pos=0.25, alpha_neg=0.12, label=label_elastic)
+
+legend_needed_stat = True
+legend_needed_statsys = True
+# Map DIS mean bands over the same elastic-style blocks, but to index×5 using DIS run coverage
+for period, runs_in_period in period_to_runs.items():
+    if period not in period_means or len(runs_in_period) == 0:
+        continue
+    mask = np.isin(run_csv_nums, runs_in_period)
+    runs_p = run_csv_nums[mask]
+    vals_p = pol_csv[mask]
+    if runs_p.size == 0:
+        continue
+    order_p = np.argsort(runs_p)
+    runs_p  = runs_p[order_p]
+    vals_p  = vals_p[order_p]
+    blocks = blocks_by_value(runs_p, vals_p)  # (x0, x1, is_pos, runs_block)
+    stats = period_means[period]
+    for (_x0, _x1, is_pos, runs_blk) in blocks:
+        # Only use runs that exist in the DIS extraction set to define the span
+        seg_idx = [run_to_index_scaled[r] for r in runs_blk if r in run_to_index_scaled]
+        if len(seg_idx) == 0:
+            continue
+        x0i, x1i = min(seg_idx), max(seg_idx)
+        n, m, s, u = stats["pos"] if is_pos else stats["neg"]
+        if n <= 0 or not np.isfinite(m):
+            continue
+        draw_mean_band(
+            ax, x0i, x1i, m, s, u,
+            base_color=dis_color,
+            label_inner=(label_dis_stat if legend_needed_stat else None),
+            label_outer=(label_dis_statsys if legend_needed_statsys else None)
+        )
+        legend_needed_stat = False
+        legend_needed_statsys = False
+
+ax.set_xlabel("run index × 5", fontsize=14)
+ax.set_ylim(0.0, 1.2)
+ax.set_xlim(0, max(run_index_scaled.max(), run_index_np_scaled.max() if run_index_np.size > 0 else 0) + 5)
+
+plt.tight_layout()
+plt.savefig("output/method_comparison_means.pdf")
+plt.close()
+print("[INFO] Saved output/method_comparison_means.pdf")
