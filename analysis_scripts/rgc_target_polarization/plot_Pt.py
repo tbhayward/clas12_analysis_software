@@ -69,11 +69,11 @@ xmin = runnum.min() - 10
 xmax = runnum.max() + 10
 
 # ===============================
-# 2) Plot Pt per run (GRV + ABD)
+# 2) Plot Pt per run (GRV + ABD) with small horizontal offset
 # ===============================
-plt.figure(fig
-plt.errorbar(runnum, Pt_grv, yerr=s_grv, fmt='o', color='blue', label="GRSV [hep-ph] 0011215v1")
-plt.errorbar(runnum, Pt_abd, yerr=s_abd, fmt='o', color='red',  label="ABDY [hep-ph] 0705.1553")
+plt.figure(figsize=(10,6))
+plt.errorbar(runnum - 0.005, Pt_grv, yerr=s_grv, fmt='o', color='blue', label="GRSV [hep-ph] 0011215v1")
+plt.errorbar(runnum + 0.005, Pt_abd, yerr=s_abd, fmt='o', color='red',  label="ABDY [hep-ph] 0705.1553")
 plt.xlabel("runnum", fontsize=14)
 plt.ylabel(r"$P_{t}$", fontsize=14)
 plt.ylim(-1, 1)
