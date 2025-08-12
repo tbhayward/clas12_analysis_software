@@ -152,6 +152,7 @@ void LoadData(){
             std::istringstream iss(line);
             DataPoint d; iss>>d.phi>>d.Q2>>d.xB>>d.t>>d.Eb>>d.A>>d.sigA;
             if(-d.t>1) continue;
+            if(-d.t<0) continue;
             if(gConstraint==1){
               if((-d.t/d.Q2)>=0.2) continue;
               if((-d.t)    >=1.0) continue;
