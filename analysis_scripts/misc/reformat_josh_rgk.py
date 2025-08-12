@@ -49,15 +49,15 @@ def main():
     parse_file(in1, 6.535, rows)
     parse_file(in2, 7.546, rows)
 
-    # Optional: sort for stable ordering (phi, then q2, xb, t)
-    rows.sort(key=lambda r: (r[0], r[1], r[2], r[3]))
+    # # Optional: sort for stable ordering (phi, then q2, xb, t)
+    # rows.sort(key=lambda r: (r[0], r[1], r[2], r[3]))
 
     with open(out_path, "w") as out:
         out.write("# phi(deg) q2(GeV2) xb t(GeV2) Eb(GeV) A sigA\n")
         for phi, q2, xb, t_mag, Eb, A, sigA in rows:
             out.write(
                 "{:0.6f} {:0.6f} {:0.6f} {:0.6f} {:0.3f} {:0.6f} {:0.6f}\n".format(
-                    phi, q2, xb, t_mag, Eb, A, sigA
+                    phi, q2, xb, -t_mag, Eb, A, sigA
                 )
             )
         #endfor

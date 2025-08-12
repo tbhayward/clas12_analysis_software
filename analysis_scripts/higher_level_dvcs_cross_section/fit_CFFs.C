@@ -77,11 +77,11 @@ static int   gScale       = 0;  // 0 off, 1 on
 static std::string gBsaFile = "imports/rga_prl_bsa.txt";
 static std::string gXsFile  = "imports/rga_pass1_xsec_2018.txt";
 
-struct DataPoint { double phi, Q2, xB, t, Eb, A, sigA; };
+struct DataPoint { double phi, Q2, xB, t, Eb, A, sigA; }; // NOTE: here t is physical (negative)
 static std::vector<DataPoint> bsaData, xsData;
 static std::vector<std::vector<DataPoint>> keptBins;
 
-// per-bin averages & fits
+// per-bin averages & fits (bin_t stores physical t < 0)
 static std::vector<double> bin_xB, bin_Q2, bin_t, bin_Eb;
 static std::vector<double> bin_A, bin_dA, bin_redChi2;
 static std::vector<int>    bin_M;
@@ -151,15 +151,20 @@ void LoadData(){
             if(line.empty()||line[0]=='#') continue;
             std::istringstream iss(line);
             DataPoint d; iss>>d.phi>>d.Q2>>d.xB>>d.t>>d.Eb>>d.A>>d.sigA;
-            // NOTE: input 't' field is already -t (>0). Keep only 0 <= -t <= 1 here.
-            if(d.t < 0) continue;
-            if(d.t > 1) continue;
+            // d.t is physical t (negative). Apply cuts on -t:
+            const double mt = -d.t; // -t (>0)
+            // always require: -t > 0 and -t < 1
+            if(!(mt > 0.0))  continue;
+            if(!(mt < 1.0))  continue;
+
             if(gConstraint==1){
-              if((d.t/d.Q2)>=0.2) continue;
-              if((d.t)    >=1.0)  continue;
+              // extra cuts: (-t)/Q2 < 0.2 and -t < 1.0
+              if((mt/d.Q2) >= 0.2) continue;
+              if(mt >= 1.0)        continue; // redundant with global cut
             } else if (gConstraint==2){
-              if((d.t/d.Q2)>=0.2) continue;
-              if((d.t)    >=0.45) continue;
+              // tighter in -t: (-t)/Q2 < 0.2 and -t < 0.45
+              if((mt/d.Q2) >= 0.2) continue;
+              if(mt >= 0.45)       continue;
             }
             v.push_back(d);
         }
@@ -211,14 +216,14 @@ void BinBsaData(){
         double sumw=0, Sx=0, Sq=0, St=0, Se=0;
         for(auto &d: pts){
             double w = 1./(d.sigA*d.sigA);
-            sumw+=w; Sx+=w*d.xB; Sq+=w*d.Q2; St+=w*d.t; Se+=w*d.Eb;
+            sumw+=w; Sx+=w*d.xB; Sq+=w*d.Q2; St+=w*d.t; Se+=w*d.Eb; // d.t is negative
         }
         bin_xB .push_back(Sx/sumw);
         bin_Q2 .push_back(Sq/sumw);
-        bin_t  .push_back(St/sumw);
+        bin_t  .push_back(St/sumw);   // negative
         bin_Eb .push_back(Se/sumw);
     }
-    Nbins = bin_A.size();
+    Nbins = (int)bin_A.size();
     double totChi2=0; int totDof=0;
     for(int k=0;k<Nbins;++k){
         totChi2 += std::pow(bin_A[k]/bin_dA[k],2);
@@ -306,32 +311,32 @@ void fcn(int&, double*, double &f, double *par, int){
         double chi2=0;
         for(int k=0;k<Nbins;++k){
             BMK_DVCS dvcs(-1,1,0,
-                          bin_Eb[k],bin_xB[k],bin_Q2[k],bin_t[k],0.0);
+                          bin_Eb[k],bin_xB[k],bin_Q2[k],bin_t[k],0.0); // bin_t is physical (negative)
             double modelA = dvcs.s1_I() / dvcs.c0_BH();
             double resid  = (bin_A[k] - modelA)/bin_dA[k];
             chi2 += resid*resid;
             if(gConstraint > 0){
-                // enforce alpha0 >= |alpha1 * t| penalty
-                if(hasH){
-                    if(alpha0_H < std::fabs(alpha1_H * bin_t[k])){
-                        chi2 += 1e6;
-                    }
-                }
-                if(hasHt){
-                    if(alpha0_Ht < std::fabs(alpha1_Ht * bin_t[k])){
-                        chi2 += 1e6;
-                    }
-                }
-                if(hasE){
-                    if(alpha0_E < std::fabs(alpha1_E * bin_t[k])){
-                        chi2 += 1e6;
-                    }
-                }
-                if(hasEt){
-                    if(alpha0_Et < std::fabs(alpha1_Et * bin_t[k])){
-                        chi2 += 1e6;
-                    }
-                }
+                // // enforce alpha0 >= |alpha1 * t| penalty (uses |t|, so sign-safe)
+                // if(hasH){
+                //     if(alpha0_H < std::fabs(alpha1_H * bin_t[k])){
+                //         chi2 += 1e6;
+                //     }
+                // }
+                // if(hasHt){
+                //     if(alpha0_Ht < std::fabs(alpha1_Ht * bin_t[k])){
+                //         chi2 += 1e6;
+                //     }
+                // }
+                // if(hasE){
+                //     if(alpha0_E < std::fabs(alpha1_E * bin_t[k])){
+                //         chi2 += 1e6;
+                //     }
+                // }
+                // if(hasEt){
+                //     if(alpha0_Et < std::fabs(alpha1_Et * bin_t[k])){
+                //         chi2 += 1e6;
+                //     }
+                // }
             }
         }
         f = chi2;
@@ -397,12 +402,11 @@ void fcn(int&, double*, double &f, double *par, int){
         // BSA part with conditional constraint
         for(int k=0;k<Nbins;++k){
             BMK_DVCS dvcs(-1,1,0,
-                          bin_Eb[k],bin_xB[k],bin_Q2[k],bin_t[k],0.0);
+                          bin_Eb[k],bin_xB[k],bin_Q2[k],bin_t[k],0.0); // bin_t is physical (negative)
             double modelA = dvcs.s1_I() / dvcs.c0_BH();
             double resid  = (bin_A[k] - modelA)/bin_dA[k];
             chi2 += resid*resid;
             if(gConstraint > 0){
-                // enforce alpha0 >= |alpha1 * t| penalty
                 if(hasH){
                     if(alpha0_H < std::fabs(alpha1_H * bin_t[k])){
                         chi2 += 1e6;
@@ -425,7 +429,7 @@ void fcn(int&, double*, double &f, double *par, int){
                 }
             }
         }
-        // xsec part
+        // xsec part (xsData t is physical negative; BMK expects t accordingly)
         for(auto &d: xsData){
             BMK_DVCS dvcs(-1,0,0,d.Eb,d.xB,d.Q2,d.t,d.phi);
             double xs    = dvcs.CrossSection();
@@ -518,7 +522,7 @@ int main(int argc, char** argv) {
       // ─── Stage 1: Im-fit only ────────────────────────────────────────────────
       gStage = 1;
       build_par_listIm();
-      int nim = parNamesIm.size();
+      int nim = (int)parNamesIm.size();
       std::vector<double> imVal(nim), imErr(nim);
       double chi2_im, edm, errdef;
       int nv,nx,ic, ndf_im;
@@ -628,7 +632,7 @@ int main(int argc, char** argv) {
       parNamesAll = parNamesIm;
       parNamesAll.insert(parNamesAll.end(),
                          parNamesRe.begin(), parNamesRe.end());
-      int nAll = parNamesAll.size();
+      int nAll = (int)parNamesAll.size();
       std::vector<double> allVal(nAll), allErr(nAll);
       double chi2_glob, edm, errdef;
       int nv,nx,ic;
@@ -644,13 +648,10 @@ int main(int argc, char** argv) {
           if(nm.find("alpha0_")==0){
             lo = 1e-6; // strictly positive, no upper cap
           }
-          // enforce alpha1 > 0
           if(nm.find("alpha1_")==0){
             lo = 1e-6;
           }
-          // enforce other positivity
-          if(nm.find("b_")==0
-          || nm.find("M2_")==0){
+          if(nm.find("b_")==0 || nm.find("M2_")==0){
             lo = 0.0;
           }
           // fix P = 1
@@ -658,18 +659,15 @@ int main(int argc, char** argv) {
           || nm=="P_E"  || nm=="P_Et"){
             init = 1.0; lo = 1.0; hi = 1.0; step = 0.0;
           }
-
           if (nm=="C0_H") hi = 0.0; // D-term should be negative
-
-          // subtraction‐term parameters ≥ 0
-          if(nm=="MD2_H"    || nm=="lambda_H"
-          || nm=="MD2_Ht"   || nm=="lambda_Ht"
-          || nm=="MD2_E"    || nm=="lambda_E"
-          || nm=="MD2_Et"   || nm=="lambda_Et"){
+          if(nm=="MD2_H" || nm=="lambda_H"
+          || nm=="MD2_Ht"|| nm=="lambda_Ht"
+          || nm=="MD2_E" || nm=="lambda_E"
+          || nm=="MD2_Et"|| nm=="lambda_Et"){
             lo = 0.0;
           }
 
-          // initialize everything
+          // initialize
           if     (nm=="r_H")        init=r_H;
           else if(nm=="alpha0_H")   init=alpha0_H;
           else if(nm=="alpha1_H")   init=alpha1_H;
@@ -723,7 +721,7 @@ int main(int argc, char** argv) {
           interimErrMap[parNamesAll[i]] = allErr[i];
         }
         chi2_total1 = chi2_glob;
-        ndf_total1  = Nbins + xsData.size() - parNamesAll.size();
+        ndf_total1  = Nbins + (int)xsData.size() - (int)parNamesAll.size();
       };
 
       // first global fit
@@ -747,7 +745,7 @@ int main(int argc, char** argv) {
           // rerun global fit with updated bin_dA
           run_global_fit();
           chi2_total2 = chi2_total1;
-          ndf_total2  = Nbins + xsData.size() - parNamesAll.size();
+          ndf_total2  = Nbins + (int)xsData.size() - (int)parNamesAll.size();
           std::cout<<"CFF global fit χ²/ndf after scaling amplitude uncertainties = "
                    <<chi2_total2<<"/"<<ndf_total2
                    <<" = "<<(ndf_total2>0?chi2_total2/ndf_total2:0)<<"\n";
@@ -764,17 +762,18 @@ int main(int argc, char** argv) {
     }
 
     // ─── Compute kinematic ranges (over loaded data after cuts) ───────────────
-    // Inputs provide -t (>0) as 't'. Also report xB that corresponds to ξ extrema.
+    // Input t is physical (negative). Report xi_min/max (with corresponding xB),
+    // and -t_min/max (positive).
     double xb_min =  std::numeric_limits<double>::infinity();
     double xb_max = -std::numeric_limits<double>::infinity();
-    double mt_min =  std::numeric_limits<double>::infinity(); // -t minimum
-    double mt_max = -std::numeric_limits<double>::infinity(); // -t maximum
+    double mt_min =  std::numeric_limits<double>::infinity(); // min of -t (>0)
+    double mt_max = -std::numeric_limits<double>::infinity(); // max of -t
 
     auto update_ranges = [&](const std::vector<DataPoint>& v){
         for(const auto& d : v){
             if (d.xB < xb_min) xb_min = d.xB;
             if (d.xB > xb_max) xb_max = d.xB;
-            double mt = d.t; // d.t is already -t (>0)
+            const double mt = -d.t;   // -t (>0)
             if (mt < mt_min) mt_min = mt;
             if (mt > mt_max) mt_max = mt;
         }
@@ -813,7 +812,7 @@ int main(int argc, char** argv) {
     fout<<"\n# chi2 ndf chi2/ndf\n"
         <<chi2_total<<" "<<ndf_total<<" "<<(ndf_total>0?chi2_total/ndf_total:0)<<"\n";
 
-    // NEW: write kinematic ranges into the output file
+    // kinematic ranges (after cuts)
     fout<<"# kinematic ranges over input data (after cuts)\n";
     if (have_xb){
         fout<<"xB_min "<<xb_min<<"  xB_max "<<xb_max<<"\n";
