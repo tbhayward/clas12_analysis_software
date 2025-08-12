@@ -30,7 +30,7 @@
 #include <ctime>
 #include <map>
 #include <functional>
-#include <limits>   
+#include <limits>
 
 // ROOT headers
 #include "TMinuit.h"
@@ -151,11 +151,12 @@ void LoadData(){
             if(line.empty()||line[0]=='#') continue;
             std::istringstream iss(line);
             DataPoint d; iss>>d.phi>>d.Q2>>d.xB>>d.t>>d.Eb>>d.A>>d.sigA;
-            if(d.t<0) continue;
-            if(d.t>1) continue;
+            // NOTE: input 't' field is already -t (>0). Keep only 0 <= -t <= 1 here.
+            if(d.t < 0) continue;
+            if(d.t > 1) continue;
             if(gConstraint==1){
               if((d.t/d.Q2)>=0.2) continue;
-              if((d.t)    >=1.0) continue;
+              if((d.t)    >=1.0)  continue;
             } else if (gConstraint==2){
               if((d.t/d.Q2)>=0.2) continue;
               if((d.t)    >=0.45) continue;
@@ -529,26 +530,6 @@ int main(int argc, char** argv) {
           const auto &nm = parNamesIm[i];
           double init=0, lo=-1e3, hi=+1e3, step=0.001;
 
-          // enforce alpha0 > 0 (no upper limit)
-          if(nm=="alpha0_H"  || nm=="alpha0_Ht"
-          || nm=="alpha0_E"  || nm=="alpha0_Et"){
-            // lo = 1e-6; // positive
-          }
-          // enforce alpha1 > 0 (no upper limit)
-          if(nm=="alpha1_H"  || nm=="alpha1_Ht"
-          || nm=="alpha1_E"  || nm=="alpha1_Et"){
-            // lo = 1e-6;
-          }
-          // enforce b ≥ 0
-          if(nm=="b_H"  || nm=="b_Ht"
-          || nm=="b_E"  || nm=="b_Et"){
-            // lo = 1e-6; hi = 1e6;
-          }
-          // enforce M2 ≥ 0
-          if(nm=="M2_H" || nm=="M2_Ht"
-          || nm=="M2_E" || nm=="M2_Et"){
-            // lo = 1e-6; hi = 1e6;
-          }
           // fix P = 1
           if(nm=="P_H"  || nm=="P_Ht"
           || nm=="P_E"  || nm=="P_Et"){
@@ -782,7 +763,29 @@ int main(int argc, char** argv) {
       }
     }
 
-    // ─── Output results ─────────────────────────────────────────────────────────
+    // ─── Compute kinematic ranges (over loaded data after cuts) ───────────────
+    // ξ is computed from Bjorken x using ξ = xB / (2 − xB). Inputs provide -t (>0).
+    double xi_min =  std::numeric_limits<double>::infinity();
+    double xi_max = -std::numeric_limits<double>::infinity();
+    double mt_min =  std::numeric_limits<double>::infinity(); // -t minimum
+    double mt_max = -std::numeric_limits<double>::infinity(); // -t maximum
+
+    auto update_ranges = [&](const std::vector<DataPoint>& v){
+        for(const auto& d : v){
+            if (d.xB < 2.0){ // guard against pathologies
+                double xi = d.xB / (2.0 - d.xB);
+                if (xi < xi_min) xi_min = xi;
+                if (xi > xi_max) xi_max = xi;
+            }
+            double mt = d.t; // d.t is already -t (>0)
+            if (mt < mt_min) mt_min = mt;
+            if (mt > mt_max) mt_max = mt;
+        }
+    };
+    update_ranges(bsaData);
+    update_ranges(xsData);
+
+    // ─── Output results ───────────────────────────────────────────────────────
     std::vector<std::string> outNames =
       (gStrategy==1 ? (std::vector<std::string>(finalValMap.size()?parNamesIm:parNamesIm))
                     : parNamesAll);
@@ -804,8 +807,23 @@ int main(int argc, char** argv) {
     for(auto &n: outNames) fout<<finalErrMap[n]<<" ";
     fout<<"\n# chi2 ndf chi2/ndf\n"
         <<chi2_total<<" "<<ndf_total<<" "<<(ndf_total>0?chi2_total/ndf_total:0)<<"\n";
+
+    // NEW: write kinematic ranges into the output file
+    if (std::isfinite(xi_min) && std::isfinite(xi_max))
+        fout<<"# kinematic ranges over input data (after cuts)\n"
+            <<"xi_min "<<xi_min<<"  xi_max "<<xi_max<<"\n";
+    else
+        fout<<"# kinematic ranges over input data (after cuts)\n"
+            <<"xi_min NA  xi_max NA\n";
+
+    if (std::isfinite(mt_min) && std::isfinite(mt_max))
+        fout<<"-t_min "<<mt_min<<"  -t_max "<<mt_max<<"\n";
+    else
+        fout<<"-t_min NA  -t_max NA\n";
+
     fout.close();
 
+    // Console recap
     std::cout<<"\n--- Fit Results ---\n";
     for(auto &n: outNames){
       std::cout<<" "<<n<<" = "<<finalValMap[n]
@@ -816,66 +834,17 @@ int main(int argc, char** argv) {
     std::cout<<" Average χ²/bin-fit = "<<avgBinChi2<<"\n";
     std::cout<<" χ²_per_amp-fit = "<<reducedAmpChi2<<"\n";
 
-    /* === New: report kinematic ranges over the loaded data (after constraints) ===
-       ξ is computed from Bjorken x using the usual relation ξ = xB / (2 − xB). */
-    {
-        double xi_min =  std::numeric_limits<double>::infinity();
-        double xi_max = -std::numeric_limits<double>::infinity();
-        double mt_min =  std::numeric_limits<double>::infinity(); // -t minimum
-        double mt_max = -std::numeric_limits<double>::infinity(); // -t maximum
-
-        auto update_ranges = [&](const std::vector<DataPoint>& v){
-            for(const auto& d : v){
-                // protect against pathological xB (xB>=2 would be unphysical here)
-                if (d.xB < 2.0){
-                    double xi = d.xB / (2.0 - d.xB);
-                    if (xi < xi_min) xi_min = xi;
-                    if (xi > xi_max) xi_max = xi;
-                }
-                double mt = d.t; // 
-                if (mt < mt_min) mt_min = mt;
-                if (mt > mt_max) mt_max = mt;
-            }
-        };
-        update_ranges(bsaData);
-        update_ranges(xsData);
-
-        if (std::isfinite(xi_min) && std::isfinite(xi_max)){
-            std::cout<<" xi range over input data:  min(xi) = "<<xi_min
-                     <<", max(xi) = "<<xi_max<<"\n";
-        } else {
-            std::cout<<" xi range over input data:  (no valid xB to compute ξ)\n";
-        }
-
-        if (std::isfinite(mt_min) && std::isfinite(mt_max)){
-            std::cout<<" -t range over input data:  min(-t) = "<<mt_min
-                     <<", max(-t) = "<<mt_max<<"\n\n";
-        } else {
-            std::cout<<" -t range over input data:  (no valid t values)\n\n";
-        }
+    if (std::isfinite(xi_min) && std::isfinite(xi_max)){
+        std::cout<<" xi range over input data:  min(xi) = "<<xi_min
+                 <<", max(xi) = "<<xi_max<<"\n";
+    } else {
+        std::cout<<" xi range over input data:  (no valid xB to compute ξ)\n";
     }
-
-    // Also report ranges over the bins that actually enter the Im-fit
-    if (Nbins > 0) {
-        double xi_min_fit =  std::numeric_limits<double>::infinity();
-        double xi_max_fit = -std::numeric_limits<double>::infinity();
-        double mt_min_fit =  std::numeric_limits<double>::infinity();
-        double mt_max_fit = -std::numeric_limits<double>::infinity();
-
-        for (int k = 0; k < Nbins; ++k) {
-            double xi = bin_xB[k] / (2.0 - bin_xB[k]);
-            if (xi < xi_min_fit) xi_min_fit = xi;
-            if (xi > xi_max_fit) xi_max_fit = xi;
-
-            double mt = -bin_t[k];
-            if (mt < mt_min_fit) mt_min_fit = mt;
-            if (mt > mt_max_fit) mt_max_fit = mt;
-        }
-
-        std::cout << " (bins used in Im-fit) xi range:  [" << xi_min_fit
-                  << ", " << xi_max_fit << "]\n";
-        std::cout << " (bins used in Im-fit) -t range:  [" << mt_min_fit
-                  << ", " << mt_max_fit << "]\n";
+    if (std::isfinite(mt_min) && std::isfinite(mt_max)){
+        std::cout<<" -t range over input data:  min(-t) = "<<mt_min
+                 <<", max(-t) = "<<mt_max<<"\n\n";
+    } else {
+        std::cout<<" -t range over input data:  (no valid t values)\n\n";
     }
 
     return 0;
