@@ -17,10 +17,17 @@
 #include <algorithm>
 
 // ---------- CONFIGURATION ----------
+// choose which run periods to process:
 // 0 = all three periods, 1 = RGC_Su22 only, 2 = RGC_Fa22 only, 3 = RGC_Sp23 only
-const int runMode = 1;
+const int runMode = 0;
+
 // testRun: 0 means process all runs, >0 will restrict to that single run number
 const int testRun = 0;  // set to your run of interest, or 0 to do all
+
+// NEW: when true, use the global-average dilution factor columns (Df_avg, Err_avg)
+// from output/dilution_factor.csv for all periods/bins.
+// when false (default), use the per-period Df_* and Err_* columns.
+const bool useAvgDf = false;
 
 // xB bin edges
 static const std::vector<double> xB_bins = {
@@ -100,27 +107,51 @@ int main() {
     std::cout << "[Loaded] " << chargeMap.size()
               << " runs with total/± charge & sign/pol info\n\n";
 
-    // --- 2) Load dilution factors and x_mean from CSV ---
+    // --- 2) Load dilution factors CSV with per-period and average columns ---
+    // Expected header like:
+    // x_mean,Df_Su22,Err_Su22,Df_Fa22,Err_Fa22,Df_Sp23,Err_Sp23,Df_avg,Err_avg,Df_std,Df_range
     std::ifstream dfcsv("output/dilution_factor.csv");
     if (!dfcsv) {
         std::cerr << "[Error] cannot open output/dilution_factor.csv\n";
         return 1;
     }
-    std::vector<double> xMean, Df, sDf;
+
+    std::vector<double> xMean;
+    std::vector<double> Df_Su22, Err_Su22;
+    std::vector<double> Df_Fa22, Err_Fa22;
+    std::vector<double> Df_Sp23, Err_Sp23;
+    std::vector<double> Df_Avg,  Err_Avg;
+
     {
-        std::string hdr; std::getline(dfcsv, hdr);
+        std::string hdr; std::getline(dfcsv, hdr); // consume header
         std::string ln;
-        while (std::getline(dfcsv, ln) && xMean.size() < xB_bins.size()-1) {
+        while (std::getline(dfcsv, ln)) {
+            if (ln.empty()) continue;
+            // replace commas with spaces for easy parsing
+            for (char &c : ln) if (c==',') c=' ';
             std::stringstream ss(ln);
-            double xm, df, dfs; char comma;
-            ss >> xm >> comma >> df >> comma >> dfs;
-            xMean.push_back(xm);
-            Df   .push_back(df);
-            sDf  .push_back(dfs);
+            double xm=0;
+            double d_su=0,e_su=0,d_fa=0,e_fa=0,d_sp=0,e_sp=0,d_av=0,e_av=0;
+            // Some files may also have extra columns at the end (Df_std, Df_range); ignore them.
+            ss >> xm >> d_su >> e_su >> d_fa >> e_fa >> d_sp >> e_sp >> d_av >> e_av;
+            if (!ss.fail()) {
+                xMean.push_back(xm);
+                Df_Su22.push_back(d_su); Err_Su22.push_back(e_su);
+                Df_Fa22.push_back(d_fa); Err_Fa22.push_back(e_fa);
+                Df_Sp23.push_back(d_sp); Err_Sp23.push_back(e_sp);
+                Df_Avg .push_back(d_av); Err_Avg .push_back(e_av);
+            }
         }
     }
-    std::cout << "[Loaded] " << xMean.size()
-              << " x_mean & dilution entries\n\n";
+
+    if (xMean.size() < xB_bins.size()-1) {
+        std::cerr << "[Warning] dilution_factor.csv has fewer rows ("
+                  << xMean.size() << ") than expected bins ("
+                  << (xB_bins.size()-1) << "). Proceeding with what is available.\n\n";
+    } else {
+        std::cout << "[Loaded] " << xMean.size()
+                  << " x_mean & dilution rows (per-period and average)\n\n";
+    }
 
     // --- 3) Prepare output ---
     gSystem->mkdir("output", true);
@@ -223,6 +254,10 @@ int main() {
 
         for (size_t i = 0; i < runs.size(); ++i) {
             int run = runs[i];
+
+            // If testRun is set, only print/process that run’s results
+            if (testRun > 0 && run != testRun) continue;
+
             double cp = chargePlusMap[run];
             double cm = chargeMinusMap[run];
             double pb = Pb.at(period);
@@ -231,23 +266,25 @@ int main() {
             std::vector<double> xv, yg, ye_g, ya, ye_a;
             std::vector<double> grv_bins, abd_bins;  // store per-bin Pt for model sys calc
 
+            bool printedRunHeader = false; // print "Run <run>:" once when the first valid bin appears
+
             for (size_t b = 0; b < nBins - 1; ++b) {  // skip the last xB bin
                 long raw_p = Np[i][b], raw_m = Nm[i][b];
                 if (cp <= 0 || cm <= 0) {
-                    // silently skip bins with missing charge info
+                    // missing charge info -> skip silently
                     continue;
                 }
                 double p = raw_p / cp;
                 double m = raw_m / cm;
                 double S = p + m;
                 if (S < 1e-12) {
-                    // silently skip empty bins
+                    // skip bins with effectively zero sum, but do not print noisy info
                     continue;
                 }
                 double delta = p - m;
                 double asym  = delta / S;
 
-                // depolarization averages for this run/bin
+                // depolarization averages for this run/bin -> only use the ratio in prints
                 double dep_mean_A = 0.0, dep_mean_C = 0.0, depRatio = 1.0;
                 if (dep_cnt[i][b] > 0) {
                     dep_mean_A = depA_sum[i][b] / (double)dep_cnt[i][b];
@@ -255,18 +292,58 @@ int main() {
                     if (std::abs(dep_mean_C) > 0.0) depRatio = dep_mean_A / dep_mean_C;
                 }
 
+                // choose dilution factor for this bin according to config
+                double xm    = (b < xMean.size() ? xMean[b] : 0.0);
+                double df    = 0.0;
+                double s_df  = 0.0;
+                if (useAvgDf) {
+                    if (b < Df_Avg.size()) { df = Df_Avg[b]; s_df = Err_Avg[b]; }
+                } else {
+                    if (period == "RGC_Su22" && b < Df_Su22.size()) { df = Df_Su22[b]; s_df = Err_Su22[b]; }
+                    else if (period == "RGC_Fa22" && b < Df_Fa22.size()) { df = Df_Fa22[b]; s_df = Err_Fa22[b]; }
+                    else if (period == "RGC_Sp23" && b < Df_Sp23.size()) { df = Df_Sp23[b]; s_df = Err_Sp23[b]; }
+                    else if (b < Df_Avg.size()) { // fallback to avg if specific missing
+                        df = Df_Avg[b]; s_df = Err_Avg[b];
+                    }
+                }
+                if (df <= 0.0) continue; // guard
+
                 // model A_LL and effective scale
-                double xm    = xMean[b];
-                double df    = Df[b], s_df = sDf[b];
                 double a_grv = ALL_GRV(xm);
                 double a_abd = ALL_ABD(xm);
 
                 double Ag    = a_grv * df * pb;
                 double Aa    = a_abd * df * pb;
+                if (Ag == 0.0 || Aa == 0.0) continue;
 
                 // depolarization-corrected Pt from asymmetry
                 double Pt_g  = (asym * depRatio) / Ag;
                 double Pt_a  = (asym * depRatio) / Aa;
+
+                // print run header once
+                if (!printedRunHeader) {
+                    std::cout << "Run " << run << ":\n";
+                    printedRunHeader = true;
+                }
+
+                // print bin details (no DepA/DepC individually, just the ratio)
+                std::cout << std::fixed << std::setprecision(3)
+                          << "    bin " << b
+                          << ": Np="    << raw_p
+                          << ", Nm="    << raw_m
+                          << ", normNp="<< p
+                          << ", normNm="<< m
+                          << ", asym="  << asym
+                          << ", Df="    << df
+                          << ", Pb="    << pb
+                          << ", DepA/DepC=" << depRatio
+                          << ", asym*(DepA/DepC)/(Df*Pb)=" << (asym*depRatio)/(df*pb)
+                          << ", pol_tgt="<< targPol
+                          << ", A_GRV=" << a_grv
+                          << ", A_ABD=" << a_abd
+                          << ", Pt_GRV_bin="<< Pt_g
+                          << ", Pt_ABD_bin="<< Pt_a
+                          << "\n";
 
                 // propagate stats
                 double var_p = raw_p / (cp*cp);
@@ -290,35 +367,16 @@ int main() {
                     + std::pow(Pt_a*s_df/df,2)
                     + std::pow(Pt_a*sigma_Pb.at(period)/pb,2));
 
-                // keep data for fits/systematics
                 xv .push_back(xm);
                 yg .push_back(Pt_g); ye_g.push_back(err_g);
                 ya .push_back(Pt_a); ye_a.push_back(err_a);
+
                 grv_bins.push_back(Pt_g);
                 abd_bins.push_back(Pt_a);
-
-                // ------- CLEAN PER-BIN PRINT (no DepA=, DepC=; no skip lines) -------
-                std::cout << std::fixed << std::setprecision(3)
-                          << "    bin " << b
-                          << ": Np="    << raw_p
-                          << ", Nm="    << raw_m
-                          << ", normNp="<< p
-                          << ", normNm="<< m
-                          << ", asym="  << asym
-                          << ", Df="    << df
-                          << ", Pb="    << pb
-                          << ", DepA/DepC=" << depRatio
-                          << ", asym*(DepA/DepC)/(Df*Pb)=" << (asym*depRatio)/(df*pb)
-                          << ", pol_tgt="<< targPol
-                          << ", A_GRV=" << a_grv
-                          << ", A_ABD=" << a_abd
-                          << ", Pt_GRV_bin="<< Pt_g
-                          << ", Pt_ABD_bin="<< Pt_a
-                          << "\n";
             }
 
             if (xv.empty()) {
-                // silently continue (no noisy "[No valid bins]" message)
+                // no valid bins for this run; don't print noisy "skip" lines
                 continue;
             }
 
