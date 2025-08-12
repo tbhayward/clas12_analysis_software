@@ -249,7 +249,7 @@ for cff in ("H","Ht","E","Et"):
     # — Im vs ξ at fixed -t —
     fig, axes = plt.subplots(2,3, figsize=(12,8), sharex=True, sharey=False)
     axes = axes.flatten()
-    fig.suptitle(rf"$\mathrm{{Im}}\,{tex}$  —  $-t$ fixed;  "
+    fig.suptitle(rf"$\mathrm{{Im}}\,{tex}$; "
                  rf"applicability: $\xi\in{xi_title_math}$, $-t\in{t_title_math}$",
                  fontsize=14, y=0.98)
 
@@ -288,7 +288,7 @@ for cff in ("H","Ht","E","Et"):
     # — Im vs -t at fixed ξ —
     fig, axes = plt.subplots(2,3, figsize=(12,8), sharex=True, sharey=False)
     axes = axes.flatten()
-    fig.suptitle(rf"$\mathrm{{Im}}\,{tex}$  —  $\xi$ fixed;  "
+    fig.suptitle(rf"$\mathrm{{Im}}\,{tex}$;  "
                  rf"applicability: $\xi\in{xi_title_math}$, $-t\in{t_title_math}$",
                  fontsize=14, y=0.98)
 
