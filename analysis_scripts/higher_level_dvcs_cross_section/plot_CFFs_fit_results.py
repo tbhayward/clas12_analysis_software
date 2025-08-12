@@ -194,8 +194,6 @@ def compute_uncertainty_band(cff, xi_vals, t_vals, nrep=2000):
 xi_ok = (np.isfinite(xi_min) and np.isfinite(xi_max) and xi_max > xi_min and xi_min > 0)
 mt_ok = (np.isfinite(mt_min) and np.isfinite(mt_max) and mt_max > mt_min and mt_min >= 0)
 
-# Draw ranges: 0.5*min .. 1.5*max (or fallbacks)
-# Keep a tiny headroom for ξ < 1 to avoid singularities.
 if xi_ok:
     xi_lo_draw = max(1e-6, 0.5*xi_min)
     xi_hi_draw = min(1.0 - 1e-6, 1.5*xi_max)
@@ -237,9 +235,9 @@ legend_elems = [
 ]
 
 # Common y-range and ticks
-Y_MIN, Y_MAX = -1.0, 4.0
-YTICKS_ALL  = [-1, 0, 1, 2, 3, 4]
-YTICKS_TL   = [0, 1, 2, 3, 4]   # top-left: hide -1
+Y_MIN, Y_MAX = 0.0, 3.0
+YTICKS_ALL  = [0, 1, 2, 3]
+YTICKS_TL   = [1, 2, 3]     # top-left: hide 0 tick
 
 tex_map = {"H":"H", "Ht":r"\tilde H", "E":"E", "Et":r"\tilde E"}
 
@@ -270,7 +268,7 @@ for cff in ("H","Ht","E","Et"):
         ax.set_xlim(xi_range[0], xi_range[-1])
         ax.set_ylim(Y_MIN, Y_MAX)
         if i == 0:
-            ax.set_yticks(YTICKS_TL)          # top-left: no -1 tick
+            ax.set_yticks(YTICKS_TL)          # top-left: no 0 tick
         elif i % 3 == 0:
             ax.set_yticks(YTICKS_ALL)         # left column: full ticks
         else:
@@ -281,7 +279,8 @@ for cff in ("H","Ht","E","Et"):
         if i % 3 == 0:
             ax.set_ylabel(r"$\mathrm{Im}\,"+tex+r"(\xi,\,-t)$")
 
-        ax.text(0.58,0.75, rf"$-t={mt0:.3f}\,\mathrm{{GeV^2}}$",
+        # Move annotation lower so it doesn't overlap the curves
+        ax.text(0.58, 0.60, rf"$-t={mt0:.3f}\,\mathrm{{GeV^2}}$",
                 transform=ax.transAxes, fontsize=12)
 
     fig.subplots_adjust(left=0.08,right=0.98,bottom=0.08,top=0.90,
@@ -309,7 +308,7 @@ for cff in ("H","Ht","E","Et"):
         ax.set_xlim(t_range[0], t_range[-1])
         ax.set_ylim(Y_MIN, Y_MAX)
         if i == 0:
-            ax.set_yticks(YTICKS_TL)          # top-left: no -1 tick
+            ax.set_yticks(YTICKS_TL)          # top-left: no 0 tick
         elif i % 3 == 0:
             ax.set_yticks(YTICKS_ALL)         # left column: full ticks
         else:
@@ -320,7 +319,8 @@ for cff in ("H","Ht","E","Et"):
         if i % 3 == 0:
             ax.set_ylabel(r"$\mathrm{Im}\,"+tex+r"(\xi,\,-t)$")
 
-        ax.text(0.62,0.75, rf"$\xi={xi0:.3f}$",
+        # Move annotation lower so it doesn't overlap the curves
+        ax.text(0.62, 0.60, rf"$\xi={xi0:.3f}$",
                 transform=ax.transAxes, fontsize=12)
 
     fig.subplots_adjust(left=0.08,right=0.98,bottom=0.08,top=0.90,
