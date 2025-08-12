@@ -25,15 +25,9 @@ if not m:
     sys.exit(1)
 timestamp = m.group(1)
 
-# ─── Helpers ──────────────────────────────────────────────────────────────────
+# ─── Small helpers ────────────────────────────────────────────────────────────
 def build_six(minv, maxv):
-    """
-    Return 6 values:
-      v1 = 0.5*minv
-      v2..v5 = minv + {0.2,0.4,0.6,0.8}*(maxv-minv)
-      v6 = 1.5*maxv
-    If min/max invalid, return None.
-    """
+    """Six values: 0.5*min, 20/40/60/80% in-range, 1.5*max."""
     if not np.isfinite(minv) or not np.isfinite(maxv) or maxv <= minv:
         return None
     return [0.5*minv,
@@ -43,10 +37,10 @@ def build_six(minv, maxv):
             minv + 0.8*(maxv-minv),
             1.5*maxv]
 
-def rng_str(lo, hi, unit=""):
+def rng_str(lo, hi):
+    """Plain numeric range string; no units, no math dollars."""
     if np.isfinite(lo) and np.isfinite(hi):
-        u = f" {unit}" if unit else ""
-        return f"[{lo:.3f}, {hi:.3f}]{u}"
+        return f"[{lo:.3f}, {hi:.3f}]"
     return "(unknown)"
 
 # ─── Load fit results & flags ─────────────────────────────────────────────────
@@ -74,9 +68,11 @@ def parse_fit_results(fname):
         if l.startswith("# parameters"):
             pnames = l.split()[2:]
         elif l.startswith("# values:"):
-            if i + 1 < len(lines): vals = np.array([float(x) for x in lines[i+1].split()])
+            if i + 1 < len(lines):
+                vals = np.array([float(x) for x in lines[i+1].split()])
         elif l.startswith("# errors:"):
-            if i + 1 < len(lines): errs = np.array([float(x) for x in lines[i+1].split()])
+            if i + 1 < len(lines):
+                errs = np.array([float(x) for x in lines[i+1].split()])
         elif l.startswith("# chi2"):
             if i + 1 < len(lines):
                 parts = lines[i+1].split()
@@ -85,7 +81,7 @@ def parse_fit_results(fname):
     if vals is None or errs is None or not pnames:
         raise RuntimeError("Could not parse fit-values/errors/parameter names")
 
-    # kinematic ranges (USED BINS)
+    # kinematic ranges (USED BINS block)
     xi_min = xi_max = mt_min = mt_max = np.nan
     for s in (l.strip() for l in lines):
         if s.startswith("xi_min"):
@@ -178,9 +174,12 @@ def compute_uncertainty_band(cff, xi_vals, t_vals, nrep=2000):
     if cff not in fit_params: return None, None, None
     params = fit_params[cff]; errs = fit_errors[cff]
     reps = generate_replicas(params, errs, nrep)
-    N = (len(xi_vals) if np.ndim(xi_vals)>0 and np.ndim(t_vals)==0
-         else len(t_vals) if np.ndim(t_vals)>0 and np.ndim(xi_vals)==0
-         else np.broadcast(np.array(xi_vals), np.array(t_vals)).shape[0])
+    if np.ndim(xi_vals) > 0 and np.ndim(t_vals) == 0:
+        N = len(xi_vals)
+    elif np.ndim(t_vals) > 0 and np.ndim(xi_vals) == 0:
+        N = len(t_vals)
+    else:
+        N = np.broadcast(np.array(xi_vals), np.array(t_vals)).shape[0]
     curves = np.empty((nrep, N))
     for i in range(nrep):
         Im_rep = make_Im_func(cff, reps[i], renorm_imag)
@@ -191,11 +190,11 @@ def compute_uncertainty_band(cff, xi_vals, t_vals, nrep=2000):
     up  = np.nanpercentile(curves, 84, axis=0)
     return med, lo, up
 
-# ─── Dynamic kinematics from results file (no hard caps on −t) ───────────────
+# ─── Dynamic kinematics from results file ─────────────────────────────────────
 xi_ok = (np.isfinite(xi_min) and np.isfinite(xi_max) and xi_max > xi_min and xi_min > 0)
 mt_ok = (np.isfinite(mt_min) and np.isfinite(mt_max) and mt_max > mt_min and mt_min >= 0)
 
-# Draw ranges: 0.5*min .. 1.5*max when available; otherwise fallbacks
+# Draw ranges: 0.5*min .. 1.5*max (or fallbacks)
 # Keep a tiny headroom for ξ < 1 to avoid singularities.
 if xi_ok:
     xi_lo_draw = max(1e-6, 0.5*xi_min)
@@ -212,13 +211,13 @@ else:
 xi_range = np.linspace(xi_lo_draw, xi_hi_draw, 400)
 t_range  = np.linspace(mt_lo_draw, mt_hi_draw, 400)
 
-# six fixed values for panels
+# six fixed panel values
 t_fixed  = build_six(mt_min, mt_max) if mt_ok else [0.1,0.2,0.3,0.4,0.5,0.6]
 xi_fixed = build_six(xi_min, xi_max) if xi_ok else [0.05,0.15,0.25,0.35,0.45,0.50]
 
-# Titles will show the USED-BIN ranges from file
-xi_title = rng_str(xi_min, xi_max)
-t_title  = rng_str(mt_min, mt_max, "GeV$^2$")
+# Titles: show USED-BIN ranges; keep units as LaTeX without extra dollars
+xi_title_math = rng_str(xi_min, xi_max)
+t_title_math  = (rng_str(mt_min, mt_max) + r"\,\mathrm{GeV}^2") if mt_ok else "(unknown)"
 
 # ─── Plot setup ────────────────────────────────────────────────────────────────
 plt.style.use('classic')
@@ -251,7 +250,7 @@ for cff in ("H","Ht","E","Et"):
     fig, axes = plt.subplots(2,3, figsize=(12,8), sharex=True, sharey=False)
     axes = axes.flatten()
     fig.suptitle(rf"$\mathrm{{Im}}\,{tex}$  —  $-t$ fixed;  "
-                 rf"applicability: $\xi\in{xi_title}$, $-t\in{t_title}$",
+                 rf"applicability: $\xi\in{xi_title_math}$, $-t\in{t_title_math}$",
                  fontsize=14, y=0.98)
 
     for i,(ax,mt0) in enumerate(zip(axes, t_fixed)):
@@ -265,7 +264,7 @@ for cff in ("H","Ht","E","Et"):
         ax.set_xlim(xi_range[0], xi_range[-1])
         ax.set_ylim(-2, 12)
 
-        # y-ticks: special case for top-left (i==0): omit -2
+        # y-ticks: top-left omits -2
         if i == 0:
             ax.set_yticks([0,2,4,6,8,10,12])
         elif i % 3 == 0:
@@ -290,7 +289,7 @@ for cff in ("H","Ht","E","Et"):
     fig, axes = plt.subplots(2,3, figsize=(12,8), sharex=True, sharey=False)
     axes = axes.flatten()
     fig.suptitle(rf"$\mathrm{{Im}}\,{tex}$  —  $\xi$ fixed;  "
-                 rf"applicability: $\xi\in{xi_title}$, $-t\in{t_title}$",
+                 rf"applicability: $\xi\in{xi_title_math}$, $-t\in{t_title_math}$",
                  fontsize=14, y=0.98)
 
     for i,(ax,xi0) in enumerate(zip(axes, xi_fixed)):
@@ -304,7 +303,7 @@ for cff in ("H","Ht","E","Et"):
         ax.set_xlim(t_range[0], t_range[-1])
         ax.set_ylim(-2, 12)
 
-        # y-ticks: special case for top-left (i==0): omit -2
+        # y-ticks: top-left omits -2
         if i == 0:
             ax.set_yticks([0,2,4,6,8,10,12])
         elif i % 3 == 0:
