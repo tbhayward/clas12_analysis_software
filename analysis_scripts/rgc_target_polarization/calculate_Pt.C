@@ -95,9 +95,6 @@ int main() {
             chargeMinusMap[run] = chMinus;
             signMap[run]        = (pol_s > 0 ? +1 : -1);
             targetPolMap[run]   = pol_s;
-            // // Debug: print loaded polarity sign
-            // std::cout << "[Debug] run " << run << "  pol_s=" << pol_s << "  signMap=" <<
-            //     signMap[run] << "\n";
         }
     }
     std::cout << "[Loaded] " << chargeMap.size()
@@ -237,14 +234,14 @@ int main() {
             for (size_t b = 0; b < nBins - 1; ++b) {  // skip the last xB bin
                 long raw_p = Np[i][b], raw_m = Nm[i][b];
                 if (cp <= 0 || cm <= 0) {
-                    std::cout << "    bin " << b << ": missing charge info, skip\n";
+                    // silently skip bins with missing charge info
                     continue;
                 }
                 double p = raw_p / cp;
                 double m = raw_m / cm;
                 double S = p + m;
                 if (S < 1e-12) {
-                    std::cout << "    bin " << b << ": S≈0, skip\n";
+                    // silently skip empty bins
                     continue;
                 }
                 double delta = p - m;
@@ -271,27 +268,6 @@ int main() {
                 double Pt_g  = (asym * depRatio) / Ag;
                 double Pt_a  = (asym * depRatio) / Aa;
 
-                // print bin details
-                std::cout << std::fixed << std::setprecision(3)
-                          << "    bin " << b
-                          << ": Np="    << raw_p
-                          << ", Nm="    << raw_m
-                          << ", normNp="<< p
-                          << ", normNm="<< m
-                          << ", asym="  << asym
-                          << ", Df="    << df
-                          << ", Pb="    << pb
-                          << ", DepA="  << dep_mean_A
-                          << ", DepC="  << dep_mean_C
-                          << ", DepA/DepC=" << depRatio
-                          << ", asym*(DepA/DepC)/(Df*Pb)=" << (asym*depRatio)/(df*pb)
-                          << ", pol_tgt="<< targPol
-                          << ", A_GRV=" << a_grv
-                          << ", A_ABD=" << a_abd
-                          << ", Pt_GRV_bin="<< Pt_g
-                          << ", Pt_ABD_bin="<< Pt_a
-                          << "\n";
-
                 // propagate stats
                 double var_p = raw_p / (cp*cp);
                 double var_m = raw_m / (cm*cm);
@@ -314,16 +290,35 @@ int main() {
                     + std::pow(Pt_a*s_df/df,2)
                     + std::pow(Pt_a*sigma_Pb.at(period)/pb,2));
 
+                // keep data for fits/systematics
                 xv .push_back(xm);
                 yg .push_back(Pt_g); ye_g.push_back(err_g);
                 ya .push_back(Pt_a); ye_a.push_back(err_a);
-
                 grv_bins.push_back(Pt_g);
                 abd_bins.push_back(Pt_a);
+
+                // ------- CLEAN PER-BIN PRINT (no DepA=, DepC=; no skip lines) -------
+                std::cout << std::fixed << std::setprecision(3)
+                          << "    bin " << b
+                          << ": Np="    << raw_p
+                          << ", Nm="    << raw_m
+                          << ", normNp="<< p
+                          << ", normNm="<< m
+                          << ", asym="  << asym
+                          << ", Df="    << df
+                          << ", Pb="    << pb
+                          << ", DepA/DepC=" << depRatio
+                          << ", asym*(DepA/DepC)/(Df*Pb)=" << (asym*depRatio)/(df*pb)
+                          << ", pol_tgt="<< targPol
+                          << ", A_GRV=" << a_grv
+                          << ", A_ABD=" << a_abd
+                          << ", Pt_GRV_bin="<< Pt_g
+                          << ", Pt_ABD_bin="<< Pt_a
+                          << "\n";
             }
 
             if (xv.empty()) {
-                std::cout << "    [No valid bins for run " << run << "]\n\n";
+                // silently continue (no noisy "[No valid bins]" message)
                 continue;
             }
 
