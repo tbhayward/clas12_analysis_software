@@ -1,15 +1,16 @@
 #!/usr/bin/env python3
 """
-plot_ImCFFs_fit_results.py  (BSA per-bin: BKM full vs BH-form approximations)
+plot_ImCFFs_fit_results.py
 
-Curves:
-  • BKM ............. solid blue        (full dv.BSA())
-  • BKM approx ...... dashed blue       (A sinφ / (1 + B cosφ), A from BKM, B from data or model)
-  • RGK fit ......... solid orange      (same BH-form using fit params)
+Plots per-bin A_LU(φ):
+  • BKM (solid blue): full dv.BSA()
+  • BKM approx (dashed blue):  A sinφ / (1 + B1 cosφ + B2 cos2φ),
+      with  A = s1_I / c0_BH,  B1 = -c1_BH/c0_BH,  B2 = +c2_BH/c0_BH
+  • RGK fit (solid orange): same BH denominator, but A from fit model.
 
 Usage:
   python plot_ImCFFs_fit_results.py output/fit_results/fit_results_<TIMESTAMP>.txt
-         [--data PATH] [--B-source data|model] [--outdir output/plots] [--debug]
+         [--data PATH] [--approx-order 1|2] [--B-source model|data] [--outdir output/plots] [--debug]
 """
 import os, re, argparse
 import numpy as np
@@ -85,16 +86,12 @@ def bkm_defaults():
     }
 
 def push_globals(param_map, flags, *, label=""):
-    # reset switches
     ROOT.gInterpreter.ProcessLine("hasH=0; hasHt=0; hasE=0; hasEt=0;")
-    # Et OFF by design here
-    flags_eff = dict(flags); flags_eff["Et"] = 0
+    flags_eff = dict(flags); flags_eff["Et"] = 0  # Et off for this study
     for cff in ("H","Ht","E","Et"):
         ROOT.gInterpreter.ProcessLine(f"has{cff} = {int(flags_eff.get(cff,0))};")
-    # renorms
     ROOT.gInterpreter.ProcessLine(f"renormImag = {float(param_map.get('renormImag',1.0))};")
     ROOT.gInterpreter.ProcessLine(f"renormReal = {float(param_map.get('renormReal',1.0))};")
-    # parameters
     def setp(name):
         if name in param_map:
             ROOT.gInterpreter.ProcessLine(f"{name} = {float(param_map[name])};")
@@ -105,7 +102,7 @@ def push_globals(param_map, flags, *, label=""):
         for k in ("C0","MD2","lambda"):
             setp(f"{k}_{cff}")
 
-# full dv.BSA curve
+# Full A_LU(φ)
 def full_bsa_curve(phi_deg, Q2, xB, t, Eb):
     out = np.empty_like(phi_deg, float)
     for i, ph in enumerate(phi_deg):
@@ -113,46 +110,45 @@ def full_bsa_curve(phi_deg, Q2, xB, t, Eb):
         out[i] = dv.BSA()
     return out
 
-# A and B from model (BMK harmonics) – with BMK→Trento sign fix on B
-def model_AB(Q2, xB, t, Eb):
+# BH-based coefficients (BMK harmonics) with correct sign conventions
+def model_AB12(Q2, xB, t, Eb):
     dv = ROOT.BMK_DVCS(-1, +1, 0, Eb, xB, Q2, t, 0.0)
     c0 = dv.c0_BH()
-    if c0 == 0: return 0.0, 0.0
-    A = dv.s1_I()/c0
-    B = - dv.c1_BH()/c0   # sign flip: cos(phi_BMK) = -cos(phi_trento)
-    return A, B
+    if c0 == 0:
+        return 0.0, 0.0, 0.0
+    A  = dv.s1_I()/c0
+    B1 = - dv.c1_BH()/c0   # sign flip BMK→Trento
+    # cos(2(π-φ)) = cos 2φ → no sign flip
+    B2 = + dv.c2_BH()/c0 if hasattr(dv, "c2_BH") else 0.0
+    return A, B1, B2
 
-# Weighted fit of C + A sinφ/(1 + B cosφ) to get B from data (and C,A if needed)
+# Fit B (and C,A) from data if requested (kept for completeness)
 def fit_B_from_data(phi_deg, y, dy):
     ph = np.deg2rad(phi_deg)
     s, c = np.sin(ph), np.cos(ph)
     w = 1.0/np.clip(dy, 1e-6, None)**2
-    # grid scan over B to avoid SciPy; bounds keep denom away from poles
     Bgrid = np.linspace(-0.95, 0.95, 761)
-    best = (np.inf, 0.0, 0.0, 0.0)  # chi2, B, C, A
+    best = (np.inf, 0.0, 0.0, 0.0)
     for B in Bgrid:
         denom = 1.0 + B*c
-        X0 = np.ones_like(s)
-        X1 = s/denom
-        # weighted linear least squares for [C, A]
+        X = np.vstack([np.ones_like(s), s/denom]).T
         W = np.diag(w)
-        X = np.vstack([X0, X1]).T
         XT_W = X.T @ W
         try:
-            theta = np.linalg.solve(XT_W @ X, XT_W @ y)
+            Cfit, Afit = np.linalg.solve(XT_W @ X, XT_W @ y)
         except np.linalg.LinAlgError:
             continue
-        Cfit, Afit = theta
-        yhat = Cfit + Afit*X1
+        yhat = Cfit + Afit*(s/denom)
         chi2 = np.sum(((y - yhat)*np.sqrt(w))**2)
         if chi2 < best[0]:
             best = (chi2, B, Cfit, Afit)
     _, Bfit, Cfit, Afit = best
     return Bfit, Cfit, Afit
 
-def bh_form_curve(phi_deg, A, B):
+def bh_form_curve(phi_deg, A, B1, B2=0.0):
     ph = np.deg2rad(phi_deg)
-    return A * np.sin(ph) / (1.0 + B * np.cos(ph))
+    denom = 1.0 + B1*np.cos(ph) + B2*np.cos(2*ph)
+    return A * np.sin(ph) / denom
 
 # ──────────────────────────────────────────────────────────────────────────────
 def main():
@@ -160,17 +156,19 @@ def main():
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument('fitfile')
     ap.add_argument('--data', default=None, help='Override data file; else use fit-file "input"')
-    ap.add_argument('--B-source', choices=['data','model'], default='data',
-                    help='Use per-bin B from data-fit (default) or from BH harmonics')
-    ap.add_argument('--outdir', default='output/plots', help='Directory for PDFs')
+    ap.add_argument('--approx-order', type=int, choices=[1,2], default=2,
+                    help='Use 1- or 2-harmonic BH denominator (default 2)')
+    ap.add_argument('--B-source', choices=['model','data'], default='model',
+                    help='Use BH-model B (default) or fit B from data (only for 1-harmonic case)')
+    ap.add_argument('--outdir', default='output/plots', help='Output directory')
     ap.add_argument('--debug', action='store_true')
     args = ap.parse_args()
 
     flags_fit, params_fit, input_path, ts = parse_fit_results(args.fitfile)
     datafile = args.data or input_path or 'imports/rgk_preliminary_bsa.txt'
+
     print(">> Using data file:", datafile)
     print(">> Fit flags:", flags_fit)
-    print(">> Fit params:", params_fit)
 
     _load_dvcs_once()
     bins = load_bins(datafile)
@@ -186,34 +184,40 @@ def main():
         Q2m, xBm, tm, Ebm = b["Q2m"], b["xBm"], b["tm"], b["Ebm"]
         phi_grid = np.linspace(0.0, 360.0, 361)
 
-        # fit B from data once per bin if requested
-        B_from_data = None
-        if args.B_source == 'data':
-            B_from_data, Ctmp, Atmp = fit_B_from_data(phi_data, A_data, dA)
-
         # --- BKM full + approx
         push_globals(params_bkm, flags_bkm, label="BKM")
         bkm_full = full_bsa_curve(phi_grid, Q2m, xBm, tm, Ebm)
-        A_bkm, B_bkm_model = model_AB(Q2m, xBm, tm, Ebm)
-        B_bkm = B_from_data if B_from_data is not None else B_bkm_model
-        bkm_approx = bh_form_curve(phi_grid, A_bkm, B_bkm)
+        A_bkm, B1_bkm, B2_bkm = model_AB12(Q2m, xBm, tm, Ebm)
 
-        # --- RGK fit approx
+        # Optionally override with data-fitted B (only meaningful for 1-harmonic form)
+        if args.approx-order == 1 and args.B_source == 'data':
+            B1_fit, _, _ = fit_B_from_data(phi_data, A_data, dA)
+            B1_used, B2_used = B1_fit, 0.0
+        else:
+            B1_used, B2_used = (B1_bkm, 0.0) if args.approx-order == 1 else (B1_bkm, B2_bkm)
+
+        bkm_approx = bh_form_curve(phi_grid, A_bkm, B1_used, B2_used)
+
+        # --- RGK fit approx (A changes; BH denominator is the same kinematics)
         push_globals(params_fit, flags_fit, label="RGK fit")
-        A_rgk, B_rgk_model = model_AB(Q2m, xBm, tm, Ebm)
-        B_rgk = B_from_data if B_from_data is not None else B_rgk_model
-        rgk_curve = bh_form_curve(phi_grid, A_rgk, B_rgk)
+        A_rgk, B1_rgk, B2_rgk = model_AB12(Q2m, xBm, tm, Ebm)
+        # use the same denominator choice as above
+        if args.approx-order == 1 and args.B_source == 'data':
+            B1_rgk_used, B2_rgk_used = B1_used, 0.0
+        else:
+            B1_rgk_used, B2_rgk_used = (B1_rgk, 0.0) if args.approx-order == 1 else (B1_rgk, B2_rgk)
+        rgk_curve = bh_form_curve(phi_grid, A_rgk, B1_rgk_used, B2_rgk_used)
 
         if args.debug and ibin == 1:
-            print(f"[BKM] A_model={A_bkm:+.6e}, B_model={B_bkm_model:+.6e}, "
-                  f"B_data={B_from_data if B_from_data is not None else float('nan'):+.6e}")
-            print(f"[RGK] A_model={A_rgk:+.6e}, B_model={B_rgk_model:+.6e}")
+            # sanity print
+            print(f"[BKM]  A={A_bkm:+.6e}  B1={B1_bkm:+.6e}  B2={B2_bkm:+.6e}")
+            print(f"[RGK]  A={A_rgk:+.6e}  B1={B1_rgk:+.6e}  B2={B2_rgk:+.6e}")
 
         # --- Plot
         fig, ax = plt.subplots(figsize=(8,5))
         ax.errorbar(phi_data, A_data, yerr=dA, fmt='o', ms=5, color='k', label='Data')
         # BKM full = solid blue
-        ax.plot(phi_grid, bkm_full, '-',  lw=2.5, color='tab:blue',  label='BKM')
+        ax.plot(phi_grid, bkm_full, '-',  lw=2.5, color='tab:blue',   label='BKM')
         # BKM approx = dashed blue
         ax.plot(phi_grid, bkm_approx, '--', lw=2.0, color='tab:blue',  label='BKM approx')
         # RGK fit = solid orange
