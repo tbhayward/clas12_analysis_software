@@ -3,20 +3,20 @@
 plot_BSA_CFFs_from_fit.py
 
 Usage:
-    python plot_BSA_CFFs_from_fit.py output/fit_results/fit_results_<TIMESTAMP>.txt --CFFs [0|1]
+    python plot_BSA_CFFs_from_fit.py output/fit_results/fit_results_<TIMESTAMP>.txt [--CFFs 0|1] [--data PATH] [--debug]
 
-What this does
---------------
-• Parses the fit-results text file produced by fit_CFFs.C
-  - Reads which CFFs were enabled (H, Ht, E, Et)
-  - Reads the fitted parameter names and values
-  - Reads the original BSA input file path from the "input" line
-• Loads DVCS_xsec.C into ROOT exactly once (guarded) and pushes the flags/parameters
-• Reconstructs BSA(φ) per φ-bin from the original BSA input file:
-  - Plots data points with error bars
-  - Overlays "original-model" BSA and "fitted" BSA curves
-  - If --CFFs=1, also shows the ImH-only fitted curve separately from the "all enabled CFFs" fit
-• Saves one PDF per φ-bin into output/plots/
+Notes
+-----
+• The "φ=0°,1°,2°" lines are just a sanity print of the first 3 points on a dense
+  φ-grid (0..360° step 1°). The full curve is computed.
+
+• If BSA=0 everywhere, the usual causes are:
+  (a) s1_I=0 (e.g. K=0 near t≈t_min, or all Im CFFs effectively zero/disabled),
+  (b) renorms/flags/params not applied into the loaded C++,
+  (c) something pathological in kinematics (y=0, etc).
+
+• Pass --debug to print internals (xi, t_min, K, BH2, DVCS2, BHDVCS, s1_I, GetImH)
+  for a few φ points of the first bin.
 """
 
 import os
@@ -25,14 +25,13 @@ import re
 import argparse
 import numpy as np
 import matplotlib.pyplot as plt
-
-import ROOT  # PyROOT (cling)
+import ROOT  # PyROOT
 
 # -----------------------------------------------------------------------------
 # One-time, guarded load of DVCS_xsec.C
 # -----------------------------------------------------------------------------
 def _load_dvcs_once():
-    """Load DVCS_xsec.C into the ROOT interpreter exactly once, guarded."""
+    """Load DVCS_xsec.C exactly once into cling without redefinitions."""
     if getattr(_load_dvcs_once, "_done", False):
         return
     ROOT.gInterpreter.Declare(r"""
@@ -45,28 +44,27 @@ def _load_dvcs_once():
 
 
 # -----------------------------------------------------------------------------
-# Fit-file parsing
+# Parse the fit-results text file produced by the fitter
 # -----------------------------------------------------------------------------
 def parse_fit_results(fname):
     """
-    Extract:
-      - flags dict like {'H':1,'Ht':0,'E':0,'Et':0}
-      - list of parameter names
-      - list of parameter values
-      - input data file path from 'input       <path>' line (if present)
-      - strategy (int) if present
+    Returns:
+      flags: dict {'H':1,'Ht':0,'E':0,'Et':0}
+      pnames: list of parameter names
+      pvals:  list of corresponding values
+      input_file: path in line "input <path>" (if present), else None
+      strategy: int if present, else None
     """
     with open(fname) as f:
         lines = [l.strip() for l in f if l.strip()]
 
-    # Flags line, e.g. "H 1 Ht 0 E 0 Et 0"
+    # flags
     flag_line = None
     for l in lines:
         if re.match(r'^\s*H\s+[01]\s+Ht\s+[01]\s+E\s+[01]\s+Et\s+[01]\s*$', l):
             flag_line = l
             break
     if flag_line is None:
-        # fallback: first line starting with "H "
         flag_line = next((l for l in lines if l.startswith("H ")), None)
     if flag_line is None:
         raise RuntimeError("Could not find 'H ... Ht ... E ... Et ...' flags line in fit file")
@@ -78,7 +76,7 @@ def parse_fit_results(fname):
         val = int(toks[i + 1])
         flags[key] = val
 
-    # Parameter names, values, (errors not needed here)
+    # parameters & values
     pnames = []
     pvals = None
     for i, l in enumerate(lines):
@@ -87,21 +85,19 @@ def parse_fit_results(fname):
         elif l.startswith("# values"):
             if i + 1 < len(lines):
                 pvals = list(map(float, lines[i + 1].split()))
-
     if not pnames or pvals is None:
         raise RuntimeError("Couldn't parse parameter names/values from fit file")
 
-    # Optional: input data file path (from fit_CFFs.C output 'input       <path>')
+    # optional input file path
     input_file = None
     for l in lines:
         if l.startswith("input"):
-            # everything after 'input' (split once) is the path
             parts = l.split(None, 1)
             if len(parts) == 2:
                 input_file = parts[1].strip()
             break
 
-    # Optional: strategy
+    # optional strategy
     strategy = None
     for l in lines:
         if l.startswith("strategy"):
@@ -117,14 +113,12 @@ def parse_fit_results(fname):
 
 
 # -----------------------------------------------------------------------------
-# Read BSA input file and split into φ-bins (wrapping when φ decreases)
+# Read a BSA data file and split into φ-bins (wrap when φ decreases)
 # -----------------------------------------------------------------------------
 def load_all_bins(datafile):
     """
-    Read a BSA data file with columns:
-      phi  Q2  xB  t  Eb  A  sigA
-    Split into bins whenever phi wraps around (phi decreases).
-    Returns a list of dicts with numpy arrays and per-bin means.
+    Expect columns: phi  Q2  xB  t  Eb  A  sigA
+    Splits into bins when phi wraps around (decreases).
     """
     bins = []
     curr = {k: [] for k in ("phi", "Q2", "xB", "t", "Eb", "A", "sigA")}
@@ -154,17 +148,9 @@ def load_all_bins(datafile):
 
 
 # -----------------------------------------------------------------------------
-# "Original" model defaults (match DVCS_xsec.C global variable names)
+# "Original" model defaults (match DVCS_xsec.C variable names)
 # -----------------------------------------------------------------------------
 def original_model_defaults():
-    """
-    Return a dict of baseline parameters keyed exactly as in DVCS_xsec.C:
-      r_H, n_H, alpha0_H, alpha1_H, b_H, M2_H, P_H,
-      r_Ht, n_Ht, alpha0_Ht, ...
-      r_E, n_E, ...
-      r_Et, n_Et, ...
-      renormImag, renormReal
-    """
     return {
         'renormImag': 1.0,
         'renormReal': 1.0,
@@ -180,62 +166,71 @@ def original_model_defaults():
 
 
 # -----------------------------------------------------------------------------
-# Push flags and parameters into the already-loaded DVCS_xsec.C (no re-includes)
+# Push flags and parameters into the already-loaded DVCS_xsec.C
 # -----------------------------------------------------------------------------
-def push_globals(param_map, flags, *, strategy1_like=True):
+def push_globals(param_map, flags):
     """
-    Set global flags/parameters inside DVCS_xsec.C via ROOT.gInterpreter.ProcessLine.
-    Only assigns keys present in param_map (so missing keys keep their DVCS defaults).
+    Sets the global switches and parameters in the C++:
+      hasH, hasHt, hasE, hasEt; renormImag/Real; and any of
+      r_*, n_*, alpha0_*, alpha1_*, b_*, M2_*, P_* present in param_map.
     """
-    # Flags first
+    # switches
     ROOT.gInterpreter.ProcessLine("hasH=0; hasHt=0; hasE=0; hasEt=0;")
     for cff in ("H", "Ht", "E", "Et"):
         ROOT.gInterpreter.ProcessLine(f"has{cff} = {int(flags.get(cff, 0))};")
 
-    # Renormalizations (BSA uses only renormImag; renormReal used in Re-parts)
+    # renormalizations
     renI = float(param_map.get('renormImag', 1.0))
-    ROOT.gInterpreter.ProcessLine(f"renormImag = {renI};")
-
-    # If you want to mimic "strategy 1" semantics (Im-only) you can set renormReal=1.0 safely;
-    # BSA does not depend on Re-parts in these formulas (it uses Im pieces in s1_I).
     renR = float(param_map.get('renormReal', 1.0))
+    ROOT.gInterpreter.ProcessLine(f"renormImag = {renI};")
     ROOT.gInterpreter.ProcessLine(f"renormReal = {renR};")
 
-    # Helper to set one variable if present
+    # helper
     def set_if_present(name):
         if name in param_map:
             ROOT.gInterpreter.ProcessLine(f"{name} = {float(param_map[name])};")
 
-    # Imaginary-ansatz parameters per CFF
+    # imaginary-ansatz parameters
     for cff in ("H", "Ht", "E", "Et"):
         if not int(flags.get(cff, 0)):
             continue
         for k in ("r", "n", "alpha0", "alpha1", "b", "M2", "P"):
             set_if_present(f"{k}_{cff}")
 
-    # Optional real-part subtraction constants (used only if present)
+    # optional real-part subtraction constants (only if present)
     for cff in ("H", "Ht", "E", "Et"):
         for k in ("C0", "MD2", "lambda"):
             set_if_present(f"{k}_{cff}")
 
 
 # -----------------------------------------------------------------------------
-# Compute BSA curve for arrays of kinematics
+# Compute BSA curve; optional deep debug print for first few points
 # -----------------------------------------------------------------------------
-def compute_bsa(phi_arr, Q2_arr, xB_arr, t_arr, Eb_arr, *, debug_tag=None):
-    """
-    Build BMK_DVCS and return dvcs.BSA() for each point.
-    Assumes DVCS_xsec.C is already loaded and globals are set.
-    """
+def compute_bsa(phi_arr, Q2_arr, xB_arr, t_arr, Eb_arr, *, debug=False, debug_tag=None, max_debug_points=3):
     out = np.empty_like(phi_arr, dtype=float)
     for i, (phi, Q2, xB, t, Eb) in enumerate(zip(phi_arr, Q2_arr, xB_arr, t_arr, Eb_arr)):
-        dvcs = ROOT.BMK_DVCS(-1, 1, 0, Eb, xB, Q2, t, phi)  # constructor forces t<=0 internally
+        dvcs = ROOT.BMK_DVCS(-1, 1, 0, Eb, xB, Q2, t, phi)
         mA = dvcs.BSA()
         out[i] = mA
-        if debug_tag and i < 3:
-            # quick peek at a few points
-            ROOT.gInterpreter.ProcessLine("/* debug */")
-            print(f"[{debug_tag}] φ={phi:6.1f}°, Q2={Q2:.3f}, xB={xB:.3f}, -t={abs(t):.3f} -> BSA={mA:.6f}")
+
+        if debug and i < max_debug_points:
+            # Internals that matter for ALU
+            xi = dvcs.xi
+            tmin = dvcs.t_min
+            K = dvcs.K
+            bh2 = dvcs.BH2()
+            dv2 = dvcs.DVCS2()
+            inter = dvcs.BHDVCS()
+            s1i = dvcs.s1_I()  # should carry L_beam
+            # evaluate ImH at (xi,t) to check it's not zero
+            ROOT.gInterpreter.ProcessLine("double __tmpImH = GetImH(%g, %g);" % (xi, dvcs.t))
+            # fetch it back by printing (cling easiest way)
+            ROOT.gInterpreter.ProcessLine('std::cout.setf(std::ios::scientific);')
+            ROOT.gInterpreter.ProcessLine('std::cout<<"[samp] ImH="<<__tmpImH<<std::endl;')
+            print(f"[{debug_tag}] φ={phi:6.1f}°, Q2={Q2:.3f}, xB={xB:.3f}, -t={abs(dvcs.t):.3f} | "
+                  f"xi={xi:.4f}, t_min={tmin:.4f}, K={K:.6e}, "
+                  f"BH2={bh2:.6e}, DVCS2={dv2:.6e}, I={inter:.6e}, s1_I={s1i:.6e} | BSA={mA:.6e}")
+
     return out
 
 
@@ -244,32 +239,32 @@ def compute_bsa(phi_arr, Q2_arr, xB_arr, t_arr, Eb_arr, *, debug_tag=None):
 # -----------------------------------------------------------------------------
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument('fitfile', help='Fit results file (output/fit_results/fit_results_<TIMESTAMP>.txt)')
+    parser.add_argument('fitfile', help='output/fit_results/fit_results_<TIMESTAMP>.txt')
     parser.add_argument('--CFFs', type=int, choices=[0, 1], default=0,
-                        help='0: show only ImH fit (or whatever flags were used), '
-                             '1: compare ImH-only vs all enabled CFFs from the fit')
+                        help='0: show only fitted curve using enabled CFFs; '
+                             '1: also show ImH-only fitted curve')
     parser.add_argument('--data', default=None,
-                        help='Override BSA input data file (otherwise taken from "input" line in fit file).')
+                        help='Override BSA input file (else use "input" line from fit file or fallback).')
+    parser.add_argument('--debug', action='store_true', help='Print internal diagnostics for first bin.')
     args = parser.parse_args()
 
     # Parse fit file
     flags, pnames, pvals, input_path, strategy = parse_fit_results(args.fitfile)
     param_map_fit = dict(zip(pnames, pvals))
 
-    # If no input path in fit file, allow override or fall back to your usual file
-    if args.data is not None:
+    # Decide data file
+    if args.data:
         datafile = args.data
-    elif input_path is not None and os.path.exists(input_path):
+    elif input_path and os.path.exists(input_path):
         datafile = input_path
     else:
-        # fallback (adjust if your repo uses a different path)
         datafile = 'imports/rgk_preliminary_bsa.txt'
 
     print(">> Flags from fit:", flags)
     print(">> Using data file:", datafile)
     print(">> Fitted parameters:", param_map_fit)
 
-    # Load DVCS_xsec.C once
+    # Load C++ once
     _load_dvcs_once()
 
     # Load data bins
@@ -278,51 +273,63 @@ def main():
 
     os.makedirs('output/plots', exist_ok=True)
 
-    # Prepare an "original model" parameter map using DVCS defaults
+    # Prepare defaults for the "original model" curve
     param_map_orig = original_model_defaults()
 
-    # Plot per φ-bin
+    # Optional: quick dump of C++ state after pushing globals
+    def dump_cpp_state(label):
+        ROOT.gInterpreter.ProcessLine(rf'std::cout<<"[{label}] hasH="<<hasH<<" hasHt="<<hasHt<<" hasE="<<hasE<<" hasEt="<<hasEt'
+                                      r'<<" renormImag="<<renormImag<<" renormReal="<<renormReal<<std::endl;')
+
+    # Plot per bin
     for idx, b in enumerate(bins, start=1):
         phi_data, As, sigAs = b["phi"], b["A"], b["sigA"]
 
-        # Grid to draw smooth model curves
-        phi_grid = np.linspace(0.0, 360.0, 361)
+        # Dense grid for model curves
+        phi_grid = np.linspace(0.0, 360.0, 361)  # 0..360 step 1°
         Q2g = np.full_like(phi_grid, b["Q2m"])
         xBg = np.full_like(phi_grid, b["xBm"])
-        tg  = np.full_like(phi_grid, b["tm"])     # note: DVCS_xsec.C enforces t<=0 internally
+        tg  = np.full_like(phi_grid, b["tm"])   # constructor enforces t<=0
         Ebg = np.full_like(phi_grid, b["Ebm"])
 
-        # --- Original model curve ---
-        push_globals(param_map_orig, flags, strategy1_like=True)
-        bsas_orig = compute_bsa(phi_grid, Q2g, xBg, tg, Ebg, debug_tag=f"bin{idx}-orig")
+        # --- Original model ---
+        push_globals(param_map_orig, flags)
+        if args.debug and idx == 1:
+            dump_cpp_state("orig")
+        bsas_orig = compute_bsa(phi_grid, Q2g, xBg, tg, Ebg,
+                                debug=(args.debug and idx == 1),
+                                debug_tag=f"bin{idx}-orig")
 
-        # --- Fitted model curves ---
-        # Full "as fit" configuration
-        push_globals(param_map_fit, flags, strategy1_like=(strategy == 1 or strategy is None))
-        bsas_fit_all = compute_bsa(phi_grid, Q2g, xBg, tg, Ebg, debug_tag=f"bin{idx}-fitAll")
+        # --- Fitted model (enabled CFFs per fit flags) ---
+        push_globals(param_map_fit, flags)
+        if args.debug and idx == 1:
+            dump_cpp_state("fitAll")
+        bsas_fit_all = compute_bsa(phi_grid, Q2g, xBg, tg, Ebg,
+                                   debug=(args.debug and idx == 1),
+                                   debug_tag=f"bin{idx}-fitAll")
 
-        # Optionally, ImH-only comparison: turn off Ht/E/Et regardless of fit flags
+        # Optional ImH-only overlay
         bsas_fit_imh = None
         if args.CFFs == 1:
             flags_imh_only = dict(flags)
             for other in ("Ht", "E", "Et"):
                 flags_imh_only[other] = 0
-            push_globals(param_map_fit, flags_imh_only, strategy1_like=(strategy == 1 or strategy is None))
-            bsas_fit_imh = compute_bsa(phi_grid, Q2g, xBg, tg, Ebg, debug_tag=f"bin{idx}-fitImH")
+            push_globals(param_map_fit, flags_imh_only)
+            if args.debug and idx == 1:
+                dump_cpp_state("fitImH")
+            bsas_fit_imh = compute_bsa(phi_grid, Q2g, xBg, tg, Ebg,
+                                       debug=False,  # already printed above
+                                       debug_tag=f"bin{idx}-fitImH")
 
         # --- Plot ---
         fig, ax = plt.subplots(figsize=(8, 5))
-
-        # Data with errors
         ax.errorbar(phi_data, As, yerr=sigAs, fmt='o', ms=5, color='k', label='Data')
-
-        # Original & fitted
-        ax.plot(phi_grid, bsas_orig, '-', lw=2, color='tab:blue', label='Original model')
+        ax.plot(phi_grid, bsas_orig, '-',  lw=2, color='tab:blue', label='Original model')
         ax.plot(phi_grid, bsas_fit_all, '--', lw=2, color='tab:red',
-                label=('Fitted model (enabled CFFs)' if args.CFFs == 1 else 'Fitted model'))
+                label=('Fitted (enabled CFFs)' if args.CFFs == 1 else 'Fitted'))
 
         if bsas_fit_imh is not None:
-            ax.plot(phi_grid, bsas_fit_imh, '-.', lw=2, color='tab:green', label='Fitted model (ImH only)')
+            ax.plot(phi_grid, bsas_fit_imh, '-.', lw=2, color='tab:green', label='Fitted (ImH only)')
 
         ax.set_xlim(0, 360)
         ax.set_xticks([0, 60, 120, 180, 240, 300, 360])
@@ -338,18 +345,19 @@ def main():
             ),
             pad=12
         )
-
         ax.legend(loc='upper right', frameon=True, edgecolor='k')
         plt.tight_layout()
 
         # Save
-        # Use a timestamp extracted from the fitfile name if present
         m = re.search(r'fit_results_(\d{8}_\d{6})\.txt$', os.path.basename(args.fitfile))
         ts = (m.group(1) if m else "noTS")
         fname = (f'output/plots/BSA_bin{idx:02d}_{ts}_Q2_{Q2m:.2f}_xB_{xBm:.3f}_mt_{abs(tm):.3f}.pdf')
         fig.savefig(fname)
         print(f">> Saved bin {idx} plot to {fname}")
         plt.close(fig)
+
+        # For debugging speed, you can break after first bin by uncommenting:
+        # if args.debug: break
 
 
 if __name__ == '__main__':
