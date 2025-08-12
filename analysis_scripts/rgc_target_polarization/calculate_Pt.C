@@ -27,7 +27,7 @@ const int testRun = 0;  // set to your run of interest, or 0 to do all
 // NEW: when true, use the global-average dilution factor columns (Df_avg, Err_avg)
 // from output/dilution_factor.csv for all periods/bins.
 // when false (default), use the per-period Df_* and Err_* columns.
-const bool useAvgDf = false;
+const bool useAvgDf = true;
 
 // xB bin edges
 static const std::vector<double> xB_bins = {
