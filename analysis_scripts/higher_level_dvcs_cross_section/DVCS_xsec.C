@@ -1479,22 +1479,22 @@ double GetReH(double xi, double t) {
     return renormReal * (sub + pv);
 }
 
-// // Repeat for Htilde, E, Et
-// double GetReHt(double xi, double t) {
-//     if(!hasHt) return 0.0;
-//     double sub = C0_Ht * TMath::Power(1.0 - t/MD2_Ht, -lambda_Ht);
-//     auto integrand = [&](double x){ double denom = xi*xi - x*x; return (2.0*xi/denom) * GetImHt(x,t); };
-//     return renormReal * (sub + PV_integral(integrand, xi, t)/M_PI);
-// }
-// double GetReE(double xi, double t) {
-//     if(!hasE) return 0.0;
-//     double sub = C0_E * TMath::Power(1.0 - t/MD2_E, -lambda_E);
-//     auto integrand = [&](double x){ double denom = xi*xi - x*x; return (2.0*xi/denom) * GetImE(x,t); };
-//     return renormReal * (sub + PV_integral(integrand, xi, t)/M_PI);
-// }
-// double GetReEt(double xi, double t) {
-//     if(!hasEt) return 0.0;
-//     double sub = C0_Et * TMath::Power(1.0 - t/MD2_Et, -lambda_Et);
-//     auto integrand = [&](double x){ double denom = xi*xi - x*x; return (2.0*xi/denom) * GetImEt(x,t); };
-//     return renormReal * (sub + PV_integral(integrand, xi, t)/M_PI);
-// }
+// Repeat for Htilde, E, Et
+double GetReHt(double xi, double t) {
+    if(!hasHt) return 0.0;
+    double sub = C0_Ht * TMath::Power(1.0 - t/MD2_Ht, -lambda_Ht);
+    auto integrand = [&](double x){ double denom = xi*xi - x*x; return (2.0*xi/denom) * GetImHt(x,t); };
+    return renormReal * (sub + PV_integral(integrand, xi, t)/M_PI);
+}
+double GetReE(double xi, double t) {
+    if(!hasE) return 0.0;
+    double sub = C0_E * TMath::Power(1.0 - t/MD2_E, -lambda_E);
+    auto integrand = [&](double x){ double denom = xi*xi - x*x; return (2.0*xi/denom) * GetImE(x,t); };
+    return renormReal * (sub + PV_integral(integrand, xi, t)/M_PI);
+}
+double GetReEt(double xi, double t) {
+    if(!hasEt) return 0.0;
+    double sub = C0_Et * TMath::Power(1.0 - t/MD2_Et, -lambda_Et);
+    auto integrand = [&](double x){ double denom = xi*xi - x*x; return (2.0*xi/denom) * GetImEt(x,t); };
+    return renormReal * (sub + PV_integral(integrand, xi, t)/M_PI);
+}
