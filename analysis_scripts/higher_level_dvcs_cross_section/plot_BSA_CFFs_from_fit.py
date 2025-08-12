@@ -1,37 +1,37 @@
 #!/usr/bin/env python3
 """
-plot_BSA_CFFs_from_fit.py
+plot_ImCFFs_fit_results.py   (repurposed)
 
-Plot A_LU(φ) per (Q2, xB, t, Eb) bin for:
-  • BKM baseline ("BKM")
-  • Your fitted model ("RGK 6 & 7 GeV Fit")
-Optional overlays:
-  • ImH-only curve from the fit (--CFFs 1)
-  • BH-dominant sinusoid A ≈ (s1_I/c0_BH) sin φ (--bh-limit)
+Per φ-bin BSA plots showing:
+  • BKM  ............ thin dashed blue  (full BSA from C++)
+  • BKM approx ...... solid blue        (A sinφ / (1 + B cosφ), A=s1_I/c0_BH, B=c1_BH/c0_BH)
+  • RGK fit ......... solid orange      (same BH-form, using fit parameters/flags)
 
 Usage:
-  python plot_BSA_CFFs_from_fit.py output/fit_results/fit_results_<TIMESTAMP>.txt
-         [--data PATH] [--CFFs 0|1] [--bh-limit] [--outdir output/plots] [--debug]
+    python plot_ImCFFs_fit_results.py output/fit_results/fit_results_<TIMESTAMP>.txt
+           [--data PATH] [--outdir output/plots] [--debug]
 
 Notes:
-  - Requires DVCS_xsec.C in your CWD (with your Et fix or Et disabled).
-  - This loader uses a NEW include guard so cling actually compiles the current file.
+  - Requires DVCS_xsec.C in CWD, with your latest Et fix (or Et disabled).
+  - The fit file’s "input" line is used if --data isn’t provided.
 """
 
-import os, re, argparse
+import os
+import re
+import argparse
 import numpy as np
 import matplotlib.pyplot as plt
 import ROOT  # PyROOT
 
 # -----------------------------------------------------------------------------
-# C++ loader — use a fresh macro guard to ensure the current DVCS_xsec.C is compiled
+# Load the C++ once (fresh guard to force current DVCS_xsec.C to compile)
 # -----------------------------------------------------------------------------
 def _load_dvcs_once():
     if getattr(_load_dvcs_once, "_done", False):
         return
     ROOT.gInterpreter.Declare(r"""
-#ifndef __DVCS_XSEC_V2__
-#define __DVCS_XSEC_V2__
+#ifndef __DVCS_XSEC_BSA_PLOT_GUARD__
+#define __DVCS_XSEC_BSA_PLOT_GUARD__
 #include "DVCS_xsec.C"
 #endif
 """)
@@ -45,18 +45,18 @@ def parse_fit_results(fname):
     with open(fname) as f:
         lines = [l.strip() for l in f if l.strip()]
 
-    # flags line like: "H 1 Ht 0 E 1 Et 0"
+    # flags line like "H 1 Ht 0 E 0 Et 0"
     flags_line = next((l for l in lines
                        if re.match(r'^\s*H\s+[01]\s+Ht\s+[01]\s+E\s+[01]\s+Et\s+[01]\s*$', l)), None)
     if flags_line is None:
         flags_line = next((l for l in lines if l.startswith("H ")), None)
     if flags_line is None:
-        raise RuntimeError("No 'H ... Ht ... E ... Et ...' flags line found in fit file")
+        raise RuntimeError("No 'H ... Ht ... E ... Et ...' line in fit file")
 
     toks = flags_line.split()
     flags = {toks[i]: int(toks[i+1]) for i in range(0, len(toks), 2)}
 
-    # parameter names/values
+    # parameter names and values
     pnames, pvals = [], None
     for i, l in enumerate(lines):
         if l.startswith("# parameters"):
@@ -67,20 +67,18 @@ def parse_fit_results(fname):
         raise RuntimeError("Couldn't parse parameter names/values from fit file")
     param_map_fit = dict(zip(pnames, pvals))
 
-    # optional input and strategy
+    # optional input path
     input_path = next((l.split(None, 1)[1].strip()
                        for l in lines if l.startswith("input")), None)
-    strategy = None
-    sline = next((l for l in lines if l.startswith("strategy")), None)
-    if sline:
-        try: strategy = int(sline.split()[1])
-        except: pass
 
-    return flags, param_map_fit, input_path, strategy
+    # timestamp convenience
+    m = re.search(r'fit_results_(\d{8}_\d{6})\.txt$', os.path.basename(fname))
+    ts = (m.group(1) if m else "noTS")
+    return flags, param_map_fit, input_path, ts
 
 
 # -----------------------------------------------------------------------------
-# Data loading (bins defined by φ wrap-around)
+# Data loading: split into φ-bins by wrap-around
 # -----------------------------------------------------------------------------
 def load_bins(datafile):
     bins, curr, prev_phi = [], {k: [] for k in ("phi","Q2","xB","t","Eb","A","sigA")}, None
@@ -111,52 +109,40 @@ def load_bins(datafile):
 
 
 # -----------------------------------------------------------------------------
-# BKM "original" baseline defaults (safe wrt Et)
+# BKM default parameters (safe wrt Et)
 # -----------------------------------------------------------------------------
 def bkm_defaults():
     return {
         'renormImag': 1.0, 'renormReal': 1.0,
         # H
-        'r_H': 0.9, 'n_H': 1.25, 'alpha0_H': 0.43, 'alpha1_H': 0.85, 'b_H': 0.4, 'M2_H': 0.64, 'P_H': 1.0,
+        'r_H': 0.9, 'n_H': 1.35, 'alpha0_H': 0.43, 'alpha1_H': 0.85, 'b_H': 0.4, 'M2_H': 0.64, 'P_H': 1.0,
         # Htilde
-        'r_Ht': 7.0, 'n_Ht': 0.6, 'alpha0_Ht': 0.43, 'alpha1_Ht': 0.85, 'b_Ht': 2.0, 'M2_Ht': 0.8, 'P_Ht': 1.0,
+        'r_Ht': 7.0, 'n_Ht': 0.6,  'alpha0_Ht': 0.43, 'alpha1_Ht': 0.85, 'b_Ht': 2.0, 'M2_Ht': 0.8,  'P_Ht': 1.0,
         # E
-        'r_E': 0.9, 'n_E': 1.25, 'alpha0_E': 0.43, 'alpha1_E': 0.85, 'b_E': 0.4, 'M2_E': 0.64, 'P_E': 1.0,
-        # Et — keep harmless: n_Et=0, P_Et=0, M2_Et nonzero to avoid accidental t/0 evaluation
-        'r_Et': 1.0, 'n_Et': 0.0, 'alpha0_Et': 0.0, 'alpha1_Et': 0.0, 'b_Et': 0.0, 'M2_Et': 1.0, 'P_Et': 0.0,
+        'r_E': 0.9, 'n_E': 1.35, 'alpha0_E': 0.43, 'alpha1_E': 0.85, 'b_E': 0.4, 'M2_E': 0.64, 'P_E': 1.0,
+        # Et: keep harmless/off (n=0,P=0), nonzero M2 to avoid t/0 if on
+        'r_Et': 1.0, 'n_Et': 0.0,  'alpha0_Et': 0.0,  'alpha1_Et': 0.0, 'b_Et': 0.0, 'M2_Et': 1.0, 'P_Et': 0.0,
     }
 
 
 # -----------------------------------------------------------------------------
-# Push globals into the C++ world (with a little safety for Et)
+# Push globals into C++ (defensively disable Et)
 # -----------------------------------------------------------------------------
-def push_globals(param_map, flags, *, safety_disable_Et=True, label=""):
-    # Beam-target CFF switches
-    # (We *don’t* trust previous state.)
+def push_globals(param_map, flags, *, label=""):
+    # reset switches
     ROOT.gInterpreter.ProcessLine("hasH=0; hasHt=0; hasE=0; hasEt=0;")
 
-    # Defensive Et handling — only enable if not obviously unsafe
-    et_flag = int(flags.get("Et", 0))
-    if safety_disable_Et and et_flag:
-        M2 = float(param_map.get("M2_Et", 0.0))
-        P  = float(param_map.get("P_Et", 0.0))
-        n  = float(param_map.get("n_Et", 0.0))
-        if abs(M2) < 1e-12 and abs(P) > 1e-12:
-            print(f"[warn] Disabling Et for {label}: M2_Et≈0 with P_Et≠0 would cause t/0.")
-            et_flag = 0
-        if n == 0.0:
-            # No imaginary amplitude anyway — harmless to keep off.
-            et_flag = 0
+    # Et OFF no matter what (safe & per discussion)
+    flags_eff = dict(flags)
+    flags_eff["Et"] = 0
+    for cff in ("H","Ht","E","Et"):
+        ROOT.gInterpreter.ProcessLine(f"has{cff} = {int(flags_eff.get(cff,0))};")
 
-    for cff, on in (("H",flags.get("H",0)), ("Ht",flags.get("Ht",0)),
-                    ("E",flags.get("E",0)),  ("Et",et_flag)):
-        ROOT.gInterpreter.ProcessLine(f"has{cff} = {int(on)};")
-
-    # Renormalizations
+    # renormalizations
     ROOT.gInterpreter.ProcessLine(f"renormImag = {float(param_map.get('renormImag',1.0))};")
     ROOT.gInterpreter.ProcessLine(f"renormReal = {float(param_map.get('renormReal',1.0))};")
 
-    # Set ansatz parameters that exist in the map
+    # parameter helper
     def setp(name):
         if name in param_map:
             ROOT.gInterpreter.ProcessLine(f"{name} = {float(param_map[name])};")
@@ -164,8 +150,7 @@ def push_globals(param_map, flags, *, safety_disable_Et=True, label=""):
     for cff in ("H","Ht","E","Et"):
         for k in ("r","n","alpha0","alpha1","b","M2","P"):
             setp(f"{k}_{cff}")
-
-    # Optional real-part subtraction constants (only if present)
+    # optional subtraction constants if present
     for cff in ("H","Ht","E","Et"):
         for k in ("C0","MD2","lambda"):
             setp(f"{k}_{cff}")
@@ -174,45 +159,48 @@ def push_globals(param_map, flags, *, safety_disable_Et=True, label=""):
 # -----------------------------------------------------------------------------
 # Physics helpers
 # -----------------------------------------------------------------------------
-def bsa_curve(phi_deg, Q2, xB, t, Eb, *, debug=False, tag="", max_dbg_pts=3):
+def full_bsa_curve(phi_deg, Q2, xB, t, Eb):
     out = np.empty_like(phi_deg, float)
     for i, ph in enumerate(phi_deg):
-        dv = ROOT.BMK_DVCS(-1, +1, 0, Eb, xB, Q2, t, ph)  # ctor takes φ in degrees
+        dv = ROOT.BMK_DVCS(-1, +1, 0, Eb, xB, Q2, t, ph)
         out[i] = dv.BSA()
-        if debug and i < max_dbg_pts:
-            print(f"[{tag}] φ={ph:6.1f}°  BSA={out[i]:+.6e}  "
-                  f"BH2={dv.BH2():.3e}  DVCS2={dv.DVCS2():.3e}  I={dv.BHDVCS():.3e}  s1_I={dv.s1_I():+.6e}")
     return out
 
-def bh_limit_sinusoid(Q2, xB, t, Eb):
+def bh_form_params(Q2, xB, t, Eb):
+    # coefficients do not depend on φ; evaluate once
     dv = ROOT.BMK_DVCS(-1, +1, 0, Eb, xB, Q2, t, 0.0)
-    amp = dv.s1_I()/dv.c0_BH() if dv.c0_BH()!=0 else 0.0
-    return lambda phi_deg: amp * np.sin(np.deg2rad(phi_deg))
+    c0 = dv.c0_BH()
+    if c0 == 0:
+        return 0.0, 0.0
+    A = dv.s1_I()/c0
+    B = dv.c1_BH()/c0
+    return A, B
+
+def bh_form_curve(phi_deg, A, B):
+    ph = np.deg2rad(phi_deg)
+    return A * np.sin(ph) / (1.0 + B * np.cos(ph))
 
 
 # -----------------------------------------------------------------------------
 # Main
 # -----------------------------------------------------------------------------
 def main():
-    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument('fitfile', help='fit_results_<TIMESTAMP>.txt from your fitter')
-    ap.add_argument('--data', default=None, help='Override BSA data file; else use "input" line in fit file or fallback')
-    ap.add_argument('--CFFs', type=int, choices=[0,1], default=0,
-                    help='If 1, also show ImH-only curve from the fit')
-    ap.add_argument('--bh-limit', action='store_true',
-                    help='Overlay BH-limit: A ≈ (s1_I/c0_BH) sin φ')
-    ap.add_argument('--outdir', default='output/plots', help='Output directory for PDFs')
-    ap.add_argument('--debug', action='store_true', help='Print internal diagnostics for first bin')
+    ap = argparse.ArgumentParser(description=__doc__,
+                                 formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument('fitfile', help='fit_results_<TIMESTAMP>.txt')
+    ap.add_argument('--data', default=None, help='Override BSA data file; else uses fit file "input"')
+    ap.add_argument('--outdir', default='output/plots', help='Directory for PDFs')
+    ap.add_argument('--debug', action='store_true', help='Print A,B for the first bin')
     args = ap.parse_args()
 
-    # Parse fit file
-    flags_fit, param_map_fit, input_path, _strategy = parse_fit_results(args.fitfile)
+    # Parse fit results
+    flags_fit, params_fit, input_path, ts = parse_fit_results(args.fitfile)
 
-    # Decide data file
-    datafile = (args.data or input_path or 'imports/rgk_preliminary_bsa.txt')
+    # Choose data file
+    datafile = args.data or input_path or 'imports/rgk_preliminary_bsa.txt'
     print(">> Using data file:", datafile)
     print(">> Fit flags:", flags_fit)
-    print(">> Fit params:", param_map_fit)
+    print(">> Fit params:", params_fit)
 
     # Load C++
     _load_dvcs_once()
@@ -223,66 +211,45 @@ def main():
         raise RuntimeError(f"No φ-bins parsed from {datafile}")
     print(f">> Found {len(bins)} φ-bins")
 
-    os.makedirs(args.outdir, exist_ok=True)
-
-    # BKM baseline flags: H,Ht,E on; Et off (safe default)
+    # BKM baseline: H,Ht,E on; Et off
     flags_bkm = {'H':1,'Ht':1,'E':1,'Et':0}
     params_bkm = bkm_defaults()
 
-    # For filename timestamp
-    m = re.search(r'fit_results_(\d{8}_\d{6})\.txt$', os.path.basename(args.fitfile))
-    ts = (m.group(1) if m else "noTS")
+    os.makedirs(args.outdir, exist_ok=True)
 
-    # Loop bins
     for ibin, b in enumerate(bins, start=1):
         phi_data, A_data, dA = b["phi"], b["A"], b["sigA"]
         Q2m, xBm, tm, Ebm = b["Q2m"], b["xBm"], b["tm"], b["Ebm"]
 
-        # Dense grid
+        # dense φ grid
         phi_grid = np.linspace(0.0, 360.0, 361)
-        Q2g = np.full_like(phi_grid, Q2m)
-        xBg = np.full_like(phi_grid, xBm)
-        tg  = np.full_like(phi_grid, tm)
-        Ebg = np.full_like(phi_grid, Ebm)
 
-        # --- BKM baseline ---
+        # --- BKM (full) + BKM (approx) ---
         push_globals(params_bkm, flags_bkm, label="BKM")
+        bkm_full = full_bsa_curve(phi_grid, Q2m, xBm, tm, Ebm)
+        A_bkm, B_bkm = bh_form_params(Q2m, xBm, tm, Ebm)
+        bkm_approx = bh_form_curve(phi_grid, A_bkm, B_bkm)
+
+        # --- RGK fit (approx only, as requested) ---
+        push_globals(params_fit, flags_fit, label="RGK fit")
+        A_rgk, B_rgk = bh_form_params(Q2m, xBm, tm, Ebm)
+        rgk_curve = bh_form_curve(phi_grid, A_rgk, B_rgk)
+
         if args.debug and ibin == 1:
-            ROOT.gInterpreter.ProcessLine(r'std::cout<<"[BKM] hasH="<<hasH<<" hasHt="<<hasHt<<" hasE="<<hasE<<" hasEt="<<hasEt<<std::endl;')
-        bkm_curve = bsa_curve(phi_grid, Q2m, xBm, tm, Ebm,
-                              debug=(args.debug and ibin==1), tag=f"bin{ibin}-BKM")
-
-        # --- RGK 6 & 7 GeV Fit (respect fit flags) ---
-        push_globals(param_map_fit, flags_fit, label="RGK-fit")
-        if args.debug and ibin == 1:
-            ROOT.gInterpreter.ProcessLine(r'std::cout<<"[RGK] hasH="<<hasH<<" hasHt="<<hasHt<<" hasE="<<hasE<<" hasEt="<<hasEt<<std::endl;')
-        rgk_curve = bsa_curve(phi_grid, Q2m, xBm, tm, Ebm,
-                              debug=(args.debug and ibin==1), tag=f"bin{ibin}-RGK")
-
-        # Optional ImH-only overlay using fit params
-        imh_curve = None
-        if args.CFFs == 1:
-            flags_imh = dict(H=flags_fit.get("H",1), Ht=0, E=0, Et=0)
-            push_globals(param_map_fit, flags_imh, label="RGK-ImH")
-            imh_curve = bsa_curve(phi_grid, Q2m, xBm, tm, Ebm)
-
-        # Optional BH-limit
-        A_bh = None
-        if args.bh_limit:
-            A_bh = bh_limit_sinusoid(Q2m, xBm, tm, Ebm)
+            print(f"[BKM]  A=s1_I/c0_BH={A_bkm:+.6e},  B=c1_BH/c0_BH={B_bkm:+.6e}")
+            print(f"[RGK]  A=s1_I/c0_BH={A_rgk:+.6e},  B=c1_BH/c0_BH={B_rgk:+.6e}")
 
         # --- Plot ---
         fig, ax = plt.subplots(figsize=(8,5))
+        # data
         ax.errorbar(phi_data, A_data, yerr=dA, fmt='o', ms=5, color='k', label='Data')
 
-        ax.plot(phi_grid, bkm_curve, '-',  lw=2, label='BKM')
-        ax.plot(phi_grid, rgk_curve, '--', lw=2, label='RGK 6 & 7 GeV Fit')
+        # BKM approx (solid blue), BKM full (thin dashed blue)
+        ax.plot(phi_grid, bkm_approx, '-',  lw=2.5, color='tab:blue',  label='BKM approx')
+        ax.plot(phi_grid, bkm_full,   '--', lw=1.5, color='tab:blue',  label='BKM')
 
-        if imh_curve is not None:
-            ax.plot(phi_grid, imh_curve, '-.', lw=2, label='RGK (ImH only)')
-
-        if A_bh is not None:
-            ax.plot(phi_grid, A_bh(phi_grid), ':', lw=2, label=r'BH limit: $s_1^I/c_0^{BH}\,\sin\phi$')
+        # RGK fit (solid orange)
+        ax.plot(phi_grid, rgk_curve, '-',   lw=2.5, color='tab:orange', label='RGK fit')
 
         ax.set_xlim(0, 360)
         ax.set_xticks([0,60,120,180,240,300,360])
@@ -298,8 +265,10 @@ def main():
         ax.legend(loc='upper right', frameon=True, edgecolor='k')
         plt.tight_layout()
 
-        outname = os.path.join(args.outdir,
-            f"BSA_bin{ibin:02d}_{ts}_Q2_{Q2m:.2f}_xB_{xBm:.3f}_mt_{abs(tm):.3f}.pdf")
+        outname = os.path.join(
+            args.outdir,
+            f"BSA_bin{ibin:02d}_{ts}_Q2_{Q2m:.2f}_xB_{xBm:.3f}_mt_{abs(tm):.3f}.pdf"
+        )
         fig.savefig(outname)
         print(f">> Saved bin {ibin} plot to {outname}")
         plt.close(fig)
