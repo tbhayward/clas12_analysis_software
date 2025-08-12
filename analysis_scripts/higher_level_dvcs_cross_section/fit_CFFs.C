@@ -832,7 +832,7 @@ int main(int argc, char** argv) {
                     if (xi < xi_min) xi_min = xi;
                     if (xi > xi_max) xi_max = xi;
                 }
-                double mt = -d.t; // report -t explicitly (t is typically negative)
+                double mt = d.t; // 
                 if (mt < mt_min) mt_min = mt;
                 if (mt > mt_max) mt_max = mt;
             }
