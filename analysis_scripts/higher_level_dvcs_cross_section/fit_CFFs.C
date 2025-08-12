@@ -67,9 +67,9 @@ extern double C0_Et,   MD2_Et,   lambda_Et;
 
 // ----------------------------------------------------------------------------
 // Control flags & data containers
-static int   gStrategy    = 0;
+static int   gStrategy    = 0;  // 1: BSA-only, 2: BSA+xsec
 static int   gStage       = 1;  // 1 = Im-only, 0 = global simultaneous
-static int   gConstraint  = 0;  // 0,1,2
+static int   gConstraint  = 0;  // 0,1,2 (see cuts below)
 static bool  gPlotBinFits = true;
 static int   gScale       = 0;  // 0 off, 1 on
 
@@ -77,11 +77,11 @@ static int   gScale       = 0;  // 0 off, 1 on
 static std::string gBsaFile = "imports/rga_prl_bsa.txt";
 static std::string gXsFile  = "imports/rga_pass1_xsec_2018.txt";
 
-struct DataPoint { double phi, Q2, xB, t, Eb, A, sigA; }; // NOTE: here t is physical (negative)
+struct DataPoint { double phi, Q2, xB, t, Eb, A, sigA; }; // t is physical (<0)
 static std::vector<DataPoint> bsaData, xsData;
 static std::vector<std::vector<DataPoint>> keptBins;
 
-// per-bin averages & fits (bin_t stores physical t < 0)
+// per-bin averages & fits (store t as physical t<0; print with -t)
 static std::vector<double> bin_xB, bin_Q2, bin_t, bin_Eb;
 static std::vector<double> bin_A, bin_dA, bin_redChi2;
 static std::vector<int>    bin_M;
@@ -117,9 +117,7 @@ void parse_args(int argc, char** argv){
           case 'S': gScale      = std::atoi(optarg); break;
           case 'p': gPlotBinFits= true;              break;
           case 'i':
-            // first arg → BSA file
             gBsaFile = optarg;
-            // if there's another non-option arg, treat it as the xsec file:
             if(optind<argc && argv[optind][0] != '-') {
               gXsFile = argv[optind++];
             }
@@ -142,6 +140,33 @@ void parse_args(int argc, char** argv){
     }
 }
 
+// Apply common kinematic cuts to a point (t is physical <0; we cut on -t)
+static inline bool pass_common_cuts(const DataPoint& d){
+    double mt = -d.t;                 // -t (>0)
+    if (mt <= 0.0)   return false;    // require -t > 0
+    if (mt >= 1.0)   return false;    // require -t < 1
+    return true;
+}
+// Additional constraint sets (on top of common)
+static inline bool pass_constraint(const DataPoint& d){
+    if (gConstraint==0) return true;
+    double mt = -d.t;                 // -t (>0)
+    double mt_over_Q2 = (d.Q2>0? mt/d.Q2 : 0.0);
+
+    if (gConstraint==1){
+        // keep only if (-t)/Q2 > 0.2
+        if (!(mt_over_Q2 > 0.2)) return false;
+        return true;
+    }
+    if (gConstraint==2){
+        // keep only if (-t)/Q2 > 0.2  AND  (-t) < 0.45
+        if (!(mt_over_Q2 > 0.2)) return false;
+        if (!(mt < 0.45))        return false;
+        return true;
+    }
+    return true;
+}
+
 void LoadData(){
     auto read=[&](const std::string &fn, auto &v){
         std::ifstream in(fn);
@@ -150,25 +175,14 @@ void LoadData(){
         while(std::getline(in,line)){
             if(line.empty()||line[0]=='#') continue;
             std::istringstream iss(line);
-            DataPoint d; iss>>d.phi>>d.Q2>>d.xB>>d.t>>d.Eb>>d.A>>d.sigA;
-            // d.t is physical t (negative). Apply cuts on -t:
-            const double mt = -d.t; // -t (>0)
-            // always require: -t > 0 and -t < 1
-            if(!(mt > 0.0))  continue;
-            if(!(mt < 1.0))  continue;
-
-            if(gConstraint==1){
-              // extra cuts: (-t)/Q2 < 0.2 and -t < 1.0
-              if((mt/d.Q2) >= 0.2) continue;
-              if(mt >= 1.0)        continue; // redundant with global cut
-            } else if (gConstraint==2){
-              // tighter in -t: (-t)/Q2 < 0.2 and -t < 0.45
-              if((mt/d.Q2) >= 0.2) continue;
-              if(mt >= 0.45)       continue;
-            }
+            DataPoint d; iss>>d.phi>>d.Q2>>d.xB>>d.t>>d.Eb>>d.A>>d.sigA; // t is physical (<0)
+            if(!iss) continue;
+            if(!pass_common_cuts(d))   continue;
+            if(!pass_constraint(d))    continue;
             v.push_back(d);
         }
     };
+    bsaData.clear(); xsData.clear();
     read(gBsaFile, bsaData);
     read(gXsFile,  xsData);
 }
@@ -186,8 +200,10 @@ void BinBsaData(){
         auto pts = std::vector<DataPoint>(bsaData.begin()+start,
                                           bsaData.begin()+i);
         start = i;
-        int M = pts.size();
-        if(M<3) continue;
+
+        int M = (int)pts.size();
+        if(M<4) continue; // need NDF = M-3 > 0
+
         TGraphErrors gr(M);
         for(int j=0;j<M;++j){
             gr.SetPoint(j, pts[j].phi, pts[j].A);
@@ -204,30 +220,37 @@ void BinBsaData(){
         double Bfit    = ftmp.GetParameter(2);
         double chi2    = ftmp.GetChisquare();
         double redchi2 = chi2 / (M - 3);
+
         if(gConstraint==1 && (redchi2>=2.0 || std::fabs(Bfit)>=0.9))
             continue;
         if(gConstraint==2 && (redchi2>=2.0 || std::fabs(Bfit)>=0.9))
             continue;
+
         keptBins.push_back(pts);
         bin_M.push_back(M);
         bin_A.push_back(Afit);
         bin_dA.push_back(dA);
         bin_redChi2.push_back(redchi2);
+
         double sumw=0, Sx=0, Sq=0, St=0, Se=0;
         for(auto &d: pts){
-            double w = 1./(d.sigA*d.sigA);
-            sumw+=w; Sx+=w*d.xB; Sq+=w*d.Q2; St+=w*d.t; Se+=w*d.Eb; // d.t is negative
+            double w = (d.sigA>0 ? 1./(d.sigA*d.sigA) : 0.0);
+            sumw+=w; Sx+=w*d.xB; Sq+=w*d.Q2; St+=w*d.t; Se+=w*d.Eb; // t kept as physical (<0)
         }
+        if(sumw<=0) continue;
         bin_xB .push_back(Sx/sumw);
         bin_Q2 .push_back(Sq/sumw);
-        bin_t  .push_back(St/sumw);   // negative
+        bin_t  .push_back(St/sumw);   // avg physical t (<0)
         bin_Eb .push_back(Se/sumw);
     }
     Nbins = (int)bin_A.size();
+
     double totChi2=0; int totDof=0;
     for(int k=0;k<Nbins;++k){
-        totChi2 += std::pow(bin_A[k]/bin_dA[k],2);
-        totDof  += (bin_M[k] - 1);
+        if (bin_dA[k]>0){
+            totChi2 += std::pow(bin_A[k]/bin_dA[k],2);
+            totDof  += (bin_M[k] - 1);
+        }
     }
     reducedAmpChi2 = totDof>0 ? totChi2/totDof : 0.0;
 }
@@ -270,168 +293,71 @@ void build_par_listRe(){
 }
 
 // ----------------------------------------------------------------------------
-// χ² function with conditional alpha0 >= |alpha1 * t| enforcement when constraint>0
+// χ² function (no alpha0/alpha1 penalty terms)
 void fcn(int&, double*, double &f, double *par, int){
     int ip=0;
     if(gStage==1){
         // assign Im-part parameters
         if(hasH){
-          r_H       = par[ip++];
-          alpha0_H  = par[ip++];
-          alpha1_H  = par[ip++];
-          b_H       = par[ip++];
-          M2_H      = par[ip++];
-          P_H       = par[ip++];
+          r_H       = par[ip++]; alpha0_H  = par[ip++]; alpha1_H  = par[ip++];
+          b_H       = par[ip++]; M2_H      = par[ip++]; P_H       = par[ip++];
         }
         if(hasHt){
-          r_Ht      = par[ip++];
-          alpha0_Ht = par[ip++];
-          alpha1_Ht = par[ip++];
-          b_Ht      = par[ip++];
-          M2_Ht     = par[ip++];
-          P_Ht      = par[ip++];
+          r_Ht      = par[ip++]; alpha0_Ht = par[ip++]; alpha1_Ht = par[ip++];
+          b_Ht      = par[ip++]; M2_Ht     = par[ip++]; P_Ht      = par[ip++];
         }
         if(hasE){
-          r_E       = par[ip++];
-          alpha0_E  = par[ip++];
-          alpha1_E  = par[ip++];
-          b_E       = par[ip++];
-          M2_E      = par[ip++];
-          P_E       = par[ip++];
+          r_E       = par[ip++]; alpha0_E  = par[ip++]; alpha1_E  = par[ip++];
+          b_E       = par[ip++]; M2_E      = par[ip++]; P_E       = par[ip++];
         }
         if(hasEt){
-          r_Et      = par[ip++];
-          alpha0_Et = par[ip++];
-          alpha1_Et = par[ip++];
-          b_Et      = par[ip++];
-          M2_Et     = par[ip++];
-          P_Et      = par[ip++];
+          r_Et      = par[ip++]; alpha0_Et = par[ip++]; alpha1_Et = par[ip++];
+          b_Et      = par[ip++]; M2_Et     = par[ip++]; P_Et      = par[ip++];
         }
         // χ² vs. BSA-derived amplitudes
         double chi2=0;
         for(int k=0;k<Nbins;++k){
-            BMK_DVCS dvcs(-1,1,0,
-                          bin_Eb[k],bin_xB[k],bin_Q2[k],bin_t[k],0.0); // bin_t is physical (negative)
+            BMK_DVCS dvcs(-1,1,0, bin_Eb[k],bin_xB[k],bin_Q2[k],bin_t[k],0.0);
             double modelA = dvcs.s1_I() / dvcs.c0_BH();
             double resid  = (bin_A[k] - modelA)/bin_dA[k];
             chi2 += resid*resid;
-            if(gConstraint > 0){
-                // // enforce alpha0 >= |alpha1 * t| penalty (uses |t|, so sign-safe)
-                // if(hasH){
-                //     if(alpha0_H < std::fabs(alpha1_H * bin_t[k])){
-                //         chi2 += 1e6;
-                //     }
-                // }
-                // if(hasHt){
-                //     if(alpha0_Ht < std::fabs(alpha1_Ht * bin_t[k])){
-                //         chi2 += 1e6;
-                //     }
-                // }
-                // if(hasE){
-                //     if(alpha0_E < std::fabs(alpha1_E * bin_t[k])){
-                //         chi2 += 1e6;
-                //     }
-                // }
-                // if(hasEt){
-                //     if(alpha0_Et < std::fabs(alpha1_Et * bin_t[k])){
-                //         chi2 += 1e6;
-                //     }
-                // }
-            }
         }
         f = chi2;
-    }
-    else { // global simultaneous
+    } else {
         // assign Im-part parameters
         if(hasH){
-          r_H       = par[ip++];
-          alpha0_H  = par[ip++];
-          alpha1_H  = par[ip++];
-          b_H       = par[ip++];
-          M2_H      = par[ip++];
-          P_H       = par[ip++];
+          r_H       = par[ip++]; alpha0_H  = par[ip++]; alpha1_H  = par[ip++];
+          b_H       = par[ip++]; M2_H      = par[ip++]; P_H       = par[ip++];
         }
         if(hasHt){
-          r_Ht      = par[ip++];
-          alpha0_Ht = par[ip++];
-          alpha1_Ht = par[ip++];
-          b_Ht      = par[ip++];
-          M2_Ht     = par[ip++];
-          P_Ht      = par[ip++];
+          r_Ht      = par[ip++]; alpha0_Ht = par[ip++]; alpha1_Ht = par[ip++];
+          b_Ht      = par[ip++]; M2_Ht     = par[ip++]; P_Ht      = par[ip++];
         }
         if(hasE){
-          r_E       = par[ip++];
-          alpha0_E  = par[ip++];
-          alpha1_E  = par[ip++];
-          b_E       = par[ip++];
-          M2_E      = par[ip++];
-          P_E       = par[ip++];
+          r_E       = par[ip++]; alpha0_E  = par[ip++]; alpha1_E  = par[ip++];
+          b_E       = par[ip++]; M2_E      = par[ip++]; P_E       = par[ip++];
         }
         if(hasEt){
-          r_Et      = par[ip++];
-          alpha0_Et = par[ip++];
-          alpha1_Et = par[ip++];
-          b_Et      = par[ip++];
-          M2_Et     = par[ip++];
-          P_Et      = par[ip++];
+          r_Et      = par[ip++]; alpha0_Et = par[ip++]; alpha1_Et = par[ip++];
+          b_Et      = par[ip++]; M2_Et     = par[ip++]; P_Et      = par[ip++];
         }
         // assign Re-part parameters
         renormReal = par[ip++];
-        if(hasH){
-          C0_H      = par[ip++];
-          MD2_H     = par[ip++];
-          lambda_H  = par[ip++];
-        }
-        if(hasHt){
-          C0_Ht     = par[ip++];
-          MD2_Ht    = par[ip++];
-          lambda_Ht = par[ip++];
-        }
-        if(hasE){
-          C0_E      = par[ip++];
-          MD2_E     = par[ip++];
-          lambda_E  = par[ip++];
-        }
-        if(hasEt){
-          C0_Et     = par[ip++];
-          MD2_Et    = par[ip++];
-          lambda_Et = par[ip++];
-        }
+        if(hasH){  C0_H = par[ip++];  MD2_H = par[ip++];  lambda_H = par[ip++]; }
+        if(hasHt){ C0_Ht= par[ip++]; MD2_Ht= par[ip++]; lambda_Ht = par[ip++]; }
+        if(hasE){  C0_E = par[ip++];  MD2_E = par[ip++];  lambda_E = par[ip++]; }
+        if(hasEt){ C0_Et= par[ip++]; MD2_Et= par[ip++]; lambda_Et = par[ip++]; }
+
         // χ² total = χ²_BSA + χ²_xsec
         double chi2 = 0;
-        // BSA part with conditional constraint
         for(int k=0;k<Nbins;++k){
-            BMK_DVCS dvcs(-1,1,0,
-                          bin_Eb[k],bin_xB[k],bin_Q2[k],bin_t[k],0.0); // bin_t is physical (negative)
+            BMK_DVCS dvcs(-1,1,0, bin_Eb[k],bin_xB[k],bin_Q2[k],bin_t[k],0.0);
             double modelA = dvcs.s1_I() / dvcs.c0_BH();
             double resid  = (bin_A[k] - modelA)/bin_dA[k];
             chi2 += resid*resid;
-            if(gConstraint > 0){
-                if(hasH){
-                    if(alpha0_H < std::fabs(alpha1_H * bin_t[k])){
-                        chi2 += 1e6;
-                    }
-                }
-                if(hasHt){
-                    if(alpha0_Ht < std::fabs(alpha1_Ht * bin_t[k])){
-                        chi2 += 1e6;
-                    }
-                }
-                if(hasE){
-                    if(alpha0_E < std::fabs(alpha1_E * bin_t[k])){
-                        chi2 += 1e6;
-                    }
-                }
-                if(hasEt){
-                    if(alpha0_Et < std::fabs(alpha1_Et * bin_t[k])){
-                        chi2 += 1e6;
-                    }
-                }
-            }
         }
-        // xsec part (xsData t is physical negative; BMK expects t accordingly)
         for(auto &d: xsData){
-            BMK_DVCS dvcs(-1,0,0,d.Eb,d.xB,d.Q2,d.t,d.phi);
+            BMK_DVCS dvcs(-1,0,0, d.Eb,d.xB,d.Q2,d.t,d.phi);
             double xs    = dvcs.CrossSection();
             double resid = (d.A - renormReal*xs)/d.sigA;
             chi2 += resid*resid;
@@ -466,7 +392,6 @@ int main(int argc, char** argv) {
     double avgBinChi2_before = bin_redChi2.empty()?0.0:
             std::accumulate(bin_redChi2.begin(), bin_redChi2.end(), 0.0) / bin_redChi2.size();
     std::cout<<"Average χ²/bin-fit before amplitude scaling = "<<avgBinChi2_before<<"\n";
-    double reducedAmpChi2_before = reducedAmpChi2;
 
     if(gScale==1){
         // scale the original BSA point uncertainties by sqrt(mean bin reduced chi2)
@@ -522,10 +447,11 @@ int main(int argc, char** argv) {
       // ─── Stage 1: Im-fit only ────────────────────────────────────────────────
       gStage = 1;
       build_par_listIm();
-      int nim = (int)parNamesIm.size();
+      int nim = parNamesIm.size();
       std::vector<double> imVal(nim), imErr(nim);
       double chi2_im, edm, errdef;
       int nv,nx,ic, ndf_im;
+
       auto run_im_fit = [&](){
         TMinuit minu(nim);
         minu.SetPrintLevel(1);
@@ -535,8 +461,7 @@ int main(int argc, char** argv) {
           double init=0, lo=-1e3, hi=+1e3, step=0.001;
 
           // fix P = 1
-          if(nm=="P_H"  || nm=="P_Ht"
-          || nm=="P_E"  || nm=="P_Et"){
+          if(nm=="P_H"  || nm=="P_Ht" || nm=="P_E"  || nm=="P_Et"){
             init = 1.0; lo = 1.0; hi = 1.0; step = 0.0;
           }
 
@@ -574,7 +499,6 @@ int main(int argc, char** argv) {
         minu.mnstat(chi2_im,edm,errdef,nv,nx,ic);
         for(int i=0;i<nim;++i) minu.GetParameter(i,imVal[i],imErr[i]);
         ndf_im = Nbins - nim;
-        // capture
         interimValMap.clear(); interimErrMap.clear();
         for(int i=0;i<nim;++i){
           interimValMap[parNamesIm[i]] = imVal[i];
@@ -584,47 +508,43 @@ int main(int argc, char** argv) {
         ndf_total1  = ndf_im;
       };
 
-      // first CFF fit (Im-only)
       run_im_fit();
       std::cout<<"CFF fit (Im-only) χ²/ndf before scaling amplitude uncertainties = "
                <<chi2_total1<<"/"<<ndf_total1
                <<" = "<<(ndf_total1>0?chi2_total1/ndf_total1:0)<<"\n";
 
-      // if scale flagged, scale bin_dA by sqrt(chi2/ndf) and redo Im-fit
       if(gScale==1){
           double scale_cff = std::sqrt((ndf_total1>0?chi2_total1/ndf_total1:1.0));
           std::cout<<"Scaling amplitude uncertainties (bin_dA) by sqrt("<<chi2_total1<<"/"<<ndf_total1<<") = "<<scale_cff<<"\n";
           for(auto &dA : bin_dA) dA *= scale_cff;
-          // recompute reducedAmpChi2 with new bin_dA
+
           double totChi2=0; int totDof=0;
           for(int k=0;k<Nbins;++k){
-              totChi2 += std::pow(bin_A[k]/bin_dA[k],2);
-              totDof  += (bin_M[k]-1);
+              if (bin_dA[k]>0){
+                  totChi2 += std::pow(bin_A[k]/bin_dA[k],2);
+                  totDof  += (bin_M[k]-1);
+              }
           }
           reducedAmpChi2 = totDof>0 ? totChi2/totDof : 0.0;
 
-          // rerun fit
           run_im_fit();
           chi2_total2 = chi2_total1;
           ndf_total2  = ndf_total1;
           std::cout<<"CFF fit (Im-only) χ²/ndf after scaling amplitude uncertainties = "
                    <<chi2_total2<<"/"<<ndf_total2
                    <<" = "<<(ndf_total2>0?chi2_total2/ndf_total2:0)<<"\n";
-          // final results from second fit
           finalValMap = interimValMap;
           finalErrMap = interimErrMap;
           chi2_total = chi2_total2;
           ndf_total  = ndf_total2;
       } else {
-          // without second scaling
           finalValMap = interimValMap;
           finalErrMap = interimErrMap;
           chi2_total = chi2_total1;
           ndf_total  = ndf_total1;
       }
 
-    }
-    else {
+    } else {
       // ─── Strategy 2: global simultaneous fit ────────────────────────────────
       gStage = 0;
       build_par_listIm();
@@ -632,7 +552,7 @@ int main(int argc, char** argv) {
       parNamesAll = parNamesIm;
       parNamesAll.insert(parNamesAll.end(),
                          parNamesRe.begin(), parNamesRe.end());
-      int nAll = (int)parNamesAll.size();
+      int nAll = parNamesAll.size();
       std::vector<double> allVal(nAll), allErr(nAll);
       double chi2_glob, edm, errdef;
       int nv,nx,ic;
@@ -645,29 +565,11 @@ int main(int argc, char** argv) {
           const auto &nm = parNamesAll[i];
           double init=0, lo=-1e3, hi=+1e3, step=0.01;
 
-          if(nm.find("alpha0_")==0){
-            lo = 1e-6; // strictly positive, no upper cap
-          }
-          if(nm.find("alpha1_")==0){
-            lo = 1e-6;
-          }
-          if(nm.find("b_")==0 || nm.find("M2_")==0){
-            lo = 0.0;
-          }
           // fix P = 1
-          if(nm=="P_H"  || nm=="P_Ht"
-          || nm=="P_E"  || nm=="P_Et"){
+          if(nm=="P_H"  || nm=="P_Ht" || nm=="P_E"  || nm=="P_Et"){
             init = 1.0; lo = 1.0; hi = 1.0; step = 0.0;
           }
-          if (nm=="C0_H") hi = 0.0; // D-term should be negative
-          if(nm=="MD2_H" || nm=="lambda_H"
-          || nm=="MD2_Ht"|| nm=="lambda_Ht"
-          || nm=="MD2_E" || nm=="lambda_E"
-          || nm=="MD2_Et"|| nm=="lambda_Et"){
-            lo = 0.0;
-          }
 
-          // initialize
           if     (nm=="r_H")        init=r_H;
           else if(nm=="alpha0_H")   init=alpha0_H;
           else if(nm=="alpha1_H")   init=alpha1_H;
@@ -714,17 +616,15 @@ int main(int argc, char** argv) {
         minu.Command("HESSE");
         minu.mnstat(chi2_glob,edm,errdef,nv,nx,ic);
         for(int i=0;i<nAll;++i) minu.GetParameter(i,allVal[i],allErr[i]);
-        // capture
         interimValMap.clear(); interimErrMap.clear();
         for(int i=0;i<nAll;++i){
           interimValMap[parNamesAll[i]] = allVal[i];
           interimErrMap[parNamesAll[i]] = allErr[i];
         }
         chi2_total1 = chi2_glob;
-        ndf_total1  = Nbins + (int)xsData.size() - (int)parNamesAll.size();
+        ndf_total1  = (int)bsaData.size() + (int)xsData.size() - (int)parNamesAll.size();
       };
 
-      // first global fit
       run_global_fit();
       std::cout<<"CFF global fit χ²/ndf before scaling amplitude uncertainties = "
                <<chi2_total1<<"/"<<ndf_total1
@@ -734,18 +634,19 @@ int main(int argc, char** argv) {
           double scale_cff = std::sqrt((ndf_total1>0?chi2_total1/ndf_total1:1.0));
           std::cout<<"Scaling amplitude uncertainties (bin_dA) by sqrt("<<chi2_total1<<"/"<<ndf_total1<<") = "<<scale_cff<<"\n";
           for(auto &dA : bin_dA) dA *= scale_cff;
-          // recompute reducedAmpChi2 after scaling
+
           double totChi2=0; int totDof=0;
           for(int k=0;k<Nbins;++k){
-              totChi2 += std::pow(bin_A[k]/bin_dA[k],2);
-              totDof  += (bin_M[k]-1);
+              if (bin_dA[k]>0){
+                  totChi2 += std::pow(bin_A[k]/bin_dA[k],2);
+                  totDof  += (bin_M[k]-1);
+              }
           }
           reducedAmpChi2 = totDof>0 ? totChi2/totDof : 0.0;
 
-          // rerun global fit with updated bin_dA
           run_global_fit();
           chi2_total2 = chi2_total1;
-          ndf_total2  = Nbins + (int)xsData.size() - (int)parNamesAll.size();
+          ndf_total2  = (int)bsaData.size() + (int)xsData.size() - (int)parNamesAll.size();
           std::cout<<"CFF global fit χ²/ndf after scaling amplitude uncertainties = "
                    <<chi2_total2<<"/"<<ndf_total2
                    <<" = "<<(ndf_total2>0?chi2_total2/ndf_total2:0)<<"\n";
@@ -761,35 +662,33 @@ int main(int argc, char** argv) {
       }
     }
 
-    // ─── Compute kinematic ranges (over loaded data after cuts) ───────────────
-    // Input t is physical (negative). Report xi_min/max (with corresponding xB),
-    // and -t_min/max (positive).
-    double xb_min =  std::numeric_limits<double>::infinity();
-    double xb_max = -std::numeric_limits<double>::infinity();
-    double mt_min =  std::numeric_limits<double>::infinity(); // min of -t (>0)
-    double mt_max = -std::numeric_limits<double>::infinity(); // max of -t
-
-    auto update_ranges = [&](const std::vector<DataPoint>& v){
+    // ─── Compute kinematic ranges over the data actually used ────────────────
+    auto scan = [&](const std::vector<DataPoint>& v,
+                    double& xb_min, double& xb_max,
+                    double& mt_min, double& mt_max){
         for(const auto& d : v){
-            if (d.xB < xb_min) xb_min = d.xB;
-            if (d.xB > xb_max) xb_max = d.xB;
-            const double mt = -d.t;   // -t (>0)
-            if (mt < mt_min) mt_min = mt;
-            if (mt > mt_max) mt_max = mt;
+            double mt = -d.t;        // -t (>0 by cuts)
+            if (mt <= 0) continue;
+            xb_min = std::min(xb_min, d.xB);
+            xb_max = std::max(xb_max, d.xB);
+            mt_min = std::min(mt_min, mt);
+            mt_max = std::max(mt_max, mt);
         }
     };
-    update_ranges(bsaData);
-    update_ranges(xsData);
+    double xb_min =  std::numeric_limits<double>::infinity();
+    double xb_max = -std::numeric_limits<double>::infinity();
+    double mt_min =  std::numeric_limits<double>::infinity();
+    double mt_max = -std::numeric_limits<double>::infinity();
 
-    double xi_min = std::numeric_limits<double>::quiet_NaN();
-    double xi_max = std::numeric_limits<double>::quiet_NaN();
-    bool have_xb = std::isfinite(xb_min) && std::isfinite(xb_max) && xb_min < 2.0 && xb_max < 2.0;
-    if (have_xb){
-        xi_min = xb_min / (2.0 - xb_min);
-        xi_max = xb_max / (2.0 - xb_max);
-    }
+    scan(bsaData, xb_min, xb_max, mt_min, mt_max);
+    if (gStrategy==2) scan(xsData, xb_min, xb_max, mt_min, mt_max);
 
-    // ─── Output results ───────────────────────────────────────────────────────
+    auto xi_of = [](double xb){ return xb/(2.0 - xb); };
+    bool have_xb = std::isfinite(xb_min) && std::isfinite(xb_max) && xb_min>0 && xb_max>0 && xb_min<2 && xb_max<2;
+    double xi_min = have_xb ? xi_of(xb_min) : std::numeric_limits<double>::quiet_NaN();
+    double xi_max = have_xb ? xi_of(xb_max) : std::numeric_limits<double>::quiet_NaN();
+
+    // ─── Output results (file) ────────────────────────────────────────────────
     std::vector<std::string> outNames =
       (gStrategy==1 ? (std::vector<std::string>(finalValMap.size()?parNamesIm:parNamesIm))
                     : parNamesAll);
@@ -812,8 +711,8 @@ int main(int argc, char** argv) {
     fout<<"\n# chi2 ndf chi2/ndf\n"
         <<chi2_total<<" "<<ndf_total<<" "<<(ndf_total>0?chi2_total/ndf_total:0)<<"\n";
 
-    // kinematic ranges (after cuts)
-    fout<<"# kinematic ranges over input data (after cuts)\n";
+    // NEW: write kinematic ranges into the output file (for data used by this strategy)
+    fout<<"# kinematic ranges over input data used in this fit (after cuts)\n";
     if (have_xb){
         fout<<"xB_min "<<xb_min<<"  xB_max "<<xb_max<<"\n";
         fout<<"xi_min "<<xi_min<<"  xi_max "<<xi_max<<"\n";
@@ -825,10 +724,9 @@ int main(int argc, char** argv) {
         fout<<"-t_min "<<mt_min<<"  -t_max "<<mt_max<<"\n";
     else
         fout<<"-t_min NA  -t_max NA\n";
-
     fout.close();
 
-    // Console recap
+    // ─── Console recap ────────────────────────────────────────────────────────
     std::cout<<"\n--- Fit Results ---\n";
     for(auto &n: outNames){
       std::cout<<" "<<n<<" = "<<finalValMap[n]
@@ -840,18 +738,18 @@ int main(int argc, char** argv) {
     std::cout<<" χ²_per_amp-fit = "<<reducedAmpChi2<<"\n";
 
     if (have_xb){
-        std::cout<<" xi/xB range over input data:  min(xi) = "<<xi_min
+        std::cout<<" xi/xB range over used input data:  min(xi) = "<<xi_min
                  <<" (from xB = "<<xb_min<<")"
                  <<", max(xi) = "<<xi_max
                  <<" (from xB = "<<xb_max<<")\n";
     } else {
-        std::cout<<" xi/xB range over input data:  (no valid xB to compute ξ)\n";
+        std::cout<<" xi/xB range over used input data:  (no valid xB to compute ξ)\n";
     }
     if (std::isfinite(mt_min) && std::isfinite(mt_max)){
-        std::cout<<" -t range over input data:     min(-t) = "<<mt_min
+        std::cout<<" -t range over used input data:     min(-t) = "<<mt_min
                  <<", max(-t) = "<<mt_max<<"\n\n";
     } else {
-        std::cout<<" -t range over input data:     (no valid t values)\n\n";
+        std::cout<<" -t range over used input data:     (no valid -t values)\n\n";
     }
 
     return 0;
@@ -861,7 +759,7 @@ int main(int argc, char** argv) {
 void PlotBinFit(int ibin, const std::string &ts) {
     if (!gPlotBinFits) return;
     auto &pts = keptBins[ibin];
-    int n = pts.size(); if(n<3) return;
+    int n = pts.size(); if(n<4) return; // require NDF>0
     system("mkdir -p output/plots/binned_fits");
     gStyle->SetOptStat(0);
 
