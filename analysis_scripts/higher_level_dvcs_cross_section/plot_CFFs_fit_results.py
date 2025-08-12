@@ -204,7 +204,7 @@ else:
 
 if mt_ok:
     mt_lo_draw = max(0.0, 0.5*mt_min)
-    mt_hi_draw = 1.5*mt_max  # ← no artificial cap
+    mt_hi_draw = 1.5*mt_max
 else:
     mt_lo_draw, mt_hi_draw = 0.00, 0.60
 
@@ -236,6 +236,11 @@ legend_elems = [
     Line2D([0],[0], color='tab:red',  lw=6, alpha=0.2, label='1σ band'),
 ]
 
+# Common y-range and ticks
+Y_MIN, Y_MAX = -1.0, 4.0
+YTICKS_ALL  = [-1, 0, 1, 2, 3, 4]
+YTICKS_TL   = [0, 1, 2, 3, 4]   # top-left: hide -1
+
 tex_map = {"H":"H", "Ht":r"\tilde H", "E":"E", "Et":r"\tilde E"}
 
 # ─── Plot each enabled CFF ────────────────────────────────────────────────────
@@ -261,22 +266,22 @@ for cff in ("H","Ht","E","Et"):
             ax.fill_between(xi_range, lo, up, **band_style)
         ax.axhline(0, **zero_line)
 
+        # y-lims & ticks
         ax.set_xlim(xi_range[0], xi_range[-1])
-        ax.set_ylim(-2, 4)
-
-        # y-ticks: top-left omits -2
+        ax.set_ylim(Y_MIN, Y_MAX)
         if i == 0:
-            ax.set_yticks([0,2,4,6,8,10,12])
+            ax.set_yticks(YTICKS_TL)          # top-left: no -1 tick
         elif i % 3 == 0:
-            ax.set_yticks([-2,0,2,4,6,8,10,12])
+            ax.set_yticks(YTICKS_ALL)         # left column: full ticks
         else:
-            ax.tick_params(labelleft=False)
+            ax.set_yticks(YTICKS_ALL)
+            ax.tick_params(labelleft=False)   # hide labels on middle/right
 
         ax.set_xlabel(r"$\xi$")
         if i % 3 == 0:
             ax.set_ylabel(r"$\mathrm{Im}\,"+tex+r"(\xi,\,-t)$")
 
-        ax.text(0.60,0.65, rf"$-t={mt0:.3f}\,\mathrm{{GeV^2}}$",
+        ax.text(0.58,0.75, rf"$-t={mt0:.3f}\,\mathrm{{GeV^2}}$",
                 transform=ax.transAxes, fontsize=12)
 
     fig.subplots_adjust(left=0.08,right=0.98,bottom=0.08,top=0.90,
@@ -300,22 +305,22 @@ for cff in ("H","Ht","E","Et"):
             ax.fill_between(t_range, lo, up, **band_style)
         ax.axhline(0, **zero_line)
 
+        # y-lims & ticks
         ax.set_xlim(t_range[0], t_range[-1])
-        ax.set_ylim(-2, 4)
-
-        # y-ticks: top-left omits -2
+        ax.set_ylim(Y_MIN, Y_MAX)
         if i == 0:
-            ax.set_yticks([0,2,4,6,8,10,12])
+            ax.set_yticks(YTICKS_TL)          # top-left: no -1 tick
         elif i % 3 == 0:
-            ax.set_yticks([-2,0,2,4,6,8,10,12])
+            ax.set_yticks(YTICKS_ALL)         # left column: full ticks
         else:
-            ax.tick_params(labelleft=False)
+            ax.set_yticks(YTICKS_ALL)
+            ax.tick_params(labelleft=False)   # hide labels on middle/right
 
         ax.set_xlabel(r"$-t\;(\mathrm{GeV^2})$")
         if i % 3 == 0:
             ax.set_ylabel(r"$\mathrm{Im}\,"+tex+r"(\xi,\,-t)$")
 
-        ax.text(0.60,0.65, rf"$\xi={xi0:.3f}$",
+        ax.text(0.62,0.75, rf"$\xi={xi0:.3f}$",
                 transform=ax.transAxes, fontsize=12)
 
     fig.subplots_adjust(left=0.08,right=0.98,bottom=0.08,top=0.90,
