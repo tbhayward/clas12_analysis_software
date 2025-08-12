@@ -6,14 +6,20 @@ Usage:
     python plot_ImCFFs_fit_results.py output/fit_results/fit_results_<TIMESTAMP>.txt
 
 Reads which CFFs were fit from the header of results file, then for each
-enabled Im CFF makes two figures:
-  1) Im CFF vs. ξ for six fixed −t between 0.1 and 0.6 (GeV²) (2×3 grid)
-  2) Im CFF vs. −t for six fixed ξ between 0.05 and 0.50 (2×3 grid)
+enabled Im CFF makes two 2×3 grids using the USED-BIN kinematic ranges that
+the fitter wrote into the results file:
 
-Includes uncertainty bands for fitted results using replica method (1σ).
+  A) Im CFF vs. ξ for six fixed −t values
+  B) Im CFF vs. −t for six fixed ξ values
 
+Choice of six fixed values for each grid:
+  - Panel 1: 0.5 * min (clamped)
+  - Panels 2–5: four evenly spaced values strictly between [min, max]
+  - Panel 6: 1.5 * max (clamped)
+
+Uncertainty bands for the fitted curves use a simple replica (1σ).
 Saves to:
-  output/plots/Im{CFF}_vs_xi_<TIMESTAMP>.pdf  
+  output/plots/Im{CFF}_vs_xi_<TIMESTAMP>.pdf
   output/plots/Im{CFF}_vs_t_<TIMESTAMP>.pdf
 """
 import os
@@ -23,7 +29,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.lines import Line2D
 
-# ─── Parse command-line ─────────────────────────────────────────────────────────
+# ─── Parse command-line ───────────────────────────────────────────────────────
 if len(sys.argv) != 2:
     print("Usage: python plot_ImCFFs_fit_results.py "
           "output/fit_results/fit_results_<TIMESTAMP>.txt")
@@ -36,60 +42,98 @@ if not m:
     sys.exit(1)
 timestamp = m.group(1)
 
-# ─── Load fit results & flags ───────────────────────────────────────────────────
+# ─── Utilities ────────────────────────────────────────────────────────────────
+def clamp(x, lo, hi):
+    return max(lo, min(hi, x))
+
+def build_six(minv, maxv, lo, hi):
+    """
+    Return 6 values:
+      v1 = 0.5*minv (clamped)
+      v2..v5 = four evenly spaced values strictly between [minv, maxv]
+               implemented as minv + {0.2,0.4,0.6,0.8}*(maxv-minv), then clamped
+      v6 = 1.5*maxv (clamped)
+    If min/max invalid, return None.
+    """
+    if not np.isfinite(minv) or not np.isfinite(maxv) or maxv <= minv:
+        return None
+    vals = [0.5*minv] + [minv + f*(maxv-minv) for f in (0.2,0.4,0.6,0.8)] + [1.5*maxv]
+    return [clamp(v, lo, hi) for v in vals]
+
+# ─── Load fit results & flags ─────────────────────────────────────────────────
 def parse_fit_results(fname):
     with open(fname) as f:
-        lines = [l.strip() for l in f if l.strip()]
-    flag_line = next((l for l in lines if re.match(r'^H\s+\d+', l)), None)
+        lines = [l.rstrip("\n") for l in f]
+
+    # flags line (e.g. "H 1 Ht 0 E 0 Et 0")
+    flag_line = next((l.strip() for l in lines if re.match(r'^\s*H\s+\d+', l)), None)
     if flag_line is None:
         raise RuntimeError("Could not find flags line (e.g., 'H 1 Ht 1 ...') in fit file")
     toks = flag_line.split()
     flags = {}
     for i in range(0, len(toks), 2):
-        key = toks[i]
-        try:
-            val = int(toks[i+1])
-        except:
-            continue
-        flags[key] = val
+        key = toks[i]; 
+        if i+1 < len(toks):
+            try: flags[key] = int(toks[i+1])
+            except: pass
 
-    pnames = []
-    vals = errs = None
+    # parameter names / values / errors
+    pnames, vals, errs = [], None, None
     chi2 = ndf = chi2ndf = None
+
     for i, l in enumerate(lines):
         if l.startswith("# parameters"):
             parts = l.split()
             pnames = parts[2:]
-        elif l.startswith("# values"):
+        elif l.startswith("# values:"):
             if i + 1 < len(lines):
-                vals = np.array(list(map(float, lines[i+1].split())))
-        elif l.startswith("# errors"):
+                vals = np.array([float(x) for x in lines[i+1].split()])
+        elif l.startswith("# errors:"):
             if i + 1 < len(lines):
-                errs = np.array(list(map(float, lines[i+1].split())))
+                errs = np.array([float(x) for x in lines[i+1].split()])
         elif l.startswith("# chi2"):
             if i + 1 < len(lines):
                 parts = lines[i+1].split()
-                chi2 = float(parts[0])
-                ndf = int(float(parts[1]))
-                chi2ndf = float(parts[2])
+                chi2 = float(parts[0]); ndf = int(float(parts[1])); chi2ndf = float(parts[2])
+
     if vals is None or errs is None or not pnames:
         raise RuntimeError("Could not parse fit-values/errors/parameter names from file")
-    return flags, pnames, vals, errs, chi2, ndf, chi2ndf
 
-flags, pnames, vals, errs, chi2, ndf, chi2ndf = parse_fit_results(fitfile)
+    # kinematic ranges (USED BINS)
+    xi_min = xi_max = mt_min = mt_max = np.nan
+    for l in lines:
+        s = l.strip()
+        if s.startswith("xi_min"):
+            # e.g. "xi_min 0.0601515  xi_max 0.230324"
+            parts = s.replace("  ", " ").split()
+            try:
+                xi_min = float(parts[1]) if parts[1] != "NA" else np.nan
+                xi_max = float(parts[3]) if parts[3] != "NA" else np.nan
+            except Exception:
+                pass
+        elif s.startswith("-t_min"):
+            # e.g. "-t_min 0.14885  -t_max 0.989903"
+            parts = s.replace("  ", " ").split()
+            try:
+                mt_min = float(parts[1]) if parts[1] != "NA" else np.nan
+                mt_max = float(parts[3]) if parts[3] != "NA" else np.nan
+            except Exception:
+                pass
+
+    return flags, pnames, vals, errs, chi2, ndf, chi2ndf, xi_min, xi_max, mt_min, mt_max
+
+flags, pnames, vals, errs, chi2, ndf, chi2ndf, xi_min, xi_max, mt_min, mt_max = parse_fit_results(fitfile)
 
 def get_idx(name):
-    try:
-        return pnames.index(name)
-    except ValueError:
-        return None
+    try: return pnames.index(name)
+    except ValueError: return None
 
-# renormImag is fixed in your C++ code to 1.0 unless you add it to the output
+# renormImag is fixed 1.0 unless present
 renorm_imag = 1.0
 if get_idx("renormImag") is not None:
     renorm_imag = vals[get_idx("renormImag")]
 
-# ─── Defaults from the C++ physically-motivated model ───────────────────────────
+# ─── Defaults from the C++ ansatz (used for "Default model" curve) ────────────
 defaults = {
     "H":  dict(r=0.9,   n=1.25, alpha0=0.43, alpha1=0.85, b=0.4, M2=0.64, P=1.0),
     "Ht": dict(r=7.0,   n=0.6,  alpha0=0.43, alpha1=0.85, b=2.0, M2=0.8,  P=1.0),
@@ -97,33 +141,30 @@ defaults = {
     "Et": dict(r=1.0,   n=0.6,  alpha0=0.0,  alpha1=0.0,  b=0.0, M2=0.0,  P=0.0),
 }
 
-# ─── Extract fit parameters safely ─────────────────────────────────────────────
+# ─── Extract fit parameters safely ────────────────────────────────────────────
 fit_params = {}
 fit_errors = {}
 for cff in ("H", "Ht", "E", "Et"):
     if flags.get(cff, 0) != 1:
         continue
     param_keys = ["r", "n", "alpha0", "alpha1", "b", "M2", "P"]
-    central = {}
-    error = {}
+    central = {}; error = {}
     for k in param_keys:
         name = f"{k}_{cff}"
         idx = get_idx(name)
         if idx is not None:
-            central[k] = vals[idx]
-            error[k] = errs[idx]
+            central[k] = vals[idx]; error[k] = errs[idx]
         else:
-            central[k] = defaults[cff][k]
-            error[k] = 0.0
+            central[k] = defaults[cff][k]; error[k] = 0.0
     fit_params[cff] = central
     fit_errors[cff] = error
 
-# ─── Build Im-CFF function matching C++ physically-motivated ansatz ───────────
+# ─── Im-CFF function (matches simple ansatz used in earlier scripts) ─────────
 def make_Im_func(cff, params, renorm):
     d = defaults[cff]
     def Im(xi, t):
         xi_arr = np.array(xi, copy=False)
-        t_arr = np.array(t, copy=False)
+        t_arr  = np.array(t,  copy=False)
         a0 = params.get("alpha0", d["alpha0"])
         a1 = params.get("alpha1", d["alpha1"])
         nval = params.get("n", d["n"])
@@ -136,25 +177,25 @@ def make_Im_func(cff, params, renorm):
         xfac = (2 * xi_arr / (1.0 + xi_arr)) ** (-alpha)
         yfac = ((1.0 - xi_arr) / (1.0 + xi_arr)) ** (bval)
         with np.errstate(divide='ignore', invalid='ignore'):
-            tfac = (1.0 - ((1.0 - xi_arr) / (1.0 + xi_arr)) * t_arr / M2) ** (-Pval) if M2 != 0 else np.ones_like(xi_arr + t_arr)
+            if M2 != 0:
+                tfac = (1.0 - ((1.0 - xi_arr) / (1.0 + xi_arr)) * t_arr / M2) ** (-Pval)
+            else:
+                tfac = np.ones_like(xi_arr + t_arr)
         return pref * xfac * yfac * tfac
     return Im
 
-# ─── Replica‐band support (1σ) ────────────────────────────────────────────────
-def generate_replicas(central, errors, nrep=5000):
+# ─── Replica bands (1σ) ───────────────────────────────────────────────────────
+def generate_replicas(central, errors, nrep=2000):
     reps = []
     for _ in range(nrep):
         d = {}
         for k, v in central.items():
             sigma = errors.get(k, 0.0)
-            if sigma > 0:
-                d[k] = np.random.normal(v, sigma)
-            else:
-                d[k] = v
+            d[k] = np.random.normal(v, sigma) if sigma > 0 else v
         reps.append(d)
     return reps
 
-def compute_uncertainty_band(cff, xi_vals, t_vals, nrep=5000):
+def compute_uncertainty_band(cff, xi_vals, t_vals, nrep=2000):
     if cff not in fit_params:
         return None, None, None
     central = fit_params[cff]
@@ -162,15 +203,14 @@ def compute_uncertainty_band(cff, xi_vals, t_vals, nrep=5000):
     param_reps = generate_replicas(central, errors_dict, nrep)
     renorm_reps = np.full(nrep, renorm_imag)
 
+    # infer broadcast length
     if np.ndim(xi_vals) > 0 and np.ndim(t_vals) == 0:
         N = len(xi_vals)
     elif np.ndim(t_vals) > 0 and np.ndim(xi_vals) == 0:
         N = len(t_vals)
     else:
-        xi_arr = np.array(xi_vals)
-        t_arr = np.array(t_vals)
-        broadcast = np.broadcast(xi_arr, t_arr)
-        N = broadcast.shape[0]
+        xi_arr = np.array(xi_vals); t_arr = np.array(t_vals)
+        N = np.broadcast(xi_arr, t_arr).shape[0]
 
     curves = np.empty((nrep, N))
     for i in range(nrep):
@@ -184,16 +224,37 @@ def compute_uncertainty_band(cff, xi_vals, t_vals, nrep=5000):
     up  = np.nanpercentile(curves, 84, axis=0)
     return med, lo, up
 
+# ─── Dynamic kinematics from results file (with safe fallbacks) ──────────────
+xi_ok = (np.isfinite(xi_min) and np.isfinite(xi_max) and xi_max > xi_min and xi_min > 0)
+mt_ok = (np.isfinite(mt_min) and np.isfinite(mt_max) and mt_max > mt_min and mt_min > 0)
+
+# safe physical bounds
+XI_LO, XI_HI = 1e-3, 0.90
+MT_LO, MT_HI = 1e-3, 0.999  # consistent with -t < 1 cuts
+
+# drawing domains
+if xi_ok:
+    xi_lo_draw = clamp(0.5*xi_min, XI_LO, XI_HI)
+    xi_hi_draw = clamp(1.5*xi_max, XI_LO, XI_HI)
+    if xi_hi_draw <= xi_lo_draw: xi_ok = False
+if mt_ok:
+    mt_lo_draw = clamp(0.5*mt_min, MT_LO, MT_HI)
+    mt_hi_draw = clamp(1.5*mt_max, MT_LO, MT_HI)
+    if mt_hi_draw <= mt_lo_draw: mt_ok = False
+
+# x-grids (fallbacks if needed)
+xi_range = np.linspace(xi_lo_draw, xi_hi_draw, 400) if xi_ok else np.linspace(0.00, 0.50, 400)
+t_range  = np.linspace(mt_lo_draw, mt_hi_draw, 400) if mt_ok else np.linspace(0.00, 0.60, 400)
+
+# six fixed values for panels
+t_fixed  = build_six(mt_min, mt_max, MT_LO, MT_HI) if mt_ok else [0.1,0.2,0.3,0.4,0.5,0.6]
+xi_fixed = build_six(xi_min, xi_max, XI_LO, XI_HI) if xi_ok else [0.05,0.15,0.25,0.35,0.45,0.50]
+
 # ─── Plot setup ────────────────────────────────────────────────────────────────
 plt.style.use('classic')
 plt.rcParams.update({'font.size':14,'font.family':'serif'})
 outdir = 'output/plots'
 os.makedirs(outdir, exist_ok=True)
-
-xi_range  = np.linspace(0,0.5,200)
-t_range   = np.linspace(0,0.6,200)
-t_fixed   = np.linspace(0.1,0.6,6)
-xi_fixed  = np.linspace(0.05,0.50,6)
 
 orig_style = {'color':'tab:blue','linestyle':'-','linewidth':2.5}
 fit_style  = {'color':'tab:red','linestyle':'--','linewidth':2.5}
@@ -208,7 +269,7 @@ legend_elems = [
 
 tex_map = {"H":"H", "Ht":r"\tilde H", "E":"E", "Et":r"\tilde E"}
 
-# ─── Plot each enabled CFF ─────────────────────────────────────────────────────
+# ─── Plot each enabled CFF ────────────────────────────────────────────────────
 for cff in ("H","Ht","E","Et"):
     if not flags.get(cff, 0):
         continue
@@ -216,42 +277,30 @@ for cff in ("H","Ht","E","Et"):
     Im_default = make_Im_func(cff, defaults[cff], renorm_imag)
     tex = tex_map[cff]
 
-    # — Im vs ξ at fixed t —
+    # — Im vs ξ at fixed -t —
     fig, axes = plt.subplots(2,3, figsize=(12,8), sharex=True, sharey=False)
     axes = axes.flatten()
     fig.suptitle(rf"$\mathrm{{Im}}\,{tex}$", fontsize=16, y=0.95)
 
-    for i,(ax,t0) in enumerate(zip(axes,t_fixed)):
-        ax.plot(xi_range, Im_default(xi_range, -t0), **orig_style)
-        med, lo, up = compute_uncertainty_band(cff, xi_range, -t0)
+    for i,(ax,mt0) in enumerate(zip(axes, t_fixed)):
+        ax.plot(xi_range, Im_default(xi_range, -mt0), **orig_style)
+        med, lo, up = compute_uncertainty_band(cff, xi_range, -mt0)
         if med is not None:
             ax.plot(xi_range, med, **fit_style)
             ax.fill_between(xi_range, lo, up, **band_style)
         ax.axhline(0, **zero_line)
 
-        ax.set_xlim(0,0.5)
-        ax.set_ylim(-2,10)
+        ax.set_xlim(xi_range[0], xi_range[-1])
+        ax.set_ylim(-2, 10)
 
-        if i == 0:
-            ax.set_yticks([0,2,4,6,8,10])
-        elif i%3==0:
-            ax.set_yticks([-2,0,2,4,6,8,10])
-        else:
-            ax.set_yticks([-2,0,2,4,6,8,10])
-            ax.tick_params(labelleft=False)
-
-        ax.set_xticks([0,0.1,0.2,0.3,0.4,0.5])
-        ax.set_xlabel(r"$\xi$")
-        if i%3==0:
+        # tidy ticks / labels
+        if i % 3 == 0:
             ax.set_ylabel(r"$\mathrm{Im}\,"+tex+r"(\xi,\,-t)$")
+        else:
+            ax.tick_params(labelleft=False)
+        ax.set_xlabel(r"$\xi$")
 
-        # remove overlapping "0.0" labels on bottom center/right
-        if i in (4,5):
-            for lbl in ax.get_xticklabels():
-                if lbl.get_text() in ('0','0.0'):
-                    lbl.set_visible(False)
-
-        ax.text(0.60,0.65, rf"$-t={t0:.2f}\,\mathrm{{GeV^2}}$",
+        ax.text(0.60,0.65, rf"$-t={mt0:.3f}\,\mathrm{{GeV^2}}$",
                 transform=ax.transAxes, fontsize=12)
 
     fig.subplots_adjust(left=0.08,right=0.98,bottom=0.08,top=0.92,
@@ -260,41 +309,29 @@ for cff in ("H","Ht","E","Et"):
     fig.savefig(f"{outdir}/Im{cff}_vs_xi_{timestamp}.pdf", bbox_inches='tight')
     plt.close(fig)
 
-    # — Im vs −t at fixed ξ —
+    # — Im vs -t at fixed ξ —
     fig, axes = plt.subplots(2,3, figsize=(12,8), sharex=True, sharey=False)
     axes = axes.flatten()
     fig.suptitle(rf"$\mathrm{{Im}}\,{tex}$", fontsize=16, y=0.95)
 
-    for i,(ax,x0) in enumerate(zip(axes,xi_fixed)):
-        ax.plot(t_range, Im_default(x0, -t_range), **orig_style)
-        med, lo, up = compute_uncertainty_band(cff, x0, -t_range)
+    for i,(ax,xi0) in enumerate(zip(axes, xi_fixed)):
+        ax.plot(t_range, Im_default(xi0, -t_range), **orig_style)
+        med, lo, up = compute_uncertainty_band(cff, xi0, -t_range)
         if med is not None:
             ax.plot(t_range, med, **fit_style)
             ax.fill_between(t_range, lo, up, **band_style)
         ax.axhline(0, **zero_line)
 
-        ax.set_xlim(0,0.6)
-        ax.set_ylim(-2,10)
+        ax.set_xlim(t_range[0], t_range[-1])
+        ax.set_ylim(-2, 10)
 
-        if i == 0:
-            ax.set_yticks([0,2,4,6,8,10])
-        elif i%3==0:
-            ax.set_yticks([-2,0,2,4,6,8,10])
-        else:
-            ax.set_yticks([-2,0,2,4,6,8,10])
-            ax.tick_params(labelleft=False)
-
-        ax.set_xticks([0,0.2,0.4,0.6])
-        ax.set_xlabel(r"$-t\;(\mathrm{GeV^2})$")
-        if i%3==0:
+        if i % 3 == 0:
             ax.set_ylabel(r"$\mathrm{Im}\,"+tex+r"(\xi,\,-t)$")
+        else:
+            ax.tick_params(labelleft=False)
+        ax.set_xlabel(r"$-t\;(\mathrm{GeV^2})$")
 
-        if i in (4,5):
-            for lbl in ax.get_xticklabels():
-                if lbl.get_text() in ('0','0.0'):
-                    lbl.set_visible(False)
-
-        ax.text(0.60,0.65, rf"$\xi={x0:.2f}$",
+        ax.text(0.60,0.65, rf"$\xi={xi0:.3f}$",
                 transform=ax.transAxes, fontsize=12)
 
     fig.subplots_adjust(left=0.08,right=0.98,bottom=0.08,top=0.92,

@@ -51,7 +51,6 @@ public class processing_beamCharge {
 		float posHelbeamChargeTotal = 0;
 		float negHelbeamChargeTotal = 0;
 		float noHelbeamChargeTotal = 0;
-		float runTotalCharge = 0;
 		int runnum;
 		while (current_file < n_files) {
 			def beamCharge = 0;
@@ -72,11 +71,6 @@ public class processing_beamCharge {
 				if (num_events%1000000 == 0) { // not necessary, just updates output
 					print("processed: "+num_events+" events, max beamCharge of current ");
 					print("run = "+beamChargeMax+" nC.\n");
-				}
-
-				if (event.hasBank("RUN::scaler")) {
-					float tempValue = event.getBank("RUN::scaler").getFloat("fcupgated",0); 
-					runTotalCharge+=tempValue;
 				}
 
     			if (event.hasBank("HEL::scaler")) {
@@ -108,7 +102,6 @@ public class processing_beamCharge {
 			println(); println(); println();
 			print(beamChargeList);
 			println();
-			println(runTotalCharge);
 			beamCharge = 0;
 			posHelbeamChargeTotal = 0;
 			negHelbeamChargeTotal = 0;
