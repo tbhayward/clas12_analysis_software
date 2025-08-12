@@ -202,7 +202,7 @@ void BinBsaData(){
         keptBins.push_back(pts);
         bin_M.push_back(M);
         bin_A.push_back(Afit);
-        bin_dA.push_back(dA);
+        bin_dA.push_back(10*dA);
         bin_redChi2.push_back(redchi2);
         double sumw=0, Sx=0, Sq=0, St=0, Se=0;
         for(auto &d: pts){
@@ -549,7 +549,7 @@ int main(int argc, char** argv) {
           // fix P = 1
           if(nm=="P_H"  || nm=="P_Ht"
           || nm=="P_E"  || nm=="P_Et"){
-            // init = 1.0; lo = 1.0; hi = 1.0; step = 0.0;
+            init = 1.0; lo = 1.0; hi = 1.0; step = 0.0;
           }
 
           if     (nm=="r_H")        init = r_H;
