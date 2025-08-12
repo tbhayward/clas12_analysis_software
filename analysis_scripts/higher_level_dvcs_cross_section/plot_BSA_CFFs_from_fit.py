@@ -4,8 +4,7 @@ plot_BSA_CFFs_from_fit.py
 
 Plots A_LU(φ) per (Q2, xB, t, Eb) bin for:
   • BKM (full) — solid blue
-  • BKM approx  A(φ) ≈ [s1_I sinφ] / [c0_BH + c1_BH cosφ + (opt) c2_BH cos2φ] — dashed blue
-  • RGK fit (same approx form but with fitted ImCFFs) — solid orange
+  • RGK fit (approx): A(φ) ≈ [s1_I(φ=indep) · sinφ] / [c0_BH + c1_BH cosφ (+ c2_BH cos2φ if order=2)] — solid orange
 
 Usage:
   python plot_BSA_CFFs_from_fit.py output/fit_results/fit_results_<TIMESTAMP>.txt
@@ -17,10 +16,9 @@ Usage:
 
 Notes
 -----
-• “Approx” uses BH-only denominator via the BH Fourier coeffs c0_BH, c1_BH, (optionally c2_BH).
-• s1_I is taken from the interference (depends on Im CFFs and L_beam); BH coeffs do not.
-• For the BKM curves we enable H,Ht,E and Et=0 (safe default).
-• For the RGK curves we apply your fit flags/parameters.
+• The RGK curve uses BH-only denominator (c0_BH,c1_BH[,c2_BH]) and s1_I from the interference with your fitted ImCFFs.
+• For the BKM “full” curve we enable H,Ht,E and Et=0 (safe default) with the default parameters.
+• For the RGK curve we apply your fit flags/parameters before evaluating s1_I.
 """
 
 import os, re, argparse
@@ -176,19 +174,6 @@ def bh_coeffs_and_s1I(Q2, xB, t, Eb):
     c2  = dv.c2_BH()
     return s1I, c0, c1, c2
 
-def approx_curve(phi_deg, s1I, c0, c1, c2, *, order=2):
-    """A(φ) ≈ [s1_I sinφ] / [c0 + c1 cosφ (+ c2 cos2φ if order=2)]."""
-    ph = np.deg2rad(phi_deg)
-    denom = c0 + c1*np.cos(ph)
-    if order == 2:
-        denom = denom + c2*np.cos(2*ph)
-    # avoid blow-ups if denom ~ 0
-    eps = 1e-14
-    denom = np.where(np.abs(denom) < eps, np.sign(denom)*eps, denom)
-    return (s1I * np.sin(ph)) / denom
-
-
-# ───────────── optional: fit B from data (B1 only) ────────────────
 def fit_B_from_data(phi_data, A_data, dA):
     """Fit A_LU(φ) = [A1 sinφ] / [1 + B1 cosφ]; return B1, A1, χ²/ndf."""
     import numpy.linalg as LA
@@ -201,9 +186,7 @@ def fit_B_from_data(phi_data, A_data, dA):
     beta = LA.pinv(X.T @ W @ X) @ (X.T @ W @ y)
     a, b = beta
     B1 = b / max(a, 1e-12)
-    # rough A1 from a
     A1 = a
-    # χ²
     yfit = (a*np.sin(ph) + b*np.sin(ph)*np.cos(ph))
     chi2 = float(((y - yfit)**2 * w).sum())
     ndf  = max(len(y) - 2, 1)
@@ -218,7 +201,7 @@ def main():
     ap.add_argument('--approx-order', type=int, choices=[1,2], default=2,
                     help='Use c0+c1 cosφ (1) or c0+c1 cosφ+c2 cos2φ (2) in the BH denominator')
     ap.add_argument('--B-source', choices=['bh','data'], default='bh',
-                    help='Use BH Fourier coeffs for B (default) or fit B1 from data')
+                    help='Use BH Fourier coeffs for B (default) or fit B1 from data (only valid for order=1)')
     ap.add_argument('--outdir', default='output/plots', help='Output directory for PDFs')
     ap.add_argument('--debug', action='store_true', help='Print internal diagnostics for first bin')
     args = ap.parse_args()
@@ -230,14 +213,13 @@ def main():
     datafile = (args.data or input_path or 'imports/rgk_preliminary_bsa.txt')
     print(">> Using data file:", datafile)
     print(">> Fit flags:", flags_fit)
-    print(">> Found", end=" ")
 
     # Load C++
     _load_dvcs_once()
 
     # Load bins
     bins = load_bins(datafile)
-    print(f"{len(bins)} φ-bins")
+    print(f">> Found {len(bins)} φ-bins")
 
     os.makedirs(args.outdir, exist_ok=True)
 
@@ -264,58 +246,32 @@ def main():
         bkm_full = bsa_full_curve(phi_grid, Q2m, xBm, tm, Ebm,
                                   debug=(args.debug and ibin==1), tag=f"bin{ibin}-BKM")
 
-        # BKM approx denominator (BH Fourier coeffs)
-        s1I_bkm, c0_bkm, c1_bkm, c2_bkm = bh_coeffs_and_s1I(Q2m, xBm, tm, Ebm)
-
-        # If requested, replace B1 by a data-driven value (per bin)
-        if args.approx_order == 1 and args.B_source == 'data':
-            B1_fit, _, _ = fit_B_from_data(phi_data, A_data, dA)
-            B1_used, B2_used = B1_fit, 0.0
-        else:
-            B1_used, B2_used = (c1_bkm/c0_bkm, 0.0) if args.approx_order == 1 else (c1_bkm/c0_bkm, c2_bkm/c0_bkm)
-
-        # Recompose denom via c0*(1 + B1 cosφ + B2 cos2φ)
-        def bkm_approx_on(phi_arr):
-            ph = np.deg2rad(phi_arr)
-            denom = c0_bkm * (1.0 + B1_used*np.cos(ph) + (B2_used*np.cos(2*ph) if args.approx_order==2 else 0.0))
-            eps = 1e-14
-            denom = np.where(np.abs(denom) < eps, np.sign(denom)*eps, denom)
-            return (s1I_bkm * np.sin(ph)) / denom
-
-        bkm_apx = bkm_approx_on(phi_grid)
-
-        # --- RGK fit approx (use your fit params; BH denominator identical) ---
+        # --- RGK fit approx (use your fit params; BH denominator choice per args) ---
         push_globals(param_map_fit, flags_fit, label="RGK-fit")
         if args.debug and ibin == 1:
             ROOT.gInterpreter.ProcessLine(r'std::cout<<"[RGK] hasH="<<hasH<<" hasHt="<<hasHt<<" hasE="<<hasE<<" hasEt="<<hasEt<<std::endl;')
 
         s1I_rgk, c0_rgk, c1_rgk, c2_rgk = bh_coeffs_and_s1I(Q2m, xBm, tm, Ebm)
-        # Note: c0,c1,c2 from BH do NOT depend on CFFs; s1_I does.
-        # Optionally mirror the same B choice as for BKM approx:
+
+        # Choose B from BH (default) or fit-from-data (only for order=1)
         if args.approx_order == 1 and args.B_source == 'data':
-            B1_rgk_used, B2_rgk_used = B1_used, 0.0
+            B1_fit, _, _ = fit_B_from_data(phi_data, A_data, dA)
+            B1_used, B2_used = B1_fit, 0.0
         else:
-            B1_rgk_used, B2_rgk_used = (c1_rgk/c0_rgk, 0.0) if args.approx_order == 1 else (c1_rgk/c0_rgk, c2_rgk/c0_rgk)
+            B1_used = c1_rgk / c0_rgk
+            B2_used = (c2_rgk / c0_rgk) if args.approx_order == 2 else 0.0
 
-        def rgk_approx_on(phi_arr):
-            ph = np.deg2rad(phi_arr)
-            denom = c0_rgk * (1.0 + B1_rgk_used*np.cos(ph) + (B2_rgk_used*np.cos(2*ph) if args.approx_order==2 else 0.0))
-            eps = 1e-14
-            denom = np.where(np.abs(denom) < eps, np.sign(denom)*eps, denom)
-            return (s1I_rgk * np.sin(ph)) / denom
-
-        rgk_apx = rgk_approx_on(phi_grid)
+        ph = np.deg2rad(phi_grid)
+        denom = c0_rgk * (1.0 + B1_used*np.cos(ph) + (B2_used*np.cos(2*ph) if args.approx_order==2 else 0.0))
+        eps = 1e-14
+        denom = np.where(np.abs(denom) < eps, np.sign(denom)*eps, denom)
+        rgk_curve = (s1I_rgk * np.sin(ph)) / denom
 
         # --- Plot ---
         fig, ax = plt.subplots(figsize=(8,5))
-        # data
         ax.errorbar(phi_data, A_data, yerr=dA, fmt='o', ms=5, color='k', label='Data')
-        # BKM approx (dashed blue)
-        ax.plot(phi_grid, bkm_apx, '--', lw=2, color='tab:blue', label='BKM approx')
-        # BKM full (solid blue)
-        ax.plot(phi_grid, bkm_full, '-',  lw=2, color='tab:blue', alpha=0.8, label='BKM')
-        # RGK fit (solid orange)
-        ax.plot(phi_grid, rgk_apx, '-',  lw=2, color='tab:orange', label='RGK fit')
+        ax.plot(phi_grid, bkm_full, '-',  lw=2, color='tab:blue',   label='BKM')
+        ax.plot(phi_grid, rgk_curve, '-', lw=2, color='tab:orange', label='RGK fit')
 
         ax.set_xlim(0, 360)
         ax.set_xticks([0,60,120,180,240,300,360])
