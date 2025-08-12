@@ -764,19 +764,16 @@ int main(int argc, char** argv) {
     }
 
     // ─── Compute kinematic ranges (over loaded data after cuts) ───────────────
-    // ξ is computed from Bjorken x using ξ = xB / (2 − xB). Inputs provide -t (>0).
-    double xi_min =  std::numeric_limits<double>::infinity();
-    double xi_max = -std::numeric_limits<double>::infinity();
+    // Inputs provide -t (>0) as 't'. Also report xB that corresponds to ξ extrema.
+    double xb_min =  std::numeric_limits<double>::infinity();
+    double xb_max = -std::numeric_limits<double>::infinity();
     double mt_min =  std::numeric_limits<double>::infinity(); // -t minimum
     double mt_max = -std::numeric_limits<double>::infinity(); // -t maximum
 
     auto update_ranges = [&](const std::vector<DataPoint>& v){
         for(const auto& d : v){
-            if (d.xB < 2.0){ // guard against pathologies
-                double xi = d.xB / (2.0 - d.xB);
-                if (xi < xi_min) xi_min = xi;
-                if (xi > xi_max) xi_max = xi;
-            }
+            if (d.xB < xb_min) xb_min = d.xB;
+            if (d.xB > xb_max) xb_max = d.xB;
             double mt = d.t; // d.t is already -t (>0)
             if (mt < mt_min) mt_min = mt;
             if (mt > mt_max) mt_max = mt;
@@ -784,6 +781,14 @@ int main(int argc, char** argv) {
     };
     update_ranges(bsaData);
     update_ranges(xsData);
+
+    double xi_min = std::numeric_limits<double>::quiet_NaN();
+    double xi_max = std::numeric_limits<double>::quiet_NaN();
+    bool have_xb = std::isfinite(xb_min) && std::isfinite(xb_max) && xb_min < 2.0 && xb_max < 2.0;
+    if (have_xb){
+        xi_min = xb_min / (2.0 - xb_min);
+        xi_max = xb_max / (2.0 - xb_max);
+    }
 
     // ─── Output results ───────────────────────────────────────────────────────
     std::vector<std::string> outNames =
@@ -809,13 +814,14 @@ int main(int argc, char** argv) {
         <<chi2_total<<" "<<ndf_total<<" "<<(ndf_total>0?chi2_total/ndf_total:0)<<"\n";
 
     // NEW: write kinematic ranges into the output file
-    if (std::isfinite(xi_min) && std::isfinite(xi_max))
-        fout<<"# kinematic ranges over input data (after cuts)\n"
-            <<"xi_min "<<xi_min<<"  xi_max "<<xi_max<<"\n";
-    else
-        fout<<"# kinematic ranges over input data (after cuts)\n"
-            <<"xi_min NA  xi_max NA\n";
-
+    fout<<"# kinematic ranges over input data (after cuts)\n";
+    if (have_xb){
+        fout<<"xB_min "<<xb_min<<"  xB_max "<<xb_max<<"\n";
+        fout<<"xi_min "<<xi_min<<"  xi_max "<<xi_max<<"\n";
+    } else {
+        fout<<"xB_min NA  xB_max NA\n";
+        fout<<"xi_min NA  xi_max NA\n";
+    }
     if (std::isfinite(mt_min) && std::isfinite(mt_max))
         fout<<"-t_min "<<mt_min<<"  -t_max "<<mt_max<<"\n";
     else
@@ -834,17 +840,19 @@ int main(int argc, char** argv) {
     std::cout<<" Average χ²/bin-fit = "<<avgBinChi2<<"\n";
     std::cout<<" χ²_per_amp-fit = "<<reducedAmpChi2<<"\n";
 
-    if (std::isfinite(xi_min) && std::isfinite(xi_max)){
-        std::cout<<" xi range over input data:  min(xi) = "<<xi_min
-                 <<", max(xi) = "<<xi_max<<"\n";
+    if (have_xb){
+        std::cout<<" xi/xB range over input data:  min(xi) = "<<xi_min
+                 <<" (from xB = "<<xb_min<<")"
+                 <<", max(xi) = "<<xi_max
+                 <<" (from xB = "<<xb_max<<")\n";
     } else {
-        std::cout<<" xi range over input data:  (no valid xB to compute ξ)\n";
+        std::cout<<" xi/xB range over input data:  (no valid xB to compute ξ)\n";
     }
     if (std::isfinite(mt_min) && std::isfinite(mt_max)){
-        std::cout<<" -t range over input data:  min(-t) = "<<mt_min
+        std::cout<<" -t range over input data:     min(-t) = "<<mt_min
                  <<", max(-t) = "<<mt_max<<"\n\n";
     } else {
-        std::cout<<" -t range over input data:  (no valid t values)\n\n";
+        std::cout<<" -t range over input data:     (no valid t values)\n\n";
     }
 
     return 0;
