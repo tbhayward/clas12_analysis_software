@@ -1377,41 +1377,41 @@ double GetImEt(double xi, double t) {
 
 double renormReal = 1.0; //test Vadim comparison
 
-// double GetReH(double xi, double t){
-//     double res = 0;
-//     if(hasH){
-//         // in theory PV \int ImH, to be checked
-//         res  = -12*xi*TMath::Power(1-xi,2)*TMath::Sqrt(TMath::Abs(t))/TMath::Power(1-t/0.7,2);
-//         // D-term
-//         res += -3*TMath::Power(1-xi,4)/TMath::Power(1-t/1.1,2); 
-//     }
-//     return res/( 1 + TMath::Power( t/0.8 , 4) );
-//     return res*renormReal/( 1 + TMath::Power( t , 4) );
-// }
+double GetReH(double xi, double t){
+    double res = 0;
+    if(hasH){
+        // in theory PV \int ImH, to be checked
+        res  = -12*xi*TMath::Power(1-xi,2)*TMath::Sqrt(TMath::Abs(t))/TMath::Power(1-t/0.7,2);
+        // D-term
+        res += -3*TMath::Power(1-xi,4)/TMath::Power(1-t/1.1,2); 
+    }
+    return res/( 1 + TMath::Power( t/0.8 , 4) );
+    return res*renormReal/( 1 + TMath::Power( t , 4) );
+}
 
-// double GetReHt(double xi, double t){
-//     double res = 0;
-//     if(hasHt)res=-12*xi*TMath::Power(1-xi,2) /TMath::Power(1-t/1.5,2);
-//     return res*renormReal;
-// }
+double GetReHt(double xi, double t){
+    double res = 0;
+    if(hasHt)res=-12*xi*TMath::Power(1-xi,2) /TMath::Power(1-t/1.5,2);
+    return res*renormReal;
+}
 
-// double GetReE(double xi, double t){
-//     double res = 0;
-//     if(hasE){
-//         res = -7 * xi*TMath::Power(1-xi,2) *TMath::Sqrt(TMath::Abs(t))/TMath::Power(1-t/0.7,2);
-//         res += -3*TMath::Power(1-xi,2)/TMath::Power(1-t/1.2,2);
+double GetReE(double xi, double t){
+    double res = 0;
+    if(hasE){
+        res = -7 * xi*TMath::Power(1-xi,2) *TMath::Sqrt(TMath::Abs(t))/TMath::Power(1-t/0.7,2);
+        res += -3*TMath::Power(1-xi,2)/TMath::Power(1-t/1.2,2);
 
-//     }
-//     return res*renormReal / ( 1 + TMath::Power( t , 4) );
-//     return res*renormReal;
-// }
+    }
+    return res*renormReal / ( 1 + TMath::Power( t , 4) );
+    return res*renormReal;
+}
 
-// double GetReEt(double xi, double t){
-//     //return 0;
-//     double res = 0;
-//     if(hasEt)res=10/t * 1/( 1 + TMath::Power( 3*xi , 4) );
-//     return res*renormReal;
-// }
+double GetReEt(double xi, double t){
+    //return 0;
+    double res = 0;
+    if(hasEt)res=10/t * 1/( 1 + TMath::Power( 3*xi , 4) );
+    return res*renormReal;
+}
 
 // -------------------------------------------------------------------------------------------------
 //   Compton Form Factor (CFF) models—real parts
@@ -1422,79 +1422,79 @@ double C0_Ht,   MD2_Ht,   lambda_Ht;
 double C0_E,    MD2_E,    lambda_E;
 double C0_Et,   MD2_Et,   lambda_Et;
 
-// Helpers for PV integration (simple two-interval Simpson with debug)
-#include <functional>
-#include <limits>
-#include <cmath>
-#include <iostream>
-double PV_integral(std::function<double(double)> f, double ξ, double t) {
-    const double eps   = 1e-8;
-    const double x_min = 1e-8;
-    const int    N     = 1000;
+// // Helpers for PV integration (simple two-interval Simpson with debug)
+// #include <functional>
+// #include <limits>
+// #include <cmath>
+// #include <iostream>
+// double PV_integral(std::function<double(double)> f, double ξ, double t) {
+//     const double eps   = 1e-8;
+//     const double x_min = 1e-8;
+//     const int    N     = 1000;
 
-    // 1) compute analytic tail 0→x_min
-    double p = alpha0_H + alpha1_H * t;
-    double C = renormImag
-             * n_H * r_H
-             * std::pow(2.0,  -p)
-             * std::pow(1.0 - t/M2_H, -P_H);
-    double analytic_tail = 0.0;
-    if (p < 1.0) {
-      analytic_tail = 2.0 * C
-                    / (ξ * (1.0 - p))
-                    * std::pow(x_min, 1.0 - p);
-    }
+//     // 1) compute analytic tail 0→x_min
+//     double p = alpha0_H + alpha1_H * t;
+//     double C = renormImag
+//              * n_H * r_H
+//              * std::pow(2.0,  -p)
+//              * std::pow(1.0 - t/M2_H, -P_H);
+//     double analytic_tail = 0.0;
+//     if (p < 1.0) {
+//       analytic_tail = 2.0 * C
+//                     / (ξ * (1.0 - p))
+//                     * std::pow(x_min, 1.0 - p);
+//     }
 
-    // 2) numeric Simpson integrals from x_min→ξ−eps and ξ+eps→1
-    auto integrate = [&](double a, double b){
-      double h = (b - a)/N, sum = 0.0;
-      for(int i=0; i<=N; ++i){
-        double x = a + i*h;
-        double w = (i==0||i==N) ? 1.0 : ((i&1)?4.0:2.0);
-        sum += w * f(x);
-      }
-      return sum * (h/3.0);
-    };
+//     // 2) numeric Simpson integrals from x_min→ξ−eps and ξ+eps→1
+//     auto integrate = [&](double a, double b){
+//       double h = (b - a)/N, sum = 0.0;
+//       for(int i=0; i<=N; ++i){
+//         double x = a + i*h;
+//         double w = (i==0||i==N) ? 1.0 : ((i&1)?4.0:2.0);
+//         sum += w * f(x);
+//       }
+//       return sum * (h/3.0);
+//     };
 
-    // the usual PV weight is inside f(x), so we just integrate f(x)=2ξ/(ξ²−x²)*ImH(x)
-    double I1 = integrate(x_min, std::max(x_min, ξ - eps));
-    double I2 = integrate(std::min(1.0, ξ + eps), 1.0);
-    double numeric = I1 + I2;
+//     // the usual PV weight is inside f(x), so we just integrate f(x)=2ξ/(ξ²−x²)*ImH(x)
+//     double I1 = integrate(x_min, std::max(x_min, ξ - eps));
+//     double I2 = integrate(std::min(1.0, ξ + eps), 1.0);
+//     double numeric = I1 + I2;
 
-    // 3) return combined result
-    return (numeric + analytic_tail);
-}
+//     // 3) return combined result
+//     return (numeric + analytic_tail);
+// }
 
-// Real part of H via dispersion relation
-double GetReH(double xi, double t) {
-    if(!hasH) return 0.0;
-    // subtraction piece
-    double sub = C0_H * TMath::Power(1.0 - t/MD2_H, -lambda_H);
-    // principal-value integral
-    auto integrand = [&](double x){
-        double denom = xi*xi - x*x;
-        return (2.0*xi/denom) * GetImH(x, t);
-    };
-    double pv = PV_integral(integrand, xi, t) / M_PI;
-    return renormReal * (sub + pv);
-}
+// // Real part of H via dispersion relation
+// double GetReH(double xi, double t) {
+//     if(!hasH) return 0.0;
+//     // subtraction piece
+//     double sub = C0_H * TMath::Power(1.0 - t/MD2_H, -lambda_H);
+//     // principal-value integral
+//     auto integrand = [&](double x){
+//         double denom = xi*xi - x*x;
+//         return (2.0*xi/denom) * GetImH(x, t);
+//     };
+//     double pv = PV_integral(integrand, xi, t) / M_PI;
+//     return renormReal * (sub + pv);
+// }
 
-// Repeat for Htilde, E, Et
-double GetReHt(double xi, double t) {
-    if(!hasHt) return 0.0;
-    double sub = C0_Ht * TMath::Power(1.0 - t/MD2_Ht, -lambda_Ht);
-    auto integrand = [&](double x){ double denom = xi*xi - x*x; return (2.0*xi/denom) * GetImHt(x,t); };
-    return renormReal * (sub + PV_integral(integrand, xi, t)/M_PI);
-}
-double GetReE(double xi, double t) {
-    if(!hasE) return 0.0;
-    double sub = C0_E * TMath::Power(1.0 - t/MD2_E, -lambda_E);
-    auto integrand = [&](double x){ double denom = xi*xi - x*x; return (2.0*xi/denom) * GetImE(x,t); };
-    return renormReal * (sub + PV_integral(integrand, xi, t)/M_PI);
-}
-double GetReEt(double xi, double t) {
-    if(!hasEt) return 0.0;
-    double sub = C0_Et * TMath::Power(1.0 - t/MD2_Et, -lambda_Et);
-    auto integrand = [&](double x){ double denom = xi*xi - x*x; return (2.0*xi/denom) * GetImEt(x,t); };
-    return renormReal * (sub + PV_integral(integrand, xi, t)/M_PI);
-}
+// // Repeat for Htilde, E, Et
+// double GetReHt(double xi, double t) {
+//     if(!hasHt) return 0.0;
+//     double sub = C0_Ht * TMath::Power(1.0 - t/MD2_Ht, -lambda_Ht);
+//     auto integrand = [&](double x){ double denom = xi*xi - x*x; return (2.0*xi/denom) * GetImHt(x,t); };
+//     return renormReal * (sub + PV_integral(integrand, xi, t)/M_PI);
+// }
+// double GetReE(double xi, double t) {
+//     if(!hasE) return 0.0;
+//     double sub = C0_E * TMath::Power(1.0 - t/MD2_E, -lambda_E);
+//     auto integrand = [&](double x){ double denom = xi*xi - x*x; return (2.0*xi/denom) * GetImE(x,t); };
+//     return renormReal * (sub + PV_integral(integrand, xi, t)/M_PI);
+// }
+// double GetReEt(double xi, double t) {
+//     if(!hasEt) return 0.0;
+//     double sub = C0_Et * TMath::Power(1.0 - t/MD2_Et, -lambda_Et);
+//     auto integrand = [&](double x){ double denom = xi*xi - x*x; return (2.0*xi/denom) * GetImEt(x,t); };
+//     return renormReal * (sub + PV_integral(integrand, xi, t)/M_PI);
+// }
