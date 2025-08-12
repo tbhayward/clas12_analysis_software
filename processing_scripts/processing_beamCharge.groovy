@@ -107,6 +107,7 @@ public class processing_beamCharge {
 			println(); println(); println();
 			print(beamChargeList);
 			println();
+			println(runTotalCharge);
 			beamCharge = 0;
 			posHelbeamChargeTotal = 0;
 			negHelbeamChargeTotal = 0;
