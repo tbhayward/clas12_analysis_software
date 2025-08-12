@@ -1,278 +1,325 @@
 #!/usr/bin/env python3
 """
-plot_ImCFFs_fit_results.py   (repurposed)
-
-Per φ-bin BSA plots showing:
-  • BKM  ............ thin dashed blue  (full BSA from C++)
-  • BKM approx ...... solid blue        (A sinφ / (1 + B cosφ), A=s1_I/c0_BH, B=c1_BH/c0_BH)
-  • RGK fit ......... solid orange      (same BH-form, using fit parameters/flags)
+plot_ImCFFs_fit_results.py
 
 Usage:
     python plot_ImCFFs_fit_results.py output/fit_results/fit_results_<TIMESTAMP>.txt
-           [--data PATH] [--outdir output/plots] [--debug]
-
-Notes:
-  - Requires DVCS_xsec.C in CWD, with your latest Et fix (or Et disabled).
-  - The fit file’s "input" line is used if --data isn’t provided.
 """
-
 import os
+import sys
 import re
-import argparse
 import numpy as np
 import matplotlib.pyplot as plt
-import ROOT  # PyROOT
+from matplotlib.lines import Line2D
 
-# -----------------------------------------------------------------------------
-# Load the C++ once (fresh guard to force current DVCS_xsec.C to compile)
-# -----------------------------------------------------------------------------
-def _load_dvcs_once():
-    if getattr(_load_dvcs_once, "_done", False):
-        return
-    ROOT.gInterpreter.Declare(r"""
-#ifndef __DVCS_XSEC_BSA_PLOT_GUARD__
-#define __DVCS_XSEC_BSA_PLOT_GUARD__
-#include "DVCS_xsec.C"
-#endif
-""")
-    _load_dvcs_once._done = True
+# ─── Parse command-line ───────────────────────────────────────────────────────
+if len(sys.argv) != 2:
+    print("Usage: python plot_ImCFFs_fit_results.py "
+          "output/fit_results/fit_results_<TIMESTAMP>.txt")
+    sys.exit(1)
 
+fitfile = sys.argv[1]
+m = re.search(r'fit_results_(\d{8}_\d{6})\.txt$', fitfile)
+if not m:
+    print("Couldn't extract timestamp from filename:", fitfile)
+    sys.exit(1)
+timestamp = m.group(1)
 
-# -----------------------------------------------------------------------------
-# Fit-file parsing
-# -----------------------------------------------------------------------------
+# ─── Small helpers ────────────────────────────────────────────────────────────
+def build_six(minv, maxv):
+    """Six values: 0.5*min, 20/40/60/80% in-range, 1.5*max."""
+    if not np.isfinite(minv) or not np.isfinite(maxv) or maxv <= minv:
+        return None
+    return [0.5*minv,
+            minv + 0.2*(maxv-minv),
+            minv + 0.4*(maxv-minv),
+            minv + 0.6*(maxv-minv),
+            minv + 0.8*(maxv-minv),
+            1.5*maxv]
+
+def rng_str(lo, hi):
+    """Plain numeric range string; no units, no math dollars."""
+    if np.isfinite(lo) and np.isfinite(hi):
+        return f"[{lo:.3f}, {hi:.3f}]"
+    return "(unknown)"
+
+# ─── Load fit results & flags ─────────────────────────────────────────────────
 def parse_fit_results(fname):
     with open(fname) as f:
-        lines = [l.strip() for l in f if l.strip()]
+        lines = [l.rstrip("\n") for l in f]
 
-    # flags line like "H 1 Ht 0 E 0 Et 0"
-    flags_line = next((l for l in lines
-                       if re.match(r'^\s*H\s+[01]\s+Ht\s+[01]\s+E\s+[01]\s+Et\s+[01]\s*$', l)), None)
-    if flags_line is None:
-        flags_line = next((l for l in lines if l.startswith("H ")), None)
-    if flags_line is None:
-        raise RuntimeError("No 'H ... Ht ... E ... Et ...' line in fit file")
+    # flags line (e.g. "H 1 Ht 0 E 0 Et 0")
+    flag_line = next((l.strip() for l in lines if re.match(r'^\s*H\s+\d+', l)), None)
+    if flag_line is None:
+        raise RuntimeError("Could not find flags line (e.g., 'H 1 Ht 1 ...')")
+    toks = flag_line.split()
+    flags = {}
+    for i in range(0, len(toks), 2):
+        key = toks[i]
+        if i+1 < len(toks):
+            try: flags[key] = int(toks[i+1])
+            except: pass
 
-    toks = flags_line.split()
-    flags = {toks[i]: int(toks[i+1]) for i in range(0, len(toks), 2)}
+    # parameter names / values / errors
+    pnames, vals, errs = [], None, None
+    chi2 = ndf = chi2ndf = None
 
-    # parameter names and values
-    pnames, pvals = [], None
     for i, l in enumerate(lines):
         if l.startswith("# parameters"):
             pnames = l.split()[2:]
-        elif l.startswith("# values") and i+1 < len(lines):
-            pvals = list(map(float, lines[i+1].split()))
-    if not pnames or pvals is None:
-        raise RuntimeError("Couldn't parse parameter names/values from fit file")
-    param_map_fit = dict(zip(pnames, pvals))
+        elif l.startswith("# values:"):
+            if i + 1 < len(lines):
+                vals = np.array([float(x) for x in lines[i+1].split()])
+        elif l.startswith("# errors:"):
+            if i + 1 < len(lines):
+                errs = np.array([float(x) for x in lines[i+1].split()])
+        elif l.startswith("# chi2"):
+            if i + 1 < len(lines):
+                parts = lines[i+1].split()
+                chi2 = float(parts[0]); ndf = int(float(parts[1])); chi2ndf = float(parts[2])
 
-    # optional input path
-    input_path = next((l.split(None, 1)[1].strip()
-                       for l in lines if l.startswith("input")), None)
+    if vals is None or errs is None or not pnames:
+        raise RuntimeError("Could not parse fit-values/errors/parameter names")
 
-    # timestamp convenience
-    m = re.search(r'fit_results_(\d{8}_\d{6})\.txt$', os.path.basename(fname))
-    ts = (m.group(1) if m else "noTS")
-    return flags, param_map_fit, input_path, ts
+    # kinematic ranges (USED BINS block)
+    xi_min = xi_max = mt_min = mt_max = np.nan
+    for s in (l.strip() for l in lines):
+        if s.startswith("xi_min"):
+            parts = s.replace("  ", " ").split()
+            try:
+                xi_min = float(parts[1]) if parts[1] != "NA" else np.nan
+                xi_max = float(parts[3]) if parts[3] != "NA" else np.nan
+            except: pass
+        elif s.startswith("-t_min"):
+            parts = s.replace("  ", " ").split()
+            try:
+                mt_min = float(parts[1]) if parts[1] != "NA" else np.nan
+                mt_max = float(parts[3]) if parts[3] != "NA" else np.nan
+            except: pass
 
+    return flags, pnames, vals, errs, chi2, ndf, chi2ndf, xi_min, xi_max, mt_min, mt_max
 
-# -----------------------------------------------------------------------------
-# Data loading: split into φ-bins by wrap-around
-# -----------------------------------------------------------------------------
-def load_bins(datafile):
-    bins, curr, prev_phi = [], {k: [] for k in ("phi","Q2","xB","t","Eb","A","sigA")}, None
-    with open(datafile) as f:
-        for line in f:
-            if not line.strip() or line.lstrip().startswith("#"):
-                continue
-            phi, Q2, xB, t, Eb, A, sigA = map(float, line.split())
-            if prev_phi is not None and phi < prev_phi:
-                arr = {k: np.array(v, float) for k, v in curr.items()}
-                arr["Q2m"], arr["xBm"], arr["tm"], arr["Ebm"] = (
-                    float(arr["Q2"].mean()), float(arr["xB"].mean()),
-                    float(arr["t"].mean()),  float(arr["Eb"].mean())
-                )
-                bins.append(arr)
-                curr = {k: [] for k in curr}
-            for k, v in zip(curr.keys(), (phi, Q2, xB, t, Eb, A, sigA)):
-                curr[k].append(v)
-            prev_phi = phi
-    if curr["phi"]:
-        arr = {k: np.array(v, float) for k, v in curr.items()}
-        arr["Q2m"], arr["xBm"], arr["tm"], arr["Ebm"] = (
-            float(arr["Q2"].mean()), float(arr["xB"].mean()),
-            float(arr["t"].mean()),  float(arr["Eb"].mean())
-        )
-        bins.append(arr)
-    return bins
+flags, pnames, vals, errs, chi2, ndf, chi2ndf, xi_min, xi_max, mt_min, mt_max = parse_fit_results(fitfile)
 
+def get_idx(name):
+    try: return pnames.index(name)
+    except ValueError: return None
 
-# -----------------------------------------------------------------------------
-# BKM default parameters (safe wrt Et)
-# -----------------------------------------------------------------------------
-def bkm_defaults():
-    return {
-        'renormImag': 1.0, 'renormReal': 1.0,
-        # H
-        'r_H': 0.9, 'n_H': 1.35, 'alpha0_H': 0.43, 'alpha1_H': 0.85, 'b_H': 0.4, 'M2_H': 0.64, 'P_H': 1.0,
-        # Htilde
-        'r_Ht': 7.0, 'n_Ht': 0.6,  'alpha0_Ht': 0.43, 'alpha1_Ht': 0.85, 'b_Ht': 2.0, 'M2_Ht': 0.8,  'P_Ht': 1.0,
-        # E
-        'r_E': 0.9, 'n_E': 1.35, 'alpha0_E': 0.43, 'alpha1_E': 0.85, 'b_E': 0.4, 'M2_E': 0.64, 'P_E': 1.0,
-        # Et: keep harmless/off (n=0,P=0), nonzero M2 to avoid t/0 if on
-        'r_Et': 1.0, 'n_Et': 0.0,  'alpha0_Et': 0.0,  'alpha1_Et': 0.0, 'b_Et': 0.0, 'M2_Et': 1.0, 'P_Et': 0.0,
-    }
+# renormImag is fixed 1.0 unless present
+renorm_imag = 1.0
+if get_idx("renormImag") is not None:
+    renorm_imag = vals[get_idx("renormImag")]
 
+# ─── Defaults for the “Default model” curve ───────────────────────────────────
+defaults = {
+    "H":  dict(r=0.9,   n=1.35, alpha0=0.43, alpha1=0.85, b=0.4, M2=0.64, P=1.0),
+    "Ht": dict(r=7.0,   n=0.6,  alpha0=0.43, alpha1=0.85, b=2.0, M2=0.8,  P=1.0),
+    "E":  dict(r=0.9,   n=1.35, alpha0=0.43, alpha1=0.85, b=0.4, M2=0.64, P=1.0),
+    "Et": dict(r=1.0,   n=0.6,  alpha0=0.0,  alpha1=0.0,  b=0.0, M2=0.0,  P=0.0),
+}
 
-# -----------------------------------------------------------------------------
-# Push globals into C++ (defensively disable Et)
-# -----------------------------------------------------------------------------
-def push_globals(param_map, flags, *, label=""):
-    # reset switches
-    ROOT.gInterpreter.ProcessLine("hasH=0; hasHt=0; hasE=0; hasEt=0;")
+# ─── Extract fit parameters safely ────────────────────────────────────────────
+fit_params, fit_errors = {}, {}
+for cff in ("H", "Ht", "E", "Et"):
+    if flags.get(cff, 0) != 1:
+        continue
+    keys = ["r","n","alpha0","alpha1","b","M2","P"]
+    cent, err = {}, {}
+    for k in keys:
+        idx = get_idx(f"{k}_{cff}")
+        if idx is not None:
+            cent[k] = vals[idx]; err[k] = errs[idx]
+        else:
+            cent[k] = defaults[cff][k]; err[k] = 0.0
+    fit_params[cff] = cent
+    fit_errors[cff] = err
 
-    # Et OFF no matter what (safe & per discussion)
-    flags_eff = dict(flags)
-    flags_eff["Et"] = 0
-    for cff in ("H","Ht","E","Et"):
-        ROOT.gInterpreter.ProcessLine(f"has{cff} = {int(flags_eff.get(cff,0))};")
+# ─── Im-CFF function (simple ansatz) ─────────────────────────────────────────
+def make_Im_func(cff, params, renorm):
+    d = defaults[cff]
+    def Im(xi, t):
+        xi_arr = np.array(xi, copy=False)
+        t_arr  = np.array(t,  copy=False)
+        a0 = params.get("alpha0", d["alpha0"])
+        a1 = params.get("alpha1", d["alpha1"])
+        nval = params.get("n", d["n"])
+        rval = params.get("r", d["r"])
+        bval = params.get("b", d["b"])
+        M2   = params.get("M2", d["M2"])
+        Pval = params.get("P", d["P"])
+        alpha = a0 + a1 * t_arr
+        pref = renorm * (nval * rval) / (1.0 + xi_arr)
+        xfac = (2 * xi_arr / (1.0 + xi_arr)) ** (-alpha)
+        yfac = ((1.0 - xi_arr) / (1.0 + xi_arr)) ** (bval)
+        with np.errstate(divide='ignore', invalid='ignore'):
+            if M2 != 0:
+                tfac = (1.0 - ((1.0 - xi_arr) / (1.0 + xi_arr)) * t_arr / M2) ** (-Pval)
+            else:
+                tfac = np.ones_like(xi_arr + t_arr)
+        return pref * xfac * yfac * tfac
+    return Im
 
-    # renormalizations
-    ROOT.gInterpreter.ProcessLine(f"renormImag = {float(param_map.get('renormImag',1.0))};")
-    ROOT.gInterpreter.ProcessLine(f"renormReal = {float(param_map.get('renormReal',1.0))};")
+# ─── Replica bands (1σ) ───────────────────────────────────────────────────────
+def generate_replicas(central, errors, nrep=2000):
+    reps = []
+    for _ in range(nrep):
+        d = {}
+        for k, v in central.items():
+            s = errors.get(k, 0.0)
+            d[k] = np.random.normal(v, s) if s > 0 else v
+        reps.append(d)
+    return reps
 
-    # parameter helper
-    def setp(name):
-        if name in param_map:
-            ROOT.gInterpreter.ProcessLine(f"{name} = {float(param_map[name])};")
+def compute_uncertainty_band(cff, xi_vals, t_vals, nrep=2000):
+    if cff not in fit_params: return None, None, None
+    params = fit_params[cff]; errs = fit_errors[cff]
+    reps = generate_replicas(params, errs, nrep)
+    if np.ndim(xi_vals) > 0 and np.ndim(t_vals) == 0:
+        N = len(xi_vals)
+    elif np.ndim(t_vals) > 0 and np.ndim(xi_vals) == 0:
+        N = len(t_vals)
+    else:
+        N = np.broadcast(np.array(xi_vals), np.array(t_vals)).shape[0]
+    curves = np.empty((nrep, N))
+    for i in range(nrep):
+        Im_rep = make_Im_func(cff, reps[i], renorm_imag)
+        curves[i] = np.array(Im_rep(xi_vals, t_vals)).reshape(-1)[:N]
+    curves = np.where(np.isfinite(curves), curves, np.nan)
+    med = np.nanmedian(curves, axis=0)
+    lo  = np.nanpercentile(curves, 16, axis=0)
+    up  = np.nanpercentile(curves, 84, axis=0)
+    return med, lo, up
 
-    for cff in ("H","Ht","E","Et"):
-        for k in ("r","n","alpha0","alpha1","b","M2","P"):
-            setp(f"{k}_{cff}")
-    # optional subtraction constants if present
-    for cff in ("H","Ht","E","Et"):
-        for k in ("C0","MD2","lambda"):
-            setp(f"{k}_{cff}")
+# ─── Dynamic kinematics from results file ─────────────────────────────────────
+xi_ok = (np.isfinite(xi_min) and np.isfinite(xi_max) and xi_max > xi_min and xi_min > 0)
+mt_ok = (np.isfinite(mt_min) and np.isfinite(mt_max) and mt_max > mt_min and mt_min >= 0)
 
+# Draw ranges: 0.5*min .. 1.5*max (or fallbacks)
+# Keep a tiny headroom for ξ < 1 to avoid singularities.
+if xi_ok:
+    xi_lo_draw = max(1e-6, 0.5*xi_min)
+    xi_hi_draw = min(1.0 - 1e-6, 1.5*xi_max)
+else:
+    xi_lo_draw, xi_hi_draw = 0.00, 0.50
 
-# -----------------------------------------------------------------------------
-# Physics helpers
-# -----------------------------------------------------------------------------
-def full_bsa_curve(phi_deg, Q2, xB, t, Eb):
-    out = np.empty_like(phi_deg, float)
-    for i, ph in enumerate(phi_deg):
-        dv = ROOT.BMK_DVCS(-1, +1, 0, Eb, xB, Q2, t, ph)
-        out[i] = dv.BSA()
-    return out
+if mt_ok:
+    mt_lo_draw = max(0.0, 0.5*mt_min)
+    mt_hi_draw = 1.5*mt_max  # ← no artificial cap
+else:
+    mt_lo_draw, mt_hi_draw = 0.00, 0.60
 
-def bh_form_params(Q2, xB, t, Eb):
-    # coefficients do not depend on φ; evaluate once
-    dv = ROOT.BMK_DVCS(-1, +1, 0, Eb, xB, Q2, t, 0.0)
-    c0 = dv.c0_BH()
-    if c0 == 0:
-        return 0.0, 0.0
-    A = dv.s1_I()/c0
-    B = dv.c1_BH()/c0
-    return A, B
+xi_range = np.linspace(xi_lo_draw, xi_hi_draw, 400)
+t_range  = np.linspace(mt_lo_draw, mt_hi_draw, 400)
 
-def bh_form_curve(phi_deg, A, B):
-    ph = np.deg2rad(phi_deg)
-    return A * np.sin(ph) / (1.0 + B * np.cos(ph))
+# six fixed panel values
+t_fixed  = build_six(mt_min, mt_max) if mt_ok else [0.1,0.2,0.3,0.4,0.5,0.6]
+xi_fixed = build_six(xi_min, xi_max) if xi_ok else [0.05,0.15,0.25,0.35,0.45,0.50]
 
+# Titles: show USED-BIN ranges; keep units as LaTeX without extra dollars
+xi_title_math = rng_str(xi_min, xi_max)
+t_title_math  = (rng_str(mt_min, mt_max) + r"\,\mathrm{GeV}^2") if mt_ok else "(unknown)"
 
-# -----------------------------------------------------------------------------
-# Main
-# -----------------------------------------------------------------------------
-def main():
-    ap = argparse.ArgumentParser(description=__doc__,
-                                 formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument('fitfile', help='fit_results_<TIMESTAMP>.txt')
-    ap.add_argument('--data', default=None, help='Override BSA data file; else uses fit file "input"')
-    ap.add_argument('--outdir', default='output/plots', help='Directory for PDFs')
-    ap.add_argument('--debug', action='store_true', help='Print A,B for the first bin')
-    args = ap.parse_args()
+# ─── Plot setup ────────────────────────────────────────────────────────────────
+plt.style.use('classic')
+plt.rcParams.update({'font.size':14,'font.family':'serif'})
+outdir = 'output/plots'
+os.makedirs(outdir, exist_ok=True)
 
-    # Parse fit results
-    flags_fit, params_fit, input_path, ts = parse_fit_results(args.fitfile)
+orig_style = {'color':'tab:blue','linestyle':'-','linewidth':2.5}
+fit_style  = {'color':'tab:red','linestyle':'--','linewidth':2.5}
+band_style = {'color':'tab:red','alpha':0.2}
+zero_line  = {'color':'gray','linestyle':'--','linewidth':1}
 
-    # Choose data file
-    datafile = args.data or input_path or 'imports/rgk_preliminary_bsa.txt'
-    print(">> Using data file:", datafile)
-    print(">> Fit flags:", flags_fit)
-    print(">> Fit params:", params_fit)
+legend_elems = [
+    Line2D([0],[0], color='tab:blue', linestyle='-', lw=2.5, label='Default model'),
+    Line2D([0],[0], color='tab:red',  linestyle='--', lw=2.5, label='Fit median'),
+    Line2D([0],[0], color='tab:red',  lw=6, alpha=0.2, label='1σ band'),
+]
 
-    # Load C++
-    _load_dvcs_once()
+tex_map = {"H":"H", "Ht":r"\tilde H", "E":"E", "Et":r"\tilde E"}
 
-    # Load bins
-    bins = load_bins(datafile)
-    if not bins:
-        raise RuntimeError(f"No φ-bins parsed from {datafile}")
-    print(f">> Found {len(bins)} φ-bins")
+# ─── Plot each enabled CFF ────────────────────────────────────────────────────
+for cff in ("H","Ht","E","Et"):
+    if not flags.get(cff, 0):
+        continue
 
-    # BKM baseline: H,Ht,E on; Et off
-    flags_bkm = {'H':1,'Ht':1,'E':1,'Et':0}
-    params_bkm = bkm_defaults()
+    Im_default = make_Im_func(cff, defaults[cff], renorm_imag)
+    tex = tex_map[cff]
 
-    os.makedirs(args.outdir, exist_ok=True)
+    # — Im vs ξ at fixed -t —
+    fig, axes = plt.subplots(2,3, figsize=(12,8), sharex=True, sharey=False)
+    axes = axes.flatten()
+    fig.suptitle(rf"$\mathrm{{Im}}\,{tex}$; "
+                 rf"applicability: $\xi\in{xi_title_math}$, $-t\in{t_title_math}$",
+                 fontsize=14, y=0.98)
 
-    for ibin, b in enumerate(bins, start=1):
-        phi_data, A_data, dA = b["phi"], b["A"], b["sigA"]
-        Q2m, xBm, tm, Ebm = b["Q2m"], b["xBm"], b["tm"], b["Ebm"]
+    for i,(ax,mt0) in enumerate(zip(axes, t_fixed)):
+        ax.plot(xi_range, Im_default(xi_range, -mt0), **orig_style)
+        med, lo, up = compute_uncertainty_band(cff, xi_range, -mt0)
+        if med is not None:
+            ax.plot(xi_range, med, **fit_style)
+            ax.fill_between(xi_range, lo, up, **band_style)
+        ax.axhline(0, **zero_line)
 
-        # dense φ grid
-        phi_grid = np.linspace(0.0, 360.0, 361)
+        ax.set_xlim(xi_range[0], xi_range[-1])
+        ax.set_ylim(-2, 4)
 
-        # --- BKM (full) + BKM (approx) ---
-        push_globals(params_bkm, flags_bkm, label="BKM")
-        bkm_full = full_bsa_curve(phi_grid, Q2m, xBm, tm, Ebm)
-        A_bkm, B_bkm = bh_form_params(Q2m, xBm, tm, Ebm)
-        bkm_approx = bh_form_curve(phi_grid, A_bkm, B_bkm)
+        # y-ticks: top-left omits -2
+        if i == 0:
+            ax.set_yticks([0,2,4,6,8,10,12])
+        elif i % 3 == 0:
+            ax.set_yticks([-2,0,2,4,6,8,10,12])
+        else:
+            ax.tick_params(labelleft=False)
 
-        # --- RGK fit (approx only, as requested) ---
-        push_globals(params_fit, flags_fit, label="RGK fit")
-        A_rgk, B_rgk = bh_form_params(Q2m, xBm, tm, Ebm)
-        rgk_curve = bh_form_curve(phi_grid, A_rgk, B_rgk)
+        ax.set_xlabel(r"$\xi$")
+        if i % 3 == 0:
+            ax.set_ylabel(r"$\mathrm{Im}\,"+tex+r"(\xi,\,-t)$")
 
-        if args.debug and ibin == 1:
-            print(f"[BKM]  A=s1_I/c0_BH={A_bkm:+.6e},  B=c1_BH/c0_BH={B_bkm:+.6e}")
-            print(f"[RGK]  A=s1_I/c0_BH={A_rgk:+.6e},  B=c1_BH/c0_BH={B_rgk:+.6e}")
+        ax.text(0.60,0.65, rf"$-t={mt0:.3f}\,\mathrm{{GeV^2}}$",
+                transform=ax.transAxes, fontsize=12)
 
-        # --- Plot ---
-        fig, ax = plt.subplots(figsize=(8,5))
-        # data
-        ax.errorbar(phi_data, A_data, yerr=dA, fmt='o', ms=5, color='k', label='Data')
+    fig.subplots_adjust(left=0.08,right=0.98,bottom=0.08,top=0.90,
+                        wspace=0.0,hspace=0.0)
+    axes[2].legend(handles=legend_elems, loc='upper right', fontsize=10)
+    fig.savefig(f"{outdir}/Im{cff}_vs_xi_{timestamp}.pdf", bbox_inches='tight')
+    plt.close(fig)
 
-        # BKM approx (solid blue), BKM full (thin dashed blue)
-        ax.plot(phi_grid, bkm_approx, '-',  lw=2.5, color='tab:blue',  label='BKM approx')
-        ax.plot(phi_grid, bkm_full,   '--', lw=1.5, color='tab:blue',  label='BKM')
+    # — Im vs -t at fixed ξ —
+    fig, axes = plt.subplots(2,3, figsize=(12,8), sharex=True, sharey=False)
+    axes = axes.flatten()
+    fig.suptitle(rf"$\mathrm{{Im}}\,{tex}$;  "
+                 rf"applicability: $\xi\in{xi_title_math}$, $-t\in{t_title_math}$",
+                 fontsize=14, y=0.98)
 
-        # RGK fit (solid orange)
-        ax.plot(phi_grid, rgk_curve, '-',   lw=2.5, color='tab:orange', label='RGK fit')
+    for i,(ax,xi0) in enumerate(zip(axes, xi_fixed)):
+        ax.plot(t_range, Im_default(xi0, -t_range), **orig_style)
+        med, lo, up = compute_uncertainty_band(cff, xi0, -t_range)
+        if med is not None:
+            ax.plot(t_range, med, **fit_style)
+            ax.fill_between(t_range, lo, up, **band_style)
+        ax.axhline(0, **zero_line)
 
-        ax.set_xlim(0, 360)
-        ax.set_xticks([0,60,120,180,240,300,360])
-        ax.set_ylim(-0.6, 0.6)
-        ax.set_xlabel(r'$\phi\;[\mathrm{deg}]$')
-        ax.set_ylabel(r'$A_{LU}(\phi)$')
-        ax.set_title(
-            (r'$\langle Q^2\rangle={:.2f}\,\mathrm{{GeV}}^2,\;\langle x_B\rangle={:.3f},\;'
-             r'\langle -t\rangle={:.3f}\,\mathrm{{GeV}}^2,\;\langle E_b\rangle={:.2f}\,\mathrm{{GeV}}$'
-            ).format(Q2m, xBm, abs(tm), Ebm),
-            pad=12
-        )
-        ax.legend(loc='upper right', frameon=True, edgecolor='k')
-        plt.tight_layout()
+        ax.set_xlim(t_range[0], t_range[-1])
+        ax.set_ylim(-2, 4)
 
-        outname = os.path.join(
-            args.outdir,
-            f"BSA_bin{ibin:02d}_{ts}_Q2_{Q2m:.2f}_xB_{xBm:.3f}_mt_{abs(tm):.3f}.pdf"
-        )
-        fig.savefig(outname)
-        print(f">> Saved bin {ibin} plot to {outname}")
-        plt.close(fig)
+        # y-ticks: top-left omits -2
+        if i == 0:
+            ax.set_yticks([0,2,4,6,8,10,12])
+        elif i % 3 == 0:
+            ax.set_yticks([-2,0,2,4,6,8,10,12])
+        else:
+            ax.tick_params(labelleft=False)
 
+        ax.set_xlabel(r"$-t\;(\mathrm{GeV^2})$")
+        if i % 3 == 0:
+            ax.set_ylabel(r"$\mathrm{Im}\,"+tex+r"(\xi,\,-t)$")
 
-if __name__ == "__main__":
-    main()
+        ax.text(0.60,0.65, rf"$\xi={xi0:.3f}$",
+                transform=ax.transAxes, fontsize=12)
+
+    fig.subplots_adjust(left=0.08,right=0.98,bottom=0.08,top=0.90,
+                        wspace=0.0,hspace=0.0)
+    axes[2].legend(handles=legend_elems, loc='upper right', fontsize=10)
+    fig.savefig(f"{outdir}/Im{cff}_vs_t_{timestamp}.pdf", bbox_inches='tight')
+    plt.close(fig)
