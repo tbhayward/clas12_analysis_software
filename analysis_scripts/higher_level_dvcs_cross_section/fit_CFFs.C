@@ -30,6 +30,7 @@
 #include <ctime>
 #include <map>
 #include <functional>
+#include <limits>   
 
 // ROOT headers
 #include "TMinuit.h"
@@ -202,7 +203,7 @@ void BinBsaData(){
         keptBins.push_back(pts);
         bin_M.push_back(M);
         bin_A.push_back(Afit);
-        bin_dA.push_back(10*dA);
+        bin_dA.push_back(dA);
         bin_redChi2.push_back(redchi2);
         double sumw=0, Sx=0, Sq=0, St=0, Se=0;
         for(auto &d: pts){
@@ -811,7 +812,47 @@ int main(int argc, char** argv) {
     std::cout<<" χ²/ndf = "<<chi2_total<<"/"<<ndf_total
              <<" = "<<(ndf_total>0?chi2_total/ndf_total:0)<<"\n";
     std::cout<<" Average χ²/bin-fit = "<<avgBinChi2<<"\n";
-    std::cout<<" χ²_per_amp-fit = "<<reducedAmpChi2<<"\n\n";
+    std::cout<<" χ²_per_amp-fit = "<<reducedAmpChi2<<"\n";
+
+    /* === New: report kinematic ranges over the loaded data (after constraints) ===
+       ξ is computed from Bjorken x using the usual relation ξ = xB / (2 − xB). */
+    {
+        double xi_min =  std::numeric_limits<double>::infinity();
+        double xi_max = -std::numeric_limits<double>::infinity();
+        double mt_min =  std::numeric_limits<double>::infinity(); // -t minimum
+        double mt_max = -std::numeric_limits<double>::infinity(); // -t maximum
+
+        auto update_ranges = [&](const std::vector<DataPoint>& v){
+            for(const auto& d : v){
+                // protect against pathological xB (xB>=2 would be unphysical here)
+                if (d.xB < 2.0){
+                    double xi = d.xB / (2.0 - d.xB);
+                    if (xi < xi_min) xi_min = xi;
+                    if (xi > xi_max) xi_max = xi;
+                }
+                double mt = -d.t; // report -t explicitly (t is typically negative)
+                if (mt < mt_min) mt_min = mt;
+                if (mt > mt_max) mt_max = mt;
+            }
+        };
+        update_ranges(bsaData);
+        update_ranges(xsData);
+
+        if (std::isfinite(xi_min) && std::isfinite(xi_max)){
+            std::cout<<" xi range over input data:  min(xi) = "<<xi_min
+                     <<", max(xi) = "<<xi_max<<"\n";
+        } else {
+            std::cout<<" xi range over input data:  (no valid xB to compute ξ)\n";
+        }
+
+        if (std::isfinite(mt_min) && std::isfinite(mt_max)){
+            std::cout<<" -t range over input data:  min(-t) = "<<mt_min
+                     <<", max(-t) = "<<mt_max<<"\n\n";
+        } else {
+            std::cout<<" -t range over input data:  (no valid t values)\n\n";
+        }
+    }
+
     return 0;
 }
 

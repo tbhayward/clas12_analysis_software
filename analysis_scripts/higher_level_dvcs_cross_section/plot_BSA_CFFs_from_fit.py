@@ -152,7 +152,8 @@ def main():
 
     ROOT.gInterpreter.ProcessLine('#include "DVCS_xsec.C"')
 
-    bins = load_all_bins('imports/rga_prl_bsa.txt')
+    # bins = load_all_bins('imports/rga_prl_bsa.txt')
+    bins = load_all_bins('imports/rgk_preliminary_bsa.txt')
     print(f">> Found {len(bins)} φ-bins")
 
     os.makedirs('output/plots', exist_ok=True)
