@@ -1286,7 +1286,7 @@ double renormImag = 1.0;
 
 // GPD–H
 double r_H       = 0.9;
-double n_H       = 1.25;
+double n_H       = 1.35;
 double alpha0_H  = 0.43;
 double alpha1_H  = 0.85;
 double b_H       = 0.4;   
@@ -1301,7 +1301,8 @@ double GetImH(double xi, double t) {
     double term1 = TMath::Power(2*xi/(1+xi), -aExp);
     double term2 = TMath::Power((1 - xi)/(1 + xi), bExp);
     double term3 = TMath::Power(1 - ((1 - xi)/(1 + xi))*t/M2_H, -P_H);
-    return renormImag * pref * term1 * term2 * term3;
+    double constant = 2*TMath::Pi()*5.0/9.0;
+    return renormImag * pref * constant * term1 * term2 * term3;
 }
 
 
@@ -1312,7 +1313,7 @@ double r_Ht      = 7.0;
 double n_Ht      = 0.6;
 double alpha0_Ht = 0.43;
 double alpha1_Ht = 0.85;
-double b_Ht      = 2.0;    // single b–slope
+double b_Ht      = 2.0;    
 double M2_Ht     = 0.8;
 double P_Ht      = 1.0;
 
@@ -1324,14 +1325,15 @@ double GetImHt(double xi, double t) {
     double term1 = TMath::Power(2*xi/(1+xi), -aExp);
     double term2 = TMath::Power((1 - xi)/(1 + xi), bExp);
     double term3 = TMath::Power(1 - ((1 - xi)/(1 + xi))*t/M2_Ht, -P_Ht);
-    return renormImag * pref * term1 * term2 * term3;
+    double constant = 0.4*TMath::Pi()*5.0/9.0;
+    return renormImag * pref * constant * term1 * term2 * term3;
 }
 
 // -----------------------------------------------------------------------------
 
 // GPD–E
 double r_E       = 0.9;
-double n_E       = 1.25;
+double n_E       = 1.35;
 double alpha0_E  = 0.43;
 double alpha1_E  = 0.85;
 double b_E       = 0.4;
@@ -1346,7 +1348,8 @@ double GetImE(double xi, double t) {
     double term1 = TMath::Power(2*xi/(1+xi), -aExp);
     double term2 = TMath::Power((1 - xi)/(1 + xi), bExp);
     double term3 = TMath::Power(1 - ((1 - xi)/(1 + xi))*t/M2_E, -P_E);
-    return renormImag * pref * term1 * term2 * term3;
+    double constant = TMath::Pi()*5.0/9.0;
+    return renormImag * pref * constant * term1 * term2 * term3;
 }
 
 // -----------------------------------------------------------------------------
