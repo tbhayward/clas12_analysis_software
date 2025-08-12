@@ -69,7 +69,7 @@ extern double C0_Et,   MD2_Et,   lambda_Et;
 static int   gStrategy    = 0;
 static int   gStage       = 1;  // 1 = Im-only, 0 = global simultaneous
 static int   gConstraint  = 0;  // 0,1,2
-static bool  gPlotBinFits = false;
+static bool  gPlotBinFits = true;
 static int   gScale       = 0;  // 0 off, 1 on
 
 // default data files:
@@ -529,22 +529,22 @@ int main(int argc, char** argv) {
           // enforce alpha0 > 0 (no upper limit)
           if(nm=="alpha0_H"  || nm=="alpha0_Ht"
           || nm=="alpha0_E"  || nm=="alpha0_Et"){
-            lo = 1e-6; // positive
+            // lo = 1e-6; // positive
           }
           // enforce alpha1 > 0 (no upper limit)
           if(nm=="alpha1_H"  || nm=="alpha1_Ht"
           || nm=="alpha1_E"  || nm=="alpha1_Et"){
-            lo = 1e-6;
+            // lo = 1e-6;
           }
           // enforce b ≥ 0
           if(nm=="b_H"  || nm=="b_Ht"
           || nm=="b_E"  || nm=="b_Et"){
-            lo = 1e-6; hi = 1e6;
+            // lo = 1e-6; hi = 1e6;
           }
           // enforce M2 ≥ 0
           if(nm=="M2_H" || nm=="M2_Ht"
           || nm=="M2_E" || nm=="M2_Et"){
-            lo = 0.0; hi = 1e6;
+            // lo = 1e-6; hi = 1e6;
           }
           // fix P = 1
           if(nm=="P_H"  || nm=="P_Ht"
