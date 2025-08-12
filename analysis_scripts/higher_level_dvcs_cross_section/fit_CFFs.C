@@ -853,6 +853,29 @@ int main(int argc, char** argv) {
         }
     }
 
+    // Also report ranges over the bins that actually enter the Im-fit
+    if (Nbins > 0) {
+        double xi_min_fit =  std::numeric_limits<double>::infinity();
+        double xi_max_fit = -std::numeric_limits<double>::infinity();
+        double mt_min_fit =  std::numeric_limits<double>::infinity();
+        double mt_max_fit = -std::numeric_limits<double>::infinity();
+
+        for (int k = 0; k < Nbins; ++k) {
+            double xi = bin_xB[k] / (2.0 - bin_xB[k]);
+            if (xi < xi_min_fit) xi_min_fit = xi;
+            if (xi > xi_max_fit) xi_max_fit = xi;
+
+            double mt = -bin_t[k];
+            if (mt < mt_min_fit) mt_min_fit = mt;
+            if (mt > mt_max_fit) mt_max_fit = mt;
+        }
+
+        std::cout << " (bins used in Im-fit) xi range:  [" << xi_min_fit
+                  << ", " << xi_max_fit << "]\n";
+        std::cout << " (bins used in Im-fit) -t range:  [" << mt_min_fit
+                  << ", " << mt_max_fit << "]\n";
+    }
+
     return 0;
 }
 
