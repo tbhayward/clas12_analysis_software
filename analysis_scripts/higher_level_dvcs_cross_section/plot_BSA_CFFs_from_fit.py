@@ -6,11 +6,10 @@ Plots A_LU(φ) per (Q2, xB, t, Eb) bin for:
   • BKM (full) — solid blue
   • RGK fit for Im CFF(s) — solid orange:
         A(φ) ≈ [s1_I · sinφ] / [c0_BH + c1_BH cosφ (+ c2_BH cos2φ if --approx-order=2)]
-        where s1_I uses your fitted ImCFFs; denominator is BH-only.
+        (s1_I from your fitted Im-CFFs; denominator is BH-only)
   • BKM with Im CFF(s) from fit — dashed green:
-        By default (--green-mode=num-only): numerator uses s1_I from your fit,
-        denominator is FULL BKM (BH^2 + DVCS^2 + even interference) from defaults.
-        With --green-mode=full: replace ImCFFs everywhere and run full BKM BSA.
+        --green-mode=num-only (default): numerator from fitted Im-CFFs, denominator from default BKM
+        --green-mode=full: both numerator & denominator from the hybrid params (Im from fit)
 
 Usage:
   python plot_BSA_CFFs_from_fit.py output/fit_results/fit_results_<TIMESTAMP>.txt
@@ -67,6 +66,7 @@ def parse_fit_results(fname):
 
     input_path = next((l.split(None, 1)[1].strip()
                        for l in lines if l.startswith("input")), None)
+
     return flags, param_map_fit, input_path
 
 
@@ -106,7 +106,6 @@ def bkm_defaults():
         'r_H': 0.9, 'n_H': 1.35, 'alpha0_H': 0.43, 'alpha1_H': 0.85, 'b_H': 0.4, 'M2_H': 0.64, 'P_H': 1.0,
         'r_Ht': 7.0, 'n_Ht': 0.6,  'alpha0_Ht': 0.43, 'alpha1_Ht': 0.85, 'b_Ht': 2.0, 'M2_Ht': 0.8,  'P_Ht': 1.0,
         'r_E': 0.9, 'n_E': 1.35, 'alpha0_E': 0.43, 'alpha1_E': 0.85, 'b_E': 0.4, 'M2_E': 0.64, 'P_E': 1.0,
-        # keep Et harmless
         'r_Et': 1.0, 'n_Et': 0.0, 'alpha0_Et': 0.0, 'alpha1_Et': 0.0, 'b_Et': 0.0, 'M2_Et': 1.0, 'P_Et': 0.0,
     }
 
@@ -160,13 +159,20 @@ def bh_coeffs_and_s1I(Q2, xB, t, Eb):
     dv = ROOT.BMK_DVCS(-1, +1, 0, Eb, xB, Q2, t, 0.0)
     return dv.s1_I(), dv.c0_BH(), dv.c1_BH(), dv.c2_BH()
 
-def full_denominator_from_current_state(phi_deg, Q2, xB, t, Eb):
-    """Return BH2 + DVCS2 + BHDVCS for each φ using current global params."""
-    out = np.empty_like(phi_deg, float)
+def xs_num_den_over_phi(param_map, flags, phi_deg, Q2, xB, t, Eb):
+    """Return arrays: numerator=(σ+−σ−)/2 and denominator=(σ++σ−)/2 for given parameters."""
+    push_globals(param_map, flags, label="xs_num_den")
+    num = np.empty_like(phi_deg, float)
+    den = np.empty_like(phi_deg, float)
     for i, ph in enumerate(phi_deg):
-        dv = ROOT.BMK_DVCS(-1, +1, 0, Eb, xB, Q2, t, ph)
-        out[i] = dv.BH2() + dv.DVCS2() + dv.BHDVCS()
-    return out
+        dv_plus  = ROOT.BMK_DVCS(-1, +1, 0, Eb, xB, Q2, t, float(ph))
+        dv_minus = ROOT.BMK_DVCS(-1, -1, 0, Eb, xB, Q2, t, float(ph))
+        xs_p = dv_plus.CrossSection()
+        xs_m = dv_minus.CrossSection()
+        num[i] = 0.5*(xs_p - xs_m)
+        den[i] = 0.5*(xs_p + xs_m)
+    return num, den
+
 
 def fit_B_from_data(phi_data, A_data, dA):
     import numpy.linalg as LA
@@ -186,6 +192,7 @@ def fit_B_from_data(phi_data, A_data, dA):
 
 
 def build_imfit_param_map(fit_param_map):
+    """Hybrid map: start with BKM defaults, override ONLY Im-CFF ansatz params present in the fit."""
     pm = bkm_defaults().copy()
     for cff in ("H","Ht","E","Et"):
         for k in ("r","n","alpha0","alpha1","b","M2","P"):
@@ -210,11 +217,11 @@ def main():
     ap.add_argument('fitfile', help='fit_results_<TIMESTAMP>.txt from your fitter')
     ap.add_argument('--data', default=None, help='Override BSA data file; else use "input" in fit file or fallback')
     ap.add_argument('--approx-order', type=int, choices=[1,2], default=2,
-                    help='Use c0+c1 cosφ (1) or c0+c1 cosφ+c2 cos2φ (2) in the BH denominator')
+                    help='Use c0+c1 cosφ (1) or c0+c1 cosφ+c2 cos2φ (2) in the BH denominator (orange curve)')
     ap.add_argument('--B-source', choices=['bh','data'], default='bh',
-                    help='Use BH Fourier coeffs for B (default) or fit B1 from data (order=1 only)')
+                    help='For orange: use BH Fourier coeffs for B (default) or fit B1 from data (order=1 only)')
     ap.add_argument('--green-mode', choices=['num-only','full'], default='num-only',
-                    help='How to build the green curve. "num-only" (default) uses s1_I from fit over full BKM denominator; "full" replaces ImCFFs everywhere and runs full BKM BSA.')
+                    help='Green curve: "num-only" (default) uses numerator from Im-fit over BKM default denominator; "full" replaces Im everywhere.')
     ap.add_argument('--outdir', default='output/plots', help='Output directory for PDFs')
     ap.add_argument('--debug', action='store_true', help='Print internal diagnostics for first bin')
     args = ap.parse_args()
@@ -231,44 +238,36 @@ def main():
 
     flags_bkm = {'H':1,'Ht':1,'E':1,'Et':0}
     params_bkm = bkm_defaults()
+    params_imfit = build_imfit_param_map(param_map_fit)
+    imlabel = latex_im_label(flags_fit)
 
     m = re.search(r'fit_results_(\d{8}_\d{6})\.txt$', os.path.basename(args.fitfile))
     ts = (m.group(1) if m else "noTS")
-    imlabel = latex_im_label(flags_fit)
 
     for ibin, b in enumerate(bins, start=1):
         phi_data, A_data, dA = b["phi"], b["A"], b["sigA"]
         Q2m, xBm, tm, Ebm = b["Q2m"], b["xBm"], b["tm"], b["Ebm"]
+
         phi_grid = np.linspace(0.0, 360.0, 361)
         ph = np.deg2rad(phi_grid)
 
-        # BKM baseline (blue)
+        # ── Blue: BKM full BSA
         push_globals(params_bkm, flags_bkm, label="BKM")
-        if args.debug and ibin == 1:
-            ROOT.gInterpreter.ProcessLine(r'std::cout<<"[BKM] hasH="<<hasH<<" hasHt="<<hasHt<<" hasE="<<hasE<<" hasEt="<<hasEt<<std::endl;')
         bkm_full = bsa_full_curve(phi_grid, Q2m, xBm, tm, Ebm,
                                   debug=(args.debug and ibin==1), tag=f"bin{ibin}-BKM")
 
-        # Denominator from default BKM (for green num-only mode)
-        denom_bkm_default = full_denominator_from_current_state(phi_grid, Q2m, xBm, tm, Ebm)
-
-        # RGK approx (orange)
+        # ── Orange: your previous approx using s1_I and BH-only denominator
         push_globals(param_map_fit, flags_fit, label="RGK-fit")
-        if args.debug and ibin == 1:
-            ROOT.gInterpreter.ProcessLine(r'std::cout<<"[RGK] hasH="<<hasH<<" hasHt="<<hasHt<<" hasE="<<hasE<<" hasEt="<<hasEt<<std::endl;')
         s1I_rgk, c0_rgk, c1_rgk, c2_rgk = bh_coeffs_and_s1I(Q2m, xBm, tm, Ebm)
         if args.approx_order == 1 and args.B_source == 'data':
-            # data-driven B1 per bin
-            def _fit_B1(bphi, bA, bE):
-                import numpy.linalg as LA
-                pp = np.deg2rad(bphi)
-                w  = 1.0/np.maximum(bE,1e-8)**2
-                X = np.vstack([np.sin(pp), np.sin(pp)*np.cos(pp)]).T
-                W = np.diag(w); y=bA
-                beta = LA.pinv(X.T@W@X) @ (X.T@W@y)
-                a,bcoef = beta
-                return bcoef/max(a,1e-12)
-            B1_used = _fit_B1(phi_data, A_data, dA); B2_used = 0.0
+            # quick per-bin B1 fit
+            import numpy.linalg as LA
+            pp = np.deg2rad(phi_data)
+            w  = 1.0/np.maximum(dA,1e-8)**2
+            X = np.vstack([np.sin(pp), np.sin(pp)*np.cos(pp)]).T
+            W = np.diag(w); y=A_data
+            a,bcoef = (LA.pinv(X.T@W@X) @ (X.T@W@y))
+            B1_used, B2_used = bcoef/max(a,1e-12), 0.0
         else:
             B1_used = (c1_rgk/c0_rgk) if c0_rgk!=0 else 0.0
             B2_used = (c2_rgk/c0_rgk) if (args.approx_order==2 and c0_rgk!=0) else 0.0
@@ -276,22 +275,24 @@ def main():
         denom_bh = np.where(np.abs(denom_bh)<1e-14, np.sign(denom_bh)*1e-14, denom_bh)
         rgk_curve = (s1I_rgk * np.sin(ph)) / denom_bh
 
-        # Green: BKM with Im from fit
-        if args.green_mode == 'full':
-            # Replace ImCFF params everywhere and run full BSA
-            params_bkm_imfit = build_imfit_param_map(param_map_fit)
-            push_globals(params_bkm_imfit, flags_bkm, label="BKM+ImFit(full)")
-            green_curve = bsa_full_curve(phi_grid, Q2m, xBm, tm, Ebm, debug=False, tag=f"bin{ibin}-BKM-ImFitFull")
-        else:
-            # Numerator-only substitution over full BKM denominator
-            # s1_I from fit (φ-independent), denom from default BKM (already computed)
-            push_globals(param_map_fit, flags_fit, label="RGK-fit(for s1I)")
-            s1I_fit, *_ = bh_coeffs_and_s1I(Q2m, xBm, tm, Ebm)
-            green_curve = (s1I_fit * np.sin(ph)) / np.where(np.abs(denom_bkm_default)<1e-14,
-                                                            np.sign(denom_bkm_default)*1e-14,
-                                                            denom_bkm_default)
+        # ── Green: consistent BSA from σ±
+        # Denominator_DEFAULT from BKM
+        _, den_bkm = xs_num_den_over_phi(params_bkm, flags_bkm, phi_grid, Q2m, xBm, tm, Ebm)
 
-        # Plot
+        # Numerator/Denominator with Im from fit
+        num_imfit, den_imfit = xs_num_den_over_phi(params_imfit, flags_bkm, phi_grid, Q2m, xBm, tm, Ebm)
+
+        if args.green_mode == 'full':
+            den_for_green = den_imfit
+        else:  # num-only
+            den_for_green = den_bkm
+
+        # protect against zeros
+        den_for_green = np.where(np.abs(den_for_green)<1e-20,
+                                 np.sign(den_for_green)*1e-20, den_for_green)
+        green_curve = num_imfit / den_for_green
+
+        # ── Plot
         fig, ax = plt.subplots(figsize=(8,5))
         ax.errorbar(phi_data, A_data, yerr=dA, fmt='o', ms=5, color='k', label='Data')
         ax.plot(phi_grid, bkm_full, '-',  lw=2, color='tab:blue',   label='BKM')
@@ -314,8 +315,6 @@ def main():
         ax.legend(loc='upper right', frameon=True, edgecolor='k')
         plt.tight_layout()
 
-        m = re.search(r'fit_results_(\d{8}_\d{6})\.txt$', os.path.basename(args.fitfile))
-        ts = (m.group(1) if m else "noTS")
         outname = os.path.join(args.outdir,
             f"BSA_bin{ibin:02d}_{ts}_Q2_{Q2m:.2f}_xB_{xBm:.3f}_mt_{abs(tm):.3f}.pdf")
         fig.savefig(outname)
