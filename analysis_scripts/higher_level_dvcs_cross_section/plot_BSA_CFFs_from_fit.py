@@ -3,9 +3,10 @@
 plot_BSA_CFFs_from_fit.py
 
 Plots A_LU(φ) per (Q2, xB, t, Eb) bin using the BH-only approximation:
-  • BKM:      A1*sinφ / (1 + B1*cosφ),  with A1 = s1_I/c0_BH from BKM defaults
-  • RGK fit:  A1*sinφ / (1 + B1*cosφ),  with A1 = s1_I/c0_BH from your fitted ImCFFs
-In both cases B1 = c1_BH/c0_BH (BH depends only on kinematics, not CFFs).
+  • BKM:     A1*sinφ / (1 + B1*cosφ), with  A1 = (s1_I/c0_BH) * [xB/y * (1+eps^2)^2]
+             evaluated using the BKM default CFF parameters (H,H~ ,E on; Et off).
+  • RGK fit: same formula, but A1 uses s1_I computed with your fitted Im-CFFs.
+             (B1 = c1_BH/c0_BH in both curves; BH coefficients depend only on kinematics.)
 
 Usage:
   python plot_BSA_CFFs_from_fit.py output/fit_results/fit_results_<TIMESTAMP>.txt
@@ -138,9 +139,9 @@ def push_globals(param_map, flags, *, safety_disable_Et=True, label=""):
         for k in ("C0","MD2","lambda"):
             setp(f"{k}_{cff}")
 
-# ─────────────── helpers to compute A1,B1 ────────────────
+# ─────────────── helpers: BH coeffs, A1B1 curve, normalization ───────────────
 def bh_coeffs_and_s1I(Q2, xB, t, Eb):
-    """Return (s1_I, c0, c1) for fixed kinematics (independent of φ)."""
+    """Return (s1_I, c0_BH, c1_BH) at fixed kinematics (φ-independent)."""
     dv = ROOT.BMK_DVCS(-1, +1, 0, Eb, xB, Q2, t, 0.0)
     s1I = dv.s1_I()
     c0  = dv.c0_BH()
@@ -151,10 +152,20 @@ def approx_curve_A1B1(phi_deg, A1, B1):
     """A(φ) = A1 * sinφ / (1 + B1 cosφ)."""
     ph = np.deg2rad(phi_deg)
     denom = 1.0 + B1*np.cos(ph)
-    # robust near denom ~ 0
     eps = 1e-14
     denom = np.where(np.abs(denom) < eps, np.sign(denom)*eps, denom)
     return A1 * np.sin(ph) / denom
+
+def bh_norm_ratio(Q2, xB, Eb):
+    """
+    Overall factor converting (s1_I / c0_BH) into the BH-only A1 for A_LU:
+        scale = (xB / y) * (1 + eps^2)^2
+      with y = Q2 / (2 M xB Eb), eps = 2 xB M / sqrt(Q2).
+    """
+    M = 0.93827
+    y = Q2 / (2.0 * M * xB * Eb)
+    eps2 = (2.0 * xB * M / np.sqrt(Q2))**2
+    return (xB / y) * (1.0 + eps2)**2
 
 # ───────────────────────────── main ───────────────────────────────
 def main():
@@ -198,23 +209,33 @@ def main():
         # Dense grid
         phi_grid = np.linspace(0.0, 360.0, 361)
 
+        # Common kinematic scale for A1
+        scale = bh_norm_ratio(Q2m, xBm, Ebm)
+        if args.debug and ibin == 1:
+            M = 0.93827
+            y = Q2m / (2.0 * M * xBm * Ebm)
+            eps2 = (2.0 * xBm * M / np.sqrt(Q2m))**2
+            print(f"[dbg] scale=(xB/y)*(1+eps^2)^2 = {scale:.6e}  (y={y:.6e}, eps2={eps2:.6e})")
+
         # --- BKM A1,B1 ---
         push_globals(params_bkm, flags_bkm, label="BKM")
         s1I_bkm, c0_bh, c1_bh = bh_coeffs_and_s1I(Q2m, xBm, tm, Ebm)
-        A1_bkm = s1I_bkm / c0_bh
+        A1_bkm = (s1I_bkm / c0_bh) * scale
         B1_bh  = c1_bh / c0_bh
         bkm_curve = approx_curve_A1B1(phi_grid, A1_bkm, B1_bh)
 
-        # --- RGK fit A1,B1 (same B1 from BH; A1 uses fitted ImCFFs) ---
+        # --- RGK fit A1 (same B1 from BH) ---
         push_globals(param_map_fit, flags_fit, label="RGK-fit")
         s1I_rgk, c0_bh_chk, c1_bh_chk = bh_coeffs_and_s1I(Q2m, xBm, tm, Ebm)
-        # sanity (BH coeffs should match):
         if args.debug and ibin == 1:
             print(f"[dbg] c0_BH={c0_bh:.6e}  c1_BH={c1_bh:.6e}  "
                   f"(RGK pass: c0={c0_bh_chk:.6e}, c1={c1_bh_chk:.6e})")
-            print(f"[dbg] A1_BKM={A1_bkm:.6e}  B1={B1_bh:.6e}  A1_RGK={s1I_rgk/c0_bh_chk:.6e}")
-        A1_rgk = s1I_rgk / c0_bh  # use identical c0 for both; c0 is same anyway
-        rgk_curve = approx_curve_A1B1(phi_grid, A1_rgk, B1_bh)
+            print(f"[dbg] A1_BKM={(s1I_bkm/c0_bh):.6e}*scale -> {A1_bkm:.6e}; "
+                  f"A1_RGK={(s1I_rgk/c0_bh_chk):.6e}*scale -> {(s1I_rgk/c0_bh_chk)*scale:.6e}")
+        # use BH from either pass (should be identical)
+        A1_rgk = (s1I_rgk / c0_bh_chk) * scale
+        B1_used = c1_bh_chk / c0_bh_chk
+        rgk_curve = approx_curve_A1B1(phi_grid, A1_rgk, B1_used)
 
         # --- Plot ---
         fig, ax = plt.subplots(figsize=(8,5))
