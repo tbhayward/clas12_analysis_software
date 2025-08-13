@@ -7,16 +7,15 @@ Plots A_LU(φ) per (Q2, xB, t, Eb) bin for:
   • RGK fit for Im CFF(s) — solid orange:
         A(φ) ≈ [s1_I · sinφ] / [c0_BH + c1_BH cosφ (+ c2_BH cos2φ if --approx-order=2)]
         (s1_I from your fitted Im-CFFs; denominator is BH-only)
-  • BKM with Im CFF(s) from fit — dashed green:
-        --green-mode=num-only (default): numerator from fitted Im-CFFs, denominator from default BKM
-        --green-mode=full: both numerator & denominator from the hybrid params (Im from fit)
+  • BKM with Im CFF(s) from fit (FULL) — dashed green:
+        full BKM σ± but only the imaginary CFF parameters present in your fit file
+        are overridden; everything else stays at BKM defaults.
 
 Usage:
   python plot_BSA_CFFs_from_fit.py output/fit_results/fit_results_<TIMESTAMP>.txt
          [--data PATH]
          [--approx-order {1,2}]
          [--B-source {bh,data}]
-         [--green-mode {num-only,full}]
          [--outdir output/plots]
          [--debug]
 """
@@ -159,40 +158,9 @@ def bh_coeffs_and_s1I(Q2, xB, t, Eb):
     dv = ROOT.BMK_DVCS(-1, +1, 0, Eb, xB, Q2, t, 0.0)
     return dv.s1_I(), dv.c0_BH(), dv.c1_BH(), dv.c2_BH()
 
-def xs_num_den_over_phi(param_map, flags, phi_deg, Q2, xB, t, Eb):
-    """Return arrays: numerator=(σ+−σ−)/2 and denominator=(σ++σ−)/2 for given parameters."""
-    push_globals(param_map, flags, label="xs_num_den")
-    num = np.empty_like(phi_deg, float)
-    den = np.empty_like(phi_deg, float)
-    for i, ph in enumerate(phi_deg):
-        dv_plus  = ROOT.BMK_DVCS(-1, +1, 0, Eb, xB, Q2, t, float(ph))
-        dv_minus = ROOT.BMK_DVCS(-1, -1, 0, Eb, xB, Q2, t, float(ph))
-        xs_p = dv_plus.CrossSection()
-        xs_m = dv_minus.CrossSection()
-        num[i] = 0.5*(xs_p - xs_m)
-        den[i] = 0.5*(xs_p + xs_m)
-    return num, den
-
-
-def fit_B_from_data(phi_data, A_data, dA):
-    import numpy.linalg as LA
-    ph = np.deg2rad(phi_data)
-    w  = 1.0 / np.maximum(dA, 1e-8)**2
-    X = np.vstack([np.sin(ph), np.sin(ph)*np.cos(ph)]).T
-    W = np.diag(w)
-    y = A_data
-    beta = LA.pinv(X.T @ W @ X) @ (X.T @ W @ y)
-    a, b = beta
-    B1 = b / max(a, 1e-12)
-    A1 = a
-    yfit = (a*np.sin(ph) + b*np.sin(ph)*np.cos(ph))
-    chi2 = float(((y - yfit)**2 * w).sum())
-    ndf  = max(len(y) - 2, 1)
-    return B1, A1, chi2/ndf
-
 
 def build_imfit_param_map(fit_param_map):
-    """Hybrid map: start with BKM defaults, override ONLY Im-CFF ansatz params present in the fit."""
+    """Start from BKM defaults; override ONLY imaginary-param names present in the fit file."""
     pm = bkm_defaults().copy()
     for cff in ("H","Ht","E","Et"):
         for k in ("r","n","alpha0","alpha1","b","M2","P"):
@@ -220,8 +188,6 @@ def main():
                     help='Use c0+c1 cosφ (1) or c0+c1 cosφ+c2 cos2φ (2) in the BH denominator (orange curve)')
     ap.add_argument('--B-source', choices=['bh','data'], default='bh',
                     help='For orange: use BH Fourier coeffs for B (default) or fit B1 from data (order=1 only)')
-    ap.add_argument('--green-mode', choices=['num-only','full'], default='num-only',
-                    help='Green curve: "num-only" (default) uses numerator from Im-fit over BKM default denominator; "full" replaces Im everywhere.')
     ap.add_argument('--outdir', default='output/plots', help='Output directory for PDFs')
     ap.add_argument('--debug', action='store_true', help='Print internal diagnostics for first bin')
     args = ap.parse_args()
@@ -256,11 +222,15 @@ def main():
         bkm_full = bsa_full_curve(phi_grid, Q2m, xBm, tm, Ebm,
                                   debug=(args.debug and ibin==1), tag=f"bin{ibin}-BKM")
 
-        # ── Orange: your previous approx using s1_I and BH-only denominator
+        # Also record BH-limit amplitude (for text)
+        s1I_bkm, c0_bkm, c1_bkm, c2_bkm = bh_coeffs_and_s1I(Q2m, xBm, tm, Ebm)
+        A1_bkm = (s1I_bkm / c0_bkm) if c0_bkm != 0 else 0.0
+
+        # ── Orange: BH-limit with your fitted Im CFF(s)
         push_globals(param_map_fit, flags_fit, label="RGK-fit")
         s1I_rgk, c0_rgk, c1_rgk, c2_rgk = bh_coeffs_and_s1I(Q2m, xBm, tm, Ebm)
         if args.approx_order == 1 and args.B_source == 'data':
-            # quick per-bin B1 fit
+            # lightweight B1 fit from the data
             import numpy.linalg as LA
             pp = np.deg2rad(phi_data)
             w  = 1.0/np.maximum(dA,1e-8)**2
@@ -274,32 +244,19 @@ def main():
         denom_bh = c0_rgk*(1.0 + B1_used*np.cos(ph) + (B2_used*np.cos(2*ph) if args.approx_order==2 else 0.0))
         denom_bh = np.where(np.abs(denom_bh)<1e-14, np.sign(denom_bh)*1e-14, denom_bh)
         rgk_curve = (s1I_rgk * np.sin(ph)) / denom_bh
+        A1_fit = (s1I_rgk / c0_rgk) if c0_rgk != 0 else 0.0
 
-        # ── Green: consistent BSA from σ±
-        # Denominator_DEFAULT from BKM
-        _, den_bkm = xs_num_den_over_phi(params_bkm, flags_bkm, phi_grid, Q2m, xBm, tm, Ebm)
-
-        # Numerator/Denominator with Im from fit
-        num_imfit, den_imfit = xs_num_den_over_phi(params_imfit, flags_bkm, phi_grid, Q2m, xBm, tm, Ebm)
-
-        if args.green_mode == 'full':
-            den_for_green = den_imfit
-        else:  # num-only
-            den_for_green = den_bkm
-
-        # protect against zeros
-        den_for_green = np.where(np.abs(den_for_green)<1e-20,
-                                 np.sign(den_for_green)*1e-20, den_for_green)
-        green_curve = num_imfit / den_for_green
+        # ── Green: FULL BKM with ONLY Im-CFF parameters overridden by the fit
+        push_globals(params_imfit, flags_bkm, label="BKM-ImFit")
+        green_full = bsa_full_curve(phi_grid, Q2m, xBm, tm, Ebm)
 
         # ── Plot
         fig, ax = plt.subplots(figsize=(8,5))
         ax.errorbar(phi_data, A_data, yerr=dA, fmt='o', ms=5, color='k', label='Data')
         ax.plot(phi_grid, bkm_full, '-',  lw=2, color='tab:blue',   label='BKM')
         ax.plot(phi_grid, rgk_curve, '-', lw=2, color='tab:orange', label=f'RGK fit for {imlabel}')
-        ax.plot(phi_grid, green_curve, '--', lw=2, color='tab:green',
-                label=(f'BKM with {imlabel} from fit'
-                       + (' (full)' if args.green_mode=='full' else ' (num-only)')))
+        ax.plot(phi_grid, green_full, '--', lw=2, color='tab:green',
+                label=f'BKM with {imlabel} from fit')
 
         ax.set_xlim(0, 360)
         ax.set_xticks([0,60,120,180,240,300,360])
@@ -312,9 +269,17 @@ def main():
             ).format(Q2m, xBm, abs(tm), Ebm),
             pad=12
         )
+
+        # small textbox with A1 amplitudes (BH limit)
+        txt = (fr"$A_1=s_1^I/c_0^{{BH}}$  "
+               fr"BKM: {A1_bkm:+.3f}   Fit: {A1_fit:+.3f}   Δ: {A1_fit-A1_bkm:+.3f}")
+        ax.text(0.02, 0.95, txt, transform=ax.transAxes, fontsize=10, va='top')
+
         ax.legend(loc='upper right', frameon=True, edgecolor='k')
         plt.tight_layout()
 
+        m = re.search(r'fit_results_(\d{8}_\d{6})\.txt$', os.path.basename(args.fitfile))
+        ts = (m.group(1) if m else "noTS")
         outname = os.path.join(args.outdir,
             f"BSA_bin{ibin:02d}_{ts}_Q2_{Q2m:.2f}_xB_{xBm:.3f}_mt_{abs(tm):.3f}.pdf")
         fig.savefig(outname)
