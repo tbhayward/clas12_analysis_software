@@ -2,15 +2,17 @@
 """
 plot_BSA_CFFs_from_fit.py
 
-Plots A_LU(φ) per (Q2, xB, t, Eb) bin using the BH-only approximation:
-  • BKM:     A1*sinφ / (1 + B1*cosφ), with  A1 = (s1_I/c0_BH) * [xB/y * (1+eps^2)^2]
-             evaluated using the BKM default CFF parameters (H,H~ ,E on; Et off).
-  • RGK fit: same formula, but A1 uses s1_I computed with your fitted Im-CFFs.
-             (B1 = c1_BH/c0_BH in both curves; BH coefficients depend only on kinematics.)
+Two-curve BH-only plot of A_LU(φ):
+  • BKM:     A*sinφ / (1 + B*cosφ + C*cos2φ) with A = K*s1_I/c0_BH from BKM defaults
+  • RGK fit: same, but A from the CFFs found in your fit file
 
-Usage:
-  python plot_BSA_CFFs_from_fit.py output/fit_results/fit_results_<TIMESTAMP>.txt
-         [--data PATH] [--outdir output/plots] [--debug]
+At fixed (Q2, xB, t, Eb): B = -c1_BH/c0_BH and C = c2_BH/c0_BH (minus sign on B is the
+Trento↔BMK convention), so B and C are identical for BKM and RGK. Only A should change.
+
+Diagnostics (printed for the first bin, or all bins with --debug):
+  (1) K-factor and ratio s1_I(RGK)/s1_I(BKM)
+  (2) BH B and C from both passes (should match)
+  (3) s1_I decomposition into H, H̃, E contributions for BKM and RGK
 """
 
 import os, re, argparse
@@ -35,7 +37,6 @@ def parse_fit_results(fname):
     with open(fname) as f:
         lines = [l.strip() for l in f if l.strip()]
 
-    # flags line like: "H 1 Ht 0 E 1 Et 0"
     flags_line = next((l for l in lines
                        if re.match(r'^\s*H\s+[01]\s+Ht\s+[01]\s+E\s+[01]\s+Et\s+[01]\s*$', l)), None)
     if flags_line is None:
@@ -45,7 +46,6 @@ def parse_fit_results(fname):
     toks = flags_line.split()
     flags = {toks[i]: int(toks[i+1]) for i in range(0, len(toks), 2)}
 
-    # parameter names/values
     pnames, pvals = [], None
     for i, l in enumerate(lines):
         if l.startswith("# parameters"):
@@ -56,7 +56,6 @@ def parse_fit_results(fname):
         raise RuntimeError("Couldn't parse parameter names/values from fit file")
     param_map_fit = dict(zip(pnames, pvals))
 
-    # optional input path
     input_path = next((l.split(None, 1)[1].strip()
                        for l in lines if l.startswith("input")), None)
 
@@ -100,17 +99,16 @@ def bkm_defaults():
         'r_Ht': 7.0, 'n_Ht': 0.6, 'alpha0_Ht': 0.43, 'alpha1_Ht': 0.85, 'b_Ht': 2.0, 'M2_Ht': 0.8, 'P_Ht': 1.0,
         # E
         'r_E': 0.9, 'n_E': 1.35, 'alpha0_E': 0.43, 'alpha1_E': 0.85, 'b_E': 0.4, 'M2_E': 0.64, 'P_E': 1.0,
-        # Et — keep harmless (imaginary effectively off)
+        # Et (kept harmless)
         'r_Et': 1.0, 'n_Et': 0.0, 'alpha0_Et': 0.0, 'alpha1_Et': 0.0, 'b_Et': 0.0, 'M2_Et': 1.0, 'P_Et': 0.0,
     }
 
 # ───────── push globals into C++ (and set switches) ───────────────
 def push_globals(param_map, flags, *, safety_disable_Et=True, label=""):
     ROOT.gInterpreter.ProcessLine("hasH=0; hasHt=0; hasE=0; hasEt=0;")
-
-    # Defensive Et handling
     et_flag = int(flags.get("Et", 0))
     if safety_disable_Et and et_flag:
+        # disable Et if parameters are degenerate
         M2 = float(param_map.get("M2_Et", 0.0))
         P  = float(param_map.get("P_Et", 0.0))
         n  = float(param_map.get("n_Et", 0.0))
@@ -139,33 +137,32 @@ def push_globals(param_map, flags, *, safety_disable_Et=True, label=""):
         for k in ("C0","MD2","lambda"):
             setp(f"{k}_{cff}")
 
-# ─────────────── helpers: BH coeffs, A1B1 curve, normalization ───────────────
+# ─────────────── helpers to compute BH & s1I ────────────────
 def bh_coeffs_and_s1I(Q2, xB, t, Eb):
-    """Return (s1_I, c0_BH, c1_BH) at fixed kinematics (φ-independent)."""
+    """Return (s1_I, c0, c1, c2, y, eps2) for fixed kinematics (independent of φ)."""
     dv = ROOT.BMK_DVCS(-1, +1, 0, Eb, xB, Q2, t, 0.0)
     s1I = dv.s1_I()
     c0  = dv.c0_BH()
     c1  = dv.c1_BH()
-    return s1I, c0, c1
+    c2  = dv.c2_BH()
+    return s1I, c0, c1, c2, dv.y, dv.eps2
 
-def approx_curve_A1B1(phi_deg, A1, B1):
-    """A(φ) = A1 * sinφ / (1 + B1 cosφ)."""
+def s1I_only_component(Q2, xB, t, Eb, *, comp, params, flags_base):
+    """Compute s1_I with only one CFF on (comp in {'H','Ht','E'})."""
+    fl = {'H':0,'Ht':0,'E':0,'Et':0}
+    fl.update({comp: 1})
+    push_globals(params, fl, label=f"{comp}-only")
+    dv = ROOT.BMK_DVCS(-1, +1, 0, Eb, xB, Q2, t, 0.0)
+    return dv.s1_I()
+
+def approx_curve(phi_deg, A, B, C=0.0):
+    """A(φ) = A * sinφ / (1 + B cosφ + C cos2φ), Trento φ in degrees."""
     ph = np.deg2rad(phi_deg)
-    denom = 1.0 + B1*np.cos(ph)
+    denom = 1.0 + B*np.cos(ph) + C*np.cos(2*ph)
+    # robust near denom ~ 0
     eps = 1e-14
     denom = np.where(np.abs(denom) < eps, np.sign(denom)*eps, denom)
-    return A1 * np.sin(ph) / denom
-
-def bh_norm_ratio(Q2, xB, Eb):
-    """
-    Overall factor converting (s1_I / c0_BH) into the BH-only A1 for A_LU:
-        scale = (xB / y) * (1 + eps^2)^2
-      with y = Q2 / (2 M xB Eb), eps = 2 xB M / sqrt(Q2).
-    """
-    M = 0.93827
-    y = Q2 / (2.0 * M * xB * Eb)
-    eps2 = (2.0 * xB * M / np.sqrt(Q2))**2
-    return (xB / y) * (1.0 + eps2)**2
+    return A * np.sin(ph) / denom
 
 # ───────────────────────────── main ───────────────────────────────
 def main():
@@ -173,21 +170,15 @@ def main():
     ap.add_argument('fitfile', help='fit_results_<TIMESTAMP>.txt from your fitter')
     ap.add_argument('--data', default=None, help='Override BSA data file; else use "input" in fit file or fallback')
     ap.add_argument('--outdir', default='output/plots', help='Output directory for PDFs')
-    ap.add_argument('--debug', action='store_true', help='Print internal diagnostics for first bin')
+    ap.add_argument('--debug', action='store_true', help='Print diagnostics for every bin (default: first bin only)')
     args = ap.parse_args()
 
-    # Parse fit file
     flags_fit, param_map_fit, input_path = parse_fit_results(args.fitfile)
-
-    # Data file
     datafile = (args.data or input_path or 'imports/rgk_preliminary_bsa.txt')
     print(">> Using data file:", datafile)
     print(">> Fit flags:", flags_fit)
 
-    # Load C++
     _load_dvcs_once()
-
-    # Load bins
     bins = load_bins(datafile)
     print(f">> Found {len(bins)} φ-bins")
 
@@ -197,47 +188,62 @@ def main():
     flags_bkm = {'H':1,'Ht':1,'E':1,'Et':0}
     params_bkm = bkm_defaults()
 
-    # Timestamp for filenames
+    # Timestamp for filenames (optional)
     m = re.search(r'fit_results_(\d{8}_\d{6})\.txt$', os.path.basename(args.fitfile))
     ts = (m.group(1) if m else "noTS")
 
-    # Loop bins
     for ibin, b in enumerate(bins, start=1):
         phi_data, A_data, dA = b["phi"], b["A"], b["sigA"]
         Q2m, xBm, tm, Ebm = b["Q2m"], b["xBm"], b["tm"], b["Ebm"]
 
-        # Dense grid
         phi_grid = np.linspace(0.0, 360.0, 361)
 
-        # Common kinematic scale for A1
-        scale = bh_norm_ratio(Q2m, xBm, Ebm)
-        if args.debug and ibin == 1:
-            M = 0.93827
-            y = Q2m / (2.0 * M * xBm * Ebm)
-            eps2 = (2.0 * xBm * M / np.sqrt(Q2m))**2
-            print(f"[dbg] scale=(xB/y)*(1+eps^2)^2 = {scale:.6e}  (y={y:.6e}, eps2={eps2:.6e})")
-
-        # --- BKM A1,B1 ---
+        # --- BKM pass: compute A,B,C (Trento) ---
         push_globals(params_bkm, flags_bkm, label="BKM")
-        s1I_bkm, c0_bh, c1_bh = bh_coeffs_and_s1I(Q2m, xBm, tm, Ebm)
-        A1_bkm = (s1I_bkm / c0_bh) * scale
-        B1_bh  = c1_bh / c0_bh
-        bkm_curve = approx_curve_A1B1(phi_grid, A1_bkm, B1_bh)
+        s1_bkm, c0_bh, c1_bh, c2_bh, y_bkm, eps2_bkm = bh_coeffs_and_s1I(Q2m, xBm, tm, Ebm)
+        Kfac = (xBm / y_bkm) * (1.0 + eps2_bkm)**2
+        A_bkm = Kfac * (s1_bkm / c0_bh)
+        # Trento mapping: B = -c1/c0, C = c2/c0
+        B_bh  = - c1_bh / c0_bh
+        C_bh  =   c2_bh / c0_bh
+        bkm_curve = approx_curve(phi_grid, A_bkm, B_bh, C_bh)
 
-        # --- RGK fit A1 (same B1 from BH) ---
+        # --- RGK pass: recompute s1_I with fitted params (BH pieces should match) ---
         push_globals(param_map_fit, flags_fit, label="RGK-fit")
-        s1I_rgk, c0_bh_chk, c1_bh_chk = bh_coeffs_and_s1I(Q2m, xBm, tm, Ebm)
-        if args.debug and ibin == 1:
-            print(f"[dbg] c0_BH={c0_bh:.6e}  c1_BH={c1_bh:.6e}  "
-                  f"(RGK pass: c0={c0_bh_chk:.6e}, c1={c1_bh_chk:.6e})")
-            print(f"[dbg] A1_BKM={(s1I_bkm/c0_bh):.6e}*scale -> {A1_bkm:.6e}; "
-                  f"A1_RGK={(s1I_rgk/c0_bh_chk):.6e}*scale -> {(s1I_rgk/c0_bh_chk)*scale:.6e}")
-        # use BH from either pass (should be identical)
-        A1_rgk = (s1I_rgk / c0_bh_chk) * scale
-        B1_used = c1_bh_chk / c0_bh_chk
-        rgk_curve = approx_curve_A1B1(phi_grid, A1_rgk, B1_used)
+        s1_fit, c0_chk, c1_chk, c2_chk, y_fit, eps2_fit = bh_coeffs_and_s1I(Q2m, xBm, tm, Ebm)
+        # sanity: c0,c1,c2 must match between passes (numerically)
+        A_fit = ((xBm / y_fit) * (1.0 + eps2_fit)**2) * (s1_fit / c0_chk)
+        rgk_curve = approx_curve(phi_grid, A_fit, B_bh, C_bh)
 
-        # --- Plot ---
+        # ───── DIAGNOSTICS ───────────────────────────────────────────────────
+        if args.debug or ibin == 1:
+            print("\n=== Diagnostics for bin {:02d} ===".format(ibin))
+            print(f"  <Q2>= {Q2m:.3f} GeV^2, <xB>= {xBm:.3f}, <-t>= {abs(tm):.3f} GeV^2, <Eb>= {Ebm:.2f} GeV")
+            print("  (1) K-factor & s1_I ratio:")
+            print(f"      K_BKM = (xB/y)*(1+eps^2)^2 = {(xBm/y_bkm)*(1+eps2_bkm)**2:.5f}")
+            print(f"      K_RGK = (xB/y)*(1+eps^2)^2 = {(xBm/y_fit)*(1+eps2_fit)**2:.5f}")
+            print(f"      s1_I(BKM) = {s1_bkm:.6e},  s1_I(RGK) = {s1_fit:.6e},  ratio RGK/BKM = {s1_fit/s1_bkm:.6f}")
+            print(f"      A_BKM = {A_bkm:.6e},  A_RGK = {A_fit:.6e}")
+
+            print("  (2) BH denominators (Trento φ):")
+            print(f"      From BKM pass:  B = -c1/c0 = {(-c1_bh/c0_bh):.6f},  C = c2/c0 = {(c2_bh/c0_bh):.6f}")
+            print(f"      From RGK pass:  B = -c1/c0 = {(-c1_chk/c0_chk):.6f},  C = c2/c0 = {(c2_chk/c0_chk):.6f}")
+
+            # component breakdowns
+            print("  (3) s1_I components (H / Ht / E), BKM vs RGK:")
+            # BKM components
+            s1_H_bkm  = s1I_only_component(Q2m,xBm,tm,Ebm, comp='H',  params=params_bkm, flags_base=flags_bkm)
+            s1_Ht_bkm = s1I_only_component(Q2m,xBm,tm,Ebm, comp='Ht', params=params_bkm, flags_base=flags_bkm)
+            s1_E_bkm  = s1I_only_component(Q2m,xBm,tm,Ebm, comp='E',  params=params_bkm, flags_base=flags_bkm)
+            # RGK components
+            s1_H_fit  = s1I_only_component(Q2m,xBm,tm,Ebm, comp='H',  params=param_map_fit, flags_base=flags_fit)
+            s1_Ht_fit = s1I_only_component(Q2m,xBm,tm,Ebm, comp='Ht', params=param_map_fit, flags_base=flags_fit)
+            s1_E_fit  = s1I_only_component(Q2m,xBm,tm,Ebm, comp='E',  params=param_map_fit, flags_base=flags_fit)
+            print(f"      BKM: H={s1_H_bkm:.6e}, Ht={s1_Ht_bkm:.6e}, E={s1_E_bkm:.6e}  -> total={s1_H_bkm+s1_Ht_bkm+s1_E_bkm:.6e}")
+            print(f"      RGK: H={s1_H_fit:.6e}, Ht={s1_Ht_fit:.6e}, E={s1_E_fit:.6e}  -> total={s1_H_fit+s1_Ht_fit+s1_E_fit:.6e}")
+            print("  ----------------------------------------------")
+
+        # ───── Plot ───────────────────────────────────────────────────────────
         fig, ax = plt.subplots(figsize=(8,5))
         ax.errorbar(phi_data, A_data, yerr=dA, fmt='o', ms=5, color='k', label='Data')
         ax.plot(phi_grid, bkm_curve, '-',  lw=2, color='tab:blue',   label='BKM')
