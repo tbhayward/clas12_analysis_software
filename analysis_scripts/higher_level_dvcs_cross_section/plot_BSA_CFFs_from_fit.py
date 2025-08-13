@@ -9,6 +9,7 @@ Theory curves:
 
 Data curve:
   • Fit A,B,(C) in  A*sinφ / (1 + B cosφ [+ C cos2φ])  by weighted least squares.
+    CONSTRAINTS:  -0.999 ≤ B ≤ 0.999  and (if order=2)  -0.999 ≤ C ≤ 0.999.
 
 Usage:
   python plot_BSA_CFFs_from_fit.py output/fit_results/fit_results_<TS>.txt
@@ -39,11 +40,9 @@ def _load_dvcs_once():
 
 # ─────────────────────── fit-file parsing ───────────────────────────
 def _parse_range_line(line, key_a, key_b):
-    """Helper for lines like: 'xi_min 0.06  xi_max 0.23' (robust to spacing)."""
     toks = line.split()
     out = {}
     try:
-        # tokens: key_a, val_a, key_b, val_b
         if len(toks) >= 4:
             va = toks[1]; vb = toks[3]
             out[key_a] = float(va) if va.upper() != "NA" else None
@@ -56,7 +55,6 @@ def parse_fit_results(fname):
     with open(fname) as f:
         lines = [l.strip() for l in f if l.strip()]
 
-    # flags
     flags_line = next((l for l in lines
                        if re.match(r'^\s*H\s+[01]\s+Ht\s+[01]\s+E\s+[01]\s+Et\s+[01]\s*$', l)), None)
     if flags_line is None:
@@ -66,7 +64,6 @@ def parse_fit_results(fname):
     toks = flags_line.split()
     flags = {toks[i]: int(toks[i+1]) for i in range(0, len(toks), 2)}
 
-    # parameter names/values
     pnames, pvals = [], None
     for i, l in enumerate(lines):
         if l.startswith("# parameters"):
@@ -77,18 +74,15 @@ def parse_fit_results(fname):
         raise RuntimeError("Couldn't parse parameter names/values from fit file")
     param_map_fit = dict(zip(pnames, pvals))
 
-    # optional input
     input_path = next((l.split(None, 1)[1].strip()
                        for l in lines if l.startswith("input")), None)
 
-    # kinematic ranges (if present)
     ranges = {'xi_min':None, 'xi_max':None, 'mt_min':None, 'mt_max':None}
     for l in lines:
         if l.startswith("xi_min"):
             ranges.update(_parse_range_line(l, "xi_min", "xi_max"))
         elif l.startswith("-t_min"):
-            tmp = _parse_range_line(l, "mt_min", "mt_max")
-            ranges.update(tmp)
+            ranges.update(_parse_range_line(l, "mt_min", "mt_max"))
 
     return flags, param_map_fit, input_path, ranges
 
@@ -212,6 +206,11 @@ def alu_curve(phi_deg, A1, B1, C1=0.0, order=1):
 
 # ─────────── weighted fit of (A,B[,C]) to data using ROOT ──────────
 def fit_data_ABC(phi_deg, y, yerr, *, order, A0, B0, C0):
+    """
+    Constrained fit:
+      B ∈ [-0.999, 0.999]
+      C ∈ [-0.999, 0.999] (only if order==2)
+    """
     n = len(phi_deg)
     gr = ROOT.TGraphErrors(n)
     for i in range(n):
@@ -225,9 +224,19 @@ def fit_data_ABC(phi_deg, y, yerr, *, order, A0, B0, C0):
         formula = ("[0]*sin(x*TMath::Pi()/180.)"
                    "/(1 + [1]*cos(x*TMath::Pi()/180.))")
     f = ROOT.TF1("f_data_fit", formula, 0, 360)
-    f.SetParameters(float(A0), float(B0), float(C0))
+
+    # Clamp starting guesses into allowed range
+    def clamp(v): return max(-0.999, min(0.999, float(v)))
+    B0c = clamp(B0)
+    C0c = clamp(C0)
+
+    f.SetParameters(float(A0), float(B0c), float(C0c))
+    # Apply limits (B always, C only if free)
+    f.SetParLimits(1, -0.999, 0.999)
     if order == 1:
         f.FixParameter(2, 0.0)
+    else:
+        f.SetParLimits(2, -0.999, 0.999)
 
     gr.Fit(f, "Q0R")
 
@@ -236,7 +245,11 @@ def fit_data_ABC(phi_deg, y, yerr, *, order, A0, B0, C0):
     C  = float(f.GetParameter(2)) if order == 2 else 0.0
     dC = float(f.GetParError(2)) if order == 2 else 0.0
     chi2 = float(f.GetChisquare()); ndf = int(f.GetNDF())
-    return dict(A=A, dA=dA, B=B, dB=dB, C=C, dC=dC, chi2=chi2, ndf=ndf)
+
+    # Boundary notice (useful in debug)
+    hit_boundary = (abs(B) >= 0.999 - 1e-6) or (order == 2 and abs(C) >= 0.999 - 1e-6)
+
+    return dict(A=A, dA=dA, B=B, dB=dB, C=C, dC=dC, chi2=chi2, ndf=ndf, hit_boundary=hit_boundary)
 
 
 # ───────────────────────────── main ───────────────────────────────
@@ -250,59 +263,47 @@ def main():
     ap.add_argument('--debug', action='store_true', help='Print detailed diagnostics for the first bin')
     args = ap.parse_args()
 
-    # Parse fit file and choose data file
     flags_fit, param_map_fit, input_path, ranges = parse_fit_results(args.fitfile)
     datafile = (args.data or input_path or 'imports/rgk_preliminary_bsa.txt')
     print(">> Using data file:", datafile)
     print(">> Fit flags:", flags_fit)
 
-    # Load C++
     _load_dvcs_once()
 
-    # Load φ-bins
     bins = load_bins(datafile)
     print(f">> Found {len(bins)} φ-bins")
 
     os.makedirs(args.outdir, exist_ok=True)
 
-    # BKM baseline flags: H,Ht,E on; Et off (safe)
     flags_bkm = {'H':1,'Ht':1,'E':1,'Et':0}
     params_bkm = bkm_defaults()
 
-    # Timestamp tag from fitfile name
     m = re.search(r'fit_results_(\d{8}_\d{6})\.txt$', os.path.basename(args.fitfile))
     ts = (m.group(1) if m else "noTS")
 
-    # Loop over bins
     for ibin, b in enumerate(bins, start=1):
         phi_data, A_data, dA = b["phi"], b["A"], b["sigA"]
         Q2m, xBm, tm, Ebm = b["Q2m"], b["xBm"], b["tm"], b["Ebm"]
 
-        # Derived kinematics
         xi_m = xBm / (2.0 - xBm)
         mt_m = abs(tm)
 
-        # Dense φ for smooth curves
         phi_grid = np.linspace(0.0, 360.0, 361)
 
-        # --- BH coefficients (for theory curves) ---
         c0_bh, c1_bh, c2_bh = bh_coeffs(Q2m, xBm, tm, Ebm)
         B_bh = -(c1_bh / c0_bh)
         C_bh =  (c2_bh / c0_bh) if args.approx_order == 2 else 0.0
 
-        # --- BKM theory (ALU) ---
         push_globals(params_bkm, flags_bkm, label="BKM")
         s1I_bkm, R_bkm, *_ = s1I_and_K(Q2m, xBm, tm, Ebm)
         A1_bkm = (R_bkm * s1I_bkm) / c0_bh
         bkm_curve = alu_curve(phi_grid, A1_bkm, B_bh, C_bh, order=args.approx_order)
 
-        # --- RGK theory (ALU) ---
         push_globals(param_map_fit, flags_fit, label="RGK-fit")
         s1I_rgk, R_rgk, *_ = s1I_and_K(Q2m, xBm, tm, Ebm)
         A1_rgk = (s1I_rgk) / c0_bh
         rgk_curve = alu_curve(phi_grid, A1_rgk, B_bh, C_bh, order=args.approx_order)
 
-        # --- Data fit: free (A,B[,C]) with BH values as starting guesses ---
         A0_guess = float(np.nan_to_num(np.average(A_data, weights=1/np.maximum(dA,1e-9)**2)))
         fit_res = fit_data_ABC(
             phi_data, A_data, dA,
@@ -312,7 +313,6 @@ def main():
         )
         data_curve = alu_curve(phi_grid, fit_res["A"], fit_res["B"], fit_res["C"], order=args.approx_order)
 
-        # Out-of-fit-range check (xi, -t)
         outside = False
         if ranges.get('xi_min') is not None and ranges.get('xi_max') is not None:
             if not (ranges['xi_min'] <= xi_m <= ranges['xi_max']):
@@ -321,7 +321,6 @@ def main():
             if not (ranges['mt_min'] <= mt_m <= ranges['mt_max']):
                 outside = True
 
-        # ── Diagnostics (first bin) ──
         if args.debug and ibin == 1:
             print(f"\n=== Diagnostics for bin {ibin:02d} ===")
             print(f"  <Q2>= {Q2m:6.3f} GeV^2, <xB>= {xBm:0.3f}, <xi>= {xi_m:0.3f}, <-t>= {mt_m:0.3f} GeV^2, <Eb>= {Ebm:0.2f} GeV")
@@ -338,9 +337,11 @@ def main():
             tot_rgk = comp_rgk['H'] + comp_rgk['Ht'] + comp_rgk['E']
             print(f"  s1_I components BKM: H={comp_bkm['H']:.6e}, H~={comp_bkm['Ht']:.6e}, E={comp_bkm['E']:.6e} -> {tot_bkm:.6e}")
             print(f"  s1_I components RGK: H={comp_rgk['H']:.6e}, H~={comp_rgk['Ht']:.6e}, E={comp_rgk['E']:.6e} -> {tot_rgk:.6e}")
-            print(f"  Data fit: A={fit_res['A']:.6f}±{fit_res['dA']:.6f}, B={fit_res['B']:.6f}±{fit_res['dB']:.6f}"
+            print(f"  Data fit: A={fit_res['A']:.6f}±{fit_res['dA']:.6f}, "
+                  f"B={fit_res['B']:.6f}±{fit_res['dB']:.6f}"
                   + (f", C={fit_res['C']:.6f}±{fit_res['dC']:.6f}" if args.approx_order==2 else "")
-                  + f",  χ²/ndf={fit_res['chi2']:.2f}/{fit_res['ndf']}")
+                  + f",  χ²/ndf={fit_res['chi2']:.2f}/{fit_res['ndf']}"
+                  + ("  [hit boundary]" if fit_res.get("hit_boundary") else ""))
 
             # restore RGK globals after component toggles
             push_globals(param_map_fit, flags_fit, label="RGK-fit-restore")
@@ -357,12 +358,11 @@ def main():
                 label=(f'Data fit: A={fit_res["A"]:.3f}±{fit_res["dA"]:.3f}'))
 
         ax.set_xlim(0, 360)
-        ax.set_xticks([0,60,120,180,240,300,360])
+        ax.set.xticks([0,60,120,180,240,300,360])
         ax.set_ylim(-0.6, 0.6)
         ax.set_xlabel(r'$\phi\;(\mathrm{deg})$')
         ax.set_ylabel(r'$A_{LU}(\phi)$')
 
-        # Title with <xi>
         ax.set_title(
             (r'$\langle Q^2\rangle={:.2f}\,\mathrm{{GeV}}^2,\;\langle x_B\rangle={:.3f},\;\langle \xi\rangle={:.3f},\;'
              r'\langle -t\rangle={:.3f}\,\mathrm{{GeV}}^2,\;\langle E_b\rangle={:.2f}\,\mathrm{{GeV}}$'
@@ -372,7 +372,6 @@ def main():
 
         ax.legend(loc='upper right', frameon=True, edgecolor='k')
 
-        # Red warning if bin is outside of fit range
         if outside:
             ax.text(0.02, 0.05, "bin outside of fit range",
                     transform=ax.transAxes, color='crimson',
