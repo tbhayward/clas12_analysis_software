@@ -372,6 +372,7 @@ void negLogLikelihood_single_hadron(Int_t &npar, Double_t *gin, Double_t &f,
 
   // Initial definitions (move outside the loop)
   double dilution_factor = dilutionFactors[currentBin].first;
+  double Df = dilution_factor
   double sigmaDf = dilutionFactors[currentBin].second;
   // // Su22
   // double sigmaPb = 0.0086;
