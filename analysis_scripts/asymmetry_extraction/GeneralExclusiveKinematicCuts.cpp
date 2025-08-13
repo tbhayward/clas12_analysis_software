@@ -75,7 +75,6 @@ bool GeneralExclusiveKinematicCuts::applyCuts(int currentFits, bool isMC)
         double pi_p   = *p_p;
         double pi_th  = *p_theta;
         double pi_ph  = *p_phi;
-        double t_val = compute_t_scalar(rn, ec_p, ec_th, ec_ph, pi_p, pi_th, pi_ph);
 
         goodEvent = goodEvent && *fiducial_status == 111 && std::fabs(*t) <= 1.0 &&
             *Mx2 > 0.80 && *Mx2 < 1.00;
