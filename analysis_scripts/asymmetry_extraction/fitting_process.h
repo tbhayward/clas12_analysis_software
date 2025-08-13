@@ -48,14 +48,16 @@ void performChi2Fits_eppi0(const char* output_file, const char* kinematic_file, 
 
 // === GeneralExclusive (simultaneous) ===
 void performChi2Fits_GeneralExclusive(const char* outFile, const char* kinFile,
-  const char* kinPlotFile, const std::string& binLabel);
+  const char* kinPlotFile, const std::string& prefix);
 
-// Wrapper that reuses your single-hadron histogram maker three times (BSA/TSA/DSA)
-void createHistogramForBin_GeneralExclusive(const std::string& binLabel,
+// Build the three phi-binned asymmetry histograms for a given bin.
+void createHistogramForBin_GeneralExclusive(const std::string& prefix, int binIndex,
   TH1D*& hBSA, TH1D*& hTSA, TH1D*& hDSA);
 
-// Draw the three hists and overlay best-fit curves; save canvases
-void plotHistogramAndFit_GeneralExclusive(TH1D* hBSA, TH1D* hTSA, TH1D* hDSA,
-  const double pars[7], const std::string& binLabel, const char* kinPlotFile);
+// Plot hists + best-fit curves (3 pads) and save a PNG per bin.
+void plotHistogramAndFit_GeneralExclusive(TH1D* hBSA, TH1D* hTSA, TH1D* hDSA, const double pars[7],
+  // dep means for overlay curves
+  double depA, double depB, double depC, double depV, double depW,
+  const std::string& prefix, int binIndex, const char* kinPlotFile);
 
 #endif // FITTING_PROCESS_H
