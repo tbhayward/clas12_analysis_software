@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 plot_BSA_CFFs_from_fit.py  —  ALU(φ) with BH-only denominator for theory,
-and (A,B,C) fitted to data.
+and (A,B,C) fitted to data. Shows <xi> and flags bins outside the fit range.
 
 Theory curves:
   • BKM (ALU):  A = (R * s1_I^BKM) / c0_BH      with R=(xB/y)*(1+eps^2)^2
@@ -38,10 +38,25 @@ def _load_dvcs_once():
 
 
 # ─────────────────────── fit-file parsing ───────────────────────────
+def _parse_range_line(line, key_a, key_b):
+    """Helper for lines like: 'xi_min 0.06  xi_max 0.23' (robust to spacing)."""
+    toks = line.split()
+    out = {}
+    try:
+        # tokens: key_a, val_a, key_b, val_b
+        if len(toks) >= 4:
+            va = toks[1]; vb = toks[3]
+            out[key_a] = float(va) if va.upper() != "NA" else None
+            out[key_b] = float(vb) if vb.upper() != "NA" else None
+    except ValueError:
+        pass
+    return out
+
 def parse_fit_results(fname):
     with open(fname) as f:
         lines = [l.strip() for l in f if l.strip()]
 
+    # flags
     flags_line = next((l for l in lines
                        if re.match(r'^\s*H\s+[01]\s+Ht\s+[01]\s+E\s+[01]\s+Et\s+[01]\s*$', l)), None)
     if flags_line is None:
@@ -51,6 +66,7 @@ def parse_fit_results(fname):
     toks = flags_line.split()
     flags = {toks[i]: int(toks[i+1]) for i in range(0, len(toks), 2)}
 
+    # parameter names/values
     pnames, pvals = [], None
     for i, l in enumerate(lines):
         if l.startswith("# parameters"):
@@ -61,9 +77,20 @@ def parse_fit_results(fname):
         raise RuntimeError("Couldn't parse parameter names/values from fit file")
     param_map_fit = dict(zip(pnames, pvals))
 
+    # optional input
     input_path = next((l.split(None, 1)[1].strip()
                        for l in lines if l.startswith("input")), None)
-    return flags, param_map_fit, input_path
+
+    # kinematic ranges (if present)
+    ranges = {'xi_min':None, 'xi_max':None, 'mt_min':None, 'mt_max':None}
+    for l in lines:
+        if l.startswith("xi_min"):
+            ranges.update(_parse_range_line(l, "xi_min", "xi_max"))
+        elif l.startswith("-t_min"):
+            tmp = _parse_range_line(l, "mt_min", "mt_max")
+            ranges.update(tmp)
+
+    return flags, param_map_fit, input_path, ranges
 
 
 # ───────────────────── data loader (φ-binned) ───────────────────────
@@ -200,9 +227,9 @@ def fit_data_ABC(phi_deg, y, yerr, *, order, A0, B0, C0):
     f = ROOT.TF1("f_data_fit", formula, 0, 360)
     f.SetParameters(float(A0), float(B0), float(C0))
     if order == 1:
-        f.FixParameter(2, 0.0)  # no cos2φ term
+        f.FixParameter(2, 0.0)
 
-    gr.Fit(f, "Q0R")  # quiet, no draw, respect range
+    gr.Fit(f, "Q0R")
 
     A  = float(f.GetParameter(0)); dA = float(f.GetParError(0))
     B  = float(f.GetParameter(1)); dB = float(f.GetParError(1))
@@ -224,7 +251,7 @@ def main():
     args = ap.parse_args()
 
     # Parse fit file and choose data file
-    flags_fit, param_map_fit, input_path = parse_fit_results(args.fitfile)
+    flags_fit, param_map_fit, input_path, ranges = parse_fit_results(args.fitfile)
     datafile = (args.data or input_path or 'imports/rgk_preliminary_bsa.txt')
     print(">> Using data file:", datafile)
     print(">> Fit flags:", flags_fit)
@@ -250,6 +277,10 @@ def main():
     for ibin, b in enumerate(bins, start=1):
         phi_data, A_data, dA = b["phi"], b["A"], b["sigA"]
         Q2m, xBm, tm, Ebm = b["Q2m"], b["xBm"], b["tm"], b["Ebm"]
+
+        # Derived kinematics
+        xi_m = xBm / (2.0 - xBm)
+        mt_m = abs(tm)
 
         # Dense φ for smooth curves
         phi_grid = np.linspace(0.0, 360.0, 361)
@@ -281,32 +312,37 @@ def main():
         )
         data_curve = alu_curve(phi_grid, fit_res["A"], fit_res["B"], fit_res["C"], order=args.approx_order)
 
+        # Out-of-fit-range check (xi, -t)
+        outside = False
+        if ranges.get('xi_min') is not None and ranges.get('xi_max') is not None:
+            if not (ranges['xi_min'] <= xi_m <= ranges['xi_max']):
+                outside = True
+        if ranges.get('mt_min') is not None and ranges.get('mt_max') is not None:
+            if not (ranges['mt_min'] <= mt_m <= ranges['mt_max']):
+                outside = True
+
         # ── Diagnostics (first bin) ──
         if args.debug and ibin == 1:
             print(f"\n=== Diagnostics for bin {ibin:02d} ===")
-            print(f"  <Q2>= {Q2m:6.3f} GeV^2, <xB>= {xBm:0.3f}, <-t>= {abs(tm):0.3f} GeV^2, <Eb>= {Ebm:0.2f} GeV")
-            print("  (1) K-factor & s1_I ratio:")
+            print(f"  <Q2>= {Q2m:6.3f} GeV^2, <xB>= {xBm:0.3f}, <xi>= {xi_m:0.3f}, <-t>= {mt_m:0.3f} GeV^2, <Eb>= {Ebm:0.2f} GeV")
+            print("  (range check) xi_min/max =", ranges.get('xi_min'), ranges.get('xi_max'),
+                  " | -t_min/max =", ranges.get('mt_min'), ranges.get('mt_max'),
+                  " | outside?", outside)
             ratio = (s1I_rgk / s1I_bkm) if abs(s1I_bkm) > 0 else float('nan')
-            print(f"      R_BKM = {R_bkm:.5f},  R_RGK = {R_rgk:.5f}")
-            print(f"      s1_I(BKM) = {s1I_bkm:.6e},  s1_I(RGK) = {s1I_rgk:.6e},  ratio RGK/BKM = {ratio:.6f}")
-            print(f"      A1_BKM = {A1_bkm:.6e},  A1_RGK = {A1_rgk:.6e}")
-            print("  (2) BH B,C used for theory:")
-            print(f"      B_BH = -c1/c0 = {B_bh:.6f},  C_BH = c2/c0 = {C_bh:.6f}")
+            print(f"  R_BKM={R_bkm:.5f}, R_RGK={R_rgk:.5f}, s1I(BKM)={s1I_bkm:.6e}, s1I(RGK)={s1I_rgk:.6e}, ratio={ratio:.6f}")
+            print(f"  A1_BKM={A1_bkm:.6e}, A1_RGK={A1_rgk:.6e}")
+            print(f"  BH B,C for theory: B_BH={B_bh:.6f}, C_BH={C_bh:.6f}")
             comp_bkm = s1I_components(Q2m, xBm, tm, Ebm, param_map=params_bkm,    flags=flags_bkm)
             comp_rgk = s1I_components(Q2m, xBm, tm, Ebm, param_map=param_map_fit, flags=flags_fit)
             tot_bkm = comp_bkm['H'] + comp_bkm['Ht'] + comp_bkm['E']
             tot_rgk = comp_rgk['H'] + comp_rgk['Ht'] + comp_rgk['E']
-            print("  (3) s1_I components (Im H / Im H~ / Im E):")
-            print(f"      BKM: H={comp_bkm['H']:.6e}, H~={comp_bkm['Ht']:.6e}, E={comp_bkm['E']:.6e}  -> total={tot_bkm:.6e}")
-            print(f"      RGK: H={comp_rgk['H']:.6e}, H~={comp_rgk['Ht']:.6e}, E={comp_rgk['E']:.6e}  -> total={tot_rgk:.6e}")
-            print("  (4) Data fit results (free A,B[,C]):")
-            print(f"      A = {fit_res['A']:.6f} ± {fit_res['dA']:.6f}")
-            print(f"      B = {fit_res['B']:.6f} ± {fit_res['dB']:.6f}")
-            if args.approx_order == 2:
-                print(f"      C = {fit_res['C']:.6f} ± {fit_res['dC']:.6f}")
-            print(f"      χ²/ndf = {fit_res['chi2']:.2f}/{fit_res['ndf']} = "
-                  f"{(fit_res['chi2']/fit_res['ndf']) if fit_res['ndf']>0 else float('nan'):.2f}")
-            # restore RGK globals after diagnostics component toggles
+            print(f"  s1_I components BKM: H={comp_bkm['H']:.6e}, H~={comp_bkm['Ht']:.6e}, E={comp_bkm['E']:.6e} -> {tot_bkm:.6e}")
+            print(f"  s1_I components RGK: H={comp_rgk['H']:.6e}, H~={comp_rgk['Ht']:.6e}, E={comp_rgk['E']:.6e} -> {tot_rgk:.6e}")
+            print(f"  Data fit: A={fit_res['A']:.6f}±{fit_res['dA']:.6f}, B={fit_res['B']:.6f}±{fit_res['dB']:.6f}"
+                  + (f", C={fit_res['C']:.6f}±{fit_res['dC']:.6f}" if args.approx_order==2 else "")
+                  + f",  χ²/ndf={fit_res['chi2']:.2f}/{fit_res['ndf']}")
+
+            # restore RGK globals after component toggles
             push_globals(param_map_fit, flags_fit, label="RGK-fit-restore")
 
         # --- Plot ---
@@ -325,18 +361,28 @@ def main():
         ax.set_ylim(-0.6, 0.6)
         ax.set_xlabel(r'$\phi\;(\mathrm{deg})$')
         ax.set_ylabel(r'$A_{LU}(\phi)$')
+
+        # Title with <xi>
         ax.set_title(
-            (r'$\langle Q^2\rangle={:.2f}\,\mathrm{{GeV}}^2,\;\langle x_B\rangle={:.3f},\;'
+            (r'$\langle Q^2\rangle={:.2f}\,\mathrm{{GeV}}^2,\;\langle x_B\rangle={:.3f},\;\langle \xi\rangle={:.3f},\;'
              r'\langle -t\rangle={:.3f}\,\mathrm{{GeV}}^2,\;\langle E_b\rangle={:.2f}\,\mathrm{{GeV}}$'
-            ).format(Q2m, xBm, abs(tm), Ebm),
+            ).format(Q2m, xBm, xi_m, mt_m, Ebm),
             pad=12
         )
+
         ax.legend(loc='upper right', frameon=True, edgecolor='k')
+
+        # Red warning if bin is outside of fit range
+        if outside:
+            ax.text(0.02, 0.05, "bin outside of fit range",
+                    transform=ax.transAxes, color='crimson',
+                    fontsize=11, fontweight='bold')
+
         plt.tight_layout()
 
         outname = os.path.join(
             args.outdir,
-            f"ALU_bin{ibin:02d}_{ts}_Q2_{Q2m:.2f}_xB_{xBm:.3f}_mt_{abs(tm):.3f}_ord{args.approx_order}.pdf"
+            f"ALU_bin{ibin:02d}_{ts}_Q2_{Q2m:.2f}_xB_{xBm:.3f}_xi_{xi_m:.3f}_mt_{mt_m:.3f}_ord{args.approx_order}.pdf"
         )
         fig.savefig(outname)
         print(f">> Saved bin {ibin} plot to {outname}")
