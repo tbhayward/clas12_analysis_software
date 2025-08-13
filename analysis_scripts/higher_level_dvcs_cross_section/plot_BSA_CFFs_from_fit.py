@@ -1,27 +1,21 @@
 #!/usr/bin/env python3
 """
-plot_BSA_CFFs_from_fit.py
+plot_BSA_CFFs_from_fit.py  —  ALU(φ) with BH-only denominator for theory,
+and (A,B,C) fitted to data.
 
-ALU(φ) in BH-only approximation (Trento φ):
-  A_LU(φ) ≈ [ R * s1_I * sinφ ] / [ c0_BH − c1_BH cosφ (+ c2_BH cos2φ if order=2) ],
-  with R = (xB / y) * (1 + eps^2)^2 and s1_I from the interference (Im–CFFs).
+Theory curves:
+  • BKM (ALU):  A = (R * s1_I^BKM) / c0_BH      with R=(xB/y)*(1+eps^2)^2
+  • RGK (ALU):  A = (s1_I^fit)   / c0_BH        (R absorbed in the Im–CFF fit)
 
-We plot per (Q2, xB, t, Eb) bin:
-  • BKM       — defaults (H, H~, E on; E~ set harmless)  → "BKM"
-  • RGK fit   — your Im–CFFs per fit file flags         → "RGK fit"
+Data curve:
+  • Fit A,B,(C) in  A*sinφ / (1 + B cosφ [+ C cos2φ])  by weighted least squares.
 
 Usage:
-  python plot_BSA_CFFs_from_fit.py output/fit_results/fit_results_<TIMESTAMP>.txt
+  python plot_BSA_CFFs_from_fit.py output/fit_results/fit_results_<TS>.txt
          [--data PATH]
-         [--approx-order {1,2}]    # denominator with c0−c1 cosφ (1) or c0−c1 cosφ + c2 cos2φ (2)
+         [--approx-order {1,2}]    # 1: fit A,B ; 2: fit A,B,C
          [--outdir output/plots]
          [--debug]
-
-Notes
------
-• BH harmonics depend only on kinematics & proton FFs (not CFFs), so B and C are identical for BKM/RGK.
-• s1_I depends on Im–CFFs; R is purely kinematic. We include R in BOTH curves (true ALU).
-• Diagnostic printout for the first bin shows R, s1_I, B,C, and s1_I components (respecting fit flags).
 """
 
 import os, re, argparse
@@ -32,7 +26,6 @@ import ROOT  # PyROOT
 
 # ──────────────────────────── C++ loader ────────────────────────────
 def _load_dvcs_once():
-    """Load DVCS_xsec.C exactly once into cling."""
     if getattr(_load_dvcs_once, "_done", False):
         return
     ROOT.gInterpreter.Declare(r"""
@@ -49,7 +42,6 @@ def parse_fit_results(fname):
     with open(fname) as f:
         lines = [l.strip() for l in f if l.strip()]
 
-    # flags line like: "H 1 Ht 0 E 1 Et 0"
     flags_line = next((l for l in lines
                        if re.match(r'^\s*H\s+[01]\s+Ht\s+[01]\s+E\s+[01]\s+Et\s+[01]\s*$', l)), None)
     if flags_line is None:
@@ -59,7 +51,6 @@ def parse_fit_results(fname):
     toks = flags_line.split()
     flags = {toks[i]: int(toks[i+1]) for i in range(0, len(toks), 2)}
 
-    # parameter names/values
     pnames, pvals = [], None
     for i, l in enumerate(lines):
         if l.startswith("# parameters"):
@@ -70,10 +61,8 @@ def parse_fit_results(fname):
         raise RuntimeError("Couldn't parse parameter names/values from fit file")
     param_map_fit = dict(zip(pnames, pvals))
 
-    # optional input
     input_path = next((l.split(None, 1)[1].strip()
                        for l in lines if l.startswith("input")), None)
-
     return flags, param_map_fit, input_path
 
 
@@ -125,7 +114,6 @@ def bkm_defaults():
 def push_globals(param_map, flags, *, safety_disable_Et=True, label=""):
     ROOT.gInterpreter.ProcessLine("hasH=0; hasHt=0; hasE=0; hasEt=0;")
 
-    # Defensive Et handling (avoid t/0)
     et_flag = int(flags.get("Et", 0))
     if safety_disable_Et and et_flag:
         M2 = float(param_map.get("M2_Et", 0.0))
@@ -151,7 +139,6 @@ def push_globals(param_map, flags, *, safety_disable_Et=True, label=""):
     for cff in ("H","Ht","E","Et"):
         for k in ("r","n","alpha0","alpha1","b","M2","P"):
             setp(f"{k}_{cff}")
-
     for cff in ("H","Ht","E","Et"):
         for k in ("C0","MD2","lambda"):
             setp(f"{k}_{cff}")
@@ -159,12 +146,10 @@ def push_globals(param_map, flags, *, safety_disable_Et=True, label=""):
 
 # ───────────── helpers: BH coeffs, s1_I, K, components ─────────────
 def bh_coeffs(Q2, xB, t, Eb):
-    """Return c0,c1,c2 for fixed kinematics (independent of φ)."""
     dv = ROOT.BMK_DVCS(-1, +1, 0, Eb, xB, Q2, t, 0.0)
     return float(dv.c0_BH()), float(dv.c1_BH()), float(dv.c2_BH())
 
 def s1I_and_K(Q2, xB, t, Eb):
-    """Return (s1_I, R, y, eps2) at the given kinematics, with current globals."""
     dv = ROOT.BMK_DVCS(-1, +1, 0, Eb, xB, Q2, t, 0.0)
     s1I  = float(dv.s1_I())
     y    = float(dv.y)
@@ -173,14 +158,11 @@ def s1I_and_K(Q2, xB, t, Eb):
     return s1I, R, y, eps2
 
 def s1I_components(Q2, xB, t, Eb, *, param_map, flags):
-    """Return dict with H,Ht,E components for s1_I, respecting 'flags' (inactive→0)."""
     out = {'H':0.0, 'Ht':0.0, 'E':0.0}
-    # Work CFF-by-CFF, only if active in flags
     for cff in ('H','Ht','E'):
         if not int(flags.get(cff,0)):
             out[cff] = 0.0
             continue
-        # enable only this CFF
         fl = {'H':0,'Ht':0,'E':0,'Et':0}
         fl[cff] = 1
         push_globals(param_map, fl, label=f"comp-{cff}")
@@ -201,21 +183,48 @@ def alu_curve(phi_deg, A1, B1, C1=0.0, order=1):
     return A1 * np.sin(ph) / denom
 
 
+# ─────────── weighted fit of (A,B[,C]) to data using ROOT ──────────
+def fit_data_ABC(phi_deg, y, yerr, *, order, A0, B0, C0):
+    n = len(phi_deg)
+    gr = ROOT.TGraphErrors(n)
+    for i in range(n):
+        gr.SetPoint(i, float(phi_deg[i]), float(y[i]))
+        gr.SetPointError(i, 0.0, float(yerr[i]))
+
+    if order == 2:
+        formula = ("[0]*sin(x*TMath::Pi()/180.)"
+                   "/(1 + [1]*cos(x*TMath::Pi()/180.) + [2]*cos(2*x*TMath::Pi()/180.))")
+    else:
+        formula = ("[0]*sin(x*TMath::Pi()/180.)"
+                   "/(1 + [1]*cos(x*TMath::Pi()/180.))")
+    f = ROOT.TF1("f_data_fit", formula, 0, 360)
+    f.SetParameters(float(A0), float(B0), float(C0))
+    if order == 1:
+        f.FixParameter(2, 0.0)  # no cos2φ term
+
+    gr.Fit(f, "Q0R")  # quiet, no draw, respect range
+
+    A  = float(f.GetParameter(0)); dA = float(f.GetParError(0))
+    B  = float(f.GetParameter(1)); dB = float(f.GetParError(1))
+    C  = float(f.GetParameter(2)) if order == 2 else 0.0
+    dC = float(f.GetParError(2)) if order == 2 else 0.0
+    chi2 = float(f.GetChisquare()); ndf = int(f.GetNDF())
+    return dict(A=A, dA=dA, B=B, dB=dB, C=C, dC=dC, chi2=chi2, ndf=ndf)
+
+
 # ───────────────────────────── main ───────────────────────────────
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument('fitfile', help='fit_results_<TIMESTAMP>.txt from your fitter')
     ap.add_argument('--data', default=None, help='Override BSA data file; else use "input" in fit file or fallback')
     ap.add_argument('--approx-order', type=int, choices=[1,2], default=1,
-                    help='Use c0−c1 cosφ (1) or c0−c1 cosφ + c2 cos2φ (2) in the BH denominator')
+                    help='Denominator order for theory AND for data fit: 1→A,B ; 2→A,B,C')
     ap.add_argument('--outdir', default='output/plots', help='Output directory for PDFs')
     ap.add_argument('--debug', action='store_true', help='Print detailed diagnostics for the first bin')
     args = ap.parse_args()
 
-    # Parse fit file
+    # Parse fit file and choose data file
     flags_fit, param_map_fit, input_path = parse_fit_results(args.fitfile)
-
-    # Data file
     datafile = (args.data or input_path or 'imports/rgk_preliminary_bsa.txt')
     print(">> Using data file:", datafile)
     print(">> Fit flags:", flags_fit)
@@ -223,7 +232,7 @@ def main():
     # Load C++
     _load_dvcs_once()
 
-    # Load bins
+    # Load φ-bins
     bins = load_bins(datafile)
     print(f">> Found {len(bins)} φ-bins")
 
@@ -233,63 +242,83 @@ def main():
     flags_bkm = {'H':1,'Ht':1,'E':1,'Et':0}
     params_bkm = bkm_defaults()
 
-    # Timestamp tag from fitfile name (if present)
+    # Timestamp tag from fitfile name
     m = re.search(r'fit_results_(\d{8}_\d{6})\.txt$', os.path.basename(args.fitfile))
     ts = (m.group(1) if m else "noTS")
 
-    # Loop bins
+    # Loop over bins
     for ibin, b in enumerate(bins, start=1):
         phi_data, A_data, dA = b["phi"], b["A"], b["sigA"]
         Q2m, xBm, tm, Ebm = b["Q2m"], b["xBm"], b["tm"], b["Ebm"]
 
-        # Dense φ grid
+        # Dense φ for smooth curves
         phi_grid = np.linspace(0.0, 360.0, 361)
 
-        # --- BH coefficients (same for both curves) ---
-        # (BH depends only on kinematics+EM FFs; CFFs don't enter c_i^BH)
+        # --- BH coefficients (for theory curves) ---
         c0_bh, c1_bh, c2_bh = bh_coeffs(Q2m, xBm, tm, Ebm)
-
-        # form B,C in Trento φ: denom = c0 − c1 cosφ + c2 cos2φ = c0*(1 + B cosφ + C cos2φ)
         B_bh = -(c1_bh / c0_bh)
         C_bh =  (c2_bh / c0_bh) if args.approx_order == 2 else 0.0
 
-        # --- BKM curve (defaults) ---
+        # --- BKM theory (ALU) ---
         push_globals(params_bkm, flags_bkm, label="BKM")
-        s1I_bkm, R_bkm, y_bkm, eps2_bkm = s1I_and_K(Q2m, xBm, tm, Ebm)
+        s1I_bkm, R_bkm, *_ = s1I_and_K(Q2m, xBm, tm, Ebm)
         A1_bkm = (R_bkm * s1I_bkm) / c0_bh
         bkm_curve = alu_curve(phi_grid, A1_bkm, B_bh, C_bh, order=args.approx_order)
 
-        # --- RGK fit curve (your Im–CFFs & flags) ---
+        # --- RGK theory (ALU) ---
         push_globals(param_map_fit, flags_fit, label="RGK-fit")
-        s1I_rgk, R_rgk, y_rgk, eps2_rgk = s1I_and_K(Q2m, xBm, tm, Ebm)
-        A1_rgk = s1I_rgk / c0_bh   # same c0_bh
+        s1I_rgk, R_rgk, *_ = s1I_and_K(Q2m, xBm, tm, Ebm)
+        A1_rgk = (s1I_rgk) / c0_bh
         rgk_curve = alu_curve(phi_grid, A1_rgk, B_bh, C_bh, order=args.approx_order)
+
+        # --- Data fit: free (A,B[,C]) with BH values as starting guesses ---
+        A0_guess = float(np.nan_to_num(np.average(A_data, weights=1/np.maximum(dA,1e-9)**2)))
+        fit_res = fit_data_ABC(
+            phi_data, A_data, dA,
+            order=args.approx_order,
+            A0=A0_guess if np.isfinite(A0_guess) else A1_bkm,
+            B0=B_bh, C0=C_bh
+        )
+        data_curve = alu_curve(phi_grid, fit_res["A"], fit_res["B"], fit_res["C"], order=args.approx_order)
 
         # ── Diagnostics (first bin) ──
         if args.debug and ibin == 1:
             print(f"\n=== Diagnostics for bin {ibin:02d} ===")
             print(f"  <Q2>= {Q2m:6.3f} GeV^2, <xB>= {xBm:0.3f}, <-t>= {abs(tm):0.3f} GeV^2, <Eb>= {Ebm:0.2f} GeV")
             print("  (1) K-factor & s1_I ratio:")
-            print(f"      R_BKM = (xB/y)*(1+eps^2)^2 = {R_bkm:.5f}")
-            print(f"      R_RGK = (xB/y)*(1+eps^2)^2 = {R_rgk:.5f}")
             ratio = (s1I_rgk / s1I_bkm) if abs(s1I_bkm) > 0 else float('nan')
+            print(f"      R_BKM = {R_bkm:.5f},  R_RGK = {R_rgk:.5f}")
             print(f"      s1_I(BKM) = {s1I_bkm:.6e},  s1_I(RGK) = {s1I_rgk:.6e},  ratio RGK/BKM = {ratio:.6f}")
             print(f"      A1_BKM = {A1_bkm:.6e},  A1_RGK = {A1_rgk:.6e}")
-            print("  (2) BH denominators (Trento φ):")
-            print(f"      B = -c1/c0 = {B_bh:.6f},  C = c2/c0 = {C_bh:.6f}")
-            print("  (3) s1_I components (Im 𝓗 / Im 𝓗̃ / Im 𝓔), BKM vs RGK:")
+            print("  (2) BH B,C used for theory:")
+            print(f"      B_BH = -c1/c0 = {B_bh:.6f},  C_BH = c2/c0 = {C_bh:.6f}")
             comp_bkm = s1I_components(Q2m, xBm, tm, Ebm, param_map=params_bkm,    flags=flags_bkm)
             comp_rgk = s1I_components(Q2m, xBm, tm, Ebm, param_map=param_map_fit, flags=flags_fit)
             tot_bkm = comp_bkm['H'] + comp_bkm['Ht'] + comp_bkm['E']
             tot_rgk = comp_rgk['H'] + comp_rgk['Ht'] + comp_rgk['E']
-            print(f"      BKM: Im𝓗={comp_bkm['H']:.6e}, Im𝓗̃={comp_bkm['Ht']:.6e}, Im𝓔={comp_bkm['E']:.6e}  -> total={tot_bkm:.6e}")
-            print(f"      RGK: Im𝓗={comp_rgk['H']:.6e}, Im𝓗̃={comp_rgk['Ht']:.6e}, Im𝓔={comp_rgk['E']:.6e}  -> total={tot_rgk:.6e}")
+            print("  (3) s1_I components (Im H / Im H~ / Im E):")
+            print(f"      BKM: H={comp_bkm['H']:.6e}, H~={comp_bkm['Ht']:.6e}, E={comp_bkm['E']:.6e}  -> total={tot_bkm:.6e}")
+            print(f"      RGK: H={comp_rgk['H']:.6e}, H~={comp_rgk['Ht']:.6e}, E={comp_rgk['E']:.6e}  -> total={tot_rgk:.6e}")
+            print("  (4) Data fit results (free A,B[,C]):")
+            print(f"      A = {fit_res['A']:.6f} ± {fit_res['dA']:.6f}")
+            print(f"      B = {fit_res['B']:.6f} ± {fit_res['dB']:.6f}")
+            if args.approx_order == 2:
+                print(f"      C = {fit_res['C']:.6f} ± {fit_res['dC']:.6f}")
+            print(f"      χ²/ndf = {fit_res['chi2']:.2f}/{fit_res['ndf']} = "
+                  f"{(fit_res['chi2']/fit_res['ndf']) if fit_res['ndf']>0 else float('nan'):.2f}")
+            # restore RGK globals after diagnostics component toggles
+            push_globals(param_map_fit, flags_fit, label="RGK-fit-restore")
 
         # --- Plot ---
         fig, ax = plt.subplots(figsize=(8,5))
         ax.errorbar(phi_data, A_data, yerr=dA, fmt='o', ms=5, color='k', label='Data')
-        ax.plot(phi_grid, bkm_curve, '-',  lw=2, color='tab:blue',   label='BKM (ALU)')
-        ax.plot(phi_grid, rgk_curve, '-',  lw=2, color='tab:orange', label='RGK fit (ALU)')
+
+        ax.plot(phi_grid, bkm_curve, '-',  lw=2, color='tab:blue',
+                label=f'BKM (ALU): A={A1_bkm:.3f}')
+        ax.plot(phi_grid, rgk_curve, '-',  lw=2, color='tab:orange',
+                label=f'RGK fit (ALU): A={A1_rgk:.3f}')
+        ax.plot(phi_grid, data_curve, '--', lw=2, color='tab:green',
+                label=(f'Data fit: A={fit_res["A"]:.3f}±{fit_res["dA"]:.3f}'))
 
         ax.set_xlim(0, 360)
         ax.set_xticks([0,60,120,180,240,300,360])
