@@ -280,7 +280,7 @@ def plot_combined_only(p_comb, prefix, out_dir):
         s1 = p_comb["ALLcos"]
         axLL.errorbar(s1["x"], s1["y"], yerr=s1["yerr"],
                       fmt=MARKER, color=black, ecolor=black, capsize=CAPSIZE)
-    axLL.set(xlim=(0, 0.7), ylim=(-0.6, 0.6),
+    axLL.set(xlim=(0, 0.7), ylim=(-0.8, 0.8),
              xlabel=r"$x_{B}$", ylabel=r"$F_{LL}^{\cos n\phi}/F_{UU}$")
     axLL.axhline(0, color="black", linestyle="--", linewidth=1.2)
     axLL.grid(True, linestyle="--", alpha=0.6)
