@@ -381,22 +381,21 @@ void negLogLikelihood_single_hadron(Int_t &npar, Double_t *gin, Double_t &f,
   // double sigmaPb = 0.0045;
   // double sigmaPtp = 0.0272;
   // double sigmaPtm = 0.0404;
-  // Sp23
-  double sigmaPb = 0.0061;
-  double sigmaPtp = 0.0404;
-  double sigmaPtm = 0.0376;
+  // // Sp23
+  // double sigmaPb = 0.0061;
+  // double sigmaPtp = 0.0404;
+  // double sigmaPtm = 0.0376;
 
-  // Random number generation setup (outside the loop)
-  std::random_device rd;
-  std::mt19937 gen(rd());
+  // // Random number generation setup (outside the loop)
+  // std::random_device rd;
+  // std::mt19937 gen(rd());
 
-  // Normal distributions (outside the loop)
-  std::normal_distribution<> distDf(0.0, sigmaDf);
-  std::normal_distribution<> distPb(0.0, sigmaPb);
-  std::normal_distribution<> distStandard(0.0, 1.0); // Standard normal distribution
+  // // Normal distributions (outside the loop)
+  // std::normal_distribution<> distDf(0.0, sigmaDf);
+  // std::normal_distribution<> distPb(0.0, sigmaPb);
+  // std::normal_distribution<> distStandard(0.0, 1.0); // Standard normal distribution
 
   while (dataReader.Next()) {
-    // Apply kinematic cuts (this function will need to be adapted)
     bool passedKinematicCuts = kinematicCuts->applyCuts(currentFits, false);
     // Check if the currentVariable is within the desired range
     if (*currentVariable >= allBins[currentFits][currentBin] && 
@@ -1256,22 +1255,22 @@ void negLogLikelihood_b2b_dihadron(Int_t &npar, Double_t *gin, Double_t &f,
       double sigmaPtp = 0.025;
       double sigmaPtm = 0.025;
 
-      // Random number generation setup
-      std::random_device rd;
-      std::mt19937 gen(rd());
+      // // Random number generation setup
+      // std::random_device rd;
+      // std::mt19937 gen(rd());
 
-      // Normal distributions
-      std::normal_distribution<> distDf(0.0, sigmaDf);
-      std::normal_distribution<> distPb(0.0, sigmaPb);
+      // // Normal distributions
+      // std::normal_distribution<> distDf(0.0, sigmaDf);
+      // std::normal_distribution<> distPb(0.0, sigmaPb);
 
-      // Select sigma for Pt based on the sign of *target_pol
-      double sigmaPt = (*target_pol >= 0) ? sigmaPtp : sigmaPtm;
-      std::normal_distribution<> distPt(0.0, sigmaPt);
+      // // Select sigma for Pt based on the sign of *target_pol
+      // double sigmaPt = (*target_pol >= 0) ? sigmaPtp : sigmaPtm;
+      // std::normal_distribution<> distPt(0.0, sigmaPt);
 
-      // Adjust the values
-      Df += distDf(gen);
-      Pb += distPb(gen);
-      Pt += distPt(gen);
+      // // Adjust the values
+      // Df += distDf(gen);
+      // Pb += distPb(gen);
+      // Pt += distPt(gen);
 
       // Restore the sign of Pt
       double signPt = (*target_pol >= 0) ? 1.0 : -1.0;
@@ -1323,7 +1322,7 @@ void negLogLikelihood_b2b_dihadron(Int_t &npar, Double_t *gin, Double_t &f,
             (*DepW / *DepA)*ALU_sinphi1*sin(*phi1) +
             (*DepW / *DepA)*ALU_sinphi2*sin(*phi2) +
             (*DepC / *DepA)*ALU_sinDeltaphi*sin(*phi1 - *phi2) +
-            (*DepC / *DepA)*ALU_sinDeltaphi*sin(2**phi1 - 2**phi2)
+            (*DepC / *DepA)*ALU_sin2Deltaphi*sin(2**phi1 - 2**phi2)
           )
           // UL
           + Df*Pt*(
@@ -1344,7 +1343,7 @@ void negLogLikelihood_b2b_dihadron(Int_t &npar, Double_t *gin, Double_t &f,
         );
       }
       if (*helicity > 0 && *target_pol < 0) { 
-        sum_PP = sum_PM + log(1 +
+        sum_PM = sum_PM + log(1 +
           // UU
           (*DepV / *DepA)*AUU_cosphi1*cos(*phi1) +
           (*DepV / *DepA)*AUU_cosphi2*cos(*phi2) +
@@ -1356,7 +1355,7 @@ void negLogLikelihood_b2b_dihadron(Int_t &npar, Double_t *gin, Double_t &f,
             (*DepW / *DepA)*ALU_sinphi1*sin(*phi1) +
             (*DepW / *DepA)*ALU_sinphi2*sin(*phi2) +
             (*DepC / *DepA)*ALU_sinDeltaphi*sin(*phi1 - *phi2) +
-            (*DepC / *DepA)*ALU_sinDeltaphi*sin(2**phi1 - 2**phi2)
+            (*DepC / *DepA)*ALU_sin2Deltaphi*sin(2**phi1 - 2**phi2)
           )
           // UL
           - Df*Pt*(
@@ -1389,7 +1388,7 @@ void negLogLikelihood_b2b_dihadron(Int_t &npar, Double_t *gin, Double_t &f,
             (*DepW / *DepA)*ALU_sinphi1*sin(*phi1) +
             (*DepW / *DepA)*ALU_sinphi2*sin(*phi2) +
             (*DepC / *DepA)*ALU_sinDeltaphi*sin(*phi1 - *phi2) +
-            (*DepC / *DepA)*ALU_sinDeltaphi*sin(2**phi1 - 2**phi2)
+            (*DepC / *DepA)*ALU_sin2Deltaphi*sin(2**phi1 - 2**phi2)
           )
           // UL
           - Df*Pt*(
@@ -1429,11 +1428,11 @@ void negLogLikelihood_b2b_dihadron(Int_t &npar, Double_t *gin, Double_t &f,
     if (*mc_currentVariable >= allBins[currentFits][currentBin] && 
           *mc_currentVariable < allBins[currentFits][currentBin + 1] && passedKinematicCuts) {
       NUU+=1+
-        (*DepV / *DepA)*AUU_cosphi1*cos(*mc_phi1) +
-        (*DepV / *DepA)*AUU_cosphi2*cos(*mc_phi2) +
-        (*DepB / *DepA)*AUU_cos2phi1*cos(2**mc_phi1) +
-        (*DepB / *DepA)*AUU_cos2phi2*cos(2**mc_phi2) +
-        (*DepB / *DepA)*AUU_cosSumphi*cos(*mc_phi1 + *mc_phi2);
+        (*mc_DepV / *mc_DepA)*AUU_cosphi1*cos(*mc_phi1) +
+        (*mc_DepV / *mc_DepA)*AUU_cosphi2*cos(*mc_phi2) +
+        (*mc_DepB / *mc_DepA)*AUU_cos2phi1*cos(2**mc_phi1) +
+        (*mc_DepB / *mc_DepA)*AUU_cos2phi2*cos(2**mc_phi2) +
+        (*mc_DepB / *mc_DepA)*AUU_cosSumphi*cos(*mc_phi1 + *mc_phi2);
     }
   }
   mcReader.Restart();  // Reset the TTreeReader at the end of the function
@@ -1925,13 +1924,13 @@ TH2D* createHistogramForBin_b2b_dihadron(const char* histName, int binIndex,
     for (int iBinY = 1; iBinY <= nPhiBins; ++iBinY) {
       // Calculate asymmetry and error for each bin
       double Npp = histPosPos->GetBinContent(iBinX, iBinY) / cpp;
-      double Npm = histPosNeg->GetBinContent(iBinX, iBinY) / cpp;
-      double Nmp = histNegPos->GetBinContent(iBinX, iBinY) / cpp;
-      double Nmm = histNegNeg->GetBinContent(iBinX, iBinY) / cpp;
+      double Npm = histPosNeg->GetBinContent(iBinX, iBinY) / cpm;
+      double Nmp = histNegPos->GetBinContent(iBinX, iBinY) / cmp;
+      double Nmm = histNegNeg->GetBinContent(iBinX, iBinY) / cmm;
       double asymmetry = asymmetry_value_calculation(meanVariable, prefix, 
-        Npp, Npm, Nmp, Nmm, meanPol, Ptp, Ptm, asymmetry_index);
+        Npp*cpp, Npm*cpm, Nmp*cmp, Nmm*cmm, meanPol, Ptp, Ptm, asymmetry_index);
       double error = asymmetry_error_calculation(meanVariable, prefix, 
-        Npp, Npm, Nmp, Nmm, meanPol, Ptp, Ptm, asymmetry_index);
+        Npp*cpp, Npm*cpm, Nmp*cmp, Nmm*cmm, meanPol, Ptp, Ptm, asymmetry_index);
 
       histAsymmetry->SetBinContent(iBinX, iBinY, asymmetry);
       histAsymmetry->SetBinError(iBinX, iBinY, error);
@@ -2508,9 +2507,9 @@ TH1D* createHistogramForBin_dvcs(const char* histName, int binIndex,
 
     // Calculate the asymmetry and error for the current bin
     double asymmetry = asymmetry_value_calculation(meanVariable, prefix, 
-      Npp, Npm, Nmp, Nmm, meanPol, Ptp, Ptm, asymmetry_index);
+      Npp*cpp, Npm*cpm, Nmp*cmp, Nmm*cmm, meanPol, Ptp, Ptm, asymmetry_index);
     double error = asymmetry_error_calculation(meanVariable, prefix, 
-      Npp, Npm, Nmp, Nmm, meanPol, Ptp, Ptm, asymmetry_index);
+      Npp*cpp, Npm*cpm, Nmp*cmp, Nmm*cmm, meanPol, Ptp, Ptm, asymmetry_index);
 
     // Fill the asymmetry histogram with the calculated values
     histAsymmetry->SetBinContent(iBin, asymmetry);
@@ -2542,7 +2541,7 @@ void performChi2Fits_dvcs(const char* output_file, const char* kinematic_file,
   meanVariablesStream << "\\centering" << endl;
   meanVariablesStream << "\\begin{tabular}{|c|c|c|c|c|} \\hline" << endl;
   meanVariablesStream << "Bin & $<Q^2>$ & $<W>$ ";
-  meanVariablesStream << "& $<x_B>$ & $<y>$ & ";
+  meanVariablesStream << "& $<x_B>$ & $<y>$ & $<t>$";
   meanVariablesStream << "& $<t>$ \\hline" << endl; 
 
   // Initalize string stream to store the kinematics in each bin for use in plotting 
@@ -3242,5 +3241,460 @@ void performChi2Fits_eppi0(const char* output_file, const char* kinematic_file,
     // Write the string stream content to the file
     kinematicPlot_File << meanVariablesPlotStream.str() << std::endl;
     kinematicPlot_File.close();
+  }
+}
+
+
+/******************** General Exclusive CASE ********************/
+
+/******************** GENERAL EXCLUSIVE (Simultaneous BSA/TSA/DSA) ********************/
+
+// --- Small context to pass histograms to Minuit FCN ---
+namespace {
+  struct GEChi2Context {
+    TH1D* hLU  = nullptr;  // BSA histogram  (A_LU vs phi)
+    TH1D* hUL  = nullptr;  // TSA histogram  (A_UL vs phi)
+    TH1D* hLL  = nullptr;  // DSA histogram  (A_LL vs phi)
+  };
+  static GEChi2Context g_ge_ctx;
+
+  // par[0] = ALU_offset
+  // par[1] = AUL_offset
+  // par[2] = ALU_sinphi
+  // par[3] = AUL_sinphi
+  // par[4] = AUL_sin2phi
+  // par[5] = ALL
+  // par[6] = ALL_cosphi
+  void chi2Fcn_GeneralExclusive(Int_t&, Double_t*, Double_t& f, Double_t* par, Int_t) {
+    double chi2 = 0.0;
+    auto accum = [&](TH1D* h, auto model){
+      if (!h) return;
+      int nb = h->GetNbinsX();
+      for (int i = 1; i <= nb; ++i) {
+        double x  = h->GetBinCenter(i);
+        double y  = h->GetBinContent(i);
+        double ey = h->GetBinError(i);
+        if (ey <= 0) continue;
+        double yhat = model(x, par);
+        double pull = (y - yhat) / ey;
+        chi2 += pull * pull;
+      }
+    };
+
+    // Models in the "chi2-fit space" (raw amplitudes; depolarization applied after fit)
+    auto mLU = [](double x, Double_t* p){ // A_LU(phi) = offset + A*sin(phi)
+      return p[0] + p[2]*sin(x);
+    };
+    auto mUL = [](double x, Double_t* p){ // A_UL(phi) = offset + A1*sin(phi) + A2*sin(2phi)
+      return p[1] + p[3]*sin(x) + p[4]*sin(2*x);
+    };
+    auto mLL = [](double x, Double_t* p){ // A_LL(phi) = A0 + A1*cos(phi)
+      return p[5] + p[6]*cos(x);
+    };
+
+    accum(g_ge_ctx.hLU, mLU);
+    accum(g_ge_ctx.hUL, mUL);
+    accum(g_ge_ctx.hLL, mLL);
+
+    f = chi2;
+  }
+} // namespace
+
+// Build three asymmetry histograms (BSA/TSA/DSA) for one kinematic bin
+// Returns { hALU(phi), hAUL(phi), hALL(phi) }
+static std::tuple<TH1D*, TH1D*, TH1D*>
+createHistogramForBin_GeneralExclusive(const char* histBaseName, int binIndex, const std::string& prefix) {
+
+  // Variable range for this kinematic bin
+  const double varMin = allBins[currentFits][binIndex];
+  const double varMax = allBins[currentFits][binIndex + 1];
+
+  // 4-yield histograms (per helicity/target state) to build asymmetries per phi-bin
+  const int nPhiBins = 12;
+  TH1D* ppp = new TH1D(Form("%s_pp", histBaseName), "", nPhiBins, 0, 2*TMath::Pi()); // +beam +target
+  TH1D* ppm = new TH1D(Form("%s_pm", histBaseName), "", nPhiBins, 0, 2*TMath::Pi()); // +beam -target
+  TH1D* pmp = new TH1D(Form("%s_mp", histBaseName), "", nPhiBins, 0, 2*TMath::Pi()); // -beam +target
+  TH1D* pmm = new TH1D(Form("%s_mm", histBaseName), "", nPhiBins, 0, 2*TMath::Pi()); // -beam -target
+
+  // to compute mean polarizations for this bin (used by asymmetry_value/error_calculation)
+  double sumPol = 0.0;
+  double sumTargetPosPol = 0.0, sumTargetNegPol = 0.0;
+  int    nPosT = 0, nNegT = 0;
+  double sumVar = 0.0, nEvt = 0.0;
+
+  // Readers
+  TTreeReaderValue<int>    runnum(dataReader, "runnum");
+  TTreeReaderValue<int>    helicity(dataReader, "helicity");
+  TTreeReaderValue<double> target_pol(dataReader, "target_pol");
+  TTreeReaderValue<double> beam_pol  (dataReader, "beam_pol");
+  TTreeReaderValue<double> phi       (dataReader, "phi");
+  TTreeReaderValue<double> currentVariable(dataReader, propertyNames[currentFits].c_str());
+
+  while (dataReader.Next()) {
+    if (!kinematicCuts->applyCuts(currentFits, false)) continue;
+    if (*currentVariable < varMin || *currentVariable >= varMax) continue;
+
+    sumVar += *currentVariable; nEvt += 1.0;
+    sumPol += *beam_pol;
+    if (*target_pol > 0) { sumTargetPosPol += *target_pol; ++nPosT; }
+    else if (*target_pol < 0) { sumTargetNegPol += *target_pol; ++nNegT; }
+
+    if (*helicity > 0 && *target_pol < 0) { ppm->Fill(*phi); }
+    else if (*helicity < 0 && *target_pol > 0) { pmp->Fill(*phi); }
+
+    if (*helicity > 0 && (*target_pol >= 0)) { ppp->Fill(*phi); }
+    else if (*helicity < 0 && (*target_pol <= 0)) { pmm->Fill(*phi); }
+  }
+  dataReader.Restart();
+
+  const double meanVar = (nEvt>0)? sumVar/nEvt : 0.0;
+  const double meanPb  = (nEvt>0)? sumPol/nEvt : 0.0;
+  const double Ptp     = (nPosT>0)? (sumTargetPosPol/nPosT) : 1.0;
+  const double Ptm     = (nNegT>0)? -(sumTargetNegPol/nNegT) : 1.0;
+
+  // Build final asymmetry histograms
+  TH1D* hALU = new TH1D(Form("%s_ALU", histBaseName), "", nPhiBins, 0, 2*TMath::Pi());
+  TH1D* hAUL = new TH1D(Form("%s_AUL", histBaseName), "", nPhiBins, 0, 2*TMath::Pi());
+  TH1D* hALL = new TH1D(Form("%s_ALL", histBaseName), "", nPhiBins, 0, 2*TMath::Pi());
+
+  for (int ib = 1; ib <= nPhiBins; ++ib) {
+    // Normalize to accumulated charges
+    const double Npp = ppp->GetBinContent(ib) / std::max(cpp, 1.0);
+    const double Npm = ppm->GetBinContent(ib) / std::max(cpm, 1.0);
+    const double Nmp = pmp->GetBinContent(ib) / std::max(cmp, 1.0);
+    const double Nmm = pmm->GetBinContent(ib) / std::max(cmm, 1.0);
+
+    // BSA
+    {
+      const int asym = 0;
+      const double val = asymmetry_value_calculation(meanVar, prefix, Npp, Npm, Nmp, Nmm, meanPb, Ptp, Ptm, asym);
+      const double err = asymmetry_error_calculation(meanVar, prefix, Npp*cpp, Npm*cpm, Nmp*cmp, Nmm*cmm, meanPb, Ptp, Ptm, asym);
+      hALU->SetBinContent(ib, val); hALU->SetBinError(ib, err);
+    }
+    // TSA
+    {
+      const int asym = 1;
+      const double val = asymmetry_value_calculation(meanVar, prefix, Npp, Npm, Nmp, Nmm, meanPb, Ptp, Ptm, asym);
+      const double err = asymmetry_error_calculation(meanVar, prefix, Npp*cpp, Npm*cpm, Nmp*cmp, Nmm*cmm, meanPb, Ptp, Ptm, asym);
+      hAUL->SetBinContent(ib, val); hAUL->SetBinError(ib, err);
+    }
+    // DSA
+    {
+      const int asym = 2;
+      const double val = asymmetry_value_calculation(meanVar, prefix, Npp, Npm, Nmp, Nmm, meanPb, Ptp, Ptm, asym);
+      const double err = asymmetry_error_calculation(meanVar, prefix, Npp*cpp, Npm*cpm, Nmp*cmp, Nmm*cmm, meanPb, Ptp, Ptm, asym);
+      hALL->SetBinContent(ib, val); hALL->SetBinError(ib, err);
+    }
+  }
+
+  delete ppp; delete ppm; delete pmp; delete pmm;
+  return {hALU, hAUL, hALL};
+}
+
+// Plot the three histograms with the simultaneous-fit curves; save a single 3-panel PNG
+static void plotHistogramAndFit_GeneralExclusive(
+  TH1D* hALU, TH1D* hAUL, TH1D* hALL,
+  const double par[7], int binIndex, const std::string& prefix)
+{
+  // Prepare TF1s matching the FCN models (no dep-scaling in displayed curves)
+  TF1 fLU ("GE_LU_model",  [](double* x, double* p){ return p[0] + p[2]*sin(x[0]); }, 0, 2*TMath::Pi(), 3);
+  TF1 fUL ("GE_UL_model",  [](double* x, double* p){ return p[1] + p[3]*sin(x[0]) + p[4]*sin(2*x[0]); }, 0, 2*TMath::Pi(), 5);
+  TF1 fLL ("GE_LL_model",  [](double* x, double* p){ return p[5] + p[6]*cos(x[0]); }, 0, 2*TMath::Pi(), 2);
+
+  fLU.SetParameters(par[0], 0.0, par[2]);
+  fUL.SetParameters(par[1], 0.0, par[3], par[4], 0.0);
+  fLL.SetParameters(par[5], par[6]);
+
+  // Canvas with three pads
+  TCanvas* c = new TCanvas("cGE", "", 1400, 500);
+  c->Divide(3,1);
+  auto drawOne = [&](int pad, TH1D* h, TF1& f, const char* ytitle){
+    c->cd(pad);
+    TGraphErrors* gr = new TGraphErrors();
+    for (int i=1;i<=h->GetNbinsX();++i){
+      gr->SetPoint(i-1, h->GetBinCenter(i), h->GetBinContent(i));
+      gr->SetPointError(i-1, 0.0, h->GetBinError(i));
+    }
+    gr->SetMarkerStyle(kFullCircle); gr->SetMarkerColor(kBlack);
+    gr->GetXaxis()->SetTitle("#phi"); gr->GetYaxis()->SetTitle(ytitle);
+    gr->GetXaxis()->SetLimits(0, 2*TMath::Pi());
+    gr->Draw("AP");
+    f.SetRange(0, 2*TMath::Pi());
+    f.SetLineColor(kRed);
+    f.Draw("same");
+
+    TLegend* L = new TLegend(0.18, 0.68, 0.48, 0.88);
+    L->SetBorderSize(1); L->SetFillColor(0); L->SetTextSize(0.025);
+    if (ytitle[2]=='U') { // LU
+      L->AddEntry((TObject*)0, Form("offset: %.4f", par[0]), "");
+      L->AddEntry((TObject*)0, Form("A_{LU}^{sin#phi}: %.4f", par[2]), "");
+    } else if (ytitle[2]=='L' && ytitle[3]=='L') { // LL
+      L->AddEntry((TObject*)0, Form("A_{LL}: %.4f", par[5]), "");
+      L->AddEntry((TObject*)0, Form("A_{LL}^{cos#phi}: %.4f", par[6]), "");
+    } else { // UL
+      L->AddEntry((TObject*)0, Form("offset: %.4f", par[1]), "");
+      L->AddEntry((TObject*)0, Form("A_{UL}^{sin#phi}: %.4f", par[3]), "");
+      L->AddEntry((TObject*)0, Form("A_{UL}^{sin2#phi}: %.4f", par[4]), "");
+    }
+    L->Draw("same");
+  };
+
+  drawOne(1, hALU, fLU,  "A_{LU}");
+  drawOne(2, hAUL, fUL,  "A_{UL}");
+  drawOne(3, hALL, fLL,  "A_{LL}");
+
+  // Title showing bin range
+  const double vmin = allBins[currentFits][binIndex];
+  const double vmax = allBins[currentFits][binIndex+1];
+  std::ostringstream ttl; ttl<<std::fixed<<std::setprecision(3)
+    << vmin << " \\leq " << formatLabelName(prefix) << " < " << vmax;
+  c->SetTitle(ttl.str().c_str());
+
+  std::string fname = "output/individual_chi2_fits/" + prefix + "_GE_bin_" + std::to_string(binIndex) + ".png";
+  c->SaveAs(fname.c_str());
+  delete c;
+}
+
+// Simultaneous chi2 fits across ALU/AUL/ALL per bin; writes:
+//  - per-parameter arrays to output_file
+//  - mean-kinematics LaTeX table to kinematic_file
+//  - compact kinematics list to kinematicPlot_file
+//  - covariance and correlation matrices to output/correlation_matrices/
+void performChi2Fits_GeneralExclusive(const char* output_file,
+                                      const char* kinematic_file,
+                                      const char* kinematicPlot_file,
+                                      const std::string& prefix) {
+  // Prepare output streams for parameter arrays
+  std::ostringstream sALUoff, sAULoff, sALU, sAUL, sAUL2, sALL, sALLc;
+  for (auto* s : {&sALUoff,&sAULoff,&sALU,&sAUL,&sAUL2,&sALL,&sALLc}) (*s) << std::fixed << std::setprecision(9);
+
+  sALUoff << prefix << "GEchi2FitsALUoffset = {";
+  sAULoff << prefix << "GEchi2FitsAULoffset = {";
+  sALU    << prefix << "GEchi2FitsALUsinphi = {";
+  sAUL    << prefix << "GEchi2FitsAULsinphi = {";
+  sAUL2   << prefix << "GEchi2FitsAULsin2phi = {";
+  sALL    << prefix << "GEchi2FitsALL = {";
+  sALLc   << prefix << "GEchi2FitsALLcosphi = {";
+
+  // Kinematic LaTeX and list
+  std::ostringstream kinLatex;
+  kinLatex << "\\begin{table}[h]\n\\centering\n"
+           << "\\begin{tabular}{|c|c|c|c|c|c|c|} \\hline\n"
+           << "Bin & $\\langle Q^2\\rangle$ & $\\langle W\\rangle$ & $\\langle x_B\\rangle$ & "
+           << "$\\langle y\\rangle$ & $\\langle t\\rangle$ & $\\langle t_{\\min}\\rangle$ \\\\ \\hline\n";
+
+  std::ostringstream kinList;
+  kinList << prefix << "GEKinematics = {";
+
+  // Create correlation-matrix directory if needed
+  gSystem->mkdir("output/correlation_matrices", kTRUE);
+
+  const size_t numBins = allBins[currentFits].size() - 1;
+
+  // Loop over kinematic bins
+  for (size_t i = 0; i < numBins; ++i) {
+    std::cout << "Beginning simultaneous chi2 GE fit for " << binNames[currentFits]
+              << " bin " << i << ". " << std::endl;
+
+    // Build asymmetry histograms
+    char hname[64]; snprintf(hname, sizeof(hname), "GE_%zu", i);
+    TH1D *hALU, *hAUL, *hALL;
+    std::tie(hALU, hAUL, hALL) = createHistogramForBin_GeneralExclusive(hname, (int)i, prefix);
+
+    // Store for FCN
+    g_ge_ctx.hLU  = hALU;
+    g_ge_ctx.hUL  = (cpp==1 ? nullptr : hAUL); // if unpolarized target, skip TSA/DSA constraints
+    g_ge_ctx.hLL  = (cpp==1 ? nullptr : hALL);
+
+    // Initialize Minuit (7 parameters)
+    TMinuit minuit(7);
+    minuit.SetPrintLevel(-1);
+    minuit.SetFCN(chi2Fcn_GeneralExclusive);
+
+    // Define parameters: name, init, step, low, high
+    minuit.DefineParameter(0, "ALU_offset",   0.0, 0.01, -1.0, 1.0);
+    minuit.DefineParameter(1, "AUL_offset",   0.0, 0.01, -1.0, 1.0);
+    minuit.DefineParameter(2, "ALU_sinphi",   0.01, 0.01, -1.0, 1.0);
+    minuit.DefineParameter(3, "AUL_sinphi",   0.01, 0.01, -1.0, 1.0);
+    minuit.DefineParameter(4, "AUL_sin2phi",  0.01, 0.01, -1.0, 1.0);
+    minuit.DefineParameter(5, "ALL",          0.25, 0.01, -1.0, 1.0);
+    minuit.DefineParameter(6, "ALL_cosphi",   0.01, 0.01, -1.0, 1.0);
+
+    // Run fit
+    double arglist[2]; int ierflg=0;
+    minuit.Migrad();
+    arglist[0] = 500; arglist[1] = 1.0;
+    minuit.mnexcm("MINImize", arglist, 2, ierflg);
+
+    // Extract parameters and errors
+    double pval[7], perr[7];
+    for (int ip=0; ip<7; ++ip) minuit.GetParameter(ip, pval[ip], perr[ip]);
+
+    // Plot summary (three panels)
+    plotHistogramAndFit_GeneralExclusive(hALU, hAUL, hALL, pval, (int)i, prefix);
+
+    // Compute mean depolarization & mean kinematics (for output + dep scaling)
+    double sumQ2=0, sumW=0, sumx=0, sumy=0, sumt=0, sumtmin=0, nEvt=0;
+    double sumDepA=0, sumDepB=0, sumDepC=0, sumDepV=0, sumDepW=0, sumVar=0;
+    {
+      TTreeReaderValue<double> Q2(dataReader,"Q2");
+      TTreeReaderValue<double> W (dataReader,"W");
+      TTreeReaderValue<double> x (dataReader,"x");
+      TTreeReaderValue<double> y (dataReader,"y");
+      TTreeReaderValue<double> t (dataReader,"t");
+      TTreeReaderValue<double> tmin(dataReader,"tmin");
+      TTreeReaderValue<double> DepA(dataReader,"DepA");
+      TTreeReaderValue<double> DepB(dataReader,"DepB");
+      TTreeReaderValue<double> DepC(dataReader,"DepC");
+      TTreeReaderValue<double> DepV(dataReader,"DepV");
+      TTreeReaderValue<double> DepW(dataReader,"DepW");
+      TTreeReaderValue<double> currentVariable(dataReader, propertyNames[currentFits].c_str());
+
+      const double vmin = allBins[currentFits][i];
+      const double vmax = allBins[currentFits][i+1];
+      while (dataReader.Next()){
+        if (!kinematicCuts->applyCuts(currentFits,false)) continue;
+        if (*currentVariable < vmin || *currentVariable >= vmax) continue;
+        sumQ2 += *Q2; sumW += *W; sumx += *x; sumy += *y; sumt += *t; sumtmin += *tmin;
+        sumDepA += *DepA; sumDepB += *DepB; sumDepC += *DepC; sumDepV += *DepV; sumDepW += *DepW;
+        sumVar += *currentVariable; nEvt += 1.0;
+      }
+      dataReader.Restart();
+    }
+
+    const double meanVar  = (nEvt>0)? sumVar/nEvt : 0.0;
+    const double meanQ2   = (nEvt>0)? sumQ2/nEvt  : 0.0;
+    const double meanW    = (nEvt>0)? sumW/nEvt   : 0.0;
+    const double meanx    = (nEvt>0)? sumx/nEvt   : 0.0;
+    const double meany    = (nEvt>0)? sumy/nEvt   : 0.0;
+    const double meant    = (nEvt>0)? sumt/nEvt   : 0.0;
+    const double meantmin = (nEvt>0)? sumtmin/nEvt: 0.0;
+
+    const double depA = (nEvt>0)? sumDepA/nEvt : 1.0;
+    const double depB = (nEvt>0)? sumDepB/nEvt : 1.0;
+    const double depC = (nEvt>0)? sumDepC/nEvt : 1.0;
+    const double depV = (nEvt>0)? sumDepV/nEvt : 1.0;
+    const double depW = (nEvt>0)? sumDepW/nEvt : 1.0;
+
+    // Depolarization scaling to structure-function ratios (match your other channels)
+    double ALU_sinphi_val = (depA/depW) * pval[2];
+    double ALU_sinphi_err = (depA/depW) * perr[2];
+
+    double AUL_sinphi_val = (depA/depV) * pval[3];
+    double AUL_sinphi_err = (depA/depV) * perr[3];
+
+    double AUL_sin2phi_val = (depA/depB) * pval[4];
+    double AUL_sin2phi_err = (depA/depB) * perr[4];
+
+    double ALL_val = (depA/depC) * pval[5];
+    double ALL_err = (depA/depC) * perr[5];
+
+    double ALL_cosphi_val = (depA/depW) * pval[6];
+    double ALL_cosphi_err = (depA/depW) * perr[6];
+
+    // Append to parameter arrays (use mean of binning variable as x)
+    sALUoff << "{" << meanVar << ", " << pval[0] << ", " << perr[0] << "}";
+    sAULoff << "{" << meanVar << ", " << pval[1] << ", " << perr[1] << "}";
+    sALU    << "{" << meanVar << ", " << ALU_sinphi_val << ", " << ALU_sinphi_err << "}";
+    sAUL    << "{" << meanVar << ", " << AUL_sinphi_val << ", " << AUL_sinphi_err << "}";
+    sAUL2   << "{" << meanVar << ", " << AUL_sin2phi_val << ", " << AUL_sin2phi_err << "}";
+    sALL    << "{" << meanVar << ", " << ALL_val << ", " << ALL_err << "}";
+    sALLc   << "{" << meanVar << ", " << ALL_cosphi_val << ", " << ALL_cosphi_err << "}";
+
+    if (i < numBins - 1) {
+      sALUoff << ", "; sAULoff << ", "; sALU << ", "; sAUL << ", "; sAUL2 << ", ";
+      sALL << ", "; sALLc << ", ";
+    }
+
+    // Kinematics LaTeX row
+    kinLatex << std::fixed << std::setprecision(3)
+             << (i+1) << " ~&~ " << meanQ2 << " ~&~ " << meanW << " ~&~ " << meanx
+             << " ~&~ " << meany << " ~&~ " << meant << " ~&~ " << meantmin
+             << " \\\\ \\hline ";
+
+    // Kinematics list row
+    kinList << "{" << meanQ2 << ", " << meanW << ", " << meanx << ", "
+            << meany << ", " << meant << ", " << meantmin << "}";
+    if (i < numBins - 1) kinList << ", ";
+
+    // Save covariance & correlation matrices
+    const int npar = 7;
+    std::vector<double> cov(npar*npar, 0.0);
+    minuit.mnemat(cov.data(), npar);
+
+    // Correlation = cov_ij / (sqrt(cov_ii)*sqrt(cov_jj))
+    std::vector<double> errv(npar);
+    for (int ip=0; ip<npar; ++ip) errv[ip] = std::sqrt(std::max(cov[ip*npar+ip], 0.0));
+
+    const char* names[npar] = {"ALU_offset","AUL_offset","ALU_sinphi","AUL_sinphi",
+                               "AUL_sin2phi","ALL","ALL_cosphi"};
+
+    {
+      std::string fcov = "output/correlation_matrices/GE_" + prefix +
+                         "_bin_" + std::to_string(i) + "_cov.txt";
+      std::ofstream of(fcov);
+      of << std::setprecision(9);
+      of << "# Covariance matrix (parameters in order):\n# ";
+      for (int ip=0; ip<npar; ++ip) { of << names[ip]; if (ip<npar-1) of << ", "; }
+      of << "\n";
+      for (int r=0; r<npar; ++r) {
+        for (int c=0; c<npar; ++c) {
+          of << cov[r*npar + c] << (c<npar-1 ? " " : "");
+        }
+        of << "\n";
+      }
+    }
+    {
+      std::string fcorr = "output/correlation_matrices/GE_" + prefix +
+                          "_bin_" + std::to_string(i) + "_corr.txt";
+      std::ofstream of(fcorr);
+      of << std::setprecision(9);
+      of << "# Correlation matrix (parameters in order):\n# ";
+      for (int ip=0; ip<npar; ++ip) { of << names[ip]; if (ip<npar-1) of << ", "; }
+      of << "\n";
+      for (int r=0; r<npar; ++r) {
+        for (int c=0; c<npar; ++c) {
+          double denom = (errv[r]>0 && errv[c]>0) ? (errv[r]*errv[c]) : 1.0;
+          double rho = cov[r*npar + c] / denom;
+          of << rho << (c<npar-1 ? " " : "");
+        }
+        of << "\n";
+      }
+    }
+
+    // cleanup hists
+    delete hALU; delete hAUL; delete hALL;
+  }
+
+  // Close arrays and write to files
+  sALUoff << "};"; sAULoff << "};"; sALU << "};"; sAUL << "};";
+  sAUL2  << "};"; sALL    << "};"; sALLc<< "};";
+
+  {
+    std::ofstream out(output_file, std::ios::app);
+    out << sALUoff.str() << "\n";
+    out << sAULoff.str() << "\n";
+    out << sALU.str()    << "\n";
+    out << sAUL.str()    << "\n";
+    out << sAUL2.str()   << "\n";
+    out << sALL.str()    << "\n";
+    out << sALLc.str()   << "\n";
+  }
+
+  // Finish LaTeX/table and kinematics list
+  kinLatex << "\\end{tabular}\n"
+           << "\\caption{Mean kinematics per bin for the simultaneous BSA/TSA/DSA "
+           << "(GeneralExclusive) fit vs $" << prefix << "$.}\n"
+           << "\\label{table:GE_kinematics_" << prefix << "}\n"
+           << "\\end{table}\n\n\n";
+  {
+    std::ofstream kf(kinematic_file, std::ios::app);
+    kf << kinLatex.str() << std::endl;
+  }
+
+  kinList << "};";
+  {
+    std::ofstream kp(kinematicPlot_file, std::ios::app);
+    kp << kinList.str() << "\n";
   }
 }

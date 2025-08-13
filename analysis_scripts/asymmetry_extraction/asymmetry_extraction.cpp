@@ -47,6 +47,7 @@
 #include "DihadronKinematicCuts.h"
 #include "dvcsKinematicCuts.h"
 #include "eppi0KinematicCuts.h"
+#include "GeneralExclusiveKinematicCuts.h"
 #include "formatLabelName.h"
 #include "readChi2Fits.h"
 #include "histConfigs.h"
@@ -102,7 +103,8 @@ int main(int argc, char *argv[]) {
   if (argc >= 4) {
       try {
           channel = std::stoi(argv[3]);
-          if (channel < 0 || channel > 5) {
+          // change the bounds check (was 0..5)
+          if (channel < 0 || channel > 6) {
               cout << "Invalid channel specified. Defaulting to single hadron." << endl;
               channel = 1;
           }
@@ -140,6 +142,10 @@ int main(int argc, char *argv[]) {
           kinematicCuts = new eppi0KinematicCuts(dataReader);
           mckinematicCuts = new eppi0KinematicCuts(mcReader);
           break;
+      case 6: 
+        kinematicCuts    = new GeneralExclusiveKinematicCuts(dataReader);
+        mckinematicCuts  = new GeneralExclusiveKinematicCuts(mcReader);
+        break;
   }
 
   cout << endl << endl;
@@ -275,14 +281,12 @@ int main(int argc, char *argv[]) {
         dilutionFactors = std::vector<std::pair<double, double>>(allBins[i].size() - 1, {0.0, 0.0});
     }
     // dilutionFactors = std::vector<std::pair<double, double>>(allBins[i].size() - 1, {1.0, 0.0});
-
-    // minimum necessary change in charge values needed for 0 AUL offset
-    // cpp = 1.06509e+06;
-    // cpm = 1.09221e+06;
-    // cmp = 1.06509e+06;
-    // cmm = 1.09221e+06;
-
-    for (int asymmetry = 0; asymmetry < 3; ++asymmetry) {
+    if (channel == 6) {
+      cout << "    Beginning chi2 simultaneous GeneralExclusive (BSA/TSA/DSA)." << endl;
+      performChi2Fits_GeneralExclusive(output_file.c_str(), kinematic_file.c_str(),
+        kinematicPlot_file.c_str(), binNames[i]);
+    } else {
+      for (int asymmetry = 0; asymmetry < 3; ++asymmetry) {
         if (asymmetry > 0 && cpp == 1) {
             cout << "Skipping TSA and DSA for unpolarized target data." << endl;
             continue;
@@ -293,17 +297,18 @@ int main(int argc, char *argv[]) {
             case 2: cout << "    Beginning chi2 DSA." << endl; break;
         }
         switch (channel) {
-            case 0: calculate_inclusive(output_file.c_str(), kinematic_file.c_str(), 
-              binNames[i], asymmetry); break;
-            case 1: performChi2Fits_single_hadron(output_file.c_str(), kinematic_file.c_str(), 
+          case 0: calculate_inclusive(output_file.c_str(), kinematic_file.c_str(), 
+            binNames[i], asymmetry); break;
+          case 1: performChi2Fits_single_hadron(output_file.c_str(), kinematic_file.c_str(), 
+            kinematicPlot_file.c_str(), binNames[i], asymmetry); break;
+          case 2: performChi2Fits_b2b_dihadron(output_file.c_str(), kinematic_file.c_str(), 
+            binNames[i], asymmetry); break;
+          case 4: performChi2Fits_dvcs(output_file.c_str(), kinematic_file.c_str(), 
+            kinematicPlot_file.c_str(), binNames[i], asymmetry); break;
+          case 5: performChi2Fits_eppi0(output_file.c_str(), kinematic_file.c_str(), 
               kinematicPlot_file.c_str(), binNames[i], asymmetry); break;
-            case 2: performChi2Fits_b2b_dihadron(output_file.c_str(), kinematic_file.c_str(), 
-              binNames[i], asymmetry); break;
-            case 4: performChi2Fits_dvcs(output_file.c_str(), kinematic_file.c_str(), 
-              kinematicPlot_file.c_str(), binNames[i], asymmetry); break;
-            case 5: performChi2Fits_eppi0(output_file.c_str(), kinematic_file.c_str(), 
-              kinematicPlot_file.c_str(), binNames[i], asymmetry); break;
-        }
+        } 
+      }
     }
     cout << endl << "     Completed " << binNames[i] << " chi2 fits." << endl;
     cout << "MLM fits disabled by default in main branch. See development/uncomment next lines for MLM." << endl;
