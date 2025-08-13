@@ -259,7 +259,7 @@ def main():
 
         outname = os.path.join(
             args.outdir,
-            f"BSA_bin{ibin:02d}_{ts}_Q2_{Q2m:.2f}_xB_{xBm:.3f}_mt_{abs(tm)::.3f}.pdf"
+            f"BSA_bin{ibin:02d}_{ts}_Q2_{Q2m:.2f}_xB_{xBm:.3f}_mt_{abs(tm):.3f}.pdf"
         )
         fig.savefig(outname)
         print(f">> Saved bin {ibin} plot to {outname}")
