@@ -415,8 +415,8 @@ void negLogLikelihood_single_hadron(Int_t &npar, Double_t *gin, Double_t &f,
       // // Adjust Pt with its uncertainty
       // Pt += sigmaPt * distStandard(gen);
       // Restore the sign of Pt
-      double signPt = (*target_pol >= 0) ? 1.0 : -1.0;
-      Pt = signPt * Pt;
+      // double signPt = (*target_pol >= 0) ? 1.0 : -1.0;
+      // Pt = signPt * Pt;
 
       // Proceed with your calculations
       if (*helicity > 0 && *target_pol >= 0) { 
