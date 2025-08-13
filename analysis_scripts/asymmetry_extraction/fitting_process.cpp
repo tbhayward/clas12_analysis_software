@@ -3252,6 +3252,8 @@ void performChi2Fits_eppi0(const char* output_file, const char* kinematic_file,
 
 /******************** GENERAL EXCLUSIVE (simultaneous ALU/AUL/ALL) ********************/
 
+// ===================== GeneralExclusive (begin) =====================
+
 // Context passed implicitly to the FCN
 struct GEContext {
   TH1D* hLU  = nullptr;  // ALU(phi) histogram (data)
@@ -3417,10 +3419,11 @@ createHistogramForBin_GeneralExclusive(const char* histBaseName, int binIndex, c
 
 
 // Plot the three histograms with model curves that include the shared UU denominator.
-// Saves a single 3-panel PNG.
+// Saves a single 3-panel PNG.  Filename includes run/timestamp suffix derived from output_file.
 static void plotHistogramAndFit_GeneralExclusive(
   TH1D* hALU, TH1D* hAUL, TH1D* hALL,
-  const double par[9], int binIndex, const std::string& prefix)
+  const double par[9], int binIndex, const std::string& prefix,
+  const std::string& runSuffix) // <-- pass "<root>_timeStamp_<ts>"
 {
   // Unpack for readability
   const double a0   = par[0], a1   = par[1];
@@ -3437,11 +3440,16 @@ static void plotHistogramAndFit_GeneralExclusive(
   auto yALL = [&](double phi){ return (g_ge_ctx.rCA*aLL + g_ge_ctx.rWA*aLLc*std::cos(phi))/denom(phi); };
 
   // Canvas with three pads
-  TCanvas* c = new TCanvas(Form("cGE_%d",binIndex), "", 1500, 520);
+  TCanvas* c = new TCanvas(Form("cGE_%d",binIndex), "", 1600, 560);
   c->Divide(3,1);
 
   auto drawOne = [&](int pad, TH1D* h, auto ymodel, const char* ytitle){
     c->cd(pad);
+    // extra margins so Y labels aren’t clipped
+    gPad->SetLeftMargin(0.20);
+    gPad->SetRightMargin(0.06);
+    gPad->SetBottomMargin(0.16);
+
     // Data as TGraphErrors
     TGraphErrors* gr = new TGraphErrors();
     const int nb = h->GetNbinsX();
@@ -3453,6 +3461,7 @@ static void plotHistogramAndFit_GeneralExclusive(
     gr->SetMarkerColor(kBlack);
     gr->GetXaxis()->SetTitle("#phi"); gr->GetYaxis()->SetTitle(ytitle);
     gr->GetXaxis()->SetLimits(0, 2*TMath::Pi());
+    gr->GetYaxis()->SetTitleOffset(1.6);
     gr->Draw("AP");
 
     // Model curve as a smooth TGraph
@@ -3465,21 +3474,25 @@ static void plotHistogramAndFit_GeneralExclusive(
     gm->SetLineColor(kRed);
     gm->Draw("L same");
 
-    // Simple legend with fitted values
-    TLegend* L = new TLegend(0.18, 0.68, 0.50, 0.88);
-    L->SetBorderSize(1); L->SetFillColor(0); L->SetTextSize(0.025);
-    if (std::string(ytitle)=="A_{LU}") {
+    // Wider legend with A-style labels (no clipping)
+    TLegend* L = new TLegend(0.10, 0.64, 0.90, 0.90);
+    L->SetBorderSize(1); L->SetFillColor(0); L->SetTextSize(0.030);
+
+    const std::string yt(ytitle);
+    if (yt == "A_{LU}") {
       L->AddEntry((TObject*)0, Form("offset: %.4f", a0), "");
-      L->AddEntry((TObject*)0, Form("F_{LU}^{sin#phi}/F_{UU}: %.4f", aLU), "");
-    } else if (std::string(ytitle)=="A_{UL}") {
+      L->AddEntry((TObject*)0, Form("A_{LU}^{sin#phi}: %.4f", aLU), "");
+    } else if (yt == "A_{UL}") {
       L->AddEntry((TObject*)0, Form("offset: %.4f", a1), "");
-      L->AddEntry((TObject*)0, Form("F_{UL}^{sin#phi}/F_{UU}: %.4f", aUL1), "");
-      L->AddEntry((TObject*)0, Form("F_{UL}^{sin2#phi}/F_{UU}: %.4f", aUL2), "");
-    } else { // ALL
-      L->AddEntry((TObject*)0, Form("F_{LL}/F_{UU}: %.4f", aLL), "");
-      L->AddEntry((TObject*)0, Form("F_{LL}^{cos#phi}/F_{UU}: %.4f", aLLc), "");
+      L->AddEntry((TObject*)0, Form("A_{UL}^{sin#phi}: %.4f", aUL1), "");
+      L->AddEntry((TObject*)0, Form("A_{UL}^{sin2#phi}: %.4f", aUL2), "");
+    } else { // A_LL
+      L->AddEntry((TObject*)0, Form("A_{LL}: %.4f", aLL), "");
+      L->AddEntry((TObject*)0, Form("A_{LL}^{cos#phi}: %.4f", aLLc), "");
     }
-    L->AddEntry((TObject*)0, Form("UU: cos#phi=%.4f, cos2#phi=%.4f", aUUc, aUUc2), "");
+    // show the shared UU modulations as asymmetry-style labels too
+    L->AddEntry((TObject*)0, Form("A_{UU}^{cos#phi}: %.4f", aUUc), "");
+    L->AddEntry((TObject*)0, Form("A_{UU}^{cos2#phi}: %.4f", aUUc2), "");
     L->Draw("same");
   };
 
@@ -3494,7 +3507,9 @@ static void plotHistogramAndFit_GeneralExclusive(
     << vminB << " \\leq " << formatLabelName(prefix) << " < " << vmaxB;
   c->SetTitle(ttl.str().c_str());
 
-  std::string fname = "output/individual_chi2_fits/" + prefix + "_GE_bin_" + std::to_string(binIndex) + ".png";
+  // Save including the run/timestamp suffix
+  std::string fname = "output/individual_chi2_fits/" + prefix +
+                      "_GE_bin_" + std::to_string(binIndex) + "_" + runSuffix + ".png";
   c->SaveAs(fname.c_str());
   delete c;
 }
@@ -3662,15 +3677,15 @@ void performChi2Fits_GeneralExclusive(const char* output_file,
     minuit.SetFCN(chi2Fcn_GeneralExclusive);
 
     // name, init, step, low, high
-    minuit.DefineParameter(0, "ALU_offset",  0.00, 0.01, -1.0, 1.0);
-    minuit.DefineParameter(1, "AUL_offset",  0.00, 0.01, -1.0, 1.0);
-    minuit.DefineParameter(2, "F_LU_sin/F_UU",   0.02, 0.01, -1.0, 1.0);
-    minuit.DefineParameter(3, "F_UL_sin/F_UU",   0.02, 0.01, -1.0, 1.0);
-    minuit.DefineParameter(4, "F_UL_sin2/F_UU",  0.02, 0.01, -1.0, 1.0);
-    minuit.DefineParameter(5, "F_LL/F_UU",       0.30, 0.01, -1.0, 1.0);
-    minuit.DefineParameter(6, "F_LL_cos/F_UU",   0.01, 0.01, -1.0, 1.0);
-    minuit.DefineParameter(7, "F_UU_cos/F_UU",   0.00, 0.01, -1.0, 1.0);
-    minuit.DefineParameter(8, "F_UU_cos2/F_UU",  0.00, 0.01, -1.0, 1.0);
+    minuit.DefineParameter(0, "ALU_offset",       0.00, 0.01, -1.0, 1.0);
+    minuit.DefineParameter(1, "AUL_offset",       0.00, 0.01, -1.0, 1.0);
+    minuit.DefineParameter(2, "F_LU_sin/F_UU",    0.02, 0.01, -1.0, 1.0);
+    minuit.DefineParameter(3, "F_UL_sin/F_UU",    0.02, 0.01, -1.0, 1.0);
+    minuit.DefineParameter(4, "F_UL_sin2/F_UU",   0.02, 0.01, -1.0, 1.0);
+    minuit.DefineParameter(5, "F_LL/F_UU",        0.30, 0.01, -1.0, 1.0);
+    minuit.DefineParameter(6, "F_LL_cos/F_UU",    0.01, 0.01, -1.0, 1.0);
+    minuit.DefineParameter(7, "F_UU_cos/F_UU",    0.00, 0.01, -1.0, 1.0);
+    minuit.DefineParameter(8, "F_UU_cos2/F_UU",   0.00, 0.01, -1.0, 1.0);
 
     minuit.Migrad();
     double arglist[2]; int ierflg=0; arglist[0]=500; arglist[1]=1.0;
@@ -3680,8 +3695,8 @@ void performChi2Fits_GeneralExclusive(const char* output_file,
     double pval[9], perr[9];
     for (int ip=0; ip<9; ++ip) minuit.GetParameter(ip, pval[ip], perr[ip]);
 
-    // Plot summary (three panels) with model including shared UU denominator
-    plotHistogramAndFit_GeneralExclusive(hALU, hAUL, hALL, pval, (int)i, prefix);
+    // Plot summary (three panels) with model including shared UU denominator; filename includes suffix
+    plotHistogramAndFit_GeneralExclusive(hALU, hAUL, hALL, pval, (int)i, prefix, suffix);
 
     // Append to parameter arrays (use mean of binning variable as x)
     sALUoff << "{" << meanVar << ", " << pval[0] << ", " << perr[0] << "}";
@@ -3796,3 +3811,5 @@ void performChi2Fits_GeneralExclusive(const char* output_file,
     kp << kinList.str() << "\n";
   }
 }
+
+// ===================== GeneralExclusive (end) =====================
