@@ -377,6 +377,20 @@ std::vector<std::pair<double, double>> calculate_dilution_factors() {
             heCuts    = new dvcsKinematicCuts(heReader);
             emptyCuts = new dvcsKinematicCuts(emptyReader);
             break;
+        case 5:
+            nh3Cuts   = new eppi0KinematicCuts(nh3Reader);
+            cCuts     = new eppi0KinematicCuts(cReader);
+            chCuts    = new eppi0KinematicCuts(chReader);
+            heCuts    = new eppi0KinematicCuts(heReader);
+            emptyCuts = new eppi0KinematicCuts(emptyReader);
+            break;
+        case 6:
+            nh3Cuts   = new GeneralExclusiveKinematicsCuts(nh3Reader);
+            cCuts     = new GeneralExclusiveKinematicsCuts(cReader);
+            chCuts    = new GeneralExclusiveKinematicsCuts(chReader);
+            heCuts    = new GeneralExclusiveKinematicsCuts(heReader);
+            emptyCuts = new GeneralExclusiveKinematicsCuts(emptyReader);
+            break;
         default:
             std::cerr << "Invalid channel specified." << std::endl;
             return {};
