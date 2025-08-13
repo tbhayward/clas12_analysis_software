@@ -3250,85 +3250,82 @@ void performChi2Fits_eppi0(const char* output_file, const char* kinematic_file,
 
 /******************** General Exclusive CASE ********************/
 
-/******************** GENERAL EXCLUSIVE (Simultaneous BSA/TSA/DSA) ********************/
+/******************** GENERAL EXCLUSIVE (simultaneous ALU/AUL/ALL) ********************/
 
-// ===========================
-// GeneralExclusive — helper FCN + context
-// ===========================
-struct GEChi2Context {
-  TH1D* hLU  = nullptr; // A_LU(phi) histogram (BSA)
-  TH1D* hUL  = nullptr; // A_UL(phi) histogram (TSA)  (may be nullptr if unpolarized target)
-  TH1D* hLL  = nullptr; // A_LL(phi) histogram (DSA)  (may be nullptr if unpolarized target)
-  // mean depolarization ratios in this bin (DepX/DepA)
-  double rVA = 1.0; // DepV/DepA (enters UU cosφ and UL sinφ numerator)
-  double rBA = 1.0; // DepB/DepA (enters UU cos2φ and UL sin2φ numerator)
-  double rWA = 1.0; // DepW/DepA (enters LU sinφ and LL cosφ numerators)
-  double rCA = 1.0; // DepC/DepA (enters LL constant numerator)
+// Context passed implicitly to the FCN
+struct GEContext {
+  TH1D* hLU  = nullptr;  // ALU(phi) histogram (data)
+  TH1D* hUL  = nullptr;  // AUL(phi) histogram (data)
+  TH1D* hLL  = nullptr;  // ALL(phi) histogram (data)
+  // Mean depolarization ratios used in the model:
+  // rVA = <DepV>/<DepA>, rBA = <DepB>/<DepA>, rWA = <DepW>/<DepA>, rCA = <DepC>/<DepA>
+  double rVA = 1.0, rBA = 1.0, rWA = 1.0, rCA = 1.0;
 };
 
-// one instance per bin (set in performChi2Fits_GeneralExclusive before fit)
-static GEChi2Context g_ge_ctx;
+// Global ctx used by the Minuit FCN
+static GEContext g_ge_ctx;
 
-// Minuit FCN: simultaneous χ² across A_LU, A_UL, A_LL with shared UU modulations.
-// Parameters (par):
-// 0: ALU_offset, 1: AUL_offset, 2: ALU_sinphi, 3: AUL_sinphi, 4: AUL_sin2phi,
-// 5: ALL,        6: ALL_cosphi, 7: AUU_cosphi, 8: AUU_cos2phi
-static void chi2Fcn_GeneralExclusive(Int_t & /*npar*/, Double_t * /*gin*/, Double_t &f,
-                                     Double_t *par, Int_t /*iflag*/) {
-  const double ALU_off = par[0];
-  const double AUL_off = par[1];
-  const double ALU_s   = par[2];
-  const double AUL_s   = par[3];
-  const double AUL_s2  = par[4];
-  const double ALL_c   = par[5];
-  const double ALL_c1  = par[6];
-  const double AUU_c1  = par[7];
-  const double AUU_c2  = par[8];
+// FCN: chi2 across ALU, AUL, ALL histograms with shared UU denominator (cos and cos2)
+// Parameters (all are structure-function ratios unless noted):
+//  p[0] = ALU_offset
+//  p[1] = AUL_offset
+//  p[2] = F_LU^{sin(phi)} / F_UU
+//  p[3] = F_UL^{sin(phi)} / F_UU
+//  p[4] = F_UL^{sin(2phi)} / F_UU
+//  p[5] = F_LL / F_UU
+//  p[6] = F_LL^{cos(phi)} / F_UU
+//  p[7] = F_UU^{cos(phi)} / F_UU         (shared UU modulation)
+//  p[8] = F_UU^{cos(2phi)} / F_UU        (shared UU modulation)
+static void chi2Fcn_GeneralExclusive(Int_t& /*npar*/, Double_t* /*gin*/, Double_t& f,
+                                     Double_t* par, Int_t /*iflag*/) {
+  const double a0 = par[0], a1 = par[1];
+  const double aLU = par[2], aUL1 = par[3], aUL2 = par[4];
+  const double aLL = par[5], aLLc = par[6];
+  const double aUUc = par[7], aUUc2 = par[8];
 
-  auto chi2_from_hist = [&](TH1D* h, int mode)->double {
+  auto denom = [&](double phi) {
+    return 1.0 + g_ge_ctx.rVA * aUUc  * std::cos(phi)
+               + g_ge_ctx.rBA * aUUc2 * std::cos(2.0*phi);
+  };
+
+  auto modelALU = [&](double phi) {
+    return a0 + (g_ge_ctx.rWA * aLU * std::sin(phi)) / denom(phi);
+  };
+  auto modelAUL = [&](double phi) {
+    return a1 + (g_ge_ctx.rVA * aUL1 * std::sin(phi)
+              +  g_ge_ctx.rBA * aUL2 * std::sin(2.0*phi)) / denom(phi);
+  };
+  auto modelALL = [&](double phi) {
+    return (g_ge_ctx.rCA * aLL + g_ge_ctx.rWA * aLLc * std::cos(phi)) / denom(phi);
+  };
+
+  auto chi2_from_hist = [&](TH1D* h, auto model) -> double {
     if (!h) return 0.0;
-    double chi2 = 0.0;
-    for (int ib=1; ib<=h->GetNbinsX(); ++ib) {
-      const double phi = h->GetBinCenter(ib);
-      const double y   = h->GetBinContent(ib);
-      const double ey  = h->GetBinError(ib);
-      if (ey<=0) continue;
-
-      // shared unpolarized denominator
-      const double den = 1.0
-        + g_ge_ctx.rVA * AUU_c1 * std::cos(phi)
-        + g_ge_ctx.rBA * AUU_c2 * std::cos(2.0*phi);
-
-      double model = 0.0;
-      if (mode==0) { // LU (BSA)
-        const double num = g_ge_ctx.rWA * ALU_s * std::sin(phi);
-        model = ALU_off + num/den;
-      } else if (mode==1) { // UL (TSA)
-        const double num = g_ge_ctx.rVA * AUL_s * std::sin(phi)
-                         + g_ge_ctx.rBA * AUL_s2* std::sin(2.0*phi);
-        model = AUL_off + num/den;
-      } else { // LL (DSA)
-        const double num = g_ge_ctx.rCA * ALL_c + g_ge_ctx.rWA * ALL_c1 * std::cos(phi);
-        model = num/den;
-      }
-
-      const double pull = (y - model)/ey;
-      chi2 += pull*pull;
+    double c2 = 0.0;
+    const int nb = h->GetNbinsX();
+    for (int i=1;i<=nb;++i){
+      const double y  = h->GetBinContent(i);
+      const double ey = h->GetBinError(i);
+      if (ey<=0) continue; // avoid zero-weight bins
+      const double x  = h->GetBinCenter(i);
+      const double yhat = model(x);
+      const double pull = (y - yhat) / ey;
+      c2 += pull*pull;
     }
-    return chi2;
+    return c2;
   };
 
   double chi2 = 0.0;
-  chi2 += chi2_from_hist(g_ge_ctx.hLU, 0);
-  chi2 += chi2_from_hist(g_ge_ctx.hUL, 1);
-  chi2 += chi2_from_hist(g_ge_ctx.hLL, 2);
+  chi2 += chi2_from_hist(g_ge_ctx.hLU, modelALU);
+  chi2 += chi2_from_hist(g_ge_ctx.hUL, modelAUL);
+  chi2 += chi2_from_hist(g_ge_ctx.hLL, modelALL);
 
   f = chi2;
 }
 
-// ============================
-// Build three asymmetry histos for one bin (BSA/TSA/DSA) with event-count print
-// ============================
+
+// Build three asymmetry histograms (BSA/TSA/DSA) for one kinematic bin
+// Returns { hALU(phi), hAUL(phi), hALL(phi) }
 static std::tuple<TH1D*, TH1D*, TH1D*>
 createHistogramForBin_GeneralExclusive(const char* histBaseName, int binIndex, const std::string& prefix) {
 
@@ -3374,8 +3371,6 @@ createHistogramForBin_GeneralExclusive(const char* histBaseName, int binIndex, c
   }
   dataReader.Restart();
 
-  std::cout << "Found " << nEvt << " events in this bin." << std::endl;
-
   const double meanVar = (nEvt>0)? sumVar/nEvt : 0.0;
   const double meanPb  = (nEvt>0)? sumPol/nEvt : 0.0;
   const double Ptp     = (nPosT>0)? (sumTargetPosPol/nPosT) : 1.0;
@@ -3387,7 +3382,7 @@ createHistogramForBin_GeneralExclusive(const char* histBaseName, int binIndex, c
   TH1D* hALL = new TH1D(Form("%s_ALL", histBaseName), "", nPhiBins, 0, 2*TMath::Pi());
 
   for (int ib = 1; ib <= nPhiBins; ++ib) {
-    // Normalize to accumulated charges
+    // Normalize to accumulated charges (guard 0)
     const double Npp = ppp->GetBinContent(ib) / std::max(cpp, 1.0);
     const double Npm = ppm->GetBinContent(ib) / std::max(cpm, 1.0);
     const double Nmp = pmp->GetBinContent(ib) / std::max(cmp, 1.0);
@@ -3420,62 +3415,79 @@ createHistogramForBin_GeneralExclusive(const char* histBaseName, int binIndex, c
   return {hALU, hAUL, hALL};
 }
 
-// ============================
-// Plot (3 panels) with helpful legends (unchanged math; displays main amps)
-// ============================
+
+// Plot the three histograms with model curves that include the shared UU denominator.
+// Saves a single 3-panel PNG.
 static void plotHistogramAndFit_GeneralExclusive(
   TH1D* hALU, TH1D* hAUL, TH1D* hALL,
   const double par[9], int binIndex, const std::string& prefix)
 {
-  // Simple display models (no UU denominator in the drawn curves; fit already used it)
-  TF1 fLU ("GE_LU_model",  [](double* x, double* p){ return p[0] + p[2]*std::sin(x[0]); }, 0, 2*TMath::Pi(), 3);
-  TF1 fUL ("GE_UL_model",  [](double* x, double* p){ return p[1] + p[3]*std::sin(x[0]) + p[4]*std::sin(2*x[0]); }, 0, 2*TMath::Pi(), 5);
-  TF1 fLL ("GE_LL_model",  [](double* x, double* p){ return p[5] + p[6]*std::cos(x[0]); }, 0, 2*TMath::Pi(), 2);
+  // Unpack for readability
+  const double a0   = par[0], a1   = par[1];
+  const double aLU  = par[2], aUL1 = par[3], aUL2 = par[4];
+  const double aLL  = par[5], aLLc = par[6];
+  const double aUUc = par[7], aUUc2= par[8];
 
-  fLU.SetParameters(par[0], 0.0, par[2]);
-  fUL.SetParameters(par[1], 0.0, par[3], par[4], 0.0);
-  fLL.SetParameters(par[5], par[6]);
+  auto denom = [&](double phi) {
+    return 1.0 + g_ge_ctx.rVA * aUUc  * std::cos(phi)
+               + g_ge_ctx.rBA * aUUc2 * std::cos(2.0*phi);
+  };
+  auto yALU = [&](double phi){ return a0 + (g_ge_ctx.rWA * aLU * std::sin(phi))/denom(phi); };
+  auto yAUL = [&](double phi){ return a1 + (g_ge_ctx.rVA * aUL1*std::sin(phi) + g_ge_ctx.rBA*aUL2*std::sin(2.0*phi))/denom(phi); };
+  auto yALL = [&](double phi){ return (g_ge_ctx.rCA*aLL + g_ge_ctx.rWA*aLLc*std::cos(phi))/denom(phi); };
 
-  TCanvas* c = new TCanvas("cGE", "", 1400, 500);
+  // Canvas with three pads
+  TCanvas* c = new TCanvas(Form("cGE_%d",binIndex), "", 1500, 520);
   c->Divide(3,1);
-  auto drawOne = [&](int pad, TH1D* h, TF1& f, const char* ytitle){
+
+  auto drawOne = [&](int pad, TH1D* h, auto ymodel, const char* ytitle){
     c->cd(pad);
+    // Data as TGraphErrors
     TGraphErrors* gr = new TGraphErrors();
-    for (int i=1;i<=h->GetNbinsX();++i){
+    const int nb = h->GetNbinsX();
+    for (int i=1;i<=nb;++i){
       gr->SetPoint(i-1, h->GetBinCenter(i), h->GetBinContent(i));
       gr->SetPointError(i-1, 0.0, h->GetBinError(i));
     }
-    gr->SetMarkerStyle(kFullCircle); gr->SetMarkerColor(kBlack);
+    gr->SetMarkerStyle(kFullCircle);
+    gr->SetMarkerColor(kBlack);
     gr->GetXaxis()->SetTitle("#phi"); gr->GetYaxis()->SetTitle(ytitle);
     gr->GetXaxis()->SetLimits(0, 2*TMath::Pi());
     gr->Draw("AP");
-    f.SetRange(0, 2*TMath::Pi());
-    f.SetLineColor(kRed);
-    f.Draw("same");
 
-    TLegend* L = new TLegend(0.18, 0.66, 0.58, 0.89);
-    L->SetBorderSize(1); L->SetFillColor(0); L->SetTextSize(0.026);
-    if (ytitle[2]=='U') { // LU
-      L->AddEntry((TObject*)0, Form("offset: %.4f", par[0]), "");
-      L->AddEntry((TObject*)0, Form("A_{LU}^{sin#phi}: %.4f", par[2]), "");
-    } else if (ytitle[2]=='L' && ytitle[3]=='L') { // LL
-      L->AddEntry((TObject*)0, Form("A_{LL}: %.4f", par[5]), "");
-      L->AddEntry((TObject*)0, Form("A_{LL}^{cos#phi}: %.4f", par[6]), "");
-    } else { // UL
-      L->AddEntry((TObject*)0, Form("offset: %.4f", par[1]), "");
-      L->AddEntry((TObject*)0, Form("A_{UL}^{sin#phi}: %.4f", par[3]), "");
-      L->AddEntry((TObject*)0, Form("A_{UL}^{sin2#phi}: %.4f", par[4]), "");
+    // Model curve as a smooth TGraph
+    const int np = 360;
+    TGraph* gm = new TGraph(np);
+    for (int j=0; j<np; ++j){
+      double phi = (2.0*TMath::Pi()) * (j/(double)(np-1));
+      gm->SetPoint(j, phi, ymodel(phi));
     }
-    // Also show the shared UU cos amplitudes that constrained all three:
-    L->AddEntry((TObject*)0, Form("UU cos#phi (shared): %.4f", par[7]), "");
-    L->AddEntry((TObject*)0, Form("UU cos2#phi (shared): %.4f", par[8]), "");
+    gm->SetLineColor(kRed);
+    gm->Draw("L same");
+
+    // Simple legend with fitted values
+    TLegend* L = new TLegend(0.18, 0.68, 0.50, 0.88);
+    L->SetBorderSize(1); L->SetFillColor(0); L->SetTextSize(0.025);
+    if (std::string(ytitle)=="A_{LU}") {
+      L->AddEntry((TObject*)0, Form("offset: %.4f", a0), "");
+      L->AddEntry((TObject*)0, Form("F_{LU}^{sin#phi}/F_{UU}: %.4f", aLU), "");
+    } else if (std::string(ytitle)=="A_{UL}") {
+      L->AddEntry((TObject*)0, Form("offset: %.4f", a1), "");
+      L->AddEntry((TObject*)0, Form("F_{UL}^{sin#phi}/F_{UU}: %.4f", aUL1), "");
+      L->AddEntry((TObject*)0, Form("F_{UL}^{sin2#phi}/F_{UU}: %.4f", aUL2), "");
+    } else { // ALL
+      L->AddEntry((TObject*)0, Form("F_{LL}/F_{UU}: %.4f", aLL), "");
+      L->AddEntry((TObject*)0, Form("F_{LL}^{cos#phi}/F_{UU}: %.4f", aLLc), "");
+    }
+    L->AddEntry((TObject*)0, Form("UU: cos#phi=%.4f, cos2#phi=%.4f", aUUc, aUUc2), "");
     L->Draw("same");
   };
 
-  drawOne(1, hALU, fLU,  "A_{LU}");
-  drawOne(2, hAUL, fUL,  "A_{UL}");
-  drawOne(3, hALL, fLL,  "A_{LL}");
+  drawOne(1, hALU, yALU, "A_{LU}");
+  drawOne(2, hAUL, yAUL, "A_{UL}");
+  drawOne(3, hALL, yALL, "A_{LL}");
 
+  // Title showing bin range
   const double vmin = allBins[currentFits][binIndex];
   const double vmax = allBins[currentFits][binIndex+1];
   std::ostringstream ttl; ttl<<std::fixed<<std::setprecision(3)
@@ -3487,18 +3499,19 @@ static void plotHistogramAndFit_GeneralExclusive(
   delete c;
 }
 
-// ============================
-// Perform simultaneous χ² fits for GeneralExclusive (BSA/TSA/DSA + shared UU)
-// Writes arrays to output_file, kinematics table to kinematic_file,
-// kinematics list to kinematicPlot_file, and labeled cov/corr matrices to output/results.
-// ============================
-static void performChi2Fits_GeneralExclusive(const char* output_file,
-                                             const char* kinematic_file,
-                                             const char* kinematicPlot_file,
-                                             const std::string& prefix) {
-  // Parameter arrays (now include AUU cos terms)
-  std::ostringstream sALUoff, sAULoff, sALU, sAUL, sAUL2, sALL, sALLc, sAUUc1, sAUUc2;
-  for (auto* s : {&sALUoff,&sAULoff,&sALU,&sAUL,&sAUL2,&sALL,&sALLc,&sAUUc1,&sAUUc2})
+
+// Simultaneous chi2 fits across ALU/AUL/ALL per bin; writes:
+//  - per-parameter arrays to output_file
+//  - mean-kinematics LaTeX table to kinematic_file
+//  - compact kinematics list to kinematicPlot_file
+//  - labeled covariance and correlation matrices to output/results/
+void performChi2Fits_GeneralExclusive(const char* output_file,
+                                      const char* kinematic_file,
+                                      const char* kinematicPlot_file,
+                                      const string& prefix) {
+  // Prepare output streams for parameter arrays
+  std::ostringstream sALUoff, sAULoff, sALU, sAUL, sAUL2, sALL, sALLc, sAUUc, sAUUc2;
+  for (auto* s : {&sALUoff,&sAULoff,&sALU,&sAUL,&sAUL2,&sALL,&sALLc,&sAUUc,&sAUUc2})
     (*s) << std::fixed << std::setprecision(9);
 
   sALUoff << prefix << "GEchi2FitsALUoffset = {";
@@ -3508,7 +3521,7 @@ static void performChi2Fits_GeneralExclusive(const char* output_file,
   sAUL2   << prefix << "GEchi2FitsAULsin2phi = {";
   sALL    << prefix << "GEchi2FitsALL = {";
   sALLc   << prefix << "GEchi2FitsALLcosphi = {";
-  sAUUc1  << prefix << "GEchi2FitsAUUcosphi = {";
+  sAUUc   << prefix << "GEchi2FitsAUUcosphi = {";
   sAUUc2  << prefix << "GEchi2FitsAUUcos2phi = {";
 
   // Kinematic LaTeX and list
@@ -3521,47 +3534,53 @@ static void performChi2Fits_GeneralExclusive(const char* output_file,
   std::ostringstream kinList;
   kinList << prefix << "GEKinematics = {";
 
-  // ensure results directory exists
+  // Results directory for matrices
   gSystem->mkdir("output/results", kTRUE);
 
   const size_t numBins = allBins[currentFits].size() - 1;
 
+  // Loop over kinematic bins
   for (size_t i = 0; i < numBins; ++i) {
     std::cout << "Beginning simultaneous chi2 GE fit for " << binNames[currentFits]
               << " bin " << i << ". " << std::endl;
 
-    // Build asymmetry histograms (also prints number of events found)
+    // Build asymmetry histograms
     char hname[64]; snprintf(hname, sizeof(hname), "GE_%zu", i);
     TH1D *hALU, *hAUL, *hALL;
     std::tie(hALU, hAUL, hALL) = createHistogramForBin_GeneralExclusive(hname, (int)i, prefix);
 
-    // Compute mean depolarization ratios and kinematics for this bin (single pass)
+    // ---- Compute mean depolarization & mean kinematics (and count events) ----
     double sumQ2=0, sumW=0, sumx=0, sumy=0, sumt=0, sumtmin=0, nEvt=0;
     double sumDepA=0, sumDepB=0, sumDepC=0, sumDepV=0, sumDepW=0, sumVar=0;
 
-    TTreeReaderValue<double> Q2(dataReader,"Q2");
-    TTreeReaderValue<double> W (dataReader,"W");
-    TTreeReaderValue<double> x (dataReader,"x");
-    TTreeReaderValue<double> y (dataReader,"y");
-    TTreeReaderValue<double> t (dataReader,"t");
-    TTreeReaderValue<double> tmin(dataReader,"tmin");
-    TTreeReaderValue<double> DepA(dataReader,"DepA");
-    TTreeReaderValue<double> DepB(dataReader,"DepB");
-    TTreeReaderValue<double> DepC(dataReader,"DepC");
-    TTreeReaderValue<double> DepV(dataReader,"DepV");
-    TTreeReaderValue<double> DepW(dataReader,"DepW");
-    TTreeReaderValue<double> currentVariable(dataReader, propertyNames[currentFits].c_str());
+    {
+      TTreeReaderValue<double> Q2(dataReader,"Q2");
+      TTreeReaderValue<double> W (dataReader,"W");
+      TTreeReaderValue<double> x (dataReader,"x");
+      TTreeReaderValue<double> y (dataReader,"y");
+      TTreeReaderValue<double> t (dataReader,"t");
+      TTreeReaderValue<double> tmin(dataReader,"tmin");
+      TTreeReaderValue<double> DepA(dataReader,"DepA");
+      TTreeReaderValue<double> DepB(dataReader,"DepB");
+      TTreeReaderValue<double> DepC(dataReader,"DepC");
+      TTreeReaderValue<double> DepV(dataReader,"DepV");
+      TTreeReaderValue<double> DepW(dataReader,"DepW");
+      TTreeReaderValue<double> currentVariable(dataReader, propertyNames[currentFits].c_str());
 
-    const double vmin = allBins[currentFits][i];
-    const double vmax = allBins[currentFits][i+1];
-    while (dataReader.Next()){
-      if (!kinematicCuts->applyCuts(currentFits,false)) continue;
-      if (*currentVariable < vmin || *currentVariable >= vmax) continue;
-      sumQ2 += *Q2; sumW += *W; sumx += *x; sumy += *y; sumt += *t; sumtmin += *tmin;
-      sumDepA += *DepA; sumDepB += *DepB; sumDepC += *DepC; sumDepV += *DepV; sumDepW += *DepW;
-      sumVar += *currentVariable; nEvt += 1.0;
+      const double vmin = allBins[currentFits][i];
+      const double vmax = allBins[currentFits][i+1];
+      while (dataReader.Next()){
+        if (!kinematicCuts->applyCuts(currentFits,false)) continue;
+        if (*currentVariable < vmin || *currentVariable >= vmax) continue;
+        sumQ2 += *Q2; sumW += *W; sumx += *x; sumy += *y; sumt += *t; sumtmin += *tmin;
+        sumDepA += *DepA; sumDepB += *DepB; sumDepC += *DepC; sumDepV += *DepV; sumDepW += *DepW;
+        sumVar += *currentVariable; nEvt += 1.0;
+      }
+      dataReader.Restart();
     }
-    dataReader.Restart();
+
+    // Print number of events in this bin (like other channels)
+    std::cout << "Found " << nEvt << " events in this bin." << std::endl;
 
     const double meanVar  = (nEvt>0)? sumVar/nEvt : 0.0;
     const double meanQ2   = (nEvt>0)? sumQ2/nEvt  : 0.0;
@@ -3571,92 +3590,77 @@ static void performChi2Fits_GeneralExclusive(const char* output_file,
     const double meant    = (nEvt>0)? sumt/nEvt   : 0.0;
     const double meantmin = (nEvt>0)? sumtmin/nEvt: 0.0;
 
-    g_ge_ctx.rVA = (nEvt>0)? (sumDepV/sumDepA) : 1.0;
-    g_ge_ctx.rBA = (nEvt>0)? (sumDepB/sumDepA) : 1.0;
-    g_ge_ctx.rWA = (nEvt>0)? (sumDepW/sumDepA) : 1.0;
-    g_ge_ctx.rCA = (nEvt>0)? (sumDepC/sumDepA) : 1.0;
+    const double depA = (nEvt>0)? (sumDepA/nEvt) : 1.0;
+    const double depB = (nEvt>0)? (sumDepB/nEvt) : 1.0;
+    const double depC = (nEvt>0)? (sumDepC/nEvt) : 1.0;
+    const double depV = (nEvt>0)? (sumDepV/nEvt) : 1.0;
+    const double depW = (nEvt>0)? (sumDepW/nEvt) : 1.0;
 
-    // set hist pointers into FCN context
+    // Pass dep ratios to FCN (so fitted amplitudes are directly S.F. ratios)
     g_ge_ctx.hLU = hALU;
     g_ge_ctx.hUL = hAUL;
     g_ge_ctx.hLL = hALL;
+    g_ge_ctx.rVA = (depA!=0.0)? (depV/depA) : 1.0;
+    g_ge_ctx.rBA = (depA!=0.0)? (depB/depA) : 1.0;
+    g_ge_ctx.rWA = (depA!=0.0)? (depW/depA) : 1.0;
+    g_ge_ctx.rCA = (depA!=0.0)? (depC/depA) : 1.0;
 
-    // Fit (9 params now: add AUU cos modulations)
+    // ---- Fit with Minuit ----
     TMinuit minuit(9);
     minuit.SetPrintLevel(-1);
+    minuit.SetErrorDef(1.0); // chi2
     minuit.SetFCN(chi2Fcn_GeneralExclusive);
-    minuit.DefineParameter(0, "ALU_offset",   0.0,  0.01, -1.0, 1.0);
-    minuit.DefineParameter(1, "AUL_offset",   0.0,  0.01, -1.0, 1.0);
-    minuit.DefineParameter(2, "ALU_sinphi",   0.02, 0.01, -1.0, 1.0);
-    minuit.DefineParameter(3, "AUL_sinphi",   0.02, 0.01, -1.0, 1.0);
-    minuit.DefineParameter(4, "AUL_sin2phi",  0.02, 0.01, -1.0, 1.0);
-    minuit.DefineParameter(5, "ALL",          0.30, 0.01, -1.0, 1.0);
-    minuit.DefineParameter(6, "ALL_cosphi",   0.01, 0.01, -1.0, 1.0);
-    minuit.DefineParameter(7, "AUU_cosphi",   0.00, 0.01, -1.0, 1.0);
-    minuit.DefineParameter(8, "AUU_cos2phi",  0.00, 0.01, -1.0, 1.0);
+
+    // name, init, step, low, high
+    minuit.DefineParameter(0, "ALU_offset",  0.00, 0.01, -1.0, 1.0);
+    minuit.DefineParameter(1, "AUL_offset",  0.00, 0.01, -1.0, 1.0);
+    minuit.DefineParameter(2, "F_LU_sin/F_UU",   0.02, 0.01, -1.0, 1.0);
+    minuit.DefineParameter(3, "F_UL_sin/F_UU",   0.02, 0.01, -1.0, 1.0);
+    minuit.DefineParameter(4, "F_UL_sin2/F_UU",  0.02, 0.01, -1.0, 1.0);
+    minuit.DefineParameter(5, "F_LL/F_UU",       0.30, 0.01, -1.0, 1.0);
+    minuit.DefineParameter(6, "F_LL_cos/F_UU",   0.01, 0.01, -1.0, 1.0);
+    minuit.DefineParameter(7, "F_UU_cos/F_UU",   0.00, 0.01, -1.0, 1.0);
+    minuit.DefineParameter(8, "F_UU_cos2/F_UU",  0.00, 0.01, -1.0, 1.0);
 
     minuit.Migrad();
-    double arglist[2] = {500, 1.0}; int ierflg=0;
+    double arglist[2]; int ierflg=0; arglist[0]=500; arglist[1]=1.0;
     minuit.mnexcm("MINImize", arglist, 2, ierflg);
 
-    // Extract fit results
+    // Extract parameters and errors
     double pval[9], perr[9];
     for (int ip=0; ip<9; ++ip) minuit.GetParameter(ip, pval[ip], perr[ip]);
 
-    // Plot summary
+    // Plot summary (three panels) with model including shared UU denominator
     plotHistogramAndFit_GeneralExclusive(hALU, hAUL, hALL, pval, (int)i, prefix);
 
-    // Convert to structure-function ratios for output (match other channels)
-    const double ALU_sinphi_val   = g_ge_ctx.rWA * pval[2] / 1.0; // will still present as A term; dep-conversion handled below as in other chans:
-    const double ALU_sinphi_out   = (sumDepA && nEvt) ? ( (sumDepA/nEvt) / (sumDepW/nEvt) ) * pval[2] : pval[2];
-    const double ALU_sinphi_err   = (sumDepA && nEvt) ? ( (sumDepA/nEvt) / (sumDepW/nEvt) ) * perr[2] : perr[2];
-
-    const double AUL_sinphi_out   = (sumDepA && nEvt) ? ( (sumDepA/nEvt) / (sumDepV/nEvt) ) * pval[3] : pval[3];
-    const double AUL_sinphi_err   = (sumDepA && nEvt) ? ( (sumDepA/nEvt) / (sumDepV/nEvt) ) * perr[3] : perr[3];
-
-    const double AUL_sin2phi_out  = (sumDepA && nEvt) ? ( (sumDepA/nEvt) / (sumDepB/nEvt) ) * pval[4] : pval[4];
-    const double AUL_sin2phi_err  = (sumDepA && nEvt) ? ( (sumDepA/nEvt) / (sumDepB/nEvt) ) * perr[4] : perr[4];
-
-    const double ALL_out          = (sumDepA && nEvt) ? ( (sumDepA/nEvt) / (sumDepC/nEvt) ) * pval[5] : pval[5];
-    const double ALL_err          = (sumDepA && nEvt) ? ( (sumDepA/nEvt) / (sumDepC/nEvt) ) * perr[5] : perr[5];
-
-    const double ALL_cosphi_out   = (sumDepA && nEvt) ? ( (sumDepA/nEvt) / (sumDepW/nEvt) ) * pval[6] : pval[6];
-    const double ALL_cosphi_err   = (sumDepA && nEvt) ? ( (sumDepA/nEvt) / (sumDepW/nEvt) ) * perr[6] : perr[6];
-
-    // For UU, report the physical ratios F_UU^{cos}/F_UU and F_UU^{cos2}/F_UU
-    const double AUU_cosphi_out   = (sumDepA && nEvt) ? ( (sumDepV/nEvt) / (sumDepA/nEvt) ) * pval[7] : pval[7];
-    const double AUU_cosphi_err   = (sumDepA && nEvt) ? ( (sumDepV/nEvt) / (sumDepA/nEvt) ) * perr[7] : perr[7];
-
-    const double AUU_cos2phi_out  = (sumDepA && nEvt) ? ( (sumDepB/nEvt) / (sumDepA/nEvt) ) * pval[8] : pval[8];
-    const double AUU_cos2phi_err  = (sumDepA && nEvt) ? ( (sumDepB/nEvt) / (sumDepA/nEvt) ) * perr[8] : perr[8];
-
-    // Append to arrays
-    sALUoff << "{" << meanVar << ", " << pval[0]          << ", " << perr[0]          << "}";
-    sAULoff << "{" << meanVar << ", " << pval[1]          << ", " << perr[1]          << "}";
-    sALU    << "{" << meanVar << ", " << ALU_sinphi_out   << ", " << ALU_sinphi_err   << "}";
-    sAUL    << "{" << meanVar << ", " << AUL_sinphi_out   << ", " << AUL_sinphi_err   << "}";
-    sAUL2   << "{" << meanVar << ", " << AUL_sin2phi_out  << ", " << AUL_sin2phi_err  << "}";
-    sALL    << "{" << meanVar << ", " << ALL_out          << ", " << ALL_err          << "}";
-    sALLc   << "{" << meanVar << ", " << ALL_cosphi_out   << ", " << ALL_cosphi_err   << "}";
-    sAUUc1  << "{" << meanVar << ", " << AUU_cosphi_out   << ", " << AUU_cosphi_err   << "}";
-    sAUUc2  << "{" << meanVar << ", " << AUU_cos2phi_out  << ", " << AUU_cos2phi_err  << "}";
+    // Append to parameter arrays (use mean of binning variable as x)
+    sALUoff << "{" << meanVar << ", " << pval[0] << ", " << perr[0] << "}";
+    sAULoff << "{" << meanVar << ", " << pval[1] << ", " << perr[1] << "}";
+    sALU    << "{" << meanVar << ", " << pval[2] << ", " << perr[2] << "}";
+    sAUL    << "{" << meanVar << ", " << pval[3] << ", " << perr[3] << "}";
+    sAUL2   << "{" << meanVar << ", " << pval[4] << ", " << perr[4] << "}";
+    sALL    << "{" << meanVar << ", " << pval[5] << ", " << perr[5] << "}";
+    sALLc   << "{" << meanVar << ", " << pval[6] << ", " << perr[6] << "}";
+    sAUUc   << "{" << meanVar << ", " << pval[7] << ", " << perr[7] << "}";
+    sAUUc2  << "{" << meanVar << ", " << pval[8] << ", " << perr[8] << "}";
 
     if (i < numBins - 1) {
       sALUoff << ", "; sAULoff << ", "; sALU << ", "; sAUL << ", "; sAUL2 << ", ";
-      sALL << ", "; sALLc << ", "; sAUUc1 << ", "; sAUUc2 << ", ";
+      sALL << ", "; sALLc << ", "; sAUUc << ", "; sAUUc2 << ", ";
     }
 
-    // Kinematics outputs
+    // Kinematics LaTeX row
     kinLatex << std::fixed << std::setprecision(3)
              << (i+1) << " ~&~ " << meanQ2 << " ~&~ " << meanW << " ~&~ " << meanx
              << " ~&~ " << meany << " ~&~ " << meant << " ~&~ " << meantmin
              << " \\\\ \\hline ";
 
+    // Kinematics list row
     kinList << "{" << meanQ2 << ", " << meanW << ", " << meanx << ", "
             << meany << ", " << meant << ", " << meantmin << "}";
     if (i < numBins - 1) kinList << ", ";
 
-    // ----- Matrices to output/results with headers -----
+    // ---- Save covariance & correlation matrices (labeled) ----
     const int npar = 9;
     std::vector<double> cov(npar*npar, 0.0);
     minuit.mnemat(cov.data(), npar);
@@ -3665,71 +3669,72 @@ static void performChi2Fits_GeneralExclusive(const char* output_file,
     for (int ip=0; ip<npar; ++ip) errv[ip] = std::sqrt(std::max(cov[ip*npar+ip], 0.0));
 
     const char* names[npar] = {
-      "ALU_offset","AUL_offset","ALU_sinphi","AUL_sinphi","AUL_sin2phi",
-      "ALL","ALL_cosphi","AUU_cosphi","AUU_cos2phi"
+      "ALU_offset","AUL_offset",
+      "F_LU_sin/F_UU","F_UL_sin/F_UU","F_UL_sin2/F_UU",
+      "F_LL/F_UU","F_LL_cos/F_UU",
+      "F_UU_cos/F_UU","F_UU_cos2/F_UU"
     };
 
-    // Covariance
+    const double vmin = allBins[currentFits][i];
+    const double vmax = allBins[currentFits][i+1];
+
     {
-      std::string path = "output/results/GE_" + prefix + "_bin_" + std::to_string(i) + "_cov.txt";
-      std::ofstream of(path);
-      of << "# GeneralExclusive covariance matrix for bin " << i << "\n";
-      of << "# Columns/rows (in order): ";
-      for (int ip=0; ip<npar; ++ip) { of << names[ip] << (ip<npar-1?", ":""); }
+      std::string fcov = "output/results/GE_" + prefix + "_bin_" + std::to_string(i) + "_cov.txt";
+      std::ofstream of(fcov);
+      of << std::setprecision(9);
+      of << "# Covariance matrix for GeneralExclusive fit\n";
+      of << "# Bin index: " << i << "  Range: [" << vmin << ", " << vmax << ")   Events: " << nEvt << "\n";
+      of << "# Parameters (order): ";
+      for (int ip=0; ip<npar; ++ip) { of << names[ip] << (ip<npar-1 ? ", " : ""); }
       of << "\n";
 
-      // header row
-      of << std::setw(16) << " "
-         << " ";
-      for (int c=0; c<npar; ++c) of << std::setw(16) << names[c];
+      // Column headers
+      of << std::left << std::setw(20) << "#";
+      for (int c=0;c<npar;++c) of << std::setw(20) << names[c];
       of << "\n";
 
       for (int r=0; r<npar; ++r) {
-        of << std::setw(16) << names[r] << " ";
+        of << std::left << std::setw(20) << names[r];
         for (int c=0; c<npar; ++c) {
-          of << std::setw(16) << cov[r*npar + c];
+          of << std::setw(20) << cov[r*npar + c];
         }
         of << "\n";
       }
-      of << "# Diagonal (variances), sqrt(diag): ";
-      for (int ip=0; ip<npar; ++ip) { of << names[ip] << "=" << errv[ip] << (ip<npar-1?"  ":""); }
-      of << "\n";
-      std::cout << "Wrote covariance matrix to " << path << std::endl;
     }
-
-    // Correlation
     {
-      std::string path = "output/results/GE_" + prefix + "_bin_" + std::to_string(i) + "_corr.txt";
-      std::ofstream of(path);
-      of << "# GeneralExclusive correlation matrix for bin " << i << "\n";
-      of << "# Columns/rows (in order): ";
-      for (int ip=0; ip<npar; ++ip) { of << names[ip] << (ip<npar-1?", ":""); }
+      std::string fcorr = "output/results/GE_" + prefix + "_bin_" + std::to_string(i) + "_corr.txt";
+      std::ofstream of(fcorr);
+      of << std::setprecision(9);
+      of << "# Correlation matrix for GeneralExclusive fit\n";
+      of << "# Bin index: " << i << "  Range: [" << vmin << ", " << vmax << ")   Events: " << nEvt << "\n";
+      of << "# rho_{ij} = cov_{ij} / (sigma_i sigma_j)\n";
+      of << "# Parameters (order): ";
+      for (int ip=0; ip<npar; ++ip) { of << names[ip] << (ip<npar-1 ? ", " : ""); }
       of << "\n";
 
-      // header row
-      of << std::setw(16) << " "
-         << " ";
-      for (int c=0; c<npar; ++c) of << std::setw(16) << names[c];
+      // Column headers
+      of << std::left << std::setw(20) << "#";
+      for (int c=0;c<npar;++c) of << std::setw(20) << names[c];
       of << "\n";
 
       for (int r=0; r<npar; ++r) {
-        of << std::setw(16) << names[r] << " ";
+        of << std::left << std::setw(20) << names[r];
         for (int c=0; c<npar; ++c) {
           double denom = (errv[r]>0 && errv[c]>0) ? (errv[r]*errv[c]) : 1.0;
           double rho = cov[r*npar + c] / denom;
-          of << std::setw(16) << rho;
+          of << std::setw(20) << rho;
         }
         of << "\n";
       }
-      std::cout << "Wrote correlation matrix to " << path << std::endl;
     }
 
+    // cleanup hists
     delete hALU; delete hAUL; delete hALL;
   }
 
   // Close arrays and write to files
   sALUoff << "};"; sAULoff << "};"; sALU << "};"; sAUL << "};";
-  sAUL2  << "};"; sALL    << "};"; sALLc<< "};"; sAUUc1<< "};"; sAUUc2<< "};";
+  sAUL2  << "};"; sALL    << "};"; sALLc<< "};"; sAUUc << "};"; sAUUc2 << "};";
 
   {
     std::ofstream out(output_file, std::ios::app);
@@ -3740,7 +3745,7 @@ static void performChi2Fits_GeneralExclusive(const char* output_file,
     out << sAUL2.str()   << "\n";
     out << sALL.str()    << "\n";
     out << sALLc.str()   << "\n";
-    out << sAUUc1.str()  << "\n";
+    out << sAUUc.str()   << "\n";
     out << sAUUc2.str()  << "\n";
   }
 
