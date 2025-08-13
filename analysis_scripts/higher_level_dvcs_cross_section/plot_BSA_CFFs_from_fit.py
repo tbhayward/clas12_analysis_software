@@ -358,7 +358,7 @@ def main():
                 label=(f'Data fit: A={fit_res["A"]:.3f}±{fit_res["dA"]:.3f}'))
 
         ax.set_xlim(0, 360)
-        ax.set.xticks([0,60,120,180,240,300,360])
+        ax.set_xticks([0,60,120,180,240,300,360])
         ax.set_ylim(-0.6, 0.6)
         ax.set_xlabel(r'$\phi\;(\mathrm{deg})$')
         ax.set_ylabel(r'$A_{LU}(\phi)$')
