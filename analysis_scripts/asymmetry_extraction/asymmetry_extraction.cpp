@@ -265,6 +265,7 @@ int main(int argc, char *argv[]) {
     cout << "-- Beginning kinematic fits." << endl;
 
     if (cpp != 1) {
+        std::cout << "HELLO WORLD" << std::endl;
         // Calculate the dilution factors for the current bin
         dilutionFactors = calculate_dilution_factors();
 
