@@ -8,7 +8,10 @@ from matplotlib.lines import Line2D
 
 # ---------------------------------------------------------------------
 # Usage:
-#   python plot_enpi_from_texts.py Su22.txt Fa22.txt Sp23.txt Combined.txt enpiHightGE
+#   python plot_enpi_from_texts.py Su22.txt Fa22.txt Sp23.txt Combined.txt <Prefix> "<Kinematic text>"
+#
+# Example:
+#   python plot_enpi_from_texts.py su22.txt fa22.txt sp23.txt combined.txt enpiHightGE "0.07<|t|<0.7, z>0.55, y<0.65, 0.75<M_x^2<1.05 (GeV^2)"
 #
 # Saves:
 #   output/enpi+/rgc_<PREFIX>_AllPeriods.pdf
@@ -81,12 +84,13 @@ def build_period_dict(parsed, prefix):
     }
 
 # ----------- plotting helpers ---------------------------------------
-def plot_all_periods(p_su22, p_fa22, p_sp23, prefix, out_dir):
+def make_title(kin_text):
+    # Math text for the reaction, then your freeform cuts string outside math
+    return rf"$ep \rightarrow en\pi^{{+}}$, {kin_text}"
+
+def plot_all_periods(p_su22, p_fa22, p_sp23, prefix, kin_text, out_dir):
     plt.figure(figsize=(12, 9))
-    plt.suptitle(
-        r"$ep \rightarrow en\pi^{+}$, $0.07<|t|<0.7$, $z>0.55$, $y<0.65$, $0.75<M_{x}^{2}<1.05\ \mathrm{GeV}^{2}$",
-        fontsize=16, y=0.97
-    )
+    plt.suptitle(make_title(kin_text), fontsize=16, y=0.97)
 
     # Order requested: BSA TL, TSA TR, DSA BL, UU BR
     axLU  = plt.subplot(2,2,1)  # BSA
@@ -157,7 +161,7 @@ def plot_all_periods(p_su22, p_fa22, p_sp23, prefix, out_dir):
             axLL.errorbar(s1["x"], s1["y"], yerr=s1["yerr"],
                           fmt=MARKER, color=COLORS[lab], ecolor=COLORS[lab],
                           capsize=CAPSIZE, label=f"{lab}, n=1")
-    axLL.set(xlim=(0, 0.7), ylim=(-0.6, 0.6),
+    axLL.set(xlim=(0, 0.7), ylim=(-1.0, 1.0),  # updated to [-1, 1]
              xlabel=r"$x_{B}$", ylabel=r"$F_{LL}^{\cos n\phi}/F_{UU}$")
     axLL.axhline(0, color="black", linestyle="--", linewidth=1.2)
     axLL.grid(True, linestyle="--", alpha=0.6)
@@ -223,12 +227,9 @@ def plot_all_periods(p_su22, p_fa22, p_sp23, prefix, out_dir):
     plt.savefig(out_path)
     print(f"Saved all-periods figure: {out_path}")
 
-def plot_combined_only(p_comb, prefix, out_dir):
+def plot_combined_only(p_comb, prefix, kin_text, out_dir):
     plt.figure(figsize=(12, 9))
-    plt.suptitle(
-        r"$ep \rightarrow en\pi^{+}$, $0.07<|t|<0.7$, $z>0.55$, $y<0.65$, $0.75<M_{x}^{2}<1.05\ \mathrm{GeV}^{2}$",
-        fontsize=16, y=0.97
-    )
+    plt.suptitle(make_title(kin_text), fontsize=16, y=0.97)
 
     # Order requested: BSA TL, TSA TR, DSA BL, UU BR
     axLU  = plt.subplot(2,2,1)
@@ -280,7 +281,7 @@ def plot_combined_only(p_comb, prefix, out_dir):
         s1 = p_comb["ALLcos"]
         axLL.errorbar(s1["x"], s1["y"], yerr=s1["yerr"],
                       fmt=MARKER, color=black, ecolor=black, capsize=CAPSIZE)
-    axLL.set(xlim=(0, 0.7), ylim=(-0.8, 0.8),
+    axLL.set(xlim=(0, 0.7), ylim=(-1.0, 1.0),  # updated to [-1, 1]
              xlabel=r"$x_{B}$", ylabel=r"$F_{LL}^{\cos n\phi}/F_{UU}$")
     axLL.axhline(0, color="black", linestyle="--", linewidth=1.2)
     axLL.grid(True, linestyle="--", alpha=0.6)
@@ -323,12 +324,13 @@ def plot_combined_only(p_comb, prefix, out_dir):
 
 # ----------- main ----------------------------------------------------
 def main():
-    if len(sys.argv) != 6:
-        print("Usage: python plot_enpi_from_texts.py Su22.txt Fa22.txt Sp23.txt Combined.txt <Prefix>")
-        print("Example: python plot_enpi_from_texts.py su22.txt fa22.txt sp23.txt combined.txt enpiHightGE")
+    if len(sys.argv) != 7:
+        print("Usage: python plot_enpi_from_texts.py Su22.txt Fa22.txt Sp23.txt Combined.txt <Prefix> \"<Kinematic text>\"")
+        print("Example:")
+        print("  python plot_enpi_from_texts.py su22.txt fa22.txt sp23.txt combined.txt enpiHightGE \"0.07<|t|<0.7, z>0.55, y<0.65, 0.75<M_x^2<1.05 (GeV^2)\"")
         sys.exit(1)
 
-    su22_path, fa22_path, sp23_path, comb_path, prefix = sys.argv[1:6]
+    su22_path, fa22_path, sp23_path, comb_path, prefix, kin_text = sys.argv[1:7]
 
     su22 = parse_asym_file(su22_path)
     fa22 = parse_asym_file(fa22_path)
@@ -343,8 +345,8 @@ def main():
     out_dir = os.path.join("output", "enpi+")
     os.makedirs(out_dir, exist_ok=True)
 
-    plot_all_periods(p_su22, p_fa22, p_sp23, prefix, out_dir)
-    plot_combined_only(p_comb, prefix, out_dir)
+    plot_all_periods(p_su22, p_fa22, p_sp23, prefix, kin_text, out_dir)
+    plot_combined_only(p_comb, prefix, kin_text, out_dir)
 
 if __name__ == "__main__":
     main()
