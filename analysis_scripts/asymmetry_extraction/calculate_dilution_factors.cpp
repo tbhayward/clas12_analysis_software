@@ -27,6 +27,8 @@
 #include "B2BDihadronKinematicCuts.h"
 #include "DihadronKinematicCuts.h"
 #include "dvcsKinematicCuts.h"
+#include "eppi0KinematicCuts.h"
+#include "GeneralExclusiveKinematicsCuts.h"
 #include "formatLabelName.h"
 #include "readChi2Fits.h"
 #include "histConfigs.h"
