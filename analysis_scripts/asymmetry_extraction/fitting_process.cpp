@@ -3306,7 +3306,7 @@ static void chi2Fcn_GeneralExclusive(Int_t& /*npar*/, Double_t* /*gin*/, Double_
     for (int i=1;i<=nb;++i){
       const double y  = h->GetBinContent(i);
       const double ey = h->GetBinError(i);
-      if (ey<=0) continue; // avoid zero-weight bins
+      if (ey<=0) continue;
       const double x  = h->GetBinCenter(i);
       const double yhat = model(x);
       const double pull = (y - yhat) / ey;
@@ -3488,10 +3488,10 @@ static void plotHistogramAndFit_GeneralExclusive(
   drawOne(3, hALL, yALL, "A_{LL}");
 
   // Title showing bin range
-  const double vmin = allBins[currentFits][binIndex];
-  const double vmax = allBins[currentFits][binIndex+1];
+  const double vminB = allBins[currentFits][binIndex];
+  const double vmaxB = allBins[currentFits][binIndex+1];
   std::ostringstream ttl; ttl<<std::fixed<<std::setprecision(3)
-    << vmin << " \\leq " << formatLabelName(prefix) << " < " << vmax;
+    << vminB << " \\leq " << formatLabelName(prefix) << " < " << vmaxB;
   c->SetTitle(ttl.str().c_str());
 
   std::string fname = "output/individual_chi2_fits/" + prefix + "_GE_bin_" + std::to_string(binIndex) + ".png";
@@ -3504,7 +3504,7 @@ static void plotHistogramAndFit_GeneralExclusive(
 //  - per-parameter arrays to output_file
 //  - mean-kinematics LaTeX table to kinematic_file
 //  - compact kinematics list to kinematicPlot_file
-//  - labeled covariance and correlation matrices to output/results/
+//  - combined, labeled covariance and correlation files to output/results/ with run+timestamp in the name
 void performChi2Fits_GeneralExclusive(const char* output_file,
                                       const char* kinematic_file,
                                       const char* kinematicPlot_file,
@@ -3536,6 +3536,56 @@ void performChi2Fits_GeneralExclusive(const char* output_file,
 
   // Results directory for matrices
   gSystem->mkdir("output/results", kTRUE);
+
+  // ---- Build combined file names using the same run+timestamp suffix as other outputs ----
+  auto deriveSuffixFromOut = [](const char* outPath)->std::string{
+    std::string s = outPath ? outPath : "";
+    size_t slash = s.find_last_of("/\\");
+    std::string base = (slash==std::string::npos)? s : s.substr(slash+1); // filename
+    size_t dot = base.find_last_of('.');
+    if (dot != std::string::npos) base = base.substr(0,dot);              // drop extension
+    const std::string prefixes[] = {"asymmetries_", "kinematics_", "kinematicPlots_"};
+    for (const auto& pfx : prefixes) {
+      if (base.rfind(pfx, 0) == 0) { base = base.substr(pfx.size()); break; }
+    }
+    return base; // "<root>_timeStamp_<ts>"
+  };
+
+  const std::string suffix = deriveSuffixFromOut(output_file);
+  const std::string covPath  = "output/results/GE_" + prefix + "_cov_"  + suffix + ".txt";
+  const std::string corrPath = "output/results/GE_" + prefix + "_corr_" + suffix + ".txt";
+
+  // Parameter names (order used everywhere)
+  const int npar = 9;
+  const char* names[npar] = {
+    "ALU_offset","AUL_offset",
+    "F_LU_sin/F_UU","F_UL_sin/F_UU","F_UL_sin2/F_UU",
+    "F_LL/F_UU","F_LL_cos/F_UU",
+    "F_UU_cos/F_UU","F_UU_cos2/F_UU"
+  };
+
+  // Open the combined matrix files (truncate once, then append per bin)
+  {
+    std::ofstream of(covPath, std::ios::out | std::ios::trunc);
+    of << std::setprecision(9);
+    of << "# Covariance matrices for GeneralExclusive simultaneous fit\n";
+    of << "# Prefix (kinematic variable): " << prefix << "\n";
+    of << "# Run+timestamp key: " << suffix << "\n";
+    of << "# Parameters (order): ";
+    for (int ip=0; ip<npar; ++ip) of << names[ip] << (ip<npar-1 ? ", " : "");
+    of << "\n\n";
+  }
+  {
+    std::ofstream of(corrPath, std::ios::out | std::ios::trunc);
+    of << std::setprecision(9);
+    of << "# Correlation matrices for GeneralExclusive simultaneous fit\n";
+    of << "# Prefix (kinematic variable): " << prefix << "\n";
+    of << "# Run+timestamp key: " << suffix << "\n";
+    of << "# rho_{ij} = cov_{ij} / (sigma_i sigma_j)\n";
+    of << "# Parameters (order): ";
+    for (int ip=0; ip<npar; ++ip) of << names[ip] << (ip<npar-1 ? ", " : "");
+    of << "\n\n";
+  }
 
   const size_t numBins = allBins[currentFits].size() - 1;
 
@@ -3660,72 +3710,52 @@ void performChi2Fits_GeneralExclusive(const char* output_file,
             << meany << ", " << meant << ", " << meantmin << "}";
     if (i < numBins - 1) kinList << ", ";
 
-    // ---- Save covariance & correlation matrices (labeled) ----
-    const int npar = 9;
+    // ---- Save labeled matrices by APPENDING to the combined files ----
     std::vector<double> cov(npar*npar, 0.0);
     minuit.mnemat(cov.data(), npar);
 
     std::vector<double> errv(npar);
     for (int ip=0; ip<npar; ++ip) errv[ip] = std::sqrt(std::max(cov[ip*npar+ip], 0.0));
 
-    const char* names[npar] = {
-      "ALU_offset","AUL_offset",
-      "F_LU_sin/F_UU","F_UL_sin/F_UU","F_UL_sin2/F_UU",
-      "F_LL/F_UU","F_LL_cos/F_UU",
-      "F_UU_cos/F_UU","F_UU_cos2/F_UU"
-    };
+    const double vminB = allBins[currentFits][i];
+    const double vmaxB = allBins[currentFits][i+1];
 
-    const double vmin = allBins[currentFits][i];
-    const double vmax = allBins[currentFits][i+1];
-
+    // Covariance block
     {
-      std::string fcov = "output/results/GE_" + prefix + "_bin_" + std::to_string(i) + "_cov.txt";
-      std::ofstream of(fcov);
+      std::ofstream of(covPath, std::ios::out | std::ios::app);
       of << std::setprecision(9);
-      of << "# Covariance matrix for GeneralExclusive fit\n";
-      of << "# Bin index: " << i << "  Range: [" << vmin << ", " << vmax << ")   Events: " << nEvt << "\n";
-      of << "# Parameters (order): ";
-      for (int ip=0; ip<npar; ++ip) { of << names[ip] << (ip<npar-1 ? ", " : ""); }
+      of << "## Bin " << i << "  Range: [" << vminB << ", " << vmaxB << ")  Events: " << nEvt << "\n";
+      of << std::left << std::setw(22) << "#";
+      for (int c=0;c<npar;++c) of << std::setw(22) << names[c];
       of << "\n";
-
-      // Column headers
-      of << std::left << std::setw(20) << "#";
-      for (int c=0;c<npar;++c) of << std::setw(20) << names[c];
-      of << "\n";
-
       for (int r=0; r<npar; ++r) {
-        of << std::left << std::setw(20) << names[r];
+        of << std::left << std::setw(22) << names[r];
         for (int c=0; c<npar; ++c) {
-          of << std::setw(20) << cov[r*npar + c];
+          of << std::setw(22) << cov[r*npar + c];
         }
         of << "\n";
       }
+      of << "\n";
     }
+
+    // Correlation block
     {
-      std::string fcorr = "output/results/GE_" + prefix + "_bin_" + std::to_string(i) + "_corr.txt";
-      std::ofstream of(fcorr);
+      std::ofstream of(corrPath, std::ios::out | std::ios::app);
       of << std::setprecision(9);
-      of << "# Correlation matrix for GeneralExclusive fit\n";
-      of << "# Bin index: " << i << "  Range: [" << vmin << ", " << vmax << ")   Events: " << nEvt << "\n";
-      of << "# rho_{ij} = cov_{ij} / (sigma_i sigma_j)\n";
-      of << "# Parameters (order): ";
-      for (int ip=0; ip<npar; ++ip) { of << names[ip] << (ip<npar-1 ? ", " : ""); }
+      of << "## Bin " << i << "  Range: [" << vminB << ", " << vmaxB << ")  Events: " << nEvt << "\n";
+      of << std::left << std::setw(22) << "#";
+      for (int c=0;c<npar;++c) of << std::setw(22) << names[c];
       of << "\n";
-
-      // Column headers
-      of << std::left << std::setw(20) << "#";
-      for (int c=0;c<npar;++c) of << std::setw(20) << names[c];
-      of << "\n";
-
       for (int r=0; r<npar; ++r) {
-        of << std::left << std::setw(20) << names[r];
+        of << std::left << std::setw(22) << names[r];
         for (int c=0; c<npar; ++c) {
           double denom = (errv[r]>0 && errv[c]>0) ? (errv[r]*errv[c]) : 1.0;
           double rho = cov[r*npar + c] / denom;
-          of << std::setw(20) << rho;
+          of << std::setw(22) << rho;
         }
         of << "\n";
       }
+      of << "\n";
     }
 
     // cleanup hists
