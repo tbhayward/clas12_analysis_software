@@ -4,21 +4,28 @@ plot_BSA_CFFs_from_fit.py
 
 Plots A_LU(φ) per (Q2, xB, t, Eb) bin for:
   • BKM (full) — solid blue
-  • RGK fit (approx): A(φ) ≈ [s1_I(φ=indep) · sinφ] / [c0_BH + c1_BH cosφ (+ c2_BH cos2φ if order=2)] — solid orange
+  • RGK fit for Im CFF(s) — solid orange:
+        A(φ) ≈ [s1_I · sinφ] / [c0_BH + c1_BH cosφ (+ c2_BH cos2φ if --approx-order=2)]
+        where s1_I uses your fitted ImCFFs; denominator is BH-only.
+  • BKM with Im CFF(s) from fit — dashed green:
+        Full BSA like BKM, but replace any available *imaginary-part* CFF parameters
+        (r, n, alpha0, alpha1, b, M2, P) with the fitted values from your results file.
+        All else (real parts, subtraction constants) stays at BKM defaults.
 
 Usage:
   python plot_BSA_CFFs_from_fit.py output/fit_results/fit_results_<TIMESTAMP>.txt
          [--data PATH]
-         [--approx-order {1,2}]    # denom with c0+c1 cosφ (1) or c0+c1 cosφ+c2 cos2φ (2)
-         [--B-source {bh,data}]    # where B (denom harmonics) come from; default 'bh'
+         [--approx-order {1,2}]    # denom: c0+c1 cosφ (1) or c0+c1 cosφ+c2 cos2φ (2)
+         [--B-source {bh,data}]    # use BH harmonics (default) or fit B1 from data (only for order=1)
          [--outdir output/plots]
          [--debug]
 
 Notes
 -----
-• The RGK curve uses BH-only denominator (c0_BH,c1_BH[,c2_BH]) and s1_I from the interference with your fitted ImCFFs.
-• For the BKM “full” curve we enable H,Ht,E and Et=0 (safe default) with the default parameters.
-• For the RGK curve we apply your fit flags/parameters before evaluating s1_I.
+• The orange RGK curve depends only on ImCFFs via s1_I; the denominator is pure BH.
+• The green curve shows what the *full* BKM prediction would look like if you swap in your fitted
+  ImCFF parameters (for any CFFs present in the fit file), leaving the rest untouched.
+• We keep Ē disabled as a safe default to avoid M2=0 / P≠0 pathologies.
 """
 
 import os, re, argparse
@@ -193,6 +200,37 @@ def fit_B_from_data(phi_data, A_data, dA):
     return B1, A1, chi2/ndf
 
 
+# ─────────── build ImCFF-substitution map for the green curve ───────────
+def build_imfit_param_map(fit_param_map):
+    """
+    Start from BKM defaults and *only* overwrite imaginary-part ansatz params
+    (r, n, alpha0, alpha1, b, M2, P) for any CFFs present in the fit file.
+    Real-part parameters (renormReal, C0, MD2, lambda) are left at defaults.
+    """
+    pm = bkm_defaults().copy()
+    for cff in ("H", "Ht", "E", "Et"):
+        for k in ("r","n","alpha0","alpha1","b","M2","P"):
+            key = f"{k}_{cff}"
+            if key in fit_param_map:
+                pm[key] = float(fit_param_map[key])
+    # Keep renormImag/Real as defaults (1.0). Do NOT import C0/MD2/lambda.
+    return pm
+
+
+# ───────────────────────────── labeling helpers ─────────────────────────────
+def latex_im_label(flags_fit):
+    parts = []
+    if flags_fit.get("H",0):  parts.append(r"$\mathrm{Im}\,\mathcal{H}$")
+    if flags_fit.get("Ht",0): parts.append(r"$\mathrm{Im}\,\widetilde{\mathcal{H}}$")
+    if flags_fit.get("E",0):  parts.append(r"$\mathrm{Im}\,\mathcal{E}$")
+    if flags_fit.get("Et",0): parts.append(r"$\mathrm{Im}\,\widetilde{\mathcal{E}}$")
+    if not parts:
+        return r"Im CFF(s)"  # fallback
+    if len(parts) == 1:
+        return parts[0]
+    return r",\;".join(parts)
+
+
 # ───────────────────────────── main ───────────────────────────────
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -231,6 +269,9 @@ def main():
     m = re.search(r'fit_results_(\d{8}_\d{6})\.txt$', os.path.basename(args.fitfile))
     ts = (m.group(1) if m else "noTS")
 
+    # Pretty label for which ImCFFs were fitted
+    imlabel = latex_im_label(flags_fit)
+
     # Loop bins
     for ibin, b in enumerate(bins, start=1):
         phi_data, A_data, dA = b["phi"], b["A"], b["sigA"]
@@ -246,6 +287,14 @@ def main():
         bkm_full = bsa_full_curve(phi_grid, Q2m, xBm, tm, Ebm,
                                   debug=(args.debug and ibin==1), tag=f"bin{ibin}-BKM")
 
+        # --- BKM full with ImCFFs substituted from fit (green dashed) ---
+        params_bkm_imfit = build_imfit_param_map(param_map_fit)
+        push_globals(params_bkm_imfit, flags_bkm, label="BKM+ImFit")
+        if args.debug and ibin == 1:
+            ROOT.gInterpreter.ProcessLine(r'std::cout<<"[BKM+ImFit] hasH="<<hasH<<" hasHt="<<hasHt<<" hasE="<<hasE<<" hasEt="<<hasEt<<std::endl;')
+        bkm_with_imfit = bsa_full_curve(phi_grid, Q2m, xBm, tm, Ebm,
+                                        debug=False, tag=f"bin{ibin}-BKM-ImFit")
+
         # --- RGK fit approx (use your fit params; BH denominator choice per args) ---
         push_globals(param_map_fit, flags_fit, label="RGK-fit")
         if args.debug and ibin == 1:
@@ -258,8 +307,8 @@ def main():
             B1_fit, _, _ = fit_B_from_data(phi_data, A_data, dA)
             B1_used, B2_used = B1_fit, 0.0
         else:
-            B1_used = c1_rgk / c0_rgk
-            B2_used = (c2_rgk / c0_rgk) if args.approx_order == 2 else 0.0
+            B1_used = c1_rgk / c0_rgk if c0_rgk != 0 else 0.0
+            B2_used = (c2_rgk / c0_rgk) if (args.approx_order == 2 and c0_rgk != 0) else 0.0
 
         ph = np.deg2rad(phi_grid)
         denom = c0_rgk * (1.0 + B1_used*np.cos(ph) + (B2_used*np.cos(2*ph) if args.approx_order==2 else 0.0))
@@ -270,8 +319,9 @@ def main():
         # --- Plot ---
         fig, ax = plt.subplots(figsize=(8,5))
         ax.errorbar(phi_data, A_data, yerr=dA, fmt='o', ms=5, color='k', label='Data')
-        ax.plot(phi_grid, bkm_full, '-',  lw=2, color='tab:blue',   label='BKM')
-        ax.plot(phi_grid, rgk_curve, '-', lw=2, color='tab:orange', label='RGK fit')
+        ax.plot(phi_grid, bkm_full, '-',   lw=2, color='tab:blue',   label='BKM')
+        ax.plot(phi_grid, rgk_curve, '-',  lw=2, color='tab:orange', label=f'RGK fit for {imlabel}')
+        ax.plot(phi_grid, bkm_with_imfit, '--', lw=2, color='tab:green', label=f'BKM with {imlabel} from fit')
 
         ax.set_xlim(0, 360)
         ax.set_xticks([0,60,120,180,240,300,360])
