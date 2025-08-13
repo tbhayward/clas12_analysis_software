@@ -2,20 +2,14 @@
 """
 plot_BSA_CFFs_from_fit.py
 
-Plots A_LU(φ) per (Q2, xB, t, Eb) bin using the BH-denominator approximation:
-
-  • BKM (solid blue):
-        A_LU(φ) ≈ [ (s1_I / c0_BH) * sin φ ] / [ 1 + (c1_BH/c0_BH) * cos φ ]
-
-  • RGK fit (solid orange):
-        Same formula, but s1_I is evaluated after pushing the ImCFF
-        parameters/flags from the provided fit_results_*.txt file.
+Plots A_LU(φ) per (Q2, xB, t, Eb) bin using the BH-only approximation:
+  • BKM:      A1*sinφ / (1 + B1*cosφ),  with A1 = s1_I/c0_BH from BKM defaults
+  • RGK fit:  A1*sinφ / (1 + B1*cosφ),  with A1 = s1_I/c0_BH from your fitted ImCFFs
+In both cases B1 = c1_BH/c0_BH (BH depends only on kinematics, not CFFs).
 
 Usage:
   python plot_BSA_CFFs_from_fit.py output/fit_results/fit_results_<TIMESTAMP>.txt
-         [--data PATH]
-         [--outdir output/plots]
-         [--debug]
+         [--data PATH] [--outdir output/plots] [--debug]
 """
 
 import os, re, argparse
@@ -23,10 +17,8 @@ import numpy as np
 import matplotlib.pyplot as plt
 import ROOT  # PyROOT
 
-
 # ──────────────────────────── C++ loader ────────────────────────────
 def _load_dvcs_once():
-    """Load DVCS_xsec.C exactly once into cling."""
     if getattr(_load_dvcs_once, "_done", False):
         return
     ROOT.gInterpreter.Declare(r"""
@@ -36,7 +28,6 @@ def _load_dvcs_once():
 #endif
 """)
     _load_dvcs_once._done = True
-
 
 # ─────────────────────── fit-file parsing ───────────────────────────
 def parse_fit_results(fname):
@@ -64,19 +55,14 @@ def parse_fit_results(fname):
         raise RuntimeError("Couldn't parse parameter names/values from fit file")
     param_map_fit = dict(zip(pnames, pvals))
 
-    # optional input path for BSA data
+    # optional input path
     input_path = next((l.split(None, 1)[1].strip()
                        for l in lines if l.startswith("input")), None)
 
     return flags, param_map_fit, input_path
 
-
 # ───────────────────── data loader (φ-binned) ───────────────────────
 def load_bins(datafile):
-    """
-    Expect columns: phi  Q2  xB  t  Eb  A  sigA
-    Split into bins when φ decreases (wrap).
-    """
     bins, curr, prev_phi = [], {k: [] for k in ("phi","Q2","xB","t","Eb","A","sigA")}, None
     with open(datafile) as f:
         for line in f:
@@ -103,7 +89,6 @@ def load_bins(datafile):
         bins.append(arr)
     return bins
 
-
 # ─────────────── defaults for the BKM “baseline” ────────────────
 def bkm_defaults():
     return {
@@ -114,16 +99,15 @@ def bkm_defaults():
         'r_Ht': 7.0, 'n_Ht': 0.6, 'alpha0_Ht': 0.43, 'alpha1_Ht': 0.85, 'b_Ht': 2.0, 'M2_Ht': 0.8, 'P_Ht': 1.0,
         # E
         'r_E': 0.9, 'n_E': 1.35, 'alpha0_E': 0.43, 'alpha1_E': 0.85, 'b_E': 0.4, 'M2_E': 0.64, 'P_E': 1.0,
-        # Et — keep harmless
+        # Et — keep harmless (imaginary effectively off)
         'r_Et': 1.0, 'n_Et': 0.0, 'alpha0_Et': 0.0, 'alpha1_Et': 0.0, 'b_Et': 0.0, 'M2_Et': 1.0, 'P_Et': 0.0,
     }
-
 
 # ───────── push globals into C++ (and set switches) ───────────────
 def push_globals(param_map, flags, *, safety_disable_Et=True, label=""):
     ROOT.gInterpreter.ProcessLine("hasH=0; hasHt=0; hasE=0; hasEt=0;")
 
-    # Defensive Et handling (avoid t/0)
+    # Defensive Et handling
     et_flag = int(flags.get("Et", 0))
     if safety_disable_Et and et_flag:
         M2 = float(param_map.get("M2_Et", 0.0))
@@ -154,31 +138,23 @@ def push_globals(param_map, flags, *, safety_disable_Et=True, label=""):
         for k in ("C0","MD2","lambda"):
             setp(f"{k}_{cff}")
 
-
-# ─────────────── helpers to compute A & B ────────────────
-def get_A_B(Q2, xB, t, Eb):
-    """
-    Return A = s1_I/c0_BH and B = c1_BH/c0_BH at fixed kinematics.
-    (s1_I carries the ImCFF dependence; c0_BH,c1_BH are BH-only.)
-    """
+# ─────────────── helpers to compute A1,B1 ────────────────
+def bh_coeffs_and_s1I(Q2, xB, t, Eb):
+    """Return (s1_I, c0, c1) for fixed kinematics (independent of φ)."""
     dv = ROOT.BMK_DVCS(-1, +1, 0, Eb, xB, Q2, t, 0.0)
-    c0 = dv.c0_BH()
-    c1 = dv.c1_BH()
-    s1 = dv.s1_I()
-    if c0 == 0:
-        return 0.0, 0.0
-    return s1 / c0, c1 / c0
+    s1I = dv.s1_I()
+    c0  = dv.c0_BH()
+    c1  = dv.c1_BH()
+    return s1I, c0, c1
 
-
-def approx_curve(phi_deg, A, B):
-    """A_LU(φ) ≈ [A sinφ] / [1 + B cosφ]."""
+def approx_curve_A1B1(phi_deg, A1, B1):
+    """A(φ) = A1 * sinφ / (1 + B1 cosφ)."""
     ph = np.deg2rad(phi_deg)
-    denom = 1.0 + B * np.cos(ph)
-    # avoid accidental blow-ups
+    denom = 1.0 + B1*np.cos(ph)
+    # robust near denom ~ 0
     eps = 1e-14
-    denom = np.where(np.abs(denom) < eps, np.sign(denom) * eps, denom)
-    return (A * np.sin(ph)) / denom
-
+    denom = np.where(np.abs(denom) < eps, np.sign(denom)*eps, denom)
+    return A1 * np.sin(ph) / denom
 
 # ───────────────────────────── main ───────────────────────────────
 def main():
@@ -192,7 +168,7 @@ def main():
     # Parse fit file
     flags_fit, param_map_fit, input_path = parse_fit_results(args.fitfile)
 
-    # Decide data file
+    # Data file
     datafile = (args.data or input_path or 'imports/rgk_preliminary_bsa.txt')
     print(">> Using data file:", datafile)
     print(">> Fit flags:", flags_fit)
@@ -206,13 +182,13 @@ def main():
 
     os.makedirs(args.outdir, exist_ok=True)
 
-    # For filename timestamp
-    m = re.search(r'fit_results_(\d{8}_\d{6})\.txt$', os.path.basename(args.fitfile))
-    ts = (m.group(1) if m else "noTS")
-
     # BKM baseline flags: H,Ht,E on; Et off
     flags_bkm = {'H':1,'Ht':1,'E':1,'Et':0}
     params_bkm = bkm_defaults()
+
+    # Timestamp for filenames
+    m = re.search(r'fit_results_(\d{8}_\d{6})\.txt$', os.path.basename(args.fitfile))
+    ts = (m.group(1) if m else "noTS")
 
     # Loop bins
     for ibin, b in enumerate(bins, start=1):
@@ -222,24 +198,27 @@ def main():
         # Dense grid
         phi_grid = np.linspace(0.0, 360.0, 361)
 
-        # --- BKM baseline (A,B from defaults) ---
+        # --- BKM A1,B1 ---
         push_globals(params_bkm, flags_bkm, label="BKM")
-        if args.debug and ibin == 1:
-            ROOT.gInterpreter.ProcessLine(r'std::cout<<"[BKM] hasH="<<hasH<<" hasHt="<<hasHt<<" hasE="<<hasE<<" hasEt="<<hasEt<<std::endl;')
-        A_bkm, B_bkm = get_A_B(Q2m, xBm, tm, Ebm)
-        bkm_curve = approx_curve(phi_grid, A_bkm, B_bkm)
+        s1I_bkm, c0_bh, c1_bh = bh_coeffs_and_s1I(Q2m, xBm, tm, Ebm)
+        A1_bkm = s1I_bkm / c0_bh
+        B1_bh  = c1_bh / c0_bh
+        bkm_curve = approx_curve_A1B1(phi_grid, A1_bkm, B1_bh)
 
-        # --- RGK fit (A from fit ImCFFs; B still BH-only) ---
+        # --- RGK fit A1,B1 (same B1 from BH; A1 uses fitted ImCFFs) ---
         push_globals(param_map_fit, flags_fit, label="RGK-fit")
+        s1I_rgk, c0_bh_chk, c1_bh_chk = bh_coeffs_and_s1I(Q2m, xBm, tm, Ebm)
+        # sanity (BH coeffs should match):
         if args.debug and ibin == 1:
-            ROOT.gInterpreter.ProcessLine(r'std::cout<<"[RGK] hasH="<<hasH<<" hasHt="<<hasHt<<" hasE="<<hasE<<" hasEt="<<hasEt<<std::endl;')
-        A_rgk, B_rgk = get_A_B(Q2m, xBm, tm, Ebm)  # c0,c1 (BH) same; s1_I reflects fit
-        rgk_curve = approx_curve(phi_grid, A_rgk, B_rgk)
+            print(f"[dbg] c0_BH={c0_bh:.6e}  c1_BH={c1_bh:.6e}  "
+                  f"(RGK pass: c0={c0_bh_chk:.6e}, c1={c1_bh_chk:.6e})")
+            print(f"[dbg] A1_BKM={A1_bkm:.6e}  B1={B1_bh:.6e}  A1_RGK={s1I_rgk/c0_bh_chk:.6e}")
+        A1_rgk = s1I_rgk / c0_bh  # use identical c0 for both; c0 is same anyway
+        rgk_curve = approx_curve_A1B1(phi_grid, A1_rgk, B1_bh)
 
         # --- Plot ---
         fig, ax = plt.subplots(figsize=(8,5))
         ax.errorbar(phi_data, A_data, yerr=dA, fmt='o', ms=5, color='k', label='Data')
-
         ax.plot(phi_grid, bkm_curve, '-',  lw=2, color='tab:blue',   label='BKM')
         ax.plot(phi_grid, rgk_curve, '-',  lw=2, color='tab:orange', label='RGK fit')
 
@@ -264,7 +243,6 @@ def main():
         fig.savefig(outname)
         print(f">> Saved bin {ibin} plot to {outname}")
         plt.close(fig)
-
 
 if __name__ == "__main__":
     main()
