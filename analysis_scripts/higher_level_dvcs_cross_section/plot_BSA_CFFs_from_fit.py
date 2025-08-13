@@ -262,7 +262,7 @@ def main():
         # --- RGK fit curve (your Im–CFFs & flags) ---
         push_globals(param_map_fit, flags_fit, label="RGK-fit")
         s1I_rgk, R_rgk, y_rgk, eps2_rgk = s1I_and_K(Q2m, xBm, tm, Ebm)
-        A1_rgk = (R_rgk * s1I_rgk) / c0_bh   # same c0_bh
+        A1_rgk = s1I_rgk / c0_bh   # same c0_bh
         rgk_curve = alu_curve(phi_grid, A1_rgk, B_bh, C_bh, order=args.approx_order)
 
         # ── Diagnostics (first bin) ──
