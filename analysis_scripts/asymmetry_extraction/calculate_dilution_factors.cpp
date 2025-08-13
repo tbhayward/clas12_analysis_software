@@ -28,7 +28,7 @@
 #include "DihadronKinematicCuts.h"
 #include "dvcsKinematicCuts.h"
 #include "eppi0KinematicCuts.h"
-#include "GeneralExclusiveKinematicsCuts.h"
+#include "GeneralExclusiveKinematicCuts.h"
 #include "formatLabelName.h"
 #include "readChi2Fits.h"
 #include "histConfigs.h"
@@ -387,11 +387,11 @@ std::vector<std::pair<double, double>> calculate_dilution_factors() {
             emptyCuts = new eppi0KinematicCuts(emptyReader);
             break;
         case 6:
-            nh3Cuts   = new GeneralExclusiveKinematicsCuts(nh3Reader);
-            cCuts     = new GeneralExclusiveKinematicsCuts(cReader);
-            chCuts    = new GeneralExclusiveKinematicsCuts(chReader);
-            heCuts    = new GeneralExclusiveKinematicsCuts(heReader);
-            emptyCuts = new GeneralExclusiveKinematicsCuts(emptyReader);
+            nh3Cuts   = new GeneralExclusiveKinematicCuts(nh3Reader);
+            cCuts     = new GeneralExclusiveKinematicCuts(cReader);
+            chCuts    = new GeneralExclusiveKinematicCuts(chReader);
+            heCuts    = new GeneralExclusiveKinematicCuts(heReader);
+            emptyCuts = new GeneralExclusiveKinematicCuts(emptyReader);
             break;
         default:
             std::cerr << "Invalid channel specified." << std::endl;
