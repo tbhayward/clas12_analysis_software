@@ -1,8 +1,9 @@
 // unfold_phi_unfold_fit.cpp
 // Exclusive pi+ unfolding and cos(n*phi) fits (phi plotted in degrees).
-// Produces AUU^{#cos#phi} and AUU^{#cos2#phi} per x_B bin (raw from fit),
+// Optional sin(phi) term via --fit-sin.
+// Produces AUU^{#cos#phi}, AUU^{#cos2#phi} (and AUU^{#sin#phi} if enabled) per x_B bin (raw),
 // and scaled FUU ratios vs x_B using depolarization factors.
-// Text outputs mirror your "chi2Fits_*" style: propertyNameAUUcosphi = {...}; etc.
+// Text outputs mirror your array style.
 //
 // Build (csh):
 //   g++ -O2 -std=c++17 unfold_phi_unfold_fit.cpp `root-config --cflags --libs` -o unfold_phi_unfold_fit
@@ -11,13 +12,14 @@
 //   ./unfold_phi_unfold_fit data.root gen.root rec.root [enpi|enpiLowt|enpiMidt|enpiHight|all]
 //        [--x x] [--phi phi] [--t t] [--mx2 Mx2] [--fid fiducial_status]
 //        [--DepA DepA] [--DepB DepB] [--DepV DepV] [--DepW DepW]
-//        [--phibins 24] [--no-fid-cut] [--debug N] [--list-branches]
+//        [--phibins 24] [--no-fid-cut] [--fit-sin] [--debug N] [--list-branches]
 //
 // Outputs per property (to output/enpi+/):
 //   - PDF  : <property>_unfolded.pdf
 //   - TEXT : <property>_unfolded_fit_arrays.txt
-//            propertyNameAUUcosphi = { {xB, val, err}, ... };
-//            propertyNameAUUcos2phi = { {xB, val, err}, ... };
+//            propertyNameAUUcosphi   = { {xB, val, err}, ... };
+//            propertyNameAUUcos2phi  = { {xB, val, err}, ... };
+//            propertyNameAUUsinphi   = { {xB, val, err}, ... };   // only if --fit-sin
 
 #include <algorithm>
 #include <cmath>
@@ -68,6 +70,7 @@ struct Config {
   BranchNames bn;
   int  phi_nbins      = 24;
   bool apply_fid_cut  = true;
+  bool fit_sin        = false;   // <-- new
   int  debug_print    = 0;
   bool list_branches  = false;
 };
@@ -77,7 +80,7 @@ static void print_usage(const char* argv0) {
             << " data.root gen.root rec.root [enpi|enpiLowt|enpiMidt|enpiHight|all]\n"
             << "    [--x x] [--phi phi] [--t t] [--mx2 Mx2] [--fid fiducial_status]\n"
             << "    [--DepA DepA] [--DepB DepB] [--DepV DepV] [--DepW DepW]\n"
-            << "    [--phibins 24] [--no-fid-cut] [--debug N] [--list-branches]\n";
+            << "    [--phibins 24] [--no-fid-cut] [--fit-sin] [--debug N] [--list-branches]\n";
 }
 
 static bool parse_args(int argc, char** argv, Config& cfg) {
@@ -119,6 +122,7 @@ static bool parse_args(int argc, char** argv, Config& cfg) {
     if (eat("--DepW", cfg.bn.DepW)) continue;
     if (eat_int("--phibins", cfg.phi_nbins)) continue;
     if (a == "--no-fid-cut") { cfg.apply_fid_cut = false; continue; }
+    if (a == "--fit-sin")    { cfg.fit_sin = true; continue; } // <-- new
     if (eat_int("--debug", cfg.debug_print)) continue;
     if (a == "--list-branches") { cfg.list_branches = true; continue; }
 
@@ -135,26 +139,20 @@ static std::vector<std::string> properties_to_run(const std::string& which) {
   return {which};
 }
 
-static std::vector<double> x_edges() {
-  return {0.06, 0.14, 0.22, 0.30, 0.40, 0.50, 0.60};
-}
+static std::vector<double> x_edges() { return {0.06, 0.14, 0.22, 0.30, 0.40, 0.50, 0.60}; }
 static int xbin_index(double x, const std::vector<double>& e) {
   for (size_t i=0;i+1<e.size();++i) if (x >= e[i] && x < e[i+1]) return (int)i;
   return -1;
 }
 
-static inline bool pass_common(double t, double mx2) {
-  return (std::fabs(t) <= 1.0) && (std::fabs(t) >= 0.0) && (mx2 > 0.80) && (mx2 < 1.00);
-}
 static inline bool pass_prop_window(const std::string& prop, double t) {
   const double at = std::fabs(t);
-  if (prop == "enpi")      return true;
+  if (prop == "enpi")      return (at >= 0.00 && at <= 1.00);
   if (prop == "enpiLowt")  return (at >= 0.00 && at <= 0.30);
   if (prop == "enpiMidt")  return (at >= 0.30 && at <= 0.70);
-  if (prop == "enpiHight") return (at >= 0.70);
+  if (prop == "enpiHight") return (at >= 0.70 && at <= 1.00);
   return false;
 }
-
 static std::string prop_title(const std::string& p) {
   if (p == "enpi")      return "ep -> e' n #pi^{+}";
   if (p == "enpiLowt")  return "ep -> e' n #pi^{+}, low |t|";
@@ -169,11 +167,9 @@ static std::string prop_tlabel(const std::string& prop) {
   if (prop == "enpiHight") return "-t #in [0.70, 1.00]";
   return "";
 }
-
 static void ensure_dir(const std::string& d) {
   if (gSystem->AccessPathName(d.c_str())) gSystem->mkdir(d.c_str(), kTRUE);
 }
-
 static void list_tree_branches(TTree* tr, const char* label) {
   if (!tr) { std::cout << "[" << label << "] Tree is null.\n"; return; }
   std::cout << "\n[" << label << "] Branches on " << tr->GetName() << ":\n";
@@ -205,8 +201,7 @@ static bool bind_tree(TTree* tr, const BranchNames& bn, BranchHandles& bh, const
   ok &= (tr->GetBranch(bn.t.c_str())  != nullptr);
   ok &= (tr->GetBranch(bn.mx2.c_str())!= nullptr);
   if (!ok) {
-    std::cerr << "ERROR: missing one of required branches on " << who << " (need: "
-              << bn.x << ", " << bn.phi << ", " << bn.t << ", " << bn.mx2 << ")\n";
+    std::cerr << "ERROR: missing required branches on " << who << "\n";
     return false;
   }
   tr->SetBranchAddress(bn.x.c_str(),   &bh.x);
@@ -242,7 +237,6 @@ static std::map<std::string,HSet> make_hist_map(int phibins) {
   const auto xe = x_edges();
   const int NX = (int)xe.size()-1;
   const double pmin = 0.0, pmax = 360.0;
-
   for (const auto& p : props) {
     HSet hs;
     hs.D.reserve(NX); hs.G.reserve(NX); hs.R.reserve(NX);
@@ -329,20 +323,16 @@ static void loop_tree_fill(
     tr->GetEntry(i);
     C.total++;
 
-    if (debug_limit > 0 && i < debug_limit) {
-      debug_event_print(dbg_label, (int)i, b, props, xe);
-    }
+    if (debug_limit > 0 && i < debug_limit) debug_event_print(dbg_label, (int)i, b, props, xe);
 
     const bool ok_abs_t = (std::fabs(b.t) <= 1.0) && (std::fabs(b.t) >= 0.0);
     const bool ok_mx2   = (b.mx2 > 0.80) && (b.mx2 < 1.00);
-    if (!ok_abs_t) C.fail_abs_t++;
-    if (!ok_mx2)   C.fail_mx2++;
     if (!(ok_abs_t && ok_mx2)) continue;
     C.pass_common_cnt++;
 
     if (apply_fid) {
-      if (!b.has_fid) { C.fail_no_fid_branch++; continue; }
-      if (b.fid < 100) { C.fail_fid_lt_100++; continue; }
+      if (!b.has_fid) continue;
+      if (b.fid < 100) continue;
     }
     if (count_fid) C.pass_fid_cnt++;
 
@@ -385,12 +375,13 @@ struct FitResult {
   double C=0, dC=0;
   double A=0, dA=0;
   double B=0, dB=0;
+  double D=0, dD=0;   // <-- sin term
   double chi2=0; int ndf=0;
   int npoints=0;
 };
 
 static FitResult make_unfold_graph_and_fit(
-  TH1D* hD, TH1D* hG, TH1D* hR, TGraphErrors*& g, TF1*& ffit)
+  TH1D* hD, TH1D* hG, TH1D* hR, TGraphErrors*& g, TF1*& ffit, bool fit_sin)
 {
   FitResult fr;
   if (!hD || !hG || !hR) { g=nullptr; ffit=nullptr; return fr; }
@@ -400,17 +391,16 @@ static FitResult make_unfold_graph_and_fit(
   X.reserve(nb); Y.reserve(nb); EY.reserve(nb);
 
   for (int b=1; b<=nb; ++b) {
-    const double D = hD->GetBinContent(b);
-    const double G = hG->GetBinContent(b);
-    const double R = hR->GetBinContent(b);
+    const double Dd = hD->GetBinContent(b);
+    const double G  = hG->GetBinContent(b);
+    const double R  = hR->GetBinContent(b);
     const double xc = hD->GetBinCenter(b); // degrees
-
     if (R <= 0.0 || G <= 0.0) continue;
 
-    const double U = (D * G) / R;
-    const double term1 = (G*G)/(R*R) * D;
-    const double term2 = (D*D)/(R*R) * G;
-    const double term3 = (D*D*G*G)/(R*R*R);
+    const double U = (Dd * G) / R;
+    const double term1 = (G*G)/(R*R) * Dd;
+    const double term2 = (Dd*Dd)/(R*R) * G;
+    const double term3 = (Dd*Dd*G*G)/(R*R*R);
     const double sig = std::sqrt(std::max(0.0, term1 + term2 + term3));
 
     X.push_back(xc); Y.push_back(U); EY.push_back(sig);
@@ -420,35 +410,36 @@ static FitResult make_unfold_graph_and_fit(
   if (fr.npoints == 0) { g=nullptr; ffit=nullptr; return fr; }
 
   g = new TGraphErrors(fr.npoints);
-  for (int i=0;i<fr.npoints;i++) {
-    g->SetPoint(i, X[i], Y[i]);
-    g->SetPointError(i, 0.0, EY[i]);
-  }
-  g->SetMarkerStyle(20);
-  g->SetMarkerSize(0.8);
-  g->SetLineWidth(1);
+  for (int i=0;i<fr.npoints;i++) { g->SetPoint(i, X[i], Y[i]); g->SetPointError(i, 0.0, EY[i]); }
+  g->SetMarkerStyle(20); g->SetMarkerSize(0.8); g->SetLineWidth(1);
 
   const double xmin = 0.0, xmax = 360.0;
-  ffit = new TF1("fitCAB_deg",
-                 "[0]*(1 + [1]*cos(TMath::Pi()/180.0*x) + [2]*cos(2.0*TMath::Pi()/180.0*x))",
-                 xmin, xmax);
-  ffit->SetParNames("C","A","B");
-  double ymean = 0.0; for (double v : Y) ymean += v; ymean /= (double)Y.size();
-  ffit->SetParameters( (ymean>0?ymean:1.0), 0.0, 0.0 );
+  if (!fit_sin) {
+    ffit = new TF1("fitCAB_deg",
+                   "[0]*(1 + [1]*cos(TMath::Pi()/180.0*x) + [2]*cos(2.0*TMath::Pi()/180.0*x))",
+                   xmin, xmax);
+    ffit->SetParNames("C","A","B");
+  } else {
+    ffit = new TF1("fitCABD_deg",
+                   "[0]*(1 + [1]*cos(TMath::Pi()/180.0*x) + [2]*cos(2.0*TMath::Pi()/180.0*x) + [3]*sin(TMath::Pi()/180.0*x))",
+                   xmin, xmax);
+    ffit->SetParNames("C","A","B","D");
+  }
+  double ymean = 0.0; for (double v : Y) ymean += v; ymean = (fr.npoints>0 ? ymean/fr.npoints : 1.0);
+  if (ymean<=0) ymean = 1.0;
+  ffit->SetParameters(ymean, 0.0, 0.0, 0.0);
   ffit->SetParLimits(0, 0.0, 1e12);
   ffit->SetParLimits(1, -2.0, 2.0);
   ffit->SetParLimits(2, -2.0, 2.0);
+  if (fit_sin) ffit->SetParLimits(3, -2.0, 2.0);
 
   g->Fit(ffit, "Q"); // quiet
 
-  fr.C  = ffit->GetParameter(0);
-  fr.dC = ffit->GetParError(0);
-  fr.A  = ffit->GetParameter(1);
-  fr.dA = ffit->GetParError(1);
-  fr.B  = ffit->GetParameter(2);
-  fr.dB = ffit->GetParError(2);
-  fr.chi2 = ffit->GetChisquare();
-  fr.ndf  = ffit->GetNDF();
+  fr.C  = ffit->GetParameter(0); fr.dC = ffit->GetParError(0);
+  fr.A  = ffit->GetParameter(1); fr.dA = ffit->GetParError(1);
+  fr.B  = ffit->GetParameter(2); fr.dB = ffit->GetParError(2);
+  if (fit_sin) { fr.D = ffit->GetParameter(3); fr.dD = ffit->GetParError(3); }
+  fr.chi2 = ffit->GetChisquare(); fr.ndf  = ffit->GetNDF();
   return fr;
 }
 
@@ -457,7 +448,9 @@ static void save_arrays_style(
   const std::string& prop,
   const std::vector<double>& xcenters,
   const std::vector<double>& Fcos, const std::vector<double>& dFcos,
-  const std::vector<double>& Fcos2, const std::vector<double>& dFcos2)
+  const std::vector<double>& Fcos2, const std::vector<double>& dFcos2,
+  bool fit_sin,
+  const std::vector<double>& Fsin, const std::vector<double>& dFsin)
 {
   ensure_dir("output/enpi+");
   std::string out = "output/enpi+/" + prop + "_unfolded_fit_arrays.txt";
@@ -478,6 +471,15 @@ static void save_arrays_style(
   }
   ofs << "};\n";
 
+  if (fit_sin) {
+    ofs << prop << "AUUsinphi = {";
+    for (size_t i=0;i<xcenters.size();++i) {
+      ofs << "{" << xcenters[i] << ", " << Fsin[i] << ", " << dFsin[i] << "}";
+      if (i + 1 < xcenters.size()) ofs << ", ";
+    }
+    ofs << "};\n";
+  }
+
   ofs.close();
   std::cout << "Wrote arrays: " << out << "\n";
 }
@@ -486,12 +488,13 @@ static void save_arrays_style(
 static void draw_property_and_save(
   const std::string& prop,
   const std::map<std::string,HSet>& H,
-  const std::map<std::string,DepMeans>& depMap)
+  const std::map<std::string,DepMeans>& depMap,
+  bool fit_sin)
 {
   const auto xe = x_edges();
   const int NX = (int)xe.size()-1;
 
-  // Global defaults (pads will also be tightened individually)
+  // Style & margins (avoid clipping)
   gStyle->SetOptStat(0);
   gStyle->SetPadLeftMargin(0.16);
   gStyle->SetPadRightMargin(0.06);
@@ -503,59 +506,49 @@ static void draw_property_and_save(
   TCanvas* c = new TCanvas(("c_"+prop).c_str(), ("Unfolded phi fits: "+prop).c_str(), 1200, 900);
   c->Divide(3,3);
 
-  std::vector<double> xcenters, xlos, xhis;
-  std::vector<double> Avec, dAvec, Bvec, dBvec, Cvec, dCvec;
-  std::vector<double> meanDepA(NX,0.0), meanDepB(NX,0.0), meanDepV(NX,0.0);
+  std::vector<double> xcenters;
+  std::vector<double> Avec, dAvec, Bvec, dBvec, Dvec, dDvec;
+  std::vector<double> meanDepA(NX,0.0), meanDepB(NX,0.0), meanDepV(NX,0.0), meanDepW(NX,0.0);
 
   const auto& dep = depMap.at(prop);
 
   for (int ib=0; ib<NX; ++ib) {
     c->cd(ib+1);
-    // Ensure per-pad margins so legends/labels never clip
-    gPad->SetLeftMargin(0.16);
-    gPad->SetRightMargin(0.06);
-    gPad->SetBottomMargin(0.16);
-    gPad->SetTopMargin(0.12);
+    gPad->SetLeftMargin(0.16); gPad->SetRightMargin(0.06);
+    gPad->SetBottomMargin(0.16); gPad->SetTopMargin(0.12);
 
     TH1D* hD = H.at(prop).D[ib].get();
     TH1D* hG = H.at(prop).G[ib].get();
     TH1D* hR = H.at(prop).R[ib].get();
 
-    TGraphErrors* g = nullptr;
-    TF1* fit = nullptr;
-    FitResult fr = make_unfold_graph_and_fit(hD,hG,hR,g,fit);
+    TGraphErrors* g = nullptr; TF1* fit = nullptr;
+    FitResult fr = make_unfold_graph_and_fit(hD,hG,hR,g,fit,fit_sin);
 
     const double xl = xe[ib], xh = xe[ib+1];
-    std::string titleCore = prop_title(prop);
-    std::string tlabel = prop_tlabel(prop);
-    std::string title = titleCore + Form(", x_{B} #in [%.2f, %.2f), %s", xl, xh, tlabel.c_str());
+    std::string title = prop_title(prop) + Form(", x_{B} #in [%.2f, %.2f), %s", xl, xh, prop_tlabel(prop).c_str());
 
     if (dep.count[ib] > 0) {
       meanDepA[ib] = dep.sumA[ib] / (double)dep.count[ib];
       meanDepB[ib] = dep.sumB[ib] / (double)dep.count[ib];
       meanDepV[ib] = dep.sumV[ib] / (double)dep.count[ib];
+      meanDepW[ib] = dep.sumW[ib] / (double)dep.count[ib];
     }
 
     if (g) {
       g->SetTitle((title + ";#phi (deg);Unfolded yield").c_str());
-      g->Draw("AP");
-      if (fit) fit->Draw("LSAME");
+      g->Draw("AP"); if (fit) fit->Draw("LSAME");
 
-      // Legend kept fully inside (pulled down so y2 ≤ 0.88)
-      auto leg = new TLegend(0.58, 0.64, 0.92, 0.88);
-      leg->SetBorderSize(1);
-      leg->SetFillStyle(0);
-      leg->SetTextSize(0.034);
-      leg->AddEntry((TObject*)0, Form("A_{UU}^{#cos#phi} = %.3g #pm %.3g", fr.A, fr.dA), "");
-      leg->AddEntry((TObject*)0, Form("A_{UU}^{#cos2#phi} = %.3g #pm %.3g", fr.B, fr.dB), "");
+      auto leg = new TLegend(0.58, 0.62, 0.92, 0.88); // keep inside
+      leg->SetBorderSize(1); leg->SetFillStyle(0); leg->SetTextSize(0.034);
+      leg->AddEntry((TObject*)0, Form("A_{UU}^{#cos#phi} = %.3g #pm %.3g",   fr.A, fr.dA), "");
+      leg->AddEntry((TObject*)0, Form("A_{UU}^{#cos2#phi} = %.3g #pm %.3g",  fr.B, fr.dB), "");
+      if (fit_sin) leg->AddEntry((TObject*)0, Form("A_{UU}^{#sin#phi} = %.3g #pm %.3g", fr.D, fr.dD), "");
       leg->Draw();
 
       xcenters.push_back(0.5*(xl+xh));
-      xlos.push_back(xl);
-      xhis.push_back(xh);
       Avec.push_back(fr.A); dAvec.push_back(fr.dA);
       Bvec.push_back(fr.B); dBvec.push_back(fr.dB);
-      Cvec.push_back(fr.C); dCvec.push_back(fr.dC);
+      if (fit_sin) { Dvec.push_back(fr.D); dDvec.push_back(fr.dD); }
     } else {
       TH1D* frame = new TH1D("frame","",10,0,360);
       frame->SetTitle((title + ";#phi (deg);Unfolded yield").c_str());
@@ -569,30 +562,31 @@ static void draw_property_and_save(
   }
 
   // Scaled FUU ratios
-  std::vector<double> Fcos, dFcos, Fcos2, dFcos2;
-  Fcos.reserve(xcenters.size()); dFcos.reserve(xcenters.size());
-  Fcos2.reserve(xcenters.size()); dFcos2.reserve(xcenters.size());
+  std::vector<double> Fcos, dFcos, Fcos2, dFcos2, Fsin, dFsin;
   for (size_t i=0;i<xcenters.size();++i) {
     const int ib = (int)i;
-    const double a = Avec[i], da = dAvec[i];
-    const double b = Bvec[i], db = dBvec[i];
-    const double mA = meanDepA[ib], mB = meanDepB[ib], mV = meanDepV[ib];
+    const double mA = meanDepA[ib], mB = meanDepB[ib], mV = meanDepV[ib], mW = meanDepW[ib];
 
-    double f1=0, df1=0, f2=0, df2=0;
-    if (mV != 0.0) { f1 = (mA/mV) * a; df1 = (mA/mV) * da; }
-    if (mB != 0.0) { f2 = (mA/mB) * b; df2 = (mA/mB) * db; }
+    // cos phi
+    double f1=0, df1=0; if (mV!=0.0) { f1=(mA/mV)*Avec[i]; df1=(mA/mV)*dAvec[i]; }
+    Fcos.push_back(f1); dFcos.push_back(df1);
 
-    Fcos.push_back(f1);  dFcos.push_back(df1);
+    // cos 2phi
+    double f2=0, df2=0; if (mB!=0.0) { f2=(mA/mB)*Bvec[i]; df2=(mA/mB)*dBvec[i]; }
     Fcos2.push_back(f2); dFcos2.push_back(df2);
+
+    // sin phi (optional)
+    if (fit_sin) {
+      double fs=0, dfs=0; if (mW!=0.0) { fs=(mA/mW)*Dvec[i]; dfs=(mA/mW)*dDvec[i]; }
+      Fsin.push_back(fs); dFsin.push_back(dfs);
+    }
   }
 
-  // Bottom row: pad 8 — x_B dependence of scaled ratios
+  // Bottom row: x_B dependence of scaled ratios
   c->cd(7); gPad->Clear();
   c->cd(8);
-  gPad->SetLeftMargin(0.16);
-  gPad->SetRightMargin(0.06);
-  gPad->SetBottomMargin(0.16);
-  gPad->SetTopMargin(0.12);
+  gPad->SetLeftMargin(0.16); gPad->SetRightMargin(0.06);
+  gPad->SetBottomMargin(0.16); gPad->SetTopMargin(0.12);
 
   if (!xcenters.empty()) {
     auto gF1 = new TGraphErrors((int)xcenters.size());
@@ -609,10 +603,25 @@ static void draw_property_and_save(
     gF1->Draw("AP");
     gF2->Draw("P SAME");
 
-    auto legAB = new TLegend(0.64, 0.70, 0.92, 0.88); // top-right, inside
+    TLegend* legAB = nullptr;
+    if (!fit_sin) {
+      legAB = new TLegend(0.64, 0.70, 0.92, 0.88);
+      legAB->AddEntry(gF1, "F_{UU}^{#cos#phi}/F_{UU}", "p");
+      legAB->AddEntry(gF2, "F_{UU}^{#cos2#phi}/F_{UU}", "p");
+    } else {
+      auto gFs = new TGraphErrors((int)xcenters.size());
+      for (int i=0;i<(int)xcenters.size();++i) {
+        gFs->SetPoint(i, xcenters[i], Fsin[i]); gFs->SetPointError(i, 0.0, dFsin[i]);
+      }
+      gFs->SetMarkerStyle(22); gFs->SetMarkerSize(1.0);
+      gFs->Draw("P SAME");
+
+      legAB = new TLegend(0.60, 0.66, 0.92, 0.88); // a hair lower to fit 3 entries
+      legAB->AddEntry(gF1, "F_{UU}^{#cos#phi}/F_{UU}", "p");
+      legAB->AddEntry(gF2, "F_{UU}^{#cos2#phi}/F_{UU}", "p");
+      legAB->AddEntry(gFs, "F_{UU}^{#sin#phi}/F_{UU}", "p");
+    }
     legAB->SetBorderSize(1); legAB->SetFillStyle(0); legAB->SetTextSize(0.034);
-    legAB->AddEntry(gF1, "F_{UU}^{#cos#phi}/F_{UU}", "p");
-    legAB->AddEntry(gF2, "F_{UU}^{#cos2#phi}/F_{UU}", "p");
     legAB->Draw();
   } else {
     TH1D* frame = new TH1D("frameAB",";x_{B};Ratio",10,0.06,0.60);
@@ -631,19 +640,14 @@ static void draw_property_and_save(
   std::cout << "Saved: " << outpdf << "\n";
 
   // Save arrays (scaled values) in your exact style
-  save_arrays_style(prop, xcenters, Fcos, dFcos, Fcos2, dFcos2);
+  save_arrays_style(prop, xcenters, Fcos, dFcos, Fcos2, dFcos2, fit_sin, Fsin, dFsin);
 }
 
-// ------------ Counters ------------
+// ------------ Counters & main ------------
 static void print_counters(const char* label, const Counters& C, const std::vector<std::string>& props) {
   std::cout << "\n[" << label << " counters]\n";
   std::cout << "  total read              : " << C.total << "\n";
-  std::cout << "  pass common cuts        : " << C.pass_common_cnt << "\n";
-  std::cout << "  pass fiducial (>=100)   : " << C.pass_fid_cnt << "\n";
-  std::cout << "  fail |t|>1 or <0        : " << C.fail_abs_t << "\n";
-  std::cout << "  fail Mx2 not (0.80,1.00): " << C.fail_mx2 << "\n";
-  std::cout << "  fail no fid branch      : " << C.fail_no_fid_branch << "\n";
-  std::cout << "  fail fid<100            : " << C.fail_fid_lt_100 << "\n";
+  std::cout << "  pass common+fid cuts    : " << C.pass_fid_cnt << "\n";
   std::cout << "  fail x outside bins     : " << C.fail_xbin << "\n";
   for (const auto& p : props) {
     auto it = C.pass_prop_cnt.find(p);
@@ -652,7 +656,6 @@ static void print_counters(const char* label, const Counters& C, const std::vect
   }
 }
 
-// ------------ main ------------
 int main(int argc, char** argv) {
   Config cfg;
   if (!parse_args(argc, argv, cfg)) return 1;
@@ -679,7 +682,7 @@ int main(int argc, char** argv) {
     list_tree_branches(tR, "REC");
   }
 
-  auto H = make_hist_map(cfg.phi_nbins);
+  auto H   = make_hist_map(cfg.phi_nbins);
   auto Dep = make_dep_map();
 
   Counters cD, cG, cR;
@@ -689,7 +692,6 @@ int main(int argc, char** argv) {
 
   const auto props = properties_to_run(cfg.which_property);
 
-  // Totals sanity & detailed counters
   for (const auto& p : props) {
     const auto& hs = H.at(p);
     long long dsum=0, gsum=0, rsum=0;
@@ -702,13 +704,8 @@ int main(int argc, char** argv) {
               << "D=" << dsum << "  G=" << gsum << "  R=" << rsum << "\n";
   }
   print_counters("DATA", cD, props);
-  print_counters("GEN",  cG, props);
-  print_counters("REC",  cR, props);
 
-  // Draw and save per property
-  for (const auto& p : props) {
-    draw_property_and_save(p, H, Dep);
-  }
+  for (const auto& p : props) draw_property_and_save(p, H, Dep, cfg.fit_sin);
 
   return 0;
 }
