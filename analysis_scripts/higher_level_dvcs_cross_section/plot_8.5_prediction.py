@@ -220,7 +220,7 @@ def main():
     flags_fit, param_map_fit, input_path, ranges = parse_fit_results(args.fitfile)
 
     # Use provided datafile, else the one recorded in the fit file, else a default
-    datafile = (args.data or input_path or 'imports/rgk_preliminary_bsa.txt')
+    datafile = (args.data or input_path or 'imports/rgk_rga_combined.txt')
     print(">> Using bin-defining data file:", datafile)
     print(">> Prediction beam energy (GeV):", args.Ebeam)
     print(">> Fit flags:", flags_fit)
