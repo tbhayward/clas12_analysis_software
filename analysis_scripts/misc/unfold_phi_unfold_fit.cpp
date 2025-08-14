@@ -1,6 +1,8 @@
 // unfold_phi_unfold_fit.cpp
 // Exclusive pi+ unfolding and cos(n*phi) fits (phi plotted in degrees).
-// Adds depolarization scaling to show F_UU^{cos phi}/F_UU and F_UU^{cos2 phi}/F_UU.
+// Produces AUU^{cos phi} and AUU^{cos2 phi} per x_B bin (raw from fit),
+// and scaled FUU ratios vs x_B using depolarization factors.
+// Text outputs mirror your "chi2Fits_*" style: propertyNameAUUcosphi = {...}; etc.
 //
 // Build (csh):
 //   g++ -O2 -std=c++17 unfold_phi_unfold_fit.cpp `root-config --cflags --libs` -o unfold_phi_unfold_fit
@@ -11,18 +13,11 @@
 //        [--DepA DepA] [--DepB DepB] [--DepV DepV] [--DepW DepW]
 //        [--phibins 24] [--no-fid-cut] [--debug N] [--list-branches]
 //
-// Outputs per property:
-//   PDF:  output/enpi+/<property>_unfolded.pdf
-//   TXT:  output/enpi+/<property>_unfolded_fit_results.txt
-//
-// Notes:
-// - Reads each tree ONCE per dataset; fills all four properties simultaneously.
-// - Input phi assumed in radians. Plots and fits in degrees (0..360).
-// - Unfolded yield per phi bin = D * G / R, with Poisson error propagation.
-// - Fits C * (1 + A*cos + B*cos2) on unfolded points.
-// - Bottom middle panel shows FUU^{cos phi}/FUU = (meanDepA/meanDepV)*A
-//   and FUU^{cos2 phi}/FUU = (meanDepA/meanDepB)*B, where means are from DATA
-//   after all kinematic and property cuts in each x_B bin.
+// Outputs per property (to output/enpi+/):
+//   - PDF  : <property>_unfolded.pdf
+//   - TEXT : <property>_unfolded_fit_arrays.txt
+//            propertyNameAUUcosphi = { {xB, val, err}, ... };
+//            propertyNameAUUcos2phi = { {xB, val, err}, ... };
 
 #include <algorithm>
 #include <cmath>
@@ -30,9 +25,11 @@
 #include <cstdlib>
 #include <cstring>
 #include <fstream>
+#include <iomanip>
 #include <iostream>
 #include <map>
 #include <memory>
+#include <sstream>
 #include <string>
 #include <vector>
 
@@ -56,11 +53,11 @@ struct BranchNames {
   std::string t   = "t";               // signed t
   std::string mx2 = "Mx2";
   std::string fid = "fiducial_status";
-  // Depolarization factors (DATA)
+  // Depolarization factors (present on DATA)
   std::string DepA = "DepA";
   std::string DepB = "DepB";
   std::string DepV = "DepV";
-  std::string DepW = "DepW"; // not used here but kept for parity/future
+  std::string DepW = "DepW";
 };
 
 struct Config {
@@ -71,7 +68,7 @@ struct Config {
   BranchNames bn;
   int  phi_nbins      = 24;
   bool apply_fid_cut  = true;
-  int  debug_print    = 0;   // print this many raw events per dataset
+  int  debug_print    = 0;
   bool list_branches  = false;
 };
 
@@ -147,18 +144,24 @@ static int xbin_index(double x, const std::vector<double>& e) {
 }
 
 static inline bool pass_common(double t, double mx2) {
-  // Data note: you fixed sign issue externally; we enforce |t| in [0,1].
   return (std::fabs(t) <= 1.0) && (std::fabs(t) >= 0.0) && (mx2 > 0.80) && (mx2 < 1.00);
 }
 static inline bool pass_prop_window(const std::string& prop, double t) {
   const double at = std::fabs(t);
-  if (prop == "enpi")      return true;                      // |t| in [0,1] from common
+  if (prop == "enpi")      return true;
   if (prop == "enpiLowt")  return (at >= 0.00 && at <= 0.30);
   if (prop == "enpiMidt")  return (at >= 0.30 && at <= 0.70);
-  if (prop == "enpiHight") return (at >= 0.70);              // bounded above by common
+  if (prop == "enpiHight") return (at >= 0.70);
   return false;
 }
 
+static std::string prop_title(const std::string& p) {
+  if (p == "enpi")      return "ep -> e' n #pi^{+}";
+  if (p == "enpiLowt")  return "ep -> e' n #pi^{+}, low |t|";
+  if (p == "enpiMidt")  return "ep -> e' n #pi^{+}, mid |t|";
+  if (p == "enpiHight") return "ep -> e' n #pi^{+}, high |t|";
+  return p;
+}
 static std::string prop_tlabel(const std::string& prop) {
   if (prop == "enpi")      return "-t \\in [0.00, 1.00]";
   if (prop == "enpiLowt")  return "-t \\in [0.00, 0.30]";
@@ -189,8 +192,7 @@ struct BranchHandles {
   double x=0, phi=0, t=0, mx2=0;
   int fid=0;
   bool has_fid=false;
-
-  // Dep factors (optional)
+  // Dep factors on DATA
   double DepA=0, DepB=0, DepV=0, DepW=0;
   bool has_DepA=false, has_DepB=false, has_DepV=false, has_DepW=false;
 };
@@ -215,7 +217,7 @@ static bool bind_tree(TTree* tr, const BranchNames& bn, BranchHandles& bh, const
   bh.has_fid = (tr->GetBranch(bn.fid.c_str()) != nullptr);
   if (bh.has_fid) tr->SetBranchAddress(bn.fid.c_str(), &bh.fid);
 
-  // Optional dep branches (typically on DATA)
+  // Optional dep branches (on DATA)
   bh.has_DepA = (tr->GetBranch(bn.DepA.c_str()) != nullptr);
   bh.has_DepB = (tr->GetBranch(bn.DepB.c_str()) != nullptr);
   bh.has_DepV = (tr->GetBranch(bn.DepV.c_str()) != nullptr);
@@ -228,13 +230,12 @@ static bool bind_tree(TTree* tr, const BranchNames& bn, BranchHandles& bh, const
   return true;
 }
 
-// ------------ Hist/dep containers ------------
+// ------------ Hists & dep means ------------
 struct HSet {
   std::vector<std::unique_ptr<TH1D>> D; // data
   std::vector<std::unique_ptr<TH1D>> G; // gen
   std::vector<std::unique_ptr<TH1D>> R; // rec
 };
-
 static std::map<std::string,HSet> make_hist_map(int phibins) {
   std::map<std::string,HSet> m;
   const auto props = all_props();
@@ -261,12 +262,10 @@ static std::map<std::string,HSet> make_hist_map(int phibins) {
   return m;
 }
 
-// Per (property, xbin) dep sums and counts from DATA
 struct DepMeans {
   std::vector<double> sumA, sumB, sumV, sumW;
   std::vector<long long> count;
 };
-
 static std::map<std::string, DepMeans> make_dep_map() {
   std::map<std::string, DepMeans> dm;
   const auto props = all_props();
@@ -305,7 +304,7 @@ static void debug_event_print(const char* label, int idx, const BranchHandles& b
   std::cout.flush();
 }
 
-// ------------ Fill loops ------------
+// ------------ Loop & fill ------------
 static void loop_tree_fill(
   TTree* tr, const BranchNames& bn, bool apply_fid, bool count_fid,
   std::map<std::string,HSet>& H, std::map<std::string,DepMeans>* depPtr,
@@ -350,7 +349,6 @@ static void loop_tree_fill(
     int ib = xbin_index(b.x, xe);
     if (ib < 0) { C.fail_xbin++; continue; }
 
-    // Convert to degrees for histogramming
     double phideg = b.phi * 180.0 / TMath::Pi();
     phideg = std::fmod(phideg, 360.0);
     if (phideg < 0) phideg += 360.0;
@@ -361,7 +359,6 @@ static void loop_tree_fill(
 
       if (std::string(dbg_label) == "DATA") {
         H[p].D[ib]->Fill(phideg);
-        // accumulate dep means if available
         if (depPtr) {
           auto& dep = depPtr->at(p);
           if (b.has_DepA) dep.sumA[ib] += b.DepA;
@@ -411,7 +408,6 @@ static FitResult make_unfold_graph_and_fit(
     if (R <= 0.0 || G <= 0.0) continue;
 
     const double U = (D * G) / R;
-    // Var(U) = (G/R)^2*D + (D/R)^2*G + (D*G/R^2)^2*R
     const double term1 = (G*G)/(R*R) * D;
     const double term2 = (D*D)/(R*R) * G;
     const double term3 = (D*D*G*G)/(R*R*R);
@@ -456,53 +452,36 @@ static FitResult make_unfold_graph_and_fit(
   return fr;
 }
 
-// ------------ Titles ------------
-static std::string prop_title(const std::string& p) {
-  if (p == "enpi")      return "ep -> e' n #pi^{+}";
-  if (p == "enpiLowt")  return "ep -> e' n #pi^{+}, low |t|";
-  if (p == "enpiMidt")  return "ep -> e' n #pi^{+}, mid |t|";
-  if (p == "enpiHight") return "ep -> e' n #pi^{+}, high |t|";
-  return p;
-}
-
-// ------------ Save text ------------
-static void save_results_txt(
+// ------------ Save text in your required style ------------
+static void save_arrays_style(
   const std::string& prop,
   const std::vector<double>& xcenters,
-  const std::vector<double>& xlo,
-  const std::vector<double>& xhi,
-  const std::vector<double>& Avec, const std::vector<double>& dAvec,
-  const std::vector<double>& Bvec, const std::vector<double>& dBvec,
-  const std::vector<double>& Cvec, const std::vector<double>& dCvec,
   const std::vector<double>& Fcos, const std::vector<double>& dFcos,
-  const std::vector<double>& Fcos2, const std::vector<double>& dFcos2,
-  const std::vector<double>& meanDepA, const std::vector<double>& meanDepB, const std::vector<double>& meanDepV,
-  const std::vector<double>& chi2, const std::vector<int>& ndf)
+  const std::vector<double>& Fcos2, const std::vector<double>& dFcos2)
 {
   ensure_dir("output/enpi+");
-  std::string out = "output/enpi+/" + prop + "_unfolded_fit_results.txt";
+  std::string out = "output/enpi+/" + prop + "_unfolded_fit_arrays.txt";
   std::ofstream ofs(out);
-  ofs << "# property: " << prop << "\n";
-  ofs << "# columns:\n";
-  ofs << "# i  xB_center  xB_lo  xB_hi"
-         "  A_raw  dA_raw  B_raw  dB_raw  C  dC"
-         "  (FUU^cosphi/FUU)  d(...)  (FUU^cos2phi/FUU)  d(...)"
-         "  meanDepA  meanDepB  meanDepV  chi2  ndf\n";
+  ofs << std::fixed << std::setprecision(9);
+
+  // propertyNameAUUcosphi = { {xB, val, err}, ... };
+  ofs << prop << "AUUcosphi = {";
   for (size_t i=0;i<xcenters.size();++i) {
-    ofs << i << " "
-        << xcenters[i] << " "
-        << xlo[i] << " "
-        << xhi[i] << " "
-        << Avec[i] << " " << dAvec[i] << " "
-        << Bvec[i] << " " << dBvec[i] << " "
-        << Cvec[i] << " " << dCvec[i] << " "
-        << Fcos[i] << " " << dFcos[i] << " "
-        << Fcos2[i] << " " << dFcos2[i] << " "
-        << meanDepA[i] << " " << meanDepB[i] << " " << meanDepV[i] << " "
-        << chi2[i] << " " << ndf[i] << "\n";
+    ofs << "{" << xcenters[i] << ", " << Fcos[i] << ", " << dFcos[i] << "}";
+    if (i + 1 < xcenters.size()) ofs << ", ";
   }
+  ofs << "};\n";
+
+  // propertyNameAUUcos2phi = { {xB, val, err}, ... };
+  ofs << prop << "AUUcos2phi = {";
+  for (size_t i=0;i<xcenters.size();++i) {
+    ofs << "{" << xcenters[i] << ", " << Fcos2[i] << ", " << dFcos2[i] << "}";
+    if (i + 1 < xcenters.size()) ofs << ", ";
+  }
+  ofs << "};\n";
+
   ofs.close();
-  std::cout << "Wrote results: " << out << "\n";
+  std::cout << "Wrote arrays: " << out << "\n";
 }
 
 // ------------ Draw/save per property ------------
@@ -514,9 +493,11 @@ static void draw_property_and_save(
   const auto xe = x_edges();
   const int NX = (int)xe.size()-1;
 
+  // Global style (more left & bottom margin so nothing clips)
   gStyle->SetOptStat(0);
-  gStyle->SetPadLeftMargin(0.16);    // more padding so y labels do not clip
+  gStyle->SetPadLeftMargin(0.16);
   gStyle->SetPadRightMargin(0.06);
+  gStyle->SetPadBottomMargin(0.13); // tiny extra bottom padding
   gStyle->SetTitleSize(0.05, "XYZ");
   gStyle->SetLabelSize(0.045, "XYZ");
 
@@ -524,8 +505,7 @@ static void draw_property_and_save(
   c->Divide(3,3);
 
   std::vector<double> xcenters, xlos, xhis;
-  std::vector<double> Avec, dAvec, Bvec, dBvec, Cvec, dCvec, Chi2;
-  std::vector<int>    NDF;
+  std::vector<double> Avec, dAvec, Bvec, dBvec, Cvec, dCvec;
   std::vector<double> meanDepA(NX,0.0), meanDepB(NX,0.0), meanDepV(NX,0.0);
 
   const auto& dep = depMap.at(prop);
@@ -560,13 +540,13 @@ static void draw_property_and_save(
       g->Draw("AP");
       if (fit) fit->Draw("LSAME");
 
-      // Smaller legend with border; only A, B
-      auto leg = new TLegend(0.56, 0.70, 0.94, 0.92);
+      // Legend: AUU^{cos phi}, AUU^{cos2 phi} (raw A,B) – small, bordered, inside pad
+      auto leg = new TLegend(0.56, 0.72, 0.94, 0.92);
       leg->SetBorderSize(1);
       leg->SetFillStyle(0);
       leg->SetTextSize(0.035);
-      leg->AddEntry((TObject*)0, Form("A = %.3g +/- %.3g", fr.A, fr.dA), "");
-      leg->AddEntry((TObject*)0, Form("B = %.3g +/- %.3g", fr.B, fr.dB), "");
+      leg->AddEntry((TObject*)0, Form("A_{UU}^{#cos#phi} = %.3g #pm %.3g", fr.A, fr.dA), "");
+      leg->AddEntry((TObject*)0, Form("A_{UU}^{#cos2#phi} = %.3g #pm %.3g", fr.B, fr.dB), "");
       leg->Draw();
 
       xcenters.push_back(0.5*(xl+xh));
@@ -575,18 +555,15 @@ static void draw_property_and_save(
       Avec.push_back(fr.A); dAvec.push_back(fr.dA);
       Bvec.push_back(fr.B); dBvec.push_back(fr.dB);
       Cvec.push_back(fr.C); dCvec.push_back(fr.dC);
-      Chi2.push_back(fr.chi2); NDF.push_back(fr.ndf);
     } else {
       TH1D* frame = new TH1D("frame","",10,0,360);
       frame->SetTitle((title + ";#phi (deg);Unfolded yield").c_str());
       frame->SetMinimum(0); frame->SetMaximum(1);
       frame->Draw("AXIS");
-      auto leg = new TLegend(0.56, 0.80, 0.94, 0.92);
+      auto leg = new TLegend(0.56, 0.82, 0.94, 0.92);
       leg->SetBorderSize(1); leg->SetFillStyle(0); leg->SetTextSize(0.035);
       leg->AddEntry((TObject*)0, "No valid unfolded points", "");
       leg->Draw();
-
-      // still push placeholders so vectors align (optional; here we skip)
     }
   }
 
@@ -595,15 +572,12 @@ static void draw_property_and_save(
   Fcos.reserve(xcenters.size()); dFcos.reserve(xcenters.size());
   Fcos2.reserve(xcenters.size()); dFcos2.reserve(xcenters.size());
   for (size_t i=0;i<xcenters.size();++i) {
-    double a = Avec[i], da = dAvec[i];
-    double b = Bvec[i], db = dBvec[i];
-    // means for corresponding bin index i (same order as we pushed)
-    // Find the index by matching center (robustness): we know the push order is ib=0..NX-1, so i aligns with ib
-    const int ib = (int)i;
-    double mA = meanDepA[ib], mB = meanDepB[ib], mV = meanDepV[ib];
+    const int ib = (int)i; // aligns with push order
+    const double a = Avec[i], da = dAvec[i];
+    const double b = Bvec[i], db = dBvec[i];
+    const double mA = meanDepA[ib], mB = meanDepB[ib], mV = meanDepV[ib];
 
-    // Protect against zero
-    double f1 = 0.0, df1 = 0.0, f2 = 0.0, df2 = 0.0;
+    double f1=0, df1=0, f2=0, df2=0;
     if (mV != 0.0) { f1 = (mA/mV) * a; df1 = (mA/mV) * da; }
     if (mB != 0.0) { f2 = (mA/mB) * b; df2 = (mA/mB) * db; }
 
@@ -611,7 +585,7 @@ static void draw_property_and_save(
     Fcos2.push_back(f2); dFcos2.push_back(df2);
   }
 
-  // Bottom row: pad 8 shows scaled FUU ratios vs x_B
+  // Bottom row: pad 8 — x_B dependence of the scaled FUU ratios (no title, top-right legend)
   c->cd(7); gPad->Clear();
   c->cd(8);
   if (!xcenters.empty()) {
@@ -624,21 +598,23 @@ static void draw_property_and_save(
     gF1->SetMarkerStyle(20); gF1->SetMarkerSize(1.0);
     gF2->SetMarkerStyle(21); gF2->SetMarkerSize(1.0);
 
-    gF1->SetTitle("Scaled coefficients vs x_{B};x_{B};Ratio");
+    // No title, just axes
+    gF1->SetTitle(";x_{B};Ratio");
     gF1->GetYaxis()->SetRangeUser(-1.0, 1.0);
     gF1->Draw("AP");
     gF2->Draw("P SAME");
 
-    auto legAB = new TLegend(0.12, 0.72, 0.56, 0.92);
+    // Legend in top-right, inside pad
+    auto legAB = new TLegend(0.62, 0.74, 0.94, 0.92);
     legAB->SetBorderSize(1); legAB->SetFillStyle(0); legAB->SetTextSize(0.035);
     legAB->AddEntry(gF1, "F_{UU}^{\\cos\\phi}/F_{UU}", "p");
     legAB->AddEntry(gF2, "F_{UU}^{\\cos2\\phi}/F_{UU}", "p");
     legAB->Draw();
   } else {
-    TH1D* frame = new TH1D("frameAB","Scaled coefficients vs x_{B};x_{B};Ratio",10,0.06,0.60);
+    TH1D* frame = new TH1D("frameAB",";x_{B};Ratio",10,0.06,0.60);
     frame->SetMinimum(-1.0); frame->SetMaximum(1.0);
     frame->Draw("AXIS");
-    auto leg = new TLegend(0.18, 0.80, 0.62, 0.92);
+    auto leg = new TLegend(0.62, 0.80, 0.94, 0.92);
     leg->SetBorderSize(1); leg->SetFillStyle(0); leg->SetTextSize(0.035);
     leg->AddEntry((TObject*)0, "No fit results collected", "");
     leg->Draw();
@@ -650,12 +626,11 @@ static void draw_property_and_save(
   c->SaveAs(outpdf.c_str());
   std::cout << "Saved: " << outpdf << "\n";
 
-  // Save numbers (include both raw A,B and scaled FUU ratios, plus dep means)
-  save_results_txt(prop, xcenters, xlos, xhis, Avec, dAvec, Bvec, dBvec, Cvec, dCvec,
-                   Fcos, dFcos, Fcos2, dFcos2, meanDepA, meanDepB, meanDepV, Chi2, NDF);
+  // Save arrays in the exact style you require (scaled values)
+  save_arrays_style(prop, xcenters, Fcos, dFcos, Fcos2, dFcos2);
 }
 
-// ------------ Counters print ------------
+// ------------ Counters ------------
 static void print_counters(const char* label, const Counters& C, const std::vector<std::string>& props) {
   std::cout << "\n[" << label << " counters]\n";
   std::cout << "  total read              : " << C.total << "\n";
@@ -710,7 +685,7 @@ int main(int argc, char** argv) {
 
   const auto props = properties_to_run(cfg.which_property);
 
-  // Totals sanity
+  // Totals sanity & detailed counters
   for (const auto& p : props) {
     const auto& hs = H.at(p);
     long long dsum=0, gsum=0, rsum=0;
@@ -722,13 +697,11 @@ int main(int argc, char** argv) {
     std::cout << "[check] property " << p << " totals: "
               << "D=" << dsum << "  G=" << gsum << "  R=" << rsum << "\n";
   }
-
-  // Detailed counters
   print_counters("DATA", cD, props);
   print_counters("GEN",  cG, props);
   print_counters("REC",  cR, props);
 
-  // Draw and save
+  // Draw and save per property
   for (const auto& p : props) {
     draw_property_and_save(p, H, Dep);
   }
