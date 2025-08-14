@@ -139,35 +139,35 @@ bool GeneralExclusiveKinematicCuts::applyCuts(int currentFits, bool isMC)
     if (property == "enpi") {
         // std::cout << *fiducial_status << " " << std::fabs(t_val) << " " << *Mx2 << std::endl;
         goodEvent = goodEvent && *fiducial_status >= 100 && 
-            std::fabs(t_val) <= 1.0 && std::fabs(t_val) >= 0.0 &&
+            std::fabs(*t) <= 1.0 && std::fabs(*t) >= 0.0 &&
             *Mx2 > 0.80 && *Mx2 < 1.00;
         return goodEvent;
     }
     if (property == "enpiLowt") {
-        goodEvent = goodEvent && std::fabs(t_val) >= 0.00 && std::fabs(t_val) <= 0.30;
+        goodEvent = goodEvent && std::fabs(*t) >= 0.00 && std::fabs(*t) <= 0.30;
         goodEvent = goodEvent && *fiducial_status >= 100 && 
-            std::fabs(t_val) <= 1.0 && std::fabs(t_val) >= 0.0 &&
+            std::fabs(*t) <= 1.0 && std::fabs(*t) >= 0.0 &&
             *Mx2 > 0.80 && *Mx2 < 1.00;
         return goodEvent;
     }
     if (property == "enpiMidt") {
-        goodEvent = goodEvent && std::fabs(t_val) >= 0.30 && std::fabs(t_val) <= 0.70;
+        goodEvent = goodEvent && std::fabs(*t) >= 0.30 && std::fabs(*t) <= 0.70;
         goodEvent = goodEvent && *fiducial_status >= 100 && 
-            std::fabs(t_val) <= 1.0 && std::fabs(t_val) >= 0.0 &&
+            std::fabs(*t) <= 1.0 && std::fabs(*t) >= 0.0 &&
             *Mx2 > 0.80 && *Mx2 < 1.00;
         return goodEvent;
     }
     if (property == "enpiHight") {
-        goodEvent = goodEvent && std::fabs(t_val) >= 0.70;
+        goodEvent = goodEvent && std::fabs(*t) >= 0.70;
         goodEvent = goodEvent && *fiducial_status >= 100 && 
-            std::fabs(t_val) <= 1.0 && std::fabs(t_val) >= 0.0 &&
+            std::fabs(*t) <= 1.0 && std::fabs(*t) >= 0.0 &&
             *Mx2 > 0.80 && *Mx2 < 1.00;
         return goodEvent;
     }
     if (property == "enpiHarutsBin") {
-        goodEvent = goodEvent && std::fabs(t_val) >= 0.47 && std::fabs(t_val) <= 0.87;
+        goodEvent = goodEvent && std::fabs(*t) >= 0.47 && std::fabs(*t) <= 0.87;
         goodEvent = goodEvent && *fiducial_status >= 100 && 
-            std::fabs(t_val) <= 1.0 && std::fabs(t_val) >= 0.0 &&
+            std::fabs(*t) <= 1.0 && std::fabs(*t) >= 0.0 &&
             *Mx2 > 0.80 && *Mx2 < 1.00;
         return goodEvent;
     }

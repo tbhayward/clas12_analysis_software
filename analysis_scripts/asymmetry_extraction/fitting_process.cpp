@@ -923,6 +923,8 @@ void performChi2Fits_single_hadron(const char* output_file, const char* kinemati
   chi2FitsAStream << std::fixed << std::setprecision(9);
   chi2FitsBStream << std::fixed << std::setprecision(9);
   chi2FitsCStream << std::fixed << std::setprecision(9);
+  chi2FitsDStream << std::fixed << std::setprecision(9);
+  chi2FitsEStream << std::fixed << std::setprecision(9);
 
   // Initialize string stream to store the kinematics in each bin for use in LaTeX 
   std::ostringstream meanVariablesStream;
