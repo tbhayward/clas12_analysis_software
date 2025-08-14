@@ -1,11 +1,15 @@
 // unfold_phi_unfold_fit.cpp
 // Exclusive pi+ unfolding and cos(n*phi) fits (phi plotted in degrees).
+// Adds depolarization scaling to show F_UU^{cos phi}/F_UU and F_UU^{cos2 phi}/F_UU.
+//
 // Build (csh):
 //   g++ -O2 -std=c++17 unfold_phi_unfold_fit.cpp `root-config --cflags --libs` -o unfold_phi_unfold_fit
+//
 // Run:
 //   ./unfold_phi_unfold_fit data.root gen.root rec.root [enpi|enpiLowt|enpiMidt|enpiHight|all]
-//                                [--x x] [--phi phi] [--t t] [--mx2 Mx2] [--fid fiducial_status]
-//                                [--phibins 24] [--no-fid-cut] [--debug N] [--list-branches]
+//        [--x x] [--phi phi] [--t t] [--mx2 Mx2] [--fid fiducial_status]
+//        [--DepA DepA] [--DepB DepB] [--DepV DepV] [--DepW DepW]
+//        [--phibins 24] [--no-fid-cut] [--debug N] [--list-branches]
 //
 // Outputs per property:
 //   PDF:  output/enpi+/<property>_unfolded.pdf
@@ -15,7 +19,10 @@
 // - Reads each tree ONCE per dataset; fills all four properties simultaneously.
 // - Input phi assumed in radians. Plots and fits in degrees (0..360).
 // - Unfolded yield per phi bin = D * G / R, with Poisson error propagation.
-// - Fits C * (1 + A*cos(pi/180*x) + B*cos(2*pi/180*x)) on unfolded points.
+// - Fits C * (1 + A*cos + B*cos2) on unfolded points.
+// - Bottom middle panel shows FUU^{cos phi}/FUU = (meanDepA/meanDepV)*A
+//   and FUU^{cos2 phi}/FUU = (meanDepA/meanDepB)*B, where means are from DATA
+//   after all kinematic and property cuts in each x_B bin.
 
 #include <algorithm>
 #include <cmath>
@@ -26,9 +33,7 @@
 #include <iostream>
 #include <map>
 #include <memory>
-#include <set>
 #include <string>
-#include <utility>
 #include <vector>
 
 #include "TBranch.h"
@@ -37,7 +42,6 @@
 #include "TGraphErrors.h"
 #include "TH1D.h"
 #include "TLegend.h"
-#include "TList.h"
 #include "TMath.h"
 #include "TPad.h"
 #include "TROOT.h"
@@ -47,11 +51,16 @@
 #include "TTree.h"
 
 struct BranchNames {
-  std::string x   = "x";
-  std::string phi = "phi";
-  std::string t   = "t";
+  std::string x   = "x";               // x_B
+  std::string phi = "phi";             // radians in input
+  std::string t   = "t";               // signed t
   std::string mx2 = "Mx2";
   std::string fid = "fiducial_status";
+  // Depolarization factors (DATA)
+  std::string DepA = "DepA";
+  std::string DepB = "DepB";
+  std::string DepV = "DepV";
+  std::string DepW = "DepW"; // not used here but kept for parity/future
 };
 
 struct Config {
@@ -62,15 +71,15 @@ struct Config {
   BranchNames bn;
   int  phi_nbins      = 24;
   bool apply_fid_cut  = true;
-  int  debug_print    = 0;  // print this many raw events per dataset
+  int  debug_print    = 0;   // print this many raw events per dataset
   bool list_branches  = false;
 };
 
-// ---------- CLI ----------
 static void print_usage(const char* argv0) {
   std::cout << "Usage:\n  " << argv0
             << " data.root gen.root rec.root [enpi|enpiLowt|enpiMidt|enpiHight|all]\n"
             << "    [--x x] [--phi phi] [--t t] [--mx2 Mx2] [--fid fiducial_status]\n"
+            << "    [--DepA DepA] [--DepB DepB] [--DepV DepV] [--DepW DepW]\n"
             << "    [--phibins 24] [--no-fid-cut] [--debug N] [--list-branches]\n";
 }
 
@@ -107,6 +116,10 @@ static bool parse_args(int argc, char** argv, Config& cfg) {
     if (eat("--t",   cfg.bn.t)) continue;
     if (eat("--mx2", cfg.bn.mx2)) continue;
     if (eat("--fid", cfg.bn.fid)) continue;
+    if (eat("--DepA", cfg.bn.DepA)) continue;
+    if (eat("--DepB", cfg.bn.DepB)) continue;
+    if (eat("--DepV", cfg.bn.DepV)) continue;
+    if (eat("--DepW", cfg.bn.DepW)) continue;
     if (eat_int("--phibins", cfg.phi_nbins)) continue;
     if (a == "--no-fid-cut") { cfg.apply_fid_cut = false; continue; }
     if (eat_int("--debug", cfg.debug_print)) continue;
@@ -117,7 +130,6 @@ static bool parse_args(int argc, char** argv, Config& cfg) {
   return true;
 }
 
-// ---------- Helpers ----------
 static std::vector<std::string> all_props() {
   return {"enpi", "enpiLowt", "enpiMidt", "enpiHight"};
 }
@@ -125,6 +137,7 @@ static std::vector<std::string> properties_to_run(const std::string& which) {
   if (which == "all") return all_props();
   return {which};
 }
+
 static std::vector<double> x_edges() {
   return {0.06, 0.14, 0.22, 0.30, 0.40, 0.50, 0.60};
 }
@@ -132,15 +145,26 @@ static int xbin_index(double x, const std::vector<double>& e) {
   for (size_t i=0;i+1<e.size();++i) if (x >= e[i] && x < e[i+1]) return (int)i;
   return -1;
 }
+
 static inline bool pass_common(double t, double mx2) {
+  // Data note: you fixed sign issue externally; we enforce |t| in [0,1].
   return (std::fabs(t) <= 1.0) && (std::fabs(t) >= 0.0) && (mx2 > 0.80) && (mx2 < 1.00);
 }
 static inline bool pass_prop_window(const std::string& prop, double t) {
-  if (prop == "enpi")      return true;
-  if (prop == "enpiLowt")  return (std::fabs(t) >= 0.00 && std::fabs(t) <= 0.30);
-  if (prop == "enpiMidt")  return (std::fabs(t) >= 0.30 && std::fabs(t) <= 0.70);
-  if (prop == "enpiHight") return (std::fabs(t) >= 0.70); // bounded by common
+  const double at = std::fabs(t);
+  if (prop == "enpi")      return true;                      // |t| in [0,1] from common
+  if (prop == "enpiLowt")  return (at >= 0.00 && at <= 0.30);
+  if (prop == "enpiMidt")  return (at >= 0.30 && at <= 0.70);
+  if (prop == "enpiHight") return (at >= 0.70);              // bounded above by common
   return false;
+}
+
+static std::string prop_tlabel(const std::string& prop) {
+  if (prop == "enpi")      return "-t \\in [0.00, 1.00]";
+  if (prop == "enpiLowt")  return "-t \\in [0.00, 0.30]";
+  if (prop == "enpiMidt")  return "-t \\in [0.30, 0.70]";
+  if (prop == "enpiHight") return "-t \\in [0.70, 1.00]";
+  return "";
 }
 
 static void ensure_dir(const std::string& d) {
@@ -160,12 +184,17 @@ static void list_tree_branches(TTree* tr, const char* label) {
   std::cout.flush();
 }
 
-// ---------- Binding ----------
+// ------------ Binding ------------
 struct BranchHandles {
   double x=0, phi=0, t=0, mx2=0;
   int fid=0;
   bool has_fid=false;
+
+  // Dep factors (optional)
+  double DepA=0, DepB=0, DepV=0, DepW=0;
+  bool has_DepA=false, has_DepB=false, has_DepV=false, has_DepW=false;
 };
+
 static bool bind_tree(TTree* tr, const BranchNames& bn, BranchHandles& bh, const char* who) {
   if (!tr) return false;
   bool ok = true;
@@ -185,23 +214,33 @@ static bool bind_tree(TTree* tr, const BranchNames& bn, BranchHandles& bh, const
 
   bh.has_fid = (tr->GetBranch(bn.fid.c_str()) != nullptr);
   if (bh.has_fid) tr->SetBranchAddress(bn.fid.c_str(), &bh.fid);
+
+  // Optional dep branches (typically on DATA)
+  bh.has_DepA = (tr->GetBranch(bn.DepA.c_str()) != nullptr);
+  bh.has_DepB = (tr->GetBranch(bn.DepB.c_str()) != nullptr);
+  bh.has_DepV = (tr->GetBranch(bn.DepV.c_str()) != nullptr);
+  bh.has_DepW = (tr->GetBranch(bn.DepW.c_str()) != nullptr);
+  if (bh.has_DepA) tr->SetBranchAddress(bn.DepA.c_str(), &bh.DepA);
+  if (bh.has_DepB) tr->SetBranchAddress(bn.DepB.c_str(), &bh.DepB);
+  if (bh.has_DepV) tr->SetBranchAddress(bn.DepV.c_str(), &bh.DepV);
+  if (bh.has_DepW) tr->SetBranchAddress(bn.DepW.c_str(), &bh.DepW);
+
   return true;
 }
 
-// ---------- Hist containers ----------
+// ------------ Hist/dep containers ------------
 struct HSet {
   std::vector<std::unique_ptr<TH1D>> D; // data
   std::vector<std::unique_ptr<TH1D>> G; // gen
   std::vector<std::unique_ptr<TH1D>> R; // rec
 };
+
 static std::map<std::string,HSet> make_hist_map(int phibins) {
   std::map<std::string,HSet> m;
   const auto props = all_props();
   const auto xe = x_edges();
   const int NX = (int)xe.size()-1;
-
-  const double pmin = 0.0;
-  const double pmax = 360.0;
+  const double pmin = 0.0, pmax = 360.0;
 
   for (const auto& p : props) {
     HSet hs;
@@ -222,17 +261,39 @@ static std::map<std::string,HSet> make_hist_map(int phibins) {
   return m;
 }
 
-// ---------- Debug counters ----------
+// Per (property, xbin) dep sums and counts from DATA
+struct DepMeans {
+  std::vector<double> sumA, sumB, sumV, sumW;
+  std::vector<long long> count;
+};
+
+static std::map<std::string, DepMeans> make_dep_map() {
+  std::map<std::string, DepMeans> dm;
+  const auto props = all_props();
+  const int NX = (int)x_edges().size()-1;
+  for (const auto& p : props) {
+    DepMeans d;
+    d.sumA.assign(NX, 0.0);
+    d.sumB.assign(NX, 0.0);
+    d.sumV.assign(NX, 0.0);
+    d.sumW.assign(NX, 0.0);
+    d.count.assign(NX, 0);
+    dm.emplace(p, std::move(d));
+  }
+  return dm;
+}
+
+// ------------ Debug counters ------------
 struct Counters {
   Long64_t total=0, pass_common_cnt=0, pass_fid_cnt=0;
-  Long64_t fail_abs_t=0, fail_mx2=0, fail_no_fid_branch=0, fail_fid_lt_100=0, fail_xbin=-0;
+  Long64_t fail_abs_t=0, fail_mx2=0, fail_no_fid_branch=0, fail_fid_lt_100=0, fail_xbin=0;
   std::map<std::string, Long64_t> pass_prop_cnt;
 };
 
 static void debug_event_print(const char* label, int idx, const BranchHandles& b,
                               const std::vector<std::string>& props, const std::vector<double>& xe) {
   std::cout << "[" << label << " evt " << idx << "] "
-            << "x=" << b.x << "  t=" << b.t << "  Mx2=" << b.mx2
+            << "x_B=" << b.x << "  t=" << b.t << "  Mx2=" << b.mx2
             << "  fid=" << (b.has_fid? b.fid : -9999)
             << "  phi(rad)=" << b.phi
             << "  phi(deg)=" << (b.phi*180.0/TMath::Pi()) << "\n";
@@ -244,10 +305,11 @@ static void debug_event_print(const char* label, int idx, const BranchHandles& b
   std::cout.flush();
 }
 
-// ---------- Fill loops ----------
+// ------------ Fill loops ------------
 static void loop_tree_fill(
   TTree* tr, const BranchNames& bn, bool apply_fid, bool count_fid,
-  std::map<std::string,HSet>& H, Counters& C, int debugN, const char* dbg_label)
+  std::map<std::string,HSet>& H, std::map<std::string,DepMeans>* depPtr,
+  Counters& C, int debugN, const char* dbg_label)
 {
   if (!tr) return;
   BranchHandles b;
@@ -261,7 +323,6 @@ static void loop_tree_fill(
 
   const auto xe = x_edges();
   const auto props = all_props();
-
   const Long64_t nent = tr->GetEntries();
   const int debug_limit = std::max(0, debugN);
 
@@ -269,17 +330,14 @@ static void loop_tree_fill(
     tr->GetEntry(i);
     C.total++;
 
-    // Unconditional early prints for first N entries:
     if (debug_limit > 0 && i < debug_limit) {
       debug_event_print(dbg_label, (int)i, b, props, xe);
     }
 
-    // Track reasons for failures:
-    bool ok_abs_t = (std::fabs(b.t) <= 1.0) && (std::fabs(b.t) >= 0.0);
-    bool ok_mx2   = (b.mx2 > 0.80) && (b.mx2 < 1.00);
+    const bool ok_abs_t = (std::fabs(b.t) <= 1.0) && (std::fabs(b.t) >= 0.0);
+    const bool ok_mx2   = (b.mx2 > 0.80) && (b.mx2 < 1.00);
     if (!ok_abs_t) C.fail_abs_t++;
     if (!ok_mx2)   C.fail_mx2++;
-
     if (!(ok_abs_t && ok_mx2)) continue;
     C.pass_common_cnt++;
 
@@ -292,6 +350,7 @@ static void loop_tree_fill(
     int ib = xbin_index(b.x, xe);
     if (ib < 0) { C.fail_xbin++; continue; }
 
+    // Convert to degrees for histogramming
     double phideg = b.phi * 180.0 / TMath::Pi();
     phideg = std::fmod(phideg, 360.0);
     if (phideg < 0) phideg += 360.0;
@@ -299,19 +358,32 @@ static void loop_tree_fill(
     for (const auto& p : props) {
       if (!pass_prop_window(p, b.t)) continue;
       C.pass_prop_cnt[p]++;
-      if (std::string(dbg_label) == "DATA") H[p].D[ib]->Fill(phideg);
-      else if (std::string(dbg_label) == "GEN") H[p].G[ib]->Fill(phideg);
-      else if (std::string(dbg_label) == "REC") H[p].R[ib]->Fill(phideg);
+
+      if (std::string(dbg_label) == "DATA") {
+        H[p].D[ib]->Fill(phideg);
+        // accumulate dep means if available
+        if (depPtr) {
+          auto& dep = depPtr->at(p);
+          if (b.has_DepA) dep.sumA[ib] += b.DepA;
+          if (b.has_DepB) dep.sumB[ib] += b.DepB;
+          if (b.has_DepV) dep.sumV[ib] += b.DepV;
+          if (b.has_DepW) dep.sumW[ib] += b.DepW;
+          dep.count[ib] += 1;
+        }
+      } else if (std::string(dbg_label) == "GEN") {
+        H[p].G[ib]->Fill(phideg);
+      } else if (std::string(dbg_label) == "REC") {
+        H[p].R[ib]->Fill(phideg);
+      }
     }
 
-    // Also print every ~10M entries to show progress on huge files
     if ((i>0) && (i % 10000000 == 0)) {
       std::cout << "[" << dbg_label << "] processed " << i << " / " << nent << " entries..." << std::endl;
     }
   }
 }
 
-// ---------- Fit ----------
+// ------------ Fit ------------
 struct FitResult {
   double C=0, dC=0;
   double A=0, dA=0;
@@ -338,10 +410,8 @@ static FitResult make_unfold_graph_and_fit(
 
     if (R <= 0.0 || G <= 0.0) continue;
 
-    // U = D*G/R
     const double U = (D * G) / R;
-
-    // Poisson propagation: Var(U) = (G/R)^2*D + (D/R)^2*G + (D*G/R^2)^2*R
+    // Var(U) = (G/R)^2*D + (D/R)^2*G + (D*G/R^2)^2*R
     const double term1 = (G*G)/(R*R) * D;
     const double term2 = (D*D)/(R*R) * G;
     const double term3 = (D*D*G*G)/(R*R*R);
@@ -386,7 +456,7 @@ static FitResult make_unfold_graph_and_fit(
   return fr;
 }
 
-// ---------- I/O ----------
+// ------------ Titles ------------
 static std::string prop_title(const std::string& p) {
   if (p == "enpi")      return "ep -> e' n #pi^{+}";
   if (p == "enpiLowt")  return "ep -> e' n #pi^{+}, low |t|";
@@ -395,6 +465,7 @@ static std::string prop_title(const std::string& p) {
   return p;
 }
 
+// ------------ Save text ------------
 static void save_results_txt(
   const std::string& prop,
   const std::vector<double>& xcenters,
@@ -403,36 +474,48 @@ static void save_results_txt(
   const std::vector<double>& Avec, const std::vector<double>& dAvec,
   const std::vector<double>& Bvec, const std::vector<double>& dBvec,
   const std::vector<double>& Cvec, const std::vector<double>& dCvec,
+  const std::vector<double>& Fcos, const std::vector<double>& dFcos,
+  const std::vector<double>& Fcos2, const std::vector<double>& dFcos2,
+  const std::vector<double>& meanDepA, const std::vector<double>& meanDepB, const std::vector<double>& meanDepV,
   const std::vector<double>& chi2, const std::vector<int>& ndf)
 {
   ensure_dir("output/enpi+");
   std::string out = "output/enpi+/" + prop + "_unfolded_fit_results.txt";
   std::ofstream ofs(out);
   ofs << "# property: " << prop << "\n";
-  ofs << "# columns: i  x_center  x_lo  x_hi  C  dC  A  dA  B  dB  chi2  ndf\n";
+  ofs << "# columns:\n";
+  ofs << "# i  xB_center  xB_lo  xB_hi"
+         "  A_raw  dA_raw  B_raw  dB_raw  C  dC"
+         "  (FUU^cosphi/FUU)  d(...)  (FUU^cos2phi/FUU)  d(...)"
+         "  meanDepA  meanDepB  meanDepV  chi2  ndf\n";
   for (size_t i=0;i<xcenters.size();++i) {
     ofs << i << " "
         << xcenters[i] << " "
         << xlo[i] << " "
         << xhi[i] << " "
-        << Cvec[i] << " " << dCvec[i] << " "
         << Avec[i] << " " << dAvec[i] << " "
         << Bvec[i] << " " << dBvec[i] << " "
+        << Cvec[i] << " " << dCvec[i] << " "
+        << Fcos[i] << " " << dFcos[i] << " "
+        << Fcos2[i] << " " << dFcos2[i] << " "
+        << meanDepA[i] << " " << meanDepB[i] << " " << meanDepV[i] << " "
         << chi2[i] << " " << ndf[i] << "\n";
   }
   ofs.close();
   std::cout << "Wrote results: " << out << "\n";
 }
 
+// ------------ Draw/save per property ------------
 static void draw_property_and_save(
   const std::string& prop,
-  const std::map<std::string,HSet>& H)
+  const std::map<std::string,HSet>& H,
+  const std::map<std::string,DepMeans>& depMap)
 {
   const auto xe = x_edges();
   const int NX = (int)xe.size()-1;
 
   gStyle->SetOptStat(0);
-  gStyle->SetPadLeftMargin(0.125);
+  gStyle->SetPadLeftMargin(0.16);    // more padding so y labels do not clip
   gStyle->SetPadRightMargin(0.06);
   gStyle->SetTitleSize(0.05, "XYZ");
   gStyle->SetLabelSize(0.045, "XYZ");
@@ -443,6 +526,9 @@ static void draw_property_and_save(
   std::vector<double> xcenters, xlos, xhis;
   std::vector<double> Avec, dAvec, Bvec, dBvec, Cvec, dCvec, Chi2;
   std::vector<int>    NDF;
+  std::vector<double> meanDepA(NX,0.0), meanDepB(NX,0.0), meanDepV(NX,0.0);
+
+  const auto& dep = depMap.at(prop);
 
   for (int ib=0; ib<NX; ++ib) {
     c->cd(ib+1);
@@ -456,20 +542,31 @@ static void draw_property_and_save(
     FitResult fr = make_unfold_graph_and_fit(hD,hG,hR,g,fit);
 
     const double xl = xe[ib], xh = xe[ib+1];
-    std::string title = prop_title(prop) + Form(", x in [%.2f, %.2f)", xl, xh);
+    std::string titleCore = prop_title(prop);
+    std::string tlabel = prop_tlabel(prop);
+    std::string title = titleCore + Form(", x_{B} in [%.2f, %.2f), %s", xl, xh, tlabel.c_str());
+
+    // compute mean dep factors for this bin from DATA
+    if (dep.count[ib] > 0) {
+      meanDepA[ib] = dep.sumA[ib] / (double)dep.count[ib];
+      meanDepB[ib] = dep.sumB[ib] / (double)dep.count[ib];
+      meanDepV[ib] = dep.sumV[ib] / (double)dep.count[ib];
+    } else {
+      meanDepA[ib] = meanDepB[ib] = meanDepV[ib] = 0.0;
+    }
 
     if (g) {
-      g->SetTitle((title + ";phi (deg);Unfolded yield").c_str());
+      g->SetTitle((title + ";#phi (deg);Unfolded yield").c_str());
       g->Draw("AP");
       if (fit) fit->Draw("LSAME");
 
-      auto leg = new TLegend(0.55, 0.58, 0.94, 0.94);
-      leg->SetBorderSize(0);
+      // Smaller legend with border; only A, B
+      auto leg = new TLegend(0.56, 0.70, 0.94, 0.92);
+      leg->SetBorderSize(1);
       leg->SetFillStyle(0);
-      leg->AddEntry((TObject*)0, Form("C = %.3g +/- %.3g", fr.C, fr.dC), "");
+      leg->SetTextSize(0.035);
       leg->AddEntry((TObject*)0, Form("A = %.3g +/- %.3g", fr.A, fr.dA), "");
       leg->AddEntry((TObject*)0, Form("B = %.3g +/- %.3g", fr.B, fr.dB), "");
-      leg->AddEntry((TObject*)0, Form("chi2/ndf = %.1f/%d", fr.chi2, fr.ndf), "");
       leg->Draw();
 
       xcenters.push_back(0.5*(xl+xh));
@@ -481,45 +578,68 @@ static void draw_property_and_save(
       Chi2.push_back(fr.chi2); NDF.push_back(fr.ndf);
     } else {
       TH1D* frame = new TH1D("frame","",10,0,360);
-      frame->SetTitle((title + ";phi (deg);Unfolded yield").c_str());
+      frame->SetTitle((title + ";#phi (deg);Unfolded yield").c_str());
       frame->SetMinimum(0); frame->SetMaximum(1);
       frame->Draw("AXIS");
-      auto leg = new TLegend(0.55, 0.70, 0.94, 0.90);
-      leg->SetBorderSize(0); leg->SetFillStyle(0);
+      auto leg = new TLegend(0.56, 0.80, 0.94, 0.92);
+      leg->SetBorderSize(1); leg->SetFillStyle(0); leg->SetTextSize(0.035);
       leg->AddEntry((TObject*)0, "No valid unfolded points", "");
       leg->Draw();
+
+      // still push placeholders so vectors align (optional; here we skip)
     }
   }
 
-  // Bottom row: pad 8 shows A(x), B(x)
+  // Build scaled FUU ratios from means: Fcos = (DepA/DepV) * A   and   Fcos2 = (DepA/DepB) * B
+  std::vector<double> Fcos, dFcos, Fcos2, dFcos2;
+  Fcos.reserve(xcenters.size()); dFcos.reserve(xcenters.size());
+  Fcos2.reserve(xcenters.size()); dFcos2.reserve(xcenters.size());
+  for (size_t i=0;i<xcenters.size();++i) {
+    double a = Avec[i], da = dAvec[i];
+    double b = Bvec[i], db = dBvec[i];
+    // means for corresponding bin index i (same order as we pushed)
+    // Find the index by matching center (robustness): we know the push order is ib=0..NX-1, so i aligns with ib
+    const int ib = (int)i;
+    double mA = meanDepA[ib], mB = meanDepB[ib], mV = meanDepV[ib];
+
+    // Protect against zero
+    double f1 = 0.0, df1 = 0.0, f2 = 0.0, df2 = 0.0;
+    if (mV != 0.0) { f1 = (mA/mV) * a; df1 = (mA/mV) * da; }
+    if (mB != 0.0) { f2 = (mA/mB) * b; df2 = (mA/mB) * db; }
+
+    Fcos.push_back(f1);  dFcos.push_back(df1);
+    Fcos2.push_back(f2); dFcos2.push_back(df2);
+  }
+
+  // Bottom row: pad 8 shows scaled FUU ratios vs x_B
   c->cd(7); gPad->Clear();
   c->cd(8);
   if (!xcenters.empty()) {
-    auto gA = new TGraphErrors((int)xcenters.size());
-    auto gB = new TGraphErrors((int)xcenters.size());
+    auto gF1 = new TGraphErrors((int)xcenters.size());
+    auto gF2 = new TGraphErrors((int)xcenters.size());
     for (int i=0;i<(int)xcenters.size();++i) {
-      gA->SetPoint(i, xcenters[i], Avec[i]); gA->SetPointError(i, 0.0, dAvec[i]);
-      gB->SetPoint(i, xcenters[i], Bvec[i]); gB->SetPointError(i, 0.0, dBvec[i]);
+      gF1->SetPoint(i, xcenters[i], Fcos[i]);  gF1->SetPointError(i, 0.0, dFcos[i]);
+      gF2->SetPoint(i, xcenters[i], Fcos2[i]); gF2->SetPointError(i, 0.0, dFcos2[i]);
     }
-    gA->SetMarkerStyle(20); gA->SetMarkerSize(1.0);
-    gB->SetMarkerStyle(21); gB->SetMarkerSize(1.0);
+    gF1->SetMarkerStyle(20); gF1->SetMarkerSize(1.0);
+    gF2->SetMarkerStyle(21); gF2->SetMarkerSize(1.0);
 
-    gA->SetTitle("A(x) and B(x);x;Coefficient");
-    gA->GetYaxis()->SetRangeUser(-1.0, 1.0);
-    gA->Draw("AP");
-    gB->Draw("P SAME");
+    gF1->SetTitle("Scaled coefficients vs x_{B};x_{B};Ratio");
+    gF1->GetYaxis()->SetRangeUser(-1.0, 1.0);
+    gF1->Draw("AP");
+    gF2->Draw("P SAME");
 
-    auto legAB = new TLegend(0.15, 0.75, 0.45, 0.92);
-    legAB->SetBorderSize(0); legAB->SetFillStyle(0);
-    legAB->AddEntry(gA, "A(x) from fits", "p");
-    legAB->AddEntry(gB, "B(x) from fits", "p");
+    auto legAB = new TLegend(0.12, 0.72, 0.56, 0.92);
+    legAB->SetBorderSize(1); legAB->SetFillStyle(0); legAB->SetTextSize(0.035);
+    legAB->AddEntry(gF1, "F_{UU}^{\\cos\\phi}/F_{UU}", "p");
+    legAB->AddEntry(gF2, "F_{UU}^{\\cos2\\phi}/F_{UU}", "p");
     legAB->Draw();
   } else {
-    TH1D* frame = new TH1D("frameAB","A(x) and B(x);x;Coefficient",10,0.06,0.60);
+    TH1D* frame = new TH1D("frameAB","Scaled coefficients vs x_{B};x_{B};Ratio",10,0.06,0.60);
     frame->SetMinimum(-1.0); frame->SetMaximum(1.0);
     frame->Draw("AXIS");
-    auto leg = new TLegend(0.2, 0.8, 0.6, 0.92);
-    leg->SetBorderSize(0); leg->SetFillStyle(0);
+    auto leg = new TLegend(0.18, 0.80, 0.62, 0.92);
+    leg->SetBorderSize(1); leg->SetFillStyle(0); leg->SetTextSize(0.035);
     leg->AddEntry((TObject*)0, "No fit results collected", "");
     leg->Draw();
   }
@@ -530,10 +650,12 @@ static void draw_property_and_save(
   c->SaveAs(outpdf.c_str());
   std::cout << "Saved: " << outpdf << "\n";
 
-  save_results_txt(prop, xcenters, xlos, xhis, Avec, dAvec, Bvec, dBvec, Cvec, dCvec, Chi2, NDF);
+  // Save numbers (include both raw A,B and scaled FUU ratios, plus dep means)
+  save_results_txt(prop, xcenters, xlos, xhis, Avec, dAvec, Bvec, dBvec, Cvec, dCvec,
+                   Fcos, dFcos, Fcos2, dFcos2, meanDepA, meanDepB, meanDepV, Chi2, NDF);
 }
 
-// ---------- Final reporting ----------
+// ------------ Counters print ------------
 static void print_counters(const char* label, const Counters& C, const std::vector<std::string>& props) {
   std::cout << "\n[" << label << " counters]\n";
   std::cout << "  total read              : " << C.total << "\n";
@@ -551,7 +673,7 @@ static void print_counters(const char* label, const Counters& C, const std::vect
   }
 }
 
-// ---------- main ----------
+// ------------ main ------------
 int main(int argc, char** argv) {
   Config cfg;
   if (!parse_args(argc, argv, cfg)) return 1;
@@ -579,11 +701,12 @@ int main(int argc, char** argv) {
   }
 
   auto H = make_hist_map(cfg.phi_nbins);
+  auto Dep = make_dep_map();
 
   Counters cD, cG, cR;
-  loop_tree_fill(tD, cfg.bn, cfg.apply_fid_cut, /*count_fid=*/true,  H, cD, cfg.debug_print, "DATA");
-  loop_tree_fill(tG, cfg.bn, /*apply_fid=*/false, /*count_fid=*/false, H, cG, cfg.debug_print, "GEN");
-  loop_tree_fill(tR, cfg.bn, cfg.apply_fid_cut, /*count_fid=*/true,  H, cR, cfg.debug_print, "REC");
+  loop_tree_fill(tD, cfg.bn, cfg.apply_fid_cut, /*count_fid=*/true,  H, &Dep, cD, cfg.debug_print, "DATA");
+  loop_tree_fill(tG, cfg.bn, /*apply_fid=*/false, /*count_fid=*/false, H, nullptr, cG, cfg.debug_print, "GEN");
+  loop_tree_fill(tR, cfg.bn, cfg.apply_fid_cut, /*count_fid=*/true,  H, nullptr, cR, cfg.debug_print, "REC");
 
   const auto props = properties_to_run(cfg.which_property);
 
@@ -607,7 +730,7 @@ int main(int argc, char** argv) {
 
   // Draw and save
   for (const auto& p : props) {
-    draw_property_and_save(p, H);
+    draw_property_and_save(p, H, Dep);
   }
 
   return 0;
