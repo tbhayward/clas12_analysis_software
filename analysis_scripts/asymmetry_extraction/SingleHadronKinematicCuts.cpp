@@ -145,7 +145,7 @@ bool SingleHadronKinematicCuts::applyCuts(int currentFits, bool isMC)
         goodEvent = goodEvent && *fiducial_status >= 100 && 
             std::fabs(t_val) <= 1.0 && std::fabs(t_val) >= 0.0 &&
             *Mx2 > 0.80 && *Mx2 < 1.00;
-            std::cout << goodEvent << std::endl;
+            if(goodEvent) std::cout << goodEvent << std::endl;
         return goodEvent;
     }
     if (property == "enpiLowt") {
