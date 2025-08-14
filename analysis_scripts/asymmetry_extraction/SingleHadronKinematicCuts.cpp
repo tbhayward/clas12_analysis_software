@@ -60,7 +60,7 @@ static double beamEnergy(int run)
     if (run >= 16042 && run <= 17065)  return 10.5473;
     if (run >= 17067 && run <= 17724)  return 10.5563;
     if (run >= 17725 && run <= 17811)  return 10.5593;
-    return 0.0;
+    return 10.604;
 }
 
 //================================================================================
@@ -129,6 +129,52 @@ bool SingleHadronKinematicCuts::applyCuts(int currentFits, bool isMC)
     // if (*p_p < 1.2    ) return false;
     // if (*xF  < 0.0    ) return false;
     // if (*Mx2 < 3.24   ) return false;
+
+    int    rn     = *runnum;
+    double ec_p   = *e_p;
+    double ec_th  = *e_theta;
+    double ec_ph  = *e_phi;
+    double pi_p   = *p_p;
+    double pi_th  = *p_theta;
+    double pi_ph  = *p_phi;
+    double t_val = compute_t_scalar(rn, ec_p, ec_th, ec_ph, pi_p, pi_th, pi_ph);
+
+    // 2) If the property is “enpi,” impose |t| < 1.0 as well:
+    if (property == "enpi") {
+        std::cout << *fiducial_status << " " << std::fabs(t_val) << " " << *Mx2 << std::endl;
+        goodEvent = goodEvent && *fiducial_status >= 100 && 
+            std::fabs(t_val) <= 1.0 && std::fabs(t_val) >= 0.0 &&
+            *Mx2 > 0.80 && *Mx2 < 1.00;
+        return goodEvent;
+    }
+    if (property == "enpiLowt") {
+        goodEvent = goodEvent && std::fabs(t_val) >= 0.00 && std::fabs(t_val) <= 0.30;
+        goodEvent = goodEvent && *fiducial_status >= 100 && 
+            std::fabs(t_val) <= 1.0 && std::fabs(t_val) >= 0.0 &&
+            *Mx2 > 0.80 && *Mx2 < 1.00;
+        return goodEvent;
+    }
+    if (property == "enpiMidt") {
+        goodEvent = goodEvent && std::fabs(t_val) >= 0.30 && std::fabs(t_val) <= 0.70;
+        goodEvent = goodEvent && *fiducial_status >= 100 && 
+            std::fabs(t_val) <= 1.0 && std::fabs(t_val) >= 0.0 &&
+            *Mx2 > 0.80 && *Mx2 < 1.00;
+        return goodEvent;
+    }
+    if (property == "enpiHight") {
+        goodEvent = goodEvent && std::fabs(t_val) >= 0.70;
+        goodEvent = goodEvent && *fiducial_status >= 100 && 
+            std::fabs(t_val) <= 1.0 && std::fabs(t_val) >= 0.0 &&
+            *Mx2 > 0.80 && *Mx2 < 1.00;
+        return goodEvent;
+    }
+    if (property == "enpiHarutsBin") {
+        goodEvent = goodEvent && std::fabs(t_val) >= 0.47 && std::fabs(t_val) <= 0.87;
+        goodEvent = goodEvent && *fiducial_status >= 100 && 
+            std::fabs(t_val) <= 1.0 && std::fabs(t_val) >= 0.0 &&
+            *Mx2 > 0.80 && *Mx2 < 1.00;
+        return goodEvent;
+    }
 
     // 2) If the property is “enpi,” impose |t| < 1.0 as well:
     if (property == "enpi") {
