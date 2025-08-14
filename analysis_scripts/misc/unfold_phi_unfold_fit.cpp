@@ -1,14 +1,28 @@
-// unfold_phi_unfold_fit.cpp
-// Build & run (csh):
-//   g++ -O2 -std=c++17 unfold_phi_unfold_fit.cpp `root-config --cflags --libs` -o unfold_phi_unfold_fit
-//   ./unfold_phi_unfold_fit data.root gen.root recmc.root [enpi|enpiLowt|enpiMidt|enpiHight|all] [--x x] [--phi phi] [--t t] [--mx2 Mx2] [--phibins 24] [--phi-deg]
-// Output: output/enpi+/PROPERTY_unfolded.pdf
+// unfold_enpi_phi_unfold_fit.cpp
+// Exclusive pi+ unfolding and cos(n*phi) fits (phi plotted in degrees).
+// Build (csh):
+//   g++ -O2 -std=c++17 unfold_enpi_phi_unfold_fit.cpp `root-config --cflags --libs` -o unfold_enpi_phi_unfold_fit
+// Run:
+//   ./unfold_enpi_phi_unfold_fit data.root gen.root rec.root [enpi|enpiLowt|enpiMidt|enpiHight|all]
+//                                [--x x] [--phi phi] [--t t] [--mx2 Mx2] [--fid fiducial_status]
+//                                [--phibins 24] [--no-fid-cut] [--debug N]
+//
+// Output per property:
+//   - PDF:  output/enpi+/<property>_unfolded.pdf
+//   - Text: output/enpi+/<property>_unfolded_fit_results.txt
+//
+// Notes:
+// - Reads each tree ONCE per dataset; fills all properties simultaneously.
+// - Input phi assumed in radians. Plots and fits in degrees (0..360).
+// - Unfolded yield per phi bin = D * G / R, with Poisson error propagation.
+// - Fits C * (1 + A*cos(pi/180*x) + B*cos(2*pi/180*x)) on unfolded points.
 
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <fstream>
 #include <iostream>
 #include <map>
 #include <memory>
@@ -30,98 +44,29 @@
 #include "TTree.h"
 
 struct BranchNames {
-  std::string x  = "x";
+  std::string x   = "x";
   std::string phi = "phi";
   std::string t   = "t";
   std::string mx2 = "Mx2";
   std::string fid = "fiducial_status";
 };
 
-struct FitResult {
-  double C=0, dC=0;
-  double A=0, dA=0;
-  double B=0, dB=0;
-  double chi2=0; int ndf=0;
-};
-
-static inline bool in_range(double v, double lo, double hi) {
-  return (v >= lo) && (v < hi);
-}
-
-static inline double wrap_phi_0_2pi(double phi) {
-  const double twopi = 2.0 * TMath::Pi();
-  phi = std::fmod(phi, twopi);
-  if (phi < 0) phi += twopi;
-  return phi;
-}
-
-struct Cuts {
-  // physics cuts common to all four properties:
-  static bool pass_common(double t, double mx2) {
-    return (std::fabs(t) <= 1.0) && (std::fabs(t) >= 0.0) && (mx2 > 0.80) && (mx2 < 1.00);
-  }
-  static bool pass_property_window(const std::string& prop, double t) {
-    if (prop == "enpi")       return true; // just the common cuts (including |t|<=1)
-    if (prop == "enpiLowt")   return (std::fabs(t) >= 0.00 && std::fabs(t) <= 0.30);
-    if (prop == "enpiMidt")   return (std::fabs(t) >= 0.30 && std::fabs(t) <= 0.70);
-    if (prop == "enpiHight")  return (std::fabs(t) >= 0.70); // up to 1.0 bounded by common cut
-    return false;
-  }
-};
-
-struct BranchHandles {
-  // Pointers bound directly to TTree branches
-  double x=0, phi=0, t=0, mx2=0;
-  int fid=0;
-  bool has_fid=false;
-};
-
-static bool bind_branches(TTree* tr, const BranchNames& bn, BranchHandles& bh, bool want_fid) {
-  if (!tr) return false;
-  bool ok = true;
-  ok &= (tr->GetBranch(bn.x.c_str())  != nullptr);
-  ok &= (tr->GetBranch(bn.phi.c_str())!= nullptr);
-  ok &= (tr->GetBranch(bn.t.c_str())  != nullptr);
-  ok &= (tr->GetBranch(bn.mx2.c_str())!= nullptr);
-  if (!ok) return false;
-
-  tr->SetBranchAddress(bn.x.c_str(),   &bh.x);
-  tr->SetBranchAddress(bn.phi.c_str(), &bh.phi);
-  tr->SetBranchAddress(bn.t.c_str(),   &bh.t);
-  tr->SetBranchAddress(bn.mx2.c_str(), &bh.mx2);
-
-  bh.has_fid = (tr->GetBranch(bn.fid.c_str()) != nullptr);
-  if (want_fid && bh.has_fid) tr->SetBranchAddress(bn.fid.c_str(), &bh.fid);
-  return true;
-}
-
-static std::string property_title(const std::string& prop) {
-  if (prop == "enpi")      return "ep -> e' n #pi^{+}";
-  if (prop == "enpiLowt")  return "ep -> e' n #pi^{+}, low |t|";
-  if (prop == "enpiMidt")  return "ep -> e' n #pi^{+}, mid |t|";
-  if (prop == "enpiHight") return "ep -> e' n #pi^{+}, high |t|";
-  return prop;
-}
-
-static void ensure_dir(const std::string& d) {
-  if (gSystem->AccessPathName(d.c_str())) {
-    gSystem->mkdir(d.c_str(), kTRUE);
-  }
-}
-
 struct Config {
   std::string data_path;
   std::string gen_path;
   std::string rec_path;
-  std::string which_property = "all"; // or one of: enpi, enpiLowt, enpiMidt, enpiHight
+  std::string which_property = "all"; // or specific one
   BranchNames bn;
   int phi_nbins = 24;
-  bool phi_in_degrees = false;
+  bool apply_fid_cut = true;
+  int debug_print = 0; // print up to N example events per dataset
 };
 
 static void print_usage(const char* argv0) {
-  std::cout << "Usage:\n  " << argv0 << " data.root gen.root recmc.root [enpi|enpiLowt|enpiMidt|enpiHight|all]"
-            << " [--x x] [--phi phi] [--t t] [--mx2 Mx2] [--phibins 24] [--phi-deg]\n";
+  std::cout << "Usage:\n  " << argv0
+            << " data.root gen.root rec.root [enpi|enpiLowt|enpiMidt|enpiHight|all]\n"
+            << "    [--x x] [--phi phi] [--t t] [--mx2 Mx2] [--fid fiducial_status]\n"
+            << "    [--phibins 24] [--no-fid-cut] [--debug N]\n";
 }
 
 static bool parse_args(int argc, char** argv, Config& cfg) {
@@ -152,12 +97,14 @@ static bool parse_args(int argc, char** argv, Config& cfg) {
       return false;
     };
 
-    if (eat("--x", cfg.bn.x)) continue;
+    if (eat("--x",   cfg.bn.x)) continue;
     if (eat("--phi", cfg.bn.phi)) continue;
-    if (eat("--t", cfg.bn.t)) continue;
+    if (eat("--t",   cfg.bn.t)) continue;
     if (eat("--mx2", cfg.bn.mx2)) continue;
+    if (eat("--fid", cfg.bn.fid)) continue;
     if (eat_int("--phibins", cfg.phi_nbins)) continue;
-    if (a == "--phi-deg") { cfg.phi_in_degrees = true; continue; }
+    if (a == "--no-fid-cut") { cfg.apply_fid_cut = false; continue; }
+    if (eat_int("--debug", cfg.debug_print)) continue;
 
     std::cerr << "Unknown argument: " << a << "\n";
   }
@@ -170,250 +117,359 @@ static std::vector<std::string> properties_to_run(const std::string& which) {
 }
 
 static std::vector<double> x_edges() {
-  // 6 x bins: [0.06-0.14), [0.14-0.22), [0.22-0.30), [0.30-0.40), [0.40-0.50), [0.50-0.60)
   return {0.06, 0.14, 0.22, 0.30, 0.40, 0.50, 0.60};
 }
-
-static int find_bin(double x, const std::vector<double>& edges) {
-  for (size_t i=0;i+1<edges.size();++i) {
-    if (in_range(x, edges[i], edges[i+1])) return static_cast<int>(i);
-  }
+static int xbin_index(double x, const std::vector<double>& e) {
+  for (size_t i=0;i+1<e.size();++i) if (x >= e[i] && x < e[i+1]) return (int)i;
   return -1;
 }
 
-static std::vector<std::unique_ptr<TH1D>>
-make_phi_harray(const std::string& prefix, int nbins, double pmin, double pmax, int nbx) {
-  std::vector<std::unique_ptr<TH1D>> v; v.reserve(nbx);
-  for (int i=0;i<nbx;i++) {
-    std::string name = prefix + Form("_bin%d", i);
-    auto h = std::make_unique<TH1D>(name.c_str(), "", nbins, pmin, pmax);
-    h->Sumw2();
-    v.emplace_back(std::move(h));
-  }
-  return v;
+static inline bool pass_common(double t, double mx2) {
+  return (std::fabs(t) <= 1.0) && (std::fabs(t) >= 0.0) && (mx2 > 0.80) && (mx2 < 1.00);
+}
+static inline bool pass_prop_window(const std::string& prop, double t) {
+  if (prop == "enpi")      return true;
+  if (prop == "enpiLowt")  return (std::fabs(t) >= 0.00 && std::fabs(t) <= 0.30);
+  if (prop == "enpiMidt")  return (std::fabs(t) >= 0.30 && std::fabs(t) <= 0.70);
+  if (prop == "enpiHight") return (std::fabs(t) >= 0.70); // bounded by common
+  return false;
 }
 
-static void fill_histos_per_file(
-  TTree* tr, const BranchNames& bn, const std::string& prop,
-  const std::vector<double>& xedges, std::vector<std::unique_ptr<TH1D>>& Hphi,
-  int phi_nbins, double phi_min, double phi_max,
-  bool apply_fiducial_cut, bool phi_is_deg)
+struct BranchHandles {
+  double x=0, phi=0, t=0, mx2=0;
+  int fid=0;
+  bool has_fid=false;
+};
+static bool bind_tree(TTree* tr, const BranchNames& bn, BranchHandles& bh) {
+  if (!tr) return false;
+  bool ok = true;
+  ok &= (tr->GetBranch(bn.x.c_str())  != nullptr);
+  ok &= (tr->GetBranch(bn.phi.c_str())!= nullptr);
+  ok &= (tr->GetBranch(bn.t.c_str())  != nullptr);
+  ok &= (tr->GetBranch(bn.mx2.c_str())!= nullptr);
+  if (!ok) return false;
+
+  tr->SetBranchAddress(bn.x.c_str(),   &bh.x);
+  tr->SetBranchAddress(bn.phi.c_str(), &bh.phi);
+  tr->SetBranchAddress(bn.t.c_str(),   &bh.t);
+  tr->SetBranchAddress(bn.mx2.c_str(), &bh.mx2);
+
+  bh.has_fid = (tr->GetBranch(bn.fid.c_str()) != nullptr);
+  if (bh.has_fid) tr->SetBranchAddress(bn.fid.c_str(), &bh.fid);
+  return true;
+}
+
+static void ensure_dir(const std::string& d) {
+  if (gSystem->AccessPathName(d.c_str())) gSystem->mkdir(d.c_str(), kTRUE);
+}
+
+struct HSet {
+  std::vector<std::unique_ptr<TH1D>> D; // data
+  std::vector<std::unique_ptr<TH1D>> G; // gen
+  std::vector<std::unique_ptr<TH1D>> R; // rec
+};
+
+static std::vector<std::string> all_props() {
+  return {"enpi", "enpiLowt", "enpiMidt", "enpiHight"};
+}
+
+static std::map<std::string,HSet> make_hist_map(int phibins) {
+  std::map<std::string,HSet> m;
+  const auto props = all_props();
+  const auto xe = x_edges();
+  const int NX = (int)xe.size()-1;
+
+  // phi axis in DEGREES [0,360)
+  const double pmin = 0.0;
+  const double pmax = 360.0;
+
+  for (const auto& p : props) {
+    HSet hs;
+    hs.D.reserve(NX); hs.G.reserve(NX); hs.R.reserve(NX);
+    for (int i=0;i<NX;i++) {
+      auto mk = [&](const std::string& tag)->std::unique_ptr<TH1D> {
+        std::string name = tag + "_" + p + "_xbin" + std::to_string(i);
+        auto h = std::make_unique<TH1D>(name.c_str(), "", phibins, pmin, pmax);
+        h->Sumw2();
+        return h;
+      };
+      hs.D.emplace_back(mk("hD"));
+      hs.G.emplace_back(mk("hG"));
+      hs.R.emplace_back(mk("hR"));
+    }
+    m.emplace(p, std::move(hs));
+  }
+  return m;
+}
+
+struct Counters {
+  Long64_t total=0, pass_common_cnt=0, pass_fid_cnt=0;
+  std::map<std::string, Long64_t> pass_prop_cnt; // per property
+};
+
+static void debug_event_print(const char* label, int idx, const BranchHandles& b, const std::vector<std::string>& props, const std::vector<double>& xe) {
+  std::cout << "[" << label << " evt " << idx << "] "
+            << "x=" << b.x << "  t=" << b.t << "  Mx2=" << b.mx2
+            << "  fid=" << b.fid << "  phi(rad)=" << b.phi << "  phi(deg)=" << (b.phi*180.0/TMath::Pi()) << "\n";
+  for (const auto& p : props) {
+    bool in_prop = pass_prop_window(p, b.t);
+    int ib = xbin_index(b.x, xe);
+    std::cout << "    prop=" << p << "  pass=" << (in_prop?"Y":"N") << "  xbin=" << ib << "\n";
+  }
+}
+
+static void loop_tree_fill(
+  TTree* tr, const BranchNames& bn, bool apply_fid, bool count_fid, // apply_fid for data/rec; count_fid toggles fid counter
+  std::map<std::string,HSet>& H, Counters& C, int debugN, const char* dbg_label)
 {
   if (!tr) return;
-  BranchHandles bh;
-  if (!bind_branches(tr, bn, bh, apply_fiducial_cut)) {
-    std::cerr << "Error: could not bind branches (check names). Tree: " << tr->GetName() << "\n";
+  BranchHandles b;
+  if (!bind_tree(tr, bn, b)) {
+    std::cerr << "ERROR: failed to bind branches on " << dbg_label << "\n";
     return;
   }
+  if (apply_fid && !b.has_fid) {
+    std::cerr << "WARNING: " << dbg_label << " missing fiducial branch '" << bn.fid << "'. Fiducial cut cannot be applied.\n";
+  }
+
+  const auto xe = x_edges();
+  const auto props = all_props();
+
   const Long64_t nent = tr->GetEntries();
   for (Long64_t i=0;i<nent;i++) {
     tr->GetEntry(i);
+    C.total++;
 
-    if (!Cuts::pass_common(bh.t, bh.mx2)) continue;
-    if (!Cuts::pass_property_window(prop, bh.t)) continue;
-    if (apply_fiducial_cut) {
-      if (!bh.has_fid) continue;
-      if (bh.fid < 100) continue;
-    }
+    if (!pass_common(b.t, b.mx2)) continue;
+    C.pass_common_cnt++;
 
-    int ib = find_bin(bh.x, xedges);
+    if (apply_fid && b.has_fid && b.fid < 100) continue;
+    if (count_fid) C.pass_fid_cnt++;
+
+    int ib = xbin_index(b.x, xe);
     if (ib < 0) continue;
 
-    double phi = bh.phi;
-    if (phi_is_deg || std::fabs(phi) > 3.5) {
-      phi = phi * TMath::Pi() / 180.0;
-    }
-    phi = wrap_phi_0_2pi(phi);
+    // Convert to degrees for histogramming
+    double phideg = b.phi * 180.0 / TMath::Pi();
+    // wrap into [0,360)
+    phideg = std::fmod(phideg, 360.0);
+    if (phideg < 0) phideg += 360.0;
 
-    Hphi[ib]->Fill(phi);
+    for (const auto& p : props) {
+      if (!pass_prop_window(p, b.t)) continue;
+      C.pass_prop_cnt[p]++;
+
+      if (std::string(dbg_label) == "DATA") H[p].D[ib]->Fill(phideg);
+      else if (std::string(dbg_label) == "GEN") H[p].G[ib]->Fill(phideg);
+      else if (std::string(dbg_label) == "REC") H[p].R[ib]->Fill(phideg);
+    }
+
+    if (debugN > 0 && C.total <= (Long64_t)debugN) {
+      debug_event_print(dbg_label, (int)i, b, props, xe);
+    }
   }
 }
 
-// Build unfolded TGraphErrors for one x bin and fit C*(1 + A*cos + B*cos2)
-static FitResult build_graph_and_fit_from_histos(
-  TH1D* hD, TH1D* hG, TH1D* hR, TGraphErrors*& out_graph, TF1*& out_fit)
+struct FitResult {
+  double C=0, dC=0;
+  double A=0, dA=0;
+  double B=0, dB=0;
+  double chi2=0; int ndf=0;
+  int npoints=0;
+};
+
+static FitResult make_unfold_graph_and_fit(
+  TH1D* hD, TH1D* hG, TH1D* hR, TGraphErrors*& g, TF1*& ffit)
 {
   FitResult fr;
-  if (!hD || !hG || !hR) return fr;
+  if (!hD || !hG || !hR) { g=nullptr; ffit=nullptr; return fr; }
 
   const int nb = hD->GetNbinsX();
-  std::vector<double> vx, vy, vex, vey; vx.reserve(nb); vy.reserve(nb); vex.assign(nb, 0.0); vey.reserve(nb);
+  std::vector<double> X(nb), Y; Y.reserve(nb);
+  std::vector<double> EX(nb, 0.0), EY; EY.reserve(nb);
 
   for (int b=1; b<=nb; ++b) {
     const double D = hD->GetBinContent(b);
     const double G = hG->GetBinContent(b);
     const double R = hR->GetBinContent(b);
+    const double xc = hD->GetBinCenter(b); // degrees
 
-    // Skip points where we cannot evaluate the ratio
     if (R <= 0.0 || G <= 0.0) continue;
 
-    const double f = (D * G) / R;
+    // U = D*G/R
+    const double U = (D * G) / R;
 
-    // Error propagation (Poisson on D,G,R):
-    // f = D * G / R
-    // Var(f) = (G/R)^2 Var(D) + (D/R)^2 Var(G) + (D*G/R^2)^2 Var(R)
-    // with Var(D)=D, Var(G)=G, Var(R)=R
+    // Var(U) = (G/R)^2 Var(D) + (D/R)^2 Var(G) + (D*G/R^2)^2 Var(R)
+    // with Poisson Var(D)=D, Var(G)=G, Var(R)=R
     const double term1 = (G*G)/(R*R) * D;
     const double term2 = (D*D)/(R*R) * G;
-    const double term3 = (D*D*G*G)/(R*R*R); // (D*G/R^2)^2 * R = D^2 G^2 / R^3
-    const double sigma = std::sqrt(std::max(0.0, term1 + term2 + term3));
+    const double term3 = (D*D*G*G)/(R*R*R);
+    const double sig = std::sqrt(std::max(0.0, term1 + term2 + term3));
 
-    const double xc = hD->GetBinCenter(b);
-    vx.push_back(xc);
-    vy.push_back(f);
-    vey.push_back(sigma);
+    X[fr.npoints] = xc;
+    Y.push_back(U);
+    EY.push_back(sig);
+    fr.npoints++;
   }
 
-  if (vx.empty()) {
-    out_graph = nullptr; out_fit = nullptr; return fr;
+  if (fr.npoints == 0) { g=nullptr; ffit=nullptr; return fr; }
+
+  g = new TGraphErrors(fr.npoints);
+  for (int i=0;i<fr.npoints;i++) {
+    g->SetPoint(i, X[i], Y[i]);
+    g->SetPointError(i, EX[i], EY[i]);
   }
+  g->SetMarkerStyle(20);
+  g->SetMarkerSize(0.8);
+  g->SetLineWidth(1);
 
-  out_graph = new TGraphErrors((int)vx.size(), vx.data(), vy.data(), nullptr, vey.data());
-  out_graph->SetMarkerStyle(20);
-  out_graph->SetMarkerSize(0.8);
-  out_graph->SetLineWidth(1);
+  // Fit in degrees: f(x) = C * (1 + A*cos(pi/180*x) + B*cos(2*pi/180*x))
+  const double xmin = 0.0, xmax = 360.0;
+  ffit = new TF1("fitCAB_deg",
+                 "[0]*(1 + [1]*cos(TMath::Pi()/180.0*x) + [2]*cos(2.0*TMath::Pi()/180.0*x))",
+                 xmin, xmax);
+  ffit->SetParNames("C","A","B");
+  // Initial guess for C is mean of Y
+  double ymean = 0.0; for (double v : Y) ymean += v; ymean /= (double)Y.size();
+  ffit->SetParameters( (ymean>0?ymean:1.0), 0.0, 0.0 );
+  ffit->SetParLimits(0, 0.0, 1e12);
+  ffit->SetParLimits(1, -2.0, 2.0);
+  ffit->SetParLimits(2, -2.0, 2.0);
 
-  // Fit function: C * (1 + A*cos(x) + B*cos(2*x))
-  const double xmin = hD->GetXaxis()->GetXmin();
-  const double xmax = hD->GetXaxis()->GetXmax();
-  out_fit = new TF1("fitCAB", "[0]*(1 + [1]*cos(x) + [2]*cos(2*x))", xmin, xmax);
-  out_fit->SetParNames("C","A","B");
+  g->Fit(ffit, "Q"); // quiet
 
-  // Initial guesses
-  double ymean = 0.0; for (double v : vy) ymean += v; ymean /= (double)vy.size();
-  out_fit->SetParameters( (ymean>0?ymean:1.0), 0.0, 0.0 );
-
-  // Reasonable bounds to stabilize (optional)
-  out_fit->SetParLimits(0, 0.0, 1e12); // C >= 0
-  out_fit->SetParLimits(1, -2.0, 2.0);
-  out_fit->SetParLimits(2, -2.0, 2.0);
-
-  // Weighted chi2 fit using errors from TGraphErrors
-  out_graph->Fit(out_fit, "Q"); // quiet; remove Q if you want fit printouts
-
-  fr.C  = out_fit->GetParameter(0);
-  fr.dC = out_fit->GetParError(0);
-  fr.A  = out_fit->GetParameter(1);
-  fr.dA = out_fit->GetParError(1);
-  fr.B  = out_fit->GetParameter(2);
-  fr.dB = out_fit->GetParError(2);
-  fr.chi2 = out_fit->GetChisquare();
-  fr.ndf  = out_fit->GetNDF();
-
+  fr.C  = ffit->GetParameter(0);
+  fr.dC = ffit->GetParError(0);
+  fr.A  = ffit->GetParameter(1);
+  fr.dA = ffit->GetParError(1);
+  fr.B  = ffit->GetParameter(2);
+  fr.dB = ffit->GetParError(2);
+  fr.chi2 = ffit->GetChisquare();
+  fr.ndf  = ffit->GetNDF();
   return fr;
 }
 
-static void draw_one_property(
-  const Config& cfg,
+static std::string prop_title(const std::string& p) {
+  if (p == "enpi")      return "ep -> e' n #pi^{+}";
+  if (p == "enpiLowt")  return "ep -> e' n #pi^{+}, low |t|";
+  if (p == "enpiMidt")  return "ep -> e' n #pi^{+}, mid |t|";
+  if (p == "enpiHight") return "ep -> e' n #pi^{+}, high |t|";
+  return p;
+}
+
+static void save_results_txt(
   const std::string& prop,
-  TFile* fData, TFile* fGen, TFile* fRec)
+  const std::vector<double>& xcenters,
+  const std::vector<double>& xlo,
+  const std::vector<double>& xhi,
+  const std::vector<double>& Avec, const std::vector<double>& dAvec,
+  const std::vector<double>& Bvec, const std::vector<double>& dBvec,
+  const std::vector<double>& Cvec, const std::vector<double>& dCvec,
+  const std::vector<double>& chi2, const std::vector<int>& ndf)
 {
-  std::cout << "Processing property: " << prop << "\n";
-
-  TTree* tData = (TTree*)fData->Get("PhysicsEvents");
-  TTree* tGen  = (TTree*)fGen->Get("PhysicsEvents");
-  TTree* tRec  = (TTree*)fRec->Get("PhysicsEvents");
-  if (!tData || !tGen || !tRec) {
-    std::cerr << "Error: could not load PhysicsEvents from one or more files.\n";
-    return;
+  ensure_dir("output/enpi+");
+  std::string out = "output/enpi+/" + prop + "_unfolded_fit_results.txt";
+  std::ofstream ofs(out);
+  ofs << "# property: " << prop << "\n";
+  ofs << "# columns: i  x_center  x_lo  x_hi  C  dC  A  dA  B  dB  chi2  ndf\n";
+  for (size_t i=0;i<xcenters.size();++i) {
+    ofs << i << " "
+        << xcenters[i] << " "
+        << xlo[i] << " "
+        << xhi[i] << " "
+        << Cvec[i] << " " << dCvec[i] << " "
+        << Avec[i] << " " << dAvec[i] << " "
+        << Bvec[i] << " " << dBvec[i] << " "
+        << chi2[i] << " " << ndf[i] << "\n";
   }
+  ofs.close();
+  std::cout << "Wrote results: " << out << "\n";
+}
 
-  const auto xedges = x_edges();
-  const int NX = (int)xedges.size()-1;
+static void draw_property_and_save(
+  const std::string& prop,
+  const std::map<std::string,HSet>& H)
+{
+  const auto xe = x_edges();
+  const int NX = (int)xe.size()-1;
 
-  // Phi axis
-  const int    PHIB = cfg.phi_nbins;
-  const double PHIM = 0.0;
-  const double PHIX = 2.0 * TMath::Pi();
-
-  // Build phi hist arrays for each x bin
-  auto hD = make_phi_harray("hD", PHIB, PHIM, PHIX, NX);
-  auto hG = make_phi_harray("hG", PHIB, PHIM, PHIX, NX);
-  auto hR = make_phi_harray("hR", PHIB, PHIM, PHIX, NX);
-
-  // Fill histograms
-  fill_histos_per_file(tData, cfg.bn, prop, xedges, hD, PHIB, PHIM, PHIX, /*apply_fiducial_cut=*/true,  cfg.phi_in_degrees);
-  fill_histos_per_file(tGen,  cfg.bn, prop, xedges, hG, PHIB, PHIM, PHIX, /*apply_fiducial_cut=*/false, cfg.phi_in_degrees);
-  fill_histos_per_file(tRec,  cfg.bn, prop, xedges, hR, PHIB, PHIM, PHIX, /*apply_fiducial_cut=*/true,  cfg.phi_in_degrees);
-
-  // Style tweaks
   gStyle->SetOptStat(0);
   gStyle->SetPadLeftMargin(0.125);
   gStyle->SetPadRightMargin(0.06);
   gStyle->SetTitleSize(0.05, "XYZ");
   gStyle->SetLabelSize(0.045, "XYZ");
 
-  // Canvas 3x3
-  auto c = new TCanvas(("c_"+prop).c_str(), ("Unfolded phi fits: "+prop).c_str(), 1200, 900);
+  TCanvas* c = new TCanvas(("c_"+prop).c_str(), ("Unfolded phi fits: "+prop).c_str(), 1200, 900);
   c->Divide(3,3);
 
-  std::vector<double> xcenters; xcenters.reserve(NX);
-  std::vector<double> Avec, dAvec, Bvec, dBvec; Avec.reserve(NX); dAvec.reserve(NX); Bvec.reserve(NX); dBvec.reserve(NX);
+  std::vector<double> xcenters, xlos, xhis;
+  std::vector<double> Avec, dAvec, Bvec, dBvec, Cvec, dCvec, Chi2;
+  std::vector<int>    NDF;
+  xcenters.reserve(NX); xlos.reserve(NX); xhis.reserve(NX);
+  Avec.reserve(NX); dAvec.reserve(NX); Bvec.reserve(NX); dBvec.reserve(NX);
+  Cvec.reserve(NX); dCvec.reserve(NX); Chi2.reserve(NX); NDF.reserve(NX);
 
   for (int ib=0; ib<NX; ++ib) {
     c->cd(ib+1);
 
+    TH1D* hD = H.at(prop).D[ib].get();
+    TH1D* hG = H.at(prop).G[ib].get();
+    TH1D* hR = H.at(prop).R[ib].get();
+
     TGraphErrors* g = nullptr;
     TF1* fit = nullptr;
-    FitResult fr = build_graph_and_fit_from_histos(hD[ib].get(), hG[ib].get(), hR[ib].get(), g, fit);
+    FitResult fr = make_unfold_graph_and_fit(hD,hG,hR,g,fit);
 
-    // Title for this pad
-    const double xl = xedges[ib], xh = xedges[ib+1];
-    std::string title = property_title(prop) + Form(", x in [%.2f, %.2f)", xl, xh);
+    const double xl = xe[ib], xh = xe[ib+1];
+    std::string title = prop_title(prop) + Form(", x in [%.2f, %.2f)", xl, xh);
+
     if (g) {
-      g->SetTitle((title + ";#phi (rad);Unfolded counts").c_str());
+      g->SetTitle((title + ";phi (deg);Unfolded yield").c_str());
       g->Draw("AP");
       if (fit) fit->Draw("LSAME");
 
-      // legend with C, A, B and uncertainties, plus chi2/ndf
-      auto leg = new TLegend(0.55, 0.60, 0.94, 0.94);
+      // Legend with C, A, B and chi2/ndf
+      auto leg = new TLegend(0.55, 0.58, 0.94, 0.94);
       leg->SetBorderSize(0);
       leg->SetFillStyle(0);
-      leg->AddEntry((TObject*)0, Form("C = %.3g #pm %.3g", fr.C, fr.dC), "");
-      leg->AddEntry((TObject*)0, Form("A = %.3g #pm %.3g", fr.A, fr.dA), "");
-      leg->AddEntry((TObject*)0, Form("B = %.3g #pm %.3g", fr.B, fr.dB), "");
-      leg->AddEntry((TObject*)0, Form("#chi^{2}/ndf = %.1f/%d", fr.chi2, fr.ndf), "");
+      leg->AddEntry((TObject*)0, Form("C = %.3g +/- %.3g", fr.C, fr.dC), "");
+      leg->AddEntry((TObject*)0, Form("A = %.3g +/- %.3g", fr.A, fr.dA), "");
+      leg->AddEntry((TObject*)0, Form("B = %.3g +/- %.3g", fr.B, fr.dB), "");
+      leg->AddEntry((TObject*)0, Form("chi2/ndf = %.1f/%d", fr.chi2, fr.ndf), "");
       leg->Draw();
 
-      // store A(x), B(x)
       xcenters.push_back(0.5*(xl+xh));
+      xlos.push_back(xl);
+      xhis.push_back(xh);
       Avec.push_back(fr.A); dAvec.push_back(fr.dA);
       Bvec.push_back(fr.B); dBvec.push_back(fr.dB);
+      Cvec.push_back(fr.C); dCvec.push_back(fr.dC);
+      Chi2.push_back(fr.chi2); NDF.push_back(fr.ndf);
     } else {
-      // Empty pad labeling
-      TH1D* frame = new TH1D("frame","",10,0,2*TMath::Pi());
-      frame->SetTitle((title + ";#phi (rad);Unfolded counts").c_str());
+      TH1D* frame = new TH1D("frame","",10,0,360);
+      frame->SetTitle((title + ";phi (deg);Unfolded yield").c_str());
       frame->SetMinimum(0); frame->SetMaximum(1);
       frame->Draw("AXIS");
-      auto leg = new TLegend(0.55, 0.60, 0.94, 0.90);
+      auto leg = new TLegend(0.55, 0.70, 0.94, 0.90);
       leg->SetBorderSize(0); leg->SetFillStyle(0);
-      leg->AddEntry((TObject*)0, "No valid points", "");
+      leg->AddEntry((TObject*)0, "No valid unfolded points", "");
       leg->Draw();
     }
   }
 
-  // Bottom row, middle pad (pad 8): A(x) and B(x)
-  c->cd(7); gPad->Clear(); // left bottom: empty on purpose
+  // Bottom row: left pad empty, middle pad shows A(x) and B(x), right pad empty
+  c->cd(7); gPad->Clear();
   c->cd(8);
-
-  TGraphErrors* gA = nullptr;
-  TGraphErrors* gB = nullptr;
-
   if (!xcenters.empty()) {
-    gA = new TGraphErrors((int)xcenters.size());
-    gB = new TGraphErrors((int)xcenters.size());
+    auto gA = new TGraphErrors((int)xcenters.size());
+    auto gB = new TGraphErrors((int)xcenters.size());
     for (int i=0;i<(int)xcenters.size();++i) {
-      gA->SetPoint(i, xcenters[i], Avec[i]);
-      gA->SetPointError(i, 0.0, dAvec[i]);
-      gB->SetPoint(i, xcenters[i], Bvec[i]);
-      gB->SetPointError(i, 0.0, dBvec[i]);
+      gA->SetPoint(i, xcenters[i], Avec[i]); gA->SetPointError(i, 0.0, dAvec[i]);
+      gB->SetPoint(i, xcenters[i], Bvec[i]); gB->SetPointError(i, 0.0, dBvec[i]);
     }
-    gA->SetMarkerStyle(20);
-    gB->SetMarkerStyle(21);
-    gA->SetMarkerSize(1.0);
-    gB->SetMarkerSize(1.0);
+    gA->SetMarkerStyle(20); gA->SetMarkerSize(1.0);
+    gB->SetMarkerStyle(21); gB->SetMarkerSize(1.0);
 
-    // Draw A first to set axes
     gA->SetTitle("A(x) and B(x);x;Coefficient");
     gA->GetYaxis()->SetRangeUser(-1.0, 1.0);
     gA->Draw("AP");
@@ -433,31 +489,81 @@ static void draw_one_property(
     leg->AddEntry((TObject*)0, "No fit results collected", "");
     leg->Draw();
   }
+  c->cd(9); gPad->Clear();
 
-  c->cd(9); gPad->Clear(); // right bottom: empty on purpose
-
-  // Save
   ensure_dir("output/enpi+");
   const std::string outpdf = "output/enpi+/" + prop + "_unfolded.pdf";
   c->SaveAs(outpdf.c_str());
   std::cout << "Saved: " << outpdf << "\n";
+
+  // Save the numbers for later "hold fixed" use
+  save_results_txt(prop, xcenters, xlos, xhis, Avec, dAvec, Bvec, dBvec, Cvec, dCvec, Chi2, NDF);
+}
+
+static void print_counters(const char* label, const Counters& C, const std::vector<std::string>& props) {
+  std::cout << "\n[" << label << " counters]\n";
+  std::cout << "  total read           : " << C.total << "\n";
+  std::cout << "  pass common cuts     : " << C.pass_common_cnt << "\n";
+  std::cout << "  pass fiducial (>=100): " << C.pass_fid_cnt << "\n";
+  for (const auto& p : props) {
+    auto it = C.pass_prop_cnt.find(p);
+    long long v = (it==C.pass_prop_cnt.end()? 0 : it->second);
+    std::cout << "  pass property " << p << " : " << v << "\n";
+  }
 }
 
 int main(int argc, char** argv) {
   Config cfg;
   if (!parse_args(argc, argv, cfg)) return 1;
 
-  std::unique_ptr<TFile> fData(TFile::Open(cfg.data_path.c_str(), "READ"));
-  std::unique_ptr<TFile> fGen (TFile::Open(cfg.gen_path.c_str(),  "READ"));
-  std::unique_ptr<TFile> fRec (TFile::Open(cfg.rec_path.c_str(),  "READ"));
-  if (!fData || fData->IsZombie() || !fGen || fGen->IsZombie() || !fRec || fRec->IsZombie()) {
-    std::cerr << "Error opening input files.\n";
+  std::unique_ptr<TFile> fD(TFile::Open(cfg.data_path.c_str(), "READ"));
+  std::unique_ptr<TFile> fG(TFile::Open(cfg.gen_path.c_str(),  "READ"));
+  std::unique_ptr<TFile> fR(TFile::Open(cfg.rec_path.c_str(),  "READ"));
+  if (!fD || fD->IsZombie() || !fG || fG->IsZombie() || !fR || fR->IsZombie()) {
+    std::cerr << "ERROR: could not open one or more input files.\n";
     return 2;
   }
 
-  auto props = properties_to_run(cfg.which_property);
+  TTree* tD = (TTree*)fD->Get("PhysicsEvents");
+  TTree* tG = (TTree*)fG->Get("PhysicsEvents");
+  TTree* tR = (TTree*)fR->Get("PhysicsEvents");
+  if (!tD || !tG || !tR) {
+    std::cerr << "ERROR: missing PhysicsEvents tree in one or more files.\n";
+    return 3;
+  }
+
+  // Make hist containers for all properties
+  auto H = make_hist_map(cfg.phi_nbins);
+
+  // Loop each dataset ONCE; fill all properties
+  Counters cD, cG, cR;
+  loop_tree_fill(tD, cfg.bn, cfg.apply_fid_cut, /*count_fid=*/true,  H, cD, cfg.debug_print, "DATA");
+  loop_tree_fill(tG, cfg.bn, /*apply_fid=*/false, /*count_fid=*/false, H, cG, cfg.debug_print, "GEN");
+  loop_tree_fill(tR, cfg.bn, cfg.apply_fid_cut, /*count_fid=*/true,  H, cR, cfg.debug_print, "REC");
+
+  const auto props = properties_to_run(cfg.which_property);
+
+  // Print summary counters for diagnostics
+  print_counters("DATA", cD, props);
+  print_counters("GEN",  cG, props);
+  print_counters("REC",  cR, props);
+
+  // Optionally, per-property quick check if any phi-bin is filled:
   for (const auto& p : props) {
-    draw_one_property(cfg, p, fData.get(), fGen.get(), fRec.get());
+    const auto& hs = H.at(p);
+    long long dsum=0, gsum=0, rsum=0;
+    for (size_t i=0;i<hs.D.size();++i) {
+      dsum += (long long)hs.D[i]->GetEntries();
+      gsum += (long long)hs.G[i]->GetEntries();
+      rsum += (long long)hs.R[i]->GetEntries();
+    }
+    std::cout << "[check] property " << p << " totals: "
+              << "D=" << dsum << "  G=" << gsum << "  R=" << rsum << "\n";
+  }
+
+  // Draw and save for requested properties
+  for (const auto& p : props) {
+    draw_property_and_save(p, H);
   }
 
   return 0;
