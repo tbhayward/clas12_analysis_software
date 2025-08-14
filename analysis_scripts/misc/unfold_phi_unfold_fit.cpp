@@ -9,7 +9,6 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
-#include <string>
 #include <iostream>
 #include <map>
 #include <memory>
@@ -58,7 +57,7 @@ static inline double wrap_phi_0_2pi(double phi) {
 
 struct Cuts {
   // physics cuts common to all four properties:
-  std::cout << t << " " << mx2 << std::endl;
+  cout << t << " " << mx2 << endl;
   static bool pass_common(double t, double mx2) {
     return (std::fabs(t) <= 1.0) && (std::fabs(t) >= 0.0) && (mx2 > 0.80) && (mx2 < 1.00);
   }
