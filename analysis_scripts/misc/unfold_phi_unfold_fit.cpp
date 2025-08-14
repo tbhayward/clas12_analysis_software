@@ -1,9 +1,7 @@
 // unfold_phi_unfold_fit.cpp
-// Exclusive pi+ unfolding and cos(n*phi) fits (phi plotted in degrees).
-// Optional sin(phi) term via --fit-sin.
-// Produces AUU^{#cos#phi}, AUU^{#cos2#phi} (and AUU^{#sin#phi} if enabled) per x_B bin (raw),
-// and scaled FUU ratios vs x_B using depolarization factors.
-// Text outputs mirror your array style.
+// Exclusive pi+ unfolding and cos(n*phi) fits (phi in degrees).
+// Optional sin(phi) term via --fit-sin. Legends drawn with TLatex in a framed box
+// so LaTeX renders correctly (no stray '#') and the box is fully inside the pad.
 //
 // Build (csh):
 //   g++ -O2 -std=c++17 unfold_phi_unfold_fit.cpp `root-config --cflags --libs` -o unfold_phi_unfold_fit
@@ -48,6 +46,9 @@
 #include "TF1.h"
 #include "TSystem.h"
 #include "TTree.h"
+#include "TPave.h"
+#include "TLatex.h"
+#include "TMarker.h"
 
 struct BranchNames {
   std::string x   = "x";               // x_B
@@ -70,7 +71,7 @@ struct Config {
   BranchNames bn;
   int  phi_nbins      = 24;
   bool apply_fid_cut  = true;
-  bool fit_sin        = false;   // <-- new
+  bool fit_sin        = false;   // <-- optional D*sin(phi)
   int  debug_print    = 0;
   bool list_branches  = false;
 };
@@ -122,7 +123,7 @@ static bool parse_args(int argc, char** argv, Config& cfg) {
     if (eat("--DepW", cfg.bn.DepW)) continue;
     if (eat_int("--phibins", cfg.phi_nbins)) continue;
     if (a == "--no-fid-cut") { cfg.apply_fid_cut = false; continue; }
-    if (a == "--fit-sin")    { cfg.fit_sin = true; continue; } // <-- new
+    if (a == "--fit-sin")    { cfg.fit_sin = true; continue; } // <-- NEW
     if (eat_int("--debug", cfg.debug_print)) continue;
     if (a == "--list-branches") { cfg.list_branches = true; continue; }
 
@@ -170,6 +171,7 @@ static std::string prop_tlabel(const std::string& prop) {
 static void ensure_dir(const std::string& d) {
   if (gSystem->AccessPathName(d.c_str())) gSystem->mkdir(d.c_str(), kTRUE);
 }
+
 static void list_tree_branches(TTree* tr, const char* label) {
   if (!tr) { std::cout << "[" << label << "] Tree is null.\n"; return; }
   std::cout << "\n[" << label << "] Branches on " << tr->GetName() << ":\n";
@@ -279,7 +281,7 @@ static std::map<std::string, DepMeans> make_dep_map() {
 // ------------ Debug counters ------------
 struct Counters {
   Long64_t total=0, pass_common_cnt=0, pass_fid_cnt=0;
-  Long64_t fail_abs_t=0, fail_mx2=0, fail_no_fid_branch=0, fail_fid_lt_100=0, fail_xbin=0;
+  Long64_t fail_xbin=0;
   std::map<std::string, Long64_t> pass_prop_cnt;
 };
 
@@ -310,10 +312,6 @@ static void loop_tree_fill(
     std::cerr << "ERROR: failed to bind branches on " << dbg_label << "\n";
     return;
   }
-  if (apply_fid && !b.has_fid) {
-    std::cerr << "WARNING: " << dbg_label << " missing fiducial branch '" << bn.fid << "'. Fiducial cut cannot be applied.\n";
-  }
-
   const auto xe = x_edges();
   const auto props = all_props();
   const Long64_t nent = tr->GetEntries();
@@ -321,27 +319,20 @@ static void loop_tree_fill(
 
   for (Long64_t i=0;i<nent;i++) {
     tr->GetEntry(i);
-    C.total++;
-
     if (debug_limit > 0 && i < debug_limit) debug_event_print(dbg_label, (int)i, b, props, xe);
 
-    const bool ok_abs_t = (std::fabs(b.t) <= 1.0) && (std::fabs(b.t) >= 0.0);
+    // common cuts (|t| in [0,1], Mx2 in (0.80,1.00))
+    const bool ok_abs_t = (std::fabs(b.t) <= 1.0);
     const bool ok_mx2   = (b.mx2 > 0.80) && (b.mx2 < 1.00);
     if (!(ok_abs_t && ok_mx2)) continue;
+    if (apply_fid) { if (!b.has_fid || b.fid < 100) continue; }
     C.pass_common_cnt++;
-
-    if (apply_fid) {
-      if (!b.has_fid) continue;
-      if (b.fid < 100) continue;
-    }
-    if (count_fid) C.pass_fid_cnt++;
 
     int ib = xbin_index(b.x, xe);
     if (ib < 0) { C.fail_xbin++; continue; }
 
     double phideg = b.phi * 180.0 / TMath::Pi();
-    phideg = std::fmod(phideg, 360.0);
-    if (phideg < 0) phideg += 360.0;
+    phideg = std::fmod(phideg, 360.0); if (phideg < 0) phideg += 360.0;
 
     for (const auto& p : props) {
       if (!pass_prop_window(p, b.t)) continue;
@@ -351,10 +342,10 @@ static void loop_tree_fill(
         H[p].D[ib]->Fill(phideg);
         if (depPtr) {
           auto& dep = depPtr->at(p);
-          if (b.has_DepA) dep.sumA[ib] += b.DepA;
-          if (b.has_DepB) dep.sumB[ib] += b.DepB;
-          if (b.has_DepV) dep.sumV[ib] += b.DepV;
-          if (b.has_DepW) dep.sumW[ib] += b.DepW;
+          dep.sumA[ib] += b.DepA;
+          dep.sumB[ib] += b.DepB;
+          dep.sumV[ib] += b.DepV;
+          dep.sumW[ib] += b.DepW;
           dep.count[ib] += 1;
         }
       } else if (std::string(dbg_label) == "GEN") {
@@ -363,11 +354,8 @@ static void loop_tree_fill(
         H[p].R[ib]->Fill(phideg);
       }
     }
-
-    if ((i>0) && (i % 10000000 == 0)) {
-      std::cout << "[" << dbg_label << "] processed " << i << " / " << nent << " entries..." << std::endl;
-    }
   }
+  C.total = tr->GetEntries();
 }
 
 // ------------ Fit ------------
@@ -375,7 +363,7 @@ struct FitResult {
   double C=0, dC=0;
   double A=0, dA=0;
   double B=0, dB=0;
-  double D=0, dD=0;   // <-- sin term
+  double D=0, dD=0;   // optional sin term
   double chi2=0; int ndf=0;
   int npoints=0;
 };
@@ -443,7 +431,68 @@ static FitResult make_unfold_graph_and_fit(
   return fr;
 }
 
-// ------------ Save text in your required style ------------
+// ---------- TLatex legend helpers (no '#' showing, fully inside pad) ----------
+static void DrawFitLegendBox(double x1, double y1, double x2, double y2,
+                             const FitResult& fr, bool fit_sin)
+{
+  // Border/frame
+  TPave* box = new TPave(x1,y1,x2,y2,1,"NDC");
+  box->SetFillStyle(0); box->SetLineColor(kBlack); box->SetLineWidth(2);
+  box->Draw();
+
+  // Text
+  TLatex lat;
+  lat.SetNDC(); lat.SetTextColor(kBlack); lat.SetTextSize(0.034); lat.SetTextAlign(13); // left-top
+  const double dx = 0.02*(x2-x1);
+  double xpos = x1 + dx;
+  double ypos = y2 - 0.18*(y2-y1);
+
+  lat.DrawLatex(xpos, ypos, Form("A_{UU}^{#cos#phi} = %.3g  #pm %.3g", fr.A, fr.dA));
+  ypos -= 0.30*(y2-y1);
+  lat.DrawLatex(xpos, ypos, Form("A_{UU}^{#cos2#phi} = %.3g  #pm %.3g", fr.B, fr.dB));
+  if (fit_sin) {
+    ypos -= 0.30*(y2-y1);
+    lat.DrawLatex(xpos, ypos, Form("A_{UU}^{#sin#phi} = %.3g  #pm %.3g", fr.D, fr.dD));
+  }
+}
+
+// bottom-panel legend with markers + TLatex
+static void DrawBottomLegendBox(double x1, double y1, double x2, double y2,
+                                TGraphErrors* gF1, TGraphErrors* gF2,
+                                bool fit_sin, TGraphErrors* gFs)
+{
+  TPave* box = new TPave(x1,y1,x2,y2,1,"NDC");
+  box->SetFillStyle(0); box->SetLineColor(kBlack); box->SetLineWidth(2);
+  box->Draw();
+
+  TLatex lat; lat.SetNDC(); lat.SetTextColor(kBlack); lat.SetTextSize(0.034); lat.SetTextAlign(13);
+  const double dx = 0.05*(x2-x1);
+  const double mdx = 0.02*(x2-x1);
+  double xtext = x1 + dx + mdx;
+  double xmark = x1 + dx;
+  double yline = y2 - 0.20*(y2-y1);
+
+  // draw marker for gF1
+  if (gF1) {
+    TMarker* m1 = new TMarker(xmark, yline, gF1->GetMarkerStyle()); m1->SetNDC(true);
+    m1->SetMarkerColor(gF1->GetMarkerColor()); m1->SetMarkerSize(gF1->GetMarkerSize()); m1->Draw();
+    lat.DrawLatex(xtext, yline, "F_{UU}^{#cos#phi}/F_{UU}");
+  }
+  yline -= 0.28*(y2-y1);
+  if (gF2) {
+    TMarker* m2 = new TMarker(xmark, yline, gF2->GetMarkerStyle()); m2->SetNDC(true);
+    m2->SetMarkerColor(gF2->GetMarkerColor()); m2->SetMarkerSize(gF2->GetMarkerSize()); m2->Draw();
+    lat.DrawLatex(xtext, yline, "F_{UU}^{#cos2#phi}/F_{UU}");
+  }
+  if (fit_sin && gFs) {
+    yline -= 0.28*(y2-y1);
+    TMarker* m3 = new TMarker(xmark, yline, gFs->GetMarkerStyle()); m3->SetNDC(true);
+    m3->SetMarkerColor(gFs->GetMarkerColor()); m3->SetMarkerSize(gFs->GetMarkerSize()); m3->Draw();
+    lat.DrawLatex(xtext, yline, "F_{UU}^{#sin#phi}/F_{UU}");
+  }
+}
+
+// ------------ Save text arrays ------------
 static void save_arrays_style(
   const std::string& prop,
   const std::vector<double>& xcenters,
@@ -538,12 +587,8 @@ static void draw_property_and_save(
       g->SetTitle((title + ";#phi (deg);Unfolded yield").c_str());
       g->Draw("AP"); if (fit) fit->Draw("LSAME");
 
-      auto leg = new TLegend(0.58, 0.62, 0.92, 0.88); // keep inside
-      leg->SetBorderSize(1); leg->SetFillStyle(0); leg->SetTextSize(0.034);
-      leg->AddEntry((TObject*)0, Form("A_{UU}^{#cos#phi} = %.3g #pm %.3g",   fr.A, fr.dA), "");
-      leg->AddEntry((TObject*)0, Form("A_{UU}^{#cos2#phi} = %.3g #pm %.3g",  fr.B, fr.dB), "");
-      if (fit_sin) leg->AddEntry((TObject*)0, Form("A_{UU}^{#sin#phi} = %.3g #pm %.3g", fr.D, fr.dD), "");
-      leg->Draw();
+      // TLatex legend box, flush to the right but inside the pad
+      DrawFitLegendBox(0.58, 0.60, 0.94, 0.88, fr, fit_sin);
 
       xcenters.push_back(0.5*(xl+xh));
       Avec.push_back(fr.A); dAvec.push_back(fr.dA);
@@ -554,10 +599,7 @@ static void draw_property_and_save(
       frame->SetTitle((title + ";#phi (deg);Unfolded yield").c_str());
       frame->SetMinimum(0); frame->SetMaximum(1);
       frame->Draw("AXIS");
-      auto leg = new TLegend(0.58, 0.76, 0.92, 0.88);
-      leg->SetBorderSize(1); leg->SetFillStyle(0); leg->SetTextSize(0.034);
-      leg->AddEntry((TObject*)0, "No valid unfolded points", "");
-      leg->Draw();
+      DrawFitLegendBox(0.58, 0.72, 0.94, 0.88, FitResult{}, fit_sin);
     }
   }
 
@@ -582,15 +624,16 @@ static void draw_property_and_save(
     }
   }
 
-  // Bottom row: x_B dependence of scaled ratios
+  // Bottom row
   c->cd(7); gPad->Clear();
   c->cd(8);
   gPad->SetLeftMargin(0.16); gPad->SetRightMargin(0.06);
   gPad->SetBottomMargin(0.16); gPad->SetTopMargin(0.12);
 
+  TGraphErrors* gF1 = nullptr; TGraphErrors* gF2 = nullptr; TGraphErrors* gFs = nullptr;
   if (!xcenters.empty()) {
-    auto gF1 = new TGraphErrors((int)xcenters.size());
-    auto gF2 = new TGraphErrors((int)xcenters.size());
+    gF1 = new TGraphErrors((int)xcenters.size());
+    gF2 = new TGraphErrors((int)xcenters.size());
     for (int i=0;i<(int)xcenters.size();++i) {
       gF1->SetPoint(i, xcenters[i], Fcos[i]);  gF1->SetPointError(i, 0.0, dFcos[i]);
       gF2->SetPoint(i, xcenters[i], Fcos2[i]); gF2->SetPointError(i, 0.0, dFcos2[i]);
@@ -603,34 +646,21 @@ static void draw_property_and_save(
     gF1->Draw("AP");
     gF2->Draw("P SAME");
 
-    TLegend* legAB = nullptr;
-    if (!fit_sin) {
-      legAB = new TLegend(0.64, 0.70, 0.92, 0.88);
-      legAB->AddEntry(gF1, "F_{UU}^{#cos#phi}/F_{UU}", "p");
-      legAB->AddEntry(gF2, "F_{UU}^{#cos2#phi}/F_{UU}", "p");
-    } else {
-      auto gFs = new TGraphErrors((int)xcenters.size());
+    if (fit_sin) {
+      gFs = new TGraphErrors((int)xcenters.size());
       for (int i=0;i<(int)xcenters.size();++i) {
         gFs->SetPoint(i, xcenters[i], Fsin[i]); gFs->SetPointError(i, 0.0, dFsin[i]);
       }
       gFs->SetMarkerStyle(22); gFs->SetMarkerSize(1.0);
       gFs->Draw("P SAME");
-
-      legAB = new TLegend(0.60, 0.66, 0.92, 0.88); // a hair lower to fit 3 entries
-      legAB->AddEntry(gF1, "F_{UU}^{#cos#phi}/F_{UU}", "p");
-      legAB->AddEntry(gF2, "F_{UU}^{#cos2#phi}/F_{UU}", "p");
-      legAB->AddEntry(gFs, "F_{UU}^{#sin#phi}/F_{UU}", "p");
+      DrawBottomLegendBox(0.58, 0.64, 0.94, 0.88, gF1, gF2, true, gFs);
+    } else {
+      DrawBottomLegendBox(0.64, 0.70, 0.94, 0.88, gF1, gF2, false, nullptr);
     }
-    legAB->SetBorderSize(1); legAB->SetFillStyle(0); legAB->SetTextSize(0.034);
-    legAB->Draw();
   } else {
     TH1D* frame = new TH1D("frameAB",";x_{B};Ratio",10,0.06,0.60);
     frame->SetMinimum(-1.0); frame->SetMaximum(1.0);
     frame->Draw("AXIS");
-    auto leg = new TLegend(0.64, 0.78, 0.92, 0.88);
-    leg->SetBorderSize(1); leg->SetFillStyle(0); leg->SetTextSize(0.034);
-    leg->AddEntry((TObject*)0, "No fit results collected", "");
-    leg->Draw();
   }
   c->cd(9); gPad->Clear();
 
@@ -647,7 +677,7 @@ static void draw_property_and_save(
 static void print_counters(const char* label, const Counters& C, const std::vector<std::string>& props) {
   std::cout << "\n[" << label << " counters]\n";
   std::cout << "  total read              : " << C.total << "\n";
-  std::cout << "  pass common+fid cuts    : " << C.pass_fid_cnt << "\n";
+  std::cout << "  pass common+fid cuts    : " << C.pass_common_cnt << "\n";
   std::cout << "  fail x outside bins     : " << C.fail_xbin << "\n";
   for (const auto& p : props) {
     auto it = C.pass_prop_cnt.find(p);
