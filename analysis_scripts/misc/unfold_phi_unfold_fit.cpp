@@ -1,6 +1,6 @@
 // unfold_phi_unfold_fit.cpp
 // Exclusive pi+ unfolding and cos(n*phi) fits (phi plotted in degrees).
-// Produces AUU^{cos phi} and AUU^{cos2 phi} per x_B bin (raw from fit),
+// Produces AUU^{#cos#phi} and AUU^{#cos2#phi} per x_B bin (raw from fit),
 // and scaled FUU ratios vs x_B using depolarization factors.
 // Text outputs mirror your "chi2Fits_*" style: propertyNameAUUcosphi = {...}; etc.
 //
@@ -163,10 +163,10 @@ static std::string prop_title(const std::string& p) {
   return p;
 }
 static std::string prop_tlabel(const std::string& prop) {
-  if (prop == "enpi")      return "-t \\in [0.00, 1.00]";
-  if (prop == "enpiLowt")  return "-t \\in [0.00, 0.30]";
-  if (prop == "enpiMidt")  return "-t \\in [0.30, 0.70]";
-  if (prop == "enpiHight") return "-t \\in [0.70, 1.00]";
+  if (prop == "enpi")      return "-t #in [0.00, 1.00]";
+  if (prop == "enpiLowt")  return "-t #in [0.00, 0.30]";
+  if (prop == "enpiMidt")  return "-t #in [0.30, 0.70]";
+  if (prop == "enpiHight") return "-t #in [0.70, 1.00]";
   return "";
 }
 
@@ -292,7 +292,7 @@ struct Counters {
 static void debug_event_print(const char* label, int idx, const BranchHandles& b,
                               const std::vector<std::string>& props, const std::vector<double>& xe) {
   std::cout << "[" << label << " evt " << idx << "] "
-            << "x_B=" << b.x << "  t=" << b.t << "  Mx2=" << b.mx2
+            << "x_{B}=" << b.x << "  t=" << b.t << "  Mx2=" << b.mx2
             << "  fid=" << (b.has_fid? b.fid : -9999)
             << "  phi(rad)=" << b.phi
             << "  phi(deg)=" << (b.phi*180.0/TMath::Pi()) << "\n";
@@ -464,7 +464,6 @@ static void save_arrays_style(
   std::ofstream ofs(out);
   ofs << std::fixed << std::setprecision(9);
 
-  // propertyNameAUUcosphi = { {xB, val, err}, ... };
   ofs << prop << "AUUcosphi = {";
   for (size_t i=0;i<xcenters.size();++i) {
     ofs << "{" << xcenters[i] << ", " << Fcos[i] << ", " << dFcos[i] << "}";
@@ -472,7 +471,6 @@ static void save_arrays_style(
   }
   ofs << "};\n";
 
-  // propertyNameAUUcos2phi = { {xB, val, err}, ... };
   ofs << prop << "AUUcos2phi = {";
   for (size_t i=0;i<xcenters.size();++i) {
     ofs << "{" << xcenters[i] << ", " << Fcos2[i] << ", " << dFcos2[i] << "}";
@@ -493,11 +491,12 @@ static void draw_property_and_save(
   const auto xe = x_edges();
   const int NX = (int)xe.size()-1;
 
-  // Global style (more left & bottom margin so nothing clips)
+  // Global defaults (pads will also be tightened individually)
   gStyle->SetOptStat(0);
   gStyle->SetPadLeftMargin(0.16);
   gStyle->SetPadRightMargin(0.06);
-  gStyle->SetPadBottomMargin(0.13); // tiny extra bottom padding
+  gStyle->SetPadBottomMargin(0.16);
+  gStyle->SetPadTopMargin(0.12);
   gStyle->SetTitleSize(0.05, "XYZ");
   gStyle->SetLabelSize(0.045, "XYZ");
 
@@ -512,6 +511,11 @@ static void draw_property_and_save(
 
   for (int ib=0; ib<NX; ++ib) {
     c->cd(ib+1);
+    // Ensure per-pad margins so legends/labels never clip
+    gPad->SetLeftMargin(0.16);
+    gPad->SetRightMargin(0.06);
+    gPad->SetBottomMargin(0.16);
+    gPad->SetTopMargin(0.12);
 
     TH1D* hD = H.at(prop).D[ib].get();
     TH1D* hG = H.at(prop).G[ib].get();
@@ -524,15 +528,12 @@ static void draw_property_and_save(
     const double xl = xe[ib], xh = xe[ib+1];
     std::string titleCore = prop_title(prop);
     std::string tlabel = prop_tlabel(prop);
-    std::string title = titleCore + Form(", x_{B} in [%.2f, %.2f), %s", xl, xh, tlabel.c_str());
+    std::string title = titleCore + Form(", x_{B} #in [%.2f, %.2f), %s", xl, xh, tlabel.c_str());
 
-    // compute mean dep factors for this bin from DATA
     if (dep.count[ib] > 0) {
       meanDepA[ib] = dep.sumA[ib] / (double)dep.count[ib];
       meanDepB[ib] = dep.sumB[ib] / (double)dep.count[ib];
       meanDepV[ib] = dep.sumV[ib] / (double)dep.count[ib];
-    } else {
-      meanDepA[ib] = meanDepB[ib] = meanDepV[ib] = 0.0;
     }
 
     if (g) {
@@ -540,11 +541,11 @@ static void draw_property_and_save(
       g->Draw("AP");
       if (fit) fit->Draw("LSAME");
 
-      // Legend: AUU^{cos phi}, AUU^{cos2 phi} (raw A,B) – small, bordered, inside pad
-      auto leg = new TLegend(0.56, 0.72, 0.94, 0.92);
+      // Legend kept fully inside (pulled down so y2 ≤ 0.88)
+      auto leg = new TLegend(0.58, 0.64, 0.92, 0.88);
       leg->SetBorderSize(1);
       leg->SetFillStyle(0);
-      leg->SetTextSize(0.035);
+      leg->SetTextSize(0.034);
       leg->AddEntry((TObject*)0, Form("A_{UU}^{#cos#phi} = %.3g #pm %.3g", fr.A, fr.dA), "");
       leg->AddEntry((TObject*)0, Form("A_{UU}^{#cos2#phi} = %.3g #pm %.3g", fr.B, fr.dB), "");
       leg->Draw();
@@ -560,19 +561,19 @@ static void draw_property_and_save(
       frame->SetTitle((title + ";#phi (deg);Unfolded yield").c_str());
       frame->SetMinimum(0); frame->SetMaximum(1);
       frame->Draw("AXIS");
-      auto leg = new TLegend(0.56, 0.82, 0.94, 0.92);
-      leg->SetBorderSize(1); leg->SetFillStyle(0); leg->SetTextSize(0.035);
+      auto leg = new TLegend(0.58, 0.76, 0.92, 0.88);
+      leg->SetBorderSize(1); leg->SetFillStyle(0); leg->SetTextSize(0.034);
       leg->AddEntry((TObject*)0, "No valid unfolded points", "");
       leg->Draw();
     }
   }
 
-  // Build scaled FUU ratios from means: Fcos = (DepA/DepV) * A   and   Fcos2 = (DepA/DepB) * B
+  // Scaled FUU ratios
   std::vector<double> Fcos, dFcos, Fcos2, dFcos2;
   Fcos.reserve(xcenters.size()); dFcos.reserve(xcenters.size());
   Fcos2.reserve(xcenters.size()); dFcos2.reserve(xcenters.size());
   for (size_t i=0;i<xcenters.size();++i) {
-    const int ib = (int)i; // aligns with push order
+    const int ib = (int)i;
     const double a = Avec[i], da = dAvec[i];
     const double b = Bvec[i], db = dBvec[i];
     const double mA = meanDepA[ib], mB = meanDepB[ib], mV = meanDepV[ib];
@@ -585,9 +586,14 @@ static void draw_property_and_save(
     Fcos2.push_back(f2); dFcos2.push_back(df2);
   }
 
-  // Bottom row: pad 8 — x_B dependence of the scaled FUU ratios (no title, top-right legend)
+  // Bottom row: pad 8 — x_B dependence of scaled ratios
   c->cd(7); gPad->Clear();
   c->cd(8);
+  gPad->SetLeftMargin(0.16);
+  gPad->SetRightMargin(0.06);
+  gPad->SetBottomMargin(0.16);
+  gPad->SetTopMargin(0.12);
+
   if (!xcenters.empty()) {
     auto gF1 = new TGraphErrors((int)xcenters.size());
     auto gF2 = new TGraphErrors((int)xcenters.size());
@@ -598,24 +604,22 @@ static void draw_property_and_save(
     gF1->SetMarkerStyle(20); gF1->SetMarkerSize(1.0);
     gF2->SetMarkerStyle(21); gF2->SetMarkerSize(1.0);
 
-    // No title, just axes
     gF1->SetTitle(";x_{B};Ratio");
     gF1->GetYaxis()->SetRangeUser(-1.0, 1.0);
     gF1->Draw("AP");
     gF2->Draw("P SAME");
 
-    // Legend in top-right, inside pad
-    auto legAB = new TLegend(0.62, 0.74, 0.94, 0.92);
-    legAB->SetBorderSize(1); legAB->SetFillStyle(0); legAB->SetTextSize(0.035);
-    legAB->AddEntry(gF1, "F_{UU}^{\\cos\\phi}/F_{UU}", "p");
-    legAB->AddEntry(gF2, "F_{UU}^{\\cos2\\phi}/F_{UU}", "p");
+    auto legAB = new TLegend(0.64, 0.70, 0.92, 0.88); // top-right, inside
+    legAB->SetBorderSize(1); legAB->SetFillStyle(0); legAB->SetTextSize(0.034);
+    legAB->AddEntry(gF1, "F_{UU}^{#cos#phi}/F_{UU}", "p");
+    legAB->AddEntry(gF2, "F_{UU}^{#cos2#phi}/F_{UU}", "p");
     legAB->Draw();
   } else {
     TH1D* frame = new TH1D("frameAB",";x_{B};Ratio",10,0.06,0.60);
     frame->SetMinimum(-1.0); frame->SetMaximum(1.0);
     frame->Draw("AXIS");
-    auto leg = new TLegend(0.62, 0.80, 0.94, 0.92);
-    leg->SetBorderSize(1); leg->SetFillStyle(0); leg->SetTextSize(0.035);
+    auto leg = new TLegend(0.64, 0.78, 0.92, 0.88);
+    leg->SetBorderSize(1); leg->SetFillStyle(0); leg->SetTextSize(0.034);
     leg->AddEntry((TObject*)0, "No fit results collected", "");
     leg->Draw();
   }
@@ -626,7 +630,7 @@ static void draw_property_and_save(
   c->SaveAs(outpdf.c_str());
   std::cout << "Saved: " << outpdf << "\n";
 
-  // Save arrays in the exact style you require (scaled values)
+  // Save arrays (scaled values) in your exact style
   save_arrays_style(prop, xcenters, Fcos, dFcos, Fcos2, dFcos2);
 }
 
