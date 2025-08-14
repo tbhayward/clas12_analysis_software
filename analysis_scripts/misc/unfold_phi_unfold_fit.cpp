@@ -1,18 +1,18 @@
-// unfold_enpi_phi_unfold_fit.cpp
+// unfold_phi_unfold_fit.cpp
 // Exclusive pi+ unfolding and cos(n*phi) fits (phi plotted in degrees).
 // Build (csh):
-//   g++ -O2 -std=c++17 unfold_enpi_phi_unfold_fit.cpp `root-config --cflags --libs` -o unfold_enpi_phi_unfold_fit
+//   g++ -O2 -std=c++17 unfold_phi_unfold_fit.cpp `root-config --cflags --libs` -o unfold_phi_unfold_fit
 // Run:
-//   ./unfold_enpi_phi_unfold_fit data.root gen.root rec.root [enpi|enpiLowt|enpiMidt|enpiHight|all]
+//   ./unfold_phi_unfold_fit data.root gen.root rec.root [enpi|enpiLowt|enpiMidt|enpiHight|all]
 //                                [--x x] [--phi phi] [--t t] [--mx2 Mx2] [--fid fiducial_status]
-//                                [--phibins 24] [--no-fid-cut] [--debug N]
+//                                [--phibins 24] [--no-fid-cut] [--debug N] [--list-branches]
 //
-// Output per property:
-//   - PDF:  output/enpi+/<property>_unfolded.pdf
-//   - Text: output/enpi+/<property>_unfolded_fit_results.txt
+// Outputs per property:
+//   PDF:  output/enpi+/<property>_unfolded.pdf
+//   TXT:  output/enpi+/<property>_unfolded_fit_results.txt
 //
 // Notes:
-// - Reads each tree ONCE per dataset; fills all properties simultaneously.
+// - Reads each tree ONCE per dataset; fills all four properties simultaneously.
 // - Input phi assumed in radians. Plots and fits in degrees (0..360).
 // - Unfolded yield per phi bin = D * G / R, with Poisson error propagation.
 // - Fits C * (1 + A*cos(pi/180*x) + B*cos(2*pi/180*x)) on unfolded points.
@@ -26,15 +26,18 @@
 #include <iostream>
 #include <map>
 #include <memory>
+#include <set>
 #include <string>
 #include <utility>
 #include <vector>
 
+#include "TBranch.h"
 #include "TCanvas.h"
 #include "TFile.h"
 #include "TGraphErrors.h"
 #include "TH1D.h"
 #include "TLegend.h"
+#include "TList.h"
 #include "TMath.h"
 #include "TPad.h"
 #include "TROOT.h"
@@ -55,18 +58,20 @@ struct Config {
   std::string data_path;
   std::string gen_path;
   std::string rec_path;
-  std::string which_property = "all"; // or specific one
+  std::string which_property = "all";
   BranchNames bn;
-  int phi_nbins = 24;
-  bool apply_fid_cut = true;
-  int debug_print = 0; // print up to N example events per dataset
+  int  phi_nbins      = 24;
+  bool apply_fid_cut  = true;
+  int  debug_print    = 0;  // print this many raw events per dataset
+  bool list_branches  = false;
 };
 
+// ---------- CLI ----------
 static void print_usage(const char* argv0) {
   std::cout << "Usage:\n  " << argv0
             << " data.root gen.root rec.root [enpi|enpiLowt|enpiMidt|enpiHight|all]\n"
             << "    [--x x] [--phi phi] [--t t] [--mx2 Mx2] [--fid fiducial_status]\n"
-            << "    [--phibins 24] [--no-fid-cut] [--debug N]\n";
+            << "    [--phibins 24] [--no-fid-cut] [--debug N] [--list-branches]\n";
 }
 
 static bool parse_args(int argc, char** argv, Config& cfg) {
@@ -105,17 +110,21 @@ static bool parse_args(int argc, char** argv, Config& cfg) {
     if (eat_int("--phibins", cfg.phi_nbins)) continue;
     if (a == "--no-fid-cut") { cfg.apply_fid_cut = false; continue; }
     if (eat_int("--debug", cfg.debug_print)) continue;
+    if (a == "--list-branches") { cfg.list_branches = true; continue; }
 
     std::cerr << "Unknown argument: " << a << "\n";
   }
   return true;
 }
 
+// ---------- Helpers ----------
+static std::vector<std::string> all_props() {
+  return {"enpi", "enpiLowt", "enpiMidt", "enpiHight"};
+}
 static std::vector<std::string> properties_to_run(const std::string& which) {
-  if (which == "all") return {"enpi", "enpiLowt", "enpiMidt", "enpiHight"};
+  if (which == "all") return all_props();
   return {which};
 }
-
 static std::vector<double> x_edges() {
   return {0.06, 0.14, 0.22, 0.30, 0.40, 0.50, 0.60};
 }
@@ -123,7 +132,6 @@ static int xbin_index(double x, const std::vector<double>& e) {
   for (size_t i=0;i+1<e.size();++i) if (x >= e[i] && x < e[i+1]) return (int)i;
   return -1;
 }
-
 static inline bool pass_common(double t, double mx2) {
   return (std::fabs(t) <= 1.0) && (std::fabs(t) >= 0.0) && (mx2 > 0.80) && (mx2 < 1.00);
 }
@@ -135,20 +143,41 @@ static inline bool pass_prop_window(const std::string& prop, double t) {
   return false;
 }
 
+static void ensure_dir(const std::string& d) {
+  if (gSystem->AccessPathName(d.c_str())) gSystem->mkdir(d.c_str(), kTRUE);
+}
+
+static void list_tree_branches(TTree* tr, const char* label) {
+  if (!tr) { std::cout << "[" << label << "] Tree is null.\n"; return; }
+  std::cout << "\n[" << label << "] Branches on " << tr->GetName() << ":\n";
+  TObjArray* bl = tr->GetListOfBranches();
+  if (!bl) { std::cout << "  (no branches?)\n"; return; }
+  for (int i=0;i<bl->GetEntries();++i) {
+    TBranch* br = dynamic_cast<TBranch*>(bl->At(i));
+    if (!br) continue;
+    std::cout << "  - " << br->GetName() << "\n";
+  }
+  std::cout.flush();
+}
+
+// ---------- Binding ----------
 struct BranchHandles {
   double x=0, phi=0, t=0, mx2=0;
   int fid=0;
   bool has_fid=false;
 };
-static bool bind_tree(TTree* tr, const BranchNames& bn, BranchHandles& bh) {
+static bool bind_tree(TTree* tr, const BranchNames& bn, BranchHandles& bh, const char* who) {
   if (!tr) return false;
   bool ok = true;
   ok &= (tr->GetBranch(bn.x.c_str())  != nullptr);
   ok &= (tr->GetBranch(bn.phi.c_str())!= nullptr);
   ok &= (tr->GetBranch(bn.t.c_str())  != nullptr);
   ok &= (tr->GetBranch(bn.mx2.c_str())!= nullptr);
-  if (!ok) return false;
-
+  if (!ok) {
+    std::cerr << "ERROR: missing one of required branches on " << who << " (need: "
+              << bn.x << ", " << bn.phi << ", " << bn.t << ", " << bn.mx2 << ")\n";
+    return false;
+  }
   tr->SetBranchAddress(bn.x.c_str(),   &bh.x);
   tr->SetBranchAddress(bn.phi.c_str(), &bh.phi);
   tr->SetBranchAddress(bn.t.c_str(),   &bh.t);
@@ -159,27 +188,18 @@ static bool bind_tree(TTree* tr, const BranchNames& bn, BranchHandles& bh) {
   return true;
 }
 
-static void ensure_dir(const std::string& d) {
-  if (gSystem->AccessPathName(d.c_str())) gSystem->mkdir(d.c_str(), kTRUE);
-}
-
+// ---------- Hist containers ----------
 struct HSet {
   std::vector<std::unique_ptr<TH1D>> D; // data
   std::vector<std::unique_ptr<TH1D>> G; // gen
   std::vector<std::unique_ptr<TH1D>> R; // rec
 };
-
-static std::vector<std::string> all_props() {
-  return {"enpi", "enpiLowt", "enpiMidt", "enpiHight"};
-}
-
 static std::map<std::string,HSet> make_hist_map(int phibins) {
   std::map<std::string,HSet> m;
   const auto props = all_props();
   const auto xe = x_edges();
   const int NX = (int)xe.size()-1;
 
-  // phi axis in DEGREES [0,360)
   const double pmin = 0.0;
   const double pmax = 360.0;
 
@@ -202,29 +222,36 @@ static std::map<std::string,HSet> make_hist_map(int phibins) {
   return m;
 }
 
+// ---------- Debug counters ----------
 struct Counters {
   Long64_t total=0, pass_common_cnt=0, pass_fid_cnt=0;
-  std::map<std::string, Long64_t> pass_prop_cnt; // per property
+  Long64_t fail_abs_t=0, fail_mx2=0, fail_no_fid_branch=0, fail_fid_lt_100=0, fail_xbin=-0;
+  std::map<std::string, Long64_t> pass_prop_cnt;
 };
 
-static void debug_event_print(const char* label, int idx, const BranchHandles& b, const std::vector<std::string>& props, const std::vector<double>& xe) {
+static void debug_event_print(const char* label, int idx, const BranchHandles& b,
+                              const std::vector<std::string>& props, const std::vector<double>& xe) {
   std::cout << "[" << label << " evt " << idx << "] "
             << "x=" << b.x << "  t=" << b.t << "  Mx2=" << b.mx2
-            << "  fid=" << b.fid << "  phi(rad)=" << b.phi << "  phi(deg)=" << (b.phi*180.0/TMath::Pi()) << "\n";
+            << "  fid=" << (b.has_fid? b.fid : -9999)
+            << "  phi(rad)=" << b.phi
+            << "  phi(deg)=" << (b.phi*180.0/TMath::Pi()) << "\n";
   for (const auto& p : props) {
     bool in_prop = pass_prop_window(p, b.t);
     int ib = xbin_index(b.x, xe);
     std::cout << "    prop=" << p << "  pass=" << (in_prop?"Y":"N") << "  xbin=" << ib << "\n";
   }
+  std::cout.flush();
 }
 
+// ---------- Fill loops ----------
 static void loop_tree_fill(
-  TTree* tr, const BranchNames& bn, bool apply_fid, bool count_fid, // apply_fid for data/rec; count_fid toggles fid counter
+  TTree* tr, const BranchNames& bn, bool apply_fid, bool count_fid,
   std::map<std::string,HSet>& H, Counters& C, int debugN, const char* dbg_label)
 {
   if (!tr) return;
   BranchHandles b;
-  if (!bind_tree(tr, bn, b)) {
+  if (!bind_tree(tr, bn, b, dbg_label)) {
     std::cerr << "ERROR: failed to bind branches on " << dbg_label << "\n";
     return;
   }
@@ -236,40 +263,55 @@ static void loop_tree_fill(
   const auto props = all_props();
 
   const Long64_t nent = tr->GetEntries();
+  const int debug_limit = std::max(0, debugN);
+
   for (Long64_t i=0;i<nent;i++) {
     tr->GetEntry(i);
     C.total++;
 
-    if (!pass_common(b.t, b.mx2)) continue;
+    // Unconditional early prints for first N entries:
+    if (debug_limit > 0 && i < debug_limit) {
+      debug_event_print(dbg_label, (int)i, b, props, xe);
+    }
+
+    // Track reasons for failures:
+    bool ok_abs_t = (std::fabs(b.t) <= 1.0) && (std::fabs(b.t) >= 0.0);
+    bool ok_mx2   = (b.mx2 > 0.80) && (b.mx2 < 1.00);
+    if (!ok_abs_t) C.fail_abs_t++;
+    if (!ok_mx2)   C.fail_mx2++;
+
+    if (!(ok_abs_t && ok_mx2)) continue;
     C.pass_common_cnt++;
 
-    if (apply_fid && b.has_fid && b.fid < 100) continue;
+    if (apply_fid) {
+      if (!b.has_fid) { C.fail_no_fid_branch++; continue; }
+      if (b.fid < 100) { C.fail_fid_lt_100++; continue; }
+    }
     if (count_fid) C.pass_fid_cnt++;
 
     int ib = xbin_index(b.x, xe);
-    if (ib < 0) continue;
+    if (ib < 0) { C.fail_xbin++; continue; }
 
-    // Convert to degrees for histogramming
     double phideg = b.phi * 180.0 / TMath::Pi();
-    // wrap into [0,360)
     phideg = std::fmod(phideg, 360.0);
     if (phideg < 0) phideg += 360.0;
 
     for (const auto& p : props) {
       if (!pass_prop_window(p, b.t)) continue;
       C.pass_prop_cnt[p]++;
-
       if (std::string(dbg_label) == "DATA") H[p].D[ib]->Fill(phideg);
       else if (std::string(dbg_label) == "GEN") H[p].G[ib]->Fill(phideg);
       else if (std::string(dbg_label) == "REC") H[p].R[ib]->Fill(phideg);
     }
 
-    if (debugN > 0 && C.total <= (Long64_t)debugN) {
-      debug_event_print(dbg_label, (int)i, b, props, xe);
+    // Also print every ~10M entries to show progress on huge files
+    if ((i>0) && (i % 10000000 == 0)) {
+      std::cout << "[" << dbg_label << "] processed " << i << " / " << nent << " entries..." << std::endl;
     }
   }
 }
 
+// ---------- Fit ----------
 struct FitResult {
   double C=0, dC=0;
   double A=0, dA=0;
@@ -285,8 +327,8 @@ static FitResult make_unfold_graph_and_fit(
   if (!hD || !hG || !hR) { g=nullptr; ffit=nullptr; return fr; }
 
   const int nb = hD->GetNbinsX();
-  std::vector<double> X(nb), Y; Y.reserve(nb);
-  std::vector<double> EX(nb, 0.0), EY; EY.reserve(nb);
+  std::vector<double> X, Y, EY;
+  X.reserve(nb); Y.reserve(nb); EY.reserve(nb);
 
   for (int b=1; b<=nb; ++b) {
     const double D = hD->GetBinContent(b);
@@ -299,37 +341,32 @@ static FitResult make_unfold_graph_and_fit(
     // U = D*G/R
     const double U = (D * G) / R;
 
-    // Var(U) = (G/R)^2 Var(D) + (D/R)^2 Var(G) + (D*G/R^2)^2 Var(R)
-    // with Poisson Var(D)=D, Var(G)=G, Var(R)=R
+    // Poisson propagation: Var(U) = (G/R)^2*D + (D/R)^2*G + (D*G/R^2)^2*R
     const double term1 = (G*G)/(R*R) * D;
     const double term2 = (D*D)/(R*R) * G;
     const double term3 = (D*D*G*G)/(R*R*R);
     const double sig = std::sqrt(std::max(0.0, term1 + term2 + term3));
 
-    X[fr.npoints] = xc;
-    Y.push_back(U);
-    EY.push_back(sig);
-    fr.npoints++;
+    X.push_back(xc); Y.push_back(U); EY.push_back(sig);
   }
 
+  fr.npoints = (int)X.size();
   if (fr.npoints == 0) { g=nullptr; ffit=nullptr; return fr; }
 
   g = new TGraphErrors(fr.npoints);
   for (int i=0;i<fr.npoints;i++) {
     g->SetPoint(i, X[i], Y[i]);
-    g->SetPointError(i, EX[i], EY[i]);
+    g->SetPointError(i, 0.0, EY[i]);
   }
   g->SetMarkerStyle(20);
   g->SetMarkerSize(0.8);
   g->SetLineWidth(1);
 
-  // Fit in degrees: f(x) = C * (1 + A*cos(pi/180*x) + B*cos(2*pi/180*x))
   const double xmin = 0.0, xmax = 360.0;
   ffit = new TF1("fitCAB_deg",
                  "[0]*(1 + [1]*cos(TMath::Pi()/180.0*x) + [2]*cos(2.0*TMath::Pi()/180.0*x))",
                  xmin, xmax);
   ffit->SetParNames("C","A","B");
-  // Initial guess for C is mean of Y
   double ymean = 0.0; for (double v : Y) ymean += v; ymean /= (double)Y.size();
   ffit->SetParameters( (ymean>0?ymean:1.0), 0.0, 0.0 );
   ffit->SetParLimits(0, 0.0, 1e12);
@@ -349,6 +386,7 @@ static FitResult make_unfold_graph_and_fit(
   return fr;
 }
 
+// ---------- I/O ----------
 static std::string prop_title(const std::string& p) {
   if (p == "enpi")      return "ep -> e' n #pi^{+}";
   if (p == "enpiLowt")  return "ep -> e' n #pi^{+}, low |t|";
@@ -405,9 +443,6 @@ static void draw_property_and_save(
   std::vector<double> xcenters, xlos, xhis;
   std::vector<double> Avec, dAvec, Bvec, dBvec, Cvec, dCvec, Chi2;
   std::vector<int>    NDF;
-  xcenters.reserve(NX); xlos.reserve(NX); xhis.reserve(NX);
-  Avec.reserve(NX); dAvec.reserve(NX); Bvec.reserve(NX); dBvec.reserve(NX);
-  Cvec.reserve(NX); dCvec.reserve(NX); Chi2.reserve(NX); NDF.reserve(NX);
 
   for (int ib=0; ib<NX; ++ib) {
     c->cd(ib+1);
@@ -428,7 +463,6 @@ static void draw_property_and_save(
       g->Draw("AP");
       if (fit) fit->Draw("LSAME");
 
-      // Legend with C, A, B and chi2/ndf
       auto leg = new TLegend(0.55, 0.58, 0.94, 0.94);
       leg->SetBorderSize(0);
       leg->SetFillStyle(0);
@@ -457,7 +491,7 @@ static void draw_property_and_save(
     }
   }
 
-  // Bottom row: left pad empty, middle pad shows A(x) and B(x), right pad empty
+  // Bottom row: pad 8 shows A(x), B(x)
   c->cd(7); gPad->Clear();
   c->cd(8);
   if (!xcenters.empty()) {
@@ -496,22 +530,28 @@ static void draw_property_and_save(
   c->SaveAs(outpdf.c_str());
   std::cout << "Saved: " << outpdf << "\n";
 
-  // Save the numbers for later "hold fixed" use
   save_results_txt(prop, xcenters, xlos, xhis, Avec, dAvec, Bvec, dBvec, Cvec, dCvec, Chi2, NDF);
 }
 
+// ---------- Final reporting ----------
 static void print_counters(const char* label, const Counters& C, const std::vector<std::string>& props) {
   std::cout << "\n[" << label << " counters]\n";
-  std::cout << "  total read           : " << C.total << "\n";
-  std::cout << "  pass common cuts     : " << C.pass_common_cnt << "\n";
-  std::cout << "  pass fiducial (>=100): " << C.pass_fid_cnt << "\n";
+  std::cout << "  total read              : " << C.total << "\n";
+  std::cout << "  pass common cuts        : " << C.pass_common_cnt << "\n";
+  std::cout << "  pass fiducial (>=100)   : " << C.pass_fid_cnt << "\n";
+  std::cout << "  fail |t|>1 or <0        : " << C.fail_abs_t << "\n";
+  std::cout << "  fail Mx2 not (0.80,1.00): " << C.fail_mx2 << "\n";
+  std::cout << "  fail no fid branch      : " << C.fail_no_fid_branch << "\n";
+  std::cout << "  fail fid<100            : " << C.fail_fid_lt_100 << "\n";
+  std::cout << "  fail x outside bins     : " << C.fail_xbin << "\n";
   for (const auto& p : props) {
     auto it = C.pass_prop_cnt.find(p);
     long long v = (it==C.pass_prop_cnt.end()? 0 : it->second);
-    std::cout << "  pass property " << p << " : " << v << "\n";
+    std::cout << "  pass property " << p << "     : " << v << "\n";
   }
 }
 
+// ---------- main ----------
 int main(int argc, char** argv) {
   Config cfg;
   if (!parse_args(argc, argv, cfg)) return 1;
@@ -532,10 +572,14 @@ int main(int argc, char** argv) {
     return 3;
   }
 
-  // Make hist containers for all properties
+  if (cfg.list_branches) {
+    list_tree_branches(tD, "DATA");
+    list_tree_branches(tG, "GEN");
+    list_tree_branches(tR, "REC");
+  }
+
   auto H = make_hist_map(cfg.phi_nbins);
 
-  // Loop each dataset ONCE; fill all properties
   Counters cD, cG, cR;
   loop_tree_fill(tD, cfg.bn, cfg.apply_fid_cut, /*count_fid=*/true,  H, cD, cfg.debug_print, "DATA");
   loop_tree_fill(tG, cfg.bn, /*apply_fid=*/false, /*count_fid=*/false, H, cG, cfg.debug_print, "GEN");
@@ -543,12 +587,7 @@ int main(int argc, char** argv) {
 
   const auto props = properties_to_run(cfg.which_property);
 
-  // Print summary counters for diagnostics
-  print_counters("DATA", cD, props);
-  print_counters("GEN",  cG, props);
-  print_counters("REC",  cR, props);
-
-  // Optionally, per-property quick check if any phi-bin is filled:
+  // Totals sanity
   for (const auto& p : props) {
     const auto& hs = H.at(p);
     long long dsum=0, gsum=0, rsum=0;
@@ -561,7 +600,12 @@ int main(int argc, char** argv) {
               << "D=" << dsum << "  G=" << gsum << "  R=" << rsum << "\n";
   }
 
-  // Draw and save for requested properties
+  // Detailed counters
+  print_counters("DATA", cD, props);
+  print_counters("GEN",  cG, props);
+  print_counters("REC",  cR, props);
+
+  // Draw and save
   for (const auto& p : props) {
     draw_property_and_save(p, H);
   }
