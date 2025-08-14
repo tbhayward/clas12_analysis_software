@@ -59,7 +59,7 @@ static double beamEnergy(int run)
     if (run >= 16042 && run <= 17065)  return 10.5473;
     if (run >= 17067 && run <= 17724)  return 10.5563;
     if (run >= 17725 && run <= 17811)  return 10.5593;
-    return 0.0;
+    return 10.604;
 }
 
 //================================================================================
@@ -137,7 +137,7 @@ bool GeneralExclusiveKinematicCuts::applyCuts(int currentFits, bool isMC)
 
     // 2) If the property is “enpi,” impose |t| < 1.0 as well:
     if (property == "enpi") {
-        std::cout << *fiducial_status << " " << std::fabs(t_val) << " " << *Mx2 << std::endl;
+        // std::cout << *fiducial_status << " " << std::fabs(t_val) << " " << *Mx2 << std::endl;
         goodEvent = goodEvent && *fiducial_status >= 100 && 
             std::fabs(t_val) <= 1.0 && std::fabs(t_val) >= 0.0 &&
             *Mx2 > 0.80 && *Mx2 < 1.00;
