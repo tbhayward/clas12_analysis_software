@@ -32,10 +32,13 @@ double BSA_single_hadron(double* x, double* par) {
   // Retrieve the parameters 
   double ALU_offset = par[0];
   double ALU_sinphi = par[1];
+  double ALU_cosphi = par[2];
+  double ALU_cos2phi = par[3];
   // Retrieve the phi variable from the input x array
   double phi = x[0];
   // Calculate and return the value of the function for the given phi and parameters 
-  return ALU_offset + ALU_sinphi*sin(phi);
+  // return ALU_offset + ALU_sinphi*sin(phi);
+  return ALU_offset + ALU_sinphi*sin(phi)/(1+ALU_cosphi*cos(phi)+ALU_cos2phi*cos(phi));
 }
 
 double BSA_dvcs(double* x, double* par) {
