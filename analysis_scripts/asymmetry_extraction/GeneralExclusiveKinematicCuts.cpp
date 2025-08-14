@@ -64,6 +64,7 @@ bool GeneralExclusiveKinematicCuts::applyCuts(int currentFits, bool isMC)
 
     // 2) If the property is “enpi,” impose |t| < 1.0 as well:
     if (property == "enpi") {
+        std::cout << *fiducial_status << " " << std::fabs(*t) << *Mx2 << std::endl;
         goodEvent = goodEvent && *fiducial_status >= 100 && 
             std::fabs(*t) <= 1.0 && std::fabs(*t) >= 0.0 &&
             *Mx2 > 0.80 && *Mx2 < 1.00;
