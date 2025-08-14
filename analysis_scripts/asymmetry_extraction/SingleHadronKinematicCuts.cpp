@@ -141,11 +141,9 @@ bool SingleHadronKinematicCuts::applyCuts(int currentFits, bool isMC)
 
     // 2) If the property is “enpi,” impose |t| < 1.0 as well:
     if (property == "enpi") {
-        // std::cout << *fiducial_status << " " << std::fabs(t_val) << " " << *Mx2 << std::endl;
         goodEvent = goodEvent && *fiducial_status >= 100 && 
             std::fabs(t_val) <= 1.0 && std::fabs(t_val) >= 0.0 &&
             *Mx2 > 0.80 && *Mx2 < 1.00;
-            if(goodEvent) std::cout << goodEvent << std::endl;
         return goodEvent;
     }
     if (property == "enpiLowt") {
