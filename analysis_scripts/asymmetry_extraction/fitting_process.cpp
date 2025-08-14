@@ -920,6 +920,7 @@ void performChi2Fits_single_hadron(const char* output_file, const char* kinemati
 
   // Initialize string streams to store the results for each bin
   std::ostringstream chi2FitsAStream, chi2FitsBStream, chi2FitsCStream;
+  std::ostringstream chi2FitsDStream, chi2FitsEStream;
   chi2FitsAStream << std::fixed << std::setprecision(9);
   chi2FitsBStream << std::fixed << std::setprecision(9);
   chi2FitsCStream << std::fixed << std::setprecision(9);
