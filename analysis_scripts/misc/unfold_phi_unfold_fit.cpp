@@ -2,8 +2,11 @@
 // Exclusive pi+ unfolding and cos(n*phi) fits (phi in degrees).
 // Optional sin(phi) term via --fit-sin. Legends drawn with TLatex in a framed box
 // so LaTeX renders correctly (no stray '#') and the box is fully inside the pad.
+// Legends have white backgrounds and are drawn LAST so they sit on top of data/fit.
+// Per-bin unfolded-yield y-range is set to [0.5*min, 1.5*max] of unfolded points.
+// Bottom-middle: colored FUU ratios vs x_B. Bottom-right: colored A,B,(D) vs x_B.
 //
-// Build (csh):
+// Build (csh on ifarm):
 //   g++ -O2 -std=c++17 unfold_phi_unfold_fit.cpp `root-config --cflags --libs` -o unfold_phi_unfold_fit
 //
 // Run:
@@ -302,7 +305,7 @@ static void debug_event_print(const char* label, int idx, const BranchHandles& b
 
 // ------------ Loop & fill ------------
 static void loop_tree_fill(
-  TTree* tr, const BranchNames& bn, bool apply_fid, bool count_fid,
+  TTree* tr, const BranchNames& bn, bool apply_fid, bool /*count_fid*/,
   std::map<std::string,HSet>& H, std::map<std::string,DepMeans>* depPtr,
   Counters& C, int debugN, const char* dbg_label)
 {
@@ -428,19 +431,19 @@ static FitResult make_unfold_graph_and_fit(
   fr.B  = ffit->GetParameter(2); fr.dB = ffit->GetParError(2);
   if (fit_sin) { fr.D = ffit->GetParameter(3); fr.dD = ffit->GetParError(3); }
   fr.chi2 = ffit->GetChisquare(); fr.ndf  = ffit->GetNDF();
+
   return fr;
 }
 
-// ---------- TLatex legend helpers (no '#' showing, fully inside pad) ----------
+// ---------- TLatex legend helpers (white background, drawn last) ----------
 static void DrawFitLegendBox(double x1, double y1, double x2, double y2,
                              const FitResult& fr, bool fit_sin)
 {
-  // Border/frame
   TPave* box = new TPave(x1,y1,x2,y2,1,"NDC");
-  box->SetFillStyle(0); box->SetLineColor(kBlack); box->SetLineWidth(2);
-  box->Draw();
+  box->SetFillStyle(1001); box->SetFillColor(kWhite);
+  box->SetLineColor(kBlack); box->SetLineWidth(2);
+  box->Draw("same"); // ensure overlay
 
-  // Text
   TLatex lat;
   lat.SetNDC(); lat.SetTextColor(kBlack); lat.SetTextSize(0.034); lat.SetTextAlign(13); // left-top
   const double dx = 0.02*(x2-x1);
@@ -456,14 +459,14 @@ static void DrawFitLegendBox(double x1, double y1, double x2, double y2,
   }
 }
 
-// bottom-panel legend with markers + TLatex
 static void DrawBottomLegendBox(double x1, double y1, double x2, double y2,
                                 TGraphErrors* gF1, TGraphErrors* gF2,
                                 bool fit_sin, TGraphErrors* gFs)
 {
   TPave* box = new TPave(x1,y1,x2,y2,1,"NDC");
-  box->SetFillStyle(0); box->SetLineColor(kBlack); box->SetLineWidth(2);
-  box->Draw();
+  box->SetFillStyle(1001); box->SetFillColor(kWhite);
+  box->SetLineColor(kBlack); box->SetLineWidth(2);
+  box->Draw("same");
 
   TLatex lat; lat.SetNDC(); lat.SetTextColor(kBlack); lat.SetTextSize(0.034); lat.SetTextAlign(13);
   const double dx = 0.05*(x2-x1);
@@ -472,7 +475,6 @@ static void DrawBottomLegendBox(double x1, double y1, double x2, double y2,
   double xmark = x1 + dx;
   double yline = y2 - 0.20*(y2-y1);
 
-  // draw marker for gF1
   if (gF1) {
     TMarker* m1 = new TMarker(xmark, yline, gF1->GetMarkerStyle()); m1->SetNDC(true);
     m1->SetMarkerColor(gF1->GetMarkerColor()); m1->SetMarkerSize(gF1->GetMarkerSize()); m1->Draw();
@@ -585,10 +587,20 @@ static void draw_property_and_save(
 
     if (g) {
       g->SetTitle((title + ";#phi (deg);Unfolded yield").c_str());
+
+      // Compute y-range from graph points: [0.5*min, 1.5*max]
+      double xmin, ymin = +1e300, xmax, ymax = -1e300, x, y;
+      for (int ip=0; ip<g->GetN(); ++ip) { g->GetPoint(ip, x, y); ymin = std::min(ymin,y); ymax = std::max(ymax,y); }
+      if (ymin > ymax) { ymin = 0.0; ymax = 1.0; } // safety
+      double lo = 0.5*ymin, hi = 1.5*ymax;
+      if (std::fabs(hi - lo) < 1e-9) { lo -= 0.1*std::fabs(hi); hi += 0.1*std::fabs(hi)+1.0; }
+      g->GetYaxis()->SetRangeUser(lo, hi);
+
       g->Draw("AP"); if (fit) fit->Draw("LSAME");
 
-      // TLatex legend box, flush to the right but inside the pad
+      // Legend LAST so it overlays the data/fit
       DrawFitLegendBox(0.58, 0.60, 0.94, 0.88, fr, fit_sin);
+      gPad->Modified(); gPad->Update();
 
       xcenters.push_back(0.5*(xl+xh));
       Avec.push_back(fr.A); dAvec.push_back(fr.dA);
@@ -600,6 +612,7 @@ static void draw_property_and_save(
       frame->SetMinimum(0); frame->SetMaximum(1);
       frame->Draw("AXIS");
       DrawFitLegendBox(0.58, 0.72, 0.94, 0.88, FitResult{}, fit_sin);
+      gPad->Modified(); gPad->Update();
     }
   }
 
@@ -609,15 +622,12 @@ static void draw_property_and_save(
     const int ib = (int)i;
     const double mA = meanDepA[ib], mB = meanDepB[ib], mV = meanDepV[ib], mW = meanDepW[ib];
 
-    // cos phi
     double f1=0, df1=0; if (mV!=0.0) { f1=(mA/mV)*Avec[i]; df1=(mA/mV)*dAvec[i]; }
     Fcos.push_back(f1); dFcos.push_back(df1);
 
-    // cos 2phi
     double f2=0, df2=0; if (mB!=0.0) { f2=(mA/mB)*Bvec[i]; df2=(mA/mB)*dBvec[i]; }
     Fcos2.push_back(f2); dFcos2.push_back(df2);
 
-    // sin phi (optional)
     if (fit_sin) {
       double fs=0, dfs=0; if (mW!=0.0) { fs=(mA/mW)*Dvec[i]; dfs=(mA/mW)*dDvec[i]; }
       Fsin.push_back(fs); dFsin.push_back(dfs);
@@ -626,43 +636,97 @@ static void draw_property_and_save(
 
   // Bottom row
   c->cd(7); gPad->Clear();
+
+  // pad 8: FUU ratios (colored)
   c->cd(8);
   gPad->SetLeftMargin(0.16); gPad->SetRightMargin(0.06);
   gPad->SetBottomMargin(0.16); gPad->SetTopMargin(0.12);
 
-  TGraphErrors* gF1 = nullptr; TGraphErrors* gF2 = nullptr; TGraphErrors* gFs = nullptr;
+  TGraphErrors *gF1=nullptr, *gF2=nullptr, *gFs=nullptr;
   if (!xcenters.empty()) {
-    gF1 = new TGraphErrors((int)xcenters.size());
-    gF2 = new TGraphErrors((int)xcenters.size());
+    gF1->SetPoint(i, xcenters[i] - 0.005, Fcos[i]);
+    gF1->GetXaxis()->SetLimits(0.0, 0.7);
+    gF2->SetPoint(i, xcenters[i] + 0.005, Fcos2[i]);
+    if (fit_sin) gFs->SetPoint(i, xcenters[i], Fsin[i]); // keep sinphi in middle
     for (int i=0;i<(int)xcenters.size();++i) {
       gF1->SetPoint(i, xcenters[i], Fcos[i]);  gF1->SetPointError(i, 0.0, dFcos[i]);
       gF2->SetPoint(i, xcenters[i], Fcos2[i]); gF2->SetPointError(i, 0.0, dFcos2[i]);
     }
-    gF1->SetMarkerStyle(20); gF1->SetMarkerSize(1.0);
-    gF2->SetMarkerStyle(21); gF2->SetMarkerSize(1.0);
+    gF1->SetMarkerStyle(20); gF1->SetMarkerSize(1.0); gF1->SetLineColor(kRed);   gF1->SetMarkerColor(kRed);
+    gF2->SetMarkerStyle(21); gF2->SetMarkerSize(1.0); gF2->SetLineColor(kBlue);  gF2->SetMarkerColor(kBlue);
 
     gF1->SetTitle(";x_{B};Ratio");
     gF1->GetYaxis()->SetRangeUser(-1.0, 1.0);
-    gF1->Draw("AP");
-    gF2->Draw("P SAME");
-
+    gF1->Draw("APL");
+    gF2->Draw("PL SAME");
     if (fit_sin) {
       gFs = new TGraphErrors((int)xcenters.size());
       for (int i=0;i<(int)xcenters.size();++i) {
         gFs->SetPoint(i, xcenters[i], Fsin[i]); gFs->SetPointError(i, 0.0, dFsin[i]);
       }
       gFs->SetMarkerStyle(22); gFs->SetMarkerSize(1.0);
-      gFs->Draw("P SAME");
+      gFs->SetLineColor(kGreen+2); gFs->SetMarkerColor(kGreen+2);
+      gFs->Draw("PL SAME");
       DrawBottomLegendBox(0.58, 0.64, 0.94, 0.88, gF1, gF2, true, gFs);
     } else {
       DrawBottomLegendBox(0.64, 0.70, 0.94, 0.88, gF1, gF2, false, nullptr);
     }
+    gPad->Modified(); gPad->Update();
   } else {
     TH1D* frame = new TH1D("frameAB",";x_{B};Ratio",10,0.06,0.60);
     frame->SetMinimum(-1.0); frame->SetMaximum(1.0);
     frame->Draw("AXIS");
   }
-  c->cd(9); gPad->Clear();
+
+  // pad 9: A,B,(D) vs x_B in colors
+  c->cd(9);
+  gPad->SetLeftMargin(0.16); gPad->SetRightMargin(0.06);
+  gPad->SetBottomMargin(0.16); gPad->SetTopMargin(0.12);
+
+  if (!xcenters.empty()) {
+    auto gA = new TGraphErrors((int)xcenters.size());
+    auto gB = new TGraphErrors((int)xcenters.size());
+    TGraphErrors* gD = nullptr;
+    for (int i=0;i<(int)xcenters.size();++i) {
+      gA->SetPoint(i, xcenters[i], Avec[i]); gA->SetPointError(i, 0.0, dAvec[i]);
+      gB->SetPoint(i, xcenters[i], Bvec[i]); gB->SetPointError(i, 0.0, dBvec[i]);
+      if (fit_sin) {
+        if (!gD) gD = new TGraphErrors((int)xcenters.size());
+        gD->SetPoint(i, xcenters[i], Dvec[i]); gD->SetPointError(i, 0.0, dDvec[i]);
+      }
+    }
+    gA->SetLineColor(kRed);   gA->SetMarkerColor(kRed);   gA->SetMarkerStyle(20);
+    gB->SetLineColor(kBlue);  gB->SetMarkerColor(kBlue);  gB->SetMarkerStyle(21);
+    if (fit_sin) { gD->SetLineColor(kGreen+2); gD->SetMarkerColor(kGreen+2); gD->SetMarkerStyle(22); }
+
+    gA->SetTitle(";x_{B};Amplitude");
+    // autoscale y-range across all series
+    double ymin=+1e300,ymax=-1e300,x,y;
+    for (int i=0;i<gA->GetN();++i){gA->GetPoint(i,x,y); ymin=std::min(ymin,y); ymax=std::max(ymax,y);}
+    for (int i=0;i<gB->GetN();++i){gB->GetPoint(i,x,y); ymin=std::min(ymin,y); ymax=std::max(ymax,y);}
+    if (fit_sin) for (int i=0;i<((int)gD->GetN());++i){gD->GetPoint(i,x,y); ymin=std::min(ymin,y); ymax=std::max(ymax,y);}
+    if (ymin>ymax){ymin=-1.0;ymax=1.0;}
+    double lo = ymin - 0.2*std::fabs(ymax - ymin);
+    double hi = ymax + 0.2*std::fabs(ymax - ymin);
+    gA->GetYaxis()->SetRangeUser(lo, hi);
+
+    gA->Draw("APL");
+    gB->Draw("PL SAME");
+    if (fit_sin) gD->Draw("PL SAME");
+
+    auto legAmp = new TLegend(0.55,0.70,0.94,0.88);
+    legAmp->SetFillStyle(1001); legAmp->SetFillColor(kWhite);
+    legAmp->SetBorderSize(1); legAmp->SetTextSize(0.034);
+    legAmp->AddEntry(gA,"A_{UU}^{#cos#phi}","lp");
+    legAmp->AddEntry(gB,"A_{UU}^{#cos2#phi}","lp");
+    if (fit_sin) legAmp->AddEntry(gD,"A_{UU}^{#sin#phi}","lp");
+    legAmp->Draw();
+    gPad->Modified(); gPad->Update();
+  } else {
+    TH1D* frame = new TH1D("frameAmp",";x_{B};Amplitude",10,0.06,0.60);
+    frame->SetMinimum(-1.0); frame->SetMaximum(1.0);
+    frame->Draw("AXIS");
+  }
 
   ensure_dir("output/enpi+");
   const std::string outpdf = "output/enpi+/" + prop + "_unfolded.pdf";
