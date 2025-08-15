@@ -3706,7 +3706,7 @@ void performChi2Fits_GeneralExclusive(const char* output_file,
     g_ge_ctx.rCA = (depA!=0.0)? (depC/depA) : 1.0;
 
     // ---- Fit with Minuit ----
-    TMinuit minuit(9);
+    TMinuit minuit(10);
     minuit.SetPrintLevel(-1);
     minuit.SetErrorDef(1.0); // chi2
     minuit.SetFCN(chi2Fcn_GeneralExclusive);
@@ -3721,6 +3721,7 @@ void performChi2Fits_GeneralExclusive(const char* output_file,
     minuit.DefineParameter(6, "F_LL_cos/F_UU",    0.01, 0.01, -1.0, 1.0);
     minuit.DefineParameter(7, "F_UU_cos/F_UU",    0.00, 0.01, -1.0, 1.0);
     minuit.DefineParameter(8, "F_UU_cos2/F_UU",   0.00, 0.01, -1.0, 1.0);
+    minuit.DefineParameter(9, "F_UU_sin/F_UU",   0.00, 0.01, -1.0, 1.0);
 
     minuit.Migrad();
     double arglist[2]; int ierflg=0; arglist[0]=500; arglist[1]=1.0;
@@ -3743,6 +3744,7 @@ void performChi2Fits_GeneralExclusive(const char* output_file,
     sALLc   << "{" << meanVar << ", " << pval[6] << ", " << perr[6] << "}";
     sAUUc   << "{" << meanVar << ", " << pval[7] << ", " << perr[7] << "}";
     sAUUc2  << "{" << meanVar << ", " << pval[8] << ", " << perr[8] << "}";
+    sAUUs  << "{" << meanVar << ", " << pval[9] << ", " << perr[9] << "}";
 
     if (i < numBins - 1) {
       sALUoff << ", "; sAULoff << ", "; sALU << ", "; sAUL << ", "; sAUL2 << ", ";
