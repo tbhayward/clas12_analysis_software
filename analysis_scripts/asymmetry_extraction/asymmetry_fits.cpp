@@ -329,7 +329,8 @@ double BSA_general_exclusive_TF1(double* x, double* par) {
   const double ALU = par[0];
   const double B   = par[1];
   const double C   = par[2];
-  return GE_model_BSA(phi, ALU, B, C);
+   const double D   = par[3];
+  return GE_model_BSA(phi, ALU, B, C, D);
 }
 // TSA params: [0]=AUL, [1]=AUL2, [2]=B_UUcos, [3]=C_UUcos2
 double TSA_general_exclusive_TF1(double* x, double* par) {
@@ -338,7 +339,8 @@ double TSA_general_exclusive_TF1(double* x, double* par) {
   const double AUL2 = par[1];
   const double B    = par[2];
   const double C    = par[3];
-  return GE_model_TSA(phi, AUL, AUL2, B, C);
+  const double D    = par[3];
+  return GE_model_TSA(phi, AUL, AUL2, B, C, D);
 }
 // DSA params: [0]=ALL, [1]=ALL2, [2]=B_UUcos, [3]=C_UUcos2
 double DSA_general_exclusive_TF1(double* x, double* par) {
@@ -347,7 +349,8 @@ double DSA_general_exclusive_TF1(double* x, double* par) {
   const double ALL2 = par[1];
   const double B    = par[2];
   const double C    = par[3];
-  return GE_model_DSA(phi, ALL, ALL2, B, C);
+  const double D    = par[4];
+  return GE_model_DSA(phi, ALL, ALL2, B, C, D);
 }
 
 /******** VALUE CALCULATIONS ********/
