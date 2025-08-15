@@ -1,24 +1,27 @@
 // unfold_phi_unfold_fit.cpp
 // Exclusive pi+ unfolding and cos(n*phi) fits (phi in degrees).
-// Adds a sin(2phi) term to the fit in addition to the existing cos(phi), cos(2phi),
-// and optional sin(phi) (enabled with --fit-sin).
-// Makes a separate 2x3 canvas for each property: enpi (all t), enpiLowt, enpiMidt, enpiHight.
-// Layout per canvas (2x3):
-//   pads 1–4  : the four x_B bins (unfolded-yield points + fit)
-//   pad 5     : FUU ratios vs x_B (points only): cos, cos2, (sin), sin2
-//   pad 6     : fitted amplitudes vs x_B (points only): cos, cos2, (sin), sin2
-// Additionally, for each property, produces a second 2x3 canvas showing, for the four x_B bins,
-// overlaid histograms of sin(phi) and sin(2phi) for DATA events; the legend includes ⟨sinφ⟩ and ⟨sin2φ⟩.
+// Optional sine terms are toggled by --fit-sin (adds sin(phi) and sin(2phi)).
+// Two canvases per property (enpi, enpiLowt, enpiMidt, enpiHight):
+//   1) Main 2x3:
+//        pads 1–4 : unfolded-yield points + fit for the four x_B bins
+//                    (Y range now forced to [0, 2*max(points)]).
+//                    Legend moved to top-right and made taller.
+//        pad 5    : FUU ratios vs x_B (points only)
+//        pad 6    : fitted amplitudes vs x_B (points only)
+//   2) “Sines” 2x3:
+//        pads 1–4 : DATA histograms of sin(phi) and sin(2phi) overlaid,
+//                    legend bigger and pinned to top-right, shows <sinφ> and <sin2φ>.
+//        pads 5–6 : left empty.
 //
-// Binning updates you requested:
-//   x_B edges: 0.10, 0.30, 0.40, 0.50, 0.60  (4 bins)
+// Binning:
+//   x_B edges: 0.10, 0.30, 0.40, 0.50, 0.60 (4 bins)
 //   |t| windows:
 //     enpi      : 0.10 ≤ |t| ≤ 1.20
 //     enpiLowt  : 0.10 ≤ |t| ≤ 0.4667
 //     enpiMidt  : 0.4667 ≤ |t| ≤ 0.8333
 //     enpiHight : 0.8333 ≤ |t| ≤ 1.20
 //
-// Build (csh on ifarm):
+// Build:
 //   g++ -O2 -std=c++17 unfold_phi_unfold_fit.cpp `root-config --cflags --libs` -o unfold_phi_unfold_fit
 //
 // Run:
@@ -27,14 +30,14 @@
 //        [--DepA DepA] [--DepB DepB] [--DepV DepV] [--DepW DepW]
 //        [--phibins 24] [--no-fid-cut] [--fit-sin] [--debug N] [--list-branches]
 //
-// Outputs per property (to output/enpi+/):
-//   - PDF  : <property>_unfolded.pdf                 (main 2x3 canvas)
-//   - PDF  : <property>_sines.pdf                    (2x3 canvas of sin and sin2 distributions)
-//   - TEXT : <property>_unfolded_fit_arrays.txt
-//            propertyNameAUUcosphi   = { {xB, val, err}, ... };
-//            propertyNameAUUcos2phi  = { {xB, val, err}, ... };
-//            propertyNameAUUsinphi   = { {xB, val, err}, ... };   // only if --fit-sin
-//            propertyNameAUUsin2phi  = { {xB, val, err}, ... };
+// Outputs to output/enpi+/:
+//   <property>_unfolded.pdf
+//   <property>_sines.pdf
+//   <property>_unfolded_fit_arrays.txt
+//     propAUUcosphi   = { {xB, val, err}, ... };
+//     propAUUcos2phi  = { {xB, val, err}, ... };
+//     (if --fit-sin) propAUUsinphi   = { {xB, val, err}, ... };
+//     (if --fit-sin) propAUUsin2phi  = { {xB, val, err}, ... };
 
 #include <algorithm>
 #include <cmath>
@@ -89,7 +92,7 @@ struct Config {
   BranchNames bn;
   int  phi_nbins      = 24;
   bool apply_fid_cut  = true;
-  bool fit_sin        = false;   // optional D*sin(phi); sin(2phi) is always fitted
+  bool fit_sin        = false;   // --fit-sin turns on BOTH sin(phi) and sin(2phi)
   int  debug_print    = 0;
   bool list_branches  = false;
 };
@@ -158,14 +161,14 @@ static std::vector<std::string> properties_to_run(const std::string& which) {
   return {which};
 }
 
-// --- UPDATED x bins: 0.10, 0.30, 0.40, 0.50, 0.60 (4 bins) ---
+// ---- x bins: 0.10, 0.30, 0.40, 0.50, 0.60 (4 bins)
 static std::vector<double> x_edges() { return {0.10, 0.30, 0.40, 0.50, 0.60}; }
 static int xbin_index(double x, const std::vector<double>& e) {
   for (size_t i=0;i+1<e.size();++i) if (x >= e[i] && x < e[i+1]) return (int)i;
   return -1;
 }
 
-// --- UPDATED |t| windows (in absolute value) ---
+// ---- |t| windows
 static inline bool pass_prop_window(const std::string& prop, double t) {
   const double at = std::fabs(t);
   if (prop == "enpi")      return (at >= 0.10 && at <= 1.20);
@@ -298,30 +301,6 @@ static std::map<std::string, DepMeans> make_dep_map() {
   return dm;
 }
 
-// --- NEW: sin(phi) and sin(2phi) histograms for DATA (per property & x bin) ---
-struct SinSet {
-  std::vector<std::unique_ptr<TH1D>> Sin;   // distribution of sin(phi)
-  std::vector<std::unique_ptr<TH1D>> Sin2;  // distribution of sin(2phi)
-};
-static std::map<std::string, SinSet> make_sin_hist_map() {
-  std::map<std::string, SinSet> m;
-  const auto props = all_props();
-  const int NX = (int)x_edges().size()-1;
-  for (const auto& p : props) {
-    SinSet ss;
-    ss.Sin.reserve(NX); ss.Sin2.reserve(NX);
-    for (int i=0;i<NX;i++) {
-      auto h1 = std::make_unique<TH1D>(("hSin_"+p+"_xbin"+std::to_string(i)).c_str(), "", 50, -1.0, 1.0);
-      auto h2 = std::make_unique<TH1D>(("hSin2_"+p+"_xbin"+std::to_string(i)).c_str(), "", 50, -1.0, 1.0);
-      h1->Sumw2(); h2->Sumw2();
-      ss.Sin.emplace_back(std::move(h1));
-      ss.Sin2.emplace_back(std::move(h2));
-    }
-    m.emplace(p, std::move(ss));
-  }
-  return m;
-}
-
 // ------------ Debug counters ------------
 struct Counters {
   Long64_t total=0, pass_common_cnt=0, pass_fid_cnt=0;
@@ -348,7 +327,6 @@ static void debug_event_print(const char* label, int idx, const BranchHandles& b
 static void loop_tree_fill(
   TTree* tr, const BranchNames& bn, bool apply_fid, bool /*count_fid*/,
   std::map<std::string,HSet>& H, std::map<std::string,DepMeans>* depPtr,
-  std::map<std::string,SinSet>* sinPtr,
   Counters& C, int debugN, const char* dbg_label)
 {
   if (!tr) return;
@@ -366,11 +344,9 @@ static void loop_tree_fill(
     tr->GetEntry(i);
     if (debug_limit > 0 && i < debug_limit) debug_event_print(dbg_label, (int)i, b, props, xe);
 
-    // UPDATED common cuts: |t| in [0.10, 1.20], Mx2 in (0.80, 1.00)
-    const double at = std::fabs(b.t);
-    const bool ok_abs_t = (at >= 0.10 && at <= 1.20);
-    const bool ok_mx2   = (b.mx2 > 0.80) && (b.mx2 < 1.00);
-    if (!(ok_abs_t && ok_mx2)) continue;
+    // Common cuts: Mx2 and optional fiducial; (t selection handled per property later)
+    const bool ok_mx2 = (b.mx2 > 0.80) && (b.mx2 < 1.00);
+    if (!ok_mx2) continue;
     if (apply_fid) { if (!b.has_fid || b.fid < 100) continue; }
     C.pass_common_cnt++;
 
@@ -394,13 +370,6 @@ static void loop_tree_fill(
           dep.sumW[ib] += b.DepW;
           dep.count[ib] += 1;
         }
-        if (sinPtr) {
-          // Fill sine distributions from DATA
-          const double s1 = std::sin(b.phi);
-          const double s2 = std::sin(2.0*b.phi);
-          sinPtr->at(p).Sin[ib]->Fill(s1);
-          sinPtr->at(p).Sin2[ib]->Fill(s2);
-        }
       } else if (std::string(dbg_label) == "GEN") {
         H[p].G[ib]->Fill(phideg);
       } else if (std::string(dbg_label) == "REC") {
@@ -414,10 +383,10 @@ static void loop_tree_fill(
 // ------------ Fit ------------
 struct FitResult {
   double C=0, dC=0;
-  double A=0, dA=0;   // cos(phi)
-  double B=0, dB=0;   // cos(2phi)
-  double D=0, dD=0;   // (optional) sin(phi) if --fit-sin
-  double E=0, dE=0;   // NEW: sin(2phi) (always)
+  double A=0, dA=0;      // cosφ
+  double B=0, dB=0;      // cos2φ
+  double D=0, dD=0;      // sinφ   (only if --fit-sin)
+  double E=0, dE=0;      // sin2φ  (only if --fit-sin)
   double chi2=0; int ndf=0;
   int npoints=0;
 };
@@ -457,39 +426,28 @@ static FitResult make_unfold_graph_and_fit(
 
   const double xmin = 0.0, xmax = 360.0;
   if (!fit_sin) {
-    // C * (1 + A cosφ + B cos2φ + E sin2φ)
-    ffit = new TF1("fitCABE_deg",
-                   "[0]*(1 + [1]*cos(TMath::Pi()/180.0*x) + [2]*cos(2.0*TMath::Pi()/180.0*x) + [3]*sin(2.0*TMath::Pi()/180.0*x))",
+    ffit = new TF1("fitCAB_deg",
+                   "[0]*(1 + [1]*cos(TMath::Pi()/180.0*x) + [2]*cos(2.0*TMath::Pi()/180.0*x))",
                    xmin, xmax);
-    ffit->SetParNames("C","A","B","E");
+    ffit->SetParNames("C","A","B");
+    ffit->SetParameters(1.0, 0.0, 0.0);
   } else {
-    // C * (1 + A cosφ + B cos2φ + D sinφ + E sin2φ)
     ffit = new TF1("fitCABDE_deg",
                    "[0]*(1 + [1]*cos(TMath::Pi()/180.0*x) + [2]*cos(2.0*TMath::Pi()/180.0*x) + [3]*sin(TMath::Pi()/180.0*x) + [4]*sin(2.0*TMath::Pi()/180.0*x))",
                    xmin, xmax);
     ffit->SetParNames("C","A","B","D","E");
+    ffit->SetParameters(1.0, 0.0, 0.0, 0.0, 0.0);
   }
-
-  double ymean = 0.0; for (double v : Y) ymean += v; ymean = (fr.npoints>0 ? ymean/fr.npoints : 1.0);
-  if (ymean<=0) ymean = 1.0;
-  if (!fit_sin) {
-    ffit->SetParameters(ymean, 0.0, 0.0, 0.0);
-    ffit->SetParLimits(0, 0.0, 1e12);
-    for (int i=1;i<=3;i++) ffit->SetParLimits(i, -2.0, 2.0);
-  } else {
-    ffit->SetParameters(ymean, 0.0, 0.0, 0.0, 0.0);
-    ffit->SetParLimits(0, 0.0, 1e12);
-    for (int i=1;i<=4;i++) ffit->SetParLimits(i, -2.0, 2.0);
-  }
+  // Reasonable bounds
+  ffit->SetParLimits(0, 0.0, 1e12);
+  for (int ip=1; ip<=4; ++ip) if (ip < ffit->GetNpar()) ffit->SetParLimits(ip, -2.0, 2.0);
 
   g->Fit(ffit, "Q"); // quiet
 
   fr.C  = ffit->GetParameter(0); fr.dC = ffit->GetParError(0);
   fr.A  = ffit->GetParameter(1); fr.dA = ffit->GetParError(1);
   fr.B  = ffit->GetParameter(2); fr.dB = ffit->GetParError(2);
-  if (!fit_sin) {
-    fr.E = ffit->GetParameter(3); fr.dE = ffit->GetParError(3);
-  } else {
+  if (fit_sin) {
     fr.D = ffit->GetParameter(3); fr.dD = ffit->GetParError(3);
     fr.E = ffit->GetParameter(4); fr.dE = ffit->GetParError(4);
   }
@@ -498,29 +456,36 @@ static FitResult make_unfold_graph_and_fit(
   return fr;
 }
 
-// ---------- TLatex legend helpers (white background, drawn last) ----------
-static void DrawFitLegendBox(double x1, double y1, double x2, double y2,
-                             const FitResult& fr, bool fit_sin) {
+// ---------- Legend helpers (white background, top-right, adaptive height) ----------
+static void DrawFitLegendBoxTR(const FitResult& fr, bool fit_sin) {
+  // Lines: A, B, plus D,E if fit_sin
+  int nLines = 2 + (fit_sin ? 2 : 0);
+  double x2=0.93, x1=0.55;
+  double y2=0.92;
+  double lineH = 0.08;               // taller lines than before
+  double padH  = 0.03;
+  double boxH  = padH + nLines*lineH + 0.04;
+  double y1    = y2 - boxH;
+  if (y1 < 0.55) { y1 = 0.55; }      // keep it inside
   TPave* box = new TPave(x1,y1,x2,y2,1,"NDC");
   box->SetFillStyle(1001); box->SetFillColor(kWhite);
   box->SetLineColor(kBlack); box->SetLineWidth(2);
   box->Draw("same");
 
   TLatex lat;
-  lat.SetNDC(); lat.SetTextColor(kBlack); lat.SetTextSize(0.034); lat.SetTextAlign(13);
-  const double dx = 0.02*(x2-x1);
-  double xpos = x1 + dx;
-  double ypos = y2 - 0.18*(y2-y1);
+  lat.SetNDC(); lat.SetTextColor(kBlack); lat.SetTextSize(0.040); lat.SetTextAlign(13);
 
-  lat.DrawLatex(xpos, ypos, Form("A_{UU}^{cos#phi} = %.3g  #pm %.3g",  fr.A, fr.dA));
-  ypos -= 0.26*(y2-y1);
-  lat.DrawLatex(xpos, ypos, Form("A_{UU}^{cos2#phi} = %.3g  #pm %.3g", fr.B, fr.dB));
+  double xtext = x1 + 0.03;
+  double yline = y2 - 0.12;
+  lat.DrawLatex(xtext, yline, Form("A_{UU}^{cos#phi} = %.3g  #pm %.3g",  fr.A, fr.dA));
+  yline -= lineH;
+  lat.DrawLatex(xtext, yline, Form("A_{UU}^{cos2#phi} = %.3g  #pm %.3g", fr.B, fr.dB));
   if (fit_sin) {
-    ypos -= 0.26*(y2-y1);
-    lat.DrawLatex(xpos, ypos, Form("A_{UU}^{sin#phi} = %.3g  #pm %.3g", fr.D, fr.dD));
+    yline -= lineH;
+    lat.DrawLatex(xtext, yline, Form("A_{UU}^{sin#phi} = %.3g  #pm %.3g",  fr.D, fr.dD));
+    yline -= lineH;
+    lat.DrawLatex(xtext, yline, Form("A_{UU}^{sin2#phi} = %.3g  #pm %.3g", fr.E, fr.dE));
   }
-  ypos -= 0.26*(y2-y1);
-  lat.DrawLatex(xpos, ypos, Form("A_{UU}^{sin2#phi} = %.3g  #pm %.3g", fr.E, fr.dE));
 }
 
 static void DrawBottomLegendBox(double x1, double y1, double x2, double y2,
@@ -537,20 +502,30 @@ static void DrawBottomLegendBox(double x1, double y1, double x2, double y2,
   const double mdx = 0.02*(x2-x1);
   double xtext = x1 + dx + mdx;
   double xmark = x1 + dx;
-  double yline = y2 - 0.18*(y2-y1);
+  double yline = y2 - 0.20*(y2-y1);
 
-  if (gF1) { TMarker* m1 = new TMarker(xmark,yline,gF1->GetMarkerStyle()); m1->SetNDC(true); m1->SetMarkerColor(gF1->GetMarkerColor()); m1->SetMarkerSize(gF1->GetMarkerSize()); m1->Draw(); lat.DrawLatex(xtext,yline,"F_{UU}^{cos#phi}/F_{UU}"); }
-  yline -= 0.24*(y2-y1);
-  if (gF2) { TMarker* m2 = new TMarker(xmark,yline,gF2->GetMarkerStyle()); m2->SetNDC(true); m2->SetMarkerColor(gF2->GetMarkerColor()); m2->SetMarkerSize(gF2->GetMarkerSize()); m2->Draw(); lat.DrawLatex(xtext,yline,"F_{UU}^{cos2#phi}/F_{UU}"); }
-  if (fit_sin && gFs) {
-    yline -= 0.24*(y2-y1);
-    TMarker* m3 = new TMarker(xmark,yline,gFs->GetMarkerStyle()); m3->SetNDC(true); m3->SetMarkerColor(gFs->GetMarkerColor()); m3->SetMarkerSize(gFs->GetMarkerSize()); m3->Draw();
-    lat.DrawLatex(xtext,yline,"F_{UU}^{sin#phi}/F_{UU}");
+  if (gF1) {
+    TMarker* m1 = new TMarker(xmark, yline, gF1->GetMarkerStyle()); m1->SetNDC(true);
+    m1->SetMarkerColor(gF1->GetMarkerColor()); m1->SetMarkerSize(gF1->GetMarkerSize()); m1->Draw();
+    lat.DrawLatex(xtext, yline, "F_{UU}^{cos#phi}/F_{UU}");
   }
-  if (gFs2) {
-    yline -= 0.24*(y2-y1);
-    TMarker* m4 = new TMarker(xmark,yline,gFs2->GetMarkerStyle()); m4->SetNDC(true); m4->SetMarkerColor(gFs2->GetMarkerColor()); m4->SetMarkerSize(gFs2->GetMarkerSize()); m4->Draw();
-    lat.DrawLatex(xtext,yline,"F_{UU}^{sin2#phi}/F_{UU}");
+  yline -= 0.25*(y2-y1);
+  if (gF2) {
+    TMarker* m2 = new TMarker(xmark, yline, gF2->GetMarkerStyle()); m2->SetNDC(true);
+    m2->SetMarkerColor(gF2->GetMarkerColor()); m2->SetMarkerSize(gF2->GetMarkerSize()); m2->Draw();
+    lat.DrawLatex(xtext, yline, "F_{UU}^{cos2#phi}/F_{UU}");
+  }
+  if (fit_sin && gFs) {
+    yline -= 0.25*(y2-y1);
+    TMarker* m3 = new TMarker(xmark, yline, gFs->GetMarkerStyle()); m3->SetNDC(true);
+    m3->SetMarkerColor(gFs->GetMarkerColor()); m3->SetMarkerSize(gFs->GetMarkerSize()); m3->Draw();
+    lat.DrawLatex(xtext, yline, "F_{UU}^{sin#phi}/F_{UU}");
+  }
+  if (fit_sin && gFs2) {
+    yline -= 0.25*(y2-y1);
+    TMarker* m4 = new TMarker(xmark, yline, gFs2->GetMarkerStyle()); m4->SetNDC(true);
+    m4->SetMarkerColor(gFs2->GetMarkerColor()); m4->SetMarkerSize(gFs2->GetMarkerSize()); m4->Draw();
+    lat.DrawLatex(xtext, yline, "F_{UU}^{sin2#phi}/F_{UU}");
   }
 }
 
@@ -558,10 +533,10 @@ static void DrawBottomLegendBox(double x1, double y1, double x2, double y2,
 static void save_arrays_style(
   const std::string& prop,
   const std::vector<double>& xcenters,
-  const std::vector<double>& Fcos,  const std::vector<double>& dFcos,
+  const std::vector<double>& Fcos, const std::vector<double>& dFcos,
   const std::vector<double>& Fcos2, const std::vector<double>& dFcos2,
   bool fit_sin,
-  const std::vector<double>& Fsin,  const std::vector<double>& dFsin,
+  const std::vector<double>& Fsin, const std::vector<double>& dFsin,
   const std::vector<double>& Fsin2, const std::vector<double>& dFsin2) {
   ensure_dir("output/enpi+");
   std::string out = "output/enpi+/" + prop + "_unfolded_fit_arrays.txt";
@@ -589,81 +564,92 @@ static void save_arrays_style(
       if (i + 1 < xcenters.size()) ofs << ", ";
     }
     ofs << "};\n";
-  }
 
-  ofs << prop << "AUUsin2phi = {";
-  for (size_t i=0;i<xcenters.size();++i) {
-    ofs << "{" << xcenters[i] << ", " << Fsin2[i] << ", " << dFsin2[i] << "}";
-    if (i + 1 < xcenters.size()) ofs << ", ";
+    ofs << prop << "AUUsin2phi = {";
+    for (size_t i=0;i<xcenters.size();++i) {
+      ofs << "{" << xcenters[i] << ", " << Fsin2[i] << ", " << dFsin2[i] << "}";
+      if (i + 1 < xcenters.size()) ofs << ", ";
+    }
+    ofs << "};\n";
   }
-  ofs << "};\n";
 
   ofs.close();
   std::cout << "Wrote arrays: " << out << "\n";
 }
 
-// --- NEW: draw sin and sin2 distributions canvas (2x3; pads 1–4 used) ---
-static void draw_sine_canvas(const std::string& prop,
-                             const std::map<std::string, SinSet>& S)
-{
+// ---- Sines canvas helpers ----
+struct SineHists {
+  std::unique_ptr<TH1D> hSin;
+  std::unique_ptr<TH1D> hSin2;
+  double meanSin=0, errSin=0;
+  double meanSin2=0, errSin2=0;
+};
+static std::map<std::string, std::vector<SineHists>>
+build_sine_hists(TTree* tD, const BranchNames& bn, bool apply_fid) {
+  std::map<std::string, std::vector<SineHists>> out;
+  if (!tD) return out;
+  BranchHandles b;
+  if (!bind_tree(tD, bn, b, "DATA")) return out;
+  const auto props = all_props();
   const auto xe = x_edges();
   const int NX = (int)xe.size()-1;
 
-  gStyle->SetOptStat(0);
-  gStyle->SetPadLeftMargin(0.16);
-  gStyle->SetPadRightMargin(0.06);
-  gStyle->SetPadBottomMargin(0.16);
-  gStyle->SetPadTopMargin(0.12);
-  gStyle->SetTitleSize(0.05, "XYZ");
-  gStyle->SetLabelSize(0.045, "XYZ");
-
-  TCanvas* c2 = new TCanvas(("c_"+prop+"_sines").c_str(),
-                            ("Sine distributions: "+prop).c_str(), 1200, 900);
-  c2->Divide(3,2); // 2x3
-
-  for (int ib=0; ib<NX; ++ib) {
-    int pad = (ib < 3) ? (ib+1) : 4;
-    c2->cd(pad);
-    gPad->SetLeftMargin(0.16); gPad->SetRightMargin(0.06);
-    gPad->SetBottomMargin(0.16); gPad->SetTopMargin(0.12);
-
-    TH1D* hS  = S.at(prop).Sin[ib].get();
-    TH1D* hS2 = S.at(prop).Sin2[ib].get();
-
-    // Set styles
-    hS ->SetLineColor(kBlue+1);  hS ->SetLineWidth(2);
-    hS2->SetLineColor(kRed+1);   hS2->SetLineWidth(2);
-
-    hS ->SetTitle(Form("%s, x_{B} #in [%.2f, %.2f), %s;sin#phi;Events",
-                       prop_title(prop).c_str(), xe[ib], xe[ib+1], prop_tlabel(prop).c_str()));
-    // Common y-range
-    double maxy = std::max(hS->GetMaximum(), hS2->GetMaximum());
-    hS->SetMaximum(maxy*1.25);
-
-    hS->Draw("HIST");
-    hS2->Draw("HIST SAME");
-
-    // Legend with means
-    const double m1 = hS->GetMean();   const double e1 = hS->GetMeanError();
-    const double m2 = hS2->GetMean();  const double e2 = hS2->GetMeanError();
-
-    auto leg = new TLegend(0.55,0.72,0.94,0.90);
-    leg->SetFillStyle(1001); leg->SetFillColor(kWhite);
-    leg->SetBorderSize(1);   leg->SetTextSize(0.034);
-    leg->AddEntry(hS , Form("#LTsin#phi#GT = %.3g #pm %.2g",  m1, e1),  "l");
-    leg->AddEntry(hS2, Form("#LTsin2#phi#GT = %.3g #pm %.2g", m2, e2),  "l");
-    leg->Draw();
+  for (const auto& p : props) {
+    std::vector<SineHists> v(NX);
+    for (int i=0;i<NX;i++) {
+      v[i].hSin  = std::make_unique<TH1D>(Form("hSin_%s_x%d",  p.c_str(), i),  ";sin#phi;Events",  100, -1.0, 1.0);
+      v[i].hSin2 = std::make_unique<TH1D>(Form("hSin2_%s_x%d", p.c_str(), i),  ";sin2#phi;Events", 100, -1.0, 1.0);
+    }
+    out.emplace(p, std::move(v));
   }
 
-  // Leave pads 5 and 6 blank
-  c2->cd(5); gPad->Clear();
-  c2->cd(6); gPad->Clear();
+  const Long64_t nent = tD->GetEntries();
+  std::vector<double> sum1(props.size()*NX,0.0), sum1sq(props.size()*NX,0.0);
+  std::vector<double> sum2(props.size()*NX,0.0), sum2sq(props.size()*NX,0.0);
+  std::vector<long long> cnt(props.size()*NX,0);
 
-  ensure_dir("output/enpi+");
-  const std::string outpdf = "output/enpi+/" + prop + "_sines.pdf";
-  c2->SaveAs(outpdf.c_str());
-  std::cout << "Saved: " << outpdf << "\n";
-  delete c2;
+  for (Long64_t i=0;i<nent;i++) {
+    tD->GetEntry(i);
+    const bool ok_mx2 = (b.mx2 > 0.80) && (b.mx2 < 1.00);
+    if (!ok_mx2) continue;
+    if (apply_fid) { if (!b.has_fid || b.fid < 100) continue; }
+
+    int ib = xbin_index(b.x, xe);
+    if (ib < 0) continue;
+
+    const double s1 = std::sin(b.phi);
+    const double s2 = std::sin(2.0*b.phi);
+
+    for (size_t ip=0; ip<props.size(); ++ip) {
+      const auto& p = props[ip];
+      if (!pass_prop_window(p, b.t)) continue;
+      auto& rec = out[p][ib];
+      rec.hSin->Fill(s1);
+      rec.hSin2->Fill(s2);
+      const size_t idx = ip*NX + ib;
+      sum1[idx]  += s1; sum1sq[idx] += s1*s1;
+      sum2[idx]  += s2; sum2sq[idx] += s2*s2;
+      cnt[idx]   += 1;
+    }
+  }
+
+  for (size_t ip=0; ip<props.size(); ++ip) {
+    const auto& p = props[ip];
+    for (int ib=0; ib<NX; ++ib) {
+      const size_t idx = ip*NX + ib;
+      auto& rec = out[p][ib];
+      const double N = (double)cnt[idx];
+      if (N > 0) {
+        rec.meanSin  = sum1[idx]/N;
+        rec.meanSin2 = sum2[idx]/N;
+        const double var1 = std::max(0.0, sum1sq[idx]/N - rec.meanSin*rec.meanSin);
+        const double var2 = std::max(0.0, sum2sq[idx]/N - rec.meanSin2*rec.meanSin2);
+        rec.errSin  = std::sqrt(var1 / N);
+        rec.errSin2 = std::sqrt(var2 / N);
+      }
+    }
+  }
+  return out;
 }
 
 static void draw_property_and_save(
@@ -675,7 +661,7 @@ static void draw_property_and_save(
   const auto xe = x_edges();
   const int NX = (int)xe.size()-1;
 
-  // Global style & margins (avoid clipping)
+  // Global style
   gStyle->SetOptStat(0);
   gStyle->SetPadLeftMargin(0.16);
   gStyle->SetPadRightMargin(0.06);
@@ -684,19 +670,17 @@ static void draw_property_and_save(
   gStyle->SetTitleSize(0.05, "XYZ");
   gStyle->SetLabelSize(0.045, "XYZ");
 
-  TCanvas* c = new TCanvas(("c_"+prop).c_str(), ("Unfolded phi fits: "+prop).c_str(), 1200, 900);
-  c->Divide(3,2); // 2x3 layout
+  TCanvas* c = new TCanvas(("c_"+prop).c_str(), ("Unfolded phi fits: "+prop).c_str(), 1500, 1000);
+  c->Divide(3,2); // 2 rows x 3 cols
 
   std::vector<double> xcenters;
   std::vector<double> Avec, dAvec, Bvec, dBvec, Dvec, dDvec, Evec, dEvec;
   std::vector<double> meanDepA(NX,0.0), meanDepB(NX,0.0), meanDepV(NX,0.0), meanDepW(NX,0.0);
-
   const auto& dep = depMap.at(prop);
 
   // Pads 1–4: unfolded φ and fits per x_B bin
   for (int ib=0; ib<NX; ++ib) {
-    const int pad = (ib < 3) ? (ib+1) : 4;
-    c->cd(pad);
+    c->cd(ib+1);
     gPad->SetLeftMargin(0.16); gPad->SetRightMargin(0.06);
     gPad->SetBottomMargin(0.16); gPad->SetTopMargin(0.12);
 
@@ -720,37 +704,34 @@ static void draw_property_and_save(
     if (g) {
       g->SetTitle((title + ";#phi (deg);Unfolded yield").c_str());
 
-      // y-range from points: [0.5*min, ~1.75*max]
-      double xmin, ymin = +1e300, xmax, ymax = -1e300, xx, yy;
-      for (int ip=0; ip<g->GetN(); ++ip) { g->GetPoint(ip, xx, yy); ymin = std::min(ymin,yy); ymax = std::max(ymax,yy); }
-      if (ymin > ymax) { ymin = 0.0; ymax = 1.0; }
-      double lo = 0.5*ymin, hi = 1.75*ymax;
-      if (std::fabs(hi - lo) < 1e-9) { lo -= 0.1*std::fabs(hi); hi += 0.1*std::fabs(hi)+1.0; }
-      g->GetYaxis()->SetRangeUser(lo, hi);
+      // --- NEW: force y-range to [0, 2*max(points)] to leave room for tall legend
+      double ymax = -1e300, xx, yy;
+      for (int ip=0; ip<g->GetN(); ++ip) { g->GetPoint(ip, xx, yy); ymax = std::max(ymax, yy); }
+      if (!(ymax > 0)) ymax = 1.0;
+      g->GetYaxis()->SetRangeUser(0.0, 2.0*ymax);
 
       g->Draw("AP"); if (fit) fit->Draw("LSAME");
 
-      // Legend LAST (white background), on top — now includes sin2φ
-      DrawFitLegendBox(0.58, 0.56, 0.94, 0.90, fr, fit_sin);
+      // Tall, top-right legend
+      DrawFitLegendBoxTR(fr, fit_sin);
       gPad->Modified(); gPad->Update();
 
       xcenters.push_back(0.5*(xl+xh));
       Avec.push_back(fr.A); dAvec.push_back(fr.dA);
       Bvec.push_back(fr.B); dBvec.push_back(fr.dB);
-      if (fit_sin) { Dvec.push_back(fr.D); dDvec.push_back(fr.dD); }
-      Evec.push_back(fr.E); dEvec.push_back(fr.dE);
+      if (fit_sin) { Dvec.push_back(fr.D); dDvec.push_back(fr.dD); Evec.push_back(fr.E); dEvec.push_back(fr.dE); }
     } else {
       TH1D* frame = new TH1D("frame","",10,0,360);
       frame->SetTitle((title + ";#phi (deg);Unfolded yield").c_str());
       frame->SetMinimum(0); frame->SetMaximum(1);
       frame->Draw("AXIS");
-      DrawFitLegendBox(0.58, 0.72, 0.94, 0.90, FitResult{}, fit_sin);
+      DrawFitLegendBoxTR(FitResult{}, fit_sin);
       gPad->Modified(); gPad->Update();
     }
   }
 
-  // Scale to FUU ratios using depolarization means
-  // cosφ uses (A/V), cos2φ uses (A/B), sinφ uses (A/W), sin2φ **assumed** (A/B) (same 2φ dep. as cos2φ)
+  // Scale to FUU ratios using depolarization means.
+  // Mapping: cosφ -> A/V, cos2φ -> A/B, sinφ -> A/W, sin2φ -> A/B (proxy; update if a dedicated dep is added)
   std::vector<double> Fcos, dFcos, Fcos2, dFcos2, Fsin, dFsin, Fsin2, dFsin2;
   for (size_t i=0;i<xcenters.size();++i) {
     const int ib = (int)i;
@@ -765,15 +746,14 @@ static void draw_property_and_save(
     if (fit_sin) {
       double fs=0, dfs=0; if (mW!=0.0) { fs=(mA/mW)*Dvec[i]; dfs=(mA/mW)*dDvec[i]; }
       Fsin.push_back(fs); dFsin.push_back(dfs);
-    } else {
-      Fsin.push_back(0.0); dFsin.push_back(0.0);
-    }
 
-    double fs2=0, dfs2=0; if (mB!=0.0) { fs2=(mA/mB)*Evec[i]; dfs2=(mA/mB)*dEvec[i]; }
-    Fsin2.push_back(fs2); dFsin2.push_back(dfs2);
+      // No dedicated dep branch for sin2ϕ in current inputs; use B as a proxy.
+      double fs2=0, dfs2=0; if (mB!=0.0) { fs2=(mA/mB)*Evec[i]; dfs2=(mA/mB)*dEvec[i]; }
+      Fsin2.push_back(fs2); dFsin2.push_back(dfs2);
+    }
   }
 
-  // pad 5 (bottom-middle): FUU ratios vs x_B (points only), with small x offsets
+  // Pad 5: FUU ratios vs x_B (points only)
   c->cd(5);
   gPad->SetLeftMargin(0.16); gPad->SetRightMargin(0.06);
   gPad->SetBottomMargin(0.16); gPad->SetTopMargin(0.12);
@@ -781,110 +761,164 @@ static void draw_property_and_save(
   TGraphErrors *gF1=nullptr, *gF2=nullptr, *gFs=nullptr, *gFs2=nullptr;
   if (!xcenters.empty()) {
     const int N = (int)xcenters.size();
-    gF1  = new TGraphErrors(N);
-    gF2  = new TGraphErrors(N);
-    gFs2 = new TGraphErrors(N);
-    if (fit_sin) gFs = new TGraphErrors(N);
+    gF1 = new TGraphErrors(N);
+    gF2 = new TGraphErrors(N);
+    if (fit_sin) { gFs = new TGraphErrors(N); gFs2 = new TGraphErrors(N); }
 
-    // Offsets: cos -0.012, cos2 +0.012, sin 0.0, sin2 +0.024
     for (int i=0;i<N;++i) {
-      gF1->SetPoint(i,  xcenters[i]-0.012, Fcos[i]);   gF1->SetPointError(i, 0.0, dFcos[i]);
-      gF2->SetPoint(i,  xcenters[i]+0.012, Fcos2[i]);  gF2->SetPointError(i, 0.0, dFcos2[i]);
-      gFs2->SetPoint(i, xcenters[i]+0.024, Fsin2[i]);  gFs2->SetPointError(i, 0.0, dFsin2[i]);
-      if (fit_sin) { gFs->SetPoint(i, xcenters[i], Fsin[i]);   gFs->SetPointError(i, 0.0, dFsin[i]); }
+      gF1->SetPoint(i, xcenters[i] - 0.004, Fcos[i]);   gF1->SetPointError(i, 0.0, dFcos[i]);
+      gF2->SetPoint(i, xcenters[i] + 0.004, Fcos2[i]);  gF2->SetPointError(i, 0.0, dFcos2[i]);
+      if (fit_sin) {
+        gFs ->SetPoint(i, xcenters[i], Fsin[i]);   gFs ->SetPointError(i, 0.0, dFsin[i]);
+        gFs2->SetPoint(i, xcenters[i], Fsin2[i]);  gFs2->SetPointError(i, 0.0, dFsin2[i]);
+      }
     }
 
-    // Styles (points only)
-    gF1->SetMarkerStyle(20);  gF1->SetMarkerSize(1.0);  gF1->SetMarkerColor(kRed+1);
-    gF2->SetMarkerStyle(21);  gF2->SetMarkerSize(1.0);  gF2->SetMarkerColor(kBlue+1);
-    if (fit_sin) { gFs->SetMarkerStyle(22);  gFs->SetMarkerSize(1.0);  gFs->SetMarkerColor(kGreen+2); }
-    gFs2->SetMarkerStyle(23); gFs2->SetMarkerSize(1.0); gFs2->SetMarkerColor(kMagenta+2);
+    gF1->SetMarkerStyle(20); gF1->SetMarkerSize(1.0); gF1->SetMarkerColor(kRed);
+    gF2->SetMarkerStyle(21); gF2->SetMarkerSize(1.0); gF2->SetMarkerColor(kBlue);
+    if (fit_sin) {
+      gFs ->SetMarkerStyle(22); gFs ->SetMarkerSize(1.0); gFs ->SetMarkerColor(kGreen+2);
+      gFs2->SetMarkerStyle(23); gFs2->SetMarkerSize(1.0); gFs2->SetMarkerColor(kMagenta+2);
+    }
 
     gF1->SetTitle(";x_{B};Ratio");
     gF1->GetYaxis()->SetRangeUser(-1.0, 1.0);
     gF1->Draw("AP");
-    gF1->GetXaxis()->SetLimits(0.0, 0.7);
+    gF1->GetXaxis()->SetLimits(0.10, 0.60);
     gF2->Draw("P SAME");
-    if (fit_sin) gFs->Draw("P SAME");
-    gFs2->Draw("P SAME");
+    if (fit_sin) { gFs->Draw("P SAME"); gFs2->Draw("P SAME"); }
 
-    // y=0 dashed
-    TLine* line0_mid = new TLine(0.0, 0.0, 0.7, 0.0);
-    line0_mid->SetLineStyle(2); line0_mid->SetLineWidth(1); line0_mid->SetLineColor(kBlack); line0_mid->Draw("SAME");
+    TLine* line0_mid = new TLine(0.10, 0.0, 0.60, 0.0);
+    line0_mid->SetLineStyle(2); line0_mid->SetLineWidth(1); line0_mid->SetLineColor(kBlack);
+    line0_mid->Draw("SAME");
 
-    // Legend LAST
-    DrawBottomLegendBox(0.56, 0.58, 0.94, 0.90, gF1, gF2, fit_sin, gFs, gFs2);
+    if (fit_sin) {
+      DrawBottomLegendBox(0.58, 0.62, 0.94, 0.90, gF1, gF2, true, gFs, gFs2);
+    } else {
+      DrawBottomLegendBox(0.64, 0.70, 0.94, 0.88, gF1, gF2, false, nullptr, nullptr);
+    }
     gPad->Modified(); gPad->Update();
   } else {
-    TH1D* frame = new TH1D("frameAB",";x_{B};Ratio",10,0.0,0.7);
+    TH1D* frame = new TH1D("frameAB",";x_{B};Ratio",10,0.10,0.60);
     frame->SetMinimum(-1.0); frame->SetMaximum(1.0);
     frame->Draw("AXIS");
   }
 
-  // pad 6 (bottom-right): A, B, (D), E vs x_B (points only)
+  // Pad 6: Amplitudes vs x_B (points only)
   c->cd(6);
   gPad->SetLeftMargin(0.16); gPad->SetRightMargin(0.06);
   gPad->SetBottomMargin(0.16); gPad->SetTopMargin(0.12);
 
   if (!xcenters.empty()) {
     const int N = (int)xcenters.size();
-    auto gA  = new TGraphErrors(N);
-    auto gB  = new TGraphErrors(N);
-    TGraphErrors* gD = nullptr;
-    auto gE  = new TGraphErrors(N);
+    auto gA = new TGraphErrors(N);
+    auto gB = new TGraphErrors(N);
+    TGraphErrors* gD=nullptr; TGraphErrors* gE=nullptr;
+
     for (int i=0;i<N;++i) {
-      gA->SetPoint(i, xcenters[i]-0.012, Avec[i]); gA->SetPointError(i, 0.0, dAvec[i]);
-      gB->SetPoint(i, xcenters[i]+0.012, Bvec[i]); gB->SetPointError(i, 0.0, dBvec[i]);
+      gA->SetPoint(i, xcenters[i] - 0.004, Avec[i]); gA->SetPointError(i, 0.0, dAvec[i]);
+      gB->SetPoint(i, xcenters[i] + 0.004, Bvec[i]); gB->SetPointError(i, 0.0, dBvec[i]);
       if (fit_sin) {
         if (!gD) gD = new TGraphErrors(N);
-        gD->SetPoint(i, xcenters[i], Dvec[i]);     gD->SetPointError(i, 0.0, dDvec[i]);
+        if (!gE) gE = new TGraphErrors(N);
+        gD->SetPoint(i, xcenters[i], Dvec[i]); gD->SetPointError(i, 0.0, dDvec[i]);
+        gE->SetPoint(i, xcenters[i], Evec[i]); gE->SetPointError(i, 0.0, dEvec[i]);
       }
-      gE->SetPoint(i, xcenters[i]+0.024, Evec[i]); gE->SetPointError(i, 0.0, dEvec[i]);
     }
-    // Styles (points only)
-    gA->SetMarkerColor(kRed+1);    gA->SetMarkerStyle(20);  gA->SetMarkerSize(1.0);
-    gB->SetMarkerColor(kBlue+1);   gB->SetMarkerStyle(21);  gB->SetMarkerSize(1.0);
-    if (fit_sin) { gD->SetMarkerColor(kGreen+2); gD->SetMarkerStyle(22); gD->SetMarkerSize(1.0); }
-    gE->SetMarkerColor(kMagenta+2); gE->SetMarkerStyle(23); gE->SetMarkerSize(1.0);
+    gA->SetMarkerColor(kRed);   gA->SetMarkerStyle(20); gA->SetMarkerSize(1.0);
+    gB->SetMarkerColor(kBlue);  gB->SetMarkerStyle(21); gB->SetMarkerSize(1.0);
+    if (fit_sin) { gD->SetMarkerColor(kGreen+2); gD->SetMarkerStyle(22); gD->SetMarkerSize(1.0);
+                   gE->SetMarkerColor(kMagenta+2); gE->SetMarkerStyle(23); gE->SetMarkerSize(1.0); }
 
     gA->SetTitle(";x_{B};Amplitude");
     gA->GetYaxis()->SetRangeUser(-1.0, 1.0);
     gA->Draw("AP");
-    gA->GetXaxis()->SetLimits(0.0, 0.7);
+    gA->GetXaxis()->SetLimits(0.10, 0.60);
     gB->Draw("P SAME");
-    if (fit_sin) gD->Draw("P SAME");
-    gE->Draw("P SAME");
+    if (fit_sin) { gD->Draw("P SAME"); gE->Draw("P SAME"); }
 
-    // y=0 dashed
-    TLine* line0_amp = new TLine(0.0, 0.0, 0.7, 0.0);
-    line0_amp->SetLineStyle(2); line0_amp->SetLineWidth(1); line0_amp->SetLineColor(kBlack); line0_amp->Draw("SAME");
+    TLine* line0_amp = new TLine(0.10, 0.0, 0.60, 0.0);
+    line0_amp->SetLineStyle(2); line0_amp->SetLineWidth(1); line0_amp->SetLineColor(kBlack);
+    line0_amp->Draw("SAME");
 
-    auto legAmp = new TLegend(0.54,0.60,0.94,0.90);
+    auto legAmp = new TLegend(0.55,0.66,0.94,0.90);
     legAmp->SetFillStyle(1001); legAmp->SetFillColor(kWhite);
     legAmp->SetBorderSize(1); legAmp->SetTextSize(0.034);
     legAmp->AddEntry(gA,"A_{UU}^{cos#phi}","p");
     legAmp->AddEntry(gB,"A_{UU}^{cos2#phi}","p");
-    if (fit_sin) legAmp->AddEntry(gD,"A_{UU}^{sin#phi}","p");
-    legAmp->AddEntry(gE,"A_{UU}^{sin2#phi}","p");
+    if (fit_sin) { legAmp->AddEntry(gD,"A_{UU}^{sin#phi}","p"); legAmp->AddEntry(gE,"A_{UU}^{sin2#phi}","p"); }
     legAmp->Draw();
-    gPad->Modified(); gPad->Update();
   } else {
-    TH1D* frame = new TH1D("frameAmp",";x_{B};Amplitude",10,0.0,0.7);
+    TH1D* frame = new TH1D("frameAmp",";x_{B};Amplitude",10,0.10,0.60);
     frame->SetMinimum(-1.0); frame->SetMaximum(1.0);
     frame->Draw("AXIS");
   }
-
-  // pad 1–4 already drawn; pad 5/6 done. No pad 7/8/9 in 2x3 layout.
 
   ensure_dir("output/enpi+");
   const std::string outpdf = "output/enpi+/" + prop + "_unfolded.pdf";
   c->SaveAs(outpdf.c_str());
   std::cout << "Saved: " << outpdf << "\n";
 
-  // Save arrays (scaled values) in your exact style (+ sin2phi)
+  // Save arrays
   save_arrays_style(prop, xcenters, Fcos, dFcos, Fcos2, dFcos2, fit_sin, Fsin, dFsin, Fsin2, dFsin2);
+}
 
-  delete c;
+// ---- Draw the “sines” canvas (DATA-only histograms of sinφ and sin2φ) ----
+static void draw_sines_canvas(
+  const std::string& prop,
+  const std::map<std::string, std::vector<SineHists>>& S)
+{
+  const auto xe = x_edges();
+  const int NX = (int)xe.size()-1;
+
+  TCanvas* c = new TCanvas(("cSines_"+prop).c_str(), ("Sine distributions: "+prop).c_str(), 1500, 1000);
+  c->Divide(3,2);
+
+  for (int ib=0; ib<NX; ++ib) {
+    c->cd(ib+1);
+    gPad->SetLeftMargin(0.16); gPad->SetRightMargin(0.06);
+    gPad->SetBottomMargin(0.16); gPad->SetTopMargin(0.12);
+
+    auto& sh = S.at(prop)[ib];
+    // Use same bins & titles already set. Style:
+    sh.hSin ->SetLineColor(kBlue+1);  sh.hSin ->SetLineWidth(3);
+    sh.hSin2->SetLineColor(kRed+1);   sh.hSin2->SetLineWidth(3);
+
+    // Auto y max across both and give headroom
+    double ymax = std::max(sh.hSin->GetMaximum(), sh.hSin2->GetMaximum());
+    if (!(ymax > 0)) ymax = 1.0;
+    sh.hSin->SetMaximum(1.15*ymax);
+    sh.hSin2->SetMaximum(1.15*ymax);
+
+    const double xl = xe[ib], xh = xe[ib+1];
+    sh.hSin->SetTitle((prop_title(prop) + Form(", x_{B} #in [%.2f, %.2f), %s", xl, xh, prop_tlabel(prop).c_str())).c_str());
+    sh.hSin->GetYaxis()->SetTitle("Events");
+
+    sh.hSin->Draw("HIST");
+    sh.hSin2->Draw("HIST SAME");
+
+    // Bigger legend, top-right, with means
+    double x2=0.90, x1=0.58, y2=0.89, y1=0.68; // bigger box
+    TPave* box = new TPave(x1,y1,x2,y2,1,"NDC");
+    box->SetFillStyle(1001); box->SetFillColor(kWhite);
+    box->SetLineColor(kBlack); box->SetLineWidth(2);
+    box->Draw("same");
+
+    TLatex lat;
+    lat.SetNDC(); lat.SetTextColor(kBlack); lat.SetTextSize(0.042); lat.SetTextAlign(13);
+    double xtext = x1 + 0.03;
+    double yline = y2 - 0.10;
+    lat.SetTextColor(kBlue+1);
+    lat.DrawLatex(xtext, yline, Form("#LTsin#phi#GT = %.4f  #pm %.4f",  sh.meanSin,  sh.errSin));
+    yline -= 0.18;
+    lat.SetTextColor(kRed+1);
+    lat.DrawLatex(xtext, yline, Form("#LTsin2#phi#GT = %.4f  #pm %.4f", sh.meanSin2, sh.errSin2));
+  }
+
+  ensure_dir("output/enpi+");
+  const std::string outpdf = "output/enpi+/" + prop + "_sines.pdf";
+  c->SaveAs(outpdf.c_str());
+  std::cout << "Saved: " << outpdf << "\n";
 }
 
 // ------------ Counters & main ------------
@@ -926,14 +960,13 @@ int main(int argc, char** argv) {
     list_tree_branches(tR, "REC");
   }
 
-  auto H    = make_hist_map(cfg.phi_nbins);
-  auto Dep  = make_dep_map();
-  auto Sine = make_sin_hist_map(); // NEW
+  auto H   = make_hist_map(cfg.phi_nbins);
+  auto Dep = make_dep_map();
 
   Counters cD, cG, cR;
-  loop_tree_fill(tD, cfg.bn, cfg.apply_fid_cut, /*count_fid=*/true,  H, &Dep, &Sine, cD, cfg.debug_print, "DATA");
-  loop_tree_fill(tG, cfg.bn, /*apply_fid=*/false, /*count_fid=*/false, H, nullptr, nullptr, cG, cfg.debug_print, "GEN");
-  loop_tree_fill(tR, cfg.bn, cfg.apply_fid_cut, /*count_fid=*/true,  H, nullptr, nullptr, cR, cfg.debug_print, "REC");
+  loop_tree_fill(tD, cfg.bn, cfg.apply_fid_cut, /*count_fid=*/true,  H, &Dep, cD, cfg.debug_print, "DATA");
+  loop_tree_fill(tG, cfg.bn, /*apply_fid=*/false, /*count_fid=*/false, H, nullptr, cG, cfg.debug_print, "GEN");
+  loop_tree_fill(tR, cfg.bn, cfg.apply_fid_cut, /*count_fid=*/true,  H, nullptr, cR, cfg.debug_print, "REC");
 
   const auto props = properties_to_run(cfg.which_property);
 
@@ -950,9 +983,12 @@ int main(int argc, char** argv) {
   }
   print_counters("DATA", cD, props);
 
+  // Build sines once from DATA for the “sines” canvases
+  auto SH = build_sine_hists(tD, cfg.bn, cfg.apply_fid_cut);
+
   for (const auto& p : props) {
-    draw_property_and_save(p, H, Dep, cfg.fit_sin);  // main 2x3 canvas (fits + summaries)
-    draw_sine_canvas(p, Sine);                       // NEW second 2x3 canvas (sine distributions)
+    draw_property_and_save(p, H, Dep, cfg.fit_sin);
+    draw_sines_canvas(p, SH);
   }
 
   return 0;
