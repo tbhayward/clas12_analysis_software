@@ -479,7 +479,7 @@ static void DrawUnfoldLegendBox_UR(double x1, double y1, double x2, double y2,
   const double lineStep = 0.23*boxH;              // spacing per line
   const double textBlockH = lineStep * (double)lines.size();
   // Vertical centering, nudged a bit upward to avoid lower-edge crowding
-  double ystart = y1 + 0.5*(boxH - textBlockH) + 0.05*boxH;
+  double ystart = y1 + 0.6*(boxH - textBlockH) + 0.05*boxH;
   double xtext  = x1 + 0.05*(x2-x1);
 
   for (size_t i=0;i<lines.size();++i) {
