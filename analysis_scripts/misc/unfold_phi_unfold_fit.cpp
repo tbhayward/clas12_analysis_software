@@ -1,16 +1,13 @@
 // unfold_phi_unfold_fit.cpp
 // Exclusive pi+ unfolding and cos(n*phi) fits (phi in degrees).
 // Optional sin(phi) and sin(2phi) terms are toggled together via --fit-sin.
-// Legends are drawn with TLatex in a framed box so LaTeX renders correctly and
-// the box sits fully *inside* each pad (upper-right). The unfolded-yield
-// y-range is forced to [0, 2*max(point)] to ensure legends never clip.
-// Bottom-middle: colored FUU ratios vs x_B (points only).
-// Bottom-right : colored A,B,(D,E) vs x_B (points only).
-// A separate 2x2 canvas per property shows, for each x_B bin, the
-// distributions of sin(phi) (blue) and sin(2phi) (red) from DATA with a UR
-// legend of <sin phi> and <sin 2phi> (mean ± error on mean).
+// Per–xB-bin unfolded-yield pads auto-scale to [0, 2*max(points)] to leave room
+// for legends. Legends are drawn as a white TPave fully *inside* each pad,
+// with text block vertically centered. Bottom-middle = FUU ratios vs xB (points),
+// bottom-right = amplitudes vs xB (points). Their legends are horizontal
+// multi-column lists. Their Y ranges are fixed to [-0.4, 0.4].
 //
-// Build (csh on ifarm):
+// Build:
 //   g++ -O2 -std=c++17 unfold_phi_unfold_fit.cpp `root-config --cflags --libs` -o unfold_phi_unfold_fit
 //
 // Run:
@@ -20,13 +17,10 @@
 //        [--phibins 24] [--no-fid-cut] [--fit-sin] [--debug N] [--list-branches]
 //
 // Outputs per property (to output/enpi+/):
-//   - PDF  : <property>_unfolded.pdf
-//   - PDF  : <property>_sinmoments.pdf
-//   - TEXT : <property>_unfolded_fit_arrays.txt
-//            propertyNameAUUcosphi   = { {xB, val, err}, ... };
-//            propertyNameAUUcos2phi  = { {xB, val, err}, ... };
-//            propertyNameAUUsinphi   = { {xB, val, err}, ... };    // only if --fit-sin
-//            propertyNameAUUsin2phi  = { {xB, val, err}, ... };    // only if --fit-sin
+//   - <property>_unfolded.pdf
+//   - <property>_sinmoments.pdf
+//   - <property>_unfolded_fit_arrays.txt
+//       propAUUcosphi, propAUUcos2phi, and (if --fit-sin) propAUUsinphi, propAUUsin2phi.
 
 #include <algorithm>
 #include <cmath>
@@ -81,7 +75,7 @@ struct Config {
   BranchNames bn;
   int  phi_nbins      = 24;
   bool apply_fid_cut  = true;
-  bool fit_sin        = false;   // <-- toggles BOTH sin(phi) and sin(2phi)
+  bool fit_sin        = false;   // toggles BOTH sin(phi) and sin(2phi)
   int  debug_print    = 0;
   bool list_branches  = false;
 };
@@ -133,7 +127,7 @@ static bool parse_args(int argc, char** argv, Config& cfg) {
     if (eat("--DepW", cfg.bn.DepW)) continue;
     if (eat_int("--phibins", cfg.phi_nbins)) continue;
     if (a == "--no-fid-cut") { cfg.apply_fid_cut = false; continue; }
-    if (a == "--fit-sin")    { cfg.fit_sin = true; continue; } // toggles sinφ & sin2φ
+    if (a == "--fit-sin")    { cfg.fit_sin = true; continue; } // sinφ & sin2φ
     if (eat_int("--debug", cfg.debug_print)) continue;
     if (a == "--list-branches") { cfg.list_branches = true; continue; }
 
@@ -150,7 +144,7 @@ static std::vector<std::string> properties_to_run(const std::string& which) {
   return {which};
 }
 
-// ---- NEW x_B binning: 4 bins ----
+// ---- x_B binning: 4 bins ----
 static std::vector<double> x_edges() { return {0.10, 0.30, 0.40, 0.50, 0.60}; }
 static int xbin_index(double x, const std::vector<double>& e) {
   for (size_t i=0;i+1<e.size();++i) if (x >= e[i] && x < e[i+1]) return (int)i;
@@ -485,91 +479,51 @@ static FitResult make_unfold_graph_and_fit(
   return fr;
 }
 
-// ---------- Legend helpers (UR, white background, auto height) ----------
-// Note: we intentionally DO NOT show the pure "AUU" normalization term in this legend.
-static void DrawFitLegendUR(const FitResult& fr,
-                            bool fit_sin, bool fit_sin2)
+// ---------- Unfolded-plot legend (UR, text centered in box) ----------
+static void DrawFitLegendUR(const FitResult& fr, bool add_sin, bool add_sin2)
 {
-  const double x2 = 0.94;            // right edge (inside)
-  const double y2 = 0.88;            // top edge (inside)
-  const double textSize = 0.040;     // tall enough to read in subpads
-  const double lineH = 1.25 * textSize;
-  const double vpad  = 0.015;        // vertical padding inside the box
-  const double hpad  = 0.020;        // horizontal padding inside the box
+  // Box geometry
+  const double x2 = 0.94;             // right/top inside
+  const double y2 = 0.88;
+  const double textSize = 0.040;
+  const double lineH    = 1.25 * textSize;
+  const double vpad     = 0.015;
+  const double hpad     = 0.020;
 
-  int nlines = 2;                    // cosφ, cos2φ
-  if (fit_sin)  nlines += 1;         // + sinφ
-  if (fit_sin2) nlines += 1;         // + sin2φ
+  int nlines = 2;                      // cos, cos2
+  if (add_sin)  nlines++;
+  if (add_sin2) nlines++;
 
-  const double width  = 0.60;                                   // wide so text never clips
-  const double baseH  = 2.0*vpad + nlines*lineH;
-  const double height = 1.06 * baseH;                           // slightly longer in y
+  const double width  = 0.62;          // a bit wider so left-most digits never clip
+  const double height = 1.08*(2.0*vpad + nlines*lineH);  // ever so slightly taller
 
   const double x1 = x2 - width;
   const double y1 = y2 - height;
 
+  // Frame
   TPave* box = new TPave(x1, y1, x2, y2, 1, "NDC");
   box->SetFillStyle(1001); box->SetFillColor(kWhite);
   box->SetLineColor(kBlack); box->SetLineWidth(2);
   box->Draw("same");
 
-  TLatex lat;
-  lat.SetNDC(); lat.SetTextColor(kBlack);
-  lat.SetTextSize(textSize);
-  lat.SetTextFont(42);               // normal (non-bold)
-  lat.SetTextAlign(13);
-  double x = x1 + hpad;
-  double y = y2 - vpad - 0.85*textSize;
+  // Place the text block vertically centered inside the box
+  TLatex lat; lat.SetNDC(); lat.SetTextColor(kBlack); lat.SetTextSize(textSize); lat.SetTextFont(42); lat.SetTextAlign(13);
+  const double textBlock = nlines*lineH;
+  double y_center = 0.5*(y1 + y2);
+  double y = y_center + 0.5*textBlock - 0.50*lineH;   // start at the "top" line baseline
+  const double x = x1 + hpad;
 
-  lat.DrawLatex(x, y, Form("A_{UU}^{cos#phi}   = % .4f  #pm %.4f", fr.A,  fr.dA));
+  lat.DrawLatex(x, y, Form("A_{UU}^{cos#phi}   = % .4f  #pm %.4f", fr.A, fr.dA));
   y -= lineH;
-  lat.DrawLatex(x, y, Form("A_{UU}^{cos2#phi} = % .4f  #pm %.4f", fr.B,  fr.dB));
-  if (fit_sin)  { y -= lineH; lat.DrawLatex(x, y, Form("A_{UU}^{sin#phi}   = % .4f  #pm %.4f", fr.D,  fr.dD)); }
-  if (fit_sin2) { y -= lineH; lat.DrawLatex(x, y, Form("A_{UU}^{sin2#phi} = % .4f  #pm %.4f", fr.E,  fr.dE)); }
+  lat.DrawLatex(x, y, Form("A_{UU}^{cos2#phi} = % .4f  #pm %.4f", fr.B, fr.dB));
+  if (add_sin)  { y -= lineH; lat.DrawLatex(x, y, Form("A_{UU}^{sin#phi}   = % .4f  #pm %.4f", fr.D, fr.dD)); }
+  if (add_sin2) { y -= lineH; lat.DrawLatex(x, y, Form("A_{UU}^{sin2#phi} = % .4f  #pm %.4f", fr.E, fr.dE)); }
 }
 
-static void DrawBottomLegendBox4(double x1, double y1, double x2, double y2,
-                                 TGraphErrors* gF1, TGraphErrors* gF2,
-                                 TGraphErrors* gFs, TGraphErrors* gFs2,
-                                 bool include_sin_terms)
-{
-  TPave* box = new TPave(x1,y1,x2,y2,1,"NDC");
-  box->SetFillStyle(1001); box->SetFillColor(kWhite);
-  box->SetLineColor(kBlack); box->SetLineWidth(2);
-  box->Draw("same");
-
-  TLatex lat; lat.SetNDC(); lat.SetTextColor(kBlack); lat.SetTextSize(0.034); lat.SetTextAlign(13); lat.SetTextFont(42);
-  const double dx = 0.05*(x2-x1);
-  const double mdx = 0.02*(x2-x1);
-  double xtext = x1 + dx + mdx;
-  double xmark = x1 + dx;
-  double yline = y2 - 0.20*(y2-y1);
-
-  if (gF1) {
-    TMarker* m1 = new TMarker(xmark, yline, gF1->GetMarkerStyle()); m1->SetNDC(true);
-    m1->SetMarkerColor(gF1->GetMarkerColor()); m1->SetMarkerSize(gF1->GetMarkerSize()); m1->Draw();
-    lat.DrawLatex(xtext, yline, "F_{UU}^{cos#phi}/F_{UU}");
-  }
-  yline -= 0.24*(y2-y1);
-  if (gF2) {
-    TMarker* m2 = new TMarker(xmark, yline, gF2->GetMarkerStyle()); m2->SetNDC(true);
-    m2->SetMarkerColor(gF2->GetMarkerColor()); m2->SetMarkerSize(gF2->GetMarkerSize()); m2->Draw();
-    lat.DrawLatex(xtext, yline, "F_{UU}^{cos2#phi}/F_{UU}");
-  }
-  if (include_sin_terms) {
-    yline -= 0.24*(y2-y1);
-    if (gFs) {
-      TMarker* m3 = new TMarker(xmark, yline, gFs->GetMarkerStyle()); m3->SetNDC(true);
-      m3->SetMarkerColor(gFs->GetMarkerColor()); m3->SetMarkerSize(gFs->GetMarkerSize()); m3->Draw();
-      lat.DrawLatex(xtext, yline, "F_{UU}^{sin#phi}/F_{UU}");
-    }
-    yline -= 0.24*(y2-y1);
-    if (gFs2) {
-      TMarker* m4 = new TMarker(xmark, yline, gFs2->GetMarkerStyle()); m4->SetNDC(true);
-      m4->SetMarkerColor(gFs2->GetMarkerColor()); m4->SetMarkerSize(gFs2->GetMarkerSize()); m4->Draw();
-      lat.DrawLatex(xtext, yline, "F_{UU}^{sin2#phi}/F_{UU}");
-    }
-  }
+// ---------- Horizontal legend for ratio/amplitude pads (multicolumn) ----------
+static void AddHorizontalLegend(TLegend* L) {
+  L->SetFillStyle(1001); L->SetFillColor(kWhite);
+  L->SetBorderSize(1);   L->SetTextSize(0.032); L->SetTextFont(42);
 }
 
 // ------------ Save text arrays ------------
@@ -619,7 +573,7 @@ static void save_arrays_style(
   std::cout << "Wrote arrays: " << out << "\n";
 }
 
-// ------------ Main 2x3 property canvas (4 x-bins + ratios + amplitudes) ------------
+// ------------ 2x3 property canvas (4 x-bins + ratios + amplitudes) ------------
 static void draw_property_and_save(
   const std::string& prop,
   const std::map<std::string,HSet>& H,
@@ -639,7 +593,6 @@ static void draw_property_and_save(
   gStyle->SetLabelSize(0.045, "XYZ");
 
   TCanvas* c = new TCanvas(("c_"+prop).c_str(), ("Unfolded phi fits: "+prop).c_str(), 1300, 820);
-  // 2 rows x 3 columns: pads 1..4 are x-bins, pad 5 is ratios, pad 6 is amplitudes
   c->Divide(3,2);
 
   std::vector<double> xcenters;
@@ -674,7 +627,7 @@ static void draw_property_and_save(
     if (g) {
       g->SetTitle((title + ";#phi (deg);Unfolded yield").c_str());
 
-      // y-range 0 .. 2×max to leave room for the UR legend
+      // y-range 0 .. 2×max to leave room for legend
       double xx, yy, ymax = -1e300;
       for (int ip=0; ip<g->GetN(); ++ip) { g->GetPoint(ip, xx, yy); ymax = std::max(ymax, yy); }
       if (!(ymax > 0.0)) ymax = 1.0;
@@ -682,8 +635,8 @@ static void draw_property_and_save(
 
       g->Draw("AP"); if (fit) fit->Draw("LSAME");
 
-      // UR legend (no pure AUU term)
-      DrawFitLegendUR(fr, /*fit_sin*/fit_sin, /*fit_sin2*/fit_sin);
+      // UR legend (text centered inside box)
+      DrawFitLegendUR(fr, /*add_sin*/fit_sin, /*add_sin2*/fit_sin);
 
       gPad->Modified(); gPad->Update();
 
@@ -696,7 +649,7 @@ static void draw_property_and_save(
       frame->SetTitle((title + ";#phi (deg);Unfolded yield").c_str());
       frame->SetMinimum(0); frame->SetMaximum(1);
       frame->Draw("AXIS");
-      DrawFitLegendUR(FitResult{}, /*fit_sin*/false, /*fit_sin2*/false);
+      DrawFitLegendUR(FitResult{}, false, false);
       gPad->Modified(); gPad->Update();
     }
   }
@@ -721,26 +674,30 @@ static void draw_property_and_save(
     }
   }
 
-  // Bottom middle (pad 5): FUU ratios vs x_B, points only
+  // Bottom middle (pad 5): FUU ratios vs x_B (horizontal legend)
   c->cd(5);
   gPad->SetLeftMargin(0.22); gPad->SetRightMargin(0.06);
   gPad->SetBottomMargin(0.16); gPad->SetTopMargin(0.12);
 
-  TGraphErrors *gF1=nullptr, *gF2=nullptr, *gFs=nullptr, *gFs2=nullptr;
   if (!xcenters.empty()) {
-    gF1 = new TGraphErrors((int)xcenters.size());
-    gF2 = new TGraphErrors((int)xcenters.size());
-    if (fit_sin) { gFs = new TGraphErrors((int)xcenters.size()); gFs2 = new TGraphErrors((int)xcenters.size()); }
+    auto gF1 = new TGraphErrors((int)xcenters.size());
+    auto gF2 = new TGraphErrors((int)xcenters.size());
+    TGraphErrors *gFs=nullptr, *gFs2=nullptr;
 
     for (int i=0;i<(int)xcenters.size();++i) {
       gF1->SetPoint(i, xcenters[i] - 0.010, Fcos[i]);   gF1->SetPointError(i, 0.0, dFcos[i]);
       gF2->SetPoint(i, xcenters[i] + 0.010, Fcos2[i]);  gF2->SetPointError(i, 0.0, dFcos2[i]);
-      if (fit_sin) {
-        gFs ->SetPoint(i, xcenters[i] - 0.003, Fsin[i]);   gFs ->SetPointError(i, 0.0, dFsin[i]);
-        gFs2->SetPoint(i, xcenters[i] + 0.003, Fsin2[i]);  gFs2->SetPointError(i, 0.0, dFsin2[i]);
+    }
+    if (fit_sin) {
+      gFs  = new TGraphErrors((int)xcenters.size());
+      gFs2 = new TGraphErrors((int)xcenters.size());
+      for (int i=0;i<(int)xcenters.size();++i) {
+        gFs ->SetPoint(i, xcenters[i] - 0.003, Fsin[i]);  gFs ->SetPointError(i, 0.0, dFsin[i]);
+        gFs2->SetPoint(i, xcenters[i] + 0.003, Fsin2[i]); gFs2->SetPointError(i, 0.0, dFsin2[i]);
       }
     }
 
+    // styles
     gF1->SetMarkerStyle(20); gF1->SetMarkerSize(1.0); gF1->SetMarkerColor(kRed);
     gF2->SetMarkerStyle(21); gF2->SetMarkerSize(1.0); gF2->SetMarkerColor(kBlue);
     if (fit_sin) {
@@ -749,26 +706,36 @@ static void draw_property_and_save(
     }
 
     gF1->SetTitle(";x_{B};Ratio");
-    gF1->GetYaxis()->SetRangeUser(-1.0, 1.0);
+    gF1->GetYaxis()->SetRangeUser(-0.4, 0.4);   // requested fixed range
     gF1->Draw("AP");
     gF1->GetXaxis()->SetLimits(0.10, 0.60);
     gF2->Draw("P SAME");
     if (fit_sin) { gFs->Draw("P SAME"); gFs2->Draw("P SAME"); }
 
     // dashed y=0 reference
-    TLine* line0_mid = new TLine(0.10, 0.0, 0.60, 0.0);
-    line0_mid->SetLineStyle(2); line0_mid->SetLineWidth(1); line0_mid->SetLineColor(kBlack);
-    line0_mid->Draw("SAME");
+    auto line0 = new TLine(0.10, 0.0, 0.60, 0.0);
+    line0->SetLineStyle(2); line0->SetLineWidth(1); line0->SetLineColor(kBlack);
+    line0->Draw("SAME");
 
-    DrawBottomLegendBox4(0.64, 0.60, 0.94, 0.88, gF1, gF2, gFs, gFs2, fit_sin);
-    gPad->Modified(); gPad->Update();
+    // Horizontal multi-column legend
+    double x1=0.18, y1=0.80, x2=0.94, y2=0.92;
+    auto L = new TLegend(x1,y1,x2,y2);
+    L->SetNColumns(fit_sin ? 4 : 2);
+    AddHorizontalLegend(L);
+    L->AddEntry(gF1,"F_{UU}^{cos#phi}/F_{UU}","p");
+    L->AddEntry(gF2,"F_{UU}^{cos2#phi}/F_{UU}","p");
+    if (fit_sin) {
+      L->AddEntry(gFs, "F_{UU}^{sin#phi}/F_{UU}","p");
+      L->AddEntry(gFs2,"F_{UU}^{sin2#phi}/F_{UU}","p");
+    }
+    L->Draw();
   } else {
     TH1D* frame = new TH1D("frameAB",";x_{B};Ratio",10,0.10,0.60);
-    frame->SetMinimum(-1.0); frame->SetMaximum(1.0);
+    frame->SetMinimum(-0.4); frame->SetMaximum(0.4);
     frame->Draw("AXIS");
   }
 
-  // Bottom right (pad 6): A, B, (D,E) vs x_B — points only
+  // Bottom right (pad 6): A, B, (D,E) vs x_B (horizontal legend)
   c->cd(6);
   gPad->SetLeftMargin(0.22); gPad->SetRightMargin(0.06);
   gPad->SetBottomMargin(0.16); gPad->SetTopMargin(0.12);
@@ -776,17 +743,21 @@ static void draw_property_and_save(
   if (!xcenters.empty()) {
     auto gA = new TGraphErrors((int)xcenters.size());
     auto gB = new TGraphErrors((int)xcenters.size());
-    TGraphErrors* gD = nullptr; TGraphErrors* gE = nullptr;
+    TGraphErrors* gD=nullptr; TGraphErrors* gE=nullptr;
     for (int i=0;i<(int)xcenters.size();++i) {
       gA->SetPoint(i, xcenters[i] - 0.010, Avec[i]); gA->SetPointError(i, 0.0, dAvec[i]);
       gB->SetPoint(i, xcenters[i] + 0.010, Bvec[i]); gB->SetPointError(i, 0.0, dBvec[i]);
-      if (fit_sin) {
-        if (!gD) gD = new TGraphErrors((int)xcenters.size());
-        if (!gE) gE = new TGraphErrors((int)xcenters.size());
+    }
+    if (fit_sin) {
+      gD = new TGraphErrors((int)xcenters.size());
+      gE = new TGraphErrors((int)xcenters.size());
+      for (int i=0;i<(int)xcenters.size();++i) {
         gD->SetPoint(i, xcenters[i] - 0.003, Dvec[i]); gD->SetPointError(i, 0.0, dDvec[i]);
         gE->SetPoint(i, xcenters[i] + 0.003, Evec[i]); gE->SetPointError(i, 0.0, dEvec[i]);
       }
     }
+
+    // styles
     gA->SetMarkerColor(kRed);   gA->SetMarkerStyle(20); gA->SetMarkerSize(1.0);
     gB->SetMarkerColor(kBlue);  gB->SetMarkerStyle(21); gB->SetMarkerSize(1.0);
     if (fit_sin) {
@@ -795,28 +766,32 @@ static void draw_property_and_save(
     }
 
     gA->SetTitle(";x_{B};Amplitude");
-    gA->GetYaxis()->SetRangeUser(-1.0, 1.0);
+    gA->GetYaxis()->SetRangeUser(-0.4, 0.4);   // requested fixed range
 
     gA->Draw("AP");
     gA->GetXaxis()->SetLimits(0.10, 0.60);
     gB->Draw("P SAME");
     if (fit_sin) { gD->Draw("P SAME"); gE->Draw("P SAME"); }
 
-    TLine* line0_amp = new TLine(0.10, 0.0, 0.60, 0.0);
-    line0_amp->SetLineStyle(2); line0_amp->SetLineWidth(1); line0_amp->SetLineColor(kBlack);
-    line0_amp->Draw("SAME");
+    auto line0 = new TLine(0.10, 0.0, 0.60, 0.0);
+    line0->SetLineStyle(2); line0->SetLineWidth(1); line0->SetLineColor(kBlack);
+    line0->Draw("SAME");
 
-    auto legAmp = new TLegend(0.55,0.66,0.94,0.88);
-    legAmp->SetFillStyle(1001); legAmp->SetFillColor(kWhite);
-    legAmp->SetBorderSize(1); legAmp->SetTextSize(0.034); legAmp->SetTextFont(42);
-    legAmp->AddEntry(gA,"A_{UU}^{cos#phi}","p");
-    legAmp->AddEntry(gB,"A_{UU}^{cos2#phi}","p");
-    if (fit_sin) { legAmp->AddEntry(gD,"A_{UU}^{sin#phi}","p"); legAmp->AddEntry(gE,"A_{UU}^{sin2#phi}","p"); }
-    legAmp->Draw();
-    gPad->Modified(); gPad->Update();
+    // Horizontal multi-column legend
+    double x1=0.16, y1=0.80, x2=0.94, y2=0.92;
+    auto L = new TLegend(x1,y1,x2,y2);
+    L->SetNColumns(fit_sin ? 4 : 2);
+    AddHorizontalLegend(L);
+    L->AddEntry(gA,"A_{UU}^{cos#phi}","p");
+    L->AddEntry(gB,"A_{UU}^{cos2#phi}","p");
+    if (fit_sin) {
+      L->AddEntry(gD,"A_{UU}^{sin#phi}","p");
+      L->AddEntry(gE,"A_{UU}^{sin2#phi}","p");
+    }
+    L->Draw();
   } else {
     TH1D* frame = new TH1D("frameAmp",";x_{B};Amplitude",10,0.10,0.60);
-    frame->SetMinimum(-1.0); frame->SetMaximum(1.0);
+    frame->SetMinimum(-0.4); frame->SetMaximum(0.4);
     frame->Draw("AXIS");
   }
 
@@ -835,11 +810,10 @@ static void DrawSinLegendUR(double meanSin,  double errSin,
                             int color1=kBlue+1, int color2=kRed+1)
 {
   const double x2 = 0.93, y2 = 0.86;
-  const double textSize = 0.040;  // smaller, normal weight
+  const double textSize = 0.040;  // small, non-bold
   const double lineH   = 1.25*textSize;
   const double vpad    = 0.015, hpad = 0.020;
 
-  // Slightly longer in y to ensure nothing clips
   const double width  = 0.56;
   const double height = 1.10 * (2.0*vpad + 2*lineH);
 
@@ -850,7 +824,8 @@ static void DrawSinLegendUR(double meanSin,  double errSin,
 
   TLatex lat; lat.SetNDC(); lat.SetTextSize(textSize); lat.SetTextAlign(13); lat.SetTextFont(42);
   double x = x2 - width + hpad;
-  double y = y2 - vpad - 0.85*textSize;
+  // center the two lines
+  double y = (y2 + (y2 - height)) * 0.5 + 0.5*lineH;
 
   lat.SetTextColor(color1);
   lat.DrawLatex(x, y, Form("#LTsin#phi#GT  = % .4f  #pm %.4f",  meanSin,  errSin));
