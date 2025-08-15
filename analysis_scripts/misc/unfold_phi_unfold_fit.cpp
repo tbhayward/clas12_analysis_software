@@ -501,8 +501,9 @@ static void DrawFitLegendUR(const FitResult& fr,
   if (fit_sin)  nlines += 1;         // + sinφ
   if (fit_sin2) nlines += 1;         // + sin2φ
 
-  const double width  = 0.60;                     // wider so text never clips (extends left)
-  const double height = 2.0*vpad + nlines*lineH;  // auto height
+  const double width  = 0.60;                                   // wide so text never clips
+  const double baseH  = 2.0*vpad + nlines*lineH;
+  const double height = 1.06 * baseH;                           // slightly longer in y
 
   const double x1 = x2 - width;
   const double y1 = y2 - height;
@@ -515,6 +516,7 @@ static void DrawFitLegendUR(const FitResult& fr,
   TLatex lat;
   lat.SetNDC(); lat.SetTextColor(kBlack);
   lat.SetTextSize(textSize);
+  lat.SetTextFont(42);               // normal (non-bold)
   lat.SetTextAlign(13);
   double x = x1 + hpad;
   double y = y2 - vpad - 0.85*textSize;
@@ -536,7 +538,7 @@ static void DrawBottomLegendBox4(double x1, double y1, double x2, double y2,
   box->SetLineColor(kBlack); box->SetLineWidth(2);
   box->Draw("same");
 
-  TLatex lat; lat.SetNDC(); lat.SetTextColor(kBlack); lat.SetTextSize(0.034); lat.SetTextAlign(13);
+  TLatex lat; lat.SetNDC(); lat.SetTextColor(kBlack); lat.SetTextSize(0.034); lat.SetTextAlign(13); lat.SetTextFont(42);
   const double dx = 0.05*(x2-x1);
   const double mdx = 0.02*(x2-x1);
   double xtext = x1 + dx + mdx;
@@ -806,7 +808,7 @@ static void draw_property_and_save(
 
     auto legAmp = new TLegend(0.55,0.66,0.94,0.88);
     legAmp->SetFillStyle(1001); legAmp->SetFillColor(kWhite);
-    legAmp->SetBorderSize(1); legAmp->SetTextSize(0.034);
+    legAmp->SetBorderSize(1); legAmp->SetTextSize(0.034); legAmp->SetTextFont(42);
     legAmp->AddEntry(gA,"A_{UU}^{cos#phi}","p");
     legAmp->AddEntry(gB,"A_{UU}^{cos2#phi}","p");
     if (fit_sin) { legAmp->AddEntry(gD,"A_{UU}^{sin#phi}","p"); legAmp->AddEntry(gE,"A_{UU}^{sin2#phi}","p"); }
@@ -833,20 +835,20 @@ static void DrawSinLegendUR(double meanSin,  double errSin,
                             int color1=kBlue+1, int color2=kRed+1)
 {
   const double x2 = 0.93, y2 = 0.86;
-  const double textSize = 0.050;
-  const double lineH = 1.25*textSize;
-  const double vpad = 0.015, hpad = 0.020;
+  const double textSize = 0.040;  // smaller, normal weight
+  const double lineH   = 1.25*textSize;
+  const double vpad    = 0.015, hpad = 0.020;
 
-  // Slightly longer in y than before
-  const double width = 0.56;
+  // Slightly longer in y to ensure nothing clips
+  const double width  = 0.56;
   const double height = 1.10 * (2.0*vpad + 2*lineH);
 
   TPave* box = new TPave(x2 - width, y2 - height, x2, y2, 1, "NDC");
   box->SetFillStyle(1001); box->SetFillColor(kWhite);
-  box->SetLineColor(kBlack); box->SetLineWidth(1); // thinner border
+  box->SetLineColor(kBlack); box->SetLineWidth(1); // thin border
   box->Draw("same");
 
-  TLatex lat; lat.SetNDC(); lat.SetTextSize(textSize); lat.SetTextAlign(13);
+  TLatex lat; lat.SetNDC(); lat.SetTextSize(textSize); lat.SetTextAlign(13); lat.SetTextFont(42);
   double x = x2 - width + hpad;
   double y = y2 - vpad - 0.85*textSize;
 
