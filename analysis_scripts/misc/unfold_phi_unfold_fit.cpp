@@ -405,7 +405,7 @@ static void loop_tree_fill(
 
 // ------------ Fit ------------
 struct FitResult {
-  double C=0, dC=0;        // overall normalization
+  double C=0, dC=0;        // overall normalization (not shown in legend)
   double A=0, dA=0;        // cosφ
   double B=0, dB=0;        // cos2φ
   double D=0, dD=0;        // sinφ (optional)
@@ -486,9 +486,9 @@ static FitResult make_unfold_graph_and_fit(
 }
 
 // ---------- Legend helpers (UR, white background, auto height) ----------
+// Note: we intentionally DO NOT show the pure "AUU" normalization term in this legend.
 static void DrawFitLegendUR(const FitResult& fr,
-                            bool fit_sin, bool fit_sin2,
-                            bool show_C)
+                            bool fit_sin, bool fit_sin2)
 {
   const double x2 = 0.94;            // right edge (inside)
   const double y2 = 0.88;            // top edge (inside)
@@ -496,13 +496,13 @@ static void DrawFitLegendUR(const FitResult& fr,
   const double lineH = 1.25 * textSize;
   const double vpad  = 0.015;        // vertical padding inside the box
   const double hpad  = 0.020;        // horizontal padding inside the box
+
   int nlines = 2;                    // cosφ, cos2φ
   if (fit_sin)  nlines += 1;         // + sinφ
   if (fit_sin2) nlines += 1;         // + sin2φ
-  if (show_C)   nlines += 1;         // + normalization if desired
 
-  const double width = 0.50;         // widened to avoid clipping long numbers
-  const double height = 2.0*vpad + nlines*lineH;
+  const double width  = 0.60;                     // wider so text never clips (extends left)
+  const double height = 2.0*vpad + nlines*lineH;  // auto height
 
   const double x1 = x2 - width;
   const double y1 = y2 - height;
@@ -524,7 +524,6 @@ static void DrawFitLegendUR(const FitResult& fr,
   lat.DrawLatex(x, y, Form("A_{UU}^{cos2#phi} = % .4f  #pm %.4f", fr.B,  fr.dB));
   if (fit_sin)  { y -= lineH; lat.DrawLatex(x, y, Form("A_{UU}^{sin#phi}   = % .4f  #pm %.4f", fr.D,  fr.dD)); }
   if (fit_sin2) { y -= lineH; lat.DrawLatex(x, y, Form("A_{UU}^{sin2#phi} = % .4f  #pm %.4f", fr.E,  fr.dE)); }
-  if (show_C)   { y -= lineH; lat.DrawLatex(x, y, Form("A_{UU}            = % .4f  #pm %.4f", fr.C,  fr.dC)); }
 }
 
 static void DrawBottomLegendBox4(double x1, double y1, double x2, double y2,
@@ -628,16 +627,16 @@ static void draw_property_and_save(
   const auto xe = x_edges();
   const int NX = (int)xe.size()-1;
 
-  // Global style & margins
+  // Global style & margins (extra left padding so y labels never clip)
   gStyle->SetOptStat(0);
-  gStyle->SetPadLeftMargin(0.16);
+  gStyle->SetPadLeftMargin(0.22);
   gStyle->SetPadRightMargin(0.06);
   gStyle->SetPadBottomMargin(0.16);
   gStyle->SetPadTopMargin(0.12);
   gStyle->SetTitleSize(0.05, "XYZ");
   gStyle->SetLabelSize(0.045, "XYZ");
 
-  TCanvas* c = new TCanvas(("c_"+prop).c_str(), ("Unfolded phi fits: "+prop).c_str(), 1200, 800);
+  TCanvas* c = new TCanvas(("c_"+prop).c_str(), ("Unfolded phi fits: "+prop).c_str(), 1300, 820);
   // 2 rows x 3 columns: pads 1..4 are x-bins, pad 5 is ratios, pad 6 is amplitudes
   c->Divide(3,2);
 
@@ -650,7 +649,7 @@ static void draw_property_and_save(
   // Pads 1..4: unfolded φ and fits per x_B bin
   for (int ib=0; ib<NX; ++ib) {
     c->cd(ib+1);
-    gPad->SetLeftMargin(0.16); gPad->SetRightMargin(0.06);
+    gPad->SetLeftMargin(0.22); gPad->SetRightMargin(0.06);
     gPad->SetBottomMargin(0.16); gPad->SetTopMargin(0.12);
 
     TH1D* hD = H.at(prop).D[ib].get();
@@ -681,8 +680,8 @@ static void draw_property_and_save(
 
       g->Draw("AP"); if (fit) fit->Draw("LSAME");
 
-      // UR legend that never clips out of the pad
-      DrawFitLegendUR(fr, /*fit_sin*/fit_sin, /*fit_sin2*/fit_sin, /*show_C*/true);
+      // UR legend (no pure AUU term)
+      DrawFitLegendUR(fr, /*fit_sin*/fit_sin, /*fit_sin2*/fit_sin);
 
       gPad->Modified(); gPad->Update();
 
@@ -695,7 +694,7 @@ static void draw_property_and_save(
       frame->SetTitle((title + ";#phi (deg);Unfolded yield").c_str());
       frame->SetMinimum(0); frame->SetMaximum(1);
       frame->Draw("AXIS");
-      DrawFitLegendUR(FitResult{}, /*fit_sin*/false, /*fit_sin2*/false, /*show_C*/false);
+      DrawFitLegendUR(FitResult{}, /*fit_sin*/false, /*fit_sin2*/false);
       gPad->Modified(); gPad->Update();
     }
   }
@@ -713,16 +712,16 @@ static void draw_property_and_save(
     Fcos2.push_back(f2); dFcos2.push_back(df2);
 
     if (fit_sin) {
-      double fs=0, dfs=0;  if (mW!=0.0) { fs =(mA/mW)*Dvec[i];  dfs =(mA/mW)*dDvec[i]; }
+      double fs=0, dfs=0;   if (mW!=0.0) { fs =(mA/mW)*Dvec[i];  dfs =(mA/mW)*dDvec[i]; }
       double fs2=0, dfs2=0; if (mW!=0.0) { fs2=(mA/mW)*Evec[i]; dfs2=(mA/mW)*dEvec[i]; }
       Fsin.push_back(fs);   dFsin.push_back(dfs);
       Fsin2.push_back(fs2); dFsin2.push_back(dfs2);
     }
   }
 
-  // Bottom middle (pad 5): FUU ratios vs x_B, with x-offsets and x-range 0.10–0.60 (points only)
+  // Bottom middle (pad 5): FUU ratios vs x_B, points only
   c->cd(5);
-  gPad->SetLeftMargin(0.16); gPad->SetRightMargin(0.06);
+  gPad->SetLeftMargin(0.22); gPad->SetRightMargin(0.06);
   gPad->SetBottomMargin(0.16); gPad->SetTopMargin(0.12);
 
   TGraphErrors *gF1=nullptr, *gF2=nullptr, *gFs=nullptr, *gFs2=nullptr;
@@ -731,7 +730,6 @@ static void draw_property_and_save(
     gF2 = new TGraphErrors((int)xcenters.size());
     if (fit_sin) { gFs = new TGraphErrors((int)xcenters.size()); gFs2 = new TGraphErrors((int)xcenters.size()); }
 
-    // Fill with offsets (cos left, cos2 right, sin center-left, sin2 center-right)
     for (int i=0;i<(int)xcenters.size();++i) {
       gF1->SetPoint(i, xcenters[i] - 0.010, Fcos[i]);   gF1->SetPointError(i, 0.0, dFcos[i]);
       gF2->SetPoint(i, xcenters[i] + 0.010, Fcos2[i]);  gF2->SetPointError(i, 0.0, dFcos2[i]);
@@ -741,7 +739,6 @@ static void draw_property_and_save(
       }
     }
 
-    // Styles & colors (points only; no lines)
     gF1->SetMarkerStyle(20); gF1->SetMarkerSize(1.0); gF1->SetMarkerColor(kRed);
     gF2->SetMarkerStyle(21); gF2->SetMarkerSize(1.0); gF2->SetMarkerColor(kBlue);
     if (fit_sin) {
@@ -749,10 +746,9 @@ static void draw_property_and_save(
       gFs2->SetMarkerStyle(23); gFs2->SetMarkerSize(1.0); gFs2->SetMarkerColor(kMagenta+2);
     }
 
-    // Axis, draw, then set X limits
     gF1->SetTitle(";x_{B};Ratio");
     gF1->GetYaxis()->SetRangeUser(-1.0, 1.0);
-    gF1->Draw("AP");                 // points only
+    gF1->Draw("AP");
     gF1->GetXaxis()->SetLimits(0.10, 0.60);
     gF2->Draw("P SAME");
     if (fit_sin) { gFs->Draw("P SAME"); gFs2->Draw("P SAME"); }
@@ -762,9 +758,7 @@ static void draw_property_and_save(
     line0_mid->SetLineStyle(2); line0_mid->SetLineWidth(1); line0_mid->SetLineColor(kBlack);
     line0_mid->Draw("SAME");
 
-    // Legend LAST so it overlays
     DrawBottomLegendBox4(0.64, 0.60, 0.94, 0.88, gF1, gF2, gFs, gFs2, fit_sin);
-
     gPad->Modified(); gPad->Update();
   } else {
     TH1D* frame = new TH1D("frameAB",";x_{B};Ratio",10,0.10,0.60);
@@ -774,7 +768,7 @@ static void draw_property_and_save(
 
   // Bottom right (pad 6): A, B, (D,E) vs x_B — points only
   c->cd(6);
-  gPad->SetLeftMargin(0.16); gPad->SetRightMargin(0.06);
+  gPad->SetLeftMargin(0.22); gPad->SetRightMargin(0.06);
   gPad->SetBottomMargin(0.16); gPad->SetTopMargin(0.12);
 
   if (!xcenters.empty()) {
@@ -791,7 +785,6 @@ static void draw_property_and_save(
         gE->SetPoint(i, xcenters[i] + 0.003, Evec[i]); gE->SetPointError(i, 0.0, dEvec[i]);
       }
     }
-    // Points only (no lines)
     gA->SetMarkerColor(kRed);   gA->SetMarkerStyle(20); gA->SetMarkerSize(1.0);
     gB->SetMarkerColor(kBlue);  gB->SetMarkerStyle(21); gB->SetMarkerSize(1.0);
     if (fit_sin) {
@@ -807,12 +800,11 @@ static void draw_property_and_save(
     gB->Draw("P SAME");
     if (fit_sin) { gD->Draw("P SAME"); gE->Draw("P SAME"); }
 
-    // dashed y=0 reference
     TLine* line0_amp = new TLine(0.10, 0.0, 0.60, 0.0);
     line0_amp->SetLineStyle(2); line0_amp->SetLineWidth(1); line0_amp->SetLineColor(kBlack);
     line0_amp->Draw("SAME");
 
-    auto legAmp = new TLegend(0.55,0.68,0.94,0.88);
+    auto legAmp = new TLegend(0.55,0.66,0.94,0.88);
     legAmp->SetFillStyle(1001); legAmp->SetFillColor(kWhite);
     legAmp->SetBorderSize(1); legAmp->SetTextSize(0.034);
     legAmp->AddEntry(gA,"A_{UU}^{cos#phi}","p");
@@ -831,7 +823,7 @@ static void draw_property_and_save(
   c->SaveAs(outpdf.c_str());
   std::cout << "Saved: " << outpdf << "\n";
 
-  // Save arrays (scaled values) in your exact style
+  // Save arrays (scaled values)
   save_arrays_style(prop, xcenters, Fcos, dFcos, Fcos2, dFcos2, fit_sin, Fsin, dFsin, Fsin2, dFsin2);
 }
 
@@ -844,12 +836,14 @@ static void DrawSinLegendUR(double meanSin,  double errSin,
   const double textSize = 0.050;
   const double lineH = 1.25*textSize;
   const double vpad = 0.015, hpad = 0.020;
-  const double width = 0.56;  // wider to avoid clipping
-  const double height = 2.0*vpad + 2*lineH;
+
+  // Slightly longer in y than before
+  const double width = 0.56;
+  const double height = 1.10 * (2.0*vpad + 2*lineH);
 
   TPave* box = new TPave(x2 - width, y2 - height, x2, y2, 1, "NDC");
   box->SetFillStyle(1001); box->SetFillColor(kWhite);
-  box->SetLineColor(kBlack); box->SetLineWidth(2);
+  box->SetLineColor(kBlack); box->SetLineWidth(1); // thinner border
   box->Draw("same");
 
   TLatex lat; lat.SetNDC(); lat.SetTextSize(textSize); lat.SetTextAlign(13);
@@ -871,12 +865,12 @@ static void draw_sin_moment_canvas(
   const int NX = (int)xe.size()-1;
 
   TCanvas* c = new TCanvas(("c_sin_"+prop).c_str(),
-                           ("sin moments: "+prop).c_str(), 1000, 800);
+                           ("sin moments: "+prop).c_str(), 1000, 820);
   c->Divide(2,2);
 
   for (int ib=0; ib<NX; ++ib) {
     c->cd(ib+1);
-    gPad->SetLeftMargin(0.16); gPad->SetRightMargin(0.06);
+    gPad->SetLeftMargin(0.22); gPad->SetRightMargin(0.06);
     gPad->SetBottomMargin(0.16); gPad->SetTopMargin(0.12);
 
     TH1D* hS  = Sins.at(prop).Hsin[ib].get();
