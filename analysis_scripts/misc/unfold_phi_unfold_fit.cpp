@@ -8,14 +8,15 @@
 //   [2] xB bin 1 unfolded + fit
 //   [3] xB bin 2 unfolded + fit
 //   [4] xB bin 3 unfolded + fit
-//   [5] FUU ratios vs xB  (points only)  — Y-range fixed to [-0.5, 0.5]
-//   [6] Amplitudes vs xB (points only)  — Y-range fixed to [-0.5, 0.5]
+//   [5] (BLANK by request — structure-function ratio plot removed)
+//   [6] Amplitudes vs xB (points only), Y in [-0.5, 0.5], horizontal legend
 //
 // A second 2x3 canvas per property shows, for each xB bin (first 4 pads),
 //   two overlaid histograms: sin(phi) (blue) and sin(2phi) (red).
 //   The legend (top-right, inside) lists <sin(phi)> and <sin(2phi)> with
-//   standard errors. Legend text is normal-weight (not bold), slightly
-//   smaller, a bit taller box, thinner border.
+//   standard errors. Legend text is normal-weight and small; legend widened
+//   back out and aligned to the top-right corner of the subplot. Legend border
+//   thickness matches the subplot frame thickness.
 //
 // Per–xB-bin unfolded-yield pads auto-scale to [0, 2*max(points)] to leave room
 // for legends. Those legends are drawn as white TPaves fully inside each pad,
@@ -313,7 +314,7 @@ static void loop_tree_fill(
   TTree* tr, const BranchNames& bn, bool apply_fid,
   std::map<std::string,HSet>& H,
   std::map<std::string,DepMeans>* depPtr,
-  Counters& C, int debugN, const char* dbg_label)
+  Counters& C, int /*debugN*/, const char* dbg_label)
 {
   if (!tr) return;
   BranchHandles b;
@@ -447,13 +448,12 @@ static FitResult make_unfold_graph_and_fit(
 
 // ------------- legend helpers -------------
 
-// Unfolded-yield pad legend (white box in upper-right, text vertically centered)
+// Unfolded-yield pad legend (white box in upper-right, widened again, border = frame thickness)
 static void DrawUnfoldLegendBox_UR(double x1, double y1, double x2, double y2,
                                    const FitResult& fr, bool fit_sin) {
-  // Slightly taller box to avoid clipping bottom
   TPave* box = new TPave(x1,y1,x2,y2,1,"NDC");
   box->SetFillStyle(1001); box->SetFillColor(kWhite);
-  box->SetLineColor(kBlack); box->SetLineWidth(2); // a bit thinner
+  box->SetLineColor(kBlack); box->SetLineWidth(1); // match frame thickness
   box->Draw("same");
 
   // Build text lines (omit pure AUU term intentionally)
@@ -487,11 +487,10 @@ static void DrawUnfoldLegendBox_UR(double x1, double y1, double x2, double y2,
   }
 }
 
-// Horizontal legend for the two bottom pads (to the RIGHT so it never crosses Y labels)
-static void DrawHorizontalLegendBottom(bool haveSin, TGraphErrors* gCos, TGraphErrors* gCos2,
-                                       TGraphErrors* gSin, TGraphErrors* gSin2) {
-  // Place in top-right-ish, avoiding the y-axis label area
-  auto L = new TLegend(0.50, 0.78, 0.94, 0.92); // narrower on the left than before
+// Horizontal legend for bottom amplitude pad (kept NARROWER and placed to the right)
+static void DrawHorizontalLegendAmplitude(bool haveSin, TGraphErrors* gCos, TGraphErrors* gCos2,
+                                          TGraphErrors* gSin, TGraphErrors* gSin2) {
+  auto L = new TLegend(0.50, 0.78, 0.94, 0.92); // tuned narrow legend (these were "perfect")
   L->SetNColumns(haveSin ? 4 : 2);
   L->SetBorderSize(1);
   L->SetFillStyle(1001);
@@ -623,8 +622,8 @@ static void draw_property_and_save(
 
       g->Draw("AP"); if (fit) fit->Draw("LSAME");
 
-      // Legend LAST (white background), inside UR — slightly taller and centered
-      DrawUnfoldLegendBox_UR(0.52, 0.66, 0.94, 0.92, fr, fit_sin);
+      // Legend LAST (white background), inside UR — widened again, aligned to UR
+      DrawUnfoldLegendBox_UR(0.46, 0.66, 0.94, 0.92, fr, fit_sin);
       gPad->Modified(); gPad->Update();
 
       xcenters.push_back(0.5*(xl+xh));
@@ -636,7 +635,7 @@ static void draw_property_and_save(
       frame->SetTitle((ttl + ";#phi (deg);Unfolded yield").c_str());
       frame->SetMinimum(0); frame->SetMaximum(1);
       frame->Draw("AXIS");
-      DrawUnfoldLegendBox_UR(0.52, 0.66, 0.94, 0.92, FitResult{}, fit_sin);
+      DrawUnfoldLegendBox_UR(0.46, 0.66, 0.94, 0.92, FitResult{}, fit_sin);
       gPad->Modified(); gPad->Update();
     }
   }
@@ -655,59 +654,14 @@ static void draw_property_and_save(
 
     if (fit_sin) {
       double fs=0, dfs=0; if (mW!=0.0) { fs=(mA/mW)*Dvec[i]; dfs=(mA/mW)*dDvec[i]; }
-      double fs2=0, dfs2=0; if (mW!=0.0) { fs2=(mA/mW)*Evec[i]; dfs2=(mA/mW)*dEvec[i]; } // map sin2 to DepW as best available
+      double fs2=0, dfs2=0; if (mW!=0.0) { fs2=(mA/mW)*Evec[i]; dfs2=(mA/mW)*dEvec[i]; }
       Fsin.push_back(fs); dFsin.push_back(dfs);
       Fsin2.push_back(fs2); dFsin2.push_back(dfs2);
     }
   }
 
-  // Pad 5 (middle bottom): FUU ratios vs xB (points only, horizontal legend)
-  c->cd(5);
-  gPad->SetLeftMargin(0.22); gPad->SetRightMargin(0.06);
-  gPad->SetBottomMargin(0.16); gPad->SetTopMargin(0.12);
-
-  TGraphErrors *gF1=nullptr, *gF2=nullptr, *gFs=nullptr, *gFs2=nullptr;
-  if (!xcenters.empty()) {
-    const int N = (int)xcenters.size();
-    gF1 = new TGraphErrors(N); gF2 = new TGraphErrors(N);
-    if (fit_sin) { gFs = new TGraphErrors(N); gFs2 = new TGraphErrors(N); }
-
-    for (int i=0;i<N;i++) {
-      gF1->SetPoint(i, xcenters[i] - 0.004, Fcos[i]);   gF1->SetPointError(i, 0.0, dFcos[i]);
-      gF2->SetPoint(i, xcenters[i] + 0.004, Fcos2[i]);  gF2->SetPointError(i, 0.0, dFcos2[i]);
-      if (fit_sin) {
-        gFs ->SetPoint(i, xcenters[i] - 0.012, Fsin[i]);   gFs ->SetPointError(i, 0.0, dFsin[i]);
-        gFs2->SetPoint(i, xcenters[i] + 0.012, Fsin2[i]);  gFs2->SetPointError(i, 0.0, dFsin2[i]);
-      }
-    }
-
-    // styles (points only)
-    gF1->SetMarkerStyle(20); gF1->SetMarkerSize(1.0); gF1->SetMarkerColor(kRed);
-    gF2->SetMarkerStyle(21); gF2->SetMarkerSize(1.0); gF2->SetMarkerColor(kBlue);
-    if (fit_sin) {
-      gFs ->SetMarkerStyle(22); gFs ->SetMarkerSize(1.0); gFs ->SetMarkerColor(kGreen+2);
-      gFs2->SetMarkerStyle(23); gFs2->SetMarkerSize(1.0); gFs2->SetMarkerColor(kMagenta+2);
-    }
-
-    gF1->SetTitle(";x_{B};Ratio");
-    gF1->GetYaxis()->SetRangeUser(-0.5, 0.5);
-    gF1->Draw("AP");
-    gF1->GetXaxis()->SetLimits(0.10, 0.60);
-    gF2->Draw("P SAME");
-    if (fit_sin) { gFs->Draw("P SAME"); gFs2->Draw("P SAME"); }
-
-    // y=0 line
-    auto line0_mid = new TLine(0.10, 0.0, 0.60, 0.0);
-    line0_mid->SetLineStyle(2); line0_mid->SetLineWidth(1); line0_mid->SetLineColor(kBlack);
-    line0_mid->Draw("SAME");
-
-    DrawHorizontalLegendBottom(fit_sin, gF1, gF2, gFs, gFs2);
-    gPad->Modified(); gPad->Update();
-  } else {
-    TH1D* frame = new TH1D("frameAB",";x_{B};Ratio",10,0.10,0.60);
-    frame->SetMinimum(-0.5); frame->SetMaximum(0.5);
-    frame->Draw("AXIS");
-  }
+  // Pad 5 (middle bottom): BLANK (structure-function ratio plot removed)
+  c->cd(5); gPad->Clear();
 
   // Pad 6 (bottom right): amplitudes vs xB (points only, horizontal legend)
   c->cd(6);
@@ -748,7 +702,7 @@ static void draw_property_and_save(
     line0->SetLineStyle(2); line0->SetLineWidth(1); line0->SetLineColor(kBlack);
     line0->Draw("SAME");
 
-    DrawHorizontalLegendBottom(fit_sin, gA, gB, (fit_sin?gD:nullptr), (fit_sin?gE:nullptr));
+    DrawHorizontalLegendAmplitude(fit_sin, gA, gB, (fit_sin?gD:nullptr), (fit_sin?gE:nullptr));
     gPad->Modified(); gPad->Update();
   } else {
     TH1D* frame = new TH1D("frameAmp",";x_{B};Amplitude",10,0.10,0.60);
@@ -865,11 +819,11 @@ static void draw_sin_moments_canvas(
     // compute means
     Moments M = compute_sine_moments(vecSin[ib], vecSin2[ib]);
 
-    // top-right legend box, slightly taller, thinner border, normal (not bold) text smaller
-    const double x1=0.62, y1=0.66, x2=0.92, y2=0.92;
+    // widened legend box, aligned to UR, border thickness = frame (1)
+    const double x1=0.54, y1=0.66, x2=0.94, y2=0.92;
     TPave* box = new TPave(x1,y1,x2,y2,1,"NDC");
     box->SetFillStyle(1001); box->SetFillColor(kWhite);
-    box->SetLineColor(kBlack); box->SetLineWidth(2);
+    box->SetLineColor(kBlack); box->SetLineWidth(1);
     box->Draw("same");
 
     TLatex lat; lat.SetNDC(); lat.SetTextColor(kBlack);
@@ -948,7 +902,7 @@ int main(int argc, char** argv) {
   print_counters("DATA", cD, props);
 
   for (const auto& p : props) {
-    // main unfolded+summary canvas
+    // main unfolded + amplitudes canvas
     draw_property_and_save(p, H, Dep, cfg.fit_sin);
     // sine-moment overlaid hist canvas
     draw_sin_moments_canvas(tD, cfg.bn, p);
