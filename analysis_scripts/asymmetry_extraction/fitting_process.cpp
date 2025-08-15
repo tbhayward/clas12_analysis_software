@@ -946,14 +946,14 @@ void performChi2Fits_single_hadron(const char* output_file, const char* kinemati
   TF1* fitFunction;
   switch (asymmetry_index) {
     case 0: // beam-spin asymmetry
-      fitFunction = new TF1("fitFunction", BSA_single_hadron, 0, 2*TMath::Pi(), 2);
+      fitFunction = new TF1("fitFunction", BSA_single_hadron, 0, 2*TMath::Pi(), 4);
       chi2FitsAStream << prefix << "chi2FitsALUoffset = {";
       chi2FitsBStream << prefix << "chi2FitsALUsinphi = {";
       chi2FitsCStream << prefix << "chi2FitsAUUcosphi = {";
       chi2FitsDStream << prefix << "chi2FitsAUUcos2phi = {";
       break;
     case 1: // target-spin asymmetry
-      fitFunction = new TF1("fitFunction", TSA_single_hadron, 0, 2*TMath::Pi(), 3);
+      fitFunction = new TF1("fitFunction", TSA_single_hadron, 0, 2*TMath::Pi(), 5);
       chi2FitsAStream << prefix << "chi2FitsAULoffset = {";
       chi2FitsBStream << prefix << "chi2FitsAULsinphi = {";
       chi2FitsCStream << prefix << "chi2FitsAULsin2phi = {";
@@ -961,7 +961,7 @@ void performChi2Fits_single_hadron(const char* output_file, const char* kinemati
       chi2FitsEStream << prefix << "chi2FitsAUUcos2phi = {";
       break;
     case 2: // double-spin asymmetry
-      fitFunction = new TF1("fitFunction", DSA_single_hadron, 0, 2*TMath::Pi(), 2);
+      fitFunction = new TF1("fitFunction", DSA_single_hadron, 0, 2*TMath::Pi(), 4);
       chi2FitsAStream << prefix << "chi2FitsALL = {";
       chi2FitsBStream << prefix << "chi2FitsALLcosphi = {";
       chi2FitsCStream << prefix << "chi2FitsAUUcosphi = {";
@@ -969,7 +969,7 @@ void performChi2Fits_single_hadron(const char* output_file, const char* kinemati
       break;
     default:
       cout << "Invalid asymmetry_index! Using default function form of BSA." << endl;
-      fitFunction = new TF1("fitFunction", BSA_single_hadron, 0, 2*TMath::Pi(), 2);
+      fitFunction = new TF1("fitFunction", BSA_single_hadron, 0, 2*TMath::Pi(), 4);
   }
 
   // Determine the number of bins
