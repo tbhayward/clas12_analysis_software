@@ -623,7 +623,7 @@ static void draw_property_and_save(
       g->Draw("AP"); if (fit) fit->Draw("LSAME");
 
       // Legend LAST (white background), inside UR — widened again, aligned to UR
-      DrawUnfoldLegendBox_UR(0.46, 0.66, 0.94, 0.86, fr, fit_sin);
+      DrawUnfoldLegendBox_UR(0.46, 0.62, 0.94, 0.88, fr, fit_sin);
       gPad->Modified(); gPad->Update();
 
       xcenters.push_back(0.5*(xl+xh));
