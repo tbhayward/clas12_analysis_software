@@ -592,7 +592,7 @@ static void draw_property_and_save(
       double xmin, ymin = +1e300, xmax, ymax = -1e300, x, y;
       for (int ip=0; ip<g->GetN(); ++ip) { g->GetPoint(ip, x, y); ymin = std::min(ymin,y); ymax = std::max(ymax,y); }
       if (ymin > ymax) { ymin = 0.0; ymax = 1.0; }
-      double lo = 0.5*ymin, hi = 1.5*ymax;
+      double lo = 0.5*ymin, hi = 2*ymax;
       if (std::fabs(hi - lo) < 1e-9) { lo -= 0.1*std::fabs(hi); hi += 0.1*std::fabs(hi)+1.0; }
       g->GetYaxis()->SetRangeUser(lo, hi);
 
