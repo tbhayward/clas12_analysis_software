@@ -820,7 +820,7 @@ static void draw_sin_moments_canvas(
     Moments M = compute_sine_moments(vecSin[ib], vecSin2[ib]);
 
     // widened legend box, aligned to UR, border thickness = frame (1)
-    const double x1=0.54, y1=0.66, x2=0.94, y2=0.92;
+    const double x1=0.50, y1=0.66, x2=0.94, y2=0.88;
     TPave* box = new TPave(x1,y1,x2,y2,1,"NDC");
     box->SetFillStyle(1001); box->SetFillColor(kWhite);
     box->SetLineColor(kBlack); box->SetLineWidth(1);
