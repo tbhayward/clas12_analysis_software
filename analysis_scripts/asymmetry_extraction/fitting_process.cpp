@@ -375,7 +375,9 @@ void negLogLikelihood_single_hadron(Int_t &npar, Double_t *gin, Double_t &f,
   double Df = dilution_factor;
   double sigmaDf = dilutionFactors[currentBin].second;
   double Pb = *beam_pol;
+  std::cout << "made it passed Pb" << std::endl;
   double Pt = *target_pol;
+  std::cout << "made it passed Pt" << std::endl;
   // // Su22
   // double sigmaPb = 0.0086;
   // double sigmaPtp = 0.0368;
