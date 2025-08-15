@@ -327,8 +327,7 @@ void calculate_inclusive(const char* output_file, const char* kinematic_file,
 /******************** SINGLE HADRON CASE ********************/
 
 // Negative log-likelihood function
-void negLogLikelihood_single_hadron(Int_t &npar, Double_t *gin, Double_t &f, 
-  Double_t *par, Int_t iflag) {
+void negLogLikelihood_single_hadron(Int_t &npar, Double_t *gin, Double_t &f, Double_t *par, Int_t iflag) {
   // npar: number of parameters
   // gin: an array of derivatives (if needed)
   // f: the value of the function
@@ -374,12 +373,6 @@ void negLogLikelihood_single_hadron(Int_t &npar, Double_t *gin, Double_t &f,
   double dilution_factor = dilutionFactors[currentBin].first;
   double Df = dilution_factor;
   double sigmaDf = dilutionFactors[currentBin].second;
-  double test = *x;
-  std::cout << "made it passed x" << std::endl;
-  double Pb = *beam_pol;
-  std::cout << "made it passed Pb" << std::endl;
-  double Pt = *target_pol;
-  std::cout << "made it passed Pt" << std::endl;
   // // Su22
   // double sigmaPb = 0.0086;
   // double sigmaPtp = 0.0368;
@@ -426,6 +419,9 @@ void negLogLikelihood_single_hadron(Int_t &npar, Double_t *gin, Double_t &f,
       // Pt = signPt * Pt;
 
       // Proceed with your calculations
+      double Pb = *beam_pol;                 // moved inside the loop
+      double Pt = std::abs(*target_pol);     // moved inside the loop
+
       if (*helicity > 0 && *target_pol >= 0) { 
         sum_PP += log(1 
           + (*DepV / *DepA)*AUU_cosphi*cos(*phi) + (*DepB / *DepA)*AUU_cos2phi*cos(2 * *phi) // UU 
@@ -552,18 +548,9 @@ void performMLMFits_single_hadron(const char* output_file, const char* kinematic
 
   // Iterate through each bin
   for (size_t i = 0; i < numBins; ++i) {
-    cout << endl << "Beginning MLM fit for " << binNames[currentFits]+1
+    cout << endl << "Beginning MLM fit for " << binNames[currentFits]
       << " bin " << i << ". ";
     currentBin = i;
-
-    // // Read the chi2 fits into a map
-    // std::map<std::string, std::vector<std::vector<double>>> chi2Fits = 
-    //     readChi2Fits(std::string(output_file));
-
-    // Construct the key based on the prefix and the fit name
-    // For now, let's assume fitName is a string that contains the fit name like "ALUsinphi"
-    // std::string fitName = "ALUsinphi";// Replace this with the logic to determine the fit name
-    // std::string key = std::string(prefix) + "chi2Fits" + fitName; 
 
     // std::vector<double> chi2Result = chi2Fits[key][currentFits];
     // Define the parameters with initial values and limits
