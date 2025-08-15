@@ -806,7 +806,7 @@ static void draw_sin_moments_canvas(
 
     // axis titles
     const double xl = xe[ib], xh = xe[ib+1];
-    hSin[ib]->SetTitle(Form("%s,  x_{B} #in [%.2f, %.2f),  %s; sin#phi; Events",
+    hSin[ib]->SetTitle(Form("%s,  x_{B} #in [%.2f, %.2f),  %s; sinn#phi; Events",
                             prop_title(prop).c_str(), xl, xh, prop_tlabel(prop).c_str()));
 
     // autoscale y to max of both
@@ -830,7 +830,7 @@ static void draw_sin_moments_canvas(
     lat.SetTextSize(0.030); lat.SetTextAlign(13);
     const double boxH = (y2-y1);
     const double step = 0.40*boxH;
-    double ys = y1 + 0.5*(boxH - 2.0*step) + 0.12*boxH; // centered, a hair up
+    double ys = y1 + 0.5*(boxH - 2.0*step) + 0.18*boxH; // centered, a hair up
     double xt = x1 + 0.06*(x2-x1);
 
     lat.SetTextColor(kBlue);
