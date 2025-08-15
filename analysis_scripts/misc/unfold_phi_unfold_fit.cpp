@@ -535,7 +535,6 @@ static void save_arrays_style(
   std::cout << "Wrote arrays: " << out << "\n";
 }
 
-// ------------ Draw/save per property ------------
 static void draw_property_and_save(
   const std::string& prop,
   const std::map<std::string,HSet>& H,
@@ -545,7 +544,7 @@ static void draw_property_and_save(
   const auto xe = x_edges();
   const int NX = (int)xe.size()-1;
 
-  // Style & margins (avoid clipping)
+  // Global style & margins (avoid clipping)
   gStyle->SetOptStat(0);
   gStyle->SetPadLeftMargin(0.16);
   gStyle->SetPadRightMargin(0.06);
@@ -563,6 +562,7 @@ static void draw_property_and_save(
 
   const auto& dep = depMap.at(prop);
 
+  // Top 6 pads: unfolded φ and fits per x_B bin
   for (int ib=0; ib<NX; ++ib) {
     c->cd(ib+1);
     gPad->SetLeftMargin(0.16); gPad->SetRightMargin(0.06);
@@ -588,17 +588,17 @@ static void draw_property_and_save(
     if (g) {
       g->SetTitle((title + ";#phi (deg);Unfolded yield").c_str());
 
-      // Compute y-range from graph points: [0.5*min, 1.5*max]
+      // y-range from points: [0.5*min, 1.5*max]
       double xmin, ymin = +1e300, xmax, ymax = -1e300, x, y;
       for (int ip=0; ip<g->GetN(); ++ip) { g->GetPoint(ip, x, y); ymin = std::min(ymin,y); ymax = std::max(ymax,y); }
-      if (ymin > ymax) { ymin = 0.0; ymax = 1.0; } // safety
+      if (ymin > ymax) { ymin = 0.0; ymax = 1.0; }
       double lo = 0.5*ymin, hi = 1.5*ymax;
       if (std::fabs(hi - lo) < 1e-9) { lo -= 0.1*std::fabs(hi); hi += 0.1*std::fabs(hi)+1.0; }
       g->GetYaxis()->SetRangeUser(lo, hi);
 
       g->Draw("AP"); if (fit) fit->Draw("LSAME");
 
-      // Legend LAST so it overlays the data/fit
+      // Legend LAST (white background), on top
       DrawFitLegendBox(0.58, 0.60, 0.94, 0.88, fr, fit_sin);
       gPad->Modified(); gPad->Update();
 
@@ -616,7 +616,7 @@ static void draw_property_and_save(
     }
   }
 
-  // Scaled FUU ratios
+  // Scale to FUU ratios using depolarization means
   std::vector<double> Fcos, dFcos, Fcos2, dFcos2, Fsin, dFsin;
   for (size_t i=0;i<xcenters.size();++i) {
     const int ib = (int)i;
@@ -634,51 +634,54 @@ static void draw_property_and_save(
     }
   }
 
-  // Bottom row
+  // Bottom row: left pad blank (7)
   c->cd(7); gPad->Clear();
 
-  // pad 8: FUU ratios (colored)
+  // Bottom row: middle pad (8): FUU ratios vs x_B, with x-offsets and x-range 0.0–0.7
   c->cd(8);
   gPad->SetLeftMargin(0.16); gPad->SetRightMargin(0.06);
   gPad->SetBottomMargin(0.16); gPad->SetTopMargin(0.12);
 
   TGraphErrors *gF1=nullptr, *gF2=nullptr, *gFs=nullptr;
   if (!xcenters.empty()) {
-    gF1->SetPoint(i, xcenters[i] - 0.005, Fcos[i]);
-    gF1->GetXaxis()->SetLimits(0.0, 0.7);
-    gF2->SetPoint(i, xcenters[i] + 0.005, Fcos2[i]);
-    if (fit_sin) gFs->SetPoint(i, xcenters[i], Fsin[i]); // keep sinphi in middle
-    for (int i=0;i<(int)xcenters.size();++i) {
-      gF1->SetPoint(i, xcenters[i], Fcos[i]);  gF1->SetPointError(i, 0.0, dFcos[i]);
-      gF2->SetPoint(i, xcenters[i], Fcos2[i]); gF2->SetPointError(i, 0.0, dFcos2[i]);
-    }
-    gF1->SetMarkerStyle(20); gF1->SetMarkerSize(1.0); gF1->SetLineColor(kRed);   gF1->SetMarkerColor(kRed);
-    gF2->SetMarkerStyle(21); gF2->SetMarkerSize(1.0); gF2->SetLineColor(kBlue);  gF2->SetMarkerColor(kBlue);
+    gF1 = new TGraphErrors((int)xcenters.size());
+    gF2 = new TGraphErrors((int)xcenters.size());
+    if (fit_sin) gFs = new TGraphErrors((int)xcenters.size());
 
+    // Fill with offsets
+    for (int i=0;i<(int)xcenters.size();++i) {
+      gF1->SetPoint(i, xcenters[i] - 0.005, Fcos[i]);   gF1->SetPointError(i, 0.0, dFcos[i]);
+      gF2->SetPoint(i, xcenters[i] + 0.005, Fcos2[i]);  gF2->SetPointError(i, 0.0, dFcos2[i]);
+      if (fit_sin) { gFs->SetPoint(i, xcenters[i], Fsin[i]); gFs->SetPointError(i, 0.0, dFsin[i]); }
+    }
+
+    // Styles & colors
+    gF1->SetMarkerStyle(20); gF1->SetMarkerSize(1.0); gF1->SetLineColor(kRed);      gF1->SetMarkerColor(kRed);
+    gF2->SetMarkerStyle(21); gF2->SetMarkerSize(1.0); gF2->SetLineColor(kBlue);     gF2->SetMarkerColor(kBlue);
+    if (fit_sin) { gFs->SetMarkerStyle(22); gFs->SetMarkerSize(1.0); gFs->SetLineColor(kGreen+2); gFs->SetMarkerColor(kGreen+2); }
+
+    // Axis, draw, then set X limits to [0.0, 0.7] (for TGraphErrors, do this after first draw)
     gF1->SetTitle(";x_{B};Ratio");
     gF1->GetYaxis()->SetRangeUser(-1.0, 1.0);
     gF1->Draw("APL");
+    gF1->GetXaxis()->SetLimits(0.0, 0.7);  // set X range
     gF2->Draw("PL SAME");
+    if (fit_sin) gFs->Draw("PL SAME");
+
+    // Legend LAST so it overlays
     if (fit_sin) {
-      gFs = new TGraphErrors((int)xcenters.size());
-      for (int i=0;i<(int)xcenters.size();++i) {
-        gFs->SetPoint(i, xcenters[i], Fsin[i]); gFs->SetPointError(i, 0.0, dFsin[i]);
-      }
-      gFs->SetMarkerStyle(22); gFs->SetMarkerSize(1.0);
-      gFs->SetLineColor(kGreen+2); gFs->SetMarkerColor(kGreen+2);
-      gFs->Draw("PL SAME");
       DrawBottomLegendBox(0.58, 0.64, 0.94, 0.88, gF1, gF2, true, gFs);
     } else {
       DrawBottomLegendBox(0.64, 0.70, 0.94, 0.88, gF1, gF2, false, nullptr);
     }
     gPad->Modified(); gPad->Update();
   } else {
-    TH1D* frame = new TH1D("frameAB",";x_{B};Ratio",10,0.06,0.60);
+    TH1D* frame = new TH1D("frameAB",";x_{B};Ratio",10,0.0,0.7); // 0.0–0.7 as requested
     frame->SetMinimum(-1.0); frame->SetMaximum(1.0);
     frame->Draw("AXIS");
   }
 
-  // pad 9: A,B,(D) vs x_B in colors
+  // Bottom row: right pad (9): A, B, (D) vs x_B (colored)
   c->cd(9);
   gPad->SetLeftMargin(0.16); gPad->SetRightMargin(0.06);
   gPad->SetBottomMargin(0.16); gPad->SetTopMargin(0.12);
@@ -688,11 +691,11 @@ static void draw_property_and_save(
     auto gB = new TGraphErrors((int)xcenters.size());
     TGraphErrors* gD = nullptr;
     for (int i=0;i<(int)xcenters.size();++i) {
-      gA->SetPoint(i, xcenters[i], Avec[i]); gA->SetPointError(i, 0.0, dAvec[i]);
-      gB->SetPoint(i, xcenters[i], Bvec[i]); gB->SetPointError(i, 0.0, dBvec[i]);
+      gA->SetPoint(i, xcenters[i] - 0.005, Avec[i]); gA->SetPointError(i, 0.0, dAvec[i]); // slight left
+      gB->SetPoint(i, xcenters[i] + 0.005, Bvec[i]); gB->SetPointError(i, 0.0, dBvec[i]); // slight right
       if (fit_sin) {
         if (!gD) gD = new TGraphErrors((int)xcenters.size());
-        gD->SetPoint(i, xcenters[i], Dvec[i]); gD->SetPointError(i, 0.0, dDvec[i]);
+        gD->SetPoint(i, xcenters[i], Dvec[i]); gD->SetPointError(i, 0.0, dDvec[i]);       // centered
       }
     }
     gA->SetLineColor(kRed);   gA->SetMarkerColor(kRed);   gA->SetMarkerStyle(20);
@@ -711,6 +714,7 @@ static void draw_property_and_save(
     gA->GetYaxis()->SetRangeUser(lo, hi);
 
     gA->Draw("APL");
+    gA->GetXaxis()->SetLimits(0.0, 0.7); // match 0.0–0.7 here too
     gB->Draw("PL SAME");
     if (fit_sin) gD->Draw("PL SAME");
 
@@ -723,7 +727,7 @@ static void draw_property_and_save(
     legAmp->Draw();
     gPad->Modified(); gPad->Update();
   } else {
-    TH1D* frame = new TH1D("frameAmp",";x_{B};Amplitude",10,0.06,0.60);
+    TH1D* frame = new TH1D("frameAmp",";x_{B};Amplitude",10,0.0,0.7); // 0.0–0.7 here as well
     frame->SetMinimum(-1.0); frame->SetMaximum(1.0);
     frame->Draw("AXIS");
   }
