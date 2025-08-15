@@ -303,21 +303,21 @@ double GE_den(double phi, double B_UUcos, double C_UUcos2, double C_UUsin) {
 // BSA(phi) = ( ALU * sin(phi) ) / GE_den(...)
 double GE_model_BSA(double phi, double ALU,
                     double B_UUcos, double C_UUcos2) {
-  const double den = GE_den(phi, B_UUcos, C_UUcos2);
+  const double den = GE_den(phi, B_UUcos, C_UUcos2, C_UUsin);
   const double num = ALU * std::sin(phi);
   return GE_safe_div(num, den);
 }
 // TSA(phi) = ( AUL * sin(phi) + AUL2 * sin(2*phi) ) / GE_den(...)
 double GE_model_TSA(double phi, double AUL, double AUL2,
                     double B_UUcos, double C_UUcos2) {
-  const double den = GE_den(phi, B_UUcos, C_UUcos2);
+  const double den = GE_den(phi, B_UUcos, C_UUcos2, C_UUsin);
   const double num = AUL * std::sin(phi) + AUL2 * std::sin(2.0 * phi);
   return GE_safe_div(num, den);
 }
 // DSA(phi) = ( ALL + ALL2 * cos(phi) ) / GE_den(...)
 double GE_model_DSA(double phi, double ALL, double ALL2,
                     double B_UUcos, double C_UUcos2) {
-  const double den = GE_den(phi, B_UUcos, C_UUcos2);
+  const double den = GE_den(phi, B_UUcos, C_UUcos2, C_UUsin);
   const double num = ALL + ALL2 * std::cos(phi);
   return GE_safe_div(num, den);
 }
