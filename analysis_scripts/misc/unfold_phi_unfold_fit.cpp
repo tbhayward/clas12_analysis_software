@@ -52,6 +52,7 @@
 #include "TPave.h"
 #include "TLatex.h"
 #include "TMarker.h"
+#include "TLine.h"
 
 struct BranchNames {
   std::string x   = "x";               // x_B
@@ -587,10 +588,10 @@ static void draw_property_and_save(
       g->SetTitle((title + ";#phi (deg);Unfolded yield").c_str());
 
       // y-range from points: [0.5*min, 2.0*max]
-      double xmin, ymin = +1e300, xmax, ymax = -1e300, x, y;
-      for (int ip=0; ip<g->GetN(); ++ip) { g->GetPoint(ip, x, y); ymin = std::min(ymin,y); ymax = std::max(ymax,y); }
+      double xmin, ymin = +1e300, xmax, ymax = -1e300, xx, yy;
+      for (int ip=0; ip<g->GetN(); ++ip) { g->GetPoint(ip, xx, yy); ymin = std::min(ymin,yy); ymax = std::max(ymax,yy); }
       if (ymin > ymax) { ymin = 0.0; ymax = 1.0; }
-      double lo = 0.5*ymin, hi = 2.0*ymax;
+      double lo = 0.5*ymin, hi = 1.75*ymax;
       if (std::fabs(hi - lo) < 1e-9) { lo -= 0.1*std::fabs(hi); hi += 0.1*std::fabs(hi)+1.0; }
       g->GetYaxis()->SetRangeUser(lo, hi);
 
@@ -635,7 +636,7 @@ static void draw_property_and_save(
   // Bottom row: left pad blank (7)
   c->cd(7); gPad->Clear();
 
-  // Bottom row: middle pad (8): FUU ratios vs x_B, with x-offsets and x-range 0.0–0.7 — POINTS ONLY
+  // Bottom row: middle pad (8): FUU ratios vs x_B, with x-offsets and x-range 0.0–0.7 (POINTS ONLY)
   c->cd(8);
   gPad->SetLeftMargin(0.16); gPad->SetRightMargin(0.06);
   gPad->SetBottomMargin(0.16); gPad->SetTopMargin(0.12);
@@ -653,22 +654,22 @@ static void draw_property_and_save(
       if (fit_sin) { gFs->SetPoint(i, xcenters[i], Fsin[i]); gFs->SetPointError(i, 0.0, dFsin[i]); }
     }
 
-    // Styles & colors (no lines drawn)
-    gF1->SetMarkerStyle(20); gF1->SetMarkerSize(1.0); gF1->SetMarkerColor(kRed);   gF1->SetLineWidth(0);
-    gF2->SetMarkerStyle(21); gF2->SetMarkerSize(1.0); gF2->SetMarkerColor(kBlue);  gF2->SetLineWidth(0);
-    if (fit_sin) { gFs->SetMarkerStyle(22); gFs->SetMarkerSize(1.0); gFs->SetMarkerColor(kGreen+2); gFs->SetLineWidth(0); }
+    // Styles & colors (points only; no lines)
+    gF1->SetMarkerStyle(20); gF1->SetMarkerSize(1.0); gF1->SetMarkerColor(kRed);
+    gF2->SetMarkerStyle(21); gF2->SetMarkerSize(1.0); gF2->SetMarkerColor(kBlue);
+    if (fit_sin) { gFs->SetMarkerStyle(22); gFs->SetMarkerSize(1.0); gFs->SetMarkerColor(kGreen+2); }
 
     // Axis, draw, then set X limits to [0.0, 0.7]
     gF1->SetTitle(";x_{B};Ratio");
     gF1->GetYaxis()->SetRangeUser(-1.0, 1.0);
-    gF1->Draw("AP");                 // points only (axes + points)
+    gF1->Draw("AP");                 // points only
     gF1->GetXaxis()->SetLimits(0.0, 0.7);
-    gF2->Draw("P SAME");             // points only
+    gF2->Draw("P SAME");
     if (fit_sin) gFs->Draw("P SAME");
 
-    // INSERT dashed line here
+    // --- Dashed y=0 reference line ---
     TLine* line0_mid = new TLine(0.0, 0.0, 0.7, 0.0);
-    line0_mid->SetLineStyle(2);
+    line0_mid->SetLineStyle(2); // dashed
     line0_mid->SetLineWidth(1);
     line0_mid->SetLineColor(kBlack);
     line0_mid->Draw("SAME");
@@ -681,7 +682,7 @@ static void draw_property_and_save(
     }
     gPad->Modified(); gPad->Update();
   } else {
-    TH1D* frame = new TH1D("frameAB",";x_{B};Ratio",10,0.0,0.7); // 0.0–0.7 as requested
+    TH1D* frame = new TH1D("frameAB",";x_{B};Ratio",10,0.0,0.7);
     frame->SetMinimum(-1.0); frame->SetMaximum(1.0);
     frame->Draw("AXIS");
   }
@@ -704,25 +705,33 @@ static void draw_property_and_save(
       }
     }
     // Points only (no lines)
-    gA->SetMarkerColor(kRed);   gA->SetMarkerStyle(20); gA->SetMarkerSize(1.0); gA->SetLineWidth(0);
-    gB->SetMarkerColor(kBlue);  gB->SetMarkerStyle(21); gB->SetMarkerSize(1.0); gB->SetLineWidth(0);
-    if (fit_sin) { gD->SetMarkerColor(kGreen+2); gD->SetMarkerStyle(22); gD->SetMarkerSize(1.0); gD->SetLineWidth(0); }
+    gA->SetMarkerColor(kRed);   gA->SetMarkerStyle(20); gA->SetMarkerSize(1.0);
+    gB->SetMarkerColor(kBlue);  gB->SetMarkerStyle(21); gB->SetMarkerSize(1.0);
+    if (fit_sin) { gD->SetMarkerColor(kGreen+2); gD->SetMarkerStyle(22); gD->SetMarkerSize(1.0); }
 
     gA->SetTitle(";x_{B};Amplitude");
     // autoscale y-range across all series
-    double ymin=+1e300,ymax=-1e300,x,y;
-    for (int i=0;i<gA->GetN();++i){gA->GetPoint(i,x,y); ymin=std::min(ymin,y); ymax=std::max(ymax,y);}
-    for (int i=0;i<gB->GetN();++i){gB->GetPoint(i,x,y); ymin=std::min(ymin,y); ymax=std::max(ymax,y);}
-    if (fit_sin) for (int i=0;i<(int)gD->GetN();++i){gD->GetPoint(i,x,y); ymin=std::min(ymin,y); ymax=std::max(ymax,y);}
+    double ymin=+1e300,ymax=-1e300,xx,yy;
+    for (int i=0;i<gA->GetN();++i){gA->GetPoint(i,xx,yy); ymin=std::min(ymin,yy); ymax=std::max(ymax,yy);}
+    for (int i=0;i<gB->GetN();++i){gB->GetPoint(i,xx,yy); ymin=std::min(ymin,yy); ymax=std::max(ymax,yy);}
+    if (fit_sin) for (int i=0;i<(int)gD->GetN();++i){gD->GetPoint(i,xx,yy); ymin=std::min(ymin,yy); ymax=std::max(ymax,yy);}
     if (ymin>ymax){ymin=-1.0;ymax=1.0;}
     double lo = ymin - 0.2*std::fabs(ymax - ymin);
-    double hi = ymax + 0.2*std::fabs(ymax - ymin);
+    double hi = ymax - 0.2*std::fabs(ymin - ymax); // symmetric-ish padding
+    if (hi < lo) { double tmp=lo; lo=hi; hi=tmp; }
     gA->GetYaxis()->SetRangeUser(lo, hi);
 
-    gA->Draw("AP");                      // points only
-    gA->GetXaxis()->SetLimits(0.0, 0.7); // match 0.0–0.7 here too
-    gB->Draw("P SAME");                  // points only
-    if (fit_sin) gD->Draw("P SAME");     // points only
+    gA->Draw("AP");
+    gA->GetXaxis()->SetLimits(0.0, 0.7);
+    gB->Draw("P SAME");
+    if (fit_sin) gD->Draw("P SAME");
+
+    // --- Dashed y=0 reference line ---
+    TLine* line0_amp = new TLine(0.0, 0.0, 0.7, 0.0);
+    line0_amp->SetLineStyle(2); // dashed
+    line0_amp->SetLineWidth(1);
+    line0_amp->SetLineColor(kBlack);
+    line0_amp->Draw("SAME");
 
     auto legAmp = new TLegend(0.55,0.70,0.94,0.88);
     legAmp->SetFillStyle(1001); legAmp->SetFillColor(kWhite);
@@ -733,7 +742,7 @@ static void draw_property_and_save(
     legAmp->Draw();
     gPad->Modified(); gPad->Update();
   } else {
-    TH1D* frame = new TH1D("frameAmp",";x_{B};Amplitude",10,0.0,0.7); // 0.0–0.7 here as well
+    TH1D* frame = new TH1D("frameAmp",";x_{B};Amplitude",10,0.0,0.7);
     frame->SetMinimum(-1.0); frame->SetMaximum(1.0);
     frame->Draw("AXIS");
   }
