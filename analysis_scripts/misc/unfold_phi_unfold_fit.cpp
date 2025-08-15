@@ -820,7 +820,7 @@ static void draw_sin_moments_canvas(
     Moments M = compute_sine_moments(vecSin[ib], vecSin2[ib]);
 
     // widened legend box, aligned to UR, border thickness = frame (1)
-    const double x1=0.50, y1=0.66, x2=0.94, y2=0.88;
+    const double x1=0.50, y1=0.70, x2=0.94, y2=0.88;
     TPave* box = new TPave(x1,y1,x2,y2,1,"NDC");
     box->SetFillStyle(1001); box->SetFillColor(kWhite);
     box->SetLineColor(kBlack); box->SetLineWidth(1);
@@ -830,7 +830,7 @@ static void draw_sin_moments_canvas(
     lat.SetTextSize(0.030); lat.SetTextAlign(13);
     const double boxH = (y2-y1);
     const double step = 0.40*boxH;
-    double ys = y1 + 0.5*(boxH - 2.0*step) + 0.06*boxH; // centered, a hair up
+    double ys = y1 + 0.5*(boxH - 2.0*step) + 0.12*boxH; // centered, a hair up
     double xt = x1 + 0.06*(x2-x1);
 
     lat.SetTextColor(kBlue);
