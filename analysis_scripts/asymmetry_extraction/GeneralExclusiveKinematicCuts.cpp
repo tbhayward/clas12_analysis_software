@@ -144,21 +144,21 @@ bool GeneralExclusiveKinematicCuts::applyCuts(int currentFits, bool isMC)
         return goodEvent;
     }
     if (property == "enpiLowt") {
-        goodEvent = goodEvent && std::fabs(*t) >= 0.00 && std::fabs(*t) <= 0.30;
+        goodEvent = goodEvent && std::fabs(*t) >= 0.00 && std::fabs(*t) <= 0.3667;
         goodEvent = goodEvent && *fiducial_status >= 100 && 
             std::fabs(*t) <= 1.0 && std::fabs(*t) >= 0.0 &&
             *Mx2 > 0.80 && *Mx2 < 1.00;
         return goodEvent;
     }
     if (property == "enpiMidt") {
-        goodEvent = goodEvent && std::fabs(*t) >= 0.30 && std::fabs(*t) <= 0.70;
+        goodEvent = goodEvent && std::fabs(*t) >= 0.3667 && std::fabs(*t) <= 0.7333;
         goodEvent = goodEvent && *fiducial_status >= 100 && 
             std::fabs(*t) <= 1.0 && std::fabs(*t) >= 0.0 &&
             *Mx2 > 0.80 && *Mx2 < 1.00;
         return goodEvent;
     }
     if (property == "enpiHight") {
-        goodEvent = goodEvent && std::fabs(*t) >= 0.70;
+        goodEvent = goodEvent && std::fabs(*t) >= 0.7333 && std::fabs(*t) < 1.1;
         goodEvent = goodEvent && *fiducial_status >= 100 && 
             std::fabs(*t) <= 1.0 && std::fabs(*t) >= 0.0 &&
             *Mx2 > 0.80 && *Mx2 < 1.00;

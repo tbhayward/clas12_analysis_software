@@ -3313,16 +3313,19 @@ static GEContext g_ge_ctx;
 //  p[6] = F_LL^{cos(phi)} / F_UU
 //  p[7] = F_UU^{cos(phi)} / F_UU         (shared UU modulation)
 //  p[8] = F_UU^{cos(2phi)} / F_UU        (shared UU modulation)
+//  p[10] = F_UU^{sin(phi)} / F_{UU}      (shared acceptance modulation)
 static void chi2Fcn_GeneralExclusive(Int_t& /*npar*/, Double_t* /*gin*/, Double_t& f,
                                      Double_t* par, Int_t /*iflag*/) {
   const double a0 = par[0], a1 = par[1];
   const double aLU = par[2], aUL1 = par[3], aUL2 = par[4];
   const double aLL = par[5], aLLc = par[6];
   const double aUUc = par[7], aUUc2 = par[8];
+  const double aUUs = par[8];
 
   auto denom = [&](double phi) {
     return 1.0 + g_ge_ctx.rVA * aUUc  * std::cos(phi)
-               + g_ge_ctx.rBA * aUUc2 * std::cos(2.0*phi);
+               + g_ge_ctx.rBA * aUUc2 * std::cos(2.0*phi)
+               + aUUs * std::sin(phi);
   };
 
   auto modelALU = [&](double phi) {
@@ -3749,7 +3752,7 @@ void performChi2Fits_GeneralExclusive(const char* output_file,
 
     if (i < numBins - 1) {
       sALUoff << ", "; sAULoff << ", "; sALU << ", "; sAUL << ", "; sAUL2 << ", ";
-      sALL << ", "; sALLc << ", "; sAUUc << ", "; sAUUc2 << ", ";
+      sALL << ", "; sALLc << ", "; sAUUc << ", "; sAUUc2 << ", "; sAUUs << ", ";
     }
 
     // Kinematics LaTeX row
@@ -3818,6 +3821,7 @@ void performChi2Fits_GeneralExclusive(const char* output_file,
   // Close arrays and write to files
   sALUoff << "};"; sAULoff << "};"; sALU << "};"; sAUL << "};";
   sAUL2  << "};"; sALL    << "};"; sALLc<< "};"; sAUUc << "};"; sAUUc2 << "};";
+  sAUUs << "};";
 
   {
     std::ofstream out(output_file, std::ios::app);
@@ -3830,6 +3834,7 @@ void performChi2Fits_GeneralExclusive(const char* output_file,
     out << sALLc.str()   << "\n";
     out << sAUUc.str()   << "\n";
     out << sAUUc2.str()  << "\n";
+    out << sAUUs.str()  << "\n";
   }
 
   // Finish LaTeX/table and kinematics list
