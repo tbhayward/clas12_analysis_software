@@ -719,7 +719,7 @@ static void draw_property_and_save(
     double lo = ymin - 0.2*std::fabs(ymax - ymin);
     double hi = ymax - 0.2*std::fabs(ymin - ymax); // symmetric-ish padding
     if (hi < lo) { double tmp=lo; lo=hi; hi=tmp; }
-    gA->GetYaxis()->SetRangeUser(lo, hi);
+    gA->GetYaxis()->SetRangeUser(-1, 1);
 
     gA->Draw("AP");
     gA->GetXaxis()->SetLimits(0.0, 0.7);
