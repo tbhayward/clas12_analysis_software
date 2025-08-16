@@ -71,6 +71,7 @@
 #include "TStyle.h"
 #include "TSystem.h"
 #include "TTree.h"
+#include "TString.h"
 
 // ------------------ CLI / Config ------------------
 
@@ -302,7 +303,6 @@ static void build_hists_one_pass(
   }
 
   if (!ok) {
-    // Still loop if partially bound, but will naturally skip missing vars.
     std::cerr << "Proceeding with whatever branches are available on "
               << (isData?"DATA":"MC") << "(" << prop << ").\n";
   }
@@ -316,7 +316,6 @@ static void build_hists_one_pass(
       if (!pass_prop_window(prop, b.t)) continue;
       if (!(b.mx2 > 0.80 && b.mx2 < 1.00)) continue;
     } else {
-      // If even the selection branches are missing, nothing to do.
       continue;
     }
 
@@ -378,7 +377,6 @@ static void compute_ratio(const TH1D* hD, const TH1D* hM, TH1D* hR) {
     double r=0, er=0;
     if (m > 0) {
       r = d/m;
-      // crude error from binomial-ish propagation on normalized contents:
       double ed = hD->GetBinError(i);
       double em = hM->GetBinError(i);
       er = std::sqrt( (ed*ed)/(m*m) + (d*d*em*em)/(m*m*m*m) );
@@ -421,7 +419,6 @@ static void draw_dist_ratio_cell(TH1D* hD, TH1D* hM,
     frame->SetTitle( (";"+xtitle+";"+ytitle).c_str() );
     frame->GetXaxis()->SetRangeUser(xmin, xmax);
 
-    // Auto y range to 1.15×max among both normalized hists
     double ymax = 0.0;
     if (dN) ymax = std::max(ymax, dN->GetMaximum());
     if (mN) ymax = std::max(ymax, mN->GetMaximum());
@@ -433,7 +430,6 @@ static void draw_dist_ratio_cell(TH1D* hD, TH1D* hM,
     if (dN && frame!=dN) { style_hist_line(dN, col.data, 2); dN->Draw("HIST SAME"); }
     if (mN && frame!=mN) { style_hist_line(mN, col.mc,   2); mN->Draw("HIST SAME"); }
   } else {
-    // Empty axes
     TH1D* ax = new TH1D("ax","",10,xmin,xmax);
     ax->SetDirectory(nullptr);
     ax->SetTitle( (";"+xtitle+";"+ytitle).c_str() );
@@ -441,14 +437,11 @@ static void draw_dist_ratio_cell(TH1D* hD, TH1D* hM,
     ax->Draw("AXIS");
   }
 
-  // One shared legend in the last cell, not per-cell — so no legend here.
-
   // --- BOTTOM: ratio (Data/MC of normalized) ---
   pBot->cd();
   TH1D* r = nullptr;
   if (dN && mN) {
-    r = (TH1D*)dN->Clone(std::string(dN->GetName())+"_ratio");
-    r->SetDirectory(nullptr);
+    r = clone_detached(dN, std::string(dN->GetName()) + "_ratio"); // <-- FIX: use helper (c_str handled)
     compute_ratio(dN, mN, r);
     r->SetTitle( (";"+xtitle+";Data/MC").c_str() );
     r->GetXaxis()->SetRangeUser(xmin, xmax);
@@ -457,7 +450,6 @@ static void draw_dist_ratio_cell(TH1D* hD, TH1D* hM,
     r->GetXaxis()->SetTitleSize(0.12);
     r->GetXaxis()->SetLabelSize(0.10);
 
-    // Ratio y-range default [0.5,1.5], but expand a bit if needed
     double rmin=+1e9, rmax=-1e9;
     for (int i=1;i<=r->GetNbinsX();++i) {
       double v = r->GetBinContent(i);
@@ -490,7 +482,6 @@ static void draw_dist_ratio_cell(TH1D* hD, TH1D* hM,
     l1->Draw("SAME");
   }
 
-  // Clean up clones created here (pads own primitives, but we detach)
   if (dN) delete dN;
   if (mN) delete mN;
   if (r)  delete r;
@@ -498,33 +489,30 @@ static void draw_dist_ratio_cell(TH1D* hD, TH1D* hM,
 
 // ------------------ Canvas per x-bin ------------------
 
+static std::string prop_tlabel(const std::string&); // fwd decl
+
 static void draw_global_legend_and_labels(
   const std::string& prop, int xbin, const std::vector<double>& xe, const Colors& col)
 {
-  // Draw a simple legend and the selection texts in the current pad.
   gPad->Clear();
   gPad->SetLeftMargin(0.12); gPad->SetRightMargin(0.02);
   gPad->SetBottomMargin(0.12); gPad->SetTopMargin(0.12);
 
-  // Dummy invisible hist to host axes and legend
   TH1D* h = new TH1D("hHost","",10,0,1);
   h->SetDirectory(nullptr);
   h->SetMinimum(0); h->SetMaximum(1);
   h->SetTitle("; ; ");
   h->Draw("AXIS");
 
-  // Legend
   auto L = new TLegend(0.15, 0.65, 0.85, 0.88);
   L->SetFillStyle(1001); L->SetFillColor(kWhite);
   L->SetBorderSize(1);   L->SetTextSize(0.035);
-  // create tiny dummies so legend shows colors
   TH1D* hD = new TH1D("hDummyData","",1,0,1);  hD->SetDirectory(nullptr); style_hist_line(hD, col.data, 2);
   TH1D* hM = new TH1D("hDummyMC","",1,0,1);    hM->SetDirectory(nullptr); style_hist_line(hM, col.mc,   2);
   L->AddEntry(hD, "DATA (norm. to integral)", "l");
   L->AddEntry(hM, "MC (norm. to integral)",   "l");
   L->Draw();
 
-  // Labels
   TLatex lat; lat.SetNDC();
   lat.SetTextSize(0.040); lat.SetTextAlign(13);
   std::string tlabel = prop_tlabel(prop);
@@ -534,11 +522,9 @@ static void draw_global_legend_and_labels(
   lat.DrawLatex(0.15, 0.52, tlabel.c_str());
   lat.DrawLatex(0.15, 0.46, xblabel.c_str());
 
-  // cleanup dummies after drawing (legend keeps a copy of style)
   delete hD; delete hM;
 }
 
-// Order of variables on the canvas (8 cells: 4×2; last cell used for legend)
 static std::vector<VarID> default_var_order() {
   return { EP, ETH_DEG, PP, PTH_DEG, Q2VAR, XB, MT };
 }
@@ -550,7 +536,6 @@ static void draw_canvas_for_xbin(
   ensure_dir("output/compare");
   auto xe = x_edges();
 
-  // Style
   gStyle->SetOptStat(0);
   TCanvas* c = new TCanvas(Form("c_%s_xb%d", prop.c_str(), xbin),
                            Form("Compare DATA vs MC: %s, xB bin %d", prop.c_str(), xbin),
@@ -558,18 +543,16 @@ static void draw_canvas_for_xbin(
   c->Divide(4,2); // 8 cells; each cell has overlay+ratio inside
 
   Colors col; // black data, red MC
-
-  auto vars = default_var_order(); // 7 items; cell 8 for legend
+  auto vars = default_var_order();
 
   for (size_t iv=0; iv<vars.size(); ++iv) {
-    int cell = (int)iv + 1; // pads are 1-indexed
+    int cell = (int)iv + 1;
     c->cd(cell);
 
     VarID v = vars[iv];
     TH1D* hD = D.h[v][xbin];
     TH1D* hM = M.h[v][xbin];
 
-    // Titles and ranges from table
     auto& I = varInfo[v];
     std::string xtitle = I.xtitle;
     std::string ytitle = "Normalized counts";
@@ -577,7 +560,6 @@ static void draw_canvas_for_xbin(
     draw_dist_ratio_cell(hD, hM, xtitle, ytitle, I.xmin, I.xmax, col);
   }
 
-  // Last cell (8): legend + labels
   c->cd(8);
   draw_global_legend_and_labels(prop, xbin, xe, col);
 
@@ -616,13 +598,11 @@ int main(int argc, char** argv) {
 
   auto props = properties_to_run(cfg.which_property);
 
-  // Build once per property, fill all xB bins & all variables in one pass
   for (const auto& p : props) {
     HistGrid HD, HM;
     build_hists_one_pass(tD, cfg.bn, p, HD, /*isData=*/true);
     build_hists_one_pass(tM, cfg.bn, p, HM, /*isData=*/false);
 
-    // One canvas per xB bin
     for (int xb=0; xb<4; ++xb) {
       draw_canvas_for_xbin(p, xb, HD, HM);
     }
