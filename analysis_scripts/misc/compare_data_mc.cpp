@@ -1,33 +1,45 @@
 // compare_data_mc.cpp
-// DATA vs MC comparisons with distributions and ratio (DATA/MC)
-// - Uses your xB and |t| binning from the unfolding script
-// - One-pass fill per (tree, property): fast
-// - DATA in black, MC in red
-// - Each histogram is normalized to its own integral (shape comparison)
-// - Per property and per xB bin, produce one 4x4 canvas:
-//     * Top 2 rows (pads 1..8): 7 variables (pad 8 reserved for legend)
-//     * Bottom 2 rows (pads 9..16): matching 7 ratio pads (DATA/MC)
+// Compare reconstructed DATA vs MC in your enpi(-t) selections,
+// split into the same xB bins as the unfolding code, with overlay+ratio.
 //
-// Variables & ranges:
-//   e_p      : [2, 9] GeV
-//   e_theta  : [0, 40] deg  (input radians -> deg)
-//   p_p      : [1, 4] GeV
-//   p_theta  : [0, 80] deg  (input radians -> deg)
-//   Q2       : [1, 8] GeV^2
-//   xB       : [0, 1]
-//   -t       : [0, 1.2]
+// • One canvas per (property, xB-bin): a compact 4×2 grid of “cells”.
+//   Each cell is internally split into top (overlay, normalized) and bottom (ratio).
+// • Variables shown (7 total):
+//     1) e_p        [2,9] GeV
+//     2) e_theta    [0,40] deg   (stored in tree as radians -> converted to deg)
+//     3) p_p        [1,4] GeV
+//     4) p_theta    [0,80] deg   (stored in tree as radians -> converted to deg)
+//     5) Q2         [1,8] (GeV/c)^2
+//     6) xB         [0,1]
+//     7) -t         [0,1.2]  (uses fabs(t))
+// • Colors: DATA black, MC red.
+// • All hists normalized to their own integrals (no magic scale factors).
+// • Fast single read per file & property; no copying vectors<unique_ptr>.
 //
 // Build:
 //   g++ -O2 -std=c++17 compare_data_mc.cpp `root-config --cflags --libs` -o compare_data_mc
 //
-// Run:
-//   ./compare_data_mc data.root mc.root [enpi|enpiLowt|enpiMidt|enpiHight|all]
-//     [--x x] [--t t] [--mx2 Mx2] [--fid fiducial_status]
-//     [--ep ep] [--eth e_theta] [--pp pp] [--pth p_theta] [--Q2 Q2]
-//     [--list-branches] [--debug N]
+// Run (example with your branch names):
+//   ./compare_data_mc data.root mc.root all \
+//     --x x --t t --mx2 Mx2 --fid fiducial_status \
+//     --ep e_p --eth e_theta --pp p_p --pth p_theta --Q2 Q2
 //
-// Output:
-//   output/compare/compare_<property>_xbin<i>.pdf  (i=0..3)
+// List branches if unsure:
+//   ./compare_data_mc data.root mc.root all --list-branches
+//
+// Outputs:
+//   output/compare/compare_<property>_xbin<idx>.pdf   (idx=0..3)
+//
+// Properties:
+//   enpi       : |t| in [0.10,1.20]
+//   enpiLowt   : |t| in [0.10,0.4667]
+//   enpiMidt   : |t| in [0.4667,0.8333]
+//   enpiHight  : |t| in [0.8333,1.20]
+//
+// Notes:
+// - Fiducial cut (fid>=100) applied if the branch exists; otherwise skipped.
+// - Mx2 in (0.80,1.00) always applied.
+// - Trees are assumed to be named "PhysicsEvents" in both files.
 
 #include <algorithm>
 #include <cmath>
@@ -45,50 +57,51 @@
 
 #include "TBranch.h"
 #include "TCanvas.h"
+#include "TDirectory.h"
+#include "TF1.h"
 #include "TFile.h"
-#include "TGraph.h"
+#include "TGraphErrors.h"
 #include "TH1D.h"
 #include "TLegend.h"
+#include "TLatex.h"
 #include "TLine.h"
 #include "TMath.h"
 #include "TPad.h"
 #include "TROOT.h"
 #include "TStyle.h"
-#include "TF1.h"
 #include "TSystem.h"
 #include "TTree.h"
-#include "TString.h"
 
-// ------------------ CLI/Config ------------------
+// ------------------ CLI / Config ------------------
 
 struct BranchNames {
+  // physics
   std::string x   = "x";
-  std::string t   = "t";     // signed
+  std::string t   = "t";
   std::string mx2 = "Mx2";
-  std::string fid = "fiducial_status";
-
-  // Kinematics (override via CLI if needed)
-  std::string ep  = "ep";    // electron momentum [GeV]
-  std::string eth = "eth";   // electron polar angle [rad]
-  std::string pp  = "pp";    // proton momentum [GeV]
-  std::string pth = "pth";   // proton polar angle [rad]
-  std::string Q2  = "Q2";    // Q^2 [GeV^2]
+  std::string fid = "fiducial_status";   // optional
+  // kinematics for plots
+  std::string ep  = "e_p";
+  std::string eth = "e_theta";           // radians in tree
+  std::string pp  = "p_p";
+  std::string pth = "p_theta";           // radians in tree
+  std::string Q2  = "Q2";
 };
 
 struct Config {
-  std::string data_path, mc_path;
+  std::string data_path;
+  std::string mc_path;
   std::string which_property = "all";
   BranchNames bn;
   bool list_branches = false;
-  int  debug_print   = 0;
 };
 
 static void print_usage(const char* argv0) {
   std::cout << "Usage:\n  " << argv0
             << " data.root mc.root [enpi|enpiLowt|enpiMidt|enpiHight|all]\n"
-            << "    [--x x] [--t t] [--mx2 Mx2] [--fid fiducial_status]\n"
-            << "    [--ep ep] [--eth e_theta] [--pp pp] [--pth p_theta] [--Q2 Q2]\n"
-            << "    [--list-branches] [--debug N]\n";
+            << "   [--x x] [--t t] [--mx2 Mx2] [--fid fiducial_status]\n"
+            << "   [--ep e_p] [--eth e_theta] [--pp p_p] [--pth p_theta] [--Q2 Q2]\n"
+            << "   [--list-branches]\n";
 }
 
 static bool parse_args(int argc, char** argv, Config& cfg) {
@@ -108,35 +121,23 @@ static bool parse_args(int argc, char** argv, Config& cfg) {
       }
       return false;
     };
-    auto eat_int = [&](const char* key, int& out) {
-      size_t eq = a.find('=');
-      if (a == key) {
-        if (i+1 < argc) { out = std::atoi(argv[++i]); return true; }
-      } else if (eq != std::string::npos && a.substr(0,eq) == key) {
-        out = std::atoi(a.substr(eq+1).c_str()); return true;
-      }
-      return false;
-    };
-
-    if (eat("--x",   cfg.bn.x)) continue;
-    if (eat("--t",   cfg.bn.t)) continue;
+    if (eat("--x", cfg.bn.x)) continue;
+    if (eat("--t", cfg.bn.t)) continue;
     if (eat("--mx2", cfg.bn.mx2)) continue;
     if (eat("--fid", cfg.bn.fid)) continue;
-    if (eat("--ep",  cfg.bn.ep)) continue;
+    if (eat("--ep", cfg.bn.ep)) continue;
     if (eat("--eth", cfg.bn.eth)) continue;
-    if (eat("--pp",  cfg.bn.pp)) continue;
+    if (eat("--pp", cfg.bn.pp)) continue;
     if (eat("--pth", cfg.bn.pth)) continue;
-    if (eat("--Q2",  cfg.bn.Q2)) continue;
-
+    if (eat("--Q2", cfg.bn.Q2)) continue;
     if (a == "--list-branches") { cfg.list_branches = true; continue; }
-    if (eat_int("--debug", cfg.debug_print)) continue;
 
     std::cerr << "Unknown argument: " << a << "\n";
   }
   return true;
 }
 
-// ------------------ binning & helper text ------------------
+// ------------------ Helpers: binning & props ------------------
 
 static std::vector<std::string> all_props() {
   return {"enpi", "enpiLowt", "enpiMidt", "enpiHight"};
@@ -146,14 +147,14 @@ static std::vector<std::string> properties_to_run(const std::string& which) {
   return {which};
 }
 
-// four xB bins
+// xB bin edges (4 bins)
 static std::vector<double> x_edges() { return {0.10, 0.30, 0.40, 0.50, 0.60}; }
 static int xbin_index(double x, const std::vector<double>& e) {
   for (size_t i=0;i+1<e.size();++i) if (x >= e[i] && x < e[i+1]) return (int)i;
   return -1;
 }
 
-// absolute-t windows per property
+// |t| windows per property
 static inline bool pass_prop_window(const std::string& prop, double t) {
   const double at = std::fabs(t);
   if (prop == "enpi")      return (at >= 0.10 && at <= 1.20);
@@ -161,13 +162,6 @@ static inline bool pass_prop_window(const std::string& prop, double t) {
   if (prop == "enpiMidt")  return (at >= 0.4667 && at <= 0.8333);
   if (prop == "enpiHight") return (at >= 0.8333 && at <= 1.20);
   return false;
-}
-static std::string prop_title(const std::string& p) {
-  if (p == "enpi")      return "ep -> e' n #pi^{+}";
-  if (p == "enpiLowt")  return "ep -> e' n #pi^{+}, low |t|";
-  if (p == "enpiMidt")  return "ep -> e' n #pi^{+}, mid |t|";
-  if (p == "enpiHight") return "ep -> e' n #pi^{+}, high |t|";
-  return p;
 }
 static std::string prop_tlabel(const std::string& prop) {
   if (prop == "enpi")      return "-t #in [0.10, 1.20]";
@@ -181,41 +175,54 @@ static void ensure_dir(const std::string& d) {
   if (gSystem->AccessPathName(d.c_str())) gSystem->mkdir(d.c_str(), kTRUE);
 }
 
-// ------------------ binding ------------------
+// ------------------ Branch binding ------------------
 
-struct Handles {
-  double x=0, t=0, mx2=0, ep=0, eth=0, pp=0, pth=0, Q2=0;
-  int fid=0;
-  bool has_fid=false;
+struct BranchHandles {
+  double x=0, t=0, mx2=0;
+  int fid=0; bool has_fid=false;
+
+  double ep=0, eth=0, pp=0, pth=0, Q2=0;
+
+  bool has_x=true, has_t=true, has_mx2=true;
+  bool has_ep=true, has_eth=true, has_pp=true, has_pth=true, has_Q2=true;
 };
 
-static bool bind_tree(TTree* tr, const BranchNames& bn, Handles& h, const char* who) {
+static bool bind_tree(TTree* tr, const BranchNames& bn, BranchHandles& b, const std::string& who) {
   if (!tr) return false;
-  bool ok = true;
-  ok &= (tr->GetBranch(bn.x.c_str())  != nullptr);
-  ok &= (tr->GetBranch(bn.t.c_str())  != nullptr);
-  ok &= (tr->GetBranch(bn.mx2.c_str())!= nullptr);
-  ok &= (tr->GetBranch(bn.ep.c_str()) != nullptr);
-  ok &= (tr->GetBranch(bn.eth.c_str())!= nullptr);
-  ok &= (tr->GetBranch(bn.pp.c_str()) != nullptr);
-  ok &= (tr->GetBranch(bn.pth.c_str())!= nullptr);
-  ok &= (tr->GetBranch(bn.Q2.c_str()) != nullptr);
+  auto missing = [&](const char* nm){ std::cerr << "  missing: " << nm << "\n"; };
+
+  // Required for selection
+  if (!tr->GetBranch(bn.x.c_str()))  { missing(bn.x.c_str());  b.has_x=false; }
+  if (!tr->GetBranch(bn.t.c_str()))  { missing(bn.t.c_str());  b.has_t=false; }
+  if (!tr->GetBranch(bn.mx2.c_str())){ missing(bn.mx2.c_str()); b.has_mx2=false; }
+
+  // Variables to plot
+  if (!tr->GetBranch(bn.ep.c_str()))  { missing(bn.ep.c_str());  b.has_ep=false; }
+  if (!tr->GetBranch(bn.eth.c_str())) { missing(bn.eth.c_str()); b.has_eth=false; }
+  if (!tr->GetBranch(bn.pp.c_str()))  { missing(bn.pp.c_str());  b.has_pp=false; }
+  if (!tr->GetBranch(bn.pth.c_str())) { missing(bn.pth.c_str()); b.has_pth=false; }
+  if (!tr->GetBranch(bn.Q2.c_str()))  { missing(bn.Q2.c_str());  b.has_Q2=false; }
+
+  bool ok = (b.has_x && b.has_t && b.has_mx2 && b.has_ep && b.has_eth && b.has_pp && b.has_pth && b.has_Q2);
   if (!ok) {
     std::cerr << "ERROR: missing required branches on " << who << "\n";
-    return false;
+    // still bind what exists to avoid crashes
   }
-  tr->SetBranchAddress(bn.x.c_str(),   &h.x);
-  tr->SetBranchAddress(bn.t.c_str(),   &h.t);
-  tr->SetBranchAddress(bn.mx2.c_str(), &h.mx2);
-  tr->SetBranchAddress(bn.ep.c_str(),  &h.ep);
-  tr->SetBranchAddress(bn.eth.c_str(), &h.eth);
-  tr->SetBranchAddress(bn.pp.c_str(),  &h.pp);
-  tr->SetBranchAddress(bn.pth.c_str(), &h.pth);
-  tr->SetBranchAddress(bn.Q2.c_str(),  &h.Q2);
 
-  h.has_fid = (tr->GetBranch(bn.fid.c_str()) != nullptr);
-  if (h.has_fid) tr->SetBranchAddress(bn.fid.c_str(), &h.fid);
-  return true;
+  if (b.has_x)   tr->SetBranchAddress(bn.x.c_str(),  &b.x);
+  if (b.has_t)   tr->SetBranchAddress(bn.t.c_str(),  &b.t);
+  if (b.has_mx2) tr->SetBranchAddress(bn.mx2.c_str(),&b.mx2);
+
+  b.has_fid = (tr->GetBranch(bn.fid.c_str()) != nullptr);
+  if (b.has_fid) tr->SetBranchAddress(bn.fid.c_str(), &b.fid);
+
+  if (b.has_ep)  tr->SetBranchAddress(bn.ep.c_str(),  &b.ep);
+  if (b.has_eth) tr->SetBranchAddress(bn.eth.c_str(), &b.eth);
+  if (b.has_pp)  tr->SetBranchAddress(bn.pp.c_str(),  &b.pp);
+  if (b.has_pth) tr->SetBranchAddress(bn.pth.c_str(), &b.pth);
+  if (b.has_Q2)  tr->SetBranchAddress(bn.Q2.c_str(),  &b.Q2);
+
+  return ok;
 }
 
 static void list_tree_branches(TTree* tr, const char* label) {
@@ -231,270 +238,356 @@ static void list_tree_branches(TTree* tr, const char* label) {
   std::cout.flush();
 }
 
-// ------------------ variable defs ------------------
+// ------------------ Variables & histograms ------------------
 
-struct VarDef {
-  std::string name;
-  std::string title;   // pad title
-  std::string xtitle;  // axis
+enum VarID { EP=0, ETH_DEG=1, PP=2, PTH_DEG=3, Q2VAR=4, XB=5, MT=6, NVAR=7 };
+
+struct VarInfo {
+  const char* name;
+  const char* xtitle;
   int    nbins;
   double xmin, xmax;
 };
 
-static std::vector<VarDef> var_list() {
-  return {
-    {"e_p",     "e_{p}",             "e_{p}  [GeV]",         70,  2.0,  9.0},
-    {"e_theta", "#theta_{e} (deg)",  "#theta_{e}  [deg]",    80,  0.0, 40.0},
-    {"p_p",     "p_{p}",             "p_{p}  [GeV]",         60,  1.0,  4.0},
-    {"p_theta", "#theta_{p} (deg)",  "#theta_{p}  [deg]",    80,  0.0, 80.0},
-    {"Q2",      "Q^{2}",             "Q^{2}  [GeV^{2}]",     70,  1.0,  8.0},
-    {"xB",      "x_{B}",             "x_{B}",                 50,  0.0,  1.0},
-    {"mt",      "-t",                "-t  [GeV^{2}]",        60,  0.0,  1.2}
-  };
+static VarInfo varInfo[NVAR] = {
+  {"e_p",      "e_{p}  (GeV)",                35,  2.0,  9.0},   // EP
+  {"e_theta",  "e_{#theta}  (deg)",           40,  0.0, 40.0},   // ETH_DEG (from rad)
+  {"p_p",      "p_{p}  (GeV)",                30,  1.0,  4.0},   // PP
+  {"p_theta",  "p_{#theta}  (deg)",           40,  0.0, 80.0},   // PTH_DEG (from rad)
+  {"Q2",       "Q^{2}  ((GeV/c)^{2})",        35,  1.0,  8.0},   // Q2VAR
+  {"xB",       "x_{B}",                        40,  0.0,  1.0},   // XB
+  {"mt",       "-t  (GeV^{2})",               40,  0.0,  1.2}    // MT (|t|)
+};
+
+struct HistGrid {
+  // h[var][xb]
+  std::vector<std::vector<TH1D*>> h;
+  HistGrid() { h.assign(NVAR, std::vector<TH1D*>(4,nullptr)); }
+  ~HistGrid() {
+    for (int v=0; v<NVAR; ++v)
+      for (int xb=0; xb<4; ++xb)
+        if (h[v][xb]) delete h[v][xb];
+  }
+};
+
+static TH1D* make_hist(const std::string& tag, VarID v, int xb) {
+  auto& I = varInfo[v];
+  std::string hname = "h_" + std::string(I.name) + "_" + tag + Form("_xb%d", xb);
+  auto* h = new TH1D(hname.c_str(), "", I.nbins, I.xmin, I.xmax);
+  h->Sumw2();
+  h->SetDirectory(nullptr); // avoid ROOT directory warnings
+  return h;
 }
 
-// ------------------ histogram grid & fast one-pass fill ------------------
+// ------------------ Filling ------------------
 
-using HistGrid = std::vector<std::vector<std::unique_ptr<TH1D>>>; // [ivar][xbin]
-
-static HistGrid build_hists_one_pass(
+static void build_hists_one_pass(
   TTree* tr, const BranchNames& bn, const std::string& prop,
-  const std::vector<VarDef>& vars, const std::vector<double>& xedges)
+  HistGrid& HG, bool isData)
 {
-  const int NV = (int)vars.size();
-  const int NX = (int)xedges.size()-1;
+  if (!tr) return;
+  BranchHandles b;
+  bool ok = bind_tree(tr, bn, b, std::string(isData?"DATA":"MC")+"("+prop+")");
 
-  // IMPORTANT: build without copying vectors of unique_ptr
-  HistGrid H;
-  H.resize(NV);
-  for (int v=0; v<NV; ++v) {
-    H[v].resize(NX);
-    for (int xb=0; xb<NX; ++xb) {
-      H[v][xb] = std::make_unique<TH1D>(
-        Form("h_%s_%s_xb%d", vars[v].name.c_str(), prop.c_str(), xb),
-        "", vars[v].nbins, vars[v].xmin, vars[v].xmax);
-      H[v][xb]->Sumw2();
-    }
+  // Make hists if not yet
+  const auto xe = x_edges();
+  for (int xb=0; xb<4; ++xb) {
+    if (!HG.h[EP][xb])      HG.h[EP][xb]      = make_hist(std::string(isData?"D":"M")+"_"+prop, EP, xb);
+    if (!HG.h[ETH_DEG][xb]) HG.h[ETH_DEG][xb] = make_hist(std::string(isData?"D":"M")+"_"+prop, ETH_DEG, xb);
+    if (!HG.h[PP][xb])      HG.h[PP][xb]      = make_hist(std::string(isData?"D":"M")+"_"+prop, PP, xb);
+    if (!HG.h[PTH_DEG][xb]) HG.h[PTH_DEG][xb] = make_hist(std::string(isData?"D":"M")+"_"+prop, PTH_DEG, xb);
+    if (!HG.h[Q2VAR][xb])   HG.h[Q2VAR][xb]   = make_hist(std::string(isData?"D":"M")+"_"+prop, Q2VAR, xb);
+    if (!HG.h[XB][xb])      HG.h[XB][xb]      = make_hist(std::string(isData?"D":"M")+"_"+prop, XB, xb);
+    if (!HG.h[MT][xb])      HG.h[MT][xb]      = make_hist(std::string(isData?"D":"M")+"_"+prop, MT, xb);
   }
 
-  Handles h; if (!bind_tree(tr, bn, h, (prop+"(FAST)").c_str())) return H;
+  if (!ok) {
+    // Still loop if partially bound, but will naturally skip missing vars.
+    std::cerr << "Proceeding with whatever branches are available on "
+              << (isData?"DATA":"MC") << "(" << prop << ").\n";
+  }
 
-  const Long64_t N = tr->GetEntries();
-  for (Long64_t i=0;i<N;i++) {
+  const Long64_t nent = tr->GetEntries();
+  for (Long64_t i=0;i<nent;i++) {
     tr->GetEntry(i);
 
-    // Common selection
-    if (h.has_fid && h.fid < 100) continue;
-    if (!(h.mx2 > 0.80 && h.mx2 < 1.00)) continue;
-    if (!pass_prop_window(prop, h.t)) continue;
-
-    int xb = xbin_index(h.x, xedges);
-    if (xb < 0 || xb >= NX) continue;
-
-    // Derived quantities
-    const double e_theta_deg = h.eth * 180.0 / TMath::Pi();
-    const double p_theta_deg = h.pth * 180.0 / TMath::Pi();
-    const double tabs        = std::fabs(h.t);
-
-    // Fill all variables (respect plotting ranges)
-    for (int v=0; v<NV; ++v) {
-      double val = 0.0;
-      if      (vars[v].name == "e_p")     val = h.ep;
-      else if (vars[v].name == "e_theta") val = e_theta_deg;
-      else if (vars[v].name == "p_p")     val = h.pp;
-      else if (vars[v].name == "p_theta") val = p_theta_deg;
-      else if (vars[v].name == "Q2")      val = h.Q2;
-      else if (vars[v].name == "xB")      val = h.x;
-      else if (vars[v].name == "mt")      val = tabs;
-
-      if (val >= vars[v].xmin && val < vars[v].xmax) H[v][xb]->Fill(val);
-    }
-  }
-
-  // Normalize each histogram to its own integral (shape-only)
-  for (int v=0; v<NV; ++v)
-    for (int xb=0; xb<NX; ++xb) {
-      double I = H[v][xb]->Integral();
-      if (I > 0) H[v][xb]->Scale(1.0/I);
+    if (b.has_x && b.has_t && b.has_mx2) {
+      if (!(std::fabs(b.t) >= 0.10 && std::fabs(b.t) <= 1.20)) continue;
+      if (!pass_prop_window(prop, b.t)) continue;
+      if (!(b.mx2 > 0.80 && b.mx2 < 1.00)) continue;
+    } else {
+      // If even the selection branches are missing, nothing to do.
+      continue;
     }
 
-  return H;
-}
+    // fiducial if present
+    if (b.has_fid && b.fid < 100) continue;
 
-// Safe ratio = data/mc (per-bin; handle mc==0)
-static std::unique_ptr<TH1D> make_ratio(const TH1D* hD, const TH1D* hM, const char* name) {
-  auto r = std::make_unique<TH1D>(*hD);
-  r->SetName(name);
-  const int nb = r->GetNbinsX();
-  for (int b=1;b<=nb;++b) {
-    double d  = hD->GetBinContent(b);
-    double dd = hD->GetBinError(b);
-    double m  = hM->GetBinContent(b);
-    double md = hM->GetBinError(b);
-    if (m <= 0) { r->SetBinContent(b, 0.0); r->SetBinError(b, 0.0); continue; }
-    double val = d/m;
-    double err = 0.0;
-    if (d>0 && m>0) err = val*std::sqrt( (dd>0? (dd*dd)/(d*d):0.0) + (md>0? (md*md)/(m*m):0.0) );
-    r->SetBinContent(b, val);
-    r->SetBinError(b, err);
+    int xb = xbin_index(b.x, xe);
+    if (xb < 0) continue;
+
+    // Fill variables (respect missing-branch flags)
+    if (b.has_ep)  HG.h[EP][xb]->Fill(b.ep);
+    if (b.has_eth) HG.h[ETH_DEG][xb]->Fill(b.eth * 180.0/TMath::Pi());
+    if (b.has_pp)  HG.h[PP][xb]->Fill(b.pp);
+    if (b.has_pth) HG.h[PTH_DEG][xb]->Fill(b.pth * 180.0/TMath::Pi());
+    if (b.has_Q2)  HG.h[Q2VAR][xb]->Fill(b.Q2);
+    if (b.has_x)   HG.h[XB][xb]->Fill(b.x);
+    if (b.has_t)   HG.h[MT][xb]->Fill(std::fabs(b.t));
   }
-  return r;
 }
 
-// ------------------ drawing helpers ------------------
+// ------------------ Drawing (overlay + ratio in one cell) ------------------
 
-struct Colors { int data=kBlack; int mc=kRed; };
+struct Colors {
+  int data = kBlack;
+  int mc   = kRed+1;
+};
 
-static void style_axes(TH1* h, const char* xtitle, const char* ytitle, double ytitle_offset=1.45) {
-  h->GetXaxis()->SetTitle(xtitle);
-  h->GetYaxis()->SetTitle(ytitle);
-  h->GetXaxis()->SetTitleSize(0.045);
-  h->GetYaxis()->SetTitleSize(0.045);
-  h->GetXaxis()->SetLabelSize(0.040);
-  h->GetYaxis()->SetLabelSize(0.040);
-  h->GetYaxis()->SetTitleOffset(ytitle_offset);
+static void style_hist_line(TH1D* h, int color, int width=2) {
+  h->SetLineColor(color);
+  h->SetLineWidth(width);
+  h->SetMarkerColor(color);
+  h->SetMarkerStyle(20);
+  h->SetMarkerSize(0.7);
 }
 
-static void draw_distributions_cell(TH1D* hD, TH1D* hM,
-                                    const std::string& title,
-                                    const std::string& xtitle,
-                                    double xmin, double xmax,
-                                    const Colors& colors)
+static double safe_integral(const TH1D* h) {
+  if (!h) return 0.0;
+  double sum = 0.0;
+  for (int i=1;i<=h->GetNbinsX();++i) sum += h->GetBinContent(i);
+  return sum;
+}
+
+static TH1D* clone_detached(const TH1D* src, const std::string& newname) {
+  auto* c = (TH1D*)src->Clone(newname.c_str());
+  c->SetDirectory(nullptr);
+  return c;
+}
+
+static void normalize_in_place(TH1D* h) {
+  double I = safe_integral(h);
+  if (I > 0) h->Scale(1.0/I);
+}
+
+static void compute_ratio(const TH1D* hD, const TH1D* hM, TH1D* hR) {
+  const int nb = hR->GetNbinsX();
+  for (int i=1;i<=nb;++i) {
+    const double d = hD->GetBinContent(i);
+    const double m = hM->GetBinContent(i);
+    double r=0, er=0;
+    if (m > 0) {
+      r = d/m;
+      // crude error from binomial-ish propagation on normalized contents:
+      double ed = hD->GetBinError(i);
+      double em = hM->GetBinError(i);
+      er = std::sqrt( (ed*ed)/(m*m) + (d*d*em*em)/(m*m*m*m) );
+    }
+    hR->SetBinContent(i, r);
+    hR->SetBinError(i, er);
+  }
+}
+
+// Draw overlay+ratio inside the current pad (we split it into two subpads)
+static void draw_dist_ratio_cell(TH1D* hD, TH1D* hM,
+                                 const std::string& xtitle, const std::string& ytitle,
+                                 double xmin, double xmax,
+                                 const Colors& col)
 {
-  if (!hD || !hM) return;
+  // Create subpads
+  TPad* pTop = new TPad("pTop","",0.00,0.32,1.00,1.00);  // ~68% height
+  TPad* pBot = new TPad("pBot","",0.00,0.00,1.00,0.32);  // ~32% height
+  pTop->SetBottomMargin(0.10);
+  pTop->SetLeftMargin(0.16); pTop->SetRightMargin(0.05); pTop->SetTopMargin(0.08);
+  pBot->SetTopMargin(0.02);  pBot->SetBottomMargin(0.35);
+  pBot->SetLeftMargin(0.16); pBot->SetRightMargin(0.05);
+  pTop->Draw(); pBot->Draw();
 
-  // Style
-  hD->SetLineColor(colors.data); hD->SetLineWidth(3);
-  hM->SetLineColor(colors.mc);   hM->SetLineWidth(3);
-  hD->SetStats(0); hM->SetStats(0);
+  // --- TOP: overlay (normalized) ---
+  pTop->cd();
+  TH1D* dN = nullptr; TH1D* mN = nullptr;
+  if (hD) dN = clone_detached(hD, std::string(hD->GetName())+"_N");
+  if (hM) mN = clone_detached(hM, std::string(hM->GetName())+"_N");
 
-  // Axes/titles
-  style_axes(hD, xtitle.c_str(), "Normalized counts");
-  hD->SetTitle(title.c_str());
-  hD->GetXaxis()->SetRangeUser(xmin, xmax);
+  if (dN) normalize_in_place(dN);
+  if (mN) normalize_in_place(mN);
 
-  // Y range: a bit of headroom over both
-  double ymax = std::max(hD->GetMaximum(), hM->GetMaximum());
-  if (ymax <= 0) ymax = 1.0;
-  hD->SetMinimum(0.0);
-  hD->SetMaximum(1.15*ymax);
+  // Axis frame from data if exists, else MC
+  TH1D* frame = nullptr;
+  if (dN && safe_integral(dN) > 0) frame = dN;
+  else if (mN && safe_integral(mN) > 0) frame = mN;
 
-  hD->Draw("HIST");
-  hM->Draw("HIST SAME");
+  if (frame) {
+    frame->SetTitle( (";"+xtitle+";"+ytitle).c_str() );
+    frame->GetXaxis()->SetRangeUser(xmin, xmax);
+
+    // Auto y range to 1.15×max among both normalized hists
+    double ymax = 0.0;
+    if (dN) ymax = std::max(ymax, dN->GetMaximum());
+    if (mN) ymax = std::max(ymax, mN->GetMaximum());
+    frame->SetMaximum(1.15*ymax);
+    frame->SetMinimum(0.0);
+
+    style_hist_line(frame, (frame==dN? col.data : col.mc), 2);
+    frame->Draw("HIST");
+    if (dN && frame!=dN) { style_hist_line(dN, col.data, 2); dN->Draw("HIST SAME"); }
+    if (mN && frame!=mN) { style_hist_line(mN, col.mc,   2); mN->Draw("HIST SAME"); }
+  } else {
+    // Empty axes
+    TH1D* ax = new TH1D("ax","",10,xmin,xmax);
+    ax->SetDirectory(nullptr);
+    ax->SetTitle( (";"+xtitle+";"+ytitle).c_str() );
+    ax->SetMinimum(0.0); ax->SetMaximum(1.0);
+    ax->Draw("AXIS");
+  }
+
+  // One shared legend in the last cell, not per-cell — so no legend here.
+
+  // --- BOTTOM: ratio (Data/MC of normalized) ---
+  pBot->cd();
+  TH1D* r = nullptr;
+  if (dN && mN) {
+    r = (TH1D*)dN->Clone(std::string(dN->GetName())+"_ratio");
+    r->SetDirectory(nullptr);
+    compute_ratio(dN, mN, r);
+    r->SetTitle( (";"+xtitle+";Data/MC").c_str() );
+    r->GetXaxis()->SetRangeUser(xmin, xmax);
+    r->GetYaxis()->SetTitleSize(0.11);
+    r->GetYaxis()->SetLabelSize(0.10);
+    r->GetXaxis()->SetTitleSize(0.12);
+    r->GetXaxis()->SetLabelSize(0.10);
+
+    // Ratio y-range default [0.5,1.5], but expand a bit if needed
+    double rmin=+1e9, rmax=-1e9;
+    for (int i=1;i<=r->GetNbinsX();++i) {
+      double v = r->GetBinContent(i);
+      if (v<=0) continue;
+      rmin = std::min(rmin,v); rmax = std::max(rmax,v);
+    }
+    if (rmin>rmax) { rmin=0.5; rmax=1.5; }
+    double lo = std::min(0.5, rmin*0.9);
+    double hi = std::max(1.5, rmax*1.1);
+    r->SetMinimum(lo); r->SetMaximum(hi);
+
+    style_hist_line(r, kBlack, 2);
+    r->Draw("HIST");
+
+    TLine* l1 = new TLine(xmin,1.0,xmax,1.0);
+    l1->SetLineStyle(2); l1->SetLineWidth(1); l1->SetLineColor(kBlack);
+    l1->Draw("SAME");
+  } else {
+    TH1D* ax = new TH1D("rax","",10,xmin,xmax);
+    ax->SetDirectory(nullptr);
+    ax->SetTitle( (";"+xtitle+";Data/MC").c_str() );
+    ax->SetMinimum(0.5); ax->SetMaximum(1.5);
+    ax->GetYaxis()->SetTitleSize(0.11);
+    ax->GetYaxis()->SetLabelSize(0.10);
+    ax->GetXaxis()->SetTitleSize(0.12);
+    ax->GetXaxis()->SetLabelSize(0.10);
+    ax->Draw("AXIS");
+    TLine* l1 = new TLine(xmin,1.0,xmax,1.0);
+    l1->SetLineStyle(2); l1->SetLineWidth(1); l1->SetLineColor(kBlack);
+    l1->Draw("SAME");
+  }
+
+  // Clean up clones created here (pads own primitives, but we detach)
+  if (dN) delete dN;
+  if (mN) delete mN;
+  if (r)  delete r;
 }
 
-static void draw_ratio_cell(TH1D* r, const std::string& xtitle, double xmin, double xmax) {
-  if (!r) return;
-  style_axes(r, xtitle.c_str(), "DATA / MC", 1.55);
-  r->SetLineColor(kBlack); r->SetMarkerColor(kBlack);
-  r->SetMarkerStyle(20); r->SetMarkerSize(0.8);
-  r->SetLineWidth(2);
+// ------------------ Canvas per x-bin ------------------
 
-  r->GetXaxis()->SetRangeUser(xmin, xmax);
-  r->SetMinimum(0.5);
-  r->SetMaximum(1.5);
-  r->Draw("E1");
+static void draw_global_legend_and_labels(
+  const std::string& prop, int xbin, const std::vector<double>& xe, const Colors& col)
+{
+  // Draw a simple legend and the selection texts in the current pad.
+  gPad->Clear();
+  gPad->SetLeftMargin(0.12); gPad->SetRightMargin(0.02);
+  gPad->SetBottomMargin(0.12); gPad->SetTopMargin(0.12);
 
-  // unity line
-  TLine* l1 = new TLine(xmin, 1.0, xmax, 1.0);
-  l1->SetLineStyle(2);
-  l1->SetLineColor(kGray+2);
-  l1->Draw("SAME");
-}
+  // Dummy invisible hist to host axes and legend
+  TH1D* h = new TH1D("hHost","",10,0,1);
+  h->SetDirectory(nullptr);
+  h->SetMinimum(0); h->SetMaximum(1);
+  h->SetTitle("; ; ");
+  h->Draw("AXIS");
 
-static void draw_global_legend() {
-  auto L = new TLegend(0.68, 0.74, 0.93, 0.92);
-  L->SetBorderSize(1);
-  L->SetFillStyle(1001);
-  L->SetFillColor(kWhite);
-  L->SetTextSize(0.035);
-  // dummy lines
-  auto hD = new TH1D("hDummyD","",1,0,1);
-  auto hM = new TH1D("hDummyM","",1,0,1);
-  hD->SetLineColor(kBlack); hD->SetLineWidth(3);
-  hM->SetLineColor(kRed);   hM->SetLineWidth(3);
-  L->AddEntry(hD, "DATA (norm)", "l");
-  L->AddEntry(hM, "MC (norm)",   "l");
+  // Legend
+  auto L = new TLegend(0.15, 0.65, 0.85, 0.88);
+  L->SetFillStyle(1001); L->SetFillColor(kWhite);
+  L->SetBorderSize(1);   L->SetTextSize(0.035);
+  // create tiny dummies so legend shows colors
+  TH1D* hD = new TH1D("hDummyData","",1,0,1);  hD->SetDirectory(nullptr); style_hist_line(hD, col.data, 2);
+  TH1D* hM = new TH1D("hDummyMC","",1,0,1);    hM->SetDirectory(nullptr); style_hist_line(hM, col.mc,   2);
+  L->AddEntry(hD, "DATA (norm. to integral)", "l");
+  L->AddEntry(hM, "MC (norm. to integral)",   "l");
   L->Draw();
+
+  // Labels
+  TLatex lat; lat.SetNDC();
+  lat.SetTextSize(0.040); lat.SetTextAlign(13);
+  std::string tlabel = prop_tlabel(prop);
+  std::string xblabel = Form("x_{B} #in [%.2f, %.2f)", xe[xbin], xe[xbin+1]);
+
+  lat.DrawLatex(0.15, 0.58, Form("Property: %s", prop.c_str()));
+  lat.DrawLatex(0.15, 0.52, tlabel.c_str());
+  lat.DrawLatex(0.15, 0.46, xblabel.c_str());
+
+  // cleanup dummies after drawing (legend keeps a copy of style)
+  delete hD; delete hM;
 }
 
-// Map variable index -> pad index (4x4 grid)
-// Dist pads in {1..8}, ratio pads = distPad + 8
-static std::vector<int> dist_pad_positions() {
-  // Fill across rows: 1..4 (row1), 5..7 used (row2), pad 8 reserved for legend
-  return {1,2,3,4,5,6,7};
+// Order of variables on the canvas (8 cells: 4×2; last cell used for legend)
+static std::vector<VarID> default_var_order() {
+  return { EP, ETH_DEG, PP, PTH_DEG, Q2VAR, XB, MT };
 }
-
-// ------------------ draw per property & x-bin ------------------
 
 static void draw_canvas_for_xbin(
   const std::string& prop, int xbin,
-  const HistGrid& HD, const HistGrid& HM,
-  const std::vector<VarDef>& vars,
-  const std::vector<double>& xedges)
+  const HistGrid& D, const HistGrid& M)
 {
+  ensure_dir("output/compare");
+  auto xe = x_edges();
+
+  // Style
   gStyle->SetOptStat(0);
-  gStyle->SetPadLeftMargin(0.16);
-  gStyle->SetPadRightMargin(0.05);
-  gStyle->SetPadBottomMargin(0.16);
-  gStyle->SetPadTopMargin(0.10);
-  gStyle->SetTitleSize(0.050, "XYZ");
-  gStyle->SetLabelSize(0.040, "XYZ");
+  TCanvas* c = new TCanvas(Form("c_%s_xb%d", prop.c_str(), xbin),
+                           Form("Compare DATA vs MC: %s, xB bin %d", prop.c_str(), xbin),
+                           1600, 900);
+  c->Divide(4,2); // 8 cells; each cell has overlay+ratio inside
 
-  const double xl = xedges[xbin], xh = xedges[xbin+1];
-  TCanvas* c = new TCanvas(
-    Form("c_cmp_%s_xbin%d", prop.c_str(), xbin),
-    Form("DATA vs MC | %s | x_{B} in [%.2f, %.2f),  %s",
-         prop_title(prop).c_str(), xl, xh, prop_tlabel(prop).c_str()),
-    1600, 1200);
-  c->Divide(4,4);
+  Colors col; // black data, red MC
 
-  Colors colors; colors.data = kBlack; colors.mc = kRed;
-
-  auto pads = dist_pad_positions(); // size 7, pad 8 kept for legend
+  auto vars = default_var_order(); // 7 items; cell 8 for legend
 
   for (size_t iv=0; iv<vars.size(); ++iv) {
-    int pDist = pads[iv];
-    int pRatio = pDist + 8;
+    int cell = (int)iv + 1; // pads are 1-indexed
+    c->cd(cell);
 
-    // Draw distributions
-    c->cd(pDist);
-    {
-      gPad->SetLeftMargin(0.16); gPad->SetRightMargin(0.05);
-      gPad->SetBottomMargin(0.16); gPad->SetTopMargin(0.10);
-      TH1D* hD = HD[iv][xbin].get();
-      TH1D* hM = HM[iv][xbin].get();
-      draw_distributions_cell(hD, hM, vars[iv].title, vars[iv].xtitle,
-                              vars[iv].xmin, vars[iv].xmax, colors);
-    }
+    VarID v = vars[iv];
+    TH1D* hD = D.h[v][xbin];
+    TH1D* hM = M.h[v][xbin];
 
-    // Draw ratio
-    c->cd(pRatio);
-    {
-      gPad->SetLeftMargin(0.16); gPad->SetRightMargin(0.05);
-      gPad->SetBottomMargin(0.16); gPad->SetTopMargin(0.10);
-      auto r = make_ratio(HD[iv][xbin].get(), HM[iv][xbin].get(),
-                          Form("r_%s_%s_xb%d", prop.c_str(), vars[iv].name.c_str(), xbin));
-      draw_ratio_cell(r.get(), vars[iv].xtitle, vars[iv].xmin, vars[iv].xmax);
-    }
+    // Titles and ranges from table
+    auto& I = varInfo[v];
+    std::string xtitle = I.xtitle;
+    std::string ytitle = "Normalized counts";
+
+    draw_dist_ratio_cell(hD, hM, xtitle, ytitle, I.xmin, I.xmax, col);
   }
 
-  // Pad 8 (top-right of the distributions grid) reserved for a clean legend
+  // Last cell (8): legend + labels
   c->cd(8);
-  gPad->SetLeftMargin(0.10); gPad->SetRightMargin(0.05);
-  gPad->SetBottomMargin(0.10); gPad->SetTopMargin(0.10);
-  gPad->Clear();
-  draw_global_legend();
+  draw_global_legend_and_labels(prop, xbin, xe, col);
 
-  // Save
-  ensure_dir("output/compare");
-  std::string out = Form("output/compare/compare_%s_xbin%d.pdf", prop.c_str(), xbin);
-  c->SaveAs(out.c_str());
-  std::cout << "Saved: " << out << "\n";
+  std::string outpdf = Form("output/compare/compare_%s_xbin%d.pdf", prop.c_str(), xbin);
+  c->Print(outpdf.c_str(), "pdf");
+  std::cout << "Saved: " << outpdf << "\n";
   delete c;
 }
 
-// ------------------ Orchestration ------------------
+// ------------------ main ------------------
 
 int main(int argc, char** argv) {
   Config cfg;
@@ -511,6 +604,8 @@ int main(int argc, char** argv) {
   TTree* tM = (TTree*)fM->Get("PhysicsEvents");
   if (!tD || !tM) {
     std::cerr << "ERROR: missing PhysicsEvents tree in one or both files.\n";
+    if (tD) std::cerr << "  DATA has it; MC missing.\n";
+    if (tM) std::cerr << "  MC has it; DATA missing.\n";
     return 3;
   }
 
@@ -519,17 +614,17 @@ int main(int argc, char** argv) {
     list_tree_branches(tM, "MC");
   }
 
-  const auto props = properties_to_run(cfg.which_property);
-  const auto vars  = var_list();
-  const auto xe    = x_edges();
-  const int  NX    = (int)xe.size()-1;
+  auto props = properties_to_run(cfg.which_property);
 
+  // Build once per property, fill all xB bins & all variables in one pass
   for (const auto& p : props) {
-    HistGrid HD = build_hists_one_pass(tD, cfg.bn, p, vars, xe);
-    HistGrid HM = build_hists_one_pass(tM, cfg.bn, p, vars, xe);
+    HistGrid HD, HM;
+    build_hists_one_pass(tD, cfg.bn, p, HD, /*isData=*/true);
+    build_hists_one_pass(tM, cfg.bn, p, HM, /*isData=*/false);
 
-    for (int xb=0; xb<NX; ++xb) {
-      draw_canvas_for_xbin(p, xb, HD, HM, vars, xe);
+    // One canvas per xB bin
+    for (int xb=0; xb<4; ++xb) {
+      draw_canvas_for_xbin(p, xb, HD, HM);
     }
   }
 
