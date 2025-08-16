@@ -1,40 +1,38 @@
 // compare_data_mc.cpp
-// Compare reconstructed DATA vs reconstructed MC (REC) in xB bins and |t| windows.
-// For each property (enpi, enpiLowt, enpiMidt, enpiHight), produce a multi-page PDF
-// with 4 pages (one per xB bin). Each page is a 3x3 grid of variables; each cell
-// contains an upper distribution overlay (DATA points, MC histogram) and a lower
-// Data/MC ratio panel.
+// Overlay DATA (black) vs MC (red) for key reconstructed observables,
+// normalized HIST-BY-HIST to unit area (shape comparison), plus a ratio panel.
+// Uses same kinematic binning you’ve been using:
 //
-// Variables (7):
-//  1) e_p       (electron momentum)        default branch "e_p"
-//  2) e_theta   (electron polar angle)     "e_theta"
-//  3) p_p       (pi+ momentum)             "p_p"
-//  4) p_theta   (pi+ polar angle)          "p_theta"
-//  5) Q2        (GeV^2)                    "Q2"
-//  6) xB        (uses branch name in Config.bn.x, default "x")
-//  7) -t        (absolute of branch Config.bn.t)
+//   x bins: [0.10,0.30), [0.30,0.40), [0.40,0.50), [0.50,0.60)
+//   t-slices ("property"):
+//     enpi      : 0.10 <= |t| <= 1.20
+//     enpiLowt  : 0.10 <= |t| <= 0.4667
+//     enpiMidt  : 0.4667 <= |t| <= 0.8333
+//     enpiHight : 0.8333 <= |t| <= 1.20
 //
-// Distributions use common binning for DATA and MC; bottom pad shows Data/MC ratio.
-// MC is shape-normalized to Data per (variable, xBin, property) by default
-// (disable with --no-norm).
+// Cuts (DATA & MC): fiducial_status >= 100 (if branch exists); 0.80 < Mx2 < 1.00
 //
-// Cuts (as in your unfolding code):
-//  - Mx2 in (0.80, 1.00)
-//  - |t| in [0.10, 1.20]  (plus the property-specific sub-window)
-//  - fiducial_status >= 100 (unless --no-fid-cut)
-//  - xB in the 4 fixed bins: [0.10,0.30), [0.30,0.40), [0.40,0.50), [0.50,0.60)
+// Variables & fixed display ranges (all normalized independently to unit area):
+//   e_p      : 2 -> 9  GeV
+//   e_theta  : 0 -> 40 deg (branch is radians; converted here)
+//   p_p      : 1 -> 4  GeV
+//   p_theta  : 0 -> 80 deg (branch is radians; converted here)
+//   Q2       : 1 -> 8
+//   xB       : 0 -> 1
+//   -t       : 0 -> 1.2  (we plot |t|)
 //
-// Output: output/enpi+/compare_<property>.pdf (multi-page).
+// Output: one canvas per (property, x-bin), 4x2 cells. Each cell contains
+// an upper overlay (data vs mc) and a lower ratio (Data/MC).
 //
 // Build:
 //   g++ -O2 -std=c++17 compare_data_mc.cpp `root-config --cflags --libs` -o compare_data_mc
 //
 // Run:
-//   ./compare_data_mc data.root rec.root [enpi|enpiLowt|enpiMidt|enpiHight|all]
-//       [--x x] [--t t] [--mx2 Mx2] [--fid fiducial_status]
-//       [--ep e_p] [--etheta e_theta] [--pp p_p] [--ptheta p_theta] [--Q2 Q2]
-//       [--nbins 50] [--no-fid-cut] [--no-norm] [--ratio 0.5 1.5]
-//
+//   ./compare_data_mc data_rec.root mc_rec.root [enpi|enpiLowt|enpiMidt|enpiHight|all]
+//        [--x x] [--t t] [--mx2 Mx2] [--fid fiducial_status]
+//        [--ep e_p] [--eth e_theta] [--pp p_p] [--pth p_theta] [--Q2 Q2]
+//        [--list-branches]
+
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
@@ -61,49 +59,42 @@
 #include "TStyle.h"
 #include "TSystem.h"
 #include "TTree.h"
-#include "TLatex.h"
 
-// ------------------ Config / CLI ------------------
+// ------------- CLI -------------
+
 struct BranchNames {
-  std::string x   = "x";
-  std::string t   = "t";
+  // shared kinematics/cuts
+  std::string x   = "x";                // xB
+  std::string t   = "t";                // signed t
   std::string mx2 = "Mx2";
   std::string fid = "fiducial_status";
-  // extra kinematics
-  std::string e_p      = "e_p";
-  std::string e_theta  = "e_theta";
-  std::string p_p      = "p_p";
-  std::string p_theta  = "p_theta";
-  std::string Q2       = "Q2";
+  // reconstructed observables
+  std::string ep  = "e_p";              // GeV
+  std::string eth = "e_theta";          // radians in tree
+  std::string pp  = "p_p";              // GeV
+  std::string pth = "p_theta";          // radians in tree
+  std::string Q2  = "Q2";
 };
 
 struct Config {
-  std::string data_path;
-  std::string rec_path;
+  std::string data_path, mc_path;
   std::string which_property = "all";
   BranchNames bn;
-  bool apply_fid_cut = true;
-  bool do_shape_norm = true;
-  int  nbins = 50;
-  double ratio_min = 0.5, ratio_max = 1.5;
+  bool list_branches = false;
 };
-
-static void ensure_dir(const std::string& d) {
-  if (gSystem->AccessPathName(d.c_str())) gSystem->mkdir(d.c_str(), kTRUE);
-}
 
 static void print_usage(const char* argv0) {
   std::cout << "Usage:\n  " << argv0
-            << " data.root rec.root [enpi|enpiLowt|enpiMidt|enpiHight|all]\n"
-            << "    [--x x] [--t t] [--mx2 Mx2] [--fid fiducial_status]\n"
-            << "    [--ep e_p] [--etheta e_theta] [--pp p_p] [--ptheta p_theta] [--Q2 Q2]\n"
-            << "    [--nbins 50] [--no-fid-cut] [--no-norm] [--ratio 0.5 1.5]\n";
+            << " data_rec.root mc_rec.root [enpi|enpiLowt|enpiMidt|enpiHight|all]\n"
+            << "   [--x x] [--t t] [--mx2 Mx2] [--fid fiducial_status]\n"
+            << "   [--ep e_p] [--eth e_theta] [--pp p_p] [--pth p_theta] [--Q2 Q2]\n"
+            << "   [--list-branches]\n";
 }
 
 static bool parse_args(int argc, char** argv, Config& cfg) {
   if (argc < 4) { print_usage(argv[0]); return false; }
   cfg.data_path = argv[1];
-  cfg.rec_path  = argv[2];
+  cfg.mc_path   = argv[2];
   cfg.which_property = argv[3];
 
   for (int i=4;i<argc;i++) {
@@ -117,49 +108,34 @@ static bool parse_args(int argc, char** argv, Config& cfg) {
       }
       return false;
     };
-    auto eat_int = [&](const char* key, int& out) {
-      size_t eq = a.find('=');
-      if (a == key) {
-        if (i+1 < argc) { out = std::atoi(argv[++i]); return true; }
-      } else if (eq != std::string::npos && a.substr(0,eq) == key) {
-        out = std::atoi(a.substr(eq+1).c_str()); return true;
-      }
-      return false;
-    };
-    auto eat_dbl2 = [&](const char* key, double& a1, double& a2) {
-      if (a == key && i+2 < argc) { a1 = std::atof(argv[++i]); a2 = std::atof(argv[++i]); return true; }
-      return false;
-    };
-    if (eat("--x", cfg.bn.x)) continue;
-    if (eat("--t", cfg.bn.t)) continue;
+    if (eat("--x",   cfg.bn.x)) continue;
+    if (eat("--t",   cfg.bn.t)) continue;
     if (eat("--mx2", cfg.bn.mx2)) continue;
     if (eat("--fid", cfg.bn.fid)) continue;
-    if (eat("--ep", cfg.bn.e_p)) continue;
-    if (eat("--etheta", cfg.bn.e_theta)) continue;
-    if (eat("--pp", cfg.bn.p_p)) continue;
-    if (eat("--ptheta", cfg.bn.p_theta)) continue;
-    if (eat("--Q2", cfg.bn.Q2)) continue;
-    if (eat_int("--nbins", cfg.nbins)) continue;
-    if (a == "--no-fid-cut") { cfg.apply_fid_cut=false; continue; }
-    if (a == "--no-norm") { cfg.do_shape_norm=false; continue; }
-    if (eat_dbl2("--ratio", cfg.ratio_min, cfg.ratio_max)) continue;
-    std::cerr << "Unknown arg: " << a << "\n";
+    if (eat("--ep",  cfg.bn.ep))  continue;
+    if (eat("--eth", cfg.bn.eth)) continue;
+    if (eat("--pp",  cfg.bn.pp))  continue;
+    if (eat("--pth", cfg.bn.pth)) continue;
+    if (eat("--Q2",  cfg.bn.Q2))  continue;
+    if (a == "--list-branches") { cfg.list_branches = true; continue; }
+    std::cerr << "Unknown argument: " << a << "\n";
   }
   return true;
 }
 
-// ------------------ Binning & property windows ------------------
-static std::vector<double> x_edges() { return {0.10,0.30,0.40,0.50,0.60}; }
+// ------------- binning & selections -------------
+
+static std::vector<std::string> all_props() {
+  return {"enpi", "enpiLowt", "enpiMidt", "enpiHight"};
+}
+static std::vector<std::string> properties_to_run(const std::string& which) {
+  if (which == "all") return all_props();
+  return {which};
+}
+static std::vector<double> x_edges() { return {0.10, 0.30, 0.40, 0.50, 0.60}; }
 static int xbin_index(double x, const std::vector<double>& e) {
   for (size_t i=0;i+1<e.size();++i) if (x >= e[i] && x < e[i+1]) return (int)i;
   return -1;
-}
-static inline bool in_common_cuts(double t, double mx2, int fid, bool has_fid, bool apply_fid) {
-  const double at = std::fabs(t);
-  if (!(at >= 0.10 && at <= 1.20)) return false;
-  if (!(mx2 > 0.80 && mx2 < 1.00)) return false;
-  if (apply_fid) { if (!has_fid || fid < 100) return false; }
-  return true;
 }
 static inline bool pass_prop_window(const std::string& prop, double t) {
   const double at = std::fabs(t);
@@ -169,329 +145,297 @@ static inline bool pass_prop_window(const std::string& prop, double t) {
   if (prop == "enpiHight") return (at >= 0.8333 && at <= 1.20);
   return false;
 }
-static std::vector<std::string> all_props() {
-  return {"enpi","enpiLowt","enpiMidt","enpiHight"};
-}
-static std::vector<std::string> props_to_run(const std::string& which) {
-  if (which=="all") return all_props();
-  return {which};
-}
-static std::string prop_title(const std::string& p) {
-  if (p == "enpi")      return "ep #rightarrow e' n #pi^{+}";
-  if (p == "enpiLowt")  return "low |t|";
-  if (p == "enpiMidt")  return "mid |t|";
-  if (p == "enpiHight") return "high |t|";
-  return p;
-}
-static std::string prop_tlabel(const std::string& prop) {
-  if (prop == "enpi")      return "-t #in [0.10, 1.20]";
-  if (prop == "enpiLowt")  return "-t #in [0.10, 0.4667]";
-  if (prop == "enpiMidt")  return "-t #in [0.4667, 0.8333]";
-  if (prop == "enpiHight") return "-t #in [0.8333, 1.20]";
-  return "";
+static void ensure_dir(const std::string& d) {
+  if (gSystem->AccessPathName(d.c_str())) gSystem->mkdir(d.c_str(), kTRUE);
 }
 
-// ------------------ Branch binding ------------------
-struct BranchHandles {
-  // basic
-  double x=0, t=0, mx2=0; int fid=0;
-  bool has_fid=false;
-  // extras
-  double e_p=0, e_theta=0, p_p=0, p_theta=0, Q2=0;
-  bool has_e_p=false, has_e_theta=false, has_p_p=false, has_p_theta=false, has_Q2=false;
+// ------------- binding -------------
+
+struct Handles {
+  double x=0, t=0, mx2=0;
+  int fid=0; bool has_fid=false;
+  double ep=0, eth=0, pp=0, pth=0, Q2=0;
 };
 
-static bool bind_tree(TTree* tr, const BranchNames& bn, BranchHandles& b) {
+static bool bind_tree(TTree* tr, const BranchNames& bn, Handles& h, const char* who) {
   if (!tr) return false;
-  auto has = [&](const std::string& name){ return tr->GetBranch(name.c_str()) != nullptr; };
-  if (!has(bn.x) || !has(bn.t) || !has(bn.mx2)) {
-    std::cerr << "ERROR: missing required branches x/t/Mx2 on tree " << tr->GetName() << "\n";
+  auto req = [&](const std::string& b){ return tr->GetBranch(b.c_str()) != nullptr; };
+  if (!(req(bn.x) && req(bn.t) && req(bn.mx2) && req(bn.ep) && req(bn.eth) &&
+        req(bn.pp) && req(bn.pth) && req(bn.Q2))) {
+    std::cerr << "ERROR: missing required branches on " << who << "\n";
     return false;
   }
-  tr->SetBranchAddress(bn.x.c_str(), &b.x);
-  tr->SetBranchAddress(bn.t.c_str(), &b.t);
-  tr->SetBranchAddress(bn.mx2.c_str(), &b.mx2);
-  b.has_fid = has(bn.fid);
-  if (b.has_fid) tr->SetBranchAddress(bn.fid.c_str(), &b.fid);
-
-  b.has_e_p     = has(bn.e_p);     if (b.has_e_p)     tr->SetBranchAddress(bn.e_p.c_str(), &b.e_p);
-  b.has_e_theta = has(bn.e_theta); if (b.has_e_theta) tr->SetBranchAddress(bn.e_theta.c_str(), &b.e_theta);
-  b.has_p_p     = has(bn.p_p);     if (b.has_p_p)     tr->SetBranchAddress(bn.p_p.c_str(), &b.p_p);
-  b.has_p_theta = has(bn.p_theta); if (b.has_p_theta) tr->SetBranchAddress(bn.p_theta.c_str(), &b.p_theta);
-  b.has_Q2      = has(bn.Q2);      if (b.has_Q2)      tr->SetBranchAddress(bn.Q2.c_str(), &b.Q2);
+  tr->SetBranchAddress(bn.x.c_str(),   &h.x);
+  tr->SetBranchAddress(bn.t.c_str(),   &h.t);
+  tr->SetBranchAddress(bn.mx2.c_str(), &h.mx2);
+  tr->SetBranchAddress(bn.ep.c_str(),  &h.ep);
+  tr->SetBranchAddress(bn.eth.c_str(), &h.eth);
+  tr->SetBranchAddress(bn.pp.c_str(),  &h.pp);
+  tr->SetBranchAddress(bn.pth.c_str(), &h.pth);
+  tr->SetBranchAddress(bn.Q2.c_str(),  &h.Q2);
+  h.has_fid = (tr->GetBranch(bn.fid.c_str()) != nullptr);
+  if (h.has_fid) tr->SetBranchAddress(bn.fid.c_str(), &h.fid);
   return true;
 }
 
-// ------------------ Variable descriptors ------------------
-struct VarDesc {
-  std::string key;        // internal id
-  std::string xtitle;     // axis label
-  int nbins;
-  double vmin, vmax;
-  bool available = true;  // set false if branch missing
-};
-
-static std::vector<VarDesc> make_var_descs(const BranchHandles& b, int nbins) {
-  std::vector<VarDesc> V;
-
-  // Tuned, conservative default ranges; adjust here if your kinematics differ.
-  V.push_back({"e_p",     "e momentum p_{e} (GeV)",            nbins, 0.0, 12.0,  b.has_e_p});
-  V.push_back({"e_theta", "e polar angle #theta_{e} (deg)",    nbins, 0.0, 40.0,  b.has_e_theta});
-  V.push_back({"p_p",     "#pi^{+} momentum p_{#pi} (GeV)",    nbins, 0.0, 6.0,   b.has_p_p});
-  V.push_back({"p_theta", "#pi^{+} polar #theta_{#pi} (deg)",  nbins, 0.0, 90.0,  b.has_p_theta});
-  V.push_back({"Q2",      "Q^{2} (GeV^{2})",                   nbins, 0.0, 10.0,  b.has_Q2});
-  V.push_back({"xB",      "x_{B}",                             nbins, 0.10, 0.60,  true});
-  V.push_back({"t",       "-t (GeV^{2})",                      nbins, 0.10, 1.20,  true});
-  return V;
+static void list_tree_branches(TTree* tr, const char* label) {
+  if (!tr) { std::cout << "[" << label << "] Tree is null.\n"; return; }
+  std::cout << "\n[" << label << "] Branches on " << tr->GetName() << ":\n";
+  TObjArray* bl = tr->GetListOfBranches();
+  if (!bl) { std::cout << "  (no branches?)\n"; return; }
+  for (int i=0;i<bl->GetEntries();++i) {
+    TBranch* br = dynamic_cast<TBranch*>(bl->At(i));
+    if (!br) continue;
+    std::cout << "  - " << br->GetName() << "\n";
+  }
+  std::cout.flush();
 }
 
-static inline double get_var_value(const VarDesc& vd, const BranchHandles& b) {
-  if (vd.key=="e_p")     return b.e_p;
-  if (vd.key=="e_theta") return b.e_theta;
-  if (vd.key=="p_p")     return b.p_p;
-  if (vd.key=="p_theta") return b.p_theta;
-  if (vd.key=="Q2")      return b.Q2;
-  if (vd.key=="xB")      return b.x;
-  if (vd.key=="t")       return std::fabs(b.t);
+// ------------- histogram helpers -------------
+
+static void normalize_to_area(TH1* h) {
+  if (!h) return;
+  double integral = h->Integral();
+  if (integral > 0) h->Scale(1.0 / integral);
+}
+
+struct VarDef {
+  std::string name;         // internal label
+  std::string title;        // top pad title (left of / above legend)
+  std::string xtitle;       // x-axis label
+  int    nbins;
+  double xmin, xmax;
+  bool   use_degrees;       // true for *_theta vars (radian->degree)
+};
+
+static std::vector<VarDef> var_list() {
+  // Bin counts chosen to be smooth but not noisy
+  return {
+    {"e_p",     "e_{p}",          "e_{p} (GeV)",          70, 2.0,  9.0,  false},
+    {"e_theta", "e_{#theta}",     "e_{#theta} (deg)",     80, 0.0, 40.0,  true },
+    {"p_p",     "p_{p}",          "p_{p} (GeV)",          60, 1.0,  4.0,  false},
+    {"p_theta", "p_{#theta}",     "p_{#theta} (deg)",     80, 0.0, 80.0,  true },
+    {"Q2",      "Q^{2}",          "Q^{2} (GeV^{2})",      70, 1.0,  8.0,  false},
+    {"xB",      "x_{B}",          "x_{B}",                60, 0.0,  1.0,  false},
+    {"t",       "-t",             "-t (GeV^{2})",         60, 0.0,  1.2,  false}
+  };
+}
+
+// Extract a value from Handles based on VarDef
+static inline double get_value(const Handles& h, const VarDef& v) {
+  if (v.name == "e_p")     return h.ep;
+  if (v.name == "e_theta") return h.eth * 180.0 / TMath::Pi();
+  if (v.name == "p_p")     return h.pp;
+  if (v.name == "p_theta") return h.pth * 180.0 / TMath::Pi();
+  if (v.name == "Q2")      return h.Q2;
+  if (v.name == "xB")      return h.x;
+  if (v.name == "t")       return std::fabs(h.t);
   return 0.0;
 }
 
-// ------------------ Hist containers ------------------
-struct HistPair { std::unique_ptr<TH1D> hD, hM; };
-using VarHists = std::vector<HistPair>;              // one per variable
-using XbinVarHists = std::vector<VarHists>;          // size = NX x Nvar
-
-static XbinVarHists make_hists_for_property(const std::vector<VarDesc>& vars,
-                                            int nx, const std::string& prop) {
-  XbinVarHists hv(nx);
-  for (int ib=0; ib<nx; ++ib) {
-    hv[ib].reserve(vars.size());
-    for (size_t iv=0; iv<vars.size(); ++iv) {
-      const auto& v = vars[iv];
-      // If unavailable, still create tiny placeholder to keep drawing flow simple
-      auto hD = std::make_unique<TH1D>(Form("hD_%s_%s_ib%d", prop.c_str(), v.key.c_str(), ib),
-                                       "", v.nbins, v.vmin, v.vmax);
-      auto hM = std::make_unique<TH1D>(Form("hM_%s_%s_ib%d", prop.c_str(), v.key.c_str(), ib),
-                                       "", v.nbins, v.vmin, v.vmax);
-      hD->Sumw2(); hM->Sumw2();
-      hv[ib].push_back({std::move(hD), std::move(hM)});
-    }
-  }
-  return hv;
-}
-
-// ------------------ Fill loops ------------------
-static void fill_tree_into_hists(TTree* tr, const BranchNames& bn, const std::string& prop,
-                                 bool apply_fid, const std::vector<VarDesc>& vars,
-                                 XbinVarHists& hv, bool isData)
+// Create and fill a normalized hist for a given (tree, property, xbin, var)
+static std::unique_ptr<TH1D> make_hist_for(
+  TTree* tr, const BranchNames& bn, const std::string& prop, int xbin,
+  const VarDef& var, const std::vector<double>& xedges)
 {
-  BranchHandles b;
-  if (!bind_tree(tr, bn, b)) return;
+  auto h = std::make_unique<TH1D>(
+    Form("h_%s_prop_%s_xbin_%d", var.name.c_str(), prop.c_str(), xbin),
+    "", var.nbins, var.xmin, var.xmax);
+  h->Sumw2();
 
-  const auto xe = x_edges();
-  const Long64_t nent = tr->GetEntries();
-  for (Long64_t i=0; i<nent; ++i) {
+  Handles hd; if (!bind_tree(tr, bn, hd, "TREE")) return h;
+
+  const Long64_t N = tr->GetEntries();
+  for (Long64_t i=0;i<N;i++) {
     tr->GetEntry(i);
-    if (!in_common_cuts(b.t, b.mx2, b.fid, b.has_fid, apply_fid)) continue;
-    if (!pass_prop_window(prop, b.t)) continue;
-    int ib = xbin_index(b.x, xe);
-    if (ib < 0) continue;
+    // cuts
+    if (hd.has_fid && hd.fid < 100) continue;
+    if (!(hd.mx2 > 0.80 && hd.mx2 < 1.00)) continue;
+    if (!pass_prop_window(prop, hd.t)) continue;
 
-    for (size_t iv=0; iv<vars.size(); ++iv) {
-      const auto& v = vars[iv];
-      if (!v.available) continue;
-      const double val = get_var_value(v, b);
-      if (std::isnan(val)) continue;
-      if (isData) hv[ib][iv].hD->Fill(val);
-      else        hv[ib][iv].hM->Fill(val);
-    }
+    int ib = xbin_index(hd.x, xedges);
+    if (ib != xbin) continue;
+
+    double val = get_value(hd, var);
+    if (val >= var.xmin && val < var.xmax) h->Fill(val);
   }
+
+  normalize_to_area(h.get());
+  return h;
 }
 
-// ------------------ Drawing helpers ------------------
-struct Colors {
-  int dataMarker=20, dataColor=kBlack;
-  int mcLineColor=kAzure+2, mcFillColor=0, mcLineWidth=2;
-};
+// ------------- draw split cell (overlay + ratio) -------------
 
-static void draw_dist_ratio_cell(TH1D* hD, TH1D* hM, const std::string& xtitle,
-                                 const std::string& titleTop,
-                                 double ratioMin, double ratioMax,
-                                 bool do_norm, const Colors& C)
+struct Colors { int data=1; int mc=2; }; // kBlack=1, kRed=2
+
+static void draw_one_cell(
+  TPad* parent, TH1D* hD, TH1D* hM,
+  const std::string& title, const std::string& xtitle,
+  double xmin, double xmax, const Colors& col)
 {
-  // Split pad
-  TPad* pTop = new TPad("pTop","",0,0.32,1,1);  pTop->SetNumber(1);
-  TPad* pBot = new TPad("pBot","",0,0,1,0.32);  pBot->SetNumber(2);
-  pTop->SetBottomMargin(0.02); pTop->SetTopMargin(0.08);
-  pTop->SetLeftMargin(0.18);   pTop->SetRightMargin(0.06);
-  pBot->SetTopMargin(0.02);    pBot->SetBottomMargin(0.38);
-  pBot->SetLeftMargin(0.18);   pBot->SetRightMargin(0.06);
+  if (!parent) return;
+  parent->cd();
+  parent->Clear();
+
+  // Subpads
+  // top for distributions, bottom for ratio
+  TPad* pTop = new TPad("pTop","", 0.00, 0.35, 1.00, 0.98);
+  TPad* pBot = new TPad("pBot","", 0.00, 0.08, 1.00, 0.32);
+  pTop->SetBottomMargin(0.04);
+  pTop->SetTopMargin(0.12);
+  pTop->SetLeftMargin(0.16);
+  pTop->SetRightMargin(0.04);
+
+  pBot->SetTopMargin(0.02);
+  pBot->SetBottomMargin(0.40);
+  pBot->SetLeftMargin(0.16);
+  pBot->SetRightMargin(0.04);
+
+  pTop->SetTicks(1,1); pBot->SetTicks(1,1);
   pTop->Draw(); pBot->Draw();
 
-  // normalize MC to Data if requested
-  double sf = 1.0;
-  if (do_norm) {
-    double iD = hD->Integral(0, hD->GetNbinsX()+1);
-    double iM = hM->Integral(0, hM->GetNbinsX()+1);
-    if (iM>0) { sf = iD / iM; hM->Scale(sf); }
-  }
-
-  // --- TOP: overlay ---
+  // --------- TOP: overlay ---------
   pTop->cd();
-  hM->SetLineColor(C.mcLineColor);
-  hM->SetLineWidth(C.mcLineWidth);
-  hM->SetFillStyle(0);
-  hM->SetTitle(titleTop.c_str());
-  hM->GetXaxis()->SetLabelSize(0); // hide x labels on top
-  hM->GetYaxis()->SetTitle("Events");
-  hM->GetYaxis()->SetTitleSize(0.06);
-  hM->GetYaxis()->SetLabelSize(0.05);
-  hM->GetYaxis()->SetTitleOffset(1.25);
 
-  // autoscale y by union
-  double ymax = std::max(hM->GetMaximum(), hD->GetMaximum());
-  hM->SetMaximum(1.25*ymax);
-  hM->Draw("HIST");
+  // Style: DATA black markers+line; MC red line
+  if (hD) { hD->SetLineColor(col.data); hD->SetMarkerColor(col.data); hD->SetMarkerStyle(20); hD->SetMarkerSize(0.7); hD->SetLineWidth(2); }
+  if (hM) { hM->SetLineColor(col.mc);   hM->SetLineWidth(2); }
 
-  auto gD = (TH1D*)hD->Clone(Form("%s_pts", hD->GetName()));
-  gD->SetMarkerStyle(C.dataMarker);
-  gD->SetMarkerColor(C.dataColor);
-  gD->SetLineColor(C.dataColor);
-  gD->Draw("E1 SAME");
+  // Axis frame
+  TH1D* frame = (TH1D*)hD->Clone("frame_overlay");
+  frame->Reset();
+  frame->SetTitle(Form("%s;%s;Normalized entries", title.c_str(), xtitle.c_str()));
+  frame->GetXaxis()->SetRangeUser(xmin, xmax);
 
-  // legend (UR)
-  auto L = new TLegend(0.58,0.72,0.94,0.92);
-  L->SetBorderSize(1); L->SetFillStyle(1001); L->SetFillColor(kWhite); L->SetTextSize(0.045);
-  L->AddEntry(gD,"DATA","lep");
-  const char* mcLabel = do_norm ? Form("MC (norm x %.3g)", sf) : "MC";
-  L->AddEntry(hM, mcLabel, "l");
+  // y-range auto from max of both
+  double ymax = 1.0;
+  if (hD) ymax = std::max(ymax, hD->GetMaximum());
+  if (hM) ymax = std::max(ymax, hM->GetMaximum());
+  frame->SetMinimum(0.0);
+  frame->SetMaximum(ymax * 1.25);
+  frame->Draw("AXIS");
+
+  if (hM) hM->Draw("HIST SAME");
+  if (hD) hD->Draw("E SAME");
+
+  // Legend (UR inside)
+  auto L = new TLegend(0.62, 0.72, 0.94, 0.90);
+  L->SetBorderSize(1);
+  L->SetFillStyle(1001);
+  L->SetFillColor(kWhite);
+  L->SetTextSize(0.030);
+  L->AddEntry(hD, "Data", "lep");
+  L->AddEntry(hM, "MC",   "l");
   L->Draw();
 
-  // --- BOTTOM: ratio ---
+  // --------- BOTTOM: ratio (Data / MC) ---------
   pBot->cd();
-  TH1D* r = (TH1D*)hD->Clone(Form("%s_ratio", hD->GetName()));
-  r->Divide(hM);
-  r->SetTitle("");
-  r->GetYaxis()->SetTitle("Data/MC");
-  r->GetXaxis()->SetTitle(xtitle.c_str());
-  r->GetXaxis()->SetTitleSize(0.13);
-  r->GetYaxis()->SetTitleSize(0.12);
-  r->GetXaxis()->SetLabelSize(0.12);
-  r->GetYaxis()->SetLabelSize(0.11);
-  r->GetYaxis()->SetTitleOffset(0.50);
-  r->GetYaxis()->SetNdivisions(505);
-  r->SetMarkerStyle(C.dataMarker);
-  r->SetMarkerColor(C.dataColor);
-  r->SetLineColor(C.dataColor);
-  r->GetYaxis()->SetRangeUser(ratioMin, ratioMax);
-  r->Draw("E1");
-
-  TLine* l1 = new TLine(r->GetXaxis()->GetXmin(),1.0,r->GetXaxis()->GetXmax(),1.0);
-  l1->SetLineStyle(2); l1->SetLineColor(kGray+2); l1->Draw("SAME");
-}
-
-// ------------------ One property -> multipage PDF ------------------
-static void draw_property_pdf(const std::string& prop,
-                              const std::vector<VarDesc>& vars,
-                              const XbinVarHists& hv,
-                              const Config& cfg)
-{
-  ensure_dir("output/enpi+");
-  std::string pdf = "output/enpi+/compare_" + prop + ".pdf";
-
-  gStyle->SetOptStat(0);
-  TCanvas* c = new TCanvas(("c_"+prop).c_str(), ("Data vs MC: "+prop).c_str(), 1800, 1200);
-  c->Divide(3,3);
-
-  // open multipage
-  c->Print((pdf + "[").c_str());
-
-  auto xe = x_edges();
-  const int NX = (int)xe.size()-1;
-  Colors colors;
-
-  for (int ib=0; ib<NX; ++ib) {
-    c->cd(0); // ensure clean
-    // draw 7 variables into first 7 pads
-    int pad = 1;
-    for (size_t iv=0; iv<vars.size(); ++iv) {
-      c->cd(pad++);
-      if (!vars[iv].available) {
-        // nice placeholder
-        gPad->Clear();
-        TLatex t; t.SetNDC(); t.SetTextSize(0.05);
-        t.DrawLatex(0.20,0.55,Form("%s unavailable on tree", vars[iv].key.c_str()));
-        continue;
-      }
-      // compose small title with xB, t-window
-      std::string ttl = Form("x_{B} #in [%.2f, %.2f),   %s",
-                             xe[ib], xe[ib+1], prop_tlabel(prop).c_str());
-      draw_dist_ratio_cell(hv[ib][iv].hD.get(), hv[ib][iv].hM.get(),
-                           vars[iv].xtitle, ttl,
-                           cfg.ratio_min, cfg.ratio_max,
-                           cfg.do_shape_norm, colors);
+  TH1D* r = nullptr;
+  if (hD && hM) {
+    r = (TH1D*)hD->Clone("ratio");
+    // Prevent div-by-zero: set bins where MC=0 to 0 with zero error
+    for (int b=1;b<=r->GetNbinsX();++b) {
+      double mc = hM->GetBinContent(b);
+      if (mc<=0) { r->SetBinContent(b, 0.0); r->SetBinError(b, 0.0); }
     }
-    // leave pad 8 and 9 blank or label
-    for (; pad<=9; ++pad) {
-      c->cd(pad);
-      gPad->Clear();
-      if (pad==9) {
-        TLatex t; t.SetNDC(); t.SetTextSize(0.060); t.SetTextAlign(22);
-        t.DrawLatex(0.50,0.55,Form("%s — %s", prop_title(prop).c_str(), prop_tlabel(prop).c_str()));
-        TLatex xb; xb.SetNDC(); xb.SetTextSize(0.050); xb.SetTextAlign(22);
-        xb.DrawLatex(0.50,0.42,Form("x_{B} bin: [%.2f, %.2f)", xe[ib], xe[ib+1]));
-      }
-    }
-    c->Print(pdf.c_str());
+    r->Divide(hM); // uses stored errors (propagation)
+    r->SetLineColor(kBlack);
+    r->SetMarkerColor(kBlack);
+    r->SetMarkerStyle(20);
+    r->SetMarkerSize(0.6);
   }
 
-  // close multipage
-  c->Print((pdf + "]").c_str());
-  std::cout << "Saved: " << pdf << "\n";
+  TH1D* fr = (TH1D*)hD->Clone("frame_ratio");
+  fr->Reset();
+  fr->SetTitle(Form(";%s;Data/MC", xtitle.c_str()));
+  fr->GetXaxis()->SetRangeUser(xmin, xmax);
+  fr->SetMinimum(0.5);
+  fr->SetMaximum(1.5);
+  fr->Draw("AXIS");
+  if (r) r->Draw("E SAME");
+
+  // y=1 line
+  TLine* l1 = new TLine(xmin, 1.0, xmax, 1.0);
+  l1->SetLineStyle(2);
+  l1->SetLineWidth(1);
+  l1->SetLineColor(kBlack);
+  l1->Draw("SAME");
+}
+
+// ------------- one canvas for a given (property, xbin) -------------
+
+static void draw_canvas_for_bin(
+  TTree* tD, TTree* tM, const BranchNames& bn,
+  const std::string& prop, int xbin)
+{
+  auto vars = var_list();
+  const auto xe = x_edges();
+
+  // Canvas: 4 columns x 2 rows = 8 cells (7 variables + 1 blank)
+  TCanvas* c = new TCanvas(
+    Form("c_cmp_%s_xbin%d", prop.c_str(), xbin),
+    Form("DATA vs MC | %s | x_{B} in [%.2f,%.2f)", prop.c_str(), xe[xbin], xe[xbin+1]),
+    1600, 900);
+  c->Divide(4,2);
+
+  gStyle->SetOptStat(0);
+
+  Colors colors; colors.data = kBlack; colors.mc = kRed;
+
+  for (size_t iv=0; iv<vars.size(); ++iv) {
+    c->cd((int)iv+1);
+    TPad* cell = (TPad*)gPad;
+
+    auto hD = make_hist_for(tD, bn, prop, xbin, vars[iv], xe);
+    auto hM = make_hist_for(tM, bn, prop, xbin, vars[iv], xe);
+
+    draw_one_cell(cell, hD.get(), hM.get(),
+                  vars[iv].title, vars[iv].xtitle,
+                  vars[iv].xmin, vars[iv].xmax, colors);
+  }
+
+  // leave last pad (8th) blank
+  c->cd(8); gPad->Clear();
+
+  ensure_dir("output/compare");
+  std::string out = Form("output/compare/compare_%s_xbin%d.pdf", prop.c_str(), xbin);
+  c->SaveAs(out.c_str());
+  std::cout << "Saved: " << out << "\n";
+
   delete c;
 }
 
-// ------------------ main ------------------
+// ------------- main -------------
+
 int main(int argc, char** argv) {
   Config cfg;
   if (!parse_args(argc, argv, cfg)) return 1;
 
   std::unique_ptr<TFile> fD(TFile::Open(cfg.data_path.c_str(), "READ"));
-  std::unique_ptr<TFile> fM(TFile::Open(cfg.rec_path.c_str(),  "READ")); // REC MC
+  std::unique_ptr<TFile> fM(TFile::Open(cfg.mc_path.c_str(),   "READ"));
   if (!fD || fD->IsZombie() || !fM || fM->IsZombie()) {
     std::cerr << "ERROR: could not open input files.\n";
     return 2;
   }
+
   TTree* tD = (TTree*)fD->Get("PhysicsEvents");
   TTree* tM = (TTree*)fM->Get("PhysicsEvents");
   if (!tD || !tM) {
-    std::cerr << "ERROR: missing 'PhysicsEvents' tree in one or both files.\n";
+    std::cerr << "ERROR: missing PhysicsEvents tree in one or both files.\n";
     return 3;
   }
 
-  // Probe branches to decide availability / set ranges
-  BranchHandles probe;
-  if (!bind_tree(tD, cfg.bn, probe)) return 4; // use DATA to probe
-  auto varDescs = make_var_descs(probe, cfg.nbins);
-
-  // For each property, build hist sets and fill
-  const auto props = props_to_run(cfg.which_property);
-  const int NX = (int)x_edges().size()-1;
-
-  for (const auto& prop : props) {
-    auto hv = make_hists_for_property(varDescs, NX, prop);
-    // fill DATA
-    fill_tree_into_hists(tD, cfg.bn, prop, cfg.apply_fid_cut, varDescs, hv, /*isData=*/true);
-    // fill MC (REC)
-    fill_tree_into_hists(tM, cfg.bn, prop, cfg.apply_fid_cut, varDescs, hv, /*isData=*/false);
-
-    // style (global)
-    gStyle->SetTitleSize(0.05, "XYZ");
-    gStyle->SetLabelSize(0.045, "XYZ");
-
-    // draw to one multi-page PDF per property
-    draw_property_pdf(prop, varDescs, hv, cfg);
+  if (cfg.list_branches) {
+    list_tree_branches(tD, "DATA");
+    list_tree_branches(tM, "MC");
   }
 
+  auto props = properties_to_run(cfg.which_property);
+  const auto xe = x_edges();
+  for (const auto& p : props) {
+    for (int xb=0; xb<(int)xe.size()-1; ++xb) {
+      draw_canvas_for_bin(tD, tM, cfg.bn, p, xb);
+    }
+  }
   return 0;
 }
