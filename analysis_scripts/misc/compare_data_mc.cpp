@@ -2,12 +2,11 @@
 // DATA vs MC comparisons with distributions and ratio (DATA/MC)
 // - Uses your xB and |t| binning from the unfolding script
 // - One-pass fill per (tree, property): fast
-// - DATA shown in black, MC in red
-// - Angles in the tree are in radians; plotted in degrees
+// - DATA in black, MC in red
 // - Each histogram is normalized to its own integral (shape comparison)
 // - Per property and per xB bin, produce one 4x4 canvas:
-//     * Top 2 rows (pads 1..8): 7 variables (1 blank pad reserved for legend)
-//     * Bottom 2 rows (pads 9..16): corresponding 7 ratio pads (DATA/MC), aligned
+//     * Top 2 rows (pads 1..8): 7 variables (pad 8 reserved for legend)
+//     * Bottom 2 rows (pads 9..16): matching 7 ratio pads (DATA/MC)
 //
 // Variables & ranges:
 //   e_p      : [2, 9] GeV
@@ -29,12 +28,6 @@
 //
 // Output:
 //   output/compare/compare_<property>_xbin<i>.pdf  (i=0..3)
-//
-// Notes:
-// - Cuts applied: fid>=100 (if available), Mx2 in (0.80,1.00), |t| per property window,
-//                 xB in the specified x bin on each canvas.
-// - Ratios use normalized shapes: DATA_norm / MC_norm, with a dashed y=1 line.
-// - If MC is zero in a bin, ratio content & error are set to 0 in that bin.
 
 #include <algorithm>
 #include <cmath>
@@ -61,8 +54,10 @@
 #include "TPad.h"
 #include "TROOT.h"
 #include "TStyle.h"
+#include "TF1.h"
 #include "TSystem.h"
 #include "TTree.h"
+#include "TString.h"
 
 // ------------------ CLI/Config ------------------
 
@@ -72,7 +67,7 @@ struct BranchNames {
   std::string mx2 = "Mx2";
   std::string fid = "fiducial_status";
 
-  // Kinematics for comparison (defaults; override via CLI if needed)
+  // Kinematics (override via CLI if needed)
   std::string ep  = "ep";    // electron momentum [GeV]
   std::string eth = "eth";   // electron polar angle [rad]
   std::string pp  = "pp";    // proton momentum [GeV]
@@ -240,7 +235,7 @@ static void list_tree_branches(TTree* tr, const char* label) {
 
 struct VarDef {
   std::string name;
-  std::string title;   // for pad title
+  std::string title;   // pad title
   std::string xtitle;  // axis
   int    nbins;
   double xmin, xmax;
@@ -269,8 +264,11 @@ static HistGrid build_hists_one_pass(
   const int NV = (int)vars.size();
   const int NX = (int)xedges.size()-1;
 
-  HistGrid H(NV, std::vector<std::unique_ptr<TH1D>>(NX));
+  // IMPORTANT: build without copying vectors of unique_ptr
+  HistGrid H;
+  H.resize(NV);
   for (int v=0; v<NV; ++v) {
+    H[v].resize(NX);
     for (int xb=0; xb<NX; ++xb) {
       H[v][xb] = std::make_unique<TH1D>(
         Form("h_%s_%s_xb%d", vars[v].name.c_str(), prop.c_str(), xb),
@@ -335,7 +333,6 @@ static std::unique_ptr<TH1D> make_ratio(const TH1D* hD, const TH1D* hM, const ch
     double md = hM->GetBinError(b);
     if (m <= 0) { r->SetBinContent(b, 0.0); r->SetBinError(b, 0.0); continue; }
     double val = d/m;
-    // simple error propagation: (d/m)*sqrt( (dd/d)^2 + (md/m)^2 )
     double err = 0.0;
     if (d>0 && m>0) err = val*std::sqrt( (dd>0? (dd*dd)/(d*d):0.0) + (md>0? (md*md)/(m*m):0.0) );
     r->SetBinContent(b, val);
@@ -374,7 +371,7 @@ static void draw_distributions_cell(TH1D* hD, TH1D* hM,
   // Axes/titles
   style_axes(hD, xtitle.c_str(), "Normalized counts");
   hD->SetTitle(title.c_str());
-  hD->GetXaxis()->SetLimits(xmin, xmax);
+  hD->GetXaxis()->SetRangeUser(xmin, xmax);
 
   // Y range: a bit of headroom over both
   double ymax = std::max(hD->GetMaximum(), hM->GetMaximum());
@@ -393,7 +390,7 @@ static void draw_ratio_cell(TH1D* r, const std::string& xtitle, double xmin, dou
   r->SetMarkerStyle(20); r->SetMarkerSize(0.8);
   r->SetLineWidth(2);
 
-  r->GetXaxis()->SetLimits(xmin, xmax);
+  r->GetXaxis()->SetRangeUser(xmin, xmax);
   r->SetMinimum(0.5);
   r->SetMaximum(1.5);
   r->Draw("E1");
@@ -424,9 +421,8 @@ static void draw_global_legend() {
 // Map variable index -> pad index (4x4 grid)
 // Dist pads in {1..8}, ratio pads = distPad + 8
 static std::vector<int> dist_pad_positions() {
-  // Fill across rows: 1..4 (row1), 5..8 (row2)
-  // Use 7 slots, leave pad 8 for legend.
-  return {1,2,3,4,5,6,7}; // pad 8 reserved
+  // Fill across rows: 1..4 (row1), 5..7 used (row2), pad 8 reserved for legend
+  return {1,2,3,4,5,6,7};
 }
 
 // ------------------ draw per property & x-bin ------------------
@@ -478,7 +474,7 @@ static void draw_canvas_for_xbin(
       gPad->SetLeftMargin(0.16); gPad->SetRightMargin(0.05);
       gPad->SetBottomMargin(0.16); gPad->SetTopMargin(0.10);
       auto r = make_ratio(HD[iv][xbin].get(), HM[iv][xbin].get(),
-                          Form("r_%s_%s_xb%d", prop.c_str(), vars[iv].name.c_str(), xbin).c_str());
+                          Form("r_%s_%s_xb%d", prop.c_str(), vars[iv].name.c_str(), xbin));
       draw_ratio_cell(r.get(), vars[iv].xtitle, vars[iv].xmin, vars[iv].xmax);
     }
   }
@@ -511,7 +507,6 @@ int main(int argc, char** argv) {
     return 2;
   }
 
-  // Heuristic tree name (same as unfolding script)
   TTree* tD = (TTree*)fD->Get("PhysicsEvents");
   TTree* tM = (TTree*)fM->Get("PhysicsEvents");
   if (!tD || !tM) {
@@ -529,7 +524,6 @@ int main(int argc, char** argv) {
   const auto xe    = x_edges();
   const int  NX    = (int)xe.size()-1;
 
-  // Build once per (file, property) — fast
   for (const auto& p : props) {
     HistGrid HD = build_hists_one_pass(tD, cfg.bn, p, vars, xe);
     HistGrid HM = build_hists_one_pass(tM, cfg.bn, p, vars, xe);
