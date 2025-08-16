@@ -363,7 +363,8 @@ static void draw_dist_ratio_cell(TH1D* hD, TH1D* hM, const std::string& xtitle,
   auto L = new TLegend(0.58,0.72,0.94,0.92);
   L->SetBorderSize(1); L->SetFillStyle(1001); L->SetFillColor(kWhite); L->SetTextSize(0.045);
   L->AddEntry(gD,"DATA","lep");
-  L->AddEntry(hM, (do_norm?Form("MC (norm x %.3g)", sf):"MC").c_str(), "l");
+  const char* mcLabel = do_norm ? Form("MC (norm x %.3g)", sf) : "MC";
+  L->AddEntry(hM, mcLabel, "l");
   L->Draw();
 
   // --- BOTTOM: ratio ---
