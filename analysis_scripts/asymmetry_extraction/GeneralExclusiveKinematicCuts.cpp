@@ -120,6 +120,8 @@ bool GeneralExclusiveKinematicCuts::applyCuts(int currentFits, bool isMC)
     // Basic naming lookup
     string property = binNames[currentFits];
 
+    if (*runnum > 17183) continue;
+
     bool goodEvent = true;
     // 1) Standard DIS/Hadron cuts (common to almost everything):
     if (*Q2 <  1.0    ) return false;
