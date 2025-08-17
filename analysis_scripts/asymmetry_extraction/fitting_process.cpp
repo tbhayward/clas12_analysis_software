@@ -3318,7 +3318,8 @@ static GEContext g_ge_ctx;
 //  p[6] = F_LL^{cos(phi)} / F_UU
 //  p[7] = F_UU^{cos(phi)} / F_UU         (shared UU modulation)
 //  p[8] = F_UU^{cos(2phi)} / F_UU        (shared UU modulation)
-//  p[10] = F_UU^{sin(phi)} / F_{UU}      (shared acceptance modulation)
+//  p[9] = F_UU^{sin(phi)} / F_{UU}      (shared acceptance modulation)
+//  p[10] = F_UU^{sin(2phi)} / F_{UU}      (shared acceptance modulation)
 static void chi2Fcn_GeneralExclusive(Int_t& /*npar*/, Double_t* /*gin*/, Double_t& f,
                                      Double_t* par, Int_t /*iflag*/) {
   const double a0 = par[0], a1 = par[1];
@@ -3331,7 +3332,7 @@ static void chi2Fcn_GeneralExclusive(Int_t& /*npar*/, Double_t* /*gin*/, Double_
     return 1.0 + g_ge_ctx.rVA * aUUc  * std::cos(phi)
                + g_ge_ctx.rBA * aUUc2 * std::cos(2.0*phi)
                + aUUs * std::sin(phi)
-               + aUUs2 * std::sin(phi);
+               + aUUs2 * std::sin(2.0*phi);
   };
 
   auto modelALU = [&](double phi) {
@@ -3480,7 +3481,7 @@ static void plotHistogramAndFit_GeneralExclusive(
     return 1.0 + g_ge_ctx.rVA * aUUc  * std::cos(phi)
                + g_ge_ctx.rBA * aUUc2 * std::cos(2.0*phi)
                + aUUs * std::sin(phi)
-               + aUUs2 * std::sin(phi);
+               + aUUs2 * std::sin(2.0*phi);
   };
   auto yALU = [&](double phi){ return a0 + (g_ge_ctx.rWA * aLU * std::sin(phi))/denom(phi); };
   auto yAUL = [&](double phi){ return a1 + (g_ge_ctx.rVA * aUL1*std::sin(phi) + g_ge_ctx.rBA*aUL2*std::sin(2.0*phi))/denom(phi); };
@@ -3740,7 +3741,7 @@ void performChi2Fits_GeneralExclusive(const char* output_file,
     minuit.DefineParameter(7, "F_UU_cos/F_UU",    0.057465742, 0.00, -1.0, 1.0);
     minuit.DefineParameter(8, "F_UU_cos2/F_UU",   0.023027417, 0.00, -1.0, 1.0);
     minuit.DefineParameter(9, "F_UU_sin/F_UU",   0.00, 0.01, -1.0, 1.0);
-    minuit.DefineParameter(9, "F_UU_sin2/F_UU",   0.00, 0.01, -1.0, 1.0);
+    minuit.DefineParameter(10, "F_UU_sin2/F_UU",   0.00, 0.01, -1.0, 1.0);
 
     minuit.Migrad();
     double arglist[2]; int ierflg=0; arglist[0]=500; arglist[1]=1.0;
