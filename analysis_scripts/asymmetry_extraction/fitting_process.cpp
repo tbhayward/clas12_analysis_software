@@ -941,7 +941,7 @@ void performChi2Fits_single_hadron(const char* output_file, const char* kinemati
   TF1* fitFunction;
   switch (asymmetry_index) {
     case 0: // beam-spin asymmetry
-      fitFunction = new TF1("fitFunction", BSA_single_hadron, 0, 2*TMath::Pi(), 4);
+      fitFunction = new TF1("fitFunction", BSA_single_hadron, 0, 2*TMath::Pi(), 2);
       chi2FitsAStream << prefix << "chi2FitsALUoffset = {";
       chi2FitsBStream << prefix << "chi2FitsALUsinphi = {";
       chi2FitsCStream << prefix << "chi2FitsAUUcosphi = {";
