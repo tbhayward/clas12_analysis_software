@@ -3739,8 +3739,8 @@ void performChi2Fits_GeneralExclusive(const char* output_file,
     minuit.DefineParameter(6, "F_LL_cos/F_UU",    0.00, 0.01, -1.0, 1.0);
     minuit.DefineParameter(7, "F_UU_cos/F_UU",    0.057465742, 0.00, -1.0, 1.0);
     minuit.DefineParameter(8, "F_UU_cos2/F_UU",   0.023027417, 0.00, -1.0, 1.0);
-    minuit.DefineParameter(9, "F_UU_sin/F_UU",   0.00, 0.00, -1.0, 1.0);
-    minuit.DefineParameter(9, "F_UU_sin2/F_UU",   0.00, 0.00, -1.0, 1.0);
+    minuit.DefineParameter(9, "F_UU_sin/F_UU",   0.00, 0.01, -1.0, 1.0);
+    minuit.DefineParameter(9, "F_UU_sin2/F_UU",   0.00, 0.01, -1.0, 1.0);
 
     minuit.Migrad();
     double arglist[2]; int ierflg=0; arglist[0]=500; arglist[1]=1.0;
