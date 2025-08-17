@@ -3320,12 +3320,13 @@ static void chi2Fcn_GeneralExclusive(Int_t& /*npar*/, Double_t* /*gin*/, Double_
   const double aLU = par[2], aUL1 = par[3], aUL2 = par[4];
   const double aLL = par[5], aLLc = par[6];
   const double aUUc = par[7], aUUc2 = par[8];
-  const double aUUs = par[8];
+  const double aUUs = par[9], aUUs2 = par[10];
 
   auto denom = [&](double phi) {
     return 1.0 + g_ge_ctx.rVA * aUUc  * std::cos(phi)
                + g_ge_ctx.rBA * aUUc2 * std::cos(2.0*phi)
-               + aUUs * std::sin(phi);
+               + aUUs * std::sin(phi)
+               + aUUs2 * std::sin(phi);
   };
 
   auto modelALU = [&](double phi) {
@@ -3471,7 +3472,9 @@ static void plotHistogramAndFit_GeneralExclusive(
 
   auto denom = [&](double phi) {
     return 1.0 + g_ge_ctx.rVA * aUUc  * std::cos(phi)
-               + g_ge_ctx.rBA * aUUc2 * std::cos(2.0*phi);
+               + g_ge_ctx.rBA * aUUc2 * std::cos(2.0*phi)
+               + aUUs * std::sin(phi)
+               + aUUs2 * std::sin(phi);
   };
   auto yALU = [&](double phi){ return a0 + (g_ge_ctx.rWA * aLU * std::sin(phi))/denom(phi); };
   auto yAUL = [&](double phi){ return a1 + (g_ge_ctx.rVA * aUL1*std::sin(phi) + g_ge_ctx.rBA*aUL2*std::sin(2.0*phi))/denom(phi); };
@@ -3531,6 +3534,8 @@ static void plotHistogramAndFit_GeneralExclusive(
     // show the shared UU modulations as asymmetry-style labels too
     L->AddEntry((TObject*)0, Form("A_{UU}^{cos#phi}: %.4f", aUUc), "");
     L->AddEntry((TObject*)0, Form("A_{UU}^{cos2#phi}: %.4f", aUUc2), "");
+    L->AddEntry((TObject*)0, Form("A_{UU}^{sin#phi}: %.4f", aUUc2), "");
+    L->AddEntry((TObject*)0, Form("A_{UU}^{sin2#phi}: %.4f", aUUc2), "");
     L->Draw("same");
   };
 
@@ -3577,6 +3582,7 @@ void performChi2Fits_GeneralExclusive(const char* output_file,
   sAUUc   << prefix << "GEchi2FitsAUUcosphi = {";
   sAUUc2  << prefix << "GEchi2FitsAUUcos2phi = {";
   sAUUs  << prefix << "GEchi2FitsAUUsinphi = {";
+  sAUUs2  << prefix << "GEchi2FitsAUUsin2phi = {";
 
   // Kinematic LaTeX and list
   std::ostringstream kinLatex;
@@ -3615,7 +3621,8 @@ void performChi2Fits_GeneralExclusive(const char* output_file,
     "ALU_offset","AUL_offset",
     "F_LU_sin/F_UU","F_UL_sin/F_UU","F_UL_sin2/F_UU",
     "F_LL/F_UU","F_LL_cos/F_UU",
-    "F_UU_cos/F_UU","F_UU_cos2/F_UU"
+    "F_UU_cos/F_UU","F_UU_cos2/F_UU",
+    "F_UU_sin/F_UU","F_UU_sin2/F_UU"
   };
 
   // Open the combined matrix files (truncate once, then append per bin)
@@ -3725,7 +3732,8 @@ void performChi2Fits_GeneralExclusive(const char* output_file,
     minuit.DefineParameter(6, "F_LL_cos/F_UU",    0.01, 0.01, -1.0, 1.0);
     minuit.DefineParameter(7, "F_UU_cos/F_UU",    0.00, 0.01, -1.0, 1.0);
     minuit.DefineParameter(8, "F_UU_cos2/F_UU",   0.00, 0.01, -1.0, 1.0);
-    minuit.DefineParameter(9, "F_UU_sin/F_UU",   0.00, 0.01, -1.0, 1.0);
+    minuit.DefineParameter(9, "F_UU_sin/F_UU",   0.00, 0.00, -1.0, 1.0);
+    minuit.DefineParameter(9, "F_UU_sin2/F_UU",   0.00, 0.00, -1.0, 1.0);
 
     minuit.Migrad();
     double arglist[2]; int ierflg=0; arglist[0]=500; arglist[1]=1.0;
@@ -3749,10 +3757,12 @@ void performChi2Fits_GeneralExclusive(const char* output_file,
     sAUUc   << "{" << meanVar << ", " << pval[7] << ", " << perr[7] << "}";
     sAUUc2  << "{" << meanVar << ", " << pval[8] << ", " << perr[8] << "}";
     sAUUs  << "{" << meanVar << ", " << pval[9] << ", " << perr[9] << "}";
+    sAUUs2  << "{" << meanVar << ", " << pval[10] << ", " << perr[10] << "}";
 
     if (i < numBins - 1) {
       sALUoff << ", "; sAULoff << ", "; sALU << ", "; sAUL << ", "; sAUL2 << ", ";
       sALL << ", "; sALLc << ", "; sAUUc << ", "; sAUUc2 << ", "; sAUUs << ", ";
+      sAUUs2 << ", ";
     }
 
     // Kinematics LaTeX row
@@ -3821,7 +3831,7 @@ void performChi2Fits_GeneralExclusive(const char* output_file,
   // Close arrays and write to files
   sALUoff << "};"; sAULoff << "};"; sALU << "};"; sAUL << "};";
   sAUL2  << "};"; sALL    << "};"; sALLc<< "};"; sAUUc << "};"; sAUUc2 << "};";
-  sAUUs << "};";
+  sAUUs << "};"; sAUUs2 << "};";
 
   {
     std::ofstream out(output_file, std::ios::app);
@@ -3835,6 +3845,7 @@ void performChi2Fits_GeneralExclusive(const char* output_file,
     out << sAUUc.str()   << "\n";
     out << sAUUc2.str()  << "\n";
     out << sAUUs.str()  << "\n";
+    out << sAUUs2.str()  << "\n";
   }
 
   // Finish LaTeX/table and kinematics list

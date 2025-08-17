@@ -296,53 +296,56 @@ static inline double GE_safe_div(double num, double den) {
 //   return 1.0 + B_UUcos * std::cos(phi) + C_UUcos2 * std::cos(2.0 * phi);
 // }
 // Shared unpolarized denominator: 1 + B * cos(phi) + C * cos(2*phi).
-double GE_den(double phi, double B_UUcos, double C_UUcos2, double C_UUsin) {
-  return 1.0 + B_UUcos * std::cos(phi) + C_UUcos2 * std::cos(2.0 * phi) + C_UUsin*std::sin(phi);
+double GE_den(double phi, double B_UUcos, double C_UUcos2, double C_UUsin, double C_UUsin) {
+  return 1.0 + B_UUcos * std::cos(phi) + C_UUcos2 * std::cos(2.0 * phi) +
+    C_UUsin*std::sin(phi) + C_UUsin2 * std::sin(phi);
 }
 
 // BSA(phi) = ( ALU * sin(phi) ) / GE_den(...)
 double GE_model_BSA(double phi, double ALU,
-                    double B_UUcos, double C_UUcos2, double C_UUsin) {
-  const double den = GE_den(phi, B_UUcos, C_UUcos2, C_UUsin);
+                    double B_UUcos, double C_UUcos2, double C_UUsin, double C_UUsin) {
+  const double den = GE_den(phi, B_UUcos, C_UUcos2, C_UUsin, C_UUsin2);
   const double num = ALU * std::sin(phi);
   return GE_safe_div(num, den);
 }
 // TSA(phi) = ( AUL * sin(phi) + AUL2 * sin(2*phi) ) / GE_den(...)
 double GE_model_TSA(double phi, double AUL, double AUL2,
-                    double B_UUcos, double C_UUcos2, double C_UUsin) {
-  const double den = GE_den(phi, B_UUcos, C_UUcos2, C_UUsin);
+                    double B_UUcos, double C_UUcos2, double C_UUsin, double C_UUsin) {
+  const double den = GE_den(phi, B_UUcos, C_UUcos2, C_UUsin, C_UUsin2);
   const double num = AUL * std::sin(phi) + AUL2 * std::sin(2.0 * phi);
   return GE_safe_div(num, den);
 }
 // DSA(phi) = ( ALL + ALL2 * cos(phi) ) / GE_den(...)
 double GE_model_DSA(double phi, double ALL, double ALL2,
-                    double B_UUcos, double C_UUcos2, double C_UUsin) {
-  const double den = GE_den(phi, B_UUcos, C_UUcos2, C_UUsin);
+                    double B_UUcos, double C_UUcos2, double C_UUsin, double C_UUsin) {
+  const double den = GE_den(phi, B_UUcos, C_UUcos2, C_UUsin, C_UUsin2);
   const double num = ALL + ALL2 * std::cos(phi);
   return GE_safe_div(num, den);
 }
 // ----- TF1-compatible wrappers (for plotting) -----
 // x[0] = phi
-// BSA params: [0]=ALU, [1]=B_UUcos, [2]=C_UUcos2
+// BSA params: [0]=ALU, [1]=B_UUcos, [2]=C_UUcos2, [3]=C_UUsin, [4]=C_UUsin2
 double BSA_general_exclusive_TF1(double* x, double* par) {
   const double phi = x[0];
   const double ALU = par[0];
   const double B   = par[1];
   const double C   = par[2];
-   const double D   = par[3];
-  return GE_model_BSA(phi, ALU, B, C, D);
+  const double D   = par[3];
+  const double E   = par[4];
+  return GE_model_BSA(phi, ALU, B, C, D, E);
 }
-// TSA params: [0]=AUL, [1]=AUL2, [2]=B_UUcos, [3]=C_UUcos2
+// TSA params: [0]=AUL, [1]=AUL2, [2]=B_UUcos, [3]=C_UUcos2, [3]=C_UUsin, [4]=C_UUsin2
 double TSA_general_exclusive_TF1(double* x, double* par) {
   const double phi  = x[0];
   const double AUL  = par[0];
   const double AUL2 = par[1];
   const double B    = par[2];
   const double C    = par[3];
-  const double D    = par[3];
-  return GE_model_TSA(phi, AUL, AUL2, B, C, D);
+  const double D    = par[4];
+  const double E    = par[5];
+  return GE_model_TSA(phi, AUL, AUL2, B, C, D, E);
 }
-// DSA params: [0]=ALL, [1]=ALL2, [2]=B_UUcos, [3]=C_UUcos2
+// DSA params: [0]=ALL, [1]=ALL2, [2]=B_UUcos, [3]=C_UUcos2, [3]=C_UUsin, [4]=C_UUsin2
 double DSA_general_exclusive_TF1(double* x, double* par) {
   const double phi  = x[0];
   const double ALL  = par[0];
@@ -350,7 +353,8 @@ double DSA_general_exclusive_TF1(double* x, double* par) {
   const double B    = par[2];
   const double C    = par[3];
   const double D    = par[4];
-  return GE_model_DSA(phi, ALL, ALL2, B, C, D);
+  const double E    = par[5];
+  return GE_model_DSA(phi, ALL, ALL2, B, C, D, E);
 }
 
 /******** VALUE CALCULATIONS ********/
