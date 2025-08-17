@@ -729,7 +729,6 @@ void plotHistogramAndFit_single_hadron(TH1D* histogram, TF1* fitFunction, int bi
   graph->GetYaxis()->SetTitleSize(0.05);
 
   // Create the legend
-  // TLegend *leg = new TLegend(0.16171, 0.7, 0.4, 0.9);  // Adjusted to the upper-left corner
   TLegend *leg = new TLegend(0.19, 0.675, 0.45, 0.875);  // Adjusted to the upper-left corner
   leg->SetBorderSize(1);
   leg->SetFillColor(0);
@@ -3469,6 +3468,7 @@ static void plotHistogramAndFit_GeneralExclusive(
   const double aLU  = par[2], aUL1 = par[3], aUL2 = par[4];
   const double aLL  = par[5], aLLc = par[6];
   const double aUUc = par[7], aUUc2= par[8];
+  const double aUUs = par[9], aUUs2= par[10];
 
   auto denom = [&](double phi) {
     return 1.0 + g_ge_ctx.rVA * aUUc  * std::cos(phi)
