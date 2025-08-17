@@ -3725,7 +3725,7 @@ void performChi2Fits_GeneralExclusive(const char* output_file,
     g_ge_ctx.rCA = (depA!=0.0)? (depC/depA) : 1.0;
 
     // ---- Fit with Minuit ----
-    TMinuit minuit(10);
+    TMinuit minuit(11);
     minuit.SetPrintLevel(-1);
     minuit.SetErrorDef(1.0); // chi2
     minuit.SetFCN(chi2Fcn_GeneralExclusive);
