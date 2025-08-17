@@ -107,3 +107,97 @@ out_dir.mkdir(parents=True, exist_ok=True)
 pdf_path = out_dir / "AUL_modulations_enpiPlus_markers_const.pdf"
 fig.savefig(pdf_path, dpi=300, bbox_inches="tight")
 print(f"Saved: {pdf_path}")
+
+
+# =========================
+# New canvas: F_LL^{cos^n φ} (n=0,1)
+# =========================
+from pathlib import Path
+import numpy as np
+import matplotlib.pyplot as plt
+
+# Data (triples: [xB_mean (unused for x), value, err])
+f0raw = np.array([
+    [0.240240319,  0.489057877, 0.033797988],
+    [0.240240319,  0.494490688, 0.038428438],
+    [0.240240319,  0.482235425, 0.034154262],
+    [0.240240319,  0.466426246, 0.030542406],
+    [0.240240319,  0.489266927, 0.038678149],
+], dtype=float)
+
+f1raw = np.array([
+    [0.240240319, -0.074598801, 0.058106918],
+    [0.240240319,  0.051498923, 0.096899984],
+    [0.240240319, -0.032504916, 0.058115016],
+    [0.240240319, -0.234254151, 0.041499988],
+    [0.240240319,  0.048625587, 0.095899916],
+], dtype=float)
+
+# Remap x → 1..N, extract y and ey
+N0, N1 = len(f0raw), len(f1raw)
+if N0 != N1:
+    raise ValueError(f"Dataset size mismatch: n0={N0}, n1={N1}")  # endif
+# endif
+
+x  = np.arange(1, N0 + 1, dtype=int)
+y0, e0 = f0raw[:, 1], f0raw[:, 2]
+y1, e1 = f1raw[:, 1], f1raw[:, 2]
+
+# Weighted constant fits (for dashed reference lines)
+def weighted_constant_fit(y, sigma):
+    w = 1.0 / np.maximum(sigma, 1e-12)**2
+    mu = np.sum(w * y) / np.sum(w)
+    s_mu = 1.0 / np.sqrt(np.sum(w))
+    return mu, s_mu
+
+mu0, smu0 = weighted_constant_fit(y0, e0)
+mu1, smu1 = weighted_constant_fit(y1, e1)
+
+# Figure
+fig, ax = plt.subplots(figsize=(7.5, 4.5), constrained_layout=False)
+ax.set_xlim(0.5, len(x) + 0.5)
+ax.set_ylim(-0.30, 0.60)  # covers both series comfortably
+ax.set_xticks(x)
+ax.set_xlabel(r"Test $\#$")
+ax.set_ylabel(r"$F_{LL}^{\cos^{n\phi}}$")
+
+# Grid + ticks; full axis border
+ax.grid(True, axis="y", linestyle="--", linewidth=0.8, alpha=0.5)
+ax.tick_params(direction="in", which="both", top=True, right=True)
+for side in ax.spines.values():
+    side.set_linewidth(1.2)
+# endfor
+
+# Markers only (no connecting lines)
+p0 = ax.errorbar(
+    x, y0, yerr=e0,
+    fmt="o", linestyle="none", markersize=6, linewidth=2, capsize=3,
+    color="red", label=r"$n=0$"
+)
+p1 = ax.errorbar(
+    x, y1, yerr=e1,
+    fmt="s", linestyle="none", markersize=6, linewidth=2, capsize=3,
+    color="blue", label=r"$n=1$"
+)
+
+# Thin dashed constant fits (not included in legend)
+xmin, xmax = 0.5, len(x) + 0.5
+ax.hlines(mu0, xmin, xmax, colors="red",  linestyles="--", linewidth=1.0)
+ax.hlines(mu1, xmin, xmax, colors="blue", linestyles="--", linewidth=1.0)
+
+# Legend (points only)
+leg = ax.legend(
+    handles=[p0.lines[0], p1.lines[0]],
+    labels=[r"$n=0$", r"$n=1$"],
+    loc="upper right", frameon=True, framealpha=1.0, fancybox=True, borderpad=0.8
+)
+leg.get_frame().set_linewidth(1.0)
+
+plt.tight_layout()
+
+# Save
+out_dir = Path("output/enpi+/")
+out_dir.mkdir(parents=True, exist_ok=True)
+pdf_path = out_dir / "FLL_modulations_enpiPlus_markers_const.pdf"
+fig.savefig(pdf_path, dpi=300, bbox_inches="tight")
+print(f"Saved: {pdf_path}")
