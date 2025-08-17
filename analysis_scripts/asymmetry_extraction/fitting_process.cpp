@@ -758,7 +758,7 @@ void plotHistogramAndFit_single_hadron(TH1D* histogram, TF1* fitFunction, int bi
       }
       leg->AddEntry((TObject*)0, Form("%s: %.4f #pm %.4f", paramName, 
         fitFunction->GetParameter(i), fitFunction->GetParError(i)), "");
-      std::cout << *fitFunction << std::endl;
+      std::cout << fitFunction->GetParameter(0) << " " << fitFunction->GetParameter(1) << " " << fitFunction->GetParameter(2) << " " << fitFunction->GetParameter(3) << " " << fitFunction->GetParameter(4) << " "   << std::endl;
   }
 
   // Add the chi-squared per degree of freedom to the legend
