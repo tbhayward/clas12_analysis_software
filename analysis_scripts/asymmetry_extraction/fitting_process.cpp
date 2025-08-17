@@ -744,11 +744,17 @@ void plotHistogramAndFit_single_hadron(TH1D* histogram, TF1* fitFunction, int bi
         paramName = "#it{A}_{LL}";
       } else if (asymmetryIndex == 0) {
         if (i == 1) paramName = "#it{A}_{LU}^{sin#phi}";
+        if (i == 2) paramName = "#it{A}_{UU}^{cos#phi}";
+        if (i == 3) paramName = "#it{A}_{UU}^{cos2#phi}";
       } else if (asymmetryIndex == 1) {
         if (i == 1) paramName = "#it{A}_{UL}^{sin#phi}";
         if (i == 2) paramName = "#it{A}_{UL}^{sin2#phi}";
+        if (i == 3) paramName = "#it{A}_{UU}^{cos#phi}";
+        if (i == 4) paramName = "#it{A}_{UU}^{cos2#phi}";
       } else if (asymmetryIndex == 2) {
         if (i == 1) paramName = "#it{A}_{LL}^{cos#phi}";
+        if (i == 2) paramName = "#it{A}_{UU}^{cos#phi}";
+        if (i == 3) paramName = "#it{A}_{UU}^{cos2#phi}";
       }
       leg->AddEntry((TObject*)0, Form("%s: %.4f #pm %.4f", paramName, 
         fitFunction->GetParameter(i), fitFunction->GetParError(i)), "");
@@ -826,9 +832,7 @@ TH1D* createHistogramForBin_single_hadron(const char* histName, int binIndex,
   TTreeReaderValue<double> DepA(dataReader, "DepA");
   TTreeReaderValue<double> DepB(dataReader, "DepB");
   TTreeReaderValue<double> phi(dataReader, "phi");
-  // TTreeReaderValue<double> phi(dataReader, "phi2");
   TTreeReaderValue<double> currentVariable(dataReader, propertyNames[currentFits].c_str());
-  // TTreeReaderValue<int> currentVariable(dataReader, propertyNames[currentFits].c_str());
 
   while (dataReader.Next()) {
     
@@ -1178,7 +1182,8 @@ void performChi2Fits_single_hadron(const char* output_file, const char* kinemati
     }
   }
 
-  chi2FitsAStream << "};";  chi2FitsBStream << "};";  chi2FitsCStream << "};"; 
+  chi2FitsAStream << "};";  chi2FitsBStream << "};";  
+  chi2FitsCStream << "};"; chi2FitsDStream << "};"; 
 
   std::ofstream outputFile(output_file, std::ios_base::app);
   outputFile << chi2FitsAStream.str() << std::endl;
