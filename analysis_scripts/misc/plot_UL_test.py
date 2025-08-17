@@ -201,3 +201,70 @@ out_dir.mkdir(parents=True, exist_ok=True)
 pdf_path = out_dir / "FLL_modulations_enpiPlus_markers_const.pdf"
 fig.savefig(pdf_path, dpi=300, bbox_inches="tight")
 print(f"Saved: {pdf_path}")
+
+
+# =========================
+# New canvas: F_LU^{sin φ}
+# =========================
+import numpy as np
+import matplotlib.pyplot as plt
+from pathlib import Path
+
+# Data (triples: [xB_mean (unused for x), value, err])
+flu_raw = np.array([
+    [0.241878358, 0.097017905, 0.007507156],
+    [0.241878358, 0.095457393, 0.013153418],
+    [0.241878358, 0.110146974, 0.009050841],
+    [0.242012442, 0.103718537, 0.026284315],
+    [0.242012442, 0.102247621, 0.062188413],
+    [0.242012442, 0.125901585, 0.030662820],
+], dtype=float)
+
+# Remap x → 1..N, extract y and ey
+x  = np.arange(1, len(flu_raw) + 1, dtype=int)
+y  = flu_raw[:, 1]
+ey = flu_raw[:, 2]
+
+# Weighted constant fit (reuse your earlier function if present)
+def _weighted_constant_fit(y, sigma):
+    w = 1.0 / np.maximum(sigma, 1e-12)**2
+    mu = np.sum(w * y) / np.sum(w)
+    s_mu = 1.0 / np.sqrt(np.sum(w))
+    return mu, s_mu
+
+mu, smu = _weighted_constant_fit(y, ey)
+
+# Figure
+fig, ax = plt.subplots(figsize=(7.5, 4.5), constrained_layout=False)
+ax.set_xlim(0.5, len(x) + 0.5)
+ax.set_ylim(-0.02, 0.18)  # adjust if you want tighter/looser bounds
+ax.set_xticks(x)
+ax.set_xlabel(r"Test $\#$")
+ax.set_ylabel(r"$F_{LU}^{\sin\phi}/F_{UU}$")
+
+# Grid + ticks; full axis border
+ax.grid(True, axis="y", linestyle="--", linewidth=0.8, alpha=0.5)
+ax.tick_params(direction="in", which="both", top=True, right=True)
+for side in ax.spines.values():
+    side.set_linewidth(1.2)
+# endfor
+
+# Markers only (no connecting lines)
+p = ax.errorbar(
+    x, y, yerr=ey,
+    fmt="o", linestyle="none", markersize=6, linewidth=2, capsize=3,
+    color="black"
+)
+
+# Thin dashed constant fit (not included in legend)
+xmin, xmax = 0.5, len(x) + 0.5
+ax.hlines(mu, xmin, xmax, colors="black", linestyles="--", linewidth=1.0)
+
+plt.tight_layout()
+
+# Save
+out_dir = Path("output/enpi+/")
+out_dir.mkdir(parents=True, exist_ok=True)
+pdf_path = out_dir / "FLU_modulation_enpiPlus_markers_const.pdf"
+fig.savefig(pdf_path, dpi=300, bbox_inches="tight")
+print(f"Saved: {pdf_path}")
