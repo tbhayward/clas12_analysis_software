@@ -74,6 +74,7 @@ void load_run_info_from_csv(const std::string& filename) {
     // Read the target polarization from the stringstream and convert it to a double
     std::getline(ss, info, ',');
     run_info.target_polarization_uncertainty = std::stof(info);
+    std::cout << run_info.runnum << " " << run_info.target_polarization_uncertainty << std::endl;
 
     // Add the struct to the run_info_list vector
     run_info_list.push_back(run_info);
