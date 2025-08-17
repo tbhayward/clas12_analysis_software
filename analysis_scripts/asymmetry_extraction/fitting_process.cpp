@@ -3616,7 +3616,7 @@ void performChi2Fits_GeneralExclusive(const char* output_file,
   const std::string corrPath = "output/results/GE_" + prefix + "_corr_" + suffix + ".txt";
 
   // Parameter names (order used everywhere)
-  const int npar = 9;
+  const int npar = 11;
   const char* names[npar] = {
     "ALU_offset","AUL_offset",
     "F_LU_sin/F_UU","F_UL_sin/F_UU","F_UL_sin2/F_UU",
