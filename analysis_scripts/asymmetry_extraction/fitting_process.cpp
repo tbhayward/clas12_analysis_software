@@ -3568,7 +3568,8 @@ void performChi2Fits_GeneralExclusive(const char* output_file,
                                       const char* kinematicPlot_file,
                                       const string& prefix) {
   // Prepare output streams for parameter arrays
-  std::ostringstream sALUoff, sAULoff, sALU, sAUL, sAUL2, sALL, sALLc, sAUUc, sAUUc2, sAUUs;
+  std::ostringstream sALUoff, sAULoff, sALU, sAUL, sAUL2, sALL, sALLc, 
+  std::ostringstream sAUUc, sAUUc2, sAUUs, sAUUs2;
   for (auto* s : {&sALUoff,&sAULoff,&sALU,&sAUL,&sAUL2,&sALL,&sALLc,&sAUUc,&sAUUc2,&sAUUs})
     (*s) << std::fixed << std::setprecision(9);
 
