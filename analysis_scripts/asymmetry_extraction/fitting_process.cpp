@@ -843,7 +843,7 @@ TH1D* createHistogramForBin_single_hadron(const char* histName, int binIndex,
     if (*currentVariable >= varMin && *currentVariable < varMax && passedKinematicCuts) {
       sumVariable += *currentVariable;
       if (*helicity > 0 && *target_pol < 0) { histPosNeg->Fill(*phi); } 
-      else if (*helicity < 0 && *target_pol > 0) {  histNegPos->Fill(*phi); }
+      else if (*helicity < 0 && *target_pol > 0) {  histNegPos->Fill(*phi); std::cout << *runnum << " " << *target_pol << std::endl;}
 
       if (*helicity > 0 && (*target_pol >= 0) ) { histPosPos->Fill(*phi); } 
       else if (*helicity < 0 && (*target_pol <= 0) ) {  histNegNeg->Fill(*phi); } 
