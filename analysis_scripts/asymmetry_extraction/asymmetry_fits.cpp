@@ -296,7 +296,7 @@ static inline double GE_safe_div(double num, double den) {
 //   return 1.0 + B_UUcos * std::cos(phi) + C_UUcos2 * std::cos(2.0 * phi);
 // }
 // Shared unpolarized denominator: 1 + B * cos(phi) + C * cos(2*phi).
-double GE_den(double phi, double B_UUcos, double C_UUcos2, double C_UUsin, double C_UUsin) {
+double GE_den(double phi, double B_UUcos, double C_UUcos2, double C_UUsin, double C_UUsin2) {
   return 1.0 + B_UUcos * std::cos(phi) + C_UUcos2 * std::cos(2.0 * phi) +
     C_UUsin*std::sin(phi) + C_UUsin2 * std::sin(phi);
 }
