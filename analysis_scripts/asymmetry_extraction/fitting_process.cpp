@@ -3465,40 +3465,48 @@ createHistogramForBin_GeneralExclusive(const char* histBaseName, int binIndex, c
 
 // Plot the three histograms with model curves that include the shared UU denominator.
 // Saves a single 3-panel PNG.  Filename includes run/timestamp suffix derived from output_file.
+// Plot the three histograms with model curves that include the shared UU denominator.
+// Saves a single 3-panel PNG.  Filename includes run/timestamp suffix derived from output_file.
 static void plotHistogramAndFit_GeneralExclusive(
   TH1D* hALU, TH1D* hAUL, TH1D* hALL,
-  const double par[9], int binIndex, const std::string& prefix,
-  const std::string& runSuffix) // <-- pass "<root>_timeStamp_<ts>"
-{
-  // Unpack for readability
-  const double a0   = par[0], a1   = par[1];
-  const double aLU  = par[2], aUL1 = par[3], aUL2 = par[4];
-  const double aLL  = par[5], aLLc = par[6];
-  const double aUUc = par[7], aUUc2= par[8];
-  const double aUUs = par[9], aUUs2= par[10];
+  const double par[11], int binIndex, const std::string& prefix,
+  const std::string& runSuffix) {
+
+  // Unpack all 11 fit parameters
+  const double a0   = par[0],  a1   = par[1];
+  const double aLU  = par[2],  aUL1 = par[3],  aUL2 = par[4];
+  const double aLL  = par[5],  aLLc = par[6];
+  const double aUUc = par[7],  aUUc2= par[8];
+  const double aUUs = par[9],  aUUs2= par[10];
 
   auto denom = [&](double phi) {
-    return 1.0 + g_ge_ctx.rVA * aUUc  * std::cos(phi)
-               + g_ge_ctx.rBA * aUUc2 * std::cos(2.0*phi)
-               + aUUs * std::sin(phi)
-               + aUUs2 * std::sin(2.0*phi);
+    return 1.0
+      + g_ge_ctx.rVA * aUUc  * std::cos(phi)
+      + g_ge_ctx.rBA * aUUc2 * std::cos(2.0*phi)
+      + aUUs  * std::sin(phi)
+      + aUUs2 * std::sin(2.0*phi);
   };
-  auto yALU = [&](double phi){ return a0 + (g_ge_ctx.rWA * aLU * std::sin(phi))/denom(phi); };
-  auto yAUL = [&](double phi){ return a1 + (g_ge_ctx.rVA * aUL1*std::sin(phi) + g_ge_ctx.rBA*aUL2*std::sin(2.0*phi))/denom(phi); };
-  auto yALL = [&](double phi){ return (g_ge_ctx.rCA*aLL + g_ge_ctx.rWA*aLLc*std::cos(phi))/denom(phi); };
 
-  // Canvas with three pads
+  auto yALU = [&](double phi){
+    return a0 + (g_ge_ctx.rWA * aLU * std::sin(phi)) / denom(phi);
+  };
+  auto yAUL = [&](double phi){
+    return a1 + (g_ge_ctx.rVA * aUL1 * std::sin(phi)
+               +  g_ge_ctx.rBA * aUL2 * std::sin(2.0*phi)) / denom(phi);
+  };
+  auto yALL = [&](double phi){
+    return (g_ge_ctx.rCA * aLL + g_ge_ctx.rWA * aLLc * std::cos(phi)) / denom(phi);
+  };
+
   TCanvas* c = new TCanvas(Form("cGE_%d",binIndex), "", 1600, 560);
   c->Divide(3,1);
 
   auto drawOne = [&](int pad, TH1D* h, auto ymodel, const char* ytitle){
     c->cd(pad);
-    // extra margins so Y labels aren’t clipped
     gPad->SetLeftMargin(0.20);
     gPad->SetRightMargin(0.06);
     gPad->SetBottomMargin(0.16);
 
-    // Data as TGraphErrors
     TGraphErrors* gr = new TGraphErrors();
     const int nb = h->GetNbinsX();
     for (int i=1;i<=nb;++i){
@@ -3507,12 +3515,12 @@ static void plotHistogramAndFit_GeneralExclusive(
     }
     gr->SetMarkerStyle(kFullCircle);
     gr->SetMarkerColor(kBlack);
-    gr->GetXaxis()->SetTitle("#phi"); gr->GetYaxis()->SetTitle(ytitle);
+    gr->GetXaxis()->SetTitle("#phi");
+    gr->GetYaxis()->SetTitle(ytitle);
     gr->GetXaxis()->SetLimits(0, 2*TMath::Pi());
     gr->GetYaxis()->SetTitleOffset(1.6);
     gr->Draw("AP");
 
-    // Model curve as a smooth TGraph
     const int np = 360;
     TGraph* gm = new TGraph(np);
     for (int j=0; j<np; ++j){
@@ -3522,27 +3530,26 @@ static void plotHistogramAndFit_GeneralExclusive(
     gm->SetLineColor(kRed);
     gm->Draw("L same");
 
-    // Wider legend with A-style labels (no clipping)
     TLegend* L = new TLegend(0.10, 0.64, 0.90, 0.90);
     L->SetBorderSize(1); L->SetFillColor(0); L->SetTextSize(0.030);
 
     const std::string yt(ytitle);
     if (yt == "A_{LU}") {
-      L->AddEntry((TObject*)0, Form("offset: %.4f", a0), "");
-      L->AddEntry((TObject*)0, Form("A_{LU}^{sin#phi}: %.4f", aLU), "");
+      L->AddEntry((TObject*)0, Form("offset: %.6f", a0), "");
+      L->AddEntry((TObject*)0, Form("A_{LU}^{sin#phi}: %.6f", aLU), "");
     } else if (yt == "A_{UL}") {
-      L->AddEntry((TObject*)0, Form("offset: %.4f", a1), "");
-      L->AddEntry((TObject*)0, Form("A_{UL}^{sin#phi}: %.4f", aUL1), "");
-      L->AddEntry((TObject*)0, Form("A_{UL}^{sin2#phi}: %.4f", aUL2), "");
+      L->AddEntry((TObject*)0, Form("offset: %.6f", a1), "");
+      L->AddEntry((TObject*)0, Form("A_{UL}^{sin#phi}: %.6f", aUL1), "");
+      L->AddEntry((TObject*)0, Form("A_{UL}^{sin2#phi}: %.6f", aUL2), "");
     } else { // A_LL
-      L->AddEntry((TObject*)0, Form("A_{LL}: %.4f", aLL), "");
-      L->AddEntry((TObject*)0, Form("A_{LL}^{cos#phi}: %.4f", aLLc), "");
+      L->AddEntry((TObject*)0, Form("A_{LL}: %.6f", aLL), "");
+      L->AddEntry((TObject*)0, Form("A_{LL}^{cos#phi}: %.6f", aLLc), "");
     }
-    // show the shared UU modulations as asymmetry-style labels too
-    L->AddEntry((TObject*)0, Form("A_{UU}^{cos#phi}: %.4f", aUUc), "");
-    L->AddEntry((TObject*)0, Form("A_{UU}^{cos2#phi}: %.4f", aUUc2), "");
-    L->AddEntry((TObject*)0, Form("A_{UU}^{sin#phi}: %.4f", aUUc2), "");
-    L->AddEntry((TObject*)0, Form("A_{UU}^{sin2#phi}: %.4f", aUUc2), "");
+    // Shared UU terms (these two were the culprits—must use aUUs / aUUs2, not aUUc2)
+    L->AddEntry((TObject*)0, Form("A_{UU}^{cos#phi}: %.6f",  aUUc),  "");
+    L->AddEntry((TObject*)0, Form("A_{UU}^{cos2#phi}: %.6f", aUUc2), "");
+    L->AddEntry((TObject*)0, Form("A_{UU}^{sin#phi}: %.6f",  aUUs),  "");
+    L->AddEntry((TObject*)0, Form("A_{UU}^{sin2#phi}: %.6f", aUUs2), "");
     L->Draw("same");
   };
 
@@ -3550,14 +3557,12 @@ static void plotHistogramAndFit_GeneralExclusive(
   drawOne(2, hAUL, yAUL, "A_{UL}");
   drawOne(3, hALL, yALL, "A_{LL}");
 
-  // Title showing bin range
   const double vminB = allBins[currentFits][binIndex];
   const double vmaxB = allBins[currentFits][binIndex+1];
   std::ostringstream ttl; ttl<<std::fixed<<std::setprecision(3)
     << vminB << " \\leq " << formatLabelName(prefix) << " < " << vmaxB;
   c->SetTitle(ttl.str().c_str());
 
-  // Save including the run/timestamp suffix
   std::string fname = "output/individual_chi2_fits/" + prefix +
                       "_GE_bin_" + std::to_string(binIndex) + "_" + runSuffix + ".png";
   c->SaveAs(fname.c_str());
@@ -3731,40 +3736,40 @@ void performChi2Fits_GeneralExclusive(const char* output_file,
     minuit.SetFCN(chi2Fcn_GeneralExclusive);
 
     // name, init, step, low, high
-    minuit.DefineParameter(0, "ALU_offset",       0.00, 0.01, -1.0, 1.0);
-    minuit.DefineParameter(1, "AUL_offset",       0.00, 0.01, -1.0, 1.0);
-    minuit.DefineParameter(2, "F_LU_sin/F_UU",    0.095457393, 0.00, -1.0, 1.0);
-    minuit.DefineParameter(3, "F_UL_sin/F_UU",    0.00, 0.01, -1.0, 1.0);
-    minuit.DefineParameter(4, "F_UL_sin2/F_UU",   0.00, 0.01, -1.0, 1.0);
-    minuit.DefineParameter(5, "F_LL/F_UU",        0.00, 0.01, -1.0, 1.0);
-    minuit.DefineParameter(6, "F_LL_cos/F_UU",    0.00, 0.01, -1.0, 1.0);
-    minuit.DefineParameter(7, "F_UU_cos/F_UU",    0.057465742, 0.00, -1.0, 1.0);
-    minuit.DefineParameter(8, "F_UU_cos2/F_UU",   0.023027417, 0.00, -1.0, 1.0);
-    minuit.DefineParameter(9, "F_UU_sin/F_UU",   0.00, 0.01, -1.0, 1.0);
-    minuit.DefineParameter(10, "F_UU_sin2/F_UU",   0.00, 0.01, -1.0, 1.0);
+    minuit.DefineParameter(0,  "ALU_offset",      0.00,        0.01, -1.0, 1.0);
+    minuit.DefineParameter(1,  "AUL_offset",      0.00,        0.01, -1.0, 1.0);
+    minuit.DefineParameter(2,  "F_LU_sin/F_UU",   0.095457393, 0.01, -1.0, 1.0);  // step != 0
+    minuit.DefineParameter(3,  "F_UL_sin/F_UU",   0.00,        0.01, -1.0, 1.0);
+    minuit.DefineParameter(4,  "F_UL_sin2/F_UU",  0.00,        0.01, -1.0, 1.0);
+    minuit.DefineParameter(5,  "F_LL/F_UU",       0.00,        0.01, -1.0, 1.0);
+    minuit.DefineParameter(6,  "F_LL_cos/F_UU",   0.00,        0.01, -1.0, 1.0);
+    minuit.DefineParameter(7,  "F_UU_cos/F_UU",   0.057465742, 0.01, -1.0, 1.0);  // step != 0
+    minuit.DefineParameter(8,  "F_UU_cos2/F_UU",  0.023027417, 0.01, -1.0, 1.0);  // step != 0
+    minuit.DefineParameter(9,  "F_UU_sin/F_UU",   0.00,        0.01, -1.0, 1.0);
+    minuit.DefineParameter(10, "F_UU_sin2/F_UU",  0.00,        0.01, -1.0, 1.0);
 
     minuit.Migrad();
     double arglist[2]; int ierflg=0; arglist[0]=500; arglist[1]=1.0;
     minuit.mnexcm("MINImize", arglist, 2, ierflg);
 
-    // Extract parameters and errors
-    double pval[9], perr[9];
-    for (int ip=0; ip<9; ++ip) minuit.GetParameter(ip, pval[ip], perr[ip]);
+    // Extract all 11 parameters and errors
+    double pval[11], perr[11];
+    for (int ip=0; ip<11; ++ip) minuit.GetParameter(ip, pval[ip], perr[ip]);
 
-    // Plot summary (three panels) with model including shared UU denominator; filename includes suffix
+    // Plot summary (three panels) with model including shared UU denominator
     plotHistogramAndFit_GeneralExclusive(hALU, hAUL, hALL, pval, (int)i, prefix, suffix);
 
     // Append to parameter arrays (use mean of binning variable as x)
-    sALUoff << "{" << meanVar << ", " << pval[0] << ", " << perr[0] << "}";
-    sAULoff << "{" << meanVar << ", " << pval[1] << ", " << perr[1] << "}";
-    sALU    << "{" << meanVar << ", " << pval[2] << ", " << perr[2] << "}";
-    sAUL    << "{" << meanVar << ", " << pval[3] << ", " << perr[3] << "}";
-    sAUL2   << "{" << meanVar << ", " << pval[4] << ", " << perr[4] << "}";
-    sALL    << "{" << meanVar << ", " << pval[5] << ", " << perr[5] << "}";
-    sALLc   << "{" << meanVar << ", " << pval[6] << ", " << perr[6] << "}";
-    sAUUc   << "{" << meanVar << ", " << pval[7] << ", " << perr[7] << "}";
-    sAUUc2  << "{" << meanVar << ", " << pval[8] << ", " << perr[8] << "}";
-    sAUUs  << "{" << meanVar << ", " << pval[9] << ", " << perr[9] << "}";
+    sALUoff << "{" << meanVar << ", " << pval[0]  << ", " << perr[0]  << "}";
+    sAULoff << "{" << meanVar << ", " << pval[1]  << ", " << perr[1]  << "}";
+    sALU    << "{" << meanVar << ", " << pval[2]  << ", " << perr[2]  << "}";
+    sAUL    << "{" << meanVar << ", " << pval[3]  << ", " << perr[3]  << "}";
+    sAUL2   << "{" << meanVar << ", " << pval[4]  << ", " << perr[4]  << "}";
+    sALL    << "{" << meanVar << ", " << pval[5]  << ", " << perr[5]  << "}";
+    sALLc   << "{" << meanVar << ", " << pval[6]  << ", " << perr[6]  << "}";
+    sAUUc   << "{" << meanVar << ", " << pval[7]  << ", " << perr[7]  << "}";
+    sAUUc2  << "{" << meanVar << ", " << pval[8]  << ", " << perr[8]  << "}";
+    sAUUs   << "{" << meanVar << ", " << pval[9]  << ", " << perr[9]  << "}";
     sAUUs2  << "{" << meanVar << ", " << pval[10] << ", " << perr[10] << "}";
 
     if (i < numBins - 1) {
