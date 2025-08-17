@@ -58,7 +58,7 @@ ax.set_xlim(0.5, len(x) + 0.5)
 ax.set_ylim(-0.4, 0.1)  # requested range
 ax.set_xticks(x)
 ax.set_xlabel(r"Test $\#$")
-ax.set_ylabel(r"$A_{UL}^{\sin^{n\phi}}$")
+ax.set_ylabel(r"$F_{UL}^{\sin^{n\phi}}/F_{UU}$")
 
 # Grid and ticks
 ax.grid(True, axis="y", linestyle="--", linewidth=0.8, alpha=0.5)
@@ -156,10 +156,10 @@ mu1, smu1 = weighted_constant_fit(y1, e1)
 # Figure
 fig, ax = plt.subplots(figsize=(7.5, 4.5), constrained_layout=False)
 ax.set_xlim(0.5, len(x) + 0.5)
-ax.set_ylim(-0.30, 0.60)  # covers both series comfortably
+ax.set_ylim(-0.30, 0.80)  # covers both series comfortably
 ax.set_xticks(x)
 ax.set_xlabel(r"Test $\#$")
-ax.set_ylabel(r"$F_{LL}^{\cos^{n\phi}}$")
+ax.set_ylabel(r"$F_{LL}^{\cos^{n\phi}}/F_{UU}$")
 
 # Grid + ticks; full axis border
 ax.grid(True, axis="y", linestyle="--", linewidth=0.8, alpha=0.5)
