@@ -131,22 +131,22 @@ bool GeneralExclusiveKinematicCuts::applyCuts(int currentFits, bool isMC)
             *x > 0.1 && *x < 0.6;
         return goodEvent;
     }
-    if (property == "enpiLowx") {
+    if (property == "enpiLowxB") {
         goodEvent = goodEvent && *fiducial_status >= 111 && *Mx2 > 0.81 && *Mx2 < 1.00 && 
             *x > 0.1 && *x < 0.25;
         return goodEvent;
     }
-    if (property == "enpiMidLowx") {
+    if (property == "enpiMidLowxB") {
         goodEvent = goodEvent && *fiducial_status >= 111 && *Mx2 > 0.81 && *Mx2 < 1.00 && 
             *x > 0.25 && *x < 0.35;
         return goodEvent;
     }
-    if (property == "enpiMidHighx") {
+    if (property == "enpiMidHighxB") {
         goodEvent = goodEvent && *fiducial_status >= 111 && *Mx2 > 0.81 && *Mx2 < 1.00 && 
             *x > 0.35 && *x < 0.45;
         return goodEvent;
     }
-    if (property == "enpiHighx") {
+    if (property == "enpiHighxB") {
         goodEvent = goodEvent && *fiducial_status >= 111 && *Mx2 > 0.81 && *Mx2 < 1.00 && 
             *x > 0.45 && *x < 0.60;
         return goodEvent;
