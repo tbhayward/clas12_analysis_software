@@ -167,9 +167,9 @@ def make_title(kin_text, xb_label):
     common = r"$Q^{2}>1,\ W>2,\ y<0.75,\ 0.81<M_{x}^{2}<1.00\ (\mathrm{GeV}^{2})$"
     # Escape braces around B for format if used elsewhere; here it's raw string already.
     if kin_text.strip():
-        return rf"$ep \rightarrow en\pi^{{+}}$ — {xb_label}\n{common}; {kin_text}"
+        return rf"$ep \rightarrow en\pi^{{+}}$ — {xb_label}; {common}; {kin_text}"
     else:
-        return rf"$ep \rightarrow en\pi^{{+}}$ — {xb_label}\n{common}"
+        return rf"$ep \rightarrow en\pi^{{+}}$ — {xb_label}; {common}"
     # endif
 # endfor
 
