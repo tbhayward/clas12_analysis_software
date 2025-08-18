@@ -3,9 +3,8 @@
 """
 enpi_depolarization_factors.py
 
-Builds a 2x2 figure (one subplot per x_B bin) showing the mean depolarization
-ratios DepB/DepA, DepC/DepA, DepV/DepA, and DepW/DepA vs -t within each x_B bin,
-including statistical (standard error of the mean) bars.
+2x2 figure: each subplot is an x_B bin, showing the mean of DepB/DepA, DepC/DepA,
+DepV/DepA, and DepW/DepA vs -t with statistical error bars (SEM).
 
 Input:
   ROOT file: /work/clas12/thayward/CLAS12_exclusive/enpi+/data/pass2/data/enpi+/rgc_fa22_inb_NH3_epi+_2.root
@@ -19,17 +18,12 @@ Kinematic cuts (always enforced):
   0.81 < Mx2 < 1.00
 
 Binning:
-  x_B bins:  [0.10, 0.25], [0.25, 0.35], [0.35, 0.45], [0.45, 0.60]
-  -t (GeV^2) edges: [0.05, 0.15, 0.25, 0.35, 0.45, 0.55, 0.65,
-                     0.75, 0.85, 0.95, 1.05, 1.15, 1.25]
-  Note: t in the file is negative (Mandelstam). We use tpos = -t.
+  x_B bins: [0.10, 0.25], [0.25, 0.35], [0.35, 0.45], [0.45, 0.60]
+  -t (GeV^2) edges: [0.05, 0.15, 0.25, 0.35, 0.45, 0.55, 0.65, 0.75, 0.85, 0.95, 1.05, 1.15, 1.25]
+  (Note: t is stored negative in the tree; we use tpos = -t)
 
 Output:
   output/enpi+/depolarization_factors.pdf
-
-Note:
-  The request said to label the x axis "x_{B}", but the points vary with -t.
-  Here we label the horizontal axis as "-t (GeV^2)" to reflect what is plotted.
 """
 
 from pathlib import Path
@@ -56,9 +50,13 @@ T_POS_EDGES = np.array([
 OUT_PATH = Path("output/enpi+/depolarization_factors.pdf")
 OUT_PATH.parent.mkdir(parents=True, exist_ok=True)
 
-# Axis labels
-AXIS_LABEL_X = "-t (GeV^2)"
+# Labels (LaTeX-friendly; ASCII only)
+AXIS_LABEL_X = r"$-t\ (\mathrm{GeV}^{2})$"
 AXIS_LABEL_Y = "depolarization factor"
+
+# Fixed axes
+X_LIMS = (0.0, 1.3)
+Y_LIMS = (0.0, 2.0)
 
 # Chunk size for iterate: integer number of entries per chunk
 ITER_STEP = 1_000_000
@@ -102,7 +100,7 @@ def main():
     n_xb = len(XB_EDGES) - 1
     n_t  = len(T_POS_EDGES) - 1
 
-    ratio_keys = ["DepB/DepA", "DepC/DepA", "DepV/DepA", "DepW/DepA"]
+    ratio_keys = ["B/A", "C/A", "V/A", "W/A"]
     counts = {k: np.zeros((n_xb, n_t), dtype=np.int64) for k in ratio_keys}
     sums   = {k: np.zeros((n_xb, n_t), dtype=np.float64) for k in ratio_keys}
     sums2  = {k: np.zeros((n_xb, n_t), dtype=np.float64) for k in ratio_keys}
@@ -188,7 +186,6 @@ def main():
             if not np.any(mx):
                 continue  # endif
 
-            x_sel   = x[mx]
             t_sel   = tpos[mx]
             rB_sel  = rB[mx]
             rC_sel  = rC[mx]
@@ -246,11 +243,12 @@ def main():
     fig, axes = plt.subplots(2, 2, figsize=(12, 9), sharex=True, sharey=True)
     axes = axes.reshape(-1)
 
+    # marker-only (no connecting lines)
     style = {
-        "DepB/DepA": dict(marker="o", linestyle="-", linewidth=1.0, markersize=4),
-        "DepC/DepA": dict(marker="s", linestyle="-", linewidth=1.0, markersize=4),
-        "DepV/DepA": dict(marker="^", linestyle="-", linewidth=1.0, markersize=4),
-        "DepW/DepA": dict(marker="D", linestyle="-", linewidth=1.0, markersize=4),
+        "DepB/DepA": dict(fmt="o", linestyle="none", markersize=4, capsize=2),
+        "DepC/DepA": dict(fmt="s", linestyle="none", markersize=4, capsize=2),
+        "DepV/DepA": dict(fmt="^", linestyle="none", markersize=4, capsize=2),
+        "DepW/DepA": dict(fmt="D", linestyle="none", markersize=4, capsize=2),
     }
 
     for ix in range(n_xb):
@@ -262,11 +260,13 @@ def main():
             ax.errorbar(t_centers, y, yerr=yerr, label=rkey, **style[rkey])
         #endfor
 
-        ax.set_title(r"x_B in [{:.2f}, {:.2f}]".format(xb_lo, xb_hi))
+        ax.set_title(r"$x_{B}$ in [{:.2f}, {:.2f}]".format(xb_lo, xb_hi))
         ax.grid(True, linestyle="--", linewidth=0.5, alpha=0.6)
         ax.legend(loc="upper right", frameon=True, fontsize=9)
         ax.set_xlabel(AXIS_LABEL_X)
         ax.set_ylabel(AXIS_LABEL_Y)
+        ax.set_xlim(*X_LIMS)
+        ax.set_ylim(*Y_LIMS)
     #endfor
 
     fig.tight_layout()
