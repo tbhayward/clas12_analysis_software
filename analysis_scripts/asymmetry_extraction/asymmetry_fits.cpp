@@ -390,14 +390,14 @@ double asymmetry_error_calculation(double currentVariable,
   // double sigmaPb = 0.0086;
   // double sigmaPtp = 0.0368;
   // double sigmaPtm = 0.03542;
-  // Fa22
-  double sigmaPb = 0.0045;
-  double sigmaPtp = 0.0272;
-  double sigmaPtm = 0.0404;
-  // // Sp23
-  // double sigmaPb = 0.0061;
-  // double sigmaPtp = 0.0404;
-  // double sigmaPtm = 0.0376;
+  // // Fa22
+  // double sigmaPb = 0.0045;
+  // double sigmaPtp = 0.0272;
+  // double sigmaPtm = 0.0404;
+  // Sp23
+  double sigmaPb = 0.0061;
+  double sigmaPtp = 0.0404;
+  double sigmaPtm = 0.0376;
 
   double Npp = npp;
   double Npm = npm;
