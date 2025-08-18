@@ -126,48 +126,56 @@ bool GeneralExclusiveKinematicCuts::applyCuts(int currentFits, bool isMC)
     if (*W  <  2.0    ) return false;
     if (*y  >  0.75   ) return false;
 
-    int    rn     = *runnum;
-    double ec_p   = *e_p;
-    double ec_th  = *e_theta;
-    double ec_ph  = *e_phi;
-    double pi_p   = *p_p;
-    double pi_th  = *p_theta;
-    double pi_ph  = *p_phi;
-    double t_val = compute_t_scalar(rn, ec_p, ec_th, ec_ph, pi_p, pi_th, pi_ph);
-
-    // 2) If the property is “enpi,” impose |t| < 1.0 as well:
     if (property == "enpi") {
-        // std::cout << *fiducial_status << " " << std::fabs(t_val) << " " << *Mx2 << std::endl;
-        goodEvent = goodEvent && *fiducial_status >= 100 && 
-            std::fabs(*t) <= 1.1 && std::fabs(*t) >= 0.0 &&
-            *Mx2 > 0.80 && *Mx2 < 1.00;
+        goodEvent = goodEvent && *fiducial_status >= 111 && *Mx2 > 0.81 && *Mx2 < 1.00 && 
+            *x > 0.1 && *x < 0.6;
         return goodEvent;
     }
-    if (property == "enpiLowt") {
-        goodEvent = goodEvent && std::fabs(*t) >= 0.10 && std::fabs(*t) <= 0.4667;
-        goodEvent = goodEvent && *fiducial_status >= 100 &&
-            *Mx2 > 0.80 && *Mx2 < 1.00;
+    if (property == "enpiLowx") {
+        goodEvent = goodEvent && *fiducial_status >= 111 && *Mx2 > 0.81 && *Mx2 < 1.00 && 
+            *x > 0.1 && *x < 0.25;
         return goodEvent;
     }
-    if (property == "enpiMidt") {
-        goodEvent = goodEvent && std::fabs(*t) >= 0.4667 && std::fabs(*t) <= 0.8333;
-        goodEvent = goodEvent && *fiducial_status >= 100 &&
-            *Mx2 > 0.80 && *Mx2 < 1.00;
+    if (property == "enpiMidLowx") {
+        goodEvent = goodEvent && *fiducial_status >= 111 && *Mx2 > 0.81 && *Mx2 < 1.00 && 
+            *x > 0.25 && *x < 0.35;
         return goodEvent;
     }
-    if (property == "enpiHight") {
-        goodEvent = goodEvent && std::fabs(*t) >= 0.8333 && std::fabs(*t) < 1.2;
-        goodEvent = goodEvent && *fiducial_status >= 100 &&
-            *Mx2 > 0.80 && *Mx2 < 1.00;
+    if (property == "enpiMidHighx") {
+        goodEvent = goodEvent && *fiducial_status >= 111 && *Mx2 > 0.81 && *Mx2 < 1.00 && 
+            *x > 0.35 && *x < 0.45;
         return goodEvent;
     }
-    if (property == "enpiHarutsBin") {
-        goodEvent = goodEvent && std::fabs(*t) >= 0.4667 && std::fabs(*t) <= 0.8333;
-        goodEvent = goodEvent && *fiducial_status >= 100 && 
-            std::fabs(*t) <= 1.0 && std::fabs(*t) >= 0.0 &&
-            *Mx2 > 0.80 && *Mx2 < 1.00;
+    if (property == "enpiHighx") {
+        goodEvent = goodEvent && *fiducial_status >= 111 && *Mx2 > 0.81 && *Mx2 < 1.00 && 
+            *x > 0.45 && *x < 0.60;
         return goodEvent;
     }
+    // if (property == "enpiLowt") {
+    //     goodEvent = goodEvent && std::fabs(*t) >= 0.10 && std::fabs(*t) <= 0.4667;
+    //     goodEvent = goodEvent && *fiducial_status >= 100 &&
+    //         *Mx2 > 0.80 && *Mx2 < 1.00;
+    //     return goodEvent;
+    // }
+    // if (property == "enpiMidt") {
+    //     goodEvent = goodEvent && std::fabs(*t) >= 0.4667 && std::fabs(*t) <= 0.8333;
+    //     goodEvent = goodEvent && *fiducial_status >= 100 &&
+    //         *Mx2 > 0.80 && *Mx2 < 1.00;
+    //     return goodEvent;
+    // }
+    // if (property == "enpiHight") {
+    //     goodEvent = goodEvent && std::fabs(*t) >= 0.8333 && std::fabs(*t) < 1.2;
+    //     goodEvent = goodEvent && *fiducial_status >= 100 &&
+    //         *Mx2 > 0.80 && *Mx2 < 1.00;
+    //     return goodEvent;
+    // }
+    // if (property == "enpiHarutsBin") {
+    //     goodEvent = goodEvent && std::fabs(*t) >= 0.4667 && std::fabs(*t) <= 0.8333;
+    //     goodEvent = goodEvent && *fiducial_status >= 100 && 
+    //         std::fabs(*t) <= 1.0 && std::fabs(*t) >= 0.0 &&
+    //         *Mx2 > 0.80 && *Mx2 < 1.00;
+    //     return goodEvent;
+    // }
 
     if (property == "Fall18xB" || property == "Fall18pT" ||
         property == "Spring18xB" || property == "Spring18pT")
