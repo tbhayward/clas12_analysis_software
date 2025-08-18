@@ -1,27 +1,26 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Combine asymmetry text files by inverse-variance weighting, aligning points by their
-'mean' coordinate within a numeric tolerance (rather than assuming identical indexing).
+Combine asymmetry text files by inverse-variance weighting.
+
+Two alignment modes:
+  1) Default (mean-based): align points by their 'mean' coordinate within a numeric
+     tolerance (--tol). Robust to tiny bin-center drifts across periods.
+  2) Index-based (--by-index): align strictly by list index (0..N-1). Assumes the
+     same bin order/structure across inputs.
 
 Usage:
-  python combine_asymmetry_texts.py [--tol 5e-4] input1.txt input2.txt ... output.txt
+  python combine_asymmetry_texts.py [--tol 5e-4] [--by-index] input1.txt input2.txt ... output.txt
 
 Notes:
   • Section order in the output follows the order in the FIRST input file; any sections
-    that exist only in later inputs are appended alphabetically (same as your original).
-  • Within each section (NAME), target 'means' come from:
-      1) all 'means' present in the FIRST file, in their original order;
-      2) plus any extra 'means' found only in later files (appended sorted by mean).
-  • For each target mean T, we gather the nearest point (within |Δ| ≤ tol) from each file
-    and perform inverse-variance weighting across those contributions:
-       value_comb = Σ (v_i / σ_i²) / Σ (1 / σ_i²)
-       sigma_comb = 1 / sqrt(Σ (1 / σ_i²))
-       mean_comb  = Σ (m_i / σ_i²) / Σ (1 / σ_i²)
-    Points with NaN or nonpositive σ are ignored. If a target has no valid contributions,
-    it is skipped.
-
-This makes the combiner robust to tiny bin-center drifts or rounding differences between periods.
+    that only appear in later inputs are appended alphabetically.
+  • In mean-based mode, target 'means' come from:
+      1) all 'means' in the FIRST file (in order), plus
+      2) any extra 'means' found only in later files (appended sorted), provided they
+         are not within tol of an already chosen target.
+  • Points with NaN or nonpositive σ are ignored. If a target/index has no valid
+    contributions, it is skipped.
 """
 
 import sys
@@ -36,12 +35,10 @@ def parse_file(path, return_order=False):
       - if return_order=True:  (dict, order_list)
     """
     with open(path, 'r') as f:
-        text = f.read()  #endif
+        text = f.read()
 
-    # Match blocks like: name = { ... };
     assign_re = re.compile(r'([A-Za-z0-9_]+)\s*=\s*\{(.*?)\};', re.DOTALL)
-    # Match inner { a, b, c } where there are no further braces inside
-    triple_re = re.compile(r'\{([^{}]+)\}')  #endif
+    triple_re = re.compile(r'\{([^{}]+)\}')
 
     out = {}
     order = []
@@ -55,31 +52,25 @@ def parse_file(path, return_order=False):
         for t in triple_re.findall(content):
             parts = [p.strip() for p in t.split(',')]
             if len(parts) != 3:
-                continue  # endif
+                continue
             try:
                 mean  = float(parts[0])
                 value = float(parts[1])
                 sigma = float(parts[2])
             except ValueError:
-                continue  # endif
+                continue
             triples.append((mean, value, sigma))
-        #endfor
         if triples:
             out[name] = triples
-    #endfor
 
-    return (out, order) if return_order else out  #endif
-#endfor
+    return (out, order) if return_order else out
 
 def is_valid(meas):
     """Check value tuple (mean, val, sig) has finite numbers and positive sigma."""
     mean, val, sig = meas
-    if not (math.isfinite(val) and math.isfinite(sig) and math.isfinite(mean)):
-        return False  # endif
-    if sig <= 0.0:
-        return False  # endif
-    return True  # endif
-#endfor
+    return (math.isfinite(mean) and math.isfinite(val) and math.isfinite(sig) and sig > 0.0)
+
+# ── Mean-based alignment helpers ─────────────────────────────────────
 
 def nearest_index_by_mean(target_mean, triples, tol):
     """
@@ -93,106 +84,77 @@ def nearest_index_by_mean(target_mean, triples, tol):
         if delta <= tol and (best_delta is None or delta < best_delta):
             best_idx = i
             best_delta = delta
-        #endif
-    #endfor
     return best_idx  # may be None
-#endfor
 
 def build_target_means(anchor_triples, other_lists, tol):
     """
     Create the set of target means for alignment:
       - Start with the means (in order) from the first file (anchor).
       - Add any means from other files that are not within tol of an existing target.
-    Returns (targets_in_order, is_anchor_mask) where the mask is a list[bool]
-    indicating which targets came from the anchor.
+    Returns (targets_in_order, is_anchor_mask) where the mask marks anchor-origin.
     """
     targets = []
     is_anchor = []
 
-    # 1) Anchor means, keep order
     if anchor_triples is not None:
         for m, _, _ in anchor_triples:
             targets.append(m)
             is_anchor.append(True)
-        #endfor
-    #endif
 
-    # 2) Extras from other files
     def exists_close(x):
         for t in targets:
             if abs(x - t) <= tol:
-                return True  # endif
-        #endfor
-        return False  # endif
-    #endfor
+                return True
+        return False
 
     extras = []
     for L in other_lists:
         if not L:
-            continue  # endif
+            continue
         for m, _, _ in L:
             if not exists_close(m):
                 extras.append(m)
-            #endif
-        #endfor
-    #endfor
 
     if extras:
-        extras_sorted = sorted(set(extras))
-        for m in extras_sorted:
+        for m in sorted(set(extras)):
             targets.append(m)
             is_anchor.append(False)
-        #endfor
-    #endif
 
-    return targets, is_anchor  #endif
-#endfor
+    return targets, is_anchor
 
 def combine_by_mean(lists_by_file, tol, want_summary=False, name_for_log=""):
     """
-    Combine multiple lists of (mean, value, sigma) by aligning on the mean with tolerance.
-
-    lists_by_file: [list_or_None, list_or_None, ...] parallel to the input files.
-                   The FIRST element is the anchor list that sets the base order.
-
+    Combine multiple lists of (mean, value, sigma) by aligning on mean with tolerance.
+    lists_by_file: [list_or_None, list_or_None, ...], first element is anchor.
     Returns a combined list of (mean, value, sigma).
     """
     anchor = lists_by_file[0]
     others = lists_by_file[1:]
-
-    # Targets: anchor means in order + unmatched means from others (sorted)
-    targets, is_anchor = build_target_means(anchor, others, tol)
+    targets, _ = build_target_means(anchor, others, tol)
 
     combined = []
-    matched_stats = []  # for optional logging: how many files contributed per target
+    matched_stats = []
 
-    for ti, T in enumerate(targets):
+    for T in targets:
         contrib = []
-        # Examine each file's list, find nearest point to T within tol
         for L in lists_by_file:
             if not L:
-                continue  # endif
+                continue
             k = nearest_index_by_mean(T, L, tol)
             if k is None:
-                continue  # endif
+                continue
             if is_valid(L[k]):
                 contrib.append(L[k])
-            #endif
-        #endfor
 
         if not contrib:
-            continue  # skip targets with no valid contributions  # endif
+            continue
 
-        # Inverse-variance weighting on contrib
-        wsum = 0.0
-        vwsum = 0.0
-        mwsum = 0.0
+        wsum = vwsum = mwsum = 0.0
         for m, v, s in contrib:
             w = 1.0 / (s * s)
-            wsum  += w
+            wsum += w
             vwsum += v * w
             mwsum += m * w
-        #endfor
 
         val_comb  = vwsum / wsum
         sig_comb  = 1.0 / math.sqrt(wsum)
@@ -200,96 +162,131 @@ def combine_by_mean(lists_by_file, tol, want_summary=False, name_for_log=""):
 
         combined.append((mean_comb, val_comb, sig_comb))
         matched_stats.append(len(contrib))
-    #endfor
 
-    if want_summary and targets:
-        # Simple one-line summary for quick sanity checking
-        # e.g., "NAME: 12 targets, contributions per target (min/median/max) = 2/3/3"
+    if want_summary:
         if matched_stats:
             srt = sorted(matched_stats)
             mn, md, mx = srt[0], srt[len(srt)//2], srt[-1]
-            print(f"[COMBINE] {name_for_log}: {len(matched_stats)} targets, per-target contributions (min/med/max) = {mn}/{md}/{mx}")
+            print(f"[COMBINE mean] {name_for_log}: {len(matched_stats)} targets, per-target contributions (min/med/max) = {mn}/{md}/{mx}")
         else:
-            print(f"[COMBINE] {name_for_log}: no matched targets")
-        #endif
-    #endif
+            print(f"[COMBINE mean] {name_for_log}: no matched targets")
 
-    return combined  #endif
-#endfor
+    return combined
+
+# ── Index-based alignment ────────────────────────────────────────────
+
+def combine_by_index(lists_by_file, want_summary=False, name_for_log=""):
+    """
+    Combine lists of (mean, value, sigma) aligned STRICTLY by index.
+    For idx = 0..max_len-1, gather that index from each list (if present/valid),
+    then inverse-variance weight. Skip indices with no valid contributions.
+    """
+    max_len = 0
+    for L in lists_by_file:
+        if L:
+            max_len = max(max_len, len(L))
+
+    combined = []
+    matched_stats = []
+
+    for idx in range(max_len):
+        contrib = []
+        for L in lists_by_file:
+            if not L or idx >= len(L):
+                continue
+            meas = L[idx]
+            if is_valid(meas):
+                contrib.append(meas)
+
+        if not contrib:
+            continue
+
+        wsum = vwsum = mwsum = 0.0
+        for m, v, s in contrib:
+            w = 1.0 / (s * s)
+            wsum += w
+            vwsum += v * w
+            mwsum += m * w
+
+        val_comb  = vwsum / wsum
+        sig_comb  = 1.0 / math.sqrt(wsum)
+        mean_comb = mwsum / wsum
+
+        combined.append((mean_comb, val_comb, sig_comb))
+        matched_stats.append(len(contrib))
+
+    if want_summary:
+        if matched_stats:
+            srt = sorted(matched_stats)
+            mn, md, mx = srt[0], srt[len(srt)//2], srt[-1]
+            print(f"[COMBINE index] {name_for_log}: {len(matched_stats)} indices, per-index contributions (min/med/max) = {mn}/{md}/{mx}")
+        else:
+            print(f"[COMBINE index] {name_for_log}: no matched indices")
+
+    return combined
+
+# ── Main ─────────────────────────────────────────────────────────────
 
 def main():
-    ap = argparse.ArgumentParser(description="Combine asymmetry text files with mean-based alignment.")
-    ap.add_argument("--tol", type=float, default=5e-4, help="tolerance for matching means across files (default: 5e-4)")
-    ap.add_argument("files", nargs="+", help="input1.txt input2.txt ... output.txt (last arg is output)")
+    ap = argparse.ArgumentParser(description="Combine asymmetry text files with mean- or index-based alignment.")
+    ap.add_argument("--tol", type=float, default=5e-4,
+                    help="tolerance for matching means across files (mean-based mode, default: 5e-4)")
+    ap.add_argument("--by-index", action="store_true",
+                    help="align strictly by index instead of mean matching")
+    ap.add_argument("files", nargs="+",
+                    help="input1.txt input2.txt ... output.txt (last arg is output)")
     args = ap.parse_args()
 
     if len(args.files) < 2:
-        print("Usage: python combine_asymmetry_texts.py [--tol 5e-4] input1.txt [input2.txt ...] output.txt")
-        sys.exit(1)  # endif
+        print("Usage: python combine_asymmetry_texts.py [--tol 5e-4] [--by-index] input1.txt [input2.txt ...] output.txt")
+        sys.exit(1)
 
     *inputs, output_path = args.files
     if not inputs:
         print("Error: Need at least one input file.")
-        sys.exit(1)  # endif
+        sys.exit(1)
 
     # Parse first file (get order) and the rest
     first_dict, first_order = parse_file(inputs[0], return_order=True)
-    parsed_rest = [parse_file(p) for p in inputs[1:]]  #endif
+    parsed_rest = [parse_file(p) for p in inputs[1:]]
 
-    # Collect union of all names
+    # Collect union of all section names
     all_names = set(first_dict.keys())
     for d in parsed_rest:
         all_names.update(d.keys())
-    #endfor
 
-    # Build final ordered list:
-    # 1) in the order they appear in the first file
-    # 2) then any names not in the first file, appended in alphabetical order
+    # Output section order: first file order, then alphabetical for the rest
     ordered_names = []
     seen = set()
     for name in first_order:
         if name in all_names and name not in seen:
             ordered_names.append(name)
             seen.add(name)
-        #endif
-    #endfor
-    remaining = sorted(n for n in all_names if n not in seen)
-    ordered_names.extend(remaining)
+    ordered_names.extend(sorted(n for n in all_names if n not in seen))
 
-    # Combine per name
+    # Combine per section
     combined_results = {}
     for name in ordered_names:
-        lists_by_file = []
-        # First file contribution (may be None if name absent)
-        lists_by_file.append(first_dict.get(name))
-        # Remaining files
-        for d in parsed_rest:
-            lists_by_file.append(d.get(name))
-        #endfor
+        lists_by_file = [first_dict.get(name)] + [d.get(name) for d in parsed_rest]
 
-        combo = combine_by_mean(lists_by_file, tol=args.tol, want_summary=True, name_for_log=name)
+        if args.by_index:
+            combo = combine_by_index(lists_by_file, want_summary=True, name_for_log=name)
+        else:
+            combo = combine_by_mean(lists_by_file, tol=args.tol, want_summary=True, name_for_log=name)
+
         if combo:
             combined_results[name] = combo
-        #endif
-    #endfor
 
     # Write output in the same format
     with open(output_path, 'w') as out:
         for name in ordered_names:
             triples = combined_results.get(name)
             if not triples:
-                continue  # endif
+                continue
             out.write(f"{name} = {{")
-            rows = []
-            for mean, val, sig in triples:
-                rows.append(f"{{{mean:.9f}, {val:.9f}, {sig:.9f}}}")
-            #endfor
+            rows = [f"{{{m:.9f}, {v:.9f}, {s:.9f}}}" for (m, v, s) in triples]
             out.write(", ".join(rows))
             out.write("};\n")
-        #endfor
-    #endif
-#endfor
 
 if __name__ == "__main__":
     main()
-#endif
