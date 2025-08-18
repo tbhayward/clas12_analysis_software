@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-enpi_olarization_factors.py
+enpi_depolarization_factors.py
 
-2x2 figure: each subplot is an x_B bin, showing the mean of B/A, C/A,
-V/A, and W/A vs -t with statistical error bars (SEM).
+2x2 figure: each subplot is an x_B bin, showing the mean of DepB/DepA, DepC/DepA,
+DepV/DepA, and DepW/DepA vs -t with statistical error bars (SEM). Marker-only
+(no connecting lines), LaTeX labels, fixed axes.
 
 Input:
   ROOT file: /work/clas12/thayward/CLAS12_exclusive/enpi+/data/pass2/data/enpi+/rgc_fa22_inb_NH3_epi+_2.root
@@ -20,10 +21,10 @@ Kinematic cuts (always enforced):
 Binning:
   x_B bins: [0.10, 0.25], [0.25, 0.35], [0.35, 0.45], [0.45, 0.60]
   -t (GeV^2) edges: [0.05, 0.15, 0.25, 0.35, 0.45, 0.55, 0.65, 0.75, 0.85, 0.95, 1.05, 1.15, 1.25]
-  (Note: t is stored negative in the tree; we use tpos = -t)
+  (Note: t is stored negative; we use tpos = -t)
 
 Output:
-  output/enpi+/olarization_factors.pdf
+  output/enpi+/depolarization_factors.pdf
 """
 
 from pathlib import Path
@@ -47,12 +48,12 @@ T_POS_EDGES = np.array([
 ], dtype=float)
 
 # Output
-OUT_PATH = Path("output/enpi+/olarization_factors.pdf")
+OUT_PATH = Path("output/enpi+/depolarization_factors.pdf")
 OUT_PATH.parent.mkdir(parents=True, exist_ok=True)
 
-# Labels (LaTeX-friendly; ASCII only)
+# Labels (LaTeX)
 AXIS_LABEL_X = r"$-t\ (\mathrm{GeV}^{2})$"
-AXIS_LABEL_Y = "olarization factor"
+AXIS_LABEL_Y = "depolarization factor"
 
 # Fixed axes
 X_LIMS = (0.0, 1.3)
@@ -100,14 +101,24 @@ def main():
     n_xb = len(XB_EDGES) - 1
     n_t  = len(T_POS_EDGES) - 1
 
-    ratio_keys = ["B/A", "C/A", "V/A", "W/A"]
+    # Internal accumulator keys
+    ratio_keys = ["DepB/DepA", "DepC/DepA", "DepV/DepA", "DepW/DepA"]
+
+    # Mapping to display labels (legend)
+    legend_map = {
+        "DepB/DepA": "B/A",
+        "DepC/DepA": "C/A",
+        "DepV/DepA": "V/A",
+        "DepW/DepA": "W/A",
+    }
+
     counts = {k: np.zeros((n_xb, n_t), dtype=np.int64) for k in ratio_keys}
     sums   = {k: np.zeros((n_xb, n_t), dtype=np.float64) for k in ratio_keys}
     sums2  = {k: np.zeros((n_xb, n_t), dtype=np.float64) for k in ratio_keys}
 
     needed = [
         "x", "t", "Q2", "W", "y", "fiducial_status", "Mx2",
-        "A", "B", "C", "V", "W"
+        "DepA", "DepB", "DepC", "DepV", "DepW"
     ]
 
     tree_spec = f"{ROOT_PATH}:{TREE_NAME}"
@@ -120,11 +131,11 @@ def main():
         fid = arrays["fiducial_status"]
         Mx2 = arrays["Mx2"]
 
-        A = arrays["A"]
-        B = arrays["B"]
-        C = arrays["C"]
-        V = arrays["V"]
-        W = arrays["W"]
+        DepA = arrays["DepA"]
+        DepB = arrays["DepB"]
+        DepC = arrays["DepC"]
+        DepV = arrays["DepV"]
+        DepW = arrays["DepW"]
 
         # Global kinematic cuts (strict inequalities for Mx2)
         base_mask = (
@@ -139,9 +150,9 @@ def main():
 
         finite_mask = (
             np.isfinite(x) & np.isfinite(tpos) &
-            np.isfinite(A) & np.isfinite(B) &
-            np.isfinite(C) & np.isfinite(V) &
-            np.isfinite(W)
+            np.isfinite(DepA) & np.isfinite(DepB) &
+            np.isfinite(DepC) & np.isfinite(DepV) &
+            np.isfinite(DepW)
         )
 
         mask = base_mask & finite_mask
@@ -150,11 +161,11 @@ def main():
 
         x    = x[mask]
         tpos = tpos[mask]
-        A    = A[mask]
-        B    = B[mask]
-        C    = C[mask]
-        V    = V[mask]
-        Wv   = W[mask]
+        A    = DepA[mask]
+        B    = DepB[mask]
+        C    = DepC[mask]
+        V    = DepV[mask]
+        Wv   = DepW[mask]
 
         # Avoid division by zero
         goodA = (A != 0.0) & np.isfinite(A)
@@ -208,10 +219,10 @@ def main():
                 vals_V = rV_sel[mt]
                 vals_W = rW_sel[mt]
 
-                cB, sB, s2B = counts["B/A"], sums["B/A"], sums2["B/A"]
-                cC, sC, s2C = counts["C/A"], sums["C/A"], sums2["C/A"]
-                cV, sV, s2V = counts["V/A"], sums["V/A"], sums2["V/A"]
-                cW, sW, s2W = counts["W/A"], sums["W/A"], sums2["W/A"]
+                cB, sB, s2B = counts["DepB/DepA"], sums["DepB/DepA"], sums2["DepB/DepA"]
+                cC, sC, s2C = counts["DepC/DepA"], sums["DepC/DepA"], sums2["DepC/DepA"]
+                cV, sV, s2V = counts["DepV/DepA"], sums["DepV/DepA"], sums2["DepV/DepA"]
+                cW, sW, s2W = counts["DepW/DepA"], sums["DepW/DepA"], sums2["DepW/DepA"]
 
                 update_acc((cB[ix, it:it+1], sB[ix, it:it+1], s2B[ix, it:it+1]), vals_B)
                 update_acc((cC[ix, it:it+1], sC[ix, it:it+1], s2C[ix, it:it+1]), vals_C)
@@ -243,7 +254,7 @@ def main():
     fig, axes = plt.subplots(2, 2, figsize=(12, 9), sharex=True, sharey=True)
     axes = axes.reshape(-1)
 
-    # marker-only (no connecting lines)
+    # Marker-only styles keyed by DISPLAY labels
     style = {
         "B/A": dict(fmt="o", linestyle="none", markersize=4, capsize=2),
         "C/A": dict(fmt="s", linestyle="none", markersize=4, capsize=2),
@@ -257,7 +268,8 @@ def main():
         for rkey in ratio_keys:
             y    = means[rkey][ix, :]
             yerr = semes[rkey][ix, :]
-            ax.errorbar(t_centers, y, yerr=yerr, label=rkey, **style[rkey])
+            disp = legend_map[rkey]
+            ax.errorbar(t_centers, y, yerr=yerr, label=disp, **style[disp])
         #endfor
 
         ax.set_title(r"$x_{B}$ in [{:.2f}, {:.2f}]".format(xb_lo, xb_hi))
