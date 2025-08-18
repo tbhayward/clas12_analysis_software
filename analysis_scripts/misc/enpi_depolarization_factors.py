@@ -208,10 +208,10 @@ def main():
                 vals_V = rV_sel[mt]
                 vals_W = rW_sel[mt]
 
-                cB, sB, s2B = counts["DepB/DepA"], sums["DepB/DepA"], sums2["DepB/DepA"]
-                cC, sC, s2C = counts["DepC/DepA"], sums["DepC/DepA"], sums2["DepC/DepA"]
-                cV, sV, s2V = counts["DepV/DepA"], sums["DepV/DepA"], sums2["DepV/DepA"]
-                cW, sW, s2W = counts["DepW/DepA"], sums["DepW/DepA"], sums2["DepW/DepA"]
+                cB, sB, s2B = counts["B/A"], sums["B/A"], sums2["B/A"]
+                cC, sC, s2C = counts["C/A"], sums["C/A"], sums2["C/A"]
+                cV, sV, s2V = counts["V/A"], sums["V/A"], sums2["V/A"]
+                cW, sW, s2W = counts["W/A"], sums["W/A"], sums2["W/A"]
 
                 update_acc((cB[ix, it:it+1], sB[ix, it:it+1], s2B[ix, it:it+1]), vals_B)
                 update_acc((cC[ix, it:it+1], sC[ix, it:it+1], s2C[ix, it:it+1]), vals_C)
