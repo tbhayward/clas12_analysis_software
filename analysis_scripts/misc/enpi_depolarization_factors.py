@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-enpi_depolarization_factors.py
+enpi_olarization_factors.py
 
-2x2 figure: each subplot is an x_B bin, showing the mean of DepB/DepA, DepC/DepA,
-DepV/DepA, and DepW/DepA vs -t with statistical error bars (SEM).
+2x2 figure: each subplot is an x_B bin, showing the mean of B/A, C/A,
+V/A, and W/A vs -t with statistical error bars (SEM).
 
 Input:
   ROOT file: /work/clas12/thayward/CLAS12_exclusive/enpi+/data/pass2/data/enpi+/rgc_fa22_inb_NH3_epi+_2.root
@@ -23,7 +23,7 @@ Binning:
   (Note: t is stored negative in the tree; we use tpos = -t)
 
 Output:
-  output/enpi+/depolarization_factors.pdf
+  output/enpi+/olarization_factors.pdf
 """
 
 from pathlib import Path
@@ -47,12 +47,12 @@ T_POS_EDGES = np.array([
 ], dtype=float)
 
 # Output
-OUT_PATH = Path("output/enpi+/depolarization_factors.pdf")
+OUT_PATH = Path("output/enpi+/olarization_factors.pdf")
 OUT_PATH.parent.mkdir(parents=True, exist_ok=True)
 
 # Labels (LaTeX-friendly; ASCII only)
 AXIS_LABEL_X = r"$-t\ (\mathrm{GeV}^{2})$"
-AXIS_LABEL_Y = "depolarization factor"
+AXIS_LABEL_Y = "olarization factor"
 
 # Fixed axes
 X_LIMS = (0.0, 1.3)
@@ -107,7 +107,7 @@ def main():
 
     needed = [
         "x", "t", "Q2", "W", "y", "fiducial_status", "Mx2",
-        "DepA", "DepB", "DepC", "DepV", "DepW"
+        "A", "B", "C", "V", "W"
     ]
 
     tree_spec = f"{ROOT_PATH}:{TREE_NAME}"
@@ -120,11 +120,11 @@ def main():
         fid = arrays["fiducial_status"]
         Mx2 = arrays["Mx2"]
 
-        DepA = arrays["DepA"]
-        DepB = arrays["DepB"]
-        DepC = arrays["DepC"]
-        DepV = arrays["DepV"]
-        DepW = arrays["DepW"]
+        A = arrays["A"]
+        B = arrays["B"]
+        C = arrays["C"]
+        V = arrays["V"]
+        W = arrays["W"]
 
         # Global kinematic cuts (strict inequalities for Mx2)
         base_mask = (
@@ -139,9 +139,9 @@ def main():
 
         finite_mask = (
             np.isfinite(x) & np.isfinite(tpos) &
-            np.isfinite(DepA) & np.isfinite(DepB) &
-            np.isfinite(DepC) & np.isfinite(DepV) &
-            np.isfinite(DepW)
+            np.isfinite(A) & np.isfinite(B) &
+            np.isfinite(C) & np.isfinite(V) &
+            np.isfinite(W)
         )
 
         mask = base_mask & finite_mask
@@ -150,11 +150,11 @@ def main():
 
         x    = x[mask]
         tpos = tpos[mask]
-        A    = DepA[mask]
-        B    = DepB[mask]
-        C    = DepC[mask]
-        V    = DepV[mask]
-        Wv   = DepW[mask]
+        A    = A[mask]
+        B    = B[mask]
+        C    = C[mask]
+        V    = V[mask]
+        Wv   = W[mask]
 
         # Avoid division by zero
         goodA = (A != 0.0) & np.isfinite(A)
@@ -245,10 +245,10 @@ def main():
 
     # marker-only (no connecting lines)
     style = {
-        "DepB/DepA": dict(fmt="o", linestyle="none", markersize=4, capsize=2),
-        "DepC/DepA": dict(fmt="s", linestyle="none", markersize=4, capsize=2),
-        "DepV/DepA": dict(fmt="^", linestyle="none", markersize=4, capsize=2),
-        "DepW/DepA": dict(fmt="D", linestyle="none", markersize=4, capsize=2),
+        "B/A": dict(fmt="o", linestyle="none", markersize=4, capsize=2),
+        "C/A": dict(fmt="s", linestyle="none", markersize=4, capsize=2),
+        "V/A": dict(fmt="^", linestyle="none", markersize=4, capsize=2),
+        "W/A": dict(fmt="D", linestyle="none", markersize=4, capsize=2),
     }
 
     for ix in range(n_xb):
