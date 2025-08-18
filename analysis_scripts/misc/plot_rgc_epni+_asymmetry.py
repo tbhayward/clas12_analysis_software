@@ -164,7 +164,7 @@ def detect_available_bins(*dicts):
 def make_title(kin_text, xb_label):
     # Reaction in math text, then cuts, then xB slice label
     # We also include the common cuts explicitly for clarity.
-    common = r"$Q^{2}>1,\ W>2,\ y<0.75,\ 0.81<M_{x}^{2}<1.00\ (\mathrm{GeV}^{2})$"
+    common = r"$Q^{2}>1 (\mathrm{GeV}^{2}),\ W>2 (\mathrm{GeV}),\ y<0.75,\ 0.81<M_{x}^{2}<1.00\ (\mathrm{GeV}^{2})$"
     # Escape braces around B for format if used elsewhere; here it's raw string already.
     if kin_text.strip():
         return rf"$ep \rightarrow en\pi^{{+}}$ — {xb_label}; {common}; {kin_text}"
