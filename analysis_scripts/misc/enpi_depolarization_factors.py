@@ -51,7 +51,7 @@ T_POS_EDGES = np.array([
 OUT_PATH = Path("output/enpi+/depolarization_factors.pdf")
 OUT_PATH.parent.mkdir(parents=True, exist_ok=True)
 
-# Labels (LaTeX)
+# Labels (LaTeX-friendly, ASCII only)
 AXIS_LABEL_X = r"$-t\ (\mathrm{GeV}^{2})$"
 AXIS_LABEL_Y = "depolarization factor"
 
@@ -272,7 +272,8 @@ def main():
             ax.errorbar(t_centers, y, yerr=yerr, label=disp, **style[disp])
         #endfor
 
-        ax.set_title(r"$x_{B}$ in [{:.2f}, {:.2f}]".format(xb_lo, xb_hi))
+        # IMPORTANT: escape the braces around B for .format with {{B}}
+        ax.set_title(r"$x_{{B}}$ in [{:.2f}, {:.2f}]".format(xb_lo, xb_hi))
         ax.grid(True, linestyle="--", linewidth=0.5, alpha=0.6)
         ax.legend(loc="upper right", frameon=True, fontsize=9)
         ax.set_xlabel(AXIS_LABEL_X)
