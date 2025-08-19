@@ -5,12 +5,22 @@ import os
 import numpy as np
 import matplotlib.pyplot as plt
 
+def parse_to_arrays(rows):
+    """Convert [[tneg, y, e], ...] -> x=-t, y, e numpy arrays."""
+    x, y, e = [], [], []
+    for tneg, yy, ee in rows:
+        x.append(-float(tneg))   # -t
+        y.append(float(yy))
+        e.append(float(ee))
+    #endfor
+    return np.asarray(x), np.asarray(y), np.asarray(e)
+#endfor
+
 def main():
     # --------------------------
-    # Raw data: each row = [t (negative), F_LU^{sin phi}, err]
-    # We'll plot versus -t, so we negate the first column.
+    # LEFT PANEL: x_B in [0.10, 0.60]
     # --------------------------
-    data_rga = [
+    data_rga_all = [
         [-1.199099929, 0.106094505, 0.014567704],
         [-1.098606216, 0.150010511, 0.013594042],
         [-0.998715748, 0.126960020, 0.012689497],
@@ -24,8 +34,7 @@ def main():
         [-0.199615240, 0.098419617, 0.007572824],
         [-0.106069254, 0.066021980, 0.007586575],
     ]
-
-    data_rgc = [
+    data_rgc_all = [
         [-1.199254858, 0.115608756, 0.026206482],
         [-1.098419750, 0.065197368, 0.024542325],
         [-0.998794627, 0.092106925, 0.023140667],
@@ -41,66 +50,121 @@ def main():
     ]
 
     # --------------------------
-    # Parse into arrays
+    # MIDDLE PANEL: x_B in [0.10, 0.25]
     # --------------------------
-    x_rga, y_rga, e_rga = [], [], []
-    for tneg, y, e in data_rga:
-        x_rga.append(-tneg)  # -t
-        y_rga.append(y)
-        e_rga.append(e)
-    #endfor
-
-    x_rgc, y_rgc, e_rgc = [], [], []
-    for tneg, y, e in data_rgc:
-        x_rgc.append(-tneg)  # -t
-        y_rgc.append(y)
-        e_rgc.append(e)
-    #endfor
-
-    x_rga = np.asarray(x_rga, dtype=float)
-    y_rga = np.asarray(y_rga, dtype=float)
-    e_rga = np.asarray(e_rga, dtype=float)
-
-    x_rgc = np.asarray(x_rgc, dtype=float)
-    y_rgc = np.asarray(y_rgc, dtype=float)
-    e_rgc = np.asarray(e_rgc, dtype=float)
+    data_rga_low = [
+        [-1.145084992, 0.054622672, 0.023743843],
+        [-0.945084171, 0.051959110, 0.020716086],
+        [-0.745308617, 0.071202111, 0.018329393],
+        [-0.542407324, 0.068584436, 0.015417029],
+        [-0.338122978, 0.103860346, 0.012533450],
+        [-0.127154681, 0.083377226, 0.007795620],
+    ]
+    data_rgc_low = [
+        [-1.144558703, 0.034687712, 0.043386411],
+        [-0.944756340, -0.015494051, 0.038461909],
+        [-0.742782191, 0.034221919, 0.032816930],
+        [-0.542254429, 0.083657502, 0.027904226],
+        [-0.338530753, 0.150299892, 0.021888257],
+        [-0.133457081, 0.059036585, 0.014071653],
+    ]
 
     # --------------------------
-    # Plot
+    # RIGHT PANEL: x_B in [0.45, 0.60]
     # --------------------------
-    fig, ax = plt.subplots(figsize=(6.5, 4.5))
+    data_rga_high = [
+        [-1.145403261, 0.140435559, 0.018536696],
+        [-0.944694169, 0.156121547, 0.016271461],
+        [-0.745924501, 0.139093691, 0.014378928],
+        [-0.550344018, 0.125560504, 0.014023515],
+        [-0.386017760, 0.058567029, 0.021135413],
+        [-0.245797394, -0.098866164, 0.709697519],
+    ]
+    data_rgc_high = [
+        [-1.145182109, 0.100559171, 0.032409370],
+        [-0.945414028, 0.153935709, 0.028465377],
+        [-0.744747106, 0.171656072, 0.025044578],
+        [-0.549817284, 0.120362491, 0.024436794],
+        [-0.388625205, 0.071432401, 0.038096994],
+        [-0.248053003, -8.700734592, 0.058707248],
+    ]
 
-    ax.errorbar(
-        x_rga, y_rga, yerr=e_rga,
-        fmt='o', ms=4, lw=1.0, capsize=2,
+    # Convert to arrays
+    xA, yA, eA = parse_to_arrays(data_rga_all)
+    xB, yB, eB = parse_to_arrays(data_rgc_all)
+
+    xL_A, yL_A, eL_A = parse_to_arrays(data_rga_low)
+    xL_B, yL_B, eL_B = parse_to_arrays(data_rgc_low)
+
+    xH_A, yH_A, eH_A = parse_to_arrays(data_rga_high)
+    xH_B, yH_B, eH_B = parse_to_arrays(data_rgc_high)
+
+    # Figure and axes
+    fig, axes = plt.subplots(1, 3, figsize=(14.0, 4.5), sharey=True)
+    (ax1, ax2, ax3) = axes
+
+    # Common styling
+    xlim = (0.0, 1.3)
+    ylim = (-0.1, 0.2)
+
+    # Left panel
+    l1 = ax1.errorbar(
+        xA, yA, yerr=eA, fmt='o', ms=4, lw=1.0, capsize=2,
         color='blue', label=r'RGA Fa18 Inb'
     )
-    ax.errorbar(
-        x_rgc, y_rgc, yerr=e_rgc,
-        fmt='s', ms=4, lw=1.0, capsize=2,
+    l2 = ax1.errorbar(
+        xB, yB, yerr=eB, fmt='s', ms=4, lw=1.0, capsize=2,
         color='red', label=r'RGC Fa22 NH$_{3}$ Inb'
     )
+    ax1.set_title(r'$x_{B}\ \in\ [0.10,\,0.60]$')
+    ax1.set_xlabel(r'$-t$ (GeV$^{2}$)')
+    ax1.set_ylabel(r'$F_{LU}^{\sin\phi}$')
+    ax1.set_xlim(*xlim)
+    ax1.set_ylim(*ylim)
+    ax1.grid(True, alpha=0.3, linestyle='--')
 
-    ax.set_xlabel(r'$-t$ (GeV$^{2}$)')
-    ax.set_ylabel(r'$F_{LU}^{\sin\phi}$')
-    ax.set_xlim(0.0, 1.3)
-    ax.set_ylim(-0.1, 0.2)
-    ax.legend(frameon=False)
-    ax.grid(True, alpha=0.3, linestyle='--')
+    # Middle panel
+    ax2.errorbar(
+        xL_A, yL_A, yerr=eL_A, fmt='o', ms=4, lw=1.0, capsize=2, color='blue'
+    )
+    ax2.errorbar(
+        xL_B, yL_B, yerr=eL_B, fmt='s', ms=4, lw=1.0, capsize=2, color='red'
+    )
+    ax2.set_title(r'$x_{B}\ \in\ [0.10,\,0.25]$')
+    ax2.set_xlabel(r'$-t$ (GeV$^{2}$)')
+    ax2.set_xlim(*xlim)
+    ax2.set_ylim(*ylim)
+    ax2.grid(True, alpha=0.3, linestyle='--')
 
-    # --------------------------
-    # Save
-    # --------------------------
-    outdir = os.path.join('output', 'enpi+')
-    if not os.path.isdir(outdir):
-        os.makedirs(outdir, exist_ok=True)
-    #endif
+    # Right panel
+    ax3.errorbar(
+        xH_A, yH_A, yerr=eH_A, fmt='o', ms=4, lw=1.0, capsize=2, color='blue'
+    )
+    ax3.errorbar(
+        xH_B, yH_B, yerr=eH_B, fmt='s', ms=4, lw=1.0, capsize=2, color='red'
+    )
+    ax3.set_title(r'$x_{B}\ \in\ [0.45,\,0.60]$')
+    ax3.set_xlabel(r'$-t$ (GeV$^{2}$)')
+    ax3.set_xlim(*xlim)
+    ax3.set_ylim(*ylim)
+    ax3.grid(True, alpha=0.3, linestyle='--')
 
-    outpath = os.path.join(outdir, 'rga_rgc_comparison.pdf')
+    # One shared legend for the whole figure
+    fig.legend(
+        handles=[l1, l2],
+        labels=[r'RGA Fa18 Inb', r'RGC Fa22 NH$_{3}$ Inb'],
+        loc='upper center', ncol=2, frameon=False, bbox_to_anchor=(0.5, 1.03)
+    )
+
     plt.tight_layout()
-    fig.savefig(outpath, bbox_inches='tight')
+
+    # Save
+    outdir = os.path.join('output', 'enpi+')
+    os.makedirs(outdir, exist_ok=True)
+    outpath = os.path.join(outdir, 'rga_rgc_comparison_1x3.pdf')
+    plt.savefig(outpath, bbox_inches='tight')
     print('Saved:', outpath)
-#endfor
+#endif
 
 if __name__ == '__main__':
     main()
