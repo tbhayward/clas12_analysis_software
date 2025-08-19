@@ -37,10 +37,10 @@ double BSA_single_hadron(double* x, double* par) {
   // Retrieve the phi variable from the input x array
   double phi = x[0];
   // Calculate and return the value of the function for the given phi and parameters 
-  return ALU_offset + ALU_sinphi*sin(phi);
+  // return ALU_offset + ALU_sinphi*sin(phi);
   // AUU_cosphi = -0.184162428;
   // AUU_cos2phi = -0.553694788;
-  // return ALU_offset + ALU_sinphi*sin(phi)/(1+AUU_cosphi*cos(phi)+AUU_cos2phi*cos(2*phi));
+  return ALU_offset + ALU_sinphi*sin(phi)/(1+AUU_cosphi*cos(phi)+AUU_cos2phi*cos(2*phi));
 }
 
 double BSA_dvcs(double* x, double* par) {
@@ -386,18 +386,18 @@ double asymmetry_error_calculation(double currentVariable,
   int asymmetry_index) {
   double Df = dilutionFactors[currentBin].first;
   double sigmaDf = dilutionFactors[currentBin].second;
-  // // Su22
-  // double sigmaPb = 0.0086;
-  // double sigmaPtp = 0.0368;
-  // double sigmaPtm = 0.0367;
+  // Su22
+  double sigmaPb = 0.0086;
+  double sigmaPtp = 0.0368;
+  double sigmaPtm = 0.0367;
   // // Fa22
   // double sigmaPb = 0.0045;
   // double sigmaPtp = 0.0243;
   // double sigmaPtm = 0.0243;
-  // Sp23
-  double sigmaPb = 0.0061;
-  double sigmaPtp = 0.0378;
-  double sigmaPtm = 0.0378;
+  // // Sp23
+  // double sigmaPb = 0.0061;
+  // double sigmaPtp = 0.0378;
+  // double sigmaPtm = 0.0378;
 
   double Npp = npp;
   double Npm = npm;
