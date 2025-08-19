@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
+
 """
 Build two figures from PhysicsEvents in a ROOT file.
 
@@ -28,7 +29,7 @@ import sys
 import numpy as np
 import matplotlib.pyplot as plt
 
-# Uproot for ROOT IO
+# Try uproot for ROOT IO
 try:
     import uproot
 except ImportError:
@@ -41,7 +42,7 @@ except ImportError:
 TREE_NAME = "PhysicsEvents"
 
 # Global axis limits
-Q2_LIM  = (1.0, 8.0)
+Q2_LIM  = (1.0, 7.0)   # ← max Q2 set to 7
 X_LIM   = (0.0, 0.70)
 T_LIM   = (0.0, 1.30)  # for -t
 PHI_LIM = (0.0, 2.0*np.pi)
@@ -74,7 +75,7 @@ XB_COLORS = {
 
 # Provided t-edges (negative t), convert to positive -t edges, ascending
 T_EDGES_T   = np.array([-1.25, -1.05, -0.85, -0.65, -0.45, -0.25, -0.05], dtype=float)
-T_EDGES_POS = np.sort(-T_EDGES_T)  # [0.05,0.25,0.45,0.65,0.85,1.05,1.25]
+T_EDGES_POS = np.sort(-T_EDGES_T)  # [0.05, 0.25, 0.45, 0.65, 0.85, 1.05, 1.25]
 
 # ─────────────────────────────────────────────────────────────────────
 # Helpers
@@ -149,7 +150,11 @@ def make_2d_canvases(data, outdir):
         ("t","Q2"),   ("t","x"),    ("t","phi"),
         ("phi","Q2"), ("phi","x"),  ("phi","t"),
     ]
-    fig, axes = plt.subplots(4, 3, figsize=(14, 16), constrained_layout=True)
+
+    # Use tight_layout with extra bottom padding (no constrained_layout)
+    fig, axes = plt.subplots(4, 3, figsize=(14, 16))
+    fig.tight_layout(rect=[0, 0.03, 1, 1])   # reserve a bit at top
+    fig.subplots_adjust(bottom=0.07)         # extra bottom padding to avoid clipping
 
     for ax, (yvar, xvar) in zip(axes.flat, pairs):
         X = extract(data, xvar)
@@ -158,13 +163,19 @@ def make_2d_canvases(data, outdir):
         xbins = get_bins(xvar)
         ybins = get_bins(yvar)
 
-        h = ax.hist2d(X, Y, bins=[xbins, ybins], cmap="viridis")
+        # Classic blue→red colormap and no white mesh lines in vector output
+        h = ax.hist2d(X, Y, bins=[xbins, ybins], cmap="jet")
+        qm = h[3]                       # QuadMesh returned by hist2d
+        qm.set_edgecolor('face')        # avoid visible edges
+        qm.set_linewidth(0.0)
+        qm.set_rasterized(True)         # prevent hairline gaps in PDFs
+
         ax.set_xlim(*({"Q2": Q2_LIM, "x": X_LIM, "t": T_LIM, "phi": PHI_LIM}[xvar]))
         ax.set_ylim(*({"Q2": Q2_LIM, "x": X_LIM, "t": T_LIM, "phi": PHI_LIM}[yvar]))
         ax.set_xlabel(var_label(xvar))
         ax.set_ylabel(var_label(yvar))
 
-        # Nice ticks for phi
+        # Ticks for phi
         if xvar == "phi":
             ax.set_xticks([0, np.pi/2, np.pi, 3*np.pi/2, 2*np.pi],
                           [r"$0$", r"$\frac{\pi}{2}$", r"$\pi$", r"$\frac{3\pi}{2}$", r"$2\pi$"])
@@ -172,9 +183,8 @@ def make_2d_canvases(data, outdir):
             ax.set_yticks([0, np.pi/2, np.pi, 3*np.pi/2, 2*np.pi],
                           [r"$0$", r"$\frac{\pi}{2}$", r"$\pi$", r"$\frac{3\pi}{2}$", r"$2\pi$"])
 
-    fig.suptitle(r"Global cuts: $Q^{2}>1,\ W>2,\ y<0.75,\ 0.81<M_{x}^{2}<1.00$", fontsize=14, y=0.995)
     outpath = os.path.join(outdir, "2d_histograms.pdf")
-    fig.savefig(outpath)
+    fig.savefig(outpath, bbox_inches="tight")
     plt.close(fig)
     print(f"Saved: {outpath}")
 
@@ -190,24 +200,25 @@ def make_binned_canvas_4x6(data, outdir):
 
     fig, axes = plt.subplots(4, nbins, figsize=(20, 12), sharey="row")
     fig.subplots_adjust(top=0.88, wspace=0.15, hspace=0.25)
-    fig.suptitle(r"Overlaid distributions by $-t$ bin and $x_{B}$ slice"
-                 "\nGlobal cuts: $Q^{2}>1,\ W>2,\ y<0.75,\ 0.81<M_{x}^{2}<1.00$",
-                 fontsize=14)
+    fig.suptitle(
+        r"Overlaid distributions by $-t$ bin and $x_{B}$ slice" "\n"
+        r"Global cuts: $Q^{2}>1,\, W>2,\, y<0.75,\, 0.81<M_{x}^{2}<1.00$",
+        fontsize=14
+    )
 
     row_vars = ["Q2", "x", "t", "phi"]
     row_lims = {"Q2": Q2_LIM, "x": X_LIM, "t": T_LIM, "phi": PHI_LIM}
     row_bins = {"Q2": NB_Q2,  "x": NB_X,  "t": NB_T,  "phi": NB_PHI}
 
-    # Build a single set of legend handles (one per xB slice)
+    # Legend handles (one per xB slice) with requested labels
     legend_handles = []
     legend_labels  = []
     for slice_name, color in XB_COLORS.items():
-        h, = plt.plot([], [], color=color, lw=1.8, label=f"{slice_name} "
-                       f"[{X_SLICES[slice_name][0]:.2f}, {X_SLICES[slice_name][1]:.2f}]")
-        legend_handles.append(h)
-        legend_labels.append(h.get_label())
-    # Remove dummy line from current axes
-    for h in legend_handles: h.remove()
+        a, b = X_SLICES[slice_name]
+        lbl = rf"$x_{{B}}\in[{a:.2f},{b:.2f}]$"
+        h, = plt.plot([], [], color=color, lw=1.8, label=lbl)
+        legend_handles.append(h); legend_labels.append(lbl)
+    for h in legend_handles: h.remove()  # cleanup dummy lines
 
     for col in range(nbins):
         tmin, tmax = edges[col], edges[col+1]
@@ -221,14 +232,14 @@ def make_binned_canvas_4x6(data, outdir):
             # Axis formatting
             ax.set_xlim(*vlim)
             if col == 0:
-                ax.set_ylabel("density")
+                ax.set_ylabel("counts")
             ax.set_xlabel(var_label(vname))
             if vname == "phi":
                 ax.set_xticks([0, np.pi/2, np.pi, 3*np.pi/2, 2*np.pi],
                               [r"$0$", r"$\frac{\pi}{2}$", r"$\pi$", r"$\frac{3\pi}{2}$", r"$2\pi$"])
-            ax.grid(True, linestyle="--", alpha=0.35)
+            ax.grid(True, linestyle="--", alpha=0.25)
 
-            # Overlays: four xB slices
+            # Overlays: four xB slices (raw counts; no normalization)
             for slice_name, color in XB_COLORS.items():
                 m = base_masks[slice_name] & tbin_mask(data, tmin, tmax)
                 vals = extract(data, vname)[m]
@@ -236,13 +247,13 @@ def make_binned_canvas_4x6(data, outdir):
                     continue
                 ax.hist(vals,
                         bins=np.linspace(vlim[0], vlim[1], nb+1),
-                        histtype="step", linewidth=1.6, density=True, color=color)
+                        histtype="step", linewidth=1.6, density=False, color=color)
 
             # Column title at top row
             if r == 0:
                 ax.set_title(col_title, fontsize=12)
 
-    # One figure-level legend explaining slice colors/ranges
+    # Figure-level legend
     fig.legend(legend_handles, legend_labels, loc="upper center",
                ncol=4, frameon=True, fontsize=11, bbox_to_anchor=(0.5, 0.93))
 
