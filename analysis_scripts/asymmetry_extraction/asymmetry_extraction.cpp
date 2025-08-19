@@ -286,7 +286,7 @@ int main(int argc, char *argv[]) {
       performChi2Fits_GeneralExclusive(output_file.c_str(), kinematic_file.c_str(),
         kinematicPlot_file.c_str(), binNames[i]);
     } else {
-      for (int asymmetry = 0; asymmetry < 3; ++asymmetry) {
+      for (int asymmetry = 0; asymmetry < 1; ++asymmetry) {
         if (asymmetry > 0 && cpp == 1) {
             cout << "Skipping TSA and DSA for unpolarized target data." << endl;
             continue;
