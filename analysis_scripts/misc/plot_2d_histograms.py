@@ -612,8 +612,8 @@ def main():
     H2, H1_Q2, H1_X, H1_T, H1_PHI, H1_MX2 = accumulate(infile)
 
     # Render figures from the accumulated histograms
-    make_2d_canvases(H2, outdir)
-    make_binned_canvas_4x6(H1_Q2, H1_X, H1_T, H1_PHI, outdir)
+    # make_2d_canvases(H2, outdir)
+    # make_binned_canvas_4x6(H1_Q2, H1_X, H1_T, H1_PHI, outdir)
     make_mx2_canvas(H1_MX2, outdir)
 #endfor
 
