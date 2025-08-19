@@ -3582,7 +3582,7 @@ void performChi2Fits_GeneralExclusive(const char* output_file,
   // Prepare output streams for parameter arrays
   std::ostringstream sALUoff, sAULoff, sALU, sAUL, sAUL2, sALL, sALLc;
   std::ostringstream sAUUc, sAUUc2, sAUUs, sAUUs2;
-  for (auto* s : {&sALUoff,&sAULoff,&sALU,&sAUL,&sAUL2,&sALL,&sALLc,&sAUUc,&sAUUc2,&sAUUs})
+  for (auto* s : {&sALUoff,&sAULoff,&sALU,&sAUL,&sAUL2,&sALL,&sALLc,&sAUUc,&sAUUc2,&sAUUs,&sAUUs2})
     (*s) << std::fixed << std::setprecision(9);
 
   sALUoff << prefix << "GEchi2FitsALUoffset = {";
@@ -3729,29 +3729,178 @@ void performChi2Fits_GeneralExclusive(const char* output_file,
     g_ge_ctx.rWA = (depA!=0.0)? (depW/depA) : 1.0;
     g_ge_ctx.rCA = (depA!=0.0)? (depC/depA) : 1.0;
 
-    // ---- Fit with Minuit ----
+    // ───────────────────────────────────────────────────────────────────
+    // Fit with Minuit (robust sequence + proper error evaluation)
+    // ───────────────────────────────────────────────────────────────────
+
     TMinuit minuit(11);
+
+    // Print level: -1 = quiet, 0 = terse, 1 = normal, 2 = verbose.
+    // Keep it quiet for production; bump to 1 while debugging.
     minuit.SetPrintLevel(-1);
-    minuit.SetErrorDef(1.0); // chi2
+
+    // ERROR DEF = 1.0 means your FCN returns χ² (so Δχ² = 1 ⇒ “1σ”).
+    // If your FCN were −log L, you would use 0.5 instead.
+    minuit.SetErrorDef(1.0);
+
+    // Your χ² functor:
     minuit.SetFCN(chi2Fcn_GeneralExclusive);
 
-    // name, init, step, low, high
-    minuit.DefineParameter(0,  "ALU_offset",      0.00,        0.01, -1.0, 1.0);
-    minuit.DefineParameter(1,  "AUL_offset",      0.00,        0.01, -1.0, 1.0);
-    minuit.DefineParameter(2,  "F_LU_sin/F_UU",   0.00,        0.001, -1.0, 1.0); 
-    minuit.DefineParameter(3,  "F_UL_sin/F_UU",   0.00,        0.001, -1.0, 1.0);
-    minuit.DefineParameter(4,  "F_UL_sin2/F_UU",  0.00,        0.001, -1.0, 1.0);
-    minuit.DefineParameter(5,  "F_LL/F_UU",       0.00,        0.001, -1.0, 1.0);
-    minuit.DefineParameter(6,  "F_LL_cos/F_UU",   0.00,        0.001, -1.0, 1.0);
-    minuit.DefineParameter(7,  "F_UU_cos/F_UU",   0.00,        0.001, -0.5, 0.5); 
-    minuit.DefineParameter(8,  "F_UU_cos2/F_UU",  0.00,        0.001, -0.5, 0.5);  
-    minuit.DefineParameter(9,  "F_UU_sin/F_UU",   0.00,        0.00, -1.0, 1.0);
-    minuit.DefineParameter(10, "F_UU_sin2/F_UU",  0.00,        0.00, -1.0, 1.0);
+    // -------------------------------------------------------------------
+    // Parameter definitions
+    // name, initial value, step size, lower bound, upper bound
+    //
+    // NOTE on step sizes:
+    //   - A realistic step size helps MIGRAD find the curvature and speeds up HESSE.
+    //   - If a parameter should be *fixed*, you must call FixParameter(i).
+    //     Setting step=0 does NOT fix it in TMinuit.
+    // -------------------------------------------------------------------
+    minuit.DefineParameter(0,  "ALU_offset",      0.00,  0.01,  -1.0,  1.0);
+    minuit.DefineParameter(1,  "AUL_offset",      0.00,  0.01,  -1.0,  1.0);
+    minuit.DefineParameter(2,  "F_LU_sin/F_UU",   0.00,  0.001, -1.0,  1.0);
+    minuit.DefineParameter(3,  "F_UL_sin/F_UU",   0.00,  0.001, -1.0,  1.0);
+    minuit.DefineParameter(4,  "F_UL_sin2/F_UU",  0.00,  0.001, -1.0,  1.0);
+    minuit.DefineParameter(5,  "F_LL/F_UU",       0.00,  0.001, -1.0,  1.0);
+    minuit.DefineParameter(6,  "F_LL_cos/F_UU",   0.00,  0.001, -1.0,  1.0);
+    minuit.DefineParameter(7,  "F_UU_cos/F_UU",   0.00,  0.001, -0.5,  0.5);
+    minuit.DefineParameter(8,  "F_UU_cos2/F_UU",  0.00,  0.001, -0.5,  0.5);
 
+    // These two are meant to be zero (no sine harmonics in UU); FIX them:
+    minuit.DefineParameter(9,  "F_UU_sin/F_UU",   0.00,  0.001, -1.0,  1.0);
+    minuit.DefineParameter(10, "F_UU_sin2/F_UU",  0.00,  0.001, -1.0,  1.0);
+    minuit.FixParameter(9);
+    minuit.FixParameter(10);
 
-    minuit.Migrad();
-    double arglist[2]; int ierflg=0; arglist[0]=500; arglist[1]=1.0;
+    // -------------------------------------------------------------------
+    // Robust minimization control
+    //  - Strategy 2: more thorough (slower) but improves reliability.
+    //  - Tolerance ~ 0.1 is a good default; it’s the EDM target in ERRDEF units.
+    //  - Use MINImize (MIGRAD (+ SIMPLEX fallback) in one command).
+    // -------------------------------------------------------------------
+    double arglist[10];
+    int ierflg = 0;
+
+    // Set strategy = 2
+    arglist[0] = 2;                      // 0=fast, 1=default, 2=robust
+    minuit.mnexcm("SET STR", arglist, 1, ierflg);
+
+    // Set tolerance (target EDM)
+    arglist[0] = 0.1;                    // tighten (e.g. 0.05 or 0.01) if needed
+    minuit.mnexcm("SET TOL", arglist, 1, ierflg);
+
+    // Run MINImize with generous call budget
+    arglist[0] = 5000;                   // max function calls
+    arglist[1] = 0.1;                    // same meaning as SET TOL (can omit if already set)
     minuit.mnexcm("MINImize", arglist, 2, ierflg);
+
+    // If MINImize struggled, try SIMPLEX to move closer, then MIGRAD again
+    if (ierflg != 0) {
+      arglist[0] = 2000;
+      minuit.mnexcm("SIMPLEX", arglist, 1, ierflg);
+
+      arglist[0] = 5000; arglist[1] = 0.1;
+      minuit.mnexcm("MIGRAD",  arglist, 2, ierflg);
+    }
+
+    // -------------------------------------------------------------------
+    // Error evaluation
+    //  - HESSE computes the covariance matrix at the minimum (parabolic errors).
+    //  - MINOS (optional) gives *asymmetric* errors; helpful near bounds
+    //    or when uncertainties are non-parabolic. It’s slower—enable as needed.
+    // -------------------------------------------------------------------
+    minuit.mnexcm("HESSE", nullptr, 0, ierflg);
+
+    // ----- Optional MINOS (asymmetric) errors: physics-only, near-bounds gate -----
+    bool doMINOS               = true;   // master switch
+    bool minosOnlyPhysics      = true;   // only amplitudes (indices 2..8)
+    bool minosNearBoundsOnly   = true;  // run MINOS only if value ~ bound
+
+    if (doMINOS) {
+      double arglist[2]; int ierflg = 0;
+
+      auto run_minos_for = [&](int ip) {
+        // TMinuit mnexcm("MINOS", ...) expects 1-based parameter number!
+        arglist[0] = ip + 1;
+        minuit.mnexcm("MINOS", arglist, 1, ierflg);
+      };
+
+      // Helper: should we run MINOS for this parameter?
+      auto should_run_minos = [&](int ip)->bool {
+        if (!minosNearBoundsOnly) return true;
+
+        // Query current value, parabolic error, and bounds
+        TString pname; Double_t val=0, err=0, lo=0, up=0; Int_t iv=0;
+        minuit.mnpout(ip, pname, val, err, lo, up, iv);
+        if (iv == 0) return false;             // not variable (fixed/const)
+
+        bool hasLimits = (lo < up);            // MINUIT uses lo==up when no limits
+        if (!hasLimits) return false;          // near-bounds test only makes sense with limits
+
+        // "Near bound" heuristic: within max(2*σ_parab, 10% of range)
+        double range  = up - lo;
+        double margin = std::max(2.0*err, 0.10*range);
+        return ((val - lo) < margin) || ((up - val) < margin);
+      };
+
+      if (minosOnlyPhysics) {
+        const int physIdx[] = {2,3,4,5,6,7,8}; // F_LU_sin/F_UU ... F_UU_cos2/F_UU
+        for (int ip : physIdx) {
+          // skip if fixed (shouldn't be), or not near bounds (if gated)
+          TString pname; Double_t v,e,lo,up; Int_t iv;
+          minuit.mnpout(ip, pname, v, e, lo, up, iv);
+          if (iv == 0) continue;               // fixed or not variable
+          if (!should_run_minos(ip)) continue;
+          run_minos_for(ip);
+        }
+      } else {
+        // All free parameters
+        for (int ip = 0; ip < 11; ++ip) {
+          TString pname; Double_t v,e,lo,up; Int_t iv;
+          minuit.mnpout(ip, pname, v, e, lo, up, iv);
+          if (iv == 0) continue;               // fixed or not variable
+          if (!should_run_minos(ip)) continue;
+          run_minos_for(ip);
+        }
+      }
+    }
+
+    // -------------------------------------------------------------------
+    // Convergence diagnostics (ALWAYS check these before trusting errors)
+    //  - fmin: best-fit FCN value (χ² here).
+    //  - edm: estimated distance to minimum (want ≪ 1).
+    //  - istat: 3=good, 2=covariance made pos-def, 1=forced pos-def, 0=not calculated.
+    // -------------------------------------------------------------------
+    double fmin, edm, errdef;
+    int npari, nparx, istat;
+    minuit.mnstat(fmin, edm, errdef, npari, nparx, istat);
+
+    // Optionally warn if convergence is marginal
+    if (edm > 1e-3*errdef || istat < 2) {
+      // Consider: better start values, looser bounds, higher strategy,
+      // or tighter tolerance; also inspect correlations/parameterization.
+      if (minuit.GetPrintLevel() <= 0) {
+        std::cerr << "[WARN] Minuit convergence is marginal: "
+                  << "EDM=" << edm << ", istat=" << istat << "\n";
+      }
+    }
+
+    // -------------------------------------------------------------------
+    // Retrieve fit results (values + symmetric/asymmetric errors)
+    //  - GetParameter(i, val, err) returns the parabolic (HESSE) error.
+    //  - mnerrs(i, eplus, eminus, eparab, gcc) returns MINOS asym. errors
+    //    if MINOS ran; eparab is the parabolic error; gcc is global corr. coeff.
+    // -------------------------------------------------------------------
+    for (int i = 0; i < 11; ++i) {
+      double val, err;
+      minuit.GetParameter(i, val, err);
+
+      double eplus=0, eminus=0, eparab=0, gcc=0;
+      minuit.mnerrs(i, eplus, eminus, eparab, gcc);  // OK even if MINOS skipped
+
+      // Store or print as you like; example:
+      // printf("%2d %-18s  val=% .6f  err(parab)=% .6f  MINOS(+/−)=(% .6f,% .6f)  GCC=% .3f\n",
+      //        i, minuit.GetParName(i).Data(), val, err, eplus, eminus, gcc);
+    }
 
     // Extract all 11 parameters and errors
     double pval[11], perr[11];
