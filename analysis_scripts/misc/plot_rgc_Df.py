@@ -180,7 +180,7 @@ os.makedirs(outdir, exist_ok=True)
 
 # 1) Integrated: one axes, 3 periods (each with its own x)
 plt.figure(figsize=(7.5, 6.0))
-title_int = rf"$ep \rightarrow en\pi^{{+}}$ — {XB_LABELS['integrated']} {COMMON_CUTS}"
+title_int = rf"$ep \rightarrow en\pi^{{+}}$ — {XB_LABELS['integrated']}, {COMMON_CUTS}"
 plt.suptitle(title_int, y=0.95, fontsize=13)
 ax = plt.gca()
 
@@ -206,7 +206,7 @@ print(f"Saved: {out1}")
 
 # 2) 2x2 canvas: four xB bins; each subplot: Su22, Fa22, Sp23 with its own legend
 fig, axes = plt.subplots(2, 2, figsize=(12, 9))
-fig.suptitle(rf"$ep \rightarrow en\pi^{{+}}$ {COMMON_CUTS}", y=0.985, fontsize=13)
+fig.suptitle(rf"$ep \rightarrow en\pi^{{+}}$, {COMMON_CUTS}", y=0.985, fontsize=13)
 
 def plot_panel(ax, xS,yS,eS, xF,yF,eF, xP,yP,eP, title, show_xlabel=True, show_ylabel=True):
     h = []
