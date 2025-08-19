@@ -92,10 +92,8 @@ def main():
     # Convert to arrays
     xA, yA, eA = parse_to_arrays(data_rga_all)
     xB, yB, eB = parse_to_arrays(data_rgc_all)
-
     xL_A, yL_A, eL_A = parse_to_arrays(data_rga_low)
     xL_B, yL_B, eL_B = parse_to_arrays(data_rgc_low)
-
     xH_A, yH_A, eH_A = parse_to_arrays(data_rga_high)
     xH_B, yH_B, eH_B = parse_to_arrays(data_rgc_high)
 
@@ -116,52 +114,55 @@ def main():
         xB, yB, yerr=eB, fmt='s', ms=4, lw=1.0, capsize=2,
         color='red', label=r'RGC Fa22 NH$_{3}$ Inb'
     )
+    ax1.axhline(0.0, linestyle='--', linewidth=0.8, alpha=0.6)
     ax1.set_title(r'$x_{B}\ \in\ [0.10,\,0.60]$')
     ax1.set_xlabel(r'$-t$ (GeV$^{2}$)')
     ax1.set_ylabel(r'$F_{LU}^{\sin\phi}$')
     ax1.set_xlim(*xlim)
     ax1.set_ylim(*ylim)
     ax1.grid(True, alpha=0.3, linestyle='--')
+    ax1.legend(frameon=False, loc='best')
 
     # Middle panel
     ax2.errorbar(
-        xL_A, yL_A, yerr=eL_A, fmt='o', ms=4, lw=1.0, capsize=2, color='blue'
+        xL_A, yL_A, yerr=eL_A, fmt='o', ms=4, lw=1.0, capsize=2,
+        color='blue', label=r'RGA Fa18 Inb'
     )
     ax2.errorbar(
-        xL_B, yL_B, yerr=eL_B, fmt='s', ms=4, lw=1.0, capsize=2, color='red'
+        xL_B, yL_B, yerr=eL_B, fmt='s', ms=4, lw=1.0, capsize=2,
+        color='red', label=r'RGC Fa22 NH$_{3}$ Inb'
     )
+    ax2.axhline(0.0, linestyle='--', linewidth=0.8, alpha=0.6)
     ax2.set_title(r'$x_{B}\ \in\ [0.10,\,0.25]$')
     ax2.set_xlabel(r'$-t$ (GeV$^{2}$)')
     ax2.set_xlim(*xlim)
     ax2.set_ylim(*ylim)
     ax2.grid(True, alpha=0.3, linestyle='--')
+    ax2.legend(frameon=False, loc='best')
 
     # Right panel
     ax3.errorbar(
-        xH_A, yH_A, yerr=eH_A, fmt='o', ms=4, lw=1.0, capsize=2, color='blue'
+        xH_A, yH_A, yerr=eH_A, fmt='o', ms=4, lw=1.0, capsize=2,
+        color='blue', label=r'RGA Fa18 Inb'
     )
     ax3.errorbar(
-        xH_B, yH_B, yerr=eH_B, fmt='s', ms=4, lw=1.0, capsize=2, color='red'
+        xH_B, yH_B, yerr=eH_B, fmt='s', ms=4, lw=1.0, capsize=2,
+        color='red', label=r'RGC Fa22 NH$_{3}$ Inb'
     )
+    ax3.axhline(0.0, linestyle='--', linewidth=0.8, alpha=0.6)
     ax3.set_title(r'$x_{B}\ \in\ [0.45,\,0.60]$')
     ax3.set_xlabel(r'$-t$ (GeV$^{2}$)')
     ax3.set_xlim(*xlim)
     ax3.set_ylim(*ylim)
     ax3.grid(True, alpha=0.3, linestyle='--')
-
-    # One shared legend for the whole figure
-    fig.legend(
-        handles=[l1, l2],
-        labels=[r'RGA Fa18 Inb', r'RGC Fa22 NH$_{3}$ Inb'],
-        loc='upper center', ncol=2, frameon=False, bbox_to_anchor=(0.5, 1.03)
-    )
+    ax3.legend(frameon=False, loc='best')
 
     plt.tight_layout()
 
-    # Save
+    # Save (original filename)
     outdir = os.path.join('output', 'enpi+')
     os.makedirs(outdir, exist_ok=True)
-    outpath = os.path.join(outdir, 'rga_rgc_comparison_1x3.pdf')
+    outpath = os.path.join(outdir, 'rga_rgc_comparison.pdf')
     plt.savefig(outpath, bbox_inches='tight')
     print('Saved:', outpath)
 #endif
