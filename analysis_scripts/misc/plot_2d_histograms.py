@@ -21,6 +21,7 @@ import sys
 import csv
 import numpy as np
 import matplotlib.pyplot as plt
+from matplotlib.ticker import FuncFormatter
 
 # Optional SciPy for robust non-linear fits; falls back to grid search.
 try:
@@ -478,6 +479,24 @@ def make_binned_canvas_4x6(H1_Q2, H1_X, H1_T, H1_PHI, outdir):
     print(f"Saved: {outpath}")
 #endfor
 
+def _y_formatter_hide_zero(hide_zero):
+    """Return a FuncFormatter that hides the '0' tick label when hide_zero=True."""
+    def _fmt(v, pos):
+        if hide_zero and np.isclose(v, 0.0, atol=1e-9):
+            return ""
+        return f"{v:g}"
+    return FuncFormatter(_fmt)
+#endfor
+
+def _x_formatter_hide_07(hide_07):
+    """Return a FuncFormatter that hides the '0.7' tick label when hide_07=True."""
+    def _fmt(v, pos):
+        if hide_07 and np.isclose(v, 0.7, atol=1e-9):
+            return ""
+        return f"{v:g}"
+    return FuncFormatter(_fmt)
+#endfor
+
 def make_mx2_canvas(H1_MX2, outdir):
     """
     Mx2 canvas tweaks per request:
@@ -488,6 +507,7 @@ def make_mx2_canvas(H1_MX2, outdir):
       • per-subplot title drawn as anchored text at top-left (no units)
       • fitted function plotted as thin dashed RED line
       • write CSV of (mu, sigma) for each (xB, -t) bin
+      • Hide '0' on left-column y-axes except bottom-left; hide '0.7' on bottom-row x-axes except bottom-left
     """
     fig, axes = plt.subplots(4, NTCOLS, figsize=(20, 12), sharex=True, sharey=False)
 
@@ -553,6 +573,16 @@ def make_mx2_canvas(H1_MX2, outdir):
                 ax.tick_params(labelbottom=False)
             #endif
 
+            # Custom tick formatters to selectively hide labels:
+            #  • Hide '0' on y-axis for left column rows r=0,1,2 (keep for r=3)
+            if c == 0:
+                ax.yaxis.set_major_formatter(_y_formatter_hide_zero(hide_zero=(r != 3)))
+            #endif
+            #  • On bottom row, hide '0.7' on x-axis except for the far-left (c==0)
+            if r == 3:
+                ax.xaxis.set_major_formatter(_x_formatter_hide_07(hide_07=(c != 0)))
+            #endif
+
             # Grid
             ax.grid(True, linestyle="--", alpha=0.25)
 
@@ -611,7 +641,7 @@ def main():
     # Single-pass accumulation over the tree (chunked)
     H2, H1_Q2, H1_X, H1_T, H1_PHI, H1_MX2 = accumulate(infile)
 
-    # Render figures from the accumulated histograms
+    # Render only the Mx2 figure for now (others commented per your last message)
     # make_2d_canvases(H2, outdir)
     # make_binned_canvas_4x6(H1_Q2, H1_X, H1_T, H1_PHI, outdir)
     make_mx2_canvas(H1_MX2, outdir)
