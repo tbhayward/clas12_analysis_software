@@ -3501,37 +3501,95 @@ static void plotHistogramAndFit_GeneralExclusive(
   TCanvas* c = new TCanvas(Form("cGE_%d",binIndex), "", 1600, 560);
   c->Divide(3,1);
 
+  // Helper to draw one panel, compute chi2/ndf and autoscale Y
   auto drawOne = [&](int pad, TH1D* h, auto ymodel, const char* ytitle){
     c->cd(pad);
     gPad->SetLeftMargin(0.20);
     gPad->SetRightMargin(0.06);
     gPad->SetBottomMargin(0.16);
 
+    // Data as TGraphErrors
     TGraphErrors* gr = new TGraphErrors();
     const int nb = h->GetNbinsX();
+    int ip = 0;
+    double minData = +1e30, maxData = -1e30;
+
     for (int i=1;i<=nb;++i){
-      gr->SetPoint(i-1, h->GetBinCenter(i), h->GetBinContent(i));
-      gr->SetPointError(i-1, 0.0, h->GetBinError(i));
+      const double x  = h->GetBinCenter(i);
+      const double y  = h->GetBinContent(i);
+      const double ey = h->GetBinError(i);
+      if (!std::isfinite(y) || !std::isfinite(ey)) continue;
+      gr->SetPoint(ip, x, y);
+      gr->SetPointError(ip, 0.0, ey);
+      minData = std::min(minData, y);
+      maxData = std::max(maxData, y);
+      ++ip;
     }
+
     gr->SetMarkerStyle(kFullCircle);
     gr->SetMarkerColor(kBlack);
     gr->GetXaxis()->SetTitle("#phi");
     gr->GetYaxis()->SetTitle(ytitle);
     gr->GetXaxis()->SetLimits(0, 2*TMath::Pi());
     gr->GetYaxis()->SetTitleOffset(1.6);
-    gr->Draw("AP");
+    gr->Draw("AP"); // creates the frame
 
+    // Model curve
     const int np = 360;
     TGraph* gm = new TGraph(np);
+    double minModel = +1e30, maxModel = -1e30;
     for (int j=0; j<np; ++j){
       double phi = (2.0*TMath::Pi()) * (j/(double)(np-1));
-      gm->SetPoint(j, phi, ymodel(phi));
+      const double ym = ymodel(phi);
+      gm->SetPoint(j, phi, ym);
+      minModel = std::min(minModel, ym);
+      maxModel = std::max(maxModel, ym);
     }
     gm->SetLineColor(kRed);
     gm->Draw("L same");
 
-    TLegend* L = new TLegend(0.10, 0.64, 0.90, 0.90);
-    L->SetBorderSize(1); L->SetFillColor(0); L->SetTextSize(0.030);
+    // ---- χ²/ndf for this panel (using number of valid points as ndf)
+    // NOTE: Parameters are shared across panels; for the per-panel number we show
+    //       ndf = N_valid points (we don't subtract parameters to avoid double counting).
+    double chi2 = 0.0;
+    int ndf = 0;
+    for (int i=1;i<=nb;++i){
+      const double x  = h->GetBinCenter(i);
+      const double y  = h->GetBinContent(i);
+      const double ey = h->GetBinError(i);
+      if (!std::isfinite(y) || !std::isfinite(ey) || ey<=0) continue;
+      const double ym = ymodel(x);
+      const double pull = (y - ym) / ey;
+      chi2 += pull*pull;
+      ++ndf;
+    }
+    const double chi2ndf = (ndf>0 ? chi2/ndf : 0.0);
+
+    // ---- Autoscale Y: from 0.5×(min over data+model) to 1.5×(max over data+model)
+    double ymin = std::min(minData, minModel);
+    double ymax = std::max(maxData, maxModel);
+    if (!std::isfinite(ymin)) ymin = 0.0;
+    if (!std::isfinite(ymax)) ymax = 1.0;
+
+    double ylow  = 0.5 * ymin;
+    double yhigh = 1.5 * ymax;
+
+    // Safety fallback if that would shrink or invert the range
+    if (!(yhigh > ylow)) {
+      const double mid = 0.5*(ymin + ymax);
+      const double span = std::max(1e-3, std::abs(mid));
+      ylow  = mid - span;
+      yhigh = mid + span;
+    }
+    gr->GetYaxis()->SetRangeUser(ylow, yhigh);
+
+    // Legend (smaller)
+    TLegend* L = new TLegend(0.10, 0.60, 0.90, 0.90);
+    L->SetBorderSize(1);
+    L->SetFillColor(0);
+    L->SetTextSize(0.024);
+
+    L->AddEntry((TObject*)0, Form("#chi^{2}/ndf = %.1f/%d = %.2f", chi2, ndf, chi2ndf), "");
 
     const std::string yt(ytitle);
     if (yt == "A_{LU}") {
@@ -3539,18 +3597,21 @@ static void plotHistogramAndFit_GeneralExclusive(
       L->AddEntry((TObject*)0, Form("A_{LU}^{sin#phi}: %.6f", aLU), "");
     } else if (yt == "A_{UL}") {
       L->AddEntry((TObject*)0, Form("offset: %.6f", a1), "");
-      L->AddEntry((TObject*)0, Form("A_{UL}^{sin#phi}: %.6f", aUL1), "");
+      L->AddEntry((TObject*)0, Form("A_{UL}^{sin#phi}: %.6f",  aUL1), "");
       L->AddEntry((TObject*)0, Form("A_{UL}^{sin2#phi}: %.6f", aUL2), "");
     } else { // A_LL
-      L->AddEntry((TObject*)0, Form("A_{LL}: %.6f", aLL), "");
+      L->AddEntry((TObject*)0, Form("A_{LL}: %.6f",          aLL),  "");
       L->AddEntry((TObject*)0, Form("A_{LL}^{cos#phi}: %.6f", aLLc), "");
     }
-    // Shared UU terms (these two were the culprits—must use aUUs / aUUs2, not aUUc2)
-    L->AddEntry((TObject*)0, Form("A_{UU}^{cos#phi}: %.6f",  aUUc),  "");
-    L->AddEntry((TObject*)0, Form("A_{UU}^{cos2#phi}: %.6f", aUUc2), "");
-    L->AddEntry((TObject*)0, Form("A_{UU}^{sin#phi}: %.6f",  aUUs),  "");
-    L->AddEntry((TObject*)0, Form("A_{UU}^{sin2#phi}: %.6f", aUUs2), "");
+    // Shared UU terms (note: use aUUs/aUUs2 for the sine harmonics)
+    L->AddEntry((TObject*)0, Form("A_{UU}^{cos#phi}: %.6f",   aUUc),  "");
+    L->AddEntry((TObject*)0, Form("A_{UU}^{cos2#phi}: %.6f",  aUUc2), "");
+    L->AddEntry((TObject*)0, Form("A_{UU}^{sin#phi}: %.6f",   aUUs),  "");
+    L->AddEntry((TObject*)0, Form("A_{UU}^{sin2#phi}: %.6f",  aUUs2), "");
     L->Draw("same");
+
+    // (optional) keep pointers around if you later need them; otherwise:
+    // delete gm; delete gr; delete L;  // you can delete if you want to free now
   };
 
   drawOne(1, hALU, yALU, "A_{LU}");
@@ -3764,6 +3825,8 @@ void performChi2Fits_GeneralExclusive(const char* output_file,
     minuit.DefineParameter(6,  "F_LL_cos/F_UU",   0.00,  0.001, -1.0,  1.0);
     minuit.DefineParameter(7,  "F_UU_cos/F_UU",   0.00,  0.001, -0.5,  0.5);
     minuit.DefineParameter(8,  "F_UU_cos2/F_UU",  0.00,  0.001, -0.5,  0.5);
+    minuit.FixParameter(7);
+    minuit.FixParameter(8);
 
     // These two are meant to be zero (no sine harmonics in UU); FIX them:
     minuit.DefineParameter(9,  "F_UU_sin/F_UU",   0.00,  0.001, -1.0,  1.0);
@@ -3783,10 +3846,6 @@ void performChi2Fits_GeneralExclusive(const char* output_file,
     // Set strategy = 2
     arglist[0] = 2;                      // 0=fast, 1=default, 2=robust
     minuit.mnexcm("SET STR", arglist, 1, ierflg);
-
-    // Set tolerance (target EDM)
-    arglist[0] = 0.1;                    // tighten (e.g. 0.05 or 0.01) if needed
-    minuit.mnexcm("SET TOL", arglist, 1, ierflg);
 
     // Run MINImize with generous call budget
     arglist[0] = 5000;                   // max function calls
