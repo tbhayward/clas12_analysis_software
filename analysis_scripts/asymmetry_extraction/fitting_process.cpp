@@ -3878,7 +3878,7 @@ void performChi2Fits_GeneralExclusive(const char* output_file,
     if (edm > 1e-3*errdef || istat < 2) {
       // Consider: better start values, looser bounds, higher strategy,
       // or tighter tolerance; also inspect correlations/parameterization.
-      if (minuit.GetPrintLevel() <= 0) {
+      if (minuit.SetPrintLevel() <= 0) {
         std::cerr << "[WARN] Minuit convergence is marginal: "
                   << "EDM=" << edm << ", istat=" << istat << "\n";
       }
