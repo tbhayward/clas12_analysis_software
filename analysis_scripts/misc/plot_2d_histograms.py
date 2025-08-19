@@ -20,7 +20,7 @@ Global cuts on ALL plots:
    Rows:  Q2, x, -t, phi
    Cols:  six (-t) bins from edges in t = [-1.25, -1.05, -0.85, -0.65, -0.45, -0.25, -0.05]
           (converted to -t: [0.05, 0.25, 0.45, 0.65, 0.85, 1.05, 1.25]; bins are consecutive pairs)
-   Each subplot overlays four histograms (Low/MidLow/MidHigh/High x_B slices),
+   Each subplot overlays four histograms (Low/MidLow/MidHigh/High x_B slices)
    with per-slice cuts: fiducial_status >= 111, 0.81 < Mx2 < 1.00, and x_B in that slice.
 """
 
@@ -42,16 +42,22 @@ except ImportError:
 TREE_NAME = "PhysicsEvents"
 
 # Global axis limits
-Q2_LIM  = (1.0, 7.0)   # ← max Q2 set to 7
+Q2_LIM  = (1.0, 7.0)   # max Q2 set to 7
 X_LIM   = (0.0, 0.70)
 T_LIM   = (0.0, 1.30)  # for -t
 PHI_LIM = (0.0, 2.0*np.pi)
 
-# Binning
+# Binning (base counts used for 1D; 2D uses 2/3 of these)
 NB_Q2  = 60
 NB_X   = 70
 NB_T   = 65
 NB_PHI = 72
+
+# 2D binning = 0.6667 × base
+NB_Q2_2D  = int(round(NB_Q2  * 2/3))   # 40
+NB_X_2D   = int(round(NB_X   * 2/3))   # 47
+NB_T_2D   = int(round(NB_T   * 2/3))   # 43
+NB_PHI_2D = int(round(NB_PHI * 2/3))   # 48
 
 # Labels
 LAB_Q2  = r"$Q^{2}\ \mathrm{(GeV^{2})}$"
@@ -120,11 +126,18 @@ def load_arrays(path):
         "fid": fid[mask],
     }
 
-def get_bins(varname):
+def get_bins_1d(varname):
     if varname == "Q2":  return np.linspace(Q2_LIM[0],  Q2_LIM[1],  NB_Q2+1)
     if varname == "x":   return np.linspace(X_LIM[0],   X_LIM[1],   NB_X+1)
     if varname == "t":   return np.linspace(T_LIM[0],   T_LIM[1],   NB_T+1)   # -t
     if varname == "phi": return np.linspace(PHI_LIM[0], PHI_LIM[1], NB_PHI+1)
+    raise ValueError(varname)
+
+def get_bins_2d(varname):
+    if varname == "Q2":  return np.linspace(Q2_LIM[0],  Q2_LIM[1],  NB_Q2_2D+1)
+    if varname == "x":   return np.linspace(X_LIM[0],   X_LIM[1],   NB_X_2D+1)
+    if varname == "t":   return np.linspace(T_LIM[0],   T_LIM[1],   NB_T_2D+1)   # -t
+    if varname == "phi": return np.linspace(PHI_LIM[0], PHI_LIM[1], NB_PHI_2D+1)
     raise ValueError(varname)
 
 def var_label(varname):
@@ -141,7 +154,7 @@ def tbin_mask(data, tmin, tmax):
     return (data["tpos"] >= tmin) & (data["tpos"] < tmax)
 
 # ─────────────────────────────────────────────────────────────────────
-# Figure 1: 2D histograms (4x3)
+# Figure 1: 2D histograms (4x3), with masked zeros → white
 # ─────────────────────────────────────────────────────────────────────
 def make_2d_canvases(data, outdir):
     pairs = [
@@ -151,24 +164,29 @@ def make_2d_canvases(data, outdir):
         ("phi","Q2"), ("phi","x"),  ("phi","t"),
     ]
 
-    # Use tight_layout with extra bottom padding (no constrained_layout)
     fig, axes = plt.subplots(4, 3, figsize=(14, 16))
-    fig.tight_layout(rect=[0, 0.03, 1, 1])   # reserve a bit at top
-    fig.subplots_adjust(bottom=0.07)         # extra bottom padding to avoid clipping
+    fig.tight_layout(rect=[0, 0.03, 1, 1])
+    fig.subplots_adjust(bottom=0.08)  # extra bottom padding
+
+    # Build colormap: classic jet for data, pure white for empty bins
+    cmap = plt.get_cmap("jet").copy()
+    cmap.set_bad("white")
 
     for ax, (yvar, xvar) in zip(axes.flat, pairs):
         X = extract(data, xvar)
         Y = extract(data, yvar)
 
-        xbins = get_bins(xvar)
-        ybins = get_bins(yvar)
+        xbins = get_bins_2d(xvar)
+        ybins = get_bins_2d(yvar)
 
-        # Classic blue→red colormap and no white mesh lines in vector output
-        h = ax.hist2d(X, Y, bins=[xbins, ybins], cmap="jet")
-        qm = h[3]                       # QuadMesh returned by hist2d
-        qm.set_edgecolor('face')        # avoid visible edges
+        # 2D histogram via numpy, then mask zeros and draw with pcolormesh
+        H, xedges, yedges = np.histogram2d(X, Y, bins=[xbins, ybins])
+        Hm = np.ma.masked_where(H <= 0, H)  # zeros → masked → white
+
+        qm = ax.pcolormesh(xedges, yedges, Hm.T, cmap=cmap, shading="flat")
+        qm.set_edgecolor("face")
         qm.set_linewidth(0.0)
-        qm.set_rasterized(True)         # prevent hairline gaps in PDFs
+        qm.set_rasterized(True)  # avoids hairline gaps in vector backends
 
         ax.set_xlim(*({"Q2": Q2_LIM, "x": X_LIM, "t": T_LIM, "phi": PHI_LIM}[xvar]))
         ax.set_ylim(*({"Q2": Q2_LIM, "x": X_LIM, "t": T_LIM, "phi": PHI_LIM}[yvar]))
@@ -192,7 +210,6 @@ def make_2d_canvases(data, outdir):
 # Figure 2: Single 4x6 canvas (rows = Q2,x,-t,phi; cols = -t bins)
 # ─────────────────────────────────────────────────────────────────────
 def make_binned_canvas_4x6(data, outdir):
-    # Precompute base masks per xB slice
     base_masks = {name: xb_slice_mask(data, rng) for name, rng in X_SLICES.items()}
 
     edges = T_EDGES_POS  # len 7 => 6 columns
@@ -210,15 +227,14 @@ def make_binned_canvas_4x6(data, outdir):
     row_lims = {"Q2": Q2_LIM, "x": X_LIM, "t": T_LIM, "phi": PHI_LIM}
     row_bins = {"Q2": NB_Q2,  "x": NB_X,  "t": NB_T,  "phi": NB_PHI}
 
-    # Legend handles (one per xB slice) with requested labels
-    legend_handles = []
-    legend_labels  = []
+    # Legend handles with requested labels (x_B intervals)
+    legend_handles, legend_labels = [], []
     for slice_name, color in XB_COLORS.items():
         a, b = X_SLICES[slice_name]
         lbl = rf"$x_{{B}}\in[{a:.2f},{b:.2f}]$"
         h, = plt.plot([], [], color=color, lw=1.8, label=lbl)
         legend_handles.append(h); legend_labels.append(lbl)
-    for h in legend_handles: h.remove()  # cleanup dummy lines
+    for h in legend_handles: h.remove()
 
     for col in range(nbins):
         tmin, tmax = edges[col], edges[col+1]
@@ -229,7 +245,6 @@ def make_binned_canvas_4x6(data, outdir):
             vlim = row_lims[vname]
             nb   = row_bins[vname]
 
-            # Axis formatting
             ax.set_xlim(*vlim)
             if col == 0:
                 ax.set_ylabel("counts")
@@ -239,7 +254,6 @@ def make_binned_canvas_4x6(data, outdir):
                               [r"$0$", r"$\frac{\pi}{2}$", r"$\pi$", r"$\frac{3\pi}{2}$", r"$2\pi$"])
             ax.grid(True, linestyle="--", alpha=0.25)
 
-            # Overlays: four xB slices (raw counts; no normalization)
             for slice_name, color in XB_COLORS.items():
                 m = base_masks[slice_name] & tbin_mask(data, tmin, tmax)
                 vals = extract(data, vname)[m]
@@ -249,11 +263,9 @@ def make_binned_canvas_4x6(data, outdir):
                         bins=np.linspace(vlim[0], vlim[1], nb+1),
                         histtype="step", linewidth=1.6, density=False, color=color)
 
-            # Column title at top row
             if r == 0:
                 ax.set_title(col_title, fontsize=12)
 
-    # Figure-level legend
     fig.legend(legend_handles, legend_labels, loc="upper center",
                ncol=4, frameon=True, fontsize=11, bbox_to_anchor=(0.5, 0.93))
 
