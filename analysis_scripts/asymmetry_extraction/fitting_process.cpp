@@ -620,7 +620,7 @@ void performMLMFits_single_hadron(const char* output_file,
       double fmin, edm, errdef; int npari, nparx, istat;
       minuit.mnstat(fmin, edm, errdef, npari, nparx, istat);
       if (edm > 1e-3*errdef || istat < 2) {
-        if (minuit.GetPrintLevel() <= 0) {
+        if (minuit.SetPrintLevel() <= 0) {
           std::cerr << "[WARN][MLM] Convergence marginal in bin " << i
                     << " : EDM=" << edm << "  istat=" << istat << std::endl;
         }
