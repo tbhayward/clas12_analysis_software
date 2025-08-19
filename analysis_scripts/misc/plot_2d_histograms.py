@@ -13,6 +13,7 @@ Outputs:
   • output/enpi+/2d_histograms.pdf
   • output/enpi+/binned_distributions.pdf
   • output/enpi+/Mx2_distributions.pdf
+  • output/enpi+/Mx2_mu_vs_bin.pdf
   • output/enpi+/Mx2_fit_params.csv   <-- (μ, σ) saved for each (xB, -t) bin
 """
 
@@ -414,7 +415,6 @@ def make_binned_canvas_4x6(H1_Q2, H1_X, H1_T, H1_PHI, outdir):
                 ("phi",H1_PHI, PHI_EDGES, PHI_CEN, LAB_PHI, PHI_LIM)]
 
     fig, axes = plt.subplots(4, NTCOLS, figsize=(20, 12), sharey="row")
-    # keep small gaps
     fig.subplots_adjust(top=0.88, wspace=0.12, hspace=0.20)
     fig.suptitle(
         r"Overlaid distributions by $-t$ bin and $x_{B}$ slice" "\n"
@@ -449,18 +449,16 @@ def make_binned_canvas_4x6(H1_Q2, H1_X, H1_T, H1_PHI, outdir):
 
             for sidx, s in enumerate(SLICE_ORDER):
                 counts = H1[sidx, c, :]
-                if np.sum(counts) == 0: 
+                if np.sum(counts) == 0:
                     continue
                 #endif
                 ax.plot(CE, counts, drawstyle="steps-mid", linewidth=1.6, color=XB_COLORS[s], label=None)
             #endfor
 
             if r == 0:
-                # Use small anchored text instead of set_title
                 ax.text(0.02, 0.98, col_title, transform=ax.transAxes, ha='left', va='top', fontsize=11)
             #endif
 
-            # Hide tick labels except left column and bottom row
             if c != 0:
                 ax.tick_params(labelleft=False)
             #endif
@@ -480,38 +478,26 @@ def make_binned_canvas_4x6(H1_Q2, H1_X, H1_T, H1_PHI, outdir):
 #endfor
 
 def _y_formatter_hide_zero(hide_zero):
-    """Return a FuncFormatter that hides the '0' tick label when hide_zero=True."""
     def _fmt(v, pos):
-        if hide_zero and np.isclose(v, 0.0, atol=1e-9):
-            return ""
+        if hide_zero and np.isclose(v, 0.0, atol=1e-9): return ""
         return f"{v:g}"
     return FuncFormatter(_fmt)
 #endfor
 
 def _x_formatter_hide_07(hide_07):
-    """Return a FuncFormatter that hides the '0.7' tick label when hide_07=True."""
     def _fmt(v, pos):
-        if hide_07 and np.isclose(v, 0.7, atol=1e-9):
-            return ""
+        if hide_07 and np.isclose(v, 0.7, atol=1e-9): return ""
         return f"{v:g}"
     return FuncFormatter(_fmt)
 #endfor
 
 def make_mx2_canvas(H1_MX2, outdir):
     """
-    Mx2 canvas tweaks per request:
-      • own y-scale per subplot (no sharey)
-      • remove axis labels except left column (y) and bottom row (x)
-      • subplots touching (wspace=0, hspace=0)
-      • y-max per subplot = 1.35 × max(hist)
-      • per-subplot title drawn as anchored text at top-left (no units)
-      • fitted function plotted as thin dashed RED line
-      • write CSV of (mu, sigma) for each (xB, -t) bin
-      • Hide '0' on left-column y-axes except bottom-left; hide '0.7' on bottom-row x-axes except bottom-left
+    Mx2 canvas:
+      • own y-scale; touching subplots; selective axis labels; red dashed fit curve
+      • writes CSV of (mu, sigma) and RETURNS mu/sigma grids and success mask
     """
     fig, axes = plt.subplots(4, NTCOLS, figsize=(20, 12), sharex=True, sharey=False)
-
-    # Make subplots touch
     fig.subplots_adjust(left=0.06, right=0.985, bottom=0.07, top=0.92, wspace=0.0, hspace=0.0)
 
     fig.suptitle(
@@ -520,9 +506,13 @@ def make_mx2_canvas(H1_MX2, outdir):
         fontsize=14
     )
 
-    xfit = np.linspace(MX2_LIM[0], MX2_LIM[1], 400)  # smooth curve for fitted function
+    xfit = np.linspace(MX2_LIM[0], MX2_LIM[1], 400)
 
-    # Prepare CSV output
+    # For return and for CSV
+    mu_grid    = np.full((4, NTCOLS), np.nan, dtype=float)
+    sigma_grid = np.full((4, NTCOLS), np.nan, dtype=float)
+    ok_grid    = np.zeros((4, NTCOLS), dtype=bool)
+
     csv_path = os.path.join(outdir, "Mx2_fit_params.csv")
     rows_for_csv = []
     header = ["slice_name","x_min","x_max","t_min","t_max","mu","sigma","n_entries","fit_success"]
@@ -535,11 +525,9 @@ def make_mx2_canvas(H1_MX2, outdir):
 
             y = H1_MX2[r, c, :].astype(float)
             n_entries = int(np.sum(y))
-            yerr = np.sqrt(np.maximum(y, 1.0))  # simple Poisson
-            ax.errorbar(MX2_CEN, y, yerr=yerr, fmt='o', ms=3, lw=1.0, capsize=2,
-                        color='black', label=None)
+            yerr = np.sqrt(np.maximum(y, 1.0))
+            ax.errorbar(MX2_CEN, y, yerr=yerr, fmt='o', ms=3, lw=1.0, capsize=2, color='black')
 
-            # Fit (Gaussian + quadratic)
             fit_success = False
             mu_val = np.nan
             sigma_val = np.nan
@@ -552,53 +540,34 @@ def make_mx2_canvas(H1_MX2, outdir):
                         label=rf"$\mu={mu:.4f},\ \sigma={sigma:.4f}$")
             #endif
 
-            # y-limit with headroom based on histogram only
+            mu_grid[r, c]    = mu_val
+            sigma_grid[r, c] = sigma_val
+            ok_grid[r, c]    = bool(fit_success)
+
             ymax = float(np.max(y)) if y.size else 1.0
             ax.set_ylim(0.0, max(1.0, 1.35*ymax))
             ax.set_xlim(*MX2_LIM)
 
-            # Axis labels only on left column / bottom row
-            if c == 0:
-                ax.set_ylabel("counts")
-            #endif
-            if r == 3:
-                ax.set_xlabel(LAB_MX2)
-            #endif
+            if c == 0: ax.set_ylabel("counts")
+            if r == 3: ax.set_xlabel(LAB_MX2)
 
-            # Hide tick labels except left column and bottom row
-            if c != 0:
-                ax.tick_params(labelleft=False)
-            #endif
-            if r != 3:
-                ax.tick_params(labelbottom=False)
-            #endif
+            if c != 0: ax.tick_params(labelleft=False)
+            if r != 3: ax.tick_params(labelbottom=False)
 
-            # Custom tick formatters to selectively hide labels:
-            #  • Hide '0' on y-axis for left column rows r=0,1,2 (keep for r=3)
             if c == 0:
                 ax.yaxis.set_major_formatter(_y_formatter_hide_zero(hide_zero=(r != 3)))
             #endif
-            #  • On bottom row, hide '0.7' on x-axis except for the far-left (c==0)
             if r == 3:
                 ax.xaxis.set_major_formatter(_x_formatter_hide_07(hide_07=(c != 0)))
             #endif
 
-            # Grid
             ax.grid(True, linestyle="--", alpha=0.25)
-
-            # Compact per-subplot "title" as anchored text (no units in the text)
-            ax.text(
-                0.02, 0.98,
-                rf"$x_{{B}}\in[{xa:.2f},{xb:.2f}],\ -t\in[{tmin:.2f},{tmax:.2f})$",
-                transform=ax.transAxes, ha='left', va='top', fontsize=9
-            )
-
-            # Per-subplot legend (μ, σ only) if we fit
+            ax.text(0.02, 0.98, rf"$x_{{B}}\in[{xa:.2f},{xb:.2f}],\ -t\in[{tmin:.2f},{tmax:.2f})$",
+                    transform=ax.transAxes, ha='left', va='top', fontsize=9)
             if fit_success:
                 ax.legend(frameon=True, fontsize=8, loc="best")
             #endif
 
-            # Stash CSV row
             rows_for_csv.append([s, f"{xa:.4f}", f"{xb:.4f}", f"{tmin:.4f}", f"{tmax:.4f}",
                                  f"{mu_val:.6f}" if np.isfinite(mu_val) else "",
                                  f"{sigma_val:.6f}" if np.isfinite(sigma_val) else "",
@@ -607,7 +576,6 @@ def make_mx2_canvas(H1_MX2, outdir):
         #endfor
     #endfor
 
-    # Write CSV
     with open(csv_path, "w", newline="") as f:
         writer = csv.writer(f)
         writer.writerow(header)
@@ -619,6 +587,53 @@ def make_mx2_canvas(H1_MX2, outdir):
     plt.close(fig)
     print(f"Saved: {outpath}")
     print(f"Wrote fit parameters: {csv_path}")
+
+    return mu_grid, sigma_grid, ok_grid
+#endfor
+
+def make_mu_index_plot(mu_grid, sigma_grid, ok_grid, outdir):
+    """
+    Plot μ vs indexed bin (1..24), using σ as the vertical error bar.
+    Bins 1–6: Low; 7–12: MidLow; 13–18: MidHigh; 19–24: High.
+    """
+    fig, ax = plt.subplots(figsize=(10, 5))
+    total_bins = 6 * len(SLICE_ORDER)
+
+    # Draw faint separators between x_B blocks
+    for cut in [6, 12, 18]:
+        ax.axvline(cut + 0.5, linestyle=":", linewidth=0.8, color="0.8")
+    #endfor
+
+    for r, s in enumerate(SLICE_ORDER):
+        xa, xb = X_SLICES[s]
+        idxs = np.arange(1 + 6*r, 1 + 6*(r+1))  # 1..6, 7..12, 13..18, 19..24
+        ys   = mu_grid[r, :]
+        yerr = sigma_grid[r, :]
+        m    = ok_grid[r, :] & np.isfinite(ys) & np.isfinite(yerr)
+
+        if np.any(m):
+            ax.errorbar(idxs[m], ys[m], yerr=yerr[m],
+                        fmt='o', ms=4, lw=1.0, capsize=3,
+                        color=XB_COLORS[s],
+                        label=rf"$x_{{B}}\in[{xa:.2f},{xb:.2f}]$")
+        else:
+            # Ensure legend entry exists even if no points
+            ax.plot([], [], 'o', color=XB_COLORS[s],
+                    label=rf"$x_{{B}}\in[{xa:.2f},{xb:.2f}]$")
+        #endif
+    #endfor
+
+    ax.set_xlim(0.5, total_bins + 0.5)
+    ax.set_xlabel("bin")
+    ax.set_ylabel(r"$\mu$")
+    ax.grid(True, linestyle="--", alpha=0.3, axis='y')
+    ax.legend(frameon=True, ncol=4, fontsize=10, loc="upper center", bbox_to_anchor=(0.5, 1.14))
+    fig.tight_layout(rect=[0, 0, 1, 0.95])
+
+    outpath = os.path.join(outdir, "Mx2_mu_vs_bin.pdf")
+    fig.savefig(outpath, bbox_inches="tight")
+    plt.close(fig)
+    print(f"Saved: {outpath}")
 #endfor
 
 # ─────────────────────────────────────────────────────────────────────
@@ -641,10 +656,13 @@ def main():
     # Single-pass accumulation over the tree (chunked)
     H2, H1_Q2, H1_X, H1_T, H1_PHI, H1_MX2 = accumulate(infile)
 
-    # Render only the Mx2 figure for now (others commented per your last message)
+    # Render just the Mx2 figure and the μ–index plot per your latest request
+    mu_grid, sigma_grid, ok_grid = make_mx2_canvas(H1_MX2, outdir)
+    make_mu_index_plot(mu_grid, sigma_grid, ok_grid, outdir)
+
+    # If you want the others again, uncomment:
     # make_2d_canvases(H2, outdir)
     # make_binned_canvas_4x6(H1_Q2, H1_X, H1_T, H1_PHI, outdir)
-    make_mx2_canvas(H1_MX2, outdir)
 #endfor
 
 if __name__ == "__main__":
