@@ -48,18 +48,18 @@ T_LIM   = (0.0, 1.30)  # for -t
 PHI_LIM = (0.0, 2.0*np.pi)
 MX2_LIM = (0.7, 1.1)
 
-# 1D base bin counts (2D gets 2/3)
-NB_Q2  = 60
-NB_X   = 70
-NB_T   = 65
-NB_PHI = 72
-NB_MX2 = 80
+# 1D base bin counts (HALVED per request; 2D gets 2/3 of these)
+NB_Q2  = 30   # was 60
+NB_X   = 35   # was 70
+NB_T   = 32   # was 65 (approx half)
+NB_PHI = 36   # was 72
+NB_MX2 = 40   # was 80
 
-# 2D binning = 0.6667 × base
-NB_Q2_2D  = int(round(NB_Q2  * 2/3))   # 40
-NB_X_2D   = int(round(NB_X   * 2/3))   # 47
-NB_T_2D   = int(round(NB_T   * 2/3))   # 43
-NB_PHI_2D = int(round(NB_PHI * 2/3))   # 48
+# 2D binning = 0.6667 × base (rounded)
+NB_Q2_2D  = int(round(NB_Q2  * 2/3))   # 20
+NB_X_2D   = int(round(NB_X   * 2/3))   # 23
+NB_T_2D   = int(round(NB_T   * 2/3))   # 21
+NB_PHI_2D = int(round(NB_PHI * 2/3))   # 24
 
 # Labels (units in parentheses)
 LAB_Q2  = r"$Q^{2}$ (GeV$^{2}$)"
@@ -138,9 +138,6 @@ def var_from_arrays(arrs, name):
 
 def slice_index_from_x(x):
     # Returns slice index in {0..3} or -1 if out of all ranges
-    edges = np.array([0.10, 0.25, 0.35, 0.45, 0.60])
-    # digitize gives 1..len(edges)-1 for interior; we want 0..3
-    # Handle open intervals (xa < x < xb): exclude exact edges to match prior (> and <)
     idx = np.full(x.shape, -1, dtype=np.int16)
     for k,(xa,xb) in enumerate([(0.10,0.25),(0.25,0.35),(0.35,0.45),(0.45,0.60)]):
         m = (x > xa) & (x < xb)
@@ -152,7 +149,6 @@ def slice_index_from_x(x):
 def tbin_index_from_tpos(tpos):
     # 6 bins from T_EDGES_POS; interval [lo, hi)
     idx = np.digitize(tpos, T_EDGES_POS) - 1
-    # valid 0..5
     bad = (idx < 0) | (idx >= NTCOLS)
     idx[bad] = -1
     return idx.astype(np.int16)
@@ -335,7 +331,6 @@ def accumulate(infile):
                 good_t  = tb  >= 0
                 good_p  = pb  >= 0
 
-                # Accumulate with np.add.at
                 np.add.at(H1_Q2,  (sidx[good_q2], tbix[good_q2], q2b[good_q2]), 1)
                 np.add.at(H1_X,   (sidx[good_x ], tbix[good_x ], xb [good_x ]), 1)
                 np.add.at(H1_T,   (sidx[good_t ], tbix[good_t ], tb [good_t ]), 1)
@@ -435,7 +430,7 @@ def make_binned_canvas_4x6(H1_Q2, H1_X, H1_T, H1_PHI, outdir):
 
     for c in range(NTCOLS):
         tmin, tmax = T_EDGES_POS[c], T_EDGES_POS[c+1]
-        col_title = rf"$-t \in [{tmin:.2f}, {tmax:.2f})$ (GeV$^{{2}}$)"
+        col_title = rf"$-t \in [{tmin:.2f}, {tmax:.2f})$"
 
         for r, (name, H1, ED, CE, LAB, LIM) in enumerate(row_vars):
             ax = axes[r, c]
@@ -457,7 +452,7 @@ def make_binned_canvas_4x6(H1_Q2, H1_X, H1_T, H1_PHI, outdir):
             #endfor
 
             if r == 0:
-                ax.set_title(col_title, fontsize=12)
+                ax.set_title(col_title, fontsize=11)  # slightly decreased
             #endif
         #endfor
     #endfor
@@ -472,13 +467,16 @@ def make_binned_canvas_4x6(H1_Q2, H1_X, H1_T, H1_PHI, outdir):
 #endfor
 
 def make_mx2_canvas(H1_MX2, outdir):
-    fig, axes = plt.subplots(4, NTCOLS, figsize=(20, 12), sharex=True, sharey=True)
-    fig.subplots_adjust(top=0.90, wspace=0.15, hspace=0.25)
+    # NOTE: own y-scale per subplot -> no sharey
+    fig, axes = plt.subplots(4, NTCOLS, figsize=(20, 12), sharex=True, sharey=False)
+    fig.subplots_adjust(top=0.90, wspace=0.18, hspace=0.28)
     fig.suptitle(
         r"$M_{x}^{2}$ distributions by $x_{B}$ slice and $-t$ bin"
         "\n" + r"Global cuts: $Q^{2}>1,\, W>2,\, y<0.75$ (no $M_{x}^{2}$ cut)",
         fontsize=14
     )
+
+    xfit = np.linspace(MX2_LIM[0], MX2_LIM[1], 400)  # smooth curve for fitted function
 
     for r, s in enumerate(SLICE_ORDER):
         xa, xb = X_SLICES[s]
@@ -494,20 +492,22 @@ def make_mx2_canvas(H1_MX2, outdir):
             # Fit (Gaussian + quadratic), dashed curve; legend shows mu & sigma only
             label_txt = r"$\mu=\mathrm{N/A},\ \sigma=\mathrm{N/A}$"
             if np.count_nonzero(y) >= 6:
-                params, yfit = _fit_gauss_plus_quad(MX2_CEN, y, yerr, mu0=M_P2, sigma0=0.03)
+                params, _ = _fit_gauss_plus_quad(MX2_CEN, y, yerr, mu0=M_P2, sigma0=0.03)
                 A, mu, sigma, c0, c1, c2 = params
-                ax.plot(MX2_CEN, yfit, linestyle='--', linewidth=1.0, color='black',
+                yfit_curve = _gauss_plus_quad(xfit, A, mu, sigma, c0, c1, c2)
+                ax.plot(xfit, yfit_curve, linestyle='--', linewidth=1.0, color='black',
                         label=rf"$\mu={mu:.4f},\ \sigma={sigma:.4f}$")
             else:
                 ax.plot([], [], linestyle='--', linewidth=1.0, color='black', label=label_txt)
             #endif
 
-            ax.set_xlim(*MX2_LIM); ax.set_ylim(bottom=0)
-            ax.set_xlabel(LAB_MX2); ax.set_ylabel("counts")
+            ax.set_xlim(*MX2_LIM)
+            ax.set_xlabel(LAB_MX2)
+            ax.set_ylabel("counts")
             ax.grid(True, linestyle="--", alpha=0.25)
             ax.set_title(
-                rf"$x_{{B}}\in[{xa:.2f},{xb:.2f}],\ -t\in[{tmin:.2f},{tmax:.2f})$ (GeV$^{{2}}$)",
-                fontsize=10
+                rf"$x_{{B}}\in[{xa:.2f},{xb:.2f}],\ -t\in[{tmin:.2f},{tmax:.2f})$",
+                fontsize=9  # slightly decreased per request
             )
             ax.legend(frameon=True, fontsize=8, loc="best")
         #endfor
