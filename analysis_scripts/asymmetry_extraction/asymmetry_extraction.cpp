@@ -319,6 +319,7 @@ int main(int argc, char *argv[]) {
       case 2: performMLMFits_b2b_dihadron(output_file.c_str(), kinematic_file.c_str(), binNames[i]); break;
       case 3: cout << "No dihadron MLM fit (yet)." << endl; break;
       case 4: cout << "No unbinned MLM fit performed for DVCS; the physics is the phi dependence" << endl; break;
+      case 6: performMLMFits_single_hadron(output_file.c_str(), kinematic_file.c_str(), binNames[i]); break;
     }
     cout << endl << "     Completed " << binNames[i] << " MLM fits." << endl;
     cout << endl << endl;
