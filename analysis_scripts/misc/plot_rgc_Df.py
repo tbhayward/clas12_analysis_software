@@ -16,7 +16,7 @@ import matplotlib.pyplot as plt
 from matplotlib.lines import Line2D
 
 # ─────────────────────────────────────────────────────────────────────
-# Helper utilities
+# Helpers
 # ─────────────────────────────────────────────────────────────────────
 def sort_and_mask(x, y, e):
     """Sort by x ascending and drop points with non-finite y or e<=0."""
@@ -133,7 +133,7 @@ Fa22_midhigh_err = np.array([0.0123799, 0.0102398, 0.00940869, 0.00780097, 0.006
 Sp23_midhigh_val = np.array([0.459963, 0.484987, 0.472083, 0.479568, 0.435612, 0.473629])
 Sp23_midhigh_err = np.array([0.0290533, 0.0207754, 0.0203631, 0.0147656, 0.0127638, 0.0211814])
 
-# High xB (6) — Su22 & Fa22 provided; Sp23 missing (omitted)
+# High xB (6) — Su22 & Fa22 provided; Sp23 not provided
 Su22_high_val = np.array([0.484279, 0.483005, 0.450656, 0.45627, 0.371169, 0.999997])
 Su22_high_err = np.array([0.0315924, 0.0289463, 0.0275378, 0.0265606, 0.0467666, 0.0])  # σ=0 -> masked
 
@@ -141,34 +141,32 @@ Fa22_high_val = np.array([0.516664, 0.490963, 0.50077, 0.485811, 0.486819, 0.247
 Fa22_high_err = np.array([0.012285, 0.0118878, 0.0101202, 0.009192, 0.0137284, 0.746155])
 
 # ─────────────────────────────────────────────────────────────────────
-# Prepare series (sorted, masked)
+# Prepare series (each period has its own x after masking)
 # ─────────────────────────────────────────────────────────────────────
-def prep_series(x, y, e):
-    return sort_and_mask(x, y, e)
-
 # Integrated
-xI, yI_Su22, eI_Su22 = prep_series(xt_integrated, Su22_int_val, Su22_int_err)
-_,  yI_Fa22, eI_Fa22 = prep_series(xt_integrated, Fa22_int_val, Fa22_int_err)
-_,  yI_Sp23, eI_Sp23 = prep_series(xt_integrated, Sp23_int_val, Sp23_int_err)
+xI_Su22, yI_Su22, eI_Su22 = sort_and_mask(xt_integrated, Su22_int_val, Su22_int_err)
+xI_Fa22, yI_Fa22, eI_Fa22 = sort_and_mask(xt_integrated, Fa22_int_val, Fa22_int_err)
+xI_Sp23, yI_Sp23, eI_Sp23 = sort_and_mask(xt_integrated, Sp23_int_val, Sp23_int_err)
 
 # Low
-xL, yL_Su22, eL_Su22 = prep_series(xt_low, Su22_low_val, Su22_low_err)
-_,  yL_Fa22, eL_Fa22 = prep_series(xt_low, Fa22_low_val, Fa22_low_err)
-_,  yL_Sp23, eL_Sp23 = prep_series(xt_low, Sp23_low_val, Sp23_low_err)
+xL_Su22, yL_Su22, eL_Su22 = sort_and_mask(xt_low, Su22_low_val, Su22_low_err)
+xL_Fa22, yL_Fa22, eL_Fa22 = sort_and_mask(xt_low, Fa22_low_val, Fa22_low_err)
+xL_Sp23, yL_Sp23, eL_Sp23 = sort_and_mask(xt_low, Sp23_low_val, Sp23_low_err)
 
 # Mid-Low
-xMLo, yMLo_Su22, eMLo_Su22 = prep_series(xt_midlow, Su22_midlow_val, Su22_midlow_err)
-_,    yMLo_Fa22, eMLo_Fa22 = prep_series(xt_midlow, Fa22_midlow_val, Fa22_midlow_err)
-_,    yMLo_Sp23, eMLo_Sp23 = prep_series(xt_midlow, Sp23_midlow_val, Sp23_midlow_err)
+xMLo_Su22, yMLo_Su22, eMLo_Su22 = sort_and_mask(xt_midlow, Su22_midlow_val, Su22_midlow_err)
+xMLo_Fa22, yMLo_Fa22, eMLo_Fa22 = sort_and_mask(xt_midlow, Fa22_midlow_val, Fa22_midlow_err)
+xMLo_Sp23, yMLo_Sp23, eMLo_Sp23 = sort_and_mask(xt_midlow, Sp23_midlow_val, Sp23_midlow_err)
 
 # Mid-High
-xMHi, yMHi_Su22, eMHi_Su22 = prep_series(xt_midhigh, Su22_midhigh_val, Su22_midhigh_err)
-_,    yMHi_Fa22, eMHi_Fa22 = prep_series(xt_midhigh, Fa22_midhigh_val, Fa22_midhigh_err)
-_,    yMHi_Sp23, eMHi_Sp23 = prep_series(xt_midhigh, Sp23_midhigh_val, Sp23_midhigh_err)
+xMHi_Su22, yMHi_Su22, eMHi_Su22 = sort_and_mask(xt_midhigh, Su22_midhigh_val, Su22_midhigh_err)
+xMHi_Fa22, yMHi_Fa22, eMHi_Fa22 = sort_and_mask(xt_midhigh, Fa22_midhigh_val, Fa22_midhigh_err)
+xMHi_Sp23, yMHi_Sp23, eMHi_Sp23 = sort_and_mask(xt_midhigh, Sp23_midhigh_val, Sp23_midhigh_err)
 
 # High
-xH, yH_Su22, eH_Su22 = prep_series(xt_high, Su22_high_val, Su22_high_err)
-_,  yH_Fa22, eH_Fa22 = prep_series(xt_high, Fa22_high_val, Fa22_high_err)
+xH_Su22, yH_Su22, eH_Su22 = sort_and_mask(xt_high, Su22_high_val, Su22_high_err)
+xH_Fa22, yH_Fa22, eH_Fa22 = sort_and_mask(xt_high, Fa22_high_val, Fa22_high_err)
+xH_Sp23, yH_Sp23, eH_Sp23 = np.array([]), np.array([]), np.array([])  # none provided
 
 # ─────────────────────────────────────────────────────────────────────
 # Plotting
@@ -176,15 +174,18 @@ _,  yH_Fa22, eH_Fa22 = prep_series(xt_high, Fa22_high_val, Fa22_high_err)
 outdir = os.path.join("output", "enpi+")
 os.makedirs(outdir, exist_ok=True)
 
-# 1) Integrated: one axes, 3 periods
+# 1) Integrated: one axes, 3 periods (each with its own x)
 plt.figure(figsize=(7.5, 6.0))
 title_int = rf"$ep \rightarrow en\pi^{{+}}$ — {XB_LABELS['integrated']}\n{COMMON_CUTS}"
-plt.suptitle(title_int, y=0.95, fontsize=13)  # slightly smaller
+plt.suptitle(title_int, y=0.95, fontsize=13)
 ax = plt.gca()
 
-ax.errorbar(xI, yI_Su22, yerr=eI_Su22, fmt=MARKER, color=COLORS["Su22"], ecolor=COLORS["Su22"], capsize=CAPSIZE, label="Su22")
-ax.errorbar(xI, yI_Fa22, yerr=eI_Fa22, fmt=MARKER, color=COLORS["Fa22"], ecolor=COLORS["Fa22"], capsize=CAPSIZE, label="Fa22")
-ax.errorbar(xI, yI_Sp23, yerr=eI_Sp23, fmt=MARKER, color=COLORS["Sp23"], ecolor=COLORS["Sp23"], capsize=CAPSIZE, label="Sp23")
+if yI_Su22.size:
+    ax.errorbar(xI_Su22, yI_Su22, yerr=eI_Su22, fmt=MARKER, color=COLORS["Su22"], ecolor=COLORS["Su22"], capsize=CAPSIZE, label="Su22")
+if yI_Fa22.size:
+    ax.errorbar(xI_Fa22, yI_Fa22, yerr=eI_Fa22, fmt=MARKER, color=COLORS["Fa22"], ecolor=COLORS["Fa22"], capsize=CAPSIZE, label="Fa22")
+if yI_Sp23.size:
+    ax.errorbar(xI_Sp23, yI_Sp23, yerr=eI_Sp23, fmt=MARKER, color=COLORS["Sp23"], ecolor=COLORS["Sp23"], capsize=CAPSIZE, label="Sp23")
 
 ax.set_xlabel(X_LABEL)
 ax.set_ylabel(Y_LABEL)
@@ -199,32 +200,37 @@ plt.savefig(out1)
 plt.close()
 print(f"Saved: {out1}")
 
-# 2) 2x2 canvas: four xB bins; each subplot: Su22, Fa22, Sp23 (if available)
+# 2) 2x2 canvas: four xB bins; each subplot: Su22, Fa22, Sp23 (own x per period)
 fig, axes = plt.subplots(2, 2, figsize=(12, 9))
-fig.suptitle(rf"$ep \rightarrow en\pi^{{+}}$\n{COMMON_CUTS}", y=0.985, fontsize=14)  # smaller
+fig.suptitle(rf"$ep \rightarrow en\pi^{{+}}$\n{COMMON_CUTS}", y=0.985, fontsize=14)
 
-def plot_panel(ax, x, yS, eS, yF, eF, yP, eP, title, show_xlabel=True, show_ylabel=True):
-    if yS.size: ax.errorbar(x, yS, yerr=eS, fmt=MARKER, color=COLORS["Su22"], ecolor=COLORS["Su22"], capsize=CAPSIZE)
-    if yF.size: ax.errorbar(x, yF, yerr=eF, fmt=MARKER, color=COLORS["Fa22"], ecolor=COLORS["Fa22"], capsize=CAPSIZE)
-    if yP.size: ax.errorbar(x, yP, yerr=eP, fmt=MARKER, color=COLORS["Sp23"], ecolor=COLORS["Sp23"], capsize=CAPSIZE)
+def plot_panel(ax, xS,yS,eS, xF,yF,eF, xP,yP,eP, title, show_xlabel=True, show_ylabel=True):
+    if yS.size: ax.errorbar(xS, yS, yerr=eS, fmt=MARKER, color=COLORS["Su22"], ecolor=COLORS["Su22"], capsize=CAPSIZE)
+    if yF.size: ax.errorbar(xF, yF, yerr=eF, fmt=MARKER, color=COLORS["Fa22"], ecolor=COLORS["Fa22"], capsize=CAPSIZE)
+    if yP.size: ax.errorbar(xP, yP, yerr=eP, fmt=MARKER, color=COLORS["Sp23"], ecolor=COLORS["Sp23"], capsize=CAPSIZE)
     ax.set_title(title, fontsize=12)
-    if show_xlabel:
-        ax.set_xlabel(X_LABEL)
-    else:
-        ax.set_xlabel("")
-    if show_ylabel:
-        ax.set_ylabel(Y_LABEL)
-    else:
-        ax.set_ylabel("")
-    ax.grid(True, linestyle="--", alpha=0.6)
     ax.set_xlim(0.0, 1.30)
     ax.set_ylim(*YFIX)
+    ax.grid(True, linestyle="--", alpha=0.6)
+    ax.set_xlabel(X_LABEL if show_xlabel else "")
+    ax.set_ylabel(Y_LABEL if show_ylabel else "")
 
-# Top row: no x-axis labels; right column: no y-axis labels
-plot_panel(axes[0,0], xL,  yL_Su22,  eL_Su22,  yL_Fa22,  eL_Fa22,  yL_Sp23,  eL_Sp23,  XB_LABELS["low"],    show_xlabel=False, show_ylabel=True)
-plot_panel(axes[0,1], xMLo,yMLo_Su22,eMLo_Su22,yMLo_Fa22,eMLo_Fa22,yMLo_Sp23,eMLo_Sp23,XB_LABELS["midlow"], show_xlabel=False, show_ylabel=False)
-plot_panel(axes[1,0], xMHi,yMHi_Su22,eMHi_Su22,yMHi_Fa22,eMHi_Fa22,yMHi_Sp23,eMHi_Sp23,XB_LABELS["midhigh"], show_xlabel=True,  show_ylabel=True)
-plot_panel(axes[1,1], xH,  yH_Su22,  eH_Su22,  yH_Fa22,  eH_Fa22,  np.array([]), np.array([]), XB_LABELS["high"], show_xlabel=True,  show_ylabel=False)
+# Top row: no x-labels; right column: no y-labels
+plot_panel(axes[0,0],
+           xL_Su22,yL_Su22,eL_Su22, xL_Fa22,yL_Fa22,eL_Fa22, xL_Sp23,yL_Sp23,eL_Sp23,
+           XB_LABELS["low"], show_xlabel=False, show_ylabel=True)
+
+plot_panel(axes[0,1],
+           xMLo_Su22,yMLo_Su22,eMLo_Su22, xMLo_Fa22,yMLo_Fa22,eMLo_Fa22, xMLo_Sp23,yMLo_Sp23,eMLo_Sp23,
+           XB_LABELS["midlow"], show_xlabel=False, show_ylabel=False)
+
+plot_panel(axes[1,0],
+           xMHi_Su22,yMHi_Su22,eMHi_Su22, xMHi_Fa22,yMHi_Fa22,eMHi_Fa22, xMHi_Sp23,yMHi_Sp23,eMHi_Sp23,
+           XB_LABELS["midhigh"], show_xlabel=True, show_ylabel=True)
+
+plot_panel(axes[1,1],
+           xH_Su22,yH_Su22,eH_Su22, xH_Fa22,yH_Fa22,eH_Fa22, xH_Sp23,yH_Sp23,eH_Sp23,
+           XB_LABELS["high"], show_xlabel=True, show_ylabel=False)
 
 # Shared legend
 handles = [
