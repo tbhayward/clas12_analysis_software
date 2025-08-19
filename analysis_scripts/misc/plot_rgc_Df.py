@@ -13,6 +13,7 @@ Saves:
 import os
 import numpy as np
 import matplotlib.pyplot as plt
+
 from matplotlib.lines import Line2D
 
 # ─────────────────────────────────────────────────────────────────────
@@ -133,12 +134,15 @@ Fa22_midhigh_err = np.array([0.0123799, 0.0102398, 0.00940869, 0.00780097, 0.006
 Sp23_midhigh_val = np.array([0.459963, 0.484987, 0.472083, 0.479568, 0.435612, 0.473629])
 Sp23_midhigh_err = np.array([0.0290533, 0.0207754, 0.0203631, 0.0147656, 0.0127638, 0.0211814])
 
-# High xB (6) — Su22 & Fa22 provided; Sp23 not provided
+# High xB (6 each)
 Su22_high_val = np.array([0.484279, 0.483005, 0.450656, 0.45627, 0.371169, 0.999997])
-Su22_high_err = np.array([0.0315924, 0.0289463, 0.0275378, 0.0265606, 0.0467666, 0.0])  # σ=0 -> masked
+Su22_high_err = np.array([0.0315924, 0.0289463, 0.0275378, 0.0265606, 0.0467666, 0.0])  # σ=0 -> masked out
 
 Fa22_high_val = np.array([0.516664, 0.490963, 0.50077, 0.485811, 0.486819, 0.247805])
 Fa22_high_err = np.array([0.012285, 0.0118878, 0.0101202, 0.009192, 0.0137284, 0.746155])
+
+Sp23_high_val = np.array([0.514416, 0.517251, 0.511247, 0.48416, 0.500329, -0.0114814])
+Sp23_high_err = np.array([0.0263089, 0.0213761, 0.0197661, 0.0195764, 0.0258954, 0.21053])
 
 # ─────────────────────────────────────────────────────────────────────
 # Prepare series (each period has its own x after masking)
@@ -166,7 +170,7 @@ xMHi_Sp23, yMHi_Sp23, eMHi_Sp23 = sort_and_mask(xt_midhigh, Sp23_midhigh_val, Sp
 # High
 xH_Su22, yH_Su22, eH_Su22 = sort_and_mask(xt_high, Su22_high_val, Su22_high_err)
 xH_Fa22, yH_Fa22, eH_Fa22 = sort_and_mask(xt_high, Fa22_high_val, Fa22_high_err)
-xH_Sp23, yH_Sp23, eH_Sp23 = np.array([]), np.array([]), np.array([])  # none provided
+xH_Sp23, yH_Sp23, eH_Sp23 = sort_and_mask(xt_high, Sp23_high_val, Sp23_high_err)
 
 # ─────────────────────────────────────────────────────────────────────
 # Plotting
@@ -200,20 +204,29 @@ plt.savefig(out1)
 plt.close()
 print(f"Saved: {out1}")
 
-# 2) 2x2 canvas: four xB bins; each subplot: Su22, Fa22, Sp23 (own x per period)
+# 2) 2x2 canvas: four xB bins; each subplot: Su22, Fa22, Sp23 with its own legend
 fig, axes = plt.subplots(2, 2, figsize=(12, 9))
-fig.suptitle(rf"$ep \rightarrow en\pi^{{+}}$\n{COMMON_CUTS}", y=0.985, fontsize=14)
+fig.suptitle(rf"$ep \rightarrow en\pi^{{+}}$\n{COMMON_CUTS}", y=0.985, fontsize=13)
 
 def plot_panel(ax, xS,yS,eS, xF,yF,eF, xP,yP,eP, title, show_xlabel=True, show_ylabel=True):
-    if yS.size: ax.errorbar(xS, yS, yerr=eS, fmt=MARKER, color=COLORS["Su22"], ecolor=COLORS["Su22"], capsize=CAPSIZE)
-    if yF.size: ax.errorbar(xF, yF, yerr=eF, fmt=MARKER, color=COLORS["Fa22"], ecolor=COLORS["Fa22"], capsize=CAPSIZE)
-    if yP.size: ax.errorbar(xP, yP, yerr=eP, fmt=MARKER, color=COLORS["Sp23"], ecolor=COLORS["Sp23"], capsize=CAPSIZE)
+    h = []
+    if yS.size:
+        h1 = ax.errorbar(xS, yS, yerr=eS, fmt=MARKER, color=COLORS["Su22"], ecolor=COLORS["Su22"], capsize=CAPSIZE, label="Su22")
+        h.append(Line2D([0],[0], marker=MARKER, color=COLORS["Su22"], linestyle='', label="Su22"))
+    if yF.size:
+        h2 = ax.errorbar(xF, yF, yerr=eF, fmt=MARKER, color=COLORS["Fa22"], ecolor=COLORS["Fa22"], capsize=CAPSIZE, label="Fa22")
+        h.append(Line2D([0],[0], marker=MARKER, color=COLORS["Fa22"], linestyle='', label="Fa22"))
+    if yP.size:
+        h3 = ax.errorbar(xP, yP, yerr=eP, fmt=MARKER, color=COLORS["Sp23"], ecolor=COLORS["Sp23"], capsize=CAPSIZE, label="Sp23")
+        h.append(Line2D([0],[0], marker=MARKER, color=COLORS["Sp23"], linestyle='', label="Sp23"))
     ax.set_title(title, fontsize=12)
     ax.set_xlim(0.0, 1.30)
     ax.set_ylim(*YFIX)
     ax.grid(True, linestyle="--", alpha=0.6)
     ax.set_xlabel(X_LABEL if show_xlabel else "")
     ax.set_ylabel(Y_LABEL if show_ylabel else "")
+    if h:
+        ax.legend(handles=h, title="Run Period", loc="best", fontsize=10, title_fontsize=10, frameon=True)
 
 # Top row: no x-labels; right column: no y-labels
 plot_panel(axes[0,0],
@@ -231,14 +244,6 @@ plot_panel(axes[1,0],
 plot_panel(axes[1,1],
            xH_Su22,yH_Su22,eH_Su22, xH_Fa22,yH_Fa22,eH_Fa22, xH_Sp23,yH_Sp23,eH_Sp23,
            XB_LABELS["high"], show_xlabel=True, show_ylabel=False)
-
-# Shared legend
-handles = [
-    Line2D([0],[0], marker=MARKER, color=COLORS["Su22"], linestyle='', label='Su22'),
-    Line2D([0],[0], marker=MARKER, color=COLORS["Fa22"], linestyle='', label='Fa22'),
-    Line2D([0],[0], marker=MARKER, color=COLORS["Sp23"], linestyle='', label='Sp23'),
-]
-fig.legend(handles=handles, loc="lower center", ncol=3, frameon=True, bbox_to_anchor=(0.5, -0.02))
 
 plt.tight_layout(rect=[0, 0.03, 1, 0.95], w_pad=2.0, h_pad=2.0)
 out2 = os.path.join(outdir, "dilution_factor_binned.pdf")
