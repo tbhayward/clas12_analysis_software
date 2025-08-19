@@ -2,13 +2,13 @@
 # -*- coding: utf-8 -*-
 
 import os
-import math
 import numpy as np
 import matplotlib.pyplot as plt
 
 def main():
     # --------------------------
-    # Raw data: each row = [ln(x_B), F_LU^{sin phi}, err]
+    # Raw data: each row = [t (negative), F_LU^{sin phi}, err]
+    # We'll plot versus -t, so we negate the first column.
     # --------------------------
     data_rga = [
         [-1.199099929, 0.106094505, 0.014567704],
@@ -43,27 +43,27 @@ def main():
     # --------------------------
     # Parse into arrays
     # --------------------------
-    xln_rga, y_rga, e_rga = [], [], []
-    for row in data_rga:
-        xln_rga.append(row[0]); y_rga.append(row[1]); e_rga.append(row[2])
+    x_rga, y_rga, e_rga = [], [], []
+    for tneg, y, e in data_rga:
+        x_rga.append(-tneg)  # -t
+        y_rga.append(y)
+        e_rga.append(e)
     #endfor
 
-    xln_rgc, y_rgc, e_rgc = [], [], []
-    for row in data_rgc:
-        xln_rgc.append(row[0]); y_rgc.append(row[1]); e_rgc.append(row[2])
+    x_rgc, y_rgc, e_rgc = [], [], []
+    for tneg, y, e in data_rgc:
+        x_rgc.append(-tneg)  # -t
+        y_rgc.append(y)
+        e_rgc.append(e)
     #endfor
 
-    xln_rga = np.asarray(xln_rga, dtype=float)
-    y_rga   = np.asarray(y_rga,   dtype=float)
-    e_rga   = np.asarray(e_rga,   dtype=float)
+    x_rga = np.asarray(x_rga, dtype=float)
+    y_rga = np.asarray(y_rga, dtype=float)
+    e_rga = np.asarray(e_rga, dtype=float)
 
-    xln_rgc = np.asarray(xln_rgc, dtype=float)
-    y_rgc   = np.asarray(y_rgc,   dtype=float)
-    e_rgc   = np.asarray(e_rgc,   dtype=float)
-
-    # Convert ln(x_B) -> x_B
-    x_rga = np.exp(xln_rga)
-    x_rgc = np.exp(xln_rgc)
+    x_rgc = np.asarray(x_rgc, dtype=float)
+    y_rgc = np.asarray(y_rgc, dtype=float)
+    e_rgc = np.asarray(e_rgc, dtype=float)
 
     # --------------------------
     # Plot
@@ -81,9 +81,9 @@ def main():
         color='red', label=r'RGC Fa22 NH$_{3}$ Inb'
     )
 
-    ax.set_xlabel(r'$x_{B}$')
+    ax.set_xlabel(r'$-t$ (GeV$^{2}$)')
     ax.set_ylabel(r'$F_{LU}^{\sin\phi}$')
-    ax.set_xlim(0.0, 0.7)
+    ax.set_xlim(0.0, 1.3)
     ax.set_ylim(-0.1, 0.2)
     ax.legend(frameon=False)
     ax.grid(True, alpha=0.3, linestyle='--')
@@ -100,8 +100,8 @@ def main():
     plt.tight_layout()
     fig.savefig(outpath, bbox_inches='tight')
     print('Saved:', outpath)
+#endfor
 
-# Entry point
 if __name__ == '__main__':
     main()
 #endif
