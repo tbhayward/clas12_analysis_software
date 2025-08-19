@@ -91,7 +91,7 @@ def main():
     # --------------------------
     # Save
     # --------------------------
-    outdir = os.path.join('enpi+')
+    outdir = os.path.join('output', 'enpi+')
     if not os.path.isdir(outdir):
         os.makedirs(outdir, exist_ok=True)
     #endif
