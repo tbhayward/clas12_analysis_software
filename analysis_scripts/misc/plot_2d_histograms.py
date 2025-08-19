@@ -13,10 +13,12 @@ Outputs:
   • output/enpi+/2d_histograms.pdf
   • output/enpi+/binned_distributions.pdf
   • output/enpi+/Mx2_distributions.pdf
+  • output/enpi+/Mx2_fit_params.csv   <-- (μ, σ) saved for each (xB, -t) bin
 """
 
 import os
 import sys
+import csv
 import numpy as np
 import matplotlib.pyplot as plt
 
@@ -48,12 +50,12 @@ T_LIM   = (0.0, 1.30)  # for -t
 PHI_LIM = (0.0, 2.0*np.pi)
 MX2_LIM = (0.7, 1.1)
 
-# 1D base bin counts (HALVED per request; 2D gets 2/3 of these)
-NB_Q2  = 30   # was 60
-NB_X   = 35   # was 70
-NB_T   = 32   # was 65 (approx half)
-NB_PHI = 36   # was 72
-NB_MX2 = 40   # was 80
+# 1D base bin counts (HALVED vs original; 2D gets 2/3 of these)
+NB_Q2  = 30
+NB_X   = 35
+NB_T   = 32
+NB_PHI = 36
+NB_MX2 = 40
 
 # 2D binning = 0.6667 × base (rounded)
 NB_Q2_2D  = int(round(NB_Q2  * 2/3))   # 20
@@ -61,7 +63,7 @@ NB_X_2D   = int(round(NB_X   * 2/3))   # 23
 NB_T_2D   = int(round(NB_T   * 2/3))   # 21
 NB_PHI_2D = int(round(NB_PHI * 2/3))   # 24
 
-# Labels (units in parentheses)
+# Labels (units in parentheses for axes only)
 LAB_Q2  = r"$Q^{2}$ (GeV$^{2}$)"
 LAB_X   = r"$x_{B}$"
 LAB_T   = r"$-t$ (GeV$^{2}$)"
@@ -166,7 +168,7 @@ def _fit_gauss_plus_quad(xc, y, yerr, mu0=M_P2, sigma0=0.03):
     if xc.size < 6 or np.sum(y) < 1:
         A = max(y.max() if y.size else 1.0, 1.0)
         p = (A, mu0, max(sigma0, 1e-3), 0.0, 0.0, 0.0)
-        return p, _gauss_plus_quad(xc, *p)
+        return p, _gauss_plus_quad(xc, *p), False
     #endif
 
     if _SCIPY:
@@ -178,7 +180,7 @@ def _fit_gauss_plus_quad(xc, y, yerr, mu0=M_P2, sigma0=0.03):
             popt, _ = curve_fit(_gauss_plus_quad, xc, y, p0=p0, sigma=yerr,
                                 absolute_sigma=True, maxfev=20000, bounds=(lower, upper))
             yfit = _gauss_plus_quad(xc, *popt)
-            return tuple(popt), yfit
+            return tuple(popt), yfit, True
         except Exception:
             pass
         #endif
@@ -226,7 +228,7 @@ def _fit_gauss_plus_quad(xc, y, yerr, mu0=M_P2, sigma0=0.03):
     _, mu_b, sg_b, coeffs_b, yhat_b = best
     A_b, c0_b, c1_b, c2_b = coeffs_b
     params = (float(A_b), float(mu_b), float(max(sg_b, 1e-3)), float(c0_b), float(c1_b), float(c2_b))
-    return params, yhat_b
+    return params, yhat_b, True
 #endfor
 
 # ─────────────────────────────────────────────────────────────────────
@@ -411,7 +413,8 @@ def make_binned_canvas_4x6(H1_Q2, H1_X, H1_T, H1_PHI, outdir):
                 ("phi",H1_PHI, PHI_EDGES, PHI_CEN, LAB_PHI, PHI_LIM)]
 
     fig, axes = plt.subplots(4, NTCOLS, figsize=(20, 12), sharey="row")
-    fig.subplots_adjust(top=0.88, wspace=0.15, hspace=0.25)
+    # keep small gaps
+    fig.subplots_adjust(top=0.88, wspace=0.12, hspace=0.20)
     fig.suptitle(
         r"Overlaid distributions by $-t$ bin and $x_{B}$ slice" "\n"
         r"Global cuts: $Q^{2}>1,\, W>2,\, y<0.75,\, 0.81<M_{x}^{2}<1.00$",
@@ -434,8 +437,9 @@ def make_binned_canvas_4x6(H1_Q2, H1_X, H1_T, H1_PHI, outdir):
 
         for r, (name, H1, ED, CE, LAB, LIM) in enumerate(row_vars):
             ax = axes[r, c]
-            ax.set_xlim(*LIM); ax.set_xlabel(LAB)
-            if c == 0: ax.set_ylabel("counts")
+            ax.set_xlim(*LIM)
+            if r == 3: ax.set_xlabel(LAB)        # bottom row only
+            if c == 0: ax.set_ylabel("counts")   # left column only
             if name == "phi":
                 ax.set_xticks([0, np.pi/2, np.pi, 3*np.pi/2, 2*np.pi],
                               [r"$0$", r"$\frac{\pi}{2}$", r"$\pi$", r"$\frac{3\pi}{2}$", r"$2\pi$"])
@@ -447,12 +451,20 @@ def make_binned_canvas_4x6(H1_Q2, H1_X, H1_T, H1_PHI, outdir):
                 if np.sum(counts) == 0: 
                     continue
                 #endif
-                ax.plot(CE, counts, drawstyle="steps-mid", linewidth=1.6, color=XB_COLORS[s],
-                        label=None)
+                ax.plot(CE, counts, drawstyle="steps-mid", linewidth=1.6, color=XB_COLORS[s], label=None)
             #endfor
 
             if r == 0:
-                ax.set_title(col_title, fontsize=11)  # slightly decreased
+                # Use small anchored text instead of set_title
+                ax.text(0.02, 0.98, col_title, transform=ax.transAxes, ha='left', va='top', fontsize=11)
+            #endif
+
+            # Hide tick labels except left column and bottom row
+            if c != 0:
+                ax.tick_params(labelleft=False)
+            #endif
+            if r != 3:
+                ax.tick_params(labelbottom=False)
             #endif
         #endfor
     #endfor
@@ -467,9 +479,21 @@ def make_binned_canvas_4x6(H1_Q2, H1_X, H1_T, H1_PHI, outdir):
 #endfor
 
 def make_mx2_canvas(H1_MX2, outdir):
-    # NOTE: own y-scale per subplot -> no sharey
+    """
+    Mx2 canvas tweaks per request:
+      • own y-scale per subplot (no sharey)
+      • remove axis labels except left column (y) and bottom row (x)
+      • subplots touching (wspace=0, hspace=0)
+      • y-max per subplot = 1.35 × max(hist)
+      • per-subplot title drawn as anchored text at top-left (no units)
+      • fitted function plotted as thin dashed RED line
+      • write CSV of (mu, sigma) for each (xB, -t) bin
+    """
     fig, axes = plt.subplots(4, NTCOLS, figsize=(20, 12), sharex=True, sharey=False)
-    fig.subplots_adjust(top=0.90, wspace=0.18, hspace=0.28)
+
+    # Make subplots touch
+    fig.subplots_adjust(left=0.06, right=0.985, bottom=0.07, top=0.92, wspace=0.0, hspace=0.0)
+
     fig.suptitle(
         r"$M_{x}^{2}$ distributions by $x_{B}$ slice and $-t$ bin"
         "\n" + r"Global cuts: $Q^{2}>1,\, W>2,\, y<0.75$ (no $M_{x}^{2}$ cut)",
@@ -478,6 +502,11 @@ def make_mx2_canvas(H1_MX2, outdir):
 
     xfit = np.linspace(MX2_LIM[0], MX2_LIM[1], 400)  # smooth curve for fitted function
 
+    # Prepare CSV output
+    csv_path = os.path.join(outdir, "Mx2_fit_params.csv")
+    rows_for_csv = []
+    header = ["slice_name","x_min","x_max","t_min","t_max","mu","sigma","n_entries","fit_success"]
+
     for r, s in enumerate(SLICE_ORDER):
         xa, xb = X_SLICES[s]
         for c in range(NTCOLS):
@@ -485,38 +514,81 @@ def make_mx2_canvas(H1_MX2, outdir):
             ax = axes[r, c]
 
             y = H1_MX2[r, c, :].astype(float)
+            n_entries = int(np.sum(y))
             yerr = np.sqrt(np.maximum(y, 1.0))  # simple Poisson
             ax.errorbar(MX2_CEN, y, yerr=yerr, fmt='o', ms=3, lw=1.0, capsize=2,
                         color='black', label=None)
 
-            # Fit (Gaussian + quadratic), dashed curve; legend shows mu & sigma only
-            label_txt = r"$\mu=\mathrm{N/A},\ \sigma=\mathrm{N/A}$"
+            # Fit (Gaussian + quadratic)
+            fit_success = False
+            mu_val = np.nan
+            sigma_val = np.nan
             if np.count_nonzero(y) >= 6:
-                params, _ = _fit_gauss_plus_quad(MX2_CEN, y, yerr, mu0=M_P2, sigma0=0.03)
+                params, _yfit_centers, fit_success = _fit_gauss_plus_quad(MX2_CEN, y, yerr, mu0=M_P2, sigma0=0.03)
                 A, mu, sigma, c0, c1, c2 = params
+                mu_val, sigma_val = float(mu), float(sigma)
                 yfit_curve = _gauss_plus_quad(xfit, A, mu, sigma, c0, c1, c2)
-                ax.plot(xfit, yfit_curve, linestyle='--', linewidth=1.0, color='black',
+                ax.plot(xfit, yfit_curve, linestyle='--', linewidth=0.9, color='red',
                         label=rf"$\mu={mu:.4f},\ \sigma={sigma:.4f}$")
-            else:
-                ax.plot([], [], linestyle='--', linewidth=1.0, color='black', label=label_txt)
             #endif
 
+            # y-limit with headroom based on histogram only
+            ymax = float(np.max(y)) if y.size else 1.0
+            ax.set_ylim(0.0, max(1.0, 1.35*ymax))
             ax.set_xlim(*MX2_LIM)
-            ax.set_xlabel(LAB_MX2)
-            ax.set_ylabel("counts")
+
+            # Axis labels only on left column / bottom row
+            if c == 0:
+                ax.set_ylabel("counts")
+            #endif
+            if r == 3:
+                ax.set_xlabel(LAB_MX2)
+            #endif
+
+            # Hide tick labels except left column and bottom row
+            if c != 0:
+                ax.tick_params(labelleft=False)
+            #endif
+            if r != 3:
+                ax.tick_params(labelbottom=False)
+            #endif
+
+            # Grid
             ax.grid(True, linestyle="--", alpha=0.25)
-            ax.set_title(
+
+            # Compact per-subplot "title" as anchored text (no units in the text)
+            ax.text(
+                0.02, 0.98,
                 rf"$x_{{B}}\in[{xa:.2f},{xb:.2f}],\ -t\in[{tmin:.2f},{tmax:.2f})$",
-                fontsize=9  # slightly decreased per request
+                transform=ax.transAxes, ha='left', va='top', fontsize=9
             )
-            ax.legend(frameon=True, fontsize=8, loc="best")
+
+            # Per-subplot legend (μ, σ only) if we fit
+            if fit_success:
+                ax.legend(frameon=True, fontsize=8, loc="best")
+            #endif
+
+            # Stash CSV row
+            rows_for_csv.append([s, f"{xa:.4f}", f"{xb:.4f}", f"{tmin:.4f}", f"{tmax:.4f}",
+                                 f"{mu_val:.6f}" if np.isfinite(mu_val) else "",
+                                 f"{sigma_val:.6f}" if np.isfinite(sigma_val) else "",
+                                 str(n_entries),
+                                 "1" if fit_success else "0"])
         #endfor
     #endfor
+
+    # Write CSV
+    with open(csv_path, "w", newline="") as f:
+        writer = csv.writer(f)
+        writer.writerow(header)
+        writer.writerows(rows_for_csv)
+    #endif
 
     outpath = os.path.join(outdir, "Mx2_distributions.pdf")
     fig.savefig(outpath, bbox_inches="tight")
     plt.close(fig)
     print(f"Saved: {outpath}")
+    print(f"Wrote fit parameters: {csv_path}")
 #endfor
 
 # ─────────────────────────────────────────────────────────────────────
@@ -540,8 +612,8 @@ def main():
     H2, H1_Q2, H1_X, H1_T, H1_PHI, H1_MX2 = accumulate(infile)
 
     # Render figures from the accumulated histograms
-    # make_2d_canvases(H2, outdir)
-    # make_binned_canvas_4x6(H1_Q2, H1_X, H1_T, H1_PHI, outdir)
+    make_2d_canvases(H2, outdir)
+    make_binned_canvas_4x6(H1_Q2, H1_X, H1_T, H1_PHI, outdir)
     make_mx2_canvas(H1_MX2, outdir)
 #endfor
 
