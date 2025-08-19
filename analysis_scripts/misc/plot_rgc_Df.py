@@ -11,7 +11,6 @@ Saves:
 """
 
 import os
-import math
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.lines import Line2D
@@ -33,23 +32,6 @@ def sort_and_mask(x, y, e):
     order = np.argsort(x)
     return x[order], y[order], e[order]
 
-def set_common_ylim(series, pad=0.05):
-    """series: list of (y, e). Compute y-lims covering all y±e, clamped to [0,1.05]."""
-    ymin, ymax = +np.inf, -np.inf
-    for y, e in series:
-        if y.size == 0:
-            continue
-        ymin = min(ymin, np.nanmin(y - e))
-        ymax = max(ymax, np.nanmax(y + e))
-    if not np.isfinite(ymin) or not np.isfinite(ymax):
-        return (0.0, 1.0)
-    span = max(0.1, ymax - ymin)
-    lo = max(0.0, ymin - pad * span)
-    hi = min(1.05, ymax + pad * span)
-    if hi - lo < 0.1:
-        hi = min(1.05, lo + 0.1)
-    return (lo, hi)
-
 # ─────────────────────────────────────────────────────────────────────
 # Styling
 # ─────────────────────────────────────────────────────────────────────
@@ -58,6 +40,8 @@ MARKER = "o"
 CAPSIZE = 3
 X_LABEL = r"$-t\ \mathrm{(GeV^{2})}$"
 Y_LABEL = r"$D_{f}$"
+YFIX = (0.2, 0.6)  # fixed y-limits everywhere
+
 COMMON_CUTS = r"$Q^{2}>1,\ W>2,\ y<0.75,\ 0.81<M_{x}^{2}<1.00\ \mathrm{GeV}^{2}$"
 XB_LABELS = {
     "integrated": r"$0.10 < x_{B} < 0.60$",
@@ -109,8 +93,6 @@ xt_high = -t_high
 # ─────────────────────────────────────────────────────────────────────
 # Hard-coded dilution factor series (Su22, Fa22, Sp23), per group
 # ─────────────────────────────────────────────────────────────────────
-# IMPORTANT: As requested, sequence is Su22, Fa22, Sp23.
-
 # Integrated (12 each)
 Su22_int_val = np.array([0.48661, 0.449281, 0.418568, 0.466025, 0.447367, 0.483743, 0.428328, 0.451445, 0.424836, 0.43053, 0.433139, 0.480003])
 Su22_int_err = np.array([0.0278322, 0.0284053, 0.0293135, 0.0218104, 0.022329, 0.0180305, 0.0215714, 0.0165681, 0.0156522, 0.0147116, 0.0130666, 0.0151448])
@@ -151,7 +133,7 @@ Fa22_midhigh_err = np.array([0.0123799, 0.0102398, 0.00940869, 0.00780097, 0.006
 Sp23_midhigh_val = np.array([0.459963, 0.484987, 0.472083, 0.479568, 0.435612, 0.473629])
 Sp23_midhigh_err = np.array([0.0290533, 0.0207754, 0.0203631, 0.0147656, 0.0127638, 0.0211814])
 
-# High xB (6) — Su22 & Fa22 provided; Sp23 missing (will be omitted)
+# High xB (6) — Su22 & Fa22 provided; Sp23 missing (omitted)
 Su22_high_val = np.array([0.484279, 0.483005, 0.450656, 0.45627, 0.371169, 0.999997])
 Su22_high_err = np.array([0.0315924, 0.0289463, 0.0275378, 0.0265606, 0.0467666, 0.0])  # σ=0 -> masked
 
@@ -161,7 +143,7 @@ Fa22_high_err = np.array([0.012285, 0.0118878, 0.0101202, 0.009192, 0.0137284, 0
 # ─────────────────────────────────────────────────────────────────────
 # Prepare series (sorted, masked)
 # ─────────────────────────────────────────────────────────────────────
-def prep_series(x, y, e):  # convenience
+def prep_series(x, y, e):
     return sort_and_mask(x, y, e)
 
 # Integrated
@@ -187,7 +169,6 @@ _,    yMHi_Sp23, eMHi_Sp23 = prep_series(xt_midhigh, Sp23_midhigh_val, Sp23_midh
 # High
 xH, yH_Su22, eH_Su22 = prep_series(xt_high, Su22_high_val, Su22_high_err)
 _,  yH_Fa22, eH_Fa22 = prep_series(xt_high, Fa22_high_val, Fa22_high_err)
-# Sp23 high missing: skip
 
 # ─────────────────────────────────────────────────────────────────────
 # Plotting
@@ -198,7 +179,7 @@ os.makedirs(outdir, exist_ok=True)
 # 1) Integrated: one axes, 3 periods
 plt.figure(figsize=(7.5, 6.0))
 title_int = rf"$ep \rightarrow en\pi^{{+}}$ — {XB_LABELS['integrated']}\n{COMMON_CUTS}"
-plt.suptitle(title_int, y=0.96, fontsize=14)
+plt.suptitle(title_int, y=0.95, fontsize=13)  # slightly smaller
 ax = plt.gca()
 
 ax.errorbar(xI, yI_Su22, yerr=eI_Su22, fmt=MARKER, color=COLORS["Su22"], ecolor=COLORS["Su22"], capsize=CAPSIZE, label="Su22")
@@ -209,34 +190,24 @@ ax.set_xlabel(X_LABEL)
 ax.set_ylabel(Y_LABEL)
 ax.grid(True, linestyle="--", alpha=0.6)
 ax.set_xlim(0.0, 1.30)
-ylim_int = set_common_ylim([(yI_Su22, eI_Su22), (yI_Fa22, eI_Fa22), (yI_Sp23, eI_Sp23)])
-ax.set_ylim(0.1,0.6)
+ax.set_ylim(*YFIX)
 ax.legend(title="Run Period")
 
 out1 = os.path.join(outdir, "dilution_factor_integrated.pdf")
-plt.tight_layout(rect=[0, 0, 1, 0.93])
+plt.tight_layout(rect=[0, 0, 1, 0.92])
 plt.savefig(out1)
 plt.close()
 print(f"Saved: {out1}")
 
 # 2) 2x2 canvas: four xB bins; each subplot: Su22, Fa22, Sp23 (if available)
 fig, axes = plt.subplots(2, 2, figsize=(12, 9))
-fig.suptitle(rf"$ep \rightarrow en\pi^{{+}}$\n{COMMON_CUTS}", y=0.98, fontsize=16)
-
-# Compute a common y-limit across all panels
-all_series = [
-    (yL_Su22, eL_Su22),   (yL_Fa22, eL_Fa22),   (yL_Sp23, eL_Sp23),
-    (yMLo_Su22, eMLo_Su22),(yMLo_Fa22, eMLo_Fa22),(yMLo_Sp23, eMLo_Sp23),
-    (yMHi_Su22, eMHi_Su22),(yMHi_Fa22, eMHi_Fa22),(yMHi_Sp23, eMHi_Sp23),
-    (yH_Su22, eH_Su22),   (yH_Fa22, eH_Fa22)
-]
-ylim_common = set_common_ylim(all_series)
+fig.suptitle(rf"$ep \rightarrow en\pi^{{+}}$\n{COMMON_CUTS}", y=0.985, fontsize=14)  # smaller
 
 def plot_panel(ax, x, yS, eS, yF, eF, yP, eP, title, show_xlabel=True, show_ylabel=True):
     if yS.size: ax.errorbar(x, yS, yerr=eS, fmt=MARKER, color=COLORS["Su22"], ecolor=COLORS["Su22"], capsize=CAPSIZE)
     if yF.size: ax.errorbar(x, yF, yerr=eF, fmt=MARKER, color=COLORS["Fa22"], ecolor=COLORS["Fa22"], capsize=CAPSIZE)
     if yP.size: ax.errorbar(x, yP, yerr=eP, fmt=MARKER, color=COLORS["Sp23"], ecolor=COLORS["Sp23"], capsize=CAPSIZE)
-    ax.set_title(title, fontsize=13)
+    ax.set_title(title, fontsize=12)
     if show_xlabel:
         ax.set_xlabel(X_LABEL)
     else:
@@ -247,17 +218,15 @@ def plot_panel(ax, x, yS, eS, yF, eF, yP, eP, title, show_xlabel=True, show_ylab
         ax.set_ylabel("")
     ax.grid(True, linestyle="--", alpha=0.6)
     ax.set_xlim(0.0, 1.30)
-    ax.set_ylim(*ylim_common)
+    ax.set_ylim(*YFIX)
 
-# Top row: no x-axis labels
+# Top row: no x-axis labels; right column: no y-axis labels
 plot_panel(axes[0,0], xL,  yL_Su22,  eL_Su22,  yL_Fa22,  eL_Fa22,  yL_Sp23,  eL_Sp23,  XB_LABELS["low"],    show_xlabel=False, show_ylabel=True)
-plot_panel(axes[0,1], xMLo,yMLo_Su22,eMLo_Su22,yMLo_Fa22,eMLo_Fa22,yMLo_Sp23,eMLo_Sp23,XB_LABELS["midlow"], show_xlabel=False, show_ylabel=False)  # right col: no y label
+plot_panel(axes[0,1], xMLo,yMLo_Su22,eMLo_Su22,yMLo_Fa22,eMLo_Fa22,yMLo_Sp23,eMLo_Sp23,XB_LABELS["midlow"], show_xlabel=False, show_ylabel=False)
+plot_panel(axes[1,0], xMHi,yMHi_Su22,eMHi_Su22,yMHi_Fa22,eMHi_Fa22,yMHi_Sp23,eMHi_Sp23,XB_LABELS["midhigh"], show_xlabel=True,  show_ylabel=True)
+plot_panel(axes[1,1], xH,  yH_Su22,  eH_Su22,  yH_Fa22,  eH_Fa22,  np.array([]), np.array([]), XB_LABELS["high"], show_xlabel=True,  show_ylabel=False)
 
-# Bottom row
-plot_panel(axes[1,0], xMHi,yMHi_Su22,eMHi_Su22,yMHi_Fa22,eMHi_Fa22,yMHi_Sp23,eMHi_Sp23,XB_LABELS["midhigh"], show_xlabel=True, show_ylabel=True)
-plot_panel(axes[1,1], xH,  yH_Su22,  eH_Su22,  yH_Fa22,  eH_Fa22,  np.array([]), np.array([]), XB_LABELS["high"], show_xlabel=True, show_ylabel=False)
-
-# Single shared legend (bottom center)
+# Shared legend
 handles = [
     Line2D([0],[0], marker=MARKER, color=COLORS["Su22"], linestyle='', label='Su22'),
     Line2D([0],[0], marker=MARKER, color=COLORS["Fa22"], linestyle='', label='Fa22'),
