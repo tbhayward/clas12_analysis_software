@@ -47,7 +47,7 @@ LABEL_FONTSIZE = 13
 XLIM_T = (0.0, 1.30)
 X_LABEL = r"$-t\ (\mathrm{GeV}^{2})$"
 
-# y-axis ranges per panel (same as your previous choices)
+# y-axis ranges per panel
 YLIM_LU = (-0.4, 0.4)   # BSA
 YLIM_UL = (-0.4, 0.4)   # TSA
 YLIM_LL = (-1.0, 1.0)   # DSA
@@ -74,7 +74,7 @@ _triple_re = re.compile(r'\{([^{}]+)\}')
 def parse_asym_file(path):
     """Parse NAME = {{mean,val,err}, ...}; blocks into dict[name] -> np.array(N,3)."""
     with open(path, "r") as f:
-        text = f.read()  # endif
+        text = f.read()
     out = {}
     for m in _assign_re.finditer(text):
         name = m.group(1)
@@ -83,17 +83,14 @@ def parse_asym_file(path):
         for t in _triple_re.findall(content):
             parts = [p.strip() for p in t.split(",")]
             if len(parts) != 3:
-                continue  # endif
+                continue
             try:
                 triples.append((float(parts[0]), float(parts[1]), float(parts[2])))
             except ValueError:
-                continue  # endif
-        # endfor
+                continue
         if triples:
             out[name] = np.array(triples, dtype=float)
-    # endfor
-    return out  # endif
-# endfor
+    return out
 
 def get_series(dct, key, negate_x=True, sort_x=True):
     """
@@ -102,23 +99,21 @@ def get_series(dct, key, negate_x=True, sort_x=True):
     Optionally sorts by x ascending for nicer plotting.
     """
     if key not in dct:
-        return None  # endif
+        return None
     arr = np.array(dct[key], dtype=float)
     if arr.size == 0:
-        return None  # endif
+        return None
     x_raw, y, e = arr[:,0], arr[:,1], arr[:,2]
     mask = np.isfinite(x_raw) & np.isfinite(y) & np.isfinite(e) & (e > 0)
     if not np.any(mask):
-        return None  # endif
+        return None
     x = -x_raw[mask] if negate_x else x_raw[mask]
     y = y[mask]
     e = e[mask]
     if sort_x and x.size > 1:
         order = np.argsort(x)
         x, y, e = x[order], y[order], e[order]
-    # endif
-    return {"x": x, "y": y, "yerr": e}  # endif
-# endfor
+    return {"x": x, "y": y, "yerr": e}
 
 def build_period_dict(parsed, bin_prefix):
     """
@@ -138,8 +133,7 @@ def build_period_dict(parsed, bin_prefix):
         # UU (n=1 open, n=2 filled)
         "UUcos":   get_series(parsed, k("AUUcosphi")),
         "UUcos2":  get_series(parsed, k("AUUcos2phi")),
-    }  # endif
-# endfor
+    }
 
 def detect_available_bins(*dicts):
     """
@@ -153,28 +147,21 @@ def detect_available_bins(*dicts):
         present = any((key_probe in d) for d in dicts if d is not None)
         if present:
             available.append(bin_tag)
-        # endif
-    # endfor
-    return available  # endif
-# endfor
+    return available
 
 # ─────────────────────────────────────────────────────────────────────
 # Plotting helpers
 # ─────────────────────────────────────────────────────────────────────
 def make_title(kin_text, xb_label):
-    # Reaction in math text, then cuts, then xB slice label
-    # We also include the common cuts explicitly for clarity.
     common = r"$Q^{2}>1\ (\mathrm{GeV}^{2}),\ W>2\ (\mathrm{GeV}),\ y<0.75,\ 0.81<M_{x}^{2}<1.00\ (\mathrm{GeV}^{2})$"
-    # Escape braces around B for format if used elsewhere; here it's raw string already.
     if kin_text.strip():
         return rf"$ep \rightarrow en\pi^{{+}}$ — {xb_label}; {common}; {kin_text}"
     else:
         return rf"$ep \rightarrow en\pi^{{+}}$ — {xb_label}; {common}"
-    # endif
-# endfor
 
 def _plot_panel_sets(axLU, axUL, axLL, axUU, pdata_by_label):
     """Internal: draw the four panels for a set of labeled period dicts."""
+
     # ---- BSA (ALU sinφ) ----
     for lab, pdata in pdata_by_label.items():
         s = pdata["ALUsin"]
@@ -182,8 +169,6 @@ def _plot_panel_sets(axLU, axUL, axLL, axUU, pdata_by_label):
             axLU.errorbar(s["x"], s["y"], yerr=s["yerr"],
                           fmt=MARKER, color=COLORS[lab], ecolor=COLORS[lab],
                           capsize=CAPSIZE, label=lab)
-        # endif
-    # endfor
     axLU.set(xlim=XLIM_T, ylim=YLIM_LU, xlabel=X_LABEL, ylabel=r"$F_{LU}^{\sin\phi}/F_{UU}$")
     axLU.axhline(0, color="black", linestyle="--", linewidth=1.2)
     axLU.grid(True, linestyle="--", alpha=0.6)
@@ -198,27 +183,26 @@ def _plot_panel_sets(axLU, axUL, axLL, axUU, pdata_by_label):
             axUL.errorbar(s1["x"], s1["y"], yerr=s1["yerr"],
                           fmt=MARKER, mfc="none", mec=COLORS[lab], ecolor=COLORS[lab],
                           capsize=CAPSIZE, label=f"{lab}, n=1")
-        # endif
         s2 = pdata["AULsin2"]
         if s2 is not None:
             axUL.errorbar(s2["x"], s2["y"], yerr=s2["yerr"],
                           fmt=MARKER, color=COLORS[lab], ecolor=COLORS[lab],
                           capsize=CAPSIZE, label=f"{lab}, n=2")
-        # endif
-    # endfor
     axUL.set(xlim=XLIM_T, ylim=YLIM_UL, xlabel=X_LABEL, ylabel=r"$F_{UL}^{\sin n\phi}/F_{UU}$")
     axUL.axhline(0, color="black", linestyle="--", linewidth=1.2)
     axUL.grid(True, linestyle="--", alpha=0.6)
+    # Harmonic legend (bottom-left)
     harmUL = axUL.legend(
         handles=[
             Line2D([0],[0], marker=MARKER, mfc='none', mec='black', linestyle='', label='n=1'),
             Line2D([0],[0], marker=MARKER, color='black', linestyle='', label='n=2')
         ],
-        title="Harmonic", frameon=True, edgecolor="black", loc="upper right",
+        title="Harmonic", frameon=True, edgecolor="black",
+        loc="lower left", bbox_to_anchor=(0.02, 0.02),
         fontsize=11, title_fontsize=12
     )
     axUL.add_artist(harmUL)
-    # add separate run period legend
+    # Run period legend (lower right)
     labs = list(pdata_by_label.keys())
     run_leg_handles = [Line2D([0],[0], marker=MARKER, color=COLORS[L], linestyle='', label=L) for L in labs]
     legUL = axUL.legend(handles=run_leg_handles, title="Run Period", frameon=True, edgecolor="black",
@@ -232,14 +216,11 @@ def _plot_panel_sets(axLU, axUL, axLL, axUU, pdata_by_label):
             axLL.errorbar(s0["x"], s0["y"], yerr=s0["yerr"],
                           fmt=MARKER, mfc="none", mec=COLORS[lab], ecolor=COLORS[lab],
                           capsize=CAPSIZE, label=f"{lab}, n=0")
-        # endif
         s1 = pdata["ALLcos"]
         if s1 is not None:
             axLL.errorbar(s1["x"], s1["y"], yerr=s1["yerr"],
                           fmt=MARKER, color=COLORS[lab], ecolor=COLORS[lab],
                           capsize=CAPSIZE, label=f"{lab}, n=1")
-        # endif
-    # endfor
     axLL.set(xlim=XLIM_T, ylim=YLIM_LL, xlabel=X_LABEL, ylabel=r"$F_{LL}^{\cos n\phi}/F_{UU}$")
     axLL.axhline(0, color="black", linestyle="--", linewidth=1.2)
     axLL.grid(True, linestyle="--", alpha=0.6)
@@ -248,7 +229,8 @@ def _plot_panel_sets(axLU, axUL, axLL, axUU, pdata_by_label):
             Line2D([0],[0], marker=MARKER, mfc='none', mec='black', linestyle='', label='n=0'),
             Line2D([0],[0], marker=MARKER, color='black', linestyle='', label='n=1')
         ],
-        title="Harmonic", frameon=True, edgecolor="black", loc="upper right",
+        title="Harmonic", frameon=True, edgecolor="black",
+        loc="lower left", bbox_to_anchor=(0.02, 0.02),
         fontsize=11, title_fontsize=12
     )
     axLL.add_artist(harmLL)
@@ -265,14 +247,11 @@ def _plot_panel_sets(axLU, axUL, axLL, axUU, pdata_by_label):
             axUU.errorbar(s1["x"], s1["y"], yerr=s1["yerr"],
                           fmt=MARKER, mfc="none", mec=COLORS[lab], ecolor=COLORS[lab],
                           capsize=CAPSIZE, label=f"{lab}, n=1")
-        # endif
         s2 = pdata["UUcos2"]
         if s2 is not None:
             axUU.errorbar(s2["x"], s2["y"], yerr=s2["yerr"],
                           fmt=MARKER, color=COLORS[lab], ecolor=COLORS[lab],
                           capsize=CAPSIZE, label=f"{lab}, n=2")
-        # endif
-    # endfor
     axUU.set(xlim=XLIM_T, ylim=YLIM_UU, xlabel=X_LABEL, ylabel=r"$F_{UU}^{\cos n\phi}/F_{UU}$")
     axUU.axhline(0, color="black", linestyle="--", linewidth=1.2)
     axUU.grid(True, linestyle="--", alpha=0.6)
@@ -281,7 +260,8 @@ def _plot_panel_sets(axLU, axUL, axLL, axUU, pdata_by_label):
             Line2D([0],[0], marker=MARKER, mfc='none', mec='black', linestyle='', label='n=1'),
             Line2D([0],[0], marker=MARKER, color='black', linestyle='', label='n=2'),
         ],
-        title="Harmonic", frameon=True, edgecolor="black", loc="upper right",
+        title="Harmonic", frameon=True, edgecolor="black",
+        loc="lower left", bbox_to_anchor=(0.02, 0.02),
         fontsize=11, title_fontsize=12
     )
     axUU.add_artist(harmUU)
@@ -290,7 +270,6 @@ def _plot_panel_sets(axLU, axUL, axLL, axUU, pdata_by_label):
     legUU = axUU.legend(handles=run_leg_handles, title="Run Period", frameon=True, edgecolor="black",
                         loc="lower right", fontsize=11, title_fontsize=12)
     legUU.get_frame().set_alpha(0.9)
-# endfor
 
 def plot_all_periods_for_bin(p_su22, p_fa22, p_sp23, bin_tag, kin_text, out_dir, out_prefix):
     plt.figure(figsize=(12, 9))
@@ -315,8 +294,7 @@ def plot_all_periods_for_bin(p_su22, p_fa22, p_sp23, bin_tag, kin_text, out_dir,
     out_path = os.path.join(out_dir, f"rgc_{out_prefix}_{bin_tag}_AllPeriods.pdf")
     plt.savefig(out_path)
     plt.close()
-    print(f"Saved all-periods figure: {out_path}")  # endif
-# endfor
+    print(f"Saved all-periods figure: {out_path}")
 
 def plot_combined_only_for_bin(p_comb, bin_tag, kin_text, out_dir, out_prefix):
     plt.figure(figsize=(12, 9))
@@ -336,7 +314,6 @@ def plot_combined_only_for_bin(p_comb, bin_tag, kin_text, out_dir, out_prefix):
         s = p_comb["ALUsin"]
         axLU.errorbar(s["x"], s["y"], yerr=s["yerr"],
                       fmt=MARKER, color=black, ecolor=black, capsize=CAPSIZE)
-    # endif
     axLU.set(xlim=XLIM_T, ylim=YLIM_LU, xlabel=X_LABEL, ylabel=r"$F_{LU}^{\sin\phi}/F_{UU}$")
     axLU.axhline(0, color="black", linestyle="--", linewidth=1.2)
     axLU.grid(True, linestyle="--", alpha=0.6)
@@ -346,12 +323,10 @@ def plot_combined_only_for_bin(p_comb, bin_tag, kin_text, out_dir, out_prefix):
         s1 = p_comb["AULsin"]
         axUL.errorbar(s1["x"], s1["y"], yerr=s1["yerr"],
                       fmt=MARKER, mfc="none", mec=black, ecolor=black, capsize=CAPSIZE)
-    # endif
     if p_comb["AULsin2"] is not None:
         s2 = p_comb["AULsin2"]
         axUL.errorbar(s2["x"], s2["y"], yerr=s2["yerr"],
                       fmt=MARKER, color=black, ecolor=black, capsize=CAPSIZE)
-    # endif
     axUL.set(xlim=XLIM_T, ylim=YLIM_UL, xlabel=X_LABEL, ylabel=r"$F_{UL}^{\sin n\phi}/F_{UU}$")
     axUL.axhline(0, color="black", linestyle="--", linewidth=1.2)
     axUL.grid(True, linestyle="--", alpha=0.6)
@@ -360,7 +335,8 @@ def plot_combined_only_for_bin(p_comb, bin_tag, kin_text, out_dir, out_prefix):
             Line2D([0],[0], marker=MARKER, mfc='none', mec='black', linestyle='', label='n=1'),
             Line2D([0],[0], marker=MARKER, color='black', linestyle='', label='n=2'),
         ],
-        title="Harmonic", frameon=True, edgecolor="black", loc="upper right",
+        title="Harmonic", frameon=True, edgecolor="black",
+        loc="lower left", bbox_to_anchor=(0.02, 0.02),
         fontsize=11, title_fontsize=12
     )
     axUL.add_artist(harmUL)
@@ -370,12 +346,10 @@ def plot_combined_only_for_bin(p_comb, bin_tag, kin_text, out_dir, out_prefix):
         s0 = p_comb["ALLn0"]
         axLL.errorbar(s0["x"], s0["y"], yerr=s0["yerr"],
                       fmt=MARKER, mfc="none", mec=black, ecolor=black, capsize=CAPSIZE)
-    # endif
     if p_comb["ALLcos"] is not None:
         s1 = p_comb["ALLcos"]
         axLL.errorbar(s1["x"], s1["y"], yerr=s1["yerr"],
                       fmt=MARKER, color=black, ecolor=black, capsize=CAPSIZE)
-    # endif
     axLL.set(xlim=XLIM_T, ylim=YLIM_LL, xlabel=X_LABEL, ylabel=r"$F_{LL}^{\cos n\phi}/F_{UU}$")
     axLL.axhline(0, color="black", linestyle="--", linewidth=1.2)
     axLL.grid(True, linestyle="--", alpha=0.6)
@@ -384,7 +358,8 @@ def plot_combined_only_for_bin(p_comb, bin_tag, kin_text, out_dir, out_prefix):
             Line2D([0],[0], marker=MARKER, mfc='none', mec='black', linestyle='', label='n=0'),
             Line2D([0],[0], marker=MARKER, color='black', linestyle='', label='n=1'),
         ],
-        title="Harmonic", frameon=True, edgecolor="black", loc="upper right",
+        title="Harmonic", frameon=True, edgecolor="black",
+        loc="lower left", bbox_to_anchor=(0.02, 0.02),
         fontsize=11, title_fontsize=12
     )
     axLL.add_artist(harmLL)
@@ -394,12 +369,10 @@ def plot_combined_only_for_bin(p_comb, bin_tag, kin_text, out_dir, out_prefix):
         s1 = p_comb["UUcos"]
         axUU.errorbar(s1["x"], s1["y"], yerr=s1["yerr"],
                       fmt=MARKER, mfc="none", mec=black, ecolor=black, capsize=CAPSIZE)
-    # endif
     if p_comb["UUcos2"] is not None:
         s2 = p_comb["UUcos2"]
         axUU.errorbar(s2["x"], s2["y"], yerr=s2["yerr"],
                       fmt=MARKER, color=black, ecolor=black, capsize=CAPSIZE)
-    # endif
     axUU.set(xlim=XLIM_T, ylim=YLIM_UU, xlabel=X_LABEL, ylabel=r"$F_{UU}^{\cos n\phi}/F_{UU}$")
     axUU.axhline(0, color="black", linestyle="--", linewidth=1.2)
     axUU.grid(True, linestyle="--", alpha=0.6)
@@ -408,7 +381,8 @@ def plot_combined_only_for_bin(p_comb, bin_tag, kin_text, out_dir, out_prefix):
             Line2D([0],[0], marker=MARKER, mfc='none', mec='black', linestyle='', label='n=1'),
             Line2D([0],[0], marker=MARKER, color='black', linestyle='', label='n=2'),
         ],
-        title="Harmonic", frameon=True, edgecolor="black", loc="upper right",
+        title="Harmonic", frameon=True, edgecolor="black",
+        loc="lower left", bbox_to_anchor=(0.02, 0.02),
         fontsize=11, title_fontsize=12
     )
     axUU.add_artist(harmUU)
@@ -418,8 +392,7 @@ def plot_combined_only_for_bin(p_comb, bin_tag, kin_text, out_dir, out_prefix):
     out_path = os.path.join(out_dir, f"rgc_{out_prefix}_{bin_tag}_CombinedOnly.pdf")
     plt.savefig(out_path)
     plt.close()
-    print(f"Saved combined-only figure: {out_path}")  # endif
-# endfor
+    print(f"Saved combined-only figure: {out_path}")
 
 # ─────────────────────────────────────────────────────────────────────
 # Main
@@ -429,7 +402,7 @@ def main():
         print("Usage: python plot_enpi_from_texts.py Su22.txt Fa22.txt Sp23.txt Combined.txt <Prefix> \"<Kinematic text>\"")
         print("Example:")
         print("  python plot_enpi_from_texts.py su22.txt fa22.txt sp23.txt combined.txt enpiGE \"Q^2>1, W>2, y<0.75, 0.81<M_x^2<1.00 (GeV^2)\"")
-        sys.exit(1)  # endif
+        sys.exit(1)
 
     su22_path, fa22_path, sp23_path, comb_path, out_prefix, kin_text = sys.argv[1:7]
 
@@ -443,7 +416,7 @@ def main():
     available_bins = detect_available_bins(su22, fa22, sp23, comb)
     if not available_bins:
         print("[ERROR] No recognizable xB-bin sections found (e.g. enpiLowxBGEchi2FitsALUsinphi).")
-        sys.exit(2)  # endif
+        sys.exit(2)
 
     out_dir = os.path.join("output", "enpi+")
     os.makedirs(out_dir, exist_ok=True)
@@ -460,9 +433,6 @@ def main():
 
         # Combined-only canvas
         plot_combined_only_for_bin(p_comb, bin_tag, kin_text, out_dir, out_prefix)
-    # endfor
-# endfor
 
 if __name__ == "__main__":
     main()
-# endif
