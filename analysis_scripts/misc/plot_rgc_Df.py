@@ -13,7 +13,6 @@ Saves:
 import os
 import numpy as np
 import matplotlib.pyplot as plt
-
 from matplotlib.lines import Line2D
 
 # ─────────────────────────────────────────────────────────────────────
@@ -43,7 +42,8 @@ X_LABEL = r"$-t\ \mathrm{(GeV^{2})}$"
 Y_LABEL = r"$D_{f}$"
 YFIX = (0.2, 0.6)  # fixed y-limits everywhere
 
-COMMON_CUTS = r"$Q^{2}>1,\ W>2,\ y<0.75,\ 0.81<M_{x}^{2}<1.00\ \mathrm{GeV}^{2}$"
+# Removed explicit Mx^2 window from the title text
+COMMON_CUTS = r"$Q^{2}>1,\ W>2,\ y<0.75$"
 XB_LABELS = {
     "integrated": r"$0.10 < x_{B} < 0.60$",
     "low":        r"$0.10 < x_{B} < 0.25$",
@@ -53,7 +53,7 @@ XB_LABELS = {
 }
 
 # ─────────────────────────────────────────────────────────────────────
-# Hard-coded -t points (negating the provided t<0 means these are positive)
+# -t points for each grouping (positive -t, derived from provided t<0)
 # ─────────────────────────────────────────────────────────────────────
 # Integrated (12)
 t_integrated = np.array([
@@ -92,57 +92,62 @@ t_high = np.array([
 xt_high = -t_high
 
 # ─────────────────────────────────────────────────────────────────────
-# Hard-coded dilution factor series (Su22, Fa22, Sp23), per group
+# NEW dilution factor series (Su22, Fa22, Sp23), per group
 # ─────────────────────────────────────────────────────────────────────
-# Integrated (12 each)
-Su22_int_val = np.array([0.48661, 0.449281, 0.418568, 0.466025, 0.447367, 0.483743, 0.428328, 0.451445, 0.424836, 0.43053, 0.433139, 0.480003])
-Su22_int_err = np.array([0.0278322, 0.0284053, 0.0293135, 0.0218104, 0.022329, 0.0180305, 0.0215714, 0.0165681, 0.0156522, 0.0147116, 0.0130666, 0.0151448])
+# ---- Su22 ----
+Su22_int_val = np.array([0.436756, 0.389743, 0.375151, 0.416042, 0.38615, 0.432918,
+                         0.386351, 0.399457, 0.363955, 0.38188, 0.403243, 0.40839])
+Su22_int_err = np.array([0.0252046, 0.0257974, 0.0252794, 0.0193817, 0.0216881, 0.0165798,
+                         0.0187477, 0.0150859, 0.0145927, 0.0129786, 0.0113738, 0.01624])
 
-Fa22_int_val = np.array([0.476551, 0.479322, 0.463499, 0.477185, 0.474655, 0.473627, 0.463388, 0.45963, 0.463811, 0.453108, 0.444489, 0.494976])
-Fa22_int_err = np.array([0.0111445, 0.0101659, 0.0100682, 0.00869438, 0.00822032, 0.00768402, 0.00694078, 0.0066358, 0.00583311, 0.00555336, 0.00556698, 0.00665952])
+Su22_low_val = np.array([0.371153, 0.411246, 0.442005, 0.24115, 0.345906, 0.386037])
+Su22_low_err = np.array([0.0546634, 0.048527, 0.0434388, 0.0646981, 0.0298382, 0.0160896])
 
-Sp23_int_val = np.array([0.482783, 0.478903, 0.506463, 0.475348, 0.483202, 0.477652, 0.479375, 0.464754, 0.439925, 0.440424, 0.447364, 0.49759])
-Sp23_int_err = np.array([0.0230691, 0.0207842, 0.0172687, 0.0180106, 0.0168914, 0.0156568, 0.0136001, 0.0129023, 0.0123617, 0.011096, 0.0103078, 0.0111493])
+Su22_midlow_val = np.array([0.401264, 0.406516, 0.413401, 0.395165, 0.365751, 0.40021])
+Su22_midlow_err = np.array([0.0336909, 0.027903, 0.0293736, 0.0228527, 0.0158932, 0.0140583])
 
-# Low xB (6 each)
-Su22_low_val = np.array([0.454878, 0.418518, 0.47636, 0.308913, 0.373904, 0.460977])
-Su22_low_err = np.array([0.0640986, 0.0644511, 0.0458086, 0.0750217, 0.0371739, 0.0155668])
+Su22_midhigh_val = np.array([0.423179, 0.36488, 0.413048, 0.407872, 0.394538, 0.465601])
+Su22_midhigh_err = np.array([0.0365177, 0.0306887, 0.0198313, 0.0167711, 0.0142019, 0.0186615])
 
-Fa22_low_val = np.array([0.42825, 0.455208, 0.451466, 0.437499, 0.436306, 0.467968])
-Fa22_low_err = np.array([0.0265942, 0.0203284, 0.0190961, 0.0157999, 0.0116434, 0.00690595])
+Su22_high_val = np.array([0.42464, 0.417366, 0.399337, 0.416074, 0.341447, 0.602045])
+Su22_high_err = np.array([0.029742, 0.0264294, 0.0258747, 0.0241789, 0.0386353, 0.4432])
 
-Sp23_low_val = np.array([0.490316, 0.454087, 0.512283, 0.373836, 0.421837, 0.46064])
-Sp23_low_err = np.array([0.03844, 0.0391033, 0.0340766, 0.0357946, 0.0238771, 0.0122773])
+# ---- Fa22 ----
+Fa22_int_val = np.array([0.430085, 0.438061, 0.421113, 0.419502, 0.424511, 0.431267,
+                         0.413241, 0.415529, 0.402449, 0.400425, 0.401987, 0.444058])
+Fa22_int_err = np.array([0.00998986, 0.00918585, 0.00872031, 0.00801108, 0.00721993, 0.00663911,
+                         0.00631867, 0.00586152, 0.00524712, 0.00489041, 0.00492321, 0.00602917])
 
-# Mid-Low xB (6 each)
-Su22_midlow_val = np.array([0.463875, 0.481922, 0.453652, 0.44336, 0.440043, 0.431272])
-Su22_midlow_err = np.array([0.0385929, 0.0307211, 0.030964, 0.0254525, 0.0165836, 0.0152497])
+Fa22_low_val = np.array([0.387409, 0.418177, 0.420803, 0.396076, 0.393667, 0.411351])
+Fa22_low_err = np.array([0.0211724, 0.0162096, 0.0168978, 0.0138455, 0.0101413, 0.00596732])
 
-Fa22_midlow_val = np.array([0.448325, 0.419726, 0.457637, 0.452798, 0.44676, 0.458582])
-Fa22_midlow_err = np.array([0.0167498, 0.0153794, 0.011201, 0.00941558, 0.0068275, 0.00607505])
+Fa22_midlow_val = np.array([0.403978, 0.367673, 0.427534, 0.419153, 0.383641, 0.423595])
+Fa22_midlow_err = np.array([0.0142024, 0.0132877, 0.00987297, 0.00831253, 0.00594896, 0.00549946])
 
-Sp23_midlow_val = np.array([0.454674, 0.477387, 0.440084, 0.483706, 0.438356, 0.472769])
-Sp23_midlow_err = np.array([0.03273, 0.0280927, 0.0236535, 0.0168341, 0.0137165, 0.0108316])
+Fa22_midhigh_val = np.array([0.461051, 0.448859, 0.421039, 0.409896, 0.418673, 0.415829])
+Fa22_midhigh_err = np.array([0.0116705, 0.00960309, 0.00781199, 0.00682293, 0.00537743, 0.0114879])
 
-# Mid-High xB (6 each)
-Su22_midhigh_val = np.array([0.452209, 0.393156, 0.485142, 0.457775, 0.440511, 0.499196])
-Su22_midhigh_err = np.array([0.0390229, 0.0343088, 0.0208589, 0.0191145, 0.0156473, 0.0228349])
+Fa22_high_val = np.array([0.453268, 0.432248, 0.439673, 0.425048, 0.407705, 0.0568268])
+Fa22_high_err = np.array([0.011452, 0.010685, 0.00920494, 0.00877271, 0.0132452, 0.512669])
 
-Fa22_midhigh_val = np.array([0.478929, 0.49171, 0.469737, 0.458246, 0.468491, 0.468527])
-Fa22_midhigh_err = np.array([0.0123799, 0.0102398, 0.00940869, 0.00780097, 0.00600854, 0.0118922])
+# ---- Sp23 ----
+# (Provided values match Fa22 block in your message)
+Sp23_int_val = np.array([0.430085, 0.438061, 0.421113, 0.419502, 0.424511, 0.431267,
+                         0.413241, 0.415529, 0.402449, 0.400425, 0.401987, 0.444058])
+Sp23_int_err = np.array([0.00998986, 0.00918585, 0.00872031, 0.00801108, 0.00721993, 0.00663911,
+                         0.00631867, 0.00586152, 0.00524712, 0.00489041, 0.00492321, 0.00602917])
 
-Sp23_midhigh_val = np.array([0.459963, 0.484987, 0.472083, 0.479568, 0.435612, 0.473629])
-Sp23_midhigh_err = np.array([0.0290533, 0.0207754, 0.0203631, 0.0147656, 0.0127638, 0.0211814])
+Sp23_low_val = np.array([0.387409, 0.418177, 0.420803, 0.396076, 0.393667, 0.411351])
+Sp23_low_err = np.array([0.0211724, 0.0162096, 0.0168978, 0.0138455, 0.0101413, 0.00596732])
 
-# High xB (6 each)
-Su22_high_val = np.array([0.484279, 0.483005, 0.450656, 0.45627, 0.371169, 0.999997])
-Su22_high_err = np.array([0.0315924, 0.0289463, 0.0275378, 0.0265606, 0.0467666, 0.0])  # σ=0 -> masked out
+Sp23_midlow_val = np.array([0.403978, 0.367673, 0.427534, 0.419153, 0.383641, 0.423595])
+Sp23_midlow_err = np.array([0.0142024, 0.0132877, 0.00987297, 0.00831253, 0.00594896, 0.00549946])
 
-Fa22_high_val = np.array([0.516664, 0.490963, 0.50077, 0.485811, 0.486819, 0.247805])
-Fa22_high_err = np.array([0.012285, 0.0118878, 0.0101202, 0.009192, 0.0137284, 0.746155])
+Sp23_midhigh_val = np.array([0.461051, 0.448859, 0.421039, 0.409896, 0.418673, 0.415829])
+Sp23_midhigh_err = np.array([0.0116705, 0.00960309, 0.00781199, 0.00682293, 0.00537743, 0.0114879])
 
-Sp23_high_val = np.array([0.514416, 0.517251, 0.511247, 0.48416, 0.500329, -0.0114814])
-Sp23_high_err = np.array([0.0263089, 0.0213761, 0.0197661, 0.0195764, 0.0258954, 0.21053])
+Sp23_high_val = np.array([0.453268, 0.432248, 0.439673, 0.425048, 0.407705, 0.0568268])
+Sp23_high_err = np.array([0.011452, 0.010685, 0.00920494, 0.00877271, 0.0132452, 0.512669])
 
 # ─────────────────────────────────────────────────────────────────────
 # Prepare series (each period has its own x after masking)
@@ -185,11 +190,14 @@ plt.suptitle(title_int, y=0.95, fontsize=13)
 ax = plt.gca()
 
 if yI_Su22.size:
-    ax.errorbar(xI_Su22, yI_Su22, yerr=eI_Su22, fmt=MARKER, color=COLORS["Su22"], ecolor=COLORS["Su22"], capsize=CAPSIZE, label="Su22")
+    ax.errorbar(xI_Su22, yI_Su22, yerr=eI_Su22, fmt=MARKER, color=COLORS["Su22"],
+                ecolor=COLORS["Su22"], capsize=CAPSIZE, label="Su22")
 if yI_Fa22.size:
-    ax.errorbar(xI_Fa22, yI_Fa22, yerr=eI_Fa22, fmt=MARKER, color=COLORS["Fa22"], ecolor=COLORS["Fa22"], capsize=CAPSIZE, label="Fa22")
+    ax.errorbar(xI_Fa22, yI_Fa22, yerr=eI_Fa22, fmt=MARKER, color=COLORS["Fa22"],
+                ecolor=COLORS["Fa22"], capsize=CAPSIZE, label="Fa22")
 if yI_Sp23.size:
-    ax.errorbar(xI_Sp23, yI_Sp23, yerr=eI_Sp23, fmt=MARKER, color=COLORS["Sp23"], ecolor=COLORS["Sp23"], capsize=CAPSIZE, label="Sp23")
+    ax.errorbar(xI_Sp23, yI_Sp23, yerr=eI_Sp23, fmt=MARKER, color=COLORS["Sp23"],
+                ecolor=COLORS["Sp23"], capsize=CAPSIZE, label="Sp23")
 
 ax.set_xlabel(X_LABEL)
 ax.set_ylabel(Y_LABEL)
@@ -211,13 +219,13 @@ fig.suptitle(rf"$ep \rightarrow en\pi^{{+}}$, {COMMON_CUTS}", y=0.985, fontsize=
 def plot_panel(ax, xS,yS,eS, xF,yF,eF, xP,yP,eP, title, show_xlabel=True, show_ylabel=True):
     h = []
     if yS.size:
-        h1 = ax.errorbar(xS, yS, yerr=eS, fmt=MARKER, color=COLORS["Su22"], ecolor=COLORS["Su22"], capsize=CAPSIZE, label="Su22")
+        ax.errorbar(xS, yS, yerr=eS, fmt=MARKER, color=COLORS["Su22"], ecolor=COLORS["Su22"], capsize=CAPSIZE)
         h.append(Line2D([0],[0], marker=MARKER, color=COLORS["Su22"], linestyle='', label="Su22"))
     if yF.size:
-        h2 = ax.errorbar(xF, yF, yerr=eF, fmt=MARKER, color=COLORS["Fa22"], ecolor=COLORS["Fa22"], capsize=CAPSIZE, label="Fa22")
+        ax.errorbar(xF, yF, yerr=eF, fmt=MARKER, color=COLORS["Fa22"], ecolor=COLORS["Fa22"], capsize=CAPSIZE)
         h.append(Line2D([0],[0], marker=MARKER, color=COLORS["Fa22"], linestyle='', label="Fa22"))
     if yP.size:
-        h3 = ax.errorbar(xP, yP, yerr=eP, fmt=MARKER, color=COLORS["Sp23"], ecolor=COLORS["Sp23"], capsize=CAPSIZE, label="Sp23")
+        ax.errorbar(xP, yP, yerr=eP, fmt=MARKER, color=COLORS["Sp23"], ecolor=COLORS["Sp23"], capsize=CAPSIZE)
         h.append(Line2D([0],[0], marker=MARKER, color=COLORS["Sp23"], linestyle='', label="Sp23"))
     ax.set_title(title, fontsize=12)
     ax.set_xlim(0.0, 1.30)
