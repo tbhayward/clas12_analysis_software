@@ -328,27 +328,28 @@ bool GeneralExclusiveKinematicCuts::applyCuts(int currentFits, bool isMC)
         return PassesDynamicMx2(*x, *t, *Mx2);
     }
 
-    if (property == "enpiLowxLowtB") {
+    if (property == "enpiLowxBLowtB") {
         bool goodEvent = (*fiducial_status >= 111) &&
-                         (*x > 0.10 && *x < 0.30) ;
+                         (*x > 0.10 && *x < 0.30) &&
+                         (-*t > 0.05 && -*t < 0.35);
         if (!goodEvent) return false;
         return PassesDynamicMx2(*x, *t, *Mx2);
     }
-    if (property == "enpiLowxHightB") {
+    if (property == "enpiLowxBHightB") {
         bool goodEvent = (*fiducial_status >= 111) &&
                          (*x > 0.10 && *x < 0.30) &&
                          (-*t > 0.85 && -*t < 1.35);
         if (!goodEvent) return false;
         return PassesDynamicMx2(*x, *t, *Mx2);
     }
-    if (property == "enpiHighxLowtB") {
+    if (property == "enpiHighxBLowtB") {
         bool goodEvent = (*fiducial_status >= 111) &&
                          (*x > 0.35 && *x < 0.60) &&
                          (-*t > 0.05 && -*t < 0.35);
         if (!goodEvent) return false;
         return PassesDynamicMx2(*x, *t, *Mx2);
     }
-    if (property == "enpiHighxHightB") {
+    if (property == "enpiHighxBHightB") {
         bool goodEvent = (*fiducial_status >= 111) &&
                          (*x > 0.35 && *x < 0.60) &&
                          (-*t > 0.85 && -*t < 1.35);
