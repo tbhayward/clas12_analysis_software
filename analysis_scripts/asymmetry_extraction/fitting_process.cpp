@@ -3339,8 +3339,14 @@ struct GEContext {
 
   // Per-φ-bin means of sin(theta_gamma) for current kinematic bin
   std::vector<double> sTG_phi_mean;      // size = nPhiBins
-  // NEW: centered version sTG_centered(φ_i) = sTG_mean(φ_i) - <sTG>_bin
+
+  // Centered & normalized (unit weighted-std) version:
+  // sTGc(φ_i) = [ sTG_mean(φ_i) - ⟨sTG⟩_w ] / std_w, with weights from total yields
   std::vector<double> sTG_phi_centered;  // size = nPhiBins
+
+  // For diagnostics / conditioning
+  double sTG_wmean = 0.0;   // weighted mean over φ
+  double sTG_wstd  = 0.0;   // weighted std over φ (pre-normalization)
 
   int    nPhiBins = 12;
   double phiMin   = 0.0;
@@ -3352,19 +3358,10 @@ static GEContext g_ge_ctx;
 static bool   g_fit_enable_tg  = true;   // set to false to fix A_tg = 0
 static double g_fit_fixed_Atg  = 0.0;    // value used if fixed
 
-// Helper: fetch sTG mean for a given phi using the histogram's binning
-static inline double GE_sTG_for_phi(double phi, TH1D* hRef) {
-  if (!hRef || g_ge_ctx.sTG_phi_mean.empty()) return 0.0;
-  const int ib = hRef->GetXaxis()->FindBin(phi);           // 1..n
-  const int idx = std::max(1, std::min(ib, (int)g_ge_ctx.sTG_phi_mean.size())) - 1;
-  return g_ge_ctx.sTG_phi_mean[idx];
-}
-
-// NEW helper: fetch centered sTG(φ)
-// (sTG_mean(φ_i) − ⟨sTG⟩_bin), where ⟨sTG⟩_bin is the charge-weighted φ-average
+// Helper: fetch centered/normalized sTG(φ) using the histogram's binning
 static inline double GE_sTG_centered_for_phi(double phi, TH1D* hRef) {
   if (!hRef || g_ge_ctx.sTG_phi_centered.empty()) return 0.0;
-  const int ib = hRef->GetXaxis()->FindBin(phi);           // 1..n
+  const int ib  = hRef->GetXaxis()->FindBin(phi);           // 1..n
   const int idx = std::max(1, std::min(ib, (int)g_ge_ctx.sTG_phi_centered.size())) - 1;
   return g_ge_ctx.sTG_phi_centered[idx];
 }
@@ -3381,7 +3378,7 @@ static inline double GE_sTG_centered_for_phi(double phi, TH1D* hRef) {
 //  p[6] = F_LL^{cosφ} / F_UU
 //  p[7] = F_UU^{cosφ} / F_UU         (shared UU modulation)
 //  p[8] = F_UU^{cos2φ} / F_UU        (shared UU modulation)
-//  p[9] = A_tg                       (leakage amp multiplying ⟨sinθγ⟩_centered·sinφ in TSA numerator)
+//  p[9] = A_tg                       (leakage amp × sTGc(φ)·sinφ in TSA numerator; no depol)
 // NOTE: A_tg carries **no depolarization factor** (per your request).
 static void chi2Fcn_GeneralExclusive(Int_t& /*npar*/, Double_t* /*gin*/, Double_t& f,
                                      Double_t* par, Int_t /*iflag*/) {
@@ -3397,15 +3394,15 @@ static void chi2Fcn_GeneralExclusive(Int_t& /*npar*/, Double_t* /*gin*/, Double_
          + g_ge_ctx.rBA * aUUc2 * std::cos(2.0*phi);
   };
 
-  // model evaluators use per-φ-bin *centered* sTG via the reference histogram binning
+  // model evaluators use per-φ-bin *centered & normalized* sTG via the histogram binning
   auto modelALU = [&](double phi, TH1D* /*hRef*/) {
     return a0 + (g_ge_ctx.rWA * aLU * std::sin(phi)) / denom(phi);
   };
   auto modelAUL = [&](double phi, TH1D* hRef) {
-    const double sTGc = GE_sTG_centered_for_phi(phi, hRef);  // centered ⟨sinθγ⟩ for the φ-bin
+    const double sTGc = GE_sTG_centered_for_phi(phi, hRef);  // centered+normalized ⟨sinθγ⟩
     const double num = g_ge_ctx.rVA * aUL1 * std::sin(phi)
                      + g_ge_ctx.rBA * aUL2 * std::sin(2.0*phi)
-                     + aTG * sTGc * std::sin(phi);  // ← centered leakage (no depol)
+                     + aTG * sTGc * std::sin(phi);  // leakage basis (no depol)
     return a1 + num / denom(phi);
   };
   auto modelALL = [&](double phi, TH1D* /*hRef*/) {
@@ -3510,12 +3507,18 @@ createHistogramForBin_GeneralExclusive(const char* histBaseName, int binIndex, c
   TH1D* hAUL = new TH1D(Form("%s_AUL", histBaseName), "", nPhiBins, phiMin, phiMax);
   TH1D* hALL = new TH1D(Form("%s_ALL", histBaseName), "", nPhiBins, phiMin, phiMax);
 
+  // We'll also need per-φ weights from total charge-normalized yield
+  std::vector<double> w_tot(nPhiBins, 0.0);
+
   for (int ib = 1; ib <= nPhiBins; ++ib) {
     // normalize to charges (guard 0)
     const double Npp = ppp->GetBinContent(ib) / std::max(cpp, 1.0);
     const double Npm = ppm->GetBinContent(ib) / std::max(cpm, 1.0);
     const double Nmp = pmp->GetBinContent(ib) / std::max(cmp, 1.0);
     const double Nmm = pmm->GetBinContent(ib) / std::max(cmm, 1.0);
+
+    // save weight used for centering/normalizing ⟨sinθγ⟩
+    w_tot[ib-1] = std::max(0.0, Npp + Npm + Nmp + Nmm);
 
     // BSA
     {
@@ -3546,24 +3549,34 @@ createHistogramForBin_GeneralExclusive(const char* histBaseName, int binIndex, c
     g_ge_ctx.sTG_phi_mean[i] = (sTG_cnt[i]>0) ? (sTG_sum[i]/sTG_cnt[i]) : 0.0;
   }
 
-  // Compute charge-weighted φ-average ⟨sTG⟩_bin and build centered array
+  // Compute charge-weighted φ-average ⟨sTG⟩_w and build centered+normalized array
   // Weight each φ-bin mean by total charge-normalized counts used in TSA (sum of four samples)
   double wsum = 0.0, ssum = 0.0;
-  for (int ib = 1; ib <= nPhiBins; ++ib) {
-    const double w =
-      (ppp->GetBinContent(ib) / std::max(cpp, 1.0)) +
-      (ppm->GetBinContent(ib) / std::max(cpm, 1.0)) +
-      (pmp->GetBinContent(ib) / std::max(cmp, 1.0)) +
-      (pmm->GetBinContent(ib) / std::max(cmm, 1.0));
-    const double s = g_ge_ctx.sTG_phi_mean[ib-1];
+  for (int i = 0; i < nPhiBins; ++i) {
+    const double w = std::max(0.0, w_tot[i]);
     wsum += w;
-    ssum += w * s;
+    ssum += w * g_ge_ctx.sTG_phi_mean[i];
   }
-  const double sTG_bin_mean = (wsum>0.0) ? (ssum/wsum) : 0.0;
+  g_ge_ctx.sTG_wmean = (wsum>0.0) ? (ssum/wsum) : 0.0;
 
+  // weighted std
+  double vsum = 0.0;
+  for (int i = 0; i < nPhiBins; ++i) {
+    const double w   = std::max(0.0, w_tot[i]);
+    const double dif = g_ge_ctx.sTG_phi_mean[i] - g_ge_ctx.sTG_wmean;
+    vsum += w * dif * dif;
+  }
+  g_ge_ctx.sTG_wstd = (wsum>0.0) ? std::sqrt(vsum/wsum) : 0.0;
+
+  // Center & normalize (if std ~ 0, just zero it out)
   g_ge_ctx.sTG_phi_centered.assign(nPhiBins, 0.0);
-  for (int ib=0; ib<nPhiBins; ++ib) {
-    g_ge_ctx.sTG_phi_centered[ib] = g_ge_ctx.sTG_phi_mean[ib] - sTG_bin_mean;
+  const double eps_std = 1e-4; // absolute threshold for "flat in φ"
+  if (g_ge_ctx.sTG_wstd > eps_std) {
+    for (int i=0; i<nPhiBins; ++i) {
+      g_ge_ctx.sTG_phi_centered[i] = (g_ge_ctx.sTG_phi_mean[i] - g_ge_ctx.sTG_wmean) / g_ge_ctx.sTG_wstd;
+    }
+  } else {
+    for (int i=0; i<nPhiBins; ++i) g_ge_ctx.sTG_phi_centered[i] = 0.0;
   }
 
   g_ge_ctx.nPhiBins = nPhiBins;
@@ -3644,7 +3657,7 @@ static void plotHistogramAndFit_GeneralExclusive(
     gr->GetYaxis()->SetRangeUser(ylow, yhigh);
     gr->Draw("AP");
 
-    // Model curve (uses centered sTG via ymodel)
+    // Model curve (uses centered+normalized sTG via ymodel)
     const int np = 360;
     TGraph* gm = new TGraph(np);
     for (int j=0; j<np; ++j){
@@ -3675,7 +3688,7 @@ static void plotHistogramAndFit_GeneralExclusive(
   auto fillTSA = [&](TLegend* L){
     L->AddEntry((TObject*)0, Form("F_{UL}^{sin#phi}/F_{UU}  = %.6f", aUL1), "");
     L->AddEntry((TObject*)0, Form("F_{UL}^{sin2#phi}/F_{UU} = %.6f", aUL2), "");
-    L->AddEntry((TObject*)0, Form("A_{tg} (leak, centered)  = %.6f", aTG),  "");
+    L->AddEntry((TObject*)0, Form("A_{tg} (leak, centered/σ) = %.6f", aTG),  "");
     L->AddEntry((TObject*)0, Form("F_{UU}^{cos#phi}/F_{UU}  = %.6f", aUUc),  "");
     L->AddEntry((TObject*)0, Form("F_{UU}^{cos2#phi}/F_{UU} = %.6f", aUUc2), "");
   };
@@ -3726,7 +3739,7 @@ void performChi2Fits_GeneralExclusive(const char* output_file,
   sALU    << prefix << "GEchi2FitsALUsinphi = {";
   sAUL    << prefix << "GEchi2FitsAULsinphi = {";
   sAUL2   << prefix << "GEchi2FitsAULsin2phi = {";
-  sATG    << prefix << "GEchi2FitsAUL_tgleak = {";          // ← centered leakage output
+  sATG    << prefix << "GEchi2FitsAUL_tgleak = {";          // ← centered+normalized leakage output
   sALL    << prefix << "GEchi2FitsALL = {";
   sALLc   << prefix << "GEchi2FitsALLcosphi = {";
   sAUUc   << prefix << "GEchi2FitsAUUcosphi = {";
@@ -3767,7 +3780,7 @@ void performChi2Fits_GeneralExclusive(const char* output_file,
     "F_LU_sin/F_UU","F_UL_sin/F_UU","F_UL_sin2/F_UU",
     "F_LL/F_UU","F_LL_cos/F_UU",
     "F_UU_cos/F_UU","F_UU_cos2/F_UU",
-    "A_tg" // leakage amplitude (× centered ⟨sinθγ⟩ in TSA numerator)
+    "A_tg" // leakage amplitude (× centered/σ ⟨sinθγ⟩ in TSA numerator)
   };
 
   // Truncate/create matrix files with headers (unchanged apart from param list)
@@ -3799,7 +3812,7 @@ void performChi2Fits_GeneralExclusive(const char* output_file,
     std::cout << "Beginning simultaneous chi2 GE fit for " << binNames[currentFits]
               << " bin " << i << ". " << std::endl;
 
-    // Build histograms and per-φ-bin ⟨sinθγ⟩ (and centered)
+    // Build histograms and per-φ-bin ⟨sinθγ⟩ (and centered+normalized)
     char hname[64]; snprintf(hname, sizeof(hname), "GE_%zu", i);
     TH1D *hALU, *hAUL, *hALL;
     std::tie(hALU, hAUL, hALL) = createHistogramForBin_GeneralExclusive(hname, (int)i, prefix);
@@ -3875,8 +3888,12 @@ void performChi2Fits_GeneralExclusive(const char* output_file,
     minuit.DefineParameter(8,  "F_UU_cos2/F_UU",  0.00,  0.01,  -0.4,    0.4);
     minuit.DefineParameter(9,  "A_tg",            0.00,  0.01,  -0.5,    0.5); 
 
-    if (!g_fit_enable_tg) {
+    // If ⟨sinθγ⟩ is essentially flat in φ for this bin, A_tg is unidentifiable → fix it.
+    if (!g_fit_enable_tg || g_ge_ctx.sTG_wstd <= 1e-4) {
       minuit.FixParameter(9);  // uses the value from DefineParameter (0.00)
+      if (g_ge_ctx.sTG_wstd <= 1e-4) {
+        std::cout << "  [info] Bin " << i << ": sTG_wstd ≈ 0; fixing A_tg=0." << std::endl;
+      }
     }
 
     // Strategy / minimize
@@ -3923,7 +3940,7 @@ void performChi2Fits_GeneralExclusive(const char* output_file,
     sALU    << "{" << meanVar << ", " << pval[2]  << ", " << perr[2]  << "}";
     sAUL    << "{" << meanVar << ", " << pval[3]  << ", " << perr[3]  << "}";
     sAUL2   << "{" << meanVar << ", " << pval[4]  << ", " << perr[4]  << "}";
-    sATG    << "{" << meanVar << ", " << pval[9]  << ", " << perr[9]  << "}"; // centered leakage
+    sATG    << "{" << meanVar << ", " << pval[9]  << ", " << perr[9]  << "}"; // centered/σ leakage
     sALL    << "{" << meanVar << ", " << pval[5]  << ", " << perr[5]  << "}";
     sALLc   << "{" << meanVar << ", " << pval[6]  << ", " << perr[6]  << "}";
     sAUUc   << "{" << meanVar << ", " << pval[7]  << ", " << perr[7]  << "}";
@@ -4003,7 +4020,7 @@ void performChi2Fits_GeneralExclusive(const char* output_file,
     out << sALU.str()    << "\n";
     out << sAUL.str()    << "\n";
     out << sAUL2.str()   << "\n";
-    out << sATG.str()    << "\n";   // leakage amplitude (centered)
+    out << sATG.str()    << "\n";   // leakage amplitude (centered/σ)
     out << sALL.str()    << "\n";
     out << sALLc.str()   << "\n";
     out << sAUUc.str()   << "\n";
