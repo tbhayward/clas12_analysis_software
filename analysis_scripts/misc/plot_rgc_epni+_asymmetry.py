@@ -60,8 +60,8 @@ XLIM_T = (0.0, 1.30)
 X_LABEL = r"$-t\ (\mathrm{GeV}^{2})$"
 
 # y-axis ranges per panel
-YLIM_LU = (-0.4, 0.4)   # BSA
-YLIM_UL = (-0.4, 0.4)   # TSA
+YLIM_LU = (-0.2, 0.3)   # BSA
+YLIM_UL = (-0.2, 0.3)   # TSA
 YLIM_LL = (-1.0, 1.0)   # DSA
 YLIM_UU = (-1.0, 1.0)   # UU
 

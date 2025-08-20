@@ -4,9 +4,12 @@
 #include <TFile.h>
 #include <TTree.h>
 
+// -----------------------------------------------------------------------------
 // constants
-static constexpr double m_e  = 0.000511;   // GeV
-static constexpr double m_pi = 0.139570;   // GeV
+// -----------------------------------------------------------------------------
+static constexpr double m_e  = 0.000511;        // GeV
+static constexpr double m_pi = 0.139570;        // GeV
+static constexpr double M_N  = 0.9382720813;    // GeV (nucleon mass, proton)
 
 // map run -> beam energy
 static double beamEnergy(int runnum) {
@@ -48,6 +51,20 @@ static double compute_t_scalar(int runnum,
     return dE*dE - (dx*dx + dy*dy + dz*dz);
 }
 
+// compute sin(theta_gamma) per
+//   sin θγ = γ * sqrt( (1 - y - (1/4) y^2 γ^2) / (1 + γ^2) ),  γ = 2 xB M_N / Q
+static double compute_sin_theta_gamma(double y, double xB, double Q2)
+{
+    if (Q2 <= 0.0) return 0.0;
+    const double Q      = std::sqrt(Q2);
+    const double gamma  = (Q > 0.0) ? (2.0 * xB * M_N / Q) : 0.0;
+    const double num    = 1.0 - y - 0.25 * y * y * gamma * gamma;
+    const double den    = 1.0 + gamma * gamma;
+    if (den <= 0.0) return 0.0;
+    const double ratio  = std::max(0.0, num / den);   // protect sqrt
+    return gamma * std::sqrt(ratio);
+}
+
 int main(int argc, char** argv) {
     if (argc != 2) {
         std::cerr << "Usage: " << argv[0] << " <input.root>\n";
@@ -71,23 +88,28 @@ int main(int argc, char** argv) {
         return 1;
     }
 
-    // we will recompute t, so disable input branch t if present
+    // we will recompute t; also ensure we don't carry any existing sinthetagamma
     tin->SetBranchStatus("t", 0);
+    tin->SetBranchStatus("sinthetagamma", 0);
 
-    // set addresses
+    // set addresses (add x, Q2, y which are needed for sin(theta_gamma))
     Int_t    runnum;
     Double_t e_p, e_theta, e_phi;
     Double_t p_p, p_theta, p_phi;
-    Double_t Mx2;  // needed for the cut Mx2 < 1.4
+    Double_t Mx2;
+    Double_t xB, Q2, y;
 
-    tin->SetBranchAddress("runnum", &runnum);
-    tin->SetBranchAddress("e_p", &e_p);
-    tin->SetBranchAddress("e_theta", &e_theta);
-    tin->SetBranchAddress("e_phi", &e_phi);
-    tin->SetBranchAddress("p_p", &p_p);
-    tin->SetBranchAddress("p_theta", &p_theta);
-    tin->SetBranchAddress("p_phi", &p_phi);
-    tin->SetBranchAddress("Mx2", &Mx2);
+    tin->SetBranchAddress("runnum",   &runnum);
+    tin->SetBranchAddress("e_p",      &e_p);
+    tin->SetBranchAddress("e_theta",  &e_theta);
+    tin->SetBranchAddress("e_phi",    &e_phi);
+    tin->SetBranchAddress("p_p",      &p_p);
+    tin->SetBranchAddress("p_theta",  &p_theta);
+    tin->SetBranchAddress("p_phi",    &p_phi);
+    tin->SetBranchAddress("Mx2",      &Mx2);
+    tin->SetBranchAddress("x",        &xB);
+    tin->SetBranchAddress("Q2",       &Q2);
+    tin->SetBranchAddress("y",        &y);
 
     TFile *fout = TFile::Open(outfile.c_str(), "RECREATE");
     if (!fout || fout->IsZombie()) {
@@ -95,22 +117,26 @@ int main(int argc, char** argv) {
         return 1;
     }
 
-    // clone structure (with 0 entries) and add our computed t
+    // clone structure (with 0 entries) and add our computed variables
     TTree *tout = tin->CloneTree(0);
     Double_t t_val;
-    tout->Branch("t", &t_val, "t/D");
+    Double_t sinthetagamma;
+    tout->Branch("t",             &t_val,         "t/D");
+    tout->Branch("sinthetagamma", &sinthetagamma, "sinthetagamma/D");
 
-    Long64_t n = tin->GetEntries();
+    const Long64_t n = tin->GetEntries();
     for (Long64_t i = 0; i < n; ++i) {
         tin->GetEntry(i);
 
-        // apply the requested cut: only write events with Mx2 < 1.4
-        if (Mx2 >= 1.4) continue;
+        // write only events with Mx2 < 1.3 (your original post-process filter)
+        if (Mx2 >= 1.3) continue;
 
-        t_val = compute_t_scalar(runnum, e_p, e_theta, e_phi,
-                                 p_p, p_theta, p_phi);
+        // compute new values
+        t_val          = compute_t_scalar(runnum, e_p, e_theta, e_phi, p_p, p_theta, p_phi);
+        sinthetagamma  = compute_sin_theta_gamma(y, xB, Q2);
+
         tout->Fill();
-    } // end for
+    }
 
     fout->Write();
     fout->Close();
