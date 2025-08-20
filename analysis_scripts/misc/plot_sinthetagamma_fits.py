@@ -8,8 +8,11 @@ Top row:  low x_B  |  high x_B
 Bottom:   low -t   |  high -t
 
 Each panel overlays two harmonics (markers only, no connecting lines):
-  • n = 1  (AULsinphi)   — circles
-  • n = 2  (AULsin2phi)  — squares
+  • n = 1  (AULsinphi)   — circles, tab:blue
+  • n = 2  (AULsin2phi)  — squares, tab:orange
+
+Also: fit each dataset to a constant (weighted mean) and plot that as a thin
+dashed horizontal line in the same color. Legends include χ²/ndf of that fit.
 
 Y range fixed to [-0.2, 0.2].
 Output:  output/enpi+/sinthetagamma_fits.pdf
@@ -25,7 +28,7 @@ import matplotlib.pyplot as plt
 def as_xyz(triples, drop_x_le=0.0):
     """
     Convert a list of {x, y, e} triples to clean numpy arrays.
-    Drops any row with non-finite values or with x <= drop_x_le.
+    Drops any row with non-finite values or with x <= drop_x_le (sentinels).
     Sorts by x ascending.
     """
     if not triples:
@@ -41,22 +44,52 @@ def as_xyz(triples, drop_x_le=0.0):
     order = np.argsort(x)
     return x[order], y[order], e[order]
 
-def plot_series_points(ax, x, y, e, label, marker):
+def fit_constant(y, e):
+    """
+    Weighted-mean fit (constant model).
+      mu   = sum(w*y)/sum(w),  w=1/e^2
+      chi2 = sum((y-mu)^2 / e^2)
+      ndf  = N - 1
+    Returns (mu, chi2, ndf). If no valid points, returns (nan, 0, 0).
+    """
+    y = np.asarray(y, float)
+    e = np.asarray(e, float)
+    m = np.isfinite(y) & np.isfinite(e) & (e > 0)
+    n = int(np.count_nonzero(m))
+    if n == 0:
+        return np.nan, 0.0, 0
+    w  = 1.0 / (e[m]**2)
+    mu = float(np.sum(w * y[m]) / np.sum(w))
+    chi2 = float(np.sum(((y[m] - mu)**2) * w))
+    ndf = max(0, n - 1)
+    return mu, chi2, ndf
+
+def plot_series_points(ax, x, y, e, label, marker, color):
     """Markers + error bars only (no connecting lines)."""
     if x.size == 0:
         return None
     return ax.errorbar(
         x, y, yerr=e,
-        fmt=marker,           # marker only
-        linestyle='None',     # no line between points
+        fmt=marker, color=color, ecolor=color,
+        linestyle='None',   # no line between points
         ms=4, lw=1.0, capsize=3,
         label=label
     )
 
 def panel(ax, x1,y1,e1, x2,y2,e2, title):
-    h1 = plot_series_points(ax, x1, y1, e1, r"$n=1$", marker="o")
-    h2 = plot_series_points(ax, x2, y2, e2, r"$n=2$", marker="s")
+    # Constant fits
+    mu1, chi2_1, ndf_1 = fit_constant(y1, e1) if y1.size else (np.nan, 0.0, 0)
+    mu2, chi2_2, ndf_2 = fit_constant(y2, e2) if y2.size else (np.nan, 0.0, 0)
 
+    # Labels with χ²/ndf
+    lab1 = r"$n=1$  ($\chi^{2}/\mathrm{ndf}={:.1f}/{}$)".format(chi2_1, ndf_1)
+    lab2 = r"$n=2$  ($\chi^{2}/\mathrm{ndf}={:.1f}/{}$)".format(chi2_2, ndf_2)
+
+    # Plot points
+    h1 = plot_series_points(ax, x1, y1, e1, lab1, marker="o", color="tab:blue")
+    h2 = plot_series_points(ax, x2, y2, e2, lab2, marker="s", color="tab:orange")
+
+    # Axes cosmetics
     ax.set_title(title, fontsize=12)
     ax.set_xlabel(r"$\sin\theta_{\gamma}$")
     ax.set_ylabel(r"$F_{UL}^{\sin(n\phi)} / F_{UU}$")
@@ -76,6 +109,14 @@ def panel(ax, x1,y1,e1, x2,y2,e2, title):
 
     ax.grid(True, linestyle="--", alpha=0.35)
 
+    # Overlay constant-fit lines (thin dashed) in same colors
+    xmin, xmax = ax.get_xlim()
+    if np.isfinite(mu1):
+        ax.plot([xmin, xmax], [mu1, mu1], linestyle="--", linewidth=1.0, color="tab:blue")
+    if np.isfinite(mu2):
+        ax.plot([xmin, xmax], [mu2, mu2], linestyle="--", linewidth=1.0, color="tab:orange")
+
+    # Legend
     handles = [h for h in (h1, h2) if h is not None]
     if handles:
         ax.legend(handles=handles, frameon=True, fontsize=10,
@@ -135,7 +176,7 @@ enpiLowtGEchi2FitsAULsin2phi = [
     [0.356821364, -0.020663126, 0.014489705],
 ]
 
-# High -t
+# High -t  (note: name preserved as provided: "Hight")
 enpiHightGEchi2FitsAULsinphi = [
     [0.105863431, -0.025144693, 0.053163791],
     [0.160573253, -0.023512803, 0.019664193],
