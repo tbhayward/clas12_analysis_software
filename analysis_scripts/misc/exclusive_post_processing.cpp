@@ -3,6 +3,7 @@
 #include <cmath>
 #include <TFile.h>
 #include <TTree.h>
+#include <TObjArray.h>
 
 // -----------------------------------------------------------------------------
 // constants
@@ -51,7 +52,7 @@ static double compute_t_scalar(int runnum,
     return dE*dE - (dx*dx + dy*dy + dz*dz);
 }
 
-// compute sin(theta_gamma) per
+// compute sin(theta_gamma):
 //   sin θγ = γ * sqrt( (1 - y - (1/4) y^2 γ^2) / (1 + γ^2) ),  γ = 2 xB M_N / Q
 static double compute_sin_theta_gamma(double y, double xB, double Q2)
 {
@@ -63,6 +64,10 @@ static double compute_sin_theta_gamma(double y, double xB, double Q2)
     if (den <= 0.0) return 0.0;
     const double ratio  = std::max(0.0, num / den);   // protect sqrt
     return gamma * std::sqrt(ratio);
+}
+
+static bool has_branch(TTree* t, const char* name) {
+    return t && t->GetListOfBranches() && t->GetListOfBranches()->FindObject(name);
 }
 
 int main(int argc, char** argv) {
@@ -88,11 +93,11 @@ int main(int argc, char** argv) {
         return 1;
     }
 
-    // we will recompute t; also ensure we don't carry any existing sinthetagamma
-    tin->SetBranchStatus("t", 0);
-    tin->SetBranchStatus("sinthetagamma", 0);
+    // We will recompute t; also make sure we don't try to read an input sinthetagamma if it exists.
+    if (has_branch(tin, "t"))             tin->SetBranchStatus("t", 0);
+    if (has_branch(tin, "sinthetagamma")) tin->SetBranchStatus("sinthetagamma", 0);
 
-    // set addresses (add x, Q2, y which are needed for sin(theta_gamma))
+    // set addresses (need x, Q2, y for sin(theta_gamma))
     Int_t    runnum;
     Double_t e_p, e_theta, e_phi;
     Double_t p_p, p_theta, p_phi;
