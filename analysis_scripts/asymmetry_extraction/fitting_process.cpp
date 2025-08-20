@@ -3329,9 +3329,6 @@ void performChi2Fits_eppi0(const char* output_file, const char* kinematic_file,
 // ─────────────────────────────────────────────────────────────────────
 // Context and globals
 // ─────────────────────────────────────────────────────────────────────
-// ─────────────────────────────────────────────────────────────────────
-// Context and global
-// ─────────────────────────────────────────────────────────────────────
 struct GEContext {
   TH1D* hLU  = nullptr;  // ALU(phi)
   TH1D* hUL  = nullptr;  // AUL(phi)

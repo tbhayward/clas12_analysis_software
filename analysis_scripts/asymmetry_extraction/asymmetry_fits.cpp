@@ -137,7 +137,7 @@ double TSA_single_hadron(double* x, double* par) {
   double phi = x[0];
   // Calculate and return the value of the function for the given phi and parameters 
   // return AUL_offset + AUL_sinphi*sin(phi)+AUL_sin2phi*sin(2*phi);
-  return AUL_offset + AUL_sinphi*sin(phi)+AUL_sin2phi*sin(2*phi)/(1+AUU_cosphi*cos(phi)+AUU_cos2phi*cos(2*phi));
+  return AUL_offset + (AUL_sinphi*sin(phi)+AUL_sin2phi*sin(2*phi))/(1+AUU_cosphi*cos(phi)+AUU_cos2phi*cos(2*phi));
 }
 
 double TSA_b2b_dihadron(double* x, double* par) {
@@ -226,7 +226,7 @@ double DSA_single_hadron(double* x, double* par) {
   // Retrieve the phi variable from the input x array
   double phi = x[0];
   // Calculate and return the value of the function for the given phi and parameters 
-  return ALL + ALL_cosphi*cos(phi)/(1+AUU_cosphi*cos(phi)+AUU_cos2phi*cos(2*phi));
+  return (ALL + ALL_cosphi*cos(phi))/(1+AUU_cosphi*cos(phi)+AUU_cos2phi*cos(2*phi));
   // return ALL;
 }
 
