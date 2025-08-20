@@ -36,6 +36,7 @@ double GE_model_BSA(double phi, double ALU,
                     double B_UUcos, double C_UUcos2);
 
 // TSA(phi) = ( AUL*sin(phi) + AUL2*sin(2phi) + Atg*sTG*sin(phi) ) / GE_den(...)
+// NOTE: for the leakage we pass a *centered* sTG per φ-bin from the fit driver.
 double GE_model_TSA_with_sTG(double phi, double AUL, double AUL2, double Atg, double sTG,
                              double B_UUcos, double C_UUcos2);
 
@@ -48,7 +49,8 @@ double GE_model_DSA(double phi, double ALL, double ALL2,
 // BSA params: [0]=ALU, [1]=B_UUcos, [2]=C_UUcos2
 double BSA_general_exclusive_TF1(double* x, double* par);
 
-// TSA params: [0]=AUL, [1]=AUL2, [2]=Atg, [3]=sTG(const), [4]=B_UUcos, [5]=C_UUcos2
+// TSA params: [0]=AUL, [1]=AUL2, [2]=Atg, [3]=(IGNORED), [4]=B_UUcos, [5]=C_UUcos2
+// The centered sTG(φ-bin) is injected inside the fit; par[3] is ignored for overlays.
 double TSA_general_exclusive_TF1(double* x, double* par);
 
 // DSA params: [0]=ALL, [1]=ALL2, [2]=B_UUcos, [3]=C_UUcos2

@@ -284,6 +284,7 @@ double DSA_dihadron(double* x, double* par) {
 }
 
 /******** General Exclusive all defined together ********/
+/******** General Exclusive all defined together ********/
 // Guard against tiny denominators
 static inline double GE_safe_div(double num, double den) {
   const double eps = 1e-12;
@@ -330,9 +331,12 @@ double BSA_general_exclusive_TF1(double* x, double* par) {
   return GE_model_BSA(x[0], par[0], par[1], par[2]);
 }
 
-// TSA params: [0]=AUL, [1]=AUL2, [2]=Atg, [3]=sTG(const), [4]=B, [5]=C
+// TSA params: [0]=AUL, [1]=AUL2, [2]=Atg, [3]=(IGNORED), [4]=B, [5]=C
+// NOTE: For overlays only. The leakage uses *centered* ⟨sinθγ⟩ per φ-bin,
+// which is injected inside the fit (not via a constant TF1 param). We therefore
+// set sTG=0 here to avoid re-introducing a constant-degenerate term.
 double TSA_general_exclusive_TF1(double* x, double* par) {
-  return GE_model_TSA_with_sTG(x[0], par[0], par[1], par[2], par[3], par[4], par[5]);
+  return GE_model_TSA_with_sTG(x[0], par[0], par[1], par[2], 0.0, par[4], par[5]);
 }
 
 // DSA params: [0]=ALL, [1]=ALL2, [2]=B, [3]=C
@@ -367,18 +371,18 @@ double asymmetry_error_calculation(double currentVariable,
   int asymmetry_index) {
   double Df = dilutionFactors[currentBin].first;
   double sigmaDf = dilutionFactors[currentBin].second;
-  // // Su22
-  // double sigmaPb = 0.0086;
-  // double sigmaPtp = 0.0368;
-  // double sigmaPtm = 0.0367;
+  // Su22
+  double sigmaPb = 0.0086;
+  double sigmaPtp = 0.0368;
+  double sigmaPtm = 0.0367;
   // // Fa22
   // double sigmaPb = 0.0045;
   // double sigmaPtp = 0.0243;
   // double sigmaPtm = 0.0243;
-  // Sp23
-  double sigmaPb = 0.0061;
-  double sigmaPtp = 0.0378;
-  double sigmaPtm = 0.0378;
+  // // Sp23
+  // double sigmaPb = 0.0061;
+  // double sigmaPtp = 0.0378;
+  // double sigmaPtm = 0.0378;
 
   double Npp = npp;
   double Npm = npm;
