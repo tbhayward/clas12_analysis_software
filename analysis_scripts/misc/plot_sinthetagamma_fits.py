@@ -15,7 +15,8 @@ Each panel overlays two harmonics (markers only, no connecting lines):
   • n = 2  (AULsin2phi)  — squares, tab:orange
 
 Also: fit each dataset to a constant (weighted mean) and plot that as a thin
-dashed horizontal line in the same color. Legends include χ²/ndf of that fit.
+dashed horizontal line in the same color. Legends include χ²/ndf of that fit
+(as a single decimal number).
 
 Y range fixed to [-0.2, 0.2].
 Output:  output/enpi+/sinthetagamma_fits.pdf
@@ -84,9 +85,13 @@ def panel(ax, x1,y1,e1, x2,y2,e2, title):
     mu1, chi2_1, ndf_1 = fit_constant(y1, e1) if y1.size else (np.nan, 0.0, 0)
     mu2, chi2_2, ndf_2 = fit_constant(y2, e2) if y2.size else (np.nan, 0.0, 0)
 
-    # Labels with χ²/ndf
-    lab1 = rf"$n=1$  ($\chi^{{2}}/\mathrm{{ndf}}={chi2_1:.1f}/{ndf_1}$)"
-    lab2 = rf"$n=2$  ($\chi^{{2}}/\mathrm{{ndf}}={chi2_2:.1f}/{ndf_2}$)"
+    # χ²/ndf as a single decimal number (handle ndf=0 safely)
+    r1 = (chi2_1 / ndf_1) if ndf_1 > 0 else 0.0
+    r2 = (chi2_2 / ndf_2) if ndf_2 > 0 else 0.0
+
+    # Labels with χ²/ndf value (single number)
+    lab1 = rf"$n=1$  ($\chi^{{2}}/\mathrm{{ndf}}={r1:.1f}$)"
+    lab2 = rf"$n=2$  ($\chi^{{2}}/\mathrm{{ndf}}={r2:.1f}$)"
 
     # Plot points
     h1 = plot_series_points(ax, x1, y1, e1, lab1, marker="o", color="tab:blue")
