@@ -3355,7 +3355,7 @@ struct GEContext {
 static GEContext g_ge_ctx;
 
 // Global switch to enable/disable the leakage fit (initial 0 and fixed if disabled)
-static bool   g_fit_enable_tg  = true;   // set to false to fix A_tg = 0
+static bool   g_fit_enable_tg  = false;   // set to false to fix A_tg = 0
 static double g_fit_fixed_Atg  = 0.0;    // value used if fixed
 
 // Helper: fetch centered/normalized sTG(φ) using the histogram's binning
@@ -3726,7 +3726,7 @@ void performChi2Fits_GeneralExclusive(const char* output_file,
   // Control the leakage fit here (global switch)
   //   true  -> fit A_tg
   //   false -> fix A_tg = g_fit_fixed_Atg (default 0)
-  g_fit_enable_tg = true;      // ← set to false to disable fitting
+  g_fit_enable_tg = false;      // ← set to false to disable fitting
   g_fit_fixed_Atg = 0.0;
 
   // Prepare output streams (add A_tg array)
