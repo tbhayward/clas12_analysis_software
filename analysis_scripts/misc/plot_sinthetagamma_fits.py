@@ -4,8 +4,11 @@
 """
 2x2 panels of F_UL^{sin(n phi)}/F_UU vs sin(theta_gamma) with uncertainties.
 
-Top row:  low x_B  |  high x_B
-Bottom:   low -t   |  high -t
+Panels (x_B, -t):
+  [0,0] Low x_B & Low -t      : 0.10<x_B<0.30, 0.05<-t<0.35
+  [0,1] Low x_B & High -t     : 0.10<x_B<0.30, 0.85<-t<1.35
+  [1,0] High x_B & Low -t     : 0.35<x_B<0.60, 0.05<-t<0.35
+  [1,1] High x_B & High -t    : 0.35<x_B<0.60, 0.85<-t<1.35
 
 Each panel overlays two harmonics (markers only, no connecting lines):
   • n = 1  (AULsinphi)   — circles, tab:blue
@@ -46,7 +49,7 @@ def as_xyz(triples, drop_x_le=0.0):
 
 def fit_constant(y, e):
     """
-    Weighted-mean fit (constant model).
+    Weighted-mean fit (constant model):
       mu   = sum(w*y)/sum(w),  w=1/e^2
       chi2 = sum((y-mu)^2 / e^2)
       ndf  = N - 1
@@ -81,7 +84,7 @@ def panel(ax, x1,y1,e1, x2,y2,e2, title):
     mu1, chi2_1, ndf_1 = fit_constant(y1, e1) if y1.size else (np.nan, 0.0, 0)
     mu2, chi2_2, ndf_2 = fit_constant(y2, e2) if y2.size else (np.nan, 0.0, 0)
 
-    # Labels with χ²/ndf (escape LaTeX braces for Python formatting)
+    # Labels with χ²/ndf
     lab1 = rf"$n=1$  ($\chi^{{2}}/\mathrm{{ndf}}={chi2_1:.1f}/{ndf_1}$)"
     lab2 = rf"$n=2$  ($\chi^{{2}}/\mathrm{{ndf}}={chi2_2:.1f}/{ndf_2}$)"
 
@@ -116,7 +119,7 @@ def panel(ax, x1,y1,e1, x2,y2,e2, title):
     if np.isfinite(mu2):
         ax.plot([xmin, xmax], [mu2, mu2], linestyle="--", linewidth=1.0, color="tab:orange")
 
-    # Legend (only two entries: the point sets)
+    # Legend (two entries: the point sets)
     handles = [h for h in (h1, h2) if h is not None]
     if handles:
         ax.legend(handles=handles, frameon=True, fontsize=10,
@@ -126,86 +129,92 @@ def panel(ax, x1,y1,e1, x2,y2,e2, title):
                 ha="center", va="center", fontsize=12, alpha=0.6)
 
 # ─────────────────────────────────────────────────────────────────────
-# Data you provided (triples: {sinθγ, value, error})
+# New data (triples: {sinθγ, value, error})
+# Only AULsinphi (n=1) and AULsin2phi (n=2) are required for the plots.
 # ─────────────────────────────────────────────────────────────────────
-# Low x_B
-enpiLowxBGEchi2FitsAULsinphi = [
-    [0.106224541, -0.028065860, 0.013605010],
-    [0.156049384, -0.003632377, 0.004786986],
-    [0.217968471, -0.000475566, 0.007246571],
-    [0.270187215,  0.056693694, 0.021983002],
+
+# Low x_B & Low -t   (0.10<x_B<0.30, 0.05<-t<0.35)
+enpiLowxBLowtGEchi2FitsAULsinphi = [
+    [0.107516772, -0.064019517, 0.027852352],
+    [0.158721085, -0.015667152, 0.006461520],
+    [0.223208570,  0.001289905, 0.005487116],
+    [0.284301854,  0.021711468, 0.009187490],
+    [0.336696510,  0.020050283, 0.037320508],
+]
+enpiLowxBLowtGEchi2FitsAULsin2phi = [
+    [0.107516772,  0.005803660, 0.055010545],
+    [0.158721085, -0.005154474, 0.018514105],
+    [0.223208570, -0.023305563, 0.010715054],
+    [0.284301854, -0.013637025, 0.019766420],
+    [0.336696510, -0.127297142, 0.073767144],
+]
+
+# Low x_B & High -t  (0.10<x_B<0.30, 0.85<-t<1.35)
+enpiLowxBHightGEchi2FitsAULsinphi = [
+    [0.105650048, -0.028064870, 0.076567872],
+    [0.157680814,  0.038585539, 0.017023297],
+    [0.224130532,  0.026030965, 0.012459477],
+    [0.284491459,  0.063985998, 0.016559254],
+    [0.336825566,  0.110784828, 0.000038842],
+]
+enpiLowxBHightGEchi2FitsAULsin2phi = [
+    [0.105650048, -0.116516175, 0.151982281],
+    [0.157680814,  0.024751149, 0.032143668],
+    [0.224130532, -0.090728307, 0.029384592],
+    [0.284491459, -0.098747896, 0.027101219],
+    [0.336825566, -0.116687033, 0.000030434],
+]
+
+# High x_B & Low -t  (0.35<x_B<0.60, 0.05<-t<0.35)
+enpiHighxBBLowtGEchi2FitsAULsinphi = [
     [0.000000000,  0.000000000, 0.010000782],  # sentinel -> drop
+    [0.170104546,  0.047205526, 0.035515564],
+    [0.232317770,  0.022489809, 0.015343618],
+    [0.299502631,  0.034118607, 0.008742240],
+    [0.361806661,  0.011211490, 0.007635931],
 ]
-enpiLowxBGEchi2FitsAULsin2phi = [
-    [0.106224541,  0.015747976, 0.030275168],
-    [0.156049384, -0.025927698, 0.011664101],
-    [0.217968471, -0.036819170, 0.010764596],
-    [0.270187215, -0.059681623, 0.023731383],
+enpiHighxBBLowtGEchi2FitsAULsin2phi = [
     [0.000000000,  0.000000000, 0.010001391],  # sentinel -> drop
+    [0.170104546,  0.073591162, 0.086565720],
+    [0.232317770,  0.009229356, 0.033590381],
+    [0.299502631,  0.002870764, 0.038150067],
+    [0.361806661, -0.008715496, 0.012555314],
 ]
 
-# High x_B
-enpiHighxBGEchi2FitsAULsinphi = [
+# High x_B & High -t (0.35<x_B<0.60, 0.85<-t<1.35)
+enpiHighxBHightGEchi2FitsAULsinphi = [
     [0.000000000,  0.000000000, 0.010000782],  # sentinel -> drop
-    [0.175687261, -0.016201462, 0.031354087],
-    [0.232413857,  0.031997790, 0.009731937],
-    [0.300164957,  0.040768159, 0.009676298],
-    [0.359281080,  0.043694399, 0.005165615],
+    [0.172592573, -0.068576063, 0.046779678],
+    [0.232020736,  0.038101527, 0.013602812],
+    [0.299690415,  0.039984526, 0.010228255],
+    [0.359996179,  0.055971602, 0.006836161],
 ]
-enpiHighxBGEchi2FitsAULsin2phi = [
+enpiHighxBHightGEchi2FitsAULsin2phi = [
     [0.000000000,  0.000000000, 0.010001391],  # sentinel -> drop
-    [0.175687261, -0.177957475, 0.084246820],
-    [0.232413857, -0.035707467, 0.025202947],
-    [0.300164957, -0.078183037, 0.019622011],
-    [0.359281080, -0.058298753, 0.010739176],
-]
-
-# Low -t
-enpiLowtGEchi2FitsAULsinphi = [
-    [0.107461948, -0.024570746, 0.030067875],
-    [0.159045586, -0.008710291, 0.007323591],
-    [0.224895070,  0.001769930, 0.005313844],
-    [0.291905934,  0.029046547, 0.006820219],
-    [0.356821364, -0.007561284, 0.008577452],
-]
-enpiLowtGEchi2FitsAULsin2phi = [
-    [0.107461948,  0.055076753, 0.060566694],
-    [0.159045586, -0.008341678, 0.016487063],
-    [0.224895070, -0.018639517, 0.010753646],
-    [0.291905934, -0.020406471, 0.015695833],
-    [0.356821364, -0.020663126, 0.014489705],
-]
-
-# High -t  (note: name preserved as provided: "Hight")
-enpiHightGEchi2FitsAULsinphi = [
-    [0.105863431, -0.025144693, 0.053163791],
-    [0.160573253, -0.023512803, 0.019664193],
-    [0.228725090,  0.001328815, 0.020276061],
-    [0.297207339,  0.027304978, 0.010367475],
-    [0.359265763,  0.048359517, 0.007921233],
-]
-enpiHightGEchi2FitsAULsin2phi = [
-    [0.105863431, -0.170791606, 0.143963579],
-    [0.160573253, -0.075891112, 0.043966462],
-    [0.228725090, -0.094003089, 0.025050109],
-    [0.297207339, -0.059079167, 0.027004949],
-    [0.359265763, -0.078686026, 0.012797081],
+    [0.172592573, -0.193949995, 0.085291091],
+    [0.232020736, -0.056253835, 0.028833524],
+    [0.299690415, -0.102146191, 0.015516744],
+    [0.359996179, -0.071449196, 0.013017852],
 ]
 
 # ─────────────────────────────────────────────────────────────────────
 # Prepare arrays (drop sentinel x<=0 rows)
 # ─────────────────────────────────────────────────────────────────────
-x_lowxb_1, y_lowxb_1, e_lowxb_1   = as_xyz(enpiLowxBGEchi2FitsAULsinphi,   drop_x_le=0.0)
-x_lowxb_2, y_lowxb_2, e_lowxb_2   = as_xyz(enpiLowxBGEchi2FitsAULsin2phi,  drop_x_le=0.0)
+# Low x_B & Low -t
+x_ll_1, y_ll_1, e_ll_1 = as_xyz(enpiLowxBLowtGEchi2FitsAULsinphi,  drop_x_le=0.0)
+x_ll_2, y_ll_2, e_ll_2 = as_xyz(enpiLowxBLowtGEchi2FitsAULsin2phi, drop_x_le=0.0)
 
-x_highxb_1, y_highxb_1, e_highxb_1 = as_xyz(enpiHighxBGEchi2FitsAULsinphi,  drop_x_le=0.0)
-x_highxb_2, y_highxb_2, e_highxb_2 = as_xyz(enpiHighxBGEchi2FitsAULsin2phi, drop_x_le=0.0)
+# Low x_B & High -t
+x_lh_1, y_lh_1, e_lh_1 = as_xyz(enpiLowxBHightGEchi2FitsAULsinphi,  drop_x_le=0.0)
+x_lh_2, y_lh_2, e_lh_2 = as_xyz(enpiLowxBHightGEchi2FitsAULsin2phi, drop_x_le=0.0)
 
-x_lowt_1, y_lowt_1, e_lowt_1     = as_xyz(enpiLowtGEchi2FitsAULsinphi,   drop_x_le=0.0)
-x_lowt_2, y_lowt_2, e_lowt_2     = as_xyz(enpiLowtGEchi2FitsAULsin2phi,  drop_x_le=0.0)
+# High x_B & Low -t
+x_hl_1, y_hl_1, e_hl_1 = as_xyz(enpiHighxBBLowtGEchi2FitsAULsinphi,  drop_x_le=0.0)
+x_hl_2, y_hl_2, e_hl_2 = as_xyz(enpiHighxBBLowtGEchi2FitsAULsin2phi, drop_x_le=0.0)
 
-x_hight_1, y_hight_1, e_hight_1  = as_xyz(enpiHightGEchi2FitsAULsinphi,  drop_x_le=0.0)
-x_hight_2, y_hight_2, e_hight_2  = as_xyz(enpiHightGEchi2FitsAULsin2phi, drop_x_le=0.0)
+# High x_B & High -t
+x_hh_1, y_hh_1, e_hh_1 = as_xyz(enpiHighxBHightGEchi2FitsAULsinphi,  drop_x_le=0.0)
+x_hh_2, y_hh_2, e_hh_2 = as_xyz(enpiHighxBHightGEchi2FitsAULsin2phi, drop_x_le=0.0)
 
 # ─────────────────────────────────────────────────────────────────────
 # Plot
@@ -216,26 +225,37 @@ os.makedirs(outdir, exist_ok=True)
 fig, axes = plt.subplots(2, 2, figsize=(12, 9))
 fig.suptitle(r"$F_{UL}^{\sin(n\phi)}/F_{UU}$ vs $\sin\theta_{\gamma}$", fontsize=14, y=0.97)
 
-# Titles include the selection ranges you provided
-panel(axes[0, 0],
-      x_lowxb_1, y_lowxb_1, e_lowxb_1,
-      x_lowxb_2, y_lowxb_2, e_lowxb_2,
-      title=r"Low $x_{B}$: $0.10<x_{B}<0.25$")
+# [0,0] Low x_B & Low -t
+panel(
+    axes[0, 0],
+    x_ll_1, y_ll_1, e_ll_1,
+    x_ll_2, y_ll_2, e_ll_2,
+    title=r"Low $x_{B}$, Low $-t$:  $0.10<x_{B}<0.30$,  $0.05<-t<0.35$"
+)
 
-panel(axes[0, 1],
-      x_highxb_1, y_highxb_1, e_highxb_1,
-      x_highxb_2, y_highxb_2, e_highxb_2,
-      title=r"High $x_{B}$: $0.45<x_{B}<0.60$")
+# [0,1] Low x_B & High -t
+panel(
+    axes[0, 1],
+    x_lh_1, y_lh_1, e_lh_1,
+    x_lh_2, y_lh_2, e_lh_2,
+    title=r"Low $x_{B}$, High $-t$: $0.10<x_{B}<0.30$,  $0.85<-t<1.35$"
+)
 
-panel(axes[1, 0],
-      x_lowt_1, y_lowt_1, e_lowt_1,
-      x_lowt_2, y_lowt_2, e_lowt_2,
-      title=r"Low $-t$: $0.05<-t<0.25$")
+# [1,0] High x_B & Low -t
+panel(
+    axes[1, 0],
+    x_hl_1, y_hl_1, e_hl_1,
+    x_hl_2, y_hl_2, e_hl_2,
+    title=r"High $x_{B}$, Low $-t$: $0.35<x_{B}<0.60$,  $0.05<-t<0.35$"
+)
 
-panel(axes[1, 1],
-      x_hight_1, y_hight_1, e_hight_1,
-      x_hight_2, y_hight_2, e_hight_2,
-      title=r"High $-t$: $0.80<-t<1.00$")
+# [1,1] High x_B & High -t
+panel(
+    axes[1, 1],
+    x_hh_1, y_hh_1, e_hh_1,
+    x_hh_2, y_hh_2, e_hh_2,
+    title=r"High $x_{B}$, High $-t$: $0.35<x_{B}<0.60$,  $0.85<-t<1.35$"
+)
 
 plt.tight_layout(rect=[0, 0.03, 1, 0.94], w_pad=2.0, h_pad=2.0)
 outpath = os.path.join(outdir, "sinthetagamma_fits.pdf")
