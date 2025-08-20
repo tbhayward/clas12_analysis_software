@@ -18,10 +18,10 @@ variable_names_here
 #enpiMidHighxB,t,-1.25,-1.05,-0.85,-0.65,-0.45,-0.25,-0.05
 #enpiHighxB,t,-1.25,-1.05,-0.85,-0.65,-0.45,-0.25,-0.05
 
-enpiLowxB,sinthetagamma,0.05,0.12,0.19,0.26,0.33,0.40
-enpiHighxB,sinthetagamma,0.05,0.12,0.19,0.26,0.33,0.40
-enpiLowt,sinthetagamma,0.05,0.12,0.19,0.26,0.33,0.40
-enpiHight,sinthetagamma,0.05,0.12,0.19,0.26,0.33,0.40
+enpiLowxBLowt,sinthetagamma,0.05,0.12,0.19,0.26,0.33,0.40
+enpiLowxBHight,sinthetagamma,0.05,0.12,0.19,0.26,0.33,0.40
+enpiHighxBLowt,sinthetagamma,0.05,0.12,0.19,0.26,0.33,0.40
+enpiHighxBHight,sinthetagamma,0.05,0.12,0.19,0.26,0.33,0.40
 
 #enpi,x,0.06,0.14,0.22,0.30,0.40,0.50,0.60
 #enpi,x,0.06,0.14,0.22,0.30,0.40,0.50,0.60
