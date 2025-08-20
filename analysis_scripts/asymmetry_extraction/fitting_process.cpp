@@ -3848,15 +3848,15 @@ void performChi2Fits_GeneralExclusive(const char* output_file,
     //   - If a parameter should be *fixed*, you must call FixParameter(i).
     //     Setting step=0 does NOT fix it in TMinuit.
     // -------------------------------------------------------------------
-    minuit.DefineParameter(0,  "ALU_offset",      0.00,  0.01,  -1.0,  1.0);
-    minuit.DefineParameter(1,  "AUL_offset",      0.00,  0.01,  -1.0,  1.0);
-    minuit.DefineParameter(2,  "F_LU_sin/F_UU",   0.00,  0.001, -1.0,  1.0);
-    minuit.DefineParameter(3,  "F_UL_sin/F_UU",   0.00,  0.001, -1.0,  1.0);
-    minuit.DefineParameter(4,  "F_UL_sin2/F_UU",  0.00,  0.001, -1.0,  1.0);
-    minuit.DefineParameter(5,  "F_LL/F_UU",       0.00,  0.001, -1.0,  1.0);
-    minuit.DefineParameter(6,  "F_LL_cos/F_UU",   0.00,  0.001, -1.0,  1.0);
-    minuit.DefineParameter(7,  "F_UU_cos/F_UU",   0.00,  0.001, -0.5,  0.5);
-    minuit.DefineParameter(8,  "F_UU_cos2/F_UU",  0.00,  0.001, -0.5,  0.5);
+    minuit.DefineParameter(0,  "ALU_offset",      0.00,  0.01,  -0.06,  0.06);
+    minuit.DefineParameter(1,  "AUL_offset",      0.00,  0.01,  -0.06,  0.06);
+    minuit.DefineParameter(2,  "F_LU_sin/F_UU",   0.00,  0.01, -0.1,  0.3);
+    minuit.DefineParameter(3,  "F_UL_sin/F_UU",   0.00,  0.01, -0.4,  0.2);
+    minuit.DefineParameter(4,  "F_UL_sin2/F_UU",  0.00,  0.01, -0.6,  0.2);
+    minuit.DefineParameter(5,  "F_LL/F_UU",       0.00,  0.01, -0.1,  0.7);
+    minuit.DefineParameter(6,  "F_LL_cos/F_UU",   0.00,  0.01, -0.4,  0.4);
+    minuit.DefineParameter(7,  "F_UU_cos/F_UU",   0.00,  0.01, -0.4,  0.4);
+    minuit.DefineParameter(8,  "F_UU_cos2/F_UU",  0.00,  0.01, -0.4,  0.4);
     // minuit.FixParameter(7);
     // minuit.FixParameter(8);
 

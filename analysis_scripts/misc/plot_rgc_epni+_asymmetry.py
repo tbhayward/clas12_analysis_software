@@ -4,23 +4,26 @@
 Plot ep -> en pi+ asymmetries versus -t in several xB bins, for three run periods
 and for the combined (inverse-variance weighted) file.
 
-Usage (kept the same CLI):
+Usage:
   python plot_enpi_from_texts.py Su22.txt Fa22.txt Sp23.txt Combined.txt <Prefix> "<Kinematic text>"
 
 Examples:
   python plot_enpi_from_texts.py su22.txt fa22.txt sp23.txt combined.txt enpiGE \
-    "Q^2>1, W>2, y<0.75, 0.81<M_x^2<1.00 (GeV^2)"
+    "Q^2>1, W>2, y<0.75"
 
 Saves for each xB bin (Low, MidLow, MidHigh, High, Inclusive):
   output/enpi+/rgc_<PREFIX>_<BinTag>_AllPeriods.pdf
   output/enpi+/rgc_<PREFIX>_<BinTag>_CombinedOnly.pdf
+
+Additional xB-overlay canvas (1×3, Combined only):
+  output/enpi+/rgc_<PREFIX>_xBOverlay_CombinedOnly.pdf
 
 Notes:
 - The text files are expected to contain sections like:
     enpiLowxBGEchi2FitsALUsinphi = {{mean_t, value, error}, ...};
   where 'mean_t' is the (negative) mean of t in that bin. We plot against -t.
 - We auto-detect which xB bin tags are available by inspecting keys.
-- Common cuts are encoded upstream; here we only plot and annotate titles.
+- Titles no longer include a fixed Mx2 exclusivity window; those are now applied bin-by-bin upstream.
 """
 
 import sys
@@ -39,6 +42,15 @@ COLORS = {
     "Sp23": "tab:green",
     "Combined": "black",
 }
+
+# Colors used to distinguish the four xB slices on the new 1×3 overlay
+XB_COLORS = {
+    "enpiLowxBGE":     "tab:blue",
+    "enpiMidLowxBGE":  "tab:orange",
+    "enpiMidHighxBGE": "tab:green",
+    "enpiHighxBGE":    "tab:red",
+}
+
 MARKER = "o"
 CAPSIZE = 3
 LABEL_FONTSIZE = 13
@@ -53,7 +65,7 @@ YLIM_UL = (-0.4, 0.4)   # TSA
 YLIM_LL = (-1.0, 1.0)   # DSA
 YLIM_UU = (-1.0, 1.0)   # UU
 
-# Human-readable labels for xB bins (shown in titles)
+# Human-readable labels for xB bins (shown in titles / legends)
 XB_BINS = {
     "enpiLowxBGE":     r"$0.10 < x_{B} < 0.25$",
     "enpiMidLowxBGE":  r"$0.25 < x_{B} < 0.35$",
@@ -75,6 +87,7 @@ def parse_asym_file(path):
     """Parse NAME = {{mean,val,err}, ...}; blocks into dict[name] -> np.array(N,3)."""
     with open(path, "r") as f:
         text = f.read()
+    #endif
     out = {}
     for m in _assign_re.finditer(text):
         name = m.group(1)
@@ -84,13 +97,19 @@ def parse_asym_file(path):
             parts = [p.strip() for p in t.split(",")]
             if len(parts) != 3:
                 continue
+            #endif
             try:
                 triples.append((float(parts[0]), float(parts[1]), float(parts[2])))
             except ValueError:
                 continue
+            #endif
+        #endfor
         if triples:
             out[name] = np.array(triples, dtype=float)
+        #endif
+    #endfor
     return out
+#endfor
 
 def get_series(dct, key, negate_x=True, sort_x=True):
     """
@@ -100,20 +119,25 @@ def get_series(dct, key, negate_x=True, sort_x=True):
     """
     if key not in dct:
         return None
+    #endif
     arr = np.array(dct[key], dtype=float)
     if arr.size == 0:
         return None
+    #endif
     x_raw, y, e = arr[:,0], arr[:,1], arr[:,2]
     mask = np.isfinite(x_raw) & np.isfinite(y) & np.isfinite(e) & (e > 0)
     if not np.any(mask):
         return None
+    #endif
     x = -x_raw[mask] if negate_x else x_raw[mask]
     y = y[mask]
     e = e[mask]
     if sort_x and x.size > 1:
         order = np.argsort(x)
         x, y, e = x[order], y[order], e[order]
+    #endif
     return {"x": x, "y": y, "yerr": e}
+#endfor
 
 def build_period_dict(parsed, bin_prefix):
     """
@@ -134,10 +158,11 @@ def build_period_dict(parsed, bin_prefix):
         "UUcos":   get_series(parsed, k("AUUcosphi")),
         "UUcos2":  get_series(parsed, k("AUUcos2phi")),
     }
+#endfor
 
 def detect_available_bins(*dicts):
     """
-    Inspect the provided parsed dictionaries and return the subset of BIN_ORDER
+    Inspect provided parsed dictionaries and return the subset of BIN_ORDER
     whose expected keys are present in ANY of the dicts.
     We require at minimum that the ALUsin key exists for that bin in some file.
     """
@@ -147,21 +172,26 @@ def detect_available_bins(*dicts):
         present = any((key_probe in d) for d in dicts if d is not None)
         if present:
             available.append(bin_tag)
+        #endif
+    #endfor
     return available
+#endfor
 
 # ─────────────────────────────────────────────────────────────────────
 # Plotting helpers
 # ─────────────────────────────────────────────────────────────────────
 def make_title(kin_text, xb_label):
-    common = r"$Q^{2}>1\ (\mathrm{GeV}^{2}),\ W>2\ (\mathrm{GeV}),\ y<0.75,\ 0.81<M_{x}^{2}<1.00\ (\mathrm{GeV}^{2})$"
+    # Titles no longer include a fixed Mx2 exclusivity window.
+    common = r"$Q^{2}>1\ (\mathrm{GeV}^{2}),\ W>2\ (\mathrm{GeV}),\ y<0.75$"
     if kin_text.strip():
         return rf"$ep \rightarrow en\pi^{{+}}$ — {xb_label}; {common}; {kin_text}"
     else:
         return rf"$ep \rightarrow en\pi^{{+}}$ — {xb_label}; {common}"
+    #endif
+#endfor
 
 def _plot_panel_sets(axLU, axUL, axLL, axUU, pdata_by_label):
     """Internal: draw the four panels for a set of labeled period dicts."""
-
     # ---- BSA (ALU sinφ) ----
     for lab, pdata in pdata_by_label.items():
         s = pdata["ALUsin"]
@@ -169,6 +199,8 @@ def _plot_panel_sets(axLU, axUL, axLL, axUU, pdata_by_label):
             axLU.errorbar(s["x"], s["y"], yerr=s["yerr"],
                           fmt=MARKER, color=COLORS[lab], ecolor=COLORS[lab],
                           capsize=CAPSIZE, label=lab)
+        #endif
+    #endfor
     axLU.set(xlim=XLIM_T, ylim=YLIM_LU, xlabel=X_LABEL, ylabel=r"$F_{LU}^{\sin\phi}/F_{UU}$")
     axLU.axhline(0, color="black", linestyle="--", linewidth=1.2)
     axLU.grid(True, linestyle="--", alpha=0.6)
@@ -183,11 +215,14 @@ def _plot_panel_sets(axLU, axUL, axLL, axUU, pdata_by_label):
             axUL.errorbar(s1["x"], s1["y"], yerr=s1["yerr"],
                           fmt=MARKER, mfc="none", mec=COLORS[lab], ecolor=COLORS[lab],
                           capsize=CAPSIZE, label=f"{lab}, n=1")
+        #endif
         s2 = pdata["AULsin2"]
         if s2 is not None:
             axUL.errorbar(s2["x"], s2["y"], yerr=s2["yerr"],
                           fmt=MARKER, color=COLORS[lab], ecolor=COLORS[lab],
                           capsize=CAPSIZE, label=f"{lab}, n=2")
+        #endif
+    #endfor
     axUL.set(xlim=XLIM_T, ylim=YLIM_UL, xlabel=X_LABEL, ylabel=r"$F_{UL}^{\sin n\phi}/F_{UU}$")
     axUL.axhline(0, color="black", linestyle="--", linewidth=1.2)
     axUL.grid(True, linestyle="--", alpha=0.6)
@@ -216,11 +251,14 @@ def _plot_panel_sets(axLU, axUL, axLL, axUU, pdata_by_label):
             axLL.errorbar(s0["x"], s0["y"], yerr=s0["yerr"],
                           fmt=MARKER, mfc="none", mec=COLORS[lab], ecolor=COLORS[lab],
                           capsize=CAPSIZE, label=f"{lab}, n=0")
+        #endif
         s1 = pdata["ALLcos"]
         if s1 is not None:
             axLL.errorbar(s1["x"], s1["y"], yerr=s1["yerr"],
                           fmt=MARKER, color=COLORS[lab], ecolor=COLORS[lab],
                           capsize=CAPSIZE, label=f"{lab}, n=1")
+        #endif
+    #endfor
     axLL.set(xlim=XLIM_T, ylim=YLIM_LL, xlabel=X_LABEL, ylabel=r"$F_{LL}^{\cos n\phi}/F_{UU}$")
     axLL.axhline(0, color="black", linestyle="--", linewidth=1.2)
     axLL.grid(True, linestyle="--", alpha=0.6)
@@ -247,11 +285,14 @@ def _plot_panel_sets(axLU, axUL, axLL, axUU, pdata_by_label):
             axUU.errorbar(s1["x"], s1["y"], yerr=s1["yerr"],
                           fmt=MARKER, mfc="none", mec=COLORS[lab], ecolor=COLORS[lab],
                           capsize=CAPSIZE, label=f"{lab}, n=1")
+        #endif
         s2 = pdata["UUcos2"]
         if s2 is not None:
             axUU.errorbar(s2["x"], s2["y"], yerr=s2["yerr"],
                           fmt=MARKER, color=COLORS[lab], ecolor=COLORS[lab],
                           capsize=CAPSIZE, label=f"{lab}, n=2")
+        #endif
+    #endfor
     axUU.set(xlim=XLIM_T, ylim=YLIM_UU, xlabel=X_LABEL, ylabel=r"$F_{UU}^{\cos n\phi}/F_{UU}$")
     axUU.axhline(0, color="black", linestyle="--", linewidth=1.2)
     axUU.grid(True, linestyle="--", alpha=0.6)
@@ -270,6 +311,7 @@ def _plot_panel_sets(axLU, axUL, axLL, axUU, pdata_by_label):
     legUU = axUU.legend(handles=run_leg_handles, title="Run Period", frameon=True, edgecolor="black",
                         loc="lower right", fontsize=11, title_fontsize=12)
     legUU.get_frame().set_alpha(0.9)
+#endfor
 
 def plot_all_periods_for_bin(p_su22, p_fa22, p_sp23, bin_tag, kin_text, out_dir, out_prefix):
     plt.figure(figsize=(12, 9))
@@ -295,6 +337,7 @@ def plot_all_periods_for_bin(p_su22, p_fa22, p_sp23, bin_tag, kin_text, out_dir,
     plt.savefig(out_path)
     plt.close()
     print(f"Saved all-periods figure: {out_path}")
+#endfor
 
 def plot_combined_only_for_bin(p_comb, bin_tag, kin_text, out_dir, out_prefix):
     plt.figure(figsize=(12, 9))
@@ -314,6 +357,7 @@ def plot_combined_only_for_bin(p_comb, bin_tag, kin_text, out_dir, out_prefix):
         s = p_comb["ALUsin"]
         axLU.errorbar(s["x"], s["y"], yerr=s["yerr"],
                       fmt=MARKER, color=black, ecolor=black, capsize=CAPSIZE)
+    #endif
     axLU.set(xlim=XLIM_T, ylim=YLIM_LU, xlabel=X_LABEL, ylabel=r"$F_{LU}^{\sin\phi}/F_{UU}$")
     axLU.axhline(0, color="black", linestyle="--", linewidth=1.2)
     axLU.grid(True, linestyle="--", alpha=0.6)
@@ -323,10 +367,12 @@ def plot_combined_only_for_bin(p_comb, bin_tag, kin_text, out_dir, out_prefix):
         s1 = p_comb["AULsin"]
         axUL.errorbar(s1["x"], s1["y"], yerr=s1["yerr"],
                       fmt=MARKER, mfc="none", mec=black, ecolor=black, capsize=CAPSIZE)
+    #endif
     if p_comb["AULsin2"] is not None:
         s2 = p_comb["AULsin2"]
         axUL.errorbar(s2["x"], s2["y"], yerr=s2["yerr"],
                       fmt=MARKER, color=black, ecolor=black, capsize=CAPSIZE)
+    #endif
     axUL.set(xlim=XLIM_T, ylim=YLIM_UL, xlabel=X_LABEL, ylabel=r"$F_{UL}^{\sin n\phi}/F_{UU}$")
     axUL.axhline(0, color="black", linestyle="--", linewidth=1.2)
     axUL.grid(True, linestyle="--", alpha=0.6)
@@ -346,10 +392,12 @@ def plot_combined_only_for_bin(p_comb, bin_tag, kin_text, out_dir, out_prefix):
         s0 = p_comb["ALLn0"]
         axLL.errorbar(s0["x"], s0["y"], yerr=s0["yerr"],
                       fmt=MARKER, mfc="none", mec=black, ecolor=black, capsize=CAPSIZE)
+    #endif
     if p_comb["ALLcos"] is not None:
         s1 = p_comb["ALLcos"]
         axLL.errorbar(s1["x"], s1["y"], yerr=s1["yerr"],
                       fmt=MARKER, color=black, ecolor=black, capsize=CAPSIZE)
+    #endif
     axLL.set(xlim=XLIM_T, ylim=YLIM_LL, xlabel=X_LABEL, ylabel=r"$F_{LL}^{\cos n\phi}/F_{UU}$")
     axLL.axhline(0, color="black", linestyle="--", linewidth=1.2)
     axLL.grid(True, linestyle="--", alpha=0.6)
@@ -369,10 +417,12 @@ def plot_combined_only_for_bin(p_comb, bin_tag, kin_text, out_dir, out_prefix):
         s1 = p_comb["UUcos"]
         axUU.errorbar(s1["x"], s1["y"], yerr=s1["yerr"],
                       fmt=MARKER, mfc="none", mec=black, ecolor=black, capsize=CAPSIZE)
+    #endif
     if p_comb["UUcos2"] is not None:
         s2 = p_comb["UUcos2"]
         axUU.errorbar(s2["x"], s2["y"], yerr=s2["yerr"],
                       fmt=MARKER, color=black, ecolor=black, capsize=CAPSIZE)
+    #endif
     axUU.set(xlim=XLIM_T, ylim=YLIM_UU, xlabel=X_LABEL, ylabel=r"$F_{UU}^{\cos n\phi}/F_{UU}$")
     axUU.axhline(0, color="black", linestyle="--", linewidth=1.2)
     axUU.grid(True, linestyle="--", alpha=0.6)
@@ -393,6 +443,66 @@ def plot_combined_only_for_bin(p_comb, bin_tag, kin_text, out_dir, out_prefix):
     plt.savefig(out_path)
     plt.close()
     print(f"Saved combined-only figure: {out_path}")
+#endfor
+
+# ─────────────────────────────────────────────────────────────────────
+# New: xB overlay 1×3 canvas from the Combined file
+# ─────────────────────────────────────────────────────────────────────
+def plot_combined_xb_overlay_1x3(comb_parsed, kin_text, out_dir, out_prefix, bins_to_use):
+    """
+    Build a 1×3 canvas (Combined only) where each subplot overlays the four xB slices:
+      Left  : F_LU^{sinφ}/F_UU  (ALUsinphi)
+      Middle: F_UL^{sinφ}/F_UU  (AULsinphi)
+      Right : F_UL^{sin2φ}/F_UU (AULsin2phi)
+    """
+    fig, axes = plt.subplots(1, 3, figsize=(14.5, 4.8), sharex=True)
+    fig.suptitle(
+        r"$ep \rightarrow en\pi^{+}$ — $x_{B}$ slices overlay; "
+        r"$Q^{2}>1,\ W>2,\ y<0.75$"
+        + (("; " + kin_text) if kin_text.strip() else ""),
+        fontsize=15, y=0.98
+    )
+
+    axL, axM, axR = axes
+
+    # Helper to draw one component on given axis for all xB bins
+    def _draw_component(ax, suffix_key, ylabel, ylim):
+        handles = []
+        labels  = []
+        for bin_tag in bins_to_use:
+            pdata = build_period_dict(comb_parsed, bin_tag)
+            s = pdata[suffix_key]
+            if s is None:
+                continue
+            #endif
+            clr = XB_COLORS.get(bin_tag, "black")
+            h = ax.errorbar(s["x"], s["y"], yerr=s["yerr"],
+                            fmt=MARKER, color=clr, ecolor=clr, capsize=CAPSIZE,
+                            label=XB_BINS.get(bin_tag, bin_tag))
+            handles.append(h)
+            labels.append(XB_BINS.get(bin_tag, bin_tag))
+        #endfor
+
+        ax.set(xlim=XLIM_T, ylim=ylim, xlabel=X_LABEL, ylabel=ylabel)
+        ax.axhline(0, color="black", linestyle="--", linewidth=1.2)
+        ax.grid(True, linestyle="--", alpha=0.6)
+        if handles:
+            leg = ax.legend(frameon=True, edgecolor="black", fontsize=11, loc="best")
+            leg.get_frame().set_alpha(0.9)
+        #endif
+    #endfor
+
+    _draw_component(axL, "ALUsin",  r"$F_{LU}^{\sin\phi}/F_{UU}$", YLIM_LU)
+    _draw_component(axM, "AULsin",  r"$F_{UL}^{\sin\phi}/F_{UU}$", YLIM_UL)
+    _draw_component(axR, "AULsin2", r"$F_{UL}^{\sin2\phi}/F_{UU}$", YLIM_UL)
+
+    fig.tight_layout(rect=[0, 0, 1, 0.94])
+    os.makedirs(out_dir, exist_ok=True)
+    out_path = os.path.join(out_dir, f"rgc_{out_prefix}_xBOverlay_CombinedOnly.pdf")
+    plt.savefig(out_path)
+    plt.close(fig)
+    print(f"Saved xB-overlay (1×3) figure: {out_path}")
+#endfor
 
 # ─────────────────────────────────────────────────────────────────────
 # Main
@@ -401,8 +511,9 @@ def main():
     if len(sys.argv) != 7:
         print("Usage: python plot_enpi_from_texts.py Su22.txt Fa22.txt Sp23.txt Combined.txt <Prefix> \"<Kinematic text>\"")
         print("Example:")
-        print("  python plot_enpi_from_texts.py su22.txt fa22.txt sp23.txt combined.txt enpiGE \"Q^2>1, W>2, y<0.75, 0.81<M_x^2<1.00 (GeV^2)\"")
+        print("  python plot_enpi_from_texts.py su22.txt fa22.txt sp23.txt combined.txt enpiGE \"Q^2>1, W>2, y<0.75\"")
         sys.exit(1)
+    #endif
 
     su22_path, fa22_path, sp23_path, comb_path, out_prefix, kin_text = sys.argv[1:7]
 
@@ -417,6 +528,7 @@ def main():
     if not available_bins:
         print("[ERROR] No recognizable xB-bin sections found (e.g. enpiLowxBGEchi2FitsALUsinphi).")
         sys.exit(2)
+    #endif
 
     out_dir = os.path.join("output", "enpi+")
     os.makedirs(out_dir, exist_ok=True)
@@ -433,6 +545,18 @@ def main():
 
         # Combined-only canvas
         plot_combined_only_for_bin(p_comb, bin_tag, kin_text, out_dir, out_prefix)
+    #endfor
+
+    # New: single xB overlay 1×3 canvas from the Combined file.
+    xb_overlay_candidates = ["enpiLowxBGE", "enpiMidLowxBGE", "enpiMidHighxBGE", "enpiHighxBGE"]
+    bins_to_use = [b for b in xb_overlay_candidates if b in available_bins]
+    if bins_to_use:
+        plot_combined_xb_overlay_1x3(comb, kin_text, out_dir, out_prefix, bins_to_use)
+    else:
+        print("[WARN] No xB-slice data available for overlay canvas; skipping.")
+    #endif
+#endfor
 
 if __name__ == "__main__":
     main()
+#endif
