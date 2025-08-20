@@ -330,8 +330,7 @@ bool GeneralExclusiveKinematicCuts::applyCuts(int currentFits, bool isMC)
 
     if (property == "enpiLowxLowtB") {
         bool goodEvent = (*fiducial_status >= 111) &&
-                         (*x > 0.10 && *x < 0.30) &&
-                         (-*t > 0.05 && -*t < 0.35);
+                         (*x > 0.10 && *x < 0.30) ;
         if (!goodEvent) return false;
         return PassesDynamicMx2(*x, *t, *Mx2);
     }
