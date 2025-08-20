@@ -3843,8 +3843,7 @@ void performChi2Fits_GeneralExclusive(const char* output_file,
     minuit.DefineParameter(9,  "A_tg",            0.00,  0.01,  -0.5,    0.5); // NEW
 
     if (!g_fit_enable_tg) {
-      minuit.FixParameter(9);                        // fix A_tg
-      minuit.mnparm(9, "A_tg", g_fit_fixed_Atg, 0.0, 0, 0, nullptr); // force value
+      minuit.FixParameter(9);  // uses the value from DefineParameter (0.00)
     }
 
     // Strategy / minimize
