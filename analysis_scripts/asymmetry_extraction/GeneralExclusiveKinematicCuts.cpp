@@ -328,6 +328,35 @@ bool GeneralExclusiveKinematicCuts::applyCuts(int currentFits, bool isMC)
         return PassesDynamicMx2(*x, *t, *Mx2);
     }
 
+    if (property == "enpiLowxBLowt") {
+        bool goodEvent = (*fiducial_status >= 111) &&
+                         (*x > 0.10 && *x < 0.25) && 
+                         (-*t > 0.05 && -*t < 0.25);
+        if (!goodEvent) return false;
+        return PassesDynamicMx2(*x, *t, *Mx2);
+    }
+    if (property == "enpiLowxBHight") {
+        bool goodEvent = (*fiducial_status >= 111) &&
+                         (*x > 0.10 && *x < 0.25) && 
+                         (-*t > 0.8 && -*t < 1.0);
+        if (!goodEvent) return false;
+        return PassesDynamicMx2(*x, *t, *Mx2);
+    }
+    if (property == "enpiHighxBLowt") {
+        bool goodEvent = (*fiducial_status >= 111) &&
+                         (*x > 0.45 && *x < 0.60) && 
+                         (-*t > 0.05 && -*t < 0.25);
+        if (!goodEvent) return false;
+        return PassesDynamicMx2(*x, *t, *Mx2);
+    }
+    if (property == "enpiHighxBHight") {
+        bool goodEvent = (*fiducial_status >= 111) &&
+                         (*x > 0.45 && *x < 0.60) && 
+                         (-*t > 0.8 && -*t < 1.0);
+        if (!goodEvent) return false;
+        return PassesDynamicMx2(*x, *t, *Mx2);
+    }
+
     // ----------------------------------------------------------------
     // xB-sliced properties: use dynamic Mx2 window from CSV for each event
     // ----------------------------------------------------------------
