@@ -81,9 +81,9 @@ def panel(ax, x1,y1,e1, x2,y2,e2, title):
     mu1, chi2_1, ndf_1 = fit_constant(y1, e1) if y1.size else (np.nan, 0.0, 0)
     mu2, chi2_2, ndf_2 = fit_constant(y2, e2) if y2.size else (np.nan, 0.0, 0)
 
-    # Labels with χ²/ndf
-    lab1 = r"$n=1$  ($\chi^{2}/\mathrm{ndf}={:.1f}/{}$)".format(chi2_1, ndf_1)
-    lab2 = r"$n=2$  ($\chi^{2}/\mathrm{ndf}={:.1f}/{}$)".format(chi2_2, ndf_2)
+    # Labels with χ²/ndf (escape LaTeX braces for Python formatting)
+    lab1 = rf"$n=1$  ($\chi^{{2}}/\mathrm{{ndf}}={chi2_1:.1f}/{ndf_1}$)"
+    lab2 = rf"$n=2$  ($\chi^{{2}}/\mathrm{{ndf}}={chi2_2:.1f}/{ndf_2}$)"
 
     # Plot points
     h1 = plot_series_points(ax, x1, y1, e1, lab1, marker="o", color="tab:blue")
@@ -116,7 +116,7 @@ def panel(ax, x1,y1,e1, x2,y2,e2, title):
     if np.isfinite(mu2):
         ax.plot([xmin, xmax], [mu2, mu2], linestyle="--", linewidth=1.0, color="tab:orange")
 
-    # Legend
+    # Legend (only two entries: the point sets)
     handles = [h for h in (h1, h2) if h is not None]
     if handles:
         ax.legend(handles=handles, frameon=True, fontsize=10,
