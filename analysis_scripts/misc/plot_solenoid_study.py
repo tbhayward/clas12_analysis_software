@@ -103,11 +103,11 @@ def main():
     fig.suptitle(r"$ep \rightarrow en\pi^{+}$ — Solenoid polarity comparison", fontsize=15, y=0.98)
 
     # Left: F_LU^{sinφ}/F_UU
-    add_component(axes[0], NEG1_ALU,  POS1_ALU,  r"$F_{LU}^{\sin\phi}/F_{UU}$", (-0.4, 0.4))
+    add_component(axes[0], NEG1_ALU,  POS1_ALU,  r"$F_{LU}^{\sin\phi}/F_{UU}$", (-0.2, 0.2))
     # Middle: F_UL^{sinφ}/F_UU
-    add_component(axes[1], NEG1_AUL,  POS1_AUL,  r"$F_{UL}^{\sin\phi}/F_{UU}$", (-0.4, 0.4))
+    add_component(axes[1], NEG1_AUL,  POS1_AUL,  r"$F_{UL}^{\sin\phi}/F_{UU}$", (-0.2, 0.2))
     # Right: F_UL^{\sin2φ}/F_UU
-    add_component(axes[2], NEG1_AUL2, POS1_AUL2, r"$F_{UL}^{\sin2\phi}/F_{UU}$", (-0.4, 0.4))
+    add_component(axes[2], NEG1_AUL2, POS1_AUL2, r"$F_{UL}^{\sin2\phi}/F_{UU}$", (-0.2, 0.2))
 
     fig.tight_layout(rect=[0, 0, 1, 0.94])
     out_path = os.path.join("output", "enpi+", "solenoid_study.pdf")
