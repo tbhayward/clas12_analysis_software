@@ -128,7 +128,7 @@ fig, axes = plt.subplots(3, 3, figsize=(14, 10), sharex=False, sharey=False)
 plt.subplots_adjust(wspace=0.25, hspace=0.28)
 
 # Column titles
-col_titles = [r"$A_{UL}^{\sin\phi}$", r"$A_{UL}^{\sin 2\phi}$", r"$A_{tg}$"]
+col_titles = [r"$A_{UL}^{\sin\phi}$", r"$A_{UL}^{\sin 2\phi}$", r"$A_{tg}^{\sin\phi}$"]
 for j, title in enumerate(col_titles):
     axes[0, j].set_title(title, fontsize=13, pad=8)
 
