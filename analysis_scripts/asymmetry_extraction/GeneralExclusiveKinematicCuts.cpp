@@ -4,9 +4,203 @@
 #include <cmath>
 #include "TMath.h"
 
+// Extra headers for CSV-backed Mx2 window helper
+#include <unordered_map>
+#include <fstream>
+#include <sstream>
+#include <utility>
+#include <vector>
+#include <limits>
+#include <cctype>
+#include <iostream>
+
 using std::string;
 
+// ====================================================================
+// Tunables for dynamic Mx2 window (μ ± Nσ), CSV location, etc.
+// ====================================================================
+static constexpr double kNSigma = 2.0;                 // half-width in sigmas
+static constexpr double kMx2Min = 0.70;                // hard clip low
+static constexpr double kMx2Max = 1.10;                // hard clip high
+static constexpr double kFallbackLo = 0.81;            // fallback window
+static constexpr double kFallbackHi = 1.00;
+
+static const char* kMx2CSVPath =
+    "/u/home/thayward/clas12_analysis_software/analysis_scripts/asymmetry_extraction/imports/Mx2_fit_params.csv";
+
+// xB slices used when the CSV was produced (must match exactly)
+struct SliceDef { const char* name; double xa, xb; };
+static const SliceDef kSlices[] = {
+    {"Low",     0.10, 0.25},
+    {"MidLow",  0.25, 0.35},
+    {"MidHigh", 0.35, 0.45},
+    {"High",    0.45, 0.60},
+};
+static constexpr int kNumSlices = 4;
+
+// -t edges (ascending) used when the CSV was produced: [0.05, 0.25, ..., 1.25]
+static const double kTEdgesPos[] = {0.05, 0.25, 0.45, 0.65, 0.85, 1.05, 1.25};
+static constexpr int kNumTEdges = 7; // 6 bins
+
+// ====================================================================
+// CSV-backed Mx2 window provider
+//   - Reads (slice_name, t_min, mu, sigma, fit_success) per cell
+//   - Lookup by event (x, t) → (μ, σ) → [μ±Nσ], clipped to [kMx2Min, kMx2Max]
+//   - Fallback to [kFallbackLo, kFallbackHi] if missing/failed/out-of-bounds
+// ====================================================================
+namespace {
+
+struct Mx2Config {
+    double nSigma     = kNSigma;
+    double mx2Min     = kMx2Min;
+    double mx2Max     = kMx2Max;
+    double fallbackLo = kFallbackLo;
+    double fallbackHi = kFallbackHi;
+};
+
+struct Key {
+    std::string slice;
+    int tbin;
+    bool operator==(const Key& o) const { return slice == o.slice && tbin == o.tbin; }
+};
+
+struct KeyHash {
+    std::size_t operator()(Key const& k) const noexcept {
+        return std::hash<std::string>{}(k.slice) ^ (std::hash<int>{}(k.tbin) << 1);
+    }
+};
+
+struct Row { double mu{std::numeric_limits<double>::quiet_NaN()};
+             double sigma{std::numeric_limits<double>::quiet_NaN()};
+             bool ok{false}; };
+
+static std::string trim(const std::string& s) {
+    size_t a = 0, b = s.size();
+    while (a < b && std::isspace(static_cast<unsigned char>(s[a]))) ++a;
+    while (b > a && std::isspace(static_cast<unsigned char>(s[b-1]))) --b;
+    return s.substr(a, b - a);
+}
+
+static std::string sliceName(double x) {
+    for (const auto& sl : kSlices) {
+        if (x > sl.xa && x < sl.xb) return sl.name;
+    }
+    return "";
+}
+
+static int tbinIndex(double tpos) {
+    // Return bin i such that tpos in [edge[i], edge[i+1]); -1 if outside
+    if (!(tpos >= kTEdgesPos[0] && tpos < kTEdgesPos[kNumTEdges-1])) return -1;
+    for (int i = 0; i < kNumTEdges - 1; ++i) {
+        if (tpos >= kTEdgesPos[i] && tpos < kTEdgesPos[i+1]) return i;
+    }
+    return -1;
+}
+
+class Mx2WindowProvider {
+public:
+    explicit Mx2WindowProvider(const std::string& csvPath, Mx2Config cfg = {})
+    : cfg_(cfg) { loaded_ = load(csvPath); }
+
+    // Return (usedDynamic?, (lo, hi))
+    std::pair<bool, std::pair<double,double>> windowFor(double x, double t) const {
+        const std::string sname = sliceName(x);
+        if (sname.empty()) {
+            return {false, {cfg_.fallbackLo, cfg_.fallbackHi}};
+        }
+        const double tpos = -t;
+        const int tb = tbinIndex(tpos);
+        if (tb < 0) {
+            return {false, {cfg_.fallbackLo, cfg_.fallbackHi}};
+        }
+        const auto it = table_.find(Key{sname, tb});
+        if (it == table_.end() || !it->second.ok ||
+            !(it->second.sigma > 0.0) ||
+            !std::isfinite(it->second.mu) ||
+            !std::isfinite(it->second.sigma)) {
+            return {false, {cfg_.fallbackLo, cfg_.fallbackHi}};
+        }
+        double lo = it->second.mu - cfg_.nSigma * it->second.sigma;
+        double hi = it->second.mu + cfg_.nSigma * it->second.sigma;
+        // Clip to hard limits
+        lo = std::max(lo, cfg_.mx2Min);
+        hi = std::min(hi, cfg_.mx2Max);
+        if (hi <= lo) {
+            return {false, {cfg_.fallbackLo, cfg_.fallbackHi}};
+        }
+        return {true, {lo, hi}};
+    }
+
+    bool passes(double Mx2, double x, double t) const {
+        const auto used_and_win = windowFor(x, t);
+        const auto lo = used_and_win.second.first;
+        const auto hi = used_and_win.second.second;
+        return (Mx2 > lo) && (Mx2 < hi);
+    }
+
+    bool loaded() const { return loaded_; }
+
+private:
+    bool load(const std::string& path) {
+        std::ifstream in(path);
+        if (!in) {
+            std::cerr << "[Mx2WindowProvider] WARNING: Could not open CSV: " << path
+                      << " — will use fallback window.\n";
+            return false;
+        }
+        std::string line;
+        // Header
+        if (!std::getline(in, line)) {
+            std::cerr << "[Mx2WindowProvider] WARNING: Empty CSV: " << path
+                      << " — will use fallback window.\n";
+            return false;
+        }
+        // Rows
+        while (std::getline(in, line)) {
+            if (line.empty()) continue;
+            std::stringstream ss(line);
+            std::string sname, x_min, x_max, t_min, t_max, mu, sigma, n_entries, fit_success;
+            std::getline(ss, sname, ',');
+            std::getline(ss, x_min, ',');
+            std::getline(ss, x_max, ',');
+            std::getline(ss, t_min, ',');
+            std::getline(ss, t_max, ',');
+            std::getline(ss, mu, ',');
+            std::getline(ss, sigma, ',');
+            std::getline(ss, n_entries, ',');
+            std::getline(ss, fit_success, ',');
+
+            const std::string s_trim = trim(sname);
+            if (s_trim.empty()) continue;
+
+            // Identify t-bin from t_min
+            double tmin_val = std::numeric_limits<double>::quiet_NaN();
+            if (!t_min.empty()) {
+                try { tmin_val = std::stod(t_min); } catch (...) { tmin_val = std::numeric_limits<double>::quiet_NaN(); }
+            }
+            const int tb = tbinIndex(tmin_val);
+            if (tb < 0) continue;
+
+            Row r;
+            try { r.mu    = mu.empty()    ? std::numeric_limits<double>::quiet_NaN() : std::stod(mu); } catch (...) { r.mu = std::numeric_limits<double>::quiet_NaN(); }
+            try { r.sigma = sigma.empty() ? std::numeric_limits<double>::quiet_NaN() : std::stod(sigma); } catch (...) { r.sigma = std::numeric_limits<double>::quiet_NaN(); }
+            r.ok = (!fit_success.empty() && trim(fit_success) == "1" &&
+                    std::isfinite(r.mu) && std::isfinite(r.sigma) && r.sigma > 0.0);
+            table_.emplace(Key{s_trim, tb}, r);
+        }
+        return true;
+    }
+
+    Mx2Config cfg_;
+    std::unordered_map<Key, Row, KeyHash> table_;
+    bool loaded_{false};
+};
+
+} // namespace
+
+// ====================================================================
 // Physical masses (GeV)
+// ====================================================================
 static constexpr double m_e  = 0.000511;  // electron
 static constexpr double m_pi = 0.13957;   // charged pion
 
@@ -45,13 +239,8 @@ GeneralExclusiveKinematicCuts::GeneralExclusiveKinematicCuts(TTreeReader& reader
 {}
 
 //================================================================================
-// beamEnergy(run): 
-//    Return beam energy (GeV) based on run number.  Matches the mapping:
-//      • 6616–6783   → Eb = 10.1998 (RGA Sp19, H₂ data)
-//      • 16042–17065 → Eb = 10.5473 (RGC Su22)
-//      • 17067–17724 → Eb = 10.5563 (RGC Fa22)
-//      • 17725–17811 → Eb = 10.5593 (RGC Sp23)
-//    Outside these → 0.0  (will cause t‐calc to be nonsense and fail).
+// beamEnergy(run): (kept as in your code; default now returns 10.604 when
+// out of the listed ranges to avoid zero.)
 //================================================================================
 static double beamEnergy(int run)
 {
@@ -63,11 +252,7 @@ static double beamEnergy(int run)
 }
 
 //================================================================================
-// compute_t(…) 
-//    Given arrays of runnum, e_p, e_theta, e_phi, p_p, p_theta, p_phi (all scalars
-//    for one event), return t = (q – p_pi)^2 = (ΔE)^2 – (Δp)^2.  We assume the beam
-//    travels +z with energy Eb(run).  “q” is virtual photon four‐vector: p_beam – p_e'.
-//    Then p_pi = (E_pi, p_vec_pi).  
+// compute_t_scalar(…): kept for convenience; not used directly below.
 //================================================================================
 static double compute_t_scalar(int run,
                                double e_p, double e_theta, double e_phi,
@@ -111,72 +296,69 @@ static double compute_t_scalar(int run,
 
 //================================================================================
 // applyCuts(…)
-//    We add one new “property” name:  “enpi+”, which means “apply all of the
-//    usual GeneralExclusiveKinematicCuts plus |t|<1.0 calculated from e_p, e_theta,
-//    e_phi, p_p, p_theta, p_phi, runnum.”
+//   Now uses dynamic Mx2 window (μ ± Nσ) from CSV for the enpi* xB cases.
+//   If the lookup fails, it falls back to [0.81, 1.00].
 //================================================================================
 bool GeneralExclusiveKinematicCuts::applyCuts(int currentFits, bool isMC)
 {
+    // Build the provider once (static lifetime) — thread-safe since C++11.
+    static const Mx2WindowProvider s_mx2prov(kMx2CSVPath, Mx2Config{});
+
     // Basic naming lookup
     string property = binNames[currentFits];
 
-    bool goodEvent = true;
-    // 1) Standard DIS/Hadron cuts (common to almost everything):
+    // Common DIS-level cuts
     if (*Q2 <  1.0    ) return false;
     if (*W  <  2.0    ) return false;
     if (*y  >  0.75   ) return false;
 
+    // Helper to apply dynamic Mx2 window
+    auto PassesDynamicMx2 = [&](double xval, double tval, double mx2val) -> bool {
+        // Returns true if Mx2 is inside dynamic (or fallback) window for this (x, -t).
+        return s_mx2prov.passes(mx2val, xval, tval);
+    };
+
+    // ----------------------------------------------------------------
+    // enpi: x in [0.10, 0.60] and dynamic Mx2 window
+    // ----------------------------------------------------------------
     if (property == "enpi") {
-        goodEvent = goodEvent && *fiducial_status >= 111 && *Mx2 > 0.81 && *Mx2 < 1.00 && 
-            *x > 0.1 && *x < 0.6;
-        return goodEvent;
+        bool goodEvent = (*fiducial_status >= 111) &&
+                         (*x > 0.10 && *x < 0.60);
+        if (!goodEvent) return false;
+        return PassesDynamicMx2(*x, *t, *Mx2);
     }
+
+    // ----------------------------------------------------------------
+    // xB-sliced properties: use dynamic Mx2 window from CSV for each event
+    // ----------------------------------------------------------------
     if (property == "enpiLowxB") {
-        goodEvent = goodEvent && *fiducial_status >= 111 && *Mx2 > 0.81 && *Mx2 < 1.00 && 
-            *x > 0.1 && *x < 0.25;
-        return goodEvent;
+        bool goodEvent = (*fiducial_status >= 111) &&
+                         (*x > 0.10 && *x < 0.25);
+        if (!goodEvent) return false;
+        return PassesDynamicMx2(*x, *t, *Mx2);
     }
     if (property == "enpiMidLowxB") {
-        goodEvent = goodEvent && *fiducial_status >= 111 && *Mx2 > 0.81 && *Mx2 < 1.00 && 
-            *x > 0.25 && *x < 0.35;
-        return goodEvent;
+        bool goodEvent = (*fiducial_status >= 111) &&
+                         (*x > 0.25 && *x < 0.35);
+        if (!goodEvent) return false;
+        return PassesDynamicMx2(*x, *t, *Mx2);
     }
     if (property == "enpiMidHighxB") {
-        goodEvent = goodEvent && *fiducial_status >= 111 && *Mx2 > 0.81 && *Mx2 < 1.00 && 
-            *x > 0.35 && *x < 0.45;
-        return goodEvent;
+        bool goodEvent = (*fiducial_status >= 111) &&
+                         (*x > 0.35 && *x < 0.45);
+        if (!goodEvent) return false;
+        return PassesDynamicMx2(*x, *t, *Mx2);
     }
     if (property == "enpiHighxB") {
-        goodEvent = goodEvent && *fiducial_status >= 111 && *Mx2 > 0.81 && *Mx2 < 1.00 && 
-            *x > 0.45 && *x < 0.60;
-        return goodEvent;
+        bool goodEvent = (*fiducial_status >= 111) &&
+                         (*x > 0.45 && *x < 0.60);
+        if (!goodEvent) return false;
+        return PassesDynamicMx2(*x, *t, *Mx2);
     }
-    // if (property == "enpiLowt") {
-    //     goodEvent = goodEvent && std::fabs(*t) >= 0.10 && std::fabs(*t) <= 0.4667;
-    //     goodEvent = goodEvent && *fiducial_status >= 100 &&
-    //         *Mx2 > 0.80 && *Mx2 < 1.00;
-    //     return goodEvent;
-    // }
-    // if (property == "enpiMidt") {
-    //     goodEvent = goodEvent && std::fabs(*t) >= 0.4667 && std::fabs(*t) <= 0.8333;
-    //     goodEvent = goodEvent && *fiducial_status >= 100 &&
-    //         *Mx2 > 0.80 && *Mx2 < 1.00;
-    //     return goodEvent;
-    // }
-    // if (property == "enpiHight") {
-    //     goodEvent = goodEvent && std::fabs(*t) >= 0.8333 && std::fabs(*t) < 1.2;
-    //     goodEvent = goodEvent && *fiducial_status >= 100 &&
-    //         *Mx2 > 0.80 && *Mx2 < 1.00;
-    //     return goodEvent;
-    // }
-    // if (property == "enpiHarutsBin") {
-    //     goodEvent = goodEvent && std::fabs(*t) >= 0.4667 && std::fabs(*t) <= 0.8333;
-    //     goodEvent = goodEvent && *fiducial_status >= 100 && 
-    //         std::fabs(*t) <= 1.0 && std::fabs(*t) >= 0.0 &&
-    //         *Mx2 > 0.80 && *Mx2 < 1.00;
-    //     return goodEvent;
-    // }
 
+    // ----------------------------------------------------------------
+    // Everything else remains exactly as you had it
+    // ----------------------------------------------------------------
     if (property == "Fall18xB" || property == "Fall18pT" ||
         property == "Spring18xB" || property == "Spring18pT")
     {
@@ -234,11 +416,5 @@ bool GeneralExclusiveKinematicCuts::applyCuts(int currentFits, bool isMC)
         return goodEvent;
     }
 
-  // if (isMC || (*runnum < 16042 || *runnum > 17811)) {
-  //   return goodEvent;
-  // } else {
-  //   // return goodEvent && *target_pol!=0;
-  //   return goodEvent;
-  // }
-  return false;
+    return false;
 }
