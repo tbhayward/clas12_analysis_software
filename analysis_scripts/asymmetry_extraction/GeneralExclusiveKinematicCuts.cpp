@@ -330,28 +330,28 @@ bool GeneralExclusiveKinematicCuts::applyCuts(int currentFits, bool isMC)
 
     if (property == "enpiLowxLowtB") {
         bool goodEvent = (*fiducial_status >= 111) &&
-                         (*x > 0.10 && *x < 0.25) &&
+                         (*x > 0.10 && *x < 0.30) &&
                          (-*t > 0.05 && -*t < 0.35);
         if (!goodEvent) return false;
         return PassesDynamicMx2(*x, *t, *Mx2);
     }
     if (property == "enpiLowxHightB") {
         bool goodEvent = (*fiducial_status >= 111) &&
-                         (*x > 0.10 && *x < 0.25) &&
+                         (*x > 0.10 && *x < 0.30) &&
                          (-*t > 0.85 && -*t < 1.35);
         if (!goodEvent) return false;
         return PassesDynamicMx2(*x, *t, *Mx2);
     }
-    if (property == "enpiLowxLowtB") {
+    if (property == "enpiHighxLowtB") {
         bool goodEvent = (*fiducial_status >= 111) &&
-                         (*x > 0.40 && *x < 0.60) &&
+                         (*x > 0.35 && *x < 0.60) &&
                          (-*t > 0.05 && -*t < 0.35);
         if (!goodEvent) return false;
         return PassesDynamicMx2(*x, *t, *Mx2);
     }
-    if (property == "enpiLowxHightB") {
+    if (property == "enpiHighxHightB") {
         bool goodEvent = (*fiducial_status >= 111) &&
-                         (*x > 0.40 && *x < 0.60) &&
+                         (*x > 0.35 && *x < 0.60) &&
                          (-*t > 0.85 && -*t < 1.35);
         if (!goodEvent) return false;
         return PassesDynamicMx2(*x, *t, *Mx2);
