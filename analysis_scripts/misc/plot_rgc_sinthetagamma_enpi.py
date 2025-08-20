@@ -46,10 +46,10 @@ T_LIM   = (0.0, 1.30)     # for -t
 SG_LIM  = (0.0, 0.50)     # sin(theta_gamma)
 
 # 2D bin counts (same as earlier for X axes; choose 40 bins for sinθγ)
-NB_Q2_2D = 20
-NB_X_2D  = 23
-NB_T_2D  = 21
-NB_SG    = 40
+NB_Q2_2D = 50
+NB_X_2D  = 50
+NB_T_2D  = 50
+NB_SG    = 50
 
 # Labels (units on axes only)
 LAB_Q2 = r"$Q^{2}$ (GeV$^{2}$)"
