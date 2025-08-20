@@ -1,8 +1,12 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
+import os
 import numpy as np
 import matplotlib.pyplot as plt
+
+# Ensure output directory exists
+os.makedirs("output/enpi+", exist_ok=True)
 
 # ===================== Data (WITH A_tg turned ON) =====================
 
@@ -107,10 +111,7 @@ highxB_AULsin2phi_off = [
 # ===================== Helpers =====================
 
 def to_xyyerr(triplets):
-    """
-    Convert list of (x_raw, y, err) into numpy arrays with
-    x = -x_raw (so x is +(-t)), and sorted ascending in x.
-    """
+    """Convert list of (x_raw, y, err) -> arrays with x = -x_raw (plot versus -t)."""
     arr = np.array(triplets, dtype=float)
     x = -arr[:, 0]  # -t on horizontal axis
     y = arr[:, 1]
@@ -141,8 +142,8 @@ row_labels = [r"$x_B\in[0.10,\,0.60]$ (integrated)",
 ax = axes[0, 0]
 x_on, y_on, e_on = to_xyyerr(enpi_AULsinphi_on)
 x_off, y_off, e_off = to_xyyerr(enpi_AULsinphi_off)
-ax.errorbar(x_on,  y_on,  yerr=e_on,  fmt='o-', label='with $A_{tg}$', capsize=3)
-ax.errorbar(x_off, y_off, yerr=e_off, fmt='s--', label='no $A_{tg}$', capsize=3)
+ax.errorbar(x_on,  y_on,  yerr=e_on,  fmt='o', linestyle='none', label='with $A_{tg}$', capsize=3)
+ax.errorbar(x_off, y_off, yerr=e_off, fmt='s', linestyle='none', label='no $A_{tg}$', capsize=3)
 add_zero_line(ax)
 ax.set_ylabel("Amplitude")
 ax.legend(frameon=False, fontsize=9)
@@ -152,15 +153,15 @@ ax.text(0.02, 0.95, row_labels[0], transform=ax.transAxes, va='top', fontsize=11
 ax = axes[0, 1]
 x_on, y_on, e_on = to_xyyerr(enpi_AULsin2phi_on)
 x_off, y_off, e_off = to_xyyerr(enpi_AULsin2phi_off)
-ax.errorbar(x_on,  y_on,  yerr=e_on,  fmt='o-', label='with $A_{tg}$', capsize=3)
-ax.errorbar(x_off, y_off, yerr=e_off, fmt='s--', label='no $A_{tg}$', capsize=3)
+ax.errorbar(x_on,  y_on,  yerr=e_on,  fmt='o', linestyle='none', label='with $A_{tg}$', capsize=3)
+ax.errorbar(x_off, y_off, yerr=e_off, fmt='s', linestyle='none', label='no $A_{tg}$', capsize=3)
 add_zero_line(ax)
 ax.legend(frameon=False, fontsize=9)
 
 # Col 3: A_tg
 ax = axes[0, 2]
 x_atg, y_atg, e_atg = to_xyyerr(enpi_Atg_on)
-ax.errorbar(x_atg, y_atg, yerr=e_atg, fmt='o-', label='$A_{tg}$ fit', capsize=3)
+ax.errorbar(x_atg, y_atg, yerr=e_atg, fmt='o', linestyle='none', label='$A_{tg}$ fit', capsize=3)
 add_zero_line(ax)
 ax.legend(frameon=False, fontsize=9)
 
@@ -169,8 +170,8 @@ ax.legend(frameon=False, fontsize=9)
 ax = axes[1, 0]
 x_on, y_on, e_on = to_xyyerr(lowxB_AULsinphi_on)
 x_off, y_off, e_off = to_xyyerr(lowxB_AULsinphi_off)
-ax.errorbar(x_on,  y_on,  yerr=e_on,  fmt='o-', label='with $A_{tg}$', capsize=3)
-ax.errorbar(x_off, y_off, yerr=e_off, fmt='s--', label='no $A_{tg}$', capsize=3)
+ax.errorbar(x_on,  y_on,  yerr=e_on,  fmt='o', linestyle='none', label='with $A_{tg}$', capsize=3)
+ax.errorbar(x_off, y_off, yerr=e_off, fmt='s', linestyle='none', label='no $A_{tg}$', capsize=3)
 add_zero_line(ax)
 ax.set_ylabel("Amplitude")
 ax.legend(frameon=False, fontsize=9)
@@ -180,15 +181,15 @@ ax.text(0.02, 0.95, row_labels[1], transform=ax.transAxes, va='top', fontsize=11
 ax = axes[1, 1]
 x_on, y_on, e_on = to_xyyerr(lowxB_AULsin2phi_on)
 x_off, y_off, e_off = to_xyyerr(lowxB_AULsin2phi_off)
-ax.errorbar(x_on,  y_on,  yerr=e_on,  fmt='o-', label='with $A_{tg}$', capsize=3)
-ax.errorbar(x_off, y_off, yerr=e_off, fmt='s--', label='no $A_{tg}$', capsize=3)
+ax.errorbar(x_on,  y_on,  yerr=e_on,  fmt='o', linestyle='none', label='with $A_{tg}$', capsize=3)
+ax.errorbar(x_off, y_off, yerr=e_off, fmt='s', linestyle='none', label='no $A_{tg}$', capsize=3)
 add_zero_line(ax)
 ax.legend(frameon=False, fontsize=9)
 
 # Col 3: A_tg
 ax = axes[1, 2]
 x_atg, y_atg, e_atg = to_xyyerr(lowxB_Atg_on)
-ax.errorbar(x_atg, y_atg, yerr=e_atg, fmt='o-', label='$A_{tg}$ fit', capsize=3)
+ax.errorbar(x_atg, y_atg, yerr=e_atg, fmt='o', linestyle='none', label='$A_{tg}$ fit', capsize=3)
 add_zero_line(ax)
 ax.legend(frameon=False, fontsize=9)
 
@@ -197,8 +198,8 @@ ax.legend(frameon=False, fontsize=9)
 ax = axes[2, 0]
 x_on, y_on, e_on = to_xyyerr(highxB_AULsinphi_on)
 x_off, y_off, e_off = to_xyyerr(highxB_AULsinphi_off)
-ax.errorbar(x_on,  y_on,  yerr=e_on,  fmt='o-', label='with $A_{tg}$', capsize=3)
-ax.errorbar(x_off, y_off, yerr=e_off, fmt='s--', label='no $A_{tg}$', capsize=3)
+ax.errorbar(x_on,  y_on,  yerr=e_on,  fmt='o', linestyle='none', label='with $A_{tg}$', capsize=3)
+ax.errorbar(x_off, y_off, yerr=e_off, fmt='s', linestyle='none', label='no $A_{tg}$', capsize=3)
 add_zero_line(ax)
 ax.set_ylabel("Amplitude")
 ax.set_xlabel(r"$-t\;(\mathrm{GeV}^2)$")
@@ -209,8 +210,8 @@ ax.text(0.02, 0.95, row_labels[2], transform=ax.transAxes, va='top', fontsize=11
 ax = axes[2, 1]
 x_on, y_on, e_on = to_xyyerr(highxB_AULsin2phi_on)
 x_off, y_off, e_off = to_xyyerr(highxB_AULsin2phi_off)
-ax.errorbar(x_on,  y_on,  yerr=e_on,  fmt='o-', label='with $A_{tg}$', capsize=3)
-ax.errorbar(x_off, y_off, yerr=e_off, fmt='s--', label='no $A_{tg}$', capsize=3)
+ax.errorbar(x_on,  y_on,  yerr=e_on,  fmt='o', linestyle='none', label='with $A_{tg}$', capsize=3)
+ax.errorbar(x_off, y_off, yerr=e_off, fmt='s', linestyle='none', label='no $A_{tg}$', capsize=3)
 add_zero_line(ax)
 ax.set_xlabel(r"$-t\;(\mathrm{GeV}^2)$")
 ax.legend(frameon=False, fontsize=9)
@@ -218,24 +219,22 @@ ax.legend(frameon=False, fontsize=9)
 # Col 3: A_tg
 ax = axes[2, 2]
 x_atg, y_atg, e_atg = to_xyyerr(highxB_Atg_on)
-ax.errorbar(x_atg, y_atg, yerr=e_atg, fmt='o-', label='$A_{tg}$ fit', capsize=3)
+ax.errorbar(x_atg, y_atg, yerr=e_atg, fmt='o', linestyle='none', label='$A_{tg}$ fit', capsize=3)
 add_zero_line(ax)
 ax.set_xlabel(r"$-t\;(\mathrm{GeV}^2)$")
 ax.legend(frameon=False, fontsize=9)
 
-# Make axes tidy
+# Tidy axes: grid, ticks, fixed y-limits, reasonable x-limits
 for i in range(3):
     for j in range(3):
         axes[i, j].grid(alpha=0.25)
         axes[i, j].tick_params(direction='in')
+        axes[i, j].set_ylim(-0.2, 0.2)  # standardized y-axis across all panels
         if i < 2:
-            # Only label x-axis on bottom row
             axes[i, j].set_xlabel("")
-        # Slightly generous x-limits based on data in that panel
-        # (compute from whatever got plotted already)
-        lines = axes[i, j].lines
+        # Auto x-limits from plotted data
         xs = []
-        for line in lines:
+        for line in axes[i, j].lines:
             xd = line.get_xdata()
             if len(xd): xs.extend(list(xd))
         if xs:
@@ -244,5 +243,5 @@ for i in range(3):
             axes[i, j].set_xlim(xmin - pad, xmax + pad)
 
 fig.suptitle(r"UL amplitudes vs $-t$ (with and without tangential leakage term)", fontsize=14, y=0.99)
-plt.savefig("output/enpi+/GE_UL_3x3_panels.pdf", dpi=200, bbox_inches="tight")
+plt.savefig("output/enpi+/GE_UL_3x3_panels.pdf", dpi=300, bbox_inches="tight")
 plt.show()
