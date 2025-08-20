@@ -284,79 +284,60 @@ double DSA_dihadron(double* x, double* par) {
 }
 
 /******** General Exclusive all defined together ********/
-// Guard against tiny denominators to avoid NaNs/infs.
+// Guard against tiny denominators
 static inline double GE_safe_div(double num, double den) {
   const double eps = 1e-12;
-  if (std::fabs(den) < eps) {
-    // Fall back to sign-preserving tiny denominator to avoid blow-up
-    return num / (den >= 0.0 ? eps : -eps);
-  }
+  if (std::fabs(den) < eps) return num / (den >= 0.0 ? eps : -eps);
   return num / den;
 }
-// // Shared unpolarized denominator: 1 + B * cos(phi) + C * cos(2*phi).
-// double GE_den(double phi, double B_UUcos, double C_UUcos2) {
-//   return 1.0 + B_UUcos * std::cos(phi) + C_UUcos2 * std::cos(2.0 * phi);
-// }
-// Shared unpolarized denominator: 1 + B * cos(phi) + C * cos(2*phi).
-double GE_den(double phi, double B_UUcos, double C_UUcos2, double C_UUsin, double C_UUsin2) {
-  return 1.0 + B_UUcos * std::cos(phi) + C_UUcos2 * std::cos(2.0 * phi) +
-    C_UUsin*std::sin(phi) + C_UUsin2 * std::sin(phi);
+
+// Denominator: 1 + B*cos(phi) + C*cos(2phi)
+double GE_den(double phi, double B_UUcos, double C_UUcos2) {
+  return 1.0
+       + B_UUcos  * std::cos(phi)
+       + C_UUcos2 * std::cos(2.0 * phi);
 }
 
-// BSA(phi) = ( ALU * sin(phi) ) / GE_den(...)
+// BSA
 double GE_model_BSA(double phi, double ALU,
-                    double B_UUcos, double C_UUcos2, double C_UUsin, double C_UUsin2) {
-  const double den = GE_den(phi, B_UUcos, C_UUcos2, C_UUsin, C_UUsin2);
+                    double B_UUcos, double C_UUcos2) {
+  const double den = GE_den(phi, B_UUcos, C_UUcos2);
   const double num = ALU * std::sin(phi);
   return GE_safe_div(num, den);
 }
-// TSA(phi) = ( AUL * sin(phi) + AUL2 * sin(2*phi) ) / GE_den(...)
-double GE_model_TSA(double phi, double AUL, double AUL2,
-                    double B_UUcos, double C_UUcos2, double C_UUsin, double C_UUsin2) {
-  const double den = GE_den(phi, B_UUcos, C_UUcos2, C_UUsin, C_UUsin2);
-  const double num = AUL * std::sin(phi) + AUL2 * std::sin(2.0 * phi);
+
+// TSA with tangential-polarization leakage term
+double GE_model_TSA_with_sTG(double phi, double AUL, double AUL2, double Atg, double sTG,
+                             double B_UUcos, double C_UUcos2) {
+  const double den = GE_den(phi, B_UUcos, C_UUcos2);
+  const double num = (AUL  * std::sin(phi))
+                   + (AUL2 * std::sin(2.0 * phi))
+                   + (Atg  * sTG * std::sin(phi)); // no depol factor
   return GE_safe_div(num, den);
 }
-// DSA(phi) = ( ALL + ALL2 * cos(phi) ) / GE_den(...)
+
+// DSA
 double GE_model_DSA(double phi, double ALL, double ALL2,
-                    double B_UUcos, double C_UUcos2, double C_UUsin, double C_UUsin2) {
-  const double den = GE_den(phi, B_UUcos, C_UUcos2, C_UUsin, C_UUsin2);
+                    double B_UUcos, double C_UUcos2) {
+  const double den = GE_den(phi, B_UUcos, C_UUcos2);
   const double num = ALL + ALL2 * std::cos(phi);
   return GE_safe_div(num, den);
 }
-// ----- TF1-compatible wrappers (for plotting) -----
-// x[0] = phi
-// BSA params: [0]=ALU, [1]=B_UUcos, [2]=C_UUcos2, [3]=C_UUsin, [4]=C_UUsin2
+
+// ----- TF1 wrappers -----
+// BSA params: [0]=ALU, [1]=B, [2]=C
 double BSA_general_exclusive_TF1(double* x, double* par) {
-  const double phi = x[0];
-  const double ALU = par[0];
-  const double B   = par[1];
-  const double C   = par[2];
-  const double D   = par[3];
-  const double E   = par[4];
-  return GE_model_BSA(phi, ALU, B, C, D, E);
+  return GE_model_BSA(x[0], par[0], par[1], par[2]);
 }
-// TSA params: [0]=AUL, [1]=AUL2, [2]=B_UUcos, [3]=C_UUcos2, [3]=C_UUsin, [4]=C_UUsin2
+
+// TSA params: [0]=AUL, [1]=AUL2, [2]=Atg, [3]=sTG(const), [4]=B, [5]=C
 double TSA_general_exclusive_TF1(double* x, double* par) {
-  const double phi  = x[0];
-  const double AUL  = par[0];
-  const double AUL2 = par[1];
-  const double B    = par[2];
-  const double C    = par[3];
-  const double D    = par[4];
-  const double E    = par[5];
-  return GE_model_TSA(phi, AUL, AUL2, B, C, D, E);
+  return GE_model_TSA_with_sTG(x[0], par[0], par[1], par[2], par[3], par[4], par[5]);
 }
-// DSA params: [0]=ALL, [1]=ALL2, [2]=B_UUcos, [3]=C_UUcos2, [3]=C_UUsin, [4]=C_UUsin2
+
+// DSA params: [0]=ALL, [1]=ALL2, [2]=B, [3]=C
 double DSA_general_exclusive_TF1(double* x, double* par) {
-  const double phi  = x[0];
-  const double ALL  = par[0];
-  const double ALL2 = par[1];
-  const double B    = par[2];
-  const double C    = par[3];
-  const double D    = par[4];
-  const double E    = par[5];
-  return GE_model_DSA(phi, ALL, ALL2, B, C, D, E);
+  return GE_model_DSA(x[0], par[0], par[1], par[2], par[3]);
 }
 
 /******** VALUE CALCULATIONS ********/
