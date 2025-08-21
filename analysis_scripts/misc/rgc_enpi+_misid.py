@@ -124,8 +124,8 @@ def main():
 
         tpos = -t[base]
         xs   = x[base]
-        e_is_pi_minus = (ep[base] == -211)   # π− → e− (electron candidate is actually π−)
-        p1_is_k_minus = (p1[base] == -321)   # π− → K− (hadron candidate flagged as K−)
+        e_is_pi_minus = (ep[base] != 11)   # π− → e− (electron candidate is actually π−)
+        p1_is_k_minus = (p1[base] != 211)   # π− → K− (hadron candidate flagged as K−)
 
         sidx = slice_index_from_x(xs)           # 0..3 or -1
         tbix = tbin_index_from_tpos(tpos)       # 0..5 or -1
