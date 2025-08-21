@@ -57,7 +57,7 @@ NB_Q2  = 67
 NB_X   = 67
 NB_T   = 67
 NB_PHI = 67
-NB_MX2 = 67
+NB_MX2 = 50
 
 # 2D binning = 0.6667 × base (rounded)
 NB_Q2_2D  = int(round(NB_Q2  ))   # 20
