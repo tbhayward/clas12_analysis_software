@@ -3640,8 +3640,7 @@ static void plotHistogramAndFit_GeneralExclusive(
     return a0 + (g_ge_ctx.rWA * aLU * std::sin(phi)) / denom(phi);
   };
   auto yAUL = [&](double phi){
-    // Use interpolated centered ⟨sinθγ⟩ for a smooth model curve
-    const double sTGc = GE_sTG_centered_interp(phi, hAUL);
+    const double sTGc = GE_sTG_centered_interp(phi, hAUL); // smoothed centered ⟨sinθγ⟩
     const double num = g_ge_ctx.rVA * aUL1 * std::sin(phi)
                      + g_ge_ctx.rBA * aUL2 * std::sin(2.0*phi)
                      + aTG * sTGc * std::sin(phi);
@@ -3689,7 +3688,7 @@ static void plotHistogramAndFit_GeneralExclusive(
     gr->Draw("AP");
 
     // Smooth model curve
-    const int np = 720; // denser sampling
+    const int np = 720;
     TGraph* gm = new TGraph(np);
     for (int j=0; j<np; ++j){
       const double phi = (2.0*TMath::Pi()) * (j/(double)(np-1));
@@ -3699,10 +3698,12 @@ static void plotHistogramAndFit_GeneralExclusive(
     gm->SetLineWidth(2);
     gm->Draw("L same");
 
-    // Smaller legend in the top-right
-    TLegend* L = new TLegend(0.62, 0.70, 0.93, 0.92);
-    L->SetBorderSize(0);
-    L->SetFillStyle(0);
+    // Legend: a touch left & down, with border
+    TLegend* L = new TLegend(0.56, 0.66, 0.90, 0.90);
+    L->SetBorderSize(1);
+    L->SetLineColor(kBlack);
+    L->SetFillColor(kWhite);
+    L->SetFillStyle(1001);
     L->SetTextSize(0.024);
     L->AddEntry((TObject*)0, Form("#chi^{2}/ndf (global) = %.1f/%d = %.2f",
                                   globalChi2, globalNdf,
@@ -3717,25 +3718,26 @@ static void plotHistogramAndFit_GeneralExclusive(
     L->AddEntry((TObject*)0, Form("F_{UU}^{cos#phi}/F_{UU} = %.6f", aUUc), "");
     L->AddEntry((TObject*)0, Form("F_{UU}^{cos2#phi}/F_{UU}= %.6f", aUUc2), "");
   };
-  // TSA legend (label requested)
+  // TSA legend (requested label)
   auto fillTSA = [&](TLegend* L){
-    L->AddEntry((TObject*)0, Form("F_{UL}^{sin#phi}/F_{UU}  = %.6f", aUL1), "");
-    L->AddEntry((TObject*)0, Form("F_{UL}^{sin2#phi}/F_{UU} = %.6f", aUL2), "");
-    L->AddEntry((TObject*)0, Form("A_{tg}^{sin#phi}          = %.6f", aTG),  "");
-    L->AddEntry((TObject*)0, Form("F_{UU}^{cos#phi}/F_{UU}  = %.6f", aUUc),  "");
-    L->AddEntry((TObject*)0, Form("F_{UU}^{cos2#phi}/F_{UU} = %.6f", aUUc2), "");
+    L->AddEntry((TObject*)0, Form("F_{UL}^{sin#phi}/F_{UU}   = %.6f", aUL1), "");
+    L->AddEntry((TObject*)0, Form("F_{UL}^{sin2#phi}/F_{UU}  = %.6f", aUL2), "");
+    L->AddEntry((TObject*)0, Form("A_{tg}^{sin#phi}           = %.6f", aTG),  "");
+    L->AddEntry((TObject*)0, Form("F_{UU}^{cos#phi}/F_{UU}   = %.6f", aUUc),  "");
+    L->AddEntry((TObject*)0, Form("F_{UU}^{cos2#phi}/F_{UU}  = %.6f", aUUc2), "");
   };
   // DSA legend
   auto fillDSA = [&](TLegend* L){
-    L->AddEntry((TObject*)0, Form("F_{LL}/F_{UU}           = %.6f", aLL),  "");
-    L->AddEntry((TObject*)0, Form("F_{LL}^{cos#phi}/F_{UU} = %.6f", aLLc), "");
-    L->AddEntry((TObject*)0, Form("F_{UU}^{cos#phi}/F_{UU} = %.6f", aUUc),  "");
-    L->AddEntry((TObject*)0, Form("F_{UU}^{cos2#phi}/F_{UU}= %.6f", aUUc2), "");
+    L->AddEntry((TObject*)0, Form("F_{LL}/F_{UU}            = %.6f", aLL),  "");
+    L->AddEntry((TObject*)0, Form("F_{LL}^{cos#phi}/F_{UU}  = %.6f", aLLc), "");
+    L->AddEntry((TObject*)0, Form("F_{UU}^{cos#phi}/F_{UU}  = %.6f", aUUc),  "");
+    L->AddEntry((TObject*)0, Form("F_{UU}^{cos2#phi}/F_{UU} = %.6f", aUUc2), "");
   };
 
-  addPointsAndCurve(1, hALU, yALU, "A_{LU}", fillBSA, -0.6,  0.6);
-  addPointsAndCurve(2, hAUL, yAUL, "A_{UL}", fillTSA, -0.6,  0.6);
-  addPointsAndCurve(3, hALL, yALL, "A_{LL}", fillDSA, -1.0,  1.0);
+  // Updated y-ranges
+  addPointsAndCurve(1, hALU, yALU, "A_{LU}", fillBSA, -0.2, 0.2);
+  addPointsAndCurve(2, hAUL, yAUL, "A_{UL}", fillTSA, -0.2, 0.2);
+  addPointsAndCurve(3, hALL, yALL, "A_{LL}", fillDSA, -0.2, 0.8);
 
   const double vminB = allBins[currentFits][binIndex];
   const double vmaxB = allBins[currentFits][binIndex+1];
