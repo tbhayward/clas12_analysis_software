@@ -422,14 +422,13 @@ def make_binned_canvas_4x6(H1_Q2, H1_X, H1_T, H1_PHI, outdir):
         fontsize=14
     )
 
-    # Prebuild legend handles
+    # Prebuild legend handles (for a clean, single legend)
     legend_handles = []
     legend_labels  = []
     for s in SLICE_ORDER:
         lbl = rf"$x_{{B}}\in[{X_SLICES[s][0]:.2f},{X_SLICES[s][1]:.2f}]$"
         h, = plt.plot([], [], color=XB_COLORS[s], lw=1.8, label=lbl)
         legend_handles.append(h); legend_labels.append(lbl)
-    #endfor
     for h in legend_handles: h.remove()
 
     for c in range(NTCOLS):
@@ -439,34 +438,32 @@ def make_binned_canvas_4x6(H1_Q2, H1_X, H1_T, H1_PHI, outdir):
         for r, (name, H1, ED, CE, LAB, LIM) in enumerate(row_vars):
             ax = axes[r, c]
             ax.set_xlim(*LIM)
-            if r == 3: ax.set_xlabel(LAB)        # bottom row only
-            if c == 0: ax.set_ylabel("counts")   # left column only
+            ax.set_xlabel(LAB)             # ← label every panel in the row
+            if c == 0:
+                ax.set_ylabel("counts")     # left column only
+
             if name == "phi":
                 ax.set_xticks([0, np.pi/2, np.pi, 3*np.pi/2, 2*np.pi],
                               [r"$0$", r"$\frac{\pi}{2}$", r"$\pi$", r"$\frac{3\pi}{2}$", r"$2\pi$"])
-            #endif
+
             ax.grid(True, linestyle="--", alpha=0.25)
 
+            # draw the four xB-slice curves
             for sidx, s in enumerate(SLICE_ORDER):
                 counts = H1[sidx, c, :]
                 if np.sum(counts) == 0:
                     continue
-                #endif
-                ax.plot(CE, counts, drawstyle="steps-mid", linewidth=1.6, color=XB_COLORS[s], label=None)
-            #endfor
+                ax.plot(CE, counts, drawstyle="steps-mid", linewidth=1.6,
+                        color=XB_COLORS[s], label=None)
 
             if r == 0:
-                ax.text(0.02, 0.98, col_title, transform=ax.transAxes, ha='left', va='top', fontsize=11)
-            #endif
+                ax.text(0.02, 0.98, col_title, transform=ax.transAxes,
+                        ha='left', va='top', fontsize=11)
 
             if c != 0:
                 ax.tick_params(labelleft=False)
-            #endif
-            if r != 3:
-                ax.tick_params(labelbottom=False)
-            #endif
-        #endfor
-    #endfor
+            # no longer hide bottom tick labels for non-bottom rows
+            # (we want ticks + labels visible on all panels now)
 
     fig.legend(legend_handles, legend_labels, loc="upper center",
                ncol=4, frameon=True, fontsize=11, bbox_to_anchor=(0.5, 0.93))
@@ -662,7 +659,7 @@ def main():
 
     # If you want the others again, uncomment:
     # make_2d_canvases(H2, outdir)
-    # make_binned_canvas_4x6(H1_Q2, H1_X, H1_T, H1_PHI, outdir)
+    make_binned_canvas_4x6(H1_Q2, H1_X, H1_T, H1_PHI, outdir)
 #endfor
 
 if __name__ == "__main__":
