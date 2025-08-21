@@ -3355,7 +3355,7 @@ struct GEContext {
 static GEContext g_ge_ctx;
 
 // Global switch to enable/disable the leakage fit (initial 0 and fixed if disabled)
-static bool   g_fit_enable_tg  = false;   // set to false to fix A_tg = 0
+static bool   g_fit_enable_tg  = true;   // set to false to fix A_tg = 0
 static double g_fit_fixed_Atg  = 0.0;    // value used if fixed
 
 // Helper: fetch centered/normalized sTG(φ) using the histogram's binning
@@ -3726,7 +3726,7 @@ void performChi2Fits_GeneralExclusive(const char* output_file,
   // Control the leakage fit here (global switch)
   //   true  -> fit A_tg
   //   false -> fix A_tg = g_fit_fixed_Atg (default 0)
-  g_fit_enable_tg = false;      // ← set to false to disable fitting
+  g_fit_enable_tg = true;      // ← set to false to disable fitting
   g_fit_fixed_Atg = 0.0;
 
   // Prepare output streams (add A_tg array)
@@ -3877,16 +3877,16 @@ void performChi2Fits_GeneralExclusive(const char* output_file,
     minuit.SetFCN(chi2Fcn_GeneralExclusive);
 
     // name, initial value, step, low, up
-    minuit.DefineParameter(0,  "ALU_offset",      0.00,  0.01,  -0.06,  0.06);
-    minuit.DefineParameter(1,  "AUL_offset",      0.00,  0.01,  -0.06,  0.06);
-    minuit.DefineParameter(2,  "F_LU_sin/F_UU",   0.00,  0.01,  -0.1,    0.3);
-    minuit.DefineParameter(3,  "F_UL_sin/F_UU",   0.00,  0.01,  -0.4,    0.2);
-    minuit.DefineParameter(4,  "F_UL_sin2/F_UU",  0.00,  0.01,  -0.6,    0.2);
-    minuit.DefineParameter(5,  "F_LL/F_UU",       0.00,  0.01,  -0.1,    0.7);
-    minuit.DefineParameter(6,  "F_LL_cos/F_UU",   0.00,  0.01,  -0.4,    0.4);
-    minuit.DefineParameter(7,  "F_UU_cos/F_UU",   0.00,  0.01,  -0.4,    0.4);
-    minuit.DefineParameter(8,  "F_UU_cos2/F_UU",  0.00,  0.01,  -0.4,    0.4);
-    minuit.DefineParameter(9,  "A_tg",            0.00,  0.01,  -0.5,    0.5); 
+    minuit.DefineParameter(0,  "ALU_offset",      0.00,  0.01,  -0.1,  0.1);
+    minuit.DefineParameter(1,  "AUL_offset",      0.00,  0.01,  -0.1,  0.1);
+    minuit.DefineParameter(2,  "F_LU_sin/F_UU",   0.00,  0.01,  -1,    1);
+    minuit.DefineParameter(3,  "F_UL_sin/F_UU",   0.00,  0.01,  -1,    1);
+    minuit.DefineParameter(4,  "F_UL_sin2/F_UU",  0.00,  0.01,  -1,    1);
+    minuit.DefineParameter(5,  "F_LL/F_UU",       0.00,  0.01,  -1,    1);
+    minuit.DefineParameter(6,  "F_LL_cos/F_UU",   0.00,  0.01,  -1,    1);
+    minuit.DefineParameter(7,  "F_UU_cos/F_UU",   0.00,  0.01,  -1,    1);
+    minuit.DefineParameter(8,  "F_UU_cos2/F_UU",  0.00,  0.01,  -1,    1);
+    minuit.DefineParameter(9,  "A_tg",            0.00,  0.01,  -1,    1); 
 
     // If ⟨sinθγ⟩ is essentially flat in φ for this bin, A_tg is unidentifiable → fix it.
     if (!g_fit_enable_tg || g_ge_ctx.sTG_wstd <= 1e-4) {
