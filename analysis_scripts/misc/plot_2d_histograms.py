@@ -415,7 +415,8 @@ def make_binned_canvas_4x6(H1_Q2, H1_X, H1_T, H1_PHI, outdir):
                 ("phi",H1_PHI, PHI_EDGES, PHI_CEN, LAB_PHI, PHI_LIM)]
 
     fig, axes = plt.subplots(4, NTCOLS, figsize=(20, 12), sharey="row")
-    fig.subplots_adjust(top=0.88, wspace=0.12, hspace=0.20)
+    # add a bit of extra room below the bottom row and slightly more row spacing
+    fig.subplots_adjust(top=0.88, bottom=0.095, wspace=0.12, hspace=0.24)
     fig.suptitle(
         r"Overlaid distributions by $-t$ bin and $x_{B}$ slice" "\n"
         r"Global cuts: $Q^{2}>1,\, W>2,\, y<0.75,\, 0.81<M_{x}^{2}<1.00$",
