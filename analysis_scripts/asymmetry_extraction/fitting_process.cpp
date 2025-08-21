@@ -3769,7 +3769,7 @@ static void plotHistogramAndFit_GeneralExclusive(
     }
   };
   auto fillDSA = [&](TLegend* L){
-    L->AddEntry((TObject*)0, Form("F_{LL}/F_{UU}            = %.6f #pm %.6f", aLL,  eLL ), "");
+    L->AddEntry((TObject*)0, Form("F_{LL}/F_{UU}  = %.6f #pm %.6f", aLL,  eLL ), "");
     L->AddEntry((TObject*)0, Form("F_{LL}^{cos#phi}/F_{UU}  = %.6f #pm %.6f", aLLc, eLLc), "");
     if (!g_ge_compact_legend) {
       L->AddEntry((TObject*)0, Form("F_{UU}^{cos#phi}/F_{UU}  = %.6f #pm %.6f", aUUc, eUUc), "");
