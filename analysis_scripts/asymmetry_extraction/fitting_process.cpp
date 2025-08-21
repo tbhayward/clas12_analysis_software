@@ -3644,8 +3644,7 @@ static void plotHistogramAndFit_GeneralExclusive(
   const double err[],                 // uncertainties (same order)
   int binIndex, const std::string& prefix,
   const std::string& runSuffix,
-  double globalChi2, int globalNdf)
-{
+  double globalChi2, int globalNdf) {
   const double a0   = par[0],  a1   = par[1];
   const double aLU  = par[2],  aUL1 = par[3],  aUL2 = par[4];
   const double aLL  = par[5],  aLLc = par[6];
@@ -3731,6 +3730,11 @@ static void plotHistogramAndFit_GeneralExclusive(
     L->SetFillColor(kWhite);
     L->SetFillStyle(1001);
     L->SetTextSize(0.024);
+
+    // NEW: left-justify text and shrink the symbol column margin
+    L->SetTextAlign(12);   // 10*H+V: H=1 left, V=2 center
+    L->SetMargin(0.08);    // default ~0.25; smaller = less left padding
+
     L->AddEntry((TObject*)0, Form("#chi^{2}/ndf (global) = %.1f/%d = %.2f",
                                   globalChi2, globalNdf,
                                   (globalNdf>0?globalChi2/globalNdf:0.0)), "");
