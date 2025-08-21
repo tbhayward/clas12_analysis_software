@@ -12,19 +12,20 @@ Bottom row (pion candidate):
   • K+ mis-ID  : matching_p1_pid ==  321
   • p  mis-ID  : matching_p1_pid == 2212
 
-Common cuts per event:
+Cuts:
   0.81 < Mx2 < 1.00
   x in slice range
   -t in one of the six bins below
   (No fiducial-status cuts.)
 
-Y-axis is a FRACTION with limits [0, 0.01].
+Y-axis is a FRACTION with limits [0, 0.03].
 
 Usage:
   python misid_vs_t_2x4.py <input.root>
 
 Output:
   output/enpi+/misidentification.pdf
+  (Also prints exact values per point to the terminal.)
 """
 
 import sys, os
@@ -51,7 +52,7 @@ X_SLICES = {
 }
 SLICE_ORDER = ["Low", "MidLow", "MidHigh", "High"]
 
-# -t bin edges in GeV^2 (ascending) → bins [edge[i], edge[i+1])
+# -t bin edges in GeV^2 (ascending) → bins [edge[i], edge[i+1})
 T_EDGES_POS = np.array([0.05, 0.25, 0.45, 0.65, 0.85, 1.05, 1.25], dtype=float)
 T_CENTERS   = 0.5 * (T_EDGES_POS[:-1] + T_EDGES_POS[1:])
 NTBINS      = len(T_EDGES_POS) - 1
@@ -59,7 +60,7 @@ NTBINS      = len(T_EDGES_POS) - 1
 # Plot / output
 OUT_DIR  = os.path.join("output", "enpi+")
 OUT_PATH = os.path.join(OUT_DIR, "misidentification.pdf")
-YLIM     = (0.0, 0.03)  # fraction scale
+YLIM     = (0.0, 0.03)  # fraction scale (you set this)
 
 # Styles
 STYLE_E_PI  = dict(fmt="o",  color="tab:blue",   label=r"$e^- \leftarrow \pi^{-}$")
@@ -91,7 +92,7 @@ def tbin_index_from_tpos(tpos):
     return bix.astype(np.int16)
 
 def binomial_err(n, N):
-    """Standard error for fraction n/N: sqrt(f*(1-f)/N). Returns np.nan if N==0."""
+    """Standard error for fraction n/N: sqrt(f*(1-f)/N). Returns (f, err) with nan where N==0."""
     with np.errstate(divide="ignore", invalid="ignore"):
         f = np.where(N > 0, n / N, np.nan)
         var = np.where(N > 0, f * (1.0 - f) / N, np.nan)
@@ -112,7 +113,7 @@ def main():
 
     branches = ["x", "t", "Mx2", "matching_e_pid", "matching_p1_pid"]
 
-    # Totals per slice/bin (shared denominator for all categories)
+    # Denominators per slice/bin (shared for all categories)
     totals = np.zeros((4, NTBINS), dtype=np.int64)
 
     # Top row (electron candidate)
@@ -121,7 +122,7 @@ def main():
 
     # Bottom row (pion candidate)
     n_p_from_e  = np.zeros((4, NTBINS), dtype=np.int64)   # matching_p1_pid == -11
-    n_p_from_k  = np.zeros((4, NTBINS), dtype=np.int64)   # matching_p1_pid == 321
+    n_p_from_k  = np.zeros((4, NTBINS), dtype=np.int64)   # matching_p1_pid ==  321
     n_p_from_p  = np.zeros((4, NTBINS), dtype=np.int64)   # matching_p1_pid == 2212
 
     # Iterate in chunks
@@ -156,8 +157,8 @@ def main():
         if not np.any(valid):
             continue
 
-        si = sidx[valid]
-        bi = tbix[valid]
+        si  = sidx[valid]
+        bi  = tbix[valid]
         epv = ep_b[valid]
         p1v = p1_b[valid]
 
@@ -169,8 +170,8 @@ def main():
         np.add.at(n_e_from_k,  (si[epv == -321], bi[epv == -321]), 1)
 
         np.add.at(n_p_from_e,  (si[p1v ==  -11], bi[p1v ==  -11]), 1)
-        np.add.at(n_p_from_k,  (si[p1v ==  321], bi[p1v ==  321]), 1)
-        np.add.at(n_p_from_p,  (si[p1v == 2212], bi[p1v == 2212]), 1)
+        np.add.at(n_p_from_k,  (si[p1v ==   321], bi[p1v ==   321]), 1)
+        np.add.at(n_p_from_p,  (si[p1v ==  2212], bi[p1v ==  2212]), 1)
 
     # Fractions + binomial errors
     f_e_pi, se_e_pi = binomial_err(n_e_from_pi, totals)
@@ -179,6 +180,33 @@ def main():
     f_p_e,  se_p_e  = binomial_err(n_p_from_e,  totals)
     f_p_k,  se_p_k  = binomial_err(n_p_from_k,  totals)
     f_p_p,  se_p_p  = binomial_err(n_p_from_p,  totals)
+
+    # ── Print exact values for EVERY point ───────────────────────────
+    print("\n=== Misidentification fractions by xB slice and -t bin ===")
+    for si, sname in enumerate(SLICE_ORDER):
+        xa, xb = X_SLICES[sname]
+        print(f"\nSlice {sname}  ( {xa:.2f} < x_B < {xb:.2f} )")
+        print("bin  [-t_min, -t_max)  N_tot |  e<-pi:  n  f  ±σ   |  e<-K:   n  f  ±σ   |  pi<-e+: n  f  ±σ   |  pi<-K+: n  f  ±σ   |  pi<-p:  n  f  ±σ")
+        for bi in range(NTBINS):
+            tmin, tmax = T_EDGES_POS[bi], T_EDGES_POS[bi+1]
+            N   = int(totals[si, bi])
+
+            nepi = int(n_e_from_pi[si, bi]); fepi = f_e_pi[si, bi]; sepi = se_e_pi[si, bi]
+            nek  = int(n_e_from_k [si, bi]); fek  = f_e_k [si, bi]; sek  = se_e_k [si, bi]
+
+            npe  = int(n_p_from_e [si, bi]); fpe  = f_p_e [si, bi]; spe  = se_p_e [si, bi]
+            npk  = int(n_p_from_k [si, bi]); fpk  = f_p_k [si, bi]; spk  = se_p_k [si, bi]
+            npp  = int(n_p_from_p [si, bi]); fpp  = f_p_p [si, bi]; spp  = se_p_p [si, bi]
+
+            def fmt(v): 
+                return "  nan" if not np.isfinite(v) else f"{v:6.4f}"
+
+            print(f"{bi:>2d}   [{tmin:5.2f},{tmax:5.2f})  {N:5d} | "
+                  f"{nepi:5d} {fmt(fepi)} ±{fmt(sepi)} | "
+                  f"{nek:5d} {fmt(fek)} ±{fmt(sek)} | "
+                  f"{npe:5d} {fmt(fpe)} ±{fmt(spe)} | "
+                  f"{npk:5d} {fmt(fpk)} ±{fmt(spk)} | "
+                  f"{npp:5d} {fmt(fpp)} ±{fmt(spp)}")
 
     # ── Plotting (2x4) ───────────────────────────────────────────────
     os.makedirs(OUT_DIR, exist_ok=True)
@@ -195,12 +223,10 @@ def main():
 
         # Top row: electron candidate mis-IDs
         ax_top = axes[0, col]
-        # π−
         m = np.isfinite(f_e_pi[col, :])
         if np.any(m):
             ax_top.errorbar(T_CENTERS[m], f_e_pi[col, m], yerr=se_e_pi[col, m],
                             markersize=MSIZE, capsize=CAPSIZE, **STYLE_E_PI)
-        # K−
         m = np.isfinite(f_e_k[col, :])
         if np.any(m):
             ax_top.errorbar(T_CENTERS[m], f_e_k[col, m], yerr=se_e_k[col, m],
@@ -211,24 +237,18 @@ def main():
         ax_top.set_title(rf"${xa:.2f} < x_{{B}} < {xb:.2f}$", fontsize=12)
         if col == 0:
             ax_top.set_ylabel("misID fraction")
-
-        # Put legend only on first column (top row)
-        if col == 0:
             ax_top.legend(loc="upper left", frameon=True, edgecolor="black", fontsize=10)
 
         # Bottom row: pion candidate mis-IDs
         ax_bot = axes[1, col]
-        # e+
         m = np.isfinite(f_p_e[col, :])
         if np.any(m):
             ax_bot.errorbar(T_CENTERS[m], f_p_e[col, m], yerr=se_p_e[col, m],
                             markersize=MSIZE, capsize=CAPSIZE, **STYLE_P_E)
-        # K+
         m = np.isfinite(f_p_k[col, :])
         if np.any(m):
             ax_bot.errorbar(T_CENTERS[m], f_p_k[col, m], yerr=se_p_k[col, m],
                             markersize=MSIZE, capsize=CAPSIZE, **STYLE_P_K)
-        # p
         m = np.isfinite(f_p_p[col, :])
         if np.any(m):
             ax_bot.errorbar(T_CENTERS[m], f_p_p[col, m], yerr=se_p_p[col, m],
@@ -239,18 +259,15 @@ def main():
         ax_bot.set_xlabel(r"$-t\ (\mathrm{GeV}^{2})$")
         if col == 0:
             ax_bot.set_ylabel("misID fraction")
-        # Put legend only on first column (bottom row)
-        if col == 0:
             ax_bot.legend(loc="upper left", frameon=True, edgecolor="black", fontsize=10)
 
-    # Common x-limits
     for ax in axes.ravel():
         ax.set_xlim(T_EDGES_POS[0], T_EDGES_POS[-1])
 
     fig.tight_layout(rect=[0, 0, 1, 0.94])
     fig.savefig(OUT_PATH, bbox_inches="tight")
     plt.close(fig)
-    print(f"Saved: {OUT_PATH}")
+    print(f"\nSaved: {OUT_PATH}")
 
 if __name__ == "__main__":
     main()
