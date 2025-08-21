@@ -3467,7 +3467,7 @@ createHistogramForBin_GeneralExclusive(const char* histBaseName, int binIndex, c
   const double varMax = allBins[currentFits][binIndex + 1];
 
   // φ-binning
-  const int nPhiBins = 24;
+  const int nPhiBins = 12;
   const double phiMin = 0.0;
   const double phiMax = 2.0*TMath::Pi();
 
@@ -3638,6 +3638,13 @@ createHistogramForBin_GeneralExclusive(const char* histBaseName, int binIndex, c
 // ─────────────────────────────────────────────────────────────────────
 // Plot 1×3 canvas with model and GLOBAL χ²/ndf, with uncertainties in legend
 // ─────────────────────────────────────────────────────────────────────
+// Toggle at file scope (top of your source):
+// true  -> compact legends (hide chi2/ndf, AUU entries, and A_tg) and use shorter box
+// false -> full legends
+static bool g_ge_compact_legend = true;
+
+// ─────────────────────────────────────────────────────────────────────
+
 static void plotHistogramAndFit_GeneralExclusive(
   TH1D* hALU, TH1D* hAUL, TH1D* hALL,
   const double par[],                 // values
@@ -3645,6 +3652,7 @@ static void plotHistogramAndFit_GeneralExclusive(
   int binIndex, const std::string& prefix,
   const std::string& runSuffix,
   double globalChi2, int globalNdf) {
+
   const double a0   = par[0],  a1   = par[1];
   const double aLU  = par[2],  aUL1 = par[3],  aUL2 = par[4];
   const double aLL  = par[5],  aLLc = par[6];
@@ -3723,43 +3731,50 @@ static void plotHistogramAndFit_GeneralExclusive(
     gm->SetLineWidth(2);
     gm->Draw("L same");
 
-    // Legend: smaller, bordered, nudged to top-right but inside pad
-    TLegend* L = new TLegend(0.48, 0.70, 0.94, 0.90);
+    // Legend (shorter box when compact)
+    const double y1 = g_ge_compact_legend ? 0.80 : 0.70;
+    TLegend* L = new TLegend(0.48, y1, 0.94, 0.90);
     L->SetBorderSize(1);
     L->SetLineColor(kBlack);
     L->SetFillColor(kWhite);
     L->SetFillStyle(1001);
     L->SetTextSize(0.024);
+    L->SetTextAlign(12); // left align
+    L->SetMargin(0.08);  // tighter left margin
 
-    // NEW: left-justify text and shrink the symbol column margin
-    L->SetTextAlign(12);   // 10*H+V: H=1 left, V=2 center
-    L->SetMargin(0.08);    // default ~0.25; smaller = less left padding
-
-    L->AddEntry((TObject*)0, Form("#chi^{2}/ndf (global) = %.1f/%d = %.2f",
-                                  globalChi2, globalNdf,
-                                  (globalNdf>0?globalChi2/globalNdf:0.0)), "");
+    if (!g_ge_compact_legend) {
+      L->AddEntry((TObject*)0, Form("#chi^{2}/ndf (global) = %.1f/%d = %.2f",
+                                    globalChi2, globalNdf,
+                                    (globalNdf>0?globalChi2/globalNdf:0.0)), "");
+    }
     fillLegend(L);
     L->Draw("same");
   };
 
-  // Legend fillers with ± uncertainties; TSA uses A_{tg}^{sinφ}
+  // Legend fillers with ± uncertainties; TSA uses A_{tg}^{sinφ} (hidden when compact)
   auto fillBSA = [&](TLegend* L){
     L->AddEntry((TObject*)0, Form("F_{LU}^{sin#phi}/F_{UU} = %.6f #pm %.6f", aLU,  eLU ), "");
-    L->AddEntry((TObject*)0, Form("F_{UU}^{cos#phi}/F_{UU} = %.6f #pm %.6f", aUUc, eUUc), "");
-    L->AddEntry((TObject*)0, Form("F_{UU}^{cos2#phi}/F_{UU}= %.6f #pm %.6f", aUUc2,eUUc2), "");
+    if (!g_ge_compact_legend) {
+      L->AddEntry((TObject*)0, Form("F_{UU}^{cos#phi}/F_{UU} = %.6f #pm %.6f", aUUc, eUUc), "");
+      L->AddEntry((TObject*)0, Form("F_{UU}^{cos2#phi}/F_{UU}= %.6f #pm %.6f", aUUc2,eUUc2), "");
+    }
   };
   auto fillTSA = [&](TLegend* L){
     L->AddEntry((TObject*)0, Form("F_{UL}^{sin#phi}/F_{UU}  = %.6f #pm %.6f", aUL1, eUL1), "");
     L->AddEntry((TObject*)0, Form("F_{UL}^{sin2#phi}/F_{UU} = %.6f #pm %.6f", aUL2, eUL2), "");
-    L->AddEntry((TObject*)0, Form("A_{tg}^{sin#phi}          = %.6f #pm %.6f", aTG,  eTG ),  "");
-    L->AddEntry((TObject*)0, Form("F_{UU}^{cos#phi}/F_{UU}  = %.6f #pm %.6f", aUUc, eUUc), "");
-    L->AddEntry((TObject*)0, Form("F_{UU}^{cos2#phi}/F_{UU} = %.6f #pm %.6f", aUUc2,eUUc2), "");
+    if (!g_ge_compact_legend) {
+      L->AddEntry((TObject*)0, Form("A_{tg}^{sin#phi}          = %.6f #pm %.6f", aTG,  eTG ),  "");
+      L->AddEntry((TObject*)0, Form("F_{UU}^{cos#phi}/F_{UU}  = %.6f #pm %.6f", aUUc, eUUc), "");
+      L->AddEntry((TObject*)0, Form("F_{UU}^{cos2#phi}/F_{UU} = %.6f #pm %.6f", aUUc2,eUUc2), "");
+    }
   };
   auto fillDSA = [&](TLegend* L){
-    L->AddEntry((TObject*)0, Form("F_{LL}/F_{UU}  = %.6f #pm %.6f", aLL,  eLL ), "");
+    L->AddEntry((TObject*)0, Form("F_{LL}/F_{UU}            = %.6f #pm %.6f", aLL,  eLL ), "");
     L->AddEntry((TObject*)0, Form("F_{LL}^{cos#phi}/F_{UU}  = %.6f #pm %.6f", aLLc, eLLc), "");
-    L->AddEntry((TObject*)0, Form("F_{UU}^{cos#phi}/F_{UU}  = %.6f #pm %.6f", aUUc, eUUc), "");
-    L->AddEntry((TObject*)0, Form("F_{UU}^{cos2#phi}/F_{UU} = %.6f #pm %.6f", aUUc2,eUUc2), "");
+    if (!g_ge_compact_legend) {
+      L->AddEntry((TObject*)0, Form("F_{UU}^{cos#phi}/F_{UU}  = %.6f #pm %.6f", aUUc, eUUc), "");
+      L->AddEntry((TObject*)0, Form("F_{UU}^{cos2#phi}/F_{UU} = %.6f #pm %.6f", aUUc2,eUUc2), "");
+    }
   };
 
   // Y ranges: BSA/TSA [-0.2,0.2], DSA [-0.2,0.4]
