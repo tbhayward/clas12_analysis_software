@@ -655,11 +655,11 @@ def main():
     H2, H1_Q2, H1_X, H1_T, H1_PHI, H1_MX2 = accumulate(infile)
 
     # Render just the Mx2 figure and the μ–index plot per your latest request
-    # mu_grid, sigma_grid, ok_grid = make_mx2_canvas(H1_MX2, outdir)
-    # make_mu_index_plot(mu_grid, sigma_grid, ok_grid, outdir)
+    mu_grid, sigma_grid, ok_grid = make_mx2_canvas(H1_MX2, outdir)
+    make_mu_index_plot(mu_grid, sigma_grid, ok_grid, outdir)
 
     # If you want the others again, uncomment:
-    make_2d_canvases(H2, outdir)
+    # make_2d_canvases(H2, outdir)
     # make_binned_canvas_4x6(H1_Q2, H1_X, H1_T, H1_PHI, outdir)
 #endfor
 
