@@ -1,6 +1,7 @@
 #include <iostream>
 #include <string>
 #include <cmath>
+#include <vector>
 #include <TFile.h>
 #include <TTree.h>
 #include <TObjArray.h>
@@ -70,6 +71,14 @@ static bool has_branch(TTree* t, const char* name) {
     return t && t->GetListOfBranches() && t->GetListOfBranches()->FindObject(name);
 }
 
+// Convenience: check a list of branch names are all present
+static bool has_all_branches(TTree* t, const std::vector<const char*>& names) {
+    for (auto* n : names) {
+        if (!has_branch(t, n)) return false;
+    }
+    return true;
+}
+
 int main(int argc, char** argv) {
     if (argc != 2) {
         std::cerr << "Usage: " << argv[0] << " <input.root>\n";
@@ -97,6 +106,27 @@ int main(int argc, char** argv) {
     if (has_branch(tin, "t"))             tin->SetBranchStatus("t", 0);
     if (has_branch(tin, "sinthetagamma")) tin->SetBranchStatus("sinthetagamma", 0);
 
+    // Detect if MC kinematics exist; if so, we'll also recompute mc_t and mc_sinthetagamma
+    const bool mc_present_min = has_branch(tin, "mc_e_p");
+    bool mc_present = false;
+
+    // If mc is present, don't clone any existing mc_t / mc_sinthetagamma so we can (re)create them
+    if (mc_present_min) {
+        if (has_branch(tin, "mc_t"))             tin->SetBranchStatus("mc_t", 0);
+        if (has_branch(tin, "mc_sinthetagamma")) tin->SetBranchStatus("mc_sinthetagamma", 0);
+
+        // Require the full MC set we need
+        mc_present = has_all_branches(tin, {
+            "mc_e_p","mc_e_theta","mc_e_phi",
+            "mc_p_p","mc_p_theta","mc_p_phi",
+            "mc_x","mc_Q2","mc_y"
+        });
+        if (!mc_present) {
+            std::cerr << "[WARN] Found 'mc_e_p' but not all required mc_* branches; "
+                         "MC recalculation will be skipped.\n";
+        }
+    }
+
     // set addresses (need x, Q2, y for sin(theta_gamma))
     Int_t    runnum;
     Double_t e_p, e_theta, e_phi;
@@ -116,6 +146,23 @@ int main(int argc, char** argv) {
     tin->SetBranchAddress("Q2",       &Q2);
     tin->SetBranchAddress("y",        &y);
 
+    // MC addresses (if available)
+    Double_t mc_e_p=0, mc_e_theta=0, mc_e_phi=0;
+    Double_t mc_p_p=0, mc_p_theta=0, mc_p_phi=0;
+    Double_t mc_xB=0, mc_Q2=0, mc_y=0;
+
+    if (mc_present) {
+        tin->SetBranchAddress("mc_e_p",     &mc_e_p);
+        tin->SetBranchAddress("mc_e_theta", &mc_e_theta);
+        tin->SetBranchAddress("mc_e_phi",   &mc_e_phi);
+        tin->SetBranchAddress("mc_p_p",     &mc_p_p);
+        tin->SetBranchAddress("mc_p_theta", &mc_p_theta);
+        tin->SetBranchAddress("mc_p_phi",   &mc_p_phi);
+        tin->SetBranchAddress("mc_x",       &mc_xB);
+        tin->SetBranchAddress("mc_Q2",      &mc_Q2);
+        tin->SetBranchAddress("mc_y",       &mc_y);
+    }
+
     TFile *fout = TFile::Open(outfile.c_str(), "RECREATE");
     if (!fout || fout->IsZombie()) {
         std::cerr << "Error: could not create output file " << outfile << "\n";
@@ -129,16 +176,31 @@ int main(int argc, char** argv) {
     tout->Branch("t",             &t_val,         "t/D");
     tout->Branch("sinthetagamma", &sinthetagamma, "sinthetagamma/D");
 
+    // MC output branches (only if inputs exist)
+    Double_t mc_t_val = 0.0;
+    Double_t mc_sinthetagamma = 0.0;
+    if (mc_present) {
+        tout->Branch("mc_t",             &mc_t_val,         "mc_t/D");
+        tout->Branch("mc_sinthetagamma", &mc_sinthetagamma, "mc_sinthetagamma/D");
+    }
+
     const Long64_t n = tin->GetEntries();
     for (Long64_t i = 0; i < n; ++i) {
         tin->GetEntry(i);
 
-        // write only events with Mx2 < 1.3 (your original post-process filter)
+        // write only events with Mx2 < 1.3 (original post-process filter)
         if (Mx2 >= 1.3) continue;
 
-        // compute new values
+        // DATA: compute new values
         t_val          = compute_t_scalar(runnum, e_p, e_theta, e_phi, p_p, p_theta, p_phi);
         sinthetagamma  = compute_sin_theta_gamma(y, xB, Q2);
+
+        // MC: compute if available
+        if (mc_present) {
+            mc_t_val            = compute_t_scalar(runnum, mc_e_p, mc_e_theta, mc_e_phi,
+                                                   mc_p_p, mc_p_theta, mc_p_phi);
+            mc_sinthetagamma    = compute_sin_theta_gamma(mc_y, mc_xB, mc_Q2);
+        }
 
         tout->Fill();
     }
