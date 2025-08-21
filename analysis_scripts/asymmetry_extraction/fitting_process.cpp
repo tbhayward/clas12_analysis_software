@@ -3350,7 +3350,7 @@ struct GEContext {
   TGraph*   sTGc_graph   = nullptr;   // owns the (x,y) points
   TSpline3* sTGc_spline  = nullptr;   // cubic spline over those points
 
-  int    nPhiBins = 24;
+  int    nPhiBins = 12;
   double phiMin   = 0.0;
   double phiMax   = 2.0*TMath::Pi();
 };
@@ -3467,7 +3467,7 @@ createHistogramForBin_GeneralExclusive(const char* histBaseName, int binIndex, c
   const double varMax = allBins[currentFits][binIndex + 1];
 
   // φ-binning
-  const int nPhiBins = 12;
+  const int nPhiBins = 24;
   const double phiMin = 0.0;
   const double phiMax = 2.0*TMath::Pi();
 
