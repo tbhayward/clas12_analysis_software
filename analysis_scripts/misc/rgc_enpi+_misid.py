@@ -59,7 +59,7 @@ NTBINS      = len(T_EDGES_POS) - 1
 # Plot / output
 OUT_DIR  = os.path.join("output", "enpi+")
 OUT_PATH = os.path.join(OUT_DIR, "misidentification.pdf")
-YLIM     = (0.0, 0.01)  # fraction scale
+YLIM     = (0.0, 0.03)  # fraction scale
 
 # Styles
 STYLE_E_PI  = dict(fmt="o",  color="tab:blue",   label=r"$e^- \leftarrow \pi^{-}$")
@@ -186,7 +186,7 @@ def main():
 
     fig.suptitle(
         r"Misidentification vs $-t$"
-        "\n" r"$0.81<M_{x}^{2}<1.00$  (no fiducial cuts)",
+        "\n" r"$0.81<M_{x}^{2}<1.00$",
         fontsize=14, y=0.98
     )
 
