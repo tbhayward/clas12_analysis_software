@@ -1,205 +1,201 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Misidentification vs -t for four xB slices (MC).
+Misidentification study (MC): fractions vs -t in four xB slices.
 
-For each xB slice and -t bin:
-  fraction_pi_to_e = N(matching_e_pid == -211) / N(total)
-  fraction_pi_to_k = N(matching_p1_pid == -321) / N(total)
+Definition (TEST MODE, per user request):
+  e_is_pi_minus = (ep != 11)        # electron candidate actually π− (or anything not 11)
+  p1_is_k_minus = (p1 != 211)       # hadron candidate flagged as K− (anything not 211)
 
 Cuts:
-  0.81 < Mx2 < 1.00
-  x in slice range
-  -t in one of the six bins defined below
-  (No fiducial-status cuts.)
+  - Only 0.81 < Mx2 < 1.00
+  - x_B in one of four bins:
+      Low:     0.10 < x < 0.25
+      MidLow:  0.25 < x < 0.35
+      MidHigh: 0.35 < x < 0.45
+      High:    0.45 < x < 0.60
+  - -t binned with edges: [0.05, 0.25, 0.45, 0.65, 0.85, 1.05, 1.25]
+    (branch 't' is negated for plotting/bins)
 
-Y-axis is a FRACTION with limits [0, 0.01].
-
-Usage:
-  python misid_vs_t.py <input.root>
+Input:
+  python misid_test.py input.root
 
 Output:
-  output/enpi+/misidentification.pdf
-  (Also prints exact values per bin to terminal.)
+  Figure: output/enpi+/misidentification.pdf
+  Console: per-bin table + lists of offending ep/p1 values.
+
+Notes:
+  - If branches 'ep'/'p1' are missing, we fall back to 'matching_e_pid'/'matching_p1_pid'.
 """
 
-import sys
 import os
+import sys
 import numpy as np
-
-try:
-    import uproot
-except Exception:
-    print("[ERROR] Please install uproot (e.g. pip install uproot)")
-    sys.exit(1)
-
+import uproot
 import matplotlib.pyplot as plt
 
-# ─────────────────────────────────────────────────────────────────────
+# ------------------------------
 # Config
-# ─────────────────────────────────────────────────────────────────────
-TREE_NAME = "PhysicsEvents"
-
-# xB slices
-X_SLICES = {
-    "Low":     (0.10, 0.25),
-    "MidLow":  (0.25, 0.35),
-    "MidHigh": (0.35, 0.45),
-    "High":    (0.45, 0.60),
-}
-SLICE_ORDER = ["Low", "MidLow", "MidHigh", "High"]
-
-# -t bin edges in GeV^2 (ascending) → bins [edge[i], edge[i+1])
+# ------------------------------
+X_SLICES = [
+    ("Low",     (0.10, 0.25)),
+    ("MidLow",  (0.25, 0.35)),
+    ("MidHigh", (0.35, 0.45)),
+    ("High",    (0.45, 0.60)),
+]
 T_EDGES_POS = np.array([0.05, 0.25, 0.45, 0.65, 0.85, 1.05, 1.25], dtype=float)
-T_CENTERS   = 0.5 * (T_EDGES_POS[:-1] + T_EDGES_POS[1:])
-NTBINS      = len(T_EDGES_POS) - 1
+YLIM = (0.0, 0.01)
+Y_LABEL = "fraction (normalized counts)"
+X_LABEL = r"$-t\ \mathrm{(GeV^2)}$"
+TITLES = {
+    "Low":     r"$0.10 < x_{B} < 0.25$",
+    "MidLow":  r"$0.25 < x_{B} < 0.35$",
+    "MidHigh": r"$0.35 < x_{B} < 0.45$",
+    "High":    r"$0.45 < x_{B} < 0.60$",
+}
 
-OUT_DIR  = os.path.join("output", "enpi+")
-OUT_PATH = os.path.join(OUT_DIR, "misidentification.pdf")
+# Markers/colors
+STYLE_E = dict(marker="o", linestyle="none", color="tab:blue",  label=r"$\pi^- \rightarrow e^-$",  ms=5)
+STYLE_K = dict(marker="s", linestyle="none", color="tab:orange", label=r"$\pi^- \rightarrow K^-$", ms=5)
 
-# Plot styling (two series)
-STYLE_E = dict(marker="o",  color="tab:blue",  label=r"$\pi^{-}\!\to e^{-}$")
-STYLE_K = dict(marker="^",  color="tab:orange",label=r"$\pi^{-}\!\to K^{-}$")
-MSIZE   = 36
+# ------------------------------
+# Utilities
+# ------------------------------
+def get_branch(tree, primary, fallback=None):
+    """Return the available branch name (primary if exists else fallback)."""
+    names = tree.keys()
+    if primary in names:
+        return primary, None
+    if fallback and fallback in names:
+        return fallback, f"[WARN] Using fallback branch '{fallback}' (missing '{primary}')."
+    return None, f"[ERROR] Neither '{primary}' nor fallback '{fallback}' found."
 
-# ─────────────────────────────────────────────────────────────────────
-# Helpers
-# ─────────────────────────────────────────────────────────────────────
-def slice_index_from_x(x):
-    """Return array of indices in {0..3} for xB slice, else -1."""
-    idx = np.full(x.shape, -1, dtype=np.int16)
-    for k, name in enumerate(SLICE_ORDER):
-        xa, xb = X_SLICES[name]
-        m = (x > xa) & (x < xb)
-        idx[m] = k
-    return idx
+def hist_fraction(values_mask, base_mask, tpos, edges):
+    """
+    Compute per-bin fraction = (# values_mask & base in bin) / (# base in bin).
+    Returns (centers, fractions, N_total, N_num) where totals are integer arrays.
+    """
+    # bin indices for all base events
+    bidx = np.digitize(tpos, edges) - 1  # 0..nb-1
+    nb = len(edges) - 1
 
-def tbin_index_from_tpos(tpos):
-    """Return -t bin index in {0..NTBINS-1}, else -1 if outside range."""
-    bix = np.digitize(tpos, T_EDGES_POS, right=False) - 1
-    bad = (bix < 0) | (bix >= NTBINS)
-    bix[bad] = -1
-    return bix.astype(np.int16)
+    N_total = np.zeros(nb, dtype=int)
+    N_num   = np.zeros(nb, dtype=int)
+    for b in range(nb):
+        in_bin = base_mask & (bidx == b)
+        N_total[b] = int(np.count_nonzero(in_bin))
+        if N_total[b] > 0:
+            N_num[b] = int(np.count_nonzero(values_mask & (bidx == b)))
+    frac = np.divide(N_num, N_total, out=np.zeros_like(N_total, dtype=float), where=N_total>0)
+    centers = 0.5 * (edges[:-1] + edges[1:])
+    return centers, frac, N_total, N_num
 
-# ─────────────────────────────────────────────────────────────────────
-# Main
-# ─────────────────────────────────────────────────────────────────────
 def main():
     if len(sys.argv) != 2:
-        print("Usage: python misid_vs_t.py <input.root>")
+        print("Usage: python misid_test.py input.root")
         sys.exit(1)
 
-    infile = sys.argv[1]
-    if not os.path.isfile(infile):
-        print(f"[ERROR] File not found: {infile}")
+    path = sys.argv[1]
+    if not os.path.isfile(path):
+        print(f"[ERROR] File not found: {path}")
         sys.exit(1)
 
-    branches = [
-        "x", "t", "Mx2",
-        "matching_e_pid", "matching_p1_pid",
-    ]
+    # Open tree
+    with uproot.open(path) as f:
+        if "PhysicsEvents" not in f:
+            print("[ERROR] Tree 'PhysicsEvents' not found.")
+            sys.exit(1)
+        t = f["PhysicsEvents"]
 
-    totals = np.zeros((4, NTBINS), dtype=np.int64)
-    bad_e  = np.zeros((4, NTBINS), dtype=np.int64)  # pi- -> e-
-    bad_k  = np.zeros((4, NTBINS), dtype=np.int64)  # pi- -> K-
+        # Resolve PID branches per request (primary: 'ep' and 'p1')
+        ep_branch, warn_ep = get_branch(t, "ep", "matching_e_pid")
+        p1_branch, warn_p1 = get_branch(t, "p1", "matching_p1_pid")
+        if warn_ep: print(warn_ep)
+        if warn_p1: print(warn_p1)
+        if ep_branch is None or p1_branch is None:
+            sys.exit(2)
 
-    step = "200 MB"
-    try:
-        itr = uproot.iterate({infile: TREE_NAME}, branches, step_size=step, library="np")
-    except Exception as e:
-        print(f"[ERROR] Failed to open '{infile}' or tree '{TREE_NAME}': {e}")
-        sys.exit(1)
+        # Load arrays (as numpy)
+        needed = ["x", "t", "Mx2", ep_branch, p1_branch]
+        arrays = t.arrays(needed, library="np")
 
-    for arrays in itr:
-        x   = arrays["x"]
-        t   = arrays["t"]
-        mx2 = arrays["Mx2"]
-        ep  = arrays["matching_e_pid"]
-        p1  = arrays["matching_p1_pid"]
+    x   = arrays["x"].astype(float)
+    tbr = arrays["t"].astype(float)
+    Mx2 = arrays["Mx2"].astype(float)
+    ep  = arrays[ep_branch].astype(np.int32)
+    p1  = arrays[p1_branch].astype(np.int32)
 
-        # Exclusivity window only
-        base = (mx2 > 0.81) & (mx2 < 1.00)
-        if not np.any(base):
-            continue
+    # Base masks: finite + Mx2 window + t finite
+    finite = np.isfinite(x) & np.isfinite(tbr) & np.isfinite(Mx2)
+    base_global = finite & (Mx2 > 0.81) & (Mx2 < 1.00)
 
-        tpos = -t[base]
-        xs   = x[base]
-        e_is_pi_minus = (ep[base] != 11)   # π− → e− (electron candidate is actually π−)
-        p1_is_k_minus = (p1[base] != 211)   # π− → K− (hadron candidate flagged as K−)
+    # -t for binning
+    tpos = -tbr
 
-        sidx = slice_index_from_x(xs)           # 0..3 or -1
-        tbix = tbin_index_from_tpos(tpos)       # 0..5 or -1
-        valid = (sidx >= 0) & (tbix >= 0)
-        if not np.any(valid):
-            continue
+    # Prepare figure
+    fig, axes = plt.subplots(1, 4, figsize=(16, 4.2), sharey=True)
+    fig.suptitle(r"$ep \rightarrow en\pi^{+}$ mis-ID test (MC): "
+                 r"$0.81<M_{x}^{2}<1.00$; fractions vs $-t$", fontsize=14, y=0.98)
 
-        sidx = sidx[valid]
-        tbix = tbix[valid]
+    # Header for console
+    print("\n=== Mis-ID fractions by xB slice and -t bin ===")
+    print("(-t bins):", ", ".join([f"[{T_EDGES_POS[i]:.2f},{T_EDGES_POS[i+1]:.2f})"
+                                   for i in range(len(T_EDGES_POS)-1)]))
+    print("Definition: e_is_pi_minus = (ep != 11),  p1_is_k_minus = (p1 != 211)\n")
 
-        np.add.at(totals, (sidx, tbix), 1)
+    for ax, (tag, (xa, xb)) in zip(axes, X_SLICES):
+        # xB slice+global base
+        base_slice = base_global & (x > xa) & (x < xb) & (tpos > T_EDGES_POS[0]) & (tpos < T_EDGES_POS[-1])
 
-        ee = e_is_pi_minus[valid]
-        kk = p1_is_k_minus[valid]
-        if np.any(ee):
-            np.add.at(bad_e, (sidx[ee], tbix[ee]), 1)
-        if np.any(kk):
-            np.add.at(bad_k, (sidx[kk], tbix[kk]), 1)
+        # TEST CONDITIONS (per-user):
+        e_is_pi_minus = (ep != 11)
+        p1_is_k_minus = (p1 != 211)
 
-    # Fractions (not percent)
-    with np.errstate(divide="ignore", invalid="ignore"):
-        frac_e = np.where(totals > 0, bad_e / totals, np.nan)
-        frac_k = np.where(totals > 0, bad_k / totals, np.nan)
+        # Fractions per -t bin
+        xc, frac_e, Ntot, Ne = hist_fraction(e_is_pi_minus, base_slice, tpos, T_EDGES_POS)
+        _,  frac_k, _,   Nk  = hist_fraction(p1_is_k_minus, base_slice, tpos, T_EDGES_POS)
 
-    # ── Print exact values to terminal ───────────────────────────────
-    print("\n=== Misidentification fractions by xB slice and -t bin ===")
-    for si, sname in enumerate(SLICE_ORDER):
-        xa, xb = X_SLICES[sname]
-        print(f"\nSlice {sname}  ( {xa:.2f} < x_B < {xb:.2f} )")
-        print("bin  [-t_min, -t_max)   N_total   N(pi->e)  frac(pi->e)   N(pi->K)  frac(pi->K)")
-        for bi in range(NTBINS):
-            tmin, tmax = T_EDGES_POS[bi], T_EDGES_POS[bi+1]
-            nt  = int(totals[si, bi])
-            ne  = int(bad_e[si, bi])
-            nk  = int(bad_k[si, bi])
-            fe  = float(frac_e[si, bi]) if nt > 0 else float("nan")
-            fk  = float(frac_k[si, bi]) if nt > 0 else float("nan")
-            print(f"{bi:>2d}   [{tmin:5.2f}, {tmax:5.2f})   {nt:7d}   {ne:8d}   {fe:11.6f}   {nk:8d}   {fk:11.6f}")
-
-    # ── Plotting ─────────────────────────────────────────────────────
-    os.makedirs(OUT_DIR, exist_ok=True)
-    fig, axes = plt.subplots(1, 4, figsize=(16, 4.6), sharey=True)
-    fig.suptitle(
-        r"Misidentification vs $-t$"
-        "\n" r"$0.81<M_{x}^{2}<1.00$  (no fiducial cuts)",
-        fontsize=13, y=0.98
-    )
-
-    for k, name in enumerate(SLICE_ORDER):
-        ax = axes[k]
-        y_e = frac_e[k, :]
-        y_k = frac_k[k, :]
-        m_e = np.isfinite(y_e)
-        m_k = np.isfinite(y_k)
-
-        if np.any(m_e):
-            ax.scatter(T_CENTERS[m_e], y_e[m_e], s=MSIZE, **STYLE_E)
-        if np.any(m_k):
-            ax.scatter(T_CENTERS[m_k], y_k[m_k], s=MSIZE, **STYLE_K)
-
+        # Plot
+        ax.errorbar(xc, frac_e, yerr=None, **STYLE_E)
+        ax.errorbar(xc, frac_k, yerr=None, **STYLE_K)
         ax.set_xlim(T_EDGES_POS[0], T_EDGES_POS[-1])
-        ax.set_ylim(0.0, 0.01)  # fraction scale 0..1%
-        ax.set_xlabel(r"$-t\ (\mathrm{GeV}^{2})$")
-        if k == 0:
-            ax.set_ylabel("misID fraction")
-        ax.grid(True, linestyle="--", alpha=0.35)
-        xa, xb = X_SLICES[name]
-        ax.set_title(rf"${xa:.2f} < x_{{B}} < {xb:.2f}$", fontsize=11)
-        ax.legend(loc="upper left", frameon=True, edgecolor="black", fontsize=10)
+        ax.set_ylim(*YLIM)
+        ax.set_xlabel(X_LABEL)
+        ax.grid(True, linestyle="--", alpha=0.4)
+        ax.set_title(TITLES[tag], fontsize=12)
+        if ax is axes[0]:
+            ax.set_ylabel(Y_LABEL)
+        if ax is axes[-1]:
+            ax.legend(frameon=True, edgecolor="black", loc="upper right", fontsize=10)
+
+        # Console printout for this slice
+        print(f"\n-- xB slice {tag}: {TITLES[tag]} --")
+        print("bin  [-t_min,-t_max)    N_total   N(pi->e)   frac(pi->e)   N(pi->K)   frac(pi->K)")
+        for i in range(len(T_EDGES_POS)-1):
+            tmin, tmax = T_EDGES_POS[i], T_EDGES_POS[i+1]
+            print(f"{i+1:>3d}  [{tmin:5.2f},{tmax:5.2f})   {Ntot[i]:7d}   {Ne[i]:8d}   {frac_e[i]:11.6f}   {Nk[i]:8d}   {frac_k[i]:11.6f}")
+
+            # Print actual offending values in this bin
+            if Ntot[i] > 0:
+                bmask = base_slice & (tpos >= tmin) & (tpos < tmax)
+                # e: ep != 11
+                hits_e = np.where(bmask & (ep != 11))[0]
+                if hits_e.size:
+                    vals = ep[hits_e]
+                    print(f"    ep values != 11 in this bin (count {hits_e.size}): {vals.tolist()}")
+                # k: p1 != 211
+                hits_k = np.where(bmask & (p1 != 211))[0]
+                if hits_k.size:
+                    vals = p1[hits_k]
+                    print(f"    p1 values != 211 in this bin (count {hits_k.size}): {vals.tolist()}")
 
     fig.tight_layout(rect=[0, 0, 1, 0.94])
-    fig.savefig(OUT_PATH, bbox_inches="tight")
+    outdir = os.path.join("output", "enpi+")
+    os.makedirs(outdir, exist_ok=True)
+    outpath = os.path.join(outdir, "misidentification.pdf")
+    fig.savefig(outpath)
     plt.close(fig)
-    print(f"\nSaved: {OUT_PATH}")
+    print(f"\nSaved: {outpath}")
 
 if __name__ == "__main__":
     main()
