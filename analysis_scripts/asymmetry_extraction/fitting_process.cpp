@@ -30,6 +30,7 @@
 #include <string>
 #include <vector>
 #include <random>
+#include "TSpline.h"
 // ROOT Library Headers
 #include <TApplication.h>
 #include <TCanvas.h>
@@ -3330,23 +3331,24 @@ void performChi2Fits_eppi0(const char* output_file, const char* kinematic_file,
 // Context and globals
 // ─────────────────────────────────────────────────────────────────────
 struct GEContext {
-  TH1D* hLU  = nullptr;  // ALU(phi)
-  TH1D* hUL  = nullptr;  // AUL(phi)
-  TH1D* hLL  = nullptr;  // ALL(phi)
+  TH1D* hLU  = nullptr;
+  TH1D* hUL  = nullptr;
+  TH1D* hLL  = nullptr;
 
   // Mean depolarization ratios <DepX>/<DepA> used in the model
   double rVA = 1.0, rBA = 1.0, rWA = 1.0, rCA = 1.0;
 
-  // Per-φ-bin means of sin(theta_gamma) for current kinematic bin
-  std::vector<double> sTG_phi_mean;      // size = nPhiBins
+  // Per-φ-bin means of sin(theta_gamma) and centered/normalized version
+  std::vector<double> sTG_phi_mean;     // size = nPhiBins
+  std::vector<double> sTG_phi_centered; // (m_i - mbar)/sigma_w
 
-  // Centered & normalized (unit weighted-std) version:
-  // sTGc(φ_i) = [ sTG_mean(φ_i) - ⟨sTG⟩_w ] / std_w, with weights from total yields
-  std::vector<double> sTG_phi_centered;  // size = nPhiBins
+  // Weighted mean and std (for diagnostics/guarding Atg)
+  double sTG_wmean = 0.0;
+  double sTG_wstd  = 0.0;
 
-  // For diagnostics / conditioning
-  double sTG_wmean = 0.0;   // weighted mean over φ
-  double sTG_wstd  = 0.0;   // weighted std over φ (pre-normalization)
+  // Smoothed interpolation of centered ⟨sinθγ⟩(φ)
+  TGraph*   sTGc_graph   = nullptr;   // owns the (x,y) points
+  TSpline3* sTGc_spline  = nullptr;   // cubic spline over those points
 
   int    nPhiBins = 12;
   double phiMin   = 0.0;
@@ -3358,12 +3360,32 @@ static GEContext g_ge_ctx;
 static bool   g_fit_enable_tg  = true;   // set to false to fix A_tg = 0
 static double g_fit_fixed_Atg  = 0.0;    // value used if fixed
 
-// Helper: fetch centered/normalized sTG(φ) using the histogram's binning
-static inline double GE_sTG_centered_for_phi(double phi, TH1D* hRef) {
+// ─────────────────────────────────────────────────────────────────────
+// Helpers
+// ─────────────────────────────────────────────────────────────────────
+
+// Wrap phi into [phiMin, phiMax)
+static inline double GE_wrap_phi(double phi, double phiMin, double phiMax) {
+  const double L = phiMax - phiMin; // should be 2π
+  double p = phi;
+  while (p <  phiMin) p += L;
+  while (p >= phiMax) p -= L;
+  return p;
+}
+
+// Fallback: centered value by φ-bin (piecewise-constant)
+static inline double GE_sTG_centered_bin(double phi, TH1D* hRef) {
   if (!hRef || g_ge_ctx.sTG_phi_centered.empty()) return 0.0;
-  const int ib  = hRef->GetXaxis()->FindBin(phi);           // 1..n
+  const int ib  = hRef->GetXaxis()->FindBin(phi); // 1..n
   const int idx = std::max(1, std::min(ib, (int)g_ge_ctx.sTG_phi_centered.size())) - 1;
   return g_ge_ctx.sTG_phi_centered[idx];
+}
+
+// Preferred: smoothed centered ⟨sinθγ⟩ via spline; falls back to binned
+static inline double GE_sTG_centered_interp(double phi, TH1D* hRef) {
+  const double pw = GE_wrap_phi(phi, g_ge_ctx.phiMin, g_ge_ctx.phiMax);
+  if (g_ge_ctx.sTGc_spline) return g_ge_ctx.sTGc_spline->Eval(pw);
+  return GE_sTG_centered_bin(pw, hRef);
 }
 
 // ─────────────────────────────────────────────────────────────────────
@@ -3378,8 +3400,7 @@ static inline double GE_sTG_centered_for_phi(double phi, TH1D* hRef) {
 //  p[6] = F_LL^{cosφ} / F_UU
 //  p[7] = F_UU^{cosφ} / F_UU         (shared UU modulation)
 //  p[8] = F_UU^{cos2φ} / F_UU        (shared UU modulation)
-//  p[9] = A_tg                       (leakage amp × sTGc(φ)·sinφ in TSA numerator; no depol)
-// NOTE: A_tg carries **no depolarization factor** (per your request).
+//  p[9] = A_tg                       (leakage amp × m^c(φ)·sinφ in TSA numerator; no depol)
 static void chi2Fcn_GeneralExclusive(Int_t& /*npar*/, Double_t* /*gin*/, Double_t& f,
                                      Double_t* par, Int_t /*iflag*/) {
   const double a0   = par[0],  a1   = par[1];
@@ -3394,22 +3415,20 @@ static void chi2Fcn_GeneralExclusive(Int_t& /*npar*/, Double_t* /*gin*/, Double_
          + g_ge_ctx.rBA * aUUc2 * std::cos(2.0*phi);
   };
 
-  // model evaluators use per-φ-bin *centered & normalized* sTG via the histogram binning
   auto modelALU = [&](double phi, TH1D* /*hRef*/) {
     return a0 + (g_ge_ctx.rWA * aLU * std::sin(phi)) / denom(phi);
   };
   auto modelAUL = [&](double phi, TH1D* hRef) {
-    const double sTGc = GE_sTG_centered_for_phi(phi, hRef);  // centered+normalized ⟨sinθγ⟩
+    const double sTGc = GE_sTG_centered_interp(phi, hRef);  // centered+normalized ⟨sinθγ⟩
     const double num = g_ge_ctx.rVA * aUL1 * std::sin(phi)
                      + g_ge_ctx.rBA * aUL2 * std::sin(2.0*phi)
-                     + aTG * sTGc * std::sin(phi);  // leakage basis (no depol)
+                     + aTG * sTGc * std::sin(phi);           // leakage basis (no depol)
     return a1 + num / denom(phi);
   };
   auto modelALL = [&](double phi, TH1D* /*hRef*/) {
     return (g_ge_ctx.rCA * aLL + g_ge_ctx.rWA * aLLc * std::cos(phi)) / denom(phi);
   };
 
-  // χ² helper that passes the histogram (for binning) into the model
   auto chi2_from_hist = [&](TH1D* h, auto model) -> double {
     if (!h) return 0.0;
     double c2 = 0.0;
@@ -3437,7 +3456,8 @@ static void chi2Fcn_GeneralExclusive(Int_t& /*npar*/, Double_t* /*gin*/, Double_
 // ─────────────────────────────────────────────────────────────────────
 // Build three asymmetry histograms (BSA/TSA/DSA) for one kinematic bin
 // and also compute ⟨sinθγ⟩ per φ-bin for that bin.
-// Returns { hALU, hAUL, hALL } and **updates g_ge_ctx.sTG_phi_mean/centered**.
+// Returns { hALU, hAUL, hALL } and updates g_ge_ctx.{sTG_phi_mean, sTG_phi_centered}
+// and the smoothed spline of m^c(φ).
 // ─────────────────────────────────────────────────────────────────────
 static std::tuple<TH1D*, TH1D*, TH1D*>
 createHistogramForBin_GeneralExclusive(const char* histBaseName, int binIndex, const std::string& prefix) {
@@ -3507,7 +3527,7 @@ createHistogramForBin_GeneralExclusive(const char* histBaseName, int binIndex, c
   TH1D* hAUL = new TH1D(Form("%s_AUL", histBaseName), "", nPhiBins, phiMin, phiMax);
   TH1D* hALL = new TH1D(Form("%s_ALL", histBaseName), "", nPhiBins, phiMin, phiMax);
 
-  // We'll also need per-φ weights from total charge-normalized yield
+  // per-φ weights from total charge-normalized yield (sum of four samples)
   std::vector<double> w_tot(nPhiBins, 0.0);
 
   for (int ib = 1; ib <= nPhiBins; ++ib) {
@@ -3517,7 +3537,7 @@ createHistogramForBin_GeneralExclusive(const char* histBaseName, int binIndex, c
     const double Nmp = pmp->GetBinContent(ib) / std::max(cmp, 1.0);
     const double Nmm = pmm->GetBinContent(ib) / std::max(cmm, 1.0);
 
-    // save weight used for centering/normalizing ⟨sinθγ⟩
+    // weight for centering/normalizing ⟨sinθγ⟩
     w_tot[ib-1] = std::max(0.0, Npp + Npm + Nmp + Nmm);
 
     // BSA
@@ -3549,8 +3569,7 @@ createHistogramForBin_GeneralExclusive(const char* histBaseName, int binIndex, c
     g_ge_ctx.sTG_phi_mean[i] = (sTG_cnt[i]>0) ? (sTG_sum[i]/sTG_cnt[i]) : 0.0;
   }
 
-  // Compute charge-weighted φ-average ⟨sTG⟩_w and build centered+normalized array
-  // Weight each φ-bin mean by total charge-normalized counts used in TSA (sum of four samples)
+  // Compute charge-weighted φ-average ⟨sTG⟩_w and weighted std σ_w
   double wsum = 0.0, ssum = 0.0;
   for (int i = 0; i < nPhiBins; ++i) {
     const double w = std::max(0.0, w_tot[i]);
@@ -3559,7 +3578,6 @@ createHistogramForBin_GeneralExclusive(const char* histBaseName, int binIndex, c
   }
   g_ge_ctx.sTG_wmean = (wsum>0.0) ? (ssum/wsum) : 0.0;
 
-  // weighted std
   double vsum = 0.0;
   for (int i = 0; i < nPhiBins; ++i) {
     const double w   = std::max(0.0, w_tot[i]);
@@ -3568,15 +3586,45 @@ createHistogramForBin_GeneralExclusive(const char* histBaseName, int binIndex, c
   }
   g_ge_ctx.sTG_wstd = (wsum>0.0) ? std::sqrt(vsum/wsum) : 0.0;
 
-  // Center & normalize (if std ~ 0, just zero it out)
+  // Center & normalize (if std ~ 0, zero it)
   g_ge_ctx.sTG_phi_centered.assign(nPhiBins, 0.0);
-  const double eps_std = 1e-4; // absolute threshold for "flat in φ"
+  const double eps_std = 1e-4;
   if (g_ge_ctx.sTG_wstd > eps_std) {
     for (int i=0; i<nPhiBins; ++i) {
-      g_ge_ctx.sTG_phi_centered[i] = (g_ge_ctx.sTG_phi_mean[i] - g_ge_ctx.sTG_wmean) / g_ge_ctx.sTG_wstd;
+      g_ge_ctx.sTG_phi_centered[i] =
+        (g_ge_ctx.sTG_phi_mean[i] - g_ge_ctx.sTG_wmean) / g_ge_ctx.sTG_wstd;
     }
   } else {
     for (int i=0; i<nPhiBins; ++i) g_ge_ctx.sTG_phi_centered[i] = 0.0;
+  }
+
+  // Build smooth cubic spline for m^c(φ) to avoid jagged model curves
+  {
+    if (g_ge_ctx.sTGc_spline) { delete g_ge_ctx.sTGc_spline; g_ge_ctx.sTGc_spline = nullptr; }
+    if (g_ge_ctx.sTGc_graph)  { delete g_ge_ctx.sTGc_graph;  g_ge_ctx.sTGc_graph  = nullptr; }
+
+    const int    nb   = nPhiBins;
+    const double dphi = (phiMax - phiMin) / nb;
+
+    // Wrap with two extra points (before/after) to stabilize edges
+    const int npts = nb + 2;
+    g_ge_ctx.sTGc_graph = new TGraph(npts);
+
+    // point 0: wrap from last bin
+    g_ge_ctx.sTGc_graph->SetPoint(0, phiMin - 0.5*dphi, g_ge_ctx.sTG_phi_centered.back());
+
+    // interior bin centers
+    for (int i=0; i<nb; ++i) {
+      const double xc = phiMin + (i + 0.5) * dphi;
+      const double yc = g_ge_ctx.sTG_phi_centered[i];
+      g_ge_ctx.sTGc_graph->SetPoint(i+1, xc, yc);
+    }
+
+    // last point: wrap from first bin
+    g_ge_ctx.sTGc_graph->SetPoint(npts-1, phiMax + 0.5*dphi, g_ge_ctx.sTG_phi_centered.front());
+
+    // cubic spline
+    g_ge_ctx.sTGc_spline = new TSpline3("sTGc_spline", g_ge_ctx.sTGc_graph, "");
   }
 
   g_ge_ctx.nPhiBins = nPhiBins;
@@ -3588,39 +3636,12 @@ createHistogramForBin_GeneralExclusive(const char* histBaseName, int binIndex, c
 }
 
 // ─────────────────────────────────────────────────────────────────────
-// Plot 1×3 canvas with model and GLOBAL χ²/ndf
+// Plot 1×3 canvas with model and GLOBAL χ²/ndf, with uncertainties in legend
 // ─────────────────────────────────────────────────────────────────────
-// Smooth, periodic linear interpolation of centered sTG across φ for plotting
-static inline double GE_sTG_centered_interp(double phi, TH1D* hRef) {
-  if (!hRef || g_ge_ctx.sTG_phi_centered.empty()) return 0.0;
-
-  const int    nb   = std::min((int)g_ge_ctx.sTG_phi_centered.size(), hRef->GetNbinsX());
-  const double phimin = hRef->GetXaxis()->GetXmin();
-  const double phimax = hRef->GetXaxis()->GetXmax();
-  const double L    = (phimax - phimin);
-  if (nb <= 0 || L <= 0) return 0.0;
-
-  // Wrap φ into [phimin,phimax)
-  double x = phi;
-  while (x <  phimin) x += L;
-  while (x >= phimax) x -= L;
-
-  // Fractional bin coordinate in [0, nb)
-  const double idxf = (x - phimin) / L * nb;
-  int    i0   = (int)std::floor(idxf);
-  double frac = idxf - i0;
-  if (i0 < 0)       { i0 += nb; }
-  if (i0 >= nb)     { i0 -= nb; }
-  const int i1 = (i0 + 1) % nb;
-
-  const double y0 = g_ge_ctx.sTG_phi_centered[i0];
-  const double y1 = g_ge_ctx.sTG_phi_centered[i1];
-  return y0 + frac * (y1 - y0);
-}
-
 static void plotHistogramAndFit_GeneralExclusive(
   TH1D* hALU, TH1D* hAUL, TH1D* hALL,
-  const double par[],                   // now 10 parameters
+  const double par[],                 // values
+  const double err[],                 // uncertainties (same order)
   int binIndex, const std::string& prefix,
   const std::string& runSuffix,
   double globalChi2, int globalNdf)
@@ -3630,6 +3651,11 @@ static void plotHistogramAndFit_GeneralExclusive(
   const double aLL  = par[5],  aLLc = par[6];
   const double aUUc = par[7],  aUUc2= par[8];
   const double aTG  = par[9];
+
+  const double eLU  = err[2],  eUL1 = err[3],  eUL2 = err[4];
+  const double eLL  = err[5],  eLLc = err[6];
+  const double eUUc = err[7],  eUUc2= err[8];
+  const double eTG  = err[9];
 
   auto denom = [&](double phi) {
     return 1.0
@@ -3687,8 +3713,8 @@ static void plotHistogramAndFit_GeneralExclusive(
     gr->GetYaxis()->SetRangeUser(ylow, yhigh);
     gr->Draw("AP");
 
-    // Smooth model curve
-    const int np = 720;
+    // Dense, smooth model curve
+    const int np = 1440;
     TGraph* gm = new TGraph(np);
     for (int j=0; j<np; ++j){
       const double phi = (2.0*TMath::Pi()) * (j/(double)(np-1));
@@ -3698,8 +3724,8 @@ static void plotHistogramAndFit_GeneralExclusive(
     gm->SetLineWidth(2);
     gm->Draw("L same");
 
-    // Legend: a touch left & down, with border
-    TLegend* L = new TLegend(0.56, 0.66, 0.90, 0.90);
+    // Legend: smaller, bordered, nudged to top-right but inside pad
+    TLegend* L = new TLegend(0.62, 0.70, 0.96, 0.94);
     L->SetBorderSize(1);
     L->SetLineColor(kBlack);
     L->SetFillColor(kWhite);
@@ -3712,32 +3738,30 @@ static void plotHistogramAndFit_GeneralExclusive(
     L->Draw("same");
   };
 
-  // BSA legend
+  // Legend fillers with ± uncertainties; TSA uses A_{tg}^{sinφ}
   auto fillBSA = [&](TLegend* L){
-    L->AddEntry((TObject*)0, Form("F_{LU}^{sin#phi}/F_{UU} = %.6f", aLU),  "");
-    L->AddEntry((TObject*)0, Form("F_{UU}^{cos#phi}/F_{UU} = %.6f", aUUc), "");
-    L->AddEntry((TObject*)0, Form("F_{UU}^{cos2#phi}/F_{UU}= %.6f", aUUc2), "");
+    L->AddEntry((TObject*)0, Form("F_{LU}^{sin#phi}/F_{UU} = %.6f #pm %.6f", aLU,  eLU ), "");
+    L->AddEntry((TObject*)0, Form("F_{UU}^{cos#phi}/F_{UU} = %.6f #pm %.6f", aUUc, eUUc), "");
+    L->AddEntry((TObject*)0, Form("F_{UU}^{cos2#phi}/F_{UU}= %.6f #pm %.6f", aUUc2,eUUc2), "");
   };
-  // TSA legend (requested label)
   auto fillTSA = [&](TLegend* L){
-    L->AddEntry((TObject*)0, Form("F_{UL}^{sin#phi}/F_{UU}   = %.6f", aUL1), "");
-    L->AddEntry((TObject*)0, Form("F_{UL}^{sin2#phi}/F_{UU}  = %.6f", aUL2), "");
-    L->AddEntry((TObject*)0, Form("A_{tg}^{sin#phi}           = %.6f", aTG),  "");
-    L->AddEntry((TObject*)0, Form("F_{UU}^{cos#phi}/F_{UU}   = %.6f", aUUc),  "");
-    L->AddEntry((TObject*)0, Form("F_{UU}^{cos2#phi}/F_{UU}  = %.6f", aUUc2), "");
+    L->AddEntry((TObject*)0, Form("F_{UL}^{sin#phi}/F_{UU}  = %.6f #pm %.6f", aUL1, eUL1), "");
+    L->AddEntry((TObject*)0, Form("F_{UL}^{sin2#phi}/F_{UU} = %.6f #pm %.6f", aUL2, eUL2), "");
+    L->AddEntry((TObject*)0, Form("A_{tg}^{sin#phi}          = %.6f #pm %.6f", aTG,  eTG ),  "");
+    L->AddEntry((TObject*)0, Form("F_{UU}^{cos#phi}/F_{UU}  = %.6f #pm %.6f", aUUc, eUUc), "");
+    L->AddEntry((TObject*)0, Form("F_{UU}^{cos2#phi}/F_{UU} = %.6f #pm %.6f", aUUc2,eUUc2), "");
   };
-  // DSA legend
   auto fillDSA = [&](TLegend* L){
-    L->AddEntry((TObject*)0, Form("F_{LL}/F_{UU}            = %.6f", aLL),  "");
-    L->AddEntry((TObject*)0, Form("F_{LL}^{cos#phi}/F_{UU}  = %.6f", aLLc), "");
-    L->AddEntry((TObject*)0, Form("F_{UU}^{cos#phi}/F_{UU}  = %.6f", aUUc),  "");
-    L->AddEntry((TObject*)0, Form("F_{UU}^{cos2#phi}/F_{UU} = %.6f", aUUc2), "");
+    L->AddEntry((TObject*)0, Form("F_{LL}/F_{UU}            = %.6f #pm %.6f", aLL,  eLL ), "");
+    L->AddEntry((TObject*)0, Form("F_{LL}^{cos#phi}/F_{UU}  = %.6f #pm %.6f", aLLc, eLLc), "");
+    L->AddEntry((TObject*)0, Form("F_{UU}^{cos#phi}/F_{UU}  = %.6f #pm %.6f", aUUc, eUUc), "");
+    L->AddEntry((TObject*)0, Form("F_{UU}^{cos2#phi}/F_{UU} = %.6f #pm %.6f", aUUc2,eUUc2), "");
   };
 
-  // Updated y-ranges
+  // Y ranges: BSA/TSA [-0.2,0.2], DSA [-0.2,0.4]
   addPointsAndCurve(1, hALU, yALU, "A_{LU}", fillBSA, -0.2, 0.2);
   addPointsAndCurve(2, hAUL, yAUL, "A_{UL}", fillTSA, -0.2, 0.2);
-  addPointsAndCurve(3, hALL, yALL, "A_{LL}", fillDSA, -0.2, 0.8);
+  addPointsAndCurve(3, hALL, yALL, "A_{LL}", fillDSA, -0.2, 0.4);
 
   const double vminB = allBins[currentFits][binIndex];
   const double vmaxB = allBins[currentFits][binIndex+1];
@@ -3752,16 +3776,14 @@ static void plotHistogramAndFit_GeneralExclusive(
 }
 
 // ─────────────────────────────────────────────────────────────────────
-// Driver: simultaneous fits per bin (now **10** parameters)
+// Driver: simultaneous fits per bin (10 parameters)
 // ─────────────────────────────────────────────────────────────────────
 void performChi2Fits_GeneralExclusive(const char* output_file,
                                       const char* kinematic_file,
                                       const char* kinematicPlot_file,
                                       const std::string& prefix) {
   // Control the leakage fit here (global switch)
-  //   true  -> fit A_tg
-  //   false -> fix A_tg = g_fit_fixed_Atg (default 0)
-  g_fit_enable_tg = true;      // ← set to false to disable fitting
+  g_fit_enable_tg = true;      // set false to disable fitting A_tg
   g_fit_fixed_Atg = 0.0;
 
   // Prepare output streams (add A_tg array)
@@ -3774,13 +3796,13 @@ void performChi2Fits_GeneralExclusive(const char* output_file,
   sALU    << prefix << "GEchi2FitsALUsinphi = {";
   sAUL    << prefix << "GEchi2FitsAULsinphi = {";
   sAUL2   << prefix << "GEchi2FitsAULsin2phi = {";
-  sATG    << prefix << "GEchi2FitsAUL_tgleak = {";          // ← centered+normalized leakage output
+  sATG    << prefix << "GEchi2FitsAUL_tgleak = {";  // centered/σ leakage
   sALL    << prefix << "GEchi2FitsALL = {";
   sALLc   << prefix << "GEchi2FitsALLcosphi = {";
   sAUUc   << prefix << "GEchi2FitsAUUcosphi = {";
   sAUUc2  << prefix << "GEchi2FitsAUUcos2phi = {";
 
-  // Kinematic LaTeX and list (unchanged)
+  // Kinematic LaTeX and list (unchanged scaffolding)
   std::ostringstream kinLatex;
   kinLatex << "\\begin{table}[h]\n\\centering\n"
            << "\\begin{tabular}{|c|c|c|c|c|c|c|} \\hline\n"
@@ -3815,31 +3837,8 @@ void performChi2Fits_GeneralExclusive(const char* output_file,
     "F_LU_sin/F_UU","F_UL_sin/F_UU","F_UL_sin2/F_UU",
     "F_LL/F_UU","F_LL_cos/F_UU",
     "F_UU_cos/F_UU","F_UU_cos2/F_UU",
-    "A_tg" // leakage amplitude (× centered/σ ⟨sinθγ⟩ in TSA numerator)
+    "A_tg"
   };
-
-  // Truncate/create matrix files with headers (unchanged apart from param list)
-  {
-    std::ofstream of(covPath, std::ios::out | std::ios::trunc);
-    of << std::setprecision(9);
-    of << "# Covariance matrices for GeneralExclusive simultaneous fit\n";
-    of << "# Prefix (kinematic variable): " << prefix << "\n";
-    of << "# Run+timestamp key: " << suffix << "\n";
-    of << "# Parameters (order): ";
-    for (int ip=0; ip<npar; ++ip) of << names[ip] << (ip<npar-1 ? ", " : "");
-    of << "\n\n";
-  }
-  {
-    std::ofstream of(corrPath, std::ios::out | std::ios::trunc);
-    of << std::setprecision(9);
-    of << "# Correlation matrices for GeneralExclusive simultaneous fit\n";
-    of << "# Prefix (kinematic variable): " << prefix << "\n";
-    of << "# Run+timestamp key: " << suffix << "\n";
-    of << "# rho_{ij} = cov_{ij} / (sigma_i sigma_j)\n";
-    of << "# Parameters (order): ";
-    for (int ip=0; ip<npar; ++ip) of << names[ip] << (ip<npar-1 ? ", " : "");
-    of << "\n\n";
-  }
 
   const size_t numBins = allBins[currentFits].size() - 1;
 
@@ -3847,10 +3846,11 @@ void performChi2Fits_GeneralExclusive(const char* output_file,
     std::cout << "Beginning simultaneous chi2 GE fit for " << binNames[currentFits]
               << " bin " << i << ". " << std::endl;
 
-    // Build histograms and per-φ-bin ⟨sinθγ⟩ (and centered+normalized)
+    // Build histograms and per-φ-bin ⟨sinθγ⟩ (centered+normalized and smoothed)
     char hname[64]; snprintf(hname, sizeof(hname), "GE_%zu", i);
     TH1D *hALU, *hAUL, *hALL;
-    std::tie(hALU, hAUL, hALL) = createHistogramForBin_GeneralExclusive(hname, (int)i, prefix);
+    std::tie(hALU, hAUL, hALL) =
+      createHistogramForBin_GeneralExclusive(hname, (int)i, prefix);
 
     // ---- Mean kinematics & depols (unchanged) ----
     double sumQ2=0, sumW=0, sumx=0, sumy=0, sumt=0, sumtmin=0, nEvt=0;
@@ -3914,18 +3914,18 @@ void performChi2Fits_GeneralExclusive(const char* output_file,
     // name, initial value, step, low, up
     minuit.DefineParameter(0,  "ALU_offset",      0.00,  0.01,  -0.1,  0.1);
     minuit.DefineParameter(1,  "AUL_offset",      0.00,  0.01,  -0.1,  0.1);
-    minuit.DefineParameter(2,  "F_LU_sin/F_UU",   0.00,  0.01,  -1,    1);
-    minuit.DefineParameter(3,  "F_UL_sin/F_UU",   0.00,  0.01,  -1,    1);
-    minuit.DefineParameter(4,  "F_UL_sin2/F_UU",  0.00,  0.01,  -1,    1);
-    minuit.DefineParameter(5,  "F_LL/F_UU",       0.00,  0.01,  -1,    1);
-    minuit.DefineParameter(6,  "F_LL_cos/F_UU",   0.00,  0.01,  -1,    1);
-    minuit.DefineParameter(7,  "F_UU_cos/F_UU",   0.00,  0.01,  -1,    1);
-    minuit.DefineParameter(8,  "F_UU_cos2/F_UU",  0.00,  0.01,  -1,    1);
-    minuit.DefineParameter(9,  "A_tg",            0.00,  0.01,  -1,    1); 
+    minuit.DefineParameter(2,  "F_LU_sin/F_UU",   0.00,  0.01,  -1.0,  1.0);
+    minuit.DefineParameter(3,  "F_UL_sin/F_UU",   0.00,  0.01,  -1.0,  1.0);
+    minuit.DefineParameter(4,  "F_UL_sin2/F_UU",  0.00,  0.01,  -1.0,  1.0);
+    minuit.DefineParameter(5,  "F_LL/F_UU",       0.00,  0.01,  -1.0,  1.0);
+    minuit.DefineParameter(6,  "F_LL_cos/F_UU",   0.00,  0.01,  -1.0,  1.0);
+    minuit.DefineParameter(7,  "F_UU_cos/F_UU",   0.00,  0.01,  -1.0,  1.0);
+    minuit.DefineParameter(8,  "F_UU_cos2/F_UU",  0.00,  0.01,  -1.0,  1.0);
+    minuit.DefineParameter(9,  "A_tg",            0.00,  0.01,  -1.0,  1.0);
 
-    // If ⟨sinθγ⟩ is essentially flat in φ for this bin, A_tg is unidentifiable → fix it.
+    // If ⟨sinθγ⟩ is essentially flat in φ, A_tg is unidentifiable → fix it.
     if (!g_fit_enable_tg || g_ge_ctx.sTG_wstd <= 1e-4) {
-      minuit.FixParameter(9);  // uses the value from DefineParameter (0.00)
+      minuit.FixParameter(9);  // stays at 0 unless you set g_fit_fixed_Atg
       if (g_ge_ctx.sTG_wstd <= 1e-4) {
         std::cout << "  [info] Bin " << i << ": sTG_wstd ≈ 0; fixing A_tg=0." << std::endl;
       }
@@ -3943,11 +3943,10 @@ void performChi2Fits_GeneralExclusive(const char* output_file,
       minuit.mnexcm("HESSE", nullptr, 0, ier);
     }
 
-    // Fit status
+    // Fit status and results
     double fmin, edm, errdef; int npari, nparx, istat;
     minuit.mnstat(fmin, edm, errdef, npari, nparx, istat);
 
-    // Retrieve results
     double pval[10], perr[10];
     for (int ip=0; ip<npar; ++ip) minuit.GetParameter(ip, pval[ip], perr[ip]);
 
@@ -3965,8 +3964,9 @@ void performChi2Fits_GeneralExclusive(const char* output_file,
     const int ndf_global = std::max(0, npts_total - npar);
     const double chi2_global = fmin;  // FCN returns χ²
 
-    // Plot
-    plotHistogramAndFit_GeneralExclusive(hALU, hAUL, hALL, pval, (int)i, prefix, suffix,
+    // Plot (pass values **and** errors)
+    plotHistogramAndFit_GeneralExclusive(hALU, hAUL, hALL, pval, perr,
+                                         (int)i, prefix, suffix,
                                          chi2_global, ndf_global);
 
     // Append to arrays
@@ -3975,7 +3975,7 @@ void performChi2Fits_GeneralExclusive(const char* output_file,
     sALU    << "{" << meanVar << ", " << pval[2]  << ", " << perr[2]  << "}";
     sAUL    << "{" << meanVar << ", " << pval[3]  << ", " << perr[3]  << "}";
     sAUL2   << "{" << meanVar << ", " << pval[4]  << ", " << perr[4]  << "}";
-    sATG    << "{" << meanVar << ", " << pval[9]  << ", " << perr[9]  << "}"; // centered/σ leakage
+    sATG    << "{" << meanVar << ", " << pval[9]  << ", " << perr[9]  << "}";
     sALL    << "{" << meanVar << ", " << pval[5]  << ", " << perr[5]  << "}";
     sALLc   << "{" << meanVar << ", " << pval[6]  << ", " << perr[6]  << "}";
     sAUUc   << "{" << meanVar << ", " << pval[7]  << ", " << perr[7]  << "}";
@@ -3996,7 +3996,7 @@ void performChi2Fits_GeneralExclusive(const char* output_file,
             << meany << ", " << meant << ", " << meantmin << "}";
     if (i < numBins - 1) kinList << ", ";
 
-    // Save covariance/correlation blocks (unchanged apart from dimension)
+    // Save covariance/correlation blocks
     std::vector<double> cov(npar*npar, 0.0);
     minuit.mnemat(cov.data(), npar);
 
@@ -4062,7 +4062,7 @@ void performChi2Fits_GeneralExclusive(const char* output_file,
     out << sAUUc2.str()  << "\n";
   }
 
-  // Finish LaTeX table & kinematics list (unchanged)
+  // Finish LaTeX table & kinematics list
   kinLatex << "\\end{tabular}\n"
            << "\\caption{Mean kinematics per bin for the simultaneous BSA/TSA/DSA "
            << "(GeneralExclusive) fit vs $" << prefix << "$.}\n"
