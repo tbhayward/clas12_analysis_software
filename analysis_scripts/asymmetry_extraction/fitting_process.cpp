@@ -3590,6 +3590,34 @@ createHistogramForBin_GeneralExclusive(const char* histBaseName, int binIndex, c
 // ─────────────────────────────────────────────────────────────────────
 // Plot 1×3 canvas with model and GLOBAL χ²/ndf
 // ─────────────────────────────────────────────────────────────────────
+// Smooth, periodic linear interpolation of centered sTG across φ for plotting
+static inline double GE_sTG_centered_interp(double phi, TH1D* hRef) {
+  if (!hRef || g_ge_ctx.sTG_phi_centered.empty()) return 0.0;
+
+  const int    nb   = std::min((int)g_ge_ctx.sTG_phi_centered.size(), hRef->GetNbinsX());
+  const double phimin = hRef->GetXaxis()->GetXmin();
+  const double phimax = hRef->GetXaxis()->GetXmax();
+  const double L    = (phimax - phimin);
+  if (nb <= 0 || L <= 0) return 0.0;
+
+  // Wrap φ into [phimin,phimax)
+  double x = phi;
+  while (x <  phimin) x += L;
+  while (x >= phimax) x -= L;
+
+  // Fractional bin coordinate in [0, nb)
+  const double idxf = (x - phimin) / L * nb;
+  int    i0   = (int)std::floor(idxf);
+  double frac = idxf - i0;
+  if (i0 < 0)       { i0 += nb; }
+  if (i0 >= nb)     { i0 -= nb; }
+  const int i1 = (i0 + 1) % nb;
+
+  const double y0 = g_ge_ctx.sTG_phi_centered[i0];
+  const double y1 = g_ge_ctx.sTG_phi_centered[i1];
+  return y0 + frac * (y1 - y0);
+}
+
 static void plotHistogramAndFit_GeneralExclusive(
   TH1D* hALU, TH1D* hAUL, TH1D* hALL,
   const double par[],                   // now 10 parameters
@@ -3612,7 +3640,8 @@ static void plotHistogramAndFit_GeneralExclusive(
     return a0 + (g_ge_ctx.rWA * aLU * std::sin(phi)) / denom(phi);
   };
   auto yAUL = [&](double phi){
-    const double sTGc = GE_sTG_centered_for_phi(phi, hAUL);
+    // Use interpolated centered ⟨sinθγ⟩ for a smooth model curve
+    const double sTGc = GE_sTG_centered_interp(phi, hAUL);
     const double num = g_ge_ctx.rVA * aUL1 * std::sin(phi)
                      + g_ge_ctx.rBA * aUL2 * std::sin(2.0*phi)
                      + aTG * sTGc * std::sin(phi);
@@ -3635,6 +3664,7 @@ static void plotHistogramAndFit_GeneralExclusive(
     gPad->SetRightMargin(0.06);
     gPad->SetBottomMargin(0.16);
 
+    // Data points
     TGraphErrors* gr = new TGraphErrors();
     const int nb = h ? h->GetNbinsX() : 0;
     int ip = 0;
@@ -3648,6 +3678,7 @@ static void plotHistogramAndFit_GeneralExclusive(
       ++ip;
     }
     gr->SetMarkerStyle(kFullCircle);
+    gr->SetMarkerSize(1.0);
     gr->SetMarkerColor(kBlack);
     gr->SetLineColor(kBlack);
     gr->GetXaxis()->SetTitle("#phi");
@@ -3657,42 +3688,44 @@ static void plotHistogramAndFit_GeneralExclusive(
     gr->GetYaxis()->SetRangeUser(ylow, yhigh);
     gr->Draw("AP");
 
-    // Model curve (uses centered+normalized sTG via ymodel)
-    const int np = 360;
+    // Smooth model curve
+    const int np = 720; // denser sampling
     TGraph* gm = new TGraph(np);
     for (int j=0; j<np; ++j){
-      double phi = (2.0*TMath::Pi()) * (j/(double)(np-1));
+      const double phi = (2.0*TMath::Pi()) * (j/(double)(np-1));
       gm->SetPoint(j, phi, ymodel(phi));
     }
     gm->SetLineColor(kRed);
+    gm->SetLineWidth(2);
     gm->Draw("L same");
 
-    // Legend with GLOBAL chi2/ndf + requested amplitudes
-    TLegend* L = new TLegend(0.14, 0.58, 0.88, 0.90);
-    L->SetBorderSize(1);
-    L->SetFillColor(0);
-    L->SetTextSize(0.028);
+    // Smaller legend in the top-right
+    TLegend* L = new TLegend(0.62, 0.70, 0.93, 0.92);
+    L->SetBorderSize(0);
+    L->SetFillStyle(0);
+    L->SetTextSize(0.024);
     L->AddEntry((TObject*)0, Form("#chi^{2}/ndf (global) = %.1f/%d = %.2f",
-                                  globalChi2, globalNdf, (globalNdf>0?globalChi2/globalNdf:0.0)), "");
+                                  globalChi2, globalNdf,
+                                  (globalNdf>0?globalChi2/globalNdf:0.0)), "");
     fillLegend(L);
     L->Draw("same");
   };
 
-  // BSA panel: show {FLUsinφ, FUUcosφ, FUUcos2φ}
+  // BSA legend
   auto fillBSA = [&](TLegend* L){
     L->AddEntry((TObject*)0, Form("F_{LU}^{sin#phi}/F_{UU} = %.6f", aLU),  "");
     L->AddEntry((TObject*)0, Form("F_{UU}^{cos#phi}/F_{UU} = %.6f", aUUc), "");
     L->AddEntry((TObject*)0, Form("F_{UU}^{cos2#phi}/F_{UU}= %.6f", aUUc2), "");
   };
-  // TSA panel: show {FULsinφ, FULsin2φ, Atg, FUUcosφ, FUUcos2φ}
+  // TSA legend (label requested)
   auto fillTSA = [&](TLegend* L){
     L->AddEntry((TObject*)0, Form("F_{UL}^{sin#phi}/F_{UU}  = %.6f", aUL1), "");
     L->AddEntry((TObject*)0, Form("F_{UL}^{sin2#phi}/F_{UU} = %.6f", aUL2), "");
-    L->AddEntry((TObject*)0, Form("A_{tg} (leak, centered/σ) = %.6f", aTG),  "");
+    L->AddEntry((TObject*)0, Form("A_{tg}^{sin#phi}          = %.6f", aTG),  "");
     L->AddEntry((TObject*)0, Form("F_{UU}^{cos#phi}/F_{UU}  = %.6f", aUUc),  "");
     L->AddEntry((TObject*)0, Form("F_{UU}^{cos2#phi}/F_{UU} = %.6f", aUUc2), "");
   };
-  // DSA panel
+  // DSA legend
   auto fillDSA = [&](TLegend* L){
     L->AddEntry((TObject*)0, Form("F_{LL}/F_{UU}           = %.6f", aLL),  "");
     L->AddEntry((TObject*)0, Form("F_{LL}^{cos#phi}/F_{UU} = %.6f", aLLc), "");
