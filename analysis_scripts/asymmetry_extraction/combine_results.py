@@ -3,6 +3,13 @@
 """
 Combine asymmetry text files by inverse-variance weighting.
 
+SPECIAL RULE (requested):
+    For each matched point:
+      • Let file ordering be [Su22, Fa22, Sp23, ...] (i.e., your first, second, third inputs).
+      • If the uncertainty σ in Su22 (file 0) OR in Sp23 (file 2) is smaller than the
+        uncertainty σ in Fa22 (file 1), then that contribution is replaced by
+        (value = 0, sigma = 1) for that file before combining.
+
 Two alignment modes:
   1) Default (mean-based): align points by their 'mean' coordinate within a numeric
      tolerance (--tol). Robust to tiny bin-center drifts across periods.
@@ -11,22 +18,14 @@ Two alignment modes:
 
 Usage:
   python combine_asymmetry_texts.py [--tol 5e-4] [--by-index] input1.txt input2.txt ... output.txt
-
-Notes:
-  • Section order in the output follows the order in the FIRST input file; any sections
-    that only appear in later inputs are appended alphabetically.
-  • In mean-based mode, target 'means' come from:
-      1) all 'means' in the FIRST file (in order), plus
-      2) any extra 'means' found only in later files (appended sorted), provided they
-         are not within tol of an already chosen target.
-  • Points with NaN or nonpositive σ are ignored. If a target/index has no valid
-    contributions, it is skipped.
 """
 
 import sys
 import re
 import math
 import argparse
+
+# ─────────────────────────────────────────────────────────────────────
 
 def parse_file(path, return_order=False):
     """
@@ -122,6 +121,32 @@ def build_target_means(anchor_triples, other_lists, tol):
 
     return targets, is_anchor
 
+# ── Combination cores (with Su22/Fa22/Sp23 σ-floor rule) ────────────
+
+def _apply_fa22_sigma_floor(matches):
+    """
+    matches: list with per-file matched measurements (or None).
+             Each measurement is (mean, value, sigma).
+    Rule:
+      If file 1 (Fa22) exists and is valid, and file 0 (Su22) OR file 2 (Sp23)
+      exists+valid with sigma < sigma_Fa22, then replace that file's contribution
+      by (same mean, value=0.0, sigma=1.0).
+    """
+    if len(matches) < 2:
+        return matches  # Need at least Fa22 to compare
+
+    fa = matches[1]
+    if fa is None or not is_valid(fa):
+        return matches
+
+    sigma_fa = fa[2]
+    for idx in (0, 2):
+        if idx < len(matches) and matches[idx] is not None and is_valid(matches[idx]):
+            m, v, s = matches[idx]
+            if s < sigma_fa:
+                matches[idx] = (m, 0.0, 1.0)
+    return matches
+
 def combine_by_mean(lists_by_file, tol, want_summary=False, name_for_log=""):
     """
     Combine multiple lists of (mean, value, sigma) by aligning on mean with tolerance.
@@ -136,16 +161,20 @@ def combine_by_mean(lists_by_file, tol, want_summary=False, name_for_log=""):
     matched_stats = []
 
     for T in targets:
-        contrib = []
+        # Collect the matched element from each file (or None)
+        matches = []
         for L in lists_by_file:
             if not L:
+                matches.append(None)
                 continue
             k = nearest_index_by_mean(T, L, tol)
-            if k is None:
-                continue
-            if is_valid(L[k]):
-                contrib.append(L[k])
+            matches.append(L[k] if k is not None else None)
 
+        # Apply the σ-floor rule using Fa22 as reference
+        matches = _apply_fa22_sigma_floor(matches)
+
+        # Keep valid contributions only
+        contrib = [meas for meas in matches if (meas is not None and is_valid(meas))]
         if not contrib:
             continue
 
@@ -173,13 +202,11 @@ def combine_by_mean(lists_by_file, tol, want_summary=False, name_for_log=""):
 
     return combined
 
-# ── Index-based alignment ────────────────────────────────────────────
-
 def combine_by_index(lists_by_file, want_summary=False, name_for_log=""):
     """
     Combine lists of (mean, value, sigma) aligned STRICTLY by index.
     For idx = 0..max_len-1, gather that index from each list (if present/valid),
-    then inverse-variance weight. Skip indices with no valid contributions.
+    apply the σ-floor rule, then inverse-variance weight. Skip indices with no valid contributions.
     """
     max_len = 0
     for L in lists_by_file:
@@ -190,14 +217,18 @@ def combine_by_index(lists_by_file, want_summary=False, name_for_log=""):
     matched_stats = []
 
     for idx in range(max_len):
-        contrib = []
+        # Collect index-aligned element from each file (or None)
+        matches = []
         for L in lists_by_file:
             if not L or idx >= len(L):
-                continue
-            meas = L[idx]
-            if is_valid(meas):
-                contrib.append(meas)
+                matches.append(None)
+            else:
+                matches.append(L[idx])
 
+        # Apply the σ-floor rule using Fa22 as reference
+        matches = _apply_fa22_sigma_floor(matches)
+
+        contrib = [meas for meas in matches if (meas is not None and is_valid(meas))]
         if not contrib:
             continue
 
@@ -240,53 +271,3 @@ def main():
     if len(args.files) < 2:
         print("Usage: python combine_asymmetry_texts.py [--tol 5e-4] [--by-index] input1.txt [input2.txt ...] output.txt")
         sys.exit(1)
-
-    *inputs, output_path = args.files
-    if not inputs:
-        print("Error: Need at least one input file.")
-        sys.exit(1)
-
-    # Parse first file (get order) and the rest
-    first_dict, first_order = parse_file(inputs[0], return_order=True)
-    parsed_rest = [parse_file(p) for p in inputs[1:]]
-
-    # Collect union of all section names
-    all_names = set(first_dict.keys())
-    for d in parsed_rest:
-        all_names.update(d.keys())
-
-    # Output section order: first file order, then alphabetical for the rest
-    ordered_names = []
-    seen = set()
-    for name in first_order:
-        if name in all_names and name not in seen:
-            ordered_names.append(name)
-            seen.add(name)
-    ordered_names.extend(sorted(n for n in all_names if n not in seen))
-
-    # Combine per section
-    combined_results = {}
-    for name in ordered_names:
-        lists_by_file = [first_dict.get(name)] + [d.get(name) for d in parsed_rest]
-
-        if args.by_index:
-            combo = combine_by_index(lists_by_file, want_summary=True, name_for_log=name)
-        else:
-            combo = combine_by_mean(lists_by_file, tol=args.tol, want_summary=True, name_for_log=name)
-
-        if combo:
-            combined_results[name] = combo
-
-    # Write output in the same format
-    with open(output_path, 'w') as out:
-        for name in ordered_names:
-            triples = combined_results.get(name)
-            if not triples:
-                continue
-            out.write(f"{name} = {{")
-            rows = [f"{{{m:.9f}, {v:.9f}, {s:.9f}}}" for (m, v, s) in triples]
-            out.write(", ".join(rows))
-            out.write("};\n")
-
-if __name__ == "__main__":
-    main()
