@@ -19,7 +19,7 @@ static double beamEnergy(int runnum) {
     if (runnum >= 16042 && runnum <= 17065)  return 10.5473;
     if (runnum >= 17067 && runnum <= 17724)  return 10.5563;
     if (runnum >= 17725 && runnum <= 17811)  return 10.5593;
-    return 10.604;
+    return 10.5563;
 }
 
 // compute t = (q - p_pi)^2
