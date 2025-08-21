@@ -3756,7 +3756,7 @@ static void plotHistogramAndFit_GeneralExclusive(
     L->AddEntry((TObject*)0, Form("F_{UU}^{cos2#phi}/F_{UU} = %.6f #pm %.6f", aUUc2,eUUc2), "");
   };
   auto fillDSA = [&](TLegend* L){
-    L->AddEntry((TObject*)0, Form("F_{LL}/F_{UU}            = %.6f #pm %.6f", aLL,  eLL ), "");
+    L->AddEntry((TObject*)0, Form("F_{LL}/F_{UU}  = %.6f #pm %.6f", aLL,  eLL ), "");
     L->AddEntry((TObject*)0, Form("F_{LL}^{cos#phi}/F_{UU}  = %.6f #pm %.6f", aLLc, eLLc), "");
     L->AddEntry((TObject*)0, Form("F_{UU}^{cos#phi}/F_{UU}  = %.6f #pm %.6f", aUUc, eUUc), "");
     L->AddEntry((TObject*)0, Form("F_{UU}^{cos2#phi}/F_{UU} = %.6f #pm %.6f", aUUc2,eUUc2), "");
