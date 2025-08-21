@@ -60,10 +60,10 @@ NB_PHI = 36
 NB_MX2 = 40
 
 # 2D binning = 0.6667 × base (rounded)
-NB_Q2_2D  = int(round(NB_Q2  * 2/3))   # 20
-NB_X_2D   = int(round(NB_X   * 2/3))   # 23
-NB_T_2D   = int(round(NB_T   * 2/3))   # 21
-NB_PHI_2D = int(round(NB_PHI * 2/3))   # 24
+NB_Q2_2D  = int(round(NB_Q2  ))   # 20
+NB_X_2D   = int(round(NB_X   ))   # 23
+NB_T_2D   = int(round(NB_T   ))   # 21
+NB_PHI_2D = int(round(NB_PHI ))   # 24
 
 # Labels (units in parentheses for axes only)
 LAB_Q2  = r"$Q^{2}$ (GeV$^{2}$)"
