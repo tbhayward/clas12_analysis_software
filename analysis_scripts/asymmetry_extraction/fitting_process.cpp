@@ -3725,7 +3725,7 @@ static void plotHistogramAndFit_GeneralExclusive(
     gm->Draw("L same");
 
     // Legend: smaller, bordered, nudged to top-right but inside pad
-    TLegend* L = new TLegend(0.52, 0.70, 0.92, 0.90);
+    TLegend* L = new TLegend(0.48, 0.70, 0.94, 0.88);
     L->SetBorderSize(1);
     L->SetLineColor(kBlack);
     L->SetFillColor(kWhite);
