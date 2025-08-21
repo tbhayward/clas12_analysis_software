@@ -106,7 +106,6 @@ def main():
         sys.exit(1)
 
     for arrays in itr:
-        fid = arrays["fiducial_status"]
         x   = arrays["x"]
         t   = arrays["t"]
         mx2 = arrays["Mx2"]
@@ -116,7 +115,7 @@ def main():
         p1_pid = arrays["matching_p1_pid"]
 
         # Base cuts for this study (per your note)
-        base = (fid >= 111) & (mx2 > 0.81) & (mx2 < 1.00)
+        base = (mx2 > 0.81) & (mx2 < 1.00)
 
         if not np.any(base):
             continue
