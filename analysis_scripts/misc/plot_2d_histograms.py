@@ -53,11 +53,11 @@ PHI_LIM = (0.0, 2.0*np.pi)
 MX2_LIM = (0.7, 1.1)
 
 # 1D base bin counts (HALVED vs original; 2D gets 2/3 of these)
-NB_Q2  = 30
-NB_X   = 35
-NB_T   = 32
-NB_PHI = 36
-NB_MX2 = 40
+NB_Q2  = 50
+NB_X   = 50
+NB_T   = 50
+NB_PHI = 50
+NB_MX2 = 50
 
 # 2D binning = 0.6667 × base (rounded)
 NB_Q2_2D  = int(round(NB_Q2  ))   # 20
