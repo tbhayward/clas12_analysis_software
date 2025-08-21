@@ -3350,7 +3350,7 @@ struct GEContext {
   TGraph*   sTGc_graph   = nullptr;   // owns the (x,y) points
   TSpline3* sTGc_spline  = nullptr;   // cubic spline over those points
 
-  int    nPhiBins = 12;
+  int    nPhiBins = 24;
   double phiMin   = 0.0;
   double phiMax   = 2.0*TMath::Pi();
 };
