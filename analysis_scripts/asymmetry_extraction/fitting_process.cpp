@@ -3764,7 +3764,7 @@ static void plotHistogramAndFit_GeneralExclusive(
     gm->Draw("L same");
 
     // Legend — top-right, nudged slightly down and made a bit wider
-    TLegend* L = new TLegend(0.66, 0.78, 0.96, 0.94);
+    TLegend* L = new TLegend(0.66, 0.78, 0.95, 0.94 );
     L->SetBorderSize(1);
     L->SetLineColor(kBlack);
     L->SetFillColor(kWhite);
@@ -3797,7 +3797,7 @@ static void plotHistogramAndFit_GeneralExclusive(
     }
   };
   auto fillDSA = [&](TLegend* L){
-    L->AddEntry((TObject*)0, Form("A_{LL}           = %.3f #pm %.3f", A_LL,  dA_LL ), "");
+    L->AddEntry((TObject*)0, Form("A_{LL} = %.3f #pm %.3f", A_LL,  dA_LL ), "");
     L->AddEntry((TObject*)0, Form("A_{LL}^{cos#phi} = %.3f #pm %.3f", A_LLc, dA_LLc), "");
     if (!g_ge_compact_legend) {
       L->AddEntry((TObject*)0, Form("A_{UU}^{cos#phi}  = %.3f #pm %.3f", A_UUc,  dA_UUc), "");
