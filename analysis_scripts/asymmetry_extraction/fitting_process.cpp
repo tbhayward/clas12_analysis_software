@@ -3407,8 +3407,7 @@ static inline double GE_sTG_centered_interp(double phi, TH1D* hRef) {
 //      Only this function is new; everything else in your driver stays.
 // ─────────────────────────────────────────────────────────────────────
 static void chi2Fcn_GeneralExclusive(Int_t& /*npar*/, Double_t* /*gin*/, Double_t& f,
-                                     Double_t* par, Int_t /*iflag*/)
-{
+                                     Double_t* par, Int_t /*iflag*/) {
   // Parameters
   const double a0   = par[0],  a1   = par[1];
   const double aLU  = par[2],  aUL1 = par[3],  aUL2 = par[4];
@@ -3689,7 +3688,7 @@ createHistogramForBin_GeneralExclusive(const char* histBaseName, int binIndex, c
 // Toggle at file scope (top of your source):
 // true  -> compact legends (hide chi2/ndf, AUU entries, and A_tg) and use shorter box
 // false -> full legends
-static bool g_ge_compact_legend = true;
+static bool g_ge_compact_legend = false;
 
 // ─────────────────────────────────────────────────────────────────────
 
@@ -3812,7 +3811,7 @@ static void plotHistogramAndFit_GeneralExclusive(
     gm->Draw("L same");
 
     // Legend — top-right, nudged slightly down and made a bit wider
-    TLegend* L = new TLegend(0.64, 0.78, 0.95, 0.94 );
+    TLegend* L = new TLegend(0.58, 0.72, 0.95, 0.94 );
     L->SetBorderSize(1);
     L->SetLineColor(kBlack);
     L->SetFillColor(kWhite);
