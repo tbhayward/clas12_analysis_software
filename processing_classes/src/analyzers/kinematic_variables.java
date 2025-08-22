@@ -74,8 +74,18 @@ public class kinematic_variables {
         return 2 * particle_mass(2212) * x / Math.pow(Q2, 0.5);
     }
 
-    double tmin(double x) {
-        return -Math.pow((particle_mass(2212) * x), 2) / (1 - x);
+    double tmin(double x, double Q2) {
+        final double M = particle_mass(2212); // proton mass in GeV
+        
+        double eps2 = 4.0 * M * M * x * x / Q2;      // this is ε^2
+        double root = Math.sqrt(1.0 + eps2);
+        double num  = Q2 * ( 2.0 * (1.0 - x) * (1.0 - root) + eps2 );
+        double den  = 4.0 * x * (1.0 - x) + eps2;
+
+        return (den != 0.0) ? -num / den : Double.NaN;
+        
+        // approximation
+        // return -Math.pow((particle_mass(2212) * x), 2) / (1 - x);
     }
 
     double t(double p, double theta) {
