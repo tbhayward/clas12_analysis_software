@@ -3653,7 +3653,7 @@ static void plotHistogramAndFit_GeneralExclusive(
   const std::string& runSuffix,
   double globalChi2, int globalNdf)
 {
-  // --- unpack fit parameters (ratios) ---
+  // --- unpack parameters (ratios) ---
   const double a0   = par[0],  a1   = par[1];
   const double aLU  = par[2],  aUL1 = par[3],  aUL2 = par[4];
   const double aLL  = par[5],  aLLc = par[6];
@@ -3665,7 +3665,7 @@ static void plotHistogramAndFit_GeneralExclusive(
   const double eUUc = err[7],  eUUc2= err[8];
   const double eTG  = err[9];
 
-  // --- (1) Use asymmetry-level amplitudes in legends: ratio × depol factor ---
+  // show asymmetry amplitudes in legends (ratio × depol)
   const double A_LU   = g_ge_ctx.rWA * aLU;    const double dA_LU   = g_ge_ctx.rWA * eLU;
   const double A_UL1  = g_ge_ctx.rVA * aUL1;   const double dA_UL1  = g_ge_ctx.rVA * eUL1;
   const double A_UL2  = g_ge_ctx.rBA * aUL2;   const double dA_UL2  = g_ge_ctx.rBA * eUL2;
@@ -3675,7 +3675,7 @@ static void plotHistogramAndFit_GeneralExclusive(
   const double A_UUc2 = g_ge_ctx.rBA * aUUc2;  const double dA_UUc2 = g_ge_ctx.rBA * eUUc2;
   const double A_TG   = aTG;                   const double dA_TG   = eTG;  // no depol
 
-  // --- model (still uses the fit parameters as in FCN) ---
+  // model
   auto denom = [&](double phi) {
     return 1.0
       + g_ge_ctx.rVA * aUUc  * std::cos(phi)
@@ -3695,35 +3695,28 @@ static void plotHistogramAndFit_GeneralExclusive(
     return (g_ge_ctx.rCA * aLL + g_ge_ctx.rWA * aLLc * std::cos(phi)) / denom(phi);
   };
 
-  // --- canvas and tighter panel spacing ---
+  // canvas with tighter gaps
   TCanvas* c = new TCanvas(Form("cGE_%d",binIndex), "", 1600, 560);
-  c->Divide(3,1, 0.01, 0.01); // small inter-pad margins
+  c->Divide(3,1, 0.01, 0.01);
 
-  // helper to draw one panel
   const auto addPointsAndCurve = [&](int pad, TH1D* h, auto ymodel,
                                      const char* ytitle,
                                      std::function<void(TLegend*)> fillLegend,
                                      double ylow, double yhigh)
   {
     c->cd(pad);
-    // tighter pad margins
-    gPad->SetLeftMargin(0.13);
+    gPad->SetLeftMargin(0.14);
     gPad->SetRightMargin(0.02);
     gPad->SetBottomMargin(0.14);
     gPad->SetTopMargin(0.08);
 
-    // data points
+    // data
     TGraphErrors* gr = new TGraphErrors();
-    const int nb = h ? h->GetNbinsX() : 0;
-    int ip = 0;
+    const int nb = h ? h->GetNbinsX() : 0; int ip=0;
     for (int i=1;i<=nb;++i){
-      const double x  = h->GetBinCenter(i);
-      const double y  = h->GetBinContent(i);
-      const double ey = h->GetBinError(i);
+      const double x=h->GetBinCenter(i), y=h->GetBinContent(i), ey=h->GetBinError(i);
       if (!std::isfinite(y) || !std::isfinite(ey)) continue;
-      gr->SetPoint(ip, x, y);
-      gr->SetPointError(ip, 0.0, ey);
-      ++ip;
+      gr->SetPoint(ip, x, y); gr->SetPointError(ip, 0.0, ey); ++ip;
     }
     gr->SetMarkerStyle(kFullCircle);
     gr->SetMarkerSize(1.0);
@@ -3733,18 +3726,15 @@ static void plotHistogramAndFit_GeneralExclusive(
     auto* axX = gr->GetXaxis();
     auto* axY = gr->GetYaxis();
     axX->SetTitle("#phi"); axY->SetTitle(ytitle);
-
-    // (2) center titles and make them a touch larger
     axX->CenterTitle(true); axY->CenterTitle(true);
     axX->SetTitleSize(0.055); axY->SetTitleSize(0.055);
     axX->SetLabelSize(0.045); axY->SetLabelSize(0.045);
-    axY->SetTitleOffset(1.10); // bring it closer (was 1.4)
-
+    axY->SetTitleOffset(1.28);   // move title away from y tick labels
     axX->SetLimits(0, 2*TMath::Pi());
     axY->SetRangeUser(ylow, yhigh);
     gr->Draw("AP");
 
-    // dense smooth model curve
+    // model curve
     const int np = 1440;
     TGraph* gm = new TGraph(np);
     for (int j=0; j<np; ++j){
@@ -3755,16 +3745,15 @@ static void plotHistogramAndFit_GeneralExclusive(
     gm->SetLineWidth(2);
     gm->Draw("L same");
 
-    // legend (shorter box when compact)
-    const double y1 = g_ge_compact_legend ? 0.80 : 0.70;
-    TLegend* L = new TLegend(0.48, y1, 0.94, 0.90);
+    // legend — fixed, tight top-right corner
+    TLegend* L = new TLegend(0.66, 0.80, 0.95, 0.94);
     L->SetBorderSize(1);
     L->SetLineColor(kBlack);
     L->SetFillColor(kWhite);
     L->SetFillStyle(1001);
     L->SetTextSize(0.026);
     L->SetTextAlign(12);
-    L->SetMargin(0.08);
+    L->SetMargin(0.10);
 
     if (!g_ge_compact_legend) {
       L->AddEntry((TObject*)0, Form("#chi^{2}/ndf (global) = %.1f/%d = %.2f",
@@ -3775,50 +3764,33 @@ static void plotHistogramAndFit_GeneralExclusive(
     L->Draw("same");
   };
 
-  // --- legend fillers now show ASYMMETRIES (not ratios) ---
+  // legend fillers report asymmetries
   auto fillBSA = [&](TLegend* L){
-    L->AddEntry((TObject*)0,
-      Form("A_{LU}^{sin#phi} = %.6f #pm %.6f", A_LU, dA_LU), "");
-    if (!g_ge_compact_legend) {
-      L->AddEntry((TObject*)0,
-        Form("A_{UU}^{cos#phi} = %.6f #pm %.6f", A_UUc,  dA_UUc), "");
-      L->AddEntry((TObject*)0,
-        Form("A_{UU}^{cos2#phi}= %.6f #pm %.6f", A_UUc2, dA_UUc2), "");
-    }
+    L->AddEntry((TObject*)0, Form("A_{LU}^{sin#phi} = %.6f #pm %.6f", A_LU,  dA_LU ), "");
   };
   auto fillTSA = [&](TLegend* L){
-    L->AddEntry((TObject*)0,
-      Form("A_{UL}^{sin#phi}  = %.6f #pm %.6f", A_UL1, dA_UL1), "");
-    L->AddEntry((TObject*)0,
-      Form("A_{UL}^{sin2#phi} = %.6f #pm %.6f", A_UL2, dA_UL2), "");
+    L->AddEntry((TObject*)0, Form("A_{UL}^{sin#phi}  = %.6f #pm %.6f", A_UL1, dA_UL1), "");
+    L->AddEntry((TObject*)0, Form("A_{UL}^{sin2#phi} = %.6f #pm %.6f", A_UL2, dA_UL2), "");
     if (!g_ge_compact_legend) {
-      L->AddEntry((TObject*)0,
-        Form("A_{tg}^{sin#phi}     = %.6f #pm %.6f", A_TG,  dA_TG ), "");
-      L->AddEntry((TObject*)0,
-        Form("A_{UU}^{cos#phi}  = %.6f #pm %.6f", A_UUc,  dA_UUc), "");
-      L->AddEntry((TObject*)0,
-        Form("A_{UU}^{cos2#phi} = %.6f #pm %.6f", A_UUc2, dA_UUc2), "");
+      L->AddEntry((TObject*)0, Form("A_{tg}^{sin#phi}     = %.6f #pm %.6f", A_TG,  dA_TG ), "");
+      L->AddEntry((TObject*)0, Form("A_{UU}^{cos#phi}  = %.6f #pm %.6f", A_UUc,  dA_UUc), "");
+      L->AddEntry((TObject*)0, Form("A_{UU}^{cos2#phi} = %.6f #pm %.6f", A_UUc2, dA_UUc2), "");
     }
   };
   auto fillDSA = [&](TLegend* L){
-    L->AddEntry((TObject*)0,
-      Form("A_{LL}           = %.6f #pm %.6f", A_LL,  dA_LL ), "");
-    L->AddEntry((TObject*)0,
-      Form("A_{LL}^{cos#phi} = %.6f #pm %.6f", A_LLc, dA_LLc), "");
+    L->AddEntry((TObject*)0, Form("A_{LL}           = %.6f #pm %.6f", A_LL,  dA_LL ), "");
+    L->AddEntry((TObject*)0, Form("A_{LL}^{cos#phi} = %.6f #pm %.6f", A_LLc, dA_LLc), "");
     if (!g_ge_compact_legend) {
-      L->AddEntry((TObject*)0,
-        Form("A_{UU}^{cos#phi}  = %.6f #pm %.6f", A_UUc,  dA_UUc), "");
-      L->AddEntry((TObject*)0,
-        Form("A_{UU}^{cos2#phi} = %.6f #pm %.6f", A_UUc2, dA_UUc2), "");
+      L->AddEntry((TObject*)0, Form("A_{UU}^{cos#phi}  = %.6f #pm %.6f", A_UUc,  dA_UUc), "");
+      L->AddEntry((TObject*)0, Form("A_{UU}^{cos2#phi} = %.6f #pm %.6f", A_UUc2, dA_UUc2), "");
     }
   };
 
-  // --- (4) y-ranges: single-spin = [-0.1, 0.1], double-spin kept wider ---
+  // y-ranges: BSA/TSA [-0.1, 0.1], DSA [-0.1, 0.3]
   addPointsAndCurve(1, hALU, yALU, "A_{LU}", fillBSA, -0.1, 0.1);
   addPointsAndCurve(2, hAUL, yAUL, "A_{UL}", fillTSA, -0.1, 0.1);
-  addPointsAndCurve(3, hALL, yALL, "A_{LL}", fillDSA, -0.2, 0.4);
+  addPointsAndCurve(3, hALL, yALL, "A_{LL}", fillDSA, -0.1, 0.3);
 
-  // --- title and save ---
   const double vminB = allBins[currentFits][binIndex];
   const double vmaxB = allBins[currentFits][binIndex+1];
   std::ostringstream ttl; ttl<<std::fixed<<std::setprecision(3)
