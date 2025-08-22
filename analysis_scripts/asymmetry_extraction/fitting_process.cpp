@@ -3409,7 +3409,7 @@ static void chi2Fcn_GeneralExclusive(Int_t& /*npar*/, Double_t* /*gin*/, Double_
                                      Double_t* par, Int_t /*iflag*/)
 {
   // ─── knobs you can adjust ─────────────────────────────────────────
-  const double EPS_FLOOR   = 5e-3;  // demand D(φ) ≥ EPS_FLOOR on [0,2π)
+  const double EPS_FLOOR   = 1e-2;  // demand D(φ) ≥ EPS_FLOOR on [0,2π)
   const double LAMBDA_DEN  = 1e6;   // penalty strength for violating D floor
   const double EPS_EVAL    = 1e-6;  // tiny clamp during evaluation
 
@@ -3719,8 +3719,7 @@ static void plotHistogramAndFit_GeneralExclusive(
   const double err[],                 // uncertainties in same order
   int binIndex, const std::string& prefix,
   const std::string& runSuffix,
-  double globalChi2, int globalNdf)
-{
+  double globalChi2, int globalNdf) {
   const double a0   = par[0],  a1   = par[1];
   const double aLU  = par[2],  aUL1 = par[3],  aUL2 = par[4];
   const double aLL  = par[5],  aLLc = par[6];
