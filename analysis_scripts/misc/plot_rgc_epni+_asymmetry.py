@@ -15,7 +15,7 @@ And a single xB-overlay (1×3, Combined-only):
   output/enpi+/rgc_<PREFIX>_xBOverlay_CombinedOnly.pdf
 
 Notes:
-- Headroom above the subplots is reserved to match the old aspect *without* drawing titles.
+- 2×2 canvases keep a suptitle; the 1×3 overlay has no title (headroom preserved via tight_layout).
 - The text files are expected to contain blocks like:
     enpiLowxBGEchi2FitsALUsinphi = {{mean_tprime, value, error}, ...};
   We plot against -t' on the x-axis.
@@ -67,7 +67,7 @@ YLIM_UL = (-0.2, 0.2)   # TSA
 YLIM_LL = (-0.4, 0.4)   # DSA
 YLIM_UU = (-0.4, 0.4)   # UU
 
-# Human-readable labels for xB bins (for legends)
+# Human-readable labels for xB bins (for legends & titles)
 XB_BINS = {
     "enpiLowxBGE":     r"$0.10 < x_{B} < 0.25$",
     "enpiMidLowxBGE":  r"$0.25 < x_{B} < 0.35$",
@@ -79,9 +79,9 @@ XB_BINS = {
 # Order to render canvases
 BIN_ORDER = ["enpiLowxBGE", "enpiMidLowxBGE", "enpiMidHighxBGE", "enpiHighxBGE", "enpiGE"]
 
-# Top headroom to preserve the aspect you liked (no visible suptitle)
-TOP_PAD_PER_BIN = 0.95   # for 2×2 canvases
-TOP_PAD_OVERLAY = 0.94   # for 1×3 overlay
+# Top padding for tight_layout
+TOP_PAD_PER_BIN = 0.95   # for 2×2 canvases with a suptitle
+TOP_PAD_OVERLAY = 0.94   # for 1×3 overlay (no visible title)
 
 # ─────────────────────────────────────────────────────────────────────
 # Parsing helpers
@@ -164,6 +164,16 @@ def detect_available_bins(*dicts):
         if present:
             available.append(bin_tag)
     return available
+
+# ─────────────────────────────────────────────────────────────────────
+# Titles for 2×2 canvases only
+# ─────────────────────────────────────────────────────────────────────
+def make_title(kin_text, xb_label):
+    """Compose the suptitle string for the 2×2 canvases."""
+    base = r"$ep \rightarrow en\pi^{+}$ — " + xb_label
+    if kin_text.strip():
+        return f"{base}; {kin_text}"
+    return base
 
 # ─────────────────────────────────────────────────────────────────────
 # Plotting helpers
@@ -278,31 +288,39 @@ def _plot_panel_sets(axLU, axUL, axLL, axUU, pdata_by_label):
     legUU.get_frame().set_alpha(0.9)
 
 # ─────────────────────────────────────────────────────────────────────
-# Per-bin canvases
+# Per-bin canvases (2×2) — WITH suptitle
 # ─────────────────────────────────────────────────────────────────────
-def plot_all_periods_for_bin(p_su22, p_fa22, p_sp23, bin_tag, out_dir, out_prefix):
+def plot_all_periods_for_bin(p_su22, p_fa22, p_sp23, bin_tag, kin_text, out_dir, out_prefix):
     plt.figure(figsize=(12, 9))  # 2×2
     axLU  = plt.subplot(2,2,1)   # BSA
     axUL  = plt.subplot(2,2,2)   # TSA
     axLL  = plt.subplot(2,2,3)   # DSA
     axUU  = plt.subplot(2,2,4)   # UU
 
+    # Title
+    xb_label = XB_BINS.get(bin_tag, bin_tag)
+    plt.suptitle(make_title(kin_text, xb_label), fontsize=16, y=0.97)
+
     pdata_by_label = {"Su22": p_su22, "Fa22": p_fa22, "Sp23": p_sp23}
     _plot_panel_sets(axLU, axUL, axLL, axUU, pdata_by_label)
 
-    plt.tight_layout(rect=[0, 0, 1, TOP_PAD_PER_BIN])  # reserve headroom, no title
+    plt.tight_layout(rect=[0, 0, 1, TOP_PAD_PER_BIN])  # leave room for suptitle
     os.makedirs(out_dir, exist_ok=True)
     out_path = os.path.join(out_dir, f"rgc_{out_prefix}_{bin_tag}_AllPeriods.pdf")
     plt.savefig(out_path)
     plt.close()
     print(f"Saved all-periods figure: {out_path}")
 
-def plot_combined_only_for_bin(p_comb, bin_tag, out_dir, out_prefix):
+def plot_combined_only_for_bin(p_comb, bin_tag, kin_text, out_dir, out_prefix):
     plt.figure(figsize=(12, 9))  # 2×2
     axLU  = plt.subplot(2,2,1)
     axUL  = plt.subplot(2,2,2)
     axLL  = plt.subplot(2,2,3)
     axUU  = plt.subplot(2,2,4)
+
+    # Title
+    xb_label = XB_BINS.get(bin_tag, bin_tag)
+    plt.suptitle(make_title(kin_text, xb_label), fontsize=16, y=0.97)
 
     black = COLORS["Combined"]
 
@@ -391,7 +409,7 @@ def plot_combined_only_for_bin(p_comb, bin_tag, out_dir, out_prefix):
     )
     axUU.add_artist(harmUU)
 
-    plt.tight_layout(rect=[0, 0, 1, TOP_PAD_PER_BIN])  # reserve headroom, no title
+    plt.tight_layout(rect=[0, 0, 1, TOP_PAD_PER_BIN])  # leave room for suptitle
     os.makedirs(out_dir, exist_ok=True)
     out_path = os.path.join(out_dir, f"rgc_{out_prefix}_{bin_tag}_CombinedOnly.pdf")
     plt.savefig(out_path)
@@ -399,7 +417,7 @@ def plot_combined_only_for_bin(p_comb, bin_tag, out_dir, out_prefix):
     print(f"Saved combined-only figure: {out_path}")
 
 # ─────────────────────────────────────────────────────────────────────
-# xB overlay 1×3 canvas (Combined only)
+# xB overlay 1×3 canvas (Combined only) — NO suptitle
 # ─────────────────────────────────────────────────────────────────────
 def plot_combined_xb_overlay_1x3(comb_parsed, out_dir, out_prefix, bins_to_use):
     """
@@ -440,7 +458,7 @@ def plot_combined_xb_overlay_1x3(comb_parsed, out_dir, out_prefix, bins_to_use):
     _draw_component(axM, "AULsin",  r"$F_{UL}^{\sin\phi}/F_{UU}$", YLIM_UL)
     _draw_component(axR, "AULsin2", r"$F_{UL}^{\sin2\phi}/F_{UU}$", YLIM_UL)
 
-    fig.tight_layout(rect=[0, 0, 1, TOP_PAD_OVERLAY])  # preserve aspect w/o title
+    fig.tight_layout(rect=[0, 0, 1, TOP_PAD_OVERLAY])  # preserve aspect, no title
     os.makedirs(out_dir, exist_ok=True)
     out_path = os.path.join(out_dir, f"rgc_{out_prefix}_xBOverlay_CombinedOnly.pdf")
     plt.savefig(out_path)
@@ -479,13 +497,13 @@ def main():
         p_sp23 = build_period_dict(sp23, bin_tag)
         p_comb = build_period_dict(comb,  bin_tag)
 
-        # All periods on one canvas (no title; aspect preserved via top padding)
-        plot_all_periods_for_bin(p_su22, p_fa22, p_sp23, bin_tag, out_dir, out_prefix)
+        # All periods on one canvas — WITH title
+        plot_all_periods_for_bin(p_su22, p_fa22, p_sp23, bin_tag, kin_text, out_dir, out_prefix)
 
-        # Combined-only canvas (no title; aspect preserved via top padding)
-        plot_combined_only_for_bin(p_comb, bin_tag, out_dir, out_prefix)
+        # Combined-only canvas — WITH title
+        plot_combined_only_for_bin(p_comb, bin_tag, kin_text, out_dir, out_prefix)
 
-    # Single xB overlay 1×3 canvas from the Combined file.
+    # Single xB overlay 1×3 canvas from the Combined file — NO title.
     xb_overlay_candidates = ["enpiLowxBGE", "enpiMidLowxBGE", "enpiMidHighxBGE", "enpiHighxBGE"]
     bins_to_use = [b for b in xb_overlay_candidates if b in available_bins]
     if bins_to_use:
