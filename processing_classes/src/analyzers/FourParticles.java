@@ -325,7 +325,7 @@ public class FourParticles {
         t12 = kinematic_variables.t(lv_p12.p(), lv_p12.theta());
         t13 = kinematic_variables.t(lv_p13.p(), lv_p13.theta());
         t23 = kinematic_variables.t(lv_p23.p(), lv_p23.theta());
-        tmin = kinematic_variables.tmin(x);
+        tmin = kinematic_variables.tmin(x,Q2);
         
         open_angle_ep = kinematic_variables.open_angle(lv_e, lv_p);
         open_angle_ep1 = kinematic_variables.open_angle(lv_e, lv_p1);

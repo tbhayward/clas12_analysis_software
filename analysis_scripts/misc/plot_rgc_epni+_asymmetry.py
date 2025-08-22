@@ -66,7 +66,7 @@ MS = 5.0  # marker size
 
 # x-axis and labels (now -t)
 XLIM_T = (0.0, 1.30)
-X_LABEL = r"$-t\ (\mathrm{GeV}^{2})$"
+X_LABEL = r"$-t'\ (\mathrm{GeV}^{2})$"
 
 # y-axis ranges per panel
 YLIM_LU = (-0.2, 0.2)   # BSA

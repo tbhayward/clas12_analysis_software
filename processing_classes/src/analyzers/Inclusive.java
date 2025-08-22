@@ -135,7 +135,7 @@ public class Inclusive {
         y = kinematic_variables.y(nu, lv_beam);
         gamma = kinematic_variables.gamma(Q2, x);
         t = kinematic_variables.t(lv_e.p(), e_theta);
-        tmin = kinematic_variables.tmin(x);
+        tmin = kinematic_variables.tmin(x,Q2);
 
         // Depolarization variables
         Depolarization_A = kinematic_variables.Depolarization_A(gamma, y);

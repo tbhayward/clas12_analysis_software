@@ -239,7 +239,7 @@ public class TwoParticles {
 
         open_angle = kinematic_variables.open_angle(lv_e, lv_p);
         t = kinematic_variables.t(lv_p.p(), lv_p.theta());
-        tmin = kinematic_variables.tmin(x);
+        tmin = kinematic_variables.tmin(x,Q2);
 
         // kinematics of hadrons
         p_px = lv_p.px();
