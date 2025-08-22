@@ -319,45 +319,6 @@ bool GeneralExclusiveKinematicCuts::applyCuts(int currentFits, bool isMC)
     };
 
     // ----------------------------------------------------------------
-    // enpi: x in [0.10, 0.60] and dynamic Mx2 window
-    // ----------------------------------------------------------------
-    if (property == "enpi") {
-        bool goodEvent = (*fiducial_status >= 111) &&
-                         (*x > 0.10 && *x < 0.60);
-        if (!goodEvent) return false;
-        return PassesDynamicMx2(*x, *t, *Mx2);
-    }
-
-    if (property == "enpiLowxBLowt") {
-        bool goodEvent = (*fiducial_status >= 111) &&
-                         (*x > 0.10 && *x < 0.30) &&
-                         (-*t > 0.05 && -*t < 0.35);
-        if (!goodEvent) return false;
-        return PassesDynamicMx2(*x, *t, *Mx2);
-    }
-    if (property == "enpiLowxBHight") {
-        bool goodEvent = (*fiducial_status >= 111) &&
-                         (*x > 0.10 && *x < 0.30) &&
-                         (-*t > 0.85 && -*t < 1.35);
-        if (!goodEvent) return false;
-        return PassesDynamicMx2(*x, *t, *Mx2);
-    }
-    if (property == "enpiHighxBBLowt") {
-        bool goodEvent = (*fiducial_status >= 111) &&
-                         (*x > 0.35 && *x < 0.60) &&
-                         (-*t > 0.05 && -*t < 0.35);
-        if (!goodEvent) return false;
-        return PassesDynamicMx2(*x, *t, *Mx2);
-    }
-    if (property == "enpiHighxBHight") {
-        bool goodEvent = (*fiducial_status >= 111) &&
-                         (*x > 0.35 && *x < 0.60) &&
-                         (-*t > 0.85 && -*t < 1.35);
-        if (!goodEvent) return false;
-        return PassesDynamicMx2(*x, *t, *Mx2);
-    }
-
-    // ----------------------------------------------------------------
     // xB-sliced properties: use dynamic Mx2 window from CSV for each event
     // ----------------------------------------------------------------
     if (property == "enpiLowxB") {
