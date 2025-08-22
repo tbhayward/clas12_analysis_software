@@ -106,16 +106,21 @@ int main(int argc, char** argv) {
     if (has_branch(tin, "t"))             tin->SetBranchStatus("t", 0);
     if (has_branch(tin, "sinthetagamma")) tin->SetBranchStatus("sinthetagamma", 0);
 
-    // Detect if MC kinematics exist; if so, we'll also recompute mc_t and mc_sinthetagamma
+    // ---- Require tmin for tprime ----
+    if (!has_branch(tin, "tmin")) {
+        std::cerr << "[ERROR] Branch 'tmin' was not found; cannot build tprime=t-tmin.\n";
+        return 2;
+    }
+
+    // Detect if MC kinematics exist; if so, we'll also recompute mc_t, mc_sinthetagamma, and mc_tprime (if mc_tmin exists).
     const bool mc_present_min = has_branch(tin, "mc_e_p");
     bool mc_present = false;
+    bool mc_tmin_present = false;
 
-    // If mc is present, don't clone any existing mc_t / mc_sinthetagamma so we can (re)create them
     if (mc_present_min) {
         if (has_branch(tin, "mc_t"))             tin->SetBranchStatus("mc_t", 0);
         if (has_branch(tin, "mc_sinthetagamma")) tin->SetBranchStatus("mc_sinthetagamma", 0);
 
-        // Require the full MC set we need
         mc_present = has_all_branches(tin, {
             "mc_e_p","mc_e_theta","mc_e_phi",
             "mc_p_p","mc_p_theta","mc_p_phi",
@@ -124,6 +129,11 @@ int main(int argc, char** argv) {
         if (!mc_present) {
             std::cerr << "[WARN] Found 'mc_e_p' but not all required mc_* branches; "
                          "MC recalculation will be skipped.\n";
+        } else {
+            mc_tmin_present = has_branch(tin, "mc_tmin");
+            if (!mc_tmin_present) {
+                std::cerr << "[WARN] MC present but 'mc_tmin' missing; mc_tprime will not be written.\n";
+            }
         }
     }
 
@@ -133,6 +143,7 @@ int main(int argc, char** argv) {
     Double_t p_p, p_theta, p_phi;
     Double_t Mx2;
     Double_t xB, Q2, y;
+    Double_t tmin = 0.0;
 
     tin->SetBranchAddress("runnum",   &runnum);
     tin->SetBranchAddress("e_p",      &e_p);
@@ -145,11 +156,13 @@ int main(int argc, char** argv) {
     tin->SetBranchAddress("x",        &xB);
     tin->SetBranchAddress("Q2",       &Q2);
     tin->SetBranchAddress("y",        &y);
+    tin->SetBranchAddress("tmin",     &tmin);   // <-- read existing tmin
 
     // MC addresses (if available)
     Double_t mc_e_p=0, mc_e_theta=0, mc_e_phi=0;
     Double_t mc_p_p=0, mc_p_theta=0, mc_p_phi=0;
     Double_t mc_xB=0, mc_Q2=0, mc_y=0;
+    Double_t mc_tmin = 0.0;
 
     if (mc_present) {
         tin->SetBranchAddress("mc_e_p",     &mc_e_p);
@@ -161,6 +174,7 @@ int main(int argc, char** argv) {
         tin->SetBranchAddress("mc_x",       &mc_xB);
         tin->SetBranchAddress("mc_Q2",      &mc_Q2);
         tin->SetBranchAddress("mc_y",       &mc_y);
+        if (mc_tmin_present) tin->SetBranchAddress("mc_tmin", &mc_tmin);
     }
 
     TFile *fout = TFile::Open(outfile.c_str(), "RECREATE");
@@ -171,16 +185,24 @@ int main(int argc, char** argv) {
 
     // clone structure (with 0 entries) and add our computed variables
     TTree *tout = tin->CloneTree(0);
-    Double_t t_val;
-    Double_t sinthetagamma;
+    Double_t t_val          = 0.0;
+    Double_t tprime_val     = 0.0;   // t - tmin (≤ 0 typically)
+    Double_t sinthetagamma  = 0.0;
+
     tout->Branch("t",             &t_val,         "t/D");
+    tout->Branch("tprime",        &tprime_val,    "tprime/D");            // <-- new
     tout->Branch("sinthetagamma", &sinthetagamma, "sinthetagamma/D");
 
     // MC output branches (only if inputs exist)
     Double_t mc_t_val = 0.0;
+    Double_t mc_tprime_val = 0.0;
     Double_t mc_sinthetagamma = 0.0;
+
     if (mc_present) {
         tout->Branch("mc_t",             &mc_t_val,         "mc_t/D");
+        if (mc_tmin_present) {
+            tout->Branch("mc_tprime",    &mc_tprime_val,    "mc_tprime/D");
+        }
         tout->Branch("mc_sinthetagamma", &mc_sinthetagamma, "mc_sinthetagamma/D");
     }
 
@@ -193,12 +215,16 @@ int main(int argc, char** argv) {
 
         // DATA: compute new values
         t_val          = compute_t_scalar(runnum, e_p, e_theta, e_phi, p_p, p_theta, p_phi);
+        tprime_val     = t_val - tmin;                      // t' = t - tmin  (usually plot -t')
         sinthetagamma  = compute_sin_theta_gamma(y, xB, Q2);
 
         // MC: compute if available
         if (mc_present) {
             mc_t_val            = compute_t_scalar(runnum, mc_e_p, mc_e_theta, mc_e_phi,
                                                    mc_p_p, mc_p_theta, mc_p_phi);
+            if (mc_tmin_present) {
+                mc_tprime_val   = mc_t_val - mc_tmin;
+            }
             mc_sinthetagamma    = compute_sin_theta_gamma(mc_y, mc_xB, mc_Q2);
         }
 
@@ -209,5 +235,10 @@ int main(int argc, char** argv) {
     fout->Close();
     fin->Close();
     std::cout << "Wrote: " << outfile << "\n";
+    std::cout << "Added branches: t, tprime, sinthetagamma"
+              << (mc_present ? (mc_tmin_present ? ", mc_t, mc_tprime, mc_sinthetagamma\n"
+                                                : ", mc_t, mc_sinthetagamma\n")
+                             : "\n");
+    std::cout << "Reminder: for plots use  -tprime  (i.e. -(t - tmin)).\n";
     return 0;
 }
