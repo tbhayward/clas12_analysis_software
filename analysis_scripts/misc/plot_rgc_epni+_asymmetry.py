@@ -64,8 +64,8 @@ X_LABEL = r"$-t'\ (\mathrm{GeV}^{2})$"
 
 YLIM_LU = (-0.2, 0.2)   # BSA
 YLIM_UL = (-0.2, 0.2)   # TSA
-YLIM_LL = (-1.0, 1.0)   # DSA
-YLIM_UU = (-1.0, 1.0)   # UU
+YLIM_LL = (-0.4, 0.4)   # DSA
+YLIM_UU = (0.4, 0.4)   # UU
 
 # Human-readable labels for xB bins (for legends)
 XB_BINS = {
