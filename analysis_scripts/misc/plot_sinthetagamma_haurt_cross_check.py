@@ -111,7 +111,7 @@ def main():
         ("0.35 < -t < 0.85", "s", "tab:orange"),
         ("0.85 < -t < 1.35", "^", "tab:green"),
     ]
-    legend_title = r"$-t$ range; $0.1 < x_{B} < 0.3$"
+    legend_title = r"$0.1 < x_{B} < 0.3$"
 
     # Gather x-range across all panels for a pleasant shared xlim
     all_x = []
@@ -119,7 +119,7 @@ def main():
                   AULsin2phi_h1, AULsin2phi_h2, AULsin2phi_h3,
                   ATGsinphi_h1, ATGsinphi_h2, ATGsinphi_h3):
         all_x.extend([t[0] for t in block])
-    xmin, xmax = min(all_x), max(all_x)
+    xmin, xmax = 0, 0.3
     pad = 0.05 * (xmax - xmin if xmax > xmin else 0.05)
     xlims = (xmin - pad, xmax + pad)
 
