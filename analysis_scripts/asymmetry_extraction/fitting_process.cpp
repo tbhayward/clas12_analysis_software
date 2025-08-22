@@ -3647,13 +3647,12 @@ static bool g_ge_compact_legend = true;
 
 static void plotHistogramAndFit_GeneralExclusive(
   TH1D* hALU, TH1D* hAUL, TH1D* hALL,
-  const double par[],                 // values
-  const double err[],                 // uncertainties (same order)
+  const double par[],                 // values (structure-function ratios)
+  const double err[],                 // uncertainties in same order
   int binIndex, const std::string& prefix,
   const std::string& runSuffix,
   double globalChi2, int globalNdf)
 {
-  // --- unpack parameters (ratios) ---
   const double a0   = par[0],  a1   = par[1];
   const double aLU  = par[2],  aUL1 = par[3],  aUL2 = par[4];
   const double aLL  = par[5],  aLLc = par[6];
@@ -3665,27 +3664,17 @@ static void plotHistogramAndFit_GeneralExclusive(
   const double eUUc = err[7],  eUUc2= err[8];
   const double eTG  = err[9];
 
-  // show asymmetry amplitudes in legends (ratio × depol)
-  const double A_LU   = g_ge_ctx.rWA * aLU;    const double dA_LU   = g_ge_ctx.rWA * eLU;
-  const double A_UL1  = g_ge_ctx.rVA * aUL1;   const double dA_UL1  = g_ge_ctx.rVA * eUL1;
-  const double A_UL2  = g_ge_ctx.rBA * aUL2;   const double dA_UL2  = g_ge_ctx.rBA * eUL2;
-  const double A_LL   = g_ge_ctx.rCA * aLL;    const double dA_LL   = g_ge_ctx.rCA * eLL;
-  const double A_LLc  = g_ge_ctx.rWA * aLLc;   const double dA_LLc  = g_ge_ctx.rWA * eLLc;
-  const double A_UUc  = g_ge_ctx.rVA * aUUc;   const double dA_UUc  = g_ge_ctx.rVA * eUUc;
-  const double A_UUc2 = g_ge_ctx.rBA * aUUc2;  const double dA_UUc2 = g_ge_ctx.rBA * eUUc2;
-  const double A_TG   = aTG;                   const double dA_TG   = eTG;  // no depol
-
-  // model
+  // ---------------- Model (still fits structure-function ratios; we plot asymmetries) ----------------
   auto denom = [&](double phi) {
     return 1.0
-      + g_ge_ctx.rVA * aUUc  * std::cos(phi)
-      + g_ge_ctx.rBA * aUUc2 * std::cos(2.0*phi);
+         + g_ge_ctx.rVA * aUUc  * std::cos(phi)
+         + g_ge_ctx.rBA * aUUc2 * std::cos(2.0*phi);
   };
   auto yALU = [&](double phi){
     return a0 + (g_ge_ctx.rWA * aLU * std::sin(phi)) / denom(phi);
   };
   auto yAUL = [&](double phi){
-    const double sTGc = GE_sTG_centered_interp(phi, hAUL);
+    const double sTGc = GE_sTG_centered_interp(phi, hAUL); // smoothed centered ⟨sinθγ⟩
     const double num = g_ge_ctx.rVA * aUL1 * std::sin(phi)
                      + g_ge_ctx.rBA * aUL2 * std::sin(2.0*phi)
                      + aTG * sTGc * std::sin(phi);
@@ -3695,46 +3684,75 @@ static void plotHistogramAndFit_GeneralExclusive(
     return (g_ge_ctx.rCA * aLL + g_ge_ctx.rWA * aLLc * std::cos(phi)) / denom(phi);
   };
 
-  // canvas with tighter gaps
-  TCanvas* c = new TCanvas(Form("cGE_%d",binIndex), "", 1600, 560);
-  c->Divide(3,1, 0.01, 0.01);
+  // ---------------- Convert to asymmetry amplitudes for legend (ratio × depol), round to 3 d.p. -------
+  auto r3 = [](double x){
+    double r = std::round(x * 1000.0) / 1000.0;
+    if (std::fabs(r) < 0.0005) r = 0.0; // suppress -0.000
+    return r;
+  };
+  const double A_LU   = r3(g_ge_ctx.rWA * aLU);    const double dA_LU   = r3(g_ge_ctx.rWA * eLU);
+  const double A_UL1  = r3(g_ge_ctx.rVA * aUL1);   const double dA_UL1  = r3(g_ge_ctx.rVA * eUL1);
+  const double A_UL2  = r3(g_ge_ctx.rBA * aUL2);   const double dA_UL2  = r3(g_ge_ctx.rBA * eUL2);
+  const double A_LL   = r3(g_ge_ctx.rCA * aLL);    const double dA_LL   = r3(g_ge_ctx.rCA * eLL);
+  const double A_LLc  = r3(g_ge_ctx.rWA * aLLc);   const double dA_LLc  = r3(g_ge_ctx.rWA * eLLc);
+  const double A_UUc  = r3(g_ge_ctx.rVA * aUUc);   const double dA_UUc  = r3(g_ge_ctx.rVA * eUUc);
+  const double A_UUc2 = r3(g_ge_ctx.rBA * aUUc2);  const double dA_UUc2 = r3(g_ge_ctx.rBA * eUUc2);
+  const double A_TG   = r3(aTG);                   const double dA_TG   = r3(eTG);  // (no depol)
 
+  // ---------------- Canvas / layout (reduced gaps) ----------------------------------------------------
+  TCanvas* c = new TCanvas(Form("cGE_%d",binIndex), "", 1600, 560);
+  // tight horizontal & vertical spacing
+  c->Divide(3, 1, 0.002, 0.002);
+
+  // ---------------- Helper to draw each panel ---------------------------------------------------------
   const auto addPointsAndCurve = [&](int pad, TH1D* h, auto ymodel,
                                      const char* ytitle,
                                      std::function<void(TLegend*)> fillLegend,
                                      double ylow, double yhigh)
   {
     c->cd(pad);
-    gPad->SetLeftMargin(0.14);
-    gPad->SetRightMargin(0.02);
-    gPad->SetBottomMargin(0.14);
-    gPad->SetTopMargin(0.08);
+    // margins keep y-title clear of ticks and give room on the right for legend
+    gPad->SetLeftMargin(0.18);
+    gPad->SetRightMargin(0.05);
+    gPad->SetBottomMargin(0.16);
+    gPad->SetTopMargin(0.06);
 
-    // data
+    // Data points → TGraphErrors
     TGraphErrors* gr = new TGraphErrors();
-    const int nb = h ? h->GetNbinsX() : 0; int ip=0;
+    const int nb = h ? h->GetNbinsX() : 0;
+    int ip = 0;
     for (int i=1;i<=nb;++i){
-      const double x=h->GetBinCenter(i), y=h->GetBinContent(i), ey=h->GetBinError(i);
+      const double x  = h->GetBinCenter(i);
+      const double y  = h->GetBinContent(i);
+      const double ey = h->GetBinError(i);
       if (!std::isfinite(y) || !std::isfinite(ey)) continue;
-      gr->SetPoint(ip, x, y); gr->SetPointError(ip, 0.0, ey); ++ip;
+      gr->SetPoint(ip, x, y);
+      gr->SetPointError(ip, 0.0, ey);
+      ++ip;
     }
     gr->SetMarkerStyle(kFullCircle);
-    gr->SetMarkerSize(1.0);
+    gr->SetMarkerSize(1.1);
     gr->SetMarkerColor(kBlack);
     gr->SetLineColor(kBlack);
 
-    auto* axX = gr->GetXaxis();
-    auto* axY = gr->GetYaxis();
-    axX->SetTitle("#phi"); axY->SetTitle(ytitle);
-    axX->CenterTitle(true); axY->CenterTitle(true);
-    axX->SetTitleSize(0.055); axY->SetTitleSize(0.055);
-    axX->SetLabelSize(0.045); axY->SetLabelSize(0.045);
-    axY->SetTitleOffset(1.28);   // move title away from y tick labels
-    axX->SetLimits(0, 2*TMath::Pi());
-    axY->SetRangeUser(ylow, yhigh);
+    // Axis styling: centered titles, slightly larger font, not squished
+    gr->GetXaxis()->SetTitle("#phi");
+    gr->GetYaxis()->SetTitle(ytitle);
+    gr->GetXaxis()->SetLimits(0, 2*TMath::Pi());
+    gr->GetYaxis()->SetRangeUser(ylow, yhigh);
+
+    gr->GetXaxis()->CenterTitle(true);
+    gr->GetYaxis()->CenterTitle(true);
+    gr->GetXaxis()->SetTitleSize(0.052);
+    gr->GetYaxis()->SetTitleSize(0.052);
+    gr->GetXaxis()->SetLabelSize(0.044);
+    gr->GetYaxis()->SetLabelSize(0.044);
+    gr->GetYaxis()->SetTitleOffset(1.85);  // pull away from ticks
+    gr->GetXaxis()->SetTitleOffset(1.25);
+
     gr->Draw("AP");
 
-    // model curve
+    // Smooth model curve
     const int np = 1440;
     TGraph* gm = new TGraph(np);
     for (int j=0; j<np; ++j){
@@ -3745,8 +3763,8 @@ static void plotHistogramAndFit_GeneralExclusive(
     gm->SetLineWidth(2);
     gm->Draw("L same");
 
-    // legend — fixed, tight top-right corner
-    TLegend* L = new TLegend(0.66, 0.80, 0.95, 0.94);
+    // Legend — top-right, nudged slightly down and made a bit wider
+    TLegend* L = new TLegend(0.68, 0.78, 0.98, 0.93);
     L->SetBorderSize(1);
     L->SetLineColor(kBlack);
     L->SetFillColor(kWhite);
@@ -3756,41 +3774,43 @@ static void plotHistogramAndFit_GeneralExclusive(
     L->SetMargin(0.10);
 
     if (!g_ge_compact_legend) {
-      L->AddEntry((TObject*)0, Form("#chi^{2}/ndf (global) = %.1f/%d = %.2f",
-                                    globalChi2, globalNdf,
-                                    (globalNdf>0?globalChi2/globalNdf:0.0)), "");
+      L->AddEntry((TObject*)0,
+        Form("#chi^{2}/ndf (global) = %.1f/%d = %.2f",
+             globalChi2, globalNdf,
+             (globalNdf>0?globalChi2/globalNdf:0.0)), "");
     }
     fillLegend(L);
     L->Draw("same");
   };
 
-  // legend fillers report asymmetries
+  // ---------------- Legend fillers: print **asymmetries** (3 d.p.) ------------------------------------
   auto fillBSA = [&](TLegend* L){
-    L->AddEntry((TObject*)0, Form("A_{LU}^{sin#phi} = %.6f #pm %.6f", A_LU,  dA_LU ), "");
+    L->AddEntry((TObject*)0, Form("A_{LU}^{sin#phi} = %.3f #pm %.3f", A_LU,  dA_LU ), "");
   };
   auto fillTSA = [&](TLegend* L){
-    L->AddEntry((TObject*)0, Form("A_{UL}^{sin#phi}  = %.6f #pm %.6f", A_UL1, dA_UL1), "");
-    L->AddEntry((TObject*)0, Form("A_{UL}^{sin2#phi} = %.6f #pm %.6f", A_UL2, dA_UL2), "");
+    L->AddEntry((TObject*)0, Form("A_{UL}^{sin#phi}  = %.3f #pm %.3f", A_UL1, dA_UL1), "");
+    L->AddEntry((TObject*)0, Form("A_{UL}^{sin2#phi} = %.3f #pm %.3f", A_UL2, dA_UL2), "");
     if (!g_ge_compact_legend) {
-      L->AddEntry((TObject*)0, Form("A_{tg}^{sin#phi}     = %.6f #pm %.6f", A_TG,  dA_TG ), "");
-      L->AddEntry((TObject*)0, Form("A_{UU}^{cos#phi}  = %.6f #pm %.6f", A_UUc,  dA_UUc), "");
-      L->AddEntry((TObject*)0, Form("A_{UU}^{cos2#phi} = %.6f #pm %.6f", A_UUc2, dA_UUc2), "");
+      L->AddEntry((TObject*)0, Form("A_{tg}^{sin#phi}     = %.3f #pm %.3f", A_TG,  dA_TG ), "");
+      L->AddEntry((TObject*)0, Form("A_{UU}^{cos#phi}  = %.3f #pm %.3f", A_UUc,  dA_UUc), "");
+      L->AddEntry((TObject*)0, Form("A_{UU}^{cos2#phi} = %.3f #pm %.3f", A_UUc2, dA_UUc2), "");
     }
   };
   auto fillDSA = [&](TLegend* L){
-    L->AddEntry((TObject*)0, Form("A_{LL}           = %.6f #pm %.6f", A_LL,  dA_LL ), "");
-    L->AddEntry((TObject*)0, Form("A_{LL}^{cos#phi} = %.6f #pm %.6f", A_LLc, dA_LLc), "");
+    L->AddEntry((TObject*)0, Form("A_{LL}           = %.3f #pm %.3f", A_LL,  dA_LL ), "");
+    L->AddEntry((TObject*)0, Form("A_{LL}^{cos#phi} = %.3f #pm %.3f", A_LLc, dA_LLc), "");
     if (!g_ge_compact_legend) {
-      L->AddEntry((TObject*)0, Form("A_{UU}^{cos#phi}  = %.6f #pm %.6f", A_UUc,  dA_UUc), "");
-      L->AddEntry((TObject*)0, Form("A_{UU}^{cos2#phi} = %.6f #pm %.6f", A_UUc2, dA_UUc2), "");
+      L->AddEntry((TObject*)0, Form("A_{UU}^{cos#phi}  = %.3f #pm %.3f", A_UUc,  dA_UUc), "");
+      L->AddEntry((TObject*)0, Form("A_{UU}^{cos2#phi} = %.3f #pm %.3f", A_UUc2, dA_UUc2), "");
     }
   };
 
-  // y-ranges: BSA/TSA [-0.1, 0.1], DSA [-0.1, 0.3]
-  addPointsAndCurve(1, hALU, yALU, "A_{LU}", fillBSA, -0.1, 0.1);
-  addPointsAndCurve(2, hAUL, yAUL, "A_{UL}", fillTSA, -0.1, 0.1);
-  addPointsAndCurve(3, hALL, yALL, "A_{LL}", fillDSA, -0.1, 0.3);
+  // ---------------- Draw the three panels --------------------------------------------------------------
+  addPointsAndCurve(1, hALU, yALU, "A_{LU}", fillBSA, -0.10, 0.10);  // SSA range [-0.1,0.1]
+  addPointsAndCurve(2, hAUL, yAUL, "A_{UL}", fillTSA, -0.10, 0.10);  // SSA range [-0.1,0.1]
+  addPointsAndCurve(3, hALL, yALL, "A_{LL}", fillDSA, -0.10, 0.30);  // DSA range [-0.1,0.3]
 
+  // ---------------- Title and save --------------------------------------------------------------------
   const double vminB = allBins[currentFits][binIndex];
   const double vmaxB = allBins[currentFits][binIndex+1];
   std::ostringstream ttl; ttl<<std::fixed<<std::setprecision(3)
