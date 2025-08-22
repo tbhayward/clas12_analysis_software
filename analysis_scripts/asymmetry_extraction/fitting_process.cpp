@@ -3641,7 +3641,7 @@ createHistogramForBin_GeneralExclusive(const char* histBaseName, int binIndex, c
 // Toggle at file scope (top of your source):
 // true  -> compact legends (hide chi2/ndf, AUU entries, and A_tg) and use shorter box
 // false -> full legends
-static bool g_ge_compact_legend = true;
+static bool g_ge_compact_legend = false;
 
 // ─────────────────────────────────────────────────────────────────────
 
