@@ -1,15 +1,11 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Plot ep -> en pi+ asymmetries versus -t in several xB bins, for three run periods
+Plot ep -> en pi+ asymmetries versus -t' in several xB bins, for three run periods
 and for the combined (inverse-variance weighted) file.
 
 Usage:
   python plot_enpi_from_texts.py Su22.txt Fa22.txt Sp23.txt Combined.txt <Prefix> "<Kinematic text>"
-
-Examples:
-  python plot_enpi_from_texts.py su22.txt fa22.txt sp23.txt combined.txt enpiGE \
-    "Q^2>1, W>2, y<0.75"
 
 Saves for each xB bin (Low, MidLow, MidHigh, High, Inclusive):
   output/enpi+/rgc_<PREFIX>_<BinTag>_AllPeriods.pdf
@@ -17,13 +13,6 @@ Saves for each xB bin (Low, MidLow, MidHigh, High, Inclusive):
 
 Additional xB-overlay canvas (1×3, Combined only):
   output/enpi+/rgc_<PREFIX>_xBOverlay_CombinedOnly.pdf
-
-Notes:
-- The text files are expected to contain sections like:
-    enpiLowxBGEchi2FitsALUsinphi = {{mean_t, value, error}, ...};
-  where 'mean_t' is the (negative) mean of t in that bin. We plot against -t.
-- We auto-detect which xB bin tags are available by inspecting keys.
-- Titles no longer include a fixed Mx2 exclusivity window; those are now applied bin-by-bin upstream.
 """
 
 import sys
@@ -51,12 +40,12 @@ XB_COLORS = {
     "enpiHighxBGE":    "tab:red",
 }
 
-# NEW: marker shapes per xB slice for the 1×3 overlay
+# Marker shapes per xB slice for the 1×3 overlay
 XB_MARKERS = {
-    "enpiLowxBGE":     "o",  # circle
-    "enpiMidLowxBGE":  "s",  # square
-    "enpiMidHighxBGE": "^",  # triangle up
-    "enpiHighxBGE":    "D",  # diamond
+    "enpiLowxBGE":     "o",
+    "enpiMidLowxBGE":  "s",
+    "enpiMidHighxBGE": "^",
+    "enpiHighxBGE":    "D",
 }
 
 MARKER = "o"
@@ -64,7 +53,7 @@ CAPSIZE = 3
 LABEL_FONTSIZE = 13
 MS = 5.0  # marker size
 
-# x-axis and labels (now -t)
+# x-axis and labels (now -t')
 XLIM_T = (0.0, 1.30)
 X_LABEL = r"$-t'\ (\mathrm{GeV}^{2})$"
 
@@ -74,7 +63,7 @@ YLIM_UL = (-0.2, 0.2)   # TSA
 YLIM_LL = (-1.0, 1.0)   # DSA
 YLIM_UU = (-1.0, 1.0)   # UU
 
-# Human-readable labels for xB bins (shown in titles / legends)
+# Human-readable labels for xB bins (shown in legends)
 XB_BINS = {
     "enpiLowxBGE":     r"$0.10 < x_{B} < 0.25$",
     "enpiMidLowxBGE":  r"$0.25 < x_{B} < 0.35$",
@@ -173,14 +162,6 @@ def detect_available_bins(*dicts):
 # ─────────────────────────────────────────────────────────────────────
 # Plotting helpers
 # ─────────────────────────────────────────────────────────────────────
-def make_title(kin_text, xb_label):
-    # Titles no longer include a fixed Mx2 exclusivity window.
-    common = r"$Q^{2}>1\ (\mathrm{GeV}^{2}),\ W>2\ (\mathrm{GeV}),\ y<0.75$"
-    if kin_text.strip():
-        return rf"$ep \rightarrow en\pi^{{+}}$ — {xb_label}; {common}; {kin_text}"
-    else:
-        return rf"$ep \rightarrow en\pi^{{+}}$ — {xb_label}; {common}"
-
 def _plot_panel_sets(axLU, axUL, axLL, axUU, pdata_by_label):
     """Internal: draw the four panels for a set of labeled period dicts."""
     # ---- BSA (ALU sinφ) ----
@@ -292,8 +273,6 @@ def _plot_panel_sets(axLU, axUL, axLL, axUU, pdata_by_label):
 
 def plot_all_periods_for_bin(p_su22, p_fa22, p_sp23, bin_tag, kin_text, out_dir, out_prefix):
     plt.figure(figsize=(12, 9))
-    xb_label = XB_BINS.get(bin_tag, bin_tag)
-    plt.suptitle(make_title(kin_text, xb_label), fontsize=16, y=0.97)
 
     # Order: BSA TL, TSA TR, DSA BL, UU BR
     axLU  = plt.subplot(2,2,1)  # BSA
@@ -308,7 +287,7 @@ def plot_all_periods_for_bin(p_su22, p_fa22, p_sp23, bin_tag, kin_text, out_dir,
     }
     _plot_panel_sets(axLU, axUL, axLL, axUU, pdata_by_label)
 
-    plt.tight_layout(rect=[0, 0, 1, 0.95])
+    plt.tight_layout()
     os.makedirs(out_dir, exist_ok=True)
     out_path = os.path.join(out_dir, f"rgc_{out_prefix}_{bin_tag}_AllPeriods.pdf")
     plt.savefig(out_path)
@@ -317,8 +296,6 @@ def plot_all_periods_for_bin(p_su22, p_fa22, p_sp23, bin_tag, kin_text, out_dir,
 
 def plot_combined_only_for_bin(p_comb, bin_tag, kin_text, out_dir, out_prefix):
     plt.figure(figsize=(12, 9))
-    xb_label = XB_BINS.get(bin_tag, bin_tag)
-    plt.suptitle(make_title(kin_text, xb_label), fontsize=16, y=0.97)
 
     # Panels
     axLU  = plt.subplot(2,2,1)
@@ -413,7 +390,7 @@ def plot_combined_only_for_bin(p_comb, bin_tag, kin_text, out_dir, out_prefix):
     )
     axUU.add_artist(harmUU)
 
-    plt.tight_layout(rect=[0, 0, 1, 0.95])
+    plt.tight_layout()
     os.makedirs(out_dir, exist_ok=True)
     out_path = os.path.join(out_dir, f"rgc_{out_prefix}_{bin_tag}_CombinedOnly.pdf")
     plt.savefig(out_path)
@@ -421,7 +398,7 @@ def plot_combined_only_for_bin(p_comb, bin_tag, kin_text, out_dir, out_prefix):
     print(f"Saved combined-only figure: {out_path}")
 
 # ─────────────────────────────────────────────────────────────────────
-# New: xB overlay 1×3 canvas from the Combined file
+# xB overlay 1×3 canvas from the Combined file
 # ─────────────────────────────────────────────────────────────────────
 def plot_combined_xb_overlay_1x3(comb_parsed, kin_text, out_dir, out_prefix, bins_to_use):
     """
@@ -429,16 +406,8 @@ def plot_combined_xb_overlay_1x3(comb_parsed, kin_text, out_dir, out_prefix, bin
       Left  : F_LU^{sinφ}/F_UU  (ALUsinphi)
       Middle: F_UL^{sinφ}/F_UU  (AULsinphi)
       Right : F_UL^{sin2φ}/F_UU (AULsin2phi)
-
-    UPDATE: each xB slice gets a unique marker shape (see XB_MARKERS) in addition to color.
     """
     fig, axes = plt.subplots(1, 3, figsize=(14.5, 4.8), sharex=True)
-    fig.suptitle(
-        r"$ep \rightarrow en\pi^{+}$ — $x_{B}$ slices overlay; "
-        r"$Q^{2}>1,\ W>2,\ y<0.75$"
-        + (("; " + kin_text) if kin_text.strip() else ""),
-        fontsize=15, y=0.98
-    )
 
     axL, axM, axR = axes
 
@@ -473,7 +442,7 @@ def plot_combined_xb_overlay_1x3(comb_parsed, kin_text, out_dir, out_prefix, bin
     _draw_component(axM, "AULsin",  r"$F_{UL}^{\sin\phi}/F_{UU}$", YLIM_UL)
     _draw_component(axR, "AULsin2", r"$F_{UL}^{\sin2\phi}/F_{UU}$", YLIM_UL)
 
-    fig.tight_layout(rect=[0, 0, 1, 0.94])
+    fig.tight_layout()
     os.makedirs(out_dir, exist_ok=True)
     out_path = os.path.join(out_dir, f"rgc_{out_prefix}_xBOverlay_CombinedOnly.pdf")
     plt.savefig(out_path)
@@ -486,8 +455,6 @@ def plot_combined_xb_overlay_1x3(comb_parsed, kin_text, out_dir, out_prefix, bin
 def main():
     if len(sys.argv) != 7:
         print("Usage: python plot_enpi_from_texts.py Su22.txt Fa22.txt Sp23.txt Combined.txt <Prefix> \"<Kinematic text>\"")
-        print("Example:")
-        print("  python plot_enpi_from_texts.py su22.txt fa22.txt sp23.txt combined.txt enpiGE \"Q^2>1, W>2, y<0.75\"")
         sys.exit(1)
 
     su22_path, fa22_path, sp23_path, comb_path, out_prefix, kin_text = sys.argv[1:7]
@@ -520,7 +487,7 @@ def main():
         # Combined-only canvas
         plot_combined_only_for_bin(p_comb, bin_tag, kin_text, out_dir, out_prefix)
 
-    # New: single xB overlay 1×3 canvas from the Combined file.
+    # Single xB overlay 1×3 canvas from the Combined file.
     xb_overlay_candidates = ["enpiLowxBGE", "enpiMidLowxBGE", "enpiMidHighxBGE", "enpiHighxBGE"]
     bins_to_use = [b for b in xb_overlay_candidates if b in available_bins]
     if bins_to_use:
