@@ -3764,7 +3764,7 @@ static void plotHistogramAndFit_GeneralExclusive(
     gm->Draw("L same");
 
     // Legend — top-right, nudged slightly down and made a bit wider
-    TLegend* L = new TLegend(0.68, 0.78, 0.98, 0.93);
+    TLegend* L = new TLegend(0.66, 0.78, 0.96, 0.94);
     L->SetBorderSize(1);
     L->SetLineColor(kBlack);
     L->SetFillColor(kWhite);
