@@ -7,12 +7,18 @@ and for the combined (inverse-variance weighted) file.
 Usage:
   python plot_enpi_from_texts.py Su22.txt Fa22.txt Sp23.txt Combined.txt <Prefix> "<Kinematic text>"
 
-Saves for each xB bin (Low, MidLow, MidHigh, High, Inclusive):
+It creates, for each xB bin it finds:
   output/enpi+/rgc_<PREFIX>_<BinTag>_AllPeriods.pdf
   output/enpi+/rgc_<PREFIX>_<BinTag>_CombinedOnly.pdf
 
-Additional xB-overlay canvas (1×3, Combined only):
+And a single xB-overlay (1×3, Combined-only):
   output/enpi+/rgc_<PREFIX>_xBOverlay_CombinedOnly.pdf
+
+Notes:
+- Headroom above the subplots is reserved to match the old aspect *without* drawing titles.
+- The text files are expected to contain blocks like:
+    enpiLowxBGEchi2FitsALUsinphi = {{mean_tprime, value, error}, ...};
+  We plot against -t' on the x-axis.
 """
 
 import sys
@@ -23,7 +29,7 @@ import matplotlib.pyplot as plt
 from matplotlib.lines import Line2D
 
 # ─────────────────────────────────────────────────────────────────────
-# Styling
+# Styling / knobs
 # ─────────────────────────────────────────────────────────────────────
 COLORS = {
     "Su22": "tab:blue",
@@ -32,7 +38,7 @@ COLORS = {
     "Combined": "black",
 }
 
-# Colors used to distinguish the four xB slices on the new 1×3 overlay
+# Colors for the four xB slices on the 1×3 overlay
 XB_COLORS = {
     "enpiLowxBGE":     "tab:blue",
     "enpiMidLowxBGE":  "tab:orange",
@@ -40,7 +46,7 @@ XB_COLORS = {
     "enpiHighxBGE":    "tab:red",
 }
 
-# Marker shapes per xB slice for the 1×3 overlay
+# Marker shapes per xB slice (overlay)
 XB_MARKERS = {
     "enpiLowxBGE":     "o",
     "enpiMidLowxBGE":  "s",
@@ -50,20 +56,18 @@ XB_MARKERS = {
 
 MARKER = "o"
 CAPSIZE = 3
-LABEL_FONTSIZE = 13
 MS = 5.0  # marker size
 
-# x-axis and labels (now -t')
+# Axes ranges/labels (x is -t')
 XLIM_T = (0.0, 1.30)
 X_LABEL = r"$-t'\ (\mathrm{GeV}^{2})$"
 
-# y-axis ranges per panel
 YLIM_LU = (-0.2, 0.2)   # BSA
 YLIM_UL = (-0.2, 0.2)   # TSA
 YLIM_LL = (-1.0, 1.0)   # DSA
 YLIM_UU = (-1.0, 1.0)   # UU
 
-# Human-readable labels for xB bins (shown in legends)
+# Human-readable labels for xB bins (for legends)
 XB_BINS = {
     "enpiLowxBGE":     r"$0.10 < x_{B} < 0.25$",
     "enpiMidLowxBGE":  r"$0.25 < x_{B} < 0.35$",
@@ -72,8 +76,12 @@ XB_BINS = {
     "enpiGE":          r"$0.10 < x_{B} < 0.60$"  # inclusive slice
 }
 
-# Order in which to render canvases
+# Order to render canvases
 BIN_ORDER = ["enpiLowxBGE", "enpiMidLowxBGE", "enpiMidHighxBGE", "enpiHighxBGE", "enpiGE"]
+
+# Top headroom to preserve the aspect you liked (no visible suptitle)
+TOP_PAD_PER_BIN = 0.95   # for 2×2 canvases
+TOP_PAD_OVERLAY = 0.94   # for 1×3 overlay
 
 # ─────────────────────────────────────────────────────────────────────
 # Parsing helpers
@@ -105,8 +113,7 @@ def parse_asym_file(path):
 def get_series(dct, key, negate_x=True, sort_x=True):
     """
     Return dict(x,y,yerr) if key exists with finite values & positive errors; else None.
-    Negates the x-values if negate_x=True (to convert t-> -t for plotting).
-    Optionally sorts by x ascending for nicer plotting.
+    Negates x if negate_x=True (to convert t' -> -t' for plotting). Optionally sort by x.
     """
     if key not in dct:
         return None
@@ -128,7 +135,7 @@ def get_series(dct, key, negate_x=True, sort_x=True):
 def build_period_dict(parsed, bin_prefix):
     """
     Collect the series for one period given a bin_prefix like 'enpiLowxBGE' or 'enpiGE'.
-    We look for keys of the form f"{bin_prefix}chi2Fits{suffix}".
+    We look for keys of the form f\"{bin_prefix}chi2Fits<suffix>\".
     """
     k = lambda suffix: f"{bin_prefix}chi2Fits{suffix}"
     return {
@@ -147,9 +154,8 @@ def build_period_dict(parsed, bin_prefix):
 
 def detect_available_bins(*dicts):
     """
-    Inspect provided parsed dictionaries and return the subset of BIN_ORDER
-    whose expected keys are present in ANY of the dicts.
-    We require at minimum that the ALUsin key exists for that bin in some file.
+    Inspect provided parsed dictionaries and return the subset of BIN_ORDER whose
+    expected keys exist in ANY of the dicts. We probe ALUsinphi to decide presence.
     """
     available = []
     for bin_tag in BIN_ORDER:
@@ -163,7 +169,7 @@ def detect_available_bins(*dicts):
 # Plotting helpers
 # ─────────────────────────────────────────────────────────────────────
 def _plot_panel_sets(axLU, axUL, axLL, axUU, pdata_by_label):
-    """Internal: draw the four panels for a set of labeled period dicts."""
+    """Draw the four panels for a set of labeled period dicts."""
     # ---- BSA (ALU sinφ) ----
     for lab, pdata in pdata_by_label.items():
         s = pdata["ALUsin"]
@@ -240,7 +246,7 @@ def _plot_panel_sets(axLU, axUL, axLL, axUU, pdata_by_label):
                         loc="lower right", fontsize=11, title_fontsize=12)
     legLL.get_frame().set_alpha(0.9)
 
-    # ---- UU (cos nφ) - n=1 open, n=2 filled) ----
+    # ---- UU (cos nφ: n=1 open, n=2 filled) ----
     for lab, pdata in pdata_by_label.items():
         s1 = pdata["UUcos"]
         if s1 is not None:
@@ -271,33 +277,28 @@ def _plot_panel_sets(axLU, axUL, axLL, axUU, pdata_by_label):
                         loc="lower right", fontsize=11, title_fontsize=12)
     legUU.get_frame().set_alpha(0.9)
 
-def plot_all_periods_for_bin(p_su22, p_fa22, p_sp23, bin_tag, kin_text, out_dir, out_prefix):
-    plt.figure(figsize=(12, 9))
+# ─────────────────────────────────────────────────────────────────────
+# Per-bin canvases
+# ─────────────────────────────────────────────────────────────────────
+def plot_all_periods_for_bin(p_su22, p_fa22, p_sp23, bin_tag, out_dir, out_prefix):
+    plt.figure(figsize=(12, 9))  # 2×2
+    axLU  = plt.subplot(2,2,1)   # BSA
+    axUL  = plt.subplot(2,2,2)   # TSA
+    axLL  = plt.subplot(2,2,3)   # DSA
+    axUU  = plt.subplot(2,2,4)   # UU
 
-    # Order: BSA TL, TSA TR, DSA BL, UU BR
-    axLU  = plt.subplot(2,2,1)  # BSA
-    axUL  = plt.subplot(2,2,2)  # TSA
-    axLL  = plt.subplot(2,2,3)  # DSA
-    axUU  = plt.subplot(2,2,4)  # UU
-
-    pdata_by_label = {
-        "Su22": p_su22,
-        "Fa22": p_fa22,
-        "Sp23": p_sp23,
-    }
+    pdata_by_label = {"Su22": p_su22, "Fa22": p_fa22, "Sp23": p_sp23}
     _plot_panel_sets(axLU, axUL, axLL, axUU, pdata_by_label)
 
-    plt.tight_layout()
+    plt.tight_layout(rect=[0, 0, 1, TOP_PAD_PER_BIN])  # reserve headroom, no title
     os.makedirs(out_dir, exist_ok=True)
     out_path = os.path.join(out_dir, f"rgc_{out_prefix}_{bin_tag}_AllPeriods.pdf")
     plt.savefig(out_path)
     plt.close()
     print(f"Saved all-periods figure: {out_path}")
 
-def plot_combined_only_for_bin(p_comb, bin_tag, kin_text, out_dir, out_prefix):
-    plt.figure(figsize=(12, 9))
-
-    # Panels
+def plot_combined_only_for_bin(p_comb, bin_tag, out_dir, out_prefix):
+    plt.figure(figsize=(12, 9))  # 2×2
     axLU  = plt.subplot(2,2,1)
     axUL  = plt.subplot(2,2,2)
     axLL  = plt.subplot(2,2,3)
@@ -390,7 +391,7 @@ def plot_combined_only_for_bin(p_comb, bin_tag, kin_text, out_dir, out_prefix):
     )
     axUU.add_artist(harmUU)
 
-    plt.tight_layout()
+    plt.tight_layout(rect=[0, 0, 1, TOP_PAD_PER_BIN])  # reserve headroom, no title
     os.makedirs(out_dir, exist_ok=True)
     out_path = os.path.join(out_dir, f"rgc_{out_prefix}_{bin_tag}_CombinedOnly.pdf")
     plt.savefig(out_path)
@@ -398,23 +399,21 @@ def plot_combined_only_for_bin(p_comb, bin_tag, kin_text, out_dir, out_prefix):
     print(f"Saved combined-only figure: {out_path}")
 
 # ─────────────────────────────────────────────────────────────────────
-# xB overlay 1×3 canvas from the Combined file
+# xB overlay 1×3 canvas (Combined only)
 # ─────────────────────────────────────────────────────────────────────
-def plot_combined_xb_overlay_1x3(comb_parsed, kin_text, out_dir, out_prefix, bins_to_use):
+def plot_combined_xb_overlay_1x3(comb_parsed, out_dir, out_prefix, bins_to_use):
     """
-    Build a 1×3 canvas (Combined only) where each subplot overlays the four xB slices:
+    Build a 1×3 canvas (Combined only) overlaying the four xB slices:
       Left  : F_LU^{sinφ}/F_UU  (ALUsinphi)
       Middle: F_UL^{sinφ}/F_UU  (AULsinphi)
       Right : F_UL^{sin2φ}/F_UU (AULsin2phi)
     """
     fig, axes = plt.subplots(1, 3, figsize=(14.5, 4.8), sharex=True)
-
     axL, axM, axR = axes
 
     # Helper to draw one component on given axis for all xB bins
     def _draw_component(ax, suffix_key, ylabel, ylim):
         handles = []
-        labels  = []
         for bin_tag in bins_to_use:
             pdata = build_period_dict(comb_parsed, bin_tag)
             s = pdata[suffix_key]
@@ -429,7 +428,6 @@ def plot_combined_xb_overlay_1x3(comb_parsed, kin_text, out_dir, out_prefix, bin
                 markersize=MS, linestyle="None"
             )
             handles.append(h)
-            labels.append(XB_BINS.get(bin_tag, bin_tag))
 
         ax.set(xlim=XLIM_T, ylim=ylim, xlabel=X_LABEL, ylabel=ylabel)
         ax.axhline(0, color="black", linestyle="--", linewidth=1.2)
@@ -442,7 +440,7 @@ def plot_combined_xb_overlay_1x3(comb_parsed, kin_text, out_dir, out_prefix, bin
     _draw_component(axM, "AULsin",  r"$F_{UL}^{\sin\phi}/F_{UU}$", YLIM_UL)
     _draw_component(axR, "AULsin2", r"$F_{UL}^{\sin2\phi}/F_{UU}$", YLIM_UL)
 
-    fig.tight_layout()
+    fig.tight_layout(rect=[0, 0, 1, TOP_PAD_OVERLAY])  # preserve aspect w/o title
     os.makedirs(out_dir, exist_ok=True)
     out_path = os.path.join(out_dir, f"rgc_{out_prefix}_xBOverlay_CombinedOnly.pdf")
     plt.savefig(out_path)
@@ -465,7 +463,7 @@ def main():
     sp23 = parse_asym_file(sp23_path)
     comb = parse_asym_file(comb_path)
 
-    # Figure out which xB-bin canvases we can actually make
+    # Which xB-bin canvases can we make?
     available_bins = detect_available_bins(su22, fa22, sp23, comb)
     if not available_bins:
         print("[ERROR] No recognizable xB-bin sections found (e.g. enpiLowxBGEchi2FitsALUsinphi).")
@@ -481,17 +479,17 @@ def main():
         p_sp23 = build_period_dict(sp23, bin_tag)
         p_comb = build_period_dict(comb,  bin_tag)
 
-        # All periods on one canvas
-        plot_all_periods_for_bin(p_su22, p_fa22, p_sp23, bin_tag, kin_text, out_dir, out_prefix)
+        # All periods on one canvas (no title; aspect preserved via top padding)
+        plot_all_periods_for_bin(p_su22, p_fa22, p_sp23, bin_tag, out_dir, out_prefix)
 
-        # Combined-only canvas
-        plot_combined_only_for_bin(p_comb, bin_tag, kin_text, out_dir, out_prefix)
+        # Combined-only canvas (no title; aspect preserved via top padding)
+        plot_combined_only_for_bin(p_comb, bin_tag, out_dir, out_prefix)
 
     # Single xB overlay 1×3 canvas from the Combined file.
     xb_overlay_candidates = ["enpiLowxBGE", "enpiMidLowxBGE", "enpiMidHighxBGE", "enpiHighxBGE"]
     bins_to_use = [b for b in xb_overlay_candidates if b in available_bins]
     if bins_to_use:
-        plot_combined_xb_overlay_1x3(comb, kin_text, out_dir, out_prefix, bins_to_use)
+        plot_combined_xb_overlay_1x3(comb, out_dir, out_prefix, bins_to_use)
     else:
         print("[WARN] No xB-slice data available for overlay canvas; skipping.")
 
