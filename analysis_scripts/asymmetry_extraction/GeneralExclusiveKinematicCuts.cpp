@@ -312,6 +312,8 @@ bool GeneralExclusiveKinematicCuts::applyCuts(int currentFits, bool isMC)
     if (*W  <  2.0    ) return false;
     if (*y  >  0.75   ) return false;
 
+    std::cout << "HELLO WORLD" << std::endl;
+
     // Helper to apply dynamic Mx2 window
     auto PassesDynamicMx2 = [&](double xval, double tval, double mx2val) -> bool {
         // Returns true if Mx2 is inside dynamic (or fallback) window for this (x, -t).
