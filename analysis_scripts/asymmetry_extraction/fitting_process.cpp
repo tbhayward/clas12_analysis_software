@@ -3409,7 +3409,7 @@ static void chi2Fcn_GeneralExclusive(Int_t& /*npar*/, Double_t* /*gin*/, Double_
                                      Double_t* par, Int_t /*iflag*/)
 {
   // ─── knobs you can adjust ─────────────────────────────────────────
-  const double EPS_FLOOR   = 1e-3;  // demand D(φ) ≥ EPS_FLOOR on [0,2π)
+  const double EPS_FLOOR   = 5e-3;  // demand D(φ) ≥ EPS_FLOOR on [0,2π)
   const double LAMBDA_DEN  = 1e6;   // penalty strength for violating D floor
   const double EPS_EVAL    = 1e-6;  // tiny clamp during evaluation
 
