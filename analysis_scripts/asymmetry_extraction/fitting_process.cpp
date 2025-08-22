@@ -3402,35 +3402,43 @@ static inline double GE_sTG_centered_interp(double phi, TH1D* hRef) {
 //  p[8] = F_UU^{cos2φ} / F_UU        (shared UU modulation)
 //  p[9] = A_tg                       (leakage amp × m^c(φ)·sinφ in TSA numerator; no depol)
 // ─────────────────────────────────────────────────────────────────────
-// FCN: global χ² across ALU, AUL, ALL with a soft barrier that enforces
-//      D(φ)=1 + (rVA*aUUc)cosφ + (rBA*aUUc2)cos2φ ≥ EPS_FLOOR on [0,2π).
-//      Only this function is new; everything else in your driver stays.
-// ─────────────────────────────────────────────────────────────────────
+// FCN: χ² with (i) denominator floor barrier and
+//      (ii) amplitude box on rVA*aUUc and rVA*aUL1 so their
+//           physical asymmetries stay within [-A_MAX_AMP, +A_MAX_AMP].
 static void chi2Fcn_GeneralExclusive(Int_t& /*npar*/, Double_t* /*gin*/, Double_t& f,
-                                     Double_t* par, Int_t /*iflag*/) {
-  // Parameters
+                                     Double_t* par, Int_t /*iflag*/)
+{
+  // ─── knobs you can adjust ─────────────────────────────────────────
+  const double EPS_FLOOR   = 1e-3;  // demand D(φ) ≥ EPS_FLOOR on [0,2π)
+  const double LAMBDA_DEN  = 1e6;   // penalty strength for violating D floor
+  const double EPS_EVAL    = 1e-6;  // tiny clamp during evaluation
+
+  const double A_MAX_AMP   = 0.999; // |A| ≤ this (applied to selected amplitudes)
+  const bool   LIMIT_A_UUCOS = true;  // enforce on A_UU^cos = rVA*aUUc
+  const bool   LIMIT_A_ULSIN = true;  // enforce on A_UL^sin = rVA*aUL1
+  const bool   LIMIT_A_ULSIN2= false; // (optional) A_UL^sin2 = rBA*aUL2
+  const bool   LIMIT_A_LU    = false; // (optional) A_LU^sin = rWA*aLU
+  const bool   LIMIT_A_LLCOS = false; // (optional) A_LL^cos = rWA*aLLc
+  const bool   LIMIT_A_LL0   = false; // (optional) A_LL^0   = rCA*aLL
+  const double LAMBDA_AMP  = 1e5;   // penalty weight for amplitude box
+  // ──────────────────────────────────────────────────────────────────
+
+  // parameters (ratios unless noted)
   const double a0   = par[0],  a1   = par[1];
   const double aLU  = par[2],  aUL1 = par[3],  aUL2 = par[4];
   const double aLL  = par[5],  aLLc = par[6];
-  const double aUUc = par[7],  aUUc2 = par[8];
+  const double aUUc = par[7],  aUUc2= par[8];
   const double aTG  = par[9];
 
-  // ── Barrier knobs (adjust if needed) ───────────────────────────────
-  const double EPS_FLOOR      = 1e-3;   // demand D(φ) ≥ this everywhere
-  const double LAMBDA_PENALTY = 1e6;    // penalty strength if violated
-  const double EPS_EVAL       = 1e-6;   // tiny runtime guard for denom
-
-  // Effective UU coefficients used in the denominator
+  // effective UU coefficients in the denominator (include depol ratios)
   const double B_eff = g_ge_ctx.rVA * aUUc;
   const double C_eff = g_ge_ctx.rBA * aUUc2;
 
-  // Denominator with a tiny clamp so trial steps don't explode
+  // denominator and models
   auto denom = [&](double phi) {
     const double d = 1.0 + B_eff*std::cos(phi) + C_eff*std::cos(2.0*phi);
     return (d < EPS_EVAL ? EPS_EVAL : d);
   };
-
-  // Models
   auto modelALU = [&](double phi, TH1D* /*hRef*/) {
     return a0 + (g_ge_ctx.rWA * aLU * std::sin(phi)) / denom(phi);
   };
@@ -3438,14 +3446,14 @@ static void chi2Fcn_GeneralExclusive(Int_t& /*npar*/, Double_t* /*gin*/, Double_
     const double sTGc = GE_sTG_centered_interp(phi, hRef);  // centered/σ ⟨sinθγ⟩
     const double num = g_ge_ctx.rVA * aUL1 * std::sin(phi)
                      + g_ge_ctx.rBA * aUL2 * std::sin(2.0*phi)
-                     + aTG * sTGc * std::sin(phi);           // leakage basis (no depol)
+                     + aTG * sTGc * std::sin(phi);           // leakage term (no depol)
     return a1 + num / denom(phi);
   };
   auto modelALL = [&](double phi, TH1D* /*hRef*/) {
     return (g_ge_ctx.rCA * aLL + g_ge_ctx.rWA * aLLc * std::cos(phi)) / denom(phi);
   };
 
-  // χ² over one histogram
+  // χ² from one histogram
   auto chi2_from_hist = [&](TH1D* h, auto model) -> double {
     if (!h) return 0.0;
     double c2 = 0.0;
@@ -3462,19 +3470,18 @@ static void chi2Fcn_GeneralExclusive(Int_t& /*npar*/, Double_t* /*gin*/, Double_
     return c2;
   };
 
-  // Base χ²
+  // base χ²
   double chi2 = 0.0;
   chi2 += chi2_from_hist(g_ge_ctx.hLU, modelALU);
   chi2 += chi2_from_hist(g_ge_ctx.hUL, modelAUL);
   chi2 += chi2_from_hist(g_ge_ctx.hLL, modelALL);
 
-  // ── Soft barrier on D(φ) over the whole domain ─────────────────────
-  // Let x = cosφ ∈ [-1,1]; cos2φ = 2x² - 1 ⇒ D = 2C x² + B x + (1 - C).
+  // (1) denominator soft barrier over full domain
   auto Dmin_over_domain = [&](double B, double C) -> double {
-    auto f = [&](double x){ return 2.0*C*x*x + B*x + (1.0 - C); };
-    double m = std::min(f(-1.0), f(+1.0));        // boundaries: 1 + C ∓ B
+    auto quad = [&](double x){ return 2.0*C*x*x + B*x + (1.0 - C); }; // x = cosφ ∈ [-1,1]
+    double m = std::min(quad(-1.0), quad(+1.0));                      // 1 + C ∓ B
     if (C > 0.0) {
-      const double x0 = -B/(4.0*C);               // vertex if inside [-1,1]
+      const double x0 = -B/(4.0*C);
       if (x0 >= -1.0 && x0 <= 1.0) {
         const double fv = 1.0 - C - (B*B)/(8.0*C);
         m = std::min(m, fv);
@@ -3482,21 +3489,35 @@ static void chi2Fcn_GeneralExclusive(Int_t& /*npar*/, Double_t* /*gin*/, Double_
     }
     return m;
   };
-
   const double Dmin = Dmin_over_domain(B_eff, C_eff);
-  double penalty = 0.0;
+  double pen_den = 0.0;
   if (Dmin < EPS_FLOOR) {
     const double deficit = EPS_FLOOR - Dmin;
-    penalty = LAMBDA_PENALTY * deficit * deficit; // quadratic penalty
+    pen_den = LAMBDA_DEN * deficit * deficit;
   }
 
-  f = chi2 + penalty;
+  // (2) amplitude box on selected physical amplitudes
+  auto over2 = [&](double A){ const double v = std::fabs(A) - A_MAX_AMP; return (v>0.0)? v*v : 0.0; };
 
-  // // Debug (optional)
-  // if (penalty > 0.0) {
-  //   std::cout << "[barrier] Dmin=" << Dmin
-  //             << " < " << EPS_FLOOR
-  //             << "  penalty=" << penalty << "\n";
+  double pen_amp = 0.0;
+  if (LIMIT_A_UUCOS) pen_amp += over2(g_ge_ctx.rVA * aUUc);
+  if (LIMIT_A_ULSIN) pen_amp += over2(g_ge_ctx.rVA * aUL1);
+  if (LIMIT_A_ULSIN2)pen_amp += over2(g_ge_ctx.rBA * aUL2);
+  if (LIMIT_A_LU)    pen_amp += over2(g_ge_ctx.rWA * aLU);
+  if (LIMIT_A_LLCOS) pen_amp += over2(g_ge_ctx.rWA * aLLc);
+  if (LIMIT_A_LL0)   pen_amp += over2(g_ge_ctx.rCA * aLL);
+  pen_amp *= LAMBDA_AMP;
+
+  // final objective
+  f = chi2 + pen_den + pen_amp;
+
+  // // Debug if you want:
+  // if (pen_den>0 || pen_amp>0) {
+  //   std::cout << "[pen] Dmin=" << Dmin
+  //             << "  pen_den=" << pen_den
+  //             << "  pen_amp=" << pen_amp
+  //             << "  (rVA*aUUc=" << g_ge_ctx.rVA*aUUc
+  //             << ", rVA*aUL1=" << g_ge_ctx.rVA*aUL1 << ")\n";
   // }
 }
 
@@ -3833,6 +3854,10 @@ static void plotHistogramAndFit_GeneralExclusive(
   // ---------------- Legend fillers: print **asymmetries** (3 d.p.) ------------------------------------
   auto fillBSA = [&](TLegend* L){
     L->AddEntry((TObject*)0, Form("A_{LU}^{sin#phi} = %.3f #pm %.3f", A_LU,  dA_LU ), "");
+    if (!g_ge_compact_legend) {
+      L->AddEntry((TObject*)0, Form("A_{UU}^{cos#phi}  = %.3f #pm %.3f", A_UUc,  dA_UUc), "");
+      L->AddEntry((TObject*)0, Form("A_{UU}^{cos2#phi} = %.3f #pm %.3f", A_UUc2, dA_UUc2), "");
+    }
   };
   auto fillTSA = [&](TLegend* L){
     L->AddEntry((TObject*)0, Form("A_{UL}^{sin#phi}  = %.3f #pm %.3f", A_UL1, dA_UL1), "");
