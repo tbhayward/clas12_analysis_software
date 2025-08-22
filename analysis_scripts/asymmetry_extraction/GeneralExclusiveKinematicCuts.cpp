@@ -312,7 +312,6 @@ bool GeneralExclusiveKinematicCuts::applyCuts(int currentFits, bool isMC)
     if (*W  <  2.0    ) return false;
     if (*y  >  0.75   ) return false;
 
-    std::cout << "HELLO WORLD" << std::endl;
 
     // Helper to apply dynamic Mx2 window
     auto PassesDynamicMx2 = [&](double xval, double tval, double mx2val) -> bool {
@@ -323,6 +322,12 @@ bool GeneralExclusiveKinematicCuts::applyCuts(int currentFits, bool isMC)
     // ----------------------------------------------------------------
     // xB-sliced properties: use dynamic Mx2 window from CSV for each event
     // ----------------------------------------------------------------
+    if (property == "enpi") {
+        bool goodEvent = (*fiducial_status >= 111) &&
+                         (*x > 0.10 && *x < 0.60);
+        if (!goodEvent) return false;
+        return PassesDynamicMx2(*x, *t, *Mx2);
+    }
     if (property == "enpiLowxB") {
         bool goodEvent = (*fiducial_status >= 111) &&
                          (*x > 0.10 && *x < 0.25);
