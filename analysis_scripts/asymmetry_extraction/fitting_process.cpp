@@ -3905,15 +3905,18 @@ static void plotHistogramAndFit_GeneralExclusive(
 //   - Column headers are just variable names (no units)
 //   - Caption specifies that Q2 and t′ are in GeV^{2}
 // ─────────────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────
+// Driver: simultaneous fits per bin (11 parameters)
+// ─────────────────────────────────────────────────────────────────────
 void performChi2Fits_GeneralExclusive(const char* output_file,
                                       const char* kinematic_file,
                                       const char* kinematicPlot_file,
                                       const std::string& prefix) {
   // Control the leakage fits here (global switches)
-  g_fit_enable_TUL   = true;   // set false to disable fitting A_T-UL
-  g_fit_enable_TLL   = true;   // set false to disable fitting A_T-LL
-  g_fit_fixed_AT_UL  = 0.0;
-  g_fit_fixed_AT_LL  = 0.0;
+  g_fit_enable_TUL = true;   // set false to disable fitting A_T-UL
+  g_fit_enable_TLL = true;   // set false to disable fitting A_T-LL
+  g_fit_fixed_AT_UL = 0.0;
+  g_fit_fixed_AT_LL = 0.0;
 
   // Prepare output streams (added A_T_UL and A_T_LL arrays)
   std::ostringstream sALUoff, sAULoff, sALU, sAUL, sAUL2, sAT_UL, sALL, sALLc, sAUUc, sAUUc2, sAT_LL;
@@ -3932,13 +3935,13 @@ void performChi2Fits_GeneralExclusive(const char* output_file,
   sAUUc2  << prefix << "GEchi2FitsAUUcos2phi = {";
   sAT_LL  << prefix << "GEchi2FitsA_T_LL = {";   // centered/σ leakage for DSA
 
-  // Kinematic LaTeX table (values rounded to 2 decimals)
+  // Kinematic LaTeX table (show [min, mean, max] for Q2, x, y, z, −t′)
   std::ostringstream kinLatex;
   kinLatex << "\\begin{table}[h]\n\\centering\n"
            << "\\begin{tabular}{|c|c|c|c|c|c|} \\hline\n"
-           << "Bin & $Q^{2}$ & $x_{B}$ & $y$ & $z$ & $t'$ \\\\ \\hline\n";
+           << "Bin & $Q^{2}$ & $x_{B}$ & $y$ & $z$ & $-t'$ \\\\ \\hline\n";
 
-  // (Keep kinList as-is for any downstream plotting/scripts)
+  // Keep kinList as-is for any downstream plotting/scripts
   std::ostringstream kinList;
   kinList << prefix << "GEKinematics = {";
 
@@ -3956,9 +3959,9 @@ void performChi2Fits_GeneralExclusive(const char* output_file,
     }
     return base;
   };
-  const std::string suffix  = deriveSuffixFromOut(output_file);
-  const std::string covPath = "output/results/GE_" + prefix + "_cov_"  + suffix + ".txt";
-  const std::string corPath = "output/results/GE_" + prefix + "_corr_" + suffix + ".txt";
+  const std::string suffix = deriveSuffixFromOut(output_file);
+  const std::string covPath  = "output/results/GE_" + prefix + "_cov_"  + suffix + ".txt";
+  const std::string corrPath = "output/results/GE_" + prefix + "_corr_" + suffix + ".txt";
 
   // Parameter names/order (11 total)
   const int npar = 11;
@@ -3982,7 +3985,7 @@ void performChi2Fits_GeneralExclusive(const char* output_file,
     std::tie(hALU, hAUL, hALL) =
       createHistogramForBin_GeneralExclusive(hname, (int)i, prefix);
 
-    // ---- Mean & range kinematics (track min/mean/max for Q2,x,y,z,t′) ----
+    // ---- Mean & range kinematics (track min/mean/max for Q2,x,y,z, and −t′) ----
     double sumQ2=0, sumW=0, sumx=0, sumy=0, sumz=0, sumt=0, sumtmin=0, sumVar=0, nEvt=0;
 
     // Ranges
@@ -3990,8 +3993,10 @@ void performChi2Fits_GeneralExclusive(const char* output_file,
     double xmin = 1e300, xmax =-1e300;
     double ymin = 1e300, ymax =-1e300;
     double zmin = 1e300, zmax =-1e300;
-    double tpmin= 1e300, tpmax=-1e300;   // t' = t - t_min
-    double sumtp = 0.0;
+
+    // −t′ = t_min − t
+    double mtp_min = 1e300, mtp_max = -1e300;  // range of (−t′)
+    double sum_mtp = 0.0;                      // mean of (−t′)
 
     {
       TTreeReaderValue<double> Q2(dataReader,"Q2");
@@ -4010,24 +4015,31 @@ void performChi2Fits_GeneralExclusive(const char* output_file,
 
       const double vmin = allBins[currentFits][i];
       const double vmax = allBins[currentFits][i+1];
+
+      // Helper for min/max (avoids -Wmisleading-indentation)
+      auto upd_minmax = [](double v, double& mn, double& mx) {
+        if (v < mn) mn = v;
+        if (v > mx) mx = v;
+      };
+
       while (dataReader.Next()){
         if (!kinematicCuts->applyCuts(currentFits,false)) continue;
         if (*currentVariable < vmin || *currentVariable >= vmax) continue;
 
         // Accumulate means
         sumQ2 += *Q2; sumW += *W; sumx += *x; sumy += *y; sumz += *z;
-        sumt += *t; sumtmin += *tmin; sumVar += *currentVariable; nEvt += 1.0;
+        sumt  += *t;  sumtmin += *tmin; sumVar += *currentVariable; nEvt += 1.0;
 
         // Ranges
-        if (*Q2 < q2min) q2min = *Q2; if (*Q2 > q2max) q2max = *Q2;
-        if (*x  < xmin ) xmin  = *x;  if (*x  > xmax ) xmax  = *x;
-        if (*y  < ymin ) ymin  = *y;  if (*y  > ymax ) ymax  = *y;
-        if (*z  < zmin ) zmin  = *z;  if (*z  > zmax ) zmax  = *z;
+        upd_minmax(*Q2, q2min, q2max);
+        upd_minmax(*x,  xmin,  xmax);
+        upd_minmax(*y,  ymin,  ymax);
+        upd_minmax(*z,  zmin,  zmax);
 
-        const double tp = (*t) - (*tmin);  // t' definition
-        sumtp += tp;
-        if (tp < tpmin) tpmin = tp;
-        if (tp > tpmax) tpmax = tp;
+        // −t′ = t_min − t
+        const double mtp = (*tmin) - (*t);
+        sum_mtp += mtp;
+        upd_minmax(mtp, mtp_min, mtp_max);
       }
       dataReader.Restart();
     }
@@ -4041,14 +4053,14 @@ void performChi2Fits_GeneralExclusive(const char* output_file,
     const double meanz    = (nEvt>0)? sumz/nEvt   : 0.0;
     const double meant    = (nEvt>0)? sumt/nEvt   : 0.0;
     const double meantmin = (nEvt>0)? sumtmin/nEvt: 0.0;
-    const double meantp   = (nEvt>0)? sumtp/nEvt  : 0.0;
+    const double mean_mtp = (nEvt>0)? sum_mtp/nEvt : 0.0;   // mean of (−t′)
 
     // If no events, make ranges [0,0,0]
     if (nEvt == 0) {
-      q2min=q2max=0.0; xmin=xmax=0.0; ymin=ymax=0.0; zmin=zmax=0.0; tpmin=tpmax=0.0;
+      q2min=q2max=0.0; xmin=xmax=0.0; ymin=ymax=0.0; zmin=zmax=0.0; mtp_min=mtp_max=0.0;
     }
 
-    // Depolarization ratios (second pass; unchanged logic)
+    // Depolarization ratios (unchanged)
     double sumDepA=0, sumDepB=0, sumDepC=0, sumDepV=0, sumDepW=0;
     {
       TTreeReaderValue<double> DepA(dataReader,"DepA");
@@ -4153,7 +4165,7 @@ void performChi2Fits_GeneralExclusive(const char* output_file,
                                          (int)i, prefix, suffix,
                                          chi2_global, ndf_global);
 
-    // Append to arrays (write ALL columns you opened above)
+    // Append to arrays
     sALUoff << "{" << meanVar << ", " << pval[0]   << ", " << perr[0]   << "}";
     sAULoff << "{" << meanVar << ", " << pval[1]   << ", " << perr[1]   << "}";
     sALU    << "{" << meanVar << ", " << pval[2]   << ", " << perr[2]   << "}";
@@ -4166,24 +4178,27 @@ void performChi2Fits_GeneralExclusive(const char* output_file,
     sAT_UL  << "{" << meanVar << ", " << pval[9]   << ", " << perr[9]   << "}";
     sAT_LL  << "{" << meanVar << ", " << pval[10]  << ", " << perr[10]  << "}";
 
-    // Add separators if not the last bin
     if (i < numBins - 1) {
       sALUoff << ", "; sAULoff << ", "; sALU << ", "; sAUL << ", "; sAUL2 << ", ";
       sALL << ", "; sALLc << ", "; sAUUc << ", "; sAUUc2 << ", ";
       sAT_UL << ", "; sAT_LL << ", ";
     }
 
-    // LaTeX row (ranges [min, mean, max] for Q2, x, y, z, t′), rounded to 2 decimals
-    kinLatex << std::fixed << std::setprecision(2)
-             << (i+1) << " ~&~ "
-             << "[" << q2min << ", " << meanQ2 << ", " << q2max << "] ~&~ "
-             << "[" << xmin  << ", " << meanx  << ", " << xmax  << "] ~&~ "
-             << "[" << ymin  << ", " << meany  << ", " << ymax  << "] ~&~ "
-             << "[" << zmin  << ", " << meanz  << ", " << zmax  << "] ~&~ "
-             << "[" << tpmin << ", " << meantp << ", " << tpmax << "]"
-             << " \\\\ \\hline ";
+    // LaTeX row: [min, mean, max] rounded to 2 decimals, with −t′
+    auto triple = [](double mn, double mu, double mx){
+      std::ostringstream o; o.setf(std::ios::fixed); o<<std::setprecision(2)
+        << "[" << mn << ", " << mu << ", " << mx << "]";
+      return o.str();
+    };
+    kinLatex << (i+1) << " ~&~ "
+             << triple(q2min,  meanQ2,  q2max)   << " ~&~ "
+             << triple(xmin,   meanx,   xmax)    << " ~&~ "
+             << triple(ymin,   meany,   ymax)    << " ~&~ "
+             << triple(zmin,   meanz,   zmax)    << " ~&~ "
+             << triple(mtp_min, mean_mtp, mtp_max)
+             << " \\\\ \\hline\n";
 
-    // (Optional) keep your compact kinList line if other scripts use it
+    // Keep kinList content (means) unchanged for downstream use
     kinList << "{" << meanQ2 << ", " << meanW << ", " << meanx << ", "
             << meany << ", " << meant << ", " << meantmin << "}";
     if (i < numBins - 1) kinList << ", ";
@@ -4215,7 +4230,7 @@ void performChi2Fits_GeneralExclusive(const char* output_file,
       of << "\n";
     }
     {
-      std::ofstream of(corPath, std::ios::out | std::ios::app);
+      std::ofstream of(corrPath, std::ios::out | std::ios::app);
       of << std::setprecision(9);
       of << "## Bin " << i << "  Range: [" << vminB << ", " << vmaxB << ")  Events: " << nEvt << "\n";
       of << std::left << std::setw(22) << "#";
@@ -4236,51 +4251,38 @@ void performChi2Fits_GeneralExclusive(const char* output_file,
     delete hALU; delete hAUL; delete hALL;
   }
 
-  // ---- finalize the streams ----
+  // Close arrays and write to file
   sALUoff << "};"; sAULoff << "};"; sALU << "};"; sAUL << "};";
-  sAUL2   << "};"; sALL    << "};"; sALLc << "};"; sAUUc << "};"; sAUUc2 << "};";
-  sAT_UL  << "};"; sAT_LL  << "};";
+  sAUL2  << "};"; sALL << "};"; sALLc<< "};"; sAUUc << "};"; sAUUc2 << "};";
+  sAT_UL << "};"; sAT_LL << "};";
 
-  kinLatex << "\\end{tabular}\n"
-           << "\\caption{Kinematic ranges $[\\min,\\,\\mathrm{mean},\\,\\max]$ per bin for the simultaneous BSA/TSA/DSA "
-           << "(GeneralExclusive) fit vs $" << prefix << "$. "
-           << "Units: $Q^{2}$ and $t'$ are in GeV$^{2}$; $x_{B}$, $y$, and $z$ are dimensionless.}\n"
-           << "\\label{table:GE_kinematics_" << prefix << "}\n"
-           << "\\end{table}\n\n\n";
-  kinList << "};";
-
-  // ---- ensure parent dirs exist (mkdir -p style) ----
-  auto ensure_dir = [](const std::string& path){
-    auto pos = path.find_last_of("/\\");
-    if (pos == std::string::npos) return;
-    std::string dir = path.substr(0,pos);
-    if (!dir.empty()) gSystem->mkdir(dir.c_str(), kTRUE);
-  };
-  ensure_dir(output_file);
-  ensure_dir(kinematic_file);
-  ensure_dir(kinematicPlot_file);
-
-  // ---- write the outputs ----
   {
     std::ofstream out(output_file, std::ios::app);
-    out << sALUoff.str() << "\n"
-        << sAULoff.str() << "\n"
-        << sALU.str()    << "\n"
-        << sAUL.str()    << "\n"
-        << sAUL2.str()   << "\n"
-        << sAT_UL.str()  << "\n"
-        << sALL.str()    << "\n"
-        << sALLc.str()   << "\n"
-        << sAUUc.str()   << "\n"
-        << sAUUc2.str()  << "\n"
-        << sAT_LL.str()  << "\n";
+    out << sALUoff.str() << "\n";
+    out << sAULoff.str() << "\n";
+    out << sALU.str()    << "\n";
+    out << sAUL.str()    << "\n";
+    out << sAUL2.str()   << "\n";
+    out << sAT_UL.str()  << "\n";   // TSA leakage amplitude (centered/σ)
+    out << sALL.str()    << "\n";
+    out << sALLc.str()   << "\n";
+    out << sAUUc.str()   << "\n";
+    out << sAUUc2.str()  << "\n";
+    out << sAT_LL.str()  << "\n";   // DSA leakage amplitude (centered/σ)
   }
 
+  // Finish LaTeX table & kinematics list
+  kinLatex << "\\end{tabular}\n"
+           << "\\caption{Per-bin kinematics shown as [min, mean, max] for $Q^{2}$, $x_{B}$, $y$, $z$, and $-t'$. "
+           << "$Q^{2}$ and $-t'$ are in GeV$^{2}$.}\n"
+           << "\\label{table:GE_kinematics_" << prefix << "}\n"
+           << "\\end{table}\n\n\n";
   {
     std::ofstream kf(kinematic_file, std::ios::app);
     kf << kinLatex.str() << std::endl;
   }
 
+  kinList << "};";
   {
     std::ofstream kp(kinematicPlot_file, std::ios::app);
     kp << kinList.str() << "\n";
