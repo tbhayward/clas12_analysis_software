@@ -22,12 +22,10 @@ XLIM_T = (0.0, 1.30)
 X_LABEL = r"$-t'\ (\mathrm{GeV}^{2})$"
 YLIM_LU = (-0.2, 0.2)   # for F_LU^{sinφ}/F_UU
 YLIM_UL = (-0.2, 0.2)   # for F_UL^{sin(nφ)}/F_UU
-YLIM_LL = (-0.5, 0.5)   # widened for F_LL/F_UU, F_LL^{cosφ}/F_UU
+YLIM_LL = (-0.5, 0.5)   # for F_LL/F_UU, F_LL^{cosφ}/F_UU (widened)
+YLIM_DIL = (0.2, 0.6)   # fixed for dilution factor
+YLIM_DELTA = (-0.2, 0.2)  # fixed range for all Δ panels
 TOP_PAD = 0.95
-
-# For |Δ| plots (single series)
-DELTA_COLOR = "k"
-DELTA_MARKER = "o"
 
 XB_LABELS = {
     "enpiGE":          r"$0.10 < x_{B} < 0.60$",
@@ -46,7 +44,7 @@ SAVE_TAG = {
 }
 
 # ─────────────────────────────────────────────────────────────────────
-# Hard-coded results: Baseline (only the needed series)
+# Hard-coded results: Baseline
 # Keys: bin tag -> series name -> list of (mean_tprime, value, error)
 # ─────────────────────────────────────────────────────────────────────
 BASELINE = {
@@ -95,7 +93,7 @@ ISRFSR = {
         "ALUsinphi":  [(-1.197986288, 0.048551415, 0.024545102), (-1.098255870, 0.123862985, 0.023747601), (-0.998891462, 0.091846287, 0.022525405), (-0.898494447, 0.077104382, 0.023725535), (-0.798761283, 0.065935063, 0.020571211), (-0.698712232, 0.156362013, 0.019400365), (-0.598220326, 0.121992809, 0.017412530), (-0.498561443, 0.109898650, 0.018692509), (-0.398301095, 0.135947770, 0.017352754), (-0.298010615, 0.172835919, 0.014392646), (-0.197276978, 0.122970061, 0.011576509), (-0.098392462, 0.117968465, 0.010324855)],
         "AULsinphi":  [(-1.197986288, 0.035220502, 0.016029710), (-1.098255870, 0.032236708, 0.009755567), (-0.998891462, 0.031725934, 0.009567746), (-0.898494447, 0.033303872, 0.012733279), (-0.798761283, 0.023277866, 0.009843772), (-0.698712232, 0.032339395, 0.007907140), (-0.598220326, 0.037345092, 0.007641359), (-0.498561443, 0.010151552, 0.009095649), (-0.398301095, 0.013717311, 0.007252380), (-0.298010615, 0.025702690, 0.006209804), (-0.197276978, 0.029802031, 0.005514051), (-0.098392462, 0.025729740, 0.004152857)],
         "AULsin2phi":[(-1.197986288, -0.092416623, 0.036507106), (-1.098255870, -0.076440648, 0.020432133), (-0.998891462, -0.080087140, 0.021940427), (-0.898494447, -0.126688525, 0.025763724), (-0.798761283, -0.105375926, 0.021420915), (-0.698712232, -0.136411270, 0.019457333), (-0.598220326, -0.108124605, 0.019367530), (-0.498561443, -0.069468664, 0.020465428), (-0.398301095, -0.070799211, 0.017443834), (-0.298010615, -0.052864232, 0.014443017), (-0.197276978, -0.028822440, 0.013269644), (-0.098392462, -0.015599912, 0.010654991)],
-        "ALL":       [(-1.197986288, 0.192883076, 0.027979049), (-1.098255870, 0.217591045, 0.023777754), (-0.998891462, 0.216015558, 0.020495500), (-0.898494447, 0.220079055, 0.017418301), (-0.798761283, 0.204439267, 0.020236974), (-0.698712232, 0.239668799, 0.16340035), (-0.598220326, 0.252632903, 0.014484849), (-0.498561443, 0.221825589, 0.013430984), (-0.398301095, 0.229884563, 0.011903020), (-0.298010615, 0.232649416, 0.010224135), (-0.197276978, 0.213899118, 0.009519064), (-0.098392462, 0.205817652, 0.009241354)],
+        "ALL":       [(-1.197986288, 0.192883076, 0.027979049), (-1.098255870, 0.217591045, 0.023777754), (-0.998891462, 0.216015558, 0.020495500), (-0.898494447, 0.220079055, 0.017418301), (-0.798761283, 0.204439267, 0.020236974), (-0.698712232, 0.239668799, 0.016340035), (-0.598220326, 0.252632903, 0.014484849), (-0.498561443, 0.221825589, 0.013430984), (-0.398301095, 0.229884563, 0.011903020), (-0.298010615, 0.232649416, 0.010224135), (-0.197276978, 0.213899118, 0.009519064), (-0.098392462, 0.205817652, 0.009241354)],
         "ALLcosphi": [(-1.197986288, -0.034489676, 0.074952893), (-1.098255870, -0.077501583, 0.080568020), (-0.998891462, 0.034172907, 0.055813628), (-0.898494447, -0.000427444, 0.087420045), (-0.798761283, -0.032301279, 0.077303033), (-0.698712232, -0.094319947, 0.054982292), (-0.598220326, -0.087656127, 0.067149174), (-0.498561443, 0.092710008, 0.049929374), (-0.398301095, 0.089864417, 0.044566171), (-0.298010615, 0.066713585, 0.041704154), (-0.197276978, 0.049191506, 0.059264257), (-0.098392462, 0.085997705, 0.040218251)],
     },
     "enpiLowxBGE": {
@@ -196,10 +194,7 @@ def to_series(triples, negate_x=True, sort=True):
 
 def dilution_series(bin_tag, which, x_fallback):
     """Return x (from fallback), y, e for dilution."""
-    if which == "Baseline":
-        d = DILUTION_BASELINE.get(bin_tag)
-    else:
-        d = DILUTION_ISRFSR.get(bin_tag)
+    d = DILUTION_BASELINE.get(bin_tag) if which == "Baseline" else DILUTION_ISRFSR.get(bin_tag)
     if d is None:
         return None
     arr = np.array(d, dtype=float)
@@ -239,14 +234,14 @@ def _draw_compare(ax, bin_tag, series_name, ylabel, ylim=None):
     ax.axhline(0, color="black", linestyle="--", linewidth=1.2)
     ax.grid(True, linestyle="--", alpha=0.6)
 
-def _abs_delta(y_base, e_base, y_isr, e_isr):
-    """Absolute delta and propagated error (assuming uncorrelated): |Δ|, σ_Δ."""
-    dy = y_isr - y_base
+def _delta(y_base, e_base, y_isr, e_isr):
+    """Delta (Baseline − ISR&FSR) and propagated error (uncorrelated)."""
+    dy = y_base - y_isr
     edy = np.sqrt(e_isr**2 + e_base**2)
-    return np.abs(dy), edy
+    return dy, edy
 
-def _draw_abs_delta(ax, bin_tag, series_name, ylabel):
-    """Draw |Δ| = |ISR&FSR − Baseline| with sqrt-sum-squares uncertainty."""
+def _draw_delta(ax, bin_tag, series_name, ylabel):
+    """Draw Δ = Baseline − ISR&FSR with sqrt-sum-squares uncertainty."""
     b_triples = BASELINE.get(bin_tag, {}).get(series_name)
     i_triples = ISRFSR.get(bin_tag, {}).get(series_name)
     if not b_triples or not i_triples:
@@ -254,19 +249,19 @@ def _draw_abs_delta(ax, bin_tag, series_name, ylabel):
     xb, yb, eb = to_series(b_triples)
     xi, yi, ei = to_series(i_triples)
     n = min(len(xb), len(xi))
-    # Use baseline x as reference (assumes identical ordering after sorting)
-    x = xb[:n]
-    y_abs, e_abs = _abs_delta(yb[:n], eb[:n], yi[:n], ei[:n])
+    x = xb[:n]  # use Baseline x
+    y_delta, e_delta = _delta(yb[:n], eb[:n], yi[:n], ei[:n])
     ax.errorbar(
-        x, y_abs, yerr=e_abs,
-        fmt=DELTA_MARKER, color=DELTA_COLOR, ecolor=DELTA_COLOR,
-        capsize=CAPSIZE, markersize=MS, linestyle="None", label=r"$|\Delta|$"
+        x, y_delta, yerr=e_delta,
+        fmt="o", color="k", ecolor="k",
+        capsize=CAPSIZE, markersize=MS, linestyle="None"
     )
-    ax.set(xlim=XLIM_T, xlabel=X_LABEL, ylabel=ylabel)
+    ax.set(xlim=XLIM_T, ylim=YLIM_DELTA, xlabel=X_LABEL, ylabel=ylabel)
+    ax.axhline(0, color="black", linestyle="--", linewidth=1.2)
     ax.grid(True, linestyle="--", alpha=0.6)
 
-def _draw_abs_delta_dilution(ax, bin_tag, x_ref):
-    """Absolute Δ for dilution factors with proper propagation."""
+def _draw_delta_dilution(ax, bin_tag, x_ref):
+    """Δ for dilution factors with proper propagation."""
     db = DILUTION_BASELINE.get(bin_tag)
     di = DILUTION_ISRFSR.get(bin_tag)
     if not db or not di:
@@ -277,20 +272,21 @@ def _draw_abs_delta_dilution(ax, bin_tag, x_ref):
     x = x_ref[:n]
     yb, eb = db[:n, 0], db[:n, 1]
     yi, ei = di[:n, 0], di[:n, 1]
-    y_abs, e_abs = _abs_delta(yb, eb, yi, ei)
+    y_delta, e_delta = _delta(yb, eb, yi, ei)
     ax.errorbar(
-        x, y_abs, yerr=e_abs,
-        fmt=DELTA_MARKER, color=DELTA_COLOR, ecolor=DELTA_COLOR,
-        capsize=CAPSIZE, markersize=MS, linestyle="None", label=r"$|\Delta D_{f}|$"
+        x, y_delta, yerr=e_delta,
+        fmt="o", color="k", ecolor="k",
+        capsize=CAPSIZE, markersize=MS, linestyle="None"
     )
-    ax.set(xlim=XLIM_T, xlabel=X_LABEL, ylabel=r"$|\Delta D_{f}|$")
+    ax.set(xlim=XLIM_T, ylim=YLIM_DELTA, xlabel=X_LABEL, ylabel=r"$\Delta D_{f}$")
+    ax.axhline(0, color="black", linestyle="--", linewidth=1.2)
     ax.grid(True, linestyle="--", alpha=0.6)
 
 # ─────────────────────────────────────────────────────────────────────
 # Plotters
 # ─────────────────────────────────────────────────────────────────────
 def plot_bin(bin_tag, out_dir):
-    # Pick x from ALUsinphi of baseline if available, otherwise ISR&FSR
+    # x reference from Baseline ALUsinphi if available, else ISR&FSR
     if bin_tag in BASELINE and "ALUsinphi" in BASELINE[bin_tag]:
         x_ref, _, _ = to_series(BASELINE[bin_tag]["ALUsinphi"])
     else:
@@ -299,7 +295,7 @@ def plot_bin(bin_tag, out_dir):
     fig, axes = plt.subplots(2, 3, figsize=(13.2, 8.6))
     ax_dil, ax_lu, ax_ul1, ax_ul2, ax_ll0, ax_ll1 = axes.flat
 
-    # --- Dilution factor (both versions if present) ---
+    # Dilution factor (both versions)
     for lab in ["Baseline", "ISR&FSR (data-driven)"]:
         s = dilution_series(bin_tag, lab, x_ref)
         if s is None:
@@ -310,10 +306,9 @@ def plot_bin(bin_tag, out_dir):
             fmt=MARKERS[lab], color=COLORS[lab], ecolor=COLORS[lab],
             capsize=CAPSIZE, markersize=MS, linestyle="None", label=lab
         )
-    # Fixed y-range and label for dilution
-    ax_dil.set(xlim=XLIM_T, ylim=(0.2, 0.6), xlabel=X_LABEL, ylabel=r"$D_{f}$")
+    ax_dil.set(xlim=XLIM_T, ylim=YLIM_DIL, xlabel=X_LABEL, ylabel=r"$D_{f}$")
     ax_dil.grid(True, linestyle="--", alpha=0.6)
-    # No legend here (legends only in subplots 3 and 6)
+    # no legend on dilution panel
 
     # Structure functions (compare)
     _draw_compare(ax_lu,  bin_tag, "ALUsinphi",  r"$F_{LU}^{\sin\phi}/F_{UU}$",   YLIM_LU)
@@ -322,7 +317,7 @@ def plot_bin(bin_tag, out_dir):
     _draw_compare(ax_ll0, bin_tag, "ALL",        r"$F_{LL}/F_{UU}$",              YLIM_LL)
     _draw_compare(ax_ll1, bin_tag, "ALLcosphi",  r"$F_{LL}^{\cos\phi}/F_{UU}$",   YLIM_LL)
 
-    # Legends only on subplots 3 and 6, in the upper right
+    # Legends only on subplots 3 and 6 (upper right)
     _legend_only_on([ax_ul1, ax_ll1], loc="upper right")
 
     # Title & save
@@ -336,8 +331,8 @@ def plot_bin(bin_tag, out_dir):
     plt.close(fig)
     print(f"[OK] Saved: {out_path}")
 
-def plot_bin_abs_delta(bin_tag, out_dir):
-    """Second figure: absolute deltas with propagated uncertainties."""
+def plot_bin_delta(bin_tag, out_dir):
+    """Second figure: Δ = Baseline − ISR&FSR, with propagated uncertainties."""
     # x reference as before
     if bin_tag in BASELINE and "ALUsinphi" in BASELINE[bin_tag]:
         x_ref, _, _ = to_series(BASELINE[bin_tag]["ALUsinphi"])
@@ -347,27 +342,25 @@ def plot_bin_abs_delta(bin_tag, out_dir):
     fig, axes = plt.subplots(2, 3, figsize=(13.2, 8.6))
     ax_dil, ax_lu, ax_ul1, ax_ul2, ax_ll0, ax_ll1 = axes.flat
 
-    # Dilution |Δ|
-    _draw_abs_delta_dilution(ax_dil, bin_tag, x_ref)
-    ax_dil.set(ylim=None)  # let matplotlib autoscale for |ΔD_f|
+    # Dilution Δ
+    _draw_delta_dilution(ax_dil, bin_tag, x_ref)
 
-    # Structure functions |Δ|
-    _draw_abs_delta(ax_lu,  bin_tag, "ALUsinphi",  r"$|\Delta(F_{LU}^{\sin\phi}/F_{UU})|$")
-    _draw_abs_delta(ax_ul1, bin_tag, "AULsinphi",  r"$|\Delta(F_{UL}^{\sin\phi}/F_{UU})|$")
-    _draw_abs_delta(ax_ul2, bin_tag, "AULsin2phi", r"$|\Delta(F_{UL}^{\sin2\phi}/F_{UU})|$")
-    _draw_abs_delta(ax_ll0, bin_tag, "ALL",        r"$|\Delta(F_{LL}/F_{UU})|$")
-    _draw_abs_delta(ax_ll1, bin_tag, "ALLcosphi",  r"$|\Delta(F_{LL}^{\cos\phi}/F_{UU})|$")
+    # Structure functions Δ
+    _draw_delta(ax_lu,  bin_tag, "ALUsinphi",  r"$\Delta(F_{LU}^{\sin\phi}/F_{UU})$")
+    _draw_delta(ax_ul1, bin_tag, "AULsinphi",  r"$\Delta(F_{UL}^{\sin\phi}/F_{UU})$")
+    _draw_delta(ax_ul2, bin_tag, "AULsin2phi", r"$\Delta(F_{UL}^{\sin2\phi}/F_{UU})$")
+    _draw_delta(ax_ll0, bin_tag, "ALL",        r"$\Delta(F_{LL}/F_{UU})$")
+    _draw_delta(ax_ll1, bin_tag, "ALLcosphi",  r"$\Delta(F_{LL}^{\cos\phi}/F_{UU})$")
 
-    # Legends only on subplots 3 and 6 (upper right)
-    _legend_only_on([ax_ul1, ax_ll1], loc="upper right")
+    # No legends on Δ plots (single dataset)
 
     # Title & save
-    title = r"$ep \rightarrow en\pi^{+}$ — " + XB_LABELS.get(bin_tag, bin_tag) + " — Absolute $\Delta$ (ISR\\&FSR − Baseline)"
+    title = r"$ep \rightarrow en\pi^{+}$ — " + XB_LABELS.get(bin_tag, bin_tag) + " — $\Delta$ (Baseline $-$ ISR\\&FSR)"
     plt.suptitle(title, fontsize=16, y=0.97)
     plt.tight_layout(rect=[0, 0, 1, TOP_PAD])
 
     os.makedirs(out_dir, exist_ok=True)
-    save_name = f"ISR_FSR_absDelta_{SAVE_TAG.get(bin_tag, bin_tag)}.pdf"
+    save_name = f"ISR_FSR_delta_{SAVE_TAG.get(bin_tag, bin_tag)}.pdf"
     out_path = os.path.join(out_dir, save_name)
     plt.savefig(out_path)
     plt.close(fig)
@@ -384,7 +377,7 @@ def main():
             print(f"[WARN] Skipping {b} (no ISR&FSR data).")
             continue
         plot_bin(b, out_dir)
-        plot_bin_abs_delta(b, out_dir)
+        plot_bin_delta(b, out_dir)
 
 if __name__ == "__main__":
     main()
