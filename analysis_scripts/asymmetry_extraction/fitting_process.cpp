@@ -3342,7 +3342,7 @@ struct GEContext {
   std::vector<double> sTG_phi_mean;     // size = nPhiBins
   std::vector<double> sTG_phi_centered; // (m_i - mbar)/sigma_w
 
-  // Weighted mean and std (for diagnostics/guarding Atg)
+  // Weighted mean and std (for diagnostics/guarding T-leakage params)
   double sTG_wmean = 0.0;
   double sTG_wstd  = 0.0;
 
@@ -3356,9 +3356,11 @@ struct GEContext {
 };
 static GEContext g_ge_ctx;
 
-// Global switch to enable/disable the leakage fit (initial 0 and fixed if disabled)
-static bool   g_fit_enable_tg  = true;   // set to false to fix A_tg = 0
-static double g_fit_fixed_Atg  = 0.0;    // value used if fixed
+// Global switches to enable/disable leakage fits (fixed to 0 if disabled)
+static bool   g_fit_enable_TUL  = true;   // TSA leakage amplitude A_T-UL
+static bool   g_fit_enable_TLL  = true;   // DSA leakage amplitude A_T-LL
+static double g_fit_fixed_AT_UL = 0.0;    // value used if fixed
+static double g_fit_fixed_AT_LL = 0.0;    // value used if fixed
 
 // ─────────────────────────────────────────────────────────────────────
 // Helpers
@@ -3391,16 +3393,17 @@ static inline double GE_sTG_centered_interp(double phi, TH1D* hRef) {
 // ─────────────────────────────────────────────────────────────────────
 // FCN: global χ² across ALU, AUL, ALL with shared UU denominator (cos, cos2)
 // Parameters (structure-function ratios unless noted):
-//  p[0] = ALU_offset
-//  p[1] = AUL_offset
-//  p[2] = F_LU^{sinφ} / F_UU
-//  p[3] = F_UL^{sinφ} / F_UU
-//  p[4] = F_UL^{sin2φ} / F_UU
-//  p[5] = F_LL / F_UU
-//  p[6] = F_LL^{cosφ} / F_UU
-//  p[7] = F_UU^{cosφ} / F_UU         (shared UU modulation)
-//  p[8] = F_UU^{cos2φ} / F_UU        (shared UU modulation)
-//  p[9] = A_tg                       (leakage amp × m^c(φ)·sinφ in TSA numerator; no depol)
+//  p[0]  = ALU_offset
+//  p[1]  = AUL_offset
+//  p[2]  = F_LU^{sinφ} / F_UU
+//  p[3]  = F_UL^{sinφ} / F_UU
+//  p[4]  = F_UL^{sin2φ} / F_UU
+//  p[5]  = F_LL / F_UU
+//  p[6]  = F_LL^{cosφ} / F_UU
+//  p[7]  = F_UU^{cosφ} / F_UU         (shared UU modulation)
+//  p[8]  = F_UU^{cos2φ} / F_UU        (shared UU modulation)
+//  p[9]  = A_T-UL                     (T-leakage in TSA; multiplies m^c(φ)·sinφ; no depol)
+//  p[10] = A_T-LL                     (T-leakage in DSA; multiplies m^c(φ)·sinφ; no depol)
 // ─────────────────────────────────────────────────────────────────────
 // FCN: χ² with (i) denominator floor barrier and
 //      (ii) amplitude box on rVA*aUUc and rVA*aUL1 so their
@@ -3416,19 +3419,20 @@ static void chi2Fcn_GeneralExclusive(Int_t& /*npar*/, Double_t* /*gin*/, Double_
   const double A_MAX_AMP   = 0.999; // |A| ≤ this (applied to selected amplitudes)
   const bool   LIMIT_A_UUCOS = true;  // enforce on A_UU^cos = rVA*aUUc
   const bool   LIMIT_A_ULSIN = true;  // enforce on A_UL^sin = rVA*aUL1
-  const bool   LIMIT_A_ULSIN2= false; // (optional) A_UL^sin2 = rBA*aUL2
-  const bool   LIMIT_A_LU    = false; // (optional) A_LU^sin = rWA*aLU
-  const bool   LIMIT_A_LLCOS = false; // (optional) A_LL^cos = rWA*aLLc
-  const bool   LIMIT_A_LL0   = false; // (optional) A_LL^0   = rCA*aLL
+  const bool   LIMIT_A_ULSIN2= false; // optional
+  const bool   LIMIT_A_LU    = false; // optional
+  const bool   LIMIT_A_LLCOS = false; // optional
+  const bool   LIMIT_A_LL0   = false; // optional
   const double LAMBDA_AMP  = 1e5;   // penalty weight for amplitude box
   // ──────────────────────────────────────────────────────────────────
 
   // parameters (ratios unless noted)
-  const double a0   = par[0],  a1   = par[1];
-  const double aLU  = par[2],  aUL1 = par[3],  aUL2 = par[4];
-  const double aLL  = par[5],  aLLc = par[6];
-  const double aUUc = par[7],  aUUc2= par[8];
-  const double aTG  = par[9];
+  const double a0    = par[0],  a1    = par[1];
+  const double aLU   = par[2],  aUL1  = par[3],  aUL2 = par[4];
+  const double aLL   = par[5],  aLLc  = par[6];
+  const double aUUc  = par[7],  aUUc2 = par[8];
+  const double aTUL  = par[9];      // A_T-UL (no depol)
+  const double aTLL  = par[10];     // A_T-LL (no depol)
 
   // effective UU coefficients in the denominator (include depol ratios)
   const double B_eff = g_ge_ctx.rVA * aUUc;
@@ -3446,11 +3450,15 @@ static void chi2Fcn_GeneralExclusive(Int_t& /*npar*/, Double_t* /*gin*/, Double_
     const double sTGc = GE_sTG_centered_interp(phi, hRef);  // centered/σ ⟨sinθγ⟩
     const double num = g_ge_ctx.rVA * aUL1 * std::sin(phi)
                      + g_ge_ctx.rBA * aUL2 * std::sin(2.0*phi)
-                     + aTG * sTGc * std::sin(phi);           // leakage term (no depol)
+                     + aTUL * sTGc * std::sin(phi);          // leakage (no depol)
     return a1 + num / denom(phi);
   };
-  auto modelALL = [&](double phi, TH1D* /*hRef*/) {
-    return (g_ge_ctx.rCA * aLL + g_ge_ctx.rWA * aLLc * std::cos(phi)) / denom(phi);
+  auto modelALL = [&](double phi, TH1D* hRef) {
+    const double sTGc = GE_sTG_centered_interp(phi, hRef);  // reuse same m^c(φ)
+    const double num = (g_ge_ctx.rCA * aLL)
+                     + (g_ge_ctx.rWA * aLLc * std::cos(phi))
+                     + (aTLL * sTGc * std::sin(phi));        // DSA leakage (no depol)
+    return num / denom(phi);
   };
 
   // χ² from one histogram
@@ -3510,15 +3518,6 @@ static void chi2Fcn_GeneralExclusive(Int_t& /*npar*/, Double_t* /*gin*/, Double_
 
   // final objective
   f = chi2 + pen_den + pen_amp;
-
-  // // Debug if you want:
-  // if (pen_den>0 || pen_amp>0) {
-  //   std::cout << "[pen] Dmin=" << Dmin
-  //             << "  pen_den=" << pen_den
-  //             << "  pen_amp=" << pen_amp
-  //             << "  (rVA*aUUc=" << g_ge_ctx.rVA*aUUc
-  //             << ", rVA*aUL1=" << g_ge_ctx.rVA*aUL1 << ")\n";
-  // }
 }
 
 // ─────────────────────────────────────────────────────────────────────
@@ -3706,8 +3705,7 @@ createHistogramForBin_GeneralExclusive(const char* histBaseName, int binIndex, c
 // ─────────────────────────────────────────────────────────────────────
 // Plot 1×3 canvas with model and GLOBAL χ²/ndf, with uncertainties in legend
 // ─────────────────────────────────────────────────────────────────────
-// Toggle at file scope (top of your source):
-// true  -> compact legends (hide chi2/ndf, AUU entries, and A_tg) and use shorter box
+// true  -> compact legends (hide chi2/ndf, AUU entries, and A_T-UL/A_T-LL) and use shorter box
 // false -> full legends
 static bool g_ge_compact_legend = false;
 
@@ -3715,23 +3713,25 @@ static bool g_ge_compact_legend = false;
 
 static void plotHistogramAndFit_GeneralExclusive(
   TH1D* hALU, TH1D* hAUL, TH1D* hALL,
-  const double par[],                 // values (structure-function ratios)
+  const double par[],                 // values (structure-function ratios / leakages)
   const double err[],                 // uncertainties in same order
   int binIndex, const std::string& prefix,
   const std::string& runSuffix,
   double globalChi2, int globalNdf) {
-  const double a0   = par[0],  a1   = par[1];
-  const double aLU  = par[2],  aUL1 = par[3],  aUL2 = par[4];
-  const double aLL  = par[5],  aLLc = par[6];
-  const double aUUc = par[7],  aUUc2= par[8];
-  const double aTG  = par[9];
+  const double a0    = par[0],  a1    = par[1];
+  const double aLU   = par[2],  aUL1  = par[3],  aUL2 = par[4];
+  const double aLL   = par[5],  aLLc  = par[6];
+  const double aUUc  = par[7],  aUUc2 = par[8];
+  const double aTUL  = par[9];
+  const double aTLL  = par[10];
 
-  const double eLU  = err[2],  eUL1 = err[3],  eUL2 = err[4];
-  const double eLL  = err[5],  eLLc = err[6];
-  const double eUUc = err[7],  eUUc2= err[8];
-  const double eTG  = err[9];
+  const double eLU   = err[2],  eUL1 = err[3],  eUL2 = err[4];
+  const double eLL   = err[5],  eLLc = err[6];
+  const double eUUc  = err[7],  eUUc2= err[8];
+  const double eTUL  = err[9];
+  const double eTLL  = err[10];
 
-  // ---------------- Model (still fits structure-function ratios; we plot asymmetries) ----------------
+  // ---------------- Model (we plot asymmetries) ----------------
   auto denom = [&](double phi) {
     return 1.0
          + g_ge_ctx.rVA * aUUc  * std::cos(phi)
@@ -3744,14 +3744,18 @@ static void plotHistogramAndFit_GeneralExclusive(
     const double sTGc = GE_sTG_centered_interp(phi, hAUL); // smoothed centered ⟨sinθγ⟩
     const double num = g_ge_ctx.rVA * aUL1 * std::sin(phi)
                      + g_ge_ctx.rBA * aUL2 * std::sin(2.0*phi)
-                     + aTG * sTGc * std::sin(phi);
+                     + aTUL * sTGc * std::sin(phi);
     return a1 + num / denom(phi);
   };
   auto yALL = [&](double phi){
-    return (g_ge_ctx.rCA * aLL + g_ge_ctx.rWA * aLLc * std::cos(phi)) / denom(phi);
+    const double sTGc = GE_sTG_centered_interp(phi, hALL);
+    const double num = (g_ge_ctx.rCA * aLL)
+                     + (g_ge_ctx.rWA * aLLc * std::cos(phi))
+                     + (aTLL * sTGc * std::sin(phi));
+    return num / denom(phi);
   };
 
-  // ---------------- Convert to asymmetry amplitudes for legend (ratio × depol), round to 3 d.p. -------
+  // ---------------- Convert to asymmetry amplitudes for legend (3 d.p.) -------
   auto r3 = [](double x){
     double r = std::round(x * 1000.0) / 1000.0;
     if (std::fabs(r) < 0.0005) r = 0.0; // suppress -0.000
@@ -3764,21 +3768,20 @@ static void plotHistogramAndFit_GeneralExclusive(
   const double A_LLc  = r3(g_ge_ctx.rWA * aLLc);   const double dA_LLc  = r3(g_ge_ctx.rWA * eLLc);
   const double A_UUc  = r3(g_ge_ctx.rVA * aUUc);   const double dA_UUc  = r3(g_ge_ctx.rVA * eUUc);
   const double A_UUc2 = r3(g_ge_ctx.rBA * aUUc2);  const double dA_UUc2 = r3(g_ge_ctx.rBA * eUUc2);
-  const double A_TG   = r3(aTG);                   const double dA_TG   = r3(eTG);  // (no depol)
+  const double A_TUL  = r3(aTUL);                  const double dA_TUL  = r3(eTUL);  // (no depol)
+  const double A_TLL  = r3(aTLL);                  const double dA_TLL  = r3(eTLL);  // (no depol)
 
-  // ---------------- Canvas / layout (reduced gaps) ----------------------------------------------------
+  // ---------------- Canvas / layout (reduced gaps) ----------------------------
   TCanvas* c = new TCanvas(Form("cGE_%d",binIndex), "", 1600, 560);
-  // tight horizontal & vertical spacing
   c->Divide(3, 1, 0.002, 0.002);
 
-  // ---------------- Helper to draw each panel ---------------------------------------------------------
+  // ---------------- Helper to draw each panel ---------------------------------
   const auto addPointsAndCurve = [&](int pad, TH1D* h, auto ymodel,
                                      const char* ytitle,
                                      std::function<void(TLegend*)> fillLegend,
                                      double ylow, double yhigh)
   {
     c->cd(pad);
-    // margins keep y-title clear of ticks and give room on the right for legend
     gPad->SetLeftMargin(0.18);
     gPad->SetRightMargin(0.05);
     gPad->SetBottomMargin(0.16);
@@ -3802,7 +3805,6 @@ static void plotHistogramAndFit_GeneralExclusive(
     gr->SetMarkerColor(kBlack);
     gr->SetLineColor(kBlack);
 
-    // Axis styling: centered titles, slightly larger font, not squished
     gr->GetXaxis()->SetTitle("#phi");
     gr->GetYaxis()->SetTitle(ytitle);
     gr->GetXaxis()->SetLimits(0, 2*TMath::Pi());
@@ -3814,7 +3816,7 @@ static void plotHistogramAndFit_GeneralExclusive(
     gr->GetYaxis()->SetTitleSize(0.052);
     gr->GetXaxis()->SetLabelSize(0.044);
     gr->GetYaxis()->SetLabelSize(0.044);
-    gr->GetYaxis()->SetTitleOffset(1.85);  // pull away from ticks
+    gr->GetYaxis()->SetTitleOffset(1.85);
     gr->GetXaxis()->SetTitleOffset(1.25);
 
     gr->Draw("AP");
@@ -3830,7 +3832,7 @@ static void plotHistogramAndFit_GeneralExclusive(
     gm->SetLineWidth(2);
     gm->Draw("L same");
 
-    // Legend — top-right, nudged slightly down and made a bit wider
+    // Legend
     TLegend* L = new TLegend(0.56, 0.72, 0.95, 0.94 );
     L->SetBorderSize(1);
     L->SetLineColor(kBlack);
@@ -3850,7 +3852,7 @@ static void plotHistogramAndFit_GeneralExclusive(
     L->Draw("same");
   };
 
-  // ---------------- Legend fillers: print **asymmetries** (3 d.p.) ------------------------------------
+  // ---------------- Legend fillers --------------------------------------------
   auto fillBSA = [&](TLegend* L){
     L->AddEntry((TObject*)0, Form("A_{LU}^{sin#phi} = %.3f #pm %.3f", A_LU,  dA_LU ), "");
     if (!g_ge_compact_legend) {
@@ -3862,7 +3864,7 @@ static void plotHistogramAndFit_GeneralExclusive(
     L->AddEntry((TObject*)0, Form("A_{UL}^{sin#phi}  = %.3f #pm %.3f", A_UL1, dA_UL1), "");
     L->AddEntry((TObject*)0, Form("A_{UL}^{sin2#phi} = %.3f #pm %.3f", A_UL2, dA_UL2), "");
     if (!g_ge_compact_legend) {
-      L->AddEntry((TObject*)0, Form("A_{tg}^{sin#phi}     = %.3f #pm %.3f", A_TG,  dA_TG ), "");
+      L->AddEntry((TObject*)0, Form("A_{T-UL}^{sin#phi}   = %.3f #pm %.3f", A_TUL, dA_TUL), "");
       L->AddEntry((TObject*)0, Form("A_{UU}^{cos#phi}  = %.3f #pm %.3f", A_UUc,  dA_UUc), "");
       L->AddEntry((TObject*)0, Form("A_{UU}^{cos2#phi} = %.3f #pm %.3f", A_UUc2, dA_UUc2), "");
     }
@@ -3871,17 +3873,18 @@ static void plotHistogramAndFit_GeneralExclusive(
     L->AddEntry((TObject*)0, Form("A_{LL} = %.3f #pm %.3f", A_LL,  dA_LL ), "");
     L->AddEntry((TObject*)0, Form("A_{LL}^{cos#phi} = %.3f #pm %.3f", A_LLc, dA_LLc), "");
     if (!g_ge_compact_legend) {
+      L->AddEntry((TObject*)0, Form("A_{T-LL}^{sin#phi}   = %.3f #pm %.3f", A_TLL, dA_TLL), "");
       L->AddEntry((TObject*)0, Form("A_{UU}^{cos#phi}  = %.3f #pm %.3f", A_UUc,  dA_UUc), "");
       L->AddEntry((TObject*)0, Form("A_{UU}^{cos2#phi} = %.3f #pm %.3f", A_UUc2, dA_UUc2), "");
     }
   };
 
-  // ---------------- Draw the three panels --------------------------------------------------------------
-  addPointsAndCurve(1, hALU, yALU, "A_{LU}", fillBSA, -0.10, 0.10);  // SSA range [-0.1,0.1]
-  addPointsAndCurve(2, hAUL, yAUL, "A_{UL}", fillTSA, -0.10, 0.10);  // SSA range [-0.1,0.1]
-  addPointsAndCurve(3, hALL, yALL, "A_{LL}", fillDSA, -0.10, 0.30);  // DSA range [-0.1,0.3]
+  // ---------------- Draw the three panels -------------------------------------
+  addPointsAndCurve(1, hALU, yALU, "A_{LU}", fillBSA, -0.10, 0.10);
+  addPointsAndCurve(2, hAUL, yAUL, "A_{UL}", fillTSA, -0.10, 0.10);
+  addPointsAndCurve(3, hALL, yALL, "A_{LL}", fillDSA, -0.10, 0.30);
 
-  // ---------------- Title and save --------------------------------------------------------------------
+  // ---------------- Title and save --------------------------------------------
   const double vminB = allBins[currentFits][binIndex];
   const double vmaxB = allBins[currentFits][binIndex+1];
   std::ostringstream ttl; ttl<<std::fixed<<std::setprecision(3)
@@ -3895,19 +3898,21 @@ static void plotHistogramAndFit_GeneralExclusive(
 }
 
 // ─────────────────────────────────────────────────────────────────────
-// Driver: simultaneous fits per bin (10 parameters)
+// Driver: simultaneous fits per bin (11 parameters)
 // ─────────────────────────────────────────────────────────────────────
 void performChi2Fits_GeneralExclusive(const char* output_file,
                                       const char* kinematic_file,
                                       const char* kinematicPlot_file,
                                       const std::string& prefix) {
-  // Control the leakage fit here (global switch)
-  g_fit_enable_tg = true;      // set false to disable fitting A_tg
-  g_fit_fixed_Atg = 0.0;
+  // Control the leakage fits here (global switches)
+  g_fit_enable_TUL = true;   // set false to disable fitting A_T-UL
+  g_fit_enable_TLL = true;   // set false to disable fitting A_T-LL
+  g_fit_fixed_AT_UL = 0.0;
+  g_fit_fixed_AT_LL = 0.0;
 
-  // Prepare output streams (add A_tg array)
-  std::ostringstream sALUoff, sAULoff, sALU, sAUL, sAUL2, sATG, sALL, sALLc, sAUUc, sAUUc2;
-  for (auto* s : {&sALUoff,&sAULoff,&sALU,&sAUL,&sAUL2,&sATG,&sALL,&sALLc,&sAUUc,&sAUUc2})
+  // Prepare output streams (added A_T_UL and A_T_LL arrays)
+  std::ostringstream sALUoff, sAULoff, sALU, sAUL, sAUL2, sAT_UL, sALL, sALLc, sAUUc, sAUUc2, sAT_LL;
+  for (auto* s : {&sALUoff,&sAULoff,&sALU,&sAUL,&sAUL2,&sAT_UL,&sALL,&sALLc,&sAUUc,&sAUUc2,&sAT_LL})
     (*s) << std::fixed << std::setprecision(9);
 
   sALUoff << prefix << "GEchi2FitsALUoffset = {";
@@ -3915,11 +3920,12 @@ void performChi2Fits_GeneralExclusive(const char* output_file,
   sALU    << prefix << "GEchi2FitsALUsinphi = {";
   sAUL    << prefix << "GEchi2FitsAULsinphi = {";
   sAUL2   << prefix << "GEchi2FitsAULsin2phi = {";
-  sATG    << prefix << "GEchi2FitsAUL_tgleak = {";  // centered/σ leakage
+  sAT_UL  << prefix << "GEchi2FitsA_T_UL = {";   // centered/σ leakage for TSA
   sALL    << prefix << "GEchi2FitsALL = {";
   sALLc   << prefix << "GEchi2FitsALLcosphi = {";
   sAUUc   << prefix << "GEchi2FitsAUUcosphi = {";
   sAUUc2  << prefix << "GEchi2FitsAUUcos2phi = {";
+  sAT_LL  << prefix << "GEchi2FitsA_T_LL = {";   // centered/σ leakage for DSA
 
   // Kinematic LaTeX and list (unchanged scaffolding)
   std::ostringstream kinLatex;
@@ -3949,14 +3955,14 @@ void performChi2Fits_GeneralExclusive(const char* output_file,
   const std::string covPath  = "output/results/GE_" + prefix + "_cov_"  + suffix + ".txt";
   const std::string corrPath = "output/results/GE_" + prefix + "_corr_" + suffix + ".txt";
 
-  // Parameter names/order (10 total)
-  const int npar = 10;
+  // Parameter names/order (11 total)
+  const int npar = 11;
   const char* names[npar] = {
     "ALU_offset","AUL_offset",
     "F_LU_sin/F_UU","F_UL_sin/F_UU","F_UL_sin2/F_UU",
     "F_LL/F_UU","F_LL_cos/F_UU",
     "F_UU_cos/F_UU","F_UU_cos2/F_UU",
-    "A_tg"
+    "A_T_UL","A_T_LL"
   };
 
   const size_t numBins = allBins[currentFits].size() - 1;
@@ -4024,7 +4030,7 @@ void performChi2Fits_GeneralExclusive(const char* output_file,
     g_ge_ctx.rWA = (depA!=0.0)? (depW/depA) : 1.0;
     g_ge_ctx.rCA = (depA!=0.0)? (depC/depA) : 1.0;
 
-    // Minuit (10 parameters)
+    // Minuit (11 parameters)
     TMinuit minuit(npar);
     minuit.SetPrintLevel(-1);
     minuit.SetErrorDef(1.0);
@@ -4040,13 +4046,20 @@ void performChi2Fits_GeneralExclusive(const char* output_file,
     minuit.DefineParameter(6,  "F_LL_cos/F_UU",   0.00,  0.01,  -1.0,  1.0);
     minuit.DefineParameter(7,  "F_UU_cos/F_UU",   0.00,  0.01,  -1.0,  1.0);
     minuit.DefineParameter(8,  "F_UU_cos2/F_UU",  0.00,  0.01,  -1.0,  1.0);
-    minuit.DefineParameter(9,  "A_tg",            0.00,  0.01,  -1.0,  1.0);
+    minuit.DefineParameter(9,  "A_T_UL",          0.00,  0.01,  -1.0,  1.0);
+    minuit.DefineParameter(10, "A_T_LL",          0.00,  0.01,  -1.0,  1.0);
 
-    // If ⟨sinθγ⟩ is essentially flat in φ, A_tg is unidentifiable → fix it.
-    if (!g_fit_enable_tg || g_ge_ctx.sTG_wstd <= 1e-4) {
-      minuit.FixParameter(9);  // stays at 0 unless you set g_fit_fixed_Atg
+    // If ⟨sinθγ⟩ is essentially flat in φ, leakage terms are unidentifiable → fix them.
+    if (!g_fit_enable_TUL || g_ge_ctx.sTG_wstd <= 1e-4) {
+      minuit.FixParameter(9);  // A_T_UL
       if (g_ge_ctx.sTG_wstd <= 1e-4) {
-        std::cout << "  [info] Bin " << i << ": sTG_wstd ≈ 0; fixing A_tg=0." << std::endl;
+        std::cout << "  [info] Bin " << i << ": sTG_wstd ≈ 0; fixing A_T_UL=0." << std::endl;
+      }
+    }
+    if (!g_fit_enable_TLL || g_ge_ctx.sTG_wstd <= 1e-4) {
+      minuit.FixParameter(10); // A_T_LL
+      if (g_ge_ctx.sTG_wstd <= 1e-4) {
+        std::cout << "  [info] Bin " << i << ": sTG_wstd ≈ 0; fixing A_T_LL=0." << std::endl;
       }
     }
 
@@ -4066,7 +4079,7 @@ void performChi2Fits_GeneralExclusive(const char* output_file,
     double fmin, edm, errdef; int npari, nparx, istat;
     minuit.mnstat(fmin, edm, errdef, npari, nparx, istat);
 
-    double pval[10], perr[10];
+    double pval[11], perr[11];
     for (int ip=0; ip<npar; ++ip) minuit.GetParameter(ip, pval[ip], perr[ip]);
 
     // GLOBAL dof (= total valid points – nvar)
@@ -4089,20 +4102,22 @@ void performChi2Fits_GeneralExclusive(const char* output_file,
                                          chi2_global, ndf_global);
 
     // Append to arrays
-    sALUoff << "{" << meanVar << ", " << pval[0]  << ", " << perr[0]  << "}";
-    sAULoff << "{" << meanVar << ", " << pval[1]  << ", " << perr[1]  << "}";
-    sALU    << "{" << meanVar << ", " << pval[2]  << ", " << perr[2]  << "}";
-    sAUL    << "{" << meanVar << ", " << pval[3]  << ", " << perr[3]  << "}";
-    sAUL2   << "{" << meanVar << ", " << pval[4]  << ", " << perr[4]  << "}";
-    sATG    << "{" << meanVar << ", " << pval[9]  << ", " << perr[9]  << "}";
-    sALL    << "{" << meanVar << ", " << pval[5]  << ", " << perr[5]  << "}";
-    sALLc   << "{" << meanVar << ", " << pval[6]  << ", " << perr[6]  << "}";
-    sAUUc   << "{" << meanVar << ", " << pval[7]  << ", " << perr[7]  << "}";
-    sAUUc2  << "{" << meanVar << ", " << pval[8]  << ", " << perr[8]  << "}";
+    sALUoff << "{" << meanVar << ", " << pval[0]   << ", " << perr[0]   << "}";
+    sAULoff << "{" << meanVar << ", " << pval[1]   << ", " << perr[1]   << "}";
+    sALU    << "{" << meanVar << ", " << pval[2]   << ", " << perr[2]   << "}";
+    sAUL    << "{" << meanVar << ", " << pval[3]   << ", " << perr[3]   << "}";
+    sAUL2   << "{" << meanVar << ", " << pval[4]   << ", " << perr[4]   << "}";
+    sALL    << "{" << meanVar << ", " << pval[5]   << ", " << perr[5]   << "}";
+    sALLc   << "{" << meanVar << ", " << pval[6]   << ", " << perr[6]   << "}";
+    sAUUc   << "{" << meanVar << ", " << pval[7]   << ", " << perr[7]   << "}";
+    sAUUc2  << "{" << meanVar << ", " << pval[8]   << ", " << perr[8]   << "}";
+    sAT_UL  << "{" << meanVar << ", " << pval[9]   << ", " << perr[9]   << "}";
+    sAT_LL  << "{" << meanVar << ", " << pval[10]  << ", " << perr[10]  << "}";
 
     if (i < numBins - 1) {
-      sALUoff << ", "; sAULoff << ", "; sALU << ", "; sAUL << ", "; sAUL2 << ", "; sATG << ", ";
+      sALUoff << ", "; sAULoff << ", "; sALU << ", "; sAUL << ", "; sAUL2 << ", ";
       sALL << ", "; sALLc << ", "; sAUUc << ", "; sAUUc2 << ", ";
+      sAT_UL << ", "; sAT_LL << ", ";
     }
 
     // Kinematics table rows (unchanged)
@@ -4165,7 +4180,8 @@ void performChi2Fits_GeneralExclusive(const char* output_file,
 
   // Close arrays and write to file
   sALUoff << "};"; sAULoff << "};"; sALU << "};"; sAUL << "};";
-  sAUL2  << "};"; sATG << "};"; sALL << "};"; sALLc<< "};"; sAUUc << "};"; sAUUc2 << "};";
+  sAUL2  << "};"; sALL << "};"; sALLc<< "};"; sAUUc << "};"; sAUUc2 << "};";
+  sAT_UL << "};"; sAT_LL << "};";
 
   {
     std::ofstream out(output_file, std::ios::app);
@@ -4174,11 +4190,12 @@ void performChi2Fits_GeneralExclusive(const char* output_file,
     out << sALU.str()    << "\n";
     out << sAUL.str()    << "\n";
     out << sAUL2.str()   << "\n";
-    out << sATG.str()    << "\n";   // leakage amplitude (centered/σ)
+    out << sAT_UL.str()  << "\n";   // TSA leakage amplitude (centered/σ)
     out << sALL.str()    << "\n";
     out << sALLc.str()   << "\n";
     out << sAUUc.str()   << "\n";
     out << sAUUc2.str()  << "\n";
+    out << sAT_LL.str()  << "\n";   // DSA leakage amplitude (centered/σ)
   }
 
   // Finish LaTeX table & kinematics list
