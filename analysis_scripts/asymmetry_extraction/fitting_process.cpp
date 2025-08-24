@@ -3901,6 +3901,9 @@ static void plotHistogramAndFit_GeneralExclusive(
 // Driver: simultaneous fits per bin (11 parameters)
 // Writes arrays, covariance/correlation, and LaTeX table with
 // [min, mean, max] for Q2, x, y, z, t′
+//   - LaTeX table values rounded to two decimals
+//   - Column headers are just variable names (no units)
+//   - Caption specifies that Q2 and t′ are in GeV^{2}
 // ─────────────────────────────────────────────────────────────────────
 void performChi2Fits_GeneralExclusive(const char* output_file,
                                       const char* kinematic_file,
@@ -3929,11 +3932,11 @@ void performChi2Fits_GeneralExclusive(const char* output_file,
   sAUUc2  << prefix << "GEchi2FitsAUUcos2phi = {";
   sAT_LL  << prefix << "GEchi2FitsA_T_LL = {";   // centered/σ leakage for DSA
 
-  // Kinematic LaTeX table (UPDATED: show [min, mean, max] for Q2, x, y, z, t′)
+  // Kinematic LaTeX table (values rounded to 2 decimals)
   std::ostringstream kinLatex;
   kinLatex << "\\begin{table}[h]\n\\centering\n"
            << "\\begin{tabular}{|c|c|c|c|c|c|} \\hline\n"
-           << "Bin & $Q^{2}\\,(\\mathrm{GeV}^{2})$ & $x_{B}$ & $y$ & $z$ & $t'$ \\\\ \\hline\n";
+           << "Bin & $Q^{2}$ & $x_{B}$ & $y$ & $z$ & $t'$ \\\\ \\hline\n";
 
   // (Keep kinList as-is for any downstream plotting/scripts)
   std::ostringstream kinList;
@@ -4170,8 +4173,8 @@ void performChi2Fits_GeneralExclusive(const char* output_file,
       sAT_UL << ", "; sAT_LL << ", ";
     }
 
-    // LaTeX row (ranges [min, mean, max] for Q2, x, y, z, t′)
-    kinLatex << std::fixed << std::setprecision(3)
+    // LaTeX row (ranges [min, mean, max] for Q2, x, y, z, t′), rounded to 2 decimals
+    kinLatex << std::fixed << std::setprecision(2)
              << (i+1) << " ~&~ "
              << "[" << q2min << ", " << meanQ2 << ", " << q2max << "] ~&~ "
              << "[" << xmin  << ", " << meanx  << ", " << xmax  << "] ~&~ "
@@ -4240,7 +4243,8 @@ void performChi2Fits_GeneralExclusive(const char* output_file,
 
   kinLatex << "\\end{tabular}\n"
            << "\\caption{Kinematic ranges $[\\min,\\,\\mathrm{mean},\\,\\max]$ per bin for the simultaneous BSA/TSA/DSA "
-           << "(GeneralExclusive) fit vs $" << prefix << "$.}\n"
+           << "(GeneralExclusive) fit vs $" << prefix << "$. "
+           << "Units: $Q^{2}$ and $t'$ are in GeV$^{2}$; $x_{B}$, $y$, and $z$ are dimensionless.}\n"
            << "\\label{table:GE_kinematics_" << prefix << "}\n"
            << "\\end{table}\n\n\n";
   kinList << "};";
