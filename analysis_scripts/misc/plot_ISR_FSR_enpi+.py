@@ -283,6 +283,88 @@ def _draw_delta_dilution(ax, bin_tag, x_ref):
     ax.grid(True, linestyle="--", alpha=0.6)
 
 # ─────────────────────────────────────────────────────────────────────
+# NEW: collectors for |Δ| (with σΔ) for text summary
+# ─────────────────────────────────────────────────────────────────────
+def _collect_abs_delta_sf(bin_tag, series_name):
+    """Return x, |Δ|, σΔ arrays for a structure-function series."""
+    b_triples = BASELINE.get(bin_tag, {}).get(series_name)
+    i_triples = ISRFSR.get(bin_tag, {}).get(series_name)
+    if not b_triples or not i_triples:
+        return None
+    xb, yb, eb = to_series(b_triples)
+    xi, yi, ei = to_series(i_triples)
+    n = min(len(xb), len(xi))
+    x = xb[:n]
+    d, ed = _delta(yb[:n], eb[:n], yi[:n], ei[:n])
+    return x, np.abs(d), ed
+
+def _collect_abs_delta_dilution(bin_tag, x_ref):
+    """Return x, |Δ|, σΔ for dilution, using provided x reference."""
+    db = DILUTION_BASELINE.get(bin_tag)
+    di = DILUTION_ISRFSR.get(bin_tag)
+    if not db or not di:
+        return None
+    db = np.array(db, dtype=float)
+    di = np.array(di, dtype=float)
+    n = min(len(db), len(di), len(x_ref))
+    x = x_ref[:n]
+    yb, eb = db[:n, 0], db[:n, 1]
+    yi, ei = di[:n, 0], di[:n, 1]
+    d, ed = _delta(yb, eb, yi, ei)
+    return x, np.abs(d), ed
+
+def _write_abs_delta_summary(out_dir, bin_tags):
+    """Write one text file summarizing |Δ| (and σΔ) for all bins/series."""
+    path = os.path.join(out_dir, "ISR_FSR_abs_delta_summary.txt")
+    with open(path, "w", encoding="utf-8") as f:
+        f.write("Absolute Δ summary |Δ| = |Baseline − ISR&FSR| with propagated σΔ (uncorrelated)\n")
+        f.write("Units: -t' in GeV^2\n")
+        f.write("=" * 86 + "\n")
+
+        series_order = [
+            ("DILUTION", "Dilution $D_f$"),
+            ("ALUsinphi",  r"$F_{LU}^{\sin\phi}/F_{UU}$"),
+            ("AULsinphi",  r"$F_{UL}^{\sin\phi}/F_{UU}$"),
+            ("AULsin2phi", r"$F_{UL}^{\sin2\phi}/F_{UU}$"),
+            ("ALL",        r"$F_{LL}/F_{UU}$"),
+            ("ALLcosphi",  r"$F_{LL}^{\cos\phi}/F_{UU}$"),
+        ]
+
+        for b in bin_tags:
+            # x reference as elsewhere
+            if b in BASELINE and "ALUsinphi" in BASELINE[b]:
+                x_ref, _, _ = to_series(BASELINE[b]["ALUsinphi"])
+            else:
+                x_ref, _, _ = to_series(ISRFSR[b]["ALUsinphi"])
+
+            f.write(f"\nBin: {b}    x_B range: {XB_LABELS.get(b, '')}\n")
+            f.write("-" * 86 + "\n")
+
+            # Dilution first
+            dil = _collect_abs_delta_dilution(b, x_ref)
+            if dil is not None:
+                x, ad, ed = dil
+                f.write(f"Series: {series_order[0][1]}\n")
+                f.write(f"{'-t\'':>8}    {'|Δ|':>12}    {'σΔ':>12}\n")
+                for xi, ai, ei in zip(x, ad, ed):
+                    f.write(f"{xi:8.5f}    {ai:12.6f}    {ei:12.6f}\n")
+                f.write("\n")
+
+            # SF series
+            for key, label in series_order[1:]:
+                res = _collect_abs_delta_sf(b, key)
+                if res is None:
+                    continue
+                x, ad, ed = res
+                f.write(f"Series: {label}\n")
+                f.write(f"{'-t\'':>8}    {'|Δ|':>12}    {'σΔ':>12}\n")
+                for xi, ai, ei in zip(x, ad, ed):
+                    f.write(f"{xi:8.5f}    {ai:12.6f}    {ei:12.6f}\n")
+                f.write("\n")
+
+    print(f"[OK] Wrote |Δ| summary: {path}")
+
+# ─────────────────────────────────────────────────────────────────────
 # Plotters
 # ─────────────────────────────────────────────────────────────────────
 def plot_bin(bin_tag, out_dir):
@@ -355,7 +437,7 @@ def plot_bin_delta(bin_tag, out_dir):
     # No legends on Δ plots (single dataset)
 
     # Title & save
-    title = r"$ep \rightarrow en\pi^{+}$ — " + XB_LABELS.get(bin_tag, bin_tag) + " — $\Delta$ (Baseline $-$ ISR\\&FSR)"
+    title = r"$ep \rightarrow en\pi^{+}$ — " + XB_LABELS.get(bin_tag, bin_tag)
     plt.suptitle(title, fontsize=16, y=0.97)
     plt.tight_layout(rect=[0, 0, 1, TOP_PAD])
 
@@ -371,6 +453,8 @@ def plot_bin_delta(bin_tag, out_dir):
 # ─────────────────────────────────────────────────────────────────────
 def main():
     out_dir = os.path.join("output", "enpi+")
+    os.makedirs(out_dir, exist_ok=True)
+
     bin_tags = ["enpiGE", "enpiLowxBGE", "enpiMidLowxBGE", "enpiMidHighxBGE", "enpiHighxBGE"]
     for b in bin_tags:
         if b not in ISRFSR:
@@ -378,6 +462,9 @@ def main():
             continue
         plot_bin(b, out_dir)
         plot_bin_delta(b, out_dir)
+
+    # After all figures, write one summary text file with |Δ|
+    _write_abs_delta_summary(out_dir, bin_tags)
 
 if __name__ == "__main__":
     main()
