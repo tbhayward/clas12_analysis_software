@@ -4153,5 +4153,5 @@ void performChi2Fits_GeneralExclusive(const char* output_file,
     sAULoff << "{" << meanVar << ", " << pval[1]   << ", " << perr[1]   << "}";
     sALU    << "{" << meanVar << ", " << pval[2]   << ", " << perr[2]   << "}";
     sAUL    << "{" << meanVar << ", " << pval[3]   << ", " << perr[3]   << "}";
-   
+ }
 // ===================== GeneralExclusive (end) =====================
