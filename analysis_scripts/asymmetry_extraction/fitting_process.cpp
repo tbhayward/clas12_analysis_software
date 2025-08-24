@@ -3909,7 +3909,7 @@ static void plotHistogramAndFit_GeneralExclusive(
 // Driver: simultaneous fits per bin (11 parameters)
 // ─────────────────────────────────────────────────────────────────────
 // Toggle whether to print all results (UU terms + leakages) or only spin-dependent SF ratios
-static bool g_ge_write_all_results = true;  
+static bool g_ge_write_all_results = false;  
 // true = print everything; false = only FLU, FUL(sin,sin2), ALL, ALLcos
 // ─────────────────────────────────────────────────────────────────────
 // Driver: simultaneous fits per bin (11 parameters)
