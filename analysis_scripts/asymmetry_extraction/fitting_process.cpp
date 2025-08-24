@@ -3927,13 +3927,13 @@ void performChi2Fits_GeneralExclusive(const char* output_file,
   sAUUc2  << prefix << "GEchi2FitsAUUcos2phi = {";
   sAT_LL  << prefix << "GEchi2FitsA_T_LL = {";   // centered/σ leakage for DSA
 
-  // Kinematic LaTeX and list (unchanged scaffolding)
+  // Kinematic LaTeX table (UPDATED: show [min, mean, max] for Q2, x, y, z, t′)
   std::ostringstream kinLatex;
   kinLatex << "\\begin{table}[h]\n\\centering\n"
-           << "\\begin{tabular}{|c|c|c|c|c|c|c|} \\hline\n"
-           << "Bin & $\\langle Q^2\\rangle$ & $\\langle W\\rangle$ & $\\langle x_B\\rangle$ & "
-           << "$\\langle y\\rangle$ & $\\langle t\\rangle$ & $\\langle t_{\\min}\\rangle$ \\\\ \\hline\n";
+           << "\\begin{tabular}{|c|c|c|c|c|c|} \\hline\n"
+           << "Bin & $Q^{2}\\,(\\mathrm{GeV}^{2})$ & $x_{B}$ & $y$ & $z$ & $t'$ \\\\ \\hline\n";
 
+  // (Keep kinList as-is for any downstream plotting/scripts)
   std::ostringstream kinList;
   kinList << prefix << "GEKinematics = {";
 
@@ -3977,15 +3977,23 @@ void performChi2Fits_GeneralExclusive(const char* output_file,
     std::tie(hALU, hAUL, hALL) =
       createHistogramForBin_GeneralExclusive(hname, (int)i, prefix);
 
-    // ---- Mean kinematics & depols (unchanged) ----
-    double sumQ2=0, sumW=0, sumx=0, sumy=0, sumt=0, sumtmin=0, nEvt=0;
-    double sumDepA=0, sumDepB=0, sumDepC=0, sumDepV=0, sumDepW=0, sumVar=0;
+    // ---- Mean & range kinematics (UPDATED to track min/mean/max for Q2,x,y,z,t′) ----
+    double sumQ2=0, sumW=0, sumx=0, sumy=0, sumz=0, sumt=0, sumtmin=0, sumVar=0, nEvt=0;
+
+    // Ranges
+    double q2min= 1e300, q2max=-1e300;
+    double xmin = 1e300, xmax =-1e300;
+    double ymin = 1e300, ymax =-1e300;
+    double zmin = 1e300, zmax =-1e300;
+    double tpmin= 1e300, tpmax=-1e300;   // t' = t - t_min
+    double sumtp = 0.0;
 
     {
       TTreeReaderValue<double> Q2(dataReader,"Q2");
       TTreeReaderValue<double> W (dataReader,"W");
       TTreeReaderValue<double> x (dataReader,"x");
       TTreeReaderValue<double> y (dataReader,"y");
+      TTreeReaderValue<double> z (dataReader,"z");          // NEW
       TTreeReaderValue<double> t (dataReader,"t");
       TTreeReaderValue<double> tmin(dataReader,"tmin");
       TTreeReaderValue<double> DepA(dataReader,"DepA");
@@ -4000,21 +4008,60 @@ void performChi2Fits_GeneralExclusive(const char* output_file,
       while (dataReader.Next()){
         if (!kinematicCuts->applyCuts(currentFits,false)) continue;
         if (*currentVariable < vmin || *currentVariable >= vmax) continue;
-        sumQ2 += *Q2; sumW += *W; sumx += *x; sumy += *y; sumt += *t; sumtmin += *tmin;
-        sumDepA += *DepA; sumDepB += *DepB; sumDepC += *DepC; sumDepV += *DepV; sumDepW += *DepW;
-        sumVar += *currentVariable; nEvt += 1.0;
+
+        // Accumulate means
+        sumQ2 += *Q2; sumW += *W; sumx += *x; sumy += *y; sumz += *z;
+        sumt += *t; sumtmin += *tmin; sumVar += *currentVariable; nEvt += 1.0;
+
+        // Ranges
+        if (*Q2 < q2min) q2min = *Q2; if (*Q2 > q2max) q2max = *Q2;
+        if (*x  < xmin ) xmin  = *x;  if (*x  > xmax ) xmax  = *x;
+        if (*y  < ymin ) ymin  = *y;  if (*y  > ymax ) ymax  = *y;
+        if (*z  < zmin ) zmin  = *z;  if (*z  > zmax ) zmax  = *z;
+
+        const double tp = (*t) - (*tmin);  // t' definition
+        sumtp += tp;
+        if (tp < tpmin) tpmin = tp;
+        if (tp > tpmax) tpmax = tp;
       }
       dataReader.Restart();
     }
 
+    // Means (guard nEvt=0)
     const double meanVar  = (nEvt>0)? sumVar/nEvt : 0.0;
     const double meanQ2   = (nEvt>0)? sumQ2/nEvt  : 0.0;
     const double meanW    = (nEvt>0)? sumW/nEvt   : 0.0;
     const double meanx    = (nEvt>0)? sumx/nEvt   : 0.0;
     const double meany    = (nEvt>0)? sumy/nEvt   : 0.0;
+    const double meanz    = (nEvt>0)? sumz/nEvt   : 0.0;    // NEW
     const double meant    = (nEvt>0)? sumt/nEvt   : 0.0;
     const double meantmin = (nEvt>0)? sumtmin/nEvt: 0.0;
+    const double meantp   = (nEvt>0)? sumtp/nEvt  : 0.0;    // NEW (t′ mean)
 
+    // If no events, make ranges [0,0,0]
+    if (nEvt == 0) {
+      q2min=q2max=0.0; xmin=xmax=0.0; ymin=ymax=0.0; zmin=zmax=0.0; tpmin=tpmax=0.0;
+    }
+
+    // Depolarization ratios (unchanged)
+    double sumDepA=0, sumDepB=0, sumDepC=0, sumDepV=0, sumDepW=0;
+    {
+      TTreeReaderValue<double> DepA(dataReader,"DepA");
+      TTreeReaderValue<double> DepB(dataReader,"DepB");
+      TTreeReaderValue<double> DepC(dataReader,"DepC");
+      TTreeReaderValue<double> DepV(dataReader,"DepV");
+      TTreeReaderValue<double> DepW(dataReader,"DepW");
+      TTreeReaderValue<double> currentVariable(dataReader, propertyNames[currentFits].c_str());
+
+      const double vmin = allBins[currentFits][i];
+      const double vmax = allBins[currentFits][i+1];
+      while (dataReader.Next()){
+        if (!kinematicCuts->applyCuts(currentFits,false)) continue;
+        if (*currentVariable < vmin || *currentVariable >= vmax) continue;
+        sumDepA += *DepA; sumDepB += *DepB; sumDepC += *DepC; sumDepV += *DepV; sumDepW += *DepW;
+      }
+      dataReader.Restart();
+    }
     const double depA = (nEvt>0)? (sumDepA/nEvt) : 1.0;
     const double depB = (nEvt>0)? (sumDepB/nEvt) : 1.0;
     const double depC = (nEvt>0)? (sumDepC/nEvt) : 1.0;
@@ -4106,113 +4153,5 @@ void performChi2Fits_GeneralExclusive(const char* output_file,
     sAULoff << "{" << meanVar << ", " << pval[1]   << ", " << perr[1]   << "}";
     sALU    << "{" << meanVar << ", " << pval[2]   << ", " << perr[2]   << "}";
     sAUL    << "{" << meanVar << ", " << pval[3]   << ", " << perr[3]   << "}";
-    sAUL2   << "{" << meanVar << ", " << pval[4]   << ", " << perr[4]   << "}";
-    sALL    << "{" << meanVar << ", " << pval[5]   << ", " << perr[5]   << "}";
-    sALLc   << "{" << meanVar << ", " << pval[6]   << ", " << perr[6]   << "}";
-    sAUUc   << "{" << meanVar << ", " << pval[7]   << ", " << perr[7]   << "}";
-    sAUUc2  << "{" << meanVar << ", " << pval[8]   << ", " << perr[8]   << "}";
-    sAT_UL  << "{" << meanVar << ", " << pval[9]   << ", " << perr[9]   << "}";
-    sAT_LL  << "{" << meanVar << ", " << pval[10]  << ", " << perr[10]  << "}";
-
-    if (i < numBins - 1) {
-      sALUoff << ", "; sAULoff << ", "; sALU << ", "; sAUL << ", "; sAUL2 << ", ";
-      sALL << ", "; sALLc << ", "; sAUUc << ", "; sAUUc2 << ", ";
-      sAT_UL << ", "; sAT_LL << ", ";
-    }
-
-    // Kinematics table rows (unchanged)
-    kinLatex << std::fixed << std::setprecision(3)
-             << (i+1) << " ~&~ " << meanQ2 << " ~&~ " << meanW << " ~&~ " << meanx
-             << " ~&~ " << meany << " ~&~ " << meant << " ~&~ " << meantmin
-             << " \\\\ \\hline ";
-
-    kinList << "{" << meanQ2 << ", " << meanW << ", " << meanx << ", "
-            << meany << ", " << meant << ", " << meantmin << "}";
-    if (i < numBins - 1) kinList << ", ";
-
-    // Save covariance/correlation blocks
-    std::vector<double> cov(npar*npar, 0.0);
-    minuit.mnemat(cov.data(), npar);
-
-    std::vector<double> errv(npar);
-    for (int ip=0; ip<npar; ++ip) errv[ip] = std::sqrt(std::max(cov[ip*npar+ip], 0.0));
-
-    const double vminB = allBins[currentFits][i];
-    const double vmaxB = allBins[currentFits][i+1];
-
-    {
-      std::ofstream of(covPath, std::ios::out | std::ios::app);
-      of << std::setprecision(9);
-      of << "## Bin " << i << "  Range: [" << vminB << ", " << vmaxB << ")  Events: " << nEvt
-         << "  npts=" << npts_total << "  npar=" << npar << "  ndf=" << ndf_global
-         << "  chi2=" << chi2_global << "\n";
-      of << std::left << std::setw(22) << "#";
-      for (int c=0;c<npar;++c) of << std::setw(22) << names[c];
-      of << "\n";
-      for (int r=0; r<npar; ++r) {
-        of << std::left << std::setw(22) << names[r];
-        for (int c=0; c<npar; ++c) of << std::setw(22) << cov[r*npar + c];
-        of << "\n";
-      }
-      of << "\n";
-    }
-    {
-      std::ofstream of(corrPath, std::ios::out | std::ios::app);
-      of << std::setprecision(9);
-      of << "## Bin " << i << "  Range: [" << vminB << ", " << vmaxB << ")  Events: " << nEvt << "\n";
-      of << std::left << std::setw(22) << "#";
-      for (int c=0;c<npar;++c) of << std::setw(22) << names[c];
-      of << "\n";
-      for (int r=0; r<npar; ++r) {
-        of << std::left << std::setw(22) << names[r];
-        for (int c=0; c<npar; ++c) {
-          double denom = (errv[r]>0 && errv[c]>0) ? (errv[r]*errv[c]) : 1.0;
-          double rho = cov[r*npar + c] / denom;
-          of << std::setw(22) << rho;
-        }
-        of << "\n";
-      }
-      of << "\n";
-    }
-
-    delete hALU; delete hAUL; delete hALL;
-  }
-
-  // Close arrays and write to file
-  sALUoff << "};"; sAULoff << "};"; sALU << "};"; sAUL << "};";
-  sAUL2  << "};"; sALL << "};"; sALLc<< "};"; sAUUc << "};"; sAUUc2 << "};";
-  sAT_UL << "};"; sAT_LL << "};";
-
-  {
-    std::ofstream out(output_file, std::ios::app);
-    out << sALUoff.str() << "\n";
-    out << sAULoff.str() << "\n";
-    out << sALU.str()    << "\n";
-    out << sAUL.str()    << "\n";
-    out << sAUL2.str()   << "\n";
-    out << sAT_UL.str()  << "\n";   // TSA leakage amplitude (centered/σ)
-    out << sALL.str()    << "\n";
-    out << sALLc.str()   << "\n";
-    out << sAUUc.str()   << "\n";
-    out << sAUUc2.str()  << "\n";
-    out << sAT_LL.str()  << "\n";   // DSA leakage amplitude (centered/σ)
-  }
-
-  // Finish LaTeX table & kinematics list
-  kinLatex << "\\end{tabular}\n"
-           << "\\caption{Mean kinematics per bin for the simultaneous BSA/TSA/DSA "
-           << "(GeneralExclusive) fit vs $" << prefix << "$.}\n"
-           << "\\label{table:GE_kinematics_" << prefix << "}\n"
-           << "\\end{table}\n\n\n";
-  {
-    std::ofstream kf(kinematic_file, std::ios::app);
-    kf << kinLatex.str() << std::endl;
-  }
-
-  kinList << "};";
-  {
-    std::ofstream kp(kinematicPlot_file, std::ios::app);
-    kp << kinList.str() << "\n";
-  }
-}
+   
 // ===================== GeneralExclusive (end) =====================
