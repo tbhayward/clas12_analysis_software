@@ -107,7 +107,7 @@ def main():
     ax.set_xlim(0.0, 60.0)
     ax.set_xlabel(r"$\theta_{e'\gamma}$")
     ax.set_ylabel("counts")
-    ax.set_title("open_angle")
+    ax.set_title("open angle")
 
     ax.grid(True, linestyle="--", linewidth=0.5, alpha=0.5)
 
