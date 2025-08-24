@@ -3975,7 +3975,6 @@ void performChi2Fits_GeneralExclusive(const char* output_file,
   const std::string corrPath = "output/results/GE_" + prefix + "_corr_" + suffix + ".txt";
 
   // ====== Containers to write the *fit-results* LaTeX table after the loop ====
-  // Per-bin mean of the fit variable, and the 11 fitted parameters & errors
   std::vector<double> meanVars;
   std::vector<std::vector<double>> all_pvals;  // [bin][0..10]
   std::vector<std::vector<double>> all_perrs;  // [bin][0..10]
@@ -4343,7 +4342,6 @@ void performChi2Fits_GeneralExclusive(const char* output_file,
     if (is_tprime)      varLabel = "$\\langle -t' \\rangle$";
     else if (is_t)      varLabel = "$\\langle -t \\rangle$";
     else {
-      // Fall back to existing formatter if available
       try { varLabel = "$\\langle " + formatLabelName(varName) + " \\rangle$"; }
       catch (...) { varLabel = "$\\langle " + varName + " \\rangle$"; }
     }
@@ -4368,9 +4366,7 @@ void performChi2Fits_GeneralExclusive(const char* output_file,
     const auto& cols = g_ge_write_all_results ? cols_full : cols_spin;
 
     // File path: starts with "fit_results", then GE, then variable, then suffix
-    // e.g., output/results/fit_results_GE_tprime_<suffix>.tex
     std::string varToken = varName;
-    // Sanitize a bit for filename
     for (auto& ch : varToken) if (ch==' ' || ch=='\'') ch = '_';
     const std::string fitOutPath = "output/results/fit_results_GE_" + varToken + "_" + suffix + ".tex";
     std::ofstream out(fitOutPath, std::ios::out | std::ios::trunc);
@@ -4386,7 +4382,7 @@ void performChi2Fits_GeneralExclusive(const char* output_file,
         << "^{\\pm " << std::setprecision(3) << eStat << "}";
       if (showSyst) {
         const double eSys = std::fabs(v) * fracSys;
-        s << _Static_cast<const char*>("_{\\pm ") << std::setprecision(3) << eSys << "}";
+        s << "_{\\pm " << std::setprecision(3) << eSys << "}";
       }
       return s.str();
     };
@@ -4406,7 +4402,6 @@ void performChi2Fits_GeneralExclusive(const char* output_file,
 
     // Rows
     for (size_t ib=0; ib<meanVars.size(); ++ib) {
-      // Negate if variable is t or t′ (user request)
       const double meanDisplay = (is_t || is_tprime) ? -meanVars[ib] : meanVars[ib];
 
       std::ostringstream row; row.setf(std::ios::fixed);
