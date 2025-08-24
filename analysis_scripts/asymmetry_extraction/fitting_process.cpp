@@ -3908,9 +3908,6 @@ static void plotHistogramAndFit_GeneralExclusive(
 // ─────────────────────────────────────────────────────────────────────
 // Driver: simultaneous fits per bin (11 parameters)
 // ─────────────────────────────────────────────────────────────────────
-// Toggle whether to print all results (UU terms + leakages) or only spin-dependent SF ratios
-static bool g_ge_write_all_results = false;  
-// true = print everything; false = only FLU, FUL(sin,sin2), ALL, ALLcos
 // ─────────────────────────────────────────────────────────────────────
 // Driver: simultaneous fits per bin (11 parameters)
 // ─────────────────────────────────────────────────────────────────────
@@ -3921,7 +3918,7 @@ void performChi2Fits_GeneralExclusive(const char* output_file,
   // === PRINT SWITCH for the fit-results LaTeX table ============================
   // If true  -> print everything (spin-dependent + UU terms + A_T leakages)
   // If false -> print only spin-dependent SF ratios: FLU^sin, FUL^sin, FUL^sin2, ALL, ALL^cos
-  static bool g_ge_write_all_results = true;  // move to file scope if you prefer
+  static bool g_ge_write_all_results = false;  // move to file scope if you prefer
 
   // Control the leakage fits here (global switches)
   g_fit_enable_TUL = true;   // set false to disable fitting A_T-UL
