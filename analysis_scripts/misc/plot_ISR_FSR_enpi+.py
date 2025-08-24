@@ -77,6 +77,7 @@ BASELINE = {
         "ALLcosphi": [(-1.143401739, -0.059602085, 0.131024483), (-0.943106811, 0.186490877, 0.081247692), (-0.743168284, -0.087448022, 0.063490157), (-0.542657082, 0.065714180, 0.083686294), (-0.343066681, 0.120575755, 0.055037004), (-0.146475591, -0.068220018, 0.065805684)],
     },
     "enpiHighxBGE": {
+        # NOTE: These numbers are currently IDENTICAL to ISRFSR below (intentional debugging clue).
         "ALUsinphi":  [(-1.149036134, 0.101467482, 0.042114943), (-0.941349191, 0.169142053, 0.035250993), (-0.744159314, 0.095445198, 0.029983854), (-0.546130452, 0.129338232, 0.025663526), (-0.345640208, 0.175218595, 0.024980652), (-0.154868192, 0.104223534, 0.022114571)],
         "AULsinphi":  [(-1.149036134, 0.022326582, 0.018548068), (-0.941349191, 0.078891319, 0.012416969), (-0.744159314, 0.045703350, 0.009178631), (-0.546130452, 0.046671193, 0.007589726), (-0.345640208, 0.028525678, 0.008097689), (-0.154868192, 0.020277797, 0.007241523)],
         "AULsin2phi":[(-1.149036134, -0.082075274, 0.038834747), (-0.941349191, -0.051292702, 0.038035522), (-0.744159314, -0.026709268, 0.020817455), (-0.546130452, -0.053372810, 0.019974131), (-0.345640208, -0.024637582, 0.015737777), (-0.154868192, -0.015887208, 0.015821254)],
@@ -118,6 +119,7 @@ ISRFSR = {
         "ALLcosphi": [(-1.145214049, -0.090597550, 0.071893891), (-0.944369217, 0.067419986, 0.083070545), (-0.743869330, -0.115336364, 0.062727377), (-0.543422016, -0.102292939, 0.084494854), (-0.343657012, 0.041596418, 0.067642533), (-0.147504474, -0.026174871, 0.070840418)],
     },
     "enpiHighxBGE": {
+        # IDENTICAL to Baseline above — this is why Δ==0 in the text output.
         "ALUsinphi":  [(-1.149036134, 0.101467482, 0.042114943), (-0.941349191, 0.169142053, 0.035250993), (-0.744159314, 0.095445198, 0.029983854), (-0.546130452, 0.129338232, 0.025663526), (-0.345640208, 0.175218595, 0.024980652), (-0.154868192, 0.104223534, 0.022114571)],
         "AULsinphi":  [(-1.149036134, 0.022326582, 0.018548068), (-0.941349191, 0.078891319, 0.012416969), (-0.744159314, 0.045703350, 0.009178631), (-0.546130452, 0.046671193, 0.007589726), (-0.345640208, 0.028525678, 0.008097689), (-0.154868192, 0.020277797, 0.007241523)],
         "AULsin2phi":[(-1.149036134, -0.082075274, 0.038834747), (-0.941349191, -0.051292702, 0.038035522), (-0.744159314, -0.026709268, 0.020817455), (-0.546130452, -0.053372810, 0.019974131), (-0.345640208, -0.024637582, 0.015737777), (-0.154868192, -0.015887208, 0.015821254)],
@@ -208,7 +210,6 @@ def get_bin_title(bin_tag):
     return r"$ep \rightarrow en\pi^{+}$ — " + XB_LABELS.get(bin_tag, bin_tag) + " — Baseline vs Data-driven ISR \\& FSR"
 
 def _legend_only_on(ax_targets, loc="upper right"):
-    """Attach legends only to given axes, with consistent styling."""
     for ax in ax_targets:
         handles, labels = ax.get_legend_handles_labels()
         if handles:
@@ -234,6 +235,18 @@ def _draw_compare(ax, bin_tag, series_name, ylabel, ylim=None):
     ax.axhline(0, color="black", linestyle="--", linewidth=1.2)
     ax.grid(True, linestyle="--", alpha=0.6)
 
+def _pair_by_nearest(x_ref, x_other):
+    """
+    For each x in x_ref, pick index in x_other (sorted asc) that is nearest.
+    Requires len(x_other) >= 1.
+    """
+    if len(x_other) == 1:
+        return np.zeros_like(x_ref, dtype=int)
+    idx = np.searchsorted(x_other, x_ref)
+    idx = np.clip(idx, 1, len(x_other)-1)
+    choose_left = (np.abs(x_ref - x_other[idx-1]) <= np.abs(x_ref - x_other[idx]))
+    return np.where(choose_left, idx-1, idx)
+
 def _delta(y_base, e_base, y_isr, e_isr):
     """Delta (Baseline − ISR&FSR) and propagated error (uncorrelated)."""
     dy = y_base - y_isr
@@ -241,18 +254,17 @@ def _delta(y_base, e_base, y_isr, e_isr):
     return dy, edy
 
 def _draw_delta(ax, bin_tag, series_name, ylabel):
-    """Draw Δ = Baseline − ISR&FSR with sqrt-sum-squares uncertainty."""
+    """Draw Δ = Baseline − ISR&FSR with sqrt-sum-squares uncertainty (aligned by nearest −t′)."""
     b_triples = BASELINE.get(bin_tag, {}).get(series_name)
     i_triples = ISRFSR.get(bin_tag, {}).get(series_name)
     if not b_triples or not i_triples:
         return
     xb, yb, eb = to_series(b_triples)
     xi, yi, ei = to_series(i_triples)
-    n = min(len(xb), len(xi))
-    x = xb[:n]  # use Baseline x
-    y_delta, e_delta = _delta(yb[:n], eb[:n], yi[:n], ei[:n])
+    idx = _pair_by_nearest(xb, xi)
+    y_delta, e_delta = _delta(yb, eb, yi[idx], ei[idx])
     ax.errorbar(
-        x, y_delta, yerr=e_delta,
+        xb, y_delta, yerr=e_delta,
         fmt="o", color="k", ecolor="k",
         capsize=CAPSIZE, markersize=MS, linestyle="None"
     )
@@ -283,23 +295,22 @@ def _draw_delta_dilution(ax, bin_tag, x_ref):
     ax.grid(True, linestyle="--", alpha=0.6)
 
 # ─────────────────────────────────────────────────────────────────────
-# NEW: collectors for signed Δ (with σΔ) for text summary
+# Collectors for signed Δ (with σΔ) for text summary (aligned)
 # ─────────────────────────────────────────────────────────────────────
 def _collect_delta_sf(bin_tag, series_name):
-    """Return x, Δ, σΔ arrays for a structure-function series."""
+    """Return x_baseline, Δ, σΔ arrays for a structure-function series, aligned by nearest −t′."""
     b_triples = BASELINE.get(bin_tag, {}).get(series_name)
     i_triples = ISRFSR.get(bin_tag, {}).get(series_name)
     if not b_triples or not i_triples:
         return None
-    xb, yb, eb = to_series(b_triples)
+    xb, yb, eb = to_series(b_triples)  # reference
     xi, yi, ei = to_series(i_triples)
-    n = min(len(xb), len(xi))
-    x = xb[:n]
-    d, ed = _delta(yb[:n], eb[:n], yi[:n], ei[:n])
-    return x, d, ed
+    idx = _pair_by_nearest(xb, xi)
+    d, ed = _delta(yb, eb, yi[idx], ei[idx])
+    return xb, d, ed
 
 def _collect_delta_dilution(bin_tag, x_ref):
-    """Return x, Δ, σΔ for dilution, using provided x reference."""
+    """Return x_ref, Δ, σΔ for dilution."""
     db = DILUTION_BASELINE.get(bin_tag)
     di = DILUTION_ISRFSR.get(bin_tag)
     if not db or not di:
@@ -331,17 +342,22 @@ def _write_delta_summary(out_dir, bin_tags):
         ]
 
         for b in bin_tags:
-            # x reference as elsewhere
-            if b in BASELINE and "ALUsinphi" in BASELINE[b]:
+            # reference x from Baseline if possible, else ISRFSR
+            if "ALUsinphi" in BASELINE.get(b, {}):
                 x_ref, _, _ = to_series(BASELINE[b]["ALUsinphi"])
-            else:
+            elif "ALUsinphi" in ISRFSR.get(b, {}):
                 x_ref, _, _ = to_series(ISRFSR[b]["ALUsinphi"])
+            else:
+                x_ref = None
 
             f.write(f"\nBin: {b}    x_B range: {XB_LABELS.get(b, '')}\n")
             f.write("-" * 86 + "\n")
 
             # Dilution first
-            dil = _collect_delta_dilution(b, x_ref)
+            if x_ref is not None:
+                dil = _collect_delta_dilution(b, x_ref)
+            else:
+                dil = None
             if dil is not None:
                 x, d, ed = dil
                 f.write(f"Series: {series_order[0][1]}\n")
@@ -363,6 +379,59 @@ def _write_delta_summary(out_dir, bin_tags):
                 f.write("\n")
 
     print(f"[OK] Wrote Δ summary: {path}")
+
+# ─────────────────────────────────────────────────────────────────────
+# Debug / sanity checks
+# ─────────────────────────────────────────────────────────────────────
+SERIES_LIST = ["ALUsinphi","AULsinphi","AULsin2phi","ALL","ALLcosphi"]
+
+def _sanity_report_bin(bin_tag):
+    lines = []
+    lines.append(f"== Bin: {bin_tag} ({XB_LABELS.get(bin_tag,'')})")
+    for s in SERIES_LIST:
+        b = BASELINE.get(bin_tag, {}).get(s)
+        i = ISRFSR.get(bin_tag, {}).get(s)
+        if not b or not i:
+            miss = []
+            if not b: miss.append("BASELINE")
+            if not i: miss.append("ISRFSR")
+            lines.append(f"  {s}: MISSING in {', '.join(miss)}")
+            continue
+        xb, yb, eb = to_series(b)
+        xi, yi, ei = to_series(i)
+        same_len = (len(yb) == len(yi))
+        exact_equal = same_len and np.array_equal(yb, yi)
+        close_equal = same_len and np.allclose(yb, yi, atol=0, rtol=0)
+        idx = _pair_by_nearest(xb, xi)
+        d = yb - yi[idx]
+        all_zero_after_align = np.allclose(d, 0.0, atol=1e-15)
+        max_abs_d = float(np.max(np.abs(d))) if d.size else float("nan")
+        lines.append(
+            f"  {s}: lenB={len(yb)} lenI={len(yi)} "
+            f"exact_equal={exact_equal} close_equal={close_equal} "
+            f"Δ_all_zero_after_align={all_zero_after_align} max|Δ|={max_abs_d:.6g}"
+        )
+        # Also check x grids
+        x_same_len = (len(xb) == len(xi))
+        x_close = x_same_len and np.allclose(xb, xi)
+        lines.append(
+            f"     xB==xI(len)={x_same_len} xB≈xI(values)={x_close} "
+            f"first3 xB/xI: {list(np.round(xb[:3],5))} / {list(np.round(xi[:3],5))}"
+        )
+        if exact_equal:
+            lines.append("     >>> WARNING: y_Baseline and y_ISRFSR are IDENTICAL for this series.")
+    return lines
+
+def write_sanity_report(out_dir, bin_tags):
+    path = os.path.join(out_dir, "ISR_FSR_sanity_report.txt")
+    with open(path, "w", encoding="utf-8") as f:
+        f.write("Sanity report comparing Baseline vs ISR&FSR (value-level checks)\n")
+        f.write("Flags: exact_equal means arrays are bit-identical; Δ_all_zero_after_align checks after nearest-x alignment.\n\n")
+        for b in bin_tags:
+            for line in _sanity_report_bin(b):
+                f.write(line + "\n")
+            f.write("\n")
+    print(f"[OK] Wrote sanity report: {path}")
 
 # ─────────────────────────────────────────────────────────────────────
 # Plotters
@@ -390,7 +459,6 @@ def plot_bin(bin_tag, out_dir):
         )
     ax_dil.set(xlim=XLIM_T, ylim=YLIM_DIL, xlabel=X_LABEL, ylabel=r"$D_{f}$")
     ax_dil.grid(True, linestyle="--", alpha=0.6)
-    # no legend on dilution panel
 
     # Structure functions (compare)
     _draw_compare(ax_lu,  bin_tag, "ALUsinphi",  r"$F_{LU}^{\sin\phi}/F_{UU}$",   YLIM_LU)
@@ -414,7 +482,7 @@ def plot_bin(bin_tag, out_dir):
     print(f"[OK] Saved: {out_path}")
 
 def plot_bin_delta(bin_tag, out_dir):
-    """Second figure: Δ = Baseline − ISR&FSR, with propagated uncertainties."""
+    """Second figure: Δ = Baseline − ISR&FSR, with propagated uncertainties (aligned)."""
     # x reference as before
     if bin_tag in BASELINE and "ALUsinphi" in BASELINE[bin_tag]:
         x_ref, _, _ = to_series(BASELINE[bin_tag]["ALUsinphi"])
@@ -433,8 +501,6 @@ def plot_bin_delta(bin_tag, out_dir):
     _draw_delta(ax_ul2, bin_tag, "AULsin2phi", r"$\Delta(F_{UL}^{\sin2\phi}/F_{UU})$")
     _draw_delta(ax_ll0, bin_tag, "ALL",        r"$\Delta(F_{LL}/F_{UU})$")
     _draw_delta(ax_ll1, bin_tag, "ALLcosphi",  r"$\Delta(F_{LL}^{\cos\phi}/F_{UU})$")
-
-    # No legends on Δ plots (single dataset)
 
     # Title & save
     title = r"$ep \rightarrow en\pi^{+}$ — " + XB_LABELS.get(bin_tag, bin_tag)
@@ -456,6 +522,10 @@ def main():
     os.makedirs(out_dir, exist_ok=True)
 
     bin_tags = ["enpiGE", "enpiLowxBGE", "enpiMidLowxBGE", "enpiMidHighxBGE", "enpiHighxBGE"]
+
+    # Debug report first — this will clearly flag identical series
+    write_sanity_report(out_dir, bin_tags)
+
     for b in bin_tags:
         if b not in ISRFSR:
             print(f"[WARN] Skipping {b} (no ISR&FSR data).")
@@ -465,6 +535,10 @@ def main():
 
     # After all figures, write one summary text file with signed Δ
     _write_delta_summary(out_dir, bin_tags)
+
+    print("\n[NOTE] If you see Δ=0 across an entire bin in the text but plots differ, open:")
+    print(f"  {os.path.join(out_dir, 'ISR_FSR_sanity_report.txt')}")
+    print("It will tell you if the hard-coded Baseline and ISR&FSR numbers are identical (as they are for enpiHighxBGE).")
 
 if __name__ == "__main__":
     main()
