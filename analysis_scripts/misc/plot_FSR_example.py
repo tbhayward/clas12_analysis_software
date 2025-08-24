@@ -78,9 +78,9 @@ def main():
     det_int = detector.astype(np.int64, copy=False)
 
     # -----------------------
-    # Apply selection: detector == 2
+    # Apply selection: detector == 1 (FD)
     # -----------------------
-    sel = (det_int == 2)
+    sel = (det_int == 1)
     oa_sel = open_angle[sel]
 
     # Optional: keep only finite values within the plot range [0, 60]
@@ -107,7 +107,7 @@ def main():
     ax.set_xlim(0.0, 60.0)
     ax.set_xlabel(r"$\theta_{e'\gamma}$")
     ax.set_ylabel("counts")
-    ax.set_title("open_angle (detector == 2)")
+    ax.set_title("open_angle")
 
     ax.grid(True, linestyle="--", linewidth=0.5, alpha=0.5)
 
