@@ -4263,13 +4263,11 @@ void performChi2Fits_GeneralExclusive(const char* output_file,
       for (int c=0;c<npar;++c) of << std::setw(22) << names[c];
       of << "\n";
       for (int r=0; r<npar; ++r) {
-        std::ofstream::fmtflags f = of.flags();
         for (int c=0; c<npar; ++c) {
           double denom = (errv[r]>0 && errv[c]>0) ? (errv[r]*errv[c]) : 1.0;
           double rho = cov[r*npar + c] / denom;
           of << std::setw(22) << rho;
         }
-        of.flags(f);
         of << "\n";
       }
       of << "\n";
@@ -4317,43 +4315,79 @@ void performChi2Fits_GeneralExclusive(const char* output_file,
 
   // =================================================================
   // Write the *fit-results* LaTeX table (in this function, no helpers)
+  // Filename starts with "fit_results", uses the variable being fit.
+  // If variable is t or tprime, label as −t or −t′ and negate values.
+  // UU cosφ and A_T terms: show *only* ±stat (no syst subscript).
   // =================================================================
   {
-    // Column spec for spin-dependent only
-    struct Col { int idx; const char* label; double sysFrac; };
+    // Determine variable name being fit against
+    std::string varName = propertyNames[currentFits];  // e.g., "tprime", "t", "xb", etc.
+
+    // Normalize to lower/compact form for detection
+    auto toLower = [](std::string s){
+      for (auto& ch : s) ch = (char)std::tolower((unsigned char)ch);
+      return s;
+    };
+    auto compact = [](std::string s){
+      std::string out; out.reserve(s.size());
+      for (char ch : s) if (ch!=' ' && ch!='_' && ch!='-' ) out.push_back(ch);
+      return out;
+    };
+    const std::string key = compact(toLower(varName));
+
+    const bool is_tprime = (key=="tprime" || key=="t'" || key=="tminustmin");
+    const bool is_t      = (!is_tprime && (key=="t"));
+
+    // Build LaTeX label for the first column
+    std::string varLabel;
+    if (is_tprime)      varLabel = "$\\langle -t' \\rangle$";
+    else if (is_t)      varLabel = "$\\langle -t \\rangle$";
+    else {
+      // Fall back to existing formatter if available
+      try { varLabel = "$\\langle " + formatLabelName(varName) + " \\rangle$"; }
+      catch (...) { varLabel = "$\\langle " + varName + " \\rangle$"; }
+    }
+
+    // Column spec for spin-dependent only (show syst)
+    struct Col { int idx; const char* label; double sysFrac; bool showSyst; };
     std::vector<Col> cols_spin = {
-      { 2, "$F_{LU}^{\\sin\\phi}/F_{UU}$",           0.06 }, // BSA
-      { 3, "$F_{UL}^{\\sin\\phi}/F_{UU}$",           0.08 }, // TSA
-      { 4, "$F_{UL}^{\\sin2\\phi}/F_{UU}$",          0.08 }, // TSA
-      { 5, "$F_{LL}/F_{UU}$",                        0.10 }, // DSA
-      { 6, "$F_{LL}^{\\cos\\phi}/F_{UU}$",           0.10 }  // DSA
+      { 2, "$F_{LU}^{\\sin\\phi}/F_{UU}$",           0.06, true }, // BSA
+      { 3, "$F_{UL}^{\\sin\\phi}/F_{UU}$",           0.08, true }, // TSA
+      { 4, "$F_{UL}^{\\sin2\\phi}/F_{UU}$",          0.08, true }, // TSA
+      { 5, "$F_{LL}/F_{UU}$",                        0.10, true }, // DSA
+      { 6, "$F_{LL}^{\\cos\\phi}/F_{UU}$",           0.10, true }  // DSA
     };
 
-    // Full set adds UU terms (0% syst by spec) and leakage amplitudes
+    // Full set adds UU terms (no syst subscript) and leakage amplitudes (no syst subscript)
     std::vector<Col> cols_full = cols_spin;
-    cols_full.push_back({ 7, "$F_{UU}^{\\cos\\phi}/F_{UU}$",        0.00 });
-    cols_full.push_back({ 8, "$F_{UU}^{\\cos2\\phi}/F_{UU}$",       0.00 });
-    cols_full.push_back({ 9, "$A_{T\\text{-}UL}^{\\sin\\phi}$",     0.08 });
-    cols_full.push_back({10, "$A_{T\\text{-}LL}^{\\sin\\phi}$",     0.10 });
+    cols_full.push_back({ 7, "$F_{UU}^{\\cos\\phi}/F_{UU}$",        0.00, false }); // UU: no syst subscript
+    cols_full.push_back({ 8, "$F_{UU}^{\\cos2\\phi}/F_{UU}$",       0.00, false }); // UU: no syst subscript
+    cols_full.push_back({ 9, "$A_{T\\text{-}UL}^{\\sin\\phi}$",     0.08, false }); // A_T: no syst subscript
+    cols_full.push_back({10, "$A_{T\\text{-}LL}^{\\sin\\phi}$",     0.10, false }); // A_T: no syst subscript
 
     const auto& cols = g_ge_write_all_results ? cols_full : cols_spin;
 
-    // Output path similar to others
-    const std::string fitOutPath = "output/results/GE_" + prefix + "_fitResults_" + suffix + ".tex";
+    // File path: starts with "fit_results", then GE, then variable, then suffix
+    // e.g., output/results/fit_results_GE_tprime_<suffix>.tex
+    std::string varToken = varName;
+    // Sanitize a bit for filename
+    for (auto& ch : varToken) if (ch==' ' || ch=='\'') ch = '_';
+    const std::string fitOutPath = "output/results/fit_results_GE_" + varToken + "_" + suffix + ".tex";
     std::ofstream out(fitOutPath, std::ios::out | std::ios::trunc);
     if (!out) {
       std::cerr << "[performChi2Fits_GeneralExclusive] Failed to open " << fitOutPath << " for writing.\n";
       return;
     }
 
-    // Helper: value^{±stat}_{±syst}, 3 d.p.
-    auto entry = [](double v, double eStat, double fracSys) {
-      const double eSys = std::fabs(v) * fracSys;
+    // Helper: value^{±stat}_{±syst} (3 d.p.), or value^{±stat} if showSyst=false
+    auto entry = [](double v, double eStat, double fracSys, bool showSyst) {
       std::ostringstream s; s.setf(std::ios::fixed);
-      s << std::setprecision(3)
-        << v
-        << "^{\\pm " << std::setprecision(3) << eStat
-        << "}_{\\pm " << std::setprecision(3) << eSys << "}";
+      s << std::setprecision(3) << v
+        << "^{\\pm " << std::setprecision(3) << eStat << "}";
+      if (showSyst) {
+        const double eSys = std::fabs(v) * fracSys;
+        s << _Static_cast<const char*>("_{\\pm ") << std::setprecision(3) << eSys << "}";
+      }
       return s.str();
     };
 
@@ -4365,11 +4399,6 @@ void performChi2Fits_GeneralExclusive(const char* output_file,
     for (size_t i=0;i<cols.size();++i) header << "|c";
     header << "|} \\hline\n";
 
-    // First column label = mean of variable being fit
-    std::string varLabel;
-    try { varLabel = "$\\langle " + formatLabelName(prefix) + " \\rangle$"; }
-    catch (...) { varLabel = "$\\langle " + prefix + " \\rangle$"; }
-
     header << varLabel;
     for (const auto& c : cols) header << " & " << c.label;
     header << " \\\\ \\hline\n";
@@ -4377,12 +4406,15 @@ void performChi2Fits_GeneralExclusive(const char* output_file,
 
     // Rows
     for (size_t ib=0; ib<meanVars.size(); ++ib) {
+      // Negate if variable is t or t′ (user request)
+      const double meanDisplay = (is_t || is_tprime) ? -meanVars[ib] : meanVars[ib];
+
       std::ostringstream row; row.setf(std::ios::fixed);
-      row << std::setprecision(3) << meanVars[ib];
+      row << std::setprecision(3) << meanDisplay;
       for (const auto& c : cols) {
         const double v  = all_pvals[ib][c.idx];
         const double es = all_perrs[ib][c.idx];
-        row << " ~&~ " << entry(v, es, c.sysFrac);
+        row << " ~&~ " << entry(v, es, c.sysFrac, c.showSyst);
       }
       row << " \\\\ \\hline\n";
       out << row.str();
@@ -4391,9 +4423,10 @@ void performChi2Fits_GeneralExclusive(const char* output_file,
     // Footer
     out << "\\end{tabular}\n"
         << "\\caption{Fitted structure-function ratios per bin. Entries are "
-           "$\\text{value}^{\\pm\\,\\text{stat}}_{\\pm\\,\\text{syst}}$ with systematics of "
-           "6\\% (beam-spin), 8\\% (target-spin), and 10\\% (double-spin).}\n"
-        << "\\label{table:GE_fitresults_" << prefix << "}\n"
+           "$\\text{value}^{\\pm\\,\\text{stat}}_{\\pm\\,\\text{syst}}$ for published quantities "
+           "(6\\% beam-spin; 8\\% target-spin; 10\\% double-spin). "
+           "Unpolarized $\\cos\\phi$ modulations and $A_{T}$ leakages are shown with statistical uncertainties only.}\n"
+        << "\\label{table:GE_fitresults_" << varToken << "}\n"
         << "\\end{table}\n";
     out.close();
     std::cout << "Wrote LaTeX fit-results table to: " << fitOutPath << std::endl;
