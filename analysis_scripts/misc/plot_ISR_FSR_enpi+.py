@@ -6,7 +6,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 # ─────────────────────────────────────────────────────────────────────
-# Styling (matched to your existing script)
+# Styling
 # ─────────────────────────────────────────────────────────────────────
 COLORS = {
     "Baseline": "tab:blue",
@@ -22,8 +22,12 @@ XLIM_T = (0.0, 1.30)
 X_LABEL = r"$-t'\ (\mathrm{GeV}^{2})$"
 YLIM_LU = (-0.2, 0.2)   # for F_LU^{sinφ}/F_UU
 YLIM_UL = (-0.2, 0.2)   # for F_UL^{sin(nφ)}/F_UU
-YLIM_LL = (-0.4, 0.4)   # for F_LL/F_UU, F_LL^{cosφ}/F_UU
+YLIM_LL = (-0.5, 0.5)   # widened for F_LL/F_UU, F_LL^{cosφ}/F_UU
 TOP_PAD = 0.95
+
+# For |Δ| plots (single series)
+DELTA_COLOR = "k"
+DELTA_MARKER = "o"
 
 XB_LABELS = {
     "enpiGE":          r"$0.10 < x_{B} < 0.60$",
@@ -84,7 +88,7 @@ BASELINE = {
 }
 
 # ─────────────────────────────────────────────────────────────────────
-# Hard-coded results: ISR & FSR (data-driven) — only needed series
+# Hard-coded results: ISR & FSR (data-driven)
 # ─────────────────────────────────────────────────────────────────────
 ISRFSR = {
     "enpiGE": {
@@ -126,8 +130,6 @@ ISRFSR = {
 
 # ─────────────────────────────────────────────────────────────────────
 # Dilution factors (value, uncertainty) in -t' bin order
-# Baseline: provided for enpiGE, enpiLowxBGE, enpiMidLowxBGE
-# ISR&FSR: provided for all five bins
 # ─────────────────────────────────────────────────────────────────────
 DILUTION_BASELINE = {
     "enpiGE": [
@@ -184,16 +186,16 @@ DILUTION_ISRFSR = {
 # ─────────────────────────────────────────────────────────────────────
 def to_series(triples, negate_x=True, sort=True):
     arr = np.array(triples, dtype=float)
-    x = -arr[:,0] if negate_x else arr[:,0]
-    y = arr[:,1]
-    e = arr[:,2]
+    x = -arr[:, 0] if negate_x else arr[:, 0]
+    y = arr[:, 1]
+    e = arr[:, 2]
     if sort:
         order = np.argsort(x)
         x, y, e = x[order], y[order], e[order]
     return x, y, e
 
 def dilution_series(bin_tag, which, x_fallback):
-    """Return x (from fallback), y, e for dilution. If baseline not provided for a bin, only ISR&FSR is drawn."""
+    """Return x (from fallback), y, e for dilution."""
     if which == "Baseline":
         d = DILUTION_BASELINE.get(bin_tag)
     else:
@@ -201,16 +203,92 @@ def dilution_series(bin_tag, which, x_fallback):
     if d is None:
         return None
     arr = np.array(d, dtype=float)
-    # Align length with fallback x if needed (truncate to min length)
     n = min(len(arr), len(x_fallback))
     x = x_fallback[:n]
-    y = arr[:n,0]
-    e = arr[:n,1]
+    y = arr[:n, 0]
+    e = arr[:n, 1]
     return x, y, e
 
 def get_bin_title(bin_tag):
     return r"$ep \rightarrow en\pi^{+}$ — " + XB_LABELS.get(bin_tag, bin_tag) + " — Baseline vs Data-driven ISR \\& FSR"
 
+def _legend_only_on(ax_targets, loc="upper right"):
+    """Attach legends only to given axes, with consistent styling."""
+    for ax in ax_targets:
+        handles, labels = ax.get_legend_handles_labels()
+        if handles:
+            leg = ax.legend(handles, labels, frameon=True, edgecolor="black", fontsize=11, loc=loc)
+            leg.get_frame().set_alpha(0.9)
+
+def _draw_compare(ax, bin_tag, series_name, ylabel, ylim=None):
+    """Compare Baseline vs ISR&FSR on a given panel."""
+    for lab in ["Baseline", "ISR&FSR (data-driven)"]:
+        src = BASELINE if lab == "Baseline" else ISRFSR
+        triples = src.get(bin_tag, {}).get(series_name)
+        if not triples:
+            continue
+        x, y, e = to_series(triples)
+        ax.errorbar(
+            x, y, yerr=e,
+            fmt=MARKERS[lab], color=COLORS[lab], ecolor=COLORS[lab],
+            capsize=CAPSIZE, markersize=MS, linestyle="None", label=lab
+        )
+    if ylim is not None:
+        ax.set(ylim=ylim)
+    ax.set(xlim=XLIM_T, xlabel=X_LABEL, ylabel=ylabel)
+    ax.axhline(0, color="black", linestyle="--", linewidth=1.2)
+    ax.grid(True, linestyle="--", alpha=0.6)
+
+def _abs_delta(y_base, e_base, y_isr, e_isr):
+    """Absolute delta and propagated error (assuming uncorrelated): |Δ|, σ_Δ."""
+    dy = y_isr - y_base
+    edy = np.sqrt(e_isr**2 + e_base**2)
+    return np.abs(dy), edy
+
+def _draw_abs_delta(ax, bin_tag, series_name, ylabel):
+    """Draw |Δ| = |ISR&FSR − Baseline| with sqrt-sum-squares uncertainty."""
+    b_triples = BASELINE.get(bin_tag, {}).get(series_name)
+    i_triples = ISRFSR.get(bin_tag, {}).get(series_name)
+    if not b_triples or not i_triples:
+        return
+    xb, yb, eb = to_series(b_triples)
+    xi, yi, ei = to_series(i_triples)
+    n = min(len(xb), len(xi))
+    # Use baseline x as reference (assumes identical ordering after sorting)
+    x = xb[:n]
+    y_abs, e_abs = _abs_delta(yb[:n], eb[:n], yi[:n], ei[:n])
+    ax.errorbar(
+        x, y_abs, yerr=e_abs,
+        fmt=DELTA_MARKER, color=DELTA_COLOR, ecolor=DELTA_COLOR,
+        capsize=CAPSIZE, markersize=MS, linestyle="None", label=r"$|\Delta|$"
+    )
+    ax.set(xlim=XLIM_T, xlabel=X_LABEL, ylabel=ylabel)
+    ax.grid(True, linestyle="--", alpha=0.6)
+
+def _draw_abs_delta_dilution(ax, bin_tag, x_ref):
+    """Absolute Δ for dilution factors with proper propagation."""
+    db = DILUTION_BASELINE.get(bin_tag)
+    di = DILUTION_ISRFSR.get(bin_tag)
+    if not db or not di:
+        return
+    db = np.array(db, dtype=float)
+    di = np.array(di, dtype=float)
+    n = min(len(db), len(di), len(x_ref))
+    x = x_ref[:n]
+    yb, eb = db[:n, 0], db[:n, 1]
+    yi, ei = di[:n, 0], di[:n, 1]
+    y_abs, e_abs = _abs_delta(yb, eb, yi, ei)
+    ax.errorbar(
+        x, y_abs, yerr=e_abs,
+        fmt=DELTA_MARKER, color=DELTA_COLOR, ecolor=DELTA_COLOR,
+        capsize=CAPSIZE, markersize=MS, linestyle="None", label=r"$|\Delta D_{f}|$"
+    )
+    ax.set(xlim=XLIM_T, xlabel=X_LABEL, ylabel=r"$|\Delta D_{f}|$")
+    ax.grid(True, linestyle="--", alpha=0.6)
+
+# ─────────────────────────────────────────────────────────────────────
+# Plotters
+# ─────────────────────────────────────────────────────────────────────
 def plot_bin(bin_tag, out_dir):
     # Pick x from ALUsinphi of baseline if available, otherwise ISR&FSR
     if bin_tag in BASELINE and "ALUsinphi" in BASELINE[bin_tag]:
@@ -232,42 +310,20 @@ def plot_bin(bin_tag, out_dir):
             fmt=MARKERS[lab], color=COLORS[lab], ecolor=COLORS[lab],
             capsize=CAPSIZE, markersize=MS, linestyle="None", label=lab
         )
-    # y-limits for dilution: auto with margin
-    ymin, ymax = 0.2, 0.5
-    pad = 0.05*(ymax - ymin) if ymax > ymin else 0.1
-    ax_dil.set(xlim=XLIM_T, xlabel=X_LABEL, ylabel="Dilution factor")
+    # Fixed y-range and label for dilution
+    ax_dil.set(xlim=XLIM_T, ylim=(0.2, 0.6), xlabel=X_LABEL, ylabel=r"$D_{f}$")
     ax_dil.grid(True, linestyle="--", alpha=0.6)
-    ax_dil.legend(frameon=True, edgecolor="black", fontsize=11).get_frame().set_alpha(0.9)
+    # No legend here (legends only in subplots 3 and 6)
 
-    # A helper to draw an SF panel comparing Baseline vs ISR&FSR
-    def draw_compare(ax, series_name, ylabel, ylim):
-        for lab in ["Baseline", "ISR&FSR (data-driven)"]:
-            src = BASELINE if lab == "Baseline" else ISRFSR
-            triples = src.get(bin_tag, {}).get(series_name)
-            if not triples:
-                continue
-            x, y, e = to_series(triples)
-            ax.errorbar(
-                x, y, yerr=e,
-                fmt=MARKERS[lab], color=COLORS[lab], ecolor=COLORS[lab],
-                capsize=CAPSIZE, markersize=MS, linestyle="None", label=lab
-            )
-        ax.set(xlim=XLIM_T, ylim=ylim, xlabel=X_LABEL, ylabel=ylabel)
-        ax.axhline(0, color="black", linestyle="--", linewidth=1.2)
-        ax.grid(True, linestyle="--", alpha=0.6)
+    # Structure functions (compare)
+    _draw_compare(ax_lu,  bin_tag, "ALUsinphi",  r"$F_{LU}^{\sin\phi}/F_{UU}$",   YLIM_LU)
+    _draw_compare(ax_ul1, bin_tag, "AULsinphi",  r"$F_{UL}^{\sin\phi}/F_{UU}$",   YLIM_UL)
+    _draw_compare(ax_ul2, bin_tag, "AULsin2phi", r"$F_{UL}^{\sin2\phi}/F_{UU}$",  YLIM_UL)
+    _draw_compare(ax_ll0, bin_tag, "ALL",        r"$F_{LL}/F_{UU}$",              YLIM_LL)
+    _draw_compare(ax_ll1, bin_tag, "ALLcosphi",  r"$F_{LL}^{\cos\phi}/F_{UU}$",   YLIM_LL)
 
-    # Panels in requested order
-    draw_compare(ax_lu,  "ALUsinphi",  r"$F_{LU}^{\sin\phi}/F_{UU}$",   YLIM_LU)
-    draw_compare(ax_ul1, "AULsinphi",  r"$F_{UL}^{\sin\phi}/F_{UU}$",   YLIM_UL)
-    draw_compare(ax_ul2, "AULsin2phi", r"$F_{UL}^{\sin2\phi}/F_{UU}$",  YLIM_UL)
-    draw_compare(ax_ll0, "ALL",        r"$F_{LL}/F_{UU}$",              YLIM_LL)
-    draw_compare(ax_ll1, "ALLcosphi",  r"$F_{LL}^{\cos\phi}/F_{UU}$",   YLIM_LL)
-
-    # Put a single legend for SF panels (bottom-right panel)
-    handles, labels = ax_ll1.get_legend_handles_labels()
-    if handles:
-        leg = ax_ll1.legend(handles, labels, frameon=True, edgecolor="black", fontsize=11, loc="best")
-        leg.get_frame().set_alpha(0.9)
+    # Legends only on subplots 3 and 6, in the upper right
+    _legend_only_on([ax_ul1, ax_ll1], loc="upper right")
 
     # Title & save
     plt.suptitle(get_bin_title(bin_tag), fontsize=16, y=0.97)
@@ -280,16 +336,55 @@ def plot_bin(bin_tag, out_dir):
     plt.close(fig)
     print(f"[OK] Saved: {out_path}")
 
+def plot_bin_abs_delta(bin_tag, out_dir):
+    """Second figure: absolute deltas with propagated uncertainties."""
+    # x reference as before
+    if bin_tag in BASELINE and "ALUsinphi" in BASELINE[bin_tag]:
+        x_ref, _, _ = to_series(BASELINE[bin_tag]["ALUsinphi"])
+    else:
+        x_ref, _, _ = to_series(ISRFSR[bin_tag]["ALUsinphi"])
+
+    fig, axes = plt.subplots(2, 3, figsize=(13.2, 8.6))
+    ax_dil, ax_lu, ax_ul1, ax_ul2, ax_ll0, ax_ll1 = axes.flat
+
+    # Dilution |Δ|
+    _draw_abs_delta_dilution(ax_dil, bin_tag, x_ref)
+    ax_dil.set(ylim=None)  # let matplotlib autoscale for |ΔD_f|
+
+    # Structure functions |Δ|
+    _draw_abs_delta(ax_lu,  bin_tag, "ALUsinphi",  r"$|\Delta(F_{LU}^{\sin\phi}/F_{UU})|$")
+    _draw_abs_delta(ax_ul1, bin_tag, "AULsinphi",  r"$|\Delta(F_{UL}^{\sin\phi}/F_{UU})|$")
+    _draw_abs_delta(ax_ul2, bin_tag, "AULsin2phi", r"$|\Delta(F_{UL}^{\sin2\phi}/F_{UU})|$")
+    _draw_abs_delta(ax_ll0, bin_tag, "ALL",        r"$|\Delta(F_{LL}/F_{UU})|$")
+    _draw_abs_delta(ax_ll1, bin_tag, "ALLcosphi",  r"$|\Delta(F_{LL}^{\cos\phi}/F_{UU})|$")
+
+    # Legends only on subplots 3 and 6 (upper right)
+    _legend_only_on([ax_ul1, ax_ll1], loc="upper right")
+
+    # Title & save
+    title = r"$ep \rightarrow en\pi^{+}$ — " + XB_LABELS.get(bin_tag, bin_tag) + " — Absolute $\Delta$ (ISR\\&FSR − Baseline)"
+    plt.suptitle(title, fontsize=16, y=0.97)
+    plt.tight_layout(rect=[0, 0, 1, TOP_PAD])
+
+    os.makedirs(out_dir, exist_ok=True)
+    save_name = f"ISR_FSR_absDelta_{SAVE_TAG.get(bin_tag, bin_tag)}.pdf"
+    out_path = os.path.join(out_dir, save_name)
+    plt.savefig(out_path)
+    plt.close(fig)
+    print(f"[OK] Saved: {out_path}")
+
+# ─────────────────────────────────────────────────────────────────────
+# Main
+# ─────────────────────────────────────────────────────────────────────
 def main():
     out_dir = os.path.join("output", "enpi+")
-    # Order required: inclusive + 4 xB slices
     bin_tags = ["enpiGE", "enpiLowxBGE", "enpiMidLowxBGE", "enpiMidHighxBGE", "enpiHighxBGE"]
     for b in bin_tags:
-        # Skip bin if we lack ISR&FSR data for it (shouldn't happen here)
         if b not in ISRFSR:
             print(f"[WARN] Skipping {b} (no ISR&FSR data).")
             continue
         plot_bin(b, out_dir)
+        plot_bin_abs_delta(b, out_dir)
 
 if __name__ == "__main__":
     main()
