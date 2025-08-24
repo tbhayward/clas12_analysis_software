@@ -284,7 +284,6 @@ double DSA_dihadron(double* x, double* par) {
 }
 
 /******** General Exclusive all defined together ********/
-// Guard against tiny denominators
 static inline double GE_safe_div(double num, double den) {
   const double eps = 1e-12;
   if (std::fabs(den) < eps) return num / (den >= 0.0 ? eps : -eps);
@@ -306,21 +305,22 @@ double GE_model_BSA(double phi, double ALU,
   return GE_safe_div(num, den);
 }
 
-// TSA with tangential-polarization leakage term
-double GE_model_TSA_with_sTG(double phi, double AUL, double AUL2, double Atg, double sTG,
+// TSA with tangential-polarization leakage term (A_T-UL)
+double GE_model_TSA_with_sTG(double phi, double AUL, double AUL2, double A_T_UL, double sTG,
                              double B_UUcos, double C_UUcos2) {
   const double den = GE_den(phi, B_UUcos, C_UUcos2);
-  const double num = (AUL  * std::sin(phi))
-                   + (AUL2 * std::sin(2.0 * phi))
-                   + (Atg  * sTG * std::sin(phi)); // no depol factor
+  const double num = (AUL    * std::sin(phi))
+                   + (AUL2   * std::sin(2.0 * phi))
+                   + (A_T_UL * sTG * std::sin(phi)); // no depol factor
   return GE_safe_div(num, den);
 }
 
-// DSA
-double GE_model_DSA(double phi, double ALL, double ALL2,
-                    double B_UUcos, double C_UUcos2) {
+// DSA with tangential-polarization leakage term (A_T-LL)
+double GE_model_DSA_with_sTG(double phi, double ALL, double ALLcos, double A_T_LL, double sTG,
+                             double B_UUcos, double C_UUcos2) {
   const double den = GE_den(phi, B_UUcos, C_UUcos2);
-  const double num = ALL + ALL2 * std::cos(phi);
+  const double num = (ALL + ALLcos * std::cos(phi))
+                   + (A_T_LL * sTG * std::sin(phi)); // no depol factor
   return GE_safe_div(num, den);
 }
 
@@ -330,7 +330,7 @@ double BSA_general_exclusive_TF1(double* x, double* par) {
   return GE_model_BSA(x[0], par[0], par[1], par[2]);
 }
 
-// TSA params: [0]=AUL, [1]=AUL2, [2]=Atg, [3]=(IGNORED), [4]=B, [5]=C
+// TSA params: [0]=AUL, [1]=AUL2, [2]=A_T_UL, [3]=(IGNORED), [4]=B, [5]=C
 // NOTE: For overlays only. The leakage uses *centered* ⟨sinθγ⟩ per φ-bin,
 // which is injected inside the fit (not via a constant TF1 param). We therefore
 // set sTG=0 here to avoid re-introducing a constant-degenerate term.
@@ -338,9 +338,10 @@ double TSA_general_exclusive_TF1(double* x, double* par) {
   return GE_model_TSA_with_sTG(x[0], par[0], par[1], par[2], 0.0, par[4], par[5]);
 }
 
-// DSA params: [0]=ALL, [1]=ALL2, [2]=B, [3]=C
+// DSA params: [0]=ALL, [1]=ALLcos, [2]=A_T_LL, [3]=(IGNORED), [4]=B, [5]=C
+// Same logic as TSA: set sTG=0 in overlays; the per-bin centered ⟨sinθγ⟩ is used in the fit.
 double DSA_general_exclusive_TF1(double* x, double* par) {
-  return GE_model_DSA(x[0], par[0], par[1], par[2], par[3]);
+  return GE_model_DSA_with_sTG(x[0], par[0], par[1], par[2], 0.0, par[4], par[5]);
 }
 
 /******** VALUE CALCULATIONS ********/
