@@ -3899,16 +3899,18 @@ static void plotHistogramAndFit_GeneralExclusive(
 
 // ─────────────────────────────────────────────────────────────────────
 // Driver: simultaneous fits per bin (11 parameters)
+// Writes arrays, covariance/correlation, and LaTeX table with
+// [min, mean, max] for Q2, x, y, z, t′
 // ─────────────────────────────────────────────────────────────────────
 void performChi2Fits_GeneralExclusive(const char* output_file,
                                       const char* kinematic_file,
                                       const char* kinematicPlot_file,
                                       const std::string& prefix) {
   // Control the leakage fits here (global switches)
-  g_fit_enable_TUL = true;   // set false to disable fitting A_T-UL
-  g_fit_enable_TLL = true;   // set false to disable fitting A_T-LL
-  g_fit_fixed_AT_UL = 0.0;
-  g_fit_fixed_AT_LL = 0.0;
+  g_fit_enable_TUL   = true;   // set false to disable fitting A_T-UL
+  g_fit_enable_TLL   = true;   // set false to disable fitting A_T-LL
+  g_fit_fixed_AT_UL  = 0.0;
+  g_fit_fixed_AT_LL  = 0.0;
 
   // Prepare output streams (added A_T_UL and A_T_LL arrays)
   std::ostringstream sALUoff, sAULoff, sALU, sAUL, sAUL2, sAT_UL, sALL, sALLc, sAUUc, sAUUc2, sAT_LL;
@@ -3951,9 +3953,9 @@ void performChi2Fits_GeneralExclusive(const char* output_file,
     }
     return base;
   };
-  const std::string suffix = deriveSuffixFromOut(output_file);
-  const std::string covPath  = "output/results/GE_" + prefix + "_cov_"  + suffix + ".txt";
-  const std::string corrPath = "output/results/GE_" + prefix + "_corr_" + suffix + ".txt";
+  const std::string suffix  = deriveSuffixFromOut(output_file);
+  const std::string covPath = "output/results/GE_" + prefix + "_cov_"  + suffix + ".txt";
+  const std::string corPath = "output/results/GE_" + prefix + "_corr_" + suffix + ".txt";
 
   // Parameter names/order (11 total)
   const int npar = 11;
@@ -3977,7 +3979,7 @@ void performChi2Fits_GeneralExclusive(const char* output_file,
     std::tie(hALU, hAUL, hALL) =
       createHistogramForBin_GeneralExclusive(hname, (int)i, prefix);
 
-    // ---- Mean & range kinematics (UPDATED to track min/mean/max for Q2,x,y,z,t′) ----
+    // ---- Mean & range kinematics (track min/mean/max for Q2,x,y,z,t′) ----
     double sumQ2=0, sumW=0, sumx=0, sumy=0, sumz=0, sumt=0, sumtmin=0, sumVar=0, nEvt=0;
 
     // Ranges
@@ -3993,7 +3995,7 @@ void performChi2Fits_GeneralExclusive(const char* output_file,
       TTreeReaderValue<double> W (dataReader,"W");
       TTreeReaderValue<double> x (dataReader,"x");
       TTreeReaderValue<double> y (dataReader,"y");
-      TTreeReaderValue<double> z (dataReader,"z");          // NEW
+      TTreeReaderValue<double> z (dataReader,"z");
       TTreeReaderValue<double> t (dataReader,"t");
       TTreeReaderValue<double> tmin(dataReader,"tmin");
       TTreeReaderValue<double> DepA(dataReader,"DepA");
@@ -4033,17 +4035,17 @@ void performChi2Fits_GeneralExclusive(const char* output_file,
     const double meanW    = (nEvt>0)? sumW/nEvt   : 0.0;
     const double meanx    = (nEvt>0)? sumx/nEvt   : 0.0;
     const double meany    = (nEvt>0)? sumy/nEvt   : 0.0;
-    const double meanz    = (nEvt>0)? sumz/nEvt   : 0.0;    // NEW
+    const double meanz    = (nEvt>0)? sumz/nEvt   : 0.0;
     const double meant    = (nEvt>0)? sumt/nEvt   : 0.0;
     const double meantmin = (nEvt>0)? sumtmin/nEvt: 0.0;
-    const double meantp   = (nEvt>0)? sumtp/nEvt  : 0.0;    // NEW (t′ mean)
+    const double meantp   = (nEvt>0)? sumtp/nEvt  : 0.0;
 
     // If no events, make ranges [0,0,0]
     if (nEvt == 0) {
       q2min=q2max=0.0; xmin=xmax=0.0; ymin=ymax=0.0; zmin=zmax=0.0; tpmin=tpmax=0.0;
     }
 
-    // Depolarization ratios (unchanged)
+    // Depolarization ratios (second pass; unchanged logic)
     double sumDepA=0, sumDepB=0, sumDepC=0, sumDepV=0, sumDepW=0;
     {
       TTreeReaderValue<double> DepA(dataReader,"DepA");
@@ -4148,11 +4150,136 @@ void performChi2Fits_GeneralExclusive(const char* output_file,
                                          (int)i, prefix, suffix,
                                          chi2_global, ndf_global);
 
-    // Append to arrays
+    // Append to arrays (write ALL columns you opened above)
     sALUoff << "{" << meanVar << ", " << pval[0]   << ", " << perr[0]   << "}";
     sAULoff << "{" << meanVar << ", " << pval[1]   << ", " << perr[1]   << "}";
     sALU    << "{" << meanVar << ", " << pval[2]   << ", " << perr[2]   << "}";
     sAUL    << "{" << meanVar << ", " << pval[3]   << ", " << perr[3]   << "}";
+    sAUL2   << "{" << meanVar << ", " << pval[4]   << ", " << perr[4]   << "}";
+    sALL    << "{" << meanVar << ", " << pval[5]   << ", " << perr[5]   << "}";
+    sALLc   << "{" << meanVar << ", " << pval[6]   << ", " << perr[6]   << "}";
+    sAUUc   << "{" << meanVar << ", " << pval[7]   << ", " << perr[7]   << "}";
+    sAUUc2  << "{" << meanVar << ", " << pval[8]   << ", " << perr[8]   << "}";
+    sAT_UL  << "{" << meanVar << ", " << pval[9]   << ", " << perr[9]   << "}";
+    sAT_LL  << "{" << meanVar << ", " << pval[10]  << ", " << perr[10]  << "}";
+
+    // Add separators if not the last bin
+    if (i < numBins - 1) {
+      sALUoff << ", "; sAULoff << ", "; sALU << ", "; sAUL << ", "; sAUL2 << ", ";
+      sALL << ", "; sALLc << ", "; sAUUc << ", "; sAUUc2 << ", ";
+      sAT_UL << ", "; sAT_LL << ", ";
+    }
+
+    // LaTeX row (ranges [min, mean, max] for Q2, x, y, z, t′)
+    kinLatex << std::fixed << std::setprecision(3)
+             << (i+1) << " ~&~ "
+             << "[" << q2min << ", " << meanQ2 << ", " << q2max << "] ~&~ "
+             << "[" << xmin  << ", " << meanx  << ", " << xmax  << "] ~&~ "
+             << "[" << ymin  << ", " << meany  << ", " << ymax  << "] ~&~ "
+             << "[" << zmin  << ", " << meanz  << ", " << zmax  << "] ~&~ "
+             << "[" << tpmin << ", " << meantp << ", " << tpmax << "]"
+             << " \\\\ \\hline ";
+
+    // (Optional) keep your compact kinList line if other scripts use it
+    kinList << "{" << meanQ2 << ", " << meanW << ", " << meanx << ", "
+            << meany << ", " << meant << ", " << meantmin << "}";
+    if (i < numBins - 1) kinList << ", ";
+
+    // Save covariance/correlation blocks
+    std::vector<double> cov(npar*npar, 0.0);
+    minuit.mnemat(cov.data(), npar);
+
+    std::vector<double> errv(npar);
+    for (int ip=0; ip<npar; ++ip) errv[ip] = std::sqrt(std::max(cov[ip*npar+ip], 0.0));
+
+    const double vminB = allBins[currentFits][i];
+    const double vmaxB = allBins[currentFits][i+1];
+
+    {
+      std::ofstream of(covPath, std::ios::out | std::ios::app);
+      of << std::setprecision(9);
+      of << "## Bin " << i << "  Range: [" << vminB << ", " << vmaxB << ")  Events: " << nEvt
+         << "  npts=" << npts_total << "  npar=" << npar << "  ndf=" << ndf_global
+         << "  chi2=" << chi2_global << "\n";
+      of << std::left << std::setw(22) << "#";
+      for (int c=0;c<npar;++c) of << std::setw(22) << names[c];
+      of << "\n";
+      for (int r=0; r<npar; ++r) {
+        of << std::left << std::setw(22) << names[r];
+        for (int c=0; c<npar; ++c) of << std::setw(22) << cov[r*npar + c];
+        of << "\n";
+      }
+      of << "\n";
+    }
+    {
+      std::ofstream of(corPath, std::ios::out | std::ios::app);
+      of << std::setprecision(9);
+      of << "## Bin " << i << "  Range: [" << vminB << ", " << vmaxB << ")  Events: " << nEvt << "\n";
+      of << std::left << std::setw(22) << "#";
+      for (int c=0;c<npar;++c) of << std::setw(22) << names[c];
+      of << "\n";
+      for (int r=0; r<npar; ++r) {
+        of << std::left << std::setw(22) << names[r];
+        for (int c=0; c<npar; ++c) {
+          double denom = (errv[r]>0 && errv[c]>0) ? (errv[r]*errv[c]) : 1.0;
+          double rho = cov[r*npar + c] / denom;
+          of << std::setw(22) << rho;
+        }
+        of << "\n";
+      }
+      of << "\n";
+    }
+
+    delete hALU; delete hAUL; delete hALL;
+  }
+
+  // ---- finalize the streams ----
+  sALUoff << "};"; sAULoff << "};"; sALU << "};"; sAUL << "};";
+  sAUL2   << "};"; sALL    << "};"; sALLc << "};"; sAUUc << "};"; sAUUc2 << "};";
+  sAT_UL  << "};"; sAT_LL  << "};";
+
+  kinLatex << "\\end{tabular}\n"
+           << "\\caption{Kinematic ranges $[\\min,\\,\\mathrm{mean},\\,\\max]$ per bin for the simultaneous BSA/TSA/DSA "
+           << "(GeneralExclusive) fit vs $" << prefix << "$.}\n"
+           << "\\label{table:GE_kinematics_" << prefix << "}\n"
+           << "\\end{table}\n\n\n";
+  kinList << "};";
+
+  // ---- ensure parent dirs exist (mkdir -p style) ----
+  auto ensure_dir = [](const std::string& path){
+    auto pos = path.find_last_of("/\\");
+    if (pos == std::string::npos) return;
+    std::string dir = path.substr(0,pos);
+    if (!dir.empty()) gSystem->mkdir(dir.c_str(), kTRUE);
+  };
+  ensure_dir(output_file);
+  ensure_dir(kinematic_file);
+  ensure_dir(kinematicPlot_file);
+
+  // ---- write the outputs ----
+  {
+    std::ofstream out(output_file, std::ios::app);
+    out << sALUoff.str() << "\n"
+        << sAULoff.str() << "\n"
+        << sALU.str()    << "\n"
+        << sAUL.str()    << "\n"
+        << sAUL2.str()   << "\n"
+        << sAT_UL.str()  << "\n"
+        << sALL.str()    << "\n"
+        << sALLc.str()   << "\n"
+        << sAUUc.str()   << "\n"
+        << sAUUc2.str()  << "\n"
+        << sAT_LL.str()  << "\n";
+  }
+
+  {
+    std::ofstream kf(kinematic_file, std::ios::app);
+    kf << kinLatex.str() << std::endl;
+  }
+
+  {
+    std::ofstream kp(kinematicPlot_file, std::ios::app);
+    kp << kinList.str() << "\n";
   }
 }
 // ===================== GeneralExclusive (end) =====================
