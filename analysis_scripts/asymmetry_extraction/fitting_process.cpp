@@ -4415,9 +4415,7 @@ void performChi2Fits_GeneralExclusive(const char* output_file,
     // Footer
     out << "\\end{tabular}\n"
         << "\\caption{Fitted structure-function ratios per bin. Entries are "
-           "$\\text{value}^{\\pm\\,\\text{stat}}_{\\pm\\,\\text{syst}}$ for published quantities "
-           "(6\\% beam-spin; 8\\% target-spin; 10\\% double-spin). "
-           "Unpolarized $\\cos\\phi$ modulations and $A_{T}$ leakages are shown with statistical uncertainties only.}\n"
+           "$\\text{value}^{\\pm\\,\\text{stat}}_{\\pm\\,\\text{syst}}$."
         << "\\label{table:GE_fitresults_" << varToken << "}\n"
         << "\\end{table}\n";
     out.close();
