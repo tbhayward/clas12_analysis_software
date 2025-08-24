@@ -3908,10 +3908,21 @@ static void plotHistogramAndFit_GeneralExclusive(
 // ─────────────────────────────────────────────────────────────────────
 // Driver: simultaneous fits per bin (11 parameters)
 // ─────────────────────────────────────────────────────────────────────
+// Toggle whether to print all results (UU terms + leakages) or only spin-dependent SF ratios
+static bool g_ge_write_all_results = true;  
+// true = print everything; false = only FLU, FUL(sin,sin2), ALL, ALLcos
+// ─────────────────────────────────────────────────────────────────────
+// Driver: simultaneous fits per bin (11 parameters)
+// ─────────────────────────────────────────────────────────────────────
 void performChi2Fits_GeneralExclusive(const char* output_file,
                                       const char* kinematic_file,
                                       const char* kinematicPlot_file,
                                       const std::string& prefix) {
+  // === PRINT SWITCH for the fit-results LaTeX table ============================
+  // If true  -> print everything (spin-dependent + UU terms + A_T leakages)
+  // If false -> print only spin-dependent SF ratios: FLU^sin, FUL^sin, FUL^sin2, ALL, ALL^cos
+  static bool g_ge_write_all_results = true;  // move to file scope if you prefer
+
   // Control the leakage fits here (global switches)
   g_fit_enable_TUL = true;   // set false to disable fitting A_T-UL
   g_fit_enable_TLL = true;   // set false to disable fitting A_T-LL
@@ -3962,6 +3973,12 @@ void performChi2Fits_GeneralExclusive(const char* output_file,
   const std::string suffix = deriveSuffixFromOut(output_file);
   const std::string covPath  = "output/results/GE_" + prefix + "_cov_"  + suffix + ".txt";
   const std::string corrPath = "output/results/GE_" + prefix + "_corr_" + suffix + ".txt";
+
+  // ====== Containers to write the *fit-results* LaTeX table after the loop ====
+  // Per-bin mean of the fit variable, and the 11 fitted parameters & errors
+  std::vector<double> meanVars;
+  std::vector<std::vector<double>> all_pvals;  // [bin][0..10]
+  std::vector<std::vector<double>> all_perrs;  // [bin][0..10]
 
   // Parameter names/order (11 total)
   const int npar = 11;
@@ -4165,7 +4182,7 @@ void performChi2Fits_GeneralExclusive(const char* output_file,
                                          (int)i, prefix, suffix,
                                          chi2_global, ndf_global);
 
-    // Append to arrays
+    // Append to arrays (asymmetry outputs)
     sALUoff << "{" << meanVar << ", " << pval[0]   << ", " << perr[0]   << "}";
     sAULoff << "{" << meanVar << ", " << pval[1]   << ", " << perr[1]   << "}";
     sALU    << "{" << meanVar << ", " << pval[2]   << ", " << perr[2]   << "}";
@@ -4177,6 +4194,15 @@ void performChi2Fits_GeneralExclusive(const char* output_file,
     sAUUc2  << "{" << meanVar << ", " << pval[8]   << ", " << perr[8]   << "}";
     sAT_UL  << "{" << meanVar << ", " << pval[9]   << ", " << perr[9]   << "}";
     sAT_LL  << "{" << meanVar << ", " << pval[10]  << ", " << perr[10]  << "}";
+
+    // Collect for the *fit-results* LaTeX table
+    meanVars.push_back(meanVar);
+    {
+      std::vector<double> pv(11), pe(11);
+      for (int k=0;k<11;++k){ pv[k]=pval[k]; pe[k]=perr[k]; }
+      all_pvals.push_back(std::move(pv));
+      all_perrs.push_back(std::move(pe));
+    }
 
     if (i < numBins - 1) {
       sALUoff << ", "; sAULoff << ", "; sALU << ", "; sAUL << ", "; sAUL2 << ", ";
@@ -4237,12 +4263,13 @@ void performChi2Fits_GeneralExclusive(const char* output_file,
       for (int c=0;c<npar;++c) of << std::setw(22) << names[c];
       of << "\n";
       for (int r=0; r<npar; ++r) {
-        of << std::left << std::setw(22) << names[r];
+        std::ofstream::fmtflags f = of.flags();
         for (int c=0; c<npar; ++c) {
           double denom = (errv[r]>0 && errv[c]>0) ? (errv[r]*errv[c]) : 1.0;
           double rho = cov[r*npar + c] / denom;
           of << std::setw(22) << rho;
         }
+        of.flags(f);
         of << "\n";
       }
       of << "\n";
@@ -4271,7 +4298,7 @@ void performChi2Fits_GeneralExclusive(const char* output_file,
     out << sAT_LL.str()  << "\n";   // DSA leakage amplitude (centered/σ)
   }
 
-  // Finish LaTeX table & kinematics list
+  // Finish LaTeX kinematics table & kinematics list
   kinLatex << "\\end{tabular}\n"
            << "\\caption{Per-bin kinematics shown as [min, mean, max] for $Q^{2}$, $x_{B}$, $y$, $z$, and $-t'$. "
            << "$Q^{2}$ and $-t'$ are in GeV$^{2}$.}\n"
@@ -4286,6 +4313,90 @@ void performChi2Fits_GeneralExclusive(const char* output_file,
   {
     std::ofstream kp(kinematicPlot_file, std::ios::app);
     kp << kinList.str() << "\n";
+  }
+
+  // =================================================================
+  // Write the *fit-results* LaTeX table (in this function, no helpers)
+  // =================================================================
+  {
+    // Column spec for spin-dependent only
+    struct Col { int idx; const char* label; double sysFrac; };
+    std::vector<Col> cols_spin = {
+      { 2, "$F_{LU}^{\\sin\\phi}/F_{UU}$",           0.06 }, // BSA
+      { 3, "$F_{UL}^{\\sin\\phi}/F_{UU}$",           0.08 }, // TSA
+      { 4, "$F_{UL}^{\\sin2\\phi}/F_{UU}$",          0.08 }, // TSA
+      { 5, "$F_{LL}/F_{UU}$",                        0.10 }, // DSA
+      { 6, "$F_{LL}^{\\cos\\phi}/F_{UU}$",           0.10 }  // DSA
+    };
+
+    // Full set adds UU terms (0% syst by spec) and leakage amplitudes
+    std::vector<Col> cols_full = cols_spin;
+    cols_full.push_back({ 7, "$F_{UU}^{\\cos\\phi}/F_{UU}$",        0.00 });
+    cols_full.push_back({ 8, "$F_{UU}^{\\cos2\\phi}/F_{UU}$",       0.00 });
+    cols_full.push_back({ 9, "$A_{T\\text{-}UL}^{\\sin\\phi}$",     0.08 });
+    cols_full.push_back({10, "$A_{T\\text{-}LL}^{\\sin\\phi}$",     0.10 });
+
+    const auto& cols = g_ge_write_all_results ? cols_full : cols_spin;
+
+    // Output path similar to others
+    const std::string fitOutPath = "output/results/GE_" + prefix + "_fitResults_" + suffix + ".tex";
+    std::ofstream out(fitOutPath, std::ios::out | std::ios::trunc);
+    if (!out) {
+      std::cerr << "[performChi2Fits_GeneralExclusive] Failed to open " << fitOutPath << " for writing.\n";
+      return;
+    }
+
+    // Helper: value^{±stat}_{±syst}, 3 d.p.
+    auto entry = [](double v, double eStat, double fracSys) {
+      const double eSys = std::fabs(v) * fracSys;
+      std::ostringstream s; s.setf(std::ios::fixed);
+      s << std::setprecision(3)
+        << v
+        << "^{\\pm " << std::setprecision(3) << eStat
+        << "}_{\\pm " << std::setprecision(3) << eSys << "}";
+      return s.str();
+    };
+
+    // Header
+    std::ostringstream header;
+    header << "\\begin{table}[h]\n\\centering\n"
+           << "\\small\n"
+           << "\\begin{tabular}{|c";
+    for (size_t i=0;i<cols.size();++i) header << "|c";
+    header << "|} \\hline\n";
+
+    // First column label = mean of variable being fit
+    std::string varLabel;
+    try { varLabel = "$\\langle " + formatLabelName(prefix) + " \\rangle$"; }
+    catch (...) { varLabel = "$\\langle " + prefix + " \\rangle$"; }
+
+    header << varLabel;
+    for (const auto& c : cols) header << " & " << c.label;
+    header << " \\\\ \\hline\n";
+    out << header.str();
+
+    // Rows
+    for (size_t ib=0; ib<meanVars.size(); ++ib) {
+      std::ostringstream row; row.setf(std::ios::fixed);
+      row << std::setprecision(3) << meanVars[ib];
+      for (const auto& c : cols) {
+        const double v  = all_pvals[ib][c.idx];
+        const double es = all_perrs[ib][c.idx];
+        row << " ~&~ " << entry(v, es, c.sysFrac);
+      }
+      row << " \\\\ \\hline\n";
+      out << row.str();
+    }
+
+    // Footer
+    out << "\\end{tabular}\n"
+        << "\\caption{Fitted structure-function ratios per bin. Entries are "
+           "$\\text{value}^{\\pm\\,\\text{stat}}_{\\pm\\,\\text{syst}}$ with systematics of "
+           "6\\% (beam-spin), 8\\% (target-spin), and 10\\% (double-spin).}\n"
+        << "\\label{table:GE_fitresults_" << prefix << "}\n"
+        << "\\end{table}\n";
+    out.close();
+    std::cout << "Wrote LaTeX fit-results table to: " << fitOutPath << std::endl;
   }
 }
 // ===================== GeneralExclusive (end) =====================
