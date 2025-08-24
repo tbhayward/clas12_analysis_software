@@ -77,11 +77,11 @@ BASELINE = {
         "ALLcosphi": [(-1.143401739, -0.059602085, 0.131024483), (-0.943106811, 0.186490877, 0.081247692), (-0.743168284, -0.087448022, 0.063490157), (-0.542657082, 0.065714180, 0.083686294), (-0.343066681, 0.120575755, 0.055037004), (-0.146475591, -0.068220018, 0.065805684)],
     },
     "enpiHighxBGE": {
-        "ALUsinphi":  [(-1.148136056, 0.123259072, 0.045473892), (-0.940605873, 0.192546170, 0.037625063), (-0.743582384, 0.108707105, 0.027979350), (-0.545134155, 0.140921187, 0.025726207), (-0.344694562, 0.147653457, 0.024371494), (-0.154606995, 0.088855242, 0.024542046)],
-        "AULsinphi":  [(-1.148136056, 0.035018939, 0.024191044), (-0.940605873, 0.071086029, 0.017531539), (-0.743582384, 0.019680690, 0.011976225), (-0.545134155, 0.043826568, 0.008697655), (-0.344694562, 0.037999416, 0.007562220), (-0.154606995, 0.018864879, 0.006714845)],
-        "AULsin2phi":[(-1.148136056, -0.101353388, 0.039162848), (-0.940605873, -0.105407011, 0.032241451), (-0.743582384, -0.090804823, 0.027491246), (-0.545134155, -0.069491095, 0.015018294), (-0.344694562, -0.031692252, 0.016937896), (-0.154606995, -0.004649973, 0.013242145)],
-        "ALL":       [(-1.148136056, 0.385431443, 0.041060002), (-0.940605873, 0.382767045, 0.029537614), (-0.743582384, 0.372971715, 0.025958009), (-0.545134155, 0.394430922, 0.020384190), (-0.344694562, 0.353300656, 0.017192646), (-0.154606995, 0.348621514, 0.017548660)],
-        "ALLcosphi": [(-1.148136056, -0.001961006, 0.198941752), (-0.940605873, -0.091586762, 0.168726135), (-0.743582384, 0.036113153, 0.105770155), (-0.545134155, -0.130013240, 0.136334414), (-0.344694562, 0.113005734, 0.089935684), (-0.154606995, 0.184403332, 0.107910601)],
+        "ALUsinphi":  [(-1.149036134, 0.101467482, 0.042114943), (-0.941349191, 0.169142053, 0.035250993), (-0.744159314, 0.095445198, 0.029983854), (-0.546130452, 0.129338232, 0.025663526), (-0.345640208, 0.175218595, 0.024980652), (-0.154868192, 0.104223534, 0.022114571)],
+        "AULsinphi":  [(-1.149036134, 0.022326582, 0.018548068), (-0.941349191, 0.078891319, 0.012416969), (-0.744159314, 0.045703350, 0.009178631), (-0.546130452, 0.046671193, 0.007589726), (-0.345640208, 0.028525678, 0.008097689), (-0.154868192, 0.020277797, 0.007241523)],
+        "AULsin2phi":[(-1.149036134, -0.082075274, 0.038834747), (-0.941349191, -0.051292702, 0.038035522), (-0.744159314, -0.026709268, 0.020817455), (-0.546130452, -0.053372810, 0.019974131), (-0.345640208, -0.024637582, 0.015737777), (-0.154868192, -0.015887208, 0.015821254)],
+        "ALL":       [(-1.149036134, 0.271264704, 0.058583053), (-0.941349191, 0.356705748, 0.030006669), (-0.744159314, 0.337707640, 0.027168289), (-0.546130452, 0.306339174, 0.020581407), (-0.345640208, 0.323539046, 0.019728841), (-0.154868192, 0.315832905, 0.019233493)],
+        "ALLcosphi": [(-1.149036134, -0.040573205, 0.176071423), (-0.941349191, -0.157000839, 0.103260995), (-0.744159314, -0.267150766, 0.093687145), (-0.546130452, -0.133148899, 0.087532565), (-0.345640208, 0.025877310, 0.100859044), (-0.154868192, 0.097804076, 0.106467239)],
     },
 }
 
@@ -283,10 +283,10 @@ def _draw_delta_dilution(ax, bin_tag, x_ref):
     ax.grid(True, linestyle="--", alpha=0.6)
 
 # ─────────────────────────────────────────────────────────────────────
-# NEW: collectors for |Δ| (with σΔ) for text summary
+# NEW: collectors for signed Δ (with σΔ) for text summary
 # ─────────────────────────────────────────────────────────────────────
-def _collect_abs_delta_sf(bin_tag, series_name):
-    """Return x, |Δ|, σΔ arrays for a structure-function series."""
+def _collect_delta_sf(bin_tag, series_name):
+    """Return x, Δ, σΔ arrays for a structure-function series."""
     b_triples = BASELINE.get(bin_tag, {}).get(series_name)
     i_triples = ISRFSR.get(bin_tag, {}).get(series_name)
     if not b_triples or not i_triples:
@@ -296,10 +296,10 @@ def _collect_abs_delta_sf(bin_tag, series_name):
     n = min(len(xb), len(xi))
     x = xb[:n]
     d, ed = _delta(yb[:n], eb[:n], yi[:n], ei[:n])
-    return x, np.abs(d), ed
+    return x, d, ed
 
-def _collect_abs_delta_dilution(bin_tag, x_ref):
-    """Return x, |Δ|, σΔ for dilution, using provided x reference."""
+def _collect_delta_dilution(bin_tag, x_ref):
+    """Return x, Δ, σΔ for dilution, using provided x reference."""
     db = DILUTION_BASELINE.get(bin_tag)
     di = DILUTION_ISRFSR.get(bin_tag)
     if not db or not di:
@@ -311,13 +311,13 @@ def _collect_abs_delta_dilution(bin_tag, x_ref):
     yb, eb = db[:n, 0], db[:n, 1]
     yi, ei = di[:n, 0], di[:n, 1]
     d, ed = _delta(yb, eb, yi, ei)
-    return x, np.abs(d), ed
+    return x, d, ed
 
-def _write_abs_delta_summary(out_dir, bin_tags):
-    """Write one text file summarizing |Δ| (and σΔ) for all bins/series."""
-    path = os.path.join(out_dir, "ISR_FSR_abs_delta_summary.txt")
+def _write_delta_summary(out_dir, bin_tags):
+    """Write one text file summarizing signed Δ (and σΔ) for all bins/series."""
+    path = os.path.join(out_dir, "ISR_FSR_delta_summary.txt")
     with open(path, "w", encoding="utf-8") as f:
-        f.write("Absolute Δ summary |Δ| = |Baseline − ISR&FSR| with propagated σΔ (uncorrelated)\n")
+        f.write("Signed Δ summary: Δ = Baseline − ISR&FSR with propagated σΔ (uncorrelated)\n")
         f.write("Units: -t' in GeV^2\n")
         f.write("=" * 86 + "\n")
 
@@ -341,28 +341,28 @@ def _write_abs_delta_summary(out_dir, bin_tags):
             f.write("-" * 86 + "\n")
 
             # Dilution first
-            dil = _collect_abs_delta_dilution(b, x_ref)
+            dil = _collect_delta_dilution(b, x_ref)
             if dil is not None:
-                x, ad, ed = dil
+                x, d, ed = dil
                 f.write(f"Series: {series_order[0][1]}\n")
-                f.write(f"{'-t\'':>8}    {'|Δ|':>12}    {'σΔ':>12}\n")
-                for xi, ai, ei in zip(x, ad, ed):
-                    f.write(f"{xi:8.5f}    {ai:12.6f}    {ei:12.6f}\n")
+                f.write(f"{'-t\'':>8}    {'Δ':>12}    {'σΔ':>12}\n")
+                for xi, di_, ei in zip(x, d, ed):
+                    f.write(f"{xi:8.5f}    {di_:12.6f}    {ei:12.6f}\n")
                 f.write("\n")
 
             # SF series
             for key, label in series_order[1:]:
-                res = _collect_abs_delta_sf(b, key)
+                res = _collect_delta_sf(b, key)
                 if res is None:
                     continue
-                x, ad, ed = res
+                x, d, ed = res
                 f.write(f"Series: {label}\n")
-                f.write(f"{'-t\'':>8}    {'|Δ|':>12}    {'σΔ':>12}\n")
-                for xi, ai, ei in zip(x, ad, ed):
-                    f.write(f"{xi:8.5f}    {ai:12.6f}    {ei:12.6f}\n")
+                f.write(f"{'-t\'':>8}    {'Δ':>12}    {'σΔ':>12}\n")
+                for xi, di_, ei in zip(x, d, ed):
+                    f.write(f"{xi:8.5f}    {di_:12.6f}    {ei:12.6f}\n")
                 f.write("\n")
 
-    print(f"[OK] Wrote |Δ| summary: {path}")
+    print(f"[OK] Wrote Δ summary: {path}")
 
 # ─────────────────────────────────────────────────────────────────────
 # Plotters
@@ -463,8 +463,8 @@ def main():
         plot_bin(b, out_dir)
         plot_bin_delta(b, out_dir)
 
-    # After all figures, write one summary text file with |Δ|
-    _write_abs_delta_summary(out_dir, bin_tags)
+    # After all figures, write one summary text file with signed Δ
+    _write_delta_summary(out_dir, bin_tags)
 
 if __name__ == "__main__":
     main()
