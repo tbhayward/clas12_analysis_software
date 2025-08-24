@@ -209,7 +209,7 @@ def dilution_series(bin_tag, which, x_fallback):
     return x, y, e
 
 def get_bin_title(bin_tag):
-    return r"$ep \rightarrow en\pi^{+}$ — " + XB_LABELS.get(bin_tag, bin_tag) + " — Baseline vs Data-driven ISR \& FSR"
+    return r"$ep \rightarrow en\pi^{+}$ — " + XB_LABELS.get(bin_tag, bin_tag) + " — Baseline vs Data-driven ISR \\& FSR"
 
 def plot_bin(bin_tag, out_dir):
     # Pick x from ALUsinphi of baseline if available, otherwise ISR&FSR
@@ -233,7 +233,7 @@ def plot_bin(bin_tag, out_dir):
             capsize=CAPSIZE, markersize=MS, linestyle="None", label=lab
         )
     # y-limits for dilution: auto with margin
-    ymin, ymax = ax_dil.get_ylim()
+    ymin, ymax = 0.2, 0.5
     pad = 0.05*(ymax - ymin) if ymax > ymin else 0.1
     ax_dil.set(xlim=XLIM_T, xlabel=X_LABEL, ylabel="Dilution factor")
     ax_dil.grid(True, linestyle="--", alpha=0.6)
