@@ -88,7 +88,7 @@ X_LABEL = r"$-t'\ (\mathrm{GeV}^{2})$"
 
 YLIM_LU = (-0.2, 0.2)   # BSA
 YLIM_UL = (-0.2, 0.2)   # TSA
-YLIM_LL = (-0.5, 0.5)   # DSA
+YLIM_LL = (-0.6, 0.6)   # DSA
 YLIM_UU = (-0.4, 0.4)   # UU
 
 # Human-readable labels for xB bins (for legends & titles)
@@ -296,7 +296,7 @@ def make_title(xb_label, with_rad=False):
     """Compose suptitle string."""
     base = r"$ep \rightarrow en\pi^{+}$ — " + xb_label
     if with_rad:
-        return base + r" (with radiative shifts $\,+\Delta$ and bars $\sigma_{\Delta}$ spanning full bins)"
+        return base
     return base
 
 # ─────────────────────────────────────────────────────────────────────
