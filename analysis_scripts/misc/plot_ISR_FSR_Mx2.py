@@ -37,7 +37,7 @@ XB_RANGE     = (0.00, 1.00)
 XB_BINS      = 50
 XB_TARGET    = (0.10, 0.25)
 
-TP_RANGE     = (0.00, 1.30)   # for -t'
+TP_RANGE     = (0.00, 1.25)   # for -t'  (changed from 1.30)
 TP_BINS      = 50
 TP_TARGET    = (0.05, 0.25)   # in -t'
 
@@ -62,7 +62,6 @@ def make_event_map(evnums, xb, tprime, mx2):
     If duplicate evnums exist, the last one wins.
     """
     ev = np.asarray(evnums)
-    # Ensure 1D and integer-like keys
     try:
         keys = ev.astype(np.int64, copy=False)
     except Exception:
@@ -110,7 +109,7 @@ def migrated_baseline_values(basemap, evnums_rad, xb_rad, tprime_rad, mx2_rad,
             if in_rad and (not in_base):
                 acc.append(mtp_b)
         elif which == "mx2":
-            in_rad  = (m2r  > lo) and (m2r  < hi)    # match your open interval
+            in_rad  = (m2r  > lo) and (m2r  < hi)    # open interval for Mx2
             in_base = (mx2_b > lo) and (mx2_b < hi)
             if in_rad and (not in_base):
                 acc.append(mx2_b)
@@ -176,7 +175,9 @@ def main():
         ax_xb.hist(xb_migr, bins=XB_BINS, range=XB_RANGE, **mig_style)
     ax_xb.set_xlabel(r"$x_{B}$")
     ax_xb.set_ylabel("counts")
-    ax_xb.set_title(r"Low $x_{B}$ bin: $0.10\leq x_{B}\leq 0.25$")
+    ax_xb.set_title(r"$x_{B}$ $0.10\leq x_{B}\leq 0.25 migration")
+    ax_xb.set_xlim(*XB_RANGE)
+    ax_xb.margins(x=0)  # no padding beyond edges
     ax_xb.legend(loc="upper right", frameon=True, edgecolor="black")
 
     # Middle: -t'
@@ -186,7 +187,9 @@ def main():
         ax_tp.hist(tp_migr, bins=TP_BINS, range=TP_RANGE, **mig_style)
     ax_tp.set_xlabel(r"$-t'\ (\mathrm{GeV}^{2})$")
     ax_tp.set_ylabel("counts")
-    ax_tp.set_title(r"Low $-t'$ bin: $0.05\leq -t' \leq 0.25$")
+    ax_tp.set_title(r"$-t'$ $0.05\leq -t' \leq 0.25$ migration")
+    ax_tp.set_xlim(*TP_RANGE)
+    ax_tp.margins(x=0)
     ax_tp.legend(loc="upper right", frameon=True, edgecolor="black")
 
     # Right: Mx2
@@ -197,6 +200,8 @@ def main():
     ax_m2.set_xlabel(r"$M_{x}^{2}\ (\mathrm{GeV}^{2})$")
     ax_m2.set_ylabel("counts")
     ax_m2.set_title(r"$0.81<M_{x}^{2}<1.00$ migration")
+    ax_m2.set_xlim(*MX2_RANGE)
+    ax_m2.margins(x=0)
     ax_m2.legend(loc="upper right", frameon=True, edgecolor="black")
 
     fig.tight_layout()
