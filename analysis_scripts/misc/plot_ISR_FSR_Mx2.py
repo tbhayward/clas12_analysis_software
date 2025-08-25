@@ -7,7 +7,7 @@ Compare baseline vs simulated ISR+FSR for three observables on a 1x3 canvas:
   [Right]  Mx2 (branch: 'Mx2'), migration INTO (0.81, 1.00)
 
 "Migration" means: events that were OUTSIDE the target range in the baseline file,
-but INSIDE the target range in the ISR+FSR file (matched by 'evnnum').
+but INSIDE the target range in the ISR+FSR file (matched by 'evnum').
 Those baseline values are drawn as a thin dashed gray histogram.
 
 Usage:
@@ -58,8 +58,8 @@ def load_branches(root_path, branches):
 
 def make_event_map(evnums, xb, tprime, mx2):
     """
-    Build a map: evnnum -> (xb, minus_tprime, mx2).
-    If duplicate evnnums exist, the last one wins.
+    Build a map: evnum -> (xb, minus_tprime, mx2).
+    If duplicate evnums exist, the last one wins.
     """
     ev = np.asarray(evnums)
     # Ensure 1D and integer-like keys
@@ -80,7 +80,7 @@ def migrated_baseline_values(basemap, evnums_rad, xb_rad, tprime_rad, mx2_rad,
                              which="xb", target=(0,1)):
     """
     Identify baseline values for events that were OUTSIDE the target range in baseline
-    but INSIDE in the ISR+FSR sample, matched by evnnum.
+    but INSIDE in the ISR+FSR sample, matched by evnum.
 
     which: "xb", "tprime" (interpreted as -t'), or "mx2"
     Returns: np.array of the *baseline* observable values for migrated events.
@@ -133,12 +133,12 @@ def main():
         sys.exit(1)
 
     # Load minimal branches
-    branches = ["evnnum", "x", "tprime", "Mx2"]
+    branches = ["evnum", "x", "tprime", "Mx2"]
     base = load_branches(base_path, branches)
     rad  = load_branches(rad_path,  branches)
 
     # Build baseline map for matching
-    base_map = make_event_map(base["evnnum"], base["x"], base["tprime"], base["Mx2"])
+    base_map = make_event_map(base["evnum"], base["x"], base["tprime"], base["Mx2"])
 
     # Prepare arrays to histogram
     xb_base = np.asarray(base["x"], dtype=float)
@@ -151,11 +151,11 @@ def main():
     mx2_rad  = np.asarray(rad["Mx2"], dtype=float)
 
     # Migration selections (baseline values of events that 'moved in' under ISR+FSR)
-    xb_migr = migrated_baseline_values(base_map, rad["evnnum"], rad["x"], rad["tprime"], rad["Mx2"],
+    xb_migr = migrated_baseline_values(base_map, rad["evnum"], rad["x"], rad["tprime"], rad["Mx2"],
                                        which="xb",     target=XB_TARGET)
-    tp_migr = migrated_baseline_values(base_map, rad["evnnum"], rad["x"], rad["tprime"], rad["Mx2"],
+    tp_migr = migrated_baseline_values(base_map, rad["evnum"], rad["x"], rad["tprime"], rad["Mx2"],
                                        which="tprime", target=TP_TARGET)
-    m2_migr = migrated_baseline_values(base_map, rad["evnnum"], rad["x"], rad["tprime"], rad["Mx2"],
+    m2_migr = migrated_baseline_values(base_map, rad["evnum"], rad["x"], rad["tprime"], rad["Mx2"],
                                        which="mx2",    target=MX2_TARGET)
 
     # Plotting
