@@ -30,21 +30,21 @@ except ImportError as e:
 
 
 def load_mx2_evnnum(root_path: str, tree_name: str = "PhysicsEvents") -> Tuple[np.ndarray, np.ndarray]:
-    """Load Mx2 and evnnum arrays from a ROOT file's TTree."""
+    """Load Mx2 and evnum arrays from a ROOT file's TTree."""
     with uproot.open(root_path) as f:
         if tree_name not in f:
             raise KeyError(f'Tree "{tree_name}" not found in file: {root_path}')
         tree = f[tree_name]
         # Read as numpy arrays
-        arrs = tree.arrays(["Mx2", "evnnum"], library="np")
-        if "Mx2" not in arrs or "evnnum" not in arrs:
-            raise KeyError('Branches "Mx2" and/or "evnnum" not found in tree.')
+        arrs = tree.arrays(["Mx2", "evnum"], library="np")
+        if "Mx2" not in arrs or "evnum" not in arrs:
+            raise KeyError('Branches "Mx2" and/or "evnum" not found in tree.')
         mx2 = np.asarray(arrs["Mx2"]).ravel()
-        evn = np.asarray(arrs["evnnum"]).ravel()
-        # Some branches might be floats; cast evnnum to integers for matching
+        evn = np.asarray(arrs["evnum"]).ravel()
+        # Some branches might be floats; cast evnum to integers for matching
         # but keep original ordering/length for one-to-one matching by index.
         # We'll match using np.isin, so casting is fine.
-        # If evnnum is very large, use int64.
+        # If evnum is very large, use int64.
         if not np.issubdtype(evn.dtype, np.integer):
             evn = evn.astype(np.int64, copy=False)
         return mx2, evn
