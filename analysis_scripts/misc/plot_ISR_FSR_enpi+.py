@@ -324,7 +324,7 @@ def dilution_series(bin_tag, which, x_fallback):
     return x, y, e
 
 def get_bin_title(bin_tag):
-    return r"$ep \rightarrow en\pi^{+}$ — " + XB_LABELS.get(bin_tag, bin_tag) + " — Baseline vs Data-driven ISR \\& FSR"
+    return r"$ep \rightarrow en\pi^{+}$ — " + XB_LABELS.get(bin_tag, bin_tag) 
 
 # =========
 # Plotters
