@@ -90,7 +90,7 @@ def main() -> None:
     data_migrated_baseline = mx2_base[migrated_on_baseline_mask]
 
     # Histogram config
-    x_min, x_max = 0.0, 2.6
+    x_min, x_max = 0.0, 5
     bins = np.linspace(x_min, x_max, args.bins + 1)
 
     # Plot
