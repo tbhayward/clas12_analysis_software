@@ -176,7 +176,7 @@ def main():
         ax_xb.hist(xb_migr, bins=XB_BINS, range=XB_RANGE, **mig_style)
     ax_xb.set_xlabel(r"$x_{B}$")
     ax_xb.set_ylabel("counts")
-    ax_xb.set_title(r"Low $x_{B}$ bin: $0.10\le x_{B}\le0.25$")
+    ax_xb.set_title(r"Low $x_{B}$ bin: $0.10\leq x_{B}\leq 0.25$")
     ax_xb.legend(loc="upper right", frameon=True, edgecolor="black")
 
     # Middle: -t'
@@ -186,7 +186,7 @@ def main():
         ax_tp.hist(tp_migr, bins=TP_BINS, range=TP_RANGE, **mig_style)
     ax_tp.set_xlabel(r"$-t'\ (\mathrm{GeV}^{2})$")
     ax_tp.set_ylabel("counts")
-    ax_tp.set_title(r"Low $-t'$ bin: $0.05\le -t' \le 0.25$")
+    ax_tp.set_title(r"Low $-t'$ bin: $0.05\leq -t' \leq 0.25$")
     ax_tp.legend(loc="upper right", frameon=True, edgecolor="black")
 
     # Right: Mx2
