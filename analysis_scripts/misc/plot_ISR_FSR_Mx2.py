@@ -175,7 +175,7 @@ def main():
         ax_xb.hist(xb_migr, bins=XB_BINS, range=XB_RANGE, **mig_style)
     ax_xb.set_xlabel(r"$x_{B}$")
     ax_xb.set_ylabel("counts")
-    ax_xb.set_title(r"$x_{B}$ $0.10\leq x_{B}\leq 0.25 migration")
+    ax_xb.set_title(r"$x_{B}$ $0.10\leq x_{B}\leq 0.25$ migration")
     ax_xb.set_xlim(*XB_RANGE)
     ax_xb.margins(x=0)  # no padding beyond edges
     ax_xb.legend(loc="upper right", frameon=True, edgecolor="black")
