@@ -12,7 +12,6 @@ Outputs (for each available xB bin):
   output/enpi+/rgc_enpi_<BinTag>_CombinedOnly.pdf
 
 If --rad is provided, also:
-  output/enpi+/rgc_enpi_<BinTag>_AllPeriods_withRad.pdf
   output/enpi+/rgc_enpi_<BinTag>_CombinedOnly_withRad.pdf
 
 Overlay (Combined-only, 1×3):
@@ -26,6 +25,13 @@ Notes:
 - With --rad, the central values are shifted by the **signed** Δ from the summary;
   stat errors remain unchanged. σΔ is shown as a shaded "systematic" rectangle
   from y=0 to y=σΔ at each x. (We deliberately do not center the band on the point.)
+- Systematic-band widths are fixed so bars **touch**:
+    * enpiGE (integrated): width = 0.10 in -t'
+    * xB sub-bins:        width = 0.20 in -t'
+- TSA systematics use only F_{UL}^{sinφ}; sin2φ systematics are ignored.
+- DSA systematics use only F_{LL}; F_{LL}^{cosφ} systematics are ignored.
+- On the 1×3 overlay, systematic bands (if --rad) are taken **only** from the
+  lowest xB bin (enpiLowxBGE).
 """
 
 import sys
@@ -92,7 +98,7 @@ BIN_ORDER = ["enpiLowxBGE", "enpiMidLowxBGE", "enpiMidHighxBGE", "enpiHighxBGE",
 TOP_PAD_PER_BIN = 0.95   # for 2×2 canvases with a suptitle
 TOP_PAD_OVERLAY = 0.94   # for 1×3 overlay (no visible title)
 
-# Output prefix constant (we dropped the old free-form args)
+# Output prefix constant
 OUT_PREFIX = "enpi"
 
 # ─────────────────────────────────────────────────────────────────────
@@ -297,11 +303,21 @@ def _legend_harmonic(ax, labels=("n=1","n=2"), where="lower left"):
                     bbox_to_anchor=(0.02, 0.02), fontsize=11, title_fontsize=12)
     ax.add_artist(leg)
 
-def _draw_sys_bands(ax, x, sigma, facecolor="0.7", alpha=0.4, zorder=1, width_fraction=0.8):
+def _bin_sys_width(bin_tag: str) -> float:
     """
-    Draw classic 'systematic' rectangles for each x-bin:
-      rectangle spans [x - w/2, x + w/2] in x,
+    Fixed systematic-band width (so bars touch):
+      - enpiGE (integrated): 0.10
+      - all xB sub-bins:     0.20
+    """
+    return 0.10 if bin_tag == "enpiGE" else 0.20
+
+def _draw_sys_bands(ax, x, sigma, *, bin_width=None, facecolor="0.7", alpha=0.4, zorder=1):
+    """
+    Draw 'systematic' rectangles for each x-bin:
+      rectangle spans [x - bin_width/2, x + bin_width/2] in x,
       and [0, sigma] in y (not centered at the point).
+
+    If bin_width is None, a small fallback width is used (not recommended).
     """
     if x is None or sigma is None:
         return
@@ -310,35 +326,18 @@ def _draw_sys_bands(ax, x, sigma, facecolor="0.7", alpha=0.4, zorder=1, width_fr
     if x.size == 0 or sigma.size == 0:
         return
 
-    # Estimate a sensible width per bin from neighbor spacing
-    # w_i = width_fraction * min(delta_left, delta_right)
-    xs = np.sort(x)
-    # map from value to width; handle possible duplicate or unsorted inputs robustly
-    widths = {}
-    for idx, xv in enumerate(xs):
-        if xs.size == 1:
-            w = 0.05  # fallback
-        elif idx == 0:
-            w = width_fraction * (xs[1] - xs[0])
-        elif idx == xs.size - 1:
-            w = width_fraction * (xs[-1] - xs[-2])
-        else:
-            dl = xs[idx]   - xs[idx-1]
-            dr = xs[idx+1] - xs[idx]
-            w = width_fraction * min(dl, dr)
-        widths[xv] = max(w, 0.01)  # avoid vanishing width
+    w = 0.05 if (bin_width is None or bin_width <= 0) else float(bin_width)
 
     for xv, sv in zip(x, sigma):
         if not np.isfinite(xv) or not np.isfinite(sv):
             continue
-        w = widths.get(xv, 0.05)
         rect = Rectangle((xv - 0.5*w, 0.0), w, sv, facecolor=facecolor, edgecolor=None,
                          alpha=alpha, zorder=zorder)
         ax.add_patch(rect)
 
-def _apply_shift_if_available(series, rad_entry, tol=1e-4):
+def _apply_shift_if_available(series, rad_entry):
     """
-    If rad_entry exists, align by x and return shifted y (y + Δ) and σ arrays.
+    Align by **index order** (no nearest-neighbor matching).
     Returns (x, y_shift, yerr, sigma_rad) or (x, y, yerr, None) if no rad_entry.
     """
     if series is None:
@@ -348,36 +347,34 @@ def _apply_shift_if_available(series, rad_entry, tol=1e-4):
     if rad_entry is None:
         return x, y, yerr, None
 
-    xr = rad_entry["x"]
-    dr = rad_entry["delta"]
-    sr = rad_entry["sigma"]
+    xr = np.asarray(rad_entry["x"])
+    dr = np.asarray(rad_entry["delta"])
+    sr = np.asarray(rad_entry["sigma"])
 
-    # If lengths match and x are close in order, pair by index
-    if len(x) == len(xr) and np.allclose(x, xr, atol=tol, rtol=0):
-        y_shift = y + dr
-        return x, y_shift, yerr, sr
-
-    # Otherwise, nearest-neighbor match each x to xr
-    y_shift = np.copy(y)
+    n = min(len(x), len(xr), len(dr), len(sr))
+    if n == 0:
+        return x, y, yerr, None
+    if len(x) != len(xr):
+        print(f"[WARN] Δ length ({len(xr)}) != data length ({len(x)}); pairing by index up to {n}.")
+    y_shift = y.copy()
+    y_shift[:n] = y_shift[:n] + dr[:n]
     sigma_out = np.full_like(y, np.nan, dtype=float)
-    for i, xv in enumerate(x):
-        j = np.argmin(np.abs(xr - xv))
-        if abs(xr[j] - xv) <= tol:
-            y_shift[i] = y[i] + dr[j]
-            sigma_out[i] = sr[j]
-        else:
-            # no match within tol: leave unshifted and NaN sigma
-            y_shift[i] = y[i]
-            sigma_out[i] = np.nan
+    sigma_out[:n] = sr[:n]
     return x, y_shift, yerr, sigma_out
 
 def _plot_panel_sets(axLU, axUL, axLL, axUU, pdata_by_label,
-                     rad_for_bin=None, with_rad=False):
+                     rad_for_bin=None, with_rad=False, *, bin_tag_for_width="enpiGE"):
     """
     Draw the four panels for a set of labeled period dicts.
     If with_rad=True and rad_for_bin is provided, shift central values by +Δ (signed)
     and draw σΔ bands from y=0 to y=σΔ (one common set per panel, independent of run period).
+
+    Systematics:
+      - TSA: use only F_{UL}^{sinφ} (ignore sin2φ systematics)
+      - DSA: use only F_{LL}      (ignore F_{LL}^{cosφ} systematics)
     """
+    bw = _bin_sys_width(bin_tag_for_width)
+
     # Helper: get the rad entry for a given series key
     def R(key):
         if rad_for_bin is None:
@@ -385,9 +382,8 @@ def _plot_panel_sets(axLU, axUL, axLL, axUU, pdata_by_label,
         return rad_for_bin.get(key)
 
     # ---- BSA (ALU sinφ) ----
-    # (Draw bands once, behind points)
     if with_rad and R("ALUsin") is not None:
-        _draw_sys_bands(axLU, R("ALUsin")["x"], np.abs(R("ALUsin")["sigma"]))
+        _draw_sys_bands(axLU, R("ALUsin")["x"], np.abs(R("ALUsin")["sigma"]), bin_width=bw)
     for lab, pdata in pdata_by_label.items():
         s = pdata["ALUsin"]
         if s is None:
@@ -400,9 +396,10 @@ def _plot_panel_sets(axLU, axUL, axLL, axUU, pdata_by_label,
     axLU.grid(True, linestyle="--", alpha=0.6)
     _legend_run_period(axLU, list(pdata_by_label.keys()))
 
-    # ---- TSA (AUL sinφ open, sin2φ filled) ----
+    # ---- TSA (AUL sinφ open, AUL sin2φ filled) ----
+    # Systematic bands: **only** from AULsin (ignore sin2 systematics)
     if with_rad and R("AULsin") is not None:
-        _draw_sys_bands(axUL, R("AULsin")["x"], np.abs(R("AULsin")["sigma"]))
+        _draw_sys_bands(axUL, R("AULsin")["x"], np.abs(R("AULsin")["sigma"]), bin_width=bw)
     for lab, pdata in pdata_by_label.items():
         s1 = pdata["AULsin"]
         if s1 is not None:
@@ -411,7 +408,6 @@ def _plot_panel_sets(axLU, axUL, axLL, axUU, pdata_by_label,
                           capsize=CAPSIZE, markersize=MS, linestyle="None")
         s2 = pdata["AULsin2"]
         if s2 is not None:
-            # AULsin2 uses its own Δ block
             if with_rad and R("AULsin2") is not None:
                 x2, y2, ye2, _ = _apply_shift_if_available(s2, R("AULsin2"))
             else:
@@ -425,8 +421,9 @@ def _plot_panel_sets(axLU, axUL, axLL, axUU, pdata_by_label,
     _legend_run_period(axUL, list(pdata_by_label.keys()))
 
     # ---- DSA (ALL n=0 open, cosφ filled) ----
+    # Systematic bands: **only** from ALL (F_{LL}), ignore F_{LL}^{cosφ} systematics
     if with_rad and R("ALLn0") is not None:
-        _draw_sys_bands(axLL, R("ALLn0")["x"], np.abs(R("ALLn0")["sigma"]))
+        _draw_sys_bands(axLL, R("ALLn0")["x"], np.abs(R("ALLn0")["sigma"]), bin_width=bw)
     for lab, pdata in pdata_by_label.items():
         s0 = pdata["ALLn0"]
         if s0 is not None:
@@ -445,7 +442,6 @@ def _plot_panel_sets(axLU, axUL, axLL, axUU, pdata_by_label,
     _legend_run_period(axLL, list(pdata_by_label.keys()))
 
     # ---- UU (cos nφ: n=1 open, n=2 filled) ----
-    # (Radiative file typically has no UU entries; we just plot nominal here.)
     for lab, pdata in pdata_by_label.items():
         s1 = pdata["UUcos"]
         if s1 is not None:
@@ -477,7 +473,7 @@ def plot_all_periods_for_bin(p_su22, p_fa22, p_sp23, bin_tag, out_dir, with_rad=
 
     pdata_by_label = {"Su22": p_su22, "Fa22": p_fa22, "Sp23": p_sp23}
     _plot_panel_sets(axLU, axUL, axLL, axUU, pdata_by_label,
-                     rad_for_bin=rad_bin, with_rad=with_rad)
+                     rad_for_bin=rad_bin, with_rad=with_rad, bin_tag_for_width=bin_tag)
 
     plt.tight_layout(rect=[0, 0, 1, TOP_PAD_PER_BIN])
     os.makedirs(out_dir, exist_ok=True)
@@ -498,6 +494,7 @@ def plot_combined_only_for_bin(p_comb, bin_tag, out_dir, with_rad=False, rad_bin
     plt.suptitle(make_title(xb_label, with_rad=with_rad), fontsize=16, y=0.97)
 
     black = COLORS["Combined"]
+    bw = _bin_sys_width(bin_tag)
 
     # Convenience accessor for rad
     def R(key):
@@ -507,7 +504,7 @@ def plot_combined_only_for_bin(p_comb, bin_tag, out_dir, with_rad=False, rad_bin
 
     # BSA
     if with_rad and R("ALUsin") is not None:
-        _draw_sys_bands(axLU, R("ALUsin")["x"], np.abs(R("ALUsin")["sigma"]))
+        _draw_sys_bands(axLU, R("ALUsin")["x"], np.abs(R("ALUsin")["sigma"]), bin_width=bw)
     if p_comb["ALUsin"] is not None:
         s = p_comb["ALUsin"]
         if with_rad:
@@ -520,9 +517,9 @@ def plot_combined_only_for_bin(p_comb, bin_tag, out_dir, with_rad=False, rad_bin
     axLU.axhline(0, color="black", linestyle="--", linewidth=1.2)
     axLU.grid(True, linestyle="--", alpha=0.6)
 
-    # TSA
+    # TSA (bands from AULsin only)
     if with_rad and R("AULsin") is not None:
-        _draw_sys_bands(axUL, R("AULsin")["x"], np.abs(R("AULsin")["sigma"]))
+        _draw_sys_bands(axUL, R("AULsin")["x"], np.abs(R("AULsin")["sigma"]), bin_width=bw)
     if p_comb["AULsin"] is not None:
         s1 = p_comb["AULsin"]
         if with_rad:
@@ -554,9 +551,9 @@ def plot_combined_only_for_bin(p_comb, bin_tag, out_dir, with_rad=False, rad_bin
     )
     axUL.add_artist(_leg)
 
-    # DSA
+    # DSA (bands from ALL only)
     if with_rad and R("ALLn0") is not None:
-        _draw_sys_bands(axLL, R("ALLn0")["x"], np.abs(R("ALLn0")["sigma"]))
+        _draw_sys_bands(axLL, R("ALLn0")["x"], np.abs(R("ALLn0")["sigma"]), bin_width=bw)
     if p_comb["ALLn0"] is not None:
         s0 = p_comb["ALLn0"]
         if with_rad:
@@ -619,22 +616,29 @@ def plot_combined_xb_overlay_1x3(comb_parsed, out_dir, bins_to_use,
       Middle: F_UL^{sinφ}/F_UU  (AULsinphi)
       Right : F_UL^{sin2φ}/F_UU (AULsin2phi)
 
-    If with_rad=True, shifts central values by +Δ and draws σΔ bands for each bin.
+    If with_rad=True:
+      * central values are shifted by +Δ (per series, per bin if available),
+      * systematic bands are drawn **only from enpiLowxBGE** uncertainties,
+        using bin width 0.20 so the bars touch,
+      * TSA uses only F_{UL}^{sinφ} bands (ignore sin2φ bands).
     """
     fig, axes = plt.subplots(1, 3, figsize=(14.5, 4.8), sharex=True)
     axL, axM, axR = axes
 
-    def _draw_component(ax, suffix_key, ylabel, ylim):
+    low_bin_tag = "enpiLowxBGE"
+    bw = _bin_sys_width(low_bin_tag)  # 0.20 on overlay
+
+    def _draw_component(ax, suffix_key, ylabel, ylim, draw_sys=True, ignore_sys=False):
         handles = []
-        # Before points, draw all sys bands (per bin) behind
-        if with_rad and rad_all is not None:
-            for bin_tag in bins_to_use:
-                rad_bin = rad_all.get(bin_tag, {})
-                rad_entry = rad_bin.get(suffix_key)
-                if rad_entry is None:
-                    continue
-                _draw_sys_bands(ax, rad_entry["x"], np.abs(rad_entry["sigma"]))
-        # Now the points
+
+        # Bands from the **lowest xB bin only** if requested and available
+        if with_rad and rad_all is not None and draw_sys and not ignore_sys:
+            low_rad = rad_all.get(low_bin_tag, {})
+            rad_entry = low_rad.get(suffix_key)
+            if rad_entry is not None:
+                _draw_sys_bands(ax, rad_entry["x"], np.abs(rad_entry["sigma"]), bin_width=bw)
+
+        # Now the points for each xB slice
         for bin_tag in bins_to_use:
             pdata = build_period_dict(comb_parsed, bin_tag)
             s = pdata[suffix_key]
@@ -642,8 +646,8 @@ def plot_combined_xb_overlay_1x3(comb_parsed, out_dir, bins_to_use,
                 continue
             clr = XB_COLORS.get(bin_tag, "black")
             mkr = XB_MARKERS.get(bin_tag, "o")
-            if with_rad:
-                rad_bin = rad_all.get(bin_tag, {}) if rad_all is not None else {}
+            if with_rad and rad_all is not None:
+                rad_bin = rad_all.get(bin_tag, {})
                 rad_entry = rad_bin.get(suffix_key)
                 if rad_entry is not None:
                     x, y, ye, _ = _apply_shift_if_available(s, rad_entry)
@@ -662,9 +666,12 @@ def plot_combined_xb_overlay_1x3(comb_parsed, out_dir, bins_to_use,
             leg = ax.legend(frameon=True, edgecolor="black", fontsize=11, loc="best")
             leg.get_frame().set_alpha(0.9)
 
-    _draw_component(axL, "ALUsin",  r"$F_{LU}^{\sin\phi}/F_{UU}$", YLIM_LU)
-    _draw_component(axM, "AULsin",  r"$F_{UL}^{\sin\phi}/F_{UU}$", YLIM_UL)
-    _draw_component(axR, "AULsin2", r"$F_{UL}^{\sin2\phi}/F_{UU}$", YLIM_UL)
+    # Left: ALUsin (draw bands from low xB)
+    _draw_component(axL, "ALUsin",  r"$F_{LU}^{\sin\phi}/F_{UU}$", YLIM_LU, draw_sys=True,  ignore_sys=False)
+    # Middle: AULsin (draw bands from low xB; ignore sin2 here by definition)
+    _draw_component(axM, "AULsin",  r"$F_{UL}^{\sin\phi}/F_{UU}$", YLIM_UL, draw_sys=True,  ignore_sys=False)
+    # Right: AULsin2 (plot points; **no** systematic bands per instruction to ignore sin2φ systematics)
+    _draw_component(axR, "AULsin2", r"$F_{UL}^{\sin2\phi}/F_{UU}$", YLIM_UL, draw_sys=False, ignore_sys=True)
 
     fig.tight_layout(rect=[0, 0, 1, TOP_PAD_OVERLAY])
     os.makedirs(out_dir, exist_ok=True)
@@ -716,14 +723,15 @@ def main():
         p_sp23 = build_period_dict(sp23, bin_tag)
         p_comb = build_period_dict(comb,  bin_tag)
 
-        # Nominal
+        # Always make the nominal "AllPeriods" canvas (3 runs)
         plot_all_periods_for_bin(p_su22, p_fa22, p_sp23, bin_tag, out_dir, with_rad=False, rad_bin=None)
+
+        # Combined-only (nominal)
         plot_combined_only_for_bin(p_comb, bin_tag, out_dir, with_rad=False, rad_bin=None)
 
-        # If --rad is present, shifted copies with bands
+        # If --rad is present, ONLY make the Combined-only radiative canvas (no AllPeriods_withRad)
         if rad_all is not None:
             rad_bin = rad_all.get(bin_tag, {})
-            plot_all_periods_for_bin(p_su22, p_fa22, p_sp23, bin_tag, out_dir, with_rad=True, rad_bin=rad_bin)
             plot_combined_only_for_bin(p_comb, bin_tag, out_dir, with_rad=True, rad_bin=rad_bin)
 
     # Combined-only xB overlay (1×3)
@@ -732,7 +740,7 @@ def main():
     if bins_to_use:
         # Nominal
         plot_combined_xb_overlay_1x3(comb, out_dir, bins_to_use, with_rad=False, rad_all=None)
-        # With radiative shifts (if present)
+        # With radiative shifts (if present); sys bands from lowest xB only
         if rad_all is not None:
             plot_combined_xb_overlay_1x3(comb, out_dir, bins_to_use, with_rad=True, rad_all=rad_all)
     else:
