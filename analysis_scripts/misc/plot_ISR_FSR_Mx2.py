@@ -63,8 +63,8 @@ def main() -> None:
     parser.add_argument(
         "--bins",
         type=int,
-        default=130,
-        help="Number of bins between 0 and 1.3 (default: 130; i.e. 0.01 width)",
+        default=260,
+        help="Number of bins between 0 and 2.6 (default: 130; i.e. 0.01 width)",
     )
     args = parser.parse_args()
 
@@ -90,7 +90,7 @@ def main() -> None:
     data_migrated_baseline = mx2_base[migrated_on_baseline_mask]
 
     # Histogram config
-    x_min, x_max = 0.0, 1.3
+    x_min, x_max = 0.0, 2.6
     bins = np.linspace(x_min, x_max, args.bins + 1)
 
     # Plot
