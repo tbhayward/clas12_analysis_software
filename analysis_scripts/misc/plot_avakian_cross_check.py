@@ -43,7 +43,7 @@ X_MIN, X_MAX = 0.05, 0.65
 
 DF_YMIN,   DF_YMAX   = 0.20, 0.60
 VBA_YMIN,  VBA_YMAX  = 0.00, 2.00
-XT_YMIN,   XT_YMAX   = 0.00, 1.00
+XT_YMIN,   XT_YMAX   = 0.00, 1.30
 
 R_SIN_YMIN,  R_SIN_YMAX  = -0.35, 0.25
 R_SIN2_YMIN, R_SIN2_YMAX = -0.60, 0.15
@@ -73,8 +73,8 @@ COL_TPR = "tab:olive"
 #   7: (unused)
 #   8: AULsin2phi
 #   9: eAULsin2phi
-#  10: <V/A>     (interpreted)
-#  11: <B/A>     (interpreted)
+#  10: <V/A>
+#  11: <B/A>
 # ----------------------------
 avak_block1 = np.array([
     [0.1709, 0.1721, 0.3714, -0.1960E-01, 0.1160E-01, 0.5400, 0.7950E-01, -0.2010E-01, 0.1060E-01, 1.568, 0.7172],
@@ -109,8 +109,6 @@ def ensure_outdir(path: str):
     outdir = os.path.dirname(path)
     if outdir:
         os.makedirs(outdir, exist_ok=True)
-    #endif
-#endfor
 
 def load_hayward_export(path):
     """
@@ -127,11 +125,9 @@ def load_hayward_export(path):
             s = line.strip()
             if not s or s.startswith("#"):
                 continue
-            # split by whitespace; expect 11 columns
             cols = s.split()
             if len(cols) < 11:
                 continue
-            #endif
             x        = float(cols[0])
             tprime   = float(cols[1])
             Df       = float(cols[2])
@@ -149,8 +145,6 @@ def load_hayward_export(path):
             cph.append(cosphi); ecph.append(e_cosphi)
             a2.append(AULsin2); ea2.append(eAULsin2)
             rva.append(VoverA); rba.append(BoverA)
-        #endfor
-    #endwith
 
     return dict(
         x=np.array(xs, float),
@@ -165,7 +159,6 @@ def load_hayward_export(path):
         VoverA=np.array(rva, float),
         BoverA=np.array(rba, float),
     )
-#endfor
 
 def split_avak_dicts():
     """
@@ -186,9 +179,7 @@ def split_avak_dicts():
             BoverA=blk[:,10],
         )
         out.append(d)
-    #endfor
     return out
-#endfor
 
 def symmetric_ylim_from_series(series_list, pad=0.05, min_halfspan=0.05):
     """
@@ -203,14 +194,11 @@ def symmetric_ylim_from_series(series_list, pad=0.05, min_halfspan=0.05):
             continue
         s_abs = np.nanmax(np.abs(arr))
         vmax = max(vmax, s_abs)
-    #endfor
     half = max(min_halfspan, (1.0 + pad) * vmax)
     return (-half, half)
-#endfor
 
 def add_panel_title(ax, idx):
     ax.set_title(tbin_titles[idx], fontsize=11)
-#endfor
 
 def dataset_handles():
     """Legend handles: Hayward (closed), Avakian (open)"""
@@ -219,11 +207,9 @@ def dataset_handles():
     h_ava = Line2D([0], [0], marker="o", linestyle="None",
                    mfc="none",  mec="black", ms=6, label="Avakian")
     return h_hay, h_ava
-#endfor
 
 # ----------------------------
 # Hard-coded Hayward D_f uncertainties (Page 1 error bars)
-# Order corresponds to the 5 x_B points within each t-bin file.
 # ----------------------------
 HAY_DF_ERRS = [
     np.array([0.00896638, 0.00481743, 0.00392132, 0.00508885, 0.00908002], float),  # t-bin 1
@@ -236,7 +222,8 @@ HAY_DF_ERRS = [
 # ----------------------------
 def page1_compare_df(pdf, hayward_dicts, avak_dicts):
     """Page 1: 1x3 Df vs x_B; y:[0.2,0.6]; x:[0.05,0.65].
-       Hayward CLOSED (with error bars), Avakian OPEN."""
+       Hayward CLOSED (with error bars), Avakian OPEN.
+       Legends live inside subplots (boxed)."""
     fig, axes = plt.subplots(1, 3, figsize=(12, 3.8), sharex=True, sharey=True)
     for i in range(3):
         ax = axes[i]
@@ -244,103 +231,88 @@ def page1_compare_df(pdf, hayward_dicts, avak_dicts):
         # Hayward = closed with error bars
         ax.errorbar(H["x"], H["Df"], yerr=HAY_DF_ERRS[i],
                     fmt="o", ms=6, lw=1.2, capsize=3,
-                    color=tbin_colors[i], mfc=tbin_colors[i], mec="black")
+                    color=tbin_colors[i], mfc=tbin_colors[i], mec="black",
+                    label="Hayward")
         # Avakian = open
-        ax.plot(A["x"], A["Df"], "o", ms=6, color=tbin_colors[i], mfc="none", mec=tbin_colors[i])
+        ax.plot(A["x"], A["Df"], "o", ms=6, color=tbin_colors[i], mfc="none", mec=tbin_colors[i],
+                label="Avakian")
         add_panel_title(ax, i)
         ax.set_xlim(X_MIN, X_MAX)
         ax.set_ylim(DF_YMIN, DF_YMAX)
         if i == 0:
             ax.set_ylabel("Dilution factor $D_{f}$")
-        #endif
         ax.set_xlabel(r"$x_{B}$")
-    #endfor
-
-    # Legend above (boxed, away from data)
-    h_h, h_a = dataset_handles()
-    fig.legend(handles=[h_h, h_a], loc="upper center", ncol=2,
-               frameon=True, fancybox=True, bbox_to_anchor=(0.5, 1.02), title="Dataset")
-    fig.tight_layout(rect=[0, 0, 1, 0.95])
+        ax.legend(loc="best", frameon=True, fancybox=True, fontsize=9)
+    fig.tight_layout()
     pdf.savefig(fig)
     plt.close(fig)
-#endfor
 
 def page2_compare_va_ba(pdf, hayward_dicts, avak_dicts):
     """Page 2: 1x3 compare <V/A> and <B/A>, y:[0,2]; x:[0.05,0.65].
-       Hayward CLOSED, Avakian OPEN."""
+       Hayward CLOSED, Avakian OPEN.
+       Legends live inside subplots (boxed)."""
     fig, axes = plt.subplots(1, 3, figsize=(12, 3.8), sharex=True, sharey=True)
     for i in range(3):
         ax = axes[i]
         H, A = hayward_dicts[i], avak_dicts[i]
 
         # V/A
-        ax.plot(H["x"], H["VoverA"], "o", ms=6, color=COL_VA, mfc=COL_VA, mec="black")
-        ax.plot(A["x"], A["VoverA"], "o", ms=6, color=COL_VA, mfc="none",  mec=COL_VA)
+        ax.plot(H["x"], H["VoverA"], "o", ms=6, color=COL_VA, mfc=COL_VA, mec="black",
+                label=r"$\langle V/A\rangle$ (Hayward)")
+        ax.plot(A["x"], A["VoverA"], "o", ms=6, color=COL_VA, mfc="none",  mec=COL_VA,
+                label=r"$\langle V/A\rangle$ (Avakian)")
 
         # B/A
-        ax.plot(H["x"], H["BoverA"], "o", ms=6, color=COL_BA, mfc=COL_BA, mec="black")
-        ax.plot(A["x"], A["BoverA"], "o", ms=6, color=COL_BA, mfc="none",  mec=COL_BA)
+        ax.plot(H["x"], H["BoverA"], "o", ms=6, color=COL_BA, mfc=COL_BA, mec="black",
+                label=r"$\langle B/A\rangle$ (Hayward)")
+        ax.plot(A["x"], A["BoverA"], "o", ms=6, color=COL_BA, mfc="none",  mec=COL_BA,
+                label=r"$\langle B/A\rangle$ (Avakian)")
 
         add_panel_title(ax, i)
         ax.set_xlim(X_MIN, X_MAX)
         ax.set_ylim(VBA_YMIN, VBA_YMAX)
         if i == 0:
             ax.set_ylabel(r"$\langle V/A\rangle,\,\langle B/A\rangle$")
-        #endif
         ax.set_xlabel(r"$x_{B}$")
-    #endfor
-
-    # Boxed legend above, away from data
-    h_va_h = Line2D([0],[0], marker="o", linestyle="None", mfc=COL_VA, mec="black", ms=6, label=r"$\langle V/A\rangle$ (Hayward)")
-    h_va_a = Line2D([0],[0], marker="o", linestyle="None", mfc="none",  mec=COL_VA, ms=6, label=r"$\langle V/A\rangle$ (Avakian)")
-    h_ba_h = Line2D([0],[0], marker="o", linestyle="None", mfc=COL_BA, mec="black", ms=6, label=r"$\langle B/A\rangle$ (Hayward)")
-    h_ba_a = Line2D([0],[0], marker="o", linestyle="None", mfc="none",  mec=COL_BA, ms=6, label=r"$\langle B/A\rangle$ (Avakian)")
-    fig.legend(handles=[h_va_h, h_va_a, h_ba_h, h_ba_a], loc="upper center", ncol=2,
-               frameon=True, fancybox=True, bbox_to_anchor=(0.5, 1.02), title="Vars / Datasets")
-    fig.tight_layout(rect=[0, 0, 1, 0.95])
+        ax.legend(loc="best", frameon=True, fancybox=True, fontsize=8, ncol=1)
+    fig.tight_layout()
     pdf.savefig(fig)
     plt.close(fig)
-#endfor
 
 def page3_compare_x_and_tprime(pdf, hayward_dicts, avak_dicts):
     """Page 3: 1x3 plot <x> and <-t'> vs x_B; y:[0,1]; x:[0.05,0.65].
-       Hayward CLOSED, Avakian OPEN."""
+       Legends live inside subplots (boxed)."""
     fig, axes = plt.subplots(1, 3, figsize=(12, 3.8), sharex=True, sharey=True)
     for i in range(3):
         ax = axes[i]
         H, A = hayward_dicts[i], avak_dicts[i]
 
-        # <x> (x vs x)
-        ax.plot(H["x"], H["x"], "o", ms=6, color=COL_X,   mfc=COL_X,   mec="black")
-        ax.plot(A["x"], A["x"], "o", ms=6, color=COL_X,   mfc="none",  mec=COL_X)
+        # <x>
+        ax.plot(H["x"], H["x"], "o", ms=6, color=COL_X,   mfc=COL_X,   mec="black",
+                label=r"$\langle x\rangle$ (Hayward)")
+        ax.plot(A["x"], A["x"], "o", ms=6, color=COL_X,   mfc="none",  mec=COL_X,
+                label=r"$\langle x\rangle$ (Avakian)")
 
         # <-t'>
-        ax.plot(H["x"], H["tprime"], "o", ms=6, color=COL_TPR, mfc=COL_TPR, mec="black")
-        ax.plot(A["x"], A["tprime"], "o", ms=6, color=COL_TPR, mfc="none",  mec=COL_TPR)
+        ax.plot(H["x"], H["tprime"], "o", ms=6, color=COL_TPR, mfc=COL_TPR, mec="black",
+                label=r"$\langle -t'\rangle$ (Hayward)")
+        ax.plot(A["x"], A["tprime"], "o", ms=6, color=COL_TPR, mfc="none",  mec=COL_TPR,
+                label=r"$\langle -t'\rangle$ (Avakian)")
 
         add_panel_title(ax, i)
         ax.set_xlim(X_MIN, X_MAX)
         ax.set_ylim(XT_YMIN, XT_YMAX)
         if i == 0:
             ax.set_ylabel(r"$\langle x\rangle,\ \langle -t'\rangle$")
-        #endif
         ax.set_xlabel(r"$x_{B}$")
-    #endfor
-
-    # Boxed legend above
-    h_x_h  = Line2D([0],[0], marker="o", linestyle="None", mfc=COL_X,   mec="black", ms=6, label=r"$\langle x\rangle$ (Hayward)")
-    h_x_a  = Line2D([0],[0], marker="o", linestyle="None", mfc="none",  mec=COL_X,   ms=6, label=r"$\langle x\rangle$ (Avakian)")
-    h_t_h  = Line2D([0],[0], marker="o", linestyle="None", mfc=COL_TPR, mec="black", ms=6, label=r"$\langle -t'\rangle$ (Hayward)")
-    h_t_a  = Line2D([0],[0], marker="o", linestyle="None", mfc="none",  mec=COL_TPR, ms=6, label=r"$\langle -t'\rangle$ (Avakian)")
-    fig.legend(handles=[h_x_h, h_x_a, h_t_h, h_t_a], loc="upper center", ncol=2,
-               frameon=True, fancybox=True, bbox_to_anchor=(0.5, 1.02), title="Vars / Datasets")
-    fig.tight_layout(rect=[0, 0, 1, 0.95])
+        ax.legend(loc="best", frameon=True, fancybox=True, fontsize=8)
+    fig.tight_layout()
     pdf.savefig(fig)
     plt.close(fig)
-#endfor
 
 def page4_compare_asymmetries(pdf, hayward_dicts, avak_dicts):
-    """Page 4: 2x3; top A_{UL}^{sinφ}, bottom A_{UL}^{sin2φ} (asymmetry amplitudes)."""
+    """Page 4: 2x3; top A_{UL}^{sinφ}, bottom A_{UL}^{sin2φ} (asymmetry amplitudes).
+       Legends live inside subplots (boxed)."""
     fig, axes = plt.subplots(2, 3, figsize=(12, 7.6), sharex=True)
 
     # Determine symmetric y-lims per row from both datasets
@@ -350,7 +322,6 @@ def page4_compare_asymmetries(pdf, hayward_dicts, avak_dicts):
         H, A = hayward_dicts[i], avak_dicts[i]
         row1_series.extend([H["AULsin"], A["AULsin"]])
         row2_series.extend([H["AULsin2"], A["AULsin2"]])
-    #endfor
     y1min, y1max = symmetric_ylim_from_series(row1_series, pad=0.1, min_halfspan=0.05)
     y2min, y2max = symmetric_ylim_from_series(row2_series, pad=0.1, min_halfspan=0.05)
 
@@ -359,42 +330,37 @@ def page4_compare_asymmetries(pdf, hayward_dicts, avak_dicts):
         axT = axes[0, i]
         H, A = hayward_dicts[i], avak_dicts[i]
         axT.errorbar(H["x"], H["AULsin"],  yerr=H["eAULsin"],  fmt="o", ms=6, lw=1.2, capsize=3,
-                     color=tbin_colors[i], mfc=tbin_colors[i], mec="black")
+                     color=tbin_colors[i], mfc=tbin_colors[i], mec="black", label="Hayward")
         axT.errorbar(A["x"], A["AULsin"],  yerr=A["eAULsin"],  fmt="o", ms=6, lw=1.2, capsize=3,
-                     color=tbin_colors[i], mfc="none", mec=tbin_colors[i])
+                     color=tbin_colors[i], mfc="none", mec=tbin_colors[i], label="Avakian")
         add_panel_title(axT, i)
         axT.set_xlim(X_MIN, X_MAX)
         axT.set_ylim(y1min, y1max)
         if i == 0:
             axT.set_ylabel(r"$A_{UL}^{\sin\phi}$")
-        #endif
+        axT.legend(loc="best", frameon=True, fancybox=True, fontsize=9)
 
         # Bottom row: AUL sin2φ
         axB = axes[1, i]
         axB.errorbar(H["x"], H["AULsin2"], yerr=H["eAULsin2"], fmt="o", ms=6, lw=1.2, capsize=3,
-                     color=tbin_colors[i], mfc=tbin_colors[i], mec="black")
+                     color=tbin_colors[i], mfc=tbin_colors[i], mec="black", label="Hayward")
         axB.errorbar(A["x"], A["AULsin2"], yerr=A["eAULsin2"], fmt="o", ms=6, lw=1.2, capsize=3,
-                     color=tbin_colors[i], mfc="none", mec=tbin_colors[i])
+                     color=tbin_colors[i], mfc="none", mec=tbin_colors[i], label="Avakian")
         axB.set_xlim(X_MIN, X_MAX)
         axB.set_ylim(y2min, y2max)
         if i == 0:
             axB.set_ylabel(r"$A_{UL}^{\sin2\phi}$")
-        #endif
         axB.set_xlabel(r"$x_{B}$")
-    #endfor
+        axB.legend(loc="best", frameon=True, fancybox=True, fontsize=9)
 
-    # Boxed legend above (dataset meaning)
-    h_h, h_a = dataset_handles()
-    fig.legend(handles=[h_h, h_a], loc="upper center", ncol=2,
-               frameon=True, fancybox=True, bbox_to_anchor=(0.5, 1.02), title="Dataset")
-    fig.tight_layout(rect=[0, 0, 1, 0.95])
+    fig.tight_layout()
     pdf.savefig(fig)
     plt.close(fig)
-#endfor
 
 def page5_compare_ratios(pdf, hayward_dicts, avak_dicts):
     """Page 5: 2x3; top F_{UL}^{sinφ}/F_{UU}, bottom F_{UL}^{sin2φ}/F_{UU} (ratios).
-       Using ratio = AUL / (V/A) and AUL2 / (B/A)."""
+       Using ratio = AUL / (V/A) and AUL2 / (B/A).
+       Legends live inside subplots (boxed)."""
     fig, axes = plt.subplots(2, 3, figsize=(12, 7.6), sharex=True, sharey=False)
 
     for i in range(3):
@@ -414,38 +380,32 @@ def page5_compare_ratios(pdf, hayward_dicts, avak_dicts):
         # Top row: sinφ ratios
         axT = axes[0, i]
         axT.errorbar(H["x"], H_r1, yerr=H_er1, fmt="o", ms=6, lw=1.2, capsize=3,
-                     color=tbin_colors[i], mfc=tbin_colors[i], mec="black")
+                     color=tbin_colors[i], mfc=tbin_colors[i], mec="black", label="Hayward")
         axT.errorbar(A["x"], A_r1, yerr=A_er1, fmt="o", ms=6, lw=1.2, capsize=3,
-                     color=tbin_colors[i], mfc="none",    mec=tbin_colors[i])
+                     color=tbin_colors[i], mfc="none",    mec=tbin_colors[i], label="Avakian")
         add_panel_title(axT, i)
         axT.set_xlim(X_MIN, X_MAX)
         axT.set_ylim(R_SIN_YMIN, R_SIN_YMAX)
         if i == 0:
             axT.set_ylabel(r"$F_{UL}^{\sin\phi}/F_{UU}$")
-        #endif
+        axT.legend(loc="best", frameon=True, fancybox=True, fontsize=9)
 
         # Bottom row: sin2φ ratios
         axB = axes[1, i]
         axB.errorbar(H["x"], H_r2, yerr=H_er2, fmt="o", ms=6, lw=1.2, capsize=3,
-                     color=tbin_colors[i], mfc=tbin_colors[i], mec="black")
+                     color=tbin_colors[i], mfc=tbin_colors[i], mec="black", label="Hayward")
         axB.errorbar(A["x"], A_r2, yerr=A_er2, fmt="o", ms=6, lw=1.2, capsize=3,
-                     color=tbin_colors[i], mfc="none",    mec=tbin_colors[i])
+                     color=tbin_colors[i], mfc="none",    mec=tbin_colors[i], label="Avakian")
         axB.set_xlim(X_MIN, X_MAX)
         axB.set_ylim(R_SIN2_YMIN, R_SIN2_YMAX)
         if i == 0:
             axB.set_ylabel(r"$F_{UL}^{\sin2\phi}/F_{UU}$")
-        #endif
         axB.set_xlabel(r"$x_{B}$")
-    #endfor
+        axB.legend(loc="best", frameon=True, fancybox=True, fontsize=9)
 
-    # Boxed legend above (dataset meaning)
-    h_h, h_a = dataset_handles()
-    fig.legend(handles=[h_h, h_a], loc="upper center", ncol=2,
-               frameon=True, fancybox=True, bbox_to_anchor=(0.5, 1.02), title="Dataset")
-    fig.tight_layout(rect=[0, 0, 1, 0.95])
+    fig.tight_layout()
     pdf.savefig(fig)
     plt.close(fig)
-#endfor
 
 # ----------------------------
 # Main
@@ -476,10 +436,8 @@ def main():
         page3_compare_x_and_tprime(pdf, hayward_dicts, avak_dicts)
         page4_compare_asymmetries(pdf, hayward_dicts, avak_dicts)
         page5_compare_ratios(pdf, hayward_dicts, avak_dicts)
-    #endwith
 
     print("Wrote:", args.out)
-#endfor
 
 if __name__ == "__main__":
     main()
