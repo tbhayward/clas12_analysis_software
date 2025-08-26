@@ -370,7 +370,7 @@ bool GeneralExclusiveKinematicCuts::applyCuts(int currentFits, bool isMC)
                          (-*tprime > 0.85 && -*tprime < 1.225);
         if (!goodEvent) return false;
         return PassesDynamicMx2(*x, *tprime, *Mx2);
-    
+    }
 
     return false;
 }
