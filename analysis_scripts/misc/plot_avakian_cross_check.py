@@ -29,7 +29,9 @@ from matplotlib.lines import Line2D
 # ----------------------------
 # Config
 # ----------------------------
-Y_MIN, Y_MAX = -0.60, 0.60
+# Per your request: different y-limits per subplot
+Y_L_MIN, Y_L_MAX = -0.35, 0.25   # sin(phi) panel
+Y_R_MIN, Y_R_MAX = -0.60, 0.10   # sin(2phi) panel
 X_MIN, X_MAX = 0.05, 0.65
 OUTPATH = "output/enpi+/harut_cross_check.pdf"
 
@@ -137,7 +139,7 @@ avak_block3 = np.array([
 
 def avak_to_ratios(block):
     """
-    Convert Avakian block to (xB, R_phi, R_phi_err, R_2phi, R_2phi_err).
+    Convert Avakian block to (xB, R_phi, R_phi_err, R_2phi, R_2phi_err, denom_phi, denom_2phi).
     Corrected index map (0-based):
       0:xB, 2:Df, 3:AUL_sinphi, 4:err_sinphi,
       7:AUL_sin2phi, 8:err_sin2phi,
@@ -244,7 +246,8 @@ def main():
     # Then print all numeric tables
     print_all_results()
 
-    fig, axes = plt.subplots(1, 2, figsize=(11, 4.5), sharey=True)
+    # NOTE: no 'sharey' so we can set different y-limits per panel
+    fig, axes = plt.subplots(1, 2, figsize=(11, 4.5), sharex=True)
     axL, axR = axes[0], axes[1]
 
     # Plot Hayward sets (filled markers) with error bars; colors by t-bin
@@ -284,8 +287,8 @@ def main():
     axR.set_ylabel(r"$F_{UL}^{\sin2\phi}/F_{UU}$")
     axL.set_xlim(X_MIN, X_MAX)
     axR.set_xlim(X_MIN, X_MAX)
-    axL.set_ylim(Y_MIN, Y_MAX)
-    axR.set_ylim(Y_MIN, Y_MAX)
+    axL.set_ylim(Y_L_MIN, Y_L_MAX)  # sinphi panel limits
+    axR.set_ylim(Y_R_MIN, Y_R_MAX)  # sin2phi panel limits
 
     # Legends:
     # 1) Left: t-bin color legend (already labeled for Hayward series)
