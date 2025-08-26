@@ -5,8 +5,8 @@
 harut_cross_check.py
 
 Make a 1x2 figure:
-  Left:  F_LU^{sin phi} / F_UU  vs x_B
-  Right: F_LU^{sin 2phi} / F_UU vs x_B
+  Left:  F_UL^{sin phi} / F_UU  vs x_B
+  Right: F_UL^{sin 2phi} / F_UU vs x_B
 
 Data:
   • Hayward (your three t-bins): filled circle markers with error bars
@@ -30,7 +30,7 @@ from matplotlib.lines import Line2D
 # Config
 # ----------------------------
 Y_MIN, Y_MAX = -0.60, 0.60
-X_MIN, X_MAX = 0.05, 0.65  
+X_MIN, X_MAX = 0.05, 0.65
 OUTPATH = "output/enpi+/harut_cross_check.pdf"
 
 colors = ["tab:blue", "tab:orange", "tab:green"]  # three t-bin colors
@@ -107,8 +107,8 @@ hayward_sets = [
 #  10: D(y) for sin2phi
 #
 # We compute structure-function ratios as:
-#   F_LU^{sinphi}/F_UU  = AULsinphi  / (Df * D_y_sinphi)
-#   F_LU^{sin2phi}/F_UU = AULsin2phi / (Df * D_y_sin2phi)
+#   F_UL^{sinphi}/F_UU  = AULsinphi  / (Df * D_y_sinphi)
+#   F_UL^{sin2phi}/F_UU = AULsin2phi / (Df * D_y_sin2phi)
 # ----------------------------
 
 avak_block1 = np.array([
@@ -169,7 +169,54 @@ def avak_to_ratios(block):
 
 # Convert all three Avakian blocks
 avak_blocks = [avak_block1, avak_block2, avak_block3]
-avak_ratios = [avak_to_ratios(b) for b in avak_blocks]  # list of tuples
+avak_ratios = [avak_to_ratios(b) for b in avak_blocks]
+#endfor
+
+# ----------------------------
+# Pretty printing helpers
+# ----------------------------
+def print_table(title, x, y, yerr, col_y_label):
+    print("=" * 78)
+    print(title)
+    print("-" * 78)
+    print("{:>3s}  {:>10s}  {:>16s}  {:>16s}".format("i", "xB", col_y_label, "err"))
+    print("-" * 78)
+    for i in range(len(x)):
+        print("{:3d}  {:10.6f}  {:16.8f}  {:16.8f}".format(i, float(x[i]), float(y[i]), float(yerr[i])))
+    #endfor
+    print("")  # blank line after table
+#endfor
+
+def print_all_results():
+    # Hayward tables (assumed already structure-function ratios as plotted)
+    for idx, (arr_phi, arr_2phi) in enumerate(hayward_sets):
+        tlabel = tbin_labels[idx]
+        print_table(
+            "Hayward F_UL^{sinphi}/F_UU   (t-bin: {})".format(tlabel),
+            arr_phi[:, 0], arr_phi[:, 1], arr_phi[:, 2],
+            "FUL^{sinphi}/FUU"
+        )
+        print_table(
+            "Hayward F_UL^{sin2phi}/F_UU  (t-bin: {})".format(tlabel),
+            arr_2phi[:, 0], arr_2phi[:, 1], arr_2phi[:, 2],
+            "FUL^{sin2phi}/FUU"
+        )
+    #endfor
+
+    # Avakian tables (converted to structure-function ratios)
+    for idx, (xB, R_phi, R_phi_err, R_2phi, R_2phi_err) in enumerate(avak_ratios):
+        tlabel = tbin_labels[idx]
+        print_table(
+            "Avakian F_UL^{sinphi}/F_UU   (t-bin: {})".format(tlabel),
+            xB, R_phi, R_phi_err,
+            "FUL^{sinphi}/FUU"
+        )
+        print_table(
+            "Avakian F_UL^{sin2phi}/F_UU  (t-bin: {})".format(tlabel),
+            xB, R_2phi, R_2phi_err,
+            "FUL^{sin2phi}/FUU"
+        )
+    #endfor
 #endfor
 
 # ----------------------------
@@ -177,6 +224,9 @@ avak_ratios = [avak_to_ratios(b) for b in avak_blocks]  # list of tuples
 # ----------------------------
 def main():
     os.makedirs(os.path.dirname(OUTPATH), exist_ok=True)
+
+    # Print all numeric tables to stdout
+    print_all_results()
 
     fig, axes = plt.subplots(1, 2, figsize=(11, 4.5), sharey=True)
     axL, axR = axes[0], axes[1]
