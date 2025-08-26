@@ -146,10 +146,10 @@ def avak_to_ratios(block):
     Df = block[:, 2]
     A_sinphi = block[:, 3]
     E_sinphi = np.abs(block[:, 4])
-    A_sin2   = block[:, 6]
-    E_sin2   = np.abs(block[:, 7])
-    Dy_phi   = block[:, 8]
-    Dy_2phi  = block[:, 9]
+    A_sin2   = block[:, 8]
+    E_sin2   = np.abs(block[:, 9])
+    Dy_phi   = block[:, 10]
+    Dy_2phi  = block[:, 11]
 
     denom_phi = Df * Dy_phi
     denom_2phi = Df * Dy_2phi
