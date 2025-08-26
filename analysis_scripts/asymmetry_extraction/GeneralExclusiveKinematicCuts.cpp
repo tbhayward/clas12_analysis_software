@@ -354,22 +354,19 @@ bool GeneralExclusiveKinematicCuts::applyCuts(int currentFits, bool isMC)
     }
     if (property == "enpiHarut1") {
         bool goodEvent = (*fiducial_status >= 111) &&
-                         (*x > 0.1 && *x < 0.3) &&
-                         (-*t > 0.05 && -*t < 0.35);
+                         (-*t > 0.05 && -*t < 0.45);
         if (!goodEvent) return false;
         return PassesDynamicMx2(*x, *t, *Mx2);
     }
     if (property == "enpiHarut2") {
         bool goodEvent = (*fiducial_status >= 111) &&
-                         (*x > 0.1 && *x < 0.3) &&
-                         (-*t > 0.35 && -*t < 0.85);
+                         (-*t > 0.45 && -*t < 0.85);
         if (!goodEvent) return false;
         return PassesDynamicMx2(*x, *t, *Mx2);
     }
     if (property == "enpiHarut3") {
         bool goodEvent = (*fiducial_status >= 111) &&
-                         (*x > 0.1 && *x < 0.3) &&
-                         (-*t > 0.85 && -*t < 1.35);
+                         (-*t > 0.85 && -*t < 1.225);
         if (!goodEvent) return false;
         return PassesDynamicMx2(*x, *t, *Mx2);
     }
