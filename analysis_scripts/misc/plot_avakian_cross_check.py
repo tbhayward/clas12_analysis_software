@@ -29,7 +29,7 @@ from matplotlib.lines import Line2D
 # ----------------------------
 # Config
 # ----------------------------
-Y_MIN, Y_MAX = -0.60, 0.25
+Y_MIN, Y_MAX = -0.60, 0.60
 X_MIN, X_MAX = 0.05, 0.65  
 OUTPATH = "output/enpi+/harut_cross_check.pdf"
 
