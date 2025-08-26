@@ -29,8 +29,8 @@ from matplotlib.lines import Line2D
 # ----------------------------
 # Config
 # ----------------------------
-Y_MIN, Y_MAX = -0.35, 0.25
-X_MIN, X_MAX = 0.05, 0.65  # If you truly meant 0.065, set X_MAX = 0.065
+Y_MIN, Y_MAX = -0.60, 0.25
+X_MIN, X_MAX = 0.05, 0.65  
 OUTPATH = "output/enpi+/harut_cross_check.pdf"
 
 colors = ["tab:blue", "tab:orange", "tab:green"]  # three t-bin colors
@@ -214,8 +214,8 @@ def main():
     # Axes labels and limits
     axL.set_xlabel(r"$x_{B}$")
     axR.set_xlabel(r"$x_{B}$")
-    axL.set_ylabel(r"$F_{LU}^{\sin\phi}/F_{UU}$")
-    axR.set_ylabel(r"$F_{LU}^{\sin2\phi}/F_{UU}$")
+    axL.set_ylabel(r"$F_{UL}^{\sin\phi}/F_{UU}$")
+    axR.set_ylabel(r"$F_{UL}^{\sin2\phi}/F_{UU}$")
     axL.set_xlim(X_MIN, X_MAX)
     axR.set_xlim(X_MIN, X_MAX)
     axL.set_ylim(Y_MIN, Y_MAX)
