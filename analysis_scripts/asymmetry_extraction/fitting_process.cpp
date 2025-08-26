@@ -3882,7 +3882,7 @@ static void plotHistogramAndFit_GeneralExclusive(
   // ---------------- Draw the three panels -------------------------------------
   addPointsAndCurve(1, hALU, yALU, "A_{LU}", fillBSA, -0.20, 0.20);
   addPointsAndCurve(2, hAUL, yAUL, "A_{UL}", fillTSA, -0.20, 0.20);
-  addPointsAndCurve(3, hALL, yALL, "A_{LL}", fillDSA, -0.10, 0.50);
+  addPointsAndCurve(3, hALL, yALL, "A_{LL}", fillDSA, -0.10, 0.60);
 
   // ---------------- Title and save --------------------------------------------
   const double vminB = allBins[currentFits][binIndex];
