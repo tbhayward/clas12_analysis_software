@@ -2,117 +2,95 @@
 # -*- coding: utf-8 -*-
 
 """
-harut_cross_check.py
+avakian_cross_check_multipage.py
 
-Make a 1x2 figure:
-  Left:  F_UL^{sin phi} / F_UU  vs x_B
-  Right: F_UL^{sin 2phi} / F_UU vs x_B
+Build a multi-page PDF comparing Hayward vs Avakian across several derived quantities.
 
-Data:
-  • Hayward (your three t-bins): filled circle markers with error bars
-  • Avakian (three t-bins): open circle markers with error bars,
-    converted from A_UL by dividing by (Df * D(y)) per your column map
+Inputs (runtime):
+  Three Hayward per-bin export text files with header:
+    "# x  -tprime  Df  AULsin  eAULsin  <cosphi>  e<cosphi>  aulsin2phi  eaulsin2phi  <V/A>  <B/A>"
+  (See examples you posted.)
 
-Legends:
-  • Left subplot: colors and their -t ranges
-  • Right subplot: marker meaning (filled = Hayward, open = Avakian)
+Hard-coded:
+  Avakian's three 5-point blocks.
 
 Output:
-  output/enpi+/harut_cross_check.pdf
+  output/enpi+/avakian_cross_check_multipage.pdf
+
+Pages:
+  1) 1x3: Df vs x_B (y:[0.2,0.6], x:[0.05,0.65]), titles carry -t' range.
+     Markers: Avakian = CLOSED circles; Hayward = OPEN circles.
+  2) 1x3: (V/A) and (B/A) vs x_B (y:[0,2], x:[0.05,0.65])
+     Markers: Hayward = CLOSED circles; Avakian = OPEN circles.
+  3) 1x3: <x> and <-t'> vs x_B (y:[0,1], x:[0.05,0.65])
+     Markers: Hayward = CLOSED circles; Avakian = OPEN circles.
+  4) 2x3: A_{UL}^{sinφ} (top), A_{UL}^{sin2φ} (bottom) vs x_B (auto symmetric y-lims per row)
+     Markers: Hayward = CLOSED circles; Avakian = OPEN circles.
+     NOTE: These are the *asymmetry amplitudes* (not ratios).
+  5) 2x3: F_{UL}^{sinφ}/F_{UU} (top), F_{UL}^{sin2φ}/F_{UU} (bottom) vs x_B
+     Computed from per-bin amplitudes as:
+       ratio_sinφ   = AULsin   / (V/A)
+       ratio_sin2φ  = AULsin2  / (B/A)
+     Fixed y-lims:
+       sinφ:   [-0.35, 0.25]
+       sin2φ:  [-0.60, 0.15]
+     Markers: Hayward = CLOSED circles; Avakian = OPEN circles.
+
+Conventions:
+  - t-bin titles (using -t′ ranges): ["0.05 < -t' < 0.45", "0.45 < -t' < 0.85", "0.85 < -t' < 1.225"]
+  - Colors for t-bins: ["tab:blue", "tab:orange", "tab:green"]
+  - Colors for Page 2 (V/A, B/A): V/A="tab:purple", B/A="tab:red"
+  - Colors for Page 3 (<x>, <-t′>): <x>="tab:blue", <-t′>="tab:olive"
+
 """
 
 import os
+import argparse
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.lines import Line2D
+from matplotlib.backends.backend_pdf import PdfPages
 
 # ----------------------------
-# Config
+# Config / constants
 # ----------------------------
-# Per your request: different y-limits per subplot
-Y_L_MIN, Y_L_MAX = -0.35, 0.25   # sin(phi) panel
-Y_R_MIN, Y_R_MAX = -0.60, 0.15   # sin(2phi) panel (updated to 0.15)
 X_MIN, X_MAX = 0.05, 0.65
-OUTPATH = "output/enpi+/harut_cross_check.pdf"
 
-colors = ["tab:blue", "tab:orange", "tab:green"]  # three t-bin colors
-tbin_labels = ["0.05 < -t < 0.45", "0.45 < -t < 0.85", "0.85 < -t < 1.225"]
+DF_YMIN,   DF_YMAX   = 0.20, 0.60
+VBA_YMIN,  VBA_YMAX  = 0.00, 2.00
+XT_YMIN,   XT_YMAX   = 0.00, 1.00
 
-# ----------------------------
-# Hayward (your) results — UPDATED ARRAYS
-# Format per point: (xB, value, err)
-# ----------------------------
-enpiHarut1GEchi2FitsAULsinphi = np.array([
-    (0.169464440, -0.033040862, 0.019637808),
-    (0.255432176,  0.024405972, 0.011847844),
-    (0.348042430,  0.081420649, 0.009146418),
-    (0.442051735,  0.099088760, 0.014005917),
-    (0.537668007,  0.047496516, 0.017856319),
-], dtype=float)
+R_SIN_YMIN,  R_SIN_YMAX  = -0.35, 0.25
+R_SIN2_YMIN, R_SIN2_YMAX = -0.60, 0.15
 
-enpiHarut1GEchi2FitsAULsin2phi = np.array([
-    (0.169464440, -0.147836872, 0.050605779),
-    (0.255432176, -0.089364439, 0.019479172),
-    (0.348042430, -0.102451672, 0.018080756),
-    (0.442051735, -0.046612422, 0.026358805),
-    (0.537668007, -0.049588114, 0.036631835),
-], dtype=float)
+OUTPATH = "output/enpi+/avakian_cross_check_multipage.pdf"
 
-enpiHarut2GEchi2FitsAULsinphi = np.array([
-    (0.166711789, -0.185373350, 0.035154993),
-    (0.257666829, -0.029528304, 0.017115088),
-    (0.352791737,  0.043233876, 0.015079326),
-    (0.444353621,  0.124480576, 0.021166973),
-    (0.540514011,  0.064941958, 0.022453429),
-], dtype=float)
+tbin_titles = ["0.05 < -t' < 0.45", "0.45 < -t' < 0.85", "0.85 < -t' < 1.225"]
+tbin_colors = ["tab:blue", "tab:orange", "tab:green"]
 
-enpiHarut2GEchi2FitsAULsin2phi = np.array([
-    (0.166711789, -0.409780182, 0.084752034),
-    (0.257666829, -0.327936196, 0.034823519),
-    (0.352791737, -0.215493468, 0.027052988),
-    (0.444353621, -0.161014987, 0.034770771),
-    (0.540514011, -0.136942728, 0.054149666),
-], dtype=float)
+# Page 2 palette (variables inside each t-panel)
+COL_VA = "tab:purple"
+COL_BA = "tab:red"
 
-enpiHarut3GEchi2FitsAULsinphi = np.array([
-    (0.167355144,  0.108010583, 0.044185777),
-    (0.256121660,  0.104709608, 0.017636483),
-    (0.349415100,  0.104212356, 0.024030534),
-    (0.447242357,  0.077923070, 0.035373521),
-    (0.540723607,  0.161757957, 0.030181965),
-], dtype=float)
-
-enpiHarut3GEchi2FitsAULsin2phi = np.array([
-    (0.167355144, -0.258947941, 0.123175313),
-    (0.256121660, -0.202247019, 0.031047992),
-    (0.349415100, -0.331442135, 0.041434944),
-    (0.447242357, -0.245808267, 0.051171297),
-    (0.540723607, -0.186831477, 0.064951121),
-], dtype=float)
-
-hayward_sets = [
-    (enpiHarut1GEchi2FitsAULsinphi,  enpiHarut1GEchi2FitsAULsin2phi),
-    (enpiHarut2GEchi2FitsAULsinphi,  enpiHarut2GEchi2FitsAULsin2phi),
-    (enpiHarut3GEchi2FitsAULsinphi,  enpiHarut3GEchi2FitsAULsin2phi),
-]
+# Page 3 palette (variables inside each t-panel)
+COL_X   = "tab:blue"
+COL_TPR = "tab:olive"
 
 # ----------------------------
-# Avakian (colleague) results (three blocks, 5 rows each, 11 columns)
-# Corrected column mapping (1-based -> 0-based):
-#   1: xB                 -> 0
-#   3: Df                 -> 2
-#   4: AUL_sinphi         -> 3
-#   5: err_sinphi         -> 4
-#   8: AUL_sin2phi        -> 7
-#   9: err_sin2phi        -> 8
-#  10: D(y) for sinphi    -> 9
-#  11: D(y) for sin2phi   -> 10
-#
-# Structure-function ratios:
-#   F_UL^{sinphi}/F_UU  = AUL_sinphi  / (Df * Dy_sinphi)
-#   F_UL^{sin2phi}/F_UU = AUL_sin2phi / (Df * Dy_sin2phi)
+# Avakian (colleague) blocks (5 rows each, 11 cols)
+# Columns (1-based):
+#   1: xB
+#   2: <-t'>
+#   3: Df
+#   4: AULsinphi
+#   5: eAULsinphi
+#   6: (unused here)
+#   7: (unused here)
+#   8: AULsin2phi
+#   9: eAULsin2phi
+#  10: <V/A>     (interpreted)
+#  11: <B/A>     (interpreted)
 # ----------------------------
-
 avak_block1 = np.array([
     [0.1709, 0.1721, 0.3714, -0.1960E-01, 0.1160E-01, 0.5400, 0.7950E-01, -0.2010E-01, 0.1060E-01, 1.568, 0.7172],
     [0.2538, 0.1675, 0.3817,  0.7600E-02, 0.6300E-02, 0.4999, 0.5580E-01, -0.2830E-01, 0.5800E-02, 1.713, 0.8107],
@@ -137,178 +115,372 @@ avak_block3 = np.array([
     [0.5881, 0.3125, 0.4234,  0.4350E-01,  0.2130E-01, -0.3000, 0.5690E-01, -0.2750E-01, 0.2120E-01, 1.674, 0.7851],
 ], dtype=float)
 
-def avak_to_ratios(block):
-    """
-    Convert Avakian block to (xB, R_phi, R_phi_err, R_2phi, R_2phi_err, denom_phi, denom_2phi).
-    Corrected index map (0-based):
-      0:xB, 2:Df, 3:AUL_sinphi, 4:err_sinphi,
-      7:AUL_sin2phi, 8:err_sin2phi,
-      9:Dy_sinphi, 10:Dy_sin2phi
-    """
-    xB = block[:, 0]
-    Df = block[:, 2]
-    A_sinphi = block[:, 3]
-    E_sinphi = np.abs(block[:, 4])
-    A_sin2   = block[:, 7]
-    E_sin2   = np.abs(block[:, 8])
-    Dy_phi   = block[:, 9]
-    Dy_2phi  = block[:, 10]
-
-    denom_phi = Df * Dy_phi
-    denom_2phi = Df * Dy_2phi
-
-    safe_phi = np.where(denom_phi != 0.0, denom_phi, np.nan)
-    safe_2phi = np.where(denom_2phi != 0.0, denom_2phi, np.nan)
-
-    R_phi = A_sinphi / safe_phi
-    R_phi_err = E_sinphi / safe_phi
-
-    R_2phi = A_sin2 / safe_2phi
-    R_2phi_err = E_sin2 / safe_2phi
-
-    return (xB, R_phi, R_phi_err, R_2phi, R_2phi_err, denom_phi, denom_2phi)
-#endfor
-
-# Convert all three Avakian blocks
 avak_blocks = [avak_block1, avak_block2, avak_block3]
-avak_ratios = [avak_to_ratios(b) for b in avak_blocks]
+
+# ----------------------------
+# Utilities
+# ----------------------------
+def ensure_outdir(path: str):
+    outdir = os.path.dirname(path)
+    if outdir:
+        os.makedirs(outdir, exist_ok=True)
+    #endif
+#endfor
+
+def load_hayward_export(path):
+    """
+    Read one Hayward per-bin export file (your new text format).
+    Returns a dict of numpy arrays with keys:
+      x, tprime, Df, AULsin, eAULsin, cosphi, e_cosphi, AULsin2, eAULsin2, VoverA, BoverA
+    """
+    xs, tps, dfs = [], [], []
+    a1, ea1, cph, ecph = [], [], [], []
+    a2, ea2, rva, rba = [], [], [], []
+
+    with open(path, "r") as f:
+        for line in f:
+            s = line.strip()
+            if not s or s.startswith("#"):
+                continue
+            # split by whitespace; expect 11 columns
+            cols = s.split()
+            if len(cols) < 11:
+                continue
+            #endfor
+            x        = float(cols[0])
+            tprime   = float(cols[1])
+            Df       = float(cols[2])
+            AULsin   = float(cols[3])
+            eAULsin  = float(cols[4])
+            cosphi   = float(cols[5])
+            e_cosphi = float(cols[6])
+            AULsin2  = float(cols[7])
+            eAULsin2 = float(cols[8])
+            VoverA   = float(cols[9])
+            BoverA   = float(cols[10])
+
+            xs.append(x); tps.append(tprime); dfs.append(Df)
+            a1.append(AULsin); ea1.append(eAULsin)
+            cph.append(cosphi); ecph.append(e_cosphi)
+            a2.append(AULsin2); ea2.append(eAULsin2)
+            rva.append(VoverA); rba.append(BoverA)
+        #endfor
+    #endwith
+
+    return dict(
+        x=np.array(xs, float),
+        tprime=np.array(tps, float),
+        Df=np.array(dfs, float),
+        AULsin=np.array(a1, float),
+        eAULsin=np.array(ea1, float),
+        cosphi=np.array(cph, float),
+        e_cosphi=np.array(ecph, float),
+        AULsin2=np.array(a2, float),
+        eAULsin2=np.array(ea2, float),
+        VoverA=np.array(rva, float),
+        BoverA=np.array(rba, float),
+    )
+#endfor
+
+def split_avak_dicts():
+    """
+    Convert Avakian blocks into list of dicts compatible with Hayward dicts.
+    Keys: x, tprime, Df, AULsin, eAULsin, AULsin2, eAULsin2, VoverA, BoverA
+    (cosphi not available; omitted.)
+    """
+    out = []
+    for blk in avak_blocks:
+        d = dict(
+            x=blk[:,0],
+            tprime=blk[:,1],
+            Df=blk[:,2],
+            AULsin=blk[:,3],
+            eAULsin=np.abs(blk[:,4]),
+            AULsin2=blk[:,7],
+            eAULsin2=np.abs(blk[:,8]),
+            VoverA=blk[:,9],
+            BoverA=blk[:,10],
+        )
+        out.append(d)
+    #endfor
+    return out
+#endfor
+
+def symmetric_ylim_from_series(series_list, pad=0.05, min_halfspan=0.05):
+    """
+    Given list of 1D arrays, compute symmetric y-lims around 0 with a small pad.
+    """
+    vmax = 0.0
+    for s in series_list:
+        if s is None: 
+            continue
+        s_abs = np.nanmax(np.abs(np.asarray(s, float)))
+        vmax = max(vmax, s_abs)
+    #endfor
+    half = max(min_halfspan, (1.0 + pad) * vmax)
+    return (-half, half)
+#endfor
+
+def add_panel_title(ax, idx):
+    ax.set_title(tbin_titles[idx], fontsize=11)
+#endfor
+
+def legend_handles(dataset_closed_color="black", dataset_open_color="black",
+                   closed_label="Hayward", open_label="Avakian"):
+    h_closed = Line2D([0], [0], marker="o", linestyle="None",
+                      mfc=dataset_closed_color, mec="black", ms=6, label=closed_label)
+    h_open   = Line2D([0], [0], marker="o", linestyle="None",
+                      mfc="none", mec=dataset_open_color, ms=6, label=open_label)
+    return h_closed, h_open
 #endfor
 
 # ----------------------------
-# Pretty printing helpers
+# Plotting pages
 # ----------------------------
-def print_table(title, x, y, yerr, col_y_label):
-    print("=" * 78)
-    print(title)
-    print("-" * 78)
-    print("{:>3s}  {:>10s}  {:>16s}  {:>16s}".format("i", "xB", col_y_label, "err"))
-    print("-" * 78)
-    for i in range(len(x)):
-        print("{:3d}  {:10.6f}  {:16.8f}  {:16.8f}".format(i, float(x[i]), float(y[i]), float(yerr[i])))
+def page1_compare_df(pdf, hayward_dicts, avak_dicts):
+    """Page 1: 1x3 Df vs x_B; y:[0.2,0.6]; x:[0.05,0.65].
+       Avakian CLOSED, Hayward OPEN."""
+    fig, axes = plt.subplots(1, 3, figsize=(12, 3.8), sharex=True, sharey=True)
+    for i in range(3):
+        ax = axes[i]
+        H, A = hayward_dicts[i], avak_dicts[i]
+        # Avakian = closed
+        ax.plot(A["x"], A["Df"], "o", ms=6, color=tbin_colors[i], mfc=tbin_colors[i], mec="black")
+        # Hayward = open
+        ax.plot(H["x"], H["Df"], "o", ms=6, color=tbin_colors[i], mfc="none", mec=tbin_colors[i])
+        add_panel_title(ax, i)
+        ax.set_xlim(X_MIN, X_MAX)
+        ax.set_ylim(DF_YMIN, DF_YMAX)
+        if i == 0:
+            ax.set_ylabel("Dilution factor $D_{f}$")
+        #endif
+        ax.set_xlabel(r"$x_{B}$")
     #endfor
-    print("")
+
+    # Legend
+    h_closed = Line2D([0],[0], marker="o", linestyle="None", mfc="black", mec="black", ms=6, label="Avakian")
+    h_open   = Line2D([0],[0], marker="o", linestyle="None", mfc="none",  mec="black", ms=6, label="Hayward")
+    axes[0].legend(handles=[h_closed, h_open], loc="lower right", frameon=False, title="Dataset")
+
+    fig.tight_layout()
+    pdf.savefig(fig)
+    plt.close(fig)
 #endfor
 
-def print_denominator_ranges():
-    for idx, (_x, _r1, _e1, _r2, _e2, dphi, d2phi) in enumerate(avak_ratios):
-        tlabel = tbin_labels[idx]
-        dphi_finite = dphi[np.isfinite(dphi)]
-        d2phi_finite = d2phi[np.isfinite(d2phi)]
-        print("Denominators (Df*Dy) ranges for {}:".format(tlabel))
-        print("  sinphi : min={:.6f}, max={:.6f}".format(np.min(dphi_finite), np.max(dphi_finite)))
-        print("  sin2phi: min={:.6f}, max={:.6f}".format(np.min(d2phi_finite), np.max(d2phi_finite)))
-    #endfor
-    print("")
-#endif
+def page2_compare_va_ba(pdf, hayward_dicts, avak_dicts):
+    """Page 2: 1x3 compare <V/A> and <B/A>, y:[0,2]; x:[0.05,0.65].
+       Hayward CLOSED, Avakian OPEN."""
+    fig, axes = plt.subplots(1, 3, figsize=(12, 3.8), sharex=True, sharey=True)
+    for i in range(3):
+        ax = axes[i]
+        H, A = hayward_dicts[i], avak_dicts[i]
 
-def print_all_results():
-    # Hayward tables (already structure-function ratios as plotted)
-    for idx, (arr_phi, arr_2phi) in enumerate(hayward_sets):
-        tlabel = tbin_labels[idx]
-        print_table(
-            f"Hayward F_UL^{{sinphi}}/F_UU   (t-bin: {tlabel})",
-            arr_phi[:, 0], arr_phi[:, 1], arr_phi[:, 2],
-            "FUL^{sinphi}/FUU"
-        )
-        print_table(
-            f"Hayward F_UL^{{sin2phi}}/F_UU  (t-bin: {tlabel})",
-            arr_2phi[:, 0], arr_2phi[:, 1], arr_2phi[:, 2],
-            "FUL^{sin2phi}/FUU"
-        )
+        # V/A (color COL_VA)
+        ax.plot(H["x"], H["VoverA"], "o", ms=6, color=COL_VA, mfc=COL_VA, mec="black", label=r"$\langle V/A\rangle$ (H)")  # closed
+        ax.plot(A["x"], A["VoverA"], "o", ms=6, color=COL_VA, mfc="none",  mec=COL_VA, label=r"$\langle V/A\rangle$ (A)")  # open
+
+        # B/A (color COL_BA)
+        ax.plot(H["x"], H["BoverA"], "o", ms=6, color=COL_BA, mfc=COL_BA, mec="black", label=r"$\langle B/A\rangle$ (H)")
+        ax.plot(A["x"], A["BoverA"], "o", ms=6, color=COL_BA, mfc="none",  mec=COL_BA, label=r"$\langle B/A\rangle$ (A)")
+
+        add_panel_title(ax, i)
+        ax.set_xlim(X_MIN, X_MAX)
+        ax.set_ylim(VBA_YMIN, VBA_YMAX)
+        if i == 0:
+            ax.set_ylabel(r"$\langle V/A\rangle,\,\langle B/A\rangle$")
+        #endif
+        ax.set_xlabel(r"$x_{B}$")
     #endfor
 
-    # Avakian tables (converted to structure-function ratios)
-    for idx, (xB, R_phi, R_phi_err, R_2phi, R_2phi_err, _dphi, _d2phi) in enumerate(avak_ratios):
-        tlabel = tbin_labels[idx]
-        print_table(
-            f"Avakian F_UL^{{sinphi}}/F_UU   (t-bin: {tlabel})",
-            xB, R_phi, R_phi_err,
-            "FUL^{sinphi}/FUU"
-        )
-        print_table(
-            f"Avakian F_UL^{{sin2phi}}/F_UU  (t-bin: {tlabel})",
-            xB, R_2phi, R_2phi_err,
-            "FUL^{sin2phi}/FUU"
-        )
+    # Build a simple legend: color encodes (V/A vs B/A); fill encodes (Hayward vs Avakian)
+    h_va_h, h_va_a = (Line2D([0],[0], marker="o", linestyle="None", mfc=COL_VA, mec="black", ms=6, label=r"$\langle V/A\rangle$ (Hayward)"),
+                      Line2D([0],[0], marker="o", linestyle="None", mfc="none",  mec=COL_VA, ms=6, label=r"$\langle V/A\rangle$ (Avakian)"))
+    h_ba_h, h_ba_a = (Line2D([0],[0], marker="o", linestyle="None", mfc=COL_BA, mec="black", ms=6, label=r"$\langle B/A\rangle$ (Hayward)"),
+                      Line2D([0],[0], marker="o", linestyle="None", mfc="none",  mec=COL_BA, ms=6, label=r"$\langle B/A\rangle$ (Avakian)"))
+    axes[0].legend(handles=[h_va_h, h_va_a, h_ba_h, h_ba_a], loc="upper right", frameon=False, title="Vars/Datasets")
+
+    fig.tight_layout()
+    pdf.savefig(fig)
+    plt.close(fig)
+#endfor
+
+def page3_compare_x_and_tprime(pdf, hayward_dicts, avak_dicts):
+    """Page 3: 1x3 plot <x> and <-t'> vs x_B; y:[0,1]; x:[0.05,0.65].
+       Hayward CLOSED, Avakian OPEN."""
+    fig, axes = plt.subplots(1, 3, figsize=(12, 3.8), sharex=True, sharey=True)
+    for i in range(3):
+        ax = axes[i]
+        H, A = hayward_dicts[i], avak_dicts[i]
+
+        # <x> (which is just x vs x) – included for direct comparison
+        ax.plot(H["x"], H["x"], "o", ms=6, color=COL_X, mfc=COL_X, mec="black", label=r"$\langle x\rangle$ (H)")
+        ax.plot(A["x"], A["x"], "o", ms=6, color=COL_X, mfc="none",  mec=COL_X, label=r"$\langle x\rangle$ (A)")
+
+        # <-t'>
+        ax.plot(H["x"], H["tprime"], "o", ms=6, color=COL_TPR, mfc=COL_TPR, mec="black", label=r"$\langle -t'\rangle$ (H)")
+        ax.plot(A["x"], A["tprime"], "o", ms=6, color=COL_TPR, mfc="none",  mec=COL_TPR, label=r"$\langle -t'\rangle$ (A)")
+
+        add_panel_title(ax, i)
+        ax.set_xlim(X_MIN, X_MAX)
+        ax.set_ylim(XT_YMIN, XT_YMAX)
+        if i == 0:
+            ax.set_ylabel(r"$\langle x\rangle,\ \langle -t'\rangle$")
+        #endif
+        ax.set_xlabel(r"$x_{B}$")
     #endfor
+
+    h_x_h, h_x_a = (Line2D([0],[0], marker="o", linestyle="None", mfc=COL_X,   mec="black", ms=6, label=r"$\langle x\rangle$ (Hayward)"),
+                    Line2D([0],[0], marker="o", linestyle="None", mfc="none",   mec=COL_X,   ms=6, label=r"$\langle x\rangle$ (Avakian)"))
+    h_t_h, h_t_a = (Line2D([0],[0], marker="o", linestyle="None", mfc=COL_TPR, mec="black", ms=6, label=r"$\langle -t'\rangle$ (Hayward)"),
+                    Line2D([0],[0], marker="o", linestyle="None", mfc="none",   mec=COL_TPR, ms=6, label=r"$\langle -t'\rangle$ (Avakian)"))
+    axes[0].legend(handles=[h_x_h, h_x_a, h_t_h, h_t_a], loc="upper left", frameon=False, title="Vars/Datasets")
+
+    fig.tight_layout()
+    pdf.savefig(fig)
+    plt.close(fig)
+#endfor
+
+def page4_compare_asymmetries(pdf, hayward_dicts, avak_dicts):
+    """Page 4: 2x3; top A_UL^{sinφ}, bottom A_UL^{sin2φ} (asymmetry amplitudes)."""
+    fig, axes = plt.subplots(2, 3, figsize=(12, 7.6), sharex=True)
+    # Determine symmetric y-lims per row from both datasets
+    row1_series = []
+    row2_series = []
+    for i in range(3):
+        H, A = hayward_dicts[i], avak_dicts[i]
+        row1_series.extend([H["AULsin"], A["AULsin"]])
+        row2_series.extend([H["AULsin2"], A["AULsin2"]])
+    #endfor
+    y1min, y1max = symmetric_ylim_from_series(row1_series, pad=0.1, min_halfspan=0.05)
+    y2min, y2max = symmetric_ylim_from_series(row2_series, pad=0.1, min_halfspan=0.05)
+
+    for i in range(3):
+        # Top row: AUL sinφ
+        axT = axes[0, i]
+        H, A = hayward_dicts[i], avak_dicts[i]
+        axT.errorbar(H["x"], H["AULsin"],  yerr=H["eAULsin"],  fmt="o", ms=6, lw=1.2, capsize=3,
+                     color=tbin_colors[i], mfc=tbin_colors[i], mec="black", label="Hayward")
+        axT.errorbar(A["x"], A["AULsin"],  yerr=A["eAULsin"],  fmt="o", ms=6, lw=1.2, capsize=3,
+                     color=tbin_colors[i], mfc="none", mec=tbin_colors[i], label="Avakian")
+        add_panel_title(axT, i)
+        axT.set_xlim(X_MIN, X_MAX)
+        axT.set_ylim(y1min, y1max)
+        if i == 0:
+            axT.set_ylabel(r"$A_{UL}^{\sin\phi}$")
+        #endif
+
+        # Bottom row: AUL sin2φ
+        axB = axes[1, i]
+        axB.errorbar(H["x"], H["AULsin2"], yerr=H["eAULsin2"], fmt="o", ms=6, lw=1.2, capsize=3,
+                     color=tbin_colors[i], mfc=tbin_colors[i], mec="black", label="Hayward")
+        axB.errorbar(A["x"], A["AULsin2"], yerr=A["eAULsin2"], fmt="o", ms=6, lw=1.2, capsize=3,
+                     color=tbin_colors[i], mfc="none", mec=tbin_colors[i], label="Avakian")
+        axB.set_xlim(X_MIN, X_MAX)
+        axB.set_ylim(y2min, y2max)
+        if i == 0:
+            axB.set_ylabel(r"$A_{UL}^{\sin2\phi}$")
+        #endif
+        axB.set_xlabel(r"$x_{B}$")
+    #endfor
+
+    # Single legend (top-left panel)
+    h_h = Line2D([0],[0], marker="o", linestyle="None", mfc="black", mec="black", ms=6, label="Hayward")
+    h_a = Line2D([0],[0], marker="o", linestyle="None", mfc="none",  mec="black", ms=6, label="Avakian")
+    axes[0,0].legend(handles=[h_h, h_a], loc="lower right", frameon=False, title="Dataset")
+
+    fig.tight_layout()
+    pdf.savefig(fig)
+    plt.close(fig)
+#endfor
+
+def page5_compare_ratios(pdf, hayward_dicts, avak_dicts):
+    """Page 5: 2x3; top F_UL^{sinφ}/F_UU, bottom F_UL^{sin2φ}/F_UU (ratios).
+       Using ratio = AUL / (V/A) and AUL2 / (B/A)."""
+    fig, axes = plt.subplots(2, 3, figsize=(12, 7.6), sharex=True, sharey=False)
+
+    for i in range(3):
+        H, A = hayward_dicts[i], avak_dicts[i]
+
+        # Ratios and errors via straightforward scaling
+        H_r1  = H["AULsin"]  / H["VoverA"]
+        H_er1 = H["eAULsin"] / H["VoverA"]
+        H_r2  = H["AULsin2"]  / H["BoverA"]
+        H_er2 = H["eAULsin2"] / H["BoverA"]
+
+        A_r1  = A["AULsin"]  / A["VoverA"]
+        A_er1 = A["eAULsin"] / A["VoverA"]
+        A_r2  = A["AULsin2"]  / A["BoverA"]
+        A_er2 = A["eAULsin2"] / A["BoverA"]
+
+        # Top row: sinφ ratios
+        axT = axes[0, i]
+        axT.errorbar(H["x"], H_r1, yerr=H_er1, fmt="o", ms=6, lw=1.2, capsize=3,
+                     color=tbin_colors[i], mfc=tbin_colors[i], mec="black", label="Hayward")
+        axT.errorbar(A["x"], A_r1, yerr=A_er1, fmt="o", ms=6, lw=1.2, capsize=3,
+                     color=tbin_colors[i], mfc="none",    mec=tbin_colors[i], label="Avakian")
+        add_panel_title(axT, i)
+        axT.set_xlim(X_MIN, X_MAX)
+        axT.set_ylim(R_SIN_YMIN, R_SIN_YMAX)
+        if i == 0:
+            axT.set_ylabel(r"$F_{UL}^{\sin\phi}/F_{UU}$")
+        #endif
+
+        # Bottom row: sin2φ ratios
+        axB = axes[1, i]
+        axB.errorbar(H["x"], H_r2, yerr=H_er2, fmt="o", ms=6, lw=1.2, capsize=3,
+                     color=tbin_colors[i], mfc=tbin_colors[i], mec="black", label="Hayward")
+        axB.errorbar(A["x"], A_r2, yerr=A_er2, fmt="o", ms=6, lw=1.2, capsize=3,
+                     color=tbin_colors[i], mfc="none",    mec=tbin_colors[i], label="Avakian")
+        axB.set_xlim(X_MIN, X_MAX)
+        axB.set_ylim(R_SIN2_YMIN, R_SIN2_YMAX)
+        if i == 0:
+            axB.set_ylabel(r"$F_{UL}^{\sin2\phi}/F_{UU}$")
+        #endif
+        axB.set_xlabel(r"$x_{B}$")
+    #endfor
+
+    # Single legend (top-left)
+    h_h = Line2D([0],[0], marker="o", linestyle="None", mfc="black", mec="black", ms=6, label="Hayward")
+    h_a = Line2D([0],[0], marker="o", linestyle="None", mfc="none",  mec="black", ms=6, label="Avakian")
+    axes[0,0].legend(handles=[h_h, h_a], loc="lower right", frameon=False, title="Dataset")
+
+    fig.tight_layout()
+    pdf.savefig(fig)
+    plt.close(fig)
 #endfor
 
 # ----------------------------
-# Plot
+# Main
 # ----------------------------
 def main():
-    os.makedirs(os.path.dirname(OUTPATH), exist_ok=True)
+    parser = argparse.ArgumentParser(description="Build multi-page Avakian/Hayward cross-check PDF.")
+    parser.add_argument("--hay1", required=True, help="Hayward per-bin export file (t-bin 1: 0.05 < -t' < 0.45)")
+    parser.add_argument("--hay2", required=True, help="Hayward per-bin export file (t-bin 2: 0.45 < -t' < 0.85)")
+    parser.add_argument("--hay3", required=True, help="Hayward per-bin export file (t-bin 3: 0.85 < -t' < 1.225)")
+    parser.add_argument("--out",  default=OUTPATH, help=f"Output PDF path (default: {OUTPATH})")
+    args = parser.parse_args()
 
-    # Diagnostics first so you can verify sane denominators
-    print_denominator_ranges()
+    ensure_outdir(args.out)
 
-    # Then print all numeric tables
-    print_all_results()
+    # Load Hayward data (3 files)
+    H1 = load_hayward_export(args.hay1)
+    H2 = load_hayward_export(args.hay2)
+    H3 = load_hayward_export(args.hay3)
+    hayward_dicts = [H1, H2, H3]
 
-    # No shared y so ticks/labels appear for BOTH subplots
-    fig, axes = plt.subplots(1, 2, figsize=(11, 4.5), sharex=True)
-    axL, axR = axes[0], axes[1]
+    # Prepare Avakian dicts
+    avak_dicts = split_avak_dicts()
 
-    # Plot Hayward sets (filled markers) with error bars; colors by t-bin
-    for i, (arr_phi, arr_2phi) in enumerate(hayward_sets):
-        x_phi, y_phi, e_phi = arr_phi[:, 0], arr_phi[:, 1], arr_phi[:, 2]
-        x_2phi, y_2phi, e_2phi = arr_2phi[:, 0], arr_2phi[:, 1], arr_2phi[:, 2]
+    # Build multipage PDF
+    with PdfPages(args.out) as pdf:
+        page1_compare_df(pdf, hayward_dicts, avak_dicts)
+        page2_compare_va_ba(pdf, hayward_dicts, avak_dicts)
+        page3_compare_x_and_tprime(pdf, hayward_dicts, avak_dicts)
+        page4_compare_asymmetries(pdf, hayward_dicts, avak_dicts)
+        page5_compare_ratios(pdf, hayward_dicts, avak_dicts)
+    #endwith
 
-        # Left: sin phi
-        axL.errorbar(
-            x_phi, y_phi, yerr=e_phi, fmt="o", ms=6, lw=1.2, capsize=3,
-            color=colors[i], mfc=colors[i], mec="black", label=tbin_labels[i]
-        )
-
-        # Right: sin 2phi
-        axR.errorbar(
-            x_2phi, y_2phi, yerr=e_2phi, fmt="o", ms=6, lw=1.2, capsize=3,
-            color=colors[i], mfc=colors[i], mec="black"
-        )
-    #endfor
-
-    # Overlay Avakian (all three t-bins) as OPEN circles in matching colors
-    for i, (xB, R_phi, R_phi_err, R_2phi, R_2phi_err, _dphi, _d2phi) in enumerate(avak_ratios):
-        axL.errorbar(
-            xB, R_phi, yerr=R_phi_err, fmt="o", ms=6, lw=1.2, capsize=3,
-            color=colors[i], mfc="none", mec=colors[i]
-        )
-        axR.errorbar(
-            xB, R_2phi, yerr=R_2phi_err, fmt="o", ms=6, lw=1.2, capsize=3,
-            color=colors[i], mfc="none", mec=colors[i]
-        )
-    #endfor
-
-    # Axes labels and limits
-    axL.set_xlabel(r"$x_{B}$")
-    axR.set_xlabel(r"$x_{B}$")
-    axL.set_ylabel(r"$F_{UL}^{\sin\phi}/F_{UU}$")
-    axR.set_ylabel(r"$F_{UL}^{\sin2\phi}/F_{UU}$")
-    axL.set_xlim(X_MIN, X_MAX)
-    axR.set_xlim(X_MIN, X_MAX)
-    axL.set_ylim(Y_L_MIN, Y_L_MAX)  # sinphi panel limits
-    axR.set_ylim(Y_R_MIN, Y_R_MAX)  # sin2phi panel limits
-
-    # Ensure y ticks & labels show for BOTH subplots
-    axL.tick_params(axis="y", which="both", labelleft=True)
-    axR.tick_params(axis="y", which="both", labelleft=True)
-
-    # Legends:
-    # 1) Left: t-bin color legend (already labeled for Hayward series)
-    leg1 = axL.legend(loc="lower left", frameon=False, title="-t bins")
-
-    # 2) Right: marker meaning legend
-    hayward_handle = Line2D([0], [0], marker="o", linestyle="None",
-                            mfc="black", mec="black", ms=6, label="Hayward")
-    avakian_handle = Line2D([0], [0], marker="o", linestyle="None",
-                            mfc="none", mec="black", ms=6, label="Avakian")
-    leg2 = axR.legend(handles=[hayward_handle, avakian_handle],
-                      loc="lower right", frameon=False, title="Markers")
-
-    # Layout and save
-    fig.tight_layout()
-    fig.savefig(OUTPATH)
-    print("Wrote:", OUTPATH)
+    print("Wrote:", args.out)
 #endfor
 
 if __name__ == "__main__":
