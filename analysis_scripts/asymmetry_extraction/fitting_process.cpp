@@ -3908,9 +3908,6 @@ static void plotHistogramAndFit_GeneralExclusive(
 // ─────────────────────────────────────────────────────────────────────
 // Driver: simultaneous fits per bin (11 parameters)
 // ─────────────────────────────────────────────────────────────────────
-// ─────────────────────────────────────────────────────────────────────
-// Driver: simultaneous fits per bin (11 parameters)
-// ─────────────────────────────────────────────────────────────────────
 void performChi2Fits_GeneralExclusive(const char* output_file,
                                       const char* kinematic_file,
                                       const char* kinematicPlot_file,
@@ -3919,6 +3916,9 @@ void performChi2Fits_GeneralExclusive(const char* output_file,
   // If true  -> print everything (spin-dependent + UU terms + A_T leakages)
   // If false -> print only spin-dependent SF ratios: FLU^sin, FUL^sin, FUL^sin2, ALL, ALL^cos
   static bool g_ge_write_all_results = false;  // move to file scope if you prefer
+
+  // === NEW: toggle for the per-bin export text file ============================
+  static bool g_ge_write_bin_export = true;  // set false to disable creating the extra text file
 
   // Control the leakage fits here (global switches)
   g_fit_enable_TUL = true;   // set false to disable fitting A_T-UL
@@ -3971,6 +3971,22 @@ void performChi2Fits_GeneralExclusive(const char* output_file,
   const std::string covPath  = "output/results/GE_" + prefix + "_cov_"  + suffix + ".txt";
   const std::string corrPath = "output/results/GE_" + prefix + "_corr_" + suffix + ".txt";
 
+  // === NEW: open the per-bin export text file (once) ===========================
+  std::ofstream binExport;
+  if (g_ge_write_bin_export) {
+    const std::string exportPath = "output/results/GE_bin_export_" + prefix + "_" + suffix + ".txt";
+    binExport.open(exportPath, std::ios::out | std::ios::trunc);
+    if (binExport) {
+      binExport << std::fixed << std::setprecision(9);
+      // Header:
+      // <x> <-t'> Df AULsin eAULsin <cosphi> e<cosphi> aulsin2phi eaulsin2phi <V/A> <B/A>
+      binExport
+        << "# x  -tprime  Df  AULsin  eAULsin  <cosphi>  e<cosphi>  aulsin2phi  eaulsin2phi  <V/A>  <B/A>\n";
+    } else {
+      std::cerr << "[performChi2Fits_GeneralExclusive] WARNING: could not open per-bin export file.\n";
+    }
+  }
+
   // ====== Containers to write the *fit-results* LaTeX table after the loop ====
   std::vector<double> meanVars;
   std::vector<std::vector<double>> all_pvals;  // [bin][0..10]
@@ -4011,6 +4027,11 @@ void performChi2Fits_GeneralExclusive(const char* output_file,
     double mtp_min = 1e300, mtp_max = -1e300;  // range of (−t′)
     double sum_mtp = 0.0;                      // mean of (−t′)
 
+    // === NEW: accumulators for <cosφ> and its standard error ===================
+    double sum_cosphi = 0.0;
+    double sum_cosphi2 = 0.0;
+    long   cnt_cosphi = 0;
+
     {
       TTreeReaderValue<double> Q2(dataReader,"Q2");
       TTreeReaderValue<double> W (dataReader,"W");
@@ -4024,6 +4045,7 @@ void performChi2Fits_GeneralExclusive(const char* output_file,
       TTreeReaderValue<double> DepC(dataReader,"DepC");
       TTreeReaderValue<double> DepV(dataReader,"DepV");
       TTreeReaderValue<double> DepW(dataReader,"DepW");
+      TTreeReaderValue<double> phi(dataReader,"phi");                 // NEW
       TTreeReaderValue<double> currentVariable(dataReader, propertyNames[currentFits].c_str());
 
       const double vmin = allBins[currentFits][i];
@@ -4053,6 +4075,12 @@ void performChi2Fits_GeneralExclusive(const char* output_file,
         const double mtp = (*tmin) - (*t);
         sum_mtp += mtp;
         upd_minmax(mtp, mtp_min, mtp_max);
+
+        // NEW: cosφ moments
+        const double cphi = std::cos(*phi);
+        sum_cosphi  += cphi;
+        sum_cosphi2 += cphi * cphi;
+        ++cnt_cosphi;
       }
       dataReader.Restart();
     }
@@ -4067,6 +4095,21 @@ void performChi2Fits_GeneralExclusive(const char* output_file,
     const double meant    = (nEvt>0)? sumt/nEvt   : 0.0;
     const double meantmin = (nEvt>0)? sumtmin/nEvt: 0.0;
     const double mean_mtp = (nEvt>0)? sum_mtp/nEvt : 0.0;   // mean of (−t′)
+
+    // NEW: ⟨cosφ⟩ and its statistical error on the mean
+    double mean_cosphi = 0.0;
+    double err_cosphi  = 0.0;
+    if (cnt_cosphi > 0) {
+      mean_cosphi = sum_cosphi / static_cast<double>(cnt_cosphi);
+      if (cnt_cosphi > 1) {
+        const double s2 = (sum_cosphi2 - static_cast<double>(cnt_cosphi)*mean_cosphi*mean_cosphi)
+                          / static_cast<double>(cnt_cosphi - 1);
+        const double var_mean = std::max(0.0, s2 / static_cast<double>(cnt_cosphi));
+        err_cosphi = std::sqrt(var_mean);
+      } else {
+        err_cosphi = 0.0;
+      }
+    }
 
     // If no events, make ranges [0,0,0]
     if (nEvt == 0) {
@@ -4267,6 +4310,33 @@ void performChi2Fits_GeneralExclusive(const char* output_file,
         of << "\n";
       }
       of << "\n";
+    }
+
+    // === NEW: write the per-bin export line ===================================
+    if (g_ge_write_bin_export && binExport) {
+      // physical TSA amplitudes (no depol factors in the *fit parameters* → scale by <V/A>, <B/A>)
+      const double AUL_sin    = g_ge_ctx.rVA * pval[3];
+      const double eAUL_sin   = g_ge_ctx.rVA * perr[3];
+      const double AUL_sin2   = g_ge_ctx.rBA * pval[4];
+      const double eAUL_sin2  = g_ge_ctx.rBA * perr[4];
+
+      // dilution factor for this bin (index i)
+      double Df = 1.0;
+      if (i < dilutionFactors.size()) Df = dilutionFactors[i].first;
+
+      // <x>  <-t'>  Df  AULsin  eAULsin  <cosphi>  e<cosphi>  aulsin2phi  eaulsin2phi  <V/A>  <B/A>
+      binExport
+        << meanx      << " "
+        << mean_mtp   << " "
+        << Df         << " "
+        << AUL_sin    << " "
+        << eAUL_sin   << " "
+        << mean_cosphi<< " "
+        << err_cosphi << " "
+        << AUL_sin2   << " "
+        << eAUL_sin2  << " "
+        << g_ge_ctx.rVA << " "
+        << g_ge_ctx.rBA << "\n";
     }
 
     delete hALU; delete hAUL; delete hALL;

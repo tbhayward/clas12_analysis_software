@@ -235,6 +235,7 @@ GeneralExclusiveKinematicCuts::GeneralExclusiveKinematicCuts(TTreeReader& reader
       z            (reader, "z"),
       t            (reader, "t"),
       tmin         (reader, "tmin"),
+      tprime       (reader, "tprime"),
       target_pol   (reader, "target_pol")
 {}
 
@@ -369,67 +370,7 @@ bool GeneralExclusiveKinematicCuts::applyCuts(int currentFits, bool isMC)
                          (-*tprime > 0.85 && -*tprime < 1.225);
         if (!goodEvent) return false;
         return PassesDynamicMx2(*x, *tprime, *Mx2);
-    }
-
-    // ----------------------------------------------------------------
-    // Everything else remains exactly as you had it
-    // ----------------------------------------------------------------
-    if (property == "Fall18xB" || property == "Fall18pT" ||
-        property == "Spring18xB" || property == "Spring18pT")
-    {
-        bool goodEvent = (*Q2 > 1.0 && *W > 2.0 && *y < 0.80 && *Mx2 > 2.25);
-        return goodEvent;
-    }
-    if (property == "W" || property == "x") {
-        bool goodEvent = (*Q2 > 1.0 && *W > 2.0 && *y < 0.80 && *Mx2 > 1.8225);
-        return goodEvent;
-    }
-    if (property == "integrated") {
-        bool goodEvent = (*Q2 > 1.0 && *W > 2.0 && *Mx2 > 1.8225 && *y < 0.80);
-        return goodEvent;
-    }
-    if (property == "Mx2") {
-        bool goodEvent = (*Q2 > 1.0 && *W > 2.0 && *y < 0.80);
-        return goodEvent;
-    }
-    if (property == "xF") {
-        bool goodEvent = (*Q2 > 1.0 && *W > 2.0 && *y < 0.80 && *Mx2 > 1.8225);
-        return goodEvent;
-    }
-    if (property == "xFsmallPT") {
-        bool goodEvent = (*Q2 > 1.0 && *W > 2.0 && *y < 0.80 &&
-                          *Mx2 > 1.8225 && *pT < 0.5);
-        return goodEvent;
-    }
-    if (property == "xFlargePT") {
-        bool goodEvent = (*Q2 > 1.0 && *W > 2.0 && *y < 0.80 &&
-                          *Mx2 > 1.8225 && *pT > 0.5);
-        return goodEvent;
-    }
-    if (property == "xTFR"   || property == "xi"     || property == "PTTFR") {
-        bool goodEvent = (*Q2 > 1.0 && *W > 2.0 && *y < 0.80 &&
-                          *Mx2 > 1.8225 && *xF < 0.0);
-        return goodEvent;
-    }
-    if (property == "xTFRsmallPT" || property == "xismallPT") {
-        bool goodEvent = (*Q2 > 1.0 && *W > 2.0 && *y < 0.80 &&
-                          *Mx2 > 1.8225 && *xF < 0.0 && *pT < 0.5);
-        return goodEvent;
-    }
-    if (property == "xTFRlargePT" || property == "xilargePT") {
-        bool goodEvent = (*Q2 > 1.0 && *W > 2.0 && *y < 0.80 &&
-                          *Mx2 > 1.8225 && *xF < 0.0 && *pT > 0.5);
-        return goodEvent;
-    }
-    if (property == "xCFR"   || property == "z"  || property == "PTCFR") {
-        bool goodEvent = (*Q2 > 1.0 && *W > 2.0 && *y < 0.80 &&
-                          *Mx2 > 1.8225 && *xF > 0.2);
-        return goodEvent;
-    }
-    if (property == "x") {
-        bool goodEvent = (*Q2 > 1.0 && *W > 2.0 && *y < 0.80 && *Mx2 > 1.8225);
-        return goodEvent;
-    }
+    
 
     return false;
 }
