@@ -357,7 +357,8 @@ bool GeneralExclusiveKinematicCuts::applyCuts(int currentFits, bool isMC)
         bool goodEvent = (*fiducial_status >= 111) &&
                          (-*tprime > 0.05 && -*tprime < 0.45);
         if (!goodEvent) return false;
-        return PassesDynamicMx2(*x, *tprime, *Mx2);
+        return *Mx2 > 0.86 && *Mx2 < 1;
+        // return PassesDynamicMx2(*x, *tprime, *Mx2);
     }
     if (property == "enpiHarut2") {
         bool goodEvent = (*fiducial_status >= 111) &&

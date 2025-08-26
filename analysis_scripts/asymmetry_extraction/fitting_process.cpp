@@ -3912,6 +3912,9 @@ static void plotHistogramAndFit_GeneralExclusive(
 // ─────────────────────────────────────────────────────────────────────
 // Driver: simultaneous fits per bin (11 parameters)
 // ─────────────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────
+// Driver: simultaneous fits per bin (11 parameters)
+// ─────────────────────────────────────────────────────────────────────
 void performChi2Fits_GeneralExclusive(const char* output_file,
                                       const char* kinematic_file,
                                       const char* kinematicPlot_file,
@@ -3983,7 +3986,7 @@ void performChi2Fits_GeneralExclusive(const char* output_file,
     binExportPath = "output/results/GE_bin_export_" + prefix + "_" + suffix + ".txt";
     binExport.open(binExportPath, std::ios::out | std::ios::trunc);
     binExport << std::fixed << std::setprecision(9);
-    binExport << "# x  -t'  Df  AULsin  eAULsin  <cosphi>  e<cosphi>  AULsin2phi  eAULsin2phi  <V/A>  <B/A>\n";
+    binExport << "# x  -t  -t'  y  Q2\n";
   }
 
   // Containers to write the *fit-results* LaTeX table after the loop (unchanged)
@@ -4026,7 +4029,7 @@ void performChi2Fits_GeneralExclusive(const char* output_file,
     double mtp_min = 1e300, mtp_max = -1e300;
     double sum_mtp = 0.0;
 
-    // NEW: ⟨cosφ⟩ and its standard error in the bin
+    // Optional moments retained (do not affect behavior elsewhere)
     double sumCos = 0.0, sumCos2 = 0.0; long long nCos = 0;
 
     {
@@ -4037,8 +4040,8 @@ void performChi2Fits_GeneralExclusive(const char* output_file,
       TTreeReaderValue<double> z (dataReader,"z");
       TTreeReaderValue<double> t (dataReader,"t");
       TTreeReaderValue<double> tmin(dataReader,"tmin");
-      TTreeReaderValue<double> tprime(dataReader,"tprime");        // NEW
-      TTreeReaderValue<double> phi(dataReader,"phi");              // NEW
+      TTreeReaderValue<double> tprime(dataReader,"tprime");
+      TTreeReaderValue<double> phi(dataReader,"phi");
       TTreeReaderValue<double> currentVariable(dataReader, propertyNames[currentFits].c_str());
 
       const double vmin = allBins[currentFits][i];
@@ -4068,7 +4071,7 @@ void performChi2Fits_GeneralExclusive(const char* output_file,
         sum_mtp += mtp;
         upd_minmax(mtp, mtp_min, mtp_max);
 
-        // cosφ moment (unweighted over accepted events)
+        // keep ⟨cosφ⟩ moment (not used in export now)
         const double c = std::cos(*phi);
         sumCos  += c;
         sumCos2 += c*c;
@@ -4093,7 +4096,7 @@ void performChi2Fits_GeneralExclusive(const char* output_file,
       q2min=q2max=0.0; xmin=xmax=0.0; ymin=ymax=0.0; zmin=zmax=0.0; mtp_min=mtp_max=0.0;
     }
 
-    // Mean and SEM for ⟨cosφ⟩
+    // Mean and SEM for ⟨cosφ⟩ (not used in export now; retained to avoid side-effects)
     double meanCos = 0.0, eMeanCos = 0.0;
     if (nCos > 0) {
       meanCos = sumCos / static_cast<double>(nCos);
@@ -4288,9 +4291,6 @@ void performChi2Fits_GeneralExclusive(const char* output_file,
       std::ofstream of(corrPath, std::ios::out | std::ios::app);
       of << std::setprecision(9);
       of << "## Bin " << i << "  Range: [" << vminB << ", " << vmaxB << ")  Events: " << nEvt << "\n";
-      of << std::left << std::setw(22) << "#";
-      for (int c=0;c<npar;++c) of << std::setw(22) << names[c];
-      of << "\n";
       for (int r=0; r<npar; ++r) {
         for (int c=0; c<npar; ++c) {
           double denom = (errv[r]>0 && errv[c]>0) ? (errv[r]*errv[c]) : 1.0;
@@ -4304,33 +4304,13 @@ void performChi2Fits_GeneralExclusive(const char* output_file,
 
     // === NEW: write one line into the extra export file =======================
     if (g_ge_write_bin_export && binExport.is_open()) {
-      // Take dilution factor for this bin.
-      // Prefer the bin index i; if out-of-range, fall back to currentBin (keeps legacy behavior).
-      double Df = 1.0;
-      if (i < dilutionFactors.size()) {
-        Df = dilutionFactors[i].first;
-      } else if ((size_t)currentBin < dilutionFactors.size()) {
-        Df = dilutionFactors[currentBin].first;
-      }
-
-      // Convert fitted structure-function ratios → physical TSA amplitudes
-      // using the per-bin depolarization ratios.
-      const double AUL_sin   = g_ge_ctx.rVA * pval[3];
-      const double eAUL_sin  = g_ge_ctx.rVA * perr[3];
-      const double AUL_sin2  = g_ge_ctx.rBA * pval[4];
-      const double eAUL_sin2 = g_ge_ctx.rBA * perr[4];
-
-      binExport << meanx     << " "
-                << mean_mtp  << " "
-                << Df        << " "
-                << AUL_sin   << " "
-                << eAUL_sin  << " "
-                << meanCos   << " "
-                << eMeanCos  << " "
-                << AUL_sin2  << " "
-                << eAUL_sin2 << " "
-                << g_ge_ctx.rVA << " "
-                << g_ge_ctx.rBA << "\n";
+      const double mean_mt = -meant;      // ⟨-t⟩
+      // mean_mtp is already ⟨-t'⟩
+      binExport << meanx    << " "
+                << mean_mt  << " "
+                << mean_mtp << " "
+                << meany    << " "
+                << meanQ2   << "\n";
     }
 
     delete hALU; delete hAUL; delete hALL;
@@ -4430,7 +4410,6 @@ void performChi2Fits_GeneralExclusive(const char* output_file,
     std::ofstream out(fitOutPath, std::ios::out | std::ios::trunc);
     if (!out) {
       std::cerr << "[performChi2Fits_GeneralExclusive] Failed to open " << fitOutPath << " for writing.\n";
-      // Close extra export file if it was opened
       if (binExport.is_open()) binExport.close();
       return;
     }
@@ -4484,14 +4463,6 @@ void performChi2Fits_GeneralExclusive(const char* output_file,
     out.close();
   }
 
-  // Close the extra export file if used
-  // (do this last so we only keep it if the full routine completes cleanly)
-  // If you prefer row-by-row flushing for robustness, you can call flush() after each write.
-  // Leaving close() here preserves current behavior elsewhere.
-  // (No change to other outputs.)
-  // ------------------------------------------------------------------
-  // NOTE: binExport was opened with truncation and a header; every run overwrites it.
-  // ------------------------------------------------------------------
-  // (intentional fall-through to scope end)
+  // binExport will auto-close on scope exit (ofstream destructor).
 }
 // ===================== GeneralExclusive (end) =====================
