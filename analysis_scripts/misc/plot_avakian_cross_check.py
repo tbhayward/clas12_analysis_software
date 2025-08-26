@@ -184,20 +184,20 @@ def print_table(title, x, y, yerr, col_y_label):
     for i in range(len(x)):
         print("{:3d}  {:10.6f}  {:16.8f}  {:16.8f}".format(i, float(x[i]), float(y[i]), float(yerr[i])))
     #endfor
-    print("")  # blank line after table
+    print("")
 #endfor
 
 def print_all_results():
-    # Hayward tables (assumed already structure-function ratios as plotted)
+    # Hayward tables (already structure-function ratios as plotted)
     for idx, (arr_phi, arr_2phi) in enumerate(hayward_sets):
         tlabel = tbin_labels[idx]
         print_table(
-            "Hayward F_UL^{sinphi}/F_UU   (t-bin: {})".format(tlabel),
+            f"Hayward F_UL^{{sinphi}}/F_UU   (t-bin: {tlabel})",
             arr_phi[:, 0], arr_phi[:, 1], arr_phi[:, 2],
             "FUL^{sinphi}/FUU"
         )
         print_table(
-            "Hayward F_UL^{sin2phi}/F_UU  (t-bin: {})".format(tlabel),
+            f"Hayward F_UL^{{sin2phi}}/F_UU  (t-bin: {tlabel})",
             arr_2phi[:, 0], arr_2phi[:, 1], arr_2phi[:, 2],
             "FUL^{sin2phi}/FUU"
         )
@@ -207,12 +207,12 @@ def print_all_results():
     for idx, (xB, R_phi, R_phi_err, R_2phi, R_2phi_err) in enumerate(avak_ratios):
         tlabel = tbin_labels[idx]
         print_table(
-            "Avakian F_UL^{sinphi}/F_UU   (t-bin: {})".format(tlabel),
+            f"Avakian F_UL^{{sinphi}}/F_UU   (t-bin: {tlabel})",
             xB, R_phi, R_phi_err,
             "FUL^{sinphi}/FUU"
         )
         print_table(
-            "Avakian F_UL^{sin2phi}/F_UU  (t-bin: {})".format(tlabel),
+            f"Avakian F_UL^{{sin2phi}}/F_UU  (t-bin: {tlabel})",
             xB, R_2phi, R_2phi_err,
             "FUL^{sin2phi}/FUU"
         )
