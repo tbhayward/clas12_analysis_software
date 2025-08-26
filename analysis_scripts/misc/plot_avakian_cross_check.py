@@ -96,19 +96,19 @@ hayward_sets = [
 
 # ----------------------------
 # Avakian (colleague) results (three blocks, 5 rows each, 11 columns)
-# Column mapping (1-based indices you provided):
-#   1: xB
-#   3: Df
-#   4: AULsinphi
-#   5: err_sinphi
-#   7: AULsin2phi
-#   8: err_sin2phi
-#   9: D(y) for sinphi
-#  10: D(y) for sin2phi
+# Corrected column mapping (1-based -> 0-based):
+#   1: xB                 -> 0
+#   3: Df                 -> 2
+#   4: AUL_sinphi         -> 3
+#   5: err_sinphi         -> 4
+#   8: AUL_sin2phi        -> 7
+#   9: err_sin2phi        -> 8
+#  10: D(y) for sinphi    -> 9
+#  11: D(y) for sin2phi   -> 10
 #
-# We compute structure-function ratios as:
-#   F_UL^{sinphi}/F_UU  = AULsinphi  / (Df * D_y_sinphi)
-#   F_UL^{sin2phi}/F_UU = AULsin2phi / (Df * D_y_sin2phi)
+# Structure-function ratios:
+#   F_UL^{sinphi}/F_UU  = AUL_sinphi  / (Df * Dy_sinphi)
+#   F_UL^{sin2phi}/F_UU = AUL_sin2phi / (Df * Dy_sin2phi)
 # ----------------------------
 
 avak_block1 = np.array([
@@ -138,9 +138,10 @@ avak_block3 = np.array([
 def avak_to_ratios(block):
     """
     Convert Avakian block to (xB, R_phi, R_phi_err, R_2phi, R_2phi_err).
-    Index map (0-based):
-      0:xB, 2:Df, 3:AUL_sinphi, 4:err_sinphi, 6:AUL_sin2phi, 7:err_sin2phi,
-      8:Dy_sinphi, 9:Dy_sin2phi
+    Corrected index map (0-based):
+      0:xB, 2:Df, 3:AUL_sinphi, 4:err_sinphi,
+      7:AUL_sin2phi, 8:err_sin2phi,
+      9:Dy_sinphi, 10:Dy_sin2phi
     """
     xB = block[:, 0]
     Df = block[:, 2]
@@ -164,7 +165,7 @@ def avak_to_ratios(block):
     R_2phi = A_sin2 / safe_2phi
     R_2phi_err = E_sin2 / safe_2phi
 
-    return (xB, R_phi, R_phi_err, R_2phi, R_2phi_err)
+    return (xB, R_phi, R_phi_err, R_2phi, R_2phi_err, denom_phi, denom_2phi)
 #endfor
 
 # Convert all three Avakian blocks
@@ -187,6 +188,18 @@ def print_table(title, x, y, yerr, col_y_label):
     print("")
 #endfor
 
+def print_denominator_ranges():
+    for idx, (_x, _r1, _e1, _r2, _e2, dphi, d2phi) in enumerate(avak_ratios):
+        tlabel = tbin_labels[idx]
+        dphi_finite = dphi[np.isfinite(dphi)]
+        d2phi_finite = d2phi[np.isfinite(d2phi)]
+        print("Denominators (Df*Dy) ranges for {}:".format(tlabel))
+        print("  sinphi : min={:.6f}, max={:.6f}".format(np.min(dphi_finite), np.max(dphi_finite)))
+        print("  sin2phi: min={:.6f}, max={:.6f}".format(np.min(d2phi_finite), np.max(d2phi_finite)))
+    #endfor
+    print("")
+#endif
+
 def print_all_results():
     # Hayward tables (already structure-function ratios as plotted)
     for idx, (arr_phi, arr_2phi) in enumerate(hayward_sets):
@@ -204,7 +217,7 @@ def print_all_results():
     #endfor
 
     # Avakian tables (converted to structure-function ratios)
-    for idx, (xB, R_phi, R_phi_err, R_2phi, R_2phi_err) in enumerate(avak_ratios):
+    for idx, (xB, R_phi, R_phi_err, R_2phi, R_2phi_err, _dphi, _d2phi) in enumerate(avak_ratios):
         tlabel = tbin_labels[idx]
         print_table(
             f"Avakian F_UL^{{sinphi}}/F_UU   (t-bin: {tlabel})",
@@ -225,7 +238,10 @@ def print_all_results():
 def main():
     os.makedirs(os.path.dirname(OUTPATH), exist_ok=True)
 
-    # Print all numeric tables to stdout
+    # Diagnostics first so you can verify sane denominators
+    print_denominator_ranges()
+
+    # Then print all numeric tables
     print_all_results()
 
     fig, axes = plt.subplots(1, 2, figsize=(11, 4.5), sharey=True)
@@ -250,7 +266,7 @@ def main():
     #endfor
 
     # Overlay Avakian (all three t-bins) as OPEN circles in matching colors
-    for i, (xB, R_phi, R_phi_err, R_2phi, R_2phi_err) in enumerate(avak_ratios):
+    for i, (xB, R_phi, R_phi_err, R_2phi, R_2phi_err, _dphi, _d2phi) in enumerate(avak_ratios):
         axL.errorbar(
             xB, R_phi, yerr=R_phi_err, fmt="o", ms=6, lw=1.2, capsize=3,
             color=colors[i], mfc="none", mec=colors[i]
