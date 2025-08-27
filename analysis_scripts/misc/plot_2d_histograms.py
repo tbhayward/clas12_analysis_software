@@ -282,7 +282,7 @@ def accumulate(infile):
         phi_wrap = np.mod(phi, 2.0*np.pi)
 
         # Base masks
-        base = (Q2 > 1.0) & (W > 2.0) & (y < 0.75)
+        base = (Q2 > 1.0) & (W > 2.0) & (y < 0.80)
         mx2_win = (Mx2 > 0.81) & (Mx2 < 1.00)
         with_mx2  = base & mx2_win
         no_mx2    = base
