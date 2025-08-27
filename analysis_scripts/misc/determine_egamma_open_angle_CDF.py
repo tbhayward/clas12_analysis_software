@@ -46,7 +46,7 @@ def java_array(name, arr, dtype="double"):
         return f"int[] {name} = new int[]{{{body}}};"
     else:
         # fixed-point with three decimals
-        body = ", ".join(f"{float(x):.3f}" for x in arr.tolist())
+        body = ", ".join(f"{float(x):.4f}" for x in arr.tolist())
         return f"double[] {name} = new double[]{{{body}}};"
 # ----------------------------------------
 
