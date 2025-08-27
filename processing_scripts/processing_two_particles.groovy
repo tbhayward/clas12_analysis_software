@@ -187,7 +187,7 @@ public static void main(String[] args) {
 	    	
 
 	    	// --- Build beam model ONCE per event, with radiative sampling enabled ---
-			BeamEnergy Eb = new BeamEnergy(research_Event, runnum, false);
+			BeamEnergy Eb = new BeamEnergy(research_Event, runnum, true);
 
 			// Effective beam energy for this event
 			double energy = (runnum == 11) ? beam_energy : Eb.Eb();
