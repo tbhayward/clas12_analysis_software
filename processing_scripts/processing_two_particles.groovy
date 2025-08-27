@@ -20,19 +20,6 @@ import groovy.io.FileType;
 // dilks CLAS QA analysis
 import clasqa.QADB // access QADB
 
-// --- ISR beam-tilt handoff (θ,φ in radians), set once per event from the driver ---
-private static final ThreadLocal<double[]> TL_ISR_ANGLES = new ThreadLocal<>();
-
-/** Called from the Groovy driver before constructing TwoParticles for this event. */
-public static void setNextISRBeamAngles(double thetaRad, double phiRad) {
-    TL_ISR_ANGLES.set(new double[]{thetaRad, phiRad});
-}
-
-/** Optional: clear angles (not required if you always set before each hadron). */
-public static void clearISRBeamAngles() {
-    TL_ISR_ANGLES.remove();
-}
-
 public static double phi_calculation (double x, double y) {
 	// tracks are given with Cartesian values and so must be converted to cylindrical
 	double phi = Math.toDegrees(Math.atan2(x,y));
@@ -212,10 +199,12 @@ public static void main(String[] args) {
 			    double Egamma = Eb.getEgammaGeV();                         // GeV
 			    isrTheta = analyzers.ISRThetaKernel.sampleThetaRad(Egamma); // radians
 			    isrPhi   = 2.0*Math.PI*Math.random();                       // uniform [0,2π)
-			}
-			if (applyISR && (evnum % 1000 == 0)) {
-			    System.out.printf("ISR sample @ event %d: Egamma=%.3f GeV, theta=%.3f deg, phi=%.3f deg%n",
-			        evnum, Egamma, Math.toDegrees(isrTheta), Math.toDegrees(isrPhi));
+
+			    // lightweight sanity print every 100k events
+			    if (evnum % 100000 == 0) {
+			        System.out.printf("ISR sample @ event %d: Egamma=%.3f GeV, theta=%.3f deg, phi=%.3f deg%n",
+			                evnum, Egamma, Math.toDegrees(isrTheta), Math.toDegrees(isrPhi));
+			    }
 			}
 		    if (process_event) {
 
