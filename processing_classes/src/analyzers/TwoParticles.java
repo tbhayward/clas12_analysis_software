@@ -54,6 +54,18 @@ public class TwoParticles {
     protected int RICH_pid;
     protected double chi2pid, beta, RQ_prob, el_prob, pi_prob, k_prob, pr_prob;
 
+    // --- NEW: Optional one-shot ISR beam deflection for the next TwoParticles instance ---
+    private static Double nextBeamThetaRad = null; // radians
+    private static Double nextBeamPhiRad = null; // radians
+
+    /**
+     * Set once before constructing TwoParticles to tilt the incoming beam (ISR). Angles in radians.
+     */
+    public static void setNextISRBeamAngles(Double thetaRad, Double phiRad) {
+        nextBeamThetaRad = thetaRad;
+        nextBeamPhiRad = phiRad;
+    }
+
     public static boolean channel_test(TwoParticles variables) {
         if (variables.helicity == 0 && variables.runnum != 11) {
             return false;
@@ -128,7 +140,7 @@ public class TwoParticles {
         } else if (generic_tests.central_detector_cut(p_rec_index, rec_Bank)) {
             detector = 2; // Central Detector
         }
-        
+
         boolean passesForwardDetector_1 = generic_tests.forward_detector_cut(p_rec_index, rec_Bank)
                 ? fiducial_cuts.dc_fiducial_cut(p_rec_index, rec_Bank, traj_Bank, configBank) : true;
         boolean passesCentralDetector_1 = generic_tests.central_detector_cut(p_rec_index, rec_Bank)
@@ -138,9 +150,15 @@ public class TwoParticles {
         boolean p_fiducial_check = passesForwardTagger_1 && passesForwardDetector_1 && passesCentralDetector_1;
 
         fiducial_status = 0;
-        if(electron_pcal_fiducial) fiducial_status+=1;
-        if(electron_fd_fiducial) fiducial_status+=10;
-        if(p_fiducial_check) fiducial_status+=100;
+        if (electron_pcal_fiducial) {
+            fiducial_status += 1;
+        }
+        if (electron_fd_fiducial) {
+            fiducial_status += 10;
+        }
+        if (p_fiducial_check) {
+            fiducial_status += 100;
+        }
         // Check if all checks pass
 //        if (e_fiducial_check && p_fiducial_check) {
 //            fiducial_status = 2; // Set to 2 if all checks pass
@@ -157,8 +175,25 @@ public class TwoParticles {
         // Set up Lorentz vectors
         // beam electron
         LorentzVector lv_beam = new LorentzVector();
-        lv_beam.setPxPyPzM(0, 0, Math.pow(Eb * Eb - kinematic_variables.particle_mass(11) * kinematic_variables.particle_mass(11), 0.5),
-                kinematic_variables.particle_mass(11));
+        double me = kinematic_variables.particle_mass(11);
+        double pBeam = Math.sqrt(Math.max(0.0, Eb * Eb - me * me));
+
+        // Default: along +z (no ISR tilt)
+        double bx = 0.0, by = 0.0, bz = pBeam;
+
+        // If caller provided a one-shot ISR tilt, use it and then consume it.
+        if (nextBeamThetaRad != null && nextBeamPhiRad != null) {
+            Vector3 kvec = new Vector3();
+            kvec.setMagThetaPhi(pBeam, nextBeamThetaRad, nextBeamPhiRad);
+            bx = kvec.x();
+            by = kvec.y();
+            bz = kvec.z();
+            // consume the one-shot so it doesn’t affect the next event accidentally
+            nextBeamThetaRad = null;
+            nextBeamPhiRad = null;
+        }
+
+        lv_beam.setPxPyPzM(bx, by, bz, me);
 
         // pull from rec banks for outgoing particles
         // electron
@@ -187,12 +222,11 @@ public class TwoParticles {
         // missing mass calculations
         Mx = kinematic_variables.Mx(lv_q, lv_target, lv_p);
         Mx2 = kinematic_variables.Mx2(lv_q, lv_target, lv_p); // missing mass squared
-        
+
         /* TOGGLE ON OR OFF IF FERMI MOTION DESIRED */
         // Simulate Fermi motion
 //        org.jlab.clas.physics.Vector3 fermiP = momentum_corrections.sampleFermiMomentum(Mx2);
 //        lv_target.setPxPyPzM(fermiP.x(), fermiP.y(), fermiP.z(), kinematic_variables.particle_mass(2212));
-
         Mx = kinematic_variables.Mx(lv_q, lv_target, lv_p);
         Mx2 = kinematic_variables.Mx2(lv_q, lv_target, lv_p); // missing mass squared
 
@@ -239,7 +273,7 @@ public class TwoParticles {
 
         open_angle = kinematic_variables.open_angle(lv_e, lv_p);
         t = kinematic_variables.t(lv_p.p(), lv_p.theta());
-        tmin = kinematic_variables.tmin(x,Q2);
+        tmin = kinematic_variables.tmin(x, Q2);
 
         // kinematics of hadrons
         p_px = lv_p.px();

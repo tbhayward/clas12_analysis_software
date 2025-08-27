@@ -5,10 +5,9 @@ import java.util.List;
 import java.util.ArrayList;
 
 /**
- * Beam energy helper with optional data-driven radiative (ISR) sampling.
- * When isRadiative=true, samples a beam fraction from the provided CDF arrays,
- * enforces a simple energy-conservation floor, sets the effective Eb,
- * and remembers the emitted ISR photon energy Egamma for downstream use.
+ * Beam energy helper with optional data-driven radiative (ISR) sampling. When isRadiative=true, samples a beam fraction
+ * from the provided CDF arrays, enforces a simple energy-conservation floor, sets the effective Eb, and remembers the
+ * emitted ISR photon energy Egamma for downstream use.
  */
 public class BeamEnergy {
 
@@ -150,7 +149,9 @@ public class BeamEnergy {
             if (!new_beam_percentage.isEmpty()) {
                 // Normalize the trimmed CDF so the last value is 1.0
                 double max_like = new_beam_likelihood.get(new_beam_likelihood.size() - 1);
-                if (max_like <= 0.0) max_like = 1.0;
+                if (max_like <= 0.0) {
+                    max_like = 1.0;
+                }
                 for (int i = 0; i < new_beam_likelihood.size(); i++) {
                     new_beam_likelihood.set(i, new_beam_likelihood.get(i) / max_like);
                 }
@@ -161,7 +162,9 @@ public class BeamEnergy {
                 while (idx < new_beam_likelihood.size() && u > new_beam_likelihood.get(idx)) {
                     idx++;
                 }
-                if (idx >= new_beam_percentage.size()) idx = new_beam_percentage.size() - 1;
+                if (idx >= new_beam_percentage.size()) {
+                    idx = new_beam_percentage.size() - 1;
+                }
 
                 selectedBeamFraction = new_beam_percentage.get(idx);
                 Eb = Eb0 * selectedBeamFraction;
@@ -178,22 +181,30 @@ public class BeamEnergy {
         }
     }
 
-    /** Effective beam energy after optional ISR sampling. */
+    /**
+     * Effective beam energy after optional ISR sampling.
+     */
     public double Eb() {
         return Eb;
     }
 
-    /** True if radiative sampling was applied in the constructor. */
+    /**
+     * True if radiative sampling was applied in the constructor.
+     */
     public boolean isRadiativeApplied() {
         return radiativeApplied;
     }
 
-    /** Sampled ISR photon energy in GeV (0 if not radiative). */
+    /**
+     * Sampled ISR photon energy in GeV (0 if not radiative).
+     */
     public double getEgammaGeV() {
         return egammaGeV;
     }
 
-    /** The sampled beam fraction (Eb / Eb0) when radiative is applied, else 1.0. */
+    /**
+     * The sampled beam fraction (Eb / Eb0) when radiative is applied, else 1.0.
+     */
     public double getSelectedBeamFraction() {
         return selectedBeamFraction;
     }
