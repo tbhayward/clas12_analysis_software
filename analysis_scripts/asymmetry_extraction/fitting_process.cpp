@@ -3528,12 +3528,12 @@ static void chi2Fcn_GeneralExclusive(Int_t& /*npar*/, Double_t* /*gin*/, Double_
 // and also compute ⟨sinθγ⟩ per φ-bin for that bin.
 // Returns { hALU, hAUL, hALL } and updates g_ge_ctx.{sTG_phi_mean, sTG_phi_centered}
 // and the smoothed spline of m^c(φ).
-// Also fills the global raw counters Npp,Npm,Nmp,Nmm for THIS bin.
+// Also fills global per-bin raw counters: ::Npp, ::Npm, ::Nmp, ::Nmm
 // ─────────────────────────────────────────────────────────────────────
 static std::tuple<TH1D*, TH1D*, TH1D*>
 createHistogramForBin_GeneralExclusive(const char* histBaseName, int binIndex, const std::string& prefix) {
 
-  // reset per-bin raw event counters (globals declared at file scope)
+  // reset per-bin raw counters
   ::Npp = ::Npm = ::Nmp = ::Nmm = 0;
 
   // Variable range for this kinematic bin
@@ -3578,11 +3578,11 @@ createHistogramForBin_GeneralExclusive(const char* histBaseName, int binIndex, c
     if (*target_pol > 0) { sumTargetPosPol += *target_pol; ++nPosT; }
     else if (*target_pol < 0) { sumTargetNegPol += *target_pol; ++nNegT; }
 
-    // fill raw yields (by helicity/target) + increment per-bin raw counters
-    if (*helicity > 0 && *target_pol < 0) { ppm->Fill(*phi); ++::Npm; }
-    else if (*helicity < 0 && *target_pol > 0) { pmp->Fill(*phi); ++::Nmp; }
-    if (*helicity > 0 && (*target_pol >= 0)) { ppp->Fill(*phi); ++::Npp; }
-    else if (*helicity < 0 && (*target_pol <= 0)) { pmm->Fill(*phi); ++::Nmm; }
+    // fill raw yields (by helicity/target)
+    if (*helicity > 0 && *target_pol < 0) { ppm->Fill(*phi); }
+    else if (*helicity < 0 && *target_pol > 0) { pmp->Fill(*phi); }
+    if (*helicity > 0 && (*target_pol >= 0)) { ppp->Fill(*phi); }
+    else if (*helicity < 0 && (*target_pol <= 0)) { pmm->Fill(*phi); }
 
     // accumulate per-φ-bin sinθγ (unweighted average across accepted events)
     int ib = std::max(1, std::min(nPhiBins, (int)std::floor(((*phi - phiMin)/(phiMax-phiMin))*nPhiBins) + 1));
@@ -3590,6 +3590,12 @@ createHistogramForBin_GeneralExclusive(const char* histBaseName, int binIndex, c
     sTG_cnt[ib-1] += 1;
   }
   dataReader.Restart();
+
+  // per-bin RAW event counters (not charge-normalized)
+  ::Npp = static_cast<long long>(ppp->GetEntries());
+  ::Npm = static_cast<long long>(ppm->GetEntries());
+  ::Nmp = static_cast<long long>(pmp->GetEntries());
+  ::Nmm = static_cast<long long>(pmm->GetEntries());
 
   const double meanVar = (nEvt>0)? sumVar/nEvt : 0.0;
   const double meanPb  = (nEvt>0)? sumPol/nEvt : 0.0;
@@ -3672,7 +3678,7 @@ createHistogramForBin_GeneralExclusive(const char* histBaseName, int binIndex, c
     for (int i=0; i<nPhiBins; ++i) g_ge_ctx.sTG_phi_centered[i] = 0.0;
   }
 
-  // Build smooth cubic spline for m^c(φ) to avoid jagged model curves
+  // Build smooth cubic spline for m^c(φ)
   {
     if (g_ge_ctx.sTGc_spline) { delete g_ge_ctx.sTGc_spline; g_ge_ctx.sTGc_spline = nullptr; }
     if (g_ge_ctx.sTGc_graph)  { delete g_ge_ctx.sTGc_graph;  g_ge_ctx.sTGc_graph  = nullptr; }
@@ -3680,24 +3686,17 @@ createHistogramForBin_GeneralExclusive(const char* histBaseName, int binIndex, c
     const int    nb   = nPhiBins;
     const double dphi = (phiMax - phiMin) / nb;
 
-    // Wrap with two extra points (before/after) to stabilize edges
     const int npts = nb + 2;
     g_ge_ctx.sTGc_graph = new TGraph(npts);
 
-    // point 0: wrap from last bin
     g_ge_ctx.sTGc_graph->SetPoint(0, phiMin - 0.5*dphi, g_ge_ctx.sTG_phi_centered.back());
-
-    // interior bin centers
     for (int i=0; i<nb; ++i) {
       const double xc = phiMin + (i + 0.5) * dphi;
       const double yc = g_ge_ctx.sTG_phi_centered[i];
       g_ge_ctx.sTGc_graph->SetPoint(i+1, xc, yc);
     }
-
-    // last point: wrap from first bin
     g_ge_ctx.sTGc_graph->SetPoint(npts-1, phiMax + 0.5*dphi, g_ge_ctx.sTG_phi_centered.front());
 
-    // cubic spline
     g_ge_ctx.sTGc_spline = new TSpline3("sTGc_spline", g_ge_ctx.sTGc_graph, "");
   }
 
@@ -3908,18 +3907,16 @@ static void plotHistogramAndFit_GeneralExclusive(
 // Driver: simultaneous fits per bin (11 parameters)
 // Now writes an expanded per-bin export line when g_ge_write_bin_export is true:
 // # <Q2> <x> <y> <-t> <-tprime> Df <V/A> <B/A> <cosphi> e<cosphi>
-//   ALUsin eALUsin AULsin2phi eAULsin2phi ALL eALL ALLcosphi eALLcosphi
-//   Npp Npm Nmp Nmm cpp cpm cmp cmm
+//   ALUsin eALUsin AULsinphi eAULsinphi AULsin2phi eAULsin2phi
+//   ALL eALL ALLcosphi eALLcosphi Npp Npm Nmp Nmm cpp cpm cmp cmm
+// (all floats rounded to 3 decimals; integer counters remain integers)
 // ─────────────────────────────────────────────────────────────────────
 void performChi2Fits_GeneralExclusive(const char* output_file,
                                       const char* kinematic_file,
                                       const char* kinematicPlot_file,
                                       const std::string& prefix) {
-  // === PRINT SWITCH for the fit-results LaTeX table ============================
-  static bool g_ge_write_all_results = false;
-
-  // === toggle for the per-bin export text file =================================
-  static bool g_ge_write_bin_export = true;
+  static bool g_ge_write_all_results = false;  // LaTeX table verbosity
+  static bool g_ge_write_bin_export  = true;   // toggle export
 
   // Control the leakage fits here (global switches)
   g_fit_enable_TUL = true;
@@ -3927,7 +3924,7 @@ void performChi2Fits_GeneralExclusive(const char* output_file,
   g_fit_fixed_AT_UL = 0.0;
   g_fit_fixed_AT_LL = 0.0;
 
-  // Prepare output streams (added A_T_UL and A_T_LL arrays)
+  // Prepare output streams
   std::ostringstream sALUoff, sAULoff, sALU, sAUL, sAUL2, sAT_UL, sALL, sALLc, sAUUc, sAUUc2, sAT_LL;
   for (auto* s : {&sALUoff,&sAULoff,&sALU,&sAUL,&sAUL2,&sAT_UL,&sALL,&sALLc,&sAUUc,&sAUUc2,&sAT_LL})
     (*s) << std::fixed << std::setprecision(9);
@@ -3944,13 +3941,12 @@ void performChi2Fits_GeneralExclusive(const char* output_file,
   sAUUc2  << prefix << "GEchi2FitsAUUcos2phi = {";
   sAT_LL  << prefix << "GEchi2FitsA_T_LL = {";
 
-  // Kinematic LaTeX table (show [min, mean, max] for Q2, x, y, z, −t′)
+  // Kinematic LaTeX table scaffolding
   std::ostringstream kinLatex;
   kinLatex << "\\begin{table}[h]\n\\centering\n"
            << "\\begin{tabular}{|c|c|c|c|c|c|} \\hline\n"
            << "Bin & $Q^{2}$ & $x_{B}$ & $y$ & $z$ & $-t'$ \\\\ \\hline\n";
 
-  // Keep kinList as-is for any downstream plotting/scripts
   std::ostringstream kinList;
   kinList << prefix << "GEKinematics = {";
 
@@ -3972,28 +3968,27 @@ void performChi2Fits_GeneralExclusive(const char* output_file,
   const std::string covPath  = "output/results/GE_" + prefix + "_cov_"  + suffix + ".txt";
   const std::string corrPath = "output/results/GE_" + prefix + "_corr_" + suffix + ".txt";
 
-  // === open the per-bin export text file (once) ================================
+  // Per-bin export file (rounded to 3 decimals)
   std::ofstream binExport;
   if (g_ge_write_bin_export) {
     const std::string exportPath = "output/results/GE_bin_export_" + prefix + "_" + suffix + ".txt";
     binExport.open(exportPath, std::ios::out | std::ios::trunc);
     if (binExport) {
-      // CHANGED: round floats to three decimals
       binExport << std::fixed << std::setprecision(3);
-      // New header (as requested)
       binExport
         << "# <Q2> <x> <y> <-t> <-tprime> Df <V/A> <B/A> <cosphi> e<cosphi> "
-        << "ALUsin eALUsin AULsin2phi eAULsin2phi ALL eALL ALLcosphi eALLcosphi "
+        << "ALUsin eALUsin AULsinphi eAULsinphi AULsin2phi eAULsin2phi "
+        << "ALL eALL ALLcosphi eALLcosphi "
         << "Npp Npm Nmp Nmm cpp cpm cmp cmm\n";
     } else {
       std::cerr << "[performChi2Fits_GeneralExclusive] WARNING: could not open per-bin export file.\n";
     }
   }
 
-  // ====== Containers to write the *fit-results* LaTeX table after the loop =====
+  // Containers for LaTeX fit-results table
   std::vector<double> meanVars;
-  std::vector<std::vector<double>> all_pvals;  // [bin][0..10]
-  std::vector<std::vector<double>> all_perrs;  // [bin][0..10]
+  std::vector<std::vector<double>> all_pvals;
+  std::vector<std::vector<double>> all_perrs;
 
   // Parameter names/order (11 total)
   const int npar = 11;
@@ -4011,29 +4006,24 @@ void performChi2Fits_GeneralExclusive(const char* output_file,
     std::cout << "Beginning simultaneous chi2 GE fit for " << binNames[currentFits]
               << " bin " << i << ". " << std::endl;
 
-    // Build histograms and per-φ-bin ⟨sinθγ⟩ (centered+normalized and smoothed).
+    // Build histograms and m^c(φ)
     char hname[64]; snprintf(hname, sizeof(hname), "GE_%zu", i);
     TH1D *hALU, *hAUL, *hALL;
     std::tie(hALU, hAUL, hALL) =
       createHistogramForBin_GeneralExclusive(hname, (int)i, prefix);
 
-    // ---- Mean & range kinematics (track min/mean/max for Q2,x,y,z, and −t′) ----
+    // Mean & range kinematics + ⟨cosφ⟩
     double sumQ2=0, sumW=0, sumx=0, sumy=0, sumz=0, sumt=0, sumtmin=0, sumVar=0, nEvt=0;
-
-    // Ranges
     double q2min= 1e300, q2max=-1e300;
     double xmin = 1e300, xmax =-1e300;
     double ymin = 1e300, ymax =-1e300;
     double zmin = 1e300, zmax =-1e300;
 
-    // −t′ (from tprime branch); also keep −t mean for export
     double mtp_min = 1e300, mtp_max = -1e300;
     double sum_mtp = 0.0;
     double sum_mt  = 0.0;
 
-    // accumulators for <cosφ> and its standard error
-    double sum_cosphi = 0.0;
-    double sum_cosphi2 = 0.0;
+    double sum_cosphi = 0.0, sum_cosphi2 = 0.0;
     long   cnt_cosphi = 0;
 
     {
@@ -4043,8 +4033,8 @@ void performChi2Fits_GeneralExclusive(const char* output_file,
       TTreeReaderValue<double> y     (dataReader,"y");
       TTreeReaderValue<double> z     (dataReader,"z");
       TTreeReaderValue<double> t     (dataReader,"t");
-      TTreeReaderValue<double> tmin  (dataReader,"tmin");       // kept (ranges/means)
-      TTreeReaderValue<double> tprime(dataReader,"tprime");     // use this for −t′
+      TTreeReaderValue<double> tmin  (dataReader,"tmin");
+      TTreeReaderValue<double> tprime(dataReader,"tprime");   // use branch directly
       TTreeReaderValue<double> phi   (dataReader,"phi");
       TTreeReaderValue<double> currentVariable(dataReader, propertyNames[currentFits].c_str());
 
@@ -4060,24 +4050,19 @@ void performChi2Fits_GeneralExclusive(const char* output_file,
         if (!kinematicCuts->applyCuts(currentFits,false)) continue;
         if (*currentVariable < vmin || *currentVariable >= vmax) continue;
 
-        // Accumulate means
         sumQ2 += *Q2; sumW += *W; sumx += *x; sumy += *y; sumz += *z;
         sumt  += *t;  sumtmin += *tmin; sumVar += *currentVariable; nEvt += 1.0;
 
-        // Ranges
         upd_minmax(*Q2, q2min, q2max);
         upd_minmax(*x,  xmin,  xmax);
         upd_minmax(*y,  ymin,  ymax);
         upd_minmax(*z,  zmin,  zmax);
 
-        // −t′ and −t (note: tprime = t - tmin, so −t′ = −tprime)
+        // −t′ and −t (tprime = t - tmin ⇒ −t′ = −tprime)
         const double mtp = -(*tprime);
-        sum_mtp += mtp;
-        upd_minmax(mtp, mtp_min, mtp_max);
+        sum_mtp += mtp; upd_minmax(mtp, mtp_min, mtp_max);
+        sum_mt  += -(*t);
 
-        sum_mt += -(*t);
-
-        // cosφ moments
         const double cphi = std::cos(*phi);
         sum_cosphi  += cphi;
         sum_cosphi2 += cphi * cphi;
@@ -4086,7 +4071,6 @@ void performChi2Fits_GeneralExclusive(const char* output_file,
       dataReader.Restart();
     }
 
-    // Means (guard nEvt=0)
     const double meanVar  = (nEvt>0)? sumVar/nEvt : 0.0;
     const double meanQ2   = (nEvt>0)? sumQ2/nEvt  : 0.0;
     const double meanW    = (nEvt>0)? sumW/nEvt   : 0.0;
@@ -4095,23 +4079,18 @@ void performChi2Fits_GeneralExclusive(const char* output_file,
     const double meanz    = (nEvt>0)? sumz/nEvt   : 0.0;
     const double meant    = (nEvt>0)? sumt/nEvt   : 0.0;
     const double meantmin = (nEvt>0)? sumtmin/nEvt: 0.0;
-    const double mean_mtp = (nEvt>0)? sum_mtp/nEvt : 0.0;   // mean of (−t′)
-    const double mean_mt  = (nEvt>0)? sum_mt /nEvt : 0.0;   // mean of (−t)
+    const double mean_mtp = (nEvt>0)? sum_mtp/nEvt : 0.0;   // ⟨−t′⟩
+    const double mean_mt  = (nEvt>0)? sum_mt /nEvt : 0.0;   // ⟨−t⟩
 
-    // ⟨cosφ⟩ and its statistical error on the mean
-    double mean_cosphi = 0.0;
-    double err_cosphi  = 0.0;
+    double mean_cosphi = 0.0, err_cosphi = 0.0;
     if (cnt_cosphi > 0) {
       mean_cosphi = sum_cosphi / static_cast<double>(cnt_cosphi);
       if (cnt_cosphi > 1) {
         const double s2 = (sum_cosphi2 - static_cast<double>(cnt_cosphi)*mean_cosphi*mean_cosphi)
                           / static_cast<double>(cnt_cosphi - 1);
-        const double var_mean = std::max(0.0, s2 / static_cast<double>(cnt_cosphi));
-        err_cosphi = std::sqrt(var_mean);
+        err_cosphi = std::sqrt(std::max(0.0, s2 / static_cast<double>(cnt_cosphi)));
       }
     }
-
-    // If no events, make ranges [0,0,0]
     if (nEvt == 0) {
       q2min=q2max=0.0; xmin=xmax=0.0; ymin=ymax=0.0; zmin=zmax=0.0; mtp_min=mtp_max=0.0;
     }
@@ -4156,7 +4135,6 @@ void performChi2Fits_GeneralExclusive(const char* output_file,
     minuit.SetErrorDef(1.0);
     minuit.SetFCN(chi2Fcn_GeneralExclusive);
 
-    // name, initial value, step, low, up
     minuit.DefineParameter(0,  "ALU_offset",      0.00,  0.01,  -0.1,  0.1);
     minuit.DefineParameter(1,  "AUL_offset",      0.00,  0.01,  -0.1,  0.1);
     minuit.DefineParameter(2,  "F_LU_sin/F_UU",   0.00,  0.01,  -1.0,  1.0);
@@ -4169,11 +4147,10 @@ void performChi2Fits_GeneralExclusive(const char* output_file,
     minuit.DefineParameter(9,  "A_T_UL",          0.00,  0.01,  -1.0,  1.0);
     minuit.DefineParameter(10, "A_T_LL",          0.00,  0.01,  -1.0,  1.0);
 
-    // Fix leakage params if m^c(φ) is flat
     if (!g_fit_enable_TUL || g_ge_ctx.sTG_wstd <= 1e-4) minuit.FixParameter(9);
     if (!g_fit_enable_TLL || g_ge_ctx.sTG_wstd <= 1e-4) minuit.FixParameter(10);
 
-    // Strategy / minimize
+    // Minimize
     {
       double arglist[2]; int ier=0;
       arglist[0] = 2;               minuit.mnexcm("SET STR", arglist, 1, ier);
@@ -4185,14 +4162,14 @@ void performChi2Fits_GeneralExclusive(const char* output_file,
       minuit.mnexcm("HESSE", nullptr, 0, ier);
     }
 
-    // Fit status and results
+    // Results
     double fmin, edm, errdef; int npari, nparx, istat;
     minuit.mnstat(fmin, edm, errdef, npari, nparx, istat);
 
     double pval[11], perr[11];
     for (int ip=0; ip<npar; ++ip) minuit.GetParameter(ip, pval[ip], perr[ip]);
 
-    // GLOBAL dof (= total valid points – nvar)
+    // GLOBAL dof
     auto count_valid_points = [](TH1D* h){
       int n=0; if (!h) return n;
       const int nb = h->GetNbinsX();
@@ -4202,8 +4179,8 @@ void performChi2Fits_GeneralExclusive(const char* output_file,
       }
       return n;
     };
-    const int npts_total  = count_valid_points(hALU) + count_valid_points(hAUL) + count_valid_points(hALL);
-    const int ndf_global  = std::max(0, npts_total - npar);
+    const int npts_total = count_valid_points(hALU) + count_valid_points(hAUL) + count_valid_points(hALL);
+    const int ndf_global = std::max(0, npts_total - npar);
     const double chi2_global = fmin;
 
     // Plot (pass values **and** errors)
@@ -4217,6 +4194,7 @@ void performChi2Fits_GeneralExclusive(const char* output_file,
     sALU    << "{" << meanVar << ", " << pval[2]   << ", " << perr[2]   << "}";
     sAUL    << "{" << meanVar << ", " << pval[3]   << ", " << perr[3]   << "}";
     sAUL2   << "{" << meanVar << ", " << pval[4]   << ", " << perr[4]   << "}";
+
     sALL    << "{" << meanVar << ", " << pval[5]   << ", " << perr[5]   << "}";
     sALLc   << "{" << meanVar << ", " << pval[6]   << ", " << perr[6]   << "}";
     sAUUc   << "{" << meanVar << ", " << pval[7]   << ", " << perr[7]   << "}";
@@ -4224,7 +4202,6 @@ void performChi2Fits_GeneralExclusive(const char* output_file,
     sAT_UL  << "{" << meanVar << ", " << pval[9]   << ", " << perr[9]   << "}";
     sAT_LL  << "{" << meanVar << ", " << pval[10]  << ", " << perr[10]  << "}";
 
-    // Collect for the *fit-results* LaTeX table
     meanVars.push_back(meanVar);
     {
       std::vector<double> pv(11), pe(11);
@@ -4239,7 +4216,7 @@ void performChi2Fits_GeneralExclusive(const char* output_file,
       sAT_UL << ", "; sAT_LL << ", ";
     }
 
-    // LaTeX row: [min, mean, max] (−t′ shown)
+    // LaTeX row: [min, mean, max] rounded to 2 decimals, with −t′
     auto triple = [](double mn, double mu, double mx){
       std::ostringstream o; o.setf(std::ios::fixed); o<<std::setprecision(2)
         << "[" << mn << ", " << mu << ", " << mx << "]";
@@ -4253,7 +4230,7 @@ void performChi2Fits_GeneralExclusive(const char* output_file,
              << triple(mtp_min, mean_mtp, mtp_max)
              << " \\\\ \\hline\n";
 
-    // Keep kinList content (means) unchanged for downstream use
+    // Keep kinList content (means) unchanged
     kinList << "{" << meanQ2 << ", " << meanW << ", " << meanx << ", "
             << meany << ", " << meant << ", " << meantmin << "}";
     if (i < numBins - 1) kinList << ", ";
@@ -4302,16 +4279,23 @@ void performChi2Fits_GeneralExclusive(const char* output_file,
       of << "\n";
     }
 
-    // === write the per-bin export line (new schema) ============================
+    // === write the per-bin export line (FINAL schema) ==========================
     if (g_ge_write_bin_export && binExport) {
-      const double ALU_sin     = g_ge_ctx.rWA * pval[2];
-      const double eALU_sin    = g_ge_ctx.rWA * perr[2];
-      const double AUL_sin2    = g_ge_ctx.rBA * pval[4];
-      const double eAUL_sin2   = g_ge_ctx.rBA * perr[4];
-      const double ALL_0       = g_ge_ctx.rCA * pval[5];
-      const double eALL_0      = g_ge_ctx.rCA * perr[5];
-      const double ALL_cosphi  = g_ge_ctx.rWA * pval[6];
-      const double eALL_cosphi = g_ge_ctx.rWA * perr[6];
+      // Convert fitted ratios → physical amplitudes (include depolarization ratios)
+      const double ALU_sin      = g_ge_ctx.rWA * pval[2];
+      const double eALU_sin     = g_ge_ctx.rWA * perr[2];
+
+      const double AUL_sin      = g_ge_ctx.rVA * pval[3];
+      const double eAUL_sin     = g_ge_ctx.rVA * perr[3];
+
+      const double AUL_sin2     = g_ge_ctx.rBA * pval[4];
+      const double eAUL_sin2    = g_ge_ctx.rBA * perr[4];
+
+      const double ALL_0        = g_ge_ctx.rCA * pval[5];
+      const double eALL_0       = g_ge_ctx.rCA * perr[5];
+
+      const double ALL_cosphi   = g_ge_ctx.rWA * pval[6];
+      const double eALL_cosphi  = g_ge_ctx.rWA * perr[6];
 
       double Df = 1.0;
       if (i < dilutionFactors.size()) Df = dilutionFactors[i].first;
@@ -4329,6 +4313,8 @@ void performChi2Fits_GeneralExclusive(const char* output_file,
         << err_cosphi   << " "
         << ALU_sin      << " "
         << eALU_sin     << " "
+        << AUL_sin      << " "
+        << eAUL_sin     << " "
         << AUL_sin2     << " "
         << eAUL_sin2    << " "
         << ALL_0        << " "
@@ -4368,7 +4354,7 @@ void performChi2Fits_GeneralExclusive(const char* output_file,
     out << sAT_LL.str()  << "\n";
   }
 
-  // Finish LaTeX kinematics table & kinematics list (unchanged: 2 d.p.)
+  // Finish LaTeX kinematics table & kinematics list (unchanged)
   kinLatex << "\\end{tabular}\n"
            << "\\caption{Per-bin kinematics shown as [min, mean, max] for $Q^{2}$, $x_{B}$, $y$, $z$, and $-t'$. "
            << "$Q^{2}$ and $-t'$ are in GeV$^{2}$.}\n"
@@ -4385,19 +4371,11 @@ void performChi2Fits_GeneralExclusive(const char* output_file,
     kp << kinList.str() << "\n";
   }
 
-  // Fit-results LaTeX table generation remains unchanged
+  // Fit-results LaTeX table block (unchanged from your version) ...
   {
     std::string varName = propertyNames[currentFits];
-
-    auto toLower = [](std::string s){
-      for (auto& ch : s) ch = (char)std::tolower((unsigned char)ch);
-      return s;
-    };
-    auto compact = [](std::string s){
-      std::string out; out.reserve(s.size());
-      for (char ch : s) if (ch!=' ' && ch!='_' && ch!='-' ) out.push_back(ch);
-      return out;
-    };
+    auto toLower = [](std::string s){ for (auto& ch : s) ch = (char)std::tolower((unsigned char)ch); return s; };
+    auto compact = [](std::string s){ std::string out; out.reserve(s.size()); for (char ch : s) if (ch!=' ' && ch!='_' && ch!='-') out.push_back(ch); return out; };
     const std::string key = compact(toLower(varName));
 
     const bool is_tprime = (key=="tprime" || key=="t'" || key=="tminustmin");
@@ -4406,10 +4384,8 @@ void performChi2Fits_GeneralExclusive(const char* output_file,
     std::string varLabel;
     if (is_tprime)      varLabel = "$\\langle -t' \\rangle$";
     else if (is_t)      varLabel = "$\\langle -t \\rangle$";
-    else {
-      try { varLabel = "$\\langle " + formatLabelName(varName) + " \\rangle$"; }
-      catch (...) { varLabel = "$\\langle " + varName + " \\rangle$"; }
-    }
+    else { try { varLabel = "$\\langle " + formatLabelName(varName) + " \\rangle$"; }
+           catch (...) { varLabel = "$\\langle " + varName + " \\rangle$"; } }
 
     struct Col { int idx; const char* label; double sysFrac; bool showSyst; };
     std::vector<Col> cols_spin = {
@@ -4432,10 +4408,7 @@ void performChi2Fits_GeneralExclusive(const char* output_file,
     for (auto& ch : varToken) if (ch==' ' || ch=='\'') ch = '_';
     const std::string fitOutPath = "output/results/fit_results_GE_" + varToken + "_" + suffix + ".tex";
     std::ofstream out(fitOutPath, std::ios::out | std::ios::trunc);
-    if (!out) {
-      std::cerr << "[performChi2Fits_GeneralExclusive] Failed to open " << fitOutPath << " for writing.\n";
-      return;
-    }
+    if (!out) { std::cerr << "[performChi2Fits_GeneralExclusive] Failed to open " << fitOutPath << " for writing.\n"; return; }
 
     auto entry = [](double v, double eStat, double fracSys, bool showSyst) {
       std::ostringstream s; s.setf(std::ios::fixed);
