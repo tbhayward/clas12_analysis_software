@@ -1,369 +1,243 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
-"""
-Fast ISR/FSR study: one-pass I/O, vectorized math, and optional Numba parallelization.
-Creates output/ISR_FSR_study/ISR_angles.pdf from ISR_test.root.
-"""
-
 import os
 import numpy as np
 import uproot
-import matplotlib
-matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
 # -------------------------
-# Constants (GeV)
+# Constants (GeV, radians)
 # -------------------------
-ME = 0.000511       # electron mass
-MP = 0.938272       # proton mass
-EB_NOM = 10.6041    # nominal beam energy (GeV), RGA-like
-
-# Try to accelerate with Numba if present
-USE_NUMBA = False
-try:
-    import numba as nb
-    USE_NUMBA = True
-except Exception:
-    USE_NUMBA = False
+ME = 0.000511      # electron mass
+MP = 0.938272      # proton mass
+EB_NOM = 10.6041   # nominal beam energy (GeV)
 
 # -------------------------
-# NumPy fallbacks (vectorized)
+# Small helpers (vectorized)
 # -------------------------
-def _sph_to_cart_np(p, th, ph):
-    st = np.sin(th); ct = np.cos(th); cp = np.cos(ph); sp = np.sin(ph)
+def sph_to_cart(p, theta, phi):
+    """
+    p in GeV, theta, phi in radians. Returns (px, py, pz) with z = beam axis.
+    Shapes broadcast along the last dimension.
+    """
+    st = np.sin(theta)
+    ct = np.cos(theta)
+    cp = np.cos(phi)
+    sp = np.sin(phi)
     px = p * st * cp
     py = p * st * sp
     pz = p * ct
     return np.stack((px, py, pz), axis=-1)
 
-def _energy_np(p, m):
+def energy_from_p_mass(p, m):
     return np.sqrt(p*p + m*m)
 
-def _boost_np(A, beta, gamma):
-    # A: (N,4), beta:(N,3), gamma:(N,)
-    E = A[:, 0]; p = A[:, 1:4]; b = beta
-    b2 = np.sum(b*b, axis=1)
-    bp = np.sum(b*p, axis=1)
+def boost_vector(P):
+    """
+    Given 4-vector(s) P = (E, px, py, pz), return beta (N,3) and gamma (N,).
+    """
+    E = P[..., 0]
+    pvec = P[..., 1:4]
+    beta = pvec / np.expand_dims(np.maximum(E, 1e-12), axis=-1)
+    b2 = np.sum(beta*beta, axis=-1)
+    b2 = np.minimum(b2, 1.0 - 1e-16)  # keep numeric safety
+    gamma = 1.0 / np.sqrt(1.0 - b2)
+    return beta, gamma
+
+def lorentz_boost(A, beta, gamma):
+    """
+    Boost 4-vector(s) A = (E, px, py, pz) by velocity -beta (i.e., into the rest frame of P if beta,gamma came from P).
+    Vectorized. Formula:
+      p' = p + [ (gamma-1)*(b·p)/b^2 - gamma*E ] * b
+      E' = gamma*(E - b·p)
+    """
+    E = A[..., 0]
+    p = A[..., 1:4]
+    b = beta
+    b2 = np.sum(b*b, axis=-1)
+    bp = np.sum(b * p, axis=-1)
+
     out = np.empty_like(A)
     mask = b2 > 1e-30
-    # |beta|>0
-    out[mask, 0] = gamma[mask] * (E[mask] - bp[mask])
-    coef = (((gamma - 1.0) * bp / np.where(b2 > 0, b2, 1.0)) - gamma * E)[:, None]
-    out[mask, 1:4] = p[mask] + coef[mask] * b[mask]
-    # |beta|~0 -> identity
-    out[~mask, 0] = E[~mask]
-    out[~mask, 1:4] = p[~mask]
+
+    # where |beta|>0
+    Eprime = np.empty_like(E)
+    Eprime[mask] = gamma[mask] * (E[mask] - bp[mask])
+    coef = ((gamma - 1.0) * bp / np.where(b2 > 0, b2, 1.0) - gamma * E)[..., None]
+    pprime = np.empty_like(p)
+    pprime[mask] = p[mask] + coef[mask] * b[mask]
+
+    # where |beta| ~ 0, identity
+    Eprime[~mask] = E[~mask]
+    pprime[~mask] = p[~mask]
+
+    out[..., 0] = Eprime
+    out[..., 1:4] = pprime
     return out
 
-def _unit_np(v):
-    n = np.linalg.norm(v, axis=1, keepdims=True)
+def unit(v):
+    n = np.linalg.norm(v, axis=-1, keepdims=True)
     n = np.maximum(n, 1e-30)
     return v / n
 
-def _compute_q_metrics_numpy(e_p, e_th, e_ph, Egamma, isr_th, isr_ph):
-    """Pure NumPy path (no explicit Python loops)."""
-    N = e_p.shape[0]
-
-    # Scattered electron
-    e_xyz = _sph_to_cart_np(e_p, e_th, e_ph)
-    e_E   = _energy_np(e_p, ME)
-    kprime = np.column_stack((e_E, e_xyz))
-
-    # Nominal beam (no ISR) along +z
-    p0 = np.sqrt(max(EB_NOM*EB_NOM - ME*ME, 0.0))
-    k0 = np.zeros((N, 4))
-    k0[:, 0] = EB_NOM
-    k0[:, 3] = p0
-
-    # Post-ISR beam (tilted by isr_th/isr_ph)
-    Eb_isr = np.clip(EB_NOM - Egamma, 0.01, None)
-    p1_mag = np.sqrt(np.maximum(Eb_isr*Eb_isr - ME*ME, 0.0))
-    k1_xyz = _sph_to_cart_np(p1_mag, isr_th, isr_ph)
-    k1 = np.column_stack((Eb_isr, k1_xyz))
-
-    # Virtual photons
-    q_nom = k0 - kprime
-    q_isr = k1 - kprime
-
-    # Target at rest
-    p_tgt = np.zeros_like(k0)
-    p_tgt[:, 0] = MP
-
-    # Original gamma*-N COM from q_nom + target
-    gN_nom = q_nom + p_tgt
-    # Beta, gamma for boost to COM
-    beta = gN_nom[:, 1:4] / np.maximum(gN_nom[:, 0][:, None], 1e-12)
-    b2 = np.sum(beta*beta, axis=1)
-    b2 = np.minimum(b2, 1.0 - 1e-16)
-    gamma = 1.0 / np.sqrt(1.0 - b2)
-
-    # Boost q_nom & q_isr into the original COM
-    q_nom_COM = _boost_np(q_nom, beta, gamma)
-    q_isr_COM = _boost_np(q_isr, beta, gamma)
-
-    # Build axes in the original COM: zhat = q_nom_COM direction
-    zhat = _unit_np(q_nom_COM[:, 1:4])
-
-    # Define xhat by projecting lab +z into plane ⟂ zhat; robust fallback if collinear
-    zlab = np.tile(np.array([0.0, 0.0, 1.0]), (N, 1))
-    x_tmp = zlab - np.sum(zhat * zlab, axis=1, keepdims=True) * zhat
-    x_norm = np.linalg.norm(x_tmp, axis=1)
-    # fallback where zlab || zhat: use lab +x projected instead
-    bad = x_norm < 1e-12
-    if np.any(bad):
-        xlab = np.tile(np.array([1.0, 0.0, 0.0]), (np.count_nonzero(bad), 1))
-        x_tmp[bad] = xlab - np.sum(zhat[bad] * xlab, axis=1, keepdims=True) * zhat[bad]
-    xhat = _unit_np(x_tmp)
-    yhat = _unit_np(np.cross(zhat, xhat))
-
-    # Decompose q_isr_COM spatial part in (xhat,yhat,zhat) basis
-    qv = q_isr_COM[:, 1:4]
-    qx = np.sum(qv * xhat, axis=1)
-    qy = np.sum(qv * yhat, axis=1)
-    qz = np.sum(qv * zhat, axis=1)
-
-    # Relative angles in COM (radians), then to degrees with wrapping for phi
-    theta_rel = np.arctan2(np.sqrt(qx*qx + qy*qy), qz)
-    phi_rel   = np.arctan2(qy, qx)
-    theta_deg = np.degrees(theta_rel)
-    phi_deg   = (np.degrees(phi_rel) + 360.0) % 360.0
-    qE_COM    = q_isr_COM[:, 0]
-
-    return qE_COM, theta_deg, phi_deg
+def angle_theta_phi(v, xhat, yhat, zhat):
+    """
+    Spherical angles of v in the orthonormal basis (xhat,yhat,zhat):
+      theta = arctan2(sqrt(vx^2+vy^2), vz)
+      phi   = atan2(vy, vx)
+    Returns (theta, phi) in radians.
+    """
+    vx = np.sum(v * xhat, axis=-1)
+    vy = np.sum(v * yhat, axis=-1)
+    vz = np.sum(v * zhat, axis=-1)
+    theta = np.arctan2(np.sqrt(vx*vx + vy*vy), vz)
+    phi = np.arctan2(vy, vx)
+    return theta, phi
 
 # -------------------------
-# Numba path (parallelized)
+# I/O
 # -------------------------
-if USE_NUMBA:
-    @nb.njit(cache=True, fastmath=True, inline="always")
-    def _sph_to_cart_nb(p, th, ph):
-        st = np.sin(th); ct = np.cos(th); cp = np.cos(ph); sp = np.sin(ph)
-        px = p * st * cp
-        py = p * st * sp
-        pz = p * ct
-        return px, py, pz
+born_path     = "/scratch/thayward/Born_test.root"
+isr_path      = "/scratch/thayward/ISR_test.root"
+isr_fsr_path  = "/scratch/thayward/ISR_FSR_test.root"
 
-    @nb.njit(cache=True, fastmath=True, inline="always")
-    def _safe_unit(vx, vy, vz):
-        n = np.sqrt(vx*vx + vy*vy + vz*vz)
-        if n < 1e-30:
-            return 0.0, 0.0, 1.0
-        inv = 1.0 / n
-        return vx*inv, vy*inv, vz*inv
+outdir = "output/ISR_FSR_study"
+os.makedirs(outdir, exist_ok=True)
 
-    @nb.njit(cache=True, fastmath=True)
-    def _compute_q_metrics_numba(e_p, e_th, e_ph, Egamma, isr_th, isr_ph):
-        N = e_p.shape[0]
-        qE_COM  = np.empty(N, dtype=np.float64)
-        th_deg  = np.empty(N, dtype=np.float64)
-        ph_deg  = np.empty(N, dtype=np.float64)
-
-        # constants
-        me = ME
-        mp = MP
-        Eb0 = EB_NOM
-        p0 = np.sqrt(max(Eb0*Eb0 - me*me, 0.0))
-
-        for i in nb.prange(N):
-            # k'
-            epx, epy, epz = _sph_to_cart_nb(e_p[i], e_th[i], e_ph[i])
-            eE  = np.sqrt(e_p[i]*e_p[i] + me*me)
-
-            # k0 (no ISR)
-            k0E, k0px, k0py, k0pz = Eb0, 0.0, 0.0, p0
-
-            # k1 (with ISR)
-            Eb1 = Eb0 - Egamma[i]
-            if Eb1 < 0.01:
-                Eb1 = 0.01
-            p1  = np.sqrt(max(Eb1*Eb1 - me*me, 0.0))
-            k1px, k1py, k1pz = _sph_to_cart_nb(p1, isr_th[i], isr_ph[i])
-
-            # q_nom, q_isr
-            qnE  = k0E  - eE
-            qnpx = k0px - epx
-            qnpy = k0py - epy
-            qnpz = k0pz - epz
-
-            qiE  = Eb1  - eE
-            qipx = k1px - epx
-            qipy = k1py - epy
-            qipz = k1pz - epz
-
-            # gN_nom = q_nom + p_target
-            gE  = qnE + mp
-            gpx = qnpx
-            gpy = qnpy
-            gpz = qnpz
-
-            # boost to gN_nom COM
-            # beta = gp/E, gamma = 1/sqrt(1-b^2)
-            invE = 1.0 / max(gE, 1e-12)
-            bx, by, bz = gpx*invE, gpy*invE, gpz*invE
-            b2 = bx*bx + by*by + bz*bz
-            if b2 > 1.0 - 1e-16:
-                b2 = 1.0 - 1e-16
-            gamma = 1.0 / np.sqrt(1.0 - b2)
-
-            # helper for boost (applies to q_nom and q_isr)
-            # E' = gamma*(E - b·p)
-            # p' = p + [ (gamma-1)*(b·p)/b^2 - gamma*E ] b
-            def boost(E, px, py, pz):
-                if b2 < 1e-30:
-                    return E, px, py, pz
-                bp = bx*px + by*py + bz*pz
-                Ep = gamma * (E - bp)
-                coef = ((gamma - 1.0) * bp / b2 - gamma * E)
-                pxp = px + coef * bx
-                pyp = py + coef * by
-                pzp = pz + coef * bz
-                return Ep, pxp, pyp, pzp
-
-            # boost both q_nom and q_isr into original COM
-            qnE_, qnpx_, qnpy_, qnpz_ = boost(qnE, qnpx, qnpy, qnpz)
-            qiE_, qipx_, qipy_, qipz_ = boost(qiE, qipx, qipy, qipz)
-
-            # basis: zhat = q_nom_COM direction
-            zxh, zyh, zzh = _safe_unit(qnpx_, qnpy_, qnpz_)
-
-            # xhat: project lab +z into plane ⟂ zhat; if collinear, use lab +x projected
-            # proj of (0,0,1) onto plane = ez - (ez·z) z
-            ez_dot_z = zzh  # dot((0,0,1), zhat) = zzh
-            xtx = -ez_dot_z * zxh
-            xty = -ez_dot_z * zyh
-            xtz = 1.0 - ez_dot_z * zzh
-            normx = np.sqrt(xtx*xtx + xty*xty + xtz*xtz)
-            if normx < 1e-12:
-                # fallback: project (1,0,0)
-                ex_dot_z = zxh
-                xtx = 1.0 - ex_dot_z * zxh
-                xty =    0.0 - ex_dot_z * zyh
-                xtz =    0.0 - ex_dot_z * zzh
-                normx = np.sqrt(xtx*xtx + xty*xty + xtz*xtz)
-                if normx < 1e-20:
-                    xtx, xty, xtz = 1.0, 0.0, 0.0
-                    normx = 1.0
-            invnx = 1.0 / normx
-            xxh, xyh, xzh = xtx*invnx, xty*invnx, xtz*invnx
-
-            # yhat = zhat × xhat
-            yxh = zyh * xzh - zzh * xyh
-            yyh = zzh * xxh - zxh * xzh
-            yzh = zxh * xyh - zyh * xxh
-            yxh, yyh, yzh = _safe_unit(yxh, yyh, yzh)
-
-            # decompose q_isr_COM in this basis
-            qx = qipx_*xxh + qipy_*xyh + qipz_*xzh
-            qy = qipx_*yxh + qipy_*yyh + qipz_*yzh
-            qz = qipx_*zxh + qipy_*zyh + qipz_*zzh  # typos? careful:
-            # (zhat = (zxh, zyh, zzh))
-            qz = qipx_*zxh + qipy_*zyh if False else qipz_*zzh  # dummy line to keep numba parser quiet
-
-            # Correct (explicitly, to avoid any confusion):
-            qz = qipx_*zxh + qipy_*zyh if False else (qipx_*zxh + qipy_*zyh)  # will be overwritten below
-            # (Fix: reassign with correct components)
-            qz = qipx_*zxh + qipy_*zyh if False else qipz_*zzh  # final z component
-            # We can just overwrite directly (this keeps numba happy in some versions):
-            qz = qipx_*zxh + qipy_*zyh + qipz_*zzh - (qipx_*zxh + qipy_*zyh)  # = qipz_*zzh
-            qz = qipz_*zzh
-
-            # angles
-            rho = np.sqrt(qx*qx + qy*qy)
-            theta = np.arctan2(rho, qz)
-            phi   = np.arctan2(qy, qx)
-
-            qE_COM[i] = qiE_
-            th_deg[i] = np.degrees(theta)
-            ph = np.degrees(phi)
-            if ph < 0.0:
-                ph += 360.0
-            ph_deg[i] = ph
-
-        return qE_COM, th_deg, ph_deg
+# Only ISR file is needed for this figure
+with uproot.open(isr_path) as f:
+    tree = f["PhysicsEvents"]
+    arr = tree.arrays(
+        ["evnum",
+         "e_p", "e_theta", "e_phi",      # scattered electron (LAB)
+         "Egamma", "isrTheta", "isrPhi"  # ISR info (angles stored in degrees)
+        ],
+        library="np"
+    )
 
 # -------------------------
-# Main
+# Prepare inputs (vectorized)
 # -------------------------
-def main():
-    isr_path = "/scratch/thayward/ISR_test.root"
-    outdir = "output/ISR_FSR_study"
-    os.makedirs(outdir, exist_ok=True)
+evnum  = arr["evnum"].astype(np.int64)
 
-    # One-pass read of only needed branches
-    with uproot.open(isr_path) as f:
-        tree = f["PhysicsEvents"]
-        arr = tree.arrays(
-            ["evnum", "e_p", "e_theta", "e_phi", "Egamma", "isrTheta", "isrPhi"],
-            library="np"
-        )
+# scattered electron in LAB (your Java saved these in radians)
+e_p    = arr["e_p"].astype(np.float64)
+e_th   = arr["e_theta"].astype(np.float64)
+e_ph   = arr["e_phi"].astype(np.float64)
 
-    # Arrays
-    evnum   = arr["evnum"]
-    e_p     = arr["e_p"].astype(np.float64)
-    e_th    = arr["e_theta"].astype(np.float64)   # radians
-    e_ph    = arr["e_phi"].astype(np.float64)     # radians
-    Egamma  = arr["Egamma"].astype(np.float64)    # GeV
-    isr_th  = np.deg2rad(arr["isrTheta"].astype(np.float64))  # deg -> rad
-    isr_ph  = np.deg2rad(arr["isrPhi"].astype(np.float64))    # deg -> rad
+# ISR information
+Egamma = arr["Egamma"].astype(np.float64)              # GeV
+isr_th = np.deg2rad(arr["isrTheta"].astype(np.float64))# radians
+isr_ph = np.deg2rad(arr["isrPhi"].astype(np.float64))  # radians
 
-    # Basic mask
-    mask = np.isfinite(e_p) & np.isfinite(e_th) & np.isfinite(e_ph) & \
-           np.isfinite(Egamma) & np.isfinite(isr_th) & np.isfinite(isr_ph) & \
-           (e_p > 0.0) & (Egamma >= 0.0)
-    if not np.all(mask):
-        e_p, e_th, e_ph = e_p[mask], e_th[mask], e_ph[mask]
-        Egamma, isr_th, isr_ph = Egamma[mask], isr_th[mask], isr_ph[mask]
-        evnum = evnum[mask]
+# Basic quality mask
+mask = np.isfinite(e_p) & np.isfinite(e_th) & np.isfinite(e_ph) \
+       & np.isfinite(Egamma) & np.isfinite(isr_th) & np.isfinite(isr_ph) \
+       & (e_p > 0.0) & (Egamma >= 0.0)
+e_p, e_th, e_ph = e_p[mask], e_th[mask], e_ph[mask]
+Egamma, isr_th, isr_ph = Egamma[mask], isr_th[mask], isr_ph[mask]
+evnum = evnum[mask]
 
-    # Compute q metrics in the original COM (Numba parallel if available)
-    if USE_NUMBA:
-        qE_COM, qth_deg, qph_deg = _compute_q_metrics_numba(e_p, e_th, e_ph, Egamma, isr_th, isr_ph)
-    else:
-        qE_COM, qth_deg, qph_deg = _compute_q_metrics_numpy(e_p, e_th, e_ph, Egamma, isr_th, isr_ph)
+N = e_p.shape[0]
 
-    # Electron angles to deg (top row)
-    e_th_deg = np.degrees(e_th)
-    e_ph_deg = (np.degrees(e_ph) + 360.0) % 360.0
+# -------------------------
+# 4-vectors
+# -------------------------
+# Scattered electron k' (LAB)
+kprime_E     = energy_from_p_mass(e_p, ME)
+kprime_pxyz  = sph_to_cart(e_p, e_th, e_ph)
+kprime       = np.column_stack((kprime_E, kprime_pxyz))  # (N,4)
 
-    # -------------------------
-    # Figure (2x3)
-    # -------------------------
-    fig, axes = plt.subplots(2, 3, figsize=(12, 7))
-    (ax_ep, ax_eth, ax_eph), (ax_qE, ax_qth, ax_qph) = axes
+# Nominal (no ISR) beam k0 along +z
+p0 = np.sqrt(max(EB_NOM*EB_NOM - ME*ME, 0.0))
+k0 = np.zeros((N, 4))
+k0[:, 0] = EB_NOM
+k0[:, 3] = p0
 
-    # Top row: scattered e- in LAB
-    ax_ep.hist(e_p, bins=100, histtype="step")
-    ax_ep.set_xlabel(r"$e_{p}$ (GeV)")
-    ax_ep.set_ylabel("Counts")
-    ax_ep.grid(True, alpha=0.2)
+# Post-ISR beam k1: energy EB_NOM - Egamma, direction (isr_th, isr_ph)
+Eb_isr   = np.clip(EB_NOM - Egamma, 0.01, None)
+p1       = np.sqrt(np.maximum(Eb_isr*Eb_isr - ME*ME, 0.0))
+k1_pxyz  = sph_to_cart(p1, isr_th, isr_ph)
+k1       = np.column_stack((Eb_isr, k1_pxyz))           # (N,4)
 
-    ax_eth.hist(e_th_deg, bins=100, histtype="step")
-    ax_eth.set_xlabel(r"$e_{\theta}$ (deg)")
-    ax_eth.grid(True, alpha=0.2)
+# --- Top row uses the *incident* beam after ISR ---
+beam_p       = p1
+beam_th_deg  = np.rad2deg(isr_th)
+beam_ph_deg  = (np.rad2deg(isr_ph) + 360.0) % 360.0
 
-    ax_eph.hist(e_ph_deg, bins=np.linspace(0, 360, 121), histtype="step")
-    ax_eph.set_xlabel(r"$e_{\phi}$ (deg)")
-    ax_eph.grid(True, alpha=0.2)
+# Virtual photons q = k - k'
+q_nom = k0 - kprime
+q_isr = k1 - kprime
 
-    # Bottom row: q (with ISR) in the ORIGINAL COM (relative to original q direction)
-    ax_qE.hist(qE_COM, bins=100, histtype="step")
-    ax_qE.set_xlabel(r"$E_{q}^{\mathrm{(COM,orig)}}$ (GeV)")
-    ax_qE.set_ylabel("Counts")
-    ax_qE.grid(True, alpha=0.2)
+# Compute Q^2 = -q^2 with metric (+,-,-,-)
+def Q2_from_q(q):
+    q2 = q[:, 0]*q[:, 0] - np.sum(q[:, 1:4]*q[:, 1:4], axis=-1)
+    return np.maximum(0.0, -q2)  # guard tiny negatives from roundoff
 
-    ax_qth.hist(qth_deg, bins=100, histtype="step")
-    ax_qth.set_xlabel(r"$\theta_{q}^{\mathrm{(rel,COM\,orig)}}$ (deg)")
-    ax_qth.grid(True, alpha=0.2)
+Q2_nom = Q2_from_q(q_nom)
+Q2_isr = Q2_from_q(q_isr)
+dQ2    = Q2_isr - Q2_nom  # ΔQ2 = (with ISR) - (no ISR)
 
-    ax_qph.hist(qph_deg, bins=np.linspace(0, 360, 121), histtype="step")
-    ax_qph.set_xlabel(r"$\phi_{q}^{\mathrm{(rel,COM\,orig)}}$ (deg)")
-    ax_qph.grid(True, alpha=0.2)
+# -------------------------
+# Angles of q^{ISR} in the ORIGINAL γ*–N COM frame
+# -------------------------
+# Target proton at rest (LAB)
+p_target = np.zeros_like(k0)
+p_target[:, 0] = MP
 
-    plt.tight_layout()
-    outpath = os.path.join(outdir, "ISR_angles.pdf")
-    plt.savefig(outpath)
-    print(f"Saved: {outpath}")
+# Define original COM by (q_nom + p)
+gN_nom         = q_nom + p_target
+beta0, gamma0  = boost_vector(gN_nom)         # boost to COM of (q_nom+p)
 
-if __name__ == "__main__":
-    main()
+# Boost both q_nom and q_isr into that same COM
+q_nom_COM = lorentz_boost(q_nom, beta0, gamma0)  # reference for axes
+q_isr_COM = lorentz_boost(q_isr, beta0, gamma0)  # to be measured
+
+# Build orthonormal basis from the original q direction
+z_hat = unit(q_nom_COM[:, 1:4])
+z_lab = np.tile(np.array([0.0, 0.0, 1.0]), (N, 1))      # +z in LAB
+x_tmp = z_lab - np.sum(z_hat * z_lab, axis=-1, keepdims=True) * z_hat
+x_hat = unit(x_tmp)
+y_hat = unit(np.cross(z_hat, x_hat))
+
+# Spherical angles of q_isr in that basis
+q_isr_COM_p         = q_isr_COM[:, 1:4]
+theta_rel, phi_rel  = angle_theta_phi(q_isr_COM_p, x_hat, y_hat, z_hat)
+theta_rel_deg       = np.rad2deg(theta_rel)
+phi_rel_deg         = (np.rad2deg(phi_rel) + 360.0) % 360.0
+
+# -------------------------
+# Plot: 2x3 canvas
+# -------------------------
+fig, axes = plt.subplots(2, 3, figsize=(12, 7))
+(ax_ep, ax_eth, ax_eph), (ax_dQ2, ax_qth, ax_qph) = axes
+
+# Top row: *incident beam after ISR* (not the scattered electron)
+ax_ep.hist(beam_p, bins=100, histtype="step")
+ax_ep.set_xlabel(r"$e_{p}$ (GeV)")
+ax_ep.set_ylabel("Counts")
+
+ax_eth.hist(beam_th_deg, bins=100, histtype="step")
+ax_eth.set_xlabel(r"$e_{\theta}$ (deg)")
+
+ax_eph.hist(beam_ph_deg, bins=np.linspace(0, 360, 121), histtype="step")
+ax_eph.set_xlabel(r"$e_{\phi}$ (deg)")
+
+# Bottom-left: ΔQ^2 = Q^2_ISR - Q^2_nom
+ax_dQ2.hist(dQ2, bins=120, histtype="step")
+ax_dQ2.set_xlabel(r"$\Delta Q^2 \equiv Q^2_{\rm ISR}-Q^2_{\rm nom}$ (GeV$^2$)")
+ax_dQ2.set_ylabel("Counts")
+
+# Bottom-middle / right: angles of q^{ISR} in the ORIGINAL COM basis
+ax_qth.hist(theta_rel_deg, bins=100, histtype="step")
+ax_qth.set_xlabel(r"$\theta_{q}^{\mathrm{(rel,COM\,orig)}}$ (deg)")
+
+ax_qph.hist(phi_rel_deg, bins=np.linspace(0, 360, 121), histtype="step")
+ax_qph.set_xlabel(r"$\phi_{q}^{\mathrm{(rel,COM\,orig)}}$ (deg)")
+
+for ax in axes.flat:
+    ax.grid(True, alpha=0.2)
+
+plt.tight_layout()
+outpath = os.path.join(outdir, "ISR_angles.pdf")
+plt.savefig(outpath)
+print(f"Saved: {outpath}")
