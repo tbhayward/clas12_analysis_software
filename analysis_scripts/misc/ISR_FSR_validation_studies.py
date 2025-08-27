@@ -222,10 +222,10 @@ if pos.size > 0:
     ax_ep.set_ylim(bottom=max(1.0, 0.8 * pos.min()))
 
 ax_eth.hist(beam_th_deg, bins=100, histtype="step")
-ax_eth.set_xlabel(r"$e_{\theta}$ (deg)")
+ax_eth.set_xlabel(r"$k_{\theta}$ (deg)")
 
 ax_eph.hist(beam_ph_deg, bins=np.linspace(0, 360, 121), histtype="step")
-ax_eph.set_xlabel(r"$e_{\phi}$ (deg)")
+ax_eph.set_xlabel(r"$k_{\phi}$ (deg)")
 
 # Bottom-left: Delta Q^2 = Q^2_ISR - Q^2_nom
 ax_dQ2.hist(dQ2, bins=120, histtype="step")
