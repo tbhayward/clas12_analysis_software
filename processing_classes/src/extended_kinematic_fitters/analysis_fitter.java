@@ -251,7 +251,7 @@ public class analysis_fitter extends GenericKinematicFitter {
 //                     this checks all of the PID requirements, if it passes all of them the electron is 
                     // added to the event below
 
-////                  check for photons within 8 degree cone angle around electron and add 
+////                     check for photons within 8 degree cone angle around electron and add 
 //                    for (int particle_index_neutral = 0; particle_index_neutral < rec_Bank.rows(); particle_index_neutral++) {
 //                        int pid_neutral = rec_Bank.getInt("pid", particle_index_neutral);
 //                        if (pid_neutral == 22 || pid_neutral == 2112) {
