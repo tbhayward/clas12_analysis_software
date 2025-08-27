@@ -194,11 +194,14 @@ def main():
         ax_Rph.set_axis_off()
     # endif
 
-    # --- bottom row: ΔQ2, Δx_B, Δ(-t) ---  (all log y-scale)
+    # --- bottom row: ΔQ2, Δx_B, Δ(-t) ---  (all log y-scale with fixed x-ranges)
+
+    # ΔQ^2 in [-4, 1]
     if dQ2.size:
-        n_dq2, _, _ = ax_dQ2.hist(dQ2, bins=160, histtype="step")
+        n_dq2, _, _ = ax_dQ2.hist(dQ2, bins=160, range=(-4.0, 1.0), histtype="step")
         ax_dQ2.set_xlabel(r"$\Delta Q^2$ (GeV$^2$)")
         ax_dQ2.set_ylabel("Counts")
+        ax_dQ2.set_xlim(-4.0, 1.0)
         ax_dQ2.set_yscale("log")
         pos = n_dq2[n_dq2 > 0]
         if pos.size > 0:
@@ -206,11 +209,12 @@ def main():
     else:
         ax_dQ2.text(0.5, 0.5, "No matched events for $\Delta Q^2$", ha="center", va="center", transform=ax_dQ2.transAxes)
         ax_dQ2.set_axis_off()
-    # endif
 
+    # Δx_B in [-0.3, 0.3]
     if dxB.size:
-        n_dxb, _, _ = ax_dxB.hist(dxB, bins=160, histtype="step")
+        n_dxb, _, _ = ax_dxB.hist(dxB, bins=160, range=(-0.3, 0.3), histtype="step")
         ax_dxB.set_xlabel(r"$\Delta x_B$")
+        ax_dxB.set_xlim(-0.3, 0.3)
         ax_dxB.set_yscale("log")
         pos = n_dxb[n_dxb > 0]
         if pos.size > 0:
@@ -218,11 +222,12 @@ def main():
     else:
         ax_dxB.text(0.5, 0.5, "No matched events for $\Delta x_B$", ha="center", va="center", transform=ax_dxB.transAxes)
         ax_dxB.set_axis_off()
-    # endif
 
+    # Δ(-t) in [-1, 1]
     if d_minus_t.size:
-        n_dmt, _, _ = ax_dmt.hist(d_minus_t, bins=160, histtype="step")
+        n_dmt, _, _ = ax_dmt.hist(d_minus_t, bins=160, range=(-1.0, 1.0), histtype="step")
         ax_dmt.set_xlabel(r"$\Delta(-t)$ (GeV$^2$)")
+        ax_dmt.set_xlim(-1.0, 1.0)
         ax_dmt.set_yscale("log")
         pos = n_dmt[n_dmt > 0]
         if pos.size > 0:
