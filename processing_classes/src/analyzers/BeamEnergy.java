@@ -4,22 +4,15 @@ import org.jlab.clas.physics.PhysicsEvent;
 import java.util.List;
 import java.util.ArrayList;
 
-/**
- * Beam energy helper with optional data-driven radiative (ISR) sampling. When isRadiative=true, samples a beam fraction
- * from the provided CDF arrays, enforces a simple energy-conservation floor, sets the effective Eb, and remembers the
- * emitted ISR photon energy Egamma for downstream use.
- */
 public class BeamEnergy {
 
-    protected double Eb;
+    protected double Eb; // nominal beam energy by run period
 
-    // --- NEW: record of the chosen ISR energy (if applied) ---
     protected boolean radiativeApplied = false;
-    protected double egammaGeV = 0.0;         // sampled ISR photon energy
-    protected double selectedBeamFraction = 1.0; // Eb / Eb0 after sampling
+    protected double egammaGeV = 0.0;
+    protected double selectedBeamFraction = 1.0;
 
-    // CDF over beam percentage (monotone, ends at 1.0)
-    protected double[] beam_percentage = new double[]{0.99995, 0.98985,
+    private static final double[] beam_percentage = new double[]{0.99995, 0.98985,
         0.97975, 0.96965, 0.95955, 0.94945, 0.93935,
         0.92925, 0.91915, 0.90905, 0.89895, 0.88885, 0.87875, 0.86865,
         0.85855, 0.84845, 0.83835, 0.82825, 0.81815, 0.80805, 0.79795,
@@ -36,7 +29,7 @@ public class BeamEnergy {
         0.08085, 0.07075, 0.06065, 0.05055, 0.04045, 0.03035, 0.02025,
         0.01015, 0.0000499999};
 
-    protected double[] beam_likelihood = new double[]{0.791947, 0.808145,
+    private static final double[] beam_likelihood = new double[]{0.791947, 0.808145,
         0.825926, 0.838389, 0.847606, 0.855139,
         0.861519, 0.867214, 0.872296, 0.876636, 0.88062, 0.884296, 0.887679,
         0.890929, 0.893896, 0.896875, 0.899571, 0.902198, 0.904849, 0.907113,
@@ -52,70 +45,69 @@ public class BeamEnergy {
         1., 1., 1., 1., 1., 1., 1., 1., 1., 1., 1., 1., 1.};
 
     public BeamEnergy(PhysicsEvent recEvent, int runnum, boolean isRadiative) {
-        // default beam energy set to rga fall 2018
-        Eb = 10.6041; // RGA Fall 2018
-//        Eb = 6.535; // RGK Fall 2018 6 GeV
-//        Eb = 7.546; // RGK Fall 2018 7 GeV
-        if (runnum >= 5032 && runnum <= 5666) {
-            Eb = 10.6041;
-        } // RGA Fall 2018
-        else if (runnum >= 2365 && runnum <= 2598) {
-            Eb = 2.22193;
-        } // "RGA" Spring 2018 engineering
-        else if (runnum >= 3030 && runnum <= 3106) {
-            Eb = 6.42313;
-        } // RGA Spring 2018 6 GeV
-        else if (runnum >= 3819 && runnum <= 3862) {
-            Eb = 6.42313;
-        } // RGA Spring 2018 6 GeV
-        else if (runnum >= 3172 && runnum <= 3817) {
-            Eb = 10.5940;
-        } // RGA Spring 2018 10 GeV
-        else if (runnum >= 3863 && runnum <= 4326) {
-            Eb = 10.5940;
-        } // RGA Spring 2018 10 GeV
-        else if (runnum >= 5875 && runnum <= 6000) {
-            Eb = 6.535;
-        } // RGK Fall 2018 6 GeV
-        else if (runnum >= 5674 && runnum <= 5870) {
-            Eb = 7.546;
-        } // RGK Fall 2018 7 GeV
-        else if (runnum >= 6616 && runnum <= 6783) {
-            Eb = 10.1998;
-        } // RGA Spring 2019
-        else if (runnum >= 6120 && runnum <= 6399) {
-            Eb = 10.5986;
-        } // RGB Spring 2019
-        else if (runnum >= 6409 && runnum <= 6604) {
-            Eb = 10.1998;
-        } // RGB Spring 2019
-        else if (runnum >= 11093 && runnum <= 11283) {
-            Eb = 10.4096;
-        } // RGB Fall 2019
-        else if (runnum >= 11284 && runnum <= 11300) {
-            Eb = 4.17179;
-        } // RGB Fall 2019
-        else if (runnum >= 11323 && runnum <= 11571) {
-            Eb = 10.3894;
-        } // RGB Spring 2020
-        else if (runnum >= 16042 && runnum <= 17065) {
-            Eb = 10.5473;
-        } // RGC Summer 2022
-        else if (runnum >= 17067 && runnum <= 17724) {
-            Eb = 10.5563;
-        } // RGC Fa 2022
-        else if (runnum >= 17725 && runnum <= 17811) {
-            Eb = 10.5593;
-        } // RGC Fa 2022 / Sp 2023
-        else if (runnum >= 19249 && runnum <= 19250) {
-            Eb = 6.39463;
+        Eb = 10.6041;
+        if (runnum >= 5032 && runnum <= 5666) { Eb = 10.6041; }
+        else if (runnum >= 2365 && runnum <= 2598) { Eb = 2.22193; }
+        else if (runnum >= 3030 && runnum <= 3106) { Eb = 6.42313; }
+        else if (runnum >= 3819 && runnum <= 3862) { Eb = 6.42313; }
+        else if (runnum >= 3172 && runnum <= 3817) { Eb = 10.5940; }
+        else if (runnum >= 3863 && runnum <= 4326) { Eb = 10.5940; }
+        else if (runnum >= 5875 && runnum <= 6000) { Eb = 6.535; }
+        else if (runnum >= 5674 && runnum <= 5870) { Eb = 7.546; }
+        else if (runnum >= 6616 && runnum <= 6783) { Eb = 10.1998; }
+        else if (runnum >= 6120 && runnum <= 6399) { Eb = 10.5986; }
+        else if (runnum >= 6409 && runnum <= 6604) { Eb = 10.1998; }
+        else if (runnum >= 11093 && runnum <= 11283) { Eb = 10.4096; }
+        else if (runnum >= 11284 && runnum <= 11300) { Eb = 4.17179; }
+        else if (runnum >= 11323 && runnum <= 11571) { Eb = 10.3894; }
+        else if (runnum >= 16042 && runnum <= 17065) { Eb = 10.5473; }
+        else if (runnum >= 17067 && runnum <= 17724) { Eb = 10.5563; }
+        else if (runnum >= 17725 && runnum <= 17811) { Eb = 10.5593; }
+        else if (runnum >= 19249 && runnum <= 19250) { Eb = 6.39463; }
+
+        final double Eb0 = Eb;
+
+        if (isRadiative) {
+            double minFrac = minBeamFraction(recEvent, Eb0);
+            List<Double> pct = new ArrayList<>();
+            List<Double> like = new ArrayList<>();
+            for (int i = 0; i < beam_percentage.length; i++) {
+                if (beam_percentage[i] >= minFrac) {
+                    pct.add(beam_percentage[i]);
+                    like.add(beam_likelihood[i]);
+                }
+            }
+            if (!pct.isEmpty()) {
+                double max_like = like.get(like.size() - 1);
+                if (max_like <= 0.0) max_like = 1.0;
+                for (int i = 0; i < like.size(); i++) like.set(i, like.get(i) / max_like);
+
+                double u = Math.random();
+                int idx = 0;
+                while (idx < like.size() && u > like.get(idx)) idx++;
+                if (idx >= pct.size()) idx = pct.size() - 1;
+
+                selectedBeamFraction = pct.get(idx);
+                double Eb_draw = Eb0 * selectedBeamFraction;
+                egammaGeV = Math.max(0.0, Eb0 - Eb_draw);
+                radiativeApplied = true;
+            } else {
+                double Eb_min = minFrac * Eb0;
+                egammaGeV = Math.max(0.0, Eb0 - Eb_min);
+                selectedBeamFraction = (Eb0 > 0.0) ? (Eb_min / Eb0) : 1.0;
+                radiativeApplied = true;
+            }
         }
+    }
 
-        final double Eb0 = Eb; // save the un-radiated beam energy
+    public double Eb() { return Eb; }
+    public boolean isRadiativeApplied() { return radiativeApplied; }
+    public double getEgammaGeV() { return egammaGeV; }
+    public double getSelectedBeamFraction() { return selectedBeamFraction; }
 
-        // determine a minimum energy the electron must have in order to create the particles in the event
-        int num_elec = recEvent.countByPid(11); // returns number of electrons
-        int num_positrons = recEvent.countByPid(-11); // returns number of positrons
+    private static double minBeamFraction(PhysicsEvent recEvent, double Eb0) {
+        int num_elec = recEvent.countByPid(11);
+        int num_positrons = recEvent.countByPid(-11);
         int num_piplus = recEvent.countByPid(211);
         int num_piminus = recEvent.countByPid(-211);
         int num_pi0 = recEvent.countByPid(111);
@@ -124,88 +116,15 @@ public class BeamEnergy {
         int num_protons = recEvent.countByPid(2212);
         int num_antiprotons = recEvent.countByPid(-2212);
 
-        if (isRadiative) {
-            // Calculate the total rest mass of the final state particles
-            double total_mass = (num_elec - 1) * 0.000511 + num_positrons * 0.000511
-                    + num_piplus * 0.13957 + num_piminus * 0.13957
-                    + num_pi0 * 0.1349766 + num_kplus * 0.493677
-                    + num_kminus * 0.493677 + (num_protons - 1) * 0.938272
-                    + num_antiprotons * 0.938272;
+        double total_mass = (num_elec - 1) * 0.000511 + num_positrons * 0.000511
+                + num_piplus * 0.13957 + num_piminus * 0.13957
+                + num_pi0 * 0.1349766 + num_kplus * 0.493677
+                + num_kminus * 0.493677 + (num_protons - 1) * 0.938272
+                + num_antiprotons * 0.938272;
 
-            // Determine the minimum beam percentage allowed
-            double min_beam_percentage = Eb0 > 0 ? (total_mass / Eb0) : 1.0;
-
-            // Create new arrays for beam percentages and likelihoods that satisfy energy conservation
-            List<Double> new_beam_percentage = new ArrayList<>();
-            List<Double> new_beam_likelihood = new ArrayList<>();
-
-            for (int i = 0; i < beam_percentage.length; i++) {
-                if (beam_percentage[i] >= min_beam_percentage) {
-                    new_beam_percentage.add(beam_percentage[i]);
-                    new_beam_likelihood.add(beam_likelihood[i]);
-                }
-            }
-
-            if (!new_beam_percentage.isEmpty()) {
-                // Normalize the trimmed CDF so the last value is 1.0
-                double max_like = new_beam_likelihood.get(new_beam_likelihood.size() - 1);
-                if (max_like <= 0.0) {
-                    max_like = 1.0;
-                }
-                for (int i = 0; i < new_beam_likelihood.size(); i++) {
-                    new_beam_likelihood.set(i, new_beam_likelihood.get(i) / max_like);
-                }
-
-                // Sample a fraction from the (trimmed) CDF
-                double u = Math.random();
-                int idx = 0;
-                while (idx < new_beam_likelihood.size() && u > new_beam_likelihood.get(idx)) {
-                    idx++;
-                }
-                if (idx >= new_beam_percentage.size()) {
-                    idx = new_beam_percentage.size() - 1;
-                }
-
-                selectedBeamFraction = new_beam_percentage.get(idx);
-                Eb = Eb0 * selectedBeamFraction;
-
-                egammaGeV = Math.max(0.0, Eb0 - Eb);
-                radiativeApplied = true;
-            } else {
-                // No valid fraction: clamp Eb to the minimum needed and set Egamma accordingly
-                Eb = Math.max(total_mass, 0.0);
-                selectedBeamFraction = (Eb0 > 0.0) ? (Eb / Eb0) : 1.0;
-                egammaGeV = Math.max(0.0, Eb0 - Eb);
-                radiativeApplied = true;
-            }
-        }
-    }
-
-    /**
-     * Effective beam energy after optional ISR sampling.
-     */
-    public double Eb() {
-        return Eb;
-    }
-
-    /**
-     * True if radiative sampling was applied in the constructor.
-     */
-    public boolean isRadiativeApplied() {
-        return radiativeApplied;
-    }
-
-    /**
-     * Sampled ISR photon energy in GeV (0 if not radiative).
-     */
-    public double getEgammaGeV() {
-        return egammaGeV;
-    }
-
-    /**
-     * The sampled beam fraction (Eb / Eb0) when radiative is applied, else 1.0.
-     */
-    public double getSelectedBeamFraction() {
-        return selectedBeamFraction;
+        double min_beam_percentage = Eb0 > 0 ? (total_mass / Eb0) : 1.0;
+        if (min_beam_percentage < 0.0) min_beam_percentage = 0.0;
+        if (min_beam_percentage > 1.0) min_beam_percentage = 1.0;
+        return min_beam_percentage;
     }
 }

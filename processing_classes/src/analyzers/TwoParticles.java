@@ -28,17 +28,9 @@ public class TwoParticles {
     protected double Mx, Mx2;
     protected double Mh, pT, xF, zeta, xi;
     protected double eta, eta_gN;
-    // eta is the rapidity, preferred by theorists in the Breit frame (e.g. eta1 is in Breit) 
-    // eta_gN is the rapidity in the gamma*-nucleon COM frame
-    // the difference between two rapidities is Lorentz invariant, i.e.
-    // eta1-eta2 = eta1_COM - eta2_COM
 
     protected double phi;
 
-    // depolarization vectors defining the polarization lost during the transfer from beam to 
-    // the virtual photon. 
-    // in ALU BSAs the twist 2 terms are modified by C/A and the twist 3 terms by W/A
-    // B and V come in AUL
     protected double Depolarization_A;
     protected double Depolarization_B;
     protected double Depolarization_C;
@@ -54,16 +46,18 @@ public class TwoParticles {
     protected int RICH_pid;
     protected double chi2pid, beta, RQ_prob, el_prob, pi_prob, k_prob, pr_prob;
 
-    // --- NEW: Optional one-shot ISR beam deflection for the next TwoParticles instance ---
-    private static Double nextBeamThetaRad = null; // radians
-    private static Double nextBeamPhiRad = null; // radians
+    // --- NEW: one-shot inverse-ISR photon to subtract from q ---
+    private static boolean useInverseISRNext = false;
+    private static double nextEgammaGeV = 0.0;
+    private static double nextThetaRad = 0.0;
+    private static double nextPhiRad   = 0.0;
 
-    /**
-     * Set once before constructing TwoParticles to tilt the incoming beam (ISR). Angles in radians.
-     */
-    public static void setNextISRBeamAngles(Double thetaRad, Double phiRad) {
-        nextBeamThetaRad = thetaRad;
-        nextBeamPhiRad = phiRad;
+    /** Arm a one-shot inverse-ISR correction for the next constructed TwoParticles. */
+    public static void setNextInverseISRPhoton(double EgammaGeV, double thetaRad, double phiRad) {
+        useInverseISRNext = true;
+        nextEgammaGeV = EgammaGeV;
+        nextThetaRad = thetaRad;
+        nextPhiRad = phiRad;
     }
 
     public static boolean channel_test(TwoParticles variables) {
@@ -76,10 +70,6 @@ public class TwoParticles {
         } else if (variables.y() > 0.80) {
             return false;
         }
-//        else if (variables.Mx2() > 1.1) {
-//            return false;
-//        }
-
         return true;
     }
 
@@ -98,11 +88,9 @@ public class TwoParticles {
     }
 
     public TwoParticles(DataEvent event, PhysicsEvent recEvent, int pPID, int pIndex, double Eb) {
-        // provide the PDG PID of the two hadrons
-
         kinematic_variables kinematic_variables = new kinematic_variables();
 
-        // load banks
+        // banks
         HipoDataBank eventBank = (HipoDataBank) event.getBank("REC::Event");
         HipoDataBank configBank = (HipoDataBank) event.getBank("RUN::config");
         HipoDataBank rec_Bank = (HipoDataBank) event.getBank("REC::Particle");
@@ -110,10 +98,10 @@ public class TwoParticles {
         HipoDataBank traj_Bank = (HipoDataBank) event.getBank("REC::Traj");
 
         helicity = eventBank.getByte("helicity", 0);
-        runnum = configBank.getInt("run", 0); // used for beam energy and polarization
+        runnum = configBank.getInt("run", 0);
 
-        num_elec = recEvent.countByPid(11); // returns number of electrons
-        num_positrons = recEvent.countByPid(-11); // returns number of positrons
+        num_elec = recEvent.countByPid(11);
+        num_positrons = recEvent.countByPid(-11);
         num_piplus = recEvent.countByPid(211);
         num_piminus = recEvent.countByPid(-211);
         num_kplus = recEvent.countByPid(321);
@@ -134,11 +122,11 @@ public class TwoParticles {
 
         int p_rec_index = getIndex(rec_Bank, pPID, pIndex);
         if (generic_tests.forward_tagger_cut(p_rec_index, rec_Bank)) {
-            detector = 0; // Forward Tagger
+            detector = 0;
         } else if (generic_tests.forward_detector_cut(p_rec_index, rec_Bank)) {
-            detector = 1; // Forward Detector
+            detector = 1;
         } else if (generic_tests.central_detector_cut(p_rec_index, rec_Bank)) {
-            detector = 2; // Central Detector
+            detector = 2;
         }
 
         boolean passesForwardDetector_1 = generic_tests.forward_detector_cut(p_rec_index, rec_Bank)
@@ -150,63 +138,24 @@ public class TwoParticles {
         boolean p_fiducial_check = passesForwardTagger_1 && passesForwardDetector_1 && passesCentralDetector_1;
 
         fiducial_status = 0;
-        if (electron_pcal_fiducial) {
-            fiducial_status += 1;
-        }
-        if (electron_fd_fiducial) {
-            fiducial_status += 10;
-        }
-        if (p_fiducial_check) {
-            fiducial_status += 100;
-        }
-        // Check if all checks pass
-//        if (e_fiducial_check && p_fiducial_check) {
-//            fiducial_status = 2; // Set to 2 if all checks pass
-//        } else {
-//            // Now check for specific cases where only one is false
-//            if (!e_fiducial_check && p_fiducial_check) {
-//                fiducial_status = 0; // Set to 0 if only electron check is false
-//            } else if (e_fiducial_check && !p_fiducial_check) {
-//                fiducial_status = 1; // Set to 1 if only p1 check is false
-//            }
-//            // If more than one is false, fiducial_status remains -1 (default)
-//        }
+        if (electron_pcal_fiducial) fiducial_status += 1;
+        if (electron_fd_fiducial)   fiducial_status += 10;
+        if (p_fiducial_check)       fiducial_status += 100;
 
-        // Set up Lorentz vectors
-        // beam electron
+        // ==== Lorentz vectors ====
+        // beam electron (no tilt)
         LorentzVector lv_beam = new LorentzVector();
         double me = kinematic_variables.particle_mass(11);
         double pBeam = Math.sqrt(Math.max(0.0, Eb * Eb - me * me));
+        lv_beam.setPxPyPzM(0.0, 0.0, pBeam, me);
 
-        // Default: along +z (no ISR tilt)
-        double bx = 0.0, by = 0.0, bz = pBeam;
-
-        // If caller provided a one-shot ISR tilt, use it and then consume it.
-        if (nextBeamThetaRad != null && nextBeamPhiRad != null) {
-            Vector3 kvec = new Vector3();
-            kvec.setMagThetaPhi(pBeam, nextBeamThetaRad, nextBeamPhiRad);
-            bx = kvec.x();
-            by = kvec.y();
-            bz = kvec.z();
-            // consume the one-shot so it doesn’t affect the next event accidentally
-            nextBeamThetaRad = null;
-            nextBeamPhiRad = null;
-        }
-
-        lv_beam.setPxPyPzM(bx, by, bz, me);
-
-        // pull from rec banks for outgoing particles
-        // electron
-        String electron_index = "[11,0]"; // highest p, kinematic fitter should require FD etc
-        Particle scattered_electron = recEvent.getParticle(electron_index); //
+        // scattered electron
+        String electron_index = "[11,0]";
+        Particle scattered_electron = recEvent.getParticle(electron_index);
         LorentzVector lv_e = new LorentzVector();
         lv_e.setPxPyPzM(scattered_electron.px(), scattered_electron.py(),
-                scattered_electron.pz(), kinematic_variables.particle_mass(11));
-        // hadrons set up below (to allow for iteration over more than two hadrons in an event)
-        LorentzVector lv_q = new LorentzVector(lv_beam);
-        lv_q.sub(lv_e);
+                        scattered_electron.pz(), kinematic_variables.particle_mass(11));
 
-        // set up hadrons 
         String pIndex_string = "[" + pPID + "," + pIndex + "]";
         Particle hadron = recEvent.getParticle(pIndex_string);
 
@@ -216,54 +165,71 @@ public class TwoParticles {
         LorentzVector lv_p = new LorentzVector();
         lv_p.setPxPyPzM(hadron.px(), hadron.py(), hadron.pz(), hadron.mass());
 
+        // --- Build baseline q = k - k' ---
+        LorentzVector lv_q = new LorentzVector(lv_beam);
+        lv_q.sub(lv_e);
+
+        // --- Optional inverse-ISR: subtract R from q (consume one-shot) ---
+        if (useInverseISRNext) {
+            useInverseISRNext = false; // consume
+
+            // guard: Egamma <= 0.999 * nu_baseline
+            double nu_baseline = lv_q.e();
+            double Egamma_eff = Math.min(nextEgammaGeV, Math.max(0.0, 0.999 * nu_baseline));
+
+            if (Egamma_eff > 0.0) {
+                Vector3 nhat = new Vector3();
+                nhat.setMagThetaPhi(1.0, nextThetaRad, nextPhiRad);
+
+                LorentzVector lv_R = new LorentzVector();
+                lv_R.setPxPyPzM(nhat.x() * Egamma_eff,
+                                nhat.y() * Egamma_eff,
+                                nhat.z() * Egamma_eff,
+                                0.0);
+                lv_q.sub(lv_R);
+            }
+        }
+
+        // target and missing mass (use corrected q)
         LorentzVector lv_target = new LorentzVector();
         momentum_corrections momentum_corrections = new momentum_corrections();
         lv_target.setPxPyPzM(0, 0, 0, kinematic_variables.particle_mass(2212));
-        // missing mass calculations
-        Mx = kinematic_variables.Mx(lv_q, lv_target, lv_p);
-        Mx2 = kinematic_variables.Mx2(lv_q, lv_target, lv_p); // missing mass squared
 
-        /* TOGGLE ON OR OFF IF FERMI MOTION DESIRED */
-        // Simulate Fermi motion
-//        org.jlab.clas.physics.Vector3 fermiP = momentum_corrections.sampleFermiMomentum(Mx2);
-//        lv_target.setPxPyPzM(fermiP.x(), fermiP.y(), fermiP.z(), kinematic_variables.particle_mass(2212));
-        Mx = kinematic_variables.Mx(lv_q, lv_target, lv_p);
-        Mx2 = kinematic_variables.Mx2(lv_q, lv_target, lv_p); // missing mass squared
+        Mx  = kinematic_variables.Mx (lv_q, lv_target, lv_p);
+        Mx2 = kinematic_variables.Mx2(lv_q, lv_target, lv_p);
 
-        // kinematics of electron
+        // electron kinematics (for output)
         e_px = lv_e.px();
         e_py = lv_e.py();
         e_pz = lv_e.pz();
-        e_p = lv_e.p();
-        e_e = lv_e.e();
+        e_p  = lv_e.p();
+        e_e  = lv_e.e();
         e_theta = scattered_electron.theta();
-        e_phi = scattered_electron.phi();
-        if (e_phi < 0) {
-            e_phi = 2 * Math.PI + e_phi;
-        }
+        e_phi   = scattered_electron.phi();
+        if (e_phi < 0) e_phi = 2 * Math.PI + e_phi;
 
-        // DIS variables
+        // ---- DIS variables from corrected q ----
         Q2 = kinematic_variables.Q2(lv_q);
-        nu = kinematic_variables.nu(lv_beam, lv_e);
-        x = kinematic_variables.x(Q2, nu);
-        W = kinematic_variables.W(Q2, nu);
-        y = kinematic_variables.y(nu, lv_beam);
+        nu = lv_q.e();                              // corrected energy transfer
+        x  = kinematic_variables.x(Q2, nu);
+        W  = kinematic_variables.W(Q2, nu);
+        y  = kinematic_variables.y(nu, lv_beam);
         gamma = kinematic_variables.gamma(Q2, x);
 
-        // Depolarization variables
+        // Depolarization from corrected (gamma, y)
         Depolarization_A = kinematic_variables.Depolarization_A(gamma, y);
         Depolarization_B = kinematic_variables.Depolarization_B(gamma, y);
         Depolarization_C = kinematic_variables.Depolarization_C(gamma, y);
         Depolarization_V = kinematic_variables.Depolarization_V(gamma, y);
         Depolarization_W = kinematic_variables.Depolarization_W(gamma, y);
 
-        // set up boost to gamma*-nucleon center of mass frame
+        // g*-N COM frame (from corrected q)
         LorentzVector gN = new LorentzVector(lv_q);
         gN.add(lv_target);
         Vector3 gNBoost = gN.boostVector();
         gNBoost.negative();
 
-        // set up boost to Breit frame
+        // Breit frame (from corrected q)
         LorentzVector Breit = new LorentzVector(lv_q);
         LorentzVector Breit_target = new LorentzVector();
         Breit_target.setPxPyPzM(0, 0, 0, 2 * x * kinematic_variables.particle_mass(2212));
@@ -275,21 +241,20 @@ public class TwoParticles {
         t = kinematic_variables.t(lv_p.p(), lv_p.theta());
         tmin = kinematic_variables.tmin(x, Q2);
 
-        // kinematics of hadrons
+        // hadron kinematics
         p_px = lv_p.px();
         p_py = lv_p.py();
         p_pz = lv_p.pz();
-        p_p = lv_p.p();
-        p_e = hadron.e();
+        p_p  = lv_p.p();
+        p_e  = hadron.e();
         p_theta = hadron.theta();
-        p_phi = hadron.phi();
-        if (p_phi < 0) {
-            p_phi = 2 * Math.PI + p_phi;
-        }
+        p_phi   = hadron.phi();
+        if (p_phi < 0) p_phi = 2 * Math.PI + p_phi;
 
+        // z from corrected q
         z = kinematic_variables.z(lv_p, lv_q);
 
-        // boost to gamma*-nucleon center of mass frame
+        // boosts with corrected q
         LorentzVector lv_p_gN = new LorentzVector(lv_p);
         lv_p_gN = kinematic_variables.lv_boost_gN(lv_target, lv_q, lv_p_gN);
         LorentzVector lv_e_gN = new LorentzVector(lv_e);
@@ -302,10 +267,8 @@ public class TwoParticles {
         lv_q_gN = kinematic_variables.lv_boost_gN(lv_target, lv_q, lv_q_gN);
         Vector3 lv_q_gN_unit = new Vector3();
         lv_q_gN_unit.setMagThetaPhi(1, lv_q_gN.theta(), lv_q_gN.phi());
-        // in gamma*-nucleon frame the z axis is along gamma* and the x axis is in the 
-        // e-e' plane in the direction of e. the y axis is then the cross product of these two
 
-        // boost to Breit infinite momentum frame
+        // Breit
         LorentzVector lv_p_Breit = new LorentzVector(lv_p);
         lv_p_Breit.boost(BreitBoost);
         LorentzVector lv_e_Breit = new LorentzVector(lv_e);
@@ -316,28 +279,23 @@ public class TwoParticles {
         lv_q_Breit.boost(BreitBoost);
         Vector3 lv_q_Breit_unit = new Vector3();
         lv_q_Breit_unit.setMagThetaPhi(1, lv_q_Breit.theta(), lv_q_Breit.phi());
-        // note that in the Breit frame +z is antialigned to the direction of q
 
         pT = lv_q_gN_unit.cross(lv_p_gN.vect()).mag();
-
         xF = 2 * (lv_p_gN.vect().dot(lv_q_gN.vect())) / (lv_q_gN.vect().mag() * W);
 
         zeta = lv_p_gN.e() / lv_target_gN.e();
 
-//        double xi2 = kinematic_variables.Lorentz_vector_inner_product(lv_p_gN, lv_q_gN)
-//                / kinematic_variables.Lorentz_vector_inner_product(lv_target_gN, lv_q_gN);
         LightConeKinematics lck = new LightConeKinematics();
         xi = lck.xi_h(lv_p_gN, lv_q_gN, lv_target_gN);
 
         p_gN_pz = lv_p_gN.vect().dot(lv_q_gN.vect()) / lv_q_gN.vect().mag();
         p_Breit_pz = lv_p_Breit.vect().dot(lv_q_Breit.vect()) / lv_q_Breit.vect().mag();
 
-        // Breit frame rapidity
+        // rapidities
         eta = -0.5 * Math.log((lv_p_Breit.e() + p_Breit_pz) / (lv_p_Breit.e() - p_Breit_pz));
-
-        // gamma*-nucleon frame rapidity
         eta_gN = 0.5 * Math.log((lv_p_gN.e() + p_gN_pz) / (lv_p_gN.e() - p_gN_pz));
 
+        // Trento phi using corrected q
         Vector3 vecH = new Vector3();
         vecH.setMagThetaPhi(lv_p_gN.vect().mag() / z, lv_p_gN.vect().theta(), lv_p_gN.vect().phi());
         Vector3 vecR = new Vector3(vecH);
@@ -358,250 +316,87 @@ public class TwoParticles {
         double cosPhiH = vT.dot(vTH);
         double sinPhiH = lv_e_gN.vect().cross(vectPhT).dot(lv_q_gN_unit);
 
-        // scaling
         double hScale = lv_q_gN_unit.cross(lv_e_gN.vect()).mag() * lv_q_gN_unit.cross(vecH).mag();
         sinPhiH = sinPhiH / hScale;
 
         phi = Math.acos(cosPhiH);
-
         if (sinPhiH < 0.0) {
             phi = 2 * Math.PI - phi;
         }
-
-        // see trento conventions: https://arxiv.org/pdf/hep-ph/0410050.pdf        
+        // end
     }
 
-    public int get_helicity() { // -1, 0, or 1. 0 equals unassigned by EventBuilder
-        if (runnum >= 4326 && runnum <= 5666) {
-            return -1 * helicity;
-        } else if (runnum >= 6616 && runnum <= 6783) {
-            return -1 * helicity;
-        } else if (runnum >= 6120 && runnum <= 6604) {
-            return -1 * helicity;
-        } else if (runnum >= 11093 && runnum <= 11283) {
-            return helicity;
-        } else if (runnum >= 11284 && runnum < 11300) {
-            return -1 * helicity;
-        } else if (runnum >= 11323 && runnum < 11571) {
-            return helicity;
-        }
+    public int get_helicity() {
+        if (runnum >= 4326 && runnum <= 5666) return -1 * helicity;
+        else if (runnum >= 6616 && runnum <= 6783) return -1 * helicity;
+        else if (runnum >= 6120 && runnum <= 6604) return -1 * helicity;
+        else if (runnum >= 11093 && runnum <= 11283) return helicity;
+        else if (runnum >= 11284 && runnum < 11300) return -1 * helicity;
+        else if (runnum >= 11323 && runnum < 11571) return helicity;
         return helicity;
     }
 
-    public int get_runnum() {
-        return runnum;
-    }
+    public int get_runnum() { return runnum; }
+    public int get_detector() { return detector; }
+    public int get_num_pos() { return num_pos; }
+    public int get_num_neg() { return num_neg; }
+    public int get_num_neutrals() { return num_neutrals; }
+    public int get_fiducial_status() { return fiducial_status; }
 
-    public int get_detector() {
-        return detector;
-    }
+    public int num_elec() { return num_elec; }
+    public int num_piplus() { return num_piplus; }
+    public int num_piminus() { return num_piminus; }
+    public int num_kplus() { return num_kplus; }
+    public int num_kminus() { return num_kminus; }
+    public int num_protons() { return num_protons; }
 
-    public int get_num_pos() {
-        return num_pos;
-    }
+    public double Q2() { return ((int) (Q2 * 100000)) / 100000.0; }
+    public double W()  { return ((int) (W  * 100000)) / 100000.0; }
+    public double gamma() { return ((int) (gamma * 100000)) / 100000.0; }
+    public double nu() { return ((int) (nu * 100000)) / 100000.0; }
+    public double x()  { return ((int) (x  * 100000)) / 100000.0; }
+    public double y()  { return ((int) (y  * 100000)) / 100000.0; }
 
-    public int get_num_neg() {
-        return num_neg;
-    }
+    public double t()    { return Double.valueOf(Math.round(t    * 100000)) / 100000; }
+    public double tmin() { return Double.valueOf(Math.round(tmin * 100000)) / 100000; }
 
-    public int get_num_neutrals() {
-        return num_neutrals;
-    }
+    public double z()   { return ((int) (z   * 100000)) / 100000.0; }
+    public double Mx()  { return ((int) (Mx  * 100000)) / 100000.0; }
+    public double Mx2() { return ((int) (Mx2 * 100000)) / 100000.0; }
+    public double pT()  { return ((int) (pT  * 100000)) / 100000.0; }
+    public double xF()  { return ((int) (xF  * 100000)) / 100000.0; }
+    public double zeta(){ return ((int) (zeta* 100000)) / 100000.0; }
+    public double xi()  { return ((int) (xi  * 100000)) / 100000.0; }
 
-    public int get_fiducial_status() {
-        return fiducial_status;
-    }
+    public double p_Breit_pz() { return ((int) (p_Breit_pz * 100000)) / 100000.0; }
+    public double p_gN_pz()    { return ((int) (p_gN_pz    * 100000)) / 100000.0; }
+    public double eta()        { return ((int) (eta        * 100000)) / 100000.0; }
+    public double eta_gN()     { return ((int) (eta_gN     * 100000)) / 100000.0; }
+    public double phi()        { return ((int) (phi        * 100000)) / 100000.0; }
 
-    public int num_elec() {
-        return num_elec;
-    } // returns number of electrons
+    public double Depolarization_A() { return ((int) (Depolarization_A * 100000)) / 100000.0; }
+    public double Depolarization_B() { return ((int) (Depolarization_B * 100000)) / 100000.0; }
+    public double Depolarization_C() { return ((int) (Depolarization_C * 100000)) / 100000.0; }
+    public double Depolarization_V() { return ((int) (Depolarization_V * 100000)) / 100000.0; }
+    public double Depolarization_W() { return ((int) (Depolarization_W * 100000)) / 100000.0; }
 
-    public int num_piplus() {
-        return num_piplus;
-    } // returns number of piplus
+    public double e_px() { return ((int) (e_px * 100000)) / 100000.0; }
+    public double e_py() { return ((int) (e_py * 100000)) / 100000.0; }
+    public double e_pz() { return ((int) (e_pz * 100000)) / 100000.0; }
+    public double e_p()  { return ((int) (e_p  * 100000)) / 100000.0; }
+    public double e_e()  { return ((int) (e_e  * 100000)) / 100000.0; }
+    public double e_theta() { return ((int) (e_theta * 100000)) / 100000.0; }
+    public double e_phi()   { return ((int) (e_phi   * 100000)) / 100000.0; }
 
-    public int num_piminus() {
-        return num_piminus;
-    } // returns number of piminus
+    public double p_px() { return ((int) (p_px * 100000)) / 100000.0; }
+    public double p_py() { return ((int) (p_py * 100000)) / 100000.0; }
+    public double p_pz() { return ((int) (p_pz * 100000)) / 100000.0; }
+    public double p_p()  { return ((int) (p_p  * 100000)) / 100000.0; }
+    public double p_e()  { return ((int) (p_e  * 100000)) / 100000.0; }
+    public double p_theta() { return ((int) (p_theta * 100000)) / 100000.0; }
+    public double p_phi()   { return ((int) (p_phi   * 100000)) / 100000.0; }
 
-    public int num_kplus() {
-        return num_kplus;
-    }// returns number of kplus
-
-    public int num_kminus() {
-        return num_kminus;
-    } // returns number of kminus
-
-    public int num_protons() {
-        return num_protons;
-    } // returns number of protons
-
-    public double Q2() {
-        return ((int) (Q2 * 100000)) / 100000.0;
-    }
-
-    public double W() {
-        return ((int) (W * 100000)) / 100000.0;
-    }
-
-    public double gamma() {
-        return ((int) (gamma * 100000)) / 100000.0;
-    }
-
-    public double nu() {
-        return ((int) (nu * 100000)) / 100000.0;
-    }
-
-    public double x() {
-        return ((int) (x * 100000)) / 100000.0;
-    }
-
-    public double y() {
-        return ((int) (y * 100000)) / 100000.0;
-    }
-
-    public double t() {
-        return Double.valueOf(Math.round(t * 100000)) / 100000;
-    }// returns t
-
-    public double tmin() {
-        return Double.valueOf(Math.round(tmin * 100000)) / 100000;
-    }// returns tmin
-
-    public double z() {
-        return ((int) (z * 100000)) / 100000.0;
-    }
-
-    public double Mx() {
-        return ((int) (Mx * 100000)) / 100000.0;
-    }
-
-    public double Mx2() {
-        return ((int) (Mx2 * 100000)) / 100000.0;
-    }
-
-    public double pT() {
-        return ((int) (pT * 100000)) / 100000.0;
-    }
-
-    public double xF() {
-        return ((int) (xF * 100000)) / 100000.0;
-    }
-
-    public double zeta() {
-        return ((int) (zeta * 100000)) / 100000.0;
-    }
-
-    public double xi() {
-        return ((int) (xi * 100000)) / 100000.0;
-    }
-
-    public double p_Breit_pz() {
-        return ((int) (p_Breit_pz * 100000)) / 100000.0;
-    }
-
-    public double p_gN_pz() {
-        return ((int) (p_gN_pz * 100000)) / 100000.0;
-    }
-
-    public double eta() {
-        return ((int) (eta * 100000)) / 100000.0;
-    }
-
-    public double eta_gN() {
-        return ((int) (eta_gN * 100000)) / 100000.0;
-    }
-
-    public double phi() {
-        return ((int) (phi * 100000)) / 100000.0;
-    }
-
-    public double Depolarization_A() {
-        return ((int) (Depolarization_A * 100000)) / 100000.0;
-    }
-
-    public double Depolarization_B() {
-        return ((int) (Depolarization_B * 100000)) / 100000.0;
-    }
-
-    public double Depolarization_C() {
-        return ((int) (Depolarization_C * 100000)) / 100000.0;
-    }
-
-    public double Depolarization_V() {
-        return ((int) (Depolarization_V * 100000)) / 100000.0;
-    }
-
-    public double Depolarization_W() {
-        return ((int) (Depolarization_W * 100000)) / 100000.0;
-    }
-
-    public double e_px() {
-        return ((int) (e_px * 100000)) / 100000.0;
-    }
-
-    public double e_py() {
-        return ((int) (e_py * 100000)) / 100000.0;
-    }
-
-    public double e_pz() {
-        return ((int) (e_pz * 100000)) / 100000.0;
-    }
-
-    public double e_p() {
-        return ((int) (e_p * 100000)) / 100000.0;
-    }
-
-    public double e_e() {
-        return ((int) (e_e * 100000)) / 100000.0;
-    }
-
-    public double e_theta() {
-        return ((int) (e_theta * 100000)) / 100000.0;
-    }
-
-    public double e_phi() {
-        return ((int) (e_phi * 100000)) / 100000.0;
-    }
-
-    public double p_px() {
-        return ((int) (p_px * 100000)) / 100000.0;
-    }
-
-    public double p_py() {
-        return ((int) (p_py * 100000)) / 100000.0;
-    }
-
-    public double p_pz() {
-        return ((int) (p_pz * 100000)) / 100000.0;
-    }
-
-    public double p_p() {
-        return ((int) (p_p * 100000)) / 100000.0;
-    }
-
-    public double p_e() {
-        return ((int) (p_e * 100000)) / 100000.0;
-    }
-
-    public double p_theta() {
-        return ((int) (p_theta * 100000)) / 100000.0;
-    }
-
-    public double p_phi() {
-        return ((int) (p_phi * 100000)) / 100000.0;
-    }
-
-    public double vz_e() {
-        return ((int) (vz_e * 100000)) / 100000.0;
-    }
-
-    public double vz_p() {
-        return ((int) (vz_p * 100000)) / 100000.0;
-    }
-
-    public double open_angle() {
-        return ((int) (open_angle * 100000)) / 100000.0;
-    }
-
+    public double vz_e() { return ((int) (vz_e * 100000)) / 100000.0; }
+    public double vz_p() { return ((int) (vz_p * 100000)) / 100000.0; }
+    public double open_angle() { return ((int) (open_angle * 100000)) / 100000.0; }
 }
