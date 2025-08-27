@@ -187,7 +187,7 @@ public static void main(String[] args) {
 	    	
 
 	    	// --- Build beam model ONCE per event, with radiative sampling enabled ---
-			BeamEnergy Eb = new BeamEnergy(research_Event, runnum, false);
+			BeamEnergy Eb = new BeamEnergy(research_Event, runnum, true);
 
 			// Effective beam energy for this event
 			double energy = (runnum == 11) ? beam_energy : Eb.Eb();
@@ -340,41 +340,44 @@ public static void main(String[] args) {
 		}
 
 		println(
-		  "1: fiducial_status,  " +
-		  "2: num_pos,          " +
-		  "3: num_neg,          " +
-		  "4: num_neutrals,     " +
-		  "5: runnum,           " +
-		  "6: evnum,            " +
-		  "7: helicity,         " +
-		  "8: detector,         " +
-		  "9: e_p,              " +
-		  "10: e_theta,         " +
-		  "11: e_phi,           " +
-		  "12: vz_e,            " +
-		  "13: p_p,             " +
-		  "14: p_theta,         " +
-		  "15: p_phi,           " +
-		  "16: vz_p,            " +
-		  "17: open_angle,      " +
-		  "18: Q2,              " +
-		  "19: W,               " +
-		  "20: Mx2,             " +
-		  "21: x,               " +
-		  "22: t,               " +
-		  "23: tmin,            " +
-		  "24: y,               " +
-		  "25: z,               " +
-		  "26: xF,              " +
-		  "27: pT,              " +
-		  "28: xi,              " +
-		  "29: eta,             " +
-		  "30: phi (trento),    " +
-		  "31: DepA,            " +
-		  "32: DepB,            " +
-		  "33: DepC,            " +
-		  "34: DepV,            " +
-		  "35: DepW"
+		  "1:  fiducial_status,  " +
+		  "2:  num_pos,          " +
+		  "3:  num_neg,          " +
+		  "4:  num_neutrals,     " +
+		  "5:  runnum,           " +
+		  "6:  evnum,            " +
+		  "7:  helicity,         " +
+		  "8:  detector,         " +
+		  "9:  e_p,              " +
+		  "10: e_theta,          " +
+		  "11: e_phi,            " +
+		  "12: vz_e,             " +
+		  "13: p_p,              " +
+		  "14: p_theta,          " +
+		  "15: p_phi,            " +
+		  "16: Egamma (GeV),     " +
+		  "17: isrTheta (deg),   " +
+		  "18: isrPhi (deg),     " +
+		  "19: vz_p,             " +
+		  "20: open_angle,       " +
+		  "21: Q2,               " +
+		  "22: W,                " +
+		  "23: Mx2,              " +
+		  "24: x,                " +
+		  "25: t,                " +
+		  "26: tmin,             " +
+		  "27: y,                " +
+		  "28: z,                " +
+		  "29: xF,               " +
+		  "30: pT,               " +
+		  "31: xi,               " +
+		  "32: eta,              " +
+		  "33: phi (trento),     " +
+		  "34: DepA,             " +
+		  "35: DepB,             " +
+		  "36: DepC,             " +
+		  "37: DepV,             " +
+		  "38: DepW"
 		);
 
 		println("Set p1 PID = $p1_Str");
