@@ -3978,7 +3978,8 @@ void performChi2Fits_GeneralExclusive(const char* output_file,
     const std::string exportPath = "output/results/GE_bin_export_" + prefix + "_" + suffix + ".txt";
     binExport.open(exportPath, std::ios::out | std::ios::trunc);
     if (binExport) {
-      binExport << std::fixed << std::setprecision(9);
+      // CHANGED: round floats to three decimals
+      binExport << std::fixed << std::setprecision(3);
       // New header (as requested)
       binExport
         << "# <Q2> <x> <y> <-t> <-tprime> Df <V/A> <B/A> <cosphi> e<cosphi> "
@@ -4303,48 +4304,42 @@ void performChi2Fits_GeneralExclusive(const char* output_file,
 
     // === write the per-bin export line (new schema) ============================
     if (g_ge_write_bin_export && binExport) {
-      // physical amplitudes (convert from fitted ratios with depol factors)
-      const double ALU_sin    = g_ge_ctx.rWA * pval[2];
-      const double eALU_sin   = g_ge_ctx.rWA * perr[2];
+      const double ALU_sin     = g_ge_ctx.rWA * pval[2];
+      const double eALU_sin    = g_ge_ctx.rWA * perr[2];
+      const double AUL_sin2    = g_ge_ctx.rBA * pval[4];
+      const double eAUL_sin2   = g_ge_ctx.rBA * perr[4];
+      const double ALL_0       = g_ge_ctx.rCA * pval[5];
+      const double eALL_0      = g_ge_ctx.rCA * perr[5];
+      const double ALL_cosphi  = g_ge_ctx.rWA * pval[6];
+      const double eALL_cosphi = g_ge_ctx.rWA * perr[6];
 
-      const double AUL_sin2   = g_ge_ctx.rBA * pval[4];
-      const double eAUL_sin2  = g_ge_ctx.rBA * perr[4];
-
-      const double ALL_0      = g_ge_ctx.rCA * pval[5];
-      const double eALL_0     = g_ge_ctx.rCA * perr[5];
-
-      const double ALL_cosphi = g_ge_ctx.rWA * pval[6];
-      const double eALL_cosphi= g_ge_ctx.rWA * perr[6];
-
-      // dilution factor for this bin
       double Df = 1.0;
       if (i < dilutionFactors.size()) Df = dilutionFactors[i].first;
 
-      // Write line (space-separated)
       binExport
-        << meanQ2       << " "  // <Q2>
-        << meanx        << " "  // <x>
-        << meany        << " "  // <y>
-        << mean_mt      << " "  // <-t>
-        << mean_mtp     << " "  // <-tprime>  (=-<t'>)
-        << Df           << " "  // Df
-        << g_ge_ctx.rVA << " "  // <V/A>
-        << g_ge_ctx.rBA << " "  // <B/A>
-        << mean_cosphi  << " "  // <cosphi>
-        << err_cosphi   << " "  // e<cosphi>
-        << ALU_sin      << " "  // ALUsin
-        << eALU_sin     << " "  // eALUsin
-        << AUL_sin2     << " "  // AULsin2phi
-        << eAUL_sin2    << " "  // eAULsin2phi
-        << ALL_0        << " "  // ALL
-        << eALL_0       << " "  // eALL
-        << ALL_cosphi   << " "  // ALLcosphi
-        << eALL_cosphi  << " "  // eALLcosphi
-        << ::Npp        << " "  // raw counts
+        << meanQ2       << " "
+        << meanx        << " "
+        << meany        << " "
+        << mean_mt      << " "
+        << mean_mtp     << " "
+        << Df           << " "
+        << g_ge_ctx.rVA << " "
+        << g_ge_ctx.rBA << " "
+        << mean_cosphi  << " "
+        << err_cosphi   << " "
+        << ALU_sin      << " "
+        << eALU_sin     << " "
+        << AUL_sin2     << " "
+        << eAUL_sin2    << " "
+        << ALL_0        << " "
+        << eALL_0       << " "
+        << ALL_cosphi   << " "
+        << eALL_cosphi  << " "
+        << ::Npp        << " "
         << ::Npm        << " "
         << ::Nmp        << " "
         << ::Nmm        << " "
-        << cpp          << " "  // charges (globals)
+        << cpp          << " "
         << cpm          << " "
         << cmp          << " "
         << cmm          << "\n";
@@ -4373,7 +4368,7 @@ void performChi2Fits_GeneralExclusive(const char* output_file,
     out << sAT_LL.str()  << "\n";
   }
 
-  // Finish LaTeX kinematics table & kinematics list
+  // Finish LaTeX kinematics table & kinematics list (unchanged: 2 d.p.)
   kinLatex << "\\end{tabular}\n"
            << "\\caption{Per-bin kinematics shown as [min, mean, max] for $Q^{2}$, $x_{B}$, $y$, $z$, and $-t'$. "
            << "$Q^{2}$ and $-t'$ are in GeV$^{2}$.}\n"
@@ -4390,7 +4385,7 @@ void performChi2Fits_GeneralExclusive(const char* output_file,
     kp << kinList.str() << "\n";
   }
 
-  // ===== Write the fit-results LaTeX table (unchanged content selection) ======
+  // Fit-results LaTeX table generation remains unchanged
   {
     std::string varName = propertyNames[currentFits];
 
