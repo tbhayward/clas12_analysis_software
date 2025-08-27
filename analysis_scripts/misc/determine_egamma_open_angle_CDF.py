@@ -107,7 +107,7 @@ def main():
         # Prepare outputs
         label = e_labels[i]  # e.g., "E0_1"
         # Comment line with three-decimal edges and integer N
-        range_str = f"[{lo:.3f}, {hi:.3f}{']' if i==len(e_edges)-2 else ')'} GeV]"
+        range_str = f"[{lo:.4f}, {hi:.4f}{']' if i==len(e_edges)-2 else ')'} GeV]"
         if args.mode == "counts":
             print(f"// Egamma in {range_str}, N = {int(mask.sum())}")
             print(java_array(f"h_counts_{label}", counts, dtype="int"))
