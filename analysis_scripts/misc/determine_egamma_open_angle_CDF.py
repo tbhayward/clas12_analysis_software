@@ -1,13 +1,16 @@
 #!/usr/bin/env python3
 """
-Build ISR-proxy angle kernels from e'gamma open_angle.
+Build ISR-proxy angle kernels from e'γ open_angle.
 
 - Input: ROOT file with tree "PhysicsEvents" containing:
     * open_angle  (deg)
     * p_p         (GeV)  (photon momentum, treat as E_gamma)
 
-- Output: prints to stdout Java-ready arrays for 5 Egamma bins:
-    [0,1), [1,2), [2,3), [3,4), [4,10] GeV
+- Output: prints to stdout Java-ready arrays for the following Egamma bins (GeV):
+    [0, 0.25), [0.25, 0.50), [0.50, 0.75), [0.75, 1.00),
+    [1.00, 1.50), [1.50, 2.00), [2.00, 2.50), [2.50, 3.00),
+    [3.00, 3.50), [3.50, 4.00), [4.00, 4.50), [4.50, 5.00),
+    [5.00, 10.00]   (last bin inclusive)
 
 Usage:
     python make_isr_theta_histos.py \
@@ -19,10 +22,9 @@ Usage:
 
 Notes:
 - 'counts' prints int[] counts per bin (copy/paste into Java).
-- 'pmf' prints normalized probability mass over bins (sums to 1).
-- 'cdf' prints cumulative sum of the PMF (last element = 1).
-
-All floating-point printouts are rounded to three decimal places.
+- 'pmf' prints normalized probability mass over bins (sums to 1 if N>0).
+- 'cdf' prints cumulative sum of the PMF (last element = 1 if N>0).
+- Doubles are printed to four decimals.
 """
 
 import argparse
@@ -30,7 +32,7 @@ import numpy as np
 
 try:
     import uproot
-except ImportError as e:
+except ImportError:
     print("ERROR: This script requires the 'uproot' package. Try: pip install uproot")
     raise
 
@@ -39,17 +41,24 @@ def java_array(name, arr, dtype="double"):
     """
     Format a numpy array as a Java array initializer string.
     dtype: "double" or "int"
-    All doubles are formatted to three decimals.
+    Doubles are formatted to four decimals.
     """
     if dtype == "int":
         body = ", ".join(str(int(x)) for x in arr.tolist())
         return f"int[] {name} = new int[]{{{body}}};"
     else:
-        # fixed-point with three decimals
         body = ", ".join(f"{float(x):.4f}" for x in arr.tolist())
         return f"double[] {name} = new double[]{{{body}}};"
-# ----------------------------------------
 
+def edge_label(v):
+    """
+    Make a Java-friendly label from a float edge value.
+    e.g., 0.25 -> '0p25', 3.0 -> '3'
+    """
+    s = f"{v:.2f}".rstrip('0').rstrip('.')
+    return s.replace('.', 'p')
+
+# ----------------------------------------
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--root", default="/volatile/clas12/thayward/egamma/rga_fa18_inb_egamma_short.root",
@@ -61,19 +70,21 @@ def main():
                     help="what to print for each Egamma bin")
     args = ap.parse_args()
 
-    # Define Egamma bin edges (GeV) and labels for printing
-    e_edges = np.array([0.0, 1.0, 2.0, 3.0, 4.0, 10.0], dtype=float)
-    e_labels = [f"E{int(e_edges[i])}_{int(e_edges[i+1])}" for i in range(len(e_edges)-1)]
+    # New Egamma bin edges (GeV)
+    e_edges = np.array(
+        [0.0, 0.25, 0.50, 0.75, 1.00, 1.50, 2.00, 2.50, 3.0, 3.5, 4.0, 4.5, 5.0, 10.0],
+        dtype=float
+    )
+    e_labels = [f"E{edge_label(e_edges[i])}_{edge_label(e_edges[i+1])}"
+                for i in range(len(e_edges)-1)]
 
     # Theta binning in degrees (common for all)
     th_edges_deg = np.linspace(0.0, args.theta_max, args.nbins + 1)
-    th_width_deg = th_edges_deg[1] - th_edges_deg[0]
 
     # Load variables
     with uproot.open(args.root) as f:
         if args.tree not in f:
             raise RuntimeError(f"Tree '{args.tree}' not found in file '{args.root}'")
-        #endif
         T = f[args.tree]
         arrs = T.arrays(["open_angle", "p_p"], library="np")
         theta_deg = arrs["open_angle"].astype(float)
@@ -99,47 +110,48 @@ def main():
             mask = (egamma >= lo) & (egamma <= hi)
         else:
             mask = (egamma >= lo) & (egamma < hi)
-        #endif
 
         th_bin = theta_deg[mask]
         counts, _ = np.histogram(th_bin, bins=th_edges_deg)
 
-        # Prepare outputs
-        label = e_labels[i]  # e.g., "E0_1"
-        # Comment line with three-decimal edges and integer N
+        label = e_labels[i]
         range_str = f"[{lo:.4f}, {hi:.4f}{']' if i==len(e_edges)-2 else ')'} GeV]"
+        N = int(mask.sum())
+
         if args.mode == "counts":
-            print(f"// Egamma in {range_str}, N = {int(mask.sum())}")
+            print(f"// Egamma in {range_str}, N = {N}")
             print(java_array(f"h_counts_{label}", counts, dtype="int"))
             print("")
+
         elif args.mode == "pmf":
             total = counts.sum()
-            pmf = counts.astype(float) / total if total > 0 else counts.astype(float)
-            # Ensure exact normalization for safety
-            if pmf.sum() > 0:
+            if total > 0:
+                pmf = counts.astype(float) / float(total)
+                # numeric hygiene
+                pmf = np.clip(pmf, 0.0, 1.0)
                 pmf = pmf / pmf.sum()
-            #endif
-            print(f"// Egamma in {range_str}, N = {int(mask.sum())}")
+            else:
+                pmf = counts.astype(float)
+            print(f"// Egamma in {range_str}, N = {N}")
             print(java_array(f"h_pmf_{label}", pmf, dtype="double"))
             print("")
+
         else:  # cdf
             total = counts.sum()
-            pmf = counts.astype(float) / total if total > 0 else counts.astype(float)
-            if pmf.sum() > 0:
+            if total > 0:
+                pmf = counts.astype(float) / float(total)
+                pmf = np.clip(pmf, 0.0, 1.0)
                 pmf = pmf / pmf.sum()
-            #endif
-            cdf = np.cumsum(pmf)
-            # Clip numerical noise
-            if cdf.size > 0:
+                cdf = np.cumsum(pmf)
+                # ensure strictly within [0,1] and end exactly at 1.0
+                cdf = np.clip(cdf, 0.0, 1.0)
                 cdf[-1] = 1.0
-            #endif
-            print(f"// Egamma in {range_str}, N = {int(mask.sum())}")
+            else:
+                cdf = np.zeros_like(counts, dtype=float)
+            print(f"// Egamma in {range_str}, N = {N}")
             print(java_array(f"h_cdf_{label}", cdf, dtype="double"))
             print("")
-        #endif
-    #endfor
 # ----------------------------------------
 
 if __name__ == "__main__":
     main()
-# endif
