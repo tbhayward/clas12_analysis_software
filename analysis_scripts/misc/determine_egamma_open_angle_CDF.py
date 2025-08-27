@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """
-Build ISR-proxy angle kernels from e'γ open_angle.
+Build ISR-proxy angle kernels from e'gamma open_angle.
 
 - Input: ROOT file with tree "PhysicsEvents" containing:
-    * open_angle  [deg]
-    * p_p         [GeV]  (photon momentum, treat as E_gamma)
+    * open_angle  (deg)
+    * p_p         (GeV)  (photon momentum, treat as E_gamma)
 
 - Output: prints to stdout Java-ready arrays for 5 Egamma bins:
     [0,1), [1,2), [2,3), [3,4), [4,10] GeV
@@ -18,9 +18,11 @@ Usage:
         --mode counts        # or pmf or cdf
 
 Notes:
-- `counts` prints int[] counts per bin (copy/paste into Java).
-- `pmf` prints normalized probability mass over bins (sums to 1).
-- `cdf` prints cumulative sum of the PMF (last element = 1).
+- 'counts' prints int[] counts per bin (copy/paste into Java).
+- 'pmf' prints normalized probability mass over bins (sums to 1).
+- 'cdf' prints cumulative sum of the PMF (last element = 1).
+
+All floating-point printouts are rounded to three decimal places.
 """
 
 import argparse
@@ -37,13 +39,14 @@ def java_array(name, arr, dtype="double"):
     """
     Format a numpy array as a Java array initializer string.
     dtype: "double" or "int"
+    All doubles are formatted to three decimals.
     """
     if dtype == "int":
         body = ", ".join(str(int(x)) for x in arr.tolist())
         return f"int[] {name} = new int[]{{{body}}};"
     else:
-        # use repr with sufficient precision, avoid scientific for small numbers
-        body = ", ".join(f"{float(x):.16g}" for x in arr.tolist())
+        # fixed-point with three decimals
+        body = ", ".join(f"{float(x):.3f}" for x in arr.tolist())
         return f"double[] {name} = new double[]{{{body}}};"
 # ----------------------------------------
 
@@ -52,7 +55,7 @@ def main():
     ap.add_argument("--root", default="/volatile/clas12/thayward/egamma/rga_fa18_inb_egamma_short.root",
                     help="Path to input ROOT file")
     ap.add_argument("--tree", default="PhysicsEvents", help="TTree name")
-    ap.add_argument("--theta-max", type=float, default=8.0, help="max open_angle [deg]")
+    ap.add_argument("--theta-max", type=float, default=8.0, help="max open_angle (deg)")
     ap.add_argument("--nbins", type=int, default=100, help="number of theta bins")
     ap.add_argument("--mode", choices=["counts", "pmf", "cdf"], default="counts",
                     help="what to print for each Egamma bin")
@@ -103,8 +106,10 @@ def main():
 
         # Prepare outputs
         label = e_labels[i]  # e.g., "E0_1"
+        # Comment line with three-decimal edges and integer N
+        range_str = f"[{lo:.3f}, {hi:.3f}{']' if i==len(e_edges)-2 else ')'} GeV]"
         if args.mode == "counts":
-            print(f"// Egamma in [{lo:.1f}, {hi:.1f}{']' if i==len(e_edges)-2 else ')'} GeV], N = {int(mask.sum())}")
+            print(f"// Egamma in {range_str}, N = {int(mask.sum())}")
             print(java_array(f"h_counts_{label}", counts, dtype="int"))
             print("")
         elif args.mode == "pmf":
@@ -114,7 +119,7 @@ def main():
             if pmf.sum() > 0:
                 pmf = pmf / pmf.sum()
             #endif
-            print(f"// Egamma in [{lo:.1f}, {hi:.1f}{']' if i==len(e_edges)-2 else ')'} GeV], N = {int(mask.sum())}")
+            print(f"// Egamma in {range_str}, N = {int(mask.sum())}")
             print(java_array(f"h_pmf_{label}", pmf, dtype="double"))
             print("")
         else:  # cdf
@@ -125,11 +130,14 @@ def main():
             #endif
             cdf = np.cumsum(pmf)
             # Clip numerical noise
-            cdf[-1] = 1.0 if cdf.size > 0 else 0.0
-            print(f"// Egamma in [{lo:.1f}, {hi:.1f}{']' if i==len(e_edges)-2 else ')'} GeV], N = {int(mask.sum())}")
+            if cdf.size > 0:
+                cdf[-1] = 1.0
+            #endif
+            print(f"// Egamma in {range_str}, N = {int(mask.sum())}")
             print(java_array(f"h_cdf_{label}", cdf, dtype="double"))
             print("")
-        #endfor
+        #endif
+    #endfor
 # ----------------------------------------
 
 if __name__ == "__main__":
