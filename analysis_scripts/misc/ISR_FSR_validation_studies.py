@@ -125,9 +125,9 @@ e_th   = arr["e_theta"].astype(np.float64)
 e_ph   = arr["e_phi"].astype(np.float64)
 
 # ISR information
-Egamma = arr["Egamma"].astype(np.float64)              # GeV
-isr_th = np.deg2rad(arr["isrTheta"].astype(np.float64))# radians
-isr_ph = np.deg2rad(arr["isrPhi"].astype(np.float64))  # radians
+Egamma = arr["Egamma"].astype(np.float64)               # GeV
+isr_th = np.deg2rad(arr["isrTheta"].astype(np.float64)) # radians
+isr_ph = np.deg2rad(arr["isrPhi"].astype(np.float64))   # radians
 
 # Basic quality mask
 mask = np.isfinite(e_p) & np.isfinite(e_th) & np.isfinite(e_ph) \
@@ -175,10 +175,10 @@ def Q2_from_q(q):
 
 Q2_nom = Q2_from_q(q_nom)
 Q2_isr = Q2_from_q(q_isr)
-dQ2    = Q2_isr - Q2_nom  # ΔQ2 = (with ISR) - (no ISR)
+dQ2    = Q2_isr - Q2_nom  # Delta Q2 = (with ISR) - (no ISR)
 
 # -------------------------
-# Angles of q^{ISR} in the ORIGINAL γ*–N COM frame
+# Angles of q^{ISR} in the ORIGINAL gamma*-N COM frame
 # -------------------------
 # Target proton at rest (LAB)
 p_target = np.zeros_like(k0)
@@ -212,9 +212,14 @@ fig, axes = plt.subplots(2, 3, figsize=(12, 7))
 (ax_ep, ax_eth, ax_eph), (ax_dQ2, ax_qth, ax_qph) = axes
 
 # Top row: *incident beam after ISR* (not the scattered electron)
-ax_ep.hist(beam_p, bins=100, histtype="step")
-ax_ep.set_xlabel(r"$e_{p}$ (GeV)")
+# -- make y-axis log and relabel x to k_p (GeV)
+n_ep, _, _ = ax_ep.hist(beam_p, bins=100, histtype="step")
+ax_ep.set_xlabel(r"$k_p$ (GeV)")
 ax_ep.set_ylabel("Counts")
+ax_ep.set_yscale("log")
+pos = n_ep[n_ep > 0]
+if pos.size > 0:
+    ax_ep.set_ylim(bottom=max(1.0, 0.8 * pos.min()))
 
 ax_eth.hist(beam_th_deg, bins=100, histtype="step")
 ax_eth.set_xlabel(r"$e_{\theta}$ (deg)")
@@ -222,7 +227,7 @@ ax_eth.set_xlabel(r"$e_{\theta}$ (deg)")
 ax_eph.hist(beam_ph_deg, bins=np.linspace(0, 360, 121), histtype="step")
 ax_eph.set_xlabel(r"$e_{\phi}$ (deg)")
 
-# Bottom-left: ΔQ^2 = Q^2_ISR - Q^2_nom
+# Bottom-left: Delta Q^2 = Q^2_ISR - Q^2_nom
 ax_dQ2.hist(dQ2, bins=120, histtype="step")
 ax_dQ2.set_xlabel(r"$\Delta Q^2 \equiv Q^2_{\rm ISR}-Q^2_{\rm nom}$ (GeV$^2$)")
 ax_dQ2.set_ylabel("Counts")
@@ -236,6 +241,7 @@ ax_qph.set_xlabel(r"$\phi_{q}^{\mathrm{(rel,COM\,orig)}}$ (deg)")
 
 for ax in axes.flat:
     ax.grid(True, alpha=0.2)
+#endfor
 
 plt.tight_layout()
 outpath = os.path.join(outdir, "ISR_angles.pdf")
