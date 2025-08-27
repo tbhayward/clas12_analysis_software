@@ -1185,7 +1185,7 @@ int main(int argc, char *argv[]) {
     if (script_index == 1 && is_mc == 0) {
         while (infile >> fiducial_status >> num_pos >> num_neg >> num_neutral >> 
             runnum >> evnum >> helicity >> detector >> e_p >> e_theta >> e_phi >> vz_e >> 
-            p_p >> p_theta >> p_phi >> vz_p >> Egamma >> isrTheta >> isrPhi >> open_angle >> 
+            p_p >> p_theta >> p_phi >> vz_p >> open_angle >> Egamma >> isrTheta >> isrPhi >> 
             Q2 >> W >> Mx2 >> x >> t >> tmin >> y >> z >> xF >> 
             pT >> xi >> eta >> phi >> DepA >> DepB >> DepC >> DepV >> DepW) {
 

@@ -187,7 +187,7 @@ public static void main(String[] args) {
 	    	
 
 	    	// --- Build beam model ONCE per event, with radiative sampling enabled ---
-			BeamEnergy Eb = new BeamEnergy(research_Event, runnum, true);
+			BeamEnergy Eb = new BeamEnergy(research_Event, runnum, false);
 
 			// Effective beam energy for this event
 			double energy = (runnum == 11) ? beam_energy : Eb.Eb();
@@ -293,11 +293,11 @@ public static void main(String[] args) {
 		                	.append(p_p).append(" ")
 		                	.append(p_theta).append(" ")
 		                	.append(p_phi).append(" ")
+		                	.append(vz_p).append(" ")
+		                	.append(open_angle).append(" ")
 		                	.append(Egamma).append(" ")
 		                	.append(isrTheta*180/3.14159).append(" ")
 		                	.append(isrPhi*180/3.14159).append(" ")
-		                	.append(vz_p).append(" ")
-		                	.append(open_angle).append(" ")
 		                	.append(Q2).append(" ")
 		                	.append(W).append(" ")
 		                	.append(Mx2).append(" ")
@@ -355,11 +355,11 @@ public static void main(String[] args) {
 		  "13: p_p,              " +
 		  "14: p_theta,          " +
 		  "15: p_phi,            " +
-		  "16: Egamma (GeV),     " +
-		  "17: isrTheta (deg),   " +
-		  "18: isrPhi (deg),     " +
-		  "19: vz_p,             " +
-		  "20: open_angle,       " +
+		  "16: vz_p,             " +
+		  "17: open_angle,       " +
+		  "18: Egamma (GeV),     " +
+		  "19: isrTheta (deg),   " +
+		  "20: isrPhi (deg),     " +
 		  "21: Q2,               " +
 		  "22: W,                " +
 		  "23: Mx2,              " +
