@@ -5,12 +5,21 @@ import java.util.List;
 import java.util.ArrayList;
 
 /**
- *
- * @author tbhayward
+ * Beam energy helper with optional data-driven radiative (ISR) sampling.
+ * When isRadiative=true, samples a beam fraction from the provided CDF arrays,
+ * enforces a simple energy-conservation floor, sets the effective Eb,
+ * and remembers the emitted ISR photon energy Egamma for downstream use.
  */
 public class BeamEnergy {
 
     protected double Eb;
+
+    // --- NEW: record of the chosen ISR energy (if applied) ---
+    protected boolean radiativeApplied = false;
+    protected double egammaGeV = 0.0;         // sampled ISR photon energy
+    protected double selectedBeamFraction = 1.0; // Eb / Eb0 after sampling
+
+    // CDF over beam percentage (monotone, ends at 1.0)
     protected double[] beam_percentage = new double[]{0.99995, 0.98985,
         0.97975, 0.96965, 0.95955, 0.94945, 0.93935,
         0.92925, 0.91915, 0.90905, 0.89895, 0.88885, 0.87875, 0.86865,
@@ -27,6 +36,7 @@ public class BeamEnergy {
         0.15155, 0.14145, 0.13135, 0.12125, 0.11115, 0.10105, 0.09095,
         0.08085, 0.07075, 0.06065, 0.05055, 0.04045, 0.03035, 0.02025,
         0.01015, 0.0000499999};
+
     protected double[] beam_likelihood = new double[]{0.791947, 0.808145,
         0.825926, 0.838389, 0.847606, 0.855139,
         0.861519, 0.867214, 0.872296, 0.876636, 0.88062, 0.884296, 0.887679,
@@ -101,7 +111,9 @@ public class BeamEnergy {
         else if (runnum >= 19249 && runnum <= 19250) {
             Eb = 6.39463;
         }
-        
+
+        final double Eb0 = Eb; // save the un-radiated beam energy
+
         // determine a minimum energy the electron must have in order to create the particles in the event
         int num_elec = recEvent.countByPid(11); // returns number of electrons
         int num_positrons = recEvent.countByPid(-11); // returns number of positrons
@@ -113,25 +125,16 @@ public class BeamEnergy {
         int num_protons = recEvent.countByPid(2212);
         int num_antiprotons = recEvent.countByPid(-2212);
 
-//        if (isRadiative) {
-//            double double_random = Math.random();
-//            for (int i = 0; i < beam_likelihood.length; i++) {
-//                if (double_random < beam_likelihood[i]) {
-//                    Eb = Eb * beam_percentage[i];
-//                    break;
-//                }
-//            }
-//        }
         if (isRadiative) {
             // Calculate the total rest mass of the final state particles
-            double total_mass = (num_elec-1) * 0.000511 + num_positrons * 0.000511
+            double total_mass = (num_elec - 1) * 0.000511 + num_positrons * 0.000511
                     + num_piplus * 0.13957 + num_piminus * 0.13957
                     + num_pi0 * 0.1349766 + num_kplus * 0.493677
-                    + num_kminus * 0.493677 + (num_protons-1) * 0.938272
+                    + num_kminus * 0.493677 + (num_protons - 1) * 0.938272
                     + num_antiprotons * 0.938272;
 
             // Determine the minimum beam percentage allowed
-            double min_beam_percentage = total_mass / Eb;
+            double min_beam_percentage = Eb0 > 0 ? (total_mass / Eb0) : 1.0;
 
             // Create new arrays for beam percentages and likelihoods that satisfy energy conservation
             List<Double> new_beam_percentage = new ArrayList<>();
@@ -144,31 +147,54 @@ public class BeamEnergy {
                 }
             }
 
-            // Check if there are valid beam percentages available
             if (!new_beam_percentage.isEmpty()) {
-                // Normalize the new beam likelihoods
-                double max_likelihood = new_beam_likelihood.get(new_beam_likelihood.size() - 1);
+                // Normalize the trimmed CDF so the last value is 1.0
+                double max_like = new_beam_likelihood.get(new_beam_likelihood.size() - 1);
+                if (max_like <= 0.0) max_like = 1.0;
                 for (int i = 0; i < new_beam_likelihood.size(); i++) {
-                    new_beam_likelihood.set(i, new_beam_likelihood.get(i) / max_likelihood);
+                    new_beam_likelihood.set(i, new_beam_likelihood.get(i) / max_like);
                 }
 
-                // Update the beam energy using the adjusted arrays
-                double double_random = Math.random();
-                for (int i = 0; i < new_beam_likelihood.size(); i++) {
-                    if (double_random < new_beam_likelihood.get(i)) {
-                        Eb = Eb * new_beam_percentage.get(i);
-                        break;
-                    }
+                // Sample a fraction from the (trimmed) CDF
+                double u = Math.random();
+                int idx = 0;
+                while (idx < new_beam_likelihood.size() && u > new_beam_likelihood.get(idx)) {
+                    idx++;
                 }
+                if (idx >= new_beam_percentage.size()) idx = new_beam_percentage.size() - 1;
+
+                selectedBeamFraction = new_beam_percentage.get(idx);
+                Eb = Eb0 * selectedBeamFraction;
+
+                egammaGeV = Math.max(0.0, Eb0 - Eb);
+                radiativeApplied = true;
             } else {
-                // If no valid beam percentages, set Eb to total_mass to conserve energy
-                Eb = total_mass;
+                // No valid fraction: clamp Eb to the minimum needed and set Egamma accordingly
+                Eb = Math.max(total_mass, 0.0);
+                selectedBeamFraction = (Eb0 > 0.0) ? (Eb / Eb0) : 1.0;
+                egammaGeV = Math.max(0.0, Eb0 - Eb);
+                radiativeApplied = true;
             }
         }
     }
 
+    /** Effective beam energy after optional ISR sampling. */
     public double Eb() {
         return Eb;
     }
 
+    /** True if radiative sampling was applied in the constructor. */
+    public boolean isRadiativeApplied() {
+        return radiativeApplied;
+    }
+
+    /** Sampled ISR photon energy in GeV (0 if not radiative). */
+    public double getEgammaGeV() {
+        return egammaGeV;
+    }
+
+    /** The sampled beam fraction (Eb / Eb0) when radiative is applied, else 1.0. */
+    public double getSelectedBeamFraction() {
+        return selectedBeamFraction;
+    }
 }

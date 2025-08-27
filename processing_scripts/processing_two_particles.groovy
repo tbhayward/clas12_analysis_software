@@ -20,6 +20,19 @@ import groovy.io.FileType;
 // dilks CLAS QA analysis
 import clasqa.QADB // access QADB
 
+// --- ISR beam-tilt handoff (θ,φ in radians), set once per event from the driver ---
+private static final ThreadLocal<double[]> TL_ISR_ANGLES = new ThreadLocal<>();
+
+/** Called from the Groovy driver before constructing TwoParticles for this event. */
+public static void setNextISRBeamAngles(double thetaRad, double phiRad) {
+    TL_ISR_ANGLES.set(new double[]{thetaRad, phiRad});
+}
+
+/** Optional: clear angles (not required if you always set before each hadron). */
+public static void clearISRBeamAngles() {
+    TL_ISR_ANGLES.remove();
+}
+
 public static double phi_calculation (double x, double y) {
 	// tracks are given with Cartesian values and so must be converted to cylindrical
 	double phi = Math.toDegrees(Math.atan2(x,y));
@@ -179,16 +192,31 @@ public static void main(String[] args) {
 		    // boolean process_event = filter.isValid(research_Event) && 
 		    // 	(runnum == 11 || runnum < 5020 || runnum >= 11571 || 
 		    // 	qa.OkForAsymmetry(runnum, evnum));
-		    // boolean process_event = filter.isValid(research_Event) && 
-		    // 	(runnum == 11 || runnum == 16194 || runnum == 16089 || runnum == 16185 ||
-	    	// 	runnum == 16308 || runnum == 16184 || runnum == 16307 || runnum == 16309 ||
-	    	// 	qa.OkForAsymmetry(runnum, evnum));
 	    	boolean process_event = filter.isValid(research_Event) && (runnum == 11 || runnum < 5020 || 
 	    		qa.pass(runnum, evnum));
 	    	if (runnum > 17768) process_event = false; // outbending RGC Sp23
 	    	if (runnum == 17331 || runnum == 16987 || runnum == 17079 || runnum == 17190 || runnum == 17639) process_event = false; // low live time
 	    	if (runnum == 16850 || runnum == 16851 || runnum == 16852 || runnum == 16855 || runnum == 16879) process_event = false; // luminosity scans
 	    	
+
+	    	// --- Build beam model ONCE per event, with radiative sampling enabled ---
+			BeamEnergy Eb = new BeamEnergy(research_Event, runnum, true);
+
+			// Effective beam energy for this event
+			double energy = (runnum == 11) ? beam_energy : Eb.Eb();
+
+			// If ISR was applied, pre-sample one (theta, phi) to reuse for all hadrons this event
+			boolean applyISR = (runnum != 11) && Eb.isRadiativeApplied() && Eb.getEgammaGeV() > 0.0;
+			double isrTheta = 0.0, isrPhi = 0.0;
+			if (applyISR) {
+			    double Egamma = Eb.getEgammaGeV();                         // GeV
+			    isrTheta = analyzers.ISRThetaKernel.sampleThetaRad(Egamma); // radians
+			    isrPhi   = 2.0*Math.PI*Math.random();                       // uniform [0,2π)
+			}
+			if (applyISR && (evnum % 1000 == 0)) {
+			    System.out.printf("ISR sample @ event %d: Egamma=%.3f GeV, theta=%.3f deg, phi=%.3f deg%n",
+			        evnum, Egamma, Math.toDegrees(isrTheta), Math.toDegrees(isrPhi));
+			}
 		    if (process_event) {
 
 		        // get # of particles w/ pid1
@@ -197,12 +225,19 @@ public static void main(String[] args) {
 		        // cycle over all hadrons
 		        for (int current_p1 = 0; current_p1 < num_p1; current_p1++) { 
 
-		        	// supply runnum and boolean for radiative simulation or not
-					BeamEnergy Eb = new BeamEnergy(research_Event, runnum, false);
-					// Use the input beam energy if runnum == 11, otherwise use Eb.Eb()
-					double energy = (runnum == 11) ? beam_energy : Eb.Eb();
-		            TwoParticles variables = new TwoParticles(event, research_Event,
-		                    p1_int, current_p1, energy);
+		        	if (applyISR) {
+				        analyzers.TwoParticles.setNextISRBeamAngles(isrTheta, isrPhi);
+				    }
+
+				    TwoParticles variables = new TwoParticles(event, research_Event,
+				        p1_int, current_p1, energy);
+
+		        	// // supply runnum and boolean for radiative simulation or not
+					// BeamEnergy Eb = new BeamEnergy(research_Event, runnum, false);
+					// // Use the input beam energy if runnum == 11, otherwise use Eb.Eb()
+					// double energy = (runnum == 11) ? beam_energy : Eb.Eb();
+		            // TwoParticles variables = new TwoParticles(event, research_Event,
+		            //         p1_int, current_p1, energy);
 		            // this is my class for defining all relevant kinematic variables
 
 		            if (variables.channel_test(variables)) {
