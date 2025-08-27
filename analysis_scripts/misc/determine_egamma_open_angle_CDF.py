@@ -14,7 +14,7 @@ Build ISR-proxy angle kernels from e'γ open_angle.
 
 Usage:
     python make_isr_theta_histos.py \
-        --root /volatile/clas12/thayward/egamma/rga_fa18_inb_egamma_short.root \
+        --root /volatile/clas12/thayward/egamma/rga_fa18_inb_egamma.root \
         --tree PhysicsEvents \
         --theta-max 8.0 \
         --nbins 100 \
@@ -61,7 +61,7 @@ def edge_label(v):
 # ----------------------------------------
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--root", default="/volatile/clas12/thayward/egamma/rga_fa18_inb_egamma_short.root",
+    ap.add_argument("--root", default="/volatile/clas12/thayward/egamma/rga_fa18_inb_egamma.root",
                     help="Path to input ROOT file")
     ap.add_argument("--tree", default="PhysicsEvents", help="TTree name")
     ap.add_argument("--theta-max", type=float, default=8.0, help="max open_angle (deg)")
