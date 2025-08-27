@@ -311,7 +311,7 @@ bool GeneralExclusiveKinematicCuts::applyCuts(int currentFits, bool isMC)
     // Common DIS-level cuts
     if (*Q2 <  1.0    ) return false;
     if (*W  <  2.0    ) return false;
-    if (*y  >  0.75   ) return false;
+    if (*y  >  0.80   ) return false;
 
 
     // Helper to apply dynamic Mx2 window
