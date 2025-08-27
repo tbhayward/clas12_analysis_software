@@ -194,9 +194,9 @@ public static void main(String[] args) {
 
 			// If ISR was applied, pre-sample one (theta, phi) to reuse for all hadrons this event
 			boolean applyISR = (runnum != 11) && Eb.getEgammaGeV() > 0.0;
-			double isrTheta = 0.0, isrPhi = 0.0;
+			double Egamma = 0.0; double isrTheta = 0.0, isrPhi = 0.0;
 			if (applyISR) {
-			    double Egamma = Eb.getEgammaGeV();                         // GeV
+			    Egamma = Eb.getEgammaGeV();                         // GeV
 			    isrTheta = analyzers.ISRThetaKernel.sampleThetaRad(Egamma); // radians
 			    isrPhi   = 2.0*Math.PI*Math.random();                       // uniform [0,2π)
 
