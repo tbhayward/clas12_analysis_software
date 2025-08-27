@@ -200,11 +200,11 @@ public static void main(String[] args) {
 			    isrTheta = analyzers.ISRThetaKernel.sampleThetaRad(Egamma); // radians
 			    isrPhi   = 2.0*Math.PI*Math.random();                       // uniform [0,2π)
 
-			    // lightweight sanity print every 100k events
-			    if (evnum % 100000 == 0) {
-			        System.out.printf("ISR sample @ event %d: Egamma=%.3f GeV, theta=%.3f deg, phi=%.3f deg%n",
-			                evnum, Egamma, Math.toDegrees(isrTheta), Math.toDegrees(isrPhi));
-			    }
+			    // // lightweight sanity print every 100k events
+			    // if (evnum % 100000 == 0) {
+			    //     System.out.printf("ISR sample @ event %d: Egamma=%.3f GeV, theta=%.3f deg, phi=%.3f deg%n",
+			    //             evnum, Egamma, Math.toDegrees(isrTheta), Math.toDegrees(isrPhi));
+			    // }
 			}
 		    if (process_event) {
 
