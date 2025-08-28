@@ -201,13 +201,13 @@ def main():
 
     # --- top row: R_p, R_theta, R_phi ---
     plot_hist_points(ax_Rp,   Rp,     bins=60, rng=None,                   xlabel=r"$R_p$ (GeV)",        logy=True)
-    plot_hist_points(ax_Rth,  Rtheta, bins=50, rng=None,                   xlabel=r"$R_{\theta}$ (deg)", logy=False)
+    plot_hist_points(ax_Rth,  Rtheta, bins=50, rng=None,                   xlabel=r"$R_{\theta}$ (deg)", logy=True)
 
-    # R_phi: force x in [0, 360], y = [0.5*min_nonzero, 1.5*max] (normalized)
+    # R_phi: force x in [0, 360], and set log-appropriate y-lims (normalized)
     if Rphi.size:
         bins_Rphi = np.linspace(0.0, 360.0, 61)  # 60 bins
         plot_hist_points(ax_Rph, Rphi, bins=bins_Rphi, rng=(0.0, 360.0),
-                         xlabel=r"$R_{\phi}$ (deg)", logy=False)
+                         xlabel=r"$R_{\phi}$ (deg)", logy=True)
 
         n_phi_raw, _ = np.histogram(Rphi, bins=bins_Rphi)
         Ntot_phi = n_phi_raw.sum()
@@ -215,10 +215,10 @@ def main():
             n_phi = n_phi_raw.astype(float) / float(Ntot_phi)
             nz = n_phi[n_phi > 0]
             if nz.size:
-                ymin = 0.5 * nz.min()
+                ymin = max(1e-12, 0.5 * nz.min())
                 ymax = 1.5 * n_phi.max()
                 if ymax <= ymin:
-                    ymax = ymin + 1.0
+                    ymax = ymin * 1.2  # keep > on log scale
                 ax_Rph.set_ylim(ymin, ymax)
     else:
         ax_Rph.text(0.5, 0.5, "No $R_{\\phi}$ info", ha="center", va="center", transform=ax_Rph.transAxes)
