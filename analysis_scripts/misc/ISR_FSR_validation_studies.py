@@ -218,7 +218,7 @@ def main():
     # --- bottom row: ΔQ2, Δx_B, ΔMx^2 ---
     plot_hist_points(ax_dQ2,  dQ2,   bins=80,  rng=(-4.0, 1.0), xlabel=r"$\Delta Q^2$ (GeV$^2$)", logy=True)
     plot_hist_points(ax_dxB,  dxB,   bins=80,  rng=(-0.3, 0.3), xlabel=r"$\Delta x_B$",           logy=True)
-    plot_hist_points(ax_dMx2, dMx2,  bins=80,  rng=(-9.0, 3.0), xlabel=r"$\Delta M_x^2$ (GeV$^2$)",logy=True)
+    plot_hist_points(ax_dMx2, dMx2,  bins=80,  rng=(-9.0, 9.0), xlabel=r"$\Delta M_x^2$ (GeV$^2$)",logy=True)
 
     plt.tight_layout()
     tag = f"_{args.tag}" if args.tag else ""
