@@ -120,35 +120,41 @@ def match_by_keys(base, corr):
 
 # --------------- plotting helper ---------------
 def plot_hist_points(ax, data, bins, rng=None, xlabel="", logy=False):
-    """Make a binned histogram and draw as points with √N error bars.
-       For log-y, zero-count bins are dropped."""
+    """Make a binned histogram and draw as points with √N error bars (normalized)."""
     if data.size == 0:
         ax.text(0.5, 0.5, "No entries", ha="center", va="center", transform=ax.transAxes)
         ax.set_axis_off()
         return
 
-    n, edges = np.histogram(data, bins=bins, range=rng)
+    counts, edges = np.histogram(data, bins=bins, range=rng)
+    Ntot = counts.sum()
     centers = 0.5 * (edges[:-1] + edges[1:])
-    if logy:
-        mask = n > 0
-    else:
-        mask = n >= 0  # keep zeros on linear plots
+
+    if Ntot <= 0:
+        ax.text(0.5, 0.5, "All bins are zero", ha="center", va="center", transform=ax.transAxes)
+        ax.set_axis_off()
+        return
+
+    # normalize
+    n = counts.astype(float) / float(Ntot)
+    yerr = np.sqrt(counts.astype(float)) / float(Ntot)
+
+    mask = n > 0 if logy else (n >= 0)
 
     if not np.any(mask):
         ax.text(0.5, 0.5, "All bins are zero", ha="center", va="center", transform=ax.transAxes)
         ax.set_axis_off()
         return
 
-    ax.errorbar(centers[mask], n[mask], yerr=np.sqrt(n[mask]), fmt='o', ms=3, lw=1)
+    ax.errorbar(centers[mask], n[mask], yerr=yerr[mask], fmt='o', ms=3, lw=1)
     ax.set_xlabel(xlabel)
     ax.set_ylabel("Counts")
     if rng is not None:
         ax.set_xlim(*rng)
     if logy:
         ax.set_yscale("log")
-        # put a sensible bottom just below the smallest positive count
         ymin = np.min(n[mask])
-        ax.set_ylim(bottom=max(1.0, 0.8 * ymin))
+        ax.set_ylim(bottom=max(1e-12, 0.8 * ymin))
 
     ax.grid(True, alpha=0.25)
 
@@ -197,28 +203,31 @@ def main():
     plot_hist_points(ax_Rp,   Rp,     bins=60, rng=None,                   xlabel=r"$R_p$ (GeV)",        logy=True)
     plot_hist_points(ax_Rth,  Rtheta, bins=50, rng=None,                   xlabel=r"$R_{\theta}$ (deg)", logy=False)
 
-    # R_phi: force x in [0, 360], y = [0.5*min_nonzero, 1.5*max]
+    # R_phi: force x in [0, 360], y = [0.5*min_nonzero, 1.5*max] (normalized)
     if Rphi.size:
         bins_Rphi = np.linspace(0.0, 360.0, 61)  # 60 bins
         plot_hist_points(ax_Rph, Rphi, bins=bins_Rphi, rng=(0.0, 360.0),
                          xlabel=r"$R_{\phi}$ (deg)", logy=False)
 
-        n_phi, _ = np.histogram(Rphi, bins=bins_Rphi)
-        nz = n_phi[n_phi > 0]
-        if nz.size:
-            ymin = 0.5 * nz.min()
-            ymax = 1.5 * n_phi.max()
-            if ymax <= ymin:
-                ymax = ymin + 1.0
-            ax_Rph.set_ylim(ymin, ymax)
+        n_phi_raw, _ = np.histogram(Rphi, bins=bins_Rphi)
+        Ntot_phi = n_phi_raw.sum()
+        if Ntot_phi > 0:
+            n_phi = n_phi_raw.astype(float) / float(Ntot_phi)
+            nz = n_phi[n_phi > 0]
+            if nz.size:
+                ymin = 0.5 * nz.min()
+                ymax = 1.5 * n_phi.max()
+                if ymax <= ymin:
+                    ymax = ymin + 1.0
+                ax_Rph.set_ylim(ymin, ymax)
     else:
         ax_Rph.text(0.5, 0.5, "No $R_{\\phi}$ info", ha="center", va="center", transform=ax_Rph.transAxes)
         ax_Rph.set_axis_off()
 
     # --- bottom row: ΔQ2, Δx_B, ΔMx^2 ---
-    plot_hist_points(ax_dQ2,  dQ2,   bins=80,  rng=(-4.0, 1.0), xlabel=r"$\Delta Q^2$ (GeV$^2$)", logy=True)
-    plot_hist_points(ax_dxB,  dxB,   bins=80,  rng=(-0.3, 0.3), xlabel=r"$\Delta x_B$",           logy=True)
-    plot_hist_points(ax_dMx2, dMx2,  bins=80,  rng=(-9.0, 9.0), xlabel=r"$\Delta M_x^2$ (GeV$^2$)",logy=True)
+    plot_hist_points(ax_dQ2,  dQ2,   bins=80,  rng=(-4.0, 1.0),  xlabel=r"$\Delta Q^2$ (GeV$^2$)",  logy=True)
+    plot_hist_points(ax_dxB,  dxB,   bins=80,  rng=(-0.3, 0.3),  xlabel=r"$\Delta x_B$",            logy=True)
+    plot_hist_points(ax_dMx2, dMx2,  bins=80,  rng=(-12.0, 12.0), xlabel=r"$\Delta M_x^2$ (GeV$^2$)", logy=True)
 
     plt.tight_layout()
     tag = f"_{args.tag}" if args.tag else ""
