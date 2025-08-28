@@ -286,6 +286,9 @@ int main(int argc, char *argv[]) {
         tree->Branch("e_theta", &e_theta, "e_theta/D");
         tree->Branch("e_phi", &e_phi, "e_phi/D");
         tree->Branch("vz_e", &vz_e, "vz_e/D");
+        tree->Branch("Egamma", &Egamma, "Egamma/D");
+        tree->Branch("isrTheta", &isrTheta, "isrTheta/D");
+        tree->Branch("isrPhi", &isrPhi, "isrPhi/D");
         tree->Branch("Q2", &Q2, "Q2/D");
         tree->Branch("W", &W, "W/D");
         tree->Branch("Mx2", &Mx2, "Mx2/D");
@@ -358,11 +361,11 @@ int main(int argc, char *argv[]) {
         tree->Branch("p_p", &p_p, "p_p/D");
         tree->Branch("p_theta", &p_theta, "p_theta/D");
         tree->Branch("p_phi", &p_phi, "p_phi/D");
+        tree->Branch("vz_p", &vz_p, "vz_p/D");
+        tree->Branch("open_angle", &open_angle, "open_angle/D");
         tree->Branch("Egamma", &Egamma, "Egamma/D");
         tree->Branch("isrTheta", &isrTheta, "isrTheta/D");
         tree->Branch("isrPhi", &isrPhi, "isrPhi/D");
-        tree->Branch("vz_p", &vz_p, "vz_p/D");
-        tree->Branch("open_angle", &open_angle, "open_angle/D");
         tree->Branch("Q2", &Q2, "Q2/D");
         tree->Branch("W", &W, "W/D");
         tree->Branch("Mx2", &Mx2, "Mx2/D");
@@ -1138,6 +1141,7 @@ int main(int argc, char *argv[]) {
     if (script_index == 0 && is_mc == 0) {
         while (infile >> fiducial_status >> num_pos >> num_neg >> num_neutral >> 
             runnum >> evnum >> helicity >> e_p >> e_theta >> e_phi >> vz_e >> 
+            Egamma >> isrTheta >> isrPhi >> 
             Q2 >> W >> Mx2 >> x >> y >> DepA >> DepB >> DepC >> DepV >> DepW) {
 
             beam_pol = getPol(runnum);
