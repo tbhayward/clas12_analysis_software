@@ -90,8 +90,8 @@ def main():
     # -----------------------
     # Make histogram
     # -----------------------
-    # Define bins from 0 to 60 (inclusive) with 60 bins of width 1.0
-    bins = np.linspace(0.0, 60.0, 61)
+    # Define bins from 0 to 60 (inclusive) with 182 bins of width 1.0
+    bins = np.linspace(0.0, 60.0, 183)
 
     fig = plt.figure(figsize=(6.4, 4.8), dpi=150)
     ax = fig.add_subplot(111)
