@@ -206,11 +206,11 @@ def main():
         if span is not None:
             lo, hi = span
             # pad the occupied range
-            left  = 0.8 * lo
-            right = 1.2 * hi
+            left  = 0.5 * lo
+            right = 1.5 * hi
             if right <= left:  # numeric guard
                 right = left + 1e-3
-            ax_Rph.set_xlim(left, right)
+            ax_Rph.set_xlim(0, 360)
     else:
         ax_Rph.text(0.5, 0.5, "No $R_{\\phi}$ info", ha="center", va="center", transform=ax_Rph.transAxes)
         ax_Rph.set_axis_off()
