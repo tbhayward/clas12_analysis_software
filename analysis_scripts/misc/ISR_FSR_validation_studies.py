@@ -7,9 +7,6 @@ Bottom: ΔQ^2 (GeV^2), Δx_B, ΔMx^2 (GeV^2)
 - Baseline vs ISR-corrected files (text or ROOT) are matched by (runnum, evnum).
 - Text format is your 38-column dump; ROOT expects branches in "PhysicsEvents":
   runnum, evnum, Q2, W, x, y, Mx2, e_p, e_theta, e_phi, Egamma, isrTheta, isrPhi.
-
-Usage:
-  python validate_inverse_isr.py --baseline baseline.txt --corrected corrected.txt --outdir output
 """
 
 import os
@@ -22,7 +19,6 @@ try:
     HAS_UPROOT = True
 except Exception:
     HAS_UPROOT = False
-# endif
 
 # -------- column mapping for 38-col text (0-based) --------
 COL = {
@@ -50,7 +46,7 @@ COL = {
     "W": 21,
     "Mx2": 22,
     "x": 23,
-    "t": 24,            # GeV^2 (your sign convention)
+    "t": 24,
     "tmin": 25,
     "y": 26,
     "z": 27,
@@ -79,24 +75,19 @@ def load_root(path):
         raise RuntimeError("uproot is not available but a ROOT file was provided.")
     with uproot.open(path) as f:
         tree = f["PhysicsEvents"]
-        # minimal set we actually need here
         needed = ["runnum", "evnum", "Q2", "x", "Mx2", "Egamma", "isrTheta", "isrPhi"]
         arrs = tree.arrays(needed, library="np")
         data = {k: arrs[k].astype(np.float64) for k in needed}
         data["runnum"] = data["runnum"].astype(np.int64)
         data["evnum"]  = data["evnum"].astype(np.int64)
         return data
-    # endif
-# endif
 
 def load_any(path):
     return load_root(path) if path.lower().endswith(".root") else load_text(path)
 
 # --------------- matching ---------------
 def match_by_keys(base, corr):
-    """
-    Return indices (i_base, i_corr) for matching (runnum, evnum).
-    """
+    """Return indices (i_base, i_corr) for matching (runnum, evnum)."""
     base_keys = base["runnum"] * (10**10) + base["evnum"]
     corr_keys = corr["runnum"] * (10**10) + corr["evnum"]
 
@@ -109,20 +100,49 @@ def match_by_keys(base, corr):
     sel_b, sel_c = [], []
     while i < bk.size and j < ck.size:
         if bk[i] == ck[j]:
-            sel_b.append(ib[i])
-            sel_c.append(ic[j])
-            i += 1
-            j += 1
+            sel_b.append(ib[i]); sel_c.append(ic[j])
+            i += 1; j += 1
         elif bk[i] < ck[j]:
             i += 1
         else:
             j += 1
-        # endif
-    # endwhile
     return np.array(sel_b, dtype=np.int64), np.array(sel_c, dtype=np.int64)
-# enddef
 
-# --------------- plotting ---------------
+# --------------- plotting helper ---------------
+def plot_hist_points(ax, data, bins, rng=None, xlabel="", logy=False):
+    """Make a binned histogram and draw as points with √N error bars.
+       For log-y, zero-count bins are dropped."""
+    if data.size == 0:
+        ax.text(0.5, 0.5, "No entries", ha="center", va="center", transform=ax.transAxes)
+        ax.set_axis_off()
+        return
+
+    n, edges = np.histogram(data, bins=bins, range=rng)
+    centers = 0.5 * (edges[:-1] + edges[1:])
+    if logy:
+        mask = n > 0
+    else:
+        mask = n >= 0  # keep zeros on linear plots
+
+    if not np.any(mask):
+        ax.text(0.5, 0.5, "All bins are zero", ha="center", va="center", transform=ax.transAxes)
+        ax.set_axis_off()
+        return
+
+    ax.errorbar(centers[mask], n[mask], yerr=np.sqrt(n[mask]), fmt='o', ms=3, lw=1)
+    ax.set_xlabel(xlabel)
+    ax.set_ylabel("Counts")
+    if rng is not None:
+        ax.set_xlim(*rng)
+    if logy:
+        ax.set_yscale("log")
+        # put a sensible bottom just below the smallest positive count
+        ymin = np.min(n[mask])
+        ax.set_ylim(bottom=max(1.0, 0.8 * ymin))
+
+    ax.grid(True, alpha=0.25)
+
+# --------------- main ---------------
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--baseline", required=True, help="Baseline file (.txt or .root)")
@@ -148,14 +168,14 @@ def main():
     mask_x  = np.isfinite(x_b)   & np.isfinite(x_c)
     mask_mx = np.isfinite(Mx2_b) & np.isfinite(Mx2_c)
 
-    dQ2   = (Q2_c  - Q2_b )[mask_q2]
-    dxB   = (x_c   - x_b  )[mask_x ]
-    dMx2  = (Mx2_c - Mx2_b)[mask_mx]   # ΔMx^2
+    dQ2  = (Q2_c  - Q2_b )[mask_q2]
+    dxB  = (x_c   - x_b  )[mask_x ]
+    dMx2 = (Mx2_c - Mx2_b)[mask_mx]
 
     # R photon (from corrected)
     Rp     = corr.get("Egamma",   np.array([]))  # GeV
-    Rtheta = corr.get("isrTheta", np.array([]))  # degrees
-    Rphi   = corr.get("isrPhi",   np.array([]))  # degrees
+    Rtheta = corr.get("isrTheta", np.array([]))  # deg
+    Rphi   = corr.get("isrPhi",   np.array([]))  # deg
     if Rphi.size:
         Rphi = np.mod(Rphi, 360.0)
 
@@ -164,79 +184,14 @@ def main():
     (ax_Rp, ax_Rth, ax_Rph), (ax_dQ2, ax_dxB, ax_dMx2) = axes
 
     # --- top row: R_p, R_theta, R_phi ---
-    if Rp.size:
-        n_rp, _, _ = ax_Rp.hist(Rp, bins=120, histtype="step")
-        ax_Rp.set_xlabel(r"$R_p$ (GeV)")
-        ax_Rp.set_ylabel("Counts")
-        ax_Rp.set_yscale("log")
-        pos = n_rp[n_rp > 0]
-        if pos.size > 0:
-            ax_Rp.set_ylim(bottom=max(1.0, 0.8 * pos.min()))
-    else:
-        ax_Rp.text(0.5, 0.5, "No $R_p$ info", ha="center", va="center", transform=ax_Rp.transAxes)
-        ax_Rp.set_axis_off()
+    plot_hist_points(ax_Rp,   Rp,     bins=120, rng=None,                 xlabel=r"$R_p$ (GeV)",       logy=True)
+    plot_hist_points(ax_Rth,  Rtheta, bins=100, rng=None,                 xlabel=r"$R_{\theta}$ (deg)", logy=False)
+    plot_hist_points(ax_Rph,  Rphi,   bins=np.linspace(0,360,121), rng=(0,360), xlabel=r"$R_{\phi}$ (deg)",   logy=False)
 
-    if Rtheta.size:
-        ax_Rth.hist(Rtheta, bins=100, histtype="step")
-        ax_Rth.set_xlabel(r"$R_{\theta}$ (deg)")
-    else:
-        ax_Rth.text(0.5, 0.5, "No $R_{\\theta}$ info", ha="center", va="center", transform=ax_Rth.transAxes)
-        ax_Rth.set_axis_off()
-
-    if Rphi.size:
-        ax_Rph.hist(Rphi, bins=np.linspace(0, 360, 121), histtype="step")
-        ax_Rph.set_xlabel(r"$R_{\phi}$ (deg)")
-    else:
-        ax_Rph.text(0.5, 0.5, "No $R_{\\phi}$ info", ha="center", va="center", transform=ax_Rph.transAxes)
-        ax_Rph.set_axis_off()
-
-    # --- bottom row: ΔQ2, Δx_B, ΔMx^2 ---  (all log y-scale; fixed x-range where requested)
-
-    # ΔQ^2 in [-4, 1]
-    if dQ2.size:
-        n_dq2, _, _ = ax_dQ2.hist(dQ2, bins=160, range=(-4.0, 1.0), histtype="step")
-        ax_dQ2.set_xlabel(r"$\Delta Q^2$ (GeV$^2$)")
-        ax_dQ2.set_ylabel("Counts")
-        ax_dQ2.set_xlim(-4.0, 1.0)
-        ax_dQ2.set_yscale("log")
-        pos = n_dq2[n_dq2 > 0]
-        if pos.size > 0:
-            ax_dQ2.set_ylim(bottom=max(1.0, 0.8 * pos.min()))
-    else:
-        ax_dQ2.text(0.5, 0.5, "No matched events for $\Delta Q^2$", ha="center", va="center", transform=ax_dQ2.transAxes)
-        ax_dQ2.set_axis_off()
-
-    # Δx_B in [-0.3, 0.3]
-    if dxB.size:
-        n_dxb, _, _ = ax_dxB.hist(dxB, bins=160, range=(-0.3, 0.3), histtype="step")
-        ax_dxB.set_xlabel(r"$\Delta x_B$")
-        ax_dxB.set_xlim(-0.3, 0.3)
-        ax_dxB.set_yscale("log")
-        pos = n_dxb[n_dxb > 0]
-        if pos.size > 0:
-            ax_dxB.set_ylim(bottom=max(1.0, 0.8 * pos.min()))
-    else:
-        ax_dxB.text(0.5, 0.5, "No matched events for $\Delta x_B$", ha="center", va="center", transform=ax_dxB.transAxes)
-        ax_dxB.set_axis_off()
-
-    # ΔMx^2 in [-3, 3]
-    if dMx2.size:
-        n_dmx2, _, _ = ax_dMx2.hist(dMx2, bins=160, range=(-3.0, 3.0), histtype="step")
-        ax_dMx2.set_xlabel(r"$\Delta M_x^2$ (GeV$^2$)")
-        ax_dMx2.set_xlim(-3.0, 3.0)
-        ax_dMx2.set_yscale("log")
-        pos = n_dmx2[n_dmx2 > 0]
-        if pos.size > 0:
-            ax_dMx2.set_ylim(bottom=max(1.0, 0.8 * pos.min()))
-    else:
-        ax_dMx2.text(0.5, 0.5, "No matched events for $\Delta M_x^2$",
-                     ha="center", va="center", transform=ax_dMx2.transAxes)
-        ax_dMx2.set_axis_off()
-
-    # style
-    for ax in axes.flat:
-        if ax.get_visible():
-            ax.grid(True, alpha=0.25)
+    # --- bottom row: ΔQ2, Δx_B, ΔMx^2 ---
+    plot_hist_points(ax_dQ2,  dQ2,   bins=160, rng=(-4.0, 1.0), xlabel=r"$\Delta Q^2$ (GeV$^2$)", logy=True)
+    plot_hist_points(ax_dxB,  dxB,   bins=160, rng=(-0.3, 0.3), xlabel=r"$\Delta x_B$",           logy=True)
+    plot_hist_points(ax_dMx2, dMx2,  bins=160, rng=(-3.0, 3.0), xlabel=r"$\Delta M_x^2$ (GeV$^2$)",logy=True)
 
     plt.tight_layout()
     tag = f"_{args.tag}" if args.tag else ""
