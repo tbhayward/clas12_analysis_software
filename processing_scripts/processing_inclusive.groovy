@@ -131,7 +131,7 @@ public static void main(String[] args) {
             // --- Toggle here ---
             // false -> baseline (no inverse-ISR)
             // true  -> enable inverse-ISR sampling (subtract R from q inside Inclusive)
-            BeamEnergy Eb = new BeamEnergy(research_Event, runnum, /*isRadiative=*/true)
+            BeamEnergy Eb = new BeamEnergy(research_Event, runnum, /*isRadiative=*/false)
 
             double Ebeam = (runnum == 11) ? beam_energy : Eb.Eb()
 
