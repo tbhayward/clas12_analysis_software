@@ -215,8 +215,6 @@ public static void main(String[] args) {
                         double isrPhi_deg   = Math.toDegrees(isrPhi)
 
                         StringBuilder line = new StringBuilder()
-                        println(applyInverseISR);
-                        println(" "+Egamma+" "+isrTheta+" "+isrPhi);
                         line.append(fiducial_status).append(" ")
                                 .append(num_pos).append(" ")
                                 .append(num_neg).append(" ")
