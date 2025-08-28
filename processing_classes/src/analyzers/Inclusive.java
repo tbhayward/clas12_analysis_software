@@ -219,4 +219,10 @@ public class Inclusive {
     public double e_theta() { return ((int) (e_theta * 100000)) / 100000.0; }
     public double e_phi()   { return ((int) (e_phi   * 100000)) / 100000.0; }
     public double vz_e()    { return ((int) (vz_e    * 100000)) / 100000.0; }
+    
+    public double Depolarization_A() { return ((int) (Depolarization_A * 100000)) / 100000.0; }
+    public double Depolarization_B() { return ((int) (Depolarization_B * 100000)) / 100000.0; }
+    public double Depolarization_C() { return ((int) (Depolarization_C * 100000)) / 100000.0; }
+    public double Depolarization_V() { return ((int) (Depolarization_V * 100000)) / 100000.0; }
+    public double Depolarization_W() { return ((int) (Depolarization_W * 100000)) / 100000.0; }
 }
