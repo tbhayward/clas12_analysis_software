@@ -198,19 +198,21 @@ def main():
     plot_hist_points(ax_Rth,  Rtheta, bins=50,  rng=None,                  xlabel=r"$R_{\theta}$ (deg)", logy=False)
     # --- R_phi with standardized x-limits from 0.8*min to 1.2*max of non-empty bins ---
     if Rphi.size:
-        bins_Rphi = np.linspace(0, 360, 61)  # 60 bins (half of 120)
+        bins_Rphi = np.linspace(0, 360, 61)  # 60 bins
         plot_hist_points(ax_Rph, Rphi, bins=bins_Rphi, rng=None,
                          xlabel=r"$R_{\phi}$ (deg)", logy=False)
 
         span = nonzero_hist_range(Rphi, bins_Rphi)
         if span is not None:
             lo, hi = span
-            # pad the occupied range
-            left  = 0.5 * lo
-            right = 1.5 * hi
+            # pad by 0.5x / 1.5x then clamp to [0, 360]
+            left  = max(0.0, 0.5 * lo)
+            right = min(360.0, 1.5 * hi)
             if right <= left:  # numeric guard
-                right = left + 1e-3
-            ax_Rph.set_xlim(0, 360)
+                left, right = 0.0, 360.0
+            ax_Rph.set_xlim(left, right)
+        else:
+            ax_Rph.set_xlim(0.0, 360.0)
     else:
         ax_Rph.text(0.5, 0.5, "No $R_{\\phi}$ info", ha="center", va="center", transform=ax_Rph.transAxes)
         ax_Rph.set_axis_off()
