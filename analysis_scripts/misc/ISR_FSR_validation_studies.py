@@ -2,11 +2,11 @@
 """
 Make inverseISR_validation.pdf with:
 Top:   R_p (GeV), R_theta (deg), R_phi (deg)
-Bottom: ΔQ^2 (GeV^2), Δx_B, Δ(-t) (GeV^2)
+Bottom: ΔQ^2 (GeV^2), Δx_B, ΔMx^2 (GeV^2)
 
 - Baseline vs ISR-corrected files (text or ROOT) are matched by (runnum, evnum).
 - Text format is your 38-column dump; ROOT expects branches in "PhysicsEvents":
-  runnum, evnum, Q2, W, x, y, t, e_p, e_theta, e_phi, Egamma, isrTheta, isrPhi.
+  runnum, evnum, Q2, W, x, y, Mx2, e_p, e_theta, e_phi, Egamma, isrTheta, isrPhi.
 
 Usage:
   python validate_inverse_isr.py --baseline baseline.txt --corrected corrected.txt --outdir output
@@ -50,7 +50,7 @@ COL = {
     "W": 21,
     "Mx2": 22,
     "x": 23,
-    "t": 24,            # GeV^2 (your sign convention); we will use -t
+    "t": 24,            # GeV^2 (your sign convention)
     "tmin": 25,
     "y": 26,
     "z": 27,
@@ -80,7 +80,7 @@ def load_root(path):
     with uproot.open(path) as f:
         tree = f["PhysicsEvents"]
         # minimal set we actually need here
-        needed = ["runnum", "evnum", "Q2", "x", "t", "Egamma", "isrTheta", "isrPhi"]
+        needed = ["runnum", "evnum", "Q2", "x", "Mx2", "Egamma", "isrTheta", "isrPhi"]
         arrs = tree.arrays(needed, library="np")
         data = {k: arrs[k].astype(np.float64) for k in needed}
         data["runnum"] = data["runnum"].astype(np.int64)
@@ -140,33 +140,32 @@ def main():
     ib, ic = match_by_keys(base, corr)
 
     # deltas (guard NaNs)
-    Q2_b, Q2_c = base["Q2"][ib], corr["Q2"][ic]
-    x_b,  x_c  = base["x"][ib],  corr["x"][ic]
-    t_b,  t_c  = base["t"][ib],  corr["t"][ic]
+    Q2_b, Q2_c   = base["Q2"][ib],  corr["Q2"][ic]
+    x_b,  x_c    = base["x"][ib],   corr["x"][ic]
+    Mx2_b, Mx2_c = base["Mx2"][ib], corr["Mx2"][ic]
 
-    mask_q2 = np.isfinite(Q2_b) & np.isfinite(Q2_c)
-    mask_x  = np.isfinite(x_b)  & np.isfinite(x_c)
-    mask_t  = np.isfinite(t_b)  & np.isfinite(t_c)
+    mask_q2 = np.isfinite(Q2_b)  & np.isfinite(Q2_c)
+    mask_x  = np.isfinite(x_b)   & np.isfinite(x_c)
+    mask_mx = np.isfinite(Mx2_b) & np.isfinite(Mx2_c)
 
-    dQ2       = (Q2_c - Q2_b)[mask_q2]
-    dxB       = (x_c  - x_b )[mask_x ]
-    d_minus_t = ((-t_c) - (-t_b))[mask_t]  # Δ(-t)
+    dQ2   = (Q2_c  - Q2_b )[mask_q2]
+    dxB   = (x_c   - x_b  )[mask_x ]
+    dMx2  = (Mx2_c - Mx2_b)[mask_mx]   # ΔMx^2
 
     # R photon (from corrected)
-    Rp     = corr.get("Egamma", np.array([]))          # GeV
-    Rtheta = corr.get("isrTheta", np.array([]))        # degrees
-    Rphi   = corr.get("isrPhi",   np.array([]))        # degrees
+    Rp     = corr.get("Egamma",   np.array([]))  # GeV
+    Rtheta = corr.get("isrTheta", np.array([]))  # degrees
+    Rphi   = corr.get("isrPhi",   np.array([]))  # degrees
     if Rphi.size:
         Rphi = np.mod(Rphi, 360.0)
-    # endif
 
     # figure layout: 2x3
     fig, axes = plt.subplots(2, 3, figsize=(13, 7.5))
-    (ax_Rp, ax_Rth, ax_Rph), (ax_dQ2, ax_dxB, ax_dmt) = axes
+    (ax_Rp, ax_Rth, ax_Rph), (ax_dQ2, ax_dxB, ax_dMx2) = axes
 
     # --- top row: R_p, R_theta, R_phi ---
     if Rp.size:
-        n_rp, bins, _ = ax_Rp.hist(Rp, bins=120, histtype="step")
+        n_rp, _, _ = ax_Rp.hist(Rp, bins=120, histtype="step")
         ax_Rp.set_xlabel(r"$R_p$ (GeV)")
         ax_Rp.set_ylabel("Counts")
         ax_Rp.set_yscale("log")
@@ -176,7 +175,6 @@ def main():
     else:
         ax_Rp.text(0.5, 0.5, "No $R_p$ info", ha="center", va="center", transform=ax_Rp.transAxes)
         ax_Rp.set_axis_off()
-    # endif
 
     if Rtheta.size:
         ax_Rth.hist(Rtheta, bins=100, histtype="step")
@@ -184,7 +182,6 @@ def main():
     else:
         ax_Rth.text(0.5, 0.5, "No $R_{\\theta}$ info", ha="center", va="center", transform=ax_Rth.transAxes)
         ax_Rth.set_axis_off()
-    # endif
 
     if Rphi.size:
         ax_Rph.hist(Rphi, bins=np.linspace(0, 360, 121), histtype="step")
@@ -192,9 +189,8 @@ def main():
     else:
         ax_Rph.text(0.5, 0.5, "No $R_{\\phi}$ info", ha="center", va="center", transform=ax_Rph.transAxes)
         ax_Rph.set_axis_off()
-    # endif
 
-    # --- bottom row: ΔQ2, Δx_B, Δ(-t) ---  (all log y-scale with fixed x-ranges)
+    # --- bottom row: ΔQ2, Δx_B, ΔMx^2 ---  (all log y-scale; fixed x-range where requested)
 
     # ΔQ^2 in [-4, 1]
     if dQ2.size:
@@ -223,33 +219,30 @@ def main():
         ax_dxB.text(0.5, 0.5, "No matched events for $\Delta x_B$", ha="center", va="center", transform=ax_dxB.transAxes)
         ax_dxB.set_axis_off()
 
-    # Δ(-t) in [-1, 1]
-    if d_minus_t.size:
-        n_dmt, _, _ = ax_dmt.hist(d_minus_t, bins=160, range=(-1.0, 1.0), histtype="step")
-        ax_dmt.set_xlabel(r"$\Delta(-t)$ (GeV$^2$)")
-        ax_dmt.set_xlim(-1.0, 1.0)
-        ax_dmt.set_yscale("log")
-        pos = n_dmt[n_dmt > 0]
+    # ΔMx^2 in [-3, 3]
+    if dMx2.size:
+        n_dmx2, _, _ = ax_dMx2.hist(dMx2, bins=160, range=(-3.0, 3.0), histtype="step")
+        ax_dMx2.set_xlabel(r"$\Delta M_x^2$ (GeV$^2$)")
+        ax_dMx2.set_xlim(-3.0, 3.0)
+        ax_dMx2.set_yscale("log")
+        pos = n_dmx2[n_dmx2 > 0]
         if pos.size > 0:
-            ax_dmt.set_ylim(bottom=max(1.0, 0.8 * pos.min()))
+            ax_dMx2.set_ylim(bottom=max(1.0, 0.8 * pos.min()))
     else:
-        ax_dmt.text(0.5, 0.5, "No matched events for $\Delta(-t)$", ha="center", va="center", transform=ax_dmt.transAxes)
-        ax_dmt.set_axis_off()
-    # endif
+        ax_dMx2.text(0.5, 0.5, "No matched events for $\Delta M_x^2$",
+                     ha="center", va="center", transform=ax_dMx2.transAxes)
+        ax_dMx2.set_axis_off()
 
     # style
     for ax in axes.flat:
         if ax.get_visible():
             ax.grid(True, alpha=0.25)
-    #endfor
 
     plt.tight_layout()
     tag = f"_{args.tag}" if args.tag else ""
     outpath = os.path.join(args.outdir, f"inverseISR_validation{tag}.pdf")
     plt.savefig(outpath)
     print(f"Saved: {outpath}")
-# endif
 
 if __name__ == "__main__":
     main()
-# endif
