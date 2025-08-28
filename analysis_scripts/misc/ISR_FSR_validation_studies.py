@@ -184,14 +184,14 @@ def main():
     (ax_Rp, ax_Rth, ax_Rph), (ax_dQ2, ax_dxB, ax_dMx2) = axes
 
     # --- top row: R_p, R_theta, R_phi ---
-plot_hist_points(ax_Rp,   Rp,     bins=60,  rng=None,                  xlabel=r"$R_p$ (GeV)",        logy=True)
-plot_hist_points(ax_Rth,  Rtheta, bins=50,  rng=None,                  xlabel=r"$R_{\theta}$ (deg)", logy=False)
-plot_hist_points(ax_Rph,  Rphi,   bins=np.linspace(0, 360, 61), rng=None, xlabel=r"$R_{\phi}$ (deg)",   logy=False)
+    plot_hist_points(ax_Rp,   Rp,     bins=60,  rng=None,                  xlabel=r"$R_p$ (GeV)",        logy=True)
+    plot_hist_points(ax_Rth,  Rtheta, bins=50,  rng=None,                  xlabel=r"$R_{\theta}$ (deg)", logy=False)
+    plot_hist_points(ax_Rph,  Rphi,   bins=np.linspace(0, 360, 61), rng=None, xlabel=r"$R_{\phi}$ (deg)",   logy=False)
 
-# --- bottom row: ΔQ2, Δx_B, ΔMx^2 ---
-plot_hist_points(ax_dQ2,  dQ2,   bins=80,  rng=(-4.0, 1.0), xlabel=r"$\Delta Q^2$ (GeV$^2$)", logy=True)
-plot_hist_points(ax_dxB,  dxB,   bins=80,  rng=(-0.3, 0.3), xlabel=r"$\Delta x_B$",           logy=True)
-plot_hist_points(ax_dMx2, dMx2,  bins=80,  rng=(-9.0, 3.0), xlabel=r"$\Delta M_x^2$ (GeV$^2$)",logy=True)
+    # --- bottom row: ΔQ2, Δx_B, ΔMx^2 ---
+    plot_hist_points(ax_dQ2,  dQ2,   bins=80,  rng=(-4.0, 1.0), xlabel=r"$\Delta Q^2$ (GeV$^2$)", logy=True)
+    plot_hist_points(ax_dxB,  dxB,   bins=80,  rng=(-0.3, 0.3), xlabel=r"$\Delta x_B$",           logy=True)
+    plot_hist_points(ax_dMx2, dMx2,  bins=80,  rng=(-9.0, 3.0), xlabel=r"$\Delta M_x^2$ (GeV$^2$)",logy=True)
 
     plt.tight_layout()
     tag = f"_{args.tag}" if args.tag else ""
