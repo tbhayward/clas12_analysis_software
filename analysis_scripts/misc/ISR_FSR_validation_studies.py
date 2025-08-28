@@ -194,9 +194,6 @@ def main():
     (ax_Rp, ax_Rth, ax_Rph), (ax_dQ2, ax_dxB, ax_dMx2) = axes
 
     # --- top row: R_p, R_theta, R_phi ---
-    plot_hist_points(ax_Rp,   Rp,     bins=60,  rng=None,                  xlabel=r"$R_p$ (GeV)",        logy=True)
-    plot_hist_points(ax_Rth,  Rtheta, bins=50,  rng=None,                  xlabel=r"$R_{\theta}$ (deg)", logy=False)
-    # --- top row: R_p, R_theta, R_phi ---
     plot_hist_points(ax_Rp,   Rp,     bins=60, rng=None,                   xlabel=r"$R_p$ (GeV)",        logy=True)
     plot_hist_points(ax_Rth,  Rtheta, bins=50, rng=None,                   xlabel=r"$R_{\theta}$ (deg)", logy=False)
 
@@ -212,7 +209,7 @@ def main():
             ymin = 0.5 * nz.min()
             ymax = 1.5 * n_phi.max()
             if ymax <= ymin:
-                ymax = ymin + 1.0  # tiny guard
+                ymax = ymin + 1.0
             ax_Rph.set_ylim(ymin, ymax)
     else:
         ax_Rph.text(0.5, 0.5, "No $R_{\\phi}$ info", ha="center", va="center", transform=ax_Rph.transAxes)
