@@ -4148,8 +4148,8 @@ void performChi2Fits_GeneralExclusive(const char* output_file,
     minuit.DefineParameter(9,  "A_T_UL",          0.00,  0.01,  -1.0,  1.0);
     minuit.DefineParameter(10, "A_T_LL",          0.00,  0.01,  -1.0,  1.0);
 
-    // minuit.FixParameter(0);
-    // minuit.FixParameter(1);
+    minuit.FixParameter(0);
+    minuit.FixParameter(1);
     // minuit.FixParameter(2);
     minuit.FixParameter(3);
     minuit.FixParameter(4);
