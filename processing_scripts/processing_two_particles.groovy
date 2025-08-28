@@ -150,7 +150,7 @@ public static void main(String[] args) {
             // --- Toggle here ---
             // false -> baseline (no inverse-ISR)
             // true  -> apply inverse-ISR (subtract R from q inside TwoParticles)
-            BeamEnergy Eb = new BeamEnergy(research_Event, runnum, /*isRadiative=*/false)
+            BeamEnergy Eb = new BeamEnergy(research_Event, runnum, /*isRadiative=*/true)
 
             double Ebeam = (runnum == 11) ? beam_energy : Eb.Eb()
 
@@ -215,6 +215,7 @@ public static void main(String[] args) {
                         double isrPhi_deg   = Math.toDegrees(isrPhi)
 
                         StringBuilder line = new StringBuilder()
+                        println(Egamma+" "+isrTheta+" "+isrPhi);
                         line.append(fiducial_status).append(" ")
                                 .append(num_pos).append(" ")
                                 .append(num_neg).append(" ")
