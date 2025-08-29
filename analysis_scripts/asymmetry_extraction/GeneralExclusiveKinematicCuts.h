@@ -18,10 +18,12 @@ private:
     TTreeReaderValue<double> e_p;       // scattered‐electron momentum
     TTreeReaderValue<double> e_theta;   // polar angle of scattered electron
     TTreeReaderValue<double> e_phi;     // azimuth of scattered electron
+    TTreeReaderValue<double> vz_e;     // azimuth of scattered electron
 
     TTreeReaderValue<double> p_p;       // pion momentum
     TTreeReaderValue<double> p_theta;   // polar angle of pion
     TTreeReaderValue<double> p_phi;     // azimuth of pion
+    TTreeReaderValue<double> vz_p;     // azimuth of pion
 
     TTreeReaderValue<double> Q2;
     TTreeReaderValue<double> W;

@@ -216,11 +216,13 @@ GeneralExclusiveKinematicCuts::GeneralExclusiveKinematicCuts(TTreeReader& reader
       e_p          (reader, "e_p"),
       e_theta      (reader, "e_theta"),
       e_phi        (reader, "e_phi"),
+      vz_e        (reader, "vz_e"),
 
       // Pion‐side branches (added p_theta)
       p_p          (reader, "p_p"),
       p_theta      (reader, "p_theta"),
       p_phi        (reader, "p_phi"),
+      vz_p        (reader, "vz_p"),
 
       // Standard DIS / hadron variables
       Q2           (reader, "Q2"),
@@ -307,7 +309,7 @@ bool GeneralExclusiveKinematicCuts::applyCuts(int currentFits, bool isMC)
 
     // Basic naming lookup
     string property = binNames[currentFits];
-    
+
     // Common DIS-level cuts
     if (*Q2 <  1.0    ) return false;
     if (*W  <  2.0    ) return false;
@@ -323,6 +325,24 @@ bool GeneralExclusiveKinematicCuts::applyCuts(int currentFits, bool isMC)
     // ----------------------------------------------------------------
     // xB-sliced properties: use dynamic Mx2 window from CSV for each event
     // ----------------------------------------------------------------
+    if (*Q2 <  1.0    ) return false;
+    if (*W  <  2.0    ) return false;
+    if (*y  >  0.80   ) return false;
+    if (*e_theta < 6 || *e_theta > 30) return false;
+    if (*p_theta < 4 || *p_theta > 30) return false;
+    if (std::abs(*vz_e + 2.2) > 5.0) return false;
+    if (std::abs(*vz_e - *vz_p) > 7.0) return false;
+    if (*Mx2  >  0.86 && *Mx2 < 1.02   ) return false;
+    if (*x > 0.1 && *x < 0.60) return false;
+    
+
+    if (property == "enpi") {
+        bool goodEvent = (*fiducial_status >= 111) &&
+                         (*x > 0.10 && *x < 0.60);
+        if (!goodEvent) return false;
+        // return PassesDynamicMx2(*x, *t, *Mx2);
+        return *Mx2 > 0.86 && *Mx2 < 1;
+    }
     if (property == "enpi") {
         bool goodEvent = (*fiducial_status >= 111) &&
                          (*x > 0.10 && *x < 0.60);
