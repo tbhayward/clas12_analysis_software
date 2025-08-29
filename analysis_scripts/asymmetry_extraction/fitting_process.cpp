@@ -4148,17 +4148,6 @@ void performChi2Fits_GeneralExclusive(const char* output_file,
     minuit.DefineParameter(9,  "A_T_UL",          0.00,  0.01,  -1.0,  1.0);
     minuit.DefineParameter(10, "A_T_LL",          0.00,  0.01,  -1.0,  1.0);
 
-    // minuit.FixParameter(0);
-    // minuit.FixParameter(1);
-    // minuit.FixParameter(2);
-    // minuit.FixParameter(3);
-    // minuit.FixParameter(4);
-    // minuit.FixParameter(5);
-    // minuit.FixParameter(6);
-    // minuit.FixParameter(7);
-    // minuit.FixParameter(8);
-    // minuit.FixParameter(9);
-    // minuit.FixParameter(10);
     if (!g_fit_enable_TUL || g_ge_ctx.sTG_wstd <= 1e-4) minuit.FixParameter(9);
     if (!g_fit_enable_TLL || g_ge_ctx.sTG_wstd <= 1e-4) minuit.FixParameter(10);
 
@@ -4293,7 +4282,7 @@ void performChi2Fits_GeneralExclusive(const char* output_file,
 
     // === write the per-bin export line (FINAL schema) ==========================
     if (g_ge_write_bin_export && binExport) {
-      // Convert fitted ratios → physical amplitudes (include depolarization ratios)
+      // Convert fitted ratios → physical asymmetry amplitudes
       const double ALU_sin      = g_ge_ctx.rWA * pval[2];
       const double eALU_sin     = g_ge_ctx.rWA * perr[2];
 
@@ -4303,6 +4292,7 @@ void performChi2Fits_GeneralExclusive(const char* output_file,
       const double AUL_sin2     = g_ge_ctx.rBA * pval[4];
       const double eAUL_sin2    = g_ge_ctx.rBA * perr[4];
 
+      // DSA: apply depolarization ratios analogous to single-spin case
       const double ALL_0        = g_ge_ctx.rCA * pval[5];
       const double eALL_0       = g_ge_ctx.rCA * perr[5];
 
