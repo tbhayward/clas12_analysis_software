@@ -332,9 +332,9 @@ bool GeneralExclusiveKinematicCuts::applyCuts(int currentFits, bool isMC)
     if (*p_theta < 4 || *p_theta > 30) return false;
     if (std::abs(*vz_e + 2.2) > 5.0) return false;
     if (std::abs(*vz_e - *vz_p) > 7.0) return false;
-    if (*Mx2  >  0.86 && *Mx2 < 1.02   ) return false;
+    if (*Mx2  <  0.86 && *Mx2 > 1.02   ) return false;
     if (*x > 0.1 && *x < 0.60) return false;
-    
+
 
     if (property == "enpi") {
         bool goodEvent = (*fiducial_status >= 111) &&
