@@ -328,13 +328,12 @@ bool GeneralExclusiveKinematicCuts::applyCuts(int currentFits, bool isMC)
     if (*Q2 <  1.0    ) return false;
     if (*W  <  2.0    ) return false;
     if (*y  >  0.80   ) return false;
-    if (*e_theta < 6 || *e_theta > 30) return false;
-    if (*p_theta < 4 || *p_theta > 30) return false;
-    // if (std::abs(*vz_e + 2.2) > 5.0) return false;
-    // if (std::abs(*vz_e - *vz_p) > 7.0) return false;
+    if (*e_theta*180/3.14159 < 6 || *e_theta*180/3.14159 > 30) return false;
+    if (*p_theta*180/3.14159 < 4 || *p_theta*180/3.14159 > 30) return false;
+    if (std::abs(*vz_e + 2.2) > 5.0) return false;
+    if (std::abs(*vz_e - *vz_p) > 7.0) return false;
     if (*Mx2  <  0.86 || *Mx2 > 1.02   ) return false;
     if (*x < 0.1 || *x > 0.60) return false;
-    if (std::abs(*t) < 0.05 || std::abs(*t) > 1.25) return false;
 
 
     if (property == "enpi") {
