@@ -3612,7 +3612,7 @@ createHistogramForBin_GeneralExclusive(const char* histBaseName, int binIndex, c
 
   for (int ib = 1; ib <= nPhiBins; ++ib) {
     // normalize to charges (guard 0)
-    std::cout << (ppp->GetBinContent(ib)+ppm->GetBinContent(ib)+pmp->GetBinContent(ib)+pmm->GetBinContent(ib)) << std::endl;
+    std::cout << (ppp->GetBinContent(ib) << " " << ppm->GetBinContent(ib) << " " << pmp->GetBinContent(ib) << " " << pmm->GetBinContent(ib)) << std::endl;
     const double Npp = ppp->GetBinContent(ib) / std::max(cpp, 1.0);
     const double Npm = ppm->GetBinContent(ib) / std::max(cpm, 1.0);
     const double Nmp = pmp->GetBinContent(ib) / std::max(cmp, 1.0);
