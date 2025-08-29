@@ -4154,10 +4154,11 @@ void performChi2Fits_GeneralExclusive(const char* output_file,
     minuit.FixParameter(3);
     minuit.FixParameter(4);
     minuit.FixParameter(5);
-    // minuit.FixParameter(6);
+    minuit.FixParameter(6);
     // minuit.FixParameter(7);
-    minuit.FixParameter(8);
+    // minuit.FixParameter(8);
     minuit.FixParameter(9);
+    minuit.FixParameter(10);
 
 
     if (!g_fit_enable_TUL || g_ge_ctx.sTG_wstd <= 1e-4) minuit.FixParameter(9);
