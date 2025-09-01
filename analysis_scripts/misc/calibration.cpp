@@ -9617,6 +9617,8 @@ void create_directories() {
         "output/calibration/energy_loss/rga_fa18_out/",
         "output/calibration/energy_loss/rga_sp19_inb/",
         "output/calibration/energy_loss/rgc_su22_inb/",
+        "output/calibration/energy_loss/rga_sp18_inb/distributions/",
+        "output/calibration/energy_loss/rga_sp18_out/distributions/",
         "output/calibration/energy_loss/rga_fa18_inb/distributions/",
         "output/calibration/energy_loss/rga_fa18_out/distributions/",
         "output/calibration/energy_loss/rga_sp19_inb/distributions/",
