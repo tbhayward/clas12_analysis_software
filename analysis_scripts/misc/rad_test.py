@@ -193,7 +193,7 @@ def event_kinematics(particles, ebeam=E_BEAM):
     # endif
 
     if not math.isfinite(t_val) and photons:
-        g = max(photon s, key=lambda a: a["px"]*a["px"] + a["py"]*a["py"] + a["pz"]*a["pz"])
+        g = max(photons, key=lambda a: a["px"]*a["px"] + a["py"]*a["py"] + a["pz"]*a["pz"])
         gE, gpx, gpy, gpz = g["E"], g["px"], g["py"], g["pz"]
         # (q - q')^2
         t_val = four_sq(qE - gE, qpx - gpx, qpy - gpy, qpz - gpz)
