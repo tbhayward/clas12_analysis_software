@@ -9668,6 +9668,12 @@ int main(int argc, char** argv) {
 
     //// PLOTS ////
 
+    int runnum = 5100; // change if needed 
+    std::string dataset = "rga_sp18_inb";
+
+    // int runnum = 5100; // change if needed 
+    // std::string dataset = "rga_sp18_out";
+
     // int runnum = 5100;
     // std::string dataset = "rga_fa18_inb";
 
