@@ -9675,11 +9675,11 @@ int main(int argc, char** argv) {
 
     //// PLOTS ////
 
-    int runnum = 5100; // change if needed 
-    std::string dataset = "rga_sp18_inb";
-
     // int runnum = 5100; // change if needed 
-    // std::string dataset = "rga_sp18_out";
+    // std::string dataset = "rga_sp18_inb";
+
+    int runnum = 5100; // change if needed 
+    std::string dataset = "rga_sp18_out";
 
     // int runnum = 5100;
     // std::string dataset = "rga_fa18_inb";
@@ -9769,8 +9769,8 @@ int main(int argc, char** argv) {
 
     dataReader.Restart();
     if (mcReader) mcReader->Restart();
-    if (mcReader) energy_loss(*mcReader, "rga_sp18_inb"); 
-    // if (mcReader) energy_loss(*mcReader, "rga_sp18_out"); 
+    // if (mcReader) energy_loss(*mcReader, "rga_sp18_inb"); 
+    if (mcReader) energy_loss(*mcReader, "rga_sp18_out"); 
     // if (mcReader) energy_loss(*mcReader, "rga_fa18_inb"); 
     // if (mcReader) energy_loss(*mcReader, "rga_fa18_out");  
     // if (mcReader) energy_loss(*mcReader, "rga_sp19_inb"); 
