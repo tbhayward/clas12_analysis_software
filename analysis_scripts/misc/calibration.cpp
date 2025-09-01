@@ -9564,8 +9564,6 @@ void energy_loss(TTreeReader& mcReader, const std::string& dataset) {
     // mcReader.Restart();
     // energy_loss_fd_distributions_theta_dc(mcReader, dataset);
 
-    std::cout << "HELLO WORLD" << std::endl;
-
     mcReader.Restart();
     energy_loss_distributions_delta_p_fd(mcReader, dataset);
 
