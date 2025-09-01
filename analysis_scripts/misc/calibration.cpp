@@ -9556,13 +9556,15 @@ void plot_energy_loss_corrections_cd(TTreeReader& mcReader, const std::string& d
 
 // Main function to call both energy loss distribution functions
 void energy_loss(TTreeReader& mcReader, const std::string& dataset) {
-    energy_loss_distributions(mcReader, dataset);
+    // energy_loss_distributions(mcReader, dataset);
 
     // mcReader.Restart();
     // energy_loss_fd_distributions(mcReader, dataset);
 
     // mcReader.Restart();
     // energy_loss_fd_distributions_theta_dc(mcReader, dataset);
+
+    std::cout << "HELLO WORLD" << std::endl;
 
     mcReader.Restart();
     energy_loss_distributions_delta_p_fd(mcReader, dataset);
