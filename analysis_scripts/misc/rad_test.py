@@ -3,10 +3,13 @@
 
 """
 Make a 2x2 canvas from two LUND .dat files (Born vs Radiative) for exclusive DVCS:
-  [1,1]  electron momentum e_p (GeV)
-  [1,2]  Q^2 (GeV^2)
-  [2,1]  W (GeV)
-  [2,2]  -t (GeV^2)  (t is the Mandelstam variable)
+  Page 1 (overlays):
+    [1,1]  electron momentum e_p (GeV)
+    [1,2]  Q^2 (GeV^2)
+    [2,1]  W (GeV)
+    [2,2]  -t (GeV^2)  (t is the Mandelstam variable)
+  Page 2 (ratios: second/first = Radiative/Born):
+    Same four panels but y-axis is the bin-wise ratio.
 
 Assumptions:
 - Beam: 10.6 GeV electron along +z on a stationary proton target.
@@ -27,7 +30,7 @@ Usage:
     python lund_rad_plots.py born.dat radiative.dat
 
 Output:
-    /u/home/thayward/rad_test.pdf
+    /u/home/thayward/rad_test.pdf  (2 pages: overlays, then ratios)
 """
 
 import sys
@@ -35,6 +38,7 @@ import os
 import math
 import numpy as np
 import matplotlib.pyplot as plt
+from matplotlib.backends.backend_pdf import PdfPages
 
 # Use plain ASCII minus in tick labels (avoids Unicode minus).
 plt.rcParams["axes.unicode_minus"] = False
@@ -88,7 +92,7 @@ def lund_event_stream(path):
             # Heuristic: header line must have >= 1 value and first is N (int)
             # LUND specs say header has >= 10 values; be tolerant of spacing.
             if len(parts) >= 1:
-                # Attempt to parse N and require len(parts) >= 1 (we'll accept any header >= 1 and < 100)
+                # Attempt to parse N and require len(parts) >= 1 (we will accept any header >= 1)
                 try:
                     N = int(float(parts[0]))
                 except Exception:
@@ -247,6 +251,37 @@ def robust_range(a, lo=1.0, hi=99.0, pad=0.05):
     return (max(lo_v - pad*span, 0.0), hi_v + pad*span)
 # enddef
 
+def hist_ratio(num, den, bins, rng):
+    """
+    Returns (centers, ratio) for histograms of num/den with common bins/range.
+    Ratio is NaN where den count is 0.
+    """
+    edges = np.linspace(rng[0], rng[1], bins + 1)
+    den_counts, _ = np.histogram(den, bins=edges)
+    num_counts, _ = np.histogram(num, bins=edges)
+    centers = 0.5 * (edges[:-1] + edges[1:])
+    ratio = np.divide(num_counts.astype(float), den_counts, out=np.full_like(num_counts, np.nan, dtype=float), where=den_counts > 0)
+    return centers, ratio
+# enddef
+
+def ratio_ylim(rvals, pad=0.15, default=(0.5, 1.5)):
+    r = rvals[np.isfinite(rvals)]
+    if r.size == 0:
+        return default
+    # endif
+    p1, p99 = np.percentile(r, [1.0, 99.0])
+    lo = min(p1, 1.0)
+    hi = max(p99, 1.0)
+    span = hi - lo
+    if span <= 0.0:
+        return (max(0.0, 1.0 - 0.5), 1.0 + 0.5)
+    # endif
+    lo -= pad * span
+    hi += pad * span
+    lo = max(0.0, lo)
+    return (lo, hi)
+# enddef
+
 def main():
     if len(sys.argv) != 3:
         print("Usage: python lund_rad_plots.py <born.dat> <radiative.dat>")
@@ -259,7 +294,7 @@ def main():
     rad  = collect_kinematics(f_rad)
 
     # Combine for consistent axis ranges
-    def join(a, b): 
+    def join(a, b):
         return np.concatenate([a, b]) if a.size and b.size else (a if a.size else b)
     # enddef
 
@@ -273,41 +308,59 @@ def main():
     w_rng  = robust_range(w_all)
     mt_rng = robust_range(mt_all)
 
-    # Figure
-    fig, axes = plt.subplots(2, 2, figsize=(10, 8))
-    ax11, ax12, ax21, ax22 = axes[0,0], axes[0,1], axes[1,0], axes[1,1]
-
     bins = 60
-
-    # Helper to draw one panel
-    def draw(ax, data_born, data_rad, rng, xlabel):
-        ax.hist(data_born, bins=bins, range=rng, histtype="step", linewidth=1.5, label="Born")
-        ax.hist(data_rad,  bins=bins, range=rng, histtype="step", linewidth=1.5, label="Radiative")
-        ax.set_xlabel(xlabel)
-        ax.set_ylabel("counts")
-        ax.legend(frameon=False)
-        ax.grid(True, alpha=0.2)
-    # enddef
-
-    draw(ax11, born["e_p"], born["e_p"]*0+np.nan, ep_rng, r"$e_{p}$ (GeV)")
-    ax11.cla()
-    # Redraw with both properly:
-    ax11.hist(born["e_p"], bins=bins, range=ep_rng, histtype="step", linewidth=1.5, label="Born")
-    ax11.hist(rad["e_p"],  bins=bins, range=ep_rng, histtype="step", linewidth=1.5, label="Radiative")
-    ax11.set_xlabel(r"$e_{p}$ (GeV)")
-    ax11.set_ylabel("counts")
-    ax11.legend(frameon=False)
-    ax11.grid(True, alpha=0.2)
-
-    draw(ax12, born["Q2"], rad["Q2"], q2_rng, r"$Q^{2}$ (GeV^{2})")
-    draw(ax21, born["W"],  rad["W"],  w_rng,  r"$W$ (GeV)")
-    draw(ax22, born["-t"], rad["-t"], mt_rng, r"$-t$ (GeV^{2})")
-
-    fig.tight_layout()
 
     outpath = "/u/home/thayward/rad_test.pdf"
     os.makedirs(os.path.dirname(outpath), exist_ok=True)
-    fig.savefig(outpath)
+
+    with PdfPages(outpath) as pdf:
+        # -------- Page 1: Overlays --------
+        fig1, axes1 = plt.subplots(2, 2, figsize=(10, 8))
+        ax11, ax12, ax21, ax22 = axes1[0,0], axes1[0,1], axes1[1,0], axes1[1,1]
+
+        def draw(ax, data_born, data_rad, rng, xlabel):
+            ax.hist(data_born, bins=bins, range=rng, histtype="step", linewidth=1.5, label="Born")
+            ax.hist(data_rad,  bins=bins, range=rng, histtype="step", linewidth=1.5, label="Radiative")
+            ax.set_xlabel(xlabel)
+            ax.set_ylabel("counts")
+            ax.legend(frameon=False)
+            ax.grid(True, alpha=0.2)
+        # enddef
+
+        draw(ax11, born["e_p"], rad["e_p"], ep_rng, r"$e_{p}$ (GeV)")
+        draw(ax12, born["Q2"],  rad["Q2"],  q2_rng, r"$Q^{2}$ (GeV^{2})")
+        draw(ax21, born["W"],   rad["W"],   w_rng,  r"$W$ (GeV)")
+        draw(ax22, born["-t"],  rad["-t"],  mt_rng, r"$-t$ (GeV^{2})")
+
+        fig1.tight_layout()
+        pdf.savefig(fig1)
+        plt.close(fig1)
+
+        # -------- Page 2: Ratios (Radiative / Born) --------
+        fig2, axes2 = plt.subplots(2, 2, figsize=(10, 8))
+        rx11, rx12, rx21, rx22 = axes2[0,0], axes2[0,1], axes2[1,0], axes2[1,1]
+
+        def draw_ratio(ax, num, den, rng, xlabel):
+            x, r = hist_ratio(num, den, bins=bins, rng=rng)
+            ax.axhline(1.0, linestyle="--", linewidth=1.0)
+            ax.plot(x, r, drawstyle="steps-mid", linewidth=1.5)
+            ax.set_xlabel(xlabel)
+            ax.set_ylabel("ratio (rad/born)")
+            ylo, yhi = ratio_ylim(r)
+            ax.set_ylim(ylo, yhi)
+            ax.grid(True, alpha=0.2)
+        # enddef
+
+        draw_ratio(rx11, rad["e_p"], born["e_p"], ep_rng, r"$e_{p}$ (GeV)")
+        draw_ratio(rx12, rad["Q2"],  born["Q2"],  q2_rng, r"$Q^{2}$ (GeV^{2})")
+        draw_ratio(rx21, rad["W"],   born["W"],   w_rng,  r"$W$ (GeV)")
+        draw_ratio(rx22, rad["-t"],  born["-t"],  mt_rng, r"$-t$ (GeV^{2})")
+
+        fig2.tight_layout()
+        pdf.savefig(fig2)
+        plt.close(fig2)
+    # with
+
     print("Saved:", outpath)
     print("Born kept/total:", born["n_kept"], "/", born["n_events"])
     print("Radiative kept/total:", rad["n_kept"], "/", rad["n_events"])
