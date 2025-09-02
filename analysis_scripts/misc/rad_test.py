@@ -9,7 +9,7 @@ Make a 2x2 canvas from two LUND .dat files (Born vs Radiative) for exclusive DVC
     [2,1]  W (GeV)
     [2,2]  -t (GeV^2)  (t is the Mandelstam variable)
   Page 2 (ratios: second/first = Radiative/Born):
-    Same four panels but y-axis is the bin-wise ratio.
+    Same four panels but y-axis is the bin-wise ratio as points with error bars.
 
 Assumptions:
 - Beam: 10.6 GeV electron along +z on a stationary proton target.
@@ -251,17 +251,31 @@ def robust_range(a, lo=1.0, hi=99.0, pad=0.05):
     return (max(lo_v - pad*span, 0.0), hi_v + pad*span)
 # enddef
 
-def hist_ratio(num, den, bins, rng):
+def hist_ratio_with_errors(num, den, bins, rng):
     """
-    Returns (centers, ratio) for histograms of num/den with common bins/range.
-    Ratio is NaN where den count is 0.
+    Build num/den histogram ratio with Poisson errors.
+    Returns (centers, ratio, ratio_err).
+    Bins with den==0 are NaN and can be masked when plotting.
     """
     edges = np.linspace(rng[0], rng[1], bins + 1)
     den_counts, _ = np.histogram(den, bins=edges)
     num_counts, _ = np.histogram(num, bins=edges)
     centers = 0.5 * (edges[:-1] + edges[1:])
-    ratio = np.divide(num_counts.astype(float), den_counts, out=np.full_like(num_counts, np.nan, dtype=float), where=den_counts > 0)
-    return centers, ratio
+
+    ratio = np.full_like(centers, np.nan, dtype=float)
+    ratio_err = np.full_like(centers, np.nan, dtype=float)
+
+    mask_den = den_counts > 0
+    ratio[mask_den] = num_counts[mask_den] / den_counts[mask_den]
+
+    # Propagate Poisson errors: sigma_R = R * sqrt(1/N + 1/D)
+    mask_both = mask_den & (num_counts > 0)
+    ratio_err[mask_both] = ratio[mask_both] * np.sqrt(1.0/num_counts[mask_both] + 1.0/den_counts[mask_both])
+    # If numerator is zero but denominator > 0, set ratio_err = 0 (conservative simple choice)
+    mask_num0 = mask_den & (num_counts == 0)
+    ratio_err[mask_num0] = 0.0
+
+    return centers, ratio, ratio_err
 # enddef
 
 def ratio_ylim(rvals, pad=0.15, default=(0.5, 1.5)):
@@ -308,7 +322,7 @@ def main():
     w_rng  = robust_range(w_all)
     mt_rng = robust_range(mt_all)
 
-    bins = 60
+    bins = 20  # <-- use 20 bins everywhere
 
     outpath = "/u/home/thayward/rad_test.pdf"
     os.makedirs(os.path.dirname(outpath), exist_ok=True)
@@ -341,12 +355,13 @@ def main():
         rx11, rx12, rx21, rx22 = axes2[0,0], axes2[0,1], axes2[1,0], axes2[1,1]
 
         def draw_ratio(ax, num, den, rng, xlabel):
-            x, r = hist_ratio(num, den, bins=bins, rng=rng)
+            x, r, rerr = hist_ratio_with_errors(num, den, bins=bins, rng=rng)
+            mask = np.isfinite(r) & np.isfinite(rerr)
             ax.axhline(1.0, linestyle="--", linewidth=1.0)
-            ax.plot(x, r, drawstyle="steps-mid", linewidth=1.5)
+            ax.errorbar(x[mask], r[mask], yerr=rerr[mask], fmt="o", markersize=3, linewidth=1.0, capsize=2)
             ax.set_xlabel(xlabel)
-            ax.set_ylabel("ratio (rad/born)")
-            ylo, yhi = ratio_ylim(r)
+            ax.set_ylabel("ratio (radiative/born)")
+            ylo, yhi = ratio_ylim(r[mask])
             ax.set_ylim(ylo, yhi)
             ax.grid(True, alpha=0.2)
         # enddef

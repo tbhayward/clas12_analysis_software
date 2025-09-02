@@ -154,7 +154,7 @@ public class fiducial_cuts {
                         return false;
                     }
                 case 5:
-                    if (lv_4 > 0.0 && lv_7 < 23.5) {
+                    if (lv_4 > 0.0 && lv_4 < 23.5) {
                         return false;
                     }
                     if (lu_7 > 193.5 && lu_7 < 216.0) {
