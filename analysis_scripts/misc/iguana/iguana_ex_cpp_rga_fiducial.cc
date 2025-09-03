@@ -12,56 +12,51 @@
 
 #include <unordered_set>
 #include <string>
-#include <iostream>
 
 int main(int argc, char** argv)
 {
-  // -------- args --------
   const char* in_file         = (argc > 1 ? argv[1] : "data.hipo");
   const int   num_events_req  = (argc > 2 ? std::stoi(argv[2]) : 1000);
   const bool  interactive     = (argc > 3 ? std::string(argv[3]) == "true" : false);
-
-  // -------- ROOT app if interactive --------
   TApplication* app = interactive ? new TApplication("app", &argc, argv) : nullptr;
 
-  // -------- open HIPO, dictionary, banks --------
-  hipo::reader      reader;
-  hipo::event       event;
-  hipo::dictionary  dict;
-
+  hipo::reader     reader;
+  hipo::event      event;
+  hipo::dictionary dict;
   reader.open(in_file);
   reader.readDictionary(dict);
 
-  hipo::bank recPart (dict.getSchema("REC::Particle"));
-  hipo::bank recCal  (dict.getSchema("REC::Calorimeter"));
-  hipo::bank runConf (dict.getSchema("RUN::config"));
-
-  // -------- build a banklist for Iguana --------
+  // Build ONE banklist and keep using those same objects
   hipo::banklist banks;
-  banks.add(recPart);
-  banks.add(recCal);
-  banks.add(runConf);
+  const int idx_particle = 0, idx_calor = 1, idx_config = 2;
+  banks.emplace_back(dict.getSchema("REC::Particle"));
+  banks.emplace_back(dict.getSchema("REC::Calorimeter"));
+  banks.emplace_back(dict.getSchema("RUN::config"));
 
-  // -------- start algorithm --------
+  // Start algorithm with that banklist
   iguana::clas12::RGAFiducialFilter fid;
   fid.Start(banks);
 
-  // -------- histograms (before/after PCAL lv, 0..400) --------
+  // Histograms: PCAL lv before/after (0..400)
   TH1D* h_lv_before = new TH1D("h_lv_before", "PCAL lv;lv;counts", 400, 0, 400);
   TH1D* h_lv_after  = new TH1D("h_lv_after" , "PCAL lv;lv;counts", 400, 0, 400);
   h_lv_before->SetLineWidth(2);
   h_lv_after ->SetLineWidth(2);
   h_lv_after ->SetLineColor(kRed);
 
-  // -------- event loop --------
   int ev = 0;
-  while (reader.read(event) && (num_events_req == 0 || ev < num_events_req)) {
-    // read banks for this event
-    event.read(recPart);
-    event.read(recCal);
-    event.read(runConf);
+  while (reader.next() && (num_events_req == 0 || ev < num_events_req)) {
+    reader.read(event);
 
-    // fill "before" (all PCAL hits: layer == 1)
+    // Read event data INTO the banks INSIDE the banklist
+    event.read(banks.at(idx_particle));
+    event.read(banks.at(idx_calor));
+    event.read(banks.at(idx_config));
+
+    auto& recPart = banks.at(idx_particle);
+    auto& recCal  = banks.at(idx_calor);
+
+    // BEFORE: all PCAL hits (layer==1)
     const int ncal = recCal.getRows();
     for (int i = 0; i < ncal; ++i) {
       if (recCal.getInt("layer", i) == 1) {
@@ -69,30 +64,26 @@ int main(int argc, char** argv)
       }
     }
 
-    // run the fiducial filter (filters REC::Particle rows in-place)
+    // Run filter (mutates REC::Particle inside banklist)
     fid.Run(banks);
 
-    // collect kept track indices from filtered REC::Particle
+    // Collect kept track indices after filtering
     std::unordered_set<int> kept;
-    for (auto const& row : recPart.getRowList())
-      kept.insert(row);
+    for (auto const& row : recPart.getRowList()) kept.insert(row);
 
-    // fill "after": only PCAL hits whose pindex survived the filter
+    // AFTER: only PCAL hits whose pindex survived
     for (int i = 0; i < ncal; ++i) {
       if (recCal.getInt("layer", i) == 1) {
-        if (kept.count(recCal.getInt("pindex", i))) {
+        if (kept.count(recCal.getInt("pindex", i)))
           h_lv_after->Fill(recCal.getFloat("lv", i));
-        }
       }
     }
 
     ++ev;
   }
 
-  // -------- stop algorithm --------
   fid.Stop();
 
-  // -------- draw / save --------
   TCanvas* c = new TCanvas("c", "RGAFiducialFilter PCAL lv (before vs after)", 900, 700);
   h_lv_before->Draw("hist");
   h_lv_after->Draw("hist same");
@@ -102,12 +93,9 @@ int main(int argc, char** argv)
   leg->Draw();
 
   if (interactive) {
-    std::cout << "\nShowing plot interactively; press Ctrl+C to exit.\n";
     app->Run();
   } else {
     c->SaveAs("out-rga-fiducial-example.png");
-    std::cout << "Wrote out-rga-fiducial-example.png\n";
   }
-
   return 0;
 }
