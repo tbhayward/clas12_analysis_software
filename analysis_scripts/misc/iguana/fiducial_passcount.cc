@@ -14,7 +14,7 @@ int main(int argc, char** argv) {
   long long maxEvents = (argc > 2) ? std::stoll(argv[2]) : -1;
 
   hipo::reader r;
-  r.open(inFile);
+  r.open(inFile.c_str());
   hipo::dictionary dict;
   r.readDictionary(dict);
 
