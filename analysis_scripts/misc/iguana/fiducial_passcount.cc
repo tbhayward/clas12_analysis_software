@@ -1,76 +1,84 @@
+// Run with:
+//   root -l -b -q 'rga_fiducial_passcount.C("input.hipo", 100000)'
+
+#include <TSystem.h>
 #include <iostream>
-#include <string>
+
+// HIPO
 #include <hipo4/reader.h>
-#include <hipo4/bank.h>
 #include <hipo4/dictionary.h>
+#include <hipo4/bank.h>
+
+// The *new* algorithm:
 #include <iguana/algorithms/clas12/RGAFiducialFilter/Algorithm.h>
 
-int main(int argc, char** argv) {
-  if (argc < 2) {
-    std::cerr << "usage: " << argv[0] << " input.hipo [maxEvents]\n";
-    return 1;
+void rga_fiducial_passcount(const char* inFile = "", Long64_t maxEvents = -1)
+{
+  if (!inFile || !*inFile) {
+    std::cerr << "usage: rga_fiducial_passcount(\"/path/to/input.hipo\", [maxEvents])\n";
+    return;
   }
-  const std::string inFile = argv[1];
-  long long maxEvents = (argc > 2) ? std::stoll(argv[2]) : -1;
 
-  hipo::reader r;
-  r.open(inFile.c_str());
-  hipo::dictionary dict;
-  r.readDictionary(dict);
+  // Load Iguana libs
+  gSystem->Load("libIguanaAlgorithms");
 
-  // Banks used
+  // Open HIPO & dictionary
+  hipo::reader r; r.open(inFile);
+  hipo::dictionary dict; r.readDictionary(dict);
+
+  // Banks
   hipo::bank bPart   (dict.getSchema("REC::Particle"));
+  hipo::bank bConfig (dict.getSchema("RUN::config"));
   hipo::bank bCal    (dict.hasSchema("REC::Calorimeter")   ? dict.getSchema("REC::Calorimeter")   : hipo::schema{});
   hipo::bank bFT     (dict.hasSchema("REC::ForwardTagger") ? dict.getSchema("REC::ForwardTagger") : hipo::schema{});
   hipo::bank bTraj   (dict.hasSchema("REC::Traj")          ? dict.getSchema("REC::Traj")          : hipo::schema{});
-  hipo::bank bConfig (dict.getSchema("RUN::config"));
 
-  // Algorithm instance (auto-loads installed defaults; no YAML path needed)
-  iguana::clas12::RGAFiducialFilter fid;
+  // Algorithm instance; uses installed YAML defaults automatically
+  iguana::clas12::RGAFiducialFilter algo;
 
-  // Build a banklist once just to Start() (schemas only)
-  hipo::banklist banks0;
-  banks0.push_back(bPart);
-  if (bCal.getSchema().getName()   != "") banks0.push_back(bCal);
-  if (bFT.getSchema().getName()    != "") banks0.push_back(bFT);
-  if (bTraj.getSchema().getName()  != "") banks0.push_back(bTraj);
-  banks0.push_back(bConfig);
-  fid.Start(banks0);
+  // Start once with schemas
+  hipo::banklist banks_start;
+  banks_start.push_back(bPart);
+  if (bCal.getSchema().getName()   != "") banks_start.push_back(bCal);
+  if (bFT.getSchema().getName()    != "") banks_start.push_back(bFT);
+  if (bTraj.getSchema().getName()  != "") banks_start.push_back(bTraj);
+  banks_start.push_back(bConfig);
+  algo.Start(banks_start);
 
-  long long evt = 0, keptTot = 0, cutTot = 0;
-
+  Long64_t evt = 0, keptTot = 0, cutTot = 0;
   hipo::event ev;
+
   while (r.next()) {
     if (maxEvents >= 0 && evt >= maxEvents) break;
-
     r.read(ev);
+
+    // Fill banks for this event
     ev.getStructure(bPart);
     if (bCal.getSchema().getName()   != "") ev.getStructure(bCal);
     if (bFT.getSchema().getName()    != "") ev.getStructure(bFT);
     if (bTraj.getSchema().getName()  != "") ev.getStructure(bTraj);
     ev.getStructure(bConfig);
 
-    // Fresh banklist with filled data for this event
-    hipo::banklist banks;
-    banks.push_back(bPart);
-    if (bCal.getSchema().getName()   != "") banks.push_back(bCal);
-    if (bFT.getSchema().getName()    != "") banks.push_back(bFT);
-    if (bTraj.getSchema().getName()  != "") banks.push_back(bTraj);
-    banks.push_back(bConfig);
+    // Build event banklist and run algorithm
+    hipo::banklist banks_evt;
+    banks_evt.push_back(bPart);
+    if (bCal.getSchema().getName()   != "") banks_evt.push_back(bCal);
+    if (bFT.getSchema().getName()    != "") banks_evt.push_back(bFT);
+    if (bTraj.getSchema().getName()  != "") banks_evt.push_back(bTraj);
+    banks_evt.push_back(bConfig);
 
-    const auto before = (int)bPart.getRowList().size();  // visible rows before filter
-    fid.Run(banks);                                      // <- in-place prune via getMutableRowList().filter(...)
-    const auto after  = (int)bPart.getRowList().size();  // visible rows after filter
-    const auto cut    = before - after;
+    const int before = (int)bPart.getRowList().size();
+    algo.Run(banks_evt);  // should prune REC::Particle in-place
+    const int after  = (int)bPart.getRowList().size();
+    const int cut    = before - after;
 
-    keptTot += after;
-    cutTot  += cut;
-
-    std::cout << "evt " << evt << ": kept " << after << " / " << before << " (cut " << cut << ")\n";
+    keptTot += after; cutTot += cut;
+    std::cout << "evt " << evt << ": kept " << after << " / " << before
+              << " (cut " << cut << ")\n";
     ++evt;
   }
 
-  std::cout << "\nTOTAL: kept " << keptTot << " | cut " << cutTot
-            << " | events " << evt << std::endl;
-  return 0;
+  algo.Stop();
+  std::cout << "\nTOTAL over " << evt << " events: kept=" << keptTot
+            << ", cut=" << cutTot << std::endl;
 }
