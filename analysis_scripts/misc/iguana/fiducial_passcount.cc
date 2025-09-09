@@ -1,30 +1,35 @@
-// Run with:
-//   root -l -b -q 'rga_fiducial_passcount.C("input.hipo", 100000)'
-
-#include <TSystem.h>
 #include <iostream>
+#include <string>
 
 // HIPO
 #include <hipo4/reader.h>
 #include <hipo4/dictionary.h>
 #include <hipo4/bank.h>
 
-// The *new* algorithm:
-#include <iguana/algorithms/clas12/RGAFiducialFilter/Algorithm.h>
+// Prefer the new RGAFiducialFilter; fall back to old FiducialFilter if needed
+#if __has_include(<iguana/algorithms/clas12/RGAFiducialFilter/Algorithm.h>)
+  #include <iguana/algorithms/clas12/RGAFiducialFilter/Algorithm.h>
+  using FidAlg = iguana::clas12::RGAFiducialFilter;
+#elif __has_include(<iguana/algorithms/clas12/FiducialFilter/Algorithm.h>)
+  #include <iguana/algorithms/clas12/FiducialFilter/Algorithm.h>
+  using FidAlg = iguana::clas12::FiducialFilter;
+#else
+  #error "No fiducial filter algorithm header found (RGAFiducialFilter or FiducialFilter)."
+#endif
 
-void rga_fiducial_passcount(const char* inFile = "", Long64_t maxEvents = -1)
-{
-  if (!inFile || !*inFile) {
-    std::cerr << "usage: rga_fiducial_passcount(\"/path/to/input.hipo\", [maxEvents])\n";
-    return;
+int main(int argc, char** argv) {
+  if (argc < 2) {
+    std::cerr << "usage: " << argv[0] << " input.hipo [maxEvents]\n";
+    return 1;
   }
-
-  // Load Iguana libs
-  gSystem->Load("libIguanaAlgorithms");
+  const std::string inFile = argv[1];
+  long long maxEvents = (argc > 2) ? std::stoll(argv[2]) : -1;
 
   // Open HIPO & dictionary
-  hipo::reader r; r.open(inFile);
-  hipo::dictionary dict; r.readDictionary(dict);
+  hipo::reader r;
+  r.open(inFile.c_str());
+  hipo::dictionary dict;
+  r.readDictionary(dict);
 
   // Banks
   hipo::bank bPart   (dict.getSchema("REC::Particle"));
@@ -33,19 +38,19 @@ void rga_fiducial_passcount(const char* inFile = "", Long64_t maxEvents = -1)
   hipo::bank bFT     (dict.hasSchema("REC::ForwardTagger") ? dict.getSchema("REC::ForwardTagger") : hipo::schema{});
   hipo::bank bTraj   (dict.hasSchema("REC::Traj")          ? dict.getSchema("REC::Traj")          : hipo::schema{});
 
-  // Algorithm instance; uses installed YAML defaults automatically
-  iguana::clas12::RGAFiducialFilter algo;
+  // Algorithm
+  FidAlg fid;
 
   // Start once with schemas
-  hipo::banklist banks_start;
-  banks_start.push_back(bPart);
-  if (bCal.getSchema().getName()   != "") banks_start.push_back(bCal);
-  if (bFT.getSchema().getName()    != "") banks_start.push_back(bFT);
-  if (bTraj.getSchema().getName()  != "") banks_start.push_back(bTraj);
-  banks_start.push_back(bConfig);
-  algo.Start(banks_start);
+  hipo::banklist banks0;
+  banks0.push_back(bPart);
+  if (bCal.getSchema().getName()   != "") banks0.push_back(bCal);
+  if (bFT.getSchema().getName()    != "") banks0.push_back(bFT);
+  if (bTraj.getSchema().getName()  != "") banks0.push_back(bTraj);
+  banks0.push_back(bConfig);
+  fid.Start(banks0);
 
-  Long64_t evt = 0, keptTot = 0, cutTot = 0;
+  long long evt = 0, keptTot = 0, cutTot = 0;
   hipo::event ev;
 
   while (r.next()) {
@@ -59,26 +64,29 @@ void rga_fiducial_passcount(const char* inFile = "", Long64_t maxEvents = -1)
     if (bTraj.getSchema().getName()  != "") ev.getStructure(bTraj);
     ev.getStructure(bConfig);
 
-    // Build event banklist and run algorithm
-    hipo::banklist banks_evt;
-    banks_evt.push_back(bPart);
-    if (bCal.getSchema().getName()   != "") banks_evt.push_back(bCal);
-    if (bFT.getSchema().getName()    != "") banks_evt.push_back(bFT);
-    if (bTraj.getSchema().getName()  != "") banks_evt.push_back(bTraj);
-    banks_evt.push_back(bConfig);
+    // Event banklist
+    hipo::banklist banks;
+    banks.push_back(bPart);
+    if (bCal.getSchema().getName()   != "") banks.push_back(bCal);
+    if (bFT.getSchema().getName()    != "") banks.push_back(bFT);
+    if (bTraj.getSchema().getName()  != "") banks.push_back(bTraj);
+    banks.push_back(bConfig);
 
     const int before = (int)bPart.getRowList().size();
-    algo.Run(banks_evt);  // should prune REC::Particle in-place
+    fid.Run(banks);                    // must prune REC::Particle in-place
     const int after  = (int)bPart.getRowList().size();
     const int cut    = before - after;
 
-    keptTot += after; cutTot += cut;
+    keptTot += after;
+    cutTot  += cut;
+
     std::cout << "evt " << evt << ": kept " << after << " / " << before
               << " (cut " << cut << ")\n";
     ++evt;
   }
 
-  algo.Stop();
+  fid.Stop();
   std::cout << "\nTOTAL over " << evt << " events: kept=" << keptTot
             << ", cut=" << cutTot << std::endl;
+  return 0;
 }
