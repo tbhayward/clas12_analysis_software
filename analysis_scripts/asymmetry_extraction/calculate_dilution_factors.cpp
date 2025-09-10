@@ -38,7 +38,7 @@
 #include "fitting_process.h"
 
 // Select dataset: 1 = RGC Su22, 2 = RGC Fa22, 3 = RGC Sp23
-constexpr int data_set = 5;
+constexpr int data_set = 7;
 
 struct DataSetConfig {
     std::string name;
@@ -106,13 +106,31 @@ const std::vector<DataSetConfig> dataSetConfigs = {
         "/work/clas12/thayward/CLAS12_exclusive/enpi+/data/pass2/data/enpi+/rgc_sp23_inb_ET_epi+_2.root"
     },
     {
-        "RGC_Fa22_enpi+_ISR_FSR",
+        "RGC_Fa22_enpi+_ISR_FSR_0",
         0.5839, 0.1992, 0.1802, 0.0301, 0.0066,
-        "/work/clas12/thayward/CLAS12_exclusive/enpi+/data/pass2/data/enpi+/rgc_fa22_inb_NH3_epi+_ISR_FSR_2.root",
-        "/work/clas12/thayward/CLAS12_exclusive/enpi+/data/pass2/data/enpi+/rgc_fa22_inb_C_epi+_ISR_FSR_2.root",
-        "/work/clas12/thayward/CLAS12_exclusive/enpi+/data/pass2/data/enpi+/rgc_fa22_inb_CH2_epi+_ISR_FSR_2.root",
-        "/work/clas12/thayward/CLAS12_exclusive/enpi+/data/pass2/data/enpi+/rgc_fa22_inb_He_epi+_ISR_FSR_2.root",
-        "/work/clas12/thayward/CLAS12_exclusive/enpi+/data/pass2/data/enpi+/rgc_fa22_inb_ET_epi+_ISR_FSR_2.root"
+        "/volatile/clas12/thayward/ISR_FSR_study/rgc_fa22_inb_NH3_epi+_ISR_FSR_0_2.root",
+        "/volatile/clas12/thayward/ISR_FSR_study/rgc_fa22_inb_C_epi+_ISR_FSR_0_2.root",
+        "/volatile/clas12/thayward/ISR_FSR_study/rgc_fa22_inb_CH2_epi+_ISR_FSR_0_2.root",
+        "/volatile/clas12/thayward/ISR_FSR_study/rgc_fa22_inb_He_epi+_ISR_FSR_0_2.root",
+        "/volatile/clas12/thayward/ISR_FSR_study/rgc_fa22_inb_ET_epi+_ISR_FSR_0_2.root",
+    },
+    {
+        "RGC_Fa22_enpi+_ISR_FSR_1",
+        0.5839, 0.1992, 0.1802, 0.0301, 0.0066,
+        "/volatile/clas12/thayward/ISR_FSR_study/rgc_fa22_inb_NH3_epi+_ISR_FSR_1_2.root",
+        "/volatile/clas12/thayward/ISR_FSR_study/rgc_fa22_inb_C_epi+_ISR_FSR_1_2.root",
+        "/volatile/clas12/thayward/ISR_FSR_study/rgc_fa22_inb_CH2_epi+_ISR_FSR_1_2.root",
+        "/volatile/clas12/thayward/ISR_FSR_study/rgc_fa22_inb_He_epi+_ISR_FSR_1_2.root",
+        "/volatile/clas12/thayward/ISR_FSR_study/rgc_fa22_inb_ET_epi+_ISR_FSR_1_2.root",
+    },
+    {
+        "RGC_Fa22_enpi+_ISR_FSR_2",
+        0.5839, 0.1992, 0.1802, 0.0301, 0.0066,
+        "/volatile/clas12/thayward/ISR_FSR_study/rgc_fa22_inb_NH3_epi+_ISR_FSR_2_2.root",
+        "/volatile/clas12/thayward/ISR_FSR_study/rgc_fa22_inb_C_epi+_ISR_FSR_2_2.root",
+        "/volatile/clas12/thayward/ISR_FSR_study/rgc_fa22_inb_CH2_epi+_ISR_FSR_2_2.root",
+        "/volatile/clas12/thayward/ISR_FSR_study/rgc_fa22_inb_He_epi+_ISR_FSR_2_2.root",
+        "/volatile/clas12/thayward/ISR_FSR_study/rgc_fa22_inb_ET_epi+_ISR_FSR_2_2.root",
     },
 };
 
