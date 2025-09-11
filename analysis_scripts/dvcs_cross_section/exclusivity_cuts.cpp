@@ -7,6 +7,8 @@
 #include <TH1D.h>
 #include <TF1.h>
 #include <TLegend.h>
+#include <TStyle.h>
+#include <TPaveText.h>
 #include <TROOT.h>
 #include <TH1.h>
 
@@ -26,6 +28,7 @@
 // -------------------- helpers: strings and keys --------------------
 
 static std::string channelToStr(Channel ch) { return (ch == Channel::DVCS) ? "dvcs" : "eppi0"; }
+static std::string channelPretty(Channel ch) { return ch == Channel::DVCS ? "DVCS" : "eppi0"; }
 
 static std::string topoToKey(Topology t) {
     switch (t) {
@@ -116,9 +119,8 @@ static bool passes3SigmaCuts(const std::map<std::string, Stats>& cuts,
 //   t1, open_angle_ep2, Emiss2, Mx2, Mx2_1, Mx2_2, pTmiss, xF, Delta_phi,
 //   theta_gamma_gamma, theta_pi0_pi0
 //
-// Note: Using double receivers is typical; if your leaves are Float_t the best
-// practice is to bind to float. If you see type-mismatch warnings, tell me and
-// I will switch these to float. For now, double is usually OK in CLAS12 trees.
+// If you later see type mismatch warnings (float vs double), tell me
+// and I will switch the receivers to match the leaf types.
 
 struct BranchBinder {
     int detector1 = 0, detector2 = 0; bool has_detector1 = false, has_detector2 = false;
@@ -201,6 +203,21 @@ static void normalizeHist(TH1D* h) {
     if (integral > 0.0) h->Scale(1.0 / integral);
 }
 
+// -------------------- pretty x-axis labels (ASCII) --------------------
+
+static std::string formatLabelName(const std::string& var, Channel ch) {
+    if (var == "Delta_phi")          return "Delta phi (rad)";
+    if (var == "theta_gamma_gamma")  return "theta gamma gamma (rad)";
+    if (var == "theta_pi0_pi0")      return "theta pi0 pi0 (rad)";
+    if (var == "pTmiss")             return "pTmiss (GeV)";
+    if (var == "xF")                 return "xF";
+    if (var == "Emiss2")             return "Emiss^2 (GeV^2)";
+    if (var == "Mx2")                return "Mx^2 (GeV^2)";
+    if (var == "Mx2_1")              return "Mx^2_1 (GeV^2)";
+    if (var == "Mx2_2")              return "Mx^2_2 (GeV^2)";
+    return var;
+}
+
 // -------------------- stage fill --------------------
 
 struct FilledHists { std::map<std::string, TH1D*> data; std::map<std::string, TH1D*> mc; };
@@ -271,6 +288,7 @@ static void saveStagePlots(const FilledHists& H, const HistList& cfg, Channel ch
                            const std::string& prettyPeriod, Topology topo,
                            const std::string& outPlotDir, const std::string& suffix)
 {
+    // Canvas: grid of pads; add a global title; remove stat box.
     int n = static_cast<int>(cfg.size());
     int cols = 4, rows = (n + cols - 1) / cols;
     TCanvas c("c", "", 2400, rows * 600);
@@ -280,6 +298,20 @@ static void saveStagePlots(const FilledHists& H, const HistList& cfg, Channel ch
         return (v == "theta_gamma_gamma" || v == "theta_pi0_pi0" || v == "pTmiss");
     };
 
+    // Global title (channel, period, topology, stage)
+    {
+        std::string title = channelPretty(ch) + "  |  " + prettyPeriod + "  |  " + topoToKey(topo) + "  |  " + suffix;
+        TPaveText* pt = new TPaveText(0.10, 0.955, 0.90, 0.995, "NDC");
+        pt->SetFillColor(0);
+        pt->SetFillStyle(0);
+        pt->SetBorderSize(0);
+        pt->SetTextAlign(22); // center
+        pt->SetTextFont(42);
+        pt->SetTextSize(0.025);
+        pt->AddText(title.c_str());
+        pt->Draw();
+    }
+
     int pad = 1;
     for (const auto& kv : cfg) {
         const std::string& var = kv.first;
@@ -287,39 +319,63 @@ static void saveStagePlots(const FilledHists& H, const HistList& cfg, Channel ch
         TH1D* mh = H.mc.at(var);
 
         c.cd(pad++);
-        if (dh) { dh->SetLineColor(kBlue); dh->SetMarkerColor(kBlue); dh->SetLineWidth(2); }
-        if (mh) { mh->SetLineColor(kRed);  mh->SetMarkerColor(kRed);  mh->SetLineWidth(2); }
+        if (dh) { dh->SetLineColor(kBlue); dh->SetMarkerColor(kBlue); dh->SetLineWidth(2); dh->SetStats(0); }
+        if (mh) { mh->SetLineColor(kRed);  mh->SetMarkerColor(kRed);  mh->SetLineWidth(2); mh->SetStats(0); }
 
+        // Normalize and set axis titles
         normalizeHist(dh); normalizeHist(mh);
+        if (dh) {
+            dh->GetYaxis()->SetTitle("Normalized counts");
+            dh->GetXaxis()->SetTitle(formatLabelName(var, ch).c_str());
+        }
+        if (mh && !dh) {
+            mh->GetYaxis()->SetTitle("Normalized counts");
+            mh->GetXaxis()->SetTitle(formatLabelName(var, ch).c_str());
+        }
+
+        // Determine max for nice scaling
         double maxv = 0.0;
         if (dh) maxv = std::max(maxv, dh->GetMaximum());
         if (mh) maxv = std::max(maxv, mh->GetMaximum());
         if (dh) dh->SetMaximum(maxv * 1.2);
+        if (!dh && mh) mh->SetMaximum(maxv * 1.2);
 
+        // Draw histograms
         if (dh) dh->Draw("E1");
         if (mh) mh->Draw(dh ? "E1 SAME" : "E1");
+
+        // Compute mu/sigma for legend and optionally draw fits
+        double mu_d = 0.0, sg_d = 0.0, mu_m = 0.0, sg_m = 0.0;
 
         if (isGaussianVar(var)) {
             if (dh && dh->GetEntries() > 0) {
                 auto ms = fitGaussianLeftSide(dh);
-                TF1 f(("fdata_" + var).c_str(), "gaus(0)",
-                      dh->GetXaxis()->GetXmin(), dh->GetXaxis()->GetXmax());
-                f.SetParameters(dh->GetMaximum(), ms.first, ms.second);
+                mu_d = ms.first; sg_d = ms.second;
+                TF1 f(("fdata_" + var).c_str(), "gaus(0)", dh->GetXaxis()->GetXmin(), dh->GetXaxis()->GetXmax());
+                f.SetParameters(dh->GetMaximum(), mu_d, sg_d);
                 f.SetLineColor(kBlue + 1); f.SetLineStyle(2); f.SetLineWidth(2); f.Draw("SAME");
+            } else {
+                mu_d = dh ? dh->GetMean() : 0.0; sg_d = dh ? dh->GetStdDev() : 0.0;
             }
             if (mh && mh->GetEntries() > 0) {
                 auto ms = fitGaussianLeftSide(mh);
-                TF1 f(("fmc_" + var).c_str(), "gaus(0)",
-                      mh->GetXaxis()->GetXmin(), mh->GetXaxis()->GetXmax());
-                f.SetParameters(mh->GetMaximum(), ms.first, ms.second);
+                mu_m = ms.first; sg_m = ms.second;
+                TF1 f(("fmc_" + var).c_str(), "gaus(0)", mh->GetXaxis()->GetXmin(), mh->GetXaxis()->GetXmax());
+                f.SetParameters(mh->GetMaximum(), mu_m, sg_m);
                 f.SetLineColor(kRed + 1); f.SetLineStyle(2); f.SetLineWidth(2); f.Draw("SAME");
+            } else {
+                mu_m = mh ? mh->GetMean() : 0.0; sg_m = mh ? mh->GetStdDev() : 0.0;
             }
+        } else {
+            mu_d = dh ? dh->GetMean() : 0.0; sg_d = dh ? dh->GetStdDev() : 0.0;
+            mu_m = mh ? mh->GetMean() : 0.0; sg_m = mh ? mh->GetStdDev() : 0.0;
         }
 
-        TLegend leg(0.55, 0.75, 0.88, 0.90);
-        leg.SetFillStyle(0); leg.SetBorderSize(0);
-        if (dh) leg.AddEntry(dh, "Data", "lep");
-        if (mh) leg.AddEntry(mh, "MC", "lep");
+        // Legend: Data and MC with mu/sigma on the same line
+        TLegend leg(0.50, 0.74, 0.90, 0.90);
+        leg.SetFillStyle(0); leg.SetBorderSize(0); leg.SetTextFont(42); leg.SetTextSize(0.03);
+        if (dh) leg.AddEntry(dh,  (std::string("Data (mu=") + Form("%.3f", mu_d) + ", sigma=" + Form("%.3f", sg_d) + ")").c_str(), "lep");
+        if (mh) leg.AddEntry(mh,  (std::string("MC (mu=")   + Form("%.3f", mu_m) + ", sigma=" + Form("%.3f", sg_m) + ")").c_str(), "lep");
         leg.Draw();
     }
 
@@ -418,7 +474,7 @@ static void runExclusivityCutsSingle(const std::string& runTag, Channel ch,
     std::cout << "[Done] Exclusivity cuts for " << pretty << std::endl;
 }
 
-// -------------------- dispatcher (kept single-threaded) --------------------
+// -------------------- dispatcher (single-threaded) --------------------
 
 void runAllExclusivityCuts(
     const std::map<std::string, TTree*>& dvcsDataTrees,
@@ -429,9 +485,9 @@ void runAllExclusivityCuts(
     const std::string& outPlotDir,
     int maxThreads)
 {
-    // Prevent ROOT from auto-registering histograms in global directories
-    // (avoids name collisions and "Replacing existing TH1" warnings).
+    // Avoid ROOT global dir ownership and hide stat boxes
     TH1::AddDirectory(kFALSE);
+    gStyle->SetOptStat(0);
 
     const std::vector<std::string> runTags = {
         "sp18_inb", "sp18_out", "fa18_inb_supp", "fa18_inb", "fa18_out", "sp19_inb"
@@ -459,8 +515,7 @@ void runAllExclusivityCuts(
 
     if (jobs.empty()) { std::cout << "[Info] No exclusivity jobs found.\n"; return; }
 
-    // Force single-threaded for now to avoid ROOT TTree/TFile concurrency hazards.
-    (void)maxThreads; // unused
+    (void)maxThreads; // unused, single-threaded run
     for (const auto& job : jobs) {
         runExclusivityCutsSingle(job.runTag, job.ch, job.data, job.mc, outJsonDir, outPlotDir);
     }

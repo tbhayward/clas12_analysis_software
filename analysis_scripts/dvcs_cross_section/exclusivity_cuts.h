@@ -5,6 +5,7 @@
 // - JSON outputs per topology, stage comparison plots
 // - Threading set to 1 for robust ROOT I/O (we can revisit with RDataFrame)
 //
+// ASCII-only.
 
 #ifndef EXCLUSIVITY_CUTS_H
 #define EXCLUSIVITY_CUTS_H
