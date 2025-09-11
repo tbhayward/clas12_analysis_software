@@ -1,10 +1,10 @@
 # Compiler and flags
-iCXX = g++
-CXXFLAGS = `root-config --cflags` -O2 -std=c++17
-LDFLAGS = `root-config --libs`
+CXX = g++
+CXXFLAGS = `root-config --cflags` -O2 -std=c++17 -pthread
+LDFLAGS = `root-config --libs` -pthread
 
 # Source files
-SRC = main.cpp load_trees.cpp make_dirs.cpp
+SRC = main.cpp load_trees.cpp make_dirs.cpp exclusivity_cuts.cpp
 OBJ = $(SRC:.cpp=.o)
 TARGET = dvcs_analysis
 

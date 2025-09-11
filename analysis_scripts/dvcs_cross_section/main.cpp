@@ -1,6 +1,8 @@
 #include "make_dirs.h"
 #include "load_trees.h"
+#include "exclusivity_cuts.h"
 #include <iostream>
+#include <map>
 
 int main(int argc, char* argv[]) {
     std::cout << "Starting DVCS analysis..." << std::endl;
@@ -10,19 +12,23 @@ int main(int argc, char* argv[]) {
     std::cout << "Output directories ready." << std::endl;
 
     // Containers for different tree categories
-    std::map<std::string, TTree*> dataTrees;
-    std::map<std::string, TTree*> genMcTrees;
-    std::map<std::string, TTree*> recMcTrees;
-    std::map<std::string, TTree*> eppi0DataTrees;
-    std::map<std::string, TTree*> eppi0GenMcTrees;
-    std::map<std::string, TTree*> eppi0RecMcTrees;
+    std::map<std::string, TTree*> dataTrees;        // DVCS data
+    std::map<std::string, TTree*> genMcTrees;       // DVCS generated MC (unused here)
+    std::map<std::string, TTree*> recMcTrees;       // DVCS reconstructed MC
+    std::map<std::string, TTree*> eppi0DataTrees;   // eppi0 data
+    std::map<std::string, TTree*> eppi0GenMcTrees;  // eppi0 generated MC (unused here)
+    std::map<std::string, TTree*> eppi0RecMcTrees;  // eppi0 reconstructed MC
 
     // Load all trees from files
     loadTrees(dataTrees, genMcTrees, recMcTrees, eppi0DataTrees, eppi0GenMcTrees, eppi0RecMcTrees);
-
     std::cout << "All trees loaded successfully." << std::endl;
 
-    // TODO: Call further analysis steps here
+    // Run exclusivity cut extraction (multi-stage) across periods and channels.
+    runAllExclusivityCuts(
+        dataTrees, recMcTrees, eppi0DataTrees, eppi0RecMcTrees,
+        "output/jsons", "output/exclusivity_plots", 3
+    );
 
+    std::cout << "Exclusivity-cut stage finished." << std::endl;
     return 0;
 }
