@@ -38,7 +38,7 @@
 #include "fitting_process.h"
 
 // Select dataset: 1 = RGC Su22, 2 = RGC Fa22, 3 = RGC Sp23
-constexpr int data_set = 5;
+constexpr int data_set = 2;
 
 struct DataSetConfig {
     std::string name;
