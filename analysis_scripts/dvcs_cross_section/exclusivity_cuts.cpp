@@ -11,6 +11,7 @@
 #include <TPaveText.h>
 #include <TROOT.h>
 #include <TH1.h>
+#include <TString.h>
 
 #include <algorithm>
 #include <cctype>
@@ -203,18 +204,18 @@ static void normalizeHist(TH1D* h) {
     if (integral > 0.0) h->Scale(1.0 / integral);
 }
 
-// -------------------- pretty x-axis labels (ASCII) --------------------
+// -------------------- pretty x-axis labels (ASCII TLatex) --------------------
 
 static std::string formatLabelName(const std::string& var, Channel ch) {
-    if (var == "Delta_phi")          return "Delta phi (rad)";
-    if (var == "theta_gamma_gamma")  return "theta gamma gamma (rad)";
-    if (var == "theta_pi0_pi0")      return "theta pi0 pi0 (rad)";
-    if (var == "pTmiss")             return "pTmiss (GeV)";
-    if (var == "xF")                 return "xF";
-    if (var == "Emiss2")             return "Emiss^2 (GeV^2)";
-    if (var == "Mx2")                return "Mx^2 (GeV^2)";
-    if (var == "Mx2_1")              return "Mx^2_1 (GeV^2)";
-    if (var == "Mx2_2")              return "Mx^2_2 (GeV^2)";
+    if (var == "Delta_phi")          return "#Delta#phi (rad)";
+    if (var == "theta_gamma_gamma")  return "#theta_{#gamma#gamma} (rad)";
+    if (var == "theta_pi0_pi0")      return "#theta_{#pi^{0}#pi^{0}} (rad)";
+    if (var == "pTmiss")             return "p_{T}^{miss} (GeV)";
+    if (var == "xF")                 return "x_{F}";
+    if (var == "Emiss2")             return "E_{miss}^{2} (GeV^{2})";
+    if (var == "Mx2")                return "M_{x}^{2} (GeV^{2})";
+    if (var == "Mx2_1")              return "M_{x1}^{2} (GeV^{2})";
+    if (var == "Mx2_2")              return "M_{x2}^{2} (GeV^{2})";
     return var;
 }
 
@@ -291,7 +292,7 @@ static void saveStagePlots(const FilledHists& H, const HistList& cfg, Channel ch
     // Canvas: grid of pads; add a global title; remove stat box.
     int n = static_cast<int>(cfg.size());
     int cols = 4, rows = (n + cols - 1) / cols;
-    TCanvas c("c", "", 2400, rows * 600);
+    TCanvas c("c", "", 2400, rows * 620); // a little taller
     c.Divide(cols, rows, 0.002, 0.002);
 
     auto isGaussianVar = [&](const std::string& v)->bool {
@@ -319,6 +320,10 @@ static void saveStagePlots(const FilledHists& H, const HistList& cfg, Channel ch
         TH1D* mh = H.mc.at(var);
 
         c.cd(pad++);
+        gPad->SetLeftMargin(0.16);   // extra left margin to avoid clipping
+        gPad->SetBottomMargin(0.13); // a bit more bottom space for titles
+        gPad->SetTickx(1); gPad->SetTicky(1);
+
         if (dh) { dh->SetLineColor(kBlue); dh->SetMarkerColor(kBlue); dh->SetLineWidth(2); dh->SetStats(0); }
         if (mh) { mh->SetLineColor(kRed);  mh->SetMarkerColor(kRed);  mh->SetLineWidth(2); mh->SetStats(0); }
 
@@ -327,10 +332,14 @@ static void saveStagePlots(const FilledHists& H, const HistList& cfg, Channel ch
         if (dh) {
             dh->GetYaxis()->SetTitle("Normalized counts");
             dh->GetXaxis()->SetTitle(formatLabelName(var, ch).c_str());
+            dh->GetXaxis()->SetTitleOffset(1.1);
+            dh->GetYaxis()->SetTitleOffset(1.5);
         }
         if (mh && !dh) {
             mh->GetYaxis()->SetTitle("Normalized counts");
             mh->GetXaxis()->SetTitle(formatLabelName(var, ch).c_str());
+            mh->GetXaxis()->SetTitleOffset(1.1);
+            mh->GetYaxis()->SetTitleOffset(1.5);
         }
 
         // Determine max for nice scaling
@@ -372,11 +381,17 @@ static void saveStagePlots(const FilledHists& H, const HistList& cfg, Channel ch
         }
 
         // Legend: Data and MC with mu/sigma on the same line
-        TLegend leg(0.50, 0.74, 0.90, 0.90);
-        leg.SetFillStyle(0); leg.SetBorderSize(0); leg.SetTextFont(42); leg.SetTextSize(0.03);
-        if (dh) leg.AddEntry(dh,  (std::string("Data (mu=") + Form("%.3f", mu_d) + ", sigma=" + Form("%.3f", sg_d) + ")").c_str(), "lep");
-        if (mh) leg.AddEntry(mh,  (std::string("MC (mu=")   + Form("%.3f", mu_m) + ", sigma=" + Form("%.3f", sg_m) + ")").c_str(), "lep");
-        leg.Draw();
+        auto dataLine = TString::Format("Data (mu=%.3f, sigma=%.3f)", mu_d, sg_d);
+        auto mcLine   = TString::Format("MC (mu=%.3f, sigma=%.3f)",   mu_m, sg_m);
+
+        TLegend* leg = new TLegend(0.50, 0.74, 0.90, 0.90);
+        leg->SetFillStyle(0);
+        leg->SetBorderSize(0);
+        leg->SetTextFont(42);
+        leg->SetTextSize(0.030);
+        if (dh) leg->AddEntry(dh, dataLine, "lep");
+        if (mh) leg->AddEntry(mh, mcLine,   "lep");
+        leg->Draw();
     }
 
     std::string fname = outPlotDir + "/" + prettyPeriod + "_" + topoToKey(topo) + "_" + suffix + "_comparison.png";
