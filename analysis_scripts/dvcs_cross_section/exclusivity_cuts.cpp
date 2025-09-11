@@ -7,6 +7,8 @@
 #include <TH1D.h>
 #include <TF1.h>
 #include <TLegend.h>
+#include <TROOT.h>
+#include <TH1.h>
 
 #include <algorithm>
 #include <cctype>
@@ -35,7 +37,6 @@ static std::string topoToKey(Topology t) {
 }
 
 static std::string periodCode(Channel ch, const std::string& runTag) {
-    // Example: DVCS_Sp18_inb, eppi0_Fa18_out, etc.
     std::string prefix = (ch == Channel::DVCS) ? "DVCS_" : "eppi0_";
     std::string nice = runTag;
     if (!nice.empty()) nice[0] = std::toupper(nice[0]);
@@ -74,6 +75,11 @@ static std::vector<StagePlan> buildStages(Channel ch) {
 }
 
 // -------------------- topology and global kinematic cuts --------------------
+//
+// Global kinematic cuts (from kin_cuts.py):
+// 1) open_angle_ep2 > 5.0 deg
+// 2) (-t1) <= 1.0
+// 3) pTmiss <= 0.20
 
 static bool passesTopology(int detector1, int detector2, Topology topo) {
     if (topo == Topology::FD_FD) return (detector1 == 1 && detector2 == 1);
@@ -82,14 +88,10 @@ static bool passesTopology(int detector1, int detector2, Topology topo) {
     return false;
 }
 
-// Global kinematic cuts (your kin_cuts.py):
-// 1) open_angle_ep2 > 5.0 deg
-// 2) (-t) <= 1.0  (i.e., if (-t) > 1.0 -> reject)
-// 3) pTmiss <= 0.20
-static bool applyKinematicCuts(double t_value, double open_angle_ep2_value, double pTmiss_value) {
-    if (open_angle_ep2_value <= 5.0) return false;
-    if ((-t_value) > 1.0) return false;
-    if (pTmiss_value > 0.20) return false;
+static bool applyKinematicCuts(double t1, double open_angle_ep2, double pTmiss) {
+    if (open_angle_ep2 <= 5.0) return false;
+    if ((-t1) > 1.0) return false;
+    if (pTmiss > 0.20) return false;
     return true;
 }
 
@@ -107,28 +109,39 @@ static bool passes3SigmaCuts(const std::map<std::string, Stats>& cuts,
     return true;
 }
 
-// -------------------- branch binder --------------------
+// -------------------- branch binder (exact names) --------------------
+//
+// We bind exactly these branch names:
+//   detector1 (int), detector2 (int)
+//   t1, open_angle_ep2, Emiss2, Mx2, Mx2_1, Mx2_2, pTmiss, xF, Delta_phi,
+//   theta_gamma_gamma, theta_pi0_pi0
+//
+// Note: Using double receivers is typical; if your leaves are Float_t the best
+// practice is to bind to float. If you see type-mismatch warnings, tell me and
+// I will switch these to float. For now, double is usually OK in CLAS12 trees.
 
 struct BranchBinder {
-    // topology IDs
     int detector1 = 0, detector2 = 0; bool has_detector1 = false, has_detector2 = false;
 
-    // variables (names match your Python attributes)
-    double t1 = 0.0, open_angle_ep2 = 0.0, Emiss2 = 0.0;
-    double Mx2 = 0.0, Mx2_1 = 0.0, Mx2_2 = 0.0;
-    double pTmiss = 0.0, xF = 0.0, Delta_phi = 0.0;
-    double theta_gamma_gamma = 0.0, theta_pi0_pi0 = 0.0;
-
-    bool has_t1=false, has_open_angle_ep2=false, has_Emiss2=false;
-    bool has_Mx2=false, has_Mx2_1=false, has_Mx2_2=false;
-    bool has_pTmiss=false, has_xF=false, has_Delta_phi=false;
-    bool has_theta_gamma_gamma=false, has_theta_pi0_pi0=false;
+    double t1 = 0.0;                bool has_t1 = false;
+    double open_angle_ep2 = 0.0;    bool has_open_angle_ep2 = false;
+    double Emiss2 = 0.0;            bool has_Emiss2 = false;
+    double Mx2 = 0.0;               bool has_Mx2 = false;
+    double Mx2_1 = 0.0;             bool has_Mx2_1 = false;
+    double Mx2_2 = 0.0;             bool has_Mx2_2 = false;
+    double pTmiss = 0.0;            bool has_pTmiss = false;
+    double xF = 0.0;                bool has_xF = false;
+    double Delta_phi = 0.0;         bool has_Delta_phi = false;
+    double theta_gamma_gamma = 0.0; bool has_theta_gamma_gamma = false;
+    double theta_pi0_pi0 = 0.0;     bool has_theta_pi0_pi0 = false;
 
     void bind(TTree* t) {
         auto bindI = [&](const char* n, int* a, bool& f){ if (t->GetBranch(n)) { t->SetBranchAddress(n, a); f = true; } };
         auto bindD = [&](const char* n, double* a, bool& f){ if (t->GetBranch(n)) { t->SetBranchAddress(n, a); f = true; } };
+
         bindI("detector1", &detector1, has_detector1);
         bindI("detector2", &detector2, has_detector2);
+
         bindD("t1", &t1, has_t1);
         bindD("open_angle_ep2", &open_angle_ep2, has_open_angle_ep2);
         bindD("Emiss2", &Emiss2, has_Emiss2);
@@ -142,7 +155,6 @@ struct BranchBinder {
         bindD("theta_pi0_pi0", &theta_pi0_pi0, has_theta_pi0_pi0);
     }
 
-    // Collect values present for histogramming and 3sigma checks
     std::map<std::string, double> valuesMap(Channel ch) const {
         std::map<std::string, double> m;
         if (has_Delta_phi) m["Delta_phi"] = Delta_phi;
@@ -191,23 +203,21 @@ static void normalizeHist(TH1D* h) {
 
 // -------------------- stage fill --------------------
 
-struct FilledHists {
-    std::map<std::string, TH1D*> data;
-    std::map<std::string, TH1D*> mc;
-};
+struct FilledHists { std::map<std::string, TH1D*> data; std::map<std::string, TH1D*> mc; };
 
 static FilledHists fillStageHists(
     TTree* dataTree, TTree* mcTree, Topology topo, Channel ch,
     const CutDict& cumulative, const HistList& cfg, int stage_index)
 {
     FilledHists out;
-    // Create histograms
+
+    // Create hists (detached from any directory to avoid name collisions)
     for (const auto& kv : cfg) {
         const std::string& var = kv.first; const HistCfg& hc = kv.second;
-        out.data[var] = new TH1D(("data_" + var + "_stage" + std::to_string(stage_index)).c_str(),
-                                 "", hc.nbins, hc.xlow, hc.xhigh);
-        out.mc[var]   = new TH1D(("mc_"   + var + "_stage" + std::to_string(stage_index)).c_str(),
-                                 "", hc.nbins, hc.xlow, hc.xhigh);
+        auto* dh = new TH1D(("data_" + var + "_stage" + std::to_string(stage_index)).c_str(), "", hc.nbins, hc.xlow, hc.xhigh);
+        auto* mh = new TH1D(("mc_"   + var + "_stage" + std::to_string(stage_index)).c_str(), "", hc.nbins, hc.xlow, hc.xhigh);
+        dh->SetDirectory(nullptr); mh->SetDirectory(nullptr);
+        out.data[var] = dh; out.mc[var] = mh;
     }
 
     // Data loop
@@ -218,7 +228,6 @@ static FilledHists fillStageHists(
             dataTree->GetEntry(i);
             if (!(b.has_detector1 && b.has_detector2)) continue;
             if (!passesTopology(b.detector1, b.detector2, topo)) continue;
-            // global kinematic cuts (uses only t1, open_angle_ep2, pTmiss)
             if (!(b.has_t1 && b.has_open_angle_ep2 && b.has_pTmiss)) continue;
             if (!applyKinematicCuts(b.t1, b.open_angle_ep2, b.pTmiss)) continue;
 
@@ -290,7 +299,6 @@ static void saveStagePlots(const FilledHists& H, const HistList& cfg, Channel ch
         if (dh) dh->Draw("E1");
         if (mh) mh->Draw(dh ? "E1 SAME" : "E1");
 
-        // Optional left-side Gaussian overlays
         if (isGaussianVar(var)) {
             if (dh && dh->GetEntries() > 0) {
                 auto ms = fitGaussianLeftSide(dh);
@@ -410,7 +418,7 @@ static void runExclusivityCutsSingle(const std::string& runTag, Channel ch,
     std::cout << "[Done] Exclusivity cuts for " << pretty << std::endl;
 }
 
-// -------------------- dispatcher (up to 3 threads) --------------------
+// -------------------- dispatcher (kept single-threaded) --------------------
 
 void runAllExclusivityCuts(
     const std::map<std::string, TTree*>& dvcsDataTrees,
@@ -421,6 +429,10 @@ void runAllExclusivityCuts(
     const std::string& outPlotDir,
     int maxThreads)
 {
+    // Prevent ROOT from auto-registering histograms in global directories
+    // (avoids name collisions and "Replacing existing TH1" warnings).
+    TH1::AddDirectory(kFALSE);
+
     const std::vector<std::string> runTags = {
         "sp18_inb", "sp18_out", "fa18_inb_supp", "fa18_inb", "fa18_out", "sp19_inb"
     };
@@ -447,19 +459,11 @@ void runAllExclusivityCuts(
 
     if (jobs.empty()) { std::cout << "[Info] No exclusivity jobs found.\n"; return; }
 
-    if (maxThreads < 1) maxThreads = 1;
-    if (maxThreads > 3) maxThreads = 3;
-
-    std::vector<std::thread> pool;
-    pool.reserve(static_cast<size_t>(maxThreads));
-
+    // Force single-threaded for now to avoid ROOT TTree/TFile concurrency hazards.
+    (void)maxThreads; // unused
     for (const auto& job : jobs) {
-        if (static_cast<int>(pool.size()) >= maxThreads) { pool.front().join(); pool.erase(pool.begin()); }
-        pool.emplace_back([&, job]() {
-            runExclusivityCutsSingle(job.runTag, job.ch, job.data, job.mc, outJsonDir, outPlotDir);
-        });
+        runExclusivityCutsSingle(job.runTag, job.ch, job.data, job.mc, outJsonDir, outPlotDir);
     }
-    for (auto& th : pool) th.join();
 
     std::cout << "[All done] Exclusivity cuts ran for " << jobs.size() << " job(s)." << std::endl;
 }
