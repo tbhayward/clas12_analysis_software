@@ -10,7 +10,8 @@ namespace fs = std::filesystem;
 void makeOutputDirs() {
     struct Category { std::string base; std::vector<std::string> subs; };
     std::vector<Category> cats = {
-        {"output/jsons", {}},
+        // jsons now has a subdir for the per-period/per-topology JSONs
+        {"output/jsons", {"individual_cuts"}},
         {"output/exclusivity_plots", {}},
         {"output/mean_kinematic_plots", {}},
         {"output/contamination_plots",
@@ -24,6 +25,7 @@ void makeOutputDirs() {
 
     for (const auto& cat : cats) {
         std::vector<std::string> created;
+
         // create base directory
         if (!fs::exists(cat.base)) {
             fs::create_directories(cat.base);
