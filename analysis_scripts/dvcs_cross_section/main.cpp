@@ -1,8 +1,12 @@
 #include "make_dirs.h"
 #include "load_trees.h"
 #include "exclusivity_cuts.h"
+#include "load_binning_scheme.h"
+
 #include <iostream>
 #include <map>
+#include <string>
+#include <vector>
 
 int main(int argc, char* argv[]) {
     std::cout << "Starting DVCS analysis..." << std::endl;
@@ -10,6 +14,11 @@ int main(int argc, char* argv[]) {
     // Create necessary output directories
     makeOutputDirs();
     std::cout << "Output directories ready." << std::endl;
+
+    // --- Load binning scheme ---
+    const std::string csv_file_path = "imports/integrated_bin_v2.csv";
+    auto binning_scheme = load_binning_scheme(csv_file_path);
+    std::cout << "Loaded binning scheme: " << binning_scheme.size() << " bins" << std::endl;
 
     // Containers for different tree categories
     std::map<std::string, TTree*> dataTrees;        // DVCS data

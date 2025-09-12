@@ -4,7 +4,7 @@ CXXFLAGS = `root-config --cflags` -O2 -std=c++17 -pthread
 LDFLAGS = `root-config --libs` -pthread
 
 # Source files
-SRC = main.cpp load_trees.cpp make_dirs.cpp exclusivity_cuts.cpp
+SRC = main.cpp load_trees.cpp make_dirs.cpp exclusivity_cuts.cpp load_binning_scheme.cpp
 OBJ = $(SRC:.cpp=.o)
 TARGET = dvcs_analysis
 
