@@ -1,8 +1,8 @@
 // exclusivity_cuts.h
-// Multi-stage exclusivity cut extraction with global kinematic cuts.
+// Multi-stage exclusivity cut extraction with global kinematic cuts and plotting.
 // - Global cuts: open_angle_ep2 > 5 deg, (-t1) <= 1.0, pTmiss <= 0.20
 // - Stagewise mu/sigma extraction (left-side Gaussian for theta_* and pTmiss)
-// - JSON outputs per topology, stage comparison plots
+// - JSON outputs per topology, plus a combined JSON for all topologies and periods
 // - Threading set to 1 for robust ROOT I/O (we can revisit with RDataFrame)
 //
 // ASCII-only.

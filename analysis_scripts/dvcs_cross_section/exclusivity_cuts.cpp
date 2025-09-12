@@ -115,13 +115,13 @@ static bool passes3SigmaCuts(const std::map<std::string, Stats>& cuts,
 
 // -------------------- branch binder (exact names) --------------------
 //
-// We bind exactly these branch names:
+// Bound branch names:
 //   detector1 (int), detector2 (int)
 //   t1, open_angle_ep2, Emiss2, Mx2, Mx2_1, Mx2_2, pTmiss, xF, Delta_phi,
 //   theta_gamma_gamma, theta_pi0_pi0
 //
-// If you later see type mismatch warnings (float vs double), tell me
-// and I will switch the receivers to match the leaf types.
+// If you later see type mismatch warnings (float vs double), tell me and I will
+// switch the receivers to match the leaf types.
 
 struct BranchBinder {
     int detector1 = 0, detector2 = 0; bool has_detector1 = false, has_detector2 = false;
@@ -380,13 +380,14 @@ static void saveStagePlots(const FilledHists& H, const HistList& cfg, Channel ch
             mu_m = mh ? mh->GetMean() : 0.0; sg_m = mh ? mh->GetStdDev() : 0.0;
         }
 
-        // Legend: Data and MC with mu/sigma on the same line
+        // Legend: boxed, near top-right but inside pad
         auto dataLine = TString::Format("Data (mu=%.3f, sigma=%.3f)", mu_d, sg_d);
         auto mcLine   = TString::Format("MC (mu=%.3f, sigma=%.3f)",   mu_m, sg_m);
 
-        TLegend* leg = new TLegend(0.50, 0.74, 0.90, 0.90);
-        leg->SetFillStyle(0);
-        leg->SetBorderSize(0);
+        TLegend* leg = new TLegend(0.62, 0.76, 0.98, 0.94);
+        leg->SetFillStyle(0);   // transparent fill
+        leg->SetBorderSize(1);  // boxed frame
+        leg->SetLineColor(kBlack);
         leg->SetTextFont(42);
         leg->SetTextSize(0.030);
         if (dh) leg->AddEntry(dh, dataLine, "lep");
@@ -446,9 +447,9 @@ static void writeCutDictJson(std::ostream& os, const CutDict& cd) {
     os << "}}";
 }
 
-static void saveFinalCutsJson(const std::string& periodCode, Topology topo,
+static void saveFinalCutsJson(const std::string& periodCodeStr, Topology topo,
                               const std::string& outJsonDir, const CutDict& cuts) {
-    std::string path = outJsonDir + "/cuts_" + periodCode + "_" + topoToKey(topo) + "_final.json";
+    std::string path = outJsonDir + "/cuts_" + periodCodeStr + "_" + topoToKey(topo) + "_final.json";
     std::ofstream ofs(path);
     if (!ofs) { std::cerr << "[Error] Cannot open JSON: " << path << std::endl; return; }
     writeCutDictJson(ofs, cuts);
@@ -456,12 +457,33 @@ static void saveFinalCutsJson(const std::string& periodCode, Topology topo,
     std::cout << "[Wrote JSON] " << path << std::endl;
 }
 
+static void writeCombinedJson(const std::string& outJsonDir,
+                              const std::map<std::string, CutDict>& combined)
+{
+    std::string path = outJsonDir + "/combined_cuts.json";
+    std::ofstream ofs(path);
+    if (!ofs) { std::cerr << "[Error] Cannot open combined JSON: " << path << std::endl; return; }
+
+    ofs << "{";
+    bool firstKey = true;
+    for (const auto& kv : combined) {
+        if (!firstKey) ofs << ",";
+        firstKey = false;
+        ofs << "\n  \"" << kv.first << "\": ";
+        writeCutDictJson(ofs, kv.second);
+    }
+    ofs << "\n}\n";
+    std::cout << "[Wrote combined JSON] " << path << std::endl;
+}
+
 // -------------------- per-period driver --------------------
+// Collects results into 'combinedOut' for final aggregation.
 
 static void runExclusivityCutsSingle(const std::string& runTag, Channel ch,
                                      TTree* dataTree, TTree* mcTree,
                                      const std::string& outJsonDir,
-                                     const std::string& outPlotDir)
+                                     const std::string& outPlotDir,
+                                     std::map<std::string, CutDict>& combinedOut)
 {
     if (!dataTree || !mcTree) {
         std::cerr << "[Skip] Missing data or MC for " << channelToStr(ch)
@@ -483,7 +505,12 @@ static void runExclusivityCutsSingle(const std::string& runTag, Channel ch,
             for (auto& kv : H.data) delete kv.second;
             for (auto& kv : H.mc)   delete kv.second;
         }
+        // Save individual json
         saveFinalCutsJson(pretty, topo, outJsonDir, cumulative);
+
+        // Add into combined structure
+        std::string combinedKey = pretty + "_" + topoToKey(topo);
+        combinedOut[combinedKey] = cumulative;
     }
 
     std::cout << "[Done] Exclusivity cuts for " << pretty << std::endl;
@@ -531,9 +558,16 @@ void runAllExclusivityCuts(
     if (jobs.empty()) { std::cout << "[Info] No exclusivity jobs found.\n"; return; }
 
     (void)maxThreads; // unused, single-threaded run
+
+    // Collect all results to write one combined JSON at the end
+    std::map<std::string, CutDict> combined;
+
     for (const auto& job : jobs) {
-        runExclusivityCutsSingle(job.runTag, job.ch, job.data, job.mc, outJsonDir, outPlotDir);
+        runExclusivityCutsSingle(job.runTag, job.ch, job.data, job.mc, outJsonDir, outPlotDir, combined);
     }
+
+    // Write combined
+    writeCombinedJson(outJsonDir, combined);
 
     std::cout << "[All done] Exclusivity cuts ran for " << jobs.size() << " job(s)." << std::endl;
 }
