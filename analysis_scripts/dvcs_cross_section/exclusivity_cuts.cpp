@@ -376,7 +376,7 @@ static void saveStagePlots(const FilledHists& H, const HistList& cfg, Channel ch
         auto dataLine = TString::Format("Data (mu=%.3f, sigma=%.3f)", mu_d, sg_d);
         auto mcLine   = TString::Format("MC (mu=%.3f, sigma=%.3f)",   mu_m, sg_m);
 
-        TLegend* leg = new TLegend(0.50, 0.68, 0.98, 0.88);
+        TLegend* leg = new TLegend(0.48, 0.68, 0.96, 0.90);
         leg->SetFillStyle(1001);
         leg->SetFillColor(kWhite);
         leg->SetBorderSize(1);
