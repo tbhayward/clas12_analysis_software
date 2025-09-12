@@ -314,9 +314,9 @@ static void saveStagePlots(const FilledHists& H, const HistList& cfg, Channel ch
         TH1D* mh = H.mc.at(var);
 
         c.cd(pad++);
-        gPad->SetLeftMargin(0.21);    // more left space to separate Y title
+        gPad->SetLeftMargin(0.21);
         gPad->SetBottomMargin(0.13);
-        gPad->SetRightMargin(0.06);   // a bit of right padding so legend fits
+        gPad->SetRightMargin(0.06);
         gPad->SetTopMargin(0.08);
         gPad->SetTickx(1); gPad->SetTicky(1);
 
@@ -349,7 +349,7 @@ static void saveStagePlots(const FilledHists& H, const HistList& cfg, Channel ch
         if (dh) dh->Draw("E1");
         if (mh) mh->Draw(dh ? "E1 SAME" : "E1");
 
-        // Compute mu/sigma for legend and optionally draw fits
+        // Compute mu/sigma and draw fits for gaussian-like variables
         double mu_d = 0.0, sg_d = 0.0, mu_m = 0.0, sg_m = 0.0;
 
         if (isGaussianVar(var)) {
@@ -372,7 +372,7 @@ static void saveStagePlots(const FilledHists& H, const HistList& cfg, Channel ch
             mu_m = mh ? mh->GetMean() : 0.0; sg_m = mh ? mh->GetStdDev() : 0.0;
         }
 
-        // Legend: boxed, solid white; bottom-left moved left, top-right flush with pad border
+        // Legend
         auto dataLine = TString::Format("Data (#mu=%.3f, #sigma=%.3f)", mu_d, sg_d);
         auto mcLine   = TString::Format("MC (#mu=%.3f, #sigma=%.3f)",   mu_m, sg_m);
 
@@ -443,6 +443,7 @@ static void writeCutDictJson(std::ostream& os, const CutDict& cd) {
 
 static void saveFinalCutsJson(const std::string& periodCodeStr, Topology topo,
                               const std::string& outJsonDir, const CutDict& cuts) {
+    // Writes a single period/topology JSON to the provided directory
     std::string path = outJsonDir + "/cuts_" + periodCodeStr + "_" + topoToKey(topo) + "_final.json";
     std::ofstream ofs(path);
     if (!ofs) { std::cerr << "[Error] Cannot open JSON: " << path << std::endl; return; }
@@ -454,6 +455,7 @@ static void saveFinalCutsJson(const std::string& periodCodeStr, Topology topo,
 static void writeCombinedJson(const std::string& outJsonDir,
                               const std::map<std::string, CutDict>& combined)
 {
+    // Combined file stays directly in output/jsons
     std::string path = outJsonDir + "/combined_cuts.json";
     std::ofstream ofs(path);
     if (!ofs) { std::cerr << "[Error] Cannot open combined JSON: " << path << std::endl; return; }
@@ -474,7 +476,7 @@ static void writeCombinedJson(const std::string& outJsonDir,
 
 static void runExclusivityCutsSingle(const std::string& runTag, Channel ch,
                                      TTree* dataTree, TTree* mcTree,
-                                     const std::string& outJsonDir,
+                                     const std::string& outJsonDir,   // base json dir ("output/jsons")
                                      const std::string& outPlotDir,
                                      std::map<std::string, CutDict>& combinedOut)
 {
@@ -483,6 +485,9 @@ static void runExclusivityCutsSingle(const std::string& runTag, Channel ch,
                   << " " << runTag << std::endl;
         return;
     }
+
+    // Individual JSONs go under a subdir
+    const std::string outJsonIndividualDir = outJsonDir + "/individual_cuts";
 
     std::string pretty = periodCode(ch, runTag);
     auto stages = buildStages(ch);
@@ -498,7 +503,11 @@ static void runExclusivityCutsSingle(const std::string& runTag, Channel ch,
             for (auto& kv : H.data) delete kv.second;
             for (auto& kv : H.mc)   delete kv.second;
         }
-        saveFinalCutsJson(pretty, topo, outJsonDir, cumulative);
+
+        // Write the **individual** JSON into output/jsons/individual_cuts/
+        saveFinalCutsJson(pretty, topo, outJsonIndividualDir, cumulative);
+
+        // Stash for the combined file (which will be written at the top level)
         std::string combinedKey = pretty + "_" + topoToKey(topo);
         combinedOut[combinedKey] = cumulative;
     }
@@ -513,7 +522,7 @@ void runAllExclusivityCuts(
     const std::map<std::string, TTree*>& dvcsRecMcTrees,
     const std::map<std::string, TTree*>& eppi0DataTrees,
     const std::map<std::string, TTree*>& eppi0RecMcTrees,
-    const std::string& outJsonDir,
+    const std::string& outJsonDir,  // base json dir ("output/jsons")
     const std::string& outPlotDir,
     int maxThreads)
 {
@@ -552,6 +561,8 @@ void runAllExclusivityCuts(
     for (const auto& job : jobs) {
         runExclusivityCutsSingle(job.runTag, job.ch, job.data, job.mc, outJsonDir, outPlotDir, combined);
     }
+
+    // Write the combined file at the top level (output/jsons/combined_cuts.json)
     writeCombinedJson(outJsonDir, combined);
 
     std::cout << "[All done] Exclusivity cuts ran for " << jobs.size() << " job(s)." << std::endl;
