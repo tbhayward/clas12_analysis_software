@@ -114,14 +114,6 @@ static bool passes3SigmaCuts(const std::map<std::string, Stats>& cuts,
 }
 
 // -------------------- branch binder (exact names) --------------------
-//
-// Bound branch names:
-//   detector1 (int), detector2 (int)
-//   t1, open_angle_ep2, Emiss2, Mx2, Mx2_1, Mx2_2, pTmiss, xF, Delta_phi,
-//   theta_gamma_gamma, theta_pi0_pi0
-//
-// If you later see type mismatch warnings (float vs double), tell me and I will
-// switch the receivers to match the leaf types.
 
 struct BranchBinder {
     int detector1 = 0, detector2 = 0; bool has_detector1 = false, has_detector2 = false;
@@ -235,6 +227,9 @@ static FilledHists fillStageHists(
         auto* dh = new TH1D(("data_" + var + "_stage" + std::to_string(stage_index)).c_str(), "", hc.nbins, hc.xlow, hc.xhigh);
         auto* mh = new TH1D(("mc_"   + var + "_stage" + std::to_string(stage_index)).c_str(), "", hc.nbins, hc.xlow, hc.xhigh);
         dh->SetDirectory(nullptr); mh->SetDirectory(nullptr);
+        // modest marker sizes to keep legend tidy
+        dh->SetMarkerStyle(20); dh->SetMarkerSize(0.8);
+        mh->SetMarkerStyle(21); mh->SetMarkerSize(0.8);
         out.data[var] = dh; out.mc[var] = mh;
     }
 
@@ -292,7 +287,7 @@ static void saveStagePlots(const FilledHists& H, const HistList& cfg, Channel ch
     // Canvas: grid of pads; add a global title; remove stat box.
     int n = static_cast<int>(cfg.size());
     int cols = 4, rows = (n + cols - 1) / cols;
-    TCanvas c("c", "", 2400, rows * 620); // a little taller
+    TCanvas c("c", "", 2400, rows * 640);
     c.Divide(cols, rows, 0.002, 0.002);
 
     auto isGaussianVar = [&](const std::string& v)->bool {
@@ -320,8 +315,10 @@ static void saveStagePlots(const FilledHists& H, const HistList& cfg, Channel ch
         TH1D* mh = H.mc.at(var);
 
         c.cd(pad++);
-        gPad->SetLeftMargin(0.16);   // extra left margin to avoid clipping
-        gPad->SetBottomMargin(0.13); // a bit more bottom space for titles
+        gPad->SetLeftMargin(0.21);    // more left space to separate Y title
+        gPad->SetBottomMargin(0.13);
+        gPad->SetRightMargin(0.06);   // a bit of right padding so legend fits
+        gPad->SetTopMargin(0.08);
         gPad->SetTickx(1); gPad->SetTicky(1);
 
         if (dh) { dh->SetLineColor(kBlue); dh->SetMarkerColor(kBlue); dh->SetLineWidth(2); dh->SetStats(0); }
@@ -332,22 +329,22 @@ static void saveStagePlots(const FilledHists& H, const HistList& cfg, Channel ch
         if (dh) {
             dh->GetYaxis()->SetTitle("Normalized counts");
             dh->GetXaxis()->SetTitle(formatLabelName(var, ch).c_str());
-            dh->GetXaxis()->SetTitleOffset(1.1);
-            dh->GetYaxis()->SetTitleOffset(1.5);
+            dh->GetXaxis()->SetTitleOffset(1.10);
+            dh->GetYaxis()->SetTitleOffset(2.20); // push away from axis
         }
         if (mh && !dh) {
             mh->GetYaxis()->SetTitle("Normalized counts");
             mh->GetXaxis()->SetTitle(formatLabelName(var, ch).c_str());
-            mh->GetXaxis()->SetTitleOffset(1.1);
-            mh->GetYaxis()->SetTitleOffset(1.5);
+            mh->GetXaxis()->SetTitleOffset(1.10);
+            mh->GetYaxis()->SetTitleOffset(2.20);
         }
 
         // Determine max for nice scaling
         double maxv = 0.0;
         if (dh) maxv = std::max(maxv, dh->GetMaximum());
         if (mh) maxv = std::max(maxv, mh->GetMaximum());
-        if (dh) dh->SetMaximum(maxv * 1.2);
-        if (!dh && mh) mh->SetMaximum(maxv * 1.2);
+        if (dh) dh->SetMaximum(maxv * 1.25);
+        if (!dh && mh) mh->SetMaximum(maxv * 1.25);
 
         // Draw histograms
         if (dh) dh->Draw("E1");
@@ -363,33 +360,31 @@ static void saveStagePlots(const FilledHists& H, const HistList& cfg, Channel ch
                 TF1 f(("fdata_" + var).c_str(), "gaus(0)", dh->GetXaxis()->GetXmin(), dh->GetXaxis()->GetXmax());
                 f.SetParameters(dh->GetMaximum(), mu_d, sg_d);
                 f.SetLineColor(kBlue + 1); f.SetLineStyle(2); f.SetLineWidth(2); f.Draw("SAME");
-            } else {
-                mu_d = dh ? dh->GetMean() : 0.0; sg_d = dh ? dh->GetStdDev() : 0.0;
-            }
+            } else { mu_d = dh ? dh->GetMean() : 0.0; sg_d = dh ? dh->GetStdDev() : 0.0; }
             if (mh && mh->GetEntries() > 0) {
                 auto ms = fitGaussianLeftSide(mh);
                 mu_m = ms.first; sg_m = ms.second;
                 TF1 f(("fmc_" + var).c_str(), "gaus(0)", mh->GetXaxis()->GetXmin(), mh->GetXaxis()->GetXmax());
                 f.SetParameters(mh->GetMaximum(), mu_m, sg_m);
                 f.SetLineColor(kRed + 1); f.SetLineStyle(2); f.SetLineWidth(2); f.Draw("SAME");
-            } else {
-                mu_m = mh ? mh->GetMean() : 0.0; sg_m = mh ? mh->GetStdDev() : 0.0;
-            }
+            } else { mu_m = mh ? mh->GetMean() : 0.0; sg_m = mh ? mh->GetStdDev() : 0.0; }
         } else {
             mu_d = dh ? dh->GetMean() : 0.0; sg_d = dh ? dh->GetStdDev() : 0.0;
             mu_m = mh ? mh->GetMean() : 0.0; sg_m = mh ? mh->GetStdDev() : 0.0;
         }
 
-        // Legend: boxed, near top-right but inside pad
+        // Legend: boxed, solid white, placed comfortably inside pad upper-right
         auto dataLine = TString::Format("Data (mu=%.3f, sigma=%.3f)", mu_d, sg_d);
         auto mcLine   = TString::Format("MC (mu=%.3f, sigma=%.3f)",   mu_m, sg_m);
 
-        TLegend* leg = new TLegend(0.62, 0.76, 0.98, 0.94);
-        leg->SetFillStyle(0);   // transparent fill
-        leg->SetBorderSize(1);  // boxed frame
+        TLegend* leg = new TLegend(0.58, 0.68, 0.90, 0.88);
+        leg->SetFillStyle(1001);
+        leg->SetFillColor(kWhite);
+        leg->SetBorderSize(1);
         leg->SetLineColor(kBlack);
         leg->SetTextFont(42);
         leg->SetTextSize(0.030);
+        leg->SetMargin(0.12);  // spacing between marker and text
         if (dh) leg->AddEntry(dh, dataLine, "lep");
         if (mh) leg->AddEntry(mh, mcLine,   "lep");
         leg->Draw();
@@ -477,7 +472,6 @@ static void writeCombinedJson(const std::string& outJsonDir,
 }
 
 // -------------------- per-period driver --------------------
-// Collects results into 'combinedOut' for final aggregation.
 
 static void runExclusivityCutsSingle(const std::string& runTag, Channel ch,
                                      TTree* dataTree, TTree* mcTree,
@@ -505,10 +499,7 @@ static void runExclusivityCutsSingle(const std::string& runTag, Channel ch,
             for (auto& kv : H.data) delete kv.second;
             for (auto& kv : H.mc)   delete kv.second;
         }
-        // Save individual json
         saveFinalCutsJson(pretty, topo, outJsonDir, cumulative);
-
-        // Add into combined structure
         std::string combinedKey = pretty + "_" + topoToKey(topo);
         combinedOut[combinedKey] = cumulative;
     }
@@ -527,7 +518,6 @@ void runAllExclusivityCuts(
     const std::string& outPlotDir,
     int maxThreads)
 {
-    // Avoid ROOT global dir ownership and hide stat boxes
     TH1::AddDirectory(kFALSE);
     gStyle->SetOptStat(0);
 
@@ -559,14 +549,10 @@ void runAllExclusivityCuts(
 
     (void)maxThreads; // unused, single-threaded run
 
-    // Collect all results to write one combined JSON at the end
     std::map<std::string, CutDict> combined;
-
     for (const auto& job : jobs) {
         runExclusivityCutsSingle(job.runTag, job.ch, job.data, job.mc, outJsonDir, outPlotDir, combined);
     }
-
-    // Write combined
     writeCombinedJson(outJsonDir, combined);
 
     std::cout << "[All done] Exclusivity cuts ran for " << jobs.size() << " job(s)." << std::endl;
