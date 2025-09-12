@@ -227,7 +227,6 @@ static FilledHists fillStageHists(
         auto* dh = new TH1D(("data_" + var + "_stage" + std::to_string(stage_index)).c_str(), "", hc.nbins, hc.xlow, hc.xhigh);
         auto* mh = new TH1D(("mc_"   + var + "_stage" + std::to_string(stage_index)).c_str(), "", hc.nbins, hc.xlow, hc.xhigh);
         dh->SetDirectory(nullptr); mh->SetDirectory(nullptr);
-        // modest marker sizes to keep legend tidy
         dh->SetMarkerStyle(20); dh->SetMarkerSize(0.8);
         mh->SetMarkerStyle(21); mh->SetMarkerSize(0.8);
         out.data[var] = dh; out.mc[var] = mh;
@@ -330,7 +329,7 @@ static void saveStagePlots(const FilledHists& H, const HistList& cfg, Channel ch
             dh->GetYaxis()->SetTitle("Normalized counts");
             dh->GetXaxis()->SetTitle(formatLabelName(var, ch).c_str());
             dh->GetXaxis()->SetTitleOffset(1.10);
-            dh->GetYaxis()->SetTitleOffset(2.20); // push away from axis
+            dh->GetYaxis()->SetTitleOffset(2.20);
         }
         if (mh && !dh) {
             mh->GetYaxis()->SetTitle("Normalized counts");
@@ -373,18 +372,18 @@ static void saveStagePlots(const FilledHists& H, const HistList& cfg, Channel ch
             mu_m = mh ? mh->GetMean() : 0.0; sg_m = mh ? mh->GetStdDev() : 0.0;
         }
 
-        // Legend: boxed, solid white, placed comfortably inside pad upper-right
+        // Legend: boxed, solid white; bottom-left moved left, top-right flush with pad border
         auto dataLine = TString::Format("Data (mu=%.3f, sigma=%.3f)", mu_d, sg_d);
         auto mcLine   = TString::Format("MC (mu=%.3f, sigma=%.3f)",   mu_m, sg_m);
 
-        TLegend* leg = new TLegend(0.58, 0.68, 0.90, 0.88);
+        TLegend* leg = new TLegend(0.50, 0.68, 0.98, 0.88);
         leg->SetFillStyle(1001);
         leg->SetFillColor(kWhite);
         leg->SetBorderSize(1);
         leg->SetLineColor(kBlack);
         leg->SetTextFont(42);
         leg->SetTextSize(0.030);
-        leg->SetMargin(0.12);  // spacing between marker and text
+        leg->SetMargin(0.12);
         if (dh) leg->AddEntry(dh, dataLine, "lep");
         if (mh) leg->AddEntry(mh, mcLine,   "lep");
         leg->Draw();
