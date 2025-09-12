@@ -2,6 +2,7 @@
 #include "load_trees.h"
 #include "exclusivity_cuts.h"
 #include "load_binning_scheme.h"
+#include "bin_means.h"
 
 #include <iostream>
 #include <map>
@@ -37,7 +38,24 @@ int main(int argc, char* argv[]) {
         dataTrees, recMcTrees, eppi0DataTrees, eppi0RecMcTrees,
         "output/jsons", "output/exclusivity_plots", 1
     );
-
     std::cout << "Exclusivity-cut stage finished." << std::endl;
+
+    // ---- GLOBAL bin-averaged kinematics over periods/topologies ----
+    std::vector<std::string> dvcs_periods = {
+        "DVCS_Fa18_inb",
+        "DVCS_Fa18_out",
+        "DVCS_Sp19_inb",
+        "DVCS_Sp18_out",
+        "DVCS_Sp18_inb",          // if you want it; keep/remove as needed
+        "DVCS_Fa18_inb_supp"      // supplemental (a.k.a. Fa18 Inb Supplemental)
+    };
+    std::vector<std::string> topologies = {"(FD,FD)", "(CD,FD)", "(CD,FT)"};
+    std::string analysis_type = "dvcs";
+    std::string out_json = "output/jsons/bin_means_global.json";
+
+    calculate_bin_means(dvcs_periods, topologies, analysis_type,
+                        binning_scheme, out_json, dataTrees);
+
+    std::cout << "[main] Global bin-averaged kinematics have been computed!" << std::endl;
     return 0;
 }
