@@ -373,10 +373,10 @@ static void saveStagePlots(const FilledHists& H, const HistList& cfg, Channel ch
         }
 
         // Legend: boxed, solid white; bottom-left moved left, top-right flush with pad border
-        auto dataLine = TString::Format("Data (mu=%.3f, sigma=%.3f)", mu_d, sg_d);
-        auto mcLine   = TString::Format("MC (mu=%.3f, sigma=%.3f)",   mu_m, sg_m);
+        auto dataLine = TString::Format("Data (#mu=%.3f, #sigma=%.3f)", mu_d, sg_d);
+        auto mcLine   = TString::Format("MC (#mu=%.3f, #sigma=%.3f)",   mu_m, sg_m);
 
-        TLegend* leg = new TLegend(0.48, 0.68, 0.96, 0.90);
+        TLegend* leg = new TLegend(0.48, 0.68, 0.94, 0.92);
         leg->SetFillStyle(1001);
         leg->SetFillColor(kWhite);
         leg->SetBorderSize(1);
