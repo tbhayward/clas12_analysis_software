@@ -322,9 +322,9 @@ struct Bounds { double lo, hi, step; };
 // };
 static std::map<std::string, Bounds> gImBounds = {
   // 𝓗
-  {"r_H",       {-1e6, +1e6, 1e-3}}, {"alpha0_H",  {-1e6, +1e6, 1e-3}},
-  {"alpha1_H",  {-1e6, +1e6, 1e-3}}, {"b_H",       {-1e6, +1e6, 1e-3}},
-  {"M2_H",      {-1e6, +1e6, 1e-3}}, {"P_H",       { 1.0,  1.0,  0.0}}, // fixed
+  {"r_H",       {0, +1e6, 1e-3}}, {"alpha0_H",  {0, +1e6, 1e-3}},
+  {"alpha1_H",  {0, +1e6, 1e-3}}, {"b_H",       {0, +1e6, 1e-3}},
+  {"M2_H",      {0, +1e6, 1e-3}}, {"P_H",       {0,  1.0,  0.0}}, // fixed
 
   // 𝓗̃
   {"r_Ht",      {-1e6, +1e6, 1e-3}}, {"alpha0_Ht", {-1e6, +1e6, 1e-3}},
