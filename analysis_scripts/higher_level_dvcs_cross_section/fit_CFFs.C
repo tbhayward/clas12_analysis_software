@@ -50,16 +50,16 @@ extern bool   hasH, hasHt, hasE, hasEt;
 extern double renormImag, renormReal;
 
 // ----------------------------------------------------------------------------
-// GPD–H defaults (in DVCS_xsec.C)
+/* GPD–H defaults (in DVCS_xsec.C) */
 extern double r_H,   n_H,   alpha0_H,   alpha1_H,   b_H,   M2_H,   P_H;
-// GPD–Htilde
+/* GPD–Htilde */
 extern double r_Ht,  n_Ht,  alpha0_Ht,  alpha1_Ht,  b_Ht,  M2_Ht,  P_Ht;
-// GPD–E
+/* GPD–E */
 extern double r_E,   n_E,   alpha0_E,   alpha1_E,   b_E,   M2_E,   P_E;
-// GPD–Etilde
+/* GPD–Etilde */
 extern double r_Et,  n_Et,  alpha0_Et,  alpha1_Et,  b_Et,  M2_Et,  P_Et;
 
-// subtraction‐relation constants (fit in strategy 2)
+/* subtraction‐relation constants (fit in strategy 2) */
 extern double C0_H,    MD2_H,    lambda_H;
 extern double C0_Ht,   MD2_Ht,   lambda_Ht;
 extern double C0_E,    MD2_E,    lambda_E;
@@ -293,6 +293,56 @@ void build_par_listRe(){
         {"C0_Et","MD2_Et","lambda_Et"});
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// USER-TWEAKABLE BOUNDS for Stage-1 Im-CFF parameters.
+// By default: loose bounds (±1e6) and P_* fixed to 1.0.
+// Edit the lo/hi/step entries below to constrain as you wish.
+// If you want to *free* a P_* later, give it a real range (e.g. {0.8,1.2,1e-3}).
+struct Bounds { double lo, hi, step; };
+// static std::map<std::string, Bounds> gImBounds = {
+//   // 𝓗
+//   {"r_H",       {-1e6, +1e6, 1e-3}}, {"alpha0_H",  {-1e6, +1e6, 1e-3}},
+//   {"alpha1_H",  {-1e6, +1e6, 1e-3}}, {"b_H",       {-1e6, +1e6, 1e-3}},
+//   {"M2_H",      {-1e6, +1e6, 1e-3}}, {"P_H",       { 1.0,  1.0,  0.0}}, // fixed
+
+//   // 𝓗̃
+//   {"r_Ht",      {-1e6, +1e6, 1e-3}}, {"alpha0_Ht", {-1e6, +1e6, 1e-3}},
+//   {"alpha1_Ht", {-1e6, +1e6, 1e-3}}, {"b_Ht",      {-1e6, +1e6, 1e-3}},
+//   {"M2_Ht",     {-1e6, +1e6, 1e-3}}, {"P_Ht",      { 1.0,  1.0,  0.0}}, // fixed
+
+//   // 𝓔
+//   {"r_E",       {-1e6, +1e6, 1e-3}}, {"alpha0_E",  {-1e6, +1e6, 1e-3}},
+//   {"alpha1_E",  {-1e6, +1e6, 1e-3}}, {"b_E",       {-1e6, +1e6, 1e-3}},
+//   {"M2_E",      {-1e6, +1e6, 1e-3}}, {"P_E",       { 1.0,  1.0,  0.0}}, // fixed
+
+//   // 𝓔̃
+//   {"r_Et",      {-1e6, +1e6, 1e-3}}, {"alpha0_Et", {-1e6, +1e6, 1e-3}},
+//   {"alpha1_Et", {-1e6, +1e6, 1e-3}}, {"b_Et",      {-1e6, +1e6, 1e-3}},
+//   {"M2_Et",     {-1e6, +1e6, 1e-3}}, {"P_Et",      { 1.0,  1.0,  0.0}}, // fixed
+// };
+static std::map<std::string, Bounds> gImBounds = {
+  // 𝓗
+  {"r_H",       {-1e6, +1e6, 1e-3}}, {"alpha0_H",  {-1e6, +1e6, 1e-3}},
+  {"alpha1_H",  {-1e6, +1e6, 1e-3}}, {"b_H",       {-1e6, +1e6, 1e-3}},
+  {"M2_H",      {-1e6, +1e6, 1e-3}}, {"P_H",       { 1.0,  1.0,  0.0}}, // fixed
+
+  // 𝓗̃
+  {"r_Ht",      {-1e6, +1e6, 1e-3}}, {"alpha0_Ht", {-1e6, +1e6, 1e-3}},
+  {"alpha1_Ht", {-1e6, +1e6, 1e-3}}, {"b_Ht",      {-1e6, +1e6, 1e-3}},
+  {"M2_Ht",     {-1e6, +1e6, 1e-3}}, {"P_Ht",      { 1.0,  1.0,  0.0}}, // fixed
+
+  // 𝓔
+  {"r_E",       {-1e6, +1e6, 1e-3}}, {"alpha0_E",  {-1e6, +1e6, 1e-3}},
+  {"alpha1_E",  {-1e6, +1e6, 1e-3}}, {"b_E",       {-1e6, +1e6, 1e-3}},
+  {"M2_E",      {-1e6, +1e6, 1e-3}}, {"P_E",       { 1.0,  1.0,  0.0}}, // fixed
+
+  // 𝓔̃
+  {"r_Et",      {-1e6, +1e6, 1e-3}}, {"alpha0_Et", {-1e6, +1e6, 1e-3}},
+  {"alpha1_Et", {-1e6, +1e6, 1e-3}}, {"b_Et",      {-1e6, +1e6, 1e-3}},
+  {"M2_Et",     {-1e6, +1e6, 1e-3}}, {"P_Et",      { 1.0,  1.0,  0.0}}, // fixed
+};
+// ─────────────────────────────────────────────────────────────────────────────
+
 // ----------------------------------------------------------------------------
 // χ² function (no alpha0/alpha1 penalty terms)
 void fcn(int&, double*, double &f, double *par, int){
@@ -505,54 +555,73 @@ int main(int argc, char** argv) {
       std::vector<double> imVal(nim), imErr(nim);
       double chi2_im, edm, errdef;
       int nv,nx,ic, ndf_im;
+
       auto run_im_fit = [&](){
         TMinuit minu(nim);
         minu.SetPrintLevel(1);
         minu.SetFCN(fcn);
-        for(int i=0;i<nim;++i){
-          const auto &nm = parNamesIm[i];
-          double init=0, lo=-1e6, hi=+1e6, step=0.001;
 
-          // fix P = 1
-          if(nm=="P_H"  || nm=="P_Ht"
-          || nm=="P_E"  || nm=="P_Et"){
-            init = 1.0; lo = 1.0; hi = 1.0; step = 0.0;
+        for(int i=0;i<nim;++i){
+          const std::string &nm = parNamesIm[i];
+
+          // default bounds (very loose)
+          double lo   = -1e6;
+          double hi   = +1e6;
+          double step = 1e-3;
+
+          // override from user-tweakable table if present
+          if(auto it = gImBounds.find(nm); it != gImBounds.end()){
+            lo   = it->second.lo;
+            hi   = it->second.hi;
+            step = it->second.step;
           }
 
-          if     (nm=="r_H")        init = r_H;
+          // initial values from current globals (unchanged from your code)
+          double init=0.0;
+               if(nm=="r_H")        init = r_H;
           else if(nm=="r_Ht")       init = r_Ht;
           else if(nm=="r_E")        init = r_E;
           else if(nm=="r_Et")       init = r_Et;
+
           else if(nm=="alpha0_H")   init = alpha0_H;
-          else if(nm=="alpha1_H")   init = alpha1_H;
-          else if(nm=="b_H")        init = b_H;
-          else if(nm=="M2_H")       init = M2_H;
-          else if(nm=="P_H")        init = P_H;
           else if(nm=="alpha0_Ht")  init = alpha0_Ht;
-          else if(nm=="alpha1_Ht")  init = alpha1_Ht;
-          else if(nm=="b_Ht")       init = b_Ht;
-          else if(nm=="M2_Ht")      init = M2_Ht;
-          else if(nm=="P_Ht")       init = P_Ht;
           else if(nm=="alpha0_E")   init = alpha0_E;
-          else if(nm=="alpha1_E")   init = alpha1_E;
-          else if(nm=="b_E")        init = b_E;
-          else if(nm=="M2_E")       init = M2_E;
-          else if(nm=="P_E")        init = P_E;
           else if(nm=="alpha0_Et")  init = alpha0_Et;
+
+          else if(nm=="alpha1_H")   init = alpha1_H;
+          else if(nm=="alpha1_Ht")  init = alpha1_Ht;
+          else if(nm=="alpha1_E")   init = alpha1_E;
           else if(nm=="alpha1_Et")  init = alpha1_Et;
+
+          else if(nm=="b_H")        init = b_H;
+          else if(nm=="b_Ht")       init = b_Ht;
+          else if(nm=="b_E")        init = b_E;
           else if(nm=="b_Et")       init = b_Et;
+
+          else if(nm=="M2_H")       init = M2_H;
+          else if(nm=="M2_Ht")      init = M2_Ht;
+          else if(nm=="M2_E")       init = M2_E;
           else if(nm=="M2_Et")      init = M2_Et;
+
+          else if(nm=="P_H")        init = P_H;
+          else if(nm=="P_Ht")       init = P_Ht;
+          else if(nm=="P_E")        init = P_E;
           else if(nm=="P_Et")       init = P_Et;
 
+          // define parameter with bounds
           minu.DefineParameter(i, nm.c_str(), init, step, lo, hi);
-          if(step==0.0) minu.FixParameter(i);
+
+          // if step==0 (e.g. P_* fixed), fix it
+          if(step==0.0 || lo==hi) minu.FixParameter(i);
         }
+
         std::cout<<" Stage1: fitting Im-CFF parameters…\n";
         minu.Migrad();
         minu.Command("HESSE");
         minu.mnstat(chi2_im,edm,errdef,nv,nx,ic);
         for(int i=0;i<nim;++i) minu.GetParameter(i,imVal[i],imErr[i]);
         ndf_im = Nbins - nim;
+
         // capture
         interimValMap.clear(); interimErrMap.clear();
         for(int i=0;i<nim;++i){
@@ -624,7 +693,7 @@ int main(int argc, char** argv) {
           const auto &nm = parNamesAll[i];
           double init=0, lo=-1e6, hi=+1e6, step=0.01;
 
-          // fix P = 1
+          // fix P = 1 (keep previous behavior in global stage, too)
           if(nm=="P_H"  || nm=="P_Ht"
           || nm=="P_E"  || nm=="P_Et"){
             init = 1.0; lo = 1.0; hi = 1.0; step = 0.0;
