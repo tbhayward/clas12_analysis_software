@@ -299,7 +299,7 @@ void build_par_listRe(){
 // Edit the lo/hi/step entries below to constrain as you wish.
 // If you want to *free* a P_* later, give it a real range (e.g. {0.8,1.2,1e-3}).
 struct Bounds { double lo, hi, step; };
-// static std::map<std::string, Bounds> gImBounds = {
+static std::map<std::string, Bounds> gImBounds = {
   // 𝓗
   {"r_H",       {-1e6, +1e6, 1e-3}}, {"alpha0_H",  {-1e6, +1e6, 1e-3}},
   {"alpha1_H",  {-1e6, +1e6, 1e-3}}, {"b_H",       {-1e6, +1e6, 1e-3}},
