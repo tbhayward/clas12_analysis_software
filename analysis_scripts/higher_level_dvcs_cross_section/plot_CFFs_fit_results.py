@@ -3,7 +3,7 @@
 plot_ImCFFs_fit_results.py
 
 Usage:
-    python plot_ImCFFs_fit_results.py output/fit_results/fit_results_<TIMESTAMP>.txt
+    python plot_CFFs_fit_results.py output/fit_results/fit_results_<TIMESTAMP>.txt
 """
 import os
 import sys
