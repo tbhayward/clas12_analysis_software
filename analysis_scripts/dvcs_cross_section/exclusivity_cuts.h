@@ -5,7 +5,6 @@
 // - JSON outputs per topology, plus a combined JSON for all topologies and periods
 // - Threading set to 1 for robust ROOT I/O (we can revisit with RDataFrame)
 //
-// ASCII-only.
 
 #ifndef EXCLUSIVITY_CUTS_H
 #define EXCLUSIVITY_CUTS_H
