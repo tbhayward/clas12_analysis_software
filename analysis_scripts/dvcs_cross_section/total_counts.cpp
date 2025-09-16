@@ -104,7 +104,6 @@ static bool loadCombinedCuts(const std::string& path, PeriodTopoCuts& out) {
     std::string s((std::istreambuf_iterator<char>(ifs)), std::istreambuf_iterator<char>());
     ifs.close();
 
-    // walk the file and find occurrences of "DVCS_..." keys
     size_t pos = 0;
     while (true) {
         size_t keyStart = s.find('"', pos);
@@ -113,22 +112,19 @@ static bool loadCombinedCuts(const std::string& path, PeriodTopoCuts& out) {
         if (keyEnd == std::string::npos) break;
         std::string key = s.substr(keyStart + 1, keyEnd - keyStart - 1); // e.g., DVCS_Sp18_inb_FD_FD
 
-        // Find "data": { ... } that follows
         size_t dataPos = s.find("\"data\"", keyEnd);
         if (dataPos == std::string::npos) { pos = keyEnd + 1; continue; }
         size_t braceStart = s.find('{', dataPos);
         if (braceStart == std::string::npos) { pos = keyEnd + 1; continue; }
 
-        // Match braces to extract the "data" object
         int depth = 0; size_t i = braceStart;
         for (; i < s.size(); ++i) {
             if (s[i] == '{') depth++;
             else if (s[i] == '}') { depth--; if (depth == 0) { ++i; break; } }
         }
         if (depth != 0) { pos = keyEnd + 1; continue; }
-        std::string dataObj = s.substr(braceStart, i - braceStart); // includes braces
+        std::string dataObj = s.substr(braceStart, i - braceStart);
 
-        // Parse entries like "Mx2":{"mean":..., "std":...}
         VarCutMap cuts;
         size_t vpos = 0;
         while (true) {
@@ -136,7 +132,7 @@ static bool loadCombinedCuts(const std::string& path, PeriodTopoCuts& out) {
             if (vKeyS == std::string::npos) break;
             size_t vKeyE = dataObj.find('"', vKeyS + 1);
             if (vKeyE == std::string::npos) break;
-            std::string var = dataObj.substr(vKeyS + 1, vKeyE - vKeyS - 1); // variable name
+            std::string var = dataObj.substr(vKeyS + 1, vKeyE - vKeyS - 1);
 
             size_t meanPos = dataObj.find("\"mean\"", vKeyE);
             size_t stdPos  = dataObj.find("\"std\"",  vKeyE);
@@ -160,7 +156,6 @@ static bool loadCombinedCuts(const std::string& path, PeriodTopoCuts& out) {
             vpos = vKeyE + 1;
         }
 
-        // Only stash keys that look like DVCS_... (we are counting DVCS)
         if (key.rfind("DVCS_", 0) == 0) out[key] = cuts;
 
         pos = keyEnd + 1;
@@ -274,19 +269,22 @@ static inline std::string tupleKeyStr(const BinKey& k) {
     return os.str();
 }
 
-// Map period "DVCS_Sp18_inb" -> pretty code "DVCS_Sp18_inb" (already pretty)
-static inline std::string prettyPeriod(const std::string& p) { return p; }
-
 // Map run-tag "sp18_inb" to group name for individual section output
 static inline std::string indivGroupName(const std::string& runTag) { return runTag; }
 
-// Combined group names
+// Existing combined group names (kept for backward-compat)
 static inline std::string combFa18() { return "Fa18_inb_out_combined"; }
 static inline std::string combFour() { return "Sp18_and_Fa18_inb_out_combined"; }
 
-// Which individual run-tags participate in which combined groups
+// New requested combined group names
+static inline std::string grpFa18Sum() { return "fa18_sum"; }
+static inline std::string grpTenSixSum() { return "10.6_sum"; }
+
+// Membership checks for combined groups
 static inline bool inFa18(const std::string& runTag) { return (runTag == "fa18_inb" || runTag == "fa18_out"); }
 static inline bool inFour(const std::string& runTag) { return (runTag == "sp18_inb" || runTag == "sp18_out" || runTag == "fa18_inb" || runTag == "fa18_out"); }
+static inline bool inFa18Sum(const std::string& runTag) { return (runTag == "fa18_inb" || runTag == "fa18_out"); }
+static inline bool inTenSixSum(const std::string& runTag) { return (runTag == "sp18_inb" || runTag == "sp18_out" || runTag == "fa18_inb" || runTag == "fa18_inb_supp" || runTag == "fa18_out"); }
 
 // JSON writer
 static void writeCountsJson(const std::string& outPath,
@@ -372,23 +370,20 @@ void compute_total_counts(const std::vector<std::string>& periods,
         }
 
         const Long64_t nent = t->GetEntries();
-        // We will aggregate over all topologies but apply the topology-specific cuts.
-        // Determine the DVCS key prefix "DVCS_<PrettyRun>" that exclusivity used.
-        // Our combined JSON keys look like "DVCS_Sp18_inb_FD_FD" etc.
-        // Build "DVCS_" + Capitalized runTag like exclusivity did.
+        // Build DVCS key prefix used in exclusivity combined JSON
         auto cap = runTag;
         if (!cap.empty()) cap[0] = std::toupper(cap[0]);
         for (size_t i = 0; i + 1 < cap.size(); ++i) if (cap[i] == '_' && i + 1 < cap.size()) cap[i + 1] = std::toupper(cap[i + 1]);
         const std::string periodCode = std::string("DVCS_") + cap;
 
-        // Event loop once; per event apply the appropriate topology set.
+        // Event loop
         for (Long64_t i = 0; i < nent; ++i) {
             t->GetEntry(i);
 
             if (!applyKinematicCuts_simple(b.t1, b.open_angle_ep2, b.pTmiss)) continue;
             if (b.helicity != +1 && b.helicity != -1) continue;
 
-            // Work out which topology this event is in (first match wins)
+            // Determine topology for this event
             std::string usedTopoKey;
             for (const auto& topoStr : topologies) {
                 if (passesTopology_simple(b.detector1, b.detector2, topoStr)) { usedTopoKey = topoToKey(topoStr); break; }
@@ -398,7 +393,7 @@ void compute_total_counts(const std::vector<std::string>& periods,
             // Load cuts for this period+topology if available
             VarCutMap topoCuts;
             auto itCut = cuts.find(periodCode + "_" + usedTopoKey);
-            if (itCut != cuts.end()) topoCuts = itCut->second; // else empty => no extra cut
+            if (itCut != cuts.end()) topoCuts = itCut->second;
 
             // Apply 3sigma cuts
             if (!topoCuts.empty()) {
@@ -422,15 +417,24 @@ void compute_total_counts(const std::vector<std::string>& periods,
             HelCounts& hc_ind = outCounts[indivGroupName(runTag)][key];
             if (b.helicity == +1) hc_ind.plus++; else hc_ind.minus++;
 
-            // Fa18 combined
+            // Existing combined groups (kept)
             if (inFa18(runTag)) {
                 HelCounts& hc_fa = outCounts[combFa18()][key];
                 if (b.helicity == +1) hc_fa.plus++; else hc_fa.minus++;
             }
-            // Four-period combined
             if (inFour(runTag)) {
                 HelCounts& hc_4 = outCounts[combFour()][key];
                 if (b.helicity == +1) hc_4.plus++; else hc_4.minus++;
+            }
+
+            // New requested summed groups
+            if (inFa18Sum(runTag)) {
+                HelCounts& hc_fs = outCounts[grpFa18Sum()][key];
+                if (b.helicity == +1) hc_fs.plus++; else hc_fs.minus++;
+            }
+            if (inTenSixSum(runTag)) {
+                HelCounts& hc_106 = outCounts[grpTenSixSum()][key];
+                if (b.helicity == +1) hc_106.plus++; else hc_106.minus++;
             }
         }
 
