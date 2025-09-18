@@ -8,6 +8,8 @@
 #include <TH1.h>
 #include <TF1.h>
 #include <TLatex.h>
+#include <TFitResult.h>   
+#include <TString.h> 
 
 #include <algorithm>
 #include <cctype>
