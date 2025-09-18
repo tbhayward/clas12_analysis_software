@@ -438,6 +438,7 @@ static int findIndex(const std::pair<double,double>& range,
 
 // Build and save canvases: one canvas per xB bin; rows=Q2 bins-in-slice, cols=t bins-in-slice.
 // Each pad: contamination vs phi, with two series (+1 and -1 helicities) and error bars.
+// Only a single global title (period) is drawn on the canvas.
 static void plotContaminationCanvases(
     const std::string& period,
     const std::map<BinKey, BinCounts>& table,
@@ -468,11 +469,23 @@ static void plotContaminationCanvases(
         const int nrows = static_cast<int>(Q2_slice.size());
         const int ncols = static_cast<int>(t_slice.size());
 
+        // Slightly smaller canvas so space for a single top title remains
+        const int w = 260*ncols + 120;
+        const int h = 220*nrows + 120;
+
         // Canvas per xB slice
         std::ostringstream cname;
         cname << "c_contam_" << period << "_xB" << ix;
-        TCanvas* c = new TCanvas(cname.str().c_str(), cname.str().c_str(), 280*ncols + 120, 240*nrows + 120);
+        TCanvas* c = new TCanvas(cname.str().c_str(), cname.str().c_str(), w, h);
         c->Divide(ncols, nrows, 0.0001, 0.0001);
+
+        // Put a single title on the canvas (period only)
+        c->cd();
+        TLatex head;
+        head.SetNDC();
+        head.SetTextSize(0.035);
+        head.SetTextAlign(22); // center
+        head.DrawLatex(0.5, 0.985, period.c_str());
 
         // Loop pads
         for (int r = 0; r < nrows; ++r) {
@@ -482,6 +495,10 @@ static void plotContaminationCanvases(
 
                 c->cd(r*ncols + ccol + 1);
                 gPad->SetGrid(1,1);
+                gPad->SetTopMargin(0.07);
+                gPad->SetBottomMargin(0.12);
+                gPad->SetLeftMargin(0.12);
+                gPad->SetRightMargin(0.05);
 
                 // Build Y arrays (two helicities), default to 0
                 std::vector<double> Yp(N_PHI_BINS_PLOT, 0.0), Ym(N_PHI_BINS_PLOT, 0.0);
@@ -530,24 +547,16 @@ static void plotContaminationCanvases(
                 grP->Draw("P SAME");
                 grM->Draw("P SAME");
 
-                // Legend and title
-                TLegend* leg = new TLegend(0.58, 0.72, 0.88, 0.88);
+                // Legend (kept small)
+                TLegend* leg = new TLegend(0.56, 0.74, 0.88, 0.90);
                 leg->SetBorderSize(0);
                 leg->SetFillStyle(0);
+                leg->SetTextSize(0.035);
                 leg->AddEntry(grP, "helicity +1", "p");
                 leg->AddEntry(grM, "helicity -1", "p");
                 leg->Draw();
 
-                std::ostringstream ttl;
-                ttl << period
-                    << " | x_{B}=[" << std::fixed << std::setprecision(3) << xBr.first << "," << xBr.second << "]"
-                    << "  Q^{2}=[" << std::setprecision(2) << Q2_slice[r].first << "," << Q2_slice[r].second << "]"
-                    << "  -t=["    << std::setprecision(2) << t_slice[ccol].first << "," << t_slice[ccol].second << "]";
-                gPad->SetTopMargin(0.12);
-                TLatex latex;
-                latex.SetNDC();
-                latex.SetTextSize(0.04);
-                latex.DrawLatex(0.10, 0.94, ttl.str().c_str());
+                // No per-pad text titles; only the global period title on the canvas
             }
         }
 
@@ -720,15 +729,15 @@ void compute_pi0_contamination_helicity(
 ) {
     namespace fs = std::filesystem;
 
-    // Standardize directories:
+    // Directories (per your conventions):
     const fs::path root(out_root_dir); // expected "output"
-    const fs::path jsons_dir = root / "jsons" / "contamination";
-    const fs::path combined_json_path = root / "jsons" / "pi0_contamination_combined.json";
-    const fs::path plots_dir = root / "plots" / "contamination";
+    const fs::path jsons_dir = root / "jsons" / "contamination";             // per-period JSONs
+    const fs::path combined_json_path = root / "jsons" / "pi0_contamination_combined.json"; // combined JSON
+    const fs::path plots_root = root / "contamination_plots";                 // already created by make_dirs
 
     std::error_code ec;
     fs::create_directories(jsons_dir, ec);
-    fs::create_directories(plots_dir, ec);
+    // plots subdirs are expected to exist via make_dirs; we will still ensure the specific one below
 
     const auto xB_bins = uniqueRanges(binning_scheme, 'x');
     const auto Q2_bins = uniqueRanges(binning_scheme, 'Q');
@@ -954,12 +963,15 @@ void compute_pi0_contamination_helicity(
         const std::string out_file = (jsons_dir / ("contamination_" + period + ".json")).string();
         writeContaminationJson(out_file, counts, N_PHI_BINS, xB_bins, Q2_bins, t_bins);
 
-        // Plot canvases for this period
+        // Plot canvases for this period (to output/contamination_plots/<runTag>/...)
         if (ENABLE_PI0_CONTAMINATION_PLOTS) {
-            plotContaminationCanvases(period, counts, binning_scheme, xB_bins, Q2_bins, t_bins, plots_dir.string());
+            const fs::path period_plot_dir = plots_root / runTag;
+            std::error_code ec_plot;
+            fs::create_directories(period_plot_dir, ec_plot);
+            plotContaminationCanvases(period, counts, binning_scheme, xB_bins, Q2_bins, t_bins, period_plot_dir.string());
         }
 
-        // ---- optional copy for Fa18_inb_supp (per-period file only) ----
+        // ---- optional copy for Fa18_inb_supp (JSON only; no plots) ----
         if (COPY_CONTAM_TO_FA18_INB_SUPP && runTag == "fa18_inb") {
             const std::string supp_period = "DVCS_Fa18_inb_supp";
             const std::string out_copy = (jsons_dir / ("contamination_" + supp_period + ".json")).string();
@@ -968,12 +980,8 @@ void compute_pi0_contamination_helicity(
             if (ec_copy) std::cerr << "[pi0_contam][WARN] Could not copy to Fa18_inb_supp JSON: " << ec_copy.message() << std::endl;
             else         std::cout << "[pi0_contam] Also wrote (copy) " << out_copy << std::endl;
 
-            if (ENABLE_PI0_CONTAMINATION_PLOTS) {
-                plotContaminationCanvases(supp_period, counts, binning_scheme, xB_bins, Q2_bins, t_bins, plots_dir.string());
-            }
-
-            // Also reflect the copy in the combined structure
-            allPeriods[supp_period] = counts;
+            // Do NOT plot for Fa18_inb_supp to avoid duplicate identical plots
+            allPeriods[supp_period] = counts; // include in combined
         }
 
         // Keep for combined output
