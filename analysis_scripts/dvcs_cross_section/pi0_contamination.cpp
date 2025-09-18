@@ -19,6 +19,7 @@
 #include <vector>
 
 bool COPY_CONTAM_TO_FA18_INB_SUPP = true;
+bool ENABLE_PI0_CONTAMINATION_PLOTS = true;
 
 // ---------------- helpers (shared style with total_counts.cpp) ----------------
 static inline std::string toLower(std::string s) {
@@ -347,13 +348,13 @@ static inline std::string keyStr(const BinKey& k) {
     std::ostringstream os; os<<"("<<a<<","<<b<<","<<c<<","<<d<<")";
     return os.str();
 }
+
 static void writeContaminationJson(const std::string& path,
                                    const std::map<BinKey, BinCounts>& table,
                                    int nPhi,
                                    const std::vector<std::pair<double,double>>& xB_bins,
                                    const std::vector<std::pair<double,double>>& Q2_bins,
-                                   const std::vector<std::pair<double,double>>& t_bins)
-{
+                                   const std::vector<std::pair<double,double>>& t_bins) {
     std::ofstream ofs(path);
     if (!ofs) { std::cerr << "[pi0_contam][ERROR] Cannot open " << path << std::endl; return; }
     ofs << std::fixed << std::setprecision(8);
@@ -384,6 +385,268 @@ static void writeContaminationJson(const std::string& path,
     ofs << "\n  }\n}\n";
     ofs.close();
     std::cout << "[pi0_contam] Wrote " << path << std::endl;
+}
+
+// =====================================================
+// ROOT plotting for helicity-resolved π0 contamination
+// =====================================================
+#include <TCanvas.h>
+#include <TGraphErrors.h>
+#include <TAxis.h>
+#include <TLegend.h>
+#include <TStyle.h>
+
+static constexpr int N_PHI_BINS_PLOT = 12;
+
+// Phi centers in degrees (0..360), consistent with equal-width 12 bins
+static std::vector<double> phiCentersDeg() {
+    std::vector<double> v(N_PHI_BINS_PLOT);
+    const double step = 360.0 / static_cast<double>(N_PHI_BINS_PLOT);
+    for (int i = 0; i < N_PHI_BINS_PLOT; ++i) v[i] = (i + 0.5) * step;
+    return v;
+}
+
+// Collect unique Q2 and t ranges that *appear* in the binning scheme for a specific xB range
+static void uniqueQT_for_xB(
+    const std::vector<Binning>& scheme,
+    const std::pair<double,double>& xBrange,
+    std::vector<std::pair<double,double>>& Q2_list,
+    std::vector<std::pair<double,double>>& t_list
+) {
+    std::set<std::pair<double,double>> qs, ts;
+    for (const auto& b : scheme) {
+        if (std::make_pair(b.xBmin,b.xBmax) == xBrange) {
+            qs.emplace(b.Q2min,b.Q2max);
+            ts.emplace(b.tmin,b.tmax);
+        }
+    }
+    Q2_list.assign(qs.begin(), qs.end());
+    t_list.assign(ts.begin(), ts.end());
+}
+
+// Find overall indices in the global (Q2_bins, t_bins) arrays for a given range
+static int findIndex(const std::pair<double,double>& range,
+                     const std::vector<std::pair<double,double>>& ranges) {
+    for (int i = 0; i < static_cast<int>(ranges.size()); ++i) {
+        if (ranges[i] == range) return i;
+    }
+    return -1;
+}
+
+// Build and save canvases: one canvas per xB bin; rows=Q2 bins-in-slice, cols=t bins-in-slice.
+// Each pad: contamination vs phi, with two series (+1 and -1 helicities) and error bars.
+static void plotContaminationCanvases(
+    const std::string& period,
+    const std::map<BinKey, BinCounts>& table,
+    const std::vector<Binning>& binning_scheme,
+    const std::vector<std::pair<double,double>>& xB_bins,
+    const std::vector<std::pair<double,double>>& Q2_bins,
+    const std::vector<std::pair<double,double>>& t_bins,
+    const std::string& out_dir_plots
+) {
+    // Prepare phi axis
+    static const std::vector<double> PHI = phiCentersDeg();
+    std::vector<double> X(N_PHI_BINS_PLOT), ex(N_PHI_BINS_PLOT, 0.0);
+    for (int i=0;i<N_PHI_BINS_PLOT;++i) X[i] = PHI[i];
+
+    // Ensure directory exists
+    std::error_code ec;
+    std::filesystem::create_directories(out_dir_plots, ec);
+
+    // Loop over xB slices that actually appear in the scheme
+    for (int ix = 0; ix < static_cast<int>(xB_bins.size()); ++ix) {
+        const auto xBr = xB_bins[ix];
+
+        // Find Q2/t grids present in this xB slice
+        std::vector<std::pair<double,double>> Q2_slice, t_slice;
+        uniqueQT_for_xB(binning_scheme, xBr, Q2_slice, t_slice);
+        if (Q2_slice.empty() || t_slice.empty()) continue;
+
+        const int nrows = static_cast<int>(Q2_slice.size());
+        const int ncols = static_cast<int>(t_slice.size());
+
+        // Canvas per xB slice
+        std::ostringstream cname;
+        cname << "c_contam_" << period << "_xB" << ix;
+        TCanvas* c = new TCanvas(cname.str().c_str(), cname.str().c_str(), 280*ncols + 120, 240*nrows + 120);
+        c->Divide(ncols, nrows, 0.0001, 0.0001);
+
+        // Loop pads
+        for (int r = 0; r < nrows; ++r) {
+            int iQ2 = findIndex(Q2_slice[r], Q2_bins); if (iQ2 < 0) continue;
+            for (int ccol = 0; ccol < ncols; ++ccol) {
+                int itb = findIndex(t_slice[ccol], t_bins); if (itb < 0) continue;
+
+                c->cd(r*ncols + ccol + 1);
+                gPad->SetGrid(1,1);
+
+                // Build Y arrays (two helicities), default to 0
+                std::vector<double> Yp(N_PHI_BINS_PLOT, 0.0), Ym(N_PHI_BINS_PLOT, 0.0);
+                std::vector<double> eYp(N_PHI_BINS_PLOT, 0.0), eYm(N_PHI_BINS_PLOT, 0.0);
+
+                for (int ip = 0; ip < N_PHI_BINS_PLOT; ++ip) {
+                    BinKey k(ix, iQ2, itb, ip);
+                    auto it = table.find(k);
+                    if (it != table.end()) {
+                        Yp[ip]  = it->second.c_plus;
+                        eYp[ip] = it->second.c_plus_err;
+                        Ym[ip]  = it->second.c_minus;
+                        eYm[ip] = it->second.c_minus_err;
+                    }
+                }
+
+                // Graphs
+                TGraphErrors* grP = new TGraphErrors(N_PHI_BINS_PLOT, X.data(), Yp.data(), ex.data(), eYp.data());
+                TGraphErrors* grM = new TGraphErrors(N_PHI_BINS_PLOT, X.data(), Ym.data(), ex.data(), eYm.data());
+
+                grP->SetTitle("");
+                grM->SetTitle("");
+                grP->SetMarkerStyle(24); // open circle
+                grM->SetMarkerStyle(20); // filled circle
+                grP->SetMarkerSize(0.9);
+                grM->SetMarkerSize(0.9);
+                grP->SetLineWidth(2);
+                grM->SetLineWidth(2);
+                grP->SetLineColor(kBlue+1);
+                grP->SetMarkerColor(kBlue+1);
+                grM->SetLineColor(kRed+1);
+                grM->SetMarkerColor(kRed+1);
+
+                // Draw with frame via dummy histogram axis
+                TH1F* frame = gPad->DrawFrame(0.0, 0.0, 360.0, 1.0);
+                frame->GetXaxis()->SetTitle("#phi (deg)");
+                frame->GetYaxis()->SetTitle("#pi^{0} contamination");
+                frame->GetXaxis()->SetNdivisions(505);
+                frame->GetXaxis()->CenterTitle();
+                frame->GetYaxis()->CenterTitle();
+
+                grP->Draw("P SAME");
+                grM->Draw("P SAME");
+
+                // Legend and title
+                TLegend* leg = new TLegend(0.58, 0.72, 0.88, 0.88);
+                leg->SetBorderSize(0);
+                leg->SetFillStyle(0);
+                leg->AddEntry(grP, "helicity +1", "p");
+                leg->AddEntry(grM, "helicity -1", "p");
+                leg->Draw();
+
+                std::ostringstream ttl;
+                ttl << period
+                    << Form(" | x_{B}=[%.3f,%.3f]", xBr.first, xBr.second)
+                    << Form("  Q^{2}=[%.2f,%.2f]", Q2_slice[r].first, Q2_slice[r].second)
+                    << Form("  -t=[%.2f,%.2f]", t_slice[ccol].first, t_slice[ccol].second);
+                gPad->SetTopMargin(0.12);
+                TLatex latex;
+                latex.SetNDC();
+                latex.SetTextSize(0.04);
+                latex.DrawLatex(0.10, 0.94, ttl.str().c_str());
+            }
+        }
+
+        // Save
+        std::ostringstream fout;
+        fout << out_dir_plots << "/plot_contamination_" << period << "_xB_" << ix << ".png";
+        c->SaveAs(fout.str().c_str());
+
+        delete c;
+    }
+}
+
+// -------------------- Plot-from-JSON (public helper) --------------------
+// Minimal reader for the contamination JSON written by writeContaminationJson() above.
+// Loads only the fields we need for plotting.
+void plot_pi0_contamination_from_json(
+    const std::string& period,
+    const std::vector<Binning>& binning_scheme,
+    const std::string& contamination_json_path,
+    const std::string& out_dir_plots
+) {
+    // Recover the global ranges by scanning the scheme
+    auto xB_bins = uniqueRanges(binning_scheme, 'x');
+    auto Q2_bins = uniqueRanges(binning_scheme, 'Q');
+    auto t_bins  = uniqueRanges(binning_scheme, 't');
+    if (xB_bins.empty() || Q2_bins.empty() || t_bins.empty()) {
+        std::cerr << "[pi0_contam][plot-from-json][ERROR] Missing binning ranges.\n";
+        return;
+    }
+
+    // Hand-rolled tiny parser (matches our write format)
+    std::ifstream ifs(contamination_json_path);
+    if (!ifs) {
+        std::cerr << "[pi0_contam][plot-from-json][ERROR] Cannot open " << contamination_json_path << "\n";
+        return;
+    }
+    std::string s((std::istreambuf_iterator<char>(ifs)), std::istreambuf_iterator<char>());
+    ifs.close();
+
+    std::map<BinKey, BinCounts> table;
+
+    size_t pos = s.find("\"bins\"");
+    if (pos == std::string::npos) { std::cerr << "[plot-from-json] 'bins' not found.\n"; return; }
+    pos = s.find('{', pos);
+    if (pos == std::string::npos) return;
+    int depth = 0; size_t i = pos;
+    for (; i < s.size(); ++i) { if (s[i]=='{') depth++; else if (s[i]=='}'){ depth--; if (!depth){ ++i; break; } } }
+    std::string binsObj = s.substr(pos, i-pos);
+
+    size_t kpos = 0;
+    while (true) {
+        size_t keyS = binsObj.find('"', kpos);
+        if (keyS == std::string::npos) break;
+        size_t keyE = binsObj.find('"', keyS+1);
+        if (keyE == std::string::npos) break;
+        std::string key = binsObj.substr(keyS+1, keyE-keyS-1); // "(ix,iQ2,it,ip)"
+        int ix, iQ2, itb, ip;
+        if (std::sscanf(key.c_str(), "(%d,%d,%d,%d)", &ix, &iQ2, &itb, &ip) != 4) { kpos = keyE+1; continue; }
+
+        size_t objS = binsObj.find('{', keyE);
+        if (objS == std::string::npos) break;
+        int d2=0; size_t j=objS;
+        for (; j < binsObj.size(); ++j) { if (binsObj[j]=='{') d2++; else if (binsObj[j]=='}'){ d2--; if(!d2){ ++j; break; } } }
+        std::string obj = binsObj.substr(objS, j-objS);
+
+        auto findVal = [&](const std::string& path)->long long {
+            size_t p = obj.find(path);
+            if (p == std::string::npos) return 0;
+            p = obj.find(':', p); if (p == std::string::npos) return 0;
+            size_t a = p+1;
+            while (a<obj.size() && std::isspace(static_cast<unsigned char>(obj[a]))) ++a;
+            size_t b=a;
+            while (b<obj.size() && (std::isdigit(static_cast<unsigned char>(obj[b])) || obj[b]=='-')) ++b;
+            try { return std::stoll(obj.substr(a,b-a)); } catch (...) { return 0; }
+        };
+        auto findDouble = [&](const std::string& path)->double {
+            size_t p = obj.find(path);
+            if (p == std::string::npos) return 0.0;
+            p = obj.find(':', p); if (p == std::string::npos) return 0.0;
+            size_t a = p+1;
+            while (a<obj.size() && std::isspace(static_cast<unsigned char>(obj[a]))) ++a;
+            size_t b=a;
+            while (b<obj.size() && (std::isdigit(static_cast<unsigned char>(obj[b])) || obj[b]=='-' || obj[b]=='+' || obj[b]=='.' || obj[b]=='e' || obj[b]=='E')) ++b;
+            try { return std::stod(obj.substr(a,b-a)); } catch (...) { return 0.0; }
+        };
+
+        BinCounts bc;
+        bc.N_data.plus  = findVal("\"N_data\":{\"helicity\":{\"+1\"");
+        bc.N_data.minus = findVal("\"N_data\":{\"helicity\":{\"+1\""); // we need the second; fallback:
+        // Better: fetch minus explicitly
+        bc.N_data.minus = findVal("\"N_data\":{\"helicity\":{\"-1\"");
+        bc.N_pi0_exp.plus  = findVal("\"N_pi0_exp\":{\"helicity\":{\"+1\"");
+        bc.N_pi0_exp.minus = findVal("\"N_pi0_exp\":{\"helicity\":{\"-1\"");
+        bc.N_pi0_mc    = static_cast<long long>(findDouble("\"N_pi0_mc\""));
+        bc.N_pi0_reco  = static_cast<long long>(findDouble("\"N_pi0_reco\""));
+        bc.c_plus      = findDouble("\"contamination\":{\"+1\":{\"value\"");
+        bc.c_plus_err  = findDouble("\"contamination\":{\"+1\":{\"err\"");
+        bc.c_minus     = findDouble("\"contamination\":{\"-1\":{\"value\"");
+        bc.c_minus_err = findDouble("\"contamination\":{\"-1\":{\"err\"");
+
+        table[BinKey(ix,iQ2,itb,ip)] = bc;
+
+        kpos = j;
+    }
+
+    plotContaminationCanvases(period, table, binning_scheme, xB_bins, Q2_bins, t_bins, out_dir_plots);
 }
 
 // ---------------- core ----------------
@@ -634,6 +897,12 @@ void compute_pi0_contamination_helicity(
         // ---- write JSON for this period ----
         const std::string out_file = (fs::path(out_dir) / ("contamination_" + period + ".json")).string();
         writeContaminationJson(out_file, counts, N_PHI_BINS, xB_bins, Q2_bins, t_bins);
+
+        // Plot canvases for this period
+        if (ENABLE_PI0_CONTAMINATION_PLOTS) {
+            const std::string plots_dir = (fs::path(out_dir) / "plots").string();
+            plotContaminationCanvases(period, counts, binning_scheme, xB_bins, Q2_bins, t_bins, plots_dir);
+        }
 
         // ---- optional copy for Fa18_inb_supp ----
         if (COPY_CONTAM_TO_FA18_INB_SUPP && runTag == "fa18_inb") {
