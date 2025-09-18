@@ -4,7 +4,10 @@
 #include "load_binning_scheme.h"
 #include "bin_means.h"
 #include "total_counts.h"
+#include "pi0_contamination.h"   // <-- needed for compute_pi0_contamination_helicity
+#include "bsa.h"                 // <-- needed for compute_and_plot_bsa_helicity
 
+#include <filesystem>            // <-- needed for std::filesystem::path
 #include <iostream>
 #include <map>
 #include <string>
@@ -16,6 +19,9 @@ int main(int argc, char* argv[]) {
     // Create necessary output directories
     makeOutputDirs();
     std::cout << "Output directories ready." << std::endl;
+
+    // Root of output tree (used by several stages)
+    const std::string output_root = "output";
 
     // --- Load binning scheme ---
     const std::string csv_file_path = "imports/integrated_bin_v2.csv";
@@ -83,7 +89,8 @@ int main(int argc, char* argv[]) {
     // writes all-periods file to output/jsons/BSA_fits_all_periods.json,
     // writes 10.6 GeV combined to output/jsons/BSA_fits_combined_10p6.json,
     // and plots to output/bsa_plots/<runTag>/...
-    const std::string contamination_dir = (std::filesystem::path(output_root) / "jsons" / "contamination").string();
+    namespace fs = std::filesystem;
+    const std::string contamination_dir = (fs::path(output_root) / "jsons" / "contamination").string();
     compute_and_plot_bsa_helicity(
         dvcs_periods,
         topologies,
