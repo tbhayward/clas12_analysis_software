@@ -204,11 +204,11 @@ struct BranchBinderDVCS {
 
     std::map<std::string,double> cutVals() const {
         std::map<std::string,double> m;
-        if (has_Dp) m["Delta_phi"]=Delta_phi;
+        if (has_Dp)  m["Delta_phi"]=Delta_phi;
         if (has_tgg) m["theta_gamma_gamma"]=theta_gamma_gamma;
-        if (has_pT) m["pTmiss"]=pTmiss;
-        if (has_xF) m["xF"]=xF;
-        if (has_Em) m["Emiss2"]=Emiss2;
+        if (has_pT)  m["pTmiss"]=pTmiss;
+        if (has_xF)  m["xF"]=xF;
+        if (has_Em)  m["Emiss2"]=Emiss2;
         if (has_Mx2) m["Mx2"]=Mx2;
         if (has_Mx21) m["Mx2_1"]=Mx2_1;
         if (has_Mx22) m["Mx2_2"]=Mx2_2;
@@ -255,11 +255,11 @@ struct BranchBinderEPPI0Data { // has helicity
 
     std::map<std::string,double> cutVals() const {
         std::map<std::string,double> m;
-        if (has_Dp) m["Delta_phi"]=Delta_phi;
+        if (has_Dp)  m["Delta_phi"]=Delta_phi;
         if (has_tpp) m["theta_pi0_pi0"]=theta_pi0_pi0;
-        if (has_pT) m["pTmiss"]=pTmiss;
-        if (has_xF) m["xF"]=xF;
-        if (has_Em) m["Emiss2"]=Emiss2;
+        if (has_pT)  m["pTmiss"]=pTmiss;
+        if (has_xF)  m["xF"]=xF;
+        if (has_Em)  m["Emiss2"]=Emiss2;
         if (has_Mx2) m["Mx2"]=Mx2;
         if (has_Mx21) m["Mx2_1"]=Mx2_1;
         if (has_Mx22) m["Mx2_2"]=Mx2_2;
@@ -305,11 +305,11 @@ struct BranchBinderEPPI0MC { // no helicity
 
     std::map<std::string,double> cutValsForDVCS() const { // when mis-ID to DVCS hypothesis
         std::map<std::string,double> m;
-        if (has_Dp) m["Delta_phi"]=Delta_phi;
+        if (has_Dp)  m["Delta_phi"]=Delta_phi;
         if (has_tgg) m["theta_gamma_gamma"]=theta_gamma_gamma;
-        if (has_pT) m["pTmiss"]=pTmiss;
-        if (has_xF) m["xF"]=xF;
-        if (has_Em) m["Emiss2"]=Emiss2;
+        if (has_pT)  m["pTmiss"]=pTmiss;
+        if (has_xF)  m["xF"]=xF;
+        if (has_Em)  m["Emiss2"]=Emiss2;
         if (has_Mx2) m["Mx2"]=Mx2;
         if (has_Mx21) m["Mx2_1"]=Mx2_1;
         if (has_Mx22) m["Mx2_2"]=Mx2_2;
@@ -317,11 +317,11 @@ struct BranchBinderEPPI0MC { // no helicity
     }
     std::map<std::string,double> cutValsForEPPI0() const { // when genuine π0 selection
         std::map<std::string,double> m;
-        if (has_Dp) m["Delta_phi"]=Delta_phi;
+        if (has_Dp)  m["Delta_phi"]=Delta_phi;
         if (has_tpp) m["theta_pi0_pi0"]=theta_pi0_pi0;
-        if (has_pT) m["pTmiss"]=pTmiss;
-        if (has_xF) m["xF"]=xF;
-        if (has_Em) m["Emiss2"]=Emiss2;
+        if (has_pT)  m["pTmiss"]=pTmiss;
+        if (has_xF)  m["xF"]=xF;
+        if (has_Em)  m["Emiss2"]=Emiss2;
         if (has_Mx2) m["Mx2"]=Mx2;
         if (has_Mx21) m["Mx2_1"]=Mx2_1;
         if (has_Mx22) m["Mx2_2"]=Mx2_2;
@@ -395,6 +395,9 @@ static void writeContaminationJson(const std::string& path,
 #include <TAxis.h>
 #include <TLegend.h>
 #include <TStyle.h>
+#include <TH1.h>
+#include <TH1F.h>
+#include <TLatex.h>
 
 static constexpr int N_PHI_BINS_PLOT = 12;
 
@@ -484,6 +487,8 @@ static void plotContaminationCanvases(
                 std::vector<double> Yp(N_PHI_BINS_PLOT, 0.0), Ym(N_PHI_BINS_PLOT, 0.0);
                 std::vector<double> eYp(N_PHI_BINS_PLOT, 0.0), eYm(N_PHI_BINS_PLOT, 0.0);
 
+                double ymax = 0.0;
+
                 for (int ip = 0; ip < N_PHI_BINS_PLOT; ++ip) {
                     BinKey k(ix, iQ2, itb, ip);
                     auto it = table.find(k);
@@ -492,8 +497,10 @@ static void plotContaminationCanvases(
                         eYp[ip] = it->second.c_plus_err;
                         Ym[ip]  = it->second.c_minus;
                         eYm[ip] = it->second.c_minus_err;
+                        ymax = std::max(ymax, std::max(Yp[ip]+eYp[ip], Ym[ip]+eYm[ip]));
                     }
                 }
+                if (ymax <= 0.0) ymax = 1.0; else ymax *= 1.20; // headroom
 
                 // Graphs
                 TGraphErrors* grP = new TGraphErrors(N_PHI_BINS_PLOT, X.data(), Yp.data(), ex.data(), eYp.data());
@@ -513,7 +520,7 @@ static void plotContaminationCanvases(
                 grM->SetMarkerColor(kRed+1);
 
                 // Draw with frame via dummy histogram axis
-                TH1F* frame = gPad->DrawFrame(0.0, 0.0, 360.0, 1.0);
+                TH1 *frame = gPad->DrawFrame(0.0, 0.0, 360.0, ymax);
                 frame->GetXaxis()->SetTitle("#phi (deg)");
                 frame->GetYaxis()->SetTitle("#pi^{0} contamination");
                 frame->GetXaxis()->SetNdivisions(505);
@@ -533,9 +540,9 @@ static void plotContaminationCanvases(
 
                 std::ostringstream ttl;
                 ttl << period
-                    << Form(" | x_{B}=[%.3f,%.3f]", xBr.first, xBr.second)
-                    << Form("  Q^{2}=[%.2f,%.2f]", Q2_slice[r].first, Q2_slice[r].second)
-                    << Form("  -t=[%.2f,%.2f]", t_slice[ccol].first, t_slice[ccol].second);
+                    << " | x_{B}=[" << std::fixed << std::setprecision(3) << xBr.first << "," << xBr.second << "]"
+                    << "  Q^{2}=[" << std::setprecision(2) << Q2_slice[r].first << "," << Q2_slice[r].second << "]"
+                    << "  -t=["    << std::setprecision(2) << t_slice[ccol].first << "," << t_slice[ccol].second << "]";
                 gPad->SetTopMargin(0.12);
                 TLatex latex;
                 latex.SetNDC();
@@ -628,18 +635,16 @@ void plot_pi0_contamination_from_json(
         };
 
         BinCounts bc;
-        bc.N_data.plus  = findVal("\"N_data\":{\"helicity\":{\"+1\"");
-        bc.N_data.minus = findVal("\"N_data\":{\"helicity\":{\"+1\""); // we need the second; fallback:
-        // Better: fetch minus explicitly
-        bc.N_data.minus = findVal("\"N_data\":{\"helicity\":{\"-1\"");
+        bc.N_data.plus   = findVal("\"N_data\":{\"helicity\":{\"+1\"");
+        bc.N_data.minus  = findVal("\"N_data\":{\"helicity\":{\"-1\"");
         bc.N_pi0_exp.plus  = findVal("\"N_pi0_exp\":{\"helicity\":{\"+1\"");
         bc.N_pi0_exp.minus = findVal("\"N_pi0_exp\":{\"helicity\":{\"-1\"");
-        bc.N_pi0_mc    = static_cast<long long>(findDouble("\"N_pi0_mc\""));
-        bc.N_pi0_reco  = static_cast<long long>(findDouble("\"N_pi0_reco\""));
-        bc.c_plus      = findDouble("\"contamination\":{\"+1\":{\"value\"");
-        bc.c_plus_err  = findDouble("\"contamination\":{\"+1\":{\"err\"");
-        bc.c_minus     = findDouble("\"contamination\":{\"-1\":{\"value\"");
-        bc.c_minus_err = findDouble("\"contamination\":{\"-1\":{\"err\"");
+        bc.N_pi0_mc     = static_cast<long long>(findDouble("\"N_pi0_mc\""));
+        bc.N_pi0_reco   = static_cast<long long>(findDouble("\"N_pi0_reco\""));
+        bc.c_plus       = findDouble("\"contamination\":{\"+1\":{\"value\"");
+        bc.c_plus_err   = findDouble("\"contamination\":{\"+1\":{\"err\"");
+        bc.c_minus      = findDouble("\"contamination\":{\"-1\":{\"value\"");
+        bc.c_minus_err  = findDouble("\"contamination\":{\"-1\":{\"err\"");
 
         table[BinKey(ix,iQ2,itb,ip)] = bc;
 
@@ -647,6 +652,58 @@ void plot_pi0_contamination_from_json(
     }
 
     plotContaminationCanvases(period, table, binning_scheme, xB_bins, Q2_bins, t_bins, out_dir_plots);
+}
+
+// -------------- Combined JSON writer ----------------
+static void writeCombinedContaminationJson(
+    const std::string& out_path_combined,
+    const std::map<std::string, std::map<BinKey, BinCounts>>& byPeriod,
+    int nPhi,
+    const std::vector<std::pair<double,double>>& xB_bins,
+    const std::vector<std::pair<double,double>>& Q2_bins,
+    const std::vector<std::pair<double,double>>& t_bins)
+{
+    std::ofstream ofs(out_path_combined);
+    if (!ofs) { std::cerr << "[pi0_contam][ERROR] Cannot open combined output " << out_path_combined << "\n"; return; }
+    ofs << std::fixed << std::setprecision(8);
+    ofs << "{\n";
+    ofs << "  \"binning_meta\": {\"phi_bins\": " << nPhi
+        << ", \"xB_bins\": " << xB_bins.size()
+        << ", \"Q2_bins\": " << Q2_bins.size()
+        << ", \"t_bins\": "  << t_bins.size()  << "},\n";
+    ofs << "  \"periods\": {\n";
+
+    bool firstP = true;
+    for (const auto& pkv : byPeriod) {
+        if (!firstP) ofs << ",\n";
+        firstP = false;
+        ofs << "    \"" << pkv.first << "\": {\n";
+        ofs << "      \"bins\": {\n";
+        bool firstB = true;
+        for (const auto& kv : pkv.second) {
+            if (!firstB) ofs << ",\n";
+            firstB = false;
+            const auto& bc = kv.second;
+            ofs << "        \"" << keyStr(kv.first) << "\": {"
+                << "\"N_data\":{\"helicity\":{\"+1\":" << bc.N_data.plus
+                << ",\"-1\":" << bc.N_data.minus << "},\"total\":" << (bc.N_data.plus+bc.N_data.minus) << "}"
+                << ",\"N_pi0_exp\":{\"helicity\":{\"+1\":" << bc.N_pi0_exp.plus
+                << ",\"-1\":" << bc.N_pi0_exp.minus << "},\"total\":" << (bc.N_pi0_exp.plus+bc.N_pi0_exp.minus) << "}"
+                << ",\"N_pi0_mc\":"   << bc.N_pi0_mc
+                << ",\"N_pi0_reco\":" << bc.N_pi0_reco
+                << ",\"contamination\":{"
+                << "\"+1\":{\"value\":" << bc.c_plus  << ",\"err\":" << bc.c_plus_err  << "},"
+                << "\"-1\":{\"value\":" << bc.c_minus << ",\"err\":" << bc.c_minus_err << "}"
+                << "}"
+                << "}";
+        }
+        ofs << "\n      }\n"; // bins
+        ofs << "    }";
+    }
+
+    ofs << "\n  }\n}\n";
+    ofs.close();
+    std::cout << "[pi0_contam] Wrote combined " << out_path_combined << std::endl;
 }
 
 // ---------------- core ----------------
@@ -659,10 +716,19 @@ void compute_pi0_contamination_helicity(
     const std::map<std::string, TTree*>& eppi0RecMcTrees,
     const std::map<std::string, TTree*>& eppi0BkgTrees,
     const std::string& combined_cuts_json,
-    const std::string& out_dir
+    const std::string& out_root_dir
 ) {
     namespace fs = std::filesystem;
-    fs::create_directories(out_dir);
+
+    // Standardize directories:
+    const fs::path root(out_root_dir); // expected "output"
+    const fs::path jsons_dir = root / "jsons" / "contamination";
+    const fs::path combined_json_path = root / "jsons" / "pi0_contamination_combined.json";
+    const fs::path plots_dir = root / "plots" / "contamination";
+
+    std::error_code ec;
+    fs::create_directories(jsons_dir, ec);
+    fs::create_directories(plots_dir, ec);
 
     const auto xB_bins = uniqueRanges(binning_scheme, 'x');
     const auto Q2_bins = uniqueRanges(binning_scheme, 'Q');
@@ -685,6 +751,9 @@ void compute_pi0_contamination_helicity(
         for (size_t i=0;i+1<cap.size();++i) if (cap[i]=='_' && i+1<cap.size()) cap[i+1]=std::toupper(cap[i+1]);
         return std::string("DVCS_") + cap + "_" + topoKey;
     };
+
+    // Keep a copy of all per-period tables to write the combined file
+    std::map<std::string, std::map<BinKey, BinCounts>> allPeriods;
 
     // For each DVCS period, build counts
     for (const auto& period : periods) {
@@ -816,12 +885,6 @@ void compute_pi0_contamination_helicity(
                     }
                     if (!match) continue;
 
-                    // 3σ cuts under π0 hypothesis
-                    // (we still use data-defined windows but with theta_pi0_pi0)
-                    // Use the same DVCS period key; theta_pi0_pi0 var will just be ignored by DVCS windows
-                    // so we *do not* apply 3σ here (to remain consistent with the python that used only kinematics on reco?).
-                    // If desired, switch to b.cutValsForEPPI0() and apply topoCuts similarly.
-
                     // binning
                     double xB=b.x, Q2=b.Q2, tt=std::fabs(b.t1), phi=b.phi();
                     if (!std::isfinite(xB)||!std::isfinite(Q2)||!std::isfinite(tt)||!std::isfinite(phi)) continue;
@@ -849,13 +912,6 @@ void compute_pi0_contamination_helicity(
                         if (passesTopology_simple(b.detector1,b.detector2,topoStr)) { match=true; break; }
                     }
                     if (!match) continue;
-
-                    // For eppi0 data, apply 3σ cuts using DVCS windows? (python did: passes_3sigma_cuts(event, False, cuts_dict) with eppi0)
-                    // We keep consistency with DVCS windows (data-defined).
-                    // However, theta_pi0_pi0 appears in eppi0 data and not in DVCS windows; we still use available vars.
-                    // If cuts are missing, we just skip 3σ.
-                    // Build the DVCS key using *some* matched topology; we already ensured match.
-                    // (Exact topo key not used here; would require same topo as in DVCS—fine to skip if absent)
 
                     // binning
                     double xB=b.x, Q2=b.Q2, tt=std::fabs(b.t1), phi=b.phi();
@@ -895,23 +951,35 @@ void compute_pi0_contamination_helicity(
         }
 
         // ---- write JSON for this period ----
-        const std::string out_file = (fs::path(out_dir) / ("contamination_" + period + ".json")).string();
+        const std::string out_file = (jsons_dir / ("contamination_" + period + ".json")).string();
         writeContaminationJson(out_file, counts, N_PHI_BINS, xB_bins, Q2_bins, t_bins);
 
         // Plot canvases for this period
         if (ENABLE_PI0_CONTAMINATION_PLOTS) {
-            const std::string plots_dir = (fs::path(out_dir) / "plots").string();
-            plotContaminationCanvases(period, counts, binning_scheme, xB_bins, Q2_bins, t_bins, plots_dir);
+            plotContaminationCanvases(period, counts, binning_scheme, xB_bins, Q2_bins, t_bins, plots_dir.string());
         }
 
-        // ---- optional copy for Fa18_inb_supp ----
+        // ---- optional copy for Fa18_inb_supp (per-period file only) ----
         if (COPY_CONTAM_TO_FA18_INB_SUPP && runTag == "fa18_inb") {
             const std::string supp_period = "DVCS_Fa18_inb_supp";
-            const std::string out_copy = (fs::path(out_dir) / ("contamination_" + supp_period + ".json")).string();
-            std::error_code ec;
-            fs::copy_file(out_file, out_copy, fs::copy_options::overwrite_existing, ec);
-            if (ec) std::cerr << "[pi0_contam][WARN] Could not copy to Fa18_inb_supp JSON: " << ec.message() << std::endl;
-            else     std::cout << "[pi0_contam] Also wrote (copy) " << out_copy << std::endl;
+            const std::string out_copy = (jsons_dir / ("contamination_" + supp_period + ".json")).string();
+            std::error_code ec_copy;
+            fs::copy_file(out_file, out_copy, fs::copy_options::overwrite_existing, ec_copy);
+            if (ec_copy) std::cerr << "[pi0_contam][WARN] Could not copy to Fa18_inb_supp JSON: " << ec_copy.message() << std::endl;
+            else         std::cout << "[pi0_contam] Also wrote (copy) " << out_copy << std::endl;
+
+            if (ENABLE_PI0_CONTAMINATION_PLOTS) {
+                plotContaminationCanvases(supp_period, counts, binning_scheme, xB_bins, Q2_bins, t_bins, plots_dir.string());
+            }
+
+            // Also reflect the copy in the combined structure
+            allPeriods[supp_period] = counts;
         }
+
+        // Keep for combined output
+        allPeriods[period] = counts;
     } // periods
+
+    // ---- write combined JSON with everything ----
+    writeCombinedContaminationJson(combined_json_path.string(), allPeriods, N_PHI_BINS, xB_bins, Q2_bins, t_bins);
 }

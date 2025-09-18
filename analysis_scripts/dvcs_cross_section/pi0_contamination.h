@@ -18,29 +18,28 @@ extern bool ENABLE_PI0_CONTAMINATION_PLOTS;
 
 // -------------------- Public API --------------------
 // Compute helicity-resolved pi0 contamination and write JSONs:
-//   contamination_<period>.json per DVCS period (and optional copy to Fa18_inb_supp).
-// NOTE: Plotting (ROOT canvases) is produced automatically at the end if
-//       ENABLE_PI0_CONTAMINATION_PLOTS is true.
+//   - Per-period files: output/jsons/contamination/contamination_<period>.json
+//   - Combined file:    output/jsons/pi0_contamination_combined.json
+// Plots (if enabled) go to: output/plots/contamination/
 void compute_pi0_contamination_helicity(
     const std::vector<std::string>& periods,                 // e.g. {"DVCS_Fa18_inb", ...}
     const std::vector<std::string>& topologies,              // {"(FD,FD)","(CD,FD)","(CD,FT)"}
     const std::vector<Binning>& binning_scheme,              // from load_binning_scheme(...)
     const std::map<std::string, TTree*>& dvcsDataTrees,      // keys: "fa18_inb", "sp18_out", ...
     const std::map<std::string, TTree*>& eppi0DataTrees,     // keys: "<tag>_eppi0"
-    const std::map<std::string, TTree*>& eppi0RecMcTrees,    // keys: "<tag>_rec_mc" (and "<tag>_bkg" are also in here)
-    const std::map<std::string, TTree*>& eppi0BkgTrees,      // keys: "<tag>_bkg" (same map as above is fine)
+    const std::map<std::string, TTree*>& eppi0RecMcTrees,    // keys: "<tag>_rec_mc"
+    const std::map<std::string, TTree*>& eppi0BkgTrees,      // keys: "<tag>_bkg"
     const std::string& combined_cuts_json,                   // "output/jsons/combined_cuts.json"
-    const std::string& out_dir                               // e.g. "output/contamination"
+    const std::string& out_root_dir                          // pass "output" (writer handles subdirs)
 );
 
 // -------------------- Optional: plot-from-JSON helper --------------------
-// If you’d like to (re)generate canvases later from saved JSON files (without recomputing),
-// you can call this function separately (not used by default).
+// Re-generate canvases later from a saved JSON without recomputing.
 void plot_pi0_contamination_from_json(
     const std::string& period,                               // "DVCS_Fa18_inb"
     const std::vector<Binning>& binning_scheme,
-    const std::string& contamination_json_path,              // "output/contamination/contamination_<period>.json"
-    const std::string& out_dir_plots                         // "output/contamination/plots"
+    const std::string& contamination_json_path,              // "output/jsons/contamination/contamination_<period>.json"
+    const std::string& out_dir_plots                         // "output/plots/contamination"
 );
 
 #endif // PI0_CONTAMINATION_H
