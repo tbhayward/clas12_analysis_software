@@ -485,7 +485,7 @@ static void plotContaminationCanvases(
         head.SetNDC();
         head.SetTextSize(0.035);
         head.SetTextAlign(22); // center
-        head.DrawLatex(0.5, 0.985, period.c_str());
+        head.DrawLatex(0.5, 0.995, period.c_str());
 
         // Loop pads
         for (int r = 0; r < nrows; ++r) {
@@ -504,20 +504,8 @@ static void plotContaminationCanvases(
                 std::vector<double> Yp(N_PHI_BINS_PLOT, 0.0), Ym(N_PHI_BINS_PLOT, 0.0);
                 std::vector<double> eYp(N_PHI_BINS_PLOT, 0.0), eYm(N_PHI_BINS_PLOT, 0.0);
 
-                double ymax = 0.0;
-
-                for (int ip = 0; ip < N_PHI_BINS_PLOT; ++ip) {
-                    BinKey k(ix, iQ2, itb, ip);
-                    auto it = table.find(k);
-                    if (it != table.end()) {
-                        Yp[ip]  = it->second.c_plus;
-                        eYp[ip] = it->second.c_plus_err;
-                        Ym[ip]  = it->second.c_minus;
-                        eYm[ip] = it->second.c_minus_err;
-                        ymax = std::max(ymax, std::max(Yp[ip]+eYp[ip], Ym[ip]+eYm[ip]));
-                    }
-                }
-                if (ymax <= 0.0) ymax = 1.0; else ymax *= 1.20; // headroom
+                const double ymin = 0.0;
+                const double ymax = 1.0;
 
                 // Graphs
                 TGraphErrors* grP = new TGraphErrors(N_PHI_BINS_PLOT, X.data(), Yp.data(), ex.data(), eYp.data());
@@ -537,7 +525,7 @@ static void plotContaminationCanvases(
                 grM->SetMarkerColor(kRed+1);
 
                 // Draw with frame via dummy histogram axis
-                TH1 *frame = gPad->DrawFrame(0.0, 0.0, 360.0, ymax);
+                TH1 *frame = gPad->DrawFrame(0.0, ymin, 360.0, ymax);
                 frame->GetXaxis()->SetTitle("#phi (deg)");
                 frame->GetYaxis()->SetTitle("#pi^{0} contamination");
                 frame->GetXaxis()->SetNdivisions(505);
@@ -549,7 +537,8 @@ static void plotContaminationCanvases(
 
                 // Legend (kept small)
                 TLegend* leg = new TLegend(0.56, 0.74, 0.88, 0.90);
-                leg->SetBorderSize(0);
+                leg->SetBorderSize(1);
+                leg->SetLineColor(kBlack);
                 leg->SetFillStyle(0);
                 leg->SetTextSize(0.035);
                 leg->AddEntry(grP, "helicity +1", "p");
