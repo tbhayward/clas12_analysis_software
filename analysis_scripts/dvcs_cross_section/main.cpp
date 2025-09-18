@@ -6,7 +6,6 @@
 #include "total_counts.h"
 #include "pi0_contamination.h"   // <-- needed for compute_pi0_contamination_helicity
 #include "bsa.h"                 // <-- needed for compute_and_plot_bsa_helicity
-
 #include <filesystem>            // <-- needed for std::filesystem::path
 #include <iostream>
 #include <map>
