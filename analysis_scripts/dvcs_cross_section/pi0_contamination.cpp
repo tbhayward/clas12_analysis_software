@@ -398,6 +398,7 @@ static void writeContaminationJson(const std::string& path,
 #include <TH1.h>
 #include <TH1F.h>
 #include <TLatex.h>
+#include <TPad.h>
 
 static constexpr int N_PHI_BINS_PLOT = 12;
 
@@ -438,7 +439,6 @@ static int findIndex(const std::pair<double,double>& range,
 
 // Build and save canvases: one canvas per xB bin; rows=Q2 bins-in-slice, cols=t bins-in-slice.
 // Each pad: contamination vs phi, with two series (+1 and -1 helicities) and error bars.
-// Only a single global title (period) is drawn on the canvas.
 static void plotContaminationCanvases(
     const std::string& period,
     const std::map<BinKey, BinCounts>& table,
@@ -469,43 +469,68 @@ static void plotContaminationCanvases(
         const int nrows = static_cast<int>(Q2_slice.size());
         const int ncols = static_cast<int>(t_slice.size());
 
-        // Slightly smaller canvas so space for a single top title remains
+        // Canvas per xB slice (use two pads: a thin title pad at top and a grid pad below)
         const int w = 260*ncols + 120;
         const int h = 220*nrows + 120;
 
-        // Canvas per xB slice
         std::ostringstream cname;
         cname << "c_contam_" << period << "_xB" << ix;
         TCanvas* c = new TCanvas(cname.str().c_str(), cname.str().c_str(), w, h);
-        c->Divide(ncols, nrows, 0.0001, 0.0001);
 
-        // Put a single title on the canvas (period only)
-        c->cd();
+        // Create a top title pad to avoid clipping/overlap with subpads
+        TPad* pTop  = new TPad("pTop","pTop", 0.0, 0.94, 1.0, 1.0);
+        pTop->SetFillStyle(0);
+        pTop->SetBorderSize(0);
+        pTop->Draw();
+
+        // Main grid pad contains the divided subpads
+        TPad* pGrid = new TPad("pGrid","pGrid", 0.0, 0.0, 1.0, 0.94);
+        pGrid->SetFillStyle(0);
+        pGrid->SetBorderSize(0);
+        pGrid->Draw();
+        pGrid->cd();
+        pGrid->Divide(ncols, nrows, 0.0001, 0.0001);
+
+        // Title in the dedicated top pad
+        pTop->cd();
         TLatex head;
         head.SetNDC();
-        head.SetTextSize(0.035);
-        head.SetTextAlign(22); // center
-        head.DrawLatex(0.5, 0.995, period.c_str());
+        head.SetTextSize(0.55);  // relative to the small top pad -> nice readable title
+        head.SetTextAlign(22);   // center
+        head.DrawLatex(0.5, 0.5, period.c_str());
 
-        // Loop pads
+        // Loop pads (inside pGrid)
         for (int r = 0; r < nrows; ++r) {
             int iQ2 = findIndex(Q2_slice[r], Q2_bins); if (iQ2 < 0) continue;
             for (int ccol = 0; ccol < ncols; ++ccol) {
                 int itb = findIndex(t_slice[ccol], t_bins); if (itb < 0) continue;
 
-                c->cd(r*ncols + ccol + 1);
+                pGrid->cd(r*ncols + ccol + 1);
                 gPad->SetGrid(1,1);
-                gPad->SetTopMargin(0.07);
-                gPad->SetBottomMargin(0.12);
+                gPad->SetTopMargin(0.08);
+                gPad->SetBottomMargin(0.14);
                 gPad->SetLeftMargin(0.12);
-                gPad->SetRightMargin(0.05);
+                gPad->SetRightMargin(0.06);
 
-                // Build Y arrays (two helicities), default to 0
+                // Build Y arrays (two helicities) FROM TABLE
                 std::vector<double> Yp(N_PHI_BINS_PLOT, 0.0), Ym(N_PHI_BINS_PLOT, 0.0);
                 std::vector<double> eYp(N_PHI_BINS_PLOT, 0.0), eYm(N_PHI_BINS_PLOT, 0.0);
 
+                double ymax_found = 0.0;
+                for (int ip = 0; ip < N_PHI_BINS_PLOT; ++ip) {
+                    auto it = table.find(BinKey(ix, iQ2, itb, ip));
+                    if (it == table.end()) continue;
+                    const BinCounts& bc = it->second;
+                    Yp[ip]  = bc.c_plus;
+                    Ym[ip]  = bc.c_minus;
+                    eYp[ip] = bc.c_plus_err;
+                    eYm[ip] = bc.c_minus_err;
+                    ymax_found = std::max(ymax_found, std::max(Yp[ip] + eYp[ip], Ym[ip] + eYm[ip]));
+                }
+
+                // y-axis range with headroom; cap at 1.0
                 const double ymin = 0.0;
-                const double ymax = 1.0;
+                const double ymax = std::min(1.0, (ymax_found > 0.0 ? ymax_found*1.25 : 0.10));
 
                 // Graphs
                 TGraphErrors* grP = new TGraphErrors(N_PHI_BINS_PLOT, X.data(), Yp.data(), ex.data(), eYp.data());
@@ -535,8 +560,8 @@ static void plotContaminationCanvases(
                 grP->Draw("P SAME");
                 grM->Draw("P SAME");
 
-                // Legend (kept small)
-                TLegend* leg = new TLegend(0.56, 0.74, 0.88, 0.90);
+                // Fixed legend position (top-right)
+                TLegend* leg = new TLegend(0.60, 0.73, 0.92, 0.92);
                 leg->SetBorderSize(1);
                 leg->SetLineColor(kBlack);
                 leg->SetFillStyle(0);
@@ -544,8 +569,6 @@ static void plotContaminationCanvases(
                 leg->AddEntry(grP, "helicity +1", "p");
                 leg->AddEntry(grM, "helicity -1", "p");
                 leg->Draw();
-
-                // No per-pad text titles; only the global period title on the canvas
             }
         }
 
@@ -726,7 +749,6 @@ void compute_pi0_contamination_helicity(
 
     std::error_code ec;
     fs::create_directories(jsons_dir, ec);
-    // plots subdirs are expected to exist via make_dirs; we will still ensure the specific one below
 
     const auto xB_bins = uniqueRanges(binning_scheme, 'x');
     const auto Q2_bins = uniqueRanges(binning_scheme, 'Q');
@@ -743,7 +765,6 @@ void compute_pi0_contamination_helicity(
     }
 
     auto dvcsCutsKey = [&](const std::string& runTag, const std::string& topoKey)->std::string {
-        // make "DVCS_Fa18_inb" style
         std::string cap = runTag;
         if (!cap.empty()) cap[0] = std::toupper(cap[0]);
         for (size_t i=0;i+1<cap.size();++i) if (cap[i]=='_' && i+1<cap.size()) cap[i+1]=std::toupper(cap[i+1]);
@@ -803,7 +824,7 @@ void compute_pi0_contamination_helicity(
                     if (!applyKinematicCuts_simple(b.t1,b.open_angle_ep2,b.pTmiss)) continue;
                     if (b.helicity!=+1 && b.helicity!=-1) continue;
 
-                    // choose topology for this event (first matching)
+                    // choose topology for this event
                     std::string usedTopoKey;
                     for (const auto& topoStr : topologies) {
                         if (passesTopology_simple(b.detector1,b.detector2,topoStr)) { usedTopoKey = topoToKey(topoStr); break; }
@@ -841,7 +862,6 @@ void compute_pi0_contamination_helicity(
                     t_pi0_bkg->GetEntry(i);
                     if (!applyKinematicCuts_simple(b.t1,b.open_angle_ep2,b.pTmiss)) continue;
 
-                    // event topology
                     bool match=false; std::string usedTopoKey;
                     for (const auto& topoStr : topologies) {
                         if (passesTopology_simple(b.detector1,b.detector2,topoStr)) { usedTopoKey = topoToKey(topoStr); match=true; break; }

@@ -20,7 +20,7 @@ extern bool ENABLE_PI0_CONTAMINATION_PLOTS;
 // Compute helicity-resolved pi0 contamination and write JSONs:
 //   - Per-period files: output/jsons/contamination/contamination_<period>.json
 //   - Combined file:    output/jsons/pi0_contamination_combined.json
-// Plots (if enabled) go to: output/plots/contamination/
+// Plots (if enabled) go to: output/contamination_plots/<runTag>/
 void compute_pi0_contamination_helicity(
     const std::vector<std::string>& periods,                 // e.g. {"DVCS_Fa18_inb", ...}
     const std::vector<std::string>& topologies,              // {"(FD,FD)","(CD,FD)","(CD,FT)"}
@@ -39,7 +39,7 @@ void plot_pi0_contamination_from_json(
     const std::string& period,                               // "DVCS_Fa18_inb"
     const std::vector<Binning>& binning_scheme,
     const std::string& contamination_json_path,              // "output/jsons/contamination/contamination_<period>.json"
-    const std::string& out_dir_plots                         // "output/plots/contamination"
+    const std::string& out_dir_plots                         // "output/contamination_plots/<runTag>"
 );
 
 #endif // PI0_CONTAMINATION_H
