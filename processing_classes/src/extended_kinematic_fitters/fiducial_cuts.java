@@ -288,30 +288,39 @@ public class fiducial_cuts {
         int pid = rec_Bank.getInt("pid", particle_Index);
         // different cuts for inbending and outbending tracks
         int runnum = run_Bank.getInt("run", 0);
-        boolean inbending = false;
-        boolean outbending = false;
-        if (run_Bank.getFloat("torus", 0) == 1) {
-            outbending = true;
-        } else {
-            inbending = true;
-        }
-//        if ((runnum >= 4763 && runnum <= 5419) || (runnum >= 6616 && runnum <= 6783)) {
-//            // inbending electron torus polarity
-//            if (pid == 11 || pid == -211 || pid == -321 || pid == -2212) {
-//                inbending = true;
-//            } else if (pid == -11 || pid == 211 || pid == 321 || pid == 2212) {
-//                outbending = true;
-//            }
-//        } else if (runnum >= 5423 && runnum <= 5666) {
-//            // outbending electron torus polarity
-//            if (pid == 11 || pid == -211 || pid == -321 || pid == -2212) {
-//                outbending = true;
-//            } else if (pid == -11 || pid == 211 || pid == 321 || pid == 2212) {
-//                inbending = true;
-//            }
+//        boolean inbending = false;
+//        boolean outbending = false;
+//        if (run_Bank.getFloat("torus", 0) == 1) {
+//            outbending = true;
 //        } else {
 //            inbending = true;
 //        }
+        boolean electron_inbending = false;
+        boolean electron_outbending = false;
+        if (run_Bank.getFloat("torus", 0) == 1) {
+            electron_outbending = true;
+        } else {
+            electron_inbending = true;
+        }
+        boolean particle_inbending = false;
+        boolean particle_outbending = false;
+        if (electron_inbending) {
+            // inbending electron torus polarity
+            if (pid == 11 || pid == -211 || pid == -321 || pid == -2212) {
+                particle_inbending = true;
+            } else if (pid == -11 || pid == 211 || pid == 321 || pid == 2212) {
+                particle_outbending = true;
+            }
+        } else if (electron_outbending) {
+            // outbending electron torus polarity
+            if (pid == 11 || pid == -211 || pid == -321 || pid == -2212) {
+                particle_inbending = true;
+            } else if (pid == -11 || pid == 211 || pid == 321 || pid == 2212) {
+                particle_outbending = true;
+            }
+        } else {
+            return false; // torus != +/- 1 ?
+        }
 
         generic_tests generic_tests = new generic_tests();
         float px = rec_Bank.getFloat("px", particle_Index);
@@ -340,14 +349,14 @@ public class fiducial_cuts {
             }
         }
 
-        if (inbending) {
+        if (particle_inbending) {
             if (theta * (180 / Math.PI) < 10) {
                 return edge_1 > 10 && edge_2 > 10 && edge_3 > 10;
             }
             if (theta * (180 / Math.PI) >= 10) {
                 return edge_1 > 3 && edge_2 > 3 && edge_3 > 10;
             }
-        } else if (outbending) {
+        } else if (particle_outbending) {
             return edge_1 > 3 && edge_2 > 3 && edge_3 > 10;
         }
         return false; // no pid match?
