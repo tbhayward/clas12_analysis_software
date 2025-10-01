@@ -2,8 +2,17 @@
 # -*- coding: utf-8 -*-
 
 r"""
-DVCS radiative-correction panels (3x5) vs phi from four ROOT trees, with Poisson
-error bars propagated for R_c = (gen_rad/rec_rad) / (gen_born/rec_born).
+DVCS radiative-correction plots of R_c(φ):
+
+(A) 3x5 panels of R_c(φ) with Poisson error bars in fixed kinematic bins
+(B) Experimental canvases: for each x_B bin, make a grid with Q^2 bins as columns
+    and -t bins as rows; each subplot shows R_c(φ) in that (Q^2, -t) bin.
+
+R_c definition (per φ bin or integrated over φ):
+  Let A=gen_rad, B=rec_rad, C=gen_born, D=rec_born (counts).
+  R_c = (A*D) / (B*C)
+  σ(R_c) = R_c * sqrt(1/A + 1/D + 1/B + 1/C)
+  If any of A,B,C,D == 0 in a φ bin, that point is undefined (NaN -> not plotted).
 
 Inputs (TTree "PhysicsEvents"):
   Born:
@@ -13,20 +22,17 @@ Inputs (TTree "PhysicsEvents"):
     - gen: /volatile/clas12/thayward/temp_rad/gen_dvcsgen_sp18_inb_rad.root
     - rec: /volatile/clas12/thayward/temp_rad/rec_dvcsgen_sp18_inb_rad.root
 
-Output:
-  - output/dvcs_rad_example.pdf
+Experimental bin CSV (two header lines, whitespace-separated columns):
+  /u/home/thayward/clas12_analysis_software/analysis_scripts/dvcs_cross_section/imports/integrated_bin_v2.csv
+  Fallbacks supported: ./integrated_bin_v2.csv or /mnt/data/integrated_bin_v2.csv
 
-Rows (top->bottom): Q^2, x_B, -t
-Columns: 5 per row
+Outputs:
+  - output/rad_example/rad_phi_panels.pdf
+  - output/rad_example/rad_phi_grid_xB_<lo>_<hi>.pdf   (one per x_B bin)
 
-Branches used: Q2, x, t1, phi2  (we define tpos = -t1)
-Axis labels: x = r"$\phi$", y = r"$R_{c}$"
-
-Poisson propagation (independent counts in a phi bin):
-  Let A=gen_rad, B=rec_rad, C=gen_born, D=rec_born.
-  R_c = (A*D) / (B*C)
-  sigma(R_c) = R_c * sqrt(1/A + 1/D + 1/B + 1/C)
-  Any bin with A==0 or B==0 or C==0 or D==0 -> NaN (not plotted).
+Style:
+  - LaTeX-like mathtext labels (no external TeX needed)
+  - Closed axes boxes; marker-only points; y range fixed to [0,2]; φ ticks at 0, π/2, π, 3π/2, 2π
 """
 
 import os
@@ -44,7 +50,7 @@ plt.rcParams.update({
     "xtick.labelsize": 10,
     "ytick.labelsize": 10,
     "legend.fontsize": 10,
-    # Use LaTeX-style mathtext without requiring a TeX install
+    # LaTeX-like mathtext without external TeX
     "mathtext.fontset": "dejavusans",
     "mathtext.default": "regular",
 })
@@ -57,156 +63,259 @@ REC_RAD_PATH  = "/volatile/clas12/thayward/temp_rad/rec_dvcsgen_sp18_inb_rad.roo
 
 TTREE_NAME = "PhysicsEvents"
 
-# -------------------- bin definitions --------------------
-Q2_BINS = [(1.0, 2.0), (2.0, 3.0), (3.0, 4.0), (4.0, 5.0), (5.0, 9.0)]
-XB_BINS = [(0.10, 0.20), (0.20, 0.30), (0.30, 0.40), (0.40, 0.50), (0.50, 0.70)]
-T_BINS  = [(0.10, 0.20), (0.20, 0.30), (0.30, 0.40), (0.40, 0.70), (0.70, 1.00)]
+CSV_CANDIDATES = [
+    "/u/home/thayward/clas12_analysis_software/analysis_scripts/dvcs_cross_section/imports/integrated_bin_v2.csv",
+    "./integrated_bin_v2.csv",
+    "/mnt/data/integrated_bin_v2.csv",
+]
 
-# -------------------- phi binning: radians in [0, 2*pi] with 24 bins --------------------
+# -------------------- fixed panel bin definitions for part (A) --------------------
+Q2_BINS_FIXED = [(1.0, 2.0), (2.0, 3.0), (3.0, 4.0), (4.0, 5.0), (5.0, 9.0)]
+XB_BINS_FIXED = [(0.10, 0.20), (0.20, 0.30), (0.30, 0.40), (0.40, 0.50), (0.50, 0.70)]
+T_BINS_FIXED  = [(0.10, 0.20), (0.20, 0.30), (0.30, 0.40), (0.40, 0.70), (0.70, 1.00)]
+
+# -------------------- φ binning: radians in [0, 2π] with 24 bins --------------------
 PHI_NBINS = 24
 PHI_MIN = 0.0
 PHI_MAX = 2.0 * np.pi
 PHI_EDGES = np.linspace(PHI_MIN, PHI_MAX, PHI_NBINS + 1)
 
-# -------------------- helpers --------------------
+# -------------------- helpers: IO and math --------------------
 def load_arrays(path):
     """
     Load required branches from ROOT file and return a dict of numpy arrays:
-      'Q2', 'x', 'phi2', 'tpos'  (where tpos = -t1)
+      'Q2', 'x', 'phi', 'tpos'  (phi wrapped into [0, 2π), tpos = -t1 > 0)
     """
     with uproot.open(path) as f:
         tree = f[TTREE_NAME]
         arr = tree.arrays(["Q2", "x", "t1", "phi2"], library="np")
-    # Compute -t1 as positive
-    tpos = -arr["t1"]
-    return {
-        "Q2": arr["Q2"],
-        "x":  arr["x"],
-        "phi2": arr["phi2"],
-        "tpos": tpos,
-    }
+    # Wrap φ into [0, 2π)
+    phi_wrapped = np.mod(arr["phi2"], 2.0 * np.pi)
+    tpos = -arr["t1"]  # positive -t
+    return {"Q2": arr["Q2"], "x": arr["x"], "phi": phi_wrapped, "tpos": tpos}
 #endfor
 
 def hist_counts(values, mask, bin_edges):
-    """
-    Histogram of 'values[mask]' into 'bin_edges'.
-    """
+    """Histogram of values[mask] into bin_edges."""
     return np.histogram(values[mask], bins=bin_edges)[0]
 #endfor
 
 def rc_and_err(A, B, C, D):
     """
-    Given arrays A,B,C,D>=0 (same shape), compute:
+    Arrays A,B,C,D >= 0 (same shape, per-φ counts):
       R_c = (A*D) / (B*C)
-      sigma(R_c) = R_c * sqrt(1/A + 1/D + 1/B + 1/C)
-    If any of A,B,C,D==0 for a bin, return NaN for both R_c and sigma.
+      σ(R_c) = R_c * sqrt(1/A + 1/D + 1/B + 1/C)
+    Any zero in A,B,C,D -> NaN for both R_c and σ.
     """
-    A = A.astype(float)
-    B = B.astype(float)
-    C = C.astype(float)
-    D = D.astype(float)
-
+    A = A.astype(float); B = B.astype(float); C = C.astype(float); D = D.astype(float)
     den = B * C
     num = A * D
-
     with np.errstate(divide="ignore", invalid="ignore"):
         R = np.where(den > 0.0, num / den, np.nan)
         mask_pos = (A > 0.0) & (B > 0.0) & (C > 0.0) & (D > 0.0)
-        sigma = np.full_like(R, np.nan, dtype=float)
-        sigma[mask_pos] = R[mask_pos] * np.sqrt(1.0/A[mask_pos] + 1.0/D[mask_pos] + 1.0/B[mask_pos] + 1.0/C[mask_pos])
-    #endif
-    return R, sigma
+        sR = np.full_like(R, np.nan, dtype=float)
+        sR[mask_pos] = R[mask_pos] * np.sqrt(1.0/A[mask_pos] + 1.0/D[mask_pos] + 1.0/B[mask_pos] + 1.0/C[mask_pos])
+    return R, sR
 #endfor
 
-def compute_rc_curve_per_bin(gen_born, rec_born, gen_rad, rec_rad, varname, lo, hi, phi_edges):
-    """
-    For a given variable name ('Q2', 'x', 'tpos') and bin [lo, hi), compute
-    the R_c(phi) curve and its Poisson error using histogrammed counts vs phi2.
-    Returns phi_centers, R(phi), sigma_R(phi) (numpy arrays).
-    """
-    m_gb = (gen_born[varname] >= lo) & (gen_born[varname] < hi)
-    m_rb = (rec_born[varname] >= lo) & (rec_born[varname] < hi)
-    m_gr = (gen_rad[varname]  >= lo) & (gen_rad[varname]  < hi)
-    m_rr = (rec_rad[varname]  >= lo) & (rec_rad[varname]  < hi)
-
-    gb_phi = hist_counts(gen_born["phi2"], m_gb, phi_edges)
-    rb_phi = hist_counts(rec_born["phi2"], m_rb, phi_edges)
-    gr_phi = hist_counts(gen_rad["phi2"],  m_gr, phi_edges)
-    rr_phi = hist_counts(rec_rad["phi2"],  m_rr, phi_edges)
-
-    R, sigma = rc_and_err(gr_phi, rr_phi, gb_phi, rb_phi)
-    centers = 0.5 * (phi_edges[:-1] + phi_edges[1:])
-    return centers, R, sigma
-#endfor
-
-# Nice LaTeX-like tick labels for phi in radians
+# Nice LaTeX-style φ ticks
 _PHI_TICKS = [0.0, 0.5*np.pi, np.pi, 1.5*np.pi, 2.0*np.pi]
 _PHI_TICKLABELS = [r"$0$", r"$\frac{\pi}{2}$", r"$\pi$", r"$\frac{3\pi}{2}$", r"$2\pi$"]
 
-def format_axes(ax):
-    """
-    Aesthetics + LaTeX-style labels and fixed phi ticks.
-    - Markers only (no connecting lines set in errorbar call).
-    - Full box (all spines visible).
-    - Fixed y range [0, 2] for all subplots.
-    """
+def format_axes_phi(ax):
+    """Marker-only style, closed box, fixed y in [0,2], φ ticks, dashed y=1 line."""
     ax.grid(True, alpha=0.35)
     ax.axhline(1.0, linestyle="--", linewidth=1.0)
-    ax.set_xlabel(r"$\phi$", fontsize=12)
-    ax.set_ylabel(r"$R_{c}$", fontsize=12)
+    ax.set_xlabel(r"$\phi$")
+    ax.set_ylabel(r"$R_{c}$")
     ax.set_xlim(PHI_MIN, PHI_MAX)
     ax.set_ylim(0.0, 2.0)
     ax.xaxis.set_major_locator(FixedLocator(_PHI_TICKS))
     ax.xaxis.set_major_formatter(FixedFormatter(_PHI_TICKLABELS))
     ax.ticklabel_format(axis="y", style="plain", useOffset=False)
-    # Ensure full box
     for spine in ["top", "right", "left", "bottom"]:
         ax.spines[spine].set_visible(True)
     #endfor
 #endfor
 
-# -------------------- plotting --------------------
-def make_panels(gen_born, rec_born, gen_rad, rec_rad, out_pdf):
-    """
-    Build the 3x5 panel figure and save to 'out_pdf'.
-    """
+# -------------------- part (A): fixed 3×5 panels --------------------
+def compute_rc_curve_1D(gen_born, rec_born, gen_rad, rec_rad, varname, lo, hi, phi_edges):
+    """R_c(φ) inside [lo,hi) of single variable varname."""
+    m_gb = (gen_born[varname] >= lo) & (gen_born[varname] < hi)
+    m_rb = (rec_born[varname] >= lo) & (rec_born[varname] < hi)
+    m_gr = (gen_rad[varname]  >= lo) & (gen_rad[varname]  < hi)
+    m_rr = (rec_rad[varname]  >= lo) & (rec_rad[varname]  < hi)
+
+    gb_phi = hist_counts(gen_born["phi"], m_gb, phi_edges)
+    rb_phi = hist_counts(rec_born["phi"], m_rb, phi_edges)
+    gr_phi = hist_counts(gen_rad["phi"],  m_gr, phi_edges)
+    rr_phi = hist_counts(rec_rad["phi"],  m_rr, phi_edges)
+
+    R, sR = rc_and_err(gr_phi, rr_phi, gb_phi, rb_phi)
+    centers = 0.5 * (phi_edges[:-1] + phi_edges[1:])
+    return centers, R, sR
+#endfor
+
+def make_phi_panels(gen_born, rec_born, gen_rad, rec_rad, out_pdf):
+    """Create the 3x5 R_c(φ) figure and save."""
     fig, axes = plt.subplots(3, 5, figsize=(18, 10), constrained_layout=True)
-    fig.suptitle(r"DVCS Radiative Correction $R_{c}$ vs $\phi$", fontsize=16)
+    fig.suptitle(r"DVCS Radiative Correction $R_{c}$ vs $\phi$")
 
-    # Row 0: Q^2 bins (5)
-    for j, (lo, hi) in enumerate(Q2_BINS):
+    # Row 0: Q^2 bins
+    for j, (lo, hi) in enumerate(Q2_BINS_FIXED):
         ax = axes[0, j]
-        phi_c, R, sR = compute_rc_curve_per_bin(gen_born, rec_born, gen_rad, rec_rad, "Q2", lo, hi, PHI_EDGES)
-        ax.errorbar(phi_c, R, yerr=sR, fmt="o", linestyle="none", linewidth=1.6, markersize=3.0, capsize=2)
+        phi_c, R, sR = compute_rc_curve_1D(gen_born, rec_born, gen_rad, rec_rad, "Q2", lo, hi, PHI_EDGES)
+        ax.errorbar(phi_c, R, yerr=sR, fmt="o", linestyle="none", linewidth=1.2, markersize=3.0, capsize=2)
         ax.set_title(rf"$Q^{{2}}\ \mathrm{{in}}\ [{lo:.2g}, {hi:.2g}]$")
-        format_axes(ax)
+        format_axes_phi(ax)
     #endfor
 
-    # Row 1: x_B bins (5)
-    for j, (lo, hi) in enumerate(XB_BINS):
+    # Row 1: x_B bins
+    for j, (lo, hi) in enumerate(XB_BINS_FIXED):
         ax = axes[1, j]
-        phi_c, R, sR = compute_rc_curve_per_bin(gen_born, rec_born, gen_rad, rec_rad, "x", lo, hi, PHI_EDGES)
-        ax.errorbar(phi_c, R, yerr=sR, fmt="o", linestyle="none", linewidth=1.6, markersize=3.0, capsize=2)
+        phi_c, R, sR = compute_rc_curve_1D(gen_born, rec_born, gen_rad, rec_rad, "x", lo, hi, PHI_EDGES)
+        ax.errorbar(phi_c, R, yerr=sR, fmt="o", linestyle="none", linewidth=1.2, markersize=3.0, capsize=2)
         ax.set_title(rf"$x_{{B}}\ \mathrm{{in}}\ [{lo:.2g}, {hi:.2g}]$")
-        format_axes(ax)
+        format_axes_phi(ax)
     #endfor
 
-    # Row 2: -t bins (5) using tpos
-    for j, (lo, hi) in enumerate(T_BINS):
+    # Row 2: -t bins (use tpos)
+    for j, (lo, hi) in enumerate(T_BINS_FIXED):
         ax = axes[2, j]
-        phi_c, R, sR = compute_rc_curve_per_bin(gen_born, rec_born, gen_rad, rec_rad, "tpos", lo, hi, PHI_EDGES)
-        ax.errorbar(phi_c, R, yerr=sR, fmt="o", linestyle="none", linewidth=1.6, markersize=3.0, capsize=2)
+        phi_c, R, sR = compute_rc_curve_1D(gen_born, rec_born, gen_rad, rec_rad, "tpos", lo, hi, PHI_EDGES)
+        ax.errorbar(phi_c, R, yerr=sR, fmt="o", linestyle="none", linewidth=1.2, markersize=3.0, capsize=2)
         ax.set_title(rf"$-t\ \mathrm{{in}}\ [{lo:.2g}, {hi:.2g}]$")
-        format_axes(ax)
+        format_axes_phi(ax)
     #endfor
 
-    # Save
-    out_dir = os.path.dirname(out_pdf)
-    if out_dir != "":
-        os.makedirs(out_dir, exist_ok=True)
-    #endif
+    os.makedirs(os.path.dirname(out_pdf), exist_ok=True)
     fig.savefig(out_pdf)
     print("Saved:", out_pdf)
+#endfor
+
+# -------------------- part (B): experimental canvases per x_B --------------------
+class BinRow(object):
+    __slots__ = ("xbmin","xbmax","q2min","q2max","tmin","tmax")
+    def __init__(self, xbmin, xbmax, q2min, q2max, tmin, tmax):
+        self.xbmin=xbmin; self.xbmax=xbmax
+        self.q2min=q2min; self.q2max=q2max
+        self.tmin=tmin;   self.tmax=tmax
+#endfor
+
+def parse_binning_csv():
+    """
+    Reads the experimental bin CSV (two header lines, whitespace split).
+    Expected columns (0-based token index):
+      4: xBmin, 5: xBmax, 7: Q2min, 8: Q2max, 10: |tmin|, 11: |tmax|
+    Returns: list[BinRow]
+    """
+    csv_path = next((p for p in CSV_CANDIDATES if os.path.isfile(p)), None)
+    if not csv_path:
+        raise FileNotFoundError("Could not find integrated_bin_v2.csv in any candidate path.")
+    rows = []
+    with open(csv_path, "r") as f:
+        lines = [ln.rstrip("\r\n") for ln in f.readlines()]
+    if len(lines) <= 2:
+        return rows
+    for i in range(2, len(lines)):
+        ln = lines[i]
+        if not ln or ln.lstrip().startswith("#"):
+            continue
+        toks = ln.split()
+        if len(toks) < 12:
+            continue
+        try:
+            xbmin = float(toks[4]);  xbmax = float(toks[5])
+            q2min = float(toks[7]);  q2max = float(toks[8])
+            tmin  = abs(float(toks[10]));  tmax  = abs(float(toks[11]))
+            rows.append(BinRow(xbmin, xbmax, q2min, q2max, tmin, tmax))
+        except Exception:
+            continue
+    return rows
+#endfor
+
+def compute_rc_curve_cell(gen_born, rec_born, gen_rad, rec_rad, xb, q2, tt, phi_edges):
+    """
+    R_c(φ) in the 3D window:
+      x_B in xb = (xbmin, xbmax),
+      Q^2 in q2 = (q2min, q2max),
+      -t in tt  = (tmin,  tmax)
+    """
+    m_gb = ((gen_born["x"] >= xb[0]) & (gen_born["x"] < xb[1]) &
+            (gen_born["Q2"] >= q2[0]) & (gen_born["Q2"] < q2[1]) &
+            (gen_born["tpos"] >= tt[0]) & (gen_born["tpos"] < tt[1]))
+    m_rb = ((rec_born["x"] >= xb[0]) & (rec_born["x"] < xb[1]) &
+            (rec_born["Q2"] >= q2[0]) & (rec_born["Q2"] < q2[1]) &
+            (rec_born["tpos"] >= tt[0]) & (rec_born["tpos"] < tt[1]))
+    m_gr = ((gen_rad["x"] >= xb[0]) & (gen_rad["x"] < xb[1]) &
+            (gen_rad["Q2"] >= q2[0]) & (gen_rad["Q2"] < q2[1]) &
+            (gen_rad["tpos"] >= tt[0]) & (gen_rad["tpos"] < tt[1]))
+    m_rr = ((rec_rad["x"] >= xb[0]) & (rec_rad["x"] < xb[1]) &
+            (rec_rad["Q2"] >= q2[0]) & (rec_rad["Q2"] < q2[1]) &
+            (rec_rad["tpos"] >= tt[0]) & (rec_rad["tpos"] < tt[1]))
+
+    gb_phi = hist_counts(gen_born["phi"], m_gb, phi_edges)
+    rb_phi = hist_counts(rec_born["phi"], m_rb, phi_edges)
+    gr_phi = hist_counts(gen_rad["phi"],  m_gr, phi_edges)
+    rr_phi = hist_counts(rec_rad["phi"],  m_rr, phi_edges)
+
+    R, sR = rc_and_err(gr_phi, rr_phi, gb_phi, rb_phi)
+    centers = 0.5 * (phi_edges[:-1] + phi_edges[1:])
+    return centers, R, sR
+#endfor
+
+def make_phi_grid_for_xb(gen_born, rec_born, gen_rad, rec_rad, xbmin, xbmax, binrows, out_dir):
+    """
+    For a fixed x_B range [xbmin,xbmax), build a grid of subplots:
+      columns = sorted unique Q^2 bins in this x_B group
+      rows    = sorted unique -t  bins in this x_B group
+    Each subplot shows R_c(φ) in that (Q^2,-t) bin.
+    """
+    q2_bins = sorted({(r.q2min, r.q2max) for r in binrows})
+    t_bins  = sorted({(r.tmin,  r.tmax)  for r in binrows})
+    nC = len(q2_bins); nR = len(t_bins)
+    if nC == 0 or nR == 0:
+        return
+
+    # Figure size scales with grid density
+    fig_w = max(10.0, 3.4 * nC + 2.0)
+    fig_h = max(7.0, 2.8 * nR + 2.0)
+    fig, axes = plt.subplots(nR, nC, figsize=(fig_w, fig_h), constrained_layout=True, squeeze=False)
+    fig.suptitle(rf"$R_{{c}}(\phi)$ for $x_{{B}}$ in [{xbmin:.2g}, {xbmax:.2g}]")
+
+    for i_t, tt in enumerate(t_bins):
+        for j_q, q2 in enumerate(q2_bins):
+            ax = axes[i_t, j_q]
+            phi_c, R, sR = compute_rc_curve_cell(gen_born, rec_born, gen_rad, rec_rad,
+                                                 (xbmin, xbmax), q2, tt, PHI_EDGES)
+            ax.errorbar(phi_c, R, yerr=sR, fmt="o", linestyle="none",
+                        linewidth=1.2, markersize=3.0, capsize=2)
+            ax.set_title(rf"$Q^{{2}}\!\in\![{q2[0]:.2g},{q2[1]:.2g}],\ -t\!\in\![{tt[0]:.2g},{tt[1]:.2g}]$")
+            format_axes_phi(ax)
+        #endfor
+    #endfor
+
+    os.makedirs(out_dir, exist_ok=True)
+    out_pdf = os.path.join(out_dir, f"rad_phi_grid_xB_{xbmin:.2g}_{xbmax:.2g}.pdf")
+    fig.savefig(out_pdf)
+    print("Saved:", out_pdf)
+#endfor
+
+def make_all_xb_phi_grids(gen_born, rec_born, gen_rad, rec_rad, out_dir):
+    """Parse CSV, group rows by x_B bin, and write one φ-grid canvas per x_B."""
+    rows = parse_binning_csv()
+    if not rows:
+        print("WARNING: No rows parsed from CSV; skipping experimental canvases.")
+        return
+    # Group by exact x_B tuple
+    groups = {}
+    for r in rows:
+        key = (r.xbmin, r.xbmax)
+        groups.setdefault(key, []).append(r)
+    #endfor
+    for (xbmin, xbmax), binrows in sorted(groups.items()):
+        make_phi_grid_for_xb(gen_born, rec_born, gen_rad, rec_rad, xbmin, xbmax, binrows, out_dir)
+    #endfor
 #endfor
 
 # -------------------- main --------------------
@@ -217,8 +326,15 @@ def main():
     gen_rad  = load_arrays(GEN_RAD_PATH)
     rec_rad  = load_arrays(REC_RAD_PATH)
 
-    # Build panels
-    make_panels(gen_born, rec_born, gen_rad, rec_rad, out_pdf="output/dvcs_rad_example.pdf")
+    # Single output root
+    out_root = "output/rad_example"
+    os.makedirs(out_root, exist_ok=True)
+
+    # (A) original 3×5 φ-panels
+    make_phi_panels(gen_born, rec_born, gen_rad, rec_rad, out_pdf=os.path.join(out_root, "rad_phi_panels.pdf"))
+
+    # (B) experimental canvases per x_B (each subplot is R_c(φ) for a (Q^2, -t) cell)
+    make_all_xb_phi_grids(gen_born, rec_born, gen_rad, rec_rad, out_dir=out_root)
 #endfor  # function ends; comment included per user preference
 
 if __name__ == "__main__":
