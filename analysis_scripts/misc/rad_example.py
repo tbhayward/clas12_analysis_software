@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-"""
+r"""
 DVCS radiative-correction panels (3x5) vs phi from four ROOT trees, with Poisson
 error bars propagated for R_c = (gen_rad/rec_rad) / (gen_born/rec_born).
 
@@ -62,7 +62,7 @@ Q2_BINS = [(1.0, 2.0), (2.0, 3.0), (3.0, 4.0), (4.0, 5.0), (5.0, 9.0)]
 XB_BINS = [(0.10, 0.20), (0.20, 0.30), (0.30, 0.40), (0.40, 0.50), (0.50, 0.70)]
 T_BINS  = [(0.10, 0.20), (0.20, 0.30), (0.30, 0.40), (0.40, 0.70), (0.70, 1.00)]
 
-# -------------------- phi binning: force radians in [0, 2*pi] with 24 bins --------------------
+# -------------------- phi binning: radians in [0, 2*pi] with 24 bins --------------------
 PHI_NBINS = 24
 PHI_MIN = 0.0
 PHI_MAX = 2.0 * np.pi
@@ -176,7 +176,7 @@ def make_panels(gen_born, rec_born, gen_rad, rec_rad, out_pdf):
         ax = axes[0, j]
         phi_c, R, sR = compute_rc_curve_per_bin(gen_born, rec_born, gen_rad, rec_rad, "Q2", lo, hi, PHI_EDGES)
         ax.errorbar(phi_c, R, yerr=sR, fmt=marker_fmt, linewidth=1.6, markersize=3.0, capsize=2)
-        ax.set_title(r"$Q^{2}\ \mathrm{in}\ [{:.2g}, {:.2g}]$".format(lo, hi))
+        ax.set_title(rf"$Q^{{2}}\ \mathrm{{in}}\ [{lo:.2g}, {hi:.2g}]$")
         format_axes(ax)
         finite = np.isfinite(R)
         if np.any(finite):
@@ -192,7 +192,7 @@ def make_panels(gen_born, rec_born, gen_rad, rec_rad, out_pdf):
         ax = axes[1, j]
         phi_c, R, sR = compute_rc_curve_per_bin(gen_born, rec_born, gen_rad, rec_rad, "x", lo, hi, PHI_EDGES)
         ax.errorbar(phi_c, R, yerr=sR, fmt=marker_fmt, linewidth=1.6, markersize=3.0, capsize=2)
-        ax.set_title(r"$x_{B}\ \mathrm{in}\ [{:.2g}, {:.2g}]$".format(lo, hi))
+        ax.set_title(rf"$x_{{B}}\ \mathrm{{in}}\ [{lo:.2g}, {hi:.2g}]$")
         format_axes(ax)
         finite = np.isfinite(R)
         if np.any(finite):
@@ -208,7 +208,7 @@ def make_panels(gen_born, rec_born, gen_rad, rec_rad, out_pdf):
         ax = axes[2, j]
         phi_c, R, sR = compute_rc_curve_per_bin(gen_born, rec_born, gen_rad, rec_rad, "tpos", lo, hi, PHI_EDGES)
         ax.errorbar(phi_c, R, yerr=sR, fmt=marker_fmt, linewidth=1.6, markersize=3.0, capsize=2)
-        ax.set_title(r"$-t\ \mathrm{in}\ [{:.2g}, {:.2g}]$".format(lo, hi))
+        ax.set_title(rf"$-t\ \mathrm{{in}}\ [{lo:.2g}, {hi:.2g}]$")
         format_axes(ax)
         finite = np.isfinite(R)
         if np.any(finite):
