@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 
 """
-DVCS radiative-correction panels (3x5) vs #phi from four ROOT trees, with Poisson
+DVCS radiative-correction panels (3x5) vs phi from four ROOT trees, with Poisson
 error bars propagated for R_c = (gen_rad/rec_rad) / (gen_born/rec_born).
 
 Inputs (TTree "PhysicsEvents"):
@@ -16,23 +16,38 @@ Inputs (TTree "PhysicsEvents"):
 Output:
   - output/dvcs_rad_example.pdf
 
-Rows (top->bottom): Q2, xB, -t
+Rows (top->bottom): Q^2, x_B, -t
 Columns: 5 per row
 
 Branches used: Q2, x, t1, phi2  (we define tpos = -t1)
-Axis labels: x = "#phi", y = "R_{c}"
+Axis labels: x = r"$\phi$", y = r"$R_{c}$"
 
-Poisson propagation (independent counts):
-  Let A=gen_rad, B=rec_rad, C=gen_born, D=rec_born in a given phi bin.
+Poisson propagation (independent counts in a phi bin):
+  Let A=gen_rad, B=rec_rad, C=gen_born, D=rec_born.
   R_c = (A*D) / (B*C)
   sigma(R_c) = R_c * sqrt(1/A + 1/D + 1/B + 1/C)
-  Points with any of A,B,C,D == 0 -> NaN (not plotted).
+  Any bin with A==0 or B==0 or C==0 or D==0 -> NaN (not plotted).
 """
 
 import os
 import numpy as np
 import uproot
 import matplotlib.pyplot as plt
+from matplotlib.ticker import FixedLocator, FixedFormatter
+
+# -------------------- styling --------------------
+plt.rcParams.update({
+    "figure.dpi": 120,
+    "savefig.dpi": 220,
+    "axes.labelsize": 12,
+    "axes.titlesize": 12,
+    "xtick.labelsize": 10,
+    "ytick.labelsize": 10,
+    "legend.fontsize": 10,
+    # Use LaTeX-style mathtext without requiring a TeX install
+    "mathtext.fontset": "dejavusans",
+    "mathtext.default": "regular",
+})
 
 # -------------------- file paths --------------------
 GEN_BORN_PATH = "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/mc/dvcsgen/gen_dvcsgen_rga_sp18_inb_10594MeV.root"
@@ -47,9 +62,11 @@ Q2_BINS = [(1.0, 2.0), (2.0, 3.0), (3.0, 4.0), (4.0, 5.0), (5.0, 9.0)]
 XB_BINS = [(0.10, 0.20), (0.20, 0.30), (0.30, 0.40), (0.40, 0.50), (0.50, 0.70)]
 T_BINS  = [(0.10, 0.20), (0.20, 0.30), (0.30, 0.40), (0.40, 0.70), (0.70, 1.00)]
 
-# Number of bins in #phi; auto-detect degrees vs radians
-PHI_NBINS_DEG = 24
-PHI_NBINS_RAD = 24
+# -------------------- phi binning: force radians in [0, 2*pi] with 24 bins --------------------
+PHI_NBINS = 24
+PHI_MIN = 0.0
+PHI_MAX = 2.0 * np.pi
+PHI_EDGES = np.linspace(PHI_MIN, PHI_MAX, PHI_NBINS + 1)
 
 # -------------------- helpers --------------------
 def load_arrays(path):
@@ -70,43 +87,19 @@ def load_arrays(path):
     }
 #endfor
 
-def decide_phi_bins(phi_arrays):
-    """
-    Decide whether phi2 is in degrees or radians by inspecting its scale.
-    Returns bin_edges (numpy array) and a label suffix string.
-    """
-    sample = []
-    for a in phi_arrays:
-        if a.size > 0:
-            n = min(5000, a.size)
-            sample.append(a[np.random.choice(a.size, size=n, replace=False)])
-        #endif
-    #endfor
-    if len(sample) == 0:
-        return np.linspace(-180.0, 180.0, PHI_NBINS_DEG + 1), "deg"
-    #endif
-    probe = np.concatenate(sample)
-    max_abs = np.nanmax(np.abs(probe))
-    if np.isfinite(max_abs) and max_abs < 3.5:
-        return np.linspace(-np.pi, np.pi, PHI_NBINS_RAD + 1), "rad"
-    else:
-        return np.linspace(-180.0, 180.0, PHI_NBINS_DEG + 1), "deg"
-    #endif
-#endfor
-
 def hist_counts(values, mask, bin_edges):
     """
-    Fast histogram of 'values[mask]' into 'bin_edges'.
+    Histogram of 'values[mask]' into 'bin_edges'.
     """
     return np.histogram(values[mask], bins=bin_edges)[0]
 #endfor
 
 def rc_and_err(A, B, C, D):
     """
-    Given four non-negative integer arrays A,B,C,D (same shape), compute:
+    Given arrays A,B,C,D>=0 (same shape), compute:
       R_c = (A*D) / (B*C)
       sigma(R_c) = R_c * sqrt(1/A + 1/D + 1/B + 1/C)
-    For any element where any of A,B,C,D == 0, return NaN for both R_c and sigma.
+    If any of A,B,C,D==0 for a bin, return NaN for both R_c and sigma.
     """
     A = A.astype(float)
     B = B.astype(float)
@@ -142,19 +135,27 @@ def compute_rc_curve_per_bin(gen_born, rec_born, gen_rad, rec_rad, varname, lo, 
     rr_phi = hist_counts(rec_rad["phi2"],  m_rr, phi_edges)
 
     R, sigma = rc_and_err(gr_phi, rr_phi, gb_phi, rb_phi)
-
     centers = 0.5 * (phi_edges[:-1] + phi_edges[1:])
     return centers, R, sigma
 #endfor
 
+# Nice LaTeX-like tick labels for phi in radians
+_PHI_TICKS = [0.0, 0.5*np.pi, np.pi, 1.5*np.pi, 2.0*np.pi]
+_PHI_TICKLABELS = [r"$0$", r"$\frac{\pi}{2}$", r"$\pi$", r"$\frac{3\pi}{2}$", r"$2\pi$"]
+
 def format_axes(ax):
     """
-    Light aesthetics for clarity.
+    Aesthetics + LaTeX-style labels and fixed phi ticks.
     """
     ax.grid(True, alpha=0.35)
     ax.axhline(1.0, linestyle="--", linewidth=1.0)
-    ax.set_xlabel("#phi", fontsize=11)
-    ax.set_ylabel("R_{c}", fontsize=11)
+    ax.set_xlabel(r"$\phi$", fontsize=12)
+    ax.set_ylabel(r"$R_{c}$", fontsize=12)
+    ax.set_xlim(PHI_MIN, PHI_MAX)
+    ax.xaxis.set_major_locator(FixedLocator(_PHI_TICKS))
+    ax.xaxis.set_major_formatter(FixedFormatter(_PHI_TICKLABELS))
+    # Avoid y-axis scientific-offset like "1e-7 +"
+    ax.ticklabel_format(axis="y", style="plain", useOffset=False)
     for spine in ["top", "right"]:
         ax.spines[spine].set_visible(False)
     #endfor
@@ -165,30 +166,17 @@ def make_panels(gen_born, rec_born, gen_rad, rec_rad, out_pdf):
     """
     Build the 3x5 panel figure and save to 'out_pdf'.
     """
-    # Decide phi binning from actual data
-    phi_edges, _phi_units = decide_phi_bins([gen_born["phi2"], rec_born["phi2"], gen_rad["phi2"], rec_rad["phi2"]])
-
-    # Figure setup
-    plt.rcParams.update({
-        "figure.dpi": 120,
-        "savefig.dpi": 200,
-        "axes.labelsize": 11,
-        "axes.titlesize": 12,
-        "xtick.labelsize": 10,
-        "ytick.labelsize": 10,
-        "legend.fontsize": 10,
-    })
     fig, axes = plt.subplots(3, 5, figsize=(18, 10), constrained_layout=True)
-    fig.suptitle("DVCS Radiative Correction R_{c} vs #phi", fontsize=16)
+    fig.suptitle(r"DVCS Radiative Correction $R_{c}$ vs $\phi$", fontsize=16)
 
     marker_fmt = "o-"
 
-    # Row 0: Q2 bins (5)
+    # Row 0: Q^2 bins (5)
     for j, (lo, hi) in enumerate(Q2_BINS):
         ax = axes[0, j]
-        phi_c, R, sR = compute_rc_curve_per_bin(gen_born, rec_born, gen_rad, rec_rad, "Q2", lo, hi, phi_edges)
+        phi_c, R, sR = compute_rc_curve_per_bin(gen_born, rec_born, gen_rad, rec_rad, "Q2", lo, hi, PHI_EDGES)
         ax.errorbar(phi_c, R, yerr=sR, fmt=marker_fmt, linewidth=1.6, markersize=3.0, capsize=2)
-        ax.set_title("Q2 in [{:.2g}, {:.2g}]".format(lo, hi))
+        ax.set_title(r"$Q^{2}\ \mathrm{in}\ [{:.2g}, {:.2g}]$".format(lo, hi))
         format_axes(ax)
         finite = np.isfinite(R)
         if np.any(finite):
@@ -199,12 +187,12 @@ def make_panels(gen_born, rec_born, gen_rad, rec_rad, out_pdf):
         #endif
     #endfor
 
-    # Row 1: xB bins (5)
+    # Row 1: x_B bins (5)
     for j, (lo, hi) in enumerate(XB_BINS):
         ax = axes[1, j]
-        phi_c, R, sR = compute_rc_curve_per_bin(gen_born, rec_born, gen_rad, rec_rad, "x", lo, hi, phi_edges)
+        phi_c, R, sR = compute_rc_curve_per_bin(gen_born, rec_born, gen_rad, rec_rad, "x", lo, hi, PHI_EDGES)
         ax.errorbar(phi_c, R, yerr=sR, fmt=marker_fmt, linewidth=1.6, markersize=3.0, capsize=2)
-        ax.set_title("xB in [{:.2g}, {:.2g}]".format(lo, hi))
+        ax.set_title(r"$x_{B}\ \mathrm{in}\ [{:.2g}, {:.2g}]$".format(lo, hi))
         format_axes(ax)
         finite = np.isfinite(R)
         if np.any(finite):
@@ -218,9 +206,9 @@ def make_panels(gen_born, rec_born, gen_rad, rec_rad, out_pdf):
     # Row 2: -t bins (5) using tpos
     for j, (lo, hi) in enumerate(T_BINS):
         ax = axes[2, j]
-        phi_c, R, sR = compute_rc_curve_per_bin(gen_born, rec_born, gen_rad, rec_rad, "tpos", lo, hi, phi_edges)
+        phi_c, R, sR = compute_rc_curve_per_bin(gen_born, rec_born, gen_rad, rec_rad, "tpos", lo, hi, PHI_EDGES)
         ax.errorbar(phi_c, R, yerr=sR, fmt=marker_fmt, linewidth=1.6, markersize=3.0, capsize=2)
-        ax.set_title("-t in [{:.2g}, {:.2g}]".format(lo, hi))
+        ax.set_title(r"$-t\ \mathrm{in}\ [{:.2g}, {:.2g}]$".format(lo, hi))
         format_axes(ax)
         finite = np.isfinite(R)
         if np.any(finite):
