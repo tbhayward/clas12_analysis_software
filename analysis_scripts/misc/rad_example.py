@@ -146,18 +146,22 @@ _PHI_TICKLABELS = [r"$0$", r"$\frac{\pi}{2}$", r"$\pi$", r"$\frac{3\pi}{2}$", r"
 def format_axes(ax):
     """
     Aesthetics + LaTeX-style labels and fixed phi ticks.
+    - Markers only (no connecting lines set in errorbar call).
+    - Full box (all spines visible).
+    - Fixed y range [0, 2] for all subplots.
     """
     ax.grid(True, alpha=0.35)
     ax.axhline(1.0, linestyle="--", linewidth=1.0)
     ax.set_xlabel(r"$\phi$", fontsize=12)
     ax.set_ylabel(r"$R_{c}$", fontsize=12)
     ax.set_xlim(PHI_MIN, PHI_MAX)
+    ax.set_ylim(0.0, 2.0)
     ax.xaxis.set_major_locator(FixedLocator(_PHI_TICKS))
     ax.xaxis.set_major_formatter(FixedFormatter(_PHI_TICKLABELS))
-    # Avoid y-axis scientific-offset like "1e-7 +"
     ax.ticklabel_format(axis="y", style="plain", useOffset=False)
-    for spine in ["top", "right"]:
-        ax.spines[spine].set_visible(False)
+    # Ensure full box
+    for spine in ["top", "right", "left", "bottom"]:
+        ax.spines[spine].set_visible(True)
     #endfor
 #endfor
 
@@ -169,54 +173,31 @@ def make_panels(gen_born, rec_born, gen_rad, rec_rad, out_pdf):
     fig, axes = plt.subplots(3, 5, figsize=(18, 10), constrained_layout=True)
     fig.suptitle(r"DVCS Radiative Correction $R_{c}$ vs $\phi$", fontsize=16)
 
-    marker_fmt = "o-"
-
     # Row 0: Q^2 bins (5)
     for j, (lo, hi) in enumerate(Q2_BINS):
         ax = axes[0, j]
         phi_c, R, sR = compute_rc_curve_per_bin(gen_born, rec_born, gen_rad, rec_rad, "Q2", lo, hi, PHI_EDGES)
-        ax.errorbar(phi_c, R, yerr=sR, fmt=marker_fmt, linewidth=1.6, markersize=3.0, capsize=2)
+        ax.errorbar(phi_c, R, yerr=sR, fmt="o", linestyle="none", linewidth=1.6, markersize=3.0, capsize=2)
         ax.set_title(rf"$Q^{{2}}\ \mathrm{{in}}\ [{lo:.2g}, {hi:.2g}]$")
         format_axes(ax)
-        finite = np.isfinite(R)
-        if np.any(finite):
-            v = R[finite]
-            lo_y, hi_y = np.nanpercentile(v, [5, 95])
-            pad = 0.20 * max(1e-6, hi_y - lo_y)
-            ax.set_ylim(lo_y - pad, hi_y + pad)
-        #endif
     #endfor
 
     # Row 1: x_B bins (5)
     for j, (lo, hi) in enumerate(XB_BINS):
         ax = axes[1, j]
         phi_c, R, sR = compute_rc_curve_per_bin(gen_born, rec_born, gen_rad, rec_rad, "x", lo, hi, PHI_EDGES)
-        ax.errorbar(phi_c, R, yerr=sR, fmt=marker_fmt, linewidth=1.6, markersize=3.0, capsize=2)
+        ax.errorbar(phi_c, R, yerr=sR, fmt="o", linestyle="none", linewidth=1.6, markersize=3.0, capsize=2)
         ax.set_title(rf"$x_{{B}}\ \mathrm{{in}}\ [{lo:.2g}, {hi:.2g}]$")
         format_axes(ax)
-        finite = np.isfinite(R)
-        if np.any(finite):
-            v = R[finite]
-            lo_y, hi_y = np.nanpercentile(v, [5, 95])
-            pad = 0.20 * max(1e-6, hi_y - lo_y)
-            ax.set_ylim(lo_y - pad, hi_y + pad)
-        #endif
     #endfor
 
     # Row 2: -t bins (5) using tpos
     for j, (lo, hi) in enumerate(T_BINS):
         ax = axes[2, j]
         phi_c, R, sR = compute_rc_curve_per_bin(gen_born, rec_born, gen_rad, rec_rad, "tpos", lo, hi, PHI_EDGES)
-        ax.errorbar(phi_c, R, yerr=sR, fmt=marker_fmt, linewidth=1.6, markersize=3.0, capsize=2)
+        ax.errorbar(phi_c, R, yerr=sR, fmt="o", linestyle="none", linewidth=1.6, markersize=3.0, capsize=2)
         ax.set_title(rf"$-t\ \mathrm{{in}}\ [{lo:.2g}, {hi:.2g}]$")
         format_axes(ax)
-        finite = np.isfinite(R)
-        if np.any(finite):
-            v = R[finite]
-            lo_y, hi_y = np.nanpercentile(v, [5, 95])
-            pad = 0.20 * max(1e-6, hi_y - lo_y)
-            ax.set_ylim(lo_y - pad, hi_y + pad)
-        #endif
     #endfor
 
     # Save
