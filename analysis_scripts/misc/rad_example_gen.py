@@ -2,7 +2,11 @@
 # -*- coding: utf-8 -*-
 
 r"""
-DVCS generator-level ratio plots of R_c^{(gen)}(φ):
+DVCS generator-level ratio plots of R_c^{(gen)}(φ) with entry-matching:
+
+- Before analysis, we read the number of entries in each generator tree and
+  truncate BOTH samples to the same length N = min(N_rad, N_born). All
+  histograms/ratios are computed using only those first N entries from each sample.
 
 (A) 3x5 panels of R_c^{(gen)}(φ) with Poisson error bars in fixed kinematic bins
 (B) Experimental canvases: for each x_B bin, a grid with Q^2 bins as columns
@@ -78,14 +82,28 @@ PHI_MAX = 2.0 * np.pi
 PHI_EDGES = np.linspace(PHI_MIN, PHI_MAX, PHI_NBINS + 1)
 
 # -------------------- helpers: IO and math --------------------
-def load_arrays(path):
+def count_entries(path):
+    """Return the number of entries in the TTree."""
+    with uproot.open(path) as f:
+        n = f[TTREE_NAME].num_entries
+    return int(n)
+#endfor
+
+def load_arrays(path, entry_stop=None):
     """
     Load required branches from ROOT file and return a dict of numpy arrays:
-      'Q2', 'x', 'phi', 'tpos'  (phi wrapped into [0, 2π), tpos = -t1 > 0)
+      'Q2', 'x', 'phi', 'tpos'
+    - phi is wrapped into [0, 2π)
+    - tpos = -t1 (>0)
+    - If entry_stop is provided, only the first [0:entry_stop) entries are read.
     """
     with uproot.open(path) as f:
         tree = f[TTREE_NAME]
-        arr = tree.arrays(["Q2", "x", "t1", "phi2"], library="np")
+        if entry_stop is None:
+            arr = tree.arrays(["Q2", "x", "t1", "phi2"], library="np")
+        else:
+            arr = tree.arrays(["Q2", "x", "t1", "phi2"], entry_start=0, entry_stop=int(entry_stop), library="np")
+        #endif
     # Wrap φ into [0, 2π)
     phi_wrapped = np.mod(arr["phi2"], 2.0 * np.pi)
     tpos = -arr["t1"]  # positive -t
@@ -303,9 +321,15 @@ def make_all_xb_phi_grids(gen_born, gen_rad, out_dir):
 
 # -------------------- main --------------------
 def main():
-    # Load arrays once from each generator file
-    gen_born = load_arrays(GEN_BORN_PATH)
-    gen_rad  = load_arrays(GEN_RAD_PATH)
+    # Count entries in each generator tree
+    n_born = count_entries(GEN_BORN_PATH)
+    n_rad  = count_entries(GEN_RAD_PATH)
+    n_use  = min(n_born, n_rad)
+    print(f"[info] Entries: gen_born={n_born}, gen_rad={n_rad} -> using first N={n_use}")
+
+    # Load arrays, truncated to the same number of entries
+    gen_born = load_arrays(GEN_BORN_PATH, entry_stop=n_use)
+    gen_rad  = load_arrays(GEN_RAD_PATH,  entry_stop=n_use)
 
     # Single output root
     out_root = "output/rad_example"
