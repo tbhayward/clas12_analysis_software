@@ -9,10 +9,9 @@ For each x_B bin (from CSV), make a canvas with columns = Q^2 bins and rows = -t
 Each subplot shows:
   - Born acceptance A_B(φ) = N_rec_B(φ) / N_gen_B(φ),
   - Rad  acceptance A_R(φ) = N_rec_R(φ) / N_gen_R(φ),
-with Poisson ratio errors per φ bin, markers only, and a legend reporting:
-  Born (reco):  ⟨Q²⟩, ⟨x_B⟩, ⟨−t⟩, ⟨y⟩
-  Rad  (reco):  ⟨Q²⟩, ⟨x_B⟩, ⟨−t⟩, ⟨y⟩
-computed from **reconstructed events inside that bin**.
+with Poisson ratio errors per φ bin, markers only, and a legend reporting two
+vertical lists (Born and Rad) of the **reconstructed-level** means:
+  ⟨Q²⟩, ⟨x_B⟩, ⟨−t⟩, ⟨y⟩.
 
 Inputs (TTree "PhysicsEvents"):
   Born:
@@ -55,7 +54,7 @@ plt.rcParams.update({
     "axes.titlesize": 12,
     "xtick.labelsize": 10,
     "ytick.labelsize": 10,
-    "legend.fontsize": 8,
+    "legend.fontsize": 7,  # slightly smaller legend font as requested
     "mathtext.fontset": "dejavusans",
     "mathtext.default": "regular",
 })
@@ -256,8 +255,8 @@ def make_acceptance_grids(gen_born, rec_born, gen_rad, rec_rad, out_dir):
     """
     Parse CSV, group rows by x_B, then for each x_B bin produce a grid:
       columns = Q^2 bins, rows = -t bins. Subplots overlay Born vs Rad A(φ),
-      and the legend shows **reconstructed** mean kinematics (⟨Q²⟩, ⟨x_B⟩, ⟨−t⟩, ⟨y⟩)
-      for Born and Rad within that subplot's bin.
+      and the legend shows **reconstructed** mean kinematics in two vertical lists:
+      (Born) and (Rad): ⟨Q²⟩, ⟨x_B⟩, ⟨−t⟩, ⟨y⟩.
     """
     rows = parse_binning_csv()
     if not rows:
@@ -312,23 +311,23 @@ def make_acceptance_grids(gen_born, rec_born, gen_rad, rec_rad, out_dir):
                 ax.set_title(rf"$Q^{{2}}\!\in\![{q2[0]:.2g},{q2[1]:.2g}],\ -t\!\in\![{tt[0]:.2g},{tt[1]:.2g}]$")
                 format_axes_phi(ax)
 
-                # Legend text with **reconstructed** mean kinematics
-                # NOTE: all LaTeX braces that are NOT placeholders are doubled {{ }}
-                born_text = (r"$\mathrm{{Born\ (reco):}}\ "
-                             r"\langle Q^{{2}}\rangle={Q2},\ "
-                             r"\langle x_{{B}}\rangle={xB},\ "
-                             r"\langle -t\rangle={t},\ "
-                             r"\langle y\rangle={y}$").format(
+                # --- Two-column legend text blocks (Born | Rad), small font ---
+                # Double braces for literal LaTeX braces to avoid .format() conflicts
+                born_text = (r"Born"
+                             r"\n$Q^{{2}}$: {Q2}"
+                             r"\n$x_{{B}}$: {xB}"
+                             r"\n$-t$: {t}"
+                             r"\n$y$: {y}").format(
                                  Q2=fmt_float(Q2b, "{:.2f}"),
                                  xB=fmt_float(xb,  "{:.3f}"),
                                  t =fmt_float(tb,  "{:.3f}"),
                                  y =fmt_float(yb,  "{:.3f}"),
                              )
-                rad_text  = (r"$\mathrm{{Rad\ (reco):}}\ "
-                             r"\langle Q^{{2}}\rangle={Q2},\ "
-                             r"\langle x_{{B}}\rangle={xB},\ "
-                             r"\langle -t\rangle={t},\ "
-                             r"\langle y\rangle={y}$").format(
+                rad_text  = (r"Rad"
+                             r"\n$Q^{{2}}$: {Q2}"
+                             r"\n$x_{{B}}$: {xB}"
+                             r"\n$-t$: {t}"
+                             r"\n$y$: {y}").format(
                                  Q2=fmt_float(Q2r, "{:.2f}"),
                                  xB=fmt_float(xr,  "{:.3f}"),
                                  t =fmt_float(tr,  "{:.3f}"),
@@ -337,7 +336,10 @@ def make_acceptance_grids(gen_born, rec_born, gen_rad, rec_rad, out_dir):
 
                 handles = [eb1[0], eb2[0]]
                 labels  = [born_text, rad_text]
-                ax.legend(handles, labels, frameon=False, loc="best")
+                ax.legend(handles, labels,
+                          frameon=False, loc="best",
+                          ncol=2, columnspacing=1.0, handletextpad=0.8,
+                          borderpad=0.25, labelspacing=0.35, fontsize=7)
             #endfor
         #endfor
 
