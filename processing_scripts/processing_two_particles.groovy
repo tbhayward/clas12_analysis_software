@@ -87,8 +87,8 @@ public static void main(String[] args) {
     double Q2, W, y, Mx2, x, t, tmin, z, xF, pT, eta, xi, phi, vz_e, vz_p
     double Depolarization_A, Depolarization_B, Depolarization_C, Depolarization_V, Depolarization_W
 
-    // GenericKinematicFitter fitter = new analysis_fitter(10.6041);
-    GenericKinematicFitter fitter = new monte_carlo_fitter(10.6041);
+    GenericKinematicFitter fitter = new analysis_fitter(10.6041);
+    // GenericKinematicFitter fitter = new monte_carlo_fitter(10.6041);
     // GenericKinematicFitter fitter = new event_builder_fitter(10.6041);
     EventFilter filter = new EventFilter("11:" + p1_Str + ":X+:X-:Xn")
 
