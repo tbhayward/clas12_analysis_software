@@ -4,9 +4,9 @@
 #include "load_binning_scheme.h"
 #include "bin_means.h"
 #include "total_counts.h"
-#include "pi0_contamination.h"   // <-- needed for compute_pi0_contamination_helicity
-#include "bsa.h"                 // <-- needed for compute_and_plot_bsa_helicity
-#include <filesystem>            // <-- needed for std::filesystem::path
+#include "pi0_contamination.h"   
+#include "bsa.h"              
+#include <filesystem>          
 #include <iostream>
 #include <map>
 #include <string>
@@ -39,49 +39,49 @@ int main(int argc, char* argv[]) {
     loadTrees(dataTrees, genMcTrees, recMcTrees, eppi0DataTrees, eppi0GenMcTrees, eppi0RecMcTrees);
     std::cout << "All trees loaded successfully." << std::endl;
 
-    // Run exclusivity cut extraction (single-threaded for stability)
-    runAllExclusivityCuts(
-        dataTrees, recMcTrees, eppi0DataTrees, eppi0RecMcTrees,
-        "output/jsons", "output/exclusivity_plots", 1
-    );
-    std::cout << "Exclusivity-cut stage finished." << std::endl;
+    // // Run exclusivity cut extraction (single-threaded for stability)
+    // runAllExclusivityCuts(
+    //     dataTrees, recMcTrees, eppi0DataTrees, eppi0RecMcTrees,
+    //     "output/jsons", "output/exclusivity_plots", 1
+    // );
+    // std::cout << "Exclusivity-cut stage finished." << std::endl;
 
-    // --------- Global bin-averaged kinematics ----------
-    std::vector<std::string> dvcs_periods = {
-        "DVCS_Fa18_inb", "DVCS_Fa18_out", "DVCS_Sp19_inb",
-        "DVCS_Sp18_out", "DVCS_Sp18_inb", "DVCS_Fa18_inb_supp"
-    };
-    std::vector<std::string> topologies = {"(FD,FD)", "(CD,FD)", "(CD,FT)"};
-    const std::string analysis_type = "dvcs";
-    const std::string output_json_means = "output/jsons/bin_means_global.json";
+    // // --------- Global bin-averaged kinematics ----------
+    // std::vector<std::string> dvcs_periods = {
+    //     "DVCS_Fa18_inb", "DVCS_Fa18_out", "DVCS_Sp19_inb",
+    //     "DVCS_Sp18_out", "DVCS_Sp18_inb", "DVCS_Fa18_inb_supp"
+    // };
+    // std::vector<std::string> topologies = {"(FD,FD)", "(CD,FD)", "(CD,FT)"};
+    // const std::string analysis_type = "dvcs";
+    // const std::string output_json_means = "output/jsons/bin_means_global.json";
 
-    calculate_bin_means(dvcs_periods, topologies, analysis_type, binning_scheme, output_json_means, 
-        dataTrees);
+    // calculate_bin_means(dvcs_periods, topologies, analysis_type, binning_scheme, output_json_means, 
+    //     dataTrees);
 
-    // --------- Total counts after exclusivity cuts (by helicity) ----------
-    const std::string cuts_json_path   = "output/jsons/combined_cuts.json"; 
-    // produced by exclusivity_cuts
-    const std::string output_counts_js = "output/jsons/total_counts.json";
+    // // --------- Total counts after exclusivity cuts (by helicity) ----------
+    // const std::string cuts_json_path   = "output/jsons/combined_cuts.json"; 
+    // // produced by exclusivity_cuts
+    // const std::string output_counts_js = "output/jsons/total_counts.json";
 
-    compute_total_counts(dvcs_periods, topologies, binning_scheme, dataTrees, cuts_json_path, 
-        output_counts_js);
+    // compute_total_counts(dvcs_periods, topologies, binning_scheme, dataTrees, cuts_json_path, 
+    //     output_counts_js);
 
-    // Helicity-resolved π0 contamination
-    // NOTE: pass the OUTPUT ROOT ("output") so the implementation writes:
-    //   - per-period JSONs to output/jsons/contamination/
-    //   - combined JSON to output/jsons/
-    //   - plots to output/contamination_plots/...
-    compute_pi0_contamination_helicity(
-        dvcs_periods,
-        topologies,
-        binning_scheme,
-        dataTrees,
-        eppi0DataTrees,
-        eppi0RecMcTrees,   // reco MC (keys "*_rec_mc")
-        eppi0RecMcTrees,   // bkg MC  (keys "*_bkg")
-        cuts_json_path,
-        output_root        // <<< was "output/contamination"; must be the root "output"
-    );
+    // // Helicity-resolved π0 contamination
+    // // NOTE: pass the OUTPUT ROOT ("output") so the implementation writes:
+    // //   - per-period JSONs to output/jsons/contamination/
+    // //   - combined JSON to output/jsons/
+    // //   - plots to output/contamination_plots/...
+    // compute_pi0_contamination_helicity(
+    //     dvcs_periods,
+    //     topologies,
+    //     binning_scheme,
+    //     dataTrees,
+    //     eppi0DataTrees,
+    //     eppi0RecMcTrees,   // reco MC (keys "*_rec_mc")
+    //     eppi0RecMcTrees,   // bkg MC  (keys "*_bkg")
+    //     cuts_json_path,
+    //     output_root        // <<< was "output/contamination"; must be the root "output"
+    // );
 
     // Beam-Spin Asymmetry: reads total_counts.json and contamination JSONs,
     // writes per-period BSA fits to output/jsons/BSA_fits/BSA_fits_<period>.json,

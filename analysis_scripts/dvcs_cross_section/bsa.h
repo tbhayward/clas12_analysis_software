@@ -1,26 +1,33 @@
-#pragma once
+#ifndef BSA_H
+#define BSA_H
 
 #include <map>
 #include <string>
+#include <tuple>
 #include <vector>
-#include <TTree.h>
 
-#include "load_binning_scheme.h"  
+#include "load_binning_scheme.h" // provides struct Binning { double xBmin,xBmax,Q2min,Q2max,tmin,tmax; }
 
-// Computes and plots BSA using:
-// - total_counts.json (helicity-resolved counts by bin/group)
-// - contamination_<period>.json files (helicity-resolved pi0 contamination)
-// - beam_pol from DVCS trees for polarization scaling
-// Writes per-period fit JSONs under output/jsons/BSA_fits/,
-// an all-periods JSON under output/jsons/BSA_fits_all_periods.json,
-// and the 10.6 GeV combined JSON under output/jsons/BSA_fits_combined_10p6.json.
-// Also writes plots under output/bsa_plots/<runTag>/...
+class TTree;
+
+// Compute helicity-resolved BSA including per-bin polarization and π0 contamination,
+// write JSONs, and plot per-period grids plus a 10.6 GeV combined set.
+//
+// Inputs:
+//  - periods:        e.g. {"DVCS_Fa18_inb", ...}
+//  - topologies:     {"(FD,FD)","(CD,FD)","(CD,FT)"}
+//  - binning_scheme: result of load_binning_scheme(...)
+//  - dvcsDataTrees:  keys = run tags: "fa18_inb", "sp18_out", ...
+//  - total_counts_json_path: "output/jsons/total_counts.json"
+//  - contamination_dir:      "output/jsons/contamination"
+//  - out_root_dir:           "output"
 void compute_and_plot_bsa_helicity(
     const std::vector<std::string>& periods,
     const std::vector<std::string>& topologies,
     const std::vector<Binning>& binning_scheme,
     const std::map<std::string, TTree*>& dvcsDataTrees,
     const std::string& total_counts_json_path,
-    const std::string& contamination_jsons_dir,
-    const std::string& out_root_dir
-);
+    const std::string& contamination_dir,
+    const std::string& out_root_dir);
+
+#endif // BSA_H
