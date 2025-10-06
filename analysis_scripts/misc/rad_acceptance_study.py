@@ -16,11 +16,17 @@ computed from **reconstructed events inside that bin**.
 
 Inputs (TTree "PhysicsEvents"):
   Born:
-    - gen: /work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/mc/dvcsgen/gen_dvcsgen_rga_fa18_out_10604MeV.root
-    - rec: /work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/mc/dvcsgen/rec_dvcsgen_rga_fa18_out_10604MeV.root
+    - gen: /work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/mc/dvcsgen/gen_dvcsgen_rga_sp18_inb_10594MeV.root
+    - rec: /work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/mc/dvcsgen/rec_dvcsgen_rga_sp18_inb_10594MeV.root
   Radiative:
-    - gen: /volatile/clas12/thayward/temp_rad/gen_dvcsgen_fa18_out_rad.root
-    - rec: /volatile/clas12/thayward/temp_rad/rec_dvcsgen_fa18_out_rad.root
+    - gen: /volatile/clas12/thayward/temp_rad/gen_sp18_inb_rad.root
+    - rec: /volatile/clas12/thayward/temp_rad/rec_sp18_inb_rad.root
+
+# Alternative set (kept as requested):
+# GEN_BORN_PATH = "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/mc/dvcsgen/gen_dvcsgen_rga_fa18_out_10604MeV.root"
+# REC_BORN_PATH = "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/mc/dvcsgen/rec_dvcsgen_rga_fa18_out_10604MeV.root"
+# GEN_RAD_PATH  = "/volatile/clas12/thayward/temp_rad/gen_fa18_out_rad.root"
+# REC_RAD_PATH  = "/volatile/clas12/thayward/temp_rad/rec_fa18_out_rad.root"
 
 Experimental bin CSV (two header lines, whitespace-separated columns):
   /u/home/thayward/clas12_analysis_software/analysis_scripts/dvcs_cross_section/imports/integrated_bin_v2.csv
@@ -94,7 +100,6 @@ def load_arrays(path):
         try:
             yarr = tree["y"].array(library="np")
         except Exception:
-            # Make a NaN array aligned with Q2 length
             yarr = np.full_like(arr["Q2"], np.nan, dtype=float)
         #endif
     phi_wrapped = np.mod(arr["phi2"], 2.0 * np.pi)
@@ -308,9 +313,10 @@ def make_acceptance_grids(gen_born, rec_born, gen_rad, rec_rad, out_dir):
                 format_axes_phi(ax)
 
                 # Legend text with **reconstructed** mean kinematics
-                born_text = (r"$\mathrm{Born\ (reco):}\ "
-                             r"\langle Q^{2}\rangle={Q2},\ "
-                             r"\langle x_{B}\rangle={xB},\ "
+                # NOTE: all LaTeX braces that are NOT placeholders are doubled {{ }}
+                born_text = (r"$\mathrm{{Born\ (reco):}}\ "
+                             r"\langle Q^{{2}}\rangle={Q2},\ "
+                             r"\langle x_{{B}}\rangle={xB},\ "
                              r"\langle -t\rangle={t},\ "
                              r"\langle y\rangle={y}$").format(
                                  Q2=fmt_float(Q2b, "{:.2f}"),
@@ -318,9 +324,9 @@ def make_acceptance_grids(gen_born, rec_born, gen_rad, rec_rad, out_dir):
                                  t =fmt_float(tb,  "{:.3f}"),
                                  y =fmt_float(yb,  "{:.3f}"),
                              )
-                rad_text  = (r"$\mathrm{Rad\ (reco):}\ "
-                             r"\langle Q^{2}\rangle={Q2},\ "
-                             r"\langle x_{B}\rangle={xB},\ "
+                rad_text  = (r"$\mathrm{{Rad\ (reco):}}\ "
+                             r"\langle Q^{{2}}\rangle={Q2},\ "
+                             r"\langle x_{{B}}\rangle={xB},\ "
                              r"\langle -t\rangle={t},\ "
                              r"\langle y\rangle={y}$").format(
                                  Q2=fmt_float(Q2r, "{:.2f}"),
