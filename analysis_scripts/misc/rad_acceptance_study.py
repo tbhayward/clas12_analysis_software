@@ -2,22 +2,25 @@
 # -*- coding: utf-8 -*-
 
 r"""
-Compare Born vs Radiative acceptances A(φ) in experimental bins:
+Compare Born vs Radiative acceptances A(φ) in experimental bins, with legends
+showing **reconstructed-level** mean kinematics per subplot:
 
 For each x_B bin (from CSV), make a canvas with columns = Q^2 bins and rows = -t bins.
 Each subplot shows:
   - Born acceptance A_B(φ) = N_rec_B(φ) / N_gen_B(φ),
   - Rad  acceptance A_R(φ) = N_rec_R(φ) / N_gen_R(φ),
-with Poisson ratio errors per φ bin, markers only, and a legend reporting the
-integrated acceptance ⟨A⟩ and (N_rec / N_gen) totals for that cell.
+with Poisson ratio errors per φ bin, markers only, and a legend reporting:
+  Born (reco):  ⟨Q²⟩, ⟨x_B⟩, ⟨−t⟩, ⟨y⟩
+  Rad  (reco):  ⟨Q²⟩, ⟨x_B⟩, ⟨−t⟩, ⟨y⟩
+computed from **reconstructed events inside that bin**.
 
 Inputs (TTree "PhysicsEvents"):
   Born:
     - gen: /work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/mc/dvcsgen/gen_dvcsgen_rga_fa18_out_10604MeV.root
     - rec: /work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/mc/dvcsgen/rec_dvcsgen_rga_fa18_out_10604MeV.root
   Radiative:
-    - gen: /volatile/clas12/thayward/temp_rad/gen_dvcsgen_sp18_inb_rad.root
-    - rec: /volatile/clas12/thayward/temp_rad/rec_dvcsgen_sp18_inb_rad.root
+    - gen: /volatile/clas12/thayward/temp_rad/gen_dvcsgen_fa18_out_rad.root
+    - rec: /volatile/clas12/thayward/temp_rad/rec_dvcsgen_fa18_out_rad.root
 
 Experimental bin CSV (two header lines, whitespace-separated columns):
   /u/home/thayward/clas12_analysis_software/analysis_scripts/dvcs_cross_section/imports/integrated_bin_v2.csv
@@ -76,15 +79,23 @@ PHI_EDGES = np.linspace(PHI_MIN, PHI_MAX, PHI_NBINS + 1)
 def load_arrays(path):
     """
     Load branches from ROOT file and return dict of numpy arrays:
-      'Q2', 'x', 'phi', 'tpos'
+      'Q2', 'x', 'y', 'phi', 'tpos'
     φ is wrapped into [0, 2π); tpos = -t1 (>0).
+    Robust to missing 'y' branch (fills with NaNs).
     """
     with uproot.open(path) as f:
         tree = f[TTREE_NAME]
         arr = tree.arrays(["Q2", "x", "t1", "phi2"], library="np")
+        # Try to get 'y'; if missing, fill with NaNs of the right length
+        try:
+            yarr = tree["y"].array(library="np")
+        except Exception:
+            # Make a NaN array aligned with Q2 length
+            yarr = np.full_like(arr["Q2"], np.nan, dtype=float)
+        #endif
     phi_wrapped = np.mod(arr["phi2"], 2.0 * np.pi)
     tpos = -arr["t1"]
-    return {"Q2": arr["Q2"], "x": arr["x"], "phi": phi_wrapped, "tpos": tpos}
+    return {"Q2": arr["Q2"], "x": arr["x"], "y": yarr, "phi": phi_wrapped, "tpos": tpos}
 #endfor
 
 def hist_counts(values, mask, bin_edges):
@@ -116,6 +127,16 @@ def binomial_error(nrec, ngen):
     p = nrec / float(ngen)
     s = np.sqrt(p * max(0.0, 1.0 - p) / float(ngen))
     return p, s
+#endfor
+
+def _safe_mean(a):
+    """mean(a) with empty-guard -> np.nan."""
+    return float(np.mean(a)) if a.size > 0 else np.nan
+#endfor
+
+def fmt_float(v, fmt="{:.3f}"):
+    """Format float or return '--' if NaN/inf."""
+    return ("--" if (v is None or not np.isfinite(v)) else fmt.format(v))
 #endfor
 
 # Pretty φ ticks
@@ -179,14 +200,19 @@ def parse_binning_csv():
     return rows
 #endfor
 
-# -------------------- acceptance calculations --------------------
+# -------------------- acceptance + reco-mean-kinematics calculations --------------------
 def acceptance_phi_for_cell(gen_dict, rec_dict, xb, q2, tt, phi_edges):
     """
     Compute acceptance vs φ inside a 3D kinematic cell:
       x_B in xb = (xbmin, xbmax), Q^2 in q2 = (q2min, q2max), -t in tt = (tmin, tmax).
-    Returns (φ_centers, A(φ), σ_A(φ), Nrec_tot, Ngen_tot, A_int, σ_int)
+
+    Returns:
+      centers, A(φ), σ_A(φ),
+      Nrec_tot, Ngen_tot, A_int, σ_int,
+      mean_Q2_reco, mean_x_reco, mean_tpos_reco(=−t), mean_y_reco
+      (the means are computed from **reconstructed** events in the cell)
     """
-    # Masks for gen & rec in the same (xB,Q2,t) truth/reco spaces respectively
+    # Masks for gen & rec in the same (xB,Q2,t) window
     m_gen = ((gen_dict["x"]  >= xb[0]) & (gen_dict["x"]  < xb[1]) &
              (gen_dict["Q2"] >= q2[0]) & (gen_dict["Q2"] < q2[1]) &
              (gen_dict["tpos"]>= tt[0]) & (gen_dict["tpos"]< tt[1]))
@@ -207,19 +233,28 @@ def acceptance_phi_for_cell(gen_dict, rec_dict, xb, q2, tt, phi_edges):
     Nrec_tot = int(np.count_nonzero(m_rec))
     A_int, sA_int = binomial_error(Nrec_tot, Ngen_tot)
 
-    return centers, Aphi, sAphi, Nrec_tot, Ngen_tot, A_int, sA_int
+    # **Reconstructed-level** mean kinematics for legend
+    mean_Q2   = _safe_mean(rec_dict["Q2"][m_rec])
+    mean_x    = _safe_mean(rec_dict["x"][m_rec])
+    mean_tpos = _safe_mean(rec_dict["tpos"][m_rec])   # this is ⟨−t⟩
+    mean_y    = _safe_mean(rec_dict["y"][m_rec])
+
+    return centers, Aphi, sAphi, Nrec_tot, Ngen_tot, A_int, sA_int, mean_Q2, mean_x, mean_tpos, mean_y
 #endfor
 
 # -------------------- plotting per x_B canvases --------------------
 def make_acceptance_grids(gen_born, rec_born, gen_rad, rec_rad, out_dir):
     """
     Parse CSV, group rows by x_B, then for each x_B bin produce a grid:
-      columns = Q^2 bins, rows = -t bins. Subplots overlay Born vs Rad A(φ).
+      columns = Q^2 bins, rows = -t bins. Subplots overlay Born vs Rad A(φ),
+      and the legend shows **reconstructed** mean kinematics (⟨Q²⟩, ⟨x_B⟩, ⟨−t⟩, ⟨y⟩)
+      for Born and Rad within that subplot's bin.
     """
     rows = parse_binning_csv()
     if not rows:
         print("WARNING: No rows parsed from CSV; skipping canvases.")
         return
+    #endif
 
     # Group rows by exact (xbmin, xbmax)
     groups = {}
@@ -235,6 +270,7 @@ def make_acceptance_grids(gen_born, rec_born, gen_rad, rec_rad, out_dir):
         t_bins  = sorted({(r.tmin,  r.tmax)  for r in binrows})
         if not q2_bins or not t_bins:
             continue
+        #endif
 
         nC = len(q2_bins); nR = len(t_bins)
         fig_w = max(10.0, 3.4 * nC + 2.0)
@@ -247,24 +283,51 @@ def make_acceptance_grids(gen_born, rec_born, gen_rad, rec_rad, out_dir):
             for j_q, q2 in enumerate(q2_bins):
                 ax = axes[i_t, j_q]
 
-                # Born acceptance in this cell
-                c_b, A_b, sA_b, Nrec_b, Ngen_b, Aint_b, sAint_b = acceptance_phi_for_cell(
+                # Born acceptance + **reco** means
+                (c_b, A_b, sA_b, Nrec_b, Ngen_b, Aint_b, sAint_b,
+                 Q2b, xb, tb, yb) = acceptance_phi_for_cell(
                     gen_born, rec_born, (xbmin, xbmax), q2, tt, PHI_EDGES
-                )
-                # Radiative acceptance in this cell
-                c_r, A_r, sA_r, Nrec_r, Ngen_r, Aint_r, sAint_r = acceptance_phi_for_cell(
+                 )
+                # Radiative acceptance + **reco** means
+                (c_r, A_r, sA_r, Nrec_r, Ngen_r, Aint_r, sAint_r,
+                 Q2r, xr, tr, yr) = acceptance_phi_for_cell(
                     gen_rad, rec_rad, (xbmin, xbmax), q2, tt, PHI_EDGES
-                )
+                 )
 
                 # Plot: markers only, error bars
-                ax.errorbar(c_b, A_b, yerr=sA_b, fmt="o", linestyle="none",
-                            markersize=3.0, capsize=2, label=rf"Born  $\langle A\rangle={Aint_b:.2f}\pm{sAint_b:.2f}$  ({Nrec_b}/{Ngen_b})")
-                ax.errorbar(c_r, A_r, yerr=sA_r, fmt="s", linestyle="none",
-                            markersize=3.0, capsize=2, label=rf"Rad   $\langle A\rangle={Aint_r:.2f}\pm{sAint_r:.2f}$  ({Nrec_r}/{Ngen_r})")
+                eb1 = ax.errorbar(c_b, A_b, yerr=sA_b, fmt="o", linestyle="none",
+                                  markersize=3.0, capsize=2, label="Born")
+                eb2 = ax.errorbar(c_r, A_r, yerr=sA_r, fmt="s", linestyle="none",
+                                  markersize=3.0, capsize=2, label="Rad")
 
                 ax.set_title(rf"$Q^{{2}}\!\in\![{q2[0]:.2g},{q2[1]:.2g}],\ -t\!\in\![{tt[0]:.2g},{tt[1]:.2g}]$")
                 format_axes_phi(ax)
-                ax.legend(frameon=False, loc="best")
+
+                # Legend text with **reconstructed** mean kinematics
+                born_text = (r"$\mathrm{Born\ (reco):}\ "
+                             r"\langle Q^{2}\rangle={Q2},\ "
+                             r"\langle x_{B}\rangle={xB},\ "
+                             r"\langle -t\rangle={t},\ "
+                             r"\langle y\rangle={y}$").format(
+                                 Q2=fmt_float(Q2b, "{:.2f}"),
+                                 xB=fmt_float(xb,  "{:.3f}"),
+                                 t =fmt_float(tb,  "{:.3f}"),
+                                 y =fmt_float(yb,  "{:.3f}"),
+                             )
+                rad_text  = (r"$\mathrm{Rad\ (reco):}\ "
+                             r"\langle Q^{2}\rangle={Q2},\ "
+                             r"\langle x_{B}\rangle={xB},\ "
+                             r"\langle -t\rangle={t},\ "
+                             r"\langle y\rangle={y}$").format(
+                                 Q2=fmt_float(Q2r, "{:.2f}"),
+                                 xB=fmt_float(xr,  "{:.3f}"),
+                                 t =fmt_float(tr,  "{:.3f}"),
+                                 y =fmt_float(yr,  "{:.3f}"),
+                             )
+
+                handles = [eb1[0], eb2[0]]
+                labels  = [born_text, rad_text]
+                ax.legend(handles, labels, frameon=False, loc="best")
             #endfor
         #endfor
 
@@ -289,9 +352,9 @@ def main():
     out_root = "output/rad_example"
     os.makedirs(out_root, exist_ok=True)
 
-    # Per-xB canvases comparing Born vs Rad acceptances
+    # Per-xB canvases comparing Born vs Rad acceptances (legends from RECO means)
     make_acceptance_grids(gen_born, rec_born, gen_rad, rec_rad, out_dir=out_root)
-#endfor  # function ends; comment included per user preference
+#endfor  # function ends; comment included per your preference
 
 if __name__ == "__main__":
     main()
