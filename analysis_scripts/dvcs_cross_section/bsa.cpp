@@ -225,11 +225,11 @@ struct BranchPol {
     double phi() const { return hasPhi2 ? phi2 : (hasDp ? Delta_phi : std::numeric_limits<double>::quiet_NaN()); }
 };
 
-static inline bool passesTopology_simple(int d1,int d2,const std::vector<std::string>& tops){
-    for (auto& t : tops){
-        if (t=="(FD,FD)" && d1==1 && d2=1) return true;
-        if (t=="(CD,FD)" && d1==2 && d2=1) return true;
-        if (t=="(CD,FT)" && d1=2 && d2==0) return true;
+static inline bool passesTopology_simple(int d1, int d2, const std::vector<std::string>& tops){
+    for (const auto& t : tops){
+        if (t=="(FD,FD)" && d1==1 && d2==1) return true;
+        if (t=="(CD,FD)" && d1==2 && d2==1) return true;
+        if (t=="(CD,FT)" && d1==2 && d2==0) return true;
     }
     return false;
 }
