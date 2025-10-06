@@ -55,8 +55,8 @@ plt.rcParams.update({
 })
 
 # -------------------- file paths --------------------
-GEN_BORN_PATH = "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/mc/dvcsgen/gen_dvcsgen_rga_sp18_inb_10599MeV.root"
-REC_BORN_PATH = "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/mc/dvcsgen/rec_dvcsgen_rga_sp18_inb_10599MeV.root"
+GEN_BORN_PATH = "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/mc/dvcsgen/gen_dvcsgen_rga_sp18_inb_10594MeV.root"
+REC_BORN_PATH = "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/mc/dvcsgen/rec_dvcsgen_rga_sp18_inb_10594MeV.root"
 GEN_RAD_PATH  = "/volatile/clas12/thayward/temp_rad/gen_dvcsgen_sp18_inb_rad.root"
 REC_RAD_PATH  = "/volatile/clas12/thayward/temp_rad/rec_dvcsgen_sp18_inb_rad.root"
 
