@@ -1,3 +1,4 @@
+// bsa.cpp
 #include "bsa.h"
 
 #include <TCanvas.h>
@@ -30,6 +31,25 @@
 #include <vector>
 
 namespace {
+
+// =================== global style ===================
+struct StyleInit {
+    StyleInit() {
+        gStyle->SetOptTitle(0);
+        gStyle->SetOptStat(0);
+        gStyle->SetFrameLineWidth(2);
+        gStyle->SetLineWidth(2);
+        gStyle->SetPadTickX(1);
+        gStyle->SetPadTickY(1);
+        gStyle->SetLegendBorderSize(1);
+
+        // Use a clean, readable font everywhere
+        const int rf = 42; // Helvetica
+        gStyle->SetTitleFont(rf, "XYZ");
+        gStyle->SetLabelFont(rf, "XYZ");
+        gStyle->SetTextFont(rf);
+    }
+} _style_bootstrap;
 
 constexpr int    N_PHI_BINS = 12;
 constexpr double TWO_PI     = 2.0 * M_PI;
@@ -74,7 +94,7 @@ static inline int findIndex(const std::pair<double,double>& range,
     return -1;
 }
 
-// For a given xB range that exists in the CSV/binning, list only the Q² and |t| ranges present.
+// For a given xB range, list only the Q² and |t| ranges present in the CSV/binning.
 static void uniqueQT_for_xB(
     const std::vector<Binning>& scheme,
     const std::pair<double,double>& xBrange,
@@ -265,6 +285,7 @@ static std::vector<PolStats> compute_bin_polarization(
         if (ix<0||iQ<0||it<0) continue;
 
         double width = TWO_PI/double(N_PHI_BINS);
+        // wrap phi to [0,2pi)
         double w = std::fmod(phi,TWO_PI); if (w<0) w+=TWO_PI; if (w>=TWO_PI) w = std::nextafter(TWO_PI,0.0);
         int ip = std::min(std::max(int(std::floor(w/width)),0), N_PHI_BINS-1);
 
@@ -416,7 +437,7 @@ static void plot_cells_for_period(
     for (int ix = 0; ix < (int)xB_bins.size(); ++ix) {
         const auto xb = xB_bins[ix];
 
-        // Restrict to only Q² and |t| bins that exist in this xB slice
+        // Only the Q² and |t| bins that exist in this xB slice
         std::vector<std::pair<double,double>> Q2_slice, t_slice;
         uniqueQT_for_xB(binning_scheme, xb, Q2_slice, t_slice);
         if (Q2_slice.empty() || t_slice.empty()) continue;
@@ -424,28 +445,31 @@ static void plot_cells_for_period(
         const int nrows = (int)t_slice.size();
         const int ncols = (int)Q2_slice.size();
 
-        // Separate title pad to avoid overlap
-        const int w = 260*ncols + 140;
-        const int h = 220*nrows + 160;
+        // Separate title pad (prevents overlap)
+        const int W = 280*ncols + 160;
+        const int H = 240*nrows + 190;
 
         std::ostringstream cname; cname<<"c_bsa_"<<period<<"_xB"<<ix;
-        TCanvas* c = new TCanvas(cname.str().c_str(), cname.str().c_str(), w, h);
+        TCanvas* c = new TCanvas(cname.str().c_str(), cname.str().c_str(), W, H);
 
-        TPad* pTop  = new TPad("pTop","pTop", 0.0, 0.94, 1.0, 1.0);
+        TPad* pTop  = new TPad("pTop","pTop", 0.0, 0.91, 1.0, 1.0);
         pTop->SetFillStyle(0); pTop->SetBorderSize(0); pTop->Draw();
 
-        TPad* pGrid = new TPad("pGrid","pGrid", 0.0, 0.00, 1.0, 0.94);
+        TPad* pGrid = new TPad("pGrid","pGrid", 0.0, 0.00, 1.0, 0.91);
         pGrid->SetFillStyle(0); pGrid->SetBorderSize(0); pGrid->Draw();
         pGrid->cd();
         pGrid->Divide(ncols, nrows, 0.0001, 0.0001);
 
-        // Title (period + xB range)
+        // Title (ASCII/ROOT-safe: use "#in" instead of Unicode ∈)
         pTop->cd();
-        TLatex head; head.SetNDC(); head.SetTextAlign(22); head.SetTextSize(0.55);
+        TLatex head;
+        head.SetNDC(); head.SetTextAlign(22);
+        head.SetTextFont(42);
+        head.SetTextSize(0.52); // relative to the (short) top pad
         std::ostringstream tit;
-        tit << "Beam-Spin Asymmetry  —  " << period
-            << Form("   x_{B}\\in[%.2g, %.2g]", xb.first, xb.second);
-        head.DrawLatex(0.5, 0.50, tit.str().c_str());
+        tit << Form("Beam-Spin Asymmetry   %s   x_{B} #in [%.2g, %.2g]",
+                    period.c_str(), xb.first, xb.second);
+        head.DrawLatex(0.5, 0.55, tit.str().c_str());
 
         // Panels
         for (int r = 0; r < nrows; ++r) {
@@ -459,16 +483,27 @@ static void plot_cells_for_period(
                 pGrid->cd(r*ncols + ccol + 1);
                 gPad->SetGrid(1,1);
                 gPad->SetTopMargin(0.08);
-                gPad->SetBottomMargin(0.14);
-                gPad->SetLeftMargin(0.12);
+                gPad->SetBottomMargin(0.17);
+                gPad->SetLeftMargin(0.15);
                 gPad->SetRightMargin(0.06);
 
                 TH1* frame = gPad->DrawFrame(0.0, -1.05, 360.0, 1.05);
-                frame->GetXaxis()->SetTitle("#phi (deg)");
-                frame->GetYaxis()->SetTitle("Beam-Spin Asymmetry");
-                frame->GetXaxis()->SetNdivisions(505);
-                frame->GetXaxis()->CenterTitle();
-                frame->GetYaxis()->CenterTitle();
+                TAxis* ax = frame->GetXaxis();
+                TAxis* ay = frame->GetYaxis();
+
+                // larger, clearer text
+                ax->SetTitle("#phi (deg)");
+                ay->SetTitle("Beam-Spin Asymmetry");
+                ax->CenterTitle(); ay->CenterTitle();
+                ax->SetNdivisions(505);
+
+                ax->SetTitleSize(0.060);
+                ax->SetLabelSize(0.048);
+                ay->SetTitleSize(0.060);
+                ay->SetLabelSize(0.048);
+
+                ax->SetTitleOffset(1.15);
+                ay->SetTitleOffset(1.35);
 
                 auto itCell = cells.find(std::make_tuple(ix, iQ_global, it_global));
                 if (itCell == cells.end()) continue;
@@ -487,7 +522,7 @@ static void plot_cells_for_period(
                 if (!x.empty()) {
                     TGraphErrors* gr = new TGraphErrors((int)x.size(), x.data(), y.data(), nullptr, ey.data());
                     gr->SetMarkerStyle(20);
-                    gr->SetMarkerSize(0.9);
+                    gr->SetMarkerSize(1.1);
                     gr->SetLineWidth(2);
                     gr->Draw("P SAME");
                 }
@@ -497,8 +532,8 @@ static void plot_cells_for_period(
                     TF1 fdraw("fBSA_draw","[3] + ([0]*sin(x))/(1+[1]*cos(x)+[2]*cos(2*x))", 0.0, TWO_PI);
                     fdraw.SetParameters(cr.fit.A, cr.fit.B1, cr.fit.B2, cr.fit.C);
                     fdraw.SetLineColor(kRed);
-                    fdraw.SetLineWidth(1);
-                    fdraw.SetNpx(720); // smooth
+                    fdraw.SetLineWidth(2);
+                    fdraw.SetNpx(720);
 
                     const int NS=721;
                     std::vector<double> xd(NS), yd(NS);
@@ -510,28 +545,30 @@ static void plot_cells_for_period(
                     }
                     TGraph* gfit = new TGraph(NS, xd.data(), yd.data());
                     gfit->SetLineColor(kRed);
-                    gfit->SetLineWidth(1);
+                    gfit->SetLineWidth(2);
                     gfit->Draw("L SAME");
                 }
 
-                // Panel annotation (Q² and -t)
+                // Panel annotation (Q² and -t) — a bit larger
                 TLatex lab;
-                lab.SetNDC(); lab.SetTextSize(0.035); lab.SetTextAlign(11);
-                lab.DrawLatex(0.12, 0.94,
-                    Form("Q^{2}\\in[%.2g, %.2g],   -t\\in[%.2g, %.2g]",
+                lab.SetNDC(); lab.SetTextSize(0.040); lab.SetTextAlign(11);
+                lab.SetTextFont(42);
+                lab.DrawLatex(0.15, 0.94,
+                    Form("Q^{2} #in [%.2g, %.2g],   -t #in [%.2g, %.2g]",
                          Q2_slice[ccol].first, Q2_slice[ccol].second,
                          t_slice[r].first,    t_slice[r].second));
 
                 // Compact legend (fixed top-right) with fit params
-                TLegend* leg = new TLegend(0.60, 0.70, 0.92, 0.92);
+                TLegend* leg = new TLegend(0.60, 0.68, 0.93, 0.93);
                 leg->SetBorderSize(1);
                 leg->SetLineColor(kBlack);
                 leg->SetFillStyle(0);
-                leg->SetTextSize(0.032);
-                leg->AddEntry((TObject*)nullptr, Form("A=%.3f#pm%.3f",  cr.fit.A,  cr.fit.Aerr), "");
-                leg->AddEntry((TObject*)nullptr, Form("B1=%.3f#pm%.3f", cr.fit.B1, cr.fit.B1err), "");
-                leg->AddEntry((TObject*)nullptr, Form("B2=%.3f#pm%.3f", cr.fit.B2, cr.fit.B2err), "");
-                leg->AddEntry((TObject*)nullptr, Form("C=%.3f#pm%.3f",  cr.fit.C,  cr.fit.Cerr), "");
+                leg->SetTextFont(42);
+                leg->SetTextSize(0.042);
+                leg->AddEntry((TObject*)nullptr, Form("A = %.3f #pm %.3f",  cr.fit.A,  cr.fit.Aerr), "");
+                leg->AddEntry((TObject*)nullptr, Form("B_{1} = %.3f #pm %.3f", cr.fit.B1, cr.fit.B1err), "");
+                leg->AddEntry((TObject*)nullptr, Form("B_{2} = %.3f #pm %.3f", cr.fit.B2, cr.fit.B2err), "");
+                leg->AddEntry((TObject*)nullptr, Form("C = %.3f #pm %.3f",  cr.fit.C,  cr.fit.Cerr), "");
                 leg->Draw();
             }
         }
