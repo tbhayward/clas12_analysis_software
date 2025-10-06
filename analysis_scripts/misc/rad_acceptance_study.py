@@ -2,16 +2,15 @@
 # -*- coding: utf-8 -*-
 
 r"""
-Compare Born vs Radiative acceptances A(φ) in experimental bins, with legends
-showing **reconstructed-level** mean kinematics per subplot:
+Compare Born vs Radiative acceptances A(φ) in experimental bins, with two
+vertical text lists per subplot (Born | Rad) showing **reconstructed-level**
+mean kinematics ⟨Q²⟩, ⟨x_B⟩, ⟨−t⟩, ⟨y⟩.
 
 For each x_B bin (from CSV), make a canvas with columns = Q^2 bins and rows = -t bins.
 Each subplot shows:
   - Born acceptance A_B(φ) = N_rec_B(φ) / N_gen_B(φ),
   - Rad  acceptance A_R(φ) = N_rec_R(φ) / N_gen_R(φ),
-with Poisson ratio errors per φ bin, markers only, and a legend reporting two
-vertical lists (Born and Rad) of the **reconstructed-level** means:
-  ⟨Q²⟩, ⟨x_B⟩, ⟨−t⟩, ⟨y⟩.
+with Poisson ratio errors per φ bin, markers only.
 
 Inputs (TTree "PhysicsEvents"):
   Born:
@@ -54,10 +53,11 @@ plt.rcParams.update({
     "axes.titlesize": 12,
     "xtick.labelsize": 10,
     "ytick.labelsize": 10,
-    "legend.fontsize": 7,  # slightly smaller legend font as requested
     "mathtext.fontset": "dejavusans",
     "mathtext.default": "regular",
 })
+
+LEGEND_FONTSIZE = 7  # smaller text blocks in each panel
 
 # -------------------- file paths --------------------
 GEN_BORN_PATH = "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/mc/dvcsgen/gen_dvcsgen_rga_sp18_inb_10594MeV.root"
@@ -95,7 +95,6 @@ def load_arrays(path):
     with uproot.open(path) as f:
         tree = f[TTREE_NAME]
         arr = tree.arrays(["Q2", "x", "t1", "phi2"], library="np")
-        # Try to get 'y'; if missing, fill with NaNs of the right length
         try:
             yarr = tree["y"].array(library="np")
         except Exception:
@@ -113,10 +112,9 @@ def hist_counts(values, mask, bin_edges):
 
 def ratio_with_poisson_errors(num, den):
     """
-    Given two non-negative arrays num, den (same shape) of counts per bin,
-    compute R = num/den with Poisson error propagation:
+    R = num/den with Poisson propagation:
         σ = R * sqrt(1/num + 1/den)
-    Any bin with num==0 or den==0 -> NaN for both R and σ.
+    Any bin with num==0 or den==0 -> NaN.
     """
     num = num.astype(float)
     den = den.astype(float)
@@ -241,7 +239,7 @@ def acceptance_phi_for_cell(gen_dict, rec_dict, xb, q2, tt, phi_edges):
     Nrec_tot = int(np.count_nonzero(m_rec))
     A_int, sA_int = binomial_error(Nrec_tot, Ngen_tot)
 
-    # **Reconstructed-level** mean kinematics for legend
+    # **Reconstructed-level** mean kinematics for text blocks
     mean_Q2   = _safe_mean(rec_dict["Q2"][m_rec])
     mean_x    = _safe_mean(rec_dict["x"][m_rec])
     mean_tpos = _safe_mean(rec_dict["tpos"][m_rec])   # this is ⟨−t⟩
@@ -255,8 +253,8 @@ def make_acceptance_grids(gen_born, rec_born, gen_rad, rec_rad, out_dir):
     """
     Parse CSV, group rows by x_B, then for each x_B bin produce a grid:
       columns = Q^2 bins, rows = -t bins. Subplots overlay Born vs Rad A(φ),
-      and the legend shows **reconstructed** mean kinematics in two vertical lists:
-      (Born) and (Rad): ⟨Q²⟩, ⟨x_B⟩, ⟨−t⟩, ⟨y⟩.
+      and each subplot has two compact vertical text panels (Born | Rad)
+      with ⟨Q²⟩, ⟨x_B⟩, ⟨−t⟩, ⟨y⟩ computed from **reconstructed** events.
     """
     rows = parse_binning_csv()
     if not rows:
@@ -281,11 +279,16 @@ def make_acceptance_grids(gen_born, rec_born, gen_rad, rec_rad, out_dir):
         #endif
 
         nC = len(q2_bins); nR = len(t_bins)
-        fig_w = max(10.0, 3.4 * nC + 2.0)
-        fig_h = max(7.0,  2.8 * nR + 2.0)
+        fig_w = max(12.0, 3.4 * nC + 2.0)   # slightly larger minimum width
+        fig_h = max(8.0,  2.8 * nR + 2.0)   # slightly larger minimum height
+
+        # Use tight_layout instead of constrained_layout to avoid collapse warnings
         fig, axes = plt.subplots(nR, nC, figsize=(fig_w, fig_h),
-                                 constrained_layout=True, squeeze=False)
+                                 constrained_layout=False, squeeze=False)
         fig.suptitle(rf"Acceptance $A(\phi)$, $x_{{B}}\in[{xbmin:.2g}, {xbmax:.2g}]$")
+
+        # Predefine a light textbox style so it doesn’t crowd the data
+        textbox = dict(boxstyle="round,pad=0.2", fc="white", ec="none", alpha=0.75)
 
         for i_t, tt in enumerate(t_bins):
             for j_q, q2 in enumerate(q2_bins):
@@ -303,17 +306,16 @@ def make_acceptance_grids(gen_born, rec_born, gen_rad, rec_rad, out_dir):
                  )
 
                 # Plot: markers only, error bars
-                eb1 = ax.errorbar(c_b, A_b, yerr=sA_b, fmt="o", linestyle="none",
-                                  markersize=3.0, capsize=2, label="Born")
-                eb2 = ax.errorbar(c_r, A_r, yerr=sA_r, fmt="s", linestyle="none",
-                                  markersize=3.0, capsize=2, label="Rad")
+                ax.errorbar(c_b, A_b, yerr=sA_b, fmt="o", linestyle="none",
+                            markersize=3.0, capsize=2)
+                ax.errorbar(c_r, A_r, yerr=sA_r, fmt="s", linestyle="none",
+                            markersize=3.0, capsize=2)
 
                 ax.set_title(rf"$Q^{{2}}\!\in\![{q2[0]:.2g},{q2[1]:.2g}],\ -t\!\in\![{tt[0]:.2g},{tt[1]:.2g}]$")
                 format_axes_phi(ax)
 
-                # --- Two-column legend text blocks (Born | Rad), small font ---
-                # Double braces for literal LaTeX braces to avoid .format() conflicts
-                born_text = (r"Born"
+                # --- Two vertical text lists inside the axes (Born | Rad) ---
+                born_text = (r"$\bf{{Born}}$"
                              r"\n$Q^{{2}}$: {Q2}"
                              r"\n$x_{{B}}$: {xB}"
                              r"\n$-t$: {t}"
@@ -323,7 +325,7 @@ def make_acceptance_grids(gen_born, rec_born, gen_rad, rec_rad, out_dir):
                                  t =fmt_float(tb,  "{:.3f}"),
                                  y =fmt_float(yb,  "{:.3f}"),
                              )
-                rad_text  = (r"Rad"
+                rad_text  = (r"$\bf{{Rad}}$"
                              r"\n$Q^{{2}}$: {Q2}"
                              r"\n$x_{{B}}$: {xB}"
                              r"\n$-t$: {t}"
@@ -334,15 +336,16 @@ def make_acceptance_grids(gen_born, rec_born, gen_rad, rec_rad, out_dir):
                                  y =fmt_float(yr,  "{:.3f}"),
                              )
 
-                handles = [eb1[0], eb2[0]]
-                labels  = [born_text, rad_text]
-                ax.legend(handles, labels,
-                          frameon=False, loc="best",
-                          ncol=2, columnspacing=1.0, handletextpad=0.8,
-                          borderpad=0.25, labelspacing=0.35, fontsize=7)
+                # Place Born panel at left-top, Rad panel at mid-top
+                ax.text(0.02, 0.98, born_text, transform=ax.transAxes,
+                        va="top", ha="left", fontsize=LEGEND_FONTSIZE, bbox=textbox)
+                ax.text(0.52, 0.98, rad_text, transform=ax.transAxes,
+                        va="top", ha="left", fontsize=LEGEND_FONTSIZE, bbox=textbox)
             #endfor
         #endfor
 
+        # Use tight_layout with a bit of room for suptitle
+        fig.tight_layout(pad=1.0, rect=[0.0, 0.03, 1.0, 0.96])
         out_pdf = os.path.join(out_dir, f"acc_phi_grid_xB_{xbmin:.2g}_{xbmax:.2g}.pdf")
         fig.savefig(out_pdf)
         print("Saved:", out_pdf)
@@ -364,7 +367,7 @@ def main():
     out_root = "output/rad_example"
     os.makedirs(out_root, exist_ok=True)
 
-    # Per-xB canvases comparing Born vs Rad acceptances (legends from RECO means)
+    # Per-xB canvases comparing Born vs Rad acceptances (reco means shown as text blocks)
     make_acceptance_grids(gen_born, rec_born, gen_rad, rec_rad, out_dir=out_root)
 #endfor  # function ends; comment included per your preference
 
