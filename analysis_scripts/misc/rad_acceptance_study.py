@@ -60,20 +60,20 @@ plt.rcParams.update({
 ANNOT_FONTSIZE = 7  # tiny, unobtrusive
 
 # -------------------- file paths --------------------
-# GEN_BORN_PATH = "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/mc/dvcsgen/gen_dvcsgen_rga_sp18_inb_10594MeV.root"
-# REC_BORN_PATH = "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/mc/dvcsgen/rec_dvcsgen_rga_sp18_inb_10594MeV.root"
-# GEN_RAD_PATH  = "/volatile/clas12/thayward/temp_rad/gen_sp18_inb_rad.root"
-# REC_RAD_PATH  = "/volatile/clas12/thayward/temp_rad/rec_sp18_inb_rad.root"
+GEN_BORN_PATH = "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/mc/dvcsgen/gen_dvcsgen_rga_sp18_inb_10594MeV.root"
+REC_BORN_PATH = "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/mc/dvcsgen/rec_dvcsgen_rga_sp18_inb_10594MeV.root"
+GEN_RAD_PATH  = "/volatile/clas12/thayward/temp_rad/gen_sp18_inb_rad.root"
+REC_RAD_PATH  = "/volatile/clas12/thayward/temp_rad/rec_sp18_inb_rad.root"
 
 # GEN_BORN_PATH = "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/mc/dvcsgen/gen_dvcsgen_rga_fa18_out_10604MeV.root"
 # REC_BORN_PATH = "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/mc/dvcsgen/rec_dvcsgen_rga_fa18_out_10604MeV.root"
 # GEN_RAD_PATH  = "/volatile/clas12/thayward/temp_rad/gen_fa18_out_rad.root"
 # REC_RAD_PATH  = "/volatile/clas12/thayward/temp_rad/rec_fa18_out_rad.root"
 
-GEN_BORN_PATH = "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/mc/dvcsgen/gen_dvcsgen_rga_sp19_inb_10200MeV.root"
-REC_BORN_PATH = "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/mc/dvcsgen/rec_dvcsgen_rga_sp19_inb_10200MeV.root"
-GEN_RAD_PATH  = "/volatile/clas12/thayward/temp_rad/gen_sp19_inb_rad.root"
-REC_RAD_PATH  = "/volatile/clas12/thayward/temp_rad/rec_sp19_inb_rad.root"
+# GEN_BORN_PATH = "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/mc/dvcsgen/gen_dvcsgen_rga_sp19_inb_10200MeV.root"
+# REC_BORN_PATH = "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/mc/dvcsgen/rec_dvcsgen_rga_sp19_inb_10200MeV.root"
+# GEN_RAD_PATH  = "/volatile/clas12/thayward/temp_rad/gen_sp19_inb_rad.root"
+# REC_RAD_PATH  = "/volatile/clas12/thayward/temp_rad/rec_sp19_inb_rad.root"
 
 TTREE_NAME = "PhysicsEvents"
 
