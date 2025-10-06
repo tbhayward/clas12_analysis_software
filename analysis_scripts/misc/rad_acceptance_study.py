@@ -2,15 +2,15 @@
 # -*- coding: utf-8 -*-
 
 r"""
-Compare Born vs Radiative acceptances A(φ) in experimental bins, with two
-vertical text lists per subplot (Born | Rad) showing **reconstructed-level**
-mean kinematics ⟨Q²⟩, ⟨x_B⟩, ⟨−t⟩, ⟨y⟩.
+Compare Born vs Radiative acceptances A(φ) in experimental bins, with a single
+compact annotation per subplot:
 
 For each x_B bin (from CSV), make a canvas with columns = Q^2 bins and rows = -t bins.
 Each subplot shows:
   - Born acceptance A_B(φ) = N_rec_B(φ) / N_gen_B(φ),
   - Rad  acceptance A_R(φ) = N_rec_R(φ) / N_gen_R(φ),
-with Poisson ratio errors per φ bin, markers only.
+with Poisson ratio errors per φ bin, markers only, and **one short line**:
+  ⟨y⟩: Born=…, Rad=…   (means computed from RECONSTRUCTED events in that bin)
 
 Inputs (TTree "PhysicsEvents"):
   Born:
@@ -49,15 +49,15 @@ from matplotlib.ticker import FixedLocator, FixedFormatter
 plt.rcParams.update({
     "figure.dpi": 120,
     "savefig.dpi": 220,
-    "axes.labelsize": 12,
-    "axes.titlesize": 12,
-    "xtick.labelsize": 10,
-    "ytick.labelsize": 10,
+    "axes.labelsize": 11,
+    "axes.titlesize": 11,
+    "xtick.labelsize": 9,
+    "ytick.labelsize": 9,
     "mathtext.fontset": "dejavusans",
     "mathtext.default": "regular",
 })
 
-LEGEND_FONTSIZE = 7  # smaller text blocks in each panel
+ANNOT_FONTSIZE = 7  # tiny, unobtrusive
 
 # -------------------- file paths --------------------
 GEN_BORN_PATH = "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/mc/dvcsgen/gen_dvcsgen_rga_sp18_inb_10594MeV.root"
@@ -140,9 +140,9 @@ def _safe_mean(a):
     return float(np.mean(a)) if a.size > 0 else np.nan
 #endfor
 
-def fmt_float(v, fmt="{:.3f}"):
-    """Format float or return '--' if NaN/inf."""
-    return ("--" if (v is None or not np.isfinite(v)) else fmt.format(v))
+def fmt2(v):
+    """Two-decimal formatter with NaN guard."""
+    return "--" if (v is None or not np.isfinite(v)) else f"{v:.2f}"
 #endfor
 
 # Pretty φ ticks
@@ -215,8 +215,7 @@ def acceptance_phi_for_cell(gen_dict, rec_dict, xb, q2, tt, phi_edges):
     Returns:
       centers, A(φ), σ_A(φ),
       Nrec_tot, Ngen_tot, A_int, σ_int,
-      mean_Q2_reco, mean_x_reco, mean_tpos_reco(=−t), mean_y_reco
-      (the means are computed from **reconstructed** events in the cell)
+      mean_y_reco   (the mean is computed from **reconstructed** events)
     """
     # Masks for gen & rec in the same (xB,Q2,t) window
     m_gen = ((gen_dict["x"]  >= xb[0]) & (gen_dict["x"]  < xb[1]) &
@@ -234,18 +233,15 @@ def acceptance_phi_for_cell(gen_dict, rec_dict, xb, q2, tt, phi_edges):
     Aphi, sAphi = ratio_with_poisson_errors(rec_phi, gen_phi)
     centers = 0.5 * (phi_edges[:-1] + phi_edges[1:])
 
-    # Integrated acceptance & binomial error from totals in this cell
+    # Integrated acceptance (for diagnostics, unused in plot)
     Ngen_tot = int(np.count_nonzero(m_gen))
     Nrec_tot = int(np.count_nonzero(m_rec))
     A_int, sA_int = binomial_error(Nrec_tot, Ngen_tot)
 
-    # **Reconstructed-level** mean kinematics for text blocks
-    mean_Q2   = _safe_mean(rec_dict["Q2"][m_rec])
-    mean_x    = _safe_mean(rec_dict["x"][m_rec])
-    mean_tpos = _safe_mean(rec_dict["tpos"][m_rec])   # this is ⟨−t⟩
-    mean_y    = _safe_mean(rec_dict["y"][m_rec])
+    # **Reconstructed-level** mean y for the tiny annotation
+    mean_y = _safe_mean(rec_dict["y"][m_rec])
 
-    return centers, Aphi, sAphi, Nrec_tot, Ngen_tot, A_int, sA_int, mean_Q2, mean_x, mean_tpos, mean_y
+    return centers, Aphi, sAphi, mean_y
 #endfor
 
 # -------------------- plotting per x_B canvases --------------------
@@ -253,8 +249,7 @@ def make_acceptance_grids(gen_born, rec_born, gen_rad, rec_rad, out_dir):
     """
     Parse CSV, group rows by x_B, then for each x_B bin produce a grid:
       columns = Q^2 bins, rows = -t bins. Subplots overlay Born vs Rad A(φ),
-      and each subplot has two compact vertical text panels (Born | Rad)
-      with ⟨Q²⟩, ⟨x_B⟩, ⟨−t⟩, ⟨y⟩ computed from **reconstructed** events.
+      and each subplot shows a **single short line** with ⟨y⟩ for Born/Rad.
     """
     rows = parse_binning_csv()
     if not rows:
@@ -279,31 +274,26 @@ def make_acceptance_grids(gen_born, rec_born, gen_rad, rec_rad, out_dir):
         #endif
 
         nC = len(q2_bins); nR = len(t_bins)
-        fig_w = max(12.0, 3.4 * nC + 2.0)   # slightly larger minimum width
-        fig_h = max(8.0,  2.8 * nR + 2.0)   # slightly larger minimum height
+        fig_w = max(11.0, 3.2 * nC + 1.8)
+        fig_h = max(7.0,  2.6 * nR + 1.8)
 
-        # Use tight_layout instead of constrained_layout to avoid collapse warnings
+        # Use tight_layout (no constrained_layout) to avoid collapse warnings
         fig, axes = plt.subplots(nR, nC, figsize=(fig_w, fig_h),
                                  constrained_layout=False, squeeze=False)
         fig.suptitle(rf"Acceptance $A(\phi)$, $x_{{B}}\in[{xbmin:.2g}, {xbmax:.2g}]$")
-
-        # Predefine a light textbox style so it doesn’t crowd the data
-        textbox = dict(boxstyle="round,pad=0.2", fc="white", ec="none", alpha=0.75)
 
         for i_t, tt in enumerate(t_bins):
             for j_q, q2 in enumerate(q2_bins):
                 ax = axes[i_t, j_q]
 
-                # Born acceptance + **reco** means
-                (c_b, A_b, sA_b, Nrec_b, Ngen_b, Aint_b, sAint_b,
-                 Q2b, xb, tb, yb) = acceptance_phi_for_cell(
+                # Born acceptance and reco mean y
+                c_b, A_b, sA_b, yb = acceptance_phi_for_cell(
                     gen_born, rec_born, (xbmin, xbmax), q2, tt, PHI_EDGES
-                 )
-                # Radiative acceptance + **reco** means
-                (c_r, A_r, sA_r, Nrec_r, Ngen_r, Aint_r, sAint_r,
-                 Q2r, xr, tr, yr) = acceptance_phi_for_cell(
+                )
+                # Radiative acceptance and reco mean y
+                c_r, A_r, sA_r, yr = acceptance_phi_for_cell(
                     gen_rad, rec_rad, (xbmin, xbmax), q2, tt, PHI_EDGES
-                 )
+                )
 
                 # Plot: markers only, error bars
                 ax.errorbar(c_b, A_b, yerr=sA_b, fmt="o", linestyle="none",
@@ -314,38 +304,16 @@ def make_acceptance_grids(gen_born, rec_born, gen_rad, rec_rad, out_dir):
                 ax.set_title(rf"$Q^{{2}}\!\in\![{q2[0]:.2g},{q2[1]:.2g}],\ -t\!\in\![{tt[0]:.2g},{tt[1]:.2g}]$")
                 format_axes_phi(ax)
 
-                # --- Two vertical text lists inside the axes (Born | Rad) ---
-                born_text = (r"$\bf{{Born}}$"
-                             r"\n$Q^{{2}}$: {Q2}"
-                             r"\n$x_{{B}}$: {xB}"
-                             r"\n$-t$: {t}"
-                             r"\n$y$: {y}").format(
-                                 Q2=fmt_float(Q2b, "{:.2f}"),
-                                 xB=fmt_float(xb,  "{:.3f}"),
-                                 t =fmt_float(tb,  "{:.3f}"),
-                                 y =fmt_float(yb,  "{:.3f}"),
-                             )
-                rad_text  = (r"$\bf{{Rad}}$"
-                             r"\n$Q^{{2}}$: {Q2}"
-                             r"\n$x_{{B}}$: {xB}"
-                             r"\n$-t$: {t}"
-                             r"\n$y$: {y}").format(
-                                 Q2=fmt_float(Q2r, "{:.2f}"),
-                                 xB=fmt_float(xr,  "{:.3f}"),
-                                 t =fmt_float(tr,  "{:.3f}"),
-                                 y =fmt_float(yr,  "{:.3f}"),
-                             )
-
-                # Place Born panel at left-top, Rad panel at mid-top
-                ax.text(0.02, 0.98, born_text, transform=ax.transAxes,
-                        va="top", ha="left", fontsize=LEGEND_FONTSIZE, bbox=textbox)
-                ax.text(0.52, 0.98, rad_text, transform=ax.transAxes,
-                        va="top", ha="left", fontsize=LEGEND_FONTSIZE, bbox=textbox)
+                # Single compact line with mean y (two decimals)
+                ax.text(0.01, 0.97,
+                        rf"$\langle y\rangle$: Born={fmt2(yb)}, Rad={fmt2(yr)}",
+                        transform=ax.transAxes, va="top", ha="left",
+                        fontsize=ANNOT_FONTSIZE, color="black")
             #endfor
         #endfor
 
-        # Use tight_layout with a bit of room for suptitle
-        fig.tight_layout(pad=1.0, rect=[0.0, 0.03, 1.0, 0.96])
+        # Keep a bit of room for suptitle
+        fig.tight_layout(pad=0.8, rect=[0.0, 0.03, 1.0, 0.95])
         out_pdf = os.path.join(out_dir, f"acc_phi_grid_xB_{xbmin:.2g}_{xbmax:.2g}.pdf")
         fig.savefig(out_pdf)
         print("Saved:", out_pdf)
@@ -367,7 +335,7 @@ def main():
     out_root = "output/rad_example"
     os.makedirs(out_root, exist_ok=True)
 
-    # Per-xB canvases comparing Born vs Rad acceptances (reco means shown as text blocks)
+    # Per-xB canvases comparing Born vs Rad acceptances (only ⟨y⟩ line per panel)
     make_acceptance_grids(gen_born, rec_born, gen_rad, rec_rad, out_dir=out_root)
 #endfor  # function ends; comment included per your preference
 
