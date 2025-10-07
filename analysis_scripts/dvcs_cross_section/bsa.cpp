@@ -650,10 +650,12 @@ static void plot_cells_for_period(
                          t_slice[r].first,    t_slice[r].second));
 
                 // Legend: keep well inside the pad
-                TLegend* leg = new TLegend(0.60, 0.68, 0.88, 0.92);
+                TLegend* leg = new TLegend(0.60, 0.68, 0.90, 0.92);
                 leg->SetBorderSize(1);
                 leg->SetLineColor(kBlack);
-                leg->SetFillStyle(0);
+                leg->SetFillColor(kWhite);
+                leg->SetFillStyle(1001); 
+                leg->SetBorderSize(1);   
                 leg->SetTextFont(42);
                 leg->SetTextSize(0.040);
                 leg->AddEntry((TObject*)nullptr, Form("A = %.3f #pm %.3f",  cr.fit.A,  cr.fit.Aerr), "");
@@ -787,22 +789,47 @@ void compute_and_plot_bsa_helicity(
                 double VarNp_pol = VarNp / (P_here*P_here);
                 double VarNm_pol = VarNm / (P_here*P_here);
 
-                // BSA = (D/S)
-                double S = Np_pol + Nm_pol;
-                double D = Np_pol - Nm_pol;
+                // --- Regularized BSA using Jeffreys prior (α = 0.5) ---
+                const double alpha = 0.5;
+
+                // Effective counts (pseudo-counts added to avoid ±1 with zero error)
+                double Np_eff = std::max(0.0, Np_pol) + alpha;
+                double Nm_eff = std::max(0.0, Nm_pol) + alpha;
+
+                // Total and difference
+                double S = Np_eff + Nm_eff;
+                double D = Np_eff - Nm_eff;
 
                 BSApt p; p.phi = PHI_RAD[ip];
-                if (S>0.0) {
-                    p.bsa = D/S;
-                    double dNp = 2*Nm_pol/(S*S);
-                    double dNm = -2*Np_pol/(S*S);
-                    double VarBSA = dNp*dNp*VarNp_pol + dNm*dNm*VarNm_pol;
-                    p.err = std::sqrt(std::max(VarBSA, 0.0));
+
+                if (S > 0.0) {
+                    p.bsa = D / S;
+
+                    // Beta posterior variance mapped to A = 2p - 1
+                    double a = Np_eff, b = Nm_eff;
+                    double varA = 4.0 * (a * b) / ((a + b) * (a + b) * (a + b + 1.0));
+
+                    // Safety floor to avoid absurdly small uncertainties
+                    p.err = std::sqrt(std::max(varA, 1e-6));
                     p.valid = std::isfinite(p.bsa) && std::isfinite(p.err);
                 } else {
-                    p.bsa = 0.0; p.err = 0.0; p.valid=false;
+                    p.bsa = 0.0;
+                    p.err = 0.0;
+                    p.valid = false;
                 }
-                result.points[ip]=p;
+
+                result.points[ip] = p;
+
+                // accumulate for combined 10.6
+                if (inTenSix(runTag)) {
+                    auto key4 = std::make_tuple(ix, iQ, itb, ip);
+                    Acc& A = acc106[key4];
+                    A.Np   += Np_eff;
+                    A.Nm   += Nm_eff;
+                    // Use approximate propagated variances (scaled by pseudo-counts)
+                    A.Varp += std::max(Np_eff, 1.0);
+                    A.Varm += std::max(Nm_eff, 1.0);
+                }
 
                 // accumulate for combined 10.6
                 if (inTenSix(runTag)) {
@@ -846,15 +873,21 @@ void compute_and_plot_bsa_helicity(
             BSApt p; p.phi = phiCentersRad()[ip]; p.valid=false;
             if (itA!=acc106.end()){
                 const auto& A = itA->second;
-                double S = A.Np + A.Nm;
-                double D = A.Np - A.Nm;
-                if (S>0.0) {
-                    p.bsa = D/S;
-                    double dNp = 2*A.Nm/(S*S);
-                    double dNm = -2*A.Np/(S*S);
-                    double VarBSA = dNp*dNp*A.Varp + dNm*dNm*A.Varm;
-                    p.err = std::sqrt(std::max(VarBSA, 0.0));
-                    p.valid = std::isfinite(p.bsa)&&std::isfinite(p.err);
+                // --- Regularized combination using Jeffreys prior (α = 0.5) ---
+                const double alpha = 0.5;
+                double Np_eff = std::max(0.0, A.Np) + alpha;
+                double Nm_eff = std::max(0.0, A.Nm) + alpha;
+
+                double S = Np_eff + Nm_eff;
+                double D = Np_eff - Nm_eff;
+
+                if (S > 0.0) {
+                    p.bsa = D / S;
+
+                    double a = Np_eff, b = Nm_eff;
+                    double varA = 4.0 * (a * b) / ((a + b) * (a + b) * (a + b + 1.0));
+                    p.err = std::sqrt(std::max(varA, 1e-6));
+                    p.valid = std::isfinite(p.bsa) && std::isfinite(p.err);
                 }
             }
             cr.points[ip]=p;
