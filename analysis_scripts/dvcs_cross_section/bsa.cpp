@@ -12,7 +12,12 @@
 #include <TLatex.h>
 #include <TFitResult.h>
 #include <TPad.h>
+#include <TGaxis.h>
 #include <TTree.h>
+
+#include <Math/Factory.h>
+#include <Math/Minimizer.h>
+#include <Math/Functor.h>
 
 #include <algorithm>
 #include <cctype>
@@ -43,7 +48,6 @@ struct StyleInit {
         gStyle->SetPadTickY(1);
         gStyle->SetLegendBorderSize(1);
 
-        // Use a clean, readable font everywhere
         const int rf = 42; // Helvetica
         gStyle->SetTitleFont(rf, "XYZ");
         gStyle->SetLabelFont(rf, "XYZ");
@@ -53,6 +57,14 @@ struct StyleInit {
 
 constexpr int    N_PHI_BINS = 12;
 constexpr double TWO_PI     = 2.0 * M_PI;
+
+// ---- BSA fit stabilization knobs (π+ style, adapted to BSA) ----
+constexpr double EPS_DEN_FLOOR = 1e-2;   // demand D(φ) ≥ this over [0,2π)
+constexpr double LAMBDA_DEN    = 1e6;    // penalty multiplier for denominator floor
+constexpr double EPS_DEN_EVAL  = 1e-6;   // evaluation clamp for denominator
+
+constexpr double A_MAX_AMP     = 0.999;  // soft "box" for |B1|,|B2| (and optional |A|,|C|)
+constexpr double LAMBDA_AMP    = 1e5;    // penalty multiplier for amplitude box
 
 using BinKey = std::tuple<int,int,int,int>; // (ix,iQ2,it,ip)
 struct HelCounts { long long plus=0, minus=0; };
@@ -285,7 +297,6 @@ static std::vector<PolStats> compute_bin_polarization(
         if (ix<0||iQ<0||it<0) continue;
 
         double width = TWO_PI/double(N_PHI_BINS);
-        // wrap phi to [0,2pi)
         double w = std::fmod(phi,TWO_PI); if (w<0) w+=TWO_PI; if (w>=TWO_PI) w = std::nextafter(TWO_PI,0.0);
         int ip = std::min(std::max(int(std::floor(w/width)),0), N_PHI_BINS-1);
 
@@ -298,6 +309,23 @@ static std::vector<PolStats> compute_bin_polarization(
     return Pbin;
 }
 
+// ------------ math helpers for stabilizer penalties ------------
+static inline double Dmin_over_domain(double B, double C) {
+    // Let x = cosφ ∈ [-1,1]; D(φ) = 1 + B cosφ + C cos2φ
+    // cos2φ = 2x^2 - 1 ⇒ D = 2C x^2 + B x + (1 - C)
+    auto quad = [&](double x){ return 2.0*C*x*x + B*x + (1.0 - C); };
+    double m = std::min(quad(-1.0), quad(+1.0)); // endpoints: 1 + C ∓ B
+    if (C > 0.0) {
+        const double x0 = -B/(4.0*C);
+        if (x0 >= -1.0 && x0 <= 1.0) {
+            const double fv = 1.0 - C - (B*B)/(8.0*C); // value at extremum inside
+            m = std::min(m, fv);
+        }
+    }
+    return m;
+}
+static inline double overBox(double A){ double v = std::fabs(A) - A_MAX_AMP; return (v>0.0)? v*v : 0.0; }
+
 // ------------ BSA computation core ------------
 struct BSApt { double phi=0.0; double bsa=0.0; double err=0.0; bool valid=false; };
 struct FitRes { double A=0, Aerr=0, B1=0, B1err=0, B2=0, B2err=0, C=0, Cerr=0, chi2=0; int ndf=0; int status=0; };
@@ -306,6 +334,7 @@ struct CellResult {
     double P_used=1.0; bool P_per_bin=false; double P_period_avg=1.0;
 };
 
+// Custom χ² + penalties minimization (Minuit2)
 static FitRes fit_cell(const std::vector<BSApt>& pts){
     std::vector<double> x, y, ey;
     x.reserve(pts.size()); y.reserve(pts.size()); ey.reserve(pts.size());
@@ -316,29 +345,79 @@ static FitRes fit_cell(const std::vector<BSApt>& pts){
         ey.push_back(std::max(p.err, 1e-6));
     }
     FitRes fr; 
-    if (x.size() < 4) { fr.status = 1; return fr; }
+    const int n = (int)x.size();
+    if (n < 4) { fr.status = 1; fr.ndf = 0; return fr; }
 
-    TGraphErrors gr((int)x.size(), x.data(), y.data(), nullptr, ey.data());
+    // χ² + stabilizers
+    auto chi2pen = [&](const double *par){
+        const double A  = par[0];
+        const double B1 = par[1];
+        const double B2 = par[2];
+        const double C  = par[3];
 
-    // A*sin(phi) / (1 + B1*cos(phi) + B2*cos(2phi)) + C
-    TF1 f("fBSA","[3] + ([0]*sin(x))/(1+[1]*cos(x)+[2]*cos(2*x))", 0.0, TWO_PI);
-    f.SetParameters(0.1, 0.0, 0.0, 0.0); // A, B1, B2, C
-    f.SetParLimits(0, -1.0, 1.0);
-    f.SetParLimits(1, -1.0, 1.0);
-    f.SetParLimits(2, -1.0, 1.0);
-    f.SetParLimits(3, -0.5, 0.5);
+        double chi2 = 0.0;
+        for (int i=0;i<n;++i){
+            const double phi = x[i];
+            double denom = 1.0 + B1*std::cos(phi) + B2*std::cos(2.0*phi);
+            if (denom < EPS_DEN_EVAL) denom = EPS_DEN_EVAL; // evaluation clamp
+            const double yhat = C + (A*std::sin(phi))/denom;
+            const double pull = (y[i] - yhat)/ey[i];
+            chi2 += pull*pull;
+        }
 
-    auto fitres = gr.Fit(&f, "QSN"); // quiet, chi2, no draw
-    fr.status = fitres ? fitres->Status() : -1;
-    fr.A     = f.GetParameter(0);  fr.Aerr  = f.GetParError(0);
-    fr.B1    = f.GetParameter(1);  fr.B1err = f.GetParError(1);
-    fr.B2    = f.GetParameter(2);  fr.B2err = f.GetParError(2);
-    fr.C     = f.GetParameter(3);  fr.Cerr  = f.GetParError(3);
-    fr.chi2  = f.GetChisquare();   fr.ndf   = f.GetNDF();
+        // (1) Denominator soft barrier over full φ-domain
+        const double Dmin = Dmin_over_domain(B1, B2);
+        double pen_den = 0.0;
+        if (Dmin < EPS_DEN_FLOOR) {
+            const double deficit = EPS_DEN_FLOOR - Dmin;
+            pen_den = LAMBDA_DEN * deficit * deficit;
+        }
+
+        // (2) Amplitude box on denominator coefficients (and optional on A,C)
+        double pen_amp = 0.0;
+        pen_amp += overBox(B1);
+        pen_amp += overBox(B2);
+        // Optionally also constrain |A|,|C| very softly:
+        // pen_amp += 0.25*overBox(A); pen_amp += 0.25*overBox(C);
+
+        return chi2 + pen_den + LAMBDA_AMP*pen_amp;
+    };
+
+    // Minimizer
+    std::unique_ptr<ROOT::Math::Minimizer> min(
+        ROOT::Math::Factory::CreateMinimizer("Minuit2", "Migrad"));
+    min->SetMaxFunctionCalls(10000);
+    min->SetMaxIterations(10000);
+    min->SetTolerance(1e-6);
+    min->SetPrintLevel(0);
+
+    ROOT::Math::Functor fcn(chi2pen, 4);
+    min->SetFunction(fcn);
+
+    // Parameters: A, B1, B2, C
+    // Seeds kept modest; bounds keep things physical and help stability.
+    min->SetLimitedVariable(0, "A",  0.10, 0.02, -1.0,  1.0);
+    min->SetLimitedVariable(1, "B1", 0.00, 0.02, -1.0,  1.0);
+    min->SetLimitedVariable(2, "B2", 0.00, 0.02, -1.0,  1.0);
+    min->SetLimitedVariable(3, "C",  0.00, 0.02, -0.5,  0.5);
+
+    const bool ok = min->Minimize();
+    fr.status = ok ? 0 : 1;
+
+    const double *par = min->X();
+    const double *err = min->Errors();
+
+    fr.A  = par[0]; fr.Aerr  = err[0];
+    fr.B1 = par[1]; fr.B1err = err[1];
+    fr.B2 = par[2]; fr.B2err = err[2];
+    fr.C  = par[3]; fr.Cerr  = err[3];
+
+    fr.chi2 = chi2pen(par);
+    fr.ndf  = std::max(0, n - 4);
     return fr;
 }
 
-// JSON writers
+// JSON writers (unchanged)
 static void write_period_bsa_json(
     const std::string& out_path,
     int nPhi,
@@ -419,6 +498,17 @@ static void write_all_periods_json(
 }
 
 // ------------ plotting (dynamic grid + clean title + red fit curve) ------------
+static void drawDegreeTicks(double xmin, double ymin, double xmax, double labelSize){
+    // Draw 0,90,180,270,360 degree ticks with labels on top of the frame axis
+    TGaxis* ax = new TGaxis(xmin, ymin, xmax, ymin, 0.0, 360.0, 4, "");
+    ax->SetLabelFont(42);
+    ax->SetLabelSize(labelSize);
+    ax->SetLabelOffset(0.012);
+    ax->SetTitle("");
+    ax->SetTickSize(0.02);
+    ax->Draw();
+}
+
 static void plot_cells_for_period(
     const std::string& period,
     const std::vector<Binning>& binning_scheme,
@@ -445,29 +535,29 @@ static void plot_cells_for_period(
         const int nrows = (int)t_slice.size();
         const int ncols = (int)Q2_slice.size();
 
-        // Separate title pad (prevents overlap)
+        // Separate title pad (smaller now)
         const int W = 280*ncols + 160;
-        const int H = 240*nrows + 190;
+        const int H = 240*nrows + 170;
 
         std::ostringstream cname; cname<<"c_bsa_"<<period<<"_xB"<<ix;
         TCanvas* c = new TCanvas(cname.str().c_str(), cname.str().c_str(), W, H);
 
-        TPad* pTop  = new TPad("pTop","pTop", 0.0, 0.91, 1.0, 1.0);
+        TPad* pTop  = new TPad("pTop","pTop", 0.0, 0.915, 1.0, 1.0);
         pTop->SetFillStyle(0); pTop->SetBorderSize(0); pTop->Draw();
 
-        TPad* pGrid = new TPad("pGrid","pGrid", 0.0, 0.00, 1.0, 0.91);
+        TPad* pGrid = new TPad("pGrid","pGrid", 0.0, 0.00, 1.0, 0.915);
         pGrid->SetFillStyle(0); pGrid->SetBorderSize(0); pGrid->Draw();
         pGrid->cd();
         pGrid->Divide(ncols, nrows, 0.0001, 0.0001);
 
-        // Title (ASCII/ROOT-safe: use "#in" instead of Unicode ∈)
+        // Title (compact and safe)
         pTop->cd();
         TLatex head;
         head.SetNDC(); head.SetTextAlign(22);
         head.SetTextFont(42);
-        head.SetTextSize(0.52); // relative to the (short) top pad
+        head.SetTextSize(0.36); // smaller than before
         std::ostringstream tit;
-        tit << Form("Beam-Spin Asymmetry   %s   x_{B} #in [%.2g, %.2g]",
+        tit << Form("Beam-Spin Asymmetry  %s   x_{B} #in [%.2g, %.2g]",
                     period.c_str(), xb.first, xb.second);
         head.DrawLatex(0.5, 0.55, tit.str().c_str());
 
@@ -483,27 +573,31 @@ static void plot_cells_for_period(
                 pGrid->cd(r*ncols + ccol + 1);
                 gPad->SetGrid(1,1);
                 gPad->SetTopMargin(0.08);
-                gPad->SetBottomMargin(0.17);
+                gPad->SetBottomMargin(0.18);
                 gPad->SetLeftMargin(0.15);
-                gPad->SetRightMargin(0.06);
+                gPad->SetRightMargin(0.10);
 
+                // frame
                 TH1* frame = gPad->DrawFrame(0.0, -1.05, 360.0, 1.05);
                 TAxis* ax = frame->GetXaxis();
                 TAxis* ay = frame->GetYaxis();
 
-                // larger, clearer text
+                // We will overlay a TGaxis for 0,90,180,270,360, so hide the default labels
+                ax->SetLabelSize(0.0001);
                 ax->SetTitle("#phi (deg)");
-                ay->SetTitle("Beam-Spin Asymmetry");
+                ay->SetTitle("A_{LU}");
                 ax->CenterTitle(); ay->CenterTitle();
                 ax->SetNdivisions(505);
 
                 ax->SetTitleSize(0.060);
-                ax->SetLabelSize(0.048);
                 ay->SetTitleSize(0.060);
                 ay->SetLabelSize(0.048);
 
-                ax->SetTitleOffset(1.15);
+                ax->SetTitleOffset(1.25);
                 ay->SetTitleOffset(1.35);
+
+                // overlay the custom degree ticks
+                drawDegreeTicks(gPad->GetUxmin(), gPad->GetUymin(), gPad->GetUxmax(), 0.048);
 
                 auto itCell = cells.find(std::make_tuple(ix, iQ_global, it_global));
                 if (itCell == cells.end()) continue;
@@ -529,19 +623,16 @@ static void plot_cells_for_period(
 
                 // Fitted curve (thin red line)
                 if (cr.fit.status == 0 || cr.fit.ndf > 0) {
-                    TF1 fdraw("fBSA_draw","[3] + ([0]*sin(x))/(1+[1]*cos(x)+[2]*cos(2*x))", 0.0, TWO_PI);
-                    fdraw.SetParameters(cr.fit.A, cr.fit.B1, cr.fit.B2, cr.fit.C);
-                    fdraw.SetLineColor(kRed);
-                    fdraw.SetLineWidth(2);
-                    fdraw.SetNpx(720);
-
+                    // draw via dense sampling to avoid any eval issues
                     const int NS=721;
                     std::vector<double> xd(NS), yd(NS);
                     for (int i=0;i<NS;++i){
                         double deg = double(i)*0.5;     // 0..360 in 0.5°
                         double rad = deg * (TWO_PI/360.0);
-                        xd[i] = deg;
-                        yd[i] = fdraw.Eval(rad);
+                        double denom = 1.0 + cr.fit.B1*std::cos(rad) + cr.fit.B2*std::cos(2.0*rad);
+                        if (denom < EPS_DEN_EVAL) denom = EPS_DEN_EVAL;
+                        double val = cr.fit.C + (cr.fit.A*std::sin(rad))/denom;
+                        xd[i] = deg; yd[i] = val;
                     }
                     TGraph* gfit = new TGraph(NS, xd.data(), yd.data());
                     gfit->SetLineColor(kRed);
@@ -549,7 +640,7 @@ static void plot_cells_for_period(
                     gfit->Draw("L SAME");
                 }
 
-                // Panel annotation (Q² and -t) — a bit larger
+                // Panel annotation (Q² and -t)
                 TLatex lab;
                 lab.SetNDC(); lab.SetTextSize(0.040); lab.SetTextAlign(11);
                 lab.SetTextFont(42);
@@ -558,13 +649,13 @@ static void plot_cells_for_period(
                          Q2_slice[ccol].first, Q2_slice[ccol].second,
                          t_slice[r].first,    t_slice[r].second));
 
-                // Compact legend (fixed top-right) with fit params
-                TLegend* leg = new TLegend(0.60, 0.68, 0.93, 0.93);
+                // Legend: keep well inside the pad
+                TLegend* leg = new TLegend(0.60, 0.68, 0.88, 0.92);
                 leg->SetBorderSize(1);
                 leg->SetLineColor(kBlack);
                 leg->SetFillStyle(0);
                 leg->SetTextFont(42);
-                leg->SetTextSize(0.042);
+                leg->SetTextSize(0.040);
                 leg->AddEntry((TObject*)nullptr, Form("A = %.3f #pm %.3f",  cr.fit.A,  cr.fit.Aerr), "");
                 leg->AddEntry((TObject*)nullptr, Form("B_{1} = %.3f #pm %.3f", cr.fit.B1, cr.fit.B1err), "");
                 leg->AddEntry((TObject*)nullptr, Form("B_{2} = %.3f #pm %.3f", cr.fit.B2, cr.fit.B2err), "");

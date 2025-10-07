@@ -1,7 +1,7 @@
 # Compiler and flags
 CXX = g++
 CXXFLAGS = `root-config --cflags` -O2 -std=c++17 -pthread
-LDFLAGS = `root-config --libs` -pthread
+LDFLAGS = `root-config --libs` -lMinuit2 -pthread
 
 # Source files
 SRC = main.cpp load_trees.cpp make_dirs.cpp exclusivity_cuts.cpp load_binning_scheme.cpp bin_means.cpp total_counts.cpp pi0_contamination.cpp bsa.cpp
