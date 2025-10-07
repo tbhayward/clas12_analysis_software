@@ -58,12 +58,12 @@ struct StyleInit {
 constexpr int    N_PHI_BINS = 12;
 constexpr double TWO_PI     = 2.0 * M_PI;
 
-// ---- BSA fit stabilization knobs (π+ style, adapted to BSA) ----
+// ---- BSA fit stabilization knobs (adapted to single-cos denominator) ----
 constexpr double EPS_DEN_FLOOR = 1e-2;   // demand D(φ) ≥ this over [0,2π)
 constexpr double LAMBDA_DEN    = 1e6;    // penalty multiplier for denominator floor
 constexpr double EPS_DEN_EVAL  = 1e-6;   // evaluation clamp for denominator
 
-constexpr double A_MAX_AMP     = 0.999;  // soft "box" for |B1|,|B2| (and optional |A|,|C|)
+constexpr double A_MAX_AMP     = 0.999;  // soft "box" for |B| (and optional |A|,|C|)
 constexpr double LAMBDA_AMP    = 1e5;    // penalty multiplier for amplitude box
 
 using BinKey = std::tuple<int,int,int,int>; // (ix,iQ2,it,ip)
@@ -310,19 +310,9 @@ static std::vector<PolStats> compute_bin_polarization(
 }
 
 // ------------ math helpers for stabilizer penalties ------------
-static inline double Dmin_over_domain(double B, double C) {
-    // Let x = cosφ ∈ [-1,1]; D(φ) = 1 + B cosφ + C cos2φ
-    // cos2φ = 2x^2 - 1 ⇒ D = 2C x^2 + B x + (1 - C)
-    auto quad = [&](double x){ return 2.0*C*x*x + B*x + (1.0 - C); };
-    double m = std::min(quad(-1.0), quad(+1.0)); // endpoints: 1 + C ∓ B
-    if (C > 0.0) {
-        const double x0 = -B/(4.0*C);
-        if (x0 >= -1.0 && x0 <= 1.0) {
-            const double fv = 1.0 - C - (B*B)/(8.0*C); // value at extremum inside
-            m = std::min(m, fv);
-        }
-    }
-    return m;
+static inline double Dmin_single(double B) {
+    // For D(φ)=1 + B cosφ, min over φ is 1 - |B|
+    return 1.0 - std::fabs(B);
 }
 static inline double overBox(double A){ double v = std::fabs(A) - A_MAX_AMP; return (v>0.0)? v*v : 0.0; }
 
@@ -334,7 +324,7 @@ struct CellResult {
     double P_used=1.0; bool P_per_bin=false; double P_period_avg=1.0;
 };
 
-// Custom χ² + penalties minimization (Minuit2)
+// Custom χ² + penalties minimization (Minuit2) for A, B(=B1), C
 static FitRes fit_cell(const std::vector<BSApt>& pts){
     std::vector<double> x, y, ey;
     x.reserve(pts.size()); y.reserve(pts.size()); ey.reserve(pts.size());
@@ -351,33 +341,30 @@ static FitRes fit_cell(const std::vector<BSApt>& pts){
     // χ² + stabilizers
     auto chi2pen = [&](const double *par){
         const double A  = par[0];
-        const double B1 = par[1];
-        const double B2 = par[2];
-        const double C  = par[3];
+        const double B1 = par[1]; // single cosine coefficient
+        const double C  = par[2];
 
         double chi2 = 0.0;
         for (int i=0;i<n;++i){
             const double phi = x[i];
-            double denom = 1.0 + B1*std::cos(phi) + B2*std::cos(2.0*phi);
+            double denom = 1.0 + B1*std::cos(phi);
             if (denom < EPS_DEN_EVAL) denom = EPS_DEN_EVAL; // evaluation clamp
             const double yhat = C + (A*std::sin(phi))/denom;
             const double pull = (y[i] - yhat)/ey[i];
             chi2 += pull*pull;
         }
 
-        // (1) Denominator soft barrier over full φ-domain
-        const double Dmin = Dmin_over_domain(B1, B2);
+        // (1) Denominator soft barrier over full φ-domain: min = 1 - |B|
+        const double Dmin = Dmin_single(B1);
         double pen_den = 0.0;
         if (Dmin < EPS_DEN_FLOOR) {
             const double deficit = EPS_DEN_FLOOR - Dmin;
             pen_den = LAMBDA_DEN * deficit * deficit;
         }
 
-        // (2) Amplitude box on denominator coefficients (and optional on A,C)
-        double pen_amp = 0.0;
-        pen_amp += overBox(B1);
-        pen_amp += overBox(B2);
-        // Optionally also constrain |A|,|C| very softly:
+        // (2) Amplitude box on |B|
+        double pen_amp = overBox(B1);
+        // Optionally also constrain |A|,|C| softly:
         // pen_amp += 0.25*overBox(A); pen_amp += 0.25*overBox(C);
 
         return chi2 + pen_den + LAMBDA_AMP*pen_amp;
@@ -391,15 +378,13 @@ static FitRes fit_cell(const std::vector<BSApt>& pts){
     min->SetTolerance(1e-6);
     min->SetPrintLevel(0);
 
-    ROOT::Math::Functor fcn(chi2pen, 4);
+    ROOT::Math::Functor fcn(chi2pen, 3);
     min->SetFunction(fcn);
 
-    // Parameters: A, B1, B2, C
-    // Seeds kept modest; bounds keep things physical and help stability.
+    // Parameters: A, B (as B1), C
     min->SetLimitedVariable(0, "A",  0.10, 0.02, -1.0,  1.0);
     min->SetLimitedVariable(1, "B1", 0.00, 0.02, -1.0,  1.0);
-    min->SetLimitedVariable(2, "B2", 0.00, 0.02, -1.0,  1.0);
-    min->SetLimitedVariable(3, "C",  0.00, 0.02, -0.5,  0.5);
+    min->SetLimitedVariable(2, "C",  0.00, 0.02, -0.5,  0.5);
 
     const bool ok = min->Minimize();
     fr.status = ok ? 0 : 1;
@@ -409,15 +394,15 @@ static FitRes fit_cell(const std::vector<BSApt>& pts){
 
     fr.A  = par[0]; fr.Aerr  = err[0];
     fr.B1 = par[1]; fr.B1err = err[1];
-    fr.B2 = par[2]; fr.B2err = err[2];
-    fr.C  = par[3]; fr.Cerr  = err[3];
+    fr.B2 = 0.0;    fr.B2err = 0.0; // single-cos fit => no cos2φ term
+    fr.C  = par[2]; fr.Cerr  = err[2];
 
     fr.chi2 = chi2pen(par);
-    fr.ndf  = std::max(0, n - 4);
+    fr.ndf  = std::max(0, n - 3);
     return fr;
 }
 
-// JSON writers (unchanged)
+// JSON writers (schema kept: B1 used, B2 always 0)
 static void write_period_bsa_json(
     const std::string& out_path,
     int nPhi,
@@ -447,7 +432,7 @@ static void write_period_bsa_json(
         ofs<<"      \"fit\": {"
               "\"A\": {\"val\": "<<cr.fit.A<<", \"err\": "<<cr.fit.Aerr<<"}, "
               "\"B1\": {\"val\": "<<cr.fit.B1<<", \"err\": "<<cr.fit.B1err<<"}, "
-              "\"B2\": {\"val\": "<<cr.fit.B2<<", \"err\": "<<cr.fit.B2err<<"}, "
+              "\"B2\": {\"val\": 0.0, \"err\": 0.0}, "
               "\"C\": {\"val\": "<<cr.fit.C<<", \"err\": "<<cr.fit.Cerr<<"}, "
               "\"chi2\": "<<cr.fit.chi2<<", \"ndf\": "<<cr.fit.ndf<<", \"status\": "<<cr.fit.status<<"},\n";
         ofs<<"      \"polarization\": {\"per_bin\": "<<(cr.P_per_bin?"true":"false")<<", \"P_used\": "<<cr.P_used<<"}\n";
@@ -486,7 +471,7 @@ static void write_all_periods_json(
             ofs<<"\"fit\":{"
                   "\"A\":{\"val\":"<<cr.fit.A<<",\"err\":"<<cr.fit.Aerr<<"},"
                   "\"B1\":{\"val\":"<<cr.fit.B1<<",\"err\":"<<cr.fit.B1err<<"},"
-                  "\"B2\":{\"val\":"<<cr.fit.B2<<",\"err\":"<<cr.fit.B2err<<"},"
+                  "\"B2\":{\"val\":0.0,\"err\":0.0},"
                   "\"C\":{\"val\":"<<cr.fit.C<<",\"err\":"<<cr.fit.Cerr<<"},"
                   "\"chi2\":"<<cr.fit.chi2<<",\"ndf\":"<<cr.fit.ndf<<",\"status\":"<<cr.fit.status<<"},";
             ofs<<"\"polarization\":{\"per_bin\":"<<(cr.P_per_bin?"true":"false")<<",\"P_used\":"<<cr.P_used<<"}";
@@ -629,7 +614,7 @@ static void plot_cells_for_period(
                     for (int i=0;i<NS;++i){
                         double deg = double(i)*0.5;     // 0..360 in 0.5°
                         double rad = deg * (TWO_PI/360.0);
-                        double denom = 1.0 + cr.fit.B1*std::cos(rad) + cr.fit.B2*std::cos(2.0*rad);
+                        double denom = 1.0 + cr.fit.B1*std::cos(rad);
                         if (denom < EPS_DEN_EVAL) denom = EPS_DEN_EVAL;
                         double val = cr.fit.C + (cr.fit.A*std::sin(rad))/denom;
                         xd[i] = deg; yd[i] = val;
@@ -650,17 +635,15 @@ static void plot_cells_for_period(
                          t_slice[r].first,    t_slice[r].second));
 
                 // Legend: keep well inside the pad
-                TLegend* leg = new TLegend(0.60, 0.68, 0.90, 0.92);
+                TLegend* leg = new TLegend(0.50, 0.68, 0.90, 0.92);
                 leg->SetBorderSize(1);
                 leg->SetLineColor(kBlack);
                 leg->SetFillColor(kWhite);
                 leg->SetFillStyle(1001); 
-                leg->SetBorderSize(1);   
                 leg->SetTextFont(42);
                 leg->SetTextSize(0.040);
                 leg->AddEntry((TObject*)nullptr, Form("A = %.3f #pm %.3f",  cr.fit.A,  cr.fit.Aerr), "");
-                leg->AddEntry((TObject*)nullptr, Form("B_{1} = %.3f #pm %.3f", cr.fit.B1, cr.fit.B1err), "");
-                leg->AddEntry((TObject*)nullptr, Form("B_{2} = %.3f #pm %.3f", cr.fit.B2, cr.fit.B2err), "");
+                leg->AddEntry((TObject*)nullptr, Form("B = %.3f #pm %.3f",  cr.fit.B1, cr.fit.B1err), "");
                 leg->AddEntry((TObject*)nullptr, Form("C = %.3f #pm %.3f",  cr.fit.C,  cr.fit.Cerr), "");
                 leg->Draw();
             }
@@ -711,7 +694,7 @@ void compute_and_plot_bsa_helicity(
 
     std::map<std::string, std::map<std::tuple<int,int,int>, CellResult>> allPeriodCells;
 
-    struct Acc { double Np=0, Nm=0, Varp=0, Varm=0; };
+    struct Acc { double Np=0, Nm=0; }; // effective counts sum
     std::map<std::tuple<int,int,int,int>, Acc> acc106; // (ix,iQ,it,ip)
 
     for (const auto& period : periods) {
@@ -770,8 +753,6 @@ void compute_and_plot_bsa_helicity(
                 // corrected counts
                 double Np_corr = Np*(1.0 - cb.c_plus);
                 double Nm_corr = Nm*(1.0 - cb.c_minus);
-                double VarNp   = (1.0 - cb.c_plus)*(1.0 - cb.c_plus)*Np + (double(Np)*double(Np))*cb.c_plus_err*cb.c_plus_err;
-                double VarNm   = (1.0 - cb.c_minus)*(1.0 - cb.c_minus)*Nm + (double(Nm)*double(Nm))*cb.c_minus_err*cb.c_minus_err;
 
                 // polarization to use for this bin
                 double P_here = result.P_used;
@@ -786,8 +767,6 @@ void compute_and_plot_bsa_helicity(
                 // scale by 1/P
                 double Np_pol = Np_corr / P_here;
                 double Nm_pol = Nm_corr / P_here;
-                double VarNp_pol = VarNp / (P_here*P_here);
-                double VarNm_pol = VarNm / (P_here*P_here);
 
                 // --- Regularized BSA using Jeffreys prior (α = 0.5) ---
                 const double alpha = 0.5;
@@ -820,25 +799,12 @@ void compute_and_plot_bsa_helicity(
 
                 result.points[ip] = p;
 
-                // accumulate for combined 10.6
+                // accumulate for combined 10.6 (using effective counts)
                 if (inTenSix(runTag)) {
                     auto key4 = std::make_tuple(ix, iQ, itb, ip);
                     Acc& A = acc106[key4];
                     A.Np   += Np_eff;
                     A.Nm   += Nm_eff;
-                    // Use approximate propagated variances (scaled by pseudo-counts)
-                    A.Varp += std::max(Np_eff, 1.0);
-                    A.Varm += std::max(Nm_eff, 1.0);
-                }
-
-                // accumulate for combined 10.6
-                if (inTenSix(runTag)) {
-                    auto key4 = std::make_tuple(ix,iQ,itb,ip);
-                    Acc& A = acc106[key4];
-                    A.Np   += Np_pol;
-                    A.Nm   += Nm_pol;
-                    A.Varp += VarNp_pol;
-                    A.Varm += VarNm_pol;
                 }
             }
 
@@ -873,10 +839,10 @@ void compute_and_plot_bsa_helicity(
             BSApt p; p.phi = phiCentersRad()[ip]; p.valid=false;
             if (itA!=acc106.end()){
                 const auto& A = itA->second;
-                // --- Regularized combination using Jeffreys prior (α = 0.5) ---
+
                 const double alpha = 0.5;
-                double Np_eff = std::max(0.0, A.Np) + alpha;
-                double Nm_eff = std::max(0.0, A.Nm) + alpha;
+                double Np_eff = std::max(0.0, A.Np); // already had alpha in accumulation
+                double Nm_eff = std::max(0.0, A.Nm);
 
                 double S = Np_eff + Nm_eff;
                 double D = Np_eff - Nm_eff;
@@ -884,6 +850,7 @@ void compute_and_plot_bsa_helicity(
                 if (S > 0.0) {
                     p.bsa = D / S;
 
+                    // Conservative uncertainty (as if a,b already included α from each period)
                     double a = Np_eff, b = Nm_eff;
                     double varA = 4.0 * (a * b) / ((a + b) * (a + b) * (a + b + 1.0));
                     p.err = std::sqrt(std::max(varA, 1e-6));
@@ -918,7 +885,7 @@ void compute_and_plot_bsa_helicity(
                 ofs<<"\"fit\":{"
                       "\"A\":{\"val\":"<<cr.fit.A<<",\"err\":"<<cr.fit.Aerr<<"},"
                       "\"B1\":{\"val\":"<<cr.fit.B1<<",\"err\":"<<cr.fit.B1err<<"},"
-                      "\"B2\":{\"val\":"<<cr.fit.B2<<",\"err\":"<<cr.fit.B2err<<"},"
+                      "\"B2\":{\"val\":0.0,\"err\":0.0},"
                       "\"C\":{\"val\":"<<cr.fit.C<<",\"err\":"<<cr.fit.Cerr<<"},"
                       "\"chi2\":"<<cr.fit.chi2<<",\"ndf\":"<<cr.fit.ndf<<",\"status\":"<<cr.fit.status<<"}";
                 ofs<<"}";
