@@ -88,20 +88,17 @@ int main(int argc, char* argv[]) {
     //     output_root        // <<< was "output/contamination"; must be the root "output"
     // );
 
-    // --------- Radiative corrections (MC rad vs no-rad, per bin) ----------
-    // Uses reconstructed MC (norad vs rad) + the same MC-side 3σ exclusivity cuts.
-    // Writes per-period JSONs to output/jsons/radiative_corrections_<period>.json,
-    // an all-periods file to output/jsons/radiative_corrections_all_periods.json,
-    // and plots to output/radiative_correction_plots/<runTag>/...
+    // --------- Radiative corrections (generated Born/Rad, per bin & φ) ----------
+    // Writes:
+    //   - per-group JSONs: output/jsons/radiative_corrections_group_<energy>.json
+    //   - per-period JSONs: output/jsons/radiative_corrections_<period>.json
+    //   - all-groups file: output/jsons/radiative_corrections_all_groups.json
+    //   - plots (ONLY per beam energy): output/radiative_correction_plots/{10.59,10.60,10.2}/...
     compute_radiative_corrections(
         dvcs_periods,
-        topologies,
         binning_scheme,
-        genMcTrees,      // born GEN
-        recMcTrees,      // born REC
-        radGenMcTrees,   // rad  GEN
-        radRecMcTrees,   // rad  REC
-        cuts_json_path,
+        genMcTrees,     // Born (no-rad) GENERATED
+        radGenMcTrees,  // Radiative GENERATED
         output_root
     );
 
