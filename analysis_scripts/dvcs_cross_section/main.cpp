@@ -6,6 +6,7 @@
 #include "total_counts.h"
 #include "pi0_contamination.h"
 #include "bsa.h"
+#include "radiative_corrections.h"  // NEW
 #include <filesystem>
 #include <iostream>
 #include <map>
@@ -59,7 +60,7 @@ int main(int argc, char* argv[]) {
     const std::string analysis_type = "dvcs";
     const std::string output_json_means = "output/jsons/bin_means_global.json";
 
-    calculate_bin_means(dvcs_periods, topologies, analysis_type, binning_scheme, output_json_means,
+    calculate_bin_means(dvcs_periods, topologies, analysis_type, binning_scheme, output_json_means, 
         dataTrees);
 
     // --------- Total counts after exclusivity cuts (by helicity) ----------
@@ -85,6 +86,21 @@ int main(int argc, char* argv[]) {
         eppi0RecMcTrees,   // bkg MC  (keys "*_bkg")
         cuts_json_path,
         output_root        // <<< was "output/contamination"; must be the root "output"
+    );
+
+    // --------- Radiative corrections (MC rad vs no-rad, per bin) ----------
+    // Uses reconstructed MC (norad vs rad) + the same MC-side 3σ exclusivity cuts.
+    // Writes per-period JSONs to output/jsons/radiative_corrections_<period>.json,
+    // an all-periods file to output/jsons/radiative_corrections_all_periods.json,
+    // and plots to output/radiative_correction_plots/<runTag>/...
+    compute_radiative_corrections(
+        dvcs_periods,
+        topologies,
+        binning_scheme,
+        recMcTrees,      // no-rad reconstructed MC
+        radRecMcTrees,   // rad reconstructed MC
+        cuts_json_path,
+        output_root
     );
 
     // Beam-Spin Asymmetry: reads total_counts.json and contamination JSONs,
