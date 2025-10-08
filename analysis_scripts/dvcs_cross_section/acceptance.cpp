@@ -364,7 +364,9 @@ static void plot_cells_for_period(
                 gPad->SetRightMargin(0.10);
 
                 // frame: 0..1.05
-                TH1* frame = gPad->DrawFrame(0.0, 0.0, 360.0, 1.05);
+                gPad->SetLogy(1); // <-- NEW: log scale
+                // frame: 1e-4 .. 1.0
+                TH1* frame = gPad->DrawFrame(0.0, 1e-4, 360.0, 1.0);
                 TAxis* ax = frame->GetXaxis();
                 TAxis* ay = frame->GetYaxis();
 
