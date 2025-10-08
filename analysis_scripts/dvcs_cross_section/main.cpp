@@ -13,6 +13,7 @@
 #include <string>
 #include <vector>
 #include "acceptance.h"
+#include "unfolding.h"
 
 int main(int argc, char* argv[]) {
     std::cout << "Starting DVCS analysis..." << std::endl;
@@ -120,22 +121,40 @@ int main(int argc, char* argv[]) {
     //     output_root
     // );
 
-        // --------- Acceptance (reco MC with MC cuts / gen MC, per bin & φ) ----------
-    // Writes per-period JSONs: output/jsons/acceptance_<period>.json
-    // Plots to: output/acceptance/<runTag>/plot_acceptance_<period>_xB_<ix>.png
+    //     // --------- Acceptance (reco MC with MC cuts / gen MC, per bin & φ) ----------
+    // // Writes per-period JSONs: output/jsons/acceptance_<period>.json
+    // // Plots to: output/acceptance/<runTag>/plot_acceptance_<period>_xB_<ix>.png
+    // {
+    //     std::vector<std::string> acc_periods = {
+    //         "DVCS_Sp18_inb", "DVCS_Sp18_out",
+    //         "DVCS_Fa18_inb", "DVCS_Fa18_out",
+    //         "DVCS_Sp19_inb"
+    //     }; // intentionally skipping DVCS_Fa18_inb_supp
+    //     compute_and_plot_acceptance(
+    //         acc_periods,
+    //         topologies,
+    //         binning_scheme,
+    //         genMcTrees,
+    //         recMcTrees,
+    //         cuts_json_path,
+    //         output_root
+    //     );
+    // }
+
+    // --------- Unfolding (counts / acceptance), helicity-resolved ----------
+    // Writes per-period JSONs: output/jsons/unfolded_<period>.json
+    // Plots to: output/unfolding/<runTag>/plot_unfolded_<period>_xB_<ix>.png
     {
-        std::vector<std::string> acc_periods = {
+        std::vector<std::string> unf_periods = {
             "DVCS_Sp18_inb", "DVCS_Sp18_out",
             "DVCS_Fa18_inb", "DVCS_Fa18_out",
             "DVCS_Sp19_inb"
-        }; // intentionally skipping DVCS_Fa18_inb_supp
-        compute_and_plot_acceptance(
-            acc_periods,
-            topologies,
+        }; // skip DVCS_Fa18_inb_supp on purpose
+        const std::string total_counts_js = "output/jsons/total_counts.json";
+        compute_and_plot_unfolding(
+            unf_periods,
             binning_scheme,
-            genMcTrees,
-            recMcTrees,
-            cuts_json_path,
+            total_counts_js,
             output_root
         );
     }
