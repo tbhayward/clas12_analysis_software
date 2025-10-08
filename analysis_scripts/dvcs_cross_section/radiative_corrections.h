@@ -18,15 +18,11 @@ class TTree;
 // - 'topologies' kept for API compatibility (ignored in implementation).
 // - recMcTrees_* and combined_cuts_json_path are also ignored.
 void compute_radiative_corrections(
-    const std::vector<std::string>& periods,
-    const std::vector<std::string>& topologies,
-    const std::vector<Binning>& binning_scheme,
-    const std::map<std::string, TTree*>& genMcTrees_norad,
-    const std::map<std::string, TTree*>& recMcTrees_norad,
-    const std::map<std::string, TTree*>& genMcTrees_rad,
-    const std::map<std::string, TTree*>& recMcTrees_rad,
-    const std::string& combined_cuts_json_path,
-    const std::string& out_root_dir
+  const std::vector<std::string>& periods,
+  const std::vector<Binning>& binning_scheme,
+  const std::map<std::string, TTree*>& genMcTrees,     // Born (no-rad), keys: "<tag>_gen"
+  const std::map<std::string, TTree*>& radGenMcTrees,  // Rad, keys: "<tag>_gen_rad"
+  const std::string& out_root_dir                      // "output"
 );
 
 #endif // RADIATIVE_CORRECTIONS_H

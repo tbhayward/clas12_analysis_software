@@ -14,6 +14,8 @@ void makeOutputDirs() {
         {"output/jsons", {"individual_cuts"}},
         {"output/exclusivity_plots", {}},
         {"output/mean_kinematic_plots", {}},
+        {"output/radiative_correction_plots",
+            {"10.59","10.60","10.2"}},
         {"output/bsa_plots",
             {"sp18_inb","sp18_out","fa18_inb_supplemental",
              "sp18_inb","sp18_out","10.6GeV","sp19_inb"}},

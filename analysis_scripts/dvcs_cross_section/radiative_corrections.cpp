@@ -1,5 +1,6 @@
 // radiative_corrections.cpp
 #include "radiative_corrections.h"
+
 #include "load_binning_scheme.h"
 
 #include <TCanvas.h>
@@ -65,14 +66,18 @@ static inline int findIndex(const std::pair<double,double>& range,
     for (int i=0;i<(int)ranges.size();++i) if (ranges[i]==range) return i;
     return -1;
 }
-static inline std::string topoKey(const std::string& topo){
-    if (topo=="(FD,FD)") return "FD_FD";
-    if (topo=="(CD,FD)") return "CD_FD";
-    if (topo=="(CD,FT)") return "CD_FT";
-    return "FD_FD";
+
+// Pretty period keys for JSON naming
+static inline std::string periodToRunTagKey(const std::string& period) {
+    // "DVCS_Fa18_inb" -> "fa18_inb"
+    auto pos = period.find('_');
+    std::string tail = (pos == std::string::npos || pos+1>=period.size())
+        ? period : period.substr(pos+1);
+    std::transform(tail.begin(), tail.end(), tail.begin(), ::tolower);
+    return tail;
 }
 static inline std::string prettyPeriodKey(const std::string& runTagLower) {
-    // runTagLower like "sp18_inb" -> "DVCS_Sp18_inb"
+    // "sp18_inb" -> "DVCS_Sp18_inb"
     std::string p = "DVCS_";
     bool upNext = true;
     for (char c : runTagLower) {
@@ -82,28 +87,20 @@ static inline std::string prettyPeriodKey(const std::string& runTagLower) {
     }
     return p;
 }
-static inline std::string toLower(std::string s){ std::transform(s.begin(),s.end(),s.begin(),::tolower); return s; }
-static inline std::string periodToRunTagKey(const std::string& period) {
-    // "DVCS_Fa18_inb" -> "fa18_inb"
-    auto pos = period.find('_');
-    if (pos == std::string::npos || pos+1>=period.size()) return toLower(period);
-    auto tail = period.substr(pos+1);
-    return toLower(tail);
-}
 
-static inline std::vector<double> phiCentersRad() {
-    std::vector<double> v(N_PHI_BINS);
-    const double step = TWO_PI / double(N_PHI_BINS);
-    for (int i=0;i<N_PHI_BINS;++i) v[i] = (i+0.5)*step;
-    return v;
-}
+// φ centers in degrees (12 bins)
 static inline std::vector<double> phiCentersDeg() {
     std::vector<double> d(N_PHI_BINS);
     const double step = 360.0/double(N_PHI_BINS);
     for (int i=0;i<N_PHI_BINS;++i) d[i] = (i+0.5)*step;
     return d;
 }
-
+static inline std::vector<double> phiCentersRad() {
+    std::vector<double> v(N_PHI_BINS);
+    const double step = TWO_PI / double(N_PHI_BINS);
+    for (int i=0;i<N_PHI_BINS;++i) v[i] = (i+0.5)*step;
+    return v;
+}
 static void drawDegreeTicks(double xmin, double ymin, double xmax, double labelSize){
     TGaxis* ax = new TGaxis(xmin, ymin, xmax, ymin, 0.0, 360.0, 4, "");
     ax->SetLabelFont(42);
@@ -115,122 +112,186 @@ static void drawDegreeTicks(double xmin, double ymin, double xmax, double labelS
 }
 
 // --------- branch binder for GENERATED trees ----------
-struct BranchGen {
-    double x=0.0;    bool has_x=false;
-    double Q2=0.0;   bool has_Q2=false;
-    double t1=0.0;   bool has_t1=false; // sign as in trees
-    double phi2=0.0; bool has_phi=false;
+struct GenBranch {
+    double x=0.0, Q2=0.0, t1=0.0, phi2=0.0;
+    bool has_x=false, has_Q2=false, has_t1=false, has_phi=false;
     void bind(TTree* t){
         auto bindD=[&](const char*n,double*a,bool&f){ if(t->GetBranch(n)){ t->SetBranchAddress(n,a); f=true; } };
-        bindD("x",&x,has_x);
+        bindD("x", &x, has_x);
         bindD("Q2",&Q2,has_Q2);
         bindD("t1",&t1,has_t1);
         bindD("phi2",&phi2,has_phi);
     }
 };
 
-static inline int phi_index(double phi_wrapped){
+// --------- accumulation structs ----------
+struct CellPhiKey { int ix=0, iQ=0, it=0, ip=0; };
+struct CellKey    { int ix=0, iQ=0, it=0; };
+
+struct CountsStore {
+    // per-φ counts
+    std::map<std::tuple<int,int,int,int>, double> born_phi;
+    std::map<std::tuple<int,int,int,int>, double> rad_phi;
+    // per-cell totals (across φ)
+    std::map<std::tuple<int,int,int>, double> born_tot;
+    std::map<std::tuple<int,int,int>, double> rad_tot;
+};
+
+static inline int phiBinIndex(double phi){
+    double w = std::fmod(phi, TWO_PI); if (w<0) w+=TWO_PI;
     const double width = TWO_PI/double(N_PHI_BINS);
-    double w = std::fmod(phi_wrapped, TWO_PI);
-    if (w < 0) w += TWO_PI;
-    if (w >= TWO_PI) w = std::nextafter(TWO_PI, 0.0);
-    int ip = std::min(std::max(int(std::floor(w/width)),0), N_PHI_BINS-1);
+    int ip = int(std::floor(w/width));
+    if (ip<0) ip = 0; if (ip>=N_PHI_BINS) ip = N_PHI_BINS-1;
     return ip;
 }
 
-// Count generated events TOT (over whole tree), and per (cell, φ)
-struct GenCounts {
-    double Ntot = 0.0;
-    // per (ix,iQ,it) -> array[phi]
-    std::map<std::tuple<int,int,int>, std::vector<double>> cell_phi;
-};
+static inline int findBin1D(double v, const std::vector<std::pair<double,double>>& ranges){
+    for (int k=0;k<(int)ranges.size();++k) if (v>=ranges[k].first && v<ranges[k].second) return k;
+    return -1;
+}
 
-static void count_generated(
-    TTree* tGen,
+static void accumulate_generated(
+    TTree* t,
+    bool isBorn,
     const std::vector<std::pair<double,double>>& xB_bins,
     const std::vector<std::pair<double,double>>& Q2_bins,
     const std::vector<std::pair<double,double>>& t_bins,
-    GenCounts& out)
+    CountsStore& acc)
 {
-    if (!tGen) return;
-    BranchGen g; g.bind(tGen);
-
-    // prepare maps with zeros
-    for (int ix=0; ix<(int)xB_bins.size(); ++ix)
-    for (int iQ=0; iQ<(int)Q2_bins.size(); ++iQ)
-    for (int it=0; it<(int)t_bins.size(); ++it) {
-        out.cell_phi[std::make_tuple(ix,iQ,it)] = std::vector<double>(N_PHI_BINS, 0.0);
-    }
-
-    const auto findBin=[&](double v,const std::vector<std::pair<double,double>>& ranges)->int{
-        for (int k=0;k<(int)ranges.size();++k) if (v>=ranges[k].first && v<ranges[k].second) return k;
-        return -1;
-    };
-
-    const Long64_t n = tGen->GetEntries();
+    if (!t) return;
+    GenBranch b; b.bind(t);
+    const Long64_t n = t->GetEntries();
     for (Long64_t i=0;i<n;++i){
-        tGen->GetEntry(i);
-        if (!(g.has_x && g.has_Q2 && g.has_t1 && g.has_phi)) continue;
+        t->GetEntry(i);
+        if (!(b.has_x && b.has_Q2 && b.has_t1 && b.has_phi)) continue;
+        const double xB=b.x, Q2=b.Q2, tt=std::fabs(b.t1), phi=b.phi2;
 
-        out.Ntot += 1.0; // total generated events for this period/model
-
-        const double xB = g.x;
-        const double Q2 = g.Q2;
-        const double tt = std::fabs(g.t1);
-
-        const int ix = findBin(xB, xB_bins);
-        const int iQ = findBin(Q2, Q2_bins);
-        const int it = findBin(tt,  t_bins);
-
+        int ix = findBin1D(xB, xB_bins);
+        int iQ = findBin1D(Q2, Q2_bins);
+        int it = findBin1D(tt,  t_bins);
         if (ix<0||iQ<0||it<0) continue;
 
-        const int ip = phi_index(g.phi2);
-        out.cell_phi[std::make_tuple(ix,iQ,it)][ip] += 1.0;
+        int ip = phiBinIndex(phi);
+
+        auto key4 = std::make_tuple(ix,iQ,it,ip);
+        auto key3 = std::make_tuple(ix,iQ,it);
+
+        if (isBorn){
+            acc.born_phi[key4] += 1.0;
+            acc.born_tot[key3] += 1.0;
+        } else {
+            acc.rad_phi[key4]  += 1.0;
+            acc.rad_tot[key3]  += 1.0;
+        }
     }
 }
 
-// --------- plotting: points with error bars, y in [0,2] ----------
-static void plot_rcphi_for_period(
-    const std::string& period_pretty,  // e.g. "DVCS_Sp18_inb"
+// --------- RC computation per group ----------
+struct PhiArrays {
+    std::vector<double> phi_deg;
+    std::vector<double> rc;      // Born/Rad
+    std::vector<double> rc_err;
+    std::vector<double> a_born;  // per-φ counts (Born)
+    std::vector<double> b_rad;   // per-φ counts (Rad)
+    double A_born = 0.0;         // totals
+    double B_rad  = 0.0;
+};
+
+using RCPerCell = std::map<std::tuple<int,int,int>, PhiArrays>;
+
+static RCPerCell compute_rc_per_cell(
+    const CountsStore& acc,
+    const std::vector<std::pair<double,double>>& xB_bins,
+    const std::vector<std::pair<double,double>>& Q2_bins,
+    const std::vector<std::pair<double,double>>& t_bins)
+{
+    RCPerCell out;
+    const auto PHI_DEG = phiCentersDeg();
+
+    for (int ix=0; ix<(int)xB_bins.size(); ++ix)
+    for (int iQ=0; iQ<(int)Q2_bins.size(); ++iQ)
+    for (int it=0; it<(int)t_bins.size();  ++it) {
+        auto key3 = std::make_tuple(ix,iQ,it);
+        double A = acc.born_tot.count(key3) ? acc.born_tot.at(key3) : 0.0;
+        double B = acc.rad_tot.count(key3)  ? acc.rad_tot.at(key3)  : 0.0;
+
+        PhiArrays pa;
+        pa.phi_deg = PHI_DEG;
+        pa.rc.resize(N_PHI_BINS, 1.0);
+        pa.rc_err.resize(N_PHI_BINS, 0.0);
+        pa.a_born.resize(N_PHI_BINS, 0.0);
+        pa.b_rad.resize(N_PHI_BINS, 0.0);
+        pa.A_born = A; pa.B_rad = B;
+
+        for (int ip=0; ip<N_PHI_BINS; ++ip){
+            auto key4 = std::make_tuple(ix,iQ,it,ip);
+            double a = acc.born_phi.count(key4) ? acc.born_phi.at(key4) : 0.0;
+            double b = acc.rad_phi.count(key4)  ? acc.rad_phi.at(key4)  : 0.0;
+
+            pa.a_born[ip]=a; pa.b_rad[ip]=b;
+
+            double RC = 1.0, sRC = 0.0;
+            if (A>0.0 && B>0.0 && a>0.0 && b>0.0) {
+                RC  = (a*B)/(b*A);
+                // conservative error propagation for (a/A)/(b/B)
+                sRC = RC * std::sqrt( (1.0/std::max(a,1.0)) + (1.0/std::max(A,1.0))
+                                     + (1.0/std::max(b,1.0)) + (1.0/std::max(B,1.0)) );
+            } else if (A>0.0 && B>0.0 && (a==0.0 || b==0.0)) {
+                // if one φ bin is empty, leave RC=1 with a large error bar (optional)
+                RC  = 1.0;
+                sRC = 0.0;
+            }
+            // clip to plotting range
+            if (!std::isfinite(RC)) RC = 1.0;
+            RC = std::clamp(RC, 0.0, 2.0);
+
+            pa.rc[ip]     = RC;
+            pa.rc_err[ip] = sRC;
+        }
+
+        out[key3] = std::move(pa);
+    }
+
+    return out;
+}
+
+// --------- plotting for a beam-energy group ----------
+static void plot_group_rc(
+    const std::string& energy_label,   // "10.59", "10.60", "10.2"
     const std::vector<Binning>& binning_scheme,
     const std::vector<std::pair<double,double>>& xB_bins,
     const std::vector<std::pair<double,double>>& Q2_bins,
     const std::vector<std::pair<double,double>>& t_bins,
-    const std::map<std::tuple<int,int,int>, std::vector<double>>& RC_phi,
-    const std::map<std::tuple<int,int,int>, std::vector<double>>& RC_err,
-    const std::string& out_dir_plots)
+    const RCPerCell& rcPerCell,
+    const std::string& out_dir_plots)  // e.g. output/radiative_correction_plots/10.59
 {
     using std::filesystem::create_directories;
     std::error_code ec;
     create_directories(out_dir_plots, ec);
 
-    static const auto PHI_DEG = phiCentersDeg();
-
     for (int ix = 0; ix < (int)xB_bins.size(); ++ix) {
         const auto xb = xB_bins[ix];
 
-        // Only Q² and |t| bins present in this x_B slice
-        std::vector<std::pair<double,double>> Q2_slice, t_slice;
-        {
-            std::set<std::pair<double,double>> qs, ts;
-            for (const auto& b : binning_scheme) {
-                if (std::make_pair(b.xBmin,b.xBmax)==xb) {
-                    qs.emplace(b.Q2min,b.Q2max);
-                    ts.emplace(b.tmin,b.tmax);
-                }
+        // Only the Q² and |t| bins used in this xB slice
+        std::set<std::pair<double,double>> qs, ts;
+        for (const auto& b : binning_scheme) {
+            if (std::make_pair(b.xBmin,b.xBmax) == xb) {
+                qs.emplace(b.Q2min,b.Q2max);
+                ts.emplace(b.tmin,b.tmax);
             }
-            Q2_slice.assign(qs.begin(),qs.end());
-            t_slice.assign(ts.begin(),ts.end());
         }
+        std::vector<std::pair<double,double>> Q2_slice(qs.begin(), qs.end());
+        std::vector<std::pair<double,double>> t_slice(ts.begin(), ts.end());
         if (Q2_slice.empty() || t_slice.empty()) continue;
 
         const int nrows = (int)t_slice.size();
         const int ncols = (int)Q2_slice.size();
 
+        // Canvas
         const int W = 280*ncols + 160;
         const int H = 240*nrows + 170;
 
-        std::ostringstream cname; cname<<"c_rcphi_"<<period_pretty<<"_xB"<<ix;
+        std::ostringstream cname; cname<<"c_rc_E"<<energy_label<<"_xB"<<ix;
         TCanvas* c = new TCanvas(cname.str().c_str(), cname.str().c_str(), W, H);
 
         TPad* pTop  = new TPad("pTop","pTop", 0.0, 0.915, 1.0, 1.0);
@@ -248,10 +309,11 @@ static void plot_rcphi_for_period(
         head.SetTextFont(42);
         head.SetTextSize(0.36);
         std::ostringstream tit;
-        tit << Form("Radiative correction (generated)  %s   x_{B} #in [%.2g, %.2g]",
-                    period_pretty.c_str(), xb.first, xb.second);
+        tit << Form("Radiative correction  E_{beam}=%s GeV   x_{B} #in [%.2g, %.2g]",
+                    energy_label.c_str(), xb.first, xb.second);
         head.DrawLatex(0.5, 0.55, tit.str().c_str());
 
+        // Panels
         for (int r = 0; r < nrows; ++r) {
             const int it_global = findIndex(t_slice[r], t_bins);
             if (it_global < 0) continue;
@@ -267,14 +329,14 @@ static void plot_rcphi_for_period(
                 gPad->SetLeftMargin(0.15);
                 gPad->SetRightMargin(0.10);
 
-                // Frame: x 0..360 (consistent), y 0..2
+                // frame: x 0..360, y 0..2 with labels
                 TH1* frame = gPad->DrawFrame(0.0, 0.0, 360.0, 2.0);
                 TAxis* ax = frame->GetXaxis();
                 TAxis* ay = frame->GetYaxis();
 
-                ax->SetLabelSize(0.0001); // hide default tick labels
+                ax->SetLabelSize(0.0001); // hide default tick labels, overlay custom
                 ax->SetTitle("#phi (deg)");
-                ay->SetTitle("rad/Born");
+                ay->SetTitle("Born/Rad");
                 ax->CenterTitle(); ay->CenterTitle();
                 ax->SetNdivisions(505);
                 ax->SetTitleSize(0.060);
@@ -282,36 +344,28 @@ static void plot_rcphi_for_period(
                 ay->SetLabelSize(0.048);
                 ax->SetTitleOffset(1.25);
                 ay->SetTitleOffset(1.35);
+
                 drawDegreeTicks(gPad->GetUxmin(), gPad->GetUymin(), gPad->GetUxmax(), 0.048);
 
-                auto key = std::make_tuple(ix, iQ_global, it_global);
-                auto itR  = RC_phi.find(key);
-                auto itRe = RC_err.find(key);
-                if (itR == RC_phi.end() || itRe == RC_err.end()) continue;
+                auto itCell = rcPerCell.find(std::make_tuple(ix, iQ_global, it_global));
+                if (itCell == rcPerCell.end()) continue;
+                const auto& pa = itCell->second;
 
-                const auto& rc  = itR->second;
-                const auto& er  = itRe->second;
-                const auto  PHI = phiCentersDeg();
+                // make graph with errors
+                // convert vectors to C arrays
+                int npt = (int)pa.phi_deg.size();
+                std::vector<double> ex(npt, 0.0);
+                TGraphErrors* gr = new TGraphErrors(npt,
+                    const_cast<double*>(pa.phi_deg.data()),
+                    const_cast<double*>(pa.rc.data()),
+                    ex.data(),
+                    const_cast<double*>(pa.rc_err.data()));
+                gr->SetMarkerStyle(20);
+                gr->SetMarkerSize(1.0);
+                gr->SetLineWidth(1);
+                gr->Draw("P SAME");
 
-                std::vector<double> xs, ys, eys;
-                xs.reserve(rc.size()); ys.reserve(rc.size()); eys.reserve(rc.size());
-                for (int ip=0; ip<N_PHI_BINS; ++ip){
-                    double val = rc[ip];
-                    double err = er[ip];
-                    if (!std::isfinite(val)) continue;
-                    xs.push_back(PHI[ip]);
-                    ys.push_back(std::clamp(val, 0.0, 2.0));
-                    eys.push_back((std::isfinite(err)? err : 0.0));
-                }
-                if (!xs.empty()){
-                    TGraphErrors* gr = new TGraphErrors((int)xs.size(), xs.data(), ys.data(), nullptr, eys.data());
-                    gr->SetMarkerStyle(20);
-                    gr->SetMarkerSize(1.0);
-                    gr->SetLineWidth(2);
-                    gr->Draw("P SAME");
-                }
-
-                // panel label
+                // annotation
                 TLatex lab;
                 lab.SetNDC(); lab.SetTextSize(0.040); lab.SetTextAlign(11);
                 lab.SetTextFont(42);
@@ -323,77 +377,77 @@ static void plot_rcphi_for_period(
         }
 
         std::ostringstream fout;
-        fout << out_dir_plots << "/rcphi_" << period_pretty << "_xB_" << ix << ".png";
+        fout << out_dir_plots << "/rc_E" << energy_label << "_xB_" << ix << ".png";
         c->SaveAs(fout.str().c_str());
         delete c;
     }
 }
 
-// --------- JSON writer (per-φ arrays + raw counts & totals) ----------
+// --------- JSON writers (arrays per φ) ----------
 static void write_period_json(
     const std::string& out_path,
     const std::vector<std::pair<double,double>>& xB_bins,
     const std::vector<std::pair<double,double>>& Q2_bins,
     const std::vector<std::pair<double,double>>& t_bins,
-    double Ntot_born, double Ntot_rad,
-    const std::map<std::tuple<int,int,int>, std::vector<double>>& phi_centers,
-    const std::map<std::tuple<int,int,int>, std::vector<double>>& rc_vals,
-    const std::map<std::tuple<int,int,int>, std::vector<double>>& rc_errs,
-    const std::map<std::tuple<int,int,int>, std::vector<double>>& born_Ngen,
-    const std::map<std::tuple<int,int,int>, std::vector<double>>& rad_Ngen
-){
-    std::ofstream ofs(out_path);
-    if (!ofs) { std::cerr<<"[radcorr] Cannot open "<<out_path<<"\n"; return; }
-    ofs<<std::fixed<<std::setprecision(8);
-    ofs<<"{\n";
-    ofs<<"  \"phi_bins\": "<<N_PHI_BINS<<",\n";
-    ofs<<"  \"Ntot_born\": "<<Ntot_born<<",\n";
-    ofs<<"  \"Ntot_rad\": "<<Ntot_rad<<",\n";
-    ofs<<"  \"binning_meta\": {\"xB_bins\": "<<xB_bins.size()<<", \"Q2_bins\": "<<Q2_bins.size()<<", \"t_bins\": "<<t_bins.size()<<"},\n";
-    ofs<<"  \"bins\": {\n";
-    bool first=true;
-    for (const auto& kv : rc_vals){
-        if (!first) ofs<<",\n"; first=false;
-        int ix,iQ,it; std::tie(ix,iQ,it)=kv.first;
-        ofs<<"    \"("<<ix<<","<<iQ<<","<<it<<")\": {";
-        auto arrDump=[&](const std::vector<double>& v){
-            ofs<<"["; for (size_t i=0;i<v.size();++i){ if(i) ofs<<","; ofs<<v[i]; } ofs<<"]";
-        };
-        ofs<<"\"phi\": "; arrDump(phi_centers.at(kv.first)); ofs<<", ";
-        ofs<<"\"RC\": ";  arrDump(kv.second); ofs<<", ";
-        ofs<<"\"RC_err\": "; arrDump(rc_errs.at(kv.first)); ofs<<", ";
-        ofs<<"\"born\": {\"Ngen\": "; arrDump(born_Ngen.at(kv.first)); ofs<<"}, ";
-        ofs<<"\"rad\":  {\"Ngen\": "; arrDump(rad_Ngen.at(kv.first));  ofs<<"}";
-        ofs<<"}";
-    }
-    ofs<<"\n  }\n}\n";
-}
-
-static void write_all_periods_json(
-    const std::string& out_path,
-    const std::map<std::string, std::map<std::tuple<int,int,int>, std::vector<double>>>& perPeriodRC,
-    const std::map<std::string, std::map<std::tuple<int,int,int>, std::vector<double>>>& perPeriodRCErr)
+    const RCPerCell& rcPerCell)
 {
     std::ofstream ofs(out_path);
     if (!ofs) { std::cerr<<"[radcorr] Cannot open "<<out_path<<"\n"; return; }
     ofs<<std::fixed<<std::setprecision(8);
-    ofs<<"{\n  \"phi_bins\": "<<N_PHI_BINS<<",\n  \"periods\": {\n";
-    bool firstP=true;
-    for (const auto& pk : perPeriodRC){
-        if (!firstP) ofs<<",\n"; firstP=false;
-        ofs<<"    \""<<pk.first<<"\": {\"bins\":{";
-        bool fb=true;
-        for (const auto& kv : pk.second){
-            if (!fb) ofs<<",";
-            fb=false;
+    ofs<<"{\n";
+    ofs<<"  \"binning_meta\": {\"phi_bins\": "<<N_PHI_BINS<<", \"xB_bins\": "<<xB_bins.size()<<", \"Q2_bins\": "<<Q2_bins.size()<<", \"t_bins\": "<<t_bins.size()<<"},\n";
+    ofs<<"  \"bins\": {\n";
+    bool first=true;
+    for (const auto& kv : rcPerCell){
+        if (!first) ofs<<",\n"; first=false;
+        int ix,iQ,it; std::tie(ix,iQ,it)=kv.first;
+        const auto& pa = kv.second;
+        ofs<<"    \"("<<ix<<","<<iQ<<","<<it<<")\": {";
+        ofs<<"\"phi\":[";
+        for (int i=0;i<(int)pa.phi_deg.size();++i){ if(i) ofs<<","; ofs<<pa.phi_deg[i]; }
+        ofs<<"], \"rc\":[";
+        for (int i=0;i<(int)pa.rc.size();++i){ if(i) ofs<<","; ofs<<pa.rc[i]; }
+        ofs<<"], \"rc_err\":[";
+        for (int i=0;i<(int)pa.rc_err.size();++i){ if(i) ofs<<","; ofs<<pa.rc_err[i]; }
+        ofs<<"], \"counts_born_phi\":[";
+        for (int i=0;i<(int)pa.a_born.size();++i){ if(i) ofs<<","; ofs<<pa.a_born[i]; }
+        ofs<<"], \"counts_rad_phi\":[";
+        for (int i=0;i<(int)pa.b_rad.size();++i){ if(i) ofs<<","; ofs<<pa.b_rad[i]; }
+        ofs<<"], \"total_born\": "<<pa.A_born<<", \"total_rad\": "<<pa.B_rad<<"}";
+    }
+    ofs<<"\n  }\n}\n";
+}
+
+static void write_all_groups_json(
+    const std::string& out_path,
+    const std::map<std::string, RCPerCell>& groupResults) // key: "10.59","10.60","10.2"
+{
+    std::ofstream ofs(out_path);
+    if (!ofs) { std::cerr<<"[radcorr] Cannot open "<<out_path<<"\n"; return; }
+    ofs<<std::fixed<<std::setprecision(8);
+    ofs<<"{\n  \"groups\": {\n";
+    bool firstG=true;
+    for (const auto& g : groupResults){
+        if (!firstG) ofs<<",\n"; firstG=false;
+        ofs<<"    \""<<g.first<<"\": {\"bins\": {";
+        bool firstB=true;
+        for (const auto& kv : g.second){
+            if (!firstB) ofs<<",";
+            firstB=false;
             int ix,iQ,it; std::tie(ix,iQ,it)=kv.first;
-            ofs<<"\"("<<ix<<","<<iQ<<","<<it<<")\": {\"RC\": [";
-            const auto& v = kv.second;
-            for (size_t i=0;i<v.size();++i){ if(i) ofs<<","; ofs<<v[i]; }
-            ofs<<"], \"RC_err\": [";
-            const auto& e = perPeriodRCErr.at(pk.first).at(kv.first);
-            for (size_t i=0;i<e.size(); ++i){ if(i) ofs<<","; ofs<<e[i]; }
-            ofs<<"]}";
+            const auto& pa = kv.second;
+            ofs<<"\"("<<ix<<","<<iQ<<","<<it<<")\": {";
+            ofs<<"\"phi\":[";
+            for (int i=0;i<(int)pa.phi_deg.size();++i){ if(i) ofs<<","; ofs<<pa.phi_deg[i]; }
+            ofs<<"], \"rc\":[";
+            for (int i=0;i<(int)pa.rc.size();++i){ if(i) ofs<<","; ofs<<pa.rc[i]; }
+            ofs<<"], \"rc_err\":[";
+            for (int i=0;i<(int)pa.rc_err.size();++i){ if(i) ofs<<","; ofs<<pa.rc_err[i]; }
+            ofs<<"], \"counts_born_phi\":[";
+            for (int i=0;i<(int)pa.a_born.size();++i){ if(i) ofs<<","; ofs<<pa.a_born[i]; }
+            ofs<<"], \"counts_rad_phi\":[";
+            for (int i=0;i<(int)pa.b_rad.size();++i){ if(i) ofs<<","; ofs<<pa.b_rad[i]; }
+            ofs<<"], \"total_born\": "<<pa.A_born<<", \"total_rad\": "<<pa.B_rad<<"}";
         }
         ofs<<"}}";
     }
@@ -406,147 +460,96 @@ static void write_all_periods_json(
 // Public driver
 // =====================================================================
 void compute_radiative_corrections(
-    const std::vector<std::string>& periods,
-    const std::vector<std::string>& topologies,                     // kept for API compat; UNUSED here
+    const std::vector<std::string>& periods,                        // e.g. DVCS_Fa18_inb, ...
     const std::vector<Binning>& binning_scheme,
-    const std::map<std::string, TTree*>& genMcTrees_norad,          // keys: "sp18_inb_gen", ...
-    const std::map<std::string, TTree*>& recMcTrees_norad,          // UNUSED
-    const std::map<std::string, TTree*>& genMcTrees_rad,            // keys: "sp18_inb_gen_rad", ...
-    const std::map<std::string, TTree*>& recMcTrees_rad,            // UNUSED
-    const std::string& combined_cuts_json_path,                     // UNUSED
-    const std::string& out_root_dir)
+    const std::map<std::string, TTree*>& genMcTrees,                // keys: "<tag>_gen"
+    const std::map<std::string, TTree*>& radGenMcTrees,             // keys: "<tag>_gen_rad"
+    const std::string& out_root_dir)                                // "output"
 {
-    (void)topologies;
-    (void)recMcTrees_norad;
-    (void)recMcTrees_rad;
-    (void)combined_cuts_json_path;
-
     namespace fs = std::filesystem;
 
     const auto xB_bins = uniqueRanges(binning_scheme, 'x');
     const auto Q2_bins = uniqueRanges(binning_scheme, 'Q');
     const auto t_bins  = uniqueRanges(binning_scheme, 't');
 
-    // Output directories
+    // Output dirs
     const fs::path json_dir  = fs::path(out_root_dir)/"jsons";
     const fs::path plot_root = fs::path(out_root_dir)/"radiative_correction_plots";
     std::error_code ec;
     fs::create_directories(json_dir, ec);
     fs::create_directories(plot_root, ec);
+    fs::create_directories(plot_root / "10.59", ec);
+    fs::create_directories(plot_root / "10.60", ec);
+    fs::create_directories(plot_root / "10.2",  ec);
 
-    // For all-periods summary
-    std::map<std::string, std::map<std::tuple<int,int,int>, std::vector<double>>> perPeriodRC;
-    std::map<std::string, std::map<std::tuple<int,int,int>, std::vector<double>>> perPeriodRCErr;
+    auto getOrNull = [](const auto& m, const std::string& k)->TTree*{
+        auto it=m.find(k); return (it!=m.end()? it->second : nullptr);
+    };
 
-    const auto PHI_RAD = phiCentersRad();
+    // ---------------- Group definitions (by beam energy) ----------------
+    struct Group { std::string label; std::vector<std::string> tags; };
+    Group g1059{"10.59", {"sp18_inb","sp18_out"}};
+    Group g1060{"10.60", {"fa18_inb","fa18_out"}};
+    Group g1020{"10.2",  {"sp19_inb"}};
 
+    std::vector<Group> groups = {g1059, g1060, g1020};
+    std::map<std::string, RCPerCell> groupResults; // label -> RCPerCell
+
+    // --------------- Compute RC for each group (pooled statistics) ---------------
+    for (const auto& G : groups) {
+        CountsStore acc;
+
+        // accumulate generated counts over all runTags in this group
+        for (const auto& tag : G.tags) {
+            TTree* tBorn = getOrNull(genMcTrees,    tag + "_gen");
+            TTree* tRad  = getOrNull(radGenMcTrees, tag + "_gen_rad");
+            if (!tBorn || !tRad) {
+                std::cerr<<"[radcorr] WARNING: missing gen trees for "<<tag<<" in group "<<G.label<<"\n";
+                continue;
+            }
+            accumulate_generated(tBorn, /*isBorn=*/true,  xB_bins, Q2_bins, t_bins, acc);
+            accumulate_generated(tRad,  /*isBorn=*/false, xB_bins, Q2_bins, t_bins, acc);
+        }
+
+        // compute per-cell per-φ Born/Rad
+        RCPerCell rc = compute_rc_per_cell(acc, xB_bins, Q2_bins, t_bins);
+        groupResults[G.label] = rc;
+
+        // plots per group (ONLY energies)
+        plot_group_rc(G.label, binning_scheme, xB_bins, Q2_bins, t_bins, rc,
+                      (plot_root / G.label).string());
+
+        // write a per-group JSON
+        const fs::path outG = json_dir / ("radiative_corrections_group_" + G.label + ".json");
+        write_period_json(outG.string(), xB_bins, Q2_bins, t_bins, rc);
+        std::cout << "[radcorr] Wrote group JSON: " << outG.string() << "\n";
+    }
+
+    // --------------- Also save per-period JSONs (duplicating from group) ---------------
     for (const auto& period : periods) {
-        const std::string runTag = periodToRunTagKey(period);            // "fa18_inb", "fa18_inb_supp", ...
-        const std::string pretty = prettyPeriodKey(runTag);              // "DVCS_Fa18_inb", etc.
-        const std::string baseRunTag = (runTag=="fa18_inb_supp") ? "fa18_inb" : runTag;
+        const std::string runTag = periodToRunTagKey(period);   // "fa18_inb", "fa18_inb_supp", ...
+        std::string energyLabel;
+        if (runTag.rfind("sp18_",0)==0) energyLabel="10.59";
+        else if (runTag.rfind("fa18_",0)==0) energyLabel="10.60";
+        else if (runTag.rfind("sp19_",0)==0) energyLabel="10.2";
+        else energyLabel="10.60"; // default fallback
 
-        auto getOrNull = [](const auto& m, const std::string& k)->TTree*{
-            auto it=m.find(k); return (it!=m.end()? it->second : nullptr);
-        };
-
-        TTree* gB = getOrNull(genMcTrees_norad, baseRunTag + "_gen");
-        TTree* gR = getOrNull(genMcTrees_rad,   baseRunTag + "_gen_rad");
-
-        if (!gB || !gR) {
-            std::cerr<<"[radcorr] Missing generated MC trees (born or rad) for "<<baseRunTag<<"\n";
+        // Use the group's RC (fa18_inb_supp duplicates fa18_inb/fa18_out pool)
+        const auto itG = groupResults.find(energyLabel);
+        if (itG == groupResults.end()) {
+            std::cerr<<"[radcorr] WARNING: no group result found for period "<<period<<" (E="<<energyLabel<<")\n";
             continue;
         }
 
-        // Count totals and per-cell,per-phi
-        GenCounts cntB, cntR;
-        count_generated(gB, xB_bins, Q2_bins, t_bins, cntB);
-        count_generated(gR, xB_bins, Q2_bins, t_bins, cntR);
-
-        // Per-cell arrays for JSON & plots
-        std::map<std::tuple<int,int,int>, std::vector<double>> phi_centers_map;
-        std::map<std::tuple<int,int,int>, std::vector<double>> RC_phi_map, RC_err_map;
-        std::map<std::tuple<int,int,int>, std::vector<double>> bornNgen_map, radNgen_map;
-
-        // Build RC(phi) = (a/NrTot) / (b/NbTot), with multinomial proportion errors
-        for (int ix=0; ix<(int)xB_bins.size(); ++ix)
-        for (int iQ=0; iQ<(int)Q2_bins.size(); ++iQ)
-        for (int it=0; it<(int)t_bins.size(); ++it) {
-            auto key3 = std::make_tuple(ix,iQ,it);
-
-            const auto& nb = cntB.cell_phi.at(key3);
-            const auto& nr = cntR.cell_phi.at(key3);
-
-            std::vector<double> RC (N_PHI_BINS, std::numeric_limits<double>::quiet_NaN());
-            std::vector<double> eRC(N_PHI_BINS, std::numeric_limits<double>::quiet_NaN());
-
-            for (int ip=0; ip<N_PHI_BINS; ++ip){
-                const double a = nr[ip]; // rad in cell, phi
-                const double b = nb[ip]; // born in cell, phi
-                const double NrTot = std::max(cntR.Ntot, 0.0);
-                const double NbTot = std::max(cntB.Ntot, 0.0);
-
-                if (NrTot <= 0.0 || NbTot <= 0.0 || b <= 0.0) {
-                    RC[ip]  = std::numeric_limits<double>::quiet_NaN();
-                    eRC[ip] = std::numeric_limits<double>::quiet_NaN();
-                    continue;
-                }
-
-                const double pr_hat = a / NrTot;
-                const double pb_hat = b / NbTot;
-
-                if (pb_hat <= 0.0) {
-                    RC[ip]  = std::numeric_limits<double>::quiet_NaN();
-                    eRC[ip] = std::numeric_limits<double>::quiet_NaN();
-                    continue;
-                }
-
-                const double R = pr_hat / pb_hat;
-
-                // multinomial proportion variance approx: var(p̂)=p̂(1-p̂)/N
-                const double var_pr = pr_hat * std::max(0.0, 1.0 - pr_hat) / std::max(NrTot, 1.0);
-                const double var_pb = pb_hat * std::max(0.0, 1.0 - pb_hat) / std::max(NbTot, 1.0);
-
-                double sR = std::numeric_limits<double>::quiet_NaN();
-                if (pr_hat>0.0 && pb_hat>0.0) {
-                    const double rel2 = (var_pr/(pr_hat*pr_hat)) + (var_pb/(pb_hat*pb_hat));
-                    sR = std::abs(R) * std::sqrt(std::max(0.0, rel2));
-                }
-
-                RC[ip]  = R;
-                eRC[ip] = sR;
-            }
-
-            phi_centers_map[key3] = PHI_RAD;
-            RC_phi_map[key3]      = RC;
-            RC_err_map[key3]      = eRC;
-            bornNgen_map[key3]    = cntB.cell_phi.at(key3);
-            radNgen_map[key3]     = cntR.cell_phi.at(key3);
-        }
-
-        // Save per-period JSON
-        {
-            const fs::path outP = fs::path(out_root_dir)/"jsons"/("radiative_corrections_"+pretty+".json");
-            write_period_json(outP.string(), xB_bins, Q2_bins, t_bins,
-                              cntB.Ntot, cntR.Ntot,
-                              phi_centers_map, RC_phi_map, RC_err_map,
-                              bornNgen_map,    radNgen_map);
-            std::cout<<"[radcorr] Wrote "<<outP.string()<<"\n";
-        }
-
-        // Plots
-        const fs::path plots_dir = fs::path(out_root_dir)/"radiative_correction_plots"/runTag;
-        fs::create_directories(plots_dir, ec);
-        plot_rcphi_for_period(pretty, binning_scheme, xB_bins, Q2_bins, t_bins,
-                              RC_phi_map, RC_err_map, plots_dir.string());
-
-        // All-periods summary stash
-        perPeriodRC[pretty]    = std::move(RC_phi_map);
-        perPeriodRCErr[pretty] = std::move(RC_err_map);
+        const std::string pretty = prettyPeriodKey(runTag);
+        const fs::path outP = fs::path(out_root_dir)/"jsons"/("radiative_corrections_"+pretty+".json");
+        write_period_json(outP.string(), xB_bins, Q2_bins, t_bins, itG->second);
+        std::cout<<"[radcorr] Wrote period JSON (from group "<<energyLabel<<"): "<<outP.string()<<"\n";
     }
 
-    // all periods file
-    write_all_periods_json((fs::path(out_root_dir)/"jsons"/"radiative_corrections_all_periods.json").string(),
-                           perPeriodRC, perPeriodRCErr);
+    // Optional: write one “all groups” container
+    write_all_groups_json((fs::path(out_root_dir)/"jsons"/"radiative_corrections_all_groups.json").string(),
+                          groupResults);
 
-    std::cout<<"[radcorr] Radiative corrections (generated-only, per-phi) complete.\n";
+    std::cout<<"[radcorr] Radiative corrections (Born/Rad, generated-only) complete.\n";
 }
