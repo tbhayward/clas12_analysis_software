@@ -4,9 +4,9 @@
 #include "load_binning_scheme.h"
 #include "bin_means.h"
 #include "total_counts.h"
-#include "pi0_contamination.h"   
-#include "bsa.h"              
-#include <filesystem>          
+#include "pi0_contamination.h"
+#include "bsa.h"
+#include <filesystem>
 #include <iostream>
 #include <map>
 #include <string>
@@ -29,14 +29,18 @@ int main(int argc, char* argv[]) {
 
     // Containers for different tree categories
     std::map<std::string, TTree*> dataTrees;        // DVCS data
-    std::map<std::string, TTree*> genMcTrees;       // DVCS generated MC 
-    std::map<std::string, TTree*> recMcTrees;       // DVCS reconstructed MC
+    std::map<std::string, TTree*> genMcTrees;       // DVCS generated MC (no-rad)
+    std::map<std::string, TTree*> recMcTrees;       // DVCS reconstructed MC (no-rad)
     std::map<std::string, TTree*> eppi0DataTrees;   // eppi0 data
-    std::map<std::string, TTree*> eppi0GenMcTrees;  // eppi0 generated MC 
+    std::map<std::string, TTree*> eppi0GenMcTrees;  // eppi0 generated MC
     std::map<std::string, TTree*> eppi0RecMcTrees;  // eppi0 reconstructed MC
+    std::map<std::string, TTree*> radGenMcTrees;    // NEW: DVCS generated MC (radiative)
+    std::map<std::string, TTree*> radRecMcTrees;    // NEW: DVCS reconstructed MC (radiative)
 
     // Load all trees from files
-    loadTrees(dataTrees, genMcTrees, recMcTrees, eppi0DataTrees, eppi0GenMcTrees, eppi0RecMcTrees);
+    loadTrees(dataTrees, genMcTrees, recMcTrees,
+              eppi0DataTrees, eppi0GenMcTrees, eppi0RecMcTrees,
+              radGenMcTrees, radRecMcTrees);
     std::cout << "All trees loaded successfully." << std::endl;
 
     // // Run exclusivity cut extraction (single-threaded for stability)
@@ -55,7 +59,7 @@ int main(int argc, char* argv[]) {
     const std::string analysis_type = "dvcs";
     const std::string output_json_means = "output/jsons/bin_means_global.json";
 
-    calculate_bin_means(dvcs_periods, topologies, analysis_type, binning_scheme, output_json_means, 
+    calculate_bin_means(dvcs_periods, topologies, analysis_type, binning_scheme, output_json_means,
         dataTrees);
 
     // --------- Total counts after exclusivity cuts (by helicity) ----------
