@@ -1,6 +1,5 @@
 // radiative_corrections.cpp
 #include "radiative_corrections.h"
-
 #include "load_binning_scheme.h"
 
 #include <TCanvas.h>
@@ -10,7 +9,7 @@
 #include <TTree.h>
 #include <TGaxis.h>
 #include <TH1.h>
-#include <TGraph.h>
+#include <TGraphErrors.h>
 #include <TPad.h>
 
 #include <algorithm>
@@ -83,15 +82,20 @@ static inline std::string prettyPeriodKey(const std::string& runTagLower) {
     }
     return p;
 }
+static inline std::string toLower(std::string s){ std::transform(s.begin(),s.end(),s.begin(),::tolower); return s; }
 static inline std::string periodToRunTagKey(const std::string& period) {
     // "DVCS_Fa18_inb" -> "fa18_inb"
     auto pos = period.find('_');
-    if (pos == std::string::npos || pos+1>=period.size()) {
-        std::string s=period; std::transform(s.begin(),s.end(),s.begin(),::tolower); return s;
-    }
-    std::string tail = period.substr(pos+1);
-    std::transform(tail.begin(), tail.end(), tail.begin(), ::tolower);
-    return tail;
+    if (pos == std::string::npos || pos+1>=period.size()) return toLower(period);
+    auto tail = period.substr(pos+1);
+    return toLower(tail);
+}
+
+static inline std::vector<double> phiCentersRad() {
+    std::vector<double> v(N_PHI_BINS);
+    const double step = TWO_PI / double(N_PHI_BINS);
+    for (int i=0;i<N_PHI_BINS;++i) v[i] = (i+0.5)*step;
+    return v;
 }
 static inline std::vector<double> phiCentersDeg() {
     std::vector<double> d(N_PHI_BINS);
@@ -99,6 +103,7 @@ static inline std::vector<double> phiCentersDeg() {
     for (int i=0;i<N_PHI_BINS;++i) d[i] = (i+0.5)*step;
     return d;
 }
+
 static void drawDegreeTicks(double xmin, double ymin, double xmax, double labelSize){
     TGaxis* ax = new TGaxis(xmin, ymin, xmax, ymin, 0.0, 360.0, 4, "");
     ax->SetLabelFont(42);
@@ -109,202 +114,90 @@ static void drawDegreeTicks(double xmin, double ymin, double xmax, double labelS
     ax->Draw();
 }
 
-// --------- exclusivity cut structures ----------
-struct Stats { double mean=0.0, std=0.0; };
-struct CutDict { std::map<std::string, Stats> data; std::map<std::string, Stats> mc; };
-
-// Very light JSON puller to get the MC means/stds we need from combined_cuts.json
-// Expect keys like: "DVCS_Sp18_inb_FD_FD": {"data":{...},"mc":{...}}
-static bool load_combined_cuts_mc(const std::string& path,
-                                  std::map<std::string, CutDict>& out)
-{
-    std::ifstream ifs(path);
-    if (!ifs) { std::cerr<<"[radcorr] Cannot open cuts json "<<path<<"\n"; return false; }
-    std::string s((std::istreambuf_iterator<char>(ifs)), std::istreambuf_iterator<char>());
-
-    size_t pos=0;
-    while (true){
-        size_t q1 = s.find('"', pos); if (q1==std::string::npos) break;
-        size_t q2 = s.find('"', q1+1); if (q2==std::string::npos) break;
-        std::string key = s.substr(q1+1, q2-q1-1); // e.g. DVCS_Sp18_inb_FD_FD
-        size_t objS = s.find('{', q2); if (objS==std::string::npos) break;
-        int d=0; size_t j=objS;
-        for (; j<s.size(); ++j){ if(s[j]=='{') d++; else if(s[j]=='}'){ d--; if(!d){ ++j; break; } } }
-        std::string obj = s.substr(objS, j-objS);
-
-        auto parseStats = [&](const std::string& blk)->std::map<std::string,Stats>{
-            std::map<std::string,Stats> m;
-            size_t p=0;
-            while (true){
-                size_t k1 = blk.find('"', p); if (k1==std::string::npos) break;
-                size_t k2 = blk.find('"', k1+1); if (k2==std::string::npos) break;
-                std::string vname = blk.substr(k1+1, k2-k1-1);
-                size_t vs = blk.find('{', k2); if (vs==std::string::npos) break;
-                int d2=0; size_t jj=vs;
-                for (; jj<blk.size(); ++jj){ if(blk[jj]=='{') d2++; else if(blk[jj]=='}'){ d2--; if(!d2){ ++jj; break; } } }
-                std::string sobj = blk.substr(vs, jj-vs);
-                auto findD=[&](const char* pat)->double{
-                    size_t pp=sobj.find(pat); if (pp==std::string::npos) return 0.0;
-                    pp=sobj.find(':',pp); if (pp==std::string::npos) return 0.0;
-                    size_t a=pp+1; while (a<sobj.size() && isspace((unsigned char)sobj[a])) ++a;
-                    size_t b=a; while (b<sobj.size() &&
-                        (isdigit((unsigned char)sobj[b])||sobj[b]=='-'||sobj[b]=='.'||sobj[b]=='e'||sobj[b]=='E'||sobj[b]=='+')) ++b;
-                    try { return std::stod(sobj.substr(a,b-a)); } catch(...) { return 0.0; }
-                };
-                Stats st; st.mean = findD("\"mean\""); st.std = std::fabs(findD("\"std\""));
-                m[vname]=st;
-                p=jj;
-            }
-            return m;
-        };
-
-        CutDict cd;
-        // find "data":{...}
-        size_t pd = obj.find("\"data\""); if (pd!=std::string::npos){
-            size_t ds = obj.find('{', pd);
-            int dd=0; size_t jd=ds;
-            for (; jd<obj.size(); ++jd){ if(obj[jd]=='{') dd++; else if(obj[jd]=='}'){ dd--; if(!dd){ ++jd; break; } } }
-            if (ds!=std::string::npos) cd.data = parseStats(obj.substr(ds, jd-ds));
-        }
-        // find "mc":{...}
-        size_t pm = obj.find("\"mc\""); if (pm!=std::string::npos){
-            size_t ms = obj.find('{', pm);
-            int dm=0; size_t jm=ms;
-            for (; jm<obj.size(); ++jm){ if(obj[jm]=='{') dm++; else if(obj[jm]=='}'){ dm--; if(!dm){ ++jm; break; } } }
-            if (ms!=std::string::npos) cd.mc = parseStats(obj.substr(ms, jm-ms));
-        }
-
-        out[key]=std::move(cd);
-        pos=j;
-    }
-    return !out.empty();
-}
-
-static inline bool within3Sigma(double val, const Stats& s) {
-    return (val >= s.mean - 3.0 * s.std) && (val <= s.mean + 3.0 * s.std);
-}
-
-// --------- branch binder (reco variables, same names as earlier) ----------
-struct Branch {
-    int detector1=0, detector2=0; bool has_d1=false, has_d2=false;
-    double t1=0.0;                bool has_t1=false;
-    double open_angle_ep2=0.0;    bool has_oa=false;
-    double Emiss2=0.0;            bool has_Emiss2=false;
-    double Mx2=0.0;               bool has_Mx2=false;
-    double Mx2_1=0.0;             bool has_Mx2_1=false;
-    double Mx2_2=0.0;             bool has_Mx2_2=false;
-    double pTmiss=0.0;            bool has_pT=false;
-    double xF=0.0;                bool has_xF=false;
-    double Delta_phi=0.0;         bool has_Dphi=false;
-    double x=0.0;                 bool has_x=false;
-    double Q2=0.0;                bool has_Q2=false;
-    double t1abs=0.0;             // |t|
+// --------- branch binder for GENERATED trees ----------
+struct BranchGen {
+    double x=0.0;    bool has_x=false;
+    double Q2=0.0;   bool has_Q2=false;
+    double t1=0.0;   bool has_t1=false; // sign as in trees
+    double phi2=0.0; bool has_phi=false;
     void bind(TTree* t){
-        auto bindI=[&](const char*n,int*a,bool&f){ if(t->GetBranch(n)){ t->SetBranchAddress(n,a); f=true; } };
         auto bindD=[&](const char*n,double*a,bool&f){ if(t->GetBranch(n)){ t->SetBranchAddress(n,a); f=true; } };
-        bindI("detector1",&detector1,has_d1);
-        bindI("detector2",&detector2,has_d2);
-        bindD("t1",&t1,has_t1);
-        bindD("open_angle_ep2",&open_angle_ep2,has_oa);
-        bindD("Emiss2",&Emiss2,has_Emiss2);
-        bindD("Mx2",&Mx2,has_Mx2);
-        bindD("Mx2_1",&Mx2_1,has_Mx2_1);
-        bindD("Mx2_2",&Mx2_2,has_Mx2_2);
-        bindD("pTmiss",&pTmiss,has_pT);
-        bindD("xF",&xF,has_xF);
-        bindD("Delta_phi",&Delta_phi,has_Dphi);
         bindD("x",&x,has_x);
         bindD("Q2",&Q2,has_Q2);
-    }
-    inline bool passesTopo(const std::string& topo) const {
-        if (topo=="(FD,FD)") return has_d1 && has_d2 && detector1==1 && detector2==1;
-        if (topo=="(CD,FD)") return has_d1 && has_d2 && detector1==2 && detector2==1;
-        if (topo=="(CD,FT)") return has_d1 && has_d2 && detector1==2 && detector2==0;
-        return false;
-    }
-    inline bool passesGlobalKin() const {
-        if (!(has_oa && has_t1 && has_pT)) return false;
-        if (open_angle_ep2 <= 5.0) return false;
-        if ((-t1) > 1.0) return false;
-        if (pTmiss > 0.20) return false;
-        return true;
-    }
-    std::map<std::string,double> valmap() const {
-        std::map<std::string,double> m;
-        if (has_Dphi) m["Delta_phi"]=Delta_phi;
-        if (has_oa)   m["theta_gamma_gamma"]=0.0; // not used directly; kept for completeness
-        if (has_pT)   m["pTmiss"]=pTmiss;
-        if (has_xF)   m["xF"]=xF;
-        if (has_Emiss2) m["Emiss2"]=Emiss2;
-        if (has_Mx2)    m["Mx2"]=Mx2;
-        if (has_Mx2_1)  m["Mx2_1"]=Mx2_1;
-        if (has_Mx2_2)  m["Mx2_2"]=Mx2_2;
-        return m;
+        bindD("t1",&t1,has_t1);
+        bindD("phi2",&phi2,has_phi);
     }
 };
 
-// apply 3σ using the **MC** side of the cuts
-static bool passes3SigmaMc(const std::map<std::string, Stats>& mcCuts,
-                           const std::map<std::string,double>& values)
-{
-    for (const auto& kv : mcCuts) {
-        auto it=values.find(kv.first);
-        if (it==values.end()) continue;
-        if (!within3Sigma(it->second, kv.second)) return false;
-    }
-    return true;
+static inline int phi_index(double phi_wrapped){
+    const double width = TWO_PI/double(N_PHI_BINS);
+    double w = std::fmod(phi_wrapped, TWO_PI);
+    if (w < 0) w += TWO_PI;
+    if (w >= TWO_PI) w = std::nextafter(TWO_PI, 0.0);
+    int ip = std::min(std::max(int(std::floor(w/width)),0), N_PHI_BINS-1);
+    return ip;
 }
 
-// --------- bin counting core (integrated over φ) ----------
-struct Counts3D { double norad=0.0; double rad=0.0; };
+// Count generated events TOT (over whole tree), and per (cell, φ)
+struct GenCounts {
+    double Ntot = 0.0;
+    // per (ix,iQ,it) -> array[phi]
+    std::map<std::tuple<int,int,int>, std::vector<double>> cell_phi;
+};
 
-static void count_in_bins_for_tree(
-    TTree* t,
-    const std::string& topo,
+static void count_generated(
+    TTree* tGen,
     const std::vector<std::pair<double,double>>& xB_bins,
     const std::vector<std::pair<double,double>>& Q2_bins,
     const std::vector<std::pair<double,double>>& t_bins,
-    const std::map<std::string,Stats>& mcCuts,
-    std::map<std::tuple<int,int,int>, double>& accum)
+    GenCounts& out)
 {
-    if (!t) return;
-    Branch b; b.bind(t);
-    auto findBin=[&](double v,const std::vector<std::pair<double,double>>& ranges)->int{
+    if (!tGen) return;
+    BranchGen g; g.bind(tGen);
+
+    // prepare maps with zeros
+    for (int ix=0; ix<(int)xB_bins.size(); ++ix)
+    for (int iQ=0; iQ<(int)Q2_bins.size(); ++iQ)
+    for (int it=0; it<(int)t_bins.size(); ++it) {
+        out.cell_phi[std::make_tuple(ix,iQ,it)] = std::vector<double>(N_PHI_BINS, 0.0);
+    }
+
+    const auto findBin=[&](double v,const std::vector<std::pair<double,double>>& ranges)->int{
         for (int k=0;k<(int)ranges.size();++k) if (v>=ranges[k].first && v<ranges[k].second) return k;
         return -1;
     };
 
-    const Long64_t n = t->GetEntries();
+    const Long64_t n = tGen->GetEntries();
     for (Long64_t i=0;i<n;++i){
-        t->GetEntry(i);
-        if (!b.passesTopo(topo)) continue;
-        if (!b.passesGlobalKin()) continue;
-        if (!(b.has_x && b.has_Q2 && b.has_t1)) continue;
+        tGen->GetEntry(i);
+        if (!(g.has_x && g.has_Q2 && g.has_t1 && g.has_phi)) continue;
 
-        std::map<std::string,double> vals = b.valmap();
-        if (!passes3SigmaMc(mcCuts, vals)) continue;
+        out.Ntot += 1.0; // total generated events for this period/model
 
-        const double xB = b.x;
-        const double Q2 = b.Q2;
-        const double tt = std::fabs(b.t1);
+        const double xB = g.x;
+        const double Q2 = g.Q2;
+        const double tt = std::fabs(g.t1);
 
-        int ix = findBin(xB, xB_bins);
-        int iQ = findBin(Q2, Q2_bins);
-        int it = findBin(tt, t_bins);
+        const int ix = findBin(xB, xB_bins);
+        const int iQ = findBin(Q2, Q2_bins);
+        const int it = findBin(tt,  t_bins);
+
         if (ix<0||iQ<0||it<0) continue;
 
-        accum[std::make_tuple(ix,iQ,it)] += 1.0;
+        const int ip = phi_index(g.phi2);
+        out.cell_phi[std::make_tuple(ix,iQ,it)][ip] += 1.0;
     }
 }
 
-// --------- plotting (one constant line per panel, y in [0,2]) ----------
-static void plot_rc_for_period(
+// --------- plotting: points with error bars, y in [0,2] ----------
+static void plot_rcphi_for_period(
     const std::string& period_pretty,  // e.g. "DVCS_Sp18_inb"
     const std::vector<Binning>& binning_scheme,
     const std::vector<std::pair<double,double>>& xB_bins,
     const std::vector<std::pair<double,double>>& Q2_bins,
     const std::vector<std::pair<double,double>>& t_bins,
-    const std::map<std::tuple<int,int,int>, double>& RC,
+    const std::map<std::tuple<int,int,int>, std::vector<double>>& RC_phi,
+    const std::map<std::tuple<int,int,int>, std::vector<double>>& RC_err,
     const std::string& out_dir_plots)
 {
     using std::filesystem::create_directories;
@@ -316,7 +209,7 @@ static void plot_rc_for_period(
     for (int ix = 0; ix < (int)xB_bins.size(); ++ix) {
         const auto xb = xB_bins[ix];
 
-        // Only the Q² and |t| bins that exist in this xB slice
+        // Only Q² and |t| bins present in this x_B slice
         std::vector<std::pair<double,double>> Q2_slice, t_slice;
         {
             std::set<std::pair<double,double>> qs, ts;
@@ -337,7 +230,7 @@ static void plot_rc_for_period(
         const int W = 280*ncols + 160;
         const int H = 240*nrows + 170;
 
-        std::ostringstream cname; cname<<"c_rc_"<<period_pretty<<"_xB"<<ix;
+        std::ostringstream cname; cname<<"c_rcphi_"<<period_pretty<<"_xB"<<ix;
         TCanvas* c = new TCanvas(cname.str().c_str(), cname.str().c_str(), W, H);
 
         TPad* pTop  = new TPad("pTop","pTop", 0.0, 0.915, 1.0, 1.0);
@@ -355,11 +248,10 @@ static void plot_rc_for_period(
         head.SetTextFont(42);
         head.SetTextSize(0.36);
         std::ostringstream tit;
-        tit << Form("Radiative correction  %s   x_{B} #in [%.2g, %.2g]",
+        tit << Form("Radiative correction (generated)  %s   x_{B} #in [%.2g, %.2g]",
                     period_pretty.c_str(), xb.first, xb.second);
         head.DrawLatex(0.5, 0.55, tit.str().c_str());
 
-        // Panels
         for (int r = 0; r < nrows; ++r) {
             const int it_global = findIndex(t_slice[r], t_bins);
             if (it_global < 0) continue;
@@ -375,14 +267,14 @@ static void plot_rc_for_period(
                 gPad->SetLeftMargin(0.15);
                 gPad->SetRightMargin(0.10);
 
-                // frame: x 0..360 (for consistent look), y 0..2
+                // Frame: x 0..360 (consistent), y 0..2
                 TH1* frame = gPad->DrawFrame(0.0, 0.0, 360.0, 2.0);
                 TAxis* ax = frame->GetXaxis();
                 TAxis* ay = frame->GetYaxis();
 
-                ax->SetLabelSize(0.0001); // hide default tick labels, overlay custom
+                ax->SetLabelSize(0.0001); // hide default tick labels
                 ax->SetTitle("#phi (deg)");
-                ay->SetTitle("R_{C} = N_{rad}/N_{norad}");
+                ay->SetTitle("rad/Born");
                 ax->CenterTitle(); ay->CenterTitle();
                 ax->SetNdivisions(505);
                 ax->SetTitleSize(0.060);
@@ -390,24 +282,36 @@ static void plot_rc_for_period(
                 ay->SetLabelSize(0.048);
                 ax->SetTitleOffset(1.25);
                 ay->SetTitleOffset(1.35);
-
                 drawDegreeTicks(gPad->GetUxmin(), gPad->GetUymin(), gPad->GetUxmax(), 0.048);
 
-                auto itCell = RC.find(std::make_tuple(ix, iQ_global, it_global));
-                if (itCell == RC.end()) continue;
+                auto key = std::make_tuple(ix, iQ_global, it_global);
+                auto itR  = RC_phi.find(key);
+                auto itRe = RC_err.find(key);
+                if (itR == RC_phi.end() || itRe == RC_err.end()) continue;
 
-                const double rc = itCell->second;
+                const auto& rc  = itR->second;
+                const auto& er  = itRe->second;
+                const auto  PHI = phiCentersDeg();
 
-                // draw as a thin horizontal line
-                const int NS = 2;
-                double xs[NS] = {0.0, 360.0};
-                double ys[NS] = {rc, rc};
-                TGraph* g = new TGraph(NS, xs, ys);
-                g->SetLineColor(kRed);
-                g->SetLineWidth(2);
-                g->Draw("L SAME");
+                std::vector<double> xs, ys, eys;
+                xs.reserve(rc.size()); ys.reserve(rc.size()); eys.reserve(rc.size());
+                for (int ip=0; ip<N_PHI_BINS; ++ip){
+                    double val = rc[ip];
+                    double err = er[ip];
+                    if (!std::isfinite(val)) continue;
+                    xs.push_back(PHI[ip]);
+                    ys.push_back(std::clamp(val, 0.0, 2.0));
+                    eys.push_back((std::isfinite(err)? err : 0.0));
+                }
+                if (!xs.empty()){
+                    TGraphErrors* gr = new TGraphErrors((int)xs.size(), xs.data(), ys.data(), nullptr, eys.data());
+                    gr->SetMarkerStyle(20);
+                    gr->SetMarkerSize(1.0);
+                    gr->SetLineWidth(2);
+                    gr->Draw("P SAME");
+                }
 
-                // annotation
+                // panel label
                 TLatex lab;
                 lab.SetNDC(); lab.SetTextSize(0.040); lab.SetTextAlign(11);
                 lab.SetTextFont(42);
@@ -415,75 +319,81 @@ static void plot_rc_for_period(
                     Form("Q^{2} #in [%.2g, %.2g],   -t #in [%.2g, %.2g]",
                          Q2_slice[ccol].first, Q2_slice[ccol].second,
                          t_slice[r].first,    t_slice[r].second));
-
-                // legend (opaque)
-                TLegend* leg = new TLegend(0.60, 0.76, 0.90, 0.92);
-                leg->SetBorderSize(1);
-                leg->SetLineColor(kBlack);
-                leg->SetFillColor(kWhite);
-                leg->SetFillStyle(1001);
-                leg->SetTextFont(42);
-                leg->SetTextSize(0.040);
-                leg->AddEntry((TObject*)nullptr, Form("R_{C} = %.3f", rc), "");
-                leg->Draw();
             }
         }
 
         std::ostringstream fout;
-        fout << out_dir_plots << "/rc_" << period_pretty << "_xB_" << ix << ".png";
+        fout << out_dir_plots << "/rcphi_" << period_pretty << "_xB_" << ix << ".png";
         c->SaveAs(fout.str().c_str());
         delete c;
     }
 }
 
-// --------- JSON writers ----------
+// --------- JSON writer (per-φ arrays + raw counts & totals) ----------
 static void write_period_json(
     const std::string& out_path,
     const std::vector<std::pair<double,double>>& xB_bins,
     const std::vector<std::pair<double,double>>& Q2_bins,
     const std::vector<std::pair<double,double>>& t_bins,
-    const std::map<std::tuple<int,int,int>, double>& rcVals,
-    const std::map<std::tuple<int,int,int>, std::pair<double,double>>& rawCounts // (norad,rad)
+    double Ntot_born, double Ntot_rad,
+    const std::map<std::tuple<int,int,int>, std::vector<double>>& phi_centers,
+    const std::map<std::tuple<int,int,int>, std::vector<double>>& rc_vals,
+    const std::map<std::tuple<int,int,int>, std::vector<double>>& rc_errs,
+    const std::map<std::tuple<int,int,int>, std::vector<double>>& born_Ngen,
+    const std::map<std::tuple<int,int,int>, std::vector<double>>& rad_Ngen
 ){
     std::ofstream ofs(out_path);
     if (!ofs) { std::cerr<<"[radcorr] Cannot open "<<out_path<<"\n"; return; }
     ofs<<std::fixed<<std::setprecision(8);
     ofs<<"{\n";
+    ofs<<"  \"phi_bins\": "<<N_PHI_BINS<<",\n";
+    ofs<<"  \"Ntot_born\": "<<Ntot_born<<",\n";
+    ofs<<"  \"Ntot_rad\": "<<Ntot_rad<<",\n";
     ofs<<"  \"binning_meta\": {\"xB_bins\": "<<xB_bins.size()<<", \"Q2_bins\": "<<Q2_bins.size()<<", \"t_bins\": "<<t_bins.size()<<"},\n";
     ofs<<"  \"bins\": {\n";
     bool first=true;
-    for (const auto& kv : rcVals){
+    for (const auto& kv : rc_vals){
         if (!first) ofs<<",\n"; first=false;
         int ix,iQ,it; std::tie(ix,iQ,it)=kv.first;
-        double rc = kv.second;
-        auto itc = rawCounts.find(kv.first);
-        double nN=0.0, nR=0.0;
-        if (itc!=rawCounts.end()){ nN=itc->second.first; nR=itc->second.second; }
-        ofs<<"    \"("<<ix<<","<<iQ<<","<<it<<")\": {\"RC\": "<<rc<<", \"N_norad\": "<<nN<<", \"N_rad\": "<<nR<<"}";
+        ofs<<"    \"("<<ix<<","<<iQ<<","<<it<<")\": {";
+        auto arrDump=[&](const std::vector<double>& v){
+            ofs<<"["; for (size_t i=0;i<v.size();++i){ if(i) ofs<<","; ofs<<v[i]; } ofs<<"]";
+        };
+        ofs<<"\"phi\": "; arrDump(phi_centers.at(kv.first)); ofs<<", ";
+        ofs<<"\"RC\": ";  arrDump(kv.second); ofs<<", ";
+        ofs<<"\"RC_err\": "; arrDump(rc_errs.at(kv.first)); ofs<<", ";
+        ofs<<"\"born\": {\"Ngen\": "; arrDump(born_Ngen.at(kv.first)); ofs<<"}, ";
+        ofs<<"\"rad\":  {\"Ngen\": "; arrDump(rad_Ngen.at(kv.first));  ofs<<"}";
+        ofs<<"}";
     }
     ofs<<"\n  }\n}\n";
 }
 
 static void write_all_periods_json(
     const std::string& out_path,
-    const std::map<std::string, std::map<std::tuple<int,int,int>, double>>& perPeriodRC)
+    const std::map<std::string, std::map<std::tuple<int,int,int>, std::vector<double>>>& perPeriodRC,
+    const std::map<std::string, std::map<std::tuple<int,int,int>, std::vector<double>>>& perPeriodRCErr)
 {
     std::ofstream ofs(out_path);
     if (!ofs) { std::cerr<<"[radcorr] Cannot open "<<out_path<<"\n"; return; }
     ofs<<std::fixed<<std::setprecision(8);
-    ofs<<"{\n  \"periods\": {\n";
+    ofs<<"{\n  \"phi_bins\": "<<N_PHI_BINS<<",\n  \"periods\": {\n";
     bool firstP=true;
     for (const auto& pk : perPeriodRC){
         if (!firstP) ofs<<",\n"; firstP=false;
-        ofs<<"    \""<<pk.first<<"\": {";
-        const auto& rc = pk.second;
-        ofs<<"\"bins\":{";
+        ofs<<"    \""<<pk.first<<"\": {\"bins\":{";
         bool fb=true;
-        for (const auto& kv : rc){
+        for (const auto& kv : pk.second){
             if (!fb) ofs<<",";
             fb=false;
             int ix,iQ,it; std::tie(ix,iQ,it)=kv.first;
-            ofs<<"\"("<<ix<<","<<iQ<<","<<it<<")\":"<<kv.second;
+            ofs<<"\"("<<ix<<","<<iQ<<","<<it<<")\": {\"RC\": [";
+            const auto& v = kv.second;
+            for (size_t i=0;i<v.size();++i){ if(i) ofs<<","; ofs<<v[i]; }
+            ofs<<"], \"RC_err\": [";
+            const auto& e = perPeriodRCErr.at(pk.first).at(kv.first);
+            for (size_t i=0;i<e.size(); ++i){ if(i) ofs<<","; ofs<<e[i]; }
+            ofs<<"]}";
         }
         ofs<<"}}";
     }
@@ -496,25 +406,26 @@ static void write_all_periods_json(
 // Public driver
 // =====================================================================
 void compute_radiative_corrections(
-    const std::vector<std::string>& periods,                        // e.g. DVCS_Fa18_inb, ...
-    const std::vector<std::string>& topologies,                     // {"(FD,FD)","(CD,FD)","(CD,FT)"}
+    const std::vector<std::string>& periods,
+    const std::vector<std::string>& topologies,                     // kept for API compat; UNUSED here
     const std::vector<Binning>& binning_scheme,
-    const std::map<std::string, TTree*>& recMcTrees_norad,          // keys: "sp18_inb_rec", ...
-    const std::map<std::string, TTree*>& recMcTrees_rad,            // keys: "sp18_inb_rec_rad", ...
-    const std::string& combined_cuts_json_path,                     // "output/jsons/combined_cuts.json"
-    const std::string& out_root_dir)                                // "output"
+    const std::map<std::string, TTree*>& genMcTrees_norad,          // keys: "sp18_inb_gen", ...
+    const std::map<std::string, TTree*>& recMcTrees_norad,          // UNUSED
+    const std::map<std::string, TTree*>& genMcTrees_rad,            // keys: "sp18_inb_gen_rad", ...
+    const std::map<std::string, TTree*>& recMcTrees_rad,            // UNUSED
+    const std::string& combined_cuts_json_path,                     // UNUSED
+    const std::string& out_root_dir)
 {
+    (void)topologies;
+    (void)recMcTrees_norad;
+    (void)recMcTrees_rad;
+    (void)combined_cuts_json_path;
+
     namespace fs = std::filesystem;
 
     const auto xB_bins = uniqueRanges(binning_scheme, 'x');
     const auto Q2_bins = uniqueRanges(binning_scheme, 'Q');
     const auto t_bins  = uniqueRanges(binning_scheme, 't');
-
-    // Load MC-side cuts
-    std::map<std::string, CutDict> cuts;
-    if (!load_combined_cuts_mc(combined_cuts_json_path, cuts)) {
-        std::cerr<<"[radcorr] WARNING: could not read combined cuts; proceeding without 3σ exclusivity cuts.\n";
-    }
 
     // Output directories
     const fs::path json_dir  = fs::path(out_root_dir)/"jsons";
@@ -523,93 +434,119 @@ void compute_radiative_corrections(
     fs::create_directories(json_dir, ec);
     fs::create_directories(plot_root, ec);
 
-    // Storage for the "all-periods" file
-    std::map<std::string, std::map<std::tuple<int,int,int>, double>> perPeriodRC;
+    // For all-periods summary
+    std::map<std::string, std::map<std::tuple<int,int,int>, std::vector<double>>> perPeriodRC;
+    std::map<std::string, std::map<std::tuple<int,int,int>, std::vector<double>>> perPeriodRCErr;
+
+    const auto PHI_RAD = phiCentersRad();
 
     for (const auto& period : periods) {
-        const std::string runTag = periodToRunTagKey(period);          // "fa18_inb", "fa18_inb_supp", ...
-        const std::string pretty = prettyPeriodKey(runTag);            // "DVCS_Fa18_inb", etc.
-
-        // pick which actual key to use for Fa18_inb_supp (reuse Fa18_inb)
+        const std::string runTag = periodToRunTagKey(period);            // "fa18_inb", "fa18_inb_supp", ...
+        const std::string pretty = prettyPeriodKey(runTag);              // "DVCS_Fa18_inb", etc.
         const std::string baseRunTag = (runTag=="fa18_inb_supp") ? "fa18_inb" : runTag;
 
-        // accumulate counts across requested topologies, then make RC
-        std::map<std::tuple<int,int,int>, double> counts_norad; // per (ix,iQ,it)
-        std::map<std::tuple<int,int,int>, double> counts_rad;
+        auto getOrNull = [](const auto& m, const std::string& k)->TTree*{
+            auto it=m.find(k); return (it!=m.end()? it->second : nullptr);
+        };
 
-        for (const auto& topo : topologies) {
-            // MC-side cuts key from combined_cuts.json:
-            // "DVCS_Sp18_inb_FD_FD", "DVCS_Fa18_inb_FD_FD", ...
-            std::string cutsKey = prettyPeriodKey(baseRunTag) + "_" + topoKey(topo);
-            std::map<std::string,Stats> mcCuts;
-            if (cuts.count(cutsKey)) mcCuts = cuts[cutsKey].mc;
+        TTree* gB = getOrNull(genMcTrees_norad, baseRunTag + "_gen");
+        TTree* gR = getOrNull(genMcTrees_rad,   baseRunTag + "_gen_rad");
 
-            auto getOrNull = [](const auto& m, const std::string& k)->TTree*{
-                auto it=m.find(k); return (it!=m.end()? it->second : nullptr);
-            };
-
-            TTree* tNorad = getOrNull(recMcTrees_norad, baseRunTag + "_rec");
-            TTree* tRad   = getOrNull(recMcTrees_rad,   baseRunTag + "_rec_rad");
-
-            if (!tNorad || !tRad) {
-                std::cerr<<"[radcorr] Missing MC trees (norad or rad) for "<<baseRunTag<<" topo "<<topo<<"\n";
-                continue;
-            }
-
-            count_in_bins_for_tree(tNorad, topo, xB_bins, Q2_bins, t_bins, mcCuts, counts_norad);
-            count_in_bins_for_tree(tRad,   topo, xB_bins, Q2_bins, t_bins, mcCuts, counts_rad);
+        if (!gB || !gR) {
+            std::cerr<<"[radcorr] Missing generated MC trees (born or rad) for "<<baseRunTag<<"\n";
+            continue;
         }
 
-        // build RC per bin (with tiny floor to avoid 0/0)
-        std::map<std::tuple<int,int,int>, double> RC;
-        std::map<std::tuple<int,int,int>, std::pair<double,double>> rawCounts;
+        // Count totals and per-cell,per-phi
+        GenCounts cntB, cntR;
+        count_generated(gB, xB_bins, Q2_bins, t_bins, cntB);
+        count_generated(gR, xB_bins, Q2_bins, t_bins, cntR);
+
+        // Per-cell arrays for JSON & plots
+        std::map<std::tuple<int,int,int>, std::vector<double>> phi_centers_map;
+        std::map<std::tuple<int,int,int>, std::vector<double>> RC_phi_map, RC_err_map;
+        std::map<std::tuple<int,int,int>, std::vector<double>> bornNgen_map, radNgen_map;
+
+        // Build RC(phi) = (a/NrTot) / (b/NbTot), with multinomial proportion errors
         for (int ix=0; ix<(int)xB_bins.size(); ++ix)
         for (int iQ=0; iQ<(int)Q2_bins.size(); ++iQ)
         for (int it=0; it<(int)t_bins.size(); ++it) {
-            auto key = std::make_tuple(ix,iQ,it);
-            double Nn = counts_norad.count(key)? counts_norad[key] : 0.0;
-            double Nr = counts_rad.count(key)?   counts_rad[key]   : 0.0;
+            auto key3 = std::make_tuple(ix,iQ,it);
 
-            // Handle empty bins gracefully: RC = 1.0 if both zero; else (Nr / Nn) with epsilon
-            double rc = 1.0;
-            if (Nn<=0.0 && Nr<=0.0) rc = 1.0;
-            else if (Nn<=0.0 && Nr>0.0) rc = 2.0; // cap visually later
-            else rc = Nr / std::max(Nn, 1e-12);
+            const auto& nb = cntB.cell_phi.at(key3);
+            const auto& nr = cntR.cell_phi.at(key3);
 
-            // Clip to plotting range a bit so legends & downstream don't blow up
-            if (!std::isfinite(rc)) rc = 1.0;
-            rc = std::clamp(rc, 0.0, 2.0);
+            std::vector<double> RC (N_PHI_BINS, std::numeric_limits<double>::quiet_NaN());
+            std::vector<double> eRC(N_PHI_BINS, std::numeric_limits<double>::quiet_NaN());
 
-            RC[key]=rc;
-            rawCounts[key] = {Nn,Nr};
+            for (int ip=0; ip<N_PHI_BINS; ++ip){
+                const double a = nr[ip]; // rad in cell, phi
+                const double b = nb[ip]; // born in cell, phi
+                const double NrTot = std::max(cntR.Ntot, 0.0);
+                const double NbTot = std::max(cntB.Ntot, 0.0);
+
+                if (NrTot <= 0.0 || NbTot <= 0.0 || b <= 0.0) {
+                    RC[ip]  = std::numeric_limits<double>::quiet_NaN();
+                    eRC[ip] = std::numeric_limits<double>::quiet_NaN();
+                    continue;
+                }
+
+                const double pr_hat = a / NrTot;
+                const double pb_hat = b / NbTot;
+
+                if (pb_hat <= 0.0) {
+                    RC[ip]  = std::numeric_limits<double>::quiet_NaN();
+                    eRC[ip] = std::numeric_limits<double>::quiet_NaN();
+                    continue;
+                }
+
+                const double R = pr_hat / pb_hat;
+
+                // multinomial proportion variance approx: var(p̂)=p̂(1-p̂)/N
+                const double var_pr = pr_hat * std::max(0.0, 1.0 - pr_hat) / std::max(NrTot, 1.0);
+                const double var_pb = pb_hat * std::max(0.0, 1.0 - pb_hat) / std::max(NbTot, 1.0);
+
+                double sR = std::numeric_limits<double>::quiet_NaN();
+                if (pr_hat>0.0 && pb_hat>0.0) {
+                    const double rel2 = (var_pr/(pr_hat*pr_hat)) + (var_pb/(pb_hat*pb_hat));
+                    sR = std::abs(R) * std::sqrt(std::max(0.0, rel2));
+                }
+
+                RC[ip]  = R;
+                eRC[ip] = sR;
+            }
+
+            phi_centers_map[key3] = PHI_RAD;
+            RC_phi_map[key3]      = RC;
+            RC_err_map[key3]      = eRC;
+            bornNgen_map[key3]    = cntB.cell_phi.at(key3);
+            radNgen_map[key3]     = cntR.cell_phi.at(key3);
         }
 
         // Save per-period JSON
         {
-            const fs::path outP = json_dir/("radiative_corrections_"+pretty+".json");
-            write_period_json(outP.string(), xB_bins, Q2_bins, t_bins, RC, rawCounts);
+            const fs::path outP = fs::path(out_root_dir)/"jsons"/("radiative_corrections_"+pretty+".json");
+            write_period_json(outP.string(), xB_bins, Q2_bins, t_bins,
+                              cntB.Ntot, cntR.Ntot,
+                              phi_centers_map, RC_phi_map, RC_err_map,
+                              bornNgen_map,    radNgen_map);
             std::cout<<"[radcorr] Wrote "<<outP.string()<<"\n";
         }
 
-        // Plots directory for this period
-        const fs::path plots_dir = plot_root / runTag; // keep original runTag for directory
+        // Plots
+        const fs::path plots_dir = fs::path(out_root_dir)/"radiative_correction_plots"/runTag;
         fs::create_directories(plots_dir, ec);
-        plot_rc_for_period(pretty, binning_scheme, xB_bins, Q2_bins, t_bins, RC, plots_dir.string());
+        plot_rcphi_for_period(pretty, binning_scheme, xB_bins, Q2_bins, t_bins,
+                              RC_phi_map, RC_err_map, plots_dir.string());
 
-        // Stash for "all periods"
-        perPeriodRC[pretty]=std::move(RC);
-
-        // If we processed fa18_inb and the requested *period* is fa18_inb_supp, we already
-        // used baseRunTag=fa18_inb. For completeness, also write the duplicate JSON/plots
-        // if the *period* itself is the supplemental (directory name changes).
-        if (runTag=="fa18_inb_supp") {
-            // nothing extra: we already keyed plots_dir with runTag so they land under fa18_inb_supp
-        }
+        // All-periods summary stash
+        perPeriodRC[pretty]    = std::move(RC_phi_map);
+        perPeriodRCErr[pretty] = std::move(RC_err_map);
     }
 
     // all periods file
     write_all_periods_json((fs::path(out_root_dir)/"jsons"/"radiative_corrections_all_periods.json").string(),
-                           perPeriodRC);
+                           perPeriodRC, perPeriodRCErr);
 
-    std::cout<<"[radcorr] Radiative corrections complete.\n";
+    std::cout<<"[radcorr] Radiative corrections (generated-only, per-phi) complete.\n";
 }
