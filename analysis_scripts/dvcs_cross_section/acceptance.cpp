@@ -452,9 +452,10 @@ void compute_and_plot_acceptance(
 
     for (const auto& period : periods) {
         const std::string runTag = periodToRunTagKey(period);
-        // Build keys: "<tag>_gen" and "<tag>_rec_mc"
+        // Build keys: "<tag>_gen" and "<tag>_rec" (DVCS); fall back to "<tag>_rec_mc" if present
         TTree* tGen = getOrNull(genMcTrees, runTag + "_gen");
-        TTree* tRec = getOrNull(recMcTrees, runTag + "_rec_mc");
+        TTree* tRec = getOrNull(recMcTrees, runTag + "_rec");
+        if (!tRec) tRec = getOrNull(recMcTrees, runTag + "_rec_mc"); // fallback for any alt naming
         if (!tGen || !tRec) {
             std::cerr<<"[acc][WARN] Missing MC trees for "<<period<<" ("<<runTag<<") — skipping.\n";
             continue;
