@@ -20,7 +20,8 @@ void makeOutputDirs() {
             {"sp18_inb","sp18_out","fa18_inb_supplemental",
              "sp18_inb","sp18_out","10.6GeV","sp19_inb"}},
         {"output/acceptance",
-            {"fa18_inb","fa18_out","sp19_inb"}}
+            {"sp18_inb","sp18_out",
+            "fa18_inb","fa18_out","sp19_inb"}}
     };
 
     for (const auto& cat : cats) {

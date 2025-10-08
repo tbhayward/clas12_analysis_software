@@ -280,7 +280,7 @@ int main(int argc, char *argv[]) {
         // If cpp == 1, fill dilutionFactors with zeros
         dilutionFactors = std::vector<std::pair<double, double>>(allBins[i].size() - 1, {0.0, 0.0});
     }
-    // dilutionFactors = std::vector<std::pair<double, double>>(allBins[i].size() - 1, {1, 0.0});
+    dilutionFactors = std::vector<std::pair<double, double>>(allBins[i].size() - 1, {1, 0.2});
     if (channel == 6) {
       cout << "    Beginning chi2 simultaneous GeneralExclusive (BSA/TSA/DSA)." << endl;
       performChi2Fits_GeneralExclusive(output_file.c_str(), kinematic_file.c_str(),

@@ -12,6 +12,7 @@
 #include <map>
 #include <string>
 #include <vector>
+#include "acceptance.h"
 
 int main(int argc, char* argv[]) {
     std::cout << "Starting DVCS analysis..." << std::endl;
@@ -94,13 +95,13 @@ int main(int argc, char* argv[]) {
     //   - per-period JSONs: output/jsons/radiative_corrections_<period>.json
     //   - all-groups file: output/jsons/radiative_corrections_all_groups.json
     //   - plots (ONLY per beam energy): output/radiative_correction_plots/{10.59,10.60,10.2}/...
-    compute_radiative_corrections(
-        dvcs_periods,
-        binning_scheme,
-        genMcTrees,     // Born (no-rad) GENERATED
-        radGenMcTrees,  // Radiative GENERATED
-        output_root
-    );
+    // compute_radiative_corrections(
+    //     dvcs_periods,
+    //     binning_scheme,
+    //     genMcTrees,     
+    //     radGenMcTrees,  
+    //     output_root
+    // );
 
     // Beam-Spin Asymmetry: reads total_counts.json and contamination JSONs,
     // writes per-period BSA fits to output/jsons/BSA_fits/BSA_fits_<period>.json,
@@ -118,6 +119,26 @@ int main(int argc, char* argv[]) {
     //     contamination_dir,    // directory with contamination_<period>.json files
     //     output_root
     // );
+
+        // --------- Acceptance (reco MC with MC cuts / gen MC, per bin & φ) ----------
+    // Writes per-period JSONs: output/jsons/acceptance_<period>.json
+    // Plots to: output/acceptance/<runTag>/plot_acceptance_<period>_xB_<ix>.png
+    {
+        std::vector<std::string> acc_periods = {
+            "DVCS_Sp18_inb", "DVCS_Sp18_out",
+            "DVCS_Fa18_inb", "DVCS_Fa18_out",
+            "DVCS_Sp19_inb"
+        }; // intentionally skipping DVCS_Fa18_inb_supp
+        compute_and_plot_acceptance(
+            acc_periods,
+            topologies,
+            binning_scheme,
+            genMcTrees,
+            recMcTrees,
+            cuts_json_path,
+            output_root
+        );
+    }
 
     std::cout << "All done." << std::endl;
     return 0;
