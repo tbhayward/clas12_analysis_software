@@ -297,7 +297,7 @@ struct BranchBinderEPPI0MC { // no helicity
         bindD("Emiss2",&Emiss2,has_Em);
         bindD("Mx2",&Mx2,has_Mx2);
         bindD("Mx2_1",&Mx2_1,has_Mx21);
-        bindD("Mx2_2",&Mx2_2,has_Mx2_2);
+        bindD("Mx2_2",&Mx2_2,has_Mx22);
         bindD("theta_pi0_pi0",&theta_pi0_pi0,has_tpp);
         bindD("theta_gamma_gamma",&theta_gamma_gamma,has_tgg);
         bindD("xF",&xF,has_xF);
