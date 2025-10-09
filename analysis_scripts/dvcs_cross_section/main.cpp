@@ -16,6 +16,7 @@
 #include "unfolding.h"
 #include "bin_volume.h"
 #include "uncorrected_cross_section.h"
+#include "rad_corrected_cross_section.h"
 
 int main(int argc, char* argv[]) {
     std::cout << "Starting DVCS analysis..." << std::endl;
@@ -170,14 +171,21 @@ int main(int argc, char* argv[]) {
     //     output_root
     // );
 
-    compute_uncorrected_cross_sections(
-        binning_scheme,
-        "output/jsons",                    // bin volume JSON directory
-        "output/jsons",               // unfolded counts per helicity
-        "imports/integrated_luminosity",        // luminosity text files
-        "output/uncorrected_cross_section"      // output dir
-    );
+    // compute_uncorrected_cross_sections(
+    //     binning_scheme,
+    //     "output/jsons",                    // bin volume JSON directory
+    //     "output/jsons",               // unfolded counts per helicity
+    //     "imports/integrated_luminosity",        // luminosity text files
+    //     "output/uncorrected_cross_section"      // output dir
+    // );
 
+    {
+        // Multiply uncorrected dσ/dφ by Born/Rad per-φ correction
+        const std::string unx_dir = "output/uncorrected_cross_section/jsons";
+        const std::string rc_dir  = "output/jsons"; // radiative_corrections_group_<E>.json
+        const std::string out_dir = "output/rad_corrected_cross_section";
+        compute_rad_corrected_cross_sections(binning_scheme, unx_dir, rc_dir, out_dir);
+    }
 
 
     std::cout << "All done." << std::endl;
