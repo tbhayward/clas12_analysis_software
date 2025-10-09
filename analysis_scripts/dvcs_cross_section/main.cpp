@@ -93,6 +93,18 @@ int main(int argc, char* argv[]) {
     //     output_root        // <<< was "output/contamination"; must be the root "output"
     // );
 
+    // --------- π0-corrected helicity counts (per φ) ----------
+    const std::string total_counts_json = "output/jsons/total_counts.json";
+    const std::string contamination_dir = "output/jsons/contamination";
+    compute_pi0_corrected_counts(
+        dvcs_periods,             // periods we already defined
+        binning_scheme,
+        total_counts_json,        // from compute_total_counts()
+        contamination_dir,        // from compute_pi0_contamination_helicity()
+        output_root               // "output"
+    );
+    std::cout << "π0-corrected counts stage finished." << std::endl;
+
     // --------- Radiative corrections (generated Born/Rad, per bin & φ) ----------
     // Writes:
     //   - per-group JSONs: output/jsons/radiative_corrections_group_<energy>.json
@@ -179,13 +191,13 @@ int main(int argc, char* argv[]) {
     //     "output/uncorrected_cross_section"      // output dir
     // );
 
-    {
-        // Multiply uncorrected dσ/dφ by Born/Rad per-φ correction
-        const std::string unx_dir = "output/uncorrected_cross_section/jsons";
-        const std::string rc_dir  = "output/jsons"; // radiative_corrections_group_<E>.json
-        const std::string out_dir = "output/rad_corrected_cross_section";
-        compute_rad_corrected_cross_sections(binning_scheme, unx_dir, rc_dir, out_dir);
-    }
+    // {
+    //     // Multiply uncorrected dσ/dφ by Born/Rad per-φ correction
+    //     const std::string unx_dir = "output/uncorrected_cross_section/jsons";
+    //     const std::string rc_dir  = "output/jsons"; // radiative_corrections_group_<E>.json
+    //     const std::string out_dir = "output/rad_corrected_cross_section";
+    //     compute_rad_corrected_cross_sections(binning_scheme, unx_dir, rc_dir, out_dir);
+    // }
 
 
     std::cout << "All done." << std::endl;
