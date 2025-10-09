@@ -2,14 +2,8 @@
 #include <string>
 #include <vector>
 
-// If Binning is declared elsewhere (e.g. load_binning_scheme.h), just ensure
-// that header is included before this one in your translation unit.
-// We only need the type for plotting grid layout.
-struct Binning {
-    double xBmin=0.0, xBmax=0.0;
-    double Q2min=0.0, Q2max=0.0;
-    double tmin=0.0,  tmax=0.0;
-};
+// Use the project's existing Binning struct
+#include "load_binning_scheme.h"
 
 // Multiply uncorrected cross sections by (Born/Rad) factors and plot.
 // Inputs:
