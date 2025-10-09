@@ -22,26 +22,55 @@ namespace fs = std::filesystem;
 // ------------------------------------------------------------
 // Helper: Read total integrated luminosity from text file
 // ------------------------------------------------------------
+// ------------------------------------------------------------
+// Helper: Read total integrated luminosity from CSV text file
+// (sum of 3rd and 4th columns = pos + neg)
+// ------------------------------------------------------------
 double read_total_luminosity(const std::string& filepath) {
-    std::ifstream infile(filepath);
-    if (!infile.is_open()) {
+    std::ifstream in(filepath);
+    if (!in.is_open()) {
         std::cerr << "[luminosity] Cannot open " << filepath << "\n";
         return 0.0;
     }
 
-    double run, tot, pos, neg;
-    double sum_pos = 0.0, sum_neg = 0.0;
-    while (infile >> run >> tot >> pos >> neg) {
-        if (pos > 0) sum_pos += pos;
-        if (neg > 0) sum_neg += neg;
-    }
-    infile.close();
+    auto trim = [](std::string s){
+        size_t a = s.find_first_not_of(" \t\r\n");
+        size_t b = s.find_last_not_of(" \t\r\n");
+        if (a == std::string::npos) return std::string();
+        return s.substr(a, b - a + 1);
+    };
 
+    double sum_pos = 0.0, sum_neg = 0.0;
+    std::string line;
+
+    while (std::getline(in, line)) {
+        line = trim(line);
+        if (line.empty()) continue;
+        if (line[0] == '#') continue;
+
+        // CSV: run,total,pos,neg,*,*
+        // Example: 5036,169255.790,87120.751,87500.855,0,0
+        std::stringstream ss(line);
+        std::string tok;
+        std::vector<std::string> cols;
+        while (std::getline(ss, tok, ',')) cols.push_back(trim(tok));
+        if (cols.size() < 4) continue;
+
+        // cols[2] = pos, cols[3] = neg
+        try {
+            double pos = std::stod(cols[2]);
+            double neg = std::stod(cols[3]);
+            if (pos > 0) sum_pos += pos;
+            if (neg > 0) sum_neg += neg;
+        } catch (...) {
+            // ignore malformed lines
+        }
+    }
+
+    in.close();
     std::cout << "[luminosity] " << filepath
               << "  total_pos=" << sum_pos
               << "  total_neg=" << sum_neg << "\n";
-
-    // return combined for now, we’ll store both later
     return sum_pos + sum_neg;
 }
 
