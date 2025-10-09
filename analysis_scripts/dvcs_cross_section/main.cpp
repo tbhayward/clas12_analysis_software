@@ -5,8 +5,9 @@
 #include "bin_means.h"
 #include "total_counts.h"
 #include "pi0_contamination.h"
+#include "pi0_corrected_counts.h"
 #include "bsa.h"
-#include "radiative_corrections.h"  // NEW
+#include "radiative_corrections.h"  
 #include <filesystem>
 #include <iostream>
 #include <map>
