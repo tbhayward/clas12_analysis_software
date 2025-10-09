@@ -15,6 +15,7 @@
 #include "acceptance.h"
 #include "unfolding.h"
 #include "bin_volume.h"
+#include "uncorrected_cross_section.h"
 
 int main(int argc, char* argv[]) {
     std::cout << "Starting DVCS analysis..." << std::endl;
@@ -160,13 +161,21 @@ int main(int argc, char* argv[]) {
     //     );
     // }
 
-    // --------- Bin Volume (generator-based φ coverage), per beam energy ----------
-    // Writes per-energy JSONs: output/jsons/bin_volume_<energy>.json
-    // Plots to: output/bin_volume/<energy>/plot_bin_volume_<energy>_xB_<ix>.png
-    compute_and_plot_bin_volume(
+    // // --------- Bin Volume (generator-based φ coverage), per beam energy ----------
+    // // Writes per-energy JSONs: output/jsons/bin_volume_<energy>.json
+    // // Plots to: output/bin_volume/<energy>/plot_bin_volume_<energy>_xB_<ix>.png
+    // compute_and_plot_bin_volume(
+    //     binning_scheme,
+    //     genMcTrees,
+    //     output_root
+    // );
+
+    compute_uncorrected_cross_sections(
         binning_scheme,
-        genMcTrees,
-        output_root
+        "output/bin_volume",                    // bin volume JSON directory
+        "output/unfolded_counts",               // unfolded counts per helicity
+        "imports/integrated_luminosity",        // luminosity text files
+        "output/uncorrected_cross_section"      // output dir
     );
 
 
