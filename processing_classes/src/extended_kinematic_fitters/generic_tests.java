@@ -12,6 +12,9 @@ public class generic_tests {
     public boolean banks_test(DataEvent event) {
         String[] bankNames
                 = {"RUN::config", "REC::Event", "REC::Particle", "REC::Calorimeter", "REC::Traj", "REC::Track", "REC::Cherenkov"};
+        if (event.hasBank("REC::Particle")) {
+            System.out.println("HELLO WORLD");
+        }
         for (String bankName : bankNames) {
             if (!event.hasBank(bankName)) {
                 return false;
