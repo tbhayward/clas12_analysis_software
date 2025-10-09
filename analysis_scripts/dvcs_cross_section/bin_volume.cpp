@@ -9,6 +9,7 @@
 #include <TPad.h>
 #include <TH1.h>
 #include <TAxis.h>
+#include <TTree.h>
 
 #include <algorithm>
 #include <cmath>
