@@ -9,7 +9,6 @@
 #include <TPad.h>
 #include <TH1.h>
 #include <TAxis.h>
-#include <TTree.h>
 
 #include <algorithm>
 #include <cmath>
@@ -30,6 +29,7 @@ namespace {
 constexpr int    N_PHI_BINS = 12;
 constexpr double TWO_PI     = 2.0 * M_PI;
 
+// ---------------- style bootstrap ----------------
 struct StyleInit {
     StyleInit() {
         gStyle->SetOptTitle(0);
@@ -46,21 +46,14 @@ struct StyleInit {
     }
 } _style_guard;
 
-// ---------- small helpers ----------
-static inline int phiBinIndex(double phi){
-    double w = std::fmod(phi, TWO_PI); if (w < 0.0) w += TWO_PI;
-    const double width = TWO_PI / double(N_PHI_BINS);
-    int ip = int(std::floor(w/width));
-    if (ip < 0) ip = 0;
-    if (ip >= N_PHI_BINS) ip = N_PHI_BINS - 1;
-    return ip;
-}
+// ---------------- helpers ----------------
 static inline std::vector<double> phiCentersDeg() {
     std::vector<double> d(N_PHI_BINS);
     const double step = 360.0/double(N_PHI_BINS);
     for (int i=0;i<N_PHI_BINS;++i) d[i] = (i+0.5)*step;
     return d;
 }
+
 static void drawDegreeTicks(double xmin, double ymin, double xmax, double labelSize){
     TGaxis* ax = new TGaxis(xmin, ymin, xmax, ymin, 0.0, 360.0, 4, "");
     ax->SetLabelFont(42);
@@ -71,7 +64,6 @@ static void drawDegreeTicks(double xmin, double ymin, double xmax, double labelS
     ax->Draw();
 }
 
-// Build unique (min,max) bins from the scheme for a coordinate (x, Q, t).
 static std::vector<std::pair<double,double>> uniqueRanges(const std::vector<Binning>& scheme, char which) {
     std::set<std::pair<double,double>> s;
     for (const auto& b : scheme) {
@@ -81,62 +73,73 @@ static std::vector<std::pair<double,double>> uniqueRanges(const std::vector<Binn
     }
     return std::vector<std::pair<double,double>>(s.begin(), s.end());
 }
+
 static inline int findIndex(const std::pair<double,double>& range,
                             const std::vector<std::pair<double,double>>& ranges) {
     for (int i=0;i<(int)ranges.size();++i) if (ranges[i]==range) return i;
     return -1;
 }
-static inline int findBin1D(double v, const std::vector<std::pair<double,double>>& ranges){
-    for (int k=0;k<(int)ranges.size();++k) if (v>=ranges[k].first && v<ranges[k].second) return k;
-    return -1;
+
+// ---------------- deterministic 3D (xB,Q2,t) volume under kinematic masks ----------------
+static double calculate_bin_volume(double xB_min, double xB_max,
+                                   double Q2_min, double Q2_max,
+                                   double t_abs_min, double t_abs_max,   // positive |t| edges
+                                   double phi_min, double phi_max,
+                                   double E_beam) {
+    constexpr int    n_steps = 10;
+    constexpr double Mp      = 0.938272; // Proton mass (GeV)
+    int valid_count = 0;
+
+    // Convert |t| edges to physical t<0 for the loop
+    const double t_phys_min = -t_abs_max;
+    const double t_phys_max = -t_abs_min;
+
+    const double dxB = (xB_max - xB_min)/n_steps;
+    const double dQ2 = (Q2_max - Q2_min)/n_steps;
+    const double dt  = (t_phys_max - t_phys_min)/n_steps;
+
+    for (int i=0; i<n_steps; ++i) {
+        const double xB = xB_min + (i+0.5)*dxB;
+
+        for (int j=0; j<n_steps; ++j) {
+            const double Q2 = Q2_min + (j+0.5)*dQ2;
+
+            // DVCS t_min(xB,Q2) (negative)
+            const double sqrt_term = std::sqrt(1.0 + (4.0*Mp*Mp*xB*xB)/Q2);
+            const double t_min_val = -Q2 * (1.0 - xB)*(1.0 - xB) / (xB * (1.0 + sqrt_term));
+
+            for (int k=0; k<n_steps; ++k) {
+                const double t = t_phys_min + (k+0.5)*dt;
+
+                // y and W cuts
+                const double y  = Q2/(2.0*Mp*xB*E_beam);
+                const double W2 = Mp*Mp + Q2*(1.0/xB - 1.0);
+                const double W  = (W2>0.0) ? std::sqrt(W2) : 0.0;
+
+                if (t > t_min_val && y > 0.19 && y < 0.80 && W > 2.0) {
+                    ++valid_count;
+                }
+            }
+        }
+    }
+
+    const double fraction = double(valid_count) / double(n_steps*n_steps*n_steps);
+    const double geometric_volume =
+        (xB_max - xB_min) *
+        (Q2_max - Q2_min) *
+        (t_abs_max - t_abs_min) *
+        (phi_max - phi_min); // φ-extent handled here
+
+    return geometric_volume * fraction;
 }
 
-// ---------- gen branches ----------
-struct GenBranch {
-    double x=0.0, Q2=0.0, t1=0.0, phi2=0.0;
-    bool has_x=false, has_Q2=false, has_t1=false, has_phi=false;
-    void bind(TTree* t){
-        auto bindD=[&](const char*n,double*a,bool&f){ if(t && t->GetBranch(n)){ t->SetBranchAddress(n,a); f=true; } };
-        bindD("x", &x, has_x);
-        bindD("Q2",&Q2,has_Q2);
-        bindD("t1",&t1,has_t1);
-        bindD("phi2",&phi2,has_phi);
-    }
-};
-
-// ---------- accumulation ----------
-struct VolBin { double gen=0.0; }; // generator count
-using AccMap = std::map<std::tuple<int,int,int,int>, VolBin>; // (ix,iQ,it,ip)
-
-static void accumulate_generated(
-    TTree* t,
-    const std::vector<std::pair<double,double>>& xB_bins,
-    const std::vector<std::pair<double,double>>& Q2_bins,
-    const std::vector<std::pair<double,double>>& t_bins,
-    AccMap& acc)
-{
-    if (!t) return;
-    GenBranch b; b.bind(t);
-    if (!(b.has_x && b.has_Q2 && b.has_t1 && b.has_phi)) return;
-
-    const Long64_t n = t->GetEntries();
-    for (Long64_t i=0;i<n;++i){
-        t->GetEntry(i);
-        double xB=b.x, Q2=b.Q2, tt=std::fabs(b.t1), phi=b.phi2;
-        int ix=findBin1D(xB,xB_bins), iQ=findBin1D(Q2,Q2_bins), it=findBin1D(tt,t_bins);
-        if (ix<0||iQ<0||it<0) continue;
-        int ip = phiBinIndex(phi);
-        acc[std::make_tuple(ix,iQ,it,ip)].gen += 1.0;
-    }
-}
-
-// ---------- JSON writer ----------
+// ---------------- JSON structs/writer ----------------
 struct PhiArrays {
     std::vector<double> phi_deg;
-    std::vector<double> vol;     // normalized per cell: sum_phi vol = 1
-    std::vector<double> vol_err; // Poisson → σ(N)/ΣN; here σ = sqrt(N)/ΣN
-    std::vector<double> n_gen_phi;
-    double Ngen_cell=0.0;
+    std::vector<double> vol;     // absolute kinematic volume per φ-bin
+    std::vector<double> vol_err; // deterministic => zeros
+    std::vector<double> n_gen_phi; // kept for schema compatibility, zeros
+    double Ngen_cell = 0.0;
 };
 using CellMap = std::map<std::tuple<int,int,int>, PhiArrays>;
 
@@ -172,7 +175,7 @@ static void write_energy_json(
     ofs<<"\n  }\n}\n";
 }
 
-// ---------- slice helpers for plotting ----------
+// ---------------- slice helpers for plotting ----------------
 static void uniqueQT_for_xB(
     const std::vector<Binning>& scheme,
     const std::pair<double,double>& xBrange,
@@ -190,7 +193,7 @@ static void uniqueQT_for_xB(
     t_list.assign(ts.begin(), ts.end());
 }
 
-// ---------- plotting ----------
+// ---------------- plotting ----------------
 static void plot_cells_for_energy(
     const std::string& energy_tag,             // "10.59", "10.60", "10.2"
     const std::vector<Binning>& binning_scheme,
@@ -237,7 +240,7 @@ static void plot_cells_for_energy(
         head.SetTextFont(42);
         head.SetTextSize(0.36);
         std::ostringstream tit;
-        tit << Form("Bin Volume (gen)  %s GeV   x_{B} #in [%.2g, %.2g]",
+        tit << Form("Bin Volume (kinematic)  %s GeV   x_{B} #in [%.2g, %.2g]",
                     energy_tag.c_str(), xb.first, xb.second);
         head.DrawLatex(0.5, 0.55, tit.str().c_str());
 
@@ -263,7 +266,7 @@ static void plot_cells_for_energy(
 
                 ax->SetLabelSize(0.0001); // custom degree ticks
                 ax->SetTitle("#phi (deg)");
-                ay->SetTitle("Normalized bin volume");
+                ay->SetTitle("Kinematic bin volume");
                 ax->CenterTitle(); ay->CenterTitle();
                 ax->SetNdivisions(505);
                 ax->SetTitleSize(0.060);
@@ -278,12 +281,12 @@ static void plot_cells_for_energy(
                 if (itCell == cells.end()) continue;
                 const auto& pa = itCell->second;
 
-                // Build graph
+                // graph (flat in φ)
                 std::vector<double> x, y, ey;
                 double ymax=0.0;
                 for (int ip=0; ip<N_PHI_BINS; ++ip) {
-                    double v  = pa.vol[ip];
-                    double ev = std::max(1e-12, pa.vol_err[ip]);
+                    const double v  = pa.vol[ip];
+                    const double ev = std::max(1e-12, pa.vol_err[ip]);
                     x.push_back(PHI_DEG[ip]);
                     y.push_back(v);
                     ey.push_back(ev);
@@ -316,12 +319,14 @@ static void plot_cells_for_energy(
     }
 }
 
-// ---------- driver ----------
 } // anon
 
+// =====================================================================
+// Public driver
+// =====================================================================
 void compute_and_plot_bin_volume(
     const std::vector<Binning>& binning_scheme,
-    const std::map<std::string, TTree*>& genMcTrees,
+    const std::map<std::string, TTree*>& /*genMcTrees*/, // unused
     const std::string& out_root_dir)
 {
     namespace fs = std::filesystem;
@@ -330,43 +335,34 @@ void compute_and_plot_bin_volume(
     const auto Q2_bins = uniqueRanges(binning_scheme, 'Q');
     const auto t_bins  = uniqueRanges(binning_scheme, 't');
 
-    // Energy → list of generator keys
-    const std::map<std::string, std::vector<std::string>> energy_to_genkeys = {
-        {"10.59", {"sp18_inb_gen", "sp18_out_gen"}},
-        {"10.60", {"fa18_inb_gen", "fa18_out_gen"}},
-        {"10.2",  {"sp19_inb_gen"}}
+    // Beam energies per “energy tag”
+    const std::map<std::string,double> energy_GeV = {
+        {"10.59", 10.59},
+        {"10.60", 10.60},
+        {"10.2",  10.20}
     };
 
     const fs::path json_dir  = fs::path(out_root_dir)/"jsons";
     const fs::path plot_root = fs::path(out_root_dir)/"bin_volume";
     std::error_code ec; fs::create_directories(json_dir, ec);
 
-    auto getOrNull = [](const auto& m, const std::string& k)->TTree*{
-        auto it=m.find(k); return (it!=m.end()? it->second : nullptr);
-    };
+    const double dphi = TWO_PI / double(N_PHI_BINS);
+    const auto   PHI_DEG = phiCentersDeg();
 
-    // Loop over energies
-    for (const auto& eg : energy_to_genkeys) {
-        const std::string energy = eg.first;
+    // Loop over energies (only depends on E_beam for masks)
+    for (const auto& eg : energy_GeV) {
+        const std::string energy_tag = eg.first;
+        const double      Ebeam      = eg.second;
 
-        // Merge-generator accumulation per energy
-        AccMap acc;
-        for (const auto& tag : eg.second) {
-            TTree* tGen = getOrNull(genMcTrees, tag);
-            if (!tGen) {
-                std::cerr<<"[binvol][WARN] Missing gen tree '"<<tag<<"' for energy "<<energy<<"\n";
-                continue;
-            }
-            accumulate_generated(tGen, xB_bins, Q2_bins, t_bins, acc);
-        }
-
-        // Build per-cell normalized φ distributions
         CellMap cells;
-        const auto PHI_DEG = phiCentersDeg();
 
         for (int ix=0; ix<(int)xB_bins.size(); ++ix)
         for (int iQ=0; iQ<(int)Q2_bins.size(); ++iQ)
         for (int it=0; it<(int)t_bins.size();  ++it) {
+            const auto xb = xB_bins[ix];
+            const auto q2 = Q2_bins[iQ];
+            const auto tt = t_bins[it]; // |t| edges
+
             PhiArrays pa;
             pa.phi_deg     = PHI_DEG;
             pa.vol.assign(N_PHI_BINS, 0.0);
@@ -374,36 +370,36 @@ void compute_and_plot_bin_volume(
             pa.n_gen_phi.assign(N_PHI_BINS, 0.0);
             pa.Ngen_cell = 0.0;
 
+            // Compute a TRUE physical volume per φ-bin using the deterministic integrator.
+            // (This will be identical for all φ bins since masks are φ-independent.)
             for (int ip=0; ip<N_PHI_BINS; ++ip) {
-                auto it4 = acc.find(std::make_tuple(ix,iQ,it,ip));
-                double g = (it4!=acc.end()? it4->second.gen : 0.0);
-                pa.n_gen_phi[ip] = g;
-                pa.Ngen_cell += g;
+                const double phi_min = ip * dphi;
+                const double phi_max = (ip+1) * dphi;
+
+                const double V = calculate_bin_volume(
+                    xb.first, xb.second,
+                    q2.first, q2.second,
+                    tt.first, tt.second,
+                    phi_min, phi_max,
+                    Ebeam
+                );
+
+                pa.vol[ip]     = V;
+                pa.vol_err[ip] = 0.0; // deterministic
             }
 
-            // Normalize to get volume fractions per φ-bin
-            if (pa.Ngen_cell > 0.0) {
-                for (int ip=0; ip<N_PHI_BINS; ++ip) {
-                    double g = pa.n_gen_phi[ip];
-                    double f = g / pa.Ngen_cell;
-                    // uncertainty: σ(f) ≈ sqrt(g) / N   (Poisson for g; treating N as fixed large)
-                    double ef = (g > 0.0 ? std::sqrt(g) / pa.Ngen_cell : 0.0);
-                    pa.vol[ip]     = f;
-                    pa.vol_err[ip] = ef;
-                }
-            }
             cells[std::make_tuple(ix,iQ,it)] = std::move(pa);
         }
 
         // JSON
-        const fs::path outJ = fs::path(out_root_dir)/"jsons"/("bin_volume_"+energy+".json");
+        const fs::path outJ = fs::path(out_root_dir)/"jsons"/("bin_volume_"+energy_tag+".json");
         write_energy_json(outJ.string(), N_PHI_BINS, xB_bins, Q2_bins, t_bins, cells);
         std::cout<<"[binvol] Wrote JSON: "<<outJ.string()<<"\n";
 
-        // Plots (per energy)
-        const fs::path outPlots = fs::path(out_root_dir)/"bin_volume"/energy;
+        // Plots
+        const fs::path outPlots = fs::path(out_root_dir)/"bin_volume"/energy_tag;
         std::error_code ec2; fs::create_directories(outPlots, ec2);
-        plot_cells_for_energy(energy, binning_scheme, xB_bins, Q2_bins, t_bins, cells, outPlots.string());
+        plot_cells_for_energy(energy_tag, binning_scheme, xB_bins, Q2_bins, t_bins, cells, outPlots.string());
     }
 
     std::cout<<"[binvol] Bin-volume computation complete.\n";
