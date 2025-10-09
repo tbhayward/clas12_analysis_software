@@ -173,7 +173,7 @@ int main(int argc, char* argv[]) {
     compute_uncorrected_cross_sections(
         binning_scheme,
         "output/jsons",                    // bin volume JSON directory
-        "output/unfolded_counts",               // unfolded counts per helicity
+        "output/jsons",               // unfolded counts per helicity
         "imports/integrated_luminosity",        // luminosity text files
         "output/uncorrected_cross_section"      // output dir
     );
