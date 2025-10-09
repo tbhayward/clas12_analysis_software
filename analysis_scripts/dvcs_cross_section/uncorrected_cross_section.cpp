@@ -270,74 +270,67 @@ void compute_uncorrected_cross_sections(
             }
         }
 
-        // ------------ compute cross sections ------------
-        // Expect bin_volume json: bins -> "(ix,iQ,it)" -> { "bin_volume": double, "vol": [12 fractions] }
+        // ------------ compute cross sections (use absolute per-φ volumes) ------------
         json jxsec;
         jxsec["energy"] = energy;
         jxsec["luminosity_total"] = L_total;
         jxsec["bins"] = json::object();
 
-        for (auto it = jvol["bins"].begin(); it != jvol["bins"].end(); ++it) {
-            const std::string bkey = it.key();
-            const json& bv = it.value();
+        if (!jvol.contains("bins")) {
+            std::cerr << "[binvol] Malformed bin-volume JSON for energy " << energy << " (no 'bins').\n";
+        } else {
+            for (auto it = jvol["bins"].begin(); it != jvol["bins"].end(); ++it) {
+                const std::string bkey = it.key();
+                const json& bv = it.value();
 
-            if (!bv.contains("vol")) continue;
-            const auto& volphi = bv["vol"];
-            if (volphi.size() != N_PHI_BINS) continue;
+                if (!bv.contains("vol")) continue;
+                const auto& volphi = bv["vol"];
+                if (volphi.size() != N_PHI_BINS) continue;
 
-            // total bin volume
-            double Vtot = 0.0;
-            if (bv.contains("bin_volume")) {
-                Vtot = std::max(0.0, bv["bin_volume"].get<double>());
-            } else {
-                // fallback: warn and skip (summing fractions would give ~1 and be wrong dimensionally)
-                std::cerr << "[binvol] Missing 'bin_volume' total for " << bkey << " in " << energy << " — skipping this bin.\n";
-                continue;
-            }
+                // locate summed yields
+                int ix=0,iQ=0,itb=0;
+                if (std::sscanf(bkey.c_str(),"(%d,%d,%d)",&ix,&iQ,&itb) != 3) continue;
 
-            // locate summed yields
-            int ix=0,iQ=0,itb=0;
-            if (std::sscanf(bkey.c_str(),"(%d,%d,%d)",&ix,&iQ,&itb) != 3) continue;
-
-            auto itP = sumPlus.find(std::make_tuple(ix,iQ,itb));
-            auto itM = sumMinus.find(std::make_tuple(ix,iQ,itb));
-            if (itP == sumPlus.end() && itM == sumMinus.end()) {
-                // no yields accumulated for this bin; still write empty arrays to keep structure
-                continue;
-            }
-
-            // per-phi denominator
-            std::vector<double> denom(N_PHI_BINS, 0.0);
-            for (int ip=0; ip<N_PHI_BINS; ++ip) {
-                const double frac = std::max(0.0, volphi[ip].get<double>()); // fraction across phi
-                denom[ip] = L_total * Vtot * frac;
-            }
-
-            auto mkOut = [&](const HelData* hd)->json {
-                json o;
-                std::vector<double> xv, yv, ev;
-                xv.reserve(N_PHI_BINS); yv.assign(N_PHI_BINS,0.0); ev.assign(N_PHI_BINS,0.0);
-                for (int ip=0; ip<N_PHI_BINS; ++ip) {
-                    double x = PHI_DEG[ip];
-                    double num = (hd ? hd->y[ip]  : 0.0);
-                    double en  = (hd ? hd->ye[ip] : 0.0);
-                    double d = denom[ip];
-                    double val = (d > 0.0 ? num / d : 0.0);
-                    double err = (d > 0.0 ? en  / d : 0.0);
-                    xv.push_back(x); yv[ip]=val; ev[ip]=err;
+                auto itP = sumPlus.find(std::make_tuple(ix,iQ,itb));
+                auto itM = sumMinus.find(std::make_tuple(ix,iQ,itb));
+                if (itP == sumPlus.end() && itM == sumMinus.end()) {
+                    // nothing to plot/output for this bin
+                    continue;
                 }
-                o["phi"]      = xv;
-                o["xsec"]     = yv;
-                o["xsec_err"] = ev;
-                return o;
-            };
 
-            jxsec["bins"][bkey] = {
-                {"helicity_plus",  mkOut(itP==sumPlus.end()? nullptr : &itP->second)},
-                {"helicity_minus", mkOut(itM==sumMinus.end()? nullptr : &itM->second)},
-                {"bin_volume_total", Vtot},
-                {"phi_fraction", volphi}
-            };
+                // per-phi denominator: L_total * V_phi (absolute volume)
+                std::vector<double> denom(N_PHI_BINS, 0.0);
+                double Vtot = 0.0; // keep as metadata
+                for (int ip=0; ip<N_PHI_BINS; ++ip) {
+                    const double Vphi = std::max(0.0, volphi[ip].get<double>());
+                    Vtot += Vphi;
+                    denom[ip] = L_total * Vphi;
+                }
+
+                auto mkOut = [&](const HelData* hd)->json {
+                    json o;
+                    std::vector<double> xv(N_PHI_BINS), yv(N_PHI_BINS,0.0), ev(N_PHI_BINS,0.0);
+                    for (int ip=0; ip<N_PHI_BINS; ++ip) {
+                        xv[ip] = PHI_DEG[ip];
+                        const double num = (hd ? hd->y[ip]  : 0.0);
+                        const double en  = (hd ? hd->ye[ip] : 0.0);
+                        const double d   = denom[ip];
+                        yv[ip] = (d > 0.0 ? num / d : 0.0);
+                        ev[ip] = (d > 0.0 ? en  / d : 0.0);
+                    }
+                    o["phi"]      = xv;
+                    o["xsec"]     = yv;
+                    o["xsec_err"] = ev;
+                    return o;
+                };
+
+                jxsec["bins"][bkey] = {
+                    {"helicity_plus",  mkOut(itP==sumPlus.end()? nullptr : &itP->second)},
+                    {"helicity_minus", mkOut(itM==sumMinus.end()? nullptr : &itM->second)},
+                    {"bin_volume_total", Vtot},
+                    {"vol_phi", volphi} // keep what we used
+                };
+            }
         }
 
         // ------------ save JSON ------------
@@ -348,7 +341,6 @@ void compute_uncorrected_cross_sections(
         std::cout << "[xsec] Wrote " << out_json << "\n";
 
         // ------------ plots (xB slices; overlay + and −) ------------
-        // We re-use your unfolding layout: rows=t bins, cols=Q2 bins (that exist under the xB slice)
         const auto Q2_all = uniqueRanges(binning_scheme, 'Q');
         const auto t_all  = uniqueRanges(binning_scheme, 't');
 
