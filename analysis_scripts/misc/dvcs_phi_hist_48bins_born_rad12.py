@@ -181,7 +181,21 @@ def trento_phi_in_gammaN_cm(beam_E, target_id, particles, gamma_selector):
     k = fourvec(beam_E, 0.0, 0.0, beam_E)
 
     eles = [p for p in particles if p["pid"] == 11]
-    assert len(eles) == 1, "Expected exactly one electron; saw {}.".format(len(eles))
+
+    if len(eles) != 1:
+        # Dump the whole event for debugging
+        print("=== BAD EVENT DUMP ===", flush=True)
+        print("beam_E={:.6f}  target_id={}  n_particles={}".format(
+            beam_E, target_id, len(particles)
+        ), flush=True)
+        for i, p in enumerate(particles, 1):
+            print("{:03d}: pid={:5d}  E={:.6f}  px={:.6f}  py={:.6f}  pz={:.6f}  m={:.6f}".format(
+                i, p["pid"], p["E"], p["px"], p["py"], p["pz"], p["mass"]
+            ), flush=True)
+        #endfor
+        assert len(eles) == 1, "Expected exactly one electron; saw {}.".format(len(eles))
+    #endif
+    
     # if len(eles) != 1:
     #     return (float("nan"), False)
     # #endif
