@@ -218,32 +218,28 @@ def trento_phi_in_gammaN_cm(beam_E, target_id, particles, gamma_selector):
     n_lep = unit(np.cross(k_vec, kprime_vec))
     n_had = unit(np.cross(q_vec, r_vec))
 
-    # if np.linalg.norm(n_lep) == 0.0 or np.linalg.norm(n_had) == 0.0 or np.linalg.norm(z_q) == 0.0:
-    #     return (float("nan"), False)
-    # #end if
-
     y_val = np.dot(np.cross(n_lep, n_had), z_q)
     x_val = np.dot(n_lep, n_had)
     phi   = math.atan2(y_val, x_val)
     if phi < 0.0:
         phi += 2.0 * math.pi
-    #endif
+    #end if
     return (phi, True)
 #end def
 
-# ------------------------------- Directory -> histogram with TOTAL event cap -------------------------------
+# Directory -> histogram with total event cap 
 
 def list_matching_files(dir_path, pattern):
     if not os.path.isdir(dir_path):
         raise RuntimeError("Directory not found: {}".format(dir_path))
-    #endif
+    #end if
     files = glob.glob(os.path.join(dir_path, pattern))
     files = sorted([f for f in files if os.path.isfile(f)])
     return files
-#enddef
+#end def
 
 def hist_from_directory_totalcap(dir_path, nbins, use_weights, pattern,
-                                 max_files, max_total_events, gamma_selector):
+        max_files, max_total_events, gamma_selector):
     """
     Returns (hist_counts, edges, n_events_used)
     Reads across files but stops once n_events_used reaches max_total_events.
@@ -251,10 +247,10 @@ def hist_from_directory_totalcap(dir_path, nbins, use_weights, pattern,
     files = list_matching_files(dir_path, pattern)
     if len(files) == 0:
         raise RuntimeError("No files matched in {} with pattern {}".format(dir_path, pattern))
-    #endif
+    #end if
     if max_files is not None:
         files = files[:max_files]
-    #endif
+    #end if
 
     edges  = np.linspace(0.0, 2.0 * math.pi, nbins + 1)
     counts = np.zeros(nbins, dtype=float)
@@ -264,36 +260,36 @@ def hist_from_directory_totalcap(dir_path, nbins, use_weights, pattern,
     for path in files:
         if max_total_events is not None and n_events_used >= max_total_events:
             break
-        #endif
-        # Stream and stop when we hit the total cap
+        #end if
+        # Stream and stop when hitting the total cap
         for evt in parse_lund_events_streaming(path, max_events=None):
             if max_total_events is not None and n_events_used >= max_total_events:
                 break
-            #endif
+            #end if
             phi, ok = trento_phi_in_gammaN_cm(evt["beam_E"], evt["target_id"], evt["particles"], gamma_selector)
             if not ok or not np.isfinite(phi):
                 continue
-            #endif
+            #end if
             idx = int(nbins * (phi / twopi))
             if idx == nbins:
                 idx = nbins - 1
-            #endif
+            #end if
             incr = evt["weight"] if use_weights else 1.0
             counts[idx] += incr
             n_events_used += 1
-        #endfor
-    #endfor
+        #end for
+    #end for
 
     return counts, edges, n_events_used
 #enddef
 
-# ------------------------------- Plotting -------------------------------
+# plotting
 
 def plot_overlay_counts_log(edges, h_born, h_rad_first, h_rad_second_or_first, out_png, title):
-    # Replace zeros with NaN to avoid log(0) issues
+    # replace zeros with NaN
     def safe_for_log(y):
         return np.where(y > 0.0, y, np.nan)
-    #enddef
+    #end def
 
     hb   = safe_for_log(h_born)
     hr1  = safe_for_log(h_rad_first)
@@ -317,7 +313,7 @@ def plot_overlay_counts_log(edges, h_born, h_rad_first, h_rad_second_or_first, o
     plt.close()
 #enddef
 
-# ------------------------------- Main -------------------------------
+# main
 
 def main():
     ap = argparse.ArgumentParser(description="Make 100-bin RAW-COUNT phi histograms with a total event cap per dataset (Born and Rad).")
@@ -334,16 +330,6 @@ def main():
 
     os.makedirs(args.outdir, exist_ok=True)
     nbins = 100
-
-    print("======================================")
-    print("[INFO] Born dir           :", args.born_dir)
-    print("[INFO] Rad  dir           :", args.rad_dir)
-    print("[INFO] Patterns (born,rad): {}, {}".format(args.pattern_born, args.pattern_rad))
-    print("[INFO] nbins              :", nbins)
-    print("[INFO] weights            :", "LUND header weights" if args.use_weights else "unit weights")
-    print("[INFO] max files (born,rad): {}, {}".format(args.max_files_born, args.max_files_rad))
-    print("[INFO] max total events    :", args.max_total_events)
-    print("======================================")
 
     # 1) Born photon: only events with exactly one photon
     h_born, edges, n_born = hist_from_directory_totalcap(
