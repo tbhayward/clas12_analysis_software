@@ -353,13 +353,9 @@ def main():
     title = "DVCS phi_Trento (gamma*-N CM), 100 bins — RAW counts (log scale)"
     plot_overlay_counts_log(edges, h_born, h_rad_first, h_rad_second_or_first, out_png, title)
 
-    print("[INFO] Events used (capped): Born={}, Rad-first={}, Rad-(2nd or 1st)={}".format(
-        n_born, n_rad_first, n_rad_2or1))
-    print("[INFO] Sum counts          : Born={:.0f}, Rad-first={:.0f}, Rad-(2nd or 1st)={:.0f}".format(
-        np.sum(h_born), np.sum(h_rad_first), np.sum(h_rad_second_or_first)))
     print("[SAVED]", out_png)
-#enddef
+#end def
 
 if __name__ == "__main__":
     main()
-#endif
+#end if
