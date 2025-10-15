@@ -181,6 +181,7 @@ def trento_phi_in_gammaN_cm(beam_E, target_id, particles, gamma_selector):
     k = fourvec(beam_E, 0.0, 0.0, beam_E)
 
     eles = [p for p in particles if p["pid"] == 11]
+    assert len(eles) == 1, "Expected exactly one electron; saw {}.".format(len(eles))
     # if len(eles) != 1:
     #     return (float("nan"), False)
     # #endif
