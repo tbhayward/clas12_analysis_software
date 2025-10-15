@@ -181,9 +181,9 @@ def trento_phi_in_gammaN_cm(beam_E, target_id, particles, gamma_selector):
     k = fourvec(beam_E, 0.0, 0.0, beam_E)
 
     eles = [p for p in particles if p["pid"] == 11]
-    if len(eles) != 1:
-        return (float("nan"), False)
-    #endif
+    # if len(eles) != 1:
+    #     return (float("nan"), False)
+    # #endif
     eprime = eles[0]
     kprime = fourvec(eprime["E"], eprime["px"], eprime["py"], eprime["pz"])
 
@@ -229,7 +229,7 @@ def trento_phi_in_gammaN_cm(beam_E, target_id, particles, gamma_selector):
         phi += 2.0 * math.pi
     #endif
     return (phi, True)
-#enddef
+#end def
 
 # ------------------------------- Directory -> histogram with TOTAL event cap -------------------------------
 
