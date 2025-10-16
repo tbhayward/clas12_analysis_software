@@ -131,12 +131,14 @@ static void iterateBins(const std::string& binsObj, Fn&& fn) {
 }
 
 // ---------------- readers ----------------
-// total_counts.json: we only need helicity-resolved DVCS counts per bin.
-// We support either of these inside each bin object (be liberal in what we accept):
-//   A) "N_data": {"helicity":{"+1": <int>, "-1": <int> }, ...}
-//   B) "helicity": { "+1": <int>, "-1": <int> }
-//   C) "N_plus": <int>, "N_minus": <int>   (fallback)
-static std::map<BinKey, HelCounts> read_total_counts(const std::string& path) {
+// total_counts.json reader (now per-period aware)
+// Supports any of the following shapes:
+//  A) { "bins": { "(ix,iQ2,it,ip)": { "N_data":{ "helicity":{"+1":..,"-1":..} } } } }
+//  B) { "periods": { "<period>": { "bins": { ... } } } }
+//  C) { "<period>": { "bins": { ... } }, "<other>": { ... } }   // rare, but be liberal
+static std::map<BinKey, HelCounts> read_total_counts(const std::string& path,
+                                                     const std::string& want_period)
+{
     std::map<BinKey, HelCounts> out;
 
     std::ifstream ifs(path);
@@ -147,47 +149,115 @@ static std::map<BinKey, HelCounts> read_total_counts(const std::string& path) {
     std::string s((std::istreambuf_iterator<char>(ifs)), std::istreambuf_iterator<char>());
     ifs.close();
 
-    size_t pos = s.find("\"bins\"");
-    if (pos == std::string::npos) { std::cerr << "[pi0_corr][ERROR] 'bins' not found in total counts.\n"; return out; }
-    pos = s.find('{', pos);
-    if (pos == std::string::npos) return out;
-    int depth = 0; size_t i = pos;
-    for (; i < s.size(); ++i) { if (s[i]=='{') depth++; else if (s[i]=='}'){ depth--; if (!depth){ ++i; break; } } }
-    std::string binsObj = s.substr(pos, i-pos);
+    auto findBalancedObject = [](const std::string& src, size_t fromBrace)->std::string {
+        if (fromBrace == std::string::npos || fromBrace >= src.size() || src[fromBrace] != '{') return {};
+        int depth = 0; size_t i = fromBrace;
+        for (; i < src.size(); ++i) {
+            if (src[i]=='{') depth++;
+            else if (src[i]=='}'){ depth--; if (!depth){ ++i; break; } }
+        }
+        if (depth != 0) return {};
+        return src.substr(fromBrace, i - fromBrace);
+    };
 
-    iterateBins(binsObj, [&](const std::string& key, const std::string& obj){
-        int ix, iQ2, itb, ip;
-        if (std::sscanf(key.c_str(), "(%d,%d,%d,%d)", &ix, &iQ2, &itb, &ip) != 4) return;
+    // Helper to parse a single "bins" object into out
+    auto parseBinsObject = [&](const std::string& binsObj) {
+        iterateBins(binsObj, [&](const std::string& key, const std::string& obj){
+            int ix, iQ2, itb, ip;
+            if (std::sscanf(key.c_str(), "(%d,%d,%d,%d)", &ix, &iQ2, &itb, &ip) != 4) return;
 
-        long long Np = 0, Nm = 0;
+            long long Np = 0, Nm = 0;
+            std::string NdataObj, helicityObj;
 
-        std::string NdataObj;
-        std::string helicityObj;
-
-        // Prefer "N_data"->"helicity"
-        if (extractObjectForKey(obj, "N_data", NdataObj)) {
-            if (extractObjectForKey(NdataObj, "helicity", helicityObj)) {
+            if (extractObjectForKey(obj, "N_data", NdataObj)) {
+                if (extractObjectForKey(NdataObj, "helicity", helicityObj)) {
+                    size_t p1 = helicityObj.find("\"+1\"");
+                    size_t p2 = helicityObj.find("\"-1\"");
+                    if (p1 != std::string::npos) Np = parseIntAfterColon(helicityObj, p1, 0);
+                    if (p2 != std::string::npos) Nm = parseIntAfterColon(helicityObj, p2, 0);
+                }
+            } else if (extractObjectForKey(obj, "helicity", helicityObj)) {
                 size_t p1 = helicityObj.find("\"+1\"");
                 size_t p2 = helicityObj.find("\"-1\"");
                 if (p1 != std::string::npos) Np = parseIntAfterColon(helicityObj, p1, 0);
                 if (p2 != std::string::npos) Nm = parseIntAfterColon(helicityObj, p2, 0);
+            } else {
+                size_t pP = obj.find("\"N_plus\"");
+                size_t pM = obj.find("\"N_minus\"");
+                if (pP != std::string::npos) Np = parseIntAfterColon(obj, pP, 0);
+                if (pM != std::string::npos) Nm = parseIntAfterColon(obj, pM, 0);
             }
-        } else if (extractObjectForKey(obj, "helicity", helicityObj)) { // or "helicity" directly
-            size_t p1 = helicityObj.find("\"+1\"");
-            size_t p2 = helicityObj.find("\"-1\"");
-            if (p1 != std::string::npos) Np = parseIntAfterColon(helicityObj, p1, 0);
-            if (p2 != std::string::npos) Nm = parseIntAfterColon(helicityObj, p2, 0);
-        } else {
-            // fallback names
-            size_t pP = obj.find("\"N_plus\"");
-            size_t pM = obj.find("\"N_minus\"");
-            if (pP != std::string::npos) Np = parseIntAfterColon(obj, pP, 0);
-            if (pM != std::string::npos) Nm = parseIntAfterColon(obj, pM, 0);
+
+            out[BinKey(ix,iQ2,itb,ip)] = HelCounts{Np,Nm};
+        });
+    };
+
+    // Case A: top-level "bins"
+    {
+        size_t pBins = s.find("\"bins\"");
+        if (pBins != std::string::npos) {
+            size_t brace = s.find('{', pBins);
+            std::string binsObj = findBalancedObject(s, brace);
+            if (!binsObj.empty()) {
+                parseBinsObject(binsObj);
+                if (!out.empty()) return out;
+            }
         }
+    }
 
-        out[BinKey(ix,iQ2,itb,ip)] = HelCounts{Np,Nm};
-    });
+    // Case B: "periods" -> "<period>" -> "bins"
+    {
+        size_t pPeriods = s.find("\"periods\"");
+        if (pPeriods != std::string::npos) {
+            size_t braceP = s.find('{', pPeriods);
+            std::string periodsObj = findBalancedObject(s, braceP);
+            if (!periodsObj.empty()) {
+                // Find the requested period object
+                std::string needle = "\"" + want_period + "\"";
+                size_t pPer = periodsObj.find(needle);
+                if (pPer != std::string::npos) {
+                    size_t bracePer = periodsObj.find('{', pPer);
+                    std::string perObj = findBalancedObject(periodsObj, bracePer);
+                    if (!perObj.empty()) {
+                        size_t pBins = perObj.find("\"bins\"");
+                        if (pBins != std::string::npos) {
+                            size_t brace = perObj.find('{', pBins);
+                            std::string binsObj = findBalancedObject(perObj, brace);
+                            if (!binsObj.empty()) {
+                                parseBinsObject(binsObj);
+                                if (!out.empty()) return out;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
 
+    // Case C: top-level "<period>" -> "bins"
+    if (!want_period.empty()) {
+        std::string needle = "\"" + want_period + "\"";
+        size_t pTop = s.find(needle);
+        if (pTop != std::string::npos) {
+            size_t bracePer = s.find('{', pTop);
+            std::string perObj = findBalancedObject(s, bracePer);
+            if (!perObj.empty()) {
+                size_t pBins = perObj.find("\"bins\"");
+                if (pBins != std::string::npos) {
+                    size_t brace = perObj.find('{', pBins);
+                    std::string binsObj = findBalancedObject(perObj, brace);
+                    if (!binsObj.empty()) {
+                        parseBinsObject(binsObj);
+                        if (!out.empty()) return out;
+                    }
+                }
+            }
+        }
+    }
+
+    std::cerr << "[pi0_corr][ERROR] Could not find a 'bins' object"
+              << (want_period.empty() ? "" : (" for period '" + want_period + "'"))
+              << " in " << path << "\n";
     return out;
 }
 
@@ -419,12 +489,6 @@ void compute_pi0_corrected_counts(
         return;
     }
 
-    // Read the global DVCS counts once
-    const auto total_counts_map = read_total_counts(total_counts_json);
-    if (total_counts_map.empty()) {
-        std::cerr << "[pi0_corr][ERROR] No bins parsed from total_counts.json – aborting." << std::endl;
-        return;
-    }
 
     // Prepare output dirs
     const fs::path out_root(out_root_dir);
@@ -449,9 +513,16 @@ void compute_pi0_corrected_counts(
             continue;
         }
 
+        // NEW: read total counts *for this period*
+        const auto total_counts_map = read_total_counts(total_counts_json, period);
+        if (total_counts_map.empty()) {
+            std::cerr << "[pi0_corr][WARN] No DVCS counts found in total_counts.json for period '"
+                      << period << "'. Skipping period." << std::endl;
+            continue;
+        }
+
         std::map<BinKey, BinRecord> table;
 
-        // Build per-bin records where we have DVCS counts (primary key space)
         for (const auto& kv : total_counts_map) {
             const BinKey& key = kv.first;
             BinRecord rec;
@@ -459,29 +530,27 @@ void compute_pi0_corrected_counts(
 
             auto itC = contam_map.find(key);
             if (itC != contam_map.end())
-                rec.contam = itC->second; // else leaves zeros
+                rec.contam = itC->second;
 
-            // Compute helicity +1
+            // +1 helicity
             {
                 const auto tmp = correct_one_helicity(rec.N_data.plus, rec.contam.c_plus, rec.contam.c_plus_err);
                 rec.N_corr.val_plus = tmp.val_plus;
                 rec.N_corr.err_plus = tmp.err_plus;
             }
-            // Compute helicity -1
+            // -1 helicity
             {
                 const auto tmp = correct_one_helicity(rec.N_data.minus, rec.contam.c_minus, rec.contam.c_minus_err);
-                rec.N_corr.val_minus = tmp.val_plus; // using val_plus/err_plus fields from helper
+                rec.N_corr.val_minus = tmp.val_plus;
                 rec.N_corr.err_minus = tmp.err_plus;
             }
 
             table[key] = rec;
         }
 
-        // Write this period
+        // Write & stash
         const fs::path out_period = out_json_dir / ("pi0_corrected_counts_" + period + ".json");
         write_corrected_json(out_period, table, xB_bins, Q2_bins, t_bins);
-
-        // Keep for combined
         allPeriods[period] = std::move(table);
     }
 
