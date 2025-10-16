@@ -310,6 +310,8 @@ bool GeneralExclusiveKinematicCuts::applyCuts(int currentFits, bool isMC)
     // Basic naming lookup
     string property = binNames[currentFits];
 
+    return true;
+
     // Common DIS-level cuts
     if (*Q2 <  1.0    ) return false;
     if (*W  <  2.0    ) return false;

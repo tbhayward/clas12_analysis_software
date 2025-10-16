@@ -38,7 +38,7 @@
 #include "fitting_process.h"
 
 // Select dataset: 1 = RGC Su22, 2 = RGC Fa22, 3 = RGC Sp23
-constexpr int data_set = 2;
+constexpr int data_set = 8;
 
 struct DataSetConfig {
     std::string name;
@@ -113,6 +113,15 @@ const std::vector<DataSetConfig> dataSetConfigs = {
         "/work/clas12/thayward/ISR_FSR_study/rgc_fa22_inb_CH2_epi+_ISR_FSR_0_2.root",
         "/work/clas12/thayward/ISR_FSR_study/rgc_fa22_inb_He_epi+_ISR_FSR_0_2.root",
         "/work/clas12/thayward/ISR_FSR_study/rgc_fa22_inb_ET_epi+_ISR_FSR_0_2.root",
+    },
+    {
+        "RGC_Fa22_enpi+",
+        0.5839, 0.1992, 0.1802, 0.0301, 0.0066,
+        "/volatile/clas12/users/mkerr/rgc/NH3/fall22_nh3_pip.root",
+        "/volatile/clas12/users/mkerr/rgc/C/fall22_c_pip.root",
+        "/volatile/clas12/users/mkerr/rgc/CH2/fall22_ch2_pip.root",
+        "/volatile/clas12/users/mkerr/rgc/ET/fall22_he_pip.root",
+        "/volatile/clas12/users/mkerr/rgc/ET/fall22_et_pip.root"
     },
 };
 

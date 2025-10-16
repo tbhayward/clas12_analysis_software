@@ -3323,9 +3323,6 @@ void performChi2Fits_eppi0(const char* output_file, const char* kinematic_file,
   }
 }
 
-
-/******************** General Exclusive CASE ********************/
-
 /******************** GENERAL EXCLUSIVE (simultaneous ALU/AUL/ALL) ********************/
 
 // ===================== GeneralExclusive (begin) =====================
