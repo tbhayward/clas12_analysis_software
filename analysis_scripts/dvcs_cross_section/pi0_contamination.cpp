@@ -408,6 +408,9 @@ static void plot_contamination_for_period(
 // ======================================================================
 // Public driver
 // ======================================================================
+// ======================================================================
+// Public driver (rewritten)
+// ======================================================================
 void compute_pi0_contamination_helicity(
     const std::vector<std::string>& periods,
     const std::vector<std::string>& topologies,
@@ -421,140 +424,200 @@ void compute_pi0_contamination_helicity(
 {
     namespace fs = std::filesystem;
 
+    // (Cuts are parsed for future use; currently not applied here.)
+    PeriodTopoCuts cuts;
+    if (!loadCombinedCuts(combined_cuts_json_path, cuts)) {
+        std::cerr << "[pi0_contam][WARN] Could not load combined cuts: "
+                  << combined_cuts_json_path << "\n";
+    }
+
+    // Build global bin edges (unique ranges from CSV binning scheme)
     const auto xB_bins = uniqueRanges(binning_scheme, 'x');
     const auto Q2_bins = uniqueRanges(binning_scheme, 'Q');
     const auto t_bins  = uniqueRanges(binning_scheme, 't');
 
-    PeriodTopoCuts cuts;
-    if (!loadCombinedCuts(combined_cuts_json_path, cuts)) {
-        std::cerr << "[pi0_contam][WARN] Could not load combined cuts: " << combined_cuts_json_path << "\n";
-    }
-
-    // Storage for combined JSON
+    // Storage for the per-period maps (for the combined JSON)
     std::map<std::string, std::map<BinKey, ContamBin>> allPeriod;
 
-    // Per-period loop
+    // Helper: fill helicity maps from a given MC tree.
+    // Important change: if helicity==0 (unset in many MC samples),
+    // count that event in BOTH +1 and -1 maps so the two estimates are identical.
+    auto fillFromTree = [&](TTree* t,
+                            const std::vector<std::string>& tops,
+                            const std::vector<std::pair<double,double>>& xB_edges,
+                            const std::vector<std::pair<double,double>>& Q2_edges,
+                            const std::vector<std::pair<double,double>>& t_edges,
+                            std::map<BinKey,long long>& Hplus,
+                            std::map<BinKey,long long>& Hminus,
+                            const char* label_for_debug) {
+        if (!t) return;
+
+        Branch b; b.bind(t);
+        if (!b.ok()) {
+            std::cerr << "[pi0_contam][WARN] Tree '" << label_for_debug
+                      << "' is missing required branches; skipping.\n";
+            return;
+        }
+
+        Long64_t nent = t->GetEntries();
+        long long n_seen = 0, n_pass = 0, n_hel_pm = 0, n_hel_zero = 0;
+
+        for (Long64_t i = 0; i < nent; ++i) {
+            t->GetEntry(i);
+            ++n_seen;
+
+            if (!applyKinematicCuts_simple(b.t1, b.open_angle_ep2, b.pTmiss)) continue;
+            if (!passesTopology_simple(b.detector1, b.detector2, tops)) continue;
+
+            // Helicity handling
+            int hel = (b.helicity == +1 ? +1 : (b.helicity == -1 ? -1 : 0));
+            if (hel == +1 || hel == -1) ++n_hel_pm; else ++n_hel_zero;
+
+            // Binning
+            double xB = b.x, Q2 = b.Q2, tt = std::fabs(b.t1), phi = b.phi();
+            if (!std::isfinite(xB) || !std::isfinite(Q2) || !std::isfinite(tt) || !std::isfinite(phi)) continue;
+
+            int ix = findBin(xB, xB_edges);
+            int iQ = findBin(Q2, Q2_edges);
+            int it = findBin(tt,  t_edges);
+            int ip = phiToBin(phi);
+            if (ix < 0 || iQ < 0 || it < 0 || ip < 0 || ip >= N_PHI_BINS) continue;
+
+            BinKey key(ix, iQ, it, ip);
+            if (hel == +1) {
+                Hplus[key]++;
+            } else if (hel == -1) {
+                Hminus[key]++;
+            } else {
+                // hel==0 → count in BOTH so c_+ == c_- when MC has no helicity info
+                Hplus[key]++;
+                Hminus[key]++;
+            }
+            ++n_pass;
+        }
+
+        std::cerr << "[pi0_contam][DBG] '" << label_for_debug << "': entries=" << n_seen
+                  << " passCuts+Topo=" << n_pass
+                  << " hel(±1)=" << n_hel_pm
+                  << " hel(0)=" << n_hel_zero << "\n";
+    };
+
+    // Process each requested DVCS period (mapping Fa18_inb_supp → Fa18_inb MC)
     for (const auto& period : periods) {
 
-        const std::string mc_period = period_alias_for_mc(period);
-        const std::string runTag_mc = periodToRunTagKey(mc_period); // fa18_inb for supp
-        const std::string runTag    = periodToRunTagKey(period);    // fa18_inb_supp etc
+        const std::string mc_period = period_alias_for_mc(period);     // e.g. DVCS_Fa18_inb
+        const std::string runTag_mc = periodToRunTagKey(mc_period);    // e.g. fa18_inb
+        const std::string runTag    = periodToRunTagKey(period);       // e.g. fa18_inb_supp
 
-        // Build expected keys
-        const std::string reco_key = runTag_mc + "_rec_mc"; // e.g. fa18_inb_rec_mc
-        const std::string bkg_key  = runTag_mc + "_bkg";    // e.g. fa18_inb_bkg
+        // Expected keys for the eπ0 MC trees
+        const std::string reco_key = runTag_mc + "_rec_mc";  // reconstructed eπ0 MC
+        const std::string bkg_key  = runTag_mc + "_bkg";     // DVCS-background MC for eπ0
 
         TTree* reco_mc = nullptr;
         TTree* bkg_mc  = nullptr;
 
-        auto itR = eppi0RecMcTrees.find(reco_key);
-        if (itR != eppi0RecMcTrees.end()) reco_mc = itR->second;
-
-        auto itB = eppi0BkgTrees.find(bkg_key);
-        if (itB != eppi0BkgTrees.end()) bkg_mc = itB->second;
+        if (auto itR = eppi0RecMcTrees.find(reco_key); itR != eppi0RecMcTrees.end())
+            reco_mc = itR->second;
+        if (auto itB = eppi0BkgTrees.find(bkg_key); itB != eppi0BkgTrees.end())
+            bkg_mc = itB->second;
 
         if (!reco_mc || !bkg_mc) {
-            std::cerr << "[pi0_contam][WARN] Missing π0 MC for '"<<period<<"'; "
-                      << "bkg="<<(bkg_mc?"ok":"none")<<" reco="<<(reco_mc?"ok":"none")<<". Continuing with what is available.\n";
+            std::cerr << "[pi0_contam][WARN] Missing π0 MC for '" << period
+                      << "'; bkg=" << (bkg_mc ? "ok" : "none")
+                      << " reco=" << (reco_mc ? "ok" : "none")
+                      << ". Proceeding with what is available.\n";
         }
 
-        // Count MC per (ix,iQ,it,ip, helicity)
+        // Accumulators (helicity-resolved)
         std::map<BinKey, long long> mc_sig_plus, mc_sig_minus;
         std::map<BinKey, long long> mc_bkg_plus, mc_bkg_minus;
 
-        auto fillFromTree = [&](TTree* t, std::map<BinKey,long long>& Hplus, std::map<BinKey,long long>& Hminus){
-            if (!t) return;
-            Branch b; b.bind(t);
-            if (!b.ok()) return;
-            const Long64_t nent = t->GetEntries();
-            for (Long64_t i=0;i<nent;++i){
-                t->GetEntry(i);
-                if (!applyKinematicCuts_simple(b.t1,b.open_angle_ep2,b.pTmiss)) continue;
-                if (!passesTopology_simple(b.detector1,b.detector2,topologies)) continue;
-                if (b.helicity!=+1 && b.helicity!=-1) continue;
+        // Fill from MC trees (allowing helicity==0)
+        fillFromTree(reco_mc, topologies, xB_bins, Q2_bins, t_bins,
+                     mc_sig_plus, mc_sig_minus, (runTag_mc + "_rec_mc").c_str());
+        fillFromTree(bkg_mc,  topologies, xB_bins, Q2_bins, t_bins,
+                     mc_bkg_plus, mc_bkg_minus, (runTag_mc + "_bkg").c_str());
 
-                double xB=b.x, Q2=b.Q2, tt=fabs(b.t1), phi=b.phi();
-                if (!std::isfinite(xB)||!std::isfinite(Q2)||!std::isfinite(tt)||!std::isfinite(phi)) continue;
-                int ix=findBin(xB,xB_bins), iQ=findBin(Q2,Q2_bins), it=findBin(tt,t_bins), ip=phiToBin(phi);
-                if (ix<0||iQ<0||it<0||ip<0||ip>=N_PHI_BINS) continue;
-
-                BinKey key(ix,iQ,it,ip);
-                if (b.helicity==+1) Hplus[key]++; else Hminus[key]++;
-            }
-        };
-
-        fillFromTree(reco_mc, mc_sig_plus, mc_sig_minus);
-        fillFromTree(bkg_mc,  mc_bkg_plus, mc_bkg_minus);
-
-        // Build contamination map
+        // Build contamination map per (ix, iQ, it, ip)
         std::map<BinKey, ContamBin> cmap;
-        auto clamp01 = [](double v){ return std::max(0.0, std::min(0.95, v)); };
 
-        // unify keys present in either
+        // Unify keys present in any of the four maps
         std::set<BinKey> keys;
         for (const auto& kv : mc_sig_plus) keys.insert(kv.first);
         for (const auto& kv : mc_sig_minus) keys.insert(kv.first);
         for (const auto& kv : mc_bkg_plus) keys.insert(kv.first);
         for (const auto& kv : mc_bkg_minus) keys.insert(kv.first);
 
-        for (const auto& k : keys){
-            const long long sP = (mc_sig_plus.count(k)? mc_sig_plus.at(k) : 0LL);
-            const long long sM = (mc_sig_minus.count(k)? mc_sig_minus.at(k) : 0LL);
-            const long long bP = (mc_bkg_plus.count(k)? mc_bkg_plus.at(k) : 0LL);
-            const long long bM = (mc_bkg_minus.count(k)? mc_bkg_minus.at(k) : 0LL);
+        auto clampFrac = [](double v){ return std::max(0.0, std::min(0.95, v)); };
 
-            // fraction with simple binomial error approximation
-            ContamBin cb;
-            if (sP>0) {
-                cb.c_plus = clamp01( double(bP)/double(std::max<long long>(sP,1)) );
-                cb.c_plus_err = std::sqrt( cb.c_plus * (1.0 - cb.c_plus) / double(std::max<long long>(sP,1)) );
-            } else { cb.c_plus = 0.0; cb.c_plus_err = 0.0; }
-            if (sM>0) {
-                cb.c_minus = clamp01( double(bM)/double(std::max<long long>(sM,1)) );
-                cb.c_minus_err = std::sqrt( cb.c_minus * (1.0 - cb.c_minus) / double(std::max<long long>(sM,1)) );
-            } else { cb.c_minus = 0.0; cb.c_minus_err = 0.0; }
+        for (const auto& k : keys) {
+            const long long sP = (mc_sig_plus.count(k) ? mc_sig_plus.at(k) : 0LL);
+            const long long sM = (mc_sig_minus.count(k) ? mc_sig_minus.at(k) : 0LL);
+            const long long bP = (mc_bkg_plus.count(k) ? mc_bkg_plus.at(k) : 0LL);
+            const long long bM = (mc_bkg_minus.count(k) ? mc_bkg_minus.at(k) : 0LL);
 
-            cmap[k]=cb;
+            ContamBin cb{};
+            if (sP > 0) {
+                cb.c_plus = clampFrac(double(bP) / double(std::max<long long>(sP, 1)));
+                cb.c_plus_err = std::sqrt(cb.c_plus * (1.0 - cb.c_plus) / double(std::max<long long>(sP, 1)));
+            }
+            if (sM > 0) {
+                cb.c_minus = clampFrac(double(bM) / double(std::max<long long>(sM, 1)));
+                cb.c_minus_err = std::sqrt(cb.c_minus * (1.0 - cb.c_minus) / double(std::max<long long>(sM, 1)));
+            }
+            cmap[k] = cb;
         }
 
-        // write per-period JSON
-        const fs::path out_json_dir = fs::path(out_root_dir)/"jsons"/"contamination";
-        std::error_code ec; fs::create_directories(out_json_dir, ec);
-        const fs::path out_json = out_json_dir/("contamination_"+period+".json");
-        write_period_contam_json(out_json.string(), N_PHI_BINS, xB_bins, Q2_bins, t_bins, cmap);
-        std::cout<<"[pi0_contam] Wrote "<<out_json.string()<<"\n";
+        // Report if nothing made it through (helps spot issues fast)
+        if (cmap.empty()) {
+            std::cerr << "[pi0_contam][INFO] No filled bins for period '" << period
+                      << "' (after cuts/topology/binning). JSON will have empty 'bins'.\n";
+        }
 
-        // plots
-        const fs::path plots_dir = fs::path(out_root_dir)/"contamination_plots"/periodToRunTagKey(period);
+        // Write per-period JSON
+        const fs::path out_json_dir = fs::path(out_root_dir) / "jsons" / "contamination";
+        std::error_code ec_mk;
+        fs::create_directories(out_json_dir, ec_mk);
+        const fs::path out_json = out_json_dir / ("contamination_" + period + ".json");
+        write_period_contam_json(out_json.string(), N_PHI_BINS, xB_bins, Q2_bins, t_bins, cmap);
+        std::cout << "[pi0_contam] Wrote " << out_json.string() << "\n";
+
+        // Plots
+        const fs::path plots_dir = fs::path(out_root_dir) / "contamination_plots" / periodToRunTagKey(period);
         plot_contamination_for_period(period, binning_scheme, xB_bins, Q2_bins, t_bins, cmap, plots_dir.string());
 
+        // Stash for combined file
         allPeriod[period] = std::move(cmap);
     }
 
-    // combined JSON (flat per-period object)
+    // Write combined JSON: flat per-period object with "bins"
     {
-        const fs::path out_comb = fs::path(out_root_dir)/"jsons"/"pi0_contamination_combined.json";
+        const fs::path out_comb = fs::path(out_root_dir) / "jsons" / "pi0_contamination_combined.json";
         std::ofstream ofs(out_comb.string());
-        if (ofs){
-            ofs<<std::fixed<<std::setprecision(8);
-            ofs<<"{\n  \"periods\": {\n";
-            bool firstP=true;
-            for (const auto& pkv : allPeriod){
-                if (!firstP) ofs<<",\n"; firstP=false;
-                ofs<<"    \""<<pkv.first<<"\": {\n      \"bins\": {\n";
-                bool firstB=true;
-                for (const auto& kv : pkv.second){
-                    if (!firstB) ofs<<",\n"; firstB=false;
-                    int ix,iQ,it,ip; std::tie(ix,iQ,it,ip)=kv.first;
-                    const auto& cb=kv.second;
-                    ofs<<"        \""<<key4(ix,iQ,it,ip)<<"\": {"
-                       <<"\"contamination\":{\"+1\":{\"value\":"<<cb.c_plus<<",\"err\":"<<cb.c_plus_err<<"},"
-                       <<"\"-1\":{\"value\":"<<cb.c_minus<<",\"err\":"<<cb.c_minus_err<<"}}}";
+        if (ofs) {
+            ofs << std::fixed << std::setprecision(8);
+            ofs << "{\n  \"periods\": {\n";
+            bool firstP = true;
+            for (const auto& pkv : allPeriod) {
+                if (!firstP) ofs << ",\n";
+                firstP = false;
+                ofs << "    \"" << pkv.first << "\": {\n      \"bins\": {\n";
+                bool firstB = true;
+                for (const auto& kv : pkv.second) {
+                    if (!firstB) ofs << ",\n";
+                    firstB = false;
+                    int ix, iQ, it, ip; std::tie(ix, iQ, it, ip) = kv.first;
+                    const auto& cb = kv.second;
+                    ofs << "        \"" << key4(ix, iQ, it, ip) << "\": {"
+                        << "\"contamination\":{\"+1\":{\"value\":" << cb.c_plus << ",\"err\":" << cb.c_plus_err << "},"
+                        << "\"-1\":{\"value\":" << cb.c_minus << ",\"err\":" << cb.c_minus_err << "}}}";
                 }
-                ofs<<"\n      }\n    }";
+                ofs << "\n      }\n    }";
             }
-            ofs<<"\n  }\n}\n";
-            std::cout<<"[pi0_contam] Wrote combined "<<out_comb.string()<<"\n";
+            ofs << "\n  }\n}\n";
+            std::cout << "[pi0_contam] Wrote combined " << out_comb.string() << "\n";
+        } else {
+            std::cerr << "[pi0_contam][ERROR] Cannot open combined JSON for writing.\n";
         }
     }
 }

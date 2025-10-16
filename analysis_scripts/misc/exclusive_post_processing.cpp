@@ -224,7 +224,7 @@ int main(int argc, char** argv) {
         tin->GetEntry(i);
 
         // write only events with Mx2 < 1.3 (original post-process filter)
-        // if (Mx2 >= 1.3) continue;
+        if (Mx2 >= 1.3) continue;
 
         // DATA: compute new values
         t_val          = compute_t_scalar(runnum, e_p, e_theta, e_phi, p_p, p_theta, p_phi);
