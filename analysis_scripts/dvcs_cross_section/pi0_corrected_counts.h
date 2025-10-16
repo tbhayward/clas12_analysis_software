@@ -2,7 +2,9 @@
 #pragma once
 #include <string>
 #include <vector>
-struct Binning;
+
+// Use the project's existing Binning struct
+#include "load_binning_scheme.h"
 
 /**
  * Compute DVCS counts corrected for π0 contamination, helicity-resolved and per φ-bin.
