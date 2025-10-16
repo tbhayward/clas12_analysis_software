@@ -169,75 +169,117 @@ static bool load_total_counts(const std::string& path, GroupCounts& outGroups) {
     return !outGroups.empty();
 }
 
-// contamination reader (per-period)
-static bool load_contam_for_period(const std::string& path, std::map<BinKey, ContamBin>& out) {
+namespace {
+struct ContamBin { double c_plus=0, c_plus_err=0, c_minus=0, c_minus_err=0; };
+using BinKey = std::tuple<int,int,int,int>;
+bool parse_tuple_key(const std::string& s, BinKey& out) {
+    int ix,iQ,it,ip;
+    if (std::sscanf(s.c_str(), "(%d,%d,%d,%d)", &ix,&iQ,&it,&ip) != 4) return false;
+    out = BinKey(ix,iQ,it,ip);
+    return true;
+}
+
+// Helper: remove all whitespace to make pattern-matching robust
+static inline std::string squash_ws(std::string z){
+    z.erase(std::remove_if(z.begin(), z.end(), [](unsigned char c){
+        return std::isspace(c);
+    }), z.end());
+    return z;
+}
+
+static bool load_contam_for_period(const std::string& path,
+                                   std::map<BinKey, ContamBin>& out)
+{
     std::ifstream ifs(path);
-    if (!ifs) return false;
+    if (!ifs) {
+        std::cerr << "[pi0_corr][WARN] Can't open contamination file: " << path << "\n";
+        return false;
+    }
     std::string s((std::istreambuf_iterator<char>(ifs)), std::istreambuf_iterator<char>());
-    size_t pos = s.find("\"bins\""); if (pos==std::string::npos) return false;
-    size_t br  = s.find('{', pos);   if (br==std::string::npos) return false;
-    int d=0; size_t i=br; for (; i<s.size(); ++i){ if(s[i]=='{') d++; else if(s[i]=='}'){ d--; if(!d){ ++i; break; } } }
+
+    // Find the "bins" object
+    size_t pos = s.find("\"bins\"");
+    if (pos == std::string::npos) {
+        std::cerr << "[pi0_corr][WARN] 'bins' not found in " << path << "\n";
+        return false;
+    }
+    size_t br = s.find('{', pos);
+    if (br == std::string::npos) return false;
+    int d=0; size_t i=br;
+    for (; i<s.size(); ++i){
+        if (s[i]=='{') d++;
+        else if (s[i]=='}'){ d--; if(!d){ ++i; break; } }
+    }
     std::string binsObj = s.substr(br, i-br);
 
-    size_t kpos=0;
+    size_t kpos = 0;
+    int nbins_loaded = 0;
+
     while (true) {
-        size_t q1 = binsObj.find('"', kpos); if (q1==std::string::npos) break;
-        size_t q2 = binsObj.find('"', q1+1); if (q2==std::string::npos) break;
+        // Key "(ix,iQ,it,ip)"
+        size_t q1 = binsObj.find('"', kpos);
+        if (q1 == std::string::npos) break;
+        size_t q2 = binsObj.find('"', q1+1);
+        if (q2 == std::string::npos) break;
         std::string key = binsObj.substr(q1+1, q2-q1-1);
-        BinKey bk; if (!parse_tuple_key4(key, bk)) { kpos=q2+1; continue; }
 
-        size_t objS = binsObj.find('{', q2); if (objS==std::string::npos) break;
-        int d2=0; size_t j=objS; for (; j<binsObj.size(); ++j){ if(binsObj[j]=='{') d2++; else if(binsObj[j]=='}'){ d2--; if(!d2){ ++j; break; } } }
-        std::string obj = binsObj.substr(objS, j-objS);
+        BinKey bk;
+        if (!parse_tuple_key(key, bk)) {
+            kpos = q2 + 1;
+            continue;
+        }
 
-        auto findD = [&](const char* pat)->double{
-            size_t p=obj.find(pat); if (p==std::string::npos) return 0.0;
-            p=obj.find(':',p); if (p==std::string::npos) return 0.0;
-            size_t a=p+1; while (a<obj.size() && isspace((unsigned char)obj[a])) ++a;
-            size_t b=a; while (b<obj.size() && (isdigit((unsigned char)obj[b])||obj[b]=='-'||obj[b]=='.'||obj[b]=='e'||obj[b]=='E'||obj[b]=='+')) ++b;
-            try { return std::stod(obj.substr(a,b-a)); } catch(...) { return 0.0; }
+        // Value object { ... } for this bin
+        size_t objS = binsObj.find('{', q2);
+        if (objS == std::string::npos) break;
+        int d2=0; size_t j=objS;
+        for (; j<binsObj.size(); ++j){
+            if (binsObj[j]=='{') d2++;
+            else if (binsObj[j]=='}'){ d2--; if(!d2){ ++j; break; } }
+        }
+        std::string objPretty = binsObj.substr(objS, j-objS);
+        std::string obj = squash_ws(objPretty); // strip whitespace
+
+        auto findD = [&](const std::string& pat)->double{
+            size_t p = obj.find(pat);
+            if (p == std::string::npos) return 0.0;
+            p = obj.find(':', p);
+            if (p == std::string::npos) return 0.0;
+            size_t a = p+1;
+            size_t b = a;
+            auto isnum = [](char c){
+                return std::isdigit((unsigned char)c) || c=='-'||c=='+'||c=='.'||c=='e'||c=='E';
+            };
+            while (b<obj.size() && isnum(obj[b])) ++b;
+            try { return std::stod(obj.substr(a,b-a)); } catch (...) { return 0.0; }
         };
+
+        // Read both helicities regardless of spacing
         ContamBin cb;
         cb.c_plus      = findD("\"contamination\":{\"+1\":{\"value\"");
         cb.c_plus_err  = findD("\"contamination\":{\"+1\":{\"err\"");
         cb.c_minus     = findD("\"contamination\":{\"-1\":{\"value\"");
         cb.c_minus_err = findD("\"contamination\":{\"-1\":{\"err\"");
-        out[bk]=cb;
-        kpos=j;
-    }
-    return true;
-}
 
-// ------------- writer -------------
-static inline std::string key4s(int ix,int iQ,int it,int ip){
-    std::ostringstream os; os<<"("<<ix<<","<<iQ<<","<<it<<","<<ip<<")"; return os.str();
-}
-struct CorrBin { double Np=0.0, Nm=0.0, Ntot=0.0; };
+        // If any of these were not found due to slightly different nesting, try a second pattern:
+        if (cb.c_plus==0.0 && cb.c_minus==0.0) {
+            // Fallback if writer had keys in a different order but same names
+            cb.c_plus      = findD("\"+1\":{\"value\"");
+            cb.c_plus_err  = findD("\"+1\":{\"err\"");
+            cb.c_minus     = findD("\"-1\":{\"value\"");
+            cb.c_minus_err = findD("\"-1\":{\"err\"");
+        }
 
-static void write_period_corrected_json(
-    const std::string& out_path,
-    int nPhi,
-    const std::vector<std::pair<double,double>>& xB_bins,
-    const std::vector<std::pair<double,double>>& Q2_bins,
-    const std::vector<std::pair<double,double>>& t_bins,
-    const std::map<BinKey, CorrBin>& m)
-{
-    std::ofstream ofs(out_path);
-    if (!ofs) { std::cerr<<"[pi0_corr][ERROR] Cannot open "<<out_path<<"\n"; return; }
-    ofs<<std::fixed<<std::setprecision(8);
-    ofs<<"{\n";
-    ofs<<"  \"binning_meta\": {\"phi_bins\": "<<nPhi<<", \"xB_bins\": "<<xB_bins.size()<<", \"Q2_bins\": "<<Q2_bins.size()<<", \"t_bins\": "<<t_bins.size()<<"},\n";
-    ofs<<"  \"bins\": {\n";
-    bool first=true;
-    for (const auto& kv : m){
-        if (!first) ofs<<",\n"; first=false;
-        int ix,iQ,it,ip; std::tie(ix,iQ,it,ip)=kv.first;
-        const auto& cb = kv.second;
-        ofs<<"    \""<<key4s(ix,iQ,it,ip)<<"\": {"
-           <<"\"helicity\":{\"+1\":"<<cb.Np<<",\"-1\":"<<cb.Nm<<"},\"total\":"<<cb.Ntot<<"}";
+        out[bk] = cb;
+        ++nbins_loaded;
+
+        kpos = j;
     }
-    ofs<<"\n  }\n}\n";
+
+    std::cout << "[pi0_corr] Parsed " << nbins_loaded << " bins from " << path << "\n";
+    return nbins_loaded > 0;
 }
+} // namespace
 
 // ------------- plotting -------------
 static void uniqueQT_for_xB(
