@@ -166,7 +166,7 @@ static bool loadCombinedCuts(const std::string& path, PeriodTopoCuts& out) {
                 size_t colon = dataObj.find(':', from);
                 if (colon == std::string::npos) return 0.0;
                 size_t j = colon + 1;
-                while (j < dataObj.size() && std::isspace(static_cast<unsigned char>(j[dataObj]))) ++j; // keep robust
+                while (j < dataObj.size() && std::isspace(static_cast<unsigned char>(dataObj[j]))) ++j;
                 size_t k = j;
                 while (k < dataObj.size() &&
                        (std::isdigit(static_cast<unsigned char>(dataObj[k])) ||
