@@ -1,10 +1,24 @@
+// total_counts.cpp — produce per-period AND combined (Sp18, Fa18, 10.6_GeV) totals
+// - Helicity-resolved DVCS data counts by (xB, Q2, |t|, phi)
+// - Applies the same simple kinematic/topology cuts and optional 3σ cuts
+// - JSON now contains a top-level "groups" object; each group has its own "bins"
+// - Plots (multi-panel vs phi) for every group under output/total_counts_plots/<group>/...
+
 #include "total_counts.h"
 
 #include <TTree.h>
+#include <TCanvas.h>
+#include <TLegend.h>
+#include <TStyle.h>
+#include <TH1.h>
+#include <TGraphErrors.h>
+#include <TLatex.h>
+#include <TPad.h>
 
 #include <algorithm>
 #include <cctype>
 #include <cmath>
+#include <filesystem>
 #include <fstream>
 #include <iomanip>
 #include <iostream>
@@ -99,7 +113,7 @@ static int findBin(double v, const std::vector<std::pair<double,double>>& ranges
     return -1;
 }
 
-// --------- 3σ cuts loader (re-uses the minimal parser style from your contamination file) ---------
+// --------- 3σ cuts loader (same parser style as contamination) ---------
 struct Stats { double mean=0.0; double std=0.0; };
 using VarCutMap = std::map<std::string, Stats>;
 using PeriodTopoCuts = std::map<std::string, VarCutMap>; // key: "DVCS_Fa18_inb_FD_FD"
@@ -231,7 +245,7 @@ static inline std::string keyStr(const BinKey& k) {
     return os.str();
 }
 
-// ---- JSON writer (FIX: add top-level "groups") ----
+// ---- JSON writer (has top-level "groups") ----
 static void write_total_counts_json(
     const std::string& out_path,
     const std::map<std::string, std::map<BinKey, HelCounts>>& groups,
@@ -249,7 +263,7 @@ static void write_total_counts_json(
         << ", \"Q2_bins\": " << Q2_bins.size()
         << ", \"t_bins\": "  << t_bins.size() << "},\n";
 
-    ofs << "  \"groups\": {\n"; // <-- required by downstream readers
+    ofs << "  \"groups\": {\n";
 
     bool firstG=true;
     for (const auto& gkv : groups) {
@@ -269,21 +283,189 @@ static void write_total_counts_json(
         }
         ofs << "\n      }\n    }";
     }
-    ofs << "\n  }\n"; // close "groups"
+    ofs << "\n  }\n";
     ofs << "}\n";
     ofs.close();
     std::cout << "[total_counts] Wrote " << out_path << "\n";
 }
 
+// ---------------- plotting (multi-panel vs φ, rows=Q², cols=|t|) ----------------
+static std::vector<double> phiCentersDeg(int nPhi=N_PHI_BINS) {
+    std::vector<double> v(nPhi);
+    const double step = 360.0 / static_cast<double>(nPhi);
+    for (int i = 0; i < nPhi; ++i) v[i] = (i + 0.5) * step;
+    return v;
+}
+static void uniqueQT_for_xB(
+    const std::vector<Binning>& scheme,
+    const std::pair<double,double>& xBrange,
+    std::vector<std::pair<double,double>>& Q2_list,
+    std::vector<std::pair<double,double>>& t_list
+) {
+    std::set<std::pair<double,double>> qs, ts;
+    for (const auto& b : scheme) {
+        if (std::make_pair(b.xBmin,b.xBmax) == xBrange) {
+            qs.emplace(b.Q2min,b.Q2max);
+            ts.emplace(b.tmin,b.tmax);
+        }
+    }
+    Q2_list.assign(qs.begin(), qs.end());
+    t_list.assign(ts.begin(), ts.end());
+}
+static int findIndex(const std::pair<double,double>& range,
+                     const std::vector<std::pair<double,double>>& ranges) {
+    for (int i = 0; i < static_cast<int>(ranges.size()); ++i) {
+        if (ranges[i] == range) return i;
+    }
+    return -1;
+}
+
+static void plot_group_counts(
+    const std::string& group_name,
+    const std::map<BinKey, HelCounts>& table,
+    const std::vector<Binning>& binning_scheme,
+    const std::vector<std::pair<double,double>>& xB_bins,
+    const std::vector<std::pair<double,double>>& Q2_bins,
+    const std::vector<std::pair<double,double>>& t_bins,
+    const std::string& out_dir_plots
+){
+    using namespace std;
+    namespace fs = std::filesystem;
+    std::error_code ec;
+    fs::create_directories(out_dir_plots, ec);
+
+    static const std::vector<double> PHI = phiCentersDeg();
+    std::vector<double> X(N_PHI_BINS), ex(N_PHI_BINS, 0.0);
+    for (int i=0;i<N_PHI_BINS;++i) X[i] = PHI[i];
+
+    for (int ix=0; ix<(int)xB_bins.size(); ++ix) {
+        const auto xBr = xB_bins[ix];
+
+        vector<pair<double,double>> Q2_slice, t_slice;
+        uniqueQT_for_xB(binning_scheme, xBr, Q2_slice, t_slice);
+        if (Q2_slice.empty() || t_slice.empty()) continue;
+
+        const int nrows = (int)Q2_slice.size();
+        const int ncols = (int)t_slice.size();
+
+        const int W = 260*ncols + 120;
+        const int H = 220*nrows + 120;
+
+        ostringstream cname; cname<<"c_counts_"<<group_name<<"_xB"<<ix;
+        TCanvas* c = new TCanvas(cname.str().c_str(), cname.str().c_str(), W, H);
+
+        TPad* pTop  = new TPad("pTop","pTop", 0.0, 0.94, 1.0, 1.0);
+        pTop->SetFillStyle(0); pTop->SetBorderSize(0); pTop->Draw();
+
+        TPad* pGrid = new TPad("pGrid","pGrid", 0.0, 0.0, 1.0, 0.94);
+        pGrid->SetFillStyle(0); pGrid->SetBorderSize(0); pGrid->Draw();
+        pGrid->cd();
+        pGrid->Divide(ncols, nrows, 0.0001, 0.0001);
+
+        pTop->cd();
+        TLatex head;
+        head.SetNDC();
+        head.SetTextSize(0.55);
+        head.SetTextAlign(22);
+        head.DrawLatex(0.5, 0.5, group_name.c_str());
+
+        for (int r=0; r<nrows; ++r) {
+            int iQ = findIndex(Q2_slice[r], Q2_bins); if (iQ<0) continue;
+            for (int cc=0; cc<ncols; ++cc) {
+                int itb = findIndex(t_slice[cc], t_bins); if (itb<0) continue;
+
+                pGrid->cd(r*ncols + cc + 1);
+                gPad->SetGrid(1,1);
+                gPad->SetTopMargin(0.08);
+                gPad->SetBottomMargin(0.14);
+                gPad->SetLeftMargin(0.12);
+                gPad->SetRightMargin(0.06);
+
+                std::vector<double> Yp(N_PHI_BINS, 0.0), Ym(N_PHI_BINS, 0.0);
+                std::vector<double> eYp(N_PHI_BINS, 0.0), eYm(N_PHI_BINS, 0.0);
+
+                double ymax_found = 0.0;
+                for (int ip=0; ip<N_PHI_BINS; ++ip) {
+                    auto it = table.find(BinKey(ix, iQ, itb, ip));
+                    if (it == table.end()) continue;
+                    const HelCounts& hc = it->second;
+
+                    Yp[ip]  = (double)hc.plus;
+                    Ym[ip]  = (double)hc.minus;
+                    eYp[ip] = std::sqrt(std::max(0.0, Yp[ip]));
+                    eYm[ip] = std::sqrt(std::max(0.0, Ym[ip]));
+                    ymax_found = std::max(ymax_found, std::max(Yp[ip] + eYp[ip], Ym[ip] + eYm[ip]));
+                }
+
+                const double ymin = 0.0;
+                const double ymax = (ymax_found > 0.0 ? ymax_found*1.25 : 10.0);
+
+                TH1 *frame = gPad->DrawFrame(0.0, ymin, 360.0, ymax);
+                frame->GetXaxis()->SetTitle("#phi (deg)");
+                frame->GetYaxis()->SetTitle("DVCS counts");
+                frame->GetXaxis()->SetNdivisions(505);
+                frame->GetXaxis()->CenterTitle();
+                frame->GetYaxis()->CenterTitle();
+
+                TGraphErrors* grP = new TGraphErrors(N_PHI_BINS, X.data(), Yp.data(), ex.data(), eYp.data());
+                TGraphErrors* grM = new TGraphErrors(N_PHI_BINS, X.data(), Ym.data(), ex.data(), eYm.data());
+                grP->SetMarkerStyle(24);
+                grM->SetMarkerStyle(20);
+                grP->SetMarkerSize(0.9);
+                grM->SetMarkerSize(0.9);
+                grP->SetLineWidth(2);
+                grM->SetLineWidth(2);
+                grP->Draw("P SAME");
+                grM->Draw("P SAME");
+
+                TLegend* leg = new TLegend(0.60, 0.73, 0.92, 0.92);
+                leg->SetBorderSize(1);
+                leg->SetLineColor(kBlack);
+                leg->SetFillStyle(0);
+                leg->SetTextSize(0.035);
+                leg->AddEntry(grP, "helicity +1", "p");
+                leg->AddEntry(grM, "helicity -1", "p");
+                leg->Draw();
+            }
+        }
+
+        ostringstream fout;
+        fout<<out_dir_plots<<"/plot_counts_"<<group_name<<"_xB_"<<ix<<".png";
+        c->SaveAs(fout.str().c_str());
+        delete c;
+    }
+}
+
+// ---- small helpers to build combined groups ----
+static inline bool isSpring18(const std::string& period) {
+    std::string s = toLower(period);
+    return (s.find("sp18") != std::string::npos || s.find("spring18") != std::string::npos);
+}
+static inline bool isFall18(const std::string& period) {
+    std::string s = toLower(period);
+    return (s.find("fa18") != std::string::npos || s.find("fall18") != std::string::npos);
+}
+static void add_into(std::map<BinKey, HelCounts>& dst, const std::map<BinKey, HelCounts>& src) {
+    for (const auto& kv : src) {
+        auto& d = dst[kv.first];
+        d.plus  += kv.second.plus;
+        d.minus += kv.second.minus;
+    }
+}
+
 // ---- main ----
+// NOTE: signature changed to include out_root_dir for plots in a sibling folder to jsons.
 void compute_total_counts(
     const std::vector<std::string>& periods,
     const std::vector<std::string>& topologies,
     const std::vector<Binning>& binning_scheme,
     const std::map<std::string, TTree*>& dvcsDataTrees,
     const std::string& combined_cuts_json,
-    const std::string& out_json_path)
-{
+    const std::string& out_json_path,
+    const std::string& out_root_dir  // e.g. "output"
+) {
+    namespace fs = std::filesystem;
+
     // Build global bin edges
     const auto xB_bins = uniqueRanges(binning_scheme, 'x');
     const auto Q2_bins = uniqueRanges(binning_scheme, 'Q');
@@ -294,8 +476,6 @@ void compute_total_counts(
     }
 
     // Load combined 3σ cuts (data)
-    using VarCutMap = std::map<std::string, Stats>;
-    using PeriodTopoCuts = std::map<std::string, VarCutMap>;
     PeriodTopoCuts cuts;
     if (!loadCombinedCuts(combined_cuts_json, cuts)) {
         std::cerr << "[total_counts][WARN] No combined cuts loaded; proceeding without 3σ cuts.\n";
@@ -311,6 +491,7 @@ void compute_total_counts(
     // group name -> (bin -> counts)
     std::map<std::string, std::map<BinKey, HelCounts>> outCounts;
 
+    // Per-period filling
     for (const auto& period : periods) {
         const std::string runTag = periodToRunTagKey(period);  // e.g. "fa18_inb"
         const std::string dvcsKeyInMap = runTag;               // tree key in dvcsDataTrees
@@ -323,9 +504,7 @@ void compute_total_counts(
         }
         TTree* t = it->second;
 
-        // ---- bind branches ----
-        struct BranchBinderDVCS b;
-        b.bind(t);
+        BranchBinderDVCS b; b.bind(t);
         if (!b.readyCuts() || !b.readyBins()) {
             std::cerr << "[total_counts][WARN] DVCS tree missing branches for '" << period << "'. Skipping.\n";
             continue;
@@ -349,30 +528,65 @@ void compute_total_counts(
             auto itCut = cuts.find(dvcsCutsKey(runTag, usedTopoKey));
             if (itCut != cuts.end()) topoCuts = itCut->second;
             if (!topoCuts.empty()) {
-                if (!passes3SigmaCuts(topoCuts, b.cutVals())) continue;
+                // collect values for cut variables
+                std::map<std::string,double> vals;
+                vals["Delta_phi"] = b.Delta_phi;
+                vals["theta_gamma_gamma"] = b.theta_gamma_gamma;
+                vals["pTmiss"] = b.pTmiss;
+                vals["xF"] = b.xF;
+                vals["Emiss2"] = b.Emiss2;
+                vals["Mx2"] = b.Mx2;
+                vals["Mx2_1"] = b.Mx2_1;
+                vals["Mx2_2"] = b.Mx2_2;
+                if (!passes3SigmaCuts(topoCuts, vals)) continue;
             }
 
             // bin
-            double xB=b.x, Q2=b.Q2, tt=std::fabs(b.t1), phi=b.phi();
+            double xB=b.x, Q2=b.Q2, tt=std::fabs(b.t1), phi=(b.phi2 || b.Delta_phi ? (b.phi2 ? b.phi2 : b.Delta_phi) : std::numeric_limits<double>::quiet_NaN());
             if (!std::isfinite(xB)||!std::isfinite(Q2)||!std::isfinite(tt)||!std::isfinite(phi)) continue;
             int ix=findBin(xB,xB_bins), iQ=findBin(Q2,Q2_bins), itb=findBin(tt,t_bins), ip=phiToBin(phi);
             if (ix<0||iQ<0||itb<0||ip<0||ip>=N_PHI_BINS) continue;
             BinKey key(ix,iQ,itb,ip);
 
-            // (1) Store under plain runTag (BSA & π0-corr expect these)
+            // (1) plain runTag (what downstream expects)
             HelCounts& hc_plain = outCounts[runTag][key];
             if (b.helicity==+1) hc_plain.plus++; else hc_plain.minus++;
 
-            // (2) ALSO store under DVCS_* name for completeness
+            // (2) ALSO under DVCS_* name
             const std::string dvcsName = dvcsPeriodName(runTag);
             HelCounts& hc_dvcs = outCounts[dvcsName][key];
             if (b.helicity==+1) hc_dvcs.plus++; else hc_dvcs.minus++;
+
+            // We’ll create combined groups after the per-period loops
         }
     }
 
-    // Write JSON (with top-level "groups")
-    write_total_counts_json(out_json_path, outCounts, N_PHI_BINS, 
-                            uniqueRanges(binning_scheme, 'x'),
-                            uniqueRanges(binning_scheme, 'Q'),
-                            uniqueRanges(binning_scheme, 't'));
+    // ----- build the combined groups -----
+    // Spring 2018 (sum all periods whose name contains Sp18)
+    std::map<BinKey, HelCounts> spring_sum, fall_sum, all_sum;
+
+    for (const auto& period : periods) {
+        const std::string runTag = periodToRunTagKey(period);
+        auto it = outCounts.find(runTag);
+        if (it == outCounts.end()) continue;
+        if (isSpring18(period)) add_into(spring_sum, it->second);
+        if (isFall18(period))   add_into(fall_sum,   it->second);
+        add_into(all_sum, it->second);
+    }
+
+    if (!spring_sum.empty()) outCounts["Spring2018"] = std::move(spring_sum);
+    if (!fall_sum.empty())   outCounts["Fall2018"]   = std::move(fall_sum);
+    if (!all_sum.empty())    outCounts["10.6_GeV"]   = std::move(all_sum); // exact name requested
+
+    // ----- write JSON (with top-level "groups") -----
+    write_total_counts_json(out_json_path, outCounts, N_PHI_BINS,
+                            xB_bins, Q2_bins, t_bins);
+
+    // ----- plots for every group -----
+    const fs::path plots_root = fs::path(out_root_dir) / "total_counts_plots";
+    for (const auto& gkv : outCounts) {
+        const std::string& group = gkv.first;
+        const fs::path out_dir = plots_root / group;
+        plot_group_counts(group, gkv.second, binning_scheme, xB_bins, Q2_bins, t_bins, out_dir.string());
+    }
 }
