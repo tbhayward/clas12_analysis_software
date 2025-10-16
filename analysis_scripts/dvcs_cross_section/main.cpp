@@ -74,8 +74,8 @@ int main(int argc, char* argv[]) {
     // produced by exclusivity_cuts
     const std::string output_counts_js = "output/jsons/total_counts.json";
 
-    // compute_total_counts(dvcs_periods, topologies, binning_scheme, dataTrees, cuts_json_path, 
-    //     output_counts_js);
+    compute_total_counts(dvcs_periods, topologies, binning_scheme, dataTrees, cuts_json_path, 
+        output_counts_js);
 
     // Helicity-resolved π0 contamination
     // NOTE: pass the OUTPUT ROOT ("output") so the implementation writes:
