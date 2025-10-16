@@ -52,61 +52,61 @@ int main(int argc, char* argv[]) {
               radGenMcTrees, radRecMcTrees);
     std::cout << "All trees loaded successfully." << std::endl;
 
-    // // Run exclusivity cut extraction (single-threaded for stability)
-    // runAllExclusivityCuts(
-    //     dataTrees, recMcTrees, eppi0DataTrees, eppi0RecMcTrees,
-    //     "output/jsons", "output/exclusivity_plots", 1
-    // );
-    // std::cout << "Exclusivity-cut stage finished." << std::endl;
+    // Run exclusivity cut extraction (single-threaded for stability)
+    runAllExclusivityCuts(
+        dataTrees, recMcTrees, eppi0DataTrees, eppi0RecMcTrees,
+        "output/jsons", "output/exclusivity_plots", 1
+    );
+    std::cout << "Exclusivity-cut stage finished." << std::endl;
 
-    // --------- Global bin-averaged kinematics ----------
-    std::vector<std::string> dvcs_periods = {
-        "DVCS_Fa18_inb", "DVCS_Fa18_out", "DVCS_Sp19_inb",
-        "DVCS_Sp18_out", "DVCS_Sp18_inb", "DVCS_Fa18_inb_supp"
-    };
-    std::vector<std::string> topologies = {"(FD,FD)", "(CD,FD)", "(CD,FT)"};
-    const std::string analysis_type = "dvcs";
-    const std::string output_json_means = "output/jsons/bin_means_global.json";
+    // // --------- Global bin-averaged kinematics ----------
+    // std::vector<std::string> dvcs_periods = {
+    //     "DVCS_Fa18_inb", "DVCS_Fa18_out", "DVCS_Sp19_inb",
+    //     "DVCS_Sp18_out", "DVCS_Sp18_inb", "DVCS_Fa18_inb_supp"
+    // };
+    // std::vector<std::string> topologies = {"(FD,FD)", "(CD,FD)", "(CD,FT)"};
+    // const std::string analysis_type = "dvcs";
+    // const std::string output_json_means = "output/jsons/bin_means_global.json";
 
     // calculate_bin_means(dvcs_periods, topologies, analysis_type, binning_scheme, output_json_means, 
     //     dataTrees);
 
-    // --------- Total counts after exclusivity cuts (by helicity) ----------
-    const std::string cuts_json_path   = "output/jsons/combined_cuts.json"; 
-    // produced by exclusivity_cuts
-    const std::string output_counts_js = "output/jsons/total_counts.json";
+    // // --------- Total counts after exclusivity cuts (by helicity) ----------
+    // const std::string cuts_json_path   = "output/jsons/combined_cuts.json"; 
+    // // produced by exclusivity_cuts
+    // const std::string output_counts_js = "output/jsons/total_counts.json";
 
-    compute_total_counts(dvcs_periods, topologies, binning_scheme, dataTrees, cuts_json_path, 
-        output_counts_js);
+    // compute_total_counts(dvcs_periods, topologies, binning_scheme, dataTrees, cuts_json_path, 
+    //     output_counts_js);
 
-    // Helicity-resolved π0 contamination
-    // NOTE: pass the OUTPUT ROOT ("output") so the implementation writes:
-    //   - per-period JSONs to output/jsons/contamination/
-    //   - combined JSON to output/jsons/
-    //   - plots to output/contamination_plots/...
-    compute_pi0_contamination_helicity(
-        dvcs_periods,
-        topologies,
-        binning_scheme,
-        dataTrees,
-        eppi0DataTrees,
-        eppi0RecMcTrees,   // reco MC
-        eppi0BkgTrees,     // bkg MC
-        cuts_json_path,
-        output_root
-    );
+    // // Helicity-resolved π0 contamination
+    // // NOTE: pass the OUTPUT ROOT ("output") so the implementation writes:
+    // //   - per-period JSONs to output/jsons/contamination/
+    // //   - combined JSON to output/jsons/
+    // //   - plots to output/contamination_plots/...
+    // compute_pi0_contamination_helicity(
+    //     dvcs_periods,
+    //     topologies,
+    //     binning_scheme,
+    //     dataTrees,
+    //     eppi0DataTrees,
+    //     eppi0RecMcTrees,   // reco MC
+    //     eppi0BkgTrees,     // bkg MC
+    //     cuts_json_path,
+    //     output_root
+    // );
 
-    // --------- π0-corrected helicity counts (per φ) ----------
-    const std::string total_counts_json = "output/jsons/total_counts.json";
-    const std::string contamination_dir_counts = "output/jsons/contamination";
-    compute_pi0_corrected_counts(
-        dvcs_periods,
-        binning_scheme,
-        total_counts_json,        // from compute_total_counts()
-        contamination_dir_counts, // from compute_pi0_contamination_helicity()
-        output_root               // "output"
-    );
-    std::cout << "π0-corrected counts stage finished." << std::endl;
+    // // --------- π0-corrected helicity counts (per φ) ----------
+    // const std::string total_counts_json = "output/jsons/total_counts.json";
+    // const std::string contamination_dir_counts = "output/jsons/contamination";
+    // compute_pi0_corrected_counts(
+    //     dvcs_periods,
+    //     binning_scheme,
+    //     total_counts_json,        // from compute_total_counts()
+    //     contamination_dir_counts, // from compute_pi0_contamination_helicity()
+    //     output_root               // "output"
+    // );
+    // std::cout << "π0-corrected counts stage finished." << std::endl;
 
     // --------- Radiative corrections (generated Born/Rad, per bin & φ) ----------
     // Writes:
@@ -128,18 +128,18 @@ int main(int argc, char* argv[]) {
     // - writes all-periods file to output/jsons/BSA_fits_all_periods.json
     // - writes 10.6 GeV combined to output/jsons/BSA_fits_combined_10p6.json
     // - plots to output/bsa_plots/<runTag>/...
-    namespace fs = std::filesystem;
-    const std::string contamination_dir_bsa =
-        (fs::path(output_root) / "jsons" / "contamination").string();
-    compute_and_plot_bsa_helicity(
-        dvcs_periods,
-        topologies,
-        binning_scheme,
-        dataTrees,            // DVCS trees (for beam_pol extraction)
-        output_counts_js,     // total_counts.json path
-        contamination_dir_bsa,// directory with contamination_<period>.json files
-        output_root
-    );
+    // namespace fs = std::filesystem;
+    // const std::string contamination_dir_bsa =
+    //     (fs::path(output_root) / "jsons" / "contamination").string();
+    // compute_and_plot_bsa_helicity(
+    //     dvcs_periods,
+    //     topologies,
+    //     binning_scheme,
+    //     dataTrees,            // DVCS trees (for beam_pol extraction)
+    //     output_counts_js,     // total_counts.json path
+    //     contamination_dir_bsa,// directory with contamination_<period>.json files
+    //     output_root
+    // );
 
     //     // --------- Acceptance (reco MC with MC cuts / gen MC, per bin & φ) ----------
     // // Writes per-period JSONs: output/jsons/acceptance_<period>.json
