@@ -74,8 +74,8 @@ int main(int argc, char* argv[]) {
     // produced by exclusivity_cuts
     const std::string output_counts_js = "output/jsons/total_counts.json";
 
-    compute_total_counts(dvcs_periods, topologies, binning_scheme, dataTrees, cuts_json_path, 
-        output_counts_js);
+    // compute_total_counts(dvcs_periods, topologies, binning_scheme, dataTrees, cuts_json_path, 
+    //     output_counts_js);
 
     // Helicity-resolved π0 contamination
     // NOTE: pass the OUTPUT ROOT ("output") so the implementation writes:
@@ -112,13 +112,13 @@ int main(int argc, char* argv[]) {
     //   - per-period JSONs: output/jsons/radiative_corrections_<period>.json
     //   - all-groups file: output/jsons/radiative_corrections_all_groups.json
     //   - plots (ONLY per beam energy): output/radiative_correction_plots/{10.59,10.60,10.2}/...
-    compute_radiative_corrections(
-        dvcs_periods,
-        binning_scheme,
-        genMcTrees,
-        radGenMcTrees,
-        output_root
-    );
+    // compute_radiative_corrections(
+    //     dvcs_periods,
+    //     binning_scheme,
+    //     genMcTrees,
+    //     radGenMcTrees,
+    //     output_root
+    // );
 
     // Beam-Spin Asymmetry:
     // - reads total_counts.json and contamination JSONs
