@@ -1,5 +1,7 @@
 #include "total_counts.h"
 
+#include <TTree.h>
+
 #include <algorithm>
 #include <cctype>
 #include <cmath>
@@ -15,83 +17,30 @@
 #include <utility>
 #include <vector>
 
-// ---------------- simple helpers ----------------
+// -------- helpers (consistent with your other files) --------
 static inline std::string toLower(std::string s) {
     std::transform(s.begin(), s.end(), s.begin(),
-        [](unsigned char c){ return static_cast<char>(std::tolower(c)); });
+                   [](unsigned char c){ return std::tolower(c); });
     return s;
 }
 
-static inline std::string trim(const std::string& s) {
-    size_t a = s.find_first_not_of(" \t\r\n");
-    size_t b = s.find_last_not_of(" \t\r\n");
-    if (a == std::string::npos) return "";
-    return s.substr(a, b - a + 1);
-}
-
-// Period like "DVCS_Fa18_inb" -> key "fa18_inb"; "DVCS_Sp18_out" -> "sp18_out".
+// "DVCS_Fa18_inb" -> "fa18_inb"
 static std::string periodToRunTagKey(const std::string& period) {
     auto pos = period.find('_');
     if (pos == std::string::npos || pos + 1 >= period.size()) return toLower(period);
     return toLower(period.substr(pos + 1));
 }
 
-// Map run-tag "fa18_inb" -> "DVCS_Fa18_inb"
-static inline std::string dvcsPeriodName(const std::string& runTag) {
+// runTag "fa18_inb" -> "DVCS_Fa18_inb"
+static std::string dvcsPeriodName(const std::string& runTag) {
     std::string cap = runTag;
     if (!cap.empty()) cap[0] = static_cast<char>(std::toupper(static_cast<unsigned char>(cap[0])));
     for (size_t i = 0; i + 1 < cap.size(); ++i) {
         if (cap[i] == '_' && i + 1 < cap.size()) {
-            cap[i + 1] = static_cast<char>(std::toupper(static_cast<unsigned char>(cap[i + 1])));
+            cap[i+1] = static_cast<char>(std::toupper(static_cast<unsigned char>(cap[i+1])));
         }
     }
     return std::string("DVCS_") + cap;
-}
-
-static constexpr int    N_PHI_BINS = 12;
-static constexpr double TWO_PI     = 2.0 * M_PI;
-
-// wrap phi to [0, 2pi)
-static inline double wrapToTwoPi(double phi) {
-    if (!std::isfinite(phi)) return 0.0;
-    double w = std::fmod(phi, TWO_PI);
-    if (w < 0.0) w += TWO_PI;
-    if (w >= TWO_PI) w = std::nextafter(TWO_PI, 0.0);
-    return w;
-}
-
-static inline int phiToBin(double phi) {
-    double w = wrapToTwoPi(phi);
-    double width = TWO_PI / static_cast<double>(N_PHI_BINS);
-    int idx = static_cast<int>(std::floor(w / width));
-    if (idx < 0) idx = 0;
-    if (idx >= N_PHI_BINS) idx = N_PHI_BINS - 1;
-    return idx;
-}
-
-// Build unique (min,max) bins from the scheme for a coordinate (x, Q, t).
-static std::vector<std::pair<double,double>> uniqueRanges(const std::vector<Binning>& scheme, char which) {
-    std::set<std::pair<double,double>> s;
-    for (const auto& b : scheme) {
-        if (which == 'x') s.emplace(b.xBmin, b.xBmax);
-        else if (which == 'Q') s.emplace(b.Q2min, b.Q2max);
-        else if (which == 't') s.emplace(b.tmin, b.tmax);
-    }
-    return std::vector<std::pair<double,double>>(s.begin(), s.end());
-}
-
-static int findBin(double v, const std::vector<std::pair<double,double>>& ranges) {
-    for (int i = 0; i < static_cast<int>(ranges.size()); ++i)
-        if (v >= ranges[i].first && v < ranges[i].second) return i;
-    return -1;
-}
-
-// ------------- topology + universal kinematic cuts -------------
-static inline bool passesTopology_simple(int detector1, int detector2, const std::string& topoStr) {
-    if (topoStr == "(FD,FD)") return (detector1 == 1 && detector2 == 1);
-    if (topoStr == "(CD,FD)") return (detector1 == 2 && detector2 == 1);
-    if (topoStr == "(CD,FT)") return (detector1 == 2 && detector2 == 0);
-    return false;
 }
 
 static inline std::string topoToKey(const std::string& topoStr) {
@@ -101,6 +50,13 @@ static inline std::string topoToKey(const std::string& topoStr) {
     return "FD_FD";
 }
 
+static inline bool passesTopology_simple(int detector1, int detector2, const std::string& topoStr) {
+    if (topoStr == "(FD,FD)") return (detector1 == 1 && detector2 == 1);
+    if (topoStr == "(CD,FD)") return (detector1 == 2 && detector2 == 1);
+    if (topoStr == "(CD,FT)") return (detector1 == 2 && detector2 == 0);
+    return false;
+}
+
 static inline bool applyKinematicCuts_simple(double t1, double open_angle_ep2, double pTmiss) {
     if (open_angle_ep2 <= 5.0) return false;
     if ((-t1) > 1.0)          return false;
@@ -108,97 +64,100 @@ static inline bool applyKinematicCuts_simple(double t1, double open_angle_ep2, d
     return true;
 }
 
-// ------------- exclusivity 3sigma cuts: data-only stats -------------
-struct Stats { double mean = 0.0; double std = 0.0; };
-using VarCutMap = std::map<std::string, Stats>;       // var -> {mean,std}
-using PeriodTopoCuts = std::map<std::string, VarCutMap>; // "DVCS_Sp18_inb_FD_FD" -> data cuts
+static constexpr int    N_PHI_BINS = 12;
+static constexpr double TWO_PI     = 2.0 * M_PI;
 
-// We expect JSON written by exclusivity_cuts.cpp -> writeCombinedJson().
-// Very small hand-rolled parser for that specific structure.
-// Only extracts the "data" section for each key.
+static inline double wrapToTwoPi(double phi) {
+    if (!std::isfinite(phi)) return 0.0;
+    double w = std::fmod(phi, TWO_PI);
+    if (w < 0.0) w += TWO_PI;
+    if (w >= TWO_PI) w = std::nextafter(TWO_PI, 0.0);
+    return w;
+}
+static inline int phiToBin(double phi) {
+    double w = wrapToTwoPi(phi);
+    double width = TWO_PI / static_cast<double>(N_PHI_BINS);
+    int idx = static_cast<int>(std::floor(w / width));
+    if (idx < 0) idx = 0;
+    if (idx >= N_PHI_BINS) idx = N_PHI_BINS - 1;
+    return idx;
+}
+
+// Unique (min,max) bins from scheme
+static std::vector<std::pair<double,double>> uniqueRanges(const std::vector<Binning>& scheme, char which) {
+    std::set<std::pair<double,double>> s;
+    for (const auto& b : scheme) {
+        if (which == 'x') s.emplace(b.xBmin, b.xBmax);
+        else if (which == 'Q') s.emplace(b.Q2min, b.Q2max);
+        else if (which == 't') s.emplace(b.tmin,  b.tmax);
+    }
+    return std::vector<std::pair<double,double>>(s.begin(), s.end());
+}
+static int findBin(double v, const std::vector<std::pair<double,double>>& ranges) {
+    for (int i = 0; i < static_cast<int>(ranges.size()); ++i)
+        if (v >= ranges[i].first && v < ranges[i].second) return i;
+    return -1;
+}
+
+// --------- 3σ cuts loader (re-uses the minimal parser style from your contamination file) ---------
+struct Stats { double mean=0.0; double std=0.0; };
+using VarCutMap = std::map<std::string, Stats>;
+using PeriodTopoCuts = std::map<std::string, VarCutMap>; // key: "DVCS_Fa18_inb_FD_FD"
+
 static bool loadCombinedCuts(const std::string& path, PeriodTopoCuts& out) {
     std::ifstream ifs(path);
-    if (!ifs) {
-        std::cerr << "[total_counts][ERROR] Cannot open cuts JSON: " << path << std::endl;
-        return false;
-    }
+    if (!ifs) { std::cerr << "[total_counts][WARN] Cannot open cuts JSON: " << path << "\n"; return false; }
     std::string s((std::istreambuf_iterator<char>(ifs)), std::istreambuf_iterator<char>());
-    ifs.close();
 
     size_t pos = 0;
     while (true) {
-        size_t keyStart = s.find('"', pos);
-        if (keyStart == std::string::npos) break;
-        size_t keyEnd = s.find('"', keyStart + 1);
-        if (keyEnd == std::string::npos) break;
-        std::string key = s.substr(keyStart + 1, keyEnd - keyStart - 1); // e.g., DVCS_Sp18_inb_FD_FD
+        size_t kS = s.find('"', pos);
+        if (kS == std::string::npos) break;
+        size_t kE = s.find('"', kS+1);
+        if (kE == std::string::npos) break;
+        std::string key = s.substr(kS+1, kE-kS-1);
 
-        size_t dataPos = s.find("\"data\"", keyEnd);
-        if (dataPos == std::string::npos) { pos = keyEnd + 1; continue; }
-        size_t braceStart = s.find('{', dataPos);
-        if (braceStart == std::string::npos) { pos = keyEnd + 1; continue; }
-
-        int depth = 0; size_t i = braceStart;
-        for (; i < s.size(); ++i) {
-            if (s[i] == '{') depth++;
-            else if (s[i] == '}') {
-                depth--;
-                if (depth == 0) { ++i; break; }
-            }
-        }
-        if (depth != 0) { pos = keyEnd + 1; continue; }
-        std::string dataObj = s.substr(braceStart, i - braceStart);
+        size_t dpos = s.find("\"data\"", kE);
+        if (dpos == std::string::npos) { pos = kE+1; continue; }
+        size_t bS = s.find('{', dpos);
+        if (bS == std::string::npos) { pos = kE+1; continue; }
+        int depth=0; size_t i=bS;
+        for (; i<s.size(); ++i) { if(s[i]=='{') depth++; else if(s[i]=='}'){ depth--; if(!depth){ ++i; break; } } }
+        std::string data = s.substr(bS, i-bS);
 
         VarCutMap cuts;
         size_t vpos = 0;
         while (true) {
-            size_t vKeyS = dataObj.find('"', vpos);
-            if (vKeyS == std::string::npos) break;
-            size_t vKeyE = dataObj.find('"', vKeyS + 1);
-            if (vKeyE == std::string::npos) break;
-            std::string var = dataObj.substr(vKeyS + 1, vKeyE - vKeyS - 1);
+            size_t vS = data.find('"', vpos);
+            if (vS == std::string::npos) break;
+            size_t vE = data.find('"', vS+1);
+            if (vE == std::string::npos) break;
+            std::string var = data.substr(vS+1, vE-vS-1);
 
-            size_t meanPos = dataObj.find("\"mean\"", vKeyE);
-            size_t stdPos  = dataObj.find("\"std\"",  vKeyE);
-            if (meanPos == std::string::npos || stdPos == std::string::npos) { vpos = vKeyE + 1; continue; }
-
-            auto readNumberAfterColon = [&](size_t from)->double {
-                size_t colon = dataObj.find(':', from);
-                if (colon == std::string::npos) return 0.0;
-                size_t j = colon + 1;
-                while (j < dataObj.size() && std::isspace(static_cast<unsigned char>(dataObj[j]))) ++j;
-                size_t k = j;
-                while (k < dataObj.size() &&
-                       (std::isdigit(static_cast<unsigned char>(dataObj[k])) ||
-                        dataObj[k] == '-' || dataObj[k] == '+' || dataObj[k] == '.' ||
-                        dataObj[k] == 'e' || dataObj[k] == 'E')) ++k;
-                std::string num = dataObj.substr(j, k - j);
-                try { return std::stod(num); } catch (...) { return 0.0; }
+            auto readNum = [&](const char* tag)->double{
+                size_t p = data.find(tag, vE);
+                if (p == std::string::npos) return 0.0;
+                p = data.find(':', p); if(p==std::string::npos) return 0.0;
+                size_t j = p+1; while (j<data.size() && std::isspace((unsigned char)data[j])) ++j;
+                size_t k=j;
+                auto isnum=[&](char c){return (std::isdigit((unsigned char)c)||c=='-'||c=='+'||c=='.'||c=='e'||c=='E');};
+                while (k<data.size() && isnum(data[k])) ++k;
+                try { return std::stod(data.substr(j,k-j)); } catch (...) { return 0.0; }
             };
-
-            double m = readNumberAfterColon(meanPos);
-            double sdev = readNumberAfterColon(stdPos);
-            cuts[var] = Stats{m, sdev};
-
-            vpos = vKeyE + 1;
+            double mean = readNum("\"mean\"");
+            double std  = readNum("\"std\"");
+            cuts[var] = Stats{mean, std};
+            vpos = vE+1;
         }
 
         if (key.rfind("DVCS_", 0) == 0) out[key] = cuts;
-
-        pos = keyEnd + 1;
+        pos = kE+1;
     }
-
-    if (out.empty()) {
-        std::cerr << "[total_counts][WARN] No DVCS cuts found in " << path << std::endl;
-        return false;
-    }
-    return true;
+    return !out.empty();
 }
-
-static inline bool within3Sigma(double val, const Stats& s) {
-    return (val >= s.mean - 3.0 * s.std) && (val <= s.mean + 3.0 * s.std);
+static inline bool within3Sigma(double v, const Stats& s) {
+    return (v >= s.mean - 3.0*s.std) && (v <= s.mean + 3.0*s.std);
 }
-
 static bool passes3SigmaCuts(const VarCutMap& cuts, const std::map<std::string,double>& values) {
     for (const auto& kv : cuts) {
         auto it = values.find(kv.first);
@@ -208,302 +167,204 @@ static bool passes3SigmaCuts(const VarCutMap& cuts, const std::map<std::string,d
     return true;
 }
 
-// ------------- Branch binder (includes helicity and bin vars) -------------
-struct BranchBinderTC {
-    // topology helpers
-    int detector1 = 0; bool has_detector1 = false;
-    int detector2 = 0; bool has_detector2 = false;
+// -------- branches --------
+struct BranchBinderDVCS {
+    int detector1=0, detector2=0; bool has_d1=false, has_d2=false;
+    int helicity=0; bool has_helicity=false;
+    double t1=0, open_angle_ep2=0, pTmiss=0; bool has_t1=false, has_oa=false, has_pT=false;
+    double x=0, Q2=0, phi2=0, Delta_phi=0; bool has_x=false, has_Q2=false, has_phi2=false, has_Dp=false;
 
-    // kinematic cuts
-    double t1 = 0.0;             bool has_t1 = false;
-    double open_angle_ep2 = 0.0; bool has_open_angle_ep2 = false;
-    double pTmiss = 0.0;         bool has_pTmiss = false;
-
-    // binning variables
-    double x = 0.0;     bool has_x = false;   // Bjorken x
-    double Q2 = 0.0;    bool has_Q2 = false;
-    double phi2 = 0.0;  bool has_phi2 = false;
-    double Delta_phi = 0.0; bool has_Delta_phi = false;
-
-    // exclusivity variables (for 3sigma checks)
-    double Emiss2 = 0.0;            bool has_Emiss2 = false;
-    double Mx2 = 0.0;               bool has_Mx2 = false;
-    double Mx2_1 = 0.0;             bool has_Mx2_1 = false;
-    double Mx2_2 = 0.0;             bool has_Mx2_2 = false;
-    double theta_gamma_gamma = 0.0; bool has_theta_gamma_gamma = false;
-    double xF = 0.0;                bool has_xF = false;
-
-    int helicity = 0; bool has_helicity = false;
+    // extra exclusivity vars to apply 3σ if present
+    double Emiss2=0, Mx2=0, Mx2_1=0, Mx2_2=0, theta_gamma_gamma=0, xF=0;
+    bool has_Em=false, has_Mx2=false, has_Mx21=false, has_Mx22=false, has_tgg=false, has_xF=false;
 
     void bind(TTree* t) {
         if (!t) return;
-        auto bindI = [&](const char* n, int* a, bool& f){ if (t->GetBranch(n)) { t->SetBranchAddress(n, a); f = true; } };
-        auto bindD = [&](const char* n, double* a, bool& f){ if (t->GetBranch(n)) { t->SetBranchAddress(n, a); f = true; } };
+        auto bindI=[&](const char*n,int*a,bool&f){ if(t->GetBranch(n)){ t->SetBranchAddress(n,a); f=true; } };
+        auto bindD=[&](const char*n,double*a,bool&f){ if(t->GetBranch(n)){ t->SetBranchAddress(n,a); f=true; } };
 
-        bindI("detector1", &detector1, has_detector1);
-        bindI("detector2", &detector2, has_detector2);
-        bindI("helicity",  &helicity,  has_helicity);
+        bindI("detector1",&detector1,has_d1);
+        bindI("detector2",&detector2,has_d2);
+        bindI("helicity",&helicity,has_helicity);
 
-        bindD("t1", &t1, has_t1);
-        bindD("open_angle_ep2", &open_angle_ep2, has_open_angle_ep2);
-        bindD("pTmiss", &pTmiss, has_pTmiss);
+        bindD("t1",&t1,has_t1);
+        bindD("open_angle_ep2",&open_angle_ep2,has_oa);
+        bindD("pTmiss",&pTmiss,has_pT);
 
-        bindD("x", &x, has_x);
-        bindD("Q2", &Q2, has_Q2);
-        bindD("phi2", &phi2, has_phi2);
-        bindD("Delta_phi", &Delta_phi, has_Delta_phi);
+        bindD("x",&x,has_x);
+        bindD("Q2",&Q2,has_Q2);
+        bindD("phi2",&phi2,has_phi2);
+        bindD("Delta_phi",&Delta_phi,has_Dp);
 
-        bindD("Emiss2", &Emiss2, has_Emiss2);
-        bindD("Mx2", &Mx2, has_Mx2);
-        bindD("Mx2_1", &Mx2_1, has_Mx2_1);
-        bindD("Mx2_2", &Mx2_2, has_Mx2_2);
-        bindD("theta_gamma_gamma", &theta_gamma_gamma, has_theta_gamma_gamma);
-        bindD("xF", &xF, has_xF);
+        bindD("Emiss2",&Emiss2,has_Em);
+        bindD("Mx2",&Mx2,has_Mx2);
+        bindD("Mx2_1",&Mx2_1,has_Mx21);
+        bindD("Mx2_2",&Mx2_2,has_Mx22);
+        bindD("theta_gamma_gamma",&theta_gamma_gamma,has_tgg);
+        bindD("xF",&xF,has_xF);
     }
+    bool readyCuts() const { return has_d1 && has_d2 && has_t1 && has_oa && has_pT && has_helicity; }
+    bool readyBins() const { return has_x && has_Q2 && (has_phi2 || has_Dp); }
+    double phi() const { return has_phi2 ? phi2 : (has_Dp ? Delta_phi : std::numeric_limits<double>::quiet_NaN()); }
 
-    double phi() const {
-        return has_phi2 ? phi2 :
-               (has_Delta_phi ? Delta_phi : std::numeric_limits<double>::quiet_NaN());
-    }
-
-    bool readyForCuts() const {
-        return has_detector1 && has_detector2 && has_t1 && has_open_angle_ep2 && has_pTmiss && has_helicity;
-    }
-
-    bool readyForBinning() const {
-        return has_x && has_Q2 && (has_phi2 || has_Delta_phi);
-    }
-
-    std::map<std::string,double> valueMapForCuts() const {
+    std::map<std::string,double> cutVals() const {
         std::map<std::string,double> m;
-        if (has_Delta_phi) m["Delta_phi"] = Delta_phi;
-        if (has_theta_gamma_gamma) m["theta_gamma_gamma"] = theta_gamma_gamma;
-        if (has_pTmiss) m["pTmiss"] = pTmiss;
-        if (has_xF) m["xF"] = xF;
-        if (has_Emiss2) m["Emiss2"] = Emiss2;
-        if (has_Mx2) m["Mx2"] = Mx2;
-        if (has_Mx2_1) m["Mx2_1"] = Mx2_1;
-        if (has_Mx2_2) m["Mx2_2"] = Mx2_2;
+        if (has_Dp)  m["Delta_phi"]=Delta_phi;
+        if (has_tgg) m["theta_gamma_gamma"]=theta_gamma_gamma;
+        if (has_pT)  m["pTmiss"]=pTmiss;
+        if (has_xF)  m["xF"]=xF;
+        if (has_Em)  m["Emiss2"]=Emiss2;
+        if (has_Mx2) m["Mx2"]=Mx2;
+        if (has_Mx21) m["Mx2_1"]=Mx2_1;
+        if (has_Mx22) m["Mx2_2"]=Mx2_2;
         return m;
     }
 };
 
-// ------------- counting core -------------
-struct HelCounts { long long plus = 0; long long minus = 0; };
-using BinKey = std::tuple<int,int,int,int>; // (ix, iQ2, it, ip)
+// ---- containers ----
+using BinKey = std::tuple<int,int,int,int>; // (ix,iQ2,it,ip)
+struct HelCounts { long long plus=0, minus=0; };
 
-// group -> binKey -> HelCounts
-using GroupCounts = std::map<std::string, std::map<BinKey, HelCounts>>;
-
-static inline std::string tupleKeyStr(const BinKey& k) {
-    int ix, iQ2, it, ip; std::tie(ix, iQ2, it, ip) = k;
-    std::ostringstream os; os << "(" << ix << "," << iQ2 << "," << it << "," << ip << ")";
+static inline std::string keyStr(const BinKey& k) {
+    int a,b,c,d; std::tie(a,b,c,d)=k;
+    std::ostringstream os; os<<"("<<a<<","<<b<<","<<c<<","<<d<<")";
     return os.str();
 }
 
-// Individual per-period group name should be DVCS_* to match downstream readers
-static inline std::string indivGroupName(const std::string& runTag) {
-    return dvcsPeriodName(runTag); // e.g., "DVCS_Fa18_inb"
-}
-
-// Existing combined group names (kept for backward-compat)
-static inline std::string combFa18() { return "Fa18_inb_out_combined"; }
-static inline std::string combFour() { return "Sp18_and_Fa18_inb_out_combined"; }
-
-// New requested combined group names
-static inline std::string grpFa18Sum() { return "fa18_sum"; }
-static inline std::string grpTenSixSum() { return "10.6_sum"; }
-
-// Membership checks for combined groups
-static inline bool inFa18(const std::string& runTag) {
-    return (runTag == "fa18_inb" || runTag == "fa18_out");
-}
-static inline bool inFour(const std::string& runTag) {
-    return (runTag == "sp18_inb" || runTag == "sp18_out" || runTag == "fa18_inb" || runTag == "fa18_out");
-}
-static inline bool inFa18Sum(const std::string& runTag) {
-    return (runTag == "fa18_inb" || runTag == "fa18_out");
-}
-static inline bool inTenSixSum(const std::string& runTag) {
-    return (runTag == "sp18_inb" || runTag == "sp18_out" || runTag == "fa18_inb" || runTag == "fa18_inb_supp" || runTag == "fa18_out");
-}
-
-// JSON writer
-static void writeCountsJson(const std::string& outPath,
-                            const GroupCounts& groups,
-                            int nPhi,
-                            const std::vector<std::pair<double,double>>& xB_bins,
-                            const std::vector<std::pair<double,double>>& Q2_bins,
-                            const std::vector<std::pair<double,double>>& t_bins)
+// ---- JSON writer ----
+static void write_total_counts_json(
+    const std::string& out_path,
+    const std::map<std::string, std::map<BinKey, HelCounts>>& groups,
+    int nPhi,
+    const std::vector<std::pair<double,double>>& xB_bins,
+    const std::vector<std::pair<double,double>>& Q2_bins,
+    const std::vector<std::pair<double,double>>& t_bins)
 {
-    std::ofstream ofs(outPath);
-    if (!ofs) {
-        std::cerr << "[total_counts][ERROR] Cannot open output JSON: " << outPath << std::endl;
-        return;
-    }
+    std::ofstream ofs(out_path);
+    if (!ofs) { std::cerr << "[total_counts][ERROR] Cannot open " << out_path << "\n"; return; }
     ofs << std::fixed << std::setprecision(8);
-
     ofs << "{\n";
     ofs << "  \"binning_meta\": {\"phi_bins\": " << nPhi
         << ", \"xB_bins\": " << xB_bins.size()
         << ", \"Q2_bins\": " << Q2_bins.size()
-        << ", \"t_bins\": "  << t_bins.size()  << "},\n";
-    ofs << "  \"groups\": {\n";
+        << ", \"t_bins\": "  << t_bins.size() << "},\n";
 
-    bool firstGroup = true;
+    bool firstG=true;
     for (const auto& gkv : groups) {
-        if (!firstGroup) ofs << ",\n";
-        firstGroup = false;
-
-        ofs << "    \"" << gkv.first << "\": {\n";
-        ofs << "      \"bins\": {\n";
-
-        bool firstBin = true;
-        for (const auto& bkv : gkv.second) {
-            if (!firstBin) ofs << ",\n";
-            firstBin = false;
-
-            std::string keyStr = tupleKeyStr(bkv.first);
-            const HelCounts& hc = bkv.second;
-            long long total = hc.plus + hc.minus;
-
-            ofs << "        \"" << keyStr << "\": {\"helicity\": {\"+1\": " << hc.plus
-                << ", \"-1\": " << hc.minus << "}, \"total\": " << total << "}";
+        if (!firstG) ofs << ",\n";
+        firstG=false;
+        ofs << "  \"" << gkv.first << "\": {\n";
+        ofs << "    \"bins\": {\n";
+        bool firstB=true;
+        for (const auto& kv : gkv.second) {
+            if (!firstB) ofs << ",\n";
+            firstB=false;
+            const HelCounts& hc = kv.second;
+            ofs << "      \"" << keyStr(kv.first) << "\": {"
+                << "\"helicity\":{\"+1\":" << hc.plus << ",\"-1\":" << hc.minus << "},"
+                << "\"total\":" << (hc.plus + hc.minus)
+                << "}";
         }
-
-        ofs << "\n      }\n";   // end bins
-        ofs << "    }";         // end group
+        ofs << "\n    }\n  }";
     }
-
-    ofs << "\n  }\n}\n";
+    ofs << "\n}\n";
     ofs.close();
-    std::cout << "[total_counts] Wrote " << outPath << std::endl;
+    std::cout << "[total_counts] Wrote " << out_path << "\n";
 }
 
-void compute_total_counts(const std::vector<std::string>& periods,
-                          const std::vector<std::string>& topologies,
-                          const std::vector<Binning>& binning_scheme,
-                          const std::map<std::string, TTree*>& dataTrees,
-                          const std::string& cuts_json_path,
-                          const std::string& output_json_path)
+// ---- main ----
+void compute_total_counts(
+    const std::vector<std::string>& periods,
+    const std::vector<std::string>& topologies,
+    const std::vector<Binning>& binning_scheme,
+    const std::map<std::string, TTree*>& dvcsDataTrees,
+    const std::string& combined_cuts_json,
+    const std::string& out_json_path)
 {
-    // Build bin edges
+    // Build global bin edges
     const auto xB_bins = uniqueRanges(binning_scheme, 'x');
     const auto Q2_bins = uniqueRanges(binning_scheme, 'Q');
     const auto t_bins  = uniqueRanges(binning_scheme, 't');
     if (xB_bins.empty() || Q2_bins.empty() || t_bins.empty()) {
-        std::cerr << "[total_counts][ERROR] Missing xB/Q2/t bins. Aborting." << std::endl;
+        std::cerr << "[total_counts][ERROR] Binning ranges are empty.\n";
         return;
     }
 
-    // Load exclusivity 3sigma cuts (data) from combined JSON
+    // Load combined 3σ cuts (data)
     PeriodTopoCuts cuts;
-    bool ok = loadCombinedCuts(cuts_json_path, cuts);
-    if (!ok) std::cerr << "[total_counts][WARN] Proceeding, but no cuts were loaded." << std::endl;
+    if (!loadCombinedCuts(combined_cuts_json, cuts)) {
+        std::cerr << "[total_counts][WARN] No combined cuts loaded; proceeding without 3σ cuts.\n";
+    }
 
-    // Set up output container
-    GroupCounts outCounts;
+    auto dvcsCutsKey = [&](const std::string& runTag, const std::string& topoKey)->std::string {
+        std::string cap = runTag;
+        if (!cap.empty()) cap[0] = std::toupper(static_cast<unsigned char>(cap[0]));
+        for (size_t i=0;i+1<cap.size();++i) if (cap[i]=='_' && i+1<cap.size()) cap[i+1]=std::toupper(static_cast<unsigned char>(cap[i+1]));
+        return std::string("DVCS_") + cap + "_" + topoKey;
+    };
 
-    // Loop over each requested period
-    for (const std::string& period : periods) {
-        const std::string runTag = periodToRunTagKey(period); // e.g., "sp18_inb"
-        auto itTree = dataTrees.find(runTag);
-        if (itTree == dataTrees.end() || !itTree->second) {
-            std::cerr << "[total_counts][WARN] No data tree for '" << period
-                      << "' (key '" << runTag << "'). Skipping." << std::endl;
+    // group name -> (bin -> counts)
+    std::map<std::string, std::map<BinKey, HelCounts>> outCounts;
+
+    for (const auto& period : periods) {
+        const std::string runTag = periodToRunTagKey(period);  // e.g. "fa18_inb"
+        const std::string dvcsKeyInMap = runTag;               // tree key in dvcsDataTrees
+
+        auto it = dvcsDataTrees.find(dvcsKeyInMap);
+        if (it == dvcsDataTrees.end() || !it->second) {
+            std::cerr << "[total_counts][WARN] No DVCS data tree for '" << period
+                      << "' (key '" << dvcsKeyInMap << "'). Skipping.\n";
             continue;
         }
-        TTree* t = itTree->second;
-
-        // Bind branches once per tree
-        BranchBinderTC b;
-        b.bind(t);
-        if (!b.readyForCuts() || !b.readyForBinning()) {
-            std::cerr << "[total_counts][WARN] Missing required branches for '" << period << "'. Skipping." << std::endl;
+        TTree* t = it->second;
+        BranchBinderDVCS b; b.bind(t);
+        if (!b.readyCuts() || !b.readyBins()) {
+            std::cerr << "[total_counts][WARN] DVCS tree missing branches for '" << period << "'. Skipping.\n";
             continue;
         }
 
         const Long64_t nent = t->GetEntries();
-
-        // Build DVCS key prefix used in exclusivity combined JSON
-        std::string cap = runTag;
-        if (!cap.empty()) cap[0] = static_cast<char>(std::toupper(static_cast<unsigned char>(cap[0])));
-        for (size_t i = 0; i + 1 < cap.size(); ++i) {
-            if (cap[i] == '_' && i + 1 < cap.size()) {
-                cap[i + 1] = static_cast<char>(std::toupper(static_cast<unsigned char>(cap[i + 1])));
-            }
-        }
-        const std::string periodCode = std::string("DVCS_") + cap;
-
-        // Event loop
-        for (Long64_t i = 0; i < nent; ++i) {
+        for (Long64_t i=0;i<nent;++i) {
             t->GetEntry(i);
+            if (!applyKinematicCuts_simple(b.t1,b.open_angle_ep2,b.pTmiss)) continue;
+            if (b.helicity!=+1 && b.helicity!=-1) continue;
 
-            if (!applyKinematicCuts_simple(b.t1, b.open_angle_ep2, b.pTmiss)) continue;
-            if (b.helicity != +1 && b.helicity != -1) continue;
-
-            // Determine topology for this event
+            // choose topology
             std::string usedTopoKey;
             for (const auto& topoStr : topologies) {
-                if (passesTopology_simple(b.detector1, b.detector2, topoStr)) {
-                    usedTopoKey = topoToKey(topoStr);
-                    break;
-                }
+                if (passesTopology_simple(b.detector1,b.detector2,topoStr)) { usedTopoKey = topoToKey(topoStr); break; }
             }
             if (usedTopoKey.empty()) continue;
 
-            // Load cuts for this period+topology if available
+            // 3σ cuts (if available)
             VarCutMap topoCuts;
-            auto itCut = cuts.find(periodCode + "_" + usedTopoKey);
+            auto itCut = cuts.find(dvcsCutsKey(runTag, usedTopoKey));
             if (itCut != cuts.end()) topoCuts = itCut->second;
-
-            // Apply 3sigma cuts
             if (!topoCuts.empty()) {
-                auto vals = b.valueMapForCuts();
-                if (!passes3SigmaCuts(topoCuts, vals)) continue;
+                if (!passes3SigmaCuts(topoCuts, b.cutVals())) continue;
             }
 
-            // Binning
-            double xB = b.x, Q2 = b.Q2, tt = std::fabs(b.t1), phi = b.phi();
-            if (!std::isfinite(xB) || !std::isfinite(Q2) || !std::isfinite(tt) || !std::isfinite(phi)) continue;
+            // bin
+            double xB=b.x, Q2=b.Q2, tt=std::fabs(b.t1), phi=b.phi();
+            if (!std::isfinite(xB)||!std::isfinite(Q2)||!std::isfinite(tt)||!std::isfinite(phi)) continue;
+            int ix=findBin(xB,xB_bins), iQ=findBin(Q2,Q2_bins), itb=findBin(tt,t_bins), ip=phiToBin(phi);
+            if (ix<0||iQ<0||itb<0||ip<0||ip>=N_PHI_BINS) continue;
+            BinKey key(ix,iQ,itb,ip);
 
-            int ix  = findBin(xB, xB_bins);
-            int iQ2 = findBin(Q2, Q2_bins);
-            int itb = findBin(tt,  t_bins);
-            int ip  = phiToBin(phi);
-            if (ix < 0 || iQ2 < 0 || itb < 0 || ip < 0 || ip >= N_PHI_BINS) continue;
+            // (1) Store under plain runTag (BSA expects this)
+            HelCounts& hc_plain = outCounts[runTag][key];
+            if (b.helicity==+1) hc_plain.plus++; else hc_plain.minus++;
 
-            BinKey key(ix, iQ2, itb, ip);
-
-            // Individual DVCS_* group
-            HelCounts& hc_ind = outCounts[indivGroupName(runTag)][key];
-            if (b.helicity == +1) hc_ind.plus++; else hc_ind.minus++;
-
-            // Existing combined groups (kept)
-            if (inFa18(runTag)) {
-                HelCounts& hc_fa = outCounts[combFa18()][key];
-                if (b.helicity == +1) hc_fa.plus++; else hc_fa.minus++;
-            }
-            if (inFour(runTag)) {
-                HelCounts& hc_4 = outCounts[combFour()][key];
-                if (b.helicity == +1) hc_4.plus++; else hc_4.minus++;
-            }
-
-            // New requested summed groups
-            if (inFa18Sum(runTag)) {
-                HelCounts& hc_fs = outCounts[grpFa18Sum()][key];
-                if (b.helicity == +1) hc_fs.plus++; else hc_fs.minus++;
-            }
-            if (inTenSixSum(runTag)) {
-                HelCounts& hc_106 = outCounts[grpTenSixSum()][key];
-                if (b.helicity == +1) hc_106.plus++; else hc_106.minus++;
-            }
+            // (2) ALSO store under DVCS_* name for completeness
+            const std::string dvcsName = dvcsPeriodName(runTag);
+            HelCounts& hc_dvcs = outCounts[dvcsName][key];
+            if (b.helicity==+1) hc_dvcs.plus++; else hc_dvcs.minus++;
         }
-
-        std::cout << "[total_counts] Counted period " << period
-                  << " using cuts key '" << periodCode << "_*'" << std::endl;
     }
 
-    // Serialize JSON
-    writeCountsJson(output_json_path, outCounts, N_PHI_BINS, xB_bins, Q2_bins, t_bins);
+    // Write JSON
+    write_total_counts_json(out_json_path, outCounts, N_PHI_BINS, 
+                            uniqueRanges(binning_scheme, 'x'),
+                            uniqueRanges(binning_scheme, 'Q'),
+                            uniqueRanges(binning_scheme, 't'));
 }

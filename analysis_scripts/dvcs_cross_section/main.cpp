@@ -74,25 +74,25 @@ int main(int argc, char* argv[]) {
     // produced by exclusivity_cuts
     const std::string output_counts_js = "output/jsons/total_counts.json";
 
-    // compute_total_counts(dvcs_periods, topologies, binning_scheme, dataTrees, cuts_json_path, 
-    //     output_counts_js);
+    compute_total_counts(dvcs_periods, topologies, binning_scheme, dataTrees, cuts_json_path, 
+        output_counts_js);
 
     // Helicity-resolved π0 contamination
     // NOTE: pass the OUTPUT ROOT ("output") so the implementation writes:
     //   - per-period JSONs to output/jsons/contamination/
     //   - combined JSON to output/jsons/
     //   - plots to output/contamination_plots/...
-    // compute_pi0_contamination_helicity(
-    //     dvcs_periods,
-    //     topologies,
-    //     binning_scheme,
-    //     dataTrees,
-    //     eppi0DataTrees,
-    //     eppi0RecMcTrees,   // reco MC (keys "*_rec_mc")
-    //     eppi0RecMcTrees,   // bkg MC  (keys "*_bkg")
-    //     cuts_json_path,
-    //     output_root        // <<< was "output/contamination"; must be the root "output"
-    // );
+    compute_pi0_contamination_helicity(
+        dvcs_periods,
+        topologies,
+        binning_scheme,
+        dataTrees,
+        eppi0DataTrees,
+        eppi0RecMcTrees,   // reco MC
+        eppi0BkgTrees,     // bkg MC
+        cuts_json_path,
+        output_root
+    );
 
     // --------- π0-corrected helicity counts (per φ) ----------
     const std::string total_counts_json = "output/jsons/total_counts.json";
