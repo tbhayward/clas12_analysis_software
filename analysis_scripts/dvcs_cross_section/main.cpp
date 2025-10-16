@@ -96,12 +96,12 @@ int main(int argc, char* argv[]) {
 
     // --------- π0-corrected helicity counts (per φ) ----------
     const std::string total_counts_json = "output/jsons/total_counts.json";
-    const std::string contamination_dir = "output/jsons/contamination";
+    const std::string contamination_dir_counts = "output/jsons/contamination";
     compute_pi0_corrected_counts(
-        dvcs_periods,             // periods we already defined
+        dvcs_periods,
         binning_scheme,
         total_counts_json,        // from compute_total_counts()
-        contamination_dir,        // from compute_pi0_contamination_helicity()
+        contamination_dir_counts, // from compute_pi0_contamination_helicity()
         output_root               // "output"
     );
     std::cout << "π0-corrected counts stage finished." << std::endl;
@@ -112,30 +112,32 @@ int main(int argc, char* argv[]) {
     //   - per-period JSONs: output/jsons/radiative_corrections_<period>.json
     //   - all-groups file: output/jsons/radiative_corrections_all_groups.json
     //   - plots (ONLY per beam energy): output/radiative_correction_plots/{10.59,10.60,10.2}/...
-    // compute_radiative_corrections(
-    //     dvcs_periods,
-    //     binning_scheme,
-    //     genMcTrees,     
-    //     radGenMcTrees,  
-    //     output_root
-    // );
+    compute_radiative_corrections(
+        dvcs_periods,
+        binning_scheme,
+        genMcTrees,
+        radGenMcTrees,
+        output_root
+    );
 
-    // Beam-Spin Asymmetry: reads total_counts.json and contamination JSONs,
-    // writes per-period BSA fits to output/jsons/BSA_fits/BSA_fits_<period>.json,
-    // writes all-periods file to output/jsons/BSA_fits_all_periods.json,
-    // writes 10.6 GeV combined to output/jsons/BSA_fits_combined_10p6.json,
-    // and plots to output/bsa_plots/<runTag>/...
-    // namespace fs = std::filesystem;
-    // const std::string contamination_dir = (fs::path(output_root) / "jsons" / "contamination").string();
-    // compute_and_plot_bsa_helicity(
-    //     dvcs_periods,
-    //     topologies,
-    //     binning_scheme,
-    //     dataTrees,            // DVCS trees (for beam_pol extraction)
-    //     output_counts_js,     // total_counts.json path
-    //     contamination_dir,    // directory with contamination_<period>.json files
-    //     output_root
-    // );
+    // Beam-Spin Asymmetry:
+    // - reads total_counts.json and contamination JSONs
+    // - writes per-period fits to output/jsons/BSA_fits/BSA_fits_<period>.json
+    // - writes all-periods file to output/jsons/BSA_fits_all_periods.json
+    // - writes 10.6 GeV combined to output/jsons/BSA_fits_combined_10p6.json
+    // - plots to output/bsa_plots/<runTag>/...
+    namespace fs = std::filesystem;
+    const std::string contamination_dir_bsa =
+        (fs::path(output_root) / "jsons" / "contamination").string();
+    compute_and_plot_bsa_helicity(
+        dvcs_periods,
+        topologies,
+        binning_scheme,
+        dataTrees,            // DVCS trees (for beam_pol extraction)
+        output_counts_js,     // total_counts.json path
+        contamination_dir_bsa,// directory with contamination_<period>.json files
+        output_root
+    );
 
     //     // --------- Acceptance (reco MC with MC cuts / gen MC, per bin & φ) ----------
     // // Writes per-period JSONs: output/jsons/acceptance_<period>.json

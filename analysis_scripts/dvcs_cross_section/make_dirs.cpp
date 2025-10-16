@@ -14,6 +14,9 @@ void makeOutputDirs() {
         {"output/jsons", {"individual_cuts"}},
         {"output/exclusivity_plots", {}},
         {"output/mean_kinematic_plots", {}},
+        {"output/pi0_corrected_counts",
+            {"sp18_inb","sp18_out","fa18_inb_supplemental",
+             "sp18_inb","sp18_out","10.6GeV","sp19_inb"}},
         {"output/radiative_correction_plots",
             {"10.59","10.60","10.2"}},
         {"output/bsa_plots",
@@ -21,7 +24,13 @@ void makeOutputDirs() {
              "sp18_inb","sp18_out","10.6GeV","sp19_inb"}},
         {"output/acceptance",
             {"sp18_inb","sp18_out",
-            "fa18_inb","fa18_out","sp19_inb"}}
+            "fa18_inb","fa18_out","sp19_inb"}},
+        {"output/bin_volume",
+            {"10.59","10.60","10.2"}},
+        {"output/uncorrected_cross_section",
+            {"10.59","10.60","10.2"}},
+        {"output/rad_corrected_cross_section",
+            {"10.59","10.60","10.2"}},
     };
 
     for (const auto& cat : cats) {
