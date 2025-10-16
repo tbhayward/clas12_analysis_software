@@ -72,7 +72,7 @@ int main(int argc, char* argv[]) {
         dataTrees);
 
     // // --------- Total counts after exclusivity cuts (by helicity) ----------
-    // const std::string cuts_json_path   = "output/jsons/combined_cuts.json"; 
+    const std::string cuts_json_path   = "output/jsons/combined_cuts.json"; 
     // // produced by exclusivity_cuts
     // const std::string output_counts_js = "output/jsons/total_counts.json";
 
