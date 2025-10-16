@@ -28,6 +28,7 @@
 #include <TStyle.h>
 #include <TLatex.h>
 #include <TPad.h>
+#include <TGraph.h>
 
 #include <algorithm>
 #include <cctype>
