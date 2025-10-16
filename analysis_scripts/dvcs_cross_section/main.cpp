@@ -34,20 +34,25 @@ int main(int argc, char* argv[]) {
     auto binning_scheme = load_binning_scheme(csv_file_path);
     std::cout << "Loaded binning scheme: " << binning_scheme.size() << " bins" << std::endl;
 
-    // Containers for different tree categories
+    // -------------------------------------------------------------------------
+    // Tree containers
+    // -------------------------------------------------------------------------
     std::map<std::string, TTree*> dataTrees;        // DVCS data
     std::map<std::string, TTree*> genMcTrees;       // DVCS generated MC (no-rad)
     std::map<std::string, TTree*> recMcTrees;       // DVCS reconstructed MC (no-rad)
-    std::map<std::string, TTree*> eppi0DataTrees;   // eppi0 data
-    std::map<std::string, TTree*> eppi0GenMcTrees;  // eppi0 generated MC
-    std::map<std::string, TTree*> eppi0RecMcTrees;  // eppi0 reconstructed MC
-    std::map<std::string, TTree*> radGenMcTrees;    // NEW: DVCS generated MC (radiative)
-    std::map<std::string, TTree*> radRecMcTrees;    // NEW: DVCS reconstructed MC (radiative)
+    std::map<std::string, TTree*> eppi0DataTrees;   // eπ⁰ data
+    std::map<std::string, TTree*> eppi0GenMcTrees;  // eπ⁰ generated MC
+    std::map<std::string, TTree*> eppi0RecMcTrees;  // eπ⁰ reconstructed MC
+    std::map<std::string, TTree*> eppi0BkgTrees;    // eπ⁰ DVCS-background MC
+    std::map<std::string, TTree*> radGenMcTrees;    // DVCS generated MC (radiative)
+    std::map<std::string, TTree*> radRecMcTrees;    // DVCS reconstructed MC (radiative)
 
-    // Load all trees from files
+    // -------------------------------------------------------------------------
+    // Load all files
+    // -------------------------------------------------------------------------
     loadTrees(dataTrees, genMcTrees, recMcTrees,
               eppi0DataTrees, eppi0GenMcTrees, eppi0RecMcTrees,
-              radGenMcTrees, radRecMcTrees);
+              eppi0BkgTrees, radGenMcTrees, radRecMcTrees);
     std::cout << "All trees loaded successfully." << std::endl;
 
     // // Run exclusivity cut extraction (single-threaded for stability)
@@ -88,11 +93,10 @@ int main(int argc, char* argv[]) {
         binning_scheme,
         dataTrees,
         eppi0DataTrees,
-        eppi0RecMcTrees,   // reco MC
-        eppi0BkgTrees,     // bkg MC
+        eppi0RecMcTrees,   // reconstructed MC
+        eppi0BkgTrees,     // NEW: background MC
         cuts_json_path,
-        output_root
-    );
+        output_root);
 
     // --------- π0-corrected helicity counts (per φ) ----------
     const std::string total_counts_json = "output/jsons/total_counts.json";

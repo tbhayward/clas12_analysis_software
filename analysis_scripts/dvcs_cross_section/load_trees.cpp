@@ -43,8 +43,9 @@ void loadTrees(std::map<std::string, TTree*>& dataTrees,
                std::map<std::string, TTree*>& eppi0DataTrees,
                std::map<std::string, TTree*>& eppi0GenMcTrees,
                std::map<std::string, TTree*>& eppi0RecMcTrees,
-               std::map<std::string, TTree*>& radGenMcTrees,  // NEW
-               std::map<std::string, TTree*>& radRecMcTrees)  // NEW
+               std::map<std::string, TTree*>& eppi0BkgTrees,
+               std::map<std::string, TTree*>& radGenMcTrees,
+               std::map<std::string, TTree*>& radRecMcTrees)
 {
     // DVCS data files
     loadCategory({
@@ -120,12 +121,12 @@ void loadTrees(std::map<std::string, TTree*>& dataTrees,
         {"sp19_inb_rec_mc","/work/clas12/thayward/CLAS12_exclusive/eppi0/data/pass2/mc/hipo_files/rec_aaogen_norad_sp19_inb_10200MeV.root"}
     }, eppi0RecMcTrees);
 
-    // eppi0 DVCS-background MC (kept as-is, loads into eppi0RecMcTrees per your original code)
+    // eπ⁰ DVCS-background MC  ->  eppi0BkgTrees
     loadCategory({
         {"sp18_inb_bkg","/work/clas12/thayward/CLAS12_exclusive/eppi0/data/pass2/mc/hipo_files/eppi0_bkg_aaogen_norad_rga_sp18_inb_epgamma.root"},
         {"sp18_out_bkg","/work/clas12/thayward/CLAS12_exclusive/eppi0/data/pass2/mc/hipo_files/eppi0_bkg_aaogen_norad_rga_sp18_out_epgamma.root"},
         {"fa18_inb_bkg","/work/clas12/thayward/CLAS12_exclusive/eppi0/data/pass2/mc/hipo_files/eppi0_bkg_aaogen_norad_rga_fa18_inb_epgamma.root"},
         {"fa18_out_bkg","/work/clas12/thayward/CLAS12_exclusive/eppi0/data/pass2/mc/hipo_files/eppi0_bkg_aaogen_norad_rga_fa18_out_epgamma.root"},
         {"sp19_inb_bkg","/work/clas12/thayward/CLAS12_exclusive/eppi0/data/pass2/mc/hipo_files/eppi0_bkg_aaogen_norad_rga_sp19_inb_epgamma.root"}
-    }, eppi0RecMcTrees);
+    }, eppi0BkgTrees);  
 }
