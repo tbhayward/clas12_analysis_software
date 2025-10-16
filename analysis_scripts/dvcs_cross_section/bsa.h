@@ -6,21 +6,12 @@
 #include <tuple>
 #include <vector>
 
-#include "load_binning_scheme.h" // provides struct Binning { double xBmin,xBmax,Q2min,Q2max,tmin,tmax; }
+#include "load_binning_scheme.h" // provides struct Binning
 
 class TTree;
 
 // Compute helicity-resolved BSA including per-bin polarization and π0 contamination,
 // write JSONs, and plot per-period grids plus a 10.6 GeV combined set.
-//
-// Inputs:
-//  - periods:        e.g. {"DVCS_Fa18_inb", ...}
-//  - topologies:     {"(FD,FD)","(CD,FD)","(CD,FT)"}
-//  - binning_scheme: result of load_binning_scheme(...)
-//  - dvcsDataTrees:  keys = run tags: "fa18_inb", "sp18_out", ...
-//  - total_counts_json_path: "output/jsons/total_counts.json"
-//  - contamination_dir:      "output/jsons/contamination"
-//  - out_root_dir:           "output"
 void compute_and_plot_bsa_helicity(
     const std::vector<std::string>& periods,
     const std::vector<std::string>& topologies,

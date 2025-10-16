@@ -5,6 +5,7 @@
 #include <string>
 class TTree;
 
+// Load all required ROOT trees into the provided maps
 void loadTrees(std::map<std::string, TTree*>& dataTrees,
                std::map<std::string, TTree*>& genMcTrees,
                std::map<std::string, TTree*>& recMcTrees,

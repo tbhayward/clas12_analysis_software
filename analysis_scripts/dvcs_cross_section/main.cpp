@@ -7,7 +7,7 @@
 #include "pi0_contamination.h"
 #include "pi0_corrected_counts.h"
 #include "bsa.h"
-#include "radiative_corrections.h"  
+#include "radiative_corrections.h"
 #include <filesystem>
 #include <iostream>
 #include <map>
@@ -34,25 +34,22 @@ int main(int argc, char* argv[]) {
     auto binning_scheme = load_binning_scheme(csv_file_path);
     std::cout << "Loaded binning scheme: " << binning_scheme.size() << " bins" << std::endl;
 
-    // -------------------------------------------------------------------------
-    // Tree containers
-    // -------------------------------------------------------------------------
+    // Containers for different tree categories
     std::map<std::string, TTree*> dataTrees;        // DVCS data
     std::map<std::string, TTree*> genMcTrees;       // DVCS generated MC (no-rad)
     std::map<std::string, TTree*> recMcTrees;       // DVCS reconstructed MC (no-rad)
-    std::map<std::string, TTree*> eppi0DataTrees;   // eπ⁰ data
-    std::map<std::string, TTree*> eppi0GenMcTrees;  // eπ⁰ generated MC
-    std::map<std::string, TTree*> eppi0RecMcTrees;  // eπ⁰ reconstructed MC
-    std::map<std::string, TTree*> eppi0BkgTrees;    // eπ⁰ DVCS-background MC
-    std::map<std::string, TTree*> radGenMcTrees;    // DVCS generated MC (radiative)
-    std::map<std::string, TTree*> radRecMcTrees;    // DVCS reconstructed MC (radiative)
+    std::map<std::string, TTree*> eppi0DataTrees;   // eppi0 data
+    std::map<std::string, TTree*> eppi0GenMcTrees;  // eppi0 generated MC
+    std::map<std::string, TTree*> eppi0RecMcTrees;  // eppi0 reconstructed MC
+    std::map<std::string, TTree*> eppi0BkgTrees;    // eppi0 background MC   (FIX: added)
+    std::map<std::string, TTree*> radGenMcTrees;    // NEW: DVCS generated MC (radiative)
+    std::map<std::string, TTree*> radRecMcTrees;    // NEW: DVCS reconstructed MC (radiative)
 
-    // -------------------------------------------------------------------------
-    // Load all files
-    // -------------------------------------------------------------------------
+    // Load all trees from files
+    // FIX: pass eppi0BkgTrees in the correct slot to match load_trees.h
     loadTrees(dataTrees, genMcTrees, recMcTrees,
-              eppi0DataTrees, eppi0GenMcTrees, eppi0RecMcTrees,
-              eppi0BkgTrees, radGenMcTrees, radRecMcTrees);
+              eppi0DataTrees, eppi0GenMcTrees, eppi0RecMcTrees, eppi0BkgTrees,
+              radGenMcTrees, radRecMcTrees);
     std::cout << "All trees loaded successfully." << std::endl;
 
     // // Run exclusivity cut extraction (single-threaded for stability)
@@ -93,10 +90,11 @@ int main(int argc, char* argv[]) {
         binning_scheme,
         dataTrees,
         eppi0DataTrees,
-        eppi0RecMcTrees,   // reconstructed MC
-        eppi0BkgTrees,     // NEW: background MC
+        eppi0RecMcTrees,   // reco MC
+        eppi0BkgTrees,     // bkg MC
         cuts_json_path,
-        output_root);
+        output_root
+    );
 
     // --------- π0-corrected helicity counts (per φ) ----------
     const std::string total_counts_json = "output/jsons/total_counts.json";
@@ -205,7 +203,6 @@ int main(int argc, char* argv[]) {
     //     const std::string out_dir = "output/rad_corrected_cross_section";
     //     compute_rad_corrected_cross_sections(binning_scheme, unx_dir, rc_dir, out_dir);
     // }
-
 
     std::cout << "All done." << std::endl;
     return 0;

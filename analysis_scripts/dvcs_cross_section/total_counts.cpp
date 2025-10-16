@@ -231,7 +231,7 @@ static inline std::string keyStr(const BinKey& k) {
     return os.str();
 }
 
-// ---- JSON writer ----
+// ---- JSON writer (FIX: add top-level "groups") ----
 static void write_total_counts_json(
     const std::string& out_path,
     const std::map<std::string, std::map<BinKey, HelCounts>>& groups,
@@ -249,25 +249,28 @@ static void write_total_counts_json(
         << ", \"Q2_bins\": " << Q2_bins.size()
         << ", \"t_bins\": "  << t_bins.size() << "},\n";
 
+    ofs << "  \"groups\": {\n"; // <-- required by downstream readers
+
     bool firstG=true;
     for (const auto& gkv : groups) {
         if (!firstG) ofs << ",\n";
         firstG=false;
-        ofs << "  \"" << gkv.first << "\": {\n";
-        ofs << "    \"bins\": {\n";
+        ofs << "    \"" << gkv.first << "\": {\n";
+        ofs << "      \"bins\": {\n";
         bool firstB=true;
         for (const auto& kv : gkv.second) {
             if (!firstB) ofs << ",\n";
             firstB=false;
             const HelCounts& hc = kv.second;
-            ofs << "      \"" << keyStr(kv.first) << "\": {"
+            ofs << "        \"" << keyStr(kv.first) << "\": {"
                 << "\"helicity\":{\"+1\":" << hc.plus << ",\"-1\":" << hc.minus << "},"
                 << "\"total\":" << (hc.plus + hc.minus)
                 << "}";
         }
-        ofs << "\n    }\n  }";
+        ofs << "\n      }\n    }";
     }
-    ofs << "\n}\n";
+    ofs << "\n  }\n"; // close "groups"
+    ofs << "}\n";
     ofs.close();
     std::cout << "[total_counts] Wrote " << out_path << "\n";
 }
@@ -291,6 +294,8 @@ void compute_total_counts(
     }
 
     // Load combined 3σ cuts (data)
+    using VarCutMap = std::map<std::string, Stats>;
+    using PeriodTopoCuts = std::map<std::string, VarCutMap>;
     PeriodTopoCuts cuts;
     if (!loadCombinedCuts(combined_cuts_json, cuts)) {
         std::cerr << "[total_counts][WARN] No combined cuts loaded; proceeding without 3σ cuts.\n";
@@ -317,7 +322,10 @@ void compute_total_counts(
             continue;
         }
         TTree* t = it->second;
-        BranchBinderDVCS b; b.bind(t);
+
+        // ---- bind branches ----
+        struct BranchBinderDVCS b;
+        b.bind(t);
         if (!b.readyCuts() || !b.readyBins()) {
             std::cerr << "[total_counts][WARN] DVCS tree missing branches for '" << period << "'. Skipping.\n";
             continue;
@@ -351,7 +359,7 @@ void compute_total_counts(
             if (ix<0||iQ<0||itb<0||ip<0||ip>=N_PHI_BINS) continue;
             BinKey key(ix,iQ,itb,ip);
 
-            // (1) Store under plain runTag (BSA expects this)
+            // (1) Store under plain runTag (BSA & π0-corr expect these)
             HelCounts& hc_plain = outCounts[runTag][key];
             if (b.helicity==+1) hc_plain.plus++; else hc_plain.minus++;
 
@@ -362,7 +370,7 @@ void compute_total_counts(
         }
     }
 
-    // Write JSON
+    // Write JSON (with top-level "groups")
     write_total_counts_json(out_json_path, outCounts, N_PHI_BINS, 
                             uniqueRanges(binning_scheme, 'x'),
                             uniqueRanges(binning_scheme, 'Q'),

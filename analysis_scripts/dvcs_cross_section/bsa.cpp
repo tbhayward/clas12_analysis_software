@@ -484,7 +484,6 @@ static void write_all_periods_json(
 
 // ------------ plotting (dynamic grid + clean title + red fit curve) ------------
 static void drawDegreeTicks(double xmin, double ymin, double xmax, double labelSize){
-    // Draw 0,90,180,270,360 degree ticks with labels on top of the frame axis
     TGaxis* ax = new TGaxis(xmin, ymin, xmax, ymin, 0.0, 360.0, 4, "");
     ax->SetLabelFont(42);
     ax->SetLabelSize(labelSize);
@@ -540,7 +539,7 @@ static void plot_cells_for_period(
         TLatex head;
         head.SetNDC(); head.SetTextAlign(22);
         head.SetTextFont(42);
-        head.SetTextSize(0.36); // smaller than before
+        head.SetTextSize(0.36);
         std::ostringstream tit;
         tit << Form("Beam-Spin Asymmetry  %s   x_{B} #in [%.2g, %.2g]",
                     period.c_str(), xb.first, xb.second);
@@ -608,7 +607,6 @@ static void plot_cells_for_period(
 
                 // Fitted curve (thin red line)
                 if (cr.fit.status == 0 || cr.fit.ndf > 0) {
-                    // draw via dense sampling to avoid any eval issues
                     const int NS=721;
                     std::vector<double> xd(NS), yd(NS);
                     for (int i=0;i<NS;++i){
@@ -634,7 +632,7 @@ static void plot_cells_for_period(
                          Q2_slice[ccol].first, Q2_slice[ccol].second,
                          t_slice[r].first,    t_slice[r].second));
 
-                // Legend: keep well inside the pad
+                // Legend
                 TLegend* leg = new TLegend(0.50, 0.68, 0.90, 0.92);
                 leg->SetBorderSize(1);
                 leg->SetLineColor(kBlack);
@@ -850,7 +848,6 @@ void compute_and_plot_bsa_helicity(
                 if (S > 0.0) {
                     p.bsa = D / S;
 
-                    // Conservative uncertainty (as if a,b already included α from each period)
                     double a = Np_eff, b = Nm_eff;
                     double varA = 4.0 * (a * b) / ((a + b) * (a + b) * (a + b + 1.0));
                     p.err = std::sqrt(std::max(varA, 1e-6));
@@ -894,7 +891,7 @@ void compute_and_plot_bsa_helicity(
         }
     }
 
-    // plots for combined 10.6 (directory name matches the dot style)
+    // plots for combined 10.6
     const fs::path plots_comb106 = fs::path(out_root_dir)/"bsa_plots"/"10.6_combined";
     std::error_code ec; fs::create_directories(plots_comb106, ec);
     plot_cells_for_period("RGA_10.6_combined", binning_scheme, xB_bins, Q2_bins, t_bins, combCells, plots_comb106.string());
