@@ -117,11 +117,11 @@ const std::vector<DataSetConfig> dataSetConfigs = {
     {
         "RGC_Fa22_enpi+",
         0.5839, 0.1992, 0.1802, 0.0301, 0.0066,
-        "/volatile/clas12/thayward/mkerr/NH3/fall22_nh3_pip.root",
-        "/volatile/clas12/thayward/mkerr/C/fall22_c_pip.root",
-        "/volatile/clas12/thayward/mkerr/CH2/fall22_ch2_pip.root",
-        "/volatile/clas12/thayward/mkerr/ET/fall22_he_pip.root",
-        "/volatile/clas12/thayward/mkerr/ET/fall22_et_pip.root"
+        "/volatile/clas12/thayward/mkerr/NH3/fall22_nh3_pip_2.root",
+        "/volatile/clas12/thayward/mkerr/C/fall22_c_pip_2.root",
+        "/volatile/clas12/thayward/mkerr/CH2/fall22_ch2_pip_2.root",
+        "/volatile/clas12/thayward/mkerr/ET/fall22_he_pip_2.root",
+        "/volatile/clas12/thayward/mkerr/ET/fall22_et_pip_2.root"
     },
 };
 
