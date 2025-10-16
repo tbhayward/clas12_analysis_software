@@ -14,6 +14,7 @@
 #include <TGraphErrors.h>
 #include <TLatex.h>
 #include <TPad.h>
+#include <TString.h> // for Form()
 
 #include <algorithm>
 #include <cctype>
@@ -349,7 +350,7 @@ static void plot_group_counts(
         const int ncols = (int)t_slice.size();
 
         const int W = 260*ncols + 120;
-        const int H = 220*nrows + 120;
+        const int H = 220*nrows + 140; // give a tad more headroom for subplot titles
 
         ostringstream cname; cname<<"c_counts_"<<group_name<<"_xB"<<ix;
         TCanvas* c = new TCanvas(cname.str().c_str(), cname.str().c_str(), W, H);
@@ -362,12 +363,15 @@ static void plot_group_counts(
         pGrid->cd();
         pGrid->Divide(ncols, nrows, 0.0001, 0.0001);
 
+        // Canvas title with xB range
         pTop->cd();
         TLatex head;
         head.SetNDC();
         head.SetTextSize(0.55);
         head.SetTextAlign(22);
-        head.DrawLatex(0.5, 0.5, group_name.c_str());
+        head.DrawLatex(0.5, 0.55,
+            Form("%s   x_{B} #in [%.3g, %.3g]",
+                 group_name.c_str(), xBr.first, xBr.second));
 
         for (int r=0; r<nrows; ++r) {
             int iQ = findIndex(Q2_slice[r], Q2_bins); if (iQ<0) continue;
@@ -376,7 +380,7 @@ static void plot_group_counts(
 
                 pGrid->cd(r*ncols + cc + 1);
                 gPad->SetGrid(1,1);
-                gPad->SetTopMargin(0.08);
+                gPad->SetTopMargin(0.18);   // more top margin for subplot title line
                 gPad->SetBottomMargin(0.14);
                 gPad->SetLeftMargin(0.12);
                 gPad->SetRightMargin(0.06);
@@ -418,6 +422,7 @@ static void plot_group_counts(
                 grP->Draw("P SAME");
                 grM->Draw("P SAME");
 
+                // Legend
                 TLegend* leg = new TLegend(0.60, 0.73, 0.92, 0.92);
                 leg->SetBorderSize(1);
                 leg->SetLineColor(kBlack);
@@ -426,6 +431,16 @@ static void plot_group_counts(
                 leg->AddEntry(grP, "helicity +1", "p");
                 leg->AddEntry(grM, "helicity -1", "p");
                 leg->Draw();
+
+                // Subplot title with Q2 and -t ranges
+                TLatex sub;
+                sub.SetNDC();
+                sub.SetTextSize(0.045);
+                sub.SetTextAlign(13); // left-top
+                sub.DrawLatex(0.14, 0.96,
+                    Form("Q^{2} #in [%.3g, %.3g],   -t #in [%.3g, %.3g]",
+                         Q2_slice[r].first, Q2_slice[r].second,
+                         t_slice[cc].first, t_slice[cc].second));
             }
         }
 
@@ -556,8 +571,6 @@ void compute_total_counts(
             const std::string dvcsName = dvcsPeriodName(runTag);
             HelCounts& hc_dvcs = outCounts[dvcsName][key];
             if (b.helicity==+1) hc_dvcs.plus++; else hc_dvcs.minus++;
-
-            // We’ll create combined groups after the per-period loops
         }
     }
 
