@@ -1,7 +1,7 @@
 // pi0_corrected_counts.cpp
 //
 // Reads:
-//   - total_counts.json (with top-level "groups")
+//   - total_counts.json
 //   - per-period contamination JSONs: output/jsons/contamination/contamination_<period>.json
 // Produces:
 //   - per-period corrected counts JSONs: output/jsons/pi0_corrected_counts_<period>.json
@@ -10,15 +10,11 @@
 //
 // Corrected per φ, per helicity:
 //   N^corr_h = N^raw_h * (1 - c_h)
-// where c_h is the π0 contamination fraction (helicity-resolved).
-//
-// Plots: one canvas per xB slice; Q²×|t| grid; in each panel we draw
-// the corrected N(+), corrected N(-) vs φ (deg) as TGraph.
 
 #include "pi0_corrected_counts.h"
+#include "load_binning_scheme.h"  // <-- use project's Binning struct
 
 #include <TCanvas.h>
-#include <TTree.h>
 #include <TGraph.h>
 #include <TLegend.h>
 #include <TH1.h>
@@ -47,12 +43,17 @@ namespace {
 
 constexpr int    N_PHI_BINS = 12;
 constexpr double TWO_PI     = 2.0 * M_PI;
+
 using BinKey = std::tuple<int,int,int,int>; // (ix,iQ,it,ip)
 
 struct HelCounts { long long plus=0, minus=0; };
 using GroupCounts = std::map<std::string, std::map<BinKey, HelCounts>>;
 
+// π0 contamination per bin (helicity-resolved)
 struct ContamBin { double c_plus=0, c_plus_err=0, c_minus=0, c_minus_err=0; };
+
+// corrected counts per bin (helicity-resolved)
+struct CorrBin { double Np=0.0, Nm=0.0, Ntot=0.0; };
 
 // -------------------- style --------------------
 struct StyleInit {
@@ -81,15 +82,19 @@ static std::string periodToRunTagKey(const std::string& period) {
     if (pos == std::string::npos || pos + 1 >= period.size()) return toLower(period);
     return toLower(period.substr(pos + 1));
 }
+static inline std::string key4s(int ix,int iQ,int it,int ip){
+    std::ostringstream os; os<<"("<<ix<<","<<iQ<<","<<it<<","<<ip<<")"; return os.str();
+}
 
-static inline std::vector<std::pair<double,double>> uniqueRanges(const std::vector<Binning>& scheme, char which) {
+static inline std::vector<std::pair<double,double>>
+uniqueRanges(const std::vector<Binning>& scheme, char which) {
     std::set<std::pair<double,double>> s;
     for (const auto& b : scheme) {
         if (which == 'x') s.emplace(b.xBmin, b.xBmax);
         else if (which == 'Q') s.emplace(b.Q2min, b.Q2max);
-        else if (which == 't') s.emplace(b.tmin, b.tmax);
+        else if (which == 't') s.emplace(b.tmin,  b.tmax);
     }
-    return std::vector<std::pair<double,double>>(s.begin(), s.end());
+    return {s.begin(), s.end()};
 }
 static inline int findIndex(const std::pair<double,double>& r,
                             const std::vector<std::pair<double,double>>& R){
@@ -103,8 +108,7 @@ static inline std::vector<double> phiCentersDeg() {
     return d;
 }
 
-// ------------- JSON I/O -------------
-// total_counts reader (matches writer with top-level "groups")
+// ------------- total_counts JSON loader (tolerant schema) -------------
 static bool parse_tuple_key4(const std::string& s, BinKey& out) {
     int ix,iQ,it,ip;
     if (std::sscanf(s.c_str(),"(%d,%d,%d,%d)",&ix,&iQ,&it,&ip)!=4) return false;
@@ -114,13 +118,37 @@ static bool parse_tuple_key4(const std::string& s, BinKey& out) {
 
 static bool load_total_counts(const std::string& path, GroupCounts& outGroups) {
     std::ifstream ifs(path);
-    if (!ifs) { std::cerr<<"[pi0_corr][ERROR] Cannot open total_counts JSON: "<<path<<"\n"; return false; }
+    if (!ifs) {
+        std::cerr<<"[pi0_corr][ERROR] Cannot open total_counts JSON: "<<path<<"\n";
+        return false;
+    }
     std::string s((std::istreambuf_iterator<char>(ifs)), std::istreambuf_iterator<char>());
 
+    // Try to find a "groups" object; if not present, treat the whole root as the groups object.
     size_t gpos = s.find("\"groups\"");
-    if (gpos==std::string::npos) { std::cerr<<"[pi0_corr][ERROR] 'groups' not found in total_counts.\n"; return false; }
-    size_t brace = s.find('{', gpos); if (brace==std::string::npos) return false;
-    int d=0; size_t i=brace; for (; i<s.size(); ++i){ if(s[i]=='{') d++; else if(s[i]=='}'){ d--; if(!d){ ++i; break; } } }
+    size_t brace;
+    if (gpos != std::string::npos) {
+        brace = s.find('{', gpos);
+    } else {
+        // find first '{' after (possible) binning_meta
+        brace = s.find('{');
+        if (brace != std::string::npos) {
+            // skip the outermost object and then find the next top-level "{"
+            int d=0; size_t i=brace;
+            for (; i<s.size(); ++i){ if(s[i]=='{') d++; else if(s[i]=='}'){ d--; if(!d){ ++i; break; } } }
+            // from i onwards, try to find the next object (the first group key)
+            size_t next_quote = s.find('"', i);
+            size_t next_brace = (next_quote==std::string::npos) ? std::string::npos : s.find('{', next_quote);
+            brace = next_brace;
+        }
+    }
+    if (brace==std::string::npos) {
+        std::cerr<<"[pi0_corr][ERROR] Could not locate groups object in total_counts.\n";
+        return false;
+    }
+
+    int d=0; size_t i=brace;
+    for (; i<s.size(); ++i){ if(s[i]=='{') d++; else if(s[i]=='}'){ d--; if(!d){ ++i; break; } } }
     std::string groupsObj = s.substr(brace, i-brace);
 
     size_t kpos=0;
@@ -169,24 +197,19 @@ static bool load_total_counts(const std::string& path, GroupCounts& outGroups) {
     return !outGroups.empty();
 }
 
-namespace {
-struct ContamBin { double c_plus=0, c_plus_err=0, c_minus=0, c_minus_err=0; };
-using BinKey = std::tuple<int,int,int,int>;
-bool parse_tuple_key(const std::string& s, BinKey& out) {
+// ------------- contamination JSON loader (whitespace-tolerant) -------------
+static bool parse_tuple_key(const std::string& s, BinKey& out) {
     int ix,iQ,it,ip;
     if (std::sscanf(s.c_str(), "(%d,%d,%d,%d)", &ix,&iQ,&it,&ip) != 4) return false;
     out = BinKey(ix,iQ,it,ip);
     return true;
 }
-
-// Helper: remove all whitespace to make pattern-matching robust
 static inline std::string squash_ws(std::string z){
     z.erase(std::remove_if(z.begin(), z.end(), [](unsigned char c){
         return std::isspace(c);
     }), z.end());
     return z;
 }
-
 static bool load_contam_for_period(const std::string& path,
                                    std::map<BinKey, ContamBin>& out)
 {
@@ -197,7 +220,6 @@ static bool load_contam_for_period(const std::string& path,
     }
     std::string s((std::istreambuf_iterator<char>(ifs)), std::istreambuf_iterator<char>());
 
-    // Find the "bins" object
     size_t pos = s.find("\"bins\"");
     if (pos == std::string::npos) {
         std::cerr << "[pi0_corr][WARN] 'bins' not found in " << path << "\n";
@@ -216,7 +238,6 @@ static bool load_contam_for_period(const std::string& path,
     int nbins_loaded = 0;
 
     while (true) {
-        // Key "(ix,iQ,it,ip)"
         size_t q1 = binsObj.find('"', kpos);
         if (q1 == std::string::npos) break;
         size_t q2 = binsObj.find('"', q1+1);
@@ -229,7 +250,6 @@ static bool load_contam_for_period(const std::string& path,
             continue;
         }
 
-        // Value object { ... } for this bin
         size_t objS = binsObj.find('{', q2);
         if (objS == std::string::npos) break;
         int d2=0; size_t j=objS;
@@ -254,16 +274,13 @@ static bool load_contam_for_period(const std::string& path,
             try { return std::stod(obj.substr(a,b-a)); } catch (...) { return 0.0; }
         };
 
-        // Read both helicities regardless of spacing
         ContamBin cb;
         cb.c_plus      = findD("\"contamination\":{\"+1\":{\"value\"");
         cb.c_plus_err  = findD("\"contamination\":{\"+1\":{\"err\"");
         cb.c_minus     = findD("\"contamination\":{\"-1\":{\"value\"");
         cb.c_minus_err = findD("\"contamination\":{\"-1\":{\"err\"");
 
-        // If any of these were not found due to slightly different nesting, try a second pattern:
         if (cb.c_plus==0.0 && cb.c_minus==0.0) {
-            // Fallback if writer had keys in a different order but same names
             cb.c_plus      = findD("\"+1\":{\"value\"");
             cb.c_plus_err  = findD("\"+1\":{\"err\"");
             cb.c_minus     = findD("\"-1\":{\"value\"");
@@ -272,16 +289,14 @@ static bool load_contam_for_period(const std::string& path,
 
         out[bk] = cb;
         ++nbins_loaded;
-
         kpos = j;
     }
 
     std::cout << "[pi0_corr] Parsed " << nbins_loaded << " bins from " << path << "\n";
     return nbins_loaded > 0;
 }
-} // namespace
 
-// ------------- plotting -------------
+// ------------- per-xB grid helpers -------------
 static void uniqueQT_for_xB(
     const std::vector<Binning>& scheme,
     const std::pair<double,double>& xBrange,
@@ -299,6 +314,37 @@ static void uniqueQT_for_xB(
     t_list.assign(ts.begin(), ts.end());
 }
 
+// ------------- JSON writer for corrected counts -------------
+static void write_period_corrected_json(
+    const std::string& out_path,
+    int nPhi,
+    const std::vector<std::pair<double,double>>& xB_bins,
+    const std::vector<std::pair<double,double>>& Q2_bins,
+    const std::vector<std::pair<double,double>>& t_bins,
+    const std::map<BinKey, CorrBin>& corr)
+{
+    std::ofstream ofs(out_path);
+    if (!ofs) { std::cerr << "[pi0_corr][ERROR] Cannot open " << out_path << "\n"; return; }
+    ofs<<std::fixed<<std::setprecision(8);
+    ofs<<"{\n";
+    ofs<<"  \"binning_meta\": {\"phi_bins\": "<<nPhi
+       <<", \"xB_bins\": "<<xB_bins.size()
+       <<", \"Q2_bins\": "<<Q2_bins.size()
+       <<", \"t_bins\": "<<t_bins.size()<<"},\n";
+    ofs<<"  \"bins\": {\n";
+    bool first=true;
+    for (const auto& kv : corr){
+        if (!first) ofs<<",\n"; first=false;
+        int ix,iQ,it,ip; std::tie(ix,iQ,it,ip)=kv.first;
+        const auto& cb = kv.second;
+        ofs<<"    \""<<key4s(ix,iQ,it,ip)<<"\": {"
+           <<"\"helicity\":{\"+1\":"<<cb.Np<<",\"-1\":"<<cb.Nm<<"},"
+           <<"\"total\":"<<cb.Ntot<<"}";
+    }
+    ofs<<"\n  }\n}\n";
+}
+
+// ------------- plotting: one canvas per xB -------------
 static void plot_corrected_counts_for_period(
     const std::string& period,
     const std::vector<Binning>& binning_scheme,
@@ -346,7 +392,7 @@ static void plot_corrected_counts_for_period(
         head.DrawLatex(0.5, 0.55, Form("#pi^{0}-corrected counts  %s   x_{B} #in [%.2g, %.2g]",
                                        period.c_str(), xb.first, xb.second));
 
-        // find global max for Y-scale per canvas (robust)
+        // global Y max per canvas
         double ymax_est = 1.0;
         for (int r=0; r<nrows; ++r){
             const int it_glob = findIndex(t_slice[r], t_bins);
@@ -388,7 +434,6 @@ static void plot_corrected_counts_for_period(
                 frame->GetXaxis()->SetTitleOffset(1.25);
                 frame->GetYaxis()->SetTitleOffset(1.35);
 
-                // series
                 std::vector<double> x, yP, yM;
                 x.reserve(N_PHI_BINS); yP.reserve(N_PHI_BINS); yM.reserve(N_PHI_BINS);
                 for (int ip=0; ip<N_PHI_BINS; ++ip){
@@ -427,7 +472,7 @@ static void plot_corrected_counts_for_period(
     }
 }
 
-} // namespace
+} // anonymous namespace
 
 // ======================================================================
 // Public driver
@@ -447,7 +492,8 @@ void compute_pi0_corrected_counts(
 
     GroupCounts groups;
     if (!load_total_counts(total_counts_json_path, groups)) {
-        std::cerr<<"[pi0_corr][ERROR] Failed to load total_counts json.\n"; return;
+        std::cerr<<"[pi0_corr][ERROR] Failed to load total_counts json.\n";
+        return;
     }
 
     std::map<std::string, std::map<BinKey, CorrBin>> allPeriod;
@@ -480,9 +526,12 @@ void compute_pi0_corrected_counts(
                 auto itC = contam.find(bk);
                 if (itC!=contam.end()) cb = itC->second;
 
-                // apply correction
-                const double Np_corr = double(hc.plus ) * (1.0 - std::max(0.0, std::min(0.95, cb.c_plus )));
-                const double Nm_corr = double(hc.minus) * (1.0 - std::max(0.0, std::min(0.95, cb.c_minus)));
+                // apply correction, clamp contamination to [0,0.95] for safety
+                const double cP = std::max(0.0, std::min(0.95, cb.c_plus ));
+                const double cM = std::max(0.0, std::min(0.95, cb.c_minus));
+                const double Np_corr = double(hc.plus ) * (1.0 - cP);
+                const double Nm_corr = double(hc.minus) * (1.0 - cM);
+
                 CorrBin out; out.Np = Np_corr; out.Nm = Nm_corr; out.Ntot = Np_corr + Nm_corr;
                 corr[bk] = out;
             }
