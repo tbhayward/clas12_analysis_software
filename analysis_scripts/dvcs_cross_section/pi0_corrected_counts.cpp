@@ -340,7 +340,8 @@ static void plot_group(
     const std::vector<std::pair<double,double>>& xB_bins,
     const std::vector<std::pair<double,double>>& Q2_bins,
     const std::vector<std::pair<double,double>>& t_bins,
-    const std::map<BinKey, CorrBin>& table,
+    const std::map<BinKey, CorrBin>& corrected,
+    const std::map<BinKey, HelCounts>& raw_totals,
     const std::string& out_dir_plots)
 {
     namespace fs = std::filesystem;
@@ -349,9 +350,8 @@ static void plot_group(
 
     const auto PHI = phiCentersDeg();
 
-    for (int ix=0; ix<(int)xB_bins.size(); ++ix) {
+    for (int ix = 0; ix < (int)xB_bins.size(); ++ix) {
         const auto xb = xB_bins[ix];
-
         std::vector<std::pair<double,double>> Q2_slice, t_slice;
         uniqueQT_for_xB(binning_scheme, xb, Q2_slice, t_slice);
         if (Q2_slice.empty() || t_slice.empty()) continue;
@@ -361,7 +361,6 @@ static void plot_group(
 
         const int W = 280*ncols + 160;
         const int H = 240*nrows + 170;
-
         std::string cname = Form("c_pi0corr_%s_xB%d", group.c_str(), ix);
         TCanvas* c = new TCanvas(cname.c_str(), cname.c_str(), W, H);
 
@@ -376,26 +375,15 @@ static void plot_group(
         // canvas title with xB
         pTop->cd();
         TLatex head; head.SetNDC(); head.SetTextAlign(22); head.SetTextFont(42); head.SetTextSize(0.40);
-        head.DrawLatex(0.5, 0.55, Form("#pi^{0}-corrected counts  %s   x_{B} #in [%.3g, %.3g]",
+        head.DrawLatex(0.5, 0.55, Form("#pi^{0}-corrected vs raw counts  %s   x_{B} #in [%.3g, %.3g]",
                                        group.c_str(), xb.first, xb.second));
 
-        // find global Y for nice headroom
-        double ymax=1.0;
-        for (int r=0; r<nrows; ++r){
-            int iQ=findIndex(Q2_slice[r], Q2_bins); if (iQ<0) continue;
-            for (int cc=0; cc<ncols; ++cc){
-                int it=findIndex(t_slice[cc], t_bins); if (it<0) continue;
-                for (int ip=0; ip<N_PHI_BINS; ++ip){
-                    auto itb = table.find(BinKey(ix,iQ,it,ip));
-                    if (itb==table.end()) continue;
-                    ymax = std::max({ymax, itb->second.Np + itb->second.ep,
-                                           itb->second.Nm + itb->second.em});
-                }
-            }
-        }
+        double ymax = 1.0;
+        for (const auto& kv : corrected)
+            ymax = std::max(ymax, kv.second.Nt + kv.second.et);
         ymax = std::max(5.0, 1.20*ymax);
 
-        for (int r=0; r<nrows; ++r) {
+        for (int r = 0; r < nrows; ++r) {
             int iQ=findIndex(Q2_slice[r], Q2_bins); if (iQ<0) continue;
             for (int cc=0; cc<ncols; ++cc) {
                 int it=findIndex(t_slice[cc], t_bins); if (it<0) continue;
@@ -409,39 +397,71 @@ static void plot_group(
 
                 TH1* frame = gPad->DrawFrame(0.0, 0.0, 360.0, ymax);
                 frame->GetXaxis()->SetTitle("#phi (deg)");
-                frame->GetYaxis()->SetTitle("N^{corr}");
+                frame->GetYaxis()->SetTitle("Counts");
                 frame->GetXaxis()->CenterTitle(); frame->GetYaxis()->CenterTitle();
 
-                std::vector<double> X, Yp, Ym, eX, eYp, eYm;
-                X.reserve(N_PHI_BINS); Yp.reserve(N_PHI_BINS); Ym.reserve(N_PHI_BINS);
-                eX.assign(N_PHI_BINS, 0.0);
+                std::vector<double> X, Yp_raw, Ym_raw, Yp_corr, Ym_corr, eX, eYp_corr, eYm_corr;
+                X.reserve(N_PHI_BINS); eX.assign(N_PHI_BINS, 0.0);
 
-                for (int ip=0; ip<N_PHI_BINS; ++ip) {
-                    auto itb = table.find(BinKey(ix,iQ,it,ip));
-                    if (itb==table.end()) continue;
+                for (int ip = 0; ip < N_PHI_BINS; ++ip) {
+                    BinKey bk(ix, iQ, it, ip);
+                    auto it_raw = raw_totals.find(bk);
+                    auto it_corr = corrected.find(bk);
+                    if (it_raw == raw_totals.end() && it_corr == corrected.end()) continue;
+
                     X.push_back(PHI[ip]);
-                    Yp.push_back(std::max(0.0, itb->second.Np));
-                    Ym.push_back(std::max(0.0, itb->second.Nm));
-                    eYp.push_back(itb->second.ep);
-                    eYm.push_back(itb->second.em);
+                    double Np_raw = it_raw != raw_totals.end() ? it_raw->second.plus : 0.0;
+                    double Nm_raw = it_raw != raw_totals.end() ? it_raw->second.minus : 0.0;
+                    double Np_corr = it_corr != corrected.end() ? it_corr->second.Np : 0.0;
+                    double Nm_corr = it_corr != corrected.end() ? it_corr->second.Nm : 0.0;
+                    double ep_corr = it_corr != corrected.end() ? it_corr->second.ep : 0.0;
+                    double em_corr = it_corr != corrected.end() ? it_corr->second.em : 0.0;
+
+                    Yp_raw.push_back(Np_raw);
+                    Ym_raw.push_back(Nm_raw);
+                    Yp_corr.push_back(Np_corr);
+                    Ym_corr.push_back(Nm_corr);
+                    eYp_corr.push_back(ep_corr);
+                    eYm_corr.push_back(em_corr);
                 }
 
-                if (!X.empty()) {
-                    TGraphErrors* gP = new TGraphErrors((int)X.size(), X.data(), Yp.data(), eX.data(), eYp.data());
-                    TGraphErrors* gM = new TGraphErrors((int)X.size(), X.data(), Ym.data(), eX.data(), eYm.data());
-                    gP->SetLineWidth(2); gP->SetMarkerStyle(20); gP->Draw("P SAME");
-                    gM->SetLineWidth(2); gM->SetMarkerStyle(24); gM->Draw("P SAME");
+                // --- make graphs ---
+                TGraphErrors* gP_corr = new TGraphErrors((int)X.size(), X.data(), Yp_corr.data(), eX.data(), eYp_corr.data());
+                TGraphErrors* gM_corr = new TGraphErrors((int)X.size(), X.data(), Ym_corr.data(), eX.data(), eYm_corr.data());
+                TGraph* gP_raw = new TGraph((int)X.size(), X.data(), Yp_raw.data());
+                TGraph* gM_raw = new TGraph((int)X.size(), X.data(), Ym_raw.data());
 
-                    if (r==0 && cc==0) {
-                        TLegend* leg = new TLegend(0.56, 0.73, 0.92, 0.92);
-                        leg->SetBorderSize(1); leg->SetFillStyle(0); leg->SetTextSize(0.040);
-                        leg->AddEntry(gP, "N^{corr}(+1) with #sigma", "p");
-                        leg->AddEntry(gM, "N^{corr}(-1) with #sigma", "p");
-                        leg->Draw();
-                    }
+                // styles
+                gP_corr->SetLineColor(kRed);  gP_corr->SetMarkerColor(kRed);
+                gM_corr->SetLineColor(kBlue); gM_corr->SetMarkerColor(kBlue);
+                gP_raw->SetLineColor(kRed);   gP_raw->SetMarkerColor(kRed);
+                gM_raw->SetLineColor(kBlue);  gM_raw->SetMarkerColor(kBlue);
+
+                gP_corr->SetMarkerStyle(20); // filled circle
+                gM_corr->SetMarkerStyle(21);
+                gP_raw->SetMarkerStyle(24);  // open square
+                gM_raw->SetMarkerStyle(25);
+
+                gP_corr->SetLineWidth(2); gM_corr->SetLineWidth(2);
+                gP_raw->SetLineWidth(2);  gM_raw->SetLineWidth(2);
+
+                // draw
+                gP_raw->Draw("P SAME");
+                gM_raw->Draw("P SAME");
+                gP_corr->Draw("P SAME");
+                gM_corr->Draw("P SAME");
+
+                if (r==0 && cc==0) {
+                    TLegend* leg = new TLegend(0.52, 0.68, 0.94, 0.92);
+                    leg->SetBorderSize(1); leg->SetFillStyle(0); leg->SetTextSize(0.037);
+                    leg->AddEntry(gP_raw,  "Raw (+1)",   "p");
+                    leg->AddEntry(gM_raw,  "Raw (-1)",   "p");
+                    leg->AddEntry(gP_corr, "#pi^{0}-corr (+1)", "p");
+                    leg->AddEntry(gM_corr, "#pi^{0}-corr (-1)", "p");
+                    leg->Draw();
                 }
 
-                TLatex lab; lab.SetNDC(); lab.SetTextSize(0.044); lab.SetTextAlign(13);
+                TLatex lab; lab.SetNDC(); lab.SetTextSize(0.042); lab.SetTextAlign(13);
                 lab.DrawLatex(0.14, 0.96, Form("Q^{2} #in [%.3g, %.3g],   -t #in [%.3g, %.3g]",
                     Q2_slice[r].first, Q2_slice[r].second, t_slice[cc].first, t_slice[cc].second));
             }
@@ -604,7 +624,7 @@ void compute_pi0_corrected_counts(
 
         // plots with error bars
         const fs::path plot_dir = out_plot_dir / group;
-        plot_group(group, binning_scheme, xB_bins, Q2_bins, t_bins, corr, plot_dir.string());
+        plot_group(group, binning_scheme, xB_bins, Q2_bins, t_bins, corr, itG->second, plot_dir.string());
     }
 
     // master combined JSON (all groups in one file)
