@@ -74,7 +74,7 @@ int main(int argc, char* argv[]) {
     // // --------- Total counts after exclusivity cuts (by helicity) ----------
     const std::string cuts_json_path   = "output/jsons/combined_cuts.json"; 
     // // produced by exclusivity_cuts
-    
+
     // const std::string output_counts_js = "output/jsons/total_counts.json";
     // compute_total_counts(dvcs_periods, topologies, binning_scheme, dataTrees, cuts_json_path,
     // output_counts_js, output_root); 
@@ -97,15 +97,19 @@ int main(int argc, char* argv[]) {
     // );
 
     // --------- π0-corrected helicity counts (per φ) ----------
-    const std::string total_counts_json = "output/jsons/total_counts.json";
+    const std::string total_counts_json        = "output/jsons/total_counts.json";
     const std::string contamination_dir_counts = "output/jsons/contamination";
+    const std::string contamination_combined   = "output/jsons/pi0_contamination_combined.json";
+
     compute_pi0_corrected_counts(
         dvcs_periods,
         binning_scheme,
         total_counts_json,        // from compute_total_counts()
-        contamination_dir_counts, // from compute_pi0_contamination_helicity()
+        contamination_dir_counts, // per-period contamination_*.json live here
+        contamination_combined,   // combined groups (Spring2018, Fall2018, 10.6_GeV)
         output_root               // "output"
     );
+
     std::cout << "π0-corrected counts stage finished." << std::endl;
 
     // --------- Radiative corrections (generated Born/Rad, per bin & φ) ----------
