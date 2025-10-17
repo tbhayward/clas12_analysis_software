@@ -378,11 +378,6 @@ static void plot_group(
         head.DrawLatex(0.5, 0.55, Form("#pi^{0}-corrected vs raw counts  %s   x_{B} #in [%.3g, %.3g]",
                                        group.c_str(), xb.first, xb.second));
 
-        double ymax = 1.0;
-        for (const auto& kv : corrected)
-            ymax = std::max(ymax, kv.second.Nt + kv.second.et);
-        ymax = std::max(5.0, 1.20*ymax);
-
         for (int r = 0; r < nrows; ++r) {
             int iQ=findIndex(Q2_slice[r], Q2_bins); if (iQ<0) continue;
             for (int cc=0; cc<ncols; ++cc) {
@@ -395,69 +390,97 @@ static void plot_group(
                 gPad->SetLeftMargin(0.14);
                 gPad->SetRightMargin(0.08);
 
+                std::vector<double> X, Yp_raw, Ym_raw, Yp_corr, Ym_corr, eX, eYp_corr, eYm_corr;
+                X.reserve(N_PHI_BINS);
+                eX.assign(N_PHI_BINS, 0.0);
+
+                // gather points for THIS slice
+                for (int ip = 0; ip < N_PHI_BINS; ++ip) {
+                    BinKey bk(ix, iQ, it, ip);
+                    auto it_raw  = raw_totals.find(bk);
+                    auto it_corr = corrected.find(bk);
+                    if (it_raw == raw_totals.end() && it_corr == corrected.end()) continue;
+
+                    X.push_back(PHI[ip]);
+                    const double Np_raw = (it_raw  != raw_totals.end()) ? (double)it_raw->second.plus  : 0.0;
+                    const double Nm_raw = (it_raw  != raw_totals.end()) ? (double)it_raw->second.minus : 0.0;
+                    const double Np_cor = (it_corr != corrected.end())  ? it_corr->second.Np : 0.0;
+                    const double Nm_cor = (it_corr != corrected.end())  ? it_corr->second.Nm : 0.0;
+                    const double ep_cor = (it_corr != corrected.end())  ? it_corr->second.ep : 0.0;
+                    const double em_cor = (it_corr != corrected.end())  ? it_corr->second.em : 0.0;
+
+                    Yp_raw.push_back(Np_raw);
+                    Ym_raw.push_back(Nm_raw);
+                    Yp_corr.push_back(Np_cor);
+                    Ym_corr.push_back(Nm_cor);
+                    eYp_corr.push_back(ep_cor);
+                    eYm_corr.push_back(em_cor);
+                }
+
+                // If no points in this slice, draw a blank frame with a note and continue.
+                if (X.empty()) {
+                    TH1* frame = gPad->DrawFrame(0.0, 0.0, 360.0, 1.0);
+                    frame->GetXaxis()->SetTitle("#phi (deg)");
+                    frame->GetYaxis()->SetTitle("Counts");
+                    frame->GetXaxis()->CenterTitle(); frame->GetYaxis()->CenterTitle();
+                    TLatex lab; lab.SetNDC(); lab.SetTextSize(0.042); lab.SetTextAlign(13);
+                    lab.DrawLatex(0.14, 0.96, Form("Q^{2} #in [%.3g, %.3g],   -t #in [%.3g, %.3g]",
+                        Q2_slice[r].first, Q2_slice[r].second, t_slice[cc].first, t_slice[cc].second));
+                    TLatex none; none.SetNDC(); none.SetTextSize(0.040); none.SetTextAlign(22);
+                    none.DrawLatex(0.5, 0.55, "No data in this slice");
+                    continue;
+                }
+
+                // compute a sensible ymax for THIS slice
+                double ymax = 0.0;
+                for (size_t i=0;i<X.size();++i) {
+                    ymax = std::max(ymax, std::max(Yp_raw[i], Ym_raw[i]));
+                    ymax = std::max(ymax, std::max(Yp_corr[i] + eYp_corr[i],
+                                                   Ym_corr[i] + eYm_corr[i]));
+                }
+                ymax = std::max(5.0, 1.20*ymax);
+
+                // draw frame
                 TH1* frame = gPad->DrawFrame(0.0, 0.0, 360.0, ymax);
                 frame->GetXaxis()->SetTitle("#phi (deg)");
                 frame->GetYaxis()->SetTitle("Counts");
                 frame->GetXaxis()->CenterTitle(); frame->GetYaxis()->CenterTitle();
 
-                std::vector<double> X, Yp_raw, Ym_raw, Yp_corr, Ym_corr, eX, eYp_corr, eYm_corr;
-                X.reserve(N_PHI_BINS); eX.assign(N_PHI_BINS, 0.0);
+                // --- make graphs (guarded) ---
+                TGraphErrors* gP_corr = nullptr;
+                TGraphErrors* gM_corr = nullptr;
+                TGraph*       gP_raw  = nullptr;
+                TGraph*       gM_raw  = nullptr;
 
-                for (int ip = 0; ip < N_PHI_BINS; ++ip) {
-                    BinKey bk(ix, iQ, it, ip);
-                    auto it_raw = raw_totals.find(bk);
-                    auto it_corr = corrected.find(bk);
-                    if (it_raw == raw_totals.end() && it_corr == corrected.end()) continue;
+                if (!X.empty()) {
+                    gP_corr = new TGraphErrors((int)X.size(), X.data(), Yp_corr.data(), eX.data(), eYp_corr.data());
+                    gM_corr = new TGraphErrors((int)X.size(), X.data(), Ym_corr.data(), eX.data(), eYm_corr.data());
+                    gP_raw  = new TGraph((int)X.size(), X.data(), Yp_raw.data());
+                    gM_raw  = new TGraph((int)X.size(), X.data(), Ym_raw.data());
 
-                    X.push_back(PHI[ip]);
-                    double Np_raw = it_raw != raw_totals.end() ? it_raw->second.plus : 0.0;
-                    double Nm_raw = it_raw != raw_totals.end() ? it_raw->second.minus : 0.0;
-                    double Np_corr = it_corr != corrected.end() ? it_corr->second.Np : 0.0;
-                    double Nm_corr = it_corr != corrected.end() ? it_corr->second.Nm : 0.0;
-                    double ep_corr = it_corr != corrected.end() ? it_corr->second.ep : 0.0;
-                    double em_corr = it_corr != corrected.end() ? it_corr->second.em : 0.0;
+                    // styles: red = +, blue = −; corrected = filled, raw = open
+                    gP_corr->SetLineColor(kRed);   gP_corr->SetMarkerColor(kRed);   gP_corr->SetMarkerStyle(20); // filled circle
+                    gM_corr->SetLineColor(kBlue);  gM_corr->SetMarkerColor(kBlue);  gM_corr->SetMarkerStyle(21); // filled square
+                    gP_raw->SetLineColor(kRed);    gP_raw->SetMarkerColor(kRed);    gP_raw->SetMarkerStyle(24);  // open circle
+                    gM_raw->SetLineColor(kBlue);   gM_raw->SetMarkerColor(kBlue);   gM_raw->SetMarkerStyle(25);  // open square
 
-                    Yp_raw.push_back(Np_raw);
-                    Ym_raw.push_back(Nm_raw);
-                    Yp_corr.push_back(Np_corr);
-                    Ym_corr.push_back(Nm_corr);
-                    eYp_corr.push_back(ep_corr);
-                    eYm_corr.push_back(em_corr);
+                    gP_corr->SetLineWidth(2); gM_corr->SetLineWidth(2);
+                    gP_raw->SetLineWidth(2);  gM_raw->SetLineWidth(2);
+
+                    // draw order: raw first (open markers), then corrected with error bars
+                    gP_raw->Draw("P SAME");
+                    gM_raw->Draw("P SAME");
+                    gP_corr->Draw("P SAME");
+                    gM_corr->Draw("P SAME");
                 }
-
-                // --- make graphs ---
-                TGraphErrors* gP_corr = new TGraphErrors((int)X.size(), X.data(), Yp_corr.data(), eX.data(), eYp_corr.data());
-                TGraphErrors* gM_corr = new TGraphErrors((int)X.size(), X.data(), Ym_corr.data(), eX.data(), eYm_corr.data());
-                TGraph* gP_raw = new TGraph((int)X.size(), X.data(), Yp_raw.data());
-                TGraph* gM_raw = new TGraph((int)X.size(), X.data(), Ym_raw.data());
-
-                // styles
-                gP_corr->SetLineColor(kRed);  gP_corr->SetMarkerColor(kRed);
-                gM_corr->SetLineColor(kBlue); gM_corr->SetMarkerColor(kBlue);
-                gP_raw->SetLineColor(kRed);   gP_raw->SetMarkerColor(kRed);
-                gM_raw->SetLineColor(kBlue);  gM_raw->SetMarkerColor(kBlue);
-
-                gP_corr->SetMarkerStyle(20); // filled circle
-                gM_corr->SetMarkerStyle(21);
-                gP_raw->SetMarkerStyle(24);  // open square
-                gM_raw->SetMarkerStyle(25);
-
-                gP_corr->SetLineWidth(2); gM_corr->SetLineWidth(2);
-                gP_raw->SetLineWidth(2);  gM_raw->SetLineWidth(2);
-
-                // draw
-                gP_raw->Draw("P SAME");
-                gM_raw->Draw("P SAME");
-                gP_corr->Draw("P SAME");
-                gM_corr->Draw("P SAME");
 
                 if (r==0 && cc==0) {
                     TLegend* leg = new TLegend(0.52, 0.68, 0.94, 0.92);
                     leg->SetBorderSize(1); leg->SetFillStyle(0); leg->SetTextSize(0.037);
-                    leg->AddEntry(gP_raw,  "Raw (+1)",   "p");
-                    leg->AddEntry(gM_raw,  "Raw (-1)",   "p");
-                    leg->AddEntry(gP_corr, "#pi^{0}-corr (+1)", "p");
-                    leg->AddEntry(gM_corr, "#pi^{0}-corr (-1)", "p");
+                    leg->AddEntry(gP_raw,  "Raw (+1)",           "p");
+                    leg->AddEntry(gM_raw,  "Raw (-1)",           "p");
+                    leg->AddEntry(gP_corr, "#pi^{0}-corr (+1)",  "p");
+                    leg->AddEntry(gM_corr, "#pi^{0}-corr (-1)",  "p");
                     leg->Draw();
                 }
 
@@ -494,13 +517,15 @@ static std::map<BinKey, CorrBin> build_corrected_for_group(
         const double ep = std::max(0.0, c.ep);
         const double em = std::max(0.0, c.em);
 
-        // corrected values
+        // corrected values with propagated uncertainties:
+        // N_corr = N * (1 - c), Var(N_corr) = (1 - c)^2 Var(N) + (dN_corr/dc)^2 Var(c)
+        // with Poisson Var(N)=N and Var(c)=err^2.
         CorrBin b;
         // + helicity
         {
             const double Np = (double)N.plus;
             const double val = Np * (1.0 - cp);
-            const double var = (1.0 - cp)*(1.0 - cp) * Np      // Var(N) with Poisson
+            const double var = (1.0 - cp)*(1.0 - cp) * Np      // Var(N)
                              + (Np*Np) * (ep*ep);              // (d/dc)^2 Var(c)
             b.Np = std::max(0.0, val);
             b.ep = std::sqrt(std::max(0.0, var));
@@ -557,7 +582,6 @@ void compute_pi0_corrected_counts(
     for (const auto& p : periods) group_names.push_back(periodToRunTagKey(p)); // runTag keys for per-period totals
     for (const auto& gkv : groups) {
         const std::string& g = gkv.first;
-        // If it's already in the list (period key), keep; else (combined like "Spring2018") add it.
         if (std::find(group_names.begin(), group_names.end(), g) == group_names.end())
             group_names.push_back(g);
     }
@@ -584,23 +608,17 @@ void compute_pi0_corrected_counts(
         // contamination table for this group
         ContamTable C;
 
-        // detect if group is one of the per-period DVCS_NN style or a combined name
-        bool is_period_like = (group.rfind("dvcs_",0)==0) || (group.find('_')!=std::string::npos); // crude
+        // detect if group is one of the per-period DVCS_* style or a combined name
+        bool is_period_like = (group.rfind("dvcs_",0)==0) || (group.find('_')!=std::string::npos);
         if (is_period_like) {
-            // Need the DVCS Period name, not runTag. Try to re-hydrate:
-            // dvcs_<Tag>  → "DVCS_" + TitleCase(Tag)
-            // Our contamination file naming is contamination_<DVCS_Period>.json (as produced earlier).
-            // Simpler: search for a contamination file that exists for any of the spelled DVCS names
-            // but we’ll reconstruct from runTag:
+            // Re-hydrate a DVCS_* period name: dvcs_<tag> → "DVCS_" + TitleCase(tag)
             std::string tag = group;
-            // TitleCase after underscores
             if (!tag.empty()) tag[0] = (char)std::toupper((unsigned char)tag[0]);
             for (size_t i=0;i+1<tag.size();++i) if (tag[i]=='_' && i+1<tag.size()) tag[i+1]=(char)std::toupper((unsigned char)tag[i+1]);
             std::string dvcsName = "DVCS_" + tag;
 
             fs::path cf = fs::path(contamination_dir)/("contamination_"+dvcsName+".json");
             if (!load_contam_period(cf.string(), C)) {
-                // also allow raw period name (some trees use exact period strings already)
                 fs::path alt = fs::path(contamination_dir)/("contamination_"+group+".json");
                 if (!load_contam_period(alt.string(), C)) {
                     std::cerr<<"[pi0corr][WARN] contamination missing for "<<group<<" (looked for "<<cf<<") — assuming c=0\n";
@@ -622,7 +640,7 @@ void compute_pi0_corrected_counts(
         write_group_json(out_group_json.string(), N_PHI_BINS, xB_bins, Q2_bins, t_bins, corr);
         std::cout<<"[pi0corr] wrote "<<out_group_json.string()<<"\n";
 
-        // plots with error bars
+        // plots with error bars (and raw overlay)
         const fs::path plot_dir = out_plot_dir / group;
         plot_group(group, binning_scheme, xB_bins, Q2_bins, t_bins, corr, itG->second, plot_dir.string());
     }
