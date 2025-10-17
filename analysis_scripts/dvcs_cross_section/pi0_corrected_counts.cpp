@@ -1,27 +1,22 @@
-// pi0_corrected_counts.cpp
+// π0-corrected counts with errors, for periods AND combined groups.
+// Uses total_counts.json ("groups": {...}) and
+//  - per-period contamination_<period>.json (each has "bins": {...})
+//  - combined pi0_contamination_combined.json ("periods": {Group: {bins:{...}}})
 //
-// Reads:
-//   - total_counts.json
-//   - per-period contamination JSONs: output/jsons/contamination/contamination_<period>.json
-// Produces:
-//   - per-period corrected counts JSONs: output/jsons/pi0_corrected_counts_<period>.json
-//   - combined: output/jsons/pi0_corrected_counts_all_periods.json
-//   - plots per period under: output/pi0_corrected_plots/<runTag>/plot_pi0corr_<period>_xB_<ix>.png
-//
-// Corrected per φ, per helicity:
-//   N^corr_h = N^raw_h * (1 - c_h)
+// Outputs one JSON per group + a master JSON, and error-bar plots
+// (xB in canvas title; Q² and −t in subplot headers).
 
 #include "pi0_corrected_counts.h"
-#include "load_binning_scheme.h"  // <-- use project's Binning struct
 
 #include <TCanvas.h>
-#include <TGraph.h>
+#include <TGraphErrors.h>
 #include <TLegend.h>
 #include <TH1.h>
 #include <TAxis.h>
 #include <TLatex.h>
 #include <TStyle.h>
 #include <TPad.h>
+#include <TString.h>
 
 #include <algorithm>
 #include <cctype>
@@ -42,20 +37,9 @@
 namespace {
 
 constexpr int    N_PHI_BINS = 12;
-constexpr double TWO_PI     = 2.0 * M_PI;
+using BinKey = std::tuple<int,int,int,int>; // (ix,iQ2,it,ip)
 
-using BinKey = std::tuple<int,int,int,int>; // (ix,iQ,it,ip)
-
-struct HelCounts { long long plus=0, minus=0; };
-using GroupCounts = std::map<std::string, std::map<BinKey, HelCounts>>;
-
-// π0 contamination per bin (helicity-resolved)
-struct ContamBin { double c_plus=0, c_plus_err=0, c_minus=0, c_minus_err=0; };
-
-// corrected counts per bin (helicity-resolved)
-struct CorrBin { double Np=0.0, Nm=0.0, Ntot=0.0; };
-
-// -------------------- style --------------------
+// ────────── styles ──────────
 struct StyleInit {
     StyleInit() {
         gStyle->SetOptTitle(0);
@@ -65,34 +49,30 @@ struct StyleInit {
         gStyle->SetPadTickX(1);
         gStyle->SetPadTickY(1);
         gStyle->SetLegendBorderSize(1);
-        gStyle->SetTitleFont(42, "XYZ");
-        gStyle->SetLabelFont(42, "XYZ");
+        gStyle->SetTitleFont(42,"XYZ");
+        gStyle->SetLabelFont(42,"XYZ");
         gStyle->SetTextFont(42);
     }
 } _style_bootstrap;
 
-// -------------------- utils --------------------
-static inline std::string toLower(std::string s) {
+// ────────── helpers ──────────
+static inline std::string toLower(std::string s){
     std::transform(s.begin(), s.end(), s.begin(),
-                   [](unsigned char c){ return std::tolower(c); });
+        [](unsigned char c){return std::tolower(c);});
     return s;
 }
-static std::string periodToRunTagKey(const std::string& period) {
+static inline std::string periodToRunTagKey(const std::string& period){
     auto pos = period.find('_');
-    if (pos == std::string::npos || pos + 1 >= period.size()) return toLower(period);
-    return toLower(period.substr(pos + 1));
+    if (pos==std::string::npos || pos+1>=period.size()) return toLower(period);
+    return toLower(period.substr(pos+1));
 }
-static inline std::string key4s(int ix,int iQ,int it,int ip){
-    std::ostringstream os; os<<"("<<ix<<","<<iQ<<","<<it<<","<<ip<<")"; return os.str();
-}
-
 static inline std::vector<std::pair<double,double>>
 uniqueRanges(const std::vector<Binning>& scheme, char which) {
     std::set<std::pair<double,double>> s;
     for (const auto& b : scheme) {
-        if (which == 'x') s.emplace(b.xBmin, b.xBmax);
-        else if (which == 'Q') s.emplace(b.Q2min, b.Q2max);
-        else if (which == 't') s.emplace(b.tmin,  b.tmax);
+        if (which=='x') s.emplace(b.xBmin,b.xBmax);
+        else if (which=='Q') s.emplace(b.Q2min,b.Q2max);
+        else if (which=='t') s.emplace(b.tmin,b.tmax);
     }
     return {s.begin(), s.end()};
 }
@@ -107,196 +87,236 @@ static inline std::vector<double> phiCentersDeg() {
     for (int i=0;i<N_PHI_BINS;++i) d[i] = (i+0.5)*step;
     return d;
 }
+static inline std::string key4s(int ix,int iQ,int it,int ip){
+    std::ostringstream os; os<<"("<<ix<<","<<iQ<<","<<it<<","<<ip<<")"; return os.str();
+}
 
-// ------------- total_counts JSON loader (tolerant schema) -------------
-static bool parse_tuple_key4(const std::string& s, BinKey& out) {
+// ────────── structures ──────────
+struct HelCounts { long long plus=0, minus=0; };
+using GroupCounts = std::map<std::string, std::map<BinKey, HelCounts>>;
+
+struct Contam { double cp=0.0, ep=0.0, cm=0.0, em=0.0; }; // contamination & errors
+using ContamTable = std::map<BinKey, Contam>;
+
+struct CorrBin {
+    double Np=0.0, ep=0.0;  // corrected +1 and its σ
+    double Nm=0.0, em=0.0;  // corrected −1 and its σ
+    double Nt=0.0, et=0.0;  // total and its σ (quadrature)
+};
+
+// ────────── JSON parsing utilities (tolerant) ──────────
+static bool parse_tuple_key(const std::string& s, BinKey& out) {
     int ix,iQ,it,ip;
     if (std::sscanf(s.c_str(),"(%d,%d,%d,%d)",&ix,&iQ,&it,&ip)!=4) return false;
     out = BinKey(ix,iQ,it,ip);
     return true;
 }
 
-static bool load_total_counts(const std::string& path, GroupCounts& outGroups) {
+// total_counts.json → groups -> (key)->helicity
+static bool load_total_counts(const std::string& path, GroupCounts& out) {
     std::ifstream ifs(path);
-    if (!ifs) {
-        std::cerr<<"[pi0_corr][ERROR] Cannot open total_counts JSON: "<<path<<"\n";
-        return false;
-    }
+    if (!ifs) { std::cerr<<"[pi0corr][ERROR] open "<<path<<" failed\n"; return false; }
     std::string s((std::istreambuf_iterator<char>(ifs)), std::istreambuf_iterator<char>());
 
-    // Try to find a "groups" object; if not present, treat the whole root as the groups object.
     size_t gpos = s.find("\"groups\"");
-    size_t brace;
-    if (gpos != std::string::npos) {
-        brace = s.find('{', gpos);
-    } else {
-        // find first '{' after (possible) binning_meta
-        brace = s.find('{');
-        if (brace != std::string::npos) {
-            // skip the outermost object and then find the next top-level "{"
-            int d=0; size_t i=brace;
-            for (; i<s.size(); ++i){ if(s[i]=='{') d++; else if(s[i]=='}'){ d--; if(!d){ ++i; break; } } }
-            // from i onwards, try to find the next object (the first group key)
-            size_t next_quote = s.find('"', i);
-            size_t next_brace = (next_quote==std::string::npos) ? std::string::npos : s.find('{', next_quote);
-            brace = next_brace;
-        }
-    }
-    if (brace==std::string::npos) {
-        std::cerr<<"[pi0_corr][ERROR] Could not locate groups object in total_counts.\n";
-        return false;
-    }
+    if (gpos==std::string::npos) { std::cerr<<"[pi0corr][ERROR] 'groups' not found in total_counts\n"; return false; }
+    size_t br = s.find('{', gpos); if (br==std::string::npos) return false;
 
-    int d=0; size_t i=brace;
+    int d=0; size_t i=br;
     for (; i<s.size(); ++i){ if(s[i]=='{') d++; else if(s[i]=='}'){ d--; if(!d){ ++i; break; } } }
-    std::string groupsObj = s.substr(brace, i-brace);
+    std::string groupsObj = s.substr(br, i-br);
 
-    size_t kpos=0;
+    size_t k=0;
     while (true) {
-        size_t q1 = groupsObj.find('"', kpos); if (q1==std::string::npos) break;
+        size_t q1 = groupsObj.find('"', k); if (q1==std::string::npos) break;
         size_t q2 = groupsObj.find('"', q1+1); if (q2==std::string::npos) break;
         std::string gname = groupsObj.substr(q1+1, q2-q1-1);
 
-        size_t objS = groupsObj.find('{', q2); if (objS==std::string::npos) break;
-        int d2=0; size_t j=objS;
+        size_t binsS = groupsObj.find("\"bins\"", q2);
+        if (binsS==std::string::npos) { k=q2+1; continue; }
+        size_t bbr = groupsObj.find('{', binsS); if (bbr==std::string::npos){ k=q2+1; continue; }
+
+        int d2=0; size_t j=bbr;
         for (; j<groupsObj.size(); ++j){ if(groupsObj[j]=='{') d2++; else if(groupsObj[j]=='}'){ d2--; if(!d2){ ++j; break; } } }
-        std::string binsObj = groupsObj.substr(objS, j-objS);
+        std::string binsObj = groupsObj.substr(bbr, j-bbr);
 
-        std::map<BinKey, HelCounts> gmap;
-        size_t bpos=0;
+        std::map<BinKey, HelCounts> table; size_t p=0;
         while (true) {
-            size_t bk1 = binsObj.find('"', bpos); if (bk1==std::string::npos) break;
-            size_t bk2 = binsObj.find('"', bk1+1); if (bk2==std::string::npos) break;
-            std::string key = binsObj.substr(bk1+1, bk2-bk1-1);
-            BinKey bk;
-            if (!parse_tuple_key4(key, bk)) { bpos=bk2+1; continue; }
+            size_t k1=binsObj.find('"', p); if (k1==std::string::npos) break;
+            size_t k2=binsObj.find('"', k1+1); if (k2==std::string::npos) break;
+            BinKey bk; if (!parse_tuple_key(binsObj.substr(k1+1,k2-k1-1), bk)){ p=k2+1; continue; }
 
-            size_t valS = binsObj.find('{', bk2); if (valS==std::string::npos) break;
-            int d3=0; size_t jj=valS;
-            for (; jj<binsObj.size(); ++jj){ if(binsObj[jj]=='{') d3++; else if(binsObj[jj]=='}'){ d3--; if(!d3){ ++jj; break; } } }
-            std::string obj = binsObj.substr(valS, jj-valS);
+            size_t vS = binsObj.find('{', k2); if (vS==std::string::npos) break;
+            int d3=0; size_t m=vS;
+            for (; m<binsObj.size(); ++m){ if(binsObj[m]=='{') d3++; else if(binsObj[m]=='}'){ d3--; if(!d3){ ++m; break;} } }
+            std::string v = binsObj.substr(vS, m-vS);
 
-            auto findLL = [&](const char* pat)->long long {
-                size_t p = obj.find(pat); if (p==std::string::npos) return 0;
-                p = obj.find(':', p); if (p==std::string::npos) return 0;
-                size_t a=p+1; while (a<obj.size() && isspace((unsigned char)obj[a])) ++a;
-                size_t b=a; while (b<obj.size() && (isdigit((unsigned char)obj[b])||obj[b]=='-')) ++b;
-                try { return std::stoll(obj.substr(a,b-a)); } catch(...) { return 0; }
+            auto findLL=[&](const char* pat)->long long{
+                size_t pos=v.find(pat); if(pos==std::string::npos) return 0;
+                pos=v.find(':',pos); if(pos==std::string::npos) return 0;
+                size_t a=pos+1; while(a<v.size() && isspace((unsigned char)v[a])) ++a;
+                size_t b=a; while(b<v.size() && (isdigit((unsigned char)v[b])||v[b]=='-')) ++b;
+                try { return std::stoll(v.substr(a,b-a)); } catch(...) { return 0; }
             };
+
             HelCounts hc;
             hc.plus  = findLL("\"+1\"");
             hc.minus = findLL("\"-1\"");
-
-            gmap[bk]=hc;
-            bpos=jj;
+            table[bk] = hc;
+            p = m;
         }
-
-        outGroups[gname]=std::move(gmap);
-        kpos=j;
+        out[gname] = std::move(table);
+        k = j;
     }
-    return !outGroups.empty();
+    return !out.empty();
 }
 
-// ------------- contamination JSON loader (whitespace-tolerant) -------------
-static bool parse_tuple_key(const std::string& s, BinKey& out) {
-    int ix,iQ,it,ip;
-    if (std::sscanf(s.c_str(), "(%d,%d,%d,%d)", &ix,&iQ,&it,&ip) != 4) return false;
-    out = BinKey(ix,iQ,it,ip);
-    return true;
-}
-static inline std::string squash_ws(std::string z){
-    z.erase(std::remove_if(z.begin(), z.end(), [](unsigned char c){
-        return std::isspace(c);
-    }), z.end());
-    return z;
-}
-static bool load_contam_for_period(const std::string& path,
-                                   std::map<BinKey, ContamBin>& out)
-{
+// per-period contamination file
+static bool load_contam_period(const std::string& path, ContamTable& out) {
     std::ifstream ifs(path);
-    if (!ifs) {
-        std::cerr << "[pi0_corr][WARN] Can't open contamination file: " << path << "\n";
-        return false;
-    }
+    if (!ifs) return false;
     std::string s((std::istreambuf_iterator<char>(ifs)), std::istreambuf_iterator<char>());
 
-    size_t pos = s.find("\"bins\"");
-    if (pos == std::string::npos) {
-        std::cerr << "[pi0_corr][WARN] 'bins' not found in " << path << "\n";
-        return false;
-    }
-    size_t br = s.find('{', pos);
-    if (br == std::string::npos) return false;
+    size_t bpos = s.find("\"bins\"");
+    if (bpos==std::string::npos) return false;
+    size_t br = s.find('{', bpos); if (br==std::string::npos) return false;
+
     int d=0; size_t i=br;
-    for (; i<s.size(); ++i){
-        if (s[i]=='{') d++;
-        else if (s[i]=='}'){ d--; if(!d){ ++i; break; } }
-    }
+    for (; i<s.size(); ++i){ if(s[i]=='{') d++; else if(s[i]=='}'){ d--; if(!d){ ++i; break; } } }
     std::string binsObj = s.substr(br, i-br);
 
-    size_t kpos = 0;
-    int nbins_loaded = 0;
-
+    size_t p=0; int nb=0;
     while (true) {
-        size_t q1 = binsObj.find('"', kpos);
-        if (q1 == std::string::npos) break;
-        size_t q2 = binsObj.find('"', q1+1);
-        if (q2 == std::string::npos) break;
-        std::string key = binsObj.substr(q1+1, q2-q1-1);
+        size_t q1=binsObj.find('"', p); if (q1==std::string::npos) break;
+        size_t q2=binsObj.find('"', q1+1); if (q2==std::string::npos) break;
+        BinKey bk; if (!parse_tuple_key(binsObj.substr(q1+1,q2-q1-1), bk)) { p=q2+1; continue; }
 
-        BinKey bk;
-        if (!parse_tuple_key(key, bk)) {
-            kpos = q2 + 1;
-            continue;
-        }
+        size_t vS=binsObj.find('{', q2); if (vS==std::string::npos) break;
+        int d2=0; size_t j=vS;
+        for (; j<binsObj.size(); ++j){ if(binsObj[j]=='{') d2++; else if(binsObj[j]=='}'){ d2--; if(!d2){ ++j; break; } } }
+        std::string obj=binsObj.substr(vS, j-vS);
 
-        size_t objS = binsObj.find('{', q2);
-        if (objS == std::string::npos) break;
-        int d2=0; size_t j=objS;
-        for (; j<binsObj.size(); ++j){
-            if (binsObj[j]=='{') d2++;
-            else if (binsObj[j]=='}'){ d2--; if(!d2){ ++j; break; } }
-        }
-        std::string objPretty = binsObj.substr(objS, j-objS);
-        std::string obj = squash_ws(objPretty); // strip whitespace
-
-        auto findD = [&](const std::string& pat)->double{
-            size_t p = obj.find(pat);
-            if (p == std::string::npos) return 0.0;
-            p = obj.find(':', p);
-            if (p == std::string::npos) return 0.0;
-            size_t a = p+1;
-            size_t b = a;
-            auto isnum = [](char c){
-                return std::isdigit((unsigned char)c) || c=='-'||c=='+'||c=='.'||c=='e'||c=='E';
-            };
-            while (b<obj.size() && isnum(obj[b])) ++b;
-            try { return std::stod(obj.substr(a,b-a)); } catch (...) { return 0.0; }
+        auto findD=[&](const std::string& pat)->double{
+            size_t pos=obj.find(pat); if(pos==std::string::npos) return 0.0;
+            pos=obj.find(':',pos); if(pos==std::string::npos) return 0.0;
+            size_t a=pos+1, b=a;
+            auto isnum=[](char c){return std::isdigit((unsigned char)c)||c=='-'||c=='+'||c=='.'||c=='e'||c=='E';};
+            while(b<obj.size() && isnum(obj[b])) ++b;
+            try { return std::stod(obj.substr(a,b-a)); } catch(...) { return 0.0; }
         };
 
-        ContamBin cb;
-        cb.c_plus      = findD("\"contamination\":{\"+1\":{\"value\"");
-        cb.c_plus_err  = findD("\"contamination\":{\"+1\":{\"err\"");
-        cb.c_minus     = findD("\"contamination\":{\"-1\":{\"value\"");
-        cb.c_minus_err = findD("\"contamination\":{\"-1\":{\"err\"");
-
-        if (cb.c_plus==0.0 && cb.c_minus==0.0) {
-            cb.c_plus      = findD("\"+1\":{\"value\"");
-            cb.c_plus_err  = findD("\"+1\":{\"err\"");
-            cb.c_minus     = findD("\"-1\":{\"value\"");
-            cb.c_minus_err = findD("\"-1\":{\"err\"");
+        Contam c;
+        // prefer nested "contamination" schema; fallback to flat "+1"/"-1"
+        c.cp = findD("\"contamination\":{\"+1\":{\"value\"");
+        c.ep = findD("\"contamination\":{\"+1\":{\"err\"");
+        c.cm = findD("\"contamination\":{\"-1\":{\"value\"");
+        c.em = findD("\"contamination\":{\"-1\":{\"err\"");
+        if (c.cp==0.0 && c.cm==0.0) {
+            c.cp = findD("\"+1\":{\"value\"");
+            c.ep = findD("\"+1\":{\"err\"");
+            c.cm = findD("\"-1\":{\"value\"");
+            c.em = findD("\"-1\":{\"err\"");
         }
-
-        out[bk] = cb;
-        ++nbins_loaded;
-        kpos = j;
+        out[bk] = c;
+        ++nb; p=j;
     }
-
-    std::cout << "[pi0_corr] Parsed " << nbins_loaded << " bins from " << path << "\n";
-    return nbins_loaded > 0;
+    return !out.empty();
 }
 
-// ------------- per-xB grid helpers -------------
+// combined contamination file: periods -> group -> bins
+static bool load_contam_group_from_combined(const std::string& combined_path,
+                                            const std::string& group,
+                                            ContamTable& out)
+{
+    std::ifstream ifs(combined_path);
+    if (!ifs) return false;
+    std::string s((std::istreambuf_iterator<char>(ifs)), std::istreambuf_iterator<char>());
+
+    // find "periods" then this group, then its "bins"
+    size_t P = s.find("\"periods\""); if (P==std::string::npos) return false;
+    size_t Pbr = s.find('{', P); if (Pbr==std::string::npos) return false;
+
+    // find group key
+    std::string gq = std::string("\"")+group+std::string("\"");
+    size_t G = s.find(gq, Pbr); if (G==std::string::npos) return false;
+
+    size_t binsK = s.find("\"bins\"", G); if (binsK==std::string::npos) return false;
+    size_t br = s.find('{', binsK); if (br==std::string::npos) return false;
+
+    int d=0; size_t i=br;
+    for (; i<s.size(); ++i){ if(s[i]=='{') d++; else if(s[i]=='}'){ d--; if(!d){ ++i; break; } } }
+    std::string binsObj = s.substr(br, i-br);
+
+    size_t p=0; int nb=0;
+    while (true) {
+        size_t q1=binsObj.find('"', p); if (q1==std::string::npos) break;
+        size_t q2=binsObj.find('"', q1+1); if (q2==std::string::npos) break;
+        BinKey bk; if (!parse_tuple_key(binsObj.substr(q1+1,q2-q1-1), bk)) { p=q2+1; continue; }
+
+        size_t vS=binsObj.find('{', q2); if (vS==std::string::npos) break;
+        int d2=0; size_t j=vS;
+        for (; j<binsObj.size(); ++j){ if(binsObj[j]=='{') d2++; else if(binsObj[j]=='}'){ d2--; if(!d2){ ++j; break; } } }
+        std::string obj=binsObj.substr(vS, j-vS);
+
+        auto findD=[&](const std::string& pat)->double{
+            size_t pos=obj.find(pat); if(pos==std::string::npos) return 0.0;
+            pos=obj.find(':',pos); if(pos==std::string::npos) return 0.0;
+            size_t a=pos+1, b=a;
+            auto isnum=[](char c){return std::isdigit((unsigned char)c)||c=='-'||c=='+'||c=='.'||c=='e'||c=='E';};
+            while(b<obj.size() && isnum(obj[b])) ++b;
+            try { return std::stod(obj.substr(a,b-a)); } catch(...) { return 0.0; }
+        };
+
+        Contam c;
+        c.cp = findD("\"contamination\":{\"+1\":{\"value\"");
+        c.ep = findD("\"contamination\":{\"+1\":{\"err\"");
+        c.cm = findD("\"contamination\":{\"-1\":{\"value\"");
+        c.em = findD("\"contamination\":{\"-1\":{\"err\"");
+        if (c.cp==0.0 && c.cm==0.0) {
+            c.cp = findD("\"+1\":{\"value\"");
+            c.ep = findD("\"+1\":{\"err\"");
+            c.cm = findD("\"-1\":{\"value\"");
+            c.em = findD("\"-1\":{\"err\"");
+        }
+        out[bk]=c; ++nb; p=j;
+    }
+    return !out.empty();
+}
+
+// ────────── JSON writer ──────────
+static void write_group_json(const std::string& out_path,
+                             int nPhi,
+                             const std::vector<std::pair<double,double>>& xB_bins,
+                             const std::vector<std::pair<double,double>>& Q2_bins,
+                             const std::vector<std::pair<double,double>>& t_bins,
+                             const std::map<BinKey, CorrBin>& table)
+{
+    std::ofstream ofs(out_path);
+    if (!ofs) { std::cerr<<"[pi0corr][ERROR] cannot write "<<out_path<<"\n"; return; }
+    ofs<<std::fixed<<std::setprecision(8);
+    ofs<<"{\n";
+    ofs<<"  \"binning_meta\": {\"phi_bins\": "<<nPhi
+       <<", \"xB_bins\": "<<xB_bins.size()
+       <<", \"Q2_bins\": "<<Q2_bins.size()
+       <<", \"t_bins\": "<<t_bins.size()<<"},\n";
+    ofs<<"  \"bins\": {\n";
+    bool first=true;
+    for (const auto& kv : table) {
+        if (!first) ofs<<",\n"; first=false;
+        int ix,iQ,it,ip; std::tie(ix,iQ,it,ip)=kv.first;
+        const auto& b = kv.second;
+        ofs<<"    \""<<key4s(ix,iQ,it,ip)<<"\": {"
+           <<"\"helicity\":{"
+           <<"\"+1\":{\"value\":"<<b.Np<<",\"err\":"<<b.ep<<"},"
+           <<"\"-1\":{\"value\":"<<b.Nm<<",\"err\":"<<b.em<<"}"
+           <<"},"
+           <<"\"total\":{\"value\":"<<b.Nt<<",\"err\":"<<b.et<<"}"
+           <<"}";
+    }
+    ofs<<"\n  }\n}\n";
+}
+
+// ────────── plotting ──────────
 static void uniqueQT_for_xB(
     const std::vector<Binning>& scheme,
     const std::pair<double,double>& xBrange,
@@ -314,265 +334,306 @@ static void uniqueQT_for_xB(
     t_list.assign(ts.begin(), ts.end());
 }
 
-// ------------- JSON writer for corrected counts -------------
-static void write_period_corrected_json(
-    const std::string& out_path,
-    int nPhi,
-    const std::vector<std::pair<double,double>>& xB_bins,
-    const std::vector<std::pair<double,double>>& Q2_bins,
-    const std::vector<std::pair<double,double>>& t_bins,
-    const std::map<BinKey, CorrBin>& corr)
-{
-    std::ofstream ofs(out_path);
-    if (!ofs) { std::cerr << "[pi0_corr][ERROR] Cannot open " << out_path << "\n"; return; }
-    ofs<<std::fixed<<std::setprecision(8);
-    ofs<<"{\n";
-    ofs<<"  \"binning_meta\": {\"phi_bins\": "<<nPhi
-       <<", \"xB_bins\": "<<xB_bins.size()
-       <<", \"Q2_bins\": "<<Q2_bins.size()
-       <<", \"t_bins\": "<<t_bins.size()<<"},\n";
-    ofs<<"  \"bins\": {\n";
-    bool first=true;
-    for (const auto& kv : corr){
-        if (!first) ofs<<",\n"; first=false;
-        int ix,iQ,it,ip; std::tie(ix,iQ,it,ip)=kv.first;
-        const auto& cb = kv.second;
-        ofs<<"    \""<<key4s(ix,iQ,it,ip)<<"\": {"
-           <<"\"helicity\":{\"+1\":"<<cb.Np<<",\"-1\":"<<cb.Nm<<"},"
-           <<"\"total\":"<<cb.Ntot<<"}";
-    }
-    ofs<<"\n  }\n}\n";
-}
-
-// ------------- plotting: one canvas per xB -------------
-static void plot_corrected_counts_for_period(
-    const std::string& period,
+static void plot_group(
+    const std::string& group,
     const std::vector<Binning>& binning_scheme,
     const std::vector<std::pair<double,double>>& xB_bins,
     const std::vector<std::pair<double,double>>& Q2_bins,
     const std::vector<std::pair<double,double>>& t_bins,
-    const std::map<BinKey, CorrBin>& corr,
+    const std::map<BinKey, CorrBin>& table,
     const std::string& out_dir_plots)
 {
     namespace fs = std::filesystem;
     std::error_code ec;
     fs::create_directories(out_dir_plots, ec);
 
-    static const auto PHI_DEG = phiCentersDeg();
+    const auto PHI = phiCentersDeg();
 
-    for (int ix=0; ix<(int)xB_bins.size(); ++ix){
+    for (int ix=0; ix<(int)xB_bins.size(); ++ix) {
         const auto xb = xB_bins[ix];
 
         std::vector<std::pair<double,double>> Q2_slice, t_slice;
         uniqueQT_for_xB(binning_scheme, xb, Q2_slice, t_slice);
         if (Q2_slice.empty() || t_slice.empty()) continue;
 
-        const int nrows = (int)t_slice.size();
-        const int ncols = (int)Q2_slice.size();
+        const int nrows = (int)Q2_slice.size();
+        const int ncols = (int)t_slice.size();
 
         const int W = 280*ncols + 160;
         const int H = 240*nrows + 170;
 
-        std::ostringstream cname; cname<<"c_pi0corr_"<<period<<"_xB"<<ix;
-        TCanvas* c = new TCanvas(cname.str().c_str(), cname.str().c_str(), W, H);
+        std::string cname = Form("c_pi0corr_%s_xB%d", group.c_str(), ix);
+        TCanvas* c = new TCanvas(cname.c_str(), cname.c_str(), W, H);
 
-        // title
-        TPad* pTop  = new TPad("pTop","pTop", 0.0, 0.915, 1.0, 1.0);
+        // header pad
+        TPad* pTop  = new TPad("pTop","pTop", 0.0, 0.92, 1.0, 1.0);
         pTop->SetFillStyle(0); pTop->SetBorderSize(0); pTop->Draw();
-
-        // grid
-        TPad* pGrid = new TPad("pGrid","pGrid", 0.0, 0.00, 1.0, 0.915);
+        // grid pad
+        TPad* pGrid = new TPad("pGrid","pGrid", 0.0, 0.00, 1.0, 0.92);
         pGrid->SetFillStyle(0); pGrid->SetBorderSize(0); pGrid->Draw();
-        pGrid->cd();
-        pGrid->Divide(ncols, nrows, 0.0001, 0.0001);
+        pGrid->cd(); pGrid->Divide(ncols, nrows, 0.0001, 0.0001);
 
-        // title text
+        // canvas title with xB
         pTop->cd();
-        TLatex head; head.SetNDC(); head.SetTextAlign(22); head.SetTextFont(42); head.SetTextSize(0.36);
-        head.DrawLatex(0.5, 0.55, Form("#pi^{0}-corrected counts  %s   x_{B} #in [%.2g, %.2g]",
-                                       period.c_str(), xb.first, xb.second));
+        TLatex head; head.SetNDC(); head.SetTextAlign(22); head.SetTextFont(42); head.SetTextSize(0.40);
+        head.DrawLatex(0.5, 0.55, Form("#pi^{0}-corrected counts  %s   x_{B} #in [%.3g, %.3g]",
+                                       group.c_str(), xb.first, xb.second));
 
-        // global Y max per canvas
-        double ymax_est = 1.0;
+        // find global Y for nice headroom
+        double ymax=1.0;
         for (int r=0; r<nrows; ++r){
-            const int it_glob = findIndex(t_slice[r], t_bins);
-            if (it_glob<0) continue;
+            int iQ=findIndex(Q2_slice[r], Q2_bins); if (iQ<0) continue;
             for (int cc=0; cc<ncols; ++cc){
-                const int iQ_glob = findIndex(Q2_slice[cc], Q2_bins);
-                if (iQ_glob<0) continue;
+                int it=findIndex(t_slice[cc], t_bins); if (it<0) continue;
                 for (int ip=0; ip<N_PHI_BINS; ++ip){
-                    auto it = corr.find(std::make_tuple(ix,iQ_glob,it_glob,ip));
-                    if (it==corr.end()) continue;
-                    ymax_est = std::max(ymax_est, std::max(it->second.Np, it->second.Nm));
+                    auto itb = table.find(BinKey(ix,iQ,it,ip));
+                    if (itb==table.end()) continue;
+                    ymax = std::max({ymax, itb->second.Np + itb->second.ep,
+                                           itb->second.Nm + itb->second.em});
                 }
             }
         }
-        const double YMAX = std::max(5.0, ymax_est*1.20);
+        ymax = std::max(5.0, 1.20*ymax);
 
-        for (int r=0; r<nrows; ++r){
-            const int it_glob = findIndex(t_slice[r], t_bins);
-            if (it_glob<0) continue;
-            for (int cc=0; cc<ncols; ++cc){
-                const int iQ_glob = findIndex(Q2_slice[cc], Q2_bins);
-                if (iQ_glob<0) continue;
+        for (int r=0; r<nrows; ++r) {
+            int iQ=findIndex(Q2_slice[r], Q2_bins); if (iQ<0) continue;
+            for (int cc=0; cc<ncols; ++cc) {
+                int it=findIndex(t_slice[cc], t_bins); if (it<0) continue;
 
                 pGrid->cd(r*ncols + cc + 1);
                 gPad->SetGrid(1,1);
-                gPad->SetTopMargin(0.08);
-                gPad->SetBottomMargin(0.18);
-                gPad->SetLeftMargin(0.15);
-                gPad->SetRightMargin(0.10);
+                gPad->SetTopMargin(0.18);
+                gPad->SetBottomMargin(0.16);
+                gPad->SetLeftMargin(0.14);
+                gPad->SetRightMargin(0.08);
 
-                TH1* frame = gPad->DrawFrame(0.0, 0.0, 360.0, YMAX);
+                TH1* frame = gPad->DrawFrame(0.0, 0.0, 360.0, ymax);
                 frame->GetXaxis()->SetTitle("#phi (deg)");
                 frame->GetYaxis()->SetTitle("N^{corr}");
-                frame->GetXaxis()->CenterTitle();
-                frame->GetYaxis()->CenterTitle();
-                frame->GetXaxis()->SetTitleSize(0.060);
-                frame->GetYaxis()->SetTitleSize(0.060);
-                frame->GetYaxis()->SetLabelSize(0.048);
-                frame->GetXaxis()->SetTitleOffset(1.25);
-                frame->GetYaxis()->SetTitleOffset(1.35);
+                frame->GetXaxis()->CenterTitle(); frame->GetYaxis()->CenterTitle();
 
-                std::vector<double> x, yP, yM;
-                x.reserve(N_PHI_BINS); yP.reserve(N_PHI_BINS); yM.reserve(N_PHI_BINS);
-                for (int ip=0; ip<N_PHI_BINS; ++ip){
-                    auto it = corr.find(std::make_tuple(ix,iQ_glob,it_glob,ip));
-                    if (it==corr.end()) continue;
-                    x.push_back(PHI_DEG[ip]);
-                    yP.push_back(std::max(0.0, it->second.Np));
-                    yM.push_back(std::max(0.0, it->second.Nm));
+                std::vector<double> X, Yp, Ym, eX, eYp, eYm;
+                X.reserve(N_PHI_BINS); Yp.reserve(N_PHI_BINS); Ym.reserve(N_PHI_BINS);
+                eX.assign(N_PHI_BINS, 0.0);
+
+                for (int ip=0; ip<N_PHI_BINS; ++ip) {
+                    auto itb = table.find(BinKey(ix,iQ,it,ip));
+                    if (itb==table.end()) continue;
+                    X.push_back(PHI[ip]);
+                    Yp.push_back(std::max(0.0, itb->second.Np));
+                    Ym.push_back(std::max(0.0, itb->second.Nm));
+                    eYp.push_back(itb->second.ep);
+                    eYm.push_back(itb->second.em);
                 }
 
-                if (!x.empty()){
-                    TGraph* gP = new TGraph((int)x.size(), x.data(), yP.data());
-                    TGraph* gM = new TGraph((int)x.size(), x.data(), yM.data());
-                    gP->SetLineWidth(2); gP->SetMarkerStyle(20); gP->Draw("LP SAME");
-                    gM->SetLineWidth(2); gM->SetMarkerStyle(24); gM->Draw("LP SAME");
+                if (!X.empty()) {
+                    TGraphErrors* gP = new TGraphErrors((int)X.size(), X.data(), Yp.data(), eX.data(), eYp.data());
+                    TGraphErrors* gM = new TGraphErrors((int)X.size(), X.data(), Ym.data(), eX.data(), eYm.data());
+                    gP->SetLineWidth(2); gP->SetMarkerStyle(20); gP->Draw("P SAME");
+                    gM->SetLineWidth(2); gM->SetMarkerStyle(24); gM->Draw("P SAME");
 
-                    TLegend* leg = new TLegend(0.50, 0.74, 0.90, 0.92);
-                    leg->SetTextFont(42); leg->SetTextSize(0.040);
-                    leg->AddEntry(gP, "N^{corr}(+1)", "lp");
-                    leg->AddEntry(gM, "N^{corr}(-1)", "lp");
-                    leg->Draw();
+                    if (r==0 && cc==0) {
+                        TLegend* leg = new TLegend(0.56, 0.73, 0.92, 0.92);
+                        leg->SetBorderSize(1); leg->SetFillStyle(0); leg->SetTextSize(0.040);
+                        leg->AddEntry(gP, "N^{corr}(+1) with #sigma", "p");
+                        leg->AddEntry(gM, "N^{corr}(-1) with #sigma", "p");
+                        leg->Draw();
+                    }
                 }
 
-                TLatex lab; lab.SetNDC(); lab.SetTextSize(0.040); lab.SetTextAlign(11); lab.SetTextFont(42);
-                lab.DrawLatex(0.15, 0.94,
-                    Form("Q^{2} #in [%.2g, %.2g],   -t #in [%.2g, %.2g]",
-                         Q2_slice[cc].first, Q2_slice[cc].second,
-                         t_slice[r].first,   t_slice[r].second));
+                TLatex lab; lab.SetNDC(); lab.SetTextSize(0.044); lab.SetTextAlign(13);
+                lab.DrawLatex(0.14, 0.96, Form("Q^{2} #in [%.3g, %.3g],   -t #in [%.3g, %.3g]",
+                    Q2_slice[r].first, Q2_slice[r].second, t_slice[cc].first, t_slice[cc].second));
             }
         }
 
-        std::ostringstream fout;
-        fout<<out_dir_plots<<"/plot_pi0corr_"<<period<<"_xB_"<<ix<<".png";
-        c->SaveAs(fout.str().c_str());
+        std::string fout = (std::filesystem::path(out_dir_plots) /
+                           Form("plot_pi0corr_%s_xB_%d.png", group.c_str(), ix)).string();
+        c->SaveAs(fout.c_str());
         delete c;
     }
 }
 
-} // anonymous namespace
+// ────────── core per-group computation ──────────
+static std::map<BinKey, CorrBin> build_corrected_for_group(
+    const std::map<BinKey, HelCounts>& totals,
+    const ContamTable& contam)
+{
+    std::map<BinKey, CorrBin> out;
 
-// ======================================================================
+    for (const auto& kv : totals) {
+        const BinKey& bk = kv.first;
+        const HelCounts& N = kv.second;
+
+        Contam c{};
+        if (auto itc = contam.find(bk); itc != contam.end()) c = itc->second;
+
+        // clamp c into [0, 0.95] for safety
+        const double cp = std::clamp(c.cp, 0.0, 0.95);
+        const double cm = std::clamp(c.cm, 0.0, 0.95);
+        const double ep = std::max(0.0, c.ep);
+        const double em = std::max(0.0, c.em);
+
+        // corrected values
+        CorrBin b;
+        // + helicity
+        {
+            const double Np = (double)N.plus;
+            const double val = Np * (1.0 - cp);
+            const double var = (1.0 - cp)*(1.0 - cp) * Np      // Var(N) with Poisson
+                             + (Np*Np) * (ep*ep);              // (d/dc)^2 Var(c)
+            b.Np = std::max(0.0, val);
+            b.ep = std::sqrt(std::max(0.0, var));
+        }
+        // - helicity
+        {
+            const double Nm = (double)N.minus;
+            const double val = Nm * (1.0 - cm);
+            const double var = (1.0 - cm)*(1.0 - cm) * Nm
+                             + (Nm*Nm) * (em*em);
+            b.Nm = std::max(0.0, val);
+            b.em = std::sqrt(std::max(0.0, var));
+        }
+        b.Nt = b.Np + b.Nm;
+        b.et = std::sqrt(b.ep*b.ep + b.em*b.em); // assume independence
+
+        out[bk] = b;
+    }
+    return out;
+}
+
+} // namespace
+
+// ────────────────────────────────────────────────────────────────────
 // Public driver
-// ======================================================================
+// ────────────────────────────────────────────────────────────────────
 void compute_pi0_corrected_counts(
     const std::vector<std::string>& periods,
     const std::vector<Binning>& binning_scheme,
-    const std::string& total_counts_json_path,
+    const std::string& total_counts_json,
     const std::string& contamination_dir,
+    const std::string& contamination_combined,
     const std::string& out_root_dir)
 {
     namespace fs = std::filesystem;
 
+    // bin meta
     const auto xB_bins = uniqueRanges(binning_scheme, 'x');
     const auto Q2_bins = uniqueRanges(binning_scheme, 'Q');
     const auto t_bins  = uniqueRanges(binning_scheme, 't');
 
+    // 1) Load all DVCS totals (groups includes: periods + Spring2018/Fall2018/10.6_GeV)
     GroupCounts groups;
-    if (!load_total_counts(total_counts_json_path, groups)) {
-        std::cerr<<"[pi0_corr][ERROR] Failed to load total_counts json.\n";
+    if (!load_total_counts(total_counts_json, groups)) {
+        std::cerr<<"[pi0corr][ERROR] could not read total_counts\n";
         return;
     }
 
-    std::map<std::string, std::map<BinKey, CorrBin>> allPeriod;
-
-    for (const auto& period : periods) {
-        const std::string runTag = periodToRunTagKey(period);
-
-        auto itG = groups.find(runTag);
-        if (itG == groups.end()) {
-            std::cerr<<"[pi0_corr][WARN] total_counts has no group '"<<runTag<<"'.\n";
-        }
-
-        // load contamination for this period
-        std::map<BinKey, ContamBin> contam;
-        const fs::path contam_path = fs::path(contamination_dir)/("contamination_"+period+".json");
-        if (!load_contam_for_period(contam_path.string(), contam)) {
-            std::cerr<<"[pi0_corr][WARN] No contamination file for "<<period<<". Assuming c=0.\n";
-        } else {
-            std::cout<<"[pi0_corr] Loaded contamination for "<<period<<" ("<<contam.size()<<" bins)\n";
-        }
-
-        std::map<BinKey, CorrBin> corr;
-        if (itG != groups.end()) {
-            const auto& counts = itG->second;
-            for (const auto& kv : counts){
-                const BinKey bk = kv.first;
-                const HelCounts& hc = kv.second;
-
-                ContamBin cb;
-                auto itC = contam.find(bk);
-                if (itC!=contam.end()) cb = itC->second;
-
-                // apply correction, clamp contamination to [0,0.95] for safety
-                const double cP = std::max(0.0, std::min(0.95, cb.c_plus ));
-                const double cM = std::max(0.0, std::min(0.95, cb.c_minus));
-                const double Np_corr = double(hc.plus ) * (1.0 - cP);
-                const double Nm_corr = double(hc.minus) * (1.0 - cM);
-
-                CorrBin out; out.Np = Np_corr; out.Nm = Nm_corr; out.Ntot = Np_corr + Nm_corr;
-                corr[bk] = out;
-            }
-        }
-
-        // write per-period JSON
-        const fs::path out_json = fs::path(out_root_dir)/"jsons"/("pi0_corrected_counts_"+period+".json");
-        std::error_code ec; fs::create_directories(out_json.parent_path(), ec);
-        write_period_corrected_json(out_json.string(), N_PHI_BINS, xB_bins, Q2_bins, t_bins, corr);
-        std::cout<<"[pi0_corr] Wrote \""<<out_json.string()<<"\"\n";
-
-        // plots
-        const fs::path plots_dir = fs::path(out_root_dir)/"pi0_corrected_plots"/periodToRunTagKey(period);
-        plot_corrected_counts_for_period(period, binning_scheme, xB_bins, Q2_bins, t_bins, corr, plots_dir.string());
-
-        allPeriod[period] = std::move(corr);
+    // 2) Build the list of groups we will output:
+    //    - all requested periods (by runTag key)
+    //    - any combined groups present in total_counts.json (e.g., Spring2018,...)
+    std::vector<std::string> group_names;
+    group_names.reserve(periods.size()+8);
+    for (const auto& p : periods) group_names.push_back(periodToRunTagKey(p)); // runTag keys for per-period totals
+    for (const auto& gkv : groups) {
+        const std::string& g = gkv.first;
+        // If it's already in the list (period key), keep; else (combined like "Spring2018") add it.
+        if (std::find(group_names.begin(), group_names.end(), g) == group_names.end())
+            group_names.push_back(g);
     }
 
-    // combined file (flat per-period)
-    {
-        const fs::path out_comb = fs::path(out_root_dir)/"jsons"/"pi0_corrected_counts_all_periods.json";
-        std::ofstream ofs(out_comb.string());
-        if (ofs){
-            ofs<<std::fixed<<std::setprecision(8);
-            ofs<<"{\n  \"periods\": {\n";
-            bool firstP=true;
-            for (const auto& pkv : allPeriod){
-                if (!firstP) ofs<<",\n"; firstP=false;
-                ofs<<"    \""<<pkv.first<<"\": {\n      \"bins\": {\n";
-                bool firstB=true;
-                for (const auto& kv : pkv.second){
-                    if (!firstB) ofs<<",\n"; firstB=false;
-                    int ix,iQ,it,ip; std::tie(ix,iQ,it,ip)=kv.first;
-                    const auto& cb = kv.second;
-                    ofs<<"        \""<<key4s(ix,iQ,it,ip)<<"\": {"
-                       <<"\"helicity\":{\"+1\":"<<cb.Np<<",\"-1\":"<<cb.Nm<<"},\"total\":"<<cb.Ntot<<"}";
-                }
-                ofs<<"\n      }\n    }";
-            }
-            ofs<<"\n  }\n}\n";
-            std::cout<<"[pi0_corr] Wrote combined \""<<out_comb.string()<<"\"\n";
+    // 3) For each group, get contamination:
+    //    - per-period groups: read contamination_<DVCS_PeriodName>.json in contamination_dir
+    //    - combined groups:   read from contamination_combined.json under "periods"[Group]
+    std::map<std::string, std::map<BinKey, CorrBin>> all_out;
+
+    const fs::path out_json_dir = fs::path(out_root_dir)/"jsons";
+    const fs::path out_plot_dir = fs::path(out_root_dir)/"pi0_corrected_plots";
+    std::error_code ec;
+    fs::create_directories(out_json_dir, ec);
+    fs::create_directories(out_plot_dir, ec);
+
+    for (const std::string& group : group_names) {
+        // find total counts for this group
+        auto itG = groups.find(group);
+        if (itG == groups.end()) {
+            std::cerr<<"[pi0corr][WARN] totals missing for group '"<<group<<"' — skipped\n";
+            continue;
         }
+
+        // contamination table for this group
+        ContamTable C;
+
+        // detect if group is one of the per-period DVCS_NN style or a combined name
+        bool is_period_like = (group.rfind("dvcs_",0)==0) || (group.find('_')!=std::string::npos); // crude
+        if (is_period_like) {
+            // Need the DVCS Period name, not runTag. Try to re-hydrate:
+            // dvcs_<Tag>  → "DVCS_" + TitleCase(Tag)
+            // Our contamination file naming is contamination_<DVCS_Period>.json (as produced earlier).
+            // Simpler: search for a contamination file that exists for any of the spelled DVCS names
+            // but we’ll reconstruct from runTag:
+            std::string tag = group;
+            // TitleCase after underscores
+            if (!tag.empty()) tag[0] = (char)std::toupper((unsigned char)tag[0]);
+            for (size_t i=0;i+1<tag.size();++i) if (tag[i]=='_' && i+1<tag.size()) tag[i+1]=(char)std::toupper((unsigned char)tag[i+1]);
+            std::string dvcsName = "DVCS_" + tag;
+
+            fs::path cf = fs::path(contamination_dir)/("contamination_"+dvcsName+".json");
+            if (!load_contam_period(cf.string(), C)) {
+                // also allow raw period name (some trees use exact period strings already)
+                fs::path alt = fs::path(contamination_dir)/("contamination_"+group+".json");
+                if (!load_contam_period(alt.string(), C)) {
+                    std::cerr<<"[pi0corr][WARN] contamination missing for "<<group<<" (looked for "<<cf<<") — assuming c=0\n";
+                }
+            }
+        } else {
+            // combined group: read from the combined contamination file
+            if (!load_contam_group_from_combined(contamination_combined, group, C)) {
+                std::cerr<<"[pi0corr][WARN] combined contamination missing for "<<group<<" — assuming c=0\n";
+            }
+        }
+
+        // compute corrected + errors
+        auto corr = build_corrected_for_group(itG->second, C);
+        all_out[group] = corr;
+
+        // write per-group JSON
+        const fs::path out_group_json = out_json_dir / ("pi0_corrected_counts_"+group+".json");
+        write_group_json(out_group_json.string(), N_PHI_BINS, xB_bins, Q2_bins, t_bins, corr);
+        std::cout<<"[pi0corr] wrote "<<out_group_json.string()<<"\n";
+
+        // plots with error bars
+        const fs::path plot_dir = out_plot_dir / group;
+        plot_group(group, binning_scheme, xB_bins, Q2_bins, t_bins, corr, plot_dir.string());
+    }
+
+    // master combined JSON (all groups in one file)
+    {
+        const fs::path out_master = out_json_dir / "pi0_corrected_counts_all_groups.json";
+        std::ofstream ofs(out_master.string());
+        if (!ofs) { std::cerr<<"[pi0corr][ERROR] cannot write "<<out_master<<"\n"; return; }
+        ofs<<std::fixed<<std::setprecision(8);
+        ofs<<"{\n  \"groups\": {\n";
+        bool firstG=true;
+        for (const auto& gkv : all_out) {
+            if (!firstG) ofs<<",\n"; firstG=false;
+            ofs<<"    \""<<gkv.first<<"\": {\n      \"bins\": {\n";
+            bool firstB=true;
+            for (const auto& kv : gkv.second) {
+                if (!firstB) ofs<<",\n"; firstB=false;
+                int ix,iQ,it,ip; std::tie(ix,iQ,it,ip)=kv.first;
+                const auto& b = kv.second;
+                ofs<<"        \""<<key4s(ix,iQ,it,ip)<<"\": {"
+                   <<"\"helicity\":{"
+                   <<"\"+1\":{\"value\":"<<b.Np<<",\"err\":"<<b.ep<<"},"
+                   <<"\"-1\":{\"value\":"<<b.Nm<<",\"err\":"<<b.em<<"}"
+                   <<"},"
+                   <<"\"total\":{\"value\":"<<b.Nt<<",\"err\":"<<b.et<<"}"
+                   <<"}";
+            }
+            ofs<<"\n      }\n    }";
+        }
+        ofs<<"\n  }\n}\n";
+        std::cout<<"[pi0corr] wrote "<<out_master.string()<<"\n";
     }
 }
