@@ -10,6 +10,7 @@
 
 #include <TCanvas.h>
 #include <TGraphErrors.h>
+#include <TGraph.h>
 #include <TLegend.h>
 #include <TH1.h>
 #include <TAxis.h>
@@ -321,7 +322,6 @@ static std::string find_contam_json(const std::string& dir, const std::string& p
         return fs::file_size(p, ec) > 0;
     };
 
-    // If period already looks like "DVCS_*", split tail; else try both raw and DVCS_ + TitleCase
     std::vector<std::string> candidates;
 
     // 1) exact as given
@@ -332,14 +332,12 @@ static std::string find_contam_json(const std::string& dir, const std::string& p
         std::string tail = period.substr(5);
         candidates.push_back((fs::path(dir) / ("contamination_DVCS_" + titleCaseTail(tail) + ".json")).string());
         candidates.push_back((fs::path(dir) / ("contamination_DVCS_" + toLower(tail) + ".json")).string());
-        // also try tail with only the part after underscore title-cased (Fa18_inb -> Fa18_Inb)
-        // already handled by titleCaseTail
     } else {
         // 3) Not prefixed: try DVCS_<TitleCase(runTag)>
         const std::string dvcs = dvcsPeriodName(period);
         candidates.push_back((fs::path(dir) / ("contamination_" + dvcs + ".json")).string());
 
-        // 4) DVCS_ + TitleCase tail from dvcs (redundant but harmless)
+        // 4) DVCS_ + TitleCase tail from dvcs
         if (dvcs.rfind("DVCS_", 0) == 0) {
             std::string tail = dvcs.substr(5);
             candidates.push_back((fs::path(dir) / ("contamination_DVCS_" + titleCaseTail(tail) + ".json")).string());
@@ -347,7 +345,7 @@ static std::string find_contam_json(const std::string& dir, const std::string& p
         }
     }
 
-    // 5) Iterate the directory and pick any file that matches case-insensitively
+    // 5) case-insensitive fallback
     try {
         for (auto& de : fs::directory_iterator(dir)) {
             if (!de.is_regular_file()) continue;
@@ -365,7 +363,7 @@ static std::string find_contam_json(const std::string& dir, const std::string& p
     return ""; // not found
 }
 
-// ────────── JSON writer ──────────
+// ────────── JSON writers ──────────
 static void write_group_json(const std::string& out_path,
                              int nPhi,
                              const std::vector<std::pair<double,double>>& xB_bins,
@@ -394,6 +392,47 @@ static void write_group_json(const std::string& out_path,
            <<"},"
            <<"\"total\":{\"value\":"<<b.Nt<<",\"err\":"<<b.et<<"}"
            <<"}";
+    }
+    ofs<<"\n  }\n}\n";
+}
+
+static void write_master_json(const std::string& out_path,
+                              int nPhi,
+                              const std::vector<std::pair<double,double>>& xB_bins,
+                              const std::vector<std::pair<double,double>>& Q2_bins,
+                              const std::vector<std::pair<double,double>>& t_bins,
+                              const std::map<std::string, std::map<BinKey, CorrBin>>& groups)
+{
+    std::ofstream ofs(out_path);
+    if (!ofs) { std::cerr<<"[pi0corr][ERROR] cannot write "<<out_path<<"\n"; return; }
+    ofs<<std::fixed<<std::setprecision(8);
+    ofs<<"{\n";
+    ofs<<"  \"binning_meta\": {\"phi_bins\": "<<nPhi
+       <<", \"xB_bins\": "<<xB_bins.size()
+       <<", \"Q2_bins\": "<<Q2_bins.size()
+       <<", \"t_bins\": "<<t_bins.size()<<"},\n";
+    ofs<<"  \"groups\": {\n";
+
+    bool firstG=true;
+    for (const auto& gkv : groups) {
+        if (!firstG) ofs<<",\n"; firstG=false;
+        ofs<<"    \""<<gkv.first<<"\": {\n";
+        ofs<<"      \"bins\": {\n";
+        bool firstB=true;
+        for (const auto& kv : gkv.second) {
+            if (!firstB) ofs<<",\n"; firstB=false;
+            const auto& b = kv.second;
+            int ix,iQ,it,ip; std::tie(ix,iQ,it,ip)=kv.first;
+            ofs<<"        \""<<key4s(ix,iQ,it,ip)<<"\": {"
+               <<"\"helicity\":{"
+               <<"\"+1\":{\"value\":"<<b.Np<<",\"err\":"<<b.ep<<"},"
+               <<"\"-1\":{\"value\":"<<b.Nm<<",\"err\":"<<b.em<<"}"
+               <<"},"
+               <<"\"total\":{\"value\":"<<b.Nt<<",\"err\":"<<b.et<<"}"
+               <<"}";
+        }
+        ofs<<"\n      }\n"; // bins
+        ofs<<"    }";
     }
     ofs<<"\n  }\n}\n";
 }
@@ -666,69 +705,42 @@ void compute_pi0_corrected_counts(
 
         std::map<BinKey, CorrBin> corr_table;
 
+        // For every bin present in the raw totals, apply contamination (default 0)
         for (const auto& kv : raw_table) {
             const BinKey& bk = kv.first;
             const HelCounts& raw = kv.second;
 
-            Contam cc; // default zeros if missing
+            Contam cc; // defaults to zeros
             if (C) {
-                auto it = C->find(bk);
-                if (it != C->end()) cc = it->second;
+                auto ic = C->find(bk);
+                if (ic != C->end()) cc = ic->second;
             }
-
-            corr_table[bk] = make_corrected(raw, cc);
+            CorrBin cb = make_corrected(raw, cc);
+            corr_table[bk] = cb;
         }
 
-        // write this group's JSON
-        const std::string out_group_json = (json_dir / ("pi0_corrected_counts_" + group + ".json")).string();
+        // write per-group JSON
+        auto sanitize = [](std::string s)->std::string {
+            for (char& c : s) if (c=='/' || c==' ' ) c = '_';
+            return s;
+        };
+        const std::string out_group_json =
+            (json_dir / ("pi0_corrected_counts_" + sanitize(group) + ".json")).string();
+
         write_group_json(out_group_json, N_PHI_BINS, xB_bins, Q2_bins, t_bins, corr_table);
+        std::cout << "[pi0corr] Wrote " << out_group_json << "\n";
 
-        // plot this group
-        const std::string out_group_plot_dir = (plots_dir_root / group).string();
-        plot_group(group, binning_scheme, xB_bins, Q2_bins, t_bins, corr_table, raw_table, out_group_plot_dir);
+        // plot per-group
+        const std::string out_plot_dir = (plots_dir_root / group).string();
+        plot_group(group, binning_scheme, xB_bins, Q2_bins, t_bins, corr_table, raw_table, out_plot_dir);
 
+        // stash for master file
         all_groups_corrected[group] = std::move(corr_table);
     }
 
-    // 6) Write master JSON collecting all groups
-    {
-        const std::string master_path = (json_dir / "pi0_corrected_counts_all_groups.json").string();
-        std::ofstream ofs(master_path);
-        if (!ofs) {
-            std::cerr << "[pi0corr][ERROR] cannot write " << master_path << "\n";
-        } else {
-            ofs << std::fixed << std::setprecision(8);
-            ofs << "{\n";
-            ofs << "  \"binning_meta\": {\"phi_bins\": " << N_PHI_BINS
-                << ", \"xB_bins\": " << xB_bins.size()
-                << ", \"Q2_bins\": " << Q2_bins.size()
-                << ", \"t_bins\": "  << t_bins.size() << "},\n";
-            ofs << "  \"groups\": {\n";
-            bool firstG = true;
-            for (const auto& g : all_groups_corrected) {
-                if (!firstG) ofs << ",\n";
-                firstG = false;
-                ofs << "    \"" << g.first << "\": {\n";
-                ofs << "      \"bins\": {\n";
-                bool firstB = true;
-                for (const auto& kv : g.second) {
-                    if (!firstB) ofs << ",\n";
-                    firstB = false;
-                    int ix,iQ,it,ip; std::tie(ix,iQ,it,ip)=kv.first;
-                    const auto& b = kv.second;
-                    ofs << "        \"" << key4s(ix,iQ,it,ip) << "\": {"
-                        << "\"helicity\":{"
-                        << "\"+1\":{\"value\":" << b.Np << ",\"err\":" << b.ep << "},"
-                        << "\"-1\":{\"value\":" << b.Nm << ",\"err\":" << b.em << "}"
-                        << "},"
-                        << "\"total\":{\"value\":" << b.Nt << ",\"err\":" << b.et << "}"
-                        << "}";
-                }
-                ofs << "\n      }\n    }";
-            }
-            ofs << "\n  }\n}\n";
-            ofs.close();
-            std::cout << "[pi0corr] wrote " << master_path << "\n";
-        }
-    }
+    // 6) Write master JSON
+    const std::string master =
+        (json_dir / "pi0_corrected_counts_all_groups.json").string();
+    write_master_json(master, N_PHI_BINS, xB_bins, Q2_bins, t_bins, all_groups_corrected);
+    std::cout << "[pi0corr] Wrote " << master << "\n";
 }

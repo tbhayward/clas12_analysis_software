@@ -544,20 +544,12 @@ void compute_total_counts(
             if (itCut != cuts.end()) topoCuts = itCut->second;
             if (!topoCuts.empty()) {
                 // collect values for cut variables
-                std::map<std::string,double> vals;
-                vals["Delta_phi"] = b.Delta_phi;
-                vals["theta_gamma_gamma"] = b.theta_gamma_gamma;
-                vals["pTmiss"] = b.pTmiss;
-                vals["xF"] = b.xF;
-                vals["Emiss2"] = b.Emiss2;
-                vals["Mx2"] = b.Mx2;
-                vals["Mx2_1"] = b.Mx2_1;
-                vals["Mx2_2"] = b.Mx2_2;
+                std::map<std::string,double> vals = b.cutVals();
                 if (!passes3SigmaCuts(topoCuts, vals)) continue;
             }
 
             // bin
-            double xB=b.x, Q2=b.Q2, tt=std::fabs(b.t1), phi=(b.phi2 || b.Delta_phi ? (b.phi2 ? b.phi2 : b.Delta_phi) : std::numeric_limits<double>::quiet_NaN());
+            double xB=b.x, Q2=b.Q2, tt=std::fabs(b.t1), phi=b.phi();
             if (!std::isfinite(xB)||!std::isfinite(Q2)||!std::isfinite(tt)||!std::isfinite(phi)) continue;
             int ix=findBin(xB,xB_bins), iQ=findBin(Q2,Q2_bins), itb=findBin(tt,t_bins), ip=phiToBin(phi);
             if (ix<0||iQ<0||itb<0||ip<0||ip>=N_PHI_BINS) continue;
