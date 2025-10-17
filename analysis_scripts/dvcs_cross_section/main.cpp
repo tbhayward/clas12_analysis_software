@@ -79,34 +79,34 @@ int main(int argc, char* argv[]) {
     // compute_total_counts(dvcs_periods, topologies, binning_scheme, dataTrees, cuts_json_path,
     // output_counts_js, output_root); 
 
-    // Helicity-resolved π0 contamination
-    // NOTE: pass the OUTPUT ROOT ("output") so the implementation writes:
-    //   - per-period JSONs to output/jsons/contamination/
-    //   - combined JSON to output/jsons/
-    //   - plots to output/contamination_plots/...
-    compute_pi0_contamination_helicity(
-        dvcs_periods,
-        topologies,
-        binning_scheme,
-        dataTrees,
-        eppi0DataTrees,
-        eppi0RecMcTrees,   // reco MC
-        eppi0BkgTrees,     // bkg MC
-        cuts_json_path,
-        output_root
-    );
-
-    // // --------- π0-corrected helicity counts (per φ) ----------
-    // const std::string total_counts_json = "output/jsons/total_counts.json";
-    // const std::string contamination_dir_counts = "output/jsons/contamination";
-    // compute_pi0_corrected_counts(
+    // // Helicity-resolved π0 contamination
+    // // NOTE: pass the OUTPUT ROOT ("output") so the implementation writes:
+    // //   - per-period JSONs to output/jsons/contamination/
+    // //   - combined JSON to output/jsons/
+    // //   - plots to output/contamination_plots/...
+    // compute_pi0_contamination_helicity(
     //     dvcs_periods,
+    //     topologies,
     //     binning_scheme,
-    //     total_counts_json,        // from compute_total_counts()
-    //     contamination_dir_counts, // from compute_pi0_contamination_helicity()
-    //     output_root               // "output"
+    //     dataTrees,
+    //     eppi0DataTrees,
+    //     eppi0RecMcTrees,   // reco MC
+    //     eppi0BkgTrees,     // bkg MC
+    //     cuts_json_path,
+    //     output_root
     // );
-    // std::cout << "π0-corrected counts stage finished." << std::endl;
+
+    // --------- π0-corrected helicity counts (per φ) ----------
+    const std::string total_counts_json = "output/jsons/total_counts.json";
+    const std::string contamination_dir_counts = "output/jsons/contamination";
+    compute_pi0_corrected_counts(
+        dvcs_periods,
+        binning_scheme,
+        total_counts_json,        // from compute_total_counts()
+        contamination_dir_counts, // from compute_pi0_contamination_helicity()
+        output_root               // "output"
+    );
+    std::cout << "π0-corrected counts stage finished." << std::endl;
 
     // --------- Radiative corrections (generated Born/Rad, per bin & φ) ----------
     // Writes:
