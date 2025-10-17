@@ -1,5 +1,5 @@
 // π0-corrected counts with errors, for periods AND combined groups.
-// Uses total_counts.json ("groups": {...}) and
+// Uses total_counts.json ("groups": {...}) and:
 //  - per-period contamination_<period>.json (each has "bins": {...})
 //  - combined pi0_contamination_combined.json ("periods": {Group: {bins:{...}}})
 //
@@ -61,11 +61,40 @@ static inline std::string toLower(std::string s){
         [](unsigned char c){return std::tolower(c);});
     return s;
 }
+static inline std::string toUpperFirst(std::string s){
+    if (!s.empty()) s[0] = static_cast<char>(std::toupper(static_cast<unsigned char>(s[0])));
+    return s;
+}
+static inline std::string titleCaseTail(const std::string& tail) {
+    // e.g. "Fa18_inb" -> "Fa18_Inb"
+    std::string t = tail;
+    if (!t.empty()) t[0] = std::toupper(static_cast<unsigned char>(t[0]));
+    for (size_t i = 0; i + 1 < t.size(); ++i) {
+        if (t[i] == '_' && std::isalpha(static_cast<unsigned char>(t[i+1]))) {
+            t[i+1] = std::toupper(static_cast<unsigned char>(t[i+1]));
+        }
+    }
+    return t;
+}
+
+// "DVCS_Fa18_inb" -> "fa18_inb"
 static inline std::string periodToRunTagKey(const std::string& period){
     auto pos = period.find('_');
     if (pos==std::string::npos || pos+1>=period.size()) return toLower(period);
     return toLower(period.substr(pos+1));
 }
+
+// runTag "fa18_inb" -> "DVCS_Fa18_inb"
+static inline std::string dvcsPeriodName(const std::string& runTag) {
+    std::string cap = runTag;
+    if (!cap.empty()) cap[0] = static_cast<char>(std::toupper(static_cast<unsigned char>(cap[0])));
+    for (size_t i = 0; i + 1 < cap.size(); ++i) {
+        if (cap[i] == '_' && i + 1 < cap.size())
+            cap[i+1] = static_cast<char>(std::toupper(static_cast<unsigned char>(cap[i+1])));
+    }
+    return std::string("DVCS_") + cap;
+}
+
 static inline std::vector<std::pair<double,double>>
 uniqueRanges(const std::vector<Binning>& scheme, char which) {
     std::set<std::pair<double,double>> s;
@@ -206,11 +235,12 @@ static bool load_contam_period(const std::string& path, ContamTable& out) {
         };
 
         Contam c;
-        // prefer nested "contamination" schema; fallback to flat "+1"/"-1"
+        // preferred nested object
         c.cp = findD("\"contamination\":{\"+1\":{\"value\"");
         c.ep = findD("\"contamination\":{\"+1\":{\"err\"");
         c.cm = findD("\"contamination\":{\"-1\":{\"value\"");
         c.em = findD("\"contamination\":{\"-1\":{\"err\"");
+        // fallback to flat
         if (c.cp==0.0 && c.cm==0.0) {
             c.cp = findD("\"+1\":{\"value\"");
             c.ep = findD("\"+1\":{\"err\"");
@@ -232,11 +262,9 @@ static bool load_contam_group_from_combined(const std::string& combined_path,
     if (!ifs) return false;
     std::string s((std::istreambuf_iterator<char>(ifs)), std::istreambuf_iterator<char>());
 
-    // find "periods" then this group, then its "bins"
     size_t P = s.find("\"periods\""); if (P==std::string::npos) return false;
     size_t Pbr = s.find('{', P); if (Pbr==std::string::npos) return false;
 
-    // find group key
     std::string gq = std::string("\"")+group+std::string("\"");
     size_t G = s.find(gq, Pbr); if (G==std::string::npos) return false;
 
@@ -281,6 +309,60 @@ static bool load_contam_group_from_combined(const std::string& combined_path,
         out[bk]=c; ++nb; p=j;
     }
     return !out.empty();
+}
+
+// ────────── tolerant contamination path resolver ──────────
+static std::string find_contam_json(const std::string& dir, const std::string& period) {
+    namespace fs = std::filesystem;
+
+    auto exists_nonempty = [&](const std::string& p)->bool {
+        std::error_code ec;
+        if (!fs::exists(p, ec)) return false;
+        return fs::file_size(p, ec) > 0;
+    };
+
+    // If period already looks like "DVCS_*", split tail; else try both raw and DVCS_ + TitleCase
+    std::vector<std::string> candidates;
+
+    // 1) exact as given
+    candidates.push_back((fs::path(dir) / ("contamination_" + period + ".json")).string());
+
+    // 2) If it starts with DVCS_, try title-casing tail after DVCS_
+    if (period.rfind("DVCS_", 0) == 0) {
+        std::string tail = period.substr(5);
+        candidates.push_back((fs::path(dir) / ("contamination_DVCS_" + titleCaseTail(tail) + ".json")).string());
+        candidates.push_back((fs::path(dir) / ("contamination_DVCS_" + toLower(tail) + ".json")).string());
+        // also try tail with only the part after underscore title-cased (Fa18_inb -> Fa18_Inb)
+        // already handled by titleCaseTail
+    } else {
+        // 3) Not prefixed: try DVCS_<TitleCase(runTag)>
+        const std::string dvcs = dvcsPeriodName(period);
+        candidates.push_back((fs::path(dir) / ("contamination_" + dvcs + ".json")).string());
+
+        // 4) DVCS_ + TitleCase tail from dvcs (redundant but harmless)
+        if (dvcs.rfind("DVCS_", 0) == 0) {
+            std::string tail = dvcs.substr(5);
+            candidates.push_back((fs::path(dir) / ("contamination_DVCS_" + titleCaseTail(tail) + ".json")).string());
+            candidates.push_back((fs::path(dir) / ("contamination_DVCS_" + toLower(tail) + ".json")).string());
+        }
+    }
+
+    // 5) Iterate the directory and pick any file that matches case-insensitively
+    try {
+        for (auto& de : fs::directory_iterator(dir)) {
+            if (!de.is_regular_file()) continue;
+            const std::string name = de.path().filename().string();
+            const std::string want = "contamination_" + period + ".json";
+            if (toLower(name) == toLower(want)) {
+                candidates.push_back(de.path().string());
+            }
+        }
+    } catch (...) {}
+
+    for (const auto& p : candidates) {
+        if (!p.empty() && exists_nonempty(p)) return p;
+    }
+    return ""; // not found
 }
 
 // ────────── JSON writer ──────────
@@ -395,6 +477,7 @@ static void plot_group(
                 eX.assign(N_PHI_BINS, 0.0);
 
                 // gather points for THIS slice
+                double ymax = 0.0;
                 for (int ip = 0; ip < N_PHI_BINS; ++ip) {
                     BinKey bk(ix, iQ, it, ip);
                     auto it_raw  = raw_totals.find(bk);
@@ -415,263 +498,237 @@ static void plot_group(
                     Ym_corr.push_back(Nm_cor);
                     eYp_corr.push_back(ep_cor);
                     eYm_corr.push_back(em_cor);
+                    ymax = std::max({ymax, Np_raw, Nm_raw, Np_cor+ep_cor, Nm_cor+em_cor});
                 }
 
-                // If no points in this slice, draw a blank frame with a note and continue.
-                if (X.empty()) {
-                    TH1* frame = gPad->DrawFrame(0.0, 0.0, 360.0, 1.0);
-                    frame->GetXaxis()->SetTitle("#phi (deg)");
-                    frame->GetYaxis()->SetTitle("Counts");
-                    frame->GetXaxis()->CenterTitle(); frame->GetYaxis()->CenterTitle();
-                    TLatex lab; lab.SetNDC(); lab.SetTextSize(0.042); lab.SetTextAlign(13);
-                    lab.DrawLatex(0.14, 0.96, Form("Q^{2} #in [%.3g, %.3g],   -t #in [%.3g, %.3g]",
-                        Q2_slice[r].first, Q2_slice[r].second, t_slice[cc].first, t_slice[cc].second));
-                    TLatex none; none.SetNDC(); none.SetTextSize(0.040); none.SetTextAlign(22);
-                    none.DrawLatex(0.5, 0.55, "No data in this slice");
-                    continue;
-                }
-
-                // compute a sensible ymax for THIS slice
-                double ymax = 0.0;
-                for (size_t i=0;i<X.size();++i) {
-                    ymax = std::max(ymax, std::max(Yp_raw[i], Ym_raw[i]));
-                    ymax = std::max(ymax, std::max(Yp_corr[i] + eYp_corr[i],
-                                                   Ym_corr[i] + eYm_corr[i]));
-                }
-                ymax = std::max(5.0, 1.20*ymax);
-
-                // draw frame
-                TH1* frame = gPad->DrawFrame(0.0, 0.0, 360.0, ymax);
+                TH1* frame = gPad->DrawFrame(0.0, 0.0, 360.0, (ymax>0? ymax*1.25 : 1.0));
                 frame->GetXaxis()->SetTitle("#phi (deg)");
                 frame->GetYaxis()->SetTitle("Counts");
-                frame->GetXaxis()->CenterTitle(); frame->GetYaxis()->CenterTitle();
+                frame->GetXaxis()->CenterTitle();
+                frame->GetYaxis()->CenterTitle();
+                frame->GetXaxis()->SetNdivisions(505);
 
-                // --- make graphs (guarded) ---
-                TGraphErrors* gP_corr = nullptr;
-                TGraphErrors* gM_corr = nullptr;
-                TGraph*       gP_raw  = nullptr;
-                TGraph*       gM_raw  = nullptr;
+                // corrected
+                TGraphErrors* grPc = new TGraphErrors((int)X.size(), X.data(), Yp_corr.data(), eX.data(), eYp_corr.data());
+                TGraphErrors* grMc = new TGraphErrors((int)X.size(), X.data(), Ym_corr.data(), eX.data(), eYm_corr.data());
+                grPc->SetMarkerStyle(24); grPc->SetMarkerSize(0.9); grPc->SetLineWidth(2);
+                grMc->SetMarkerStyle(20); grMc->SetMarkerSize(0.9); grMc->SetLineWidth(2);
+                grPc->Draw("P SAME");
+                grMc->Draw("P SAME");
 
-                if (!X.empty()) {
-                    gP_corr = new TGraphErrors((int)X.size(), X.data(), Yp_corr.data(), eX.data(), eYp_corr.data());
-                    gM_corr = new TGraphErrors((int)X.size(), X.data(), Ym_corr.data(), eX.data(), eYm_corr.data());
-                    gP_raw  = new TGraph((int)X.size(), X.data(), Yp_raw.data());
-                    gM_raw  = new TGraph((int)X.size(), X.data(), Ym_raw.data());
+                // raw (no errors; plot with faint markers/lines)
+                TGraph* grPr = new TGraph((int)X.size(), X.data(), Yp_raw.data());
+                TGraph* grMr = new TGraph((int)X.size(), X.data(), Ym_raw.data());
+                grPr->SetMarkerStyle(24); grPr->SetMarkerSize(0.7);
+                grMr->SetMarkerStyle(20); grMr->SetMarkerSize(0.7);
+                grPr->SetLineStyle(2); grMr->SetLineStyle(2);
+                grPr->Draw("P SAME");
+                grMr->Draw("P SAME");
 
-                    // styles: red = +, blue = −; corrected = filled, raw = open
-                    gP_corr->SetLineColor(kRed);   gP_corr->SetMarkerColor(kRed);   gP_corr->SetMarkerStyle(20); // filled circle
-                    gM_corr->SetLineColor(kBlue);  gM_corr->SetMarkerColor(kBlue);  gM_corr->SetMarkerStyle(21); // filled square
-                    gP_raw->SetLineColor(kRed);    gP_raw->SetMarkerColor(kRed);    gP_raw->SetMarkerStyle(24);  // open circle
-                    gM_raw->SetLineColor(kBlue);   gM_raw->SetMarkerColor(kBlue);   gM_raw->SetMarkerStyle(25);  // open square
+                // legend
+                TLegend* leg = new TLegend(0.56, 0.70, 0.92, 0.92);
+                leg->SetBorderSize(1); leg->SetLineColor(kBlack); leg->SetFillStyle(0); leg->SetTextSize(0.035);
+                leg->AddEntry(grPc, "helicity +1 (corr.)", "p");
+                leg->AddEntry(grMc, "helicity -1 (corr.)", "p");
+                leg->AddEntry(grPr, "helicity +1 (raw)", "p");
+                leg->AddEntry(grMr, "helicity -1 (raw)", "p");
+                leg->Draw();
 
-                    gP_corr->SetLineWidth(2); gM_corr->SetLineWidth(2);
-                    gP_raw->SetLineWidth(2);  gM_raw->SetLineWidth(2);
-
-                    // draw order: raw first (open markers), then corrected with error bars
-                    gP_raw->Draw("P SAME");
-                    gM_raw->Draw("P SAME");
-                    gP_corr->Draw("P SAME");
-                    gM_corr->Draw("P SAME");
-                }
-
-                if (r==0 && cc==0) {
-                    TLegend* leg = new TLegend(0.52, 0.68, 0.94, 0.92);
-                    leg->SetBorderSize(1); leg->SetFillStyle(0); leg->SetTextSize(0.037);
-                    leg->AddEntry(gP_raw,  "Raw (+1)",           "p");
-                    leg->AddEntry(gM_raw,  "Raw (-1)",           "p");
-                    leg->AddEntry(gP_corr, "#pi^{0}-corr (+1)",  "p");
-                    leg->AddEntry(gM_corr, "#pi^{0}-corr (-1)",  "p");
-                    leg->Draw();
-                }
-
-                TLatex lab; lab.SetNDC(); lab.SetTextSize(0.042); lab.SetTextAlign(13);
-                lab.DrawLatex(0.14, 0.96, Form("Q^{2} #in [%.3g, %.3g],   -t #in [%.3g, %.3g]",
-                    Q2_slice[r].first, Q2_slice[r].second, t_slice[cc].first, t_slice[cc].second));
+                // subplot title with Q² and -t
+                TLatex sub; sub.SetNDC(); sub.SetTextSize(0.045); sub.SetTextAlign(13);
+                sub.DrawLatex(0.14, 0.96,
+                    Form("Q^{2} #in [%.3g, %.3g],   -t #in [%.3g, %.3g]",
+                         Q2_slice[r].first, Q2_slice[r].second, t_slice[cc].first, t_slice[cc].second));
             }
         }
 
-        std::string fout = (std::filesystem::path(out_dir_plots) /
-                           Form("plot_pi0corr_%s_xB_%d.png", group.c_str(), ix)).string();
-        c->SaveAs(fout.c_str());
+        std::ostringstream fout;
+        fout << out_dir_plots << "/plot_pi0corr_" << group << "_xB_" << ix << ".png";
+        c->SaveAs(fout.str().c_str());
         delete c;
     }
 }
 
-// ────────── core per-group computation ──────────
-static std::map<BinKey, CorrBin> build_corrected_for_group(
-    const std::map<BinKey, HelCounts>& totals,
-    const ContamTable& contam)
-{
-    std::map<BinKey, CorrBin> out;
+// ────────── correction core ──────────
+static CorrBin make_corrected(const HelCounts& raw, const Contam& c) {
+    // N_corr = N_raw * (1 - c),  sigma^2 = (sqrt(N_raw)*(1-c))^2 + (N_raw*sigma_c)^2
+    auto one = [](double Nraw, double c, double ec)->std::pair<double,double>{
+        if (Nraw <= 0.0) return {0.0, 0.0};
+        if (c < 0.0) c = 0.0;
+        const double val = Nraw * (1.0 - c);
+        const double sig = std::sqrt( std::max(0.0, (std::sqrt(Nraw)*(1.0 - c))*(std::sqrt(Nraw)*(1.0 - c)) + (Nraw*ec)*(Nraw*ec)) );
+        return {val, sig};
+    };
 
-    for (const auto& kv : totals) {
-        const BinKey& bk = kv.first;
-        const HelCounts& N = kv.second;
-
-        Contam c{};
-        if (auto itc = contam.find(bk); itc != contam.end()) c = itc->second;
-
-        // clamp c into [0, 0.95] for safety
-        const double cp = std::clamp(c.cp, 0.0, 0.95);
-        const double cm = std::clamp(c.cm, 0.0, 0.95);
-        const double ep = std::max(0.0, c.ep);
-        const double em = std::max(0.0, c.em);
-
-        // corrected values with propagated uncertainties:
-        // N_corr = N * (1 - c), Var(N_corr) = (1 - c)^2 Var(N) + (dN_corr/dc)^2 Var(c)
-        // with Poisson Var(N)=N and Var(c)=err^2.
-        CorrBin b;
-        // + helicity
-        {
-            const double Np = (double)N.plus;
-            const double val = Np * (1.0 - cp);
-            const double var = (1.0 - cp)*(1.0 - cp) * Np      // Var(N)
-                             + (Np*Np) * (ep*ep);              // (d/dc)^2 Var(c)
-            b.Np = std::max(0.0, val);
-            b.ep = std::sqrt(std::max(0.0, var));
-        }
-        // - helicity
-        {
-            const double Nm = (double)N.minus;
-            const double val = Nm * (1.0 - cm);
-            const double var = (1.0 - cm)*(1.0 - cm) * Nm
-                             + (Nm*Nm) * (em*em);
-            b.Nm = std::max(0.0, val);
-            b.em = std::sqrt(std::max(0.0, var));
-        }
-        b.Nt = b.Np + b.Nm;
-        b.et = std::sqrt(b.ep*b.ep + b.em*b.em); // assume independence
-
-        out[bk] = b;
-    }
+    CorrBin out;
+    std::tie(out.Np, out.ep) = one((double)raw.plus,  c.cp, c.ep);
+    std::tie(out.Nm, out.em) = one((double)raw.minus, c.cm, c.em);
+    out.Nt = out.Np + out.Nm;
+    out.et = std::sqrt(out.ep*out.ep + out.em*out.em);
     return out;
 }
 
 } // namespace
 
-// ────────────────────────────────────────────────────────────────────
-// Public driver
-// ────────────────────────────────────────────────────────────────────
+// ======================= PUBLIC ENTRY ===========================
 void compute_pi0_corrected_counts(
-    const std::vector<std::string>& periods,
+    const std::vector<std::string>& dvcs_periods,           // list like DVCS_Fa18_inb, ...
     const std::vector<Binning>& binning_scheme,
-    const std::string& total_counts_json,
-    const std::string& contamination_dir,
-    const std::string& contamination_combined,
-    const std::string& out_root_dir)
-{
+    const std::string& total_counts_json,                   // output/jsons/total_counts.json
+    const std::string& contamination_dir_counts,            // output/jsons/contamination
+    const std::string& contamination_combined,              // output/jsons/pi0_contamination_combined.json
+    const std::string& out_root_dir                         // "output"
+) {
     namespace fs = std::filesystem;
 
-    // bin meta
+    // 1) Load total counts groups
+    GroupCounts group_counts;
+    if (!load_total_counts(total_counts_json, group_counts)) {
+        std::cerr << "[pi0corr][ERROR] Could not load total_counts.json; aborting.\n";
+        return;
+    }
+
+    // 2) Build bin axes
     const auto xB_bins = uniqueRanges(binning_scheme, 'x');
     const auto Q2_bins = uniqueRanges(binning_scheme, 'Q');
     const auto t_bins  = uniqueRanges(binning_scheme, 't');
 
-    // 1) Load all DVCS totals (groups includes: periods + Spring2018/Fall2018/10.6_GeV)
-    GroupCounts groups;
-    if (!load_total_counts(total_counts_json, groups)) {
-        std::cerr<<"[pi0corr][ERROR] could not read total_counts\n";
-        return;
-    }
-
-    // 2) Build the list of groups we will output:
-    //    - all requested periods (by runTag key)
-    //    - any combined groups present in total_counts.json (e.g., Spring2018,...)
-    std::vector<std::string> group_names;
-    group_names.reserve(periods.size()+8);
-    for (const auto& p : periods) group_names.push_back(periodToRunTagKey(p)); // runTag keys for per-period totals
-    for (const auto& gkv : groups) {
-        const std::string& g = gkv.first;
-        if (std::find(group_names.begin(), group_names.end(), g) == group_names.end())
-            group_names.push_back(g);
-    }
-
-    // 3) For each group, get contamination:
-    //    - per-period groups: read contamination_<DVCS_PeriodName>.json in contamination_dir
-    //    - combined groups:   read from contamination_combined.json under "periods"[Group]
-    std::map<std::string, std::map<BinKey, CorrBin>> all_out;
-
-    const fs::path out_json_dir = fs::path(out_root_dir)/"jsons";
-    const fs::path out_plot_dir = fs::path(out_root_dir)/"pi0_corrected_plots";
+    // 3) Prepare output dirs
+    const fs::path json_dir = fs::path(out_root_dir) / "jsons";
+    const fs::path plots_dir_root = fs::path(out_root_dir) / "pi0_corrected_plots";
     std::error_code ec;
-    fs::create_directories(out_json_dir, ec);
-    fs::create_directories(out_plot_dir, ec);
+    fs::create_directories(json_dir, ec);
+    fs::create_directories(plots_dir_root, ec);
 
-    for (const std::string& group : group_names) {
-        // find total counts for this group
-        auto itG = groups.find(group);
-        if (itG == groups.end()) {
-            std::cerr<<"[pi0corr][WARN] totals missing for group '"<<group<<"' — skipped\n";
+    // 4) Load contamination per period (tolerant path)
+    //    We'll gather contamination for all keys found in total_counts: this includes
+    //    runTags (fa18_inb), DVCS_* names, and combined groups.
+    std::map<std::string, ContamTable> contam_by_group; // key matches group name in total_counts
+
+    auto load_period_contam = [&](const std::string& periodKey){
+        // Try to resolve a per-period file. periodKey may be "fa18_inb" or "DVCS_Fa18_inb".
+        // We'll create a set of candidate logical period names to try.
+        std::vector<std::string> logical_periods;
+
+        if (periodKey.rfind("DVCS_", 0) == 0) {
+            logical_periods.push_back(periodKey);                       // DVCS_Fa18_inb
+            logical_periods.push_back(periodToRunTagKey(periodKey));    // fa18_inb
+        } else {
+            logical_periods.push_back(periodKey);                        // fa18_inb
+            logical_periods.push_back(dvcsPeriodName(periodKey));        // DVCS_Fa18_inb
+        }
+
+        for (const auto& per : logical_periods) {
+            const std::string cand = find_contam_json(contamination_dir_counts, per);
+            if (!cand.empty()) {
+                ContamTable ct;
+                if (load_contam_period(cand, ct)) {
+                    contam_by_group[periodKey] = std::move(ct);
+                    return true;
+                }
+            }
+        }
+        return false;
+    };
+
+    // Preload contamination for every group we have raw counts for.
+    for (const auto& gkv : group_counts) {
+        const std::string& group = gkv.first;
+
+        // Combined groups come from the combined JSON
+        if (group == "Spring2018" || group == "Fall2018" || group == "10.6_GeV") {
+            ContamTable ct;
+            if (load_contam_group_from_combined(contamination_combined, group, ct)) {
+                contam_by_group[group] = std::move(ct);
+            } else {
+                std::cerr << "[pi0corr][WARN] contamination missing for " << group
+                          << " (combined file \"" << contamination_combined << "\") — assuming c=0\n";
+            }
             continue;
         }
 
-        // contamination table for this group
-        ContamTable C;
-
-        // detect if group is one of the per-period DVCS_* style or a combined name
-        bool is_period_like = (group.rfind("dvcs_",0)==0) || (group.find('_')!=std::string::npos);
-        if (is_period_like) {
-            // Re-hydrate a DVCS_* period name: dvcs_<tag> → "DVCS_" + TitleCase(tag)
-            std::string tag = group;
-            if (!tag.empty()) tag[0] = (char)std::toupper((unsigned char)tag[0]);
-            for (size_t i=0;i+1<tag.size();++i) if (tag[i]=='_' && i+1<tag.size()) tag[i+1]=(char)std::toupper((unsigned char)tag[i+1]);
-            std::string dvcsName = "DVCS_" + tag;
-
-            fs::path cf = fs::path(contamination_dir)/("contamination_"+dvcsName+".json");
-            if (!load_contam_period(cf.string(), C)) {
-                fs::path alt = fs::path(contamination_dir)/("contamination_"+group+".json");
-                if (!load_contam_period(alt.string(), C)) {
-                    std::cerr<<"[pi0corr][WARN] contamination missing for "<<group<<" (looked for "<<cf<<") — assuming c=0\n";
-                }
-            }
-        } else {
-            // combined group: read from the combined contamination file
-            if (!load_contam_group_from_combined(contamination_combined, group, C)) {
-                std::cerr<<"[pi0corr][WARN] combined contamination missing for "<<group<<" — assuming c=0\n";
-            }
+        // Otherwise it's a plain period/runTag/DVCS_* name
+        if (!load_period_contam(group)) {
+            std::cerr << "[pi0corr][WARN] contamination missing for " << group
+                      << " (looked in \"" << contamination_dir_counts << "\") — assuming c=0\n";
         }
-
-        // compute corrected + errors
-        auto corr = build_corrected_for_group(itG->second, C);
-        all_out[group] = corr;
-
-        // write per-group JSON
-        const fs::path out_group_json = out_json_dir / ("pi0_corrected_counts_"+group+".json");
-        write_group_json(out_group_json.string(), N_PHI_BINS, xB_bins, Q2_bins, t_bins, corr);
-        std::cout<<"[pi0corr] wrote "<<out_group_json.string()<<"\n";
-
-        // plots with error bars (and raw overlay)
-        const fs::path plot_dir = out_plot_dir / group;
-        plot_group(group, binning_scheme, xB_bins, Q2_bins, t_bins, corr, itG->second, plot_dir.string());
     }
 
-    // master combined JSON (all groups in one file)
-    {
-        const fs::path out_master = out_json_dir / "pi0_corrected_counts_all_groups.json";
-        std::ofstream ofs(out_master.string());
-        if (!ofs) { std::cerr<<"[pi0corr][ERROR] cannot write "<<out_master<<"\n"; return; }
-        ofs<<std::fixed<<std::setprecision(8);
-        ofs<<"{\n  \"groups\": {\n";
-        bool firstG=true;
-        for (const auto& gkv : all_out) {
-            if (!firstG) ofs<<",\n"; firstG=false;
-            ofs<<"    \""<<gkv.first<<"\": {\n      \"bins\": {\n";
-            bool firstB=true;
-            for (const auto& kv : gkv.second) {
-                if (!firstB) ofs<<",\n"; firstB=false;
-                int ix,iQ,it,ip; std::tie(ix,iQ,it,ip)=kv.first;
-                const auto& b = kv.second;
-                ofs<<"        \""<<key4s(ix,iQ,it,ip)<<"\": {"
-                   <<"\"helicity\":{"
-                   <<"\"+1\":{\"value\":"<<b.Np<<",\"err\":"<<b.ep<<"},"
-                   <<"\"-1\":{\"value\":"<<b.Nm<<",\"err\":"<<b.em<<"}"
-                   <<"},"
-                   <<"\"total\":{\"value\":"<<b.Nt<<",\"err\":"<<b.et<<"}"
-                   <<"}";
+    // 5) Compute corrected counts per group, write one JSON per group, and plot
+    std::map<std::string, std::map<BinKey, CorrBin>> all_groups_corrected;
+
+    for (const auto& gkv : group_counts) {
+        const std::string& group = gkv.first;
+        const auto& raw_table    = gkv.second;
+
+        const auto itC = contam_by_group.find(group);
+        const ContamTable* C = (itC != contam_by_group.end()) ? &itC->second : nullptr;
+
+        std::map<BinKey, CorrBin> corr_table;
+
+        for (const auto& kv : raw_table) {
+            const BinKey& bk = kv.first;
+            const HelCounts& raw = kv.second;
+
+            Contam cc; // default zeros if missing
+            if (C) {
+                auto it = C->find(bk);
+                if (it != C->end()) cc = it->second;
             }
-            ofs<<"\n      }\n    }";
+
+            corr_table[bk] = make_corrected(raw, cc);
         }
-        ofs<<"\n  }\n}\n";
-        std::cout<<"[pi0corr] wrote "<<out_master.string()<<"\n";
+
+        // write this group's JSON
+        const std::string out_group_json = (json_dir / ("pi0_corrected_counts_" + group + ".json")).string();
+        write_group_json(out_group_json, N_PHI_BINS, xB_bins, Q2_bins, t_bins, corr_table);
+
+        // plot this group
+        const std::string out_group_plot_dir = (plots_dir_root / group).string();
+        plot_group(group, binning_scheme, xB_bins, Q2_bins, t_bins, corr_table, raw_table, out_group_plot_dir);
+
+        all_groups_corrected[group] = std::move(corr_table);
+    }
+
+    // 6) Write master JSON collecting all groups
+    {
+        const std::string master_path = (json_dir / "pi0_corrected_counts_all_groups.json").string();
+        std::ofstream ofs(master_path);
+        if (!ofs) {
+            std::cerr << "[pi0corr][ERROR] cannot write " << master_path << "\n";
+        } else {
+            ofs << std::fixed << std::setprecision(8);
+            ofs << "{\n";
+            ofs << "  \"binning_meta\": {\"phi_bins\": " << N_PHI_BINS
+                << ", \"xB_bins\": " << xB_bins.size()
+                << ", \"Q2_bins\": " << Q2_bins.size()
+                << ", \"t_bins\": "  << t_bins.size() << "},\n";
+            ofs << "  \"groups\": {\n";
+            bool firstG = true;
+            for (const auto& g : all_groups_corrected) {
+                if (!firstG) ofs << ",\n";
+                firstG = false;
+                ofs << "    \"" << g.first << "\": {\n";
+                ofs << "      \"bins\": {\n";
+                bool firstB = true;
+                for (const auto& kv : g.second) {
+                    if (!firstB) ofs << ",\n";
+                    firstB = false;
+                    int ix,iQ,it,ip; std::tie(ix,iQ,it,ip)=kv.first;
+                    const auto& b = kv.second;
+                    ofs << "        \"" << key4s(ix,iQ,it,ip) << "\": {"
+                        << "\"helicity\":{"
+                        << "\"+1\":{\"value\":" << b.Np << ",\"err\":" << b.ep << "},"
+                        << "\"-1\":{\"value\":" << b.Nm << ",\"err\":" << b.em << "}"
+                        << "},"
+                        << "\"total\":{\"value\":" << b.Nt << ",\"err\":" << b.et << "}"
+                        << "}";
+                }
+                ofs << "\n      }\n    }";
+            }
+            ofs << "\n  }\n}\n";
+            ofs.close();
+            std::cout << "[pi0corr] wrote " << master_path << "\n";
+        }
     }
 }
