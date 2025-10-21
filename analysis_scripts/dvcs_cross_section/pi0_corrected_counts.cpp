@@ -191,12 +191,14 @@ static bool load_total_counts(const std::string& path, GroupCounts& out) {
             for (; m<binsObj.size(); ++m){ if(binsObj[m]=='{') d3++; else if(binsObj[m]=='}'){ d3--; if(!d3){ ++m; break;} } }
             std::string v = binsObj.substr(vS, m-vS);
 
-            auto findLL=[&](const char* pat)->long long{
-                size_t pos=v.find(pat); if(pos==std::string::npos) return 0;
-                pos=v.find(':',pos); if(pos==std::string::npos) return 0;
-                size_t a=pos+1; while(a<v.size() && isspace((unsigned char)v[a])) ++a;
-                size_t b=a; while(b<v.size() && (isdigit((unsigned char>)v[b])||v[b]=='-')) ++b;
-                try { return std::stoll(v.substr(a,b-a)); } catch(...) { return 0; }
+            auto findLL = [&](const char* pat)->long long {
+                size_t pos = v.find(pat); if (pos == std::string::npos) return 0;
+                pos = v.find(':', pos);   if (pos == std::string::npos) return 0;
+                size_t a = pos + 1;
+                while (a < v.size() && std::isspace(static_cast<unsigned char>(v[a]))) ++a;
+                size_t b = a;
+                while (b < v.size() && (std::isdigit(static_cast<unsigned char>(v[b])) || v[b]=='-' || v[b]=='+')) ++b;
+                try { return std::stoll(v.substr(a, b - a)); } catch (...) { return 0; }
             };
 
             HelCounts hc;
