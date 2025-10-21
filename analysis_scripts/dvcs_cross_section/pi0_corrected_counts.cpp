@@ -18,6 +18,7 @@
 #include <TStyle.h>
 #include <TPad.h>
 #include <TString.h>
+#include <TColor.h>
 
 #include <algorithm>
 #include <cctype>
@@ -62,10 +63,6 @@ static inline std::string toLower(std::string s){
         [](unsigned char c){return std::tolower(c);});
     return s;
 }
-static inline std::string toUpperFirst(std::string s){
-    if (!s.empty()) s[0] = static_cast<char>(std::toupper(static_cast<unsigned char>(s[0])));
-    return s;
-}
 static inline std::string titleCaseTail(const std::string& tail) {
     // e.g. "Fa18_inb" -> "Fa18_Inb"
     std::string t = tail;
@@ -94,6 +91,19 @@ static inline std::string dvcsPeriodName(const std::string& runTag) {
             cap[i+1] = static_cast<char>(std::toupper(static_cast<unsigned char>(cap[i+1])));
     }
     return std::string("DVCS_") + cap;
+}
+
+static inline bool containsNoCase(const std::string& s, const std::string& pat){
+    return toLower(s).find(toLower(pat)) != std::string::npos;
+}
+
+static inline std::string combinedKeyFor(const std::string& group) {
+    // Map period groups to their combined key
+    if (containsNoCase(group, "Fa18")) return "Fall2018";
+    if (containsNoCase(group, "Sp18")) return "Spring2018";
+    // 10.6_GeV is already a combined key; return as-is if asked for fallback
+    if (containsNoCase(group, "10.6") || containsNoCase(group, "10_6") || containsNoCase(group, "10-6")) return "10.6_GeV";
+    return "";
 }
 
 static inline std::vector<std::pair<double,double>>
@@ -185,7 +195,7 @@ static bool load_total_counts(const std::string& path, GroupCounts& out) {
                 size_t pos=v.find(pat); if(pos==std::string::npos) return 0;
                 pos=v.find(':',pos); if(pos==std::string::npos) return 0;
                 size_t a=pos+1; while(a<v.size() && isspace((unsigned char)v[a])) ++a;
-                size_t b=a; while(b<v.size() && (isdigit((unsigned char)v[b])||v[b]=='-')) ++b;
+                size_t b=a; while(b<v.size() && (isdigit((unsigned char>)v[b])||v[b]=='-')) ++b;
                 try { return std::stoll(v.substr(a,b-a)); } catch(...) { return 0; }
             };
 
@@ -523,7 +533,7 @@ static void plot_group(
                     auto it_corr = corrected.find(bk);
                     if (it_raw == raw_totals.end() && it_corr == corrected.end()) continue;
 
-                    X.push_back(PHI[ip]);
+                    // Require at least raw OR corrected to exist to add a point
                     const double Np_raw = (it_raw  != raw_totals.end()) ? (double)it_raw->second.plus  : 0.0;
                     const double Nm_raw = (it_raw  != raw_totals.end()) ? (double)it_raw->second.minus : 0.0;
                     const double Np_cor = (it_corr != corrected.end())  ? it_corr->second.Np : 0.0;
@@ -531,6 +541,10 @@ static void plot_group(
                     const double ep_cor = (it_corr != corrected.end())  ? it_corr->second.ep : 0.0;
                     const double em_cor = (it_corr != corrected.end())  ? it_corr->second.em : 0.0;
 
+                    // If everything is zero, skip (avoid 0-point graphs)
+                    if (Np_raw==0.0 && Nm_raw==0.0 && Np_cor==0.0 && Nm_cor==0.0) continue;
+
+                    X.push_back(PHI[ip]);
                     Yp_raw.push_back(Np_raw);
                     Ym_raw.push_back(Nm_raw);
                     Yp_corr.push_back(Np_cor);
@@ -540,6 +554,10 @@ static void plot_group(
                     ymax = std::max({ymax, Np_raw, Nm_raw, Np_cor+ep_cor, Nm_cor+em_cor});
                 }
 
+                if (X.empty()) { // nothing in this panel
+                    continue;
+                }
+
                 TH1* frame = gPad->DrawFrame(0.0, 0.0, 360.0, (ymax>0? ymax*1.25 : 1.0));
                 frame->GetXaxis()->SetTitle("#phi (deg)");
                 frame->GetYaxis()->SetTitle("Counts");
@@ -547,30 +565,29 @@ static void plot_group(
                 frame->GetYaxis()->CenterTitle();
                 frame->GetXaxis()->SetNdivisions(505);
 
-                // corrected
-                TGraphErrors* grPc = new TGraphErrors((int)X.size(), X.data(), Yp_corr.data(), eX.data(), eYp_corr.data());
-                TGraphErrors* grMc = new TGraphErrors((int)X.size(), X.data(), Ym_corr.data(), eX.data(), eYm_corr.data());
-                grPc->SetMarkerStyle(24); grPc->SetMarkerSize(0.9); grPc->SetLineWidth(2);
-                grMc->SetMarkerStyle(20); grMc->SetMarkerSize(0.9); grMc->SetLineWidth(2);
+                // ---- corrected (AFTER) — filled red/blue with errors
+                TGraphErrors* grPc = new TGraphErrors((int)X.size(), X.data(), Yp_corr.data(), eX.data(), eYp_corr.data()); // + helicity
+                TGraphErrors* grMc = new TGraphErrors((int)X.size(), X.data(), Ym_corr.data(), eX.data(), eYm_corr.data()); // - helicity
+                grPc->SetMarkerStyle(20); grPc->SetMarkerSize(1.0); grPc->SetLineWidth(2); grPc->SetMarkerColor(kRed);  grPc->SetLineColor(kRed);
+                grMc->SetMarkerStyle(21); grMc->SetMarkerSize(1.0); grMc->SetLineWidth(2); grMc->SetMarkerColor(kBlue); grMc->SetLineColor(kBlue);
                 grPc->Draw("P SAME");
                 grMc->Draw("P SAME");
 
-                // raw (no errors; plot with faint markers/lines)
-                TGraph* grPr = new TGraph((int)X.size(), X.data(), Yp_raw.data());
-                TGraph* grMr = new TGraph((int)X.size(), X.data(), Ym_raw.data());
-                grPr->SetMarkerStyle(24); grPr->SetMarkerSize(0.7);
-                grMr->SetMarkerStyle(20); grMr->SetMarkerSize(0.7);
-                grPr->SetLineStyle(2); grMr->SetLineStyle(2);
+                // ---- raw (BEFORE) — open gray, dashed, no errors
+                TGraph* grPr = new TGraph((int)X.size(), X.data(), Yp_raw.data()); // + helicity
+                TGraph* grMr = new TGraph((int)X.size(), X.data(), Ym_raw.data()); // - helicity
+                grPr->SetMarkerStyle(24); grPr->SetMarkerSize(0.9); grPr->SetLineStyle(2); grPr->SetMarkerColor(kGray+2); grPr->SetLineColor(kGray+2);
+                grMr->SetMarkerStyle(25); grMr->SetMarkerSize(0.9); grMr->SetLineStyle(2); grMr->SetMarkerColor(kGray+2); grMr->SetLineColor(kGray+2);
                 grPr->Draw("P SAME");
                 grMr->Draw("P SAME");
 
                 // legend
-                TLegend* leg = new TLegend(0.56, 0.70, 0.92, 0.92);
+                TLegend* leg = new TLegend(0.54, 0.68, 0.92, 0.92);
                 leg->SetBorderSize(1); leg->SetLineColor(kBlack); leg->SetFillStyle(0); leg->SetTextSize(0.035);
-                leg->AddEntry(grPc, "helicity +1 (corr.)", "p");
-                leg->AddEntry(grMc, "helicity -1 (corr.)", "p");
-                leg->AddEntry(grPr, "helicity +1 (raw)", "p");
-                leg->AddEntry(grMr, "helicity -1 (raw)", "p");
+                leg->AddEntry(grPc, "+ helicity (corr.)", "p");
+                leg->AddEntry(grMc, "- helicity (corr.)", "p");
+                leg->AddEntry(grPr, "+ helicity (raw)",  "p");
+                leg->AddEntry(grMr, "- helicity (raw)",  "p");
                 leg->Draw();
 
                 // subplot title with Q² and -t
@@ -640,13 +657,10 @@ void compute_pi0_corrected_counts(
     fs::create_directories(plots_dir_root, ec);
 
     // 4) Load contamination per period (tolerant path)
-    //    We'll gather contamination for all keys found in total_counts: this includes
-    //    runTags (fa18_inb), DVCS_* names, and combined groups.
     std::map<std::string, ContamTable> contam_by_group; // key matches group name in total_counts
 
     auto load_period_contam = [&](const std::string& periodKey){
         // Try to resolve a per-period file. periodKey may be "fa18_inb" or "DVCS_Fa18_inb".
-        // We'll create a set of candidate logical period names to try.
         std::vector<std::string> logical_periods;
 
         if (periodKey.rfind("DVCS_", 0) == 0) {
@@ -687,9 +701,21 @@ void compute_pi0_corrected_counts(
         }
 
         // Otherwise it's a plain period/runTag/DVCS_* name
-        if (!load_period_contam(group)) {
+        bool ok = load_period_contam(group);
+        if (!ok) {
+            // Fallback: use combined contamination for period's umbrella group (Fa18→Fall2018, Sp18→Spring2018)
+            const std::string combo = combinedKeyFor(group);
+            if (!combo.empty()) {
+                ContamTable ct;
+                if (load_contam_group_from_combined(contamination_combined, combo, ct)) {
+                    contam_by_group[group] = std::move(ct);
+                    std::cerr << "[pi0corr][INFO] Using combined contamination \"" << combo
+                              << "\" as fallback for period \"" << group << "\"\n";
+                    continue;
+                }
+            }
             std::cerr << "[pi0corr][WARN] contamination missing for " << group
-                      << " (looked in \"" << contamination_dir_counts << "\") — assuming c=0\n";
+                      << " (checked per-period and combined) — assuming c=0\n";
         }
     }
 
