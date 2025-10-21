@@ -68,33 +68,33 @@ int main(int argc, char* argv[]) {
     const std::string analysis_type = "dvcs";
     const std::string output_json_means = "output/jsons/bin_means_global.json";
 
-    calculate_bin_means(dvcs_periods, topologies, analysis_type, binning_scheme, output_json_means, 
-        dataTrees);
+    // calculate_bin_means(dvcs_periods, topologies, analysis_type, binning_scheme, output_json_means, 
+    //     dataTrees);
 
     // // --------- Total counts after exclusivity cuts (by helicity) ----------
     const std::string cuts_json_path   = "output/jsons/combined_cuts.json"; 
     // // produced by exclusivity_cuts
 
     const std::string output_counts_js = "output/jsons/total_counts.json";
-    compute_total_counts(dvcs_periods, topologies, binning_scheme, dataTrees, cuts_json_path,
-    output_counts_js, output_root); 
+    // compute_total_counts(dvcs_periods, topologies, binning_scheme, dataTrees, cuts_json_path,
+    // output_counts_js, output_root); 
 
-    // // Helicity-resolved π0 contamination
-    // // NOTE: pass the OUTPUT ROOT ("output") so the implementation writes:
-    // //   - per-period JSONs to output/jsons/contamination/
-    // //   - combined JSON to output/jsons/
-    // //   - plots to output/contamination_plots/...
-    // compute_pi0_contamination_helicity(
-    //     dvcs_periods,
-    //     topologies,
-    //     binning_scheme,
-    //     dataTrees,
-    //     eppi0DataTrees,
-    //     eppi0RecMcTrees,   // reco MC
-    //     eppi0BkgTrees,     // bkg MC
-    //     cuts_json_path,
-    //     output_root
-    // );
+    // Helicity-resolved π0 contamination
+    // NOTE: pass the OUTPUT ROOT ("output") so the implementation writes:
+    //   - per-period JSONs to output/jsons/contamination/
+    //   - combined JSON to output/jsons/
+    //   - plots to output/contamination_plots/...
+    compute_pi0_contamination_helicity(
+        dvcs_periods,
+        topologies,
+        binning_scheme,
+        dataTrees,
+        eppi0DataTrees,
+        eppi0RecMcTrees,   // reco MC
+        eppi0BkgTrees,     // bkg MC
+        cuts_json_path,
+        output_root
+    );
 
     // --------- π0-corrected helicity counts (per φ) ----------
     const std::string total_counts_json        = "output/jsons/total_counts.json";
