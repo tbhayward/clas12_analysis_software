@@ -88,7 +88,7 @@ static inline std::string dvcsPeriodName(const std::string& runTag) {
     if (!cap.empty()) cap[0] = static_cast<char>(std::toupper(static_cast<unsigned char>(cap[0])));
     for (size_t i = 0; i + 1 < cap.size(); ++i) {
         if (cap[i] == '_' && i + 1 < cap.size())
-            cap[i+1] = static_cast<char>(std::toupper(static_cast<unsigned char>(cap[i+1])));
+            cap[i+1] = static_cast<unsigned char>(std::toupper(cap[i+1]));
     }
     return std::string("DVCS_") + cap;
 }
