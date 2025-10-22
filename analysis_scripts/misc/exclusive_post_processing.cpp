@@ -43,9 +43,10 @@
 #include <RVersion.h>
 
 // ----------------------------- constants -------------------------------------
-static constexpr double M_E  = 0.000511;        // GeV
-static constexpr double M_PI = 0.139570;        // GeV
-static constexpr double M_N  = 0.9382720813;    // GeV (proton)
+// (Use names that won't collide with <cmath> macros like M_E, M_PI)
+static constexpr double MASS_E  = 0.000511;        // GeV (electron)
+static constexpr double MASS_PI = 0.139570;        // GeV (charged pion)
+static constexpr double MASS_N  = 0.9382720813;    // GeV (proton)
 
 // ------------------------------ helpers --------------------------------------
 static double beamEnergy(int runnum) {
@@ -66,13 +67,13 @@ static double compute_t_scalar(int runnum,
     const double Eb = beamEnergy(runnum);
     if (Eb <= 0.0) return 1e9;
 
-    const double E_e = std::sqrt(e_p*e_p + M_E*M_E);
+    const double E_e = std::sqrt(e_p*e_p + MASS_E*MASS_E);
     const double se  = std::sin(e_theta), ce = std::cos(e_theta);
     const double ex  = e_p * se * std::cos(e_phi);
     const double ey  = e_p * se * std::sin(e_phi);
     const double ez  = e_p * ce;
 
-    const double E_pi = std::sqrt(p_p*p_p + M_PI*M_PI);
+    const double E_pi = std::sqrt(p_p*p_p + MASS_PI*MASS_PI);
     const double sp   = std::sin(p_theta), cp = std::cos(p_theta);
     const double px   = p_p * sp * std::cos(p_phi);
     const double py   = p_p * sp * std::sin(p_phi);
@@ -90,7 +91,7 @@ static double compute_t_scalar(int runnum,
 static double compute_sin_theta_gamma(double y, double xB, double Q2) {
     if (Q2 <= 0.0) return 0.0;
     const double Q     = std::sqrt(Q2);
-    const double gamma = (Q > 0.0) ? (2.0 * xB * M_N / Q) : 0.0;
+    const double gamma = (Q > 0.0) ? (2.0 * xB * MASS_N / Q) : 0.0;
     const double num   = 1.0 - y - 0.25 * y * y * gamma * gamma;
     const double den   = 1.0 + gamma * gamma;
     if (den <= 0.0) return 0.0;
@@ -103,11 +104,11 @@ static double compute_tmin_exact(double xB, double Q2) {
     if (Q2 <= 0.0 || !xb_ok) {
         if (xb_ok) {
             const double denom = (1.0 - xB);
-            if (denom > 0.0) return - (M_N*xB)*(M_N*xB) / denom; // high-E approx
+            if (denom > 0.0) return - (MASS_N*xB)*(MASS_N*xB) / denom; // high-E approx
         }
         return 0.0;
     }
-    const double eps2 = 4.0*M_N*M_N*xB*xB / Q2;
+    const double eps2 = 4.0*MASS_N*MASS_N*xB*xB / Q2;
     const double root = std::sqrt(1.0 + eps2);
     const double num  = Q2 * ( 2.0*(1.0 - xB)*(1.0 - root) + eps2 );
     const double den  = 4.0*xB*(1.0 - xB) + eps2;
@@ -162,28 +163,21 @@ int main(int argc, char** argv) {
     const bool have_tprime  = has_branch(tskim, "tprime");
     const bool have_stg     = has_branch(tskim, "sinthetagamma");
 
-    // We need to drop 8 columns from the OUTPUT.
-    // Strategy: from the skimmed tree, disable those branches, then CloneTree(0)
-    // and Fill manually. This guarantees those columns are absent in the output.
+    // Disable the 8 columns to drop in the OUTPUT, then clone kept structure
     const char* DROP[] = {"fiducial_status","num_pos","num_neg","num_neutral",
                           "evnum","detector","xi","eta"};
-
     tskim->SetBranchStatus("*", 1);
     for (const char* nm : DROP) if (has_branch(tskim, nm)) tskim->SetBranchStatus(nm, 0);
 
-    // Create output file with strong compression
+    // Create output file with portable compression (zlib level 9 works everywhere)
     TFile* fout = TFile::Open(outfile.c_str(), "RECREATE");
     if (!fout || fout->IsZombie()) {
         std::cerr << "Error: could not create output " << outfile << "\n";
         fin->Close();
         return 1;
     }
-#if ROOT_VERSION_CODE >= ROOT_VERSION(6,22,0)
-    fout->SetCompressionSettings(ROOT::RCompressionSetting::EDefaults::kUseZSTD);
-#else
     fout->SetCompressionAlgorithm(ROOT::kZLIB);
     fout->SetCompressionLevel(9);
-#endif
 
     // Clone structure of active (kept) branches only; 0 entries to start
     TTree* tout = tskim->CloneTree(0, "fast");
@@ -194,6 +188,7 @@ int main(int argc, char** argv) {
 
     if (!have_t)      b_t      = tout->Branch("t",             &t_val,              "t/D");
     if (!have_tmin)   b_tmin   = tout->Branch("tmin",          &tmin_val,           "tmin/D");
+    if (!have_tprime) b_b_tprime = nullptr; // placeholder to keep naming consistent
     if (!have_tprime) b_tprime = tout->Branch("tprime",        &tprime_val,         "tprime/D");
     if (!have_stg)    b_stg    = tout->Branch("sinthetagamma", &sinthetagamma_val,  "sinthetagamma/D");
 
@@ -205,7 +200,6 @@ int main(int argc, char** argv) {
 
     bool need_compute = (!have_t) || (!have_tmin) || (!have_tprime) || (!have_stg);
     if (need_compute) {
-        // These must exist in the skim (they were present before, but assert again)
         if (!tskim->GetBranch("runnum") ||
             !tskim->GetBranch("e_p")    || !tskim->GetBranch("e_theta") || !tskim->GetBranch("e_phi") ||
             !tskim->GetBranch("p_p")    || !tskim->GetBranch("p_theta") || !tskim->GetBranch("p_phi") ||
@@ -245,14 +239,12 @@ int main(int argc, char** argv) {
     const Long64_t nsel = tskim->GetEntries();
     double mx2_min = 1e300, mx2_sum = 0.0;
     Double_t mx2_tmp = 0.0;
-    // ensure Mx2 is enabled and readable for min/mean check
     tskim->SetBranchStatus("Mx2", 1);
     tskim->SetBranchAddress("Mx2", &mx2_tmp);
 
     for (Long64_t i=0; i<nsel; ++i) {
         tskim->GetEntry(i);
 
-        // compute derived only if needed
         if (need_compute) {
             if (!have_t || !have_tmin || !have_tprime) {
                 const double tt   = compute_t_scalar(runnum, e_p, e_theta, e_phi, p_p, p_theta, p_phi);
@@ -266,11 +258,9 @@ int main(int argc, char** argv) {
             }
         }
 
-        // track Mx2 stats from the OUTPUT content (same entries as tout)
         if (mx2_tmp < mx2_min) mx2_min = mx2_tmp;
         mx2_sum += mx2_tmp;
 
-        // fill: existing kept branches copy over automatically; new ones via our variables
         if (b_t)      b_t->Fill();
         if (b_tmin)   b_tmin->Fill();
         if (b_tprime) b_tprime->Fill();
@@ -281,7 +271,7 @@ int main(int argc, char** argv) {
 
     // Write output
     fout->cd();
-    tout->Write("PhysicsEvents");  // keep same name to minimize downstream changes
+    tout->Write("PhysicsEvents");  // keep same name
     fout->Close();
     fin->Close();
 
