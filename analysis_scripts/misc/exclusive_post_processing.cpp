@@ -169,7 +169,7 @@ int main(int argc, char** argv) {
     tskim->SetBranchStatus("*", 1);
     for (const char* nm : DROP) if (has_branch(tskim, nm)) tskim->SetBranchStatus(nm, 0);
 
-    // Create output file with portable compression (zlib level 9 works everywhere)
+    // Create output file with portable compression (zlib level 9)
     TFile* fout = TFile::Open(outfile.c_str(), "RECREATE");
     if (!fout || fout->IsZombie()) {
         std::cerr << "Error: could not create output " << outfile << "\n";
@@ -188,7 +188,6 @@ int main(int argc, char** argv) {
 
     if (!have_t)      b_t      = tout->Branch("t",             &t_val,              "t/D");
     if (!have_tmin)   b_tmin   = tout->Branch("tmin",          &tmin_val,           "tmin/D");
-    if (!have_tprime) b_b_tprime = nullptr; // placeholder to keep naming consistent
     if (!have_tprime) b_tprime = tout->Branch("tprime",        &tprime_val,         "tprime/D");
     if (!have_stg)    b_stg    = tout->Branch("sinthetagamma", &sinthetagamma_val,  "sinthetagamma/D");
 
