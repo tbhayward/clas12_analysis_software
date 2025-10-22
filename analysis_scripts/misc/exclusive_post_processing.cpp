@@ -138,18 +138,10 @@ int main(int argc, char** argv) {
     const char* CUTS = "Mx2>0.65 && Mx2<1.125 && fiducial_status==111 && x>0.09 && x<0.61";
 
     const Long64_t n_in     = tin->GetEntries();
-    const Long64_t n_expect = tin->GetEntries(CUTS); // requires branches enabled (we enable below)
+    const Long64_t n_expect = tin->GetEntries(CUTS);
 
-    // 1) Make sure branches used in CUTS are ENABLED for CopyTree
-    tin->SetBranchStatus("*", 0);
-    for (const char* bn : std::vector<const char*>{"Mx2","fiducial_status","x"}) {
-        if (has_branch(tin, bn)) tin->SetBranchStatus(bn, 1);
-        else {
-            std::cerr << "Error: required branch for cuts missing: " << bn << "\n";
-            fin->Close();
-            return 1;
-        }
-    }
+    // 1) DO NOT disable branches before CopyTree. Copy everything; we will drop later.
+    tin->SetBranchStatus("*", 1);
 
     // 2) Create output file; cd into it so CopyTree builds the skim *on the file*
     TFile* fout = TFile::Open(outfile.c_str(), "RECREATE");
@@ -172,10 +164,10 @@ int main(int argc, char** argv) {
     }
     tskim->SetDirectory(fout);  // ensure file-backed
 
-    // 4) Now that we have the skim, enable everything on it for computations
+    // 4) Enable everything on the skim (we may need multiple inputs to compute)
     tskim->SetBranchStatus("*", 1);
 
-    // 5) Check which derived branches already exist on the skim
+    // 5) Check derived branches
     const bool have_t       = has_branch(tskim, "t");
     const bool have_tmin    = has_branch(tskim, "tmin");
     const bool have_tprime  = has_branch(tskim, "tprime");
@@ -191,7 +183,7 @@ int main(int argc, char** argv) {
     Double_t t_val=0, tmin_val=0, tprime_val=0, stg_val=0;
     TBranch *b_t=nullptr, *b_tmin=nullptr, *b_tprime=nullptr, *b_stg=nullptr;
 
-    // Also compute Mx2 stats (sanity check)
+    // Mx2 stats (sanity check)
     Double_t mx2_tmp = 0.0;
     double mx2_min = 1e300, mx2_sum = 0.0;
     const Long64_t nsel = tskim->GetEntries();
