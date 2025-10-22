@@ -138,13 +138,18 @@ int main(int argc, char** argv) {
     const char* CUTS = "Mx2>0.65 && Mx2<1.125 && fiducial_status==111 && x>0.09 && x<0.61";
 
     const Long64_t n_in     = tin->GetEntries();
-    const Long64_t n_expect = tin->GetEntries(CUTS);
+    const Long64_t n_expect = tin->GetEntries(CUTS); // requires branches enabled (we enable below)
 
-    // 1) Disable DROP set on *input* so CopyTree never copies them
-    const char* DROP[] = {"fiducial_status","num_pos","num_neg","num_neutral",
-                          "evnum","detector","xi","eta"};
-    tin->SetBranchStatus("*", 1);
-    for (const char* nm : DROP) if (has_branch(tin, nm)) tin->SetBranchStatus(nm, 0);
+    // 1) Make sure branches used in CUTS are ENABLED for CopyTree
+    tin->SetBranchStatus("*", 0);
+    for (const char* bn : std::vector<const char*>{"Mx2","fiducial_status","x"}) {
+        if (has_branch(tin, bn)) tin->SetBranchStatus(bn, 1);
+        else {
+            std::cerr << "Error: required branch for cuts missing: " << bn << "\n";
+            fin->Close();
+            return 1;
+        }
+    }
 
     // 2) Create output file; cd into it so CopyTree builds the skim *on the file*
     TFile* fout = TFile::Open(outfile.c_str(), "RECREATE");
@@ -165,16 +170,19 @@ int main(int argc, char** argv) {
         fin->Close();
         return 1;
     }
-    tskim->SetDirectory(fout);  // belt-and-suspenders
+    tskim->SetDirectory(fout);  // ensure file-backed
 
-    // 4) Check which derived branches already exist on the skim
+    // 4) Now that we have the skim, enable everything on it for computations
+    tskim->SetBranchStatus("*", 1);
+
+    // 5) Check which derived branches already exist on the skim
     const bool have_t       = has_branch(tskim, "t");
     const bool have_tmin    = has_branch(tskim, "tmin");
     const bool have_tprime  = has_branch(tskim, "tprime");
     const bool have_stg     = has_branch(tskim, "sinthetagamma");
     const bool need_compute = (!have_t) || (!have_tmin) || (!have_tprime) || (!have_stg);
 
-    // 5) If any are missing, add and fill them *on tskim* (which is file-backed)
+    // 6) If any are missing, add and fill them *on tskim* (file-backed)
     Int_t    runnum=0;
     Double_t e_p=0,e_theta=0,e_phi=0;
     Double_t p_p=0,p_theta=0,p_phi=0;
@@ -183,26 +191,23 @@ int main(int argc, char** argv) {
     Double_t t_val=0, tmin_val=0, tprime_val=0, stg_val=0;
     TBranch *b_t=nullptr, *b_tmin=nullptr, *b_tprime=nullptr, *b_stg=nullptr;
 
-    // we will also compute Mx2 stats in this pass (or separate pass if not computing)
-    bool did_stats_in_loop = false;
+    // Also compute Mx2 stats (sanity check)
     Double_t mx2_tmp = 0.0;
     double mx2_min = 1e300, mx2_sum = 0.0;
     const Long64_t nsel = tskim->GetEntries();
 
     if (need_compute) {
         // Ensure inputs exist
-        if (!tskim->GetBranch("runnum") ||
-            !tskim->GetBranch("e_p")    || !tskim->GetBranch("e_theta") || !tskim->GetBranch("e_phi") ||
-            !tskim->GetBranch("p_p")    || !tskim->GetBranch("p_theta") || !tskim->GetBranch("p_phi") ||
-            !tskim->GetBranch("x")      || !tskim->GetBranch("Q2")      || !tskim->GetBranch("y")     ||
-            !tskim->GetBranch("Mx2")) {
-            std::cerr << "Missing inputs for computing derived branches or Mx2 in skim.\n";
-            fout->Close(); fin->Close();
-            return 1;
+        for (const char* bn : std::vector<const char*>{
+            "runnum","e_p","e_theta","e_phi","p_p","p_theta","p_phi","x","Q2","y","Mx2"
+        }) {
+            if (!tskim->GetBranch(bn)) {
+                std::cerr << "Missing branch in skim needed for compute/stats: " << bn << "\n";
+                fout->Close(); fin->Close();
+                return 1;
+            }
         }
 
-        // Set up inputs
-        tskim->SetBranchStatus("*", 1);
         tskim->SetBranchAddress("runnum",  &runnum);
         tskim->SetBranchAddress("e_p",     &e_p);
         tskim->SetBranchAddress("e_theta", &e_theta);
@@ -215,13 +220,11 @@ int main(int argc, char** argv) {
         tskim->SetBranchAddress("y",       &yv);
         tskim->SetBranchAddress("Mx2",     &mx2_tmp);
 
-        // Create ONLY missing branches on tskim (file-backed)
         if (!have_t)      b_t      = tskim->Branch("t",             &t_val,     "t/D");
         if (!have_tmin)   b_tmin   = tskim->Branch("tmin",          &tmin_val,  "tmin/D");
         if (!have_tprime) b_tprime = tskim->Branch("tprime",        &tprime_val,"tprime/D");
         if (!have_stg)    b_stg    = tskim->Branch("sinthetagamma", &stg_val,   "sinthetagamma/D");
 
-        // Fill across all selected entries
         for (Long64_t i=0; i<nsel; ++i) {
             tskim->GetEntry(i);
 
@@ -244,11 +247,8 @@ int main(int argc, char** argv) {
             if (mx2_tmp < mx2_min) mx2_min = mx2_tmp;
             mx2_sum += mx2_tmp;
         }
-        did_stats_in_loop = true;
-    }
-
-    // 6) If we didn’t loop above, compute Mx2 stats now
-    if (!did_stats_in_loop) {
+    } else {
+        // No compute needed; still do Mx2 stats
         if (!tskim->GetBranch("Mx2")) {
             std::cerr << "Mx2 branch is missing in skim, cannot compute stats.\n";
         } else {
@@ -261,9 +261,21 @@ int main(int argc, char** argv) {
         }
     }
 
-    // 7) Write (tree already attached to file). Keep same name.
+    // 7) Drop the 8 columns by disabling them on tskim and cloning to a new tree
+    const char* DROP[] = {"fiducial_status","num_pos","num_neg","num_neutral",
+                          "evnum","detector","xi","eta"};
+
+    tskim->SetBranchStatus("*", 1);
+    for (const char* nm : DROP) if (has_branch(tskim, nm)) tskim->SetBranchStatus(nm, 0);
+
+    // Clone all entries (-1) with only the enabled branches
+    TTree* tout = tskim->CloneTree(-1, "fast");
+    tout->SetName("PhysicsEvents");       // keep the canonical name
+    tout->SetDirectory(fout);             // ensure attached (should already be)
+
+    // 8) Write the final tree and close files
     fout->cd();
-    tskim->Write("PhysicsEvents", TObject::kOverwrite);
+    tout->Write("", TObject::kOverwrite);
     fout->Close();
     fin->Close();
 
