@@ -1,44 +1,53 @@
-// postprocess_enpi_skim.cpp
-// Tight skim for enpi+ PhysicsEvents:
-//   Cuts: 0.65 < Mx2 < 1.125, fiducial_status == 111, 0.09 < x < 0.61
-//   Drops from OUTPUT: fiducial_status, num_pos, num_neg, num_neutral,
-//                     evnum, detector, xi, eta,
-//                     any existing t/tmin/tprime/sinthetagamma (and mc_* versions)
-//   Recomputes and ADDS: t, tmin (exact), tprime, sinthetagamma
+// exclusive_post_processing.cpp
 //
-// Compile (tcsh):
-//   g++ -O2 -std=c++17 postprocess_enpi_skim.cpp `root-config --cflags --libs` -o postprocess_enpi_skim
+// Skimmer for CLAS12 enpi+ PhysicsEvents.
+//
+// Selection (applied via CopyTree):
+//   0.65 < Mx2 < 1.125
+//   fiducial_status == 111
+//   0.09 < x < 0.61
+//
+// Output policy:
+//   - Keep all branches EXCEPT the following eight:
+//       fiducial_status, num_pos, num_neg, num_neutral, evnum, detector, xi, eta
+//   - Preserve existing t, tmin, tprime, sinthetagamma if they are already in the input.
+//   - If any of those four are missing, compute and add ONLY the missing ones.
+//
+// Sanity printouts:
+//   - Input entries
+//   - Expected entries from the selection expression
+//   - Actual entries written to output
+//   - Mx2 min/mean in the OUTPUT tree (should satisfy the lower cut)
+//
+// Build (tcsh/bash):
+//   g++ -O2 -std=c++17 exclusive_post_processing.cpp `root-config --cflags --libs` -o exclusive_post_processing
 //
 // Run:
-//   ./postprocess_enpi_skim /path/to/input.root
+//   ./exclusive_post_processing /path/to/input.root
 //
-// Output filename is input with "_2" inserted before ".root" (or appended "_2.root" if no .root).
+// Output file name:
+//   Inserts "_2" before ".root" (or appends "_2.root" if no .root suffix).
 
-#include <algorithm>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <iostream>
-#include <set>
 #include <string>
 #include <vector>
 
 #include <TFile.h>
-#include <TKey.h>
 #include <TTree.h>
+#include <TBranch.h>
 #include <TSystem.h>
+#include <RVersion.h>
 
-// -----------------------------------------------------------------------------
-// constants
-// -----------------------------------------------------------------------------
-static constexpr double M_E  = 0.000511;        // (GeV)
-static constexpr double M_PI = 0.139570;        // (GeV)
-static constexpr double M_N  = 0.9382720813;    // (GeV) proton mass
+// ----------------------------- constants -------------------------------------
+static constexpr double M_E  = 0.000511;        // GeV
+static constexpr double M_PI = 0.139570;        // GeV
+static constexpr double M_N  = 0.9382720813;    // GeV (proton)
 
-// -----------------------------------------------------------------------------
-// beam energy map (run -> Eb)
-// -----------------------------------------------------------------------------
+// ------------------------------ helpers --------------------------------------
 static double beamEnergy(int runnum) {
     if (runnum >= 6616  && runnum <= 6783)   return 10.1998;
     if (runnum >= 16042 && runnum <= 17065)  return 10.5473;
@@ -47,36 +56,34 @@ static double beamEnergy(int runnum) {
     return 10.5563;
 }
 
-// -----------------------------------------------------------------------------
-// kinematics helpers
-// -----------------------------------------------------------------------------
+static bool has_branch(TTree* t, const char* name) {
+    return t && t->GetListOfBranches() && t->GetListOfBranches()->FindObject(name);
+}
+
 static double compute_t_scalar(int runnum,
                                double e_p, double e_theta, double e_phi,
                                double p_p, double p_theta, double p_phi) {
-    double Eb = beamEnergy(runnum);
+    const double Eb = beamEnergy(runnum);
     if (Eb <= 0.0) return 1e9;
 
-    // electron 3-momentum
-    double E_e   = std::sqrt(e_p*e_p + M_E*M_E);
-    double se    = std::sin(e_theta), ce = std::cos(e_theta);
-    double ex    = e_p * se * std::cos(e_phi);
-    double ey    = e_p * se * std::sin(e_phi);
-    double ez    = e_p * ce;
+    const double E_e = std::sqrt(e_p*e_p + M_E*M_E);
+    const double se  = std::sin(e_theta), ce = std::cos(e_theta);
+    const double ex  = e_p * se * std::cos(e_phi);
+    const double ey  = e_p * se * std::sin(e_phi);
+    const double ez  = e_p * ce;
 
-    // pion 3-momentum
-    double E_pi  = std::sqrt(p_p*p_p + M_PI*M_PI);
-    double sp    = std::sin(p_theta), cp = std::cos(p_theta);
-    double px    = p_p * sp * std::cos(p_phi);
-    double py    = p_p * sp * std::sin(p_phi);
-    double pz    = p_p * cp;
+    const double E_pi = std::sqrt(p_p*p_p + M_PI*M_PI);
+    const double sp   = std::sin(p_theta), cp = std::cos(p_theta);
+    const double px   = p_p * sp * std::cos(p_phi);
+    const double py   = p_p * sp * std::sin(p_phi);
+    const double pz   = p_p * cp;
 
     // q = k - k' = (Eb - E_e, -ex, -ey, Eb - ez)
-    double dE = (Eb - E_e) - E_pi;
-    double dx = -ex - px;
-    double dy = -ey - py;
-    double dz = (Eb - ez) - pz;
+    const double dE = (Eb - E_e) - E_pi;
+    const double dx = -ex - px;
+    const double dy = -ey - py;
+    const double dz = (Eb - ez) - pz;
 
-    // t = (q - p_pi)^2 already folded into the dE,dx,dy,dz above
     return dE*dE - (dx*dx + dy*dy + dz*dz);
 }
 
@@ -87,45 +94,28 @@ static double compute_sin_theta_gamma(double y, double xB, double Q2) {
     const double num   = 1.0 - y - 0.25 * y * y * gamma * gamma;
     const double den   = 1.0 + gamma * gamma;
     if (den <= 0.0) return 0.0;
-    const double ratio = std::max(0.0, num / den); // protect sqrt
+    const double ratio = std::max(0.0, num / den);
     return gamma * std::sqrt(ratio);
 }
 
-// Exact tmin for DVCS/DVMP:
 static double compute_tmin_exact(double xB, double Q2) {
     const bool xb_ok = (xB > 0.0 && xB < 1.0);
     if (Q2 <= 0.0 || !xb_ok) {
         if (xb_ok) {
             const double denom = (1.0 - xB);
-            if (denom > 0.0) return - (M_N*xB)*(M_N*xB) / denom; // high-energy approx
+            if (denom > 0.0) return - (M_N*xB)*(M_N*xB) / denom; // high-E approx
         }
         return 0.0;
     }
-    const double eps2 = 4.0 * M_N * M_N * xB * xB / Q2;
+    const double eps2 = 4.0*M_N*M_N*xB*xB / Q2;
     const double root = std::sqrt(1.0 + eps2);
     const double num  = Q2 * ( 2.0*(1.0 - xB)*(1.0 - root) + eps2 );
     const double den  = 4.0*xB*(1.0 - xB) + eps2;
     if (den == 0.0) return 0.0;
-    return - num / den; // negative
+    return - num / den;
 }
 
-// -----------------------------------------------------------------------------
-// tiny helpers
-// -----------------------------------------------------------------------------
-static bool has_branch(TTree* t, const char* name) {
-    return t && t->GetListOfBranches() && t->GetListOfBranches()->FindObject(name);
-}
-
-static bool has_all_branches(TTree* t, const std::vector<const char*>& names) {
-    for (auto* n : names) {
-        if (!has_branch(t, n)) return false;
-    }
-    return true;
-}
-
-// -----------------------------------------------------------------------------
-// main
-// -----------------------------------------------------------------------------
+// -------------------------------- main ---------------------------------------
 int main(int argc, char** argv) {
     if (argc != 2) {
         std::cerr << "Usage: " << argv[0] << " <input.root>\n";
@@ -138,50 +128,56 @@ int main(int argc, char** argv) {
     if (pos != std::string::npos) outfile.insert(pos, "_2");
     else                          outfile += "_2.root";
 
-    // open input
+    // Open input
     TFile* fin = TFile::Open(infile.c_str(), "READ");
     if (!fin || fin->IsZombie()) {
-        std::cerr << "Error: could not open input file " << infile << "\n";
+        std::cerr << "Error: could not open input " << infile << "\n";
         return 1;
     }
-
     TTree* tin = static_cast<TTree*>(fin->Get("PhysicsEvents"));
     if (!tin) {
-        std::cerr << "Error: tree PhysicsEvents not found in " << infile << "\n";
+        std::cerr << "Error: PhysicsEvents not found in " << infile << "\n";
         fin->Close();
         return 1;
     }
 
-    // -------------------------------------------------------------------------
-    // Build output schema by cloning only the branches we want to KEEP.
-    // Temporarily DISABLE branches we do not want in the output, clone an empty
-    // structure, then re-enable for reading.
-    // -------------------------------------------------------------------------
-    std::vector<const char*> drop_from_output = {
-        "fiducial_status","num_pos","num_neg","num_neutral",
-        "evnum","detector","xi","eta",
-        // Also drop any preexisting computed fields if present:
-        "t","tmin","tprime","sinthetagamma",
-        "mc_t","mc_tmin","mc_tprime","mc_sinthetagamma"
-    };
+    // Selection (used by CopyTree)
+    const char* CUTS = "Mx2>0.65 && Mx2<1.125 && fiducial_status==111 && x>0.09 && x<0.61";
 
-    std::vector<const char*> to_disable;
-    to_disable.reserve(drop_from_output.size());
-    for (auto* nm : drop_from_output) {
-        if (has_branch(tin, nm)) to_disable.push_back(nm);
+    // Counts for sanity
+    const Long64_t n_in     = tin->GetEntries();
+    const Long64_t n_expect = tin->GetEntries(CUTS);
+
+    // Perform the skim (this enforces the cuts)
+    TTree* tskim = tin->CopyTree(CUTS);
+    if (!tskim) {
+        std::cerr << "CopyTree returned null.\n";
+        fin->Close();
+        return 1;
     }
 
-    tin->SetBranchStatus("*", 1);
-    for (auto* nm : to_disable) tin->SetBranchStatus(nm, 0);
+    // Determine which computed branches already exist in the skim
+    const bool have_t       = has_branch(tskim, "t");
+    const bool have_tmin    = has_branch(tskim, "tmin");
+    const bool have_tprime  = has_branch(tskim, "tprime");
+    const bool have_stg     = has_branch(tskim, "sinthetagamma");
 
-    // Create output file (use strong compression to save space)
+    // We need to drop 8 columns from the OUTPUT.
+    // Strategy: from the skimmed tree, disable those branches, then CloneTree(0)
+    // and Fill manually. This guarantees those columns are absent in the output.
+    const char* DROP[] = {"fiducial_status","num_pos","num_neg","num_neutral",
+                          "evnum","detector","xi","eta"};
+
+    tskim->SetBranchStatus("*", 1);
+    for (const char* nm : DROP) if (has_branch(tskim, nm)) tskim->SetBranchStatus(nm, 0);
+
+    // Create output file with strong compression
     TFile* fout = TFile::Open(outfile.c_str(), "RECREATE");
     if (!fout || fout->IsZombie()) {
-        std::cerr << "Error: could not create output file " << outfile << "\n";
+        std::cerr << "Error: could not create output " << outfile << "\n";
         fin->Close();
         return 1;
     }
-
 #if ROOT_VERSION_CODE >= ROOT_VERSION(6,22,0)
     fout->SetCompressionSettings(ROOT::RCompressionSetting::EDefaults::kUseZSTD);
 #else
@@ -189,137 +185,114 @@ int main(int argc, char** argv) {
     fout->SetCompressionLevel(9);
 #endif
 
-    // Clone structure (0 entries) with only enabled branches copied
-    TTree* tout = tin->CloneTree(0, "fast");
+    // Clone structure of active (kept) branches only; 0 entries to start
+    TTree* tout = tskim->CloneTree(0, "fast");
 
-    // Re-enable everything for reading from the input now
-    tin->SetBranchStatus("*", 1);
+    // If any of (t, tmin, tprime, sinthetagamma) are missing, add them to OUTPUT
+    Double_t t_val=0, tmin_val=0, tprime_val=0, sinthetagamma_val=0;
+    TBranch *b_t=nullptr, *b_tmin=nullptr, *b_tprime=nullptr, *b_stg=nullptr;
 
-    // -------------------------------------------------------------------------
-    // Set up input addresses we need for cuts and computations
-    // -------------------------------------------------------------------------
-    Int_t    runnum = 0;
-    Int_t    fiducial_status = 0;
-    Double_t e_p=0, e_theta=0, e_phi=0;
-    Double_t p_p=0, p_theta=0, p_phi=0;
-    Double_t Mx2=0;
-    Double_t xB=0, Q2=0, y=0;
+    if (!have_t)      b_t      = tout->Branch("t",             &t_val,              "t/D");
+    if (!have_tmin)   b_tmin   = tout->Branch("tmin",          &tmin_val,           "tmin/D");
+    if (!have_tprime) b_tprime = tout->Branch("tprime",        &tprime_val,         "tprime/D");
+    if (!have_stg)    b_stg    = tout->Branch("sinthetagamma", &sinthetagamma_val,  "sinthetagamma/D");
 
-    tin->SetBranchAddress("runnum",          &runnum);
-    tin->SetBranchAddress("fiducial_status", &fiducial_status);
-    tin->SetBranchAddress("e_p",             &e_p);
-    tin->SetBranchAddress("e_theta",         &e_theta);
-    tin->SetBranchAddress("e_phi",           &e_phi);
-    tin->SetBranchAddress("p_p",             &p_p);
-    tin->SetBranchAddress("p_theta",         &p_theta);
-    tin->SetBranchAddress("p_phi",           &p_phi);
-    tin->SetBranchAddress("Mx2",             &Mx2);
-    tin->SetBranchAddress("x",               &xB);
-    tin->SetBranchAddress("Q2",              &Q2);
-    tin->SetBranchAddress("y",               &y);
+    // Set up addresses for inputs needed to compute missing outputs
+    Int_t    runnum=0;
+    Double_t e_p=0,e_theta=0,e_phi=0;
+    Double_t p_p=0,p_theta=0,p_phi=0;
+    Double_t xB=0,Q2=0,yv=0;
 
-    // Detect MC kinematics availability
-    const bool mc_min = has_branch(tin, "mc_e_p");
-    bool mc_present = false;
-    Double_t mc_e_p=0, mc_e_theta=0, mc_e_phi=0;
-    Double_t mc_p_p=0, mc_p_theta=0, mc_p_phi=0;
-    Double_t mc_xB=0, mc_Q2=0, mc_y=0;
-
-    if (mc_min) {
-        mc_present = has_all_branches(tin, {
-            "mc_e_p","mc_e_theta","mc_e_phi",
-            "mc_p_p","mc_p_theta","mc_p_phi",
-            "mc_x","mc_Q2","mc_y"
-        });
-        if (mc_present) {
-            tin->SetBranchAddress("mc_e_p",     &mc_e_p);
-            tin->SetBranchAddress("mc_e_theta", &mc_e_theta);
-            tin->SetBranchAddress("mc_e_phi",   &mc_e_phi);
-            tin->SetBranchAddress("mc_p_p",     &mc_p_p);
-            tin->SetBranchAddress("mc_p_theta", &mc_p_theta);
-            tin->SetBranchAddress("mc_p_phi",   &mc_p_phi);
-            tin->SetBranchAddress("mc_x",       &mc_xB);
-            tin->SetBranchAddress("mc_Q2",      &mc_Q2);
-            tin->SetBranchAddress("mc_y",       &mc_y);
-        } else {
-            std::cerr << "[WARN] Found some mc_* but not all required; MC recalculation will be skipped.\n";
+    bool need_compute = (!have_t) || (!have_tmin) || (!have_tprime) || (!have_stg);
+    if (need_compute) {
+        // These must exist in the skim (they were present before, but assert again)
+        if (!tskim->GetBranch("runnum") ||
+            !tskim->GetBranch("e_p")    || !tskim->GetBranch("e_theta") || !tskim->GetBranch("e_phi") ||
+            !tskim->GetBranch("p_p")    || !tskim->GetBranch("p_theta") || !tskim->GetBranch("p_phi") ||
+            !tskim->GetBranch("x")      || !tskim->GetBranch("Q2")      || !tskim->GetBranch("y")) {
+            std::cerr << "Missing inputs for computing derived branches in skim.\n";
+            fout->Close(); fin->Close();
+            return 1;
         }
+        tskim->SetBranchStatus("runnum", 1);
+        tskim->SetBranchStatus("e_p",    1);
+        tskim->SetBranchStatus("e_theta",1);
+        tskim->SetBranchStatus("e_phi",  1);
+        tskim->SetBranchStatus("p_p",    1);
+        tskim->SetBranchStatus("p_theta",1);
+        tskim->SetBranchStatus("p_phi",  1);
+        tskim->SetBranchStatus("x",      1);
+        tskim->SetBranchStatus("Q2",     1);
+        tskim->SetBranchStatus("y",      1);
+
+        tskim->SetBranchAddress("runnum",  &runnum);
+        tskim->SetBranchAddress("e_p",     &e_p);
+        tskim->SetBranchAddress("e_theta", &e_theta);
+        tskim->SetBranchAddress("e_phi",   &e_phi);
+        tskim->SetBranchAddress("p_p",     &p_p);
+        tskim->SetBranchAddress("p_theta", &p_theta);
+        tskim->SetBranchAddress("p_phi",   &p_phi);
+        tskim->SetBranchAddress("x",       &xB);
+        tskim->SetBranchAddress("Q2",      &Q2);
+        tskim->SetBranchAddress("y",       &yv);
     }
 
-    // -------------------------------------------------------------------------
-    // Add new computed branches to the OUTPUT tree
-    // -------------------------------------------------------------------------
-    Double_t t_val = 0.0;
-    Double_t tmin_val = 0.0;
-    Double_t tprime_val = 0.0;
-    Double_t sinthetagamma_val = 0.0;
-
-    tout->Branch("t",             &t_val,              "t/D");
-    tout->Branch("tmin",          &tmin_val,           "tmin/D");
-    tout->Branch("tprime",        &tprime_val,         "tprime/D");
-    tout->Branch("sinthetagamma", &sinthetagamma_val,  "sinthetagamma/D");
-
-    Double_t mc_t_val=0.0, mc_tmin_val=0.0, mc_tprime_val=0.0, mc_sinthetagamma_val=0.0;
-    if (mc_present) {
-        tout->Branch("mc_t",             &mc_t_val,             "mc_t/D");
-        tout->Branch("mc_tmin",          &mc_tmin_val,          "mc_tmin/D");
-        tout->Branch("mc_tprime",        &mc_tprime_val,        "mc_tprime/D");
-        tout->Branch("mc_sinthetagamma", &mc_sinthetagamma_val, "mc_sinthetagamma/D");
-    }
-
-    // Optional I/O tuning for size/performance
+    // I/O tuning (optional)
     tout->SetAutoSave(0);
     tout->SetAutoFlush(100000);
 
-    // -------------------------------------------------------------------------
-    // Event loop with requested cuts
-    //   Cuts:
-    //     0.65 < Mx2 < 1.125
-    //     fiducial_status == 111
-    //     0.09 < x < 0.61
-    // -------------------------------------------------------------------------
-    const double x_lo = 0.090;
-    const double x_hi = 0.610;
+    // Loop over skimmed entries: fill kept branches; compute and fill only missing outputs
+    const Long64_t nsel = tskim->GetEntries();
+    double mx2_min = 1e300, mx2_sum = 0.0;
+    Double_t mx2_tmp = 0.0;
+    // ensure Mx2 is enabled and readable for min/mean check
+    tskim->SetBranchStatus("Mx2", 1);
+    tskim->SetBranchAddress("Mx2", &mx2_tmp);
 
-    const Long64_t n = tin->GetEntries();
-    Long64_t n_kept = 0;
-    for (Long64_t i = 0; i < n; ++i) {
-        tin->GetEntry(i);
+    for (Long64_t i=0; i<nsel; ++i) {
+        tskim->GetEntry(i);
 
-        if (!(Mx2 > 0.65 && Mx2 < 1.125)) continue;
-        if (fiducial_status != 111) continue;
-        if (!(xB > x_lo && xB < x_hi)) continue;
-
-        // Compute data values
-        t_val             = compute_t_scalar(runnum, e_p, e_theta, e_phi, p_p, p_theta, p_phi);
-        tmin_val          = compute_tmin_exact(xB, Q2);
-        tprime_val        = t_val - tmin_val;
-        sinthetagamma_val = compute_sin_theta_gamma(y, xB, Q2);
-
-        // MC values if available
-        if (mc_present) {
-            mc_t_val             = compute_t_scalar(runnum, mc_e_p, mc_e_theta, mc_e_phi,
-                                                    mc_p_p, mc_p_theta, mc_p_phi);
-            mc_tmin_val          = compute_tmin_exact(mc_xB, mc_Q2);
-            mc_tprime_val        = mc_t_val - mc_tmin_val;
-            mc_sinthetagamma_val = compute_sin_theta_gamma(mc_y, mc_xB, mc_Q2);
+        // compute derived only if needed
+        if (need_compute) {
+            if (!have_t || !have_tmin || !have_tprime) {
+                const double tt   = compute_t_scalar(runnum, e_p, e_theta, e_phi, p_p, p_theta, p_phi);
+                const double tmin = compute_tmin_exact(xB, Q2);
+                if (!have_t)      t_val      = tt;
+                if (!have_tmin)   tmin_val   = tmin;
+                if (!have_tprime) tprime_val = tt - tmin;
+            }
+            if (!have_stg) {
+                sinthetagamma_val = compute_sin_theta_gamma(yv, xB, Q2);
+            }
         }
 
+        // track Mx2 stats from the OUTPUT content (same entries as tout)
+        if (mx2_tmp < mx2_min) mx2_min = mx2_tmp;
+        mx2_sum += mx2_tmp;
+
+        // fill: existing kept branches copy over automatically; new ones via our variables
+        if (b_t)      b_t->Fill();
+        if (b_tmin)   b_tmin->Fill();
+        if (b_tprime) b_tprime->Fill();
+        if (b_stg)    b_stg->Fill();
+
         tout->Fill();
-        ++n_kept;
     }
 
-    fout->Write();
+    // Write output
+    fout->cd();
+    tout->Write("PhysicsEvents");  // keep same name to minimize downstream changes
     fout->Close();
     fin->Close();
 
-    std::cout << "Input:  " << infile  << "\n";
-    std::cout << "Output: " << outfile << "\n";
-    std::cout << "Events kept: " << n_kept << " / " << n << "\n";
-    std::cout << "Applied cuts: 0.65 < Mx2 < 1.125, fiducial_status == 111, 0.09 < x < 0.61\n";
-    std::cout << "Dropped from OUTPUT: fiducial_status, num_pos, num_neg, num_neutral, evnum, detector, xi, eta\n";
-    std::cout << "Added branches: t, tmin(exact), tprime, sinthetagamma"
-              << (mc_present ? ", mc_t, mc_tmin(exact), mc_tprime, mc_sinthetagamma\n" : "\n");
-    std::cout << "Reminder: for plots usually use -tprime.\n";
+    // Final sanity summary
+    const double mx2_mean = (nsel>0 ? mx2_sum / nsel : 0.0);
+    std::cout << "Input entries : " << n_in << "\n";
+    std::cout << "Selected (exp): " << n_expect << " (by CopyTree expression)\n";
+    std::cout << "Selected (out): " << nsel << " (actual written)\n";
+    std::cout << "Mx2 in output : min=" << mx2_min << "  mean=" << mx2_mean << "\n";
+    std::cout << "Dropped cols  : fiducial_status, num_pos, num_neg, num_neutral, evnum, detector, xi, eta\n";
+    std::cout << "Preserved     : existing t/tmin/tprime/sinthetagamma; added only if missing.\n";
+
     return 0;
 }
