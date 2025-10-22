@@ -10,22 +10,22 @@
 // Output policy:
 //   - Keep all branches EXCEPT the following eight:
 //       fiducial_status, num_pos, num_neg, num_neutral, evnum, detector, xi, eta
-//   - Preserve existing t, tmin, tprime, sinthetagamma if they are already in the input.
-//   - If any of those four are missing, compute and add ONLY the missing ones.
+//   - Preserve existing t, tmin, tprime, sinthetagamma if already present.
+//   - If any are missing, compute and add ONLY the missing ones.
 //
 // Sanity printouts:
 //   - Input entries
 //   - Expected entries from the selection expression
 //   - Actual entries written to output
-//   - Mx2 min/mean in the OUTPUT tree (should satisfy the lower cut)
+//   - Mx2 min/mean computed from the skimmed entries (should honor the lower cut)
 //
-// Build (tcsh/bash):
+// Build:
 //   g++ -O2 -std=c++17 exclusive_post_processing.cpp `root-config --cflags --libs` -o exclusive_post_processing
 //
 // Run:
 //   ./exclusive_post_processing /path/to/input.root
 //
-// Output file name:
+// Output filename:
 //   Inserts "_2" before ".root" (or appends "_2.root" if no .root suffix).
 
 #include <cmath>
@@ -43,7 +43,7 @@
 #include <RVersion.h>
 
 // ----------------------------- constants -------------------------------------
-// (Use names that won't collide with <cmath> macros like M_E, M_PI)
+// (Avoid <cmath> macro collisions like M_E, M_PI)
 static constexpr double MASS_E  = 0.000511;        // GeV (electron)
 static constexpr double MASS_PI = 0.139570;        // GeV (charged pion)
 static constexpr double MASS_N  = 0.9382720813;    // GeV (proton)
@@ -149,7 +149,7 @@ int main(int argc, char** argv) {
     const Long64_t n_in     = tin->GetEntries();
     const Long64_t n_expect = tin->GetEntries(CUTS);
 
-    // Perform the skim (this enforces the cuts)
+    // Perform the skim (this enforces the cuts) -- memory-resident skim
     TTree* tskim = tin->CopyTree(CUTS);
     if (!tskim) {
         std::cerr << "CopyTree returned null.\n";
@@ -169,7 +169,7 @@ int main(int argc, char** argv) {
     tskim->SetBranchStatus("*", 1);
     for (const char* nm : DROP) if (has_branch(tskim, nm)) tskim->SetBranchStatus(nm, 0);
 
-    // Create output file with portable compression (zlib level 9)
+    // Create output file and attach output tree to it
     TFile* fout = TFile::Open(outfile.c_str(), "RECREATE");
     if (!fout || fout->IsZombie()) {
         std::cerr << "Error: could not create output " << outfile << "\n";
@@ -178,9 +178,11 @@ int main(int argc, char** argv) {
     }
     fout->SetCompressionAlgorithm(ROOT::kZLIB);
     fout->SetCompressionLevel(9);
+    fout->cd();
 
     // Clone structure of active (kept) branches only; 0 entries to start
     TTree* tout = tskim->CloneTree(0, "fast");
+    tout->SetDirectory(fout);  // <-- critical: avoid memory-resident output tree
 
     // If any of (t, tmin, tprime, sinthetagamma) are missing, add them to OUTPUT
     Double_t t_val=0, tmin_val=0, tprime_val=0, sinthetagamma_val=0;
@@ -274,7 +276,7 @@ int main(int argc, char** argv) {
     fout->Close();
     fin->Close();
 
-    // Final sanity summary
+    // Final sanity summary (Mx2 stats tracked from the skim loop)
     const double mx2_mean = (nsel>0 ? mx2_sum / nsel : 0.0);
     std::cout << "Input entries : " << n_in << "\n";
     std::cout << "Selected (exp): " << n_expect << " (by CopyTree expression)\n";
