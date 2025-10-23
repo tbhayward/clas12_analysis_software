@@ -210,7 +210,7 @@ static constexpr double m_pi = 0.13957;   // charged pion
 GeneralExclusiveKinematicCuts::GeneralExclusiveKinematicCuts(TTreeReader& reader)
     : BaseKinematicCuts(reader),
       runnum       (reader, "runnum"),
-      fiducial_status(reader, "fiducial_status"),
+      // fiducial_status(reader, "fiducial_status"),
 
       // Electron‐side branches (added e_p, e_theta)
       e_p          (reader, "e_p"),
