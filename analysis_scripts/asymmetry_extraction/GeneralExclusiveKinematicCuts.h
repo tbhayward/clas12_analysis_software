@@ -32,7 +32,7 @@ private:
     TTreeReaderValue<double> pT;        // pion pT
     TTreeReaderValue<double> y;
     TTreeReaderValue<double> x;
-    TTreeReaderValue<double> xi;
+    // TTreeReaderValue<double> xi;
     TTreeReaderValue<double> phi;
     TTreeReaderValue<double> z;
     TTreeReaderValue<double> t;        

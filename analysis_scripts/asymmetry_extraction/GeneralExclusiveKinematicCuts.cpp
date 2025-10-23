@@ -232,7 +232,7 @@ GeneralExclusiveKinematicCuts::GeneralExclusiveKinematicCuts(TTreeReader& reader
       pT           (reader, "pT"),
       y            (reader, "y"),
       x            (reader, "x"),
-      xi           (reader, "xi"),
+      // xi           (reader, "xi"),
       phi          (reader, "phi"),
       z            (reader, "z"),
       t            (reader, "t"),
