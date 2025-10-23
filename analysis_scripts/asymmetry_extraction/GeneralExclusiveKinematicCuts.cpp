@@ -374,26 +374,26 @@ bool GeneralExclusiveKinematicCuts::applyCuts(int currentFits, bool isMC)
         if (!goodEvent) return false;
         return PassesDynamicMx2(*x, *t, *Mx2);
     }
-    if (property == "enpiHarut1") {
-        bool goodEvent = (*fiducial_status >= 111) &&
-                         (-*tprime > 0.05 && -*tprime < 0.45);
-        if (!goodEvent) return false;
-        return *Mx2 > 0.86 && *Mx2 < 1;
-        // return PassesDynamicMx2(*x, *tprime, *Mx2);
-    }
-    if (property == "enpiHarut2") {
-        bool goodEvent = (*fiducial_status >= 111) &&
-                         (-*t > 0.45 && -*t < 0.85);
-        if (!goodEvent) return false;
-        return *Mx2 > 0.86 && *Mx2 < 1;
-        // return PassesDynamicMx2(*x, *tprime, *Mx2);
-    }
-    if (property == "enpiHarut3") {
-        bool goodEvent = (*fiducial_status >= 111) &&
-                         (-*tprime > 0.85 && -*tprime < 1.225);
-        if (!goodEvent) return false;
-        return PassesDynamicMx2(*x, *tprime, *Mx2);
-    }
+    // if (property == "enpiHarut1") {
+    //     bool goodEvent = (*fiducial_status >= 111) &&
+    //                      (-*tprime > 0.05 && -*tprime < 0.45);
+    //     if (!goodEvent) return false;
+    //     return *Mx2 > 0.86 && *Mx2 < 1;
+    //     // return PassesDynamicMx2(*x, *tprime, *Mx2);
+    // }
+    // if (property == "enpiHarut2") {
+    //     bool goodEvent = (*fiducial_status >= 111) &&
+    //                      (-*t > 0.45 && -*t < 0.85);
+    //     if (!goodEvent) return false;
+    //     return *Mx2 > 0.86 && *Mx2 < 1;
+    //     // return PassesDynamicMx2(*x, *tprime, *Mx2);
+    // }
+    // if (property == "enpiHarut3") {
+    //     bool goodEvent = (*fiducial_status >= 111) &&
+    //                      (-*tprime > 0.85 && -*tprime < 1.225);
+    //     if (!goodEvent) return false;
+    //     return PassesDynamicMx2(*x, *tprime, *Mx2);
+    // }
 
     return false;
 }
