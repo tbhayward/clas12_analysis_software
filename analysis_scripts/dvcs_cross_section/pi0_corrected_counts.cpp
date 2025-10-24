@@ -3,23 +3,20 @@
 // π0-corrected counts with errors, for periods AND combined groups.
 //
 // Inputs (ALL required and strictly matched):
-//   - total_counts.json                        (must have "groups" with per-period keys)
-//   - contamination_dir_counts/contamination_<group>.json  (for every non-combined group)
-//   - contamination_combined.json              (must contain "Spring2018","Fall2018","10.6_GeV" if present in totals)
+//   - total_counts.json
+//   - contamination_dir_counts/contamination_<group>.json
+//   - contamination_combined.json
 //
 // Rules (strict):
-//   * Every bin present in total_counts[group] MUST appear in the contamination table
-//     for that same group (per-helicity entries required). Missing -> FATAL.
-//   * No fallback to combined for periods; combined contamination is used ONLY for
-//     "Spring2018","Fall2018","10.6_GeV" group names.
-//   * Binning meta (phi_bins, sizes of xB/Q²/t lists) must match across inputs.
-//   * Any directory/plot/JSON write failure -> FATAL.
+//   * Every bin in total_counts[group] MUST appear in contamination for that same group.
+//   * Combined contamination used ONLY for "Spring2018","Fall2018","10.6_GeV".
+//   * Binning meta must match across inputs.
+//   * Any read/write/plot failure -> FATAL.
 //
-// Output:
+// Outputs:
 //   - <out_root_dir>/jsons/pi0_corrected_counts_<group>.json
 //   - <out_root_dir>/jsons/pi0_corrected_counts_all_groups.json
 //   - <out_root_dir>/pi0_corrected_plots/<group>/plot_pi0corr_<group>_xB_<ix>.png
-//
 // ------------------------------------------------------------
 
 #include "pi0_corrected_counts.h"
@@ -39,6 +36,8 @@
 #include <algorithm>
 #include <cctype>
 #include <cmath>
+#include <cstdio>
+#include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <iomanip>
@@ -55,7 +54,7 @@
 
 namespace {
 
-constexpr int    N_PHI_BINS = 12;
+constexpr int N_PHI_BINS = 12;
 using BinKey = std::tuple<int,int,int,int>; // (ix,iQ2,it,ip)
 
 // ────────── fail-fast helpers ──────────
@@ -64,6 +63,7 @@ using BinKey = std::tuple<int,int,int,int>; // (ix,iQ2,it,ip)
     std::exit(EXIT_FAILURE);
 }
 
+// ────────── ROOT style setup ──────────
 struct StyleInit {
     StyleInit() {
         gStyle->SetOptTitle(0);
@@ -79,13 +79,11 @@ struct StyleInit {
     }
 } _style_bootstrap;
 
+// ────────── basic helpers ──────────
 static inline std::string toLower(std::string s){
     std::transform(s.begin(), s.end(), s.begin(),
-        [](unsigned char c){return std::tolower(c);});
+        [](unsigned char c){ return std::tolower(c); });
     return s;
-}
-static inline bool containsNoCase(const std::string& s, const std::string& pat){
-    return toLower(s).find(toLower(pat)) != std::string::npos;
 }
 
 static inline std::vector<std::pair<double,double>>
@@ -98,32 +96,36 @@ uniqueRanges(const std::vector<Binning>& scheme, char which) {
     }
     return {s.begin(), s.end()};
 }
+
 static inline int findIndex(const std::pair<double,double>& r,
                             const std::vector<std::pair<double,double>>& R){
     for (int i=0;i<(int)R.size();++i) if (R[i]==r) return i;
     return -1;
 }
+
 static inline std::vector<double> phiCentersDeg() {
     std::vector<double> d(N_PHI_BINS);
     const double step = 360.0/double(N_PHI_BINS);
     for (int i=0;i<N_PHI_BINS;++i) d[i] = (i+0.5)*step;
     return d;
 }
+
 static inline std::string key4s(int ix,int iQ,int it,int ip){
-    std::ostringstream os; os<<"("<<ix<<","<<iQ<<","<<it<<","<<ip<<")"; return os.str();
+    std::ostringstream os; os << "(" << ix << "," << iQ << "," << it << "," << ip << ")";
+    return os.str();
 }
 
 // ────────── structures ──────────
 struct HelCounts { long long plus=0, minus=0; };
 using GroupCounts = std::map<std::string, std::map<BinKey, HelCounts>>;
 
-struct Contam { double cp=0.0, ep=0.0, cm=0.0, em=0.0; }; // contamination & errors
+struct Contam { double cp=0.0, ep=0.0, cm=0.0, em=0.0; };
 using ContamTable = std::map<BinKey, Contam>;
 
 struct CorrBin {
-    double Np=0.0, ep=0.0;  // corrected +1 and its σ
-    double Nm=0.0, em=0.0;  // corrected −1 and its σ
-    double Nt=0.0, et=0.0;  // total and its σ (quadrature)
+    double Np=0.0, ep=0.0;
+    double Nm=0.0, em=0.0;
+    double Nt=0.0, et=0.0;
 };
 
 // ────────── strict JSON parsing utilities ──────────
@@ -139,18 +141,20 @@ struct BinningMeta {
     size_t nx=0, nQ=0, nt=0;
 };
 
-// returns substring of the first {...} after the named key
 static std::string objForKey(const std::string& s, const std::string& key) {
     size_t p = s.find(key); if (p==std::string::npos) fatal("Key '"+key+"' not found in JSON.");
     size_t br = s.find('{', p); if (br==std::string::npos) fatal("Malformed JSON after key '"+key+"'");
     int d=0; size_t i=br;
-    for (; i<s.size(); ++i){ if(s[i]=='{') d++; else if(s[i]=='}'){ d--; if(!d){ ++i; break; } } }
+    for (; i<s.size(); ++i){
+        if(s[i]=='{') d++;
+        else if(s[i]=='}'){ d--; if(!d){ ++i; break; } }
+    }
     if (d!=0) fatal("Unbalanced braces in JSON near key '"+key+"'");
     return s.substr(br, i-br);
 }
 
-static long long parseIntAfterColon(const std::string& s, size_t colonPos, const std::string& ctx){
-    size_t a = colonPos + 1;
+static long long parseIntAfterColon(const std::string& s, size_t cpos, const std::string& ctx){
+    size_t a = cpos + 1;
     while (a < s.size() && std::isspace((unsigned char)s[a])) ++a;
     size_t b = a;
     while (b < s.size() && (std::isdigit((unsigned char)s[b]) || s[b]=='-' || s[b]=='+')) ++b;
@@ -158,8 +162,8 @@ static long long parseIntAfterColon(const std::string& s, size_t colonPos, const
     catch(...) { fatal("Non-integer value in "+ctx); }
     return 0;
 }
-static double parseDoubleAfterColon(const std::string& s, size_t colonPos, const std::string& ctx){
-    size_t a = colonPos + 1;
+static double parseDoubleAfterColon(const std::string& s, size_t cpos, const std::string& ctx){
+    size_t a = cpos + 1;
     while (a < s.size() && std::isspace((unsigned char)s[a])) ++a;
     size_t b = a;
     auto isnum=[](char c){ return std::isdigit((unsigned char)c)||c=='-'||c=='+'||c=='.'||c=='e'||c=='E'; };
@@ -205,7 +209,10 @@ static GroupCounts load_total_counts_STRICT(const std::string& path, BinningMeta
         if (binsS==std::string::npos) fatal("Group "+gname+" has no 'bins' object in total_counts.json");
         int d=0; size_t br = groupsObj.find('{', binsS); if (br==std::string::npos) fatal("Malformed 'bins' in group "+gname);
         size_t j=br;
-        for (; j<groupsObj.size(); ++j){ if(groupsObj[j]=='{') d++; else if(groupsObj[j]=='}'){ d--; if(!d){ ++j; break; } } }
+        for (; j<groupsObj.size(); ++j){
+            if(groupsObj[j]=='{') d++;
+            else if(groupsObj[j]=='}'){ d--; if(!d){ ++j; break; } }
+        }
         std::string binsObj = groupsObj.substr(br, j-br);
 
         std::map<BinKey, HelCounts> table; size_t p=0;
@@ -217,7 +224,10 @@ static GroupCounts load_total_counts_STRICT(const std::string& path, BinningMeta
 
             size_t vS = binsObj.find('{', k2); if (vS==std::string::npos) fatal("Missing bin object in "+gname);
             int d2=0; size_t m=vS;
-            for (; m<binsObj.size(); ++m){ if(binsObj[m]=='{') d2++; else if(binsObj[m]=='}'){ d2--; if(!d2){ ++m; break;} } }
+            for (; m<binsObj.size(); ++m){
+                if(binsObj[m]=='{') d2++;
+                else if(binsObj[m]=='}'){ d2--; if(!d2){ ++m; break;} }
+            }
             std::string v = binsObj.substr(vS, m-vS);
 
             // helicity +1
@@ -258,7 +268,10 @@ static ContamTable load_contam_period_STRICT(const std::string& path, BinningMet
 
         size_t vS=binsObj.find('{', q2); if (vS==std::string::npos) fatal("Missing bin object in contamination JSON");
         int d2=0; size_t j=vS;
-        for (; j<binsObj.size(); ++j){ if(binsObj[j]=='{') d2++; else if(binsObj[j]=='}'){ d2--; if(!d2){ ++j; break; } } }
+        for (; j<binsObj.size(); ++j){
+            if(binsObj[j]=='{') d2++;
+            else if(binsObj[j]=='}'){ d2--; if(!d2){ ++j; break; } }
+        }
         std::string obj=binsObj.substr(vS, j-vS);
 
         auto findVal=[&](const char* pat, const char* ctx)->double{
@@ -268,7 +281,6 @@ static ContamTable load_contam_period_STRICT(const std::string& path, BinningMet
         };
 
         Contam c;
-        // strict nested structure
         c.cp = findVal("\"contamination\":{\"+1\":{\"value\"", "contamination(+1).value");
         c.ep = findVal("\"contamination\":{\"+1\":{\"err\"",   "contamination(+1).err");
         c.cm = findVal("\"contamination\":{\"-1\":{\"value\"", "contamination(-1).value");
@@ -291,7 +303,6 @@ static ContamTable load_contam_group_from_combined_STRICT(const std::string& com
 
     out_meta = load_meta(s);
 
-    // dive into "periods" then group
     std::string periodsObj = objForKey(s, "\"periods\"");
     std::string gq = std::string("\"")+group+std::string("\"");
     size_t G = periodsObj.find(gq);
@@ -300,7 +311,10 @@ static ContamTable load_contam_group_from_combined_STRICT(const std::string& com
     size_t binsK = periodsObj.find("\"bins\"", G);
     if (binsK==std::string::npos) fatal("Group '"+group+"' has no 'bins' in combined contamination JSON");
     int d=0; size_t br = periodsObj.find('{', binsK); if (br==std::string::npos) fatal("Malformed 'bins' for group "+group);
-    size_t i=br; for (; i<periodsObj.size(); ++i){ if(periodsObj[i]=='{') d++; else if(periodsObj[i]=='}'){ d--; if(!d){ ++i; break; } } }
+    size_t i=br; for (; i<periodsObj.size(); ++i){
+        if(periodsObj[i]=='{') d++;
+        else if(periodsObj[i]=='}'){ d--; if(!d){ ++i; break; } }
+    }
     std::string binsObj = periodsObj.substr(br, i-br);
 
     ContamTable out; size_t p=0; int nb=0;
@@ -310,7 +324,10 @@ static ContamTable load_contam_group_from_combined_STRICT(const std::string& com
         BinKey bk; if (!parse_tuple_key(binsObj.substr(q1+1,q2-q1-1), bk)) fatal("Bad bin tuple in combined contamination");
 
         size_t vS=binsObj.find('{', q2); if (vS==std::string::npos) fatal("Missing bin object in combined contamination");
-        int d2=0; size_t j=vS; for (; j<binsObj.size(); ++j){ if(binsObj[j]=='{') d2++; else if(binsObj[j]=='}'){ d2--; if(!d2){ ++j; break; } } }
+        int d2=0; size_t j=vS; for (; j<binsObj.size(); ++j){
+            if(binsObj[j]=='{') d2++;
+            else if(binsObj[j]=='}'){ d2--; if(!d2){ ++j; break; } }
+        }
         std::string obj=binsObj.substr(vS, j-vS);
 
         auto findVal=[&](const char* pat, const char* ctx)->double{
@@ -330,7 +347,7 @@ static ContamTable load_contam_group_from_combined_STRICT(const std::string& com
     return out;
 }
 
-// ────────── plotting ──────────
+// ────────── plotting helpers ──────────
 static void uniqueQT_for_xB(
     const std::vector<Binning>& scheme,
     const std::pair<double,double>& xBrange,
@@ -348,6 +365,7 @@ static void uniqueQT_for_xB(
     t_list.assign(ts.begin(), ts.end());
 }
 
+// ────────── plotting with fail-fast SaveAs check ──────────
 static void plot_group(
     const std::string& group,
     const std::vector<Binning>& binning_scheme,
@@ -361,10 +379,7 @@ static void plot_group(
     namespace fs = std::filesystem;
     std::error_code ec;
     fs::create_directories(out_dir_plots, ec);
-    if (ec) {
-        fatal(std::string("[pi0corr][FATAL] Cannot create directory: ")
-              + out_dir_plots + " (" + ec.message() + ")");
-    }
+    if (ec) fatal("Cannot create directory: "+out_dir_plots+" ("+ec.message()+")");
 
     const auto PHI = phiCentersDeg();
 
@@ -382,15 +397,12 @@ static void plot_group(
         std::string cname = Form("c_pi0corr_%s_xB%d", group.c_str(), ix);
         TCanvas* c = new TCanvas(cname.c_str(), cname.c_str(), W, H);
 
-        // header pad
         TPad* pTop  = new TPad("pTop","pTop", 0.0, 0.92, 1.0, 1.0);
         pTop->SetFillStyle(0); pTop->SetBorderSize(0); pTop->Draw();
-        // grid pad
         TPad* pGrid = new TPad("pGrid","pGrid", 0.0, 0.00, 1.0, 0.92);
         pGrid->SetFillStyle(0); pGrid->SetBorderSize(0); pGrid->Draw();
         pGrid->cd(); pGrid->Divide(ncols, nrows, 0.0001, 0.0001);
 
-        // canvas title with xB
         pTop->cd();
         TLatex head; head.SetNDC(); head.SetTextAlign(22); head.SetTextFont(42); head.SetTextSize(0.40);
         head.DrawLatex(0.5, 0.55, Form("#pi^{0}-corrected vs raw counts  %s   x_{B} #in [%.3g, %.3g]",
@@ -445,7 +457,6 @@ static void plot_group(
                 frame->GetYaxis()->CenterTitle();
                 frame->GetXaxis()->SetNdivisions(505);
 
-                // corrected with errors
                 TGraphErrors* grPc = new TGraphErrors((int)X.size(), X.data(), Yp_corr.data(), eX.data(), eYp_corr.data());
                 TGraphErrors* grMc = new TGraphErrors((int)X.size(), X.data(), Ym_corr.data(), eX.data(), eYm_corr.data());
                 grPc->SetMarkerStyle(20); grPc->SetMarkerSize(1.0); grPc->SetLineWidth(2); grPc->SetMarkerColor(kRed);  grPc->SetLineColor(kRed);
@@ -453,7 +464,6 @@ static void plot_group(
                 grPc->Draw("P SAME");
                 grMc->Draw("P SAME");
 
-                // raw, dashed gray
                 TGraph* grPr = new TGraph((int)X.size(), X.data(), Yp_raw.data());
                 TGraph* grMr = new TGraph((int)X.size(), X.data(), Ym_raw.data());
                 grPr->SetMarkerStyle(24); grPr->SetMarkerSize(0.9); grPr->SetLineStyle(2); grPr->SetMarkerColor(kGray+2); grPr->SetLineColor(kGray+2);
@@ -477,18 +487,17 @@ static void plot_group(
             }
         }
 
-        // ---- save + verify (fail-fast) ----
         const std::string fpath =
             out_dir_plots + "/plot_pi0corr_" + group + "_xB_" + std::to_string(ix) + ".png";
         c->SaveAs(fpath.c_str());
 
         std::error_code fec;
-        const bool exists = fs::exists(fpath, fec);
-        const auto size   = exists ? fs::file_size(fpath, fec) : 0ULL;
+        const bool exists = std::filesystem::exists(fpath, fec);
+        const auto size   = exists ? std::filesystem::file_size(fpath, fec) : 0ULL;
         if (!exists || size == 0 || fec) {
             delete c;
             std::ostringstream em;
-            em << "[pi0corr][FATAL] Failed to save plot: " << fpath
+            em << "Failed to save plot: " << fpath
                << " (exists=" << std::boolalpha << exists
                << ", size=" << size
                << ", ec=" << (fec ? fec.message() : "ok") << ")";
@@ -505,15 +514,15 @@ static CorrBin make_corrected_STRICT(const HelCounts& raw, const Contam& c,
 {
     auto one = [&](double Nraw, double val, double err, const char* hel)->std::pair<double,double>{
         if (Nraw < 0.0) fatal("Negative raw count in "+group+" bin "+binKeyStr);
-        if (val < 0.0) fatal("Negative contamination for "+std::string(hel)+" in "+group+" bin "+binKeyStr);
+        if (val < 0.0) fatal(std::string("Negative contamination for ")+hel+" in "+group+" bin "+binKeyStr);
         if (!std::isfinite(val) || !std::isfinite(err)) fatal("Non-finite contamination in "+group+" bin "+binKeyStr);
         const double Ncorr = Nraw * (1.0 - val);
-        const double sigma = std::sqrt( std::max(0.0, (std::sqrt(Nraw)*(1.0 - val))*(std::sqrt(Nraw)*(1.0 - val)) + (Nraw*err)*(Nraw*err)) );
+        const double sigma = std::sqrt( std::max(0.0,
+            (std::sqrt(Nraw)*(1.0 - val))*(std::sqrt(Nraw)*(1.0 - val)) + (Nraw*err)*(Nraw*err)) );
         return {Ncorr, sigma};
     };
 
     CorrBin out;
-    const std::string k = binKeyStr;
     std::tie(out.Np, out.ep) = one((double)raw.plus,  c.cp, c.ep, "+1");
     std::tie(out.Nm, out.em) = one((double)raw.minus, c.cm, c.em, "-1");
     out.Nt = out.Np + out.Nm;
@@ -585,11 +594,14 @@ static void write_master_json(const std::string& out_path,
                <<"\"total\":{\"value\":"<<b.Nt<<",\"err\":"<<b.et<<"}"
                <<"}";
         }
-        ofs<<"\n      }\n"; // bins
+        ofs<<"\n      }\n";
         ofs<<"    }";
     }
     ofs<<"\n  }\n}\n";
 }
+
+// =============== END anonymous namespace =================
+} // namespace
 
 // ======================= PUBLIC ENTRY ===========================
 void compute_pi0_corrected_counts(
@@ -606,7 +618,7 @@ void compute_pi0_corrected_counts(
     BinningMeta totals_meta;
     GroupCounts group_counts = load_total_counts_STRICT(total_counts_json, totals_meta);
 
-    // Ensure the list of groups we were asked to process exists in totals
+    // Ensure requested groups exist in totals
     for (const auto& g : dvcs_periods) {
         if (group_counts.find(g) == group_counts.end())
             fatal("Requested group '"+g+"' not present in total_counts.json::groups");
@@ -621,7 +633,7 @@ void compute_pi0_corrected_counts(
         fatal("Binning scheme sizes mismatch total_counts binning_meta.");
 
     // Prepare output dirs
-    const fs::path json_dir = fs::path(out_root_dir) / "jsons";
+    const fs::path json_dir       = fs::path(out_root_dir) / "jsons";
     const fs::path plots_dir_root = fs::path(out_root_dir) / "pi0_corrected_plots";
     std::error_code ec;
     if (!fs::create_directories(json_dir, ec) && ec)
@@ -633,15 +645,16 @@ void compute_pi0_corrected_counts(
     // Load contamination tables, STRICT: per-period from individual files,
     // combined groups only from combined JSON.
     std::map<std::string, ContamTable> contam_by_group;
+
     auto load_period_contam = [&](const std::string& group)->void{
         const fs::path f = fs::path(contamination_dir_counts) / ("contamination_" + group + ".json");
         BinningMeta cm;
         ContamTable ct = load_contam_period_STRICT(f.string(), cm);
-        // Cross-check meta
         if (cm.phi_bins!=totals_meta.phi_bins || cm.nx!=totals_meta.nx || cm.nQ!=totals_meta.nQ || cm.nt!=totals_meta.nt)
             fatal("Binning meta mismatch between contamination("+group+") and total_counts.");
         contam_by_group[group] = std::move(ct);
     };
+
     auto load_combined_contam = [&](const std::string& group)->void{
         BinningMeta cm;
         ContamTable ct = load_contam_group_from_combined_STRICT(contamination_combined, group, cm);
@@ -650,15 +663,13 @@ void compute_pi0_corrected_counts(
         contam_by_group[group] = std::move(ct);
     };
 
-    // Preload contamination for every group actually present in totals
+    // Preload contamination for every group present in totals
     for (const auto& gkv : group_counts) {
         const std::string& group = gkv.first;
-
         if (group == "Spring2018" || group == "Fall2018" || group == "10.6_GeV") {
             load_combined_contam(group);
         } else {
-            // Strict: require per-period contamination file; NO FALLBACK.
-            load_period_contam(group);
+            load_period_contam(group); // NO FALLBACK
         }
     }
 
@@ -666,8 +677,8 @@ void compute_pi0_corrected_counts(
     std::map<std::string, std::map<BinKey, CorrBin>> all_groups_corrected;
 
     for (const auto& gkv : group_counts) {
-        const std::string& group = gkv.first;
-        const auto& raw_table    = gkv.second;
+        const std::string& group     = gkv.first;
+        const auto&        raw_table = gkv.second;
 
         const auto itC = contam_by_group.find(group);
         if (itC == contam_by_group.end())
@@ -676,17 +687,20 @@ void compute_pi0_corrected_counts(
 
         std::map<BinKey, CorrBin> corr_table;
 
-        // For every bin in the raw totals, MUST find contamination (strict)
+        // For every bin in raw totals, MUST find contamination (strict)
         for (const auto& kv : raw_table) {
             const BinKey& bk = kv.first;
             const HelCounts& raw = kv.second;
 
             auto ic = C.find(bk);
             if (ic == C.end()) {
-                std::ostringstream os; os<<"Missing contamination for group '"<<group<<"' bin "<<key4s(std::get<0>(bk),std::get<1>(bk),std::get<2>(bk),std::get<3>(bk));
+                std::ostringstream os;
+                os << "Missing contamination for group '"<<group<<"' bin "
+                   << key4s(std::get<0>(bk),std::get<1>(bk),std::get<2>(bk),std::get<3>(bk));
                 fatal(os.str());
             }
-            CorrBin cb = make_corrected_STRICT(raw, ic->second, group, key4s(std::get<0>(bk),std::get<1>(bk),std::get<2>(bk),std::get<3>(bk)));
+            CorrBin cb = make_corrected_STRICT(raw, ic->second, group,
+                                               key4s(std::get<0>(bk),std::get<1>(bk),std::get<2>(bk),std::get<3>(bk)));
             corr_table[bk] = cb;
         }
 
@@ -710,8 +724,7 @@ void compute_pi0_corrected_counts(
     }
 
     // Write master JSON
-    const std::string master =
-        (json_dir / "pi0_corrected_counts_all_groups.json").string();
+    const std::string master = (json_dir / "pi0_corrected_counts_all_groups.json").string();
     write_master_json(master, N_PHI_BINS, xB_bins.size(), Q2_bins.size(), t_bins.size(), all_groups_corrected);
     std::cout << "[pi0corr] Wrote " << master << "\n";
 }
