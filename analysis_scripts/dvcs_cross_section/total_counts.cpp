@@ -1,25 +1,22 @@
 // total_counts.cpp
 // ------------------------------------------------------------
 // Compute helicity-separated total counts after exclusivity cuts.
-// - Reads: combined_cuts.json (3σ means/stds)
-// - Reads: DVCS data trees per period
+// Strict mode: any missing lookup (trees, branches, dirs, files) causes a fatal exit.
+// - Reads: DVCS data trees per period (must have: helicity, x, Q2, t1, phi2)
 // - Writes:
-//     • output/jsons/total_counts.json             (all groups, nested "groups")
-//     • output/jsons/total_counts_<group>.json     (flat per-group file)
-// - Produces per-group φ-binned plots under output/total_counts_plots/<group>/
+//     • <out_root_dir>/jsons/total_counts.json             (master, nested "groups")
+//     • <out_root_dir>/jsons/total_counts_<group>.json     (flat per-group file)
+// - Produces per-group φ-binned plots under <out_root_dir>/total_counts_plots/<group>/
 //
-// Each group (period) JSON contains:
+// Per-group JSON:
 // {
-//   "binning_meta": { ... },
+//   "binning_meta": { "phi_bins": N, "xB_bins": nx, "Q2_bins": nQ, "t_bins": nt },
 //   "bins": {
-//      "(ix,iQ2,it,ip)": {
-//         "helicity": { "+1": N_plus, "-1": N_minus },
-//         "total": N_total
-//      }, ...
+//      "(ix,iQ2,it,ip)": { "helicity": { "+1": Np, "-1": Nm }, "total": Np+Nm }, ...
 //   }
 // }
 //
-// Combined master JSON structure:
+// Master JSON:
 // {
 //   "binning_meta": {...},
 //   "groups": { "<group>": { "bins": {...} }, ... }
@@ -27,14 +24,19 @@
 // ------------------------------------------------------------
 
 #include "total_counts.h"
+
 #include <TTree.h>
 #include <TCanvas.h>
-#include <TGraphErrors.h>
+#include <TGraph.h>
 #include <TLegend.h>
 #include <TLatex.h>
 #include <TPad.h>
 #include <TH1.h>
 #include <TStyle.h>
+
+#include <algorithm>
+#include <cctype>
+#include <cmath>
 #include <filesystem>
 #include <fstream>
 #include <iomanip>
@@ -43,13 +45,21 @@
 #include <set>
 #include <sstream>
 #include <string>
+#include <tuple>
 #include <vector>
 
 // ------------------------------------------------------------
 // Helpers and constants
 // ------------------------------------------------------------
+namespace {
+
 static constexpr int N_PHI_BINS = 12;
-static constexpr double TWO_PI = 2.0 * M_PI;
+static constexpr double TWO_PI  = 2.0 * M_PI;
+
+[[noreturn]] static void fatal(const std::string& msg) {
+    std::cerr << "[total_counts][FATAL] " << msg << std::endl;
+    std::exit(EXIT_FAILURE);
+}
 
 static inline std::string toLower(std::string s) {
     std::transform(s.begin(), s.end(), s.begin(),
@@ -58,7 +68,7 @@ static inline std::string toLower(std::string s) {
 }
 
 static inline double wrapToTwoPi(double phi) {
-    if (!std::isfinite(phi)) return 0.0;
+    if (!std::isfinite(phi)) return std::numeric_limits<double>::quiet_NaN();
     double w = std::fmod(phi, TWO_PI);
     if (w < 0.0) w += TWO_PI;
     if (w >= TWO_PI) w = std::nextafter(TWO_PI, 0.0);
@@ -67,25 +77,27 @@ static inline double wrapToTwoPi(double phi) {
 
 static inline int phiToBin(double phi) {
     double w = wrapToTwoPi(phi);
-    double width = TWO_PI / static_cast<double>(N_PHI_BINS);
+    if (!std::isfinite(w)) return -1;
+    const double width = TWO_PI / static_cast<double>(N_PHI_BINS);
     int idx = static_cast<int>(std::floor(w / width));
     if (idx < 0) idx = 0;
     if (idx >= N_PHI_BINS) idx = N_PHI_BINS - 1;
     return idx;
 }
 
-static std::vector<std::pair<double,double>> uniqueRanges(const std::vector<Binning>& scheme, char which) {
+static std::vector<std::pair<double,double>>
+uniqueRanges(const std::vector<Binning>& scheme, char which) {
     std::set<std::pair<double,double>> s;
     for (const auto& b : scheme) {
         if (which == 'x') s.emplace(b.xBmin, b.xBmax);
         else if (which == 'Q') s.emplace(b.Q2min, b.Q2max);
         else if (which == 't') s.emplace(b.tmin, b.tmax);
     }
-    return std::vector<std::pair<double,double>>(s.begin(), s.end());
+    return {s.begin(), s.end()};
 }
 
 static int findBin(double v, const std::vector<std::pair<double,double>>& ranges) {
-    for (int i = 0; i < static_cast<int>(ranges.size()); ++i)
+    for (int i = 0; i < (int)ranges.size(); ++i)
         if (v >= ranges[i].first && v < ranges[i].second) return i;
     return -1;
 }
@@ -98,7 +110,7 @@ static inline std::string keyStr(int ix,int iQ,int it,int ip) {
 struct HelCounts { long long plus=0, minus=0; };
 
 // ------------------------------------------------------------
-// Write one flat JSON per group (top-level "bins")
+// JSON writers (strict)
 // ------------------------------------------------------------
 static void write_total_counts_group_json(
     const std::string& out_path,
@@ -109,7 +121,7 @@ static void write_total_counts_group_json(
     const std::vector<std::pair<double,double>>& t_bins)
 {
     std::ofstream ofs(out_path);
-    if (!ofs) { std::cerr << "[total_counts][ERROR] Cannot open " << out_path << "\n"; return; }
+    if (!ofs) fatal(std::string("Cannot open for write: ") + out_path);
     ofs << std::fixed << std::setprecision(8);
     ofs << "{\n";
     ofs << "  \"binning_meta\": {\"phi_bins\": " << nPhi
@@ -133,9 +145,6 @@ static void write_total_counts_group_json(
     std::cout << "[total_counts] Wrote " << out_path << "\n";
 }
 
-// ------------------------------------------------------------
-// Write master JSON (nested "groups")
-// ------------------------------------------------------------
 static void write_total_counts_master_json(
     const std::string& out_path,
     const std::map<std::string, std::map<std::tuple<int,int,int,int>, HelCounts>>& allGroups,
@@ -145,7 +154,7 @@ static void write_total_counts_master_json(
     const std::vector<std::pair<double,double>>& t_bins)
 {
     std::ofstream ofs(out_path);
-    if (!ofs) { std::cerr << "[total_counts][ERROR] Cannot open " << out_path << "\n"; return; }
+    if (!ofs) fatal(std::string("Cannot open for write: ") + out_path);
     ofs << std::fixed << std::setprecision(8);
     ofs << "{\n";
     ofs << "  \"binning_meta\": {\"phi_bins\": " << nPhi
@@ -178,7 +187,7 @@ static void write_total_counts_master_json(
 }
 
 // ------------------------------------------------------------
-// Plotting helper
+// Plotting (strict save)
 // ------------------------------------------------------------
 static std::vector<double> phiCentersDeg() {
     std::vector<double> v(N_PHI_BINS);
@@ -196,11 +205,14 @@ static void plot_group_counts(
     const std::vector<std::pair<double,double>>& t_bins,
     const std::string& out_dir)
 {
-    static const std::vector<double> PHI = phiCentersDeg();
+    const std::vector<double> PHI = phiCentersDeg();
     std::vector<double> X(N_PHI_BINS), ex(N_PHI_BINS, 0.0);
     for (int i=0;i<N_PHI_BINS;++i) X[i] = PHI[i];
+
     std::error_code ec;
-    std::filesystem::create_directories(out_dir, ec);
+    if (!std::filesystem::create_directories(out_dir, ec) && ec) {
+        fatal(std::string("Failed to create plot directory: ") + out_dir + " (" + ec.message() + ")");
+    }
 
     for (int ix = 0; ix < (int)xB_bins.size(); ++ix) {
         std::set<std::pair<double,double>> q2set, tset;
@@ -213,8 +225,8 @@ static void plot_group_counts(
         std::vector<std::pair<double,double>> Ts(tset.begin(),tset.end());
         if (Q2s.empty()||Ts.empty()) continue;
 
-        const int nrows = Q2s.size();
-        const int ncols = Ts.size();
+        const int nrows = (int)Q2s.size();
+        const int ncols = (int)Ts.size();
         const int W=260*ncols+120, H=220*nrows+140;
 
         TCanvas* c = new TCanvas(Form("c_counts_%s_xB%d",group.c_str(),ix), "", W,H);
@@ -233,10 +245,20 @@ static void plot_group_counts(
             for (int ccol=0;ccol<ncols;++ccol){
                 pGrid->cd(r*ncols+ccol+1);
                 gPad->SetGrid(1,1);
-                TH1* frame=gPad->DrawFrame(0,0,360,1);
+
+                // find max for y-axis
+                double ymax = 1.0;
+                for (int ip=0; ip<N_PHI_BINS; ++ip) {
+                    auto it = table.find({ix,r,ccol,ip});
+                    if (it==table.end()) continue;
+                    ymax = std::max<double>(ymax, it->second.plus);
+                    ymax = std::max<double>(ymax, it->second.minus);
+                }
+                TH1* frame=gPad->DrawFrame(0,0,360, ymax*1.25);
                 frame->GetXaxis()->SetTitle("#phi (deg)");
                 frame->GetYaxis()->SetTitle("Counts");
-                std::vector<double> Yp(N_PHI_BINS,0),Ym(N_PHI_BINS,0);
+
+                std::vector<double> Yp(N_PHI_BINS,0.0), Ym(N_PHI_BINS,0.0);
                 for(int ip=0;ip<N_PHI_BINS;++ip){
                     auto it=table.find({ix,r,ccol,ip});
                     if(it==table.end())continue;
@@ -251,71 +273,132 @@ static void plot_group_counts(
                 gm->Draw("LP SAME");
             }
         }
-        c->SaveAs((out_dir+"/plot_total_counts_"+group+"_xB_"+std::to_string(ix)+".png").c_str());
+        const std::string fpath = out_dir + "/plot_total_counts_" + group + "_xB_" + std::to_string(ix) + ".png";
+        if (!c->SaveAs(fpath.c_str())) {
+            delete c;
+            fatal(std::string("Failed to save plot: ") + fpath);
+        }
         delete c;
     }
 }
 
+} // namespace
+
 // ------------------------------------------------------------
-// Main compute function
+// Main compute function (STRICT)
 // ------------------------------------------------------------
 void compute_total_counts(
     const std::vector<std::string>& periods,
-    const std::vector<std::string>& topologies,
+    const std::vector<std::string>& /*topologies*/,     // not used here
     const std::vector<Binning>& binning_scheme,
-    const std::map<std::string, TTree*>& dataTrees,
-    const std::string& combined_cuts_json,
+    const std::map<std::string, TTree*>& dataTrees,     // keys should match period strings
+    const std::string& /*combined_cuts_json*/,          // not applied here
     const std::string& out_json_path,
     const std::string& out_root_dir)
 {
     namespace fs = std::filesystem;
+
+    // ---- Validate binning axes ----
     const auto xB_bins = uniqueRanges(binning_scheme,'x');
     const auto Q2_bins = uniqueRanges(binning_scheme,'Q');
     const auto t_bins  = uniqueRanges(binning_scheme,'t');
+    if (N_PHI_BINS <= 0) fatal("N_PHI_BINS must be > 0");
+    if (xB_bins.empty() || Q2_bins.empty() || t_bins.empty())
+        fatal("Empty binning axes (xB/Q2/t). Check binning_scheme.");
 
+    // ---- Prepare output dirs ----
+    std::error_code ec;
+    const fs::path plots_root = fs::path(out_root_dir) / "total_counts_plots";
+    const fs::path jsons_dir  = fs::path(out_root_dir) / "jsons";
+    if (!fs::create_directories(plots_root, ec) && ec)
+        fatal(std::string("Cannot create plots root: ") + plots_root.string() + " (" + ec.message() + ")");
+    ec.clear();
+    if (!fs::create_directories(jsons_dir, ec) && ec)
+        fatal(std::string("Cannot create jsons dir: ") + jsons_dir.string() + " (" + ec.message() + ")");
+
+    // ---- Per-period processing ----
     std::map<std::string, std::map<std::tuple<int,int,int,int>, HelCounts>> allGroups;
 
     for (const auto& period : periods) {
-        auto it = dataTrees.find(toLower(period));
-        if (it==dataTrees.end() || !it->second){
-            std::cerr<<"[total_counts][WARN] Missing data tree for "<<period<<"\n";
-            continue;
+        // Tree lookup must succeed (exact match first, then lowercase as a convenience)
+        TTree* t = nullptr;
+        auto it_exact = dataTrees.find(period);
+        auto it_lower = dataTrees.find(toLower(period));
+        if (it_exact != dataTrees.end() && it_exact->second) {
+            t = it_exact->second;
+            std::cout << "[total_counts][INFO] Using tree key \"" << period << "\"\n";
+        } else if (it_lower != dataTrees.end() && it_lower->second) {
+            t = it_lower->second;
+            std::cout << "[total_counts][INFO] Using tree key \"" << toLower(period) << "\" for period \"" << period << "\"\n";
+        } else {
+            fatal(std::string("Missing DVCS data tree for period: ") + period +
+                  " (looked for keys \"" + period + "\" and \"" + toLower(period) + "\")");
         }
-        TTree* t=it->second;
-        int helicity=0; double x=0,Q2=0,t1=0,phi2=0; 
-        t->SetBranchAddress("helicity",&helicity);
-        t->SetBranchAddress("x",&x);
-        t->SetBranchAddress("Q2",&Q2);
-        t->SetBranchAddress("t1",&t1);
-        if(t->GetBranch("phi2")) t->SetBranchAddress("phi2",&phi2);
 
-        std::map<std::tuple<int,int,int,int>,HelCounts> table;
-        const Long64_t nent=t->GetEntries();
-        for(Long64_t i=0;i<nent;++i){
+        // Required branches (phi2 required; no Delta_phi fallback in this program)
+        int    helicity = 0;
+        double x = 0.0, Q2 = 0.0, t1 = 0.0, phi2 = std::numeric_limits<double>::quiet_NaN();
+
+        auto mustBindI = [&](const char* name, int* addr){
+            if (!t->GetBranch(name)) fatal(std::string("Missing integer branch '") + name + "' in period " + period);
+            t->SetBranchAddress(name, addr);
+        };
+        auto mustBindD = [&](const char* name, double* addr){
+            if (!t->GetBranch(name)) fatal(std::string("Missing double branch '") + name + "' in period " + period);
+            t->SetBranchAddress(name, addr);
+        };
+
+        mustBindI("helicity", &helicity);
+        mustBindD("x",       &x);
+        mustBindD("Q2",      &Q2);
+        mustBindD("t1",      &t1);
+        if (!t->GetBranch("phi2"))
+            fatal(std::string("Missing required branch 'phi2' in period ") + period + " (this program does not use Delta_phi)");
+        t->SetBranchAddress("phi2", &phi2);
+
+        std::map<std::tuple<int,int,int,int>, HelCounts> table;
+
+        const Long64_t nent = t->GetEntries();
+        if (nent <= 0) {
+            std::cerr << "[total_counts][WARN] Tree has zero entries for period " << period << "\n";
+        }
+
+        Long64_t filled_events = 0;
+        for (Long64_t i = 0; i < nent; ++i) {
             t->GetEntry(i);
-            if(helicity!=+1 && helicity!=-1) continue;
-            if(!std::isfinite(x)||!std::isfinite(Q2)||!std::isfinite(t1)||!std::isfinite(phi2)) continue;
-            int ix=findBin(x,xB_bins), iQ=findBin(Q2,Q2_bins), itb=findBin(std::fabs(t1),t_bins), ip=phiToBin(phi2);
-            if(ix<0||iQ<0||itb<0||ip<0) continue;
-            auto& hc=table[{ix,iQ,itb,ip}];
-            if(helicity==+1) hc.plus++; else hc.minus++;
+            if (helicity!=+1 && helicity!=-1) continue;
+            if (!std::isfinite(x) || !std::isfinite(Q2) || !std::isfinite(t1) || !std::isfinite(phi2)) continue;
+
+            const int ix  = findBin(x,  xB_bins);
+            const int iQ  = findBin(Q2, Q2_bins);
+            const int itb = findBin(std::fabs(t1), t_bins);
+            const int ip  = phiToBin(phi2);
+
+            if (ix<0 || iQ<0 || itb<0 || ip<0) continue;
+
+            auto& hc = table[{ix,iQ,itb,ip}];
+            if (helicity==+1) hc.plus++; else hc.minus++;
+            ++filled_events;
         }
 
-        allGroups[period]=table;
+        std::cout << "[total_counts][INFO] " << period
+                  << ": entries=" << nent
+                  << ", filled_bins=" << table.size()
+                  << ", accepted_events=" << filled_events << "\n";
 
-        // Plot per group
-        const fs::path plot_dir = fs::path(out_root_dir)/"total_counts_plots"/period;
-        plot_group_counts(period,table,binning_scheme,xB_bins,Q2_bins,t_bins,plot_dir.string());
+        allGroups[period] = std::move(table);
+
+        // Plot per group (strict save inside)
+        const std::string plot_dir = (plots_root / period).string();
+        plot_group_counts(period, allGroups[period], binning_scheme, xB_bins, Q2_bins, t_bins, plot_dir);
     }
 
-    // Write master JSON
+    // ---- Write master JSON ----
     write_total_counts_master_json(out_json_path, allGroups, N_PHI_BINS, xB_bins, Q2_bins, t_bins);
 
-    // Write one flat JSON per group
-    const fs::path per_dir = fs::path(out_root_dir)/"jsons";
-    std::error_code ec; fs::create_directories(per_dir,ec);
-    for(const auto& gkv: allGroups){
-        std::string fname = (per_dir/("total_counts_"+gkv.first+".json")).string();
-        write_total_counts_group_json(fname,gkv.second,N_PHI_BINS,xB_bins,Q2_bins,t_bins);
+    // ---- Write one flat JSON per group ----
+    for (const auto& gkv : allGroups) {
+        const std::string fname = (jsons_dir / ("total_counts_" + gkv.first + ".json")).string();
+        write_total_counts_group_json(fname, gkv.second, N_PHI_BINS, xB_bins, Q2_bins, t_bins);
     }
 }
