@@ -196,6 +196,9 @@ static std::vector<double> phiCentersDeg() {
     return v;
 }
 
+// ------------------------------------------------------------
+// Plotting helper
+// ------------------------------------------------------------
 static void plot_group_counts(
     const std::string& group,
     const std::map<std::tuple<int,int,int,int>, HelCounts>& table,
@@ -205,13 +208,18 @@ static void plot_group_counts(
     const std::vector<std::pair<double,double>>& t_bins,
     const std::string& out_dir)
 {
-    const std::vector<double> PHI = phiCentersDeg();
+    namespace fs = std::filesystem;
+
+    static const std::vector<double> PHI = phiCentersDeg();
     std::vector<double> X(N_PHI_BINS), ex(N_PHI_BINS, 0.0);
     for (int i=0;i<N_PHI_BINS;++i) X[i] = PHI[i];
 
     std::error_code ec;
-    if (!std::filesystem::create_directories(out_dir, ec) && ec) {
-        fatal(std::string("Failed to create plot directory: ") + out_dir + " (" + ec.message() + ")");
+    fs::create_directories(out_dir, ec);
+    if (ec) {
+        std::cerr << "[total_counts][FATAL] Cannot create directory: " << out_dir
+                  << " (" << ec.message() << ")\n";
+        std::exit(EXIT_FAILURE);
     }
 
     for (int ix = 0; ix < (int)xB_bins.size(); ++ix) {
@@ -221,13 +229,15 @@ static void plot_group_counts(
                 q2set.emplace(b.Q2min,b.Q2max);
                 tset.emplace(b.tmin,b.tmax);
             }
+
         std::vector<std::pair<double,double>> Q2s(q2set.begin(),q2set.end());
         std::vector<std::pair<double,double>> Ts(tset.begin(),tset.end());
-        if (Q2s.empty()||Ts.empty()) continue;
+        if (Q2s.empty() || Ts.empty()) continue;
 
-        const int nrows = (int)Q2s.size();
-        const int ncols = (int)Ts.size();
-        const int W=260*ncols+120, H=220*nrows+140;
+        const int nrows = Q2s.size();
+        const int ncols = Ts.size();
+        const int W = 260 * ncols + 120;
+        const int H = 220 * nrows + 140;
 
         TCanvas* c = new TCanvas(Form("c_counts_%s_xB%d",group.c_str(),ix), "", W,H);
         TPad* pTop = new TPad("pTop","pTop",0.0,0.94,1.0,1.0);
@@ -245,39 +255,46 @@ static void plot_group_counts(
             for (int ccol=0;ccol<ncols;++ccol){
                 pGrid->cd(r*ncols+ccol+1);
                 gPad->SetGrid(1,1);
-
-                // find max for y-axis
-                double ymax = 1.0;
-                for (int ip=0; ip<N_PHI_BINS; ++ip) {
-                    auto it = table.find({ix,r,ccol,ip});
-                    if (it==table.end()) continue;
-                    ymax = std::max<double>(ymax, it->second.plus);
-                    ymax = std::max<double>(ymax, it->second.minus);
-                }
-                TH1* frame=gPad->DrawFrame(0,0,360, ymax*1.25);
+                TH1* frame = gPad->DrawFrame(0,0,360,1);
                 frame->GetXaxis()->SetTitle("#phi (deg)");
                 frame->GetYaxis()->SetTitle("Counts");
 
-                std::vector<double> Yp(N_PHI_BINS,0.0), Ym(N_PHI_BINS,0.0);
+                std::vector<double> Yp(N_PHI_BINS,0), Ym(N_PHI_BINS,0);
                 for(int ip=0;ip<N_PHI_BINS;++ip){
-                    auto it=table.find({ix,r,ccol,ip});
-                    if(it==table.end())continue;
-                    Yp[ip]=it->second.plus;
-                    Ym[ip]=it->second.minus;
+                    auto it = table.find({ix,r,ccol,ip});
+                    if(it == table.end()) continue;
+                    Yp[ip] = it->second.plus;
+                    Ym[ip] = it->second.minus;
                 }
-                TGraph* gp=new TGraph(N_PHI_BINS,X.data(),Yp.data());
-                gp->SetMarkerStyle(24); gp->SetMarkerColor(kRed);
+
+                TGraph* gp = new TGraph(N_PHI_BINS,X.data(),Yp.data());
+                gp->SetMarkerStyle(24);
+                gp->SetMarkerColor(kRed);
                 gp->Draw("LP SAME");
-                TGraph* gm=new TGraph(N_PHI_BINS,X.data(),Ym.data());
-                gm->SetMarkerStyle(20); gm->SetMarkerColor(kBlue);
+
+                TGraph* gm = new TGraph(N_PHI_BINS,X.data(),Ym.data());
+                gm->SetMarkerStyle(20);
+                gm->SetMarkerColor(kBlue);
                 gm->Draw("LP SAME");
             }
         }
+
+        // save and verify
         const std::string fpath = out_dir + "/plot_total_counts_" + group + "_xB_" + std::to_string(ix) + ".png";
-        if (!c->SaveAs(fpath.c_str())) {
-            delete c;
-            fatal(std::string("Failed to save plot: ") + fpath);
+        c->SaveAs(fpath.c_str());
+
+        // fail-fast verification
+        std::error_code fec;
+        if (!fs::exists(fpath, fec) || (fs::file_size(fpath, fec) == 0)) {
+            std::ostringstream em;
+            em << "[total_counts][FATAL] Failed to save plot: " << fpath
+               << " (exists=" << fs::exists(fpath)
+               << ", size=" << fs::file_size(fpath, fec)
+               << ", ec=" << (fec ? fec.message() : "ok") << ")";
+            std::cerr << em.str() << std::endl;
+            std::exit(EXIT_FAILURE);
         }
+
         delete c;
     }
 }
