@@ -360,8 +360,11 @@ static void plot_group(
 {
     namespace fs = std::filesystem;
     std::error_code ec;
-    if (!fs::create_directories(out_dir_plots, ec) && ec)
-        fatal(std::string("Failed to create plot directory: ")+out_dir_plots+" ("+ec.message()+")");
+    fs::create_directories(out_dir_plots, ec);
+    if (ec) {
+        fatal(std::string("[pi0corr][FATAL] Cannot create directory: ")
+              + out_dir_plots + " (" + ec.message() + ")");
+    }
 
     const auto PHI = phiCentersDeg();
 
@@ -413,7 +416,6 @@ static void plot_group(
                     BinKey bk(ix, iQ, it, ip);
                     auto it_raw  = raw_totals.find(bk);
                     auto it_corr = corrected.find(bk);
-                    if (it_raw == raw_totals.end() && it_corr == corrected.end()) continue;
 
                     const double Np_raw = (it_raw  != raw_totals.end()) ? (double)it_raw->second.plus  : 0.0;
                     const double Nm_raw = (it_raw  != raw_totals.end()) ? (double)it_raw->second.minus : 0.0;
@@ -443,7 +445,7 @@ static void plot_group(
                 frame->GetYaxis()->CenterTitle();
                 frame->GetXaxis()->SetNdivisions(505);
 
-                // corrected (AFTER)
+                // corrected with errors
                 TGraphErrors* grPc = new TGraphErrors((int)X.size(), X.data(), Yp_corr.data(), eX.data(), eYp_corr.data());
                 TGraphErrors* grMc = new TGraphErrors((int)X.size(), X.data(), Ym_corr.data(), eX.data(), eYm_corr.data());
                 grPc->SetMarkerStyle(20); grPc->SetMarkerSize(1.0); grPc->SetLineWidth(2); grPc->SetMarkerColor(kRed);  grPc->SetLineColor(kRed);
@@ -451,7 +453,7 @@ static void plot_group(
                 grPc->Draw("P SAME");
                 grMc->Draw("P SAME");
 
-                // raw (BEFORE)
+                // raw, dashed gray
                 TGraph* grPr = new TGraph((int)X.size(), X.data(), Yp_raw.data());
                 TGraph* grMr = new TGraph((int)X.size(), X.data(), Ym_raw.data());
                 grPr->SetMarkerStyle(24); grPr->SetMarkerSize(0.9); grPr->SetLineStyle(2); grPr->SetMarkerColor(kGray+2); grPr->SetLineColor(kGray+2);
@@ -470,13 +472,29 @@ static void plot_group(
                 TLatex sub; sub.SetNDC(); sub.SetTextSize(0.045); sub.SetTextAlign(13);
                 sub.DrawLatex(0.14, 0.96,
                     Form("Q^{2} #in [%.3g, %.3g],   -t #in [%.3g, %.3g]",
-                         Q2_slice[r].first, Q2_slice[r].second, t_slice[cc].first, t_slice[cc].second));
+                         Q2_slice[r].first, Q2_slice[r].second,
+                         t_slice[cc].first, t_slice[cc].second));
             }
         }
 
-        std::ostringstream fout;
-        fout << out_dir_plots << "/plot_pi0corr_" << group << "_xB_" << ix << ".png";
-        if (!c->SaveAs(fout.str().c_str())) { delete c; fatal(std::string("Failed to save plot: ")+fout.str()); }
+        // ---- save + verify (fail-fast) ----
+        const std::string fpath =
+            out_dir_plots + "/plot_pi0corr_" + group + "_xB_" + std::to_string(ix) + ".png";
+        c->SaveAs(fpath.c_str());
+
+        std::error_code fec;
+        const bool exists = fs::exists(fpath, fec);
+        const auto size   = exists ? fs::file_size(fpath, fec) : 0ULL;
+        if (!exists || size == 0 || fec) {
+            delete c;
+            std::ostringstream em;
+            em << "[pi0corr][FATAL] Failed to save plot: " << fpath
+               << " (exists=" << std::boolalpha << exists
+               << ", size=" << size
+               << ", ec=" << (fec ? fec.message() : "ok") << ")";
+            fatal(em.str());
+        }
+
         delete c;
     }
 }
