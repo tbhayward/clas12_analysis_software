@@ -521,6 +521,9 @@ static int findIndex(const std::pair<double,double>& r,
     return -1;
 }
 
+// ------------------------------------------------------------
+// Plotting
+// ------------------------------------------------------------
 static void plot_group(
     const std::string& name,
     const std::map<BinKey, BinCounts>& table,
@@ -531,9 +534,14 @@ static void plot_group(
     const std::string& out_dir)
 {
     if (!ENABLE_PLOTS) return;
+    namespace fs = std::filesystem;
+
     std::error_code ec;
-    if (!std::filesystem::create_directories(out_dir, ec) && ec)
-        fatal(std::string("Failed to create plot dir: ")+out_dir+" ("+ec.message()+")");
+    fs::create_directories(out_dir, ec);
+    if (ec) {
+        fatal(std::string("[pi0_contam][FATAL] Cannot create directory: ") + out_dir +
+              " (" + ec.message() + ")");
+    }
 
     const auto PHI = phiCentersDeg();
     std::vector<double> X(N_PHI_BINS), ex(N_PHI_BINS, 0.0);
@@ -559,7 +567,8 @@ static void plot_group(
 
         pTop->cd();
         TLatex head; head.SetNDC(); head.SetTextSize(0.55); head.SetTextAlign(22);
-        head.DrawLatex(0.5, 0.55, Form("%s   x_{B} #in [%.3g, %.3g]", name.c_str(), xB_bins[ix].first, xB_bins[ix].second));
+        head.DrawLatex(0.5, 0.55, Form("%s   x_{B} #in [%.3g, %.3g]", name.c_str(),
+                                       xB_bins[ix].first, xB_bins[ix].second));
 
         for (int r=0; r<nrows; ++r) {
             int iQ = findIndex(Q2s[r], Q2_bins); if (iQ<0) continue;
@@ -606,6 +615,11 @@ static void plot_group(
                 grP->Draw("P SAME");
                 grM->Draw("P SAME");
 
+                TLatex sub; sub.SetNDC(); sub.SetTextSize(0.045); sub.SetTextAlign(13);
+                sub.DrawLatex(0.14, 0.96,
+                    Form("Q^{2} #in [%.3g, %.3g],   -t #in [%.3g, %.3g]",
+                         Q2s[r].first, Q2s[r].second, Ts[cc].first, Ts[cc].second));
+
                 if (r==0 && cc==0) {
                     TLegend* leg = new TLegend(0.58, 0.73, 0.92, 0.92);
                     leg->SetBorderSize(1); leg->SetFillStyle(0); leg->SetTextSize(0.035);
@@ -613,15 +627,26 @@ static void plot_group(
                     leg->AddEntry(grM, "helicity -1", "p");
                     leg->Draw();
                 }
-
-                TLatex sub; sub.SetNDC(); sub.SetTextSize(0.045); sub.SetTextAlign(13);
-                sub.DrawLatex(0.14, 0.96,
-                    Form("Q^{2} #in [%.3g, %.3g],   -t #in [%.3g, %.3g]",
-                         Q2s[r].first, Q2s[r].second, Ts[cc].first, Ts[cc].second));
             }
         }
+
+        // Save and verify on disk (fail-fast)
         const std::string fpath = out_dir + "/plot_contamination_" + name + "_xB_" + std::to_string(ix) + ".png";
-        if (!c->SaveAs(fpath.c_str())) { delete c; fatal(std::string("Failed to save plot: ")+fpath); }
+        c->SaveAs(fpath.c_str());
+
+        std::error_code fec;
+        const bool exists = fs::exists(fpath, fec);
+        const auto size   = exists ? fs::file_size(fpath, fec) : 0ULL;
+        if (!exists || size == 0 || fec) {
+            delete c;
+            std::ostringstream em;
+            em << "[pi0_contam][FATAL] Failed to save plot: " << fpath
+               << " (exists=" << std::boolalpha << exists
+               << ", size=" << size
+               << ", ec=" << (fec ? fec.message() : "ok") << ")";
+            fatal(em.str());
+        }
+
         delete c;
     }
 }
