@@ -80,12 +80,6 @@ struct StyleInit {
 } _style_bootstrap;
 
 // ────────── basic helpers ──────────
-static inline std::string toLower(std::string s){
-    std::transform(s.begin(), s.end(), s.begin(),
-        [](unsigned char c){ return std::tolower(c); });
-    return s;
-}
-
 static inline std::vector<std::pair<double,double>>
 uniqueRanges(const std::vector<Binning>& scheme, char which) {
     std::set<std::pair<double,double>> s;
@@ -618,7 +612,7 @@ void compute_pi0_corrected_counts(
     BinningMeta totals_meta;
     GroupCounts group_counts = load_total_counts_STRICT(total_counts_json, totals_meta);
 
-    // Ensure requested groups exist in totals
+    // Ensure requested groups exist in totals (strict)
     for (const auto& g : dvcs_periods) {
         if (group_counts.find(g) == group_counts.end())
             fatal("Requested group '"+g+"' not present in total_counts.json::groups");
@@ -663,7 +657,7 @@ void compute_pi0_corrected_counts(
         contam_by_group[group] = std::move(ct);
     };
 
-    // Preload contamination for every group present in totals
+    // Preload contamination for every group present in totals (STRICT match)
     for (const auto& gkv : group_counts) {
         const std::string& group = gkv.first;
         if (group == "Spring2018" || group == "Fall2018" || group == "10.6_GeV") {

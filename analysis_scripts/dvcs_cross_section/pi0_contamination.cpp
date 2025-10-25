@@ -4,11 +4,11 @@
 //   c_h = (N_bkg_mc / N_dvcs_data_h) * (N_pi0_data_h / N_pi0_rec_mc)
 // with Poisson error propagation.
 //
-// Inputs (all required per period):
-//   - DVCS DATA trees (helicity)            key: <runTag>
-//   - eπ0 DATA trees (helicity)             key: <runTag>_eppi0
-//   - eπ0 RECO MC trees (no helicity)       key: <runTag>_rec_mc
-//   - eπ0→DVCS BKG MC trees (no helicity)   key: <runTag>_bkg
+// Inputs (all required per period), using canonical keys that match load_trees.cpp:
+//   - DVCS DATA trees (helicity)            key: DVCS_<Period>_<beam>   e.g. DVCS_Sp18_inb
+//   - eπ0 DATA trees (helicity)             key: DVCS_<...>_eppi0       e.g. DVCS_Sp18_inb_eppi0
+//   - eπ0 RECO MC trees (no helicity)       key: DVCS_<...>_rec_mc      e.g. DVCS_Sp18_inb_rec_mc
+//   - eπ0→DVCS BKG MC trees (no helicity)   key: DVCS_<...>_bkg         e.g. DVCS_Sp18_inb_bkg
 //   - combined_cuts.json   (required; 3σ exclusivity cuts on DVCS hypothesis)
 //       * If a cut variable exists in JSON but branch missing in the tree -> FATAL
 //
@@ -86,13 +86,6 @@ static inline bool isFall18(const std::string& p){
     return s.find("fa18") != std::string::npos || s.find("fall2018") != std::string::npos;
 }
 
-// "DVCS_Fa18_inb" → "fa18_inb"
-static inline std::string periodToRunTagKey(const std::string& period){
-    auto pos = period.find('_');
-    if (pos==std::string::npos || pos+1>=period.size()) return toLower(period);
-    return toLower(period.substr(pos+1));
-}
-
 static inline std::string topoToKey(const std::string& topoStr){
     if (topoStr == "(FD,FD)") return "FD_FD";
     if (topoStr == "(CD,FD)") return "CD_FD";
@@ -153,7 +146,7 @@ static int findBin(double v, const std::vector<std::pair<double,double>>& ranges
 // ------------------------------------------------------------
 struct Stats { double mean=0.0, std=0.0; };
 using VarCutMap = std::map<std::string, Stats>;
-using PeriodTopoCuts = std::map<std::string, VarCutMap>;  // key: "DVCS_<TitleCaseRunTag>_<TopoKey>"
+using PeriodTopoCuts = std::map<std::string, VarCutMap>;  // key: "DVCS_<RunTag>_<TopoKey>" (RunTag EXACT, e.g. DVCS_Sp18_inb)
 
 static bool parseNumber(const std::string& s, size_t posColon, double& out){
     size_t a = posColon + 1;
@@ -317,12 +310,12 @@ struct BranchBinderDVCS {
         mustBindD(t,"phi2",&phi2);
 
         // Potential cut vars (must exist if referenced by cuts JSON)
-        if (t->GetBranch("Emiss2"))          t->SetBranchAddress("Emiss2",&Emiss2), boundD.insert("Emiss2");
-        if (t->GetBranch("Mx2"))             t->SetBranchAddress("Mx2",&Mx2), boundD.insert("Mx2");
-        if (t->GetBranch("Mx2_1"))           t->SetBranchAddress("Mx2_1",&Mx2_1), boundD.insert("Mx2_1");
-        if (t->GetBranch("Mx2_2"))           t->SetBranchAddress("Mx2_2",&Mx2_2), boundD.insert("Mx2_2");
+        if (t->GetBranch("Emiss2"))            t->SetBranchAddress("Emiss2",&Emiss2), boundD.insert("Emiss2");
+        if (t->GetBranch("Mx2"))               t->SetBranchAddress("Mx2",&Mx2), boundD.insert("Mx2");
+        if (t->GetBranch("Mx2_1"))             t->SetBranchAddress("Mx2_1",&Mx2_1), boundD.insert("Mx2_1");
+        if (t->GetBranch("Mx2_2"))             t->SetBranchAddress("Mx2_2",&Mx2_2), boundD.insert("Mx2_2");
         if (t->GetBranch("theta_gamma_gamma")) t->SetBranchAddress("theta_gamma_gamma",&theta_gamma_gamma), boundD.insert("theta_gamma_gamma");
-        if (t->GetBranch("xF"))              t->SetBranchAddress("xF",&xF), boundD.insert("xF");
+        if (t->GetBranch("xF"))                t->SetBranchAddress("xF",&xF), boundD.insert("xF");
     }
     std::map<std::string,double> cutVals() const {
         std::map<std::string,double> v;
@@ -713,10 +706,10 @@ void compute_pi0_contamination_helicity(
     const std::vector<std::string>& periods,
     const std::vector<std::string>& topologies,
     const std::vector<Binning>& binning_scheme,
-    const std::map<std::string, TTree*>& dvcsDataTrees,   // key: runTag (e.g. "fa18_inb")
-    const std::map<std::string, TTree*>& eppi0DataTrees,  // key: runTag + "_eppi0"
-    const std::map<std::string, TTree*>& eppi0RecMcTrees, // key: runTag + "_rec_mc"
-    const std::map<std::string, TTree*>& eppi0BkgTrees,   // key: runTag + "_bkg"
+    const std::map<std::string, TTree*>& dvcsDataTrees,   // key: DVCS_<...>
+    const std::map<std::string, TTree*>& eppi0DataTrees,  // key: DVCS_<...>_eppi0
+    const std::map<std::string, TTree*>& eppi0RecMcTrees, // key: DVCS_<...>_rec_mc
+    const std::map<std::string, TTree*>& eppi0BkgTrees,   // key: DVCS_<...>_bkg
     const std::string& combined_cuts_json,
     const std::string& out_root_dir)
 {
@@ -733,12 +726,11 @@ void compute_pi0_contamination_helicity(
     PeriodTopoCuts cuts;
     loadCombinedCuts_STRICT(combined_cuts_json, cuts);
 
+    // EXACT key: if runTag already starts with "DVCS_", do not add; no titlecasing.
     auto dvcsCutsKey = [&](const std::string& runTag, const std::string& topoKey)->std::string {
-        std::string cap = runTag;
-        if (!cap.empty()) cap[0] = std::toupper(static_cast<unsigned char>(cap[0]));
-        for (size_t i=0;i+1<cap.size();++i) if (cap[i]=='_' && i+1<cap.size())
-            cap[i+1] = std::toupper(static_cast<unsigned char>(cap[i+1]));
-        return std::string("DVCS_") + cap + "_" + topoKey;
+        std::string base = runTag;
+        if (base.rfind("DVCS_", 0) != 0) base = std::string("DVCS_") + base;
+        return base + "_" + topoKey;
     };
 
     // Output paths (STRICT)
@@ -758,8 +750,8 @@ void compute_pi0_contamination_helicity(
 
     // ---------- Per-period loops (STRICT) ----------
     for (const auto& period : periods) {
-        const std::string runTag = periodToRunTagKey(period);
-        const std::string key_dvcs     = runTag;               // dvcs data
+        const std::string runTag = periodToRunTagKey(period); // should already be canonical (e.g. DVCS_Sp18_inb)
+        const std::string key_dvcs     = runTag;               // DVCS data
         const std::string key_pi0_data = runTag + "_eppi0";    // eπ0 data
         const std::string key_pi0_reco = runTag + "_rec_mc";   // eπ0 reco MC
         const std::string key_pi0_bkg  = runTag + "_bkg";      // eπ0→DVCS bkg MC
