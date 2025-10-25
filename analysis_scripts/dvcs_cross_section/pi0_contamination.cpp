@@ -170,48 +170,101 @@ static void loadCombinedCuts_STRICT(const std::string& path, PeriodTopoCuts& out
     std::string s((std::istreambuf_iterator<char>(ifs)), std::istreambuf_iterator<char>());
     if (s.empty()) fatal(std::string("Cuts JSON is empty: ") + path);
 
-    size_t pos=0; int blocks=0;
+    auto parse_num_after_colon = [](const std::string& src, size_t colonPos)->double{
+        size_t a = colonPos + 1;
+        while (a < src.size() && std::isspace((unsigned char)src[a])) ++a;
+        size_t b = a;
+        auto isnum=[](char c){ return std::isdigit((unsigned char)c)||c=='-'||c=='+'||c=='.'||c=='e'||c=='E'; };
+        while (b < src.size() && isnum(src[b])) ++b;
+        try { return std::stod(src.substr(a, b-a)); } catch (...) { throw std::runtime_error("nan"); }
+    };
+
+    size_t pos = 0;
+    int blocks = 0;
     while (true) {
-        size_t kS = s.find('"', pos); if (kS==std::string::npos) break;
-        size_t kE = s.find('"', kS+1); if (kE==std::string::npos) break;
+        // Find next top-level DVCS_* key
+        size_t kS = s.find('"', pos); if (kS == std::string::npos) break;
+        size_t kE = s.find('"', kS+1); if (kE == std::string::npos) break;
         std::string key = s.substr(kS+1, kE-kS-1);
+        pos = kE + 1;
 
-        // we only capture DVCS_* blocks
-        if (key.rfind("DVCS_", 0) != 0) { pos = kE + 1; continue; }
+        if (key.rfind("DVCS_", 0) != 0) continue;
 
-        size_t dpos = s.find("\"data\"", kE); if (dpos==std::string::npos) fatal("Malformed cuts JSON near key: " + key);
-        size_t bS = s.find('{', dpos); if (bS==std::string::npos) fatal("Malformed cuts JSON near key: " + key);
+        // Locate the `"data"` object for this block
+        size_t dpos = s.find("\"data\"", kE);
+        if (dpos == std::string::npos) fatal("Malformed cuts JSON near key: " + key);
+        size_t dataObjStart = s.find('{', dpos);
+        if (dataObjStart == std::string::npos) fatal("Malformed cuts JSON near key: " + key);
 
-        int depth=0; size_t i=bS;
-        for (; i<s.size(); ++i) { if(s[i]=='{') depth++; else if(s[i]=='}'){ depth--; if(!depth){ ++i; break; } } }
-        if (depth!=0) fatal("Unbalanced braces in cuts JSON");
-        std::string data = s.substr(bS, i-bS);
+        // Extract the full braces-balanced `"data"` object
+        int depth = 0;
+        size_t i = dataObjStart;
+        for (; i < s.size(); ++i) {
+            if (s[i] == '{') depth++;
+            else if (s[i] == '}') { depth--; if (!depth) { ++i; break; } }
+        }
+        if (depth != 0) fatal("Unbalanced braces in cuts JSON (data block for key " + key + ")");
+        std::string data = s.substr(dataObjStart, i - dataObjStart);
 
         VarCutMap cuts;
-        size_t vpos=0; int vars=0;
+        // Walk the top-level members of `"data"`: "<var>": { "mean": ..., "std": ... }
+        size_t p = 0;
         while (true) {
-            size_t vS = data.find('"', vpos); if (vS==std::string::npos) break;
-            size_t vE = data.find('"', vS+1); if (vE==std::string::npos) fatal("Malformed variable name in cuts JSON");
-            std::string var = data.substr(vS+1, vE-vS-1);
+            // find next quoted name
+            size_t vS = data.find('"', p);
+            if (vS == std::string::npos) break;
+            size_t vE = data.find('"', vS+1);
+            if (vE == std::string::npos) fatal("Malformed variable name in cuts JSON (key " + key + ")");
+            std::string var = data.substr(vS+1, vE - vS - 1);
 
-            size_t pm = data.find("\"mean\"", vE); if (pm==std::string::npos) fatal("Missing 'mean' for var " + var);
-            size_t cm = data.find(':', pm); if (cm==std::string::npos) fatal("Malformed 'mean' for var " + var);
-            double m=0.0; if (!parseNumber(data, cm, m)) fatal("Non-numeric 'mean' for var " + var);
+            // after name, expect ':' then an object { ... } for that variable
+            size_t colon = data.find(':', vE+1);
+            if (colon == std::string::npos) fatal("Malformed entry for var " + var + " (key " + key + ")");
+            size_t objStart = data.find('{', colon+1);
+            if (objStart == std::string::npos) {
+                // If the next token isn’t an object, we likely hit an inner quoted token like "mean"
+                // Advance and continue searching for the next top-level entry
+                p = vE + 1;
+                continue;
+            }
 
-            size_t ps = data.find("\"std\"", vE); if (ps==std::string::npos) fatal("Missing 'std' for var " + var);
-            size_t cs = data.find(':', ps); if (cs==std::string::npos) fatal("Malformed 'std' for var " + var);
-            double sd=0.0; if (!parseNumber(data, cs, sd)) fatal("Non-numeric 'std' for var " + var);
+            // Extract braces-balanced inner object for this variable
+            int d2 = 0;
+            size_t j = objStart;
+            for (; j < data.size(); ++j) {
+                if (data[j] == '{') d2++;
+                else if (data[j] == '}') { d2--; if (!d2) { ++j; break; } }
+            }
+            if (d2 != 0) fatal("Unbalanced braces in var object for " + var + " (key " + key + ")");
+            std::string varObj = data.substr(objStart, j - objStart);
 
-            cuts[var] = Stats{m, sd};
-            vpos = vE + 1;
-            ++vars;
+            // Pull "mean" and "std" inside varObj
+            size_t pm = varObj.find("\"mean\"");
+            if (pm == std::string::npos) fatal("Missing 'mean' for var " + var + " (key " + key + ")");
+            size_t cm = varObj.find(':', pm);
+            if (cm == std::string::npos) fatal("Malformed 'mean' for var " + var + " (key " + key + ")");
+
+            size_t ps = varObj.find("\"std\"");
+            if (ps == std::string::npos) fatal("Missing 'std' for var " + var + " (key " + key + ")");
+            size_t cs = varObj.find(':', ps);
+            if (cs == std::string::npos) fatal("Malformed 'std' for var " + var + " (key " + key + ")");
+
+            double mean = 0.0, stdev = 0.0;
+            try { mean = parse_num_after_colon(varObj, cm); } catch(...) { fatal("Non-numeric 'mean' for var " + var + " (key " + key + ")"); }
+            try { stdev = parse_num_after_colon(varObj, cs); } catch(...) { fatal("Non-numeric 'std' for var " + var + " (key " + key + ")"); }
+
+            cuts[var] = Stats{mean, stdev};
+
+            // advance after this variable's object
+            p = j;
         }
-        if (vars==0) fatal("No variables parsed in cuts block for key " + key);
-        out[key] = cuts;
+
+        if (cuts.empty()) fatal("No variables parsed in cuts block for key " + key);
+        out[key] = std::move(cuts);
         ++blocks;
-        pos = kE + 1;
     }
-    if (blocks==0) fatal("No DVCS_* blocks found in cuts JSON");
+
+    if (blocks == 0) fatal("No DVCS_* blocks found in cuts JSON");
 }
 
 static inline bool within3Sigma(double v, const Stats& s){
