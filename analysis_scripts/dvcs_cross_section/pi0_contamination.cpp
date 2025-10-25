@@ -750,7 +750,7 @@ void compute_pi0_contamination_helicity(
 
     // ---------- Per-period loops (STRICT) ----------
     for (const auto& period : periods) {
-        const std::string runTag = periodToRunTagKey(period); // should already be canonical (e.g. DVCS_Sp18_inb)
+        const std::string runTag = period; // period strings are already canonical (e.g. "sp18_inb") // should already be canonical (e.g. DVCS_Sp18_inb)
         const std::string key_dvcs     = runTag;               // DVCS data
         const std::string key_pi0_data = runTag + "_eppi0";    // eπ0 data
         const std::string key_pi0_reco = runTag + "_rec_mc";   // eπ0 reco MC
