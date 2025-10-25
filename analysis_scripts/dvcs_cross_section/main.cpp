@@ -72,8 +72,8 @@ int main(int argc, char* argv[]) {
     const std::string analysis_type = "dvcs";
     const std::string output_json_means = "output/jsons/bin_means_global.json";
 
-    // calculate_bin_means(dvcs_periods, topologies, analysis_type, binning_scheme, output_json_means, 
-    //     dataTrees);
+    calculate_bin_means(dvcs_periods, topologies, analysis_type, binning_scheme, output_json_means, 
+        dataTrees);
 
     // // --------- Total counts after exclusivity cuts (by helicity) ----------
     const std::string cuts_json_path   = "output/jsons/combined_cuts.json"; 
