@@ -3,6 +3,7 @@
 #include <TTree.h>
 #include <algorithm>
 #include <cmath>
+#include <cctype>
 #include <fstream>
 #include <iomanip>
 #include <iostream>
@@ -69,6 +70,27 @@ static int findBin(double v, const std::vector<std::pair<double,double>>& ranges
     for (int i = 0; i < static_cast<int>(ranges.size()); ++i)
         if (v >= ranges[i].first && v < ranges[i].second) return i;
     return -1;
+}
+
+// Canonicalize period -> DVCS_<CapitalizedPeriod> (e.g., "sp18_inb" -> "DVCS_Sp18_inb")
+static std::string periodToDVCSKey(const std::string& period) {
+    std::string s = period;
+    // lower-case everything first
+    std::transform(s.begin(), s.end(), s.begin(),
+                   [](unsigned char c){ return static_cast<char>(std::tolower(c)); });
+    // capitalize first and any char after '_'
+    bool cap = true;
+    for (char& c : s) {
+        if (cap && std::isalpha(static_cast<unsigned char>(c))) {
+            c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
+            cap = false;
+        } else if (c == '_') {
+            cap = true;
+        } else {
+            cap = false;
+        }
+    }
+    return "DVCS_" + s;
 }
 
 // ---------------- branch binder ----------------
@@ -157,9 +179,11 @@ void calculate_bin_means(
 
     // ---------------- Loop over periods ----------------
     for (const auto& period : dvcs_periods) {
-        auto itTree = dataTrees.find(period);
+        const std::string key = periodToDVCSKey(period); // e.g. "sp18_inb" -> "DVCS_Sp18_inb"
+
+        auto itTree = dataTrees.find(key);
         if (itTree == dataTrees.end() || !itTree->second) {
-            std::cerr << "[bin_means][FATAL] Missing data tree for period: '" << period << "'\n";
+            std::cerr << "[bin_means][FATAL] Missing data tree for period: '" << key << "'\n";
             std::cerr << "Available keys:";
             for (const auto& kv : dataTrees) std::cerr << " " << kv.first;
             std::cerr << std::endl;
@@ -170,13 +194,13 @@ void calculate_bin_means(
         BranchBinderBM b; b.bind(t);
 
         if (!b.readyForCuts()) {
-            std::cerr << "[bin_means][FATAL] Tree for '" << period
+            std::cerr << "[bin_means][FATAL] Tree for '" << key
                       << "' lacks cut branches (detector1/2,t1,open_angle_ep2,pTmiss)."
                       << std::endl;
             std::exit(EXIT_FAILURE);
         }
         if (!b.readyForBinning()) {
-            std::cerr << "[bin_means][FATAL] Tree for '" << period
+            std::cerr << "[bin_means][FATAL] Tree for '" << key
                       << "' lacks binning vars (x,Q2,phi2/Delta_phi)." << std::endl;
             std::exit(EXIT_FAILURE);
         }
