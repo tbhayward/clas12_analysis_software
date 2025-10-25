@@ -61,8 +61,12 @@ int main(int argc, char* argv[]) {
 
     // --------- Global bin-averaged kinematics ----------
     std::vector<std::string> dvcs_periods = {
-        "DVCS_Fa18_inb", "DVCS_Fa18_out", "DVCS_Sp19_inb",
-        "DVCS_Sp18_out", "DVCS_Sp18_inb", "DVCS_Fa18_inb_supp"
+        "fa18_inb",
+        "fa18_out",
+        "fa18_inb_supp",
+        "sp18_inb",
+        "sp18_out",
+        "sp19_inb"
     };
     std::vector<std::string> topologies = {"(FD,FD)", "(CD,FD)", "(CD,FT)"};
     const std::string analysis_type = "dvcs";
