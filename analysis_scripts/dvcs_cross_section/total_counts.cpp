@@ -337,77 +337,62 @@ void compute_total_counts(
     std::map<std::string, std::map<std::tuple<int,int,int,int>, HelCounts>> allGroups;
 
     for (const auto& period : periods) {
-        // Tree lookup must succeed (exact match first, then lowercase as a convenience)
-        TTree* t = nullptr;
-        auto it_exact = dataTrees.find(period);
-        auto it_lower = dataTrees.find(toLower(period));
-        if (it_exact != dataTrees.end() && it_exact->second) {
-            t = it_exact->second;
-            std::cout << "[total_counts][INFO] Using tree key \"" << period << "\"\n";
-        } else if (it_lower != dataTrees.end() && it_lower->second) {
-            t = it_lower->second;
-            std::cout << "[total_counts][INFO] Using tree key \"" << toLower(period) << "\" for period \"" << period << "\"\n";
-        } else {
-            fatal(std::string("Missing DVCS data tree for period: ") + period +
-                  " (looked for keys \"" + period + "\" and \"" + toLower(period) + "\")");
+        // Strict: require exact key match in dataTrees
+        auto it = dataTrees.find(period);
+        if (it == dataTrees.end() || !it->second) {
+            // Build a helpful message listing exactly what keys exist
+            std::ostringstream avail;
+            avail << "{ ";
+            bool first = true;
+            for (const auto& kv : dataTrees) {
+                if (!first) avail << ", ";
+                first = false;
+                avail << '"' << kv.first << '"';
+            }
+            avail << " }";
+            fatal(std::string("[total_counts] Missing DVCS data tree for period (exact match required): ")
+                  + period + ". Available keys: " + avail.str());
         }
 
-        // Required branches (phi2 required; no Delta_phi fallback in this program)
-        int    helicity = 0;
-        double x = 0.0, Q2 = 0.0, t1 = 0.0, phi2 = std::numeric_limits<double>::quiet_NaN();
+        TTree* t = it->second;
 
-        auto mustBindI = [&](const char* name, int* addr){
-            if (!t->GetBranch(name)) fatal(std::string("Missing integer branch '") + name + "' in period " + period);
-            t->SetBranchAddress(name, addr);
-        };
-        auto mustBindD = [&](const char* name, double* addr){
-            if (!t->GetBranch(name)) fatal(std::string("Missing double branch '") + name + "' in period " + period);
-            t->SetBranchAddress(name, addr);
-        };
+        // Strict: require phi2 branch
+        int helicity = 0; 
+        double x = 0, Q2 = 0, t1 = 0, phi2 = std::numeric_limits<double>::quiet_NaN();
 
-        mustBindI("helicity", &helicity);
-        mustBindD("x",       &x);
-        mustBindD("Q2",      &Q2);
-        mustBindD("t1",      &t1);
-        if (!t->GetBranch("phi2"))
-            fatal(std::string("Missing required branch 'phi2' in period ") + period + " (this program does not use Delta_phi)");
+        t->SetBranchAddress("helicity", &helicity);
+        t->SetBranchAddress("x", &x);
+        t->SetBranchAddress("Q2", &Q2);
+        t->SetBranchAddress("t1", &t1);
+        if (!t->GetBranch("phi2")) {
+            fatal(std::string("[total_counts] Required branch 'phi2' missing in tree for period '")
+                  + period + "'");
+        }
         t->SetBranchAddress("phi2", &phi2);
 
         std::map<std::tuple<int,int,int,int>, HelCounts> table;
-
         const Long64_t nent = t->GetEntries();
-        if (nent <= 0) {
-            std::cerr << "[total_counts][WARN] Tree has zero entries for period " << period << "\n";
-        }
-
-        Long64_t filled_events = 0;
         for (Long64_t i = 0; i < nent; ++i) {
             t->GetEntry(i);
-            if (helicity!=+1 && helicity!=-1) continue;
+            if (helicity != +1 && helicity != -1) continue;
             if (!std::isfinite(x) || !std::isfinite(Q2) || !std::isfinite(t1) || !std::isfinite(phi2)) continue;
 
-            const int ix  = findBin(x,  xB_bins);
-            const int iQ  = findBin(Q2, Q2_bins);
-            const int itb = findBin(std::fabs(t1), t_bins);
-            const int ip  = phiToBin(phi2);
+            int ix  = findBin(x, xB_bins);
+            int iQ  = findBin(Q2, Q2_bins);
+            int itb = findBin(std::fabs(t1), t_bins);
+            int ip  = phiToBin(phi2);
+            if (ix < 0 || iQ < 0 || itb < 0 || ip < 0) continue;
 
-            if (ix<0 || iQ<0 || itb<0 || ip<0) continue;
-
-            auto& hc = table[{ix,iQ,itb,ip}];
-            if (helicity==+1) hc.plus++; else hc.minus++;
-            ++filled_events;
+            auto& hc = table[{ix, iQ, itb, ip}];
+            if (helicity == +1) hc.plus++; else hc.minus++;
         }
 
-        std::cout << "[total_counts][INFO] " << period
-                  << ": entries=" << nent
-                  << ", filled_bins=" << table.size()
-                  << ", accepted_events=" << filled_events << "\n";
+        // Keep the exact requested period string as the group key
+        allGroups[period] = table;
 
-        allGroups[period] = std::move(table);
-
-        // Plot per group (strict save inside)
-        const std::string plot_dir = (plots_root / period).string();
-        plot_group_counts(period, allGroups[period], binning_scheme, xB_bins, Q2_bins, t_bins, plot_dir);
+        // Plot per group to a directory named exactly by the requested period
+        const fs::path plot_dir = fs::path(out_root_dir) / "total_counts_plots" / period;
+        plot_group_counts(period, table, binning_scheme, xB_bins, Q2_bins, t_bins, plot_dir.string());
     }
 
     // ---- Write master JSON ----
