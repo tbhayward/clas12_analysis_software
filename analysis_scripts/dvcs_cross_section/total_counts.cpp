@@ -6,7 +6,7 @@
 // - Writes:
 //     • <out_root_dir>/jsons/total_counts.json             (master, nested "groups")
 //     • <out_root_dir>/jsons/total_counts_<group>.json     (flat per-group file)
-// - Produces per-group φ-binned plots under <out_root_dir>/total_counts_plots/<group>/
+// - Produces per-group phi-binned plots under <out_root_dir>/total_counts_plots/<group>/
 //
 // Per-group JSON:
 // {
@@ -48,11 +48,11 @@
 #include <tuple>
 #include <vector>
 
+namespace {
+
 // ------------------------------------------------------------
 // Helpers and constants
 // ------------------------------------------------------------
-namespace {
-
 static constexpr int N_PHI_BINS = 12;
 static constexpr double TWO_PI  = 2.0 * M_PI;
 
@@ -65,6 +65,18 @@ static inline std::string toLower(std::string s) {
     std::transform(s.begin(), s.end(), s.begin(),
                    [](unsigned char c){ return std::tolower(c); });
     return s;
+}
+
+// Canonicalize period -> DVCS_<CapitalizedPeriod head only>
+// e.g., "sp18_inb" -> "DVCS_Sp18_inb", "fa18_inb_supp" -> "DVCS_Fa18_inb_supp"
+static std::string periodToDVCSKey(const std::string& period) {
+    std::string s = period;
+    std::transform(s.begin(), s.end(), s.begin(),
+                   [](unsigned char c){ return static_cast<char>(std::tolower(c)); });
+    if (!s.empty() && std::isalpha(static_cast<unsigned char>(s[0]))) {
+        s[0] = static_cast<char>(std::toupper(static_cast<unsigned char>(s[0])));
+    }
+    return "DVCS_" + s;
 }
 
 static inline double wrapToTwoPi(double phi) {
@@ -196,9 +208,6 @@ static std::vector<double> phiCentersDeg() {
     return v;
 }
 
-// ------------------------------------------------------------
-// Plotting helper
-// ------------------------------------------------------------
 static void plot_group_counts(
     const std::string& group,
     const std::map<std::tuple<int,int,int,int>, HelCounts>& table,
@@ -234,8 +243,8 @@ static void plot_group_counts(
         std::vector<std::pair<double,double>> Ts(tset.begin(),tset.end());
         if (Q2s.empty() || Ts.empty()) continue;
 
-        const int nrows = Q2s.size();
-        const int ncols = Ts.size();
+        const int nrows = (int)Q2s.size();
+        const int ncols = (int)Ts.size();
         const int W = 260 * ncols + 120;
         const int H = 220 * nrows + 140;
 
@@ -308,7 +317,7 @@ void compute_total_counts(
     const std::vector<std::string>& periods,
     const std::vector<std::string>& /*topologies*/,     // not used here
     const std::vector<Binning>& binning_scheme,
-    const std::map<std::string, TTree*>& dataTrees,     // keys should match period strings
+    const std::map<std::string, TTree*>& dataTrees,     // keys are DVCS_* names
     const std::string& /*combined_cuts_json*/,          // not applied here
     const std::string& out_json_path,
     const std::string& out_root_dir)
@@ -337,10 +346,11 @@ void compute_total_counts(
     std::map<std::string, std::map<std::tuple<int,int,int,int>, HelCounts>> allGroups;
 
     for (const auto& period : periods) {
-        // Strict: require exact key match in dataTrees
-        auto it = dataTrees.find(period);
+        // Map requested period -> DVCS_* key for the tree lookup
+        const std::string dvcsKey = periodToDVCSKey(period);
+
+        auto it = dataTrees.find(dvcsKey);
         if (it == dataTrees.end() || !it->second) {
-            // Build a helpful message listing exactly what keys exist
             std::ostringstream avail;
             avail << "{ ";
             bool first = true;
@@ -350,8 +360,8 @@ void compute_total_counts(
                 avail << '"' << kv.first << '"';
             }
             avail << " }";
-            fatal(std::string("[total_counts] Missing DVCS data tree for period (exact match required): ")
-                  + period + ". Available keys: " + avail.str());
+            fatal(std::string("[total_counts] Missing DVCS data tree for period: ")
+                  + period + " (looked for key '" + dvcsKey + "'). Available keys: " + avail.str());
         }
 
         TTree* t = it->second;
@@ -366,7 +376,7 @@ void compute_total_counts(
         t->SetBranchAddress("t1", &t1);
         if (!t->GetBranch("phi2")) {
             fatal(std::string("[total_counts] Required branch 'phi2' missing in tree for period '")
-                  + period + "'");
+                  + period + "' (key '" + dvcsKey + "')");
         }
         t->SetBranchAddress("phi2", &phi2);
 
@@ -387,7 +397,7 @@ void compute_total_counts(
             if (helicity == +1) hc.plus++; else hc.minus++;
         }
 
-        // Keep the exact requested period string as the group key
+        // Keep the original requested period as the group key (matches contamination/correction stages)
         allGroups[period] = table;
 
         // Plot per group to a directory named exactly by the requested period
@@ -400,7 +410,7 @@ void compute_total_counts(
 
     // ---- Write one flat JSON per group ----
     for (const auto& gkv : allGroups) {
-        const std::string fname = (jsons_dir / ("total_counts_" + gkv.first + ".json")).string();
+        const std::string fname = (std::filesystem::path(out_root_dir) / "jsons" / ("total_counts_" + gkv.first + ".json")).string();
         write_total_counts_group_json(fname, gkv.second, N_PHI_BINS, xB_bins, Q2_bins, t_bins);
     }
 }
