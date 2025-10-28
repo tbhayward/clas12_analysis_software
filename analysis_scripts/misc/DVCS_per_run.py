@@ -43,8 +43,8 @@ for run_num, count in zip(unique_runs, event_counts):
             events_per_nC.append(events_per_nc_value)
             valid_runs.append(run_num)
             
-            # Check if value is less than 0.8 and print run number
-            if events_per_nc_value < 0.8:
+            # Check if value is less than 0.08 and print run number
+            if events_per_nc_value < 0.08:
                 print(f"Run {run_num}: {events_per_nc_value:.4f} events/nC")
         else:
             print(f"Warning: Run {run_num} has zero charge, skipping")
