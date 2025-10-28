@@ -32,7 +32,7 @@ unique_runs, event_counts = np.unique(runnum_data, return_counts=True)
 events_per_nC = []
 valid_runs = []
 
-print("Runs with events/nC < 0.8:")
+print("Runs with events/nC < 0.08:")
 print("-" * 30)
 
 for run_num, count in zip(unique_runs, event_counts):
