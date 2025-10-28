@@ -37,6 +37,8 @@
 #include <TStyle.h>
 #include <TROOT.h>
 #include <TError.h>
+#include <TBranch.h>
+#include <TLeaf.h>
 
 #include <algorithm>
 #include <cctype>
@@ -253,19 +255,18 @@ static std::vector<std::string> requiredCutBranches(const PeriodCuts& cuts) {
 // SetBranchAddress helpers
 struct BranchBinding {
     std::string name;
-    double as_double = std::numeric_limits<double>::quiet_NaN(); // numeric readout
-    long long as_ll  = 0;                                        // int-like readout
-    // We will always bind to a double slot if the branch is a floating numeric,
-    // and to as_ll if it is an integer-like. We detect type from leaf type code.
+    double     as_double = std::numeric_limits<double>::quiet_NaN();
+    long long  as_ll     = 0;
+    bool       is_int    = false; // set at bind time
 };
 
 static bool isIntegerLeaf(TLeaf* leaf) {
     if (!leaf) return false;
     const char* t = leaf->GetTypeName();
-    // ROOT type names; this is a practical set (adapt if needed)
-    return std::string(t) == "Int_t"  || std::string(t) == "UInt_t" ||
-           std::string(t) == "Short_t"|| std::string(t) == "UShort_t" ||
-           std::string(t) == "Char_t" || std::string(t) == "UChar_t" ||
+    // ROOT type names; extend if needed
+    return std::string(t) == "Int_t"    || std::string(t) == "UInt_t"   ||
+           std::string(t) == "Short_t"  || std::string(t) == "UShort_t" ||
+           std::string(t) == "Char_t"   || std::string(t) == "UChar_t"  ||
            std::string(t) == "Long64_t" || std::string(t) == "ULong64_t";
 }
 
@@ -275,6 +276,8 @@ static void bindRequiredBranches_STRICT(
     std::unordered_map<std::string, BranchBinding>& bindings)
 {
     bindings.clear();
+    bindings.reserve(branch_names.size()); // avoid rehash so stored addresses stay valid during binding
+
     for (const auto& bname : branch_names) {
         TBranch* b = t->GetBranch(bname.c_str());
         if (!b) fatal("Required branch for cuts missing: '" + bname + "'");
@@ -283,18 +286,20 @@ static void bindRequiredBranches_STRICT(
         if (!leaf) {
             // try the first leaf if multiple
             leaf = (TLeaf*)b->GetListOfLeaves()->First();
+            if (!leaf) fatal("Branch has no leaves (unexpected): '" + bname + "'");
         }
 
-        BranchBinding bb;
-        bb.name = bname;
+        // Insert default element, then bind to its fields (addresses remain valid as long as we do not rehash)
+        auto [it, inserted] = bindings.emplace(bname, BranchBinding{});
+        BranchBinding& bb = it->second;
+        bb.name   = bname;
+        bb.is_int = isIntegerLeaf(leaf);
 
-        if (isIntegerLeaf(leaf)) {
+        if (bb.is_int) {
             t->SetBranchAddress(bname.c_str(), &bb.as_ll);
         } else {
             t->SetBranchAddress(bname.c_str(), &bb.as_double);
         }
-
-        bindings[bname] = bb;
     } // #endfor
 }
 
@@ -306,22 +311,20 @@ static inline bool passBaseCuts(const std::vector<BaseCut>& baseCuts,
         if (it == B.end()) return false; // strict
         const BranchBinding& bb = it->second;
 
-        // Decide whether to read as integer or double, based on which field has been touched
-        const bool usedInt = (bb.as_ll != 0 || (bb.as_double != bb.as_double /*NaN*/)); // heuristic
         if (c.has_eq) {
-            long long v = usedInt ? bb.as_ll : (long long)std::llround(bb.as_double);
+            long long v = bb.is_int ? bb.as_ll : (long long)std::llround(bb.as_double);
             if (v != c.eq) return false;
         }
         if (c.has_neq) {
-            long long v = usedInt ? bb.as_ll : (long long)std::llround(bb.as_double);
+            long long v = bb.is_int ? bb.as_ll : (long long)std::llround(bb.as_double);
             if (v == c.neq) return false;
         }
         if (c.has_min) {
-            double v = usedInt ? (double)bb.as_ll : bb.as_double;
+            double v = bb.is_int ? (double)bb.as_ll : bb.as_double;
             if (!(v >= c.vmin)) return false;
         }
         if (c.has_max) {
-            double v = usedInt ? (double)bb.as_ll : bb.as_double;
+            double v = bb.is_int ? (double)bb.as_ll : bb.as_double;
             if (!(v <= c.vmax)) return false;
         }
     } // #endfor
@@ -335,7 +338,7 @@ static inline bool passSigmaCuts(const std::vector<SigmaCut>& sigmaCuts,
         const auto it = B.find(c.branch);
         if (it == B.end()) return false; // strict
         const BranchBinding& bb = it->second;
-        const double v = std::isfinite(bb.as_double) ? bb.as_double : (double)bb.as_ll; // prefer double
+        const double v = bb.is_int ? (double)bb.as_ll : bb.as_double;
         const double lo = c.center - c.nsigma * c.sigma;
         const double hi = c.center + c.nsigma * c.sigma;
 
@@ -652,7 +655,6 @@ void compute_total_counts(
             if (ix < 0 || iQ < 0 || itb < 0 || ip < 0) continue;
 
             // Apply exclusivity cuts (base + 3-sigma), strict
-            // cutBindings have been updated by SetBranchAddress and GetEntry.
             if (!passes3SigmaCuts_STRICT(cuts, cutBindings)) continue;
 
             // Count
