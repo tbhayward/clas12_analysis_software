@@ -1,16 +1,21 @@
 // pi0_contamination.cpp
 // ------------------------------------------------------------
-// Helicity-resolved π0 contamination estimator (STRICT, fail-fast):
+// Helicity-resolved pi0 contamination estimator (STRICT, fail-fast):
 //   c_h = (N_bkg_mc / N_dvcs_data_h) * (N_pi0_data_h / N_pi0_rec_mc)
 // with Poisson error propagation.
 //
-// Inputs (all required per period), using canonical keys that match load_trees.cpp:
-//   - DVCS DATA trees (helicity)            key: DVCS_<Period>_<beam>   e.g. DVCS_Sp18_inb
-//   - eπ0 DATA trees (helicity)             key: DVCS_<...>_eppi0       e.g. DVCS_Sp18_inb_eppi0
-//   - eπ0 RECO MC trees (no helicity)       key: DVCS_<...>_rec_mc      e.g. DVCS_Sp18_inb_rec_mc
-//   - eπ0→DVCS BKG MC trees (no helicity)   key: DVCS_<...>_bkg         e.g. DVCS_Sp18_inb_bkg
-//   - combined_cuts.json   (required; 3σ exclusivity cuts on DVCS hypothesis)
-//       * If a cut variable exists in JSON but branch missing in the tree -> FATAL
+// Inputs (all required per period), using keys loaded by load_trees.cpp:
+//   - DVCS DATA trees (helicity)
+//       possible keys tried: <runTag>, DVCS_<runTag>, <TitleCase(runTag)>, DVCS_<TitleCase(runTag)>
+//   - epi0 DATA trees (helicity)
+//       keys tried with suffix "_eppi0" analogously
+//   - epi0 RECO MC (no helicity)
+//       keys tried with suffix "_rec_mc" analogously
+//   - epi0->DVCS BKG MC (no helicity)
+//       keys tried with suffix "_bkg" analogously
+//   - combined_cuts.json   (required; 3sigma exclusivity cuts on DVCS hypothesis)
+//       cuts blocks searched under:
+//         DVCS_<runTag>_<TopoKey> and DVCS_<TitleCase(runTag)>_<TopoKey>
 //
 // Outputs:
 //   (1) Per-period JSONs:  <out_root_dir>/jsons/contamination/contamination_<period>.json
@@ -19,7 +24,7 @@
 //
 // Notes:
 //   - Uses only phi2 (no Delta_phi fallback).
-//   - Binning is (xB, Q², |t|, φ) from provided binning scheme.
+//   - Binning is (xB, Q2, |t|, phi) from provided binning scheme.
 //   - Any missing lookup / I/O failure is FATAL.
 // ------------------------------------------------------------
 
@@ -77,6 +82,23 @@ static inline std::string toLower(std::string s){
                    [](unsigned char c){ return std::tolower(c); });
     return s;
 }
+
+static inline std::string titleCaseRunTag(std::string s){
+    // Make first character and any character following '_' uppercase; leave others as-is.
+    bool up = true;
+    for (char& c : s) {
+        if (up && std::isalpha(static_cast<unsigned char>(c))) {
+            c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
+            up = false;
+        } else if (c == '_') {
+            up = true;
+        } else {
+            up = false;
+        }
+    }
+    return s;
+}
+
 static inline bool isSpring18(const std::string& p){
     std::string s = toLower(p);
     return s.find("sp18") != std::string::npos || s.find("spring2018") != std::string::npos;
@@ -142,11 +164,11 @@ static int findBin(double v, const std::vector<std::pair<double,double>>& ranges
 }
 
 // ------------------------------------------------------------
-// 3σ cuts loader (STRICT)
+// 3sigma cuts loader (STRICT)
 // ------------------------------------------------------------
 struct Stats { double mean=0.0, std=0.0; };
 using VarCutMap = std::map<std::string, Stats>;
-using PeriodTopoCuts = std::map<std::string, VarCutMap>;  // key: "DVCS_<RunTag>_<TopoKey>" (RunTag EXACT, e.g. DVCS_Sp18_inb)
+using PeriodTopoCuts = std::map<std::string, VarCutMap>;  // key: "DVCS_<RunTag>_<TopoKey>"
 
 static bool parseNumber(const std::string& s, size_t posColon, double& out){
     size_t a = posColon + 1;
@@ -175,7 +197,6 @@ static void loadCombinedCuts_STRICT(const std::string& path, PeriodTopoCuts& out
     size_t pos = 0;
     int blocks = 0;
     while (true) {
-        // Find next top-level DVCS_* key
         size_t kS = s.find('"', pos); if (kS == std::string::npos) break;
         size_t kE = s.find('"', kS+1); if (kE == std::string::npos) break;
         std::string key = s.substr(kS+1, kE-kS-1);
@@ -183,13 +204,11 @@ static void loadCombinedCuts_STRICT(const std::string& path, PeriodTopoCuts& out
 
         if (key.rfind("DVCS_", 0) != 0) continue;
 
-        // Locate the `"data"` object for this block
         size_t dpos = s.find("\"data\"", kE);
         if (dpos == std::string::npos) fatal("Malformed cuts JSON near key: " + key);
         size_t dataObjStart = s.find('{', dpos);
         if (dataObjStart == std::string::npos) fatal("Malformed cuts JSON near key: " + key);
 
-        // Extract the full braces-balanced `"data"` object
         int depth = 0;
         size_t i = dataObjStart;
         for (; i < s.size(); ++i) {
@@ -200,28 +219,19 @@ static void loadCombinedCuts_STRICT(const std::string& path, PeriodTopoCuts& out
         std::string data = s.substr(dataObjStart, i - dataObjStart);
 
         VarCutMap cuts;
-        // Walk the top-level members of `"data"`: "<var>": { "mean": ..., "std": ... }
         size_t p = 0;
         while (true) {
-            // find next quoted name
             size_t vS = data.find('"', p);
             if (vS == std::string::npos) break;
             size_t vE = data.find('"', vS+1);
             if (vE == std::string::npos) fatal("Malformed variable name in cuts JSON (key " + key + ")");
             std::string var = data.substr(vS+1, vE - vS - 1);
 
-            // after name, expect ':' then an object { ... } for that variable
             size_t colon = data.find(':', vE+1);
             if (colon == std::string::npos) fatal("Malformed entry for var " + var + " (key " + key + ")");
             size_t objStart = data.find('{', colon+1);
-            if (objStart == std::string::npos) {
-                // If the next token isn’t an object, we likely hit an inner quoted token like "mean"
-                // Advance and continue searching for the next top-level entry
-                p = vE + 1;
-                continue;
-            }
+            if (objStart == std::string::npos) { p = vE + 1; continue; }
 
-            // Extract braces-balanced inner object for this variable
             int d2 = 0;
             size_t j = objStart;
             for (; j < data.size(); ++j) {
@@ -231,7 +241,6 @@ static void loadCombinedCuts_STRICT(const std::string& path, PeriodTopoCuts& out
             if (d2 != 0) fatal("Unbalanced braces in var object for " + var + " (key " + key + ")");
             std::string varObj = data.substr(objStart, j - objStart);
 
-            // Pull "mean" and "std" inside varObj
             size_t pm = varObj.find("\"mean\"");
             if (pm == std::string::npos) fatal("Missing 'mean' for var " + var + " (key " + key + ")");
             size_t cm = varObj.find(':', pm);
@@ -247,8 +256,6 @@ static void loadCombinedCuts_STRICT(const std::string& path, PeriodTopoCuts& out
             try { stdev = parse_num_after_colon(varObj, cs); } catch(...) { fatal("Non-numeric 'std' for var " + var + " (key " + key + ")"); }
 
             cuts[var] = Stats{mean, stdev};
-
-            // advance after this variable's object
             p = j;
         }
 
@@ -281,6 +288,85 @@ static bool passes3SigmaCuts_STRICT(const VarCutMap& cuts,
 }
 
 // ------------------------------------------------------------
+// Key resolution utilities (NEW)
+// ------------------------------------------------------------
+template <typename MapT>
+static TTree* resolveTreeOrDie(const MapT& m,
+                               const std::string& runTag,
+                               const std::string& suffix,
+                               const std::string& human_name_for_error)
+{
+    const std::string tRunTag = titleCaseRunTag(runTag);
+
+    const std::string candidates[] = {
+        runTag + suffix,
+        std::string("DVCS_") + runTag + suffix,
+        tRunTag + suffix,
+        std::string("DVCS_") + tRunTag + suffix
+    };
+
+    for (const auto& k : candidates) {
+        auto it = m.find(k);
+        if (it != m.end() && it->second) return it->second;
+    }
+
+    // Build a useful error with available keys
+    std::ostringstream avail;
+    avail << "{ ";
+    bool first = true;
+    for (const auto& kv : m) {
+        if (!first) avail << ", ";
+        first = false;
+        avail << "\"" << kv.first << "\"";
+    }
+    avail << " }";
+
+    std::ostringstream em;
+    em << "Missing " << human_name_for_error
+       << " for " << runTag << " (tried keys: "
+       << candidates[0] << ", " << candidates[1] << ", "
+       << candidates[2] << ", " << candidates[3] << "). Available: "
+       << avail.str();
+    fatal(em.str());
+    return nullptr; // unreachable
+}
+
+static const VarCutMap& resolveCutsOrDie(const PeriodTopoCuts& cuts,
+                                         const std::string& runTag,
+                                         const std::string& topoKey)
+{
+    const std::string tRunTag = titleCaseRunTag(runTag);
+
+    const std::string k1 = std::string("DVCS_") + runTag  + "_" + topoKey;
+    const std::string k2 = std::string("DVCS_") + tRunTag + "_" + topoKey;
+
+    auto it = cuts.find(k1);
+    if (it != cuts.end()) return it->second;
+
+    it = cuts.find(k2);
+    if (it != cuts.end()) return it->second;
+
+    // Build helpful error listing available cut blocks
+    std::ostringstream avail;
+    avail << "{ ";
+    bool first = true;
+    for (const auto& kv : cuts) {
+        if (!first) avail << ", ";
+        first = false;
+        avail << "\"" << kv.first << "\"";
+    }
+    avail << " }";
+
+    std::ostringstream em;
+    em << "Cuts block not found for keys \"" << k1 << "\" or \"" << k2
+       << "\". Available: " << avail.str();
+    fatal(em.str());
+    // unreachable
+    static VarCutMap dummy;
+    return dummy;
+}
+
+// ------------------------------------------------------------
 // Branch binders (STRICT: require phi2, and branches used by cuts)
 // ------------------------------------------------------------
 struct BranchBinderDVCS {
@@ -288,7 +374,7 @@ struct BranchBinderDVCS {
     double t1=0, open_angle_ep2=0, pTmiss=0;
     double x=0, Q2=0, phi2=0;
 
-    // exclusivity-like quantities for 3σ on DVCS hypothesis
+    // exclusivity-like quantities for 3sigma on DVCS hypothesis
     // Provide all potential variables; if cuts reference any missing one -> FATAL in validation step
     double Emiss2=0, Mx2=0, Mx2_1=0, Mx2_2=0, theta_gamma_gamma=0, xF=0;
 
@@ -309,7 +395,6 @@ struct BranchBinderDVCS {
         mustBindD(t,"Q2",&Q2);
         mustBindD(t,"phi2",&phi2);
 
-        // Potential cut vars (must exist if referenced by cuts JSON)
         if (t->GetBranch("Emiss2"))            t->SetBranchAddress("Emiss2",&Emiss2), boundD.insert("Emiss2");
         if (t->GetBranch("Mx2"))               t->SetBranchAddress("Mx2",&Mx2), boundD.insert("Mx2");
         if (t->GetBranch("Mx2_1"))             t->SetBranchAddress("Mx2_1",&Mx2_1), boundD.insert("Mx2_1");
@@ -319,9 +404,7 @@ struct BranchBinderDVCS {
     }
     std::map<std::string,double> cutVals() const {
         std::map<std::string,double> v;
-        // Always provide the core ones (φ cut is not applied by 3σ here)
         v["pTmiss"] = pTmiss;
-        // Optional ones only if bound (validation will check if referenced)
         if (boundD.count("Emiss2")) v["Emiss2"]=Emiss2;
         if (boundD.count("Mx2")) v["Mx2"]=Mx2;
         if (boundD.count("Mx2_1")) v["Mx2_1"]=Mx2_1;
@@ -337,10 +420,10 @@ struct BranchBinderEPPI0Data { // has helicity
     double t1=0, open_angle_ep2=0, pTmiss=0;
     double x=0, Q2=0, phi2=0;
 
-    void mustBindI(TTree* t, const char* n, int* a){ if(!t->GetBranch(n)) fatal(std::string("eπ0 DATA missing int branch '")+n+"'"); t->SetBranchAddress(n,a); }
-    void mustBindD(TTree* t, const char* n, double* a){ if(!t->GetBranch(n)) fatal(std::string("eπ0 DATA missing double branch '")+n+"'"); t->SetBranchAddress(n,a); }
+    void mustBindI(TTree* t, const char* n, int* a){ if(!t->GetBranch(n)) fatal(std::string("epi0 DATA missing int branch '")+n+"'"); t->SetBranchAddress(n,a); }
+    void mustBindD(TTree* t, const char* n, double* a){ if(!t->GetBranch(n)) fatal(std::string("epi0 DATA missing double branch '")+n+"'"); t->SetBranchAddress(n,a); }
     void bind(TTree* t){
-        if(!t) fatal("eπ0 DATA tree pointer is null");
+        if(!t) fatal("epi0 DATA tree pointer is null");
         mustBindI(t,"detector1",&detector1);
         mustBindI(t,"detector2",&detector2);
         mustBindI(t,"helicity",&helicity);
@@ -362,10 +445,10 @@ struct BranchBinderEPPI0MC { // no helicity
     double Emiss2=0, Mx2=0, Mx2_1=0, Mx2_2=0, theta_gamma_gamma=0, xF=0;
     std::set<std::string> boundD, boundI;
 
-    void mustBindI(TTree* t, const char* n, int* a){ if(!t->GetBranch(n)) fatal(std::string("eπ0 MC missing int branch '")+n+"'"); t->SetBranchAddress(n,a); boundI.insert(n); }
-    void mustBindD(TTree* t, const char* n, double* a){ if(!t->GetBranch(n)) fatal(std::string("eπ0 MC missing double branch '")+n+"'"); t->SetBranchAddress(n,a); boundD.insert(n); }
+    void mustBindI(TTree* t, const char* n, int* a){ if(!t->GetBranch(n)) fatal(std::string("epi0 MC missing int branch '")+n+"'"); t->SetBranchAddress(n,a); boundI.insert(n); }
+    void mustBindD(TTree* t, const char* n, double* a){ if(!t->GetBranch(n)) fatal(std::string("epi0 MC missing double branch '")+n+"'"); t->SetBranchAddress(n,a); boundD.insert(n); }
     void bind(TTree* t){
-        if(!t) fatal("eπ0 MC tree pointer is null");
+        if(!t) fatal("epi0 MC tree pointer is null");
         mustBindI(t,"detector1",&detector1);
         mustBindI(t,"detector2",&detector2);
         mustBindD(t,"t1",&t1);
@@ -375,7 +458,6 @@ struct BranchBinderEPPI0MC { // no helicity
         mustBindD(t,"Q2",&Q2);
         mustBindD(t,"phi2",&phi2);
 
-        // Potential DVCS-hypothesis cut vars
         if (t->GetBranch("Emiss2"))            t->SetBranchAddress("Emiss2",&Emiss2), boundD.insert("Emiss2");
         if (t->GetBranch("Mx2"))               t->SetBranchAddress("Mx2",&Mx2), boundD.insert("Mx2");
         if (t->GetBranch("Mx2_1"))             t->SetBranchAddress("Mx2_1",&Mx2_1), boundD.insert("Mx2_1");
@@ -404,9 +486,9 @@ struct HelCounts { long long plus=0, minus=0; };
 
 struct BinCounts {
     HelCounts N_data;        // DVCS data, helicity-resolved
-    HelCounts N_pi0_exp;     // eπ0 data, helicity-resolved
+    HelCounts N_pi0_exp;     // epi0 data, helicity-resolved
     long long N_pi0_mc   = 0; // bkg MC (mis-ID to DVCS) -- no helicity
-    long long N_pi0_reco = 0; // reco MC (true eπ0)      -- no helicity
+    long long N_pi0_reco = 0; // reco MC (true epi0)      -- no helicity
 
     double c_plus = 0.0, c_plus_err = 0.0;
     double c_minus= 0.0, c_minus_err= 0.0;
@@ -535,7 +617,7 @@ static void write_combined_json(
 }
 
 // ------------------------------------------------------------
-// Plotting
+// Plotting helpers
 // ------------------------------------------------------------
 static std::vector<double> phiCentersDeg(){
     std::vector<double> v(N_PHI_BINS);
@@ -676,7 +758,6 @@ static void plot_group(
             }
         }
 
-        // Save and verify on disk (fail-fast)
         const std::string fpath = out_dir + "/plot_contamination_" + name + "_xB_" + std::to_string(ix) + ".png";
         c->SaveAs(fpath.c_str());
 
@@ -706,10 +787,10 @@ void compute_pi0_contamination_helicity(
     const std::vector<std::string>& periods,
     const std::vector<std::string>& topologies,
     const std::vector<Binning>& binning_scheme,
-    const std::map<std::string, TTree*>& dvcsDataTrees,   // key: DVCS_<...>
-    const std::map<std::string, TTree*>& eppi0DataTrees,  // key: DVCS_<...>_eppi0
-    const std::map<std::string, TTree*>& eppi0RecMcTrees, // key: DVCS_<...>_rec_mc
-    const std::map<std::string, TTree*>& eppi0BkgTrees,   // key: DVCS_<...>_bkg
+    const std::map<std::string, TTree*>& dvcsDataTrees,   // assorted keys; resolved flexibly
+    const std::map<std::string, TTree*>& eppi0DataTrees,  // idem
+    const std::map<std::string, TTree*>& eppi0RecMcTrees, // idem
+    const std::map<std::string, TTree*>& eppi0BkgTrees,   // idem
     const std::string& combined_cuts_json,
     const std::string& out_root_dir)
 {
@@ -722,16 +803,9 @@ void compute_pi0_contamination_helicity(
     if (xB_bins.empty() || Q2_bins.empty() || t_bins.empty())
         fatal("Empty bin ranges (xB/Q2/t). Check binning_scheme.");
 
-    // Load 3σ cuts (STRICT)
+    // Load 3sigma cuts (STRICT)
     PeriodTopoCuts cuts;
     loadCombinedCuts_STRICT(combined_cuts_json, cuts);
-
-    // EXACT key: if runTag already starts with "DVCS_", do not add; no titlecasing.
-    auto dvcsCutsKey = [&](const std::string& runTag, const std::string& topoKey)->std::string {
-        std::string base = runTag;
-        if (base.rfind("DVCS_", 0) != 0) base = std::string("DVCS_") + base;
-        return base + "_" + topoKey;
-    };
 
     // Output paths (STRICT)
     const fs::path root(out_root_dir);
@@ -750,50 +824,29 @@ void compute_pi0_contamination_helicity(
 
     // ---------- Per-period loops (STRICT) ----------
     for (const auto& period : periods) {
-        const std::string runTag = period; // period strings are already canonical (e.g. "sp18_inb") // should already be canonical (e.g. DVCS_Sp18_inb)
-        const std::string key_dvcs     = runTag;               // DVCS data
-        const std::string key_pi0_data = runTag + "_eppi0";    // eπ0 data
-        const std::string key_pi0_reco = runTag + "_rec_mc";   // eπ0 reco MC
-        const std::string key_pi0_bkg  = runTag + "_bkg";      // eπ0→DVCS bkg MC
+        const std::string runTag = period; // e.g. "sp18_inb"
 
-        auto itD  = dvcsDataTrees.find(key_dvcs);
-        auto itED = eppi0DataTrees.find(key_pi0_data);
-        auto itRM = eppi0RecMcTrees.find(key_pi0_reco);
-        auto itBM = eppi0BkgTrees.find(key_pi0_bkg);
-
-        if (itD==dvcsDataTrees.end() || !itD->second)
-            fatal("Missing DVCS DATA for " + period + " (key: " + key_dvcs + ")");
-        if (itED==eppi0DataTrees.end() || !itED->second)
-            fatal("Missing eπ0 DATA for " + period + " (key: " + key_pi0_data + ")");
-        if (itRM==eppi0RecMcTrees.end() || !itRM->second)
-            fatal("Missing eπ0 RECO MC for " + period + " (key: " + key_pi0_reco + ")");
-        if (itBM==eppi0BkgTrees.end() || !itBM->second)
-            fatal("Missing eπ0→DVCS BKG MC for " + period + " (key: " + key_pi0_bkg + ")");
-
-        TTree* t_dvcs     = itD->second;
-        TTree* t_pi0_data = itED->second;
-        TTree* t_pi0_reco = itRM->second;
-        TTree* t_pi0_bkg  = itBM->second;
+        // Resolve trees with flexible keys
+        TTree* t_dvcs     = resolveTreeOrDie(dvcsDataTrees,   runTag, "",         "DVCS DATA");
+        TTree* t_pi0_data = resolveTreeOrDie(eppi0DataTrees,  runTag, "_eppi0",   "epi0 DATA");
+        TTree* t_pi0_reco = resolveTreeOrDie(eppi0RecMcTrees, runTag, "_rec_mc",  "epi0 RECO MC");
+        TTree* t_pi0_bkg  = resolveTreeOrDie(eppi0BkgTrees,   runTag, "_bkg",     "epi0->DVCS BKG MC");
 
         std::map<BinKey, BinCounts> table;
 
-        // DVCS data → N_data^±
+        // DVCS data -> N_data^±
         {
             BranchBinderDVCS b; b.bind(t_dvcs);
 
             // Validate that any cut variable referenced by JSON exists in DVCS tree
             for (const auto& topoStr : topologies) {
                 const std::string topoKey = topoToKey(topoStr);
-                const std::string cKey    = dvcsCutsKey(runTag, topoKey);
-                auto itC = cuts.find(cKey);
-                if (itC == cuts.end())
-                    fatal("Cuts block not found for key: " + cKey + " (period: " + period + ")");
-                for (const auto& v : itC->second) {
+                const VarCutMap& cMap = resolveCutsOrDie(cuts, runTag, topoKey);
+                for (const auto& v : cMap) {
                     const std::string& var = v.first;
-                    // Branch must be bound if referenced
                     if (b.boundD.count(var)==0) {
                         fatal("Cuts reference variable '" + var + "' but DVCS tree does not provide it "
-                              "(period=" + period + ", topo=" + topoKey + ")");
+                              "(period=" + runTag + ", topo=" + topoKey + ")");
                     }
                 }
             }
@@ -813,10 +866,8 @@ void compute_pi0_contamination_helicity(
                 }
                 if (!matched) continue;
 
-                const std::string cKey = dvcsCutsKey(runTag, usedTopoKey);
-                auto itC = cuts.find(cKey);
-                if (itC == cuts.end()) fatal("Missing cuts block (post-validation) for key " + cKey);
-                if (!passes3SigmaCuts_STRICT(itC->second, b.cutVals(), period, usedTopoKey)) continue;
+                const VarCutMap& cMap = resolveCutsOrDie(cuts, runTag, usedTopoKey);
+                if (!passes3SigmaCuts_STRICT(cMap, b.cutVals(), runTag, usedTopoKey)) continue;
 
                 double xB=b.x, Q2=b.Q2, tt=std::fabs(b.t1), phi=b.phi2;
                 if (!std::isfinite(xB)||!std::isfinite(Q2)||!std::isfinite(tt)||!std::isfinite(phi)) continue;
@@ -828,22 +879,19 @@ void compute_pi0_contamination_helicity(
             }
         }
 
-        // eπ0→DVCS mis-ID MC → N_pi0_mc
+        // epi0->DVCS mis-ID MC -> N_pi0_mc
         {
             BranchBinderEPPI0MC b; b.bind(t_pi0_bkg);
 
-            // Validate referenced DVCS cuts variables also exist on this MC if cuts applied to MC
             for (const auto& topoStr : topologies) {
                 const std::string topoKey = topoToKey(topoStr);
-                const std::string cKey    = dvcsCutsKey(runTag, topoKey);
-                auto itC = cuts.find(cKey);
-                if (itC == cuts.end()) fatal("Cuts block not found for key: " + cKey);
-                for (const auto& v : itC->second) {
+                const VarCutMap& cMap = resolveCutsOrDie(cuts, runTag, topoKey);
+                for (const auto& v : cMap) {
                     const std::string& var = v.first;
                     if (var=="pTmiss") continue; // guaranteed
                     if (b.boundD.count(var)==0) {
-                        fatal("Cuts reference variable '" + var + "' but eπ0_bkg MC does not provide it "
-                              "(period=" + period + ", topo=" + topoKey + ")");
+                        fatal("Cuts reference variable '" + var + "' but epi0_bkg MC does not provide it "
+                              "(period=" + runTag + ", topo=" + topoKey + ")");
                     }
                 }
             }
@@ -859,10 +907,8 @@ void compute_pi0_contamination_helicity(
                 }
                 if (!match) continue;
 
-                const std::string cKey = dvcsCutsKey(runTag, usedTopoKey);
-                auto itC = cuts.find(cKey);
-                if (itC == cuts.end()) fatal("Missing cuts block (post-validation) for key " + cKey);
-                if (!passes3SigmaCuts_STRICT(itC->second, b.cutValsForDVCS(), period, usedTopoKey)) continue;
+                const VarCutMap& cMap = resolveCutsOrDie(cuts, runTag, usedTopoKey);
+                if (!passes3SigmaCuts_STRICT(cMap, b.cutValsForDVCS(), runTag, usedTopoKey)) continue;
 
                 double xB=b.x, Q2=b.Q2, tt=std::fabs(b.t1), phi=b.phi2;
                 if (!std::isfinite(xB)||!std::isfinite(Q2)||!std::isfinite(tt)||!std::isfinite(phi)) continue;
@@ -873,7 +919,7 @@ void compute_pi0_contamination_helicity(
             }
         }
 
-        // eπ0 reco MC → N_pi0_reco
+        // epi0 reco MC -> N_pi0_reco
         {
             BranchBinderEPPI0MC b; b.bind(t_pi0_reco);
             const Long64_t nent = t_pi0_reco->GetEntries();
@@ -896,7 +942,7 @@ void compute_pi0_contamination_helicity(
             }
         }
 
-        // eπ0 DATA → N_pi0_exp^±
+        // epi0 DATA -> N_pi0_exp^±
         {
             BranchBinderEPPI0Data b; b.bind(t_pi0_data);
             const Long64_t nent = t_pi0_data->GetEntries();
@@ -950,7 +996,8 @@ void compute_pi0_contamination_helicity(
     if (!all_sum.empty())    { finalize_contamination(all_sum);    groupTables["10.6_GeV"]   = all_sum;    }
 
     // Write combined JSON with everything (periods + combined)
-    write_combined_json(combined_out.string(), groupTables, N_PHI_BINS, xB_bins, Q2_bins, t_bins);
+    write_combined_json((root / "jsons" / "pi0_contamination_combined.json").string(),
+                        groupTables, N_PHI_BINS, xB_bins, Q2_bins, t_bins);
 
     // Plots for combined groups too
     for (const auto& g : {"Spring2018","Fall2018","10.6_GeV"}) {
