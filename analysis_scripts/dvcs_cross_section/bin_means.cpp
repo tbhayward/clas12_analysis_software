@@ -72,23 +72,16 @@ static int findBin(double v, const std::vector<std::pair<double,double>>& ranges
     return -1;
 }
 
-// Canonicalize period -> DVCS_<CapitalizedPeriod> (e.g., "sp18_inb" -> "DVCS_Sp18_inb")
+// Canonicalize period -> DVCS_<CapitalizedPeriod>
+// e.g., "sp18_inb" -> "DVCS_Sp18_inb", "fa18_inb_supp" -> "DVCS_Fa18_inb_supp"
 static std::string periodToDVCSKey(const std::string& period) {
     std::string s = period;
     // lower-case everything first
     std::transform(s.begin(), s.end(), s.begin(),
                    [](unsigned char c){ return static_cast<char>(std::tolower(c)); });
-    // capitalize first and any char after '_'
-    bool cap = true;
-    for (char& c : s) {
-        if (cap && std::isalpha(static_cast<unsigned char>(c))) {
-            c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
-            cap = false;
-        } else if (c == '_') {
-            cap = true;
-        } else {
-            cap = false;
-        }
+    // capitalize only the very first character; keep everything after underscores as-is (lower-case)
+    if (!s.empty() && std::isalpha(static_cast<unsigned char>(s[0]))) {
+        s[0] = static_cast<char>(std::toupper(static_cast<unsigned char>(s[0])));
     }
     return "DVCS_" + s;
 }
@@ -179,7 +172,7 @@ void calculate_bin_means(
 
     // ---------------- Loop over periods ----------------
     for (const auto& period : dvcs_periods) {
-        const std::string key = periodToDVCSKey(period); // e.g. "sp18_inb" -> "DVCS_Sp18_inb"
+        const std::string key = periodToDVCSKey(period); // e.g., "sp18_inb" -> "DVCS_Sp18_inb"
 
         auto itTree = dataTrees.find(key);
         if (itTree == dataTrees.end() || !itTree->second) {
