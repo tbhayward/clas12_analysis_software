@@ -1,5 +1,6 @@
 #include "make_dirs.h"
 #include "load_trees.h"
+#include "periods.h"
 #include "exclusivity_cuts.h"
 #include "load_binning_scheme.h"
 #include "bin_means.h"
@@ -52,22 +53,18 @@ int main(int argc, char* argv[]) {
               radGenMcTrees, radRecMcTrees);
     std::cout << "All trees loaded successfully." << std::endl;
 
-    // // Run exclusivity cut extraction (single-threaded for stability)
-    // runAllExclusivityCuts(
-    //     dataTrees, recMcTrees, eppi0DataTrees, eppi0RecMcTrees,
-    //     "output/jsons", "output/exclusivity_plots", 1
-    // );
-    // std::cout << "Exclusivity-cut stage finished." << std::endl;
+    // Run exclusivity cut extraction (single-threaded for stability)
+    runAllExclusivityCuts(
+        dataTrees, recMcTrees, eppi0DataTrees, eppi0RecMcTrees,
+        "output/jsons", "output/exclusivity_plots", 1
+    );
+    std::cout << "Exclusivity-cut stage finished." << std::endl;
 
     // --------- Global bin-averaged kinematics ----------
-    std::vector<std::string> dvcs_periods = {
-        "fa18_inb",
-        "fa18_out",
-        "fa18_inb_supp",
-        "sp18_inb",
-        "sp18_out",
-        "sp19_inb"
-    };
+    std::vector<std::string> dvcs_periods;
+    for (const auto& P : CANONICAL_PERIODS()) {
+        dvcs_periods.push_back(P.tree_key);
+    }
     std::vector<std::string> topologies = {"(FD,FD)", "(CD,FD)", "(CD,FT)"};
     const std::string analysis_type = "dvcs";
     const std::string output_json_means = "output/jsons/bin_means_global.json";
