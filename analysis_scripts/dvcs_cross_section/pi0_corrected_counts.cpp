@@ -1,6 +1,6 @@
 // pi0_corrected_counts.cpp (STRICT / FAIL-FAST)
 //
-// π0-corrected counts with errors, for periods AND combined groups.
+// pi0-corrected counts with errors, for periods AND combined groups.
 //
 // Inputs (ALL required and strictly matched):
 //   - total_counts.json
@@ -411,7 +411,7 @@ static void plot_group(
                 gPad->SetGrid(1,1);
                 gPad->SetTopMargin(0.18);
                 gPad->SetBottomMargin(0.16);
-                gPad->SetLeftMargin(0.14);
+                gPad->SetLeftMargin(0.125);
                 gPad->SetRightMargin(0.08);
 
                 std::vector<double> X, Yp_raw, Ym_raw, Yp_corr, Ym_corr, eX, eYp_corr, eYm_corr;
@@ -612,7 +612,7 @@ void compute_pi0_corrected_counts(
     BinningMeta totals_meta;
     GroupCounts group_counts = load_total_counts_STRICT(total_counts_json, totals_meta);
 
-    // Ensure requested groups exist in totals (strict)
+    // Ensure requested groups exist in totals (strict) — exact names only
     for (const auto& g : dvcs_periods) {
         if (group_counts.find(g) == group_counts.end())
             fatal("Requested group '"+g+"' not present in total_counts.json::groups");
@@ -637,7 +637,7 @@ void compute_pi0_corrected_counts(
         fatal(std::string("Cannot create plots root: ")+plots_dir_root.string()+" ("+ec.message()+")");
 
     // Load contamination tables, STRICT: per-period from individual files,
-    // combined groups only from combined JSON.
+    // combined groups only from combined JSON (by exact name).
     std::map<std::string, ContamTable> contam_by_group;
 
     auto load_period_contam = [&](const std::string& group)->void{
@@ -672,7 +672,11 @@ void compute_pi0_corrected_counts(
 
     for (const auto& gkv : group_counts) {
         const std::string& group     = gkv.first;
-        const auto&        raw_table = gkv.second;
+        if (std::find(dvcs_periods.begin(), dvcs_periods.end(), group) == dvcs_periods.end()) {
+            continue; // only the explicitly requested groups, by exact name
+        }
+
+        const auto& raw_table = gkv.second;
 
         const auto itC = contam_by_group.find(group);
         if (itC == contam_by_group.end())
@@ -698,13 +702,13 @@ void compute_pi0_corrected_counts(
             corr_table[bk] = cb;
         }
 
-        // write per-group JSON
-        auto sanitize = [](std::string s)->std::string {
+        // write per-group JSON (filenames are path-safe; JSON keys keep exact names)
+        auto path_sanitize = [](std::string s)->std::string {
             for (char& c : s) if (c=='/' || c==' ' ) c = '_';
             return s;
         };
         const std::string out_group_json =
-            (json_dir / ("pi0_corrected_counts_" + sanitize(group) + ".json")).string();
+            (json_dir / ("pi0_corrected_counts_" + path_sanitize(group) + ".json")).string();
 
         write_group_json(out_group_json, N_PHI_BINS, xB_bins.size(), Q2_bins.size(), t_bins.size(), corr_table);
         std::cout << "[pi0corr] Wrote " << out_group_json << "\n";
@@ -717,7 +721,7 @@ void compute_pi0_corrected_counts(
         all_groups_corrected[group] = std::move(corr_table);
     }
 
-    // Write master JSON
+    // Write master JSON (group names are exactly the same keys)
     const std::string master = (json_dir / "pi0_corrected_counts_all_groups.json").string();
     write_master_json(master, N_PHI_BINS, xB_bins.size(), Q2_bins.size(), t_bins.size(), all_groups_corrected);
     std::cout << "[pi0corr] Wrote " << master << "\n";

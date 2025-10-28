@@ -2,7 +2,8 @@
 // ------------------------------------------------------------
 // Compute helicity-separated total counts after exclusivity cuts.
 // Strict mode: any missing lookup (trees, branches, dirs, files) causes a fatal exit.
-// - Reads: DVCS data trees per period (must have: helicity, x, Q2, t1, phi2)
+// - Reads: DVCS data trees per period (must have at least: helicity, x, Q2, t1, phi2)
+//          plus any branches referenced by the combined cuts JSON.
 // - Writes:
 //     • <out_root_dir>/jsons/total_counts.json             (master, nested "groups")
 //     • <out_root_dir>/jsons/total_counts_<label>.json     (flat per-group file; label = fa18_inb, etc.)
@@ -34,6 +35,8 @@
 #include <TPad.h>
 #include <TH1.h>
 #include <TStyle.h>
+#include <TROOT.h>
+#include <TError.h>
 
 #include <algorithm>
 #include <cctype>
@@ -42,12 +45,17 @@
 #include <fstream>
 #include <iomanip>
 #include <iostream>
+#include <limits>
 #include <map>
 #include <set>
 #include <sstream>
 #include <string>
 #include <tuple>
+#include <unordered_map>
 #include <vector>
+
+#include <nlohmann/json.hpp>
+using nlohmann::json;
 
 namespace {
 
@@ -56,6 +64,8 @@ namespace {
 // ------------------------------------------------------------
 static constexpr int N_PHI_BINS = 12;
 static constexpr double TWO_PI  = 2.0 * M_PI;
+
+struct BinningRange { double lo=0.0; double hi=0.0; };
 
 [[noreturn]] static void fatal(const std::string& msg) {
     std::cerr << "[total_counts][FATAL] " << msg << std::endl;
@@ -92,8 +102,9 @@ uniqueRanges(const std::vector<Binning>& scheme, char which) {
 }
 
 static int findBin(double v, const std::vector<std::pair<double,double>>& ranges) {
-    for (int i = 0; i < (int)ranges.size(); ++i)
+    for (int i = 0; i < (int)ranges.size(); ++i) {
         if (v >= ranges[i].first && v < ranges[i].second) return i;
+    }
     return -1;
 }
 
@@ -117,6 +128,236 @@ static inline const char* tree_key_to_label_or_fatal(const std::string& k) {
     for (const auto& p : CANONICAL_PERIODS()) oss << " " << p.tree_key;
     fatal(oss.str());
     return ""; // unreachable
+}
+
+// ------------------------------------------------------------
+// Exclusivity cut model
+// ------------------------------------------------------------
+struct SigmaCut {
+    std::string branch;     // branch to read
+    double center = 0.0;    // mean value
+    double sigma  = 0.0;    // sigma
+    double nsigma = 3.0;    // how many sigmas
+    enum Mode { TWO_SIDED, UPPER, LOWER } mode = TWO_SIDED;
+};
+
+struct BaseCut {
+    std::string branch;    // branch to read
+    bool has_min = false;
+    bool has_max = false;
+    bool has_eq  = false;
+    bool has_neq = false;
+    double vmin = 0.0;
+    double vmax = 0.0;
+    long long eq = 0;
+    long long neq = 0;
+};
+
+struct PeriodCuts {
+    std::vector<SigmaCut> sigma_cuts;
+    std::vector<BaseCut>  base_cuts;
+};
+
+static SigmaCut::Mode parseMode(const std::string& m) {
+    if (m == "two_sided") return SigmaCut::TWO_SIDED;
+    if (m == "upper")     return SigmaCut::UPPER;
+    if (m == "lower")     return SigmaCut::LOWER;
+    fatal("Unknown sigma cut mode: " + m);
+    return SigmaCut::TWO_SIDED; // unreachable
+}
+
+static void parseSigmaCuts(const json& arr, std::vector<SigmaCut>& out) {
+    if (!arr.is_array()) fatal("sigma_cuts must be an array");
+    for (const auto& j : arr) {
+        SigmaCut c;
+        if (!j.contains("branch")) fatal("sigma_cuts entry missing 'branch'");
+        c.branch = j.at("branch").get<std::string>();
+        if (!j.contains("center") || !j.contains("sigma"))
+            fatal("sigma_cuts entry for '" + c.branch + "' missing 'center' or 'sigma'");
+        c.center  = j.at("center").get<double>();
+        c.sigma   = j.at("sigma").get<double>();
+        c.nsigma  = j.value("nsigma", 3.0);
+        c.mode    = parseMode(j.value("mode", std::string("two_sided")));
+        out.push_back(c);
+    } // #endfor
+}
+
+static void parseBaseCuts(const json& arr, std::vector<BaseCut>& out) {
+    if (!arr.is_array()) fatal("base_cuts must be an array");
+    for (const auto& j : arr) {
+        BaseCut c;
+        if (!j.contains("branch")) fatal("base_cuts entry missing 'branch'");
+        c.branch = j.at("branch").get<std::string>();
+
+        if (j.contains("min")) { c.has_min = true; c.vmin = j.at("min").get<double>(); }
+        if (j.contains("max")) { c.has_max = true; c.vmax = j.at("max").get<double>(); }
+
+        if (j.contains("eq"))  { c.has_eq = true;  c.eq  = j.at("eq").get<long long>(); }
+        if (j.contains("neq")) { c.has_neq = true; c.neq = j.at("neq").get<long long>(); }
+
+        if (!(c.has_min || c.has_max || c.has_eq || c.has_neq)) {
+            fatal("base_cuts entry for '" + c.branch + "' has no condition (min/max/eq/neq)");
+        }
+        out.push_back(c);
+    } // #endfor
+}
+
+static PeriodCuts loadCombinedCuts(const std::string& json_path, const std::string& period_key) {
+    std::ifstream ifs(json_path);
+    if (!ifs) fatal("Cannot open combined cuts JSON: " + json_path);
+    json J; ifs >> J;
+
+    PeriodCuts cuts;
+
+    // global
+    if (J.contains("global")) {
+        const auto& G = J.at("global");
+        if (G.contains("sigma_cuts")) parseSigmaCuts(G.at("sigma_cuts"), cuts.sigma_cuts);
+        if (G.contains("base_cuts"))  parseBaseCuts(G.at("base_cuts"), cuts.base_cuts);
+    }
+
+    // period override (replace arrays if present)
+    if (J.contains("period_overrides")) {
+        const auto& PO = J.at("period_overrides");
+        auto it = PO.find(period_key);
+        if (it != PO.end()) {
+            const auto& P = *it;
+            if (P.contains("sigma_cuts")) {
+                cuts.sigma_cuts.clear();
+                parseSigmaCuts(P.at("sigma_cuts"), cuts.sigma_cuts);
+            }
+            if (P.contains("base_cuts")) {
+                cuts.base_cuts.clear();
+                parseBaseCuts(P.at("base_cuts"), cuts.base_cuts);
+            }
+        }
+    }
+
+    // sanity
+    for (const auto& c : cuts.sigma_cuts) {
+        if (c.sigma <= 0.0) fatal("sigma_cuts: non-positive sigma for branch '" + c.branch + "'");
+        if (c.nsigma <= 0.0) fatal("sigma_cuts: non-positive nsigma for branch '" + c.branch + "'");
+    }
+
+    return cuts;
+}
+
+// Collect unique list of branches required by cuts
+static std::vector<std::string> requiredCutBranches(const PeriodCuts& cuts) {
+    std::set<std::string> s;
+    for (const auto& c : cuts.sigma_cuts) s.insert(c.branch);
+    for (const auto& c : cuts.base_cuts)  s.insert(c.branch);
+    return {s.begin(), s.end()};
+}
+
+// SetBranchAddress helpers
+struct BranchBinding {
+    std::string name;
+    double as_double = std::numeric_limits<double>::quiet_NaN(); // numeric readout
+    long long as_ll  = 0;                                        // int-like readout
+    // We will always bind to a double slot if the branch is a floating numeric,
+    // and to as_ll if it is an integer-like. We detect type from leaf type code.
+};
+
+static bool isIntegerLeaf(TLeaf* leaf) {
+    if (!leaf) return false;
+    const char* t = leaf->GetTypeName();
+    // ROOT type names; this is a practical set (adapt if needed)
+    return std::string(t) == "Int_t"  || std::string(t) == "UInt_t" ||
+           std::string(t) == "Short_t"|| std::string(t) == "UShort_t" ||
+           std::string(t) == "Char_t" || std::string(t) == "UChar_t" ||
+           std::string(t) == "Long64_t" || std::string(t) == "ULong64_t";
+}
+
+static void bindRequiredBranches_STRICT(
+    TTree* t,
+    const std::vector<std::string>& branch_names,
+    std::unordered_map<std::string, BranchBinding>& bindings)
+{
+    bindings.clear();
+    for (const auto& bname : branch_names) {
+        TBranch* b = t->GetBranch(bname.c_str());
+        if (!b) fatal("Required branch for cuts missing: '" + bname + "'");
+
+        TLeaf* leaf = b->GetLeaf(bname.c_str());
+        if (!leaf) {
+            // try the first leaf if multiple
+            leaf = (TLeaf*)b->GetListOfLeaves()->First();
+        }
+
+        BranchBinding bb;
+        bb.name = bname;
+
+        if (isIntegerLeaf(leaf)) {
+            t->SetBranchAddress(bname.c_str(), &bb.as_ll);
+        } else {
+            t->SetBranchAddress(bname.c_str(), &bb.as_double);
+        }
+
+        bindings[bname] = bb;
+    } // #endfor
+}
+
+// Evaluate base cuts
+static inline bool passBaseCuts(const std::vector<BaseCut>& baseCuts,
+                                const std::unordered_map<std::string, BranchBinding>& B) {
+    for (const auto& c : baseCuts) {
+        const auto it = B.find(c.branch);
+        if (it == B.end()) return false; // strict
+        const BranchBinding& bb = it->second;
+
+        // Decide whether to read as integer or double, based on which field has been touched
+        const bool usedInt = (bb.as_ll != 0 || (bb.as_double != bb.as_double /*NaN*/)); // heuristic
+        if (c.has_eq) {
+            long long v = usedInt ? bb.as_ll : (long long)std::llround(bb.as_double);
+            if (v != c.eq) return false;
+        }
+        if (c.has_neq) {
+            long long v = usedInt ? bb.as_ll : (long long)std::llround(bb.as_double);
+            if (v == c.neq) return false;
+        }
+        if (c.has_min) {
+            double v = usedInt ? (double)bb.as_ll : bb.as_double;
+            if (!(v >= c.vmin)) return false;
+        }
+        if (c.has_max) {
+            double v = usedInt ? (double)bb.as_ll : bb.as_double;
+            if (!(v <= c.vmax)) return false;
+        }
+    } // #endfor
+    return true;
+}
+
+// Evaluate sigma cuts
+static inline bool passSigmaCuts(const std::vector<SigmaCut>& sigmaCuts,
+                                 const std::unordered_map<std::string, BranchBinding>& B) {
+    for (const auto& c : sigmaCuts) {
+        const auto it = B.find(c.branch);
+        if (it == B.end()) return false; // strict
+        const BranchBinding& bb = it->second;
+        const double v = std::isfinite(bb.as_double) ? bb.as_double : (double)bb.as_ll; // prefer double
+        const double lo = c.center - c.nsigma * c.sigma;
+        const double hi = c.center + c.nsigma * c.sigma;
+
+        if (c.mode == SigmaCut::TWO_SIDED) {
+            if (v < lo || v > hi) return false;
+        } else if (c.mode == SigmaCut::UPPER) {
+            if (v > hi) return false;
+        } else { // LOWER
+            if (v < lo) return false;
+        }
+    } // #endfor
+    return true;
+}
+
+// Combined exclusivity predicate: base AND sigma
+static inline bool passes3SigmaCuts_STRICT(
+    const PeriodCuts& cuts,
+    const std::unordered_map<std::string, BranchBinding>& B)
+{
+    if (!passBaseCuts(cuts.base_cuts, B)) return false;
+    if (!passSigmaCuts(cuts.sigma_cuts, B)) return false;
+    return true;
 }
 
 // ------------------------------------------------------------
@@ -149,7 +390,7 @@ static void write_total_counts_group_json(
             << ",\"-1\":" << hc.minus << "},"
             << "\"total\":" << (hc.plus + hc.minus)
             << "}";
-    }
+    } // #endfor
     ofs << "\n  }\n}\n";
     ofs.close();
     std::cout << "[total_counts] Wrote " << out_path << "\n";
@@ -170,7 +411,7 @@ static void write_total_counts_master_json(
     ofs << "  \"binning_meta\": {\"phi_bins\": " << nPhi
         << ", \"xB_bins\": " << xB_bins.size()
         << ", \"Q2_bins\": " << Q2_bins.size()
-        << ", \"t_bins\": "  << t_bins.size() << "},\n";
+        << ", \"t_bins\":  " << t_bins.size() << "},\n";
     ofs << "  \"groups\": {\n";
 
     bool firstG = true;
@@ -188,9 +429,9 @@ static void write_total_counts_master_json(
                 << ",\"-1\":" << hc.minus << "},"
                 << "\"total\":" << (hc.plus + hc.minus)
                 << "}";
-        }
+        } // #endfor
         ofs << "\n    }}";
-    }
+    } // #endfor
     ofs << "\n  }\n}\n";
     ofs.close();
     std::cout << "[total_counts] Wrote master " << out_path << "\n";
@@ -231,11 +472,12 @@ static void plot_group_counts(
 
     for (int ix = 0; ix < (int)xB_bins.size(); ++ix) {
         std::set<std::pair<double,double>> q2set, tset;
-        for (const auto& b : binning_scheme)
+        for (const auto& b : binning_scheme) {
             if (std::make_pair(b.xBmin,b.xBmax)==xB_bins[ix]) {
                 q2set.emplace(b.Q2min,b.Q2max);
                 tset.emplace(b.tmin,b.tmax);
             }
+        } // #endfor
 
         std::vector<std::pair<double,double>> Q2s(q2set.begin(),q2set.end());
         std::vector<std::pair<double,double>> Ts(tset.begin(),tset.end());
@@ -254,9 +496,9 @@ static void plot_group_counts(
         pGrid->Divide(ncols,nrows,0.0001,0.0001);
 
         pTop->cd();
-        TLatex head; head.SetNDC(); head.SetTextSize(0.55);
+        TLatex head; head.SetNDC(); head.SetTextSize(0.055);
         head.SetTextAlign(22);
-        head.DrawLatex(0.5,0.55,Form("%s   x_B [%.3g,%.3g]",group_label.c_str(),xB_bins[ix].first,xB_bins[ix].second));
+        head.DrawLatex(0.5,0.55,Form("%s   x_B (%.3g, %.3g)",group_label.c_str(),xB_bins[ix].first,xB_bins[ix].second));
 
         for (int r=0;r<nrows;++r){
             for (int ccol=0;ccol<ncols;++ccol){
@@ -272,7 +514,7 @@ static void plot_group_counts(
                     if(it == table.end()) continue;
                     Yp[ip] = it->second.plus;
                     Ym[ip] = it->second.minus;
-                }
+                } // #endfor
 
                 TGraph* gp = new TGraph(N_PHI_BINS,X.data(),Yp.data());
                 gp->SetMarkerStyle(24);
@@ -283,8 +525,8 @@ static void plot_group_counts(
                 gm->SetMarkerStyle(20);
                 gm->SetMarkerColor(kBlue);
                 gm->Draw("LP SAME");
-            }
-        }
+            } // #endfor
+        } // #endfor
 
         const std::string fpath = out_dir + "/plot_total_counts_" + group_label + "_xB_" + std::to_string(ix) + ".png";
         c->SaveAs(fpath.c_str());
@@ -302,7 +544,7 @@ static void plot_group_counts(
         }
 
         delete c;
-    }
+    } // #endfor
 }
 
 } // namespace
@@ -315,7 +557,7 @@ void compute_total_counts(
     const std::vector<std::string>& /*topologies*/,     // not used here
     const std::vector<Binning>& binning_scheme,
     const std::map<std::string, TTree*>& dataTrees,     // keys are DVCS_* names
-    const std::string& /*combined_cuts_json*/,          // not applied here
+    const std::string& combined_cuts_json,              // applied here (base + 3-sigma)
     const std::string& out_json_path,
     const std::string& out_root_dir)
 {
@@ -349,7 +591,7 @@ void compute_total_counts(
             oss << "Periods must be canonical tree keys. Got '" << period_key << "'. Expected one of:";
             for (const auto& p : CANONICAL_PERIODS()) oss << " " << p.tree_key;
             fatal(oss.str());
-        }
+        } // #endif
         const char* label = tree_key_to_label_or_fatal(period_key);
 
         auto it = dataTrees.find(period_key);
@@ -361,14 +603,17 @@ void compute_total_counts(
                 if (!first) avail << ", ";
                 first = false;
                 avail << '"' << kv.first << '"';
-            }
+            } // #endfor
             avail << " }";
             fatal(std::string("Missing DVCS data tree for key '") + period_key + "'. Available keys: " + avail.str());
-        }
+        } // #endif
+
+        // ---- Load per-period cuts (global with optional period override) ----
+        const PeriodCuts cuts = loadCombinedCuts(combined_cuts_json, period_key);
 
         TTree* t = it->second;
 
-        // Strict: require branches
+        // Strict: require baseline branches (for binning and helicity)
         int helicity = 0;
         double x = 0, Q2 = 0, t1 = 0, phi2 = std::numeric_limits<double>::quiet_NaN();
 
@@ -383,22 +628,37 @@ void compute_total_counts(
         t->SetBranchAddress("t1", &t1);
         t->SetBranchAddress("phi2", &phi2);
 
+        // Bind all branches required by exclusivity/base cuts
+        const auto neededCutBranches = requiredCutBranches(cuts);
+        std::unordered_map<std::string, BranchBinding> cutBindings;
+        bindRequiredBranches_STRICT(t, neededCutBranches, cutBindings);
+
+        // Count table
         std::map<std::tuple<int,int,int,int>, HelCounts> table;
+
         const Long64_t nent = t->GetEntries();
         for (Long64_t i = 0; i < nent; ++i) {
             t->GetEntry(i);
-            if (helicity != +1 && helicity != -1) continue;
-            if (!std::isfinite(x) || !std::isfinite(Q2) || !std::isfinite(t1) || !std::isfinite(phi2)) continue;
 
+            // Basic sanity for helicity
+            if (helicity != +1 && helicity != -1) continue;
+
+            // Compute bin indices (note: |t1| into t-bins)
+            if (!std::isfinite(x) || !std::isfinite(Q2) || !std::isfinite(t1) || !std::isfinite(phi2)) continue;
             const int ix  = findBin(x, xB_bins);
             const int iQ  = findBin(Q2, Q2_bins);
             const int itb = findBin(std::fabs(t1), t_bins);
             const int ip  = phiToBin(phi2);
             if (ix < 0 || iQ < 0 || itb < 0 || ip < 0) continue;
 
+            // Apply exclusivity cuts (base + 3-sigma), strict
+            // cutBindings have been updated by SetBranchAddress and GetEntry.
+            if (!passes3SigmaCuts_STRICT(cuts, cutBindings)) continue;
+
+            // Count
             auto& hc = table[{ix, iQ, itb, ip}];
             if (helicity == +1) hc.plus++; else hc.minus++;
-        }
+        } // #endfor
 
         const std::string label_str(label);
 
@@ -408,7 +668,7 @@ void compute_total_counts(
         // Plots go to .../total_counts_plots/<label>/
         const fs::path plot_dir = fs::path(out_root_dir) / "total_counts_plots" / label_str;
         plot_group_counts(label_str, table, binning_scheme, xB_bins, Q2_bins, t_bins, plot_dir.string());
-    }
+    } // #endfor
 
     // ---- Write master JSON ----
     write_total_counts_master_json(out_json_path, allGroupsByLabel, N_PHI_BINS, xB_bins, Q2_bins, t_bins);
@@ -417,5 +677,5 @@ void compute_total_counts(
     for (const auto& gkv : allGroupsByLabel) {
         const std::string fname = (std::filesystem::path(out_root_dir) / "jsons" / ("total_counts_" + gkv.first + ".json")).string();
         write_total_counts_group_json(fname, gkv.second, N_PHI_BINS, xB_bins, Q2_bins, t_bins);
-    }
+    } // #endfor
 }
