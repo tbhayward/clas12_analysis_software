@@ -32,20 +32,28 @@ unique_runs, event_counts = np.unique(runnum_data, return_counts=True)
 events_per_nC = []
 valid_runs = []
 
+print("Runs with events/nC < 0.8:")
+print("-" * 30)
+
 for run_num, count in zip(unique_runs, event_counts):
     if run_num in run_charge_map:
         charge = run_charge_map[run_num]
         if charge > 0:  # Avoid division by zero
-            events_per_nC.append(count / charge)
+            events_per_nc_value = count / charge
+            events_per_nC.append(events_per_nc_value)
             valid_runs.append(run_num)
+            
+            # Check if value is less than 0.8 and print run number
+            if events_per_nc_value < 0.8:
+                print(f"Run {run_num}: {events_per_nc_value:.4f} events/nC")
         else:
             print(f"Warning: Run {run_num} has zero charge, skipping")
     else:
         print(f"Warning: Run {run_num} not found in CSV file, skipping")
 
-# Create the plot
+# Create the plot with scattered points (no connecting line)
 plt.figure(figsize=(12, 6))
-plt.plot(valid_runs, events_per_nC, 'bo-', markersize=3, linewidth=1)
+plt.plot(valid_runs, events_per_nC, 'bo', markersize=4)  # Removed the '-'' to remove connecting line
 plt.xlabel('Run Number')
 plt.ylabel('Events / nC')
 plt.title('DVCS Events per nC by Run Number')
@@ -59,5 +67,5 @@ plt.tight_layout()
 plt.savefig('output/dvcs_per_nC.png', dpi=300, bbox_inches='tight')
 plt.close()
 
-print(f"Plot saved to output/dvcs_per_nC.png")
+print(f"\nPlot saved to output/dvcs_per_nC.png")
 print(f"Processed {len(valid_runs)} runs with valid charge information")
