@@ -1,4 +1,5 @@
 #include "bin_means.h"
+#include "periods.h"  // for CANONICAL_PERIODS()
 
 #include <TTree.h>
 #include <algorithm>
@@ -55,7 +56,7 @@ static inline int phiToBin(double phi) {
 }
 
 static std::vector<std::pair<double,double>> uniqueRanges(
-    const std::vector<Binning>& scheme, char which) 
+    const std::vector<Binning>& scheme, char which)
 {
     std::set<std::pair<double,double>> s;
     for (const auto& b : scheme) {
@@ -70,20 +71,6 @@ static int findBin(double v, const std::vector<std::pair<double,double>>& ranges
     for (int i = 0; i < static_cast<int>(ranges.size()); ++i)
         if (v >= ranges[i].first && v < ranges[i].second) return i;
     return -1;
-}
-
-// Canonicalize period -> DVCS_<CapitalizedPeriod>
-// e.g., "sp18_inb" -> "DVCS_Sp18_inb", "fa18_inb_supp" -> "DVCS_Fa18_inb_supp"
-static std::string periodToDVCSKey(const std::string& period) {
-    std::string s = period;
-    // lower-case everything first
-    std::transform(s.begin(), s.end(), s.begin(),
-                   [](unsigned char c){ return static_cast<char>(std::tolower(c)); });
-    // capitalize only the very first character; keep everything after underscores as-is (lower-case)
-    if (!s.empty() && std::isalpha(static_cast<unsigned char>(s[0]))) {
-        s[0] = static_cast<char>(std::toupper(static_cast<unsigned char>(s[0])));
-    }
-    return "DVCS_" + s;
 }
 
 // ---------------- branch binder ----------------
@@ -145,8 +132,15 @@ struct Accum {
     long long count = 0;
 };
 
+static inline bool is_canonical_tree_key(const std::string& k) {
+    for (const auto& p : CANONICAL_PERIODS()) {
+        if (k == p.tree_key) return true;
+    }
+    return false;
+}
+
 void calculate_bin_means(
-    const std::vector<std::string>& dvcs_periods,
+    const std::vector<std::string>& dvcs_periods,   // must be canonical tree keys (DVCS_Fa18_inb, etc.)
     const std::vector<std::string>& topologies,
     const std::string& analysis_type,
     const std::vector<Binning>& binning_scheme,
@@ -155,7 +149,7 @@ void calculate_bin_means(
 ) {
     (void)analysis_type;
 
-    std::cout << "[bin_means] Using periods:";
+    std::cout << "[bin_means] Using canonical DVCS tree keys:";
     for (const auto& p : dvcs_periods) std::cout << " " << p;
     std::cout << "\n" << std::endl;
 
@@ -170,14 +164,20 @@ void calculate_bin_means(
 
     std::map<std::tuple<int,int,int,int>, Accum> acc;
 
-    // ---------------- Loop over periods ----------------
-    for (const auto& period : dvcs_periods) {
-        const std::string key = periodToDVCSKey(period); // e.g., "sp18_inb" -> "DVCS_Sp18_inb"
+    // ---------------- Loop over canonical tree keys ----------------
+    for (const auto& period_key : dvcs_periods) {
+        if (!is_canonical_tree_key(period_key)) {
+            std::cerr << "[bin_means][FATAL] Non-canonical period key: '" << period_key << "'\n";
+            std::cerr << "Expected one of:";
+            for (const auto& p : CANONICAL_PERIODS()) std::cerr << " " << p.tree_key;
+            std::cerr << std::endl;
+            std::exit(EXIT_FAILURE);
+        }
 
-        auto itTree = dataTrees.find(key);
+        auto itTree = dataTrees.find(period_key);
         if (itTree == dataTrees.end() || !itTree->second) {
-            std::cerr << "[bin_means][FATAL] Missing data tree for period: '" << key << "'\n";
-            std::cerr << "Available keys:";
+            std::cerr << "[bin_means][FATAL] Missing data tree for key: '" << period_key << "'\n";
+            std::cerr << "Available keys in dataTrees:";
             for (const auto& kv : dataTrees) std::cerr << " " << kv.first;
             std::cerr << std::endl;
             std::exit(EXIT_FAILURE);
@@ -187,13 +187,13 @@ void calculate_bin_means(
         BranchBinderBM b; b.bind(t);
 
         if (!b.readyForCuts()) {
-            std::cerr << "[bin_means][FATAL] Tree for '" << key
+            std::cerr << "[bin_means][FATAL] Tree for '" << period_key
                       << "' lacks cut branches (detector1/2,t1,open_angle_ep2,pTmiss)."
                       << std::endl;
             std::exit(EXIT_FAILURE);
         }
         if (!b.readyForBinning()) {
-            std::cerr << "[bin_means][FATAL] Tree for '" << key
+            std::cerr << "[bin_means][FATAL] Tree for '" << period_key
                       << "' lacks binning vars (x,Q2,phi2/Delta_phi)." << std::endl;
             std::exit(EXIT_FAILURE);
         }
@@ -205,16 +205,20 @@ void calculate_bin_means(
                 if (!passesTopology_simple(b.detector1, b.detector2, topo)) continue;
                 if (!applyKinematicCuts_simple(b.t1, b.open_angle_ep2, b.pTmiss)) continue;
 
-                double xB=b.x, Q2=b.Q2, tt=std::fabs(b.t1), phi=b.phi();
-                if (!std::isfinite(xB)||!std::isfinite(Q2)||!std::isfinite(tt)||!std::isfinite(phi)) continue;
+                double xB = b.x;
+                double Q2 = b.Q2;
+                double tt = std::fabs(b.t1);
+                double phi = b.phi();
 
-                int ix=findBin(xB,xB_bins);
-                int iQ=findBin(Q2,Q2_bins);
-                int it=findBin(tt,t_bins);
-                int ip=phiToBin(phi);
-                if (ix<0||iQ<0||it<0||ip<0||ip>=N_PHI_BINS) continue;
+                if (!std::isfinite(xB) || !std::isfinite(Q2) || !std::isfinite(tt) || !std::isfinite(phi)) continue;
 
-                auto key4 = std::make_tuple(ix,iQ,it,ip);
+                int ix = findBin(xB, xB_bins);
+                int iQ = findBin(Q2, Q2_bins);
+                int it = findBin(tt,  t_bins);
+                int ip = phiToBin(phi);
+                if (ix < 0 || iQ < 0 || it < 0 || ip < 0 || ip >= N_PHI_BINS) continue;
+
+                auto key4 = std::make_tuple(ix, iQ, it, ip);
                 auto& a = acc[key4];
                 a.sum_xB  += xB;
                 a.sum_Q2  += Q2;

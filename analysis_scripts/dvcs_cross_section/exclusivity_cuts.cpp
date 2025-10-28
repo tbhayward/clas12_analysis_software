@@ -1,5 +1,6 @@
 // exclusivity_cuts.cpp
 #include "exclusivity_cuts.h"
+#include "periods.h"  // <-- canonical period labels and tree_key mapping
 
 #include <TFile.h>
 #include <TTree.h>
@@ -41,11 +42,13 @@ static std::string topoToKey(Topology t) {
 }
 
 static std::string periodCode(Channel ch, const std::string& runTag) {
+    // runTag is the label from periods.h (e.g., "fa18_inb")
     std::string prefix = (ch == Channel::DVCS) ? "DVCS_" : "eppi0_";
     std::string nice = runTag;
     if (!nice.empty()) nice[0] = std::toupper(nice[0]);
-    for (size_t i = 0; i + 1 < nice.size(); ++i) if (nice[i] == '_' && i + 1 < nice.size())
-        nice[i + 1] = std::toupper(nice[i + 1]);
+    for (size_t i = 0; i + 1 < nice.size(); ++i) {
+        if (nice[i] == '_' && i + 1 < nice.size()) nice[i + 1] = std::toupper(nice[i + 1]);
+    }
     return prefix + nice;
 }
 
@@ -352,6 +355,10 @@ static void saveStagePlots(const FilledHists& H, const HistList& cfg, Channel ch
         // Compute mu/sigma and draw fits for gaussian-like variables
         double mu_d = 0.0, sg_d = 0.0, mu_m = 0.0, sg_m = 0.0;
 
+        auto isGaussianVar = [&](const std::string& v)->bool {
+            return (v == "theta_gamma_gamma" || v == "theta_pi0_pi0" || v == "pTmiss");
+        };
+
         if (isGaussianVar(var)) {
             if (dh && dh->GetEntries() > 0) {
                 auto ms = fitGaussianLeftSide(dh);
@@ -474,7 +481,7 @@ static void writeCombinedJson(const std::string& outJsonDir,
 
 // -------------------- per-period driver --------------------
 
-static void runExclusivityCutsSingle(const std::string& runTag, Channel ch,
+static void runExclusivityCutsSingle(const std::string& runTagLabel, Channel ch,
                                      TTree* dataTree, TTree* mcTree,
                                      const std::string& outJsonDir,   // base json dir ("output/jsons")
                                      const std::string& outPlotDir,
@@ -482,14 +489,14 @@ static void runExclusivityCutsSingle(const std::string& runTag, Channel ch,
 {
     if (!dataTree || !mcTree) {
         std::cerr << "[Skip] Missing data or MC for " << channelToStr(ch)
-                  << " " << runTag << std::endl;
+                  << " " << runTagLabel << std::endl;
         return;
     }
 
     // Individual JSONs go under a subdir
     const std::string outJsonIndividualDir = outJsonDir + "/individual_cuts";
 
-    std::string pretty = periodCode(ch, runTag);
+    std::string pretty = periodCode(ch, runTagLabel);
     auto stages = buildStages(ch);
     auto cfg = getHistConfigs(ch);
 
@@ -504,7 +511,7 @@ static void runExclusivityCutsSingle(const std::string& runTag, Channel ch,
             for (auto& kv : H.mc)   delete kv.second;
         }
 
-        // Write the **individual** JSON into output/jsons/individual_cuts/
+        // Write the individual JSON into output/jsons/individual_cuts/
         saveFinalCutsJson(pretty, topo, outJsonIndividualDir, cumulative);
 
         // Stash for the combined file (which will be written at the top level)
@@ -529,37 +536,44 @@ void runAllExclusivityCuts(
     TH1::AddDirectory(kFALSE);
     gStyle->SetOptStat(0);
 
-    const std::vector<std::string> runTags = {
-        "sp18_inb", "sp18_out", "fa18_inb_supp", "fa18_inb", "fa18_out", "sp19_inb"
-    };
-
-    struct Job { std::string runTag; Channel ch; TTree* data; TTree* mc; };
+    struct Job { std::string label; Channel ch; TTree* data; TTree* mc; };
     std::vector<Job> jobs;
+    jobs.reserve(CANONICAL_PERIODS().size() * 2);
 
     auto getOrNull = [](const auto& m, const std::string& k)->TTree* {
         auto it = m.find(k); return (it != m.end() ? it->second : nullptr);
     };
 
-    // DVCS
-    for (const auto& tag : runTags) {
-        TTree* data = getOrNull(dvcsDataTrees, tag);
-        TTree* mc   = getOrNull(dvcsRecMcTrees, tag + "_rec");
-        if (data && mc) jobs.push_back({tag, Channel::DVCS, data, mc});
-    }
-    // eppi0
-    for (const auto& tag : runTags) {
-        TTree* data = getOrNull(eppi0DataTrees, tag + "_eppi0");
-        TTree* mc   = getOrNull(eppi0RecMcTrees, tag + "_rec_mc");
-        if (data && mc) jobs.push_back({tag, Channel::EPPI0, data, mc});
+    // Build jobs from canonical periods (single source of truth)
+    for (const auto& P : CANONICAL_PERIODS()) {
+        const std::string base = P.tree_key;      // e.g., "DVCS_Fa18_inb"
+        const std::string lbl  = P.label;         // e.g., "fa18_inb"
+
+        // DVCS (data vs reconstructed MC)
+        {
+            TTree* data = getOrNull(dvcsDataTrees, base);
+            TTree* mc   = getOrNull(dvcsRecMcTrees, base + std::string("_rec"));
+            if (data && mc) jobs.push_back({lbl, Channel::DVCS, data, mc});
+        }
+
+        // eppi0 (data vs reco MC). Keys use the same canonical base plus suffixes from periods.h
+        {
+            TTree* data = getOrNull(eppi0DataTrees,  base + std::string(SUF_EPPI0));
+            TTree* mc   = getOrNull(eppi0RecMcTrees, base + std::string(SUF_REC_MC));
+            if (data && mc) jobs.push_back({lbl, Channel::EPPI0, data, mc});
+        }
     }
 
-    if (jobs.empty()) { std::cout << "[Info] No exclusivity jobs found.\n"; return; }
+    if (jobs.empty()) {
+        std::cout << "[Info] No exclusivity jobs found.\n";
+        return;
+    }
 
     (void)maxThreads; // unused, single-threaded run
 
     std::map<std::string, CutDict> combined;
     for (const auto& job : jobs) {
-        runExclusivityCutsSingle(job.runTag, job.ch, job.data, job.mc, outJsonDir, outPlotDir, combined);
+        runExclusivityCutsSingle(job.label, job.ch, job.data, job.mc, outJsonDir, outPlotDir, combined);
     }
 
     // Write the combined file at the top level (output/jsons/combined_cuts.json)

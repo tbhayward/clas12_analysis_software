@@ -5,8 +5,8 @@
 // - Reads: DVCS data trees per period (must have: helicity, x, Q2, t1, phi2)
 // - Writes:
 //     • <out_root_dir>/jsons/total_counts.json             (master, nested "groups")
-//     • <out_root_dir>/jsons/total_counts_<group>.json     (flat per-group file)
-// - Produces per-group phi-binned plots under <out_root_dir>/total_counts_plots/<group>/
+//     • <out_root_dir>/jsons/total_counts_<label>.json     (flat per-group file; label = fa18_inb, etc.)
+// - Produces per-group phi-binned plots under <out_root_dir>/total_counts_plots/<label>/
 //
 // Per-group JSON:
 // {
@@ -19,11 +19,12 @@
 // Master JSON:
 // {
 //   "binning_meta": {...},
-//   "groups": { "<group>": { "bins": {...} }, ... }
+//   "groups": { "<label>": { "bins": {...} }, ... }
 // }
 // ------------------------------------------------------------
 
 #include "total_counts.h"
+#include "periods.h"  // canonical PeriodDef {label, tree_key}
 
 #include <TTree.h>
 #include <TCanvas.h>
@@ -59,24 +60,6 @@ static constexpr double TWO_PI  = 2.0 * M_PI;
 [[noreturn]] static void fatal(const std::string& msg) {
     std::cerr << "[total_counts][FATAL] " << msg << std::endl;
     std::exit(EXIT_FAILURE);
-}
-
-static inline std::string toLower(std::string s) {
-    std::transform(s.begin(), s.end(), s.begin(),
-                   [](unsigned char c){ return std::tolower(c); });
-    return s;
-}
-
-// Canonicalize period -> DVCS_<CapitalizedPeriod head only>
-// e.g., "sp18_inb" -> "DVCS_Sp18_inb", "fa18_inb_supp" -> "DVCS_Fa18_inb_supp"
-static std::string periodToDVCSKey(const std::string& period) {
-    std::string s = period;
-    std::transform(s.begin(), s.end(), s.begin(),
-                   [](unsigned char c){ return static_cast<char>(std::tolower(c)); });
-    if (!s.empty() && std::isalpha(static_cast<unsigned char>(s[0]))) {
-        s[0] = static_cast<char>(std::toupper(static_cast<unsigned char>(s[0])));
-    }
-    return "DVCS_" + s;
 }
 
 static inline double wrapToTwoPi(double phi) {
@@ -121,6 +104,21 @@ static inline std::string keyStr(int ix,int iQ,int it,int ip) {
 
 struct HelCounts { long long plus=0, minus=0; };
 
+// Canonical helpers
+static inline bool is_canonical_tree_key(const std::string& k) {
+    for (const auto& p : CANONICAL_PERIODS()) if (k == p.tree_key) return true;
+    return false;
+}
+
+static inline const char* tree_key_to_label_or_fatal(const std::string& k) {
+    for (const auto& p : CANONICAL_PERIODS()) if (k == p.tree_key) return p.label;
+    std::ostringstream oss;
+    oss << "Non-canonical tree key '" << k << "'. Expected one of:";
+    for (const auto& p : CANONICAL_PERIODS()) oss << " " << p.tree_key;
+    fatal(oss.str());
+    return ""; // unreachable
+}
+
 // ------------------------------------------------------------
 // JSON writers (strict)
 // ------------------------------------------------------------
@@ -159,7 +157,7 @@ static void write_total_counts_group_json(
 
 static void write_total_counts_master_json(
     const std::string& out_path,
-    const std::map<std::string, std::map<std::tuple<int,int,int,int>, HelCounts>>& allGroups,
+    const std::map<std::string, std::map<std::tuple<int,int,int,int>, HelCounts>>& allGroupsByLabel,
     int nPhi,
     const std::vector<std::pair<double,double>>& xB_bins,
     const std::vector<std::pair<double,double>>& Q2_bins,
@@ -176,7 +174,7 @@ static void write_total_counts_master_json(
     ofs << "  \"groups\": {\n";
 
     bool firstG = true;
-    for (const auto& gkv : allGroups) {
+    for (const auto& gkv : allGroupsByLabel) {
         if (!firstG) ofs << ",\n";
         firstG = false;
         ofs << "    \"" << gkv.first << "\": { \"bins\": {\n";
@@ -209,7 +207,7 @@ static std::vector<double> phiCentersDeg() {
 }
 
 static void plot_group_counts(
-    const std::string& group,
+    const std::string& group_label, // fa18_inb, etc.
     const std::map<std::tuple<int,int,int,int>, HelCounts>& table,
     const std::vector<Binning>& binning_scheme,
     const std::vector<std::pair<double,double>>& xB_bins,
@@ -248,7 +246,7 @@ static void plot_group_counts(
         const int W = 260 * ncols + 120;
         const int H = 220 * nrows + 140;
 
-        TCanvas* c = new TCanvas(Form("c_counts_%s_xB%d",group.c_str(),ix), "", W,H);
+        TCanvas* c = new TCanvas(Form("c_counts_%s_xB%d",group_label.c_str(),ix), "", W,H);
         TPad* pTop = new TPad("pTop","pTop",0.0,0.94,1.0,1.0);
         pTop->SetFillStyle(0); pTop->Draw();
         TPad* pGrid= new TPad("pGrid","pGrid",0.0,0.0,1.0,0.94);
@@ -258,14 +256,14 @@ static void plot_group_counts(
         pTop->cd();
         TLatex head; head.SetNDC(); head.SetTextSize(0.55);
         head.SetTextAlign(22);
-        head.DrawLatex(0.5,0.55,Form("%s   x_{B} [%.3g,%.3g]",group.c_str(),xB_bins[ix].first,xB_bins[ix].second));
+        head.DrawLatex(0.5,0.55,Form("%s   x_B [%.3g,%.3g]",group_label.c_str(),xB_bins[ix].first,xB_bins[ix].second));
 
         for (int r=0;r<nrows;++r){
             for (int ccol=0;ccol<ncols;++ccol){
                 pGrid->cd(r*ncols+ccol+1);
                 gPad->SetGrid(1,1);
                 TH1* frame = gPad->DrawFrame(0,0,360,1);
-                frame->GetXaxis()->SetTitle("#phi (deg)");
+                frame->GetXaxis()->SetTitle("phi (deg)");
                 frame->GetYaxis()->SetTitle("Counts");
 
                 std::vector<double> Yp(N_PHI_BINS,0), Ym(N_PHI_BINS,0);
@@ -288,8 +286,7 @@ static void plot_group_counts(
             }
         }
 
-        // save and verify
-        const std::string fpath = out_dir + "/plot_total_counts_" + group + "_xB_" + std::to_string(ix) + ".png";
+        const std::string fpath = out_dir + "/plot_total_counts_" + group_label + "_xB_" + std::to_string(ix) + ".png";
         c->SaveAs(fpath.c_str());
 
         // fail-fast verification
@@ -311,10 +308,10 @@ static void plot_group_counts(
 } // namespace
 
 // ------------------------------------------------------------
-// Main compute function (STRICT)
+// Main compute function (STRICT, canonical names enforced)
 // ------------------------------------------------------------
 void compute_total_counts(
-    const std::vector<std::string>& periods,
+    const std::vector<std::string>& periods,            // MUST be canonical tree keys (e.g. "DVCS_Fa18_inb")
     const std::vector<std::string>& /*topologies*/,     // not used here
     const std::vector<Binning>& binning_scheme,
     const std::map<std::string, TTree*>& dataTrees,     // keys are DVCS_* names
@@ -343,13 +340,19 @@ void compute_total_counts(
         fatal(std::string("Cannot create jsons dir: ") + jsons_dir.string() + " (" + ec.message() + ")");
 
     // ---- Per-period processing ----
-    std::map<std::string, std::map<std::tuple<int,int,int,int>, HelCounts>> allGroups;
+    // Use LABELS for group keys and filenames; use TREE KEYS for lookups.
+    std::map<std::string, std::map<std::tuple<int,int,int,int>, HelCounts>> allGroupsByLabel;
 
-    for (const auto& period : periods) {
-        // Map requested period -> DVCS_* key for the tree lookup
-        const std::string dvcsKey = periodToDVCSKey(period);
+    for (const auto& period_key : periods) {
+        if (!is_canonical_tree_key(period_key)) {
+            std::ostringstream oss;
+            oss << "Periods must be canonical tree keys. Got '" << period_key << "'. Expected one of:";
+            for (const auto& p : CANONICAL_PERIODS()) oss << " " << p.tree_key;
+            fatal(oss.str());
+        }
+        const char* label = tree_key_to_label_or_fatal(period_key);
 
-        auto it = dataTrees.find(dvcsKey);
+        auto it = dataTrees.find(period_key);
         if (it == dataTrees.end() || !it->second) {
             std::ostringstream avail;
             avail << "{ ";
@@ -360,24 +363,24 @@ void compute_total_counts(
                 avail << '"' << kv.first << '"';
             }
             avail << " }";
-            fatal(std::string("[total_counts] Missing DVCS data tree for period: ")
-                  + period + " (looked for key '" + dvcsKey + "'). Available keys: " + avail.str());
+            fatal(std::string("Missing DVCS data tree for key '") + period_key + "'. Available keys: " + avail.str());
         }
 
         TTree* t = it->second;
 
-        // Strict: require phi2 branch
-        int helicity = 0; 
+        // Strict: require branches
+        int helicity = 0;
         double x = 0, Q2 = 0, t1 = 0, phi2 = std::numeric_limits<double>::quiet_NaN();
+
+        if (!t->GetBranch("helicity") || !t->GetBranch("x") || !t->GetBranch("Q2") || !t->GetBranch("t1"))
+            fatal(std::string("Required branches (helicity,x,Q2,t1) missing in '") + period_key + "'");
+        if (!t->GetBranch("phi2"))
+            fatal(std::string("Required branch 'phi2' missing in '") + period_key + "'");
 
         t->SetBranchAddress("helicity", &helicity);
         t->SetBranchAddress("x", &x);
         t->SetBranchAddress("Q2", &Q2);
         t->SetBranchAddress("t1", &t1);
-        if (!t->GetBranch("phi2")) {
-            fatal(std::string("[total_counts] Required branch 'phi2' missing in tree for period '")
-                  + period + "' (key '" + dvcsKey + "')");
-        }
         t->SetBranchAddress("phi2", &phi2);
 
         std::map<std::tuple<int,int,int,int>, HelCounts> table;
@@ -387,29 +390,31 @@ void compute_total_counts(
             if (helicity != +1 && helicity != -1) continue;
             if (!std::isfinite(x) || !std::isfinite(Q2) || !std::isfinite(t1) || !std::isfinite(phi2)) continue;
 
-            int ix  = findBin(x, xB_bins);
-            int iQ  = findBin(Q2, Q2_bins);
-            int itb = findBin(std::fabs(t1), t_bins);
-            int ip  = phiToBin(phi2);
+            const int ix  = findBin(x, xB_bins);
+            const int iQ  = findBin(Q2, Q2_bins);
+            const int itb = findBin(std::fabs(t1), t_bins);
+            const int ip  = phiToBin(phi2);
             if (ix < 0 || iQ < 0 || itb < 0 || ip < 0) continue;
 
             auto& hc = table[{ix, iQ, itb, ip}];
             if (helicity == +1) hc.plus++; else hc.minus++;
         }
 
-        // Keep the original requested period as the group key (matches contamination/correction stages)
-        allGroups[period] = table;
+        const std::string label_str(label);
 
-        // Plot per group to a directory named exactly by the requested period
-        const fs::path plot_dir = fs::path(out_root_dir) / "total_counts_plots" / period;
-        plot_group_counts(period, table, binning_scheme, xB_bins, Q2_bins, t_bins, plot_dir.string());
+        // Store by LABEL for downstream consistency
+        allGroupsByLabel[label_str] = table;
+
+        // Plots go to .../total_counts_plots/<label>/
+        const fs::path plot_dir = fs::path(out_root_dir) / "total_counts_plots" / label_str;
+        plot_group_counts(label_str, table, binning_scheme, xB_bins, Q2_bins, t_bins, plot_dir.string());
     }
 
     // ---- Write master JSON ----
-    write_total_counts_master_json(out_json_path, allGroups, N_PHI_BINS, xB_bins, Q2_bins, t_bins);
+    write_total_counts_master_json(out_json_path, allGroupsByLabel, N_PHI_BINS, xB_bins, Q2_bins, t_bins);
 
-    // ---- Write one flat JSON per group ----
-    for (const auto& gkv : allGroups) {
+    // ---- Write one flat JSON per group (label) ----
+    for (const auto& gkv : allGroupsByLabel) {
         const std::string fname = (std::filesystem::path(out_root_dir) / "jsons" / ("total_counts_" + gkv.first + ".json")).string();
         write_total_counts_group_json(fname, gkv.second, N_PHI_BINS, xB_bins, Q2_bins, t_bins);
     }
