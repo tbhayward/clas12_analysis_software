@@ -5,7 +5,7 @@
 // with Poisson error propagation.
 //
 // Canonical period naming (required):
-//   - Periods come from periods.h (findPeriodDefByLabel).
+//   - Periods come from periods.h (PeriodDef and CANONICAL_PERIODS()).
 //   - Each period has a canonical tree_key like "DVCS_Fa18_inb".
 //   - Associated trees MUST exist under the following exact keys:
 //       dvcsDataTrees.at(tree_key)
@@ -29,7 +29,7 @@
 // ------------------------------------------------------------
 
 #include "pi0_contamination.h"
-#include "periods.h"  // provides PeriodDef and findPeriodDefByLabel
+#include "periods.h"  // provides PeriodDef and CANONICAL_PERIODS()
 
 #include <TTree.h>
 #include <TCanvas.h>
@@ -149,9 +149,21 @@ static int findBin(double v, const std::vector<std::pair<double,double>>& ranges
 }
 
 // ------------------------------------------------------------
+// Local canonical lookup shim (search by short label)
+// If periods.h also provides a function with this name, ours has
+// internal linkage and won't conflict.
+// ------------------------------------------------------------
+static inline const PeriodDef* findPeriodDefByLabel(const std::string& label) {
+    for (const auto& p : CANONICAL_PERIODS()) {
+        if (label == p.label) return &p;
+    }
+    return nullptr;
+}
+
+// ------------------------------------------------------------
 // 3sigma cuts loader (STRICT)
 // ------------------------------------------------------------
-struct Stats { double mean=0.0, std=0.0; };
+struct Stats { double mean=0.0; double std=0.0; };
 using VarCutMap = std::map<std::string, Stats>;
 using PeriodTopoCuts = std::map<std::string, VarCutMap>;  // key: "<tree_key>_<TopoKey>"
 
@@ -336,7 +348,6 @@ struct BranchBinderDVCS {
     double x=0, Q2=0, phi2=0;
 
     // exclusivity-like quantities for 3sigma on DVCS hypothesis
-    // Provide all potential variables; if cuts reference any missing one -> FATAL in validation step
     double Emiss2=0, Mx2=0, Mx2_1=0, Mx2_2=0, theta_gamma_gamma=0, xF=0;
 
     std::set<std::string> boundD, boundI;
