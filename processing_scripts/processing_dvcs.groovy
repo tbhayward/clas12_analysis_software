@@ -98,15 +98,15 @@ public static void main(String[] args) {
 	// setup QA database
 	QADB qa = new QADB("latest");
 	qa.checkForDefect('TotalOutlier')    
-	qa.checkForDefect('TerminalOutlier')
-	qa.checkForDefect('MarginalOutlier')
-	qa.checkForDefect('SectorLoss')
-	qa.checkForDefect('LowLiveTime')
-	qa.checkForDefect('Misc')
-	qa.checkForDefect('ChargeHigh')
-	qa.checkForDefect('ChargeNegative')
-	qa.checkForDefect('ChargeUnknown')
-	qa.checkForDefect('PossiblyNoBeam')
+	// qa.checkForDefect('TerminalOutlier')
+	// qa.checkForDefect('MarginalOutlier')
+	// qa.checkForDefect('SectorLoss')
+	// qa.checkForDefect('LowLiveTime')
+	// qa.checkForDefect('Misc')
+	// qa.checkForDefect('ChargeHigh')
+	// qa.checkForDefect('ChargeNegative')
+	// qa.checkForDefect('ChargeUnknown')
+	// qa.checkForDefect('PossiblyNoBeam')
 	[ // list of runs with `Misc` that should be allowed, generally empty target etc for dilution factor calculations
 	 	5046, 5047, 5051, 5128, 5129, 5130, 5158, 5159,
   		5160, 5163, 5165, 5166, 5167, 5168, 5169, 5180,
