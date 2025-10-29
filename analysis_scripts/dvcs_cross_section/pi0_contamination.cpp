@@ -219,6 +219,7 @@ static void loadCombinedCuts_STRICT(const std::string& path, PeriodTopoCuts& out
         int depth = 0;
         size_t i = dataObjStart;
         for (; i < s.size(); ++i) {
+            if (i >= s.size()) break;
             if (s[i] == '{') depth++;
             else if (s[i] == '}') { depth--; if (!depth) { ++i; break; } }
         }
@@ -807,6 +808,15 @@ void compute_pi0_contamination_helicity(
         const PeriodDef* pdef = findPeriodDefByTreeKey(period_tree_key);
         const std::string& tree_key   = pdef->tree_key; // e.g. "DVCS_Fa18_inb"
         const std::string& shortlabel = pdef->label;    // e.g. "fa18_inb"
+
+        // >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+        // Hard-skip the supplemental period: no MC exists for it.
+        // We duplicate outputs from Fa18_inb elsewhere.
+        if (tree_key == "DVCS_Fa18_inb_supp") {
+            std::cout << "[pi0_contam] Skipping processing of DVCS_Fa18_inb_supp (no MC). Using duplicated results from Fa18_inb.\n";
+            continue;
+        }
+        // <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
 
         // Exact-key trees
         TTree* t_dvcs     = getTreeOrDie(dvcsDataTrees,   tree_key,             "DVCS DATA");
