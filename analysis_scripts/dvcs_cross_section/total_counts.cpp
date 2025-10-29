@@ -446,6 +446,13 @@ static std::vector<double> phiCentersDeg() {
     return v;
 }
 
+static bool pairAlmostEqual(const std::pair<double,double>& a,
+                            const std::pair<double,double>& b,
+                            double eps = 1e-9) {
+    return std::fabs(a.first  - b.first)  < eps &&
+           std::fabs(a.second - b.second) < eps;
+} // #end pairAlmostEqual
+
 static void plot_group_counts(
     const std::string& group_label, // fa18_inb, etc.
     const std::map<std::tuple<int,int,int,int>, HelCounts>& table,
@@ -525,7 +532,34 @@ static void plot_group_counts(
                 gPad->SetLeftMargin(0.125);
                 gPad->SetRightMargin(0.06);
 
-                TH1* frame = gPad->DrawFrame(0,0,360,1);
+                // Find global indices iQ and itb robustly (tolerant to FP noise)
+                int iQ  = -1;
+                int itb = -1;
+                for (int iq=0; iq<(int)Q2_bins.size(); ++iq) {
+                    if (pairAlmostEqual(Q2_bins[iq], Q2s[r])) { iQ = iq; break; }
+                }
+                for (int it=0; it<(int)t_bins.size(); ++it) {
+                    if (pairAlmostEqual(t_bins[it], Ts[ccol])) { itb = it; break; }
+                }
+
+                // Gather Y arrays and find panel-local maximum
+                std::vector<double> Yp(N_PHI_BINS,0.0), Ym(N_PHI_BINS,0.0);
+                double local_max = 0.0;
+
+                if (iQ >= 0 && itb >= 0) {
+                    for(int ip=0; ip<N_PHI_BINS; ++ip){
+                        auto itbl = table.find({ix, iQ, itb, ip});
+                        if(itbl == table.end()) continue;
+                        Yp[ip] = (double)itbl->second.plus;
+                        Ym[ip] = (double)itbl->second.minus;
+                        local_max = std::max(local_max, std::max(Yp[ip], Ym[ip]));
+                    } // #endfor
+                }
+
+                // Choose y-max (>=1 to avoid zero range); add headroom
+                double ymax = std::max(1.0, local_max * 1.15);
+
+                TH1* frame = gPad->DrawFrame(0.0, 0.0, 360.0, ymax);
                 if (!frame) fatal("DrawFrame returned null");
                 frame->GetXaxis()->SetTitle("phi (deg)");
                 frame->GetYaxis()->SetTitle("Counts");
@@ -533,32 +567,24 @@ static void plot_group_counts(
                 frame->GetYaxis()->CenterTitle();
                 frame->GetXaxis()->SetNdivisions(505);
 
-                std::vector<double> Yp(N_PHI_BINS,0), Ym(N_PHI_BINS,0);
-
-                int iQ = -1, itb = -1;
-                // find indices for this Q2/t pair in the master lists
-                for (int iq=0; iq<(int)Q2_bins.size(); ++iq) {
-                    if (Q2_bins[iq] == Q2s[r]) { iQ = iq; break; }
+                // If very wide dynamic range, log-scale helps
+                if (local_max >= 500.0) {
+                    gPad->SetLogy(1);
+                    frame->GetYaxis()->SetRangeUser(0.5, std::max(1.0, local_max*1.15));
+                } else {
+                    gPad->SetLogy(0);
                 }
-                for (int it=0; it<(int)t_bins.size(); ++it) {
-                    if (t_bins[it] == Ts[ccol]) { itb = it; break; }
-                }
-
-                for(int ip=0;ip<N_PHI_BINS;++ip){
-                    auto it = table.find({ix, iQ, itb, ip});
-                    if(it == table.end()) continue;
-                    Yp[ip] = it->second.plus;
-                    Ym[ip] = it->second.minus;
-                } // #endfor
 
                 TGraph* gp = new TGraph(N_PHI_BINS,X.data(),Yp.data());
                 TGraph* gm = new TGraph(N_PHI_BINS,X.data(),Ym.data());
                 if (!gp || !gm) fatal("TGraph allocation failed");
                 gp->SetMarkerStyle(24);
                 gp->SetMarkerColor(kRed);
-                gp->Draw("LP SAME");
+                gp->SetLineColor(kRed);
                 gm->SetMarkerStyle(20);
                 gm->SetMarkerColor(kBlue);
+                gm->SetLineColor(kBlue);
+                gp->Draw("LP SAME");
                 gm->Draw("LP SAME");
             } // #endfor
         } // #endfor
@@ -583,7 +609,7 @@ static void plot_group_counts(
 
         delete c;
     } // #endfor
-}
+} // #end plot_group_counts
 
 } // namespace
 
