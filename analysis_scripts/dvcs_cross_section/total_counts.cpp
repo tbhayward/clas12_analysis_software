@@ -74,6 +74,10 @@ struct BinningRange { double lo=0.0; double hi=0.0; };
     std::exit(EXIT_FAILURE);
 }
 
+static inline void dbg(const std::string& msg) {
+    std::cerr << "[total_counts][DBG] " << msg << std::endl;
+}
+
 static inline double wrapToTwoPi(double phi) {
     if (!std::isfinite(phi)) return std::numeric_limits<double>::quiet_NaN();
     double w = std::fmod(phi, TWO_PI);
@@ -205,6 +209,7 @@ static void parseBaseCuts(const json& arr, std::vector<BaseCut>& out) {
 }
 
 static PeriodCuts loadCombinedCuts(const std::string& json_path, const std::string& period_key) {
+    dbg(std::string("Loading combined cuts JSON: ") + json_path + " (period=" + period_key + ")");
     std::ifstream ifs(json_path);
     if (!ifs) fatal("Cannot open combined cuts JSON: " + json_path);
     json J; ifs >> J;
@@ -241,6 +246,8 @@ static PeriodCuts loadCombinedCuts(const std::string& json_path, const std::stri
         if (c.nsigma <= 0.0) fatal("sigma_cuts: non-positive nsigma for branch '" + c.branch + "'");
     }
 
+    dbg("Cuts loaded: sigma_cuts=" + std::to_string(cuts.sigma_cuts.size()) +
+        " base_cuts=" + std::to_string(cuts.base_cuts.size()));
     return cuts;
 }
 
@@ -275,21 +282,21 @@ static void bindRequiredBranches_STRICT(
     const std::vector<std::string>& branch_names,
     std::unordered_map<std::string, BranchBinding>& bindings)
 {
+    dbg("Binding required exclusivity branches...");
     bindings.clear();
     bindings.reserve(branch_names.size()); // avoid rehash so stored addresses stay valid during binding
 
     for (const auto& bname : branch_names) {
+        dbg(std::string("  binding '") + bname + "'");
         TBranch* b = t->GetBranch(bname.c_str());
         if (!b) fatal("Required branch for cuts missing: '" + bname + "'");
 
         TLeaf* leaf = b->GetLeaf(bname.c_str());
         if (!leaf) {
-            // try the first leaf if multiple
             leaf = (TLeaf*)b->GetListOfLeaves()->First();
             if (!leaf) fatal("Branch has no leaves (unexpected): '" + bname + "'");
         }
 
-        // Insert default element, then bind to its fields (addresses remain valid as long as we do not rehash)
         auto [it, inserted] = bindings.emplace(bname, BranchBinding{});
         BranchBinding& bb = it->second;
         bb.name   = bname;
@@ -301,6 +308,8 @@ static void bindRequiredBranches_STRICT(
             t->SetBranchAddress(bname.c_str(), &bb.as_double);
         }
     } // #endfor
+
+    dbg("All required branches bound: " + std::to_string(bindings.size()));
 }
 
 // Evaluate base cuts
@@ -358,9 +367,7 @@ static inline bool passes3SigmaCuts_STRICT(
     const PeriodCuts& cuts,
     const std::unordered_map<std::string, BranchBinding>& B)
 {
-    if (!passBaseCuts(cuts.base_cuts, B)) return false;
-    if (!passSigmaCuts(cuts.sigma_cuts, B)) return false;
-    return true;
+    return passBaseCuts(cuts.base_cuts, B) && passSigmaCuts(cuts.sigma_cuts, B);
 }
 
 // ------------------------------------------------------------
@@ -461,6 +468,8 @@ static void plot_group_counts(
 {
     namespace fs = std::filesystem;
 
+    dbg(std::string("Plotting group '") + group_label + "' to " + out_dir);
+
     static const std::vector<double> PHI = phiCentersDeg();
     std::vector<double> X(N_PHI_BINS), ex(N_PHI_BINS, 0.0);
     for (int i=0;i<N_PHI_BINS;++i) X[i] = PHI[i];
@@ -472,8 +481,12 @@ static void plot_group_counts(
                   << " (" << ec.message() << ")\n";
         std::exit(EXIT_FAILURE);
     }
+    dbg("Plot dir ready. xB bins: " + std::to_string(xB_bins.size()));
 
     for (int ix = 0; ix < (int)xB_bins.size(); ++ix) {
+        dbg("Preparing xB bin ix=" + std::to_string(ix) +
+            " range=(" + std::to_string(xB_bins[ix].first) + "," + std::to_string(xB_bins[ix].second) + ")");
+
         std::set<std::pair<double,double>> q2set, tset;
         for (const auto& b : binning_scheme) {
             if (std::make_pair(b.xBmin,b.xBmax)==xB_bins[ix]) {
@@ -484,70 +497,126 @@ static void plot_group_counts(
 
         std::vector<std::pair<double,double>> Q2s(q2set.begin(),q2set.end());
         std::vector<std::pair<double,double>> Ts(tset.begin(),tset.end());
-        if (Q2s.empty() || Ts.empty()) continue;
+
+        dbg("  Q2 bins for this xB: " + std::to_string(Q2s.size()) +
+            " ; t bins: " + std::to_string(Ts.size()));
+
+        if (Q2s.empty() || Ts.empty()) {
+            dbg("  Skipping plot for this xB (empty Q2 or t list).");
+            continue;
+        } // #endif
 
         const int nrows = (int)Q2s.size();
         const int ncols = (int)Ts.size();
+        if (nrows <= 0 || ncols <= 0) {
+            dbg("  nrows or ncols is zero; skipping.");
+            continue;
+        }
         const int W = 260 * ncols + 120;
         const int H = 220 * nrows + 140;
 
         TCanvas* c = new TCanvas(Form("c_counts_%s_xB%d",group_label.c_str(),ix), "", W,H);
+        if (!c) { fatal("TCanvas allocation failed"); }
+        dbg("  Canvas allocated.");
+
         TPad* pTop = new TPad("pTop","pTop",0.0,0.94,1.0,1.0);
-        pTop->SetFillStyle(0); pTop->Draw();
         TPad* pGrid= new TPad("pGrid","pGrid",0.0,0.0,1.0,0.94);
+        pTop->SetFillStyle(0); pTop->Draw();
         pGrid->SetFillStyle(0); pGrid->Draw();
         pGrid->Divide(ncols,nrows,0.0001,0.0001);
+        dbg("  Pads created and divided (nrows=" + std::to_string(nrows) + ", ncols=" + std::to_string(ncols) + ").");
 
         pTop->cd();
+        if (!gPad) fatal("gPad null after pTop->cd()");
         TLatex head; head.SetNDC(); head.SetTextSize(0.055);
         head.SetTextAlign(22);
         head.DrawLatex(0.5,0.55,Form("%s   x_B (%.3g, %.3g)",group_label.c_str(),xB_bins[ix].first,xB_bins[ix].second));
+        dbg("  Header drawn.");
+
+        const int cells = nrows * ncols;
 
         for (int r=0;r<nrows;++r){
             for (int ccol=0;ccol<ncols;++ccol){
-                pGrid->cd(r*ncols+ccol+1);
+                const int cell = r*ncols + ccol + 1;
+                if (cell < 1 || cell > cells) {
+                    dbg("  WARNING: computed cell index out of range: " + std::to_string(cell) + "/" + std::to_string(cells));
+                    continue;
+                }
+                pGrid->cd(cell);
+                if (!gPad) fatal("gPad null after pGrid->cd(cell)");
+
                 gPad->SetGrid(1,1);
+                gPad->SetTopMargin(0.18);
+                gPad->SetBottomMargin(0.14);
+                gPad->SetLeftMargin(0.125);
+                gPad->SetRightMargin(0.06);
+
                 TH1* frame = gPad->DrawFrame(0,0,360,1);
+                if (!frame) fatal("DrawFrame returned null");
                 frame->GetXaxis()->SetTitle("phi (deg)");
                 frame->GetYaxis()->SetTitle("Counts");
+                frame->GetXaxis()->CenterTitle();
+                frame->GetYaxis()->CenterTitle();
+                frame->GetXaxis()->SetNdivisions(505);
 
                 std::vector<double> Yp(N_PHI_BINS,0), Ym(N_PHI_BINS,0);
+
+                int iQ = -1, itb = -1;
+                // find indices for this Q2/t pair in the master lists
+                for (int iq=0; iq<(int)Q2_bins.size(); ++iq) {
+                    if (Q2_bins[iq] == Q2s[r]) { iQ = iq; break; }
+                }
+                for (int it=0; it<(int)t_bins.size(); ++it) {
+                    if (t_bins[it] == Ts[ccol]) { itb = it; break; }
+                }
+                dbg("    Cell r=" + std::to_string(r) + " c=" + std::to_string(ccol) +
+                    " -> iQ=" + std::to_string(iQ) + " itb=" + std::to_string(itb));
+
                 for(int ip=0;ip<N_PHI_BINS;++ip){
-                    auto it = table.find({ix,r,ccol,ip});
+                    auto it = table.find({ix, iQ, itb, ip});
                     if(it == table.end()) continue;
                     Yp[ip] = it->second.plus;
                     Ym[ip] = it->second.minus;
                 } // #endfor
 
                 TGraph* gp = new TGraph(N_PHI_BINS,X.data(),Yp.data());
+                TGraph* gm = new TGraph(N_PHI_BINS,X.data(),Ym.data());
+                if (!gp || !gm) fatal("TGraph allocation failed");
                 gp->SetMarkerStyle(24);
                 gp->SetMarkerColor(kRed);
                 gp->Draw("LP SAME");
-
-                TGraph* gm = new TGraph(N_PHI_BINS,X.data(),Ym.data());
                 gm->SetMarkerStyle(20);
                 gm->SetMarkerColor(kBlue);
                 gm->Draw("LP SAME");
+                dbg("    Plotted cell " + std::to_string(cell));
             } // #endfor
         } // #endfor
 
         const std::string fpath = out_dir + "/plot_total_counts_" + group_label + "_xB_" + std::to_string(ix) + ".png";
+        dbg("  Saving: " + fpath);
         c->SaveAs(fpath.c_str());
 
         // fail-fast verification
         std::error_code fec;
-        if (!fs::exists(fpath, fec) || (fs::file_size(fpath, fec) == 0)) {
+        bool exists = fs::exists(fpath, fec);
+        auto sz = exists ? fs::file_size(fpath, fec) : 0ULL;
+        dbg(std::string("  Save check: exists=") + (exists ? "true" : "false") +
+            " size=" + std::to_string(sz) + " ec=" + (fec ? fec.message() : "ok"));
+
+        if (!exists || (sz == 0) || fec) {
             std::ostringstream em;
             em << "[total_counts][FATAL] Failed to save plot: " << fpath
-               << " (exists=" << fs::exists(fpath)
-               << ", size=" << fs::file_size(fpath, fec)
+               << " (exists=" << exists
+               << ", size=" << sz
                << ", ec=" << (fec ? fec.message() : "ok") << ")";
             std::cerr << em.str() << std::endl;
             std::exit(EXIT_FAILURE);
         }
 
         delete c;
+        dbg("  Canvas deleted.");
     } // #endfor
+    dbg("Finished plotting group '" + group_label + "'");
 }
 
 } // namespace
@@ -566,10 +635,19 @@ void compute_total_counts(
 {
     namespace fs = std::filesystem;
 
+    dbg("compute_total_counts() starting...");
+    dbg("  periods.size=" + std::to_string(periods.size()));
+    dbg("  binning_scheme.size=" + std::to_string(binning_scheme.size()));
+    dbg("  dataTrees.size=" + std::to_string(dataTrees.size()));
+    dbg("  out_root_dir=" + out_root_dir);
+
     // ---- Validate binning axes ----
     const auto xB_bins = uniqueRanges(binning_scheme,'x');
     const auto Q2_bins = uniqueRanges(binning_scheme,'Q');
     const auto t_bins  = uniqueRanges(binning_scheme,'t');
+    dbg("  axes: xB=" + std::to_string(xB_bins.size()) +
+        " Q2=" + std::to_string(Q2_bins.size()) +
+        " t="  + std::to_string(t_bins.size()));
     if (N_PHI_BINS <= 0) fatal("N_PHI_BINS must be > 0");
     if (xB_bins.empty() || Q2_bins.empty() || t_bins.empty())
         fatal("Empty binning axes (xB/Q2/t). Check binning_scheme.");
@@ -583,12 +661,15 @@ void compute_total_counts(
     ec.clear();
     if (!fs::create_directories(jsons_dir, ec) && ec)
         fatal(std::string("Cannot create jsons dir: ") + jsons_dir.string() + " (" + ec.message() + ")");
+    dbg("  output dirs ready");
 
     // ---- Per-period processing ----
     // Use LABELS for group keys and filenames; use TREE KEYS for lookups.
     std::map<std::string, std::map<std::tuple<int,int,int,int>, HelCounts>> allGroupsByLabel;
 
     for (const auto& period_key : periods) {
+        dbg(std::string("Processing period_key=") + period_key);
+
         if (!is_canonical_tree_key(period_key)) {
             std::ostringstream oss;
             oss << "Periods must be canonical tree keys. Got '" << period_key << "'. Expected one of:";
@@ -596,6 +677,7 @@ void compute_total_counts(
             fatal(oss.str());
         } // #endif
         const char* label = tree_key_to_label_or_fatal(period_key);
+        dbg(std::string("  label resolved: ") + label);
 
         auto it = dataTrees.find(period_key);
         if (it == dataTrees.end() || !it->second) {
@@ -615,6 +697,8 @@ void compute_total_counts(
         const PeriodCuts cuts = loadCombinedCuts(combined_cuts_json, period_key);
 
         TTree* t = it->second;
+        if (!t) fatal("Null TTree pointer for " + period_key);
+        dbg("  TTree ok. Entries=" + std::to_string((long long)t->GetEntries()));
 
         // Strict: require baseline branches (for binning and helicity)
         int helicity = 0;
@@ -630,9 +714,19 @@ void compute_total_counts(
         t->SetBranchAddress("Q2", &Q2);
         t->SetBranchAddress("t1", &t1);
         t->SetBranchAddress("phi2", &phi2);
+        dbg("  Baseline branches bound.");
 
         // Bind all branches required by exclusivity/base cuts
         const auto neededCutBranches = requiredCutBranches(cuts);
+        {
+            std::ostringstream oss; oss << "  Required cut branches [" << neededCutBranches.size() << "]: ";
+            for (size_t i=0;i<neededCutBranches.size();++i) {
+                if (i) oss << ", ";
+                oss << neededCutBranches[i];
+            }
+            dbg(oss.str());
+        }
+
         std::unordered_map<std::string, BranchBinding> cutBindings;
         bindRequiredBranches_STRICT(t, neededCutBranches, cutBindings);
 
@@ -640,7 +734,9 @@ void compute_total_counts(
         std::map<std::tuple<int,int,int,int>, HelCounts> table;
 
         const Long64_t nent = t->GetEntries();
+        dbg("  Entering event loop: nent=" + std::to_string((long long)nent));
         for (Long64_t i = 0; i < nent; ++i) {
+            if ((i % 1000000) == 0) dbg("    entry " + std::to_string((long long)i) + "/" + std::to_string((long long)nent));
             t->GetEntry(i);
 
             // Basic sanity for helicity
@@ -661,6 +757,16 @@ void compute_total_counts(
             auto& hc = table[{ix, iQ, itb, ip}];
             if (helicity == +1) hc.plus++; else hc.minus++;
         } // #endfor
+        dbg("  Event loop done. Table size=" + std::to_string(table.size()));
+
+        // Small summary of totals for this period
+        long long sum_plus=0, sum_minus=0;
+        for (const auto& kv : table) {
+            sum_plus  += kv.second.plus;
+            sum_minus += kv.second.minus;
+        }
+        dbg("  Totals: plus=" + std::to_string(sum_plus) + " minus=" + std::to_string(sum_minus) +
+            " total=" + std::to_string(sum_plus + sum_minus));
 
         const std::string label_str(label);
 
@@ -670,14 +776,19 @@ void compute_total_counts(
         // Plots go to .../total_counts_plots/<label>/
         const fs::path plot_dir = fs::path(out_root_dir) / "total_counts_plots" / label_str;
         plot_group_counts(label_str, table, binning_scheme, xB_bins, Q2_bins, t_bins, plot_dir.string());
+        dbg(std::string("  Plots completed for label=") + label_str);
     } // #endfor
 
     // ---- Write master JSON ----
+    dbg("Writing master JSON: " + out_json_path);
     write_total_counts_master_json(out_json_path, allGroupsByLabel, N_PHI_BINS, xB_bins, Q2_bins, t_bins);
 
     // ---- Write one flat JSON per group (label) ----
     for (const auto& gkv : allGroupsByLabel) {
         const std::string fname = (std::filesystem::path(out_root_dir) / "jsons" / ("total_counts_" + gkv.first + ".json")).string();
+        dbg("Writing group JSON: " + fname);
         write_total_counts_group_json(fname, gkv.second, N_PHI_BINS, xB_bins, Q2_bins, t_bins);
     } // #endfor
+
+    dbg("compute_total_counts() finished.");
 }
