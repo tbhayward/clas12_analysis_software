@@ -98,7 +98,7 @@ public static void main(String[] args) {
 	// setup QA database
 	QADB qa = new QADB("latest");
 	qa.checkForDefect('TotalOutlier')    
-	// qa.checkForDefect('TerminalOutlier')
+	qa.checkForDefect('TerminalOutlier')
 	// qa.checkForDefect('MarginalOutlier')
 	// qa.checkForDefect('SectorLoss')
 	// qa.checkForDefect('LowLiveTime')
