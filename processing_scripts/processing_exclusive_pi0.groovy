@@ -175,8 +175,12 @@ public static void main(String[] args) {
 		    // 	(runnum == 11 || runnum == 16194 || runnum == 16089 || runnum == 16185 ||
 	    	// 	runnum == 16308 || runnum == 16184 || runnum == 16307 || runnum == 16309 ||
 	    	// 	qa.OkForAsymmetry(runnum, evnum));
-	    	boolean process_event = filter.isValid(research_Event) && (runnum == 11 || runnum < 5020 ||
-	    	qa.pass(runnum, evnum));
+	    	boolean process_event = filter.isValid(research_Event) && 
+		    	(runnum == 11 ||  // MC
+		    	runnum < 3087 || // RGA Sp18 Inb
+		     	(runnum > 3306 && runnum < 3817) || // RGA Sp18 Inb
+		     	(runnum > 4003 && runnum < 5020) || // RGA Sp18 Inb
+		    	qa.pass(runnum, evnum));
 	    	if (runnum > 17768) process_event = false; // outbending RGC Sp23
 	    	if (runnum == 17331 || runnum == 16987 || runnum == 17079 || runnum == 17190 || runnum == 17639) process_event = false; // low live time
 	    	if (runnum == 16850 || runnum == 16851 || runnum == 16852 || runnum == 16855 || runnum == 16879) process_event = false; // luminosity scans
