@@ -105,7 +105,7 @@ public static void main(String[] args) {
 	qa.checkForDefect('Misc')
 	qa.checkForDefect('ChargeHigh')
 	qa.checkForDefect('ChargeNegative')
-	// qa.checkForDefect('ChargeUnknown')
+	qa.checkForDefect('ChargeUnknown')
 	// qa.checkForDefect('PossiblyNoBeam')
 	[ // list of runs with `Misc` that should be allowed, generally empty target etc for dilution factor calculations
 	 	5046, 5047, 5051, 5128, 5129, 5130, 5158, 5159,
