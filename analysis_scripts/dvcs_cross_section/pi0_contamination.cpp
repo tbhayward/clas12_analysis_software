@@ -4,40 +4,30 @@
 //   c_h = (N_bkg_mc / N_dvcs_data_h) * (N_pi0_data_h / N_pi0_rec_mc)
 // with Poisson error propagation.
 //
-// Canonical period naming used in THIS program:
-//   - Periods come from periods.h (PeriodDef and CANONICAL_PERIODS()).
-//   - Each period has a canonical tree_key like "DVCS_Fa18_inb" (lowercase inb/out).
-//   - Associated trees MUST exist under the following exact keys:
+// Naming (HARD-CODED, SINGLE CANON):
+//   - 'periods' MUST be the exact DVCS tree keys from periods.h, e.g. "DVCS_Fa18_inb".
+//   - Trees MUST exist under these exact keys:
 //       dvcsDataTrees.at(tree_key)
 //       eppi0DataTrees.at(tree_key + "_eppi0")
 //       eppi0RecMcTrees.at(tree_key + "_rec_mc")
 //       eppi0BkgTrees.at(tree_key + "_bkg")
-//
-// Cuts JSON canonicalization (STRICT but case-normalized for last token):
-//   - Your combined_cuts.json uses keys like "DVCS_Fa18_Inb_FD_FD" (capital I/O).
-//   - We therefore normalize ONLY FOR CUTS LOOKUPS:
-//         "..._inb" -> "..._Inb",  "..._out" -> "..._Out"
-//     before appending "_FD_FD", "_CD_FD", or "_CD_FT".
-//   - This keeps your tree keys and I/O everywhere else unchanged.
-//
-// The 3-sigma cuts JSON MUST contain blocks named:
-//       <DVCS_<Sp|Fa>YY_<Inb|Out>>_<TopoKey>
-// where <TopoKey> is one of FD_FD, CD_FD, or CD_FT.
+//   - Cuts JSON uses keys like "DVCS_Fa18_Inb_FD_FD". We convert the tree_key
+//     suffix "_inb"/"_out" to "_Inb"/"_Out" ONLY for cuts lookup.
 //
 // Outputs:
-//   (1) Per-period JSONs:  <out_root_dir>/jsons/contamination/contamination_<period>.json
-//       where <period> is the short label from periods.h (e.g. "fa18_inb").
+//   (1) Per-period JSONs:  <out_root_dir>/jsons/contamination/contamination_<shortlabel>.json
+//       where <shortlabel> is the periods.h label for the tree_key (e.g. "fa18_inb").
 //   (2) Combined JSON:     <out_root_dir>/jsons/pi0_contamination_combined.json
-//   (3) Plots per group:   <out_root_dir>/contamination_plots/<group>/...
+//   (3) Plots per group:   <out_root_dir>/contamination_plots/<shortlabel>/...
 //
 // Notes:
 //   - Uses only phi2 (no Delta_phi fallback).
-//   - Binning is (xB, Q2, |t|, phi) from provided binning scheme.
+//   - Binning is (xB, Q2, |t|, phi).
 //   - Any missing lookup / I/O failure is FATAL.
 // ------------------------------------------------------------
 
 #include "pi0_contamination.h"
-#include "periods.h"  // provides PeriodDef and CANONICAL_PERIODS()
+#include "periods.h"  // PeriodDef, CANONICAL_PERIODS()
 
 #include <TTree.h>
 #include <TCanvas.h>
@@ -92,13 +82,13 @@ static inline std::string toLower(std::string s){
     return s;
 }
 
-static inline bool isSpring18(const std::string& p){
-    std::string s = toLower(p);
-    return s.find("sp18") != std::string::npos || s.find("spring2018") != std::string::npos;
+static inline bool isSpring18(const std::string& s){
+    std::string t = toLower(s);
+    return t.find("sp18") != std::string::npos || t.find("spring2018") != std::string::npos;
 }
-static inline bool isFall18(const std::string& p){
-    std::string s = toLower(p);
-    return s.find("fa18") != std::string::npos || s.find("fall2018") != std::string::npos;
+static inline bool isFall18(const std::string& s){
+    std::string t = toLower(s);
+    return t.find("fa18") != std::string::npos || t.find("fall2018") != std::string::npos;
 }
 
 static inline std::string topoToKey(const std::string& topoStr){
@@ -157,13 +147,23 @@ static int findBin(double v, const std::vector<std::pair<double,double>>& ranges
 }
 
 // ------------------------------------------------------------
-// Local canonical lookup shim (search by short label)
+// Period lookup (HARD-CODED: require exact tree_key)
 // ------------------------------------------------------------
-static inline const PeriodDef* findPeriodDefByLabel(const std::string& label) {
+static inline const PeriodDef* findPeriodDefByTreeKey(const std::string& tree_key) {
     for (const auto& p : CANONICAL_PERIODS()) {
-        if (label == p.label) return &p;
+        if (tree_key == p.tree_key) return &p;
     }
-    return nullptr;
+    std::ostringstream os;
+    os << "Unknown tree_key: " << tree_key << "  Available: { ";
+    bool first = true;
+    for (const auto& p : CANONICAL_PERIODS()) {
+        if (!first) os << ", ";
+        first = false;
+        os << "\"" << p.tree_key << "\"";
+    }
+    os << " }";
+    fatal(os.str());
+    return nullptr; // unreachable
 }
 
 // ------------------------------------------------------------
@@ -171,9 +171,9 @@ static inline const PeriodDef* findPeriodDefByLabel(const std::string& label) {
 // ------------------------------------------------------------
 struct Stats { double mean=0.0; double std=0.0; };
 using VarCutMap = std::map<std::string, Stats>;
-using PeriodTopoCuts = std::map<std::string, VarCutMap>;  // key: "<tree_key>_<TopoKey>" (for DVCS_* keys in JSON)
+using PeriodTopoCuts = std::map<std::string, VarCutMap>;  // key: "<DVCS_*_Inb|Out>_<TopoKey>"
 
-// normalize a DVCS tree_key for CUTS (…_inb -> …_Inb, …_out -> …_Out)
+// convert DVCS_*_(inb|out) -> DVCS_*_(Inb|Out) for cuts JSON
 static inline std::string cutsTreeKey(const std::string& tree_key) {
     if (tree_key.size() >= 4) {
         if (tree_key.rfind("_inb") == tree_key.size() - 4) {
@@ -206,7 +206,7 @@ static void loadCombinedCuts_STRICT(const std::string& path, PeriodTopoCuts& out
     while (true) {
         size_t kS = s.find('"', pos); if (kS == std::string::npos) break;
         size_t kE = s.find('"', kS+1); if (kE == std::string::npos) break;
-        std::string key = s.substr(kS+1, kE-kS-1);
+        std::string key = s.substr(kS+1, kE-kS-1); // e.g. DVCS_Fa18_Inb_FD_FD
         pos = kE + 1;
 
         if (key.rfind("DVCS_", 0) != 0) continue;
@@ -295,7 +295,7 @@ static bool passes3SigmaCuts_STRICT(const VarCutMap& cuts,
 }
 
 // ------------------------------------------------------------
-// Canonical lookups (STRICT, cuts use normalized key)
+// Canonical lookups (STRICT)
 // ------------------------------------------------------------
 template <typename MapT>
 static TTree* getTreeOrDie(const MapT& m,
@@ -324,10 +324,10 @@ static TTree* getTreeOrDie(const MapT& m,
 }
 
 static const VarCutMap& resolveCutsCanonicalOrDie(const PeriodTopoCuts& cuts,
-                                                  const std::string& tree_key_for_cuts,
+                                                  const std::string& tree_key,
                                                   const std::string& topoKey)
 {
-    const std::string k = tree_key_for_cuts + "_" + topoKey; // e.g. "DVCS_Fa18_Inb_FD_FD"
+    const std::string k = cutsTreeKey(tree_key) + "_" + topoKey; // e.g. "DVCS_Fa18_Inb_FD_FD"
     auto it = cuts.find(k);
     if (it != cuts.end()) return it->second;
 
@@ -347,14 +347,14 @@ static const VarCutMap& resolveCutsCanonicalOrDie(const PeriodTopoCuts& cuts,
 }
 
 // ------------------------------------------------------------
-// Branch binders (STRICT: require phi2, and branches used by cuts)
+// Branch binders (STRICT)
 // ------------------------------------------------------------
 struct BranchBinderDVCS {
     int detector1=0, detector2=0, helicity=0;
     double t1=0, open_angle_ep2=0, pTmiss=0;
     double x=0, Q2=0, phi2=0;
 
-    // exclusivity-like quantities for 3sigma on DVCS hypothesis
+    // optional extras that may appear in cuts JSON
     double Emiss2=0, Mx2=0, Mx2_1=0, Mx2_2=0, theta_gamma_gamma=0, xF=0;
 
     std::set<std::string> boundD, boundI;
@@ -420,7 +420,7 @@ struct BranchBinderEPPI0MC { // no helicity
     double t1=0, open_angle_ep2=0, pTmiss=0;
     double x=0, Q2=0, phi2=0;
 
-    // DVCS-hypothesis cuts variables that might be referenced
+    // optional extras that may appear in cuts JSON
     double Emiss2=0, Mx2=0, Mx2_1=0, Mx2_2=0, theta_gamma_gamma=0, xF=0;
     std::set<std::string> boundD, boundI;
 
@@ -466,8 +466,8 @@ struct HelCounts { long long plus=0, minus=0; };
 struct BinCounts {
     HelCounts N_data;        // DVCS data, helicity-resolved
     HelCounts N_pi0_exp;     // epi0 data, helicity-resolved
-    long long N_pi0_mc   = 0; // bkg MC (mis-ID to DVCS) -- no helicity
-    long long N_pi0_reco = 0; // reco MC (true epi0)      -- no helicity
+    long long N_pi0_mc   = 0; // bkg MC (mis-ID to DVCS)
+    long long N_pi0_reco = 0; // reco MC (true epi0)
 
     double c_plus = 0.0, c_plus_err = 0.0;
     double c_minus= 0.0, c_minus_err= 0.0;
@@ -632,7 +632,7 @@ static int findIndex(const std::pair<double,double>& r,
 // Plotting
 // ------------------------------------------------------------
 static void plot_group(
-    const std::string& name,
+    const std::string& name, // short label for title
     const std::map<BinKey, BinCounts>& table,
     const std::vector<Binning>& binning_scheme,
     const std::vector<std::pair<double,double>>& xB_bins,
@@ -760,16 +760,16 @@ static void plot_group(
 } // namespace
 
 // ------------------------------------------------------------
-// Core (STRICT)
+// Core (STRICT, HARD-CODED naming)
 // ------------------------------------------------------------
 void compute_pi0_contamination_helicity(
-    const std::vector<std::string>& periods,          // labels like "fa18_inb", "sp18_out", etc. (periods.h)
-    const std::vector<std::string>& topologies,       // strings "(FD,FD)" "(CD,FD)" "(CD,FT)"
+    const std::vector<std::string>& periods,          // MUST be exact tree_keys like "DVCS_Fa18_inb"
+    const std::vector<std::string>& topologies,       // "(FD,FD)" "(CD,FD)" "(CD,FT)"
     const std::vector<Binning>& binning_scheme,
-    const std::map<std::string, TTree*>& dvcsDataTrees,   // exact canonical keys only
-    const std::map<std::string, TTree*>& eppi0DataTrees,  // exact canonical keys only
-    const std::map<std::string, TTree*>& eppi0RecMcTrees, // exact canonical keys only
-    const std::map<std::string, TTree*>& eppi0BkgTrees,   // exact canonical keys only
+    const std::map<std::string, TTree*>& dvcsDataTrees,
+    const std::map<std::string, TTree*>& eppi0DataTrees,
+    const std::map<std::string, TTree*>& eppi0RecMcTrees,
+    const std::map<std::string, TTree*>& eppi0BkgTrees,
     const std::string& combined_cuts_json,
     const std::string& out_root_dir)
 {
@@ -799,16 +799,14 @@ void compute_pi0_contamination_helicity(
         fatal(std::string("Cannot create plots root: ")+plots_root.string()+" ("+ec.message()+")");
 
     // Keep all per-period tables for combined build and plots
-    std::map<std::string, std::map<BinKey, BinCounts>> groupTables;
+    std::map<std::string, std::map<BinKey, BinCounts>> groupTables; // keyed by short label
 
     // ---------- Per-period loops (STRICT, canonical) ----------
-    for (const auto& period_label : periods) {
-        // Canonical period def
-        const PeriodDef* pdef = findPeriodDefByLabel(period_label);
-        if (!pdef) fatal(std::string("Unknown period label: ") + period_label);
-
-        const std::string& tree_key = pdef->tree_key;             // e.g. "DVCS_Fa18_inb"  (lowercase inb/out for trees)
-        const std::string  cuts_key = cutsTreeKey(pdef->tree_key); // e.g. "DVCS_Fa18_Inb" (capitalized Inb/Out for cuts JSON)
+    for (const auto& period_tree_key : periods) {
+        // Canonical period def (by exact tree_key)
+        const PeriodDef* pdef = findPeriodDefByTreeKey(period_tree_key);
+        const std::string& tree_key   = pdef->tree_key; // e.g. "DVCS_Fa18_inb"
+        const std::string& shortlabel = pdef->label;    // e.g. "fa18_inb"
 
         // Exact-key trees
         TTree* t_dvcs     = getTreeOrDie(dvcsDataTrees,   tree_key,             "DVCS DATA");
@@ -822,15 +820,15 @@ void compute_pi0_contamination_helicity(
         {
             BranchBinderDVCS b; b.bind(t_dvcs);
 
-            // Validate that any cut variable referenced by JSON exists in DVCS tree for every topology used
+            // Validate cut variables exist in DVCS tree for each used topology
             for (const auto& topoStr : topologies) {
                 const std::string topoKey = topoToKey(topoStr);
-                const VarCutMap& cMap = resolveCutsCanonicalOrDie(cuts, cuts_key, topoKey);
+                const VarCutMap& cMap = resolveCutsCanonicalOrDie(cuts, tree_key, topoKey);
                 for (const auto& v : cMap) {
                     const std::string& var = v.first;
                     if (b.boundD.count(var)==0 && var!="pTmiss") {
                         fatal("Cuts reference variable '" + var + "' but DVCS tree does not provide it "
-                              "(period=" + period_label + ", topo=" + topoKey + ")");
+                              "(period="+ shortlabel +", topo="+ topoKey +")");
                     }
                 }
             }
@@ -850,8 +848,8 @@ void compute_pi0_contamination_helicity(
                 }
                 if (!matched) continue;
 
-                const VarCutMap& cMap = resolveCutsCanonicalOrDie(cuts, cuts_key, usedTopoKey);
-                if (!passes3SigmaCuts_STRICT(cMap, b.cutVals(), period_label, usedTopoKey)) continue;
+                const VarCutMap& cMap = resolveCutsCanonicalOrDie(cuts, tree_key, usedTopoKey);
+                if (!passes3SigmaCuts_STRICT(cMap, b.cutVals(), shortlabel, usedTopoKey)) continue;
 
                 double xB=b.x, Q2=b.Q2, tt=std::fabs(b.t1), phi=b.phi2;
                 if (!std::isfinite(xB)||!std::isfinite(Q2)||!std::isfinite(tt)||!std::isfinite(phi)) continue;
@@ -867,16 +865,16 @@ void compute_pi0_contamination_helicity(
         {
             BranchBinderEPPI0MC b; b.bind(t_pi0_bkg);
 
-            // Ensure all cut vars referenced exist in this MC (except pTmiss which we already have)
+            // Ensure all cut vars referenced exist in this MC (except pTmiss)
             for (const auto& topoStr : topologies) {
                 const std::string topoKey = topoToKey(topoStr);
-                const VarCutMap& cMap = resolveCutsCanonicalOrDie(cuts, cuts_key, topoKey);
+                const VarCutMap& cMap = resolveCutsCanonicalOrDie(cuts, tree_key, topoKey);
                 for (const auto& v : cMap) {
                     const std::string& var = v.first;
-                    if (var=="pTmiss") continue; // guaranteed bound
+                    if (var=="pTmiss") continue;
                     if (b.boundD.count(var)==0) {
                         fatal("Cuts reference variable '" + var + "' but epi0_bkg MC does not provide it "
-                              "(period=" + period_label + ", topo=" + topoKey + ")");
+                              "(period="+ shortlabel +", topo="+ topoKey +")");
                     }
                 }
             }
@@ -892,8 +890,8 @@ void compute_pi0_contamination_helicity(
                 }
                 if (!match) continue;
 
-                const VarCutMap& cMap = resolveCutsCanonicalOrDie(cuts, cuts_key, usedTopoKey);
-                if (!passes3SigmaCuts_STRICT(cMap, b.cutValsForDVCS(), period_label, usedTopoKey)) continue;
+                const VarCutMap& cMap = resolveCutsCanonicalOrDie(cuts, tree_key, usedTopoKey);
+                if (!passes3SigmaCuts_STRICT(cMap, b.cutValsForDVCS(), shortlabel, usedTopoKey)) continue;
 
                 double xB=b.x, Q2=b.Q2, tt=std::fabs(b.t1), phi=b.phi2;
                 if (!std::isfinite(xB)||!std::isfinite(Q2)||!std::isfinite(tt)||!std::isfinite(phi)) continue;
@@ -955,23 +953,23 @@ void compute_pi0_contamination_helicity(
         // Compute contamination for this period
         finalize_contamination(table);
 
-        // Write per-period JSON
+        // Write per-period JSON (use short label in filename/dir)
         const std::string out_per =
-            (jsons_dir / ("contamination_" + period_label + ".json")).string();
+            (jsons_dir / ("contamination_" + shortlabel + ".json")).string();
         write_per_period_json(out_per, table, N_PHI_BINS, xB_bins, Q2_bins, t_bins);
 
         // Plot per-period
-        const std::string plot_dir = (plots_root / period_label).string();
-        plot_group(period_label, table, binning_scheme, xB_bins, Q2_bins, t_bins, plot_dir);
+        const std::string plot_dir = (plots_root / shortlabel).string();
+        plot_group(shortlabel, table, binning_scheme, xB_bins, Q2_bins, t_bins, plot_dir);
 
-        // Stash for combined
-        groupTables[period_label] = std::move(table);
+        // Stash for combined (key by short label)
+        groupTables[shortlabel] = std::move(table);
     }
 
     // ---------- Build combined groups from raw counts ----------
     std::map<BinKey, BinCounts> spring_sum, fall_sum, all_sum;
     for (const auto& g : groupTables) {
-        const std::string& name = g.first;
+        const std::string& name = g.first; // short labels like "fa18_inb"
         if (isSpring18(name)) add_into(spring_sum, g.second);
         if (isFall18(name))   add_into(fall_sum,   g.second);
         add_into(all_sum, g.second);
@@ -980,7 +978,7 @@ void compute_pi0_contamination_helicity(
     if (!fall_sum.empty())   { finalize_contamination(fall_sum);   groupTables["Fall2018"]   = fall_sum;   }
     if (!all_sum.empty())    { finalize_contamination(all_sum);    groupTables["10.6_GeV"]   = all_sum;    }
 
-    // Write combined JSON with everything (periods + combined)
+    // Write combined JSON
     write_combined_json((root / "jsons" / "pi0_contamination_combined.json").string(),
                         groupTables, N_PHI_BINS, xB_bins, Q2_bins, t_bins);
 
