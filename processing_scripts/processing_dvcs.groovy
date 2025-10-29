@@ -99,7 +99,7 @@ public static void main(String[] args) {
 	QADB qa = new QADB("latest");
 	qa.checkForDefect('TotalOutlier')    
 	qa.checkForDefect('TerminalOutlier')
-	// qa.checkForDefect('MarginalOutlier')
+	qa.checkForDefect('MarginalOutlier')
 	// qa.checkForDefect('SectorLoss')
 	// qa.checkForDefect('LowLiveTime')
 	// qa.checkForDefect('Misc')
