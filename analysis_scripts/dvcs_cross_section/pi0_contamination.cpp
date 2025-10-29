@@ -4,9 +4,11 @@
 //   c_h = (N_bkg_mc / N_dvcs_data_h) * (N_pi0_data_h / N_pi0_rec_mc)
 // with Poisson error propagation.
 //
-// Canonical period naming (required):
-//   - Periods come from periods.h (PeriodDef and CANONICAL_PERIODS()).
-//   - Each period has a canonical tree_key like "DVCS_Fa18_inb".
+// Canonical naming and inputs (REQUIRED, NO CONDITIONALS):
+//   - The 'periods' argument is a list of canonical tree keys from periods.h,
+//     e.g. "DVCS_Fa18_inb", "DVCS_Fa18_inb_supp", "DVCS_Sp18_out", etc.
+//   - Each such key MUST exist in periods.h (PeriodDef::tree_key) and maps to a
+//     short label (PeriodDef::label), e.g. "fa18_inb", used for output names.
 //   - Associated trees MUST exist under the following exact keys:
 //       dvcsDataTrees.at(tree_key)
 //       eppi0DataTrees.at(tree_key + "_eppi0")
@@ -17,10 +19,10 @@
 //     where <TopoKey> is one of FD_FD, CD_FD, or CD_FT.
 //
 // Outputs:
-//   (1) Per-period JSONs:  <out_root_dir>/jsons/contamination/contamination_<period>.json
-//       where <period> is the short label from periods.h (e.g. "fa18_inb").
+//   (1) Per-period JSONs:  <out_root_dir>/jsons/contamination/contamination_<label>.json
+//       where <label> is the short label from periods.h (e.g. "fa18_inb").
 //   (2) Combined JSON:     <out_root_dir>/jsons/pi0_contamination_combined.json
-//   (3) Plots per group:   <out_root_dir>/contamination_plots/<group>/...
+//   (3) Plots per group:   <out_root_dir>/contamination_plots/<label or group>/...
 //
 // Notes:
 //   - Uses only phi2 (no Delta_phi fallback).
@@ -149,11 +151,18 @@ static int findBin(double v, const std::vector<std::pair<double,double>>& ranges
 }
 
 // ------------------------------------------------------------
-// Local canonical lookup shim (search by short label)
+// Local canonical lookup shims (STRICT)
 // ------------------------------------------------------------
 static inline const PeriodDef* findPeriodDefByLabel(const std::string& label) {
     for (const auto& p : CANONICAL_PERIODS()) {
         if (label == p.label) return &p;
+    }
+    return nullptr;
+}
+
+static inline const PeriodDef* findPeriodDefByTreeKey(const std::string& key) {
+    for (const auto& p : CANONICAL_PERIODS()) {
+        if (key == p.tree_key) return &p;
     }
     return nullptr;
 }
@@ -742,7 +751,7 @@ static void plot_group(
 // Core (STRICT)
 // ------------------------------------------------------------
 void compute_pi0_contamination_helicity(
-    const std::vector<std::string>& periods,          // labels like "fa18_inb", "sp18_out", etc. (periods.h)
+    const std::vector<std::string>& periods,          // REQUIRED: canonical tree keys like "DVCS_Fa18_inb"
     const std::vector<std::string>& topologies,       // strings "(FD,FD)" "(CD,FD)" "(CD,FT)"
     const std::vector<Binning>& binning_scheme,
     const std::map<std::string, TTree*>& dvcsDataTrees,   // exact canonical keys only
@@ -781,11 +790,13 @@ void compute_pi0_contamination_helicity(
     std::map<std::string, std::map<BinKey, BinCounts>> groupTables;
 
     // ---------- Per-period loops (STRICT, canonical) ----------
-    for (const auto& period_label : periods) {
-        // Canonical period def
-        const PeriodDef* pdef = findPeriodDefByLabel(period_label);
-        if (!pdef) fatal(std::string("Unknown period label: ") + period_label);
-        const std::string& tree_key = pdef->tree_key; // e.g. "DVCS_Fa18_inb"
+    for (const auto& tree_key_in : periods) {
+        // REQUIRED: resolve by exact tree_key (no conditionals, no guessing)
+        const PeriodDef* pdef = findPeriodDefByTreeKey(tree_key_in);
+        if (!pdef) fatal(std::string("Unknown canonical tree_key: ") + tree_key_in);
+
+        const std::string tree_key    = pdef->tree_key; // e.g. "DVCS_Fa18_inb"
+        const std::string period_label= pdef->label;    // e.g. "fa18_inb"
 
         // Exact-key trees
         TTree* t_dvcs     = getTreeOrDie(dvcsDataTrees,   tree_key,             "DVCS DATA");
@@ -932,23 +943,23 @@ void compute_pi0_contamination_helicity(
         // Compute contamination for this period
         finalize_contamination(table);
 
-        // Write per-period JSON
+        // Write per-period JSON (by short label)
         const std::string out_per =
             (jsons_dir / ("contamination_" + period_label + ".json")).string();
         write_per_period_json(out_per, table, N_PHI_BINS, xB_bins, Q2_bins, t_bins);
 
-        // Plot per-period
+        // Plot per-period (dir named by short label)
         const std::string plot_dir = (plots_root / period_label).string();
         plot_group(period_label, table, binning_scheme, xB_bins, Q2_bins, t_bins, plot_dir);
 
-        // Stash for combined
+        // Stash for combined (key by label)
         groupTables[period_label] = std::move(table);
     }
 
     // ---------- Build combined groups from raw counts ----------
     std::map<BinKey, BinCounts> spring_sum, fall_sum, all_sum;
     for (const auto& g : groupTables) {
-        const std::string& name = g.first;
+        const std::string& name = g.first; // this is the short label
         if (isSpring18(name)) add_into(spring_sum, g.second);
         if (isFall18(name))   add_into(fall_sum,   g.second);
         add_into(all_sum, g.second);
