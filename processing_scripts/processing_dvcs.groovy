@@ -103,7 +103,7 @@ public static void main(String[] args) {
 	qa.checkForDefect('SectorLoss')
 	qa.checkForDefect('LowLiveTime')
 	qa.checkForDefect('Misc')
-	// qa.checkForDefect('ChargeHigh')
+	qa.checkForDefect('ChargeHigh')
 	// qa.checkForDefect('ChargeNegative')
 	// qa.checkForDefect('ChargeUnknown')
 	// qa.checkForDefect('PossiblyNoBeam')
