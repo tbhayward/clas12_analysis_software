@@ -30,6 +30,7 @@
 #include <TTree.h>
 #include <TCanvas.h>
 #include <TGraph.h>
+#include <TGraphErrors.h>
 #include <TLegend.h>
 #include <TLatex.h>
 #include <TPad.h>
@@ -578,13 +579,13 @@ static void plot_group_counts(
                 gp->SetMarkerColor(kRed);
                 gp->SetLineColor(kRed);
                 gp->SetLineWidth(1);
-                gp->Draw("P SAME");     // points only
+                gp->Draw("PE1 SAME");     // points only
 
                 gm->SetMarkerStyle(20); // blue filled
                 gm->SetMarkerColor(kBlue);
                 gm->SetLineColor(kBlue);
                 gm->SetLineWidth(1);
-                gm->Draw("P SAME");     // points only
+                gm->Draw("PE1 SAME");     // points only
 
                 // Annotate the Q2 and t ranges for this subplot
                 TLatex lab; lab.SetNDC(); lab.SetTextSize(0.045);
