@@ -964,6 +964,27 @@ void compute_pi0_contamination_helicity(
 
         // Stash for combined (key by short label)
         groupTables[shortlabel] = std::move(table);
+
+        // ------------------------------------------------------------
+        // Hard-coded duplication for Fa18_inb_supp (no MC available)
+        // ------------------------------------------------------------
+        if (shortlabel == "fa18_inb") {
+            std::cout << "[pi0_contam] Duplicating results from Fa18_inb for Fa18_inb_supp (no MC available)\n";
+
+            const std::string supp_label = "fa18_inb_supp";
+            const std::string supp_out_per =
+                (jsons_dir / ("contamination_" + supp_label + ".json")).string();
+            const std::string supp_plot_dir = (plots_root / supp_label).string();
+
+            // Copy the results and write duplicate JSON + plots
+            write_per_period_json(supp_out_per, groupTables.at("fa18_inb"),
+                                  N_PHI_BINS, xB_bins, Q2_bins, t_bins);
+            plot_group(supp_label, groupTables.at("fa18_inb"),
+                       binning_scheme, xB_bins, Q2_bins, t_bins, supp_plot_dir);
+
+            // Store duplicate entry for later combinations
+            groupTables[supp_label] = groupTables.at("fa18_inb");
+        }
     }
 
     // ---------- Build combined groups from raw counts ----------
