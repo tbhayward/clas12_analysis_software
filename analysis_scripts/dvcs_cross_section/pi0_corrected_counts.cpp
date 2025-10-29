@@ -51,11 +51,48 @@
 #include <tuple>
 #include <utility>
 #include <vector>
+#include <unordered_map>
+#include <unordered_set>
 
 namespace {
 
 constexpr int N_PHI_BINS = 12;
 using BinKey = std::tuple<int,int,int,int>; // (ix,iQ2,it,ip)
+
+// ===== NEW: hard-wired mapping from external DVCS_* names -> short JSON group keys =====
+static const std::unordered_map<std::string,std::string> kGroupNameMap = {
+    {"DVCS_Sp18_inb",      "sp18_inb"},
+    {"DVCS_Sp18_out",      "sp18_out"},
+    {"DVCS_Fa18_inb",      "fa18_inb"},
+    {"DVCS_Fa18_out",      "fa18_out"},
+    {"DVCS_Sp19_inb",      "sp19_inb"},
+    // If DVCS_Fa18_inb_supp is passed, map to fa18_inb totals (by design).
+    {"DVCS_Fa18_inb_supp", "fa18_inb"}
+};
+// For completeness: if a caller already passes short names (sp18_inb, etc.), we accept them as-is.
+
+static std::vector<std::string> resolve_requested_groups(const std::vector<std::string>& dvcs_periods) {
+    std::vector<std::string> out;
+    out.reserve(dvcs_periods.size());
+    for (const auto& g : dvcs_periods) {
+        auto it = kGroupNameMap.find(g);
+        if (it != kGroupNameMap.end()) {
+            out.push_back(it->second);
+        } else {
+            // Accept literal group if it is already a short key or combined key.
+            // No auto-adaptation beyond this fixed mapping.
+            out.push_back(g);
+        }
+    }
+    // Ensure uniqueness while preserving order.
+    std::unordered_set<std::string> seen;
+    std::vector<std::string> uniq;
+    uniq.reserve(out.size());
+    for (const auto& g : out) {
+        if (seen.insert(g).second) uniq.push_back(g);
+    }
+    return uniq;
+}
 
 // ────────── fail-fast helpers ──────────
 [[noreturn]] static void fatal(const std::string& msg) {
@@ -151,7 +188,7 @@ static long long parseIntAfterColon(const std::string& s, size_t cpos, const std
     size_t a = cpos + 1;
     while (a < s.size() && std::isspace((unsigned char)s[a])) ++a;
     size_t b = a;
-    while (b < s.size() && (std::isdigit((unsigned char)s[b]) || s[b]=='-' || s[b]=='+')) ++b;
+    while (b < s.size() && (std::isdigit((unsigned char)s[b]) || s[b]=='-' || s[b]=='+' )) ++b;
     try { return std::stoll(s.substr(a,b-a)); }
     catch(...) { fatal("Non-integer value in "+ctx); }
     return 0;
@@ -183,7 +220,7 @@ static BinningMeta load_meta(const std::string& s) {
     return bm;
 }
 
-// total_counts.json → groups -> (key)->helicity
+// total_counts.json -> groups -> (key)->helicity
 static GroupCounts load_total_counts_STRICT(const std::string& path, BinningMeta& out_meta) {
     std::ifstream ifs(path);
     if (!ifs) fatal(std::string("Cannot open total_counts_json: ")+path);
@@ -222,14 +259,12 @@ static GroupCounts load_total_counts_STRICT(const std::string& path, BinningMeta
                 if(binsObj[m]=='{') d2++;
                 else if(binsObj[m]=='}'){ d2--; if(!d2){ ++m; break;} }
             }
-            std::string v = binsObj.substr(vS, m-vS);
+            std::string v = binsObj.substr(m-(m-vS), (m-vS)); // same as binsObj.substr(vS, m-vS)
 
-            // helicity +1
             size_t pPlus = v.find("\"+1\""); if (pPlus==std::string::npos) fatal("Missing +1 in helicity for "+gname);
             pPlus = v.find(':', pPlus); if (pPlus==std::string::npos) fatal("Malformed +1 in "+gname);
             long long Np = parseIntAfterColon(v, pPlus, gname+" (+1)");
 
-            // helicity -1
             size_t pMinus = v.find("\"-1\""); if (pMinus==std::string::npos) fatal("Missing -1 in helicity for "+gname);
             pMinus = v.find(':', pMinus); if (pMinus==std::string::npos) fatal("Malformed -1 in "+gname);
             long long Nm = parseIntAfterColon(v, pMinus, gname+" (-1)");
@@ -399,7 +434,7 @@ static void plot_group(
 
         pTop->cd();
         TLatex head; head.SetNDC(); head.SetTextAlign(22); head.SetTextFont(42); head.SetTextSize(0.40);
-        head.DrawLatex(0.5, 0.55, Form("#pi^{0}-corrected vs raw counts  %s   x_{B} #in [%.3g, %.3g]",
+        head.DrawLatex(0.5, 0.55, Form("pi0-corrected vs raw counts  %s   x_B in [%.3g, %.3g]",
                                        group.c_str(), xb.first, xb.second));
 
         for (int r = 0; r < nrows; ++r) {
@@ -445,7 +480,7 @@ static void plot_group(
                 if (X.empty()) continue;
 
                 TH1* frame = gPad->DrawFrame(0.0, 0.0, 360.0, (ymax>0? ymax*1.25 : 1.0));
-                frame->GetXaxis()->SetTitle("#phi (deg)");
+                frame->GetXaxis()->SetTitle("phi (deg)");
                 frame->GetYaxis()->SetTitle("Counts");
                 frame->GetXaxis()->CenterTitle();
                 frame->GetYaxis()->CenterTitle();
@@ -475,7 +510,7 @@ static void plot_group(
 
                 TLatex sub; sub.SetNDC(); sub.SetTextSize(0.045); sub.SetTextAlign(13);
                 sub.DrawLatex(0.14, 0.96,
-                    Form("Q^{2} #in [%.3g, %.3g],   -t #in [%.3g, %.3g]",
+                    Form("Q^{2} in [%.3g, %.3g],   -t in [%.3g, %.3g]",
                          Q2_slice[r].first, Q2_slice[r].second,
                          t_slice[cc].first, t_slice[cc].second));
             }
@@ -599,7 +634,7 @@ static void write_master_json(const std::string& out_path,
 
 // ======================= PUBLIC ENTRY ===========================
 void compute_pi0_corrected_counts(
-    const std::vector<std::string>& dvcs_periods,           // keys in total_counts.json::groups
+    const std::vector<std::string>& dvcs_periods,           // incoming names (may be DVCS_* or short names)
     const std::vector<Binning>& binning_scheme,
     const std::string& total_counts_json,                   // output/jsons/total_counts.json
     const std::string& contamination_dir_counts,            // output/jsons/contamination
@@ -608,14 +643,20 @@ void compute_pi0_corrected_counts(
 ) {
     namespace fs = std::filesystem;
 
+    // === NEW: resolve requested periods to the exact short keys used in total_counts.json ===
+    const std::vector<std::string> requested_short = resolve_requested_groups(dvcs_periods);
+
     // Load totals (strict) and record meta
     BinningMeta totals_meta;
     GroupCounts group_counts = load_total_counts_STRICT(total_counts_json, totals_meta);
 
-    // Ensure requested groups exist in totals (strict) — exact names only
-    for (const auto& g : dvcs_periods) {
-        if (group_counts.find(g) == group_counts.end())
-            fatal("Requested group '"+g+"' not present in total_counts.json::groups");
+    // Strictly ensure requested groups exist in totals (using resolved names)
+    for (const auto& g_short : requested_short) {
+        if (group_counts.find(g_short) == group_counts.end()) {
+            std::ostringstream os;
+            os << "Requested group '" << g_short << "' not present in total_counts.json::groups";
+            fatal(os.str());
+        }
     }
 
     // Build bin axes from scheme and cross-check sizes with meta
@@ -671,9 +712,11 @@ void compute_pi0_corrected_counts(
     std::map<std::string, std::map<BinKey, CorrBin>> all_groups_corrected;
 
     for (const auto& gkv : group_counts) {
-        const std::string& group     = gkv.first;
-        if (std::find(dvcs_periods.begin(), dvcs_periods.end(), group) == dvcs_periods.end()) {
-            continue; // only the explicitly requested groups, by exact name
+        const std::string& group = gkv.first;
+
+        // Only process exactly the resolved requested set
+        if (std::find(requested_short.begin(), requested_short.end(), group) == requested_short.end()) {
+            continue;
         }
 
         const auto& raw_table = gkv.second;
@@ -702,7 +745,7 @@ void compute_pi0_corrected_counts(
             corr_table[bk] = cb;
         }
 
-        // write per-group JSON (filenames are path-safe; JSON keys keep exact names)
+        // write per-group JSON
         auto path_sanitize = [](std::string s)->std::string {
             for (char& c : s) if (c=='/' || c==' ' ) c = '_';
             return s;
