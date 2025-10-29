@@ -53,12 +53,12 @@ int main(int argc, char* argv[]) {
               radGenMcTrees, radRecMcTrees);
     std::cout << "All trees loaded successfully." << std::endl;
 
-    // // Run exclusivity cut extraction (single-threaded for stability)
-    // runAllExclusivityCuts(
-    //     dataTrees, recMcTrees, eppi0DataTrees, eppi0RecMcTrees,
-    //     "output/jsons", "output/exclusivity_plots", 1
-    // );
-    // std::cout << "Exclusivity-cut stage finished." << std::endl;
+    // Run exclusivity cut extraction (single-threaded for stability)
+    runAllExclusivityCuts(
+        dataTrees, recMcTrees, eppi0DataTrees, eppi0RecMcTrees,
+        "output/jsons", "output/exclusivity_plots", 1
+    );
+    std::cout << "Exclusivity-cut stage finished." << std::endl;
 
     // --------- Global bin-averaged kinematics ----------
     std::vector<std::string> dvcs_periods;
@@ -77,39 +77,39 @@ int main(int argc, char* argv[]) {
     // // produced by exclusivity_cuts
 
     const std::string output_counts_js = "output/jsons/total_counts.json";
-    compute_total_counts(dvcs_periods, topologies, binning_scheme, dataTrees, cuts_json_path,
-    output_counts_js, output_root); 
+    // compute_total_counts(dvcs_periods, topologies, binning_scheme, dataTrees, cuts_json_path,
+    // output_counts_js, output_root); 
 
-    // Helicity-resolved π0 contamination
-    // NOTE: pass the OUTPUT ROOT ("output") so the implementation writes:
-    //   - per-period JSONs to output/jsons/contamination/
-    //   - combined JSON to output/jsons/
-    //   - plots to output/contamination_plots/...
-    compute_pi0_contamination_helicity(
-        dvcs_periods,
-        topologies,
-        binning_scheme,
-        dataTrees,
-        eppi0DataTrees,
-        eppi0RecMcTrees,   // reco MC
-        eppi0BkgTrees,     // bkg MC
-        cuts_json_path,
-        output_root
-    );
+    // // Helicity-resolved π0 contamination
+    // // NOTE: pass the OUTPUT ROOT ("output") so the implementation writes:
+    // //   - per-period JSONs to output/jsons/contamination/
+    // //   - combined JSON to output/jsons/
+    // //   - plots to output/contamination_plots/...
+    // compute_pi0_contamination_helicity(
+    //     dvcs_periods,
+    //     topologies,
+    //     binning_scheme,
+    //     dataTrees,
+    //     eppi0DataTrees,
+    //     eppi0RecMcTrees,   // reco MC
+    //     eppi0BkgTrees,     // bkg MC
+    //     cuts_json_path,
+    //     output_root
+    // );
 
     // --------- π0-corrected helicity counts (per φ) ----------
     const std::string total_counts_json        = "output/jsons/total_counts.json";
     const std::string contamination_dir_counts = "output/jsons/contamination";
     const std::string contamination_combined   = "output/jsons/pi0_contamination_combined.json";
 
-    compute_pi0_corrected_counts(
-        dvcs_periods,
-        binning_scheme,
-        total_counts_json,        // from compute_total_counts()
-        contamination_dir_counts, // per-period contamination_*.json live here
-        contamination_combined,   // combined groups (Spring2018, Fall2018, 10.6_GeV)
-        output_root               // "output"
-    );
+    // compute_pi0_corrected_counts(
+    //     dvcs_periods,
+    //     binning_scheme,
+    //     total_counts_json,        // from compute_total_counts()
+    //     contamination_dir_counts, // per-period contamination_*.json live here
+    //     contamination_combined,   // combined groups (Spring2018, Fall2018, 10.6_GeV)
+    //     output_root               // "output"
+    // );
 
     std::cout << "π0-corrected counts stage finished." << std::endl;
 
