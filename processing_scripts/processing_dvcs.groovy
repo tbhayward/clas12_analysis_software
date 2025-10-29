@@ -104,7 +104,7 @@ public static void main(String[] args) {
 	qa.checkForDefect('LowLiveTime')
 	qa.checkForDefect('Misc')
 	qa.checkForDefect('ChargeHigh')
-	// qa.checkForDefect('ChargeNegative')
+	qa.checkForDefect('ChargeNegative')
 	// qa.checkForDefect('ChargeUnknown')
 	// qa.checkForDefect('PossiblyNoBeam')
 	[ // list of runs with `Misc` that should be allowed, generally empty target etc for dilution factor calculations
