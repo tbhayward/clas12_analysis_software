@@ -150,8 +150,6 @@ static int findBin(double v, const std::vector<std::pair<double,double>>& ranges
 
 // ------------------------------------------------------------
 // Local canonical lookup shim (search by short label)
-// If periods.h also provides a function with this name, ours has
-// internal linkage and won't conflict.
 // ------------------------------------------------------------
 static inline const PeriodDef* findPeriodDefByLabel(const std::string& label) {
     for (const auto& p : CANONICAL_PERIODS()) {
@@ -167,15 +165,6 @@ struct Stats { double mean=0.0; double std=0.0; };
 using VarCutMap = std::map<std::string, Stats>;
 using PeriodTopoCuts = std::map<std::string, VarCutMap>;  // key: "<tree_key>_<TopoKey>"
 
-static bool parseNumber(const std::string& s, size_t posColon, double& out){
-    size_t a = posColon + 1;
-    while (a < s.size() && std::isspace(static_cast<unsigned char>(s[a]))) ++a;
-    size_t b = a;
-    auto isnum=[](char c){ return std::isdigit((unsigned char)c)||c=='-'||c=='+'||c=='.'||c=='e'||c=='E'; };
-    while (b < s.size() && isnum(s[b])) ++b;
-    try { out = std::stod(s.substr(a, b - a)); return true; } catch (...) { return false; }
-}
-
 static void loadCombinedCuts_STRICT(const std::string& path, PeriodTopoCuts& out){
     std::ifstream ifs(path);
     if (!ifs) fatal(std::string("Cannot open cuts JSON: ") + path);
@@ -188,7 +177,7 @@ static void loadCombinedCuts_STRICT(const std::string& path, PeriodTopoCuts& out
         size_t b = a;
         auto isnum=[](char c){ return std::isdigit((unsigned char)c)||c=='-'||c=='+'||c=='.'||c=='e'||c=='E'; };
         while (b < src.size() && isnum(src[b])) ++b;
-        try { return std::stod(src.substr(a, b-a)); } catch (...) { throw std::runtime_error("nan"); }
+        return std::stod(src.substr(a, b-a));
     };
 
     size_t pos = 0;
@@ -199,7 +188,6 @@ static void loadCombinedCuts_STRICT(const std::string& path, PeriodTopoCuts& out
         std::string key = s.substr(kS+1, kE-kS-1);
         pos = kE + 1;
 
-        // Expect DVCS_* style keys (e.g. "DVCS_Fa18_inb_FD_FD")
         if (key.rfind("DVCS_", 0) != 0) continue;
 
         size_t dpos = s.find("\"data\"", kE);
@@ -250,8 +238,8 @@ static void loadCombinedCuts_STRICT(const std::string& path, PeriodTopoCuts& out
             if (cs == std::string::npos) fatal("Malformed 'std' for var " + var + " (key " + key + ")");
 
             double mean = 0.0, stdev = 0.0;
-            try { mean = parse_num_after_colon(varObj, cm); } catch(...) { fatal("Non-numeric 'mean' for var " + var + " (key " + key + ")"); }
-            try { stdev = parse_num_after_colon(varObj, cs); } catch(...) { fatal("Non-numeric 'std' for var " + var + " (key " + key + ")"); }
+            try { mean = parse_num_after_colon(varObj, cm); } catch (...) { fatal("Non-numeric 'mean' for var " + var + " (key " + key + ")"); }
+            try { stdev = parse_num_after_colon(varObj, cs); } catch (...) { fatal("Non-numeric 'std' for var " + var + " (key " + key + ")"); }
 
             cuts[var] = Stats{mean, stdev};
             p = j;
@@ -296,7 +284,6 @@ static TTree* getTreeOrDie(const MapT& m,
     auto it = m.find(exact_key);
     if (it != m.end() && it->second) return it->second;
 
-    // Build a useful error with available keys
     std::ostringstream avail;
     avail << "{ ";
     bool first = true;
@@ -323,7 +310,6 @@ static const VarCutMap& resolveCutsCanonicalOrDie(const PeriodTopoCuts& cuts,
     auto it = cuts.find(k);
     if (it != cuts.end()) return it->second;
 
-    // Build helpful error listing available cut blocks
     std::ostringstream avail;
     avail << "{ ";
     bool first = true;
@@ -666,8 +652,8 @@ static void plot_group(
         pGrid->cd(); pGrid->Divide(ncols, nrows, 0.0001, 0.0001);
 
         pTop->cd();
-        TLatex head; head.SetNDC(); head.SetTextSize(0.55); head.SetTextAlign(22);
-        head.DrawLatex(0.5, 0.55, Form("%s   x_{B} #in [%.3g, %.3g]", name.c_str(),
+        TLatex head; head.SetNDC(); head.SetTextSize(0.055); head.SetTextAlign(22);
+        head.DrawLatex(0.5, 0.55, Form("%s   x_{B} in (%.3g, %.3g)", name.c_str(),
                                        xB_bins[ix].first, xB_bins[ix].second));
 
         for (int r=0; r<nrows; ++r) {
@@ -679,7 +665,7 @@ static void plot_group(
                 gPad->SetGrid(1,1);
                 gPad->SetTopMargin(0.18);
                 gPad->SetBottomMargin(0.14);
-                gPad->SetLeftMargin(0.12);
+                gPad->SetLeftMargin(0.125);
                 gPad->SetRightMargin(0.06);
 
                 std::vector<double> Yp(N_PHI_BINS,0.0), Ym(N_PHI_BINS,0.0);
@@ -717,7 +703,7 @@ static void plot_group(
 
                 TLatex sub; sub.SetNDC(); sub.SetTextSize(0.045); sub.SetTextAlign(13);
                 sub.DrawLatex(0.14, 0.96,
-                    Form("Q^{2} #in [%.3g, %.3g],   -t #in [%.3g, %.3g]",
+                    Form("Q^{2} in (%.3g, %.3g),   -t in (%.3g, %.3g)",
                          Q2s[r].first, Q2s[r].second, Ts[cc].first, Ts[cc].second));
 
                 if (r==0 && cc==0) {
