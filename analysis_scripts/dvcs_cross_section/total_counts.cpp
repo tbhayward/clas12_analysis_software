@@ -451,7 +451,7 @@ static bool pairAlmostEqual(const std::pair<double,double>& a,
                             double eps = 1e-9) {
     return std::fabs(a.first  - b.first)  < eps &&
            std::fabs(a.second - b.second) < eps;
-} // #end pairAlmostEqual
+}
 
 static void plot_group_counts(
     const std::string& group_label, // fa18_inb, etc.
@@ -466,7 +466,7 @@ static void plot_group_counts(
 
     static const std::vector<double> PHI = phiCentersDeg();
     std::vector<double> X(N_PHI_BINS), ex(N_PHI_BINS, 0.0);
-    for (int i=0;i<N_PHI_BINS;++i) X[i] = PHI[i];
+    for (int i = 0; i < N_PHI_BINS; ++i) X[i] = PHI[i];
 
     std::error_code ec;
     fs::create_directories(out_dir, ec);
@@ -479,86 +479,81 @@ static void plot_group_counts(
     for (int ix = 0; ix < (int)xB_bins.size(); ++ix) {
         std::set<std::pair<double,double>> q2set, tset;
         for (const auto& b : binning_scheme) {
-            if (std::make_pair(b.xBmin,b.xBmax)==xB_bins[ix]) {
-                q2set.emplace(b.Q2min,b.Q2max);
-                tset.emplace(b.tmin,b.tmax);
+            if (std::make_pair(b.xBmin, b.xBmax) == xB_bins[ix]) {
+                q2set.emplace(b.Q2min, b.Q2max);
+                tset.emplace(b.tmin,  b.tmax);
             }
-        } // #endfor
+        }
 
-        std::vector<std::pair<double,double>> Q2s(q2set.begin(),q2set.end());
-        std::vector<std::pair<double,double>> Ts(tset.begin(),tset.end());
+        std::vector<std::pair<double,double>> Q2s(q2set.begin(), q2set.end());
+        std::vector<std::pair<double,double>> Ts (tset.begin(),  tset.end());
 
-        if (Q2s.empty() || Ts.empty()) {
-            continue;
-        } // #endif
+        if (Q2s.empty() || Ts.empty()) continue;
 
         const int nrows = (int)Q2s.size();
         const int ncols = (int)Ts.size();
-        if (nrows <= 0 || ncols <= 0) {
-            continue;
-        }
+        if (nrows <= 0 || ncols <= 0) continue;
+
         const int W = 260 * ncols + 120;
         const int H = 220 * nrows + 140;
 
-        TCanvas* c = new TCanvas(Form("c_counts_%s_xB%d",group_label.c_str(),ix), "", W,H);
+        TCanvas* c = new TCanvas(Form("c_counts_%s_xB%d", group_label.c_str(), ix), "", W, H);
         if (!c) { fatal("TCanvas allocation failed"); }
 
-        TPad* pTop = new TPad("pTop","pTop",0.0,0.94,1.0,1.0);
-        TPad* pGrid= new TPad("pGrid","pGrid",0.0,0.0,1.0,0.94);
-        pTop->SetFillStyle(0); pTop->Draw();
+        TPad* pTop  = new TPad("pTop",  "pTop",  0.0, 0.94, 1.0, 1.0);
+        TPad* pGrid = new TPad("pGrid", "pGrid", 0.0, 0.00, 1.0, 0.94);
+        pTop->SetFillStyle(0);  pTop->Draw();
         pGrid->SetFillStyle(0); pGrid->Draw();
-        pGrid->Divide(ncols,nrows,0.0001,0.0001);
+        pGrid->Divide(ncols, nrows, 0.0001, 0.0001);
 
         pTop->cd();
         if (!gPad) fatal("gPad null after pTop->cd()");
-        TLatex head; head.SetNDC(); head.SetTextSize(0.055);
-        head.SetTextAlign(22);
-        head.DrawLatex(0.5,0.55,Form("%s   x_B (%.3g, %.3g)",group_label.c_str(),xB_bins[ix].first,xB_bins[ix].second));
+        TLatex head; head.SetNDC(); head.SetTextSize(0.055); head.SetTextAlign(22);
+        head.DrawLatex(0.5, 0.55,
+            Form("%s   x_B (%.3g, %.3g)", group_label.c_str(), xB_bins[ix].first, xB_bins[ix].second));
 
         const int cells = nrows * ncols;
 
-        for (int r=0;r<nrows;++r){
-            for (int ccol=0;ccol<ncols;++ccol){
-                const int cell = r*ncols + ccol + 1;
-                if (cell < 1 || cell > cells) {
-                    continue;
-                }
+        for (int r = 0; r < nrows; ++r) {
+            for (int ccol = 0; ccol < ncols; ++ccol) {
+                const int cell = r * ncols + ccol + 1;
+                if (cell < 1 || cell > cells) continue;
+
                 pGrid->cd(cell);
                 if (!gPad) fatal("gPad null after pGrid->cd(cell)");
 
-                gPad->SetGrid(1,1);
+                gPad->SetGrid(1, 1);
                 gPad->SetTopMargin(0.18);
                 gPad->SetBottomMargin(0.14);
                 gPad->SetLeftMargin(0.125);
                 gPad->SetRightMargin(0.06);
 
-                // Find global indices iQ and itb robustly (tolerant to FP noise)
-                int iQ  = -1;
-                int itb = -1;
-                for (int iq=0; iq<(int)Q2_bins.size(); ++iq) {
+                // Map local (Q2,t) pair to global indices robustly
+                int iQ = -1, itb = -1;
+                for (int iq = 0; iq < (int)Q2_bins.size(); ++iq) {
                     if (pairAlmostEqual(Q2_bins[iq], Q2s[r])) { iQ = iq; break; }
                 }
-                for (int it=0; it<(int)t_bins.size(); ++it) {
+                for (int it = 0; it < (int)t_bins.size(); ++it) {
                     if (pairAlmostEqual(t_bins[it], Ts[ccol])) { itb = it; break; }
                 }
 
-                // Gather Y arrays and find panel-local maximum
-                std::vector<double> Yp(N_PHI_BINS,0.0), Ym(N_PHI_BINS,0.0);
+                std::vector<double> Yp(N_PHI_BINS, 0.0), Ym(N_PHI_BINS, 0.0);
+                std::vector<double> EYp(N_PHI_BINS, 0.0), EYm(N_PHI_BINS, 0.0);
                 double local_max = 0.0;
 
                 if (iQ >= 0 && itb >= 0) {
-                    for(int ip=0; ip<N_PHI_BINS; ++ip){
+                    for (int ip = 0; ip < N_PHI_BINS; ++ip) {
                         auto itbl = table.find({ix, iQ, itb, ip});
-                        if(itbl == table.end()) continue;
-                        Yp[ip] = (double)itbl->second.plus;
-                        Ym[ip] = (double)itbl->second.minus;
+                        if (itbl == table.end()) continue;
+                        Yp[ip]  = (double)itbl->second.plus;
+                        Ym[ip]  = (double)itbl->second.minus;
+                        EYp[ip] = std::sqrt(std::max(0.0, Yp[ip]));
+                        EYm[ip] = std::sqrt(std::max(0.0, Ym[ip]));
                         local_max = std::max(local_max, std::max(Yp[ip], Ym[ip]));
-                    } // #endfor
+                    }
                 }
 
-                // Choose y-max (>=1 to avoid zero range); add headroom
                 double ymax = std::max(1.0, local_max * 1.15);
-
                 TH1* frame = gPad->DrawFrame(0.0, 0.0, 360.0, ymax);
                 if (!frame) fatal("DrawFrame returned null");
                 frame->GetXaxis()->SetTitle("phi (deg)");
@@ -567,36 +562,45 @@ static void plot_group_counts(
                 frame->GetYaxis()->CenterTitle();
                 frame->GetXaxis()->SetNdivisions(505);
 
-                // If very wide dynamic range, log-scale helps
                 if (local_max >= 500.0) {
                     gPad->SetLogy(1);
-                    frame->GetYaxis()->SetRangeUser(0.5, std::max(1.0, local_max*1.15));
+                    frame->GetYaxis()->SetRangeUser(0.5, std::max(1.0, local_max * 1.15));
                 } else {
                     gPad->SetLogy(0);
                 }
 
-                TGraph* gp = new TGraph(N_PHI_BINS,X.data(),Yp.data());
-                TGraph* gm = new TGraph(N_PHI_BINS,X.data(),Ym.data());
-                if (!gp || !gm) fatal("TGraph allocation failed");
-                gp->SetMarkerStyle(24);
+                // Points only, with error bars (no connecting lines)
+                TGraphErrors* gp = new TGraphErrors(N_PHI_BINS, X.data(), Yp.data(), ex.data(), EYp.data());
+                TGraphErrors* gm = new TGraphErrors(N_PHI_BINS, X.data(), Ym.data(), ex.data(), EYm.data());
+                if (!gp || !gm) fatal("TGraphErrors allocation failed");
+
+                gp->SetMarkerStyle(24); // red open
                 gp->SetMarkerColor(kRed);
                 gp->SetLineColor(kRed);
-                gm->SetMarkerStyle(20);
+                gp->SetLineWidth(1);
+                gp->Draw("P SAME");     // points only
+
+                gm->SetMarkerStyle(20); // blue filled
                 gm->SetMarkerColor(kBlue);
                 gm->SetLineColor(kBlue);
-                gp->Draw("LP SAME");
-                gm->Draw("LP SAME");
-            } // #endfor
-        } // #endfor
+                gm->SetLineWidth(1);
+                gm->Draw("P SAME");     // points only
+
+                // Annotate the Q2 and t ranges for this subplot
+                TLatex lab; lab.SetNDC(); lab.SetTextSize(0.045);
+                lab.SetTextAlign(13); // left-top
+                lab.DrawLatex(0.12, 0.88,
+                    Form("Q2 (%.3g, %.3g)   t (%.3g, %.3g)",
+                         Q2s[r].first, Q2s[r].second, Ts[ccol].first, Ts[ccol].second));
+            }
+        }
 
         const std::string fpath = out_dir + "/plot_total_counts_" + group_label + "_xB_" + std::to_string(ix) + ".png";
         c->SaveAs(fpath.c_str());
 
-        // fail-fast verification
         std::error_code fec;
         bool exists = fs::exists(fpath, fec);
         auto sz = exists ? fs::file_size(fpath, fec) : 0ULL;
-
         if (!exists || (sz == 0) || fec) {
             std::ostringstream em;
             em << "[total_counts][FATAL] Failed to save plot: " << fpath
@@ -608,8 +612,8 @@ static void plot_group_counts(
         }
 
         delete c;
-    } // #endfor
-} // #end plot_group_counts
+    }
+}
 
 } // namespace
 
