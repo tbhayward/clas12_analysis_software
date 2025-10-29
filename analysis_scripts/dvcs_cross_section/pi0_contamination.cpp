@@ -632,8 +632,9 @@ static int findIndex(const std::pair<double,double>& r,
 // ------------------------------------------------------------
 // Plotting
 // ------------------------------------------------------------
+// REPLACE your existing plot_group(...) with this version (entire function).
 static void plot_group(
-    const std::string& name, // short label for title
+    const std::string& name, // short label for title, e.g. "fa18_inb" or "Spring2018"
     const std::map<BinKey, BinCounts>& table,
     const std::vector<Binning>& binning_scheme,
     const std::vector<std::pair<double,double>>& xB_bins,
@@ -651,9 +652,32 @@ static void plot_group(
               " (" + ec.message() + ")");
     }
 
+    // phi bin centers (deg) and zero x-errors
     const auto PHI = phiCentersDeg();
     std::vector<double> X(N_PHI_BINS), ex(N_PHI_BINS, 0.0);
     for (int i=0;i<N_PHI_BINS;++i) X[i]=PHI[i];
+
+    // pretty run-period string for the header (capitalize and space)
+    auto pretty_period = [](std::string s)->std::string {
+        // Examples:
+        //  "fa18_inb"     -> "Fa18 Inb"
+        //  "Spring2018"   -> "Spring 2018"
+        //  "10.6_GeV"     -> "10.6 GeV"
+        for (auto& c : s) if (c=='_'||c=='-') c=' ';
+        if (!s.empty()) s[0] = std::toupper(static_cast<unsigned char>(s[0]));
+        // Insert a space between letters and digits for "Spring2018" style
+        std::string t; t.reserve(s.size()+3);
+        for (size_t i=0;i<s.size();++i) {
+            t.push_back(s[i]);
+            if (i+1<s.size() &&
+                std::isalpha(static_cast<unsigned char>(s[i])) &&
+                std::isdigit(static_cast<unsigned char>(s[i+1])))
+            {
+                t.push_back(' ');
+            }
+        }
+        return t;
+    }(name);
 
     for (int ix=0; ix<(int)xB_bins.size(); ++ix) {
         std::vector<std::pair<double,double>> Q2s, Ts;
@@ -662,21 +686,30 @@ static void plot_group(
 
         const int nrows = (int)Q2s.size();
         const int ncols = (int)Ts.size();
-        const int W = 260*ncols + 120;
-        const int H = 220*nrows + 140;
+
+        // Room for header + grid, scaled with grid size
+        const int W = 260*ncols + 140;
+        const int H = 230*nrows + 180;
 
         TCanvas* c = new TCanvas(Form("c_contam_%s_xB%d", name.c_str(), ix), "", W, H);
 
-        TPad* pTop  = new TPad("pTop","pTop", 0.0, 0.94, 1.0, 1.0);
+        // Header pad (top strip) and grid pad below
+        // Slightly taller header so we can use a bigger title
+        TPad* pTop  = new TPad("pTop","pTop", 0.0, 0.90, 1.0, 1.0);
         pTop->SetFillStyle(0); pTop->SetBorderSize(0); pTop->Draw();
-        TPad* pGrid = new TPad("pGrid","pGrid", 0.0, 0.0, 1.0, 0.94);
+        TPad* pGrid = new TPad("pGrid","pGrid", 0.0, 0.0, 1.0, 0.90);
         pGrid->SetFillStyle(0); pGrid->SetBorderSize(0); pGrid->Draw();
         pGrid->cd(); pGrid->Divide(ncols, nrows, 0.0001, 0.0001);
 
+        // Big, explicit header
         pTop->cd();
-        TLatex head; head.SetNDC(); head.SetTextSize(0.055); head.SetTextAlign(22);
-        head.DrawLatex(0.5, 0.55, Form("%s   x_{B} in (%.3g, %.3g)", name.c_str(),
-                                       xB_bins[ix].first, xB_bins[ix].second));
+        TLatex head; head.SetNDC(); head.SetTextAlign(22);
+        head.SetTextSize(0.085); // larger title
+        head.DrawLatex(
+            0.5, 0.50,
+            Form("#pi^{0} contamination vs #phi   |   %s   |   x_{B} in (%.3g, %.3g)",
+                 pretty_period.c_str(), xB_bins[ix].first, xB_bins[ix].second)
+        );
 
         for (int r=0; r<nrows; ++r) {
             int iQ = findIndex(Q2s[r], Q2_bins); if (iQ<0) continue;
@@ -714,27 +747,37 @@ static void plot_group(
                 frame->GetYaxis()->CenterTitle();
                 frame->GetXaxis()->SetNdivisions(505);
 
+                // Graphs (+1 blue, -1 red)
                 TGraphErrors* grP = new TGraphErrors(N_PHI_BINS, X.data(), Yp.data(), ex.data(), eYp.data());
                 TGraphErrors* grM = new TGraphErrors(N_PHI_BINS, X.data(), Ym.data(), ex.data(), eYm.data());
+
                 grP->SetMarkerStyle(24);
                 grM->SetMarkerStyle(20);
                 grP->SetMarkerSize(0.9); grM->SetMarkerSize(0.9);
                 grP->SetLineWidth(2);    grM->SetLineWidth(2);
+
+                grP->SetLineColor(kBlue+1);
+                grP->SetMarkerColor(kBlue+1);
+                grM->SetLineColor(kRed+1);
+                grM->SetMarkerColor(kRed+1);
+
                 grP->Draw("P SAME");
                 grM->Draw("P SAME");
 
+                // Subplot subtitle (kinematic box)
                 TLatex sub; sub.SetNDC(); sub.SetTextSize(0.045); sub.SetTextAlign(13);
                 sub.DrawLatex(0.14, 0.96,
                     Form("Q^{2} in (%.3g, %.3g),   -t in (%.3g, %.3g)",
                          Q2s[r].first, Q2s[r].second, Ts[cc].first, Ts[cc].second));
 
-                if (r==0 && cc==0) {
-                    TLegend* leg = new TLegend(0.58, 0.73, 0.92, 0.92);
-                    leg->SetBorderSize(1); leg->SetFillStyle(0); leg->SetTextSize(0.035);
-                    leg->AddEntry(grP, "helicity +1", "p");
-                    leg->AddEntry(grM, "helicity -1", "p");
-                    leg->Draw();
-                }
+                // Legend on EVERY subplot (top-right), no overlap with header
+                TLegend* leg = new TLegend(0.68, 0.76, 0.94, 0.93);
+                leg->SetBorderSize(1);
+                leg->SetFillStyle(0);
+                leg->SetTextSize(0.035);
+                leg->AddEntry(grP, "helicity +1", "p");
+                leg->AddEntry(grM, "helicity -1", "p");
+                leg->Draw();
             }
         }
 
