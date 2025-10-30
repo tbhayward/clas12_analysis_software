@@ -21,6 +21,7 @@
 #include <map>
 #include <set>
 #include <sstream>
+#include <stdexcept>
 #include <string>
 #include <tuple>
 #include <utility>
@@ -216,7 +217,6 @@ static bool extract_stats_block(const std::string& s, size_t scope_from, const s
     // naive bracket matching for mc object
     int depth = 0; size_t i = lbrace;
     for (; i < s.size(); ++i) {
-        if (i == s.size()) break;
         if (s[i] == '{') ++depth;
         else if (s[i] == '}') { --depth; if (depth == 0) break; }
     }
@@ -234,10 +234,32 @@ static bool extract_stats_block(const std::string& s, size_t scope_from, const s
     return true;
 }
 
+// Produce possible period variants to tolerate case differences in JSON keys.
+// Examples:
+//   "DVCS_Sp18_inb" -> {"DVCS_Sp18_inb", "DVCS_Sp18_Inb"}
+//   "DVCS_Fa18_out" -> {"DVCS_Fa18_out", "DVCS_Fa18_Out"}
+static std::vector<std::string> period_variants(const std::string& period) {
+    std::vector<std::string> v;
+    v.push_back(period);
+    // If ends with _inb or _out, add title-case variant
+    if (period.size() >= 4) {
+        if (period.rfind("_inb") != std::string::npos) {
+            std::string p2 = period;
+            p2.replace(p2.size()-4, 4, "_Inb");
+            v.push_back(p2);
+        } else if (period.rfind("_out") != std::string::npos) {
+            std::string p2 = period;
+            p2.replace(p2.size()-4, 4, "_Out");
+            v.push_back(p2);
+        }
+    }
+    return v;
+}
+
 static bool load_combined_mc_cuts(const std::string& json_path, const std::vector<std::string>& periods, ComboMC& out) {
     std::ifstream ifs(json_path);
     if (!ifs) {
-        std::cerr << "[acc][WARN] Cannot open combined cuts JSON: " << json_path << "\n";
+        std::cerr << "[acc][ERROR] Cannot open combined cuts JSON: " << json_path << "\n";
         return false;
     }
     const std::string s((std::istreambuf_iterator<char>(ifs)), std::istreambuf_iterator<char>());
@@ -250,26 +272,26 @@ static bool load_combined_mc_cuts(const std::string& json_path, const std::vecto
 
     bool any=false;
     for (const auto& period : periods) {
-        for (const auto& topo : topoKeys) {
-            const std::string comboKey = period + "_" + topo; // e.g. "DVCS_Fa18_inb_FD_FD"
-            size_t pkey = s.find("\"" + comboKey + "\"");
-            if (pkey == std::string::npos) continue;
+        const auto pvars = period_variants(period); // try both lower and title case suffixes
+        for (const auto& period_try : pvars) {
+            for (const auto& topo : topoKeys) {
+                const std::string comboKey = period_try + "_" + topo; // e.g. "DVCS_Sp18_Inb_FD_FD"
+                size_t pkey = s.find("\"" + comboKey + "\"");
+                if (pkey == std::string::npos) continue;
 
-            CutMap cmap;
-            for (const auto& v : vars) {
-                Stats st;
-                if (extract_stats_block(s, pkey, v, st)) {
-                    cmap[v] = st;
+                CutMap cmap;
+                for (const auto& v : vars) {
+                    Stats st;
+                    if (extract_stats_block(s, pkey, v, st)) {
+                        cmap[v] = st;
+                    }
+                }
+                if (!cmap.empty()) {
+                    out[comboKey] = std::move(cmap);
+                    any = true;
                 }
             }
-            if (!cmap.empty()) {
-                out[comboKey] = std::move(cmap);
-                any = true;
-            }
         }
-    }
-    if (!any) {
-        std::cerr << "[acc][WARN] No MC cut blocks found in combined cuts JSON for requested periods.\n";
     }
     return any;
 }
@@ -363,8 +385,11 @@ static void accumulate_reconstructed(
         if (itCuts != topoCutsForPeriod.end()) {
             const CutMap& cuts_mc = itCuts->second;
             if (!passes3SigmaCuts(cuts_mc, b.valuesMapDVCS())) continue;
+        } else {
+            // If this period had no entry for this topology, veto by default to avoid
+            // mixing uncut with cut selections. Comment the next line if you prefer permissive.
+            continue;
         }
-        // else: if no cuts for this topo in JSON, fall through (no 3σ veto).
 
         double xB = b.x, Q2 = b.Q2, tt = std::fabs(b.t1), phi = b.phi2;
         int ix = findBin1D(xB, xB_bins), iQ = findBin1D(Q2, Q2_bins), it = findBin1D(tt, t_bins);
@@ -592,9 +617,16 @@ void compute_and_plot_acceptance(
     const auto t_bins  = uniqueRanges(binning, 't');
 
     // Load MC-side 3σ windows from combined_cuts.json for all requested periods
-    // Example keys inside JSON: "DVCS_Fa18_inb_FD_FD", etc.
     ComboMC comboCuts;
-    load_combined_mc_cuts(cuts_json_path, periods, comboCuts);
+    const bool haveCuts = load_combined_mc_cuts(cuts_json_path, periods, comboCuts);
+    if (!haveCuts) {
+        std::ostringstream msg;
+        msg << "[acc][FATAL] No MC cut blocks found in combined cuts JSON for requested periods.\n"
+            << "  JSON path: " << cuts_json_path << "\n"
+            << "  Example expected keys include e.g. \"DVCS_Sp18_inb_FD_FD\" or \"DVCS_Sp18_Inb_FD_FD\".\n"
+            << "  Please verify period naming (inb vs Inb, out vs Out) and re-run exclusivity_cuts.\n";
+        throw std::runtime_error(msg.str());
+    }
 
     // Output dirs
     const fs::path json_dir  = fs::path(out_root_dir) / "jsons";
@@ -634,12 +666,32 @@ void compute_and_plot_acceptance(
             continue;
         }
 
-        // Build topology->CutMap for this specific period from the combined set
+        // Build topology->CutMap for this specific period from the combined set.
+        // We accept either lower-case or title-case period suffix in the JSON.
         std::map<std::string, CutMap> topoCutsForPeriod;
         for (const std::string topoKey : {"FD_FD","CD_FD","CD_FT"}) {
-            const std::string comboKey = period + "_" + topoKey;
-            auto it = comboCuts.find(comboKey);
-            if (it != comboCuts.end()) topoCutsForPeriod[topoKey] = it->second;
+            // Try title-case period key first (matches your JSON), then lower-case.
+            const std::string comboKeyTitle = period + "_" + topoKey; // as-passed (could already be *_Inb/*_Out)
+            const std::string comboKeyLower = [&](){
+                // if period ended with _inb/_out, also try title-case variant
+                auto pv = period_variants(period);
+                // prefer title-case variant if present
+                for (const auto& ptry : pv) {
+                    auto it = comboCuts.find(ptry + "_" + topoKey);
+                    if (it != comboCuts.end()) return ptry + "_" + topoKey;
+                }
+                return period + "_" + topoKey;
+            }();
+
+            auto it1 = comboCuts.find(comboKeyLower);
+            if (it1 != comboCuts.end()) {
+                topoCutsForPeriod[topoKey] = it1->second;
+                continue;
+            }
+            auto it2 = comboCuts.find(comboKeyTitle);
+            if (it2 != comboCuts.end()) {
+                topoCutsForPeriod[topoKey] = it2->second;
+            }
         }
 
         // Accumulate
