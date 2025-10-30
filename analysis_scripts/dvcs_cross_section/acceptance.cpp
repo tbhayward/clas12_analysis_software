@@ -123,14 +123,28 @@ struct GenBranch {
     }
 };
 
+// Reconstructed MC needs all variables that exclusivity_cuts used
 struct RecBranch {
     double x = 0.0, Q2 = 0.0, t1 = 0.0, phi2 = 0.0;
     double open_angle_ep2 = 0.0, pTmiss = 0.0;
     int detector1 = 0, detector2 = 0;
-    bool has_x = false, has_Q2 = false, has_t1 = false, has_phi = false, hasTopo = false, hasOA = false, hasPT = false;
+    // exclusivity variables (bind if present)
+    double Delta_phi = 0.0;
+    double theta_gamma_gamma = 0.0;
+    double xF = 0.0;
+    double Emiss2 = 0.0;
+    double Mx2 = 0.0;
+    double Mx2_1 = 0.0;
+    double Mx2_2 = 0.0;
+
+    bool has_x=false, has_Q2=false, has_t1=false, has_phi=false;
+    bool hasTopo=false, hasOA=false, hasPT=false;
+    bool has_Delta_phi=false, has_theta_gg=false, has_xF=false, has_Emiss2=false, has_Mx2=false, has_Mx2_1=false, has_Mx2_2=false;
+
     void bind(TTree* t) {
         auto bindD = [&](const char* n, double* a, bool& f){ if (t && t->GetBranch(n)) { t->SetBranchAddress(n, a); f = true; } };
         auto bindI = [&](const char* n, int* a, bool& f){ if (t && t->GetBranch(n)) { t->SetBranchAddress(n, a); f = true; } };
+
         bindD("x",   &x,   has_x);
         bindD("Q2",  &Q2,  has_Q2);
         bindD("t1",  &t1,  has_t1);
@@ -139,38 +153,149 @@ struct RecBranch {
         bindD("pTmiss",&pTmiss,hasPT);
         bindI("detector1",&detector1,hasTopo);
         bindI("detector2",&detector2,hasTopo);
+
+        // extras used by exclusivity_cuts
+        bindD("Delta_phi", &Delta_phi, has_Delta_phi);
+        bindD("theta_gamma_gamma", &theta_gamma_gamma, has_theta_gg);
+        bindD("xF", &xF, has_xF);
+        bindD("Emiss2", &Emiss2, has_Emiss2);
+        bindD("Mx2", &Mx2, has_Mx2);
+        bindD("Mx2_1", &Mx2_1, has_Mx2_1);
+        bindD("Mx2_2", &Mx2_2, has_Mx2_2);
+    }
+
+    // Build value map in the same naming as exclusivity_cuts (DVCS channel)
+    std::map<std::string,double> valuesMapDVCS() const {
+        std::map<std::string,double> m;
+        if (has_Delta_phi) m["Delta_phi"] = Delta_phi;
+        if (has_theta_gg)  m["theta_gamma_gamma"] = theta_gamma_gamma;
+        if (has_pTmiss)    m["pTmiss"] = pTmiss;
+        if (has_xF)        m["xF"] = xF;
+        if (has_Emiss2)    m["Emiss2"] = Emiss2;
+        if (has_Mx2)       m["Mx2"] = Mx2;
+        if (has_Mx2_1)     m["Mx2_1"] = Mx2_1;
+        if (has_Mx2_2)     m["Mx2_2"] = Mx2_2;
+        return m;
     }
 };
 
-// ---------------- MC exclusivity cuts loader ----------------
-struct MCCuts {
+// ---------------- global DVCS MC-side kinematic cuts (same as exclusivity_cuts) ----------------
+struct MCCutsFixed {
     double min_open_angle_deg = 5.0;
     double max_neg_t_GeV2     = 1.0;
     double max_pTmiss_GeV     = 0.20;
 };
+static inline bool passesGlobalMCCuts(double t1, double oa_deg, double pTmiss, const MCCutsFixed& c) {
+    if (oa_deg <= c.min_open_angle_deg) return false;
+    if ((-t1) > c.max_neg_t_GeV2)       return false;
+    if (pTmiss > c.max_pTmiss_GeV)      return false;
+    return true;
+}
 
-static bool load_mc_cuts(const std::string& path, MCCuts& out) {
-    std::ifstream ifs(path);
-    if (!ifs) { std::cerr << "[acc][WARN] Cannot open cuts JSON: " << path << " — using defaults.\n"; return false; }
-    std::string s((std::istreambuf_iterator<char>(ifs)), std::istreambuf_iterator<char>());
+// ---------------- JSON: load combined_cuts.json (MC stats only) ----------------
+struct Stats { double mean=0.0, std=0.0; };
+using CutMap  = std::map<std::string, Stats>;          // var -> (mean,std)
+using ComboMC = std::map<std::string, CutMap>;         // "DVCS_Fa18_inb_FD_FD" -> CutMap
 
-    auto findD = [&](const char* pat, double& dst)->bool{
-        size_t p = s.find(pat); if (p == std::string::npos) return false;
-        p = s.find(':', p); if (p == std::string::npos) return false;
-        size_t a = p + 1; while (a < s.size() && isspace((unsigned char)s[a])) ++a;
-        size_t b = a; while (b < s.size() && (isdigit((unsigned char)s[b]) || s[b] == '-' || s[b] == '.' || s[b] == 'e' || s[b] == 'E' || s[b] == '+')) ++b;
-        try { dst = std::stod(s.substr(a, b - a)); return true; } catch(...) { return false; }
+// crude extractor: find number after a pattern
+static bool extract_number_after(const std::string& s, size_t from, const std::string& pat, double& out) {
+    size_t p = s.find(pat, from); if (p == std::string::npos) return false;
+    p = s.find(':', p); if (p == std::string::npos) return false;
+    size_t a = p + 1;
+    while (a < s.size() && isspace((unsigned char)s[a])) ++a;
+    size_t b = a;
+    while (b < s.size() && (isdigit((unsigned char)s[b]) || s[b]=='-' || s[b]=='+' || s[b]=='.' || s[b]=='e' || s[b]=='E')) ++b;
+    try { out = std::stod(s.substr(a, b - a)); return true; } catch(...) { return false; }
+}
+
+static bool extract_stats_block(const std::string& s, size_t scope_from, const std::string& var, Stats& st) {
+    // look for ..."var":{"mean":X,"std":Y}... inside the "mc":{...} object nearest to scope_from
+    // 1) find "mc" after scope_from
+    size_t pmc = s.find("\"mc\"", scope_from); if (pmc == std::string::npos) return false;
+    size_t lbrace = s.find('{', pmc); if (lbrace == std::string::npos) return false;
+    // naive bracket matching for mc object
+    int depth = 0; size_t i = lbrace;
+    for (; i < s.size(); ++i) {
+        if (s[i] == '{') ++depth;
+        else if (s[i] == '}') { --depth; if (depth == 0) break; }
+    }
+    if (i >= s.size()) return false;
+    size_t mc_end = i;
+    // 2) within mc object, find the variable key
+    size_t pv = s.find("\"" + var + "\"", lbrace);
+    if (pv == std::string::npos || pv > mc_end) return false;
+    // 3) extract mean and std near this variable
+    double mu=0.0, sg=0.0;
+    bool ok1 = extract_number_after(s, pv, "\"mean\"", mu);
+    bool ok2 = extract_number_after(s, pv, "\"std\"",  sg);
+    if (!(ok1 && ok2)) return false;
+    st.mean = mu; st.std = std::abs(sg);
+    return true;
+}
+
+static bool load_combined_mc_cuts(const std::string& json_path, const std::vector<std::string>& periods, ComboMC& out) {
+    std::ifstream ifs(json_path);
+    if (!ifs) {
+        std::cerr << "[acc][WARN] Cannot open combined cuts JSON: " << json_path << "\n";
+        return false;
+    }
+    const std::string s((std::istreambuf_iterator<char>(ifs)), std::istreambuf_iterator<char>());
+
+    static const std::vector<std::string> topoKeys = {"FD_FD", "CD_FD", "CD_FT"};
+    static const std::vector<std::string> vars = {
+        "Delta_phi", "theta_gamma_gamma", "pTmiss", "xF",
+        "Emiss2", "Mx2", "Mx2_1", "Mx2_2"
     };
 
-    bool any = false;
-    any |= findD("\"mc_open_angle_ep2_min_deg\"", out.min_open_angle_deg);
-    any |= findD("\"mc_t1_abs_max_GeV2\"",       out.max_neg_t_GeV2);
-    any |= findD("\"mc_pTmiss_max_GeV\"",        out.max_pTmiss_GeV);
-    if (!any) std::cerr << "[acc][WARN] Could not locate MC cuts in JSON — using defaults.\n";
+    bool any=false;
+    for (const auto& period : periods) {
+        for (const auto& topo : topoKeys) {
+            const std::string comboKey = period + "_" + topo; // e.g. "DVCS_Fa18_inb_FD_FD"
+            size_t pkey = s.find("\"" + comboKey + "\"");
+            if (pkey == std::string::npos) continue;
+
+            CutMap cmap;
+            for (const auto& v : vars) {
+                Stats st;
+                if (extract_stats_block(s, pkey, v, st)) {
+                    cmap[v] = st;
+                }
+            }
+            if (!cmap.empty()) {
+                out[comboKey] = std::move(cmap);
+                any = true;
+            }
+        }
+    }
+    if (!any) {
+        std::cerr << "[acc][WARN] No MC cut blocks found in combined cuts JSON for requested periods.\n";
+    }
     return any;
 }
 
-static inline bool passesTopology_simple(int d1, int d2, const std::vector<std::string>& tops) {
+static inline bool within3Sigma(double val, const Stats& s) {
+    return (val >= s.mean - 3.0*s.std) && (val <= s.mean + 3.0*s.std);
+}
+
+static bool passes3SigmaCuts(const CutMap& cuts_mc, const std::map<std::string,double>& values) {
+    for (const auto& kv : cuts_mc) {
+        const std::string& var = kv.first;
+        auto it = values.find(var);
+        if (it == values.end()) continue; // variable not present in tree: skip
+        if (!within3Sigma(it->second, kv.second)) return false;
+    }
+    return true;
+}
+
+// ---------------- topology helpers ----------------
+static inline std::string topoKeyFromDet(int d1, int d2) {
+    if (d1 == 1 && d2 == 1) return "FD_FD";
+    if (d1 == 2 && d2 == 1) return "CD_FD";
+    if (d1 == 2 && d2 == 0) return "CD_FT";
+    return ""; // unknown
+}
+
+static inline bool topoAllowed(int d1, int d2, const std::vector<std::string>& tops) {
     for (const auto& t : tops) {
         if (t == "(FD,FD)" && d1 == 1 && d2 == 1) return true;
         if (t == "(CD,FD)" && d1 == 2 && d2 == 1) return true;
@@ -179,19 +304,11 @@ static inline bool passesTopology_simple(int d1, int d2, const std::vector<std::
     return false;
 }
 
-static inline bool passesMCCuts(double t1, double oa_deg, double pTmiss, const MCCuts& c) {
-    if (oa_deg <= c.min_open_angle_deg) return false;
-    if ((-t1) > c.max_neg_t_GeV2)       return false;
-    if (pTmiss > c.max_pTmiss_GeV)      return false;
-    return true;
-}
-
 // ---------------- accumulation ----------------
 struct AccBin {
     double gen = 0.0;
     double rec = 0.0;
 };
-
 using AccMap = std::map<std::tuple<int,int,int,int>, AccBin>; // (ix,iQ,it,ip)
 
 static void accumulate_generated(
@@ -222,7 +339,8 @@ static void accumulate_reconstructed(
     const std::vector<std::pair<double,double>>& Q2_bins,
     const std::vector<std::pair<double,double>>& t_bins,
     const std::vector<std::string>& topologies,
-    const MCCuts& cuts,
+    const MCCutsFixed& globalCuts,
+    const std::map<std::string, CutMap>& topoCutsForPeriod, // e.g. {"FD_FD":CutMap,...}
     AccMap& acc)
 {
     if (!t) return;
@@ -232,8 +350,20 @@ static void accumulate_reconstructed(
     const Long64_t n = t->GetEntries();
     for (Long64_t i = 0; i < n; ++i) {
         t->GetEntry(i);
-        if (!passesTopology_simple(b.detector1, b.detector2, topologies)) continue;
-        if (!passesMCCuts(b.t1, b.open_angle_ep2, b.pTmiss, cuts)) continue;
+
+        if (!topoAllowed(b.detector1, b.detector2, topologies)) continue;
+        if (!passesGlobalMCCuts(b.t1, b.open_angle_ep2, b.pTmiss, globalCuts)) continue;
+
+        // Topology-specific 3σ windows from combined_cuts.json (MC)
+        const std::string topoKey = topoKeyFromDet(b.detector1, b.detector2);
+        if (topoKey.empty()) continue; // unknown combo
+
+        auto itCuts = topoCutsForPeriod.find(topoKey);
+        if (itCuts != topoCutsForPeriod.end()) {
+            const CutMap& cuts_mc = itCuts->second;
+            if (!passes3SigmaCuts(cuts_mc, b.valuesMapDVCS())) continue;
+        }
+        // else: if no cuts for this topo in JSON, fall through (no 3σ veto).
 
         double xB = b.x, Q2 = b.Q2, tt = std::fabs(b.t1), phi = b.phi2;
         int ix = findBin1D(xB, xB_bins), iQ = findBin1D(Q2, Q2_bins), it = findBin1D(tt, t_bins);
@@ -252,7 +382,6 @@ struct PhiArrays {
     std::vector<double> n_rec_phi;
     double Ngen_cell = 0.0, Nrec_cell = 0.0;
 };
-
 using CellMap = std::map<std::tuple<int,int,int>, PhiArrays>;
 
 static void write_period_json(
@@ -461,8 +590,10 @@ void compute_and_plot_acceptance(
     const auto Q2_bins = uniqueRanges(binning, 'Q');
     const auto t_bins  = uniqueRanges(binning, 't');
 
-    // Load MC-side exclusivity cut thresholds
-    MCCuts cuts; load_mc_cuts(cuts_json_path, cuts);
+    // Load MC-side 3σ windows from combined_cuts.json for all requested periods
+    // Example keys inside JSON: "DVCS_Fa18_inb_FD_FD", etc.
+    ComboMC comboCuts;
+    load_combined_mc_cuts(cuts_json_path, periods, comboCuts);
 
     // Output dirs
     const fs::path json_dir  = fs::path(out_root_dir) / "jsons";
@@ -470,21 +601,22 @@ void compute_and_plot_acceptance(
     std::error_code ec;
     fs::create_directories(json_dir, ec);
 
+    // Global DVCS MC thresholds (same as exclusivity_cuts)
+    const MCCutsFixed globalCuts;
+
     for (const auto& period : periods) {
         const std::string runTag = periodToRunTagKey(period);
 
-        // IMPORTANT: resolve using the exact period-based keys first to match load_trees.cpp tags.
-        // We also keep the older runTag-based keys as a fallback.
+        // Resolve using the exact period-based keys first (matches load_trees.cpp)
         const std::vector<std::string> gen_keys = {
-            period + "_gen",          // e.g., "DVCS_Sp18_inb_gen"  <-- matches load_trees.cpp
-            runTag + "_gen"           // e.g., "sp18_inb_gen"       <-- fallback if ever used elsewhere
+            period + "_gen",   // e.g., "DVCS_Sp18_inb_gen"
+            runTag + "_gen"    // fallback if ever used
         };
-
         const std::vector<std::string> rec_keys = {
-            period + "_rec",          // e.g., "DVCS_Sp18_inb_rec"  <-- matches load_trees.cpp
-            period + "_rec_mc",       // e.g., "DVCS_Sp18_inb_rec_mc" (if an alt naming is ever used)
-            runTag + "_rec",          // "sp18_inb_rec"             <-- fallback
-            runTag + "_rec_mc"        // "sp18_inb_rec_mc"          <-- fallback
+            period + "_rec",       // e.g., "DVCS_Sp18_inb_rec"
+            period + "_rec_mc",    // if alt naming exists
+            runTag + "_rec",       // fallback
+            runTag + "_rec_mc"     // fallback
         };
 
         TTree* tGen = try_keys(genMcTrees, gen_keys);
@@ -501,10 +633,18 @@ void compute_and_plot_acceptance(
             continue;
         }
 
+        // Build topology->CutMap for this specific period from the combined set
+        std::map<std::string, CutMap> topoCutsForPeriod;
+        for (const std::string topoKey : {"FD_FD","CD_FD","CD_FT"}) {
+            const std::string comboKey = period + "_" + topoKey;
+            auto it = comboCuts.find(comboKey);
+            if (it != comboCuts.end()) topoCutsForPeriod[topoKey] = it->second;
+        }
+
         // Accumulate
         AccMap acc;
         accumulate_generated(tGen, xB_bins, Q2_bins, t_bins, acc);
-        accumulate_reconstructed(tRec, xB_bins, Q2_bins, t_bins, topologies, cuts, acc);
+        accumulate_reconstructed(tRec, xB_bins, Q2_bins, t_bins, topologies, globalCuts, topoCutsForPeriod, acc);
 
         // Build per-cell phi arrays
         const auto PHI_DEG = phiCentersDeg();
@@ -531,7 +671,7 @@ void compute_and_plot_acceptance(
                 double A = 0.0, sA = 0.0;
                 if (g > 0.0) {
                     A  = r / g;
-                    sA = std::sqrt(std::max(0.0, A * (1.0 - A) / g));
+                    sA = std::sqrt(std::max(0.0, A * (1.0 - A) / g)); // binomial
                 }
                 if (!std::isfinite(A)) A = 0.0;
                 A = std::clamp(A, 0.0, 1.2);
