@@ -169,7 +169,7 @@ struct RecBranch {
         std::map<std::string,double> m;
         if (has_Delta_phi) m["Delta_phi"] = Delta_phi;
         if (has_theta_gg)  m["theta_gamma_gamma"] = theta_gamma_gamma;
-        if (has_pTmiss)    m["pTmiss"] = pTmiss;
+        if (hasPT)         m["pTmiss"] = pTmiss;
         if (has_xF)        m["xF"] = xF;
         if (has_Emiss2)    m["Emiss2"] = Emiss2;
         if (has_Mx2)       m["Mx2"] = Mx2;
