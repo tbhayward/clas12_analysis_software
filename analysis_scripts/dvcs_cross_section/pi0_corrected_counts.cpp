@@ -59,38 +59,25 @@ namespace {
 constexpr int N_PHI_BINS = 12;
 using BinKey = std::tuple<int,int,int,int>; // (ix,iQ2,it,ip)
 
-// ===== NEW: hard-wired mapping from external DVCS_* names -> short JSON group keys =====
+// ===== Fixed mapping from external DVCS_* names -> short JSON group keys =====
 static const std::unordered_map<std::string,std::string> kGroupNameMap = {
     {"DVCS_Sp18_inb",      "sp18_inb"},
     {"DVCS_Sp18_out",      "sp18_out"},
     {"DVCS_Fa18_inb",      "fa18_inb"},
     {"DVCS_Fa18_out",      "fa18_out"},
     {"DVCS_Sp19_inb",      "sp19_inb"},
-    // If DVCS_Fa18_inb_supp is passed, map to fa18_inb totals (by design).
     {"DVCS_Fa18_inb_supp", "fa18_inb"}
 };
-// For completeness: if a caller already passes short names (sp18_inb, etc.), we accept them as-is.
-
+// If caller already passes short names or combined keys, accept as-is.
 static std::vector<std::string> resolve_requested_groups(const std::vector<std::string>& dvcs_periods) {
-    std::vector<std::string> out;
-    out.reserve(dvcs_periods.size());
+    std::vector<std::string> out; out.reserve(dvcs_periods.size());
     for (const auto& g : dvcs_periods) {
         auto it = kGroupNameMap.find(g);
-        if (it != kGroupNameMap.end()) {
-            out.push_back(it->second);
-        } else {
-            // Accept literal group if it is already a short key or combined key.
-            // No auto-adaptation beyond this fixed mapping.
-            out.push_back(g);
-        }
+        out.push_back(it != kGroupNameMap.end() ? it->second : g);
     }
-    // Ensure uniqueness while preserving order.
     std::unordered_set<std::string> seen;
-    std::vector<std::string> uniq;
-    uniq.reserve(out.size());
-    for (const auto& g : out) {
-        if (seen.insert(g).second) uniq.push_back(g);
-    }
+    std::vector<std::string> uniq; uniq.reserve(out.size());
+    for (const auto& g : out) if (seen.insert(g).second) uniq.push_back(g);
     return uniq;
 }
 
@@ -172,9 +159,12 @@ struct BinningMeta {
     size_t nx=0, nQ=0, nt=0;
 };
 
+// Extract the object (including braces) following key "..." allowing arbitrary whitespace.
 static std::string objForKey(const std::string& s, const std::string& key) {
-    size_t p = s.find(key); if (p==std::string::npos) fatal("Key '"+key+"' not found in JSON.");
-    size_t br = s.find('{', p); if (br==std::string::npos) fatal("Malformed JSON after key '"+key+"'");
+    size_t p = s.find(key);
+    if (p==std::string::npos) fatal("Key '"+key+"' not found in JSON.");
+    size_t br = s.find('{', p);
+    if (br==std::string::npos) fatal("Malformed JSON after key '"+key+"'");
     int d=0; size_t i=br;
     for (; i<s.size(); ++i){
         if(s[i]=='{') d++;
@@ -188,7 +178,7 @@ static long long parseIntAfterColon(const std::string& s, size_t cpos, const std
     size_t a = cpos + 1;
     while (a < s.size() && std::isspace((unsigned char)s[a])) ++a;
     size_t b = a;
-    while (b < s.size() && (std::isdigit((unsigned char)s[b]) || s[b]=='-' || s[b]=='+' )) ++b;
+    while (b < s.size() && (std::isdigit((unsigned char)s[b]) || s[b]=='-' || s[b]=='+')) ++b;
     try { return std::stoll(s.substr(a,b-a)); }
     catch(...) { fatal("Non-integer value in "+ctx); }
     return 0;
@@ -197,11 +187,21 @@ static double parseDoubleAfterColon(const std::string& s, size_t cpos, const std
     size_t a = cpos + 1;
     while (a < s.size() && std::isspace((unsigned char)s[a])) ++a;
     size_t b = a;
-    auto isnum=[](char c){ return std::isdigit((unsigned char)c)||c=='-'||c=='+'||c=='.'||c=='e'||c=='E'; };
+    auto isnum=[](char c){ return std::isdigit((unsigned char)c)||c=='-'||c=='+'||c=='.'||c=='e'||c=='E'||c=='n'||c=='N'||c=='a'||c=='A'||c=='f'||c=='F'; };
+    // allow "nan", "inf" representations if present
     while (b < s.size() && isnum(s[b])) ++b;
     try { return std::stod(s.substr(a,b-a)); }
     catch(...) { fatal("Non-numeric value in "+ctx); }
     return 0.0;
+}
+
+// Get numeric field "<key>": <number> from within an object string.
+static double getNumberForKey(const std::string& obj, const char* key, const std::string& ctx){
+    size_t p = obj.find(key);
+    if (p==std::string::npos) fatal("Missing key "+std::string(key)+" in "+ctx);
+    size_t c = obj.find(':', p);
+    if (c==std::string::npos) fatal("Malformed key "+std::string(key)+" in "+ctx);
+    return parseDoubleAfterColon(obj, c, ctx+"::"+key);
 }
 
 static BinningMeta load_meta(const std::string& s) {
@@ -259,7 +259,7 @@ static GroupCounts load_total_counts_STRICT(const std::string& path, BinningMeta
                 if(binsObj[m]=='{') d2++;
                 else if(binsObj[m]=='}'){ d2--; if(!d2){ ++m; break;} }
             }
-            std::string v = binsObj.substr(m-(m-vS), (m-vS)); // same as binsObj.substr(vS, m-vS)
+            std::string v = binsObj.substr(vS, m-vS);
 
             size_t pPlus = v.find("\"+1\""); if (pPlus==std::string::npos) fatal("Missing +1 in helicity for "+gname);
             pPlus = v.find(':', pPlus); if (pPlus==std::string::npos) fatal("Malformed +1 in "+gname);
@@ -280,7 +280,7 @@ static GroupCounts load_total_counts_STRICT(const std::string& path, BinningMeta
     return out;
 }
 
-// contamination per group file
+// contamination per group file (whitespace-robust hierarchical parsing)
 static ContamTable load_contam_period_STRICT(const std::string& path, BinningMeta& out_meta) {
     std::ifstream ifs(path);
     if (!ifs) fatal(std::string("Cannot open contamination file: ")+path);
@@ -301,19 +301,23 @@ static ContamTable load_contam_period_STRICT(const std::string& path, BinningMet
             if(binsObj[j]=='{') d2++;
             else if(binsObj[j]=='}'){ d2--; if(!d2){ ++j; break; } }
         }
-        std::string obj=binsObj.substr(vS, j-vS);
+        std::string binObj=binsObj.substr(vS, j-vS);
 
-        auto findVal=[&](const char* pat, const char* ctx)->double{
-            size_t pos=obj.find(pat); if(pos==std::string::npos) fatal(std::string("Missing ")+pat+" in "+ctx);
-            pos=obj.find(':',pos); if(pos==std::string::npos) fatal(std::string("Malformed ")+pat+" in "+ctx);
-            return parseDoubleAfterColon(obj, pos, ctx);
-        };
+        // Navigate: contamination -> "+1" -> value/err ; contamination -> "-1" -> value/err
+        std::string contaminationObj = objForKey(binObj, "\"contamination\"");
+        std::string plusObj = objForKey(contaminationObj, "\"+1\"");
+        std::string minusObj= objForKey(contaminationObj, "\"-1\"");
 
         Contam c;
-        c.cp = findVal("\"contamination\":{\"+1\":{\"value\"", "contamination(+1).value");
-        c.ep = findVal("\"contamination\":{\"+1\":{\"err\"",   "contamination(+1).err");
-        c.cm = findVal("\"contamination\":{\"-1\":{\"value\"", "contamination(-1).value");
-        c.em = findVal("\"contamination\":{\"-1\":{\"err\"",   "contamination(-1).err");
+        c.cp = getNumberForKey(plusObj,  "\"value\"", "contamination(+1)");
+        c.ep = getNumberForKey(plusObj,  "\"err\"",   "contamination(+1)");
+        c.cm = getNumberForKey(minusObj, "\"value\"", "contamination(-1)");
+        c.em = getNumberForKey(minusObj, "\"err\"",   "contamination(-1)");
+
+        if (!std::isfinite(c.cp) || !std::isfinite(c.ep) || !std::isfinite(c.cm) || !std::isfinite(c.em))
+            fatal("Non-finite contamination number in file: "+path);
+
+        if (c.cp < 0.0 || c.cm < 0.0) fatal("Negative contamination value in file: "+path);
 
         out[bk] = c; ++nb; p=j;
     }
@@ -321,7 +325,7 @@ static ContamTable load_contam_period_STRICT(const std::string& path, BinningMet
     return out;
 }
 
-// combined contamination: periods -> <group> -> bins
+// combined contamination: periods -> <group> -> bins (same robust parsing)
 static ContamTable load_contam_group_from_combined_STRICT(const std::string& combined_path,
                                                           const std::string& group,
                                                           BinningMeta& out_meta)
@@ -357,18 +361,22 @@ static ContamTable load_contam_group_from_combined_STRICT(const std::string& com
             if(binsObj[j]=='{') d2++;
             else if(binsObj[j]=='}'){ d2--; if(!d2){ ++j; break; } }
         }
-        std::string obj=binsObj.substr(vS, j-vS);
+        std::string binObj=binsObj.substr(vS, j-vS);
 
-        auto findVal=[&](const char* pat, const char* ctx)->double{
-            size_t pos=obj.find(pat); if(pos==std::string::npos) fatal(std::string("Missing ")+pat+" in "+ctx);
-            pos=obj.find(':',pos); if(pos==std::string::npos) fatal(std::string("Malformed ")+pat+" in "+ctx);
-            return parseDoubleAfterColon(obj, pos, ctx);
-        };
+        std::string contaminationObj = objForKey(binObj, "\"contamination\"");
+        std::string plusObj = objForKey(contaminationObj, "\"+1\"");
+        std::string minusObj= objForKey(contaminationObj, "\"-1\"");
+
         Contam c;
-        c.cp = findVal("\"contamination\":{\"+1\":{\"value\"", "combined contamination(+1).value");
-        c.ep = findVal("\"contamination\":{\"+1\":{\"err\"",   "combined contamination(+1).err");
-        c.cm = findVal("\"contamination\":{\"-1\":{\"value\"", "combined contamination(-1).value");
-        c.em = findVal("\"contamination\":{\"-1\":{\"err\"",   "combined contamination(-1).err");
+        c.cp = getNumberForKey(plusObj,  "\"value\"", "combined contamination(+1)");
+        c.ep = getNumberForKey(plusObj,  "\"err\"",   "combined contamination(+1)");
+        c.cm = getNumberForKey(minusObj, "\"value\"", "combined contamination(-1)");
+        c.em = getNumberForKey(minusObj, "\"err\"",   "combined contamination(-1)");
+
+        if (!std::isfinite(c.cp) || !std::isfinite(c.ep) || !std::isfinite(c.cm) || !std::isfinite(c.em))
+            fatal("Non-finite contamination number in combined JSON group "+group);
+
+        if (c.cp < 0.0 || c.cm < 0.0) fatal("Negative contamination value in combined JSON group "+group);
 
         out[bk]=c; ++nb; p=j;
     }
@@ -643,14 +651,14 @@ void compute_pi0_corrected_counts(
 ) {
     namespace fs = std::filesystem;
 
-    // === NEW: resolve requested periods to the exact short keys used in total_counts.json ===
+    // Resolve requested periods to short keys used in total_counts.json
     const std::vector<std::string> requested_short = resolve_requested_groups(dvcs_periods);
 
     // Load totals (strict) and record meta
     BinningMeta totals_meta;
     GroupCounts group_counts = load_total_counts_STRICT(total_counts_json, totals_meta);
 
-    // Strictly ensure requested groups exist in totals (using resolved names)
+    // Strictly ensure requested groups exist in totals
     for (const auto& g_short : requested_short) {
         if (group_counts.find(g_short) == group_counts.end()) {
             std::ostringstream os;
@@ -677,8 +685,7 @@ void compute_pi0_corrected_counts(
     if (!fs::create_directories(plots_dir_root, ec) && ec)
         fatal(std::string("Cannot create plots root: ")+plots_dir_root.string()+" ("+ec.message()+")");
 
-    // Load contamination tables, STRICT: per-period from individual files,
-    // combined groups only from combined JSON (by exact name).
+    // Load contamination tables: per-period from individual files; combined groups from combined JSON
     std::map<std::string, ContamTable> contam_by_group;
 
     auto load_period_contam = [&](const std::string& group)->void{
@@ -704,7 +711,7 @@ void compute_pi0_corrected_counts(
         if (group == "Spring2018" || group == "Fall2018" || group == "10.6_GeV") {
             load_combined_contam(group);
         } else {
-            load_period_contam(group); // NO FALLBACK
+            load_period_contam(group); // no fallback
         }
     }
 
@@ -715,9 +722,7 @@ void compute_pi0_corrected_counts(
         const std::string& group = gkv.first;
 
         // Only process exactly the resolved requested set
-        if (std::find(requested_short.begin(), requested_short.end(), group) == requested_short.end()) {
-            continue;
-        }
+        if (std::find(requested_short.begin(), requested_short.end(), group) == requested_short.end()) continue;
 
         const auto& raw_table = gkv.second;
 
