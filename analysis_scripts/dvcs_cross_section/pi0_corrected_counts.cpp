@@ -52,7 +52,6 @@
 #include <utility>
 #include <vector>
 
-// ===== helpers/types/parsers/plotters (internal linkage) =====
 namespace {
 
 constexpr int N_PHI_BINS = 12;
@@ -63,7 +62,6 @@ using BinKey = std::tuple<int,int,int,int>; // (ix,iQ2,it,ip)
     std::exit(EXIT_FAILURE);
 }
 
-// ROOT style (thin, neutral)
 struct StyleInit {
     StyleInit() {
         gStyle->SetOptTitle(0);
@@ -126,9 +124,12 @@ struct BinningMeta {
 };
 
 // ---- tiny string-based JSON utilities (strict enough for our files) ----
+
 static std::string objForKey(const std::string& s, const std::string& key) {
-    size_t p = s.find(key); if (p==std::string::npos) fatal("Key '"+key+"' not found in JSON.");
-    size_t br = s.find('{', p); if (br==std::string::npos) fatal("Malformed JSON after key '"+key+"'");
+    size_t p = s.find(key);
+    if (p==std::string::npos) fatal("Key '"+key+"' not found in JSON.");
+    size_t br = s.find('{', p);
+    if (br==std::string::npos) fatal("Malformed JSON after key '"+key+"'");
     int d=0; size_t i=br;
     for (; i<s.size(); ++i) {
         if (s[i]=='{') d++;
@@ -138,7 +139,7 @@ static std::string objForKey(const std::string& s, const std::string& key) {
     return s.substr(br, i-br);
 }
 
-static long long parseIntAfterColon(const std::string& s, size_t cpos, const std::string& ctx) {
+static long long parseIntAfterColon_strict(const std::string& s, size_t cpos, const std::string& ctx) {
     size_t a = cpos + 1;
     while (a < s.size() && std::isspace((unsigned char)s[a])) ++a;
     size_t b = a;
@@ -148,15 +149,80 @@ static long long parseIntAfterColon(const std::string& s, size_t cpos, const std
     return 0;
 }
 
-static double parseDoubleAfterColon(const std::string& s, size_t cpos, const std::string& ctx) {
-    size_t a = cpos + 1;
-    while (a < s.size() && std::isspace((unsigned char)s[a])) ++a;
-    size_t b = a;
-    auto isnum=[](char c){ return std::isdigit((unsigned char)c)||c=='-'||c=='+'||c=='.'||c=='e'||c=='E'; };
-    while (b < s.size() && isnum(s[b])) ++b;
-    try { return std::stod(s.substr(a,b-a)); }
-    catch(...) { fatal("Non-numeric value in "+ctx); }
-    return 0.0;
+// Extract the raw "token" for the JSON value after a colon, and try to parse into double.
+// Accepts either bare numbers or quoted numbers. If token is null/NaN/Inf, prints detailed context and fails.
+static double parseDoubleAfterColon_diag(const std::string& whole_json,
+                                         size_t colon_pos,
+                                         const std::string& ctx,
+                                         const std::string& file_hint,
+                                         const std::string& group_hint,
+                                         const std::string& bin_hint) {
+    auto snippet_around = [&](size_t pos)->std::string{
+        const size_t L = (pos>60? pos-60:0);
+        const size_t R = std::min(whole_json.size(), pos+60);
+        std::string sn = whole_json.substr(L, R-L);
+        for (char& c : sn) if (std::iscntrl((unsigned char)c)) c = ' ';
+        return sn;
+    };
+
+    // advance to first non-space after colon
+    size_t a = colon_pos + 1;
+    while (a < whole_json.size() && std::isspace((unsigned char)whole_json[a])) ++a;
+
+    // read raw token
+    std::string raw;
+    size_t endpos = a;
+    if (a < whole_json.size() && whole_json[a] == '"') {
+        // quoted token
+        ++endpos;
+        while (endpos < whole_json.size() && whole_json[endpos] != '"') ++endpos;
+        if (endpos >= whole_json.size()) {
+            fatal("Unterminated quoted value in "+ctx+" near: "+snippet_around(a));
+        }
+        raw = whole_json.substr(a+1, endpos - (a+1));
+        ++endpos;
+    } else {
+        // bare token: read until delimiter
+        auto isdelim = [](char c)->bool{
+            return std::isspace((unsigned char)c) || c==',' || c=='}' || c==']';
+        };
+        while (endpos < whole_json.size() && !isdelim(whole_json[endpos])) ++endpos;
+        raw = whole_json.substr(a, endpos - a);
+    }
+
+    // Trim raw
+    auto ltrim=[&](std::string& t){ size_t i=0; while (i<t.size() && std::isspace((unsigned char)t[i])) ++i; t.erase(0,i); };
+    auto rtrim=[&](std::string& t){ size_t i=t.size(); while (i>0 && std::isspace((unsigned char)t[i-1])) --i; t.erase(i); };
+    ltrim(raw); rtrim(raw);
+
+    // Quick rejects we want to report verbosely
+    std::string raw_lower = raw; for (char& c : raw_lower) c = (char)std::tolower((unsigned char)c);
+    if (raw.empty() || raw_lower=="nan" || raw_lower=="inf" || raw_lower=="infinity"
+        || raw_lower=="-inf" || raw_lower=="-infinity" || raw_lower=="null") {
+        std::ostringstream em;
+        em << "Non-numeric token in " << ctx
+           << "  file=" << file_hint
+           << "  group=" << group_hint
+           << "  bin=" << bin_hint
+           << "  raw_token=\"" << raw << "\""
+           << "  json_snippet: ..." << snippet_around(a) << "...";
+        fatal(em.str());
+    }
+
+    // Try std::stod on raw
+    try {
+        return std::stod(raw);
+    } catch(...) {
+        std::ostringstream em;
+        em << "Non-numeric value in " << ctx
+           << "  file=" << file_hint
+           << "  group=" << group_hint
+           << "  bin=" << bin_hint
+           << "  raw_token=\"" << raw << "\""
+           << "  json_snippet: ..." << snippet_around(a) << "...";
+        fatal(em.str());
+    }
+    return 0.0; // unreachable
 }
 
 static bool parse_tuple_key(const std::string& s, BinKey& out) {
@@ -171,7 +237,7 @@ static BinningMeta load_meta(const std::string& s) {
     auto findN = [&](const char* k, const char* ctx)->int{
         size_t p = meta.find(k); if (p==std::string::npos) fatal(std::string("binning_meta missing ")+k);
         size_t c = meta.find(':', p); if (c==std::string::npos) fatal(std::string("binning_meta malformed for ")+k);
-        return (int)parseIntAfterColon(meta, c, ctx);
+        return (int)parseIntAfterColon_strict(meta, c, ctx);
     };
     BinningMeta bm;
     bm.phi_bins = findN("\"phi_bins\"", "phi_bins");
@@ -224,15 +290,13 @@ static GroupCounts load_total_counts_STRICT(const std::string& path, BinningMeta
             }
             std::string v = binsObj.substr(vS, m-vS);
 
-            // helicity +1
             size_t pPlus = v.find("\"+1\""); if (pPlus==std::string::npos) fatal("Missing +1 in helicity for "+gname);
             pPlus = v.find(':', pPlus); if (pPlus==std::string::npos) fatal("Malformed +1 in "+gname);
-            long long Np = parseIntAfterColon(v, pPlus, gname+" (+1)");
+            long long Np = parseIntAfterColon_strict(v, pPlus, gname+" (+1)");
 
-            // helicity -1
             size_t pMinus = v.find("\"-1\""); if (pMinus==std::string::npos) fatal("Missing -1 in helicity for "+gname);
             pMinus = v.find(':', pMinus); if (pMinus==std::string::npos) fatal("Malformed -1 in "+gname);
-            long long Nm = parseIntAfterColon(v, pMinus, gname+" (-1)");
+            long long Nm = parseIntAfterColon_strict(v, pMinus, gname+" (-1)");
 
             table[bk] = HelCounts{Np,Nm};
             p = m; ++nbins;
@@ -245,8 +309,8 @@ static GroupCounts load_total_counts_STRICT(const std::string& path, BinningMeta
     return out;
 }
 
-// per-period contamination file (exact group name)
-static ContamTable load_contam_period_STRICT(const std::string& path, BinningMeta& out_meta) {
+// Per-period contamination file (exact <group> name)
+static ContamTable load_contam_period_STRICT(const std::string& path, BinningMeta& out_meta, const std::string& group) {
     std::ifstream ifs(path);
     if (!ifs) fatal(std::string("Cannot open contamination file: ")+path);
     std::string s((std::istreambuf_iterator<char>(ifs)), std::istreambuf_iterator<char>());
@@ -258,7 +322,8 @@ static ContamTable load_contam_period_STRICT(const std::string& path, BinningMet
     while (true) {
         size_t q1=binsObj.find('"', p); if (q1==std::string::npos) break;
         size_t q2=binsObj.find('"', q1+1); if (q2==std::string::npos) fatal("Malformed bin key in contamination JSON");
-        BinKey bk; if (!parse_tuple_key(binsObj.substr(q1+1,q2-q1-1), bk)) fatal("Bad bin tuple key in contamination JSON");
+        std::string binKeyStr = binsObj.substr(q1+1,q2-q1-1);
+        BinKey bk; if (!parse_tuple_key(binKeyStr, bk)) fatal("Bad bin tuple key in contamination JSON");
 
         size_t vS=binsObj.find('{', q2); if (vS==std::string::npos) fatal("Missing bin object in contamination JSON");
         int d2=0; size_t j=vS;
@@ -269,9 +334,19 @@ static ContamTable load_contam_period_STRICT(const std::string& path, BinningMet
         std::string obj=binsObj.substr(vS, j-vS);
 
         auto findVal=[&](const char* pat, const char* ctx)->double{
-            size_t pos=obj.find(pat); if(pos==std::string::npos) fatal(std::string("Missing ")+pat+" in "+ctx);
-            pos=obj.find(':',pos); if(pos==std::string::npos) fatal(std::string("Malformed ")+pat+" in "+ctx);
-            return parseDoubleAfterColon(obj, pos, ctx);
+            size_t pos=obj.find(pat);
+            if(pos==std::string::npos) {
+                std::ostringstream em; em<<"Missing "<<pat<<" in "<<ctx
+                    <<"  file="<<path<<"  group="<<group<<"  bin="<<binKeyStr;
+                fatal(em.str());
+            }
+            pos=obj.find(':',pos);
+            if(pos==std::string::npos) {
+                std::ostringstream em; em<<"Malformed "<<pat<<" in "<<ctx
+                    <<"  file="<<path<<"  group="<<group<<"  bin="<<binKeyStr;
+                fatal(em.str());
+            }
+            return parseDoubleAfterColon_diag(obj, pos, ctx, path, group, binKeyStr);
         };
 
         Contam c;
@@ -286,7 +361,7 @@ static ContamTable load_contam_period_STRICT(const std::string& path, BinningMet
     return out;
 }
 
-// combined contamination (exact group inside "periods")
+// Combined contamination (exact group name inside "periods")
 static ContamTable load_contam_group_from_combined_STRICT(const std::string& combined_path,
                                                           const std::string& group,
                                                           BinningMeta& out_meta) {
@@ -314,7 +389,8 @@ static ContamTable load_contam_group_from_combined_STRICT(const std::string& com
     while (true) {
         size_t q1=binsObj.find('"', p); if (q1==std::string::npos) break;
         size_t q2=binsObj.find('"', q1+1); if (q2==std::string::npos) fatal("Malformed bin key in combined contamination");
-        BinKey bk; if (!parse_tuple_key(binsObj.substr(q1+1,q2-q1-1), bk)) fatal("Bad bin tuple in combined contamination");
+        std::string binKeyStr = binsObj.substr(q1+1,q2-q1-1);
+        BinKey bk; if (!parse_tuple_key(binKeyStr, bk)) fatal("Bad bin tuple in combined contamination");
 
         size_t vS=binsObj.find('{', q2); if (vS==std::string::npos) fatal("Missing bin object in combined contamination");
         int d2=0; size_t j=vS; for (; j<binsObj.size(); ++j) {
@@ -324,9 +400,19 @@ static ContamTable load_contam_group_from_combined_STRICT(const std::string& com
         std::string obj=binsObj.substr(vS, j-vS);
 
         auto findVal=[&](const char* pat, const char* ctx)->double{
-            size_t pos=obj.find(pat); if(pos==std::string::npos) fatal(std::string("Missing ")+pat+" in "+ctx);
-            pos=obj.find(':',pos); if(pos==std::string::npos) fatal(std::string("Malformed ")+pat+" in "+ctx);
-            return parseDoubleAfterColon(obj, pos, ctx);
+            size_t pos=obj.find(pat);
+            if(pos==std::string::npos) {
+                std::ostringstream em; em<<"Missing "<<pat<<" in "<<ctx
+                    <<"  file="<<combined_path<<"  group="<<group<<"  bin="<<binKeyStr;
+                fatal(em.str());
+            }
+            pos=obj.find(':',pos);
+            if(pos==std::string::npos) {
+                std::ostringstream em; em<<"Malformed "<<pat<<" in "<<ctx
+                    <<"  file="<<combined_path<<"  group="<<group<<"  bin="<<binKeyStr;
+                fatal(em.str());
+            }
+            return parseDoubleAfterColon_diag(obj, pos, ctx, combined_path, group, binKeyStr);
         };
         Contam c;
         c.cp = findVal("\"contamination\":{\"+1\":{\"value\"", "combined contamination(+1).value");
@@ -340,7 +426,8 @@ static ContamTable load_contam_group_from_combined_STRICT(const std::string& com
     return out;
 }
 
-// plot per group: corrected vs raw, sliced by xB with (Q2,t) subpanels
+// ---- plotting (unchanged) ----
+
 static void uniqueQT_for_xB(
     const std::vector<Binning>& scheme,
     const std::pair<double,double>& xBrange,
@@ -588,7 +675,6 @@ static void write_master_json(const std::string& out_path,
 
 } // end anonymous namespace
 
-// ======================= PUBLIC ENTRY (global namespace) ===========================
 void compute_pi0_corrected_counts(
     const std::vector<std::string>& /*dvcs_periods (ignored on purpose)*/,
     const std::vector<Binning>& binning_scheme,
@@ -599,12 +685,10 @@ void compute_pi0_corrected_counts(
 ) {
     namespace fs = std::filesystem;
 
-    // Load totals (STRICT), and derive the definitive group list from the file itself.
     BinningMeta totals_meta;
     std::vector<std::string> group_order;
     GroupCounts group_counts = load_total_counts_STRICT(total_counts_json, totals_meta, group_order);
 
-    // Build bin axes from scheme and cross-check sizes with meta
     const auto xB_bins = uniqueRanges(binning_scheme, 'x');
     const auto Q2_bins = uniqueRanges(binning_scheme, 'Q');
     const auto t_bins  = uniqueRanges(binning_scheme, 't');
@@ -612,7 +696,6 @@ void compute_pi0_corrected_counts(
     if (xB_bins.size()!=totals_meta.nx || Q2_bins.size()!=totals_meta.nQ || t_bins.size()!=totals_meta.nt)
         fatal("Binning scheme sizes mismatch total_counts binning_meta.");
 
-    // Prepare output dirs
     const fs::path json_dir       = fs::path(out_root_dir) / "jsons";
     const fs::path plots_dir_root = fs::path(out_root_dir) / "pi0_corrected_plots";
     std::error_code ec;
@@ -622,13 +705,13 @@ void compute_pi0_corrected_counts(
     if (!fs::create_directories(plots_dir_root, ec) && ec)
         fatal(std::string("Cannot create plots root: ")+plots_dir_root.string()+" ("+ec.message()+")");
 
-    // Load contamination tables using EXACT group names from total_counts.json.
     std::map<std::string, ContamTable> contam_by_group;
 
     auto load_period_contam = [&](const std::string& group)->void{
         const fs::path f = fs::path(contamination_dir_counts) / ("contamination_" + group + ".json");
         BinningMeta cm;
-        ContamTable ct = load_contam_period_STRICT(f.string(), cm);
+        std::cout<<"[pi0corr] Reading per-period contamination: "<<f<<"  group="<<group<<std::endl;
+        ContamTable ct = load_contam_period_STRICT(f.string(), cm, group);
         if (cm.phi_bins!=totals_meta.phi_bins || cm.nx!=totals_meta.nx || cm.nQ!=totals_meta.nQ || cm.nt!=totals_meta.nt)
             fatal("Binning meta mismatch between contamination("+group+") and total_counts.");
         contam_by_group[group] = std::move(ct);
@@ -636,6 +719,7 @@ void compute_pi0_corrected_counts(
 
     auto load_combined_contam = [&](const std::string& group)->void{
         BinningMeta cm;
+        std::cout<<"[pi0corr] Reading combined contamination: "<<contamination_combined<<"  group="<<group<<std::endl;
         ContamTable ct = load_contam_group_from_combined_STRICT(contamination_combined, group, cm);
         if (cm.phi_bins!=totals_meta.phi_bins || cm.nx!=totals_meta.nx || cm.nQ!=totals_meta.nQ || cm.nt!=totals_meta.nt)
             fatal("Binning meta mismatch between combined contamination("+group+") and total_counts.");
@@ -650,7 +734,6 @@ void compute_pi0_corrected_counts(
         }
     }
 
-    // Compute corrected counts per group
     std::map<std::string, std::map<BinKey, CorrBin>> all_groups_corrected;
 
     for (const auto& gname : group_order) {
@@ -672,7 +755,6 @@ void compute_pi0_corrected_counts(
             if (ic != C.end()) {
                 c = ic->second;
             } else {
-                // Missing bin in contamination: hard default to zero contamination.
                 c = Contam{0.0, 0.0, 0.0, 0.0};
             }
 
