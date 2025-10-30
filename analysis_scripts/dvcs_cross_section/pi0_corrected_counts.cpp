@@ -2,11 +2,16 @@
 //
 // Behavior:
 // - Read groups directly from total_counts.json and process ALL of them.
-// - For combined groups ("Spring2018","Fall2018","10.6_GeV") use the combined contamination JSON.
-// - For all other groups use per-period contamination files named
+// - Additionally synthesize combined groups:
+//       Fall2018    = fa18_inb + fa18_out
+//       Spring2018  = sp18_inb + sp18_out
+//       10.6_GeV    = sp18_inb + sp18_out + fa18_inb + fa18_out
+//   For these synthesized groups, raw counts are the sums of their parts,
+//   and contamination comes from contamination_combined.json.
+// - For all other (per-period) groups use per-period contamination files named
 //     <contamination_dir_counts>/contamination_<group>.json
 //   where <group> matches the group key EXACTLY as it appears in total_counts.json.
-// - If a specific (ix,iQ2,it,ip) bin is missing in contamination, assume contamination=0.0±0.0.
+// - If a specific (ix,iQ2,it,ip) bin is missing in contamination, assume 0.0 ± 0.0.
 //
 // Inputs:
 //   - total_counts.json                 (required; definitive list of groups to process)
@@ -149,8 +154,7 @@ static long long parseIntAfterColon_strict(const std::string& s, size_t cpos, co
     return 0;
 }
 
-// Extract the raw "token" for the JSON value after a colon, and try to parse into double.
-// Accepts either bare numbers or quoted numbers. If token is null/NaN/Inf, prints detailed context and fails.
+// Extract the raw token after a colon and parse into double; accepts quoted or bare numerics.
 static double parseDoubleAfterColon_diag(const std::string& whole_json,
                                          size_t colon_pos,
                                          const std::string& ctx,
@@ -165,15 +169,12 @@ static double parseDoubleAfterColon_diag(const std::string& whole_json,
         return sn;
     };
 
-    // advance to first non-space after colon
     size_t a = colon_pos + 1;
     while (a < whole_json.size() && std::isspace((unsigned char)whole_json[a])) ++a;
 
-    // read raw token
     std::string raw;
     size_t endpos = a;
     if (a < whole_json.size() && whole_json[a] == '"') {
-        // quoted token
         ++endpos;
         while (endpos < whole_json.size() && whole_json[endpos] != '"') ++endpos;
         if (endpos >= whole_json.size()) {
@@ -182,7 +183,6 @@ static double parseDoubleAfterColon_diag(const std::string& whole_json,
         raw = whole_json.substr(a+1, endpos - (a+1));
         ++endpos;
     } else {
-        // bare token: read until delimiter
         auto isdelim = [](char c)->bool{
             return std::isspace((unsigned char)c) || c==',' || c=='}' || c==']';
         };
@@ -190,12 +190,10 @@ static double parseDoubleAfterColon_diag(const std::string& whole_json,
         raw = whole_json.substr(a, endpos - a);
     }
 
-    // Trim raw
     auto ltrim=[&](std::string& t){ size_t i=0; while (i<t.size() && std::isspace((unsigned char)t[i])) ++i; t.erase(0,i); };
     auto rtrim=[&](std::string& t){ size_t i=t.size(); while (i>0 && std::isspace((unsigned char)t[i-1])) --i; t.erase(i); };
     ltrim(raw); rtrim(raw);
 
-    // Quick rejects we want to report verbosely
     std::string raw_lower = raw; for (char& c : raw_lower) c = (char)std::tolower((unsigned char)c);
     if (raw.empty() || raw_lower=="nan" || raw_lower=="inf" || raw_lower=="infinity"
         || raw_lower=="-inf" || raw_lower=="-infinity" || raw_lower=="null") {
@@ -209,10 +207,8 @@ static double parseDoubleAfterColon_diag(const std::string& whole_json,
         fatal(em.str());
     }
 
-    // Try std::stod on raw
-    try {
-        return std::stod(raw);
-    } catch(...) {
+    try { return std::stod(raw); }
+    catch(...) {
         std::ostringstream em;
         em << "Non-numeric value in " << ctx
            << "  file=" << file_hint
@@ -320,7 +316,6 @@ static ContamTable load_contam_period_STRICT(const std::string& path,
     out_meta = load_meta(s);
     std::string binsObj = objForKey(s, "\"bins\"");
 
-    // Small helper: extract the {...} block that immediately follows a label like "\"+1\"" or "\"-1\""
     auto extract_block_after_label = [](const std::string& src, const char* label)->std::string {
         size_t p = src.find(label);
         if (p == std::string::npos) return std::string();
@@ -335,7 +330,6 @@ static ContamTable load_contam_period_STRICT(const std::string& path,
         return src.substr(br, i - br);
     };
 
-    // parse a "value" or "err" inside a small block; with diagnostics
     auto parse_field = [&](const std::string& block, const char* key,
                            const std::string& ctx,
                            const std::string& file_hint,
@@ -375,9 +369,7 @@ static ContamTable load_contam_period_STRICT(const std::string& path,
         }
         std::string obj = binsObj.substr(vS, j - vS);
 
-        // Narrow to the contamination object first
         std::string contamObj = objForKey(obj, "\"contamination\"");
-        // Then isolate +1 and -1 blocks
         std::string blockP = extract_block_after_label(contamObj, "\"+1\"");
         std::string blockM = extract_block_after_label(contamObj, "\"-1\"");
         if (blockP.empty() || blockM.empty()) {
@@ -476,7 +468,6 @@ static ContamTable load_contam_group_from_combined_STRICT(const std::string& com
         }
         std::string obj = binsObj.substr(vS, j - vS);
 
-        // Narrow to contamination, then (+1) and (-1) subblocks
         std::string contamObj = objForKey(obj, "\"contamination\"");
         std::string blockP    = extract_block_after_label(contamObj, "\"+1\"");
         std::string blockM    = extract_block_after_label(contamObj, "\"-1\"");
@@ -746,6 +737,28 @@ static void write_master_json(const std::string& out_path,
     ofs<<"\n  }\n}\n";
 }
 
+// --------- helpers to synthesize combined raw tables ---------
+
+static std::map<BinKey, HelCounts>
+sum_raw_tables(const std::vector<const std::map<BinKey, HelCounts>*>& parts) {
+    std::map<BinKey, HelCounts> out;
+    for (const auto* tbl : parts) {
+        for (const auto& kv : *tbl) {
+            const BinKey& bk = kv.first;
+            const HelCounts& hc = kv.second;
+            HelCounts& acc = out[bk];
+            acc.plus  += hc.plus;
+            acc.minus += hc.minus;
+        }
+    }
+    return out;
+}
+
+static std::string sanitize_for_path(std::string s) {
+    for (char& c : s) if (c=='/' || c==' ') c = '_';
+    return s;
+}
+
 } // end anonymous namespace
 
 void compute_pi0_corrected_counts(
@@ -783,7 +796,7 @@ void compute_pi0_corrected_counts(
     auto load_period_contam = [&](const std::string& group)->void{
         const fs::path f = fs::path(contamination_dir_counts) / ("contamination_" + group + ".json");
         BinningMeta cm;
-        std::cout<<"[pi0corr] Reading per-period contamination: "<<f<<"  group="<<group<<std::endl;
+        std::cout<<"[pi0corr] Reading per-period contamination: \""<<f.string()<<"\"  group="<<group<<std::endl;
         ContamTable ct = load_contam_period_STRICT(f.string(), cm, group);
         if (cm.phi_bins!=totals_meta.phi_bins || cm.nx!=totals_meta.nx || cm.nQ!=totals_meta.nQ || cm.nt!=totals_meta.nt)
             fatal("Binning meta mismatch between contamination("+group+") and total_counts.");
@@ -792,15 +805,18 @@ void compute_pi0_corrected_counts(
 
     auto load_combined_contam = [&](const std::string& group)->void{
         BinningMeta cm;
-        std::cout<<"[pi0corr] Reading combined contamination: "<<contamination_combined<<"  group="<<group<<std::endl;
+        std::cout<<"[pi0corr] Reading combined contamination: \""<<contamination_combined<<"\"  group="<<group<<std::endl;
         ContamTable ct = load_contam_group_from_combined_STRICT(contamination_combined, group, cm);
         if (cm.phi_bins!=totals_meta.phi_bins || cm.nx!=totals_meta.nx || cm.nQ!=totals_meta.nQ || cm.nt!=totals_meta.nt)
             fatal("Binning meta mismatch between combined contamination("+group+") and total_counts.");
         contam_by_group[group] = std::move(ct);
     };
 
+    // First pass: all groups that exist in total_counts.json
     for (const auto& gname : group_order) {
         if (gname == "Spring2018" || gname == "Fall2018" || gname == "10.6_GeV") {
+            // If your total_counts.json already contains combined groups, you may enable this path.
+            // Otherwise, they will be synthesized below.
             load_combined_contam(gname);
         } else {
             load_period_contam(gname);
@@ -809,6 +825,7 @@ void compute_pi0_corrected_counts(
 
     std::map<std::string, std::map<BinKey, CorrBin>> all_groups_corrected;
 
+    // Process per-period groups from total_counts.json
     for (const auto& gname : group_order) {
         const auto& raw_table = group_counts.at(gname);
 
@@ -836,12 +853,8 @@ void compute_pi0_corrected_counts(
             corr_table[bk] = cb;
         }
 
-        auto path_sanitize = [](std::string s)->std::string {
-            for (char& c : s) if (c=='/' || c==' ' ) c = '_';
-            return s;
-        };
         const std::string out_group_json =
-            (json_dir / ("pi0_corrected_counts_" + path_sanitize(gname) + ".json")).string();
+            (json_dir / ("pi0_corrected_counts_" + sanitize_for_path(gname) + ".json")).string();
 
         write_group_json(out_group_json, N_PHI_BINS, xB_bins.size(), Q2_bins.size(), t_bins.size(), corr_table);
         std::cout << "[pi0corr] Wrote " << out_group_json << "\n";
@@ -851,6 +864,69 @@ void compute_pi0_corrected_counts(
 
         all_groups_corrected[gname] = std::move(corr_table);
     }
+
+    // ------------------ Synthesize combined groups ------------------
+    struct CombinedSpec {
+        std::string name;
+        std::vector<std::string> parts;
+    };
+
+    const std::vector<CombinedSpec> combined_specs = {
+        {"Fall2018",   {"fa18_inb", "fa18_out"}},
+        {"Spring2018", {"sp18_inb", "sp18_out"}},
+        {"10.6_GeV",   {"sp18_inb", "sp18_out", "fa18_inb", "fa18_out"}}
+    };
+
+    for (const auto& spec : combined_specs) {
+        // Verify that all parts exist in total_counts.json
+        std::vector<const std::map<BinKey, HelCounts>*> part_ptrs;
+        bool skip=false;
+        for (const auto& p : spec.parts) {
+            auto it = group_counts.find(p);
+            if (it == group_counts.end()) {
+                std::cerr << "[pi0corr][WARN] Combined group '"<<spec.name
+                          << "' skipped because part '"<<p<<"' not present in total_counts.json\n";
+                skip = true; break;
+            }
+            part_ptrs.push_back(&it->second);
+        }
+        if (skip) continue;
+
+        // Sum raw counts across parts
+        const auto combined_raw = sum_raw_tables(part_ptrs);
+
+        // Load combined contamination (if not already loaded above)
+        if (contam_by_group.find(spec.name) == contam_by_group.end()) {
+            load_combined_contam(spec.name);
+        }
+        const ContamTable& C = contam_by_group.at(spec.name);
+
+        // Make corrected table
+        std::map<BinKey, CorrBin> corr_table;
+        for (const auto& kv : combined_raw) {
+            const BinKey& bk = kv.first;
+            const HelCounts& raw = kv.second;
+
+            auto ic = C.find(bk);
+            Contam c = (ic != C.end()) ? ic->second : Contam{0.0,0.0,0.0,0.0};
+
+            CorrBin cb = make_corrected_STRICT(raw, c, spec.name,
+                                               key4s(std::get<0>(bk),std::get<1>(bk),std::get<2>(bk),std::get<3>(bk)));
+            corr_table[bk] = cb;
+        }
+
+        // Write per-group JSON and plots for the synthesized combined
+        const std::string out_group_json =
+            (json_dir / ("pi0_corrected_counts_" + sanitize_for_path(spec.name) + ".json")).string();
+        write_group_json(out_group_json, N_PHI_BINS, xB_bins.size(), Q2_bins.size(), t_bins.size(), corr_table);
+        std::cout << "[pi0corr] Wrote " << out_group_json << " (combined)\n";
+
+        const std::string out_plot_dir = (plots_dir_root / spec.name).string();
+        plot_group(spec.name, binning_scheme, xB_bins, Q2_bins, t_bins, corr_table, combined_raw, out_plot_dir);
+
+        all_groups_corrected[spec.name] = std::move(corr_table);
+    }
+    // ------------------ end combined synthesis ------------------
 
     const std::string master = (json_dir / "pi0_corrected_counts_all_groups.json").string();
     write_master_json(master, N_PHI_BINS, xB_bins.size(), Q2_bins.size(), t_bins.size(), all_groups_corrected);
