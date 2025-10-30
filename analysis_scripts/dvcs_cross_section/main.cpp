@@ -97,20 +97,20 @@ int main(int argc, char* argv[]) {
     //     output_root
     // );
 
-    // --------- π0-corrected helicity counts (per φ) ----------
-    const std::string total_counts_json        = "output/jsons/total_counts.json";
-    const std::string contamination_dir_counts = "output/jsons/contamination";
-    const std::string contamination_combined   = "output/jsons/pi0_contamination_combined.json";
+    // // --------- π0-corrected helicity counts (per φ) ----------
+    // const std::string total_counts_json        = "output/jsons/total_counts.json";
+    // const std::string contamination_dir_counts = "output/jsons/contamination";
+    // const std::string contamination_combined   = "output/jsons/pi0_contamination_combined.json";
 
-    compute_pi0_corrected_counts(
-        dvcs_periods,
-        binning_scheme,
-        total_counts_json,        // from compute_total_counts()
-        contamination_dir_counts, // per-period contamination_*.json live here
-        contamination_combined,   // combined groups (Spring2018, Fall2018, 10.6_GeV)
-        output_root               // "output"
-    );
-    std::cout << "π0-corrected counts stage finished." << std::endl;
+    // compute_pi0_corrected_counts(
+    //     dvcs_periods,
+    //     binning_scheme,
+    //     total_counts_json,        // from compute_total_counts()
+    //     contamination_dir_counts, // per-period contamination_*.json live here
+    //     contamination_combined,   // combined groups (Spring2018, Fall2018, 10.6_GeV)
+    //     output_root               // "output"
+    // );
+    // std::cout << "π0-corrected counts stage finished." << std::endl;
 
     // --------- Radiative corrections (generated Born/Rad, per bin & φ) ----------
     // Writes:
@@ -145,25 +145,25 @@ int main(int argc, char* argv[]) {
     //     output_root
     // );
 
-    //     // --------- Acceptance (reco MC with MC cuts / gen MC, per bin & φ) ----------
-    // // Writes per-period JSONs: output/jsons/acceptance_<period>.json
-    // // Plots to: output/acceptance/<runTag>/plot_acceptance_<period>_xB_<ix>.png
-    // {
-    //     std::vector<std::string> acc_periods = {
-    //         "DVCS_Sp18_inb", "DVCS_Sp18_out",
-    //         "DVCS_Fa18_inb", "DVCS_Fa18_out",
-    //         "DVCS_Sp19_inb"
-    //     }; // intentionally skipping DVCS_Fa18_inb_supp
-    //     compute_and_plot_acceptance(
-    //         acc_periods,
-    //         topologies,
-    //         binning_scheme,
-    //         genMcTrees,
-    //         recMcTrees,
-    //         cuts_json_path,
-    //         output_root
-    //     );
-    // }
+        // --------- Acceptance (reco MC with MC cuts / gen MC, per bin & φ) ----------
+    // Writes per-period JSONs: output/jsons/acceptance_<period>.json
+    // Plots to: output/acceptance/<runTag>/plot_acceptance_<period>_xB_<ix>.png
+    {
+        std::vector<std::string> acc_periods = {
+            "DVCS_Sp18_inb", "DVCS_Sp18_out",
+            "DVCS_Fa18_inb", "DVCS_Fa18_out",
+            "DVCS_Sp19_inb"
+        }; // intentionally skipping DVCS_Fa18_inb_supp
+        compute_and_plot_acceptance(
+            acc_periods,
+            topologies,
+            binning_scheme,
+            genMcTrees,
+            recMcTrees,
+            cuts_json_path,
+            output_root
+        );
+    }
 
     // // --------- Unfolding (counts / acceptance), helicity-resolved ----------
     // // Writes per-period JSONs: output/jsons/unfolded_<period>.json
