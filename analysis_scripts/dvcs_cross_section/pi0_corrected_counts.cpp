@@ -310,7 +310,9 @@ static GroupCounts load_total_counts_STRICT(const std::string& path, BinningMeta
 }
 
 // Per-period contamination file (exact <group> name)
-static ContamTable load_contam_period_STRICT(const std::string& path, BinningMeta& out_meta, const std::string& group) {
+static ContamTable load_contam_period_STRICT(const std::string& path,
+                                             BinningMeta& out_meta,
+                                             const std::string& group) {
     std::ifstream ifs(path);
     if (!ifs) fatal(std::string("Cannot open contamination file: ")+path);
     std::string s((std::istreambuf_iterator<char>(ifs)), std::istreambuf_iterator<char>());
@@ -318,46 +320,82 @@ static ContamTable load_contam_period_STRICT(const std::string& path, BinningMet
     out_meta = load_meta(s);
     std::string binsObj = objForKey(s, "\"bins\"");
 
-    ContamTable out; size_t p=0; int nb=0;
+    // Small helper: extract the {...} block that immediately follows a label like "\"+1\"" or "\"-1\""
+    auto extract_block_after_label = [](const std::string& src, const char* label)->std::string {
+        size_t p = src.find(label);
+        if (p == std::string::npos) return std::string();
+        size_t br = src.find('{', p);
+        if (br == std::string::npos) return std::string();
+        int d = 0; size_t i = br;
+        for (; i < src.size(); ++i) {
+            if (src[i] == '{') ++d;
+            else if (src[i] == '}') { --d; if (!d) { ++i; break; } }
+        }
+        if (d != 0) return std::string();
+        return src.substr(br, i - br);
+    };
+
+    // parse a "value" or "err" inside a small block; with diagnostics
+    auto parse_field = [&](const std::string& block, const char* key,
+                           const std::string& ctx,
+                           const std::string& file_hint,
+                           const std::string& group_hint,
+                           const std::string& bin_hint)->double {
+        size_t p = block.find(key);
+        if (p == std::string::npos) {
+            std::ostringstream em; em << "Missing " << key << " in " << ctx
+                                      << "  file=" << file_hint
+                                      << "  group=" << group_hint
+                                      << "  bin=" << bin_hint;
+            fatal(em.str());
+        }
+        size_t c = block.find(':', p);
+        if (c == std::string::npos) {
+            std::ostringstream em; em << "Malformed " << key << " in " << ctx
+                                      << "  file=" << file_hint
+                                      << "  group=" << group_hint
+                                      << "  bin=" << bin_hint;
+            fatal(em.str());
+        }
+        return parseDoubleAfterColon_diag(block, c, ctx, file_hint, group_hint, bin_hint);
+    };
+
+    ContamTable out; size_t p = 0; int nb = 0;
     while (true) {
-        size_t q1=binsObj.find('"', p); if (q1==std::string::npos) break;
-        size_t q2=binsObj.find('"', q1+1); if (q2==std::string::npos) fatal("Malformed bin key in contamination JSON");
-        std::string binKeyStr = binsObj.substr(q1+1,q2-q1-1);
+        size_t q1 = binsObj.find('"', p); if (q1 == std::string::npos) break;
+        size_t q2 = binsObj.find('"', q1+1); if (q2 == std::string::npos) fatal("Malformed bin key in contamination JSON");
+        std::string binKeyStr = binsObj.substr(q1+1, q2-q1-1);
         BinKey bk; if (!parse_tuple_key(binKeyStr, bk)) fatal("Bad bin tuple key in contamination JSON");
 
-        size_t vS=binsObj.find('{', q2); if (vS==std::string::npos) fatal("Missing bin object in contamination JSON");
-        int d2=0; size_t j=vS;
-        for (; j<binsObj.size(); ++j) {
-            if(binsObj[j]=='{') d2++;
-            else if(binsObj[j]=='}'){ d2--; if(!d2){ ++j; break; } }
+        size_t vS = binsObj.find('{', q2); if (vS == std::string::npos) fatal("Missing bin object in contamination JSON");
+        int d2 = 0; size_t j = vS;
+        for (; j < binsObj.size(); ++j) {
+            if (binsObj[j] == '{') ++d2;
+            else if (binsObj[j] == '}') { --d2; if (!d2) { ++j; break; } }
         }
-        std::string obj=binsObj.substr(vS, j-vS);
+        std::string obj = binsObj.substr(vS, j - vS);
 
-        auto findVal=[&](const char* pat, const char* ctx)->double{
-            size_t pos=obj.find(pat);
-            if(pos==std::string::npos) {
-                std::ostringstream em; em<<"Missing "<<pat<<" in "<<ctx
-                    <<"  file="<<path<<"  group="<<group<<"  bin="<<binKeyStr;
-                fatal(em.str());
-            }
-            pos=obj.find(':',pos);
-            if(pos==std::string::npos) {
-                std::ostringstream em; em<<"Malformed "<<pat<<" in "<<ctx
-                    <<"  file="<<path<<"  group="<<group<<"  bin="<<binKeyStr;
-                fatal(em.str());
-            }
-            return parseDoubleAfterColon_diag(obj, pos, ctx, path, group, binKeyStr);
-        };
+        // Narrow to the contamination object first
+        std::string contamObj = objForKey(obj, "\"contamination\"");
+        // Then isolate +1 and -1 blocks
+        std::string blockP = extract_block_after_label(contamObj, "\"+1\"");
+        std::string blockM = extract_block_after_label(contamObj, "\"-1\"");
+        if (blockP.empty() || blockM.empty()) {
+            std::ostringstream em; em << "Missing helicity block(s) in contamination object"
+                                      << "  file=" << path << "  group=" << group
+                                      << "  bin=" << binKeyStr;
+            fatal(em.str());
+        }
 
         Contam c;
-        c.cp = findVal("\"contamination\":{\"+1\":{\"value\"", "contamination(+1).value");
-        c.ep = findVal("\"contamination\":{\"+1\":{\"err\"",   "contamination(+1).err");
-        c.cm = findVal("\"contamination\":{\"-1\":{\"value\"", "contamination(-1).value");
-        c.em = findVal("\"contamination\":{\"-1\":{\"err\"",   "contamination(-1).err");
+        c.cp = parse_field(blockP, "\"value\"", "contamination(+1).value", path, group, binKeyStr);
+        c.ep = parse_field(blockP, "\"err\"",   "contamination(+1).err",   path, group, binKeyStr);
+        c.cm = parse_field(blockM, "\"value\"", "contamination(-1).value", path, group, binKeyStr);
+        c.em = parse_field(blockM, "\"err\"",   "contamination(-1).err",   path, group, binKeyStr);
 
-        out[bk] = c; ++nb; p=j;
+        out[bk] = c; ++nb; p = j;
     }
-    if (nb==0) fatal("No bins parsed in contamination file: "+path);
+    if (nb == 0) fatal("No bins parsed in contamination file: " + path);
     return out;
 }
 
@@ -380,49 +418,84 @@ static ContamTable load_contam_group_from_combined_STRICT(const std::string& com
     if (binsK==std::string::npos) fatal("Group '"+group+"' has no 'bins' in combined contamination JSON");
     int d=0; size_t br = periodsObj.find('{', binsK); if (br==std::string::npos) fatal("Malformed 'bins' for group "+group);
     size_t i=br; for (; i<periodsObj.size(); ++i) {
-        if(periodsObj[i]=='{') d++;
-        else if(periodsObj[i]=='}'){ d--; if(!d){ ++i; break; } }
+        if (periodsObj[i]=='{') ++d;
+        else if (periodsObj[i]=='}') { --d; if (!d) { ++i; break; } }
     }
     std::string binsObj = periodsObj.substr(br, i-br);
 
-    ContamTable out; size_t p=0; int nb=0;
+    auto extract_block_after_label = [](const std::string& src, const char* label)->std::string {
+        size_t p = src.find(label);
+        if (p == std::string::npos) return std::string();
+        size_t br = src.find('{', p);
+        if (br == std::string::npos) return std::string();
+        int d = 0; size_t i = br;
+        for (; i < src.size(); ++i) {
+            if (src[i] == '{') ++d;
+            else if (src[i] == '}') { --d; if (!d) { ++i; break; } }
+        }
+        if (d != 0) return std::string();
+        return src.substr(br, i - br);
+    };
+
+    auto parse_field = [&](const std::string& block, const char* key,
+                           const std::string& ctx,
+                           const std::string& file_hint,
+                           const std::string& group_hint,
+                           const std::string& bin_hint)->double {
+        size_t p = block.find(key);
+        if (p == std::string::npos) {
+            std::ostringstream em; em << "Missing " << key << " in " << ctx
+                                      << "  file=" << file_hint
+                                      << "  group=" << group_hint
+                                      << "  bin=" << bin_hint;
+            fatal(em.str());
+        }
+        size_t c = block.find(':', p);
+        if (c == std::string::npos) {
+            std::ostringstream em; em << "Malformed " << key << " in " << ctx
+                                      << "  file=" << file_hint
+                                      << "  group=" << group_hint
+                                      << "  bin=" << bin_hint;
+            fatal(em.str());
+        }
+        return parseDoubleAfterColon_diag(block, c, ctx, file_hint, group_hint, bin_hint);
+    };
+
+    ContamTable out; size_t p = 0; int nb = 0;
     while (true) {
-        size_t q1=binsObj.find('"', p); if (q1==std::string::npos) break;
-        size_t q2=binsObj.find('"', q1+1); if (q2==std::string::npos) fatal("Malformed bin key in combined contamination");
-        std::string binKeyStr = binsObj.substr(q1+1,q2-q1-1);
+        size_t q1 = binsObj.find('"', p); if (q1 == std::string::npos) break;
+        size_t q2 = binsObj.find('"', q1+1); if (q2 == std::string::npos) fatal("Malformed bin key in combined contamination");
+        std::string binKeyStr = binsObj.substr(q1+1, q2-q1-1);
         BinKey bk; if (!parse_tuple_key(binKeyStr, bk)) fatal("Bad bin tuple in combined contamination");
 
-        size_t vS=binsObj.find('{', q2); if (vS==std::string::npos) fatal("Missing bin object in combined contamination");
-        int d2=0; size_t j=vS; for (; j<binsObj.size(); ++j) {
-            if(binsObj[j]=='{') d2++;
-            else if(binsObj[j]=='}'){ d2--; if(!d2){ ++j; break; } }
+        size_t vS = binsObj.find('{', q2); if (vS == std::string::npos) fatal("Missing bin object in combined contamination");
+        int d2 = 0; size_t j = vS;
+        for (; j < binsObj.size(); ++j) {
+            if (binsObj[j] == '{') ++d2;
+            else if (binsObj[j] == '}') { --d2; if (!d2) { ++j; break; } }
         }
-        std::string obj=binsObj.substr(vS, j-vS);
+        std::string obj = binsObj.substr(vS, j - vS);
 
-        auto findVal=[&](const char* pat, const char* ctx)->double{
-            size_t pos=obj.find(pat);
-            if(pos==std::string::npos) {
-                std::ostringstream em; em<<"Missing "<<pat<<" in "<<ctx
-                    <<"  file="<<combined_path<<"  group="<<group<<"  bin="<<binKeyStr;
-                fatal(em.str());
-            }
-            pos=obj.find(':',pos);
-            if(pos==std::string::npos) {
-                std::ostringstream em; em<<"Malformed "<<pat<<" in "<<ctx
-                    <<"  file="<<combined_path<<"  group="<<group<<"  bin="<<binKeyStr;
-                fatal(em.str());
-            }
-            return parseDoubleAfterColon_diag(obj, pos, ctx, combined_path, group, binKeyStr);
-        };
+        // Narrow to contamination, then (+1) and (-1) subblocks
+        std::string contamObj = objForKey(obj, "\"contamination\"");
+        std::string blockP    = extract_block_after_label(contamObj, "\"+1\"");
+        std::string blockM    = extract_block_after_label(contamObj, "\"-1\"");
+        if (blockP.empty() || blockM.empty()) {
+            std::ostringstream em; em << "Missing helicity block(s) in combined contamination object"
+                                      << "  file=" << combined_path << "  group=" << group
+                                      << "  bin=" << binKeyStr;
+            fatal(em.str());
+        }
+
         Contam c;
-        c.cp = findVal("\"contamination\":{\"+1\":{\"value\"", "combined contamination(+1).value");
-        c.ep = findVal("\"contamination\":{\"+1\":{\"err\"",   "combined contamination(+1).err");
-        c.cm = findVal("\"contamination\":{\"-1\":{\"value\"", "combined contamination(-1).value");
-        c.em = findVal("\"contamination\":{\"-1\":{\"err\"",   "combined contamination(-1).err");
+        c.cp = parse_field(blockP, "\"value\"", "combined contamination(+1).value", combined_path, group, binKeyStr);
+        c.ep = parse_field(blockP, "\"err\"",   "combined contamination(+1).err",   combined_path, group, binKeyStr);
+        c.cm = parse_field(blockM, "\"value\"", "combined contamination(-1).value", combined_path, group, binKeyStr);
+        c.em = parse_field(blockM, "\"err\"",   "combined contamination(-1).err",   combined_path, group, binKeyStr);
 
-        out[bk]=c; ++nb; p=j;
+        out[bk] = c; ++nb; p = j;
     }
-    if (nb==0) fatal("No bins parsed for group "+group+" in combined contamination JSON");
+    if (nb == 0) fatal("No bins parsed for group "+group+" in combined contamination JSON");
     return out;
 }
 
