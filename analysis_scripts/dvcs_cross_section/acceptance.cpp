@@ -216,6 +216,7 @@ static bool extract_stats_block(const std::string& s, size_t scope_from, const s
     // naive bracket matching for mc object
     int depth = 0; size_t i = lbrace;
     for (; i < s.size(); ++i) {
+        if (i == s.size()) break;
         if (s[i] == '{') ++depth;
         else if (s[i] == '}') { --depth; if (depth == 0) break; }
     }
