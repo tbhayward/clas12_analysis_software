@@ -7,7 +7,6 @@
 //     <contamination_dir_counts>/contamination_<group>.json
 //   where <group> matches the group key EXACTLY as it appears in total_counts.json.
 // - If a specific (ix,iQ2,it,ip) bin is missing in contamination, assume contamination=0.0±0.0.
-//   (This prevents fatal mismatches like the 'fa18_inb' bin (0,0,0,1) not found.)
 //
 // Inputs:
 //   - total_counts.json                 (required; definitive list of groups to process)
@@ -53,6 +52,7 @@
 #include <utility>
 #include <vector>
 
+// ===== helpers/types/parsers/plotters (internal linkage) =====
 namespace {
 
 constexpr int N_PHI_BINS = 12;
@@ -63,6 +63,7 @@ using BinKey = std::tuple<int,int,int,int>; // (ix,iQ2,it,ip)
     std::exit(EXIT_FAILURE);
 }
 
+// ROOT style (thin, neutral)
 struct StyleInit {
     StyleInit() {
         gStyle->SetOptTitle(0);
@@ -124,7 +125,7 @@ struct BinningMeta {
     size_t nx=0, nQ=0, nt=0;
 };
 
-// ────────── tiny strict JSON helpers (string-based) ──────────
+// ---- tiny string-based JSON utilities (strict enough for our files) ----
 static std::string objForKey(const std::string& s, const std::string& key) {
     size_t p = s.find(key); if (p==std::string::npos) fatal("Key '"+key+"' not found in JSON.");
     size_t br = s.find('{', p); if (br==std::string::npos) fatal("Malformed JSON after key '"+key+"'");
@@ -146,6 +147,7 @@ static long long parseIntAfterColon(const std::string& s, size_t cpos, const std
     catch(...) { fatal("Non-integer value in "+ctx); }
     return 0;
 }
+
 static double parseDoubleAfterColon(const std::string& s, size_t cpos, const std::string& ctx) {
     size_t a = cpos + 1;
     while (a < s.size() && std::isspace((unsigned char)s[a])) ++a;
@@ -180,7 +182,7 @@ static BinningMeta load_meta(const std::string& s) {
     return bm;
 }
 
-// total_counts.json → definitive groups + their bins
+// total_counts.json -> definitive groups + bins
 static GroupCounts load_total_counts_STRICT(const std::string& path, BinningMeta& out_meta,
                                             std::vector<std::string>& group_order) {
     std::ifstream ifs(path);
@@ -243,7 +245,7 @@ static GroupCounts load_total_counts_STRICT(const std::string& path, BinningMeta
     return out;
 }
 
-// Per-period contamination file (exact <group> name)
+// per-period contamination file (exact group name)
 static ContamTable load_contam_period_STRICT(const std::string& path, BinningMeta& out_meta) {
     std::ifstream ifs(path);
     if (!ifs) fatal(std::string("Cannot open contamination file: ")+path);
@@ -284,7 +286,7 @@ static ContamTable load_contam_period_STRICT(const std::string& path, BinningMet
     return out;
 }
 
-// Combined contamination (exact group name inside "periods")
+// combined contamination (exact group inside "periods")
 static ContamTable load_contam_group_from_combined_STRICT(const std::string& combined_path,
                                                           const std::string& group,
                                                           BinningMeta& out_meta) {
@@ -338,7 +340,7 @@ static ContamTable load_contam_group_from_combined_STRICT(const std::string& com
     return out;
 }
 
-// ────────── plotting helpers ──────────
+// plot per group: corrected vs raw, sliced by xB with (Q2,t) subpanels
 static void uniqueQT_for_xB(
     const std::vector<Binning>& scheme,
     const std::pair<double,double>& xBrange,
@@ -497,7 +499,6 @@ static void plot_group(
     }
 }
 
-// ────────── correction core ──────────
 static CorrBin make_corrected_STRICT(const HelCounts& raw, const Contam& c,
                                      const std::string& group, const std::string& binKeyStr) {
     auto one = [&](double Nraw, double val, double err, const char* hel)->std::pair<double,double>{
@@ -518,7 +519,6 @@ static CorrBin make_corrected_STRICT(const HelCounts& raw, const Contam& c,
     return out;
 }
 
-// ────────── JSON writers ──────────
 static void write_group_json(const std::string& out_path,
                              int nPhi,
                              size_t nx, size_t nQ, size_t nt,
@@ -586,14 +586,16 @@ static void write_master_json(const std::string& out_path,
     ofs<<"\n  }\n}\n";
 }
 
-// ======================= PUBLIC ENTRY ===========================
+} // end anonymous namespace
+
+// ======================= PUBLIC ENTRY (global namespace) ===========================
 void compute_pi0_corrected_counts(
     const std::vector<std::string>& /*dvcs_periods (ignored on purpose)*/,
     const std::vector<Binning>& binning_scheme,
-    const std::string& total_counts_json,                   // output/jsons/total_counts.json
-    const std::string& contamination_dir_counts,            // output/jsons/contamination
-    const std::string& contamination_combined,              // output/jsons/pi0_contamination_combined.json
-    const std::string& out_root_dir                         // "output"
+    const std::string& total_counts_json,
+    const std::string& contamination_dir_counts,
+    const std::string& contamination_combined,
+    const std::string& out_root_dir
 ) {
     namespace fs = std::filesystem;
 
@@ -670,8 +672,7 @@ void compute_pi0_corrected_counts(
             if (ic != C.end()) {
                 c = ic->second;
             } else {
-                // Missing bin in contamination: use 0.0±0.0 contamination (hard default).
-                // This is deterministic and avoids failing when a single φ-bin is absent.
+                // Missing bin in contamination: hard default to zero contamination.
                 c = Contam{0.0, 0.0, 0.0, 0.0};
             }
 
@@ -700,5 +701,3 @@ void compute_pi0_corrected_counts(
     write_master_json(master, N_PHI_BINS, xB_bins.size(), Q2_bins.size(), t_bins.size(), all_groups_corrected);
     std::cout << "[pi0corr] Wrote " << master << "\n";
 }
-
-} // namespace
