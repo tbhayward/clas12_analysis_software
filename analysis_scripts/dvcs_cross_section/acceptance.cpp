@@ -225,7 +225,7 @@ static bool load_pi0_corrected_master(const std::string& path, GroupHelMap& outG
 
             size_t valS = binsObj.find('{', bk2); if (valS==std::string::npos) break;
             int d4=0; size_t jj=valS;
-            for (; jj<binsObj.size(); ++jj){ if(binsObj[jj]=='{') d4++; else if(binsObjs[jj]=='}'){ d4--; if(!d4){ ++jj; break; } } }
+            for (; jj<binsObj.size(); ++jj){ if(binsObj[jj]=='{') d4++; else if(binsObj[jj]=='}'){ d4--; if(!d4){ ++jj; break; } } }
             // NOTE: fix typo: binsObjs -> binsObj
         }
         // The above loop had a small typo; correct and continue parsing:
