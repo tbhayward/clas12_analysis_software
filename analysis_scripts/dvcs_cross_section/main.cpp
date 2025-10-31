@@ -151,9 +151,9 @@ int main(int argc, char* argv[]) {
     // Plots to: output/unfolding/<runTag>/plot_unfolded_<period>_xB_<ix>.png
     {
         std::vector<std::string> unf_periods = {
-            "DVCS_Sp18_inb", "DVCS_Sp18_out",
-            "DVCS_Fa18_inb", "DVCS_Fa18_out",
-            "DVCS_Sp19_inb"
+            "sp18_inb", "sp18_out",
+            "fa18_inb", "fa18_out",
+            "sp19_inb"
         }; // skip DVCS_Fa18_inb_supp on purpose
         const std::string total_counts_js = "output/jsons/total_counts.json";
         compute_and_plot_unfolding(
