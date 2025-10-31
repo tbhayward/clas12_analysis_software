@@ -199,8 +199,8 @@ static bool load_acceptance_json(const std::string& path, AccMap3& out) {
 struct HelVals {
     double plus   = 0.0;
     double minus  = 0.0;
-    double eplus  = 0.0;
-    double eminus = 0.0;
+    double eplus  = 0.0;  // sigma on plus
+    double eminus = 0.0;  // sigma on minus
 };
 using GroupHelMap = std::map<std::string, std::map<BinKey4, HelVals>>;
 
@@ -332,10 +332,13 @@ static bool load_pi0_corrected_master(const std::string& path,
 // ---------- per-cell result ----------
 struct UnfoldCell {
     std::vector<double> phi_deg;
+
     std::vector<double> yield_p;     // +1
     std::vector<double> yield_p_err;
+
     std::vector<double> yield_m;     // -1
     std::vector<double> yield_m_err;
+
     std::vector<double> acc, acc_err; // optional for debug
 };
 
@@ -716,7 +719,7 @@ void compute_and_plot_unfolding(
                     double Um   = Nm / A_clamp;
                     double vN   = sNm * sNm;
                     double vA   = sA * sA;
-                    // FIX: Nm*Nm (typo was "Nm*N m")
+                    // FIX: use Nm*Nm
                     double varU = (vN / (A_clamp*A_clamp)) + ((Nm*Nm) / (A_clamp*A_clamp*A_clamp*A_clamp)) * vA;
                     uc.yield_m[ip]     = Um;
                     uc.yield_m_err[ip] = std::sqrt(std::max(0.0, varU));
@@ -744,7 +747,6 @@ void compute_and_plot_unfolding(
         return perPeriodCells.find(p) != perPeriodCells.end();
     };
 
-    // Helpers: assemble pointers and write a combined product
     auto combine_and_write = [&](const std::string& label,
                                  const std::vector<std::string>& members) {
         std::vector<const std::map<std::tuple<int,int,int>, UnfoldCell>*> parts;
