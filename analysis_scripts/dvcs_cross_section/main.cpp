@@ -151,11 +151,12 @@ int main(int argc, char* argv[]) {
     // Plots to: output/unfolding/<runTag>/plot_unfolded_<period>_xB_<ix>.png
     {
         std::vector<std::string> unf_periods = {
-            "sp18_inb", "sp18_out",
-            "fa18_inb", "fa18_out",
-            "sp19_inb"
+            "DVCS_Sp18_inb", "DVCS_Sp18_out",
+            "DVCS_Fa18_inb", "DVCS_Fa18_out",
+            "DVCS_Sp19_inb"
         }; // skip DVCS_Fa18_inb_supp on purpose
-        const std::string total_counts_js = "output/jsons/total_counts.json";
+        // note that we pass the pi0_corrected_counts below (i.e. not the original total_counts)
+        const std::string total_counts_js = "output/jsons/pi0_corrected_counts_all_groups.json";
         compute_and_plot_unfolding(
             unf_periods,
             binning_scheme,
