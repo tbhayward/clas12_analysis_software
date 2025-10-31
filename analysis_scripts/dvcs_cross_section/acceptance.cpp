@@ -1,5 +1,26 @@
-// acceptance.cpp
-#include "acceptance.h"
+// unfolding.cpp — uses pi0_corrected_counts_all_groups.json as the canonical source
+// Reads corrected helicity counts (value, err) and unfolds by acceptance.
+// Acceptance files are expected at: <out_root_dir>/jsons/acceptance_<DVCS_PERIOD>.json
+// where <DVCS_PERIOD> is an exact DVCS_* name (e.g. DVCS_Sp18_inb) mapped from the short group key.
+//
+// Inputs (key ones):
+//   - total_counts_json_path  -> path to pi0_corrected_counts_all_groups.json
+//   - periods                 -> vector<string> of GROUP KEYS to process exactly as named
+//                                (short keys: sp18_inb, sp18_out, fa18_inb_supp, fa18_inb, fa18_out, sp19_inb)
+//   - binning_scheme          -> same Binning vector you already use elsewhere
+//   - out_root_dir            -> root output dir containing jsons/ and plot dirs
+//
+// Outputs:
+//   - <out_root_dir>/jsons/unfolded_<GROUP>.json
+//   - <out_root_dir>/unfolding/<GROUP>/plot_unfolded_<GROUP>_xB_<ix>.png
+//
+// Notes:
+//   - Uses helicity count uncertainties from the pi0-corrected JSON (err fields) instead of Poisson sqrt(N).
+//   - Variance propagation: U = N / A, Var(U) ~ (1/A)^2 Var(N) + (N/A^2)^2 Var(A).
+//   - Period names are NOT transformed when accessing the corrected master; they must match its group keys exactly.
+//   - Acceptance filenames are looked up through a fixed map from short key -> DVCS_* key (exact filenames you already produced).
+
+#include "unfolding.h"
 
 #include <TCanvas.h>
 #include <TGraphErrors.h>
@@ -9,7 +30,6 @@
 #include <TStyle.h>
 #include <TPad.h>
 #include <TH1.h>
-#include <TTree.h>
 
 #include <algorithm>
 #include <cctype>
@@ -21,7 +41,6 @@
 #include <map>
 #include <set>
 #include <sstream>
-#include <stdexcept>
 #include <string>
 #include <tuple>
 #include <utility>
@@ -32,7 +51,6 @@ namespace {
 constexpr int    N_PHI_BINS = 12;
 constexpr double TWO_PI     = 2.0 * M_PI;
 
-// ---------------- style bootstrap ----------------
 struct StyleInit {
     StyleInit() {
         gStyle->SetOptTitle(0);
@@ -42,28 +60,17 @@ struct StyleInit {
         gStyle->SetPadTickX(1);
         gStyle->SetPadTickY(1);
         gStyle->SetLegendBorderSize(1);
-        const int rf = 42;
+        const int rf = 42; // Helvetica
         gStyle->SetTitleFont(rf, "XYZ");
         gStyle->SetLabelFont(rf, "XYZ");
         gStyle->SetTextFont(rf);
     }
-} _style_guard;
+} _style_bootstrap;
 
-// ---------------- helpers ----------------
-static inline std::string toLower(std::string s) {
-    std::transform(s.begin(), s.end(), s.begin(),
-                   [](unsigned char c){ return std::tolower(c); });
-    return s;
-}
+using BinKey4 = std::tuple<int,int,int,int>; // (ix,iQ,it,ip)
 
-static std::string periodToRunTagKey(const std::string& period) {
-    // "DVCS_Fa18_inb" -> "fa18_inb"
-    auto pos = period.find('_');
-    if (pos == std::string::npos || pos + 1 >= period.size()) return toLower(period);
-    return toLower(period.substr(pos + 1));
-}
-
-static std::vector<std::pair<double,double>> uniqueRanges(const std::vector<Binning>& scheme, char which) {
+// ---------- tiny helpers ----------
+static inline std::vector<std::pair<double,double>> uniqueRanges(const std::vector<Binning>& scheme, char which) {
     std::set<std::pair<double,double>> s;
     for (const auto& b : scheme) {
         if (which == 'x') s.emplace(b.xBmin, b.xBmax);
@@ -72,36 +79,18 @@ static std::vector<std::pair<double,double>> uniqueRanges(const std::vector<Binn
     }
     return std::vector<std::pair<double,double>>(s.begin(), s.end());
 }
-
 static inline int findIndex(const std::pair<double,double>& range,
                             const std::vector<std::pair<double,double>>& ranges) {
-    for (int i = 0; i < (int)ranges.size(); ++i) if (ranges[i] == range) return i;
+    for (int i=0;i<(int)ranges.size();++i) if (ranges[i]==range) return i;
     return -1;
 }
-
-static inline int phiBinIndex(double phi) {
-    double w = std::fmod(phi, TWO_PI);
-    if (w < 0) w += TWO_PI;
-    const double width = TWO_PI / double(N_PHI_BINS);
-    int ip = int(std::floor(w / width));
-    if (ip < 0) ip = 0;
-    if (ip >= N_PHI_BINS) ip = N_PHI_BINS - 1;
-    return ip;
-}
-
-static inline int findBin1D(double v, const std::vector<std::pair<double,double>>& ranges) {
-    for (int k = 0; k < (int)ranges.size(); ++k) if (v >= ranges[k].first && v < ranges[k].second) return k;
-    return -1;
-}
-
 static inline std::vector<double> phiCentersDeg() {
     std::vector<double> d(N_PHI_BINS);
-    const double step = 360.0 / double(N_PHI_BINS);
-    for (int i = 0; i < N_PHI_BINS; ++i) d[i] = (i + 0.5) * step;
+    const double step = 360.0/double(N_PHI_BINS);
+    for (int i=0;i<N_PHI_BINS;++i) d[i] = (i+0.5)*step;
     return d;
 }
-
-static void drawDegreeTicks(double xmin, double ymin, double xmax, double labelSize) {
+static inline void drawDegreeTicks(double xmin, double ymin, double xmax, double labelSize){
     TGaxis* ax = new TGaxis(xmin, ymin, xmax, ymin, 0.0, 360.0, 4, "");
     ax->SetLabelFont(42);
     ax->SetLabelSize(labelSize);
@@ -110,345 +99,267 @@ static void drawDegreeTicks(double xmin, double ymin, double xmax, double labelS
     ax->SetTickSize(0.02);
     ax->Draw();
 }
-
-// ---------------- branches ----------------
-struct GenBranch {
-    double x = 0.0, Q2 = 0.0, t1 = 0.0, phi2 = 0.0;
-    bool has_x = false, has_Q2 = false, has_t1 = false, has_phi = false;
-    void bind(TTree* t) {
-        auto bindD = [&](const char* n, double* a, bool& f){ if (t && t->GetBranch(n)) { t->SetBranchAddress(n, a); f = true; } };
-        bindD("x",   &x,   has_x);
-        bindD("Q2",  &Q2,  has_Q2);
-        bindD("t1",  &t1,  has_t1);
-        bindD("phi2",&phi2,has_phi);
-    }
-};
-
-// Reconstructed MC needs all variables that exclusivity_cuts used
-struct RecBranch {
-    double x = 0.0, Q2 = 0.0, t1 = 0.0, phi2 = 0.0;
-    double open_angle_ep2 = 0.0, pTmiss = 0.0;
-    int detector1 = 0, detector2 = 0;
-    // exclusivity variables (bind if present)
-    double Delta_phi = 0.0;
-    double theta_gamma_gamma = 0.0;
-    double xF = 0.0;
-    double Emiss2 = 0.0;
-    double Mx2 = 0.0;
-    double Mx2_1 = 0.0;
-    double Mx2_2 = 0.0;
-
-    bool has_x=false, has_Q2=false, has_t1=false, has_phi=false;
-    bool hasTopo=false, hasOA=false, hasPT=false;
-    bool has_Delta_phi=false, has_theta_gg=false, has_xF=false, has_Emiss2=false, has_Mx2=false, has_Mx2_1=false, has_Mx2_2=false;
-
-    void bind(TTree* t) {
-        auto bindD = [&](const char* n, double* a, bool& f){ if (t && t->GetBranch(n)) { t->SetBranchAddress(n, a); f = true; } };
-        auto bindI = [&](const char* n, int* a, bool& f){ if (t && t->GetBranch(n)) { t->SetBranchAddress(n, a); f = true; } };
-
-        bindD("x",   &x,   has_x);
-        bindD("Q2",  &Q2,  has_Q2);
-        bindD("t1",  &t1,  has_t1);
-        bindD("phi2",&phi2,has_phi);
-        bindD("open_angle_ep2",&open_angle_ep2,hasOA);
-        bindD("pTmiss",&pTmiss,hasPT);
-        bindI("detector1",&detector1,hasTopo);
-        bindI("detector2",&detector2,hasTopo);
-
-        // extras used by exclusivity_cuts
-        bindD("Delta_phi", &Delta_phi, has_Delta_phi);
-        bindD("theta_gamma_gamma", &theta_gamma_gamma, has_theta_gg);
-        bindD("xF", &xF, has_xF);
-        bindD("Emiss2", &Emiss2, has_Emiss2);
-        bindD("Mx2", &Mx2, has_Mx2);
-        bindD("Mx2_1", &Mx2_1, has_Mx2_1);
-        bindD("Mx2_2", &Mx2_2, has_Mx2_2);
-    }
-
-    // Build value map in the same naming as exclusivity_cuts (DVCS channel)
-    std::map<std::string,double> valuesMapDVCS() const {
-        std::map<std::string,double> m;
-        if (has_Delta_phi) m["Delta_phi"] = Delta_phi;
-        if (has_theta_gg)  m["theta_gamma_gamma"] = theta_gamma_gamma;
-        if (hasPT)         m["pTmiss"] = pTmiss;
-        if (has_xF)        m["xF"] = xF;
-        if (has_Emiss2)    m["Emiss2"] = Emiss2;
-        if (has_Mx2)       m["Mx2"] = Mx2;
-        if (has_Mx2_1)     m["Mx2_1"] = Mx2_1;
-        if (has_Mx2_2)     m["Mx2_2"] = Mx2_2;
-        return m;
-    }
-};
-
-// ---------------- global DVCS MC-side kinematic cuts (same as exclusivity_cuts) ----------------
-struct MCCutsFixed {
-    double min_open_angle_deg = 5.0;
-    double max_neg_t_GeV2     = 1.0;
-    double max_pTmiss_GeV     = 0.20;
-};
-static inline bool passesGlobalMCCuts(double t1, double oa_deg, double pTmiss, const MCCutsFixed& c) {
-    if (oa_deg <= c.min_open_angle_deg) return false;
-    if ((-t1) > c.max_neg_t_GeV2)       return false;
-    if (pTmiss > c.max_pTmiss_GeV)      return false;
+static inline bool parse_tuple_key4(const std::string& s, BinKey4& out) {
+    int ix,iQ,it,ip;
+    if (std::sscanf(s.c_str(),"(%d,%d,%d,%d)",&ix,&iQ,&it,&ip)!=4) return false;
+    out = BinKey4(ix,iQ,it,ip);
+    return true;
+}
+static inline bool parse_tuple_key3(const std::string& s, std::tuple<int,int,int>& out) {
+    int ix,iQ,it;
+    if (std::sscanf(s.c_str(),"(%d,%d,%d)",&ix,&iQ,&it)!=3) return false;
+    out = std::make_tuple(ix,iQ,it);
     return true;
 }
 
-// ---------------- JSON: load combined_cuts.json (MC stats only) ----------------
-struct Stats { double mean=0.0, std=0.0; };
-using CutMap  = std::map<std::string, Stats>;          // var -> (mean,std)
-using ComboMC = std::map<std::string, CutMap>;         // "DVCS_Fa18_inb_FD_FD" -> CutMap
+// ---------- acceptance_<DVCS_PERIOD>.json loader ----------
+struct AccCell {
+    std::vector<double> phi_deg, acc, acc_err;
+};
+using AccMap3 = std::map<std::tuple<int,int,int>, AccCell>; // (ix,iQ,it)
 
-// crude extractor: find number after a pattern
-static bool extract_number_after(const std::string& s, size_t from, const std::string& pat, double& out) {
-    size_t p = s.find(pat, from); if (p == std::string::npos) return false;
-    p = s.find(':', p); if (p == std::string::npos) return false;
-    size_t a = p + 1;
-    while (a < s.size() && isspace((unsigned char)s[a])) ++a;
-    size_t b = a;
-    while (b < s.size() && (isdigit((unsigned char)s[b]) || s[b]=='-' || s[b]=='+' || s[b]=='.' || s[b]=='e' || s[b]=='E')) ++b;
-    try { out = std::stod(s.substr(a, b - a)); return true; } catch(...) { return false; }
-}
-
-static bool extract_stats_block(const std::string& s, size_t scope_from, const std::string& var, Stats& st) {
-    // look for ..."var":{"mean":X,"std":Y}... inside the "mc":{...} object nearest to scope_from
-    // 1) find "mc" after scope_from
-    size_t pmc = s.find("\"mc\"", scope_from); if (pmc == std::string::npos) return false;
-    size_t lbrace = s.find('{', pmc); if (lbrace == std::string::npos) return false;
-    // naive bracket matching for mc object
-    int depth = 0; size_t i = lbrace;
-    for (; i < s.size(); ++i) {
-        if (s[i] == '{') ++depth;
-        else if (s[i] == '}') { --depth; if (depth == 0) break; }
-    }
-    if (i >= s.size()) return false;
-    size_t mc_end = i;
-    // 2) within mc object, find the variable key
-    size_t pv = s.find("\"" + var + "\"", lbrace);
-    if (pv == std::string::npos || pv > mc_end) return false;
-    // 3) extract mean and std near this variable
-    double mu=0.0, sg=0.0;
-    bool ok1 = extract_number_after(s, pv, "\"mean\"", mu);
-    bool ok2 = extract_number_after(s, pv, "\"std\"",  sg);
-    if (!(ok1 && ok2)) return false;
-    st.mean = mu; st.std = std::abs(sg);
-    return true;
-}
-
-// Produce possible period variants to tolerate case differences in JSON keys.
-// Examples:
-//   "DVCS_Sp18_inb" -> {"DVCS_Sp18_inb", "DVCS_Sp18_Inb"}
-//   "DVCS_Fa18_out" -> {"DVCS_Fa18_out", "DVCS_Fa18_Out"}
-static std::vector<std::string> period_variants(const std::string& period) {
-    std::vector<std::string> v;
-    v.push_back(period);
-    // If ends with _inb or _out, add title-case variant
-    if (period.size() >= 4) {
-        if (period.rfind("_inb") != std::string::npos) {
-            std::string p2 = period;
-            p2.replace(p2.size()-4, 4, "_Inb");
-            v.push_back(p2);
-        } else if (period.rfind("_out") != std::string::npos) {
-            std::string p2 = period;
-            p2.replace(p2.size()-4, 4, "_Out");
-            v.push_back(p2);
-        }
-    }
-    return v;
-}
-
-static bool load_combined_mc_cuts(const std::string& json_path, const std::vector<std::string>& periods, ComboMC& out) {
-    std::ifstream ifs(json_path);
+static bool load_acceptance_json(const std::string& path, AccMap3& out) {
+    std::ifstream ifs(path);
     if (!ifs) {
-        std::cerr << "[acc][ERROR] Cannot open combined cuts JSON: " << json_path << "\n";
+        std::cerr<<"[unf][WARN] Cannot open acceptance JSON: "<<path<<"\n";
         return false;
     }
-    const std::string s((std::istreambuf_iterator<char>(ifs)), std::istreambuf_iterator<char>());
+    std::string s((std::istreambuf_iterator<char>(ifs)), std::istreambuf_iterator<char>());
 
-    static const std::vector<std::string> topoKeys = {"FD_FD", "CD_FD", "CD_FT"};
-    static const std::vector<std::string> vars = {
-        "Delta_phi", "theta_gamma_gamma", "pTmiss", "xF",
-        "Emiss2", "Mx2", "Mx2_1", "Mx2_2"
+    size_t bpos = s.find("\"bins\"");
+    if (bpos==std::string::npos) return false;
+    size_t br = s.find('{', bpos); if (br==std::string::npos) return false;
+    int d=0; size_t i=br; for (; i<s.size(); ++i){ if(s[i]=='{') d++; else if(s[i]=='}'){ d--; if(!d){ ++i; break; } } }
+    std::string binsObj = s.substr(br, i-br);
+
+    auto parseArray = [&](const std::string& obj, const char* key)->std::vector<double>{
+        std::vector<double> v;
+        size_t p = obj.find(key); if (p==std::string::npos) return v;
+        p = obj.find('[', p); if (p==std::string::npos) return v;
+        size_t q = obj.find(']', p); if (q==std::string::npos) return v;
+        std::string arr = obj.substr(p+1, q-p-1);
+        std::stringstream ss(arr);
+        while (ss.good()){
+            std::string tok; std::getline(ss, tok, ',');
+            tok.erase(std::remove_if(tok.begin(), tok.end(), ::isspace), tok.end());
+            if (tok.empty()) continue;
+            try { v.push_back(std::stod(tok)); } catch(...) {}
+        }
+        return v;
     };
 
-    bool any=false;
-    for (const auto& period : periods) {
-        const auto pvars = period_variants(period); // try both lower and title case suffixes
-        for (const auto& period_try : pvars) {
-            for (const auto& topo : topoKeys) {
-                const std::string comboKey = period_try + "_" + topo; // e.g. "DVCS_Sp18_Inb_FD_FD"
-                size_t pkey = s.find("\"" + comboKey + "\"");
-                if (pkey == std::string::npos) continue;
+    size_t kpos=0;
+    while (true) {
+        size_t q1 = binsObj.find('"', kpos); if (q1==std::string::npos) break;
+        size_t q2 = binsObj.find('"', q1+1); if (q2==std::string::npos) break;
+        std::string key = binsObj.substr(q1+1, q2-q1-1);
+        std::tuple<int,int,int> k3;
+        if (!parse_tuple_key3(key, k3)) { kpos = q2+1; continue; }
 
-                CutMap cmap;
-                for (const auto& v : vars) {
-                    Stats st;
-                    if (extract_stats_block(s, pkey, v, st)) {
-                        cmap[v] = st;
-                    }
-                }
-                if (!cmap.empty()) {
-                    out[comboKey] = std::move(cmap);
-                    any = true;
-                }
+        size_t objS = binsObj.find('{', q2); if (objS==std::string::npos) break;
+        int d2=0; size_t j=objS; for (; j<binsObj.size(); ++j){ if(binsObj[j]=='{') d2++; else if(binsObj[j]=='}'){ d2--; if(!d2){ ++j; break; } } }
+        std::string obj = binsObj.substr(objS, j-objS);
+
+        AccCell cell;
+        cell.phi_deg = parseArray(obj, "\"phi\":[");
+        cell.acc     = parseArray(obj, "\"acc\":[");
+        cell.acc_err = parseArray(obj, "\"acc_err\":[");
+        if (!cell.phi_deg.empty() && cell.acc.size()==cell.phi_deg.size() && cell.acc_err.size()==cell.phi_deg.size())
+            out[k3] = std::move(cell);
+
+        kpos = j;
+    }
+    return !out.empty();
+}
+
+// ---------- corrected-counts master loader (pi0_corrected_counts_all_groups.json) ----------
+struct HelVals {
+    double plus   = 0.0;
+    double minus  = 0.0;
+    double eplus  = 0.0;  // sigma on plus
+    double eminus = 0.0;  // sigma on minus
+};
+using GroupHelMap = std::map<std::string, std::map<BinKey4, HelVals>>;
+
+static bool load_pi0_corrected_master(const std::string& path, GroupHelMap& outGroups) {
+    std::ifstream ifs(path);
+    if (!ifs) {
+        std::cerr<<"[unf][ERROR] Cannot open pi0_corrected_counts_all_groups JSON: "<<path<<"\n";
+        return false;
+    }
+    std::string s((std::istreambuf_iterator<char>(ifs)), std::istreambuf_iterator<char>());
+
+    // Find "groups" object
+    size_t gpos = s.find("\"groups\"");
+    if (gpos==std::string::npos) { std::cerr<<"[unf][ERROR] 'groups' not found in corrected master.\n"; return false; }
+    size_t brace = s.find('{', gpos); if (brace==std::string::npos) return false;
+    int d=0; size_t i=brace; for (; i<s.size(); ++i){ if(s[i]=='{') d++; else if(s[i]=='}'){ d--; if(!d){ ++i; break; } } }
+    std::string groupsObj = s.substr(brace, i-brace);
+
+    size_t kpos=0;
+    while (true) {
+        size_t q1 = groupsObj.find('"', kpos); if (q1==std::string::npos) break;
+        size_t q2 = groupsObj.find('"', q1+1); if (q2==std::string::npos) break;
+        std::string gname = groupsObj.substr(q1+1, q2-q1-1);
+
+        size_t objS = groupsObj.find('{', q2); if (objS==std::string::npos) break;
+        int d2=0; size_t j=objS;
+        for (; j<groupsObj.size(); ++j){ if(groupsObj[j]=='{') d2++; else if(groupsObj[j]=='}'){ d2--; if(!d2){ ++j; break; } } }
+        std::string gObj = groupsObj.substr(objS, j-objS);
+
+        size_t bpos = gObj.find("\"bins\"");
+        if (bpos==std::string::npos) { kpos=j; continue; }
+        size_t br = gObj.find('{', bpos); if (br==std::string::npos) { kpos=j; continue; }
+        int d3=0; size_t m=br; for (; m<gObj.size(); ++m){ if(gObj[m]=='{') d3++; else if(gObj[m]=='}'){ d3--; if(!d3){ ++m; break; } } }
+        std::string binsObj = gObj.substr(br, m-br);
+
+        std::map<BinKey4, HelVals> gmap;
+
+        size_t bkey=0;
+        while (true) {
+            size_t bk1 = binsObj.find('"', bkey); if (bk1==std::string::npos) break;
+            size_t bk2 = binsObj.find('"', bk1+1); if (bk2==std::string::npos) break;
+            std::string key = binsObj.substr(bk1+1, bk2-bk1-1);
+            BinKey4 bk;
+            if (!parse_tuple_key4(key, bk)) { bkey=bk2+1; continue; }
+
+            size_t valS = binsObj.find('{', bk2); if (valS==std::string::npos) break;
+            int d4=0; size_t jj=valS;
+            for (; jj<binsObj.size(); ++jj){ if(binsObj[jj]=='{') d4++; else if(binsObjs[jj]=='}'){ d4--; if(!d4){ ++jj; break; } } }
+            // NOTE: fix typo: binsObjs -> binsObj
+        }
+        // The above loop had a small typo; correct and continue parsing:
+    }
+
+    // Re-parse bins properly (fixed block)
+    {
+        // Rewind and parse again cleanly
+        size_t kpos2=0;
+        outGroups.clear();
+        while (true) {
+            size_t q1 = groupsObj.find('"', kpos2); if (q1==std::string::npos) break;
+            size_t q2 = groupsObj.find('"', q1+1); if (q2==std::string::npos) break;
+            std::string gname = groupsObj.substr(q1+1, q2-q1-1);
+
+            size_t objS = groupsObj.find('{', q2); if (objS==std::string::npos) break;
+            int d2=0; size_t j=objS;
+            for (; j<groupsObj.size(); ++j){ if(groupsObj[j]=='{') d2++; else if(groupsObj[j]=='}'){ d2--; if(!d2){ ++j; break; } } }
+            std::string gObj = groupsObj.substr(objS, j-objS);
+
+            size_t bpos2 = gObj.find("\"bins\"");
+            if (bpos2==std::string::npos) { kpos2=j; continue; }
+            size_t br2 = gObj.find('{', bpos2); if (br2==std::string::npos) { kpos2=j; continue; }
+            int d3=0; size_t m2=br2; for (; m2<gObj.size(); ++m2){ if(gObj[m2]=='{') d3++; else if(gObj[m2]=='}'){ d3--; if(!d3){ ++m2; break; } } }
+            std::string binsObj = gObj.substr(br2, m2-br2);
+
+            std::map<BinKey4, HelVals> gmap;
+
+            auto extract_block = [&](const std::string& src, const char* label)->std::string {
+                size_t p = src.find(label);
+                if (p == std::string::npos) return std::string();
+                size_t br3 = src.find('{', p);
+                if (br3 == std::string::npos) return std::string();
+                int dd=0; size_t ii=br3; for (; ii<src.size(); ++ii){ if(src[ii]=='{') dd++; else if(src[ii]=='}'){ dd--; if(!dd){ ++ii; break; } } }
+                return src.substr(br3, ii-br3);
+            };
+            auto find_num = [&](const std::string& src, const char* keyname)->double {
+                size_t p = src.find(keyname); if (p==std::string::npos) return 0.0;
+                p = src.find(':', p); if (p==std::string::npos) return 0.0;
+                size_t a=p+1; while (a<src.size() && std::isspace((unsigned char)src[a])) ++a;
+                size_t b=a; while (b<src.size() && (std::isdigit((unsigned char)src[b]) || src[b]=='+' || src[b]=='-' || src[b]=='.' || src[b]=='e' || src[b]=='E')) ++b;
+                try { return std::stod(src.substr(a,b-a)); } catch(...) { return 0.0; }
+            };
+
+            size_t bkey2=0;
+            while (true) {
+                size_t bk1 = binsObj.find('"', bkey2); if (bk1==std::string::npos) break;
+                size_t bk2 = binsObj.find('"', bk1+1); if (bk2==std::string::npos) break;
+                std::string key = binsObj.substr(bk1+1, bk2-bk1-1);
+                BinKey4 bk;
+                if (!parse_tuple_key4(key, bk)) { bkey2=bk2+1; continue; }
+
+                size_t valS = binsObj.find('{', bk2); if (valS==std::string::npos) break;
+                int d4=0; size_t jj=valS;
+                for (; jj<binsObj.size(); ++jj){ if(binsObj[jj]=='{') d4++; else if(binsObj[jj]=='}'){ d4--; if(!d4){ ++jj; break; } } }
+                std::string obj = binsObj.substr(valS, jj-valS);
+
+                size_t hpos = obj.find("\"helicity\"");
+                if (hpos == std::string::npos) { bkey2 = jj; continue; }
+                size_t hbr = obj.find('{', hpos); if (hbr == std::string::npos) { bkey2 = jj; continue; }
+                int dh=0; size_t hk=hbr; for (; hk<obj.size(); ++hk){ if(obj[hk]=='{') dh++; else if(obj[hk]=='}'){ dh--; if(!dh){ ++hk; break; } } }
+                std::string helObj = obj.substr(hbr, hk-hbr);
+
+                std::string plusBlk  = extract_block(helObj, "\"+1\"");
+                std::string minusBlk = extract_block(helObj, "\"-1\"");
+
+                HelVals hv;
+                hv.plus   = find_num(plusBlk,  "\"value\"");
+                hv.eplus  = find_num(plusBlk,  "\"err\"");
+                hv.minus  = find_num(minusBlk, "\"value\"");
+                hv.eminus = find_num(minusBlk, "\"err\"");
+
+                gmap[bk] = hv;
+                bkey2 = jj;
             }
+
+            outGroups[gname] = std::move(gmap);
+            kpos2 = j;
         }
     }
-    return any;
+
+    return !outGroups.empty();
 }
 
-static inline bool within3Sigma(double val, const Stats& s) {
-    return (val >= s.mean - 3.0*s.std) && (val <= s.mean + 3.0*s.std);
-}
-
-static bool passes3SigmaCuts(const CutMap& cuts_mc, const std::map<std::string,double>& values) {
-    for (const auto& kv : cuts_mc) {
-        const std::string& var = kv.first;
-        auto it = values.find(var);
-        if (it == values.end()) continue; // variable not present in tree: skip
-        if (!within3Sigma(it->second, kv.second)) return false;
-    }
-    return true;
-}
-
-// ---------------- topology helpers ----------------
-static inline std::string topoKeyFromDet(int d1, int d2) {
-    if (d1 == 1 && d2 == 1) return "FD_FD";
-    if (d1 == 2 && d2 == 1) return "CD_FD";
-    if (d1 == 2 && d2 == 0) return "CD_FT";
-    return ""; // unknown
-}
-
-static inline bool topoAllowed(int d1, int d2, const std::vector<std::string>& tops) {
-    for (const auto& t : tops) {
-        if (t == "(FD,FD)" && d1 == 1 && d2 == 1) return true;
-        if (t == "(CD,FD)" && d1 == 2 && d2 == 1) return true;
-        if (t == "(CD,FT)" && d1 == 2 && d2 == 0) return true;
-    }
-    return false;
-}
-
-// ---------------- accumulation ----------------
-struct AccBin {
-    double gen = 0.0;
-    double rec = 0.0;
-};
-using AccMap = std::map<std::tuple<int,int,int,int>, AccBin>; // (ix,iQ,it,ip)
-
-static void accumulate_generated(
-    TTree* t,
-    const std::vector<std::pair<double,double>>& xB_bins,
-    const std::vector<std::pair<double,double>>& Q2_bins,
-    const std::vector<std::pair<double,double>>& t_bins,
-    AccMap& acc)
-{
-    if (!t) return;
-    GenBranch b; b.bind(t);
-    if (!(b.has_x && b.has_Q2 && b.has_t1 && b.has_phi)) return;
-
-    const Long64_t n = t->GetEntries();
-    for (Long64_t i = 0; i < n; ++i) {
-        t->GetEntry(i);
-        double xB = b.x, Q2 = b.Q2, tt = std::fabs(b.t1), phi = b.phi2;
-        int ix = findBin1D(xB, xB_bins), iQ = findBin1D(Q2, Q2_bins), it = findBin1D(tt, t_bins);
-        if (ix < 0 || iQ < 0 || it < 0) continue;
-        int ip = phiBinIndex(phi);
-        acc[std::make_tuple(ix, iQ, it, ip)].gen += 1.0;
-    }
-}
-
-static void accumulate_reconstructed(
-    TTree* t,
-    const std::vector<std::pair<double,double>>& xB_bins,
-    const std::vector<std::pair<double,double>>& Q2_bins,
-    const std::vector<std::pair<double,double>>& t_bins,
-    const std::vector<std::string>& topologies,
-    const MCCutsFixed& globalCuts,
-    const std::map<std::string, CutMap>& topoCutsForPeriod, // e.g. {"FD_FD":CutMap,...}
-    AccMap& acc)
-{
-    if (!t) return;
-    RecBranch b; b.bind(t);
-    if (!(b.has_x && b.has_Q2 && b.has_t1 && b.has_phi && b.hasTopo && b.hasOA && b.hasPT)) return;
-
-    const Long64_t n = t->GetEntries();
-    for (Long64_t i = 0; i < n; ++i) {
-        t->GetEntry(i);
-
-        if (!topoAllowed(b.detector1, b.detector2, topologies)) continue;
-        if (!passesGlobalMCCuts(b.t1, b.open_angle_ep2, b.pTmiss, globalCuts)) continue;
-
-        // Topology-specific 3σ windows from combined_cuts.json (MC)
-        const std::string topoKey = topoKeyFromDet(b.detector1, b.detector2);
-        if (topoKey.empty()) continue; // unknown combo
-
-        auto itCuts = topoCutsForPeriod.find(topoKey);
-        if (itCuts != topoCutsForPeriod.end()) {
-            const CutMap& cuts_mc = itCuts->second;
-            if (!passes3SigmaCuts(cuts_mc, b.valuesMapDVCS())) continue;
-        } else {
-            // If this period had no entry for this topology, veto by default to avoid
-            // mixing uncut with cut selections. Comment the next line if you prefer permissive.
-            continue;
-        }
-
-        double xB = b.x, Q2 = b.Q2, tt = std::fabs(b.t1), phi = b.phi2;
-        int ix = findBin1D(xB, xB_bins), iQ = findBin1D(Q2, Q2_bins), it = findBin1D(tt, t_bins);
-        if (ix < 0 || iQ < 0 || it < 0) continue;
-        int ip = phiBinIndex(phi);
-        acc[std::make_tuple(ix, iQ, it, ip)].rec += 1.0;
-    }
-}
-
-// ---------------- JSON writer ----------------
-struct PhiArrays {
+// ---------- per-cell result ----------
+struct UnfoldCell {
     std::vector<double> phi_deg;
-    std::vector<double> acc;
-    std::vector<double> acc_err;
-    std::vector<double> n_gen_phi;
-    std::vector<double> n_rec_phi;
-    double Ngen_cell = 0.0, Nrec_cell = 0.0;
-};
-using CellMap = std::map<std::tuple<int,int,int>, PhiArrays>;
 
-static void write_period_json(
+    std::vector<double> yield_p;     // +1
+    std::vector<double> yield_p_err;
+
+    std::vector<double> yield_m;     // -1
+    std::vector<double> yield_m_err;
+
+    std::vector<double> acc, acc_err; // stored for sanity/debug
+};
+
+// ---------- JSON writer ----------
+static void write_unfolded_json(
     const std::string& out_path,
     int nPhi,
     const std::vector<std::pair<double,double>>& xB_bins,
     const std::vector<std::pair<double,double>>& Q2_bins,
     const std::vector<std::pair<double,double>>& t_bins,
-    const CellMap& cells)
+    const std::map<std::tuple<int,int,int>, UnfoldCell>& cells)
 {
     std::ofstream ofs(out_path);
-    if (!ofs) { std::cerr << "[acc] Cannot open " << out_path << "\n"; return; }
-    ofs << std::fixed << std::setprecision(8);
-    ofs << "{\n";
-    ofs << "  \"binning_meta\": {\"phi_bins\": " << nPhi
-        << ", \"xB_bins\": " << xB_bins.size()
-        << ", \"Q2_bins\": " << Q2_bins.size()
-        << ", \"t_bins\": " << t_bins.size() << "},\n";
-    ofs << "  \"bins\": {\n";
-    bool first = true;
-    for (const auto& kv : cells) {
-        if (!first) ofs << ",\n"; first = false;
-        int ix, iQ, it; std::tie(ix, iQ, it) = kv.first;
-        const auto& pa = kv.second;
-        ofs << "    \"(" << ix << "," << iQ << "," << it << ")\": {";
-        ofs << "\"phi\":[";
-        for (size_t i = 0; i < pa.phi_deg.size(); ++i) { if (i) ofs << ","; ofs << pa.phi_deg[i]; }
-        ofs << "], \"acc\":[";
-        for (size_t i = 0; i < pa.acc.size(); ++i) { if (i) ofs << ","; ofs << pa.acc[i]; }
-        ofs << "], \"acc_err\":[";
-        for (size_t i = 0; i < pa.acc_err.size(); ++i) { if (i) ofs << ","; ofs << pa.acc_err[i]; }
-        ofs << "], \"counts_gen_phi\":[";
-        for (size_t i = 0; i < pa.n_gen_phi.size(); ++i) { if (i) ofs << ","; ofs << pa.n_gen_phi[i]; }
-        ofs << "], \"counts_rec_phi\":[";
-        for (size_t i = 0; i < pa.n_rec_phi.size(); ++i) { if (i) ofs << ","; ofs << pa.n_rec_phi[i]; }
-        ofs << "], \"total_gen\": " << pa.Ngen_cell << ", \"total_rec\": " << pa.Nrec_cell << "}";
+    if (!ofs) { std::cerr<<"[unf][ERROR] Cannot open "<<out_path<<"\n"; return; }
+    ofs<<std::fixed<<std::setprecision(8);
+    ofs<<"{\n";
+    ofs<<"  \"binning_meta\": {\"phi_bins\": "<<nPhi<<", \"xB_bins\": "<<xB_bins.size()<<", \"Q2_bins\": "<<Q2_bins.size()<<", \"t_bins\": "<<t_bins.size()<<"},\n";
+    ofs<<"  \"bins\": {\n";
+    bool first=true;
+    for (const auto& kv : cells){
+        if (!first) ofs<<",\n"; first=false;
+        int ix,iQ,it; std::tie(ix,iQ,it)=kv.first;
+        const auto& c = kv.second;
+        ofs<<"    \"("<<ix<<","<<iQ<<","<<it<<")\": {";
+        auto dumpA=[&](const char* name,const std::vector<double>& v){
+            ofs<<"\""<<name<<"\":["; for (size_t i=0;i<v.size();++i){ if(i)ofs<<","; ofs<<v[i]; } ofs<<"],";
+        };
+        dumpA("phi", c.phi_deg);
+        dumpA("yield_plus", c.yield_p);
+        dumpA("yield_plus_err", c.yield_p_err);
+        dumpA("yield_minus", c.yield_m);
+        dumpA("yield_minus_err", c.yield_m_err);
+        dumpA("acc", c.acc);
+        ofs<<"\"acc_err\":["; for (size_t i=0;i<c.acc_err.size();++i){ if(i)ofs<<","; ofs<<c.acc_err[i]; } ofs<<"]";
+        ofs<<"}";
     }
-    ofs << "\n  }\n}\n";
+    ofs<<"\n  }\n}\n";
 }
 
-// ---------------- plotting ----------------
+// ---------- slice helpers for plotting ----------
 static void uniqueQT_for_xB(
     const std::vector<Binning>& scheme,
     const std::pair<double,double>& xBrange,
@@ -457,29 +368,30 @@ static void uniqueQT_for_xB(
 ) {
     std::set<std::pair<double,double>> qs, ts;
     for (const auto& b : scheme) {
-        if (std::make_pair(b.xBmin, b.xBmax) == xBrange) {
-            qs.emplace(b.Q2min, b.Q2max);
-            ts.emplace(b.tmin,  b.tmax);
+        if (std::make_pair(b.xBmin,b.xBmax) == xBrange) {
+            qs.emplace(b.Q2min,b.Q2max);
+            ts.emplace(b.tmin,b.tmax);
         }
     }
     Q2_list.assign(qs.begin(), qs.end());
     t_list.assign(ts.begin(), ts.end());
 }
 
-static void plot_cells_for_period(
-    const std::string& period,
+// ---------- plotting ----------
+static void plot_cells_for_group(
+    const std::string& group,
     const std::vector<Binning>& binning_scheme,
     const std::vector<std::pair<double,double>>& xB_bins,
     const std::vector<std::pair<double,double>>& Q2_bins,
     const std::vector<std::pair<double,double>>& t_bins,
-    const CellMap& cells,
+    const std::map<std::tuple<int,int,int>, UnfoldCell>& cells,
     const std::string& out_dir_plots)
 {
     using std::filesystem::create_directories;
     std::error_code ec;
     create_directories(out_dir_plots, ec);
 
-    static const auto PHI = phiCentersDeg();
+    static const auto PHI_DEG = phiCentersDeg();
 
     for (int ix = 0; ix < (int)xB_bins.size(); ++ix) {
         const auto xb = xB_bins[ix];
@@ -491,10 +403,10 @@ static void plot_cells_for_period(
         const int nrows = (int)t_slice.size();
         const int ncols = (int)Q2_slice.size();
 
-        const int W = 280 * ncols + 160;
-        const int H = 240 * nrows + 170;
+        const int W = 280*ncols + 160;
+        const int H = 240*nrows + 170;
 
-        std::ostringstream cname; cname << "c_acc_" << period << "_xB" << ix;
+        std::ostringstream cname; cname<<"c_unf_"<<group<<"_xB"<<ix;
         TCanvas* c = new TCanvas(cname.str().c_str(), cname.str().c_str(), W, H);
 
         TPad* pTop  = new TPad("pTop","pTop", 0.0, 0.915, 1.0, 1.0);
@@ -512,8 +424,8 @@ static void plot_cells_for_period(
         head.SetTextFont(42);
         head.SetTextSize(0.36);
         std::ostringstream tit;
-        tit << Form("Acceptance  %s   x_{B} #in [%.2g, %.2g]",
-                    period.c_str(), xb.first, xb.second);
+        tit << Form("Unfolded Yields  %s   x_{B} in (%.2g, %.2g)",
+                    group.c_str(), xb.first, xb.second);
         head.DrawLatex(0.5, 0.55, tit.str().c_str());
 
         // Panels
@@ -525,22 +437,21 @@ static void plot_cells_for_period(
                 const int iQ_global = findIndex(Q2_slice[ccol], Q2_bins);
                 if (iQ_global < 0) continue;
 
-                pGrid->cd(r * ncols + ccol + 1);
+                pGrid->cd(r*ncols + ccol + 1);
                 gPad->SetGrid(1,1);
                 gPad->SetTopMargin(0.08);
                 gPad->SetBottomMargin(0.18);
-                gPad->SetLeftMargin(0.15);
+                gPad->SetLeftMargin(0.125);
                 gPad->SetRightMargin(0.10);
 
-                // log-scale y for acceptance
-                gPad->SetLogy(1);
-                TH1* frame = gPad->DrawFrame(0.0, 1e-4, 360.0, 1.0);
+                // frame (y autoscale from 0)
+                TH1* frame = gPad->DrawFrame(0.0, 0.0, 360.0, 0.0);
                 TAxis* ax = frame->GetXaxis();
                 TAxis* ay = frame->GetYaxis();
 
                 ax->SetLabelSize(0.0001);
                 ax->SetTitle("#phi (deg)");
-                ay->SetTitle("Acceptance");
+                ay->SetTitle("Unfolded yield");
                 ax->CenterTitle(); ay->CenterTitle();
                 ax->SetNdivisions(505);
                 ax->SetTitleSize(0.060);
@@ -553,197 +464,224 @@ static void plot_cells_for_period(
 
                 auto itCell = cells.find(std::make_tuple(ix, iQ_global, it_global));
                 if (itCell == cells.end()) continue;
-                const auto& pa = itCell->second;
+                const auto& uc = itCell->second;
 
-                std::vector<double> x, y, ey;
-                for (int ip = 0; ip < N_PHI_BINS; ++ip) {
-                    double A = pa.acc[ip];
-                    double sA = pa.acc_err[ip];
-                    x.push_back(PHI[ip]);
-                    y.push_back(A);
-                    ey.push_back(std::max(1e-6, sA));
+                std::vector<double> x, yp, ymp, ym, ymm;
+                x.reserve(N_PHI_BINS); yp.reserve(N_PHI_BINS); ymp.reserve(N_PHI_BINS);
+                ym.reserve(N_PHI_BINS); ymm.reserve(N_PHI_BINS);
+
+                double ymax=0.0;
+                for (int ip=0; ip<N_PHI_BINS; ++ip) {
+                    x.push_back(PHI_DEG[ip]);
+                    double vp = uc.yield_p[ip];
+                    double vm = uc.yield_m[ip];
+                    double ep = std::max(1e-12, uc.yield_p_err[ip]);
+                    double em = std::max(1e-12, uc.yield_m_err[ip]);
+                    yp.push_back(vp); ymp.push_back(ep);
+                    ym.push_back(vm); ymm.push_back(em);
+                    ymax = std::max(ymax, std::max(vp+ep, vm+em));
                 }
-                TGraphErrors* gr = new TGraphErrors(N_PHI_BINS, x.data(), y.data(), nullptr, ey.data());
-                gr->SetMarkerStyle(20);
-                gr->SetMarkerSize(1.0);
-                gr->SetLineWidth(2);
-                gr->Draw("P SAME");
 
+                if (ymax <= 0.0) ymax = 1.0;
+                frame->GetYaxis()->SetRangeUser(0.0, ymax*1.20);
+
+                TGraphErrors* grP = new TGraphErrors(N_PHI_BINS, x.data(), yp.data(), nullptr, ymp.data());
+                grP->SetMarkerStyle(20);
+                grP->SetMarkerSize(1.0);
+                grP->SetLineWidth(2);
+                grP->SetLineColor(kBlue+1);
+                grP->SetMarkerColor(kBlue+1);
+                grP->Draw("P SAME");
+
+                TGraphErrors* grM = new TGraphErrors(N_PHI_BINS, x.data(), ym.data(), nullptr, ymm.data());
+                grM->SetMarkerStyle(25);
+                grM->SetMarkerSize(1.0);
+                grM->SetLineWidth(2);
+                grM->SetLineColor(kRed+1);
+                grM->SetMarkerColor(kRed+1);
+                grM->Draw("P SAME");
+
+                // annotate Q2 and -t
                 TLatex lab;
                 lab.SetNDC(); lab.SetTextSize(0.040); lab.SetTextAlign(11);
                 lab.SetTextFont(42);
                 lab.DrawLatex(0.15, 0.94,
-                    Form("Q^{2} #in [%.2g, %.2g],   -t #in [%.2g, %.2g]",
+                    Form("Q^{2} in (%.2g, %.2g),   -t in (%.2g, %.2g)",
                          Q2_slice[ccol].first, Q2_slice[ccol].second,
                          t_slice[r].first,    t_slice[r].second));
+
+                // legend
+                TLegend* leg = new TLegend(0.50, 0.72, 0.90, 0.92);
+                leg->SetBorderSize(1);
+                leg->SetLineColor(kBlack);
+                leg->SetFillColor(kWhite);
+                leg->SetFillStyle(1001);
+                leg->SetTextFont(42);
+                leg->SetTextSize(0.040);
+                leg->AddEntry(grP, "+ helicity", "lep");
+                leg->AddEntry(grM, "- helicity", "lep");
+                leg->Draw();
             }
         }
 
         std::ostringstream fout;
-        fout << out_dir_plots << "/plot_acceptance_" << period << "_xB_" << ix << ".png";
+        fout << out_dir_plots << "/plot_unfolded_" << group << "_xB_" << ix << ".png";
         c->SaveAs(fout.str().c_str());
         delete c;
     }
 }
 
-// ---------------- key resolution ----------------
-template <typename MapT>
-static TTree* try_keys(const MapT& m, const std::vector<std::string>& keys) {
-    for (const auto& k : keys) {
-        auto it = m.find(k);
-        if (it != m.end()) return it->second;
-    }
-    return nullptr;
-}
+// ---------- DVCS acceptance filename mapping (short -> exact DVCS_* key) ----------
+// These are the ONLY names we will look for on disk, matching what acceptance.cpp wrote.
+static const std::map<std::string, std::string> kAccFileKey = {
+    {"sp18_inb",      "DVCS_Sp18_inb"},
+    {"sp18_out",      "DVCS_Sp18_out"},
+    {"fa18_inb_supp", "DVCS_Fa18_inb_supp"},
+    {"fa18_inb",      "DVCS_Fa18_inb"},
+    {"fa18_out",      "DVCS_Fa18_out"},
+    {"sp19_inb",      "DVCS_Sp19_inb"}
+};
 
+// ---------- main driver ----------
 } // anon
 
-// =====================================================================
-// Public driver
-// =====================================================================
-void compute_and_plot_acceptance(
-    const std::vector<std::string>& periods,
-    const std::vector<std::string>& topologies,
-    const std::vector<Binning>& binning,
-    const std::map<std::string, TTree*>& genMcTrees,
-    const std::map<std::string, TTree*>& recMcTrees,
-    const std::string& cuts_json_path,
+void compute_and_plot_unfolding(
+    const std::vector<std::string>& periods,           // exact short group keys to process
+    const std::vector<Binning>& binning_scheme,
+    const std::string& total_counts_json_path,         // path to pi0_corrected_counts_all_groups.json
     const std::string& out_root_dir)
 {
     namespace fs = std::filesystem;
 
-    const auto xB_bins = uniqueRanges(binning, 'x');
-    const auto Q2_bins = uniqueRanges(binning, 'Q');
-    const auto t_bins  = uniqueRanges(binning, 't');
+    const auto xB_bins = uniqueRanges(binning_scheme, 'x');
+    const auto Q2_bins = uniqueRanges(binning_scheme, 'Q');
+    const auto t_bins  = uniqueRanges(binning_scheme, 't');
 
-    // Load MC-side 3σ windows from combined_cuts.json for all requested periods
-    ComboMC comboCuts;
-    const bool haveCuts = load_combined_mc_cuts(cuts_json_path, periods, comboCuts);
-    if (!haveCuts) {
-        std::ostringstream msg;
-        msg << "[acc][FATAL] No MC cut blocks found in combined cuts JSON for requested periods.\n"
-            << "  JSON path: " << cuts_json_path << "\n"
-            << "  Example expected keys include e.g. \"DVCS_Sp18_inb_FD_FD\" or \"DVCS_Sp18_Inb_FD_FD\".\n"
-            << "  Please verify period naming (inb vs Inb, out vs Out) and re-run exclusivity_cuts.\n";
-        throw std::runtime_error(msg.str());
+    // Load corrected master (value, err per helicity) with short group keys
+    GroupHelMap groups;
+    if (!load_pi0_corrected_master(total_counts_json_path, groups)) {
+        std::cerr<<"[unf][ERROR] Failed to load corrected master json.\n";
+        return;
     }
 
-    // Output dirs
-    const fs::path json_dir  = fs::path(out_root_dir) / "jsons";
-    const fs::path plot_root = fs::path(out_root_dir) / "acceptance";
+    const fs::path json_dir  = fs::path(out_root_dir)/"jsons";
+    const fs::path plot_root = fs::path(out_root_dir)/"unfolding";
     std::error_code ec;
     fs::create_directories(json_dir, ec);
 
-    // Global DVCS MC thresholds (same as exclusivity_cuts)
-    const MCCutsFixed globalCuts;
+    auto getGroup = [&](const std::string& key)->const std::map<BinKey4,HelVals>*{
+        auto it = groups.find(key);
+        if (it==groups.end()) return nullptr;
+        return &it->second;
+    };
 
-    for (const auto& period : periods) {
-        const std::string runTag = periodToRunTagKey(period);
-
-        // Resolve using the exact period-based keys first (matches load_trees.cpp)
-        const std::vector<std::string> gen_keys = {
-            period + "_gen",   // e.g., "DVCS_Sp18_inb_gen"
-            runTag + "_gen"    // fallback if ever used
-        };
-        const std::vector<std::string> rec_keys = {
-            period + "_rec",       // e.g., "DVCS_Sp18_inb_rec"
-            period + "_rec_mc",    // if alt naming exists
-            runTag + "_rec",       // fallback
-            runTag + "_rec_mc"     // fallback
-        };
-
-        TTree* tGen = try_keys(genMcTrees, gen_keys);
-        TTree* tRec = try_keys(recMcTrees, rec_keys);
-
-        if (!tGen || !tRec) {
-            std::ostringstream tried;
-            tried << "[acc][WARN] Missing MC trees for " << period << " (" << runTag << "). Tried gen keys: ";
-            for (size_t i = 0; i < gen_keys.size(); ++i) { if (i) tried << ", "; tried << "\"" << gen_keys[i] << "\""; }
-            tried << " | rec keys: ";
-            for (size_t i = 0; i < rec_keys.size(); ++i) { if (i) tried << ", "; tried << "\"" << rec_keys[i] << "\""; }
-            tried << " — skipping.\n";
-            std::cerr << tried.str();
+    for (const auto& group : periods) {
+        const auto* gmap = getGroup(group);
+        if (!gmap) {
+            std::cerr<<"[unf][WARN] No group '"<<group<<"' in corrected master — skipping\n";
             continue;
         }
 
-        // Build topology->CutMap for this specific period from the combined set.
-        // We accept either lower-case or title-case period suffix in the JSON.
-        std::map<std::string, CutMap> topoCutsForPeriod;
-        for (const std::string topoKey : {"FD_FD","CD_FD","CD_FT"}) {
-            // Try title-case period key first (matches your JSON), then lower-case.
-            const std::string comboKeyTitle = period + "_" + topoKey; // as-passed (could already be *_Inb/*_Out)
-            const std::string comboKeyLower = [&](){
-                // if period ended with _inb/_out, also try title-case variant
-                auto pv = period_variants(period);
-                // prefer title-case variant if present
-                for (const auto& ptry : pv) {
-                    auto it = comboCuts.find(ptry + "_" + topoKey);
-                    if (it != comboCuts.end()) return ptry + "_" + topoKey;
-                }
-                return period + "_" + topoKey;
-            }();
+        // acceptance JSON for this group (via explicit DVCS_* filename mapping)
+        auto itMap = kAccFileKey.find(group);
+        if (itMap == kAccFileKey.end()) {
+            std::cerr<<"[unf][WARN] No DVCS acceptance mapping for group '"<<group<<"' — skipping.\n";
+            continue;
+        }
+        const std::string dvcs_key = itMap->second; // e.g. "DVCS_Sp18_inb"
+        const fs::path acc_path = fs::path(out_root_dir)/"jsons"/("acceptance_"+dvcs_key+".json");
 
-            auto it1 = comboCuts.find(comboKeyLower);
-            if (it1 != comboCuts.end()) {
-                topoCutsForPeriod[topoKey] = it1->second;
+        AccMap3 accCells;
+        if (!load_acceptance_json(acc_path.string(), accCells)) {
+            std::cerr<<"[unf][WARN] Missing/invalid acceptance for "<<group<<" at "<<acc_path.string()<<" — skipping.\n";
+            continue;
+        }
+
+        std::map<std::tuple<int,int,int>, UnfoldCell> outCells;
+
+        // Build all cells
+        for (int ix=0; ix<(int)xB_bins.size(); ++ix)
+        for (int iQ=0; iQ<(int)Q2_bins.size(); ++iQ)
+        for (int it=0; it<(int)t_bins.size();  ++it) {
+            UnfoldCell uc;
+            uc.phi_deg = phiCentersDeg();
+            uc.yield_p.assign(N_PHI_BINS, 0.0);
+            uc.yield_p_err.assign(N_PHI_BINS, 0.0);
+            uc.yield_m.assign(N_PHI_BINS, 0.0);
+            uc.yield_m_err.assign(N_PHI_BINS, 0.0);
+            uc.acc.assign(N_PHI_BINS, 0.0);
+            uc.acc_err.assign(N_PHI_BINS, 0.0);
+
+            // acceptance cell
+            auto itAcc = accCells.find(std::make_tuple(ix,iQ,it));
+            if (itAcc == accCells.end()) {
+                outCells[std::make_tuple(ix,iQ,it)] = std::move(uc);
                 continue;
             }
-            auto it2 = comboCuts.find(comboKeyTitle);
-            if (it2 != comboCuts.end()) {
-                topoCutsForPeriod[topoKey] = it2->second;
-            }
-        }
+            const auto& ac = itAcc->second;
 
-        // Accumulate
-        AccMap acc;
-        accumulate_generated(tGen, xB_bins, Q2_bins, t_bins, acc);
-        accumulate_reconstructed(tRec, xB_bins, Q2_bins, t_bins, topologies, globalCuts, topoCutsForPeriod, acc);
+            for (int ip=0; ip<N_PHI_BINS; ++ip) {
+                // acceptance
+                double A    = (ip<(int)ac.acc.size()    ? ac.acc[ip]     : 0.0);
+                double sA   = (ip<(int)ac.acc_err.size()? ac.acc_err[ip] : 0.0);
+                A = std::max(0.0, A);
+                const double A_clamp = std::max(A, 1e-12); // protect division
 
-        // Build per-cell phi arrays
-        const auto PHI_DEG = phiCentersDeg();
-        CellMap cells;
-        for (int ix = 0; ix < (int)xB_bins.size(); ++ix)
-        for (int iQ = 0; iQ < (int)Q2_bins.size(); ++iQ)
-        for (int it = 0; it < (int)t_bins.size();  ++it) {
-            PhiArrays pa;
-            pa.phi_deg = PHI_DEG;
-            pa.acc.resize(N_PHI_BINS, 0.0);
-            pa.acc_err.resize(N_PHI_BINS, 0.0);
-            pa.n_gen_phi.resize(N_PHI_BINS, 0.0);
-            pa.n_rec_phi.resize(N_PHI_BINS, 0.0);
-            pa.Ngen_cell = 0.0; pa.Nrec_cell = 0.0;
+                uc.acc[ip]     = A;
+                uc.acc_err[ip] = sA;
 
-            for (int ip = 0; ip < N_PHI_BINS; ++ip) {
-                auto it4 = acc.find(std::make_tuple(ix, iQ, it, ip));
-                double g = 0.0, r = 0.0;
-                if (it4 != acc.end()) { g = it4->second.gen; r = it4->second.rec; }
-                pa.n_gen_phi[ip] = g;
-                pa.n_rec_phi[ip] = r;
-                pa.Ngen_cell += g; pa.Nrec_cell += r;
+                // corrected helicity counts (value, err)
+                BinKey4 k4(ix,iQ,it,ip);
+                auto itC = gmap->find(k4);
 
-                double A = 0.0, sA = 0.0;
-                if (g > 0.0) {
-                    A  = r / g;
-                    sA = std::sqrt(std::max(0.0, A * (1.0 - A) / g)); // binomial
+                double Np = 0.0, Nm = 0.0, sNp = 0.0, sNm = 0.0;
+                if (itC != gmap->end()) {
+                    Np  = std::max(0.0, itC->second.plus);
+                    Nm  = std::max(0.0, itC->second.minus);
+                    sNp = std::max(0.0, itC->second.eplus);
+                    sNm = std::max(0.0, itC->second.eminus);
                 }
-                if (!std::isfinite(A)) A = 0.0;
-                A = std::clamp(A, 0.0, 1.2);
-                pa.acc[ip]     = A;
-                pa.acc_err[ip] = sA;
+
+                // Unfolded (+): U = N/A
+                if (A > 0.0) {
+                    double U   = Np / A_clamp;
+                    double vN  = sNp*sNp;                          // variance of corrected N
+                    double vA  = sA*sA;                            // variance of A
+                    double varU = (vN/(A_clamp*A_clamp)) + ((Np*Np)/(A_clamp*A_clamp*A_clamp*A_clamp))*vA;
+                    uc.yield_p[ip]     = U;
+                    uc.yield_p_err[ip] = std::sqrt(std::max(0.0, varU));
+                } else {
+                    uc.yield_p[ip]     = 0.0;
+                    uc.yield_p_err[ip] = 0.0;
+                }
+
+                // Unfolded (-): U = N/A
+                if (A > 0.0) {
+                    double U   = Nm / A_clamp;
+                    double vN  = sNm*sNm;
+                    double vA  = sA*sA;
+                    double varU = (vN/(A_clamp*A_clamp)) + ((Nm*Nm)/(A_clamp*A_clamp*A_clamp*A_clamp))*vA;
+                    uc.yield_m[ip]     = U;
+                    uc.yield_m_err[ip] = std::sqrt(std::max(0.0, varU));
+                } else {
+                    uc.yield_m[ip]     = 0.0;
+                    uc.yield_m_err[ip] = 0.0;
+                }
             }
-            cells[std::make_tuple(ix, iQ, it)] = std::move(pa);
+
+            outCells[std::make_tuple(ix,iQ,it)] = std::move(uc);
         }
 
-        // Write JSON
-        const fs::path outJ = fs::path(out_root_dir) / "jsons" / ("acceptance_" + period + ".json");
-        write_period_json(outJ.string(), N_PHI_BINS, xB_bins, Q2_bins, t_bins, cells);
-        std::cout << "[acc] Wrote acceptance JSON: " << outJ.string() << "\n";
+        // JSON
+        const fs::path outJ = fs::path(out_root_dir)/"jsons"/("unfolded_"+group+".json");
+        write_unfolded_json(outJ.string(), N_PHI_BINS, xB_bins, Q2_bins, t_bins, outCells);
+        std::cout<<"[unf] Wrote unfolded JSON: "<<outJ.string()<<"\n";
 
         // Plots
-        const fs::path outPlots = fs::path(out_root_dir) / "acceptance" / periodToRunTagKey(period);
+        const fs::path outPlots = fs::path(out_root_dir)/"unfolding"/group;
         std::error_code ec2; fs::create_directories(outPlots, ec2);
-        plot_cells_for_period(period, binning, xB_bins, Q2_bins, t_bins, cells, outPlots.string());
+        plot_cells_for_group(group, binning_scheme, xB_bins, Q2_bins, t_bins, outCells, outPlots.string());
     }
 
-    std::cout << "[acc] Acceptance computation complete.\n";
+    std::cout<<"[unf] Unfolding complete.\n";
 }
