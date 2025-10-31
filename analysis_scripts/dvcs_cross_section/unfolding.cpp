@@ -2,20 +2,20 @@
 // Reads corrected helicity counts (value, err) and unfolds by acceptance.
 // Acceptance files are expected at: <out_root_dir>/jsons/acceptance_<PERIOD>.json
 //
-// Inputs (key ones):
-//   - total_counts_json_path  -> path to pi0_corrected_counts_all_groups.json
-//   - periods                 -> vector<string> of PERIOD KEYS (DVCS_* names) to process exactly as named
-//   - binning_scheme          -> same Binning vector you already use elsewhere
-//   - out_root_dir            -> root output dir containing jsons/ and plot dirs
-//
-// Outputs:
+// Per-period outputs:
 //   - <out_root_dir>/jsons/unfolded_<PERIOD>.json
 //   - <out_root_dir>/unfolding/<PERIOD>/plot_unfolded_<PERIOD>_xB_<ix>.png
 //
+// Combined outputs (this file also produces):
+//   - <out_root_dir>/jsons/unfolded_Fa18.json
+//   - <out_root_dir>/jsons/unfolded_Sp18.json
+//   - <out_root_dir>/jsons/unfolded_10p6GeV.json
+//   - Plots to corresponding directories under <out_root_dir>/unfolding/.
+//
 // Notes:
-//   - Uses helicity count uncertainties from the pi0-corrected JSON (err fields) instead of Poisson sqrt(N).
-//   - Variance propagation: U = N / A, Var(U) ~ (1/A)^2 Var(N) + (N/A^2)^2 Var(A).
-//   - PERIOD names are fixed DVCS_* tokens for acceptance files, while corrected-counts groups are runTags.
+//   - Unfolding: U = N / A with error propagation from both N and A.
+//   - Combination: inverse-variance weighting on the unfolded U across requested periods.
+//   - PERIOD names are DVCS_* tokens for acceptance files; pi0-corrected master is keyed by runTags.
 
 #include "unfolding.h"
 
@@ -66,7 +66,6 @@ struct StyleInit {
 
 using BinKey4 = std::tuple<int,int,int,int>; // (ix,iQ,it,ip)
 
-// ---------------- key conversion (same convention as acceptance.cpp) ----------------
 static inline std::string toLower(std::string s) {
     std::transform(s.begin(), s.end(), s.begin(),
                    [](unsigned char c){ return std::tolower(c); });
@@ -80,7 +79,7 @@ static std::string periodToRunTagKey(const std::string& period) {
     return toLower(period.substr(pos + 1));
 }
 
-// ---------- tiny helpers ----------
+// ---------- helpers for bin edges and indices ----------
 static inline std::vector<std::pair<double,double>> uniqueRanges(const std::vector<Binning>& scheme, char which) {
     std::set<std::pair<double,double>> s;
     for (const auto& b : scheme) {
@@ -200,13 +199,12 @@ static bool load_acceptance_json(const std::string& path, AccMap3& out) {
 struct HelVals {
     double plus   = 0.0;
     double minus  = 0.0;
-    double eplus  = 0.0;  // sigma on plus
-    double eminus = 0.0;  // sigma on minus
+    double eplus  = 0.0;
+    double eminus = 0.0;
 };
 using GroupHelMap = std::map<std::string, std::map<BinKey4, HelVals>>;
 
 static bool extract_braced_block_after_key(const std::string& s, const std::string& quotedKey, std::string& outObj) {
-    // Look for "<quotedKey>": { ...matched... }
     size_t pkey = s.find(quotedKey);
     if (pkey == std::string::npos) return false;
     size_t pcolon = s.find(':', pkey + quotedKey.size());
@@ -228,7 +226,6 @@ static bool extract_braced_block_after_key(const std::string& s, const std::stri
 }
 
 static std::string extract_object_member(const std::string& obj, const char* memberKey) {
-    // Find memberKey inside obj (assumed to start with '{'), extract its { ... } block
     size_t p = obj.find(memberKey);
     if (p == std::string::npos) return std::string();
     size_t colon = obj.find(':', p);
@@ -275,7 +272,6 @@ static bool load_pi0_corrected_master(const std::string& path,
             continue;
         }
 
-        // Inside groupObj, pull "bins": { ... }
         std::string binsObj = extract_object_member(groupObj, "\"bins\"");
         if (binsObj.empty()) {
             std::cerr << "[unf][WARN] Group '" << gname << "' has no 'bins' object — skipping.\n";
@@ -284,7 +280,6 @@ static bool load_pi0_corrected_master(const std::string& path,
 
         std::map<BinKey4, HelVals> gmap;
 
-        // Iterate top-level "bins" members: "(ix,iQ,it,ip)": { ... }
         size_t cursor = 0;
         while (true) {
             size_t q1 = binsObj.find('"', cursor); if (q1 == std::string::npos) break;
@@ -553,6 +548,62 @@ static void plot_cells_for_group(
     }
 }
 
+// ---------- inverse-variance combiner for unfolded cells ----------
+static bool combine_cells_inverse_variance(
+    const std::vector<const std::map<std::tuple<int,int,int>, UnfoldCell>*>& parts,
+    std::map<std::tuple<int,int,int>, UnfoldCell>& combined) {
+
+    if (parts.empty()) return false;
+
+    // Find union of all keys
+    std::set<std::tuple<int,int,int>> keys;
+    for (const auto* m : parts) for (const auto& kv : *m) keys.insert(kv.first);
+
+    const int nphi = N_PHI_BINS;
+    for (const auto& key : keys) {
+        UnfoldCell out;
+        out.phi_deg = phiCentersDeg();
+        out.yield_p.assign(nphi, 0.0);
+        out.yield_p_err.assign(nphi, 0.0);
+        out.yield_m.assign(nphi, 0.0);
+        out.yield_m_err.assign(nphi, 0.0);
+        out.acc.assign(nphi, 0.0);
+        out.acc_err.assign(nphi, 0.0);
+
+        for (int ip = 0; ip < nphi; ++ip) {
+            double wsum_p = 0.0, wval_p = 0.0;
+            double wsum_m = 0.0, wval_m = 0.0;
+
+            double wsum_a = 0.0, wval_a = 0.0; // acceptance "debug" average
+            for (const auto* m : parts) {
+                auto it = m->find(key);
+                if (it == m->end()) continue;
+                const auto& c = it->second;
+
+                if (ip < (int)c.yield_p.size()) {
+                    double s = std::max(0.0, c.yield_p_err[ip]);
+                    if (s > 0.0) { double w = 1.0 / (s*s); wsum_p += w; wval_p += w * c.yield_p[ip]; }
+                }
+                if (ip < (int)c.yield_m.size()) {
+                    double s = std::max(0.0, c.yield_m_err[ip]);
+                    if (s > 0.0) { double w = 1.0 / (s*s); wsum_m += w; wval_m += w * c.yield_m[ip]; }
+                }
+                if (ip < (int)c.acc.size()) {
+                    double sa = std::max(0.0, (ip < (int)c.acc_err.size() ? c.acc_err[ip] : 0.0));
+                    if (sa > 0.0) { double w = 1.0 / (sa*sa); wsum_a += w; wval_a += w * c.acc[ip]; }
+                }
+            }
+
+            if (wsum_p > 0.0) { out.yield_p[ip] = wval_p / wsum_p; out.yield_p_err[ip] = std::sqrt(1.0 / wsum_p); }
+            if (wsum_m > 0.0) { out.yield_m[ip] = wval_m / wsum_m; out.yield_m_err[ip] = std::sqrt(1.0 / wsum_m); }
+            if (wsum_a > 0.0) { out.acc[ip]     = wval_a / wsum_a; out.acc_err[ip]     = std::sqrt(1.0 / wsum_a); }
+        }
+
+        combined[key] = std::move(out);
+    }
+    return !combined.empty();
+}
+
 // ---------- main driver ----------
 } // anon
 
@@ -567,8 +618,7 @@ void compute_and_plot_unfolding(
     const auto Q2_bins = uniqueRanges(binning_scheme, 'Q');
     const auto t_bins  = uniqueRanges(binning_scheme, 't');
 
-    // Build the exact group keys to pull from the corrected master (runTags),
-    // while keeping the DVCS_* period tokens for acceptance file names.
+    // Build the runTag list corresponding to DVCS_* periods
     std::vector<std::string> runTagGroups;
     runTagGroups.reserve(periods.size());
     for (const auto& p : periods) runTagGroups.push_back(periodToRunTagKey(p));
@@ -581,9 +631,11 @@ void compute_and_plot_unfolding(
     }
 
     const fs::path json_dir  = fs::path(out_root_dir) / "jsons";
-    const fs::path plot_root = fs::path(out_root_dir) / "unfolding";
     std::error_code ec;
     fs::create_directories(json_dir, ec);
+
+    // Store per-period unfolded cells to allow post-facto combinations
+    std::map<std::string, std::map<std::tuple<int,int,int>, UnfoldCell>> perPeriodCells;
 
     auto getGroup = [&](const std::string& runTag)->const std::map<BinKey4,HelVals>*{
         auto it = groups.find(runTag);
@@ -591,9 +643,10 @@ void compute_and_plot_unfolding(
         return &it->second;
     };
 
+    // ---------- per-period unfolding ----------
     for (size_t idx = 0; idx < periods.size(); ++idx) {
-        const std::string& periodDVCS = periods[idx];          // e.g. DVCS_Fa18_out (for acceptance file names)
-        const std::string& runTag     = runTagGroups[idx];     // e.g. fa18_out    (for corrected master groups)
+        const std::string& periodDVCS = periods[idx];          // e.g. DVCS_Fa18_out
+        const std::string& runTag     = runTagGroups[idx];     // e.g. fa18_out
 
         const auto* gmap = getGroup(runTag);
         if (!gmap) {
@@ -611,7 +664,6 @@ void compute_and_plot_unfolding(
 
         std::map<std::tuple<int,int,int>, UnfoldCell> outCells;
 
-        // Build all cells
         for (int ix = 0; ix < (int)xB_bins.size(); ++ix)
         for (int iQ = 0; iQ < (int)Q2_bins.size(); ++iQ)
         for (int it = 0; it < (int)t_bins.size();  ++it) {
@@ -624,7 +676,6 @@ void compute_and_plot_unfolding(
             uc.acc.assign(N_PHI_BINS, 0.0);
             uc.acc_err.assign(N_PHI_BINS, 0.0);
 
-            // acceptance cell
             auto itAcc = accCells.find(std::make_tuple(ix, iQ, it));
             if (itAcc == accCells.end()) {
                 outCells[std::make_tuple(ix, iQ, it)] = std::move(uc);
@@ -633,16 +684,14 @@ void compute_and_plot_unfolding(
             const auto& ac = itAcc->second;
 
             for (int ip = 0; ip < N_PHI_BINS; ++ip) {
-                // acceptance
                 double A  = (ip < (int)ac.acc.size()     ? ac.acc[ip]     : 0.0);
                 double sA = (ip < (int)ac.acc_err.size() ? ac.acc_err[ip] : 0.0);
                 A = std::max(0.0, A);
-                const double A_clamp = std::max(A, 1e-12); // protect division
+                const double A_clamp = std::max(A, 1e-12);
 
                 uc.acc[ip]     = A;
                 uc.acc_err[ip] = sA;
 
-                // corrected helicity counts (value, err)
                 BinKey4 k4(ix, iQ, it, ip);
                 auto itC = gmap->find(k4);
 
@@ -654,46 +703,89 @@ void compute_and_plot_unfolding(
                     sNm = std::max(0.0, itC->second.eminus);
                 }
 
-                // Unfolded (+): U = N/A
                 if (A > 0.0) {
-                    double U    = Np / A_clamp;
-                    double vN   = sNp * sNp; // variance of corrected N
-                    double vA   = sA * sA;   // variance of A
+                    double Up   = Np / A_clamp;
+                    double vN   = sNp * sNp;
+                    double vA   = sA * sA;
                     double varU = (vN / (A_clamp*A_clamp)) + ((Np*Np) / (A_clamp*A_clamp*A_clamp*A_clamp)) * vA;
-                    uc.yield_p[ip]     = U;
+                    uc.yield_p[ip]     = Up;
                     uc.yield_p_err[ip] = std::sqrt(std::max(0.0, varU));
-                } else {
-                    uc.yield_p[ip]     = 0.0;
-                    uc.yield_p_err[ip] = 0.0;
                 }
 
-                // Unfolded (-): U = N/A
                 if (A > 0.0) {
-                    double U    = Nm / A_clamp;
+                    double Um   = Nm / A_clamp;
                     double vN   = sNm * sNm;
                     double vA   = sA * sA;
+                    // FIX: Nm*Nm (typo was "Nm*N m")
                     double varU = (vN / (A_clamp*A_clamp)) + ((Nm*Nm) / (A_clamp*A_clamp*A_clamp*A_clamp)) * vA;
-                    uc.yield_m[ip]     = U;
+                    uc.yield_m[ip]     = Um;
                     uc.yield_m_err[ip] = std::sqrt(std::max(0.0, varU));
-                } else {
-                    uc.yield_m[ip]     = 0.0;
-                    uc.yield_m_err[ip] = 0.0;
                 }
             }
 
             outCells[std::make_tuple(ix, iQ, it)] = std::move(uc);
         }
 
-        // JSON
+        // Persist per-period
+        perPeriodCells[periodDVCS] = outCells;
+
+        // JSON and plots
         const fs::path outJ = fs::path(out_root_dir) / "jsons" / ("unfolded_" + periodDVCS + ".json");
-        write_unfolded_json(outJ.string(), N_PHI_BINS, xB_bins, Q2_bins, t_bins, outCells);
+        write_unfolded_json(outJ.string(), N_PHI_BINS, xB_bins, Q2_bins, t_bins, perPeriodCells[periodDVCS]);
         std::cout << "[unf] Wrote unfolded JSON: " << outJ.string() << "\n";
 
-        // Plots
         const fs::path outPlots = fs::path(out_root_dir) / "unfolding" / periodDVCS;
         std::error_code ec2; fs::create_directories(outPlots, ec2);
-        plot_cells_for_group(periodDVCS, binning_scheme, xB_bins, Q2_bins, t_bins, outCells, outPlots.string());
+        plot_cells_for_group(periodDVCS, binning_scheme, xB_bins, Q2_bins, t_bins, perPeriodCells[periodDVCS], outPlots.string());
     }
 
-    std::cout << "[unf] Unfolding complete.\n";
+    // ---------- build combined sets ----------
+    auto have = [&](const char* p)->bool {
+        return perPeriodCells.find(p) != perPeriodCells.end();
+    };
+
+    // Helpers: assemble pointers and write a combined product
+    auto combine_and_write = [&](const std::string& label,
+                                 const std::vector<std::string>& members) {
+        std::vector<const std::map<std::tuple<int,int,int>, UnfoldCell>*> parts;
+        parts.reserve(members.size());
+        for (const auto& m : members) {
+            auto it = perPeriodCells.find(m);
+            if (it != perPeriodCells.end()) parts.push_back(&it->second);
+        }
+        if (parts.empty()) return;
+
+        std::map<std::tuple<int,int,int>, UnfoldCell> combined;
+        if (!combine_cells_inverse_variance(parts, combined)) return;
+
+        const fs::path outJ = fs::path(out_root_dir) / "jsons" / ("unfolded_" + label + ".json");
+        write_unfolded_json(outJ.string(), N_PHI_BINS, xB_bins, Q2_bins, t_bins, combined);
+        std::cout << "[unf] Wrote unfolded JSON (combined): " << outJ.string() << "\n";
+
+        const fs::path outPlots = fs::path(out_root_dir) / "unfolding" / label;
+        std::error_code ec3; fs::create_directories(outPlots, ec3);
+        plot_cells_for_group(label, binning_scheme, xB_bins, Q2_bins, t_bins, combined, outPlots.string());
+    };
+
+    // Fa18 = inb + out
+    if (have("DVCS_Fa18_inb") || have("DVCS_Fa18_out")) {
+        combine_and_write("Fa18", {"DVCS_Fa18_inb","DVCS_Fa18_out"});
+    }
+
+    // Sp18 = inb + out
+    if (have("DVCS_Sp18_inb") || have("DVCS_Sp18_out")) {
+        combine_and_write("Sp18", {"DVCS_Sp18_inb","DVCS_Sp18_out"});
+    }
+
+    // 10.6 GeV = Sp18 plus Fa18 (ignore Sp19 at 10.2 GeV)
+    std::vector<std::string> tenSixMembers;
+    if (have("DVCS_Sp18_inb")) tenSixMembers.push_back("DVCS_Sp18_inb");
+    if (have("DVCS_Sp18_out")) tenSixMembers.push_back("DVCS_Sp18_out");
+    if (have("DVCS_Fa18_inb")) tenSixMembers.push_back("DVCS_Fa18_inb");
+    if (have("DVCS_Fa18_out")) tenSixMembers.push_back("DVCS_Fa18_out");
+    if (!tenSixMembers.empty()) {
+        combine_and_write("10p6GeV", tenSixMembers);
+    }
+
+    std::cout << "[unf] Unfolding complete (per-period and combined).\n";
 }
