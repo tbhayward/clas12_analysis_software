@@ -1,4 +1,4 @@
-// unfolding.cpp — uses pi0_corrected_counts_all_groups.json as the canonical source
+// unfolding.cpp - uses pi0_corrected_counts_all_groups.json as the canonical source
 // Reads corrected helicity counts (value, err) and unfolds by acceptance.
 // Acceptance files are expected at: <out_root_dir>/jsons/acceptance_<GROUP>.json
 //
