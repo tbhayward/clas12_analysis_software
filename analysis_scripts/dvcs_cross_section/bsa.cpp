@@ -700,8 +700,10 @@ static void plot_cells_for_period(
     }
 }
 
+} // <-- end anonymous namespace BEFORE the public function
+
 // =======================================================
-// Public driver
+// Public driver (must have external linkage for the linker)
 // =======================================================
 void compute_and_plot_bsa_helicity(
     const std::vector<std::string>& periods,
@@ -948,5 +950,3 @@ void compute_and_plot_bsa_helicity(
     std::error_code ec; fs::create_directories(plots_comb106, ec);
     plot_cells_for_period("RGA_10.6_combined", binning_scheme, xB_bins, Q2_bins, t_bins, combCells, plots_comb106.string());
 }
-
-} // end anonymous namespace
