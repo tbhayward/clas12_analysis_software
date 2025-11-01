@@ -18,7 +18,6 @@
 //     and divide Np, Nm by P in that bin (same as before). If absent, we use P=1 for that group.
 //   * For synthesized groups like "10.6_GeV", we expect no tree; we use P=1.
 //
-// ------------------------------------------------------------------------------
 
 #include "bsa.h"
 
@@ -699,7 +698,6 @@ static void plot_cells_for_period(
 
 // ------------ helpers ------------
 static inline bool isTenSixGroup(const std::string& group) {
-    // keys for 10.6 combinations we will treat specially for plot directory
     return (group == "sp18_inb" || group == "sp18_out" ||
             group == "fa18_inb" || group == "fa18_out" ||
             group == "fa18_inb_supp" || group == "10.6_GeV");
@@ -733,7 +731,7 @@ void compute_and_plot_bsa_helicity(
     // Load corrected counts (all groups)
     BinningMeta master_meta;
     std::vector<std::string> group_order_in_master;
-    AllGroups allGroups = load_corrected_master(pi0_corrected_master_json_path, master_meta, group_order_in_master);
+    AllGroups allGroups = load_corrected_master(pi0_corrected_counts_json_path, master_meta, group_order_in_master);
 
     // Build binning from your runtime scheme (checks sizes)
     const auto xB_bins = uniqueRanges(binning_scheme, 'x');
@@ -855,11 +853,8 @@ void compute_and_plot_bsa_helicity(
         allPeriodCells, N_PHI_BINS, xB_bins, Q2_bins, t_bins);
 
     // ---- Combined 10.6 output (if present in master) ----
-    // If the caller wants the combined 10.6 file to always exist, we try to build it
-    // from the explicit corrected group "10.6_GeV" (which your pi0_corrected pipeline writes).
     auto it106 = allGroups.find("10.6_GeV");
     if (it106 != allGroups.end()) {
-        // Build cells straight from the 10.6_GeV corrected table (P=1 fallback).
         std::map<std::tuple<int,int,int>, CellResult> combCells;
         const GroupTable& table106 = it106->second;
 
