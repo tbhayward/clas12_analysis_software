@@ -1,6 +1,6 @@
 // bsa.cpp (uses pi0_corrected_counts_all_groups.json as the ONLY input for counts)
 //
-// Behavior summary (unchanged outputs except correct low-stat errors):
+// Behavior summary (strict, with correct low-stat errors, no fallbacks):
 // - Reads contamination-corrected helicity counts from:
 //       <out_root_dir>/jsons/pi0_corrected_counts_all_groups.json
 // - For each requested group in `periods`, computes per-bin BSA points and fits
@@ -13,10 +13,12 @@
 // Notes:
 // - Group names must match EXACTLY the keys present in pi0_corrected_counts_all_groups.json,
 //   e.g. "fa18_inb", "fa18_out", "sp18_inb", "sp18_out", "Spring2018", "Fall2018", "10.6_GeV".
-// - Polarization (mandatory):
-//   * For every group (including synthesized), a DVCS TTree must be present.
+// - Polarization (mandatory, NO FALLBACKS):
+//   * For every group (including combined), a DVCS TTree must be present (exact key match).
 //   * We compute per-bin P from the tree and divide asymmetry and its error by that P.
-//   * If any required tree is missing, the program exits with a fatal error.
+//   * If any required tree or per-bin polarization is missing where counts exist (S>0), FATAL.
+//
+// Style: K&R braces, ASCII-only.
 
 #include "bsa.h"
 
@@ -94,96 +96,22 @@ struct HelCorr { double Np=0.0; double Nm=0.0; double ep=0.0; double em=0.0; }; 
 using GroupTable = std::map<BinKey, HelCorr>;
 using AllGroups  = std::map<std::string, GroupTable>;
 
-// ------------ small string utils ------------
-static inline std::string toLower(std::string s) {
-    std::transform(s.begin(), s.end(), s.begin(),
-                   [](unsigned char c){ return std::tolower(c); });
-    return s;
-}
-static inline std::string stripPrefixCI(std::string s, const std::string& pref) {
-    if (s.size() >= pref.size()) {
-        bool match = true;
-        for (size_t i=0;i<pref.size();++i) {
-            if (std::tolower((unsigned char)s[i]) != std::tolower((unsigned char)pref[i])) { match=false; break; }
-        }
-        if (match) return s.substr(pref.size());
-    }
-    return s;
-}
-static inline std::string replaceAll(std::string s, char a, char b) {
-    std::replace(s.begin(), s.end(), a, b);
-    return s;
+// ------------ tiny helpers ------------
+[[noreturn]] static void fatal(const std::string& msg) {
+    std::cerr << "[bsa][FATAL] " << msg << std::endl;
+    std::exit(EXIT_FAILURE);
 }
 
-// Build a case-insensitive index from available JSON keys -> canonical key
-static std::map<std::string,std::string> build_ci_index(const AllGroups& g) {
-    std::map<std::string,std::string> m;
-    for (const auto& kv : g) {
-        m[toLower(kv.first)] = kv.first;
-    }
-    return m;
+static inline std::string key4s(int ix,int iQ,int it,int ip) {
+    std::ostringstream os; os << "(" << ix << "," << iQ << "," << it << "," << ip << ")";
+    return os.str();
 }
 
-// Try to resolve an incoming period tag (possibly "DVCS_Sp18_inb") to a JSON key.
-// Returns empty string if not resolvable.
-static std::string resolve_group_key(const std::string& periodRaw,
-                                     const AllGroups& allGroups,
-                                     const std::map<std::string,std::string>& ci_index)
-{
-    // 0) Exact match as-is
-    if (allGroups.find(periodRaw) != allGroups.end()) return periodRaw;
-
-    // 1) Case-insensitive direct match
-    {
-        const std::string low = toLower(periodRaw);
-        auto it = ci_index.find(low);
-        if (it != ci_index.end()) return it->second;
-    }
-
-    // 2) Strip common prefixes (DVCS_ or DVCS-) and retry
-    std::string s = stripPrefixCI(periodRaw, "DVCS_");
-    if (s == periodRaw) s = stripPrefixCI(periodRaw, "DVCS-");
-
-    // 2a) Exact match after strip
-    if (allGroups.find(s) != allGroups.end()) return s;
-
-    // 2b) Lowercase match after strip
-    {
-        const std::string low = toLower(s);
-        auto it = ci_index.find(low);
-        if (it != ci_index.end()) return it->second;
-    }
-
-    // 3) Normalize separators (replace '-' with '_') and retry
-    std::string n1 = replaceAll(s, '-', '_');
-    if (allGroups.find(n1) != allGroups.end()) return n1;
-    {
-        const std::string low = toLower(n1);
-        auto it = ci_index.find(low);
-        if (it != ci_index.end()) return it->second;
-    }
-
-    // 4) Special-case combined groups that are Capitalized in JSON
-    if (toLower(n1) == "spring2018" && allGroups.find("Spring2018") != allGroups.end()) return "Spring2018";
-    if (toLower(n1) == "fall2018"   && allGroups.find("Fall2018")   != allGroups.end()) return "Fall2018";
-
-    if (toLower(n1) == "10.6_gev" || toLower(n1) == "10_6_gev" ||
-        toLower(n1) == "10p6_gev" || toLower(n1) == "10p6"     ||
-        toLower(n1) == "10.6")
-    {
-        if (allGroups.find("10.6_GeV") != allGroups.end()) return "10.6_GeV";
-    }
-
-    // 5) Construct a likely alias, e.g. "DVCS_Sp18_inb" -> "sp18_inb"
-    {
-        std::string candidate = toLower(s);
-        candidate = replaceAll(candidate, '-', '_');
-        if (allGroups.find(candidate) != allGroups.end()) return candidate;
-        auto it = ci_index.find(candidate);
-        if (it != ci_index.end()) return it->second;
-    }
-
-    return std::string();
+static bool parse_tuple_key(const std::string& s, BinKey& out) {
+    int ix,iQ,it,ip;
+    if (std::sscanf(s.c_str(),"(%d,%d,%d,%d)",&ix,&iQ,&it,&ip)!=4) return false;
+    out = BinKey(ix,iQ,it,ip);
+    return true;
 }
 
 static inline std::vector<std::pair<double,double>> uniqueRanges(const std::vector<Binning>& scheme, char which) {
@@ -208,6 +136,7 @@ static inline std::vector<double> phiCentersDeg() {
     for (int i=0;i<N_PHI_BINS;++i) d[i] = (i+0.5)*step;
     return d;
 }
+
 static inline int findIndex(const std::pair<double,double>& range,
                             const std::vector<std::pair<double,double>>& ranges) {
     for (int i=0;i<(int)ranges.size();++i) if (ranges[i]==range) return i;
@@ -231,29 +160,7 @@ static void uniqueQT_for_xB(
     t_list.assign(ts.begin(), ts.end());
 }
 
-// ------------ tiny helpers ------------
-static bool parse_tuple_key(const std::string& s, BinKey& out) {
-    int ix,iQ,it,ip;
-    if (std::sscanf(s.c_str(),"(%d,%d,%d,%d)",&ix,&iQ,&it,&ip)!=4) return false;
-    out = BinKey(ix,iQ,it,ip);
-    return true;
-}
-static inline std::string key4s(int ix,int iQ,int it,int ip) {
-    std::ostringstream os; os << "(" << ix << "," << iQ << "," << it << "," << ip << ")";
-    return os.str();
-}
-
-struct BinningMeta {
-    int    phi_bins=0;
-    size_t nx=0, nQ=0, nt=0;
-};
-
-[[noreturn]] static void fatal(const std::string& msg) {
-    std::cerr << "[bsa][FATAL] " << msg << std::endl;
-    std::exit(EXIT_FAILURE);
-}
-
-// Extract {...} block that follows a key
+// Extract {...} block that follows a key (very small JSON helper)
 static std::string objForKey(const std::string& s, const std::string& key) {
     size_t p = s.find(key);
     if (p==std::string::npos) fatal("Key '"+key+"' not found.");
@@ -292,6 +199,8 @@ static double parseDoubleAfterColon_num(const std::string& s, size_t cpos, const
 }
 
 // ------------ load pi0_corrected_counts_all_groups.json ------------
+struct BinningMeta { int phi_bins=0; size_t nx=0, nQ=0, nt=0; };
+
 static BinningMeta load_meta_from_master(const std::string& s) {
     std::string meta = objForKey(s, "\"binning_meta\"");
     auto findN = [&](const char* k, const char* ctx)->int{
@@ -468,10 +377,10 @@ static inline double overBox(double A){ double v = std::fabs(A) - A_MAX_AMP; ret
 
 // ------------ BSA computation core ------------
 struct BSApt { double phi=0.0; double bsa=0.0; double err=0.0; bool valid=false; };
-struct FitRes { double A=0, Aerr=0, B1=0, B1err=0, B2=0, B2err=0, C=0, Cerr=0, chi2=0; int ndf=0; int status=0; };
+struct FitRes { double A=0, Aerr=0, B1=0, B1err=0, B2=0, B2err=0, C=0, Cerr=0; double chi2=0; int ndf=0; int status=0; };
 struct CellResult {
     std::vector<BSApt> points; FitRes fit;
-    double P_used=1.0; bool P_per_bin=false; double P_period_avg=1.0;
+    double P_used=std::numeric_limits<double>::quiet_NaN(); bool P_per_bin=true;
 };
 
 static FitRes fit_cell(const std::vector<BSApt>& pts){
@@ -575,7 +484,7 @@ static void write_period_bsa_json(
               "\"B2\": {\"val\": 0.0, \"err\": 0.0}, "
               "\"C\": {\"val\": "<<cr.fit.C<<", \"err\": "<<cr.fit.Cerr<<"}, "
               "\"chi2\": "<<cr.fit.chi2<<", \"ndf\": "<<cr.fit.ndf<<", \"status\": "<<cr.fit.status<<"},\n";
-        ofs<<"      \"polarization\": {\"per_bin\": "<<(cr.P_per_bin?"true":"false")<<", \"P_used\": "<<cr.P_used<<"}\n";
+        ofs<<"      \"polarization\": {\"per_bin\": "<<(cr.P_per_bin?"true":"false")<<", \"P_used\": "<<(std::isfinite(cr.P_used)? cr.P_used : 0.0)<<"}\n";
         ofs<<"    }";
     }
     ofs<<"\n  }\n}\n";
@@ -615,7 +524,7 @@ static void write_all_periods_json(
                   "\"B2\":{\"val\":0.0,\"err\":0.0},"
                   "\"C\":{\"val\":"<<cr.fit.C<<",\"err\":"<<cr.fit.Cerr<<"},"
                   "\"chi2\":"<<cr.fit.chi2<<",\"ndf\":"<<cr.fit.ndf<<",\"status\":"<<cr.fit.status<<"},";
-            ofs<<"\"polarization\":{\"per_bin\":"<<(cr.P_per_bin?"true":"false")<<",\"P_used\":"<<cr.P_used<<"}";
+            ofs<<"\"polarization\":{\"per_bin\":"<<(cr.P_per_bin?"true":"false")<<",\"P_used\":"<<(std::isfinite(cr.P_used)? cr.P_used : 0.0)<<"}";
             ofs<<"}";
         }
         ofs<<"\n      }\n    }";
@@ -633,6 +542,11 @@ static void drawDegreeTicks(double xmin, double ymin, double xmax, double labelS
     ax->SetTitle("");
     ax->SetTickSize(0.02);
     ax->Draw();
+}
+
+static std::string plot_subdir_for_group(const std::string& group) {
+    if (group == "10.6_GeV") return "10.6_combined";
+    return group;
 }
 
 static void plot_cells_for_period(
@@ -786,21 +700,6 @@ static void plot_cells_for_period(
     }
 }
 
-// ------------ helpers ------------
-static inline bool isTenSixGroup(const std::string& group) {
-    return (group == "sp18_inb" || group == "sp18_out" ||
-            group == "fa18_inb" || group == "fa18_out" ||
-            group == "fa18_inb_supp" || group == "10.6_GeV");
-}
-
-static std::string plot_subdir_for_group(const std::string& group) {
-    if (group == "10.6_GeV") return "10.6_combined";
-    return group;
-}
-
-} // anon namespace
-
-
 // =======================================================
 // Public driver
 // =======================================================
@@ -818,7 +717,6 @@ void compute_and_plot_bsa_helicity(
     BinningMeta master_meta;
     std::vector<std::string> group_order_in_master;
     AllGroups allGroups = load_corrected_master(pi0_corrected_counts_json_path, master_meta, group_order_in_master);
-    const auto ci_index = build_ci_index(allGroups);
 
     // Build binning from your runtime scheme (checks sizes)
     const auto xB_bins = uniqueRanges(binning_scheme, 'x');
@@ -836,49 +734,32 @@ void compute_and_plot_bsa_helicity(
 
     std::map<std::string, std::map<std::tuple<int,int,int>, CellResult>> allPeriodCells;
 
-    for (const auto& periodRaw : periods) {
-        // Resolve JSON key from incoming period name (e.g. "DVCS_Sp18_inb" -> "sp18_inb")
-        const std::string group = resolve_group_key(periodRaw, allGroups, ci_index);
-        if (group.empty()) {
-            std::cerr << "[bsa][WARN] Group '"<<periodRaw<<"' not present in corrected master; skipping.\n";
-            continue;
+    // Strict per-period processing: exact group names, polarization required
+    for (const auto& group : periods) {
+        auto itG = allGroups.find(group);
+        if (itG == allGroups.end()) {
+            fatal("Requested group '"+group+"' not present in corrected master. Exact match is required.");
         }
-        const GroupTable& table = allGroups[group];
+        const GroupTable& table = itG->second;
 
-        // polarization lookup (mandatory)
-        TTree* t = nullptr;
-        {
-            auto itT = dvcsDataTrees.find(periodRaw);
-            if (itT != dvcsDataTrees.end()) {
-                t = itT->second;
-            } else {
-                auto itT2 = dvcsDataTrees.find(group);
-                if (itT2 != dvcsDataTrees.end()) t = itT2->second;
-            }
-            if (!t) {
-                fatal("Missing DVCS polarization tree for requested group '" + periodRaw +
-                      "' (resolved '" + group + "'). Polarization is required.");
-            }
+        // Require exact DVCS tree key equal to 'group'
+        auto itT = dvcsDataTrees.find(group);
+        if (itT == dvcsDataTrees.end() || !(itT->second)) {
+            fatal("Missing DVCS polarization tree for requested group '"+group+"'.");
         }
+        TTree* t = itT->second;
 
-        std::vector<PolStats> Pbin;
-        PolStats Pavg{1.0,0.0,0};
-        if (t) {
-            Pbin = compute_bin_polarization(t, xB_bins, Q2_bins, t_bins, topologies);
-            double sumP=0.0; int nn=0;
-            for (auto& ps : Pbin) if (ps.n>0) { sumP+=ps.P; nn++; }
-            if (nn>0) { Pavg.P = sumP/double(nn); Pavg.n=nn; }
-        }
+        // Compute per-bin polarization from the tree
+        std::vector<PolStats> Pbin = compute_bin_polarization(t, xB_bins, Q2_bins, t_bins, topologies);
 
-        // assemble BSA cells
+        // assemble BSA cells (strict: if S>0, then P must exist and be >0)
         std::map<std::tuple<int,int,int>, CellResult> cells;
         for (int ix=0; ix<(int)xB_bins.size(); ++ix)
         for (int iQ=0; iQ<(int)Q2_bins.size(); ++iQ)
         for (int itb=0; itb<(int)t_bins.size(); ++itb) {
             CellResult result;
             result.points.resize(N_PHI_BINS);
-            result.P_per_bin = (t != nullptr);
-            result.P_used = (Pavg.P>0? Pavg.P : 1.0);
+            result.P_per_bin = true;
 
             for (int ip=0; ip<N_PHI_BINS; ++ip) {
                 const BinKey bk(ix,iQ,itb,ip);
@@ -891,19 +772,10 @@ void compute_and_plot_bsa_helicity(
                     Nm = itB->second.Nm;
                 }
 
-                // pick P for this bin (computed earlier)
-                double P_here = result.P_used;
-                if (!Pbin.empty()) {
-                    size_t flat = (((ix*(size_t)Q2_bins.size()+iQ)*(size_t)t_bins.size()+itb)*N_PHI_BINS + ip);
-                    if (flat < Pbin.size() && Pbin[flat].n > 0 && Pbin[flat].P > 0.05) {
-                        P_here = Pbin[flat].P;
-                    }
-                }
-
                 BSApt p;
                 p.phi = PHI_RAD[ip];
 
-                // NEW: if corrected helicity yields are not both positive, mark this phi-bin invalid
+                // If corrected helicity yields are not both positive, mark invalid
                 if (!(Np > 0.0 && Nm > 0.0)) {
                     p.valid = false;
                     p.bsa = 0.0;
@@ -912,23 +784,27 @@ void compute_and_plot_bsa_helicity(
                     continue;
                 }
 
-                // Use Jeffreys on positive corrected yields; then divide by P
+                // Require per-bin polarization
+                const size_t flat = (((ix*(size_t)Q2_bins.size()+iQ)*(size_t)t_bins.size()+itb)*N_PHI_BINS + ip);
+                if (!(flat < Pbin.size() && Pbin[flat].n > 0 && Pbin[flat].P > 0.0)) {
+                    fatal("Polarization missing for group '"+group+"' bin "+key4s(ix,iQ,itb,ip)+
+                          " while counts exist (S>0). No fallbacks allowed.");
+                }
+                const double P_here = Pbin[flat].P;
+                result.P_used = P_here; // last used; metadata only
+
+                // Jeffreys on positive corrected yields; then divide by P_here
                 const double a = Np + JEFFREYS_ALPHA;
                 const double b = Nm + JEFFREYS_ALPHA;
                 const double S = a + b;
                 const double D = a - b;
 
-                if (S > 0.0 && P_here > 0.05) {
-                    const double A_raw   = D / S;
-                    const double var_raw = 4.0 * (a*b) / ((a+b)*(a+b)*(a+b+1.0));
-                    p.bsa  = A_raw / P_here;
-                    p.err  = std::sqrt(std::max(var_raw, 1e-12)) / P_here;
-                    p.valid = std::isfinite(p.bsa) && std::isfinite(p.err);
-                } else {
-                    p.valid = false;
-                    p.bsa = 0.0;
-                    p.err = 0.0;
-                }
+                const double A_raw   = D / S;
+                const double var_raw = 4.0 * (a*b) / ((a+b)*(a+b)*(a+b+1.0));
+                p.bsa  = A_raw / P_here;
+                p.err  = std::sqrt(std::max(var_raw, 1e-12)) / P_here;
+                p.valid = std::isfinite(p.bsa) && std::isfinite(p.err);
+
                 result.points[ip] = p;
             }
 
@@ -952,127 +828,125 @@ void compute_and_plot_bsa_helicity(
         (fs::path(out_root_dir)/"jsons"/"BSA_fits_all_periods.json").string(),
         allPeriodCells, N_PHI_BINS, xB_bins, Q2_bins, t_bins);
 
-    // ---- Combined 10.6 output (if present in master) ----
+    // ---- Combined 10.6 output (strict) ----
     auto it106 = allGroups.find("10.6_GeV");
-    if (it106 != allGroups.end()) {
-
-        // Component groups that make up 10.6 GeV
-        std::vector<std::string> comps = {"sp18_inb","sp18_out","fa18_inb","fa18_out"};
-
-        // Require DVCS trees for ALL components
-        std::map<std::string,TTree*> compTrees;
-        for (const auto& cg : comps) {
-            auto itT = dvcsDataTrees.find(cg);
-            if (itT == dvcsDataTrees.end() || !itT->second) {
-                fatal("Missing DVCS polarization tree for component period '" + cg +
-                      "' required to build 10.6_GeV combined polarization.");
-            }
-            compTrees[cg] = itT->second;
-        }
-
-        // Precompute per-bin P for each component
-        std::map<std::string, std::vector<PolStats>> P_comp;
-        for (const auto& kv : compTrees) {
-            P_comp[kv.first] = compute_bin_polarization(
-                kv.second, xB_bins, Q2_bins, t_bins, topologies);
-        }
-
-        // Build combined cells with per-bin P_comb (counts-weighted)
-        std::map<std::tuple<int,int,int>, CellResult> combCells;
-        const GroupTable& table106 = it106->second;
-
-        auto flatIdx = [&](int ix,int iQ,int itb,int ip)->size_t{
-            return (((ix*(size_t)Q2_bins.size()+iQ)*(size_t)t_bins.size()+itb)*N_PHI_BINS + ip);
-        };
-
-        for (int ix=0; ix<(int)xB_bins.size(); ++ix)
-        for (int iQ=0; iQ<(int)Q2_bins.size(); ++iQ)
-        for (int itb=0; itb<(int)t_bins.size(); ++itb) {
-            CellResult cr; cr.points.resize(N_PHI_BINS);
-            cr.P_per_bin = true; // we are computing per-bin P_comb
-
-            for (int ip=0; ip<N_PHI_BINS; ++ip){
-                const BinKey bk(ix,iQ,itb,ip);
-                BSApt p; p.phi = phiCentersRad()[ip]; p.valid=false;
-
-                // combined corrected counts for plotting
-                double Np = 0.0, Nm = 0.0;
-                auto it = table106.find(bk);
-                if (it != table106.end()) {
-                    Np = it->second.Np;
-                    Nm = it->second.Nm;
-                }
-
-                // If corrected yields are not both positive, skip this phi-bin
-                if (!(Np > 0.0 && Nm > 0.0)) {
-                    cr.points[ip] = p; // invalid
-                    continue;
-                }
-
-                // counts-weighted P_comb over components that have both P and nonzero S
-                double wsum = 0.0, psum = 0.0;
-                for (const auto& cg : comps) {
-                    // counts weight from that component's corrected master
-                    const auto& tblC = allGroups.at(cg);
-                    auto itC = tblC.find(bk);
-                    double S_k = 0.0;
-                    if (itC != tblC.end()) {
-                        const double a = itC->second.Np;
-                        const double b = itC->second.Nm;
-                        if (a > 0.0 && b > 0.0) S_k = a + b;
-                    }
-
-                    // component per-bin polarization
-                    const auto& Pc = P_comp[cg];
-                    const size_t f = flatIdx(ix,iQ,itb,ip);
-                    double Pk = (f < Pc.size() && Pc[f].n > 0) ? Pc[f].P : 0.0;
-
-                    if (S_k > 0.0 && Pk > 0.05) {
-                        wsum += S_k;
-                        psum += S_k * Pk;
-                    }
-                }
-
-                if (!(wsum > 0.0)) {
-                    fatal("Could not build counts-weighted polarization for 10.6_GeV at bin (" +
-                          std::to_string(ix) + "," + std::to_string(iQ) + "," + std::to_string(itb) +
-                          ") phi-bin " + std::to_string(ip) +
-                          ". Check component trees and counts.");
-                }
-                const double P_here = psum / wsum;
-                cr.P_used = P_here; // last phi-bin’s P; used only for metadata
-                cr.P_per_bin = true;
-
-                // Jeffreys on positive corrected yields; then divide by P_here
-                const double a = Np + JEFFREYS_ALPHA;
-                const double b = Nm + JEFFREYS_ALPHA;
-                const double S = a + b;
-                const double D = a - b;
-
-                if (S > 0.0) {
-                    const double A_raw   = D / S;
-                    const double var_raw = 4.0 * (a*b) / ((a+b)*(a+b)*(a+b+1.0));
-                    p.bsa  = A_raw / P_here;
-                    p.err  = std::sqrt(std::max(var_raw, 1e-12)) / P_here;
-                    p.valid = std::isfinite(p.bsa) && std::isfinite(p.err);
-                }
-                cr.points[ip] = p;
-            }
-
-            cr.fit = fit_cell(cr.points);
-            combCells[std::make_tuple(ix,iQ,itb)] = std::move(cr);
-        }
-
-        // Write combined JSON (now includes polarization metadata via cells)
-        const fs::path outC = fs::path(out_root_dir)/"jsons"/"BSA_fits_combined_10.6.json";
-        write_period_bsa_json(outC.string(), N_PHI_BINS, xB_bins, Q2_bins, t_bins, combCells);
-
-        // Plots for combined 10.6
-        const fs::path plots_comb106 = fs::path(out_root_dir)/"bsa_plots"/"10.6_combined";
-        std::error_code ec; fs::create_directories(plots_comb106, ec);
-        plot_cells_for_period("RGA_10.6_combined", binning_scheme, xB_bins, Q2_bins, t_bins, combCells, plots_comb106.string());
-
-    } else {
+    if (it106 == allGroups.end()) {
         fatal("No '10.6_GeV' group in corrected master; cannot build combined output.");
     }
+
+    // Require component groups and their exact trees
+    const std::vector<std::string> comps = {"sp18_inb","sp18_out","fa18_inb","fa18_out"};
+    std::map<std::string,TTree*> compTrees;
+    for (const auto& cg : comps) {
+        auto itG = allGroups.find(cg);
+        if (itG == allGroups.end()) {
+            fatal("Combined 10.6_GeV requires component counts group '"+cg+"' in corrected master.");
+        }
+        auto itT = dvcsDataTrees.find(cg);
+        if (itT == dvcsDataTrees.end() || !(itT->second)) {
+            fatal("Missing DVCS polarization tree for component '"+cg+"' required for 10.6_GeV.");
+        }
+        compTrees[cg] = itT->second;
+    }
+
+    // Precompute per-bin P for each component
+    std::map<std::string, std::vector<PolStats>> P_comp;
+    for (const auto& kv : compTrees) {
+        P_comp[kv.first] = compute_bin_polarization(
+            kv.second, xB_bins, Q2_bins, t_bins, topologies);
+    }
+
+    // Build combined cells with counts-weighted P_comb across components
+    std::map<std::tuple<int,int,int>, CellResult> combCells;
+    const GroupTable& table106 = it106->second;
+
+    auto flatIdx = [&](int ix,int iQ,int itb,int ip)->size_t{
+        return (((ix*(size_t)Q2_bins.size()+iQ)*(size_t)t_bins.size()+itb)*N_PHI_BINS + ip);
+    };
+
+    for (int ix=0; ix<(int)xB_bins.size(); ++ix)
+    for (int iQ=0; iQ<(int)Q2_bins.size(); ++iQ)
+    for (int itb=0; itb<(int)t_bins.size(); ++itb) {
+        CellResult cr; cr.points.resize(N_PHI_BINS);
+        cr.P_per_bin = true;
+
+        for (int ip=0; ip<N_PHI_BINS; ++ip){
+            const BinKey bk(ix,iQ,itb,ip);
+            BSApt p; p.phi = phiCentersRad()[ip]; p.valid=false;
+
+            // combined corrected counts
+            double Np = 0.0, Nm = 0.0;
+            auto it = table106.find(bk);
+            if (it != table106.end()) {
+                Np = it->second.Np;
+                Nm = it->second.Nm;
+            }
+
+            // If corrected yields are not both positive, skip
+            if (!(Np > 0.0 && Nm > 0.0)) {
+                cr.points[ip] = p; // invalid
+                continue;
+            }
+
+            // counts-weighted P_comb over components that have both P and nonzero S
+            double wsum = 0.0, psum = 0.0;
+            for (const auto& cg : comps) {
+                // counts weight from that component's corrected master
+                const auto& tblC = allGroups.at(cg);
+                auto itC = tblC.find(bk);
+                double S_k = 0.0;
+                if (itC != tblC.end()) {
+                    const double a = itC->second.Np;
+                    const double b = itC->second.Nm;
+                    if (a > 0.0 && b > 0.0) S_k = a + b;
+                }
+
+                // component per-bin polarization
+                const auto& Pc = P_comp[cg];
+                const size_t f = flatIdx(ix,iQ,itb,ip);
+                double Pk = (f < Pc.size() && Pc[f].n > 0) ? Pc[f].P : 0.0;
+
+                if (S_k > 0.0 && Pk > 0.0) {
+                    wsum += S_k;
+                    psum += S_k * Pk;
+                }
+            }
+
+            if (!(wsum > 0.0)) {
+                fatal("Could not build polarization for 10.6_GeV at bin (" +
+                      std::to_string(ix) + "," + std::to_string(iQ) + "," + std::to_string(itb) +
+                      ") phi-bin " + std::to_string(ip) +
+                      ". Check component trees and counts.");
+            }
+            const double P_here = psum / wsum;
+            cr.P_used = P_here;
+
+            // Jeffreys on positive corrected yields; then divide by P_here
+            const double a = Np + JEFFREYS_ALPHA;
+            const double b = Nm + JEFFREYS_ALPHA;
+            const double S = a + b;
+            const double D = a - b;
+
+            const double A_raw   = D / S;
+            const double var_raw = 4.0 * (a*b) / ((a+b)*(a+b)*(a+b+1.0));
+            p.bsa  = A_raw / P_here;
+            p.err  = std::sqrt(std::max(var_raw, 1e-12)) / P_here;
+            p.valid = std::isfinite(p.bsa) && std::isfinite(p.err);
+
+            cr.points[ip] = p;
+        }
+
+        cr.fit = fit_cell(cr.points);
+        combCells[std::make_tuple(ix,iQ,itb)] = std::move(cr);
+    }
+
+    // Write combined JSON and plots
+    const fs::path outC = fs::path(out_root_dir)/"jsons"/"BSA_fits_combined_10.6.json";
+    write_period_bsa_json(outC.string(), N_PHI_BINS, xB_bins, Q2_bins, t_bins, combCells);
+
+    const fs::path plots_comb106 = fs::path(out_root_dir)/"bsa_plots"/"10.6_combined";
+    std::error_code ec; fs::create_directories(plots_comb106, ec);
+    plot_cells_for_period("RGA_10.6_combined", binning_scheme, xB_bins, Q2_bins, t_bins, combCells, plots_comb106.string());
 }
+
+} // end anonymous namespace
