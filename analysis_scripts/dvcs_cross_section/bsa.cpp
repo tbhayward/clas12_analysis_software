@@ -1,6 +1,6 @@
 // bsa.cpp (uses pi0_corrected_counts_all_groups.json as the ONLY input for counts)
 //
-// Behavior summary (unchanged outputs):
+// Behavior summary (unchanged outputs except correct low-stat errors):
 // - Reads contamination-corrected helicity counts from:
 //       <out_root_dir>/jsons/pi0_corrected_counts_all_groups.json
 // - For each requested group in `periods`, computes per-bin BSA points and fits
@@ -15,8 +15,8 @@
 //   e.g. "fa18_inb", "fa18_out", "sp18_inb", "sp18_out", "Spring2018", "Fall2018", "10.6_GeV".
 // - Polarization:
 //   * If a DVCS TTree is provided in dvcsDataTrees with key == original period name (e.g. "DVCS_Sp18_inb"),
-//     we compute per-bin P and divide Np, Nm by P in that bin. If absent, we try the resolved JSON key.
-//     If still absent, we use P=1 for that group.
+//     we compute per-bin P and divide the asymmetry and its error by that P in the same bin.
+//     If absent, we try the resolved JSON key. If still absent, we use P=1 for that group.
 //   * For synthesized groups like "10.6_GeV", we expect no tree; we use P=1.
 //
 
@@ -49,6 +49,7 @@
 #include <iostream>
 #include <limits>
 #include <map>
+#include <memory>
 #include <set>
 #include <sstream>
 #include <string>
@@ -87,8 +88,11 @@ constexpr double EPS_DEN_EVAL  = 1e-6;   // evaluation clamp for denominator
 constexpr double A_MAX_AMP     = 0.999;  // soft box for |B|
 constexpr double LAMBDA_AMP    = 1e5;    // penalty multiplier for amplitude box
 
+// Jeffreys prior alpha for counts
+constexpr double JEFFREYS_ALPHA = 0.5;
+
 using BinKey = std::tuple<int,int,int,int>; // (ix,iQ,it,ip)
-struct HelCorr { double Np=0.0, Nm=0.0; double ep=0.0, em=0.0; }; // corrected counts
+struct HelCorr { double Np=0.0; double Nm=0.0; double ep=0.0; double em=0.0; }; // corrected counts
 using GroupTable = std::map<BinKey, HelCorr>;
 using AllGroups  = std::map<std::string, GroupTable>;
 
@@ -161,25 +165,18 @@ static std::string resolve_group_key(const std::string& periodRaw,
         if (it != ci_index.end()) return it->second;
     }
 
-    // 4) Fully normalized lowercase token; try common aliases
-    std::string low = toLower(n1);
+    // 4) Special-case combined groups that are Capitalized in JSON
+    if (toLower(n1) == "spring2018" && allGroups.find("Spring2018") != allGroups.end()) return "Spring2018";
+    if (toLower(n1) == "fall2018"   && allGroups.find("Fall2018")   != allGroups.end()) return "Fall2018";
 
-    // Special-case combined groups that are Capitalized in JSON
-    if (low == "spring2018") {
-        if (allGroups.find("Spring2018") != allGroups.end()) return "Spring2018";
-    }
-    if (low == "fall2018") {
-        if (allGroups.find("Fall2018") != allGroups.end()) return "Fall2018";
-    }
-
-    // Variants of the 10.6 group name
-    if (low == "10.6_gev" || low == "10_6_gev" || low == "10p6_gev" || low == "10p6" || low == "10.6") {
+    if (toLower(n1) == "10.6_gev" || toLower(n1) == "10_6_gev" ||
+        toLower(n1) == "10p6_gev" || toLower(n1) == "10p6"     ||
+        toLower(n1) == "10.6")
+    {
         if (allGroups.find("10.6_GeV") != allGroups.end()) return "10.6_GeV";
     }
 
-    // 5) If caller passed DVCS_Sp18_inb / DVCS_Fa18_out etc., we expect sp18_inb/fa18_out
-    //    Construct a common pattern: lowercased and underscores.
-    //    E.g. "DVCS_Sp18_inb" -> "sp18_inb"
+    // 5) Construct a likely alias, e.g. "DVCS_Sp18_inb" -> "sp18_inb"
     {
         std::string candidate = toLower(s);
         candidate = replaceAll(candidate, '-', '_');
@@ -188,7 +185,6 @@ static std::string resolve_group_key(const std::string& periodRaw,
         if (it != ci_index.end()) return it->second;
     }
 
-    // Not resolvable
     return std::string();
 }
 
@@ -380,6 +376,7 @@ static AllGroups load_corrected_master(const std::string& master_path,
             size_t mce = v.find(':', me); if (mce==std::string::npos) fatal("Malformed -1.err in "+gname);
             double em = parseDoubleAfterColon_num(v, mce, gname+" (-1).err");
 
+            (void)ep; (void)em; // not used here, but parsed for completeness
             tbl[bk] = HelCorr{Np, Nm, ep, em};
             p = j; ++nb;
         }
@@ -468,9 +465,7 @@ static std::vector<PolStats> compute_bin_polarization(
 }
 
 // ------------ math helpers for stabilizer penalties ------------
-static inline double Dmin_single(double B) {
-    return 1.0 - std::fabs(B);
-}
+static inline double Dmin_single(double B) { return 1.0 - std::fabs(B); }
 static inline double overBox(double A){ double v = std::fabs(A) - A_MAX_AMP; return (v>0.0)? v*v : 0.0; }
 
 // ------------ BSA computation core ------------
@@ -515,7 +510,6 @@ static FitRes fit_cell(const std::vector<BSApt>& pts){
             const double deficit = EPS_DEN_FLOOR - Dmin;
             pen_den = LAMBDA_DEN * deficit * deficit;
         }
-
         double pen_amp = overBox(B1);
         return chi2 + pen_den + LAMBDA_AMP*pen_amp;
     };
@@ -587,6 +581,7 @@ static void write_period_bsa_json(
         ofs<<"    }";
     }
     ofs<<"\n  }\n}\n";
+    std::cout << "[bsa] Wrote " << out_path << "\n";
 }
 
 static void write_all_periods_json(
@@ -628,6 +623,7 @@ static void write_all_periods_json(
         ofs<<"\n      }\n    }";
     }
     ofs<<"\n  }\n}\n";
+    std::cout << "[bsa] Wrote " << out_path << "\n";
 }
 
 // ------------ plotting ------------
@@ -777,9 +773,9 @@ static void plot_cells_for_period(
                 leg->SetFillStyle(1001);
                 leg->SetTextFont(42);
                 leg->SetTextSize(0.040);
-                leg->AddEntry((TObject*)nullptr, Form("A = %.3f #pm %.3f",  cr.fit.A,  cr.fit.Aerr), "");
-                leg->AddEntry((TObject*)nullptr, Form("B = %.3f #pm %.3f",  cr.fit.B1, cr.fit.B1err), "");
-                leg->AddEntry((TObject*)nullptr, Form("C = %.3f #pm %.3f",  cr.fit.C,  cr.fit.Cerr), "");
+                leg->AddEntry((TObject*)nullptr, Form("A = %.3f +/- %.3f",  cr.fit.A,  cr.fit.Aerr), "");
+                leg->AddEntry((TObject*)nullptr, Form("B = %.3f +/- %.3f",  cr.fit.B1, cr.fit.B1err), "");
+                leg->AddEntry((TObject*)nullptr, Form("C = %.3f +/- %.3f",  cr.fit.C,  cr.fit.Cerr), "");
                 leg->Draw();
             }
         }
@@ -788,6 +784,7 @@ static void plot_cells_for_period(
         fout << out_dir_plots << "/plot_bsa_" << period << "_xB_" << ix << ".png";
         c->SaveAs(fout.str().c_str());
         delete c;
+        std::cout << "[bsa] Wrote " << fout.str() << "\n";
     }
 }
 
@@ -873,17 +870,18 @@ void compute_and_plot_bsa_helicity(
 
         // assemble BSA cells
         std::map<std::tuple<int,int,int>, CellResult> cells;
-        for (int ix=0; ix<(int)xB_bins.size(); ++ix) //endfor
-        for (int iQ=0; iQ<(int)Q2_bins.size(); ++iQ) //endfor
-        for (int itb=0; itb<(int)t_bins.size(); ++itb) { //endfor
+        for (int ix=0; ix<(int)xB_bins.size(); ++ix)
+        for (int iQ=0; iQ<(int)Q2_bins.size(); ++iQ)
+        for (int itb=0; itb<(int)t_bins.size(); ++itb) {
             CellResult result;
             result.points.resize(N_PHI_BINS);
             result.P_per_bin = (t != nullptr);
             result.P_used = (Pavg.P>0? Pavg.P : 1.0);
 
-            for (int ip=0; ip<N_PHI_BINS; ++ip) { //endfor
+            for (int ip=0; ip<N_PHI_BINS; ++ip) {
                 const BinKey bk(ix,iQ,itb,ip);
 
+                // corrected counts (can be fractional due to contamination correction)
                 double Np = 0.0, Nm = 0.0;
                 auto itB = table.find(bk);
                 if (itB != table.end()) {
@@ -901,51 +899,30 @@ void compute_and_plot_bsa_helicity(
                         result.P_per_bin = false; // fall back noted
                     }
                 }
-
                 if (P_here <= 0.0) { P_here = (Pavg.P>0? Pavg.P : 1.0); result.P_per_bin=false; }
                 result.P_used = P_here;
 
-                // NEW (correct): use raw counts for Jeffreys, then divide A and sigma by P
-                const double a = std::max(0.0, Np) + alpha;
-                const double b = std::max(0.0, Nm) + alpha;
-
+                // Jeffreys on RAW counts; then divide A and sigma by P
+                const double a = std::max(0.0, Np) + JEFFREYS_ALPHA;
+                const double b = std::max(0.0, Nm) + JEFFREYS_ALPHA;
                 const double S = a + b;
                 const double D = a - b;
 
-                BSApt p; 
-                p.phi = PHI_RAD[ip];  // radians
+                BSApt p;
+                p.phi = PHI_RAD[ip];
 
                 if (S > 0.0) {
                     const double A_raw = D / S;
-                    const double var_raw = 4.0 * (a*b) / ( (a+b)*(a+b)*(a+b+1.0) );  // Jeffreys variance for (Np-Nm)/(Np+Nm)
-
-                    // Scale the asymmetry and its error by P (treating P as known)
+                    const double var_raw = 4.0 * (a*b) / ((a+b)*(a+b)*(a+b+1.0));
                     p.bsa = A_raw / P_here;
                     p.err = std::sqrt(std::max(var_raw, 1e-12)) / P_here;
-
-                    // (optional) guard against numerical overshoot
                     if (p.bsa >  1.0) p.bsa =  1.0;
                     if (p.bsa < -1.0) p.bsa = -1.0;
-
                     p.valid = std::isfinite(p.bsa) && std::isfinite(p.err);
                 } else {
                     p.bsa = 0.0;
                     p.err = 0.0;
                     p.valid = false;
-                }
-                result.points[ip] = p;
-
-                const double S = a + b;
-                const double D = a - b;
-
-                BSApt p; p.phi = PHI_RAD[ip];
-                if (S > 0.0) {
-                    p.bsa = D / S;
-                    const double varA = 4.0 * (a*b) / ( (a+b)*(a+b)*(a+b+1.0) );
-                    p.err = std::sqrt(std::max(varA, 1e-6));
-                    p.valid = std::isfinite(p.bsa) && std::isfinite(p.err);
-                } else {
-                    p.bsa = 0.0; p.err = 0.0; p.valid=false;
                 }
                 result.points[ip] = p;
             }
@@ -965,7 +942,7 @@ void compute_and_plot_bsa_helicity(
         allPeriodCells[group] = std::move(cells);
     }
 
-    // all-periods rollup (for whatever groups were successfully resolved)
+    // all-periods rollup
     write_all_periods_json(
         (fs::path(out_root_dir)/"jsons"/"BSA_fits_all_periods.json").string(),
         allPeriodCells, N_PHI_BINS, xB_bins, Q2_bins, t_bins);
@@ -976,27 +953,27 @@ void compute_and_plot_bsa_helicity(
         std::map<std::tuple<int,int,int>, CellResult> combCells;
         const GroupTable& table106 = it106->second;
 
-        for (int ix=0; ix<(int)xB_bins.size(); ++ix) //endfor
-        for (int iQ=0; iQ<(int)Q2_bins.size(); ++iQ) //endfor
-        for (int itb=0; itb<(int)t_bins.size(); ++itb) { //endfor
+        for (int ix=0; ix<(int)xB_bins.size(); ++ix)
+        for (int iQ=0; iQ<(int)Q2_bins.size(); ++iQ)
+        for (int itb=0; itb<(int)t_bins.size(); ++itb) {
             CellResult cr; cr.points.resize(N_PHI_BINS);
             cr.P_used = 1.0; cr.P_per_bin = false;
 
-            for (int ip=0; ip<N_PHI_BINS; ++ip){ //endfor
+            for (int ip=0; ip<N_PHI_BINS; ++ip){
                 const BinKey bk(ix,iQ,itb,ip);
                 BSApt p; p.phi = phiCentersRad()[ip]; p.valid=false;
 
                 auto it = table106.find(bk);
                 if (it != table106.end()) {
-                    const double alpha = 0.5;
-                    const double a = std::max(0.0, it->second.Np) + alpha;
-                    const double b = std::max(0.0, it->second.Nm) + alpha;
+                    const double a = std::max(0.0, it->second.Np) + JEFFREYS_ALPHA;
+                    const double b = std::max(0.0, it->second.Nm) + JEFFREYS_ALPHA;
                     const double S = a + b;
                     const double D = a - b;
                     if (S > 0.0) {
-                        p.bsa = D / S;
-                        const double varA = 4.0 * (a*b) / ( (a+b)*(a+b)*(a+b+1.0) );
-                        p.err = std::sqrt(std::max(varA, 1e-6));
+                        const double A_raw = D / S;
+                        const double var_raw = 4.0 * (a*b) / ((a+b)*(a+b)*(a+b+1.0));
+                        p.bsa = A_raw;                 // no P scaling in combined 10.6
+                        p.err = std::sqrt(std::max(var_raw, 1e-12));
                         p.valid = std::isfinite(p.bsa) && std::isfinite(p.err);
                     }
                 }
@@ -1007,8 +984,9 @@ void compute_and_plot_bsa_helicity(
         }
 
         // write combined JSON (filename with dot kept for backward compatibility)
+        const fs::path outC = fs::path(out_root_dir)/"jsons"/"BSA_fits_combined_10.6.json";
         {
-            std::ofstream ofs((fs::path(out_root_dir)/"jsons"/"BSA_fits_combined_10.6.json").string());
+            std::ofstream ofs(outC.string());
             if (ofs){
                 ofs<<std::fixed<<std::setprecision(8);
                 ofs<<"{\n";
@@ -1034,6 +1012,9 @@ void compute_and_plot_bsa_helicity(
                     ofs<<"}";
                 }
                 ofs<<"\n  }\n}\n";
+                std::cout << "[bsa] Wrote " << outC.string() << "\n";
+            } else {
+                std::cerr << "[bsa][ERROR] Cannot open " << outC.string() << "\n";
             }
         }
 
