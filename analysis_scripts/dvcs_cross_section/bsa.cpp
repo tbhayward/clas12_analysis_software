@@ -14,8 +14,9 @@
 // - Group names must match EXACTLY the keys present in pi0_corrected_counts_all_groups.json,
 //   e.g. "fa18_inb", "fa18_out", "sp18_inb", "sp18_out", "Spring2018", "Fall2018", "10.6_GeV".
 // - Polarization:
-//   * If a DVCS TTree is provided in dvcsDataTrees with key == group name, we compute per-bin P
-//     and divide Np, Nm by P in that bin (same as before). If absent, we use P=1 for that group.
+//   * If a DVCS TTree is provided in dvcsDataTrees with key == original period name (e.g. "DVCS_Sp18_inb"),
+//     we compute per-bin P and divide Np, Nm by P in that bin. If absent, we try the resolved JSON key.
+//     If still absent, we use P=1 for that group.
 //   * For synthesized groups like "10.6_GeV", we expect no tree; we use P=1.
 //
 
@@ -91,10 +92,104 @@ struct HelCorr { double Np=0.0, Nm=0.0; double ep=0.0, em=0.0; }; // corrected c
 using GroupTable = std::map<BinKey, HelCorr>;
 using AllGroups  = std::map<std::string, GroupTable>;
 
+// ------------ small string utils ------------
 static inline std::string toLower(std::string s) {
     std::transform(s.begin(), s.end(), s.begin(),
                    [](unsigned char c){ return std::tolower(c); });
     return s;
+}
+static inline std::string stripPrefixCI(std::string s, const std::string& pref) {
+    if (s.size() >= pref.size()) {
+        bool match = true;
+        for (size_t i=0;i<pref.size();++i) {
+            if (std::tolower((unsigned char)s[i]) != std::tolower((unsigned char)pref[i])) { match=false; break; }
+        }
+        if (match) return s.substr(pref.size());
+    }
+    return s;
+}
+static inline std::string replaceAll(std::string s, char a, char b) {
+    std::replace(s.begin(), s.end(), a, b);
+    return s;
+}
+
+// Build a case-insensitive index from available JSON keys -> canonical key
+static std::map<std::string,std::string> build_ci_index(const AllGroups& g) {
+    std::map<std::string,std::string> m;
+    for (const auto& kv : g) {
+        m[toLower(kv.first)] = kv.first;
+    }
+    return m;
+}
+
+// Try to resolve an incoming period tag (possibly "DVCS_Sp18_inb") to a JSON key.
+// Returns empty string if not resolvable.
+static std::string resolve_group_key(const std::string& periodRaw,
+                                     const AllGroups& allGroups,
+                                     const std::map<std::string,std::string>& ci_index)
+{
+    // 0) Exact match as-is
+    if (allGroups.find(periodRaw) != allGroups.end()) return periodRaw;
+
+    // 1) Case-insensitive direct match
+    {
+        const std::string low = toLower(periodRaw);
+        auto it = ci_index.find(low);
+        if (it != ci_index.end()) return it->second;
+    }
+
+    // 2) Strip common prefixes (DVCS_ or DVCS-) and retry
+    std::string s = stripPrefixCI(periodRaw, "DVCS_");
+    if (s == periodRaw) s = stripPrefixCI(periodRaw, "DVCS-");
+
+    // 2a) Exact match after strip
+    if (allGroups.find(s) != allGroups.end()) return s;
+
+    // 2b) Lowercase match after strip
+    {
+        const std::string low = toLower(s);
+        auto it = ci_index.find(low);
+        if (it != ci_index.end()) return it->second;
+    }
+
+    // 3) Normalize separators (replace '-' with '_') and retry
+    std::string n1 = replaceAll(s, '-', '_');
+    if (allGroups.find(n1) != allGroups.end()) return n1;
+    {
+        const std::string low = toLower(n1);
+        auto it = ci_index.find(low);
+        if (it != ci_index.end()) return it->second;
+    }
+
+    // 4) Fully normalized lowercase token; try common aliases
+    std::string low = toLower(n1);
+
+    // Special-case combined groups that are Capitalized in JSON
+    if (low == "spring2018") {
+        if (allGroups.find("Spring2018") != allGroups.end()) return "Spring2018";
+    }
+    if (low == "fall2018") {
+        if (allGroups.find("Fall2018") != allGroups.end()) return "Fall2018";
+    }
+
+    // Variants of the 10.6 group name
+    if (low == "10.6_gev" || low == "10_6_gev" || low == "10p6_gev" || low == "10p6" || low == "10.6") {
+        if (allGroups.find("10.6_GeV") != allGroups.end()) return "10.6_GeV";
+    }
+
+    // 5) If caller passed DVCS_Sp18_inb / DVCS_Fa18_out etc., we expect sp18_inb/fa18_out
+    //    Construct a common pattern: lowercased and underscores.
+    //    E.g. "DVCS_Sp18_inb" -> "sp18_inb"
+    {
+        std::string candidate = toLower(s);
+        candidate = replaceAll(candidate, '-', '_');
+        if (allGroups.find(candidate) != allGroups.end()) return candidate;
+        auto it = ci_index.find(candidate);
+        if (it != ci_index.end()) return it->second;
+    }
+
+    // Not resolvable
+    return std::string();
 }
 
 static inline std::vector<std::pair<double,double>> uniqueRanges(const std::vector<Binning>& scheme, char which) {
@@ -714,10 +809,6 @@ static std::string plot_subdir_for_group(const std::string& group) {
 // =======================================================
 // Public driver
 // =======================================================
-//
-// NOTE: signature changed to accept the master corrected counts JSON path,
-// and we dropped the contamination directory argument.
-//
 void compute_and_plot_bsa_helicity(
     const std::vector<std::string>& periods,
     const std::vector<std::string>& topologies,
@@ -732,6 +823,7 @@ void compute_and_plot_bsa_helicity(
     BinningMeta master_meta;
     std::vector<std::string> group_order_in_master;
     AllGroups allGroups = load_corrected_master(pi0_corrected_counts_json_path, master_meta, group_order_in_master);
+    const auto ci_index = build_ci_index(allGroups);
 
     // Build binning from your runtime scheme (checks sizes)
     const auto xB_bins = uniqueRanges(binning_scheme, 'x');
@@ -749,20 +841,25 @@ void compute_and_plot_bsa_helicity(
 
     std::map<std::string, std::map<std::tuple<int,int,int>, CellResult>> allPeriodCells;
 
-    for (const auto& group : periods) {
-        // Locate group in corrected master
-        auto itG = allGroups.find(group);
-        if (itG == allGroups.end()) {
-            std::cerr << "[bsa][WARN] Group '"<<group<<"' not present in corrected master; skipping.\n";
+    for (const auto& periodRaw : periods) {
+        // Resolve JSON key from incoming period name (e.g. "DVCS_Sp18_inb" -> "sp18_inb")
+        const std::string group = resolve_group_key(periodRaw, allGroups, ci_index);
+        if (group.empty()) {
+            std::cerr << "[bsa][WARN] Group '"<<periodRaw<<"' not present in corrected master; skipping.\n";
             continue;
         }
-        const GroupTable& table = itG->second;
+        const GroupTable& table = allGroups[group];
 
-        // polarization lookup (optional)
+        // polarization lookup (prefer original period key; fall back to resolved key)
         TTree* t = nullptr;
         {
-            auto itT = dvcsDataTrees.find(group);
-            if (itT != dvcsDataTrees.end()) t = itT->second;
+            auto itT = dvcsDataTrees.find(periodRaw);
+            if (itT != dvcsDataTrees.end()) {
+                t = itT->second;
+            } else {
+                auto itT2 = dvcsDataTrees.find(group);
+                if (itT2 != dvcsDataTrees.end()) t = itT2->second;
+            }
         }
 
         std::vector<PolStats> Pbin;
@@ -776,15 +873,15 @@ void compute_and_plot_bsa_helicity(
 
         // assemble BSA cells
         std::map<std::tuple<int,int,int>, CellResult> cells;
-        for (int ix=0; ix<(int)xB_bins.size(); ++ix)
-        for (int iQ=0; iQ<(int)Q2_bins.size(); ++iQ)
-        for (int itb=0; itb<(int)t_bins.size(); ++itb) {
+        for (int ix=0; ix<(int)xB_bins.size(); ++ix) //endfor
+        for (int iQ=0; iQ<(int)Q2_bins.size(); ++iQ) //endfor
+        for (int itb=0; itb<(int)t_bins.size(); ++itb) { //endfor
             CellResult result;
             result.points.resize(N_PHI_BINS);
             result.P_per_bin = (t != nullptr);
             result.P_used = (Pavg.P>0? Pavg.P : 1.0);
 
-            for (int ip=0; ip<N_PHI_BINS; ++ip) {
+            for (int ip=0; ip<N_PHI_BINS; ++ip) { //endfor
                 const BinKey bk(ix,iQ,itb,ip);
 
                 double Np = 0.0, Nm = 0.0;
@@ -808,7 +905,7 @@ void compute_and_plot_bsa_helicity(
                 if (P_here <= 0.0) { P_here = (Pavg.P>0? Pavg.P : 1.0); result.P_per_bin=false; }
                 result.P_used = P_here;
 
-                // scale by 1/P (same convention you used previously)
+                // scale by 1/P (same convention as before)
                 const double Np_pol = Np / P_here;
                 const double Nm_pol = Nm / P_here;
 
@@ -847,7 +944,7 @@ void compute_and_plot_bsa_helicity(
         allPeriodCells[group] = std::move(cells);
     }
 
-    // all-periods rollup (for whatever groups you passed)
+    // all-periods rollup (for whatever groups were successfully resolved)
     write_all_periods_json(
         (fs::path(out_root_dir)/"jsons"/"BSA_fits_all_periods.json").string(),
         allPeriodCells, N_PHI_BINS, xB_bins, Q2_bins, t_bins);
@@ -858,13 +955,13 @@ void compute_and_plot_bsa_helicity(
         std::map<std::tuple<int,int,int>, CellResult> combCells;
         const GroupTable& table106 = it106->second;
 
-        for (int ix=0; ix<(int)xB_bins.size(); ++ix)
-        for (int iQ=0; iQ<(int)Q2_bins.size(); ++iQ)
-        for (int itb=0; itb<(int)t_bins.size(); ++itb) {
+        for (int ix=0; ix<(int)xB_bins.size(); ++ix) //endfor
+        for (int iQ=0; iQ<(int)Q2_bins.size(); ++iQ) //endfor
+        for (int itb=0; itb<(int)t_bins.size(); ++itb) { //endfor
             CellResult cr; cr.points.resize(N_PHI_BINS);
             cr.P_used = 1.0; cr.P_per_bin = false;
 
-            for (int ip=0; ip<N_PHI_BINS; ++ip){
+            for (int ip=0; ip<N_PHI_BINS; ++ip){ //endfor
                 const BinKey bk(ix,iQ,itb,ip);
                 BSApt p; p.phi = phiCentersRad()[ip]; p.valid=false;
 
