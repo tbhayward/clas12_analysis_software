@@ -10,14 +10,31 @@
 
 class TTree;
 
-// Compute helicity-resolved BSA including per-bin polarization and π0 contamination,
-// write JSONs, and plot per-period grids plus a 10.6 GeV combined set.
+/**
+ * Compute helicity-resolved Beam-Spin Asymmetry (BSA)
+ * using π⁰-corrected helicity counts instead of raw total_counts.
+ *
+ * Inputs:
+ *   - pi0_corrected_counts_json_path : JSON file containing all groups,
+ *     e.g. "output/jsons/pi0_corrected_counts_all_groups.json"
+ *   - contamination_dir              : directory containing per-period
+ *     contamination_<period>.json files (used only for metadata checks)
+ *   - dvcsDataTrees                  : map from runTag to DVCS TTree* (for beam polarization)
+ *   - binning_scheme                 : xB, Q², t bin definitions
+ *
+ * Outputs:
+ *   - JSONs:   output/jsons/BSA_fits_<period>.json,
+ *              output/jsons/BSA_fits_all_periods.json,
+ *              output/jsons/BSA_fits_combined_10.6.json
+ *   - Plots:   output/bsa_plots/<period>/plot_bsa_<period>_xB_<ix>.png,
+ *              output/bsa_plots/10.6_combined/...
+ */
 void compute_and_plot_bsa_helicity(
     const std::vector<std::string>& periods,
     const std::vector<std::string>& topologies,
     const std::vector<Binning>& binning_scheme,
     const std::map<std::string, TTree*>& dvcsDataTrees,
-    const std::string& total_counts_json_path,
+    const std::string& pi0_corrected_counts_json_path,
     const std::string& contamination_dir,
     const std::string& out_root_dir);
 

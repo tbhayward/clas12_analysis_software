@@ -1,4 +1,25 @@
-// bsa.cpp
+// bsa.cpp (uses pi0_corrected_counts_all_groups.json as the ONLY input for counts)
+//
+// Behavior summary (unchanged outputs):
+// - Reads contamination-corrected helicity counts from:
+//       <out_root_dir>/jsons/pi0_corrected_counts_all_groups.json
+// - For each requested group in `periods`, computes per-bin BSA points and fits
+//   the stabilized model: y(phi) = C + [A*sin(phi)] / [1 + B*cos(phi)]
+// - Writes per-group fit JSONs to:  <out_root_dir>/jsons/BSA_fits/BSA_fits_<group>.json
+// - Writes all-periods rollup to:   <out_root_dir>/jsons/BSA_fits_all_periods.json
+// - Writes 10.6 combined to:        <out_root_dir>/jsons/BSA_fits_combined_10.6.json
+// - Saves plots under:              <out_root_dir>/bsa_plots/<group>/plot_bsa_<group>_xB_<ix>.png
+//
+// Notes:
+// - Group names must match EXACTLY the keys present in pi0_corrected_counts_all_groups.json,
+//   e.g. "fa18_inb", "fa18_out", "sp18_inb", "sp18_out", "Spring2018", "Fall2018", "10.6_GeV".
+// - Polarization:
+//   * If a DVCS TTree is provided in dvcsDataTrees with key == group name, we compute per-bin P
+//     and divide Np, Nm by P in that bin (same as before). If absent, we use P=1 for that group.
+//   * For synthesized groups like "10.6_GeV", we expect no tree; we use P=1.
+//
+// ------------------------------------------------------------------------------
+
 #include "bsa.h"
 
 #include <TCanvas.h>
@@ -58,36 +79,35 @@ struct StyleInit {
 constexpr int    N_PHI_BINS = 12;
 constexpr double TWO_PI     = 2.0 * M_PI;
 
-// ---- BSA fit stabilization knobs (adapted to single-cos denominator) ----
-constexpr double EPS_DEN_FLOOR = 1e-2;   // demand D(φ) ≥ this over [0,2π)
+// ---- BSA fit stabilization knobs (single-cos denominator) ----
+constexpr double EPS_DEN_FLOOR = 1e-2;   // demand D(phi) >= this across [0,2pi)
 constexpr double LAMBDA_DEN    = 1e6;    // penalty multiplier for denominator floor
 constexpr double EPS_DEN_EVAL  = 1e-6;   // evaluation clamp for denominator
 
-constexpr double A_MAX_AMP     = 0.999;  // soft "box" for |B| (and optional |A|,|C|)
+constexpr double A_MAX_AMP     = 0.999;  // soft box for |B|
 constexpr double LAMBDA_AMP    = 1e5;    // penalty multiplier for amplitude box
 
-using BinKey = std::tuple<int,int,int,int>; // (ix,iQ2,it,ip)
-struct HelCounts { long long plus=0, minus=0; };
+using BinKey = std::tuple<int,int,int,int>; // (ix,iQ,it,ip)
+struct HelCorr { double Np=0.0, Nm=0.0; double ep=0.0, em=0.0; }; // corrected counts
+using GroupTable = std::map<BinKey, HelCorr>;
+using AllGroups  = std::map<std::string, GroupTable>;
 
 static inline std::string toLower(std::string s) {
     std::transform(s.begin(), s.end(), s.begin(),
                    [](unsigned char c){ return std::tolower(c); });
     return s;
 }
-static std::string periodToRunTagKey(const std::string& period) {
-    auto pos = period.find('_');
-    if (pos == std::string::npos || pos + 1 >= period.size()) return toLower(period);
-    return toLower(period.substr(pos + 1));
-}
-static std::vector<std::pair<double,double>> uniqueRanges(const std::vector<Binning>& scheme, char which) {
+
+static inline std::vector<std::pair<double,double>> uniqueRanges(const std::vector<Binning>& scheme, char which) {
     std::set<std::pair<double,double>> s;
     for (const auto& b : scheme) {
         if (which == 'x') s.emplace(b.xBmin, b.xBmax);
         else if (which == 'Q') s.emplace(b.Q2min, b.Q2max);
         else if (which == 't') s.emplace(b.tmin, b.tmax);
     }
-    return std::vector<std::pair<double,double>>(s.begin(), s.end());
+    return {s.begin(), s.end()};
 }
+
 static inline std::vector<double> phiCentersRad() {
     std::vector<double> v(N_PHI_BINS);
     const double step = TWO_PI / double(N_PHI_BINS);
@@ -106,7 +126,6 @@ static inline int findIndex(const std::pair<double,double>& range,
     return -1;
 }
 
-// For a given xB range, list only the Q² and |t| ranges present in the CSV/binning.
 static void uniqueQT_for_xB(
     const std::vector<Binning>& scheme,
     const std::pair<double,double>& xBrange,
@@ -124,114 +143,160 @@ static void uniqueQT_for_xB(
     t_list.assign(ts.begin(), ts.end());
 }
 
-// ------------ I/O helpers: total_counts.json ------------
-using GroupCounts = std::map<std::string, std::map<BinKey, HelCounts>>;
-
+// ------------ tiny helpers ------------
 static bool parse_tuple_key(const std::string& s, BinKey& out) {
     int ix,iQ,it,ip;
     if (std::sscanf(s.c_str(),"(%d,%d,%d,%d)",&ix,&iQ,&it,&ip)!=4) return false;
     out = BinKey(ix,iQ,it,ip);
     return true;
 }
-
-// Minimal parser (shape written by your total_counts code)
-static bool load_total_counts(const std::string& path, GroupCounts& outGroups) {
-    std::ifstream ifs(path);
-    if (!ifs) { std::cerr<<"[bsa][ERROR] Cannot open total_counts JSON: "<<path<<"\n"; return false; }
-    std::string s((std::istreambuf_iterator<char>(ifs)), std::istreambuf_iterator<char>());
-
-    size_t gpos = s.find("\"groups\"");
-    if (gpos==std::string::npos) { std::cerr<<"[bsa][ERROR] 'groups' not found in total_counts.\n"; return false; }
-    size_t brace = s.find('{', gpos); if (brace==std::string::npos) return false;
-    int d=0; size_t i=brace; for (; i<s.size(); ++i){ if(s[i]=='{') d++; else if(s[i]=='}'){ d--; if(!d){ ++i; break; } } }
-    std::string groupsObj = s.substr(brace, i-brace);
-
-    size_t kpos=0;
-    while (true) {
-        size_t q1 = groupsObj.find('"', kpos); if (q1==std::string::npos) break;
-        size_t q2 = groupsObj.find('"', q1+1); if (q2==std::string::npos) break;
-        std::string gname = groupsObj.substr(q1+1, q2-q1-1);
-
-        size_t objS = groupsObj.find('{', q2); if (objS==std::string::npos) break;
-        int d2=0; size_t j=objS;
-        for (; j<groupsObj.size(); ++j){ if(groupsObj[j]=='{') d2++; else if(groupsObj[j]=='}'){ d2--; if(!d2){ ++j; break; } } }
-        std::string binsObj = groupsObj.substr(objS, j-objS);
-
-        std::map<BinKey, HelCounts> gmap;
-        size_t bpos=0;
-        while (true) {
-            size_t bk1 = binsObj.find('"', bpos); if (bk1==std::string::npos) break;
-            size_t bk2 = binsObj.find('"', bk1+1); if (bk2==std::string::npos) break;
-            std::string key = binsObj.substr(bk1+1, bk2-bk1-1);
-            BinKey bk;
-            if (!parse_tuple_key(key, bk)) { bpos=bk2+1; continue; }
-
-            size_t valS = binsObj.find('{', bk2); if (valS==std::string::npos) break;
-            int d3=0; size_t jj=valS;
-            for (; jj<binsObj.size(); ++jj){ if(binsObj[jj]=='{') d3++; else if(binsObj[jj]=='}'){ d3--; if(!d3){ ++jj; break; } } }
-            std::string obj = binsObj.substr(valS, jj-valS);
-
-            auto findLL = [&](const char* pat)->long long {
-                size_t p = obj.find(pat); if (p==std::string::npos) return 0;
-                p = obj.find(':', p); if (p==std::string::npos) return 0;
-                size_t a=p+1; while (a<obj.size() && isspace((unsigned char)obj[a])) ++a;
-                size_t b=a; while (b<obj.size() && (isdigit((unsigned char)obj[b])||obj[b]=='-')) ++b;
-                try { return std::stoll(obj.substr(a,b-a)); } catch(...) { return 0; }
-            };
-            HelCounts hc;
-            hc.plus  = findLL("\"+1\"");
-            hc.minus = findLL("\"-1\"");
-
-            gmap[bk]=hc;
-            bpos=jj;
-        }
-
-        outGroups[gname]=std::move(gmap);
-        kpos=j;
-    }
-    return !outGroups.empty();
+static inline std::string key4s(int ix,int iQ,int it,int ip) {
+    std::ostringstream os; os << "(" << ix << "," << iQ << "," << it << "," << ip << ")";
+    return os.str();
 }
 
-// ------------ I/O helpers: contamination_<period>.json ------------
-struct ContamBin { double c_plus=0, c_plus_err=0, c_minus=0, c_minus_err=0; };
-using ContamMap = std::map<BinKey, ContamBin>;
+struct BinningMeta {
+    int    phi_bins=0;
+    size_t nx=0, nQ=0, nt=0;
+};
 
-static bool load_contam_for_period(const std::string& path, ContamMap& out) {
-    std::ifstream ifs(path);
-    if (!ifs) return false;
-    std::string s((std::istreambuf_iterator<char>(ifs)), std::istreambuf_iterator<char>());
-    size_t pos = s.find("\"bins\""); if (pos==std::string::npos) return false;
-    size_t br = s.find('{', pos); if (br==std::string::npos) return false;
-    int d=0; size_t i=br; for (; i<s.size(); ++i){ if(s[i]=='{') d++; else if(s[i]=='}'){ d--; if(!d){ ++i; break; } } }
-    std::string binsObj = s.substr(br, i-br);
+[[noreturn]] static void fatal(const std::string& msg) {
+    std::cerr << "[bsa][FATAL] " << msg << std::endl;
+    std::exit(EXIT_FAILURE);
+}
 
-    size_t kpos=0;
-    while (true) {
-        size_t q1 = binsObj.find('"', kpos); if (q1==std::string::npos) break;
-        size_t q2 = binsObj.find('"', q1+1); if (q2==std::string::npos) break;
-        std::string key = binsObj.substr(q1+1, q2-q1-1);
-        BinKey bk; if (!parse_tuple_key(key, bk)) { kpos=q2+1; continue; }
-
-        size_t objS = binsObj.find('{', q2); if (objS==std::string::npos) break;
-        int d2=0; size_t j=objS; for (; j<binsObj.size(); ++j){ if(binsObj[j]=='{') d2++; else if(binsObj[j]=='}'){ d2--; if(!d2){ ++j; break; } } }
-        std::string obj = binsObj.substr(objS, j-objS);
-
-        auto findD = [&](const char* pat)->double{
-            size_t p=obj.find(pat); if (p==std::string::npos) return 0.0;
-            p=obj.find(':',p); if (p==std::string::npos) return 0.0;
-            size_t a=p+1; while (a<obj.size() && isspace((unsigned char)obj[a])) ++a;
-            size_t b=a; while (b<obj.size() && (isdigit((unsigned char)obj[b])||obj[b]=='-'||obj[b]=='.'||obj[b]=='e'||obj[b]=='E'||obj[b]=='+')) ++b;
-            try { return std::stod(obj.substr(a,b-a)); } catch(...) { return 0.0; }
-        };
-        ContamBin cb;
-        cb.c_plus      = findD("\"contamination\":{\"+1\":{\"value\"");
-        cb.c_plus_err  = findD("\"contamination\":{\"+1\":{\"err\"");
-        cb.c_minus     = findD("\"contamination\":{\"-1\":{\"value\"");
-        cb.c_minus_err = findD("\"contamination\":{\"-1\":{\"err\"");
-        out[bk]=cb;
-        kpos=j;
+// Extract {...} block that follows a key
+static std::string objForKey(const std::string& s, const std::string& key) {
+    size_t p = s.find(key);
+    if (p==std::string::npos) fatal("Key '"+key+"' not found.");
+    size_t br = s.find('{', p);
+    if (br==std::string::npos) fatal("Malformed JSON after key '"+key+"'");
+    int d=0; size_t i=br;
+    for (; i<s.size(); ++i) {
+        if (s[i]=='{') d++;
+        else if (s[i]=='}') { d--; if (!d) { ++i; break; } }
     }
-    return true;
+    if (d!=0) fatal("Unbalanced braces near key '"+key+"'");
+    return s.substr(br, i-br);
+}
+
+static long long parseIntAfterColon_strict(const std::string& s, size_t cpos, const std::string& ctx) {
+    size_t a = cpos + 1;
+    while (a < s.size() && std::isspace((unsigned char)s[a])) ++a;
+    size_t b = a;
+    while (b < s.size() && (std::isdigit((unsigned char)s[b]) || s[b]=='-' || s[b]=='+')) ++b;
+    try { return std::stoll(s.substr(a,b-a)); }
+    catch(...) { fatal("Non-integer value in "+ctx); }
+    return 0;
+}
+
+static double parseDoubleAfterColon_num(const std::string& s, size_t cpos, const std::string& ctx) {
+    size_t a = cpos + 1;
+    while (a < s.size() && std::isspace((unsigned char)s[a])) ++a;
+    size_t b = a;
+    auto isdelim = [](char c)->bool{
+        return std::isspace((unsigned char)c) || c==',' || c=='}' || c==']';
+    };
+    while (b < s.size() && !isdelim(s[b])) ++b;
+    std::string raw = s.substr(a, b-a);
+    try { return std::stod(raw); } catch(...) { fatal("Non-numeric value in "+ctx); }
+    return 0.0;
+}
+
+// ------------ load pi0_corrected_counts_all_groups.json ------------
+static BinningMeta load_meta_from_master(const std::string& s) {
+    std::string meta = objForKey(s, "\"binning_meta\"");
+    auto findN = [&](const char* k, const char* ctx)->int{
+        size_t p = meta.find(k); if (p==std::string::npos) fatal(std::string("binning_meta missing ")+k);
+        size_t c = meta.find(':', p); if (c==std::string::npos) fatal(std::string("binning_meta malformed for ")+k);
+        return (int)parseIntAfterColon_strict(meta, c, ctx);
+    };
+    BinningMeta bm;
+    bm.phi_bins = findN("\"phi_bins\"", "phi_bins");
+    bm.nx       = (size_t)findN("\"xB_bins\"", "xB_bins");
+    bm.nQ       = (size_t)findN("\"Q2_bins\"", "Q2_bins");
+    bm.nt       = (size_t)findN("\"t_bins\"",  "t_bins");
+    if (bm.phi_bins != N_PHI_BINS) fatal("phi_bins mismatch: expected 12.");
+    return bm;
+}
+
+static AllGroups load_corrected_master(const std::string& master_path,
+                                       BinningMeta& out_meta,
+                                       std::vector<std::string>& group_order) {
+    std::ifstream ifs(master_path);
+    if (!ifs) fatal(std::string("Cannot open master corrected counts: ")+master_path);
+    std::string s((std::istreambuf_iterator<char>(ifs)), std::istreambuf_iterator<char>());
+
+    out_meta = load_meta_from_master(s);
+
+    std::string groupsObj = objForKey(s, "\"groups\"");
+
+    AllGroups out;
+    size_t gk=0;
+    while (true) {
+        size_t q1 = groupsObj.find('"', gk); if (q1==std::string::npos) break;
+        size_t q2 = groupsObj.find('"', q1+1); if (q2==std::string::npos) fatal("Malformed group name.");
+        std::string gname = groupsObj.substr(q1+1, q2-q1-1);
+        group_order.push_back(gname);
+
+        size_t binsS = groupsObj.find("\"bins\"", q2);
+        if (binsS==std::string::npos) fatal("Group "+gname+" missing 'bins' object.");
+        int d=0; size_t br = groupsObj.find('{', binsS); if (br==std::string::npos) fatal("Malformed 'bins' in group "+gname);
+        size_t i=br; for (; i<groupsObj.size(); ++i) {
+            if (groupsObj[i]=='{') ++d;
+            else if (groupsObj[i]=='}') { --d; if (!d) { ++i; break; } }
+        }
+        std::string binsObj = groupsObj.substr(br, i-br);
+
+        GroupTable tbl;
+        size_t p=0; int nb=0;
+        while (true) {
+            size_t k1=binsObj.find('"', p); if (k1==std::string::npos) break;
+            size_t k2=binsObj.find('"', k1+1); if (k2==std::string::npos) fatal("Malformed bin key in "+gname);
+            std::string key = binsObj.substr(k1+1, k2-k1-1);
+            BinKey bk; if (!parse_tuple_key(key, bk)) fatal("Bad bin tuple key in "+gname);
+
+            size_t vS = binsObj.find('{', k2); if (vS==std::string::npos) fatal("Missing bin object in "+gname);
+            int d2=0; size_t j=vS;
+            for (; j<binsObj.size(); ++j) {
+                if (binsObj[j]=='{') ++d2;
+                else if (binsObj[j]=='}') { --d2; if (!d2) { ++j; break; } }
+            }
+            std::string v = binsObj.substr(vS, j-vS);
+
+            // helicity +1
+            size_t hp = v.find("\"+1\"");
+            if (hp==std::string::npos) fatal("Missing +1 block in "+gname);
+            size_t hv = v.find("\"value\"", hp); if (hv==std::string::npos) fatal("Missing +1.value in "+gname);
+            size_t hc = v.find(':', hv); if (hc==std::string::npos) fatal("Malformed +1.value in "+gname);
+            double Np = parseDoubleAfterColon_num(v, hc, gname+" (+1).value");
+
+            size_t he = v.find("\"err\"", hp); if (he==std::string::npos) fatal("Missing +1.err in "+gname);
+            size_t hce = v.find(':', he); if (hce==std::string::npos) fatal("Malformed +1.err in "+gname);
+            double ep = parseDoubleAfterColon_num(v, hce, gname+" (+1).err");
+
+            // helicity -1
+            size_t mp = v.find("\"-1\"");
+            if (mp==std::string::npos) fatal("Missing -1 block in "+gname);
+            size_t mv = v.find("\"value\"", mp); if (mv==std::string::npos) fatal("Missing -1.value in "+gname);
+            size_t mc = v.find(':', mv); if (mc==std::string::npos) fatal("Malformed -1.value in "+gname);
+            double Nm = parseDoubleAfterColon_num(v, mc, gname+" (-1).value");
+
+            size_t me = v.find("\"err\"", mp); if (me==std::string::npos) fatal("Missing -1.err in "+gname);
+            size_t mce = v.find(':', me); if (mce==std::string::npos) fatal("Malformed -1.err in "+gname);
+            double em = parseDoubleAfterColon_num(v, mce, gname+" (-1).err");
+
+            tbl[bk] = HelCorr{Np, Nm, ep, em};
+            p = j; ++nb;
+        }
+        if (nb==0) {
+            std::cerr << "[bsa][WARN] Group '"<<gname<<"' has zero bins in corrected master.\n";
+        }
+        out[gname] = std::move(tbl);
+        gk = i;
+    }
+    if (out.empty()) fatal("No groups parsed from corrected master.");
+    return out;
 }
 
 // ------------ polarization (from DVCS tree) ------------
@@ -274,7 +339,7 @@ static std::vector<PolStats> compute_bin_polarization(
     const std::vector<std::string>& tops)
 {
     std::vector<PolStats> Pbin(xB_bins.size()*Q2_bins.size()*t_bins.size()*N_PHI_BINS);
-    auto idx=[&](int ix,int iQ,int it,int ip){ return (((ix* (int)Q2_bins.size() + iQ)*(int)t_bins.size()+it)*N_PHI_BINS + ip); };
+    auto idx=[&](int ix,int iQ,int it,int ip){ return (((ix*(int)Q2_bins.size()+iQ)*(int)t_bins.size()+it)*N_PHI_BINS + ip); };
 
     BranchPol b; b.bind(t);
     if (!(b.hasH && b.hasCuts && b.hasBins && (b.hasPhi2||b.hasDp) && b.hasPol && b.hasTopo)) return Pbin;
@@ -301,17 +366,15 @@ static std::vector<PolStats> compute_bin_polarization(
         int ip = std::min(std::max(int(std::floor(w/width)),0), N_PHI_BINS-1);
 
         PolStats& ps = Pbin[idx(ix,iQ,it,ip)];
-        ps.P += (b.beam_pol - ps.P)/(ps.n+1); // online mean
+        ps.P += (b.beam_pol - ps.P)/(ps.n+1);
         ps.n++;
     }
-
     for (auto& ps : Pbin) ps.P_se = 0.0;
     return Pbin;
 }
 
 // ------------ math helpers for stabilizer penalties ------------
 static inline double Dmin_single(double B) {
-    // For D(φ)=1 + B cosφ, min over φ is 1 - |B|
     return 1.0 - std::fabs(B);
 }
 static inline double overBox(double A){ double v = std::fabs(A) - A_MAX_AMP; return (v>0.0)? v*v : 0.0; }
@@ -324,13 +387,12 @@ struct CellResult {
     double P_used=1.0; bool P_per_bin=false; double P_period_avg=1.0;
 };
 
-// Custom χ² + penalties minimization (Minuit2) for A, B(=B1), C
 static FitRes fit_cell(const std::vector<BSApt>& pts){
     std::vector<double> x, y, ey;
     x.reserve(pts.size()); y.reserve(pts.size()); ey.reserve(pts.size());
     for (const auto& p : pts) {
         if (!p.valid) continue;
-        x.push_back(p.phi);                 // radians
+        x.push_back(p.phi);
         y.push_back(p.bsa);
         ey.push_back(std::max(p.err, 1e-6));
     }
@@ -338,23 +400,21 @@ static FitRes fit_cell(const std::vector<BSApt>& pts){
     const int n = (int)x.size();
     if (n < 4) { fr.status = 1; fr.ndf = 0; return fr; }
 
-    // χ² + stabilizers
     auto chi2pen = [&](const double *par){
         const double A  = par[0];
-        const double B1 = par[1]; // single cosine coefficient
+        const double B1 = par[1];
         const double C  = par[2];
 
         double chi2 = 0.0;
         for (int i=0;i<n;++i){
             const double phi = x[i];
             double denom = 1.0 + B1*std::cos(phi);
-            if (denom < EPS_DEN_EVAL) denom = EPS_DEN_EVAL; // evaluation clamp
+            if (denom < EPS_DEN_EVAL) denom = EPS_DEN_EVAL;
             const double yhat = C + (A*std::sin(phi))/denom;
             const double pull = (y[i] - yhat)/ey[i];
             chi2 += pull*pull;
         }
 
-        // (1) Denominator soft barrier over full φ-domain: min = 1 - |B|
         const double Dmin = Dmin_single(B1);
         double pen_den = 0.0;
         if (Dmin < EPS_DEN_FLOOR) {
@@ -362,15 +422,10 @@ static FitRes fit_cell(const std::vector<BSApt>& pts){
             pen_den = LAMBDA_DEN * deficit * deficit;
         }
 
-        // (2) Amplitude box on |B|
         double pen_amp = overBox(B1);
-        // Optionally also constrain |A|,|C| softly:
-        // pen_amp += 0.25*overBox(A); pen_amp += 0.25*overBox(C);
-
         return chi2 + pen_den + LAMBDA_AMP*pen_amp;
     };
 
-    // Minimizer
     std::unique_ptr<ROOT::Math::Minimizer> min(
         ROOT::Math::Factory::CreateMinimizer("Minuit2", "Migrad"));
     min->SetMaxFunctionCalls(10000);
@@ -381,7 +436,6 @@ static FitRes fit_cell(const std::vector<BSApt>& pts){
     ROOT::Math::Functor fcn(chi2pen, 3);
     min->SetFunction(fcn);
 
-    // Parameters: A, B (as B1), C
     min->SetLimitedVariable(0, "A",  0.10, 0.02, -1.0,  1.0);
     min->SetLimitedVariable(1, "B1", 0.00, 0.02, -1.0,  1.0);
     min->SetLimitedVariable(2, "C",  0.00, 0.02, -0.5,  0.5);
@@ -394,7 +448,7 @@ static FitRes fit_cell(const std::vector<BSApt>& pts){
 
     fr.A  = par[0]; fr.Aerr  = err[0];
     fr.B1 = par[1]; fr.B1err = err[1];
-    fr.B2 = 0.0;    fr.B2err = 0.0; // single-cos fit => no cos2φ term
+    fr.B2 = 0.0;    fr.B2err = 0.0;
     fr.C  = par[2]; fr.Cerr  = err[2];
 
     fr.chi2 = chi2pen(par);
@@ -402,7 +456,7 @@ static FitRes fit_cell(const std::vector<BSApt>& pts){
     return fr;
 }
 
-// JSON writers (schema kept: B1 used, B2 always 0)
+// JSON writers (schema preserved)
 static void write_period_bsa_json(
     const std::string& out_path,
     int nPhi,
@@ -482,7 +536,7 @@ static void write_all_periods_json(
     ofs<<"\n  }\n}\n";
 }
 
-// ------------ plotting (dynamic grid + clean title + red fit curve) ------------
+// ------------ plotting ------------
 static void drawDegreeTicks(double xmin, double ymin, double xmax, double labelSize){
     TGaxis* ax = new TGaxis(xmin, ymin, xmax, ymin, 0.0, 360.0, 4, "");
     ax->SetLabelFont(42);
@@ -502,16 +556,15 @@ static void plot_cells_for_period(
     const std::map<std::tuple<int,int,int>, CellResult>& cells,
     const std::string& out_dir_plots)
 {
-    using std::filesystem::create_directories;
+    namespace fs = std::filesystem;
     std::error_code ec;
-    create_directories(out_dir_plots, ec);
+    fs::create_directories(out_dir_plots, ec);
 
     static const auto PHI_DEG = phiCentersDeg();
 
     for (int ix = 0; ix < (int)xB_bins.size(); ++ix) {
         const auto xb = xB_bins[ix];
 
-        // Only the Q² and |t| bins that exist in this xB slice
         std::vector<std::pair<double,double>> Q2_slice, t_slice;
         uniqueQT_for_xB(binning_scheme, xb, Q2_slice, t_slice);
         if (Q2_slice.empty() || t_slice.empty()) continue;
@@ -519,7 +572,6 @@ static void plot_cells_for_period(
         const int nrows = (int)t_slice.size();
         const int ncols = (int)Q2_slice.size();
 
-        // Separate title pad (smaller now)
         const int W = 280*ncols + 160;
         const int H = 240*nrows + 170;
 
@@ -534,7 +586,6 @@ static void plot_cells_for_period(
         pGrid->cd();
         pGrid->Divide(ncols, nrows, 0.0001, 0.0001);
 
-        // Title (compact and safe)
         pTop->cd();
         TLatex head;
         head.SetNDC(); head.SetTextAlign(22);
@@ -545,7 +596,6 @@ static void plot_cells_for_period(
                     period.c_str(), xb.first, xb.second);
         head.DrawLatex(0.5, 0.55, tit.str().c_str());
 
-        // Panels
         for (int r = 0; r < nrows; ++r) {
             const int it_global = findIndex(t_slice[r], t_bins);
             if (it_global < 0) continue;
@@ -558,15 +608,13 @@ static void plot_cells_for_period(
                 gPad->SetGrid(1,1);
                 gPad->SetTopMargin(0.08);
                 gPad->SetBottomMargin(0.18);
-                gPad->SetLeftMargin(0.15);
+                gPad->SetLeftMargin(0.125);
                 gPad->SetRightMargin(0.10);
 
-                // frame
                 TH1* frame = gPad->DrawFrame(0.0, -1.05, 360.0, 1.05);
                 TAxis* ax = frame->GetXaxis();
                 TAxis* ay = frame->GetYaxis();
 
-                // We will overlay a TGaxis for 0,90,180,270,360, so hide the default labels
                 ax->SetLabelSize(0.0001);
                 ax->SetTitle("#phi (deg)");
                 ay->SetTitle("A_{LU}");
@@ -580,14 +628,12 @@ static void plot_cells_for_period(
                 ax->SetTitleOffset(1.25);
                 ay->SetTitleOffset(1.35);
 
-                // overlay the custom degree ticks
                 drawDegreeTicks(gPad->GetUxmin(), gPad->GetUymin(), gPad->GetUxmax(), 0.048);
 
                 auto itCell = cells.find(std::make_tuple(ix, iQ_global, it_global));
                 if (itCell == cells.end()) continue;
                 const auto& cr = itCell->second;
 
-                // Data points
                 std::vector<double> x, y, ey;
                 x.reserve(N_PHI_BINS); y.reserve(N_PHI_BINS); ey.reserve(N_PHI_BINS);
                 for (int ip=0; ip<N_PHI_BINS; ++ip) {
@@ -605,12 +651,11 @@ static void plot_cells_for_period(
                     gr->Draw("P SAME");
                 }
 
-                // Fitted curve (thin red line)
                 if (cr.fit.status == 0 || cr.fit.ndf > 0) {
                     const int NS=721;
                     std::vector<double> xd(NS), yd(NS);
                     for (int i=0;i<NS;++i){
-                        double deg = double(i)*0.5;     // 0..360 in 0.5°
+                        double deg = double(i)*0.5;
                         double rad = deg * (TWO_PI/360.0);
                         double denom = 1.0 + cr.fit.B1*std::cos(rad);
                         if (denom < EPS_DEN_EVAL) denom = EPS_DEN_EVAL;
@@ -623,7 +668,6 @@ static void plot_cells_for_period(
                     gfit->Draw("L SAME");
                 }
 
-                // Panel annotation (Q² and -t)
                 TLatex lab;
                 lab.SetNDC(); lab.SetTextSize(0.040); lab.SetTextAlign(11);
                 lab.SetTextFont(42);
@@ -632,12 +676,11 @@ static void plot_cells_for_period(
                          Q2_slice[ccol].first, Q2_slice[ccol].second,
                          t_slice[r].first,    t_slice[r].second));
 
-                // Legend
                 TLegend* leg = new TLegend(0.50, 0.68, 0.90, 0.92);
                 leg->SetBorderSize(1);
                 leg->SetLineColor(kBlack);
                 leg->SetFillColor(kWhite);
-                leg->SetFillStyle(1001); 
+                leg->SetFillStyle(1001);
                 leg->SetTextFont(42);
                 leg->SetTextSize(0.040);
                 leg->AddEntry((TObject*)nullptr, Form("A = %.3f #pm %.3f",  cr.fit.A,  cr.fit.Aerr), "");
@@ -655,244 +698,237 @@ static void plot_cells_for_period(
 }
 
 // ------------ helpers ------------
-static inline bool inTenSix(const std::string& runTag) {
-    return (runTag=="sp18_inb" || runTag=="sp18_out" ||
-            runTag=="fa18_inb" || runTag=="fa18_inb_supp" || runTag=="fa18_out");
+static inline bool isTenSixGroup(const std::string& group) {
+    // keys for 10.6 combinations we will treat specially for plot directory
+    return (group == "sp18_inb" || group == "sp18_out" ||
+            group == "fa18_inb" || group == "fa18_out" ||
+            group == "fa18_inb_supp" || group == "10.6_GeV");
+}
+
+static std::string plot_subdir_for_group(const std::string& group) {
+    if (group == "10.6_GeV") return "10.6_combined";
+    return group;
 }
 
 } // anon namespace
 
+
 // =======================================================
 // Public driver
 // =======================================================
+//
+// NOTE: signature changed to accept the master corrected counts JSON path,
+// and we dropped the contamination directory argument.
+//
 void compute_and_plot_bsa_helicity(
-    const std::vector<std::string>& periods,
+    const std::vector<std::string>& periods,                // must match group keys in corrected master
     const std::vector<std::string>& topologies,
     const std::vector<Binning>& binning_scheme,
-    const std::map<std::string, TTree*>& dvcsDataTrees,
-    const std::string& total_counts_json_path,
-    const std::string& contamination_dir,
+    const std::map<std::string, TTree*>& dvcsDataTrees,     // optional per-group polarization trees
+    const std::string& pi0_corrected_master_json_path,      // <out_root>/jsons/pi0_corrected_counts_all_groups.json
     const std::string& out_root_dir)
 {
     namespace fs = std::filesystem;
 
+    // Load corrected counts (all groups)
+    BinningMeta master_meta;
+    std::vector<std::string> group_order_in_master;
+    AllGroups allGroups = load_corrected_master(pi0_corrected_master_json_path, master_meta, group_order_in_master);
+
+    // Build binning from your runtime scheme (checks sizes)
     const auto xB_bins = uniqueRanges(binning_scheme, 'x');
     const auto Q2_bins = uniqueRanges(binning_scheme, 'Q');
     const auto t_bins  = uniqueRanges(binning_scheme, 't');
-
-    GroupCounts groups;
-    if (!load_total_counts(total_counts_json_path, groups)) {
-        std::cerr<<"[bsa][ERROR] Failed to load total_counts json.\n"; return;
+    if (xB_bins.size() != master_meta.nx || Q2_bins.size() != master_meta.nQ || t_bins.size() != master_meta.nt) {
+        fatal("Binning mismatch between runtime binning_scheme and corrected master binning_meta.");
     }
 
     const auto PHI_RAD = phiCentersRad();
 
     const fs::path json_period_dir = fs::path(out_root_dir)/"jsons"/"BSA_fits";
-    fs::create_directories(json_period_dir);
+    std::error_code ecDir;
+    fs::create_directories(json_period_dir, ecDir);
 
     std::map<std::string, std::map<std::tuple<int,int,int>, CellResult>> allPeriodCells;
 
-    struct Acc { double Np=0, Nm=0; }; // effective counts sum
-    std::map<std::tuple<int,int,int,int>, Acc> acc106; // (ix,iQ,it,ip)
-
-    for (const auto& period : periods) {
-        const std::string runTag = periodToRunTagKey(period);
-
-        auto itG = groups.find(runTag);
-        if (itG == groups.end()) {
-            std::cerr<<"[bsa][WARN] total_counts has no group '"<<runTag<<"'. Skipping "<<period<<"\n";
+    for (const auto& group : periods) {
+        // Locate group in corrected master
+        auto itG = allGroups.find(group);
+        if (itG == allGroups.end()) {
+            std::cerr << "[bsa][WARN] Group '"<<group<<"' not present in corrected master; skipping.\n";
             continue;
         }
-        const auto& countsMap = itG->second;
+        const GroupTable& table = itG->second;
 
-        ContamMap contam;
-        const fs::path contam_path = fs::path(contamination_dir)/("contamination_"+period+".json");
-        if (!load_contam_for_period(contam_path.string(), contam)) {
-            std::cerr<<"[bsa][WARN] No contamination file for "<<period<<". Assuming c=0.\n";
+        // polarization lookup (optional)
+        TTree* t = nullptr;
+        {
+            auto itT = dvcsDataTrees.find(group);
+            if (itT != dvcsDataTrees.end()) t = itT->second;
         }
 
-        // polarization
-        TTree* t = nullptr;
-        auto itT = dvcsDataTrees.find(runTag);
-        if (itT!=dvcsDataTrees.end()) t = itT->second;
         std::vector<PolStats> Pbin;
         PolStats Pavg{1.0,0.0,0};
-        if (t){
+        if (t) {
             Pbin = compute_bin_polarization(t, xB_bins, Q2_bins, t_bins, topologies);
-            double sumP=0; int nn=0;
+            double sumP=0.0; int nn=0;
             for (auto& ps : Pbin) if (ps.n>0) { sumP+=ps.P; nn++; }
             if (nn>0) { Pavg.P = sumP/double(nn); Pavg.n=nn; }
         }
 
+        // assemble BSA cells
         std::map<std::tuple<int,int,int>, CellResult> cells;
-
-        // build cells
         for (int ix=0; ix<(int)xB_bins.size(); ++ix)
         for (int iQ=0; iQ<(int)Q2_bins.size(); ++iQ)
         for (int itb=0; itb<(int)t_bins.size(); ++itb) {
             CellResult result;
             result.points.resize(N_PHI_BINS);
-            result.P_per_bin = true;
+            result.P_per_bin = (t != nullptr);
             result.P_used = (Pavg.P>0? Pavg.P : 1.0);
 
-            for (int ip=0; ip<N_PHI_BINS; ++ip){
+            for (int ip=0; ip<N_PHI_BINS; ++ip) {
                 const BinKey bk(ix,iQ,itb,ip);
 
-                // raw counts
-                auto itC = countsMap.find(bk);
-                long long Np=0, Nm=0;
-                if (itC!=countsMap.end()) { Np = itC->second.plus; Nm = itC->second.minus; }
-
-                // contamination
-                ContamBin cb;
-                auto itCt = contam.find(bk);
-                if (itCt!=contam.end()) cb = itCt->second;
-
-                // corrected counts
-                double Np_corr = Np*(1.0 - cb.c_plus);
-                double Nm_corr = Nm*(1.0 - cb.c_minus);
-
-                // polarization to use for this bin
-                double P_here = result.P_used;
-                if (!Pbin.empty()){
-                    size_t idx = (((ix*(size_t)Q2_bins.size()+iQ)*(size_t)t_bins.size()+itb)*N_PHI_BINS + ip);
-                    if (idx<Pbin.size() && Pbin[idx].n>0 && Pbin[idx].P>0.1) { P_here = Pbin[idx].P; }
-                    else result.P_per_bin = false;
+                double Np = 0.0, Nm = 0.0;
+                auto itB = table.find(bk);
+                if (itB != table.end()) {
+                    Np = itB->second.Np;
+                    Nm = itB->second.Nm;
                 }
-                if (P_here<=0.0) { P_here = (Pavg.P>0? Pavg.P : 1.0); result.P_per_bin=false; }
+
+                // pick P for this bin
+                double P_here = result.P_used;
+                if (t && !Pbin.empty()) {
+                    size_t flat = (((ix*(size_t)Q2_bins.size()+iQ)*(size_t)t_bins.size()+itb)*N_PHI_BINS + ip);
+                    if (flat<Pbin.size() && Pbin[flat].n>0 && Pbin[flat].P>0.1) {
+                        P_here = Pbin[flat].P;
+                    } else {
+                        result.P_per_bin = false; // fall back noted
+                    }
+                }
+
+                if (P_here <= 0.0) { P_here = (Pavg.P>0? Pavg.P : 1.0); result.P_per_bin=false; }
                 result.P_used = P_here;
 
-                // scale by 1/P
-                double Np_pol = Np_corr / P_here;
-                double Nm_pol = Nm_corr / P_here;
+                // scale by 1/P (same convention you used previously)
+                const double Np_pol = Np / P_here;
+                const double Nm_pol = Nm / P_here;
 
-                // --- Regularized BSA using Jeffreys prior (α = 0.5) ---
+                // Jeffreys prior for uncertainty stabilization
                 const double alpha = 0.5;
+                const double a = std::max(0.0, Np_pol) + alpha;
+                const double b = std::max(0.0, Nm_pol) + alpha;
 
-                // Effective counts (pseudo-counts added to avoid ±1 with zero error)
-                double Np_eff = std::max(0.0, Np_pol) + alpha;
-                double Nm_eff = std::max(0.0, Nm_pol) + alpha;
-
-                // Total and difference
-                double S = Np_eff + Nm_eff;
-                double D = Np_eff - Nm_eff;
+                const double S = a + b;
+                const double D = a - b;
 
                 BSApt p; p.phi = PHI_RAD[ip];
-
                 if (S > 0.0) {
                     p.bsa = D / S;
-
-                    // Beta posterior variance mapped to A = 2p - 1
-                    double a = Np_eff, b = Nm_eff;
-                    double varA = 4.0 * (a * b) / ((a + b) * (a + b) * (a + b + 1.0));
-
-                    // Safety floor to avoid absurdly small uncertainties
+                    const double varA = 4.0 * (a*b) / ( (a+b)*(a+b)*(a+b+1.0) );
                     p.err = std::sqrt(std::max(varA, 1e-6));
                     p.valid = std::isfinite(p.bsa) && std::isfinite(p.err);
                 } else {
-                    p.bsa = 0.0;
-                    p.err = 0.0;
-                    p.valid = false;
+                    p.bsa = 0.0; p.err = 0.0; p.valid=false;
                 }
-
                 result.points[ip] = p;
-
-                // accumulate for combined 10.6 (using effective counts)
-                if (inTenSix(runTag)) {
-                    auto key4 = std::make_tuple(ix, iQ, itb, ip);
-                    Acc& A = acc106[key4];
-                    A.Np   += Np_eff;
-                    A.Nm   += Nm_eff;
-                }
             }
 
             result.fit = fit_cell(result.points);
             cells[std::make_tuple(ix,iQ,itb)] = std::move(result);
         }
 
-        // write per-period JSON + plots
-        const fs::path outP = json_period_dir/("BSA_fits_"+period+".json");
+        // write per-group JSON + plots
+        const fs::path outP = json_period_dir/("BSA_fits_"+group+".json");
         write_period_bsa_json(outP.string(), N_PHI_BINS, xB_bins, Q2_bins, t_bins, cells);
 
-        const fs::path plots_dir = fs::path(out_root_dir)/"bsa_plots"/periodToRunTagKey(period);
+        const fs::path plots_dir = fs::path(out_root_dir)/"bsa_plots"/plot_subdir_for_group(group);
         std::error_code ec; fs::create_directories(plots_dir, ec);
-        plot_cells_for_period(period, binning_scheme, xB_bins, Q2_bins, t_bins, cells, plots_dir.string());
+        plot_cells_for_period(group, binning_scheme, xB_bins, Q2_bins, t_bins, cells, plots_dir.string());
 
-        allPeriodCells[period] = std::move(cells);
+        allPeriodCells[group] = std::move(cells);
     }
 
-    // ---- write “all periods” file ----
-    write_all_periods_json((fs::path(out_root_dir)/"jsons"/"BSA_fits_all_periods.json").string(),
-                           allPeriodCells, N_PHI_BINS, xB_bins, Q2_bins, t_bins);
+    // all-periods rollup (for whatever groups you passed)
+    write_all_periods_json(
+        (fs::path(out_root_dir)/"jsons"/"BSA_fits_all_periods.json").string(),
+        allPeriodCells, N_PHI_BINS, xB_bins, Q2_bins, t_bins);
 
-    // ---- 10.6 GeV statistical combination ----
-    std::map<std::tuple<int,int,int>, CellResult> combCells;
-    for (int ix=0; ix<(int)xB_bins.size(); ++ix)
-    for (int iQ=0; iQ<(int)Q2_bins.size(); ++iQ)
-    for (int itb=0; itb<(int)t_bins.size(); ++itb) {
-        CellResult cr; cr.points.resize(N_PHI_BINS);
-        cr.P_used = 1.0; cr.P_per_bin = false;
-        for (int ip=0; ip<N_PHI_BINS; ++ip){
-            auto itA = acc106.find(std::make_tuple(ix,iQ,itb,ip));
-            BSApt p; p.phi = phiCentersRad()[ip]; p.valid=false;
-            if (itA!=acc106.end()){
-                const auto& A = itA->second;
+    // ---- Combined 10.6 output (if present in master) ----
+    // If the caller wants the combined 10.6 file to always exist, we try to build it
+    // from the explicit corrected group "10.6_GeV" (which your pi0_corrected pipeline writes).
+    auto it106 = allGroups.find("10.6_GeV");
+    if (it106 != allGroups.end()) {
+        // Build cells straight from the 10.6_GeV corrected table (P=1 fallback).
+        std::map<std::tuple<int,int,int>, CellResult> combCells;
+        const GroupTable& table106 = it106->second;
 
-                const double alpha = 0.5;
-                double Np_eff = std::max(0.0, A.Np); // already had alpha in accumulation
-                double Nm_eff = std::max(0.0, A.Nm);
+        for (int ix=0; ix<(int)xB_bins.size(); ++ix)
+        for (int iQ=0; iQ<(int)Q2_bins.size(); ++iQ)
+        for (int itb=0; itb<(int)t_bins.size(); ++itb) {
+            CellResult cr; cr.points.resize(N_PHI_BINS);
+            cr.P_used = 1.0; cr.P_per_bin = false;
 
-                double S = Np_eff + Nm_eff;
-                double D = Np_eff - Nm_eff;
+            for (int ip=0; ip<N_PHI_BINS; ++ip){
+                const BinKey bk(ix,iQ,itb,ip);
+                BSApt p; p.phi = phiCentersRad()[ip]; p.valid=false;
 
-                if (S > 0.0) {
-                    p.bsa = D / S;
-
-                    double a = Np_eff, b = Nm_eff;
-                    double varA = 4.0 * (a * b) / ((a + b) * (a + b) * (a + b + 1.0));
-                    p.err = std::sqrt(std::max(varA, 1e-6));
-                    p.valid = std::isfinite(p.bsa) && std::isfinite(p.err);
+                auto it = table106.find(bk);
+                if (it != table106.end()) {
+                    const double alpha = 0.5;
+                    const double a = std::max(0.0, it->second.Np) + alpha;
+                    const double b = std::max(0.0, it->second.Nm) + alpha;
+                    const double S = a + b;
+                    const double D = a - b;
+                    if (S > 0.0) {
+                        p.bsa = D / S;
+                        const double varA = 4.0 * (a*b) / ( (a+b)*(a+b)*(a+b+1.0) );
+                        p.err = std::sqrt(std::max(varA, 1e-6));
+                        p.valid = std::isfinite(p.bsa) && std::isfinite(p.err);
+                    }
                 }
+                cr.points[ip]=p;
             }
-            cr.points[ip]=p;
+            cr.fit = fit_cell(cr.points);
+            combCells[std::make_tuple(ix,iQ,itb)] = std::move(cr);
         }
-        cr.fit = fit_cell(cr.points);
-        combCells[std::make_tuple(ix,iQ,itb)] = std::move(cr);
-    }
 
-    // write combined JSON (uses 10.6 with a dot)
-    {
-        std::ofstream ofs((fs::path(out_root_dir)/"jsons"/"BSA_fits_combined_10.6.json").string());
-        if (ofs){
-            ofs<<std::fixed<<std::setprecision(8);
-            ofs<<"{\n";
-            ofs<<"  \"combined\": true,\n";
-            ofs<<"  \"periods_used\": [\"DVCS_Sp18_inb\",\"DVCS_Sp18_out\",\"DVCS_Fa18_inb_supp\",\"DVCS_Fa18_inb\",\"DVCS_Fa18_out\"],\n";
-            ofs<<"  \"binning_meta\": {\"phi_bins\": "<<N_PHI_BINS<<", \"xB_bins\": "<<xB_bins.size()<<", \"Q2_bins\": "<<Q2_bins.size()<<", \"t_bins\": "<<t_bins.size()<<"},\n";
-            ofs<<"  \"bins\": {\n";
-            bool first=true;
-            for (const auto& kv : combCells){
-                if (!first) ofs<<",\n"; first=false;
-                int ix,iQ,it; std::tie(ix,iQ,it)=kv.first;
-                const auto& cr = kv.second;
-                ofs<<"    \"("<<ix<<","<<iQ<<","<<it<<")\": {";
-                ofs<<"\"phi\":["; for (size_t i=0;i<cr.points.size();++i){ if(i)ofs<<","; ofs<<cr.points[i].phi; } ofs<<"],";
-                ofs<<"\"bsa\":["; for (size_t i=0;i<cr.points.size();++i){ if(i)ofs<<","; ofs<<cr.points[i].bsa; } ofs<<"],";
-                ofs<<"\"bsa_err\":["; for (size_t i=0;i<cr.points.size();++i){ if(i)ofs<<","; ofs<<cr.points[i].err; } ofs<<"],";
-                ofs<<"\"fit\":{"
-                      "\"A\":{\"val\":"<<cr.fit.A<<",\"err\":"<<cr.fit.Aerr<<"},"
-                      "\"B1\":{\"val\":"<<cr.fit.B1<<",\"err\":"<<cr.fit.B1err<<"},"
-                      "\"B2\":{\"val\":0.0,\"err\":0.0},"
-                      "\"C\":{\"val\":"<<cr.fit.C<<",\"err\":"<<cr.fit.Cerr<<"},"
-                      "\"chi2\":"<<cr.fit.chi2<<",\"ndf\":"<<cr.fit.ndf<<",\"status\":"<<cr.fit.status<<"}";
-                ofs<<"}";
+        // write combined JSON (filename with dot kept for backward compatibility)
+        {
+            std::ofstream ofs((fs::path(out_root_dir)/"jsons"/"BSA_fits_combined_10.6.json").string());
+            if (ofs){
+                ofs<<std::fixed<<std::setprecision(8);
+                ofs<<"{\n";
+                ofs<<"  \"combined\": true,\n";
+                ofs<<"  \"periods_used\": [\"sp18_inb\",\"sp18_out\",\"fa18_inb\",\"fa18_out\"],\n";
+                ofs<<"  \"binning_meta\": {\"phi_bins\": "<<N_PHI_BINS<<", \"xB_bins\": "<<xB_bins.size()<<", \"Q2_bins\": "<<Q2_bins.size()<<", \"t_bins\": "<<t_bins.size()<<"},\n";
+                ofs<<"  \"bins\": {\n";
+                bool first=true;
+                for (const auto& kv : combCells){
+                    if (!first) ofs<<",\n"; first=false;
+                    int ix,iQ,it; std::tie(ix,iQ,it)=kv.first;
+                    const auto& cr = kv.second;
+                    ofs<<"    \"("<<ix<<","<<iQ<<","<<it<<")\": {";
+                    ofs<<"\"phi\":["; for (size_t i=0;i<cr.points.size();++i){ if(i)ofs<<","; ofs<<cr.points[i].phi; } ofs<<"],";
+                    ofs<<"\"bsa\":["; for (size_t i=0;i<cr.points.size();++i){ if(i)ofs<<","; ofs<<cr.points[i].bsa; } ofs<<"],";
+                    ofs<<"\"bsa_err\":["; for (size_t i=0;i<cr.points.size();++i){ if(i)ofs<<","; ofs<<cr.points[i].err; } ofs<<"],";
+                    ofs<<"\"fit\":{"
+                          "\"A\":{\"val\":"<<cr.fit.A<<",\"err\":"<<cr.fit.Aerr<<"},"
+                          "\"B1\":{\"val\":"<<cr.fit.B1<<",\"err\":"<<cr.fit.B1err<<"},"
+                          "\"B2\":{\"val\":0.0,\"err\":0.0},"
+                          "\"C\":{\"val\":"<<cr.fit.C<<",\"err\":"<<cr.fit.Cerr<<"},"
+                          "\"chi2\":"<<cr.fit.chi2<<",\"ndf\":"<<cr.fit.ndf<<",\"status\":"<<cr.fit.status<<"}";
+                    ofs<<"}";
+                }
+                ofs<<"\n  }\n}\n";
             }
-            ofs<<"\n  }\n}\n";
         }
-    }
 
-    // plots for combined 10.6
-    const fs::path plots_comb106 = fs::path(out_root_dir)/"bsa_plots"/"10.6_combined";
-    std::error_code ec; fs::create_directories(plots_comb106, ec);
-    plot_cells_for_period("RGA_10.6_combined", binning_scheme, xB_bins, Q2_bins, t_bins, combCells, plots_comb106.string());
+        // plots for combined 10.6
+        const fs::path plots_comb106 = fs::path(out_root_dir)/"bsa_plots"/"10.6_combined";
+        std::error_code ec; fs::create_directories(plots_comb106, ec);
+        plot_cells_for_period("RGA_10.6_combined", binning_scheme, xB_bins, Q2_bins, t_bins, combCells, plots_comb106.string());
+    } else {
+        std::cerr << "[bsa][INFO] No '10.6_GeV' group in corrected master; skipping combined 10.6 output.\n";
+    }
 }
