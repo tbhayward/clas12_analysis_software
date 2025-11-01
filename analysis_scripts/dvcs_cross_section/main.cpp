@@ -165,22 +165,22 @@ int main(int argc, char* argv[]) {
     //     );
     // }
 
-    // --------- Bin Volume (generator-based φ coverage), per beam energy ----------
-    // Writes per-energy JSONs: output/jsons/bin_volume_<energy>.json
-    // Plots to: output/bin_volume/<energy>/plot_bin_volume_<energy>_xB_<ix>.png
-    compute_and_plot_bin_volume(
-        binning_scheme,
-        genMcTrees,
-        output_root
-    );
-
-    // compute_uncorrected_cross_sections(
+    // // --------- Bin Volume (generator-based φ coverage), per beam energy ----------
+    // // Writes per-energy JSONs: output/jsons/bin_volume_<energy>.json
+    // // Plots to: output/bin_volume/<energy>/plot_bin_volume_<energy>_xB_<ix>.png
+    // compute_and_plot_bin_volume(
     //     binning_scheme,
-    //     "output/jsons",                    // bin volume JSON directory
-    //     "output/jsons",               // unfolded counts per helicity
-    //     "imports/integrated_luminosity",        // luminosity text files
-    //     "output/uncorrected_cross_section"      // output dir
+    //     genMcTrees,
+    //     output_root
     // );
+
+    compute_uncorrected_cross_sections(
+        binning_scheme,
+        "output/jsons",                    // bin volume JSON directory
+        "output/jsons",               // unfolded counts per helicity
+        "imports/integrated_luminosity",        // luminosity text files
+        "output/uncorrected_cross_section"      // output dir
+    );
 
     // Beam-Spin Asymmetry:
     // - reads total_counts.json and contamination JSONs
