@@ -13,12 +13,10 @@
 // Notes:
 // - Group names must match EXACTLY the keys present in pi0_corrected_counts_all_groups.json,
 //   e.g. "fa18_inb", "fa18_out", "sp18_inb", "sp18_out", "Spring2018", "Fall2018", "10.6_GeV".
-// - Polarization:
-//   * If a DVCS TTree is provided in dvcsDataTrees with key == original period name (e.g. "DVCS_Sp18_inb"),
-//     we compute per-bin P and divide the asymmetry and its error by that P in the same bin.
-//     If absent, we try the resolved JSON key. If still absent, we use P=1 for that group.
-//   * For synthesized groups like "10.6_GeV", we expect no tree; we use P=1.
-//
+// - Polarization (mandatory):
+//   * For every group (including synthesized), a DVCS TTree must be present.
+//   * We compute per-bin P from the tree and divide asymmetry and its error by that P.
+//   * If any required tree is missing, the program exits with a fatal error.
 
 #include "bsa.h"
 
@@ -847,7 +845,7 @@ void compute_and_plot_bsa_helicity(
         }
         const GroupTable& table = allGroups[group];
 
-        // polarization lookup (prefer original period key; fall back to resolved key)
+        // polarization lookup (mandatory)
         TTree* t = nullptr;
         {
             auto itT = dvcsDataTrees.find(periodRaw);
@@ -856,6 +854,10 @@ void compute_and_plot_bsa_helicity(
             } else {
                 auto itT2 = dvcsDataTrees.find(group);
                 if (itT2 != dvcsDataTrees.end()) t = itT2->second;
+            }
+            if (!t) {
+                fatal("Missing DVCS polarization tree for requested group '" + periodRaw +
+                      "' (resolved '" + group + "'). Polarization is required.");
             }
         }
 
@@ -889,40 +891,43 @@ void compute_and_plot_bsa_helicity(
                     Nm = itB->second.Nm;
                 }
 
-                // pick P for this bin
+                // pick P for this bin (computed earlier)
                 double P_here = result.P_used;
-                if (t && !Pbin.empty()) {
+                if (!Pbin.empty()) {
                     size_t flat = (((ix*(size_t)Q2_bins.size()+iQ)*(size_t)t_bins.size()+itb)*N_PHI_BINS + ip);
-                    if (flat<Pbin.size() && Pbin[flat].n>0 && Pbin[flat].P>0.1) {
+                    if (flat < Pbin.size() && Pbin[flat].n > 0 && Pbin[flat].P > 0.05) {
                         P_here = Pbin[flat].P;
-                    } else {
-                        result.P_per_bin = false; // fall back noted
                     }
                 }
-                if (P_here <= 0.0) { P_here = (Pavg.P>0? Pavg.P : 1.0); result.P_per_bin=false; }
-                result.P_used = P_here;
-
-                // Jeffreys on RAW counts; then divide A and sigma by P
-                const double a = std::max(0.0, Np) + JEFFREYS_ALPHA;
-                const double b = std::max(0.0, Nm) + JEFFREYS_ALPHA;
-                const double S = a + b;
-                const double D = a - b;
 
                 BSApt p;
                 p.phi = PHI_RAD[ip];
 
-                if (S > 0.0) {
-                    const double A_raw = D / S;
-                    const double var_raw = 4.0 * (a*b) / ((a+b)*(a+b)*(a+b+1.0));
-                    p.bsa = A_raw / P_here;
-                    p.err = std::sqrt(std::max(var_raw, 1e-12)) / P_here;
-                    if (p.bsa >  1.0) p.bsa =  1.0;
-                    if (p.bsa < -1.0) p.bsa = -1.0;
-                    p.valid = std::isfinite(p.bsa) && std::isfinite(p.err);
-                } else {
+                // NEW: if corrected helicity yields are not both positive, mark this phi-bin invalid
+                if (!(Np > 0.0 && Nm > 0.0)) {
+                    p.valid = false;
                     p.bsa = 0.0;
                     p.err = 0.0;
+                    result.points[ip] = p;
+                    continue;
+                }
+
+                // Use Jeffreys on positive corrected yields; then divide by P
+                const double a = Np + JEFFREYS_ALPHA;
+                const double b = Nm + JEFFREYS_ALPHA;
+                const double S = a + b;
+                const double D = a - b;
+
+                if (S > 0.0 && P_here > 0.05) {
+                    const double A_raw   = D / S;
+                    const double var_raw = 4.0 * (a*b) / ((a+b)*(a+b)*(a+b+1.0));
+                    p.bsa  = A_raw / P_here;
+                    p.err  = std::sqrt(std::max(var_raw, 1e-12)) / P_here;
+                    p.valid = std::isfinite(p.bsa) && std::isfinite(p.err);
+                } else {
                     p.valid = false;
+                    p.bsa = 0.0;
+                    p.err = 0.0;
                 }
                 result.points[ip] = p;
             }
@@ -950,79 +955,124 @@ void compute_and_plot_bsa_helicity(
     // ---- Combined 10.6 output (if present in master) ----
     auto it106 = allGroups.find("10.6_GeV");
     if (it106 != allGroups.end()) {
+
+        // Component groups that make up 10.6 GeV
+        std::vector<std::string> comps = {"sp18_inb","sp18_out","fa18_inb","fa18_out"};
+
+        // Require DVCS trees for ALL components
+        std::map<std::string,TTree*> compTrees;
+        for (const auto& cg : comps) {
+            auto itT = dvcsDataTrees.find(cg);
+            if (itT == dvcsDataTrees.end() || !itT->second) {
+                fatal("Missing DVCS polarization tree for component period '" + cg +
+                      "' required to build 10.6_GeV combined polarization.");
+            }
+            compTrees[cg] = itT->second;
+        }
+
+        // Precompute per-bin P for each component
+        std::map<std::string, std::vector<PolStats>> P_comp;
+        for (const auto& kv : compTrees) {
+            P_comp[kv.first] = compute_bin_polarization(
+                kv.second, xB_bins, Q2_bins, t_bins, topologies);
+        }
+
+        // Build combined cells with per-bin P_comb (counts-weighted)
         std::map<std::tuple<int,int,int>, CellResult> combCells;
         const GroupTable& table106 = it106->second;
+
+        auto flatIdx = [&](int ix,int iQ,int itb,int ip)->size_t{
+            return (((ix*(size_t)Q2_bins.size()+iQ)*(size_t)t_bins.size()+itb)*N_PHI_BINS + ip);
+        };
 
         for (int ix=0; ix<(int)xB_bins.size(); ++ix)
         for (int iQ=0; iQ<(int)Q2_bins.size(); ++iQ)
         for (int itb=0; itb<(int)t_bins.size(); ++itb) {
             CellResult cr; cr.points.resize(N_PHI_BINS);
-            cr.P_used = 1.0; cr.P_per_bin = false;
+            cr.P_per_bin = true; // we are computing per-bin P_comb
 
             for (int ip=0; ip<N_PHI_BINS; ++ip){
                 const BinKey bk(ix,iQ,itb,ip);
                 BSApt p; p.phi = phiCentersRad()[ip]; p.valid=false;
 
+                // combined corrected counts for plotting
+                double Np = 0.0, Nm = 0.0;
                 auto it = table106.find(bk);
                 if (it != table106.end()) {
-                    const double a = std::max(0.0, it->second.Np) + JEFFREYS_ALPHA;
-                    const double b = std::max(0.0, it->second.Nm) + JEFFREYS_ALPHA;
-                    const double S = a + b;
-                    const double D = a - b;
-                    if (S > 0.0) {
-                        const double A_raw = D / S;
-                        const double var_raw = 4.0 * (a*b) / ((a+b)*(a+b)*(a+b+1.0));
-                        p.bsa = A_raw;                 // no P scaling in combined 10.6
-                        p.err = std::sqrt(std::max(var_raw, 1e-12));
-                        p.valid = std::isfinite(p.bsa) && std::isfinite(p.err);
+                    Np = it->second.Np;
+                    Nm = it->second.Nm;
+                }
+
+                // If corrected yields are not both positive, skip this phi-bin
+                if (!(Np > 0.0 && Nm > 0.0)) {
+                    cr.points[ip] = p; // invalid
+                    continue;
+                }
+
+                // counts-weighted P_comb over components that have both P and nonzero S
+                double wsum = 0.0, psum = 0.0;
+                for (const auto& cg : comps) {
+                    // counts weight from that component's corrected master
+                    const auto& tblC = allGroups.at(cg);
+                    auto itC = tblC.find(bk);
+                    double S_k = 0.0;
+                    if (itC != tblC.end()) {
+                        const double a = itC->second.Np;
+                        const double b = itC->second.Nm;
+                        if (a > 0.0 && b > 0.0) S_k = a + b;
+                    }
+
+                    // component per-bin polarization
+                    const auto& Pc = P_comp[cg];
+                    const size_t f = flatIdx(ix,iQ,itb,ip);
+                    double Pk = (f < Pc.size() && Pc[f].n > 0) ? Pc[f].P : 0.0;
+
+                    if (S_k > 0.0 && Pk > 0.05) {
+                        wsum += S_k;
+                        psum += S_k * Pk;
                     }
                 }
-                cr.points[ip]=p;
+
+                if (!(wsum > 0.0)) {
+                    fatal("Could not build counts-weighted polarization for 10.6_GeV at bin (" +
+                          std::to_string(ix) + "," + std::to_string(iQ) + "," + std::to_string(itb) +
+                          ") phi-bin " + std::to_string(ip) +
+                          ". Check component trees and counts.");
+                }
+                const double P_here = psum / wsum;
+                cr.P_used = P_here; // last phi-bin’s P; used only for metadata
+                cr.P_per_bin = true;
+
+                // Jeffreys on positive corrected yields; then divide by P_here
+                const double a = Np + JEFFREYS_ALPHA;
+                const double b = Nm + JEFFREYS_ALPHA;
+                const double S = a + b;
+                const double D = a - b;
+
+                if (S > 0.0) {
+                    const double A_raw   = D / S;
+                    const double var_raw = 4.0 * (a*b) / ((a+b)*(a+b)*(a+b+1.0));
+                    p.bsa  = A_raw / P_here;
+                    p.err  = std::sqrt(std::max(var_raw, 1e-12)) / P_here;
+                    p.valid = std::isfinite(p.bsa) && std::isfinite(p.err);
+                }
+                cr.points[ip] = p;
             }
+
             cr.fit = fit_cell(cr.points);
             combCells[std::make_tuple(ix,iQ,itb)] = std::move(cr);
         }
 
-        // write combined JSON (filename with dot kept for backward compatibility)
+        // Write combined JSON (now includes polarization metadata via cells)
         const fs::path outC = fs::path(out_root_dir)/"jsons"/"BSA_fits_combined_10.6.json";
-        {
-            std::ofstream ofs(outC.string());
-            if (ofs){
-                ofs<<std::fixed<<std::setprecision(8);
-                ofs<<"{\n";
-                ofs<<"  \"combined\": true,\n";
-                ofs<<"  \"periods_used\": [\"sp18_inb\",\"sp18_out\",\"fa18_inb\",\"fa18_out\"],\n";
-                ofs<<"  \"binning_meta\": {\"phi_bins\": "<<N_PHI_BINS<<", \"xB_bins\": "<<xB_bins.size()<<", \"Q2_bins\": "<<Q2_bins.size()<<", \"t_bins\": "<<t_bins.size()<<"},\n";
-                ofs<<"  \"bins\": {\n";
-                bool first=true;
-                for (const auto& kv : combCells){
-                    if (!first) ofs<<",\n"; first=false;
-                    int ix,iQ,it; std::tie(ix,iQ,it)=kv.first;
-                    const auto& cr = kv.second;
-                    ofs<<"    \"("<<ix<<","<<iQ<<","<<it<<")\": {";
-                    ofs<<"\"phi\":["; for (size_t i=0;i<cr.points.size();++i){ if(i)ofs<<","; ofs<<cr.points[i].phi; } ofs<<"],";
-                    ofs<<"\"bsa\":["; for (size_t i=0;i<cr.points.size();++i){ if(i)ofs<<","; ofs<<cr.points[i].bsa; } ofs<<"],";
-                    ofs<<"\"bsa_err\":["; for (size_t i=0;i<cr.points.size();++i){ if(i)ofs<<","; ofs<<cr.points[i].err; } ofs<<"],";
-                    ofs<<"\"fit\":{"
-                          "\"A\":{\"val\":"<<cr.fit.A<<",\"err\":"<<cr.fit.Aerr<<"},"
-                          "\"B1\":{\"val\":"<<cr.fit.B1<<",\"err\":"<<cr.fit.B1err<<"},"
-                          "\"B2\":{\"val\":0.0,\"err\":0.0},"
-                          "\"C\":{\"val\":"<<cr.fit.C<<",\"err\":"<<cr.fit.Cerr<<"},"
-                          "\"chi2\":"<<cr.fit.chi2<<",\"ndf\":"<<cr.fit.ndf<<",\"status\":"<<cr.fit.status<<"}";
-                    ofs<<"}";
-                }
-                ofs<<"\n  }\n}\n";
-                std::cout << "[bsa] Wrote " << outC.string() << "\n";
-            } else {
-                std::cerr << "[bsa][ERROR] Cannot open " << outC.string() << "\n";
-            }
-        }
+        write_period_bsa_json(outC.string(), N_PHI_BINS, xB_bins, Q2_bins, t_bins, combCells);
 
-        // plots for combined 10.6
+        // Plots for combined 10.6
         const fs::path plots_comb106 = fs::path(out_root_dir)/"bsa_plots"/"10.6_combined";
         std::error_code ec; fs::create_directories(plots_comb106, ec);
         plot_cells_for_period("RGA_10.6_combined", binning_scheme, xB_bins, Q2_bins, t_bins, combCells, plots_comb106.string());
+
     } else {
-        std::cerr << "[bsa][INFO] No '10.6_GeV' group in corrected master; skipping combined 10.6 output.\n";
+        fatal("No '10.6_GeV' group in corrected master; cannot build combined output.");
     }
 }
