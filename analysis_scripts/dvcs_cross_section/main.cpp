@@ -197,10 +197,10 @@ int main(int argc, char* argv[]) {
     // - plots to output/bsa_plots/<runTag>/...
     namespace fs = std::filesystem;
     compute_and_plot_bsa_helicity(
-        dvcs_periods,             // e.g. {"sp18_inb","sp18_out","fa18_inb","fa18_out","Spring2018","Fall2018","10.6_GeV"}
+        dvcs_periods,
         topologies,
         binning_scheme,
-        dataTrees,                // optional per-group P
+        dataTrees,
         (fs::path(output_root)/"jsons"/"pi0_corrected_counts_all_groups.json").string(),
         output_root
     );

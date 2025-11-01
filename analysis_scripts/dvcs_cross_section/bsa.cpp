@@ -721,11 +721,11 @@ static std::string plot_subdir_for_group(const std::string& group) {
 // and we dropped the contamination directory argument.
 //
 void compute_and_plot_bsa_helicity(
-    const std::vector<std::string>& periods,                // must match group keys in corrected master
+    const std::vector<std::string>& periods,
     const std::vector<std::string>& topologies,
     const std::vector<Binning>& binning_scheme,
-    const std::map<std::string, TTree*>& dvcsDataTrees,     // optional per-group polarization trees
-    const std::string& pi0_corrected_master_json_path,      // <out_root>/jsons/pi0_corrected_counts_all_groups.json
+    const std::map<std::string, TTree*>& dvcsDataTrees,
+    const std::string& pi0_corrected_counts_json_path,
     const std::string& out_root_dir)
 {
     namespace fs = std::filesystem;
