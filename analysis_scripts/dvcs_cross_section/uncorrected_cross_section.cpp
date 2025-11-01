@@ -334,7 +334,7 @@ void compute_uncorrected_cross_sections(
         }
 
         // ------------ save JSON ------------
-        const std::string out_json = (fs::path(output_dir)/"jsons"/("uncorrected_xsec_"+energy+".json")).string();
+        const std::string out_json = (fs::path("output/jsons") / ("uncorrected_xsec_" + energy + ".json")).string();
         std::ofstream ofs(out_json);
         ofs << std::setw(2) << jxsec << "\n";
         ofs.close();
@@ -393,7 +393,7 @@ void compute_uncorrected_cross_sections(
                     gPad->SetRightMargin(0.10);
                     gPad->SetLogy();
 
-                    TH1* frame = gPad->DrawFrame(0.0, 1e-4, 360.0, 1.0);
+                    TH1* frame = gPad->DrawFrame(0.0, 1e-4, 360.0, 1e3);
                     frame->GetXaxis()->SetLabelSize(0.0001);
                     frame->GetXaxis()->SetTitle("#phi (deg)");
                     frame->GetYaxis()->SetTitle("d#sigma/d#phi (uncorr.)");
@@ -426,7 +426,8 @@ void compute_uncorrected_cross_sections(
                             x[i]=xp[i].get<double>(); y[i]=yp[i].get<double>(); e[i]=std::max(1e-12, ep[i].get<double>());
                             ymax = std::max(ymax, y[i]+e[i]);
                         }
-                        if (ymax > 0.0) frame->GetYaxis()->SetRangeUser(1e-4, std::max(1.0, ymax*1.5));
+                        // if (ymax > 0.0) frame->GetYaxis()->SetRangeUser(1e-4, std::max(1.0, ymax*1.5));
+                        frame->GetYaxis()->SetRangeUser(1e-4, 1e3);
                         auto* gr = new TGraphErrors(N_PHI_BINS, x.data(), y.data(), nullptr, e.data());
                         gr->SetMarkerStyle(mstyle);
                         gr->SetMarkerSize(1.0);
