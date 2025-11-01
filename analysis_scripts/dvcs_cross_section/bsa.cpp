@@ -905,14 +905,35 @@ void compute_and_plot_bsa_helicity(
                 if (P_here <= 0.0) { P_here = (Pavg.P>0? Pavg.P : 1.0); result.P_per_bin=false; }
                 result.P_used = P_here;
 
-                // scale by 1/P (same convention as before)
-                const double Np_pol = Np / P_here;
-                const double Nm_pol = Nm / P_here;
+                // NEW (correct): use raw counts for Jeffreys, then divide A and sigma by P
+                const double a = std::max(0.0, Np) + alpha;
+                const double b = std::max(0.0, Nm) + alpha;
 
-                // Jeffreys prior for uncertainty stabilization
-                const double alpha = 0.5;
-                const double a = std::max(0.0, Np_pol) + alpha;
-                const double b = std::max(0.0, Nm_pol) + alpha;
+                const double S = a + b;
+                const double D = a - b;
+
+                BSApt p; 
+                p.phi = PHI_RAD[ip];  // radians
+
+                if (S > 0.0) {
+                    const double A_raw = D / S;
+                    const double var_raw = 4.0 * (a*b) / ( (a+b)*(a+b)*(a+b+1.0) );  // Jeffreys variance for (Np-Nm)/(Np+Nm)
+
+                    // Scale the asymmetry and its error by P (treating P as known)
+                    p.bsa = A_raw / P_here;
+                    p.err = std::sqrt(std::max(var_raw, 1e-12)) / P_here;
+
+                    // (optional) guard against numerical overshoot
+                    if (p.bsa >  1.0) p.bsa =  1.0;
+                    if (p.bsa < -1.0) p.bsa = -1.0;
+
+                    p.valid = std::isfinite(p.bsa) && std::isfinite(p.err);
+                } else {
+                    p.bsa = 0.0;
+                    p.err = 0.0;
+                    p.valid = false;
+                }
+                result.points[ip] = p;
 
                 const double S = a + b;
                 const double D = a - b;
