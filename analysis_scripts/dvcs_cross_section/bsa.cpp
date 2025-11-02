@@ -741,13 +741,13 @@ static void plot_cells_for_period(
             TLatex head;
             head.SetNDC(); head.SetTextAlign(22);
             head.SetTextFont(42);
-            head.SetTextSize(0.26); // was 0.36
+            head.SetTextSize(0.18); // was 0.36
             std::ostringstream tit;
             if (xsec_overlay)
-                tit << Form("BSA    %s    x_{B} #in [%.2g, %.2g]   (counts: blue, #sigma: red)",
+                tit << Form("BSA %s x_{B} #in [%.2g, %.2g] (counts: blue, #sigma: red)",
                             period.c_str(), xb.first, xb.second);
             else
-                tit << Form("BSA    %s    x_{B} #in [%.2g, %.2g]",
+                tit << Form("BSA %s x_{B} #in [%.2g, %.2g]",
                             period.c_str(), xb.first, xb.second);
             head.DrawLatex(0.5, 0.55, tit.str().c_str());
         }
@@ -847,7 +847,7 @@ static void plot_cells_for_period(
                     }
 
                     // --------- Legend: widened to the left and inset from top-right
-                    TLegend* leg = new TLegend(0.52, 0.70, 0.88, 0.92); // was ~ (0.58,0.70,0.92,0.92)
+                    TLegend* leg = new TLegend(0.44, 0.68, 0.86, 0.90); 
                     leg->SetBorderSize(1);
                     leg->SetLineColor(kBlack);
                     leg->SetFillColor(kWhite);
