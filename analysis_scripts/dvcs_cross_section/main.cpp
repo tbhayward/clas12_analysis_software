@@ -206,13 +206,13 @@ int main(int argc, char* argv[]) {
     // );
 
     compute_and_plot_bsa_helicity(
-        periods,
+        dvcs_periods,                                                // was: periods
         topologies,
         binning_scheme,
-        dvcsDataTrees,
-        (fs::path(output_root)/"jsons"/"pi0_corrected_counts_all_groups.json").string()
-        out_root_dir,
-        "output/rad_corrected_cross_section/jsons"
+        dataTrees,                                                   // was: dvcsDataTrees
+        (fs::path(output_root) / "jsons" / "pi0_corrected_counts_all_groups.json").string(),
+        output_root,                                                 // was: out_root_dir
+        (fs::path(output_root) / "rad_corrected_cross_section" / "jsons").string() // directory with rad_corrected_xsec_<E>.json
     );
 
 
