@@ -11,10 +11,13 @@
 // - Saves plots under:              <out_root_dir>/bsa_plots/<group>/plot_bsa_<group>_xB_<ix>.png
 //
 // Notes:
-// - Group names must match EXACTLY the keys present in pi0_corrected_counts_all_groups.json,
-//   e.g. "fa18_inb", "fa18_out", "sp18_inb", "sp18_out", "Spring2018", "Fall2018", "10.6_GeV".
+// - Group names in the corrected master are bare keys, e.g. "fa18_inb", "fa18_out",
+//   "sp18_inb", "sp18_out", "fa18_inb_supp", "sp19_inb", "10.6_GeV".
+// - This file accepts `periods` entries as *either* bare keys or DVCS_* keys.
+//   Internally we normalize to the bare key for JSON, and we resolve the DVCS tree
+//   either by the original key or by a canonical DVCS alias.
 // - Polarization (mandatory, NO FALLBACKS):
-//   * For every group (including combined), a DVCS TTree must be present (exact key match).
+//   * For every group (including combined), a DVCS TTree must be present.
 //   * We compute per-bin P from the tree and divide asymmetry and its error by that P.
 //   * If any required tree or per-bin polarization is missing where counts exist (S>0), FATAL.
 //
@@ -69,7 +72,6 @@ struct StyleInit {
         gStyle->SetPadTickX(1);
         gStyle->SetPadTickY(1);
         gStyle->SetLegendBorderSize(1);
-
         const int rf = 42; // Helvetica
         gStyle->SetTitleFont(rf, "XYZ");
         gStyle->SetLabelFont(rf, "XYZ");
@@ -261,7 +263,6 @@ static AllGroups load_corrected_master(const std::string& master_path,
             }
             std::string v = binsObj.substr(vS, j-vS);
 
-            // helicity +1
             size_t hp = v.find("\"+1\"");
             if (hp==std::string::npos) fatal("Missing +1 block in "+gname);
             size_t hv = v.find("\"value\"", hp); if (hv==std::string::npos) fatal("Missing +1.value in "+gname);
@@ -272,7 +273,6 @@ static AllGroups load_corrected_master(const std::string& master_path,
             size_t hce = v.find(':', he); if (hce==std::string::npos) fatal("Malformed +1.err in "+gname);
             double ep = parseDoubleAfterColon_num(v, hce, gname+" (+1).err");
 
-            // helicity -1
             size_t mp = v.find("\"-1\"");
             if (mp==std::string::npos) fatal("Missing -1 block in "+gname);
             size_t mv = v.find("\"value\"", mp); if (mv==std::string::npos) fatal("Missing -1.value in "+gname);
@@ -283,7 +283,7 @@ static AllGroups load_corrected_master(const std::string& master_path,
             size_t mce = v.find(':', me); if (mce==std::string::npos) fatal("Malformed -1.err in "+gname);
             double em = parseDoubleAfterColon_num(v, mce, gname+" (-1).err");
 
-            (void)ep; (void)em; // not used here, but parsed for completeness
+            (void)ep; (void)em;
             tbl[bk] = HelCorr{Np, Nm, ep, em};
             p = j; ++nb;
         }
@@ -295,6 +295,63 @@ static AllGroups load_corrected_master(const std::string& master_path,
     }
     if (out.empty()) fatal("No groups parsed from corrected master.");
     return out;
+}
+
+// ------------ name normalization / tree aliasing ------------
+static const std::map<std::string,std::string> BARE_TO_DVCS = {
+    {"sp18_inb",      "DVCS_Sp18_inb"},
+    {"sp18_out",      "DVCS_Sp18_out"},
+    {"fa18_inb_supp", "DVCS_Fa18_inb_supp"},
+    {"fa18_inb",      "DVCS_Fa18_inb"},
+    {"fa18_out",      "DVCS_Fa18_out"},
+    {"sp19_inb",      "DVCS_Sp19_inb"}
+};
+
+static std::string to_bare_group(const std::string& name) {
+    // If name is already a bare key we recognize, return it.
+    if (BARE_TO_DVCS.count(name)) return name;
+    // If name is a DVCS_* alias we know, map back to bare.
+    for (const auto& kv : BARE_TO_DVCS) {
+        if (kv.second == name) return kv.first;
+    }
+    // If name equals the combined group key, keep as is.
+    if (name == "10.6_GeV") return name;
+
+    // Last resort: try to recognize "DVCS_" prefix and known seasonal tokens.
+    // E.g., "DVCS_Fa18_inb" -> "fa18_inb" (case-insensitive seasonal prefix).
+    if (name.rfind("DVCS_", 0) == 0) {
+        std::string tail = name.substr(5);
+        // canonicalize: lower everything
+        std::string low = tail;
+        std::transform(low.begin(), low.end(), low.begin(),
+                       [](unsigned char c){ return std::tolower(c); });
+        // keep underscores as in inputs
+        return low;
+    }
+    // Otherwise, return as is and hope it matches the JSON exactly.
+    return name;
+}
+
+static TTree* find_tree_for_group(const std::map<std::string,TTree*>& trees,
+                                  const std::string& requested_key,
+                                  const std::string& bare_key) {
+    // First: try exactly what main.cpp provided in `periods`
+    auto it = trees.find(requested_key);
+    if (it != trees.end() && it->second) return it->second;
+
+    // Second: try canonical DVCS alias for the bare key
+    auto itAlias = BARE_TO_DVCS.find(bare_key);
+    if (itAlias != BARE_TO_DVCS.end()) {
+        auto it2 = trees.find(itAlias->second);
+        if (it2 != trees.end() && it2->second) return it2->second;
+    }
+
+    // Third: if the bare key itself is present as a key (some loaders do this), use it
+    auto itBare = trees.find(bare_key);
+    if (itBare != trees.end() && itBare->second) return itBare->second;
+
+    // Not found
+    return nullptr;
 }
 
 // ------------ polarization (from DVCS tree) ------------
@@ -700,10 +757,10 @@ static void plot_cells_for_period(
     }
 }
 
-} // <-- end anonymous namespace BEFORE the public function
+} // end anonymous namespace
 
 // =======================================================
-// Public driver (must have external linkage for the linker)
+// Public driver
 // =======================================================
 void compute_and_plot_bsa_helicity(
     const std::vector<std::string>& periods,
@@ -715,7 +772,7 @@ void compute_and_plot_bsa_helicity(
 {
     namespace fs = std::filesystem;
 
-    // Load corrected counts (all groups)
+    // Load corrected counts (all groups, bare keys)
     BinningMeta master_meta;
     std::vector<std::string> group_order_in_master;
     AllGroups allGroups = load_corrected_master(pi0_corrected_counts_json_path, master_meta, group_order_in_master);
@@ -736,20 +793,25 @@ void compute_and_plot_bsa_helicity(
 
     std::map<std::string, std::map<std::tuple<int,int,int>, CellResult>> allPeriodCells;
 
-    // Strict per-period processing: exact group names, polarization required
-    for (const auto& group : periods) {
-        auto itG = allGroups.find(group);
+    // Strict per-period processing with internal name normalization
+    for (const auto& req_name : periods) {
+        const std::string bare = to_bare_group(req_name);
+
+        auto itG = allGroups.find(bare);
         if (itG == allGroups.end()) {
-            fatal("Requested group '"+group+"' not present in corrected master. Exact match is required.");
+            fatal("Requested group '"+req_name+"' (normalized to '"+bare+"') not present in corrected master.");
         }
         const GroupTable& table = itG->second;
 
-        // Require exact DVCS tree key equal to 'group'
-        auto itT = dvcsDataTrees.find(group);
-        if (itT == dvcsDataTrees.end() || !(itT->second)) {
-            fatal("Missing DVCS polarization tree for requested group '"+group+"'.");
+        // Resolve DVCS tree (required)
+        TTree* t = find_tree_for_group(dvcsDataTrees, req_name, bare);
+        if (!t) {
+            std::ostringstream os;
+            os << "Missing DVCS polarization tree for requested group '"<<req_name<<"' "
+               << "(normalized to '"<<bare<<"'). "
+               << "Tried exact key, canonical DVCS alias, and bare key.";
+            fatal(os.str());
         }
-        TTree* t = itT->second;
 
         // Compute per-bin polarization from the tree
         std::vector<PolStats> Pbin = compute_bin_polarization(t, xB_bins, Q2_bins, t_bins, topologies);
@@ -766,7 +828,6 @@ void compute_and_plot_bsa_helicity(
             for (int ip=0; ip<N_PHI_BINS; ++ip) {
                 const BinKey bk(ix,iQ,itb,ip);
 
-                // corrected counts (can be fractional due to contamination correction)
                 double Np = 0.0, Nm = 0.0;
                 auto itB = table.find(bk);
                 if (itB != table.end()) {
@@ -777,7 +838,6 @@ void compute_and_plot_bsa_helicity(
                 BSApt p;
                 p.phi = PHI_RAD[ip];
 
-                // If corrected helicity yields are not both positive, mark invalid
                 if (!(Np > 0.0 && Nm > 0.0)) {
                     p.valid = false;
                     p.bsa = 0.0;
@@ -786,16 +846,14 @@ void compute_and_plot_bsa_helicity(
                     continue;
                 }
 
-                // Require per-bin polarization
                 const size_t flat = (((ix*(size_t)Q2_bins.size()+iQ)*(size_t)t_bins.size()+itb)*N_PHI_BINS + ip);
                 if (!(flat < Pbin.size() && Pbin[flat].n > 0 && Pbin[flat].P > 0.0)) {
-                    fatal("Polarization missing for group '"+group+"' bin "+key4s(ix,iQ,itb,ip)+
+                    fatal("Polarization missing for group '"+bare+"' bin "+key4s(ix,iQ,itb,ip)+
                           " while counts exist (S>0). No fallbacks allowed.");
                 }
                 const double P_here = Pbin[flat].P;
-                result.P_used = P_here; // last used; metadata only
+                result.P_used = P_here;
 
-                // Jeffreys on positive corrected yields; then divide by P_here
                 const double a = Np + JEFFREYS_ALPHA;
                 const double b = Nm + JEFFREYS_ALPHA;
                 const double S = a + b;
@@ -814,15 +872,15 @@ void compute_and_plot_bsa_helicity(
             cells[std::make_tuple(ix,iQ,itb)] = std::move(result);
         }
 
-        // write per-group JSON + plots
-        const fs::path outP = json_period_dir/("BSA_fits_"+group+".json");
+        // write per-group JSON + plots (use bare for filenames to match counts keys)
+        const fs::path outP = json_period_dir/("BSA_fits_"+bare+".json");
         write_period_bsa_json(outP.string(), N_PHI_BINS, xB_bins, Q2_bins, t_bins, cells);
 
-        const fs::path plots_dir = fs::path(out_root_dir)/"bsa_plots"/plot_subdir_for_group(group);
+        const fs::path plots_dir = fs::path(out_root_dir)/"bsa_plots"/plot_subdir_for_group(bare);
         std::error_code ec; fs::create_directories(plots_dir, ec);
-        plot_cells_for_period(group, binning_scheme, xB_bins, Q2_bins, t_bins, cells, plots_dir.string());
+        plot_cells_for_period(bare, binning_scheme, xB_bins, Q2_bins, t_bins, cells, plots_dir.string());
 
-        allPeriodCells[group] = std::move(cells);
+        allPeriodCells[bare] = std::move(cells);
     }
 
     // all-periods rollup
@@ -836,19 +894,22 @@ void compute_and_plot_bsa_helicity(
         fatal("No '10.6_GeV' group in corrected master; cannot build combined output.");
     }
 
-    // Require component groups and their exact trees
-    const std::vector<std::string> comps = {"sp18_inb","sp18_out","fa18_inb","fa18_out"};
+    const std::vector<std::string> comps_bare = {"sp18_inb","sp18_out","fa18_inb","fa18_out"};
     std::map<std::string,TTree*> compTrees;
-    for (const auto& cg : comps) {
+    for (const auto& cg : comps_bare) {
         auto itG = allGroups.find(cg);
         if (itG == allGroups.end()) {
             fatal("Combined 10.6_GeV requires component counts group '"+cg+"' in corrected master.");
         }
-        auto itT = dvcsDataTrees.find(cg);
-        if (itT == dvcsDataTrees.end() || !(itT->second)) {
-            fatal("Missing DVCS polarization tree for component '"+cg+"' required for 10.6_GeV.");
+        // accept any of: exact bare, canonical DVCS alias, or a DVCS_* in the input map
+        TTree* t = find_tree_for_group(dvcsDataTrees, cg, cg);
+        if (!t) {
+            std::ostringstream os;
+            os << "Missing DVCS polarization tree for component '"<<cg<<"' required for 10.6_GeV. "
+               << "Tried bare, canonical DVCS alias, and exact keys.";
+            fatal(os.str());
         }
-        compTrees[cg] = itT->second;
+        compTrees[cg] = t;
     }
 
     // Precompute per-bin P for each component
@@ -876,7 +937,6 @@ void compute_and_plot_bsa_helicity(
             const BinKey bk(ix,iQ,itb,ip);
             BSApt p; p.phi = phiCentersRad()[ip]; p.valid=false;
 
-            // combined corrected counts
             double Np = 0.0, Nm = 0.0;
             auto it = table106.find(bk);
             if (it != table106.end()) {
@@ -884,16 +944,13 @@ void compute_and_plot_bsa_helicity(
                 Nm = it->second.Nm;
             }
 
-            // If corrected yields are not both positive, skip
             if (!(Np > 0.0 && Nm > 0.0)) {
-                cr.points[ip] = p; // invalid
+                cr.points[ip] = p;
                 continue;
             }
 
-            // counts-weighted P_comb over components that have both P and nonzero S
             double wsum = 0.0, psum = 0.0;
-            for (const auto& cg : comps) {
-                // counts weight from that component's corrected master
+            for (const auto& cg : comps_bare) {
                 const auto& tblC = allGroups.at(cg);
                 auto itC = tblC.find(bk);
                 double S_k = 0.0;
@@ -903,7 +960,6 @@ void compute_and_plot_bsa_helicity(
                     if (a > 0.0 && b > 0.0) S_k = a + b;
                 }
 
-                // component per-bin polarization
                 const auto& Pc = P_comp[cg];
                 const size_t f = flatIdx(ix,iQ,itb,ip);
                 double Pk = (f < Pc.size() && Pc[f].n > 0) ? Pc[f].P : 0.0;
@@ -923,7 +979,6 @@ void compute_and_plot_bsa_helicity(
             const double P_here = psum / wsum;
             cr.P_used = P_here;
 
-            // Jeffreys on positive corrected yields; then divide by P_here
             const double a = Np + JEFFREYS_ALPHA;
             const double b = Nm + JEFFREYS_ALPHA;
             const double S = a + b;
@@ -942,7 +997,6 @@ void compute_and_plot_bsa_helicity(
         combCells[std::make_tuple(ix,iQ,itb)] = std::move(cr);
     }
 
-    // Write combined JSON and plots
     const fs::path outC = fs::path(out_root_dir)/"jsons"/"BSA_fits_combined_10.6.json";
     write_period_bsa_json(outC.string(), N_PHI_BINS, xB_bins, Q2_bins, t_bins, combCells);
 
