@@ -33,6 +33,7 @@
 // Style: K&R braces, ASCII-only.
 
 #include "bsa.h"
+#include "load_binning_scheme.h"
 
 #include <TCanvas.h>
 #include <TGraph.h>
