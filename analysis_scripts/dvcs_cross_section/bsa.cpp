@@ -332,7 +332,6 @@ static AllGroups load_corrected_master(const std::string& master_path,
 
 // ------------ name resolver: DVCS_* tree key -> counts key ------------
 static std::string counts_key_from_tree_key(const std::string& treeKey) {
-    // Known explicit mappings
     static const std::map<std::string,std::string> M = {
         {"DVCS_Sp18_inb",        "sp18_inb"},
         {"DVCS_Sp18_out",        "sp18_out"},
@@ -344,22 +343,20 @@ static std::string counts_key_from_tree_key(const std::string& treeKey) {
     auto it = M.find(treeKey);
     if (it != M.end()) return it->second;
 
-    // Heuristic fallback: strip "DVCS_" prefix and lowercase the rest
     std::string s = treeKey;
     const std::string pre = "DVCS_";
     if (s.rfind(pre,0)==0) s = s.substr(pre.size());
     for (auto& c : s) c = (char)std::tolower((unsigned char)c);
-    return s; // e.g. "sp18_inb"
+    return s;
 }
 
 // ------------ simple map: period -> energies used for rad xsec ------------
 static std::vector<std::string> energies_for_group(const std::string& group) {
-    // 10.6 combined will add both; individual periods are split as per run conditions.
     if (group == "sp18_inb" || group == "sp18_out") return {"10.59"};
     if (group == "fa18_inb" || group == "fa18_out" || group == "fa18_inb_supp") return {"10.60"};
     if (group == "sp19_inb") return {"10.2"};
     if (group == "10.6_GeV") return {"10.59","10.60"};
-    return {}; // unknown -> no overlay
+    return {};
 }
 
 // ------------ compute simple mean beam polarization from a tree ------------
@@ -379,7 +376,7 @@ static PolMean mean_beam_polarization(TTree* t) {
     for (Long64_t i=0;i<nent;++i) {
         t->GetEntry(i);
         if (!std::isfinite(beam_pol)) continue;
-        if (beam_pol <= 0.0) continue; // ignore zero/non-positive values
+        if (beam_pol <= 0.0) continue;
         mean += (beam_pol - mean) / double(n+1);
         ++n;
     }
@@ -409,7 +406,7 @@ struct BSApt { double phi=0.0; double bsa=0.0; double err=0.0; bool valid=false;
 struct FitRes { double A=0, Aerr=0, B1=0, B1err=0, B2=0, B2err=0, C=0, Cerr=0; double chi2=0; int ndf=0; int status=0; };
 struct CellResult {
     std::vector<BSApt> points; FitRes fit;
-    double P_used=std::numeric_limits<double>::quiet_NaN(); bool P_per_bin=false; // always false
+    double P_used=std::numeric_limits<double>::quiet_NaN(); bool P_per_bin=false;
 };
 
 // fit
@@ -587,7 +584,7 @@ static XsecTable load_xsec_energy_file(const std::string& path) {
         std::cerr << "[bsa][xsec] WARN: cannot open " << path << "\n";
         return table;
     }
-    json j; 
+    json j;
     try { ifs >> j; } catch(...) {
         std::cerr << "[bsa][xsec] WARN: malformed JSON in " << path << "\n";
         return table;
@@ -621,7 +618,6 @@ static XsecTable load_xsec_energy_file(const std::string& path) {
         if (!read12(cell["helicity_plus"],  phi1, xb.splus,  xb.splus_err)) continue;
         if (!read12(cell["helicity_minus"], phi2, xb.sminus, xb.sminus_err)) continue;
 
-        // prefer the phi centers from the "+" block (degrees) for plotting consistency
         for (int i=0;i<N_PHI_BINS;++i) xb.xphi[i] = phi1[i];
         xb.valid = true;
 
@@ -640,8 +636,7 @@ static XsecTable build_overlay_table(const std::string& dir, const std::vector<s
             auto key = kv.first;
             const XsecBin12& add = kv.second;
             if (!add.valid) continue;
-            auto& dst = acc[key]; // creates if missing
-            // If not populated yet, copy; else sum the sigma arrays and rms-add errors
+            auto& dst = acc[key];
             if (!dst.valid) {
                 dst = add;
             } else {
@@ -668,7 +663,7 @@ static std::vector<BSApt> bsa_from_xsec_cell(const XsecBin12& xb, double P_used)
         const double esm = xb.sminus_err[i];
 
         BSApt p;
-        p.phi = xb.xphi[i] * (TWO_PI/360.0); // store in radians internally like the counts path
+        p.phi = xb.xphi[i] * (TWO_PI/360.0);
 
         const double S = sp + sm;
         const double D = sp - sm;
@@ -680,14 +675,11 @@ static std::vector<BSApt> bsa_from_xsec_cell(const XsecBin12& xb, double P_used)
             continue;
         }
 
-        // A_raw = D/S ; Var(A_raw) by linear error propagation assuming indep.
-        // dA/dsp = 2*sm / S^2 ; dA/dsm = -2*sp / S^2
         const double invS2 = 1.0 / (S*S);
         const double dAsp  = (2.0*sm) * invS2;
         const double dAsm  = (-2.0*sp) * invS2;
         const double var_raw = dAsp*dAsp*esp*esp + dAsm*dAsm*esm*esm;
 
-        // Divide by P to get A_LU
         p.bsa  = (D / S) / P_used;
         p.err  = std::sqrt(std::max(0.0, var_raw)) / std::max(P_used, 1e-12);
         p.valid = std::isfinite(p.bsa) && std::isfinite(p.err);
@@ -705,7 +697,7 @@ static void plot_cells_for_period(
     const std::vector<std::pair<double,double>>& t_bins,
     const std::map<std::tuple<int,int,int>, CellResult>& cells,
     const std::string& out_dir_plots,
-    const XsecTable* xsec_overlay // pass nullptr for BLUE-only canvas, non-null for overlay canvas
+    const XsecTable* xsec_overlay
 ) {
     namespace fs = std::filesystem;
     std::error_code ec;
@@ -726,12 +718,9 @@ static void plot_cells_for_period(
         const int W = 280*ncols + 160;
         const int H = 240*nrows + 170;
 
-        // Canvas title and filename
         std::ostringstream cname;
-        if (xsec_overlay)
-            cname<<"c_bsa_vs_xsec_"<<period<<"_xB"<<ix;
-        else
-            cname<<"c_bsa_"<<period<<"_xB"<<ix;
+        if (xsec_overlay) cname<<"c_bsa_vs_xsec_"<<period<<"_xB"<<ix;
+        else              cname<<"c_bsa_"<<period<<"_xB"<<ix;
 
         TCanvas* c = new TCanvas(cname.str().c_str(), cname.str().c_str(), W, H);
 
@@ -750,10 +739,10 @@ static void plot_cells_for_period(
         head.SetTextSize(0.36);
         std::ostringstream tit;
         if (xsec_overlay)
-            tit << Form("Beam-Spin Asymmetry  %s   x_{B} #in [%.2g, %.2g]   (Counts: blue, Xsec: red)",
+            tit << Form("BSA    %s    x_{B} #in [%.2g, %.2g]   (Counts: blue, Xsec: red)",
                         period.c_str(), xb.first, xb.second);
         else
-            tit << Form("Beam-Spin Asymmetry  %s   x_{B} #in [%.2g, %.2g]",
+            tit << Form("BSA    %s    x_{B} #in [%.2g, %.2g]",
                         period.c_str(), xb.first, xb.second);
         head.DrawLatex(0.5, 0.55, tit.str().c_str());
 
@@ -767,10 +756,10 @@ static void plot_cells_for_period(
 
                 pGrid->cd(r*ncols + ccol + 1);
                 gPad->SetGrid(1,1);
-                gPad->SetTopMargin(0.08);
+                gPad->SetTopMargin(0.12);
                 gPad->SetBottomMargin(0.18);
                 gPad->SetLeftMargin(0.125);
-                gPad->SetRightMargin(0.10);
+                gPad->SetRightMargin(0.12);
 
                 TH1* frame = gPad->DrawFrame(0.0, -1.05, 360.0, 1.05);
                 TAxis* ax = frame->GetXaxis();
@@ -791,22 +780,36 @@ static void plot_cells_for_period(
 
                 drawDegreeTicks(gPad->GetUxmin(), gPad->GetUymin(), gPad->GetUxmax(), 0.048);
 
+                // ---- per-subplot title with Q2 and t ranges (restored) ----
+                {
+                    TLatex subt;
+                    subt.SetNDC();
+                    subt.SetTextFont(42);
+                    subt.SetTextSize(0.050);
+                    subt.SetTextAlign(21); // centered
+                    std::ostringstream st;
+                    st << Form("Q^{2} #in [%.2g, %.2g]   -t #in [%.2g, %.2g]",
+                               Q2_slice[ccol].first, Q2_slice[ccol].second,
+                               t_slice[r].first,     t_slice[r].second);
+                    subt.DrawLatex(0.50, 0.94, st.str().c_str());
+                }
+
                 // ---------- BLUE (counts-based) ----------
                 auto itCell = cells.find(std::make_tuple(ix, iQ_global, it_global));
                 if (itCell != cells.end()) {
                     const auto& cr = itCell->second;
 
-                    std::vector<double> xB, yB, eyB;
-                    xB.reserve(N_PHI_BINS); yB.reserve(N_PHI_BINS); eyB.reserve(N_PHI_BINS);
+                    std::vector<double> xBv, yBv, eyBv;
+                    xBv.reserve(N_PHI_BINS); yBv.reserve(N_PHI_BINS); eyBv.reserve(N_PHI_BINS);
                     for (int ip=0; ip<N_PHI_BINS; ++ip) {
                         const auto& p = cr.points[ip];
                         if (!p.valid) continue;
-                        xB.push_back(PHI_DEG[ip]);
-                        yB.push_back(p.bsa);
-                        eyB.push_back(std::max(1e-6, p.err));
+                        xBv.push_back(PHI_DEG[ip]);
+                        yBv.push_back(p.bsa);
+                        eyBv.push_back(std::max(1e-6, p.err));
                     }
-                    if (!xB.empty()) {
-                        TGraphErrors* gr = new TGraphErrors((int)xB.size(), xB.data(), yB.data(), nullptr, eyB.data());
+                    if (!xBv.empty()) {
+                        TGraphErrors* gr = new TGraphErrors((int)xBv.size(), xBv.data(), yBv.data(), nullptr, eyBv.data());
                         gr->SetMarkerStyle(20);
                         gr->SetMarkerSize(1.1);
                         gr->SetLineWidth(2);
@@ -815,53 +818,50 @@ static void plot_cells_for_period(
                         gr->Draw("P SAME");
                     }
 
-                    if (cr.fit.status == 0 || cr.fit.ndf > 0) {
+                    // Blue fit
+                    FitRes blueFit = cr.fit;
+                    if (blueFit.status == 0 || blueFit.ndf > 0) {
                         const int NS=721;
                         std::vector<double> xd(NS), yd(NS);
                         for (int i=0;i<NS;++i){
                             double deg = double(i)*0.5;
                             double rad = deg * (TWO_PI/360.0);
-                            double denom = 1.0 + cr.fit.B1*std::cos(rad);
+                            double denom = 1.0 + blueFit.B1*std::cos(rad);
                             if (denom < EPS_DEN_EVAL) denom = EPS_DEN_EVAL;
-                            double val = cr.fit.C + (cr.fit.A*std::sin(rad))/denom;
+                            double val = blueFit.C + (blueFit.A*std::sin(rad))/denom;
                             xd[i] = deg; yd[i] = val;
                         }
                         TGraph* gfit = new TGraph(NS, xd.data(), yd.data());
                         gfit->SetLineColor(kBlue+1);
-                        gfit->SetLineStyle(2); // dashed
-                        gfit->SetLineWidth(1); // thin
+                        gfit->SetLineStyle(2);
+                        gfit->SetLineWidth(1);
                         gfit->Draw("L SAME");
                     }
 
-                    // Legend basic entries (blue)
-                    TLegend* leg = new TLegend(0.50, 0.66, 0.90, 0.93);
+                    // Legend in top-right without clipping
+                    TLegend* leg = new TLegend(0.58, 0.70, 0.92, 0.92);
                     leg->SetBorderSize(1);
                     leg->SetLineColor(kBlack);
                     leg->SetFillColor(kWhite);
                     leg->SetFillStyle(1001);
                     leg->SetTextFont(42);
                     leg->SetTextSize(0.040);
-                    leg->AddEntry((TObject*)nullptr, Form("Counts fit: A=%.3f, B=%.3f, C=%.3f", cr.fit.A, cr.fit.B1, cr.fit.C), "");
-                    leg->AddEntry((TObject*)nullptr, Form("Q^{2} in [%.2g, %.2g],  -t in [%.2g, %.2g]",
-                                                          Q2_slice[ccol].first, Q2_slice[ccol].second,
-                                                          t_slice[r].first,    t_slice[r].second), "");
-                    // If overlay present, we will add red entries below
-                    // Defer drawing until after red is drawn so the legend is last
-                    // Keep a pointer to reuse.
-                    // We will Draw() it after adding red rows.
-                    // Store temporarily in pad user pointer if desired; simpler: keep it local.
-                    // We'll Draw() at the end of the panel after red drawing section.
-                    // To allow adding to it, we keep it in scope:
-                    // ---------- RED (xsec-based) ----------
+
+                    // Counts-only line always present
+                    leg->AddEntry((TObject*)nullptr,
+                                  Form("counts: A = %.3f #pm %.3f", blueFit.A, blueFit.Aerr),
+                                  "");
+
+                    // If overlay present, add sigma line
                     if (xsec_overlay) {
                         auto itX = xsec_overlay->find(std::make_tuple(ix, iQ_global, it_global));
                         if (itX != xsec_overlay->end() && itX->second.valid) {
-                            // Rebuild red points (in degrees for x axis)
-                            std::vector<double> xr, yr, eyr;
-                            xr.reserve(N_PHI_BINS); yr.reserve(N_PHI_BINS); eyr.reserve(N_PHI_BINS);
-                            // We do not have the per-cell P_used here, but the counts cell has it:
                             const double P_used = cr.P_used;
                             const auto redPts = bsa_from_xsec_cell(itX->second, std::max(1e-12, P_used));
+
+                            // draw red points
+                            std::vector<double> xr, yr, eyr;
+                            xr.reserve(N_PHI_BINS); yr.reserve(N_PHI_BINS); eyr.reserve(N_PHI_BINS);
                             for (int ip=0; ip<N_PHI_BINS; ++ip) {
                                 if (!redPts[ip].valid) continue;
                                 xr.push_back(PHI_DEG[ip]);
@@ -876,41 +876,39 @@ static void plot_cells_for_period(
                                 grr->SetLineColor(kRed+1);
                                 grr->SetMarkerColor(kRed+1);
                                 grr->Draw("P SAME");
+                            }
 
-                                // Fit a red curve to the red points using same fitter
-                                // Build a temporary CellResult-like vector
-                                std::vector<BSApt> redForFit = redPts;
-                                FitRes redFit = fit_cell(redForFit);
-                                if (redFit.status == 0 || redFit.ndf > 0) {
-                                    const int NS=721;
-                                    std::vector<double> xfd(NS), yfd(NS);
-                                    for (int i=0;i<NS;++i){
-                                        double deg = double(i)*0.5;
-                                        double rad = deg * (TWO_PI/360.0);
-                                        double denom = 1.0 + redFit.B1*std::cos(rad);
-                                        if (denom < EPS_DEN_EVAL) denom = EPS_DEN_EVAL;
-                                        double val = redFit.C + (redFit.A*std::sin(rad))/denom;
-                                        xfd[i] = deg; yfd[i] = val;
-                                    }
-                                    TGraph* gfitr = new TGraph(NS, xfd.data(), yfd.data());
-                                    gfitr->SetLineColor(kRed+1);
-                                    gfitr->SetLineStyle(2); // dashed
-                                    gfitr->SetLineWidth(1); // thin
-                                    gfitr->Draw("L SAME");
-
-                                    leg->AddEntry((TObject*)nullptr,
-                                                  Form("Xsec fit:   A=%.3f, B=%.3f, C=%.3f", redFit.A, redFit.B1, redFit.C),
-                                                  "");
-                                } else {
-                                    leg->AddEntry((TObject*)nullptr, "Xsec fit: failed", "");
+                            // fit red
+                            FitRes redFit = fit_cell(redPts);
+                            if (redFit.status == 0 || redFit.ndf > 0) {
+                                const int NS=721;
+                                std::vector<double> xfd(NS), yfd(NS);
+                                for (int i=0;i<NS;++i){
+                                    double deg = double(i)*0.5;
+                                    double rad = deg * (TWO_PI/360.0);
+                                    double denom = 1.0 + redFit.B1*std::cos(rad);
+                                    if (denom < EPS_DEN_EVAL) denom = EPS_DEN_EVAL;
+                                    double val = redFit.C + (redFit.A*std::sin(rad))/denom;
+                                    xfd[i] = deg; yfd[i] = val;
                                 }
+                                TGraph* gfitr = new TGraph(NS, xfd.data(), yfd.data());
+                                gfitr->SetLineColor(kRed+1);
+                                gfitr->SetLineStyle(2);
+                                gfitr->SetLineWidth(1);
+                                gfitr->Draw("L SAME");
+
+                                // sigma line in legend
+                                leg->AddEntry((TObject*)nullptr,
+                                              Form("sigma:  A = %.3f #pm %.3f", redFit.A, redFit.Aerr),
+                                              "");
                             } else {
-                                leg->AddEntry((TObject*)nullptr, "Xsec points: none", "");
+                                leg->AddEntry((TObject*)nullptr, "sigma: A = n/a", "");
                             }
                         } else {
-                            leg->AddEntry((TObject*)nullptr, "Xsec overlay: missing", "");
+                            leg->AddEntry((TObject*)nullptr, "sigma: missing", "");
                         }
                     }
+
                     leg->Draw();
                 }
             }
@@ -939,17 +937,15 @@ void compute_and_plot_bsa_helicity(
     const std::map<std::string, TTree*>& dvcsDataTrees,
     const std::string& pi0_corrected_counts_json_path,
     const std::string& out_root_dir,
-    const std::string& radcorr_xsec_json_dir // NEW: directory containing rad_corrected_xsec_<E>.json
+    const std::string& radcorr_xsec_json_dir
 )
 {
     namespace fs = std::filesystem;
 
-    // Load corrected counts (all groups)
     BinningMeta master_meta;
     std::vector<std::string> group_order_in_master;
     AllGroups allGroups = load_corrected_master(pi0_corrected_counts_json_path, master_meta, group_order_in_master);
 
-    // Build binning from runtime scheme (size checks)
     const auto xB_bins = uniqueRanges(binning_scheme, 'x');
     const auto Q2_bins = uniqueRanges(binning_scheme, 'Q');
     const auto t_bins  = uniqueRanges(binning_scheme, 't');
@@ -965,12 +961,10 @@ void compute_and_plot_bsa_helicity(
 
     std::map<std::string, std::map<std::tuple<int,int,int>, CellResult>> allPeriodCells;
 
-    // ---------- Per-period processing with single scalar P (COUNTS path) ----------
+    // ---------- Per-period processing (counts path) ----------
     for (const auto& treeKey : periods) {
-        // Resolve to counts key
         const std::string countsKey = counts_key_from_tree_key(treeKey);
 
-        // Lookup counts group
         auto itG = allGroups.find(countsKey);
         if (itG == allGroups.end()) {
             std::ostringstream avail;
@@ -980,21 +974,18 @@ void compute_and_plot_bsa_helicity(
         }
         const GroupTable& table = itG->second;
 
-        // Tree must exist for polarization
         auto itT = dvcsDataTrees.find(treeKey);
         if (itT == dvcsDataTrees.end() || !(itT->second)) {
             fatal("Missing DVCS polarization tree for requested period '"+treeKey+"'.");
         }
         TTree* t = itT->second;
 
-        // Single scalar mean polarization for the whole period
         PolMean pm = mean_beam_polarization(t);
         if (pm.n == 0 || !(pm.P > 0.0) || !std::isfinite(pm.P)) {
             fatal("Cannot compute mean beam polarization for period '"+treeKey+"': no valid beam_pol entries.");
         }
         const double P_here = pm.P;
 
-        // Assemble BSA cells using constant P
         std::map<std::tuple<int,int,int>, CellResult> cells;
 
         for (int ix=0; ix<(int)xB_bins.size(); ++ix)
@@ -1044,21 +1035,17 @@ void compute_and_plot_bsa_helicity(
             cells[std::make_tuple(ix,iQ,itb)] = std::move(result);
         }
 
-        // write per-group JSON + BLUE plots
         const fs::path outP = json_period_dir/("BSA_fits_"+countsKey+".json");
         write_period_bsa_json(outP.string(), N_PHI_BINS, xB_bins, Q2_bins, t_bins, cells);
 
         const fs::path plots_dir = fs::path(out_root_dir)/"bsa_plots"/plot_subdir_for_group(countsKey);
         std::error_code ec; fs::create_directories(plots_dir, ec);
-        // BLUE-only canvas (counts)
         plot_cells_for_period(countsKey, binning_scheme, xB_bins, Q2_bins, t_bins, cells, plots_dir.string(), nullptr);
 
-        // Build the red overlay table for this period (if we can find energies)
         XsecTable overlay;
         const auto energies = energies_for_group(countsKey);
         if (!energies.empty()) {
             overlay = build_overlay_table(radcorr_xsec_json_dir, energies);
-            // RED overlay canvas (counts + xsec)
             plot_cells_for_period(countsKey, binning_scheme, xB_bins, Q2_bins, t_bins, cells, plots_dir.string(), &overlay);
         } else {
             std::cerr << "[bsa][xsec] NOTE: no energy mapping for group '"<<countsKey<<"' -> skipping overlay.\n";
@@ -1067,19 +1054,17 @@ void compute_and_plot_bsa_helicity(
         allPeriodCells[countsKey] = std::move(cells);
     }
 
-    // all-periods rollup (counts path)
     write_all_periods_json(
         (fs::path(out_root_dir)/"jsons"/"BSA_fits_all_periods.json").string(),
         allPeriodCells, N_PHI_BINS, xB_bins, Q2_bins, t_bins);
 
-    // ---- Combined 10.6 output (counts path; one global P over component trees) ----
+    // ---- Combined 10.6 output (counts path) ----
     auto it106 = allGroups.find("10.6_GeV");
     if (it106 == allGroups.end()) {
         fatal("No '10.6_GeV' group in corrected master; cannot build combined output.");
     }
     const GroupTable& table106 = it106->second;
 
-    // Component groups and their tree keys
     const std::vector<std::pair<std::string,std::string>> comps = {
         {"sp18_inb", "DVCS_Sp18_inb"},
         {"sp18_out", "DVCS_Sp18_out"},
@@ -1122,7 +1107,7 @@ void compute_and_plot_bsa_helicity(
             }
 
             if (!(Np > 0.0 && Nm > 0.0)) {
-                cr.points[ip] = p; // invalid point
+                cr.points[ip] = p;
                 continue;
             }
 
@@ -1144,16 +1129,13 @@ void compute_and_plot_bsa_helicity(
         combCells[std::make_tuple(ix,iQ,itb)] = std::move(cr);
     }
 
-    // Write combined JSON and BLUE plots
     const fs::path outC = fs::path(out_root_dir)/"jsons"/"BSA_fits_combined_10.6.json";
     write_period_bsa_json(outC.string(), N_PHI_BINS, xB_bins, Q2_bins, t_bins, combCells);
 
     const fs::path plots_comb106 = fs::path(out_root_dir)/"bsa_plots"/"10.6_combined";
     std::error_code ec; fs::create_directories(plots_comb106, ec);
-    // BLUE-only (counts)
     plot_cells_for_period("RGA_10.6_combined", binning_scheme, xB_bins, Q2_bins, t_bins, combCells, plots_comb106.string(), nullptr);
 
-    // RED overlay for 10.6 combined: use energies {10.59,10.60}
     {
         const auto energies106 = energies_for_group("10.6_GeV");
         if (!energies106.empty()) {
