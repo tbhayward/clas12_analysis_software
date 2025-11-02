@@ -1,32 +1,28 @@
 // bsa.cpp (uses pi0_corrected_counts_all_groups.json as the ONLY input for counts)
 //
-// Behavior summary (strict for per-period; robust combine for 10.6):
+// Behavior summary:
 // - Reads contamination-corrected helicity counts from:
 //       <out_root_dir>/jsons/pi0_corrected_counts_all_groups.json
-// - For each requested group in `periods`, computes per-bin BSA points and fits
-//   the stabilized model: y(phi) = C + [A*sin(phi)] / [1 + B*cos(phi)]
+// - For each requested group (period), computes a SINGLE scalar polarization P
+//   as the mean of the tree branch "beam_pol" over ALL DVCS events in that period.
+// - Uses that constant P to build per-phi BSA points and fit the stabilized model:
+//       y(phi) = C + [A*sin(phi)] / [1 + B*cos(phi)]
 // - Writes per-group fit JSONs to:  <out_root_dir>/jsons/BSA_fits/BSA_fits_<group>.json
 // - Writes all-periods rollup to:   <out_root_dir>/jsons/BSA_fits_all_periods.json
 // - Writes 10.6 combined to:        <out_root_dir>/jsons/BSA_fits_combined_10.6.json
+//   For 10.6_GeV, polarization is a single scalar mean computed over ALL events
+//   from its component periods' DVCS trees combined.
 // - Saves plots under:              <out_root_dir>/bsa_plots/<group>/plot_bsa_<group>_xB_<ix>.png
 //
-// Notes:
-// - Group names in the corrected master are lowercase without the DVCS_ prefix,
-//   e.g. "fa18_inb", "fa18_out", "sp18_inb", "sp18_out", plus combined keys like "10.6_GeV".
-// - The trees loaded by loadTrees are keyed with DVCS_ prefixes, e.g. "DVCS_Fa18_inb".
-// - This file transparently bridges those naming schemes:
-//     * Counts lookup uses a resolver:  "DVCS_Fa18_inb" -> "fa18_inb" (and other fallbacks)
-//     * Tree lookup keeps the original tree key for per-period; for combined 10.6 it
-//       resolves from counts key back to the matching DVCS_* tree key.
-// - Polarization (per-period groups, strict, NO FALLBACKS):
-//   * For every requested group, a DVCS TTree must be present (exact key match from `periods`).
-//   * We compute per-(xB,Q2,t,phi) bin polarization from the tree and divide A and sigma_A by that.
-//   * If any required per-phi polarization is missing where counts exist (S>0), FATAL.
-// - Combined 10.6 logic (robust):
-//   * Build P per (xB,Q2,t) cell for each component period via DVCS entries.
-//   * First try counts-weighted average of P across components where both S_cell>0 and Pk>0.
-//   * Else fall back to DVCS-entries-weighted average across components with Pk>0.
-//   * Fatal only if no component provides any polarization in that cell.
+// Names and bridging:
+// - Corrected-counts master JSON groups use lower-case, no DVCS_ prefix, e.g. "sp18_inb".
+// - DVCS data trees in memory are keyed like "DVCS_Sp18_inb".
+// - This file resolves tree keys -> counts keys robustly.
+//
+// Polarization policy (simple and robust):
+// - Per period: P_period = avg over all events of beam_pol (finite and > 0).
+// - Combined 10.6: P_106 = avg over all events from component trees.
+// - No per-phi or per-bin polarization is computed anywhere.
 //
 // Style: K&R braces, ASCII-only.
 
@@ -102,7 +98,7 @@ constexpr double LAMBDA_AMP    = 1e5;    // penalty multiplier for amplitude box
 constexpr double JEFFREYS_ALPHA = 0.5;
 
 using BinKey = std::tuple<int,int,int,int>; // (ix,iQ,it,ip)
-struct HelCorr { double Np=0.0; double Nm=0.0; double ep=0.0; double em=0.0; }; // corrected counts
+struct HelCorr { double Np=0.0; double Nm=0.0; double ep=0.0; double em=0.0; };
 using GroupTable = std::map<BinKey, HelCorr>;
 using AllGroups  = std::map<std::string, GroupTable>;
 
@@ -123,6 +119,12 @@ static bool parse_tuple_key(const std::string& s, BinKey& out) {
     out = BinKey(ix,iQ,it,ip);
     return true;
 }
+
+struct Binning {
+    double xBmin, xBmax;
+    double Q2min, Q2max;
+    double tmin,  tmax;
+};
 
 static inline std::vector<std::pair<double,double>> uniqueRanges(const std::vector<Binning>& scheme, char which) {
     std::set<std::pair<double,double>> s;
@@ -170,7 +172,7 @@ static void uniqueQT_for_xB(
     t_list.assign(ts.begin(), ts.end());
 }
 
-// Extract {...} block that follows a key (very small JSON helper)
+// Extract {...} block that follows a key (tiny JSON helper)
 static std::string objForKey(const std::string& s, const std::string& key) {
     size_t p = s.find(key);
     if (p==std::string::npos) fatal("Key '"+key+"' not found.");
@@ -307,161 +309,65 @@ static AllGroups load_corrected_master(const std::string& master_path,
     return out;
 }
 
-// ------------ name resolvers to bridge counts<->tree keys ------------
-static std::string toLowerCopy(std::string s) {
-    for (char& c : s) c = (char)std::tolower((unsigned char)c);
-    return s;
+// ------------ name resolver: DVCS_* tree key -> counts key ------------
+static std::string counts_key_from_tree_key(const std::string& treeKey) {
+    // Known explicit mappings (safe and clear)
+    static const std::map<std::string,std::string> M = {
+        {"DVCS_Sp18_inb",        "sp18_inb"},
+        {"DVCS_Sp18_out",        "sp18_out"},
+        {"DVCS_Fa18_inb",        "fa18_inb"},
+        {"DVCS_Fa18_inb_supp",   "fa18_inb_supp"},
+        {"DVCS_Fa18_out",        "fa18_out"},
+        {"DVCS_Sp19_inb",        "sp19_inb"}
+    };
+    auto it = M.find(treeKey);
+    if (it != M.end()) return it->second;
+
+    // Heuristic fallback: strip "DVCS_" prefix and lowercase the rest
+    std::string s = treeKey;
+    const std::string pre = "DVCS_";
+    if (s.rfind(pre,0)==0) s = s.substr(pre.size());
+    for (auto& c : s) c = (char)std::tolower((unsigned char)c);
+    return s; // e.g. "sp18_inb"
 }
 
-static std::string stripPrefix(const std::string& s, const std::string& pref) {
-    if (s.rfind(pref, 0) == 0) return s.substr(pref.size());
-    return s;
-}
+// ------------ compute simple mean beam polarization from a tree ------------
+struct PolMean { double P=0.0; long long n=0; };
 
-// Normalize a key into the canonical "counts" form: lowercase, no DVCS_ prefix.
-static std::string normalize_to_counts_key(const std::string& anyKey) {
-    return toLowerCopy(stripPrefix(anyKey, "DVCS_"));
-}
+static PolMean mean_beam_polarization(TTree* t) {
+    if (!t) return PolMean{0.0,0};
+    double beam_pol = 0.0;
+    bool hasPol = (t->GetBranch("beam_pol") != nullptr);
+    if (!hasPol) return PolMean{0.0,0};
 
-// From a tree key like "DVCS_Fa18_inb", resolve the counts key present in the master.
-// Tries: exact, normalized, and lowercase. Returns empty string if not found.
-static std::string resolve_counts_key(const std::string& treeKey, const AllGroups& countsGroups) {
-    // 1) exact
-    if (countsGroups.count(treeKey)) return treeKey;
-    // 2) normalized (lowercase, no DVCS_)
-    std::string nrm = normalize_to_counts_key(treeKey);
-    if (countsGroups.count(nrm)) return nrm;
-    // 3) pure lowercase of original
-    std::string low = toLowerCopy(treeKey);
-    if (countsGroups.count(low)) return low;
-    return std::string();
-}
-
-// From a counts key like "fa18_inb", find the matching DVCS_* tree key in dvcsDataTrees.
-static std::string resolve_tree_key_from_counts(const std::string& countsKey,
-                                                const std::map<std::string, TTree*>& dvcsDataTrees) {
-    // 1) exact key present as-is (unlikely but harmless)
-    if (dvcsDataTrees.count(countsKey)) return countsKey;
-    // 2) scan for a tree whose normalized form matches the counts key
-    for (const auto& kv : dvcsDataTrees) {
-        if (normalize_to_counts_key(kv.first) == countsKey) return kv.first;
-    }
-    // 3) try DVCS_ + CamelCase variants if ever needed (not implemented; scanning covers it)
-    return std::string();
-}
-
-// ------------ polarization (from DVCS tree) ------------
-struct PolStats { double P=1.0; double P_se=0.0; int n=0; };
-
-// Per-event branches used to compute polarization
-struct BranchPol {
-    int helicity=0;
-    double t1=0, open_angle_ep2=0, pTmiss=0;
-    double x=0, Q2=0, phi2=0, Delta_phi=0;
-    double beam_pol=1.0;
-    int detector1=0, detector2=0;
-    bool hasH=false, hasCuts=false, hasBins=false, hasPhi2=false, hasDp=false, hasPol=false, hasTopo=false;
-    void bind(TTree* t){
-        if (!t) return;
-        auto bindI=[&](const char*n,int*a,bool&f){ if(t->GetBranch(n)){ t->SetBranchAddress(n,a); f=true; } };
-        auto bindD=[&](const char*n,double*a,bool&f){ if(t->GetBranch(n)){ t->SetBranchAddress(n,a); f=true; } };
-        bindI("helicity",&helicity,hasH);
-        bindD("t1",&t1,hasCuts); bindD("open_angle_ep2",&open_angle_ep2,hasCuts); bindD("pTmiss",&pTmiss,hasCuts);
-        bindD("x",&x,hasBins); bindD("Q2",&Q2,hasBins); bindD("phi2",&phi2,hasPhi2); bindD("Delta_phi",&Delta_phi,hasDp);
-        bindD("beam_pol",&beam_pol,hasPol);
-        bindI("detector1",&detector1,hasTopo); bindI("detector2",&detector2,hasTopo);
-    }
-    double phi() const { return hasPhi2 ? phi2 : (hasDp ? Delta_phi : std::numeric_limits<double>::quiet_NaN()); }
-};
-
-static inline bool passesTopology_simple(int d1, int d2, const std::vector<std::string>& tops){
-    for (const auto& t : tops){
-        if (t=="(FD,FD)" && d1==1 && d2==1) return true;
-        if (t=="(CD,FD)" && d1==2 && d2==1) return true;
-        if (t=="(CD,FT)" && d1==2 && d2==0) return true;
-    }
-    return false;
-}
-static inline bool applyKinematicCuts_simple(double t1,double oa,double pT){ return !(oa<=5.0 || (-t1)>1.0 || pT>0.20); }
-
-// Per-(xB,Q2,t,phi) polarization (strict mode for single periods)
-static std::vector<PolStats> compute_bin_polarization(
-    TTree* t, const std::vector<std::pair<double,double>>& xB_bins,
-    const std::vector<std::pair<double,double>>& Q2_bins,
-    const std::vector<std::pair<double,double>>& t_bins,
-    const std::vector<std::string>& tops)
-{
-    std::vector<PolStats> Pbin(xB_bins.size()*Q2_bins.size()*t_bins.size()*N_PHI_BINS);
-    auto idx=[&](int ix,int iQ,int it,int ip){ return (((ix*(int)Q2_bins.size()+iQ)*(int)t_bins.size()+it)*N_PHI_BINS + ip); };
-
-    BranchPol b; b.bind(t);
-    if (!(b.hasH && b.hasCuts && b.hasBins && (b.hasPhi2||b.hasDp) && b.hasPol && b.hasTopo)) return Pbin;
+    t->SetBranchAddress("beam_pol", &beam_pol);
 
     const Long64_t nent = t->GetEntries();
-    for (Long64_t i=0;i<nent;++i){
+    long long n = 0;
+    double mean = 0.0;
+    for (Long64_t i=0;i<nent;++i) {
         t->GetEntry(i);
-        if (!applyKinematicCuts_simple(b.t1,b.open_angle_ep2,b.pTmiss)) continue;
-        if (b.helicity!=+1 && b.helicity!=-1) continue;
-        if (!passesTopology_simple(b.detector1,b.detector2,tops)) continue;
-
-        double xB=b.x, Q2=b.Q2, tt=fabs(b.t1), phi=b.phi();
-        if (!std::isfinite(xB)||!std::isfinite(Q2)||!std::isfinite(tt)||!std::isfinite(phi)) continue;
-
-        auto findBin=[&](double v,const std::vector<std::pair<double,double>>& ranges)->int{
-            for (int k=0;k<(int)ranges.size();++k) if (v>=ranges[k].first && v<ranges[k].second) return k;
-            return -1;
-        };
-        int ix=findBin(xB,xB_bins), iQ=findBin(Q2,Q2_bins), it=findBin(tt,t_bins);
-        if (ix<0||iQ<0||it<0) continue;
-
-        double width = TWO_PI/double(N_PHI_BINS);
-        double w = std::fmod(phi,TWO_PI); if (w<0) w+=TWO_PI; if (w>=TWO_PI) w = std::nextafter(TWO_PI,0.0);
-        int ip = std::min(std::max(int(std::floor(w/width)),0), N_PHI_BINS-1);
-
-        PolStats& ps = Pbin[idx(ix,iQ,it,ip)];
-        ps.P += (b.beam_pol - ps.P)/(ps.n+1);
-        ps.n++;
+        if (!std::isfinite(beam_pol)) continue;
+        if (beam_pol <= 0.0) continue; // ignore zero/non-positive values
+        // incremental mean
+        mean += (beam_pol - mean) / double(n+1);
+        ++n;
     }
-    for (auto& ps : Pbin) ps.P_se = 0.0;
-    return Pbin;
+    return PolMean{mean, n};
 }
 
-// Per-(xB,Q2,t) polarization (aggregated over phi); used for 10.6 combine
-static std::vector<PolStats> compute_cell_polarization(
-    TTree* t, const std::vector<std::pair<double,double>>& xB_bins,
-    const std::vector<std::pair<double,double>>& Q2_bins,
-    const std::vector<std::pair<double,double>>& t_bins,
-    const std::vector<std::string>& tops)
-{
-    std::vector<PolStats> Pcell(xB_bins.size()*Q2_bins.size()*t_bins.size());
-    auto idx3=[&](int ix,int iQ,int it){ return (ix*(int)Q2_bins.size()+iQ)*(int)t_bins.size()+it; };
-
-    BranchPol b; b.bind(t);
-    if (!(b.hasH && b.hasCuts && b.hasBins && b.hasPol && b.hasTopo)) return Pcell;
-
-    const Long64_t nent = t->GetEntries();
-    for (Long64_t i=0;i<nent;++i){
-        t->GetEntry(i);
-        if (!applyKinematicCuts_simple(b.t1,b.open_angle_ep2,b.pTmiss)) continue;
-        if (b.helicity!=+1 && b.helicity!=-1) continue;
-        if (!passesTopology_simple(b.detector1,b.detector2,tops)) continue;
-
-        double xB=b.x, Q2=b.Q2, tt=fabs(b.t1);
-        if (!std::isfinite(xB)||!std::isfinite(Q2)||!std::isfinite(tt)) continue;
-
-        auto findBin=[&](double v,const std::vector<std::pair<double,double>>& ranges)->int{
-            for (int k=0;k<(int)ranges.size();++k) if (v>=ranges[k].first && v<ranges[k].second) return k;
-            return -1;
-        };
-        int ix=findBin(xB,xB_bins), iQ=findBin(Q2,Q2_bins), it=findBin(tt,t_bins);
-        if (ix<0||iQ<0||it<0) continue;
-
-        PolStats& ps = Pcell[idx3(ix,iQ,it)];
-        ps.P += (b.beam_pol - ps.P)/(ps.n+1);
-        ps.n++;
+static PolMean mean_beam_polarization_multi(const std::vector<TTree*>& trees) {
+    long long total_n = 0;
+    double acc_weighted = 0.0;
+    for (TTree* t : trees) {
+        PolMean pm = mean_beam_polarization(t);
+        if (pm.n > 0) {
+            acc_weighted += pm.P * double(pm.n);
+            total_n += pm.n;
+        }
     }
-    for (auto& ps : Pcell) ps.P_se = 0.0;
-    return Pcell;
+    if (total_n == 0) return PolMean{0.0,0};
+    return PolMean{acc_weighted / double(total_n), total_n};
 }
 
 // ------------ math helpers for stabilizer penalties ------------
@@ -473,7 +379,7 @@ struct BSApt { double phi=0.0; double bsa=0.0; double err=0.0; bool valid=false;
 struct FitRes { double A=0, Aerr=0, B1=0, B1err=0, B2=0, B2err=0, C=0, Cerr=0; double chi2=0; int ndf=0; int status=0; };
 struct CellResult {
     std::vector<BSApt> points; FitRes fit;
-    double P_used=std::numeric_limits<double>::quiet_NaN(); bool P_per_bin=true;
+    double P_used=std::numeric_limits<double>::quiet_NaN(); bool P_per_bin=false; // now always false
 };
 
 static FitRes fit_cell(const std::vector<BSApt>& pts){
@@ -577,7 +483,7 @@ static void write_period_bsa_json(
               "\"B2\": {\"val\": 0.0, \"err\": 0.0}, "
               "\"C\": {\"val\": "<<cr.fit.C<<", \"err\": "<<cr.fit.Cerr<<"}, "
               "\"chi2\": "<<cr.fit.chi2<<", \"ndf\": "<<cr.fit.ndf<<", \"status\": "<<cr.fit.status<<"},\n";
-        ofs<<"      \"polarization\": {\"per_bin\": "<<(cr.P_per_bin?"true":"false")<<", \"P_used\": "<<(std::isfinite(cr.P_used)? cr.P_used : 0.0)<<"}\n";
+        ofs<<"      \"polarization\": {\"per_bin\": false, \"P_used\": "<<(std::isfinite(cr.P_used)? cr.P_used : 0.0)<<"}\n";
         ofs<<"    }";
     }
     ofs<<"\n  }\n}\n";
@@ -617,7 +523,7 @@ static void write_all_periods_json(
                   "\"B2\":{\"val\":0.0,\"err\":0.0},"
                   "\"C\":{\"val\":"<<cr.fit.C<<",\"err\":"<<cr.fit.Cerr<<"},"
                   "\"chi2\":"<<cr.fit.chi2<<",\"ndf\":"<<cr.fit.ndf<<",\"status\":"<<cr.fit.status<<"},";
-            ofs<<"\"polarization\":{\"per_bin\":"<<(cr.P_per_bin?"true":"false")<<",\"P_used\":"<<(std::isfinite(cr.P_used)? cr.P_used : 0.0)<<"}";
+            ofs<<"\"polarization\":{\"per_bin\":false,\"P_used\":"<<(std::isfinite(cr.P_used)? cr.P_used : 0.0)<<"}";
             ofs<<"}";
         }
         ofs<<"\n      }\n    }";
@@ -800,7 +706,7 @@ static void plot_cells_for_period(
 // =======================================================
 void compute_and_plot_bsa_helicity(
     const std::vector<std::string>& periods,
-    const std::vector<std::string>& topologies,
+    const std::vector<std::string>& topologies, // unused now; kept for interface compatibility
     const std::vector<Binning>& binning_scheme,
     const std::map<std::string, TTree*>& dvcsDataTrees,
     const std::string& pi0_corrected_counts_json_path,
@@ -813,7 +719,7 @@ void compute_and_plot_bsa_helicity(
     std::vector<std::string> group_order_in_master;
     AllGroups allGroups = load_corrected_master(pi0_corrected_counts_json_path, master_meta, group_order_in_master);
 
-    // Build binning from your runtime scheme (checks sizes)
+    // Build binning from runtime scheme (size checks)
     const auto xB_bins = uniqueRanges(binning_scheme, 'x');
     const auto Q2_bins = uniqueRanges(binning_scheme, 'Q');
     const auto t_bins  = uniqueRanges(binning_scheme, 't');
@@ -829,37 +735,45 @@ void compute_and_plot_bsa_helicity(
 
     std::map<std::string, std::map<std::tuple<int,int,int>, CellResult>> allPeriodCells;
 
-    // Strict per-period processing with counts-key resolution
+    // ---------- Per-period processing with single scalar P ----------
     for (const auto& treeKey : periods) {
-        // counts key may differ; resolve it
-        const std::string countsKey = resolve_counts_key(treeKey, allGroups);
-        if (countsKey.empty()) {
-            std::ostringstream msg;
-            msg << "Requested group '"<< treeKey
-                <<"' not present in corrected master. Tried normalized key '"
-                << normalize_to_counts_key(treeKey) << "' and lowercase variant.";
-            fatal(msg.str());
-        }
-        const GroupTable& table = allGroups.at(countsKey);
+        // Resolve to counts key
+        const std::string countsKey = counts_key_from_tree_key(treeKey);
 
-        // polarization tree must be found by the original tree key (exact match from loadTrees)
+        // Lookup counts group
+        auto itG = allGroups.find(countsKey);
+        if (itG == allGroups.end()) {
+            std::ostringstream avail;
+            avail << "Available groups:";
+            for (const auto& gkv : allGroups) avail << " " << gkv.first;
+            fatal("Requested group '"+countsKey+"' not present in corrected master. " + avail.str());
+        }
+        const GroupTable& table = itG->second;
+
+        // Tree must exist for polarization
         auto itT = dvcsDataTrees.find(treeKey);
         if (itT == dvcsDataTrees.end() || !(itT->second)) {
-            fatal("Missing DVCS polarization tree for requested group '"+treeKey+"'.");
+            fatal("Missing DVCS polarization tree for requested period '"+treeKey+"'.");
         }
         TTree* t = itT->second;
 
-        // Compute per-(xB,Q2,t,phi) polarization from the tree
-        std::vector<PolStats> Pbin = compute_bin_polarization(t, xB_bins, Q2_bins, t_bins, topologies);
+        // Single scalar mean polarization for the whole period
+        PolMean pm = mean_beam_polarization(t);
+        if (pm.n == 0 || !(pm.P > 0.0) || !std::isfinite(pm.P)) {
+            fatal("Cannot compute mean beam polarization for period '"+treeKey+"': no valid beam_pol entries.");
+        }
+        const double P_here = pm.P;
 
-        // assemble BSA cells (strict: if S>0, then P must exist and be >0 per phi)
+        // Assemble BSA cells using constant P
         std::map<std::tuple<int,int,int>, CellResult> cells;
+
         for (int ix=0; ix<(int)xB_bins.size(); ++ix)
         for (int iQ=0; iQ<(int)Q2_bins.size(); ++iQ)
         for (int itb=0; itb<(int)t_bins.size(); ++itb) {
             CellResult result;
             result.points.resize(N_PHI_BINS);
-            result.P_per_bin = true;
+            result.P_per_bin = false;
+            result.P_used = P_here;
 
             for (int ip=0; ip<N_PHI_BINS; ++ip) {
                 const BinKey bk(ix,iQ,itb,ip);
@@ -882,14 +796,6 @@ void compute_and_plot_bsa_helicity(
                     continue;
                 }
 
-                const size_t flat = (((ix*(size_t)Q2_bins.size()+iQ)*(size_t)t_bins.size()+itb)*N_PHI_BINS + ip);
-                if (!(flat < Pbin.size() && Pbin[flat].n > 0 && Pbin[flat].P > 0.0)) {
-                    fatal("Polarization missing for group '"+treeKey+"' bin "+key4s(ix,iQ,itb,ip)+
-                          " while counts exist (S>0). No fallbacks allowed.");
-                }
-                const double P_here = Pbin[flat].P;
-                result.P_used = P_here; // last used; metadata only
-
                 const double a = Np + JEFFREYS_ALPHA;
                 const double b = Nm + JEFFREYS_ALPHA;
                 const double S = a + b;
@@ -908,15 +814,15 @@ void compute_and_plot_bsa_helicity(
             cells[std::make_tuple(ix,iQ,itb)] = std::move(result);
         }
 
-        // write per-group JSON + plots (use the tree key for filenames/dirs to match your logs)
-        const fs::path outP = json_period_dir/("BSA_fits_"+normalize_to_counts_key(treeKey)+".json");
+        // write per-group JSON + plots
+        const fs::path outP = json_period_dir/("BSA_fits_"+countsKey+".json");
         write_period_bsa_json(outP.string(), N_PHI_BINS, xB_bins, Q2_bins, t_bins, cells);
 
-        const fs::path plots_dir = fs::path(out_root_dir)/"bsa_plots"/plot_subdir_for_group(normalize_to_counts_key(treeKey));
+        const fs::path plots_dir = fs::path(out_root_dir)/"bsa_plots"/plot_subdir_for_group(countsKey);
         std::error_code ec; fs::create_directories(plots_dir, ec);
-        plot_cells_for_period(normalize_to_counts_key(treeKey), binning_scheme, xB_bins, Q2_bins, t_bins, cells, plots_dir.string());
+        plot_cells_for_period(countsKey, binning_scheme, xB_bins, Q2_bins, t_bins, cells, plots_dir.string());
 
-        allPeriodCells[normalize_to_counts_key(treeKey)] = std::move(cells);
+        allPeriodCells[countsKey] = std::move(cells);
     }
 
     // all-periods rollup
@@ -924,101 +830,43 @@ void compute_and_plot_bsa_helicity(
         (fs::path(out_root_dir)/"jsons"/"BSA_fits_all_periods.json").string(),
         allPeriodCells, N_PHI_BINS, xB_bins, Q2_bins, t_bins);
 
-    // ---- Combined 10.6 output (robust P combiner) ----
+    // ---- Combined 10.6 output (one global scalar P over component trees) ----
     auto it106 = allGroups.find("10.6_GeV");
     if (it106 == allGroups.end()) {
         fatal("No '10.6_GeV' group in corrected master; cannot build combined output.");
     }
-
-    // Component counts keys in the master
-    const std::vector<std::string> compCounts = {"sp18_inb","sp18_out","fa18_inb","fa18_out"};
-
-    // Resolve each component to an actual DVCS_* tree key for polarization
-    std::map<std::string,TTree*> compTrees; // countsKey -> TTree*
-    for (const auto& ck : compCounts) {
-        if (!allGroups.count(ck)) {
-            fatal("Combined 10.6_GeV requires component counts group '"+ck+"' in corrected master.");
-        }
-        const std::string treeKey = resolve_tree_key_from_counts(ck, dvcsDataTrees);
-        if (treeKey.empty()) {
-            fatal("Could not find a DVCS tree key in dvcsDataTrees that matches counts group '"+ck+"'.");
-        }
-        auto itT = dvcsDataTrees.find(treeKey);
-        if (itT == dvcsDataTrees.end() || !(itT->second)) {
-            fatal("Missing DVCS polarization tree for component '"+treeKey+"' required for 10.6_GeV.");
-        }
-        compTrees[ck] = itT->second;
-    }
-
-    // Per-component P per (xB,Q2,t) via DVCS entries (aggregated over phi)
-    std::map<std::string, std::vector<PolStats>> P_comp_cell; // countsKey -> Pcell vector
-    for (const auto& kv : compTrees) {
-        P_comp_cell[kv.first] = compute_cell_polarization(
-            kv.second, xB_bins, Q2_bins, t_bins, topologies);
-    }
-
-    // Helper: flat index for cell (ix,iQ,it)
-    auto idx3 = [&](int ix,int iQ,int it)->size_t{
-        return (ix*(size_t)Q2_bins.size()+iQ)*(size_t)t_bins.size()+it;
-    };
-
-    // Build combined cells with robust polarization combination
-    std::map<std::tuple<int,int,int>, CellResult> combCells;
     const GroupTable& table106 = it106->second;
 
+    // Component groups and their tree keys
+    const std::vector<std::pair<std::string,std::string>> comps = {
+        {"sp18_inb", "DVCS_Sp18_inb"},
+        {"sp18_out", "DVCS_Sp18_out"},
+        {"fa18_inb", "DVCS_Fa18_inb"},
+        {"fa18_out", "DVCS_Fa18_out"}
+    };
+
+    std::vector<TTree*> compTrees;
+    for (const auto& kv : comps) {
+        auto itT = dvcsDataTrees.find(kv.second);
+        if (itT == dvcsDataTrees.end() || !(itT->second)) {
+            fatal("Missing DVCS polarization tree for 10.6_GeV component '"+kv.second+"'.");
+        }
+        compTrees.push_back(itT->second);
+    }
+
+    PolMean pm106 = mean_beam_polarization_multi(compTrees);
+    if (pm106.n == 0 || !(pm106.P > 0.0) || !std::isfinite(pm106.P)) {
+        fatal("Could not build polarization for 10.6_GeV: no valid beam_pol entries across components.");
+    }
+    const double P_106 = pm106.P;
+
+    std::map<std::tuple<int,int,int>, CellResult> combCells;
     for (int ix=0; ix<(int)xB_bins.size(); ++ix)
     for (int iQ=0; iQ<(int)Q2_bins.size(); ++iQ)
     for (int itb=0; itb<(int)t_bins.size(); ++itb) {
         CellResult cr; cr.points.resize(N_PHI_BINS);
         cr.P_per_bin = false;
-
-        // 1) counts-weighted P across components with S_cell>0 and Pk>0
-        double wsum_counts = 0.0, psum_counts = 0.0;
-
-        for (const auto& ck : compCounts) {
-            const auto& tblC = allGroups.at(ck);
-            double S_cell = 0.0;
-            for (int ip=0; ip<N_PHI_BINS; ++ip) {
-                auto itC = tblC.find(BinKey(ix,iQ,itb,ip));
-                if (itC != tblC.end() && itC->second.Np>0.0 && itC->second.Nm>0.0) {
-                    S_cell += itC->second.Np + itC->second.Nm;
-                }
-            }
-            const auto& Pc = P_comp_cell.at(ck);
-            const size_t f3 = idx3(ix,iQ,itb);
-            const bool haveP = (f3 < Pc.size() && Pc[f3].n > 0 && Pc[f3].P > 0.0);
-
-            if (S_cell > 0.0 && haveP) {
-                wsum_counts += S_cell;
-                psum_counts += S_cell * Pc[f3].P;
-            }
-        }
-
-        double P_here = 0.0;
-        if (wsum_counts > 0.0) {
-            P_here = psum_counts / wsum_counts;
-        } else {
-            // 2) DVCS-entries-weighted fallback across components with Pk>0
-            double wsum_n = 0.0, psum_n = 0.0;
-            for (const auto& ck : compCounts) {
-                const auto& Pc = P_comp_cell.at(ck);
-                const size_t f3 = idx3(ix,iQ,itb);
-                if (f3 < Pc.size() && Pc[f3].n > 0 && Pc[f3].P > 0.0) {
-                    wsum_n += Pc[f3].n;
-                    psum_n += Pc[f3].n * Pc[f3].P;
-                }
-            }
-            if (wsum_n > 0.0) {
-                P_here = psum_n / wsum_n;
-            }
-        }
-
-        if (!(P_here > 0.0)) {
-            fatal("Could not build polarization for 10.6_GeV at cell ("+
-                  std::to_string(ix)+","+std::to_string(iQ)+","+std::to_string(itb)+
-                  "): no component provides usable DVCS polarization here.");
-        }
-        cr.P_used = P_here;
+        cr.P_used = P_106;
 
         for (int ip=0; ip<N_PHI_BINS; ++ip){
             const BinKey bk(ix,iQ,itb,ip);
@@ -1043,8 +891,8 @@ void compute_and_plot_bsa_helicity(
 
             const double A_raw   = D / S;
             const double var_raw = 4.0 * (a*b) / ((a+b)*(a+b)*(a+b+1.0));
-            p.bsa  = A_raw / P_here;
-            p.err  = std::sqrt(std::max(var_raw, 1e-12)) / P_here;
+            p.bsa  = A_raw / P_106;
+            p.err  = std::sqrt(std::max(var_raw, 1e-12)) / P_106;
             p.valid = std::isfinite(p.bsa) && std::isfinite(p.err);
 
             cr.points[ip] = p;
