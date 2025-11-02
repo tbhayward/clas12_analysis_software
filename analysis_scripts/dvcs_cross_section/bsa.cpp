@@ -11,10 +11,15 @@
 // - Saves plots under:              <out_root_dir>/bsa_plots/<group>/plot_bsa_<group>_xB_<ix>.png
 //
 // Notes:
-// - Group names must match EXACTLY the keys present in pi0_corrected_counts_all_groups.json,
-//   e.g. "fa18_inb", "fa18_out", "sp18_inb", "sp18_out", "Spring2018", "Fall2018", "10.6_GeV".
+// - Group names in the corrected master are lowercase without the DVCS_ prefix,
+//   e.g. "fa18_inb", "fa18_out", "sp18_inb", "sp18_out", plus combined keys like "10.6_GeV".
+// - The trees loaded by loadTrees are keyed with DVCS_ prefixes, e.g. "DVCS_Fa18_inb".
+// - This file transparently bridges those naming schemes:
+//     * Counts lookup uses a resolver:  "DVCS_Fa18_inb" -> "fa18_inb" (and other fallbacks)
+//     * Tree lookup keeps the original tree key for per-period; for combined 10.6 it
+//       resolves from counts key back to the matching DVCS_* tree key.
 // - Polarization (per-period groups, strict, NO FALLBACKS):
-//   * For every requested group, a DVCS TTree must be present (exact key match).
+//   * For every requested group, a DVCS TTree must be present (exact key match from `periods`).
 //   * We compute per-(xB,Q2,t,phi) bin polarization from the tree and divide A and sigma_A by that.
 //   * If any required per-phi polarization is missing where counts exist (S>0), FATAL.
 // - Combined 10.6 logic (robust):
@@ -300,6 +305,49 @@ static AllGroups load_corrected_master(const std::string& master_path,
     }
     if (out.empty()) fatal("No groups parsed from corrected master.");
     return out;
+}
+
+// ------------ name resolvers to bridge counts<->tree keys ------------
+static std::string toLowerCopy(std::string s) {
+    for (char& c : s) c = (char)std::tolower((unsigned char)c);
+    return s;
+}
+
+static std::string stripPrefix(const std::string& s, const std::string& pref) {
+    if (s.rfind(pref, 0) == 0) return s.substr(pref.size());
+    return s;
+}
+
+// Normalize a key into the canonical "counts" form: lowercase, no DVCS_ prefix.
+static std::string normalize_to_counts_key(const std::string& anyKey) {
+    return toLowerCopy(stripPrefix(anyKey, "DVCS_"));
+}
+
+// From a tree key like "DVCS_Fa18_inb", resolve the counts key present in the master.
+// Tries: exact, normalized, and lowercase. Returns empty string if not found.
+static std::string resolve_counts_key(const std::string& treeKey, const AllGroups& countsGroups) {
+    // 1) exact
+    if (countsGroups.count(treeKey)) return treeKey;
+    // 2) normalized (lowercase, no DVCS_)
+    std::string nrm = normalize_to_counts_key(treeKey);
+    if (countsGroups.count(nrm)) return nrm;
+    // 3) pure lowercase of original
+    std::string low = toLowerCopy(treeKey);
+    if (countsGroups.count(low)) return low;
+    return std::string();
+}
+
+// From a counts key like "fa18_inb", find the matching DVCS_* tree key in dvcsDataTrees.
+static std::string resolve_tree_key_from_counts(const std::string& countsKey,
+                                                const std::map<std::string, TTree*>& dvcsDataTrees) {
+    // 1) exact key present as-is (unlikely but harmless)
+    if (dvcsDataTrees.count(countsKey)) return countsKey;
+    // 2) scan for a tree whose normalized form matches the counts key
+    for (const auto& kv : dvcsDataTrees) {
+        if (normalize_to_counts_key(kv.first) == countsKey) return kv.first;
+    }
+    // 3) try DVCS_ + CamelCase variants if ever needed (not implemented; scanning covers it)
+    return std::string();
 }
 
 // ------------ polarization (from DVCS tree) ------------
@@ -781,17 +829,23 @@ void compute_and_plot_bsa_helicity(
 
     std::map<std::string, std::map<std::tuple<int,int,int>, CellResult>> allPeriodCells;
 
-    // Strict per-period processing: exact group names, polarization per phi required
-    for (const auto& group : periods) {
-        auto itG = allGroups.find(group);
-        if (itG == allGroups.end()) {
-            fatal("Requested group '"+group+"' not present in corrected master. Exact match is required.");
+    // Strict per-period processing with counts-key resolution
+    for (const auto& treeKey : periods) {
+        // counts key may differ; resolve it
+        const std::string countsKey = resolve_counts_key(treeKey, allGroups);
+        if (countsKey.empty()) {
+            std::ostringstream msg;
+            msg << "Requested group '"<< treeKey
+                <<"' not present in corrected master. Tried normalized key '"
+                << normalize_to_counts_key(treeKey) << "' and lowercase variant.";
+            fatal(msg.str());
         }
-        const GroupTable& table = itG->second;
+        const GroupTable& table = allGroups.at(countsKey);
 
-        auto itT = dvcsDataTrees.find(group);
+        // polarization tree must be found by the original tree key (exact match from loadTrees)
+        auto itT = dvcsDataTrees.find(treeKey);
         if (itT == dvcsDataTrees.end() || !(itT->second)) {
-            fatal("Missing DVCS polarization tree for requested group '"+group+"'.");
+            fatal("Missing DVCS polarization tree for requested group '"+treeKey+"'.");
         }
         TTree* t = itT->second;
 
@@ -830,7 +884,7 @@ void compute_and_plot_bsa_helicity(
 
                 const size_t flat = (((ix*(size_t)Q2_bins.size()+iQ)*(size_t)t_bins.size()+itb)*N_PHI_BINS + ip);
                 if (!(flat < Pbin.size() && Pbin[flat].n > 0 && Pbin[flat].P > 0.0)) {
-                    fatal("Polarization missing for group '"+group+"' bin "+key4s(ix,iQ,itb,ip)+
+                    fatal("Polarization missing for group '"+treeKey+"' bin "+key4s(ix,iQ,itb,ip)+
                           " while counts exist (S>0). No fallbacks allowed.");
                 }
                 const double P_here = Pbin[flat].P;
@@ -854,15 +908,15 @@ void compute_and_plot_bsa_helicity(
             cells[std::make_tuple(ix,iQ,itb)] = std::move(result);
         }
 
-        // write per-group JSON + plots
-        const fs::path outP = json_period_dir/("BSA_fits_"+group+".json");
+        // write per-group JSON + plots (use the tree key for filenames/dirs to match your logs)
+        const fs::path outP = json_period_dir/("BSA_fits_"+normalize_to_counts_key(treeKey)+".json");
         write_period_bsa_json(outP.string(), N_PHI_BINS, xB_bins, Q2_bins, t_bins, cells);
 
-        const fs::path plots_dir = fs::path(out_root_dir)/"bsa_plots"/plot_subdir_for_group(group);
+        const fs::path plots_dir = fs::path(out_root_dir)/"bsa_plots"/plot_subdir_for_group(normalize_to_counts_key(treeKey));
         std::error_code ec; fs::create_directories(plots_dir, ec);
-        plot_cells_for_period(group, binning_scheme, xB_bins, Q2_bins, t_bins, cells, plots_dir.string());
+        plot_cells_for_period(normalize_to_counts_key(treeKey), binning_scheme, xB_bins, Q2_bins, t_bins, cells, plots_dir.string());
 
-        allPeriodCells[group] = std::move(cells);
+        allPeriodCells[normalize_to_counts_key(treeKey)] = std::move(cells);
     }
 
     // all-periods rollup
@@ -876,22 +930,28 @@ void compute_and_plot_bsa_helicity(
         fatal("No '10.6_GeV' group in corrected master; cannot build combined output.");
     }
 
-    // Require component groups and their exact trees
-    const std::vector<std::string> comps = {"sp18_inb","sp18_out","fa18_inb","fa18_out"};
-    std::map<std::string,TTree*> compTrees;
-    for (const auto& cg : comps) {
-        if (!allGroups.count(cg)) {
-            fatal("Combined 10.6_GeV requires component counts group '"+cg+"' in corrected master.");
+    // Component counts keys in the master
+    const std::vector<std::string> compCounts = {"sp18_inb","sp18_out","fa18_inb","fa18_out"};
+
+    // Resolve each component to an actual DVCS_* tree key for polarization
+    std::map<std::string,TTree*> compTrees; // countsKey -> TTree*
+    for (const auto& ck : compCounts) {
+        if (!allGroups.count(ck)) {
+            fatal("Combined 10.6_GeV requires component counts group '"+ck+"' in corrected master.");
         }
-        auto itT = dvcsDataTrees.find(cg);
+        const std::string treeKey = resolve_tree_key_from_counts(ck, dvcsDataTrees);
+        if (treeKey.empty()) {
+            fatal("Could not find a DVCS tree key in dvcsDataTrees that matches counts group '"+ck+"'.");
+        }
+        auto itT = dvcsDataTrees.find(treeKey);
         if (itT == dvcsDataTrees.end() || !(itT->second)) {
-            fatal("Missing DVCS polarization tree for component '"+cg+"' required for 10.6_GeV.");
+            fatal("Missing DVCS polarization tree for component '"+treeKey+"' required for 10.6_GeV.");
         }
-        compTrees[cg] = itT->second;
+        compTrees[ck] = itT->second;
     }
 
     // Per-component P per (xB,Q2,t) via DVCS entries (aggregated over phi)
-    std::map<std::string, std::vector<PolStats>> P_comp_cell;
+    std::map<std::string, std::vector<PolStats>> P_comp_cell; // countsKey -> Pcell vector
     for (const auto& kv : compTrees) {
         P_comp_cell[kv.first] = compute_cell_polarization(
             kv.second, xB_bins, Q2_bins, t_bins, topologies);
@@ -915,9 +975,8 @@ void compute_and_plot_bsa_helicity(
         // 1) counts-weighted P across components with S_cell>0 and Pk>0
         double wsum_counts = 0.0, psum_counts = 0.0;
 
-        for (const auto& cg : comps) {
-            // counts in this cell for this component = sum over phi of corrected S
-            const auto& tblC = allGroups.at(cg);
+        for (const auto& ck : compCounts) {
+            const auto& tblC = allGroups.at(ck);
             double S_cell = 0.0;
             for (int ip=0; ip<N_PHI_BINS; ++ip) {
                 auto itC = tblC.find(BinKey(ix,iQ,itb,ip));
@@ -925,7 +984,7 @@ void compute_and_plot_bsa_helicity(
                     S_cell += itC->second.Np + itC->second.Nm;
                 }
             }
-            const auto& Pc = P_comp_cell.at(cg);
+            const auto& Pc = P_comp_cell.at(ck);
             const size_t f3 = idx3(ix,iQ,itb);
             const bool haveP = (f3 < Pc.size() && Pc[f3].n > 0 && Pc[f3].P > 0.0);
 
@@ -941,8 +1000,8 @@ void compute_and_plot_bsa_helicity(
         } else {
             // 2) DVCS-entries-weighted fallback across components with Pk>0
             double wsum_n = 0.0, psum_n = 0.0;
-            for (const auto& cg : comps) {
-                const auto& Pc = P_comp_cell.at(cg);
+            for (const auto& ck : compCounts) {
+                const auto& Pc = P_comp_cell.at(ck);
                 const size_t f3 = idx3(ix,iQ,itb);
                 if (f3 < Pc.size() && Pc[f3].n > 0 && Pc[f3].P > 0.0) {
                     wsum_n += Pc[f3].n;
