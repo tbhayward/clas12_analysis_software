@@ -41,6 +41,7 @@
 #include <TPad.h>
 #include <TGaxis.h>
 #include <TTree.h>
+#include <TString.h>
 
 #include <Math/Factory.h>
 #include <Math/Minimizer.h>
@@ -119,12 +120,6 @@ static bool parse_tuple_key(const std::string& s, BinKey& out) {
     out = BinKey(ix,iQ,it,ip);
     return true;
 }
-
-struct Binning {
-    double xBmin, xBmax;
-    double Q2min, Q2max;
-    double tmin,  tmax;
-};
 
 static inline std::vector<std::pair<double,double>> uniqueRanges(const std::vector<Binning>& scheme, char which) {
     std::set<std::pair<double,double>> s;
