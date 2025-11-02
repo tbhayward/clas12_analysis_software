@@ -848,7 +848,7 @@ static void plot_cells_for_period(
 
                     // --------- Legend: widened to the left and inset from top-right
                     TLegend* leg = new TLegend(0.40, 0.68, 0.86, 0.88); 
-                    leg->SetMargin(0.22);
+                    leg->SetMargin(0.30);
                     leg->SetBorderSize(1);
                     leg->SetLineColor(kBlack);
                     leg->SetFillColor(kWhite);
