@@ -1,18 +1,24 @@
-// bsa.cpp (uses pi0_corrected_counts_all_groups.json as the ONLY input for counts)
+// bsa.cpp (uses pi0_corrected_counts_all_groups.json as the ONLY input for counts,
+// and (optionally) uses rad_corrected_xsec_<E>.json files to overlay BSA from
+// radiatively corrected cross sections).
 //
 // Behavior summary:
 // - Reads contamination-corrected helicity counts from:
 //       <out_root_dir>/jsons/pi0_corrected_counts_all_groups.json
 // - For each requested group (period), computes a SINGLE scalar polarization P
 //   as the mean of the tree branch "beam_pol" over ALL DVCS events in that period.
-// - Uses that constant P to build per-phi BSA points and fit the stabilized model:
+// - Uses that constant P to build per-phi BSA points from corrected counts and fit:
 //       y(phi) = C + [A*sin(phi)] / [1 + B*cos(phi)]
-// - Writes per-group fit JSONs to:  <out_root_dir>/jsons/BSA_fits/BSA_fits_<group>.json
-// - Writes all-periods rollup to:   <out_root_dir>/jsons/BSA_fits_all_periods.json
-// - Writes 10.6 combined to:        <out_root_dir>/jsons/BSA_fits_combined_10.6.json
-//   For 10.6_GeV, polarization is a single scalar mean computed over ALL events
-//   from its component periods' DVCS trees combined.
-// - Saves plots under:              <out_root_dir>/bsa_plots/<group>/plot_bsa_<group>_xB_<ix>.png
+// - BLUE canvas: plots the counts-based BSA points (blue) and a thin dashed blue fit.
+// - RED OVERLAY canvas: in the same layout, adds points and a thin dashed fit for the
+//   BSA computed from radiatively-corrected cross sections:
+//       A_LU(phi) = [sigma_plus - sigma_minus] / [ P * (sigma_plus + sigma_minus) ]
+//   with error propagation from sigma uncertainties.
+// - Writes per-group fit JSONs (counts-based) to: <out_root_dir>/jsons/BSA_fits/BSA_fits_<group>.json
+// - Writes all-periods rollup (counts-based) to:   <out_root_dir>/jsons/BSA_fits_all_periods.json
+// - Writes 10.6 combined (counts-based) to:        <out_root_dir>/jsons/BSA_fits_combined_10.6.json
+// - Saves BLUE plots under:                         <out_root_dir>/bsa_plots/<group>/plot_bsa_<group>_xB_<ix>.png
+// - Saves OVERLAY plots under:                      <out_root_dir>/bsa_plots/<group>/plot_bsa_vs_xsec_<group>_xB_<ix>.png
 //
 // Names and bridging:
 // - Corrected-counts master JSON groups use lower-case, no DVCS_ prefix, e.g. "sp18_inb".
@@ -64,6 +70,10 @@
 #include <utility>
 #include <vector>
 
+// JSON for reading cross-section overlays
+#include <nlohmann/json.hpp>
+using json = nlohmann::json;
+
 namespace {
 
 // =================== global style ===================
@@ -76,7 +86,6 @@ struct StyleInit {
         gStyle->SetPadTickX(1);
         gStyle->SetPadTickY(1);
         gStyle->SetLegendBorderSize(1);
-
         const int rf = 42; // Helvetica
         gStyle->SetTitleFont(rf, "XYZ");
         gStyle->SetLabelFont(rf, "XYZ");
@@ -103,6 +112,17 @@ struct HelCorr { double Np=0.0; double Nm=0.0; double ep=0.0; double em=0.0; };
 using GroupTable = std::map<BinKey, HelCorr>;
 using AllGroups  = std::map<std::string, GroupTable>;
 
+struct XsecBin12 {
+    std::array<double, N_PHI_BINS> xphi{};
+    std::array<double, N_PHI_BINS> splus{};
+    std::array<double, N_PHI_BINS> splus_err{};
+    std::array<double, N_PHI_BINS> sminus{};
+    std::array<double, N_PHI_BINS> sminus_err{};
+    bool valid = false;
+};
+using XsecTable = std::map<std::tuple<int,int,int>, XsecBin12>; // (ix,iQ,it) -> 12-bin struct
+using XsecByEnergy = std::map<std::string, XsecTable>; // energy string -> table
+
 // ------------ tiny helpers ------------
 [[noreturn]] static void fatal(const std::string& msg) {
     std::cerr << "[bsa][FATAL] " << msg << std::endl;
@@ -118,6 +138,11 @@ static bool parse_tuple_key(const std::string& s, BinKey& out) {
     int ix,iQ,it,ip;
     if (std::sscanf(s.c_str(),"(%d,%d,%d,%d)",&ix,&iQ,&it,&ip)!=4) return false;
     out = BinKey(ix,iQ,it,ip);
+    return true;
+}
+
+static bool parse_tuple3_key(const std::string& s, int& ix,int& iQ,int& it) {
+    if (std::sscanf(s.c_str(),"(%d,%d,%d)",&ix,&iQ,&it)!=3) return false;
     return true;
 }
 
@@ -167,7 +192,7 @@ static void uniqueQT_for_xB(
     t_list.assign(ts.begin(), ts.end());
 }
 
-// Extract {...} block that follows a key (tiny JSON helper)
+// Extract {...} block that follows a key (tiny JSON helper for counts master)
 static std::string objForKey(const std::string& s, const std::string& key) {
     size_t p = s.find(key);
     if (p==std::string::npos) fatal("Key '"+key+"' not found.");
@@ -290,7 +315,7 @@ static AllGroups load_corrected_master(const std::string& master_path,
             size_t mce = v.find(':', me); if (mce==std::string::npos) fatal("Malformed -1.err in "+gname);
             double em = parseDoubleAfterColon_num(v, mce, gname+" (-1).err");
 
-            (void)ep; (void)em; // parsed for completeness
+            (void)ep; (void)em;
             tbl[bk] = HelCorr{Np, Nm, ep, em};
             p = j; ++nb;
         }
@@ -306,7 +331,7 @@ static AllGroups load_corrected_master(const std::string& master_path,
 
 // ------------ name resolver: DVCS_* tree key -> counts key ------------
 static std::string counts_key_from_tree_key(const std::string& treeKey) {
-    // Known explicit mappings (safe and clear)
+    // Known explicit mappings
     static const std::map<std::string,std::string> M = {
         {"DVCS_Sp18_inb",        "sp18_inb"},
         {"DVCS_Sp18_out",        "sp18_out"},
@@ -324,6 +349,16 @@ static std::string counts_key_from_tree_key(const std::string& treeKey) {
     if (s.rfind(pre,0)==0) s = s.substr(pre.size());
     for (auto& c : s) c = (char)std::tolower((unsigned char)c);
     return s; // e.g. "sp18_inb"
+}
+
+// ------------ simple map: period -> energies used for rad xsec ------------
+static std::vector<std::string> energies_for_group(const std::string& group) {
+    // 10.6 combined will add both; individual periods are split as per run conditions.
+    if (group == "sp18_inb" || group == "sp18_out") return {"10.59"};
+    if (group == "fa18_inb" || group == "fa18_out" || group == "fa18_inb_supp") return {"10.60"};
+    if (group == "sp19_inb") return {"10.2"};
+    if (group == "10.6_GeV") return {"10.59","10.60"};
+    return {}; // unknown -> no overlay
 }
 
 // ------------ compute simple mean beam polarization from a tree ------------
@@ -344,7 +379,6 @@ static PolMean mean_beam_polarization(TTree* t) {
         t->GetEntry(i);
         if (!std::isfinite(beam_pol)) continue;
         if (beam_pol <= 0.0) continue; // ignore zero/non-positive values
-        // incremental mean
         mean += (beam_pol - mean) / double(n+1);
         ++n;
     }
@@ -374,9 +408,10 @@ struct BSApt { double phi=0.0; double bsa=0.0; double err=0.0; bool valid=false;
 struct FitRes { double A=0, Aerr=0, B1=0, B1err=0, B2=0, B2err=0, C=0, Cerr=0; double chi2=0; int ndf=0; int status=0; };
 struct CellResult {
     std::vector<BSApt> points; FitRes fit;
-    double P_used=std::numeric_limits<double>::quiet_NaN(); bool P_per_bin=false; // now always false
+    double P_used=std::numeric_limits<double>::quiet_NaN(); bool P_per_bin=false; // always false
 };
 
+// fit
 static FitRes fit_cell(const std::vector<BSApt>& pts){
     std::vector<double> x, y, ey;
     x.reserve(pts.size()); y.reserve(pts.size()); ey.reserve(pts.size());
@@ -386,7 +421,7 @@ static FitRes fit_cell(const std::vector<BSApt>& pts){
         y.push_back(p.bsa);
         ey.push_back(std::max(p.err, 1e-6));
     }
-    FitRes fr; 
+    FitRes fr;
     const int n = (int)x.size();
     if (n < 3) { fr.status = 1; fr.ndf = 0; return fr; }
 
@@ -445,7 +480,7 @@ static FitRes fit_cell(const std::vector<BSApt>& pts){
     return fr;
 }
 
-// JSON writers (schema preserved)
+// JSON writers (schema preserved) for counts-based outputs
 static void write_period_bsa_json(
     const std::string& out_path,
     int nPhi,
@@ -527,7 +562,7 @@ static void write_all_periods_json(
     std::cout << "[bsa] Wrote " << out_path << "\n";
 }
 
-// ------------ plotting ------------
+// ------------ plotting helpers ------------
 static void drawDegreeTicks(double xmin, double ymin, double xmax, double labelSize){
     TGaxis* ax = new TGaxis(xmin, ymin, xmax, ymin, 0.0, 360.0, 4, "");
     ax->SetLabelFont(42);
@@ -543,6 +578,124 @@ static std::string plot_subdir_for_group(const std::string& group) {
     return group;
 }
 
+// ------------ load a single energy rad-corrected xsec file into XsecTable ------------
+static XsecTable load_xsec_energy_file(const std::string& path) {
+    XsecTable table;
+    std::ifstream ifs(path);
+    if (!ifs) {
+        std::cerr << "[bsa][xsec] WARN: cannot open " << path << "\n";
+        return table;
+    }
+    json j; 
+    try { ifs >> j; } catch(...) {
+        std::cerr << "[bsa][xsec] WARN: malformed JSON in " << path << "\n";
+        return table;
+    }
+    if (!j.contains("bins")) return table;
+    const json& jb = j["bins"];
+    for (auto it = jb.begin(); it != jb.end(); ++it) {
+        const std::string k = it.key();
+        int ix=-1,iQ=-1,itb=-1;
+        if (!parse_tuple3_key(k, ix,iQ,itb)) continue;
+        const json& cell = it.value();
+        if (!cell.contains("helicity_plus") || !cell.contains("helicity_minus")) continue;
+
+        auto read12 = [&](const json& h, std::array<double,N_PHI_BINS>& phi,
+                          std::array<double,N_PHI_BINS>& val, std::array<double,N_PHI_BINS>& err)->bool {
+            if (!h.contains("phi") || !h.contains("xsec")) return false;
+            const auto& p = h["phi"];
+            const auto& v = h["xsec"];
+            const bool has_err = h.contains("xsec_err");
+            if ((int)p.size()!=N_PHI_BINS || (int)v.size()!=N_PHI_BINS) return false;
+            for (int i=0;i<N_PHI_BINS;++i) {
+                phi[i] = p[i].get<double>();
+                val[i] = v[i].get<double>();
+                err[i] = (has_err ? h["xsec_err"][i].get<double>() : 0.0);
+            }
+            return true;
+        };
+
+        XsecBin12 xb;
+        std::array<double,N_PHI_BINS> phi1{}, phi2{};
+        if (!read12(cell["helicity_plus"],  phi1, xb.splus,  xb.splus_err)) continue;
+        if (!read12(cell["helicity_minus"], phi2, xb.sminus, xb.sminus_err)) continue;
+
+        // prefer the phi centers from the "+" block (degrees) for plotting consistency
+        for (int i=0;i<N_PHI_BINS;++i) xb.xphi[i] = phi1[i];
+        xb.valid = true;
+
+        table[std::make_tuple(ix,iQ,itb)] = xb;
+    }
+    return table;
+}
+
+// ------------ assemble overlay (possibly many energies) into one table ------------
+static XsecTable build_overlay_table(const std::string& dir, const std::vector<std::string>& energies) {
+    XsecTable acc;
+    for (const auto& E : energies) {
+        const std::string path = (std::filesystem::path(dir)/("rad_corrected_xsec_"+E+".json")).string();
+        XsecTable one = load_xsec_energy_file(path);
+        for (const auto& kv : one) {
+            auto key = kv.first;
+            const XsecBin12& add = kv.second;
+            if (!add.valid) continue;
+            auto& dst = acc[key]; // creates if missing
+            // If not populated yet, copy; else sum the sigma arrays and rms-add errors
+            if (!dst.valid) {
+                dst = add;
+            } else {
+                for (int i=0;i<N_PHI_BINS;++i) {
+                    dst.splus[i]      += add.splus[i];
+                    dst.sminus[i]     += add.sminus[i];
+                    dst.splus_err[i]   = std::sqrt(dst.splus_err[i]*dst.splus_err[i] + add.splus_err[i]*add.splus_err[i]);
+                    dst.sminus_err[i]  = std::sqrt(dst.sminus_err[i]*dst.sminus_err[i] + add.sminus_err[i]*add.sminus_err[i]);
+                }
+            }
+            dst.valid = true;
+        }
+    }
+    return acc;
+}
+
+// ------------ form BSA points from xsec overlay for a cell ------------
+static std::vector<BSApt> bsa_from_xsec_cell(const XsecBin12& xb, double P_used) {
+    std::vector<BSApt> pts(N_PHI_BINS);
+    for (int i=0;i<N_PHI_BINS;++i) {
+        const double sp  = xb.splus[i];
+        const double sm  = xb.sminus[i];
+        const double esp = xb.splus_err[i];
+        const double esm = xb.sminus_err[i];
+
+        BSApt p;
+        p.phi = xb.xphi[i] * (TWO_PI/360.0); // store in radians internally like the counts path
+
+        const double S = sp + sm;
+        const double D = sp - sm;
+        if (!(S > 0.0) || !(sp>=0.0) || !(sm>=0.0)) {
+            p.valid = false;
+            p.bsa = 0.0;
+            p.err = 0.0;
+            pts[i] = p;
+            continue;
+        }
+
+        // A_raw = D/S ; Var(A_raw) by linear error propagation assuming indep.
+        // dA/dsp = 2*sm / S^2 ; dA/dsm = -2*sp / S^2
+        const double invS2 = 1.0 / (S*S);
+        const double dAsp  = (2.0*sm) * invS2;
+        const double dAsm  = (-2.0*sp) * invS2;
+        const double var_raw = dAsp*dAsp*esp*esp + dAsm*dAsm*esm*esm;
+
+        // Divide by P to get A_LU
+        p.bsa  = (D / S) / P_used;
+        p.err  = std::sqrt(std::max(0.0, var_raw)) / std::max(P_used, 1e-12);
+        p.valid = std::isfinite(p.bsa) && std::isfinite(p.err);
+        pts[i] = p;
+    }
+    return pts;
+}
+
+// ------------ plot counts-based cells (BLUE), optionally overlay xsec (RED) ------------
 static void plot_cells_for_period(
     const std::string& period,
     const std::vector<Binning>& binning_scheme,
@@ -550,8 +703,9 @@ static void plot_cells_for_period(
     const std::vector<std::pair<double,double>>& Q2_bins,
     const std::vector<std::pair<double,double>>& t_bins,
     const std::map<std::tuple<int,int,int>, CellResult>& cells,
-    const std::string& out_dir_plots)
-{
+    const std::string& out_dir_plots,
+    const XsecTable* xsec_overlay // pass nullptr for BLUE-only canvas, non-null for overlay canvas
+) {
     namespace fs = std::filesystem;
     std::error_code ec;
     fs::create_directories(out_dir_plots, ec);
@@ -571,7 +725,13 @@ static void plot_cells_for_period(
         const int W = 280*ncols + 160;
         const int H = 240*nrows + 170;
 
-        std::ostringstream cname; cname<<"c_bsa_"<<period<<"_xB"<<ix;
+        // Canvas title and filename
+        std::ostringstream cname;
+        if (xsec_overlay)
+            cname<<"c_bsa_vs_xsec_"<<period<<"_xB"<<ix;
+        else
+            cname<<"c_bsa_"<<period<<"_xB"<<ix;
+
         TCanvas* c = new TCanvas(cname.str().c_str(), cname.str().c_str(), W, H);
 
         TPad* pTop  = new TPad("pTop","pTop", 0.0, 0.915, 1.0, 1.0);
@@ -588,8 +748,12 @@ static void plot_cells_for_period(
         head.SetTextFont(42);
         head.SetTextSize(0.36);
         std::ostringstream tit;
-        tit << Form("Beam-Spin Asymmetry  %s   x_{B} #in [%.2g, %.2g]",
-                    period.c_str(), xb.first, xb.second);
+        if (xsec_overlay)
+            tit << Form("Beam-Spin Asymmetry  %s   x_{B} #in [%.2g, %.2g]   (Counts: blue, Xsec: red)",
+                        period.c_str(), xb.first, xb.second);
+        else
+            tit << Form("Beam-Spin Asymmetry  %s   x_{B} #in [%.2g, %.2g]",
+                        period.c_str(), xb.first, xb.second);
         head.DrawLatex(0.5, 0.55, tit.str().c_str());
 
         for (int r = 0; r < nrows; ++r) {
@@ -626,68 +790,136 @@ static void plot_cells_for_period(
 
                 drawDegreeTicks(gPad->GetUxmin(), gPad->GetUymin(), gPad->GetUxmax(), 0.048);
 
+                // ---------- BLUE (counts-based) ----------
                 auto itCell = cells.find(std::make_tuple(ix, iQ_global, it_global));
-                if (itCell == cells.end()) continue;
-                const auto& cr = itCell->second;
+                if (itCell != cells.end()) {
+                    const auto& cr = itCell->second;
 
-                std::vector<double> x, y, ey;
-                x.reserve(N_PHI_BINS); y.reserve(N_PHI_BINS); ey.reserve(N_PHI_BINS);
-                for (int ip=0; ip<N_PHI_BINS; ++ip) {
-                    const auto& p = cr.points[ip];
-                    if (!p.valid) continue;
-                    x.push_back(PHI_DEG[ip]);
-                    y.push_back(p.bsa);
-                    ey.push_back(std::max(1e-6, p.err));
-                }
-                if (!x.empty()) {
-                    TGraphErrors* gr = new TGraphErrors((int)x.size(), x.data(), y.data(), nullptr, ey.data());
-                    gr->SetMarkerStyle(20);
-                    gr->SetMarkerSize(1.1);
-                    gr->SetLineWidth(2);
-                    gr->Draw("P SAME");
-                }
-
-                if (cr.fit.status == 0 || cr.fit.ndf > 0) {
-                    const int NS=721;
-                    std::vector<double> xd(NS), yd(NS);
-                    for (int i=0;i<NS;++i){
-                        double deg = double(i)*0.5;
-                        double rad = deg * (TWO_PI/360.0);
-                        double denom = 1.0 + cr.fit.B1*std::cos(rad);
-                        if (denom < EPS_DEN_EVAL) denom = EPS_DEN_EVAL;
-                        double val = cr.fit.C + (cr.fit.A*std::sin(rad))/denom;
-                        xd[i] = deg; yd[i] = val;
+                    std::vector<double> xB, yB, eyB;
+                    xB.reserve(N_PHI_BINS); yB.reserve(N_PHI_BINS); eyB.reserve(N_PHI_BINS);
+                    for (int ip=0; ip<N_PHI_BINS; ++ip) {
+                        const auto& p = cr.points[ip];
+                        if (!p.valid) continue;
+                        xB.push_back(PHI_DEG[ip]);
+                        yB.push_back(p.bsa);
+                        eyB.push_back(std::max(1e-6, p.err));
                     }
-                    TGraph* gfit = new TGraph(NS, xd.data(), yd.data());
-                    gfit->SetLineColor(kRed);
-                    gfit->SetLineWidth(2);
-                    gfit->Draw("L SAME");
+                    if (!xB.empty()) {
+                        TGraphErrors* gr = new TGraphErrors((int)xB.size(), xB.data(), yB.data(), nullptr, eyB.data());
+                        gr->SetMarkerStyle(20);
+                        gr->SetMarkerSize(1.1);
+                        gr->SetLineWidth(2);
+                        gr->SetLineColor(kBlue+1);
+                        gr->SetMarkerColor(kBlue+1);
+                        gr->Draw("P SAME");
+                    }
+
+                    if (cr.fit.status == 0 || cr.fit.ndf > 0) {
+                        const int NS=721;
+                        std::vector<double> xd(NS), yd(NS);
+                        for (int i=0;i<NS;++i){
+                            double deg = double(i)*0.5;
+                            double rad = deg * (TWO_PI/360.0);
+                            double denom = 1.0 + cr.fit.B1*std::cos(rad);
+                            if (denom < EPS_DEN_EVAL) denom = EPS_DEN_EVAL;
+                            double val = cr.fit.C + (cr.fit.A*std::sin(rad))/denom;
+                            xd[i] = deg; yd[i] = val;
+                        }
+                        TGraph* gfit = new TGraph(NS, xd.data(), yd.data());
+                        gfit->SetLineColor(kBlue+1);
+                        gfit->SetLineStyle(2); // dashed
+                        gfit->SetLineWidth(1); // thin
+                        gfit->Draw("L SAME");
+                    }
+
+                    // Legend basic entries (blue)
+                    TLegend* leg = new TLegend(0.50, 0.66, 0.90, 0.93);
+                    leg->SetBorderSize(1);
+                    leg->SetLineColor(kBlack);
+                    leg->SetFillColor(kWhite);
+                    leg->SetFillStyle(1001);
+                    leg->SetTextFont(42);
+                    leg->SetTextSize(0.040);
+                    leg->AddEntry((TObject*)nullptr, Form("Counts fit: A=%.3f, B=%.3f, C=%.3f", cr.fit.A, cr.fit.B1, cr.fit.C), "");
+                    leg->AddEntry((TObject*)nullptr, Form("Q^{2} in [%.2g, %.2g],  -t in [%.2g, %.2g]",
+                                                          Q2_slice[ccol].first, Q2_slice[ccol].second,
+                                                          t_slice[r].first,    t_slice[r].second), "");
+                    // If overlay present, we will add red entries below
+                    // Defer drawing until after red is drawn so the legend is last
+                    // Keep a pointer to reuse.
+                    // We will Draw() it after adding red rows.
+                    // Store temporarily in pad user pointer if desired; simpler: keep it local.
+                    // We'll Draw() at the end of the panel after red drawing section.
+                    // To allow adding to it, we keep it in scope:
+                    // ---------- RED (xsec-based) ----------
+                    if (xsec_overlay) {
+                        auto itX = xsec_overlay->find(std::make_tuple(ix, iQ_global, it_global));
+                        if (itX != xsec_overlay->end() && itX->second.valid) {
+                            // Rebuild red points (in degrees for x axis)
+                            std::vector<double> xr, yr, eyr;
+                            xr.reserve(N_PHI_BINS); yr.reserve(N_PHI_BINS); eyr.reserve(N_PHI_BINS);
+                            // We do not have the per-cell P_used here, but the counts cell has it:
+                            const double P_used = cr.P_used;
+                            const auto redPts = bsa_from_xsec_cell(itX->second, std::max(1e-12, P_used));
+                            for (int ip=0; ip<N_PHI_BINS; ++ip) {
+                                if (!redPts[ip].valid) continue;
+                                xr.push_back(PHI_DEG[ip]);
+                                yr.push_back(redPts[ip].bsa);
+                                eyr.push_back(std::max(1e-6, redPts[ip].err));
+                            }
+                            if (!xr.empty()) {
+                                TGraphErrors* grr = new TGraphErrors((int)xr.size(), xr.data(), yr.data(), nullptr, eyr.data());
+                                grr->SetMarkerStyle(24);
+                                grr->SetMarkerSize(1.1);
+                                grr->SetLineWidth(2);
+                                grr->SetLineColor(kRed+1);
+                                grr->SetMarkerColor(kRed+1);
+                                grr->Draw("P SAME");
+
+                                // Fit a red curve to the red points using same fitter
+                                // Build a temporary CellResult-like vector
+                                std::vector<BSApt> redForFit = redPts;
+                                FitRes redFit = fit_cell(redForFit);
+                                if (redFit.status == 0 || redFit.ndf > 0) {
+                                    const int NS=721;
+                                    std::vector<double> xfd(NS), yfd(NS);
+                                    for (int i=0;i<NS;++i){
+                                        double deg = double(i)*0.5;
+                                        double rad = deg * (TWO_PI/360.0);
+                                        double denom = 1.0 + redFit.B1*std::cos(rad);
+                                        if (denom < EPS_DEN_EVAL) denom = EPS_DEN_EVAL;
+                                        double val = redFit.C + (redFit.A*std::sin(rad))/denom;
+                                        xfd[i] = deg; yfd[i] = val;
+                                    }
+                                    TGraph* gfitr = new TGraph(NS, xfd.data(), yfd.data());
+                                    gfitr->SetLineColor(kRed+1);
+                                    gfitr->SetLineStyle(2); // dashed
+                                    gfitr->SetLineWidth(1); // thin
+                                    gfitr->Draw("L SAME");
+
+                                    leg->AddEntry((TObject*)nullptr,
+                                                  Form("Xsec fit:   A=%.3f, B=%.3f, C=%.3f", redFit.A, redFit.B1, redFit.C),
+                                                  "");
+                                } else {
+                                    leg->AddEntry((TObject*)nullptr, "Xsec fit: failed", "");
+                                }
+                            } else {
+                                leg->AddEntry((TObject*)nullptr, "Xsec points: none", "");
+                            }
+                        } else {
+                            leg->AddEntry((TObject*)nullptr, "Xsec overlay: missing", "");
+                        }
+                    }
+                    leg->Draw();
                 }
-
-                TLatex lab;
-                lab.SetNDC(); lab.SetTextSize(0.040); lab.SetTextAlign(11);
-                lab.SetTextFont(42);
-                lab.DrawLatex(0.15, 0.94,
-                    Form("Q^{2} #in [%.2g, %.2g],   -t #in [%.2g, %.2g]",
-                         Q2_slice[ccol].first, Q2_slice[ccol].second,
-                         t_slice[r].first,    t_slice[r].second));
-
-                TLegend* leg = new TLegend(0.50, 0.68, 0.90, 0.92);
-                leg->SetBorderSize(1);
-                leg->SetLineColor(kBlack);
-                leg->SetFillColor(kWhite);
-                leg->SetFillStyle(1001);
-                leg->SetTextFont(42);
-                leg->SetTextSize(0.040);
-                leg->AddEntry((TObject*)nullptr, Form("A = %.3f +/- %.3f",  cr.fit.A,  cr.fit.Aerr), "");
-                leg->AddEntry((TObject*)nullptr, Form("B = %.3f +/- %.3f",  cr.fit.B1, cr.fit.B1err), "");
-                leg->AddEntry((TObject*)nullptr, Form("C = %.3f +/- %.3f",  cr.fit.C,  cr.fit.Cerr), "");
-                leg->Draw();
             }
         }
 
         std::ostringstream fout;
-        fout << out_dir_plots << "/plot_bsa_" << period << "_xB_" << ix << ".png";
+        if (xsec_overlay)
+            fout << out_dir_plots << "/plot_bsa_vs_xsec_" << period << "_xB_" << ix << ".png";
+        else
+            fout << out_dir_plots << "/plot_bsa_" << period << "_xB_" << ix << ".png";
         c->SaveAs(fout.str().c_str());
         delete c;
         std::cout << "[bsa] Wrote " << fout.str() << "\n";
@@ -705,7 +937,9 @@ void compute_and_plot_bsa_helicity(
     const std::vector<Binning>& binning_scheme,
     const std::map<std::string, TTree*>& dvcsDataTrees,
     const std::string& pi0_corrected_counts_json_path,
-    const std::string& out_root_dir)
+    const std::string& out_root_dir,
+    const std::string& radcorr_xsec_json_dir // NEW: directory containing rad_corrected_xsec_<E>.json
+)
 {
     namespace fs = std::filesystem;
 
@@ -730,7 +964,7 @@ void compute_and_plot_bsa_helicity(
 
     std::map<std::string, std::map<std::tuple<int,int,int>, CellResult>> allPeriodCells;
 
-    // ---------- Per-period processing with single scalar P ----------
+    // ---------- Per-period processing with single scalar P (COUNTS path) ----------
     for (const auto& treeKey : periods) {
         // Resolve to counts key
         const std::string countsKey = counts_key_from_tree_key(treeKey);
@@ -809,23 +1043,35 @@ void compute_and_plot_bsa_helicity(
             cells[std::make_tuple(ix,iQ,itb)] = std::move(result);
         }
 
-        // write per-group JSON + plots
+        // write per-group JSON + BLUE plots
         const fs::path outP = json_period_dir/("BSA_fits_"+countsKey+".json");
         write_period_bsa_json(outP.string(), N_PHI_BINS, xB_bins, Q2_bins, t_bins, cells);
 
         const fs::path plots_dir = fs::path(out_root_dir)/"bsa_plots"/plot_subdir_for_group(countsKey);
         std::error_code ec; fs::create_directories(plots_dir, ec);
-        plot_cells_for_period(countsKey, binning_scheme, xB_bins, Q2_bins, t_bins, cells, plots_dir.string());
+        // BLUE-only canvas (counts)
+        plot_cells_for_period(countsKey, binning_scheme, xB_bins, Q2_bins, t_bins, cells, plots_dir.string(), nullptr);
+
+        // Build the red overlay table for this period (if we can find energies)
+        XsecTable overlay;
+        const auto energies = energies_for_group(countsKey);
+        if (!energies.empty()) {
+            overlay = build_overlay_table(radcorr_xsec_json_dir, energies);
+            // RED overlay canvas (counts + xsec)
+            plot_cells_for_period(countsKey, binning_scheme, xB_bins, Q2_bins, t_bins, cells, plots_dir.string(), &overlay);
+        } else {
+            std::cerr << "[bsa][xsec] NOTE: no energy mapping for group '"<<countsKey<<"' -> skipping overlay.\n";
+        }
 
         allPeriodCells[countsKey] = std::move(cells);
     }
 
-    // all-periods rollup
+    // all-periods rollup (counts path)
     write_all_periods_json(
         (fs::path(out_root_dir)/"jsons"/"BSA_fits_all_periods.json").string(),
         allPeriodCells, N_PHI_BINS, xB_bins, Q2_bins, t_bins);
 
-    // ---- Combined 10.6 output (one global scalar P over component trees) ----
+    // ---- Combined 10.6 output (counts path; one global P over component trees) ----
     auto it106 = allGroups.find("10.6_GeV");
     if (it106 == allGroups.end()) {
         fatal("No '10.6_GeV' group in corrected master; cannot build combined output.");
@@ -897,11 +1143,23 @@ void compute_and_plot_bsa_helicity(
         combCells[std::make_tuple(ix,iQ,itb)] = std::move(cr);
     }
 
-    // Write combined JSON and plots
+    // Write combined JSON and BLUE plots
     const fs::path outC = fs::path(out_root_dir)/"jsons"/"BSA_fits_combined_10.6.json";
     write_period_bsa_json(outC.string(), N_PHI_BINS, xB_bins, Q2_bins, t_bins, combCells);
 
     const fs::path plots_comb106 = fs::path(out_root_dir)/"bsa_plots"/"10.6_combined";
     std::error_code ec; fs::create_directories(plots_comb106, ec);
-    plot_cells_for_period("RGA_10.6_combined", binning_scheme, xB_bins, Q2_bins, t_bins, combCells, plots_comb106.string());
+    // BLUE-only (counts)
+    plot_cells_for_period("RGA_10.6_combined", binning_scheme, xB_bins, Q2_bins, t_bins, combCells, plots_comb106.string(), nullptr);
+
+    // RED overlay for 10.6 combined: use energies {10.59,10.60}
+    {
+        const auto energies106 = energies_for_group("10.6_GeV");
+        if (!energies106.empty()) {
+            XsecTable overlay106 = build_overlay_table(radcorr_xsec_json_dir, energies106);
+            plot_cells_for_period("RGA_10.6_combined", binning_scheme, xB_bins, Q2_bins, t_bins, combCells, plots_comb106.string(), &overlay106);
+        } else {
+            std::cerr << "[bsa][xsec] NOTE: no energy mapping for '10.6_GeV' combined overlay.\n";
+        }
+    }
 }
