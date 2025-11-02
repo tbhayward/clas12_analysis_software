@@ -697,7 +697,7 @@ static void plot_cells_for_period(
     const std::vector<std::pair<double,double>>& t_bins,
     const std::map<std::tuple<int,int,int>, CellResult>& cells,
     const std::string& out_dir_plots,
-    const XsecTable* xsec_overlay
+    const XsecTable* xsec_overlay // pass nullptr for BLUE-only canvas, non-null for overlay canvas
 ) {
     namespace fs = std::filesystem;
     std::error_code ec;
@@ -718,9 +718,12 @@ static void plot_cells_for_period(
         const int W = 280*ncols + 160;
         const int H = 240*nrows + 170;
 
+        // Canvas title and filename
         std::ostringstream cname;
-        if (xsec_overlay) cname<<"c_bsa_vs_xsec_"<<period<<"_xB"<<ix;
-        else              cname<<"c_bsa_"<<period<<"_xB"<<ix;
+        if (xsec_overlay)
+            cname<<"c_bsa_vs_xsec_"<<period<<"_xB"<<ix;
+        else
+            cname<<"c_bsa_"<<period<<"_xB"<<ix;
 
         TCanvas* c = new TCanvas(cname.str().c_str(), cname.str().c_str(), W, H);
 
@@ -732,19 +735,22 @@ static void plot_cells_for_period(
         pGrid->cd();
         pGrid->Divide(ncols, nrows, 0.0001, 0.0001);
 
+        // ---------- smaller canvas title; counts/#sigma wording ----------
         pTop->cd();
-        TLatex head;
-        head.SetNDC(); head.SetTextAlign(22);
-        head.SetTextFont(42);
-        head.SetTextSize(0.36);
-        std::ostringstream tit;
-        if (xsec_overlay)
-            tit << Form("BSA    %s    x_{B} #in [%.2g, %.2g]   (Counts: blue, Xsec: red)",
-                        period.c_str(), xb.first, xb.second);
-        else
-            tit << Form("BSA    %s    x_{B} #in [%.2g, %.2g]",
-                        period.c_str(), xb.first, xb.second);
-        head.DrawLatex(0.5, 0.55, tit.str().c_str());
+        {
+            TLatex head;
+            head.SetNDC(); head.SetTextAlign(22);
+            head.SetTextFont(42);
+            head.SetTextSize(0.26); // was 0.36
+            std::ostringstream tit;
+            if (xsec_overlay)
+                tit << Form("BSA    %s    x_{B} #in [%.2g, %.2g]   (counts: blue, #sigma: red)",
+                            period.c_str(), xb.first, xb.second);
+            else
+                tit << Form("BSA    %s    x_{B} #in [%.2g, %.2g]",
+                            period.c_str(), xb.first, xb.second);
+            head.DrawLatex(0.5, 0.55, tit.str().c_str());
+        }
 
         for (int r = 0; r < nrows; ++r) {
             const int it_global = findIndex(t_slice[r], t_bins);
@@ -756,10 +762,12 @@ static void plot_cells_for_period(
 
                 pGrid->cd(r*ncols + ccol + 1);
                 gPad->SetGrid(1,1);
+
+                // ---- margins tuned to avoid clipping of y-title and legend
                 gPad->SetTopMargin(0.12);
                 gPad->SetBottomMargin(0.18);
-                gPad->SetLeftMargin(0.125);
-                gPad->SetRightMargin(0.12);
+                gPad->SetLeftMargin(0.16);  // was 0.125
+                gPad->SetRightMargin(0.14); // was 0.10/0.12
 
                 TH1* frame = gPad->DrawFrame(0.0, -1.05, 360.0, 1.05);
                 TAxis* ax = frame->GetXaxis();
@@ -776,17 +784,17 @@ static void plot_cells_for_period(
                 ay->SetLabelSize(0.048);
 
                 ax->SetTitleOffset(1.25);
-                ay->SetTitleOffset(1.35);
+                ay->SetTitleOffset(1.40); // tiny push to the right with bigger left margin
 
                 drawDegreeTicks(gPad->GetUxmin(), gPad->GetUymin(), gPad->GetUxmax(), 0.048);
 
-                // ---- per-subplot title with Q2 and t ranges (restored) ----
+                // ---- per-subplot title with smaller font
                 {
                     TLatex subt;
                     subt.SetNDC();
                     subt.SetTextFont(42);
-                    subt.SetTextSize(0.050);
-                    subt.SetTextAlign(21); // centered
+                    subt.SetTextSize(0.042); // was 0.050
+                    subt.SetTextAlign(21);
                     std::ostringstream st;
                     st << Form("Q^{2} #in [%.2g, %.2g]   -t #in [%.2g, %.2g]",
                                Q2_slice[ccol].first, Q2_slice[ccol].second,
@@ -838,8 +846,8 @@ static void plot_cells_for_period(
                         gfit->Draw("L SAME");
                     }
 
-                    // Legend in top-right without clipping
-                    TLegend* leg = new TLegend(0.58, 0.70, 0.92, 0.92);
+                    // --------- Legend: widened to the left and inset from top-right
+                    TLegend* leg = new TLegend(0.52, 0.70, 0.88, 0.92); // was ~ (0.58,0.70,0.92,0.92)
                     leg->SetBorderSize(1);
                     leg->SetLineColor(kBlack);
                     leg->SetFillColor(kWhite);
@@ -847,19 +855,19 @@ static void plot_cells_for_period(
                     leg->SetTextFont(42);
                     leg->SetTextSize(0.040);
 
-                    // Counts-only line always present
+                    // counts line (lowercase label)
                     leg->AddEntry((TObject*)nullptr,
                                   Form("counts: A = %.3f #pm %.3f", blueFit.A, blueFit.Aerr),
                                   "");
 
-                    // If overlay present, add sigma line
+                    // If overlay present, add #sigma line
                     if (xsec_overlay) {
                         auto itX = xsec_overlay->find(std::make_tuple(ix, iQ_global, it_global));
                         if (itX != xsec_overlay->end() && itX->second.valid) {
                             const double P_used = cr.P_used;
                             const auto redPts = bsa_from_xsec_cell(itX->second, std::max(1e-12, P_used));
 
-                            // draw red points
+                            // red points
                             std::vector<double> xr, yr, eyr;
                             xr.reserve(N_PHI_BINS); yr.reserve(N_PHI_BINS); eyr.reserve(N_PHI_BINS);
                             for (int ip=0; ip<N_PHI_BINS; ++ip) {
@@ -878,7 +886,7 @@ static void plot_cells_for_period(
                                 grr->Draw("P SAME");
                             }
 
-                            // fit red
+                            // red fit
                             FitRes redFit = fit_cell(redPts);
                             if (redFit.status == 0 || redFit.ndf > 0) {
                                 const int NS=721;
@@ -897,15 +905,15 @@ static void plot_cells_for_period(
                                 gfitr->SetLineWidth(1);
                                 gfitr->Draw("L SAME");
 
-                                // sigma line in legend
+                                // #sigma line in legend (Greek via TLatex)
                                 leg->AddEntry((TObject*)nullptr,
-                                              Form("sigma:  A = %.3f #pm %.3f", redFit.A, redFit.Aerr),
+                                              Form("#sigma: A = %.3f #pm %.3f", redFit.A, redFit.Aerr),
                                               "");
                             } else {
-                                leg->AddEntry((TObject*)nullptr, "sigma: A = n/a", "");
+                                leg->AddEntry((TObject*)nullptr, "#sigma: A = n/a", "");
                             }
                         } else {
-                            leg->AddEntry((TObject*)nullptr, "sigma: missing", "");
+                            leg->AddEntry((TObject*)nullptr, "#sigma: missing", "");
                         }
                     }
 
