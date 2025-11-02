@@ -196,14 +196,14 @@ int main(int argc, char* argv[]) {
     // - writes 10.6 GeV combined to output/jsons/BSA_fits_combined_10p6.json
     // - plots to output/bsa_plots/<runTag>/...
     namespace fs = std::filesystem;
-    compute_and_plot_bsa_helicity(
-        dvcs_periods,
-        topologies,
-        binning_scheme,
-        dataTrees,
-        (fs::path(output_root)/"jsons"/"pi0_corrected_counts_all_groups.json").string(),
-        output_root
-    );
+    // compute_and_plot_bsa_helicity(
+    //     dvcs_periods,
+    //     topologies,
+    //     binning_scheme,
+    //     dataTrees,
+    //     (fs::path(output_root)/"jsons"/"pi0_corrected_counts_all_groups.json").string(),
+    //     output_root
+    // );
 
     compute_and_plot_bsa_helicity(
         periods,
