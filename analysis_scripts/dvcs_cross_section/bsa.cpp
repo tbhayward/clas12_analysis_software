@@ -793,7 +793,7 @@ static void plot_cells_for_period(
                     TLatex subt;
                     subt.SetNDC();
                     subt.SetTextFont(42);
-                    subt.SetTextSize(0.042); // was 0.050
+                    subt.SetTextSize(0.05); // was 0.050
                     subt.SetTextAlign(21);
                     std::ostringstream st;
                     st << Form("Q^{2} #in [%.2g, %.2g]   -t #in [%.2g, %.2g]",
@@ -847,13 +847,13 @@ static void plot_cells_for_period(
                     }
 
                     // --------- Legend: widened to the left and inset from top-right
-                    TLegend* leg = new TLegend(0.42, 0.68, 0.86, 0.88); 
+                    TLegend* leg = new TLegend(0.40, 0.68, 0.86, 0.88); 
                     leg->SetBorderSize(1);
                     leg->SetLineColor(kBlack);
                     leg->SetFillColor(kWhite);
                     leg->SetFillStyle(1001);
                     leg->SetTextFont(42);
-                    leg->SetTextSize(0.040);
+                    leg->SetTextSize(0.048);
 
                     // counts line (lowercase label)
                     leg->AddEntry((TObject*)nullptr,
