@@ -205,6 +205,16 @@ int main(int argc, char* argv[]) {
         output_root
     );
 
+    compute_and_plot_bsa_helicity(
+        periods,
+        topologies,
+        binning_scheme,
+        dvcsDataTrees,
+        (fs::path(output_root)/"jsons"/"pi0_corrected_counts_all_groups.json").string()
+        out_root_dir,
+        "output/rad_corrected_cross_section/jsons"
+    );
+
 
     std::cout << "All done." << std::endl;
     return 0;
