@@ -639,6 +639,32 @@ void compare_unpolarized_cross_sections_sp18out_vs_fa18out(
         return &it->second;
     };
 
+    // ---------- helper: per-subplot phi-averaged ratio and uncertainty ----------
+    auto phiAveragedRatio = [](const CellData* A, const CellData* B, double& R, double& eR)->bool {
+        if (!A || !B) return false;
+        double sumA = 0.0, sumB = 0.0, sumVarA = 0.0, sumVarB = 0.0;
+        for (int i = 0; i < N_PHI_BINS; ++i) {
+            const double a = A->xsec[i];
+            const double b = B->xsec[i];
+            const double ea = A->xerr[i];
+            const double eb = B->xerr[i];
+            if (!(a > 0.0 && b > 0.0)) continue;
+            if (!std::isfinite(a) || !std::isfinite(b)) continue;
+            sumA += a;
+            sumB += b;
+            sumVarA += ea * ea;
+            sumVarB += eb * eb;
+        }
+        if (!(sumA > 0.0 && sumB > 0.0)) return false;
+        R  = sumA / sumB;
+        // propagate: sigma_R = R * sqrt( (sigma_A/sumA)^2 + (sigma_B/sumB)^2 )
+        const double sigmaA = std::sqrt(std::max(0.0, sumVarA));
+        const double sigmaB = std::sqrt(std::max(0.0, sumVarB));
+        eR = R * std::sqrt( std::pow(sigmaA / std::max(1e-12, sumA), 2.0)
+                          + std::pow(sigmaB / std::max(1e-12, sumB), 2.0) );
+        return std::isfinite(R) && std::isfinite(eR);
+    };
+
     // ---------- global accumulators for the final single-number ratio ----------
     // (i) integrated ratio: 100 * (sum A) / (sum B)
     long long n_points_integrated = 0;
@@ -704,7 +730,7 @@ void compare_unpolarized_cross_sections_sp18out_vs_fa18out(
                     gPad->SetRightMargin(0.10);
                     gPad->SetLogy();
 
-                    // Y lower bound 1e-2 per your request
+                    // note: keeping exactly as in your pasted version (1e-4 lower bound)
                     TH1* frame = gPad->DrawFrame(0.0, 1e-4, 360.0, 1e3);
                     frame->GetXaxis()->SetLabelSize(0.0001);
                     frame->GetXaxis()->SetTitle("#phi (deg)");
@@ -774,6 +800,22 @@ void compare_unpolarized_cross_sections_sp18out_vs_fa18out(
                         if (g_fa18) leg->AddEntry(g_fa18, "Fa18 out (total L)", "lep");
                         leg->Draw();
                     }
+
+                    // ------- NEW: phi-averaged ratio box (bottom-left) -------
+                    double Rphi = 0.0, eRphi = 0.0;
+                    if (phiAveragedRatio(cd_sp18, cd_fa18, Rphi, eRphi)) {
+                        // Tight box in lower-left of the pad; NDC coords inside pad
+                        TPaveText* box = new TPaveText(0.16, 0.16, 0.50, 0.30, "NDC");
+                        box->SetFillColor(kWhite);
+                        box->SetFillStyle(1001);
+                        box->SetLineColor(kBlack);
+                        box->SetLineWidth(1);
+                        box->SetTextFont(42);
+                        box->SetTextSize(0.040);
+                        box->SetTextAlign(12);
+                        box->AddText(Form("Sp18/Fa18 = %.3f #pm %.3f", Rphi, eRphi));
+                        box->Draw("SAME");
+                    }
                 }
             }
 
@@ -825,7 +867,7 @@ void compare_unpolarized_cross_sections_sp18out_vs_fa18out(
                     gPad->SetRightMargin(0.10);
                     gPad->SetLogy(0);
 
-                    // Y-axis around 100% (adjust if you prefer wider bounds)
+                    // Y-axis bounds in percent (0..200) around unity=100
                     TH1* frame = gPad->DrawFrame(0.0, 0.0, 360.0, 200.0);
                     frame->GetXaxis()->SetLabelSize(0.0001);
                     frame->GetXaxis()->SetTitle("#phi (deg)");
@@ -869,7 +911,7 @@ void compare_unpolarized_cross_sections_sp18out_vs_fa18out(
 
                     if (!cd_sp18 || !cd_fa18) continue;
 
-                    // compute 100 * (Sp18 / Fa18), and accumulate global stats
+                    // compute 100 * (Sp18 / Fa18) vs phi and accumulate global stats
                     std::vector<double> xp, yp, ey;
                     xp.reserve(N_PHI_BINS);
                     yp.reserve(N_PHI_BINS);
@@ -884,7 +926,6 @@ void compare_unpolarized_cross_sections_sp18out_vs_fa18out(
                         if (!(A > 0.0 && B > 0.0)) continue;
                         if (!std::isfinite(A) || !std::isfinite(B)) continue;
 
-                        // pointwise ratio and error
                         const double R  = A / B;
                         const double eR = R * std::sqrt( std::pow(eA/std::max(1e-12,A), 2.0)
                                                        + std::pow(eB/std::max(1e-12,B), 2.0) );
@@ -893,13 +934,11 @@ void compare_unpolarized_cross_sections_sp18out_vs_fa18out(
                         yp.push_back(100.0 * R);
                         ey.push_back(100.0 * eR);
 
-                        // --- global accumulators ---
-                        // (i) integrated ratio pieces
+                        // --- global accumulators (for end-of-function printout) ---
                         sumA += A;
                         sumB += B;
                         ++n_points_integrated;
 
-                        // (ii) weighted mean pieces (only if finite uncertainty)
                         const double varR = eR * eR;
                         if (std::isfinite(varR) && varR > 0.0) {
                             const double w = 1.0 / varR;
@@ -917,6 +956,21 @@ void compare_unpolarized_cross_sections_sp18out_vs_fa18out(
                         gr->SetLineColor(kBlack);
                         gr->SetMarkerColor(kBlack);
                         gr->Draw("P SAME");
+                    }
+
+                    // ------- NEW: also show the phi-averaged ratio box on this canvas -------
+                    double Rphi = 0.0, eRphi = 0.0;
+                    if (phiAveragedRatio(cd_sp18, cd_fa18, Rphi, eRphi)) {
+                        TPaveText* box = new TPaveText(0.18, 0.16, 0.52, 0.30, "NDC");
+                        box->SetFillColor(kWhite);
+                        box->SetFillStyle(1001);
+                        box->SetLineColor(kBlack);
+                        box->SetLineWidth(1);
+                        box->SetTextFont(42);
+                        box->SetTextSize(0.040);
+                        box->SetTextAlign(12);
+                        box->AddText(Form("Sp18/Fa18 = %.3f #pm %.3f", Rphi, eRphi));
+                        box->Draw("SAME");
                     }
                 }
             }
@@ -945,7 +999,7 @@ void compare_unpolarized_cross_sections_sp18out_vs_fa18out(
         weighted_mean_se_pct    = 100.0 * sRw;
     }
 
-    // Print concise one-liners (your preference is single-line outputs)
+    // Print concise one-liners
     std::cout << "[compare][final] IntegratedRatioPct = " << integrated_ratio_pct
               << " ; points=" << n_points_integrated
               << " ; sumA=" << sumA << " ; sumB=" << sumB << "\n";
