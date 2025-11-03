@@ -19,6 +19,7 @@
 #include "bin_volume.h"
 #include "uncorrected_cross_section.h"
 #include "rad_corrected_cross_section.h"
+#include "model_predictions.h"
 
 int main(int argc, char* argv[]) {
     std::cout << "Starting DVCS analysis..." << std::endl;
@@ -75,7 +76,7 @@ int main(int argc, char* argv[]) {
     // // --------- Total counts after exclusivity cuts (by helicity) ----------
     const std::string cuts_json_path   = "output/jsons/combined_cuts.json"; 
     // // produced by exclusivity_cuts
-    
+
     // const std::string output_counts_js = "output/jsons/total_counts.json";
     // compute_total_counts(dvcs_periods, topologies, binning_scheme, dataTrees, cuts_json_path,
     // output_counts_js, output_root); 
@@ -182,13 +183,13 @@ int main(int argc, char* argv[]) {
     //     "output/uncorrected_cross_section"      // output dir
     // );
 
-    compare_unpolarized_cross_sections_sp18out_vs_fa18out(
-        binning_scheme,
-        "output/jsons",                    // bin volume JSON directory
-        "output/jsons",                    // unfolded counts
-        "imports/integrated_luminosity",   // luminosity text files (use total column)
-        "output/uncorrected_cross_section/" // output dir
-    ); // #endif
+    // compare_unpolarized_cross_sections_sp18out_vs_fa18out(
+    //     binning_scheme,
+    //     "output/jsons",                    // bin volume JSON directory
+    //     "output/jsons",                    // unfolded counts
+    //     "imports/integrated_luminosity",   // luminosity text files (use total column)
+    //     "output/uncorrected_cross_section/" // output dir
+    // ); // #endif
 
     // // Multiply uncorrected dσ/dφ by Born/Rad per-φ correction
     // const std::string unx_dir = "output/jsons";
@@ -213,6 +214,13 @@ int main(int argc, char* argv[]) {
     //     output_root,  
     //     (fs::path(output_root) / "rad_corrected_cross_section" / "jsons").string() // directory with rad_corrected_xsec_<E>.json
     // );
+
+    // Example: unpolarized predictions (xB,Q2,t,phi,Ebeam)
+    ModelPaths paths; // leave empty to use env/defaults
+    double xB = 0.11; double Q2 = 1.6; double tpos = 0.20; double phi_deg = 180;
+    double xs_vgg  = vgg_xs(xB, Q2, tpos, phi_deg, 10.604, Helicity::Unpol, paths, /*globalfit=*/false);
+    double xs_bh   = vgg_bh_only(xB, Q2, tpos, phi_deg, 10.604, paths, /*globalfit=*/false);
+    double xs_km15 = km15_xs(xB, Q2, tpos, phi_deg, 10.604, Helicity::Unpol, paths);
 
 
     std::cout << "All done." << std::endl;
