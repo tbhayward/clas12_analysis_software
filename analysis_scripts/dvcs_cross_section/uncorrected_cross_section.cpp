@@ -805,7 +805,7 @@ void compare_unpolarized_cross_sections_sp18out_vs_fa18out(
             head.SetTextFont(42);
             head.SetTextSize(0.30);
             std::ostringstream tit;
-            tit << Form("Ratio vs #phi: 100 #times ( #sigma_{U}^{Sp18} / #sigma_{U}^{Fa18} )   x_{B} #in [%.2g, %.2g]",
+            tit << Form("Ratio vs #phi: x_{B} #in [%.2g, %.2g]",
                         xb.first, xb.second);
             head.DrawLatex(0.5, 0.58, tit.str().c_str());
 
@@ -821,12 +821,12 @@ void compare_unpolarized_cross_sections_sp18out_vs_fa18out(
                     gPad->SetGrid(1,1);
                     gPad->SetTopMargin(0.08);
                     gPad->SetBottomMargin(0.18);
-                    gPad->SetLeftMargin(0.16);
+                    gPad->SetLeftMargin(0.18);
                     gPad->SetRightMargin(0.10);
                     gPad->SetLogy(0);
 
                     // Y-axis around 100% (adjust if you prefer wider bounds)
-                    TH1* frame = gPad->DrawFrame(0.0, 50.0, 360.0, 150.0);
+                    TH1* frame = gPad->DrawFrame(0.0, 0.0, 360.0, 200.0);
                     frame->GetXaxis()->SetLabelSize(0.0001);
                     frame->GetXaxis()->SetTitle("#phi (deg)");
                     frame->GetYaxis()->SetTitle("100 #times ( #sigma_{U}^{Sp18} / #sigma_{U}^{Fa18} )  (%)");
