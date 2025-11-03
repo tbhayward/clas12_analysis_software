@@ -829,7 +829,7 @@ void compare_unpolarized_cross_sections_sp18out_vs_fa18out(
                     TH1* frame = gPad->DrawFrame(0.0, 0.0, 360.0, 200.0);
                     frame->GetXaxis()->SetLabelSize(0.0001);
                     frame->GetXaxis()->SetTitle("#phi (deg)");
-                    frame->GetYaxis()->SetTitle("100 #times ( #sigma_{U}^{Sp18} / #sigma_{U}^{Fa18} )  (%)");
+                    frame->GetYaxis()->SetTitle(" #sigma_{U}^{Sp18} / #sigma_{U}^{Fa18} (%)");
                     frame->GetXaxis()->CenterTitle();
                     frame->GetYaxis()->CenterTitle();
                     frame->GetXaxis()->SetNdivisions(505);
