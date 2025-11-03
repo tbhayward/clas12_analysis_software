@@ -217,7 +217,7 @@ int main(int argc, char* argv[]) {
 
     // Example: unpolarized predictions (xB,Q2,t,phi,Ebeam)
     ModelPaths paths; // leave empty to use env/defaults
-    double xB = 0.11; double Q2 = 1.6; double tpos = 0.20; double phi_deg = 180;
+    double xB = 0.11; double Q2 = 1.6; double tpos = 0.20; double phi_deg = 1;
     double xs_vgg  = vgg_xs(xB, Q2, tpos, phi_deg, 10.604, Helicity::Unpol, paths, /*globalfit=*/false);
     double xs_bh   = vgg_bh_only(xB, Q2, tpos, phi_deg, 10.604, paths, /*globalfit=*/false);
     double xs_km15 = km15_xs(xB, Q2, tpos, phi_deg, 10.604, Helicity::Unpol, paths);
