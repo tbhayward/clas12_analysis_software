@@ -182,6 +182,14 @@ int main(int argc, char* argv[]) {
     //     "output/uncorrected_cross_section"      // output dir
     // );
 
+    compare_unpolarized_cross_sections_sp18out_vs_fa18out(
+        binning_scheme,
+        "output/jsons",                    // bin volume JSON directory
+        "output/jsons",                    // unfolded counts
+        "imports/integrated_luminosity",   // luminosity text files (use total column)
+        "output/uncorrected_cross_section" // output dir
+    ); // #endif
+
     // // Multiply uncorrected dσ/dφ by Born/Rad per-φ correction
     // const std::string unx_dir = "output/jsons";
     // const std::string rc_dir  = "output/jsons"; // radiative_corrections_group_<E>.json
@@ -189,31 +197,22 @@ int main(int argc, char* argv[]) {
     // compute_rad_corrected_cross_sections(binning_scheme, unx_dir, rc_dir, out_dir);
 
 
-    // Beam-Spin Asymmetry:
-    // - reads total_counts.json and contamination JSONs
-    // - writes per-period fits to output/jsons/BSA_fits/BSA_fits_<period>.json
-    // - writes all-periods file to output/jsons/BSA_fits_all_periods.json
-    // - writes 10.6 GeV combined to output/jsons/BSA_fits_combined_10p6.json
-    // - plots to output/bsa_plots/<runTag>/...
-    namespace fs = std::filesystem;
+    // // Beam-Spin Asymmetry:
+    // // - reads total_counts.json and contamination JSONs
+    // // - writes per-period fits to output/jsons/BSA_fits/BSA_fits_<period>.json
+    // // - writes all-periods file to output/jsons/BSA_fits_all_periods.json
+    // // - writes 10.6 GeV combined to output/jsons/BSA_fits_combined_10p6.json
+    // // - plots to output/bsa_plots/<runTag>/...
+    // namespace fs = std::filesystem;
     // compute_and_plot_bsa_helicity(
-    //     dvcs_periods,
+    //     dvcs_periods,                                               
     //     topologies,
     //     binning_scheme,
-    //     dataTrees,
-    //     (fs::path(output_root)/"jsons"/"pi0_corrected_counts_all_groups.json").string(),
-    //     output_root
+    //     dataTrees,       
+    //     (fs::path(output_root) / "jsons" / "pi0_corrected_counts_all_groups.json").string(),
+    //     output_root,  
+    //     (fs::path(output_root) / "rad_corrected_cross_section" / "jsons").string() // directory with rad_corrected_xsec_<E>.json
     // );
-
-    compute_and_plot_bsa_helicity(
-        dvcs_periods,                                                // was: periods
-        topologies,
-        binning_scheme,
-        dataTrees,                                                   // was: dvcsDataTrees
-        (fs::path(output_root) / "jsons" / "pi0_corrected_counts_all_groups.json").string(),
-        output_root,                                                 // was: out_root_dir
-        (fs::path(output_root) / "rad_corrected_cross_section" / "jsons").string() // directory with rad_corrected_xsec_<E>.json
-    );
 
 
     std::cout << "All done." << std::endl;
