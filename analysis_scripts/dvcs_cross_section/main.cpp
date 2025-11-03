@@ -20,6 +20,7 @@
 #include "uncorrected_cross_section.h"
 #include "rad_corrected_cross_section.h"
 #include "model_predictions.h"
+#include "bin_centering_corrections.h"
 
 int main(int argc, char* argv[]) {
     std::cout << "Starting DVCS analysis..." << std::endl;
