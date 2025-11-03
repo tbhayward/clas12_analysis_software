@@ -809,6 +809,7 @@ void compare_unpolarized_cross_sections_sp18out_vs_fa18out(
                         TPaveText* box = new TPaveText(0.16, 0.14, 0.52, 0.26, "NDC");  // coords = (x1,y1,x2,y2)
                         box->SetFillColor(kWhite);        // solid white background
                         box->SetFillStyle(1001);          // ensure it's opaque
+                        box->SetBorderSize(1);
                         box->SetLineColor(kBlack);        // black outline
                         box->SetLineWidth(2);             // thicker border
                         box->SetShadowColor(0);           // no drop shadow
@@ -967,6 +968,7 @@ void compare_unpolarized_cross_sections_sp18out_vs_fa18out(
                         TPaveText* box = new TPaveText(0.18, 0.18, 0.54, 0.30, "NDC");  // coords = (x1,y1,x2,y2)
                         box->SetFillColor(kWhite);        // solid white background
                         box->SetFillStyle(1001);          // ensure it's opaque
+                        box->SetBorderSize(1);
                         box->SetLineColor(kBlack);        // black outline
                         box->SetLineWidth(2);             // thicker border
                         box->SetShadowColor(0);           // no drop shadow
