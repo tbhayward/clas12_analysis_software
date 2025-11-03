@@ -705,7 +705,7 @@ void compare_unpolarized_cross_sections_sp18out_vs_fa18out(
                     gPad->SetLogy();
 
                     // Y lower bound 1e-2 per your request
-                    TH1* frame = gPad->DrawFrame(0.0, 1e-2, 360.0, 1e3);
+                    TH1* frame = gPad->DrawFrame(0.0, 1e-4, 360.0, 1e3);
                     frame->GetXaxis()->SetLabelSize(0.0001);
                     frame->GetXaxis()->SetTitle("#phi (deg)");
                     frame->GetYaxis()->SetTitle("d#sigma_{U}/d#phi (uncorr.)");
