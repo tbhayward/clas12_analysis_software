@@ -187,7 +187,7 @@ int main(int argc, char* argv[]) {
         "output/jsons",                    // bin volume JSON directory
         "output/jsons",                    // unfolded counts
         "imports/integrated_luminosity",   // luminosity text files (use total column)
-        "output/uncorrected_cross_section" // output dir
+        "output/uncorrected_cross_section/" // output dir
     ); // #endif
 
     // // Multiply uncorrected dσ/dφ by Born/Rad per-φ correction
