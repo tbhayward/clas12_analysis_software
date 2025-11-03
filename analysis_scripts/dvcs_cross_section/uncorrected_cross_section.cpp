@@ -483,7 +483,7 @@ void compare_unpolarized_cross_sections_sp18out_vs_fa18out(
 ) {
     namespace fs = std::filesystem;
 
-    // read SECOND column (total) from luminosity CSVs
+    // ---------- read SECOND column (total) from luminosity CSVs ----------
     auto read_totalcol_luminosity = [](const std::string& filepath)->double {
         std::ifstream in(filepath);
         if (!in.is_open()) {
@@ -517,23 +517,23 @@ void compare_unpolarized_cross_sections_sp18out_vs_fa18out(
         return sum_total;
     };
 
-    // bin edges/helpers
+    // ---------- bin edges/helpers ----------
     const auto xB_bins = uniqueRanges(binning_scheme, 'x');
     const auto Q2_bins = uniqueRanges(binning_scheme, 'Q');
     const auto t_bins  = uniqueRanges(binning_scheme, 't');
     const auto PHI_DEG = phiCentersDeg();
 
-    // period and energy keys
+    // ---------- period and energy keys ----------
     const std::string P_SP18_OUT = "DVCS_Sp18_out";
     const std::string P_FA18_OUT = "DVCS_Fa18_out";
     const std::string E_SP18 = "10.59";
     const std::string E_FA18 = "10.60";
 
-    // luminosities (SECOND column totals)
+    // ---------- luminosities (SECOND column totals) ----------
     const double L_sp18_out_total = read_totalcol_luminosity(luminosity_dir + "/rga_sp18_out.txt");
     const double L_fa18_out_total = read_totalcol_luminosity(luminosity_dir + "/rga_fa18_out.txt");
 
-    // load bin-volume JSONs
+    // ---------- load bin-volume JSONs ----------
     const std::string path_vol_sp18 = (fs::path(bin_volume_json_dir) / ("bin_volume_" + E_SP18 + ".json")).string();
     const std::string path_vol_fa18 = (fs::path(bin_volume_json_dir) / ("bin_volume_" + E_FA18 + ".json")).string();
     const json jvol_sp18 = load_json(path_vol_sp18);
@@ -541,7 +541,7 @@ void compare_unpolarized_cross_sections_sp18out_vs_fa18out(
     if (jvol_sp18.empty()) std::cerr << "[compare] Missing bin-volume JSON " << path_vol_sp18 << "\n";
     if (jvol_fa18.empty()) std::cerr << "[compare] Missing bin-volume JSON " << path_vol_fa18 << "\n";
 
-    // load unfolded counts per period
+    // ---------- load unfolded counts per period ----------
     const std::string path_u_sp18 = (fs::path(unfolded_counts_dir) / ("unfolded_" + P_SP18_OUT + ".json")).string();
     const std::string path_u_fa18 = (fs::path(unfolded_counts_dir) / ("unfolded_" + P_FA18_OUT + ".json")).string();
     const json ju_sp18 = load_json(path_u_sp18);
@@ -549,7 +549,7 @@ void compare_unpolarized_cross_sections_sp18out_vs_fa18out(
     if (ju_sp18.empty()) std::cerr << "[compare] Missing unfolded " << path_u_sp18 << "\n";
     if (ju_fa18.empty()) std::cerr << "[compare] Missing unfolded " << path_u_fa18 << "\n";
 
-    // build unpolarized xsec arrays for a given period (sum helicities, divide by L*V_phi)
+    // ---------- build unpolarized xsec arrays for a period ----------
     struct CellData { std::vector<double> xsec, xerr; bool ok=false; CellData(): xsec(N_PHI_BINS,0.0), xerr(N_PHI_BINS,0.0){} };
     using CellKey = std::tuple<int,int,int>;
 
@@ -629,17 +629,27 @@ void compare_unpolarized_cross_sections_sp18out_vs_fa18out(
     const auto map_sp18 = build_unpol(jvol_sp18, ju_sp18, L_sp18_out_total);
     const auto map_fa18 = build_unpol(jvol_fa18, ju_fa18, L_fa18_out_total);
 
-    // output dir
+    // ---------- output dir ----------
     fs::create_directories(fs::path(output_dir)/"plots_compare");
 
-    // helper: fetch a cell
+    // ---------- helper: fetch a cell ----------
     auto fetchCell = [&](const std::map<CellKey,CellData>& M, int ix, int iQ, int itb)->const CellData* {
         auto it = M.find(std::make_tuple(ix,iQ,itb));
         if (it == M.end() || !it->second.ok) return nullptr;
         return &it->second;
     };
 
-    // loop over xB bins
+    // ---------- global accumulators for the final single-number ratio ----------
+    // (i) integrated ratio: 100 * (sum A) / (sum B)
+    long long n_points_integrated = 0;
+    double sumA = 0.0, sumB = 0.0;
+
+    // (ii) inverse-variance weighted mean of pointwise ratios: 100 * <A/B>_w
+    long long n_points_weighted = 0;
+    double wsum = 0.0;     // sum of weights
+    double wrsum = 0.0;    // sum of w_i * R_i
+
+    // ---------- loop over xB bins (also fills the global accumulators) ----------
     for (int ix = 0; ix < (int)xB_bins.size(); ++ix) {
         const auto xb = xB_bins[ix];
 
@@ -652,7 +662,9 @@ void compare_unpolarized_cross_sections_sp18out_vs_fa18out(
         const int W = 280*ncols + 160;
         const int H = 240*nrows + 170;
 
-        // (1) Cross-section overlay: Sp18 vs Fa18
+        // =========================
+        // (1) Cross-section canvas
+        // =========================
         {
             std::ostringstream cname; cname << "c_xsec_unpol_compare_sp18out_fa18out_xB" << ix;
             TCanvas* c = new TCanvas(cname.str().c_str(), cname.str().c_str(), W, H);
@@ -665,7 +677,7 @@ void compare_unpolarized_cross_sections_sp18out_vs_fa18out(
             pGrid->cd();
             pGrid->Divide(ncols, nrows, 0.0001, 0.0001);
 
-            // title
+            // Title
             pTop->cd();
             TLatex head;
             head.SetNDC(); head.SetTextAlign(22);
@@ -692,7 +704,7 @@ void compare_unpolarized_cross_sections_sp18out_vs_fa18out(
                     gPad->SetRightMargin(0.10);
                     gPad->SetLogy();
 
-                    // y lower bound 1e-2 per your request
+                    // Y lower bound 1e-2 per your request
                     TH1* frame = gPad->DrawFrame(0.0, 1e-2, 360.0, 1e3);
                     frame->GetXaxis()->SetLabelSize(0.0001);
                     frame->GetXaxis()->SetTitle("#phi (deg)");
@@ -771,7 +783,9 @@ void compare_unpolarized_cross_sections_sp18out_vs_fa18out(
             std::cout << "[compare] Wrote " << outP << "\n";
         }
 
-        // (2) Ratio canvas: 100 * (Sp18/Fa18) vs phi, y in [50, 150]
+        // ==========================================
+        // (2) Ratio canvas: 100 * (Sp18/Fa18) vs phi
+        // ==========================================
         {
             std::ostringstream cname; cname << "c_xsec_ratio_sp18_over_fa18_xB" << ix;
             TCanvas* c = new TCanvas(cname.str().c_str(), cname.str().c_str(), W, H);
@@ -784,7 +798,7 @@ void compare_unpolarized_cross_sections_sp18out_vs_fa18out(
             pGrid->cd();
             pGrid->Divide(ncols, nrows, 0.0001, 0.0001);
 
-            // title: 100 * (Sp18/Fa18)
+            // Title
             pTop->cd();
             TLatex head;
             head.SetNDC(); head.SetTextAlign(22);
@@ -811,7 +825,7 @@ void compare_unpolarized_cross_sections_sp18out_vs_fa18out(
                     gPad->SetRightMargin(0.10);
                     gPad->SetLogy(0);
 
-                    // y-axis 50..150 (%), centered around 100%
+                    // Y-axis around 100% (adjust if you prefer wider bounds)
                     TH1* frame = gPad->DrawFrame(0.0, 50.0, 360.0, 150.0);
                     frame->GetXaxis()->SetLabelSize(0.0001);
                     frame->GetXaxis()->SetTitle("#phi (deg)");
@@ -855,7 +869,7 @@ void compare_unpolarized_cross_sections_sp18out_vs_fa18out(
 
                     if (!cd_sp18 || !cd_fa18) continue;
 
-                    // compute 100 * (Sp18 / Fa18), with propagated errors
+                    // compute 100 * (Sp18 / Fa18), and accumulate global stats
                     std::vector<double> xp, yp, ey;
                     xp.reserve(N_PHI_BINS);
                     yp.reserve(N_PHI_BINS);
@@ -870,6 +884,7 @@ void compare_unpolarized_cross_sections_sp18out_vs_fa18out(
                         if (!(A > 0.0 && B > 0.0)) continue;
                         if (!std::isfinite(A) || !std::isfinite(B)) continue;
 
+                        // pointwise ratio and error
                         const double R  = A / B;
                         const double eR = R * std::sqrt( std::pow(eA/std::max(1e-12,A), 2.0)
                                                        + std::pow(eB/std::max(1e-12,B), 2.0) );
@@ -877,6 +892,21 @@ void compare_unpolarized_cross_sections_sp18out_vs_fa18out(
                         xp.push_back(PHI_DEG[ip]);
                         yp.push_back(100.0 * R);
                         ey.push_back(100.0 * eR);
+
+                        // --- global accumulators ---
+                        // (i) integrated ratio pieces
+                        sumA += A;
+                        sumB += B;
+                        ++n_points_integrated;
+
+                        // (ii) weighted mean pieces (only if finite uncertainty)
+                        const double varR = eR * eR;
+                        if (std::isfinite(varR) && varR > 0.0) {
+                            const double w = 1.0 / varR;
+                            wsum  += w;
+                            wrsum += w * R;
+                            ++n_points_weighted;
+                        }
                     }
 
                     if (!xp.empty()) {
@@ -897,6 +927,33 @@ void compare_unpolarized_cross_sections_sp18out_vs_fa18out(
             std::cout << "[compare] Wrote " << outP2 << "\n";
         }
     }
+
+    // ---------- final single-number summary ----------
+    // Integrated ratio: 100 * (sum A)/(sum B) — Δphi cancels if binning identical.
+    double integrated_ratio_pct = std::numeric_limits<double>::quiet_NaN();
+    if (sumB > 0.0) {
+        integrated_ratio_pct = 100.0 * (sumA / sumB);
+    }
+
+    // Weighted mean ratio: 100 * (wrsum/wsum), SE = 100*sqrt(1/wsum)
+    double weighted_mean_ratio_pct = std::numeric_limits<double>::quiet_NaN();
+    double weighted_mean_se_pct    = std::numeric_limits<double>::quiet_NaN();
+    if (wsum > 0.0) {
+        const double Rw  = wrsum / wsum;
+        const double sRw = std::sqrt(1.0 / wsum);
+        weighted_mean_ratio_pct = 100.0 * Rw;
+        weighted_mean_se_pct    = 100.0 * sRw;
+    }
+
+    // Print concise one-liners (your preference is single-line outputs)
+    std::cout << "[compare][final] IntegratedRatioPct = " << integrated_ratio_pct
+              << " ; points=" << n_points_integrated
+              << " ; sumA=" << sumA << " ; sumB=" << sumB << "\n";
+
+    std::cout << "[compare][final] WeightedMeanRatioPct = " << weighted_mean_ratio_pct
+              << " +/- " << weighted_mean_se_pct
+              << " ; points=" << n_points_weighted
+              << " ; wsum=" << wsum << "\n";
 
     std::cout << "[compare] Finished unpolarized comparison Sp18 out vs Fa18 out.\n";
 }
