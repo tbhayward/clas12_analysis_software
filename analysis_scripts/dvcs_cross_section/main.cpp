@@ -182,7 +182,7 @@ int main(int argc, char* argv[]) {
     //     "output/uncorrected_cross_section"      // output dir
     // );
 
-    compare_unpolarized_xsec_sp18out_vs_fa18out(
+    compare_unpolarized_cross_sections_sp18out_vs_fa18out(
         binning_scheme,
         "output/jsons",                    // bin volume JSON directory
         "output/jsons",                    // unfolded counts

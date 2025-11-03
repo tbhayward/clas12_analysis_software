@@ -19,7 +19,7 @@ void compute_uncorrected_cross_sections(
 
 // Compare unpolarized cross sections using TOTAL-column luminosity for Sp18 out vs Fa18 out.
 // Produces panel plots per xB slice; no JSONs are written.
-void compare_unpolarized_xsec_sp18out_vs_fa18out(
+void compare_unpolarized_cross_sections_sp18out_vs_fa18out(
     const std::vector<Binning>& binning_scheme,
     const std::string& bin_volume_json_dir,
     const std::string& unfolded_counts_dir,
