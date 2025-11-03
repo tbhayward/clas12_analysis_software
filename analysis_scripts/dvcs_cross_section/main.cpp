@@ -126,61 +126,61 @@ int main(int argc, char* argv[]) {
     //     output_root
     // );
 
-    // --------- Acceptance (reco MC with MC cuts / gen MC, per bin & φ) ----------
-    // Writes per-period JSONs: output/jsons/acceptance_<period>.json
-    // Plots to: output/acceptance/<runTag>/plot_acceptance_<period>_xB_<ix>.png
-    {
-        std::vector<std::string> acc_periods = {
-            "DVCS_Sp18_inb", "DVCS_Sp18_out",
-            "DVCS_Fa18_inb", "DVCS_Fa18_out",
-            "DVCS_Sp19_inb"
-        }; // intentionally skipping DVCS_Fa18_inb_supp
-        compute_and_plot_acceptance(
-            acc_periods,
-            topologies,
-            binning_scheme,
-            genMcTrees,
-            recMcTrees,
-            cuts_json_path,
-            output_root
-        );
-    }
+    // // --------- Acceptance (reco MC with MC cuts / gen MC, per bin & φ) ----------
+    // // Writes per-period JSONs: output/jsons/acceptance_<period>.json
+    // // Plots to: output/acceptance/<runTag>/plot_acceptance_<period>_xB_<ix>.png
+    // {
+    //     std::vector<std::string> acc_periods = {
+    //         "DVCS_Sp18_inb", "DVCS_Sp18_out",
+    //         "DVCS_Fa18_inb", "DVCS_Fa18_out",
+    //         "DVCS_Sp19_inb"
+    //     }; // intentionally skipping DVCS_Fa18_inb_supp
+    //     compute_and_plot_acceptance(
+    //         acc_periods,
+    //         topologies,
+    //         binning_scheme,
+    //         genMcTrees,
+    //         recMcTrees,
+    //         cuts_json_path,
+    //         output_root
+    //     );
+    // }
 
-    // --------- Unfolding (counts / acceptance), helicity-resolved ----------
-    // Writes per-period JSONs: output/jsons/unfolded_<period>.json
-    // Plots to: output/unfolding/<runTag>/plot_unfolded_<period>_xB_<ix>.png
-    {
-        std::vector<std::string> unf_periods = {
-            "DVCS_Sp18_inb", "DVCS_Sp18_out",
-            "DVCS_Fa18_inb", "DVCS_Fa18_out",
-            "DVCS_Sp19_inb"
-        }; // skip DVCS_Fa18_inb_supp on purpose
-        // note that we pass the pi0_corrected_counts below (i.e. not the original total_counts)
-        const std::string total_counts_js = "output/jsons/pi0_corrected_counts_all_groups.json";
-        compute_and_plot_unfolding(
-            unf_periods,
-            binning_scheme,
-            total_counts_js,
-            output_root
-        );
-    }
+    // // --------- Unfolding (counts / acceptance), helicity-resolved ----------
+    // // Writes per-period JSONs: output/jsons/unfolded_<period>.json
+    // // Plots to: output/unfolding/<runTag>/plot_unfolded_<period>_xB_<ix>.png
+    // {
+    //     std::vector<std::string> unf_periods = {
+    //         "DVCS_Sp18_inb", "DVCS_Sp18_out",
+    //         "DVCS_Fa18_inb", "DVCS_Fa18_out",
+    //         "DVCS_Sp19_inb"
+    //     }; // skip DVCS_Fa18_inb_supp on purpose
+    //     // note that we pass the pi0_corrected_counts below (i.e. not the original total_counts)
+    //     const std::string total_counts_js = "output/jsons/pi0_corrected_counts_all_groups.json";
+    //     compute_and_plot_unfolding(
+    //         unf_periods,
+    //         binning_scheme,
+    //         total_counts_js,
+    //         output_root
+    //     );
+    // }
 
-    // --------- Bin Volume (generator-based φ coverage), per beam energy ----------
-    // Writes per-energy JSONs: output/jsons/bin_volume_<energy>.json
-    // Plots to: output/bin_volume/<energy>/plot_bin_volume_<energy>_xB_<ix>.png
-    compute_and_plot_bin_volume(
-        binning_scheme,
-        genMcTrees,
-        output_root
-    );
+    // // --------- Bin Volume (generator-based φ coverage), per beam energy ----------
+    // // Writes per-energy JSONs: output/jsons/bin_volume_<energy>.json
+    // // Plots to: output/bin_volume/<energy>/plot_bin_volume_<energy>_xB_<ix>.png
+    // compute_and_plot_bin_volume(
+    //     binning_scheme,
+    //     genMcTrees,
+    //     output_root
+    // );
 
-    compute_uncorrected_cross_sections(
-        binning_scheme,
-        "output/jsons",                    // bin volume JSON directory
-        "output/jsons",               // unfolded counts per helicity
-        "imports/integrated_luminosity",        // luminosity text files
-        "output/uncorrected_cross_section"      // output dir
-    );
+    // compute_uncorrected_cross_sections(
+    //     binning_scheme,
+    //     "output/jsons",                    // bin volume JSON directory
+    //     "output/jsons",               // unfolded counts per helicity
+    //     "imports/integrated_luminosity",        // luminosity text files
+    //     "output/uncorrected_cross_section"      // output dir
+    // );
 
     compare_unpolarized_cross_sections_sp18out_vs_fa18out(
         binning_scheme,
