@@ -805,17 +805,18 @@ void compare_unpolarized_cross_sections_sp18out_vs_fa18out(
                     // ------- NEW: phi-averaged ratio box (bottom-left) -------
                     double Rphi = 0.0, eRphi = 0.0;
                     if (phiAveragedRatio(cd_sp18, cd_fa18, Rphi, eRphi)) {
-                        // Tight box in lower-left of the pad; NDC coords inside pad
-                        TPaveText* box = new TPaveText(0.16, 0.16, 0.50, 0.30, "NDC");
-                        box->SetFillColor(kWhite);
-                        box->SetFillStyle(1001);
-                        box->SetLineColor(kBlack);
-                        box->SetLineWidth(1);
+                        // --- Box showing phi-averaged ratio ---
+                        TPaveText* box = new TPaveText(0.16, 0.14, 0.52, 0.26, "NDC");  // coords = (x1,y1,x2,y2)
+                        box->SetFillColor(kWhite);        // solid white background
+                        box->SetFillStyle(1001);          // ensure it's opaque
+                        box->SetLineColor(kBlack);        // black outline
+                        box->SetLineWidth(2);             // thicker border
+                        box->SetShadowColor(0);           // no drop shadow
                         box->SetTextFont(42);
                         box->SetTextSize(0.040);
                         box->SetTextAlign(12);
                         box->AddText(Form("Sp18/Fa18 = %.3f #pm %.3f", Rphi, eRphi));
-                        box->Draw("SAME");
+                        box->Draw("same");
                     }
                 }
             }
@@ -962,16 +963,18 @@ void compare_unpolarized_cross_sections_sp18out_vs_fa18out(
                     // ------- NEW: also show the phi-averaged ratio box on this canvas -------
                     double Rphi = 0.0, eRphi = 0.0;
                     if (phiAveragedRatio(cd_sp18, cd_fa18, Rphi, eRphi)) {
-                        TPaveText* box = new TPaveText(0.18, 0.16, 0.52, 0.30, "NDC");
-                        box->SetFillColor(kWhite);
-                        box->SetFillStyle(1001);
-                        box->SetLineColor(kBlack);
-                        box->SetLineWidth(1);
+                        // --- Box showing phi-averaged ratio ---
+                        TPaveText* box = new TPaveText(0.16, 0.14, 0.52, 0.26, "NDC");  // coords = (x1,y1,x2,y2)
+                        box->SetFillColor(kWhite);        // solid white background
+                        box->SetFillStyle(1001);          // ensure it's opaque
+                        box->SetLineColor(kBlack);        // black outline
+                        box->SetLineWidth(2);             // thicker border
+                        box->SetShadowColor(0);           // no drop shadow
                         box->SetTextFont(42);
                         box->SetTextSize(0.040);
                         box->SetTextAlign(12);
                         box->AddText(Form("Sp18/Fa18 = %.3f #pm %.3f", Rphi, eRphi));
-                        box->Draw("SAME");
+                        box->Draw("same");
                     }
                 }
             }
