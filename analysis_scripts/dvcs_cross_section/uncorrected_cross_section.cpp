@@ -483,6 +483,7 @@ void compare_unpolarized_cross_sections_sp18out_vs_fa18out(
 ) {
     namespace fs = std::filesystem;
 
+    // read SECOND column (total) from luminosity CSVs
     auto read_totalcol_luminosity = [](const std::string& filepath)->double {
         std::ifstream in(filepath);
         if (!in.is_open()) {
@@ -495,6 +496,7 @@ void compare_unpolarized_cross_sections_sp18out_vs_fa18out(
             if (a == std::string::npos) return std::string();
             return s.substr(a, b - a + 1);
         };
+
         double sum_total = 0.0;
         std::string line;
         while (std::getline(in, line)) {
@@ -503,7 +505,8 @@ void compare_unpolarized_cross_sections_sp18out_vs_fa18out(
             std::stringstream ss(line);
             std::string tok; std::vector<std::string> cols;
             while (std::getline(ss, tok, ',')) cols.push_back(trim(tok));
-            if (cols.size() < 2) continue;         // expect: run,total,pos,neg,*,*
+            // expect: run,total,pos,neg,*,*
+            if (cols.size() < 2) continue;
             try {
                 double tot = std::stod(cols[1]);    // SECOND column
                 if (tot > 0) sum_total += tot;
@@ -514,19 +517,23 @@ void compare_unpolarized_cross_sections_sp18out_vs_fa18out(
         return sum_total;
     };
 
+    // bin edges/helpers
     const auto xB_bins = uniqueRanges(binning_scheme, 'x');
     const auto Q2_bins = uniqueRanges(binning_scheme, 'Q');
     const auto t_bins  = uniqueRanges(binning_scheme, 't');
     const auto PHI_DEG = phiCentersDeg();
 
+    // period and energy keys
     const std::string P_SP18_OUT = "DVCS_Sp18_out";
     const std::string P_FA18_OUT = "DVCS_Fa18_out";
     const std::string E_SP18 = "10.59";
     const std::string E_FA18 = "10.60";
 
+    // luminosities (SECOND column totals)
     const double L_sp18_out_total = read_totalcol_luminosity(luminosity_dir + "/rga_sp18_out.txt");
     const double L_fa18_out_total = read_totalcol_luminosity(luminosity_dir + "/rga_fa18_out.txt");
 
+    // load bin-volume JSONs
     const std::string path_vol_sp18 = (fs::path(bin_volume_json_dir) / ("bin_volume_" + E_SP18 + ".json")).string();
     const std::string path_vol_fa18 = (fs::path(bin_volume_json_dir) / ("bin_volume_" + E_FA18 + ".json")).string();
     const json jvol_sp18 = load_json(path_vol_sp18);
@@ -534,6 +541,7 @@ void compare_unpolarized_cross_sections_sp18out_vs_fa18out(
     if (jvol_sp18.empty()) std::cerr << "[compare] Missing bin-volume JSON " << path_vol_sp18 << "\n";
     if (jvol_fa18.empty()) std::cerr << "[compare] Missing bin-volume JSON " << path_vol_fa18 << "\n";
 
+    // load unfolded counts per period
     const std::string path_u_sp18 = (fs::path(unfolded_counts_dir) / ("unfolded_" + P_SP18_OUT + ".json")).string();
     const std::string path_u_fa18 = (fs::path(unfolded_counts_dir) / ("unfolded_" + P_FA18_OUT + ".json")).string();
     const json ju_sp18 = load_json(path_u_sp18);
@@ -541,6 +549,7 @@ void compare_unpolarized_cross_sections_sp18out_vs_fa18out(
     if (ju_sp18.empty()) std::cerr << "[compare] Missing unfolded " << path_u_sp18 << "\n";
     if (ju_fa18.empty()) std::cerr << "[compare] Missing unfolded " << path_u_fa18 << "\n";
 
+    // build unpolarized xsec arrays for a given period (sum helicities, divide by L*V_phi)
     struct CellData { std::vector<double> xsec, xerr; bool ok=false; CellData(): xsec(N_PHI_BINS,0.0), xerr(N_PHI_BINS,0.0){} };
     using CellKey = std::tuple<int,int,int>;
 
@@ -620,16 +629,17 @@ void compare_unpolarized_cross_sections_sp18out_vs_fa18out(
     const auto map_sp18 = build_unpol(jvol_sp18, ju_sp18, L_sp18_out_total);
     const auto map_fa18 = build_unpol(jvol_fa18, ju_fa18, L_fa18_out_total);
 
+    // output dir
     fs::create_directories(fs::path(output_dir)/"plots_compare");
 
-    // ---------- helper to fetch a cell ----------
+    // helper: fetch a cell
     auto fetchCell = [&](const std::map<CellKey,CellData>& M, int ix, int iQ, int itb)->const CellData* {
         auto it = M.find(std::make_tuple(ix,iQ,itb));
         if (it == M.end() || !it->second.ok) return nullptr;
         return &it->second;
     };
 
-    // ---------- loop over xB bins ----------
+    // loop over xB bins
     for (int ix = 0; ix < (int)xB_bins.size(); ++ix) {
         const auto xb = xB_bins[ix];
 
@@ -642,9 +652,7 @@ void compare_unpolarized_cross_sections_sp18out_vs_fa18out(
         const int W = 280*ncols + 160;
         const int H = 240*nrows + 170;
 
-        // =========================
-        // (1) Cross-section canvas
-        // =========================
+        // (1) Cross-section overlay: Sp18 vs Fa18
         {
             std::ostringstream cname; cname << "c_xsec_unpol_compare_sp18out_fa18out_xB" << ix;
             TCanvas* c = new TCanvas(cname.str().c_str(), cname.str().c_str(), W, H);
@@ -657,6 +665,7 @@ void compare_unpolarized_cross_sections_sp18out_vs_fa18out(
             pGrid->cd();
             pGrid->Divide(ncols, nrows, 0.0001, 0.0001);
 
+            // title
             pTop->cd();
             TLatex head;
             head.SetNDC(); head.SetTextAlign(22);
@@ -683,6 +692,7 @@ void compare_unpolarized_cross_sections_sp18out_vs_fa18out(
                     gPad->SetRightMargin(0.10);
                     gPad->SetLogy();
 
+                    // y lower bound 1e-2 per your request
                     TH1* frame = gPad->DrawFrame(0.0, 1e-2, 360.0, 1e3);
                     frame->GetXaxis()->SetLabelSize(0.0001);
                     frame->GetXaxis()->SetTitle("#phi (deg)");
@@ -761,11 +771,9 @@ void compare_unpolarized_cross_sections_sp18out_vs_fa18out(
             std::cout << "[compare] Wrote " << outP << "\n";
         }
 
-        // ==========================================
-        // (2) Percent-difference vs phi canvas (NEW)
-        // ==========================================
+        // (2) Ratio canvas: 100 * (Sp18/Fa18) vs phi, y in [50, 150]
         {
-            std::ostringstream cname; cname << "c_xsec_pctdiff_sp18out_minus_fa18out_xB" << ix;
+            std::ostringstream cname; cname << "c_xsec_ratio_sp18_over_fa18_xB" << ix;
             TCanvas* c = new TCanvas(cname.str().c_str(), cname.str().c_str(), W, H);
 
             TPad* pTop  = new TPad("pTop","pTop", 0.0, 0.915, 1.0, 1.0);
@@ -776,14 +784,14 @@ void compare_unpolarized_cross_sections_sp18out_vs_fa18out(
             pGrid->cd();
             pGrid->Divide(ncols, nrows, 0.0001, 0.0001);
 
-            // Title
+            // title: 100 * (Sp18/Fa18)
             pTop->cd();
             TLatex head;
             head.SetNDC(); head.SetTextAlign(22);
             head.SetTextFont(42);
             head.SetTextSize(0.30);
             std::ostringstream tit;
-            tit << Form("#Delta%%(#phi) = 2(#sigma_{U}^{Sp18}-#sigma_{U}^{Fa18})/(#sigma_{U}^{Sp18}+ #sigma_{U}^{Fa18})  x_{B} #in [%.2g, %.2g]",
+            tit << Form("Ratio vs #phi: 100 #times ( #sigma_{U}^{Sp18} / #sigma_{U}^{Fa18} )   x_{B} #in [%.2g, %.2g]",
                         xb.first, xb.second);
             head.DrawLatex(0.5, 0.58, tit.str().c_str());
 
@@ -801,12 +809,13 @@ void compare_unpolarized_cross_sections_sp18out_vs_fa18out(
                     gPad->SetBottomMargin(0.18);
                     gPad->SetLeftMargin(0.16);
                     gPad->SetRightMargin(0.10);
-                    gPad->SetLogy(0); // linear for percent difference
+                    gPad->SetLogy(0);
 
-                    TH1* frame = gPad->DrawFrame(0.0, -100.0, 360.0, 100.0);
+                    // y-axis 50..150 (%), centered around 100%
+                    TH1* frame = gPad->DrawFrame(0.0, 50.0, 360.0, 150.0);
                     frame->GetXaxis()->SetLabelSize(0.0001);
                     frame->GetXaxis()->SetTitle("#phi (deg)");
-                    frame->GetYaxis()->SetTitle("#Delta%% (Sp18 - Fa18)");
+                    frame->GetYaxis()->SetTitle("100 #times ( #sigma_{U}^{Sp18} / #sigma_{U}^{Fa18} )  (%)");
                     frame->GetXaxis()->CenterTitle();
                     frame->GetYaxis()->CenterTitle();
                     frame->GetXaxis()->SetNdivisions(505);
@@ -826,28 +835,27 @@ void compare_unpolarized_cross_sections_sp18out_vs_fa18out(
                     ax->SetTickSize(0.02);
                     ax->Draw();
 
-                    // horizontal zero line
-                    TLine* zero = new TLine(0.0, 0.0, 360.0, 0.0);
-                    zero->SetLineStyle(2);
-                    zero->SetLineWidth(2);
-                    zero->SetLineColor(kGray+2);
-                    zero->Draw("SAME");
+                    // unity (100%) reference line
+                    TLine* unity = new TLine(0.0, 100.0, 360.0, 100.0);
+                    unity->SetLineStyle(2);
+                    unity->SetLineWidth(2);
+                    unity->SetLineColor(kGray+2);
+                    unity->Draw("SAME");
 
                     const CellData* cd_sp18 = fetchCell(map_sp18, ix, iQ_global, it_global);
                     const CellData* cd_fa18 = fetchCell(map_fa18, ix, iQ_global, it_global);
-                    if (!cd_sp18 || !cd_fa18) {
-                        // Subplot label
-                        TLatex lab;
-                        lab.SetNDC(); lab.SetTextSize(0.046); lab.SetTextAlign(11);
-                        lab.SetTextFont(42);
-                        lab.DrawLatex(0.15, 0.94,
-                            Form("Q^{2} #in [%.2g, %.2g],   -t #in [%.2g, %.2g]",
-                                 Q2_slice[cc].first, Q2_slice[cc].second,
-                                 t_slice[r].first,   t_slice[r].second));
-                        continue;
-                    }
 
-                    // Build percent-difference points for bins with A>0 and B>0
+                    TLatex lab;
+                    lab.SetNDC(); lab.SetTextSize(0.046); lab.SetTextAlign(11);
+                    lab.SetTextFont(42);
+                    lab.DrawLatex(0.15, 0.94,
+                        Form("Q^{2} #in [%.2g, %.2g],   -t #in [%.2g, %.2g]",
+                             Q2_slice[cc].first, Q2_slice[cc].second,
+                             t_slice[r].first,   t_slice[r].second));
+
+                    if (!cd_sp18 || !cd_fa18) continue;
+
+                    // compute 100 * (Sp18 / Fa18), with propagated errors
                     std::vector<double> xp, yp, ey;
                     xp.reserve(N_PHI_BINS);
                     yp.reserve(N_PHI_BINS);
@@ -862,21 +870,15 @@ void compare_unpolarized_cross_sections_sp18out_vs_fa18out(
                         if (!(A > 0.0 && B > 0.0)) continue;
                         if (!std::isfinite(A) || !std::isfinite(B)) continue;
 
-                        const double h  = A + B;
-                        const double g  = A - B;
-                        const double f  = 2.0 * g / std::max(1e-12, h);  // fraction
-                        const double df_dA =  4.0*B / (h*h);
-                        const double df_dB = -4.0*A / (h*h);
-                        const double var_f = std::max(0.0, df_dA*df_dA*eA*eA + df_dB*df_dB*eB*eB);
-                        const double per   = 100.0 * f;
-                        const double eper  = 100.0 * std::sqrt(var_f);
+                        const double R  = A / B;
+                        const double eR = R * std::sqrt( std::pow(eA/std::max(1e-12,A), 2.0)
+                                                       + std::pow(eB/std::max(1e-12,B), 2.0) );
 
                         xp.push_back(PHI_DEG[ip]);
-                        yp.push_back(per);
-                        ey.push_back(eper);
+                        yp.push_back(100.0 * R);
+                        ey.push_back(100.0 * eR);
                     }
 
-                    // Draw only if we have at least one valid point
                     if (!xp.empty()) {
                         auto* gr = new TGraphErrors((int)xp.size(), xp.data(), yp.data(), nullptr, ey.data());
                         gr->SetMarkerStyle(21);
@@ -886,19 +888,10 @@ void compare_unpolarized_cross_sections_sp18out_vs_fa18out(
                         gr->SetMarkerColor(kBlack);
                         gr->Draw("P SAME");
                     }
-
-                    // Subplot title (larger), same as xsec panel
-                    TLatex lab;
-                    lab.SetNDC(); lab.SetTextSize(0.046); lab.SetTextAlign(11);
-                    lab.SetTextFont(42);
-                    lab.DrawLatex(0.15, 0.94,
-                        Form("Q^{2} #in [%.2g, %.2g],   -t #in [%.2g, %.2g]",
-                             Q2_slice[cc].first, Q2_slice[cc].second,
-                             t_slice[r].first,   t_slice[r].second));
                 }
             }
 
-            const std::string outP2 = (fs::path(output_dir)/"plots_compare"/("uncorr_xsec_pctdiff_sp18out_minus_fa18out_xB_"+std::to_string(ix)+".png")).string();
+            const std::string outP2 = (fs::path(output_dir)/"plots_compare"/("uncorr_xsec_ratio_sp18_over_fa18_xB_"+std::to_string(ix)+".png")).string();
             c->SaveAs(outP2.c_str());
             delete c;
             std::cout << "[compare] Wrote " << outP2 << "\n";
