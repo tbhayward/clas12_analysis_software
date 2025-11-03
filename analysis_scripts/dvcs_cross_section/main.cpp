@@ -53,12 +53,12 @@ int main(int argc, char* argv[]) {
               radGenMcTrees, radRecMcTrees);
     std::cout << "All trees loaded successfully." << std::endl;
 
-    // // Run exclusivity cut extraction (single-threaded for stability)
-    // runAllExclusivityCuts(
-    //     dataTrees, recMcTrees, eppi0DataTrees, eppi0RecMcTrees,
-    //     "output/jsons", "output/exclusivity_plots", 1
-    // );
-    // std::cout << "Exclusivity-cut stage finished." << std::endl;
+    // Run exclusivity cut extraction (single-threaded for stability)
+    runAllExclusivityCuts(
+        dataTrees, recMcTrees, eppi0DataTrees, eppi0RecMcTrees,
+        "output/jsons", "output/exclusivity_plots", 1
+    );
+    std::cout << "Exclusivity-cut stage finished." << std::endl;
 
     // --------- Global bin-averaged kinematics ----------
     std::vector<std::string> dvcs_periods;
@@ -69,48 +69,48 @@ int main(int argc, char* argv[]) {
     const std::string analysis_type = "dvcs";
     const std::string output_json_means = "output/jsons/bin_means_global.json";
 
-    // calculate_bin_means(dvcs_periods, topologies, analysis_type, binning_scheme, output_json_means, 
-    //     dataTrees);
+    calculate_bin_means(dvcs_periods, topologies, analysis_type, binning_scheme, output_json_means, 
+        dataTrees);
 
     // // --------- Total counts after exclusivity cuts (by helicity) ----------
     const std::string cuts_json_path   = "output/jsons/combined_cuts.json"; 
     // // produced by exclusivity_cuts
 
-    // const std::string output_counts_js = "output/jsons/total_counts.json";
-    // compute_total_counts(dvcs_periods, topologies, binning_scheme, dataTrees, cuts_json_path,
-    // output_counts_js, output_root); 
+    const std::string output_counts_js = "output/jsons/total_counts.json";
+    compute_total_counts(dvcs_periods, topologies, binning_scheme, dataTrees, cuts_json_path,
+    output_counts_js, output_root); 
 
-    // // Helicity-resolved π0 contamination
-    // // NOTE: pass the OUTPUT ROOT ("output") so the implementation writes:
-    // //   - per-period JSONs to output/jsons/contamination/
-    // //   - combined JSON to output/jsons/
-    // //   - plots to output/contamination_plots/...
-    // compute_pi0_contamination_helicity(
-    //     dvcs_periods,
-    //     topologies,
-    //     binning_scheme,
-    //     dataTrees,
-    //     eppi0DataTrees,
-    //     eppi0RecMcTrees,   // reco MC
-    //     eppi0BkgTrees,     // bkg MC
-    //     cuts_json_path,
-    //     output_root
-    // );
+    // Helicity-resolved π0 contamination
+    // NOTE: pass the OUTPUT ROOT ("output") so the implementation writes:
+    //   - per-period JSONs to output/jsons/contamination/
+    //   - combined JSON to output/jsons/
+    //   - plots to output/contamination_plots/...
+    compute_pi0_contamination_helicity(
+        dvcs_periods,
+        topologies,
+        binning_scheme,
+        dataTrees,
+        eppi0DataTrees,
+        eppi0RecMcTrees,   // reco MC
+        eppi0BkgTrees,     // bkg MC
+        cuts_json_path,
+        output_root
+    );
 
-    // // --------- π0-corrected helicity counts (per φ) ----------
-    // const std::string total_counts_json        = "output/jsons/total_counts.json";
-    // const std::string contamination_dir_counts = "output/jsons/contamination";
-    // const std::string contamination_combined   = "output/jsons/pi0_contamination_combined.json";
+    // --------- π0-corrected helicity counts (per φ) ----------
+    const std::string total_counts_json        = "output/jsons/total_counts.json";
+    const std::string contamination_dir_counts = "output/jsons/contamination";
+    const std::string contamination_combined   = "output/jsons/pi0_contamination_combined.json";
 
-    // compute_pi0_corrected_counts(
-    //     dvcs_periods,
-    //     binning_scheme,
-    //     total_counts_json,        // from compute_total_counts()
-    //     contamination_dir_counts, // per-period contamination_*.json live here
-    //     contamination_combined,   // combined groups (Spring2018, Fall2018, 10.6_GeV)
-    //     output_root               // "output"
-    // );
-    // std::cout << "π0-corrected counts stage finished." << std::endl;
+    compute_pi0_corrected_counts(
+        dvcs_periods,
+        binning_scheme,
+        total_counts_json,        // from compute_total_counts()
+        contamination_dir_counts, // per-period contamination_*.json live here
+        contamination_combined,   // combined groups (Spring2018, Fall2018, 10.6_GeV)
+        output_root               // "output"
+    );
+    std::cout << "π0-corrected counts stage finished." << std::endl;
 
     // // --------- Radiative corrections (generated Born/Rad, per bin & φ) ----------
     // // Writes:
@@ -126,61 +126,61 @@ int main(int argc, char* argv[]) {
     //     output_root
     // );
 
-    // // --------- Acceptance (reco MC with MC cuts / gen MC, per bin & φ) ----------
-    // // Writes per-period JSONs: output/jsons/acceptance_<period>.json
-    // // Plots to: output/acceptance/<runTag>/plot_acceptance_<period>_xB_<ix>.png
-    // {
-    //     std::vector<std::string> acc_periods = {
-    //         "DVCS_Sp18_inb", "DVCS_Sp18_out",
-    //         "DVCS_Fa18_inb", "DVCS_Fa18_out",
-    //         "DVCS_Sp19_inb"
-    //     }; // intentionally skipping DVCS_Fa18_inb_supp
-    //     compute_and_plot_acceptance(
-    //         acc_periods,
-    //         topologies,
-    //         binning_scheme,
-    //         genMcTrees,
-    //         recMcTrees,
-    //         cuts_json_path,
-    //         output_root
-    //     );
-    // }
+    // --------- Acceptance (reco MC with MC cuts / gen MC, per bin & φ) ----------
+    // Writes per-period JSONs: output/jsons/acceptance_<period>.json
+    // Plots to: output/acceptance/<runTag>/plot_acceptance_<period>_xB_<ix>.png
+    {
+        std::vector<std::string> acc_periods = {
+            "DVCS_Sp18_inb", "DVCS_Sp18_out",
+            "DVCS_Fa18_inb", "DVCS_Fa18_out",
+            "DVCS_Sp19_inb"
+        }; // intentionally skipping DVCS_Fa18_inb_supp
+        compute_and_plot_acceptance(
+            acc_periods,
+            topologies,
+            binning_scheme,
+            genMcTrees,
+            recMcTrees,
+            cuts_json_path,
+            output_root
+        );
+    }
 
-    // // --------- Unfolding (counts / acceptance), helicity-resolved ----------
-    // // Writes per-period JSONs: output/jsons/unfolded_<period>.json
-    // // Plots to: output/unfolding/<runTag>/plot_unfolded_<period>_xB_<ix>.png
-    // {
-    //     std::vector<std::string> unf_periods = {
-    //         "DVCS_Sp18_inb", "DVCS_Sp18_out",
-    //         "DVCS_Fa18_inb", "DVCS_Fa18_out",
-    //         "DVCS_Sp19_inb"
-    //     }; // skip DVCS_Fa18_inb_supp on purpose
-    //     // note that we pass the pi0_corrected_counts below (i.e. not the original total_counts)
-    //     const std::string total_counts_js = "output/jsons/pi0_corrected_counts_all_groups.json";
-    //     compute_and_plot_unfolding(
-    //         unf_periods,
-    //         binning_scheme,
-    //         total_counts_js,
-    //         output_root
-    //     );
-    // }
+    // --------- Unfolding (counts / acceptance), helicity-resolved ----------
+    // Writes per-period JSONs: output/jsons/unfolded_<period>.json
+    // Plots to: output/unfolding/<runTag>/plot_unfolded_<period>_xB_<ix>.png
+    {
+        std::vector<std::string> unf_periods = {
+            "DVCS_Sp18_inb", "DVCS_Sp18_out",
+            "DVCS_Fa18_inb", "DVCS_Fa18_out",
+            "DVCS_Sp19_inb"
+        }; // skip DVCS_Fa18_inb_supp on purpose
+        // note that we pass the pi0_corrected_counts below (i.e. not the original total_counts)
+        const std::string total_counts_js = "output/jsons/pi0_corrected_counts_all_groups.json";
+        compute_and_plot_unfolding(
+            unf_periods,
+            binning_scheme,
+            total_counts_js,
+            output_root
+        );
+    }
 
-    // // --------- Bin Volume (generator-based φ coverage), per beam energy ----------
-    // // Writes per-energy JSONs: output/jsons/bin_volume_<energy>.json
-    // // Plots to: output/bin_volume/<energy>/plot_bin_volume_<energy>_xB_<ix>.png
-    // compute_and_plot_bin_volume(
-    //     binning_scheme,
-    //     genMcTrees,
-    //     output_root
-    // );
+    // --------- Bin Volume (generator-based φ coverage), per beam energy ----------
+    // Writes per-energy JSONs: output/jsons/bin_volume_<energy>.json
+    // Plots to: output/bin_volume/<energy>/plot_bin_volume_<energy>_xB_<ix>.png
+    compute_and_plot_bin_volume(
+        binning_scheme,
+        genMcTrees,
+        output_root
+    );
 
-    // compute_uncorrected_cross_sections(
-    //     binning_scheme,
-    //     "output/jsons",                    // bin volume JSON directory
-    //     "output/jsons",               // unfolded counts per helicity
-    //     "imports/integrated_luminosity",        // luminosity text files
-    //     "output/uncorrected_cross_section"      // output dir
-    // );
+    compute_uncorrected_cross_sections(
+        binning_scheme,
+        "output/jsons",                    // bin volume JSON directory
+        "output/jsons",               // unfolded counts per helicity
+        "imports/integrated_luminosity",        // luminosity text files
+        "output/uncorrected_cross_section"      // output dir
+    );
 
     compare_unpolarized_cross_sections_sp18out_vs_fa18out(
         binning_scheme,
