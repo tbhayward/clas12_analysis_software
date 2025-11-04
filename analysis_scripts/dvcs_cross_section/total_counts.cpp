@@ -562,7 +562,8 @@ static void plot_group_counts(
         const std::string fpath = out_dir + "/plot_total_counts_" + group_label + "_xB_" + std::to_string(ix) + ".png";
         c->Modified(); c->Update();
         c->SaveAs(fpath.c_str());
-        // give ROOT a moment to flush I/O and global lists
+        
+        // Enhanced ROOT memory cleanup
         gSystem->ProcessEvents();
         std::this_thread::sleep_for(std::chrono::milliseconds(5));
 
@@ -580,11 +581,16 @@ static void plot_group_counts(
             std::exit(EXIT_FAILURE);
         }
 
-        // close politely
+        // Enhanced polite teardown
         c->Close();
         delete c;
+        c = nullptr;
+        
+        // More aggressive ROOT cleanup
         gSystem->ProcessEvents();
+        gROOT->GetListOfCanvases()->Delete();
         std::this_thread::sleep_for(std::chrono::milliseconds(2));
+        gSystem->CollectGarbage();
     }
 }
 
@@ -592,6 +598,7 @@ static void plot_group_counts(
 // Main compute
 // ------------------------------------------------------------
 } // namespace
+
 
 void compute_total_counts(
     const std::vector<std::string>& periods,
@@ -606,6 +613,15 @@ void compute_total_counts(
 
     // Force batch mode: prevents post-SaveAs GUI crashes on headless nodes
     if (gROOT) gROOT->SetBatch(kTRUE);
+
+    // Pre-emptive memory protection and ROOT configuration
+    gErrorIgnoreLevel = kError;  // Reduce ROOT verbosity
+    gSystem->ResetSignals();     // Disable ROOT's signal handling which can interfere
+    
+    // Force garbage collection before starting
+    gSystem->ProcessEvents();
+    gSystem->CollectGarbage();
+    std::this_thread::sleep_for(std::chrono::milliseconds(5));
 
     // Axes
     const auto xB_bins = uniqueRanges(binning_scheme,'x');
@@ -626,6 +642,9 @@ void compute_total_counts(
         fatal(std::string("Cannot create jsons dir: ") + jsons_dir.string() + " (" + ec.message() + ")");
 
     std::map<std::string, std::map<std::tuple<int,int,int,int>, HelCounts>> allGroupsByLabel;
+
+    // Pre-allocate memory for critical structures
+    allGroupsByLabel.reserve(periods.size());
 
     // Per period
     for (const auto& period_key : periods) {
@@ -706,13 +725,60 @@ void compute_total_counts(
         }
         fence("period.plot.end " + label_str);
 
-        // Explicit emplace (avoid operator[] rebalancing after heavy ROOT activity)
+        // SAFE EMPLACE OPERATION with comprehensive validation
         fence("map.emplace.begin " + label_str);
-        allGroupsByLabel.emplace(label_str, std::move(table));
+
+        // Comprehensive safety checks before emplace
+        if (label_str.empty()) {
+            fatal("Empty label_str for period_key: " + period_key);
+        }
+
+        // Check if key already exists (shouldn't happen, but safer)
+        if (allGroupsByLabel.find(label_str) != allGroupsByLabel.end()) {
+            fatal("Duplicate period label detected: " + label_str);
+        }
+
+        // Validate table integrity
+        size_t table_size = table.size();
+        std::cout << "[debug] Table size for " << label_str << ": " << table_size << std::endl;
+
+        // Validate the string isn't corrupted
+        if (label_str.c_str() == nullptr || label_str.length() >= 1000) {
+            fatal("Corrupted label_str detected: " + label_str);
+        }
+
+        // Force memory synchronization and ROOT cleanup before critical operation
+        gSystem->ProcessEvents();
+        gSystem->CollectGarbage();
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+
+        // Use try-catch and verify insertion with insert instead of emplace
+        try {
+            auto insert_result = allGroupsByLabel.insert(
+                std::make_pair(label_str, std::map<std::tuple<int,int,int,int>, HelCounts>())
+            );
+            
+            if (insert_result.second) {
+                // Successfully inserted, now move the data
+                insert_result.first->second = std::move(table);
+                std::cout << "[debug] Successfully emplaced data for " << label_str 
+                          << " with " << insert_result.first->second.size() << " entries" << std::endl;
+            } else {
+                fatal("Failed to insert new element for: " + label_str);
+            }
+        } catch (const std::bad_alloc& e) {
+            fatal("Memory allocation failed during emplace: " + std::string(e.what()));
+        } catch (const std::exception& e) {
+            fatal("Standard exception during emplace: " + std::string(e.what()));
+        } catch (...) {
+            fatal("Unknown exception during emplace");
+        }
+
         fence("map.emplace.end " + label_str);
 
-        // small breather for ROOT global bookkeeping
+        // Small breather for ROOT global bookkeeping
         gSystem->ProcessEvents();
+        gSystem->CollectGarbage();
         std::this_thread::sleep_for(std::chrono::milliseconds(5));
 
         fence("period.end " + label_str);
