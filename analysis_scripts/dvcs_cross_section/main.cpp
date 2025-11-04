@@ -229,7 +229,7 @@ int main(int argc, char* argv[]) {
         binning_scheme,     // already loaded above
         "output/jsons", // input: directory containing rad_corrected_xsec_10.59.json etc.
         "output/bin_centering", // output: base directory for bin-centered JSONs + plots
-        5,    // n_steps: subgrid sampling per dimension
+        3,    // n_steps: subgrid sampling per dimension
         ModelPaths(), // model paths (empty -> use default environment/config)
         true  // vgg_globalfit = true
     );
