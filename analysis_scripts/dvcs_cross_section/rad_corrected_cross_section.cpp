@@ -348,7 +348,7 @@ void compute_rad_corrected_cross_sections(
                 TLatex head;
                 head.SetNDC(); head.SetTextAlign(22);
                 head.SetTextFont(42);
-                head.SetTextSize(0.30);
+                head.SetTextSize(0.22);
                 std::ostringstream tit;
                 tit << (overlay ? "unc vs. rad corrected d#sigma/d#phi"
                                 : "rad corrected d#sigma/d#phi");
@@ -423,7 +423,7 @@ void compute_rad_corrected_cross_sections(
                         TGraphErrors* gcm = drawHelFrom(jb_corr, "helicity_minus", 25 /*filled square*/, kRed+1);
 
                         TLatex lab;
-                        lab.SetNDC(); lab.SetTextSize(0.044); lab.SetTextAlign(11);
+                        lab.SetNDC(); lab.SetTextSize(0.05); lab.SetTextAlign(11);
                         lab.SetTextFont(42);
                         lab.DrawLatex(0.15, 0.94,
                             Form("Q^{2} #in [%.2g, %.2g], -t #in [%.2g, %.2g]",
