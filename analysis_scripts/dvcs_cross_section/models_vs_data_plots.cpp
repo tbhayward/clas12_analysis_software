@@ -27,7 +27,7 @@
 #include <utility>
 #include <vector>
 
-// OpenMP only for model sampling; ROOT drawing remains single-threaded.
+// OpenMP for model sampling (ROOT drawing remains single-threaded)
 #ifdef _OPENMP
 #include <omp.h>
 #endif
@@ -37,7 +37,7 @@ using json = nlohmann::json;
 namespace fs = std::filesystem;
 
 namespace {
-constexpr int    N_PHI_BINS = 12;
+constexpr int N_PHI_BINS = 12;
 
 // ------------ style ------------
 struct StyleInit {
@@ -79,13 +79,13 @@ static inline int configure_omp_workers(int /*hard_cap*/ = 5) {
 }
 #endif
 
-// Helpers from your plotting conventions
+// ---------- helpers ----------
 static inline std::vector<double> phiCentersDeg() {
     std::vector<double> d(N_PHI_BINS);
     const double step = 360.0 / double(N_PHI_BINS);
     for (int i=0;i<N_PHI_BINS;++i) d[i] = (i+0.5)*step;
     return d;
-} //enddef
+}
 
 static void drawDegreeTicks(double xmin, double ymin, double xmax, double labelSize) {
     TGaxis* ax = new TGaxis(xmin, ymin, xmax, ymin, 0.0, 360.0, 4, "");
@@ -95,51 +95,60 @@ static void drawDegreeTicks(double xmin, double ymin, double xmax, double labelS
     ax->SetTitle("");
     ax->SetTickSize(0.02);
     ax->Draw();
-} //enddef
+}
 
-// bin helpers (duplicate of your other modules to stay standalone)
+// unique bin ranges from scheme
 static std::vector<std::pair<double,double>> uniqueRanges(const std::vector<Binning>& scheme, char which) {
     std::set<std::pair<double,double>> s;
     for (const auto& b : scheme) {
         if      (which == 'x') s.emplace(b.xBmin, b.xBmax);
         else if (which == 'Q') s.emplace(b.Q2min, b.Q2max);
         else if (which == 't') s.emplace(b.tmin, b.tmax);
-    } //endfor
+    }
     return std::vector<std::pair<double,double>>(s.begin(), s.end());
-} //enddef
+}
 
 static inline int findIndex(const std::pair<double,double>& range,
                             const std::vector<std::pair<double,double>>& ranges) {
-    for (int i=0;i<(int)ranges.size();++i) if (ranges[i]==range) return i; //endfor
+    for (int i=0;i<(int)ranges.size();++i) if (ranges[i]==range) return i;
     return -1;
-} //enddef
+}
 
-// JSON helpers
+// ---------- JSON helpers ----------
 static json load_json(const std::string& path) {
     std::ifstream f(path);
     if (!f.is_open()) {
         log_warn("Failed to open " + path);
         return json();
-    } //endif
+    }
     json j; f >> j; return j;
-} //enddef
+}
+
+static void save_json(const json& j, const std::string& path) {
+    std::ofstream ofs(path);
+    if (!ofs.is_open()) {
+        log_warn("Failed to write " + path);
+        return;
+    }
+    ofs << std::setw(2) << j << "\n";
+}
 
 static inline bool has_bins12(const json& h){
     return h.contains("phi") && h.contains("xsec") && h.contains("xsec_err")
         && h["phi"].size()==N_PHI_BINS && h["xsec"].size()==N_PHI_BINS && h["xsec_err"].size()==N_PHI_BINS;
-} //enddef
+}
 
 // safe read double from json index
 static inline double jgetd(const json& a, size_t i, double def=0.0){
     try { return a[i].get<double>(); } catch(...) { return def; }
-} //enddef
+}
 
-static inline double midpoint(double a, double b){ return 0.5*(a+b); } //enddef
-static inline bool positive(double v){ return std::isfinite(v) && v>0.0; } //enddef
+static inline double midpoint(double a, double b){ return 0.5*(a+b); }
+static inline bool positive(double v){ return std::isfinite(v) && v>0.0; }
 
 // Draw the data points (bin-centered cross sections)
 static TGraphErrors* draw_data_hel(const json& h, int mstyle, int color, TH1* /*frame*/, double& ymax_accum) {
-    if (!has_bins12(h)) return nullptr; //endif
+    if (!has_bins12(h)) return nullptr;
     const auto& xp = h["phi"];
     const auto& yp = h["xsec"];
     const auto& ep = h["xsec_err"];
@@ -149,7 +158,7 @@ static TGraphErrors* draw_data_hel(const json& h, int mstyle, int color, TH1* /*
         y[i]=yp[i].get<double>();
         e[i]=std::max(1e-12, ep[i].get<double>());
         ymax_accum = std::max(ymax_accum, y[i]+e[i]);
-    } //endfor
+    }
     auto* gr = new TGraphErrors(N_PHI_BINS, x.data(), y.data(), nullptr, e.data());
     gr->SetMarkerStyle(mstyle);
     gr->SetMarkerSize(1.0);
@@ -158,93 +167,24 @@ static TGraphErrors* draw_data_hel(const json& h, int mstyle, int color, TH1* /*
     gr->SetMarkerColor(color);
     gr->Draw("P SAME");
     return gr;
-} //enddef
+}
 
-// Sample a model curve densely in phi (0..360) at bin centers (xB,Q2,t)
-struct ModelCurves {
-    std::vector<double> phi_deg;  // 0..360
-    std::vector<double> y_plus;   // + helicity
-    std::vector<double> y_minus;  // - helicity
-    std::vector<double> y_bh;     // BH (helicity-independent)
-};
-
-// NOTE: Logging kept light here; panel-level progress is printed in the main loop.
-static ModelCurves sample_models_dense(
-    int phi_dense,
-    double Ebeam,
-    double xBmin, double xBmax,
-    double Q2min, double Q2max,
-    double tmin_pos, double tmax_pos,
-    const ModelPaths& paths,
-    bool vgg_globalfit,
-    int omp_workers  // hard-capped upstream
-) {
-    ModelCurves mc;
-    if (phi_dense < 2) phi_dense = 2;
-    mc.phi_deg.resize(phi_dense);
-    mc.y_plus.resize(phi_dense);
-    mc.y_minus.resize(phi_dense);
-    mc.y_bh.resize(phi_dense);
-
-    const double xB_c   = midpoint(xBmin, xBmax);
-    const double Q2_c   = midpoint(Q2min, Q2max);
-    const double tpos_c = midpoint(tmin_pos, tmax_pos);
-
-    // Sample 0..360 inclusive (wrap last point to 360 exactly)
-    #ifdef _OPENMP
-    omp_set_num_threads(omp_workers);
-    #endif
-
-    #pragma omp parallel for if(phi_dense > 72) schedule(static)
-    for (int i=0; i<phi_dense; ++i) {
-        double ph = (phi_dense == 1) ? 0.0 : (360.0 * double(i) / double(phi_dense-1));
-        mc.phi_deg[i] = ph;
-
-        // Precompute BH for envelope (helicity independent)
-        double ybh = 0.0;
-        try {
-            ybh = vgg_bh_only(xB_c, Q2_c, tpos_c, ph, Ebeam, paths, /*globalfit=*/vgg_globalfit);
-        } catch (...) {
-            ybh = 0.0;
-        }
-        mc.y_bh[i] = positive(ybh) ? ybh : 0.0;
-
-        // Placeholders; will be overwritten later with VGG/KM15 samples.
-        mc.y_plus[i]  = 0.0;
-        mc.y_minus[i] = 0.0;
-    } //endfor
-
-    return mc;
-} //enddef
-
-// Compute a specific model at (phi, +) and (phi, -) for a given label
-enum class ModelTag { VGG, KM15 };
-
-static inline double eval_model(ModelTag tag, double xB, double Q2, double tpos, double ph_deg,
-                                double Ebeam, Helicity hel, const ModelPaths& paths, bool vgg_globalfit) {
-    if (tag == ModelTag::KM15) {
-        return km15_xs(xB, Q2, tpos, ph_deg, Ebeam, hel, paths);
-    } else {
-        return vgg_xs(xB, Q2, tpos, ph_deg, Ebeam, hel, paths, vgg_globalfit);
-    }
-} //enddef
-
-// Compute canvas-wide y-range including data points and model envelopes
+// For y-range across canvas using data + model envelopes (from predictions JSON)
 static std::pair<double,double> computeYRangeCanvas(
-    const json& jout_bins,                                       // data (bin-centered)
-    const std::vector<std::string>& bin_keys,
-    const std::map<std::string, std::pair<double,double>>& model_envelopes  // per-panel (min,max) from model sampling
+    const json& data_bins,
+    const json& pred_bins,
+    const std::vector<std::string>& bin_keys
 ) {
     double global_min = 1e10;
     double global_max = -1e10;
 
-    auto collectData = [&](const json& h) {
-        if (!h.contains("xsec") || !h.contains("xsec_err")) return;
-        const auto& yp = h["xsec"];
-        const auto& ep = h["xsec_err"];
-        for (int i=0;i<N_PHI_BINS;++i) {
-            double y = jgetd(yp, i, 0.0);
-            double e = jgetd(ep, i, 0.0);
+    auto scanData = [&](const json& H){
+        if (!H.contains("xsec") || !H.contains("xsec_err")) return;
+        const auto& yp = H["xsec"];
+        const auto& ep = H["xsec_err"];
+        for (int i=0;i<N_PHI_BINS;++i){
+            const double y = jgetd(yp, i, 0.0);
+            const double e = jgetd(ep, i, 0.0);
             if (y > 0.0) {
                 global_min = std::min(global_min, std::max(1e-12, y - e));
                 global_max = std::max(global_max, y + e);
@@ -252,46 +192,264 @@ static std::pair<double,double> computeYRangeCanvas(
         }
     };
 
-    for (const auto& bkey : bin_keys) {
-        if (!jout_bins.contains(bkey)) continue;
-        const json& jb = jout_bins[bkey];
-        if (jb.contains("helicity_plus"))  collectData(jb["helicity_plus"]);
-        if (jb.contains("helicity_minus")) collectData(jb["helicity_minus"]);
+    auto scanPred = [&](const json& cell){
+        auto consider = [&](const char* name){
+            if (!cell.contains(name)) return;
+            const auto& v = cell[name];
+            for (size_t i=0;i<v.size();++i) {
+                double y = 0.0;
+                try { y = v[i].get<double>(); } catch(...) { y = 0.0; }
+                if (positive(y)) {
+                    global_min = std::min(global_min, y);
+                    global_max = std::max(global_max, y);
+                }
+            }
+        };
+        consider("bh");
+        consider("km15_plus");
+        consider("km15_minus");
+        consider("vgg_plus");
+        consider("vgg_minus");
+    };
 
-        auto it = model_envelopes.find(bkey);
-        if (it != model_envelopes.end()) {
-            global_min = std::min(global_min, it->second.first);
-            global_max = std::max(global_max, it->second.second);
+    for (const auto& bkey : bin_keys) {
+        // data
+        if (data_bins.contains(bkey)) {
+            const json& jb = data_bins[bkey];
+            if (jb.contains("helicity_plus"))  scanData(jb["helicity_plus"]);
+            if (jb.contains("helicity_minus")) scanData(jb["helicity_minus"]);
+        }
+        // predictions
+        if (pred_bins.contains(bkey)) {
+            scanPred(pred_bins[bkey]);
         }
     }
 
-    // Defaults if nothing valid
     if (!(global_max > 0.0)) return {1e-4, 1.0};
 
-    // Pad and round
     double ymin = std::pow(10.0, std::floor(std::log10(std::max(1e-12, global_min))));
     ymin = std::max(1e-4, ymin*0.5);
     double ymax = std::pow(10.0, std::ceil(std::log10(global_max)));
     ymax *= 2.0;
-
     return {ymin, ymax};
-} //enddef
+}
 
 } // anon
 
-void plot_models_vs_bincentered(
+// ============================================================
+// 1) COMPUTE AND SAVE MODEL PREDICTIONS TO JSON
+//    Creates: <predictions_output_dir>/jsons/model_predictions_<E>.json
+//    Layout:
+//    {
+//      "energy":"10.60","phi_dense":361,"vgg_globalfit":true,
+//      "bins": {
+//        "(ix,iQ,it)": {
+//          "xB_range":[...],
+//          "Q2_range":[...],
+//          "tpos_range":[...],
+//          "phi":[...],
+//          "bh":[...],
+//          "km15_plus":[...], "km15_minus":[...],
+//          "vgg_plus":[...],  "vgg_minus":[...]
+//        }, ...
+//      }
+//    }
+// ============================================================
+void compute_model_predictions(
     const std::vector<Binning>& binning_scheme,
-    const std::string& bincenter_json_dir,
-    const std::string& output_dir,
+    const std::string& bincenter_json_dir,     // to know which bins exist
+    const std::string& predictions_output_dir, // where to write model_predictions_<E>.json
     const ModelPaths& paths,
     bool vgg_globalfit,
     int phi_dense
 ) {
-    log_info("Starting models vs. bin-centered plotting...");
+    log_info("Starting compute_model_predictions...");
     const int omp_workers = configure_omp_workers(5);
 
-    fs::create_directories(output_dir);
-    fs::create_directories(fs::path(output_dir)/"plots");
+    fs::create_directories(predictions_output_dir);
+    fs::create_directories(fs::path(predictions_output_dir) / "jsons");
+
+    const auto xB_bins = uniqueRanges(binning_scheme, 'x');
+    const auto Q2_all  = uniqueRanges(binning_scheme, 'Q');
+    const auto t_all   = uniqueRanges(binning_scheme, 't');
+
+    const std::vector<std::string> energies = {"10.59","10.60","10.2"};
+
+    auto build_phi = [&](int n){
+        std::vector<double> ph(n);
+        for (int i=0; i<n; ++i) {
+            ph[i] = (n == 1) ? 0.0 : (360.0 * double(i) / double(n-1));
+        }
+        return ph;
+    };
+    const std::vector<double> phi_grid = build_phi(std::max(2, phi_dense));
+
+    int eidx = 0;
+    for (const auto& E : energies) {
+        ++eidx;
+        const std::string bc_path = (fs::path(bincenter_json_dir) / ("bin_centered_xsec_" + E + ".json")).string();
+        if (!fs::exists(bc_path)) {
+            log_warn("Missing bin-centered JSON for E=" + E + "; skipping predictions for this energy.");
+            continue;
+        }
+        log_info("Energy " + E + " (" + std::to_string(eidx) + "/" + std::to_string(energies.size()) + ") "
+                 "loading bins from " + bc_path);
+        json j_bc = load_json(bc_path);
+        if (j_bc.is_null() || !j_bc.contains("bins")) {
+            log_warn("Malformed bin-centered JSON for E=" + E + "; skipping.");
+            continue;
+        }
+
+        // Build tasks from the scheme so we know ranges for indices
+        struct Task { int ix; int iQ; int it; std::pair<double,double> xb; std::pair<double,double> q2; std::pair<double,double> tp; };
+        std::vector<Task> tasks;
+
+        for (int ix = 0; ix < (int)xB_bins.size(); ++ix) {
+            const auto xb = xB_bins[ix];
+
+            std::set<std::pair<double,double>> qs, ts;
+            for (const auto& b : binning_scheme) {
+                if (std::make_pair(b.xBmin,b.xBmax) == xb) {
+                    qs.emplace(b.Q2min,b.Q2max);
+                    ts.emplace(b.tmin,b.tmax);
+                }
+            }
+            std::vector<std::pair<double,double>> Q2_slice(qs.begin(), qs.end());
+            std::vector<std::pair<double,double>> t_slice(ts.begin(), ts.end());
+
+            for (const auto& q2r : Q2_slice) {
+                for (const auto& tr : t_slice) {
+                    int iQg = findIndex(q2r, Q2_all);
+                    int itg = findIndex(tr,  t_all);
+                    if (iQg < 0 || itg < 0) continue;
+                    // Only add if this bkey exists in data
+                    const std::string bkey =
+                        "(" + std::to_string(ix) + "," + std::to_string(iQg) + "," + std::to_string(itg) + ")";
+                    if (j_bc["bins"].contains(bkey)) {
+                        tasks.push_back({ix, iQg, itg, xb, q2r, tr});
+                    }
+                }
+            }
+        }
+
+        log_info("E=" + E + " tasks: " + std::to_string(tasks.size()) + " panels to compute.");
+
+        json j_out;
+        j_out["energy"]        = E;
+        j_out["phi_dense"]     = (int)phi_grid.size();
+        j_out["vgg_globalfit"] = vgg_globalfit;
+        j_out["bins"]          = json::object();
+
+        std::atomic<int> done(0);
+        const int chunk = std::max(1, (int)tasks.size()/10);
+
+        auto t0 = std::chrono::steady_clock::now();
+
+        // Parallelize across panels; the phi loop is SERIAL to maintain hard cap of 5 total workers.
+        #ifdef _OPENMP
+        omp_set_num_threads(omp_workers);
+        #pragma omp parallel for schedule(dynamic)
+        #endif
+        for (int itask = 0; itask < (int)tasks.size(); ++itask) {
+            const auto task = tasks[itask];
+
+            const double xB_c   = midpoint(task.xb.first, task.xb.second);
+            const double Q2_c   = midpoint(task.q2.first, task.q2.second);
+            const double tpos_c = midpoint(task.tp.first, task.tp.second);
+            const double Ebeam  = std::stod(E);
+
+            std::vector<double> y_bh(phi_grid.size(), 0.0);
+            std::vector<double> y_km_p(phi_grid.size(), 0.0), y_km_m(phi_grid.size(), 0.0);
+            std::vector<double> y_vg_p(phi_grid.size(), 0.0), y_vg_m(phi_grid.size(), 0.0);
+
+            for (size_t i=0; i<phi_grid.size(); ++i) {
+                const double ph = phi_grid[i];
+
+                // BH (helicity independent)
+                double yb = 0.0;
+                try { yb = vgg_bh_only(xB_c, Q2_c, tpos_c, ph, Ebeam, paths, vgg_globalfit); }
+                catch(...) { yb = 0.0; }
+                y_bh[i] = positive(yb) ? yb : 0.0;
+
+                // KM15
+                double km_p = 0.0, km_m = 0.0;
+                try {
+                    km_p = km15_xs(xB_c, Q2_c, tpos_c, ph, Ebeam, Helicity::Plus,  paths);
+                    km_m = km15_xs(xB_c, Q2_c, tpos_c, ph, Ebeam, Helicity::Minus, paths);
+                } catch (...) {
+                    km_p = km_m = 0.0;
+                }
+                y_km_p[i] = positive(km_p) ? km_p : 0.0;
+                y_km_m[i] = positive(km_m) ? km_m : 0.0;
+
+                // VGG
+                double vg_p = 0.0, vg_m = 0.0;
+                try {
+                    vg_p = vgg_xs(xB_c, Q2_c, tpos_c, ph, Ebeam, Helicity::Plus,  paths, vgg_globalfit);
+                    vg_m = vgg_xs(xB_c, Q2_c, tpos_c, ph, Ebeam, Helicity::Minus, paths, vgg_globalfit);
+                } catch (...) {
+                    vg_p = vg_m = 0.0;
+                }
+                y_vg_p[i] = positive(vg_p) ? vg_p : 0.0;
+                y_vg_m[i] = positive(vg_m) ? vg_m : 0.0;
+            }
+
+            const std::string bkey =
+                "(" + std::to_string(task.ix) + "," + std::to_string(task.iQ) + "," + std::to_string(task.it) + ")";
+
+            json cell;
+            cell["xB_range"]  = {task.xb.first,  task.xb.second};
+            cell["Q2_range"]  = {task.q2.first,  task.q2.second};
+            cell["tpos_range"]= {task.tp.first,  task.tp.second};
+            cell["phi"]       = phi_grid;
+            cell["bh"]        = y_bh;
+            cell["km15_plus"] = y_km_p;
+            cell["km15_minus"]= y_km_m;
+            cell["vgg_plus"]  = y_vg_p;
+            cell["vgg_minus"] = y_vg_m;
+
+            #ifdef _OPENMP
+            #pragma omp critical
+            #endif
+            {
+                j_out["bins"][bkey] = cell;
+                int d = ++done;
+                if (d % chunk == 0 || d == (int)tasks.size()) {
+                    std::cout << "[models] E=" << E << " progress " << (int)(100.0*double(d)/double(tasks.size()))
+                              << "% (" << d << "/" << tasks.size() << ")\n";
+                }
+            }
+        } // end parallel over tasks
+
+        auto t1 = std::chrono::steady_clock::now();
+        auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(t1 - t0).count();
+
+        const std::string out_json =
+            (fs::path(predictions_output_dir)/"jsons"/("model_predictions_" + E + ".json")).string();
+        save_json(j_out, out_json);
+        log_info("Wrote model predictions -> " + out_json + " (" + std::to_string(ms) + " ms).");
+    } // energies
+
+    log_info("Finished compute_model_predictions.");
+}
+
+// ============================================================
+// 2) PLOT USING SAVED MODEL PREDICTIONS + BIN-CENTERED DATA
+//    Reads:
+//      - bin_centered_xsec_<E>.json  (data points)
+//      - model_predictions_<E>.json  (curves)
+//    Writes PNGs to <plots_output_dir>/plots
+// ============================================================
+void plot_models_vs_bincentered(
+    const std::vector<Binning>& binning_scheme,
+    const std::string& bincenter_json_dir,     // where bin_centered_xsec_<E>.json live
+    const std::string& predictions_json_dir,   // where model_predictions_<E>.json live
+    const std::string& plots_output_dir,       // base dir (we create plots/ under it)
+    int /*phi_dense_unused*/
+) {
+    log_info("Starting plots from saved model predictions...");
+    fs::create_directories(plots_output_dir);
+    fs::create_directories(fs::path(plots_output_dir)/"plots");
 
     const auto xB_bins = uniqueRanges(binning_scheme, 'x');
     const auto Q2_all  = uniqueRanges(binning_scheme, 'Q');
@@ -302,25 +460,26 @@ void plot_models_vs_bincentered(
              + ", t="  + std::to_string(t_all.size()));
 
     const std::vector<std::string> energies = {"10.59","10.60","10.2"};
-    const auto PHI_DEG = phiCentersDeg();
 
     int ecount = 0;
     for (const auto& E : energies) {
         ++ecount;
-        const std::string bc_path = (fs::path(bincenter_json_dir) / ("bin_centered_xsec_" + E + ".json")).string();
-        log_info("Energy " + E + " (" + std::to_string(ecount) + "/" + std::to_string(energies.size()) + "): "
-                 + "loading " + bc_path);
-        json j_bc = load_json(bc_path);
-        if (j_bc.empty() || !j_bc.contains("bins")) {
-            log_warn("Missing or malformed bin-centered file for E=" + E + " (skipping).");
-            continue;
-        }
+        const std::string bc_path   = (fs::path(bincenter_json_dir)   / ("bin_centered_xsec_" + E + ".json")).string();
+        const std::string pred_path = (fs::path(predictions_json_dir) / ("model_predictions_" + E + ".json")).string();
 
-        // For each xB slice, build a canvas of Q2 x t panels
+        log_info("Energy " + E + " (" + std::to_string(ecount) + "/" + std::to_string(energies.size()) + ")");
+        if (!fs::exists(bc_path))   { log_warn("Missing " + bc_path + " (skipping E).");   continue; }
+        if (!fs::exists(pred_path)) { log_warn("Missing " + pred_path + " (skipping E)."); continue; }
+
+        json j_bc   = load_json(bc_path);
+        json j_pred = load_json(pred_path);
+        if (j_bc.is_null() || !j_bc.contains("bins"))     { log_warn("Malformed data JSON for E=" + E + "; skipping."); continue; }
+        if (j_pred.is_null() || !j_pred.contains("bins")) { log_warn("Malformed predictions JSON for E=" + E + "; skipping."); continue; }
+
+        // For each xB slice, canvas of Q2 x t panels
         for (int ix = 0; ix < (int)xB_bins.size(); ++ix) {
             const auto xb = xB_bins[ix];
 
-            // Discover which Q2,t actually appear in this xB slice from the scheme
             std::set<std::pair<double,double>> qs, ts;
             for (const auto& b : binning_scheme) {
                 if (std::make_pair(b.xBmin,b.xBmax) == xb) {
@@ -340,8 +499,7 @@ void plot_models_vs_bincentered(
             std::ostringstream cname;
             cname << "c_models_"<<E<<"_xB"<<ix;
 
-            log_info("xB slice " + std::to_string(ix) + ": grid " + std::to_string(nrows) + "x" + std::to_string(ncols)
-                     + ", phi_dense=" + std::to_string(phi_dense));
+            log_info("xB slice " + std::to_string(ix) + ": grid " + std::to_string(nrows) + "x" + std::to_string(ncols));
 
             auto t_canvas_start = std::chrono::steady_clock::now();
 
@@ -366,45 +524,7 @@ void plot_models_vs_bincentered(
                 << Form("  %s GeV x_{B} in [%.2g, %.2g]", E.c_str(), xb.first, xb.second);
             head.DrawLatex(0.5, 0.55, tit.str().c_str());
 
-            // First pass over panels: pre-sample BH and collect model envelopes for y-range
-            std::map<std::string, std::pair<double,double>> model_envelopes; // bkey -> (min,max)
-            int envelope_panels = 0;
-
-            for (int r=0; r<nrows; ++r) {
-                const int it_global = findIndex(t_slice[r], t_all);
-                if (it_global < 0) continue;
-                for (int cc=0; cc<ncols; ++cc) {
-                    const int iQ_global = findIndex(Q2_slice[cc], Q2_all);
-                    if (iQ_global < 0) continue;
-
-                    const std::string bkey =
-                        "(" + std::to_string(ix) + "," + std::to_string(iQ_global) + "," + std::to_string(it_global) + ")";
-
-                    // Pre-sample BH for envelope (parallel inside)
-                    ModelCurves mc_bh = sample_models_dense(
-                        phi_dense, std::stod(E),
-                        xb.first, xb.second,
-                        Q2_slice[cc].first, Q2_slice[cc].second,
-                        t_slice[r].first,   t_slice[r].second,
-                        paths, vgg_globalfit,
-                        omp_workers
-                    );
-                    double mmin = 1e10, mmax = -1e10;
-                    for (size_t i=0;i<mc_bh.y_bh.size();++i) {
-                        double v = mc_bh.y_bh[i];
-                        if (positive(v)) {
-                            mmin = std::min(mmin, v);
-                            mmax = std::max(mmax, v);
-                        }
-                    }
-                    if (mmax <= 0.0) { mmin = 1e10; mmax = -1e10; }
-                    model_envelopes[bkey] = {mmin, mmax};
-                    ++envelope_panels;
-                }
-            }
-            log_info("Envelope pre-sampled for " + std::to_string(envelope_panels) + " panels.");
-
-            // Second pass: compute canvas y-range from data and BH envelopes
+            // Collect all bin keys for this canvas to determine y-range (data + predictions)
             std::vector<std::string> canvas_bin_keys;
             for (int r=0; r<nrows; ++r) {
                 const int it_global = findIndex(t_slice[r], t_all);
@@ -417,10 +537,14 @@ void plot_models_vs_bincentered(
                     );
                 }
             }
-            auto [ymin_canvas, ymax_canvas] = computeYRangeCanvas(j_bc["bins"], canvas_bin_keys, model_envelopes);
+            auto [ymin_canvas, ymax_canvas] = computeYRangeCanvas(
+                j_bc["bins"],
+                j_pred["bins"],
+                canvas_bin_keys
+            );
             log_info("Canvas y-range: [" + std::to_string(ymin_canvas) + ", " + std::to_string(ymax_canvas) + "]");
 
-            // Third pass: draw each panel (compute models in parallel across phi inside each panel)
+            // Draw each panel using predictions
             for (int r=0; r<nrows; ++r) {
                 const int it_global = findIndex(t_slice[r], t_all);
                 if (it_global < 0) continue;
@@ -431,13 +555,11 @@ void plot_models_vs_bincentered(
                     const std::string bkey =
                         "(" + std::to_string(ix) + "," + std::to_string(iQ_global) + "," + std::to_string(it_global) + ")";
 
-                    log_info("Panel " + bkey + ": sampling models at centers and drawing...");
-
                     pGrid->cd(r*ncols + cc + 1);
                     gPad->SetGrid(1,1);
                     gPad->SetTopMargin(0.08);
                     gPad->SetBottomMargin(0.18);
-                    gPad->SetLeftMargin(0.125);
+                    gPad->SetLeftMargin(0.125); // user preference
                     gPad->SetRightMargin(0.10);
                     gPad->SetLogy();
 
@@ -456,150 +578,98 @@ void plot_models_vs_bincentered(
 
                     drawDegreeTicks(gPad->GetUxmin(), gPad->GetUymin(), gPad->GetUxmax(), 0.048);
 
-                    if (!j_bc["bins"].contains(bkey)) {
-                        log_warn("No data bin found for " + bkey + " (skipping panel).");
-                        continue;
-                    }
-                    const json& jb = j_bc["bins"][bkey];
-
-                    // Data points
-                    double ymax_seen = 0.0;
-                    TGraphErrors* gdp = nullptr;
-                    TGraphErrors* gdm = nullptr;
-                    if (jb.contains("helicity_plus"))
-                        gdp = draw_data_hel(jb["helicity_plus"],  20, kBlue+1, frame, ymax_seen);
-                    if (jb.contains("helicity_minus"))
-                        gdm = draw_data_hel(jb["helicity_minus"], 25, kRed+1,  frame, ymax_seen);
-
-                    // Centers for model sampling
-                    const double xB_c   = midpoint(xb.first, xb.second);
-                    const double Q2_c   = midpoint(Q2_slice[cc].first, Q2_slice[cc].second);
-                    const double tpos_c = midpoint(t_slice[r].first,   t_slice[r].second);
-
-                    // Dense phi vector
-                    std::vector<double> ph(phi_dense);
-                    for (int i=0; i<phi_dense; ++i) {
-                        ph[i] = (phi_dense == 1) ? 0.0 : (360.0 * double(i) / double(phi_dense-1));
+                    // Data points (if exist)
+                    if (j_bc["bins"].contains(bkey)) {
+                        const json& jb = j_bc["bins"][bkey];
+                        double ymax_seen = 0.0;
+                        if (jb.contains("helicity_plus"))
+                            draw_data_hel(jb["helicity_plus"],  20, kBlue+1, frame, ymax_seen);
+                        if (jb.contains("helicity_minus"))
+                            draw_data_hel(jb["helicity_minus"], 25, kRed+1,  frame, ymax_seen);
+                    } else {
+                        log_warn("No data bin for " + bkey + " (still drawing predictions if present).");
                     }
 
-                    std::vector<double> y_km_plus(phi_dense),  y_km_minus(phi_dense);
-                    std::vector<double> y_vg_plus(phi_dense),  y_vg_minus(phi_dense);
-                    std::vector<double> y_bh(phi_dense);
+                    // Predictions (required to draw curves)
+                    if (!j_pred["bins"].contains(bkey)) {
+                        log_warn("No predictions for " + bkey + " (panel will show data only).");
+                    } else {
+                        const json& cell = j_pred["bins"][bkey];
 
-                    // Progress tracker for this panel (10% steps)
-                    int chunk = std::max(1, phi_dense/10);
-                    std::atomic<int> prog(0);
-
-                    #ifdef _OPENMP
-                    omp_set_num_threads(omp_workers);
-                    #endif
-                    #pragma omp parallel for if(phi_dense > 24) schedule(static)
-                    for (int i=0; i<phi_dense; ++i) {
-                        double p = ph[i];
-
-                        // KM15
-                        double km_p = 0.0, km_m = 0.0;
-                        try {
-                            km_p = km15_xs(xB_c, Q2_c, tpos_c, p, std::stod(E), Helicity::Plus,  paths);
-                            km_m = km15_xs(xB_c, Q2_c, tpos_c, p, std::stod(E), Helicity::Minus, paths);
-                        } catch (...) {
-                            km_p = km_m = 0.0;
-                        }
-                        y_km_plus[i]  = positive(km_p) ? km_p : 0.0;
-                        y_km_minus[i] = positive(km_m) ? km_m : 0.0;
-
-                        // VGG
-                        double vg_p = 0.0, vg_m = 0.0;
-                        try {
-                            vg_p = vgg_xs(xB_c, Q2_c, tpos_c, p, std::stod(E), Helicity::Plus,  paths, vgg_globalfit);
-                            vg_m = vgg_xs(xB_c, Q2_c, tpos_c, p, std::stod(E), Helicity::Minus, paths, vgg_globalfit);
-                        } catch (...) {
-                            vg_p = vg_m = 0.0;
-                        }
-                        y_vg_plus[i]  = positive(vg_p) ? vg_p : 0.0;
-                        y_vg_minus[i] = positive(vg_m) ? vg_m : 0.0;
-
-                        // BH (helicity independent)
-                        double yb = 0.0;
-                        try {
-                            yb = vgg_bh_only(xB_c, Q2_c, tpos_c, p, std::stod(E), paths, /*globalfit=*/vgg_globalfit);
-                        } catch (...) {
-                            yb = 0.0;
-                        }
-                        y_bh[i] = positive(yb) ? yb : 0.0;
-
-                        int done = ++prog;
-                        if (done % chunk == 0 || done == phi_dense) {
-                            #ifdef _OPENMP
-                            #pragma omp critical
-                            #endif
-                            {
-                                int pct = int(100.0 * double(done) / double(phi_dense));
-                                std::cout << "[models] Panel " << bkey << " model sampling " << pct
-                                          << "% (" << done << "/" << phi_dense << ")\n";
+                        auto get_vec = [&](const char* name)->std::vector<double>{
+                            std::vector<double> v;
+                            if (!cell.contains(name)) return v;
+                            const auto& a = cell[name];
+                            v.resize(a.size());
+                            for (size_t i=0;i<v.size();++i) {
+                                try { v[i] = a[i].get<double>(); } catch(...) { v[i] = 0.0; }
                             }
+                            return v;
+                        };
+
+                        std::vector<double> ph     = get_vec("phi");
+                        std::vector<double> y_bh   = get_vec("bh");
+                        std::vector<double> y_km_p = get_vec("km15_plus");
+                        std::vector<double> y_km_m = get_vec("km15_minus");
+                        std::vector<double> y_vg_p = get_vec("vgg_plus");
+                        std::vector<double> y_vg_m = get_vec("vgg_minus");
+
+                        auto makeLine = [&](const std::vector<double>& xv, const std::vector<double>& yv,
+                                            int color, int lstyle)->TGraph* {
+                            if (xv.empty() || yv.empty()) return nullptr;
+                            auto* gr = new TGraph((int)xv.size(),
+                                                  const_cast<double*>(xv.data()),
+                                                  const_cast<double*>(yv.data()));
+                            gr->SetLineColor(color);
+                            gr->SetLineWidth(3);
+                            gr->SetLineStyle(lstyle);
+                            gr->Draw("L SAME");
+                            return gr;
+                        };
+
+                        // KM15 dashed: + blue, - red
+                        TGraph* g_km_p = makeLine(ph, y_km_p,  kBlue+1, 2);
+                        TGraph* g_km_m = makeLine(ph, y_km_m,  kRed+1,  2);
+
+                        // VGG dotted: + blue, - red
+                        TGraph* g_vg_p = makeLine(ph, y_vg_p,  kBlue+1, 3);
+                        TGraph* g_vg_m = makeLine(ph, y_vg_m,  kRed+1,  3);
+
+                        // BH dashed black
+                        TGraph* g_bh   = makeLine(ph, y_bh, kBlack, 2);
+
+                        // Panel label
+                        TLatex lab;
+                        lab.SetNDC(); lab.SetTextSize(0.07); lab.SetTextAlign(11);
+                        lab.SetTextFont(42);
+                        lab.DrawLatex(0.15, 0.94,
+                            Form("Q^{2} in [%.2g, %.2g], -t in [%.2g, %.2g]",
+                                 Q2_slice[cc].first, Q2_slice[cc].second,
+                                 t_slice[r].first,   t_slice[r].second));
+
+                        // Legend
+                        if (g_km_p || g_km_m || g_vg_p || g_vg_m || g_bh) {
+                            double x1=0.16, y1=0.18, x2=0.68, y2=0.42;
+                            TLegend* leg = new TLegend(x1,y1,x2,y2);
+                            leg->SetBorderSize(1);
+                            leg->SetLineColor(kBlack);
+                            leg->SetFillColor(kWhite);
+                            leg->SetFillStyle(1001);
+                            leg->SetTextFont(42);
+                            leg->SetTextSize(0.048);
+                            if (g_km_p) leg->AddEntry(g_km_p,"KM15 + (dashed)",   "l");
+                            if (g_km_m) leg->AddEntry(g_km_m,"KM15 - (dashed)",   "l");
+                            if (g_vg_p) leg->AddEntry(g_vg_p,"VGG + (dotted)",    "l");
+                            if (g_vg_m) leg->AddEntry(g_vg_m,"VGG - (dotted)",    "l");
+                            if (g_bh)   leg->AddEntry(g_bh,  "BH exact (dashed)", "l");
+                            leg->Draw();
                         }
-                    } //end parallel for
-
-                    // Build TGraphs and draw (lines only)
-                    auto makeLine = [&](const std::vector<double>& xv, const std::vector<double>& yv,
-                                        int color, int lstyle)->TGraph* {
-                        auto* gr = new TGraph((int)xv.size(), const_cast<double*>(xv.data()),
-                                              const_cast<double*>(yv.data()));
-                        gr->SetLineColor(color);
-                        gr->SetLineWidth(3);
-                        gr->SetLineStyle(lstyle);
-                        gr->Draw("L SAME");
-                        return gr;
-                    };
-
-                    // KM15 dashed: + blue, - red
-                    TGraph* g_km_p = makeLine(ph, y_km_plus,  kBlue+1, 2);
-                    TGraph* g_km_m = makeLine(ph, y_km_minus, kRed+1,  2);
-
-                    // VGG dotted: + blue, - red
-                    TGraph* g_vg_p = makeLine(ph, y_vg_plus,  kBlue+1, 3);
-                    TGraph* g_vg_m = makeLine(ph, y_vg_minus, kRed+1,  3);
-
-                    // BH dashed black
-                    TGraph* g_bh   = makeLine(ph, y_bh, kBlack, 2);
-
-                    // Panel label
-                    TLatex lab;
-                    lab.SetNDC(); lab.SetTextSize(0.07); lab.SetTextAlign(11);
-                    lab.SetTextFont(42);
-                    lab.DrawLatex(0.15, 0.94,
-                        Form("Q^{2} in [%.2g, %.2g], -t in [%.2g, %.2g]",
-                             Q2_slice[cc].first, Q2_slice[cc].second,
-                             t_slice[r].first,   t_slice[r].second));
-
-                    // Legend (bottom-left)
-                    if (gdp || gdm || g_km_p || g_km_m || g_vg_p || g_vg_m || g_bh) {
-                        double x1=0.16, y1=0.18, x2=0.68, y2=0.42;
-                        TLegend* leg = new TLegend(x1,y1,x2,y2);
-                        leg->SetBorderSize(1);
-                        leg->SetLineColor(kBlack);
-                        leg->SetFillColor(kWhite);
-                        leg->SetFillStyle(1001);
-                        leg->SetTextFont(42);
-                        leg->SetTextSize(0.048);
-
-                        if (gdp)    leg->AddEntry(gdp,   "+ helicity (data)", "lep");
-                        if (gdm)    leg->AddEntry(gdm,   "- helicity (data)", "lep");
-                        if (g_km_p) leg->AddEntry(g_km_p,"KM15 + (dashed)",   "l");
-                        if (g_km_m) leg->AddEntry(g_km_m,"KM15 - (dashed)",   "l");
-                        if (g_vg_p) leg->AddEntry(g_vg_p,"VGG + (dotted)",    "l");
-                        if (g_vg_m) leg->AddEntry(g_vg_m,"VGG - (dotted)",    "l");
-                        if (g_bh)   leg->AddEntry(g_bh,  "BH exact (dashed)", "l");
-                        leg->Draw();
-                    }
-
-                    log_info("Panel " + bkey + " done.");
+                    } // predictions present
                 } // cols
             } // rows
 
             const std::string outP =
-                (fs::path(output_dir)/"plots"/(std::string("models_vs_bincentered_")+E+"_xB_"+std::to_string(ix)+".png")).string();
+                (fs::path(plots_output_dir)/"plots"/(std::string("models_vs_bincentered_")+E+"_xB_"+std::to_string(ix)+".png")).string();
             c->SaveAs(outP.c_str());
             delete c;
 
@@ -609,5 +679,5 @@ void plot_models_vs_bincentered(
         } // xB slices
     } // energies
 
-    log_info("Finished models vs. bin-centered plotting.");
+    log_info("Finished plotting from saved model predictions.");
 }
