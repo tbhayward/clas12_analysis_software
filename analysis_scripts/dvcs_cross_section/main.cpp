@@ -21,6 +21,7 @@
 #include "rad_corrected_cross_section.h"
 #include "model_predictions.h"
 #include "bin_centering_corrections.h"
+#include "models_vs_data_plots.h"
 
 int main(int argc, char* argv[]) {
     std::cout << "Starting DVCS analysis..." << std::endl;
@@ -224,16 +225,16 @@ int main(int argc, char* argv[]) {
     // double xs_km15 = km15_xs(xB, Q2, tpos, phi_deg, 10.604, Helicity::Plus, paths);
     // std::cout << xs_vgg << " " << xs_km15 << " " << xs_bh << std::endl;
 
-    // --------- Bin-centering corrections using VGG ONLY (compute only) ----------
-    compute_bin_centered_cross_sections(
-        binning_scheme,
-        "output/jsons",           // rad_corrected_xsec_<E>.json input
-        "output/bin_centering",   // JSONs saved to output/bin_centering/jsons
-        4,
-        ModelPaths(),
-        true,
-        ModelChoice::Both      // VGGOnly, KM15Only, Both
-    );
+    // // --------- Bin-centering corrections using VGG ONLY (compute only) ----------
+    // compute_bin_centered_cross_sections(
+    //     binning_scheme,
+    //     "output/jsons",           // rad_corrected_xsec_<E>.json input
+    //     "output/bin_centering",   // JSONs saved to output/bin_centering/jsons
+    //     4,
+    //     ModelPaths(),
+    //     true,
+    //     ModelChoice::Both      // VGGOnly, KM15Only, Both
+    // );
     // // --------- Bin-centering plots only (no recompute) ----------
     // plot_bin_centered_cross_sections(
     //     binning_scheme,
@@ -241,6 +242,16 @@ int main(int argc, char* argv[]) {
     //     "output/bin_centering/jsons",  // where bin_centered_xsec_<E>.json lives (after BC)
     //     "output/bin_centering/plots"   // where to write the PNGs
     // );
+
+    // --------- Models vs bin-centered data (plots only; no heavy recalculation) ----------
+    plot_models_vs_bincentered(
+        binning_scheme,
+        "output/bin_centering/jsons",  // where bin_centered_xsec_<E>.json live
+        "output/bin_centering",        // plots will go under output/bin_centering/plots
+        ModelPaths(),                  // your configured paths to models
+        true,                          // vgg_globalfit flag
+        181                           // phi sampling density (0..360 by 1 deg)
+    );
 
     std::cout << "All done." << std::endl;
     return 0;
