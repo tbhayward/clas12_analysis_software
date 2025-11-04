@@ -114,107 +114,107 @@ int main(int argc, char* argv[]) {
     // );
     // std::cout << "π0-corrected counts stage finished." << std::endl;
 
-    // --------- Radiative corrections (generated Born/Rad, per bin & φ) ----------
-    // Writes:
-    //   - per-group JSONs: output/jsons/radiative_corrections_group_<energy>.json
-    //   - per-period JSONs: output/jsons/radiative_corrections_<period>.json
-    //   - all-groups file: output/jsons/radiative_corrections_all_groups.json
-    //   - plots (ONLY per beam energy): output/radiative_correction_plots/{10.59,10.60,10.2}/...
-    compute_radiative_corrections(
-        dvcs_periods,
-        binning_scheme,
-        genMcTrees,
-        radGenMcTrees,
-        output_root
-    );
+    // // --------- Radiative corrections (generated Born/Rad, per bin & φ) ----------
+    // // Writes:
+    // //   - per-group JSONs: output/jsons/radiative_corrections_group_<energy>.json
+    // //   - per-period JSONs: output/jsons/radiative_corrections_<period>.json
+    // //   - all-groups file: output/jsons/radiative_corrections_all_groups.json
+    // //   - plots (ONLY per beam energy): output/radiative_correction_plots/{10.59,10.60,10.2}/...
+    // compute_radiative_corrections(
+    //     dvcs_periods,
+    //     binning_scheme,
+    //     genMcTrees,
+    //     radGenMcTrees,
+    //     output_root
+    // );
 
-    // --------- Acceptance (reco MC with MC cuts / gen MC, per bin & φ) ----------
-    // Writes per-period JSONs: output/jsons/acceptance_<period>.json
-    // Plots to: output/acceptance/<runTag>/plot_acceptance_<period>_xB_<ix>.png
-    {
-        std::vector<std::string> acc_periods = {
-            "DVCS_Sp18_inb", "DVCS_Sp18_out",
-            "DVCS_Fa18_inb", "DVCS_Fa18_out",
-            "DVCS_Sp19_inb"
-        }; // intentionally skipping DVCS_Fa18_inb_supp
-        compute_and_plot_acceptance(
-            acc_periods,
-            topologies,
-            binning_scheme,
-            genMcTrees,
-            recMcTrees,
-            cuts_json_path,
-            output_root
-        );
-    }
+    // // --------- Acceptance (reco MC with MC cuts / gen MC, per bin & φ) ----------
+    // // Writes per-period JSONs: output/jsons/acceptance_<period>.json
+    // // Plots to: output/acceptance/<runTag>/plot_acceptance_<period>_xB_<ix>.png
+    // {
+    //     std::vector<std::string> acc_periods = {
+    //         "DVCS_Sp18_inb", "DVCS_Sp18_out",
+    //         "DVCS_Fa18_inb", "DVCS_Fa18_out",
+    //         "DVCS_Sp19_inb"
+    //     }; // intentionally skipping DVCS_Fa18_inb_supp
+    //     compute_and_plot_acceptance(
+    //         acc_periods,
+    //         topologies,
+    //         binning_scheme,
+    //         genMcTrees,
+    //         recMcTrees,
+    //         cuts_json_path,
+    //         output_root
+    //     );
+    // }
 
-    // --------- Unfolding (counts / acceptance), helicity-resolved ----------
-    // Writes per-period JSONs: output/jsons/unfolded_<period>.json
-    // Plots to: output/unfolding/<runTag>/plot_unfolded_<period>_xB_<ix>.png
-    {
-        std::vector<std::string> unf_periods = {
-            "DVCS_Sp18_inb", "DVCS_Sp18_out",
-            "DVCS_Fa18_inb", "DVCS_Fa18_out",
-            "DVCS_Sp19_inb"
-        }; // skip DVCS_Fa18_inb_supp on purpose
-        // note that we pass the pi0_corrected_counts below (i.e. not the original total_counts)
-        const std::string total_counts_js = "output/jsons/pi0_corrected_counts_all_groups.json";
-        compute_and_plot_unfolding(
-            unf_periods,
-            binning_scheme,
-            total_counts_js,
-            output_root
-        );
-    }
+    // // --------- Unfolding (counts / acceptance), helicity-resolved ----------
+    // // Writes per-period JSONs: output/jsons/unfolded_<period>.json
+    // // Plots to: output/unfolding/<runTag>/plot_unfolded_<period>_xB_<ix>.png
+    // {
+    //     std::vector<std::string> unf_periods = {
+    //         "DVCS_Sp18_inb", "DVCS_Sp18_out",
+    //         "DVCS_Fa18_inb", "DVCS_Fa18_out",
+    //         "DVCS_Sp19_inb"
+    //     }; // skip DVCS_Fa18_inb_supp on purpose
+    //     // note that we pass the pi0_corrected_counts below (i.e. not the original total_counts)
+    //     const std::string total_counts_js = "output/jsons/pi0_corrected_counts_all_groups.json";
+    //     compute_and_plot_unfolding(
+    //         unf_periods,
+    //         binning_scheme,
+    //         total_counts_js,
+    //         output_root
+    //     );
+    // }
 
-    // --------- Bin Volume (generator-based φ coverage), per beam energy ----------
-    // Writes per-energy JSONs: output/jsons/bin_volume_<energy>.json
-    // Plots to: output/bin_volume/<energy>/plot_bin_volume_<energy>_xB_<ix>.png
-    compute_and_plot_bin_volume(
-        binning_scheme,
-        genMcTrees,
-        output_root
-    );
+    // // --------- Bin Volume (generator-based φ coverage), per beam energy ----------
+    // // Writes per-energy JSONs: output/jsons/bin_volume_<energy>.json
+    // // Plots to: output/bin_volume/<energy>/plot_bin_volume_<energy>_xB_<ix>.png
+    // compute_and_plot_bin_volume(
+    //     binning_scheme,
+    //     genMcTrees,
+    //     output_root
+    // );
 
-    compute_uncorrected_cross_sections(
-        binning_scheme,
-        "output/jsons",                    // bin volume JSON directory
-        "output/jsons",               // unfolded counts per helicity
-        "imports/integrated_luminosity",        // luminosity text files
-        "output/uncorrected_cross_section"      // output dir
-    );
+    // compute_uncorrected_cross_sections(
+    //     binning_scheme,
+    //     "output/jsons",                    // bin volume JSON directory
+    //     "output/jsons",               // unfolded counts per helicity
+    //     "imports/integrated_luminosity",        // luminosity text files
+    //     "output/uncorrected_cross_section"      // output dir
+    // );
 
-    compare_unpolarized_cross_sections_sp18out_vs_fa18out(
-        binning_scheme,
-        "output/jsons",                    // bin volume JSON directory
-        "output/jsons",                    // unfolded counts
-        "imports/integrated_luminosity",   // luminosity text files (use total column)
-        "output/uncorrected_cross_section/" // output dir
-    ); // #endif
+    // compare_unpolarized_cross_sections_sp18out_vs_fa18out(
+    //     binning_scheme,
+    //     "output/jsons",                    // bin volume JSON directory
+    //     "output/jsons",                    // unfolded counts
+    //     "imports/integrated_luminosity",   // luminosity text files (use total column)
+    //     "output/uncorrected_cross_section/" // output dir
+    // ); // #endif
 
-    // Multiply uncorrected dσ/dφ by Born/Rad per-φ correction
-    const std::string unx_dir = "output/jsons";
-    const std::string rc_dir  = "output/jsons"; // radiative_corrections_group_<E>.json
-    const std::string out_dir = "output/rad_corrected_cross_section";
-    compute_rad_corrected_cross_sections(binning_scheme, unx_dir, rc_dir, out_dir);
+    // // Multiply uncorrected dσ/dφ by Born/Rad per-φ correction
+    // const std::string unx_dir = "output/jsons";
+    // const std::string rc_dir  = "output/jsons"; // radiative_corrections_group_<E>.json
+    // const std::string out_dir = "output/rad_corrected_cross_section";
+    // compute_rad_corrected_cross_sections(binning_scheme, unx_dir, rc_dir, out_dir);
 
 
-    // Beam-Spin Asymmetry:
-    // - reads total_counts.json and contamination JSONs
-    // - writes per-period fits to output/jsons/BSA_fits/BSA_fits_<period>.json
-    // - writes all-periods file to output/jsons/BSA_fits_all_periods.json
-    // - writes 10.6 GeV combined to output/jsons/BSA_fits_combined_10p6.json
-    // - plots to output/bsa_plots/<runTag>/...
-    namespace fs = std::filesystem;
-    compute_and_plot_bsa_helicity(
-        dvcs_periods,                                               
-        topologies,
-        binning_scheme,
-        dataTrees,       
-        (fs::path(output_root) / "jsons" / "pi0_corrected_counts_all_groups.json").string(),
-        output_root,  
-        (fs::path(output_root) / "rad_corrected_cross_section" / "jsons").string() // directory with rad_corrected_xsec_<E>.json
-    );
+    // // Beam-Spin Asymmetry:
+    // // - reads total_counts.json and contamination JSONs
+    // // - writes per-period fits to output/jsons/BSA_fits/BSA_fits_<period>.json
+    // // - writes all-periods file to output/jsons/BSA_fits_all_periods.json
+    // // - writes 10.6 GeV combined to output/jsons/BSA_fits_combined_10p6.json
+    // // - plots to output/bsa_plots/<runTag>/...
+    // namespace fs = std::filesystem;
+    // compute_and_plot_bsa_helicity(
+    //     dvcs_periods,                                               
+    //     topologies,
+    //     binning_scheme,
+    //     dataTrees,       
+    //     (fs::path(output_root) / "jsons" / "pi0_corrected_counts_all_groups.json").string(),
+    //     output_root,  
+    //     (fs::path(output_root) / "rad_corrected_cross_section" / "jsons").string() // directory with rad_corrected_xsec_<E>.json
+    // );
 
     // Example: unpolarized predictions (xB,Q2,t,phi,Ebeam)
     ModelPaths paths; // leave empty to use env/defaults
