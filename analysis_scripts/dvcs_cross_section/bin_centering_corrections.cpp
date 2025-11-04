@@ -23,7 +23,7 @@
 #include <tuple>
 #include <vector>
 
-// OpenMP for parallel processing
+// OpenMP for parallel processing (hard-capped to 5 threads)
 #ifdef _OPENMP
 #include <omp.h>
 #endif
@@ -52,6 +52,7 @@ struct StyleInit {
     }
 } _style_guard;
 
+// ---------- small helpers ----------
 static inline std::vector<double> phiCentersDeg() {
     std::vector<double> d(N_PHI_BINS);
     const double step = 360.0 / double(N_PHI_BINS);
@@ -127,8 +128,7 @@ static inline double jgetd(const json& a, size_t i, double def=0.0){
 } //enddef
 
 static inline double midpoint(double a, double b){ return 0.5*(a+b); } //enddef
-
-static inline bool finite_pos(double v){ return std::isfinite(v) && v>0.0; } //enddef
+static inline bool   finite_pos(double v){ return std::isfinite(v) && v>0.0; } //enddef
 
 // ------------------------------------------------------------
 // Optimized helper: compute fbin for one (xB,Q2,t,phi-bin,helicity)
@@ -160,8 +160,8 @@ static void compute_fbin_for_point(
 
     // Only compute center values for models we're actually using
     double km15_center = 0.0;
-    double vgg_center = 0.0;
-    
+    double vgg_center  = 0.0;
+
     if (model_choice == ModelChoice::Both || model_choice == ModelChoice::KM15Only) {
         km15_center = km15_xs(xB_c, Q2_c, tpos_c, phi_center_deg, Ebeam, hel, paths);
     }
@@ -169,15 +169,11 @@ static void compute_fbin_for_point(
         vgg_center  = vgg_xs(xB_c, Q2_c, tpos_c, phi_center_deg, Ebeam, hel, paths, vgg_globalfit);
     }
 
-    // Early exit if we don't need to compute averages (no valid center values)
-    bool need_km15 = (model_choice == ModelChoice::Both || model_choice == ModelChoice::KM15Only) && finite_pos(km15_center);
-    bool need_vgg = (model_choice == ModelChoice::Both || model_choice == ModelChoice::VGGOnly) && finite_pos(vgg_center);
-    
-    if (!need_km15 && !need_vgg) {
-        return;
-    }
+    const bool need_km15 = (model_choice == ModelChoice::Both || model_choice == ModelChoice::KM15Only) && finite_pos(km15_center);
+    const bool need_vgg  = (model_choice == ModelChoice::Both || model_choice == ModelChoice::VGGOnly)   && finite_pos(vgg_center);
+    if (!need_km15 && !need_vgg) return;
 
-    // Use fixed sub-binning (no adaptive binning)
+    // sub-binning grids (uniform)
     const int nx = std::max(2, n_steps);
     const int nQ = std::max(2, n_steps);
     const int nt = std::max(2, n_steps);
@@ -196,17 +192,8 @@ static void compute_fbin_for_point(
     const auto ts = linspace(tmin_pos, tmax_pos, nt);
     const auto ps = linspace(phi_edges_deg.first, phi_edges_deg.second, np);
 
-    // accumulate over sub-bins
     double sum_km15 = 0.0; int cnt_km15 = 0;
     double sum_vgg  = 0.0; int cnt_vgg  = 0;
-
-    int total_sub_bins = nx * nQ * nt * np;
-    
-    // Only show progress for very large computations
-    if (total_sub_bins > 1000) {
-        #pragma omp critical
-        std::cout << "[bincenter]       Computing " << total_sub_bins << " sub-bins" << std::endl;
-    }
 
     for (double xb : xs){
         for (double q2 : Qs){
@@ -225,35 +212,28 @@ static void compute_fbin_for_point(
         } //endfor
     } //endfor
 
-    // averages
     if (need_km15 && cnt_km15 > 0) {
         const double avg_km15 = sum_km15 / double(cnt_km15);
         if (finite_pos(avg_km15)) fbin_km15 = km15_center / avg_km15;
     }
-    
     if (need_vgg && cnt_vgg > 0) {
         const double avg_vgg = sum_vgg / double(cnt_vgg);
         if (finite_pos(avg_vgg)) fbin_vgg = vgg_center / avg_vgg;
     }
 } //enddef
 
-// ------------------------------------------------------------
-// Plot helpers
-// ------------------------------------------------------------
-static TGraphErrors* draw_hel_curve(const json& h, int mstyle, int color, TH1* frame){
+// ---------------- plotting helpers (shared with plotter) ----------------
+static TGraphErrors* draw_hel_curve(const json& h, int mstyle, int color){
     if (!has_bins12(h)) return nullptr; //endif
     const auto& xp = h["phi"];
     const auto& yp = h["xsec"];
     const auto& ep = h["xsec_err"];
     std::vector<double> x(N_PHI_BINS), y(N_PHI_BINS), e(N_PHI_BINS);
-    double ymax=0.0;
     for (int i=0;i<N_PHI_BINS;++i){
         x[i]=xp[i].get<double>();
         y[i]=yp[i].get<double>();
         e[i]=std::max(1e-12, ep[i].get<double>());
-        ymax = std::max(ymax, y[i]+e[i]);
     } //endfor
-    if (ymax > 0.0) frame->GetYaxis()->SetRangeUser(1e-4, std::max(1.0, ymax*1.5)); //endif
     auto* gr = new TGraphErrors(N_PHI_BINS, x.data(), y.data(), nullptr, e.data());
     gr->SetMarkerStyle(mstyle);
     gr->SetMarkerSize(1.0);
@@ -264,95 +244,117 @@ static TGraphErrors* draw_hel_curve(const json& h, int mstyle, int color, TH1* f
     return gr;
 } //enddef
 
+// For log-scale y-range across a whole canvas (like rad_corrected_cross_section.cpp)
+static std::pair<double, double> calculateYRangeForCanvas(const json& jb_after_bins,
+                                                         const json& jb_before_bins,
+                                                         const std::vector<std::string>& bin_keys,
+                                                         bool overlay) {
+    double global_min = 1e10;
+    double global_max = -1e10;
+
+    auto scanHel = [&](const json& H){
+        if (!H.contains("xsec") || !H.contains("xsec_err")) return;
+        const auto& yp = H["xsec"];
+        const auto& ep = H["xsec_err"];
+        for (int i=0;i<N_PHI_BINS;++i){
+            const double y = jgetd(yp, i, 0.0);
+            const double e = jgetd(ep, i, 0.0);
+            if (y > 0.0) {
+                global_min = std::min(global_min, std::max(1e-10, y - e));
+                global_max = std::max(global_max, y + e);
+            }
+        }
+    }; //enddef
+
+    for (const auto& bkey : bin_keys) {
+        if (jb_after_bins.contains(bkey)) {
+            const json& after = jb_after_bins[bkey];
+            if (after.contains("helicity_plus"))  scanHel(after["helicity_plus"]);
+            if (after.contains("helicity_minus")) scanHel(after["helicity_minus"]);
+        }
+        if (overlay && jb_before_bins.contains(bkey)) {
+            const json& before = jb_before_bins[bkey];
+            if (before.contains("helicity_plus"))  scanHel(before["helicity_plus"]);
+            if (before.contains("helicity_minus")) scanHel(before["helicity_minus"]);
+        }
+    } //endfor
+
+    if (global_max <= 0) {
+        global_min = 1e-4;
+        global_max = 1.0;
+    } else {
+        double ymin10 = std::pow(10.0, std::floor(std::log10(global_min)));
+        double ymax10 = std::pow(10.0, std::ceil (std::log10(global_max)));
+        global_min = std::max(1e-4, ymin10*0.5);
+        global_max = ymax10*2.0;
+    }
+    return {global_min, global_max};
+} //enddef
+
 } // anon
 
-// ------------------------------------------------------------
-// Main driver
-// ------------------------------------------------------------
+// ============================================================
+// COMPUTE-ONLY: writes bin_centered_xsec_<E>.json (no plots)
+// ============================================================
 void compute_bin_centered_cross_sections(
     const std::vector<Binning>& binning_scheme,
-    const std::string& radcorr_xsec_json_dir,
-    const std::string& output_dir,
+    const std::string& radcorr_xsec_json_dir,  // where rad_corrected_xsec_<E>.json lives (input)
+    const std::string& output_dir,             // base output dir; JSONs go to output_dir/jsons
     int n_steps,
     const ModelPaths& paths,
     bool vgg_globalfit,
     ModelChoice model_choice
 ) {
-    std::cout << "[bincenter] Starting bin-centering corrections..." << std::endl;
-    std::cout << "[bincenter] Model choice: ";
-    switch (model_choice) {
-        case ModelChoice::Both: std::cout << "Both models (averaged)"; break;
-        case ModelChoice::VGGOnly: std::cout << "VGG only"; break;
-        case ModelChoice::KM15Only: std::cout << "KM15 only"; break;
-    }
-    std::cout << std::endl;
-    
-    // Set up parallel processing with maximum 4 threads
+    std::cout << "[bincenter] Starting bin-centering computation..." << std::endl;
+    std::cout << "[bincenter] Model choice = "
+              << (model_choice==ModelChoice::Both? "Both" : (model_choice==ModelChoice::VGGOnly? "VGGOnly" : "KM15Only"))
+              << ", n_steps = " << n_steps << std::endl;
+
     #ifdef _OPENMP
-    const int max_threads = 4;
-    omp_set_num_threads(max_threads);
-    std::cout << "[bincenter] Using OpenMP with up to " << max_threads << " threads" << std::endl;
+    int hard_cap = 5;
+    int want     = omp_get_max_threads();
+    int use      = std::min(hard_cap, std::max(1, want));
+    omp_set_num_threads(use);
+    std::cout << "[bincenter] OpenMP enabled with " << use << " worker(s) (hard-capped at 5)\n";
     #else
-    std::cout << "[bincenter] WARNING: OpenMP not available, running sequentially" << std::endl;
+    std::cout << "[bincenter] OpenMP not available; running single-threaded\n";
     #endif
-    
-    std::cout << "[bincenter] Creating output directories..." << std::endl;
-    
+
     fs::create_directories(output_dir);
     fs::create_directories(fs::path(output_dir)/"jsons");
-    fs::create_directories(fs::path(output_dir)/"plots");
 
     const auto xB_bins = uniqueRanges(binning_scheme, 'x');
     const auto Q2_all  = uniqueRanges(binning_scheme, 'Q');
     const auto t_all   = uniqueRanges(binning_scheme, 't');
     const auto PHI_DEG = phiCentersDeg();
 
-    // Keep 10.59 in the list; we will silently skip if it is not available yet.
+    // energies we attempt (skip missing quietly)
     const std::vector<std::string> energies = {"10.59","10.60","10.2"};
 
-    int total_energy_count = energies.size();
-    int current_energy_index = 0;
-
+    int e_idx = 0;
     for (const auto& E : energies) {
-        current_energy_index++;
-        std::cout << "[bincenter] ===========================================" << std::endl;
-        std::cout << "[bincenter] Processing energy E = " << E << " (" 
-                  << current_energy_index << "/" << total_energy_count << ")" << std::endl;
-
-        const std::string rc_path =
-            (fs::path(radcorr_xsec_json_dir) / ("rad_corrected_xsec_" + E + ".json")).string();
-
-        // Quietly skip if file is missing
+        ++e_idx;
+        const std::string rc_path = (fs::path(radcorr_xsec_json_dir) / ("rad_corrected_xsec_" + E + ".json")).string();
         if (!fs::exists(rc_path)) {
-            std::cout << "[bincenter] Skipping E=" << E << " (no RC file yet)\n";
+            std::cout << "[bincenter] Skip E=" << E << " (missing " << rc_path << ")\n";
             continue;
-        } //endif
+        }
+        std::cout << "[bincenter] ===========================================\n";
+        std::cout << "[bincenter] Energy " << E << " (" << e_idx << "/" << energies.size() << ") -> " << rc_path << "\n";
 
-        // Load and validate
-        std::cout << "[bincenter] Loading radiative corrections from: " << rc_path << std::endl;
         json j_rc = load_json(rc_path);
         if (j_rc.is_null() || j_rc.empty() || !j_rc.contains("bins")) {
-            std::cout << "[bincenter] Skipping E=" << E << " (RC file present but malformed)\n";
+            std::cout << "[bincenter] JSON malformed for E=" << E << " (no bins). Skipping.\n";
             continue;
-        } //endif
+        }
 
-        // Output accumulator for this energy
-        json jout;
+        json jout; // result for this energy
         jout["energy"] = E;
         jout["bins"]   = json::object();
 
-        int total_xb_bins = xB_bins.size();
-        int current_xb_index = 0;
-
-        // Loop the physics bins
-        for (int ix = 0; ix < total_xb_bins; ++ix) {
-            current_xb_index++;
+        for (int ix = 0; ix < (int)xB_bins.size(); ++ix) {
             const auto xb = xB_bins[ix];
 
-            std::cout << "[bincenter]   Processing xB bin " << current_xb_index << "/" << total_xb_bins 
-                      << ": [" << xb.first << ", " << xb.second << "]" << std::endl;
-
-            // Slices that actually occur for this xB in the scheme
             std::set<std::pair<double,double>> qs, ts;
             for (const auto& b : binning_scheme) {
                 if (std::make_pair(b.xBmin,b.xBmax) == xb) {
@@ -363,65 +365,36 @@ void compute_bin_centered_cross_sections(
             std::vector<std::pair<double,double>> Q2_slice(qs.begin(), qs.end());
             std::vector<std::pair<double,double>> t_slice(ts.begin(),  ts.end());
 
-            int total_q2_bins = Q2_slice.size();
-            int total_t_bins = t_slice.size();
-            int total_bins_for_xb = total_q2_bins * total_t_bins;
-
-            std::cout << "[bincenter]     Found " << total_q2_bins << " Q2 bins and " 
-                      << total_t_bins << " t bins (" << total_bins_for_xb << " total bins)" << std::endl;
-            
-            // Create a list of all (q2r, tr) pairs to process
-            std::vector<std::pair<std::pair<double, double>, std::pair<double, double>>> bin_pairs;
+            // Gather (Q2,t) tasks
+            std::vector<std::pair<std::pair<double,double>, std::pair<double,double>>> tasks;
+            tasks.reserve(Q2_slice.size()*t_slice.size());
             for (const auto& q2r : Q2_slice) {
-                const int iQ_global = findIndex(q2r, Q2_all);
-                if (iQ_global < 0) continue;
                 for (const auto& tr : t_slice) {
-                    const int it_global = findIndex(tr, t_all);
-                    if (it_global < 0) continue;
-                    bin_pairs.emplace_back(q2r, tr);
+                    tasks.emplace_back(q2r, tr);
                 }
             }
 
-            // Process bins in parallel
             #pragma omp parallel for schedule(dynamic)
-            for (size_t pair_idx = 0; pair_idx < bin_pairs.size(); ++pair_idx) {
-                const auto& q2r = bin_pairs[pair_idx].first;
-                const auto& tr = bin_pairs[pair_idx].second;
-                
-                #ifdef _OPENMP
-                #pragma omp critical
-                #endif
-                {
-                    std::cout << "[bincenter]     Thread " << 
-                    #ifdef _OPENMP
-                    omp_get_thread_num() 
-                    #else
-                    0
-                    #endif
-                    << " processing Q2[" << q2r.first << ", " << q2r.second 
-                    << "], t[" << tr.first << ", " << tr.second << "]" << std::endl;
-                }
+            for (size_t it = 0; it < tasks.size(); ++it) {
+                const auto q2r = tasks[it].first;
+                const auto tr  = tasks[it].second;
+
+                const int iQ_global = findIndex(q2r, Q2_all);
+                const int it_global = findIndex(tr,  t_all);
+                if (iQ_global < 0 || it_global < 0) continue;
 
                 const std::string bkey =
-                    "(" + std::to_string(ix) + "," + std::to_string(findIndex(q2r, Q2_all)) + "," + std::to_string(findIndex(tr, t_all)) + ")";
+                    "(" + std::to_string(ix) + "," + std::to_string(iQ_global) + "," + std::to_string(it_global) + ")";
 
-                if (!j_rc["bins"].contains(bkey)) {
-                    continue;
-                }
+                if (!j_rc["bins"].contains(bkey)) continue;
                 const json& cell_in = j_rc["bins"][bkey];
-                if (!has_bc_cell(cell_in)) {
-                    continue;
-                }
+                if (!has_bc_cell(cell_in)) continue;
 
                 auto do_one_hel = [&](const char* node, Helicity hel)->json{
                     json out;
-                    if (!cell_in.contains(node)) {
-                        return out;
-                    }
+                    if (!cell_in.contains(node)) return out;
                     const json& h = cell_in[node];
-                    if (!has_bins12(h)) {
-                        return out;
-                    }
+                    if (!has_bins12(h)) return out;
 
                     const auto& phi = h["phi"];
                     const auto& xs  = h["xsec"];
@@ -447,43 +420,34 @@ void compute_bin_centered_cross_sections(
                             fkm, fvg
                         );
 
-                        // Choose final factor based on model choice
+                        // determine final factor
                         double f_final = 1.0;
                         double f_sys   = 0.0;
-                        
                         switch (model_choice) {
                             case ModelChoice::Both:
                                 if (finite_pos(fkm) && finite_pos(fvg)) {
                                     f_final = 0.5*(fkm + fvg);
                                     f_sys   = std::fabs(fkm - fvg);
                                 } else if (finite_pos(fkm)) {
-                                    f_final = fkm;
-                                    f_sys   = 1.0;
+                                    f_final = fkm; f_sys = 1.0;
                                 } else if (finite_pos(fvg)) {
-                                    f_final = fvg;
-                                    f_sys   = 1.0;
+                                    f_final = fvg; f_sys = 1.0;
                                 }
                                 break;
                             case ModelChoice::VGGOnly:
-                                if (finite_pos(fvg)) {
-                                    f_final = fvg;
-                                    f_sys   = 0.0; // No systematic when using single model
-                                }
+                                if (finite_pos(fvg)) f_final = fvg;
                                 break;
                             case ModelChoice::KM15Only:
-                                if (finite_pos(fkm)) {
-                                    f_final = fkm;
-                                    f_sys   = 0.0; // No systematic when using single model
-                                }
+                                if (finite_pos(fkm)) f_final = fkm;
                                 break;
-                        }
+                        } //endswitch
 
                         const double x  = jgetd(xs, ip, 0.0);
                         const double ex = std::max(0.0, jgetd(xe, ip, 0.0));
 
                         phi_bc[ip]   = phi_c;
                         y[ip]        = f_final * x;
-                        e[ip]        = f_final * ex;  // scale statistical error by same factor
+                        e[ip]        = f_final * ex;  // scale stat error
                         fbin_used[ip]= f_final;
                         fbin_km15[ip]= (finite_pos(fkm) ? fkm : 0.0);
                         fbin_vgg[ip] = (finite_pos(fvg) ? fvg : 0.0);
@@ -502,146 +466,227 @@ void compute_bin_centered_cross_sections(
 
                 json hp_bc = do_one_hel("helicity_plus",  Helicity::Plus);
                 json hm_bc = do_one_hel("helicity_minus", Helicity::Minus);
-                
-                if (!hp_bc.is_null() || !hm_bc.is_null()) {
-                    #ifdef _OPENMP
-                    #pragma omp critical
-                    #endif
-                    {
-                        jout["bins"][bkey] = {
-                            {"helicity_plus",  hp_bc},
-                            {"helicity_minus", hm_bc}
-                        };
-                    }
+                if (hp_bc.is_null() && hm_bc.is_null()) continue;
+
+                #ifdef _OPENMP
+                #pragma omp critical
+                #endif
+                {
+                    jout["bins"][bkey] = {
+                        {"helicity_plus",  hp_bc},
+                        {"helicity_minus", hm_bc}
+                    };
                 }
-            } // end parallel for
-        } //endfor
+            } //end parallel for
+        } //endfor xB
 
-        // If nothing was produced for this energy, do not write files or make plots
-        if (jout["bins"].empty()) {
-            std::cout << "[bincenter] No valid bins at E=" << E << ", skipping save/plots\n";
+        // Write out JSON for this energy
+        const std::string out_json = (fs::path(output_dir)/"jsons"/("bin_centered_xsec_"+E+".json")).string();
+        save_json(jout, out_json);
+        std::cout << "[bincenter] Wrote " << out_json << "\n";
+    } //endfor energies
+
+    std::cout << "[bincenter] Finished bin-centering computation.\n";
+} //enddef
+
+// ============================================================
+// PLOT-ONLY: reads bin_centered_xsec_<E>.json (+ before BC)
+// makes corrected-only and overlay plots
+// ============================================================
+void plot_bin_centered_cross_sections(
+    const std::vector<Binning>& binning_scheme,
+    const std::string& radcorr_xsec_json_dir, // input: before-BC "rad_corrected_xsec_<E>.json"
+    const std::string& bincenter_json_dir,    // input: after-BC  "bin_centered_xsec_<E>.json"
+    const std::string& plots_output_dir       // output: plots go here
+) {
+    fs::create_directories(plots_output_dir);
+
+    const auto xB_bins = uniqueRanges(binning_scheme, 'x');
+    const auto Q2_all  = uniqueRanges(binning_scheme, 'Q');
+    const auto t_all   = uniqueRanges(binning_scheme, 't');
+
+    const std::vector<std::string> energies = {"10.59","10.60","10.2"};
+
+    auto makeCanvasSet = [&](const std::string& E, const json& j_before, const json& j_after, bool overlay){
+        for (int ix = 0; ix < (int)xB_bins.size(); ++ix) {
+            const auto xb = xB_bins[ix];
+
+            std::set<std::pair<double,double>> qs, ts;
+            for (const auto& b : binning_scheme) {
+                if (std::make_pair(b.xBmin,b.xBmax) == xb) {
+                    qs.emplace(b.Q2min,b.Q2max);
+                    ts.emplace(b.tmin,b.tmax);
+                } //endif
+            } //endfor
+            std::vector<std::pair<double,double>> Q2_slice(qs.begin(), qs.end());
+            std::vector<std::pair<double,double>> t_slice(ts.begin(),  ts.end());
+            if (Q2_slice.empty() || t_slice.empty()) continue;
+
+            const int nrows = (int)t_slice.size();
+            const int ncols = (int)Q2_slice.size();
+            const int W = 280*ncols + 160;
+            const int H = 240*nrows + 170;
+
+            std::ostringstream cname;
+            cname << "c_bincenter_"<<E<<"_xB"<<ix<<(overlay ? "_overlay" : "_bc");
+            TCanvas* c = new TCanvas(cname.str().c_str(), cname.str().c_str(), W, H);
+
+            TPad* pTop  = new TPad("pTop","pTop", 0.0, 0.915, 1.0, 1.0);
+            pTop->SetFillStyle(0); pTop->SetBorderSize(0); pTop->Draw();
+
+            TPad* pGrid = new TPad("pGrid","pGrid", 0.0, 0.00, 1.0, 0.915);
+            pGrid->SetFillStyle(0); pGrid->SetBorderSize(0); pGrid->Draw();
+            pGrid->cd();
+            pGrid->Divide(ncols, nrows, 0.0001, 0.0001);
+
+            // Title (match rad_corrected_cross_section.cpp sizing/position)
+            pTop->cd();
+            TLatex head;
+            head.SetNDC(); head.SetTextAlign(22);
+            head.SetTextFont(42);
+            head.SetTextSize(0.22);
+            std::ostringstream tit;
+            tit << (overlay ? "unc vs. bin-centered d#sigma/d#phi"
+                            : "bin-centered d#sigma/d#phi");
+            tit << Form("  %s GeV x_{B} #in [%.2g, %.2g]", E.c_str(), xb.first, xb.second);
+            head.DrawLatex(0.5, 0.55, tit.str().c_str());
+
+            // First pass: collect all bin keys for this canvas to determine y-range
+            std::vector<std::string> canvas_bin_keys;
+            for (int r=0; r<nrows; ++r) {
+                const int it_global = findIndex(t_slice[r], t_all);
+                if (it_global < 0) continue;
+                for (int cc=0; cc<ncols; ++cc) {
+                    const int iQ_global = findIndex(Q2_slice[cc], Q2_all);
+                    if (iQ_global < 0) continue;
+                    const std::string bkey =
+                        "(" + std::to_string(ix) + "," + std::to_string(iQ_global) + "," + std::to_string(it_global) + ")";
+                    canvas_bin_keys.push_back(bkey);
+                }
+            }
+
+            // Compute common y-range for the canvas
+            auto [ymin_canvas, ymax_canvas] = calculateYRangeForCanvas(
+                j_after["bins"],
+                j_before.contains("bins") ? j_before["bins"] : json::object(),
+                canvas_bin_keys,
+                overlay
+            );
+
+            // Draw panels
+            for (int r=0; r<nrows; ++r) {
+                const int it_global = findIndex(t_slice[r], t_all);
+                if (it_global < 0) continue;
+                for (int cc=0; cc<ncols; ++cc) {
+                    const int iQ_global = findIndex(Q2_slice[cc], Q2_all);
+                    if (iQ_global < 0) continue;
+
+                    pGrid->cd(r*ncols + cc + 1);
+                    gPad->SetGrid(1,1);
+                    gPad->SetTopMargin(0.08);
+                    gPad->SetBottomMargin(0.18);
+                    gPad->SetLeftMargin(0.15);
+                    gPad->SetRightMargin(0.10);
+                    gPad->SetLogy();
+
+                    TH1* frame = gPad->DrawFrame(0.0, ymin_canvas, 360.0, ymax_canvas);
+                    frame->GetXaxis()->SetLabelSize(0.0001);
+                    frame->GetXaxis()->SetTitle("#phi (deg)");
+                    frame->GetYaxis()->SetTitle(overlay ? "d#sigma/d#phi" : "d#sigma/d#phi (bin-centered)");
+                    frame->GetXaxis()->CenterTitle();
+                    frame->GetYaxis()->CenterTitle();
+                    frame->GetXaxis()->SetNdivisions(505);
+                    frame->GetXaxis()->SetTitleSize(0.060);
+                    frame->GetYaxis()->SetTitleSize(0.060);
+                    frame->GetYaxis()->SetLabelSize(0.048);
+                    frame->GetXaxis()->SetTitleOffset(1.25);
+                    frame->GetYaxis()->SetTitleOffset(1.35);
+
+                    drawDegreeTicks(gPad->GetUxmin(), gPad->GetUymin(), gPad->GetUxmax(), 0.048);
+
+                    const std::string bkey =
+                        "(" + std::to_string(ix) + "," + std::to_string(iQ_global) + "," + std::to_string(it_global) + ")";
+
+                    // after-BC (required)
+                    if (!j_after["bins"].contains(bkey)) continue;
+                    const json& jb_after = j_after["bins"][bkey];
+
+                    // before-BC (optional overlay)
+                    const bool   have_before = overlay && j_before.contains("bins") && j_before["bins"].contains(bkey);
+                    const json&  jb_before  = (have_before ? j_before["bins"][bkey] : json::object());
+
+                    // draw order: before first (grey open), after second (colored filled)
+                    TGraphErrors* gup = nullptr;
+                    TGraphErrors* gum = nullptr;
+                    if (have_before) {
+                        if (jb_before.contains("helicity_plus"))
+                            gup = draw_hel_curve(jb_before["helicity_plus"],  24 /*open circle*/,   kGray+2);
+                        if (jb_before.contains("helicity_minus"))
+                            gum = draw_hel_curve(jb_before["helicity_minus"], 26 /*open triangle*/, kGray+2);
+                    }
+                    TGraphErrors* gcp = nullptr;
+                    TGraphErrors* gcm = nullptr;
+                    if (jb_after.contains("helicity_plus"))
+                        gcp = draw_hel_curve(jb_after["helicity_plus"],  20 /*filled circle*/,  kBlue+1);
+                    if (jb_after.contains("helicity_minus"))
+                        gcm = draw_hel_curve(jb_after["helicity_minus"], 25 /*filled square*/,  kRed+1);
+
+                    // per-panel label (Q2,t) — match sizes/placement from rad code
+                    TLatex lab;
+                    lab.SetNDC(); lab.SetTextSize(0.07); lab.SetTextAlign(11);
+                    lab.SetTextFont(42);
+                    lab.DrawLatex(0.15, 0.94,
+                        Form("Q^{2} #in [%.2g, %.2g], -t #in [%.2g, %.2g]",
+                             Q2_slice[cc].first, Q2_slice[cc].second,
+                             t_slice[r].first,   t_slice[r].second));
+
+                    // bottom-left legend (match rad code)
+                    if (gcp || gcm || gup || gum){
+                        double x1=0.16, y1=0.18, x2=0.56 , y2=0.42;
+                        TLegend* leg = new TLegend(x1,y1,x2,y2);
+                        leg->SetBorderSize(1);
+                        leg->SetLineColor(kBlack);
+                        leg->SetFillColor(kWhite);
+                        leg->SetFillStyle(1001);
+                        leg->SetTextFont(42);
+                        leg->SetTextSize(0.048);
+                        if (gcp) leg->AddEntry(gcp, "bin-centered  + helicity", "lep");
+                        if (gcm) leg->AddEntry(gcm, "bin-centered  - helicity", "lep");
+                        if (gup) leg->AddEntry(gup, "before BC     + helicity", "lep");
+                        if (gum) leg->AddEntry(gum, "before BC     - helicity", "lep");
+                        leg->Draw();
+                    } //endif
+                } //endfor cols
+            } //endfor rows
+
+            const std::string outP =
+                (fs::path(plots_output_dir) / (std::string("bin_centered_xsec_") + E + "_xB_" + std::to_string(ix) + (overlay ? "_overlay.png" : ".png"))).string();
+            c->SaveAs(outP.c_str());
+            delete c;
+        } //endfor xB
+    }; //end lambda makeCanvasSet
+
+    for (const auto& E : energies) {
+        const std::string before_path = (fs::path(radcorr_xsec_json_dir) / ("rad_corrected_xsec_" + E + ".json")).string();
+        const std::string after_path  = (fs::path(bincenter_json_dir)    / ("bin_centered_xsec_" + E + ".json")).string();
+
+        if (!fs::exists(after_path)) {
+            std::cout << "[bincenter-plot] Skip E=" << E << " (missing " << after_path << ")\n";
             continue;
-        } //endif
-
-        // Save JSON for this energy
-        {
-            const std::string out_json =
-                (fs::path(output_dir)/"jsons"/("bin_centered_xsec_"+E+".json")).string();
-            std::cout << "[bincenter] Saving results to: " << out_json << std::endl;
-            save_json(jout, out_json);
-            std::cout << "[bincenter] Successfully wrote " << out_json << "\n";
         }
 
-        // Plot helper (not parallelized since ROOT is not thread-safe)
-        auto makeCanvas = [&](bool overlay){
-            std::cout << "[bincenter] Generating " << (overlay ? "overlay" : "corrected-only") << " plots for E=" << E << std::endl;
-            for (int ix = 0; ix < (int)xB_bins.size(); ++ix) {
-                const auto xb = xB_bins[ix];
+        json j_before = load_json(before_path); // may be empty if missing; overlay will just omit
+        json j_after  = load_json(after_path);
 
-                std::set<std::pair<double,double>> qs, ts;
-                for (const auto& b : binning_scheme) {
-                    if (std::make_pair(b.xBmin,b.xBmax) == xb) {
-                        qs.emplace(b.Q2min,b.Q2max);
-                        ts.emplace(b.tmin,b.tmax);
-                    } //endif
-                } //endfor
-                std::vector<std::pair<double,double>> Q2_slice(qs.begin(), qs.end());
-                std::vector<std::pair<double,double>> t_slice(ts.begin(), ts.end());
-                if (Q2_slice.empty() || t_slice.empty()) continue;
+        if (j_after.is_null() || !j_after.contains("bins")) {
+            std::cout << "[bincenter-plot] Malformed after-BC JSON for E=" << E << "\n";
+            continue;
+        }
 
-                const int nrows = (int)t_slice.size();
-                const int ncols = (int)Q2_slice.size();
-                const int W = 280*ncols + 160;
-                const int H = 240*nrows + 170;
+        std::cout << "[bincenter-plot] Plotting E=" << E << "\n";
+        makeCanvasSet(E, j_before, j_after, false); // corrected-only
+        makeCanvasSet(E, j_before, j_after, true);  // before vs after
+    } //endfor energies
 
-                std::ostringstream cname;
-                cname << "c_bincenter_"<<E<<"_xB"<<ix<<(overlay ? "_overlay" : "_bc");
-                TCanvas* c = new TCanvas(cname.str().c_str(), cname.str().c_str(), W, H);
-
-                TPad* pTop  = new TPad("pTop","pTop", 0.0, 0.915, 1.0, 1.0);
-                pTop->SetFillStyle(0); pTop->SetBorderSize(0); pTop->Draw();
-
-                TPad* pGrid = new TPad("pGrid","pGrid", 0.0, 0.00, 1.0, 0.915);
-                pGrid->SetFillStyle(0); pGrid->SetBorderSize(0); pGrid->Draw();
-                pGrid->cd();
-                pGrid->Divide(ncols, nrows, 0.0001, 0.0001);
-
-                // Title
-                pTop->cd();
-                TLatex head;
-                head.SetNDC(); head.SetTextAlign(22);
-                head.SetTextFont(42);
-                head.SetTextSize(0.36);
-                std::ostringstream tit;
-                tit << (overlay ? "Before vs. After Bin-Centering d#sigma/d#phi"
-                                : "Bin-Centered d#sigma/d#phi");
-                tit << Form("  %s GeV   x_{B} in [%.2g, %.2g]", E.c_str(), xb.first, xb.second);
-                head.DrawLatex(0.5, 0.55, tit.str().c_str());
-
-                for (int r=0; r<nrows; ++r) {
-                    const int it_global = findIndex(t_slice[r], t_all);
-                    if (it_global < 0) continue;
-                    for (int cc=0; cc<ncols; ++cc) {
-                        const int iQ_global = findIndex(Q2_slice[cc], Q2_all);
-                        if (iQ_global < 0) continue;
-
-                        pGrid->cd(r*ncols + cc + 1);
-                        gPad->SetGrid(1,1);
-                        gPad->SetTopMargin(0.08);
-                        gPad->SetBottomMargin(0.18);
-                        gPad->SetLeftMargin(0.15);
-                        gPad->SetRightMargin(0.10);
-                        gPad->SetLogy();
-
-                        TH1* frame = gPad->DrawFrame(0.0, 1e-4, 360.0, 1.0);
-                        frame->GetXaxis()->SetLabelSize(0.0001);
-                        frame->GetXaxis()->SetTitle("#phi (deg)");
-                        frame->GetYaxis()->SetTitle(overlay ? "d#sigma/d#phi" : "d#sigma/d#phi (bin-centered)");
-                        frame->GetXaxis()->CenterTitle();
-                        frame->GetYaxis()->CenterTitle();
-                        frame->GetXaxis()->SetNdivisions(505);
-                        frame->GetXaxis()->SetTitleSize(0.060);
-                        frame->GetYaxis()->SetTitleSize(0.060);
-                        frame->GetYaxis()->SetLabelSize(0.048);
-                        frame->GetXaxis()->SetTitleOffset(1.25);
-                        frame->GetYaxis()->SetTitleOffset(1.35);
-
-                        drawDegreeTicks(gPad->GetUxmin(), gPad->GetUymin(), gPad->GetUxmax(), 0.048);
-
-                        const std::string bkey =
-                            "(" + std::to_string(ix) + "," + std::to_string(iQ_global) + "," + std::to_string(it_global) + ")";
-
-                        if (!jout["bins"].contains(bkey)) continue;
-                        const json& jb_bc = jout["bins"][bkey];
-
-                        const bool have_before = overlay && j_rc["bins"].contains(bkey);
-                        const json& jb_before = have_before ? j_rc["bins"][bkey] : json::object();
-
-                        // draw order: before first, after second
-                        TGraphErrors* gup = nullptr;
-                        TGraphErrors* gum = nullptr;
-                        if (have_before) {
-                            gup = draw_hel_curve(jb_before["helicity_plus"],  24, kGray+2, frame);
-                            gum = draw_hel_curve(jb_before["helicity_minus"], 26, kGray+2, frame);
-                        } //endif
-                        TGraphErrors* gcp = draw_hel_curve(jb_bc["helicity_plus"],  20, kBlue+1, frame);
-                        TGraphErrors* gcm = draw_hel_curve(jb_bc["helicity_minus"], 25, kRed+1,  frame);
-                    } //endfor
-                } //endfor
-
-                const std::string outP =
-                    (fs::path(output_dir)/"plots"/(std::string("bin_centered_xsec_")+E+"_xB_"+std::to_string(ix)+(overlay ? "_overlay.png" : ".png"))).string();
-                c->SaveAs(outP.c_str());
-                delete c;
-            } //endfor
-        }; //enddef
-
-        makeCanvas(false); // after BC only
-        makeCanvas(true);  // before vs after BC
-        
-        std::cout << "[bincenter] Completed processing for E = " << E << std::endl;
-    } //endfor
-
-    std::cout << "[bincenter] ===========================================" << std::endl;
-    std::cout << "[bincenter] Finished bin-centering correction." << std::endl;
+    std::cout << "[bincenter-plot] Finished plotting bin-centered cross sections.\n";
 } //enddef
