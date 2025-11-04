@@ -590,7 +590,7 @@ static void plot_group_counts(
         gSystem->ProcessEvents();
         gROOT->GetListOfCanvases()->Delete();
         std::this_thread::sleep_for(std::chrono::milliseconds(2));
-        gSystem->CollectGarbage();
+        // Note: gSystem->CollectGarbage() removed as it doesn't exist
     }
 }
 
@@ -618,9 +618,8 @@ void compute_total_counts(
     gErrorIgnoreLevel = kError;  // Reduce ROOT verbosity
     gSystem->ResetSignals();     // Disable ROOT's signal handling which can interfere
     
-    // Force garbage collection before starting
+    // Force cleanup before starting
     gSystem->ProcessEvents();
-    gSystem->CollectGarbage();
     std::this_thread::sleep_for(std::chrono::milliseconds(5));
 
     // Axes
@@ -643,8 +642,7 @@ void compute_total_counts(
 
     std::map<std::string, std::map<std::tuple<int,int,int,int>, HelCounts>> allGroupsByLabel;
 
-    // Pre-allocate memory for critical structures
-    allGroupsByLabel.reserve(periods.size());
+    // Note: std::map doesn't have reserve(), removed that line
 
     // Per period
     for (const auto& period_key : periods) {
@@ -749,7 +747,6 @@ void compute_total_counts(
 
         // Force memory synchronization and ROOT cleanup before critical operation
         gSystem->ProcessEvents();
-        gSystem->CollectGarbage();
         std::this_thread::sleep_for(std::chrono::milliseconds(10));
 
         // Use try-catch and verify insertion with insert instead of emplace
@@ -778,7 +775,6 @@ void compute_total_counts(
 
         // Small breather for ROOT global bookkeeping
         gSystem->ProcessEvents();
-        gSystem->CollectGarbage();
         std::this_thread::sleep_for(std::chrono::milliseconds(5));
 
         fence("period.end " + label_str);
