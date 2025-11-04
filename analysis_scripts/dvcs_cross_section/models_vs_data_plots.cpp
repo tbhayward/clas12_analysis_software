@@ -477,17 +477,64 @@ static std::pair<double,double> computeYRangePanel(
     ymax *= 2.0;
     return {ymin, ymax};
 }
+
+
+
 // ============================================================
 // 2) FAST STEP: plot using saved predictions + bin-centered data
-//    - Single legend at top (no overlap with subplots)
-//    - Extra left margin so y labels don't clip
-//    - Dynamic y-range per panel (no shared canvas range)
 // ============================================================
+static std::pair<double,double> panelYRangeLogSafe(const json& j_bc_cell,
+                                                   const json* j_pred_cell) {
+    auto scanHel = [](const json& H, double& gmin, double& gmax){
+        if (!H.contains("xsec") || !H.contains("xsec_err")) return;
+        const auto& y  = H["xsec"];
+        const auto& ey = H["xsec_err"];
+        for (int i=0;i<N_PHI_BINS;++i){
+            const double v  = jgetd(y,  i, 0.0);
+            const double dv = std::max(0.0, jgetd(ey, i, 0.0));
+            if (v > 0.0) {
+                gmin = std::min(gmin, std::max(1e-12, v - dv));
+                gmax = std::max(gmax, v + dv);
+            }
+        }
+    };
+
+    double gmin = 1e10, gmax = -1e10;
+
+    // data
+    if (j_bc_cell.contains("helicity_plus"))  scanHel(j_bc_cell["helicity_plus"],  gmin, gmax);
+    if (j_bc_cell.contains("helicity_minus")) scanHel(j_bc_cell["helicity_minus"], gmin, gmax);
+
+    // predictions
+    if (j_pred_cell){
+        auto scanVec = [&](const char* key){
+            if (!j_pred_cell->contains(key)) return;
+            const auto& a = (*j_pred_cell)[key];
+            for (size_t i=0;i<a.size();++i){
+                const double v = jgetd(a, i, 0.0);
+                if (positive(v)) { gmin = std::min(gmin, v); gmax = std::max(gmax, v); }
+            }
+        };
+        scanVec("km15_plus");  scanVec("km15_minus");
+        scanVec("vgg_plus");   scanVec("vgg_minus");
+        scanVec("bh");
+    }
+
+    // fallbacks + log padding
+    if (!(gmax > 0.0)) { gmin = 1e-4; gmax = 1.0; }
+    double ymin10 = std::pow(10.0, std::floor(std::log10(std::max(1e-12, gmin))));
+    double ymax10 = std::pow(10.0, std::ceil (std::log10(gmax)));
+    gmin = std::max(1e-4, ymin10*0.8);
+    gmax = ymax10*1.25;
+    if (gmax <= gmin) gmax = gmin*10.0; // safety
+    return {gmin, gmax};
+}
+
 void plot_models_vs_bincentered(
     const std::vector<Binning>& binning_scheme,
-    const std::string& bincenter_json_dir,     // bin_centered_xsec_<E>.json (data points)
-    const std::string& predictions_json_dir,   // model_predictions_<E>.json (precomputed curves)
-    const std::string& output_dir,             // PNGs go under output_dir/plots
+    const std::string& bincenter_json_dir,     // bin_centered_xsec_<E>.json (data)
+    const std::string& predictions_json_dir,   // model_predictions_<E>.json (curves)
+    const std::string& output_dir,             // PNGs under output_dir/plots
     int /*phi_dense_unused*/
 ) {
     log_info("Starting models vs. bin-centered plotting (using saved predictions)...");
@@ -512,29 +559,17 @@ void plot_models_vs_bincentered(
         const std::string bc_path   = (fs::path(bincenter_json_dir)   / ("bin_centered_xsec_" + E + ".json")).string();
         const std::string pred_path = (fs::path(predictions_json_dir) / ("model_predictions_" + E + ".json")).string();
 
-        if (!fs::exists(pred_path)) {
-            log_warn("Missing predictions for E=" + E + " at " + pred_path + " (skipping plots).");
-            continue;
-        }
-        if (!fs::exists(bc_path)) {
-            log_warn("Missing bin-centered data for E=" + E + " at " + bc_path + " (skipping plots).");
-            continue;
-        }
+        if (!fs::exists(pred_path)) { log_warn("Missing predictions for E=" + E + " at " + pred_path + " (skipping)."); continue; }
+        if (!fs::exists(bc_path))   { log_warn("Missing bin-centered data for E=" + E + " at " + bc_path + " (skipping)."); continue; }
 
         log_info("Energy " + E + " (" + std::to_string(ecount) + "/" + std::to_string(energies.size()) + "):");
-        log_info("  loading data " + bc_path);
+        log_info("  loading data  " + bc_path);
         log_info("  loading preds " + pred_path);
 
         json j_bc   = load_json(bc_path);
         json j_pred = load_json(pred_path);
-        if (j_bc.empty() || !j_bc.contains("bins")) {
-            log_warn("Malformed bin-centered JSON for E=" + E + ". Skipping.");
-            continue;
-        }
-        if (j_pred.empty() || !j_pred.contains("bins")) {
-            log_warn("Malformed predictions JSON for E=" + E + ". Skipping.");
-            continue;
-        }
+        if (j_bc.empty()   || !j_bc.contains("bins"))  { log_warn("Malformed bin-centered JSON for E=" + E + ". Skipping."); continue; }
+        if (j_pred.empty() || !j_pred.contains("bins")){ log_warn("Malformed predictions JSON for E=" + E + ". Skipping."); continue; }
 
         for (int ix = 0; ix < (int)xB_bins.size(); ++ix) {
             const auto xb = xB_bins[ix];
@@ -552,101 +587,63 @@ void plot_models_vs_bincentered(
 
             const int nrows = (int)t_slice.size();
             const int ncols = (int)Q2_slice.size();
-            const int W = 280*ncols + 160;
-            const int H = 240*nrows + 170;
 
-            std::ostringstream cname;
-            cname << "c_models_" << E << "_xB" << ix;
+            const int W = 320*ncols + 220;     // give more horizontal room
+            const int H = 260*nrows + 260;     // extra space for title+legend
 
+            std::ostringstream cname; cname << "c_models_"<<E<<"_xB"<<ix;
             log_info("xB slice " + std::to_string(ix) + ": grid " + std::to_string(nrows) + "x" + std::to_string(ncols));
 
             auto t_canvas_start = std::chrono::steady_clock::now();
 
             TCanvas* c = new TCanvas(cname.str().c_str(), cname.str().c_str(), W, H);
+            c->cd();
 
-            // Expand the top band a bit to fit a single legend + title cleanly.
-            // Top pad: y in [0.86, 1.00]; grid pad: y in [0.00, 0.86]
-            TPad* pTop  = new TPad("pTop","pTop", 0.0, 0.86, 1.0, 1.0);
+            // Top band: title + single legend
+            TPad* pTop = new TPad("pTop","pTop", 0.0, 0.90, 1.0, 1.0);
             pTop->SetFillStyle(0); pTop->SetBorderSize(0); pTop->Draw();
-
-            // Split the top band into title (left) and legend (right)
             pTop->cd();
-            TPad* pTitle  = new TPad("pTitle","pTitle", 0.00, 0.00, 0.55, 1.00);
-            TPad* pLegend = new TPad("pLegend","pLegend",0.55, 0.00, 1.00, 1.00);
-            pTitle->SetFillStyle(0);  pTitle->SetBorderSize(0);
-            pLegend->SetFillStyle(0); pLegend->SetBorderSize(0);
-            pTitle->Draw(); pLegend->Draw();
 
-            TPad* pGrid = new TPad("pGrid","pGrid", 0.0, 0.00, 1.0, 0.86);
-            pGrid->SetFillStyle(0); pGrid->SetBorderSize(0); pGrid->Draw();
-            pGrid->cd();
-            pGrid->Divide(ncols, nrows, 0.0001, 0.0001);
-
-            // Title (left of top band)
-            pTitle->cd();
-            TLatex head;
-            head.SetNDC(); head.SetTextAlign(13);
-            head.SetTextFont(42);
-            head.SetTextSize(0.35); // relative to the top pad (bigger number OK here)
+            // Title
+            TLatex head; head.SetNDC(); head.SetTextAlign(22); head.SetTextFont(42); head.SetTextSize(0.40);
             std::ostringstream tit;
             tit << "models vs. bin-centered d#sigma/d#phi"
-                << Form("  %s GeV  x_{B} #in [%.2g, %.2g]", E.c_str(), xb.first, xb.second);
-            head.DrawLatex(0.02, 0.55, tit.str().c_str());
+                << Form("   %s GeV,  x_{B} #in [%.2g, %.2g]", E.c_str(), xb.first, xb.second);
+            head.DrawLatex(0.50, 0.68, tit.str().c_str());
 
-            // Single legend (right of top band) with proxy objects
-            pLegend->cd();
-            std::vector<TObject*> proxies;
+            // Global legend (compact, single row)
+            // Build tiny dummy objects so the legend shows both markers and lines
+            TGraph dp; dp.SetMarkerStyle(20); dp.SetMarkerColor(kBlue+1);
+            TGraph dm; dm.SetMarkerStyle(25); dm.SetMarkerColor(kRed+1);
+            TGraph km; km.SetLineColor(kBlue+1); km.SetLineStyle(2); km.SetLineWidth(3);
+            TGraph kn; kn.SetLineColor(kRed+1);  kn.SetLineStyle(2); kn.SetLineWidth(3);
+            TGraph vg; vg.SetLineColor(kBlue+1); vg.SetLineStyle(3); vg.SetLineWidth(3);
+            TGraph vn; vn.SetLineColor(kRed+1);  vn.SetLineStyle(3); vn.SetLineWidth(3);
+            TGraph bh; bh.SetLineColor(kBlack);  bh.SetLineStyle(2); bh.SetLineWidth(3);
 
-            auto makeProxyMarker = [&](int mstyle, int color)->TGraph* {
-                auto* g = new TGraph(1);
-                g->SetPoint(0, 0.0, 0.0);
-                g->SetMarkerStyle(mstyle);
-                g->SetMarkerSize(1.0);
-                g->SetMarkerColor(color);
-                g->SetLineColor(color);
-                proxies.push_back(g);
-                return g;
-            };
-            auto makeProxyLine = [&](int color, int lstyle)->TGraph* {
-                auto* g = new TGraph(2);
-                g->SetPoint(0, 0.0, 0.0);
-                g->SetPoint(1, 1.0, 0.0);
-                g->SetLineColor(color);
-                g->SetLineWidth(3);
-                g->SetLineStyle(lstyle);
-                proxies.push_back(g);
-                return g;
-            };
-
-            TLegend* legTop = new TLegend(0.02, 0.10, 0.98, 0.90);
-            legTop->SetBorderSize(1);
-            legTop->SetLineColor(kBlack);
-            legTop->SetFillColor(kWhite);
-            legTop->SetFillStyle(1001);
+            TLegend* legTop = new TLegend(0.08, 0.10, 0.92, 0.56);
+            legTop->SetNColumns(5);
+            legTop->SetBorderSize(0);
+            legTop->SetFillStyle(0);
             legTop->SetTextFont(42);
-            legTop->SetTextSize(0.18);
-
-            // Data proxies
-            auto* p_plus  = makeProxyMarker(20, kBlue+1);
-            auto* p_minus = makeProxyMarker(25, kRed+1);
-            legTop->AddEntry(p_plus,  "+ helicity (data)", "p");
-            legTop->AddEntry(p_minus, "- helicity (data)", "p");
-
-            // Model proxies
-            auto* l_km_p = makeProxyLine(kBlue+1, 2);
-            auto* l_km_m = makeProxyLine(kRed+1,  2);
-            auto* l_vg_p = makeProxyLine(kBlue+1, 3);
-            auto* l_vg_m = makeProxyLine(kRed+1,  3);
-            auto* l_bh   = makeProxyLine(kBlack,  2);
-
-            legTop->AddEntry(l_km_p, "KM15 + (dashed)", "l");
-            legTop->AddEntry(l_km_m, "KM15 - (dashed)", "l");
-            legTop->AddEntry(l_vg_p, "VGG + (dotted)",  "l");
-            legTop->AddEntry(l_vg_m, "VGG - (dotted)",  "l");
-            legTop->AddEntry(l_bh,   "BH exact (dashed)","l");
+            legTop->SetTextSize(0.22);
+            legTop->AddEntry(&dp, "+ helicity (data)", "p");
+            legTop->AddEntry(&dm, "- helicity (data)", "p");
+            legTop->AddEntry(&km, "KM15 + (dashed)",  "l");
+            legTop->AddEntry(&kn, "KM15 - (dashed)",  "l");
+            legTop->AddEntry(&vg, "VGG + (dotted)",   "l");
+            legTop->AddEntry(&vn, "VGG - (dotted)",   "l");
+            legTop->AddEntry(&bh, "BH exact",         "l");
             legTop->Draw();
 
-            // Draw panels (with dynamic y-range per panel)
+            // Grid pad below
+            c->cd();
+            TPad* pGrid = new TPad("pGrid","pGrid", 0.0, 0.00, 1.0, 0.90);
+            pGrid->SetFillStyle(0); pGrid->SetBorderSize(0); pGrid->Draw();
+            pGrid->cd();
+            pGrid->Divide(ncols, nrows, 0.00, 0.00);
+
+            // Draw panels
             for (int r=0; r<nrows; ++r) {
                 const int it_global = findIndex(t_slice[r], t_all);
                 if (it_global < 0) continue;
@@ -658,21 +655,22 @@ void plot_models_vs_bincentered(
                         "(" + std::to_string(ix) + "," + std::to_string(iQ_global) + "," + std::to_string(it_global) + ")";
                     log_info("Plotting panel " + bkey + "...");
 
-                    // Panel-specific y-range
-                    auto [ymin_panel, ymax_panel] = computeYRangePanel(
-                        j_bc["bins"], j_pred["bins"], bkey);
-                    if (!(ymax_panel > ymin_panel)) { ymin_panel = 1e-4; ymax_panel = 1.0; }
-
                     pGrid->cd(r*ncols + cc + 1);
                     gPad->SetGrid(1,1);
-                    gPad->SetTopMargin(0.08);
+                    gPad->SetTicks(1,1);
+                    gPad->SetTopMargin(0.06);
                     gPad->SetBottomMargin(0.18);
-                    gPad->SetLeftMargin(0.16);   // a touch more than 0.125 to avoid clipping
-                    gPad->SetRightMargin(0.10);
+                    gPad->SetLeftMargin(0.18);     // more left padding so labels do not clip
+                    gPad->SetRightMargin(0.08);
                     gPad->SetLogy();
 
+                    const json* jb_cell   = (j_bc["bins"].contains(bkey)   ? &j_bc["bins"][bkey]   : nullptr);
+                    const json* jp_cell   = (j_pred["bins"].contains(bkey) ? &j_pred["bins"][bkey] : nullptr);
+
+                    // Dynamic y-range per panel (log-safe)
+                    auto [ymin_panel, ymax_panel] = panelYRangeLogSafe(jb_cell ? *jb_cell : json::object(), jp_cell);
+
                     TH1* frame = gPad->DrawFrame(0.0, ymin_panel, 360.0, ymax_panel);
-                    frame->GetXaxis()->SetLabelSize(0.0001);
                     frame->GetXaxis()->SetTitle("#phi (deg)");
                     frame->GetYaxis()->SetTitle("d#sigma/d#phi (bin-centered)");
                     frame->GetXaxis()->CenterTitle();
@@ -680,32 +678,25 @@ void plot_models_vs_bincentered(
                     frame->GetXaxis()->SetNdivisions(505);
                     frame->GetXaxis()->SetTitleSize(0.060);
                     frame->GetYaxis()->SetTitleSize(0.060);
-                    frame->GetYaxis()->SetLabelSize(0.048);
-                    frame->GetXaxis()->SetTitleOffset(1.25);
-                    frame->GetYaxis()->SetTitleOffset(1.35);
+                    frame->GetYaxis()->SetLabelSize(0.050);
+                    frame->GetXaxis()->SetLabelSize(0.050);
+                    frame->GetXaxis()->SetTitleOffset(1.10);
+                    frame->GetYaxis()->SetTitleOffset(1.55);
 
-                    drawDegreeTicks(gPad->GetUxmin(), gPad->GetUymin(), gPad->GetUxmax(), 0.048);
+                    drawDegreeTicks(gPad->GetUxmin(), gPad->GetUymin(), gPad->GetUxmax(), 0.050);
 
-                    // Data points
+                    // Data
                     double ymax_seen = 0.0;
-                    if (j_bc["bins"].contains(bkey)) {
-                        const json& jb = j_bc["bins"][bkey];
-                        if (jb.contains("helicity_plus"))
-                            draw_data_hel(jb["helicity_plus"],  20, kBlue+1, frame, ymax_seen);
-                        if (jb.contains("helicity_minus"))
-                            draw_data_hel(jb["helicity_minus"], 25, kRed+1,  frame, ymax_seen);
+                    if (jb_cell){
+                        if (jb_cell->contains("helicity_plus"))
+                            draw_data_hel((*jb_cell)["helicity_plus"],  20, kBlue+1, frame, ymax_seen);
+                        if (jb_cell->contains("helicity_minus"))
+                            draw_data_hel((*jb_cell)["helicity_minus"], 25, kRed+1,  frame, ymax_seen);
                     } else {
                         log_warn("No data for " + bkey + " (panel will show models only).");
                     }
 
-                    // Models from predictions
-                    const json* pb = nullptr;
-                    if (j_pred["bins"].contains(bkey)) {
-                        pb = &j_pred["bins"][bkey];
-                    } else {
-                        log_warn("No predictions for " + bkey + " (panel will show data only).");
-                    }
-
+                    // Model curves
                     auto makeLine = [&](const std::vector<double>& xv, const std::vector<double>& yv,
                                         int color, int lstyle)->TGraph* {
                         auto* gr = new TGraph((int)xv.size(),
@@ -718,56 +709,49 @@ void plot_models_vs_bincentered(
                         return gr;
                     };
 
-                    if (pb) {
-                        std::vector<double> ph; ph.reserve((*pb)["phi_deg"].size());
-                        for (size_t i=0; i<(*pb)["phi_deg"].size(); ++i)
-                            ph.push_back(jgetd((*pb)["phi_deg"], i, 0.0));
-                        std::vector<double> v; v.reserve(ph.size());
+                    if (jp_cell){
+                        std::vector<double> ph, v;
+                        ph.reserve((*jp_cell)["phi_deg"].size());
+                        for (size_t i=0;i<(*jp_cell)["phi_deg"].size();++i)
+                            ph.push_back(jgetd((*jp_cell)["phi_deg"], i, 0.0));
 
                         auto pull = [&](const char* key, int color, int style)->TGraph* {
-                            if (!pb->contains(key)) return nullptr;
+                            if (!jp_cell->contains(key)) return nullptr;
                             v.clear(); v.reserve(ph.size());
-                            for (size_t i=0; i<ph.size(); ++i) v.push_back(jgetd((*pb)[key], i, 0.0));
+                            for (size_t i=0;i<ph.size();++i) v.push_back(jgetd((*jp_cell)[key], i, 0.0));
                             return makeLine(ph, v, color, style);
                         };
 
-                        // KM15 dashed
                         pull("km15_plus",  kBlue+1, 2);
                         pull("km15_minus", kRed+1,  2);
-                        // VGG dotted
                         pull("vgg_plus",   kBlue+1, 3);
                         pull("vgg_minus",  kRed+1,  3);
-                        // BH dashed black
                         pull("bh",         kBlack,  2);
+                    } else {
+                        log_warn("No predictions for " + bkey + " (panel will show data only).");
                     }
 
-                    // Panel label
-                    TLatex lab;
-                    lab.SetNDC(); lab.SetTextSize(0.07); lab.SetTextAlign(11);
-                    lab.SetTextFont(42);
+                    // per-panel label
+                    TLatex lab; lab.SetNDC(); lab.SetTextSize(0.070); lab.SetTextAlign(11); lab.SetTextFont(42);
                     lab.DrawLatex(0.15, 0.94,
-                        Form("Q^{2} #in [%.2g, %.2g], -t #in [%.2g, %.2g]",
+                        Form("Q^{2} #in [%.2g, %.2g],  -t #in [%.2g, %.2g]",
                              Q2_slice[cc].first, Q2_slice[cc].second,
                              t_slice[r].first,   t_slice[r].second));
 
                     log_info("Panel " + bkey + " done.");
-                } // cols
-            } // rows
+                }
+            }
 
             const std::string outP =
                 (fs::path(output_dir)/"plots"/(std::string("models_vs_bincentered_")+E+"_xB_"+std::to_string(ix)+".png")).string();
             c->SaveAs(outP.c_str());
-
-            // Clean up top-legend proxies
-            for (auto* o : proxies) delete o;
-
             delete c;
 
             auto t_canvas_end = std::chrono::steady_clock::now();
             auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(t_canvas_end - t_canvas_start).count();
             log_info("Saved " + outP + " (" + std::to_string(ms) + " ms).");
-        } // xB slices
-    } // energies
+        }
+    }
 
     log_info("Finished models vs. bin-centered plotting.");
 }
