@@ -150,13 +150,19 @@ static std::pair<double, double> calculateYRangeForCanvas(const json& jout_bins,
         global_min = 1e-4;
         global_max = 1.0;
     } else {
-        // Round down to nearest power of 10 below min
-        global_min = std::pow(10.0, std::floor(std::log10(global_min)));
+        // Round down to nearest power of 10 below min, but set a floor of 1e-4
+        double calculated_min = std::pow(10.0, std::floor(std::log10(global_min)));
+        global_min = std::max(1e-4, calculated_min); // Use 1e-4 as minimum, or calculated if higher
+        
         // Round up to nearest power of 10 above max
         global_max = std::pow(10.0, std::ceil(std::log10(global_max)));
+        
         // Add some padding
         global_min *= 0.5;
         global_max *= 2.0;
+        
+        // Ensure we don't go below our global minimum after padding
+        global_min = std::max(1e-4, global_min);
     }
     
     return {global_min, global_max};

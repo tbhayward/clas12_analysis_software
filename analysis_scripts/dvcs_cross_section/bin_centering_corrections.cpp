@@ -179,6 +179,11 @@ static void compute_fbin_for_point(
     double sum_km15 = 0.0; int cnt_km15 = 0;
     double sum_vgg  = 0.0; int cnt_vgg  = 0;
 
+    // Status update for detailed progress
+    std::cout << "[bincenter]       Computing bin-centering factors: " 
+              << nx << "×" << nQ << "×" << nt << "×" << np << " = " 
+              << (nx * nQ * nt * np) << " sub-bins" << std::endl;
+
     for (double xb : xs){
         for (double q2 : Qs){
             for (double tp : ts){
@@ -240,6 +245,9 @@ void compute_bin_centered_cross_sections(
     const ModelPaths& paths,
     bool vgg_globalfit
 ) {
+    std::cout << "[bincenter] Starting bin-centering corrections..." << std::endl;
+    std::cout << "[bincenter] Creating output directories..." << std::endl;
+    
     fs::create_directories(output_dir);
     fs::create_directories(fs::path(output_dir)/"jsons");
     fs::create_directories(fs::path(output_dir)/"plots");
@@ -252,7 +260,15 @@ void compute_bin_centered_cross_sections(
     // Keep 10.59 in the list; we will silently skip if it is not available yet.
     const std::vector<std::string> energies = {"10.59","10.60","10.2"};
 
+    int total_energy_count = energies.size();
+    int current_energy_index = 0;
+
     for (const auto& E : energies) {
+        current_energy_index++;
+        std::cout << "[bincenter] ===========================================" << std::endl;
+        std::cout << "[bincenter] Processing energy E = " << E << " (" 
+                  << current_energy_index << "/" << total_energy_count << ")" << std::endl;
+
         const std::string rc_path =
             (fs::path(radcorr_xsec_json_dir) / ("rad_corrected_xsec_" + E + ".json")).string();
 
@@ -263,6 +279,7 @@ void compute_bin_centered_cross_sections(
         } //endif
 
         // Load and validate
+        std::cout << "[bincenter] Loading radiative corrections from: " << rc_path << std::endl;
         json j_rc = load_json(rc_path);
         if (j_rc.is_null() || j_rc.empty() || !j_rc.contains("bins")) {
             std::cout << "[bincenter] Skipping E=" << E << " (RC file present but malformed)\n";
@@ -274,9 +291,16 @@ void compute_bin_centered_cross_sections(
         jout["energy"] = E;
         jout["bins"]   = json::object();
 
+        int total_xb_bins = xB_bins.size();
+        int current_xb_index = 0;
+
         // Loop the physics bins
-        for (int ix = 0; ix < (int)xB_bins.size(); ++ix) {
+        for (int ix = 0; ix < total_xb_bins; ++ix) {
+            current_xb_index++;
             const auto xb = xB_bins[ix];
+
+            std::cout << "[bincenter]   Processing xB bin " << current_xb_index << "/" << total_xb_bins 
+                      << ": [" << xb.first << ", " << xb.second << "]" << std::endl;
 
             // Slices that actually occur for this xB in the scheme
             std::set<std::pair<double,double>> qs, ts;
@@ -289,25 +313,52 @@ void compute_bin_centered_cross_sections(
             std::vector<std::pair<double,double>> Q2_slice(qs.begin(), qs.end());
             std::vector<std::pair<double,double>> t_slice(ts.begin(),  ts.end());
 
+            int total_q2_bins = Q2_slice.size();
+            int total_t_bins = t_slice.size();
+            int current_bin_count = 0;
+            int total_bins_for_xb = total_q2_bins * total_t_bins;
+
+            std::cout << "[bincenter]     Found " << total_q2_bins << " Q2 bins and " 
+                      << total_t_bins << " t bins (" << total_bins_for_xb << " total bins)" << std::endl;
+
             for (const auto& q2r : Q2_slice) {
                 const int iQ_global = findIndex(q2r, Q2_all);
                 if (iQ_global < 0) continue;
                 for (const auto& tr : t_slice) {
+                    current_bin_count++;
                     const int it_global = findIndex(tr, t_all);
                     if (it_global < 0) continue;
 
                     const std::string bkey =
                         "(" + std::to_string(ix) + "," + std::to_string(iQ_global) + "," + std::to_string(it_global) + ")";
 
-                    if (!j_rc["bins"].contains(bkey)) continue;
+                    std::cout << "[bincenter]     Processing bin " << current_bin_count << "/" << total_bins_for_xb 
+                              << ": Q2[" << q2r.first << ", " << q2r.second 
+                              << "], t[" << tr.first << ", " << tr.second << "]" << std::endl;
+
+                    if (!j_rc["bins"].contains(bkey)) {
+                        std::cout << "[bincenter]       WARNING: No data found for bin key " << bkey << std::endl;
+                        continue;
+                    }
                     const json& cell_in = j_rc["bins"][bkey];
-                    if (!has_bc_cell(cell_in)) continue;
+                    if (!has_bc_cell(cell_in)) {
+                        std::cout << "[bincenter]       WARNING: Cell data malformed for bin key " << bkey << std::endl;
+                        continue;
+                    }
 
                     auto do_one_hel = [&](const char* node, Helicity hel)->json{
                         json out;
-                        if (!cell_in.contains(node)) return out;
+                        if (!cell_in.contains(node)) {
+                            std::cout << "[bincenter]       WARNING: No " << node << " data found" << std::endl;
+                            return out;
+                        }
                         const json& h = cell_in[node];
-                        if (!has_bins12(h)) return out;
+                        if (!has_bins12(h)) {
+                            std::cout << "[bincenter]       WARNING: " << node << " data malformed" << std::endl;
+                            return out;
+                        }
+
+                        std::cout << "[bincenter]       Processing " << node << "..." << std::endl;
 
                         const auto& phi = h["phi"];
                         const auto& xs  = h["xsec"];
@@ -317,6 +368,8 @@ void compute_bin_centered_cross_sections(
                         std::vector<double> fbin_used(N_PHI_BINS, 1.0), fbin_km15(N_PHI_BINS, 1.0), fbin_vgg(N_PHI_BINS, 1.0), fbin_sys(N_PHI_BINS, 0.0);
 
                         for (int ip=0; ip<N_PHI_BINS; ++ip){
+                            std::cout << "[bincenter]         Processing phi bin " << ip+1 << "/" << N_PHI_BINS << std::endl;
+                            
                             const double phi_c = jgetd(phi, ip, PHI_DEG[ip]);
                             const auto   phi_edges = phiEdgesDegForBin(ip);
 
@@ -365,17 +418,22 @@ void compute_bin_centered_cross_sections(
                         out["fbin_km15"] = fbin_km15;
                         out["fbin_vgg"]  = fbin_vgg;
                         out["fbin_sys"]  = fbin_sys;
+                        std::cout << "[bincenter]       Completed " << node << " processing" << std::endl;
                         return out;
                     }; //enddef
 
                     json hp_bc = do_one_hel("helicity_plus",  Helicity::Plus);
                     json hm_bc = do_one_hel("helicity_minus", Helicity::Minus);
-                    if (hp_bc.is_null() && hm_bc.is_null()) continue;
+                    if (hp_bc.is_null() && hm_bc.is_null()) {
+                        std::cout << "[bincenter]       No valid data produced for this bin" << std::endl;
+                        continue;
+                    }
 
                     jout["bins"][bkey] = {
                         {"helicity_plus",  hp_bc},
                         {"helicity_minus", hm_bc}
                     };
+                    std::cout << "[bincenter]       Successfully processed bin " << bkey << std::endl;
                 } //endfor
             } //endfor
         } //endfor
@@ -390,14 +448,18 @@ void compute_bin_centered_cross_sections(
         {
             const std::string out_json =
                 (fs::path(output_dir)/"jsons"/("bin_centered_xsec_"+E+".json")).string();
+            std::cout << "[bincenter] Saving results to: " << out_json << std::endl;
             save_json(jout, out_json);
-            std::cout << "[bincenter] Wrote " << out_json << "\n";
+            std::cout << "[bincenter] Successfully wrote " << out_json << "\n";
         }
 
         // Plot helper
         auto makeCanvas = [&](bool overlay){
+            std::cout << "[bincenter] Generating " << (overlay ? "overlay" : "corrected-only") << " plots for E=" << E << std::endl;
             for (int ix = 0; ix < (int)xB_bins.size(); ++ix) {
                 const auto xb = xB_bins[ix];
+
+                std::cout << "[bincenter]   Creating plots for xB bin " << ix+1 << "/" << xB_bins.size() << std::endl;
 
                 std::set<std::pair<double,double>> qs, ts;
                 for (const auto& b : binning_scheme) {
@@ -487,35 +549,12 @@ void compute_bin_centered_cross_sections(
                         } //endif
                         TGraphErrors* gcp = draw_hel_curve(jb_bc["helicity_plus"],  20, kBlue+1, frame);
                         TGraphErrors* gcm = draw_hel_curve(jb_bc["helicity_minus"], 25, kRed+1,  frame);
-
-                        TLatex lab;
-                        lab.SetNDC(); lab.SetTextSize(0.040); lab.SetTextAlign(11);
-                        lab.SetTextFont(42);
-                        lab.DrawLatex(0.15, 0.94,
-                            Form("Q^{2} in [%.2g, %.2g],   -t in [%.2g, %.2g]",
-                                 Q2_slice[cc].first, Q2_slice[cc].second,
-                                 t_slice[r].first,   t_slice[r].second));
-
-                        if (gcp || gcm || gup || gum){
-                            double x1=0.48, y1=0.70, x2=0.90, y2=0.93;
-                            TLegend* leg = new TLegend(x1,y1,x2,y2);
-                            leg->SetBorderSize(1);
-                            leg->SetLineColor(kBlack);
-                            leg->SetFillColor(kWhite);
-                            leg->SetFillStyle(1001);
-                            leg->SetTextFont(42);
-                            leg->SetTextSize(0.038);
-                            if (gcp) leg->AddEntry(gcp, "bin-centered  + helicity", "lep");
-                            if (gcm) leg->AddEntry(gcm, "bin-centered  - helicity", "lep");
-                            if (gup) leg->AddEntry(gup, "before BC     + helicity", "lep");
-                            if (gum) leg->AddEntry(gum, "before BC     - helicity", "lep");
-                            leg->Draw();
-                        } //endif
                     } //endfor
                 } //endfor
 
                 const std::string outP =
                     (fs::path(output_dir)/"plots"/(std::string("bin_centered_xsec_")+E+"_xB_"+std::to_string(ix)+(overlay ? "_overlay.png" : ".png"))).string();
+                std::cout << "[bincenter]     Saving plot: " << outP << std::endl;
                 c->SaveAs(outP.c_str());
                 delete c;
             } //endfor
@@ -523,7 +562,10 @@ void compute_bin_centered_cross_sections(
 
         makeCanvas(false); // after BC only
         makeCanvas(true);  // before vs after BC
+        
+        std::cout << "[bincenter] Completed processing for E = " << E << std::endl;
     } //endfor
 
-    std::cout << "[bincenter] Finished bin-centering correction.\n";
+    std::cout << "[bincenter] ===========================================" << std::endl;
+    std::cout << "[bincenter] Finished bin-centering correction." << std::endl;
 } //enddef
