@@ -348,11 +348,11 @@ void compute_rad_corrected_cross_sections(
                 TLatex head;
                 head.SetNDC(); head.SetTextAlign(22);
                 head.SetTextFont(42);
-                head.SetTextSize(0.36);
+                head.SetTextSize(0.30);
                 std::ostringstream tit;
-                tit << (overlay ? "Uncorrected vs. Radiatively Corrected d#sigma/d#phi"
-                                : "Radiatively Corrected d#sigma/d#phi");
-                tit << Form("  %s GeV   x_{B} #in [%.2g, %.2g]", E.c_str(), xb.first, xb.second);
+                tit << (overlay ? "unc vs. rad corrected d#sigma/d#phi"
+                                : "rad corrected d#sigma/d#phi");
+                tit << Form("  %s GeV x_{B} #in [%.2g, %.2g]", E.c_str(), xb.first, xb.second);
                 head.DrawLatex(0.5, 0.55, tit.str().c_str());
 
                 // First pass: collect all bin keys for this xB slice to calculate y-range
@@ -424,9 +424,9 @@ void compute_rad_corrected_cross_sections(
 
                         TLatex lab;
                         lab.SetNDC(); lab.SetTextSize(0.040); lab.SetTextAlign(11);
-                        lab.SetTextFont(42);
+                        lab.SetTextFont(48);
                         lab.DrawLatex(0.15, 0.94,
-                            Form("Q^{2} #in [%.2g, %.2g],   -t #in [%.2g, %.2g]",
+                            Form("Q^{2} #in [%.2g, %.2g], -t #in [%.2g, %.2g]",
                                  Q2_slice[cc].first, Q2_slice[cc].second,
                                  t_slice[r].first,   t_slice[r].second));
 
