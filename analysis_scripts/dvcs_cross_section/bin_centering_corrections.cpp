@@ -126,7 +126,7 @@ static inline double midpoint(double a, double b){ return 0.5*(a+b); } //enddef
 static inline bool finite_pos(double v){ return std::isfinite(v) && v>0.0; } //enddef
 
 // ------------------------------------------------------------
-// helper: compute fbin for one (xB,Q2,t,phi-bin,helicity)
+// Optimized helper: compute fbin for one (xB,Q2,t,phi-bin,helicity)
 // ------------------------------------------------------------
 static void compute_fbin_for_point(
     // bin ranges and centers
@@ -141,6 +141,7 @@ static void compute_fbin_for_point(
     Helicity hel,
     const ModelPaths& paths,
     bool vgg_globalfit,
+    ModelChoice model_choice,
     // outputs
     double& fbin_km15, double& fbin_vgg
 ) {
@@ -152,15 +153,36 @@ static void compute_fbin_for_point(
     const double Q2_c   = midpoint(Q2min, Q2max);
     const double tpos_c = midpoint(tmin_pos, tmax_pos);
 
-    // model values at center
-    const double km15_center = km15_xs(xB_c, Q2_c, tpos_c, phi_center_deg, Ebeam, hel, paths);
-    const double vgg_center  =  vgg_xs(xB_c, Q2_c, tpos_c, phi_center_deg, Ebeam, hel, paths, vgg_globalfit);
+    // Only compute center values for models we're actually using
+    double km15_center = 0.0;
+    double vgg_center = 0.0;
+    
+    if (model_choice == ModelChoice::Both || model_choice == ModelChoice::KM15Only) {
+        km15_center = km15_xs(xB_c, Q2_c, tpos_c, phi_center_deg, Ebeam, hel, paths);
+    }
+    if (model_choice == ModelChoice::Both || model_choice == ModelChoice::VGGOnly) {
+        vgg_center  = vgg_xs(xB_c, Q2_c, tpos_c, phi_center_deg, Ebeam, hel, paths, vgg_globalfit);
+    }
 
-    // sub-binning grids (uniform)
-    const int nx = std::max(2, n_steps);
-    const int nQ = std::max(2, n_steps);
-    const int nt = std::max(2, n_steps);
-    const int np = std::max(2, n_steps);
+    // Early exit if we don't need to compute averages (no valid center values)
+    bool need_km15 = (model_choice == ModelChoice::Both || model_choice == ModelChoice::KM15Only) && finite_pos(km15_center);
+    bool need_vgg = (model_choice == ModelChoice::Both || model_choice == ModelChoice::VGGOnly) && finite_pos(vgg_center);
+    
+    if (!need_km15 && !need_vgg) {
+        return;
+    }
+
+    // Use adaptive sub-binning: fewer steps for smaller bins or when n_steps is large
+    const double xB_width = xBmax - xBmin;
+    const double Q2_width = Q2max - Q2min;
+    const double t_width = tmax_pos - tmin_pos;
+    const double phi_width = phi_edges_deg.second - phi_edges_deg.first;
+    
+    // Adaptive step sizing: use fewer steps when the bin is small relative to typical ranges
+    const int nx = (xB_width < 0.1) ? std::max(2, n_steps/2) : std::max(2, n_steps);
+    const int nQ = (Q2_width < 1.0) ? std::max(2, n_steps/2) : std::max(2, n_steps);
+    const int nt = (t_width < 0.1) ? std::max(2, n_steps/2) : std::max(2, n_steps);
+    const int np = std::max(2, n_steps); // phi usually needs more points due to oscillations
 
     auto linspace = [](double lo, double hi, int n){
         std::vector<double> v(n);
@@ -179,30 +201,42 @@ static void compute_fbin_for_point(
     double sum_km15 = 0.0; int cnt_km15 = 0;
     double sum_vgg  = 0.0; int cnt_vgg  = 0;
 
-    // Status update for detailed progress
-    std::cout << "[bincenter]       Computing bin-centering factors: " 
-              << nx << "×" << nQ << "×" << nt << "×" << np << " = " 
-              << (nx * nQ * nt * np) << " sub-bins" << std::endl;
+    int total_sub_bins = nx * nQ * nt * np;
+    
+    // Only show progress for very large computations
+    if (total_sub_bins > 1000) {
+        std::cout << "[bincenter]       Computing " << total_sub_bins << " sub-bins" << std::endl;
+    }
 
+    // Precompute values to avoid repeated function calls for the same parameters
     for (double xb : xs){
         for (double q2 : Qs){
             for (double tp : ts){
+                // Compute both models at once for the same (xb, q2, tp) point across all phi values
                 for (double ph : ps){
-                    const double vk = km15_xs(xb, q2, tp, ph, Ebeam, hel, paths);
-                    if (finite_pos(vk)) { sum_km15 += vk; ++cnt_km15; } //endif
-                    const double vv =  vgg_xs(xb, q2, tp, ph, Ebeam, hel, paths, vgg_globalfit);
-                    if (finite_pos(vv)) { sum_vgg  += vv; ++cnt_vgg; } //endif
+                    if (need_km15) {
+                        const double vk = km15_xs(xb, q2, tp, ph, Ebeam, hel, paths);
+                        if (finite_pos(vk)) { sum_km15 += vk; ++cnt_km15; } //endif
+                    }
+                    if (need_vgg) {
+                        const double vv = vgg_xs(xb, q2, tp, ph, Ebeam, hel, paths, vgg_globalfit);
+                        if (finite_pos(vv)) { sum_vgg  += vv; ++cnt_vgg; } //endif
+                    }
                 } //endfor
             } //endfor
         } //endfor
     } //endfor
 
     // averages
-    const double avg_km15 = (cnt_km15>0 ? (sum_km15 / double(cnt_km15)) : 0.0);
-    const double avg_vgg  = (cnt_vgg >0 ? (sum_vgg  / double(cnt_vgg )) : 0.0);
-
-    if (finite_pos(avg_km15) && finite_pos(km15_center)) fbin_km15 = km15_center / avg_km15; //endif
-    if (finite_pos(avg_vgg ) && finite_pos(vgg_center )) fbin_vgg  = vgg_center  / avg_vgg;  //endif
+    if (need_km15 && cnt_km15 > 0) {
+        const double avg_km15 = sum_km15 / double(cnt_km15);
+        if (finite_pos(avg_km15)) fbin_km15 = km15_center / avg_km15;
+    }
+    
+    if (need_vgg && cnt_vgg > 0) {
+        const double avg_vgg = sum_vgg / double(cnt_vgg);
+        if (finite_pos(avg_vgg)) fbin_vgg = vgg_center / avg_vgg;
+    }
 } //enddef
 
 // ------------------------------------------------------------
@@ -243,9 +277,18 @@ void compute_bin_centered_cross_sections(
     const std::string& output_dir,
     int n_steps,
     const ModelPaths& paths,
-    bool vgg_globalfit
+    bool vgg_globalfit,
+    ModelChoice model_choice
 ) {
     std::cout << "[bincenter] Starting bin-centering corrections..." << std::endl;
+    std::cout << "[bincenter] Model choice: ";
+    switch (model_choice) {
+        case ModelChoice::Both: std::cout << "Both models (averaged)"; break;
+        case ModelChoice::VGGOnly: std::cout << "VGG only"; break;
+        case ModelChoice::KM15Only: std::cout << "KM15 only"; break;
+    }
+    std::cout << std::endl;
+    
     std::cout << "[bincenter] Creating output directories..." << std::endl;
     
     fs::create_directories(output_dir);
@@ -332,33 +375,23 @@ void compute_bin_centered_cross_sections(
                     const std::string bkey =
                         "(" + std::to_string(ix) + "," + std::to_string(iQ_global) + "," + std::to_string(it_global) + ")";
 
-                    std::cout << "[bincenter]     Processing bin " << current_bin_count << "/" << total_bins_for_xb 
-                              << ": Q2[" << q2r.first << ", " << q2r.second 
-                              << "], t[" << tr.first << ", " << tr.second << "]" << std::endl;
-
                     if (!j_rc["bins"].contains(bkey)) {
-                        std::cout << "[bincenter]       WARNING: No data found for bin key " << bkey << std::endl;
                         continue;
                     }
                     const json& cell_in = j_rc["bins"][bkey];
                     if (!has_bc_cell(cell_in)) {
-                        std::cout << "[bincenter]       WARNING: Cell data malformed for bin key " << bkey << std::endl;
                         continue;
                     }
 
                     auto do_one_hel = [&](const char* node, Helicity hel)->json{
                         json out;
                         if (!cell_in.contains(node)) {
-                            std::cout << "[bincenter]       WARNING: No " << node << " data found" << std::endl;
                             return out;
                         }
                         const json& h = cell_in[node];
                         if (!has_bins12(h)) {
-                            std::cout << "[bincenter]       WARNING: " << node << " data malformed" << std::endl;
                             return out;
                         }
-
-                        std::cout << "[bincenter]       Processing " << node << "..." << std::endl;
 
                         const auto& phi = h["phi"];
                         const auto& xs  = h["xsec"];
@@ -368,8 +401,6 @@ void compute_bin_centered_cross_sections(
                         std::vector<double> fbin_used(N_PHI_BINS, 1.0), fbin_km15(N_PHI_BINS, 1.0), fbin_vgg(N_PHI_BINS, 1.0), fbin_sys(N_PHI_BINS, 0.0);
 
                         for (int ip=0; ip<N_PHI_BINS; ++ip){
-                            std::cout << "[bincenter]         Processing phi bin " << ip+1 << "/" << N_PHI_BINS << std::endl;
-                            
                             const double phi_c = jgetd(phi, ip, PHI_DEG[ip]);
                             const auto   phi_edges = phiEdgesDegForBin(ip);
 
@@ -382,22 +413,40 @@ void compute_bin_centered_cross_sections(
                                 n_steps,
                                 std::stod(E), hel,
                                 paths, vgg_globalfit,
+                                model_choice,
                                 fkm, fvg
                             );
 
-                            // Choose final factor and a simple model-variation systematic
+                            // Choose final factor based on model choice
                             double f_final = 1.0;
                             double f_sys   = 0.0;
-                            if (finite_pos(fkm)) {
-                                f_final = 0.5*(fkm + fvg);
-                                f_sys   = std::fabs(fkm - fvg);
-                            } else if (finite_pos(fvg)) {
-                                f_final = fvg;
-                                f_sys   = 1.0;
-                            } else {
-                                f_final = 1.0;
-                                f_sys   = 0.0;
-                            } //endif
+                            
+                            switch (model_choice) {
+                                case ModelChoice::Both:
+                                    if (finite_pos(fkm) && finite_pos(fvg)) {
+                                        f_final = 0.5*(fkm + fvg);
+                                        f_sys   = std::fabs(fkm - fvg);
+                                    } else if (finite_pos(fkm)) {
+                                        f_final = fkm;
+                                        f_sys   = 1.0;
+                                    } else if (finite_pos(fvg)) {
+                                        f_final = fvg;
+                                        f_sys   = 1.0;
+                                    }
+                                    break;
+                                case ModelChoice::VGGOnly:
+                                    if (finite_pos(fvg)) {
+                                        f_final = fvg;
+                                        f_sys   = 0.0; // No systematic when using single model
+                                    }
+                                    break;
+                                case ModelChoice::KM15Only:
+                                    if (finite_pos(fkm)) {
+                                        f_final = fkm;
+                                        f_sys   = 0.0; // No systematic when using single model
+                                    }
+                                    break;
+                            }
 
                             const double x  = jgetd(xs, ip, 0.0);
                             const double ex = std::max(0.0, jgetd(xe, ip, 0.0));
@@ -418,14 +467,12 @@ void compute_bin_centered_cross_sections(
                         out["fbin_km15"] = fbin_km15;
                         out["fbin_vgg"]  = fbin_vgg;
                         out["fbin_sys"]  = fbin_sys;
-                        std::cout << "[bincenter]       Completed " << node << " processing" << std::endl;
                         return out;
                     }; //enddef
 
                     json hp_bc = do_one_hel("helicity_plus",  Helicity::Plus);
                     json hm_bc = do_one_hel("helicity_minus", Helicity::Minus);
                     if (hp_bc.is_null() && hm_bc.is_null()) {
-                        std::cout << "[bincenter]       No valid data produced for this bin" << std::endl;
                         continue;
                     }
 
@@ -433,7 +480,6 @@ void compute_bin_centered_cross_sections(
                         {"helicity_plus",  hp_bc},
                         {"helicity_minus", hm_bc}
                     };
-                    std::cout << "[bincenter]       Successfully processed bin " << bkey << std::endl;
                 } //endfor
             } //endfor
         } //endfor
@@ -458,8 +504,6 @@ void compute_bin_centered_cross_sections(
             std::cout << "[bincenter] Generating " << (overlay ? "overlay" : "corrected-only") << " plots for E=" << E << std::endl;
             for (int ix = 0; ix < (int)xB_bins.size(); ++ix) {
                 const auto xb = xB_bins[ix];
-
-                std::cout << "[bincenter]   Creating plots for xB bin " << ix+1 << "/" << xB_bins.size() << std::endl;
 
                 std::set<std::pair<double,double>> qs, ts;
                 for (const auto& b : binning_scheme) {
@@ -554,7 +598,6 @@ void compute_bin_centered_cross_sections(
 
                 const std::string outP =
                     (fs::path(output_dir)/"plots"/(std::string("bin_centered_xsec_")+E+"_xB_"+std::to_string(ix)+(overlay ? "_overlay.png" : ".png"))).string();
-                std::cout << "[bincenter]     Saving plot: " << outP << std::endl;
                 c->SaveAs(outP.c_str());
                 delete c;
             } //endfor
