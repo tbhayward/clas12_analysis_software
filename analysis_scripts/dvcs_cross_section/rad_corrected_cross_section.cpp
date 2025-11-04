@@ -431,14 +431,14 @@ void compute_rad_corrected_cross_sections(
                                  t_slice[r].first,   t_slice[r].second));
 
                         if (gcp || gcm || gup || gum){
-                            double x1=0.48, y1=0.70, x2=0.90, y2=0.93;
+                            double x1=0.44, y1=0.68, x2=0.90, y2=0.93;
                             TLegend* leg = new TLegend(x1,y1,x2,y2);
                             leg->SetBorderSize(1);
                             leg->SetLineColor(kBlack);
                             leg->SetFillColor(kWhite);
                             leg->SetFillStyle(1001);
                             leg->SetTextFont(42);
-                            leg->SetTextSize(0.038);
+                            leg->SetTextSize(0.042);
                             if (gcp) leg->AddEntry(gcp, "corrected  + helicity", "lep");
                             if (gcm) leg->AddEntry(gcm, "corrected  - helicity", "lep");
                             if (gup) leg->AddEntry(gup, "uncorrected + helicity", "lep");
