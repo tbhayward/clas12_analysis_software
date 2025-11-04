@@ -431,7 +431,7 @@ void compute_rad_corrected_cross_sections(
                                  t_slice[r].first,   t_slice[r].second));
 
                         if (gcp || gcm || gup || gum){
-                            double x1=0.24, y1=0.24, x2=0.54, y2=0.42;
+                            double x1=0.14, y1=0.18, x2=0.54, y2=0.42;
                             TLegend* leg = new TLegend(x1,y1,x2,y2);
                             leg->SetBorderSize(1);
                             leg->SetLineColor(kBlack);
