@@ -23,6 +23,11 @@
 #include <tuple>
 #include <vector>
 
+// OpenMP for parallel processing
+#ifdef _OPENMP
+#include <omp.h>
+#endif
+
 #include <nlohmann/json.hpp>
 using json = nlohmann::json;
 namespace fs = std::filesystem;
@@ -172,17 +177,11 @@ static void compute_fbin_for_point(
         return;
     }
 
-    // Use adaptive sub-binning: fewer steps for smaller bins or when n_steps is large
-    const double xB_width = xBmax - xBmin;
-    const double Q2_width = Q2max - Q2min;
-    const double t_width = tmax_pos - tmin_pos;
-    const double phi_width = phi_edges_deg.second - phi_edges_deg.first;
-    
-    // Adaptive step sizing: use fewer steps when the bin is small relative to typical ranges
-    const int nx = (xB_width < 0.1) ? std::max(2, n_steps/2) : std::max(2, n_steps);
-    const int nQ = (Q2_width < 1.0) ? std::max(2, n_steps/2) : std::max(2, n_steps);
-    const int nt = (t_width < 0.1) ? std::max(2, n_steps/2) : std::max(2, n_steps);
-    const int np = std::max(2, n_steps); // phi usually needs more points due to oscillations
+    // Use fixed sub-binning (no adaptive binning)
+    const int nx = std::max(2, n_steps);
+    const int nQ = std::max(2, n_steps);
+    const int nt = std::max(2, n_steps);
+    const int np = std::max(2, n_steps);
 
     auto linspace = [](double lo, double hi, int n){
         std::vector<double> v(n);
@@ -205,14 +204,13 @@ static void compute_fbin_for_point(
     
     // Only show progress for very large computations
     if (total_sub_bins > 1000) {
+        #pragma omp critical
         std::cout << "[bincenter]       Computing " << total_sub_bins << " sub-bins" << std::endl;
     }
 
-    // Precompute values to avoid repeated function calls for the same parameters
     for (double xb : xs){
         for (double q2 : Qs){
             for (double tp : ts){
-                // Compute both models at once for the same (xb, q2, tp) point across all phi values
                 for (double ph : ps){
                     if (need_km15) {
                         const double vk = km15_xs(xb, q2, tp, ph, Ebeam, hel, paths);
@@ -289,6 +287,15 @@ void compute_bin_centered_cross_sections(
     }
     std::cout << std::endl;
     
+    // Set up parallel processing with maximum 4 threads
+    #ifdef _OPENMP
+    const int max_threads = 4;
+    omp_set_num_threads(max_threads);
+    std::cout << "[bincenter] Using OpenMP with up to " << max_threads << " threads" << std::endl;
+    #else
+    std::cout << "[bincenter] WARNING: OpenMP not available, running sequentially" << std::endl;
+    #endif
+    
     std::cout << "[bincenter] Creating output directories..." << std::endl;
     
     fs::create_directories(output_dir);
@@ -358,130 +365,156 @@ void compute_bin_centered_cross_sections(
 
             int total_q2_bins = Q2_slice.size();
             int total_t_bins = t_slice.size();
-            int current_bin_count = 0;
             int total_bins_for_xb = total_q2_bins * total_t_bins;
 
             std::cout << "[bincenter]     Found " << total_q2_bins << " Q2 bins and " 
                       << total_t_bins << " t bins (" << total_bins_for_xb << " total bins)" << std::endl;
-
+            
+            // Create a list of all (q2r, tr) pairs to process
+            std::vector<std::pair<std::pair<double, double>, std::pair<double, double>>> bin_pairs;
             for (const auto& q2r : Q2_slice) {
                 const int iQ_global = findIndex(q2r, Q2_all);
                 if (iQ_global < 0) continue;
                 for (const auto& tr : t_slice) {
-                    current_bin_count++;
                     const int it_global = findIndex(tr, t_all);
                     if (it_global < 0) continue;
+                    bin_pairs.emplace_back(q2r, tr);
+                }
+            }
 
-                    const std::string bkey =
-                        "(" + std::to_string(ix) + "," + std::to_string(iQ_global) + "," + std::to_string(it_global) + ")";
+            // Process bins in parallel
+            #pragma omp parallel for schedule(dynamic)
+            for (size_t pair_idx = 0; pair_idx < bin_pairs.size(); ++pair_idx) {
+                const auto& q2r = bin_pairs[pair_idx].first;
+                const auto& tr = bin_pairs[pair_idx].second;
+                
+                #ifdef _OPENMP
+                #pragma omp critical
+                #endif
+                {
+                    std::cout << "[bincenter]     Thread " << 
+                    #ifdef _OPENMP
+                    omp_get_thread_num() 
+                    #else
+                    0
+                    #endif
+                    << " processing Q2[" << q2r.first << ", " << q2r.second 
+                    << "], t[" << tr.first << ", " << tr.second << "]" << std::endl;
+                }
 
-                    if (!j_rc["bins"].contains(bkey)) {
-                        continue;
-                    }
-                    const json& cell_in = j_rc["bins"][bkey];
-                    if (!has_bc_cell(cell_in)) {
-                        continue;
-                    }
+                const std::string bkey =
+                    "(" + std::to_string(ix) + "," + std::to_string(findIndex(q2r, Q2_all)) + "," + std::to_string(findIndex(tr, t_all)) + ")";
 
-                    auto do_one_hel = [&](const char* node, Helicity hel)->json{
-                        json out;
-                        if (!cell_in.contains(node)) {
-                            return out;
-                        }
-                        const json& h = cell_in[node];
-                        if (!has_bins12(h)) {
-                            return out;
-                        }
+                if (!j_rc["bins"].contains(bkey)) {
+                    continue;
+                }
+                const json& cell_in = j_rc["bins"][bkey];
+                if (!has_bc_cell(cell_in)) {
+                    continue;
+                }
 
-                        const auto& phi = h["phi"];
-                        const auto& xs  = h["xsec"];
-                        const auto& xe  = h["xsec_err"];
-
-                        std::vector<double> phi_bc(N_PHI_BINS), y(N_PHI_BINS), e(N_PHI_BINS);
-                        std::vector<double> fbin_used(N_PHI_BINS, 1.0), fbin_km15(N_PHI_BINS, 1.0), fbin_vgg(N_PHI_BINS, 1.0), fbin_sys(N_PHI_BINS, 0.0);
-
-                        for (int ip=0; ip<N_PHI_BINS; ++ip){
-                            const double phi_c = jgetd(phi, ip, PHI_DEG[ip]);
-                            const auto   phi_edges = phiEdgesDegForBin(ip);
-
-                            double fkm = 0.0, fvg = 0.0;
-                            compute_fbin_for_point(
-                                xb.first, xb.second,
-                                q2r.first, q2r.second,
-                                tr.first,  tr.second,
-                                phi_c, phi_edges,
-                                n_steps,
-                                std::stod(E), hel,
-                                paths, vgg_globalfit,
-                                model_choice,
-                                fkm, fvg
-                            );
-
-                            // Choose final factor based on model choice
-                            double f_final = 1.0;
-                            double f_sys   = 0.0;
-                            
-                            switch (model_choice) {
-                                case ModelChoice::Both:
-                                    if (finite_pos(fkm) && finite_pos(fvg)) {
-                                        f_final = 0.5*(fkm + fvg);
-                                        f_sys   = std::fabs(fkm - fvg);
-                                    } else if (finite_pos(fkm)) {
-                                        f_final = fkm;
-                                        f_sys   = 1.0;
-                                    } else if (finite_pos(fvg)) {
-                                        f_final = fvg;
-                                        f_sys   = 1.0;
-                                    }
-                                    break;
-                                case ModelChoice::VGGOnly:
-                                    if (finite_pos(fvg)) {
-                                        f_final = fvg;
-                                        f_sys   = 0.0; // No systematic when using single model
-                                    }
-                                    break;
-                                case ModelChoice::KM15Only:
-                                    if (finite_pos(fkm)) {
-                                        f_final = fkm;
-                                        f_sys   = 0.0; // No systematic when using single model
-                                    }
-                                    break;
-                            }
-
-                            const double x  = jgetd(xs, ip, 0.0);
-                            const double ex = std::max(0.0, jgetd(xe, ip, 0.0));
-
-                            phi_bc[ip]   = phi_c;
-                            y[ip]        = f_final * x;
-                            e[ip]        = f_final * ex;  // scale statistical error by same factor
-                            fbin_used[ip]= f_final;
-                            fbin_km15[ip]= (finite_pos(fkm) ? fkm : 0.0);
-                            fbin_vgg[ip] = (finite_pos(fvg) ? fvg : 0.0);
-                            fbin_sys[ip] = f_sys;
-                        } //endfor
-
-                        out["phi"]       = phi_bc;
-                        out["xsec"]      = y;
-                        out["xsec_err"]  = e;
-                        out["fbin_used"] = fbin_used;
-                        out["fbin_km15"] = fbin_km15;
-                        out["fbin_vgg"]  = fbin_vgg;
-                        out["fbin_sys"]  = fbin_sys;
+                auto do_one_hel = [&](const char* node, Helicity hel)->json{
+                    json out;
+                    if (!cell_in.contains(node)) {
                         return out;
-                    }; //enddef
-
-                    json hp_bc = do_one_hel("helicity_plus",  Helicity::Plus);
-                    json hm_bc = do_one_hel("helicity_minus", Helicity::Minus);
-                    if (hp_bc.is_null() && hm_bc.is_null()) {
-                        continue;
+                    }
+                    const json& h = cell_in[node];
+                    if (!has_bins12(h)) {
+                        return out;
                     }
 
-                    jout["bins"][bkey] = {
-                        {"helicity_plus",  hp_bc},
-                        {"helicity_minus", hm_bc}
-                    };
-                } //endfor
-            } //endfor
+                    const auto& phi = h["phi"];
+                    const auto& xs  = h["xsec"];
+                    const auto& xe  = h["xsec_err"];
+
+                    std::vector<double> phi_bc(N_PHI_BINS), y(N_PHI_BINS), e(N_PHI_BINS);
+                    std::vector<double> fbin_used(N_PHI_BINS, 1.0), fbin_km15(N_PHI_BINS, 1.0), fbin_vgg(N_PHI_BINS, 1.0), fbin_sys(N_PHI_BINS, 0.0);
+
+                    for (int ip=0; ip<N_PHI_BINS; ++ip){
+                        const double phi_c = jgetd(phi, ip, PHI_DEG[ip]);
+                        const auto   phi_edges = phiEdgesDegForBin(ip);
+
+                        double fkm = 0.0, fvg = 0.0;
+                        compute_fbin_for_point(
+                            xb.first, xb.second,
+                            q2r.first, q2r.second,
+                            tr.first,  tr.second,
+                            phi_c, phi_edges,
+                            n_steps,
+                            std::stod(E), hel,
+                            paths, vgg_globalfit,
+                            model_choice,
+                            fkm, fvg
+                        );
+
+                        // Choose final factor based on model choice
+                        double f_final = 1.0;
+                        double f_sys   = 0.0;
+                        
+                        switch (model_choice) {
+                            case ModelChoice::Both:
+                                if (finite_pos(fkm) && finite_pos(fvg)) {
+                                    f_final = 0.5*(fkm + fvg);
+                                    f_sys   = std::fabs(fkm - fvg);
+                                } else if (finite_pos(fkm)) {
+                                    f_final = fkm;
+                                    f_sys   = 1.0;
+                                } else if (finite_pos(fvg)) {
+                                    f_final = fvg;
+                                    f_sys   = 1.0;
+                                }
+                                break;
+                            case ModelChoice::VGGOnly:
+                                if (finite_pos(fvg)) {
+                                    f_final = fvg;
+                                    f_sys   = 0.0; // No systematic when using single model
+                                }
+                                break;
+                            case ModelChoice::KM15Only:
+                                if (finite_pos(fkm)) {
+                                    f_final = fkm;
+                                    f_sys   = 0.0; // No systematic when using single model
+                                }
+                                break;
+                        }
+
+                        const double x  = jgetd(xs, ip, 0.0);
+                        const double ex = std::max(0.0, jgetd(xe, ip, 0.0));
+
+                        phi_bc[ip]   = phi_c;
+                        y[ip]        = f_final * x;
+                        e[ip]        = f_final * ex;  // scale statistical error by same factor
+                        fbin_used[ip]= f_final;
+                        fbin_km15[ip]= (finite_pos(fkm) ? fkm : 0.0);
+                        fbin_vgg[ip] = (finite_pos(fvg) ? fvg : 0.0);
+                        fbin_sys[ip] = f_sys;
+                    } //endfor
+
+                    out["phi"]       = phi_bc;
+                    out["xsec"]      = y;
+                    out["xsec_err"]  = e;
+                    out["fbin_used"] = fbin_used;
+                    out["fbin_km15"] = fbin_km15;
+                    out["fbin_vgg"]  = fbin_vgg;
+                    out["fbin_sys"]  = fbin_sys;
+                    return out;
+                }; //enddef
+
+                json hp_bc = do_one_hel("helicity_plus",  Helicity::Plus);
+                json hm_bc = do_one_hel("helicity_minus", Helicity::Minus);
+                
+                if (!hp_bc.is_null() || !hm_bc.is_null()) {
+                    #ifdef _OPENMP
+                    #pragma omp critical
+                    #endif
+                    {
+                        jout["bins"][bkey] = {
+                            {"helicity_plus",  hp_bc},
+                            {"helicity_minus", hm_bc}
+                        };
+                    }
+                }
+            } // end parallel for
         } //endfor
 
         // If nothing was produced for this energy, do not write files or make plots
@@ -499,7 +532,7 @@ void compute_bin_centered_cross_sections(
             std::cout << "[bincenter] Successfully wrote " << out_json << "\n";
         }
 
-        // Plot helper
+        // Plot helper (not parallelized since ROOT is not thread-safe)
         auto makeCanvas = [&](bool overlay){
             std::cout << "[bincenter] Generating " << (overlay ? "overlay" : "corrected-only") << " plots for E=" << E << std::endl;
             for (int ix = 0; ix < (int)xB_bins.size(); ++ix) {
