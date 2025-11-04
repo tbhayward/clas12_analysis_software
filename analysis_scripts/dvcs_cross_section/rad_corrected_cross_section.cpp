@@ -103,6 +103,65 @@ static inline double jgetd(const json& a, size_t i, double def=0.0){
     try { return a[i].get<double>(); } catch(...) { return def; }
 }
 
+// Helper function to calculate log-scale y-axis range for a canvas
+static std::pair<double, double> calculateYRangeForCanvas(const json& jout_bins, 
+                                                         const json& j_unc_bins,
+                                                         const std::vector<std::string>& bin_keys,
+                                                         bool overlay) {
+    double global_min = 1e10;
+    double global_max = -1e10;
+    
+    for (const auto& bkey : bin_keys) {
+        if (!jout_bins.contains(bkey)) continue;
+        const json& jb_corr = jout_bins[bkey];
+        
+        // Check corrected data
+        auto checkGraphRange = [&](const json& h) {
+            if (!h.contains("xsec") || !h.contains("xsec_err")) return;
+            const auto& yp = h["xsec"];
+            const auto& ep = h["xsec_err"];
+            for (int i = 0; i < N_PHI_BINS; ++i) {
+                double y = jgetd(yp, i, 0.0);
+                double e = jgetd(ep, i, 0.0);
+                if (y > 0) {
+                    global_min = std::min(global_min, std::max(1e-10, y - e));
+                    global_max = std::max(global_max, y + e);
+                }
+            }
+        };
+        
+        if (jb_corr.contains("helicity_plus")) 
+            checkGraphRange(jb_corr["helicity_plus"]);
+        if (jb_corr.contains("helicity_minus")) 
+            checkGraphRange(jb_corr["helicity_minus"]);
+        
+        // Check uncorrected data if overlay
+        if (overlay && j_unc_bins.contains(bkey)) {
+            const json& jb_unc = j_unc_bins[bkey];
+            if (jb_unc.contains("helicity_plus")) 
+                checkGraphRange(jb_unc["helicity_plus"]);
+            if (jb_unc.contains("helicity_minus")) 
+                checkGraphRange(jb_unc["helicity_minus"]);
+        }
+    }
+    
+    // Set defaults if no valid data found
+    if (global_max <= 0) {
+        global_min = 1e-4;
+        global_max = 1.0;
+    } else {
+        // Round down to nearest power of 10 below min
+        global_min = std::pow(10.0, std::floor(std::log10(global_min)));
+        // Round up to nearest power of 10 above max
+        global_max = std::pow(10.0, std::ceil(std::log10(global_max)));
+        // Add some padding
+        global_min *= 0.5;
+        global_max *= 2.0;
+    }
+    
+    return {global_min, global_max};
+}
+
 } // anon
 
 // ------------------------------------------------------------
@@ -221,7 +280,7 @@ void compute_rad_corrected_cross_sections(
         const auto Q2_all = uniqueRanges(binning_scheme, 'Q');
         const auto t_all  = uniqueRanges(binning_scheme, 't');
 
-        auto drawHelFrom = [&](const json& jb, const char* node, int mstyle, int color, TH1* frame){
+        auto drawHelFrom = [&](const json& jb, const char* node, int mstyle, int color){
             if (!jb.contains(node)) return (TGraphErrors*)nullptr;
             const auto& h = jb[node];
             if (!h.contains("phi") || !h.contains("xsec") || !h.contains("xsec_err")) return (TGraphErrors*)nullptr;
@@ -230,12 +289,9 @@ void compute_rad_corrected_cross_sections(
             const auto& ep = h["xsec_err"];
             if (xp.size()!=N_PHI_BINS || yp.size()!=N_PHI_BINS || ep.size()!=N_PHI_BINS) return (TGraphErrors*)nullptr;
             std::vector<double> x(N_PHI_BINS), y(N_PHI_BINS), e(N_PHI_BINS);
-            double ymax=0.0;
             for (int i=0;i<N_PHI_BINS;++i){
                 x[i]=xp[i].get<double>(); y[i]=yp[i].get<double>(); e[i]=std::max(1e-12, ep[i].get<double>());
-                ymax = std::max(ymax, y[i]+e[i]);
             }
-            if (ymax > 0.0) frame->GetYaxis()->SetRangeUser(1e-4, std::max(1.0, ymax*1.5));
             auto* gr = new TGraphErrors(N_PHI_BINS, x.data(), y.data(), nullptr, e.data());
             gr->SetMarkerStyle(mstyle);
             gr->SetMarkerSize(1.0);
@@ -293,7 +349,24 @@ void compute_rad_corrected_cross_sections(
                 tit << Form("  %s GeV   x_{B} #in [%.2g, %.2g]", E.c_str(), xb.first, xb.second);
                 head.DrawLatex(0.5, 0.55, tit.str().c_str());
 
-                // Panels
+                // First pass: collect all bin keys for this xB slice to calculate y-range
+                std::vector<std::string> canvas_bin_keys;
+                for (int r=0; r<nrows; ++r) {
+                    const int it_global = findIndex(t_slice[r], t_all);
+                    if (it_global < 0) continue;
+                    for (int cc=0; cc<ncols; ++cc) {
+                        const int iQ_global = findIndex(Q2_slice[cc], Q2_all);
+                        if (iQ_global < 0) continue;
+                        const std::string bkey = "(" + std::to_string(ix) + "," + std::to_string(iQ_global) + "," + std::to_string(it_global) + ")";
+                        canvas_bin_keys.push_back(bkey);
+                    }
+                }
+
+                // Calculate y-range for this entire canvas
+                auto [ymin_canvas, ymax_canvas] = calculateYRangeForCanvas(
+                    jout["bins"], j_unc["bins"], canvas_bin_keys, overlay);
+
+                // Second pass: draw each panel
                 for (int r=0; r<nrows; ++r) {
                     const int it_global = findIndex(t_slice[r], t_all);
                     if (it_global < 0) continue;
@@ -309,7 +382,8 @@ void compute_rad_corrected_cross_sections(
                         gPad->SetRightMargin(0.10);
                         gPad->SetLogy();
 
-                        TH1* frame = gPad->DrawFrame(0.0, 1e-4, 360.0, 1.0);
+                        // Use canvas-specific y-range
+                        TH1* frame = gPad->DrawFrame(0.0, ymin_canvas, 360.0, ymax_canvas);
                         frame->GetXaxis()->SetLabelSize(0.0001);
                         frame->GetXaxis()->SetTitle("#phi (deg)");
                         frame->GetYaxis()->SetTitle(overlay ? "d#sigma/d#phi" : "d#sigma/d#phi (rad-corr.)");
@@ -336,11 +410,11 @@ void compute_rad_corrected_cross_sections(
                         TGraphErrors* gup = nullptr;
                         TGraphErrors* gum = nullptr;
                         if (have_unc) {
-                            gup = drawHelFrom(jb_unc,  "helicity_plus",  24 /*open circle*/, kGray+2, frame);
-                            gum = drawHelFrom(jb_unc,  "helicity_minus", 26 /*open triangle*/, kGray+2, frame);
+                            gup = drawHelFrom(jb_unc,  "helicity_plus",  24 /*open circle*/, kGray+2);
+                            gum = drawHelFrom(jb_unc,  "helicity_minus", 26 /*open triangle*/, kGray+2);
                         }
-                        TGraphErrors* gcp = drawHelFrom(jb_corr, "helicity_plus",  20 /*filled circle*/, kBlue+1, frame);
-                        TGraphErrors* gcm = drawHelFrom(jb_corr, "helicity_minus", 25 /*filled square*/, kRed+1,  frame);
+                        TGraphErrors* gcp = drawHelFrom(jb_corr, "helicity_plus",  20 /*filled circle*/, kBlue+1);
+                        TGraphErrors* gcm = drawHelFrom(jb_corr, "helicity_minus", 25 /*filled square*/, kRed+1);
 
                         TLatex lab;
                         lab.SetNDC(); lab.SetTextSize(0.040); lab.SetTextAlign(11);
