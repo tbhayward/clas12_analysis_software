@@ -112,7 +112,7 @@ static inline double midpoint(double a, double b){ return 0.5*(a+b); } //enddef
 static inline bool positive(double v){ return std::isfinite(v) && v>0.0; } //enddef
 
 // Draw the data points (bin-centered cross sections)
-static TGraphErrors* draw_data_hel(const json& h, int mstyle, int color, TH1* frame, double& ymax_accum) {
+static TGraphErrors* draw_data_hel(const json& h, int mstyle, int color, TH1* /*frame*/, double& ymax_accum) {
     if (!has_bins12(h)) return nullptr; //endif
     const auto& xp = h["phi"];
     const auto& yp = h["xsec"];
@@ -176,19 +176,16 @@ static ModelCurves sample_models_dense(
         double ph = (phi_dense == 1) ? 0.0 : (360.0 * double(i) / double(phi_dense-1));
         mc.phi_deg[i] = ph;
 
-        // KM15, VGG, BH are combined later by line style; here we store final choices:
-        // Convention: we will compute VGG and KM15 in the draw step; to get a y-range that
-        // accounts for BH too, compute BH here as well.
-        // If your BH function name differs, adjust here.
+        // Precompute BH for envelope (helicity independent)
         double ybh = 0.0;
         try {
-            ybh = bh_xs(xB_c, Q2_c, tpos_c, ph, Ebeam, Helicity::Plus, paths); // helicity-independent
+            ybh = vgg_bh_only(xB_c, Q2_c, tpos_c, ph, Ebeam, paths, /*globalfit=*/vgg_globalfit);
         } catch (...) {
             ybh = 0.0;
         }
         mc.y_bh[i] = positive(ybh) ? ybh : 0.0;
 
-        // Placeholders; will be overwritten in draw with actual VGG/KM15 samples if desired.
+        // Placeholders; will be overwritten later with VGG/KM15 samples.
         mc.y_plus[i]  = 0.0;
         mc.y_minus[i] = 0.0;
     } //endfor
@@ -341,7 +338,7 @@ void plot_models_vs_bincentered(
                     const std::string bkey =
                         "(" + std::to_string(ix) + "," + std::to_string(iQ_global) + "," + std::to_string(it_global) + ")";
 
-                    // Pre-sample BH for envelope (KM15/VGG envelopes are added during draw)
+                    // Pre-sample BH for envelope
                     ModelCurves mc_bh = sample_models_dense(
                         phi_dense, std::stod(E),
                         xb.first, xb.second,
@@ -389,7 +386,7 @@ void plot_models_vs_bincentered(
                     gPad->SetGrid(1,1);
                     gPad->SetTopMargin(0.08);
                     gPad->SetBottomMargin(0.18);
-                    gPad->SetLeftMargin(0.15);
+                    gPad->SetLeftMargin(0.125); // per your preference
                     gPad->SetRightMargin(0.10);
                     gPad->SetLogy();
 
@@ -457,7 +454,7 @@ void plot_models_vs_bincentered(
                         y_vg_minus[i] = positive(vg_m) ? vg_m : 0.0;
                         // BH (helicity independent)
                         double yb = 0.0;
-                        try { yb = bh_xs(xB_c, Q2_c, tpos_c, p, std::stod(E), Helicity::Plus, paths); }
+                        try { yb = vgg_bh_only(xB_c, Q2_c, tpos_c, p, std::stod(E), paths, /*globalfit=*/vgg_globalfit); }
                         catch (...) { yb = 0.0; }
                         y_bh[i] = positive(yb) ? yb : 0.0;
                     }
@@ -496,7 +493,7 @@ void plot_models_vs_bincentered(
 
                     // Legend (bottom-left) — width per your tweak
                     if (gdp || gdm || g_km_p || g_km_m || g_vg_p || g_vg_m || g_bh) {
-                        double x1=0.16, y1=0.18, x2=0.68, y2=0.42; // your updated width
+                        double x1=0.16, y1=0.18, x2=0.68, y2=0.42; // updated width
                         TLegend* leg = new TLegend(x1,y1,x2,y2);
                         leg->SetBorderSize(1);
                         leg->SetLineColor(kBlack);
