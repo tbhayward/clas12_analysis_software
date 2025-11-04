@@ -192,11 +192,11 @@ int main(int argc, char* argv[]) {
     //     "output/uncorrected_cross_section/" // output dir
     // ); // #endif
 
-    // // Multiply uncorrected dσ/dφ by Born/Rad per-φ correction
-    // const std::string unx_dir = "output/jsons";
-    // const std::string rc_dir  = "output/jsons"; // radiative_corrections_group_<E>.json
-    // const std::string out_dir = "output/rad_corrected_cross_section";
-    // compute_rad_corrected_cross_sections(binning_scheme, unx_dir, rc_dir, out_dir);
+    // Multiply uncorrected dσ/dφ by Born/Rad per-φ correction
+    const std::string unx_dir = "output/jsons";
+    const std::string rc_dir  = "output/jsons"; // radiative_corrections_group_<E>.json
+    const std::string out_dir = "output/jsons";
+    compute_rad_corrected_cross_sections(binning_scheme, unx_dir, rc_dir, out_dir);
 
 
     // // Beam-Spin Asymmetry:
@@ -227,7 +227,7 @@ int main(int argc, char* argv[]) {
     // --------- Bin-centering corrections (KM15/VGG) ----------
     compute_bin_centered_cross_sections(
         binning_scheme,     // already loaded above
-        "output/rad_corrected_cross_section/jsons", // input: directory containing rad_corrected_xsec_10.59.json etc.
+        "output/jsons", // input: directory containing rad_corrected_xsec_10.59.json etc.
         "output/bin_centering", // output: base directory for bin-centered JSONs + plots
         5,    // n_steps: subgrid sampling per dimension
         ModelPaths(), // model paths (empty -> use default environment/config)
