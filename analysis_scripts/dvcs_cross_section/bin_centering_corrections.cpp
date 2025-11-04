@@ -642,7 +642,7 @@ void plot_bin_centered_cross_sections(
 
                     // bottom-left legend (match rad code)
                     if (gcp || gcm || gup || gum){
-                        double x1=0.16, y1=0.18, x2=0.56 , y2=0.42;
+                        double x1=0.16, y1=0.18, x2=0.64 , y2=0.42;
                         TLegend* leg = new TLegend(x1,y1,x2,y2);
                         leg->SetBorderSize(1);
                         leg->SetLineColor(kBlack);
