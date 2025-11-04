@@ -423,15 +423,15 @@ void compute_rad_corrected_cross_sections(
                         TGraphErrors* gcm = drawHelFrom(jb_corr, "helicity_minus", 25 /*filled square*/, kRed+1);
 
                         TLatex lab;
-                        lab.SetNDC(); lab.SetTextSize(0.040); lab.SetTextAlign(11);
-                        lab.SetTextFont(48);
+                        lab.SetNDC(); lab.SetTextSize(0.044); lab.SetTextAlign(11);
+                        lab.SetTextFont(42);
                         lab.DrawLatex(0.15, 0.94,
                             Form("Q^{2} #in [%.2g, %.2g], -t #in [%.2g, %.2g]",
                                  Q2_slice[cc].first, Q2_slice[cc].second,
                                  t_slice[r].first,   t_slice[r].second));
 
                         if (gcp || gcm || gup || gum){
-                            double x1=0.14, y1=0.18, x2=0.54, y2=0.42;
+                            double x1=0.16, y1=0.18, x2=0.56 , y2=0.42;
                             TLegend* leg = new TLegend(x1,y1,x2,y2);
                             leg->SetBorderSize(1);
                             leg->SetLineColor(kBlack);
