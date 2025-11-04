@@ -431,8 +431,57 @@ void compute_model_predictions(
     log_info("Finished compute_model_predictions.");
 }
 
+// Add this helper near your other anon-namespace helpers (uses jgetd & scan_prediction_envelope already present)
+static std::pair<double,double> computeYRangePanel(
+    const json& data_bins,
+    const json& pred_bins,
+    const std::string& bkey
+) {
+    double global_min = 1e10;
+    double global_max = -1e10;
+
+    auto collectData = [&](const json& h) {
+        if (!h.contains("xsec") || !h.contains("xsec_err")) return;
+        const auto& yp = h["xsec"];
+        const auto& ep = h["xsec_err"];
+        for (int i=0; i<N_PHI_BINS; ++i) {
+            double y = jgetd(yp, i, 0.0);
+            double e = jgetd(ep, i, 0.0);
+            if (y > 0.0) {
+                global_min = std::min(global_min, std::max(1e-12, y - e));
+                global_max = std::max(global_max, y + e);
+            }
+        }
+    };
+
+    if (data_bins.contains(bkey)) {
+        const json& jb = data_bins[bkey];
+        if (jb.contains("helicity_plus"))  collectData(jb["helicity_plus"]);
+        if (jb.contains("helicity_minus")) collectData(jb["helicity_minus"]);
+    }
+    if (pred_bins.contains(bkey)) {
+        double mmin = 1e10, mmax = -1e10;
+        scan_prediction_envelope(pred_bins[bkey], mmin, mmax);
+        if (mmax > 0.0) {
+            global_min = std::min(global_min, mmin);
+            global_max = std::max(global_max, mmax);
+        }
+    }
+
+    if (!(global_max > 0.0)) return {1e-4, 1.0};
+
+    // Log-scale friendly rounding with padding
+    double ymin = std::pow(10.0, std::floor(std::log10(std::max(1e-12, global_min))));
+    ymin = std::max(1e-4, ymin*0.5);
+    double ymax = std::pow(10.0, std::ceil(std::log10(global_max)));
+    ymax *= 2.0;
+    return {ymin, ymax};
+}
 // ============================================================
 // 2) FAST STEP: plot using saved predictions + bin-centered data
+//    - Single legend at top (no overlap with subplots)
+//    - Extra left margin so y labels don't clip
+//    - Dynamic y-range per panel (no shared canvas range)
 // ============================================================
 void plot_models_vs_bincentered(
     const std::vector<Binning>& binning_scheme,
@@ -442,7 +491,7 @@ void plot_models_vs_bincentered(
     int /*phi_dense_unused*/
 ) {
     log_info("Starting models vs. bin-centered plotting (using saved predictions)...");
-    configure_omp_workers(5); // for any small internal loops we might enable later
+    configure_omp_workers(5);
 
     fs::create_directories(output_dir);
     fs::create_directories(fs::path(output_dir)/"plots");
@@ -515,48 +564,89 @@ void plot_models_vs_bincentered(
 
             TCanvas* c = new TCanvas(cname.str().c_str(), cname.str().c_str(), W, H);
 
-            TPad* pTop  = new TPad("pTop","pTop", 0.0, 0.915, 1.0, 1.0);
+            // Expand the top band a bit to fit a single legend + title cleanly.
+            // Top pad: y in [0.86, 1.00]; grid pad: y in [0.00, 0.86]
+            TPad* pTop  = new TPad("pTop","pTop", 0.0, 0.86, 1.0, 1.0);
             pTop->SetFillStyle(0); pTop->SetBorderSize(0); pTop->Draw();
 
-            TPad* pGrid = new TPad("pGrid","pGrid", 0.0, 0.00, 1.0, 0.915);
+            // Split the top band into title (left) and legend (right)
+            pTop->cd();
+            TPad* pTitle  = new TPad("pTitle","pTitle", 0.00, 0.00, 0.55, 1.00);
+            TPad* pLegend = new TPad("pLegend","pLegend",0.55, 0.00, 1.00, 1.00);
+            pTitle->SetFillStyle(0);  pTitle->SetBorderSize(0);
+            pLegend->SetFillStyle(0); pLegend->SetBorderSize(0);
+            pTitle->Draw(); pLegend->Draw();
+
+            TPad* pGrid = new TPad("pGrid","pGrid", 0.0, 0.00, 1.0, 0.86);
             pGrid->SetFillStyle(0); pGrid->SetBorderSize(0); pGrid->Draw();
             pGrid->cd();
             pGrid->Divide(ncols, nrows, 0.0001, 0.0001);
 
-            // Title
-            pTop->cd();
+            // Title (left of top band)
+            pTitle->cd();
             TLatex head;
-            head.SetNDC(); head.SetTextAlign(22);
+            head.SetNDC(); head.SetTextAlign(13);
             head.SetTextFont(42);
-            head.SetTextSize(0.22);
+            head.SetTextSize(0.35); // relative to the top pad (bigger number OK here)
             std::ostringstream tit;
             tit << "models vs. bin-centered d#sigma/d#phi"
-                << Form("  %s GeV x_{B} #in [%.2g, %.2g]", E.c_str(), xb.first, xb.second);
-            head.DrawLatex(0.5, 0.55, tit.str().c_str());
+                << Form("  %s GeV  x_{B} #in [%.2g, %.2g]", E.c_str(), xb.first, xb.second);
+            head.DrawLatex(0.02, 0.55, tit.str().c_str());
 
-            // Build canvas bin-key list
-            std::vector<std::string> canvas_bin_keys;
-            for (int r=0; r<nrows; ++r) {
-                const int it_global = findIndex(t_slice[r], t_all);
-                if (it_global < 0) continue;
-                for (int cc=0; cc<ncols; ++cc) {
-                    const int iQ_global = findIndex(Q2_slice[cc], Q2_all);
-                    if (iQ_global < 0) continue;
-                    canvas_bin_keys.emplace_back(
-                        "(" + std::to_string(ix) + "," + std::to_string(iQ_global) + "," + std::to_string(it_global) + ")"
-                    );
-                }
-            }
+            // Single legend (right of top band) with proxy objects
+            pLegend->cd();
+            std::vector<TObject*> proxies;
 
-            // Compute canvas y-range from data and predictions
-            auto [ymin_canvas, ymax_canvas] = computeYRangeCanvas(
-                j_bc["bins"],
-                j_pred["bins"],
-                canvas_bin_keys
-            );
-            log_info("Canvas y-range: [" + std::to_string(ymin_canvas) + ", " + std::to_string(ymax_canvas) + "]");
+            auto makeProxyMarker = [&](int mstyle, int color)->TGraph* {
+                auto* g = new TGraph(1);
+                g->SetPoint(0, 0.0, 0.0);
+                g->SetMarkerStyle(mstyle);
+                g->SetMarkerSize(1.0);
+                g->SetMarkerColor(color);
+                g->SetLineColor(color);
+                proxies.push_back(g);
+                return g;
+            };
+            auto makeProxyLine = [&](int color, int lstyle)->TGraph* {
+                auto* g = new TGraph(2);
+                g->SetPoint(0, 0.0, 0.0);
+                g->SetPoint(1, 1.0, 0.0);
+                g->SetLineColor(color);
+                g->SetLineWidth(3);
+                g->SetLineStyle(lstyle);
+                proxies.push_back(g);
+                return g;
+            };
 
-            // Draw panels
+            TLegend* legTop = new TLegend(0.02, 0.10, 0.98, 0.90);
+            legTop->SetBorderSize(1);
+            legTop->SetLineColor(kBlack);
+            legTop->SetFillColor(kWhite);
+            legTop->SetFillStyle(1001);
+            legTop->SetTextFont(42);
+            legTop->SetTextSize(0.18);
+
+            // Data proxies
+            auto* p_plus  = makeProxyMarker(20, kBlue+1);
+            auto* p_minus = makeProxyMarker(25, kRed+1);
+            legTop->AddEntry(p_plus,  "+ helicity (data)", "p");
+            legTop->AddEntry(p_minus, "- helicity (data)", "p");
+
+            // Model proxies
+            auto* l_km_p = makeProxyLine(kBlue+1, 2);
+            auto* l_km_m = makeProxyLine(kRed+1,  2);
+            auto* l_vg_p = makeProxyLine(kBlue+1, 3);
+            auto* l_vg_m = makeProxyLine(kRed+1,  3);
+            auto* l_bh   = makeProxyLine(kBlack,  2);
+
+            legTop->AddEntry(l_km_p, "KM15 + (dashed)", "l");
+            legTop->AddEntry(l_km_m, "KM15 - (dashed)", "l");
+            legTop->AddEntry(l_vg_p, "VGG + (dotted)",  "l");
+            legTop->AddEntry(l_vg_m, "VGG - (dotted)",  "l");
+            legTop->AddEntry(l_bh,   "BH exact (dashed)","l");
+            legTop->Draw();
+
+            // Draw panels (with dynamic y-range per panel)
             for (int r=0; r<nrows; ++r) {
                 const int it_global = findIndex(t_slice[r], t_all);
                 if (it_global < 0) continue;
@@ -568,15 +658,20 @@ void plot_models_vs_bincentered(
                         "(" + std::to_string(ix) + "," + std::to_string(iQ_global) + "," + std::to_string(it_global) + ")";
                     log_info("Plotting panel " + bkey + "...");
 
+                    // Panel-specific y-range
+                    auto [ymin_panel, ymax_panel] = computeYRangePanel(
+                        j_bc["bins"], j_pred["bins"], bkey);
+                    if (!(ymax_panel > ymin_panel)) { ymin_panel = 1e-4; ymax_panel = 1.0; }
+
                     pGrid->cd(r*ncols + cc + 1);
                     gPad->SetGrid(1,1);
                     gPad->SetTopMargin(0.08);
                     gPad->SetBottomMargin(0.18);
-                    gPad->SetLeftMargin(0.125);
+                    gPad->SetLeftMargin(0.16);   // a touch more than 0.125 to avoid clipping
                     gPad->SetRightMargin(0.10);
                     gPad->SetLogy();
 
-                    TH1* frame = gPad->DrawFrame(0.0, ymin_canvas, 360.0, ymax_canvas);
+                    TH1* frame = gPad->DrawFrame(0.0, ymin_panel, 360.0, ymax_panel);
                     frame->GetXaxis()->SetLabelSize(0.0001);
                     frame->GetXaxis()->SetTitle("#phi (deg)");
                     frame->GetYaxis()->SetTitle("d#sigma/d#phi (bin-centered)");
@@ -603,7 +698,7 @@ void plot_models_vs_bincentered(
                         log_warn("No data for " + bkey + " (panel will show models only).");
                     }
 
-                    // Model curves from predictions
+                    // Models from predictions
                     const json* pb = nullptr;
                     if (j_pred["bins"].contains(bkey)) {
                         pb = &j_pred["bins"][bkey];
@@ -623,17 +718,11 @@ void plot_models_vs_bincentered(
                         return gr;
                     };
 
-                    TGraph* g_km_p=nullptr; TGraph* g_km_m=nullptr;
-                    TGraph* g_vg_p=nullptr; TGraph* g_vg_m=nullptr;
-                    TGraph* g_bh  =nullptr;
-
-                    std::vector<double> ph, v;
-
                     if (pb) {
-                        // phi vector
-                        ph.reserve((*pb)["phi_deg"].size());
+                        std::vector<double> ph; ph.reserve((*pb)["phi_deg"].size());
                         for (size_t i=0; i<(*pb)["phi_deg"].size(); ++i)
                             ph.push_back(jgetd((*pb)["phi_deg"], i, 0.0));
+                        std::vector<double> v; v.reserve(ph.size());
 
                         auto pull = [&](const char* key, int color, int style)->TGraph* {
                             if (!pb->contains(key)) return nullptr;
@@ -643,13 +732,13 @@ void plot_models_vs_bincentered(
                         };
 
                         // KM15 dashed
-                        g_km_p = pull("km15_plus",  kBlue+1, 2);
-                        g_km_m = pull("km15_minus", kRed+1,  2);
+                        pull("km15_plus",  kBlue+1, 2);
+                        pull("km15_minus", kRed+1,  2);
                         // VGG dotted
-                        g_vg_p = pull("vgg_plus",   kBlue+1, 3);
-                        g_vg_m = pull("vgg_minus",  kRed+1,  3);
+                        pull("vgg_plus",   kBlue+1, 3);
+                        pull("vgg_minus",  kRed+1,  3);
                         // BH dashed black
-                        g_bh   = pull("bh",         kBlack,  2);
+                        pull("bh",         kBlack,  2);
                     }
 
                     // Panel label
@@ -661,32 +750,6 @@ void plot_models_vs_bincentered(
                              Q2_slice[cc].first, Q2_slice[cc].second,
                              t_slice[r].first,   t_slice[r].second));
 
-                    // Legend
-                    // Show entries in a stable order. Use bottom-left placement.
-                    if (g_km_p || g_km_m || g_vg_p || g_vg_m || g_bh ||
-                        (j_bc["bins"].contains(bkey) && (j_bc["bins"][bkey].contains("helicity_plus") || j_bc["bins"][bkey].contains("helicity_minus")))) {
-                        double x1=0.16, y1=0.18, x2=0.68, y2=0.42;
-                        TLegend* leg = new TLegend(x1,y1,x2,y2);
-                        leg->SetBorderSize(1);
-                        leg->SetLineColor(kBlack);
-                        leg->SetFillColor(kWhite);
-                        leg->SetFillStyle(1001);
-                        leg->SetTextFont(42);
-                        leg->SetTextSize(0.048);
-
-                        if (j_bc["bins"].contains(bkey) && j_bc["bins"][bkey].contains("helicity_plus"))
-                            leg->AddEntry((TObject*)0, "+ helicity (data)", "");
-                        if (j_bc["bins"].contains(bkey) && j_bc["bins"][bkey].contains("helicity_minus"))
-                            leg->AddEntry((TObject*)0, "- helicity (data)", "");
-
-                        if (g_km_p) leg->AddEntry(g_km_p,"KM15 + (dashed)",   "l");
-                        if (g_km_m) leg->AddEntry(g_km_m,"KM15 - (dashed)",   "l");
-                        if (g_vg_p) leg->AddEntry(g_vg_p,"VGG + (dotted)",    "l");
-                        if (g_vg_m) leg->AddEntry(g_vg_m,"VGG - (dotted)",    "l");
-                        if (g_bh)   leg->AddEntry(g_bh,  "BH exact (dashed)", "l");
-                        leg->Draw();
-                    }
-
                     log_info("Panel " + bkey + " done.");
                 } // cols
             } // rows
@@ -694,6 +757,10 @@ void plot_models_vs_bincentered(
             const std::string outP =
                 (fs::path(output_dir)/"plots"/(std::string("models_vs_bincentered_")+E+"_xB_"+std::to_string(ix)+".png")).string();
             c->SaveAs(outP.c_str());
+
+            // Clean up top-legend proxies
+            for (auto* o : proxies) delete o;
+
             delete c;
 
             auto t_canvas_end = std::chrono::steady_clock::now();
