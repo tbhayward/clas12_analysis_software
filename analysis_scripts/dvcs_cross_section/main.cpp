@@ -216,16 +216,23 @@ int main(int argc, char* argv[]) {
     //     (fs::path(output_root) / "rad_corrected_cross_section" / "jsons").string() // directory with rad_corrected_xsec_<E>.json
     // );
 
-    // Example: unpolarized predictions (xB,Q2,t,phi,Ebeam)
-    ModelPaths paths; // leave empty to use env/defaults
-    double xB = 0.11; double Q2 = 1.6; double tpos = 0.20; double phi_deg = 180;
-    double xs_vgg  = vgg_xs(xB, Q2, tpos, phi_deg, 10.604, Helicity::Plus, paths, /*globalfit=*/false);
-    double xs_bh   = vgg_bh_only(xB, Q2, tpos, phi_deg, 10.604, paths, /*globalfit=*/false);
-    double xs_km15 = km15_xs(xB, Q2, tpos, phi_deg, 10.604, Helicity::Plus, paths);
-    std::cout << xs_vgg << " " << xs_km15 << " " << xs_bh << std::endl;
-    xs_bh   = vgg_bh_only(xB, Q2, tpos, phi_deg, 10.594, paths, /*globalfit=*/false);
-    xs_km15 = km15_xs(xB, Q2, tpos, phi_deg, 10.594, Helicity::Plus, paths);
-    std::cout << xs_vgg << " " << xs_km15 << " " << xs_bh << std::endl;
+    // // Example: unpolarized predictions (xB,Q2,t,phi,Ebeam)
+    // ModelPaths paths; // leave empty to use env/defaults
+    // double xB = 0.11; double Q2 = 1.6; double tpos = 0.20; double phi_deg = 180;
+    // double xs_vgg  = vgg_xs(xB, Q2, tpos, phi_deg, 10.604, Helicity::Plus, paths, /*globalfit=*/false);
+    // double xs_bh   = vgg_bh_only(xB, Q2, tpos, phi_deg, 10.604, paths, /*globalfit=*/false);
+    // double xs_km15 = km15_xs(xB, Q2, tpos, phi_deg, 10.604, Helicity::Plus, paths);
+    // std::cout << xs_vgg << " " << xs_km15 << " " << xs_bh << std::endl;
+
+    // --------- Bin-centering corrections (KM15/VGG) ----------
+    compute_bin_centered_cross_sections(
+        binning_scheme,     // already loaded above
+        "output/rad_corrected_cross_section/jsons", // input: directory containing rad_corrected_xsec_10.59.json etc.
+        "output/bin_centering", // output: base directory for bin-centered JSONs + plots
+        5,    // n_steps: subgrid sampling per dimension
+        ModelPaths(), // model paths (empty -> use default environment/config)
+        true  // vgg_globalfit = true
+    );
 
     std::cout << "All done." << std::endl;
     return 0;
