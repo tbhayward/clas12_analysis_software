@@ -249,27 +249,36 @@ void compute_bin_centered_cross_sections(
     const auto t_all   = uniqueRanges(binning_scheme, 't');
     const auto PHI_DEG = phiCentersDeg();
 
-    // match energies used by the RC stage
+    // Keep 10.59 in the list; we will silently skip if it is not available yet.
     const std::vector<std::string> energies = {"10.59","10.60","10.2"};
 
     for (const auto& E : energies) {
-        const std::string rc_path = (fs::path(radcorr_xsec_json_dir) / ("rad_corrected_xsec_" + E + ".json")).string();
-        json j_rc = load_json(rc_path);
-        if (j_rc.empty() || !j_rc.contains("bins")) {
-            std::cerr << "[bincenter] NOTE: missing or malformed RC file for E="<<E<<" -> "<<rc_path<<"\n";
+        const std::string rc_path =
+            (fs::path(radcorr_xsec_json_dir) / ("rad_corrected_xsec_" + E + ".json")).string();
+
+        // Quietly skip if file is missing
+        if (!fs::exists(rc_path)) {
+            std::cout << "[bincenter] Skipping E=" << E << " (no RC file yet)\n";
             continue;
         } //endif
 
-        // output container
+        // Load and validate
+        json j_rc = load_json(rc_path);
+        if (j_rc.is_null() || j_rc.empty() || !j_rc.contains("bins")) {
+            std::cout << "[bincenter] Skipping E=" << E << " (RC file present but malformed)\n";
+            continue;
+        } //endif
+
+        // Output accumulator for this energy
         json jout;
         jout["energy"] = E;
         jout["bins"]   = json::object();
 
-        // Loop bins
+        // Loop the physics bins
         for (int ix = 0; ix < (int)xB_bins.size(); ++ix) {
             const auto xb = xB_bins[ix];
 
-            // collect Q2,t slices present in the scheme for this xB
+            // Slices that actually occur for this xB in the scheme
             std::set<std::pair<double,double>> qs, ts;
             for (const auto& b : binning_scheme) {
                 if (std::make_pair(b.xBmin,b.xBmax) == xb) {
@@ -287,7 +296,9 @@ void compute_bin_centered_cross_sections(
                     const int it_global = findIndex(tr, t_all);
                     if (it_global < 0) continue;
 
-                    const std::string bkey = "(" + std::to_string(ix) + "," + std::to_string(iQ_global) + "," + std::to_string(it_global) + ")";
+                    const std::string bkey =
+                        "(" + std::to_string(ix) + "," + std::to_string(iQ_global) + "," + std::to_string(it_global) + ")";
+
                     if (!j_rc["bins"].contains(bkey)) continue;
                     const json& cell_in = j_rc["bins"][bkey];
                     if (!has_bc_cell(cell_in)) continue;
@@ -321,7 +332,7 @@ void compute_bin_centered_cross_sections(
                                 fkm, fvg
                             );
 
-                            // choose final fbin
+                            // Choose final factor and a simple model-variation systematic
                             double f_final = 1.0;
                             double f_sys   = 0.0;
                             if (finite_pos(fkm)) {
@@ -338,12 +349,9 @@ void compute_bin_centered_cross_sections(
                             const double x  = jgetd(xs, ip, 0.0);
                             const double ex = std::max(0.0, jgetd(xe, ip, 0.0));
 
-                            const double yc = f_final * x;
-                            const double ec = f_final * ex;  // stat error scales with factor
-
                             phi_bc[ip]   = phi_c;
-                            y[ip]        = yc;
-                            e[ip]        = ec;
+                            y[ip]        = f_final * x;
+                            e[ip]        = f_final * ex;  // scale statistical error by same factor
                             fbin_used[ip]= f_final;
                             fbin_km15[ip]= (finite_pos(fkm) ? fkm : 0.0);
                             fbin_vgg[ip] = (finite_pos(fvg) ? fvg : 0.0);
@@ -372,12 +380,21 @@ void compute_bin_centered_cross_sections(
             } //endfor
         } //endfor
 
-        // save JSON
-        const std::string out_json = (fs::path(output_dir)/"jsons"/("bin_centered_xsec_"+E+".json")).string();
-        save_json(jout, out_json);
-        std::cout << "[bincenter] Wrote " << out_json << "\n";
+        // If nothing was produced for this energy, do not write files or make plots
+        if (jout["bins"].empty()) {
+            std::cout << "[bincenter] No valid bins at E=" << E << ", skipping save/plots\n";
+            continue;
+        } //endif
 
-        // ---------------- PLOTS ----------------
+        // Save JSON for this energy
+        {
+            const std::string out_json =
+                (fs::path(output_dir)/"jsons"/("bin_centered_xsec_"+E+".json")).string();
+            save_json(jout, out_json);
+            std::cout << "[bincenter] Wrote " << out_json << "\n";
+        }
+
+        // Plot helper
         auto makeCanvas = [&](bool overlay){
             for (int ix = 0; ix < (int)xB_bins.size(); ++ix) {
                 const auto xb = xB_bins[ix];
@@ -452,7 +469,9 @@ void compute_bin_centered_cross_sections(
 
                         drawDegreeTicks(gPad->GetUxmin(), gPad->GetUymin(), gPad->GetUxmax(), 0.048);
 
-                        const std::string bkey = "(" + std::to_string(ix) + "," + std::to_string(iQ_global) + "," + std::to_string(it_global) + ")";
+                        const std::string bkey =
+                            "(" + std::to_string(ix) + "," + std::to_string(iQ_global) + "," + std::to_string(it_global) + ")";
+
                         if (!jout["bins"].contains(bkey)) continue;
                         const json& jb_bc = jout["bins"][bkey];
 

@@ -110,14 +110,15 @@ static inline double jgetd(const json& a, size_t i, double def=0.0){
 // ------------------------------------------------------------
 void compute_rad_corrected_cross_sections(
     const std::vector<Binning>& binning_scheme,
-    const std::string& uncorrected_xsec_json_dir, // "output/uncorrected_cross_section/jsons"
-    const std::string& radcorr_json_dir,          // "output/jsons"
-    const std::string& output_dir)                // "output/rad_corrected_cross_section"
+    const std::string& uncorrected_xsec_json_dir, // e.g. "output/jsons"
+    const std::string& radcorr_json_dir,          // e.g. "output/jsons"
+    const std::string& output_dir)                // e.g. "output/rad_corrected_cross_section"
 {
     // dirs
     fs::create_directories(output_dir);
-    fs::create_directories(fs::path(output_dir)/"jsons");
     fs::create_directories(fs::path(output_dir)/"plots");
+    fs::create_directories(uncorrected_xsec_json_dir);
+    fs::create_directories(radcorr_json_dir); // <<— JSONs will be saved here now
 
     // binning helpers for plotting layout
     const auto xB_bins = uniqueRanges(binning_scheme, 'x');
@@ -178,7 +179,7 @@ void compute_rad_corrected_cross_sections(
                     const double r  = std::max(0.0, jgetd(rc_phi, ip, 1.0));
                     const double er = has_rc_err ? std::max(0.0, jgetd(rc_err, ip, 0.0)) : 0.0;
 
-                    // y' = r * x ;    σ_y'^2 = (r*σ_x)^2 + (x*σ_r)^2
+                    // y' = r * x ;    sigma_y'^2 = (r*sigma_x)^2 + (x*sigma_r)^2
                     const double yc = r * x;
                     double ec = std::sqrt( (r*ex)*(r*ex) + (x*er)*(x*er) );
                     if (!std::isfinite(ec)) ec = 0.0;
@@ -208,8 +209,8 @@ void compute_rad_corrected_cross_sections(
             };
         }
 
-        // Save corrected JSON
-        const std::string out_json = (fs::path(output_dir)/"jsons"/("rad_corrected_xsec_"+E+".json")).string();
+        // Save corrected JSON — now in the universal output/jsons directory
+        const std::string out_json = (fs::path(radcorr_json_dir)/("rad_corrected_xsec_"+E+".json")).string();
         {
             std::ofstream ofs(out_json);
             ofs << std::setw(2) << jout << "\n";
@@ -331,7 +332,7 @@ void compute_rad_corrected_cross_sections(
                         const bool have_unc = overlay && j_unc["bins"].contains(bkey);
                         const json& jb_unc = have_unc ? j_unc["bins"][bkey] : json::object();
 
-                        // draw order: show uncorrected first (grey, open), then corrected (color, filled)
+                        // draw order: uncorrected first (grey), then corrected (color)
                         TGraphErrors* gup = nullptr;
                         TGraphErrors* gum = nullptr;
                         if (have_unc) {
@@ -349,7 +350,6 @@ void compute_rad_corrected_cross_sections(
                                  Q2_slice[cc].first, Q2_slice[cc].second,
                                  t_slice[r].first,   t_slice[r].second));
 
-                        // legend
                         if (gcp || gcm || gup || gum){
                             double x1=0.48, y1=0.70, x2=0.90, y2=0.93;
                             TLegend* leg = new TLegend(x1,y1,x2,y2);
