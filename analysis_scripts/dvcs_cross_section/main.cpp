@@ -224,23 +224,23 @@ int main(int argc, char* argv[]) {
     // double xs_km15 = km15_xs(xB, Q2, tpos, phi_deg, 10.604, Helicity::Plus, paths);
     // std::cout << xs_vgg << " " << xs_km15 << " " << xs_bh << std::endl;
 
-    // // --------- Bin-centering corrections using VGG ONLY (compute only) ----------
-    // compute_bin_centered_cross_sections(
-    //     binning_scheme,
-    //     "output/jsons",           // rad_corrected_xsec_<E>.json input
-    //     "output/bin_centering",   // JSONs saved to output/bin_centering/jsons
-    //     2,
-    //     ModelPaths(),
-    //     true,
-    //     ModelChoice::VGGOnly      // VGGOnly, KM15Only, Both
-    // );
-    // --------- Bin-centering plots only (no recompute) ----------
-    plot_bin_centered_cross_sections(
+    // --------- Bin-centering corrections using VGG ONLY (compute only) ----------
+    compute_bin_centered_cross_sections(
         binning_scheme,
-        "output/jsons",                // where rad_corrected_xsec_<E>.json lives (before BC)
-        "output/bin_centering/jsons",  // where bin_centered_xsec_<E>.json lives (after BC)
-        "output/bin_centering/plots"   // where to write the PNGs
+        "output/jsons",           // rad_corrected_xsec_<E>.json input
+        "output/bin_centering",   // JSONs saved to output/bin_centering/jsons
+        4,
+        ModelPaths(),
+        true,
+        ModelChoice::Both      // VGGOnly, KM15Only, Both
     );
+    // // --------- Bin-centering plots only (no recompute) ----------
+    // plot_bin_centered_cross_sections(
+    //     binning_scheme,
+    //     "output/jsons",                // where rad_corrected_xsec_<E>.json lives (before BC)
+    //     "output/bin_centering/jsons",  // where bin_centered_xsec_<E>.json lives (after BC)
+    //     "output/bin_centering/plots"   // where to write the PNGs
+    // );
 
     std::cout << "All done." << std::endl;
     return 0;
