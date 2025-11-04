@@ -250,7 +250,7 @@ int main(int argc, char* argv[]) {
         "output/bin_centering",        // plots will go under output/bin_centering/plots
         ModelPaths(),                  // your configured paths to models
         true,                          // vgg_globalfit flag
-        181                           // phi sampling density (0..360 by 1 deg)
+        24                          // phi sampling density (0..360 by 1 deg)
     );
 
     std::cout << "All done." << std::endl;

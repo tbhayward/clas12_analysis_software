@@ -12,6 +12,8 @@
 #include <TGaxis.h>
 
 #include <algorithm>
+#include <atomic>
+#include <chrono>
 #include <cmath>
 #include <filesystem>
 #include <fstream>
@@ -53,6 +55,30 @@ struct StyleInit {
     }
 } _style_guard;
 
+// ---------- small logging helpers ----------
+static inline void log_info(const std::string& msg) {
+    std::cout << "[models] " << msg << std::endl;
+}
+
+static inline void log_warn(const std::string& msg) {
+    std::cout << "[models][warn] " << msg << std::endl;
+}
+
+#ifdef _OPENMP
+static inline int configure_omp_workers(int hard_cap = 5) {
+    int sys_cap = omp_get_max_threads();
+    int use = std::min(hard_cap, std::max(1, sys_cap));
+    omp_set_num_threads(use);
+    log_info("OpenMP enabled with " + std::to_string(use) + " worker(s) (hard-capped at 5).");
+    return use;
+}
+#else
+static inline int configure_omp_workers(int /*hard_cap*/ = 5) {
+    log_info("OpenMP not available; running single-threaded.");
+    return 1;
+}
+#endif
+
 // Helpers from your plotting conventions
 static inline std::vector<double> phiCentersDeg() {
     std::vector<double> d(N_PHI_BINS);
@@ -92,7 +118,7 @@ static inline int findIndex(const std::pair<double,double>& range,
 static json load_json(const std::string& path) {
     std::ifstream f(path);
     if (!f.is_open()) {
-        std::cerr << "[models] Failed to open " << path << "\n";
+        log_warn("Failed to open " + path);
         return json();
     } //endif
     json j; f >> j; return j;
@@ -142,6 +168,7 @@ struct ModelCurves {
     std::vector<double> y_bh;     // BH (helicity-independent)
 };
 
+// NOTE: Logging kept light here; panel-level progress is printed in the main loop.
 static ModelCurves sample_models_dense(
     int phi_dense,
     double Ebeam,
@@ -149,7 +176,8 @@ static ModelCurves sample_models_dense(
     double Q2min, double Q2max,
     double tmin_pos, double tmax_pos,
     const ModelPaths& paths,
-    bool vgg_globalfit
+    bool vgg_globalfit,
+    int omp_workers  // hard-capped upstream
 ) {
     ModelCurves mc;
     if (phi_dense < 2) phi_dense = 2;
@@ -162,15 +190,11 @@ static ModelCurves sample_models_dense(
     const double Q2_c   = midpoint(Q2min, Q2max);
     const double tpos_c = midpoint(tmin_pos, tmax_pos);
 
-    // Hard cap: use at most 5 threads here, no matter the machine.
+    // Sample 0..360 inclusive (wrap last point to 360 exactly)
     #ifdef _OPENMP
-    const int user_cap = 5;
-    int sys_cap = omp_get_max_threads();
-    int nthreads = std::min(user_cap, std::max(1, sys_cap));
-    omp_set_num_threads(nthreads);
+    omp_set_num_threads(omp_workers);
     #endif
 
-    // Sample 0..360 inclusive (wrap last point to 360 exactly)
     #pragma omp parallel for if(phi_dense > 72) schedule(static)
     for (int i=0; i<phi_dense; ++i) {
         double ph = (phi_dense == 1) ? 0.0 : (360.0 * double(i) / double(phi_dense-1));
@@ -263,6 +287,9 @@ void plot_models_vs_bincentered(
     bool vgg_globalfit,
     int phi_dense
 ) {
+    log_info("Starting models vs. bin-centered plotting...");
+    const int omp_workers = configure_omp_workers(5);
+
     fs::create_directories(output_dir);
     fs::create_directories(fs::path(output_dir)/"plots");
 
@@ -270,15 +297,22 @@ void plot_models_vs_bincentered(
     const auto Q2_all  = uniqueRanges(binning_scheme, 'Q');
     const auto t_all   = uniqueRanges(binning_scheme, 't');
 
+    log_info("Discovered unique bins: xB=" + std::to_string(xB_bins.size())
+             + ", Q2=" + std::to_string(Q2_all.size())
+             + ", t="  + std::to_string(t_all.size()));
+
     const std::vector<std::string> energies = {"10.59","10.60","10.2"};
     const auto PHI_DEG = phiCentersDeg();
 
+    int ecount = 0;
     for (const auto& E : energies) {
+        ++ecount;
         const std::string bc_path = (fs::path(bincenter_json_dir) / ("bin_centered_xsec_" + E + ".json")).string();
+        log_info("Energy " + E + " (" + std::to_string(ecount) + "/" + std::to_string(energies.size()) + "): "
+                 + "loading " + bc_path);
         json j_bc = load_json(bc_path);
         if (j_bc.empty() || !j_bc.contains("bins")) {
-            std::cerr << "[models] NOTE: missing or malformed bin-centered file for E=" << E
-                      << " -> " << bc_path << " (skipping)\n";
+            log_warn("Missing or malformed bin-centered file for E=" + E + " (skipping).");
             continue;
         }
 
@@ -305,6 +339,12 @@ void plot_models_vs_bincentered(
 
             std::ostringstream cname;
             cname << "c_models_"<<E<<"_xB"<<ix;
+
+            log_info("xB slice " + std::to_string(ix) + ": grid " + std::to_string(nrows) + "x" + std::to_string(ncols)
+                     + ", phi_dense=" + std::to_string(phi_dense));
+
+            auto t_canvas_start = std::chrono::steady_clock::now();
+
             TCanvas* c = new TCanvas(cname.str().c_str(), cname.str().c_str(), W, H);
 
             TPad* pTop  = new TPad("pTop","pTop", 0.0, 0.915, 1.0, 1.0);
@@ -323,11 +363,13 @@ void plot_models_vs_bincentered(
             head.SetTextSize(0.22);
             std::ostringstream tit;
             tit << "models vs. bin-centered d#sigma/d#phi"
-                << Form("  %s GeV x_{B} #in [%.2g, %.2g]", E.c_str(), xb.first, xb.second);
+                << Form("  %s GeV x_{B} in [%.2g, %.2g]", E.c_str(), xb.first, xb.second);
             head.DrawLatex(0.5, 0.55, tit.str().c_str());
 
             // First pass over panels: pre-sample BH and collect model envelopes for y-range
             std::map<std::string, std::pair<double,double>> model_envelopes; // bkey -> (min,max)
+            int envelope_panels = 0;
+
             for (int r=0; r<nrows; ++r) {
                 const int it_global = findIndex(t_slice[r], t_all);
                 if (it_global < 0) continue;
@@ -338,13 +380,14 @@ void plot_models_vs_bincentered(
                     const std::string bkey =
                         "(" + std::to_string(ix) + "," + std::to_string(iQ_global) + "," + std::to_string(it_global) + ")";
 
-                    // Pre-sample BH for envelope
+                    // Pre-sample BH for envelope (parallel inside)
                     ModelCurves mc_bh = sample_models_dense(
                         phi_dense, std::stod(E),
                         xb.first, xb.second,
                         Q2_slice[cc].first, Q2_slice[cc].second,
                         t_slice[r].first,   t_slice[r].second,
-                        paths, vgg_globalfit
+                        paths, vgg_globalfit,
+                        omp_workers
                     );
                     double mmin = 1e10, mmax = -1e10;
                     for (size_t i=0;i<mc_bh.y_bh.size();++i) {
@@ -354,10 +397,12 @@ void plot_models_vs_bincentered(
                             mmax = std::max(mmax, v);
                         }
                     }
-                    if (mmax <= 0.0) { mmin = 1e10; mmax = -1e10; } // if BH had no data
+                    if (mmax <= 0.0) { mmin = 1e10; mmax = -1e10; }
                     model_envelopes[bkey] = {mmin, mmax};
+                    ++envelope_panels;
                 }
             }
+            log_info("Envelope pre-sampled for " + std::to_string(envelope_panels) + " panels.");
 
             // Second pass: compute canvas y-range from data and BH envelopes
             std::vector<std::string> canvas_bin_keys;
@@ -373,8 +418,9 @@ void plot_models_vs_bincentered(
                 }
             }
             auto [ymin_canvas, ymax_canvas] = computeYRangeCanvas(j_bc["bins"], canvas_bin_keys, model_envelopes);
+            log_info("Canvas y-range: [" + std::to_string(ymin_canvas) + ", " + std::to_string(ymax_canvas) + "]");
 
-            // Third pass: draw each panel
+            // Third pass: draw each panel (compute models in parallel across phi inside each panel)
             for (int r=0; r<nrows; ++r) {
                 const int it_global = findIndex(t_slice[r], t_all);
                 if (it_global < 0) continue;
@@ -382,11 +428,16 @@ void plot_models_vs_bincentered(
                     const int iQ_global = findIndex(Q2_slice[cc], Q2_all);
                     if (iQ_global < 0) continue;
 
+                    const std::string bkey =
+                        "(" + std::to_string(ix) + "," + std::to_string(iQ_global) + "," + std::to_string(it_global) + ")";
+
+                    log_info("Panel " + bkey + ": sampling models at centers and drawing...");
+
                     pGrid->cd(r*ncols + cc + 1);
                     gPad->SetGrid(1,1);
                     gPad->SetTopMargin(0.08);
                     gPad->SetBottomMargin(0.18);
-                    gPad->SetLeftMargin(0.125); // per your preference
+                    gPad->SetLeftMargin(0.125);
                     gPad->SetRightMargin(0.10);
                     gPad->SetLogy();
 
@@ -405,59 +456,90 @@ void plot_models_vs_bincentered(
 
                     drawDegreeTicks(gPad->GetUxmin(), gPad->GetUymin(), gPad->GetUxmax(), 0.048);
 
-                    const std::string bkey =
-                        "(" + std::to_string(ix) + "," + std::to_string(iQ_global) + "," + std::to_string(it_global) + ")";
-                    if (!j_bc["bins"].contains(bkey)) continue;
+                    if (!j_bc["bins"].contains(bkey)) {
+                        log_warn("No data bin found for " + bkey + " (skipping panel).");
+                        continue;
+                    }
                     const json& jb = j_bc["bins"][bkey];
 
-                    // 1) Data points (bin-centered)
+                    // Data points
                     double ymax_seen = 0.0;
                     TGraphErrors* gdp = nullptr;
                     TGraphErrors* gdm = nullptr;
                     if (jb.contains("helicity_plus"))
-                        gdp = draw_data_hel(jb["helicity_plus"],  20 /*filled circle*/, kBlue+1, frame, ymax_seen);
+                        gdp = draw_data_hel(jb["helicity_plus"],  20, kBlue+1, frame, ymax_seen);
                     if (jb.contains("helicity_minus"))
-                        gdm = draw_data_hel(jb["helicity_minus"], 25 /*filled square*/, kRed+1,  frame, ymax_seen);
+                        gdm = draw_data_hel(jb["helicity_minus"], 25, kRed+1,  frame, ymax_seen);
 
-                    // 2) Model curves (KM15 dashed, VGG dotted), and BH dashed black.
-                    //    Sample densely now (at bin centers).
+                    // Centers for model sampling
                     const double xB_c   = midpoint(xb.first, xb.second);
                     const double Q2_c   = midpoint(Q2_slice[cc].first, Q2_slice[cc].second);
                     const double tpos_c = midpoint(t_slice[r].first,   t_slice[r].second);
 
                     // Dense phi vector
                     std::vector<double> ph(phi_dense);
-                    std::vector<double> y_km_plus(phi_dense),  y_km_minus(phi_dense);
-                    std::vector<double> y_vg_plus(phi_dense),  y_vg_minus(phi_dense);
-                    std::vector<double> y_bh(phi_dense);
-
                     for (int i=0; i<phi_dense; ++i) {
                         ph[i] = (phi_dense == 1) ? 0.0 : (360.0 * double(i) / double(phi_dense-1));
                     }
 
-                    // Compute (no drawing) — allow limited parallel sampling
+                    std::vector<double> y_km_plus(phi_dense),  y_km_minus(phi_dense);
+                    std::vector<double> y_vg_plus(phi_dense),  y_vg_minus(phi_dense);
+                    std::vector<double> y_bh(phi_dense);
+
+                    // Progress tracker for this panel (10% steps)
+                    int chunk = std::max(1, phi_dense/10);
+                    std::atomic<int> prog(0);
+
                     #ifdef _OPENMP
-                    omp_set_num_threads(std::min(5, std::max(1, omp_get_max_threads())));
+                    omp_set_num_threads(omp_workers);
                     #endif
-                    #pragma omp parallel for if(phi_dense > 72) schedule(static)
+                    #pragma omp parallel for if(phi_dense > 24) schedule(static)
                     for (int i=0; i<phi_dense; ++i) {
                         double p = ph[i];
+
                         // KM15
-                        double km_p = km15_xs(xB_c, Q2_c, tpos_c, p, std::stod(E), Helicity::Plus,  paths);
-                        double km_m = km15_xs(xB_c, Q2_c, tpos_c, p, std::stod(E), Helicity::Minus, paths);
+                        double km_p = 0.0, km_m = 0.0;
+                        try {
+                            km_p = km15_xs(xB_c, Q2_c, tpos_c, p, std::stod(E), Helicity::Plus,  paths);
+                            km_m = km15_xs(xB_c, Q2_c, tpos_c, p, std::stod(E), Helicity::Minus, paths);
+                        } catch (...) {
+                            km_p = km_m = 0.0;
+                        }
                         y_km_plus[i]  = positive(km_p) ? km_p : 0.0;
                         y_km_minus[i] = positive(km_m) ? km_m : 0.0;
+
                         // VGG
-                        double vg_p = vgg_xs(xB_c, Q2_c, tpos_c, p, std::stod(E), Helicity::Plus,  paths, vgg_globalfit);
-                        double vg_m = vgg_xs(xB_c, Q2_c, tpos_c, p, std::stod(E), Helicity::Minus, paths, vgg_globalfit);
+                        double vg_p = 0.0, vg_m = 0.0;
+                        try {
+                            vg_p = vgg_xs(xB_c, Q2_c, tpos_c, p, std::stod(E), Helicity::Plus,  paths, vgg_globalfit);
+                            vg_m = vgg_xs(xB_c, Q2_c, tpos_c, p, std::stod(E), Helicity::Minus, paths, vgg_globalfit);
+                        } catch (...) {
+                            vg_p = vg_m = 0.0;
+                        }
                         y_vg_plus[i]  = positive(vg_p) ? vg_p : 0.0;
                         y_vg_minus[i] = positive(vg_m) ? vg_m : 0.0;
+
                         // BH (helicity independent)
                         double yb = 0.0;
-                        try { yb = vgg_bh_only(xB_c, Q2_c, tpos_c, p, std::stod(E), paths, /*globalfit=*/vgg_globalfit); }
-                        catch (...) { yb = 0.0; }
+                        try {
+                            yb = vgg_bh_only(xB_c, Q2_c, tpos_c, p, std::stod(E), paths, /*globalfit=*/vgg_globalfit);
+                        } catch (...) {
+                            yb = 0.0;
+                        }
                         y_bh[i] = positive(yb) ? yb : 0.0;
-                    }
+
+                        int done = ++prog;
+                        if (done % chunk == 0 || done == phi_dense) {
+                            #ifdef _OPENMP
+                            #pragma omp critical
+                            #endif
+                            {
+                                int pct = int(100.0 * double(done) / double(phi_dense));
+                                std::cout << "[models] Panel " << bkey << " model sampling " << pct
+                                          << "% (" << done << "/" << phi_dense << ")\n";
+                            }
+                        }
+                    } //end parallel for
 
                     // Build TGraphs and draw (lines only)
                     auto makeLine = [&](const std::vector<double>& xv, const std::vector<double>& yv,
@@ -471,11 +553,11 @@ void plot_models_vs_bincentered(
                         return gr;
                     };
 
-                    // KM15 dashed: + blue, − red
+                    // KM15 dashed: + blue, - red
                     TGraph* g_km_p = makeLine(ph, y_km_plus,  kBlue+1, 2);
                     TGraph* g_km_m = makeLine(ph, y_km_minus, kRed+1,  2);
 
-                    // VGG dotted: + blue, − red
+                    // VGG dotted: + blue, - red
                     TGraph* g_vg_p = makeLine(ph, y_vg_plus,  kBlue+1, 3);
                     TGraph* g_vg_m = makeLine(ph, y_vg_minus, kRed+1,  3);
 
@@ -487,13 +569,13 @@ void plot_models_vs_bincentered(
                     lab.SetNDC(); lab.SetTextSize(0.07); lab.SetTextAlign(11);
                     lab.SetTextFont(42);
                     lab.DrawLatex(0.15, 0.94,
-                        Form("Q^{2} #in [%.2g, %.2g], -t #in [%.2g, %.2g]",
+                        Form("Q^{2} in [%.2g, %.2g], -t in [%.2g, %.2g]",
                              Q2_slice[cc].first, Q2_slice[cc].second,
                              t_slice[r].first,   t_slice[r].second));
 
-                    // Legend (bottom-left) — width per your tweak
+                    // Legend (bottom-left)
                     if (gdp || gdm || g_km_p || g_km_m || g_vg_p || g_vg_m || g_bh) {
-                        double x1=0.16, y1=0.18, x2=0.68, y2=0.42; // updated width
+                        double x1=0.16, y1=0.18, x2=0.68, y2=0.42;
                         TLegend* leg = new TLegend(x1,y1,x2,y2);
                         leg->SetBorderSize(1);
                         leg->SetLineColor(kBlack);
@@ -511,15 +593,21 @@ void plot_models_vs_bincentered(
                         if (g_bh)   leg->AddEntry(g_bh,  "BH exact (dashed)", "l");
                         leg->Draw();
                     }
-                }
-            }
+
+                    log_info("Panel " + bkey + " done.");
+                } // cols
+            } // rows
 
             const std::string outP =
                 (fs::path(output_dir)/"plots"/(std::string("models_vs_bincentered_")+E+"_xB_"+std::to_string(ix)+".png")).string();
             c->SaveAs(outP.c_str());
             delete c;
-        }
-    }
 
-    std::cout << "[models] Finished model vs. bin-centered plotting.\n";
+            auto t_canvas_end = std::chrono::steady_clock::now();
+            auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(t_canvas_end - t_canvas_start).count();
+            log_info("Saved " + outP + " (" + std::to_string(ms) + " ms).");
+        } // xB slices
+    } // energies
+
+    log_info("Finished models vs. bin-centered plotting.");
 }
