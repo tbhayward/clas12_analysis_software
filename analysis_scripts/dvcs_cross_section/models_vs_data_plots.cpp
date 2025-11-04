@@ -530,6 +530,56 @@ static std::pair<double,double> panelYRangeLogSafe(const json& j_bc_cell,
     return {gmin, gmax};
 }
 
+// ============================================================
+// 2) FAST STEP: plot using saved predictions + bin-centered data
+// ============================================================
+static std::pair<double,double> panelYRangeLogSafe(const json& j_bc_cell,
+                                                   const json* j_pred_cell) {
+    auto scanHel = [](const json& H, double& gmin, double& gmax){
+        if (!H.contains("xsec") || !H.contains("xsec_err")) return;
+        const auto& y  = H["xsec"];
+        const auto& ey = H["xsec_err"];
+        for (int i=0;i<N_PHI_BINS;++i){
+            const double v  = jgetd(y,  i, 0.0);
+            const double dv = std::max(0.0, jgetd(ey, i, 0.0));
+            if (v > 0.0) {
+                gmin = std::min(gmin, std::max(1e-12, v - dv));
+                gmax = std::max(gmax, v + dv);
+            }
+        }
+    };
+
+    double gmin = 1e10, gmax = -1e10;
+
+    // data
+    if (j_bc_cell.contains("helicity_plus"))  scanHel(j_bc_cell["helicity_plus"],  gmin, gmax);
+    if (j_bc_cell.contains("helicity_minus")) scanHel(j_bc_cell["helicity_minus"], gmin, gmax);
+
+    // predictions
+    if (j_pred_cell){
+        auto scanVec = [&](const char* key){
+            if (!j_pred_cell->contains(key)) return;
+            const auto& a = (*j_pred_cell)[key];
+            for (size_t i=0;i<a.size();++i){
+                const double v = jgetd(a, i, 0.0);
+                if (positive(v)) { gmin = std::min(gmin, v); gmax = std::max(gmax, v); }
+            }
+        };
+        scanVec("km15_plus");  scanVec("km15_minus");
+        scanVec("vgg_plus");   scanVec("vgg_minus");
+        scanVec("bh");
+    }
+
+    // fallbacks + log padding
+    if (!(gmax > 0.0)) { gmin = 1e-4; gmax = 1.0; }
+    double ymin10 = std::pow(10.0, std::floor(std::log10(std::max(1e-12, gmin))));
+    double ymax10 = std::pow(10.0, std::ceil (std::log10(gmax)));
+    gmin = std::max(1e-4, ymin10*0.8);
+    gmax = ymax10*1.25;
+    if (gmax <= gmin) gmax = gmin*10.0; // safety
+    return {gmin, gmax};
+}
+
 void plot_models_vs_bincentered(
     const std::vector<Binning>& binning_scheme,
     const std::string& bincenter_json_dir,     // bin_centered_xsec_<E>.json (data)
