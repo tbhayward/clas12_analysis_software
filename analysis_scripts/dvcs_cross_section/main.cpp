@@ -192,11 +192,11 @@ int main(int argc, char* argv[]) {
     //     "output/uncorrected_cross_section/" // output dir
     // ); // #endif
 
-    // Multiply uncorrected dσ/dφ by Born/Rad per-φ correction
-    const std::string unx_dir = "output/jsons";                    // reads: uncorrected_xsec_<E>.json
-    const std::string rc_dir  = "output/jsons";                    // reads: radiative_corrections_group_<E>.json
-    const std::string out_dir = "output/rad_corrected_cross_section"; // writes plots here
-    compute_rad_corrected_cross_sections(binning_scheme, unx_dir, rc_dir, out_dir);
+    // // Multiply uncorrected dσ/dφ by Born/Rad per-φ correction
+    // const std::string unx_dir = "output/jsons";                    // reads: uncorrected_xsec_<E>.json
+    // const std::string rc_dir  = "output/jsons";                    // reads: radiative_corrections_group_<E>.json
+    // const std::string out_dir = "output/rad_corrected_cross_section"; // writes plots here
+    // compute_rad_corrected_cross_sections(binning_scheme, unx_dir, rc_dir, out_dir);
 
 
     // // Beam-Spin Asymmetry:
@@ -228,7 +228,7 @@ int main(int argc, char* argv[]) {
     compute_bin_centered_cross_sections(
         binning_scheme,     
         "output/jsons",     
-        "output/bin_centering_vgg_only", // different output directory to avoid overwriting
+        "output/bin_centering", // different output directory to avoid overwriting
         3,                  
         ModelPaths(),       
         true,               
