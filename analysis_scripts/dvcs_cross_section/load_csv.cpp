@@ -1,310 +1,290 @@
-// load_csv.cpp
 #include "load_csv.h"
 
-#include <algorithm>
-#include <cctype>
 #include <cmath>
+#include <cstdint>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
 #include <fstream>
-#include <iomanip>
 #include <iostream>
-#include <limits>
-#include <map>
 #include <sstream>
 #include <string>
 #include <unordered_map>
 #include <utility>
 #include <vector>
 
-namespace {
+// Simple logger
+static inline void lee_info(const std::string& s)  { std::cout << "[lee] " << s << std::endl; }
+static inline void lee_warn(const std::string& s)  { std::cout << "[lee][warn] " << s << std::endl; }
 
-// trim helpers
-static inline std::string ltrim(std::string s) {
-    size_t i=0; while (i<s.size() && std::isspace(static_cast<unsigned char>(s[i]))) ++i;
-    return s.substr(i);
+// Quantize doubles to int64 keys at 1e-6 precision to avoid float mismatches.
+static inline int64_t q6(double v) {
+    return (int64_t) llround(v * 1000000.0);
 }
-static inline std::string rtrim(std::string s) {
-    if (s.empty()) return s;
-    size_t i=s.size(); while (i>0 && std::isspace(static_cast<unsigned char>(s[i-1]))) --i;
-    return s.substr(0,i);
-}
-static inline std::string trim(std::string s) { return rtrim(ltrim(std::move(s))); }
 
-// very simple CSV splitter (assumes no embedded commas inside quoted fields)
+// Composite key for acceptance lookup
+struct AccKey {
+    int64_t xBmin, xBmax;
+    int64_t Q2min, Q2max;
+    int64_t tmin,  tmax;
+    int64_t phiavg;
+
+    bool operator==(const AccKey& o) const {
+        return xBmin==o.xBmin && xBmax==o.xBmax &&
+               Q2min==o.Q2min && Q2max==o.Q2max &&
+               tmin==o.tmin && tmax==o.tmax &&
+               phiavg==o.phiavg;
+    }
+};
+
+struct AccKeyHash {
+    size_t operator()(const AccKey& k) const {
+        // Cheap hash mixer
+        uint64_t h = 1469598103934665603ull;
+        auto mix = [&](int64_t v){
+            h ^= (uint64_t) v;
+            h *= 1099511628211ull;
+        };
+        mix(k.xBmin); mix(k.xBmax);
+        mix(k.Q2min); mix(k.Q2max);
+        mix(k.tmin);  mix(k.tmax);
+        mix(k.phiavg);
+        return (size_t) h;
+    }
+};
+
+// Split CSV line into fields (assumes numeric columns have no embedded commas in quotes)
 static std::vector<std::string> split_csv_line(const std::string& line) {
     std::vector<std::string> out;
-    std::string cur;
+    std::string cur; cur.reserve(line.size());
     bool in_quotes = false;
-    for (char ch : line) {
-        if (ch == '"') { in_quotes = !in_quotes; continue; }
-        if (ch == ',' && !in_quotes) {
-            out.push_back(trim(cur));
+    for (char c : line) {
+        if (c == '"') { in_quotes = !in_quotes; continue; }
+        if (c == ',' && !in_quotes) {
+            out.push_back(cur);
             cur.clear();
         } else {
-            cur.push_back(ch);
+            cur.push_back(c);
         }
     }
-    out.push_back(trim(cur));
+    out.push_back(cur);
     return out;
 }
 
-// read whole CSV into rows of strings; return header index map
-static bool read_csv(const std::string& path,
-                     std::vector<std::vector<std::string>>& rows,
-                     std::unordered_map<std::string, size_t>& col,
-                     bool verbose_open=true) {
-    std::ifstream in(path);
-    if (!in.is_open()) {
-        std::cerr << "[lee][warn] Failed to open " << path << "\n";
-        return false;
-    }
-    if (verbose_open) std::cout << "[lee] Opened " << path << "\n";
-    std::string line;
-    if (!std::getline(in, line)) {
-        std::cerr << "[lee][warn] Empty CSV: " << path << "\n";
-        return false;
-    }
-    auto header = split_csv_line(line);
-    for (size_t i=0;i<header.size();++i) col[header[i]] = i;
-
-    while (std::getline(in, line)) {
-        if (line.empty()) continue;
-        rows.push_back(split_csv_line(line));
-    }
-    return true;
-}
-
-// get numeric from row by column name; returns def if missing/empty
-static double getd(const std::vector<std::string>& row,
-                   const std::unordered_map<std::string,size_t>& col,
-                   const std::string& name, double def=0.0) {
-    auto it = col.find(name);
-    if (it == col.end()) return def;
-    size_t idx = it->second;
-    if (idx >= row.size()) return def;
-    const std::string& s = row[idx];
-    if (s.empty()) return def;
+static inline double to_double(const std::string& s) {
+    if (s.empty()) return 0.0;
     char* endp = nullptr;
     double v = std::strtod(s.c_str(), &endp);
-    if (endp == s.c_str()) return def;
+    if (endp == s.c_str()) return 0.0;
     return v;
 }
 
-// get integer-like field (0/1) for valid bin
-static int geti(const std::vector<std::string>& row,
-                const std::unordered_map<std::string,size_t>& col,
-                const std::string& name, int def=0) {
-    auto it = col.find(name);
-    if (it == col.end()) return def;
-    size_t idx = it->second;
-    if (idx >= row.size()) return def;
-    const std::string& s = row[idx];
-    if (s.empty()) return def;
+static inline int to_int(const std::string& s) {
+    if (s.empty()) return 0;
     char* endp = nullptr;
     long v = std::strtol(s.c_str(), &endp, 10);
-    if (endp == s.c_str()) return def;
-    return static_cast<int>(v);
+    if (endp == s.c_str()) return 0;
+    return (int)v;
 }
 
-// key builder with rounding (3 decimals) to be robust to small float diffs
-static std::string key_from_bin(double xBmin, double xBmax,
-                                double Q2min, double Q2max,
-                                double tmin,  double tmax,
-                                double phiavg) {
-    auto fmt = [](double v)->std::string {
-        std::ostringstream os; os.setf(std::ios::fixed); os<<std::setprecision(3)<<v; return os.str();
-    };
-    std::ostringstream k;
-    k << "xb:"  << fmt(xBmin) << "-" << fmt(xBmax)
-      << "|Q2:" << fmt(Q2min) << "-" << fmt(Q2max)
-      << "|t:"  << fmt(tmin)  << "-" << fmt(tmax)
-      << "|phi:"<< fmt(phiavg);
-    return k.str();
+static std::unordered_map<std::string,int> header_index(const std::vector<std::string>& cols) {
+    std::unordered_map<std::string,int> m;
+    for (int i = 0; i < (int)cols.size(); ++i) m[cols[i]] = i;
+    return m;
 }
 
-// tolerant equality check for a bin (fallback if hash did not match)
-static bool same_bin_tol(double a1,double a2,double eps) { return std::fabs(a1-a2) <= eps; }
-static bool bin_matches(const LeeRow& a,
-                        double xbmin,double xbmax,
-                        double q2min,double q2max,
-                        double tmin, double tmax,
-                        double phia,
-                        double eps_lo=1e-4, double eps_hi=5e-3) {
-    // try tight first, then looser
-    auto ok = [&](double e)->bool {
-        return same_bin_tol(a.xBmin,xbmin,e) && same_bin_tol(a.xBmax,xbmax,e) &&
-               same_bin_tol(a.Q2min,q2min,e) && same_bin_tol(a.Q2max,q2max,e) &&
-               same_bin_tol(a.tmin,tmin,e)   && same_bin_tol(a.tmax,tmax,e)   &&
-               same_bin_tol(a.phiavg,phia,e);
-    };
-    return ok(eps_lo) || ok(eps_hi);
+// Helpers: safe col fetch
+static inline double getd(const std::vector<std::string>& row, const std::unordered_map<std::string,int>& idx, const char* key) {
+    auto it = idx.find(key);
+    if (it == idx.end()) return 0.0;
+    int j = it->second;
+    if (j < 0 || j >= (int)row.size()) return 0.0;
+    return to_double(row[j]);
+}
+static inline int geti(const std::vector<std::string>& row, const std::unordered_map<std::string,int>& idx, const char* key) {
+    auto it = idx.find(key);
+    if (it == idx.end()) return 0;
+    int j = it->second;
+    if (j < 0 || j >= (int)row.size()) return 0;
+    return to_int(row[j]);
 }
 
-struct AccRow {
-    double xBmin=0, xBmax=0;
-    double Q2min=0, Q2max=0;
-    double tmin=0, tmax=0;
-    double phimin=0, phimax=0, phiavg=0;
-    double acc_inb=0, acc_out=0;
-};
+// Build acceptance map from full_acc.csv
+static std::unordered_map<AccKey, std::pair<double,double>, AccKeyHash>
+build_acceptance_map(const std::string& full_acc_path)
+{
+    std::unordered_map<AccKey, std::pair<double,double>, AccKeyHash> accmap;
 
-// load all acceptance rows + build hash index
-static void load_acceptance(const std::string& acc_csv_path,
-                            std::vector<AccRow>& acc_rows,
-                            std::unordered_multimap<std::string,size_t>& index) {
-    std::vector<std::vector<std::string>> rows;
-    std::unordered_map<std::string,size_t> col;
-    if (!read_csv(acc_csv_path, rows, col)) return;
-
-    for (size_t i=0;i<rows.size();++i) {
-        const auto& r = rows[i];
-        AccRow a;
-        a.xBmin  = getd(r,col,"xBmin");
-        a.xBmax  = getd(r,col,"xBmax");
-        a.Q2min  = getd(r,col,"Q2min");
-        a.Q2max  = getd(r,col,"Q2max");
-        a.tmin   = getd(r,col,"t_abs_min");
-        a.tmax   = getd(r,col,"t_abs_max");
-        a.phimin = getd(r,col,"phimin");
-        a.phimax = getd(r,col,"phimax");
-        a.phiavg = getd(r,col,"phiavg");
-        a.acc_inb= getd(r,col,"acceptance_inb");
-        a.acc_out= getd(r,col,"acceptance_out");
-
-        size_t idx = acc_rows.size();
-        acc_rows.push_back(a);
-        index.emplace(key_from_bin(a.xBmin,a.xBmax,a.Q2min,a.Q2max,a.tmin,a.tmax,a.phiavg), idx);
+    std::ifstream f(full_acc_path);
+    if (!f.is_open()) {
+        lee_warn(std::string("Cannot open ") + full_acc_path);
+        return accmap;
     }
 
-    std::cout << "[lee] full_acc rows loaded: " << acc_rows.size() << "\n";
+    std::string header;
+    if (!std::getline(f, header)) {
+        lee_warn(std::string("Empty file: ") + full_acc_path);
+        return accmap;
+    }
+    auto hcols = split_csv_line(header);
+    auto H = header_index(hcols);
+
+    // Required column names in full_acc.csv:
+    // xBmin,xBmax,Q2min,Q2max,t1min,t1max,phi_avg_this_point,acceptance_inb,acceptance_outb
+    int rown = 0, ok = 0;
+    std::string line;
+    while (std::getline(f, line)) {
+        ++rown;
+        if (line.empty()) continue;
+        auto cols = split_csv_line(line);
+
+        double xBmin = getd(cols, H, "xBmin");
+        double xBmax = getd(cols, H, "xBmax");
+        double Q2min = getd(cols, H, "Q2min");
+        double Q2max = getd(cols, H, "Q2max");
+        double tmin  = getd(cols, H, "t1min");
+        double tmax  = getd(cols, H, "t1max");
+        double phiav = getd(cols, H, "phi_avg_this_point");
+
+        double ainb  = getd(cols, H, "acceptance_inb");
+        double aout  = getd(cols, H, "acceptance_outb");
+
+        AccKey k { q6(xBmin), q6(xBmax), q6(Q2min), q6(Q2max), q6(tmin), q6(tmax), q6(phiav) };
+        accmap.emplace(k, std::make_pair(ainb, aout));
+        ++ok;
+    }
+    lee_info("full_acc rows read: " + std::to_string(rown) + " ; stored: " + std::to_string(ok));
+    return accmap;
 }
 
-} // anon
+std::vector<LeeRow> load_lee_csvs(const std::string& all_bin_v3_path,
+                                  const std::string& full_acc_path,
+                                  int& matched_acc,
+                                  int& unmatched_acc)
+{
+    matched_acc = 0; unmatched_acc = 0;
 
-LeeData load_lee_csvs(const std::string& all_bin_csv,
-                      const std::string& full_acc_csv,
-                      bool verbose) {
-    LeeData out;
+    // Build acceptance lookup first
+    auto accmap = build_acceptance_map(full_acc_path);
 
-    // 1) Read acceptance CSV and build index
-    std::vector<AccRow> acc_rows;
-    std::unordered_multimap<std::string,size_t> acc_index;
-    load_acceptance(full_acc_csv, acc_rows, acc_index);
+    std::vector<LeeRow> out;
 
-    // 2) Read all_bin_v3
-    std::vector<std::vector<std::string>> rows;
-    std::unordered_map<std::string,size_t> col;
-    if (!read_csv(all_bin_csv, rows, col)) return out;
+    std::ifstream f(all_bin_v3_path);
+    if (!f.is_open()) {
+        lee_warn(std::string("Cannot open ") + all_bin_v3_path);
+        return out;
+    }
 
-    size_t kept = 0, skipped_invalid = 0, matched_acc = 0, unmatched_acc = 0;
+    std::string header;
+    if (!std::getline(f, header)) {
+        lee_warn(std::string("Empty file: ") + all_bin_v3_path);
+        return out;
+    }
+    auto hcols = split_csv_line(header);
+    auto H = header_index(hcols);
 
-    for (size_t i=0;i<rows.size();++i) {
-        const auto& r = rows[i];
+    // Column names we rely on in all_bin_v3.csv (checked via /mnt/data inspection):
+    // Binning
+    //  xBmin,xBmax,Q2min,Q2max,t_abs_min,t_abs_max,phimin,phimax,phiavg,"valid bin"
+    // Raw yields
+    //  raw yield, ep->epg, (FD, FD), exp, inbending
+    //  raw yield, ep->epg, (CD, FD), exp, inbending
+    //  raw yield, ep->epg, (CD, FT), exp, inbending
+    //  raw yield, ep->epg, (FD, FD), exp, outbending
+    //  raw yield, ep->epg, (CD, FD), exp, outbending
+    //  raw yield, ep->epg, (CD, FT), exp, outbending
+    //
+    // Contamination and signal
+    //  contamination ratio, inbending
+    //  contamination ratio, outbending
+    //  signal yield, ep->epg, exp, inbending
+    //  signal yield, ep->epg, exp, outbending
+    //
+    // Acceptance-corrected yield
+    //  acceptance corrected yield, ep->epg, exp
+    //
+    // Factors
+    //  Frad, Fbin, bin_volume
 
-        // filter on "valid bin"
-        int valid = geti(r, col, "valid bin", 0);
-        if (valid != 1) { ++skipped_invalid; continue; }
+    int kept = 0, skipped = 0, rown = 0;
+    std::string line;
+    while (std::getline(f, line)) {
+        ++rown;
+        if (line.empty()) continue;
+        auto cols = split_csv_line(line);
 
-        LeeRow lr;
-        lr.valid  = true;
-        lr.xBmin  = getd(r,col,"xBmin");
-        lr.xBmax  = getd(r,col,"xBmax");
-        lr.Q2min  = getd(r,col,"Q2min");
-        lr.Q2max  = getd(r,col,"Q2max");
-        lr.tmin   = getd(r,col,"t_abs_min");
-        lr.tmax   = getd(r,col,"t_abs_max");
-        lr.phimin = getd(r,col,"phimin");
-        lr.phimax = getd(r,col,"phimax");
-        lr.phiavg = getd(r,col,"phiavg");
+        int valid = geti(cols, H, "valid bin");
+        if (valid != 1) { ++skipped; continue; }
 
-        // raw yields (sum detector topologies) - inbending
-        lr.raw_inb_fd_fd = getd(r,col,"raw yield, ep->epg, (FD, FD), exp, inbending");
-        lr.raw_inb_cd_fd = getd(r,col,"raw yield, ep->epg, (CD, FD), exp, inbending");
-        lr.raw_inb_cd_ft = getd(r,col,"raw yield, ep->epg, (CD, FT), exp, inbending");
-        // raw yields - outbending
-        lr.raw_out_fd_fd = getd(r,col,"raw yield, ep->epg, (FD, FD), exp, outbending");
-        lr.raw_out_cd_fd = getd(r,col,"raw yield, ep->epg, (CD, FD), exp, outbending");
-        lr.raw_out_cd_ft = getd(r,col,"raw yield, ep->epg, (CD, FT), exp, outbending");
+        LeeRow r{};
 
-        lr.raw_inb_sum = lr.raw_inb_fd_fd + lr.raw_inb_cd_fd + lr.raw_inb_cd_ft;
-        lr.raw_out_sum = lr.raw_out_fd_fd + lr.raw_out_cd_fd + lr.raw_out_cd_ft;
-        lr.raw_combined = lr.raw_inb_sum + lr.raw_out_sum;
+        r.xBmin  = getd(cols, H, "xBmin");
+        r.xBmax  = getd(cols, H, "xBmax");
+        r.Q2min  = getd(cols, H, "Q2min");
+        r.Q2max  = getd(cols, H, "Q2max");
+        r.tmin   = getd(cols, H, "t_abs_min");
+        r.tmax   = getd(cols, H, "t_abs_max");
+        r.phimin = getd(cols, H, "phimin");
+        r.phimax = getd(cols, H, "phimax");
+        r.phiavg = getd(cols, H, "phiavg");
 
-        // contamination and signal yields
-        lr.contam_inb = getd(r,col,"contamination ratio, inbending");
-        lr.contam_out = getd(r,col,"contamination ratio, outbending");
-        lr.signal_inb = getd(r,col,"signal yield, ep->epg, exp, inbending");
-        lr.signal_out = getd(r,col,"signal yield, ep->epg, exp, outbending");
+        // Raw yields: sum per topology for inb/out
+        double inb_fd_fd = getd(cols, H, "raw yield, ep->epg, (FD, FD), exp, inbending");
+        double inb_cd_fd = getd(cols, H, "raw yield, ep->epg, (CD, FD), exp, inbending");
+        double inb_cd_ft = getd(cols, H, "raw yield, ep->epg, (CD, FT), exp, inbending");
+        double out_fd_fd = getd(cols, H, "raw yield, ep->epg, (FD, FD), exp, outbending");
+        double out_cd_fd = getd(cols, H, "raw yield, ep->epg, (CD, FD), exp, outbending");
+        double out_cd_ft = getd(cols, H, "raw yield, ep->epg, (CD, FT), exp, outbending");
 
-        // acceptance corrected yield (combined)
-        lr.acc_corr_yld = getd(r,col,"acceptance corrected yield, ep->epg, exp");
+        r.raw_inb_sum  = inb_fd_fd + inb_cd_fd + inb_cd_ft;
+        r.raw_out_sum  = out_fd_fd + out_cd_fd + out_cd_ft;
+        r.raw_combined = r.raw_inb_sum + r.raw_out_sum;
 
-        // systematics
-        lr.Frad = getd(r,col,"Frad",1.0);
-        lr.Fbin = getd(r,col,"Fbin",1.0);
-        lr.Vbin = getd(r,col,"bin_volume",1.0);
+        r.contam_inb   = getd(cols, H, "contamination ratio, inbending");
+        r.contam_out   = getd(cols, H, "contamination ratio, outbending");
+        r.signal_inb   = getd(cols, H, "signal yield, ep->epg, exp, inbending");
+        r.signal_out   = getd(cols, H, "signal yield, ep->epg, exp, outbending");
 
-        // --- match acceptance from full_acc.csv ---
-        lr.acc_inb = 0.0;
-        lr.acc_out = 0.0;
+        // Acceptance from full_acc via keyed lookup
+        AccKey k{ q6(r.xBmin), q6(r.xBmax), q6(r.Q2min), q6(r.Q2max),
+                  q6(r.tmin),  q6(r.tmax),  q6(r.phiavg) };
 
-        const std::string k = key_from_bin(lr.xBmin,lr.xBmax,lr.Q2min,lr.Q2max,lr.tmin,lr.tmax,lr.phiavg);
-        auto range = acc_index.equal_range(k);
-
-        bool found = false;
-        size_t best_idx = std::numeric_limits<size_t>::max();
-        double best_dphi = 1e9;
-
-        // 1) First try hash matches (there can be multiple if duplicates)
-        for (auto it = range.first; it != range.second; ++it) {
-            const AccRow& a = acc_rows[it->second];
-            double dphi = std::fabs(a.phiavg - lr.phiavg);
-            if (dphi < best_dphi) { best_dphi = dphi; best_idx = it->second; found = true; }
-        }
-
-        // 2) Fallback: tolerant scan
-        if (!found) {
-            for (size_t j=0;j<acc_rows.size();++j) {
-                const AccRow& a = acc_rows[j];
-                if (bin_matches(lr, a.xBmin,a.xBmax,a.Q2min,a.Q2max,a.tmin,a.tmax,a.phiavg)) {
-                    double dphi = std::fabs(a.phiavg - lr.phiavg);
-                    if (dphi < best_dphi) { best_dphi = dphi; best_idx = j; found = true; }
-                }
-            }
-        }
-
-        if (found) {
-            lr.acc_inb = acc_rows[best_idx].acc_inb;
-            lr.acc_out = acc_rows[best_idx].acc_out;
+        auto it = accmap.find(k);
+        if (it != accmap.end()) {
+            r.acc_inb = it->second.first;
+            r.acc_out = it->second.second;
+            r.has_acceptance = true;
             ++matched_acc;
         } else {
+            r.acc_inb = 0.0;
+            r.acc_out = 0.0;
+            r.has_acceptance = false;
             ++unmatched_acc;
         }
 
-        out.rows.push_back(lr);
-        if (verbose) {
-            const LeeRow& t = out.rows.back();
-            std::cout << "[lee] row " << kept
-                      << " xB[" << t.xBmin << "," << t.xBmax << "]"
-                      << " Q2[" << t.Q2min << "," << t.Q2max << "]"
-                      << " t["  << t.tmin  << "," << t.tmax  << "]"
-                      << " phi["<< t.phimin<< "," << t.phimax<< "]"
-                      << " phiavg=" << t.phiavg
-                      << " | raw_inb_sum=" << t.raw_inb_sum
-                      << " raw_out_sum=" << t.raw_out_sum
-                      << " raw_combined=" << t.raw_combined
-                      << " | contam(inb,out)=(" << t.contam_inb << "," << t.contam_out << ")"
-                      << " | signal(inb,out)=(" << t.signal_inb << "," << t.signal_out << ")"
-                      << " | acc(inb,out)=(" << t.acc_inb << "," << t.acc_out << ")"
-                      << " | acc_corr_yld=" << t.acc_corr_yld
-                      << " | Frad=" << t.Frad << " Fbin=" << t.Fbin << " Vbin=" << t.Vbin
-                      << "\n";
-        }
+        r.acc_corr_yield = getd(cols, H, "acceptance corrected yield, ep->epg, exp");
+
+        r.Frad = getd(cols, H, "Frad");
+        r.Fbin = getd(cols, H, "Fbin");
+        r.Vbin = getd(cols, H, "bin_volume");
+
+        out.push_back(r);
         ++kept;
+
+        // Row-by-row print (matches your current style)
+        std::printf("[lee] row %d xB[%.3f,%.3f] Q2[%.3f,%.3f] t[%.3f,%.3f] phi[%.0f,%.0f] phiavg=%.3f | raw_inb_sum=%.0f raw_out_sum=%.0f raw_combined=%.0f | contam(inb,out)=(%.6f,%.6f) | signal(inb,out)=(%.6f,%.6f) | acc(inb,out)=(%.6f,%.6f) | acc_corr_yld=%.6f | Frad=%.5f Fbin=%.5f Vbin=%.6g\n",
+                    kept,
+                    r.xBmin, r.xBmax, r.Q2min, r.Q2max,
+                    r.tmin,  r.tmax, r.phimin, r.phimax, r.phiavg,
+                    r.raw_inb_sum, r.raw_out_sum, r.raw_combined,
+                    r.contam_inb, r.contam_out,
+                    r.signal_inb, r.signal_out,
+                    r.acc_inb, r.acc_out,
+                    r.acc_corr_yield,
+                    r.Frad, r.Fbin, r.Vbin);
     }
 
-    std::cout << "[lee] all_bin_v3 kept rows (valid==1): " << kept
-              << " ; skipped invalid: " << skipped_invalid << "\n";
-    std::cout << "[lee] acceptance matched: " << matched_acc
-              << " ; unmatched: " << unmatched_acc << "\n";
+    lee_info("all_bin_v3 kept rows (valid==1): " + std::to_string(kept) + " ; skipped invalid: " + std::to_string(skipped));
+    lee_info("acceptance matched: " + std::to_string(matched_acc) + " ; unmatched: " + std::to_string(unmatched_acc));
     return out;
 }

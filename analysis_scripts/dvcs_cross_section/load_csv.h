@@ -1,4 +1,3 @@
-// load_csv.h
 #ifndef LOAD_CSV_H
 #define LOAD_CSV_H
 
@@ -6,41 +5,43 @@
 #include <vector>
 
 struct LeeRow {
-    // Bin definitions
-    double xBmin=0, xBmax=0;
-    double Q2min=0, Q2max=0;
-    double tmin=0, tmax=0;          // absolute t limits (positive)
-    double phimin=0, phimax=0;
-    double phiavg=0;
+    // Bin coordinates
+    double xBmin, xBmax;
+    double Q2min, Q2max;
+    double tmin,  tmax;           // |t| bin (abs(t))
+    double phimin, phimax;        // from all_bin_v3
+    double phiavg;                // center used for plotting
 
-    // Valid flag from all_bin_v3.csv (rows with valid==1 only are kept)
-    bool   valid=true;
+    // Raw yields (sum across three topologies, per your request)
+    double raw_inb_sum;           // FD,FD + CD,FD + CD,FT (inbending)
+    double raw_out_sum;           // FD,FD + CD,FD + CD,FT (outbending)
+    double raw_combined;          // sum of the above
 
-    // Raw yields (from all_bin_v3.csv)
-    double raw_inb_fd_fd=0, raw_inb_cd_fd=0, raw_inb_cd_ft=0;
-    double raw_out_fd_fd=0, raw_out_cd_fd=0, raw_out_cd_ft=0;
+    // Pi0 contamination & signal (from all_bin_v3)
+    double contam_inb;
+    double contam_out;
+    double signal_inb;
+    double signal_out;
 
-    // Convenience sums
-    double raw_inb_sum=0, raw_out_sum=0, raw_combined=0;
+    // Acceptances (from full_acc.csv, matched by bin)
+    double acc_inb;
+    double acc_out;
 
-    // Contamination ratios and signal yields (from all_bin_v3.csv)
-    double contam_inb=0, contam_out=0;
-    double signal_inb=0, signal_out=0;
+    // Acceptance-corrected yield (combined)
+    double acc_corr_yield;
 
-    // Acceptance (from full_acc.csv; matched by bin)
-    double acc_inb=0, acc_out=0;
+    // Systematics / factors
+    double Frad;
+    double Fbin;
+    double Vbin; // bin_volume
 
-    // Acceptance corrected yield (combined) and systematic factors
-    double acc_corr_yld=0;     // "acceptance corrected yield, ep->epg, exp"
-    double Frad=1.0, Fbin=1.0, Vbin=1.0; // Frad, Fbin, bin_volume
+    // Debug
+    bool   has_acceptance;
 };
 
-struct LeeData {
-    std::vector<LeeRow> rows;
-};
-
-LeeData load_lee_csvs(const std::string& all_bin_csv,
-                      const std::string& full_acc_csv,
-                      bool verbose);
+std::vector<LeeRow> load_lee_csvs(const std::string& all_bin_v3_path,
+                                  const std::string& full_acc_path,
+                                  int& matched_acc,
+                                  int& unmatched_acc);
 
 #endif // LOAD_CSV_H

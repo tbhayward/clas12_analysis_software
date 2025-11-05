@@ -1,4 +1,3 @@
-// cross_check_lee_main.cpp
 #include "load_csv.h"
 
 #include <filesystem>
@@ -8,27 +7,30 @@
 
 namespace fs = std::filesystem;
 
-static void make_output_dirs(const std::string& base) {
-    std::vector<std::string> sub = {
-        "raw_yield","pi0_contamination","signal_yield",
-        "rad_corrections","acceptance","unfolding",
-        "bin_volume","cross_sections"
+static inline void mkoutdirs() {
+    const std::string base = "output/cross_check/lee";
+    const char* subdirs[] = {
+        "raw_yield", "pi0_contamination", "signal_yield",
+        "rad_corrections", "acceptance", "unfolding",
+        "bin_volume", "cross_sections"
     };
     fs::create_directories(base);
-    for (const auto& s : sub) fs::create_directories(fs::path(base) / s);
+    for (auto s : subdirs) fs::create_directories(fs::path(base) / s);
 }
 
 int main() {
-    // Hard-coded CSV locations (as requested)
-    const std::string all_csv = "imports/all_bin_v3.csv";
-    const std::string acc_csv = "imports/full_acc.csv";
-    const std::string out_dir = "output/cross_check/lee";
+    std::cout << "[lee] cross_check_lee starting...\n";
 
-    make_output_dirs(out_dir);
+    // Hard-coded locations as requested
+    const std::string all_bin_v3 = "imports/all_bin_v3.csv";
+    const std::string full_acc   = "imports/full_acc.csv";
 
-    std::cout << "[lee] Loading CSVs from imports/ ...\n";
-    LeeData data = load_lee_csvs(all_csv, acc_csv, /*verbose=*/true);
-    std::cout << "[lee] Loaded rows: " << data.rows.size() << "\n";
+    mkoutdirs();
+
+    int acc_ok = 0, acc_bad = 0;
+    auto rows = load_lee_csvs(all_bin_v3, full_acc, acc_ok, acc_bad);
+
+    std::cout << "[lee] Loaded rows: " << rows.size() << "\n";
     std::cout << "[lee] First pass complete. Add plotting next.\n";
     return 0;
 }
