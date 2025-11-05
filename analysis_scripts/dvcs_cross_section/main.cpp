@@ -205,11 +205,11 @@ int main(int argc, char* argv[]) {
     // );
 
 
-    // // Multiply uncorrected dσ/dφ by Born/Rad per-φ correction
-    // const std::string unx_dir = "output/jsons";                    // reads: uncorrected_xsec_<E>.json
-    // const std::string rc_dir  = "output/jsons";                    // reads: radiative_corrections_group_<E>.json
-    // const std::string out_dir = "output/rad_corrected_cross_section"; // writes plots here
-    // compute_rad_corrected_cross_sections(binning_scheme, unx_dir, rc_dir, out_dir);
+    // Multiply uncorrected dσ/dφ by Born/Rad per-φ correction
+    const std::string unx_dir = "output/jsons";                    // reads: uncorrected_xsec_<E>.json
+    const std::string rc_dir  = "output/jsons";                    // reads: radiative_corrections_group_<E>.json
+    const std::string out_dir = "output/rad_corrected_cross_section"; // writes plots here
+    compute_rad_corrected_cross_sections(binning_scheme, unx_dir, rc_dir, out_dir);
 
 
     // // Beam-Spin Asymmetry:
