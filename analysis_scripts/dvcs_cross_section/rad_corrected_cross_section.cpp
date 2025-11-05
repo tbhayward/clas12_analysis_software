@@ -63,6 +63,11 @@ static void drawDegreeTicks(double xmin, double ymin, double xmax, double labelS
     ax->Draw();
 }
 
+static inline bool has_unpol12(const json& h){
+    return h.contains("phi") && h.contains("xsec") && h.contains("xsec_err")
+        && h["phi"].size()==N_PHI_BINS && h["xsec"].size()==N_PHI_BINS && h["xsec_err"].size()==N_PHI_BINS;
+}
+
 // bin helpers
 static std::vector<std::pair<double,double>> uniqueRanges(const std::vector<Binning>& scheme, char which) {
     std::set<std::pair<double,double>> s;
@@ -230,7 +235,16 @@ void compute_rad_corrected_cross_sections(
                 json out;
                 if (!cell_unc.contains(node)) return out;
                 const json& h = cell_unc[node];
-                if (!has_bins12(h)) return out;
+                
+                // Use the appropriate checker based on node type
+                bool has_data = false;
+                if (std::string(node) == "unpolarized") {
+                    has_data = has_unpol12(h);
+                } else {
+                    has_data = has_bins12(h);
+                }
+                
+                if (!has_data) return out;
 
                 const auto& ph = h["phi"];
                 const auto& xs = h["xsec"];
@@ -260,7 +274,9 @@ void compute_rad_corrected_cross_sections(
 
             json hp = corrOneHel("helicity_plus");
             json hm = corrOneHel("helicity_minus");
-            if (hp.is_null() && hm.is_null()) continue;
+            json hu = corrOneHel("unpolarized");  // ADD THIS LINE
+
+            if (hp.is_null() && hm.is_null() && hu.is_null()) continue;
 
             json rc_used;
             rc_used["phi"]    = cell_rc["phi"];
@@ -270,6 +286,7 @@ void compute_rad_corrected_cross_sections(
             jout["bins"][bkey] = {
                 {"helicity_plus",  hp},
                 {"helicity_minus", hm},
+                {"unpolarized",    hu},  // ADD THIS LINE
                 {"rc_used",        rc_used}
             };
         }
@@ -455,9 +472,193 @@ void compute_rad_corrected_cross_sections(
             }
         };
 
+        auto makeCanvasUnpol = [&](){
+            for (int ix = 0; ix < (int)xB_bins.size(); ++ix) {
+                const auto xb = xB_bins[ix];
+
+                // slice-specific lists (same as before)
+                std::set<std::pair<double,double>> qs, ts;
+                for (const auto& b : binning_scheme) {
+                    if (std::make_pair(b.xBmin,b.xBmax) == xb) {
+                        qs.emplace(b.Q2min,b.Q2max);
+                        ts.emplace(b.tmin,b.tmax);
+                    }
+                }
+                std::vector<std::pair<double,double>> Q2_slice(qs.begin(), qs.end());
+                std::vector<std::pair<double,double>> t_slice(ts.begin(), ts.end());
+                if (Q2_slice.empty() || t_slice.empty()) continue;
+
+                const int nrows = (int)t_slice.size();
+                const int ncols = (int)Q2_slice.size();
+                const int W = 280*ncols + 160;
+                const int H = 240*nrows + 170;
+
+                std::ostringstream cname;
+                cname << "c_radxsec_unpol_"<<E<<"_xB"<<ix;
+                TCanvas* c = new TCanvas(cname.str().c_str(), cname.str().c_str(), W, H);
+
+                TPad* pTop  = new TPad("pTop","pTop", 0.0, 0.915, 1.0, 1.0);
+                pTop->SetFillStyle(0); pTop->SetBorderSize(0); pTop->Draw();
+
+                TPad* pGrid = new TPad("pGrid","pGrid", 0.0, 0.00, 1.0, 0.915);
+                pGrid->SetFillStyle(0); pGrid->SetBorderSize(0); pGrid->Draw();
+                pGrid->cd();
+                pGrid->Divide(ncols, nrows, 0.0001, 0.0001);
+
+                // Title
+                pTop->cd();
+                TLatex head;
+                head.SetNDC(); head.SetTextAlign(22);
+                head.SetTextFont(42);
+                head.SetTextSize(0.22);
+                std::ostringstream tit;
+                tit << "Unpolarized rad corrected d#sigma/d#phi";
+                tit << Form("  %s GeV x_{B} #in [%.2g, %.2g]", E.c_str(), xb.first, xb.second);
+                head.DrawLatex(0.5, 0.55, tit.str().c_str());
+
+                // First pass: collect all bin keys for this xB slice to calculate y-range
+                std::vector<std::string> canvas_bin_keys;
+                for (int r=0; r<nrows; ++r) {
+                    const int it_global = findIndex(t_slice[r], t_all);
+                    if (it_global < 0) continue;
+                    for (int cc=0; cc<ncols; ++cc) {
+                        const int iQ_global = findIndex(Q2_slice[cc], Q2_all);
+                        if (iQ_global < 0) continue;
+                        const std::string bkey = "(" + std::to_string(ix) + "," + std::to_string(iQ_global) + "," + std::to_string(it_global) + ")";
+                        canvas_bin_keys.push_back(bkey);
+                    }
+                }
+
+                // Calculate y-range for unpolarized
+                auto calculateYRangeUnpol = [&](const json& jout_bins, 
+                                               const json& j_unc_bins,
+                                               const std::vector<std::string>& bin_keys) {
+                    double global_min = 1e10;
+                    double global_max = -1e10;
+                    
+                    for (const auto& bkey : bin_keys) {
+                        if (!jout_bins.contains(bkey)) continue;
+                        const json& jb_corr = jout_bins[bkey];
+                        
+                        // Check corrected unpolarized data
+                        auto checkGraphRange = [&](const json& h) {
+                            if (!h.contains("xsec") || !h.contains("xsec_err")) return;
+                            const auto& yp = h["xsec"];
+                            const auto& ep = h["xsec_err"];
+                            for (int i = 0; i < N_PHI_BINS; ++i) {
+                                double y = jgetd(yp, i, 0.0);
+                                double e = jgetd(ep, i, 0.0);
+                                if (y > 0) {
+                                    global_min = std::min(global_min, std::max(1e-10, y - e));
+                                    global_max = std::max(global_max, y + e);
+                                }
+                            }
+                        };
+                        
+                        if (jb_corr.contains("unpolarized")) 
+                            checkGraphRange(jb_corr["unpolarized"]);
+                    }
+                    
+                    // Set defaults if no valid data found
+                    if (global_max <= 0) {
+                        global_min = 1e-4;
+                        global_max = 1.0;
+                    } else {
+                        // Round down to nearest power of 10 below min, but set a floor of 1e-4
+                        double calculated_min = std::pow(10.0, std::floor(std::log10(global_min)));
+                        global_min = std::max(1e-4, calculated_min);
+                        
+                        // Round up to nearest power of 10 above max
+                        global_max = std::pow(10.0, std::ceil(std::log10(global_max)));
+                        
+                        // Add some padding
+                        global_min *= 0.5;
+                        global_max *= 2.0;
+                        
+                        // Ensure we don't go below our global minimum after padding
+                        global_min = std::max(1e-4, global_min);
+                    }
+                    
+                    return std::make_pair(global_min, global_max);
+                };
+
+                auto [ymin_canvas, ymax_canvas] = calculateYRangeUnpol(jout["bins"], j_unc["bins"], canvas_bin_keys);
+
+                // Second pass: draw each panel
+                for (int r=0; r<nrows; ++r) {
+                    const int it_global = findIndex(t_slice[r], t_all);
+                    if (it_global < 0) continue;
+                    for (int cc=0; cc<ncols; ++cc) {
+                        const int iQ_global = findIndex(Q2_slice[cc], Q2_all);
+                        if (iQ_global < 0) continue;
+
+                        pGrid->cd(r*ncols + cc + 1);
+                        gPad->SetGrid(1,1);
+                        gPad->SetTopMargin(0.08);
+                        gPad->SetBottomMargin(0.18);
+                        gPad->SetLeftMargin(0.15);
+                        gPad->SetRightMargin(0.10);
+                        gPad->SetLogy();
+
+                        // Use canvas-specific y-range
+                        TH1* frame = gPad->DrawFrame(0.0, ymin_canvas, 360.0, ymax_canvas);
+                        frame->GetXaxis()->SetLabelSize(0.0001);
+                        frame->GetXaxis()->SetTitle("#phi (deg)");
+                        frame->GetYaxis()->SetTitle("d#sigma_{U}/d#phi (rad-corr.)");
+                        frame->GetXaxis()->CenterTitle();
+                        frame->GetYaxis()->CenterTitle();
+                        frame->GetXaxis()->SetNdivisions(505);
+                        frame->GetXaxis()->SetTitleSize(0.060);
+                        frame->GetYaxis()->SetTitleSize(0.060);
+                        frame->GetYaxis()->SetLabelSize(0.048);
+                        frame->GetXaxis()->SetTitleOffset(1.25);
+                        frame->GetYaxis()->SetTitleOffset(1.35);
+
+                        drawDegreeTicks(gPad->GetUxmin(), gPad->GetUymin(), gPad->GetUxmax(), 0.048);
+
+                        const std::string bkey = "(" + std::to_string(ix) + "," + std::to_string(iQ_global) + "," + std::to_string(it_global) + ")";
+                        if (!jout["bins"].contains(bkey)) continue;
+                        const json& jb_corr = jout["bins"][bkey];
+
+                        // Draw unpolarized corrected
+                        TGraphErrors* gcu = nullptr;
+                        if (jb_corr.contains("unpolarized")) {
+                            gcu = drawHelFrom(jb_corr, "unpolarized", 20, kBlack);
+                        }
+
+                        TLatex lab;
+                        lab.SetNDC(); lab.SetTextSize(0.07); lab.SetTextAlign(11);
+                        lab.SetTextFont(42);
+                        lab.DrawLatex(0.15, 0.94,
+                            Form("Q^{2} #in [%.2g, %.2g], -t #in [%.2g, %.2g]",
+                                 Q2_slice[cc].first, Q2_slice[cc].second,
+                                 t_slice[r].first,   t_slice[r].second));
+
+                        if (gcu){
+                            TLegend* leg = new TLegend(0.16, 0.18, 0.56, 0.30);
+                            leg->SetBorderSize(1);
+                            leg->SetLineColor(kBlack);
+                            leg->SetFillColor(kWhite);
+                            leg->SetFillStyle(1001);
+                            leg->SetTextFont(42);
+                            leg->SetTextSize(0.048);
+                            leg->AddEntry(gcu, "corrected unpolarized", "lep");
+                            leg->Draw();
+                        }
+                    }
+                }
+
+                const std::string outP =
+                    (fs::path(output_dir)/"plots"/(std::string("rad_corrected_unpol_xsec_")+E+"_xB_"+std::to_string(ix)+".png")).string();
+                c->SaveAs(outP.c_str());
+                delete c;
+            }
+        };
+
         // Save both variants
         makeCanvas(false); // corrected-only
         makeCanvas(true);  // overlay
+        makeCanvasUnpol();
     }
 
     std::cout << "[radxsec] Finished radiatively corrected cross-section generation.\n";
