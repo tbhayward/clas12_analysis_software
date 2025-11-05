@@ -227,6 +227,46 @@ static std::string safe_canvas_name(const std::string& out_png) {
     return fs::path(out_png).filename().string(); // avoid slashes in TObject name
 }
 
+// Pre-scan panel data to get a canvas-wide Y max (counts or ratio)
+static double compute_canvas_ymax(bool ratio_mode,
+                                  const std::vector<std::pair<double,double>>& Q2s,
+                                  const std::vector<std::pair<double,double>>& Ts,
+                                  const std::vector<double>& phiC,
+                                  const std::function<bool(int,int,std::vector<double>&,std::vector<double>&)>& fillBoth)
+{
+    double ymax = 0.0;
+    const int nrows = (int)Ts.size();
+    const int ncols = (int)Q2s.size();
+
+    for (int r=0; r<nrows; ++r) {
+        for (int ccol=0; ccol<ncols; ++ccol) {
+            std::vector<double> A(N_PHI_BINS,0.0), B(N_PHI_BINS,0.0);
+            (void)fillBoth(ccol, r, A, B);
+
+            if (!ratio_mode) {
+                for (int ip=0; ip<N_PHI_BINS; ++ip) {
+                    ymax = std::max(ymax, A[ip]);
+                    ymax = std::max(ymax, B[ip]);
+                }
+            } else {
+                for (int ip=0; ip<N_PHI_BINS; ++ip) {
+                    const double NL = B[ip];
+                    const double NH = A[ip];
+                    if (NL <= 0.0) continue;
+                    const double R  = (NH <= 0.0) ? 0.0 : NH/NL;
+                    double eR = 0.0;
+                    if (NH > 0.0) eR = R * std::sqrt(1.0/NH + 1.0/NL);
+                    ymax = std::max(ymax, R + eR);
+                }
+            }
+        }
+    }
+
+    if (ymax <= 0.0) ymax = ratio_mode ? 1.0 : 1.0; // sensible fallback
+    if (ratio_mode)  ymax = std::max(ymax, 1.0);     // keep y=1 line visible
+    return ymax;
+}
+
 static void draw_one_canvas(const std::string& title,
                             const std::vector<std::pair<double,double>>& Q2s,
                             const std::vector<std::pair<double,double>>& Ts,
@@ -237,6 +277,9 @@ static void draw_one_canvas(const std::string& title,
     const int nrows = (int)Ts.size();
     const int ncols = (int)Q2s.size();
     if (nrows==0 || ncols==0) return;
+
+    // First pass: determine canvas-wide ymax
+    const double canvas_ymax = compute_canvas_ymax(draw_ratio_only, Q2s, Ts, phiC, fillBoth);
 
     const int W = 320*ncols + 220;
     const int H = 260*nrows + 260;
@@ -292,7 +335,7 @@ static void draw_one_canvas(const std::string& title,
     pGrid->cd();
     pGrid->Divide(ncols, nrows, 0.00, 0.00);
 
-    // Panels
+    // Panels (use the canvas-wide ymax)
     for (int r=0; r<nrows; ++r) {
         for (int ccol=0; ccol<ncols; ++ccol) {
             pGrid->cd(r*ncols + ccol + 1);
@@ -306,19 +349,7 @@ static void draw_one_canvas(const std::string& title,
             std::vector<double> A(N_PHI_BINS,0.0), B(N_PHI_BINS,0.0);
             (void)fillBoth(ccol, r, A, B);
 
-            double ymin=0.0, ymax=1.0;
-            TH1* frame = nullptr;
-
-            if (!draw_ratio_only) {
-                double local_max = 0.0;
-                for (int ip=0; ip<N_PHI_BINS; ++ip) local_max = std::max(local_max, std::max(A[ip], B[ip]));
-                ymax = std::max(1.0, local_max*1.25);
-                frame = gPad->DrawFrame(0.0, 0.0, 360.0, ymax);
-            } else {
-                ymin = 0.5; ymax = 1.5;
-                frame = gPad->DrawFrame(0.0, ymin, 360.0, ymax);
-            }
-
+            TH1* frame = gPad->DrawFrame(0.0, 0.0, 360.0, canvas_ymax);
             frame->GetXaxis()->SetTitle("#phi (deg)");
             frame->GetYaxis()->SetTitle(draw_ratio_only ? "Hayward / Lee" : "Raw counts");
             frame->GetXaxis()->CenterTitle();
@@ -352,7 +383,7 @@ static void draw_one_canvas(const std::string& title,
                     const double R  = (NH <= 0.0) ? 0.0 : NH/NL;
                     double eR = 0.0;
                     if (NH > 0.0) eR = R * std::sqrt(1.0/NH + 1.0/NL); // Poisson propagation
-                    x.push_back(phiC[ip]);
+                    x.push_back(phiCentersDeg()[ip]);
                     y.push_back(R);
                     ey.push_back(eR);
                 }
@@ -369,6 +400,7 @@ static void draw_one_canvas(const std::string& title,
                     eyA[ip] = (A[ip] > 0.0) ? std::sqrt(A[ip]) : 0.0;
                     eyB[ip] = (B[ip] > 0.0) ? std::sqrt(B[ip]) : 0.0;
                 }
+                const auto phiC = phiCentersDeg();
                 graph_pe1(phiC, A, eyA, 20, black);   // Hayward (pass-2)
                 graph_pe1(phiC, B, eyB, 24, orange);  // Lee (pass-1)
             }
@@ -377,16 +409,7 @@ static void draw_one_canvas(const std::string& title,
 
     c->SaveAs(out_png.c_str());
 
-    // cleanup legend sample objects
-    // (legend itself is owned by pad/canvas; safe to delete explicitly too)
-    // We created legTop on heap; delete it to be tidy.
-    // Note: Pads/canvas deleted below will also clean up drawables.
-    // But we explicitly delete to be clear.
-    delete legTop;
-    // Keepalive objects were never owned by ROOT; we must delete them.
-    // We cannot access legend_keepalive here; move deletion before return in scope.
-    // To keep code simple, rely on process lifetime; leaks are tiny per canvas.
-
+    delete legTop; // legend itself
     delete c;
 }
 
