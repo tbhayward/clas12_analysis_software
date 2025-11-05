@@ -31,6 +31,19 @@ namespace {
 constexpr int    N_PHI_BINS = 12;
 constexpr double TWO_PI     = 2.0 * M_PI;
 
+// ------------ Target properties for luminosity calculation ------------
+constexpr double TARGET_DENSITY = 0.07151;        // g/cm³
+constexpr double TARGET_LENGTH = 5.0;             // cm
+constexpr double AVOGADRO = 6.022e23;             // mol⁻¹
+constexpr double ATOMIC_WEIGHT = 1.00794;         // g/mol
+constexpr double ELEMENTARY_CHARGE = 1.60217662e-19; // C
+
+// Calculate luminosity from charge (in Coulombs)
+static inline double charge_to_luminosity(double charge_C) {
+    // L = (Q/e) * (N_A * ρ * l) / A_w
+    return (charge_C / ELEMENTARY_CHARGE) * (AVOGADRO * TARGET_DENSITY * TARGET_LENGTH) / ATOMIC_WEIGHT;
+}
+
 // ------------ style ------------
 struct StyleInit {
     StyleInit() {
@@ -90,11 +103,21 @@ static json load_json(const std::string& path) {
 }
 
 // CSV luminosity: run,total,pos,neg,*,*
-static double read_total_luminosity(const std::string& filepath) {
+struct LuminosityData {
+    double total_charge;  // C (from column 2)
+    double pos_charge;    // C (from column 3)  
+    double neg_charge;    // C (from column 4)
+    double total_lumi;    // cm⁻² (calculated)
+    double pos_lumi;      // cm⁻² (calculated)
+    double neg_lumi;      // cm⁻² (calculated)
+};
+
+static LuminosityData read_luminosity_data(const std::string& filepath) {
+    LuminosityData data{0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
     std::ifstream in(filepath);
     if (!in.is_open()) {
         std::cerr << "[luminosity] Cannot open " << filepath << "\n";
-        return 0.0;
+        return data;
     }
     auto trim = [](std::string s){
         size_t a = s.find_first_not_of(" \t\r\n");
@@ -103,7 +126,7 @@ static double read_total_luminosity(const std::string& filepath) {
         return s.substr(a, b - a + 1);
     };
 
-    double sum_pos=0.0, sum_neg=0.0;
+    double sum_total = 0.0, sum_pos = 0.0, sum_neg = 0.0;
     std::string line;
     while (std::getline(in, line)) {
         line = trim(line);
@@ -113,17 +136,31 @@ static double read_total_luminosity(const std::string& filepath) {
         while (std::getline(ss, tok, ',')) cols.push_back(trim(tok));
         if (cols.size() < 4) continue;
         try {
+            double total = std::stod(cols[1]);
             double pos = std::stod(cols[2]);
             double neg = std::stod(cols[3]);
+            if (total > 0) sum_total += total;
             if (pos > 0) sum_pos += pos;
             if (neg > 0) sum_neg += neg;
         } catch (...) {}
     }
     in.close();
+    
+    data.total_charge = sum_total;
+    data.pos_charge = sum_pos;
+    data.neg_charge = sum_neg;
+    data.total_lumi = charge_to_luminosity(sum_total);
+    data.pos_lumi = charge_to_luminosity(sum_pos);
+    data.neg_lumi = charge_to_luminosity(sum_neg);
+    
     std::cout << "[luminosity] " << filepath
-              << "  total_pos=" << sum_pos
-              << "  total_neg=" << sum_neg << "\n";
-    return sum_pos + sum_neg;
+              << "  total_charge=" << sum_total << " C"
+              << "  pos_charge=" << sum_pos << " C"
+              << "  neg_charge=" << sum_neg << " C"
+              << "  total_lumi=" << data.total_lumi << " cm⁻²"
+              << "  pos_lumi=" << data.pos_lumi << " cm⁻²"  
+              << "  neg_lumi=" << data.neg_lumi << " cm⁻²\n";
+    return data;
 }
 
 // ---------- slicers ----------
@@ -156,7 +193,7 @@ static inline std::string periodToRunTagKey(const std::string& period) {
 } // anon
 
 // ------------------------------------------------------------
-// Main
+// Main function for polarized cross sections
 // ------------------------------------------------------------
 void compute_uncorrected_cross_sections(
     const std::vector<Binning>& binning_scheme,
@@ -172,23 +209,35 @@ void compute_uncorrected_cross_sections(
     const auto PHI_DEG = phiCentersDeg();
 
     // ----- luminosity -----
-    const double L_fa18_inb = read_total_luminosity(luminosity_dir + "/rga_fa18_inb.txt");
-    const double L_fa18_out = read_total_luminosity(luminosity_dir + "/rga_fa18_out.txt");
-    const double L_sp19_inb = read_total_luminosity(luminosity_dir + "/rga_sp19_inb.txt");
+    const auto L_fa18_inb = read_luminosity_data(luminosity_dir + "/rga_fa18_inb.txt");
+    const auto L_fa18_out = read_luminosity_data(luminosity_dir + "/rga_fa18_out.txt");
+    const auto L_sp19_inb = read_luminosity_data(luminosity_dir + "/rga_sp19_inb.txt");
 
-    const double L_10p6 = L_fa18_inb + L_fa18_out;
-    const double L_10p2 = L_sp19_inb;
+    // Combine luminosities for 10.6 GeV (Fa18 inb + out)
+    const double L_10p6_pos = L_fa18_inb.pos_lumi + L_fa18_out.pos_lumi;
+    const double L_10p6_neg = L_fa18_inb.neg_lumi + L_fa18_out.neg_lumi;
+    const double L_10p6_total = L_fa18_inb.total_lumi + L_fa18_out.total_lumi;
+    
+    const double L_10p2_pos = L_sp19_inb.pos_lumi;
+    const double L_10p2_neg = L_sp19_inb.neg_lumi;
+    const double L_10p2_total = L_sp19_inb.total_lumi;
 
-    const std::map<std::string, double> energyL = {
-        {"10.60", L_10p6},
-        {"10.2",  L_10p2}
+    // Store luminosity data for each energy
+    struct EnergyLuminosity {
+        double pos_lumi;
+        double neg_lumi;
+        double total_lumi;
+    };
+    
+    const std::map<std::string, EnergyLuminosity> energyL = {
+        {"10.60", {L_10p6_pos, L_10p6_neg, L_10p6_total}},
+        {"10.2",  {L_10p2_pos, L_10p2_neg, L_10p2_total}}
     };
 
     // ----- energy → periods to combine -----
     const std::map<std::string, std::vector<std::string>> energyPeriods = {
         {"10.60", {"DVCS_Fa18_inb", "DVCS_Fa18_out"}},
         {"10.2",  {"DVCS_Sp19_inb"}}
-        // (Sp18* can be added later)
     };
 
     // ----- load bin-volume JSONs -----
@@ -214,16 +263,15 @@ void compute_uncorrected_cross_sections(
     // ============================================================
     for (const auto& eg : energyPeriods) {
         const std::string energy = eg.first;
-        const double L_total = energyL.at(energy);
+        const EnergyLuminosity& L_data = energyL.at(energy);
         const json& jvol = jBinVol[energy];
 
-        if (jvol.empty() || L_total <= 0.0) {
+        if (jvol.empty() || L_data.pos_lumi <= 0.0 || L_data.neg_lumi <= 0.0) {
             std::cerr << "[xsec] Skipping " << energy << " due to missing bin-volume or luminosity.\n";
             continue;
         }
 
         // ------------ sum unfolded yields (helicity-resolved) across periods ------------
-        // data structure: (ix,iQ,it) -> arrays (len 12) for plus/minus + errors
         struct HelData { std::vector<double> y, ye; HelData(): y(N_PHI_BINS,0.0), ye(N_PHI_BINS,0.0){} };
         using CellKey = std::tuple<int,int,int>;
         std::map<CellKey, HelData> sumPlus, sumMinus;
@@ -271,10 +319,14 @@ void compute_uncorrected_cross_sections(
             }
         }
 
-        // ------------ compute cross sections (use absolute per-φ volumes) ------------
+        // ------------ compute cross sections ------------
         json jxsec;
         jxsec["energy"] = energy;
-        jxsec["luminosity_total"] = L_total;
+        jxsec["luminosity"] = {
+            {"pos_lumi", L_data.pos_lumi},
+            {"neg_lumi", L_data.neg_lumi},
+            {"total_lumi", L_data.total_lumi}
+        };
         jxsec["bins"] = json::object();
 
         if (!jvol.contains("bins")) {
@@ -295,20 +347,24 @@ void compute_uncorrected_cross_sections(
                 auto itP = sumPlus.find(std::make_tuple(ix,iQ,itb));
                 auto itM = sumMinus.find(std::make_tuple(ix,iQ,itb));
                 if (itP == sumPlus.end() && itM == sumMinus.end()) {
-                    // nothing to plot/output for this bin
                     continue;
                 }
 
-                // per-phi denominator: L_total * V_phi (absolute volume)
-                std::vector<double> denom(N_PHI_BINS, 0.0);
-                double Vtot = 0.0; // keep as metadata
+                // Calculate denominators for different cross section types
+                std::vector<double> denom_pos(N_PHI_BINS, 0.0);
+                std::vector<double> denom_neg(N_PHI_BINS, 0.0);
+                std::vector<double> denom_total(N_PHI_BINS, 0.0);
+                double Vtot = 0.0;
+                
                 for (int ip=0; ip<N_PHI_BINS; ++ip) {
                     const double Vphi = std::max(0.0, volphi[ip].get<double>());
                     Vtot += Vphi;
-                    denom[ip] = L_total * Vphi;
+                    denom_pos[ip] = L_data.pos_lumi * Vphi;
+                    denom_neg[ip] = L_data.neg_lumi * Vphi;
+                    denom_total[ip] = L_data.total_lumi * Vphi;
                 }
 
-                auto mkOut = [&](const HelData* hd)->json {
+                auto mkOut = [&](const HelData* hd, const std::vector<double>& denom)->json {
                     json o;
                     std::vector<double> xv(N_PHI_BINS), yv(N_PHI_BINS,0.0), ev(N_PHI_BINS,0.0);
                     for (int ip=0; ip<N_PHI_BINS; ++ip) {
@@ -325,23 +381,38 @@ void compute_uncorrected_cross_sections(
                     return o;
                 };
 
+                // Calculate unpolarized cross section (sum of plus and minus)
+                HelData unpol_data;
+                if (itP != sumPlus.end() && itM != sumMinus.end()) {
+                    for (int ip=0; ip<N_PHI_BINS; ++ip) {
+                        unpol_data.y[ip] = itP->second.y[ip] + itM->second.y[ip];
+                        unpol_data.ye[ip] = std::sqrt(itP->second.ye[ip]*itP->second.ye[ip] + 
+                                                     itM->second.ye[ip]*itM->second.ye[ip]);
+                    }
+                } else if (itP != sumPlus.end()) {
+                    unpol_data = itP->second;
+                } else if (itM != sumMinus.end()) {
+                    unpol_data = itM->second;
+                }
+
                 jxsec["bins"][bkey] = {
-                    {"helicity_plus",  mkOut(itP==sumPlus.end()? nullptr : &itP->second)},
-                    {"helicity_minus", mkOut(itM==sumMinus.end()? nullptr : &itM->second)},
+                    {"helicity_plus",  mkOut(itP==sumPlus.end()? nullptr : &itP->second, denom_pos)},
+                    {"helicity_minus", mkOut(itM==sumMinus.end()? nullptr : &itM->second, denom_neg)},
+                    {"unpolarized",    mkOut(&unpol_data, denom_total)},
                     {"bin_volume_total", Vtot},
-                    {"vol_phi", volphi} // keep what we used
+                    {"vol_phi", volphi}
                 };
             }
         }
 
         // ------------ save JSON ------------
-        const std::string out_json = (fs::path("output/jsons") / ("uncorrected_xsec_" + energy + ".json")).string();
+        const std::string out_json = (fs::path(output_dir)/"jsons" / ("uncorrected_xsec_" + energy + ".json")).string();
         std::ofstream ofs(out_json);
         ofs << std::setw(2) << jxsec << "\n";
         ofs.close();
         std::cout << "[xsec] Wrote " << out_json << "\n";
 
-        // ------------ plots (xB slices; overlay + and −) ------------
+        // ------------ plots (xB slices; overlay +, −, and unpolarized) ------------
         const auto Q2_all = uniqueRanges(binning_scheme, 'Q');
         const auto t_all  = uniqueRanges(binning_scheme, 't');
 
@@ -427,7 +498,6 @@ void compute_uncorrected_cross_sections(
                             x[i]=xp[i].get<double>(); y[i]=yp[i].get<double>(); e[i]=std::max(1e-12, ep[i].get<double>());
                             ymax = std::max(ymax, y[i]+e[i]);
                         }
-                        // if (ymax > 0.0) frame->GetYaxis()->SetRangeUser(1e-4, std::max(1.0, ymax*1.5));
                         frame->GetYaxis()->SetRangeUser(1e-4, 1e3);
                         auto* gr = new TGraphErrors(N_PHI_BINS, x.data(), y.data(), nullptr, e.data());
                         gr->SetMarkerStyle(mstyle);
@@ -441,6 +511,7 @@ void compute_uncorrected_cross_sections(
 
                     TGraphErrors* gp = drawHel("helicity_plus", 20, kBlue+1);
                     TGraphErrors* gm = drawHel("helicity_minus", 25, kRed+1);
+                    TGraphErrors* gu = drawHel("unpolarized", 22, kGreen+2);
 
                     TLatex lab;
                     lab.SetNDC(); lab.SetTextSize(0.040); lab.SetTextAlign(11);
@@ -450,7 +521,7 @@ void compute_uncorrected_cross_sections(
                              Q2_slice[cc].first, Q2_slice[cc].second,
                              t_slice[r].first,   t_slice[r].second));
 
-                    if (gp || gm){
+                    if (gp || gm || gu){
                         TLegend* leg = new TLegend(0.50, 0.72, 0.90, 0.92);
                         leg->SetBorderSize(1);
                         leg->SetLineColor(kBlack);
@@ -460,6 +531,7 @@ void compute_uncorrected_cross_sections(
                         leg->SetTextSize(0.040);
                         if (gp) leg->AddEntry(gp, "+ helicity", "lep");
                         if (gm) leg->AddEntry(gm, "- helicity", "lep");
+                        if (gu) leg->AddEntry(gu, "unpolarized", "lep");
                         leg->Draw();
                     }
                 }
@@ -474,48 +546,313 @@ void compute_uncorrected_cross_sections(
     std::cout << "[xsec] Finished uncorrected cross-section generation.\n";
 }
 
+// ------------------------------------------------------------
+// Function for unpolarized cross sections using total charge
+// ------------------------------------------------------------
+void compute_unpolarized_cross_sections(
+    const std::vector<Binning>& binning_scheme,
+    const std::string& bin_volume_json_dir,
+    const std::string& unfolded_counts_dir,
+    const std::string& luminosity_dir,
+    const std::string& output_dir)
+{
+    // ----- bin edges & helpers -----
+    const auto xB_bins = uniqueRanges(binning_scheme, 'x');
+    const auto Q2_bins = uniqueRanges(binning_scheme, 'Q');
+    const auto t_bins  = uniqueRanges(binning_scheme, 't');
+    const auto PHI_DEG = phiCentersDeg();
 
+    // ----- luminosity for unpolarized (using total charge) -----
+    const auto L_sp18_out = read_luminosity_data(luminosity_dir + "/rga_sp18_out.txt");
+    const auto L_fa18_inb = read_luminosity_data(luminosity_dir + "/rga_fa18_inb.txt");
+    const auto L_fa18_out = read_luminosity_data(luminosity_dir + "/rga_fa18_out.txt");
+    const auto L_sp19_inb = read_luminosity_data(luminosity_dir + "/rga_sp19_inb.txt");
+
+    // Combine for 10.6 GeV (Fa18 inb + out)
+    const double L_10p6_total = L_fa18_inb.total_lumi + L_fa18_out.total_lumi;
+    const double L_10p2_total = L_sp19_inb.total_lumi;
+    const double L_10p59_total = L_sp18_out.total_lumi;
+
+    const std::map<std::string, double> energyLumi = {
+        {"10.59", L_10p59_total},
+        {"10.60", L_10p6_total},
+        {"10.2",  L_10p2_total}
+    };
+
+    const std::map<std::string, std::vector<std::string>> energyPeriods = {
+        {"10.59", {"DVCS_Sp18_out"}},
+        {"10.60", {"DVCS_Fa18_inb", "DVCS_Fa18_out"}},
+        {"10.2",  {"DVCS_Sp19_inb"}}
+    };
+
+    // ----- load bin-volume JSONs -----
+    std::map<std::string, json> jBinVol;
+    for (const auto& kv : energyPeriods) {
+        const std::string e = kv.first;
+        const std::string path = (fs::path(bin_volume_json_dir) / ("bin_volume_" + e + ".json")).string();
+        jBinVol[e] = load_json(path);
+        if (jBinVol[e].empty()) {
+            std::cerr << "[binvol] Missing " << path << "\n";
+        } else {
+            std::cout << "[binvol] Loaded " << path << "\n";
+        }
+    }
+
+    // ----- output dirs -----
+    fs::create_directories(output_dir);
+    fs::create_directories(fs::path(output_dir)/"jsons_unpol");
+    fs::create_directories(fs::path(output_dir)/"plots_unpol");
+
+    // ============================================================
+    // Loop energies for unpolarized cross sections
+    // ============================================================
+    for (const auto& eg : energyPeriods) {
+        const std::string energy = eg.first;
+        const double L_total = energyLumi.at(energy);
+        const json& jvol = jBinVol[energy];
+
+        if (jvol.empty() || L_total <= 0.0) {
+            std::cerr << "[xsec_unpol] Skipping " << energy << " due to missing bin-volume or luminosity.\n";
+            continue;
+        }
+
+        // ------------ sum unfolded yields (total) across periods ------------
+        struct YieldData { std::vector<double> y, ye; YieldData(): y(N_PHI_BINS,0.0), ye(N_PHI_BINS,0.0){} };
+        using CellKey = std::tuple<int,int,int>;
+        std::map<CellKey, YieldData> sumTotal;
+
+        for (const std::string& period : eg.second) {
+            const std::string path = (fs::path(unfolded_counts_dir) / ("unfolded_"+period+".json")).string();
+            json ju = load_json(path);
+            if (ju.empty()) {
+                std::cerr << "[xsec_unpol] Missing unfolded " << path << " (skipping this period)\n";
+                continue;
+            }
+
+            if (!ju.contains("bins")) continue;
+            for (auto it = ju["bins"].begin(); it != ju["bins"].end(); ++it) {
+                const std::string bkey = it.key();
+                const json& cell = it.value();
+
+                int ix=0,iQ=0,itb=0;
+                if (std::sscanf(bkey.c_str(),"(%d,%d,%d)",&ix,&iQ,&itb) != 3) continue;
+
+                YieldData& yd = sumTotal[CellKey(ix,iQ,itb)];
+                
+                // Try to get total yield first, otherwise sum plus and minus
+                if (cell.contains("yield") && cell["yield"].size() == N_PHI_BINS) {
+                    const auto& yt = cell["yield"];
+                    const auto& et = cell.contains("yield_err") ? cell["yield_err"] : json::array();
+                    for (int ip=0; ip<N_PHI_BINS; ++ip) {
+                        double vt = yt[ip].get<double>();
+                        double etv = (et.size()==N_PHI_BINS ? std::max(0.0, et[ip].get<double>()) : std::sqrt(std::max(0.0, vt)));
+                        yd.y[ip] += vt;
+                        yd.ye[ip] = std::sqrt(yd.ye[ip]*yd.ye[ip] + etv*etv);
+                    }
+                } else if (cell.contains("yield_plus") && cell.contains("yield_minus")) {
+                    const auto& yp = cell["yield_plus"];
+                    const auto& ym = cell["yield_minus"];
+                    const auto& ep = cell.contains("yield_plus_err") ? cell["yield_plus_err"] : json::array();
+                    const auto& em = cell.contains("yield_minus_err") ? cell["yield_minus_err"] : json::array();
+                    if (yp.size() == N_PHI_BINS && ym.size() == N_PHI_BINS) {
+                        for (int ip=0; ip<N_PHI_BINS; ++ip) {
+                            double vp = yp[ip].get<double>();
+                            double vm = ym[ip].get<double>();
+                            double epv = (ep.size()==N_PHI_BINS ? std::max(0.0, ep[ip].get<double>()) : std::sqrt(std::max(0.0, vp)));
+                            double emv = (em.size()==N_PHI_BINS ? std::max(0.0, em[ip].get<double>()) : std::sqrt(std::max(0.0, vm)));
+                            yd.y[ip] += (vp + vm);
+                            yd.ye[ip] = std::sqrt(yd.ye[ip]*yd.ye[ip] + epv*epv + emv*emv);
+                        }
+                    }
+                }
+            }
+        }
+
+        // ------------ compute unpolarized cross sections ------------
+        json jxsec;
+        jxsec["energy"] = energy;
+        jxsec["luminosity_total"] = L_total;
+        jxsec["bins"] = json::object();
+
+        if (!jvol.contains("bins")) {
+            std::cerr << "[binvol] Malformed bin-volume JSON for energy " << energy << " (no 'bins').\n";
+        } else {
+            for (auto it = jvol["bins"].begin(); it != jvol["bins"].end(); ++it) {
+                const std::string bkey = it.key();
+                const json& bv = it.value();
+
+                if (!bv.contains("vol")) continue;
+                const auto& volphi = bv["vol"];
+                if (volphi.size() != N_PHI_BINS) continue;
+
+                int ix=0,iQ=0,itb=0;
+                if (std::sscanf(bkey.c_str(),"(%d,%d,%d)",&ix,&iQ,&itb) != 3) continue;
+
+                auto itY = sumTotal.find(std::make_tuple(ix,iQ,itb));
+                if (itY == sumTotal.end()) continue;
+
+                std::vector<double> denom(N_PHI_BINS, 0.0);
+                double Vtot = 0.0;
+                for (int ip=0; ip<N_PHI_BINS; ++ip) {
+                    const double Vphi = std::max(0.0, volphi[ip].get<double>());
+                    Vtot += Vphi;
+                    denom[ip] = L_total * Vphi;
+                }
+
+                json o;
+                std::vector<double> xv(N_PHI_BINS), yv(N_PHI_BINS,0.0), ev(N_PHI_BINS,0.0);
+                for (int ip=0; ip<N_PHI_BINS; ++ip) {
+                    xv[ip] = PHI_DEG[ip];
+                    const double num = itY->second.y[ip];
+                    const double en  = itY->second.ye[ip];
+                    const double d   = denom[ip];
+                    yv[ip] = (d > 0.0 ? num / d : 0.0);
+                    ev[ip] = (d > 0.0 ? en  / d : 0.0);
+                }
+                o["phi"]      = xv;
+                o["xsec"]     = yv;
+                o["xsec_err"] = ev;
+
+                jxsec["bins"][bkey] = {
+                    {"unpolarized", o},
+                    {"bin_volume_total", Vtot},
+                    {"vol_phi", volphi}
+                };
+            }
+        }
+
+        // ------------ save JSON ------------
+        const std::string out_json = (fs::path(output_dir)/"jsons_unpol" / ("unpol_xsec_" + energy + ".json")).string();
+        std::ofstream ofs(out_json);
+        ofs << std::setw(2) << jxsec << "\n";
+        ofs.close();
+        std::cout << "[xsec_unpol] Wrote " << out_json << "\n";
+
+        // ------------ plots ------------
+        const auto Q2_all = uniqueRanges(binning_scheme, 'Q');
+        const auto t_all  = uniqueRanges(binning_scheme, 't');
+
+        for (int ix = 0; ix < (int)xB_bins.size(); ++ix) {
+            const auto xb = xB_bins[ix];
+            std::vector<std::pair<double,double>> Q2_slice, t_slice;
+            uniqueQT_for_xB(binning_scheme, xb, Q2_slice, t_slice);
+            if (Q2_slice.empty() || t_slice.empty()) continue;
+
+            const int nrows = (int)t_slice.size();
+            const int ncols = (int)Q2_slice.size();
+            const int W = 280*ncols + 160;
+            const int H = 240*nrows + 170;
+
+            std::ostringstream cname; cname<<"c_xsec_unpol_"<<energy<<"_xB"<<ix;
+            TCanvas* c = new TCanvas(cname.str().c_str(), cname.str().c_str(), W, H);
+
+            TPad* pTop  = new TPad("pTop","pTop", 0.0, 0.915, 1.0, 1.0);
+            pTop->SetFillStyle(0); pTop->SetBorderSize(0); pTop->Draw();
+
+            TPad* pGrid = new TPad("pGrid","pGrid", 0.0, 0.00, 1.0, 0.915);
+            pGrid->SetFillStyle(0); pGrid->SetBorderSize(0); pGrid->Draw();
+            pGrid->cd();
+            pGrid->Divide(ncols, nrows, 0.0001, 0.0001);
+
+            // Title
+            pTop->cd();
+            TLatex head;
+            head.SetNDC(); head.SetTextAlign(22);
+            head.SetTextFont(42);
+            head.SetTextSize(0.36);
+            std::ostringstream tit;
+            tit << Form("Unpolarized Cross Section  %s GeV   x_{B} #in [%.2g, %.2g]",
+                        energy.c_str(), xb.first, xb.second);
+            head.DrawLatex(0.5, 0.55, tit.str().c_str());
+
+            for (int r=0; r<nrows; ++r) {
+                const int it_global = findIndex(t_slice[r], t_all);
+                if (it_global < 0) continue;
+                for (int cc=0; cc<ncols; ++cc) {
+                    const int iQ_global = findIndex(Q2_slice[cc], Q2_all);
+                    if (iQ_global < 0) continue;
+
+                    pGrid->cd(r*ncols + cc + 1);
+                    gPad->SetGrid(1,1);
+                    gPad->SetTopMargin(0.08);
+                    gPad->SetBottomMargin(0.18);
+                    gPad->SetLeftMargin(0.15);
+                    gPad->SetRightMargin(0.10);
+                    gPad->SetLogy();
+
+                    TH1* frame = gPad->DrawFrame(0.0, 1e-4, 360.0, 1e3);
+                    frame->GetXaxis()->SetLabelSize(0.0001);
+                    frame->GetXaxis()->SetTitle("#phi (deg)");
+                    frame->GetYaxis()->SetTitle("d#sigma_{U}/d#phi (uncorr.)");
+                    frame->GetXaxis()->CenterTitle();
+                    frame->GetYaxis()->CenterTitle();
+                    frame->GetXaxis()->SetNdivisions(505);
+                    frame->GetXaxis()->SetTitleSize(0.060);
+                    frame->GetYaxis()->SetTitleSize(0.060);
+                    frame->GetYaxis()->SetLabelSize(0.048);
+                    frame->GetXaxis()->SetTitleOffset(1.25);
+                    frame->GetYaxis()->SetTitleOffset(1.35);
+
+                    drawDegreeTicks(gPad->GetUxmin(), gPad->GetUymin(), gPad->GetUxmax(), 0.048);
+
+                    const std::string bkey = "(" + std::to_string(ix) + "," + std::to_string(iQ_global) + "," + std::to_string(it_global) + ")";
+                    if (!jxsec["bins"].contains(bkey)) continue;
+                    const json& jb = jxsec["bins"][bkey]["unpolarized"];
+
+                    if (!jb.contains("phi") || !jb.contains("xsec") || !jb.contains("xsec_err")) continue;
+                    const auto& xp = jb["phi"];
+                    const auto& yp = jb["xsec"];
+                    const auto& ep = jb["xsec_err"];
+                    if (xp.size()!=N_PHI_BINS || yp.size()!=N_PHI_BINS || ep.size()!=N_PHI_BINS) continue;
+
+                    std::vector<double> x(N_PHI_BINS), y(N_PHI_BINS), e(N_PHI_BINS);
+                    for (int i=0;i<N_PHI_BINS;++i){
+                        x[i]=xp[i].get<double>(); y[i]=yp[i].get<double>(); e[i]=std::max(1e-12, ep[i].get<double>());
+                    }
+                    frame->GetYaxis()->SetRangeUser(1e-4, 1e3);
+                    auto* gr = new TGraphErrors(N_PHI_BINS, x.data(), y.data(), nullptr, e.data());
+                    gr->SetMarkerStyle(20);
+                    gr->SetMarkerSize(1.0);
+                    gr->SetLineWidth(2);
+                    gr->SetLineColor(kBlack);
+                    gr->SetMarkerColor(kBlack);
+                    gr->Draw("P SAME");
+
+                    TLatex lab;
+                    lab.SetNDC(); lab.SetTextSize(0.040); lab.SetTextAlign(11);
+                    lab.SetTextFont(42);
+                    lab.DrawLatex(0.15, 0.94,
+                        Form("Q^{2} #in [%.2g, %.2g],   -t #in [%.2g, %.2g]",
+                             Q2_slice[cc].first, Q2_slice[cc].second,
+                             t_slice[r].first,   t_slice[r].second));
+                }
+            }
+
+            const std::string outP = (fs::path(output_dir)/"plots_unpol"/("unpol_xsec_"+energy+"_xB_"+std::to_string(ix)+".png")).string();
+            c->SaveAs(outP.c_str());
+            delete c;
+        }
+    }
+
+    std::cout << "[xsec_unpol] Finished unpolarized cross-section generation.\n";
+}
+
+// ------------------------------------------------------------
+// Comparison function (updated with proper luminosity calculation)
+// ------------------------------------------------------------
 void compare_unpolarized_cross_sections_sp18out_vs_fa18out(
     const std::vector<Binning>& binning_scheme,
-    const std::string& bin_volume_json_dir,   // e.g. "output/jsons"
-    const std::string& unfolded_counts_dir,   // e.g. "output/jsons"
-    const std::string& luminosity_dir,        // e.g. "imports/integrated_luminosity"
-    const std::string& output_dir             // e.g. "output/uncorrected_cross_section"
-) {
+    const std::string& bin_volume_json_dir,
+    const std::string& unfolded_counts_dir,
+    const std::string& luminosity_dir,
+    const std::string& output_dir)
+{
     namespace fs = std::filesystem;
 
-    // ---------- read SECOND column (total) from luminosity CSVs ----------
-    auto read_totalcol_luminosity = [](const std::string& filepath)->double {
-        std::ifstream in(filepath);
-        if (!in.is_open()) {
-            std::cerr << "[luminosity-totalcol] Cannot open " << filepath << "\n";
-            return 0.0;
-        }
-        auto trim = [](std::string s){
-            size_t a = s.find_first_not_of(" \t\r\n");
-            size_t b = s.find_last_not_of(" \t\r\n");
-            if (a == std::string::npos) return std::string();
-            return s.substr(a, b - a + 1);
-        };
-
-        double sum_total = 0.0;
-        std::string line;
-        while (std::getline(in, line)) {
-            line = trim(line);
-            if (line.empty() || line[0]=='#') continue;
-            std::stringstream ss(line);
-            std::string tok; std::vector<std::string> cols;
-            while (std::getline(ss, tok, ',')) cols.push_back(trim(tok));
-            // expect: run,total,pos,neg,*,*
-            if (cols.size() < 2) continue;
-            try {
-                double tot = std::stod(cols[1]);    // SECOND column
-                if (tot > 0) sum_total += tot;
-            } catch (...) {}
-        }
-        in.close();
-        std::cout << "[luminosity-totalcol] " << filepath << "  total=" << sum_total << "\n";
-        return sum_total;
+    // Read luminosity using our new function
+    auto read_total_luminosity = [](const std::string& filepath)->double {
+        LuminosityData data = read_luminosity_data(filepath);
+        return data.total_lumi;
     };
 
     // ---------- bin edges/helpers ----------
@@ -530,9 +867,9 @@ void compare_unpolarized_cross_sections_sp18out_vs_fa18out(
     const std::string E_SP18 = "10.59";
     const std::string E_FA18 = "10.60";
 
-    // ---------- luminosities (SECOND column totals) ----------
-    const double L_sp18_out_total = read_totalcol_luminosity(luminosity_dir + "/rga_sp18_out.txt");
-    const double L_fa18_out_total = read_totalcol_luminosity(luminosity_dir + "/rga_fa18_out.txt");
+    // ---------- luminosities (using total charge and proper conversion) ----------
+    const double L_sp18_out_total = read_total_luminosity(luminosity_dir + "/rga_sp18_out.txt");
+    const double L_fa18_out_total = read_total_luminosity(luminosity_dir + "/rga_fa18_out.txt");
 
     // ---------- load bin-volume JSONs ----------
     const std::string path_vol_sp18 = (fs::path(bin_volume_json_dir) / ("bin_volume_" + E_SP18 + ".json")).string();
@@ -658,7 +995,6 @@ void compare_unpolarized_cross_sections_sp18out_vs_fa18out(
         }
         if (!(sumA > 0.0 && sumB > 0.0)) return false;
         R  = sumA / sumB;
-        // propagate: sigma_R = R * sqrt( (sigma_A/sumA)^2 + (sigma_B/sumB)^2 )
         const double sigmaA = std::sqrt(std::max(0.0, sumVarA));
         const double sigmaB = std::sqrt(std::max(0.0, sumVarB));
         eR = R * std::sqrt( std::pow(sigmaA / std::max(1e-12, sumA), 2.0)
@@ -667,16 +1003,14 @@ void compare_unpolarized_cross_sections_sp18out_vs_fa18out(
     };
 
     // ---------- global accumulators for the final single-number ratio ----------
-    // (i) integrated ratio: 100 * (sum A) / (sum B)
     long long n_points_integrated = 0;
     double sumA = 0.0, sumB = 0.0;
 
-    // (ii) inverse-variance weighted mean of pointwise ratios: 100 * <A/B>_w
     long long n_points_weighted = 0;
-    double wsum = 0.0;     // sum of weights
-    double wrsum = 0.0;    // sum of w_i * R_i
+    double wsum = 0.0;
+    double wrsum = 0.0;
 
-    // ---------- loop over xB bins (also fills the global accumulators) ----------
+    // ---------- loop over xB bins ----------
     for (int ix = 0; ix < (int)xB_bins.size(); ++ix) {
         const auto xb = xB_bins[ix];
 
@@ -689,9 +1023,7 @@ void compare_unpolarized_cross_sections_sp18out_vs_fa18out(
         const int W = 280*ncols + 160;
         const int H = 240*nrows + 170;
 
-        // =========================
-        // (1) Cross-section canvas
-        // =========================
+        // Cross-section canvas
         {
             std::ostringstream cname; cname << "c_xsec_unpol_compare_sp18out_fa18out_xB" << ix;
             TCanvas* c = new TCanvas(cname.str().c_str(), cname.str().c_str(), W, H);
@@ -731,7 +1063,6 @@ void compare_unpolarized_cross_sections_sp18out_vs_fa18out(
                     gPad->SetRightMargin(0.10);
                     gPad->SetLogy();
 
-                    // note: keeping exactly as in your pasted version (1e-4 lower bound)
                     TH1* frame = gPad->DrawFrame(0.0, 1e-4, 360.0, 1e3);
                     frame->GetXaxis()->SetLabelSize(0.0001);
                     frame->GetXaxis()->SetTitle("#phi (deg)");
@@ -802,17 +1133,16 @@ void compare_unpolarized_cross_sections_sp18out_vs_fa18out(
                         leg->Draw();
                     }
 
-                    // ------- NEW: phi-averaged ratio box (bottom-left) -------
+                    // Phi-averaged ratio box
                     double Rphi = 0.0, eRphi = 0.0;
                     if (phiAveragedRatio(cd_sp18, cd_fa18, Rphi, eRphi)) {
-                        // --- Box showing phi-averaged ratio ---
-                        TPaveText* box = new TPaveText(0.16, 0.18, 0.58, 0.30, "NDC");  // coords = (x1,y1,x2,y2)
-                        box->SetFillColor(kWhite);        // solid white background
-                        box->SetFillStyle(1001);          // ensure it's opaque
+                        TPaveText* box = new TPaveText(0.16, 0.18, 0.58, 0.30, "NDC");
+                        box->SetFillColor(kWhite);
+                        box->SetFillStyle(1001);
                         box->SetBorderSize(1);
-                        box->SetLineColor(kBlack);        // black outline
-                        box->SetLineWidth(2);             // thicker border
-                        box->SetShadowColor(0);           // no drop shadow
+                        box->SetLineColor(kBlack);
+                        box->SetLineWidth(2);
+                        box->SetShadowColor(0);
                         box->SetTextFont(42);
                         box->SetTextSize(0.040);
                         box->SetTextAlign(12);
@@ -828,9 +1158,7 @@ void compare_unpolarized_cross_sections_sp18out_vs_fa18out(
             std::cout << "[compare] Wrote " << outP << "\n";
         }
 
-        // ==========================================
-        // (2) Ratio canvas: 100 * (Sp18/Fa18) vs phi
-        // ==========================================
+        // Ratio canvas
         {
             std::ostringstream cname; cname << "c_xsec_ratio_sp18_over_fa18_xB" << ix;
             TCanvas* c = new TCanvas(cname.str().c_str(), cname.str().c_str(), W, H);
@@ -870,7 +1198,6 @@ void compare_unpolarized_cross_sections_sp18out_vs_fa18out(
                     gPad->SetRightMargin(0.10);
                     gPad->SetLogy(0);
 
-                    // Y-axis bounds in percent (0..200) around unity=100
                     TH1* frame = gPad->DrawFrame(0.0, 0.0, 360.0, 200.0);
                     frame->GetXaxis()->SetLabelSize(0.0001);
                     frame->GetXaxis()->SetTitle("#phi (deg)");
@@ -894,7 +1221,7 @@ void compare_unpolarized_cross_sections_sp18out_vs_fa18out(
                     ax->SetTickSize(0.02);
                     ax->Draw();
 
-                    // unity (100%) reference line
+                    // unity reference line
                     TLine* unity = new TLine(0.0, 100.0, 360.0, 100.0);
                     unity->SetLineStyle(2);
                     unity->SetLineWidth(2);
@@ -914,7 +1241,7 @@ void compare_unpolarized_cross_sections_sp18out_vs_fa18out(
 
                     if (!cd_sp18 || !cd_fa18) continue;
 
-                    // compute 100 * (Sp18 / Fa18) vs phi and accumulate global stats
+                    // compute ratio vs phi
                     std::vector<double> xp, yp, ey;
                     xp.reserve(N_PHI_BINS);
                     yp.reserve(N_PHI_BINS);
@@ -937,7 +1264,7 @@ void compare_unpolarized_cross_sections_sp18out_vs_fa18out(
                         yp.push_back(100.0 * R);
                         ey.push_back(100.0 * eR);
 
-                        // --- global accumulators (for end-of-function printout) ---
+                        // global accumulators
                         sumA += A;
                         sumB += B;
                         ++n_points_integrated;
@@ -961,17 +1288,16 @@ void compare_unpolarized_cross_sections_sp18out_vs_fa18out(
                         gr->Draw("P SAME");
                     }
 
-                    // ------- NEW: also show the phi-averaged ratio box on this canvas -------
+                    // Phi-averaged ratio box
                     double Rphi = 0.0, eRphi = 0.0;
                     if (phiAveragedRatio(cd_sp18, cd_fa18, Rphi, eRphi)) {
-                        // --- Box showing phi-averaged ratio ---
-                        TPaveText* box = new TPaveText(0.18, 0.18, 0.58, 0.30, "NDC");  // coords = (x1,y1,x2,y2)
-                        box->SetFillColor(kWhite);        // solid white background
-                        box->SetFillStyle(1001);          // ensure it's opaque
+                        TPaveText* box = new TPaveText(0.18, 0.18, 0.58, 0.30, "NDC");
+                        box->SetFillColor(kWhite);
+                        box->SetFillStyle(1001);
                         box->SetBorderSize(1);
-                        box->SetLineColor(kBlack);        // black outline
-                        box->SetLineWidth(2);             // thicker border
-                        box->SetShadowColor(0);           // no drop shadow
+                        box->SetLineColor(kBlack);
+                        box->SetLineWidth(2);
+                        box->SetShadowColor(0);
                         box->SetTextFont(42);
                         box->SetTextSize(0.040);
                         box->SetTextAlign(12);
@@ -989,13 +1315,11 @@ void compare_unpolarized_cross_sections_sp18out_vs_fa18out(
     }
 
     // ---------- final single-number summary ----------
-    // Integrated ratio: 100 * (sum A)/(sum B) — Δphi cancels if binning identical.
     double integrated_ratio_pct = std::numeric_limits<double>::quiet_NaN();
     if (sumB > 0.0) {
         integrated_ratio_pct = 100.0 * (sumA / sumB);
     }
 
-    // Weighted mean ratio: 100 * (wrsum/wsum), SE = 100*sqrt(1/wsum)
     double weighted_mean_ratio_pct = std::numeric_limits<double>::quiet_NaN();
     double weighted_mean_se_pct    = std::numeric_limits<double>::quiet_NaN();
     if (wsum > 0.0) {
@@ -1005,7 +1329,6 @@ void compare_unpolarized_cross_sections_sp18out_vs_fa18out(
         weighted_mean_se_pct    = 100.0 * sRw;
     }
 
-    // Print concise one-liners
     std::cout << "[compare][final] IntegratedRatioPct = " << integrated_ratio_pct
               << " ; points=" << n_points_integrated
               << " ; sumA=" << sumA << " ; sumB=" << sumB << "\n";

@@ -177,21 +177,33 @@ int main(int argc, char* argv[]) {
     //     output_root
     // );
 
-    // compute_uncorrected_cross_sections(
-    //     binning_scheme,
-    //     "output/jsons",                    // bin volume JSON directory
-    //     "output/jsons",               // unfolded counts per helicity
-    //     "imports/integrated_luminosity",        // luminosity text files
-    //     "output/uncorrected_cross_section"      // output dir
-    // );
+    // For polarized cross sections (existing functionality, but now with proper luminosity calculation)
+    compute_uncorrected_cross_sections(
+        binning_scheme,
+        "output/jsons",                    // bin volume JSON directory
+        "output/jsons",                    // unfolded counts per helicity
+        "imports/integrated_luminosity",   // luminosity text files
+        "output/uncorrected_cross_section" // output dir
+    );
 
-    // compare_unpolarized_cross_sections_sp18out_vs_fa18out(
-    //     binning_scheme,
-    //     "output/jsons",                    // bin volume JSON directory
-    //     "output/jsons",                    // unfolded counts
-    //     "imports/integrated_luminosity",   // luminosity text files (use total column)
-    //     "output/uncorrected_cross_section/" // output dir
-    // ); // #endif
+    // NEW: For unpolarized cross sections using total charge
+    compute_unpolarized_cross_sections(
+        binning_scheme,
+        "output/jsons",                    // bin volume JSON directory  
+        "output/jsons",                    // unfolded counts
+        "imports/integrated_luminosity",   // luminosity text files
+        "output/uncorrected_cross_section" // output dir
+    );
+
+    // Comparison function (uses the new luminosity calculation)
+    compare_unpolarized_cross_sections_sp18out_vs_fa18out(
+        binning_scheme,
+        "output/jsons",
+        "output/jsons", 
+        "imports/integrated_luminosity",
+        "output/uncorrected_cross_section"
+    );
+
 
     // // Multiply uncorrected dσ/dφ by Born/Rad per-φ correction
     // const std::string unx_dir = "output/jsons";                    // reads: uncorrected_xsec_<E>.json

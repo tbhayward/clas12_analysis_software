@@ -16,6 +16,15 @@ void compute_uncorrected_cross_sections(
     const std::string& output_dir             // e.g. "output/uncorrected_cross_section"
 );
 
+// NEW: Unpolarized cross sections using TOTAL-column luminosity
+// For periods where we only have total charge (Sp18 out) or want combined analysis
+void compute_unpolarized_cross_sections(
+    const std::vector<Binning>& binning_scheme,
+    const std::string& bin_volume_json_dir,   // e.g. "output/jsons"
+    const std::string& unfolded_counts_dir,   // e.g. "output/jsons"
+    const std::string& luminosity_dir,        // e.g. "imports/integrated_luminosity"
+    const std::string& output_dir             // e.g. "output/uncorrected_cross_section"
+);
 
 // Compare unpolarized cross sections using TOTAL-column luminosity for Sp18 out vs Fa18 out.
 // Produces panel plots per xB slice; no JSONs are written.
