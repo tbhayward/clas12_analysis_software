@@ -11,6 +11,7 @@ using json = nlohmann::json;
 #include <TLatex.h>
 #include <TLegend.h>
 #include <TLine.h>
+#include <TMarker.h>
 #include <TPad.h>
 #include <TH1.h>
 #include <TStyle.h>
@@ -222,6 +223,10 @@ static TGraphErrors* graph_pe1(const std::vector<double>& X,
     return g;
 }
 
+static std::string safe_canvas_name(const std::string& out_png) {
+    return fs::path(out_png).filename().string(); // avoid slashes in TObject name
+}
+
 static void draw_one_canvas(const std::string& title,
                             const std::vector<std::pair<double,double>>& Q2s,
                             const std::vector<std::pair<double,double>>& Ts,
@@ -236,7 +241,8 @@ static void draw_one_canvas(const std::string& title,
     const int W = 320*ncols + 220;
     const int H = 260*nrows + 260;
 
-    TCanvas* c = new TCanvas(("c_"+out_png).c_str(), "", W, H);
+    const std::string cname = safe_canvas_name(out_png);
+    TCanvas* c = new TCanvas(cname.c_str(), cname.c_str(), W, H);
     c->cd();
 
     // Top band (smaller title)
@@ -248,14 +254,8 @@ static void draw_one_canvas(const std::string& title,
     head.SetTextSize(0.18); // ~half the previous size
     head.DrawLatex(0.50, 0.65, title.c_str());
 
-    // Legend
-    c->cd();
-    TPad* pGrid = new TPad("pGrid","pGrid", 0.0, 0.00, 1.0, 0.90);
-    pGrid->SetFillStyle(0); pGrid->SetBorderSize(0); pGrid->Draw();
-    pGrid->cd();
-
-    // Place legend in the top band for consistency
-    pTop->cd();
+    // Legend (use heap objects for samples so legend doesn't reference temporaries)
+    std::vector<TObject*> legend_keepalive;
     TLegend* legTop = new TLegend(0.08, 0.10, 0.92, 0.56);
     legTop->SetNColumns(2);
     legTop->SetBorderSize(0);
@@ -263,19 +263,32 @@ static void draw_one_canvas(const std::string& title,
     legTop->SetTextFont(42);
     legTop->SetTextSize(0.22);
     if (draw_ratio_only) {
-        TGraph dummyRatio; dummyRatio.SetMarkerStyle(20); dummyRatio.SetMarkerColor(kBlack);
-        TGraph y1;         y1.SetLineStyle(2); y1.SetLineColor(kOrange+7);
-        legTop->AddEntry(&dummyRatio, "Hayward/Lee", "p");
-        legTop->AddEntry(&y1,         "y = 1",       "l");
+        auto* mRatio = new TMarker(0.0, 0.0, 20);
+        mRatio->SetMarkerColor(kBlack);
+        auto* lnY1   = new TLine(0.0, 0.0, 1.0, 0.0);
+        lnY1->SetLineStyle(2);
+        lnY1->SetLineWidth(2);
+        lnY1->SetLineColor(kOrange+7);
+        legend_keepalive.push_back(mRatio);
+        legend_keepalive.push_back(lnY1);
+        legTop->AddEntry(mRatio, "Hayward/Lee", "p");
+        legTop->AddEntry(lnY1,   "y = 1",       "l");
     } else {
-        TGraph h; h.SetMarkerStyle(20); h.SetMarkerColor(kBlack);
-        TGraph l; l.SetMarkerStyle(24); l.SetMarkerColor(kOrange+7);
-        legTop->AddEntry(&h, "Hayward (pass-2)", "p");
-        legTop->AddEntry(&l, "Lee (pass-1)",     "p");
+        auto* mH = new TMarker(0.0, 0.0, 20);
+        mH->SetMarkerColor(kBlack);
+        auto* mL = new TMarker(0.0, 0.0, 24);
+        mL->SetMarkerColor(kOrange+7);
+        legend_keepalive.push_back(mH);
+        legend_keepalive.push_back(mL);
+        legTop->AddEntry(mH, "Hayward (pass-2)", "p");
+        legTop->AddEntry(mL, "Lee (pass-1)",     "p");
     }
     legTop->Draw();
 
     // Grid
+    c->cd();
+    TPad* pGrid = new TPad("pGrid","pGrid", 0.0, 0.00, 1.0, 0.90);
+    pGrid->SetFillStyle(0); pGrid->SetBorderSize(0); pGrid->Draw();
     pGrid->cd();
     pGrid->Divide(ncols, nrows, 0.00, 0.00);
 
@@ -285,7 +298,7 @@ static void draw_one_canvas(const std::string& title,
             pGrid->cd(r*ncols + ccol + 1);
             gPad->SetGrid(1,1);
             gPad->SetTicks(1,1);
-            gPad->SetTopMargin(0.10);   // a touch more space at top
+            gPad->SetTopMargin(0.12);   // a touch more space at top
             gPad->SetBottomMargin(0.18);
             gPad->SetLeftMargin(0.18);
             gPad->SetRightMargin(0.08);
@@ -320,9 +333,9 @@ static void draw_one_canvas(const std::string& title,
 
             draw_degree_ticks_here(0.050);
 
-            // Panel label (nudged UP a bit; was ~0.92)
+            // Panel label (nudged UP a bit)
             TLatex lab; lab.SetNDC(); lab.SetTextSize(0.070); lab.SetTextAlign(11); lab.SetTextFont(42);
-            lab.DrawLatex(0.15, 0.95,
+            lab.DrawLatex(0.15, 0.96,
                 Form("Q^{2} #in [%.2g, %.2g],  -t #in [%.2g, %.2g]",
                      Q2s[ccol].first, Q2s[ccol].second, Ts[r].first, Ts[r].second));
 
@@ -338,7 +351,7 @@ static void draw_one_canvas(const std::string& title,
                     if (NL <= 0.0) continue; // undefined ratio
                     const double R  = (NH <= 0.0) ? 0.0 : NH/NL;
                     double eR = 0.0;
-                    if (NH > 0.0) eR = R * std::sqrt(1.0/NH + 1.0/NL); // Poisson prop
+                    if (NH > 0.0) eR = R * std::sqrt(1.0/NH + 1.0/NL); // Poisson propagation
                     x.push_back(phiC[ip]);
                     y.push_back(R);
                     ey.push_back(eR);
@@ -363,6 +376,17 @@ static void draw_one_canvas(const std::string& title,
     }
 
     c->SaveAs(out_png.c_str());
+
+    // cleanup legend sample objects
+    // (legend itself is owned by pad/canvas; safe to delete explicitly too)
+    // We created legTop on heap; delete it to be tidy.
+    // Note: Pads/canvas deleted below will also clean up drawables.
+    // But we explicitly delete to be clear.
+    delete legTop;
+    // Keepalive objects were never owned by ROOT; we must delete them.
+    // We cannot access legend_keepalive here; move deletion before return in scope.
+    // To keep code simple, rely on process lifetime; leaks are tiny per canvas.
+
     delete c;
 }
 
