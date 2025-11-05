@@ -38,10 +38,25 @@ constexpr double AVOGADRO = 6.022e23;             // mol⁻¹
 constexpr double ATOMIC_WEIGHT = 1.00794;         // g/mol
 constexpr double ELEMENTARY_CHARGE = 1.60217662e-19; // C
 
+// Cross section conversion factors
+constexpr double BARN_TO_CM2 = 1e-24;             // 1 barn = 1e-24 cm²
+constexpr double NANOBARN_TO_CM2 = 1e-33;         // 1 nb = 1e-33 cm²
+constexpr double CM2_TO_NANOBARN = 1e33;          // 1 cm² = 1e33 nb
+
 // Calculate luminosity from charge (in Coulombs)
 static inline double charge_to_luminosity(double charge_C) {
     // L = (Q/e) * (N_A * ρ * l) / A_w
     return (charge_C / ELEMENTARY_CHARGE) * (AVOGADRO * TARGET_DENSITY * TARGET_LENGTH) / ATOMIC_WEIGHT;
+}
+
+// Convert cross section from cm² to nb
+static inline double cm2_to_nanobarn(double xsec_cm2) {
+    return xsec_cm2 * CM2_TO_NANOBARN;
+}
+
+// Convert cross section from nb to cm²  
+static inline double nanobarn_to_cm2(double xsec_nb) {
+    return xsec_nb * NANOBARN_TO_CM2;
 }
 
 // ------------ style ------------
@@ -158,8 +173,11 @@ static LuminosityData read_luminosity_data(const std::string& filepath) {
               << "  pos_charge=" << sum_pos << " C"
               << "  neg_charge=" << sum_neg << " C"
               << "  total_lumi=" << data.total_lumi << " cm⁻²"
-              << "  pos_lumi=" << data.pos_lumi << " cm⁻²"  
-              << "  neg_lumi=" << data.neg_lumi << " cm⁻²\n";
+              << " (" << data.total_lumi * CM2_TO_NANOBARN << " nb⁻¹)"
+              << "  pos_lumi=" << data.pos_lumi << " cm⁻²"
+              << " (" << data.pos_lumi * CM2_TO_NANOBARN << " nb⁻¹)"
+              << "  neg_lumi=" << data.neg_lumi << " cm⁻²"
+              << " (" << data.neg_lumi * CM2_TO_NANOBARN << " nb⁻¹)\n";
     return data;
 }
 
@@ -372,8 +390,9 @@ void compute_uncorrected_cross_sections(
                         const double num = (hd ? hd->y[ip]  : 0.0);
                         const double en  = (hd ? hd->ye[ip] : 0.0);
                         const double d   = denom[ip];
-                        yv[ip] = (d > 0.0 ? num / d : 0.0);
-                        ev[ip] = (d > 0.0 ? en  / d : 0.0);
+                        // Convert from cm² to nb
+                        yv[ip] = (d > 0.0 ? cm2_to_nanobarn(num / d) : 0.0);
+                        ev[ip] = (d > 0.0 ? cm2_to_nanobarn(en / d) : 0.0);
                     }
                     o["phi"]      = xv;
                     o["xsec"]     = yv;
@@ -468,7 +487,7 @@ void compute_uncorrected_cross_sections(
                     TH1* frame = gPad->DrawFrame(0.0, 1e-4, 360.0, 1e3);
                     frame->GetXaxis()->SetLabelSize(0.0001);
                     frame->GetXaxis()->SetTitle("#phi (deg)");
-                    frame->GetYaxis()->SetTitle("d#sigma/d#phi (uncorr.)");
+                    frame->GetYaxis()->SetTitle("d#sigma/d#phi [nb/GeV^{4}]");
                     frame->GetXaxis()->CenterTitle();
                     frame->GetYaxis()->CenterTitle();
                     frame->GetXaxis()->SetNdivisions(505);
@@ -706,8 +725,9 @@ void compute_unpolarized_cross_sections(
                     const double num = itY->second.y[ip];
                     const double en  = itY->second.ye[ip];
                     const double d   = denom[ip];
-                    yv[ip] = (d > 0.0 ? num / d : 0.0);
-                    ev[ip] = (d > 0.0 ? en  / d : 0.0);
+                    // Convert from cm² to nb
+                    yv[ip] = (d > 0.0 ? cm2_to_nanobarn(num / d) : 0.0);
+                    ev[ip] = (d > 0.0 ? cm2_to_nanobarn(en / d) : 0.0);
                 }
                 o["phi"]      = xv;
                 o["xsec"]     = yv;
@@ -783,7 +803,7 @@ void compute_unpolarized_cross_sections(
                     TH1* frame = gPad->DrawFrame(0.0, 1e-4, 360.0, 1e3);
                     frame->GetXaxis()->SetLabelSize(0.0001);
                     frame->GetXaxis()->SetTitle("#phi (deg)");
-                    frame->GetYaxis()->SetTitle("d#sigma_{U}/d#phi (uncorr.)");
+                    frame->GetYaxis()->SetTitle("d#sigma_{U}/d#phi [nb/GeV^{4}]");
                     frame->GetXaxis()->CenterTitle();
                     frame->GetYaxis()->CenterTitle();
                     frame->GetXaxis()->SetNdivisions(505);
@@ -951,8 +971,9 @@ void compare_unpolarized_cross_sections_sp18out_vs_fa18out(
                 const double Vphi = std::max(0.0, bv["vol"][ip].get<double>());
                 const double denom = Ltot * Vphi;
                 if (denom > 0.0) {
-                    cd.xsec[ip] = Y[ip]  / denom;
-                    cd.xerr[ip] = Ye[ip] / denom;
+                    // Convert from cm² to nb
+                    cd.xsec[ip] = cm2_to_nanobarn(Y[ip]  / denom);
+                    cd.xerr[ip] = cm2_to_nanobarn(Ye[ip] / denom);
                 } else {
                     cd.xsec[ip] = 0.0;
                     cd.xerr[ip] = 0.0;
@@ -1066,7 +1087,7 @@ void compare_unpolarized_cross_sections_sp18out_vs_fa18out(
                     TH1* frame = gPad->DrawFrame(0.0, 1e-4, 360.0, 1e3);
                     frame->GetXaxis()->SetLabelSize(0.0001);
                     frame->GetXaxis()->SetTitle("#phi (deg)");
-                    frame->GetYaxis()->SetTitle("d#sigma_{U}/d#phi (uncorr.)");
+                    frame->GetYaxis()->SetTitle("d#sigma_{U}/d#phi [nb/GeV^{4}]");
                     frame->GetXaxis()->CenterTitle();
                     frame->GetYaxis()->CenterTitle();
                     frame->GetXaxis()->SetNdivisions(505);
