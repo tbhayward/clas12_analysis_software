@@ -19,7 +19,7 @@ static void make_output_dirs(const std::string& base) {
 }
 
 int main() {
-    // Hard-coded CSV locations
+    // Hard-coded CSV locations (as requested)
     const std::string all_csv = "imports/all_bin_v3.csv";
     const std::string acc_csv = "imports/full_acc.csv";
     const std::string out_dir = "output/cross_check/lee";
