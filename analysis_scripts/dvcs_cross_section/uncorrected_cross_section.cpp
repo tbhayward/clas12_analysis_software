@@ -43,8 +43,13 @@ constexpr double BARN_TO_CM2 = 1e-24;             // 1 barn = 1e-24 cm²
 constexpr double NANOBARN_TO_CM2 = 1e-33;         // 1 nb = 1e-33 cm²
 constexpr double CM2_TO_NANOBARN = 1e33;          // 1 cm² = 1e33 nb
 
-// Calculate luminosity from charge (in Coulombs)
-static inline double charge_to_luminosity(double charge_C) {
+// Charge unit fix
+constexpr double NANOCOULOMB_TO_COULOMB = 1e-9;   // 1 nC = 1e-9 C
+
+// Calculate luminosity from charge (in NANOCOULOMBS)
+static inline double charge_to_luminosity(double charge_nC) {
+    // Convert nC to C first
+    double charge_C = charge_nC * NANOCOULOMB_TO_COULOMB;
     // L = (Q/e) * (N_A * ρ * l) / A_w
     return (charge_C / ELEMENTARY_CHARGE) * (AVOGADRO * TARGET_DENSITY * TARGET_LENGTH) / ATOMIC_WEIGHT;
 }
@@ -169,15 +174,15 @@ static LuminosityData read_luminosity_data(const std::string& filepath) {
     data.neg_lumi = charge_to_luminosity(sum_neg);
     
     std::cout << "[luminosity] " << filepath
-              << "  total_charge=" << sum_total << " C"
-              << "  pos_charge=" << sum_pos << " C"
-              << "  neg_charge=" << sum_neg << " C"
-              << "  total_lumi=" << data.total_lumi << " cm⁻²"
-              << " (" << data.total_lumi * CM2_TO_NANOBARN << " nb⁻¹)"
-              << "  pos_lumi=" << data.pos_lumi << " cm⁻²"
-              << " (" << data.pos_lumi * CM2_TO_NANOBARN << " nb⁻¹)"
-              << "  neg_lumi=" << data.neg_lumi << " cm⁻²"
-              << " (" << data.neg_lumi * CM2_TO_NANOBARN << " nb⁻¹)\n";
+          << "  total_charge=" << sum_total << " nC"  
+          << "  pos_charge=" << sum_pos << " nC"    
+          << "  neg_charge=" << sum_neg << " nC"  
+          << "  total_lumi=" << data.total_lumi << " cm⁻²"
+          << " (" << data.total_lumi * CM2_TO_NANOBARN << " nb⁻¹)"
+          << "  pos_lumi=" << data.pos_lumi << " cm⁻²"
+          << " (" << data.pos_lumi * CM2_TO_NANOBARN << " nb⁻¹)"
+          << "  neg_lumi=" << data.neg_lumi << " cm⁻²"
+          << " (" << data.neg_lumi * CM2_TO_NANOBARN << " nb⁻¹)\n";
     return data;
 }
 
