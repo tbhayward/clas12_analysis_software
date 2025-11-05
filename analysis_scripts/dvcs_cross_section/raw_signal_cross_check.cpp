@@ -366,8 +366,8 @@ static void draw_one_canvas(const std::string& title,
 
             // Panel label (nudged UP a bit)
             TLatex lab; lab.SetNDC(); lab.SetTextSize(0.070); lab.SetTextAlign(11); lab.SetTextFont(42);
-            lab.DrawLatex(0.15, 0.96,
-                Form("Q^{2} #in [%.2g, %.2g],  -t #in [%.2g, %.2g]",
+            lab.DrawLatex(0.15, 0.92,
+                Form("Q^{2} #in [%.2g, %.2g], -t #in [%.2g, %.2g]",
                      Q2s[ccol].first, Q2s[ccol].second, Ts[r].first, Ts[r].second));
 
             const int black  = kBlack;
@@ -485,9 +485,9 @@ void plot_raw_yield_cross_checks(const std::vector<LeeRow>& rows,
         // OUT
         {
             const std::string title_counts =
-                Form("Raw yields: %s   x_{B} #in [%.3g, %.3g]", name_out.c_str(), ax.xB[ix].first, ax.xB[ix].second);
+                Form("Raw yields: %s x_{B} #in [%.3g, %.3g]", name_out.c_str(), ax.xB[ix].first, ax.xB[ix].second);
             const std::string title_ratio  =
-                Form("Raw yields ratio (Hayward/Lee): %s   x_{B} #in [%.3g, %.3g]", name_out.c_str(), ax.xB[ix].first, ax.xB[ix].second);
+                Form("Raw yields ratio (Hayward/Lee): %s x_{B} #in [%.3g, %.3g]", name_out.c_str(), ax.xB[ix].first, ax.xB[ix].second);
 
             auto fillBoth_out = make_fillBoth(ours_out, lee.out, ix);
 
