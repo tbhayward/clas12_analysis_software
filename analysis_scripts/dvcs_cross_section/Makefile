@@ -1,20 +1,33 @@
 # Compiler and flags
 CXX = g++
-CXXFLAGS = `root-config --cflags` -O2 -std=c++17 -pthread -fopenmp
-LDFLAGS = `root-config --libs` -lMinuit2 -pthread -fopenmp
+CXXFLAGS = $(shell root-config --cflags) -O2 -std=c++17 -pthread -fopenmp
+LDFLAGS  = $(shell root-config --libs) -lMinuit2 -pthread -fopenmp
 
-# Source files
-SRC = main.cpp load_trees.cpp make_dirs.cpp exclusivity_cuts.cpp load_binning_scheme.cpp bin_means.cpp total_counts.cpp pi0_contamination.cpp pi0_corrected_counts.cpp bsa.cpp radiative_corrections.cpp acceptance.cpp unfolding.cpp bin_volume.cpp uncorrected_cross_section.cpp rad_corrected_cross_section.cpp model_predictions.cpp bin_centering_corrections.cpp models_vs_data_plots.cpp
-OBJ = $(SRC:.cpp=.o)
-TARGET = dvcs_analysis
+# ---------- dvcs_analysis (existing) ----------
+DVCS_SRC = main.cpp load_trees.cpp make_dirs.cpp exclusivity_cuts.cpp load_binning_scheme.cpp \
+           bin_means.cpp total_counts.cpp pi0_contamination.cpp pi0_corrected_counts.cpp \
+           bsa.cpp radiative_corrections.cpp acceptance.cpp unfolding.cpp bin_volume.cpp \
+           uncorrected_cross_section.cpp rad_corrected_cross_section.cpp model_predictions.cpp \
+           bin_centering_corrections.cpp models_vs_data_plots.cpp
+DVCS_OBJ = $(DVCS_SRC:.cpp=.o)
+DVCS_BIN = dvcs_analysis
 
-all: $(TARGET)
+# ---------- cross_check_lee (new) ----------
+LEE_SRC  = cross_check_lee_main.cpp load_csv.cpp
+LEE_OBJ  = $(LEE_SRC:.cpp=.o)
+LEE_BIN  = cross_check_lee
 
-$(TARGET): $(OBJ)
-	$(CXX) $(OBJ) -o $(TARGET) $(LDFLAGS)
+# Build both by default
+all: $(DVCS_BIN) $(LEE_BIN)
+
+$(DVCS_BIN): $(DVCS_OBJ)
+	$(CXX) $(DVCS_OBJ) -o $@ $(LDFLAGS)
+
+$(LEE_BIN): $(LEE_OBJ)
+	$(CXX) $(LEE_OBJ) -o $@ $(LDFLAGS)
 
 %.o: %.cpp
 	$(CXX) $(CXXFLAGS) -c $< -o $@
 
 clean:
-	rm -f $(OBJ) $(TARGET)
+	rm -f $(DVCS_OBJ) $(DVCS_BIN) $(LEE_OBJ) $(LEE_BIN)

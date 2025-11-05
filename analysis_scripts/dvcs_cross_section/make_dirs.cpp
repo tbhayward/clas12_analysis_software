@@ -31,6 +31,10 @@ void makeOutputDirs() {
             {"10.59","10.60","10.2"}},
         {"output/rad_corrected_cross_section",
             {"10.59","10.60","10.2"}},
+        {"output/cross_check/lee",
+            {"raw_yield","pi0_contamination","signal_yield",
+            "rad_corrections", "acceptance", "unfolding",
+            "bin_volume", "cross_sections"}},
     };
 
     for (const auto& cat : cats) {

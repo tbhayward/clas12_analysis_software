@@ -243,24 +243,24 @@ int main(int argc, char* argv[]) {
     //     "output/bin_centering/plots"   // where to write the PNGs
     // );
 
-    // --------- 1) Compute and save model predictions (run once, or when you change models/phi grid) ----------
-    compute_model_predictions(
-        binning_scheme,
-        "output/bin_centering/jsons",        // reads bin_centered_xsec_<E>.json to know which bins exist
-        "output/model_predictions",          // will write jsons/model_predictions_<E>.json here
-        ModelPaths(),                        // configure as needed
-        true,                                // vgg_globalfit flag
-        24                                  // phi sampling density (0..360 by 1 deg)
-    );
+    // // --------- 1) Compute and save model predictions (run once, or when you change models/phi grid) ----------
+    // compute_model_predictions(
+    //     binning_scheme,
+    //     "output/bin_centering/jsons",        // reads bin_centered_xsec_<E>.json to know which bins exist
+    //     "output/model_predictions",          // will write jsons/model_predictions_<E>.json here
+    //     ModelPaths(),                        // configure as needed
+    //     true,                                // vgg_globalfit flag
+    //     24                                  // phi sampling density (0..360 by 1 deg)
+    // );
 
-    // --------- 2) Plot using the saved predictions (fast; tweak aesthetics without recomputing) ----------
-    plot_models_vs_bincentered(
-        binning_scheme,
-        "output/bin_centering/jsons",        // where bin_centered_xsec_<E>.json live (data points)
-        "output/model_predictions/jsons",    // where model_predictions_<E>.json live (precomputed curves)
-        "output/bin_centering",              // PNGs go under output/bin_centering/plots
-        0                                     // unused (predictions carry their own phi grid)
-    );
+    // // --------- 2) Plot using the saved predictions (fast; tweak aesthetics without recomputing) ----------
+    // plot_models_vs_bincentered(
+    //     binning_scheme,
+    //     "output/bin_centering/jsons",        // where bin_centered_xsec_<E>.json live (data points)
+    //     "output/model_predictions/jsons",    // where model_predictions_<E>.json live (precomputed curves)
+    //     "output/bin_centering",              // PNGs go under output/bin_centering/plots
+    //     0                                     // unused (predictions carry their own phi grid)
+    // );
 
     std::cout << "All done." << std::endl;
     return 0;
