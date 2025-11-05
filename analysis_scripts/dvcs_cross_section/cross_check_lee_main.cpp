@@ -31,6 +31,14 @@ int main() {
     auto rows = load_lee_csvs(all_bin_v3, full_acc, acc_ok, acc_bad);
 
     std::cout << "[lee] Loaded rows: " << rows.size() << "\n";
-    std::cout << "[lee] First pass complete. Add plotting next.\n";
+    std::cout << "[lee] First pass complete.\n";
+
+    // NEW: make the raw-yield comparison/ratio canvases
+    plot_raw_yield_cross_checks(rows,
+        "output/jsons/total_counts.json",
+        "output/cross_check/lee/raw_yield");
+
+
+
     return 0;
 }

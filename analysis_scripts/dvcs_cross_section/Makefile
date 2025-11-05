@@ -13,7 +13,7 @@ DVCS_OBJ = $(DVCS_SRC:.cpp=.o)
 DVCS_BIN = dvcs_analysis
 
 # ---------- cross_check_lee (new) ----------
-LEE_SRC  = cross_check_lee_main.cpp load_csv.cpp
+LEE_SRC  = cross_check_lee_main.cpp load_csv.cpp raw_signal_cross_check.cpp
 LEE_OBJ  = $(LEE_SRC:.cpp=.o)
 LEE_BIN  = cross_check_lee
 
