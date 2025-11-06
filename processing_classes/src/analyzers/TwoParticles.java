@@ -246,7 +246,8 @@ public class TwoParticles {
         BreitBoost.negative();
 
         open_angle = kinematic_variables.open_angle(lv_e, lv_p);
-        t = kinematic_variables.t(lv_p.p(), lv_p.theta());
+//        t = kinematic_variables.t(lv_p.p(), lv_p.theta());
+        t = kinematic_variables.t(lv_target, lv_p);
         tmin = kinematic_variables.tmin(x, Q2);
 
         // hadron kinematics

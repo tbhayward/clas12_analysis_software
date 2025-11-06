@@ -299,9 +299,14 @@ public class ThreeParticles {
         BreitBoost.negative();
 
 
-        t = kinematic_variables.t(lv_p.p(), lv_p.theta());
-        t1 = kinematic_variables.t(lv_p1.p(), lv_p1.theta());
-        t2 = kinematic_variables.t(lv_p2.p(), lv_p2.theta());
+//        t = kinematic_variables.t(lv_p.p(), lv_p.theta());
+//        t1 = kinematic_variables.t(lv_p1.p(), lv_p1.theta());
+//        t2 = kinematic_variables.t(lv_p2.p(), lv_p2.theta());
+//        tmin = kinematic_variables.tmin(x,Q2);
+
+        t = kinematic_variables.t(lv_target, lv_p);
+        t1 = kinematic_variables.t(lv_target, lv_p1);
+        t2 = kinematic_variables.t(lv_target, lv_p2);
         tmin = kinematic_variables.tmin(x,Q2);
         
         open_angle_ep = kinematic_variables.open_angle(lv_e, lv_p);

@@ -94,6 +94,12 @@ public class kinematic_variables {
         return 2 * mp * (E - p) - 2 * Math.sqrt(mp * mp + E * E) * Math.sqrt(mp * mp + p * p)
                 + 2 * Math.sqrt(mp * mp + E * E) * Math.sqrt(mp * mp + p * p) * Math.cos(theta);
     }
+    
+    double t(LorentzVector targetInitial, LorentzVector recoilProton) {
+        LorentzVector diff = new LorentzVector(targetInitial);
+        diff.sub(recoilProton);
+        return diff.mass2();
+    }
 
     double Depolarization_A(double gamma, double y) {
         return 1 / (1 + gamma * gamma) * (1 - y + y * y / 2 + y * y * gamma * gamma / 4);
