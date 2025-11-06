@@ -1399,7 +1399,7 @@ void compare_unpolarized_cross_sections_sp18out_vs_fa18out(
             std::cerr << "\n  Available -t bins:"; for (const auto& b : t_bins)  std::cerr << " [" << b.first << "," << b.second << "]";
             std::cerr << "\n";
         } else {
-            // Reuse the outer builders and types
+            // Reuse builders and types already defined above
             const auto map_sp18_local = build_unpol(jvol_sp18, ju_sp18, L_sp18_out_total);
             const auto map_fa18_local = build_unpol(jvol_fa18, ju_fa18, L_fa18_out_total);
 
@@ -1416,12 +1416,9 @@ void compare_unpolarized_cross_sections_sp18out_vs_fa18out(
                 std::cerr << "[compare][single-bin] Missing cell in one period for the selected bin (ix,iQ,it)=("
                           << ix << "," << iQ << "," << it << ").\n";
             } else {
-                const int W = 900, H = 720;
+                const int W = 900, H = 560;
                 TCanvas* c1 = new TCanvas("c_single_bin","c_single_bin", W, H);
-                c1->Divide(1,2,0.0,0.0);
 
-                // ---------- top: d sigma_U / d phi overlay ----------
-                c1->cd(1);
                 gPad->SetGrid(1,1);
                 gPad->SetTopMargin(0.08);
                 gPad->SetBottomMargin(0.18);
@@ -1429,7 +1426,8 @@ void compare_unpolarized_cross_sections_sp18out_vs_fa18out(
                 gPad->SetRightMargin(0.10);
                 gPad->SetLogy();
 
-                TH1* fr1 = gPad->DrawFrame(0.0, 1e-4, 360.0, 1e3);
+                // NOTE: requested y-range is 10^-1 to 10
+                TH1* fr1 = gPad->DrawFrame(0.0, 1e-1, 360.0, 1e1);
                 fr1->GetXaxis()->SetLabelSize(0.0001);
                 fr1->GetXaxis()->SetTitle("#phi (deg)");
                 fr1->GetYaxis()->SetTitle("d#sigma_{U}/d#phi (nb/GeV^{4})");
@@ -1441,10 +1439,10 @@ void compare_unpolarized_cross_sections_sp18out_vs_fa18out(
                 fr1->GetYaxis()->SetLabelSize(0.048);
                 fr1->GetXaxis()->SetTitleOffset(1.25);
                 fr1->GetYaxis()->SetTitleOffset(1.42);
+
                 drawDegreeTicks(gPad->GetUxmin(), gPad->GetUymin(), gPad->GetUxmax(), 0.048);
 
                 auto drawSet = [&](const CellData* cd, int mstyle, int color)->TGraphErrors* {
-                    if (!cd) return (TGraphErrors*)nullptr;
                     std::vector<double> x(N_PHI_BINS), y(N_PHI_BINS), e(N_PHI_BINS);
                     for (int i=0;i<N_PHI_BINS;++i) {
                         x[i] = PHI_DEG[i];
@@ -1464,6 +1462,7 @@ void compare_unpolarized_cross_sections_sp18out_vs_fa18out(
                 TGraphErrors* g_sp18 = drawSet(cd_sp18, 20, kBlue+1);
                 TGraphErrors* g_fa18 = drawSet(cd_fa18, 25, kRed+1);
 
+                // Bin-label line
                 TLatex lab1;
                 lab1.SetNDC(); lab1.SetTextSize(0.046); lab1.SetTextAlign(11);
                 lab1.SetTextFont(42);
@@ -1473,76 +1472,24 @@ void compare_unpolarized_cross_sections_sp18out_vs_fa18out(
                          Q2_bins[iQ].first, Q2_bins[iQ].second,
                          t_bins[it].first,  t_bins[it].second));
 
+                // Dataset legend
                 if (g_sp18 || g_fa18) {
-                    TLegend* leg = new TLegend(0.58, 0.70, 0.90, 0.90);
+                    TLegend* leg = new TLegend(0.66, 0.70, 0.92, 0.90);
                     leg->SetBorderSize(1);
                     leg->SetLineColor(kBlack);
                     leg->SetFillColor(kWhite);
                     leg->SetFillStyle(1001);
                     leg->SetTextFont(42);
                     leg->SetTextSize(0.042);
-                    if (g_sp18) leg->AddEntry(g_sp18, "Sp18 out (total L)", "lep");
-                    if (g_fa18) leg->AddEntry(g_fa18, "Fa18 out (total L)", "lep");
+                    if (g_sp18) leg->AddEntry(g_sp18, "Sp18 Outb", "lep");
+                    if (g_fa18) leg->AddEntry(g_fa18, "Fa18 Outb", "lep");
                     leg->Draw();
                 }
 
-                // ---------- bottom: ratio vs phi (Sp18/Fa18) ----------
-                c1->cd(2);
-                gPad->SetGrid(1,1);
-                gPad->SetTopMargin(0.08);
-                gPad->SetBottomMargin(0.18);
-                gPad->SetLeftMargin(0.18);
-                gPad->SetRightMargin(0.10);
-                gPad->SetLogy(0);
-
-                TH1* fr2 = gPad->DrawFrame(0.0, 0.0, 360.0, 200.0);
-                fr2->GetXaxis()->SetLabelSize(0.0001);
-                fr2->GetXaxis()->SetTitle("#phi (deg)");
-                fr2->GetYaxis()->SetTitle("#sigma_{U}^{Sp18}/#sigma_{U}^{Fa18} (%)");
-                fr2->GetXaxis()->CenterTitle();
-                fr2->GetYaxis()->CenterTitle();
-                fr2->GetXaxis()->SetNdivisions(505);
-                fr2->GetXaxis()->SetTitleSize(0.060);
-                fr2->GetYaxis()->SetTitleSize(0.060);
-                fr2->GetYaxis()->SetLabelSize(0.048);
-                fr2->GetXaxis()->SetTitleOffset(1.25);
-                fr2->GetYaxis()->SetTitleOffset(1.42);
-                drawDegreeTicks(gPad->GetUxmin(), gPad->GetUymin(), gPad->GetUxmax(), 0.048);
-
-                TLine* unity = new TLine(0.0, 100.0, 360.0, 100.0);
-                unity->SetLineStyle(2);
-                unity->SetLineWidth(2);
-                unity->SetLineColor(kGray+2);
-                unity->Draw("SAME");
-
-                std::vector<double> xp, yp, ey;
-                xp.reserve(N_PHI_BINS); yp.reserve(N_PHI_BINS); ey.reserve(N_PHI_BINS);
-                for (int ip=0; ip<N_PHI_BINS; ++ip) {
-                    const double A  = cd_sp18->xsec[ip];
-                    const double B  = cd_fa18->xsec[ip];
-                    const double eA = cd_sp18->xerr[ip];
-                    const double eB = cd_fa18->xerr[ip];
-                    if (!(A>0.0 && B>0.0)) continue;
-                    const double R  = A / B;
-                    const double eR = R * std::sqrt( std::pow(eA/std::max(1e-12,A), 2.0)
-                                                   + std::pow(eB/std::max(1e-12,B), 2.0) );
-                    xp.push_back(PHI_DEG[ip]);
-                    yp.push_back(100.0 * R);
-                    ey.push_back(100.0 * eR);
-                }
-                if (!xp.empty()) {
-                    auto* grr = new TGraphErrors((int)xp.size(), xp.data(), yp.data(), nullptr, ey.data());
-                    grr->SetMarkerStyle(21);
-                    grr->SetMarkerSize(1.0);
-                    grr->SetLineWidth(2);
-                    grr->SetLineColor(kBlack);
-                    grr->SetMarkerColor(kBlack);
-                    grr->Draw("P SAME");
-                }
-
+                // Phi-averaged ratio box (Sp18/Fa18) placed in bottom-left of the top plot
                 double Rphi = 0.0, eRphi = 0.0;
                 if (phiAveragedRatio(cd_sp18, cd_fa18, Rphi, eRphi)) {
-                    TPaveText* box = new TPaveText(0.18, 0.18, 0.58, 0.30, "NDC");
+                    TPaveText* box = new TPaveText(0.16, 0.18, 0.56, 0.30, "NDC");
                     box->SetFillColor(kWhite);
                     box->SetFillStyle(1001);
                     box->SetBorderSize(1);
