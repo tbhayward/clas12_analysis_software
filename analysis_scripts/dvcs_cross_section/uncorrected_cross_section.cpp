@@ -1474,13 +1474,13 @@ void compare_unpolarized_cross_sections_sp18out_vs_fa18out(
 
                 // Dataset legend
                 if (g_sp18 || g_fa18) {
-                    TLegend* leg = new TLegend(0.66, 0.70, 0.92, 0.90);
+                    TLegend* leg = new TLegend(0.66, 0.74, 0.90, 0.92);
                     leg->SetBorderSize(1);
                     leg->SetLineColor(kBlack);
                     leg->SetFillColor(kWhite);
                     leg->SetFillStyle(1001);
                     leg->SetTextFont(42);
-                    leg->SetTextSize(0.042);
+                    leg->SetTextSize(0.036);
                     if (g_sp18) leg->AddEntry(g_sp18, "Sp18 Outb", "lep");
                     if (g_fa18) leg->AddEntry(g_fa18, "Fa18 Outb", "lep");
                     leg->Draw();
