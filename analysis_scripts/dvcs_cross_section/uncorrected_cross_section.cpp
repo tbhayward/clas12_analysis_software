@@ -1343,55 +1343,51 @@ void compare_unpolarized_cross_sections_sp18out_vs_fa18out(
         }
     }
 
-    // ---------- NEW: single “summed low-xB” plot (xB_max <= 0.15), summed over Q^2 and -t ----------
+    // ---------- NEW: single "summed low-xB" plot (xB_max <= 0.15), COMMON PHASE SPACE ----------
     {
-        // // Determine which xB indices to include
-        // std::vector<int> ix_include;
-        // for (int ix = 0; ix < (int)xB_bins.size(); ++ix) {
-        //     const auto& xb = xB_bins[ix];
-        //     if (xb.second <= 0.15) ix_include.push_back(ix);
-        // }
-
-        // Determine which xB indices to include
+        // 1) choose xB bins: xmax <= 0.15
         std::vector<int> ix_include;
         for (int ix = 0; ix < (int)xB_bins.size(); ++ix) {
             const auto& xb = xB_bins[ix];
-            if (xb.second <= 23498234.15) ix_include.push_back(ix);
+            if (xb.second <= 0.15) ix_include.push_back(ix);
         }
+        auto ix_allowed = [&](int ix)->bool {
+            return std::find(ix_include.begin(), ix_include.end(), ix) != ix_include.end();
+        };
 
-        // Sum over selected cells
+        // 2) intersection of cells present in BOTH periods within selected xB
+        using CellKey = std::tuple<int,int,int>;
+        std::set<CellKey> keys_sp18, keys_fa18, keys_inter;
+
+        for (const auto& kv : map_sp18) {
+            int ix,iQ,itb; std::tie(ix,iQ,itb) = kv.first;
+            if (ix_allowed(ix)) keys_sp18.insert(kv.first);
+        }
+        for (const auto& kv : map_fa18) {
+            int ix,iQ,itb; std::tie(ix,iQ,itb) = kv.first;
+            if (ix_allowed(ix)) keys_fa18.insert(kv.first);
+        }
+        std::set_intersection(keys_sp18.begin(), keys_sp18.end(),
+                              keys_fa18.begin(), keys_fa18.end(),
+                              std::inserter(keys_inter, keys_inter.begin()));
+
+        // 3) sum dσU/dφ over the common cells only
         std::vector<double> y_sp18(N_PHI_BINS, 0.0), e2_sp18(N_PHI_BINS, 0.0);
         std::vector<double> y_fa18(N_PHI_BINS, 0.0), e2_fa18(N_PHI_BINS, 0.0);
 
-        for (const auto& kv : map_sp18) {
-            int ix, iQ, itb;
-            std::tie(ix,iQ,itb) = kv.first;
-            if (std::find(ix_include.begin(), ix_include.end(), ix) == ix_include.end()) continue;
-            const CellData& cd = kv.second;
-            for (int ip=0; ip<N_PHI_BINS; ++ip) {
-                y_sp18[ip]  += cd.xsec[ip];
-                e2_sp18[ip] += cd.xerr[ip]*cd.xerr[ip];
-            }
-        }
-        for (const auto& kv : map_fa18) {
-            int ix, iQ, itb;
-            std::tie(ix,iQ,itb) = kv.first;
-            if (std::find(ix_include.begin(), ix_include.end(), ix) == ix_include.end()) continue;
-            const CellData& cd = kv.second;
-            for (int ip=0; ip<N_PHI_BINS; ++ip) {
-                y_fa18[ip]  += cd.xsec[ip];
-                e2_fa18[ip] += cd.xerr[ip]*cd.xerr[ip];
+        for (const auto& key : keys_inter) {
+            const auto& cdA = map_sp18.at(key);
+            const auto& cdB = map_fa18.at(key);
+            for (int ip = 0; ip < N_PHI_BINS; ++ip) {
+                y_sp18[ip]  += cdA.xsec[ip];
+                e2_sp18[ip] += cdA.xerr[ip] * cdA.xerr[ip];
+                y_fa18[ip]  += cdB.xsec[ip];
+                e2_fa18[ip] += cdB.xerr[ip] * cdB.xerr[ip];
             }
         }
 
-        // If both are empty, skip
-        bool any_sp18=false, any_fa18=false;
-        for (int ip=0; ip<N_PHI_BINS; ++ip) {
-            if (y_sp18[ip] > 0.0) any_sp18 = true;
-            if (y_fa18[ip] > 0.0) any_fa18 = true;
-        }
-        if (any_sp18 || any_fa18) {
-            // Build arrays
+        bool any = false; for (int ip=0; ip<N_PHI_BINS; ++ip) if (y_sp18[ip] > 0.0 || y_fa18[ip] > 0.0) { any = true; break; }
+        if (any) {
             std::vector<double> x(N_PHI_BINS), es_sp18(N_PHI_BINS,0.0), es_fa18(N_PHI_BINS,0.0);
             for (int i=0;i<N_PHI_BINS;++i) {
                 x[i] = PHI_DEG[i];
@@ -1399,19 +1395,17 @@ void compare_unpolarized_cross_sections_sp18out_vs_fa18out(
                 es_fa18[i] = std::sqrt(std::max(0.0, e2_fa18[i]));
             }
 
-            // Canvas
             const int W = 900, H = 650;
             TCanvas* c = new TCanvas("c_sum_lowxB_phi", "c_sum_lowxB_phi", W, H);
 
-            // Top title pad
+            // top title pad
             TPad* pTop  = new TPad("pTop_lowx","pTop_lowx", 0.0, 0.90, 1.0, 1.0);
             pTop->SetFillStyle(0); pTop->SetBorderSize(0); pTop->Draw();
             pTop->cd();
-            TLatex head;
-            head.SetNDC(); head.SetTextAlign(22); head.SetTextFont(42); head.SetTextSize(0.30);
-            head.DrawLatex(0.5, 0.55, "#sigma_{U} vs #phi (x_{B} < 0.15, all Q^{2}, -t)");
+            TLatex head; head.SetNDC(); head.SetTextAlign(22); head.SetTextFont(42); head.SetTextSize(0.30);
+            head.DrawLatex(0.5, 0.55, "#sigma_{U} vs #phi (x_{B} < 0.15, common phase space)");
 
-            // Main pad
+            // main pad
             c->cd();
             TPad* pMain = new TPad("pMain_lowx","pMain_lowx", 0.0, 0.00, 1.0, 0.90);
             pMain->SetFillStyle(0); pMain->SetBorderSize(0); pMain->Draw();
@@ -1423,17 +1417,17 @@ void compare_unpolarized_cross_sections_sp18out_vs_fa18out(
             gPad->SetRightMargin(0.10);
             gPad->SetLogy();
 
-            // Dynamic y-range (log): compute upper bound
+            // choose a sensible log range
             double ymax = 0.0;
             for (int i=0;i<N_PHI_BINS;++i) {
                 ymax = std::max(ymax, y_sp18[i] + es_sp18[i]);
                 ymax = std::max(ymax, y_fa18[i] + es_fa18[i]);
             }
             if (!(ymax > 0.0)) ymax = 1.0;
+            double ymin = 1.0; // lower bound (nb/GeV^4) for readability on log axis
             double ytop = std::pow(10.0, std::ceil(std::log10(ymax*1.5)));
-            if (!(ytop > 1e-4)) ytop = 1.0;
 
-            TH1* frame = gPad->DrawFrame(0.0, 10, 360.0, 10e5);
+            TH1* frame = gPad->DrawFrame(0.0, ymin, 360.0, ytop);
             frame->GetXaxis()->SetTitle("#phi (deg)");
             frame->GetYaxis()->SetTitle("d#sigma_{U}/d#phi (nb/GeV^{4})");
             frame->GetXaxis()->CenterTitle();
@@ -1442,21 +1436,12 @@ void compare_unpolarized_cross_sections_sp18out_vs_fa18out(
             frame->GetXaxis()->SetTitleSize(0.060);
             frame->GetYaxis()->SetTitleSize(0.060);
             frame->GetYaxis()->SetLabelSize(0.048);
+            frame->GetXaxis()->SetLabelSize(0.048);   // show default labels
+            frame->GetXaxis()->SetLabelOffset(0.012); // just below axis
             frame->GetXaxis()->SetTitleOffset(1.25);
             frame->GetYaxis()->SetTitleOffset(1.42);
+            // (No TGaxis here -> avoids extra bottom line)
 
-            // Degree ticks
-            TGaxis* ax = new TGaxis(gPad->GetUxmin(), gPad->GetUymin(),
-                                    gPad->GetUxmax(), gPad->GetUymin(),
-                                    0.0, 360.0, 4, "");
-            ax->SetLabelFont(42);
-            ax->SetLabelSize(0.048);
-            ax->SetLabelOffset(0.012);
-            ax->SetTitle("");
-            ax->SetTickSize(0.02);
-            ax->Draw();
-
-            // Draw series
             auto* gr_sp18 = new TGraphErrors(N_PHI_BINS, x.data(), y_sp18.data(), nullptr, es_sp18.data());
             gr_sp18->SetMarkerStyle(20);
             gr_sp18->SetMarkerSize(1.1);
@@ -1473,7 +1458,6 @@ void compare_unpolarized_cross_sections_sp18out_vs_fa18out(
             gr_fa18->SetMarkerColor(kRed+1);
             gr_fa18->Draw("P SAME");
 
-            // Legend and annotation
             TLegend* leg = new TLegend(0.58, 0.70, 0.90, 0.90);
             leg->SetBorderSize(1);
             leg->SetLineColor(kBlack);
@@ -1489,6 +1473,15 @@ void compare_unpolarized_cross_sections_sp18out_vs_fa18out(
             c->SaveAs(outSingle.c_str());
             delete c;
             std::cout << "[compare] Wrote " << outSingle << "\n";
+
+            // optional sanity printout for this specific sum
+            double sA=0.0, sB=0.0;
+            for (int i=0;i<N_PHI_BINS;++i) { sA += y_sp18[i]; sB += y_fa18[i]; }
+            if (sB > 0.0) {
+                std::cout << "[compare][sum-lowxB] cells=" << keys_inter.size()
+                          << " ; sum_sp18=" << sA << " ; sum_fa18=" << sB
+                          << " ; ratio=" << (sA/sB) << "\n";
+            }
         }
     }
 
