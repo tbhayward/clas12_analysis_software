@@ -11,6 +11,7 @@
 #include <TPaveText.h>
 #include <TGaxis.h>
 #include <TLine.h>
+#include <TString.h>
 
 #include <filesystem>
 #include <fstream>
@@ -23,6 +24,7 @@
 #include <tuple>
 #include <vector>
 #include <algorithm>
+#include <cstdio>
 
 #include <nlohmann/json.hpp>
 using json = nlohmann::json;
@@ -33,24 +35,24 @@ constexpr int    N_PHI_BINS = 12;
 constexpr double TWO_PI     = 2.0 * M_PI;
 
 // ------------ Target properties for luminosity calculation ------------
-constexpr double TARGET_DENSITY = 0.07151;        // g/cm^3
-constexpr double TARGET_LENGTH = 5.0;             // cm
-constexpr double AVOGADRO = 6.022e23;             // mol^-1
-constexpr double ATOMIC_WEIGHT = 1.00794;         // g/mol
-constexpr double ELEMENTARY_CHARGE = 1.60217662e-19; // C
+constexpr double TARGET_DENSITY = 0.07151;            // g/cm^3
+constexpr double TARGET_LENGTH  = 5.0;                // cm
+constexpr double AVOGADRO       = 6.022e23;           // mol^-1
+constexpr double ATOMIC_WEIGHT  = 1.00794;            // g/mol
+constexpr double ELEMENTARY_CHARGE = 1.60217662e-19;  // C
 
 // Cross section conversion factors
-constexpr double BARN_TO_CM2 = 1e-24;             // 1 barn = 1e-24 cm^2
-constexpr double NANOBARN_TO_CM2 = 1e-33;         // 1 nb = 1e-33 cm^2
-constexpr double CM2_TO_NANOBARN = 1e33;          // 1 cm^2 = 1e33 nb
+constexpr double BARN_TO_CM2       = 1e-24;           // 1 barn = 1e-24 cm^2
+constexpr double NANOBARN_TO_CM2   = 1e-33;           // 1 nb   = 1e-33 cm^2
+constexpr double CM2_TO_NANOBARN   = 1e33;            // 1 cm^2 = 1e33 nb
 
 // Inverse luminosity conversion
-constexpr double CM2LUMI_TO_NANOBARNLUMI = 1e-33; // 1 cm^-2 = 1e-33 nb^-1
+constexpr double CM2LUMI_TO_NANOBARNLUMI = 1e-33;     // 1 cm^-2 = 1e-33 nb^-1
 
 // Charge unit fix
-constexpr double NANOCOULOMB_TO_COULOMB = 1e-9;   // 1 nC = 1e-9 C
+constexpr double NANOCOULOMB_TO_COULOMB  = 1e-9;      // 1 nC = 1e-9 C
 
-// Calculate luminosity from charge (in NANOCOULOMBS)
+// Calculate luminosity from charge (input in nC)
 static inline double charge_to_luminosity(double charge_nC) {
     // Convert nC to C first
     double charge_C = charge_nC * NANOCOULOMB_TO_COULOMB;
@@ -90,6 +92,7 @@ static inline std::vector<double> phiCentersDeg() {
     for (int i=0;i<N_PHI_BINS;++i) d[i] = (i+0.5)*step;
     return d;
 }
+
 static void drawDegreeTicks(double xmin, double ymin, double xmax, double labelSize){
     TGaxis* ax = new TGaxis(xmin, ymin, xmax, ymin, 0.0, 360.0, 4, "");
     ax->SetLabelFont(42);
@@ -110,6 +113,7 @@ static std::vector<std::pair<double,double>> uniqueRanges(const std::vector<Binn
     }
     return std::vector<std::pair<double,double>>(s.begin(), s.end());
 }
+
 static inline int findIndex(const std::pair<double,double>& range,
                             const std::vector<std::pair<double,double>>& ranges) {
     for (int i=0;i<(int)ranges.size();++i) if (ranges[i]==range) return i;
@@ -126,11 +130,11 @@ static json load_json(const std::string& path) {
     json j; f >> j; return j;
 }
 
-// CSV luminosity: run,total,pos,neg,*,*
+// CSV luminosity: columns include total, pos, neg charges in nC (sums over runs)
 struct LuminosityData {
-    double total_charge;  // C (from column 2)
-    double pos_charge;    // C (from column 3)
-    double neg_charge;    // C (from column 4)
+    double total_charge;  // nC (from column 2)
+    double pos_charge;    // nC (from column 3)
+    double neg_charge;    // nC (from column 4)
     double total_lumi;    // cm^-2 (calculated)
     double pos_lumi;      // cm^-2 (calculated)
     double neg_lumi;      // cm^-2 (calculated)
@@ -160,33 +164,33 @@ static LuminosityData read_luminosity_data(const std::string& filepath) {
         while (std::getline(ss, tok, ',')) cols.push_back(trim(tok));
         if (cols.size() < 4) continue;
         try {
-            double total = std::stod(cols[1]);
-            double pos = std::stod(cols[2]);
-            double neg = std::stod(cols[3]);
+            double total = std::stod(cols[1]); // nC
+            double pos   = std::stod(cols[2]); // nC
+            double neg   = std::stod(cols[3]); // nC
             if (total > 0) sum_total += total;
-            if (pos > 0) sum_pos += pos;
-            if (neg > 0) sum_neg += neg;
+            if (pos   > 0) sum_pos   += pos;
+            if (neg   > 0) sum_neg   += neg;
         } catch (...) {}
     }
     in.close();
 
     data.total_charge = sum_total;
-    data.pos_charge = sum_pos;
-    data.neg_charge = sum_neg;
-    data.total_lumi = charge_to_luminosity(sum_total);
-    data.pos_lumi = charge_to_luminosity(sum_pos);
-    data.neg_lumi = charge_to_luminosity(sum_neg);
+    data.pos_charge   = sum_pos;
+    data.neg_charge   = sum_neg;
+    data.total_lumi   = charge_to_luminosity(sum_total);
+    data.pos_lumi     = charge_to_luminosity(sum_pos);
+    data.neg_lumi     = charge_to_luminosity(sum_neg);
 
     std::cout << "[luminosity] " << filepath
         << "  total_charge=" << sum_total << " nC"
-        << "  pos_charge=" << sum_pos << " nC"
-        << "  neg_charge=" << sum_neg << " nC"
-        << "  total_lumi=" << data.total_lumi << " cm^-2"
+        << "  pos_charge="   << sum_pos   << " nC"
+        << "  neg_charge="   << sum_neg   << " nC"
+        << "  total_lumi="   << data.total_lumi << " cm^-2"
         << " (" << data.total_lumi * CM2LUMI_TO_NANOBARNLUMI << " nb^-1)"
-        << "  pos_lumi=" << data.pos_lumi << " cm^-2"
-        << " (" << data.pos_lumi * CM2LUMI_TO_NANOBARNLUMI << " nb^-1)"
-        << "  neg_lumi=" << data.neg_lumi << " cm^-2"
-        << " (" << data.neg_lumi * CM2LUMI_TO_NANOBARNLUMI << " nb^-1)\n";
+        << "  pos_lumi="     << data.pos_lumi   << " cm^-2"
+        << " (" << data.pos_lumi * CM2LUMI_TO_NANOBARNLUMI   << " nb^-1)"
+        << "  neg_lumi="     << data.neg_lumi   << " cm^-2"
+        << " (" << data.neg_lumi * CM2LUMI_TO_NANOBARNLUMI   << " nb^-1)\n";
     return data;
 }
 
@@ -241,12 +245,12 @@ void compute_uncorrected_cross_sections(
     const auto L_sp19_inb = read_luminosity_data(luminosity_dir + "/rga_sp19_inb.txt");
 
     // Combine luminosities for 10.6 GeV (Fa18 inb + out)
-    const double L_10p6_pos = L_fa18_inb.pos_lumi + L_fa18_out.pos_lumi;
-    const double L_10p6_neg = L_fa18_inb.neg_lumi + L_fa18_out.neg_lumi;
+    const double L_10p6_pos   = L_fa18_inb.pos_lumi   + L_fa18_out.pos_lumi;
+    const double L_10p6_neg   = L_fa18_inb.neg_lumi   + L_fa18_out.neg_lumi;
     const double L_10p6_total = L_fa18_inb.total_lumi + L_fa18_out.total_lumi;
 
-    const double L_10p2_pos = L_sp19_inb.pos_lumi;
-    const double L_10p2_neg = L_sp19_inb.neg_lumi;
+    const double L_10p2_pos   = L_sp19_inb.pos_lumi;
+    const double L_10p2_neg   = L_sp19_inb.neg_lumi;
     const double L_10p2_total = L_sp19_inb.total_lumi;
 
     // Store luminosity data for each energy
@@ -332,8 +336,8 @@ void compute_uncorrected_cross_sections(
                 HelData& hp = sumPlus[CellKey(ix,iQ,itb)];
                 HelData& hm = sumMinus[CellKey(ix,iQ,itb)];
                 for (int ip=0; ip<N_PHI_BINS; ++ip) {
-                    double vp = yp[ip].get<double>();
-                    double vm = ym[ip].get<double>();
+                    double vp  = yp[ip].get<double>();
+                    double vm  = ym[ip].get<double>();
                     double epv = (ep.size()==N_PHI_BINS ? std::max(0.0, ep[ip].get<double>()) : std::sqrt(std::max(0.0, vp)));
                     double emv = (em.size()==N_PHI_BINS ? std::max(0.0, em[ip].get<double>()) : std::sqrt(std::max(0.0, vm)));
 
@@ -386,8 +390,8 @@ void compute_uncorrected_cross_sections(
                 for (int ip=0; ip<N_PHI_BINS; ++ip) {
                     const double Vphi = std::max(0.0, volphi[ip].get<double>());
                     Vtot += Vphi;
-                    denom_pos[ip] = L_data.pos_lumi * Vphi;
-                    denom_neg[ip] = L_data.neg_lumi * Vphi;
+                    denom_pos[ip]   = L_data.pos_lumi   * Vphi;
+                    denom_neg[ip]   = L_data.neg_lumi   * Vphi;
                     denom_total[ip] = L_data.total_lumi * Vphi;
                 }
 
@@ -413,9 +417,9 @@ void compute_uncorrected_cross_sections(
                 HelData unpol_data;
                 if (itP != sumPlus.end() && itM != sumMinus.end()) {
                     for (int ip=0; ip<N_PHI_BINS; ++ip) {
-                        unpol_data.y[ip] = itP->second.y[ip] + itM->second.y[ip];
+                        unpol_data.y[ip]  = itP->second.y[ip] + itM->second.y[ip];
                         unpol_data.ye[ip] = std::sqrt(itP->second.ye[ip]*itP->second.ye[ip] +
-                                                     itM->second.ye[ip]*itM->second.ye[ip]);
+                                                      itM->second.ye[ip]*itM->second.ye[ip]);
                     }
                 } else if (itP != sumPlus.end()) {
                     unpol_data = itP->second;
@@ -489,7 +493,7 @@ void compute_uncorrected_cross_sections(
                     gPad->SetGrid(1,1);
                     gPad->SetTopMargin(0.08);
                     gPad->SetBottomMargin(0.18);
-                    gPad->SetLeftMargin(0.15);
+                    gPad->SetLeftMargin(0.125);
                     gPad->SetRightMargin(0.10);
                     gPad->SetLogy();
 
@@ -521,10 +525,8 @@ void compute_uncorrected_cross_sections(
                         const auto& ep = h["xsec_err"];
                         if (xp.size()!=N_PHI_BINS || yp.size()!=N_PHI_BINS || ep.size()!=N_PHI_BINS) return (TGraphErrors*)nullptr;
                         std::vector<double> x(N_PHI_BINS), y(N_PHI_BINS), e(N_PHI_BINS);
-                        double ymax=0.0;
                         for (int i=0;i<N_PHI_BINS;++i){
                             x[i]=xp[i].get<double>(); y[i]=yp[i].get<double>(); e[i]=std::max(1e-12, ep[i].get<double>());
-                            ymax = std::max(ymax, y[i]+e[i]);
                         }
                         frame->GetYaxis()->SetRangeUser(1e-4, 1e3);
                         auto* gr = new TGraphErrors(N_PHI_BINS, x.data(), y.data(), nullptr, e.data());
@@ -597,8 +599,8 @@ void compute_unpolarized_cross_sections(
     const auto L_sp19_inb = read_luminosity_data(luminosity_dir + "/rga_sp19_inb.txt");
 
     // Combine for 10.6 GeV (Fa18 inb + out)
-    const double L_10p6_total = L_fa18_inb.total_lumi + L_fa18_out.total_lumi;
-    const double L_10p2_total = L_sp19_inb.total_lumi;
+    const double L_10p6_total  = L_fa18_inb.total_lumi + L_fa18_out.total_lumi;
+    const double L_10p2_total  = L_sp19_inb.total_lumi;
     const double L_10p59_total = L_sp18_out.total_lumi;
 
     const std::map<std::string, double> energyLumi = {
@@ -672,10 +674,10 @@ void compute_unpolarized_cross_sections(
                     const auto& yt = cell["yield"];
                     const auto& et = cell.contains("yield_err") ? cell["yield_err"] : json::array();
                     for (int ip=0; ip<N_PHI_BINS; ++ip) {
-                        double vt = yt[ip].get<double>();
+                        double vt  = yt[ip].get<double>();
                         double etv = (et.size()==N_PHI_BINS ? std::max(0.0, et[ip].get<double>()) : std::sqrt(std::max(0.0, vt)));
-                        yd.y[ip] += vt;
-                        yd.ye[ip] = std::sqrt(yd.ye[ip]*yd.ye[ip] + etv*etv);
+                        yd.y[ip]  += vt;
+                        yd.ye[ip]  = std::sqrt(yd.ye[ip]*yd.ye[ip] + etv*etv);
                     }
                 } else if (cell.contains("yield_plus") && cell.contains("yield_minus")) {
                     const auto& yp = cell["yield_plus"];
@@ -684,12 +686,12 @@ void compute_unpolarized_cross_sections(
                     const auto& em = cell.contains("yield_minus_err") ? cell["yield_minus_err"] : json::array();
                     if (yp.size() == N_PHI_BINS && ym.size() == N_PHI_BINS) {
                         for (int ip=0; ip<N_PHI_BINS; ++ip) {
-                            double vp = yp[ip].get<double>();
-                            double vm = ym[ip].get<double>();
+                            double vp  = yp[ip].get<double>();
+                            double vm  = ym[ip].get<double>();
                             double epv = (ep.size()==N_PHI_BINS ? std::max(0.0, ep[ip].get<double>()) : std::sqrt(std::max(0.0, vp)));
                             double emv = (em.size()==N_PHI_BINS ? std::max(0.0, em[ip].get<double>()) : std::sqrt(std::max(0.0, vm)));
-                            yd.y[ip] += (vp + vm);
-                            yd.ye[ip] = std::sqrt(yd.ye[ip]*yd.ye[ip] + epv*epv + emv*emv);
+                            yd.y[ip]  += (vp + vm);
+                            yd.ye[ip]  = std::sqrt(yd.ye[ip]*yd.ye[ip] + epv*epv + emv*emv);
                         }
                     }
                 }
@@ -805,7 +807,7 @@ void compute_unpolarized_cross_sections(
                     gPad->SetGrid(1,1);
                     gPad->SetTopMargin(0.08);
                     gPad->SetBottomMargin(0.18);
-                    gPad->SetLeftMargin(0.15);
+                    gPad->SetLeftMargin(0.125);
                     gPad->SetRightMargin(0.10);
                     gPad->SetLogy();
 
@@ -883,7 +885,7 @@ static int findRangeIndexApprox(const std::vector<std::pair<double,double>>& bin
     return -1;
 }
 
-// Put this near your other helpers (before the compare function)
+// Robust bin matcher
 static int findRangeIndexRobust(const std::vector<std::pair<double,double>>& ranges,
                                 std::pair<double,double> want,
                                 double atol = 1e-6, double rtol = 1e-6) {
@@ -977,8 +979,8 @@ void compare_unpolarized_cross_sections_sp18out_vs_fa18out(
                 const auto& em = (cell.contains("yield_minus_err") && (int)cell["yield_minus_err"].size()==N_PHI_BINS) ? cell["yield_minus_err"] : json::array();
 
                 for (int ip=0; ip<N_PHI_BINS; ++ip) {
-                    const double vp = have_plus  ? yp[ip].get<double>() : 0.0;
-                    const double vm = have_minus ? ym[ip].get<double>() : 0.0;
+                    const double vp  = have_plus  ? yp[ip].get<double>() : 0.0;
+                    const double vm  = have_minus ? ym[ip].get<double>() : 0.0;
                     const double epv = (ep.is_array() ? std::max(0.0, ep[ip].get<double>()) : std::sqrt(std::max(0.0, vp)));
                     const double emv = (em.is_array() ? std::max(0.0, em[ip].get<double>()) : std::sqrt(std::max(0.0, vm)));
                     Y[ip]  = vp + vm;
@@ -1124,7 +1126,7 @@ void compare_unpolarized_cross_sections_sp18out_vs_fa18out(
                     gPad->SetGrid(1,1);
                     gPad->SetTopMargin(0.08);
                     gPad->SetBottomMargin(0.18);
-                    gPad->SetLeftMargin(0.16);
+                    gPad->SetLeftMargin(0.125);
                     gPad->SetRightMargin(0.10);
                     gPad->SetLogy();
 
@@ -1259,7 +1261,7 @@ void compare_unpolarized_cross_sections_sp18out_vs_fa18out(
                     gPad->SetGrid(1,1);
                     gPad->SetTopMargin(0.08);
                     gPad->SetBottomMargin(0.18);
-                    gPad->SetLeftMargin(0.18);
+                    gPad->SetLeftMargin(0.125);
                     gPad->SetRightMargin(0.10);
                     gPad->SetLogy(0);
 
@@ -1400,8 +1402,155 @@ void compare_unpolarized_cross_sections_sp18out_vs_fa18out(
             std::cerr << "\n";
         } else {
             // Reuse builders and types already defined above
-            const auto map_sp18_local = build_unpol(jvol_sp18, ju_sp18, L_sp18_out_total);
-            const auto map_fa18_local = build_unpol(jvol_fa18, ju_fa18, L_fa18_out_total);
+            // Note: jvol_sp18/ju_sp18 and jvol_fa18/ju_fa18 are in the outer scope of this function.
+            const std::string path_vol_sp18 = (fs::path(bin_volume_json_dir) / ("bin_volume_" + std::string("10.59") + ".json")).string();
+            const std::string path_vol_fa18 = (fs::path(bin_volume_json_dir) / ("bin_volume_" + std::string("10.60") + ".json")).string();
+            const json jvol_sp18_local = load_json(path_vol_sp18);
+            const json jvol_fa18_local = load_json(path_vol_fa18);
+
+            const std::string path_u_sp18 = (fs::path(unfolded_counts_dir) / ("unfolded_" + std::string("DVCS_Sp18_out") + ".json")).string();
+            const std::string path_u_fa18 = (fs::path(unfolded_counts_dir) / ("unfolded_" + std::string("DVCS_Fa18_out") + ".json")).string();
+            const json ju_sp18_local = load_json(path_u_sp18);
+            const json ju_fa18_local = load_json(path_u_fa18);
+
+            const double L_sp18_out_total = read_total_luminosity(luminosity_dir + "/rga_sp18_out.txt");
+            const double L_fa18_out_total = read_total_luminosity(luminosity_dir + "/rga_fa18_out.txt");
+
+            const auto map_sp18_local = [&](){
+                std::map<CellKey, CellData> m;
+                if (!jvol_sp18_local.empty()) {
+                    // reuse the lambda build_unpol from above by duplicating minimal logic here
+                    auto build = [&](const json& jvol, const json& ju, double Ltot)->std::map<CellKey,CellData>{
+                        std::map<CellKey, CellData> out;
+                        if (jvol.empty() || ju.empty() || !jvol.contains("bins")) return out;
+                        for (auto itb = jvol["bins"].begin(); itb != jvol["bins"].end(); ++itb) {
+                            const std::string bkey = itb.key();
+                            const json& bv = itb.value();
+                            if (!bv.contains("vol")) continue;
+                            if ((int)bv["vol"].size() != N_PHI_BINS) continue;
+                            int ixb=0,iQb=0,itbidx=0;
+                            if (std::sscanf(bkey.c_str(),"(%d,%d,%d)",&ixb,&iQb,&itbidx) != 3) continue;
+                            if (!ju.contains("bins") || !ju["bins"].contains(bkey)) continue;
+                            const json& cell = ju["bins"][bkey];
+
+                            // sum plus+minus if present, else use total
+                            std::vector<double> Y(N_PHI_BINS,0.0), Ye(N_PHI_BINS,0.0);
+                            bool have_plus  = cell.contains("yield_plus")  && (int)cell["yield_plus"].size()==N_PHI_BINS;
+                            bool have_minus = cell.contains("yield_minus") && (int)cell["yield_minus"].size()==N_PHI_BINS;
+                            bool have_total = cell.contains("yield")       && (int)cell["yield"].size()==N_PHI_BINS;
+                            if (!(have_plus || have_minus || have_total)) continue;
+
+                            if (have_plus || have_minus) {
+                                const auto& yp = have_plus  ? cell["yield_plus"]  : json::array();
+                                const auto& ym = have_minus ? cell["yield_minus"] : json::array();
+                                const auto& ep = (cell.contains("yield_plus_err")  && (int)cell["yield_plus_err"].size()==N_PHI_BINS)  ? cell["yield_plus_err"]  : json::array();
+                                const auto& em = (cell.contains("yield_minus_err") && (int)cell["yield_minus_err"].size()==N_PHI_BINS) ? cell["yield_minus_err"] : json::array();
+                                for (int ip=0; ip<N_PHI_BINS; ++ip) {
+                                    const double vp  = have_plus  ? yp[ip].get<double>() : 0.0;
+                                    const double vm  = have_minus ? ym[ip].get<double>() : 0.0;
+                                    const double epv = (ep.is_array() ? std::max(0.0, ep[ip].get<double>()) : std::sqrt(std::max(0.0, vp)));
+                                    const double emv = (em.is_array() ? std::max(0.0, em[ip].get<double>()) : std::sqrt(std::max(0.0, vm)));
+                                    Y[ip]  = vp + vm;
+                                    Ye[ip] = std::sqrt(epv*epv + emv*emv);
+                                }
+                            } else {
+                                const auto& y  = cell["yield"];
+                                const bool has_e = cell.contains("yield_err") && (int)cell["yield_err"].size()==N_PHI_BINS;
+                                for (int ip=0; ip<N_PHI_BINS; ++ip) {
+                                    Y[ip]  = y[ip].get<double>();
+                                    Ye[ip] = has_e ? std::max(0.0, cell["yield_err"][ip].get<double>())
+                                                   : std::sqrt(std::max(0.0, Y[ip]));
+                                }
+                            }
+
+                            CellData cd;
+                            for (int ip=0; ip<N_PHI_BINS; ++ip) {
+                                const double Vphi = std::max(0.0, bv["vol"][ip].get<double>());
+                                const double denom = Ltot * Vphi;
+                                if (denom > 0.0) {
+                                    cd.xsec[ip] = cm2_to_nanobarn(Y[ip]  / denom);
+                                    cd.xerr[ip] = cm2_to_nanobarn(Ye[ip] / denom);
+                                } else {
+                                    cd.xsec[ip] = 0.0;
+                                    cd.xerr[ip] = 0.0;
+                                }
+                            }
+                            cd.ok = true;
+                            out[CellKey(ixb,iQb,itbidx)] = std::move(cd);
+                        }
+                        return out;
+                    };
+                    m = build(jvol_sp18_local, ju_sp18_local, L_sp18_out_total);
+                }
+                return m;
+            }();
+
+            const auto map_fa18_local = [&](){
+                std::map<CellKey, CellData> m;
+                if (!jvol_fa18_local.empty()) {
+                    auto build = [&](const json& jvol, const json& ju, double Ltot)->std::map<CellKey,CellData>{
+                        std::map<CellKey, CellData> out;
+                        if (jvol.empty() || ju.empty() || !jvol.contains("bins")) return out;
+                        for (auto itb = jvol["bins"].begin(); itb != jvol["bins"].end(); ++itb) {
+                            const std::string bkey = itb.key();
+                            const json& bv = itb.value();
+                            if (!bv.contains("vol")) continue;
+                            if ((int)bv["vol"].size() != N_PHI_BINS) continue;
+                            int ixb=0,iQb=0,itbidx=0;
+                            if (std::sscanf(bkey.c_str(),"(%d,%d,%d)",&ixb,&iQb,&itbidx) != 3) continue;
+                            if (!ju.contains("bins") || !ju["bins"].contains(bkey)) continue;
+                            const json& cell = ju["bins"][bkey];
+
+                            std::vector<double> Y(N_PHI_BINS,0.0), Ye(N_PHI_BINS,0.0);
+                            bool have_plus  = cell.contains("yield_plus")  && (int)cell["yield_plus"].size()==N_PHI_BINS;
+                            bool have_minus = cell.contains("yield_minus") && (int)cell["yield_minus"].size()==N_PHI_BINS;
+                            bool have_total = cell.contains("yield")       && (int)cell["yield"].size()==N_PHI_BINS;
+                            if (!(have_plus || have_minus || have_total)) continue;
+
+                            if (have_plus || have_minus) {
+                                const auto& yp = have_plus  ? cell["yield_plus"]  : json::array();
+                                const auto& ym = have_minus ? cell["yield_minus"] : json::array();
+                                const auto& ep = (cell.contains("yield_plus_err")  && (int)cell["yield_plus_err"].size()==N_PHI_BINS)  ? cell["yield_plus_err"]  : json::array();
+                                const auto& em = (cell.contains("yield_minus_err") && (int)cell["yield_minus_err"].size()==N_PHI_BINS) ? cell["yield_minus_err"] : json::array();
+                                for (int ip=0; ip<N_PHI_BINS; ++ip) {
+                                    const double vp  = have_plus  ? yp[ip].get<double>() : 0.0;
+                                    const double vm  = have_minus ? ym[ip].get<double>() : 0.0;
+                                    const double epv = (ep.is_array() ? std::max(0.0, ep[ip].get<double>()) : std::sqrt(std::max(0.0, vp)));
+                                    const double emv = (em.is_array() ? std::max(0.0, em[ip].get<double>()) : std::sqrt(std::max(0.0, vm)));
+                                    Y[ip]  = vp + vm;
+                                    Ye[ip] = std::sqrt(epv*epv + emv*emv);
+                                }
+                            } else {
+                                const auto& y  = cell["yield"];
+                                const bool has_e = cell.contains("yield_err") && (int)cell["yield_err"].size()==N_PHI_BINS;
+                                for (int ip=0; ip<N_PHI_BINS; ++ip) {
+                                    Y[ip]  = y[ip].get<double>();
+                                    Ye[ip] = has_e ? std::max(0.0, cell["yield_err"][ip].get<double>())
+                                                   : std::sqrt(std::max(0.0, Y[ip]));
+                                }
+                            }
+
+                            CellData cd;
+                            for (int ip=0; ip<N_PHI_BINS; ++ip) {
+                                const double Vphi = std::max(0.0, bv["vol"][ip].get<double>());
+                                const double denom = Ltot * Vphi;
+                                if (denom > 0.0) {
+                                    cd.xsec[ip] = cm2_to_nanobarn(Y[ip]  / denom);
+                                    cd.xerr[ip] = cm2_to_nanobarn(Ye[ip] / denom);
+                                } else {
+                                    cd.xsec[ip] = 0.0;
+                                    cd.xerr[ip] = 0.0;
+                                }
+                            }
+                            cd.ok = true;
+                            out[CellKey(ixb,iQb,itbidx)] = std::move(cd);
+                        }
+                        return out;
+                    };
+                    m = build(jvol_fa18_local, ju_fa18_local, L_fa18_out_total);
+                }
+                return m;
+            }();
 
             auto fetchCellLocal = [&](const std::map<CellKey,CellData>& M, int ixb, int iQb, int itb)->const CellData* {
                 auto itc = M.find(std::make_tuple(ixb,iQb,itb));
@@ -1422,7 +1571,7 @@ void compare_unpolarized_cross_sections_sp18out_vs_fa18out(
                 gPad->SetGrid(1,1);
                 gPad->SetTopMargin(0.08);
                 gPad->SetBottomMargin(0.18);
-                gPad->SetLeftMargin(0.16);
+                gPad->SetLeftMargin(0.125);
                 gPad->SetRightMargin(0.10);
                 gPad->SetLogy();
 
@@ -1486,7 +1635,7 @@ void compare_unpolarized_cross_sections_sp18out_vs_fa18out(
                     leg->Draw();
                 }
 
-                // Phi-averaged ratio box (Sp18/Fa18) placed in bottom-left of the top plot
+                // Phi-averaged ratio box (Sp18/Fa18)
                 double Rphi = 0.0, eRphi = 0.0;
                 if (phiAveragedRatio(cd_sp18, cd_fa18, Rphi, eRphi)) {
                     TPaveText* box = new TPaveText(0.16, 0.18, 0.56, 0.30, "NDC");
