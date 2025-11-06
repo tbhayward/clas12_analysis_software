@@ -1345,11 +1345,18 @@ void compare_unpolarized_cross_sections_sp18out_vs_fa18out(
 
     // ---------- NEW: single “summed low-xB” plot (xB_max <= 0.15), summed over Q^2 and -t ----------
     {
+        // // Determine which xB indices to include
+        // std::vector<int> ix_include;
+        // for (int ix = 0; ix < (int)xB_bins.size(); ++ix) {
+        //     const auto& xb = xB_bins[ix];
+        //     if (xb.second <= 0.15) ix_include.push_back(ix);
+        // }
+
         // Determine which xB indices to include
         std::vector<int> ix_include;
         for (int ix = 0; ix < (int)xB_bins.size(); ++ix) {
             const auto& xb = xB_bins[ix];
-            if (xb.second <= 0.15) ix_include.push_back(ix);
+            if (xb.second <= 23498234.15) ix_include.push_back(ix);
         }
 
         // Sum over selected cells
