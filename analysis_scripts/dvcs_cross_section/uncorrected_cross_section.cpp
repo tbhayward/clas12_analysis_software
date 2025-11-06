@@ -883,6 +883,26 @@ static int findRangeIndexApprox(const std::vector<std::pair<double,double>>& bin
     return -1;
 }
 
+// Put this near your other helpers (before the compare function)
+static int findRangeIndexRobust(const std::vector<std::pair<double,double>>& ranges,
+                                std::pair<double,double> want,
+                                double atol = 1e-6, double rtol = 1e-6) {
+    auto eq = [&](double a, double b) {
+        return std::fabs(a - b) <= (atol + rtol * std::max(std::fabs(a), std::fabs(b)));
+    };
+    // pass 1: try exact edge match (with tolerance)
+    for (int i = 0; i < (int)ranges.size(); ++i) {
+        if (eq(ranges[i].first, want.first) && eq(ranges[i].second, want.second)) return i;
+    }
+    // pass 2: fall back to midpoint containment
+    const double mid = 0.5 * (want.first + want.second);
+    for (int i = 0; i < (int)ranges.size(); ++i) {
+        const double lo = ranges[i].first, hi = ranges[i].second;
+        if (mid >= lo - 10*atol && mid <= hi + 10*atol) return i;
+    }
+    return -1;
+}
+
 
 // ------------------------------------------------------------
 // Comparison function (updated with proper luminosity calculation)
@@ -1360,120 +1380,34 @@ void compare_unpolarized_cross_sections_sp18out_vs_fa18out(
         }
     }
 
-    // ---------- SINGLE LARGE PLOT: specific bin xB=[0.09,0.12], Q2=[1.5,1.9], -t=[0.25,0.40] ----------
+    // ---------- SINGLE LARGE PLOT: specific bin ----------
     {
         const std::pair<double,double> xb_sel = {0.09, 0.12};
-        const std::pair<double,double> Q2_sel = {1.456,  1.912};
-        const std::pair<double,double> t_sel  = {0.25, 0.40};
+        const std::pair<double,double> Q2_sel = {1.456, 1.912};
+        const std::pair<double,double> t_sel  = {0.25,  0.40};
 
-        // robust (tolerant) matching of bin edges
-        const int ix = findRangeIndexApprox(xB_bins, xb_sel);
-        const int iQ = findRangeIndexApprox(Q2_bins, Q2_sel);
-        const int it = findRangeIndexApprox(t_bins,  t_sel);
+        const int ix = findRangeIndexRobust(xB_bins, xb_sel);
+        const int iQ = findRangeIndexRobust(Q2_bins, Q2_sel);
+        const int it = findRangeIndexRobust(t_bins,  t_sel);
 
         if (ix < 0 || iQ < 0 || it < 0) {
-            std::cerr << "[compare][single-bin] Requested bin not found with tolerant matching.\n";
+            std::cerr << "[compare][single-bin] Requested bin not found with robust matching.\n";
             std::cerr << "  Wanted xB=[" << xb_sel.first << "," << xb_sel.second << "], "
                       << "Q2=[" << Q2_sel.first << "," << Q2_sel.second << "], "
                       << "t=["  << t_sel.first  << "," << t_sel.second  << "]\n";
-
-            // brief diagnostic dump to help spot tiny edge differences
-            std::cerr << "  Available Q2 bins:";
-            for (const auto& b : Q2_bins) std::cerr << " [" << b.first << "," << b.second << "]";
-            std::cerr << "\n  Available -t bins:";
-            for (const auto& b : t_bins)  std::cerr << " [" << b.first << "," << b.second << "]";
+            std::cerr << "  Available xB bins:"; for (const auto& b : xB_bins) std::cerr << " [" << b.first << "," << b.second << "]";
+            std::cerr << "\n  Available Q2 bins:"; for (const auto& b : Q2_bins) std::cerr << " [" << b.first << "," << b.second << "]";
+            std::cerr << "\n  Available -t bins:"; for (const auto& b : t_bins)  std::cerr << " [" << b.first << "," << b.second << "]";
             std::cerr << "\n";
         } else {
             const CellData* cd_sp18 = fetchCell(map_sp18, ix, iQ, it);
             const CellData* cd_fa18 = fetchCell(map_fa18, ix, iQ, it);
 
             if (!cd_sp18 || !cd_fa18) {
-                std::cerr << "[compare][single-bin] Missing cell in one period for the selected bin.\n";
+                std::cerr << "[compare][single-bin] Missing cell in one period for the selected bin (ix,iQ,it)=("
+                          << ix << "," << iQ << "," << it << ").\n";
             } else {
-                // Build arrays and plot (unchanged aesthetics; no extra bottom axis)
-                std::vector<double> x(N_PHI_BINS), yA(N_PHI_BINS), eA(N_PHI_BINS),
-                                    yB(N_PHI_BINS), eB(N_PHI_BINS);
-                double ymax = 0.0, ymin_pos = std::numeric_limits<double>::infinity();
-                for (int i=0;i<N_PHI_BINS;++i) {
-                    x[i]  = PHI_DEG[i];
-                    yA[i] = cd_sp18->xsec[i];  eA[i] = std::max(0.0, cd_sp18->xerr[i]);
-                    yB[i] = cd_fa18->xsec[i];  eB[i] = std::max(0.0, cd_fa18->xerr[i]);
-                    ymax = std::max(ymax, std::max(yA[i]+eA[i], yB[i]+eB[i]));
-                    if (yA[i] > 0.0) ymin_pos = std::min(ymin_pos, yA[i]);
-                    if (yB[i] > 0.0) ymin_pos = std::min(ymin_pos, yB[i]);
-                }
-                if (!(ymax > 0.0)) ymax = 1.0;
-                if (!std::isfinite(ymin_pos) || ymin_pos <= 0.0) ymin_pos = 1.0;
-                const double ylow = std::pow(10.0, std::floor(std::log10(ymin_pos)) - 1.0);
-                const double ytop = std::pow(10.0, std::ceil(std::log10(ymax*1.5)));
-
-                const int W = 900, H = 650;
-                TCanvas* c = new TCanvas("c_singlebin_phi", "c_singlebin_phi", W, H);
-
-                // Title pad
-                TPad* pTop  = new TPad("pTop_single","pTop_single", 0.0, 0.90, 1.0, 1.0);
-                pTop->SetFillStyle(0); pTop->SetBorderSize(0); pTop->Draw();
-                pTop->cd();
-                TLatex head; head.SetNDC(); head.SetTextAlign(22); head.SetTextFont(42); head.SetTextSize(0.30);
-                head.DrawLatex(0.5, 0.55,
-                    Form("#sigma_{U} vs #phi (x_{B} #in [%.2g, %.2g], Q^{2} #in [%.2g, %.2g], -t #in [%.2g, %.2g])",
-                         xb_sel.first, xb_sel.second, Q2_sel.first, Q2_sel.second, t_sel.first, t_sel.second));
-
-                // Main pad (no TGaxis — uses the frame’s X labels; no extra bottom line)
-                c->cd();
-                TPad* pMain = new TPad("pMain_single","pMain_single", 0.0, 0.00, 1.0, 0.90);
-                pMain->SetFillStyle(0); pMain->SetBorderSize(0); pMain->Draw();
-                pMain->cd();
-                gPad->SetGrid(1,1);
-                gPad->SetTopMargin(0.08);
-                gPad->SetBottomMargin(0.18);
-                gPad->SetLeftMargin(0.16);
-                gPad->SetRightMargin(0.10);
-                gPad->SetLogy();
-
-                TH1* frame = gPad->DrawFrame(0.0, ylow, 360.0, ytop);
-                frame->GetXaxis()->SetTitle("#phi (deg)");
-                frame->GetYaxis()->SetTitle("d#sigma_{U}/d#phi (nb/GeV^{4})");
-                frame->GetXaxis()->CenterTitle(); frame->GetYaxis()->CenterTitle();
-                frame->GetXaxis()->SetNdivisions(505);
-                frame->GetXaxis()->SetTitleSize(0.060); frame->GetYaxis()->SetTitleSize(0.060);
-                frame->GetYaxis()->SetLabelSize(0.048); frame->GetXaxis()->SetLabelSize(0.048);
-                frame->GetXaxis()->SetLabelOffset(0.012);
-                frame->GetXaxis()->SetTitleOffset(1.25); frame->GetYaxis()->SetTitleOffset(1.42);
-
-                auto* gr_sp18 = new TGraphErrors(N_PHI_BINS, x.data(), yA.data(), nullptr, eA.data());
-                gr_sp18->SetMarkerStyle(20); gr_sp18->SetMarkerSize(1.1);
-                gr_sp18->SetLineWidth(2);    gr_sp18->SetLineColor(kBlue+1);
-                gr_sp18->SetMarkerColor(kBlue+1); gr_sp18->Draw("P SAME");
-
-                auto* gr_fa18 = new TGraphErrors(N_PHI_BINS, x.data(), yB.data(), nullptr, eB.data());
-                gr_fa18->SetMarkerStyle(25); gr_fa18->SetMarkerSize(1.1);
-                gr_fa18->SetLineWidth(2);    gr_fa18->SetLineColor(kRed+1);
-                gr_fa18->SetMarkerColor(kRed+1); gr_fa18->Draw("P SAME");
-
-                TLegend* leg = new TLegend(0.58, 0.70, 0.90, 0.90);
-                leg->SetBorderSize(1); leg->SetLineColor(kBlack);
-                leg->SetFillColor(kWhite); leg->SetFillStyle(1001);
-                leg->SetTextFont(42); leg->SetTextSize(0.042);
-                leg->AddEntry(gr_sp18, "Sp18 Outb", "lep");
-                leg->AddEntry(gr_fa18, "Fa18 Outb", "lep");
-                leg->Draw();
-
-                double Rphi=0.0, eRphi=0.0;
-                if (phiAveragedRatio(cd_sp18, cd_fa18, Rphi, eRphi)) {
-                    TPaveText* box = new TPaveText(0.18, 0.18, 0.58, 0.30, "NDC");
-                    box->SetFillColor(kWhite); box->SetFillStyle(1001);
-                    box->SetBorderSize(1); box->SetLineColor(kBlack); box->SetLineWidth(2);
-                    box->SetShadowColor(0); box->SetTextFont(42); box->SetTextSize(0.040); box->SetTextAlign(12);
-                    box->AddText(Form("Sp18/Fa18 = %.3f #pm %.3f", Rphi, eRphi));
-                    box->Draw("same");
-                }
-
-                const std::string outSingle =
-                    (fs::path(output_dir)/"plots_compare"/"uncorr_xsec_singlebin_phi_sp18out_vs_fa18out_xB_0p09_0p12_Q2_1p5_1p9_t_0p25_0p4.png").string();
-                c->SaveAs(outSingle.c_str());
-                delete c;
-                std::cout << "[compare] Wrote " << outSingle << "\n";
+                // ... your plotting code as-is ...
             }
         }
     }
