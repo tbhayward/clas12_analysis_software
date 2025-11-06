@@ -979,7 +979,7 @@ void compare_unpolarized_cross_sections_sp18out_vs_fa18out(
                 const double Vphi = std::max(0.0, bv["vol"][ip].get<double>());
                 const double denom = Ltot * Vphi;
                 if (denom > 0.0) {
-                    // Convert from cm² to nb
+                    // Convert from cm^2 to nb
                     cd.xsec[ip] = cm2_to_nanobarn(Y[ip]  / denom);
                     cd.xerr[ip] = cm2_to_nanobarn(Ye[ip] / denom);
                 } else {
@@ -1039,7 +1039,7 @@ void compare_unpolarized_cross_sections_sp18out_vs_fa18out(
     double wsum = 0.0;
     double wrsum = 0.0;
 
-    // ---------- loop over xB bins ----------
+    // ---------- loop over xB bins (existing canvases) ----------
     for (int ix = 0; ix < (int)xB_bins.size(); ++ix) {
         const auto xb = xB_bins[ix];
 
@@ -1095,7 +1095,7 @@ void compare_unpolarized_cross_sections_sp18out_vs_fa18out(
                     TH1* frame = gPad->DrawFrame(0.0, 1e-4, 360.0, 1e3);
                     frame->GetXaxis()->SetLabelSize(0.0001);
                     frame->GetXaxis()->SetTitle("#phi (deg)");
-                    frame->GetYaxis()->SetTitle("d#sigma_{U}/d#phi [nb/GeV^{4}]");
+                    frame->GetYaxis()->SetTitle("d#sigma_{U}/d#phi (nb/GeV^{4})");
                     frame->GetXaxis()->CenterTitle();
                     frame->GetYaxis()->CenterTitle();
                     frame->GetXaxis()->SetNdivisions(505);
@@ -1340,6 +1340,152 @@ void compare_unpolarized_cross_sections_sp18out_vs_fa18out(
             c->SaveAs(outP2.c_str());
             delete c;
             std::cout << "[compare] Wrote " << outP2 << "\n";
+        }
+    }
+
+    // ---------- NEW: single “summed low-xB” plot (xB_max <= 0.15), summed over Q^2 and -t ----------
+    {
+        // Determine which xB indices to include
+        std::vector<int> ix_include;
+        for (int ix = 0; ix < (int)xB_bins.size(); ++ix) {
+            const auto& xb = xB_bins[ix];
+            if (xb.second <= 0.15) ix_include.push_back(ix);
+        }
+
+        // Sum over selected cells
+        std::vector<double> y_sp18(N_PHI_BINS, 0.0), e2_sp18(N_PHI_BINS, 0.0);
+        std::vector<double> y_fa18(N_PHI_BINS, 0.0), e2_fa18(N_PHI_BINS, 0.0);
+
+        for (const auto& kv : map_sp18) {
+            int ix, iQ, itb;
+            std::tie(ix,iQ,itb) = kv.first;
+            if (std::find(ix_include.begin(), ix_include.end(), ix) == ix_include.end()) continue;
+            const CellData& cd = kv.second;
+            for (int ip=0; ip<N_PHI_BINS; ++ip) {
+                y_sp18[ip]  += cd.xsec[ip];
+                e2_sp18[ip] += cd.xerr[ip]*cd.xerr[ip];
+            }
+        }
+        for (const auto& kv : map_fa18) {
+            int ix, iQ, itb;
+            std::tie(ix,iQ,itb) = kv.first;
+            if (std::find(ix_include.begin(), ix_include.end(), ix) == ix_include.end()) continue;
+            const CellData& cd = kv.second;
+            for (int ip=0; ip<N_PHI_BINS; ++ip) {
+                y_fa18[ip]  += cd.xsec[ip];
+                e2_fa18[ip] += cd.xerr[ip]*cd.xerr[ip];
+            }
+        }
+
+        // If both are empty, skip
+        bool any_sp18=false, any_fa18=false;
+        for (int ip=0; ip<N_PHI_BINS; ++ip) {
+            if (y_sp18[ip] > 0.0) any_sp18 = true;
+            if (y_fa18[ip] > 0.0) any_fa18 = true;
+        }
+        if (any_sp18 || any_fa18) {
+            // Build arrays
+            std::vector<double> x(N_PHI_BINS), es_sp18(N_PHI_BINS,0.0), es_fa18(N_PHI_BINS,0.0);
+            for (int i=0;i<N_PHI_BINS;++i) {
+                x[i] = PHI_DEG[i];
+                es_sp18[i] = std::sqrt(std::max(0.0, e2_sp18[i]));
+                es_fa18[i] = std::sqrt(std::max(0.0, e2_fa18[i]));
+            }
+
+            // Canvas
+            const int W = 900, H = 650;
+            TCanvas* c = new TCanvas("c_sum_lowxB_phi", "c_sum_lowxB_phi", W, H);
+
+            // Top title pad
+            TPad* pTop  = new TPad("pTop_lowx","pTop_lowx", 0.0, 0.90, 1.0, 1.0);
+            pTop->SetFillStyle(0); pTop->SetBorderSize(0); pTop->Draw();
+            pTop->cd();
+            TLatex head;
+            head.SetNDC(); head.SetTextAlign(22); head.SetTextFont(42); head.SetTextSize(0.30);
+            head.DrawLatex(0.5, 0.55, "#sigma_{U} vs #phi  (Summed over x_{B} < 0.15, all Q^{2}, -t)");
+
+            // Main pad
+            c->cd();
+            TPad* pMain = new TPad("pMain_lowx","pMain_lowx", 0.0, 0.00, 1.0, 0.90);
+            pMain->SetFillStyle(0); pMain->SetBorderSize(0); pMain->Draw();
+            pMain->cd();
+            gPad->SetGrid(1,1);
+            gPad->SetTopMargin(0.08);
+            gPad->SetBottomMargin(0.18);
+            gPad->SetLeftMargin(0.16);
+            gPad->SetRightMargin(0.10);
+            gPad->SetLogy();
+
+            // Dynamic y-range (log): compute upper bound
+            double ymax = 0.0;
+            for (int i=0;i<N_PHI_BINS;++i) {
+                ymax = std::max(ymax, y_sp18[i] + es_sp18[i]);
+                ymax = std::max(ymax, y_fa18[i] + es_fa18[i]);
+            }
+            if (!(ymax > 0.0)) ymax = 1.0;
+            double ytop = std::pow(10.0, std::ceil(std::log10(ymax*1.5)));
+            if (!(ytop > 1e-4)) ytop = 1.0;
+
+            TH1* frame = gPad->DrawFrame(0.0, 1e-4, 360.0, ytop);
+            frame->GetXaxis()->SetTitle("#phi (deg)");
+            frame->GetYaxis()->SetTitle("d#sigma_{U}/d#phi (nb/GeV^{4})");
+            frame->GetXaxis()->CenterTitle();
+            frame->GetYaxis()->CenterTitle();
+            frame->GetXaxis()->SetNdivisions(505);
+            frame->GetXaxis()->SetTitleSize(0.060);
+            frame->GetYaxis()->SetTitleSize(0.060);
+            frame->GetYaxis()->SetLabelSize(0.048);
+            frame->GetXaxis()->SetTitleOffset(1.25);
+            frame->GetYaxis()->SetTitleOffset(1.42);
+
+            // Degree ticks
+            TGaxis* ax = new TGaxis(gPad->GetUxmin(), gPad->GetUymin(),
+                                    gPad->GetUxmax(), gPad->GetUymin(),
+                                    0.0, 360.0, 4, "");
+            ax->SetLabelFont(42);
+            ax->SetLabelSize(0.048);
+            ax->SetLabelOffset(0.012);
+            ax->SetTitle("");
+            ax->SetTickSize(0.02);
+            ax->Draw();
+
+            // Draw series
+            auto* gr_sp18 = new TGraphErrors(N_PHI_BINS, x.data(), y_sp18.data(), nullptr, es_sp18.data());
+            gr_sp18->SetMarkerStyle(20);
+            gr_sp18->SetMarkerSize(1.1);
+            gr_sp18->SetLineWidth(2);
+            gr_sp18->SetLineColor(kBlue+1);
+            gr_sp18->SetMarkerColor(kBlue+1);
+            gr_sp18->Draw("P SAME");
+
+            auto* gr_fa18 = new TGraphErrors(N_PHI_BINS, x.data(), y_fa18.data(), nullptr, es_fa18.data());
+            gr_fa18->SetMarkerStyle(25);
+            gr_fa18->SetMarkerSize(1.1);
+            gr_fa18->SetLineWidth(2);
+            gr_fa18->SetLineColor(kRed+1);
+            gr_fa18->SetMarkerColor(kRed+1);
+            gr_fa18->Draw("P SAME");
+
+            // Legend and annotation
+            TLegend* leg = new TLegend(0.58, 0.70, 0.90, 0.90);
+            leg->SetBorderSize(1);
+            leg->SetLineColor(kBlack);
+            leg->SetFillColor(kWhite);
+            leg->SetFillStyle(1001);
+            leg->SetTextFont(42);
+            leg->SetTextSize(0.042);
+            leg->AddEntry(gr_sp18, "Sp18 out (total L)", "lep");
+            leg->AddEntry(gr_fa18, "Fa18 out (total L)", "lep");
+            leg->Draw();
+
+            TLatex note;
+            note.SetNDC(); note.SetTextFont(42); note.SetTextSize(0.040);
+            note.DrawLatex(0.16, 0.20, "Uncorrected (no radiative/bin-centering); summed over Q^{2}, -t");
+
+            const std::string outSingle = (fs::path(output_dir)/"plots_compare"/"uncorr_xsec_sum_phi_sp18out_vs_fa18out_xB_lt_0p15.png").string();
+            c->SaveAs(outSingle.c_str());
+            delete c;
+            std::cout << "[compare] Wrote " << outSingle << "\n";
         }
     }
 
