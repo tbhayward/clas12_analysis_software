@@ -72,6 +72,14 @@ public static void main(String[] args) {
 		userProvidedRun = Integer.parseInt(args[4]);
 	}
 
+	// Allow for QADB override (usually meaning you're processing MC)
+	Integer userProvidedOverride = 0;
+	if (args.length < 6) {
+		println("No indication of QADB provided. Will use QADB.");
+	} else {
+		userProvidedOverride = Integer.parseInt(args[5]);
+	}
+
 	// ~~~~~~~~~~~~~~~~ prepare physics analysis ~~~~~~~~~~~~~~~~ //
 
 	// declare physics event variables
@@ -177,6 +185,7 @@ public static void main(String[] args) {
 	    	// 	qa.OkForAsymmetry(runnum, evnum));
 	    	boolean process_event = filter.isValid(research_Event) && 
 		    	(runnum == 11 ||  // MC
+	    		userProvidedOverride == 1 || // skip QADB
 		    	runnum < 3087 || // RGA Sp18 Inb
 		     	(runnum > 3306 && runnum < 3817) || // RGA Sp18 Inb
 		     	(runnum > 4003 && runnum < 5020) || // RGA Sp18 Inb
