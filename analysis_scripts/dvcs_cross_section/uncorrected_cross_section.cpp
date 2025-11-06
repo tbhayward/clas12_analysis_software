@@ -947,7 +947,7 @@ void compare_unpolarized_cross_sections_sp18out_vs_fa18out(
 
     // ---------- load unfolded counts ----------
     const std::string path_u_sp18 = (fs::path(unfolded_counts_dir) / ("unfolded_" + P_SP18_OUT + ".json")).string();
-    aconst std::string path_u_fa18 = (fs::path(unfolded_counts_dir) / ("unfolded_" + P_FA18_OUT + ".json")).string();
+    const std::string path_u_fa18 = (fs::path(unfolded_counts_dir) / ("unfolded_" + P_FA18_OUT + ".json")).string();
     const json ju_sp18 = load_json(path_u_sp18);
     const json ju_fa18 = load_json(path_u_fa18);
     if (ju_sp18.empty()) std::cerr << "[compare] Missing unfolded " << path_u_sp18 << "\n";
@@ -1399,98 +1399,9 @@ void compare_unpolarized_cross_sections_sp18out_vs_fa18out(
             std::cerr << "\n  Available -t bins:"; for (const auto& b : t_bins)  std::cerr << " [" << b.first << "," << b.second << "]";
             std::cerr << "\n";
         } else {
-            // Recompute maps here to ensure scope access (alternatively hoist maps outside the big loop).
-            const std::string E_SP18 = "10.59";
-            const std::string E_FA18 = "10.60";
-            const std::string path_vol_sp18 = (fs::path(bin_volume_json_dir) / ("bin_volume_" + E_SP18 + ".json")).string();
-            const std::string path_vol_fa18 = (fs::path(bin_volume_json_dir) / ("bin_volume_" + E_FA18 + ".json")).string();
-            const json jvol_sp18 = load_json(path_vol_sp18);
-            const json jvol_fa18 = load_json(path_vol_fa18);
-
-            const std::string path_u_sp18 = (fs::path(unfolded_counts_dir) / ("unfolded_DVCS_Sp18_out.json")).string();
-            const std::string path_u_fa18 = (fs::path(unfolded_counts_dir) / ("unfolded_DVCS_Fa18_out.json")).string();
-            const json ju_sp18 = load_json(path_u_sp18);
-            const json ju_fa18 = load_json(path_u_fa18);
-
-            const double L_sp18_out_total = read_total_luminosity(luminosity_dir + "/rga_sp18_out.txt");
-            const double L_fa18_out_total = read_total_luminosity(luminosity_dir + "/rga_fa18_out.txt");
-
-            struct CellData { std::vector<double> xsec, xerr; bool ok=false; CellData(): xsec(N_PHI_BINS,0.0), xerr(N_PHI_BINS,0.0){} };
-            using CellKey = std::tuple<int,int,int>;
-
-            auto build_unpol_local = [&](const json& jvol, const json& ju, double Ltot)->std::map<CellKey, CellData> {
-                std::map<CellKey, CellData> out;
-                if (jvol.empty() || ju.empty() || !jvol.contains("bins")) return out;
-
-                auto read_total_yield = [&](const json& cell, std::vector<double>& Y, std::vector<double>& Ye)->bool {
-                    Y.assign(N_PHI_BINS, 0.0);
-                    Ye.assign(N_PHI_BINS, 0.0);
-                    bool have_plus  = cell.contains("yield_plus")  && (int)cell["yield_plus"].size()==N_PHI_BINS;
-                    bool have_minus = cell.contains("yield_minus") && (int)cell["yield_minus"].size()==N_PHI_BINS;
-                    bool have_total = cell.contains("yield")       && (int)cell["yield"].size()==N_PHI_BINS;
-                    if (!(have_plus || have_minus || have_total)) return false;
-
-                    if (have_plus || have_minus) {
-                        const auto& yp = have_plus  ? cell["yield_plus"]  : json::array();
-                        const auto& ym = have_minus ? cell["yield_minus"] : json::array();
-                        const auto& ep = (cell.contains("yield_plus_err")  && (int)cell["yield_plus_err"].size()==N_PHI_BINS)  ? cell["yield_plus_err"]  : json::array();
-                        const auto& em = (cell.contains("yield_minus_err") && (int)cell["yield_minus_err"].size()==N_PHI_BINS) ? cell["yield_minus_err"] : json::array();
-
-                        for (int ip=0; ip<N_PHI_BINS; ++ip) {
-                            const double vp = have_plus  ? yp[ip].get<double>() : 0.0;
-                            const double vm = have_minus ? ym[ip].get<double>() : 0.0;
-                            const double epv = (ep.is_array() ? std::max(0.0, ep[ip].get<double>()) : std::sqrt(std::max(0.0, vp)));
-                            const double emv = (em.is_array() ? std::max(0.0, em[ip].get<double>()) : std::sqrt(std::max(0.0, vm)));
-                            Y[ip]  = vp + vm;
-                            Ye[ip] = std::sqrt(epv*epv + emv*emv);
-                        }
-                    } else {
-                        const auto& y  = cell["yield"];
-                        const bool has_e = cell.contains("yield_err") && (int)cell["yield_err"].size()==N_PHI_BINS;
-                        for (int ip=0; ip<N_PHI_BINS; ++ip) {
-                            Y[ip]  = y[ip].get<double>();
-                            Ye[ip] = has_e ? std::max(0.0, cell["yield_err"][ip].get<double>())
-                                           : std::sqrt(std::max(0.0, Y[ip]));
-                        }
-                    }
-                    return true;
-                };
-
-                for (auto it = jvol["bins"].begin(); it != jvol["bins"].end(); ++it) {
-                    const std::string bkey = it.key();
-                    const json& bv = it.value();
-                    if (!bv.contains("vol")) continue;
-                    if ((int)bv["vol"].size() != N_PHI_BINS) continue;
-
-                    int ixx=0,iQQ=0,itt=0;
-                    if (std::sscanf(bkey.c_str(),"(%d,%d,%d)",&ixx,&iQQ,&itt) != 3) continue;
-
-                    if (!ju.contains("bins") || !ju["bins"].contains(bkey)) continue;
-                    const json& cell = ju["bins"][bkey];
-
-                    std::vector<double> Y, Ye;
-                    if (!read_total_yield(cell, Y, Ye)) continue;
-
-                    CellData cd;
-                    for (int ip=0; ip<N_PHI_BINS; ++ip) {
-                        const double Vphi = std::max(0.0, bv["vol"][ip].get<double>());
-                        const double denom = Ltot * Vphi;
-                        if (denom > 0.0) {
-                            cd.xsec[ip] = cm2_to_nanobarn(Y[ip]  / denom);
-                            cd.xerr[ip] = cm2_to_nanobarn(Ye[ip] / denom);
-                        } else {
-                            cd.xsec[ip] = 0.0;
-                            cd.xerr[ip] = 0.0;
-                        }
-                    }
-                    cd.ok = true;
-                    out[CellKey(ixx,iQQ,itt)] = std::move(cd);
-                }
-                return out;
-            };
-
-            const auto map_sp18_local = build_unpol_local(jvol_sp18, ju_sp18, L_sp18_out_total);
-            const auto map_fa18_local = build_unpol_local(jvol_fa18, ju_fa18, L_fa18_out_total);
+            // Reuse the outer builders and types
+            const auto map_sp18_local = build_unpol(jvol_sp18, ju_sp18, L_sp18_out_total);
+            const auto map_fa18_local = build_unpol(jvol_fa18, ju_fa18, L_fa18_out_total);
 
             auto fetchCellLocal = [&](const std::map<CellKey,CellData>& M, int ixb, int iQb, int itb)->const CellData* {
                 auto itc = M.find(std::make_tuple(ixb,iQb,itb));
@@ -1505,7 +1416,6 @@ void compare_unpolarized_cross_sections_sp18out_vs_fa18out(
                 std::cerr << "[compare][single-bin] Missing cell in one period for the selected bin (ix,iQ,it)=("
                           << ix << "," << iQ << "," << it << ").\n";
             } else {
-                // --- SINGLE LARGE PLOT (draw + save) ---
                 const int W = 900, H = 720;
                 TCanvas* c1 = new TCanvas("c_single_bin","c_single_bin", W, H);
                 c1->Divide(1,2,0.0,0.0);
@@ -1646,7 +1556,6 @@ void compare_unpolarized_cross_sections_sp18out_vs_fa18out(
                     box->Draw("same");
                 }
 
-                // ---------- save ----------
                 const std::string out_single =
                     (fs::path(output_dir) / "plots_compare" /
                      ("uncorr_xsec_single_sp18_over_fa18_xB_"+std::to_string(ix)+
