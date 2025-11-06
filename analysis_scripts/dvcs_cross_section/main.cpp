@@ -177,32 +177,32 @@ int main(int argc, char* argv[]) {
     //     output_root
     // );
 
-    // For polarized cross sections (existing functionality, but now with proper luminosity calculation)
-    compute_uncorrected_cross_sections(
-        binning_scheme,
-        "output/jsons",                    // bin volume JSON directory
-        "output/jsons",                    // unfolded counts per helicity
-        "imports/integrated_luminosity",   // luminosity text files
-        "output/uncorrected_cross_section" // output dir
-    );
+    // // For polarized cross sections (existing functionality, but now with proper luminosity calculation)
+    // compute_uncorrected_cross_sections(
+    //     binning_scheme,
+    //     "output/jsons",                    // bin volume JSON directory
+    //     "output/jsons",                    // unfolded counts per helicity
+    //     "imports/integrated_luminosity",   // luminosity text files
+    //     "output/uncorrected_cross_section" // output dir
+    // );
 
-    // NEW: For unpolarized cross sections using total charge
-    compute_unpolarized_cross_sections(
-        binning_scheme,
-        "output/jsons",                    // bin volume JSON directory  
-        "output/jsons",                    // unfolded counts
-        "imports/integrated_luminosity",   // luminosity text files
-        "output/uncorrected_cross_section" // output dir
-    );
+    // // NEW: For unpolarized cross sections using total charge
+    // compute_unpolarized_cross_sections(
+    //     binning_scheme,
+    //     "output/jsons",                    // bin volume JSON directory  
+    //     "output/jsons",                    // unfolded counts
+    //     "imports/integrated_luminosity",   // luminosity text files
+    //     "output/uncorrected_cross_section" // output dir
+    // );
 
-    // Comparison function (uses the new luminosity calculation)
-    compare_unpolarized_cross_sections_sp18out_vs_fa18out(
-        binning_scheme,
-        "output/jsons",
-        "output/jsons", 
-        "imports/integrated_luminosity",
-        "output/uncorrected_cross_section"
-    );
+    // // Comparison function (uses the new luminosity calculation)
+    // compare_unpolarized_cross_sections_sp18out_vs_fa18out(
+    //     binning_scheme,
+    //     "output/jsons",
+    //     "output/jsons", 
+    //     "imports/integrated_luminosity",
+    //     "output/uncorrected_cross_section"
+    // );
 
 
     // // Multiply uncorrected dσ/dφ by Born/Rad per-φ correction
@@ -229,13 +229,17 @@ int main(int argc, char* argv[]) {
     //     (fs::path(output_root) / "rad_corrected_cross_section" / "jsons").string() // directory with rad_corrected_xsec_<E>.json
     // );
 
-    // // Example: unpolarized predictions (xB,Q2,t,phi,Ebeam)
-    // ModelPaths paths; // leave empty to use env/defaults
-    // double xB = 0.11; double Q2 = 1.6; double tpos = 0.20; double phi_deg = 180;
-    // double xs_vgg  = vgg_xs(xB, Q2, tpos, phi_deg, 10.604, Helicity::Plus, paths, /*globalfit=*/false);
-    // double xs_bh   = vgg_bh_only(xB, Q2, tpos, phi_deg, 10.604, paths, /*globalfit=*/false);
-    // double xs_km15 = km15_xs(xB, Q2, tpos, phi_deg, 10.604, Helicity::Plus, paths);
-    // std::cout << xs_vgg << " " << xs_km15 << " " << xs_bh << std::endl;
+    // Example: unpolarized predictions (xB,Q2,t,phi,Ebeam)
+    ModelPaths paths; // leave empty to use env/defaults
+    double xB = 0.11; double Q2 = 1.6; double tpos = 0.20; double phi_deg = 180;
+    double xs_vgg  = vgg_xs(xB, Q2, tpos, phi_deg, 10.604, Helicity::Plus, paths, /*globalfit=*/false);
+    double xs_bh   = vgg_bh_only(xB, Q2, tpos, phi_deg, 10.604, paths, /*globalfit=*/false);
+    double xs_km15 = km15_xs(xB, Q2, tpos, phi_deg, 10.604, Helicity::Plus, paths);
+    std::cout << xs_vgg << " " << xs_km15 << " " << xs_bh << std::endl;
+    xs_vgg  = vgg_xs(xB, Q2, tpos, phi_deg, 10.594, Helicity::Plus, paths, /*globalfit=*/false);
+    xs_bh   = vgg_bh_only(xB, Q2, tpos, phi_deg, 10.594, paths, /*globalfit=*/false);
+    xs_km15 = km15_xs(xB, Q2, tpos, phi_deg, 10.594, Helicity::Plus, paths);
+    std::cout << xs_vgg << " " << xs_km15 << " " << xs_bh << std::endl;
 
     // // --------- Bin-centering corrections using VGG ONLY (compute only) ----------
     // compute_bin_centered_cross_sections(
