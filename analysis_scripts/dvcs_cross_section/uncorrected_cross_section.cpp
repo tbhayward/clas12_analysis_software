@@ -1612,7 +1612,7 @@ void compare_unpolarized_cross_sections_sp18out_vs_fa18out(
                                  t_bins[it].first,  t_bins[it].second));
 
                         if (g_plus || g_minus || g_unpol) {
-                            TLegend* leg = new TLegend(0.64, 0.72, 0.90, 0.92);
+                            TLegend* leg = new TLegend(0.64, 0.00, 0.90, 0.18);
                             leg->SetBorderSize(1);
                             leg->SetLineColor(kBlack);
                             leg->SetFillColor(kWhite);
