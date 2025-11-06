@@ -1363,7 +1363,7 @@ void compare_unpolarized_cross_sections_sp18out_vs_fa18out(
     // ---------- SINGLE LARGE PLOT: specific bin xB=[0.09,0.12], Q2=[1.5,1.9], -t=[0.25,0.40] ----------
     {
         const std::pair<double,double> xb_sel = {0.09, 0.12};
-        const std::pair<double,double> Q2_sel = {1.5,  1.9};
+        const std::pair<double,double> Q2_sel = {1.456,  1.912};
         const std::pair<double,double> t_sel  = {0.25, 0.40};
 
         // robust (tolerant) matching of bin edges
