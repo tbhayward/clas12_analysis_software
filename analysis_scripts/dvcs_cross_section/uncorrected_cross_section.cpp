@@ -8,8 +8,9 @@
 #include <TPad.h>
 #include <TH1.h>
 #include <TAxis.h>
-#include <TPaveText.h>  
+#include <TPaveText.h>
 #include <TGaxis.h>
+#include <TLine.h>
 
 #include <filesystem>
 #include <fstream>
@@ -32,19 +33,19 @@ constexpr int    N_PHI_BINS = 12;
 constexpr double TWO_PI     = 2.0 * M_PI;
 
 // ------------ Target properties for luminosity calculation ------------
-constexpr double TARGET_DENSITY = 0.07151;        // g/cm³
+constexpr double TARGET_DENSITY = 0.07151;        // g/cm^3
 constexpr double TARGET_LENGTH = 5.0;             // cm
-constexpr double AVOGADRO = 6.022e23;             // mol⁻¹
+constexpr double AVOGADRO = 6.022e23;             // mol^-1
 constexpr double ATOMIC_WEIGHT = 1.00794;         // g/mol
 constexpr double ELEMENTARY_CHARGE = 1.60217662e-19; // C
 
 // Cross section conversion factors
-constexpr double BARN_TO_CM2 = 1e-24;             // 1 barn = 1e-24 cm²
-constexpr double NANOBARN_TO_CM2 = 1e-33;         // 1 nb = 1e-33 cm²
-constexpr double CM2_TO_NANOBARN = 1e33;          // 1 cm² = 1e33 nb
+constexpr double BARN_TO_CM2 = 1e-24;             // 1 barn = 1e-24 cm^2
+constexpr double NANOBARN_TO_CM2 = 1e-33;         // 1 nb = 1e-33 cm^2
+constexpr double CM2_TO_NANOBARN = 1e33;          // 1 cm^2 = 1e33 nb
 
-// ADD THIS - inverse luminosity conversion
-constexpr double CM2LUMI_TO_NANOBARNLUMI = 1e-33; // 1 cm⁻² = 1e-33 nb⁻¹
+// Inverse luminosity conversion
+constexpr double CM2LUMI_TO_NANOBARNLUMI = 1e-33; // 1 cm^-2 = 1e-33 nb^-1
 
 // Charge unit fix
 constexpr double NANOCOULOMB_TO_COULOMB = 1e-9;   // 1 nC = 1e-9 C
@@ -53,16 +54,16 @@ constexpr double NANOCOULOMB_TO_COULOMB = 1e-9;   // 1 nC = 1e-9 C
 static inline double charge_to_luminosity(double charge_nC) {
     // Convert nC to C first
     double charge_C = charge_nC * NANOCOULOMB_TO_COULOMB;
-    // L = (Q/e) * (N_A * ρ * l) / A_w
+    // L = (Q/e) * (N_A * rho * l) / A_w
     return (charge_C / ELEMENTARY_CHARGE) * (AVOGADRO * TARGET_DENSITY * TARGET_LENGTH) / ATOMIC_WEIGHT;
 }
 
-// Convert cross section from cm² to nb
+// Convert cross section from cm^2 to nb
 static inline double cm2_to_nanobarn(double xsec_cm2) {
     return xsec_cm2 * CM2_TO_NANOBARN;
 }
 
-// Convert cross section from nb to cm²  
+// Convert cross section from nb to cm^2
 static inline double nanobarn_to_cm2(double xsec_nb) {
     return xsec_nb * NANOBARN_TO_CM2;
 }
@@ -128,11 +129,11 @@ static json load_json(const std::string& path) {
 // CSV luminosity: run,total,pos,neg,*,*
 struct LuminosityData {
     double total_charge;  // C (from column 2)
-    double pos_charge;    // C (from column 3)  
+    double pos_charge;    // C (from column 3)
     double neg_charge;    // C (from column 4)
-    double total_lumi;    // cm⁻² (calculated)
-    double pos_lumi;      // cm⁻² (calculated)
-    double neg_lumi;      // cm⁻² (calculated)
+    double total_lumi;    // cm^-2 (calculated)
+    double pos_lumi;      // cm^-2 (calculated)
+    double neg_lumi;      // cm^-2 (calculated)
 };
 
 static LuminosityData read_luminosity_data(const std::string& filepath) {
@@ -168,24 +169,24 @@ static LuminosityData read_luminosity_data(const std::string& filepath) {
         } catch (...) {}
     }
     in.close();
-    
+
     data.total_charge = sum_total;
     data.pos_charge = sum_pos;
     data.neg_charge = sum_neg;
     data.total_lumi = charge_to_luminosity(sum_total);
     data.pos_lumi = charge_to_luminosity(sum_pos);
     data.neg_lumi = charge_to_luminosity(sum_neg);
-    
+
     std::cout << "[luminosity] " << filepath
         << "  total_charge=" << sum_total << " nC"
-        << "  pos_charge=" << sum_pos << " nC"  
+        << "  pos_charge=" << sum_pos << " nC"
         << "  neg_charge=" << sum_neg << " nC"
-        << "  total_lumi=" << data.total_lumi << " cm⁻²"
-        << " (" << data.total_lumi * CM2LUMI_TO_NANOBARNLUMI << " nb⁻¹)"  // CHANGED THIS
-        << "  pos_lumi=" << data.pos_lumi << " cm⁻²"
-        << " (" << data.pos_lumi * CM2LUMI_TO_NANOBARNLUMI << " nb⁻¹)"    // CHANGED THIS
-        << "  neg_lumi=" << data.neg_lumi << " cm⁻²"
-        << " (" << data.neg_lumi * CM2LUMI_TO_NANOBARNLUMI << " nb⁻¹)\n"; // CHANGED THIS
+        << "  total_lumi=" << data.total_lumi << " cm^-2"
+        << " (" << data.total_lumi * CM2LUMI_TO_NANOBARNLUMI << " nb^-1)"
+        << "  pos_lumi=" << data.pos_lumi << " cm^-2"
+        << " (" << data.pos_lumi * CM2LUMI_TO_NANOBARNLUMI << " nb^-1)"
+        << "  neg_lumi=" << data.neg_lumi << " cm^-2"
+        << " (" << data.neg_lumi * CM2LUMI_TO_NANOBARNLUMI << " nb^-1)\n";
     return data;
 }
 
@@ -243,7 +244,7 @@ void compute_uncorrected_cross_sections(
     const double L_10p6_pos = L_fa18_inb.pos_lumi + L_fa18_out.pos_lumi;
     const double L_10p6_neg = L_fa18_inb.neg_lumi + L_fa18_out.neg_lumi;
     const double L_10p6_total = L_fa18_inb.total_lumi + L_fa18_out.total_lumi;
-    
+
     const double L_10p2_pos = L_sp19_inb.pos_lumi;
     const double L_10p2_neg = L_sp19_inb.neg_lumi;
     const double L_10p2_total = L_sp19_inb.total_lumi;
@@ -254,13 +255,13 @@ void compute_uncorrected_cross_sections(
         double neg_lumi;
         double total_lumi;
     };
-    
+
     const std::map<std::string, EnergyLuminosity> energyL = {
         {"10.60", {L_10p6_pos, L_10p6_neg, L_10p6_total}},
         {"10.2",  {L_10p2_pos, L_10p2_neg, L_10p2_total}}
     };
 
-    // ----- energy → periods to combine -----
+    // ----- energy -> periods to combine -----
     const std::map<std::string, std::vector<std::string>> energyPeriods = {
         {"10.60", {"DVCS_Fa18_inb", "DVCS_Fa18_out"}},
         {"10.2",  {"DVCS_Sp19_inb"}}
@@ -381,7 +382,7 @@ void compute_uncorrected_cross_sections(
                 std::vector<double> denom_neg(N_PHI_BINS, 0.0);
                 std::vector<double> denom_total(N_PHI_BINS, 0.0);
                 double Vtot = 0.0;
-                
+
                 for (int ip=0; ip<N_PHI_BINS; ++ip) {
                     const double Vphi = std::max(0.0, volphi[ip].get<double>());
                     Vtot += Vphi;
@@ -398,7 +399,7 @@ void compute_uncorrected_cross_sections(
                         const double num = (hd ? hd->y[ip]  : 0.0);
                         const double en  = (hd ? hd->ye[ip] : 0.0);
                         const double d   = denom[ip];
-                        // Convert from cm² to nb
+                        // Convert from cm^2 to nb
                         yv[ip] = (d > 0.0 ? cm2_to_nanobarn(num / d) : 0.0);
                         ev[ip] = (d > 0.0 ? cm2_to_nanobarn(en / d) : 0.0);
                     }
@@ -413,7 +414,7 @@ void compute_uncorrected_cross_sections(
                 if (itP != sumPlus.end() && itM != sumMinus.end()) {
                     for (int ip=0; ip<N_PHI_BINS; ++ip) {
                         unpol_data.y[ip] = itP->second.y[ip] + itM->second.y[ip];
-                        unpol_data.ye[ip] = std::sqrt(itP->second.ye[ip]*itP->second.ye[ip] + 
+                        unpol_data.ye[ip] = std::sqrt(itP->second.ye[ip]*itP->second.ye[ip] +
                                                      itM->second.ye[ip]*itM->second.ye[ip]);
                     }
                 } else if (itP != sumPlus.end()) {
@@ -439,7 +440,7 @@ void compute_uncorrected_cross_sections(
         ofs.close();
         std::cout << "[xsec] Wrote " << out_json << "\n";
 
-        // ------------ plots (xB slices; overlay +, −, and unpolarized) ------------
+        // ------------ plots (xB slices; overlay +, - , and unpolarized) ------------
         const auto Q2_all = uniqueRanges(binning_scheme, 'Q');
         const auto t_all  = uniqueRanges(binning_scheme, 't');
 
@@ -665,7 +666,7 @@ void compute_unpolarized_cross_sections(
                 if (std::sscanf(bkey.c_str(),"(%d,%d,%d)",&ix,&iQ,&itb) != 3) continue;
 
                 YieldData& yd = sumTotal[CellKey(ix,iQ,itb)];
-                
+
                 // Try to get total yield first, otherwise sum plus and minus
                 if (cell.contains("yield") && cell["yield"].size() == N_PHI_BINS) {
                     const auto& yt = cell["yield"];
@@ -733,7 +734,7 @@ void compute_unpolarized_cross_sections(
                     const double num = itY->second.y[ip];
                     const double en  = itY->second.ye[ip];
                     const double d   = denom[ip];
-                    // Convert from cm² to nb
+                    // Convert from cm^2 to nb
                     yv[ip] = (d > 0.0 ? cm2_to_nanobarn(num / d) : 0.0);
                     ev[ip] = (d > 0.0 ? cm2_to_nanobarn(en / d) : 0.0);
                 }
@@ -865,7 +866,6 @@ void compute_unpolarized_cross_sections(
     std::cout << "[xsec_unpol] Finished unpolarized cross-section generation.\n";
 }
 
-
 static inline bool approx_equal(double a, double b,
                                 double atol = 1e-9, double rtol = 1e-6) {
     return std::fabs(a - b) <= std::max(atol, rtol * std::max(std::fabs(a), std::fabs(b)));
@@ -902,7 +902,6 @@ static int findRangeIndexRobust(const std::vector<std::pair<double,double>>& ran
     }
     return -1;
 }
-
 
 // ------------------------------------------------------------
 // Comparison function (updated with proper luminosity calculation)
@@ -948,7 +947,7 @@ void compare_unpolarized_cross_sections_sp18out_vs_fa18out(
 
     // ---------- load unfolded counts ----------
     const std::string path_u_sp18 = (fs::path(unfolded_counts_dir) / ("unfolded_" + P_SP18_OUT + ".json")).string();
-    const std::string path_u_fa18 = (fs::path(unfolded_counts_dir) / ("unfolded_" + P_FA18_OUT + ".json")).string();
+    aconst std::string path_u_fa18 = (fs::path(unfolded_counts_dir) / ("unfolded_" + P_FA18_OUT + ".json")).string();
     const json ju_sp18 = load_json(path_u_sp18);
     const json ju_fa18 = load_json(path_u_fa18);
     if (ju_sp18.empty()) std::cerr << "[compare] Missing unfolded " << path_u_sp18 << "\n";
@@ -1212,7 +1211,7 @@ void compare_unpolarized_cross_sections_sp18out_vs_fa18out(
                         box->SetTextFont(42);
                         box->SetTextSize(0.040);
                         box->SetTextAlign(12);
-                        box->AddText(Form("Sp18/Fa18 = %.3f #pm %.3f", Rphi, eRphi));
+                        box->AddText(Form("Sp18/Fa18 = %.3f +/- %.3f", Rphi, eRphi));
                         box->Draw("same");
                     }
                 }
@@ -1367,7 +1366,7 @@ void compare_unpolarized_cross_sections_sp18out_vs_fa18out(
                         box->SetTextFont(42);
                         box->SetTextSize(0.040);
                         box->SetTextAlign(12);
-                        box->AddText(Form("Sp18/Fa18 = %.3f #pm %.3f", Rphi, eRphi));
+                        box->AddText(Form("Sp18/Fa18 = %.3f +/- %.3f", Rphi, eRphi));
                         box->Draw("same");
                     }
                 }
@@ -1400,14 +1399,261 @@ void compare_unpolarized_cross_sections_sp18out_vs_fa18out(
             std::cerr << "\n  Available -t bins:"; for (const auto& b : t_bins)  std::cerr << " [" << b.first << "," << b.second << "]";
             std::cerr << "\n";
         } else {
-            const CellData* cd_sp18 = fetchCell(map_sp18, ix, iQ, it);
-            const CellData* cd_fa18 = fetchCell(map_fa18, ix, iQ, it);
+            // Recompute maps here to ensure scope access (alternatively hoist maps outside the big loop).
+            const std::string E_SP18 = "10.59";
+            const std::string E_FA18 = "10.60";
+            const std::string path_vol_sp18 = (fs::path(bin_volume_json_dir) / ("bin_volume_" + E_SP18 + ".json")).string();
+            const std::string path_vol_fa18 = (fs::path(bin_volume_json_dir) / ("bin_volume_" + E_FA18 + ".json")).string();
+            const json jvol_sp18 = load_json(path_vol_sp18);
+            const json jvol_fa18 = load_json(path_vol_fa18);
+
+            const std::string path_u_sp18 = (fs::path(unfolded_counts_dir) / ("unfolded_DVCS_Sp18_out.json")).string();
+            const std::string path_u_fa18 = (fs::path(unfolded_counts_dir) / ("unfolded_DVCS_Fa18_out.json")).string();
+            const json ju_sp18 = load_json(path_u_sp18);
+            const json ju_fa18 = load_json(path_u_fa18);
+
+            const double L_sp18_out_total = read_total_luminosity(luminosity_dir + "/rga_sp18_out.txt");
+            const double L_fa18_out_total = read_total_luminosity(luminosity_dir + "/rga_fa18_out.txt");
+
+            struct CellData { std::vector<double> xsec, xerr; bool ok=false; CellData(): xsec(N_PHI_BINS,0.0), xerr(N_PHI_BINS,0.0){} };
+            using CellKey = std::tuple<int,int,int>;
+
+            auto build_unpol_local = [&](const json& jvol, const json& ju, double Ltot)->std::map<CellKey, CellData> {
+                std::map<CellKey, CellData> out;
+                if (jvol.empty() || ju.empty() || !jvol.contains("bins")) return out;
+
+                auto read_total_yield = [&](const json& cell, std::vector<double>& Y, std::vector<double>& Ye)->bool {
+                    Y.assign(N_PHI_BINS, 0.0);
+                    Ye.assign(N_PHI_BINS, 0.0);
+                    bool have_plus  = cell.contains("yield_plus")  && (int)cell["yield_plus"].size()==N_PHI_BINS;
+                    bool have_minus = cell.contains("yield_minus") && (int)cell["yield_minus"].size()==N_PHI_BINS;
+                    bool have_total = cell.contains("yield")       && (int)cell["yield"].size()==N_PHI_BINS;
+                    if (!(have_plus || have_minus || have_total)) return false;
+
+                    if (have_plus || have_minus) {
+                        const auto& yp = have_plus  ? cell["yield_plus"]  : json::array();
+                        const auto& ym = have_minus ? cell["yield_minus"] : json::array();
+                        const auto& ep = (cell.contains("yield_plus_err")  && (int)cell["yield_plus_err"].size()==N_PHI_BINS)  ? cell["yield_plus_err"]  : json::array();
+                        const auto& em = (cell.contains("yield_minus_err") && (int)cell["yield_minus_err"].size()==N_PHI_BINS) ? cell["yield_minus_err"] : json::array();
+
+                        for (int ip=0; ip<N_PHI_BINS; ++ip) {
+                            const double vp = have_plus  ? yp[ip].get<double>() : 0.0;
+                            const double vm = have_minus ? ym[ip].get<double>() : 0.0;
+                            const double epv = (ep.is_array() ? std::max(0.0, ep[ip].get<double>()) : std::sqrt(std::max(0.0, vp)));
+                            const double emv = (em.is_array() ? std::max(0.0, em[ip].get<double>()) : std::sqrt(std::max(0.0, vm)));
+                            Y[ip]  = vp + vm;
+                            Ye[ip] = std::sqrt(epv*epv + emv*emv);
+                        }
+                    } else {
+                        const auto& y  = cell["yield"];
+                        const bool has_e = cell.contains("yield_err") && (int)cell["yield_err"].size()==N_PHI_BINS;
+                        for (int ip=0; ip<N_PHI_BINS; ++ip) {
+                            Y[ip]  = y[ip].get<double>();
+                            Ye[ip] = has_e ? std::max(0.0, cell["yield_err"][ip].get<double>())
+                                           : std::sqrt(std::max(0.0, Y[ip]));
+                        }
+                    }
+                    return true;
+                };
+
+                for (auto it = jvol["bins"].begin(); it != jvol["bins"].end(); ++it) {
+                    const std::string bkey = it.key();
+                    const json& bv = it.value();
+                    if (!bv.contains("vol")) continue;
+                    if ((int)bv["vol"].size() != N_PHI_BINS) continue;
+
+                    int ixx=0,iQQ=0,itt=0;
+                    if (std::sscanf(bkey.c_str(),"(%d,%d,%d)",&ixx,&iQQ,&itt) != 3) continue;
+
+                    if (!ju.contains("bins") || !ju["bins"].contains(bkey)) continue;
+                    const json& cell = ju["bins"][bkey];
+
+                    std::vector<double> Y, Ye;
+                    if (!read_total_yield(cell, Y, Ye)) continue;
+
+                    CellData cd;
+                    for (int ip=0; ip<N_PHI_BINS; ++ip) {
+                        const double Vphi = std::max(0.0, bv["vol"][ip].get<double>());
+                        const double denom = Ltot * Vphi;
+                        if (denom > 0.0) {
+                            cd.xsec[ip] = cm2_to_nanobarn(Y[ip]  / denom);
+                            cd.xerr[ip] = cm2_to_nanobarn(Ye[ip] / denom);
+                        } else {
+                            cd.xsec[ip] = 0.0;
+                            cd.xerr[ip] = 0.0;
+                        }
+                    }
+                    cd.ok = true;
+                    out[CellKey(ixx,iQQ,itt)] = std::move(cd);
+                }
+                return out;
+            };
+
+            const auto map_sp18_local = build_unpol_local(jvol_sp18, ju_sp18, L_sp18_out_total);
+            const auto map_fa18_local = build_unpol_local(jvol_fa18, ju_fa18, L_fa18_out_total);
+
+            auto fetchCellLocal = [&](const std::map<CellKey,CellData>& M, int ixb, int iQb, int itb)->const CellData* {
+                auto itc = M.find(std::make_tuple(ixb,iQb,itb));
+                if (itc == M.end() || !itc->second.ok) return nullptr;
+                return &itc->second;
+            };
+
+            const CellData* cd_sp18 = fetchCellLocal(map_sp18_local, ix, iQ, it);
+            const CellData* cd_fa18 = fetchCellLocal(map_fa18_local, ix, iQ, it);
 
             if (!cd_sp18 || !cd_fa18) {
                 std::cerr << "[compare][single-bin] Missing cell in one period for the selected bin (ix,iQ,it)=("
                           << ix << "," << iQ << "," << it << ").\n";
             } else {
-                // ... your plotting code as-is ...
+                // --- SINGLE LARGE PLOT (draw + save) ---
+                const int W = 900, H = 720;
+                TCanvas* c1 = new TCanvas("c_single_bin","c_single_bin", W, H);
+                c1->Divide(1,2,0.0,0.0);
+
+                // ---------- top: d sigma_U / d phi overlay ----------
+                c1->cd(1);
+                gPad->SetGrid(1,1);
+                gPad->SetTopMargin(0.08);
+                gPad->SetBottomMargin(0.18);
+                gPad->SetLeftMargin(0.16);
+                gPad->SetRightMargin(0.10);
+                gPad->SetLogy();
+
+                TH1* fr1 = gPad->DrawFrame(0.0, 1e-4, 360.0, 1e3);
+                fr1->GetXaxis()->SetLabelSize(0.0001);
+                fr1->GetXaxis()->SetTitle("#phi (deg)");
+                fr1->GetYaxis()->SetTitle("d#sigma_{U}/d#phi (nb/GeV^{4})");
+                fr1->GetXaxis()->CenterTitle();
+                fr1->GetYaxis()->CenterTitle();
+                fr1->GetXaxis()->SetNdivisions(505);
+                fr1->GetXaxis()->SetTitleSize(0.060);
+                fr1->GetYaxis()->SetTitleSize(0.060);
+                fr1->GetYaxis()->SetLabelSize(0.048);
+                fr1->GetXaxis()->SetTitleOffset(1.25);
+                fr1->GetYaxis()->SetTitleOffset(1.42);
+                drawDegreeTicks(gPad->GetUxmin(), gPad->GetUymin(), gPad->GetUxmax(), 0.048);
+
+                auto drawSet = [&](const CellData* cd, int mstyle, int color)->TGraphErrors* {
+                    if (!cd) return (TGraphErrors*)nullptr;
+                    std::vector<double> x(N_PHI_BINS), y(N_PHI_BINS), e(N_PHI_BINS);
+                    for (int i=0;i<N_PHI_BINS;++i) {
+                        x[i] = PHI_DEG[i];
+                        y[i] = cd->xsec[i];
+                        e[i] = std::max(1e-12, cd->xerr[i]);
+                    }
+                    auto* gr = new TGraphErrors(N_PHI_BINS, x.data(), y.data(), nullptr, e.data());
+                    gr->SetMarkerStyle(mstyle);
+                    gr->SetMarkerSize(1.0);
+                    gr->SetLineWidth(2);
+                    gr->SetLineColor(color);
+                    gr->SetMarkerColor(color);
+                    gr->Draw("P SAME");
+                    return gr;
+                };
+
+                TGraphErrors* g_sp18 = drawSet(cd_sp18, 20, kBlue+1);
+                TGraphErrors* g_fa18 = drawSet(cd_fa18, 25, kRed+1);
+
+                TLatex lab1;
+                lab1.SetNDC(); lab1.SetTextSize(0.046); lab1.SetTextAlign(11);
+                lab1.SetTextFont(42);
+                lab1.DrawLatex(0.15, 0.94,
+                    Form("x_{B} #in [%.2g, %.2g],   Q^{2} #in [%.2g, %.2g],   -t #in [%.2g, %.2g]",
+                         xB_bins[ix].first, xB_bins[ix].second,
+                         Q2_bins[iQ].first, Q2_bins[iQ].second,
+                         t_bins[it].first,  t_bins[it].second));
+
+                if (g_sp18 || g_fa18) {
+                    TLegend* leg = new TLegend(0.58, 0.70, 0.90, 0.90);
+                    leg->SetBorderSize(1);
+                    leg->SetLineColor(kBlack);
+                    leg->SetFillColor(kWhite);
+                    leg->SetFillStyle(1001);
+                    leg->SetTextFont(42);
+                    leg->SetTextSize(0.042);
+                    if (g_sp18) leg->AddEntry(g_sp18, "Sp18 out (total L)", "lep");
+                    if (g_fa18) leg->AddEntry(g_fa18, "Fa18 out (total L)", "lep");
+                    leg->Draw();
+                }
+
+                // ---------- bottom: ratio vs phi (Sp18/Fa18) ----------
+                c1->cd(2);
+                gPad->SetGrid(1,1);
+                gPad->SetTopMargin(0.08);
+                gPad->SetBottomMargin(0.18);
+                gPad->SetLeftMargin(0.18);
+                gPad->SetRightMargin(0.10);
+                gPad->SetLogy(0);
+
+                TH1* fr2 = gPad->DrawFrame(0.0, 0.0, 360.0, 200.0);
+                fr2->GetXaxis()->SetLabelSize(0.0001);
+                fr2->GetXaxis()->SetTitle("#phi (deg)");
+                fr2->GetYaxis()->SetTitle("#sigma_{U}^{Sp18}/#sigma_{U}^{Fa18} (%)");
+                fr2->GetXaxis()->CenterTitle();
+                fr2->GetYaxis()->CenterTitle();
+                fr2->GetXaxis()->SetNdivisions(505);
+                fr2->GetXaxis()->SetTitleSize(0.060);
+                fr2->GetYaxis()->SetTitleSize(0.060);
+                fr2->GetYaxis()->SetLabelSize(0.048);
+                fr2->GetXaxis()->SetTitleOffset(1.25);
+                fr2->GetYaxis()->SetTitleOffset(1.42);
+                drawDegreeTicks(gPad->GetUxmin(), gPad->GetUymin(), gPad->GetUxmax(), 0.048);
+
+                TLine* unity = new TLine(0.0, 100.0, 360.0, 100.0);
+                unity->SetLineStyle(2);
+                unity->SetLineWidth(2);
+                unity->SetLineColor(kGray+2);
+                unity->Draw("SAME");
+
+                std::vector<double> xp, yp, ey;
+                xp.reserve(N_PHI_BINS); yp.reserve(N_PHI_BINS); ey.reserve(N_PHI_BINS);
+                for (int ip=0; ip<N_PHI_BINS; ++ip) {
+                    const double A  = cd_sp18->xsec[ip];
+                    const double B  = cd_fa18->xsec[ip];
+                    const double eA = cd_sp18->xerr[ip];
+                    const double eB = cd_fa18->xerr[ip];
+                    if (!(A>0.0 && B>0.0)) continue;
+                    const double R  = A / B;
+                    const double eR = R * std::sqrt( std::pow(eA/std::max(1e-12,A), 2.0)
+                                                   + std::pow(eB/std::max(1e-12,B), 2.0) );
+                    xp.push_back(PHI_DEG[ip]);
+                    yp.push_back(100.0 * R);
+                    ey.push_back(100.0 * eR);
+                }
+                if (!xp.empty()) {
+                    auto* grr = new TGraphErrors((int)xp.size(), xp.data(), yp.data(), nullptr, ey.data());
+                    grr->SetMarkerStyle(21);
+                    grr->SetMarkerSize(1.0);
+                    grr->SetLineWidth(2);
+                    grr->SetLineColor(kBlack);
+                    grr->SetMarkerColor(kBlack);
+                    grr->Draw("P SAME");
+                }
+
+                double Rphi = 0.0, eRphi = 0.0;
+                if (phiAveragedRatio(cd_sp18, cd_fa18, Rphi, eRphi)) {
+                    TPaveText* box = new TPaveText(0.18, 0.18, 0.58, 0.30, "NDC");
+                    box->SetFillColor(kWhite);
+                    box->SetFillStyle(1001);
+                    box->SetBorderSize(1);
+                    box->SetLineColor(kBlack);
+                    box->SetLineWidth(2);
+                    box->SetShadowColor(0);
+                    box->SetTextFont(42);
+                    box->SetTextSize(0.040);
+                    box->SetTextAlign(12);
+                    box->AddText(Form("Sp18/Fa18 = %.3f +/- %.3f", Rphi, eRphi));
+                    box->Draw("same");
+                }
+
+                // ---------- save ----------
+                const std::string out_single =
+                    (fs::path(output_dir) / "plots_compare" /
+                     ("uncorr_xsec_single_sp18_over_fa18_xB_"+std::to_string(ix)+
+                      "_Q2_"+std::to_string(iQ)+"_t_"+std::to_string(it)+".png")).string();
+                c1->SaveAs(out_single.c_str());
+                delete c1;
+                std::cout << "[compare][single-bin] Wrote " << out_single << "\n";
             }
         }
     }
