@@ -1402,7 +1402,7 @@ void compare_unpolarized_cross_sections_sp18out_vs_fa18out(
             pTop->cd();
             TLatex head;
             head.SetNDC(); head.SetTextAlign(22); head.SetTextFont(42); head.SetTextSize(0.30);
-            head.DrawLatex(0.5, 0.55, "#sigma_{U} vs #phi  (Summed over x_{B} < 0.15, all Q^{2}, -t)");
+            head.DrawLatex(0.5, 0.55, "#sigma_{U} vs #phi (x_{B} < 0.15, all Q^{2}, -t)");
 
             // Main pad
             c->cd();
@@ -1426,7 +1426,7 @@ void compare_unpolarized_cross_sections_sp18out_vs_fa18out(
             double ytop = std::pow(10.0, std::ceil(std::log10(ymax*1.5)));
             if (!(ytop > 1e-4)) ytop = 1.0;
 
-            TH1* frame = gPad->DrawFrame(0.0, 1e-4, 360.0, ytop);
+            TH1* frame = gPad->DrawFrame(0.0, 10, 360.0, 10e5);
             frame->GetXaxis()->SetTitle("#phi (deg)");
             frame->GetYaxis()->SetTitle("d#sigma_{U}/d#phi (nb/GeV^{4})");
             frame->GetXaxis()->CenterTitle();
@@ -1474,13 +1474,9 @@ void compare_unpolarized_cross_sections_sp18out_vs_fa18out(
             leg->SetFillStyle(1001);
             leg->SetTextFont(42);
             leg->SetTextSize(0.042);
-            leg->AddEntry(gr_sp18, "Sp18 out (total L)", "lep");
-            leg->AddEntry(gr_fa18, "Fa18 out (total L)", "lep");
+            leg->AddEntry(gr_sp18, "Sp18 Outb", "lep");
+            leg->AddEntry(gr_fa18, "Fa18 Outb", "lep");
             leg->Draw();
-
-            TLatex note;
-            note.SetNDC(); note.SetTextFont(42); note.SetTextSize(0.040);
-            note.DrawLatex(0.16, 0.20, "Uncorrected (no radiative/bin-centering); summed over Q^{2}, -t");
 
             const std::string outSingle = (fs::path(output_dir)/"plots_compare"/"uncorr_xsec_sum_phi_sp18out_vs_fa18out_xB_lt_0p15.png").string();
             c->SaveAs(outSingle.c_str());
