@@ -5,6 +5,7 @@
 
 #include "load_csv.h"
 #include "raw_signal_cross_check.h"
+#include "pi0_contamination_cross_check.h"
 
 
 namespace fs = std::filesystem;
@@ -35,12 +36,15 @@ int main() {
     std::cout << "[lee] Loaded rows: " << rows.size() << "\n";
     std::cout << "[lee] First pass complete.\n";
 
-    // NEW: make the raw-yield comparison/ratio canvases
-    plot_raw_yield_cross_checks(rows,
-        "output/jsons/total_counts.json",
-        "output/cross_check/lee/raw_yield");
+    // // NEW: make the raw-yield comparison/ratio canvases
+    // plot_raw_yield_cross_checks(rows,
+    //     "output/jsons/total_counts.json",
+    //     "output/cross_check/lee/raw_yield");
 
-
+    // NEW: pi0 contamination comparisons
+    plot_pi0_contam_cross_checks(rows,
+        "output/jsons/pi0_contamination_combined.json",
+        "output/cross_check/lee/pi0_contamination");
 
     return 0;
 }

@@ -3,7 +3,7 @@ CXX = g++
 CXXFLAGS = $(shell root-config --cflags) -O2 -std=c++17 -pthread -fopenmp
 LDFLAGS  = $(shell root-config --libs) -lMinuit2 -pthread -fopenmp
 
-# ---------- dvcs_analysis (existing) ----------
+# ---------- dvcs_analysis ----------
 DVCS_SRC = main.cpp load_trees.cpp make_dirs.cpp exclusivity_cuts.cpp load_binning_scheme.cpp \
            bin_means.cpp total_counts.cpp pi0_contamination.cpp pi0_corrected_counts.cpp \
            bsa.cpp radiative_corrections.cpp acceptance.cpp unfolding.cpp bin_volume.cpp \
@@ -13,7 +13,8 @@ DVCS_OBJ = $(DVCS_SRC:.cpp=.o)
 DVCS_BIN = dvcs_analysis
 
 # ---------- cross_check_lee (new) ----------
-LEE_SRC  = cross_check_lee_main.cpp load_csv.cpp raw_signal_cross_check.cpp
+LEE_SRC  = cross_check_lee_main.cpp load_csv.cpp raw_signal_cross_check.cpp \
+           pi0_contamination_cross_check.cpp
 LEE_OBJ  = $(LEE_SRC:.cpp=.o)
 LEE_BIN  = cross_check_lee
 
