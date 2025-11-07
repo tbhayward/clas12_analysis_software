@@ -1,5 +1,11 @@
 // pi0_contamination_cross_check.cpp  (ordered-index remap + robust matching + deep debug)
 // -----------------------------------------------------------------------------
+// CHANGES (2025-11-07):
+//   * Normalize all Q2 and |t| ranges to ascending order on BOTH sides.
+//   * Compare Lee t-ranges using fabs() to match our |t| convention.
+//   * Add env-tunable tolerances: PI0X_ABS_TOL, PI0X_REL_TOL.
+//   * Add last-panel near-miss debug to catch final xB mapping failures.
+// -----------------------------------------------------------------------------
 // - Reads Lee's CSV rows (load_csv.h).
 // - Loads your combined pi0 JSON and extracts (ix,iQ,it,ip) indices and hel-avg values.
 // - Rebuilds YOUR numeric bin edges from imports/integrated_bin_v2.csv (load_binning_scheme.h)
@@ -11,6 +17,8 @@
 //     PI0X_DEBUG=1                -> verbose mapping diagnostics
 //     PI0X_ACCEPT_NEAREST=1       -> if strict match fails, accept nearest index within soft tol
 //     PI0X_SOFT_REL=0.01          -> relative soft tol for nearest accept (default 1e-2)
+//     PI0X_ABS_TOL=0.0005         -> absolute tol for edge equality (default 5e-4)
+//     PI0X_REL_TOL=0.003          -> relative tol for edge equality (default 3e-3)
 // -----------------------------------------------------------------------------
 
 #include "pi0_contamination_cross_check.h"
@@ -55,6 +63,10 @@ static bool   g_debug = false;
 static bool   g_accept_nearest = false;
 static double g_soft_rel = 1e-2;
 
+// ---------- global equality tolerances ----------
+static double g_abs_tol = 5e-4;   // default absolute tolerance
+static double g_rel_tol = 3e-3;   // default relative tolerance
+
 // ---------- small utilities ----------
 static inline void info(const std::string& s) { std::cout << "[cross] " << s << std::endl; }
 static inline void warn(const std::string& s) { std::cout << "[cross][warn] " << s << std::endl; }
@@ -78,12 +90,18 @@ static inline std::string fmt_pairs(const std::vector<std::pair<double,double>>&
     return os.str();
 }
 
-// A bit looser than before to accommodate CSV vs JSON float formatting
-static inline bool approx_equal(double a, double b, double abs=1e-4, double rel=2e-3){
+// normalize a numeric interval to ascending order
+static inline std::pair<double,double> norm_range(std::pair<double,double> p){
+    if (p.second < p.first) std::swap(p.first, p.second);
+    return p;
+}
+
+// tolerant equality for doubles (env-tunable)
+static inline bool approx_equal(double a, double b){
     double d = std::fabs(a-b);
-    if (d <= abs) return true;
+    if (d <= g_abs_tol) return true;
     double m = std::max(std::fabs(a), std::fabs(b));
-    return d <= rel * (m>0.0 ? m : 1.0);
+    return d <= g_rel_tol * (m>0.0 ? m : 1.0);
 }
 
 static inline void degreeTicks(double xmin, double ymin, double xmax, double labelSize){
@@ -127,16 +145,18 @@ static AxisSets build_axes_from_rows(const std::vector<LeeRow>& rows){
     std::map<std::pair<double,double>, std::set<std::pair<double,double>>> t_by_xb;
 
     for (const auto& r : rows){
-        auto xb = std::make_pair(r.xBmin, r.xBmax);
+        auto xb = norm_range({r.xBmin, r.xBmax});
         xbset.insert(xb);
-        q2_by_xb[xb].insert({r.Q2min, r.Q2max});
-        t_by_xb[xb].insert({r.tmin,   r.tmax});
+        q2_by_xb[xb].insert(norm_range({r.Q2min, r.Q2max}));
+        // compare Lee t using fabs to align with our |t|
+        t_by_xb[xb].insert(norm_range({std::fabs(r.tmin), std::fabs(r.tmax)}));
     }
 
     AxisSets ax;
     ax.xB.assign(xbset.begin(), xbset.end());
     for (int ix=0; ix<(int)ax.xB.size(); ++ix){
         const auto& xb = ax.xB[ix];
+        // sets are sorted; convert to vectors in that order
         ax.Q2_by_ix[ix] = { q2_by_xb[xb].begin(), q2_by_xb[xb].end() };
         ax.t_by_ix[ix]  = {  t_by_xb[xb].begin(),  t_by_xb[xb].end()  };
     }
@@ -160,10 +180,12 @@ static inline int nearest_index(const std::pair<double,double>& r,
     return best;
 }
 
-static inline int find_index_close(const std::pair<double,double>& r,
+static inline int find_index_close(std::pair<double,double> r,
                                    const std::vector<std::pair<double,double>>& v){
+    r = norm_range(r);
     for (int i=0;i<(int)v.size();++i){
-        if (approx_equal(r.first, v[i].first) && approx_equal(r.second, v[i].second)) return i;
+        auto vi = norm_range(v[i]);
+        if (approx_equal(r.first, vi.first) && approx_equal(r.second, vi.second)) return i;
     }
     return -1;
 }
@@ -172,7 +194,7 @@ static inline int find_index_close(const std::pair<double,double>& r,
 struct MyAxes {
     std::vector<std::pair<double,double>> xB; // ordered first-appearance
     std::map<int, std::vector<std::pair<double,double>>> Q2_by_ix; // per-ix ordered first-appearance
-    std::map<int, std::vector<std::pair<double,double>>> t_by_ix;  // per-ix ordered first-appearance
+    std::map<int, std::vector<std::pair<double,double>>> t_by_ix;  // per-ix ordered first-appearance (|t|)
 };
 
 static MyAxes build_my_axes_ordered(const std::vector<Binning>& scheme){
@@ -182,7 +204,7 @@ static MyAxes build_my_axes_ordered(const std::vector<Binning>& scheme){
     xB_order.reserve(16);
 
     for (const auto& b : scheme){
-        std::pair<double,double> xb = {b.xBmin, b.xBmax};
+        std::pair<double,double> xb = norm_range({b.xBmin, b.xBmax});
         if (!seen_xb.count(xb)){
             seen_xb.insert(xb);
             xB_order.push_back(xb);
@@ -199,10 +221,10 @@ static MyAxes build_my_axes_ordered(const std::vector<Binning>& scheme){
         std::set<std::pair<double,double>> q_seen, t_seen;
 
         for (const auto& b : scheme){
-            if (std::make_pair(b.xBmin,b.xBmax) != xb) continue;
+            if (norm_range({b.xBmin,b.xBmax}) != xb) continue;
 
-            std::pair<double,double> q = {b.Q2min, b.Q2max};
-            std::pair<double,double> t = {std::fabs(b.tmin), std::fabs(b.tmax)};
+            std::pair<double,double> q = norm_range({b.Q2min, b.Q2max});
+            std::pair<double,double> t = norm_range({std::fabs(b.tmin), std::fabs(b.tmax)});
 
             if (!q_seen.count(q)){ q_seen.insert(q); q_order.push_back(q); }
             if (!t_seen.count(t)){ t_seen.insert(t); t_order.push_back(t); }
@@ -310,8 +332,7 @@ static void collect_and_remap_ours(const json& bins_object,
 
     const int lee_last_ix = (int)leeAx.xB.size() - 1;
 
-    size_t iter_count = 0;
-    for (auto it = bins_object.begin(); it != bins_object.end(); ++it, ++iter_count){
+    for (auto it = bins_object.begin(); it != bins_object.end(); ++it){
         // key is "(ix,iQ,it,ip)"
         int ix=-1,iQ=-1,itb=-1,ip=-1;
         if (std::sscanf(it.key().c_str(), "(%d,%d,%d,%d)", &ix,&iQ,&itb,&ip) != 4) continue;
@@ -381,18 +402,24 @@ static void collect_and_remap_ours(const json& bins_object,
             }
             continue;
         }
-        const auto q2R = Q2s_my[iQ];
-        const auto tR  = Ts_my[itb];
+        const auto q2R = norm_range(Q2s_my[iQ]); // normalized
+        const auto tR  = norm_range(Ts_my[itb]); // already |t| and normalized
 
         // map to Lee index space by numeric compare
         int ixL = find_index_close(xbR, leeAx.xB);
         if (ixL < 0){
             double frac=-1.0; int near_ix = nearest_index(xbR, leeAx.xB, frac);
-            std::ostringstream os;
-            os << side_tag << " xb no-strict-match my=" << fmt_pair(xbR)
-               << " nearest Lee ix=" << near_ix << " Lee=" << (near_ix>=0?fmt_pair(leeAx.xB[near_ix]):std::string("NA"))
-               << " frac_diff=" << frac;
-            dbg(os.str());
+            if (g_debug){
+                std::ostringstream os;
+                os << side_tag << " xb no-strict-match my=" << fmt_pair(xbR)
+                   << " nearest Lee ix=" << near_ix << " Lee=" << (near_ix>=0?fmt_pair(leeAx.xB[near_ix]):std::string("NA"))
+                   << " frac_diff=" << frac;
+                dbg(os.str());
+            }
+            // focused last-bin near-miss note
+            if (near_ix == lee_last_ix){
+                dbg(std::string(side_tag) + " near last-xB panel but xb strict-match failed.");
+            }
             if (g_accept_nearest && near_ix>=0 && frac <= g_soft_rel){
                 ixL = near_ix;
                 dbg(std::string(side_tag) + " xb accepting nearest due to PI0X_ACCEPT_NEAREST");
@@ -403,16 +430,20 @@ static void collect_and_remap_ours(const json& bins_object,
         }
         const auto& Q2s_L = leeAx.Q2_by_ix.at(ixL);
         const auto& Ts_L  = leeAx.t_by_ix.at(ixL);
+
         int iQL = find_index_close(q2R, Q2s_L);
         if (iQL < 0){
             double frac=-1.0; int near_iQ = nearest_index(q2R, Q2s_L, frac);
-            std::ostringstream os;
-            os << side_tag << " Q2 no-strict-match ixL=" << ixL
-               << " my=" << fmt_pair(q2R)
-               << " nearest iQ=" << near_iQ
-               << " Lee=" << (near_iQ>=0?fmt_pair(Q2s_L[near_iQ]):std::string("NA"))
-               << " frac_diff=" << frac;
-            dbg(os.str());
+            if (g_debug){
+                std::ostringstream os;
+                os << side_tag << " Q2 no-strict-match ixL=" << ixL
+                   << " my=" << fmt_pair(q2R)
+                   << " nearest iQ=" << near_iQ
+                   << " Lee=" << (near_iQ>=0?fmt_pair(Q2s_L[near_iQ]):std::string("NA"))
+                   << " frac_diff=" << frac;
+                dbg(os.str());
+            }
+            if (ixL == lee_last_ix) dbg(std::string(side_tag) + " last-xB: Q2 failed strict match.");
             if (g_accept_nearest && near_iQ>=0 && frac <= g_soft_rel){
                 iQL = near_iQ;
                 dbg(std::string(side_tag) + " Q2 accepting nearest due to PI0X_ACCEPT_NEAREST");
@@ -421,16 +452,20 @@ static void collect_and_remap_ours(const json& bins_object,
                 continue;
             }
         }
+
         int itL = find_index_close(tR, Ts_L);
         if (itL < 0){
             double frac=-1.0; int near_it = nearest_index(tR, Ts_L, frac);
-            std::ostringstream os;
-            os << side_tag << " t no-strict-match ixL=" << ixL
-               << " my=" << fmt_pair(tR)
-               << " nearest it=" << near_it
-               << " Lee=" << (near_it>=0?fmt_pair(Ts_L[near_it]):std::string("NA"))
-               << " frac_diff=" << frac;
-            dbg(os.str());
+            if (g_debug){
+                std::ostringstream os;
+                os << side_tag << " t no-strict-match ixL=" << ixL
+                   << " my=" << fmt_pair(tR)
+                   << " nearest it=" << near_it
+                   << " Lee=" << (near_it>=0?fmt_pair(Ts_L[near_it]):std::string("NA"))
+                   << " frac_diff=" << frac;
+                dbg(os.str());
+            }
+            if (ixL == lee_last_ix) dbg(std::string(side_tag) + " last-xB: |t| failed strict match.");
             if (g_accept_nearest && near_it>=0 && frac <= g_soft_rel){
                 itL = near_it;
                 dbg(std::string(side_tag) + " t accepting nearest due to PI0X_ACCEPT_NEAREST");
@@ -502,10 +537,10 @@ static void collect_lee_split(const std::vector<LeeRow>& rows, const AxisSets& a
                               std::map<Key3, LeeSeries>& lee_inb,
                               std::map<Key3, LeeSeries>& lee_out){
     for (const auto& r : rows){
-        int ix = find_index_close({r.xBmin,r.xBmax}, ax.xB);
+        int ix = find_index_close(norm_range({r.xBmin,r.xBmax}), ax.xB);
         if (ix<0) continue;
-        int iQ = find_index_close({r.Q2min,r.Q2max}, ax.Q2_by_ix.at(ix));
-        int it = find_index_close({r.tmin, r.tmax }, ax.t_by_ix.at(ix));
+        int iQ = find_index_close(norm_range({r.Q2min,r.Q2max}), ax.Q2_by_ix.at(ix));
+        int it = find_index_close(norm_range({std::fabs(r.tmin), std::fabs(r.tmax)}), ax.t_by_ix.at(ix));
         if (iQ<0 || it<0) continue;
         const double phi = r.phiavg;
 
@@ -710,11 +745,16 @@ void plot_pi0_contam_cross_checks(const std::vector<LeeRow>& rows,
     if (const char* s = std::getenv("PI0X_DEBUG"))             g_debug = (s[0] != '0');
     if (const char* s = std::getenv("PI0X_ACCEPT_NEAREST"))    g_accept_nearest = (s[0] != '0');
     if (const char* s = std::getenv("PI0X_SOFT_REL"))          g_soft_rel = std::atof(s);
+    if (const char* s = std::getenv("PI0X_ABS_TOL"))           g_abs_tol = std::atof(s);
+    if (const char* s = std::getenv("PI0X_REL_TOL"))           g_rel_tol = std::atof(s);
 
     std::ostringstream boot;
+    boot.setf(std::ios::fixed); boot.precision(6);
     boot << "debug=" << g_debug
          << " accept_nearest=" << g_accept_nearest
-         << " soft_rel=" << g_soft_rel;
+         << " soft_rel=" << g_soft_rel
+         << " abs_tol=" << g_abs_tol
+         << " rel_tol=" << g_rel_tol;
     info(boot.str());
 
     fs::create_directories(output_base_dir);
@@ -776,7 +816,7 @@ void plot_pi0_contam_cross_checks(const std::vector<LeeRow>& rows,
     // 4) Collect our points and REMAP (index -> numeric -> Lee indices)
     std::map<Key3, Series> ours_inb, ours_out;
     collect_and_remap_ours(bins_inb, myAx, leeAx, ours_inb, "INB");
-    collect_and_remap_ours(bins_out, myAx, leeAx, ours_out, "OUT");
+    collect_and_remap_ours(bins_out,  myAx, leeAx, ours_out,  "OUT");
 
     // Sanity dump: if last Lee panel is empty for ours, try to log any nearby candidates
     const int lee_last_ix = (int)leeAx.xB.size() - 1;
