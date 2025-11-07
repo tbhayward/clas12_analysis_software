@@ -1,10 +1,12 @@
-// pi0_contamination_cross_check.cpp  (numeric-range remap, no changes to compute code)
+// pi0_contamination_cross_check.cpp  (ordered-index remap + robust matching)
 // -----------------------------------------------------------------------------
 // - Reads Lee's CSV rows (load_csv.h).
 // - Loads your combined pi0 JSON and extracts (ix,iQ,it,ip) indices and hel-avg values.
-// - Rebuilds YOUR numeric bin edges from imports/integrated_bin_v2.csv (load_binning_scheme.h).
-// - Remaps your (ix,iQ,it) to Lee's panels by comparing NUMERIC ranges (with tolerance).
+// - Rebuilds YOUR numeric bin edges from imports/integrated_bin_v2.csv (load_binning_scheme.h)
+//   but PRESERVES original index order (no sorting), so JSON indices map 1:1.
+// - Remaps your (ix,iQ,it) to Lee's panels by numeric comparison with tolerance.
 // - Plots your points at the 12 fixed phi centers implied by ip.
+// - Splits Lee’s CSV into inb/out series so sides are compared consistently.
 // -----------------------------------------------------------------------------
 
 #include "pi0_contamination_cross_check.h"
@@ -46,11 +48,8 @@ static inline void info(const std::string& s) { std::cout << "[cross] " << s << 
 static inline void warn(const std::string& s) { std::cout << "[cross][warn] " << s << std::endl; }
 static inline std::string slower(std::string s){ for (auto& c: s) c = (char)std::tolower((unsigned char)c); return s; }
 
-// Tolerances tuned to tolerate tiny CSV/JSON rounding and the last-bin edge.
-static constexpr double ABS_EPS = 1e-3;
-static constexpr double REL_EPS = 5e-3;
-
-static inline bool approx_equal(double a, double b, double abs=ABS_EPS, double rel=REL_EPS){
+// A bit looser than before to accommodate CSV vs JSON float formatting
+static inline bool approx_equal(double a, double b, double abs=1e-4, double rel=2e-3){
     double d = std::fabs(a-b);
     if (d <= abs) return true;
     double m = std::max(std::fabs(a), std::fabs(b));
@@ -85,7 +84,7 @@ static std::string choose_fa18_key(const std::vector<std::string>& keys, bool wa
     return std::string();
 }
 
-// ---------- build Lee axes from his CSV ----------
+// ---------- build Lee axes from his CSV (order doesn't matter here) ----------
 struct AxisSets {
     std::vector<std::pair<double,double>> xB;
     std::map<int, std::vector<std::pair<double,double>>> Q2_by_ix;
@@ -114,73 +113,55 @@ static AxisSets build_axes_from_rows(const std::vector<LeeRow>& rows){
     return ax;
 }
 
-// Robust range matching:
-// 1) try endpoint closeness,
-// 2) fall back to center/width closeness,
-// 3) fall back to requiring strong overlap (>95% of the smaller width).
-static inline bool ranges_close_endpoints(const std::pair<double,double>& a,
-                                          const std::pair<double,double>& b){
-    return approx_equal(a.first,b.first) && approx_equal(a.second,b.second);
-}
-static inline bool ranges_close_centerwidth(const std::pair<double,double>& a,
-                                            const std::pair<double,double>& b){
-    const double ca = 0.5*(a.first+a.second);
-    const double cb = 0.5*(b.first+b.second);
-    const double wa = (a.second-a.first);
-    const double wb = (b.second-b.first);
-    return approx_equal(ca,cb) && approx_equal(wa,wb);
-}
-static inline bool ranges_strong_overlap(const std::pair<double,double>& a,
-                                         const std::pair<double,double>& b){
-    const double lo = std::max(a.first,b.first);
-    const double hi = std::min(a.second,b.second);
-    const double overlap = std::max(0.0, hi-lo);
-    const double wmin = std::max(1e-12, std::min(a.second-a.first, b.second-b.first));
-    return (overlap / wmin) >= 0.95;
-}
-
 static inline int find_index_close(const std::pair<double,double>& r,
                                    const std::vector<std::pair<double,double>>& v){
-    // exact-ish endpoints first
     for (int i=0;i<(int)v.size();++i){
-        if (ranges_close_endpoints(r, v[i])) return i;
-    }
-    // center/width next
-    for (int i=0;i<(int)v.size();++i){
-        if (ranges_close_centerwidth(r, v[i])) return i;
-    }
-    // overlap fallback (handles last-bin tiny drifts)
-    for (int i=0;i<(int)v.size();++i){
-        if (ranges_strong_overlap(r, v[i])) return i;
+        if (approx_equal(r.first, v[i].first) && approx_equal(r.second, v[i].second)) return i;
     }
     return -1;
 }
 
-// ---------- rebuild YOUR numeric axes from integrated_bin_v2.csv ----------
+// ---------- rebuild YOUR numeric axes from integrated_bin_v2.csv (ORDERED) ----------
 struct MyAxes {
-    std::vector<std::pair<double,double>> xB;
-    std::map<int, std::vector<std::pair<double,double>>> Q2_by_ix;
-    std::map<int, std::vector<std::pair<double,double>>> t_by_ix;
+    std::vector<std::pair<double,double>> xB; // ordered first-appearance
+    std::map<int, std::vector<std::pair<double,double>>> Q2_by_ix; // per-ix ordered first-appearance
+    std::map<int, std::vector<std::pair<double,double>>> t_by_ix;  // per-ix ordered first-appearance
 };
 
-static MyAxes build_my_axes(const std::vector<Binning>& scheme){
-    std::set<std::pair<double,double>> xbs;
-    for (const auto& b : scheme) xbs.emplace(b.xBmin, b.xBmax);
+static MyAxes build_my_axes_ordered(const std::vector<Binning>& scheme){
+    // preserve order of first appearance for xB
+    std::vector<std::pair<double,double>> xB_order;
+    auto seen_xb = std::set<std::pair<double,double>>();
+    xB_order.reserve(16);
+
+    for (const auto& b : scheme){
+        std::pair<double,double> xb = {b.xBmin, b.xBmax};
+        if (!seen_xb.count(xb)){
+            seen_xb.insert(xb);
+            xB_order.push_back(xb);
+        }
+    }
 
     MyAxes ax;
-    ax.xB.assign(xbs.begin(), xbs.end());
+    ax.xB = xB_order;
 
+    // For each ix (by order), collect Q2 and |t| ranges in order first seen at that ix
     for (int ix=0; ix<(int)ax.xB.size(); ++ix){
         const auto xb = ax.xB[ix];
-        std::set<std::pair<double,double>> qs, ts;
+        std::vector<std::pair<double,double>> q_order, t_order;
+        std::set<std::pair<double,double>> q_seen, t_seen;
+
         for (const auto& b : scheme){
-            if (std::make_pair(b.xBmin,b.xBmax) == xb){
-                qs.emplace(b.Q2min, b.Q2max);
-                ts.emplace(std::fabs(b.tmin), std::fabs(b.tmax));
-            }
+            if (std::make_pair(b.xBmin,b.xBmax) != xb) continue;
+
+            std::pair<double,double> q = {b.Q2min, b.Q2max};
+            std::pair<double,double> t = {std::fabs(b.tmin), std::fabs(b.tmax)};
+
+            if (!q_seen.count(q)){ q_seen.insert(q); q_order.push_back(q); }
+            if (!t_seen.count(t)){ t_seen.insert(t); t_order.push_back(t); }
         }
-        ax.Q2_by_ix[ix] = { qs.begin(), qs.end() };
-        ax.t_by_ix[ix]  = { ts.begin(), ts.end() };
+        ax.Q2_by_ix[ix] = q_order;
+        ax.t_by_ix[ix]  = t_order;
     }
     return ax;
 }
@@ -237,10 +218,44 @@ static void accumulate_point(std::map<Key3, Series>& dst, const Key3& k,
     s.err.push_back(ey);
 }
 
+// average helper when N_data missing
+static inline bool build_helavg(double cp, double cm, double ep, double em,
+                                long long Np, long long Nm,
+                                double& c_avg, double& e_avg){
+    const double Ntot = double(Np + Nm);
+    if (Ntot > 0.0){
+        const double wp = (Np>0 ? double(Np)/Ntot : 0.0);
+        const double wm = (Nm>0 ? double(Nm)/Ntot : 0.0);
+        c_avg = wp*cp + wm*cm;
+        e_avg = std::sqrt((wp*ep)*(wp*ep) + (wm*em)*(wm*em));
+        return true;
+    }
+    // fallback: equal-weights over available helicities
+    bool have_p = std::isfinite(cp);
+    bool have_m = std::isfinite(cm);
+    if (have_p && have_m){
+        c_avg = 0.5*(cp+cm);
+        // simple quadrature; if ep/em missing, treat as zero
+        e_avg = 0.5*std::sqrt(ep*ep + em*em);
+        return true;
+    }
+    if (have_p){
+        c_avg = cp; e_avg = ep;
+        return true;
+    }
+    if (have_m){
+        c_avg = cm; e_avg = em;
+        return true;
+    }
+    return false;
+}
+
 static void collect_and_remap_ours(const json& bins_object,
                                    const MyAxes& myAx,
                                    const AxisSets& leeAx,
                                    std::map<Key3, Series>& out_side){
+    size_t kept = 0, dropped_bad_index = 0, dropped_nomatch = 0, dropped_empty = 0;
+
     for (auto it = bins_object.begin(); it != bins_object.end(); ++it){
         // key is "(ix,iQ,it,ip)"
         int ix=-1,iQ=-1,itb=-1,ip=-1;
@@ -248,7 +263,7 @@ static void collect_and_remap_ours(const json& bins_object,
         const json& cell = it.value();
 
         long long Np=0, Nm=0;
-        double cp=0.0, cm=0.0, ep=0.0, em=0.0;
+        double cp=NAN, cm=NAN, ep=0.0, em=0.0;
         try { Np = cell.at("N_data").at("helicity").at("+1").get<long long>(); } catch(...) {}
         try { Nm = cell.at("N_data").at("helicity").at("-1").get<long long>(); } catch(...) {}
         try { cp = cell.at("contamination").at("+1").at("value").get<double>(); } catch(...) {}
@@ -256,37 +271,37 @@ static void collect_and_remap_ours(const json& bins_object,
         try { ep = cell.at("contamination").at("+1").at("err").get<double>(); } catch(...) {}
         try { em = cell.at("contamination").at("-1").at("err").get<double>(); } catch(...) {}
 
-        const double Ntot = double(Np + Nm);
-        if (Ntot <= 0.0) continue;
+        double c_avg=0.0, e_avg=0.0;
+        if (!build_helavg(cp, cm, ep, em, Np, Nm, c_avg, e_avg)){
+            dropped_empty++; continue;
+        }
 
-        const double wp = (Np>0 ? double(Np)/Ntot : 0.0);
-        const double wm = (Nm>0 ? double(Nm)/Ntot : 0.0);
-        const double c_avg = wp*cp + wm*cm;
-        const double e_avg = std::sqrt((wp*ep)*(wp*ep) + (wm*em)*(wm*em));
+        // numeric ranges from YOUR CSV axes, preserving index order
+        if (ix < 0 || ix >= (int)myAx.xB.size()){ dropped_bad_index++; continue; }
+        const auto xbR = myAx.xB[ix];
 
-        // numeric ranges from *your* CSV axes
-        if (ix < 0 || ix >= (int)myAx.xB.size()) continue;
-        auto xbR = myAx.xB[ix];
-
-        const auto& Q2s_my = myAx.Q2_by_ix.at(ix);
-        const auto& Ts_my  = myAx.t_by_ix.at(ix);
-        if (iQ < 0 || iQ >= (int)Q2s_my.size()) continue;
-        if (itb < 0 || itb >= (int)Ts_my.size()) continue;
-        auto q2R = Q2s_my[iQ];
-        auto tR  = Ts_my[itb];
+        const auto itQv = myAx.Q2_by_ix.find(ix);
+        const auto itTv = myAx.t_by_ix.find(ix);
+        if (itQv==myAx.Q2_by_ix.end() || itTv==myAx.t_by_ix.end()){ dropped_bad_index++; continue; }
+        const auto& Q2s_my = itQv->second;
+        const auto& Ts_my  = itTv->second;
+        if (iQ < 0 || iQ >= (int)Q2s_my.size()){ dropped_bad_index++; continue; }
+        if (itb < 0 || itb >= (int)Ts_my.size()){ dropped_bad_index++; continue; }
+        const auto q2R = Q2s_my[iQ];
+        const auto tR  = Ts_my[itb];
 
         // map to Lee index space by numeric compare
         int ixL = find_index_close(xbR, leeAx.xB);
-        if (ixL < 0) continue;
+        if (ixL < 0){ dropped_nomatch++; continue; }
         const auto& Q2s_L = leeAx.Q2_by_ix.at(ixL);
         const auto& Ts_L  = leeAx.t_by_ix.at(ixL);
         int iQL = find_index_close(q2R, Q2s_L);
         int itL = find_index_close(tR,   Ts_L);
-        if (iQL < 0 || itL < 0) continue;
+        if (iQL < 0 || itL < 0){ dropped_nomatch++; continue; }
 
-        // phi center from ip
         const double phi_deg = phi_center_from_ip(ip);
         accumulate_point(out_side, Key3{ixL,iQL,itL}, phi_deg, c_avg, e_avg);
+        kept++;
     }
 
     // sort by phi for nicer lines
@@ -299,14 +314,19 @@ static void collect_and_remap_ours(const json& bins_object,
         s.phi.swap(p); s.val.swap(v); s.err.swap(e);
     };
     for (auto& kv : out_side) sort_by_phi(kv.second);
+
+    info("collect_and_remap_ours: kept=" + std::to_string(kept) +
+         " dropped_bad_index=" + std::to_string(dropped_bad_index) +
+         " dropped_nomatch=" + std::to_string(dropped_nomatch) +
+         " dropped_empty=" + std::to_string(dropped_empty));
 }
 
-// ---------- gather Lee series (split into inb/out) ----------
+// ---------- gather Lee series (split inb/out) ----------
 struct LeeSeries { std::vector<double> phi; std::vector<double> val; };
-struct LeeBoth { std::map<Key3, LeeSeries> inb, out; };
 
-static LeeBoth collect_lee_sides(const std::vector<LeeRow>& rows, const AxisSets& ax){
-    LeeBoth B;
+static void collect_lee_split(const std::vector<LeeRow>& rows, const AxisSets& ax,
+                              std::map<Key3, LeeSeries>& lee_inb,
+                              std::map<Key3, LeeSeries>& lee_out){
     for (const auto& r : rows){
         int ix = find_index_close({r.xBmin,r.xBmax}, ax.xB);
         if (ix<0) continue;
@@ -314,14 +334,15 @@ static LeeBoth collect_lee_sides(const std::vector<LeeRow>& rows, const AxisSets
         int it = find_index_close({r.tmin, r.tmax }, ax.t_by_ix.at(ix));
         if (iQ<0 || it<0) continue;
         const double phi = r.phiavg;
+
         if (std::isfinite(r.contam_inb) && r.contam_inb>0.0){
-            auto& s = B.inb[{ix,iQ,it}]; s.phi.push_back(phi); s.val.push_back(r.contam_inb);
+            auto& s = lee_inb[{ix,iQ,it}]; s.phi.push_back(phi); s.val.push_back(r.contam_inb);
         }
         if (std::isfinite(r.contam_out) && r.contam_out>0.0){
-            auto& s = B.out[{ix,iQ,it}]; s.phi.push_back(phi); s.val.push_back(r.contam_out);
+            auto& s = lee_out[{ix,iQ,it}]; s.phi.push_back(phi); s.val.push_back(r.contam_out);
         }
     }
-    auto sort_map = [](std::map<Key3,LeeSeries>& M){
+    auto sort_series = [](std::map<Key3, LeeSeries>& M){
         for (auto& kv : M){
             auto& s = kv.second;
             std::vector<int> idx(s.phi.size());
@@ -332,9 +353,8 @@ static LeeBoth collect_lee_sides(const std::vector<LeeRow>& rows, const AxisSets
             s.phi.swap(p); s.val.swap(v);
         }
     };
-    sort_map(B.inb);
-    sort_map(B.out);
-    return B;
+    sort_series(lee_inb);
+    sort_series(lee_out);
 }
 
 // ---------- plotting helpers ----------
@@ -439,7 +459,7 @@ static void draw_canvas(const std::string& title,
             gPad->SetTicks(1,1);
             gPad->SetTopMargin(0.12);
             gPad->SetBottomMargin(0.18);
-            gPad->SetLeftMargin(0.18);
+            gPad->SetLeftMargin(0.125);   // user preference
             gPad->SetRightMargin(0.08);
 
             std::vector<double> xH,yH,eH,xL,yL;
@@ -466,7 +486,6 @@ static void draw_canvas(const std::string& title,
                      Q2s[col].first, Q2s[col].second, Ts[r].first, Ts[r].second));
 
             if (ratio_mode){
-                // build ratio at our phi against nearest Lee phi (20 deg tolerance)
                 const double tol = 20.0;
                 std::vector<double> xr, yr, er;
                 for (size_t i=0;i<xH.size();++i){
@@ -514,31 +533,50 @@ void plot_pi0_contam_cross_checks(const std::vector<LeeRow>& rows,
     gStyle->SetLabelFont(42,"XYZ");
     gStyle->SetTextFont(42);
 
-    // 1) Build Lee axes and gather Lee series (split sides)
+    // 1) Build Lee axes and gather Lee series (split by side)
     AxisSets leeAx = build_axes_from_rows(rows);
-    LeeBoth lee = collect_lee_sides(rows, leeAx);
+    std::map<Key3, LeeSeries> lee_inb, lee_out;
+    collect_lee_split(rows, leeAx, lee_inb, lee_out);
 
     // 2) Load our combined JSON, pick Fa18 inb/out
     json bins_inb, bins_out; std::string name_inb, name_out;
     if (!load_our_periods(pi0_combined_json, bins_inb, bins_out, name_inb, name_out)) return;
     info("Using periods: " + name_inb + " and " + name_out);
 
-    // 3) Rebuild YOUR axes from CSV
+    // 3) Rebuild YOUR axes from CSV (ORDER PRESERVED)
     const std::string my_csv = "imports/integrated_bin_v2.csv";
     auto my_scheme = load_binning_scheme(my_csv);
     if (my_scheme.empty()){ warn("Your binning CSV parsed empty: "+my_csv); return; }
-    MyAxes myAx = build_my_axes(my_scheme);
+    MyAxes myAx = build_my_axes_ordered(my_scheme);
 
     // 4) Collect our points and REMAP (index -> numeric -> Lee indices)
     std::map<Key3, Series> ours_inb, ours_out;
     collect_and_remap_ours(bins_inb, myAx, leeAx, ours_inb);
     collect_and_remap_ours(bins_out, myAx, leeAx, ours_out);
 
+    // Quick debug if an xB panel ends up empty on our side
+    auto debug_empty_panel = [&](int ix, const std::map<Key3, Series>& ours_map, const char* tag){
+        bool any=false;
+        for (const auto& kv : ours_map){
+            int ixl, iQ, it; std::tie(ixl,iQ,it)=kv.first;
+            if (ixl==ix && !kv.second.phi.empty()){ any=true; break; }
+        }
+        if (!any){
+            std::ostringstream os;
+            os << "No points for " << tag << " at Lee ix=" << ix
+               << " xB=[" << leeAx.xB[ix].first << "," << leeAx.xB[ix].second << "]";
+            warn(os.str());
+        }
+    };
+
     // 5) Plot per Lee xB panel
     for (int ix=0; ix<(int)leeAx.xB.size(); ++ix){
         const auto& Q2s = leeAx.Q2_by_ix.at(ix);
         const auto& Ts  = leeAx.t_by_ix.at(ix);
         if (Q2s.empty() || Ts.empty()) continue;
+
+        debug_empty_panel(ix, ours_inb, "ours_inb");
+        debug_empty_panel(ix, ours_out, "ours_out");
 
         auto fetch_inb = [&](int iQ, int it,
                              std::vector<double>& xH, std::vector<double>& yH, std::vector<double>& eH,
@@ -547,8 +585,8 @@ void plot_pi0_contam_cross_checks(const std::vector<LeeRow>& rows,
             auto itH = ours_inb.find(k);
             if (itH != ours_inb.end()){ xH = itH->second.phi; yH = itH->second.val; eH = itH->second.err; }
             else { xH.clear(); yH.clear(); eH.clear(); }
-            auto itL = lee.inb.find(k);
-            if (itL != lee.inb.end()){ xL = itL->second.phi; yL = itL->second.val; }
+            auto itL = lee_inb.find(k);
+            if (itL != lee_inb.end()){ xL = itL->second.phi; yL = itL->second.val; }
             else { xL.clear(); yL.clear(); }
         };
 
@@ -559,8 +597,8 @@ void plot_pi0_contam_cross_checks(const std::vector<LeeRow>& rows,
             auto itH = ours_out.find(k);
             if (itH != ours_out.end()){ xH = itH->second.phi; yH = itH->second.val; eH = itH->second.err; }
             else { xH.clear(); yH.clear(); eH.clear(); }
-            auto itL = lee.out.find(k);
-            if (itL != lee.out.end()){ xL = itL->second.phi; yL = itL->second.val; }
+            auto itL = lee_out.find(k);
+            if (itL != lee_out.end()){ xL = itL->second.phi; yL = itL->second.val; }
             else { xL.clear(); yL.clear(); }
         };
 
