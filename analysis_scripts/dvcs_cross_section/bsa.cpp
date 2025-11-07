@@ -830,14 +830,14 @@ static void plot_single_cell_overlay_canvas(
     }
 
     // Legend
-    TLegend* leg = new TLegend(0.40, 0.68, 0.86, 0.88);
+    TLegend* leg = new TLegend(0.42, 0.68, 0.86, 0.88);
     leg->SetMargin(0.04);
     leg->SetBorderSize(1);
     leg->SetLineColor(kBlack);
     leg->SetFillColor(kWhite);
     leg->SetFillStyle(1001);
     leg->SetTextFont(42);
-    leg->SetTextSize(0.048);
+    leg->SetTextSize(0.042);
 
     leg->AddEntry((TObject*)nullptr,
                   Form("counts: A = %.3f #pm %.3f", countsCell.fit.A, countsCell.fit.Aerr),
