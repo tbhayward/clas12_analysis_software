@@ -1,4 +1,4 @@
-// pi0_contamination_cross_check.cpp  (ordered-index remap + robust matching)
+// pi0_contamination_cross_check.cpp  (ordered-index remap + robust matching + deep debug)
 // -----------------------------------------------------------------------------
 // - Reads Lee's CSV rows (load_csv.h).
 // - Loads your combined pi0 JSON and extracts (ix,iQ,it,ip) indices and hel-avg values.
@@ -7,6 +7,10 @@
 // - Remaps your (ix,iQ,it) to Lee's panels by numeric comparison with tolerance.
 // - Plots your points at the 12 fixed phi centers implied by ip.
 // - Splits Lee’s CSV into inb/out series so sides are compared consistently.
+// - Adds extensive debugging controlled by env vars:
+//     PI0X_DEBUG=1                -> verbose mapping diagnostics
+//     PI0X_ACCEPT_NEAREST=1       -> if strict match fails, accept nearest index within soft tol
+//     PI0X_SOFT_REL=0.01          -> relative soft tol for nearest accept (default 1e-2)
 // -----------------------------------------------------------------------------
 
 #include "pi0_contamination_cross_check.h"
@@ -26,13 +30,16 @@ using json = nlohmann::json;
 #include <TStyle.h>
 #include <TGaxis.h>
 #include <TMarker.h>
+#include <TString.h>
 
 #include <algorithm>
 #include <cctype>
 #include <cmath>
+#include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <limits>
 #include <map>
 #include <set>
 #include <sstream>
@@ -43,10 +50,33 @@ using json = nlohmann::json;
 
 namespace fs = std::filesystem;
 
+// ---------- global debug toggles ----------
+static bool   g_debug = false;
+static bool   g_accept_nearest = false;
+static double g_soft_rel = 1e-2;
+
 // ---------- small utilities ----------
 static inline void info(const std::string& s) { std::cout << "[cross] " << s << std::endl; }
 static inline void warn(const std::string& s) { std::cout << "[cross][warn] " << s << std::endl; }
-static inline std::string slower(std::string s){ for (auto& c: s) c = (char)std::tolower((unsigned char)c); return s; }
+static inline void dbg (const std::string& s) { if (g_debug) std::cout << "[cross][dbg] " << s << std::endl; }
+
+static inline std::string slower(std::string s){
+    for (auto& c: s) c = (char)std::tolower((unsigned char)c);
+    return s;
+}
+
+static inline std::string fmt_pair(const std::pair<double,double>& p){
+    std::ostringstream os; os.setf(std::ios::fixed); os.precision(6);
+    os << "[" << p.first << "," << p.second << "]";
+    return os.str();
+}
+
+static inline std::string fmt_pairs(const std::vector<std::pair<double,double>>& v){
+    std::ostringstream os; os << "{";
+    for (size_t i=0;i<v.size();++i){ if (i) os << ", "; os << fmt_pair(v[i]); }
+    os << "}";
+    return os.str();
+}
 
 // A bit looser than before to accommodate CSV vs JSON float formatting
 static inline bool approx_equal(double a, double b, double abs=1e-4, double rel=2e-3){
@@ -111,6 +141,23 @@ static AxisSets build_axes_from_rows(const std::vector<LeeRow>& rows){
         ax.t_by_ix[ix]  = {  t_by_xb[xb].begin(),  t_by_xb[xb].end()  };
     }
     return ax;
+}
+
+// nearest index helper for debugging and optional soft acceptance
+static inline int nearest_index(const std::pair<double,double>& r,
+                                const std::vector<std::pair<double,double>>& v,
+                                double& best_absdiff_frac_out){
+    int best = -1;
+    double best_rel = std::numeric_limits<double>::max();
+    const double span = std::max(1e-12, std::fabs(r.second - r.first));
+    for (int i=0;i<(int)v.size();++i){
+        double d1 = std::fabs(r.first  - v[i].first);
+        double d2 = std::fabs(r.second - v[i].second);
+        double rel = std::max(d1, d2) / span; // relative to r's span
+        if (rel < best_rel){ best_rel = rel; best = i; }
+    }
+    best_absdiff_frac_out = best_rel;
+    return best;
 }
 
 static inline int find_index_close(const std::pair<double,double>& r,
@@ -218,6 +265,17 @@ static void accumulate_point(std::map<Key3, Series>& dst, const Key3& k,
     s.err.push_back(ey);
 }
 
+static inline std::string fmt_series(const Series& s){
+    std::ostringstream os; os << "N=" << s.phi.size() << " phi=[";
+    for (size_t i=0;i<s.phi.size();++i){ if(i) os<<","; os<<s.phi[i]; }
+    os << "] val=[";
+    for (size_t i=0;i<s.val.size();++i){ if(i) os<<","; os<<s.val[i]; }
+    os << "] err=[";
+    for (size_t i=0;i<s.err.size();++i){ if(i) os<<","; os<<s.err[i]; }
+    os << "]";
+    return os.str();
+}
+
 // average helper when N_data missing
 static inline bool build_helavg(double cp, double cm, double ep, double em,
                                 long long Np, long long Nm,
@@ -230,33 +288,30 @@ static inline bool build_helavg(double cp, double cm, double ep, double em,
         e_avg = std::sqrt((wp*ep)*(wp*ep) + (wm*em)*(wm*em));
         return true;
     }
-    // fallback: equal-weights over available helicities
     bool have_p = std::isfinite(cp);
     bool have_m = std::isfinite(cm);
     if (have_p && have_m){
         c_avg = 0.5*(cp+cm);
-        // simple quadrature; if ep/em missing, treat as zero
         e_avg = 0.5*std::sqrt(ep*ep + em*em);
         return true;
     }
-    if (have_p){
-        c_avg = cp; e_avg = ep;
-        return true;
-    }
-    if (have_m){
-        c_avg = cm; e_avg = em;
-        return true;
-    }
+    if (have_p){ c_avg = cp; e_avg = ep; return true; }
+    if (have_m){ c_avg = cm; e_avg = em; return true; }
     return false;
 }
 
 static void collect_and_remap_ours(const json& bins_object,
                                    const MyAxes& myAx,
                                    const AxisSets& leeAx,
-                                   std::map<Key3, Series>& out_side){
+                                   std::map<Key3, Series>& out_side,
+                                   const char* side_tag){
     size_t kept = 0, dropped_bad_index = 0, dropped_nomatch = 0, dropped_empty = 0;
+    std::map<int,size_t> kept_by_ixL;
 
-    for (auto it = bins_object.begin(); it != bins_object.end(); ++it){
+    const int lee_last_ix = (int)leeAx.xB.size() - 1;
+
+    size_t iter_count = 0;
+    for (auto it = bins_object.begin(); it != bins_object.end(); ++it, ++iter_count){
         // key is "(ix,iQ,it,ip)"
         int ix=-1,iQ=-1,itb=-1,ip=-1;
         if (std::sscanf(it.key().c_str(), "(%d,%d,%d,%d)", &ix,&iQ,&itb,&ip) != 4) continue;
@@ -273,35 +328,137 @@ static void collect_and_remap_ours(const json& bins_object,
 
         double c_avg=0.0, e_avg=0.0;
         if (!build_helavg(cp, cm, ep, em, Np, Nm, c_avg, e_avg)){
-            dropped_empty++; continue;
+            dropped_empty++;
+            if (g_debug){
+                std::ostringstream os; os << side_tag << " drop(empty) key=" << it.key();
+                dbg(os.str());
+            }
+            continue;
         }
 
         // numeric ranges from YOUR CSV axes, preserving index order
-        if (ix < 0 || ix >= (int)myAx.xB.size()){ dropped_bad_index++; continue; }
+        if (ix < 0 || ix >= (int)myAx.xB.size()){
+            dropped_bad_index++;
+            if (g_debug){
+                std::ostringstream os; os << side_tag << " drop(bad ix) key=" << it.key()
+                                          << " myAx.xB.size=" << myAx.xB.size();
+                dbg(os.str());
+            }
+            continue;
+        }
         const auto xbR = myAx.xB[ix];
 
         const auto itQv = myAx.Q2_by_ix.find(ix);
         const auto itTv = myAx.t_by_ix.find(ix);
-        if (itQv==myAx.Q2_by_ix.end() || itTv==myAx.t_by_ix.end()){ dropped_bad_index++; continue; }
+        if (itQv==myAx.Q2_by_ix.end() || itTv==myAx.t_by_ix.end()){
+            dropped_bad_index++;
+            if (g_debug){
+                std::ostringstream os; os << side_tag << " drop(missing Q/t vectors) ix=" << ix
+                                          << " key=" << it.key();
+                dbg(os.str());
+            }
+            continue;
+        }
         const auto& Q2s_my = itQv->second;
         const auto& Ts_my  = itTv->second;
-        if (iQ < 0 || iQ >= (int)Q2s_my.size()){ dropped_bad_index++; continue; }
-        if (itb < 0 || itb >= (int)Ts_my.size()){ dropped_bad_index++; continue; }
+        if (iQ < 0 || iQ >= (int)Q2s_my.size()){
+            dropped_bad_index++;
+            if (g_debug){
+                std::ostringstream os; os << side_tag << " drop(bad iQ) ix=" << ix
+                                          << " iQ=" << iQ << " Q2s_my.size=" << Q2s_my.size()
+                                          << " key=" << it.key();
+                dbg(os.str());
+            }
+            continue;
+        }
+        if (itb < 0 || itb >= (int)Ts_my.size()){
+            dropped_bad_index++;
+            if (g_debug){
+                std::ostringstream os; os << side_tag << " drop(bad it) ix=" << ix
+                                          << " it=" << itb << " Ts_my.size=" << Ts_my.size()
+                                          << " key=" << it.key();
+                dbg(os.str());
+            }
+            continue;
+        }
         const auto q2R = Q2s_my[iQ];
         const auto tR  = Ts_my[itb];
 
         // map to Lee index space by numeric compare
         int ixL = find_index_close(xbR, leeAx.xB);
-        if (ixL < 0){ dropped_nomatch++; continue; }
+        if (ixL < 0){
+            double frac=-1.0; int near_ix = nearest_index(xbR, leeAx.xB, frac);
+            std::ostringstream os;
+            os << side_tag << " xb no-strict-match my=" << fmt_pair(xbR)
+               << " nearest Lee ix=" << near_ix << " Lee=" << (near_ix>=0?fmt_pair(leeAx.xB[near_ix]):std::string("NA"))
+               << " frac_diff=" << frac;
+            dbg(os.str());
+            if (g_accept_nearest && near_ix>=0 && frac <= g_soft_rel){
+                ixL = near_ix;
+                dbg(std::string(side_tag) + " xb accepting nearest due to PI0X_ACCEPT_NEAREST");
+            } else {
+                dropped_nomatch++;
+                continue;
+            }
+        }
         const auto& Q2s_L = leeAx.Q2_by_ix.at(ixL);
         const auto& Ts_L  = leeAx.t_by_ix.at(ixL);
         int iQL = find_index_close(q2R, Q2s_L);
-        int itL = find_index_close(tR,   Ts_L);
-        if (iQL < 0 || itL < 0){ dropped_nomatch++; continue; }
+        if (iQL < 0){
+            double frac=-1.0; int near_iQ = nearest_index(q2R, Q2s_L, frac);
+            std::ostringstream os;
+            os << side_tag << " Q2 no-strict-match ixL=" << ixL
+               << " my=" << fmt_pair(q2R)
+               << " nearest iQ=" << near_iQ
+               << " Lee=" << (near_iQ>=0?fmt_pair(Q2s_L[near_iQ]):std::string("NA"))
+               << " frac_diff=" << frac;
+            dbg(os.str());
+            if (g_accept_nearest && near_iQ>=0 && frac <= g_soft_rel){
+                iQL = near_iQ;
+                dbg(std::string(side_tag) + " Q2 accepting nearest due to PI0X_ACCEPT_NEAREST");
+            } else {
+                dropped_nomatch++;
+                continue;
+            }
+        }
+        int itL = find_index_close(tR, Ts_L);
+        if (itL < 0){
+            double frac=-1.0; int near_it = nearest_index(tR, Ts_L, frac);
+            std::ostringstream os;
+            os << side_tag << " t no-strict-match ixL=" << ixL
+               << " my=" << fmt_pair(tR)
+               << " nearest it=" << near_it
+               << " Lee=" << (near_it>=0?fmt_pair(Ts_L[near_it]):std::string("NA"))
+               << " frac_diff=" << frac;
+            dbg(os.str());
+            if (g_accept_nearest && near_it>=0 && frac <= g_soft_rel){
+                itL = near_it;
+                dbg(std::string(side_tag) + " t accepting nearest due to PI0X_ACCEPT_NEAREST");
+            } else {
+                dropped_nomatch++;
+                continue;
+            }
+        }
 
         const double phi_deg = phi_center_from_ip(ip);
         accumulate_point(out_side, Key3{ixL,iQL,itL}, phi_deg, c_avg, e_avg);
         kept++;
+        kept_by_ixL[ixL]++;
+
+        // Focused debug for last xB Lee panel
+        if (g_debug && ixL == lee_last_ix){
+            std::ostringstream os;
+            os << side_tag << " mapped-to-last-xB: key=" << it.key()
+               << " myXb=" << fmt_pair(xbR)
+               << " LeeXb=" << fmt_pair(leeAx.xB[ixL])
+               << " myQ2=" << fmt_pair(q2R)
+               << " LeeQ2=" << fmt_pair(leeAx.Q2_by_ix.at(ixL)[iQL])
+               << " myt="  << fmt_pair(tR)
+               << " Leet=" << fmt_pair(leeAx.t_by_ix.at(ixL)[itL])
+               << " phi=" << phi_deg
+               << " c=" << c_avg << " e=" << e_avg;
+            dbg(os.str());
+        }
     }
 
     // sort by phi for nicer lines
@@ -315,10 +472,27 @@ static void collect_and_remap_ours(const json& bins_object,
     };
     for (auto& kv : out_side) sort_by_phi(kv.second);
 
-    info("collect_and_remap_ours: kept=" + std::to_string(kept) +
-         " dropped_bad_index=" + std::to_string(dropped_bad_index) +
-         " dropped_nomatch=" + std::to_string(dropped_nomatch) +
-         " dropped_empty=" + std::to_string(dropped_empty));
+    // summary
+    {
+        std::ostringstream os;
+        os << side_tag << " collect_and_remap_ours: kept=" << kept
+           << " drop_bad_index=" << dropped_bad_index
+           << " drop_nomatch=" << dropped_nomatch
+           << " drop_empty=" << dropped_empty
+           << " unique_cells=" << out_side.size();
+        info(os.str());
+    }
+
+    if (g_debug){
+        // dump how many points per Lee xB panel we produced
+        std::ostringstream os;
+        os << side_tag << " kept_by_Lee_ix:";
+        for (int i=0;i<(int)leeAx.xB.size();++i){
+            size_t n = kept_by_ixL.count(i) ? kept_by_ixL[i] : 0;
+            os << " ix=" << i << "(" << fmt_pair(leeAx.xB[i]) << ")=" << n;
+        }
+        dbg(os.str());
+    }
 }
 
 // ---------- gather Lee series (split inb/out) ----------
@@ -355,6 +529,17 @@ static void collect_lee_split(const std::vector<LeeRow>& rows, const AxisSets& a
     };
     sort_series(lee_inb);
     sort_series(lee_out);
+
+    if (g_debug){
+        std::ostringstream os1, os2;
+        size_t cnt1=0, cnt2=0;
+        for (auto& kv : lee_inb) cnt1 += kv.second.phi.size();
+        for (auto& kv : lee_out) cnt2 += kv.second.phi.size();
+        os1 << "Lee inb series: cells=" << lee_inb.size() << " total points=" << cnt1;
+        os2 << "Lee out series: cells=" << lee_out.size() << " total points=" << cnt2;
+        dbg(os1.str());
+        dbg(os2.str());
+    }
 }
 
 // ---------- plotting helpers ----------
@@ -459,7 +644,7 @@ static void draw_canvas(const std::string& title,
             gPad->SetTicks(1,1);
             gPad->SetTopMargin(0.12);
             gPad->SetBottomMargin(0.18);
-            gPad->SetLeftMargin(0.125);   // user preference
+            gPad->SetLeftMargin(0.125);
             gPad->SetRightMargin(0.08);
 
             std::vector<double> xH,yH,eH,xL,yL;
@@ -521,6 +706,17 @@ static void draw_canvas(const std::string& title,
 void plot_pi0_contam_cross_checks(const std::vector<LeeRow>& rows,
                                   const std::string& pi0_combined_json,
                                   const std::string& output_base_dir){
+    // read debug envs
+    if (const char* s = std::getenv("PI0X_DEBUG"))             g_debug = (s[0] != '0');
+    if (const char* s = std::getenv("PI0X_ACCEPT_NEAREST"))    g_accept_nearest = (s[0] != '0');
+    if (const char* s = std::getenv("PI0X_SOFT_REL"))          g_soft_rel = std::atof(s);
+
+    std::ostringstream boot;
+    boot << "debug=" << g_debug
+         << " accept_nearest=" << g_accept_nearest
+         << " soft_rel=" << g_soft_rel;
+    info(boot.str());
+
     fs::create_directories(output_base_dir);
 
     gStyle->SetOptTitle(0);
@@ -535,6 +731,14 @@ void plot_pi0_contam_cross_checks(const std::vector<LeeRow>& rows,
 
     // 1) Build Lee axes and gather Lee series (split by side)
     AxisSets leeAx = build_axes_from_rows(rows);
+
+    info("Lee xB panels = " + std::to_string(leeAx.xB.size()));
+    for (int ix=0; ix<(int)leeAx.xB.size(); ++ix){
+        dbg("Lee ix="+std::to_string(ix)+" xB="+fmt_pair(leeAx.xB[ix])+
+            " Q2="+fmt_pairs(leeAx.Q2_by_ix[ix])+
+            " t="+fmt_pairs(leeAx.t_by_ix[ix]));
+    }
+
     std::map<Key3, LeeSeries> lee_inb, lee_out;
     collect_lee_split(rows, leeAx, lee_inb, lee_out);
 
@@ -548,13 +752,34 @@ void plot_pi0_contam_cross_checks(const std::vector<LeeRow>& rows,
     auto my_scheme = load_binning_scheme(my_csv);
     if (my_scheme.empty()){ warn("Your binning CSV parsed empty: "+my_csv); return; }
     MyAxes myAx = build_my_axes_ordered(my_scheme);
+    info("My xB count = " + std::to_string(myAx.xB.size()));
+    for (int ix=0; ix<(int)myAx.xB.size(); ++ix){
+        dbg("My ix="+std::to_string(ix)+" xB="+fmt_pair(myAx.xB[ix])+
+            " Q2="+fmt_pairs(myAx.Q2_by_ix[ix])+
+            " t="+fmt_pairs(myAx.t_by_ix[ix]));
+    }
+
+    // quick check: print last panel ranges side-by-side
+    if (!leeAx.xB.empty()){
+        int L = (int)leeAx.xB.size()-1;
+        dbg(std::string("Lee last xB=")+fmt_pair(leeAx.xB[L])+
+            " Q2="+fmt_pairs(leeAx.Q2_by_ix[L])+
+            " t="+fmt_pairs(leeAx.t_by_ix[L]));
+    }
+    if (!myAx.xB.empty()){
+        int M = (int)myAx.xB.size()-1;
+        dbg(std::string("My last xB=")+fmt_pair(myAx.xB[M])+
+            " Q2="+fmt_pairs(myAx.Q2_by_ix[M])+
+            " t="+fmt_pairs(myAx.t_by_ix[M]));
+    }
 
     // 4) Collect our points and REMAP (index -> numeric -> Lee indices)
     std::map<Key3, Series> ours_inb, ours_out;
-    collect_and_remap_ours(bins_inb, myAx, leeAx, ours_inb);
-    collect_and_remap_ours(bins_out, myAx, leeAx, ours_out);
+    collect_and_remap_ours(bins_inb, myAx, leeAx, ours_inb, "INB");
+    collect_and_remap_ours(bins_out, myAx, leeAx, ours_out, "OUT");
 
-    // Quick debug if an xB panel ends up empty on our side
+    // Sanity dump: if last Lee panel is empty for ours, try to log any nearby candidates
+    const int lee_last_ix = (int)leeAx.xB.size() - 1;
     auto debug_empty_panel = [&](int ix, const std::map<Key3, Series>& ours_map, const char* tag){
         bool any=false;
         for (const auto& kv : ours_map){
@@ -564,19 +789,30 @@ void plot_pi0_contam_cross_checks(const std::vector<LeeRow>& rows,
         if (!any){
             std::ostringstream os;
             os << "No points for " << tag << " at Lee ix=" << ix
-               << " xB=[" << leeAx.xB[ix].first << "," << leeAx.xB[ix].second << "]";
+               << " xB=" << fmt_pair(leeAx.xB[ix])
+               << " (dumping first 5 cells overall for " << tag << ")";
             warn(os.str());
+            int c=0;
+            for (const auto& kv : ours_map){
+                if (c>=5) break;
+                std::ostringstream d;
+                int ixl, iQ, it; std::tie(ixl,iQ,it)=kv.first;
+                d << "  cell ix=" << ixl << " iQ=" << iQ << " it=" << it
+                  << " series: " << fmt_series(kv.second);
+                dbg(d.str());
+                ++c;
+            }
         }
     };
+
+    debug_empty_panel(lee_last_ix, ours_inb, "ours_inb");
+    debug_empty_panel(lee_last_ix, ours_out, "ours_out");
 
     // 5) Plot per Lee xB panel
     for (int ix=0; ix<(int)leeAx.xB.size(); ++ix){
         const auto& Q2s = leeAx.Q2_by_ix.at(ix);
         const auto& Ts  = leeAx.t_by_ix.at(ix);
         if (Q2s.empty() || Ts.empty()) continue;
-
-        debug_empty_panel(ix, ours_inb, "ours_inb");
-        debug_empty_panel(ix, ours_out, "ours_out");
 
         auto fetch_inb = [&](int iQ, int it,
                              std::vector<double>& xH, std::vector<double>& yH, std::vector<double>& eH,
