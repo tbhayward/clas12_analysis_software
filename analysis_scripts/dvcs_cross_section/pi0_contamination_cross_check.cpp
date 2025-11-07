@@ -14,6 +14,8 @@ using json = nlohmann::json;
 #include <TH1.h>
 #include <TStyle.h>
 #include <TGaxis.h>
+#include <TMarker.h>
+#include <TString.h>
 
 #include <algorithm>
 #include <cctype>
@@ -29,9 +31,6 @@ using json = nlohmann::json;
 #include <unordered_map>
 #include <utility>
 #include <vector>
-#include <TMarker.h>   
-#include <TString.h>
-#include <cstdio>  
 
 namespace fs = std::filesystem;
 
@@ -74,7 +73,7 @@ static void draw_degree_ticks_here(double labelSize) {
     degreeTicks(gPad->GetUxmin(), gPad->GetUymin(), gPad->GetUxmax(), labelSize);
 }
 
-// Prefer exact “fa18_inb/out”; otherwise accept keys with “fa18” and (“inb”/“out”) but NOT “supp”.
+// Prefer exact "fa18_inb/out"; otherwise accept keys with "fa18" and ("inb"/"out") but NOT "supp".
 static std::string choose_fa18_key(const std::vector<std::string>& keys, bool want_inb) {
     const std::string exact = want_inb ? "fa18_inb" : "fa18_out";
     for (const auto& k : keys) if (slower(k) == exact) return k;
@@ -280,7 +279,6 @@ static double compute_canvas_ymax(bool ratio_mode,
     double ymax = 0.0;
     const int nrows = (int)Ts.size();
     const int ncols = (int)Q2s.size();
-    std::vector<double> phiC = phiCentersDeg();
 
     for (int r=0; r<nrows; ++r) {
         for (int ccol=0; ccol<ncols; ++ccol) {
@@ -300,10 +298,7 @@ static double compute_canvas_ymax(bool ratio_mode,
                     if (NL <= 0.0) continue; // undefined ratio
                     const double R  = (NH <= 0.0) ? 0.0 : NH/NL;
                     double eR = 0.0;
-                    if (NL > 0.0) {
-                        // eR = eA / NL  == R * (eA / NH) if NH>0
-                        eR = (NH > 0.0) ? (R * (eA / NH)) : (eA / NL);
-                    }
+                    if (NH > 0.0) eR = R * (eA / NH); else if (eA > 0.0) eR = eA / NL;
                     ymax = std::max(ymax, R + eR);
                 }
             }
@@ -311,6 +306,7 @@ static double compute_canvas_ymax(bool ratio_mode,
     }
 
     if (ymax <= 0.0) ymax = ratio_mode ? 1.0 : 0.10;
+    if (!ratio_mode) ymax *= 1.15; // headroom for error bars
     if (ratio_mode)  ymax = std::max(ymax, 1.0);
     return ymax;
 }
@@ -429,8 +425,7 @@ static void draw_one_canvas(const std::string& title,
                     if (L <= 0.0) continue;     // undefined
                     const double R  = (H <= 0.0) ? 0.0 : H/L;
                     double eR = 0.0;
-                    if (H > 0.0) eR = R * (eH / H); // treat Lee as exact here
-                    else if (eH > 0.0) eR = eH / L;
+                    if (H > 0.0) eR = R * (eH / H); else if (eH > 0.0) eR = eH / L;
                     x.push_back(phiC[ip]);
                     y.push_back(R);
                     ey.push_back(eR);
@@ -506,7 +501,7 @@ void plot_pi0_contam_cross_checks(const std::vector<LeeRow>& rows,
                 A[ip]  = a;
                 EA[ip] = ea;
                 B[ip]  = b;
-                any |= (a>0.0 || b>0.0);
+                any |= (a>0.0 || ea>0.0 || b>0.0); // keep bins even if our central value is 0 but we have uncertainty
             }
             return any;
         };
