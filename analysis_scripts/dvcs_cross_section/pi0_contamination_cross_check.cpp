@@ -5,7 +5,6 @@
 // - Rebuilds YOUR numeric bin edges from imports/integrated_bin_v2.csv (load_binning_scheme.h).
 // - Remaps your (ix,iQ,it) to Lee's panels by comparing NUMERIC ranges (with tolerance).
 // - Plots your points at the 12 fixed phi centers implied by ip.
-// - Uses side-aware Lee CSV (separate inb/out lookup).
 // -----------------------------------------------------------------------------
 
 #include "pi0_contamination_cross_check.h"
@@ -45,26 +44,20 @@ namespace fs = std::filesystem;
 // ---------- small utilities ----------
 static inline void info(const std::string& s) { std::cout << "[cross] " << s << std::endl; }
 static inline void warn(const std::string& s) { std::cout << "[cross][warn] " << s << std::endl; }
-static inline std::string slower(std::string s) { for (auto& c: s) c = (char)std::tolower((unsigned char)c); return s; }
+static inline std::string slower(std::string s){ for (auto& c: s) c = (char)std::tolower((unsigned char)c); return s; }
 
-// Loosened tolerance (handles final xB bin drift) and used by index matching.
-static inline bool approx_equal(double a, double b, double abs=1e-3, double rel=5e-4) {
+// Tolerances tuned to tolerate tiny CSV/JSON rounding and the last-bin edge.
+static constexpr double ABS_EPS = 1e-3;
+static constexpr double REL_EPS = 5e-3;
+
+static inline bool approx_equal(double a, double b, double abs=ABS_EPS, double rel=REL_EPS){
     double d = std::fabs(a-b);
     if (d <= abs) return true;
     double m = std::max(std::fabs(a), std::fabs(b));
-    return d <= rel * (m > 0.0 ? m : 1.0);
+    return d <= rel * (m>0.0 ? m : 1.0);
 }
 
-// Overlap-based fallback for bins that do not match exactly but are effectively identical.
-static inline double overlap_frac(std::pair<double,double> a, std::pair<double,double> b) {
-    double lo = std::max(a.first,  b.first);
-    double hi = std::min(a.second, b.second);
-    double ov = std::max(0.0, hi - lo);
-    double span = std::max(a.second, b.second) - std::min(a.first, b.first);
-    return (span > 0.0) ? (ov / span) : 0.0;
-}
-
-static inline void degreeTicks(double xmin, double ymin, double xmax, double labelSize) {
+static inline void degreeTicks(double xmin, double ymin, double xmax, double labelSize){
     TGaxis* ax = new TGaxis(xmin, ymin, xmax, ymin, 0.0, 360.0, 4, "");
     ax->SetLabelFont(42);
     ax->SetLabelSize(labelSize);
@@ -73,20 +66,20 @@ static inline void degreeTicks(double xmin, double ymin, double xmax, double lab
     ax->SetTickSize(0.02);
     ax->Draw();
 }
-static void draw_degree_ticks_here(double labelSize) {
+static void draw_degree_ticks_here(double labelSize){
     degreeTicks(gPad->GetUxmin(), gPad->GetUymin(), gPad->GetUxmax(), labelSize);
 }
 
 // pick Fa18 inb/out from combined JSON period names (avoid *_supp)
-static std::string choose_fa18_key(const std::vector<std::string>& keys, bool want_inb) {
+static std::string choose_fa18_key(const std::vector<std::string>& keys, bool want_inb){
     const std::string exact = want_inb ? "fa18_inb" : "fa18_out";
-    for (const auto& k : keys) if (slower(k) == exact) return k;
-    for (const auto& k : keys) {
+    for (const auto& k : keys) if (slower(k)==exact) return k;
+    for (const auto& k : keys){
         const std::string kl = slower(k);
-        const bool ok = kl.find("fa18") != std::string::npos &&
-                        kl.find("supp") == std::string::npos &&
-                        ((want_inb && kl.find("inb") != std::string::npos) ||
-                         (!want_inb && kl.find("out") != std::string::npos));
+        const bool ok = kl.find("fa18")!=std::string::npos &&
+                        kl.find("supp")==std::string::npos &&
+                        ((want_inb && kl.find("inb")!=std::string::npos) ||
+                         (!want_inb && kl.find("out")!=std::string::npos));
         if (ok) return k;
     }
     return std::string();
@@ -99,12 +92,12 @@ struct AxisSets {
     std::map<int, std::vector<std::pair<double,double>>> t_by_ix;
 };
 
-static AxisSets build_axes_from_rows(const std::vector<LeeRow>& rows) {
+static AxisSets build_axes_from_rows(const std::vector<LeeRow>& rows){
     std::set<std::pair<double,double>> xbset;
     std::map<std::pair<double,double>, std::set<std::pair<double,double>>> q2_by_xb;
     std::map<std::pair<double,double>, std::set<std::pair<double,double>>> t_by_xb;
 
-    for (const auto& r : rows) {
+    for (const auto& r : rows){
         auto xb = std::make_pair(r.xBmin, r.xBmax);
         xbset.insert(xb);
         q2_by_xb[xb].insert({r.Q2min, r.Q2max});
@@ -113,7 +106,7 @@ static AxisSets build_axes_from_rows(const std::vector<LeeRow>& rows) {
 
     AxisSets ax;
     ax.xB.assign(xbset.begin(), xbset.end());
-    for (int ix=0; ix<(int)ax.xB.size(); ++ix) {
+    for (int ix=0; ix<(int)ax.xB.size(); ++ix){
         const auto& xb = ax.xB[ix];
         ax.Q2_by_ix[ix] = { q2_by_xb[xb].begin(), q2_by_xb[xb].end() };
         ax.t_by_ix[ix]  = {  t_by_xb[xb].begin(),  t_by_xb[xb].end()  };
@@ -121,18 +114,46 @@ static AxisSets build_axes_from_rows(const std::vector<LeeRow>& rows) {
     return ax;
 }
 
-// First try exact-ish match, then the best-overlap fallback (require strong overlap).
+// Robust range matching:
+// 1) try endpoint closeness,
+// 2) fall back to center/width closeness,
+// 3) fall back to requiring strong overlap (>95% of the smaller width).
+static inline bool ranges_close_endpoints(const std::pair<double,double>& a,
+                                          const std::pair<double,double>& b){
+    return approx_equal(a.first,b.first) && approx_equal(a.second,b.second);
+}
+static inline bool ranges_close_centerwidth(const std::pair<double,double>& a,
+                                            const std::pair<double,double>& b){
+    const double ca = 0.5*(a.first+a.second);
+    const double cb = 0.5*(b.first+b.second);
+    const double wa = (a.second-a.first);
+    const double wb = (b.second-b.first);
+    return approx_equal(ca,cb) && approx_equal(wa,wb);
+}
+static inline bool ranges_strong_overlap(const std::pair<double,double>& a,
+                                         const std::pair<double,double>& b){
+    const double lo = std::max(a.first,b.first);
+    const double hi = std::min(a.second,b.second);
+    const double overlap = std::max(0.0, hi-lo);
+    const double wmin = std::max(1e-12, std::min(a.second-a.first, b.second-b.first));
+    return (overlap / wmin) >= 0.95;
+}
+
 static inline int find_index_close(const std::pair<double,double>& r,
-                                   const std::vector<std::pair<double,double>>& v) {
-    for (int i=0; i<(int)v.size(); ++i) {
-        if (approx_equal(r.first, v[i].first) && approx_equal(r.second, v[i].second)) return i;
+                                   const std::vector<std::pair<double,double>>& v){
+    // exact-ish endpoints first
+    for (int i=0;i<(int)v.size();++i){
+        if (ranges_close_endpoints(r, v[i])) return i;
     }
-    int best = -1; double bestFrac = -1.0;
-    for (int i=0; i<(int)v.size(); ++i) {
-        double f = overlap_frac(r, v[i]);
-        if (f > bestFrac) { bestFrac = f; best = i; }
+    // center/width next
+    for (int i=0;i<(int)v.size();++i){
+        if (ranges_close_centerwidth(r, v[i])) return i;
     }
-    return (bestFrac >= 0.98) ? best : -1;
+    // overlap fallback (handles last-bin tiny drifts)
+    for (int i=0;i<(int)v.size();++i){
+        if (ranges_strong_overlap(r, v[i])) return i;
+    }
+    return -1;
 }
 
 // ---------- rebuild YOUR numeric axes from integrated_bin_v2.csv ----------
@@ -142,18 +163,18 @@ struct MyAxes {
     std::map<int, std::vector<std::pair<double,double>>> t_by_ix;
 };
 
-static MyAxes build_my_axes(const std::vector<Binning>& scheme) {
+static MyAxes build_my_axes(const std::vector<Binning>& scheme){
     std::set<std::pair<double,double>> xbs;
     for (const auto& b : scheme) xbs.emplace(b.xBmin, b.xBmax);
 
     MyAxes ax;
     ax.xB.assign(xbs.begin(), xbs.end());
 
-    for (int ix=0; ix<(int)ax.xB.size(); ++ix) {
+    for (int ix=0; ix<(int)ax.xB.size(); ++ix){
         const auto xb = ax.xB[ix];
         std::set<std::pair<double,double>> qs, ts;
-        for (const auto& b : scheme) {
-            if (std::make_pair(b.xBmin,b.xBmax) == xb) {
+        for (const auto& b : scheme){
+            if (std::make_pair(b.xBmin,b.xBmax) == xb){
                 qs.emplace(b.Q2min, b.Q2max);
                 ts.emplace(std::fabs(b.tmin), std::fabs(b.tmax));
             }
@@ -167,11 +188,11 @@ static MyAxes build_my_axes(const std::vector<Binning>& scheme) {
 // ---------- read our JSON, pick Fa18 inb/out ----------
 static bool load_our_periods(const std::string& combined_path,
                              json& bins_inb, json& bins_out,
-                             std::string& name_inb, std::string& name_out) {
+                             std::string& name_inb, std::string& name_out){
     std::ifstream f(combined_path);
-    if (!f.is_open()) { warn("Cannot open: " + combined_path); return false; }
+    if (!f.is_open()){ warn("Cannot open: " + combined_path); return false; }
     json J; f >> J;
-    if (!J.contains("periods")) { warn("No 'periods' in combined JSON"); return false; }
+    if (!J.contains("periods")){ warn("No 'periods' in combined JSON"); return false; }
 
     const json& P = J["periods"];
     std::vector<std::string> names; names.reserve(P.size());
@@ -179,13 +200,11 @@ static bool load_our_periods(const std::string& combined_path,
 
     name_inb = choose_fa18_key(names, true);
     name_out = choose_fa18_key(names, false);
-    if (name_inb.empty() || name_out.empty()) {
-        warn("Could not locate both Fa18 inb and Fa18 out in combined JSON");
-        return false;
+    if (name_inb.empty() || name_out.empty()){
+        warn("Could not locate both Fa18 inb and Fa18 out in combined JSON"); return false;
     }
-    if (!P.at(name_inb).contains("bins") || !P.at(name_out).contains("bins")) {
-        warn("Selected periods lack 'bins'");
-        return false;
+    if (!P.at(name_inb).contains("bins") || !P.at(name_out).contains("bins")){
+        warn("Selected periods lack 'bins'"); return false;
     }
     bins_inb = P.at(name_inb)["bins"];
     bins_out = P.at(name_out)["bins"];
@@ -195,7 +214,7 @@ static bool load_our_periods(const std::string& combined_path,
 // ---------- parse our cells (helicity-avg), then REMAP onto Lee grid ----------
 static constexpr int N_PHI_BINS = 12;
 
-static inline double phi_center_from_ip(int ip) {
+static inline double phi_center_from_ip(int ip){
     const double w = 360.0 / double(N_PHI_BINS);
     if (ip < 0) ip = 0;
     if (ip >= N_PHI_BINS) ip = N_PHI_BINS - 1;
@@ -211,7 +230,7 @@ struct Series {
 };
 
 static void accumulate_point(std::map<Key3, Series>& dst, const Key3& k,
-                             double phi_deg, double y, double ey) {
+                             double phi_deg, double y, double ey){
     auto& s = dst[k];
     s.phi.push_back(phi_deg);
     s.val.push_back(y);
@@ -221,8 +240,8 @@ static void accumulate_point(std::map<Key3, Series>& dst, const Key3& k,
 static void collect_and_remap_ours(const json& bins_object,
                                    const MyAxes& myAx,
                                    const AxisSets& leeAx,
-                                   std::map<Key3, Series>& out_side) {
-    for (auto it = bins_object.begin(); it != bins_object.end(); ++it) {
+                                   std::map<Key3, Series>& out_side){
+    for (auto it = bins_object.begin(); it != bins_object.end(); ++it){
         // key is "(ix,iQ,it,ip)"
         int ix=-1,iQ=-1,itb=-1,ip=-1;
         if (std::sscanf(it.key().c_str(), "(%d,%d,%d,%d)", &ix,&iQ,&itb,&ip) != 4) continue;
@@ -256,7 +275,7 @@ static void collect_and_remap_ours(const json& bins_object,
         auto q2R = Q2s_my[iQ];
         auto tR  = Ts_my[itb];
 
-        // map to Lee index space by numeric compare (with tolerant fallback)
+        // map to Lee index space by numeric compare
         int ixL = find_index_close(xbR, leeAx.xB);
         if (ixL < 0) continue;
         const auto& Q2s_L = leeAx.Q2_by_ix.at(ixL);
@@ -271,7 +290,7 @@ static void collect_and_remap_ours(const json& bins_object,
     }
 
     // sort by phi for nicer lines
-    auto sort_by_phi = [](Series& s) {
+    auto sort_by_phi = [](Series& s){
         std::vector<int> idx(s.phi.size());
         for (int i=0;i<(int)idx.size();++i) idx[i]=i;
         std::sort(idx.begin(), idx.end(), [&](int a,int b){ return s.phi[a] < s.phi[b]; });
@@ -282,20 +301,28 @@ static void collect_and_remap_ours(const json& bins_object,
     for (auto& kv : out_side) sort_by_phi(kv.second);
 }
 
-// ---------- gather Lee series by side (xL,yL at Lee's own phi) ----------
+// ---------- gather Lee series (split into inb/out) ----------
 struct LeeSeries { std::vector<double> phi; std::vector<double> val; };
-struct LeeBySide { std::map<Key3, LeeSeries> inb, out; };
+struct LeeBoth { std::map<Key3, LeeSeries> inb, out; };
 
-static LeeBySide collect_lee_byside(const std::vector<LeeRow>& rows, const AxisSets& ax) {
-    LeeBySide maps;
-
-    auto push = [](std::map<Key3,LeeSeries>& M, const Key3& k, double phi, double val) {
-        auto& s = M[k];
-        s.phi.push_back(phi);
-        s.val.push_back(val);
-    };
-    auto sort_map = [](std::map<Key3,LeeSeries>& M) {
-        for (auto& kv : M) {
+static LeeBoth collect_lee_sides(const std::vector<LeeRow>& rows, const AxisSets& ax){
+    LeeBoth B;
+    for (const auto& r : rows){
+        int ix = find_index_close({r.xBmin,r.xBmax}, ax.xB);
+        if (ix<0) continue;
+        int iQ = find_index_close({r.Q2min,r.Q2max}, ax.Q2_by_ix.at(ix));
+        int it = find_index_close({r.tmin, r.tmax }, ax.t_by_ix.at(ix));
+        if (iQ<0 || it<0) continue;
+        const double phi = r.phiavg;
+        if (std::isfinite(r.contam_inb) && r.contam_inb>0.0){
+            auto& s = B.inb[{ix,iQ,it}]; s.phi.push_back(phi); s.val.push_back(r.contam_inb);
+        }
+        if (std::isfinite(r.contam_out) && r.contam_out>0.0){
+            auto& s = B.out[{ix,iQ,it}]; s.phi.push_back(phi); s.val.push_back(r.contam_out);
+        }
+    }
+    auto sort_map = [](std::map<Key3,LeeSeries>& M){
+        for (auto& kv : M){
             auto& s = kv.second;
             std::vector<int> idx(s.phi.size());
             for (int i=0;i<(int)idx.size();++i) idx[i]=i;
@@ -305,34 +332,14 @@ static LeeBySide collect_lee_byside(const std::vector<LeeRow>& rows, const AxisS
             s.phi.swap(p); s.val.swap(v);
         }
     };
-
-    for (const auto& r : rows) {
-        int ix = find_index_close({r.xBmin,r.xBmax}, ax.xB);
-        if (ix<0) continue;
-        int iQ = find_index_close({r.Q2min,r.Q2max}, ax.Q2_by_ix.at(ix));
-        int it = find_index_close({r.tmin, r.tmax }, ax.t_by_ix.at(ix));
-        if (iQ<0 || it<0) continue;
-        const Key3 k{ix,iQ,it};
-        const double phi = r.phiavg;
-
-        if (std::isfinite(r.contam_inb) && r.contam_inb > 0.0) push(maps.inb, k, phi, r.contam_inb);
-        if (std::isfinite(r.contam_out) && r.contam_out > 0.0) push(maps.out, k, phi, r.contam_out);
-    }
-
-    sort_map(maps.inb);
-    sort_map(maps.out);
-    return maps;
+    sort_map(B.inb);
+    sort_map(B.out);
+    return B;
 }
 
 // ---------- plotting helpers ----------
-static double ymax_series(const std::vector<double>& y, const std::vector<double>* ey=nullptr) {
-    double m=0.0;
-    for (size_t i=0;i<y.size();++i) {
-        double v=y[i];
-        if (ey) v += std::max(0.0, (*ey)[i]);
-        m = std::max(m, v);
-    }
-    return m;
+static double ymax_series(const std::vector<double>& y, const std::vector<double>* ey=nullptr){
+    double m=0.0; for (size_t i=0;i<y.size();++i){ double v=y[i]; if (ey) v += std::max(0.0, (*ey)[i]); m = std::max(m, v); } return m;
 }
 
 static double compute_canvas_ymax(bool ratio_mode,
@@ -340,26 +347,26 @@ static double compute_canvas_ymax(bool ratio_mode,
                                   const std::vector<std::pair<double,double>>& Ts,
                                   const std::function<void(int,int,
                                                            std::vector<double>&,std::vector<double>&,std::vector<double>&,
-                                                           std::vector<double>&,std::vector<double>&)>& fetch) {
+                                                           std::vector<double>&,std::vector<double>&)>& fetch){
     double ymax = 0.0;
-    for (int r=0; r<(int)Ts.size(); ++r) {
-        for (int c=0; c<(int)Q2s.size(); ++c) {
+    for (int r=0; r<(int)Ts.size(); ++r){
+        for (int c=0; c<(int)Q2s.size(); ++c){
             std::vector<double> xH,yH,eH,xL,yL;
             fetch(c,r,xH,yH,eH,xL,yL);
-            if (!ratio_mode) {
+            if (!ratio_mode){
                 ymax = std::max(ymax, ymax_series(yH, &eH));
                 ymax = std::max(ymax, ymax_series(yL, nullptr));
             } else {
                 const double tol = 20.0;
                 std::vector<double> R, eR;
-                for (size_t i=0;i<xH.size();++i) {
+                for (size_t i=0;i<xH.size();++i){
                     double phi = xH[i];
                     double best=1e9; int jbest=-1;
-                    for (size_t j=0;j<xL.size();++j) {
+                    for (size_t j=0;j<xL.size();++j){
                         double d = std::fabs(xL[j]-phi);
                         if (d<best){ best=d; jbest=(int)j; }
                     }
-                    if (jbest>=0 && best<=tol && yL[jbest]>0.0) {
+                    if (jbest>=0 && best<=tol && yL[jbest]>0.0){
                         double r = (yH[i]<=0.0) ? 0.0 : yH[i]/yL[jbest];
                         double er=0.0;
                         if (yH[i]>0.0) er = r*(eH[i]/yH[i]);
@@ -379,7 +386,7 @@ static double compute_canvas_ymax(bool ratio_mode,
 static TGraphErrors* draw_points(const std::vector<double>& X,
                                  const std::vector<double>& Y,
                                  const std::vector<double>& EY,
-                                 int mstyle, int color) {
+                                 int mstyle, int color){
     std::vector<double> EX(X.size(), 0.0);
     auto* g = new TGraphErrors((int)X.size(),
                                const_cast<double*>(X.data()),
@@ -401,7 +408,7 @@ static void draw_canvas(const std::string& title,
                                                  std::vector<double>&,std::vector<double>&,std::vector<double>&,
                                                  std::vector<double>&,std::vector<double>&)>& fetch,
                         const std::string& out_png,
-                        bool ratio_mode) {
+                        bool ratio_mode){
     const int nrows = (int)Ts.size();
     const int ncols = (int)Q2s.size();
     if (nrows==0 || ncols==0) return;
@@ -425,8 +432,8 @@ static void draw_canvas(const std::string& title,
     pGrid->SetFillStyle(0); pGrid->SetBorderSize(0); pGrid->Draw();
     pGrid->cd(); pGrid->Divide(ncols, nrows, 0.00, 0.00);
 
-    for (int r=0; r<nrows; ++r) {
-        for (int col=0; col<ncols; ++col) {
+    for (int r=0; r<nrows; ++r){
+        for (int col=0; col<ncols; ++col){
             pGrid->cd(r*ncols + col + 1);
             gPad->SetGrid(1,1);
             gPad->SetTicks(1,1);
@@ -458,17 +465,17 @@ static void draw_canvas(const std::string& title,
                 Form("Q^{2} in [%.2g, %.2g], -t in [%.2g, %.2g]",
                      Q2s[col].first, Q2s[col].second, Ts[r].first, Ts[r].second));
 
-            if (ratio_mode) {
+            if (ratio_mode){
                 // build ratio at our phi against nearest Lee phi (20 deg tolerance)
                 const double tol = 20.0;
                 std::vector<double> xr, yr, er;
-                for (size_t i=0;i<xH.size();++i) {
+                for (size_t i=0;i<xH.size();++i){
                     double best=1e9; int jbest=-1;
-                    for (size_t j=0;j<xL.size();++j) {
+                    for (size_t j=0;j<xL.size();++j){
                         double d = std::fabs(xL[j]-xH[i]);
                         if (d<best){ best=d; jbest=(int)j; }
                     }
-                    if (jbest>=0 && best<=tol && yL[jbest]>0.0) {
+                    if (jbest>=0 && best<=tol && yL[jbest]>0.0){
                         double r = (yH[i]<=0.0) ? 0.0 : yH[i]/yL[jbest];
                         double er_i = 0.0;
                         if (yH[i]>0.0) er_i = r*(eH[i]/yH[i]);
@@ -494,7 +501,7 @@ static void draw_canvas(const std::string& title,
 // ---------- driver ----------
 void plot_pi0_contam_cross_checks(const std::vector<LeeRow>& rows,
                                   const std::string& pi0_combined_json,
-                                  const std::string& output_base_dir) {
+                                  const std::string& output_base_dir){
     fs::create_directories(output_base_dir);
 
     gStyle->SetOptTitle(0);
@@ -507,9 +514,9 @@ void plot_pi0_contam_cross_checks(const std::vector<LeeRow>& rows,
     gStyle->SetLabelFont(42,"XYZ");
     gStyle->SetTextFont(42);
 
-    // 1) Build Lee axes and gather Lee series (side-aware)
+    // 1) Build Lee axes and gather Lee series (split sides)
     AxisSets leeAx = build_axes_from_rows(rows);
-    auto lee_csv = collect_lee_byside(rows, leeAx);
+    LeeBoth lee = collect_lee_sides(rows, leeAx);
 
     // 2) Load our combined JSON, pick Fa18 inb/out
     json bins_inb, bins_out; std::string name_inb, name_out;
@@ -519,48 +526,41 @@ void plot_pi0_contam_cross_checks(const std::vector<LeeRow>& rows,
     // 3) Rebuild YOUR axes from CSV
     const std::string my_csv = "imports/integrated_bin_v2.csv";
     auto my_scheme = load_binning_scheme(my_csv);
-    if (my_scheme.empty()) { warn("Your binning CSV parsed empty: " + my_csv); return; }
+    if (my_scheme.empty()){ warn("Your binning CSV parsed empty: "+my_csv); return; }
     MyAxes myAx = build_my_axes(my_scheme);
 
-    // 4) Collect our points and REMAP
+    // 4) Collect our points and REMAP (index -> numeric -> Lee indices)
     std::map<Key3, Series> ours_inb, ours_out;
     collect_and_remap_ours(bins_inb, myAx, leeAx, ours_inb);
     collect_and_remap_ours(bins_out, myAx, leeAx, ours_out);
 
     // 5) Plot per Lee xB panel
-    for (int ix=0; ix<(int)leeAx.xB.size(); ++ix) {
+    for (int ix=0; ix<(int)leeAx.xB.size(); ++ix){
         const auto& Q2s = leeAx.Q2_by_ix.at(ix);
         const auto& Ts  = leeAx.t_by_ix.at(ix);
         if (Q2s.empty() || Ts.empty()) continue;
 
         auto fetch_inb = [&](int iQ, int it,
                              std::vector<double>& xH, std::vector<double>& yH, std::vector<double>& eH,
-                             std::vector<double>& xL, std::vector<double>& yL) {
+                             std::vector<double>& xL, std::vector<double>& yL){
             const Key3 k{ix,iQ,it};
-            // ours
-            {
-                auto itH = ours_inb.find(k);
-                if (itH != ours_inb.end()) { xH = itH->second.phi; yH = itH->second.val; eH = itH->second.err; }
-                else { xH.clear(); yH.clear(); eH.clear(); }
-            }
-            // Lee (inb)
-            {
-                auto itL = lee_csv.inb.find(k);
-                if (itL != lee_csv.inb.end()) { xL = itL->second.phi; yL = itL->second.val; }
-                else { xL.clear(); yL.clear(); }
-            }
+            auto itH = ours_inb.find(k);
+            if (itH != ours_inb.end()){ xH = itH->second.phi; yH = itH->second.val; eH = itH->second.err; }
+            else { xH.clear(); yH.clear(); eH.clear(); }
+            auto itL = lee.inb.find(k);
+            if (itL != lee.inb.end()){ xL = itL->second.phi; yL = itL->second.val; }
+            else { xL.clear(); yL.clear(); }
         };
 
         auto fetch_out = [&](int iQ, int it,
                              std::vector<double>& xH, std::vector<double>& yH, std::vector<double>& eH,
-                             std::vector<double>& xL, std::vector<double>& yL) {
+                             std::vector<double>& xL, std::vector<double>& yL){
             const Key3 k{ix,iQ,it};
             auto itH = ours_out.find(k);
-            if (itH != ours_out.end()) { xH = itH->second.phi; yH = itH->second.val; eH = itH->second.err; }
+            if (itH != ours_out.end()){ xH = itH->second.phi; yH = itH->second.val; eH = itH->second.err; }
             else { xH.clear(); yH.clear(); eH.clear(); }
-            // Lee (out)
-            auto itL = lee_csv.out.find(k);
-            if (itL != lee_csv.out.end()) { xL = itL->second.phi; yL = itL->second.val; }
+            auto itL = lee.out.find(k);
+            if (itL != lee.out.end()){ xL = itL->second.phi; yL = itL->second.val; }
             else { xL.clear(); yL.clear(); }
         };
 
