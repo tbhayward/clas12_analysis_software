@@ -14,15 +14,12 @@
 //   BSA computed from radiatively-corrected cross sections:
 //       A_LU(phi) = [sigma_plus - sigma_minus] / [ P * (sigma_plus + sigma_minus) ]
 //   with error propagation from sigma uncertainties.
-// - NEW: For any period where cross-section overlays are available, also write a
-//   per-bin SINGLE-CANVAS comparison (counts vs xsec) for every populated cell.
-//   Saved under: <out_root_dir>/bsa_plots/<group>/single_bin/plot_bsa_vs_xsec_single_<group>_xB_<ix>_Q2_<iQ>_t_<it>.png
-//
 // - Writes per-group fit JSONs (counts-based) to: <out_root_dir>/jsons/BSA_fits/BSA_fits_<group>.json
 // - Writes all-periods rollup (counts-based) to:   <out_root_dir>/jsons/BSA_fits_all_periods.json
 // - Writes 10.6 combined (counts-based) to:        <out_root_dir>/jsons/BSA_fits_combined_10.6.json
 // - Saves BLUE plots under:                         <out_root_dir>/bsa_plots/<group>/plot_bsa_<group>_xB_<ix>.png
 // - Saves OVERLAY plots under:                      <out_root_dir>/bsa_plots/<group>/plot_bsa_vs_xsec_<group>_xB_<ix>.png
+// - NEW: Saves single-cell OVERLAY plots under:     <out_root_dir>/bsa_plots/<group>/single/plot_bsa_vs_xsec_<group>_xB_<ix>_Q_<iQ>_t_<it>.png
 //
 // Names and bridging:
 // - Corrected-counts master JSON groups use lower-case, no DVCS_ prefix, e.g. "sp18_inb".
@@ -59,7 +56,9 @@
 #include <Math/Functor.h>
 
 #include <algorithm>
+#include <array>
 #include <cctype>
+#include <cstdio>
 #include <cmath>
 #include <filesystem>
 #include <fstream>
@@ -200,15 +199,15 @@ static void uniqueQT_for_xB(
 // Extract {...} block that follows a key (tiny JSON helper for counts master)
 static std::string objForKey(const std::string& s, const std::string& key) {
     size_t p = s.find(key);
-    if (p==std::string::npos) fatal("Key '"+key+"' not found.");
+    if (p==std::string::npos) fatal(std::string("Key '") + key + "' not found.");
     size_t br = s.find('{', p);
-    if (br==std::string::npos) fatal("Malformed JSON after key '"+key+"'");
+    if (br==std::string::npos) fatal(std::string("Malformed JSON after key '") + key + "'");
     int d=0; size_t i=br;
     for (; i<s.size(); ++i) {
         if (s[i]=='{') d++;
         else if (s[i]=='}') { d--; if (!d) { ++i; break; } }
     }
-    if (d!=0) fatal("Unbalanced braces near key '"+key+"'");
+    if (d!=0) fatal(std::string("Unbalanced braces near key '") + key + "'");
     return s.substr(br, i-br);
 }
 
@@ -218,7 +217,7 @@ static long long parseIntAfterColon_strict(const std::string& s, size_t cpos, co
     size_t b = a;
     while (b < s.size() && (std::isdigit((unsigned char)s[b]) || s[b]=='-' || s[b]=='+')) ++b;
     try { return std::stoll(s.substr(a,b-a)); }
-    catch(...) { fatal("Non-integer value in "+ctx); }
+    catch(...) { fatal(std::string("Non-integer value in ") + ctx); }
     return 0;
 }
 
@@ -231,7 +230,7 @@ static double parseDoubleAfterColon_num(const std::string& s, size_t cpos, const
     };
     while (b < s.size() && !isdelim(s[b])) ++b;
     std::string raw = s.substr(a, b-a);
-    try { return std::stod(raw); } catch(...) { fatal("Non-numeric value in "+ctx); }
+    try { return std::stod(raw); } catch(...) { fatal(std::string("Non-numeric value in ") + ctx); }
     return 0.0;
 }
 
@@ -239,17 +238,17 @@ static double parseDoubleAfterColon_num(const std::string& s, size_t cpos, const
 struct BinningMeta { int phi_bins=0; size_t nx=0, nQ=0, nt=0; };
 
 static BinningMeta load_meta_from_master(const std::string& s) {
-    std::string meta = objForKey(s, "\"binning_meta\"");
+    std::string meta = objForKey(s, R"("binning_meta")");
     auto findN = [&](const char* k, const char* ctx)->int{
-        size_t p = meta.find(k); if (p==std::string::npos) fatal(std::string("binning_meta missing ")+k);
-        size_t c = meta.find(':', p); if (c==std::string::npos) fatal(std::string("binning_meta malformed for ")+k);
+        size_t p = meta.find(k); if (p==std::string::npos) fatal(std::string("binning_meta missing ") + k);
+        size_t c = meta.find(':', p); if (c==std::string::npos) fatal(std::string("binning_meta malformed for ") + k);
         return (int)parseIntAfterColon_strict(meta, c, ctx);
     };
     BinningMeta bm;
-    bm.phi_bins = findN("\"phi_bins\"", "phi_bins");
-    bm.nx       = (size_t)findN("\"xB_bins\"", "xB_bins");
-    bm.nQ       = (size_t)findN("\"Q2_bins\"", "Q2_bins");
-    bm.nt       = (size_t)findN("\"t_bins\"",  "t_bins");
+    bm.phi_bins = findN(R"("phi_bins")", "phi_bins");
+    bm.nx       = (size_t)findN(R"("xB_bins")", "xB_bins");
+    bm.nQ       = (size_t)findN(R"("Q2_bins")", "Q2_bins");
+    bm.nt       = (size_t)findN(R"("t_bins")",  "t_bins");
     if (bm.phi_bins != N_PHI_BINS) fatal("phi_bins mismatch: expected 12.");
     return bm;
 }
@@ -258,12 +257,12 @@ static AllGroups load_corrected_master(const std::string& master_path,
                                        BinningMeta& out_meta,
                                        std::vector<std::string>& group_order) {
     std::ifstream ifs(master_path);
-    if (!ifs) fatal(std::string("Cannot open master corrected counts: ")+master_path);
+    if (!ifs) fatal(std::string("Cannot open master corrected counts: ") + master_path);
     std::string s((std::istreambuf_iterator<char>(ifs)), std::istreambuf_iterator<char>());
 
     out_meta = load_meta_from_master(s);
 
-    std::string groupsObj = objForKey(s, "\"groups\"");
+    std::string groupsObj = objForKey(s, R"("groups")");
 
     AllGroups out;
     size_t gk=0;
@@ -273,9 +272,9 @@ static AllGroups load_corrected_master(const std::string& master_path,
         std::string gname = groupsObj.substr(q1+1, q2-q1-1);
         group_order.push_back(gname);
 
-        size_t binsS = groupsObj.find("\"bins\"", q2);
-        if (binsS==std::string::npos) fatal("Group "+gname+" missing 'bins' object.");
-        int d=0; size_t br = groupsObj.find('{', binsS); if (br==std::string::npos) fatal("Malformed 'bins' in group "+gname);
+        size_t binsS = groupsObj.find(R"("bins")", q2);
+        if (binsS==std::string::npos) fatal(std::string("Group ") + gname + " missing 'bins' object.");
+        int d=0; size_t br = groupsObj.find('{', binsS); if (br==std::string::npos) fatal(std::string("Malformed 'bins' in group ") + gname);
         size_t i=br; for (; i<groupsObj.size(); ++i) {
             if (groupsObj[i]=='{') ++d;
             else if (groupsObj[i]=='}') { --d; if (!d) { ++i; break; } }
@@ -286,11 +285,11 @@ static AllGroups load_corrected_master(const std::string& master_path,
         size_t p=0; int nb=0;
         while (true) {
             size_t k1=binsObj.find('"', p); if (k1==std::string::npos) break;
-            size_t k2=binsObj.find('"', k1+1); if (k2==std::string::npos) fatal("Malformed bin key in "+gname);
+            size_t k2=binsObj.find('"', k1+1); if (k2==std::string::npos) fatal(std::string("Malformed bin key in ") + gname);
             std::string key = binsObj.substr(k1+1, k2-k1-1);
-            BinKey bk; if (!parse_tuple_key(key, bk)) fatal("Bad bin tuple key in "+gname);
+            BinKey bk; if (!parse_tuple_key(key, bk)) fatal(std::string("Bad bin tuple key in ") + gname);
 
-            size_t vS = binsObj.find('{', k2); if (vS==std::string::npos) fatal("Missing bin object in "+gname);
+            size_t vS = binsObj.find('{', k2); if (vS==std::string::npos) fatal(std::string("Missing bin object in ") + gname);
             int d2=0; size_t j=vS;
             for (; j<binsObj.size(); ++j) {
                 if (binsObj[j]=='{') ++d2;
@@ -299,25 +298,25 @@ static AllGroups load_corrected_master(const std::string& master_path,
             std::string v = binsObj.substr(vS, j-vS);
 
             // helicity +1
-            size_t hp = v.find("\"+1\"");
-            if (hp==std::string::npos) fatal("Missing +1 block in "+gname);
-            size_t hv = v.find("\"value\"", hp); if (hv==std::string::npos) fatal("Missing +1.value in "+gname");
-            size_t hc = v.find(':', hv); if (hc==std::string::npos) fatal("Malformed +1.value in "+gname);
+            size_t hp = v.find(R"("+1")");
+            if (hp==std::string::npos) fatal(std::string("Missing +1 block in ")+gname);
+            size_t hv = v.find(R"("value")", hp); if (hv==std::string::npos) fatal(std::string("Missing +1.value in ")+gname);
+            size_t hc = v.find(':', hv);         if (hc==std::string::npos) fatal(std::string("Malformed +1.value in ")+gname);
             double Np = parseDoubleAfterColon_num(v, hc, gname+" (+1).value");
 
-            size_t he = v.find("\"err\"", hp); if (he==std::string::npos) fatal("Missing +1.err in "+gname);
-            size_t hce = v.find(':', he); if (hce==std::string::npos) fatal("Malformed +1.err in "+gname);
+            size_t he = v.find(R"("err")", hp);  if (he==std::string::npos) fatal(std::string("Missing +1.err in ")+gname);
+            size_t hce = v.find(':', he);        if (hce==std::string::npos) fatal(std::string("Malformed +1.err in ")+gname);
             double ep = parseDoubleAfterColon_num(v, hce, gname+" (+1).err");
 
             // helicity -1
-            size_t mp = v.find("\"-1\"");
-            if (mp==std::string::npos) fatal("Missing -1 block in "+gname);
-            size_t mv = v.find("\"value\"", mp); if (mv==std::string::npos) fatal("Missing -1.value in "+gname");
-            size_t mc = v.find(':', mv); if (mc==std::string::npos) fatal("Malformed -1.value in "+gname);
+            size_t mp = v.find(R"("-1")");
+            if (mp==std::string::npos) fatal(std::string("Missing -1 block in ")+gname);
+            size_t mv = v.find(R"("value")", mp); if (mv==std::string::npos) fatal(std::string("Missing -1.value in ")+gname);
+            size_t mc = v.find(':', mv);         if (mc==std::string::npos) fatal(std::string("Malformed -1.value in ")+gname);
             double Nm = parseDoubleAfterColon_num(v, mc, gname+" (-1).value");
 
-            size_t me = v.find("\"err\"", mp); if (me==std::string::npos) fatal("Missing -1.err in "+gname);
-            size_t mce = v.find(':', me); if (mce==std::string::npos) fatal("Malformed -1.err in "+gname);
+            size_t me = v.find(R"("err")", mp);  if (me==std::string::npos) fatal(std::string("Missing -1.err in ")+gname);
+            size_t mce = v.find(':', me);        if (mce==std::string::npos) fatal(std::string("Malformed -1.err in ")+gname);
             double em = parseDoubleAfterColon_num(v, mce, gname+" (-1).err");
 
             (void)ep; (void)em;
@@ -660,7 +659,7 @@ static XsecTable build_overlay_table(const std::string& dir, const std::vector<s
 // ------------ form BSA points from xsec overlay for a cell ------------
 static std::vector<BSApt> bsa_from_xsec_cell(const XsecBin12& xb, double P_used) {
     std::vector<BSApt> pts(N_PHI_BINS);
-    for (int i=0;i<N_PHI_BINS;++i) {
+    for (int i=0; i<N_PHI_BINS; ++i) {
         const double sp  = xb.splus[i];
         const double sm  = xb.sminus[i];
         const double esp = xb.splus_err[i];
@@ -692,6 +691,175 @@ static std::vector<BSApt> bsa_from_xsec_cell(const XsecBin12& xb, double P_used)
     return pts;
 }
 
+// ------------ single-cell OVERLAY plot (counts vs xsec) ------------
+static void plot_single_cell_overlay_canvas(
+    const std::string& period,
+    const std::pair<double,double>& xb_range,
+    const std::pair<double,double>& Q2_range,
+    const std::pair<double,double>& t_range,
+    const std::vector<double>& phi_deg,
+    const CellResult& countsCell,
+    const XsecBin12* xsecCell,
+    const std::string& out_png_path
+) {
+    const int W = 700, H = 550;
+    TCanvas* c = new TCanvas("c_single", "c_single", W, H);
+    c->cd();
+
+    gPad->SetGrid(1,1);
+    gPad->SetTopMargin(0.12);
+    gPad->SetBottomMargin(0.18);
+    gPad->SetLeftMargin(0.16);
+    gPad->SetRightMargin(0.14);
+
+    TH1* frame = gPad->DrawFrame(0.0, -1.05, 360.0, 1.05);
+    TAxis* ax = frame->GetXaxis();
+    TAxis* ay = frame->GetYaxis();
+
+    ax->SetLabelSize(0.0001);
+    ax->SetTitle("#phi (deg)");
+    ay->SetTitle("A_{LU}");
+    ax->CenterTitle(); ay->CenterTitle();
+    ax->SetNdivisions(505);
+
+    ax->SetTitleSize(0.060);
+    ay->SetTitleSize(0.060);
+    ay->SetLabelSize(0.048);
+
+    ax->SetTitleOffset(1.25);
+    ay->SetTitleOffset(1.40);
+
+    drawDegreeTicks(gPad->GetUxmin(), gPad->GetUymin(), gPad->GetUxmax(), 0.048);
+
+    {
+        TLatex subt;
+        subt.SetNDC();
+        subt.SetTextFont(42);
+        subt.SetTextSize(0.05);
+        subt.SetTextAlign(21);
+        std::ostringstream st;
+        st << Form("%s  x_{B} in [%.2g, %.2g]   Q^{2} in [%.2g, %.2g]   -t in [%.2g, %.2g]",
+                   period.c_str(),
+                   xb_range.first, xb_range.second,
+                   Q2_range.first, Q2_range.second,
+                   t_range.first,  t_range.second);
+        subt.DrawLatex(0.50, 0.94, st.str().c_str());
+    }
+
+    // BLUE counts points
+    std::vector<double> xc, yc, eyc;
+    for (int ip=0; ip<N_PHI_BINS; ++ip) {
+        const auto& p = countsCell.points[ip];
+        if (!p.valid) continue;
+        xc.push_back(phi_deg[ip]);
+        yc.push_back(p.bsa);
+        eyc.push_back(std::max(1e-6, p.err));
+    }
+    if (!xc.empty()) {
+        TGraphErrors* gr = new TGraphErrors((int)xc.size(), xc.data(), yc.data(), nullptr, eyc.data());
+        gr->SetMarkerStyle(20);
+        gr->SetMarkerSize(1.1);
+        gr->SetLineWidth(2);
+        gr->SetLineColor(kBlue+1);
+        gr->SetMarkerColor(kBlue+1);
+        gr->Draw("P SAME");
+    }
+
+    // BLUE fit
+    if (countsCell.fit.ndf > 0 || countsCell.fit.status == 0) {
+        const int NS=721;
+        std::vector<double> xd(NS), yd(NS);
+        for (int i=0;i<NS;++i){
+            double deg = double(i)*0.5;
+            double rad = deg * (TWO_PI/360.0);
+            double denom = 1.0 + countsCell.fit.B1*std::cos(rad);
+            if (denom < EPS_DEN_EVAL) denom = EPS_DEN_EVAL;
+            double val = countsCell.fit.C + (countsCell.fit.A*std::sin(rad))/denom;
+            xd[i] = deg; yd[i] = val;
+        }
+        TGraph* gfit = new TGraph(NS, xd.data(), yd.data());
+        gfit->SetLineColor(kBlue+1);
+        gfit->SetLineStyle(2);
+        gfit->SetLineWidth(1);
+        gfit->Draw("L SAME");
+    }
+
+    // RED overlay points and fit (if provided)
+    FitRes redFit{};
+    bool haveRed = false;
+    if (xsecCell && xsecCell->valid) {
+        const double P_used = std::max(1e-12, countsCell.P_used);
+        auto redPts = bsa_from_xsec_cell(*xsecCell, P_used);
+
+        std::vector<double> xr, yr, eyr;
+        for (int ip=0; ip<N_PHI_BINS; ++ip) {
+            if (!redPts[ip].valid) continue;
+            xr.push_back(phi_deg[ip]);
+            yr.push_back(redPts[ip].bsa);
+            eyr.push_back(std::max(1e-6, redPts[ip].err));
+        }
+        if (!xr.empty()) {
+            TGraphErrors* grr = new TGraphErrors((int)xr.size(), xr.data(), yr.data(), nullptr, eyr.data());
+            grr->SetMarkerStyle(24);
+            grr->SetMarkerSize(1.1);
+            grr->SetLineWidth(2);
+            grr->SetLineColor(kRed+1);
+            grr->SetMarkerColor(kRed+1);
+            grr->Draw("P SAME");
+        }
+
+        redFit = fit_cell(redPts);
+        if (redFit.ndf > 0 || redFit.status == 0) {
+            const int NS=721;
+            std::vector<double> xfd(NS), yfd(NS);
+            for (int i=0;i<NS;++i){
+                double deg = double(i)*0.5;
+                double rad = deg * (TWO_PI/360.0);
+                double denom = 1.0 + redFit.B1*std::cos(rad);
+                if (denom < EPS_DEN_EVAL) denom = EPS_DEN_EVAL;
+                double val = redFit.C + (redFit.A*std::sin(rad))/denom;
+                xfd[i] = deg; yfd[i] = val;
+            }
+            TGraph* gfitr = new TGraph(NS, xfd.data(), yfd.data());
+            gfitr->SetLineColor(kRed+1);
+            gfitr->SetLineStyle(2);
+            gfitr->SetLineWidth(1);
+            gfitr->Draw("L SAME");
+        }
+        haveRed = true;
+    }
+
+    // Legend
+    TLegend* leg = new TLegend(0.40, 0.68, 0.86, 0.88);
+    leg->SetMargin(0.04);
+    leg->SetBorderSize(1);
+    leg->SetLineColor(kBlack);
+    leg->SetFillColor(kWhite);
+    leg->SetFillStyle(1001);
+    leg->SetTextFont(42);
+    leg->SetTextSize(0.048);
+
+    leg->AddEntry((TObject*)nullptr,
+                  Form("counts: A = %.3f #pm %.3f", countsCell.fit.A, countsCell.fit.Aerr),
+                  "");
+    if (haveRed) {
+        if (redFit.ndf > 0 || redFit.status == 0) {
+            leg->AddEntry((TObject*)nullptr,
+                          Form("#sigma: A = %.3f #pm %.3f", redFit.A, redFit.Aerr),
+                          "");
+        } else {
+            leg->AddEntry((TObject*)nullptr, "#sigma: A = n/a", "");
+        }
+    } else {
+        leg->AddEntry((TObject*)nullptr, "#sigma: missing", "");
+    }
+    leg->Draw();
+
+    c->SaveAs(out_png_path.c_str());
+    std::cout << "[bsa] Wrote " << out_png_path << "\n";
+    delete c;
+}
+
 // ------------ plot counts-based cells (BLUE), optionally overlay xsec (RED) ------------
 static void plot_cells_for_period(
     const std::string& period,
@@ -706,6 +874,9 @@ static void plot_cells_for_period(
     namespace fs = std::filesystem;
     std::error_code ec;
     fs::create_directories(out_dir_plots, ec);
+
+    // also make a "single" subdir for the per-cell overlay plots
+    fs::create_directories(fs::path(out_dir_plots)/"single", ec);
 
     static const auto PHI_DEG = phiCentersDeg();
 
@@ -767,7 +938,7 @@ static void plot_cells_for_period(
                 pGrid->cd(r*ncols + ccol + 1);
                 gPad->SetGrid(1,1);
 
-                // margins
+                // ---- margins tuned to avoid clipping of y-title and legend
                 gPad->SetTopMargin(0.12);
                 gPad->SetBottomMargin(0.18);
                 gPad->SetLeftMargin(0.16);
@@ -792,7 +963,7 @@ static void plot_cells_for_period(
 
                 drawDegreeTicks(gPad->GetUxmin(), gPad->GetUymin(), gPad->GetUxmax(), 0.048);
 
-                // ---- per-subplot title
+                // ---- per-subplot title with smaller font
                 {
                     TLatex subt;
                     subt.SetNDC();
@@ -864,7 +1035,7 @@ static void plot_cells_for_period(
                                   Form("counts: A = %.3f #pm %.3f", blueFit.A, blueFit.Aerr),
                                   "");
 
-                    // If overlay present, add #sigma
+                    // If overlay present, add red points/fit
                     if (xsec_overlay) {
                         auto itX = xsec_overlay->find(std::make_tuple(ix, iQ_global, it_global));
                         if (itX != xsec_overlay->end() && itX->second.valid) {
@@ -915,6 +1086,15 @@ static void plot_cells_for_period(
                             } else {
                                 leg->AddEntry((TObject*)nullptr, "#sigma: A = n/a", "");
                             }
+
+                            // --------- NEW: write single-cell overlay canvas too
+                            std::ostringstream op;
+                            op << out_dir_plots << "/single/plot_bsa_vs_xsec_" << period
+                               << "_xB_" << ix << "_Q_" << iQ_global << "_t_" << it_global << ".png";
+                            plot_single_cell_overlay_canvas(
+                                period, xb, Q2_slice[ccol], t_slice[r], PHI_DEG, cr, &(itX->second), op.str()
+                            );
+
                         } else {
                             leg->AddEntry((TObject*)nullptr, "#sigma: missing", "");
                         }
@@ -933,200 +1113,6 @@ static void plot_cells_for_period(
         c->SaveAs(fout.str().c_str());
         delete c;
         std::cout << "[bsa] Wrote " << fout.str() << "\n";
-    }
-}
-
-// ------------ NEW: per-bin single-canvas comparison (counts vs xsec) ------------
-static void plot_single_bin_compare_for_period(
-    const std::string& period,
-    const std::vector<std::pair<double,double>>& xB_bins,
-    const std::vector<std::pair<double,double>>& Q2_bins,
-    const std::vector<std::pair<double,double>>& t_bins,
-    const std::map<std::tuple<int,int,int>, CellResult>& cells,
-    const std::string& out_dir_plots,
-    const XsecTable& xsec_overlay
-) {
-    namespace fs = std::filesystem;
-    const auto PHI_DEG = phiCentersDeg();
-
-    fs::path single_dir = fs::path(out_dir_plots) / "single_bin";
-    std::error_code ec;
-    fs::create_directories(single_dir, ec);
-
-    for (int ix=0; ix<(int)xB_bins.size(); ++ix) {
-        for (int iQ=0; iQ<(int)Q2_bins.size(); ++iQ) {
-            for (int itb=0; itb<(int)t_bins.size(); ++itb) {
-                const auto key = std::make_tuple(ix,iQ,itb);
-                auto itC = cells.find(key);
-                auto itX = xsec_overlay.find(key);
-                if (itC == cells.end()) continue;
-                if (itX == xsec_overlay.end() || !itX->second.valid) continue;
-
-                const CellResult& cr = itC->second;
-                const double P_used = std::max(1e-12, cr.P_used);
-                const auto redPts   = bsa_from_xsec_cell(itX->second, P_used);
-
-                // Check we have at least a couple of valid points to draw
-                int valid_blue = 0, valid_red = 0;
-                for (int i=0;i<N_PHI_BINS;++i) {
-                    if (cr.points[i].valid) ++valid_blue;
-                    if (redPts[i].valid)    ++valid_red;
-                }
-                if (valid_blue < 2 && valid_red < 2) continue;
-
-                std::ostringstream cname;
-                cname << "c_bsa_vs_xsec_single_" << period
-                      << "_xB" << ix << "_Q2" << iQ << "_t" << itb;
-
-                TCanvas* c = new TCanvas(cname.str().c_str(), cname.str().c_str(), 900, 650);
-                gPad->SetGrid(1,1);
-                gPad->SetTopMargin(0.12);
-                gPad->SetBottomMargin(0.18);
-                gPad->SetLeftMargin(0.16);
-                gPad->SetRightMargin(0.14);
-
-                TH1* frame = gPad->DrawFrame(0.0, -1.05, 360.0, 1.05);
-                frame->GetXaxis()->SetTitle("#phi (deg)");
-                frame->GetYaxis()->SetTitle("A_{LU}");
-                frame->GetXaxis()->CenterTitle();
-                frame->GetYaxis()->CenterTitle();
-                frame->GetXaxis()->SetNdivisions(505);
-                frame->GetXaxis()->SetTitleSize(0.060);
-                frame->GetYaxis()->SetTitleSize(0.060);
-                frame->GetYaxis()->SetLabelSize(0.048);
-                frame->GetXaxis()->SetTitleOffset(1.25);
-                frame->GetYaxis()->SetTitleOffset(1.40);
-
-                drawDegreeTicks(gPad->GetUxmin(), gPad->GetUymin(), gPad->GetUxmax(), 0.048);
-
-                // Subtitle with bin ranges
-                {
-                    TLatex subt;
-                    subt.SetNDC();
-                    subt.SetTextFont(42);
-                    subt.SetTextSize(0.050);
-                    subt.SetTextAlign(21);
-                    std::ostringstream st;
-                    st << Form("%s  x_{B} #in [%.2g, %.2g]   Q^{2} #in [%.2g, %.2g]   -t #in [%.2g, %.2g]",
-                               period.c_str(),
-                               xB_bins[ix].first, xB_bins[ix].second,
-                               Q2_bins[iQ].first, Q2_bins[iQ].second,
-                               t_bins[itb].first, t_bins[itb].second);
-                    subt.DrawLatex(0.50, 0.94, st.str().c_str());
-                }
-
-                // Blue points
-                {
-                    std::vector<double> xb, yb, eyb;
-                    for (int i=0; i<N_PHI_BINS; ++i) {
-                        const auto& p = cr.points[i];
-                        if (!p.valid) continue;
-                        xb.push_back(PHI_DEG[i]);
-                        yb.push_back(p.bsa);
-                        eyb.push_back(std::max(1e-6, p.err));
-                    }
-                    if (!xb.empty()) {
-                        TGraphErrors* gr = new TGraphErrors((int)xb.size(), xb.data(), yb.data(), nullptr, eyb.data());
-                        gr->SetMarkerStyle(20);
-                        gr->SetMarkerSize(1.2);
-                        gr->SetLineWidth(2);
-                        gr->SetLineColor(kBlue+1);
-                        gr->SetMarkerColor(kBlue+1);
-                        gr->Draw("P SAME");
-                    }
-                }
-
-                // Blue fit curve
-                FitRes blueFit = cr.fit;
-                if (blueFit.status == 0 || blueFit.ndf > 0) {
-                    const int NS=721;
-                    std::vector<double> xd(NS), yd(NS);
-                    for (int i=0;i<NS;++i){
-                        double deg = double(i)*0.5;
-                        double rad = deg * (TWO_PI/360.0);
-                        double denom = 1.0 + blueFit.B1*std::cos(rad);
-                        if (denom < EPS_DEN_EVAL) denom = EPS_DEN_EVAL;
-                        double val = blueFit.C + (blueFit.A*std::sin(rad))/denom;
-                        xd[i] = deg; yd[i] = val;
-                    }
-                    TGraph* gfit = new TGraph(NS, xd.data(), yd.data());
-                    gfit->SetLineColor(kBlue+1);
-                    gfit->SetLineStyle(2);
-                    gfit->SetLineWidth(1);
-                    gfit->Draw("L SAME");
-                }
-
-                // Red points from xsec
-                FitRes redFit;
-                {
-                    std::vector<double> xr, yr, eyr;
-                    for (int i=0; i<N_PHI_BINS; ++i) {
-                        if (!redPts[i].valid) continue;
-                        xr.push_back(PHI_DEG[i]);
-                        yr.push_back(redPts[i].bsa);
-                        eyr.push_back(std::max(1e-6, redPts[i].err));
-                    }
-                    if (!xr.empty()) {
-                        TGraphErrors* grr = new TGraphErrors((int)xr.size(), xr.data(), yr.data(), nullptr, eyr.data());
-                        grr->SetMarkerStyle(24);
-                        grr->SetMarkerSize(1.2);
-                        grr->SetLineWidth(2);
-                        grr->SetLineColor(kRed+1);
-                        grr->SetMarkerColor(kRed+1);
-                        grr->Draw("P SAME");
-                    }
-
-                    redFit = fit_cell(redPts);
-                    if (redFit.status == 0 || redFit.ndf > 0) {
-                        const int NS=721;
-                        std::vector<double> xd(NS), yd(NS);
-                        for (int i=0;i<NS;++i){
-                            double deg = double(i)*0.5;
-                            double rad = deg * (TWO_PI/360.0);
-                            double denom = 1.0 + redFit.B1*std::cos(rad);
-                            if (denom < EPS_DEN_EVAL) denom = EPS_DEN_EVAL;
-                            double val = redFit.C + (redFit.A*std::sin(rad))/denom;
-                            xd[i] = deg; yd[i] = val;
-                        }
-                        TGraph* gfitr = new TGraph(NS, xd.data(), yd.data());
-                        gfitr->SetLineColor(kRed+1);
-                        gfitr->SetLineStyle(2);
-                        gfitr->SetLineWidth(1);
-                        gfitr->Draw("L SAME");
-                    }
-                }
-
-                // Legend
-                TLegend* leg = new TLegend(0.38, 0.68, 0.86, 0.88);
-                leg->SetMargin(0.04);
-                leg->SetBorderSize(1);
-                leg->SetLineColor(kBlack);
-                leg->SetFillColor(kWhite);
-                leg->SetFillStyle(1001);
-                leg->SetTextFont(42);
-                leg->SetTextSize(0.048);
-                leg->AddEntry((TObject*)nullptr,
-                              Form("counts: A = %.3f #pm %.3f", blueFit.A, blueFit.Aerr), "");
-                if (redFit.ndf > 0 || redFit.status == 0) {
-                    leg->AddEntry((TObject*)nullptr,
-                                  Form("#sigma: A = %.3f #pm %.3f", redFit.A, redFit.Aerr), "");
-                } else {
-                    leg->AddEntry((TObject*)nullptr, "#sigma: A = n/a", "");
-                }
-                leg->AddEntry((TObject*)nullptr, Form("P = %.3f", P_used), "");
-                leg->Draw();
-
-                std::ostringstream fout;
-                fout << (single_dir / ("plot_bsa_vs_xsec_single_" + period
-                        + "_xB_" + std::to_string(ix)
-                        + "_Q2_" + std::to_string(iQ)
-                        + "_t_"  + std::to_string(itb) + ".png")).string();
-
-                c->SaveAs(fout.str().c_str());
-                delete c;
-                std::cout << "[bsa] Wrote " << fout.str() << "\n";
-            }
-        }
     }
 }
 
@@ -1175,19 +1161,19 @@ void compute_and_plot_bsa_helicity(
             std::ostringstream avail;
             avail << "Available groups:";
             for (const auto& gkv : allGroups) avail << " " << gkv.first;
-            fatal("Requested group '"+countsKey+"' not present in corrected master. " + avail.str());
+            fatal(std::string("Requested group '")+countsKey+"' not present in corrected master. " + avail.str());
         }
         const GroupTable& table = itG->second;
 
         auto itT = dvcsDataTrees.find(treeKey);
         if (itT == dvcsDataTrees.end() || !(itT->second)) {
-            fatal("Missing DVCS polarization tree for requested period '"+treeKey+"'.");
+            fatal(std::string("Missing DVCS polarization tree for requested period '")+treeKey+"'.");
         }
         TTree* t = itT->second;
 
         PolMean pm = mean_beam_polarization(t);
         if (pm.n == 0 || !(pm.P > 0.0) || !std::isfinite(pm.P)) {
-            fatal("Cannot compute mean beam polarization for period '"+treeKey+"': no valid beam_pol entries.");
+            fatal(std::string("Cannot compute mean beam polarization for period '")+treeKey+"': no valid beam_pol entries.");
         }
         const double P_here = pm.P;
 
@@ -1252,9 +1238,6 @@ void compute_and_plot_bsa_helicity(
         if (!energies.empty()) {
             overlay = build_overlay_table(radcorr_xsec_json_dir, energies);
             plot_cells_for_period(countsKey, binning_scheme, xB_bins, Q2_bins, t_bins, cells, plots_dir.string(), &overlay);
-
-            // NEW: also emit single-canvas per-bin overlay comparisons
-            plot_single_bin_compare_for_period(countsKey, xB_bins, Q2_bins, t_bins, cells, plots_dir.string(), overlay);
         } else {
             std::cerr << "[bsa][xsec] NOTE: no energy mapping for group '"<<countsKey<<"' -> skipping overlay.\n";
         }
@@ -1284,7 +1267,7 @@ void compute_and_plot_bsa_helicity(
     for (const auto& kv : comps) {
         auto itT = dvcsDataTrees.find(kv.second);
         if (itT == dvcsDataTrees.end() || !(itT->second)) {
-            fatal("Missing DVCS polarization tree for 10.6_GeV component '"+kv.second+"'.");
+            fatal(std::string("Missing DVCS polarization tree for 10.6_GeV component '")+kv.second+"'.");
         }
         compTrees.push_back(itT->second);
     }
@@ -1349,12 +1332,6 @@ void compute_and_plot_bsa_helicity(
         if (!energies106.empty()) {
             XsecTable overlay106 = build_overlay_table(radcorr_xsec_json_dir, energies106);
             plot_cells_for_period("RGA_10.6_combined", binning_scheme, xB_bins, Q2_bins, t_bins, combCells, plots_comb106.string(), &overlay106);
-
-            // NEW: single-canvas per-bin overlays for 10.6 combined
-            plot_single_bin_compare_for_period("RGA_10.6_combined",
-                                               xB_bins, Q2_bins, t_bins,
-                                               combCells, plots_comb106.string(),
-                                               overlay106);
         } else {
             std::cerr << "[bsa][xsec] NOTE: no energy mapping for '10.6_GeV' combined overlay.\n";
         }
