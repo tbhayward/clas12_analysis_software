@@ -735,7 +735,7 @@ static void plot_single_cell_overlay_canvas(
         TLatex subt;
         subt.SetNDC();
         subt.SetTextFont(42);
-        subt.SetTextSize(0.03);
+        subt.SetTextSize(0.04);
         subt.SetTextAlign(21);
         std::ostringstream st;
         st << Form("Fall 2018 -- x_{B} in [%.2g, %.2g]; Q^{2} in [%.2g, %.2g]; -t in [%.2g, %.2g]",
