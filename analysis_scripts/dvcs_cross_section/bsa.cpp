@@ -700,8 +700,7 @@ static void plot_single_cell_overlay_canvas(
     const std::vector<double>& phi_deg,
     const CellResult& countsCell,
     const XsecBin12* xsecCell,
-    const std::string& out_png_path
-) {
+    const std::string& out_png_path) {
     const int W = 700, H = 550;
     TCanvas* c = new TCanvas("c_single", "c_single", W, H);
     c->cd();
@@ -731,20 +730,27 @@ static void plot_single_cell_overlay_canvas(
 
     drawDegreeTicks(gPad->GetUxmin(), gPad->GetUymin(), gPad->GetUxmax(), 0.048);
 
+    // smaller subtitle and correct formatting
     {
         TLatex subt;
         subt.SetNDC();
         subt.SetTextFont(42);
-        subt.SetTextSize(0.04);
+        subt.SetTextSize(0.035);
         subt.SetTextAlign(21);
         std::ostringstream st;
-        st << Form("Fall 2018 -- x_{B} #in [%.2g, %.2g]; Q^{2} #in [%.2g, %.2g]; -t #in [%.2g, %.2g]",
+        st << Form("%s  x_{B} in [%.2g, %.2g];  Q^{2} in [%.2g, %.2g];  -t in [%.2g, %.2g]",
                    period.c_str(),
                    xb_range.first, xb_range.second,
                    Q2_range.first, Q2_range.second,
                    t_range.first,  t_range.second);
         subt.DrawLatex(0.50, 0.94, st.str().c_str());
     }
+
+    // Keep handles for legend
+    TGraphErrors* grCountsPts = nullptr;
+    TGraph*       grCountsFit = nullptr;
+    TGraphErrors* grSigmaPts  = nullptr;
+    TGraph*       grSigmaFit  = nullptr;
 
     // BLUE counts points
     std::vector<double> xc, yc, eyc;
@@ -756,16 +762,16 @@ static void plot_single_cell_overlay_canvas(
         eyc.push_back(std::max(1e-6, p.err));
     }
     if (!xc.empty()) {
-        TGraphErrors* gr = new TGraphErrors((int)xc.size(), xc.data(), yc.data(), nullptr, eyc.data());
-        gr->SetMarkerStyle(20);
-        gr->SetMarkerSize(1.1);
-        gr->SetLineWidth(2);
-        gr->SetLineColor(kBlue+1);
-        gr->SetMarkerColor(kBlue+1);
-        gr->Draw("P SAME");
+        grCountsPts = new TGraphErrors((int)xc.size(), xc.data(), yc.data(), nullptr, eyc.data());
+        grCountsPts->SetMarkerStyle(20);       // closed circle
+        grCountsPts->SetMarkerSize(1.1);
+        grCountsPts->SetLineWidth(2);
+        grCountsPts->SetLineColor(kBlue+1);
+        grCountsPts->SetMarkerColor(kBlue+1);
+        grCountsPts->Draw("P SAME");
     }
 
-    // BLUE fit
+    // BLUE counts fit (dashed)
     if (countsCell.fit.ndf > 0 || countsCell.fit.status == 0) {
         const int NS=721;
         std::vector<double> xd(NS), yd(NS);
@@ -774,17 +780,17 @@ static void plot_single_cell_overlay_canvas(
             double rad = deg * (TWO_PI/360.0);
             double denom = 1.0 + countsCell.fit.B1*std::cos(rad);
             if (denom < EPS_DEN_EVAL) denom = EPS_DEN_EVAL;
-            double val = countsCell.fit.C + (countsCell.fit.A*std::sin(rad))/denom;
-            xd[i] = deg; yd[i] = val;
+            xd[i] = deg;
+            yd[i] = countsCell.fit.C + (countsCell.fit.A*std::sin(rad))/denom;
         }
-        TGraph* gfit = new TGraph(NS, xd.data(), yd.data());
-        gfit->SetLineColor(kBlue+1);
-        gfit->SetLineStyle(2);
-        gfit->SetLineWidth(1);
-        gfit->Draw("L SAME");
+        grCountsFit = new TGraph(NS, xd.data(), yd.data());
+        grCountsFit->SetLineColor(kBlue+1);
+        grCountsFit->SetLineStyle(2);          // dashed
+        grCountsFit->SetLineWidth(1);
+        grCountsFit->Draw("L SAME");
     }
 
-    // RED overlay points and fit (if provided)
+    // RED overlay points and BLUE fit (different dash) if provided
     FitRes redFit{};
     bool haveRed = false;
     if (xsecCell && xsecCell->valid) {
@@ -799,13 +805,13 @@ static void plot_single_cell_overlay_canvas(
             eyr.push_back(std::max(1e-6, redPts[ip].err));
         }
         if (!xr.empty()) {
-            TGraphErrors* grr = new TGraphErrors((int)xr.size(), xr.data(), yr.data(), nullptr, eyr.data());
-            grr->SetMarkerStyle(24);
-            grr->SetMarkerSize(1.1);
-            grr->SetLineWidth(2);
-            grr->SetLineColor(kRed+1);
-            grr->SetMarkerColor(kRed+1);
-            grr->Draw("P SAME");
+            grSigmaPts = new TGraphErrors((int)xr.size(), xr.data(), yr.data(), nullptr, eyr.data());
+            grSigmaPts->SetMarkerStyle(24);    // open circle
+            grSigmaPts->SetMarkerSize(1.1);
+            grSigmaPts->SetLineWidth(2);
+            grSigmaPts->SetLineColor(kRed+1);
+            grSigmaPts->SetMarkerColor(kRed+1);
+            grSigmaPts->Draw("P SAME");
         }
 
         redFit = fit_cell(redPts);
@@ -817,20 +823,20 @@ static void plot_single_cell_overlay_canvas(
                 double rad = deg * (TWO_PI/360.0);
                 double denom = 1.0 + redFit.B1*std::cos(rad);
                 if (denom < EPS_DEN_EVAL) denom = EPS_DEN_EVAL;
-                double val = redFit.C + (redFit.A*std::sin(rad))/denom;
-                xfd[i] = deg; yfd[i] = val;
+                xfd[i] = deg;
+                yfd[i] = redFit.C + (redFit.A*std::sin(rad))/denom;
             }
-            TGraph* gfitr = new TGraph(NS, xfd.data(), yfd.data());
-            gfitr->SetLineColor(kRed+1);
-            gfitr->SetLineStyle(2);
-            gfitr->SetLineWidth(1);
-            gfitr->Draw("L SAME");
+            grSigmaFit = new TGraph(NS, xfd.data(), yfd.data());
+            grSigmaFit->SetLineColor(kBlue+1); // per your request: sigma line in blue
+            grSigmaFit->SetLineStyle(7);       // dotted (different from counts dashed)
+            grSigmaFit->SetLineWidth(1);
+            grSigmaFit->Draw("L SAME");
         }
         haveRed = true;
     }
 
-    // Legend
-    TLegend* leg = new TLegend(0.42, 0.68, 0.86, 0.88);
+    // Legend with actual markers/lines
+    TLegend* leg = new TLegend(0.40, 0.68, 0.86, 0.88);
     leg->SetMargin(0.04);
     leg->SetBorderSize(1);
     leg->SetLineColor(kBlack);
@@ -839,20 +845,24 @@ static void plot_single_cell_overlay_canvas(
     leg->SetTextFont(42);
     leg->SetTextSize(0.042);
 
-    leg->AddEntry((TObject*)nullptr,
-                  Form("counts: A = %.3f #pm %.3f", countsCell.fit.A, countsCell.fit.Aerr),
-                  "");
+    if (grCountsPts) leg->AddEntry(grCountsPts, "counts (closed circle)", "p");
+    if (grCountsFit) {
+        std::string lab = Form("counts fit: A = %.3f #pm %.3f", countsCell.fit.A, countsCell.fit.Aerr);
+        leg->AddEntry(grCountsFit, lab.c_str(), "l");
+    }
+
     if (haveRed) {
-        if (redFit.ndf > 0 || redFit.status == 0) {
-            leg->AddEntry((TObject*)nullptr,
-                          Form("#sigma: A = %.3f #pm %.3f", redFit.A, redFit.Aerr),
-                          "");
-        } else {
-            leg->AddEntry((TObject*)nullptr, "#sigma: A = n/a", "");
+        if (grSigmaPts) leg->AddEntry(grSigmaPts, "#sigma (open circle)", "p");
+        if (grSigmaFit && (redFit.ndf > 0 || redFit.status == 0)) {
+            std::string lab = Form("#sigma fit: A = %.3f #pm %.3f", redFit.A, redFit.Aerr);
+            leg->AddEntry(grSigmaFit, lab.c_str(), "l");
+        } else if (!grSigmaFit) {
+            leg->AddEntry((TObject*)nullptr, "#sigma fit: n/a", "");
         }
     } else {
         leg->AddEntry((TObject*)nullptr, "#sigma: missing", "");
     }
+
     leg->Draw();
 
     c->SaveAs(out_png_path.c_str());
