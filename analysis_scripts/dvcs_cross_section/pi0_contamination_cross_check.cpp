@@ -29,6 +29,9 @@ using json = nlohmann::json;
 #include <unordered_map>
 #include <utility>
 #include <vector>
+#include <TMarker.h>   
+#include <TString.h>
+#include <cstdio>  
 
 namespace fs = std::filesystem;
 
