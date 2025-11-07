@@ -738,7 +738,7 @@ static void plot_single_cell_overlay_canvas(
         subt.SetTextSize(0.04);
         subt.SetTextAlign(21);
         std::ostringstream st;
-        st << Form("Fall 2018 -- x_{B} in [%.2g, %.2g]; Q^{2} in [%.2g, %.2g]; -t in [%.2g, %.2g]",
+        st << Form("Fall 2018 -- x_{B} #in [%.2g, %.2g]; Q^{2} #in [%.2g, %.2g]; -t #in [%.2g, %.2g]",
                    period.c_str(),
                    xb_range.first, xb_range.second,
                    Q2_range.first, Q2_range.second,
