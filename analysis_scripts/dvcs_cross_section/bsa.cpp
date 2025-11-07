@@ -735,10 +735,10 @@ static void plot_single_cell_overlay_canvas(
         TLatex subt;
         subt.SetNDC();
         subt.SetTextFont(42);
-        subt.SetTextSize(0.05);
+        subt.SetTextSize(0.03);
         subt.SetTextAlign(21);
         std::ostringstream st;
-        st << Form("%s  x_{B} in [%.2g, %.2g]   Q^{2} in [%.2g, %.2g]   -t in [%.2g, %.2g]",
+        st << Form("Fall 2018 -- x_{B} in [%.2g, %.2g]; Q^{2} in [%.2g, %.2g]; -t in [%.2g, %.2g]",
                    period.c_str(),
                    xb_range.first, xb_range.second,
                    Q2_range.first, Q2_range.second,
@@ -1022,14 +1022,14 @@ static void plot_cells_for_period(
                     }
 
                     // --------- Legend
-                    TLegend* leg = new TLegend(0.40, 0.68, 0.86, 0.88);
+                    TLegend* leg = new TLegend(0.38, 0.68, 0.86, 0.88);
                     leg->SetMargin(0.04);
                     leg->SetBorderSize(1);
                     leg->SetLineColor(kBlack);
                     leg->SetFillColor(kWhite);
                     leg->SetFillStyle(1001);
                     leg->SetTextFont(42);
-                    leg->SetTextSize(0.048);
+                    leg->SetTextSize(0.044);
 
                     leg->AddEntry((TObject*)nullptr,
                                   Form("counts: A = %.3f #pm %.3f", blueFit.A, blueFit.Aerr),
