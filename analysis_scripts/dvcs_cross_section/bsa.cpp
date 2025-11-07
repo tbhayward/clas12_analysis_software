@@ -833,7 +833,7 @@ static void plot_single_cell_overlay_canvas(
     }
 
     // Minimal legend update: only two items, using markers with colors
-    TLegend* leg = new TLegend(0.42, 0.68, 0.86, 0.88);
+    TLegend* leg = new TLegend(0.38, 0.68, 0.86, 0.88);
     leg->SetMargin(0.04);
     leg->SetBorderSize(1);
     leg->SetLineColor(kBlack);
@@ -844,7 +844,7 @@ static void plot_single_cell_overlay_canvas(
 
     if (grCountsPts) {
         leg->AddEntry(grCountsPts,
-                      Form("counts (closed): A = %.3f #pm %.3f",
+                      Form("counts: A = %.3f #pm %.3f",
                            countsCell.fit.A, countsCell.fit.Aerr),
                       "p");
     } else {
@@ -856,7 +856,7 @@ static void plot_single_cell_overlay_canvas(
 
     if (haveRed && grSigmaPts) {
         leg->AddEntry(grSigmaPts,
-                      Form("#sigma (open): A = %.3f #pm %.3f",
+                      Form("#sigma: A = %.3f #pm %.3f",
                            redFit.A, redFit.Aerr),
                       "p");
     } else if (haveRed) {
