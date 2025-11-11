@@ -1,7 +1,11 @@
 // exclusivity_cuts.cpp
-#include "exclusivity_cuts.h"
-#include "periods.h"  // <-- canonical period labels and tree_key mapping
+// Same plots; universal cuts use global_cuts.h so every stage can share them.
 
+#include "exclusivity_cuts.h"
+#include "periods.h"
+#include "global_cuts.h"
+
+// ROOT
 #include <TFile.h>
 #include <TTree.h>
 #include <TCanvas.h>
@@ -14,14 +18,16 @@
 #include <TH1.h>
 #include <TString.h>
 
+// C++ stdlib
 #include <algorithm>
-#include <cctype>
+#include <atomic>
 #include <cmath>
 #include <fstream>
 #include <iomanip>
 #include <iostream>
 #include <map>
 #include <memory>
+#include <mutex>
 #include <string>
 #include <thread>
 #include <utility>
@@ -29,8 +35,13 @@
 
 // -------------------- helpers: strings and keys --------------------
 
-static std::string channelToStr(Channel ch) { return (ch == Channel::DVCS) ? "dvcs" : "eppi0"; }
-static std::string channelPretty(Channel ch) { return ch == Channel::DVCS ? "DVCS" : "eppi0"; }
+static std::string channelToStr(Channel ch) {
+    return (ch == Channel::DVCS) ? "dvcs" : "eppi0";
+}
+
+static std::string channelPretty(Channel ch) {
+    return (ch == Channel::DVCS) ? "DVCS" : "eppi0";
+}
 
 static std::string topoToKey(Topology t) {
     switch (t) {
@@ -42,7 +53,6 @@ static std::string topoToKey(Topology t) {
 }
 
 static std::string periodCode(Channel ch, const std::string& runTag) {
-    // runTag is the label from periods.h (e.g., "fa18_inb")
     std::string prefix = (ch == Channel::DVCS) ? "DVCS_" : "eppi0_";
     std::string nice = runTag;
     if (!nice.empty()) nice[0] = std::toupper(nice[0]);
@@ -81,25 +91,13 @@ static std::vector<StagePlan> buildStages(Channel ch) {
     return stages; // final pass is len(stages)+1 in driver
 }
 
-// -------------------- topology and global kinematic cuts --------------------
-//
-// Global kinematic cuts (from kin_cuts.py):
-// 1) open_angle_ep2 > 5.0 deg
-// 2) (-t1) <= 1.0
-// 3) pTmiss <= 0.20
+// -------------------- topology --------------------
 
 static bool passesTopology(int detector1, int detector2, Topology topo) {
     if (topo == Topology::FD_FD) return (detector1 == 1 && detector2 == 1);
     if (topo == Topology::CD_FD) return (detector1 == 2 && detector2 == 1);
     if (topo == Topology::CD_FT) return (detector1 == 2 && detector2 == 0);
     return false;
-}
-
-static bool applyKinematicCuts(double t1, double open_angle_ep2, double pTmiss) {
-    if (open_angle_ep2 <= 5.0) return false;
-    if ((-t1) > 1.0) return false;
-    if (pTmiss > 0.20) return false;
-    return true;
 }
 
 static bool within3Sigma(double val, const Stats& s) {
@@ -116,7 +114,7 @@ static bool passes3SigmaCuts(const std::map<std::string, Stats>& cuts,
     return true;
 }
 
-// -------------------- branch binder (exact names) --------------------
+// -------------------- branch binder --------------------
 
 struct BranchBinder {
     int detector1 = 0, detector2 = 0; bool has_detector1 = false, has_detector2 = false;
@@ -142,6 +140,7 @@ struct BranchBinder {
 
         bindD("t1", &t1, has_t1);
         bindD("open_angle_ep2", &open_angle_ep2, has_open_angle_ep2);
+
         bindD("Emiss2", &Emiss2, has_Emiss2);
         bindD("Mx2", &Mx2, has_Mx2);
         bindD("Mx2_1", &Mx2_1, has_Mx2_1);
@@ -199,7 +198,7 @@ static void normalizeHist(TH1D* h) {
     if (integral > 0.0) h->Scale(1.0 / integral);
 }
 
-// -------------------- pretty x-axis labels (ASCII TLatex) --------------------
+// -------------------- pretty x-axis labels --------------------
 
 static std::string formatLabelName(const std::string& var, Channel ch) {
     if (var == "Delta_phi")          return "#Delta#phi (rad)";
@@ -216,7 +215,10 @@ static std::string formatLabelName(const std::string& var, Channel ch) {
 
 // -------------------- stage fill --------------------
 
-struct FilledHists { std::map<std::string, TH1D*> data; std::map<std::string, TH1D*> mc; };
+struct FilledHists {
+    std::map<std::string, TH1D*> data;
+    std::map<std::string, TH1D*> mc;
+};
 
 static FilledHists fillStageHists(
     TTree* dataTree, TTree* mcTree, Topology topo, Channel ch,
@@ -224,7 +226,7 @@ static FilledHists fillStageHists(
 {
     FilledHists out;
 
-    // Create hists (detached from any directory to avoid name collisions)
+    // Create detached histograms.
     for (const auto& kv : cfg) {
         const std::string& var = kv.first; const HistCfg& hc = kv.second;
         auto* dh = new TH1D(("data_" + var + "_stage" + std::to_string(stage_index)).c_str(), "", hc.nbins, hc.xlow, hc.xhigh);
@@ -243,8 +245,9 @@ static FilledHists fillStageHists(
             dataTree->GetEntry(i);
             if (!(b.has_detector1 && b.has_detector2)) continue;
             if (!passesTopology(b.detector1, b.detector2, topo)) continue;
+            // Must have all three to apply the universal cuts
             if (!(b.has_t1 && b.has_open_angle_ep2 && b.has_pTmiss)) continue;
-            if (!applyKinematicCuts(b.t1, b.open_angle_ep2, b.pTmiss)) continue;
+            if (!passes_global_cuts(b.t1, b.open_angle_ep2, b.pTmiss)) continue;
 
             auto vals = b.valuesMap(ch);
             if (!passes3SigmaCuts(cumulative.data, vals)) continue;
@@ -265,7 +268,7 @@ static FilledHists fillStageHists(
             if (!(b.has_detector1 && b.has_detector2)) continue;
             if (!passesTopology(b.detector1, b.detector2, topo)) continue;
             if (!(b.has_t1 && b.has_open_angle_ep2 && b.has_pTmiss)) continue;
-            if (!applyKinematicCuts(b.t1, b.open_angle_ep2, b.pTmiss)) continue;
+            if (!passes_global_cuts(b.t1, b.open_angle_ep2, b.pTmiss)) continue;
 
             auto vals = b.valuesMap(ch);
             if (!passes3SigmaCuts(cumulative.mc, vals)) continue;
@@ -280,13 +283,16 @@ static FilledHists fillStageHists(
     return out;
 }
 
-// -------------------- plotting --------------------
+// -------------------- plotting (unchanged aesthetics) --------------------
+
+static std::mutex g_plot_mutex;
 
 static void saveStagePlots(const FilledHists& H, const HistList& cfg, Channel ch,
                            const std::string& prettyPeriod, Topology topo,
                            const std::string& outPlotDir, const std::string& suffix)
 {
-    // Canvas: grid of pads; add a global title; remove stat box.
+    std::lock_guard<std::mutex> lock(g_plot_mutex); // serialize ROOT drawing
+
     int n = static_cast<int>(cfg.size());
     int cols = 4, rows = (n + cols - 1) / cols;
     TCanvas c("c", "", 2400, rows * 640);
@@ -296,14 +302,13 @@ static void saveStagePlots(const FilledHists& H, const HistList& cfg, Channel ch
         return (v == "theta_gamma_gamma" || v == "theta_pi0_pi0" || v == "pTmiss");
     };
 
-    // Global title (channel, period, topology, stage)
     {
         std::string title = channelPretty(ch) + "  |  " + prettyPeriod + "  |  " + topoToKey(topo) + "  |  " + suffix;
         TPaveText* pt = new TPaveText(0.10, 0.955, 0.90, 0.995, "NDC");
         pt->SetFillColor(0);
         pt->SetFillStyle(0);
         pt->SetBorderSize(0);
-        pt->SetTextAlign(22); // center
+        pt->SetTextAlign(22);
         pt->SetTextFont(42);
         pt->SetTextSize(0.025);
         pt->AddText(title.c_str());
@@ -326,7 +331,6 @@ static void saveStagePlots(const FilledHists& H, const HistList& cfg, Channel ch
         if (dh) { dh->SetLineColor(kBlue); dh->SetMarkerColor(kBlue); dh->SetLineWidth(2); dh->SetStats(0); }
         if (mh) { mh->SetLineColor(kRed);  mh->SetMarkerColor(kRed);  mh->SetLineWidth(2); mh->SetStats(0); }
 
-        // Normalize and set axis titles
         normalizeHist(dh); normalizeHist(mh);
         if (dh) {
             dh->GetYaxis()->SetTitle("Normalized counts");
@@ -341,25 +345,19 @@ static void saveStagePlots(const FilledHists& H, const HistList& cfg, Channel ch
             mh->GetYaxis()->SetTitleOffset(2.20);
         }
 
-        // Determine max for nice scaling
         double maxv = 0.0;
         if (dh) maxv = std::max(maxv, dh->GetMaximum());
         if (mh) maxv = std::max(maxv, mh->GetMaximum());
         if (dh) dh->SetMaximum(maxv * 1.25);
         if (!dh && mh) mh->SetMaximum(maxv * 1.25);
 
-        // Draw histograms
         if (dh) dh->Draw("E1");
         if (mh) mh->Draw(dh ? "E1 SAME" : "E1");
 
-        // Compute mu/sigma and draw fits for gaussian-like variables
+        bool isG = (var == "theta_gamma_gamma" || var == "theta_pi0_pi0" || var == "pTmiss");
         double mu_d = 0.0, sg_d = 0.0, mu_m = 0.0, sg_m = 0.0;
 
-        auto isGaussianVar = [&](const std::string& v)->bool {
-            return (v == "theta_gamma_gamma" || v == "theta_pi0_pi0" || v == "pTmiss");
-        };
-
-        if (isGaussianVar(var)) {
+        if (isG) {
             if (dh && dh->GetEntries() > 0) {
                 auto ms = fitGaussianLeftSide(dh);
                 mu_d = ms.first; sg_d = ms.second;
@@ -379,7 +377,6 @@ static void saveStagePlots(const FilledHists& H, const HistList& cfg, Channel ch
             mu_m = mh ? mh->GetMean() : 0.0; sg_m = mh ? mh->GetStdDev() : 0.0;
         }
 
-        // Legend
         auto dataLine = TString::Format("Data (#mu=%.3f, #sigma=%.3f)", mu_d, sg_d);
         auto mcLine   = TString::Format("MC (#mu=%.3f, #sigma=%.3f)",   mu_m, sg_m);
 
@@ -448,24 +445,14 @@ static void writeCutDictJson(std::ostream& os, const CutDict& cd) {
     os << "}}";
 }
 
-static void saveFinalCutsJson(const std::string& periodCodeStr, Topology topo,
-                              const std::string& outJsonDir, const CutDict& cuts) {
-    // Writes a single period/topology JSON to the provided directory
-    std::string path = outJsonDir + "/cuts_" + periodCodeStr + "_" + topoToKey(topo) + "_final.json";
-    std::ofstream ofs(path);
-    if (!ofs) { std::cerr << "[Error] Cannot open JSON: " << path << std::endl; return; }
-    writeCutDictJson(ofs, cuts);
-    ofs << std::endl;
-    std::cout << "[Wrote JSON] " << path << std::endl;
-}
-
 static void writeCombinedJson(const std::string& outJsonDir,
-                              const std::map<std::string, CutDict>& combined)
-{
-    // Combined file stays directly in output/jsons
+                              const std::map<std::string, CutDict>& combined) {
     std::string path = outJsonDir + "/combined_cuts.json";
     std::ofstream ofs(path);
-    if (!ofs) { std::cerr << "[Error] Cannot open combined JSON: " << path << std::endl; return; }
+    if (!ofs) {
+        std::cerr << "[Error] Cannot open combined JSON: " << path << std::endl;
+        return;
+    }
 
     ofs << "{";
     bool firstKey = true;
@@ -479,105 +466,134 @@ static void writeCombinedJson(const std::string& outJsonDir,
     std::cout << "[Wrote combined JSON] " << path << std::endl;
 }
 
-// -------------------- per-period driver --------------------
+// -------------------- per-period worker --------------------
 
-static void runExclusivityCutsSingle(const std::string& runTagLabel, Channel ch,
-                                     TTree* dataTree, TTree* mcTree,
-                                     const std::string& outJsonDir,   // base json dir ("output/jsons")
-                                     const std::string& outPlotDir,
-                                     std::map<std::string, CutDict>& combinedOut)
+struct PeriodWork {
+    std::string label;  // e.g., "fa18_inb"
+    TTree* dvcs_data = nullptr;
+    TTree* dvcs_mc   = nullptr;
+    TTree* eppi0_data = nullptr;
+    TTree* eppi0_mc   = nullptr;
+};
+
+static void processOneChannelOneTopology(
+    const std::string& prettyPeriod, Channel ch, Topology topo,
+    TTree* dataTree, TTree* mcTree,
+    const std::string& outPlotDir,
+    CutDict& outCutsForTopo)
 {
-    if (!dataTree || !mcTree) {
-        std::cerr << "[Skip] Missing data or MC for " << channelToStr(ch)
-                  << " " << runTagLabel << std::endl;
-        return;
-    }
-
-    // Individual JSONs go under a subdir
-    const std::string outJsonIndividualDir = outJsonDir + "/individual_cuts";
-
-    std::string pretty = periodCode(ch, runTagLabel);
     auto stages = buildStages(ch);
-    auto cfg = getHistConfigs(ch);
+    auto cfg    = getHistConfigs(ch);
 
-    for (Topology topo : {Topology::FD_FD, Topology::CD_FD, Topology::CD_FT}) {
-        CutDict cumulative;
-        int numStages = static_cast<int>(stages.size()) + 1; // final pass
-        for (int s = 0; s < numStages; ++s) {
-            auto H = fillStageHists(dataTree, mcTree, topo, ch, cumulative, cfg, s);
-            saveStagePlots(H, cfg, ch, pretty, topo, outPlotDir, "cut_" + std::to_string(s));
-            if (s < static_cast<int>(stages.size())) updateCumulativeCuts(H, stages[s], cumulative);
-            for (auto& kv : H.data) delete kv.second;
-            for (auto& kv : H.mc)   delete kv.second;
+    CutDict cumulative;
+    int numStages = static_cast<int>(stages.size()) + 1;
+    for (int s = 0; s < numStages; ++s) {
+        auto H = fillStageHists(dataTree, mcTree, topo, ch, cumulative, cfg, s);
+        saveStagePlots(H, cfg, ch, prettyPeriod, topo, outPlotDir, "cut_" + std::to_string(s));
+        if (s < static_cast<int>(stages.size())) {
+            updateCumulativeCuts(H, stages[s], cumulative);
         }
-
-        // Write the individual JSON into output/jsons/individual_cuts/
-        saveFinalCutsJson(pretty, topo, outJsonIndividualDir, cumulative);
-
-        // Stash for the combined file (which will be written at the top level)
-        std::string combinedKey = pretty + "_" + topoToKey(topo);
-        combinedOut[combinedKey] = cumulative;
+        for (auto& kv : H.data) delete kv.second;
+        for (auto& kv : H.mc)   delete kv.second;
     }
 
-    std::cout << "[Done] Exclusivity cuts for " << pretty << std::endl;
+    outCutsForTopo = cumulative;
 }
 
-// -------------------- dispatcher (single-threaded) --------------------
+static void processPeriod(
+    const PeriodWork& W,
+    const std::string& outJsonDir,
+    const std::string& outPlotDir,
+    std::map<std::string, CutDict>& combined_out,
+    std::mutex& combined_mutex)
+{
+    TH1::AddDirectory(kFALSE);
+    gStyle->SetOptStat(0);
+
+    if (W.dvcs_data && W.dvcs_mc) {
+        std::string pretty = periodCode(Channel::DVCS, W.label);
+        for (Topology topo : {Topology::FD_FD, Topology::CD_FD, Topology::CD_FT}) {
+            CutDict cutsDVCS;
+            processOneChannelOneTopology(pretty, Channel::DVCS, topo, W.dvcs_data, W.dvcs_mc, outPlotDir, cutsDVCS);
+            std::lock_guard<std::mutex> lock(combined_mutex);
+            combined_out[pretty + "_" + topoToKey(topo)] = cutsDVCS;
+        }
+        std::cout << "[Done] Exclusivity cuts for " << pretty << std::endl;
+    }
+
+    if (W.eppi0_data && W.eppi0_mc) {
+        std::string pretty = periodCode(Channel::EPPI0, W.label);
+        for (Topology topo : {Topology::FD_FD, Topology::CD_FD, Topology::CD_FT}) {
+            CutDict cutsPI0;
+            processOneChannelOneTopology(pretty, Channel::EPPI0, topo, W.eppi0_data, W.eppi0_mc, outPlotDir, cutsPI0);
+            std::lock_guard<std::mutex> lock(combined_mutex);
+            combined_out[pretty + "_" + topoToKey(topo)] = cutsPI0;
+        }
+        std::cout << "[Done] Exclusivity cuts for " << pretty << std::endl;
+    }
+}
+
+// -------------------- dispatcher --------------------
 
 void runAllExclusivityCuts(
     const std::map<std::string, TTree*>& dvcsDataTrees,
     const std::map<std::string, TTree*>& dvcsRecMcTrees,
     const std::map<std::string, TTree*>& eppi0DataTrees,
     const std::map<std::string, TTree*>& eppi0RecMcTrees,
-    const std::string& outJsonDir,  // base json dir ("output/jsons")
+    const std::string& outJsonDir,
     const std::string& outPlotDir,
     int maxThreads)
 {
-    TH1::AddDirectory(kFALSE);
-    gStyle->SetOptStat(0);
-
-    struct Job { std::string label; Channel ch; TTree* data; TTree* mc; };
-    std::vector<Job> jobs;
-    jobs.reserve(CANONICAL_PERIODS().size() * 2);
+    // Build workers per period
+    std::vector<PeriodWork> work;
+    work.reserve(CANONICAL_PERIODS().size());
 
     auto getOrNull = [](const auto& m, const std::string& k)->TTree* {
         auto it = m.find(k); return (it != m.end() ? it->second : nullptr);
     };
 
-    // Build jobs from canonical periods (single source of truth)
     for (const auto& P : CANONICAL_PERIODS()) {
-        const std::string base = P.tree_key;      // e.g., "DVCS_Fa18_inb"
-        const std::string lbl  = P.label;         // e.g., "fa18_inb"
-
-        // DVCS (data vs reconstructed MC)
-        {
-            TTree* data = getOrNull(dvcsDataTrees, base);
-            TTree* mc   = getOrNull(dvcsRecMcTrees, base + std::string("_rec"));
-            if (data && mc) jobs.push_back({lbl, Channel::DVCS, data, mc});
-        }
-
-        // eppi0 (data vs reco MC). Keys use the same canonical base plus suffixes from periods.h
-        {
-            TTree* data = getOrNull(eppi0DataTrees,  base + std::string(SUF_EPPI0));
-            TTree* mc   = getOrNull(eppi0RecMcTrees, base + std::string(SUF_REC_MC));
-            if (data && mc) jobs.push_back({lbl, Channel::EPPI0, data, mc});
-        }
+        const std::string base = P.tree_key;
+        const std::string lbl  = P.label;
+        PeriodWork W;
+        W.label      = lbl;
+        W.dvcs_data  = getOrNull(dvcsDataTrees, base);
+        W.dvcs_mc    = getOrNull(dvcsRecMcTrees, base + std::string("_rec"));
+        W.eppi0_data = getOrNull(eppi0DataTrees,  base + std::string(SUF_EPPI0));
+        W.eppi0_mc   = getOrNull(eppi0RecMcTrees, base + std::string(SUF_REC_MC));
+        if (W.dvcs_data && W.dvcs_mc) work.push_back(W);
+        else if (W.eppi0_data && W.eppi0_mc) work.push_back(W);
     }
 
-    if (jobs.empty()) {
+    if (work.empty()) {
         std::cout << "[Info] No exclusivity jobs found.\n";
         return;
     }
 
-    (void)maxThreads; // unused, single-threaded run
+    // Cap to at most 5 threads, and not more than number of periods.
+    int nworkers = std::max(1, std::min<int>(maxThreads, 5));
+    nworkers = std::min<int>(nworkers, static_cast<int>(work.size()));
 
     std::map<std::string, CutDict> combined;
-    for (const auto& job : jobs) {
-        runExclusivityCutsSingle(job.label, job.ch, job.data, job.mc, outJsonDir, outPlotDir, combined);
-    }
+    std::mutex combined_mutex;
 
-    // Write the combined file at the top level (output/jsons/combined_cuts.json)
+    std::vector<std::thread> threads;
+    threads.reserve(nworkers);
+
+    std::atomic<size_t> idx{0};
+    auto worker = [&]() {
+        while (true) {
+            size_t i = idx.fetch_add(1);
+            if (i >= work.size()) break;
+            processPeriod(work[i], outJsonDir, outPlotDir, combined, combined_mutex);
+        }
+    };
+
+    for (int i = 0; i < nworkers; ++i) threads.emplace_back(worker);
+    for (auto& t : threads) t.join();
+
     writeCombinedJson(outJsonDir, combined);
 
-    std::cout << "[All done] Exclusivity cuts ran for " << jobs.size() << " job(s)." << std::endl;
+    std::cout << "[All done] Exclusivity cuts ran for " << work.size()
+              << " period(s) with up to " << nworkers << " worker(s)." << std::endl;
 }

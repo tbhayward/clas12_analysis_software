@@ -2,6 +2,7 @@
 #include "make_dirs.h"
 #include "load_trees.h"
 #include "periods.h"
+#include "global_cuts.h"
 #include "exclusivity_cuts.h"
 #include "load_binning_scheme.h"
 #include "bin_means.h"
@@ -41,30 +42,31 @@ int main(int argc, char* argv[]) {
     // auto binning_scheme = load_binning_scheme(csv_file_path);
     // std::cout << "Loaded binning scheme: " << binning_scheme.size() << " bins" << std::endl;
 
-    // // Containers for different tree categories
-    // std::map<std::string, TTree*> dataTrees;        // DVCS data
-    // std::map<std::string, TTree*> genMcTrees;       // DVCS generated MC (no-rad)
-    // std::map<std::string, TTree*> recMcTrees;       // DVCS reconstructed MC (no-rad)
-    // std::map<std::string, TTree*> eppi0DataTrees;   // eppi0 data
-    // std::map<std::string, TTree*> eppi0GenMcTrees;  // eppi0 generated MC
-    // std::map<std::string, TTree*> eppi0RecMcTrees;  // eppi0 reconstructed MC
-    // std::map<std::string, TTree*> eppi0BkgTrees;    // eppi0 background MC   (FIX: added)
-    // std::map<std::string, TTree*> radGenMcTrees;    // NEW: DVCS generated MC (radiative)
-    // std::map<std::string, TTree*> radRecMcTrees;    // NEW: DVCS reconstructed MC (radiative)
+    // Containers for different tree categories
+    std::map<std::string, TTree*> dataTrees;        // DVCS data
+    std::map<std::string, TTree*> genMcTrees;       // DVCS generated MC (no-rad)
+    std::map<std::string, TTree*> recMcTrees;       // DVCS reconstructed MC (no-rad)
+    std::map<std::string, TTree*> eppi0DataTrees;   // eppi0 data
+    std::map<std::string, TTree*> eppi0GenMcTrees;  // eppi0 generated MC
+    std::map<std::string, TTree*> eppi0RecMcTrees;  // eppi0 reconstructed MC
+    std::map<std::string, TTree*> eppi0BkgTrees;    // eppi0 background MC   (FIX: added)
+    std::map<std::string, TTree*> radGenMcTrees;    // NEW: DVCS generated MC (radiative)
+    std::map<std::string, TTree*> radRecMcTrees;    // NEW: DVCS reconstructed MC (radiative)
 
-    // // Load all trees from files
-    // // FIX: pass eppi0BkgTrees in the correct slot to match load_trees.h
-    // loadTrees(dataTrees, genMcTrees, recMcTrees,
-    //           eppi0DataTrees, eppi0GenMcTrees, eppi0RecMcTrees, eppi0BkgTrees,
-    //           radGenMcTrees, radRecMcTrees);
-    // std::cout << "All trees loaded successfully." << std::endl;
+    // Load all trees from files
+    loadTrees(dataTrees, genMcTrees, recMcTrees,
+              eppi0DataTrees, eppi0GenMcTrees, eppi0RecMcTrees, eppi0BkgTrees,
+              radGenMcTrees, radRecMcTrees);
+    std::cout << "All trees loaded successfully." << std::endl;
 
-    // // Run exclusivity cut extraction (single-threaded for stability)
-    // runAllExclusivityCuts(
-    //     dataTrees, recMcTrees, eppi0DataTrees, eppi0RecMcTrees,
-    //     "output/jsons", "output/exclusivity_plots", 1
-    // );
-    // std::cout << "Exclusivity-cut stage finished." << std::endl;
+    // Run exclusivity cut extraction 
+    // Record the exact global cuts used:
+    write_global_cuts_config_json("output/jsons");
+    runAllExclusivityCuts(
+        dataTrees, recMcTrees, eppi0DataTrees, eppi0RecMcTrees,
+        "output/jsons", "output/exclusivity_plots", 1
+    );
+    std::cout << "Exclusivity-cut stage finished." << std::endl;
 
     // // --------- Global bin-averaged kinematics ----------
     // std::vector<std::string> dvcs_periods;

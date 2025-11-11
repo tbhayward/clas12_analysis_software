@@ -1,10 +1,11 @@
 // exclusivity_cuts.h
 // Multi-stage exclusivity cut extraction with global kinematic cuts and plotting.
-// - Global cuts: open_angle_ep2 > 5 deg, (-t1) <= 1.0, pTmiss <= 0.20
+// - Universal global cuts (applied to all entries before stage logic):
+//     (-t1) < 1.0, open_angle_ep2 > 5.0 deg, pTmiss <= 0.20
 // - Stagewise mu/sigma extraction (left-side Gaussian for theta_* and pTmiss)
-// - JSON outputs per topology, plus a combined JSON for all topologies and periods
-// - Threading set to 1 for robust ROOT I/O (we can revisit with RDataFrame)
-//
+// - One combined JSON for all periods and topologies: output/jsons/combined_cuts.json
+// - Plots are identical to previous version; filenames and styles unchanged.
+// - Parallelized by period with a hard cap of 5 threads.
 
 #ifndef EXCLUSIVITY_CUTS_H
 #define EXCLUSIVITY_CUTS_H
@@ -28,9 +29,9 @@ void runAllExclusivityCuts(
     const std::map<std::string, TTree*>& dvcsRecMcTrees,
     const std::map<std::string, TTree*>& eppi0DataTrees,
     const std::map<std::string, TTree*>& eppi0RecMcTrees,
-    const std::string& outJsonDir,
+    const std::string& outJsonDir,  // base json dir ("output/jsons")
     const std::string& outPlotDir,
-    int maxThreads = 1 // keep 1 for stability; we can revisit
+    int maxThreads = 5               // capped internally to at most 5
 );
 
 #endif // EXCLUSIVITY_CUTS_H
