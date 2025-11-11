@@ -39,11 +39,12 @@
 //      "Sp18 Inb" -> "DVCS_Sp18_inb",
 //      "Sp18 Out" -> "DVCS_Sp18_out".
 // 3) Parallelize ACROSS TREES (max_workers up to 5). Each worker scans its
-//    TTree exactly once, applies BOTH global and 3σ exclusivity cuts, accepts
-//    all topologies, and accumulates per-bin sums and counts for its period.
+//    TTree exactly once, applies BOTH global and 3-sigma exclusivity cuts,
+//    accepts all topologies, and accumulates per-bin sums and counts.
 // 4) After all workers finish, compute the combined groups (Fa18, Sp18,
 //    10.6 GeV) by merging the per-period sums and counts (weighted means).
-// 5) Write the four averages back into the CSV columns for each group.
+// 5) Write the four averages back into the CSV columns. Column names are
+//    "base, Group" (comma + space), e.g. "xBavg, Fa18 Inb".
 // ============================================================================
 
 static const char* kCutsJSON = "output/jsons/combined_cuts.json";
@@ -448,30 +449,40 @@ struct PeriodAccum {
     std::vector<Accum> bins; // one per valid CSV row
 };
 
+// ---------------- Column name resolution (comma style) ----------------
+// Preferred header form is: "base, Group" (comma + space).
+// For robustness, we also accept a couple of legacy aliases.
+static int find_avg_col(const std::unordered_map<std::string,int>& H,
+                        const std::string& base, const std::string& group) {
+    const std::string primary = base + ", " + group;   // matches initialize_pass2_csv
+    auto it = H.find(primary);
+    if (it != H.end()) return it->second;
+
+    // Fallbacks (if someone imports an older CSV)
+    const std::string alt1 = base + " (" + group + ")";
+    const std::string alt2 = base + "," + group;       // comma no space
+    const std::string alt3 = base + " " + group;       // space no comma
+
+    auto try1 = H.find(alt1); if (try1 != H.end()) return try1->second;
+    auto try2 = H.find(alt2); if (try2 != H.end()) return try2->second;
+    auto try3 = H.find(alt3); if (try3 != H.end()) return try3->second;
+
+    std::cerr << "[bin_means] FATAL: column missing: " << primary
+              << " (also tried \"" << alt1 << "\", \"" << alt2 << "\", \"" << alt3 << "\")"
+              << std::endl;
+    std::exit(EXIT_FAILURE);
+}
+
 // ---------------- Write means into CSV rows ----------------
 static void write_means_into_rows(const std::string& group_name,
                                   const std::vector<Accum>& bins,
                                   std::vector<std::vector<std::string>>& rows,
                                   const std::unordered_map<std::string,int>& H)
 {
-    auto need = [&](const std::string& col)->int {
-        auto it = H.find(col);
-        if (it == H.end()) {
-            std::cerr << "[bin_means] FATAL: column missing: " << col << std::endl;
-            std::exit(EXIT_FAILURE);
-        }
-        return it->second;
-    };
-
-    const std::string xb_col   = "xBavg ("     + group_name + ")";
-    const std::string q2_col   = "Q2avg ("     + group_name + ")";
-    const std::string t_col    = "t_abs_avg (" + group_name + ")";
-    const std::string phi_col  = "phiavg ("    + group_name + ")";
-
-    const int XB  = need(xb_col);
-    const int Q2  = need(q2_col);
-    const int TA  = need(t_col);
-    const int PHI = need(phi_col);
+    const int XB  = find_avg_col(H, "xBavg",     group_name);
+    const int Q2  = find_avg_col(H, "Q2avg",     group_name);
+    const int TA  = find_avg_col(H, "t_abs_avg", group_name);
+    const int PHI = find_avg_col(H, "phiavg",    group_name);
 
     std::ostringstream oss;
     oss.setf(std::ios::fixed);
@@ -488,7 +499,7 @@ static void write_means_into_rows(const std::string& group_name,
         double xb_mean  = A.sum_x   / (double)A.n;
         double q2_mean  = A.sum_Q2  / (double)A.n;
         double ta_mean  = A.sum_ta  / (double)A.n;
-        double phi_mean = wrap_360(A.sum_phi / (double)A.n);
+        double phi_mean = wrap_360(A.sum_phi / (double)A.n); // degrees
 
         oss.str(""); oss << std::setprecision(8) << xb_mean;  rows[r][XB]  = oss.str();
         oss.str(""); oss << std::setprecision(8) << q2_mean;  rows[r][Q2]  = oss.str();
@@ -542,7 +553,7 @@ bool update_bin_means_csv(const std::string& csv_path,
     for (int idx : valid_row_indices) valid_rows.push_back(rows_all[idx]);
 
     // Bin ranges and row index mapping
-    Ranges rng;
+    struct Ranges rng;
     std::map<std::tuple<int,int,int,int>, int> tuple_to_row;
     build_ranges_and_index(valid_rows, H, rng, tuple_to_row);
 
