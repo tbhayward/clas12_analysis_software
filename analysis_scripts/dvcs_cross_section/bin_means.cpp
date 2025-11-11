@@ -1,460 +1,636 @@
+// bin_means.cpp
+// Compute per-bin means (xB, Q2, |t|, phi) per period, then fill combined groups,
+// using global cuts AND all derived 3-sigma exclusivity cuts from combined_cuts.json.
+
 #include "bin_means.h"
-#include "exclusivity_cuts.h"   // passes3sigma(...), Topology, topo_to_csv_title(...)
-#include "global_cuts.h"
+#include "periods.h"
+#include "load_binning_scheme.h"
 
 #include <TTree.h>
+
+#include <algorithm>
+#include <cassert>
 #include <cmath>
-#include <cctype>
+#include <cstddef>
 #include <cstdint>
-#include <cstdio>
 #include <fstream>
 #include <iomanip>
 #include <iostream>
 #include <limits>
+#include <map>
+#include <mutex>
 #include <set>
 #include <sstream>
 #include <string>
 #include <tuple>
+#include <type_traits>
 #include <unordered_map>
 #include <utility>
 #include <vector>
 
-// ------------------------------
-// CSV helpers
-// ------------------------------
+#ifdef _OPENMP
+#include <omp.h>
+#endif
+
+// ---------------- constants ----------------
+static constexpr double DEG2RAD = M_PI / 180.0;
+static const std::string kCutsJSON = "output/jsons/combined_cuts.json";
+
+// We accept all topologies for the averages; we only use them to look up the 3σ gates.
+enum class Topology { FD_FD, CD_FD, CD_FT };
+
+static inline const char* topo_tag(Topology t) {
+    switch (t) {
+        case Topology::FD_FD: return "FD_FD";
+        case Topology::CD_FD: return "CD_FD";
+        case Topology::CD_FT: return "CD_FT";
+    }
+    return "FD_FD";
+}
+
+static inline const std::vector<std::string>& csv_period_labels() {
+    static const std::vector<std::string> v = {
+        "Fa18 Inb", "Fa18 Out", "Sp19 Inb", "Sp18 Inb", "Sp18 Out"
+    };
+    return v;
+}
+static inline const std::vector<std::string>& csv_group_labels() {
+    static const std::vector<std::string> v = { "Fa18", "Sp18", "10.6 GeV" };
+    return v;
+}
+
+// Map your tree key to the JSON block and CSV label.
+struct PeriodKeyMap {
+    std::string json_tag;   // e.g. "DVCS_Fa18_Inb"
+    std::string csv_label;  // e.g. "Fa18 Inb"
+};
+static inline PeriodKeyMap period_key_to_tags(const std::string& k) {
+    std::string s; s.reserve(k.size());
+    for (char c : k) s.push_back((char)std::tolower((unsigned char)c));
+    auto has = [&](const char* sub){ return s.find(sub) != std::string::npos; };
+
+    if (has("fa18") && has("inb")) return {"DVCS_Fa18_Inb", "Fa18 Inb"};
+    if (has("fa18") && has("out")) return {"DVCS_Fa18_Out", "Fa18 Out"};
+    if (has("sp19") && has("inb")) return {"DVCS_Sp19_Inb", "Sp19 Inb"};
+    if (has("sp18") && has("inb")) return {"DVCS_Sp18_Inb", "Sp18 Inb"};
+    if (has("sp18") && has("out")) return {"DVCS_Sp18_Out", "Sp18 Out"};
+    return {"", ""};
+}
+
+// ---------------- CSV utils ----------------
+struct CSV {
+    std::vector<std::string> header;
+    std::unordered_map<std::string,int> index;
+    std::vector<std::vector<std::string>> rows;
+};
+
 static std::vector<std::string> split_csv_line(const std::string& line) {
     std::vector<std::string> out;
-    std::string cur; cur.reserve(line.size());
-    bool in_quotes = false;
+    std::string cur;
+    bool inq = false;
     for (char c : line) {
-        if (c == '"') { in_quotes = !in_quotes; continue; }
-        if (c == ',' && !in_quotes) { out.push_back(cur); cur.clear(); }
-        else { cur.push_back(c); }
+        if (c == '"') { inq = !inq; continue; }
+        if (c == ',' && !inq) { out.push_back(cur); cur.clear(); }
+        else cur.push_back(c);
     }
     out.push_back(cur);
     return out;
 }
 
-static std::string join_csv_row(const std::vector<std::string>& fields) {
-    std::ostringstream oss;
-    for (size_t i = 0; i < fields.size(); ++i) {
-        const std::string& s = fields[i];
-        bool need_quotes = s.find(',') != std::string::npos || s.find('"') != std::string::npos;
-        if (need_quotes) {
-            oss << '"';
-            for (char ch : s) oss << (ch == '"' ? "\"\"" : std::string(1, ch));
-            oss << '"';
-        } else {
-            oss << s;
-        }
-        if (i + 1 < fields.size()) oss << ',';
+static bool load_csv(const std::string& path, CSV& csv) {
+    std::ifstream fin(path);
+    if (!fin.is_open()) {
+        std::cerr << "[bin_means] FATAL: cannot open CSV: " << path << std::endl;
+        return false;
     }
-    return oss.str();
+    std::string line;
+    if (!std::getline(fin, line)) {
+        std::cerr << "[bin_means] FATAL: empty CSV: " << path << std::endl;
+        return false;
+    }
+    csv.header = split_csv_line(line);
+    csv.index.clear();
+    for (int i = 0; i < (int)csv.header.size(); ++i) csv.index[csv.header[i]] = i;
+
+    csv.rows.clear();
+    while (std::getline(fin, line)) {
+        if (!line.empty()) csv.rows.push_back(split_csv_line(line));
+    }
+    return true;
 }
 
-static std::unordered_map<std::string,int>
-build_header_index(const std::vector<std::string>& header) {
-    std::unordered_map<std::string,int> m;
-    for (int i = 0; i < (int)header.size(); ++i) m[header[i]] = i;
-    return m;
+static bool write_csv(const std::string& path, const CSV& csv) {
+    std::ofstream fout(path);
+    if (!fout.is_open()) {
+        std::cerr << "[bin_means] FATAL: cannot write CSV: " << path << std::endl;
+        return false;
+    }
+    // header
+    for (size_t i = 0; i < csv.header.size(); ++i) {
+        const std::string& s = csv.header[i];
+        bool needq = s.find(',') != std::string::npos || s.find('"') != std::string::npos;
+        if (needq) {
+            fout << '"';
+            for (char ch : s) fout << (ch == '"' ? "\"\"" : std::string(1, ch));
+            fout << '"';
+        } else {
+            fout << s;
+        }
+        if (i + 1 < csv.header.size()) fout << ',';
+    }
+    fout << "\n";
+    // rows
+    for (const auto& row : csv.rows) {
+        for (size_t i = 0; i < row.size(); ++i) {
+            const std::string& s = row[i];
+            bool needq = s.find(',') != std::string::npos || s.find('"') != std::string::npos;
+            if (needq) {
+                fout << '"';
+                for (char ch : s) fout << (ch == '"' ? "\"\"" : std::string(1, ch));
+                fout << '"';
+            } else {
+                fout << s;
+            }
+            if (i + 1 < row.size()) fout << ',';
+        }
+        fout << "\n";
+    }
+    return true;
 }
 
-static bool get_double(const std::vector<std::string>& row,
-                       const std::unordered_map<std::string,int>& H,
-                       const std::string& name, double& out) {
-    auto it = H.find(name);
-    if (it == H.end()) return false;
-    int j = it->second;
-    if (j < 0 || j >= (int)row.size()) return false;
-    if (row[j].empty()) return false;
-    char* endp = nullptr;
-    out = std::strtod(row[j].c_str(), &endp);
-    return endp != row[j].c_str();
+static int col(const CSV& csv, const std::string& name) {
+    auto it = csv.index.find(name);
+    if (it == csv.index.end()) {
+        std::cerr << "[bin_means] FATAL: column missing: " << name << std::endl;
+        std::exit(EXIT_FAILURE);
+    }
+    return it->second;
 }
 
-static int get_int(const std::vector<std::string>& row,
-                   const std::unordered_map<std::string,int>& H,
-                   const std::string& name, int& out) {
-    auto it = H.find(name);
-    if (it == H.end()) return 0;
-    int j = it->second;
-    if (j < 0 || j >= (int)row.size()) return 0;
-    if (row[j].empty()) return 0;
-    char* endp = nullptr;
-    long v = std::strtol(row[j].c_str(), &endp, 10);
-    if (endp == row[j].c_str()) return 0;
-    out = (int)v;
-    return 1;
-}
+static inline std::string col_xBavg(const std::string& group)  { return "xBavg, "    + group; }
+static inline std::string col_Q2avg(const std::string& group)  { return "Q2avg, "    + group; }
+static inline std::string col_tavg (const std::string& group)  { return "t_abs_avg, "+ group; }
+static inline std::string col_phiavg(const std::string& group) { return "phiavg, "   + group; }
 
-static inline std::string fmt8(double v) {
-    std::ostringstream s; s << std::fixed << std::setprecision(8) << v; return s.str();
-}
+// ---------------- tuple hasher ----------------
+struct TupleHash {
+    template <class T> static inline void hc(std::size_t& s, const T& v) {
+        std::hash<T> h; s ^= h(v) + 0x9e3779b97f4a7c15ULL + (s<<6) + (s>>2);
+    }
+    template <class... Ts> std::size_t operator()(const std::tuple<Ts...>& t) const {
+        std::size_t seed = 0;
+        std::apply([&](const Ts&... elems){ (hc(seed, elems), ...); }, t);
+        return seed;
+    }
+};
 
-static inline double wrap_deg_360(double phi_deg) {
-    if (!std::isfinite(phi_deg)) return std::numeric_limits<double>::quiet_NaN();
-    double w = std::fmod(phi_deg, 360.0);
-    if (w < 0.0) w += 360.0;
-    if (w >= 360.0) w = std::nextafter(360.0, 0.0);
-    return w;
-}
-
-// ------------------------------
-// Branch binder
-// ------------------------------
+// ---------------- branches ----------------
 struct BranchBinder {
-    int    detector1 = 0; bool has_detector1 = false;
-    int    detector2 = 0; bool has_detector2 = false;
+    // det flags (not needed for acceptance, but bound in case you want later logic)
+    int detector1 = 0; bool has_d1 = false;
+    int detector2 = 0; bool has_d2 = false;
 
-    double t1 = 0.0;             bool has_t1 = false;
-    double open_angle_ep2 = 0.0; bool has_open_angle_ep2 = false;
-    double pTmiss = 0.0;         bool has_pTmiss = false;
+    // exclusivity & globals
+    double t1 = 0.0;               bool has_t1 = false;
+    double open_angle_ep2 = 0.0;   bool has_open = false; // degrees
+    double pTmiss = 0.0;           bool has_pT = false;
+    double Emiss2 = 0.0;           bool has_Em2 = false;
+    double Mx2 = 0.0;              bool has_Mx2 = false;
+    double Mx2_1 = 0.0;            bool has_Mx2_1 = false;
+    double Mx2_2 = 0.0;            bool has_Mx2_2 = false;
+    double xF = 0.0;               bool has_xF = false;
 
-    double x = 0.0;              bool has_x = false;
-    double Q2 = 0.0;             bool has_Q2 = false;
-    double phi2 = 0.0;           bool has_phi2 = false;      // degrees
-    double Delta_phi = 0.0;      bool has_Delta_phi = false; // degrees
+    // binning vars
+    double x = 0.0;                bool has_x = false;
+    double Q2 = 0.0;               bool has_Q2 = false;
+    double phi2 = 0.0;             bool has_phi = false;  // degrees
 
     void bind(TTree* t) {
         if (!t) return;
-        auto bindI = [&](const char* n, int* a, bool& f){
-            if (t->GetBranch(n)) { t->SetBranchAddress(n, a); f = true; }
-        };
-        auto bindD = [&](const char* n, double* a, bool& f){
-            if (t->GetBranch(n)) { t->SetBranchAddress(n, a); f = true; }
-        };
+        auto bindI = [&](const char* n, int* a, bool& f){ if (t->GetBranch(n)) { t->SetBranchAddress(n, a); f = true; } };
+        auto bindD = [&](const char* n, double* a, bool& f){ if (t->GetBranch(n)) { t->SetBranchAddress(n, a); f = true; } };
 
-        bindI("detector1", &detector1, has_detector1);
-        bindI("detector2", &detector2, has_detector2);
+        bindI("detector1", &detector1, has_d1);
+        bindI("detector2", &detector2, has_d2);
 
         bindD("t1", &t1, has_t1);
-        bindD("open_angle_ep2", &open_angle_ep2, has_open_angle_ep2);
-        bindD("pTmiss", &pTmiss, has_pTmiss);
+        bindD("open_angle_ep2", &open_angle_ep2, has_open);
+        bindD("pTmiss", &pTmiss, has_pT);
+        bindD("Emiss2", &Emiss2, has_Em2);
+        bindD("Mx2", &Mx2, has_Mx2);
+        bindD("Mx2_1", &Mx2_1, has_Mx2_1);
+        bindD("Mx2_2", &Mx2_2, has_Mx2_2);
+        bindD("xF", &xF, has_xF);
 
         bindD("x", &x, has_x);
         bindD("Q2", &Q2, has_Q2);
-        bindD("phi2", &phi2, has_phi2);
-        bindD("Delta_phi", &Delta_phi, has_Delta_phi);
+        bindD("phi2", &phi2, has_phi);
     }
 
-    inline double phi_deg() const {
-        if (has_phi2) return phi2;
-        if (has_Delta_phi) return Delta_phi;
-        return std::numeric_limits<double>::quiet_NaN();
+    bool readyForCuts() const {
+        // require core globals; the 3-sigma variables are optional and applied if present
+        return has_t1 && has_open && has_pT;
     }
-
-    inline bool readyForCuts() const {
-        return has_t1 && has_open_angle_ep2 && has_pTmiss;
-    }
-    inline bool readyForVars() const {
-        return has_x && has_Q2 && (has_phi2 || has_Delta_phi);
+    bool readyForAverages() const {
+        return has_x && has_Q2 && has_phi;
     }
 };
 
-// ------------------------------
-// Row definition from CSV
-// ------------------------------
-struct RowDef {
-    int    row_index = -1;
-    double xBmin=0, xBmax=0;
-    double Q2min=0, Q2max=0;
-    double tminAbs=0, tmaxAbs=0;
-    double phimin=0, phimax=0; // degrees
-
-    int col_xBavg[8]  = {-1,-1,-1,-1,-1,-1,-1,-1};
-    int col_Q2avg[8]  = {-1,-1,-1,-1,-1,-1,-1,-1};
-    int col_tavg[8]   = {-1,-1,-1,-1,-1,-1,-1,-1};
-    int col_phiavg[8] = {-1,-1,-1,-1,-1,-1,-1,-1};
-};
-
-static const std::vector<std::string>& group_labels() {
-    static const std::vector<std::string> labs = {
-        "Fa18 Inb","Fa18 Out","Sp19 Inb","Sp18 Inb","Sp18 Out","Fa18","Sp18","10.6 GeV"
-    };
-    return labs;
-}
-enum GroupIdx {
-    G_Fa18_Inb=0, G_Fa18_Out=1, G_Sp19_Inb=2, G_Sp18_Inb=3, G_Sp18_Out=4, G_Fa18=5, G_Sp18=6, G_10p6=7
-};
-
-static int period_to_group(const std::string& key) {
-    if (key == "DVCS_Fa18_inb") return G_Fa18_Inb;
-    if (key == "DVCS_Fa18_out") return G_Fa18_Out;
-    if (key == "DVCS_Sp19_inb") return G_Sp19_Inb;
-    if (key == "DVCS_Sp18_inb") return G_Sp18_Inb;
-    if (key == "DVCS_Sp18_out") return G_Sp18_Out;
-    return -1;
-}
-
-// ------------------------------
-// Build unique ranges from CSV rows
-// ------------------------------
-static std::vector<std::pair<double,double>> unique_ranges_from_rows(
-    const std::vector<RowDef>& rows, char which)
-{
-    std::set<std::pair<double,double>> s;
-    for (const auto& r : rows) {
-        if (which=='x') s.emplace(r.xBmin, r.xBmax);
-        else if (which=='Q') s.emplace(r.Q2min, r.Q2max);
-        else if (which=='t') s.emplace(r.tminAbs, r.tmaxAbs);
-        else if (which=='p') s.emplace(r.phimin, r.phimax);
-    }
-    return {s.begin(), s.end()};
-}
-
-static int find_idx(double v, const std::vector<std::pair<double,double>>& ranges) {
-    for (int i = 0; i < (int)ranges.size(); ++i)
-        if (v >= ranges[i].first && v < ranges[i].second) return i;
-    return -1;
-}
-
-// ------------------------------
-// Key4 hashing (fix for GCC11 tuple hashing)
-// ------------------------------
-using Key4 = std::tuple<int,int,int,int>;
-
-struct Key4Hash {
-    size_t operator()(const Key4& k) const noexcept {
-        // simple 64-bit mix
-        uint64_t h = 1469598103934665603ull;
-        auto mix = [&](int v) {
-            uint64_t x = static_cast<uint64_t>(static_cast<uint32_t>(v));
-            h ^= x + 0x9e3779b97f4a7c15ull + (h<<6) + (h>>2);
-        };
-        mix(std::get<0>(k));
-        mix(std::get<1>(k));
-        mix(std::get<2>(k));
-        mix(std::get<3>(k));
-        return static_cast<size_t>(h);
-    }
-};
-
-// ------------------------------
-// Accumulator
-// ------------------------------
-struct Accum {
-    double sum_x=0, sum_Q2=0, sum_t=0, sum_phi=0;
-    long long n=0;
-    inline void add(double xB, double Q2, double tabs, double phi_deg) {
-        sum_x   += xB;
-        sum_Q2  += Q2;
-        sum_t   += tabs;
-        sum_phi += wrap_deg_360(phi_deg);
-        ++n;
-    }
-};
-
-// ------------------------------
-// Cuts: global AND 3-sigma; accept ANY topology
-// ------------------------------
-static bool passes_all_cuts(const std::string& period_key, const BranchBinder& b) {
-    if (!global_cuts::passes(b.t1, b.open_angle_ep2, b.pTmiss)) return false;
-    static const Topology topos[] = {Topology::FD_FD, Topology::CD_FD, Topology::CD_FT};
-    bool ok3 = false;
-    for (Topology tp : topos) {
-        if (passes3sigma(period_key, topo_to_csv_title(tp), b.t1, b.open_angle_ep2, b.pTmiss)) {
-            ok3 = true; break;
-        }
-    }
-    return ok3;
-}
-
-// ------------------------------
-// Main
-// ------------------------------
-bool update_bin_means_csv(const std::string& csv_path,
-                          const std::map<std::string, TTree*>& dataTrees,
-                          int /*worker_count*/) {
-    // 1) Read CSV
-    std::ifstream fin(csv_path);
-    if (!fin.is_open()) {
-        std::cerr << "[bin_means] FATAL: cannot open CSV: " << csv_path << std::endl;
-        return false;
-    }
-    std::string header_line;
-    if (!std::getline(fin, header_line)) {
-        std::cerr << "[bin_means] FATAL: empty CSV: " << csv_path << std::endl;
-        return false;
-    }
-    std::vector<std::string> header = split_csv_line(header_line);
-    auto H = build_header_index(header);
-
-    const char* req[] = {"bin index","xBmin","xBmax","Q2min","Q2max","t_abs_min","t_abs_max","phimin","phimax"};
-    for (auto* n : req) {
-        if (!H.count(n)) {
-            std::cerr << "[bin_means] FATAL: CSV missing column: " << n << std::endl;
-            return false;
-        }
-    }
-
-    // 2) Read rows
-    std::vector<std::vector<std::string>> rows_csv;
-    rows_csv.reserve(4000);
-    std::string line;
-    while (std::getline(fin, line)) {
-        if (!line.empty()) rows_csv.push_back(split_csv_line(line));
-    }
-    fin.close();
-
-    std::vector<RowDef> rows;
-    rows.reserve(rows_csv.size());
-    const auto& groups = group_labels();
-
-    for (size_t r = 0; r < rows_csv.size(); ++r) {
-        const auto& cols = rows_csv[r];
-        RowDef R;
-
-        int idx = -1;
-        get_int(cols, H, "bin index", idx);
-        R.row_index = idx;
-
-        get_double(cols, H, "xBmin", R.xBmin); get_double(cols, H, "xBmax", R.xBmax);
-        get_double(cols, H, "Q2min", R.Q2min); get_double(cols, H, "Q2max", R.Q2max);
-        get_double(cols, H, "t_abs_min", R.tminAbs); get_double(cols, H, "t_abs_max", R.tmaxAbs);
-        get_double(cols, H, "phimin", R.phimin); get_double(cols, H, "phimax", R.phimax);
-
-        for (int g = 0; g < (int)groups.size(); ++g) {
-            std::string s1 = "xBavg, "     + groups[g];
-            std::string s2 = "Q2avg, "     + groups[g];
-            std::string s3 = "t_abs_avg, " + groups[g];
-            std::string s4 = "phiavg, "    + groups[g];
-            auto it1 = H.find(s1); auto it2 = H.find(s2);
-            auto it3 = H.find(s3); auto it4 = H.find(s4);
-            if (it1 == H.end() || it2 == H.end() || it3 == H.end() || it4 == H.end()) {
-                std::cerr << "[bin_means] FATAL: column missing: "
-                          << (it1==H.end()?s1: it2==H.end()?s2: it3==H.end()?s3:s4) << std::endl;
-                return false;
-            }
-            R.col_xBavg[g]  = it1->second;
-            R.col_Q2avg[g]  = it2->second;
-            R.col_tavg[g]   = it3->second;
-            R.col_phiavg[g] = it4->second;
-        }
-        rows.push_back(R);
-    }
-
-    // 3) Build 4D index
-    const auto x_ranges  = unique_ranges_from_rows(rows, 'x');
-    const auto Q_ranges  = unique_ranges_from_rows(rows, 'Q');
-    const auto t_ranges  = unique_ranges_from_rows(rows, 't');
-    const auto p_ranges  = unique_ranges_from_rows(rows, 'p');
-
-    std::unordered_map<Key4, int, Key4Hash> lut;
-    lut.reserve(rows.size()*2);
-    for (int i = 0; i < (int)rows.size(); ++i) {
-        int ix = find_idx(rows[i].xBmin,  x_ranges);
-        int iQ = find_idx(rows[i].Q2min,  Q_ranges);
-        int it = find_idx(rows[i].tminAbs, t_ranges);
-        int ip = find_idx(rows[i].phimin,  p_ranges);
-        if (ix<0 || iQ<0 || it<0 || ip<0) {
-            std::cerr << "[bin_means] WARNING: could not index row i="<<i<<" bin="<<rows[i].row_index<<"\n";
-            continue;
-        }
-        lut.emplace(Key4{ix,iQ,it,ip}, i);
-    }
-
-    // 4) Per-period accumulators (5 periods)
-    const int Rn = (int)rows.size();
-    std::vector<std::vector<Accum>> per_group_acc(5, std::vector<Accum>(Rn));
-
-    auto add_event = [&](int gidx, int row_slot, double xB, double Q2, double tabs, double phi){
-        if (gidx<0 || gidx>=5) return;
-        if (row_slot<0 || row_slot>=Rn) return;
-        per_group_acc[gidx][row_slot].add(xB,Q2,tabs,phi);
-    };
-
-    // 5) Loop each period ONCE
-    for (const auto& kv : dataTrees) {
-        const std::string period_key = kv.first;
-        int gidx = period_to_group(period_key);
-        if (gidx < 0) continue;
-
-        TTree* t = kv.second;
-        if (!t) { std::cerr << "[bin_means] WARNING: null tree for " << period_key << "\n"; continue; }
-
-        BranchBinder b; b.bind(t);
-        if (!b.readyForCuts() || !b.readyForVars()) {
-            std::cerr << "[bin_means] FATAL: tree '"<<period_key<<"' missing required branches.\n";
-            return false;
-        }
-
-        const Long64_t nent = t->GetEntries();
-        for (Long64_t i = 0; i < nent; ++i) {
-            t->GetEntry(i);
-            if (!passes_all_cuts(period_key, b)) continue;
-
-            double xB  = b.x;
-            double Q2  = b.Q2;
-            double tab = std::fabs(b.t1);
-            double phi = wrap_deg_360(b.phi_deg());
-            if (!std::isfinite(xB) || !std::isfinite(Q2) || !std::isfinite(tab) || !std::isfinite(phi)) continue;
-
-            int ix = find_idx(xB,  x_ranges);
-            int iQ = find_idx(Q2,  Q_ranges);
-            int it = find_idx(tab, t_ranges);
-            int ip = find_idx(phi, p_ranges);
-            if (ix<0 || iQ<0 || it<0 || ip<0) continue;
-
-            auto itL = lut.find(Key4{ix,iQ,it,ip});
-            if (itL == lut.end()) continue;
-            int row_slot = itL->second;
-
-            add_event(gidx, row_slot, xB, Q2, tab, phi);
-        }
-    }
-
-    // 6) Write per-period means
-    auto write_means_for_group = [&](int gidx_period, int g_write_slot) {
-        for (int i = 0; i < Rn; ++i) {
-            const auto& a = per_group_acc[gidx_period][i];
-            if (a.n <= 0) continue;
-            rows_csv[i][ rows[i].col_xBavg[g_write_slot]  ] = fmt8(a.sum_x / a.n);
-            rows_csv[i][ rows[i].col_Q2avg[g_write_slot]  ] = fmt8(a.sum_Q2 / a.n);
-            rows_csv[i][ rows[i].col_tavg[g_write_slot]   ] = fmt8(a.sum_t / a.n);
-            rows_csv[i][ rows[i].col_phiavg[g_write_slot] ] = fmt8(a.sum_phi / a.n);
-        }
-    };
-
-    write_means_for_group(G_Fa18_Inb, G_Fa18_Inb);
-    write_means_for_group(G_Fa18_Out, G_Fa18_Out);
-    write_means_for_group(G_Sp19_Inb, G_Sp19_Inb);
-    write_means_for_group(G_Sp18_Inb, G_Sp18_Inb);
-    write_means_for_group(G_Sp18_Out, G_Sp18_Out);
-
-    // 7) Combined groups from per-period sums
-    auto combine_and_write = [&](const std::vector<int>& src_gidx, int dst_slot) {
-        std::vector<Accum> combined(Rn);
-        for (int i = 0; i < Rn; ++i) {
-            for (int g : src_gidx) {
-                combined[i].sum_x   += per_group_acc[g][i].sum_x;
-                combined[i].sum_Q2  += per_group_acc[g][i].sum_Q2;
-                combined[i].sum_t   += per_group_acc[g][i].sum_t;
-                combined[i].sum_phi += per_group_acc[g][i].sum_phi;
-                combined[i].n       += per_group_acc[g][i].n;
-            }
-            if (combined[i].n > 0) {
-                rows_csv[i][ rows[i].col_xBavg[dst_slot]  ] = fmt8(combined[i].sum_x   / combined[i].n);
-                rows_csv[i][ rows[i].col_Q2avg[dst_slot]  ] = fmt8(combined[i].sum_Q2  / combined[i].n);
-                rows_csv[i][ rows[i].col_tavg[dst_slot]   ] = fmt8(combined[i].sum_t   / combined[i].n);
-                rows_csv[i][ rows[i].col_phiavg[dst_slot] ] = fmt8(combined[i].sum_phi / combined[i].n);
-            }
-        }
-    };
-
-    combine_and_write({G_Fa18_Inb, G_Fa18_Out}, G_Fa18);
-    combine_and_write({G_Sp18_Inb, G_Sp18_Out}, G_Sp18);
-    combine_and_write({G_Fa18_Inb, G_Fa18_Out, G_Sp18_Inb, G_Sp18_Out}, G_10p6);
-
-    // 8) Write CSV back
-    std::ofstream fout(csv_path);
-    if (!fout.is_open()) {
-        std::cerr << "[bin_means] FATAL: cannot re-open CSV for write: " << csv_path << std::endl;
-        return false;
-    }
-    fout << join_csv_row(header) << "\n";
-    for (const auto& row : rows_csv) fout << join_csv_row(row) << "\n";
-    fout.close();
-
-    std::cout << "[bin_means] Updated bin means in: " << csv_path << std::endl;
+// ---------------- global cuts ----------------
+static inline bool passes_global(const BranchBinder& b) {
+    if (!b.readyForCuts()) return false;
+    if (b.open_angle_ep2 <= 5.0) return false;    // deg
+    if ((-b.t1) > 1.0)          return false;     // |t| < 1.0
+    if (b.pTmiss > 0.20)        return false;     // GeV
     return true;
+}
+
+// ---------------- 3-sigma cuts loader ----------------
+struct Sigmas { double mean = std::numeric_limits<double>::quiet_NaN(); double std = std::numeric_limits<double>::quiet_NaN(); };
+using VarMap = std::unordered_map<std::string, Sigmas>;           // var -> {mean,std}
+static std::unordered_map<std::string, VarMap> g_sigma_cache;     // "DVCS_Fa18_Inb_FD_FD" -> map
+static std::once_flag g_sigma_once;
+
+static double parse_number(const std::string& s, size_t& i) {
+    while (i < s.size() && !(std::isdigit((unsigned char)s[i]) || s[i]=='-' || s[i]=='+')) ++i;
+    size_t st = i;
+    while (i < s.size() && (std::isdigit((unsigned char)s[i]) || s[i]=='.' || s[i]=='e' || s[i]=='E' || s[i]=='+' || s[i]=='-')) ++i;
+    if (st == i) return std::numeric_limits<double>::quiet_NaN();
+    return std::strtod(s.c_str() + st, nullptr);
+}
+
+static Sigmas extract_mean_std(const std::string& block, const std::string& var) {
+    Sigmas out;
+    size_t data_pos = block.find("\"data\"");
+    if (data_pos == std::string::npos) return out;
+    size_t var_pos = block.find("\"" + var + "\"", data_pos);
+    if (var_pos == std::string::npos) return out;
+    size_t mpos = block.find("\"mean\"", var_pos);
+    size_t spos = block.find("\"std\"",  var_pos);
+    if (mpos != std::string::npos) { size_t i = mpos; out.mean = parse_number(block, i); }
+    if (spos != std::string::npos) { size_t i = spos; out.std  = parse_number(block, i); }
+    return out;
+}
+
+static std::string extract_object(const std::string& full, const std::string& key) {
+    const std::string qk = "\"" + key + "\"";
+    size_t p = full.find(qk);
+    if (p == std::string::npos) return {};
+    size_t brace = full.find('{', p);
+    if (brace == std::string::npos) return {};
+    int depth = 0;
+    size_t i = brace;
+    for (; i < full.size(); ++i) {
+        if (full[i] == '{') ++depth;
+        else if (full[i] == '}') { --depth; if (depth == 0) { ++i; break; } }
+    }
+    if (i <= brace) return {};
+    return full.substr(brace, i - brace);
+}
+
+static void load_sigmas_once() {
+    std::ifstream fin(kCutsJSON);
+    if (!fin.is_open()) {
+        std::cerr << "[bin_means] WARNING: cannot open " << kCutsJSON << " — 3-sigma cuts skipped." << std::endl;
+        return;
+    }
+    std::string text((std::istreambuf_iterator<char>(fin)), std::istreambuf_iterator<char>());
+
+    const std::vector<std::string> P = { "DVCS_Fa18_Inb", "DVCS_Fa18_Out", "DVCS_Sp19_Inb",
+                                         "DVCS_Sp18_Inb", "DVCS_Sp18_Out" };
+    const std::vector<std::string> T = { "FD_FD", "CD_FD", "CD_FT" };
+
+    const std::vector<std::string> VARS = {
+        "Emiss2", "Mx2", "Mx2_1", "Mx2_2", "pTmiss", "theta_gamma_gamma", "xF"
+    };
+
+    for (const auto& p : P) {
+        for (const auto& t : T) {
+            const std::string key = p + "_" + t;
+            const std::string obj = extract_object(text, key);
+            if (obj.empty()) continue;
+            VarMap vm;
+            for (const auto& v : VARS) {
+                Sigmas s = extract_mean_std(obj, v);
+                if (std::isfinite(s.std)) vm[v] = s;
+            }
+            if (!vm.empty()) g_sigma_cache.emplace(key, std::move(vm));
+        }
+    }
+}
+
+enum class CutMode { TwoSided, UpperOnly };
+
+static CutMode var_mode(const std::string& var) {
+    if (var == "Emiss2" || var == "pTmiss" || var == "theta_gamma_gamma") return CutMode::UpperOnly;
+    return CutMode::TwoSided; // Mx2, Mx2_1, Mx2_2, xF
+}
+
+static bool passes_3sigma_for_topo(const std::string& period_json_tag,
+                                   Topology topo,
+                                   const BranchBinder& b) {
+    std::call_once(g_sigma_once, load_sigmas_once);
+    if (period_json_tag.empty()) return true;
+
+    const std::string key = period_json_tag + "_" + std::string(topo_tag(topo));
+    auto it = g_sigma_cache.find(key);
+    if (it == g_sigma_cache.end()) return true;
+
+    const VarMap& vm = it->second;
+
+    auto check = [&](const char* var, bool has_val, double val)->bool {
+        auto itv = vm.find(var);
+        if (itv == vm.end()) return true;          // no derived cut for this var -> pass
+        if (!has_val) return true;                 // branch not available -> pass
+        const Sigmas s = itv->second;
+        if (!std::isfinite(s.mean) || !std::isfinite(s.std)) return true;
+
+        const CutMode mode = var_mode(var);
+        if (mode == CutMode::UpperOnly) {
+            return (val <= s.mean + 3.0 * s.std);
+        } else {
+            const double d = std::abs(val - s.mean);
+            return (d <= 3.0 * s.std);
+        }
+    };
+
+    // theta: JSON stored in radians; branch is degrees
+    const bool ok_theta = check("theta_gamma_gamma", b.has_open, b.open_angle_ep2 * DEG2RAD);
+    const bool ok_pT    = check("pTmiss",           b.has_pT,   b.pTmiss);
+    const bool ok_Em2   = check("Emiss2",           b.has_Em2,  b.Emiss2);
+    const bool ok_Mx2   = check("Mx2",              b.has_Mx2,  b.Mx2);
+    const bool ok_Mx21  = check("Mx2_1",            b.has_Mx2_1,b.Mx2_1);
+    const bool ok_Mx22  = check("Mx2_2",            b.has_Mx2_2,b.Mx2_2);
+    const bool ok_xF    = check("xF",               b.has_xF,   b.xF);
+
+    return ok_theta && ok_pT && ok_Em2 && ok_Mx2 && ok_Mx21 && ok_Mx22 && ok_xF;
+}
+
+// Accept if ANY topology’s 3σ gate passes (you said: accept all topologies for averages).
+static bool passes_all_exclusivity(const std::string& period_json_tag, const BranchBinder& b) {
+    return passes_3sigma_for_topo(period_json_tag, Topology::FD_FD, b)
+        || passes_3sigma_for_topo(period_json_tag, Topology::CD_FD, b)
+        || passes_3sigma_for_topo(period_json_tag, Topology::CD_FT, b);
+}
+
+// ---------------- accumulators ----------------
+struct Accum {
+    double sx = 0.0, sQ = 0.0, st = 0.0, sp = 0.0;
+    long long n = 0;
+    void add(double x, double Q2, double tabs, double phi_deg) { sx += x; sQ += Q2; st += tabs; sp += phi_deg; ++n; }
+    double mx() const { return n ? sx / n : std::numeric_limits<double>::quiet_NaN(); }
+    double mQ() const { return n ? sQ / n : std::numeric_limits<double>::quiet_NaN(); }
+    double mt() const { return n ? st / n : std::numeric_limits<double>::quiet_NaN(); }
+    double mp() const { return n ? sp / n : std::numeric_limits<double>::quiet_NaN(); }
+};
+
+static bool in_range(double v, double a, double b) { return (v >= a) && (v < b); }
+
+static bool row_accepts_phi(double phi_deg, double pmin_deg, double pmax_deg) {
+    if (!std::isfinite(phi_deg) || !std::isfinite(pmin_deg) || !std::isfinite(pmax_deg)) return false;
+    if (pmax_deg > pmin_deg) return in_range(phi_deg, pmin_deg, pmax_deg);
+    // wrap-around safety (unlikely for this CSV)
+    return phi_deg >= pmin_deg || phi_deg < pmax_deg;
+}
+
+static bool row_accepts_kin(const BranchBinder& b,
+                            double xBmin, double xBmax,
+                            double Q2min, double Q2max,
+                            double tmin, double tmax) {
+    const double tabs = std::fabs(b.t1);
+    if (!in_range(b.x,   xBmin, xBmax))   return false;
+    if (!in_range(b.Q2,  Q2min, Q2max))   return false;
+    if (!in_range(tabs,  tmin,  tmax))    return false;
+    return true;
+}
+
+// ---------------- per-period processing ----------------
+struct PeriodResult {
+    std::unordered_map<int, Accum> per_row; // row index -> Accum
+};
+
+static PeriodResult process_period(const std::string& period_key, TTree* tree, const CSV& csv) {
+    PeriodResult R;
+    if (!tree) return R;
+
+    PeriodKeyMap tags = period_key_to_tags(period_key);
+    if (tags.json_tag.empty() || tags.csv_label.empty()) {
+        std::cerr << "[bin_means] WARNING: cannot map period key '" << period_key
+                  << "' to JSON/CSV labels; proceeding without 3-sigma cuts for this period."
+                  << std::endl;
+    }
+
+    BranchBinder b; b.bind(tree);
+    if (!b.readyForCuts() || !b.readyForAverages()) {
+        std::cerr << "[bin_means] FATAL: Tree for '" << period_key
+                  << "' missing branches (t1/open_angle_ep2/pTmiss/x/Q2/phi2)." << std::endl;
+        std::exit(EXIT_FAILURE);
+    }
+
+    // CSV columns we need
+    const int c_xBmin = col(csv, "xBmin");
+    const int c_xBmax = col(csv, "xBmax");
+    const int c_Q2min = col(csv, "Q2min");
+    const int c_Q2max = col(csv, "Q2max");
+    const int c_tmin  = col(csv, "t_abs_min");
+    const int c_tmax  = col(csv, "t_abs_max");
+    const int c_pmin  = col(csv, "phimin");
+    const int c_pmax  = col(csv, "phimax");
+    const int c_valid = col(csv, "valid bin");
+
+    auto toD = [](const std::string& s)->double {
+        if (s.empty()) return std::numeric_limits<double>::quiet_NaN();
+        char* e = nullptr; double v = std::strtod(s.c_str(), &e);
+        return (e == s.c_str()) ? std::numeric_limits<double>::quiet_NaN() : v;
+    };
+
+    const Long64_t N = tree->GetEntries();
+    for (Long64_t i = 0; i < N; ++i) {
+        tree->GetEntry(i);
+        if (!passes_global(b)) continue;
+
+        // 3-sigma (any topology OK)
+        if (!passes_all_exclusivity(tags.json_tag, b)) continue;
+
+        for (int r = 0; r < (int)csv.rows.size(); ++r) {
+            const auto& row = csv.rows[r];
+
+            // valid row?
+            bool valid = true;
+            if (c_valid < (int)row.size()) {
+                const std::string& vs = row[c_valid];
+                valid = (vs == "1" || vs == "1.0" || vs == "true" || vs == "TRUE");
+            }
+            if (!valid) continue;
+
+            const double xBmin  = toD(row[c_xBmin]);
+            const double xBmax  = toD(row[c_xBmax]);
+            const double Q2min  = toD(row[c_Q2min]);
+            const double Q2max  = toD(row[c_Q2max]);
+            const double tmin   = toD(row[c_tmin]);
+            const double tmax   = toD(row[c_tmax]);
+            const double pmin   = toD(row[c_pmin]);
+            const double pmax   = toD(row[c_pmax]);
+
+            if (!row_accepts_kin(b, xBmin, xBmax, Q2min, Q2max, tmin, tmax)) continue;
+            if (!row_accepts_phi(b.phi2, pmin, pmax)) continue;
+
+            R.per_row[r].add(b.x, b.Q2, std::fabs(b.t1), b.phi2);
+        }
+    }
+
+    return R;
+}
+
+// ---------------- main entry ----------------
+static inline std::string fmt8(double v) {
+    if (!std::isfinite(v)) return std::string();
+    std::ostringstream oss; oss << std::fixed << std::setprecision(8) << v;
+    return oss.str();
+}
+
+static void fill_combined_groups(CSV& csv,
+                                 const std::unordered_map<std::string, std::unordered_map<int, Accum>>& per_period) {
+    // Build helpers: map CSV label -> per-row Accum (already computed)
+    auto get = [&](const std::string& lab)->const std::unordered_map<int, Accum>* {
+        auto it = per_period.find(lab);
+        return (it == per_period.end()) ? nullptr : &it->second;
+    };
+
+    const auto* Fa18Inb = get("Fa18 Inb");
+    const auto* Fa18Out = get("Fa18 Out");
+    const auto* Sp18Inb = get("Sp18 Inb");
+    const auto* Sp18Out = get("Sp18 Out");
+    const auto* Sp19Inb = get("Sp19 Inb");
+
+    const int c_xB_Fa18   = col(csv, col_xBavg("Fa18"));
+    const int c_Q2_Fa18   = col(csv, col_Q2avg("Fa18"));
+    const int c_t_Fa18    = col(csv, col_tavg ("Fa18"));
+    const int c_phi_Fa18  = col(csv, col_phiavg("Fa18"));
+
+    const int c_xB_Sp18   = col(csv, col_xBavg("Sp18"));
+    const int c_Q2_Sp18   = col(csv, col_Q2avg("Sp18"));
+    const int c_t_Sp18    = col(csv, col_tavg ("Sp18"));
+    const int c_phi_Sp18  = col(csv, col_phiavg("Sp18"));
+
+    const int c_xB_106    = col(csv, col_xBavg("10.6 GeV"));
+    const int c_Q2_106    = col(csv, col_Q2avg("10.6 GeV"));
+    const int c_t_106     = col(csv, col_tavg ("10.6 GeV"));
+    const int c_phi_106   = col(csv, col_phiavg("10.6 GeV"));
+
+    auto combine = [&](const std::vector<const std::unordered_map<int, Accum>*>& parts, int row)->Accum {
+        Accum a;
+        for (auto* p : parts) {
+            if (!p) continue;
+            auto it = p->find(row);
+            if (it == p->end()) continue;
+            const Accum& r = it->second;
+            a.sx += r.sx; a.sQ += r.sQ; a.st += r.st; a.sp += r.sp; a.n += r.n;
+        }
+        return a;
+    };
+
+    for (int r = 0; r < (int)csv.rows.size(); ++r) {
+        // Fa18 = Inb + Out
+        {
+            Accum a = combine({Fa18Inb, Fa18Out}, r);
+            if (a.n > 0) {
+                csv.rows[r][c_xB_Fa18]  = fmt8(a.mx());
+                csv.rows[r][c_Q2_Fa18]  = fmt8(a.mQ());
+                csv.rows[r][c_t_Fa18]   = fmt8(a.mt());
+                csv.rows[r][c_phi_Fa18] = fmt8(a.mp());
+            }
+        }
+        // Sp18 = Inb + Out
+        {
+            Accum a = combine({Sp18Inb, Sp18Out}, r);
+            if (a.n > 0) {
+                csv.rows[r][c_xB_Sp18]  = fmt8(a.mx());
+                csv.rows[r][c_Q2_Sp18]  = fmt8(a.mQ());
+                csv.rows[r][c_t_Sp18]   = fmt8(a.mt());
+                csv.rows[r][c_phi_Sp18] = fmt8(a.mp());
+            }
+        }
+        // 10.6 GeV = Fa18 + Sp18 (exclude Sp19 10.2 GeV)
+        {
+            Accum a = combine({Fa18Inb, Fa18Out, Sp18Inb, Sp18Out}, r);
+            if (a.n > 0) {
+                csv.rows[r][c_xB_106]  = fmt8(a.mx());
+                csv.rows[r][c_Q2_106]  = fmt8(a.mQ());
+                csv.rows[r][c_t_106]   = fmt8(a.mt());
+                csv.rows[r][c_phi_106] = fmt8(a.mp());
+            }
+        }
+        (void)Sp19Inb; // intentionally unused for 10.6 GeV group
+    }
+}
+
+void update_bin_means_csv(const std::string& csv_path,
+                          const std::map<std::string, TTree*>& dataTrees,
+                          int max_workers) {
+    CSV csv;
+    if (!load_csv(csv_path, csv)) std::exit(EXIT_FAILURE);
+
+    // Resolve per-period CSV columns for writing period means
+    std::unordered_map<std::string,int> cxB, cQ2, ct, cphi;
+    for (const auto& lab : csv_period_labels()) {
+        cxB[lab]  = col(csv, col_xBavg(lab));
+        cQ2[lab]  = col(csv, col_Q2avg(lab));
+        ct[lab]   = col(csv, col_tavg (lab));
+        cphi[lab] = col(csv, col_phiavg(lab));
+    }
+
+    // Determine available period keys from dataTrees
+    std::vector<std::string> period_keys;
+    for (const auto& P : CANONICAL_PERIODS()) {
+        auto it = dataTrees.find(P.tree_key);
+        if (it != dataTrees.end() && it->second) period_keys.push_back(P.tree_key);
+    }
+    if (period_keys.empty()) {
+        std::cerr << "[bin_means] FATAL: no DVCS trees available in dataTrees." << std::endl;
+        std::exit(EXIT_FAILURE);
+    }
+
+    // Process periods (optionally in parallel across periods)
+    std::vector<PeriodResult> results(period_keys.size());
+
+    const int nth = std::max(1, std::min(5, max_workers));
+#ifdef _OPENMP
+#pragma omp parallel for schedule(static) num_threads(nth)
+#endif
+    for (int i = 0; i < (int)period_keys.size(); ++i) {
+        const std::string& pk = period_keys[i];
+        auto it = dataTrees.find(pk);
+        TTree* t = (it == dataTrees.end()) ? nullptr : it->second;
+        results[i] = process_period(pk, t, csv);
+    }
+
+    // Write period results into CSV cells
+    std::unordered_map<std::string, std::unordered_map<int, Accum>> per_period_rows; // label -> row -> Accum
+
+    for (int i = 0; i < (int)period_keys.size(); ++i) {
+        const std::string& pk = period_keys[i];
+        PeriodKeyMap tags = period_key_to_tags(pk);
+        if (tags.csv_label.empty()) continue; // skip unknown
+
+        const auto& perrow = results[i].per_row;
+        per_period_rows[tags.csv_label] = perrow;
+
+        for (const auto& kv : perrow) {
+            int r = kv.first;
+            const Accum& a = kv.second;
+            if (a.n <= 0) continue;
+
+            csv.rows[r][cxB[tags.csv_label]]  = fmt8(a.mx());
+            csv.rows[r][cQ2[tags.csv_label]]  = fmt8(a.mQ());
+            csv.rows[r][ct [tags.csv_label]]  = fmt8(a.mt());
+            csv.rows[r][cphi[tags.csv_label]] = fmt8(a.mp());
+        }
+    }
+
+    // Fill combined groups from the period maps (no TTree reread)
+    fill_combined_groups(csv, per_period_rows);
+
+    if (!write_csv(csv_path, csv)) std::exit(EXIT_FAILURE);
+    std::cout << "[bin_means] Updated bin means in: " << csv_path << std::endl;
 }
