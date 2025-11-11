@@ -82,12 +82,14 @@ int main(int argc, char* argv[]) {
 
     // --------- Global bin-averaged kinematics (CSV update) ----------
     {
+        const std::string csv_main   = "output/csvs/dvcs_pass2_analysis.csv";
+        const std::string csv_backup = "output/csvs/dvcs_pass2_analysis_backup_bin_means.csv";
+
         // Make a simple backup before modifying
         try {
-            std::filesystem::copy_file("output/csvs/dvcs_pass2_analysis.csv", 
-                "output/csvs/dvcs_pass2_analysis_backup_bin_means.csv",
-                std::filesystem::copy_options::overwrite_existing);
-            std::cout << "[main] Backed up CSV.\n";
+            std::filesystem::copy_file(csv_main, csv_backup,
+                                       std::filesystem::copy_options::overwrite_existing);
+            std::cout << "[main] Backed up CSV to " << csv_backup << "\n";
         } catch (const std::exception& e) {
             std::cerr << "[main] WARNING: Backup failed (" << e.what() << "). Continuing anyway.\n";
         }
