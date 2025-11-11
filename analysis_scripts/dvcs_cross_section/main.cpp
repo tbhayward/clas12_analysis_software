@@ -42,22 +42,22 @@ int main(int argc, char* argv[]) {
     // auto binning_scheme = load_binning_scheme(csv_file_path);
     // std::cout << "Loaded binning scheme: " << binning_scheme.size() << " bins" << std::endl;
 
-    // // Containers for different tree categories
-    // std::map<std::string, TTree*> dataTrees;        // DVCS data
-    // std::map<std::string, TTree*> genMcTrees;       // DVCS generated MC (no-rad)
-    // std::map<std::string, TTree*> recMcTrees;       // DVCS reconstructed MC (no-rad)
-    // std::map<std::string, TTree*> eppi0DataTrees;   // eppi0 data
-    // std::map<std::string, TTree*> eppi0GenMcTrees;  // eppi0 generated MC
-    // std::map<std::string, TTree*> eppi0RecMcTrees;  // eppi0 reconstructed MC
-    // std::map<std::string, TTree*> eppi0BkgTrees;    // eppi0 background MC   (FIX: added)
-    // std::map<std::string, TTree*> radGenMcTrees;    // NEW: DVCS generated MC (radiative)
-    // std::map<std::string, TTree*> radRecMcTrees;    // NEW: DVCS reconstructed MC (radiative)
+    // Containers for different tree categories
+    std::map<std::string, TTree*> dataTrees;        // DVCS data
+    std::map<std::string, TTree*> genMcTrees;       // DVCS generated MC (no-rad)
+    std::map<std::string, TTree*> recMcTrees;       // DVCS reconstructed MC (no-rad)
+    std::map<std::string, TTree*> eppi0DataTrees;   // eppi0 data
+    std::map<std::string, TTree*> eppi0GenMcTrees;  // eppi0 generated MC
+    std::map<std::string, TTree*> eppi0RecMcTrees;  // eppi0 reconstructed MC
+    std::map<std::string, TTree*> eppi0BkgTrees;    // eppi0 background MC   (FIX: added)
+    std::map<std::string, TTree*> radGenMcTrees;    // NEW: DVCS generated MC (radiative)
+    std::map<std::string, TTree*> radRecMcTrees;    // NEW: DVCS reconstructed MC (radiative)
 
-    // // Load all trees from files
-    // loadTrees(dataTrees, genMcTrees, recMcTrees,
-    //           eppi0DataTrees, eppi0GenMcTrees, eppi0RecMcTrees, eppi0BkgTrees,
-    //           radGenMcTrees, radRecMcTrees);
-    // std::cout << "All trees loaded successfully." << std::endl;
+    // Load all trees from files
+    loadTrees(dataTrees, genMcTrees, recMcTrees,
+              eppi0DataTrees, eppi0GenMcTrees, eppi0RecMcTrees, eppi0BkgTrees,
+              radGenMcTrees, radRecMcTrees);
+    std::cout << "All trees loaded successfully." << std::endl;
 
     // // Run exclusivity cut extraction 
     // // Record the exact global cuts used:
@@ -79,6 +79,25 @@ int main(int argc, char* argv[]) {
 
     // calculate_bin_means(dvcs_periods, topologies, analysis_type, binning_scheme, output_json_means, 
     //     dataTrees);
+
+    // --------- Global bin-averaged kinematics (CSV update) ----------
+    {
+        // Make a simple backup before modifying
+        try {
+            std::filesystem::copy_file("output/csvs/dvcs_pass2_analysis.csv", 
+                "output/csvs/dvcs_pass2_analysis_backup_bin_means.csv",
+                std::filesystem::copy_options::overwrite_existing);
+            std::cout << "[main] Backed up CSV to " << csv_backup << "\n";
+        } catch (const std::exception& e) {
+            std::cerr << "[main] WARNING: Backup failed (" << e.what() << "). Continuing anyway.\n";
+        }
+
+        // dataTrees already built (keys like DVCS_Fa18_inb, ...). Launch with up to 5 workers.
+        if (!update_bin_means_csv(csv_main, dataTrees, /*max_workers=*/5)) {
+            std::cerr << "[main] ERROR: update_bin_means_csv failed.\n";
+            std::exit(EXIT_FAILURE);
+        }
+    }
 
     // // // --------- Total counts after exclusivity cuts (by helicity) ----------
     // const std::string cuts_json_path   = "output/jsons/combined_cuts.json"; 
