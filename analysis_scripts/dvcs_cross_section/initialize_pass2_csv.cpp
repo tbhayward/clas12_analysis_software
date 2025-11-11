@@ -10,11 +10,10 @@
 #include <unordered_map>
 #include <utility>
 #include <vector>
-#include <algorithm>  
+#include <algorithm>
 #include <iterator>
 
 /**
- *
  * OVERVIEW
  * --------
  * 1) Read header row from Lee's CSV and build a "name -> index" lookup.
@@ -25,30 +24,16 @@
  *    - Leave all other analysis-produced columns blank for now.
  * 5) Write the new CSV file.
  *
- * CSV FORMAT
- * ----------
- * We only need a simple CSV parser that can handle quoted fields and commas.
- * We'll implement a minimal split function that respects double quotes.
- *
  * TRIPLE FIELDS
  * -------------
- * Certain fields will later store triplets "value,stat,syst" inside a single CSV cell.
- * In this initializer, we leave those cells blank (empty string). Downstream code will
- * fill them with quoted triples (e.g. "12.3,0.5,0.7"). We provide a simple formatter below.
+ * Some downstream fields will store triplets "value,stat,syst" inside a single CSV cell.
+ * Here we leave them blank; later steps will populate them.
  */
 
 /* ============================
  * Minimal CSV utilities
  * ============================ */
 
-/**
- * split_csv_line
- *
- * Splits a CSV line into fields with very basic quote handling.
- * - If we are inside double quotes, commas are treated as literal commas.
- * - Quotes themselves are not included in the returned text.
- *
- */
 static std::vector<std::string> split_csv_line(const std::string& line) {
     std::vector<std::string> out;
     std::string cur;
@@ -71,13 +56,6 @@ static std::vector<std::string> split_csv_line(const std::string& line) {
     return out;
 }
 
-/**
- * join_csv_row
- *
- * Writes a vector of fields to a CSV line.
- * - If a field contains a comma or a quote, we wrap it in quotes and
- *   escape any embedded quotes by doubling them.
- */
 static std::string join_csv_row(const std::vector<std::string>& fields) {
     std::ostringstream oss;
     for (size_t i = 0; i < fields.size(); ++i) {
@@ -85,8 +63,8 @@ static std::string join_csv_row(const std::vector<std::string>& fields) {
         bool need_quotes = (s.find(',') != std::string::npos) || (s.find('"') != std::string::npos);
         if (need_quotes) {
             oss << '"';
-            for (char c : s) {
-                if (c == '"') oss << "\"\""; else oss << c;
+            for (char ch : s) {
+                if (ch == '"') oss << "\"\""; else oss << ch;
             }
             oss << '"';
         } else {
@@ -101,10 +79,6 @@ static std::string join_csv_row(const std::vector<std::string>& fields) {
  * Header lookup helpers
  * ============================ */
 
-/**
- * Build a case-sensitive name->index map for Lee's header.
- * We use exact names because Lee's CSV has stable column titles.
- */
 static std::unordered_map<std::string, int>
 build_header_index(const std::vector<std::string>& header) {
     std::unordered_map<std::string, int> m;
@@ -114,12 +88,6 @@ build_header_index(const std::vector<std::string>& header) {
     return m;
 }
 
-/**
- * get_col
- *
- * Safe getter that returns empty string if a named column is missing
- * or out-of-range in the given row. We do not throw; we leave cells blank.
- */
 static std::string get_col(const std::vector<std::string>& row,
                            const std::unordered_map<std::string,int>& idx,
                            const std::string& name) {
@@ -130,12 +98,6 @@ static std::string get_col(const std::vector<std::string>& row,
     return row[j];
 }
 
-/**
- * ToInteger
- *
- * Converts a string to integer. Returns 0 if conversion fails.
- * Used only for "valid bin" filtering.
- */
 static int ToInteger(const std::string& s) {
     if (s.empty()) return 0;
     char* endp = nullptr;
@@ -145,17 +107,9 @@ static int ToInteger(const std::string& s) {
 }
 
 /* ============================
- * Triplet formatter
- * ============================
- *
- * We will leave all triplet fields blank at initialization.
- * This helper shows how we will format triplets later:
- *
- *   make_triplet(12.3, 0.5, 0.7)  ->  "12.3,0.5,0.7"
- *
- * If you want to populate a single-number-only field as a triplet,
- * you can do: make_triplet(value, NAN, NAN) or just leave it blank here.
- */
+ * Triplet formatter (unused here)
+ * ============================ */
+
 static std::string make_triplet(double v, double stat, double syst) {
     std::ostringstream oss;
     oss << v << "," << stat << "," << syst;
@@ -164,12 +118,7 @@ static std::string make_triplet(double v, double stat, double syst) {
 
 /* ============================
  * Build the NEW header (schema)
- * ============================
- *
- * We construct the header in a very explicit, readable way.
- * Repeated families of columns (periods, helicities, topologies, energies)
- * are created by simple loops for clarity and to avoid typos.
- */
+ * ============================ */
 
 static void add_bin_definition_columns(std::vector<std::string>& H) {
     // Bin-definition columns (copied where specified)
@@ -177,16 +126,16 @@ static void add_bin_definition_columns(std::vector<std::string>& H) {
     H.push_back("Bin Name");
     H.push_back("xBmin");
     H.push_back("xBmax");
-    H.push_back("xBavg");      // blank at init
+    // Removed legacy singleton xBavg
     H.push_back("Q2min");
     H.push_back("Q2max");
-    H.push_back("Q2avg");      // blank at init
+    // Removed legacy singleton Q2avg
     H.push_back("t_abs_min");
     H.push_back("t_abs_max");
-    H.push_back("t_abs_avg");  // blank at init
+    // Removed legacy singleton t_abs_avg
     H.push_back("phimin");
     H.push_back("phimax");
-    H.push_back("phiavg");     // blank at init
+    // Removed legacy singleton phiavg
     H.push_back("tmin");
     H.push_back("tcol");
     H.push_back("P1");
@@ -196,14 +145,29 @@ static void add_bin_definition_columns(std::vector<std::string>& H) {
     H.push_back("intP1P2");
 }
 
+// NEW: add period/combined-specific average columns only (no singletons)
+static void add_avg_columns(std::vector<std::string>& H) {
+    const std::vector<std::string> groups = {
+        "Fa18 Inb", "Fa18 Out", "Sp19 Inb", "Sp18 Inb", "Sp18 Out",
+        "Fa18", "Sp18", "10.6 GeV"
+    };
+    const std::vector<std::string> vars = {
+        "xBavg", "Q2avg", "t_abs_avg", "phiavg"
+    };
+    for (const auto& v : vars) {
+        for (const auto& g : groups) {
+            std::ostringstream name;
+            name << v << ", " << g;
+            H.push_back(name.str());
+        }
+    }
+}
+
 static void add_raw_yield_columns(std::vector<std::string>& H) {
-    // Periods we will support
     const std::vector<std::string> periods = {
         "Fa18 Inb", "Fa18 Out", "Sp19 Inb", "Sp18 Inb", "Sp18 Out"
     };
-    // Helicity states for split
     const std::vector<std::string> helicities = { "unpol", "pos", "neg" };
-    // Topologies
     const std::vector<std::string> topos = { "(FD, FD)", "(CD, FD)", "(CD, FT)" };
 
     // ep->epg
@@ -229,7 +193,6 @@ static void add_raw_yield_columns(std::vector<std::string>& H) {
 }
 
 static void add_contamination_columns(std::vector<std::string>& H) {
-    // Triplets; shared for helicities
     const std::vector<std::string> per = {
         "Fa18 Inb", "Fa18 Out", "Sp19 Inb", "Sp18 Inb", "Sp18 Out"
     };
@@ -241,7 +204,6 @@ static void add_contamination_columns(std::vector<std::string>& H) {
 }
 
 static void add_signal_yield_columns(std::vector<std::string>& H) {
-    // Helicity-split signal yield for ep->epg
     const std::vector<std::string> periods = {
         "Fa18 Inb", "Fa18 Out", "Sp19 Inb", "Sp18 Inb", "Sp18 Out"
     };
@@ -256,7 +218,6 @@ static void add_signal_yield_columns(std::vector<std::string>& H) {
 }
 
 static void add_acceptance_columns(std::vector<std::string>& H) {
-    // Triplets; shared for helicities
     const std::vector<std::string> per = {
         "Fa18 Inb", "Fa18 Out", "Sp19 Inb", "Sp18 Inb", "Sp18 Out"
     };
@@ -268,7 +229,6 @@ static void add_acceptance_columns(std::vector<std::string>& H) {
 }
 
 static void add_acc_corrected_yield_columns(std::vector<std::string>& H) {
-    // Acceptance-corrected yield, ep->epg, helicity split, per period and combined groups
     const std::vector<std::string> periods = {
         "Fa18 Inb", "Fa18 Out", "Sp19 Inb", "Sp18 Inb", "Sp18 Out"
     };
@@ -296,7 +256,6 @@ static void add_acc_corrected_yield_columns(std::vector<std::string>& H) {
 }
 
 static void add_frad_fbin_binvol_columns(std::vector<std::string>& H) {
-    // Scalars; by beam energy
     H.push_back("Frad, 10.6 GeV");
     H.push_back("Frad, 10.2 GeV");
     H.push_back("Fbin, 10.6 GeV");
@@ -306,7 +265,6 @@ static void add_frad_fbin_binvol_columns(std::vector<std::string>& H) {
 }
 
 static void add_luminosity_columns(std::vector<std::string>& H) {
-    // Scalars; per period and combined
     H.push_back("integrated luminosity, Fa18 Inb (nC)");
     H.push_back("integrated luminosity, Fa18 Out (nC)");
     H.push_back("integrated luminosity, Sp19 Inb (nC)");
@@ -318,13 +276,12 @@ static void add_luminosity_columns(std::vector<std::string>& H) {
 }
 
 static void add_cross_section_columns(std::vector<std::string>& H) {
-    // Cross sections, ep->epg, helicity split, per period and combined groups
     const std::vector<std::string> periods = {
         "Fa18 Inb", "Fa18 Out", "Sp19 Inb", "Sp18 Inb", "Sp18 Out"
     };
     const std::vector<std::string> helicities = { "unpol", "pos", "neg" };
     const std::vector<std::string> combined = {
-        "Fa18", "Sp18", "10.6 GeV"
+        "10.6 GeV", "Fa18", "Sp18"
     };
 
     // Per period
@@ -346,7 +303,6 @@ static void add_cross_section_columns(std::vector<std::string>& H) {
 }
 
 static void add_bsa_columns(std::vector<std::string>& H) {
-    // Triplets; counts and sigma flavors, by group
     const std::vector<std::string> counts_groups = {
         "Fa18 Inb", "Fa18 Out", "Sp19 Inb", "Sp18 Inb", "Sp18 Out",
         "Fa18", "Sp18", "10.6 GeV"
@@ -364,10 +320,7 @@ static void add_bsa_columns(std::vector<std::string>& H) {
 }
 
 static void add_valid_and_prefactor_columns(std::vector<std::string>& H) {
-    // valid bin
     H.push_back("valid bin");
-
-    // Kinematic prefactors and Fourier coefficients
     H.push_back("cross section prefactor, 10.6 GeV");
     H.push_back("cross section prefactor, 10.2 GeV");
     H.push_back("BH2 prefactor, 10.6 GeV");
@@ -396,9 +349,10 @@ static void add_valid_and_prefactor_columns(std::vector<std::string>& H) {
 
 static std::vector<std::string> build_new_header() {
     std::vector<std::string> H;
-    H.reserve(300); // generous
+    H.reserve(400);
 
     add_bin_definition_columns(H);
+    add_avg_columns(H);                    // group-specific averages only
     add_raw_yield_columns(H);
     add_contamination_columns(H);
     add_signal_yield_columns(H);
@@ -415,14 +369,9 @@ static std::vector<std::string> build_new_header() {
 
 /* ============================
  * Copy plan: which Lee columns to copy
- * ============================
- *
- * We list the exact column names expected in Lee's CSV for the fields we COPY.
- * Everything else in the new schema will be left blank.
- */
+ * ============================ */
 
 struct CopyMap {
-    // Map new-name -> old-name
     std::vector<std::pair<std::string, std::string>> pairs;
 };
 
@@ -434,16 +383,16 @@ static CopyMap build_copy_map() {
     M.pairs.push_back({"Bin Name", "Bin Name"});
     M.pairs.push_back({"xBmin", "xBmin"});
     M.pairs.push_back({"xBmax", "xBmax"});
-    // xBavg blank by design
+    // No xBavg singleton in new schema
     M.pairs.push_back({"Q2min", "Q2min"});
     M.pairs.push_back({"Q2max", "Q2max"});
-    // Q2avg blank by design
+    // No Q2avg singleton in new schema
     M.pairs.push_back({"t_abs_min", "t_abs_min"});
     M.pairs.push_back({"t_abs_max", "t_abs_max"});
-    // t_abs_avg blank by design
+    // No t_abs_avg singleton in new schema
     M.pairs.push_back({"phimin", "phimin"});
     M.pairs.push_back({"phimax", "phimax"});
-    // phiavg blank by design
+    // No phiavg singleton in new schema
     M.pairs.push_back({"tmin", "tmin"});
     M.pairs.push_back({"tcol", "tcol"});
     M.pairs.push_back({"P1", "P1"});
@@ -498,7 +447,6 @@ bool initialize_pass2_csv(const std::string& lee_csv_path,
         std::string first = lee_header[0];
         bool unnamed = first.empty();
         if (!unnamed) {
-            // Some CSV tools export "Unnamed: 0" for the first column; treat that as "bin index".
             std::string low;
             low.reserve(first.size());
             for (char c : first) low.push_back((char)std::tolower((unsigned char)c));
@@ -510,7 +458,7 @@ bool initialize_pass2_csv(const std::string& lee_csv_path,
     // 3) Build Lee's header index
     std::unordered_map<std::string,int> L = build_header_index(lee_header);
 
-    // 4) Build the new header schema
+    // 4) Build the new header schema (now includes grouped average columns only)
     std::vector<std::string> new_header = build_new_header();
 
     // 5) Open output CSV and write new header
@@ -550,22 +498,17 @@ bool initialize_pass2_csv(const std::string& lee_csv_path,
             const std::string& new_name = kv.first;
             const std::string& old_name = kv.second;
 
-            // Find index of new_name in new_header
             auto it_new = std::find(new_header.begin(), new_header.end(), new_name);
             if (it_new == new_header.end()) {
-                // Should not happen; skip if we made a typo
                 continue;
             }
             size_t new_idx = (size_t)std::distance(new_header.begin(), it_new);
 
-            // Extract from Lee row
             std::string v = get_col(cols, L, old_name);
-            out_row[new_idx] = v; // scalar copy as-is
+            out_row[new_idx] = v;
         }
 
-        // All other fields remain blank at initialization stage.
-        // Triplet-type cells will be filled later as "value,stat,syst" by downstream code.
-
+        // All analysis-produced fields (including grouped averages) remain blank at init
         fout << join_csv_row(out_row) << "\n";
         ++kept_rows;
     }
