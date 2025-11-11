@@ -68,17 +68,17 @@ int main(int argc, char* argv[]) {
     // );
     // std::cout << "Exclusivity-cut stage finished." << std::endl;
 
-    // --------- Global bin-averaged kinematics ----------
-    std::vector<std::string> dvcs_periods;
-    for (const auto& P : CANONICAL_PERIODS()) {
-        dvcs_periods.push_back(P.tree_key);
-    }
-    std::vector<std::string> topologies = {"(FD,FD)", "(CD,FD)", "(CD,FT)"};
-    const std::string analysis_type = "dvcs";
-    const std::string output_json_means = "output/jsons/bin_means_global.json";
+    // // --------- Global bin-averaged kinematics ----------
+    // std::vector<std::string> dvcs_periods;
+    // for (const auto& P : CANONICAL_PERIODS()) {
+    //     dvcs_periods.push_back(P.tree_key);
+    // }
+    // std::vector<std::string> topologies = {"(FD,FD)", "(CD,FD)", "(CD,FT)"};
+    // const std::string analysis_type = "dvcs";
+    // const std::string output_json_means = "output/jsons/bin_means_global.json";
 
-    calculate_bin_means(dvcs_periods, topologies, analysis_type, binning_scheme, output_json_means, 
-        dataTrees);
+    // calculate_bin_means(dvcs_periods, topologies, analysis_type, binning_scheme, output_json_means, 
+    //     dataTrees);
 
     // // // --------- Total counts after exclusivity cuts (by helicity) ----------
     // const std::string cuts_json_path   = "output/jsons/combined_cuts.json"; 
