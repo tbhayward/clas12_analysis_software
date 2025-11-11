@@ -24,10 +24,11 @@
  *    - Leave all other analysis-produced columns blank for now.
  * 5) Write the new CSV file.
  *
- * TRIPLE FIELDS
- * -------------
- * Some downstream fields will store triplets "value,stat,syst" inside a single CSV cell.
- * Here we leave them blank; later steps will populate them.
+ * GROUPED AVERAGES
+ * ----------------
+ * We only keep period/combined-group averages (no singletons). For each variable
+ * (xB, Q2, t_abs, phi) the eight grouped averages appear right after the matching
+ * "...max" column.
  */
 
 /* ============================
@@ -120,22 +121,48 @@ static std::string make_triplet(double v, double stat, double syst) {
  * Build the NEW header (schema)
  * ============================ */
 
+static const std::vector<std::string>& avg_groups() {
+    static const std::vector<std::string> g = {
+        "Fa18 Inb", "Fa18 Out", "Sp19 Inb", "Sp18 Inb", "Sp18 Out",
+        "Fa18", "Sp18", "10.6 GeV"
+    };
+    return g;
+}
+
+static void add_grouped_avg_columns(std::vector<std::string>& H, const std::string& base) {
+    for (const auto& g : avg_groups()) {
+        std::ostringstream name;
+        name << base << ", " << g;
+        H.push_back(name.str());
+    }
+}
+
 static void add_bin_definition_columns(std::vector<std::string>& H) {
     // Bin-definition columns (copied where specified)
     H.push_back("bin index");
     H.push_back("Bin Name");
+
+    // xB
     H.push_back("xBmin");
     H.push_back("xBmax");
-    // Removed legacy singleton xBavg
+    add_grouped_avg_columns(H, "xBavg"); // immediately after xBmax
+
+    // Q2
     H.push_back("Q2min");
     H.push_back("Q2max");
-    // Removed legacy singleton Q2avg
+    add_grouped_avg_columns(H, "Q2avg"); // immediately after Q2max
+
+    // t_abs
     H.push_back("t_abs_min");
     H.push_back("t_abs_max");
-    // Removed legacy singleton t_abs_avg
+    add_grouped_avg_columns(H, "t_abs_avg"); // immediately after t_abs_max
+
+    // phi
     H.push_back("phimin");
     H.push_back("phimax");
-    // Removed legacy singleton phiavg
+    add_grouped_avg_columns(H, "phiavg"); // immediately after phimax
+
+    // remaining bin-definition helpers
     H.push_back("tmin");
     H.push_back("tcol");
     H.push_back("P1");
@@ -143,24 +170,6 @@ static void add_bin_definition_columns(std::vector<std::string>& H) {
     H.push_back("maxP1P2");
     H.push_back("minP1P2");
     H.push_back("intP1P2");
-}
-
-// NEW: add period/combined-specific average columns only (no singletons)
-static void add_avg_columns(std::vector<std::string>& H) {
-    const std::vector<std::string> groups = {
-        "Fa18 Inb", "Fa18 Out", "Sp19 Inb", "Sp18 Inb", "Sp18 Out",
-        "Fa18", "Sp18", "10.6 GeV"
-    };
-    const std::vector<std::string> vars = {
-        "xBavg", "Q2avg", "t_abs_avg", "phiavg"
-    };
-    for (const auto& v : vars) {
-        for (const auto& g : groups) {
-            std::ostringstream name;
-            name << v << ", " << g;
-            H.push_back(name.str());
-        }
-    }
 }
 
 static void add_raw_yield_columns(std::vector<std::string>& H) {
@@ -349,10 +358,9 @@ static void add_valid_and_prefactor_columns(std::vector<std::string>& H) {
 
 static std::vector<std::string> build_new_header() {
     std::vector<std::string> H;
-    H.reserve(400);
+    H.reserve(500);
 
-    add_bin_definition_columns(H);
-    add_avg_columns(H);                    // group-specific averages only
+    add_bin_definition_columns(H);  // includes grouped average columns placed after each max
     add_raw_yield_columns(H);
     add_contamination_columns(H);
     add_signal_yield_columns(H);
@@ -378,21 +386,17 @@ struct CopyMap {
 static CopyMap build_copy_map() {
     CopyMap M;
 
-    // Bin-definition copies
+    // Bin-definition copies (no singleton avgs in new schema)
     M.pairs.push_back({"bin index", "bin index"});
     M.pairs.push_back({"Bin Name", "Bin Name"});
     M.pairs.push_back({"xBmin", "xBmin"});
     M.pairs.push_back({"xBmax", "xBmax"});
-    // No xBavg singleton in new schema
     M.pairs.push_back({"Q2min", "Q2min"});
     M.pairs.push_back({"Q2max", "Q2max"});
-    // No Q2avg singleton in new schema
     M.pairs.push_back({"t_abs_min", "t_abs_min"});
     M.pairs.push_back({"t_abs_max", "t_abs_max"});
-    // No t_abs_avg singleton in new schema
     M.pairs.push_back({"phimin", "phimin"});
     M.pairs.push_back({"phimax", "phimax"});
-    // No phiavg singleton in new schema
     M.pairs.push_back({"tmin", "tmin"});
     M.pairs.push_back({"tcol", "tcol"});
     M.pairs.push_back({"P1", "P1"});
@@ -458,7 +462,7 @@ bool initialize_pass2_csv(const std::string& lee_csv_path,
     // 3) Build Lee's header index
     std::unordered_map<std::string,int> L = build_header_index(lee_header);
 
-    // 4) Build the new header schema (now includes grouped average columns only)
+    // 4) Build the new header schema
     std::vector<std::string> new_header = build_new_header();
 
     // 5) Open output CSV and write new header
