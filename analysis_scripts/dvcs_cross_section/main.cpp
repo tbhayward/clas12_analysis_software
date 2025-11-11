@@ -27,11 +27,11 @@
 int main(int argc, char* argv[]) {
     std::cout << "Starting DVCS analysis..." << std::endl;
 
-    initialize_pass2_csv("imports/all_bin_v3.csv", "output/output/dvcs_pass2_analysis.csv");
-
     // Create necessary output directories
     makeOutputDirs();
     std::cout << "Output directories ready." << std::endl;
+
+    initialize_pass2_csv("imports/all_bin_v3.csv", "output/dvcs_pass2_analysis.csv");
 
     // Root of output tree (used by several stages)
     const std::string output_root = "output";
