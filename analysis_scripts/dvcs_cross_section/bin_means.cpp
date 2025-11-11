@@ -26,20 +26,25 @@
 #include <omp.h>
 #endif
 
-// -----------------------------------------------------------------------------
-// Overview:
-//  - Read CSV bins (xB, Q2, |t|, phi) and build bin lookups.
-//  - For each group (5 periods + Fa18 + Sp18 + 10.6 GeV):
-//      * Scan relevant TTree(s).
-//      * Apply BOTH simple global cuts AND 3-sigma exclusivity cuts.
-//      * Accept ALL topologies; topology is only used to select 3-sigma thresholds.
-//      * Accumulate x, Q2, |t|, phi and counts per CSV row.
-//      * Compute means and write them back into the group's four average columns.
-//  - Write to a temp file, then rename to csv_path.
-// Notes:
-//  - Phi is ALWAYS in degrees here (both CSV bin edges and tree branches).
-//  - Exclusivity 3-sigma thresholds are loaded from output/jsons/combined_cuts.json.
-// -----------------------------------------------------------------------------
+// ============================================================================
+// Strategy
+// --------
+// 1) Load the CSV and identify valid rows (valid bin == 1). Build bin ranges
+//    (xB, Q2, |t|, phi in degrees) from Sangbaek's CSV and a map from
+//    (ix, iQ, it, ip) -> row_index.
+// 2) Build the five periods and their tree keys from dataTrees:
+//      "Fa18 Inb" -> "DVCS_Fa18_inb",
+//      "Fa18 Out" -> "DVCS_Fa18_out",
+//      "Sp19 Inb" -> "DVCS_Sp19_inb",
+//      "Sp18 Inb" -> "DVCS_Sp18_inb",
+//      "Sp18 Out" -> "DVCS_Sp18_out".
+// 3) Parallelize ACROSS TREES (max_workers up to 5). Each worker scans its
+//    TTree exactly once, applies BOTH global and 3σ exclusivity cuts, accepts
+//    all topologies, and accumulates per-bin sums and counts for its period.
+// 4) After all workers finish, compute the combined groups (Fa18, Sp18,
+//    10.6 GeV) by merging the per-period sums and counts (weighted means).
+// 5) Write the four averages back into the CSV columns for each group.
+// ============================================================================
 
 static const char* kCutsJSON = "output/jsons/combined_cuts.json";
 
@@ -65,7 +70,7 @@ static std::string join_csv_row(const std::vector<std::string>& fields) {
         bool need_quotes = (s.find(',') != std::string::npos) || (s.find('"') != std::string::npos);
         if (need_quotes) {
             oss << '"';
-            for (char c : s) oss << (c == '"' ? "\"\"" : std::string(1, c));
+            for (char c : s) { if (c == '"') oss << "\"\""; else oss << c; }
             oss << '"';
         } else {
             oss << s;
@@ -108,12 +113,17 @@ static inline double ToDouble(const std::string& s) {
     return v;
 }
 
-// ---------------- Group wiring ----------------
-static const std::vector<std::string> kGroups = {
+// ---------------- Groups and period wiring ----------------
+static const std::vector<std::string> kPeriodGroups = {
+    "Fa18 Inb", "Fa18 Out", "Sp19 Inb", "Sp18 Inb", "Sp18 Out"
+};
+
+static const std::vector<std::string> kAllGroups = {
     "Fa18 Inb", "Fa18 Out", "Sp19 Inb", "Sp18 Inb", "Sp18 Out",
     "Fa18", "Sp18", "10.6 GeV"
 };
 
+// Map CSV display name -> canonical tree key used in dataTrees.
 static const std::map<std::string,std::string> kDisplayToTree = {
     {"Fa18 Inb", "DVCS_Fa18_inb"},
     {"Fa18 Out", "DVCS_Fa18_out"},
@@ -122,6 +132,7 @@ static const std::map<std::string,std::string> kDisplayToTree = {
     {"Sp18 Out", "DVCS_Sp18_out"}
 };
 
+// Combined membership (only display period names).
 static std::map<std::string, std::vector<std::string>> build_combined_groups() {
     std::map<std::string, std::vector<std::string>> m;
     m["Fa18"]     = {"Fa18 Inb", "Fa18 Out"};
@@ -130,6 +141,7 @@ static std::map<std::string, std::vector<std::string>> build_combined_groups() {
     return m;
 }
 
+// For 3-sigma JSON lookups: treeKey -> JSON base block name.
 static const std::map<std::string,std::string> kTreeToJsonBase = {
     {"DVCS_Fa18_inb", "DVCS_Fa18_Inb"},
     {"DVCS_Fa18_out", "DVCS_Fa18_Out"},
@@ -189,7 +201,7 @@ struct BranchBinder {
         bindD("theta_gamma_gamma", &theta_gamma_gamma, has_tgg);
     }
 
-    // Phi always in DEGREES now.
+    // Phi is ALWAYS in degrees here.
     double phi_deg() const {
         if (has_phi2) return phi2;
         if (has_Delta_phi) return Delta_phi;
@@ -208,12 +220,10 @@ static inline bool passes_simple_global(const BranchBinder& b) {
 
 struct MeanStd { double mean = 0.0; double std = 0.0; bool ok = false; };
 struct CutTable {
-    // key: "<JSONBASE>_<TOPO>", var: "Emiss2" / "Mx2" / "pTmiss" / "theta_gamma_gamma"
-    std::map<std::pair<std::string,std::string>, MeanStd> data;
+    std::map<std::pair<std::string,std::string>, MeanStd> data; // {fullkey,var} -> mean,std
     bool loaded = false;
 };
 
-// Tiny numeric parser
 static bool parse_next_number(const std::string& s, size_t start, double& out, size_t& endpos) {
     size_t i = start;
     while (i < s.size() && std::isspace((unsigned char)s[i])) ++i;
@@ -316,6 +326,13 @@ static inline bool pass_3sigma_one(const MeanStd& ms, double value, bool one_sid
     return (std::fabs(value - ms.mean) <= 3.0 * ms.std);
 }
 
+static MeanStd get_ms(const std::string& fullkey, const std::string& var) {
+    const CutTable& ct = get_cuts_table();
+    auto it = ct.data.find({fullkey, var});
+    if (it == ct.data.end()) return MeanStd{};
+    return it->second;
+}
+
 static bool passes_3sigma_all(const std::string& tree_key, int det1, int det2, const BranchBinder& b) {
     const CutTable& ct = get_cuts_table();
     if (!ct.loaded) return true;
@@ -328,10 +345,10 @@ static bool passes_3sigma_all(const std::string& tree_key, int det1, int det2, c
 
     std::string full = itBase->second + "_" + topo;
 
-    const MeanStd ms_Emiss2 = ct.data.at({full, "Emiss2"});
-    const MeanStd ms_Mx2    = ct.data.at({full, "Mx2"});
-    const MeanStd ms_pT     = ct.data.at({full, "pTmiss"});
-    const MeanStd ms_tgg    = ct.data.at({full, "theta_gamma_gamma"});
+    const MeanStd ms_Emiss2 = get_ms(full, "Emiss2");
+    const MeanStd ms_Mx2    = get_ms(full, "Mx2");
+    const MeanStd ms_pT     = get_ms(full, "pTmiss");
+    const MeanStd ms_tgg    = get_ms(full, "theta_gamma_gamma");
 
     bool ok = true;
     if (b.has_Emiss2)   ok = ok && pass_3sigma_one(ms_Emiss2, b.Emiss2, false);
@@ -353,7 +370,7 @@ static int find_bin(double v, const std::vector<std::pair<double,double>>& rs) {
     for (int i = 0; i < (int)rs.size(); ++i) {
         const auto& r = rs[i];
         if (r.first <= v && v < r.second) return i;
-        if (v == r.second && i+1 == (int)rs.size()) return i;
+        if (v == r.second && i+1 == (int)rs.size()) return i; // include last-edge
     }
     return -1;
 }
@@ -427,80 +444,13 @@ struct Accum {
     long long n = 0;
 };
 
-struct GroupAccum {
-    std::vector<Accum> bins; // one per CSV row
+struct PeriodAccum {
+    std::vector<Accum> bins; // one per valid CSV row
 };
-
-// ---------------- Scan one group ----------------
-static void scan_group_fill(const std::string& group_name,
-                            const std::vector<std::string>& group_display_periods,
-                            const std::map<std::string, TTree*>& dataTrees,
-                            const Ranges& rng,
-                            const std::map<std::tuple<int,int,int,int>, int>& tuple_to_row,
-                            GroupAccum& out)
-{
-    int max_row_index = -1;
-    for (const auto& kv : tuple_to_row) if (kv.second > max_row_index) max_row_index = kv.second;
-    int rows_count = max_row_index + 1;
-    out.bins.assign(rows_count, Accum{});
-
-    std::vector<std::pair<std::string,TTree*>> trees;
-    for (const auto& disp : group_display_periods) {
-        auto itT = kDisplayToTree.find(disp);
-        if (itT == kDisplayToTree.end()) continue;
-        auto itMap = dataTrees.find(itT->second);
-        if (itMap != dataTrees.end() && itMap->second) trees.emplace_back(itT->second, itMap->second);
-    }
-
-    for (const auto& kv : trees) {
-        const std::string& tree_key = kv.first;
-        TTree* t = kv.second;
-        BranchBinder b; b.bind(t);
-        const Long64_t nent = t->GetEntries();
-
-        for (Long64_t i = 0; i < nent; ++i) {
-            t->GetEntry(i);
-
-            if (!passes_simple_global(b)) continue;
-
-            int d1 = b.has_detector1 ? b.detector1 : 0;
-            int d2 = b.has_detector2 ? b.detector2 : 0;
-            if (!passes_3sigma_all(tree_key, d1, d2, b)) continue;
-
-            if (!(b.has_x && b.has_Q2 && b.has_t1)) continue;
-            double xb  = b.x;
-            double Q2  = b.Q2;
-            double tab = std::fabs(b.t1);
-            if (!std::isfinite(xb) || !std::isfinite(Q2) || !std::isfinite(tab)) continue;
-
-            double phi_deg = b.phi_deg();
-            if (!std::isfinite(phi_deg)) continue;
-            phi_deg = wrap_360(phi_deg);
-
-            int ix = find_bin(xb,  rng.xb);
-            int iQ = find_bin(Q2,  rng.q2);
-            int it = find_bin(tab, rng.tabs);
-            int ip = find_bin(phi_deg, rng.phi);
-            if (ix < 0 || iQ < 0 || it < 0 || ip < 0) continue;
-
-            auto itRow = tuple_to_row.find({ix,iQ,it,ip});
-            if (itRow == tuple_to_row.end()) continue;
-            int row_index = itRow->second;
-            if (row_index < 0 || row_index >= (int)out.bins.size()) continue;
-
-            Accum& A = out.bins[row_index];
-            A.sum_x   += xb;
-            A.sum_Q2  += Q2;
-            A.sum_ta  += tab;
-            A.sum_phi += phi_deg;
-            A.n       += 1;
-        }
-    }
-}
 
 // ---------------- Write means into CSV rows ----------------
 static void write_means_into_rows(const std::string& group_name,
-                                  const GroupAccum& gacc,
+                                  const std::vector<Accum>& bins,
                                   std::vector<std::vector<std::string>>& rows,
                                   const std::unordered_map<std::string,int>& H)
 {
@@ -527,7 +477,7 @@ static void write_means_into_rows(const std::string& group_name,
     oss.setf(std::ios::fixed);
 
     for (int r = 0; r < (int)rows.size(); ++r) {
-        const Accum& A = (r < (int)gacc.bins.size()) ? gacc.bins[r] : Accum{};
+        const Accum& A = (r < (int)bins.size()) ? bins[r] : Accum{};
         if (A.n <= 0) {
             rows[r][XB].clear();
             rows[r][Q2].clear();
@@ -591,53 +541,143 @@ bool update_bin_means_csv(const std::string& csv_path,
     valid_rows.reserve(valid_row_indices.size());
     for (int idx : valid_row_indices) valid_rows.push_back(rows_all[idx]);
 
+    // Bin ranges and row index mapping
     Ranges rng;
     std::map<std::tuple<int,int,int,int>, int> tuple_to_row;
     build_ranges_and_index(valid_rows, H, rng, tuple_to_row);
 
-    auto combined = build_combined_groups();
+    // Prepare per-period accumulators (only the five periods are scanned).
+    const int n_valid = (int)valid_rows.size();
+    std::map<std::string, PeriodAccum> period_acc; // key: display period name
 
-    struct GroupPlan {
-        std::string name;
-        std::vector<std::string> periods; // display names
-        GroupAccum accum;
-    };
-    std::vector<GroupPlan> plans;
-
-    // 5 individual periods we know about
-    for (const auto& g : kGroups) {
-        if (kDisplayToTree.count(g)) {
-            plans.push_back(GroupPlan{g, std::vector<std::string>{g}, GroupAccum{}});
-        }
+    for (const auto& disp : kPeriodGroups) {
+        period_acc[disp].bins.assign(n_valid, Accum{});
     }
-    // Combined groups
-    for (const auto& kv : combined) {
-        plans.push_back(GroupPlan{kv.first, kv.second, GroupAccum{}});
+
+    // Build list of trees we actually have.
+    struct PeriodTree {
+        std::string display;   // e.g., "Fa18 Inb"
+        std::string tree_key;  // e.g., "DVCS_Fa18_inb"
+    };
+    std::vector<PeriodTree> trees_to_scan;
+    trees_to_scan.reserve(kPeriodGroups.size());
+    for (const auto& disp : kPeriodGroups) {
+        auto itKey = kDisplayToTree.find(disp);
+        if (itKey == kDisplayToTree.end()) continue;
+        auto itTree = dataTrees.find(itKey->second);
+        if (itTree == dataTrees.end() || !itTree->second) continue;
+        trees_to_scan.push_back({disp, itKey->second});
     }
 
     if (max_workers <= 0) max_workers = 1;
+
+    // Parallelize across trees; each TTree is read by at most one thread.
 #ifdef _OPENMP
-    #pragma omp parallel for num_threads(max_workers) schedule(dynamic)
+    #pragma omp parallel for num_threads(std::min<int>(max_workers, (int)trees_to_scan.size())) schedule(dynamic)
 #endif
-    for (int ig = 0; ig < (int)plans.size(); ++ig) {
-        scan_group_fill(plans[ig].name,
-                        plans[ig].periods,
-                        dataTrees,
-                        rng,
-                        tuple_to_row,
-                        plans[ig].accum);
+    for (int itree = 0; itree < (int)trees_to_scan.size(); ++itree) {
+        const PeriodTree PT = trees_to_scan[itree];
+        TTree* t = dataTrees.at(PT.tree_key);
+
+        // Local accumulator for this period (thread-local).
+        std::vector<Accum> local_bins(n_valid);
+
+        BranchBinder b; b.bind(t);
+        const Long64_t nent = t->GetEntries();
+
+        for (Long64_t i = 0; i < nent; ++i) {
+            t->GetEntry(i);
+
+            // Apply BOTH cut sets.
+            if (!passes_simple_global(b)) continue;
+
+            int d1 = b.has_detector1 ? b.detector1 : 0;
+            int d2 = b.has_detector2 ? b.detector2 : 0;
+            if (!passes_3sigma_all(PT.tree_key, d1, d2, b)) continue;
+
+            if (!(b.has_x && b.has_Q2 && b.has_t1)) continue;
+
+            double xb  = b.x;
+            double Q2  = b.Q2;
+            double tab = std::fabs(b.t1);
+            double phi_deg = b.phi_deg();
+
+            if (!std::isfinite(xb) || !std::isfinite(Q2) || !std::isfinite(tab) || !std::isfinite(phi_deg)) continue;
+
+            phi_deg = wrap_360(phi_deg);
+
+            int ix = find_bin(xb,  rng.xb);
+            int iQ = find_bin(Q2,  rng.q2);
+            int it = find_bin(tab, rng.tabs);
+            int ip = find_bin(phi_deg, rng.phi);
+            if (ix < 0 || iQ < 0 || it < 0 || ip < 0) continue;
+
+            auto rit = tuple_to_row.find({ix,iQ,it,ip});
+            if (rit == tuple_to_row.end()) continue;
+            int row_index = rit->second;
+
+            Accum& A = local_bins[row_index];
+            A.sum_x   += xb;
+            A.sum_Q2  += Q2;
+            A.sum_ta  += tab;
+            A.sum_phi += phi_deg;
+            A.n       += 1;
+        }
+
+        // Merge into the period accumulator.
+#ifdef _OPENMP
+        #pragma omp critical
+#endif
+        {
+            auto& dst = period_acc[PT.display].bins;
+            for (int r = 0; r < n_valid; ++r) {
+                dst[r].sum_x   += local_bins[r].sum_x;
+                dst[r].sum_Q2  += local_bins[r].sum_Q2;
+                dst[r].sum_ta  += local_bins[r].sum_ta;
+                dst[r].sum_phi += local_bins[r].sum_phi;
+                dst[r].n       += local_bins[r].n;
+            }
+        }
     }
 
-    // Map valid-rows back into full CSV
+    // Build combined groups from period sums (weighted means via summed counts).
+    std::map<std::string, std::vector<Accum>> all_group_bins;
+    // Start by copying the five periods straight through.
+    for (const auto& disp : kPeriodGroups) {
+        all_group_bins[disp] = period_acc[disp].bins;
+    }
+
+    // Now the combined ones.
+    auto combined = build_combined_groups();
+    for (const auto& kv : combined) {
+        const std::string& cname = kv.first;
+        const auto& members = kv.second;
+        std::vector<Accum> bins(n_valid);
+        for (const auto& mdisp : members) {
+            const auto& src = period_acc[mdisp].bins;
+            for (int r = 0; r < n_valid; ++r) {
+                bins[r].sum_x   += src[r].sum_x;
+                bins[r].sum_Q2  += src[r].sum_Q2;
+                bins[r].sum_ta  += src[r].sum_ta;
+                bins[r].sum_phi += src[r].sum_phi;
+                bins[r].n       += src[r].n;
+            }
+        }
+        all_group_bins[cname] = std::move(bins);
+    }
+
+    // Map valid-rows back into full CSV after writing means for each group.
     std::vector<std::vector<std::string>> working_valid = valid_rows;
-    for (const auto& gp : plans) {
-        write_means_into_rows(gp.name, gp.accum, working_valid, H);
+    for (const auto& gname : kAllGroups) {
+        auto it = all_group_bins.find(gname);
+        if (it == all_group_bins.end()) continue;
+        write_means_into_rows(gname, it->second, working_valid, H);
     }
     for (int k = 0; k < (int)working_valid.size(); ++k) {
         rows_all[valid_row_indices[k]] = working_valid[k];
     }
 
-    // Temp write then replace
+    // Write atomically
     std::string tmp_path = csv_path + ".tmp.binmeans";
     {
         std::ofstream fout(tmp_path);
