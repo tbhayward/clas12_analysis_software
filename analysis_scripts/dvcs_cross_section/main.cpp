@@ -27,7 +27,7 @@
 int main(int argc, char* argv[]) {
     std::cout << "Starting DVCS analysis..." << std::endl;
 
-    initialize_pass2_csv("imports/all_bin_v3.csv", "output/output/dvcs_pass2_analysis.csv")
+    initialize_pass2_csv("imports/all_bin_v3.csv", "output/output/dvcs_pass2_analysis.csv");
 
     // Create necessary output directories
     makeOutputDirs();
