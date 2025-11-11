@@ -1,19 +1,16 @@
 #include "bin_means.h"
+#include "exclusivity_cuts.h"   // passes3sigma(...) + Topology enum + topo_to_csv_title(...)
+#include "global_cuts.h"        // global_cuts::passes(...)
+#include "periods.h"            // CANONICAL_PERIODS() if needed
 
 #include <TTree.h>
-
-#include <algorithm>
-#include <cassert>
 #include <cmath>
 #include <cctype>
 #include <cstdio>
-#include <cstdlib>
 #include <fstream>
 #include <iomanip>
 #include <iostream>
-#include <iterator>
 #include <limits>
-#include <map>
 #include <set>
 #include <sstream>
 #include <string>
@@ -22,38 +19,12 @@
 #include <utility>
 #include <vector>
 
-#ifdef _OPENMP
-#include <omp.h>
-#endif
-
-// ============================================================================
-// Strategy
-// --------
-// 1) Load the CSV and identify valid rows (valid bin == 1). Build bin ranges
-//    (xB, Q2, |t|, phi in degrees) from Sangbaek's CSV and a map from
-//    (ix, iQ, it, ip) -> row_index.
-// 2) Build the five periods and their tree keys from dataTrees:
-//      "Fa18 Inb" -> "DVCS_Fa18_inb",
-//      "Fa18 Out" -> "DVCS_Fa18_out",
-//      "Sp19 Inb" -> "DVCS_Sp19_inb",
-//      "Sp18 Inb" -> "DVCS_Sp18_inb",
-//      "Sp18 Out" -> "DVCS_Sp18_out".
-// 3) Parallelize ACROSS TREES (max_workers up to 5). Each worker scans its
-//    TTree exactly once, applies BOTH global and 3-sigma exclusivity cuts,
-//    accepts all topologies, and accumulates per-bin sums and counts.
-// 4) After all workers finish, compute the combined groups (Fa18, Sp18,
-//    10.6 GeV) by merging the per-period sums and counts (weighted means).
-// 5) Write the four averages back into the CSV columns. Column names are
-//    "base, Group" (comma + space), e.g. "xBavg, Fa18 Inb".
-// ============================================================================
-
-static const char* kCutsJSON = "output/jsons/combined_cuts.json";
-
-// ---------------- CSV helpers ----------------
+// ------------------------------
+// Helpers: CSV minimal parsing
+// ------------------------------
 static std::vector<std::string> split_csv_line(const std::string& line) {
     std::vector<std::string> out;
-    std::string cur;
-    cur.reserve(line.size());
+    std::string cur; cur.reserve(line.size());
     bool in_quotes = false;
     for (char c : line) {
         if (c == '"') { in_quotes = !in_quotes; continue; }
@@ -68,10 +39,10 @@ static std::string join_csv_row(const std::vector<std::string>& fields) {
     std::ostringstream oss;
     for (size_t i = 0; i < fields.size(); ++i) {
         const std::string& s = fields[i];
-        bool need_quotes = (s.find(',') != std::string::npos) || (s.find('"') != std::string::npos);
+        bool need_quotes = s.find(',') != std::string::npos || s.find('"') != std::string::npos;
         if (need_quotes) {
             oss << '"';
-            for (char c : s) { if (c == '"') oss << "\"\""; else oss << c; }
+            for (char ch : s) oss << (ch == '"' ? "\"\"" : std::string(1, ch));
             oss << '"';
         } else {
             oss << s;
@@ -88,77 +59,45 @@ build_header_index(const std::vector<std::string>& header) {
     return m;
 }
 
-static std::string get_col(const std::vector<std::string>& row,
-                           const std::unordered_map<std::string,int>& idx,
-                           const std::string& name) {
-    auto it = idx.find(name);
-    if (it == idx.end()) return std::string();
+static bool get_double(const std::vector<std::string>& row,
+                       const std::unordered_map<std::string,int>& H,
+                       const std::string& name, double& out) {
+    auto it = H.find(name);
+    if (it == H.end()) return false;
     int j = it->second;
-    if (j < 0 || j >= (int)row.size()) return std::string();
-    return row[j];
-}
-
-static inline int ToInt(const std::string& s) {
-    if (s.empty()) return 0;
+    if (j < 0 || j >= (int)row.size()) return false;
+    if (row[j].empty()) return false;
     char* endp = nullptr;
-    long v = std::strtol(s.c_str(), &endp, 10);
-    if (endp == s.c_str()) return 0;
-    return (int)v;
+    out = std::strtod(row[j].c_str(), &endp);
+    return endp != row[j].c_str();
 }
 
-static inline double ToDouble(const std::string& s) {
-    if (s.empty()) return std::numeric_limits<double>::quiet_NaN();
+static int get_int(const std::vector<std::string>& row,
+                   const std::unordered_map<std::string,int>& H,
+                   const std::string& name, int& out) {
+    auto it = H.find(name);
+    if (it == H.end()) return 0;
+    int j = it->second;
+    if (j < 0 || j >= (int)row.size()) return 0;
+    if (row[j].empty()) return 0;
     char* endp = nullptr;
-    double v = std::strtod(s.c_str(), &endp);
-    if (endp == s.c_str()) return std::numeric_limits<double>::quiet_NaN();
-    return v;
+    long v = std::strtol(row[j].c_str(), &endp, 10);
+    if (endp == row[j].c_str()) return 0;
+    out = (int)v;
+    return 1;
 }
 
-// ---------------- Groups and period wiring ----------------
-static const std::vector<std::string> kPeriodGroups = {
-    "Fa18 Inb", "Fa18 Out", "Sp19 Inb", "Sp18 Inb", "Sp18 Out"
-};
-
-static const std::vector<std::string> kAllGroups = {
-    "Fa18 Inb", "Fa18 Out", "Sp19 Inb", "Sp18 Inb", "Sp18 Out",
-    "Fa18", "Sp18", "10.6 GeV"
-};
-
-// Map CSV display name -> canonical tree key used in dataTrees.
-static const std::map<std::string,std::string> kDisplayToTree = {
-    {"Fa18 Inb", "DVCS_Fa18_inb"},
-    {"Fa18 Out", "DVCS_Fa18_out"},
-    {"Sp19 Inb", "DVCS_Sp19_inb"},
-    {"Sp18 Inb", "DVCS_Sp18_inb"},
-    {"Sp18 Out", "DVCS_Sp18_out"}
-};
-
-// Combined membership (only display period names).
-static std::map<std::string, std::vector<std::string>> build_combined_groups() {
-    std::map<std::string, std::vector<std::string>> m;
-    m["Fa18"]     = {"Fa18 Inb", "Fa18 Out"};
-    m["Sp18"]     = {"Sp18 Inb", "Sp18 Out"};
-    m["10.6 GeV"] = {"Fa18 Inb", "Fa18 Out", "Sp18 Inb", "Sp18 Out"};
-    return m;
+static inline double wrap_deg_360(double phi_deg) {
+    if (!std::isfinite(phi_deg)) return std::numeric_limits<double>::quiet_NaN();
+    double w = std::fmod(phi_deg, 360.0);
+    if (w < 0.0) w += 360.0;
+    if (w >= 360.0) w = std::nextafter(360.0, 0.0);
+    return w;
 }
 
-// For 3-sigma JSON lookups: treeKey -> JSON base block name.
-static const std::map<std::string,std::string> kTreeToJsonBase = {
-    {"DVCS_Fa18_inb", "DVCS_Fa18_Inb"},
-    {"DVCS_Fa18_out", "DVCS_Fa18_Out"},
-    {"DVCS_Sp19_inb", "DVCS_Sp19_Inb"},
-    {"DVCS_Sp18_inb", "DVCS_Sp18_Inb"},
-    {"DVCS_Sp18_out", "DVCS_Sp18_Out"}
-};
-
-static inline std::string topo_string_from_det(int d1, int d2) {
-    if (d1 == 1 && d2 == 1) return "FD_FD";
-    if (d1 == 2 && d2 == 1) return "CD_FD";
-    if (d1 == 2 && d2 == 0) return "CD_FT";
-    return std::string();
-}
-
-// ---------------- Branch binder ----------------
+// ------------------------------
+// Branch binder (minimal)
+// ------------------------------
 struct BranchBinder {
     int    detector1 = 0; bool has_detector1 = false;
     int    detector2 = 0; bool has_detector2 = false;
@@ -169,12 +108,8 @@ struct BranchBinder {
 
     double x = 0.0;              bool has_x = false;
     double Q2 = 0.0;             bool has_Q2 = false;
-    double phi2 = 0.0;           bool has_phi2 = false;
-    double Delta_phi = 0.0;      bool has_Delta_phi = false;
-
-    double Emiss2 = 0.0;         bool has_Emiss2 = false;
-    double Mx2 = 0.0;            bool has_Mx2 = false;
-    double theta_gamma_gamma = 0.0; bool has_tgg = false;
+    double phi2 = 0.0;           bool has_phi2 = false; // degrees preferred
+    double Delta_phi = 0.0;      bool has_Delta_phi = false; // fallback in degrees
 
     void bind(TTree* t) {
         if (!t) return;
@@ -196,516 +131,316 @@ struct BranchBinder {
         bindD("Q2", &Q2, has_Q2);
         bindD("phi2", &phi2, has_phi2);
         bindD("Delta_phi", &Delta_phi, has_Delta_phi);
-
-        bindD("Emiss2", &Emiss2, has_Emiss2);
-        bindD("Mx2", &Mx2, has_Mx2);
-        bindD("theta_gamma_gamma", &theta_gamma_gamma, has_tgg);
     }
 
-    // Phi is ALWAYS in degrees here.
-    double phi_deg() const {
+    inline double phi_deg() const {
         if (has_phi2) return phi2;
         if (has_Delta_phi) return Delta_phi;
         return std::numeric_limits<double>::quiet_NaN();
     }
+
+    inline bool readyForCuts() const {
+        return has_t1 && has_open_angle_ep2 && has_pTmiss;
+    }
+    inline bool readyForVars() const {
+        return has_x && has_Q2 && (has_phi2 || has_Delta_phi);
+    }
 };
 
-// ---------------- Cuts ----------------
-static inline bool passes_simple_global(const BranchBinder& b) {
-    if (!(b.has_t1 && b.has_open_angle_ep2 && b.has_pTmiss)) return false;
-    if (!(b.open_angle_ep2 > 5.0)) return false;   // deg
-    if ((-b.t1) > 1.0) return false;               // |t| <= 1.0
-    if (b.pTmiss > 0.20) return false;             // (GeV)
-    return true;
-}
+// ------------------------------
+// Bin grid assembled from CSV
+// ------------------------------
+struct RowDef {
+    int    row_index = -1; // "bin index" from CSV
+    double xBmin=0, xBmax=0;
+    double Q2min=0, Q2max=0;
+    double tminAbs=0, tmaxAbs=0;
+    double phimin=0, phimax=0; // degrees
 
-struct MeanStd { double mean = 0.0; double std = 0.0; bool ok = false; };
-struct CutTable {
-    std::map<std::pair<std::string,std::string>, MeanStd> data; // {fullkey,var} -> mean,std
-    bool loaded = false;
+    // CSV column indices for write-back:
+    int col_xBavg[8]  = {-1,-1,-1,-1,-1,-1,-1,-1};
+    int col_Q2avg[8]  = {-1,-1,-1,-1,-1,-1,-1,-1};
+    int col_tavg[8]   = {-1,-1,-1,-1,-1,-1,-1,-1};
+    int col_phiavg[8] = {-1,-1,-1,-1,-1,-1,-1,-1};
 };
 
-static bool parse_next_number(const std::string& s, size_t start, double& out, size_t& endpos) {
-    size_t i = start;
-    while (i < s.size() && std::isspace((unsigned char)s[i])) ++i;
-    if (i >= s.size()) return false;
-    if (s[i] == '+' || s[i] == '-') ++i;
-    size_t j = i;
-    bool dot = false, exp = false;
-    while (j < s.size()) {
-        char c = s[j];
-        if (std::isdigit((unsigned char)c)) { ++j; continue; }
-        if (!dot && c == '.') { dot = true; ++j; continue; }
-        if (!exp && (c == 'e' || c == 'E')) {
-            exp = true; ++j;
-            if (j < s.size() && (s[j] == '+' || s[j] == '-')) ++j;
-            continue;
-        }
-        break;
-    }
-    if (j == i) return false;
-    out = std::strtod(s.substr(i, j - i).c_str(), nullptr);
-    endpos = j;
-    return true;
+static const std::vector<std::string>& group_labels() {
+    static const std::vector<std::string> labs = {
+        "Fa18 Inb","Fa18 Out","Sp19 Inb","Sp18 Inb","Sp18 Out","Fa18","Sp18","10.6 GeV"
+    };
+    return labs;
 }
-
-static MeanStd extract_mean_std(const std::string& json,
-                                const std::string& key_prefix,
-                                const std::string& var) {
-    MeanStd ms;
-    std::string anchor = "\"" + key_prefix + "\"";
-    size_t p = json.find(anchor);
-    if (p == std::string::npos) return ms;
-
-    size_t q = json.find("\"data\"", p);
-    if (q == std::string::npos) return ms;
-
-    std::string varkey = "\"" + var + "\"";
-    size_t r = json.find(varkey, q);
-    if (r == std::string::npos) return ms;
-
-    size_t mpos = json.find("\"mean\"", r);
-    if (mpos == std::string::npos) return ms;
-    mpos = json.find(':', mpos);
-    if (mpos == std::string::npos) return ms;
-
-    double mean_val = 0.0, std_val = 0.0;
-    size_t endpos = mpos + 1;
-    if (!parse_next_number(json, endpos, mean_val, endpos)) return ms;
-
-    size_t spos = json.find("\"std\"", r);
-    if (spos == std::string::npos) return ms;
-    spos = json.find(':', spos);
-    if (spos == std::string::npos) return ms;
-
-    size_t endpos2 = spos + 1;
-    if (!parse_next_number(json, endpos2, std_val, endpos2)) return ms;
-
-    ms.mean = mean_val;
-    ms.std  = std_val;
-    ms.ok   = true;
-    return ms;
-}
-
-static CutTable load_cuts_json_once() {
-    CutTable table;
-    std::ifstream fin(kCutsJSON);
-    if (!fin.is_open()) {
-        std::cerr << "[bin_means] Warning: cannot open " << kCutsJSON
-                  << ". 3-sigma cuts will be skipped (global cuts still applied)." << std::endl;
-        return table;
-    }
-    std::ostringstream oss; oss << fin.rdbuf();
-    std::string js = oss.str();
-
-    const char* vars[4] = {"Emiss2", "Mx2", "pTmiss", "theta_gamma_gamma"};
-    std::vector<std::string> jsonBases;
-    for (auto& kv : kTreeToJsonBase) jsonBases.push_back(kv.second);
-    const char* topos[3] = {"FD_FD","CD_FD","CD_FT"};
-
-    for (const auto& base : jsonBases) {
-        for (const char* topo : topos) {
-            std::string key = base + std::string("_") + topo;
-            for (const char* v : vars) {
-                table.data[{key, v}] = extract_mean_std(js, key, v);
-            }
-        }
-    }
-    table.loaded = true;
-    return table;
-}
-
-static const CutTable& get_cuts_table() {
-    static CutTable table = load_cuts_json_once();
-    return table;
-}
-
-static inline bool pass_3sigma_one(const MeanStd& ms, double value, bool one_sided) {
-    if (!ms.ok || !std::isfinite(value)) return true;
-    if (ms.std <= 0.0) return true;
-    if (one_sided) return (value <= (ms.mean + 3.0 * ms.std));
-    return (std::fabs(value - ms.mean) <= 3.0 * ms.std);
-}
-
-static MeanStd get_ms(const std::string& fullkey, const std::string& var) {
-    const CutTable& ct = get_cuts_table();
-    auto it = ct.data.find({fullkey, var});
-    if (it == ct.data.end()) return MeanStd{};
-    return it->second;
-}
-
-static bool passes_3sigma_all(const std::string& tree_key, int det1, int det2, const BranchBinder& b) {
-    const CutTable& ct = get_cuts_table();
-    if (!ct.loaded) return true;
-
-    auto itBase = kTreeToJsonBase.find(tree_key);
-    if (itBase == kTreeToJsonBase.end()) return true;
-
-    std::string topo = topo_string_from_det(det1, det2);
-    if (topo.empty()) return true;
-
-    std::string full = itBase->second + "_" + topo;
-
-    const MeanStd ms_Emiss2 = get_ms(full, "Emiss2");
-    const MeanStd ms_Mx2    = get_ms(full, "Mx2");
-    const MeanStd ms_pT     = get_ms(full, "pTmiss");
-    const MeanStd ms_tgg    = get_ms(full, "theta_gamma_gamma");
-
-    bool ok = true;
-    if (b.has_Emiss2)   ok = ok && pass_3sigma_one(ms_Emiss2, b.Emiss2, false);
-    if (b.has_Mx2)      ok = ok && pass_3sigma_one(ms_Mx2,    b.Mx2,    false);
-    if (b.has_pTmiss)   ok = ok && pass_3sigma_one(ms_pT,     b.pTmiss, true);
-    if (b.has_tgg)      ok = ok && pass_3sigma_one(ms_tgg,    b.theta_gamma_gamma, true);
-    return ok;
-}
-
-// ---------------- Bin helpers (phi in degrees) ----------------
-struct Ranges {
-    std::vector<std::pair<double,double>> xb;
-    std::vector<std::pair<double,double>> q2;
-    std::vector<std::pair<double,double>> tabs;
-    std::vector<std::pair<double,double>> phi; // degrees
+enum GroupIdx {
+    G_Fa18_Inb=0, G_Fa18_Out=1, G_Sp19_Inb=2, G_Sp18_Inb=3, G_Sp18_Out=4, G_Fa18=5, G_Sp18=6, G_10p6=7
 };
 
-static int find_bin(double v, const std::vector<std::pair<double,double>>& rs) {
-    for (int i = 0; i < (int)rs.size(); ++i) {
-        const auto& r = rs[i];
-        if (r.first <= v && v < r.second) return i;
-        if (v == r.second && i+1 == (int)rs.size()) return i; // include last-edge
-    }
+// map canonical period key -> group index
+static int period_to_group(const std::string& key) {
+    if (key == "DVCS_Fa18_inb") return G_Fa18_Inb;
+    if (key == "DVCS_Fa18_out") return G_Fa18_Out;
+    if (key == "DVCS_Sp19_inb") return G_Sp19_Inb;
+    if (key == "DVCS_Sp18_inb") return G_Sp18_Inb;
+    if (key == "DVCS_Sp18_out") return G_Sp18_Out;
     return -1;
 }
 
-static double wrap_360(double d) {
-    double w = std::fmod(d, 360.0);
-    if (w < 0.0) w += 360.0;
-    return w;
-}
-
-static void build_ranges_and_index(
-    const std::vector<std::vector<std::string>>& rows,
-    const std::unordered_map<std::string,int>& H,
-    Ranges& rng,
-    std::map<std::tuple<int,int,int,int>, int>& tuple_to_row)
+// ------------------------------
+// Fast 4D bin indexer based on unique ranges
+// ------------------------------
+static std::vector<std::pair<double,double>> unique_ranges_from_rows(
+    const std::vector<RowDef>& rows, char which)
 {
-    std::set<std::pair<double,double>> sxb, sq2, st, sphi;
-
-    for (int row_index = 0; row_index < (int)rows.size(); ++row_index) {
-        const auto& r = rows[row_index];
-        double xbmin = ToDouble(get_col(r, H, "xBmin"));
-        double xbmax = ToDouble(get_col(r, H, "xBmax"));
-        double q2min = ToDouble(get_col(r, H, "Q2min"));
-        double q2max = ToDouble(get_col(r, H, "Q2max"));
-        double tmin  = ToDouble(get_col(r, H, "t_abs_min"));
-        double tmax  = ToDouble(get_col(r, H, "t_abs_max"));
-        double phimin = ToDouble(get_col(r, H, "phimin"));
-        double phimax = ToDouble(get_col(r, H, "phimax"));
-
-        sxb.emplace(xbmin, xbmax);
-        sq2.emplace(q2min, q2max);
-        st.emplace(tmin, tmax);
-        sphi.emplace(phimin, phimax);
+    std::set<std::pair<double,double>> s;
+    for (const auto& r : rows) {
+        if (which=='x') s.emplace(r.xBmin, r.xBmax);
+        else if (which=='Q') s.emplace(r.Q2min, r.Q2max);
+        else if (which=='t') s.emplace(r.tminAbs, r.tmaxAbs);
+        else if (which=='p') s.emplace(r.phimin, r.phimax);
     }
-
-    rng.xb.assign(sxb.begin(), sxb.end());
-    rng.q2.assign(sq2.begin(), sq2.end());
-    rng.tabs.assign(st.begin(), st.end());
-    rng.phi.assign(sphi.begin(), sphi.end());
-
-    for (int row_index = 0; row_index < (int)rows.size(); ++row_index) {
-        const auto& r = rows[row_index];
-        double xbmin = ToDouble(get_col(r, H, "xBmin"));
-        double xbmax = ToDouble(get_col(r, H, "xBmax"));
-        double q2min = ToDouble(get_col(r, H, "Q2min"));
-        double q2max = ToDouble(get_col(r, H, "Q2max"));
-        double tmin  = ToDouble(get_col(r, H, "t_abs_min"));
-        double tmax  = ToDouble(get_col(r, H, "t_abs_max"));
-        double phimin = ToDouble(get_col(r, H, "phimin"));
-        double phimax = ToDouble(get_col(r, H, "phimax"));
-
-        int ix = find_bin(xbmin + 0.5 * (xbmax - xbmin), rng.xb);
-        int iQ = find_bin(q2min + 0.5 * (q2max - q2min), rng.q2);
-        int it = find_bin(tmin  + 0.5 * (tmax  - tmin ), rng.tabs);
-
-        double midphi = wrap_360(phimin + 0.5 * (phimax - phimin));
-        int ip = find_bin(midphi, rng.phi);
-
-        if (ix >= 0 && iQ >= 0 && it >= 0 && ip >= 0) {
-            tuple_to_row[{ix,iQ,it,ip}] = row_index;
-        }
-    }
+    return {s.begin(), s.end()};
 }
 
-// ---------------- Accumulators ----------------
+static int find_idx(double v, const std::vector<std::pair<double,double>>& ranges) {
+    for (int i = 0; i < (int)ranges.size(); ++i)
+        if (v >= ranges[i].first && v < ranges[i].second) return i;
+    return -1;
+}
+
+// map 4-tuple -> row slot
+using Key4 = std::tuple<int,int,int,int>;
+
+// ------------------------------
+// Accumulator
+// ------------------------------
 struct Accum {
-    double sum_x = 0.0;
-    double sum_Q2 = 0.0;
-    double sum_ta = 0.0;
-    double sum_phi = 0.0; // degrees
-    long long n = 0;
-};
-
-struct PeriodAccum {
-    std::vector<Accum> bins; // one per valid CSV row
-};
-
-// ---------------- Column name resolution (comma style) ----------------
-// Preferred header form is: "base, Group" (comma + space).
-// For robustness, we also accept a couple of legacy aliases.
-static int find_avg_col(const std::unordered_map<std::string,int>& H,
-                        const std::string& base, const std::string& group) {
-    const std::string primary = base + ", " + group;   // matches initialize_pass2_csv
-    auto it = H.find(primary);
-    if (it != H.end()) return it->second;
-
-    // Fallbacks (if someone imports an older CSV)
-    const std::string alt1 = base + " (" + group + ")";
-    const std::string alt2 = base + "," + group;       // comma no space
-    const std::string alt3 = base + " " + group;       // space no comma
-
-    auto try1 = H.find(alt1); if (try1 != H.end()) return try1->second;
-    auto try2 = H.find(alt2); if (try2 != H.end()) return try2->second;
-    auto try3 = H.find(alt3); if (try3 != H.end()) return try3->second;
-
-    std::cerr << "[bin_means] FATAL: column missing: " << primary
-              << " (also tried \"" << alt1 << "\", \"" << alt2 << "\", \"" << alt3 << "\")"
-              << std::endl;
-    std::exit(EXIT_FAILURE);
-}
-
-// ---------------- Write means into CSV rows ----------------
-static void write_means_into_rows(const std::string& group_name,
-                                  const std::vector<Accum>& bins,
-                                  std::vector<std::vector<std::string>>& rows,
-                                  const std::unordered_map<std::string,int>& H)
-{
-    const int XB  = find_avg_col(H, "xBavg",     group_name);
-    const int Q2  = find_avg_col(H, "Q2avg",     group_name);
-    const int TA  = find_avg_col(H, "t_abs_avg", group_name);
-    const int PHI = find_avg_col(H, "phiavg",    group_name);
-
-    std::ostringstream oss;
-    oss.setf(std::ios::fixed);
-
-    for (int r = 0; r < (int)rows.size(); ++r) {
-        const Accum& A = (r < (int)bins.size()) ? bins[r] : Accum{};
-        if (A.n <= 0) {
-            rows[r][XB].clear();
-            rows[r][Q2].clear();
-            rows[r][TA].clear();
-            rows[r][PHI].clear();
-            continue;
-        }
-        double xb_mean  = A.sum_x   / (double)A.n;
-        double q2_mean  = A.sum_Q2  / (double)A.n;
-        double ta_mean  = A.sum_ta  / (double)A.n;
-        double phi_mean = wrap_360(A.sum_phi / (double)A.n); // degrees
-
-        oss.str(""); oss << std::setprecision(8) << xb_mean;  rows[r][XB]  = oss.str();
-        oss.str(""); oss << std::setprecision(8) << q2_mean;  rows[r][Q2]  = oss.str();
-        oss.str(""); oss << std::setprecision(8) << ta_mean;  rows[r][TA]  = oss.str();
-        oss.str(""); oss << std::setprecision(8) << phi_mean; rows[r][PHI] = oss.str();
+    double sum_x=0, sum_Q2=0, sum_t=0, sum_phi=0;
+    long long n=0;
+    inline void add(double xB, double Q2, double tabs, double phi_deg) {
+        sum_x   += xB;
+        sum_Q2  += Q2;
+        sum_t   += tabs;
+        sum_phi += wrap_deg_360(phi_deg);
+        ++n;
     }
+};
+
+// ------------------------------
+// Cut wrapper: BOTH global and 3-sigma, accept ANY topology
+// ------------------------------
+static bool passes_all_cuts(const std::string& period_key, const BranchBinder& b) {
+    if (!global_cuts::passes(b.t1, b.open_angle_ep2, b.pTmiss)) return false;
+    // accept if ANY topology's 3-sigma passes:
+    static const Topology topos[] = {Topology::FD_FD, Topology::CD_FD, Topology::CD_FT};
+    bool ok3 = false;
+    for (Topology tp : topos) {
+        if (passes3sigma(period_key, topo_to_csv_title(tp), b.t1, b.open_angle_ep2, b.pTmiss)) {
+            ok3 = true; break;
+        }
+    }
+    return ok3;
 }
 
-// ---------------- Public API ----------------
+// ------------------------------
+// Main
+// ------------------------------
 bool update_bin_means_csv(const std::string& csv_path,
                           const std::map<std::string, TTree*>& dataTrees,
-                          int max_workers)
+                          int /*worker_count*/)
 {
-    // Load CSV
+    // 1) Load CSV
     std::ifstream fin(csv_path);
     if (!fin.is_open()) {
-        std::cerr << "[bin_means] ERROR: cannot open CSV: " << csv_path << std::endl;
+        std::cerr << "[bin_means] FATAL: cannot open CSV: " << csv_path << std::endl;
         return false;
     }
     std::string header_line;
     if (!std::getline(fin, header_line)) {
-        std::cerr << "[bin_means] ERROR: CSV is empty: " << csv_path << std::endl;
+        std::cerr << "[bin_means] FATAL: empty CSV: " << csv_path << std::endl;
         return false;
     }
     std::vector<std::string> header = split_csv_line(header_line);
     auto H = build_header_index(header);
 
-    std::vector<std::vector<std::string>> rows_all;
+    // verify required bin-def columns
+    const char* req[] = {"bin index","xBmin","xBmax","Q2min","Q2max","t_abs_min","t_abs_max","phimin","phimax"};
+    for (auto* n : req) {
+        if (!H.count(n)) { std::cerr << "[bin_means] FATAL: CSV missing column: " << n << std::endl; return false; }
+    }
+
+    // 2) Slurp all rows and build RowDef list
+    std::vector<std::vector<std::string>> rows_csv;
+    rows_csv.reserve(4000);
     std::string line;
     while (std::getline(fin, line)) {
-        if (line.empty()) { rows_all.push_back(std::vector<std::string>{}); continue; }
-        rows_all.push_back(split_csv_line(line));
+        if (!line.empty()) rows_csv.push_back(split_csv_line(line));
     }
     fin.close();
 
-    int col_valid = (H.count("valid bin") ? H.at("valid bin") : -1);
-    std::vector<int> valid_row_indices;
-    for (int i = 0; i < (int)rows_all.size(); ++i) {
-        const auto& r = rows_all[i];
-        if (col_valid < 0 || col_valid >= (int)r.size()) continue;
-        if (ToInt(r[col_valid]) == 1) valid_row_indices.push_back(i);
+    std::vector<RowDef> rows;
+    rows.reserve(rows_csv.size());
+    for (size_t r = 0; r < rows_csv.size(); ++r) {
+        const auto& cols = rows_csv[r];
+        RowDef R;
+        // bin index
+        int idx = -1;
+        get_int(cols, H, "bin index", idx);
+        R.row_index = idx;
+
+        // edges
+        get_double(cols, H, "xBmin", R.xBmin); get_double(cols, H, "xBmax", R.xBmax);
+        get_double(cols, H, "Q2min", R.Q2min); get_double(cols, H, "Q2max", R.Q2max);
+        get_double(cols, H, "t_abs_min", R.tminAbs); get_double(cols, H, "t_abs_max", R.tmaxAbs);
+        get_double(cols, H, "phimin", R.phimin); get_double(cols, H, "phimax", R.phimax);
+
+        // write-back columns
+        const auto& groups = group_labels();
+        for (int g = 0; g < (int)groups.size(); ++g) {
+            // build exact header names
+            std::string s1 = "xBavg, "     + groups[g];
+            std::string s2 = "Q2avg, "     + groups[g];
+            std::string s3 = "t_abs_avg, " + groups[g];
+            std::string s4 = "phiavg, "    + groups[g];
+            auto it1 = H.find(s1); auto it2 = H.find(s2);
+            auto it3 = H.find(s3); auto it4 = H.find(s4);
+            if (it1 == H.end() || it2 == H.end() || it3 == H.end() || it4 == H.end()) {
+                std::cerr << "[bin_means] FATAL: column missing: " 
+                          << (it1==H.end()?s1: it2==H.end()?s2: it3==H.end()?s3:s4) << std::endl;
+                return false;
+            }
+            R.col_xBavg[g]  = it1->second;
+            R.col_Q2avg[g]  = it2->second;
+            R.col_tavg[g]   = it3->second;
+            R.col_phiavg[g] = it4->second;
+        }
+        rows.push_back(R);
     }
 
-    if (valid_row_indices.empty()) {
-        std::cerr << "[bin_means] WARNING: no valid rows (valid bin == 1). Nothing to do." << std::endl;
-        return true;
+    // 3) Build fast 4D index
+    const auto x_ranges  = unique_ranges_from_rows(rows, 'x');
+    const auto Q_ranges  = unique_ranges_from_rows(rows, 'Q');
+    const auto t_ranges  = unique_ranges_from_rows(rows, 't');
+    const auto p_ranges  = unique_ranges_from_rows(rows, 'p');
+
+    std::unordered_map<Key4, int> lut; // -> row slot
+    lut.reserve(rows.size()*2);
+    for (int i = 0; i < (int)rows.size(); ++i) {
+        int ix = find_idx(rows[i].xBmin, x_ranges);
+        int iQ = find_idx(rows[i].Q2min, Q_ranges);
+        int it = find_idx(rows[i].tminAbs, t_ranges);
+        int ip = find_idx(rows[i].phimin,  p_ranges);
+        if (ix<0 || iQ<0 || it<0 || ip<0) {
+            std::cerr << "[bin_means] WARNING: could not index row i="<<i<<" bin="<<rows[i].row_index<<"\n";
+            continue;
+        }
+        lut.emplace(Key4{ix,iQ,it,ip}, i);
     }
 
-    std::vector<std::vector<std::string>> valid_rows;
-    valid_rows.reserve(valid_row_indices.size());
-    for (int idx : valid_row_indices) valid_rows.push_back(rows_all[idx]);
-
-    // Bin ranges and row index mapping
-    struct Ranges rng;
-    std::map<std::tuple<int,int,int,int>, int> tuple_to_row;
-    build_ranges_and_index(valid_rows, H, rng, tuple_to_row);
-
-    // Prepare per-period accumulators (only the five periods are scanned).
-    const int n_valid = (int)valid_rows.size();
-    std::map<std::string, PeriodAccum> period_acc; // key: display period name
-
-    for (const auto& disp : kPeriodGroups) {
-        period_acc[disp].bins.assign(n_valid, Accum{});
-    }
-
-    // Build list of trees we actually have.
-    struct PeriodTree {
-        std::string display;   // e.g., "Fa18 Inb"
-        std::string tree_key;  // e.g., "DVCS_Fa18_inb"
+    // 4) Per-period accumulators (store to compute combined later)
+    const int R = (int)rows.size();
+    std::vector<std::vector<Accum>> per_group_acc(5, std::vector<Accum>(R)); // 5 periods only
+    auto add_event = [&](int gidx, int row_slot, double xB, double Q2, double tabs, double phi){
+        if (gidx<0 || gidx>=5) return;
+        if (row_slot<0 || row_slot>=R) return;
+        per_group_acc[gidx][row_slot].add(xB,Q2,tabs,phi);
     };
-    std::vector<PeriodTree> trees_to_scan;
-    trees_to_scan.reserve(kPeriodGroups.size());
-    for (const auto& disp : kPeriodGroups) {
-        auto itKey = kDisplayToTree.find(disp);
-        if (itKey == kDisplayToTree.end()) continue;
-        auto itTree = dataTrees.find(itKey->second);
-        if (itTree == dataTrees.end() || !itTree->second) continue;
-        trees_to_scan.push_back({disp, itKey->second});
-    }
 
-    if (max_workers <= 0) max_workers = 1;
+    // 5) Loop each period ONCE (single-thread for ROOT safety)
+    for (const auto& kv : dataTrees) {
+        const std::string period_key = kv.first;
+        int gidx = period_to_group(period_key); // only 5 period groups here
+        if (gidx < 0) continue;                 // ignore other keys
 
-    // Parallelize across trees; each TTree is read by at most one thread.
-#ifdef _OPENMP
-    #pragma omp parallel for num_threads(std::min<int>(max_workers, (int)trees_to_scan.size())) schedule(dynamic)
-#endif
-    for (int itree = 0; itree < (int)trees_to_scan.size(); ++itree) {
-        const PeriodTree PT = trees_to_scan[itree];
-        TTree* t = dataTrees.at(PT.tree_key);
-
-        // Local accumulator for this period (thread-local).
-        std::vector<Accum> local_bins(n_valid);
+        TTree* t = kv.second;
+        if (!t) { std::cerr << "[bin_means] WARNING: null tree for " << period_key << "\n"; continue; }
 
         BranchBinder b; b.bind(t);
-        const Long64_t nent = t->GetEntries();
-
-        for (Long64_t i = 0; i < nent; ++i) {
-            t->GetEntry(i);
-
-            // Apply BOTH cut sets.
-            if (!passes_simple_global(b)) continue;
-
-            int d1 = b.has_detector1 ? b.detector1 : 0;
-            int d2 = b.has_detector2 ? b.detector2 : 0;
-            if (!passes_3sigma_all(PT.tree_key, d1, d2, b)) continue;
-
-            if (!(b.has_x && b.has_Q2 && b.has_t1)) continue;
-
-            double xb  = b.x;
-            double Q2  = b.Q2;
-            double tab = std::fabs(b.t1);
-            double phi_deg = b.phi_deg();
-
-            if (!std::isfinite(xb) || !std::isfinite(Q2) || !std::isfinite(tab) || !std::isfinite(phi_deg)) continue;
-
-            phi_deg = wrap_360(phi_deg);
-
-            int ix = find_bin(xb,  rng.xb);
-            int iQ = find_bin(Q2,  rng.q2);
-            int it = find_bin(tab, rng.tabs);
-            int ip = find_bin(phi_deg, rng.phi);
-            if (ix < 0 || iQ < 0 || it < 0 || ip < 0) continue;
-
-            auto rit = tuple_to_row.find({ix,iQ,it,ip});
-            if (rit == tuple_to_row.end()) continue;
-            int row_index = rit->second;
-
-            Accum& A = local_bins[row_index];
-            A.sum_x   += xb;
-            A.sum_Q2  += Q2;
-            A.sum_ta  += tab;
-            A.sum_phi += phi_deg;
-            A.n       += 1;
-        }
-
-        // Merge into the period accumulator.
-#ifdef _OPENMP
-        #pragma omp critical
-#endif
-        {
-            auto& dst = period_acc[PT.display].bins;
-            for (int r = 0; r < n_valid; ++r) {
-                dst[r].sum_x   += local_bins[r].sum_x;
-                dst[r].sum_Q2  += local_bins[r].sum_Q2;
-                dst[r].sum_ta  += local_bins[r].sum_ta;
-                dst[r].sum_phi += local_bins[r].sum_phi;
-                dst[r].n       += local_bins[r].n;
-            }
-        }
-    }
-
-    // Build combined groups from period sums (weighted means via summed counts).
-    std::map<std::string, std::vector<Accum>> all_group_bins;
-    // Start by copying the five periods straight through.
-    for (const auto& disp : kPeriodGroups) {
-        all_group_bins[disp] = period_acc[disp].bins;
-    }
-
-    // Now the combined ones.
-    auto combined = build_combined_groups();
-    for (const auto& kv : combined) {
-        const std::string& cname = kv.first;
-        const auto& members = kv.second;
-        std::vector<Accum> bins(n_valid);
-        for (const auto& mdisp : members) {
-            const auto& src = period_acc[mdisp].bins;
-            for (int r = 0; r < n_valid; ++r) {
-                bins[r].sum_x   += src[r].sum_x;
-                bins[r].sum_Q2  += src[r].sum_Q2;
-                bins[r].sum_ta  += src[r].sum_ta;
-                bins[r].sum_phi += src[r].sum_phi;
-                bins[r].n       += src[r].n;
-            }
-        }
-        all_group_bins[cname] = std::move(bins);
-    }
-
-    // Map valid-rows back into full CSV after writing means for each group.
-    std::vector<std::vector<std::string>> working_valid = valid_rows;
-    for (const auto& gname : kAllGroups) {
-        auto it = all_group_bins.find(gname);
-        if (it == all_group_bins.end()) continue;
-        write_means_into_rows(gname, it->second, working_valid, H);
-    }
-    for (int k = 0; k < (int)working_valid.size(); ++k) {
-        rows_all[valid_row_indices[k]] = working_valid[k];
-    }
-
-    // Write atomically
-    std::string tmp_path = csv_path + ".tmp.binmeans";
-    {
-        std::ofstream fout(tmp_path);
-        if (!fout.is_open()) {
-            std::cerr << "[bin_means] ERROR: cannot open temp CSV: " << tmp_path << std::endl;
+        if (!b.readyForCuts() || !b.readyForVars()) {
+            std::cerr << "[bin_means] FATAL: tree '"<<period_key<<"' missing required branches.\n";
             return false;
         }
-        fout << join_csv_row(header) << "\n";
-        for (const auto& r : rows_all) {
-            if (r.empty()) { fout << "\n"; continue; }
-            fout << join_csv_row(r) << "\n";
+
+        const Long64_t nent = t->GetEntries();
+        for (Long64_t i = 0; i < nent; ++i) {
+            t->GetEntry(i);
+            if (!passes_all_cuts(period_key, b)) continue;
+
+            double xB  = b.x;
+            double Q2  = b.Q2;
+            double tab = std::fabs(b.t1);
+            double phi = wrap_deg_360(b.phi_deg());
+            if (!std::isfinite(xB) || !std::isfinite(Q2) || !std::isfinite(tab) || !std::isfinite(phi)) continue;
+
+            int ix = find_idx(xB,  x_ranges);
+            int iQ = find_idx(Q2,  Q_ranges);
+            int it = find_idx(tab, t_ranges);
+            int ip = find_idx(phi, p_ranges);
+            if (ix<0 || iQ<0 || it<0 || ip<0) continue;
+
+            auto itL = lut.find(Key4{ix,iQ,it,ip});
+            if (itL == lut.end()) continue;
+            int row_slot = itL->second;
+
+            add_event(gidx, row_slot, xB, Q2, tab, phi);
         }
     }
-    if (std::rename(tmp_path.c_str(), csv_path.c_str()) != 0) {
-        std::perror("[bin_means] rename failed");
+
+    // 6) Write per-period means into CSV rows
+    auto write_means_for_group = [&](int gidx_period, int g_write_slot) {
+        for (int i = 0; i < R; ++i) {
+            const auto& a = per_group_acc[gidx_period][i];
+            if (a.n <= 0) continue;
+            rows_csv[i][ rows[i].col_xBavg[g_write_slot]  ] = (static_cast<std::ostringstream&>(std::ostringstream() << std::setprecision(8) << std::fixed << (a.sum_x / a.n))).str();
+            rows_csv[i][ rows[i].col_Q2avg[g_write_slot]  ] = (static_cast<std::ostringstream&>(std::ostringstream() << std::setprecision(8) << std::fixed << (a.sum_Q2 / a.n))).str();
+            rows_csv[i][ rows[i].col_tavg[g_write_slot]   ] = (static_cast<std::ostringstream&>(std::ostringstream() << std::setprecision(8) << std::fixed << (a.sum_t / a.n))).str();
+            rows_csv[i][ rows[i].col_phiavg[g_write_slot] ] = (static_cast<std::ostringstream&>(std::ostringstream() << std::setprecision(8) << std::fixed << (a.sum_phi / a.n))).str();
+        }
+    };
+
+    // per-period (exact slot == group index)
+    write_means_for_group(G_Fa18_Inb, G_Fa18_Inb);
+    write_means_for_group(G_Fa18_Out, G_Fa18_Out);
+    write_means_for_group(G_Sp19_Inb, G_Sp19_Inb);
+    write_means_for_group(G_Sp18_Inb, G_Sp18_Inb);
+    write_means_for_group(G_Sp18_Out, G_Sp18_Out);
+
+    // 7) Combined groups built from per-period sums
+    auto combine_and_write = [&](const std::vector<int>& src_gidx, int dst_slot) {
+        std::vector<Accum> combined(R);
+        for (int i = 0; i < R; ++i) {
+            for (int g : src_gidx) {
+                combined[i].sum_x   += per_group_acc[g][i].sum_x;
+                combined[i].sum_Q2  += per_group_acc[g][i].sum_Q2;
+                combined[i].sum_t   += per_group_acc[g][i].sum_t;
+                combined[i].sum_phi += per_group_acc[g][i].sum_phi;
+                combined[i].n       += per_group_acc[g][i].n;
+            }
+            if (combined[i].n > 0) {
+                rows_csv[i][ rows[i].col_xBavg[dst_slot]  ] = (static_cast<std::ostringstream&>(std::ostringstream() << std::setprecision(8) << std::fixed << (combined[i].sum_x   / combined[i].n))).str();
+                rows_csv[i][ rows[i].col_Q2avg[dst_slot]  ] = (static_cast<std::ostringstream&>(std::ostringstream() << std::setprecision(8) << std::fixed << (combined[i].sum_Q2  / combined[i].n))).str();
+                rows_csv[i][ rows[i].col_tavg[dst_slot]   ] = (static_cast<std::ostringstream&>(std::ostringstream() << std::setprecision(8) << std::fixed << (combined[i].sum_t   / combined[i].n))).str();
+                rows_csv[i][ rows[i].col_phiavg[dst_slot] ] = (static_cast<std::ostringstream&>(std::ostringstream() << std::setprecision(8) << std::fixed << (combined[i].sum_phi / combined[i].n))).str();
+            }
+        }
+    };
+
+    // Fa18 = Fa18 Inb + Fa18 Out
+    combine_and_write({G_Fa18_Inb, G_Fa18_Out}, G_Fa18);
+
+    // Sp18 = Sp18 Inb + Sp18 Out
+    combine_and_write({G_Sp18_Inb, G_Sp18_Out}, G_Sp18);
+
+    // 10.6 GeV = Fa18 Inb + Fa18 Out + Sp18 Inb + Sp18 Out  (exclude Sp19 Inb)
+    combine_and_write({G_Fa18_Inb, G_Fa18_Out, G_Sp18_Inb, G_Sp18_Out}, G_10p6);
+
+    // 8) Write CSV back
+    std::ofstream fout(csv_path);
+    if (!fout.is_open()) {
+        std::cerr << "[bin_means] FATAL: cannot re-open CSV for write: " << csv_path << std::endl;
         return false;
     }
+    fout << join_csv_row(header) << "\n";
+    for (const auto& row : rows_csv) fout << join_csv_row(row) << "\n";
+    fout.close();
 
     std::cout << "[bin_means] Updated bin means in: " << csv_path << std::endl;
     return true;
