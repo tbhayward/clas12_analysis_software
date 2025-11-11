@@ -87,7 +87,7 @@ int main(int argc, char* argv[]) {
             std::filesystem::copy_file("output/csvs/dvcs_pass2_analysis.csv", 
                 "output/csvs/dvcs_pass2_analysis_backup_bin_means.csv",
                 std::filesystem::copy_options::overwrite_existing);
-            std::cout << "[main] Backed up CSV to " << csv_backup << "\n";
+            std::cout << "[main] Backed up CSV.\n";
         } catch (const std::exception& e) {
             std::cerr << "[main] WARNING: Backup failed (" << e.what() << "). Continuing anyway.\n";
         }
