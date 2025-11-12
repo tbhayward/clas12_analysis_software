@@ -1,5 +1,5 @@
 // bin_means.cpp
-// Progress-enabled version. Single pass through each TTree per period.
+// Progress-enabled, thread-safe binding. Single pass per TTree.
 // Uses ONLY phi2 (radians) -> converts to degrees for CSV phimin/phimax checks.
 // Skips any bin with fewer than MIN_BIN_COUNT entries.
 
@@ -9,6 +9,7 @@
 
 #include <TTree.h>
 #include <TStopwatch.h>
+#include <TROOT.h>          // ROOT::EnableThreadSafety
 
 #include <algorithm>
 #include <cassert>
@@ -215,6 +216,9 @@ struct Accum {
     double mp() const { return n ? sp / n : std::numeric_limits<double>::quiet_NaN(); }
 };
 
+// ---------- NEW: serialize ROOT binding to avoid Cling races ----------
+static std::mutex g_root_bind_mutex;
+
 // ---------------- branch binder ----------------
 struct BranchBinder {
     // global/exclusivity inputs
@@ -234,7 +238,27 @@ struct BranchBinder {
 
     void bind(TTree* t) {
         if (!t) return;
-        auto bindD = [&](const char* n, double* a, bool& f){ if (t->GetBranch(n)) { t->SetBranchAddress(n, a); f = true; } };
+
+        // Only one thread at a time may call SetBranchStatus/SetBranchAddress.
+        std::lock_guard<std::mutex> lock(g_root_bind_mutex);
+
+        // Optional: restrict active branches (also helps speed)
+        t->SetBranchStatus("*", 0);
+        t->SetBranchStatus("t1", 1);
+        t->SetBranchStatus("open_angle_ep2", 1);
+        t->SetBranchStatus("pTmiss", 1);
+        t->SetBranchStatus("Emiss2", 1);
+        t->SetBranchStatus("Mx2", 1);
+        t->SetBranchStatus("Mx2_1", 1);
+        t->SetBranchStatus("Mx2_2", 1);
+        t->SetBranchStatus("xF", 1);
+        t->SetBranchStatus("x", 1);
+        t->SetBranchStatus("Q2", 1);
+        t->SetBranchStatus("phi2", 1);
+
+        auto bindD = [&](const char* n, double* a, bool& f){
+            if (t->GetBranch(n)) { t->SetBranchAddress(n, a); f = true; }
+        };
 
         bindD("t1", &t1, has_t1);
         bindD("open_angle_ep2", &open_angle_ep2, has_open);
@@ -620,6 +644,9 @@ static void fill_combined_groups(CSV& csv,
 bool update_bin_means_csv(const std::string& csv_path,
                           const std::map<std::string, TTree*>& dataTrees,
                           int max_workers) {
+    // Make ROOT set up its global mutexes.
+    ROOT::EnableThreadSafety();
+
     CSV csv;
     if (!load_csv(csv_path, csv)) return false;
 
