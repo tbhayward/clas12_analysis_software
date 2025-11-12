@@ -186,7 +186,7 @@ struct TupleHash {
 
 // ---------------- branches ----------------
 struct BranchBinder {
-    // det flags (not needed for acceptance, but bound in case you want later logic)
+    // det flags (bound in case you want later logic)
     int detector1 = 0; bool has_d1 = false;
     int detector2 = 0; bool has_d2 = false;
 
@@ -366,7 +366,7 @@ static bool passes_3sigma_for_topo(const std::string& period_json_tag,
     return ok_theta && ok_pT && ok_Em2 && ok_Mx2 && ok_Mx21 && ok_Mx22 && ok_xF;
 }
 
-// Accept if ANY topology’s 3σ gate passes (you said: accept all topologies for averages).
+// Accept if ANY topology’s 3σ gate passes (accept-all-topologies for averages).
 static bool passes_all_exclusivity(const std::string& period_json_tag, const BranchBinder& b) {
     return passes_3sigma_for_topo(period_json_tag, Topology::FD_FD, b)
         || passes_3sigma_for_topo(period_json_tag, Topology::CD_FD, b)
@@ -389,7 +389,7 @@ static bool in_range(double v, double a, double b) { return (v >= a) && (v < b);
 static bool row_accepts_phi(double phi_deg, double pmin_deg, double pmax_deg) {
     if (!std::isfinite(phi_deg) || !std::isfinite(pmin_deg) || !std::isfinite(pmax_deg)) return false;
     if (pmax_deg > pmin_deg) return in_range(phi_deg, pmin_deg, pmax_deg);
-    // wrap-around safety (unlikely for this CSV)
+    // wrap-around safety
     return phi_deg >= pmin_deg || phi_deg < pmax_deg;
 }
 
@@ -565,15 +565,15 @@ static void fill_combined_groups(CSV& csv,
     }
 }
 
-void update_bin_means_csv(const std::string& csv_path,
+bool update_bin_means_csv(const std::string& csv_path,
                           const std::map<std::string, TTree*>& dataTrees,
                           int max_workers) {
     CSV csv;
-    if (!load_csv(csv_path, csv)) std::exit(EXIT_FAILURE);
+    if (!load_csv(csv_path, csv)) return false;
 
     // Resolve per-period CSV columns for writing period means
     std::unordered_map<std::string,int> cxB, cQ2, ct, cphi;
-    for (const auto& lab : csv_period_labels()) {
+    for (const const auto& lab : csv_period_labels()) {
         cxB[lab]  = col(csv, col_xBavg(lab));
         cQ2[lab]  = col(csv, col_Q2avg(lab));
         ct[lab]   = col(csv, col_tavg (lab));
@@ -631,6 +631,7 @@ void update_bin_means_csv(const std::string& csv_path,
     // Fill combined groups from the period maps (no TTree reread)
     fill_combined_groups(csv, per_period_rows);
 
-    if (!write_csv(csv_path, csv)) std::exit(EXIT_FAILURE);
+    if (!write_csv(csv_path, csv)) return false;
     std::cout << "[bin_means] Updated bin means in: " << csv_path << std::endl;
+    return true;
 }
