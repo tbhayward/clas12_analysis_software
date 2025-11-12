@@ -18,6 +18,7 @@
 #include <TColor.h>
 #include <TLegend.h>
 #include <TStyle.h>
+#include <TString.h>
 
 #include <algorithm>
 #include <atomic>
@@ -508,6 +509,11 @@ static void ensure_dir(const std::string& path) {
     }
 }
 
+// --------------------- Shared CSV column indices struct (FIX) --------------------
+struct CsvCols {
+    int c_xb_min, c_xb_max, c_q2_min, c_q2_max, c_tab_min, c_tab_max, c_phi_min, c_phi_max;
+};
+
 // -------------- plotting (shared y per canvas, big text, legend) --------------
 struct CellData {
     std::vector<double> X, Yp, Ym, EX, EYp, EYm, q2means, tmeans;
@@ -518,7 +524,7 @@ static void draw_group_canvases(
     const std::string& topo_str,
     const std::string& topo_dir,
     const CsvDoc& csv,
-    const struct { int c_xb_min, c_xb_max, c_q2_min, c_q2_max, c_tab_min, c_tab_max, c_phi_min, c_phi_max; } cols,
+    const CsvCols& cols,
     const std::string& out_root_dir)
 {
     namespace fs = std::filesystem;
@@ -786,7 +792,8 @@ bool update_total_counts_csv(
         return false;
     }
 
-    struct CsvCols { int c_xb_min, c_xb_max, c_q2_min, c_q2_max, c_tab_min, c_tab_max, c_phi_min, c_phi_max; } cols;
+    // Use the shared CsvCols (file-scope) — FIXED
+    CsvCols cols;
     cols.c_xb_min  = csv.col_index("xBmin");
     cols.c_xb_max  = csv.col_index("xBmax");
     cols.c_q2_min  = csv.col_index("Q2min");
