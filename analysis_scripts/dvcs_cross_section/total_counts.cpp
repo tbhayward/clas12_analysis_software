@@ -1,5 +1,5 @@
-// total_counts.cpp — self-contained (no csv_io.h), exact-typed binder, auto-mkdir,
-// phi wrap, FAST bin index, and periodic progress prints.
+// total_counts.cpp — CSV writing fixed, big-text plots with legend, shared y per canvas,
+// canonical directory names only, supplemental excluded from CSV writes.
 
 #include "total_counts.h"
 #include "periods.h"                // CANONICAL_PERIODS(), PeriodDef{label, tree_key}
@@ -16,8 +16,8 @@
 #include <TBranch.h>
 #include <TTree.h>
 #include <TColor.h>
-#include <TString.h>
-#include <TStopwatch.h>
+#include <TLegend.h>
+#include <TStyle.h>
 
 #include <algorithm>
 #include <atomic>
@@ -37,8 +37,6 @@
 #include <unordered_map>
 #include <utility>
 #include <vector>
-#include <cstdlib>
-#include <functional>
 
 #ifdef _OPENMP
 #include <omp.h>
@@ -97,7 +95,6 @@ struct CsvDoc {
         while (std::getline(fin, line)) {
             if (!line.empty()) rows.push_back(split_csv_line(line));
         }
-        // Pad any short rows up to header size
         for (auto& r : rows) r.resize(header.size());
         return true;
     }
@@ -108,13 +105,11 @@ struct CsvDoc {
             std::cerr << "[CsvDoc] FATAL: cannot write CSV: " << path << std::endl;
             return false;
         }
-        // header
         for (size_t i = 0; i < header.size(); ++i) {
             write_field(fout, header[i]);
             if (i + 1 < header.size()) fout << ',';
         }
         fout << "\n";
-        // rows
         for (const auto& row : rows) {
             for (size_t i = 0; i < row.size(); ++i) {
                 write_field(fout, row[i]);
@@ -136,16 +131,13 @@ struct CsvDoc {
         return (it == index.end()) ? -1 : it->second;
     }
 
-    // Ensure a column exists; extend header, index, and each row appropriately.
     int ensure_col(const std::string& name) {
         auto it = index.find(name);
         if (it != index.end()) return it->second;
         int new_idx = (int)header.size();
         header.push_back(name);
         index[name] = new_idx;
-        for (auto& r : rows) {
-            if ((int)r.size() < new_idx + 1) r.resize(new_idx + 1);
-        }
+        for (auto& r : rows) r.resize(header.size());
         return new_idx;
     }
 
@@ -164,7 +156,7 @@ struct CsvDoc {
 
     void set(int r, int c, double v) {
         if (r < 0 || r >= (int)rows.size() || c < 0 || c >= (int)header.size()) return;
-        std::ostringstream oss; oss.setf(std::ios::fixed); oss << std::setprecision(16) << v;
+        std::ostringstream oss; oss.setf(std::ios::fixed); oss << std::setprecision(8) << v;
         rows[r][c] = oss.str();
     }
 };
@@ -391,7 +383,7 @@ static void bindRequiredBranches_STRICT(
     bindings.reserve(branch_names.size());
     for (const auto& bname : branch_names) {
         TBranch* b = t->GetBranch(bname.c_str());
-        if (!b) continue; // non-existing may be optional
+        if (!b) continue; // allow missing optional
         auto [it, inserted] = bindings.emplace(bname, BranchBinding{});
         BranchBinding& bb = it->second;
         bb.name = bname;
@@ -448,7 +440,7 @@ static inline std::string safe_label_for_key(const std::string& k) {
     return std::string();
 }
 
-// -------------- topology: fixed set and detector-based resolver --------------
+// -------------- topology strings and dirs --------------
 static const char* TOPO_STRS[3] = {"(FD, FD)","(CD, FD)","(CD, FT)"};
 static const char* TOPO_DIRS[3] = {"FD_FD","CD_FD","CD_FT"};
 
@@ -475,31 +467,29 @@ struct TopologyResolver {
     }
 };
 
-// -------------- CSV helpers for counts and plotting --------------
-struct CsvCols {
-    int c_xb_min = -1, c_xb_max = -1;
-    int c_q2_min = -1, c_q2_max = -1;
-    int c_tab_min = -1, c_tab_max = -1; // |t|
-    int c_phi_min = -1, c_phi_max = -1;
-};
-
-static inline std::string period_yield_col_base(const std::string& label,
-                                                const std::string& topo_str) {
-    std::ostringstream os;
-    os << "raw yield, ep->epg, " << topo_str << ", exp, " << label << ", ";
-    return os.str();
+// -------- label->directory mapping (use only make_dirs.cpp names) --------
+static inline bool is_group_label(const std::string& L) {
+    return (L == "Fa18" || L == "Sp18" || L == "10.6 GeV");
+}
+static std::string period_dir_for_label(const std::string& L) {
+    if (L == "Fa18 Inb")      return "Fa18_Inb";
+    if (L == "Fa18 Out")      return "Fa18_Out";
+    if (L == "Fa18 Inb Supp") return "Fa18_Inb_Supp";
+    if (L == "Sp18 Inb")      return "Sp18_Inb";
+    if (L == "Sp18 Out")      return "Sp18_Out";
+    if (L == "Sp19 Inb")      return "Sp19_Inb";
+    // default: sanitize spaces -> underscore
+    std::string s=L; for (char& c : s) if (c==' ') c='_';
+    return s;
+}
+static std::string out_root_for_label(const std::string& L, const std::string& out_root_dir) {
+    namespace fs = std::filesystem;
+    const std::string base = (fs::path(out_root_dir) / "total_counts_plots").string();
+    if (is_group_label(L)) return (fs::path(base) / L).string();          // Fa18, Sp18, "10.6 GeV"
+    return (fs::path(base) / period_dir_for_label(L)).string();           // canonical period dir
 }
 
-static inline std::string combined_yield_col_base(const std::string& group,
-                                                  const std::string& topo_str) {
-    std::ostringstream os;
-    os << "raw yield, ep->epg, " << topo_str << ", exp, " << group << ", ";
-    return os.str();
-}
-
-static inline std::string topo_dir_name(int topo_idx) {
-    return TOPO_DIRS[topo_idx];
-}
+static inline std::string topo_dir_name(int topo_idx) { return TOPO_DIRS[topo_idx]; }
 
 struct RowCounts { long long pos=0, neg=0; };
 
@@ -509,219 +499,62 @@ static inline double safe_mean(const std::vector<double>& v) {
     return n>0 ? s/n : std::numeric_limits<double>::quiet_NaN();
 }
 
-static void ensure_plot_dir(const std::string& path) {
+static void ensure_dir(const std::string& path) {
     namespace fs = std::filesystem;
     std::error_code ec;
     if (!fs::exists(path)) {
         fs::create_directories(path, ec);
-        if (ec) fatal("Could not create plot output directory: " + path + " (" + ec.message() + ")");
+        if (ec) fatal("Could not create output directory: " + path + " (" + ec.message() + ")");
     }
 }
 
-// ======================= FAST CSV INDEX (for event->row lookup) =======================
-struct FastCsvIndex {
-    // numeric tolerance for matching CSV edges
-    static constexpr double TOL = 1e-10;
-
-    std::vector<double> x_edges;
-    std::vector<double> q_edges;
-    std::vector<double> t_edges;
-
-    struct PhiRow {
-        double pmin, pmax;
-        int row;
-    };
-    struct CellKey {
-        int ix, iq, it;
-        bool operator==(const CellKey& o) const noexcept {
-            return ix==o.ix && iq==o.iq && it==o.it;
-        }
-    };
-    struct CellKeyHash {
-        std::size_t operator()(const CellKey& k) const noexcept {
-            // 21 bits per index is plenty
-            return ((std::size_t)k.ix * 1315423911u) ^ ((std::size_t)k.iq * 2654435761u) ^ (std::size_t)k.it;
-        }
-    };
-
-    std::unordered_map<CellKey, std::vector<PhiRow>, CellKeyHash> cell_map;
-
-    static void add_edge(std::vector<double>& edges, double v) {
-        if (!std::isfinite(v)) return;
-        edges.push_back(v);
-    }
-
-    static void uniq_sort(std::vector<double>& v) {
-        std::sort(v.begin(), v.end());
-        std::vector<double> out; out.reserve(v.size());
-        for (double x : v) {
-            if (out.empty() || std::fabs(x - out.back()) > TOL) out.push_back(x);
-        }
-        v.swap(out);
-    }
-
-    static int find_edge_index(const std::vector<double>& edges, double val) {
-        // find index i such that edges[i] == val within tolerance
-        auto it = std::lower_bound(edges.begin(), edges.end(), val - TOL);
-        if (it == edges.end()) return -1;
-        int i = (int)std::distance(edges.begin(), it);
-        if (i < (int)edges.size() && std::fabs(edges[i] - val) <= TOL) return i;
-        // Try next if lower_bound landed before tolerance
-        if (i+1 < (int)edges.size() && std::fabs(edges[i+1] - val) <= TOL) return i+1;
-        return -1;
-    }
-
-    static int interval_index_from_pair(const std::vector<double>& edges, double a, double b) {
-        int ia = find_edge_index(edges, a);
-        if (ia < 0) return -1;
-        if (ia+1 >= (int)edges.size()) return -1;
-        if (std::fabs(edges[ia+1] - b) <= TOL) return ia; // bin is [edges[ia], edges[ia+1])
-        return -1;
-    }
-
-    static int interval_index_of_value(const std::vector<double>& edges, double v) {
-        // Return i such that edges[i] <= v < edges[i+1]
-        if (edges.size() < 2) return -1;
-        // Handle out-of-range quickly
-        if (!(v >= edges.front()) || !(v < edges.back())) return -1;
-        auto it = std::upper_bound(edges.begin(), edges.end(), v - TOL);
-        int i = (int)std::distance(edges.begin(), it) - 1;
-        if (i < 0 || i >= (int)edges.size()-1) return -1;
-        if (v < edges[i] - TOL || v > edges[i+1] + TOL) return -1;
-        return i;
-    }
-
-    bool build(const CsvDoc& csv, const CsvCols& cols) {
-        // collect global union of edges
-        x_edges.clear(); q_edges.clear(); t_edges.clear();
-        x_edges.reserve(csv.nrows()*2);
-        q_edges.reserve(csv.nrows()*2);
-        t_edges.reserve(csv.nrows()*2);
-
-        for (int r = 0; r < csv.nrows(); ++r) {
-            add_edge(x_edges, csv.as_double(r, cols.c_xb_min));
-            add_edge(x_edges, csv.as_double(r, cols.c_xb_max));
-            add_edge(q_edges, csv.as_double(r, cols.c_q2_min));
-            add_edge(q_edges, csv.as_double(r, cols.c_q2_max));
-            add_edge(t_edges, csv.as_double(r, cols.c_tab_min));
-            add_edge(t_edges, csv.as_double(r, cols.c_tab_max));
-        }
-        uniq_sort(x_edges); uniq_sort(q_edges); uniq_sort(t_edges);
-        if (x_edges.size()<2 || q_edges.size()<2 || t_edges.size()<2) {
-            std::cerr << "[total_counts] FAST index: not enough edges to build." << std::endl;
-            return false;
-        }
-
-        cell_map.clear();
-        cell_map.reserve((size_t)(x_edges.size()*q_edges.size()));
-
-        for (int r = 0; r < csv.nrows(); ++r) {
-            const double xbmin  = csv.as_double(r, cols.c_xb_min);
-            const double xbmax  = csv.as_double(r, cols.c_xb_max);
-            const double q2min  = csv.as_double(r, cols.c_q2_min);
-            const double q2max  = csv.as_double(r, cols.c_q2_max);
-            const double tmin   = csv.as_double(r, cols.c_tab_min);
-            const double tmax   = csv.as_double(r, cols.c_tab_max);
-            const double pmin   = csv.as_double(r, cols.c_phi_min);
-            const double pmax   = csv.as_double(r, cols.c_phi_max);
-
-            const int ix = interval_index_from_pair(x_edges, xbmin, xbmax);
-            const int iq = interval_index_from_pair(q_edges, q2min, q2max);
-            const int it = interval_index_from_pair(t_edges,  tmin,  tmax);
-            if (ix < 0 || iq < 0 || it < 0) continue; // skip malformed row
-
-            CellKey key{ix, iq, it};
-            cell_map[key].push_back(PhiRow{pmin, pmax, r});
-        }
-
-        // Optional: sort phi rows by pmin for each cell (not required, but nice)
-        for (auto& kv : cell_map) {
-            auto& v = kv.second;
-            std::sort(v.begin(), v.end(),
-                      [](const PhiRow& a, const PhiRow& b){ return a.pmin < b.pmin; });
-        }
-        return true;
-    }
-
-    // Find phi rows for an event (xB, Q2, |t|). Returns false if cell missing.
-    bool rows_for_event(double xb, double Q2, double tabs, const std::vector<PhiRow>*& out) const {
-        const int ix = interval_index_of_value(x_edges, xb);
-        if (ix < 0) return false;
-        const int iq = interval_index_of_value(q_edges, Q2);
-        if (iq < 0) return false;
-        const int it = interval_index_of_value(t_edges, tabs);
-        if (it < 0) return false;
-        static const std::vector<PhiRow> empty;
-        CellKey key{ix, iq, it};
-        auto itv = cell_map.find(key);
-        if (itv == cell_map.end()) { out = &empty; return true; } // valid cell w/ no rows (shouldn't happen)
-        out = &itv->second;
-        return true;
-    }
-
-    // Locate the single CSV row for this phi (deg) within provided rows.
-    // Returns row index or -1.
-    static int find_row_for_phi(const std::vector<PhiRow>& rows, double phi_deg) {
-        // Small linear scan is OK (typ. 12–24 entries). This is negligible.
-        for (const auto& pr : rows) {
-            if (row_accepts_phi(phi_deg, pr.pmin, pr.pmax)) return pr.row;
-        }
-        return -1;
-    }
+// -------------- plotting (shared y per canvas, big text, legend) --------------
+struct CellData {
+    std::vector<double> X, Yp, Ym, EX, EYp, EYm, q2means, tmeans;
 };
 
-// ----------------- Status print helper -----------------
-static inline void print_status_singleline(const std::string& tag,
-                                           double pct,
-                                           long long i,
-                                           long long N,
-                                           long long matched,
-                                           long long pos_count,
-                                           long long neg_count,
-                                           double elapsed_s)
-{
-    double rate = (elapsed_s > 0.0) ? (double)i / elapsed_s : 0.0;
-    std::cout << "[total_counts][" << tag << "] "
-              << std::fixed << std::setprecision(1)
-              << pct << "%  "
-              << i << "/" << N
-              << "  matched=" << matched
-              << "  pos=" << pos_count
-              << "  neg=" << neg_count
-              << "  rate=" << std::setprecision(2) << rate << " ev/s"
-              << std::endl;
-}
-
-// -------------------- Plot canvases (unchanged logic) --------------------
 static void draw_group_canvases(
     const std::string& label,
     const std::string& topo_str,
     const std::string& topo_dir,
     const CsvDoc& csv,
-    const CsvCols& cols,
+    const struct { int c_xb_min, c_xb_max, c_q2_min, c_q2_max, c_tab_min, c_tab_max, c_phi_min, c_phi_max; } cols,
     const std::string& out_root_dir)
 {
     namespace fs = std::filesystem;
+    const std::string base_dir = out_root_for_label(label, out_root_dir);
+    ensure_dir(base_dir); // period or group dir
+    const std::string out_dir = (fs::path(base_dir) / topo_dir).string();
+    ensure_dir(out_dir);
 
-    const std::string out_dir = (fs::path(out_root_dir) / "total_counts_plots" / label).string();
-    ensure_plot_dir(out_dir);
-
-    const std::string c_phiavg_name = std::string("phiavg, ") + label;
-    const std::string c_q2avg_name  = std::string("Q2avg, ") + label;
+    const std::string c_phiavg_name = std::string("phiavg, ")    + label;
+    const std::string c_q2avg_name  = std::string("Q2avg, ")     + label;
     const std::string c_tabavg_name = std::string("t_abs_avg, ") + label;
-    const std::string c_xbavg_name  = std::string("xBavg, ") + label;
+    const std::string c_xbavg_name  = std::string("xBavg, ")     + label;
 
     const int c_phiavg = csv.has_col(c_phiavg_name) ? csv.col_index(c_phiavg_name) : -1;
     const int c_q2avg  = csv.has_col(c_q2avg_name)  ? csv.col_index(c_q2avg_name)  : -1;
     const int c_tabavg = csv.has_col(c_tabavg_name) ? csv.col_index(c_tabavg_name) : -1;
     const int c_xbavg  = csv.has_col(c_xbavg_name)  ? csv.col_index(c_xbavg_name)  : -1;
 
+    const std::string ybase = std::string("raw yield, ep->epg, ") + topo_str + ", exp, " + label + ", ";
+    const int c_pos = csv.has_col(ybase + "pos")   ? csv.col_index(ybase + "pos")   : -1;
+    const int c_neg = csv.has_col(ybase + "neg")   ? csv.col_index(ybase + "neg")   : -1;
+
+    // Build distinct xB ranges for this CSV
     std::set<std::pair<double,double>> xb_set;
     for (int r = 0; r < csv.nrows(); ++r) {
         xb_set.emplace(csv.as_double(r, cols.c_xb_min), csv.as_double(r, cols.c_xb_max));
     }
 
+    // Style knobs (bigger text)
+    const double head_size = 0.10;    // big canvas title
+    const double lab_size  = 0.065;   // axis labels
+    const double tick_size = 0.055;   // axis ticks
+    const double latex_size= 0.055;   // in-pad labels and legend text
+
     for (auto xb : xb_set) {
+        // Distinct Q2 and |t| ranges within this xB slice
         std::set<std::pair<double,double>> q2set;
         for (int r = 0; r < csv.nrows(); ++r) {
             const double xbmin = csv.as_double(r, cols.c_xb_min);
@@ -750,48 +583,34 @@ static void draw_group_canvases(
 
         const int nrows = (int)Q2s.size();
         const int ncols = (int)Ts.size();
-        const int W = 260 * ncols + 120;
-        const int H = 220 * nrows + 160;
+        const int W = 300 * ncols + 160;
+        const int H = 260 * nrows + 200;
 
+        // Per-canvas data-first pass: build all CellData and compute a shared max
+        std::vector<CellData> cells(nrows * ncols);
+        double canvas_max = 1.0;
+        bool need_log = false;
+
+        // Also get mean xB for title
         std::vector<double> xbmeans;
         for (int r = 0; r < csv.nrows(); ++r) {
             const double xbmin = csv.as_double(r, cols.c_xb_min);
             const double xbmax = csv.as_double(r, cols.c_xb_max);
             if (std::fabs(xbmin - xb.first) < 1e-9 && std::fabs(xbmax - xb.second) < 1e-9) {
-                if (c_xbavg >= 0) xbmeans.push_back(csv.as_double(r, c_xbavg));
-                else xbmeans.push_back((xb.first + xb.second) * 0.5);
+                xbmeans.push_back((c_xbavg >= 0) ? csv.as_double(r, c_xbavg)
+                                                 : 0.5 * (xb.first + xb.second));
             }
         }
         const double xb_mean_for_title = safe_mean(xbmeans);
 
-        std::string cname = "c_counts_" + label + "_" + topo_dir + "_xB_" + std::to_string((int)std::round(xb.first*1000.0));
-        TCanvas* c = new TCanvas(cname.c_str(), "", W, H);
-        TPad* pTop  = new TPad("pTop",  "pTop",  0.0, 0.93, 1.0, 1.0);
-        TPad* pGrid = new TPad("pGrid", "pGrid", 0.0, 0.00, 1.0, 0.93);
-        pTop->SetFillStyle(0);  pTop->Draw();
-        pGrid->SetFillStyle(0); pGrid->Draw();
-        pGrid->Divide(ncols, nrows, 0.0001, 0.0001);
-
-        pTop->cd();
-        TLatex head; head.SetNDC(); head.SetTextSize(0.055); head.SetTextAlign(22);
-        head.DrawLatex(0.5, 0.55,
-            Form("%s   <xB>=%.3g   %s", label.c_str(), xb_mean_for_title, topo_str.c_str()));
-
         for (int rrow = 0; rrow < nrows; ++rrow) {
             for (int ccol = 0; ccol < ncols; ++ccol) {
-                const int cell = rrow * ncols + ccol + 1;
-                pGrid->cd(cell);
-                gPad->SetGrid(1, 1);
-                gPad->SetTopMargin(0.18);
-                gPad->SetBottomMargin(0.14);
-                gPad->SetLeftMargin(0.125);
-                gPad->SetRightMargin(0.06);
-
+                const int idx = rrow * ncols + ccol;
                 const auto& qpair = Q2s[rrow];
                 const auto& tpair = Ts[ccol];
 
                 std::vector<int> rows_for_cell;
-                rows_for_cell.reserve(24);
+                rows_for_cell.reserve(32);
                 for (int r = 0; r < csv.nrows(); ++r) {
                     const double xbmin = csv.as_double(r, cols.c_xb_min);
                     const double xbmax = csv.as_double(r, cols.c_xb_max);
@@ -799,32 +618,19 @@ static void draw_group_canvases(
                     const double q2max = csv.as_double(r, cols.c_q2_max);
                     const double tmin  = csv.as_double(r, cols.c_tab_min);
                     const double tmax  = csv.as_double(r, cols.c_tab_max);
-                    const double pmin  = csv.as_double(r, cols.c_phi_min);
-                    const double pmax  = csv.as_double(r, cols.c_phi_max);
                     if (std::fabs(xbmin - xb.first)  < 1e-9 && std::fabs(xbmax - xb.second) < 1e-9 &&
                         std::fabs(q2min - qpair.first) < 1e-9 && std::fabs(q2max - qpair.second) < 1e-9 &&
                         std::fabs(tmin  - tpair.first) < 1e-9 && std::fabs(tmax  - tpair.second) < 1e-9) {
                         rows_for_cell.push_back(r);
                     }
                 }
-                if (rows_for_cell.empty()) {
-                    TH1* frame = gPad->DrawFrame(0.0, 0.0, 360.0, 1.0);
-                    frame->GetXaxis()->SetTitle("phi (deg)");
-                    frame->GetYaxis()->SetTitle("Counts");
-                    continue;
-                }
-
                 std::sort(rows_for_cell.begin(), rows_for_cell.end(), [&](int a, int b){
                     return csv.as_double(a, cols.c_phi_min) < csv.as_double(b, cols.c_phi_min);
                 });
 
-                const std::string ybase = period_yield_col_base(label, topo_str);
-                const int c_pos = csv.has_col(ybase + "pos") ? csv.col_index(ybase + "pos") : -1;
-                const int c_neg = csv.has_col(ybase + "neg") ? csv.col_index(ybase + "neg") : -1;
-
-                std::vector<double> X, Yp, Ym, EX, EYp, EYm, q2means, tmeans;
-                X.reserve(rows_for_cell.size());
-                EX.assign(rows_for_cell.size(), 0.0);
+                CellData& C = cells[idx];
+                C.X.reserve(rows_for_cell.size());
+                C.EX.assign(rows_for_cell.size(), 0.0);
 
                 for (int r : rows_for_cell) {
                     const double pmin = csv.as_double(r, cols.c_phi_min);
@@ -834,56 +640,101 @@ static void draw_group_canvases(
                         const double pav = csv.as_double(r, c_phiavg);
                         if (std::isfinite(pav) && pav > 0.0 && pav < 360.0) xphi = pav;
                     }
-                    X.push_back(xphi);
+                    C.X.push_back(xphi);
 
                     double yp=0.0, yn=0.0;
                     if (c_pos >= 0) yp = csv.as_double(r, c_pos);
                     if (c_neg >= 0) yn = csv.as_double(r, c_neg);
-                    Yp.push_back(yp);
-                    Ym.push_back(yn);
-                    EYp.push_back(std::sqrt(std::max(0.0, yp)));
-                    EYm.push_back(std::sqrt(std::max(0.0, yn)));
+                    C.Yp.push_back(yp);
+                    C.Ym.push_back(yn);
+                    C.EYp.push_back(std::sqrt(std::max(0.0, yp)));
+                    C.EYm.push_back(std::sqrt(std::max(0.0, yn)));
 
-                    if (c_q2avg >= 0)  q2means.push_back(csv.as_double(r, c_q2avg));
-                    else               q2means.push_back(0.5 * (qpair.first + qpair.second));
-                    if (c_tabavg >= 0) tmeans.push_back(csv.as_double(r, c_tabavg));
-                    else               tmeans.push_back(0.5 * (tpair.first + tpair.second));
+                    if (c_q2avg >= 0)  C.q2means.push_back(csv.as_double(r, c_q2avg));
+                    else               C.q2means.push_back(0.5 * (qpair.first + qpair.second));
+                    if (c_tabavg >= 0) C.tmeans.push_back(csv.as_double(r, c_tabavg));
+                    else               C.tmeans.push_back(0.5 * (tpair.first + tpair.second));
+
+                    canvas_max = std::max(canvas_max, yp);
+                    canvas_max = std::max(canvas_max, yn);
+                    if (yp >= 500.0 || yn >= 500.0) need_log = true;
                 }
+            }
+        }
 
-                double local_max = 1.0;
-                for (double v : Yp) local_max = std::max(local_max, v);
-                for (double v : Ym) local_max = std::max(local_max, v);
+        // Draw
+        std::string cname = "c_counts_" + period_dir_for_label(label) + "_" + topo_dir + "_xB_" + std::to_string((int)std::round(xb.first*1000.0));
+        TCanvas* c = new TCanvas(cname.c_str(), "", W, H);
 
-                TH1* frame = gPad->DrawFrame(0.0, 0.0, 360.0, std::max(1.0, local_max * 1.15));
+        // Slightly larger general text
+        gStyle->SetTitleFontSize(0.05);
+
+        TPad* pTop  = new TPad("pTop",  "pTop",  0.0, 0.92, 1.0, 1.0);
+        TPad* pGrid = new TPad("pGrid", "pGrid", 0.0, 0.00, 1.0, 0.92);
+        pTop->SetFillStyle(0);  pTop->Draw();
+        pGrid->SetFillStyle(0); pGrid->Draw();
+        pGrid->Divide(ncols, nrows, 0.0001, 0.0001);
+
+        pTop->cd();
+        TLatex head; head.SetNDC(); head.SetTextSize(head_size); head.SetTextAlign(22);
+        head.DrawLatex(0.5, 0.45,
+            Form("%s   <xB>=%.3g   %s", label.c_str(), xb_mean_for_title, topo_str.c_str()));
+
+        // y range
+        const double y_lo = need_log ? 0.5 : 0.0;
+        const double y_hi = std::max(1.0, canvas_max * 1.15);
+
+        for (int rrow = 0; rrow < nrows; ++rrow) {
+            for (int ccol = 0; ccol < ncols; ++ccol) {
+                const int cell = rrow * ncols + ccol + 1;
+                pGrid->cd(cell);
+                gPad->SetGrid(1, 1);
+                gPad->SetTopMargin(0.16);
+                gPad->SetBottomMargin(0.16);
+                gPad->SetLeftMargin(0.125);
+                gPad->SetRightMargin(0.06);
+
+                if (need_log) gPad->SetLogy(1); else gPad->SetLogy(0);
+
+                TH1* frame = gPad->DrawFrame(0.0, y_lo, 360.0, y_hi);
                 frame->GetXaxis()->SetTitle("phi (deg)");
                 frame->GetYaxis()->SetTitle("Counts");
                 frame->GetXaxis()->CenterTitle();
                 frame->GetYaxis()->CenterTitle();
                 frame->GetXaxis()->SetNdivisions(505);
+                frame->GetXaxis()->SetTitleSize(lab_size);
+                frame->GetYaxis()->SetTitleSize(lab_size);
+                frame->GetXaxis()->SetLabelSize(tick_size);
+                frame->GetYaxis()->SetLabelSize(tick_size);
 
-                if (local_max >= 500.0) {
-                    gPad->SetLogy(1);
-                    frame->GetYaxis()->SetRangeUser(0.5, std::max(1.0, local_max * 1.15));
-                } else {
-                    gPad->SetLogy(0);
-                }
+                const int idx = rrow * ncols + ccol;
+                const CellData& C = cells[idx];
 
-                TGraphErrors* gp = new TGraphErrors((int)X.size(), X.data(), Yp.data(), EX.data(), EYp.data());
-                TGraphErrors* gm = new TGraphErrors((int)X.size(), X.data(), Ym.data(), EX.data(), EYm.data());
+                TGraphErrors* gp = new TGraphErrors((int)C.X.size(), (double*)C.X.data(), (double*)C.Yp.data(), (double*)C.EX.data(), (double*)C.EYp.data());
+                TGraphErrors* gm = new TGraphErrors((int)C.X.size(), (double*)C.X.data(), (double*)C.Ym.data(), (double*)C.EX.data(), (double*)C.EYm.data());
                 gp->SetMarkerStyle(24); gp->SetMarkerColor(kRed);  gp->SetLineColor(kRed);  gp->SetLineWidth(1);
                 gm->SetMarkerStyle(20); gm->SetMarkerColor(kBlue); gm->SetLineColor(kBlue); gm->SetLineWidth(1);
                 gp->Draw("PE1 SAME");
                 gm->Draw("PE1 SAME");
 
-                TLatex lab; lab.SetNDC(); lab.SetTextSize(0.045); lab.SetTextAlign(13);
-                const double q2m = safe_mean(q2means);
-                const double tm  = safe_mean(tmeans);
-                lab.DrawLatex(0.12, 0.88, Form("Q2=%.3g  |t|=%.3g", q2m, tm));
+                // corner label and legend
+                TLatex lab; lab.SetNDC(); lab.SetTextSize(latex_size); lab.SetTextAlign(13);
+                const double q2m = safe_mean(C.q2means);
+                const double tm  = safe_mean(C.tmeans);
+                lab.DrawLatex(0.12, 0.86, Form("Q2=%.3g  |t|=%.3g", q2m, tm));
+
+                TLegend* leg = new TLegend(0.62, 0.78, 0.92, 0.92);
+                leg->SetBorderSize(0);
+                leg->SetFillStyle(0);
+                leg->SetTextSize(latex_size);
+                leg->AddEntry(gp, "helicity +", "pe");
+                leg->AddEntry(gm, "helicity -", "pe");
+                leg->Draw();
             }
         }
 
-        const std::string fpath = out_dir + "/plot_total_counts_" + label + "_" + topo_dir
-                                  + "_xB_" + std::to_string((int)std::round(xb.first*1000.0)) + ".png";
+        const std::string fpath = (fs::path(out_dir) / ("plot_total_counts_" + period_dir_for_label(label) + "_" + topo_dir
+                                  + "_xB_" + std::to_string((int)std::round(xb.first*1000.0)) + ".png")).string();
         c->SaveAs(fpath.c_str());
         delete c;
     }
@@ -906,6 +757,13 @@ static void enable_needed_branches(TTree* t,
     for (const auto& b : extra)    if (t->GetBranch(b.c_str())) t->SetBranchStatus(b.c_str(), 1);
 }
 
+// Should we write period counts into CSV for this label?
+// Drop the supplemental from CSV (still plot).
+static bool write_counts_for_label(const std::string& label) {
+    if (label == "Fa18 Inb Supp") return false;
+    return true;
+}
+
 } // namespace
 
 // ---------------- entry ----------------
@@ -920,9 +778,7 @@ bool update_total_counts_csv(
 
     std::vector<std::string> periods;
     periods.reserve(CANONICAL_PERIODS().size());
-    for (const auto& P : CANONICAL_PERIODS()) {
-        periods.push_back(P.tree_key);
-    }
+    for (const auto& P : CANONICAL_PERIODS()) periods.push_back(P.tree_key);
 
     CsvDoc csv;
     if (!csv.load(csv_path)) {
@@ -930,7 +786,7 @@ bool update_total_counts_csv(
         return false;
     }
 
-    CsvCols cols;
+    struct CsvCols { int c_xb_min, c_xb_max, c_q2_min, c_q2_max, c_tab_min, c_tab_max, c_phi_min, c_phi_max; } cols;
     cols.c_xb_min  = csv.col_index("xBmin");
     cols.c_xb_max  = csv.col_index("xBmax");
     cols.c_q2_min  = csv.col_index("Q2min");
@@ -945,23 +801,27 @@ bool update_total_counts_csv(
     }
 
     auto ensure_yield_columns = [&](const std::string& label, const std::string& topo_str) {
-        const std::string base = period_yield_col_base(label, topo_str);
-        csv.ensure_col(base + "unpol");
-        csv.ensure_col(base + "pos");
-        csv.ensure_col(base + "neg");
+        // Do NOT make columns for supplemental label.
+        if (!write_counts_for_label(label)) return std::tuple<int,int,int>(-1,-1,-1);
+        const std::string base = std::string("raw yield, ep->epg, ") + topo_str + ", exp, " + label + ", ";
+        const int c_unpol = csv.ensure_col(base + "unpol");
+        const int c_pos   = csv.ensure_col(base + "pos");
+        const int c_neg   = csv.ensure_col(base + "neg");
+        return std::make_tuple(c_unpol, c_pos, c_neg);
     };
 
     using PeriodRowMap = std::unordered_map<int, RowCounts>;
     std::mutex merge_mtx;
     std::map<std::string, std::map<std::string, PeriodRowMap>> counts_by_label_topo;
 
-    // Build FAST index once for all threads
-    FastCsvIndex fast;
-    if (!fast.build(csv, cols)) {
-        std::cerr << "[total_counts] WARNING: fast index build failed; continuing (slower).\n";
-    }
-
     ROOT::EnableThreadSafety(); (void)TGraphErrors::Class();
+
+    // Progress cadence helper
+    auto cadence_for = [](Long64_t N)->Long64_t {
+        Long64_t by_pct = (Long64_t)std::max(1.0, std::floor(0.02 * (double)N));
+        Long64_t by_abs = 1000000;
+        return std::min(by_pct, by_abs);
+    };
 
     #pragma omp parallel for schedule(dynamic) num_threads(max_workers)
     for (int ip = 0; ip < (int)periods.size(); ++ip) {
@@ -998,8 +858,8 @@ bool update_total_counts_csv(
         // Enable only what's needed
         enable_needed_branches(t, {}, need);
 
-        // Explicit exact-typed bindings for these known branches
-        int helicity = 0; 
+        // Typed bindings
+        int helicity = 0;
         double x = 0.0, Q2 = 0.0, t1 = 0.0, phi2 = std::numeric_limits<double>::quiet_NaN();
         if (!t->GetBranch("helicity") || !t->GetBranch("x") || !t->GetBranch("Q2")
             || !t->GetBranch("t1") || !t->GetBranch("phi2")) {
@@ -1007,16 +867,16 @@ bool update_total_counts_csv(
             { std::cerr << "[total_counts] Required branches missing in " << period_key << "\n"; }
             continue;
         }
-        t->SetBranchAddress("helicity", &helicity); // Int_t
-        t->SetBranchAddress("x",        &x);        // Double_t
-        t->SetBranchAddress("Q2",       &Q2);       // Double_t
-        t->SetBranchAddress("t1",       &t1);       // Double_t
-        t->SetBranchAddress("phi2",     &phi2);     // Double_t (radians)
+        t->SetBranchAddress("helicity", &helicity);
+        t->SetBranchAddress("x",        &x);
+        t->SetBranchAddress("Q2",       &Q2);
+        t->SetBranchAddress("t1",       &t1);
+        t->SetBranchAddress("phi2",     &phi2);
 
-        TopologyResolver topo; 
-        topo.bind(t); // binds detector1, detector2 as int
+        TopologyResolver topo;
+        topo.bind(t);
 
-        // Build the list for the generic binder but DROP explicitly bound names
+        // Generic binder for all other cut variables
         std::vector<std::string> need_for_binder;
         need_for_binder.reserve(need.size());
         for (const auto& b : need) {
@@ -1024,27 +884,27 @@ bool update_total_counts_csv(
             for (const char* s : explicit_binds) if (b == s) { drop = true; break; }
             if (!drop) need_for_binder.push_back(b);
         }
-
         std::unordered_map<std::string, BranchBinding> bind;
         bindRequiredBranches_STRICT(t, need_for_binder, bind);
 
         std::map<std::string, PeriodRowMap> local_by_topo;
 
         const Long64_t N = t->GetEntries();
-        Long64_t matched = 0;
-        Long64_t pos_count = 0, neg_count = 0;
+        const Long64_t cadence = cadence_for(N);
+        Long64_t pass_global = 0, pass_3sig = 0, used_rows = 0;
 
-        // progress
-        TStopwatch sw; sw.Start();
-        const Long64_t cadence_by_pct = std::max<Long64_t>( (Long64_t) (0.02 * (double)N), 1 ); // ~2%
-        const Long64_t cadence_by_abs = 1000000;
-        const Long64_t cadence = std::min(cadence_by_pct, cadence_by_abs);
+        #pragma omp critical
+        { std::cout << "[total_counts] Start " << label << " (" << topo_dir_name(0) << "/" << topo_dir_name(1) << "/" << topo_dir_name(2) << ") with " << (long long)N << " entries\n"; }
 
         for (Long64_t i = 0; i < N; ++i) {
             t->GetEntry(i);
+
             if (helicity != +1 && helicity != -1) continue;
             if (!std::isfinite(x) || !std::isfinite(Q2) || !std::isfinite(t1) || !std::isfinite(phi2)) continue;
+            ++pass_global;
+
             if (!passes3SigmaCuts_STRICT(cuts, bind)) continue;
+            ++pass_3sig;
 
             const int topo_idx = topo.index();
             if (topo_idx < 0 || topo_idx > 2) continue;
@@ -1055,59 +915,76 @@ bool update_total_counts_csv(
             const double tab = std::fabs(t1);
             const double phi_deg = wrap_deg_0_360(rad_to_deg(phi2));
 
-            // FAST lookup: locate phi rows for this (xB,Q2,|t|) cell
-            const std::vector<FastCsvIndex::PhiRow>* phiRows = nullptr;
-            if (!fast.rows_for_event(xb, q2, tab, phiRows)) continue; // outside edges
-            if (!phiRows || phiRows->empty()) continue;
+            bool used_any = false;
+            for (int r = 0; r < csv.nrows(); ++r) {
+                const double xbmin  = csv.as_double(r, cols.c_xb_min);
+                const double xbmax  = csv.as_double(r, cols.c_xb_max);
+                const double q2min  = csv.as_double(r, cols.c_q2_min);
+                const double q2max  = csv.as_double(r, cols.c_q2_max);
+                const double tabmin = csv.as_double(r, cols.c_tab_min);
+                const double tabmax = csv.as_double(r, cols.c_tab_max);
+                const double pmin   = csv.as_double(r, cols.c_phi_min);
+                const double pmax   = csv.as_double(r, cols.c_phi_max);
+                if (in_range(xb, xbmin, xbmax) &&
+                    in_range(q2, q2min, q2max) &&
+                    in_range(tab, tabmin, tabmax) &&
+                    row_accepts_phi(phi_deg, pmin, pmax)) {
+                    RowCounts& rc = local_by_topo[topo_str][r];
+                    if (helicity == +1) rc.pos++; else rc.neg++;
+                    used_any = true;
+                }
+            }
+            if (used_any) ++used_rows;
 
-            // Now select the phi sub-bin
-            const int found_row = FastCsvIndex::find_row_for_phi(*phiRows, phi_deg);
-            if (found_row < 0) continue;
-            ++matched;
-
-            RowCounts& rc = local_by_topo[topo_str][found_row];
-            if (helicity == +1) { rc.pos++; ++pos_count; } else { rc.neg++; ++neg_count; }
-
-            if (i == 0 || (i % cadence) == 0 || i + 1 == N) {
-                double pct = (N > 0) ? (100.0 * (double)i / (double)N) : 100.0;
+            if ((i % cadence) == 0) {
                 #pragma omp critical
                 {
-                    print_status_singleline(label, pct, (long long)i, (long long)N,
-                                            (long long)matched, (long long)pos_count,
-                                            (long long)neg_count, sw.RealTime());
+                    double pct = (N>0)? (100.0 * (double)i / (double)N) : 100.0;
+                    std::cout << "[total_counts][" << label << "] "
+                              << std::fixed << std::setprecision(1)
+                              << pct << "%  " << (long long)i << "/" << (long long)N
+                              << "  seen=" << pass_global
+                              << "  kept=" << pass_3sig
+                              << "  usedRows=" << used_rows
+                              << "\n";
                 }
-                sw.Continue();
             }
         }
 
+        #pragma omp critical
+        { std::cout << "[total_counts] Done " << label << "  seen=" << pass_global << " kept=" << pass_3sig << " usedRows=" << used_rows << "\n"; }
+
+        // Merge results
         {
             std::lock_guard<std::mutex> lock(merge_mtx);
             for (const auto& tk : local_by_topo) {
                 const std::string topo_str = tk.first;
-                ensure_yield_columns(label, topo_str);
-
+                // ensure columns only if we will write this label
+                if (write_counts_for_label(label)) {
+                    (void)ensure_yield_columns(label, topo_str);
+                }
                 auto& tgt = counts_by_label_topo[label][topo_str];
                 for (const auto& rkv : tk.second) {
                     tgt[rkv.first].pos += rkv.second.pos;
                     tgt[rkv.first].neg += rkv.second.neg;
                 }
             }
-            std::cout << "[total_counts] Finished " << label
-                      << "  matched=" << matched
-                      << "  pos=" << pos_count
-                      << "  neg=" << neg_count << std::endl;
         }
     } // omp parallel loop
 
-    // Write per-period counts into CSV
+    // Write per-period counts into CSV (skip supplemental)
     for (const auto& lblkv : counts_by_label_topo) {
         const std::string& label = lblkv.first;
+        if (!write_counts_for_label(label)) {
+            std::cout << "[total_counts] Skipping CSV write for supplemental label: " << label << "\n";
+            continue;
+        }
         for (int topo_idx = 0; topo_idx < 3; ++topo_idx) {
             const std::string topo_str = TOPO_STRS[topo_idx];
             const auto itTopo = lblkv.second.find(topo_str);
             if (itTopo == lblkv.second.end()) continue;
 
-            const std::string base = period_yield_col_base(label, topo_str);
+            const std::string base = std::string("raw yield, ep->epg, ") + topo_str + ", exp, " + label + ", ";
             const int c_unpol = csv.ensure_col(base + "unpol");
             const int c_pos   = csv.ensure_col(base + "pos");
             const int c_neg   = csv.ensure_col(base + "neg");
@@ -1137,14 +1014,14 @@ bool update_total_counts_csv(
         group_members[g].push_back(lbl);
     }
 
-    // Combined per-group counts
+    // Combined per-group counts (sum pos/neg from members that wrote)
     for (const auto& gkv : group_members) {
         const std::string group = gkv.first;
         const auto& members = gkv.second;
 
         for (int topo_idx = 0; topo_idx < 3; ++topo_idx) {
             const std::string topo_str = TOPO_STRS[topo_idx];
-            const std::string gbase = combined_yield_col_base(group, topo_str);
+            const std::string gbase = std::string("raw yield, ep->epg, ") + topo_str + ", exp, " + group + ", ";
             const int c_unpol = csv.ensure_col(gbase + "unpol");
             const int c_pos   = csv.ensure_col(gbase + "pos");
             const int c_neg   = csv.ensure_col(gbase + "neg");
@@ -1152,7 +1029,8 @@ bool update_total_counts_csv(
             for (int r = 0; r < csv.nrows(); ++r) {
                 long long pos_sum=0, neg_sum=0;
                 for (const auto& lbl : members) {
-                    const std::string pbase = period_yield_col_base(lbl, topo_str);
+                    if (!write_counts_for_label(lbl)) continue; // skip supplemental member
+                    const std::string pbase = std::string("raw yield, ep->epg, ") + topo_str + ", exp, " + lbl + ", ";
                     const int p_pos = csv.col_index(pbase + "pos");
                     const int p_neg = csv.col_index(pbase + "neg");
                     if (p_pos >= 0) pos_sum += (long long)std::llround(csv.as_double(r, p_pos));
@@ -1172,7 +1050,7 @@ bool update_total_counts_csv(
     }
     std::cout << "[total_counts] Updated raw yields in: " << csv_path << "\n";
 
-    // Plots (auto-creates output dirs)
+    // Plots: one subdir per (label or group)/(topology)
     for (const auto& p : periods) {
         const std::string label = safe_label_for_key(p);
         for (int topo_idx = 0; topo_idx < 3; ++topo_idx) {
