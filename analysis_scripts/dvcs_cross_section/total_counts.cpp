@@ -17,6 +17,9 @@
 #include <TError.h>
 #include <TString.h>
 #include <TTree.h>
+#include <TBranch.h>        // optional (comes via TTree.h)
+#include <TLeaf.h>          // REQUIRED for TLeaf::GetTypeName(), etc.
+#include <TLeafElement.h>   // optional, but harmless if some leaves are TLeafElement
 
 #include <algorithm>
 #include <atomic>
