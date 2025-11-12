@@ -10,6 +10,7 @@
 #include <TROOT.h>
 #include <TError.h>
 #include <TLeaf.h>
+#include <TTree.h>
 
 #include <algorithm>
 #include <atomic>
