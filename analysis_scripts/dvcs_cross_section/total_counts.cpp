@@ -1,5 +1,5 @@
-// total_counts.cpp — CSV writing fixed, big-text plots with legend, shared y per canvas,
-// canonical directory names only, supplemental excluded from CSV writes.
+// total_counts.cpp — CSV writing fixed (diagnostics + atomic save), big-text plots with legend,
+// shared y per canvas, canonical directory names only, supplemental excluded from CSV writes.
 
 #include "total_counts.h"
 #include "periods.h"                // CANONICAL_PERIODS(), PeriodDef{label, tree_key}
@@ -38,6 +38,7 @@
 #include <unordered_map>
 #include <utility>
 #include <vector>
+#include <cstdio>   // std::remove
 
 #ifdef _OPENMP
 #include <omp.h>
@@ -117,6 +118,24 @@ struct CsvDoc {
                 if (i + 1 < row.size()) fout << ',';
             }
             fout << "\n";
+        }
+        return true;
+    }
+
+    // Atomic save: write to path.tmp then rename.
+    bool save_atomic(const std::string& path) const {
+        const std::string tmp = path + ".tmp";
+        if (!save(tmp)) return false;
+        std::error_code ec;
+        std::filesystem::rename(tmp, path, ec);
+        if (ec) {
+            // try replace
+            std::remove(path.c_str());
+            std::filesystem::rename(tmp, path, ec);
+            if (ec) {
+                std::cerr << "[CsvDoc] ERROR: atomic rename failed (" << ec.message() << ")\n";
+                return false;
+            }
         }
         return true;
     }
@@ -509,7 +528,7 @@ static void ensure_dir(const std::string& path) {
     }
 }
 
-// --------------------- Shared CSV column indices struct (FIX) --------------------
+// --------------------- Shared CSV column indices struct --------------------
 struct CsvCols {
     int c_xb_min, c_xb_max, c_q2_min, c_q2_max, c_tab_min, c_tab_max, c_phi_min, c_phi_max;
 };
@@ -554,10 +573,10 @@ static void draw_group_canvases(
     }
 
     // Style knobs (bigger text)
-    const double head_size = 0.10;    // big canvas title
-    const double lab_size  = 0.065;   // axis labels
-    const double tick_size = 0.055;   // axis ticks
-    const double latex_size= 0.055;   // in-pad labels and legend text
+    const double head_size = 0.75;    // very large title inside the top pad
+    const double lab_size  = 0.075;   // axis labels
+    const double tick_size = 0.060;   // axis ticks
+    const double latex_size= 0.065;   // in-pad labels and legend text
 
     for (auto xb : xb_set) {
         // Distinct Q2 and |t| ranges within this xB slice
@@ -590,7 +609,7 @@ static void draw_group_canvases(
         const int nrows = (int)Q2s.size();
         const int ncols = (int)Ts.size();
         const int W = 300 * ncols + 160;
-        const int H = 260 * nrows + 200;
+        const int H = 260 * nrows + 240;
 
         // Per-canvas data-first pass: build all CellData and compute a shared max
         std::vector<CellData> cells(nrows * ncols);
@@ -672,18 +691,16 @@ static void draw_group_canvases(
         std::string cname = "c_counts_" + period_dir_for_label(label) + "_" + topo_dir + "_xB_" + std::to_string((int)std::round(xb.first*1000.0));
         TCanvas* c = new TCanvas(cname.c_str(), "", W, H);
 
-        // Slightly larger general text
-        gStyle->SetTitleFontSize(0.05);
-
-        TPad* pTop  = new TPad("pTop",  "pTop",  0.0, 0.92, 1.0, 1.0);
-        TPad* pGrid = new TPad("pGrid", "pGrid", 0.0, 0.00, 1.0, 0.92);
+        // Title pad taller; grid pad shorter for clearance
+        TPad* pTop  = new TPad("pTop",  "pTop",  0.0, 0.84, 1.0, 1.0);
+        TPad* pGrid = new TPad("pGrid", "pGrid", 0.0, 0.00, 1.0, 0.84);
         pTop->SetFillStyle(0);  pTop->Draw();
         pGrid->SetFillStyle(0); pGrid->Draw();
         pGrid->Divide(ncols, nrows, 0.0001, 0.0001);
 
         pTop->cd();
         TLatex head; head.SetNDC(); head.SetTextSize(head_size); head.SetTextAlign(22);
-        head.DrawLatex(0.5, 0.45,
+        head.DrawLatex(0.5, 0.50,
             Form("%s   <xB>=%.3g   %s", label.c_str(), xb_mean_for_title, topo_str.c_str()));
 
         // y range
@@ -695,10 +712,10 @@ static void draw_group_canvases(
                 const int cell = rrow * ncols + ccol + 1;
                 pGrid->cd(cell);
                 gPad->SetGrid(1, 1);
-                gPad->SetTopMargin(0.16);
-                gPad->SetBottomMargin(0.16);
-                gPad->SetLeftMargin(0.125);
-                gPad->SetRightMargin(0.06);
+                gPad->SetTopMargin(0.24);     // more headroom so labels/legend never clip
+                gPad->SetBottomMargin(0.18);
+                gPad->SetLeftMargin(0.16);    // extra left padding for y-axis labels
+                gPad->SetRightMargin(0.07);
 
                 if (need_log) gPad->SetLogy(1); else gPad->SetLogy(0);
 
@@ -727,11 +744,14 @@ static void draw_group_canvases(
                 TLatex lab; lab.SetNDC(); lab.SetTextSize(latex_size); lab.SetTextAlign(13);
                 const double q2m = safe_mean(C.q2means);
                 const double tm  = safe_mean(C.tmeans);
-                lab.DrawLatex(0.12, 0.86, Form("Q2=%.3g  |t|=%.3g", q2m, tm));
+                lab.DrawLatex(0.12, 0.83, Form("Q2=%.3g  |t|=%.3g", q2m, tm));
 
-                TLegend* leg = new TLegend(0.62, 0.78, 0.92, 0.92);
-                leg->SetBorderSize(0);
-                leg->SetFillStyle(0);
+                // Boxed legend tucked neatly into the top-right interior
+                TLegend* leg = new TLegend(0.70, 0.74, 0.96, 0.93);
+                leg->SetBorderSize(1);
+                leg->SetLineColor(kBlack);
+                leg->SetFillStyle(1001);
+                leg->SetFillColor(kWhite);
                 leg->SetTextSize(latex_size);
                 leg->AddEntry(gp, "helicity +", "pe");
                 leg->AddEntry(gm, "helicity -", "pe");
@@ -792,7 +812,7 @@ bool update_total_counts_csv(
         return false;
     }
 
-    // Use the shared CsvCols (file-scope) — FIXED
+    // Shared CsvCols
     CsvCols cols;
     cols.c_xb_min  = csv.col_index("xBmin");
     cols.c_xb_max  = csv.col_index("xBmax");
@@ -823,7 +843,6 @@ bool update_total_counts_csv(
 
     ROOT::EnableThreadSafety(); (void)TGraphErrors::Class();
 
-    // Progress cadence helper
     auto cadence_for = [](Long64_t N)->Long64_t {
         Long64_t by_pct = (Long64_t)std::max(1.0, std::floor(0.02 * (double)N));
         Long64_t by_abs = 1000000;
@@ -979,6 +998,9 @@ bool update_total_counts_csv(
         }
     } // omp parallel loop
 
+    // Diagnostics: how many cells are written in total?
+    size_t grand_cells_written = 0;
+
     // Write per-period counts into CSV (skip supplemental)
     for (const auto& lblkv : counts_by_label_topo) {
         const std::string& label = lblkv.first;
@@ -989,24 +1011,36 @@ bool update_total_counts_csv(
         for (int topo_idx = 0; topo_idx < 3; ++topo_idx) {
             const std::string topo_str = TOPO_STRS[topo_idx];
             const auto itTopo = lblkv.second.find(topo_str);
-            if (itTopo == lblkv.second.end()) continue;
+            if (itTopo == lblkv.second.end()) {
+                std::cout << "[total_counts] NOTE: no entries for " << label << " / " << topo_str << "\n";
+                continue;
+            }
 
             const std::string base = std::string("raw yield, ep->epg, ") + topo_str + ", exp, " + label + ", ";
-            const int c_unpol = csv.ensure_col(base + "unpol");
-            const int c_pos   = csv.ensure_col(base + "pos");
-            const int c_neg   = csv.ensure_col(base + "neg");
+            const int c_unpol = csv.col_index(base + "unpol");
+            const int c_pos   = csv.col_index(base + "pos");
+            const int c_neg   = csv.col_index(base + "neg");
 
+            if (c_unpol < 0 || c_pos < 0 || c_neg < 0) {
+                std::cout << "[total_counts] HEADER MISSING for " << label << " / " << topo_str
+                          << " (expected \"" << base << "unpol\" etc.)\n";
+                continue;
+            }
+
+            size_t cells_written_here = 0;
             for (const auto& rkv : itTopo->second) {
                 const int r = rkv.first;
                 const long long pos = rkv.second.pos;
                 const long long neg = rkv.second.neg;
                 const long long unp = pos + neg;
-                csv.set(r, c_unpol, (double)unp);
-                csv.set(r, c_pos,   (double)pos);
-                csv.set(r, c_neg,   (double)neg);
+                csv.set(r, c_unpol, (double)unp); ++cells_written_here;
+                csv.set(r, c_pos,   (double)pos); ++cells_written_here;
+                csv.set(r, c_neg,   (double)neg); ++cells_written_here;
             }
+            grand_cells_written += cells_written_here;
+            std::cout << "[total_counts] wrote " << cells_written_here
+                      << " cells for " << label << " / " << topo_str << "\n";
         }
-        std::cout << "[total_counts] wrote per-topology counts for " << label << "\n";
     }
 
     // Build groups
@@ -1033,6 +1067,7 @@ bool update_total_counts_csv(
             const int c_pos   = csv.ensure_col(gbase + "pos");
             const int c_neg   = csv.ensure_col(gbase + "neg");
 
+            size_t group_cells_written = 0;
             for (int r = 0; r < csv.nrows(); ++r) {
                 long long pos_sum=0, neg_sum=0;
                 for (const auto& lbl : members) {
@@ -1043,19 +1078,22 @@ bool update_total_counts_csv(
                     if (p_pos >= 0) pos_sum += (long long)std::llround(csv.as_double(r, p_pos));
                     if (p_neg >= 0) neg_sum += (long long)std::llround(csv.as_double(r, p_neg));
                 }
-                csv.set(r, c_pos,   (double)pos_sum);
-                csv.set(r, c_neg,   (double)neg_sum);
-                csv.set(r, c_unpol, (double)(pos_sum + neg_sum));
+                csv.set(r, c_pos,   (double)pos_sum); ++group_cells_written;
+                csv.set(r, c_neg,   (double)neg_sum); ++group_cells_written;
+                csv.set(r, c_unpol, (double)(pos_sum + neg_sum)); ++group_cells_written;
             }
+            grand_cells_written += group_cells_written;
+            std::cout << "[total_counts] wrote " << group_cells_written
+                      << " cells for combined group " << group << " / " << topo_str << "\n";
         }
-        std::cout << "[total_counts] wrote combined counts for " << group << " (per topology)\n";
     }
 
-    if (!csv.save(csv_path)) {
+    if (!csv.save_atomic(csv_path)) {
         std::cerr << "[total_counts] ERROR: failed to save " << csv_path << "\n";
         return false;
     }
-    std::cout << "[total_counts] Updated raw yields in: " << csv_path << "\n";
+    std::cout << "[total_counts] Updated raw yields in: " << csv_path
+              << " (cells written: " << grand_cells_written << ")\n";
 
     // Plots: one subdir per (label or group)/(topology)
     for (const auto& p : periods) {
