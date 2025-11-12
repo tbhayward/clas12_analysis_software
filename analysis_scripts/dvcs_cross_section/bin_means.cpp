@@ -1,5 +1,5 @@
 // bin_means.cpp
-// Progress-enabled, thread-safe binding. Single pass per TTree.
+// Progress-enabled, thread-safe binding for ROOT. Single pass per TTree.
 // Uses ONLY phi2 (radians) -> converts to degrees for CSV phimin/phimax checks.
 // Skips any bin with fewer than MIN_BIN_COUNT entries.
 
@@ -216,7 +216,7 @@ struct Accum {
     double mp() const { return n ? sp / n : std::numeric_limits<double>::quiet_NaN(); }
 };
 
-// ---------- NEW: serialize ROOT binding to avoid Cling races ----------
+// ---------- ROOT binding serialized to avoid Cling races ----------
 static std::mutex g_root_bind_mutex;
 
 // ---------------- branch binder ----------------
@@ -239,22 +239,8 @@ struct BranchBinder {
     void bind(TTree* t) {
         if (!t) return;
 
-        // Only one thread at a time may call SetBranchStatus/SetBranchAddress.
+        // Serialize only the SetBranchAddress calls; no status gating.
         std::lock_guard<std::mutex> lock(g_root_bind_mutex);
-
-        // Optional: restrict active branches (also helps speed)
-        t->SetBranchStatus("*", 0);
-        t->SetBranchStatus("t1", 1);
-        t->SetBranchStatus("open_angle_ep2", 1);
-        t->SetBranchStatus("pTmiss", 1);
-        t->SetBranchStatus("Emiss2", 1);
-        t->SetBranchStatus("Mx2", 1);
-        t->SetBranchStatus("Mx2_1", 1);
-        t->SetBranchStatus("Mx2_2", 1);
-        t->SetBranchStatus("xF", 1);
-        t->SetBranchStatus("x", 1);
-        t->SetBranchStatus("Q2", 1);
-        t->SetBranchStatus("phi2", 1);
 
         auto bindD = [&](const char* n, double* a, bool& f){
             if (t->GetBranch(n)) { t->SetBranchAddress(n, a); f = true; }
@@ -292,9 +278,9 @@ struct BranchBinder {
 // ---------------- cuts ----------------
 static inline bool passes_global(const BranchBinder& b) {
     if (!b.readyForCuts()) return false;
-    if (b.open_angle_ep2 <= 5.0) return false;    // degrees
+    if (b.open_angle_ep2 <= 5.0) return false;    // degrees threshold
     if ((-b.t1) > 1.0)          return false;     // |t| < 1.0
-    if (b.pTmiss > 0.20)        return false;     // GeV
+    if (b.pTmiss > 0.20)        return false;     // (GeV)
     return true;
 }
 
@@ -482,6 +468,9 @@ static PeriodResult process_period(const std::string& period_key, TTree* tree, c
     const Long64_t N = tree->GetEntries();
     print_banner("Processing period " + period_key + " with " + std::to_string((long long)N) + " entries");
 
+    // Optional quick sanity peek (off by default). export BINMEANS_DEBUG=1 to enable.
+    const bool dbg = (std::getenv("BINMEANS_DEBUG") != nullptr);
+
     long long n_pass_global = 0;
     long long n_pass_3sig   = 0;
     long long n_used_rows   = 0;
@@ -494,6 +483,15 @@ static PeriodResult process_period(const std::string& period_key, TTree* tree, c
 
     for (Long64_t i = 0; i < N; ++i) {
         tree->GetEntry(i);
+
+        if (dbg && i < 3) {
+            std::cout << "[bin_means][" << period_key << "] sample "
+                      << i << " t1=" << b.t1
+                      << " open_angle_ep2=" << b.open_angle_ep2
+                      << " pTmiss=" << b.pTmiss
+                      << " x=" << b.x << " Q2=" << b.Q2
+                      << " phi2(rad)=" << b.phi2_rad << std::endl;
+        }
 
         if (!passes_global(b)) continue;
         ++n_pass_global;
