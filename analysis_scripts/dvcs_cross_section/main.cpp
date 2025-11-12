@@ -68,35 +68,44 @@ int main(int argc, char* argv[]) {
     // );
     // std::cout << "Exclusivity-cut stage finished." << std::endl;
 
-    // // --------- Global bin-averaged kinematics ----------
-    // std::vector<std::string> dvcs_periods;
-    // for (const auto& P : CANONICAL_PERIODS()) {
-    //     dvcs_periods.push_back(P.tree_key);
+    // // --------- Global bin-averaged kinematics (CSV update) ----------
+    // {
+    //     const std::string csv_main   = "output/csvs/dvcs_pass2_analysis.csv";
+    //     const std::string csv_backup = "output/csvs/dvcs_pass2_analysis_backup_bin_means.csv";
+
+    //     // Make a simple backup before modifying
+    //     try {
+    //         std::filesystem::copy_file(csv_main, csv_backup,
+    //                                    std::filesystem::copy_options::overwrite_existing);
+    //         std::cout << "[main] Backed up CSV to " << csv_backup << "\n";
+    //     } catch (const std::exception& e) {
+    //         std::cerr << "[main] WARNING: Backup failed (" << e.what() << "). Continuing anyway.\n";
+    //     }
+
+    //     // dataTrees already built (keys like DVCS_Fa18_inb, ...). Launch with up to 5 workers.
+    //     if (!update_bin_means_csv(csv_main, dataTrees, /*max_workers=*/5)) {
+    //         std::cerr << "[main] ERROR: update_bin_means_csv failed.\n";
+    //         std::exit(EXIT_FAILURE);
+    //     }
     // }
-    // std::vector<std::string> topologies = {"(FD,FD)", "(CD,FD)", "(CD,FT)"};
-    // const std::string analysis_type = "dvcs";
-    // const std::string output_json_means = "output/jsons/bin_means_global.json";
 
-    // calculate_bin_means(dvcs_periods, topologies, analysis_type, binning_scheme, output_json_means, 
-    //     dataTrees);
-
-    // --------- Global bin-averaged kinematics (CSV update) ----------
+    // --------- Raw yields (counts) into CSV + plots ----------
     {
         const std::string csv_main   = "output/csvs/dvcs_pass2_analysis.csv";
-        const std::string csv_backup = "output/csvs/dvcs_pass2_analysis_backup_bin_means.csv";
+        const std::string cuts_json  = "output/jsons/combined_cuts.json";
 
-        // Make a simple backup before modifying
+        // Make a backup (the function also backs up to ..._total_counts.csv)
         try {
-            std::filesystem::copy_file(csv_main, csv_backup,
+            std::filesystem::copy_file(csv_main,
+                                       "output/csvs/dvcs_pass2_analysis_backup_total_counts.csv",
                                        std::filesystem::copy_options::overwrite_existing);
-            std::cout << "[main] Backed up CSV to " << csv_backup << "\n";
+            std::cout << "[main] Backed up CSV to dvcs_pass2_analysis_backup_total_counts.csv\n";
         } catch (const std::exception& e) {
-            std::cerr << "[main] WARNING: Backup failed (" << e.what() << "). Continuing anyway.\n";
+            std::cerr << "[main] WARNING: backup failed (" << e.what() << "). Continuing.\n";
         }
 
-        // dataTrees already built (keys like DVCS_Fa18_inb, ...). Launch with up to 5 workers.
-        if (!update_bin_means_csv(csv_main, dataTrees, /*max_workers=*/5)) {
-            std::cerr << "[main] ERROR: update_bin_means_csv failed.\n";
+        if (!update_total_counts_csv(csv_main, dvcs_periods, dataTrees, cuts_json, output_root, /*max_workers=*/5)) {
+            std::cerr << "[main] ERROR: update_total_counts_csv failed.\n";
             std::exit(EXIT_FAILURE);
         }
     }

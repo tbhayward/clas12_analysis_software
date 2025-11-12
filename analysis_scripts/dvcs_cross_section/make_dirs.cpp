@@ -14,6 +14,11 @@ void makeOutputDirs() {
         {"output/csvs"},
         {"output/jsons"},
         {"output/exclusivity_plots", {}},
+        {"output/total_counts_plots",
+            {"Fa18 Inb", "Fa18 Out", "Fa18 Inb Supp", "Sp18 Inb",
+                "Sp18 Out", "Sp19 Inb", "Fa18", "Sp18", "10.6 GeV"
+            }
+        },
         // {"output/mean_kinematic_plots", {}},
         // {"output/pi0_corrected_counts",
         //     {"sp18_inb","sp18_out","fa18_inb_supplemental",

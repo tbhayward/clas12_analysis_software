@@ -1,47 +1,19 @@
-// total_counts.cpp
-// ------------------------------------------------------------
-// Compute helicity-separated total counts after exclusivity cuts.
-// Strict mode: any missing lookup (trees, branches, dirs, files) causes a fatal exit.
-// - Reads: DVCS data trees per period (must have at least: helicity, x, Q2, t1, phi2)
-//          plus any branches referenced by the combined cuts JSON.
-// - Writes:
-//     • <out_root_dir>/jsons/total_counts.json             (master, nested "groups")
-//     • <out_root_dir>/jsons/total_counts_<label>.json     (flat per-group file; label = fa18_inb, etc.)
-// - Produces per-group phi-binned plots under <out_root_dir>/total_counts_plots/<label>/
-//
-// Per-group JSON:
-// {
-//   "binning_meta": { "phi_bins": N, "xB_bins": nx, "Q2_bins": nQ, "t_bins": nt },
-//   "bins": {
-//      "(ix,iQ2,it,ip)": { "helicity": { "+1": Np, "-1": Nm }, "total": Np+Nm }, ...
-//   }
-// }
-//
-// Master JSON:
-// {
-//   "binning_meta": {...},
-//   "groups": { "<label>": { "bins": {...} }, ... }
-// }
-// ------------------------------------------------------------
-
 #include "total_counts.h"
-#include "periods.h"  // canonical PeriodDef {label, tree_key}
+#include "periods.h"                // CANONICAL_PERIODS(), PeriodDef{label, tree_key}
+#include "load_binning_scheme.h"    // shared project type (harmless include here)
+#include "csv_io.h"                 // same CSV helper used by bin_means
 
-#include <TTree.h>
 #include <TCanvas.h>
-#include <TGraph.h>
 #include <TGraphErrors.h>
-#include <TLegend.h>
 #include <TLatex.h>
 #include <TPad.h>
 #include <TH1.h>
-#include <TStyle.h>
 #include <TROOT.h>
 #include <TError.h>
-#include <TBranch.h>
 #include <TLeaf.h>
 
 #include <algorithm>
+#include <atomic>
 #include <cctype>
 #include <cmath>
 #include <filesystem>
@@ -50,6 +22,7 @@
 #include <iostream>
 #include <limits>
 #include <map>
+#include <mutex>
 #include <set>
 #include <sstream>
 #include <string>
@@ -58,101 +31,38 @@
 #include <utility>
 #include <vector>
 
-#include <nlohmann/json.hpp>
-using nlohmann::json;
+#ifdef _OPENMP
+#include <omp.h>
+#endif
 
 namespace {
 
-// ------------------------------------------------------------
-// Helpers and constants
-// ------------------------------------------------------------
-static constexpr int N_PHI_BINS = 12;
-static constexpr double TWO_PI  = 2.0 * M_PI;
-
-struct BinningRange { double lo=0.0; double hi=0.0; };
-
-[[noreturn]] static void fatal(const std::string& msg) {
-    std::cerr << "[total_counts][FATAL] " << msg << std::endl;
+[[noreturn]] void fatal(const std::string& msg) {
+    std::cerr << "[total_counts] FATAL: " << msg << std::endl;
     std::exit(EXIT_FAILURE);
 }
 
-static inline double wrapToTwoPi(double phi) {
-    if (!std::isfinite(phi)) return std::numeric_limits<double>::quiet_NaN();
-    double w = std::fmod(phi, TWO_PI);
-    if (w < 0.0) w += TWO_PI;
-    if (w >= TWO_PI) w = std::nextafter(TWO_PI, 0.0);
+static inline double wrap_deg_0_360(double deg) {
+    if (!std::isfinite(deg)) return std::numeric_limits<double>::quiet_NaN();
+    double w = std::fmod(deg, 360.0);
+    if (w < 0.0) w += 360.0;
+    if (w >= 360.0) w = std::nextafter(360.0, 0.0);
     return w;
 }
 
-static inline int phiToBin(double phi) {
-    double w = wrapToTwoPi(phi);
-    if (!std::isfinite(w)) return -1;
-    const double width = TWO_PI / static_cast<double>(N_PHI_BINS);
-    int idx = static_cast<int>(std::floor(w / width));
-    if (idx < 0) idx = 0;
-    if (idx >= N_PHI_BINS) idx = N_PHI_BINS - 1;
-    return idx;
-}
+static inline double rad_to_deg(double rad) { return rad * 180.0 / M_PI; }
 
-static std::vector<std::pair<double,double>>
-uniqueRanges(const std::vector<Binning>& scheme, char which) {
-    std::set<std::pair<double,double>> s;
-    for (const auto& b : scheme) {
-        if (which == 'x') s.emplace(b.xBmin, b.xBmax);
-        else if (which == 'Q') s.emplace(b.Q2min, b.Q2max);
-        else if (which == 't') s.emplace(b.tmin, b.tmax);
-    }
-    return {s.begin(), s.end()};
-}
-
-static int findBin(double v, const std::vector<std::pair<double,double>>& ranges) {
-    for (int i = 0; i < (int)ranges.size(); ++i) {
-        if (v >= ranges[i].first && v < ranges[i].second) return i;
-    }
-    return -1;
-}
-
-static inline std::string keyStr(int ix,int iQ,int it,int ip) {
-    std::ostringstream os; os<<"("<<ix<<","<<iQ<<","<<it<<","<<ip<<")";
-    return os.str();
-}
-
-struct HelCounts { long long plus=0, minus=0; };
-
-// Canonical helpers — IMPORTANT: never return raw pointers into temporaries.
-static inline bool is_canonical_tree_key(const std::string& k) {
-    for (const auto& p : CANONICAL_PERIODS()) if (k == p.tree_key) return true;
-    return false;
-}
-
-// Always return a real std::string copy of the label so we never dangle.
-static inline std::string safe_label_for_key(const std::string& k) {
-    for (const auto& p : CANONICAL_PERIODS()) {
-        if (k == p.tree_key) {
-            // Works whether PeriodDef::label is std::string or const char*
-            return std::string(p.label);
-        }
-    }
-    std::ostringstream oss;
-    oss << "Non-canonical tree key '" << k << "'. Expected one of:";
-    for (const auto& p : CANONICAL_PERIODS()) oss << " " << p.tree_key;
-    fatal(oss.str());
-    return std::string(); // unreachable
-}
-
-// ------------------------------------------------------------
-// Exclusivity cut model
-// ------------------------------------------------------------
+// ---------------- cuts ----------------
 struct SigmaCut {
-    std::string branch;     // branch to read
-    double center = 0.0;    // mean value
-    double sigma  = 0.0;    // sigma
-    double nsigma = 3.0;    // how many sigmas
+    std::string branch;
+    double center = 0.0;
+    double sigma  = 0.0;
+    double nsigma = 3.0;
     enum Mode { TWO_SIDED, UPPER, LOWER } mode = TWO_SIDED;
 };
 
 struct BaseCut {
-    std::string branch;    // branch to read
+    std::string branch;
     bool has_min = false;
     bool has_max = false;
     bool has_eq  = false;
@@ -173,10 +83,10 @@ static SigmaCut::Mode parseMode(const std::string& m) {
     if (m == "upper")     return SigmaCut::UPPER;
     if (m == "lower")     return SigmaCut::LOWER;
     fatal("Unknown sigma cut mode: " + m);
-    return SigmaCut::TWO_SIDED; // unreachable
+    return SigmaCut::TWO_SIDED;
 }
 
-static void parseSigmaCuts(const json& arr, std::vector<SigmaCut>& out) {
+static void parseSigmaCuts(const nlohmann::json& arr, std::vector<SigmaCut>& out) {
     if (!arr.is_array()) fatal("sigma_cuts must be an array");
     for (const auto& j : arr) {
         SigmaCut c;
@@ -189,93 +99,65 @@ static void parseSigmaCuts(const json& arr, std::vector<SigmaCut>& out) {
         c.nsigma  = j.value("nsigma", 3.0);
         c.mode    = parseMode(j.value("mode", std::string("two_sided")));
         out.push_back(c);
-    } // #endfor
+    }
 }
 
-static void parseBaseCuts(const json& arr, std::vector<BaseCut>& out) {
+static void parseBaseCuts(const nlohmann::json& arr, std::vector<BaseCut>& out) {
     if (!arr.is_array()) fatal("base_cuts must be an array");
     for (const auto& j : arr) {
         BaseCut c;
         if (!j.contains("branch")) fatal("base_cuts entry missing 'branch'");
         c.branch = j.at("branch").get<std::string>();
-
         if (j.contains("min")) { c.has_min = true; c.vmin = j.at("min").get<double>(); }
         if (j.contains("max")) { c.has_max = true; c.vmax = j.at("max").get<double>(); }
-
-        if (j.contains("eq"))  { c.has_eq = true;  c.eq  = j.at("eq").get<long long>(); }
-        if (j.contains("neq")) { c.has_neq = true; c.neq = j.at("neq").get<long long>(); }
-
-        if (!(c.has_min || c.has_max || c.has_eq || c.has_neq)) {
-            fatal("base_cuts entry for '" + c.branch + "' has no condition (min/max/eq/neq)");
-        }
+        if (j.contains("eq"))  { c.has_eq  = true; c.eq   = j.at("eq").get<long long>(); }
+        if (j.contains("neq")) { c.has_neq = true; c.neq  = j.at("neq").get<long long>(); }
+        if (!(c.has_min || c.has_max || c.has_eq || c.has_neq))
+            fatal("base_cuts entry for '" + c.branch + "' has no condition");
         out.push_back(c);
-    } // #endfor
+    }
 }
 
 static PeriodCuts loadCombinedCuts(const std::string& json_path, const std::string& period_key) {
     std::ifstream ifs(json_path);
     if (!ifs) fatal("Cannot open combined cuts JSON: " + json_path);
-    json J; ifs >> J;
+    nlohmann::json J; ifs >> J;
 
     PeriodCuts cuts;
-
-    // global
     if (J.contains("global")) {
         const auto& G = J.at("global");
         if (G.contains("sigma_cuts")) parseSigmaCuts(G.at("sigma_cuts"), cuts.sigma_cuts);
-        if (G.contains("base_cuts"))  parseBaseCuts(G.at("base_cuts"), cuts.base_cuts);
+        if (G.contains("base_cuts"))  parseBaseCuts(G.at("base_cuts"),  cuts.base_cuts);
     }
-
-    // period override (replace arrays if present)
     if (J.contains("period_overrides")) {
         const auto& PO = J.at("period_overrides");
         auto it = PO.find(period_key);
         if (it != PO.end()) {
             const auto& P = *it;
-            if (P.contains("sigma_cuts")) {
-                cuts.sigma_cuts.clear();
-                parseSigmaCuts(P.at("sigma_cuts"), cuts.sigma_cuts);
-            }
-            if (P.contains("base_cuts")) {
-                cuts.base_cuts.clear();
-                parseBaseCuts(P.at("base_cuts"), cuts.base_cuts);
-            }
+            if (P.contains("sigma_cuts")) { cuts.sigma_cuts.clear(); parseSigmaCuts(P.at("sigma_cuts"), cuts.sigma_cuts); }
+            if (P.contains("base_cuts"))  { cuts.base_cuts.clear();  parseBaseCuts(P.at("base_cuts"),  cuts.base_cuts);  }
         }
     }
-
-    // sanity
     for (const auto& c : cuts.sigma_cuts) {
-        if (c.sigma <= 0.0) fatal("sigma_cuts: non-positive sigma for branch '" + c.branch + "'");
-        if (c.nsigma <= 0.0) fatal("sigma_cuts: non-positive nsigma for branch '" + c.branch + "'");
+        if (c.sigma <= 0.0) fatal("sigma_cuts: non-positive sigma for '" + c.branch + "'");
+        if (c.nsigma <= 0.0) fatal("sigma_cuts: non-positive nsigma for '" + c.branch + "'");
     }
-
     return cuts;
 }
 
-// Collect unique list of branches required by cuts
-static std::vector<std::string> requiredCutBranches(const PeriodCuts& cuts) {
-    std::set<std::string> s;
-    for (const auto& c : cuts.sigma_cuts) s.insert(c.branch);
-    for (const auto& c : cuts.base_cuts)  s.insert(c.branch);
-    return {s.begin(), s.end()};
-}
-
-// SetBranchAddress helpers
+// -------------- binding helpers --------------
 struct BranchBinding {
     std::string name;
     double     as_double = std::numeric_limits<double>::quiet_NaN();
     long long  as_ll     = 0;
-    bool       is_int    = false; // set at bind time
+    bool       is_int    = false;
 };
 
 static bool isIntegerLeaf(TLeaf* leaf) {
     if (!leaf) return false;
-    const char* t = leaf->GetTypeName();
-    // ROOT type names; extend if needed
-    return std::string(t) == "Int_t"    || std::string(t) == "UInt_t"   ||
-           std::string(t) == "Short_t"  || std::string(t) == "UShort_t" ||
-           std::string(t) == "Char_t"   || std::string(t) == "UChar_t"  ||
-           std::string(t) == "Long64_t" || std::string(t) == "ULong64_t";
+    const std::string t = leaf->GetTypeName();
+    return t == "Int_t" || t == "UInt_t" || t == "Short_t" || t == "UShort_t" ||
+           t == "Char_t" || t == "UChar_t" || t == "Long64_t" || t == "ULong64_t";
 }
 
 static void bindRequiredBranches_STRICT(
@@ -284,82 +166,55 @@ static void bindRequiredBranches_STRICT(
     std::unordered_map<std::string, BranchBinding>& bindings)
 {
     bindings.clear();
-    bindings.reserve(branch_names.size()); // avoid rehash so stored addresses stay valid during binding
-
+    bindings.reserve(branch_names.size());
     for (const auto& bname : branch_names) {
         TBranch* b = t->GetBranch(bname.c_str());
         if (!b) fatal("Required branch for cuts missing: '" + bname + "'");
-
         TLeaf* leaf = b->GetLeaf(bname.c_str());
         if (!leaf) {
             leaf = (TLeaf*)b->GetListOfLeaves()->First();
-            if (!leaf) fatal("Branch has no leaves (unexpected): '" + bname + "'");
+            if (!leaf) fatal("Branch has no leaves: '" + bname + "'");
         }
-
-        auto [it, inserted] = bindings.emplace(bname, BranchBinding{});
+        auto [it, ok] = bindings.emplace(bname, BranchBinding{});
         BranchBinding& bb = it->second;
         bb.name   = bname;
         bb.is_int = isIntegerLeaf(leaf);
-
-        if (bb.is_int) {
-            t->SetBranchAddress(bname.c_str(), &bb.as_ll);
-        } else {
-            t->SetBranchAddress(bname.c_str(), &bb.as_double);
-        }
-    } // #endfor
+        if (bb.is_int) t->SetBranchAddress(bname.c_str(), &bb.as_ll);
+        else           t->SetBranchAddress(bname.c_str(), &bb.as_double);
+    }
 }
 
-// Evaluate base cuts
 static inline bool passBaseCuts(const std::vector<BaseCut>& baseCuts,
                                 const std::unordered_map<std::string, BranchBinding>& B) {
     for (const auto& c : baseCuts) {
         const auto it = B.find(c.branch);
-        if (it == B.end()) return false; // strict
+        if (it == B.end()) return false;
         const BranchBinding& bb = it->second;
 
-        if (c.has_eq) {
-            long long v = bb.is_int ? bb.as_ll : (long long)std::llround(bb.as_double);
-            if (v != c.eq) return false;
-        }
-        if (c.has_neq) {
-            long long v = bb.is_int ? bb.as_ll : (long long)std::llround(bb.as_double);
-            if (v == c.neq) return false;
-        }
-        if (c.has_min) {
-            double v = bb.is_int ? (double)bb.as_ll : bb.as_double;
-            if (!(v >= c.vmin)) return false;
-        }
-        if (c.has_max) {
-            double v = bb.is_int ? (double)bb.as_ll : bb.as_double;
-            if (!(v <= c.vmax)) return false;
-        }
-    } // #endfor
+        if (c.has_eq)  { long long v = bb.is_int ? bb.as_ll : (long long)std::llround(bb.as_double); if (v != c.eq)  return false; }
+        if (c.has_neq) { long long v = bb.is_int ? bb.as_ll : (long long)std::llround(bb.as_double); if (v == c.neq) return false; }
+        if (c.has_min) { double v    = bb.is_int ? (double)bb.as_ll : bb.as_double; if (!(v >= c.vmin)) return false; }
+        if (c.has_max) { double v    = bb.is_int ? (double)bb.as_ll : bb.as_double; if (!(v <= c.vmax)) return false; }
+    }
     return true;
 }
 
-// Evaluate sigma cuts
 static inline bool passSigmaCuts(const std::vector<SigmaCut>& sigmaCuts,
                                  const std::unordered_map<std::string, BranchBinding>& B) {
     for (const auto& c : sigmaCuts) {
         const auto it = B.find(c.branch);
-        if (it == B.end()) return false; // strict
+        if (it == B.end()) return false;
         const BranchBinding& bb = it->second;
-        const double v = bb.is_int ? (double)bb.as_ll : bb.as_double;
+        const double v  = bb.is_int ? (double)bb.as_ll : bb.as_double;
         const double lo = c.center - c.nsigma * c.sigma;
         const double hi = c.center + c.nsigma * c.sigma;
-
-        if (c.mode == SigmaCut::TWO_SIDED) {
-            if (v < lo || v > hi) return false;
-        } else if (c.mode == SigmaCut::UPPER) {
-            if (v > hi) return false;
-        } else { // LOWER
-            if (v < lo) return false;
-        }
-    } // #endfor
+        if (c.mode == SigmaCut::TWO_SIDED) { if (v < lo || v > hi) return false; }
+        else if (c.mode == SigmaCut::UPPER) { if (v > hi) return false; }
+        else { if (v < lo) return false; }
+    }
     return true;
 }
 
-// Combined exclusivity predicate: base AND sigma
 static inline bool passes3SigmaCuts_STRICT(
     const PeriodCuts& cuts,
     const std::unordered_map<std::string, BranchBinding>& B)
@@ -367,203 +222,266 @@ static inline bool passes3SigmaCuts_STRICT(
     return passBaseCuts(cuts.base_cuts, B) && passSigmaCuts(cuts.sigma_cuts, B);
 }
 
-// ------------------------------------------------------------
-// JSON writers (strict)
-// ------------------------------------------------------------
-static void write_total_counts_group_json(
-    const std::string& out_path,
-    const std::map<std::tuple<int,int,int,int>, HelCounts>& table,
-    int nPhi,
-    const std::vector<std::pair<double,double>>& xB_bins,
-    const std::vector<std::pair<double,double>>& Q2_bins,
-    const std::vector<std::pair<double,double>>& t_bins)
-{
-    std::ofstream ofs(out_path);
-    if (!ofs) fatal(std::string("Cannot open for write: ") + out_path);
-    ofs << std::fixed << std::setprecision(8);
-    ofs << "{\n";
-    ofs << "  \"binning_meta\": {\"phi_bins\": " << nPhi
-        << ", \"xB_bins\": " << xB_bins.size()
-        << ", \"Q2_bins\": " << Q2_bins.size()
-        << ", \"t_bins\": "  << t_bins.size() << "},\n";
-    ofs << "  \"bins\": {\n";
-    bool first=true;
-    for (const auto& kv : table) {
-        if (!first) ofs << ",\n"; first=false;
-        const HelCounts& hc = kv.second;
-        int ix,iq,itb,ip; std::tie(ix,iq,itb,ip) = kv.first;
-        ofs << "    \"" << keyStr(ix,iq,itb,ip) << "\": {"
-            << "\"helicity\":{\"+1\":" << hc.plus
-            << ",\"-1\":" << hc.minus << "},"
-            << "\"total\":" << (hc.plus + hc.minus)
-            << "}";
-    } // #endfor
-    ofs << "\n  }\n}\n";
-    ofs.close();
-    std::cout << "[total_counts] Wrote " << out_path << "\n";
+// -------------- canonical period helpers --------------
+static inline bool is_canonical_tree_key(const std::string& k) {
+    for (const auto& p : CANONICAL_PERIODS()) if (k == p.tree_key) return true;
+    return false;
+}
+static inline std::string safe_label_for_key(const std::string& k) {
+    for (const auto& p : CANONICAL_PERIODS()) if (k == p.tree_key) return std::string(p.label);
+    fatal("Non-canonical period key: " + k);
+    return std::string();
 }
 
-static void write_total_counts_master_json(
-    const std::string& out_path,
-    const std::map<std::string, std::map<std::tuple<int,int,int,int>, HelCounts>>& allGroupsByLabel,
-    int nPhi,
-    const std::vector<std::pair<double,double>>& xB_bins,
-    const std::vector<std::pair<double,double>>& Q2_bins,
-    const std::vector<std::pair<double,double>>& t_bins)
-{
-    std::ofstream ofs(out_path);
-    if (!ofs) fatal(std::string("Cannot open for write: ") + out_path);
-    ofs << std::fixed << std::setprecision(8);
-    ofs << "{\n";
-    ofs << "  \"binning_meta\": {\"phi_bins\": " << nPhi
-        << ", \"xB_bins\": " << xB_bins.size()
-        << ", \"Q2_bins\": " << Q2_bins.size()
-        << ", \"t_bins\":  " << t_bins.size() << "},\n";
-    ofs << "  \"groups\": {\n";
+// -------------- topology helpers --------------
+static const char* TOPO_STRS[3] = {"(FD, FD)","(CD, FD)","(CD, FT)"};
+static const char* TOPO_DIRS[3] = {"FD_FD","CD_FD","CD_FT"}; // for filenames/dirs
 
-    bool firstG = true;
-    for (const auto& gkv : allGroupsByLabel) {
-        if (!firstG) ofs << ",\n";
-        firstG = false;
-        ofs << "    \"" << gkv.first << "\": { \"bins\": {\n";
-        bool firstB = true;
-        for (const auto& kv : gkv.second) {
-            if (!firstB) ofs << ",\n"; firstB=false;
-            const HelCounts& hc = kv.second;
-            int ix,iq,itb,ip; std::tie(ix,iq,itb,ip)=kv.first;
-            ofs << "      \"" << keyStr(ix,iq,itb,ip) << "\": {"
-                << "\"helicity\":{\"+1\":" << hc.plus
-                << ",\"-1\":" << hc.minus << "},"
-                << "\"total\":" << (hc.plus + hc.minus)
-                << "}";
-        } // #endfor
-        ofs << "\n    }}";
-    } // #endfor
-    ofs << "\n  }\n}\n";
-    ofs.close();
-    std::cout << "[total_counts] Wrote master " << out_path << "\n";
+static int topo_index_from_string(const std::string& s) {
+    for (int i = 0; i < 3; ++i) if (s == TOPO_STRS[i]) return i;
+    return -1;
 }
 
-// ------------------------------------------------------------
-// Plotting (strict save)
-// ------------------------------------------------------------
-static std::vector<double> phiCentersDeg() {
-    std::vector<double> v(N_PHI_BINS);
-    const double step = 360.0 / static_cast<double>(N_PHI_BINS);
-    for (int i = 0; i < N_PHI_BINS; ++i) v[i] = (i + 0.5) * step;
-    return v;
+struct TopologyResolver {
+    // Supported encodings:
+    //   1) topology_id or topology_code int 0/1/2 -> (FD,FD)/(CD,FD)/(CD,FT)
+    //   2) is_fd_fd / is_cd_fd / is_cd_ft flags (0/1)
+    bool have_id = false, have_code = false, have_flags = false;
+    int topology_id = -1, topology_code = -1;
+    int is_fd_fd = 0, is_cd_fd = 0, is_cd_ft = 0;
+
+    void bind(TTree* t) {
+        have_id   = (t->GetBranch("topology_id")   != nullptr);
+        have_code = (t->GetBranch("topology_code") != nullptr);
+        have_flags= (t->GetBranch("is_fd_fd") && t->GetBranch("is_cd_fd") && t->GetBranch("is_cd_ft"));
+
+        if (have_id)   t->SetBranchAddress("topology_id",   &topology_id);
+        if (have_code) t->SetBranchAddress("topology_code", &topology_code);
+        if (have_flags){
+            t->SetBranchAddress("is_fd_fd", &is_fd_fd);
+            t->SetBranchAddress("is_cd_fd", &is_cd_fd);
+            t->SetBranchAddress("is_cd_ft", &is_cd_ft);
+        }
+    }
+
+    // returns 0,1,2 or -1
+    int index() const {
+        if (have_id)   { if (topology_id   >= 0 && topology_id   <= 2) return topology_id; }
+        if (have_code) { if (topology_code >= 0 && topology_code <= 2) return topology_code; }
+        if (have_flags) {
+            if (is_fd_fd) return 0;
+            if (is_cd_fd) return 1;
+            if (is_cd_ft) return 2;
+        }
+        return -1;
+    }
+};
+
+// -------------- CSV helpers --------------
+struct CsvCols {
+    int c_xb_min = -1, c_xb_max = -1;
+    int c_q2_min = -1, c_q2_max = -1;
+    int c_tab_min = -1, c_tab_max = -1; // |t|
+    int c_phi_min = -1, c_phi_max = -1;
+};
+
+static inline std::string period_yield_col_base(const std::string& label,
+                                                const std::string& topo_str) {
+    // Example: "raw yield, ep->epg, (FD, FD), exp, Fa18 Inb, "
+    std::ostringstream os;
+    os << "raw yield, ep->epg, " << topo_str << ", exp, " << label << ", ";
+    return os.str();
 }
 
-static bool pairAlmostEqual(const std::pair<double,double>& a,
-                            const std::pair<double,double>& b,
-                            double eps = 1e-9) {
-    return std::fabs(a.first  - b.first)  < eps &&
-           std::fabs(a.second - b.second) < eps;
+static inline std::string combined_yield_col_base(const std::string& group,
+                                                  const std::string& topo_str) {
+    std::ostringstream os;
+    os << "raw yield, ep->epg, " << topo_str << ", exp, " << group << ", ";
+    return os.str();
 }
 
-static void plot_group_counts(
-    const std::string& group_label, // fa18_inb, etc.
-    const std::map<std::tuple<int,int,int,int>, HelCounts>& table,
-    const std::vector<Binning>& binning_scheme,
-    const std::vector<std::pair<double,double>>& xB_bins,
-    const std::vector<std::pair<double,double>>& Q2_bins,
-    const std::vector<std::pair<double,double>>& t_bins,
-    const std::string& out_dir)
+static inline std::string topo_dir_name(int topo_idx) {
+    return TOPO_DIRS[topo_idx];
+}
+
+struct RowCounts { long long pos=0, neg=0; };
+
+static inline double safe_mean(const std::vector<double>& v) {
+    double s=0.0; int n=0;
+    for (double x : v) if (std::isfinite(x)) { s+=x; ++n; }
+    return n>0 ? s/n : std::numeric_limits<double>::quiet_NaN();
+}
+
+// Draw one label+topology set of canvases (one canvas per xB range)
+static void draw_group_canvases(
+    const std::string& label,
+    const std::string& topo_str,
+    const std::string& topo_dir,
+    const CsvDoc& csv,
+    const CsvCols& cols,
+    const std::string& out_root_dir)
 {
     namespace fs = std::filesystem;
 
-    static const std::vector<double> PHI = phiCentersDeg();
-    std::vector<double> X(N_PHI_BINS), ex(N_PHI_BINS, 0.0);
-    for (int i = 0; i < N_PHI_BINS; ++i) X[i] = PHI[i];
-
-    std::error_code ec;
-    fs::create_directories(out_dir, ec);
-    if (ec) {
-        std::cerr << "[total_counts][FATAL] Cannot create directory: " << out_dir
-                  << " (" << ec.message() << ")\n";
-        std::exit(EXIT_FAILURE);
+    const std::string out_dir = (fs::path(out_root_dir) / "total_counts_plots" / label / topo_dir).string();
+    if (!fs::exists(out_dir)) {
+        fatal("Missing plot output directory: " + out_dir + " (makeOutputDirs must create it)");
     }
 
-    for (int ix = 0; ix < (int)xB_bins.size(); ++ix) {
-        std::set<std::pair<double,double>> q2set, tset;
-        for (const auto& b : binning_scheme) {
-            if (std::make_pair(b.xBmin, b.xBmax) == xB_bins[ix]) {
-                q2set.emplace(b.Q2min, b.Q2max);
-                tset.emplace(b.tmin,  b.tmax);
+    // Per-label means and phi averages
+    const std::string c_phiavg_name = std::string("phiavg, ") + label;
+    const std::string c_q2avg_name  = std::string("Q2avg, ") + label;
+    const std::string c_tabavg_name = std::string("t_abs_avg, ") + label;
+    const std::string c_xbavg_name  = std::string("xBavg, ") + label;
+
+    const int c_phiavg = csv.has_col(c_phiavg_name) ? csv.col_index(c_phiavg_name) : -1;
+    const int c_q2avg  = csv.has_col(c_q2avg_name)  ? csv.col_index(c_q2avg_name)  : -1;
+    const int c_tabavg = csv.has_col(c_tabavg_name) ? csv.col_index(c_tabavg_name) : -1;
+    const int c_xbavg  = csv.has_col(c_xbavg_name)  ? csv.col_index(c_xbavg_name)  : -1;
+
+    // Yield columns for this label+topology
+    const std::string ybase = period_yield_col_base(label, topo_str);
+    const int c_pos = csv.has_col(ybase + "pos")   ? csv.col_index(ybase + "pos")   : -1;
+    const int c_neg = csv.has_col(ybase + "neg")   ? csv.col_index(ybase + "neg")   : -1;
+
+    // Unique xB ranges in rows
+    std::set<std::pair<double,double>> xb_set;
+    for (int r = 0; r < csv.nrows(); ++r) {
+        xb_set.emplace(csv.as_double(r, cols.c_xb_min), csv.as_double(r, cols.c_xb_max));
+    }
+
+    for (auto xb : xb_set) {
+        // collect Q2 ranges for this xB
+        std::set<std::pair<double,double>> q2set;
+        for (int r = 0; r < csv.nrows(); ++r) {
+            const double xbmin = csv.as_double(r, cols.c_xb_min);
+            const double xbmax = csv.as_double(r, cols.c_xb_max);
+            if (std::fabs(xbmin - xb.first) < 1e-9 && std::fabs(xbmax - xb.second) < 1e-9) {
+                q2set.emplace(csv.as_double(r, cols.c_q2_min), csv.as_double(r, cols.c_q2_max));
             }
         }
 
+        // find t sets for each Q2, then collect rows per (Q2,t)
+        std::set<std::pair<double,double>> tset_all;
+        for (auto q2r : q2set) {
+            for (int r = 0; r < csv.nrows(); ++r) {
+                const double xbmin = csv.as_double(r, cols.c_xb_min);
+                const double xbmax = csv.as_double(r, cols.c_xb_max);
+                const double q2min = csv.as_double(r, cols.c_q2_min);
+                const double q2max = csv.as_double(r, cols.c_q2_max);
+                if (std::fabs(xbmin - xb.first) < 1e-9 && std::fabs(xbmax - xb.second) < 1e-9 &&
+                    std::fabs(q2min - q2r.first) < 1e-9 && std::fabs(q2max - q2r.second) < 1e-9) {
+                    tset_all.emplace(csv.as_double(r, cols.c_tab_min), csv.as_double(r, cols.c_tab_max));
+                }
+            }
+        }
         std::vector<std::pair<double,double>> Q2s(q2set.begin(), q2set.end());
-        std::vector<std::pair<double,double>> Ts (tset.begin(),  tset.end());
-
+        std::vector<std::pair<double,double>> Ts (tset_all.begin(), tset_all.end());
         if (Q2s.empty() || Ts.empty()) continue;
 
         const int nrows = (int)Q2s.size();
         const int ncols = (int)Ts.size();
-        if (nrows <= 0 || ncols <= 0) continue;
-
         const int W = 260 * ncols + 120;
-        const int H = 220 * nrows + 140;
+        const int H = 220 * nrows + 160;
 
-        TCanvas* c = new TCanvas(Form("c_counts_%s_xB%d", group_label.c_str(), ix), "", W, H);
-        if (!c) { fatal("TCanvas allocation failed"); }
+        // Canvas-level <xB> for title
+        std::vector<double> xbmeans;
+        for (int r = 0; r < csv.nrows(); ++r) {
+            const double xbmin = csv.as_double(r, cols.c_xb_min);
+            const double xbmax = csv.as_double(r, cols.c_xb_max);
+            if (std::fabs(xbmin - xb.first) < 1e-9 && std::fabs(xbmax - xb.second) < 1e-9) {
+                if (c_xbavg >= 0) xbmeans.push_back(csv.as_double(r, c_xbavg));
+                else xbmeans.push_back((xb.first + xb.second) * 0.5);
+            }
+        }
+        const double xb_mean_for_title = safe_mean(xbmeans);
 
-        TPad* pTop  = new TPad("pTop",  "pTop",  0.0, 0.94, 1.0, 1.0);
-        TPad* pGrid = new TPad("pGrid", "pGrid", 0.0, 0.00, 1.0, 0.94);
+        std::string cname = "c_counts_" + label + "_" + topo_dir + "_xB_" + std::to_string((int)std::round(xb.first*1000.0));
+        TCanvas* c = new TCanvas(cname.c_str(), "", W, H);
+        TPad* pTop  = new TPad("pTop",  "pTop",  0.0, 0.93, 1.0, 1.0);
+        TPad* pGrid = new TPad("pGrid", "pGrid", 0.0, 0.00, 1.0, 0.93);
         pTop->SetFillStyle(0);  pTop->Draw();
         pGrid->SetFillStyle(0); pGrid->Draw();
         pGrid->Divide(ncols, nrows, 0.0001, 0.0001);
 
         pTop->cd();
-        if (!gPad) fatal("gPad null after pTop->cd()");
         TLatex head; head.SetNDC(); head.SetTextSize(0.055); head.SetTextAlign(22);
         head.DrawLatex(0.5, 0.55,
-            Form("%s   x_B (%.3g, %.3g)", group_label.c_str(), xB_bins[ix].first, xB_bins[ix].second));
+            Form("%s   <xB>=%.3g   %s", label.c_str(), xb_mean_for_title, topo_str.c_str()));
 
-        const int cells = nrows * ncols;
-
-        for (int r = 0; r < nrows; ++r) {
+        for (int rrow = 0; rrow < nrows; ++rrow) {
             for (int ccol = 0; ccol < ncols; ++ccol) {
-                const int cell = r * ncols + ccol + 1;
-                if (cell < 1 || cell > cells) continue;
-
+                const int cell = rrow * ncols + ccol + 1;
                 pGrid->cd(cell);
-                if (!gPad) fatal("gPad null after pGrid->cd(cell)");
-
                 gPad->SetGrid(1, 1);
                 gPad->SetTopMargin(0.18);
                 gPad->SetBottomMargin(0.14);
                 gPad->SetLeftMargin(0.125);
                 gPad->SetRightMargin(0.06);
 
-                // Map local (Q2,t) pair to global indices robustly
-                int iQ = -1, itb = -1;
-                for (int iq = 0; iq < (int)Q2_bins.size(); ++iq) {
-                    if (pairAlmostEqual(Q2_bins[iq], Q2s[r])) { iQ = iq; break; }
-                }
-                for (int it = 0; it < (int)t_bins.size(); ++it) {
-                    if (pairAlmostEqual(t_bins[it], Ts[ccol])) { itb = it; break; }
-                }
+                const auto& qpair = Q2s[rrow];
+                const auto& tpair = Ts[ccol];
 
-                std::vector<double> Yp(N_PHI_BINS, 0.0), Ym(N_PHI_BINS, 0.0);
-                std::vector<double> EYp(N_PHI_BINS, 0.0), EYm(N_PHI_BINS, 0.0);
-                double local_max = 0.0;
-
-                if (iQ >= 0 && itb >= 0) {
-                    for (int ip = 0; ip < N_PHI_BINS; ++ip) {
-                        auto itbl = table.find({ix, iQ, itb, ip});
-                        if (itbl == table.end()) continue;
-                        Yp[ip]  = (double)itbl->second.plus;
-                        Ym[ip]  = (double)itbl->second.minus;
-                        EYp[ip] = std::sqrt(std::max(0.0, Yp[ip]));
-                        EYm[ip] = std::sqrt(std::max(0.0, Ym[ip]));
-                        local_max = std::max(local_max, std::max(Yp[ip], Ym[ip]));
+                // gather rows for this cell
+                std::vector<int> rows;
+                rows.reserve(24);
+                for (int r = 0; r < csv.nrows(); ++r) {
+                    const double xbmin = csv.as_double(r, cols.c_xb_min);
+                    const double xbmax = csv.as_double(r, cols.c_xb_max);
+                    const double q2min = csv.as_double(r, cols.c_q2_min);
+                    const double q2max = csv.as_double(r, cols.c_q2_max);
+                    const double tmin  = csv.as_double(r, cols.c_tab_min);
+                    const double tmax  = csv.as_double(r, cols.c_tab_max);
+                    if (std::fabs(xbmin - xb.first)  < 1e-9 && std::fabs(xbmax - xb.second) < 1e-9 &&
+                        std::fabs(q2min - qpair.first) < 1e-9 && std::fabs(q2max - qpair.second) < 1e-9 &&
+                        std::fabs(tmin  - tpair.first) < 1e-9 && std::fabs(tmax  - tpair.second) < 1e-9) {
+                        rows.push_back(r);
                     }
                 }
+                if (rows.empty()) {
+                    TH1* frame = gPad->DrawFrame(0.0, 0.0, 360.0, 1.0);
+                    frame->GetXaxis()->SetTitle("phi (deg)");
+                    frame->GetYaxis()->SetTitle("Counts");
+                    continue;
+                }
 
-                double ymax = std::max(1.0, local_max * 1.15);
-                TH1* frame = gPad->DrawFrame(0.0, 0.0, 360.0, ymax);
-                if (!frame) fatal("DrawFrame returned null");
+                std::sort(rows.begin(), rows.end(), [&](int a, int b){
+                    return csv.as_double(a, cols.c_phi_min) < csv.as_double(b, cols.c_phi_min);
+                });
+
+                std::vector<double> X, Yp, Ym, EX, EYp, EYm, q2means, tmeans;
+                X.reserve(rows.size()); Yp.reserve(rows.size()); Ym.reserve(rows.size());
+                EX.resize(rows.size(), 0.0);
+
+                for (int r : rows) {
+                    const double pmin = csv.as_double(r, cols.c_phi_min);
+                    const double pmax = csv.as_double(r, cols.c_phi_max);
+                    double xphi = 0.5 * (pmin + pmax);
+                    if (c_phiavg >= 0) {
+                        const double pav = csv.as_double(r, c_phiavg);
+                        if (std::isfinite(pav) && pav > 0.0 && pav < 360.0) xphi = pav;
+                    }
+                    X.push_back(xphi);
+
+                    double yp=0.0, yn=0.0;
+                    if (c_pos >= 0) yp = csv.as_double(r, c_pos);
+                    if (c_neg >= 0) yn = csv.as_double(r, c_neg);
+                    Yp.push_back(yp);
+                    Ym.push_back(yn);
+                    EYp.push_back(std::sqrt(std::max(0.0, yp)));
+                    EYm.push_back(std::sqrt(std::max(0.0, yn)));
+
+                    if (c_q2avg >= 0)  q2means.push_back(csv.as_double(r, c_q2avg));
+                    else               q2means.push_back(0.5 * (qpair.first + qpair.second));
+                    if (c_tabavg >= 0) tmeans.push_back(csv.as_double(r, c_tabavg));
+                    else               tmeans.push_back(0.5 * (tpair.first + tpair.second));
+                }
+
+                double local_max = 1.0;
+                for (double v : Yp) local_max = std::max(local_max, v);
+                for (double v : Ym) local_max = std::max(local_max, v);
+
+                TH1* frame = gPad->DrawFrame(0.0, 0.0, 360.0, std::max(1.0, local_max * 1.15));
                 frame->GetXaxis()->SetTitle("phi (deg)");
                 frame->GetYaxis()->SetTitle("Counts");
                 frame->GetXaxis()->CenterTitle();
@@ -577,188 +495,295 @@ static void plot_group_counts(
                     gPad->SetLogy(0);
                 }
 
-                // Points only, with error bars (no connecting lines)
-                TGraphErrors* gp = new TGraphErrors(N_PHI_BINS, X.data(), Yp.data(), ex.data(), EYp.data());
-                TGraphErrors* gm = new TGraphErrors(N_PHI_BINS, X.data(), Ym.data(), ex.data(), EYm.data());
-                if (!gp || !gm) fatal("TGraphErrors allocation failed");
+                TGraphErrors* gp = new TGraphErrors((int)X.size(), X.data(), Yp.data(), EX.data(), EYp.data());
+                TGraphErrors* gm = new TGraphErrors((int)X.size(), X.data(), Ym.data(), EX.data(), EYm.data());
+                gp->SetMarkerStyle(24); gp->SetMarkerColor(kRed);  gp->SetLineColor(kRed);  gp->SetLineWidth(1);
+                gm->SetMarkerStyle(20); gm->SetMarkerColor(kBlue); gm->SetLineColor(kBlue); gm->SetLineWidth(1);
+                gp->Draw("PE1 SAME");
+                gm->Draw("PE1 SAME");
 
-                gp->SetMarkerStyle(24); // red open
-                gp->SetMarkerColor(kRed);
-                gp->SetLineColor(kRed);
-                gp->SetLineWidth(1);
-                gp->Draw("PE1 SAME");     // points only
-
-                gm->SetMarkerStyle(20); // blue filled
-                gm->SetMarkerColor(kBlue);
-                gm->SetLineColor(kBlue);
-                gm->SetLineWidth(1);
-                gm->Draw("PE1 SAME");     // points only
-
-                // Annotate the Q2 and t ranges for this subplot
-                TLatex lab; lab.SetNDC(); lab.SetTextSize(0.045);
-                lab.SetTextAlign(13); // left-top
-                lab.DrawLatex(0.12, 0.88,
-                    Form("Q2 (%.3g, %.3g)   t (%.3g, %.3g)",
-                         Q2s[r].first, Q2s[r].second, Ts[ccol].first, Ts[ccol].second));
+                TLatex lab; lab.SetNDC(); lab.SetTextSize(0.045); lab.SetTextAlign(13);
+                const double q2m = safe_mean(q2means);
+                const double tm  = safe_mean(tmeans);
+                lab.DrawLatex(0.12, 0.88, Form("Q2=%.3g  |t|=%.3g", q2m, tm));
             }
         }
 
-        const std::string fpath = out_dir + "/plot_total_counts_" + group_label + "_xB_" + std::to_string(ix) + ".png";
+        const std::string fpath = out_dir + "/plot_total_counts_" + label + "_" + topo_dir
+                                  + "_xB_" + std::to_string((int)std::round(xb.first*1000.0)) + ".png";
         c->SaveAs(fpath.c_str());
-
-        std::error_code fec;
-        bool exists = fs::exists(fpath, fec);
-        auto sz = exists ? fs::file_size(fpath, fec) : 0ULL;
-        if (!exists || (sz == 0) || fec) {
-            std::ostringstream em;
-            em << "[total_counts][FATAL] Failed to save plot: " << fpath
-               << " (exists=" << exists
-               << ", size=" << sz
-               << ", ec=" << (fec ? fec.message() : "ok") << ")";
-            std::cerr << em.str() << std::endl;
-            std::exit(EXIT_FAILURE);
-        }
-
         delete c;
     }
 }
 
+// Combined group tag
+static inline std::string group_tag_for_key(const std::string& period_key) {
+    if (period_key.find("Fa18") != std::string::npos) return "Fa18";
+    if (period_key.find("Sp18") != std::string::npos) return "Sp18";
+    return "10.6 GeV"; // includes Sp19 etc.
+}
+
 } // namespace
 
-// ------------------------------------------------------------
-// Main compute function (STRICT, canonical names enforced)
-// ------------------------------------------------------------
-void compute_total_counts(
-    const std::vector<std::string>& periods,            // MUST be canonical tree keys (e.g. "DVCS_Fa18_inb")
-    const std::vector<std::string>& /*topologies*/,     // not used here
-    const std::vector<Binning>& binning_scheme,
-    const std::map<std::string, TTree*>& dataTrees,     // keys are DVCS_* names
-    const std::string& combined_cuts_json,              // applied here (base + 3-sigma)
-    const std::string& out_json_path,
-    const std::string& out_root_dir)
+// ---------------- entry ----------------
+bool update_total_counts_csv(
+    const std::string& csv_path,
+    const std::vector<std::string>& periods,
+    const std::vector<std::string>& topologies,
+    const std::map<std::string, TTree*>& dvcsDataTrees,
+    const std::string& combined_cuts_json,
+    const std::string& out_root_dir,
+    int max_workers)
 {
     namespace fs = std::filesystem;
 
-    // ---- Validate binning axes ----
-    const auto xB_bins = uniqueRanges(binning_scheme,'x');
-    const auto Q2_bins = uniqueRanges(binning_scheme,'Q');
-    const auto t_bins  = uniqueRanges(binning_scheme,'t');
-    if (N_PHI_BINS <= 0) fatal("N_PHI_BINS must be > 0");
-    if (xB_bins.empty() || Q2_bins.empty() || t_bins.empty())
-        fatal("Empty binning axes (xB/Q2/t). Check binning_scheme.");
+    // Backup
+    try {
+        const std::string backup = "output/csvs/dvcs_pass2_analysis_backup_total_counts.csv";
+        fs::copy_file(csv_path, backup, fs::copy_options::overwrite_existing);
+        std::cout << "[total_counts] Backed up CSV to " << backup << "\n";
+    } catch (const std::exception& e) {
+        std::cerr << "[total_counts] WARNING: backup failed (" << e.what() << "). Continuing.\n";
+    }
 
-    // ---- Prepare output dirs ----
-    std::error_code ec;
-    const fs::path plots_root = fs::path(out_root_dir) / "total_counts_plots";
-    const fs::path jsons_dir  = fs::path(out_root_dir) / "jsons";
-    if (!fs::create_directories(plots_root, ec) && ec)
-        fatal(std::string("Cannot create plots root: ") + plots_root.string() + " (" + ec.message() + ")");
-    ec.clear();
-    if (!fs::create_directories(jsons_dir, ec) && ec)
-        fatal(std::string("Cannot create jsons dir: ") + jsons_dir.string() + " (" + ec.message() + ")");
+    // Load CSV
+    CsvDoc csv;
+    if (!csv.load(csv_path)) {
+        std::cerr << "[total_counts] ERROR: failed to read " << csv_path << "\n";
+        return false;
+    }
 
-    // ---- Per-period processing ----
-    std::map<std::string, std::map<std::tuple<int,int,int,int>, HelCounts>> allGroupsByLabel;
+    // Bin-edge columns
+    CsvCols cols;
+    cols.c_xb_min  = csv.col_index("xBmin");
+    cols.c_xb_max  = csv.col_index("xBmax");
+    cols.c_q2_min  = csv.col_index("Q2min");
+    cols.c_q2_max  = csv.col_index("Q2max");
+    if (csv.has_col("t_abs_min") && csv.has_col("t_abs_max")) {
+        cols.c_tab_min = csv.col_index("t_abs_min");
+        cols.c_tab_max = csv.col_index("t_abs_max");
+    } else {
+        cols.c_tab_min = csv.col_index("tmin");
+        cols.c_tab_max = csv.col_index("tmax");
+    }
+    cols.c_phi_min = csv.col_index("phimin");
+    cols.c_phi_max = csv.col_index("phimax");
+    if (cols.c_xb_min < 0 || cols.c_xb_max < 0 || cols.c_q2_min < 0 || cols.c_q2_max < 0
+        || cols.c_tab_min < 0 || cols.c_tab_max < 0 || cols.c_phi_min < 0 || cols.c_phi_max < 0) {
+        fatal("Missing one or more required bin-edge columns in CSV.");
+    }
 
-    for (const auto& period_key : periods) {
+    // Ensure per-period/per-topology columns exist as we go
+    auto ensure_yield_columns = [&](const std::string& label, const std::string& topo_str) {
+        const std::string base = period_yield_col_base(label, topo_str);
+        csv.ensure_col(base + "unpol");
+        csv.ensure_col(base + "pos");
+        csv.ensure_col(base + "neg");
+    };
+
+    // Thread-safe counts store: label -> topo_str -> (row -> RowCounts)
+    using PeriodRowMap = std::unordered_map<int, RowCounts>;
+    std::mutex merge_mtx;
+    std::map<std::string, std::map<std::string, PeriodRowMap>> counts_by_label_topo;
+
+    // Warm up ROOT
+    ROOT::EnableThreadSafety(); (void)TGraphErrors::Class();
+
+    // Process periods in parallel
+    #pragma omp parallel for schedule(dynamic) num_threads(max_workers)
+    for (int ip = 0; ip < (int)periods.size(); ++ip) {
+        const std::string period_key = periods[ip];
         if (!is_canonical_tree_key(period_key)) {
-            std::ostringstream oss;
-            oss << "Periods must be canonical tree keys. Got '" << period_key << "'. Expected one of:";
-            for (const auto& p : CANONICAL_PERIODS()) oss << " " << p.tree_key;
-            fatal(oss.str());
+            #pragma omp critical
+            { std::cerr << "[total_counts] Non-canonical period: " << period_key << "\n"; }
+            continue;
         }
+        const std::string label = safe_label_for_key(period_key);
 
-        const std::string label_str = safe_label_for_key(period_key);
-        std::cout << "[fence] period.begin " << label_str << "\n";
-
-        auto it = dataTrees.find(period_key);
-        if (it == dataTrees.end() || !it->second) {
-            std::ostringstream avail;
-            avail << "{ ";
-            bool first = true;
-            for (const auto& kv : dataTrees) {
-                if (!first) avail << ", ";
-                first = false;
-                avail << '"' << kv.first << '"';
-            }
-            avail << " }";
-            fatal(std::string("Missing DVCS data tree for key '") + period_key + "'. Available keys: " + avail.str());
+        auto itT = dvcsDataTrees.find(period_key);
+        if (itT == dvcsDataTrees.end() || !itT->second) {
+            #pragma omp critical
+            { std::cerr << "[total_counts] Missing TTree for " << period_key << "\n"; }
+            continue;
         }
-
-        // ---- Load per-period cuts (global with optional period override) ----
+        TTree* t = itT->second;
         const PeriodCuts cuts = loadCombinedCuts(combined_cuts_json, period_key);
 
-        TTree* t = it->second;
-        if (!t) fatal("Null TTree pointer for " + period_key);
-
-        // Strict: require baseline branches (for binning and helicity)
-        int helicity = 0;
-        double x = 0, Q2 = 0, t1 = 0, phi2 = std::numeric_limits<double>::quiet_NaN();
-
-        if (!t->GetBranch("helicity") || !t->GetBranch("x") || !t->GetBranch("Q2") || !t->GetBranch("t1"))
-            fatal(std::string("Required branches (helicity,x,Q2,t1) missing in '") + period_key + "'");
-        if (!t->GetBranch("phi2"))
-            fatal(std::string("Required branch 'phi2' missing in '") + period_key + "'");
-
+        // Baseline branches
+        int helicity = 0; double x=0.0, Q2=0.0, t1=0.0, phi2 = std::numeric_limits<double>::quiet_NaN();
+        if (!t->GetBranch("helicity") || !t->GetBranch("x") || !t->GetBranch("Q2") || !t->GetBranch("t1") || !t->GetBranch("phi2")) {
+            #pragma omp critical
+            { std::cerr << "[total_counts] Required branches missing in " << period_key << "\n"; }
+            continue;
+        }
         t->SetBranchAddress("helicity", &helicity);
         t->SetBranchAddress("x", &x);
         t->SetBranchAddress("Q2", &Q2);
         t->SetBranchAddress("t1", &t1);
         t->SetBranchAddress("phi2", &phi2);
 
-        // Bind all branches required by exclusivity/base cuts
-        const auto neededCutBranches = requiredCutBranches(cuts);
-        std::unordered_map<std::string, BranchBinding> cutBindings;
-        bindRequiredBranches_STRICT(t, neededCutBranches, cutBindings);
+        // Bind cut branches
+        std::vector<std::string> need;
+        need.reserve(cuts.base_cuts.size() + cuts.sigma_cuts.size());
+        for (const auto& c : cuts.base_cuts)  need.push_back(c.branch);
+        for (const auto& c : cuts.sigma_cuts) need.push_back(c.branch);
+        std::sort(need.begin(), need.end()); need.erase(std::unique(need.begin(), need.end()), need.end());
+        std::unordered_map<std::string, BranchBinding> bind;
+        bindRequiredBranches_STRICT(t, need, bind);
 
-        // Count table
-        std::map<std::tuple<int,int,int,int>, HelCounts> table;
+        // Topology resolver
+        TopologyResolver topo; topo.bind(t);
+        // Filter requested topologies
+        bool req_ok[3] = {false,false,false};
+        for (const auto& s : topologies) { int ix = topo_index_from_string(s); if (ix >= 0) req_ok[ix] = true; }
+
+        // Thread-local map: topo_str -> (row -> RowCounts)
+        std::map<std::string, PeriodRowMap> local_by_topo;
 
         const Long64_t nent = t->GetEntries();
-        std::cout << "[loop] [" << period_key << "] Entries: " << nent << "\n";
         for (Long64_t i = 0; i < nent; ++i) {
-            if ((i & 0x3FFFF) == 0) std::cout << "[loop] [" << period_key << "] at entry " << i << "\n";
             t->GetEntry(i);
-
-            // Basic sanity for helicity
             if (helicity != +1 && helicity != -1) continue;
-
-            // Compute bin indices (note: |t1| into t-bins)
             if (!std::isfinite(x) || !std::isfinite(Q2) || !std::isfinite(t1) || !std::isfinite(phi2)) continue;
-            const int ix  = findBin(x, xB_bins);
-            const int iQ  = findBin(Q2, Q2_bins);
-            const int itb = findBin(std::fabs(t1), t_bins);
-            const int ip  = phiToBin(phi2);
-            if (ix < 0 || iQ < 0 || itb < 0 || ip < 0) continue;
+            if (!passes3SigmaCuts_STRICT(cuts, bind)) continue;
 
-            // Apply exclusivity cuts (base + 3-sigma), strict
-            if (!passes3SigmaCuts_STRICT(cuts, cutBindings)) continue;
+            const int topo_idx = topo.index();
+            if (topo_idx < 0 || topo_idx > 2) continue;
+            if (!req_ok[topo_idx]) continue;
+            const std::string topo_str = TOPO_STRS[topo_idx];
 
-            // Count
-            auto& hc = table[{ix, iQ, itb, ip}];
-            if (helicity == +1) hc.plus++; else hc.minus++;
+            const double xb  = x;
+            const double q2  = Q2;
+            const double tab = std::fabs(t1);
+            const double phi_deg = wrap_deg_0_360(rad_to_deg(phi2));
+
+            // Find the CSV row whose bin edges contain this event
+            int found_row = -1;
+            for (int r = 0; r < csv.nrows(); ++r) {
+                const double xbmin  = csv.as_double(r, cols.c_xb_min);
+                const double xbmax  = csv.as_double(r, cols.c_xb_max);
+                const double q2min  = csv.as_double(r, cols.c_q2_min);
+                const double q2max  = csv.as_double(r, cols.c_q2_max);
+                const double tabmin = csv.as_double(r, cols.c_tab_min);
+                const double tabmax = csv.as_double(r, cols.c_tab_max);
+                const double pmin   = csv.as_double(r, cols.c_phi_min);
+                const double pmax   = csv.as_double(r, cols.c_phi_max);
+                if (xb  >= xbmin && xb  < xbmax &&
+                    q2  >= q2min && q2  < q2max &&
+                    tab >= tabmin && tab < tabmax &&
+                    phi_deg >= pmin && phi_deg < pmax) {
+                    found_row = r; break;
+                }
+            }
+            if (found_row < 0) continue;
+
+            RowCounts& rc = local_by_topo[topo_str][found_row];
+            if (helicity == +1) rc.pos++; else rc.neg++;
         }
 
-        // ---- Plot for this period ----
-        std::cout << "[fence] period.plot.begin " << label_str << "\n";
-        const fs::path plot_dir = fs::path(out_root_dir) / "total_counts_plots" / label_str;
-        plot_group_counts(label_str, table, binning_scheme, xB_bins, Q2_bins, t_bins, plot_dir.string());
-        std::cout << "[fence] period.plot.end " << label_str << "\n";
+        // Merge into global
+        {
+            std::lock_guard<std::mutex> lock(merge_mtx);
+            for (const auto& tk : local_by_topo) {
+                ensure_yield_columns(label, tk.first);
+                auto& tgt = counts_by_label_topo[label][tk.first];
+                for (const auto& rkv : tk.second) {
+                    tgt[rkv.first].pos += rkv.second.pos;
+                    tgt[rkv.first].neg += rkv.second.neg;
+                }
+            }
+        }
+    } // omp
 
-        // ---- Store table by LABEL (safe std::string key) ----
-        std::cout << "[fence] map.emplace.begin " << label_str << "\n";
-        allGroupsByLabel.emplace(std::piecewise_construct,
-                                 std::forward_as_tuple(label_str),
-                                 std::forward_as_tuple(std::move(table)));
-        std::cout << "[fence] map.emplace.end " << label_str << "\n";
-    } // #endfor periods
+    // Write per-period, per-topology counts to CSV
+    for (const auto& lblkv : counts_by_label_topo) {
+        const std::string& label = lblkv.first;
+        for (const auto& tkv : lblkv.second) {
+            const std::string& topo_str = tkv.first;
+            const std::string base = period_yield_col_base(label, topo_str);
+            const int c_unpol = csv.ensure_col(base + "unpol");
+            const int c_pos   = csv.ensure_col(base + "pos");
+            const int c_neg   = csv.ensure_col(base + "neg");
 
-    // ---- Write master JSON ----
-    write_total_counts_master_json(out_json_path, allGroupsByLabel, N_PHI_BINS, xB_bins, Q2_bins, t_bins);
-
-    // ---- Write one flat JSON per group (label) ----
-    for (const auto& gkv : allGroupsByLabel) {
-        const std::string fname = (std::filesystem::path(out_root_dir) / "jsons" / ("total_counts_" + gkv.first + ".json")).string();
-        write_total_counts_group_json(fname, gkv.second, N_PHI_BINS, xB_bins, Q2_bins, t_bins);
+            for (const auto& rkv : tkv.second) {
+                const int r = rkv.first;
+                const long long pos = rkv.second.pos;
+                const long long neg = rkv.second.neg;
+                const long long unp = pos + neg;
+                csv.set(r, c_unpol, (double)unp);
+                csv.set(r, c_pos,   (double)pos);
+                csv.set(r, c_neg,   (double)neg);
+            }
+        }
+        std::cout << "[total_counts] wrote per-topology counts for " << label << "\n";
     }
+
+    // Build combined groups per topology
+    std::map<std::string, std::vector<std::string>> group_members = {
+        {"Fa18",    {}},
+        {"Sp18",    {}},
+        {"10.6 GeV",{}}
+    };
+    for (const auto& p : periods) {
+        const std::string g   = group_tag_for_key(p);
+        const std::string lbl = safe_label_for_key(p);
+        group_members[g].push_back(lbl);
+    }
+
+    for (const auto& gkv : group_members) {
+        const std::string group = gkv.first;
+        const auto& members = gkv.second;
+
+        for (int topo_idx = 0; topo_idx < 3; ++topo_idx) {
+            if (std::find(topologies.begin(), topologies.end(), std::string(TOPO_STRS[topo_idx])) == topologies.end())
+                continue;
+            const std::string topo_str = TOPO_STRS[topo_idx];
+            const std::string gbase = combined_yield_col_base(group, topo_str);
+            const int c_unpol = csv.ensure_col(gbase + "unpol");
+            const int c_pos   = csv.ensure_col(gbase + "pos");
+            const int c_neg   = csv.ensure_col(gbase + "neg");
+
+            for (int r = 0; r < csv.nrows(); ++r) {
+                long long pos_sum=0, neg_sum=0;
+                for (const auto& lbl : members) {
+                    const std::string pbase = period_yield_col_base(lbl, topo_str);
+                    const int p_pos = csv.col_index(pbase + "pos");
+                    const int p_neg = csv.col_index(pbase + "neg");
+                    if (p_pos >= 0) pos_sum += (long long)std::llround(csv.as_double(r, p_pos));
+                    if (p_neg >= 0) neg_sum += (long long)std::llround(csv.as_double(r, p_neg));
+                }
+                csv.set(r, c_pos,   (double)pos_sum);
+                csv.set(r, c_neg,   (double)neg_sum);
+                csv.set(r, c_unpol, (double)(pos_sum + neg_sum));
+            }
+        }
+        std::cout << "[total_counts] wrote combined counts for " << group << " (per topology)\n";
+    }
+
+    // Save CSV
+    if (!csv.save(csv_path)) {
+        std::cerr << "[total_counts] ERROR: failed to save " << csv_path << "\n";
+        return false;
+    }
+    std::cout << "[total_counts] Updated raw yields in: " << csv_path << "\n";
+
+    // Plots: per period and per group, per topology
+    for (const auto& lblkv : counts_by_label_topo) {
+        const std::string& label = lblkv.first;
+        for (int topo_idx = 0; topo_idx < 3; ++topo_idx) {
+            const std::string topo_str = TOPO_STRS[topo_idx];
+            if (std::find(topologies.begin(), topologies.end(), topo_str) == topologies.end()) continue;
+            draw_group_canvases(label, topo_str, topo_dir_name(topo_idx), csv, cols, out_root_dir);
+        }
+    }
+    for (const auto& gkv : group_members) {
+        const std::string group = gkv.first;
+        for (int topo_idx = 0; topo_idx < 3; ++topo_idx) {
+            const std::string topo_str = TOPO_STRS[topo_idx];
+            if (std::find(topologies.begin(), topologies.end(), topo_str) == topologies.end()) continue;
+            draw_group_canvases(group, topo_str, topo_dir_name(topo_idx), csv, cols, out_root_dir);
+        }
+    }
+
+    return true;
 }
