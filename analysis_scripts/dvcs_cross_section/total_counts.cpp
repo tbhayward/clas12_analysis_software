@@ -17,9 +17,9 @@
 #include <TError.h>
 #include <TString.h>
 #include <TTree.h>
-#include <TBranch.h>        // optional (comes via TTree.h)
-#include <TLeaf.h>          // REQUIRED for TLeaf::GetTypeName(), etc.
-#include <TLeafElement.h>   // optional, but harmless if some leaves are TLeafElement
+#include <TBranch.h>
+#include <TLeaf.h>
+#include <TLeafElement.h>
 
 #include <algorithm>
 #include <atomic>
@@ -49,9 +49,10 @@
 
 namespace {
 
-static inline bool is_debug() {
-    return std::getenv("TOTAL_COUNTS_DEBUG") != nullptr;
-}
+// ---------------- small utils ----------------
+static inline bool is_debug() { return std::getenv("TOTAL_COUNTS_DEBUG") != nullptr; }
+static inline bool trace_matches() { return std::getenv("TOTAL_COUNTS_TRACE_MATCHES") != nullptr; }
+static inline bool list_enabled_branches() { return std::getenv("TOTAL_COUNTS_LIST_ENABLED_BRANCHES") != nullptr; }
 
 [[noreturn]] void fatal(const std::string& msg) {
     std::cerr << "[total_counts] FATAL: " << msg << std::endl;
@@ -339,7 +340,6 @@ static std::string period_dir_for_label(const std::string& L) {
     if (L=="Sp18 Inb")      return "Sp18_Inb";
     if (L=="Sp18 Out")      return "Sp18_Out";
     if (L=="Sp19 Inb")      return "Sp19_Inb";
-    // fallback (never produce lowercase/space dirs)
     std::string s=L; for (char& c:s) if (c==' ') c='_';
     return s;
 }
@@ -359,7 +359,7 @@ static std::string out_root_for_label(const std::string& label, const std::strin
     namespace fs=std::filesystem;
     const std::string base = (fs::path(out_root_dir) / "total_counts_plots").string();
     if (is_group_label(label)) {
-        // These three are intentionally literal (Fa18, Sp18, "10.6 GeV").
+        // Groups are literal (Fa18, Sp18, 10.6 GeV).
         return (fs::path(base) / label).string();
     }
     return (fs::path(base) / period_dir_for_label(label)).string();
@@ -398,16 +398,12 @@ static void draw_group_canvases(
     const int c_tabavg = csv.has_col("t_abs_avg, "+label)? csv.col_index("t_abs_avg, "+label) : -1;
     const int c_xbavg  = csv.has_col("xBavg, "+label)? csv.col_index("xBavg, "+label) : -1;
 
-    const std::string ybase = std::string("raw yield, ep->epg, ")+topo_str+", exp, "+label+", ";
-    const int c_pos = csv.has_col(ybase+"pos")? csv.col_index(ybase+"pos") : -1;
-    const int c_neg = csv.has_col(ybase+"neg")? csv.col_index(ybase+"neg") : -1;
-
     // collect unique xB ranges
     std::set<std::pair<double,double>> xb_set;
     for (int r=0;r<csv.nrows();++r) xb_set.emplace(csv.as_double(r,cols.c_xb_min), csv.as_double(r,cols.c_xb_max));
 
-    // style tweaks: a touch more left margin, slightly smaller title, legend inwards
-    const double head_size = 0.62;   // was 0.75; now slightly smaller
+    // aesthetics: tiny bit more left margin; slightly smaller top title; legend bottom-left nudged left
+    const double head_size = 0.58;   // was 0.62
     const double lab_size  = 0.075;
     const double tick_size = 0.060;
     const double latex_size= 0.065;
@@ -521,7 +517,7 @@ static void draw_group_canvases(
             gPad->SetGrid(1,1);
             gPad->SetTopMargin(0.22);
             gPad->SetBottomMargin(0.18);
-            gPad->SetLeftMargin(0.19);   // a tiny bit more padding on left
+            gPad->SetLeftMargin(0.205);   // tiny bit more left padding
             gPad->SetRightMargin(0.07);
             if (need_log) gPad->SetLogy(1); else gPad->SetLogy(0);
 
@@ -546,11 +542,10 @@ static void draw_group_canvases(
 
             TLatex lab; lab.SetNDC(); lab.SetTextSize(latex_size); lab.SetTextAlign(13);
             const double q2m=safe_mean(C.q2means), tm=safe_mean(C.tmeans);
-            // Use Q^{2} in corner label
             lab.DrawLatex(0.12, 0.83, Form("Q^{2}=%.3g  |t|=%.3g", q2m, tm));
 
-            // Legend moved a bit further left for room
-            TLegend* leg=new TLegend(0.62, 0.74, 0.95, 0.93);
+            // Legend bottom-left moved a bit left for more room
+            TLegend* leg=new TLegend(0.58, 0.74, 0.95, 0.93);
             leg->SetBorderSize(1);
             leg->SetLineColor(kBlack);
             leg->SetFillStyle(1001);
@@ -597,13 +592,22 @@ static inline bool passesAllCuts(const PeriodCuts& cuts,
     return passBaseCuts(cuts.base_cuts,B) && passSigmaCuts(cuts.sigma_cuts,B);
 }
 
-// -------------- main entry --------------
+// A small struct to understand why events fail to write
+struct DebugCounts {
+    long long total=0, bad_helicity=0, bad_nan=0, cut_fail=0, topo_bad=0, no_row_match=0;
+    long long kin_ok_phi_fail=0, phi_ok_kin_fail=0, both_ok=0;
+};
+
 static const char* TOPO_DIR(int idx){ return TOPO_DIRS[idx]; }
 static const char* TOPO_STR(int idx){ return TOPO_STRS[idx]; }
 
 struct RowCounts { long long pos=0, neg=0; };
 
-bool update_total_counts_csv(
+} // end anonymous namespace
+
+// ---------------- EXPORTED FUNCTION (global scope) ----------------
+// Note the leading '::' to ensure global scope definition, fixing the link error.
+bool ::update_total_counts_csv(
     const std::string& csv_path,
     const std::map<std::string, TTree*>& dvcsDataTrees,
     const std::string& combined_cuts_json,
@@ -663,18 +667,23 @@ bool update_total_counts_csv(
         return std::min(by_pct, by_abs);
     };
 
-    // Parallel over periods
+#ifdef _OPENMP
     #pragma omp parallel for schedule(dynamic) num_threads(max_workers)
+#endif
     for (int ip=0; ip<(int)periods.size(); ++ip) {
         const std::string period_key = periods[ip];
         if (!is_canonical_tree_key(period_key)) {
+#ifdef _OPENMP
             #pragma omp critical
+#endif
             std::cerr << "[total_counts] Non-canonical period: " << period_key << "\n";
             continue;
         }
         auto itT = dvcsDataTrees.find(period_key);
         if (itT==dvcsDataTrees.end() || !itT->second) {
+#ifdef _OPENMP
             #pragma omp critical
+#endif
             std::cerr << "[total_counts] Missing TTree for " << period_key << "\n";
             continue;
         }
@@ -687,7 +696,6 @@ bool update_total_counts_csv(
         std::vector<std::string> need;
         for (const auto& c:cuts.base_cuts)  need.push_back(c.branch);
         for (const auto& c:cuts.sigma_cuts) need.push_back(c.branch);
-        // Explicit typed binds:
         const char* explicit_binds[] = {"helicity","x","Q2","t1","phi2","detector1","detector2"};
         for (const char* s:explicit_binds) need.push_back(s);
         std::sort(need.begin(), need.end());
@@ -697,11 +705,26 @@ bool update_total_counts_csv(
         t->SetBranchStatus("*", 0);
         for (const auto& b:need) if (t->GetBranch(b.c_str())) t->SetBranchStatus(b.c_str(), 1);
 
+        if (list_enabled_branches()) {
+#ifdef _OPENMP
+            #pragma omp critical
+#endif
+            {
+                std::cout << "[total_counts]["<<label<<"] Enabled branches:\n";
+                for (const auto& b:need) {
+                    Bool_t st = t->GetBranchStatus(b.c_str());
+                    std::cout << "  - " << b << " : " << (st? "ON":"OFF") << "\n";
+                }
+            }
+        }
+
         // Typed binds
         int helicity=0; double x=0, Q2=0, t1=0, phi2=std::numeric_limits<double>::quiet_NaN();
         if (!t->GetBranch("helicity") || !t->GetBranch("x") || !t->GetBranch("Q2") ||
             !t->GetBranch("t1") || !t->GetBranch("phi2")) {
+#ifdef _OPENMP
             #pragma omp critical
+#endif
             std::cerr << "[total_counts] Required branches missing in " << period_key << "\n";
             continue;
         }
@@ -727,25 +750,34 @@ bool update_total_counts_csv(
         const Long64_t N=t->GetEntries();
         const Long64_t cadence=cadence_for(N);
         Long64_t seen=0, kept=0, used=0;
+        DebugCounts dbg;
 
+#ifdef _OPENMP
         #pragma omp critical
+#endif
         std::cout << "[total_counts] Start " << label << " with " << (long long)N << " entries\n";
 
         for (Long64_t i=0;i<N;++i) {
             t->GetEntry(i);
-            if (helicity!=+1 && helicity!=-1) continue;
-            if (!std::isfinite(x) || !std::isfinite(Q2) || !std::isfinite(t1) || !std::isfinite(phi2)) continue;
+            dbg.total++;
+
+            if (helicity!=+1 && helicity!=-1) { dbg.bad_helicity++; continue; }
+            if (!std::isfinite(x) || !std::isfinite(Q2) || !std::isfinite(t1) || !std::isfinite(phi2)) { dbg.bad_nan++; continue; }
             ++seen;
 
-            if (!passesAllCuts(cuts, bind)) continue;
+            // Cuts
+            if (!passesAllCuts(cuts, bind)) { dbg.cut_fail++; continue; }
             ++kept;
 
             const int topo_idx=topo.index();
-            if (topo_idx<0 || topo_idx>2) continue;
+            if (topo_idx<0 || topo_idx>2) { dbg.topo_bad++; continue; }
             const std::string topo_str = TOPO_STR(topo_idx);
 
             const double phi_deg = wrap_deg_0_360(rad_to_deg(phi2));
             bool used_any=false;
+
+            // For diagnostics: separate kin-only and phi-only tests
+            bool matched_kin_any=false, matched_phi_any=false;
 
             for (int r=0;r<csv.nrows();++r) {
                 const double xbmin=csv.as_double(r, cols.c_xb_min);
@@ -757,16 +789,35 @@ bool update_total_counts_csv(
                 const double pmin=csv.as_double(r, cols.c_phi_min);
                 const double pmax=csv.as_double(r, cols.c_phi_max);
 
-                if (in_range(x, xbmin, xbmax) &&
-                    in_range(Q2, q2min, q2max) &&
-                    in_range(std::fabs(t1), tabmin, tabmax) &&
-                    row_accepts_phi(phi_deg, pmin, pmax))
-                {
+                const bool kin_ok = in_range(x, xbmin, xbmax) &&
+                                    in_range(Q2, q2min, q2max) &&
+                                    in_range(std::fabs(t1), tabmin, tabmax);
+                const bool phi_ok = row_accepts_phi(phi_deg, pmin, pmax);
+
+                matched_kin_any |= kin_ok;
+                matched_phi_any |= phi_ok;
+
+                if (kin_ok && phi_ok) {
                     RowCounts& rc = local_by_topo[topo_str][r];
                     if (helicity==+1) rc.pos++; else rc.neg++;
                     used_any=true;
+
+                    if (trace_matches()) {
+#ifdef _OPENMP
+                        #pragma omp critical
+#endif
+                        std::cout << "[total_counts]["<<label<<"] match: row="<<r
+                                  << " x="<<x<<" Q2="<<Q2<<" |t|="<<std::fabs(t1)
+                                  << " phi="<<phi_deg<<"\n";
+                }
                 }
             }
+
+            if (matched_kin_any && !matched_phi_any) dbg.kin_ok_phi_fail++;
+            if (!matched_kin_any && matched_phi_any) dbg.phi_ok_kin_fail++;
+            if (matched_kin_any && matched_phi_any)  dbg.both_ok++;
+            if (!used_any) dbg.no_row_match++;
+
             if (used_any) ++used;
 
             if ((i % cadence)==0 && is_debug()) {
@@ -776,16 +827,31 @@ bool update_total_counts_csv(
             }
         }
 
+#ifdef _OPENMP
         #pragma omp critical
-        std::cout << "[total_counts] Done " << label << "  seen="<<seen<<" kept="<<kept<<" used="<<used<<"\n";
+#endif
+        {
+            std::cout << "[total_counts] Done " << label << "  seen="<<seen<<" kept="<<kept<<" used="<<used<<"\n";
+            if (is_debug()) {
+                std::cout << "[total_counts]["<<label<<"] debug: total="<<dbg.total
+                          << " bad_helicity="<<dbg.bad_helicity
+                          << " bad_nan="<<dbg.bad_nan
+                          << " cut_fail="<<dbg.cut_fail
+                          << " topo_bad="<<dbg.topo_bad
+                          << " no_row_match="<<dbg.no_row_match
+                          << " kin_ok_phi_fail="<<dbg.kin_ok_phi_fail
+                          << " phi_ok_kin_fail="<<dbg.phi_ok_kin_fail
+                          << " both_ok="<<dbg.both_ok
+                          << "\n";
+            }
+        }
 
         // Merge
         {
             std::lock_guard<std::mutex> lock(merge_mtx);
             for (const auto& tk: local_by_topo) {
                 const std::string topo_str=tk.first;
-                // ensure header cols now (except supplemental)
-                (void)ensure_yield_columns(label, topo_str);
+                (void)ensure_yield_columns(label, topo_str); // ensure headers (except supplemental)
                 auto& tgt = counts_by_label_topo[label][topo_str];
                 for (const auto& rkv : tk.second) {
                     tgt[rkv.first].pos += rkv.second.pos;
@@ -844,11 +910,11 @@ bool update_total_counts_csv(
         }
     }
 
-    // Build combined groups (Fa18, Sp18, 10.6 GeV) by summing member period columns
+    // Combined groups
     std::map<std::string, std::vector<std::string>> group_members = {
         {"Fa18",    {"Fa18 Inb","Fa18 Out"}},
         {"Sp18",    {"Sp18 Inb","Sp18 Out"}},
-        {"10.6 GeV",{"Fa18 Inb","Fa18 Out","Sp18 Inb","Sp18 Out"}} // Sp19 included in 10.6 if desired; adjust if needed
+        {"10.6 GeV",{"Fa18 Inb","Fa18 Out","Sp18 Inb","Sp18 Out"}} // adjust if you want Sp19 aggregated too
     };
 
     for (const auto& gkv : group_members) {
@@ -900,7 +966,7 @@ bool update_total_counts_csv(
               << "  (cells written: " << grand_cells_written
               << ", size " << size_before << " -> " << size_after << ")\n";
 
-    // Plots (use canonical dirs only)
+    // Plots (canonical dirs only)
     for (const auto& P:CANONICAL_PERIODS()) {
         const std::string label = P.label;
         for (int topo_idx=0; topo_idx<3; ++topo_idx)
@@ -913,5 +979,3 @@ bool update_total_counts_csv(
 
     return true;
 }
-
-} // namespace
