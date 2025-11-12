@@ -1,8 +1,8 @@
-// total_counts.cpp — self-contained (no csv_io.h), gated-branch I/O, auto-mkdir for plots, phi wrap fix
+// total_counts.cpp — self-contained (no csv_io.h), exact-typed binder, auto-mkdir, phi wrap
 
 #include "total_counts.h"
 #include "periods.h"                // CANONICAL_PERIODS(), PeriodDef{label, tree_key}
-#include "load_binning_scheme.h"    // shared project type (harmless include here)
+#include "load_binning_scheme.h"    // harmless include
 
 #include <TCanvas.h>
 #include <TGraphErrors.h>
@@ -13,7 +13,8 @@
 #include <TError.h>
 #include <TLeaf.h>
 #include <TBranch.h>
-#include <TTree.h>                  // ensure TTree is declared
+#include <TTree.h>
+#include <TColor.h>
 
 #include <algorithm>
 #include <atomic>
@@ -40,9 +41,9 @@
 
 #include <nlohmann/json.hpp>
 
-// ---------------------- Minimal CSV helper (self-contained) ----------------------
 namespace {
 
+// ---------------------- Minimal CSV helper (self-contained) ----------------------
 struct CsvDoc {
     std::vector<std::string> header;
     std::unordered_map<std::string,int> index;
@@ -91,7 +92,6 @@ struct CsvDoc {
         while (std::getline(fin, line)) {
             if (!line.empty()) rows.push_back(split_csv_line(line));
         }
-        // Normalize row width
         for (auto& r : rows) r.resize(header.size());
         return true;
     }
@@ -134,7 +134,7 @@ struct CsvDoc {
         int new_idx = (int)header.size();
         header.push_back(name);
         index[name] = new_idx;
-        for (auto& r : rows) r.resize(header.size()); // new empty field
+        for (auto& r : rows) r.resize(header.size());
         return new_idx;
     }
 
@@ -163,6 +163,7 @@ struct CsvDoc {
     std::exit(EXIT_FAILURE);
 }
 
+static inline double pi() { return std::acos(-1.0); }
 static inline double wrap_deg_0_360(double deg) {
     if (!std::isfinite(deg)) return std::numeric_limits<double>::quiet_NaN();
     double w = std::fmod(deg, 360.0);
@@ -171,13 +172,13 @@ static inline double wrap_deg_0_360(double deg) {
     return w;
 }
 
-static inline double rad_to_deg(double rad) { return rad * 180.0 / M_PI; }
+static inline double rad_to_deg(double rad) { return rad * 180.0 / pi(); }
 static inline bool in_range(double v, double a, double b) { return (v >= a) && (v < b); }
 
 static bool row_accepts_phi(double phi_deg, double pmin_deg, double pmax_deg) {
     if (!std::isfinite(phi_deg) || !std::isfinite(pmin_deg) || !std::isfinite(pmax_deg)) return false;
     if (pmax_deg > pmin_deg) return in_range(phi_deg, pmin_deg, pmax_deg);
-    return (phi_deg >= pmin_deg) || (phi_deg < pmax_deg); // wrap
+    return (phi_deg >= pmin_deg) || (phi_deg < pmax_deg); // wrap window
 }
 
 // ---------------- cuts ----------------
@@ -268,25 +269,112 @@ static PeriodCuts loadCombinedCuts(const std::string& json_path, const std::stri
         }
     }
     for (const auto& c : cuts.sigma_cuts) {
-        if (c.sigma <= 0.0) fatal("sigma_cuts: non-positive sigma for '" + c.branch + "'");
+        if (c.sigma  <= 0.0) fatal("sigma_cuts: non-positive sigma for '" + c.branch + "'");
         if (c.nsigma <= 0.0) fatal("sigma_cuts: non-positive nsigma for '" + c.branch + "'");
     }
     return cuts;
 }
 
-// -------------- binding helpers --------------
+// -------------- binding helpers (exact type) --------------
 struct BranchBinding {
     std::string name;
-    double     as_double = std::numeric_limits<double>::quiet_NaN();
-    long long  as_ll     = 0;
-    bool       is_int    = false;
+    enum class Kind { kDouble, kFloat, kI32, kU32, kI64, kU64, kI16, kU16, kI8, kU8 } kind = Kind::kDouble;
+
+    double              as_double = std::numeric_limits<double>::quiet_NaN();
+    float               as_float  = std::numeric_limits<float>::quiet_NaN();
+    int                 as_i32    = 0;
+    unsigned int        as_u32    = 0;
+    long long           as_i64    = 0;
+    unsigned long long  as_u64    = 0;
+    short               as_i16    = 0;
+    unsigned short      as_u16    = 0;
+    signed char         as_i8     = 0;
+    unsigned char       as_u8     = 0;
 };
 
-static bool isIntegerLeaf(TLeaf* leaf) {
-    if (!leaf) return false;
-    const std::string t = leaf->GetTypeName();
-    return t == "Int_t" || t == "UInt_t" || t == "Short_t" || t == "UShort_t" ||
-           t == "Char_t" || t == "UChar_t" || t == "Long64_t" || t == "ULong64_t";
+static inline bool kind_is_int(BranchBinding::Kind k) {
+    using K = BranchBinding::Kind;
+    return k == K::kI32 || k == K::kU32 || k == K::kI64 || k == K::kU64 ||
+           k == K::kI16 || k == K::kU16 || k == K::kI8  || k == K::kU8;
+}
+
+static inline double bb_as_double(const BranchBinding& bb) {
+    using K = BranchBinding::Kind;
+    switch (bb.kind) {
+        case K::kDouble: return bb.as_double;
+        case K::kFloat:  return (double)bb.as_float;
+        case K::kI32:    return (double)bb.as_i32;
+        case K::kU32:    return (double)bb.as_u32;
+        case K::kI64:    return (double)bb.as_i64;
+        case K::kU64:    return (double)bb.as_u64;
+        case K::kI16:    return (double)bb.as_i16;
+        case K::kU16:    return (double)bb.as_u16;
+        case K::kI8:     return (double)bb.as_i8;
+        case K::kU8:     return (double)bb.as_u8;
+    }
+    return std::numeric_limits<double>::quiet_NaN();
+}
+
+static inline long long bb_as_ll(const BranchBinding& bb) {
+    using K = BranchBinding::Kind;
+    switch (bb.kind) {
+        case K::kDouble: return (long long)std::llround(bb.as_double);
+        case K::kFloat:  return (long long)std::llround(bb.as_float);
+        case K::kI32:    return (long long)bb.as_i32;
+        case K::kU32:    return (long long)bb.as_u32;
+        case K::kI64:    return (long long)bb.as_i64;
+        case K::kU64:    return (long long)bb.as_u64;
+        case K::kI16:    return (long long)bb.as_i16;
+        case K::kU16:    return (long long)bb.as_u16;
+        case K::kI8:     return (long long)bb.as_i8;
+        case K::kU8:     return (long long)bb.as_u8;
+    }
+    return 0;
+}
+
+static void bind_one_exact(TTree* t, const std::string& bname, BranchBinding& bb) {
+    TBranch* b = t->GetBranch(bname.c_str());
+    if (!b) return;
+    TLeaf* leaf = b->GetLeaf(bname.c_str());
+    if (!leaf) {
+        leaf = (TLeaf*)b->GetListOfLeaves()->First();
+        if (!leaf) fatal("Branch has no leaves: '" + bname + "'");
+    }
+    const std::string tn = leaf->GetTypeName();
+
+    if (tn == "Double_t" || tn == "double") {
+        bb.kind = BranchBinding::Kind::kDouble;
+        t->SetBranchAddress(bname.c_str(), &bb.as_double);
+    } else if (tn == "Float_t" || tn == "float") {
+        bb.kind = BranchBinding::Kind::kFloat;
+        t->SetBranchAddress(bname.c_str(), &bb.as_float);
+    } else if (tn == "Int_t" || tn == "int") {
+        bb.kind = BranchBinding::Kind::kI32;
+        t->SetBranchAddress(bname.c_str(), &bb.as_i32);
+    } else if (tn == "UInt_t" || tn == "unsigned int") {
+        bb.kind = BranchBinding::Kind::kU32;
+        t->SetBranchAddress(bname.c_str(), &bb.as_u32);
+    } else if (tn == "Long64_t" || tn == "long long") {
+        bb.kind = BranchBinding::Kind::kI64;
+        t->SetBranchAddress(bname.c_str(), &bb.as_i64);
+    } else if (tn == "ULong64_t" || tn == "unsigned long long") {
+        bb.kind = BranchBinding::Kind::kU64;
+        t->SetBranchAddress(bname.c_str(), &bb.as_u64);
+    } else if (tn == "Short_t" || tn == "short") {
+        bb.kind = BranchBinding::Kind::kI16;
+        t->SetBranchAddress(bname.c_str(), &bb.as_i16);
+    } else if (tn == "UShort_t" || tn == "unsigned short") {
+        bb.kind = BranchBinding::Kind::kU16;
+        t->SetBranchAddress(bname.c_str(), &bb.as_u16);
+    } else if (tn == "Char_t" || tn == "char" || tn == "signed char") {
+        bb.kind = BranchBinding::Kind::kI8;
+        t->SetBranchAddress(bname.c_str(), &bb.as_i8);
+    } else if (tn == "UChar_t" || tn == "unsigned char") {
+        bb.kind = BranchBinding::Kind::kU8;
+        t->SetBranchAddress(bname.c_str(), &bb.as_u8);
+    } else {
+        fatal("Unsupported leaf type '" + tn + "' for branch '" + bname + "'");
+    }
 }
 
 static void bindRequiredBranches_STRICT(
@@ -298,18 +386,11 @@ static void bindRequiredBranches_STRICT(
     bindings.reserve(branch_names.size());
     for (const auto& bname : branch_names) {
         TBranch* b = t->GetBranch(bname.c_str());
-        if (!b) continue; // only bind existing ones; non-existing might be optional
-        TLeaf* leaf = b->GetLeaf(bname.c_str());
-        if (!leaf) {
-            leaf = (TLeaf*)b->GetListOfLeaves()->First();
-            if (!leaf) fatal("Branch has no leaves: '" + bname + "'");
-        }
-        auto [it, ok] = bindings.emplace(bname, BranchBinding{});
+        if (!b) continue; // non-existing may be optional
+        auto [it, inserted] = bindings.emplace(bname, BranchBinding{});
         BranchBinding& bb = it->second;
-        bb.name   = bname;
-        bb.is_int = isIntegerLeaf(leaf);
-        if (bb.is_int) t->SetBranchAddress(bname.c_str(), &bb.as_ll);
-        else           t->SetBranchAddress(bname.c_str(), &bb.as_double);
+        bb.name = bname;
+        bind_one_exact(t, bname, bb);
     }
 }
 
@@ -320,10 +401,10 @@ static inline bool passBaseCuts(const std::vector<BaseCut>& baseCuts,
         if (it == B.end()) return false;
         const BranchBinding& bb = it->second;
 
-        if (c.has_eq)  { long long v = bb.is_int ? bb.as_ll : (long long)std::llround(bb.as_double); if (v != c.eq)  return false; }
-        if (c.has_neq) { long long v = bb.is_int ? bb.as_ll : (long long)std::llround(bb.as_double); if (v == c.neq) return false; }
-        if (c.has_min) { double v    = bb.is_int ? (double)bb.as_ll : bb.as_double; if (!(v >= c.vmin)) return false; }
-        if (c.has_max) { double v    = bb.is_int ? (double)bb.as_ll : bb.as_double; if (!(v <= c.vmax)) return false; }
+        if (c.has_eq)  { if (bb_as_ll(bb) != c.eq)  return false; }
+        if (c.has_neq) { if (bb_as_ll(bb) == c.neq) return false; }
+        if (c.has_min) { if (!(bb_as_double(bb) >= c.vmin)) return false; }
+        if (c.has_max) { if (!(bb_as_double(bb) <= c.vmax)) return false; }
     }
     return true;
 }
@@ -334,7 +415,7 @@ static inline bool passSigmaCuts(const std::vector<SigmaCut>& sigmaCuts,
         const auto it = B.find(c.branch);
         if (it == B.end()) return false;
         const BranchBinding& bb = it->second;
-        const double v  = bb.is_int ? (double)bb.as_ll : bb.as_double;
+        const double v  = bb_as_double(bb);
         const double lo = c.center - c.nsigma * c.sigma;
         const double hi = c.center + c.nsigma * c.sigma;
         if (c.mode == SigmaCut::TWO_SIDED) { if (v < lo || v > hi) return false; }
@@ -562,9 +643,13 @@ static void draw_group_canvases(
                     return csv.as_double(a, cols.c_phi_min) < csv.as_double(b, cols.c_phi_min);
                 });
 
+                const std::string ybase = period_yield_col_base(label, topo_str);
+                const int c_pos = csv.has_col(ybase + "pos") ? csv.col_index(ybase + "pos") : -1;
+                const int c_neg = csv.has_col(ybase + "neg") ? csv.col_index(ybase + "neg") : -1;
+
                 std::vector<double> X, Yp, Ym, EX, EYp, EYm, q2means, tmeans;
-                X.reserve(rows_for_cell.size()); Yp.reserve(rows_for_cell.size()); Ym.reserve(rows_for_cell.size());
-                EX.resize(rows_for_cell.size(), 0.0);
+                X.reserve(rows_for_cell.size());
+                EX.assign(rows_for_cell.size(), 0.0);
 
                 for (int r : rows_for_cell) {
                     const double pmin = csv.as_double(r, cols.c_phi_min);
@@ -729,38 +814,51 @@ bool update_total_counts_csv(
         TTree* t = itT->second;
         const PeriodCuts cuts = loadCombinedCuts(combined_cuts_json, period_key);
 
+        // Build and de-dup 'need'
         std::vector<std::string> need;
         need.reserve(cuts.base_cuts.size() + cuts.sigma_cuts.size() + 8);
         for (const auto& c : cuts.base_cuts)  need.push_back(c.branch);
         for (const auto& c : cuts.sigma_cuts) need.push_back(c.branch);
-        need.push_back("helicity");
-        need.push_back("x");
-        need.push_back("Q2");
-        need.push_back("t1");
-        need.push_back("phi2");
-        need.push_back("detector1");
-        need.push_back("detector2");
+
+        // Explicitly bound branches (exclude these from generic binder)
+        const char* explicit_binds[] = {"helicity","x","Q2","t1","phi2","detector1","detector2"};
+        for (const char* s : explicit_binds) need.push_back(s);
+
         std::sort(need.begin(), need.end());
         need.erase(std::unique(need.begin(), need.end()), need.end());
 
+        // Enable only what's needed
         enable_needed_branches(t, {}, need);
 
-        int helicity = 0; double x=0.0, Q2=0.0, t1=0.0, phi2 = std::numeric_limits<double>::quiet_NaN();
-        if (!t->GetBranch("helicity") || !t->GetBranch("x") || !t->GetBranch("Q2") || !t->GetBranch("t1") || !t->GetBranch("phi2")) {
+        // Explicit exact-typed bindings for these known branches
+        int helicity = 0; 
+        double x = 0.0, Q2 = 0.0, t1 = 0.0, phi2 = std::numeric_limits<double>::quiet_NaN();
+        if (!t->GetBranch("helicity") || !t->GetBranch("x") || !t->GetBranch("Q2")
+            || !t->GetBranch("t1") || !t->GetBranch("phi2")) {
             #pragma omp critical
             { std::cerr << "[total_counts] Required branches missing in " << period_key << "\n"; }
             continue;
         }
-        t->SetBranchAddress("helicity", &helicity);
-        t->SetBranchAddress("x", &x);
-        t->SetBranchAddress("Q2", &Q2);
-        t->SetBranchAddress("t1", &t1);
-        t->SetBranchAddress("phi2", &phi2);
+        t->SetBranchAddress("helicity", &helicity); // Int_t
+        t->SetBranchAddress("x",        &x);        // Double_t
+        t->SetBranchAddress("Q2",       &Q2);       // Double_t
+        t->SetBranchAddress("t1",       &t1);       // Double_t
+        t->SetBranchAddress("phi2",     &phi2);     // Double_t (radians)
+
+        TopologyResolver topo; 
+        topo.bind(t); // binds detector1, detector2 as int
+
+        // Build the list for the generic binder but DROP explicitly bound names
+        std::vector<std::string> need_for_binder;
+        need_for_binder.reserve(need.size());
+        for (const auto& b : need) {
+            bool drop = false;
+            for (const char* s : explicit_binds) if (b == s) { drop = true; break; }
+            if (!drop) need_for_binder.push_back(b);
+        }
 
         std::unordered_map<std::string, BranchBinding> bind;
-        bindRequiredBranches_STRICT(t, need, bind);
-
-        TopologyResolver topo; topo.bind(t);
+        bindRequiredBranches_STRICT(t, need_for_binder, bind);
 
         std::map<std::string, PeriodRowMap> local_by_topo;
 
@@ -816,8 +914,9 @@ bool update_total_counts_csv(
                 }
             }
         }
-    } // omp
+    } // omp parallel loop
 
+    // Write per-period counts into CSV
     for (const auto& lblkv : counts_by_label_topo) {
         const std::string& label = lblkv.first;
         for (int topo_idx = 0; topo_idx < 3; ++topo_idx) {
@@ -843,6 +942,7 @@ bool update_total_counts_csv(
         std::cout << "[total_counts] wrote per-topology counts for " << label << "\n";
     }
 
+    // Build groups
     std::map<std::string, std::vector<std::string>> group_members = {
         {"Fa18",    {}},
         {"Sp18",    {}},
@@ -854,6 +954,7 @@ bool update_total_counts_csv(
         group_members[g].push_back(lbl);
     }
 
+    // Combined per-group counts
     for (const auto& gkv : group_members) {
         const std::string group = gkv.first;
         const auto& members = gkv.second;
@@ -888,6 +989,7 @@ bool update_total_counts_csv(
     }
     std::cout << "[total_counts] Updated raw yields in: " << csv_path << "\n";
 
+    // Plots (auto-creates output dirs)
     for (const auto& p : periods) {
         const std::string label = safe_label_for_key(p);
         for (int topo_idx = 0; topo_idx < 3; ++topo_idx) {
