@@ -106,7 +106,7 @@ int main(int argc, char* argv[]) {
 
         // update_total_counts_csv() now discovers periods/topologies internally
         if (!update_total_counts_csv(csv_main, dataTrees, cuts_json, output_root,
-                /*max_workers=*/1)) {
+                /*max_workers=*/5)) {
             std::cerr << "[main] ERROR: update_total_counts_csv failed.\n";
             std::exit(EXIT_FAILURE);
         }
