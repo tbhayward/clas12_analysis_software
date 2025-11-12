@@ -1,4 +1,4 @@
-// total_counts.cpp — self-contained (no csv_io.h), exact-typed binder, auto-mkdir, phi wrap
+// total_counts.cpp — self-contained (no csv_io.h), exact-typed binder, auto-mkdir, hierarchical bin index (supports non-uniform phi bins)
 
 #include "total_counts.h"
 #include "periods.h"                // CANONICAL_PERIODS(), PeriodDef{label, tree_key}
@@ -15,6 +15,7 @@
 #include <TBranch.h>
 #include <TTree.h>
 #include <TColor.h>
+#include <TTreeCache.h>
 
 #include <algorithm>
 #include <atomic>
@@ -34,6 +35,7 @@
 #include <unordered_map>
 #include <utility>
 #include <vector>
+#include <chrono>
 
 #ifdef _OPENMP
 #include <omp.h>
@@ -126,16 +128,6 @@ struct CsvDoc {
     int col_index(const std::string& name) const {
         auto it = index.find(name);
         return (it == index.end()) ? -1 : it->second;
-    }
-
-    int ensure_col(const std::string& name) {
-        auto it = index.find(name);
-        if (it != index.end()) return it->second;
-        int new_idx = (int)header.size();
-        header.push_back(name);
-        index[name] = new_idx;
-        for (auto& r : rows) r.resize(header.size());
-        return new_idx;
     }
 
     static double toD(const std::string& s) {
@@ -386,7 +378,7 @@ static void bindRequiredBranches_STRICT(
     bindings.reserve(branch_names.size());
     for (const auto& bname : branch_names) {
         TBranch* b = t->GetBranch(bname.c_str());
-        if (!b) continue; // non-existing may be optional
+        if (!b) continue; // non-existing may be optional in cuts
         auto [it, inserted] = bindings.emplace(bname, BranchBinding{});
         BranchBinding& bb = it->second;
         bb.name = bname;
@@ -624,8 +616,6 @@ static void draw_group_canvases(
                     const double q2max = csv.as_double(r, cols.c_q2_max);
                     const double tmin  = csv.as_double(r, cols.c_tab_min);
                     const double tmax  = csv.as_double(r, cols.c_tab_max);
-                    const double pmin  = csv.as_double(r, cols.c_phi_min);
-                    const double pmax  = csv.as_double(r, cols.c_phi_max);
                     if (std::fabs(xbmin - xb.first)  < 1e-9 && std::fabs(xbmax - xb.second) < 1e-9 &&
                         std::fabs(q2min - qpair.first) < 1e-9 && std::fabs(q2max - qpair.second) < 1e-9 &&
                         std::fabs(tmin  - tpair.first) < 1e-9 && std::fabs(tmax  - tpair.second) < 1e-9) {
@@ -654,7 +644,7 @@ static void draw_group_canvases(
                 for (int r : rows_for_cell) {
                     const double pmin = csv.as_double(r, cols.c_phi_min);
                     const double pmax = csv.as_double(r, cols.c_phi_max);
-                    double xphi = 0.5 * (pmin + pmax);
+                    double xphi = 0.5 * (pmin + pmax); // default center
                     if (c_phiavg >= 0) {
                         const double pav = csv.as_double(r, c_phiavg);
                         if (std::isfinite(pav) && pav > 0.0 && pav < 360.0) xphi = pav;
@@ -731,9 +721,135 @@ static void enable_needed_branches(TTree* t,
     for (const auto& b : extra)    if (t->GetBranch(b.c_str())) t->SetBranchStatus(b.c_str(), 1);
 }
 
-} // namespace
+// --------- Hierarchical bin indexer (xB -> Q2 -> |t| -> vector of phi bins) ----------
+struct CsvCols;
+struct BinIndex {
+    struct PhiBin { double pmin, pmax; int row; };
+    struct TLevel {
+        std::vector<double> t_edges;              // size Nt+1
+        std::vector<std::vector<PhiBin>> phi;     // size Nt, phi[i] is the list for t-bin i
+    };
+    struct QLevel {
+        std::vector<double> q2_edges;             // size Nq+1
+        std::vector<TLevel> t_levels;             // size Nq
+    };
+
+    std::vector<double> xb_edges;                 // size Nx+1
+    std::vector<QLevel> q_levels;                 // size Nx
+
+    static int bin_index(double v, const std::vector<double>& edges) {
+        auto it = std::upper_bound(edges.begin(), edges.end(), v);
+        int i = int(it - edges.begin()) - 1;
+        if (i < 0 || i+1 >= (int)edges.size()) return -1;
+        return i;
+    }
+
+    static std::vector<double> collect_edges_for_axis(const CsvDoc& csv, int cmin, int cmax) {
+        std::set<double> s;
+        for (int r = 0; r < csv.nrows(); ++r) {
+            s.insert(csv.as_double(r, cmin));
+            s.insert(csv.as_double(r, cmax));
+        }
+        return std::vector<double>(s.begin(), s.end());
+    }
+
+    void build(const CsvDoc& csv, const CsvCols& cols) {
+        // Global xB edges
+        xb_edges = collect_edges_for_axis(csv, cols.c_xb_min, cols.c_xb_max);
+        if (xb_edges.size() < 2) fatal("BinIndex: not enough xB edges.");
+        const int Nx = (int)xb_edges.size() - 1;
+        q_levels.assign(Nx, QLevel{});
+
+        // For each xB-bin, gather Q2 edges from rows that start in this xB-bin
+        std::vector<std::set<double>> q2_sets(Nx);
+        for (int r = 0; r < csv.nrows(); ++r) {
+            const double xbmin = csv.as_double(r, cols.c_xb_min);
+            int ix = bin_index(xbmin + 1e-12, xb_edges);
+            if (ix < 0) continue;
+            q2_sets[ix].insert(csv.as_double(r, cols.c_q2_min));
+            q2_sets[ix].insert(csv.as_double(r, cols.c_q2_max));
+        }
+        for (int ix = 0; ix < Nx; ++ix) {
+            if (q2_sets[ix].size() < 2) fatal("BinIndex: not enough Q2 edges in an xB slice.");
+            q_levels[ix].q2_edges.assign(q2_sets[ix].begin(), q2_sets[ix].end());
+            const int Nq = (int)q_levels[ix].q2_edges.size() - 1;
+            q_levels[ix].t_levels.assign(Nq, TLevel{});
+        }
+
+        // For each (xB,Q2) bin, gather t edges from rows in that slice
+        std::vector<std::vector<std::set<double>>> t_sets;
+        t_sets.resize(Nx);
+        for (int ix = 0; ix < Nx; ++ix) {
+            const int Nq = (int)q_levels[ix].t_levels.size();
+            t_sets[ix].resize(Nq);
+        }
+        for (int r = 0; r < csv.nrows(); ++r) {
+            const double xbmin = csv.as_double(r, cols.c_xb_min);
+            const double q2min = csv.as_double(r, cols.c_q2_min);
+            int ix = bin_index(xbmin + 1e-12, xb_edges);
+            if (ix < 0) continue;
+            int iq = bin_index(q2min + 1e-12, q_levels[ix].q2_edges);
+            if (iq < 0) continue;
+            t_sets[ix][iq].insert(csv.as_double(r, cols.c_tab_min));
+            t_sets[ix][iq].insert(csv.as_double(r, cols.c_tab_max));
+        }
+        for (int ix = 0; ix < Nx; ++ix) {
+            int Nq = (int)q_levels[ix].t_levels.size();
+            for (int iq = 0; iq < Nq; ++iq) {
+                if (t_sets[ix][iq].size() < 2) fatal("BinIndex: not enough |t| edges in an (xB,Q2) slice.");
+                q_levels[ix].t_levels[iq].t_edges.assign(t_sets[ix][iq].begin(), t_sets[ix][iq].end());
+                int Nt = (int)q_levels[ix].t_levels[iq].t_edges.size() - 1;
+                q_levels[ix].t_levels[iq].phi.assign(Nt, std::vector<PhiBin>{});
+            }
+        }
+
+        // Distribute each row into its (ix,iq,it) cell and store phi interval
+        for (int r = 0; r < csv.nrows(); ++r) {
+            const double xbmin = csv.as_double(r, cols.c_xb_min);
+            const double q2min = csv.as_double(r, cols.c_q2_min);
+            const double tmin  = csv.as_double(r, cols.c_tab_min);
+            const double pmin  = csv.as_double(r, cols.c_phi_min);
+            const double pmax  = csv.as_double(r, cols.c_phi_max);
+
+            int ix = bin_index(xbmin + 1e-12, xb_edges);
+            if (ix < 0) continue;
+            int iq = bin_index(q2min + 1e-12, q_levels[ix].q2_edges);
+            if (iq < 0) continue;
+            int it = bin_index(tmin + 1e-12, q_levels[ix].t_levels[iq].t_edges);
+            if (it < 0) continue;
+
+            q_levels[ix].t_levels[iq].phi[it].push_back(PhiBin{pmin, pmax, r});
+        }
+
+        // Optional: sanity check that each (ix,iq,it) has at least one phi bin
+        // Not strictly required if some cells are intentionally empty.
+    }
+
+    int find_row(double xb, double q2, double tab, double phi_deg) const {
+        int ix = bin_index(xb, xb_edges);
+        if (ix < 0) return -1;
+        const QLevel& ql = q_levels[ix];
+
+        int iq = bin_index(q2, ql.q2_edges);
+        if (iq < 0) return -1;
+        const TLevel& tl = ql.t_levels[iq];
+
+        int it = bin_index(tab, tl.t_edges);
+        if (it < 0) return -1;
+        const std::vector<PhiBin>& pb = tl.phi[it];
+        if (pb.empty()) return -1;
+
+        // Non-uniform phi bins: small linear scan over the few phi bins in this cell.
+        for (const auto& bin : pb) {
+            if (row_accepts_phi(phi_deg, bin.pmin, bin.pmax)) return bin.row;
+        }
+        return -1;
+    }
+};
 
 // ---------------- entry ----------------
+} // namespace
+
 bool update_total_counts_csv(
     const std::string& csv_path,
     const std::map<std::string, TTree*>& dvcsDataTrees,
@@ -749,14 +865,6 @@ bool update_total_counts_csv(
         periods.push_back(P.tree_key);
     }
 
-    try {
-        const std::string backup = "output/csvs/dvcs_pass2_analysis_backup_total_counts.csv";
-        fs::copy_file(csv_path, backup, fs::copy_options::overwrite_existing);
-        std::cout << "[total_counts] Backed up CSV to " << backup << "\n";
-    } catch (const std::exception& e) {
-        std::cerr << "[total_counts] WARNING: backup failed (" << e.what() << "). Continuing.\n";
-    }
-
     CsvDoc csv;
     if (!csv.load(csv_path)) {
         std::cerr << "[total_counts] ERROR: failed to read " << csv_path << "\n";
@@ -768,19 +876,18 @@ bool update_total_counts_csv(
     cols.c_xb_max  = csv.col_index("xBmax");
     cols.c_q2_min  = csv.col_index("Q2min");
     cols.c_q2_max  = csv.col_index("Q2max");
-    if (csv.has_col("t_abs_min") && csv.has_col("t_abs_max")) {
-        cols.c_tab_min = csv.col_index("t_abs_min");
-        cols.c_tab_max = csv.col_index("t_abs_max");
-    } else {
-        cols.c_tab_min = csv.col_index("tmin");
-        cols.c_tab_max = csv.col_index("tmax");
-    }
+    cols.c_tab_min = csv.col_index("t_abs_min");
+    cols.c_tab_max = csv.col_index("t_abs_max");
     cols.c_phi_min = csv.col_index("phimin");
     cols.c_phi_max = csv.col_index("phimax");
     if (cols.c_xb_min < 0 || cols.c_xb_max < 0 || cols.c_q2_min < 0 || cols.c_q2_max < 0
         || cols.c_tab_min < 0 || cols.c_tab_max < 0 || cols.c_phi_min < 0 || cols.c_phi_max < 0) {
         fatal("Missing one or more required bin-edge columns in CSV.");
     }
+
+    // Build hierarchical bin index once (supports non-uniform phi bins per cell)
+    BinIndex indexer;
+    indexer.build(csv, cols);
 
     auto ensure_yield_columns = [&](const std::string& label, const std::string& topo_str) {
         const std::string base = period_yield_col_base(label, topo_str);
@@ -830,8 +937,19 @@ bool update_total_counts_csv(
         // Enable only what's needed
         enable_needed_branches(t, {}, need);
 
+        // ROOT I/O cache: cache only what we read on this thread
+        t->SetCacheSize(128*1024*1024);
+        TTreeCache::SetLearnEntries(10);
+        t->AddBranchToCache("helicity", true);
+        t->AddBranchToCache("x",        true);
+        t->AddBranchToCache("Q2",       true);
+        t->AddBranchToCache("t1",       true);
+        t->AddBranchToCache("phi2",     true);
+        t->AddBranchToCache("detector1",true);
+        t->AddBranchToCache("detector2",true);
+
         // Explicit exact-typed bindings for these known branches
-        int helicity = 0; 
+        int helicity = 0;
         double x = 0.0, Q2 = 0.0, t1 = 0.0, phi2 = std::numeric_limits<double>::quiet_NaN();
         if (!t->GetBranch("helicity") || !t->GetBranch("x") || !t->GetBranch("Q2")
             || !t->GetBranch("t1") || !t->GetBranch("phi2")) {
@@ -845,7 +963,7 @@ bool update_total_counts_csv(
         t->SetBranchAddress("t1",       &t1);       // Double_t
         t->SetBranchAddress("phi2",     &phi2);     // Double_t (radians)
 
-        TopologyResolver topo; 
+        TopologyResolver topo;
         topo.bind(t); // binds detector1, detector2 as int
 
         // Build the list for the generic binder but DROP explicitly bound names
@@ -859,10 +977,19 @@ bool update_total_counts_csv(
 
         std::unordered_map<std::string, BranchBinding> bind;
         bindRequiredBranches_STRICT(t, need_for_binder, bind);
+        // Add those branches to cache too
+        for (const auto& kv : bind) t->AddBranchToCache(kv.first.c_str(), true);
 
         std::map<std::string, PeriodRowMap> local_by_topo;
 
         const Long64_t nent = t->GetEntries();
+        std::cout << "[total_counts] " << label << " entries=" << nent
+                  << "  (cuts: base=" << cuts.base_cuts.size()
+                  << ", sigma=" << cuts.sigma_cuts.size() << ")\n";
+
+        auto t0 = std::chrono::steady_clock::now();
+        const Long64_t report_every = 500000;
+
         for (Long64_t i = 0; i < nent; ++i) {
             t->GetEntry(i);
             if (helicity != +1 && helicity != -1) continue;
@@ -878,27 +1005,22 @@ bool update_total_counts_csv(
             const double tab = std::fabs(t1);
             const double phi_deg = wrap_deg_0_360(rad_to_deg(phi2));
 
-            int found_row = -1;
-            for (int r = 0; r < csv.nrows(); ++r) {
-                const double xbmin  = csv.as_double(r, cols.c_xb_min);
-                const double xbmax  = csv.as_double(r, cols.c_xb_max);
-                const double q2min  = csv.as_double(r, cols.c_q2_min);
-                const double q2max  = csv.as_double(r, cols.c_q2_max);
-                const double tabmin = csv.as_double(r, cols.c_tab_min);
-                const double tabmax = csv.as_double(r, cols.c_tab_max);
-                const double pmin   = csv.as_double(r, cols.c_phi_min);
-                const double pmax   = csv.as_double(r, cols.c_phi_max);
-                if (in_range(xb, xbmin, xbmax) &&
-                    in_range(q2, q2min, q2max) &&
-                    in_range(tab, tabmin, tabmax) &&
-                    row_accepts_phi(phi_deg, pmin, pmax)) {
-                    found_row = r; break;
-                }
-            }
-            if (found_row < 0) continue;
+            const int row = indexer.find_row(xb, q2, tab, phi_deg);
+            if (row < 0) continue;
 
-            RowCounts& rc = local_by_topo[topo_str][found_row];
+            RowCounts& rc = local_by_topo[topo_str][row];
             if (helicity == +1) rc.pos++; else rc.neg++;
+
+            if ((i % report_every) == 0) {
+                auto t1clk = std::chrono::steady_clock::now();
+                double sec = std::chrono::duration<double>(t1clk - t0).count();
+                double rate = (sec > 0.0) ? (i / sec) : 0.0;
+                std::cout << "[total_counts] " << label << " "
+                          << i << "/" << nent << " ("
+                          << std::fixed << std::setprecision(1)
+                          << (100.0 * double(i)/double(nent)) << "%), "
+                          << std::setprecision(2) << rate/1e6 << " Mev/s\n";
+            }
         }
 
         {
