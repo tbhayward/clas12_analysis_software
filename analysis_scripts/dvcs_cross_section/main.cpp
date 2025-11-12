@@ -95,7 +95,7 @@ int main(int argc, char* argv[]) {
         }
 
         // dataTrees already built (keys like DVCS_Fa18_inb, ...). Launch with up to 5 workers.
-        if (!update_bin_means_csv(csv_main, dataTrees, /*max_workers=*/1)) {
+        if (!update_bin_means_csv(csv_main, dataTrees, /*max_workers=*/5)) {
             std::cerr << "[main] ERROR: update_bin_means_csv failed.\n";
             std::exit(EXIT_FAILURE);
         }
