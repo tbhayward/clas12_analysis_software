@@ -1,4 +1,5 @@
-// total_counts.cpp — self-contained (no csv_io.h), exact-typed binder, auto-mkdir, phi wrap
+// total_counts.cpp — self-contained (no csv_io.h), exact-typed binder, auto-mkdir,
+// phi wrap, FAST bin index, and periodic progress prints.
 
 #include "total_counts.h"
 #include "periods.h"                // CANONICAL_PERIODS(), PeriodDef{label, tree_key}
@@ -16,6 +17,7 @@
 #include <TTree.h>
 #include <TColor.h>
 #include <TString.h>
+#include <TStopwatch.h>
 
 #include <algorithm>
 #include <atomic>
@@ -36,6 +38,7 @@
 #include <utility>
 #include <vector>
 #include <cstdlib>
+#include <functional>
 
 #ifdef _OPENMP
 #include <omp.h>
@@ -300,12 +303,6 @@ struct BranchBinding {
     unsigned char       as_u8     = 0;
 };
 
-static inline bool kind_is_int(BranchBinding::Kind k) {
-    using K = BranchBinding::Kind;
-    return k == K::kI32 || k == K::kU32 || k == K::kI64 || k == K::kU64 ||
-           k == K::kI16 || k == K::kU16 || k == K::kI8  || k == K::kU8;
-}
-
 static inline double bb_as_double(const BranchBinding& bb) {
     using K = BranchBinding::Kind;
     switch (bb.kind) {
@@ -521,7 +518,181 @@ static void ensure_plot_dir(const std::string& path) {
     }
 }
 
-// Draw one label+topology set of canvases (one canvas per xB range)
+// ======================= FAST CSV INDEX (for event->row lookup) =======================
+struct FastCsvIndex {
+    // numeric tolerance for matching CSV edges
+    static constexpr double TOL = 1e-10;
+
+    std::vector<double> x_edges;
+    std::vector<double> q_edges;
+    std::vector<double> t_edges;
+
+    struct PhiRow {
+        double pmin, pmax;
+        int row;
+    };
+    struct CellKey {
+        int ix, iq, it;
+        bool operator==(const CellKey& o) const noexcept {
+            return ix==o.ix && iq==o.iq && it==o.it;
+        }
+    };
+    struct CellKeyHash {
+        std::size_t operator()(const CellKey& k) const noexcept {
+            // 21 bits per index is plenty
+            return ((std::size_t)k.ix * 1315423911u) ^ ((std::size_t)k.iq * 2654435761u) ^ (std::size_t)k.it;
+        }
+    };
+
+    std::unordered_map<CellKey, std::vector<PhiRow>, CellKeyHash> cell_map;
+
+    static void add_edge(std::vector<double>& edges, double v) {
+        if (!std::isfinite(v)) return;
+        edges.push_back(v);
+    }
+
+    static void uniq_sort(std::vector<double>& v) {
+        std::sort(v.begin(), v.end());
+        std::vector<double> out; out.reserve(v.size());
+        for (double x : v) {
+            if (out.empty() || std::fabs(x - out.back()) > TOL) out.push_back(x);
+        }
+        v.swap(out);
+    }
+
+    static int find_edge_index(const std::vector<double>& edges, double val) {
+        // find index i such that edges[i] == val within tolerance
+        auto it = std::lower_bound(edges.begin(), edges.end(), val - TOL);
+        if (it == edges.end()) return -1;
+        int i = (int)std::distance(edges.begin(), it);
+        if (i < (int)edges.size() && std::fabs(edges[i] - val) <= TOL) return i;
+        // Try next if lower_bound landed before tolerance
+        if (i+1 < (int)edges.size() && std::fabs(edges[i+1] - val) <= TOL) return i+1;
+        return -1;
+    }
+
+    static int interval_index_from_pair(const std::vector<double>& edges, double a, double b) {
+        int ia = find_edge_index(edges, a);
+        if (ia < 0) return -1;
+        if (ia+1 >= (int)edges.size()) return -1;
+        if (std::fabs(edges[ia+1] - b) <= TOL) return ia; // bin is [edges[ia], edges[ia+1])
+        return -1;
+    }
+
+    static int interval_index_of_value(const std::vector<double>& edges, double v) {
+        // Return i such that edges[i] <= v < edges[i+1]
+        if (edges.size() < 2) return -1;
+        // Handle out-of-range quickly
+        if (!(v >= edges.front()) || !(v < edges.back())) return -1;
+        auto it = std::upper_bound(edges.begin(), edges.end(), v - TOL);
+        int i = (int)std::distance(edges.begin(), it) - 1;
+        if (i < 0 || i >= (int)edges.size()-1) return -1;
+        if (v < edges[i] - TOL || v > edges[i+1] + TOL) return -1;
+        return i;
+    }
+
+    bool build(const CsvDoc& csv, const CsvCols& cols) {
+        // collect global union of edges
+        x_edges.clear(); q_edges.clear(); t_edges.clear();
+        x_edges.reserve(csv.nrows()*2);
+        q_edges.reserve(csv.nrows()*2);
+        t_edges.reserve(csv.nrows()*2);
+
+        for (int r = 0; r < csv.nrows(); ++r) {
+            add_edge(x_edges, csv.as_double(r, cols.c_xb_min));
+            add_edge(x_edges, csv.as_double(r, cols.c_xb_max));
+            add_edge(q_edges, csv.as_double(r, cols.c_q2_min));
+            add_edge(q_edges, csv.as_double(r, cols.c_q2_max));
+            add_edge(t_edges, csv.as_double(r, cols.c_tab_min));
+            add_edge(t_edges, csv.as_double(r, cols.c_tab_max));
+        }
+        uniq_sort(x_edges); uniq_sort(q_edges); uniq_sort(t_edges);
+        if (x_edges.size()<2 || q_edges.size()<2 || t_edges.size()<2) {
+            std::cerr << "[total_counts] FAST index: not enough edges to build." << std::endl;
+            return false;
+        }
+
+        cell_map.clear();
+        cell_map.reserve((size_t)(x_edges.size()*q_edges.size()));
+
+        for (int r = 0; r < csv.nrows(); ++r) {
+            const double xbmin  = csv.as_double(r, cols.c_xb_min);
+            const double xbmax  = csv.as_double(r, cols.c_xb_max);
+            const double q2min  = csv.as_double(r, cols.c_q2_min);
+            const double q2max  = csv.as_double(r, cols.c_q2_max);
+            const double tmin   = csv.as_double(r, cols.c_tab_min);
+            const double tmax   = csv.as_double(r, cols.c_tab_max);
+            const double pmin   = csv.as_double(r, cols.c_phi_min);
+            const double pmax   = csv.as_double(r, cols.c_phi_max);
+
+            const int ix = interval_index_from_pair(x_edges, xbmin, xbmax);
+            const int iq = interval_index_from_pair(q_edges, q2min, q2max);
+            const int it = interval_index_from_pair(t_edges,  tmin,  tmax);
+            if (ix < 0 || iq < 0 || it < 0) continue; // skip malformed row
+
+            CellKey key{ix, iq, it};
+            cell_map[key].push_back(PhiRow{pmin, pmax, r});
+        }
+
+        // Optional: sort phi rows by pmin for each cell (not required, but nice)
+        for (auto& kv : cell_map) {
+            auto& v = kv.second;
+            std::sort(v.begin(), v.end(),
+                      [](const PhiRow& a, const PhiRow& b){ return a.pmin < b.pmin; });
+        }
+        return true;
+    }
+
+    // Find phi rows for an event (xB, Q2, |t|). Returns false if cell missing.
+    bool rows_for_event(double xb, double Q2, double tabs, const std::vector<PhiRow>*& out) const {
+        const int ix = interval_index_of_value(x_edges, xb);
+        if (ix < 0) return false;
+        const int iq = interval_index_of_value(q_edges, Q2);
+        if (iq < 0) return false;
+        const int it = interval_index_of_value(t_edges, tabs);
+        if (it < 0) return false;
+        static const std::vector<PhiRow> empty;
+        CellKey key{ix, iq, it};
+        auto itv = cell_map.find(key);
+        if (itv == cell_map.end()) { out = &empty; return true; } // valid cell w/ no rows (shouldn't happen)
+        out = &itv->second;
+        return true;
+    }
+
+    // Locate the single CSV row for this phi (deg) within provided rows.
+    // Returns row index or -1.
+    static int find_row_for_phi(const std::vector<PhiRow>& rows, double phi_deg) {
+        // Small linear scan is OK (typ. 12–24 entries). This is negligible.
+        for (const auto& pr : rows) {
+            if (row_accepts_phi(phi_deg, pr.pmin, pr.pmax)) return pr.row;
+        }
+        return -1;
+    }
+};
+
+// ----------------- Status print helper -----------------
+static inline void print_status_singleline(const std::string& tag,
+                                           double pct,
+                                           long long i,
+                                           long long N,
+                                           long long matched,
+                                           long long pos_count,
+                                           long long neg_count,
+                                           double elapsed_s)
+{
+    double rate = (elapsed_s > 0.0) ? (double)i / elapsed_s : 0.0;
+    std::cout << "[total_counts][" << tag << "] "
+              << std::fixed << std::setprecision(1)
+              << pct << "%  "
+              << i << "/" << N
+              << "  matched=" << matched
+              << "  pos=" << pos_count
+              << "  neg=" << neg_count
+              << "  rate=" << std::setprecision(2) << rate << " ev/s"
+              << std::endl;
+}
+
+// -------------------- Plot canvases (unchanged logic) --------------------
 static void draw_group_canvases(
     const std::string& label,
     const std::string& topo_str,
@@ -544,10 +715,6 @@ static void draw_group_canvases(
     const int c_q2avg  = csv.has_col(c_q2avg_name)  ? csv.col_index(c_q2avg_name)  : -1;
     const int c_tabavg = csv.has_col(c_tabavg_name) ? csv.col_index(c_tabavg_name) : -1;
     const int c_xbavg  = csv.has_col(c_xbavg_name)  ? csv.col_index(c_xbavg_name)  : -1;
-
-    const std::string ybase = period_yield_col_base(label, topo_str);
-    const int c_pos = csv.has_col(ybase + "pos")   ? csv.col_index(ybase + "pos")   : -1;
-    const int c_neg = csv.has_col(ybase + "neg")   ? csv.col_index(ybase + "neg")   : -1;
 
     std::set<std::pair<double,double>> xb_set;
     for (int r = 0; r < csv.nrows(); ++r) {
@@ -788,6 +955,12 @@ bool update_total_counts_csv(
     std::mutex merge_mtx;
     std::map<std::string, std::map<std::string, PeriodRowMap>> counts_by_label_topo;
 
+    // Build FAST index once for all threads
+    FastCsvIndex fast;
+    if (!fast.build(csv, cols)) {
+        std::cerr << "[total_counts] WARNING: fast index build failed; continuing (slower).\n";
+    }
+
     ROOT::EnableThreadSafety(); (void)TGraphErrors::Class();
 
     #pragma omp parallel for schedule(dynamic) num_threads(max_workers)
@@ -857,8 +1030,17 @@ bool update_total_counts_csv(
 
         std::map<std::string, PeriodRowMap> local_by_topo;
 
-        const Long64_t nent = t->GetEntries();
-        for (Long64_t i = 0; i < nent; ++i) {
+        const Long64_t N = t->GetEntries();
+        Long64_t matched = 0;
+        Long64_t pos_count = 0, neg_count = 0;
+
+        // progress
+        TStopwatch sw; sw.Start();
+        const Long64_t cadence_by_pct = std::max<Long64_t>( (Long64_t) (0.02 * (double)N), 1 ); // ~2%
+        const Long64_t cadence_by_abs = 1000000;
+        const Long64_t cadence = std::min(cadence_by_pct, cadence_by_abs);
+
+        for (Long64_t i = 0; i < N; ++i) {
             t->GetEntry(i);
             if (helicity != +1 && helicity != -1) continue;
             if (!std::isfinite(x) || !std::isfinite(Q2) || !std::isfinite(t1) || !std::isfinite(phi2)) continue;
@@ -873,27 +1055,29 @@ bool update_total_counts_csv(
             const double tab = std::fabs(t1);
             const double phi_deg = wrap_deg_0_360(rad_to_deg(phi2));
 
-            int found_row = -1;
-            for (int r = 0; r < csv.nrows(); ++r) {
-                const double xbmin  = csv.as_double(r, cols.c_xb_min);
-                const double xbmax  = csv.as_double(r, cols.c_xb_max);
-                const double q2min  = csv.as_double(r, cols.c_q2_min);
-                const double q2max  = csv.as_double(r, cols.c_q2_max);
-                const double tabmin = csv.as_double(r, cols.c_tab_min);
-                const double tabmax = csv.as_double(r, cols.c_tab_max);
-                const double pmin   = csv.as_double(r, cols.c_phi_min);
-                const double pmax   = csv.as_double(r, cols.c_phi_max);
-                if (in_range(xb, xbmin, xbmax) &&
-                    in_range(q2, q2min, q2max) &&
-                    in_range(tab, tabmin, tabmax) &&
-                    row_accepts_phi(phi_deg, pmin, pmax)) {
-                    found_row = r; break;
-                }
-            }
+            // FAST lookup: locate phi rows for this (xB,Q2,|t|) cell
+            const std::vector<FastCsvIndex::PhiRow>* phiRows = nullptr;
+            if (!fast.rows_for_event(xb, q2, tab, phiRows)) continue; // outside edges
+            if (!phiRows || phiRows->empty()) continue;
+
+            // Now select the phi sub-bin
+            const int found_row = FastCsvIndex::find_row_for_phi(*phiRows, phi_deg);
             if (found_row < 0) continue;
+            ++matched;
 
             RowCounts& rc = local_by_topo[topo_str][found_row];
-            if (helicity == +1) rc.pos++; else rc.neg++;
+            if (helicity == +1) { rc.pos++; ++pos_count; } else { rc.neg++; ++neg_count; }
+
+            if (i == 0 || (i % cadence) == 0 || i + 1 == N) {
+                double pct = (N > 0) ? (100.0 * (double)i / (double)N) : 100.0;
+                #pragma omp critical
+                {
+                    print_status_singleline(label, pct, (long long)i, (long long)N,
+                                            (long long)matched, (long long)pos_count,
+                                            (long long)neg_count, sw.RealTime());
+                }
+                sw.Continue();
+            }
         }
 
         {
@@ -908,6 +1092,10 @@ bool update_total_counts_csv(
                     tgt[rkv.first].neg += rkv.second.neg;
                 }
             }
+            std::cout << "[total_counts] Finished " << label
+                      << "  matched=" << matched
+                      << "  pos=" << pos_count
+                      << "  neg=" << neg_count << std::endl;
         }
     } // omp parallel loop
 
