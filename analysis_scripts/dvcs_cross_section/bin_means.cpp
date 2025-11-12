@@ -1,21 +1,22 @@
 // bin_means.cpp
 // Compute per-bin means (xB, Q2, |t|, phi) per period, then fill combined groups,
 // using global cuts AND all derived 3-sigma exclusivity cuts from combined_cuts.json.
+// Notes specific to this analysis:
+//   * Use ONLY the phi2 branch (radians) and convert to degrees.
+//   * phimin/phimax are always provided in the CSV (degrees); wrap-around supported.
+//   * No conditional fallbacks to Delta_phi or phi.
 
 #include "bin_means.h"
 #include "periods.h"
 #include "load_binning_scheme.h"
 
 #include <TTree.h>
-#include <TChain.h>
 
 #include <algorithm>
 #include <cassert>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
-#include <cctype>
-#include <cstdlib>
 #include <fstream>
 #include <iomanip>
 #include <iostream>
@@ -35,12 +36,13 @@
 #include <omp.h>
 #endif
 
-// ---------------- constants ----------------
-static constexpr double PI = 3.14159265358979323846;
-static constexpr double DEG2RAD = PI / 180.0;
+// ---------------- numeric helpers ----------------
+static constexpr double PI       = 3.14159265358979323846;
+static constexpr double RAD2DEG  = 180.0 / PI;
+static constexpr double DEG2RAD  = PI / 180.0;
 static const std::string kCutsJSON = "output/jsons/combined_cuts.json";
 
-// We accept all topologies for the averages; we only use them to look up the 3-sigma gates.
+// We accept all topologies for the averages; they are only used to look up the 3-sigma gates.
 enum class Topology { FD_FD, CD_FD, CD_FT };
 
 static inline const char* topo_tag(Topology t) {
@@ -135,10 +137,7 @@ static bool write_csv(const std::string& path, const CSV& csv) {
         bool needq = s.find(',') != std::string::npos || s.find('"') != std::string::npos;
         if (needq) {
             fout << '"';
-            for (char ch : s) {
-                if (ch == '"') fout << "\"\"";
-                else           fout << ch;
-            }
+            for (char ch : s) fout << (ch == '"' ? "\"\"" : std::string(1, ch));
             fout << '"';
         } else {
             fout << s;
@@ -153,10 +152,7 @@ static bool write_csv(const std::string& path, const CSV& csv) {
             bool needq = s.find(',') != std::string::npos || s.find('"') != std::string::npos;
             if (needq) {
                 fout << '"';
-                for (char ch : s) {
-                    if (ch == '"') fout << "\"\"";
-                    else           fout << ch;
-                }
+                for (char ch : s) fout << (ch == '"' ? "\"\"" : std::string(1, ch));
                 fout << '"';
             } else {
                 fout << s;
@@ -182,7 +178,18 @@ static inline std::string col_Q2avg(const std::string& group)  { return "Q2avg, 
 static inline std::string col_tavg (const std::string& group)  { return "t_abs_avg, "+ group; }
 static inline std::string col_phiavg(const std::string& group) { return "phiavg, "   + group; }
 
-// ---------------- tuple hasher ----------------
+// ---------------- accumulators ----------------
+struct Accum {
+    double sx = 0.0, sQ = 0.0, st = 0.0, sp = 0.0;
+    long long n = 0;
+    void add(double x, double Q2, double tabs, double phi_deg) { sx += x; sQ += Q2; st += tabs; sp += phi_deg; ++n; }
+    double mx() const { return n ? sx / n : std::numeric_limits<double>::quiet_NaN(); }
+    double mQ() const { return n ? sQ / n : std::numeric_limits<double>::quiet_NaN(); }
+    double mt() const { return n ? st / n : std::numeric_limits<double>::quiet_NaN(); }
+    double mp() const { return n ? sp / n : std::numeric_limits<double>::quiet_NaN(); }
+};
+
+// ---------------- tuple hasher (if needed later) ----------------
 struct TupleHash {
     template <class T> static inline void hc(std::size_t& s, const T& v) {
         std::hash<T> h; s ^= h(v) + 0x9e3779b97f4a7c15ULL + (s<<6) + (s>>2);
@@ -196,10 +203,6 @@ struct TupleHash {
 
 // ---------------- branches ----------------
 struct BranchBinder {
-    // det flags (bound in case you want later logic)
-    int detector1 = 0; bool has_d1 = false;
-    int detector2 = 0; bool has_d2 = false;
-
     // exclusivity & globals
     double t1 = 0.0;               bool has_t1 = false;
     double open_angle_ep2 = 0.0;   bool has_open = false; // degrees
@@ -213,41 +216,24 @@ struct BranchBinder {
     // binning vars
     double x = 0.0;                bool has_x = false;
     double Q2 = 0.0;               bool has_Q2 = false;
-    double phi2 = 0.0;             bool has_phi = false;  // degrees
+    double phi2_rad = 0.0;         bool has_phi2 = false;  // radians
 
     void bind(TTree* t) {
         if (!t) return;
+        auto bindD = [&](const char* n, double* a, bool& f){ if (t->GetBranch(n)) { t->SetBranchAddress(n, a); f = true; } };
 
-        // If this is a TChain, force-load the first tree so branches are discoverable.
-        if (auto ch = dynamic_cast<TChain*>(t)) {
-            ch->LoadTree(0);   // does not require addresses set
-        }
+        bindD("t1", &t1, has_t1);
+        bindD("open_angle_ep2", &open_angle_ep2, has_open);
+        bindD("pTmiss", &pTmiss, has_pT);
+        bindD("Emiss2", &Emiss2, has_Em2);
+        bindD("Mx2", &Mx2, has_Mx2);
+        bindD("Mx2_1", &Mx2_1, has_Mx2_1);
+        bindD("Mx2_2", &Mx2_2, has_Mx2_2);
+        bindD("xF", &xF, has_xF);
 
-        auto bindI = [&](const char* n, int* a, bool& f) {
-            // Try to bind regardless; mark present if a branch or leaf with this name exists
-            t->SetBranchAddress(n, a);
-            f = (t->GetBranch(n) != nullptr) || (t->GetLeaf(n) != nullptr);
-        };
-        auto bindD = [&](const char* n, double* a, bool& f) {
-            t->SetBranchAddress(n, a);
-            f = (t->GetBranch(n) != nullptr) || (t->GetLeaf(n) != nullptr);
-        };
-
-        bindI("detector1", &detector1, has_d1);
-        bindI("detector2", &detector2, has_d2);
-
-        bindD("t1",               &t1,               has_t1);
-        bindD("open_angle_ep2",   &open_angle_ep2,   has_open);   // degrees
-        bindD("pTmiss",           &pTmiss,           has_pT);
-        bindD("Emiss2",           &Emiss2,           has_Em2);
-        bindD("Mx2",              &Mx2,              has_Mx2);
-        bindD("Mx2_1",            &Mx2_1,            has_Mx2_1);
-        bindD("Mx2_2",            &Mx2_2,            has_Mx2_2);
-        bindD("xF",               &xF,               has_xF);
-
-        bindD("x",                &x,                has_x);
-        bindD("Q2",               &Q2,               has_Q2);
-        bindD("phi2",             &phi2,             has_phi);    // degrees
+        bindD("x", &x, has_x);
+        bindD("Q2", &Q2, has_Q2);
+        bindD("phi2", &phi2_rad, has_phi2); // ONLY phi2, radians
     }
 
     bool readyForCuts() const {
@@ -255,7 +241,17 @@ struct BranchBinder {
         return has_t1 && has_open && has_pT;
     }
     bool readyForAverages() const {
-        return has_x && has_Q2 && has_phi;
+        return has_x && has_Q2 && has_phi2;
+    }
+
+    // phi in degrees, wrapped to [0,360)
+    double phi_deg() const {
+        if (!has_phi2) return std::numeric_limits<double>::quiet_NaN();
+        double deg = std::fmod(phi2_rad * RAD2DEG, 360.0);
+        if (deg < 0.0) deg += 360.0;
+        // protect against 360.0 exact
+        if (deg >= 360.0) deg = std::nextafter(360.0, 0.0);
+        return deg;
     }
 };
 
@@ -377,7 +373,7 @@ static bool passes_3sigma_for_topo(const std::string& period_json_tag,
         }
     };
 
-    // theta: JSON stored in radians; branch is degrees
+    // theta: JSON stored in radians; branch open_angle_ep2 is degrees
     const bool ok_theta = check("theta_gamma_gamma", b.has_open, b.open_angle_ep2 * DEG2RAD);
     const bool ok_pT    = check("pTmiss",           b.has_pT,   b.pTmiss);
     const bool ok_Em2   = check("Emiss2",           b.has_Em2,  b.Emiss2);
@@ -389,31 +385,21 @@ static bool passes_3sigma_for_topo(const std::string& period_json_tag,
     return ok_theta && ok_pT && ok_Em2 && ok_Mx2 && ok_Mx21 && ok_Mx22 && ok_xF;
 }
 
-// Accept if ANY topology’s 3-sigma gate passes (accept-all-topologies for averages).
+// Accept if ANY topology 3-sigma gate passes (accept-all-topologies for averages).
 static bool passes_all_exclusivity(const std::string& period_json_tag, const BranchBinder& b) {
     return passes_3sigma_for_topo(period_json_tag, Topology::FD_FD, b)
         || passes_3sigma_for_topo(period_json_tag, Topology::CD_FD, b)
         || passes_3sigma_for_topo(period_json_tag, Topology::CD_FT, b);
 }
 
-// ---------------- accumulators ----------------
-struct Accum {
-    double sx = 0.0, sQ = 0.0, st = 0.0, sp = 0.0;
-    long long n = 0;
-    void add(double x, double Q2, double tabs, double phi_deg) { sx += x; sQ += Q2; st += tabs; sp += phi_deg; ++n; }
-    double mx() const { return n ? sx / n : std::numeric_limits<double>::quiet_NaN(); }
-    double mQ() const { return n ? sQ / n : std::numeric_limits<double>::quiet_NaN(); }
-    double mt() const { return n ? st / n : std::numeric_limits<double>::quiet_NaN(); }
-    double mp() const { return n ? sp / n : std::numeric_limits<double>::quiet_NaN(); }
-};
+static inline bool in_range(double v, double a, double b) { return (v >= a) && (v < b); }
 
-static bool in_range(double v, double a, double b) { return (v >= a) && (v < b); }
-
+// phimin/phimax are degrees; phi_deg is degrees; wrap-around supported.
 static bool row_accepts_phi(double phi_deg, double pmin_deg, double pmax_deg) {
-    if (!std::isfinite(phi_deg) || !std::isfinite(pmin_deg) || !std::isfinite(pmax_deg)) return false;
+    // normal case
     if (pmax_deg > pmin_deg) return in_range(phi_deg, pmin_deg, pmax_deg);
-    // wrap-around safety
-    return phi_deg >= pmin_deg || phi_deg < pmax_deg;
+    // range crosses 360 -> 0 boundary; accept outside-gap
+    return (phi_deg >= pmin_deg) || (phi_deg < pmax_deg);
 }
 
 static bool row_accepts_kin(const BranchBinder& b,
@@ -445,15 +431,6 @@ static PeriodResult process_period(const std::string& period_key, TTree* tree, c
 
     BranchBinder b; b.bind(tree);
     if (!b.readyForCuts() || !b.readyForAverages()) {
-        std::cerr << "[bin_means] DEBUG missing: "
-          << (b.has_t1   ? "" : "t1 ")
-          << (b.has_open ? "" : "open_angle_ep2 ")
-          << (b.has_pT   ? "" : "pTmiss ")
-          << (b.has_x    ? "" : "x ")
-          << (b.has_Q2   ? "" : "Q2 ")
-          << (b.has_phi  ? "" : "phi2 ")
-          << std::endl;
-          
         std::cerr << "[bin_means] FATAL: Tree for '" << period_key
                   << "' missing branches (t1/open_angle_ep2/pTmiss/x/Q2/phi2)." << std::endl;
         std::exit(EXIT_FAILURE);
@@ -484,6 +461,9 @@ static PeriodResult process_period(const std::string& period_key, TTree* tree, c
         // 3-sigma (any topology OK)
         if (!passes_all_exclusivity(tags.json_tag, b)) continue;
 
+        // phi in degrees from phi2 (radians)
+        const double phi_deg = b.phi_deg();
+
         for (int r = 0; r < (int)csv.rows.size(); ++r) {
             const auto& row = csv.rows[r];
 
@@ -505,9 +485,9 @@ static PeriodResult process_period(const std::string& period_key, TTree* tree, c
             const double pmax   = toD(row[c_pmax]);
 
             if (!row_accepts_kin(b, xBmin, xBmax, Q2min, Q2max, tmin, tmax)) continue;
-            if (!row_accepts_phi(b.phi2, pmin, pmax)) continue;
+            if (!row_accepts_phi(phi_deg, pmin, pmax)) continue;
 
-            R.per_row[r].add(b.x, b.Q2, std::fabs(b.t1), b.phi2);
+            R.per_row[r].add(b.x, b.Q2, std::fabs(b.t1), phi_deg);
         }
     }
 
