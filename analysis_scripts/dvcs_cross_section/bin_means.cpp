@@ -1,6 +1,7 @@
 // bin_means.cpp
 // Progress-enabled version. Single pass through each TTree per period.
 // Uses ONLY phi2 (radians) -> converts to degrees for CSV phimin/phimax checks.
+// Now skips any bin with fewer than MIN_BIN_COUNT entries.
 
 #include "bin_means.h"
 #include "periods.h"
@@ -37,6 +38,9 @@ static constexpr double PI      = 3.14159265358979323846;
 static constexpr double RAD2DEG = 180.0 / PI;
 static constexpr double DEG2RAD = PI / 180.0;
 
+// Minimum entries required to write a bin's averages
+static constexpr long long MIN_BIN_COUNT = 10;
+
 static const std::string kCutsJSON = "output/jsons/combined_cuts.json";
 
 // ---------------- printing helpers ----------------
@@ -50,8 +54,7 @@ static inline void print_status_singleline(const std::string& tag,
                                            long long pass_global,
                                            long long pass_3sig,
                                            long long used_rows,
-                                           double elapsed_s)
-{
+                                           double elapsed_s) {
     double rate = (elapsed_s > 0.0) ? (double)i / elapsed_s : 0.0;
     std::cout << "[bin_means][" << tag << "] "
               << std::fixed << std::setprecision(1)
@@ -59,7 +62,7 @@ static inline void print_status_singleline(const std::string& tag,
               << i << "/" << N
               << "  global=" << pass_global
               << "  sig=" << pass_3sig
-              << "  used=" << used_rows
+              << "  used=" << n_used_rows
               << "  rate=" << std::setprecision(2) << rate << " ev/s"
               << std::endl;
 }
@@ -324,7 +327,7 @@ static void load_sigmas_once() {
 
     for (const auto& p : P) {
         for (const auto& t : T) {
-            const std::string key = p + "_" + t;
+            const std::string key = p + "_" + std::string(t);
             const std::string obj = extract_object(text, key);
             if (obj.empty()) continue;
             VarMap vm;
@@ -499,7 +502,6 @@ static PeriodResult process_period(const std::string& period_key, TTree* tree, c
         }
     }
 
-    TStopwatch swtot; // simple call to show total not needed; we already printed periodic rates.
     print_banner("Finished " + period_key +
                  "  global_pass=" + std::to_string(n_pass_global) +
                  "  sig_pass="    + std::to_string(n_pass_3sig) +
@@ -555,36 +557,67 @@ static void fill_combined_groups(CSV& csv,
         return a;
     };
 
-    print_banner("Combining period means into Fa18, Sp18, 10.6 GeV groups");
+    print_banner("Combining period means into Fa18, Sp18, 10.6 GeV groups (skip if n < 10)");
+    long long wrote_Fa18 = 0, wrote_Sp18 = 0, wrote_106 = 0;
+    long long skip_Fa18 = 0, skip_Sp18 = 0, skip_106 = 0;
+
     for (int r = 0; r < (int)csv.rows.size(); ++r) {
         {
             Accum a = combine({Fa18Inb, Fa18Out}, r);
-            if (a.n > 0) {
+            if (a.n >= MIN_BIN_COUNT) {
                 csv.rows[r][c_xB_Fa18]  = fmt8(a.mx());
                 csv.rows[r][c_Q2_Fa18]  = fmt8(a.mQ());
                 csv.rows[r][c_t_Fa18]   = fmt8(a.mt());
                 csv.rows[r][c_phi_Fa18] = fmt8(a.mp());
+                ++wrote_Fa18;
+            } else {
+                csv.rows[r][c_xB_Fa18].clear();
+                csv.rows[r][c_Q2_Fa18].clear();
+                csv.rows[r][c_t_Fa18].clear();
+                csv.rows[r][c_phi_Fa18].clear();
+                ++skip_Fa18;
             }
         }
         {
             Accum a = combine({Sp18Inb, Sp18Out}, r);
-            if (a.n > 0) {
+            if (a.n >= MIN_BIN_COUNT) {
                 csv.rows[r][c_xB_Sp18]  = fmt8(a.mx());
                 csv.rows[r][c_Q2_Sp18]  = fmt8(a.mQ());
                 csv.rows[r][c_t_Sp18]   = fmt8(a.mt());
                 csv.rows[r][c_phi_Sp18] = fmt8(a.mp());
+                ++wrote_Sp18;
+            } else {
+                csv.rows[r][c_xB_Sp18].clear();
+                csv.rows[r][c_Q2_Sp18].clear();
+                csv.rows[r][c_t_Sp18].clear();
+                csv.rows[r][c_phi_Sp18].clear();
+                ++skip_Sp18;
             }
         }
         {
             Accum a = combine({Fa18Inb, Fa18Out, Sp18Inb, Sp18Out}, r); // 10.6 GeV only
-            if (a.n > 0) {
+            if (a.n >= MIN_BIN_COUNT) {
                 csv.rows[r][c_xB_106]  = fmt8(a.mx());
                 csv.rows[r][c_Q2_106]  = fmt8(a.mQ());
                 csv.rows[r][c_t_106]   = fmt8(a.mt());
                 csv.rows[r][c_phi_106] = fmt8(a.mp());
+                ++wrote_106;
+            } else {
+                csv.rows[r][c_xB_106].clear();
+                csv.rows[r][c_Q2_106].clear();
+                csv.rows[r][c_t_106].clear();
+                csv.rows[r][c_phi_106].clear();
+                ++skip_106;
             }
         }
     }
+
+    print_banner("Group write summary: Fa18 wrote=" + std::to_string(wrote_Fa18) +
+                 " skipped=" + std::to_string(skip_Fa18) +
+                 " | Sp18 wrote=" + std::to_string(wrote_Sp18) +
+                 " skipped=" + std::to_string(skip_Sp18) +
+                 " | 10.6 wrote=" + std::to_string(wrote_106) +
+                 " skipped=" + std::to_string(skip_106));
 }
 
 bool update_bin_means_csv(const std::string& csv_path,
@@ -641,22 +674,31 @@ bool update_bin_means_csv(const std::string& csv_path,
         const auto& perrow = results[i].per_row;
         per_period_rows[tags.csv_label] = perrow;
 
-        long long filled = 0;
+        long long wrote = 0, skipped = 0;
         for (const auto& kv : perrow) {
             int r = kv.first;
             const Accum& a = kv.second;
-            if (a.n <= 0) continue;
-            ++filled;
-
-            csv.rows[r][cxB[tags.csv_label]]  = fmt8(a.mx());
-            csv.rows[r][cQ2[tags.csv_label]]  = fmt8(a.mQ());
-            csv.rows[r][ct [tags.csv_label]]  = fmt8(a.mt());
-            csv.rows[r][cphi[tags.csv_label]] = fmt8(a.mp());
+            if (a.n >= MIN_BIN_COUNT) {
+                csv.rows[r][cxB[tags.csv_label]]  = fmt8(a.mx());
+                csv.rows[r][cQ2[tags.csv_label]]  = fmt8(a.mQ());
+                csv.rows[r][ct [tags.csv_label]]  = fmt8(a.mt());
+                csv.rows[r][cphi[tags.csv_label]] = fmt8(a.mp());
+                ++wrote;
+            } else {
+                // Ensure cells are blanked if below threshold
+                csv.rows[r][cxB[tags.csv_label]].clear();
+                csv.rows[r][cQ2[tags.csv_label]].clear();
+                csv.rows[r][ct [tags.csv_label]].clear();
+                csv.rows[r][cphi[tags.csv_label]].clear();
+                ++skipped;
+            }
         }
-        print_banner("Wrote " + std::to_string(filled) + " row means for " + tags.csv_label);
+        print_banner("Wrote " + std::to_string(wrote) +
+                     " row means (n >= " + std::to_string(MIN_BIN_COUNT) + ") and skipped " +
+                     std::to_string(skipped) + " for " + tags.csv_label);
     }
 
-    // Combined groups
+    // Combined groups (with the same n >= MIN_BIN_COUNT policy on the combined count)
     fill_combined_groups(csv, per_period_rows);
 
     if (!write_csv(csv_path, csv)) return false;
