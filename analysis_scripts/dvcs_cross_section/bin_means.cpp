@@ -445,6 +445,15 @@ static PeriodResult process_period(const std::string& period_key, TTree* tree, c
 
     BranchBinder b; b.bind(tree);
     if (!b.readyForCuts() || !b.readyForAverages()) {
+        std::cerr << "[bin_means] DEBUG missing: "
+          << (b.has_t1   ? "" : "t1 ")
+          << (b.has_open ? "" : "open_angle_ep2 ")
+          << (b.has_pT   ? "" : "pTmiss ")
+          << (b.has_x    ? "" : "x ")
+          << (b.has_Q2   ? "" : "Q2 ")
+          << (b.has_phi  ? "" : "phi2 ")
+          << std::endl;
+          
         std::cerr << "[bin_means] FATAL: Tree for '" << period_key
                   << "' missing branches (t1/open_angle_ep2/pTmiss/x/Q2/phi2)." << std::endl;
         std::exit(EXIT_FAILURE);
