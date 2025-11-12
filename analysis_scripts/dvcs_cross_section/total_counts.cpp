@@ -16,6 +16,7 @@
 #include <TStyle.h>
 #include <TError.h>
 #include <TString.h>
+#include <TTree.h>
 
 #include <algorithm>
 #include <atomic>
