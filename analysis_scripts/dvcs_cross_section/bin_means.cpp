@@ -1,7 +1,7 @@
 // bin_means.cpp
 // Progress-enabled version. Single pass through each TTree per period.
 // Uses ONLY phi2 (radians) -> converts to degrees for CSV phimin/phimax checks.
-// Now skips any bin with fewer than MIN_BIN_COUNT entries.
+// Skips any bin with fewer than MIN_BIN_COUNT entries.
 
 #include "bin_means.h"
 #include "periods.h"
@@ -15,6 +15,7 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <cstdlib>
 #include <fstream>
 #include <iomanip>
 #include <iostream>
@@ -62,7 +63,7 @@ static inline void print_status_singleline(const std::string& tag,
               << i << "/" << N
               << "  global=" << pass_global
               << "  sig=" << pass_3sig
-              << "  used=" << n_used_rows
+              << "  used=" << used_rows
               << "  rate=" << std::setprecision(2) << rate << " ev/s"
               << std::endl;
 }
@@ -391,7 +392,7 @@ static bool passes_all_exclusivity(const std::string& period_json_tag, const Bra
 static inline bool in_range(double v, double a, double b) { return (v >= a) && (v < b); }
 static bool row_accepts_phi(double phi_deg, double pmin_deg, double pmax_deg) {
     if (pmax_deg > pmin_deg) return in_range(phi_deg, pmin_deg, pmax_deg);
-    return (phi_deg >= pmin_deg) || (phi_deg < pmax_deg); // wrap-around case
+    return (phi_deg >= pmin_deg) || (phi_deg < pmax_deg); // wrap-around
 }
 static bool row_accepts_kin(const BranchBinder& b,
                             double xBmin, double xBmax,
@@ -422,7 +423,6 @@ static PeriodResult process_period(const std::string& period_key, TTree* tree, c
         std::exit(EXIT_FAILURE);
     }
 
-    // Fetch needed CSV columns once.
     const int c_xBmin = col(csv, "xBmin");
     const int c_xBmax = col(csv, "xBmax");
     const int c_Q2min = col(csv, "Q2min");
@@ -439,7 +439,6 @@ static PeriodResult process_period(const std::string& period_key, TTree* tree, c
         return (e == s.c_str()) ? std::numeric_limits<double>::quiet_NaN() : v;
     };
 
-    // Pre-cache parsed CSV row windows to avoid string->double repeatedly.
     struct RowWin {
         double xBmin, xBmax, Q2min, Q2max, tmin, tmax, pmin, pmax;
         bool valid;
@@ -465,13 +464,12 @@ static PeriodResult process_period(const std::string& period_key, TTree* tree, c
 
     TStopwatch sw; sw.Start();
 
-    // Progress cadence: print about every 2% or every 1M events, whichever comes first.
     const Long64_t cadence_by_pct = std::max<Long64_t>( (Long64_t) (0.02 * (double)N), 1 );
     const Long64_t cadence_by_abs = 1000000;
     const Long64_t cadence = std::min(cadence_by_pct, cadence_by_abs);
 
     for (Long64_t i = 0; i < N; ++i) {
-        tree->GetEntry(i); // single pass through the tree
+        tree->GetEntry(i);
 
         if (!passes_global(b)) continue;
         ++n_pass_global;
@@ -482,7 +480,6 @@ static PeriodResult process_period(const std::string& period_key, TTree* tree, c
         const double phi_deg = b.phi_deg();
         bool used_any_row = false;
 
-        // Test this event against CSV rows (no additional tree reads).
         for (int r = 0; r < (int)rows.size(); ++r) {
             const RowWin& w = rows[r];
             if (!w.valid) continue;
@@ -498,7 +495,7 @@ static PeriodResult process_period(const std::string& period_key, TTree* tree, c
             double pct = (N > 0) ? (100.0 * (double)i / (double)N) : 100.0;
             print_status_singleline(period_key, pct, (long long)i, (long long)N,
                                     n_pass_global, n_pass_3sig, n_used_rows, sw.RealTime());
-            sw.Continue(); // reset interval timing
+            sw.Continue();
         }
     }
 
@@ -528,7 +525,7 @@ static void fill_combined_groups(CSV& csv,
     const auto* Fa18Out = get("Fa18 Out");
     const auto* Sp18Inb = get("Sp18 Inb");
     const auto* Sp18Out = get("Sp18 Out");
-    const auto* Sp19Inb = get("Sp19 Inb"); (void)Sp19Inb; // excluded from 10.6 GeV combo
+    const auto* Sp19Inb = get("Sp19 Inb"); (void)Sp19Inb;
 
     const int c_xB_Fa18   = col(csv, col_xBavg("Fa18"));
     const int c_Q2_Fa18   = col(csv, col_Q2avg("Fa18"));
@@ -595,7 +592,7 @@ static void fill_combined_groups(CSV& csv,
             }
         }
         {
-            Accum a = combine({Fa18Inb, Fa18Out, Sp18Inb, Sp18Out}, r); // 10.6 GeV only
+            Accum a = combine({Fa18Inb, Fa18Out, Sp18Inb, Sp18Out}, r);
             if (a.n >= MIN_BIN_COUNT) {
                 csv.rows[r][c_xB_106]  = fmt8(a.mx());
                 csv.rows[r][c_Q2_106]  = fmt8(a.mQ());
@@ -626,7 +623,6 @@ bool update_bin_means_csv(const std::string& csv_path,
     CSV csv;
     if (!load_csv(csv_path, csv)) return false;
 
-    // Resolve period columns for output once.
     std::unordered_map<std::string,int> cxB, cQ2, ct, cphi;
     for (const auto& lab : csv_period_labels()) {
         cxB[lab]  = col(csv, col_xBavg(lab));
@@ -635,7 +631,6 @@ bool update_bin_means_csv(const std::string& csv_path,
         cphi[lab] = col(csv, col_phiavg(lab));
     }
 
-    // Determine available period keys.
     std::vector<std::string> period_keys;
     for (const auto& P : CANONICAL_PERIODS()) {
         auto it = dataTrees.find(P.tree_key);
@@ -649,7 +644,6 @@ bool update_bin_means_csv(const std::string& csv_path,
     print_banner("Will process periods:");
     for (const auto& k : period_keys) std::cout << "  - " << k << std::endl;
 
-    // Process each period (parallel across periods if requested).
     std::vector<PeriodResult> results(period_keys.size());
 
     const int nth = std::max(1, std::min(5, max_workers));
@@ -663,8 +657,7 @@ bool update_bin_means_csv(const std::string& csv_path,
         results[i] = process_period(pk, t, csv);
     }
 
-    // Write period means to CSV, and collect for group combos.
-    std::unordered_map<std::string, std::unordered_map<int, Accum>> per_period_rows; // label -> row -> Accum
+    std::unordered_map<std::string, std::unordered_map<int, Accum>> per_period_rows;
 
     for (int i = 0; i < (int)period_keys.size(); ++i) {
         const std::string& pk = period_keys[i];
@@ -685,7 +678,6 @@ bool update_bin_means_csv(const std::string& csv_path,
                 csv.rows[r][cphi[tags.csv_label]] = fmt8(a.mp());
                 ++wrote;
             } else {
-                // Ensure cells are blanked if below threshold
                 csv.rows[r][cxB[tags.csv_label]].clear();
                 csv.rows[r][cQ2[tags.csv_label]].clear();
                 csv.rows[r][ct [tags.csv_label]].clear();
@@ -698,7 +690,6 @@ bool update_bin_means_csv(const std::string& csv_path,
                      std::to_string(skipped) + " for " + tags.csv_label);
     }
 
-    // Combined groups (with the same n >= MIN_BIN_COUNT policy on the combined count)
     fill_combined_groups(csv, per_period_rows);
 
     if (!write_csv(csv_path, csv)) return false;
