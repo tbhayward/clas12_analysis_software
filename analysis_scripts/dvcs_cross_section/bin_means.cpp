@@ -13,6 +13,8 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <cctype>
+#include <cstdlib>
 #include <fstream>
 #include <iomanip>
 #include <iostream>
@@ -33,10 +35,11 @@
 #endif
 
 // ---------------- constants ----------------
-static constexpr double DEG2RAD = M_PI / 180.0;
+static constexpr double PI = 3.14159265358979323846;
+static constexpr double DEG2RAD = PI / 180.0;
 static const std::string kCutsJSON = "output/jsons/combined_cuts.json";
 
-// We accept all topologies for the averages; we only use them to look up the 3σ gates.
+// We accept all topologies for the averages; we only use them to look up the 3-sigma gates.
 enum class Topology { FD_FD, CD_FD, CD_FT };
 
 static inline const char* topo_tag(Topology t) {
@@ -131,7 +134,10 @@ static bool write_csv(const std::string& path, const CSV& csv) {
         bool needq = s.find(',') != std::string::npos || s.find('"') != std::string::npos;
         if (needq) {
             fout << '"';
-            for (char ch : s) fout << (ch == '"' ? "\"\"" : std::string(1, ch));
+            for (char ch : s) {
+                if (ch == '"') fout << "\"\"";
+                else           fout << ch;
+            }
             fout << '"';
         } else {
             fout << s;
@@ -146,7 +152,10 @@ static bool write_csv(const std::string& path, const CSV& csv) {
             bool needq = s.find(',') != std::string::npos || s.find('"') != std::string::npos;
             if (needq) {
                 fout << '"';
-                for (char ch : s) fout << (ch == '"' ? "\"\"" : std::string(1, ch));
+                for (char ch : s) {
+                    if (ch == '"') fout << "\"\"";
+                    else           fout << ch;
+                }
                 fout << '"';
             } else {
                 fout << s;
@@ -366,7 +375,7 @@ static bool passes_3sigma_for_topo(const std::string& period_json_tag,
     return ok_theta && ok_pT && ok_Em2 && ok_Mx2 && ok_Mx21 && ok_Mx22 && ok_xF;
 }
 
-// Accept if ANY topology’s 3σ gate passes (accept-all-topologies for averages).
+// Accept if ANY topology’s 3-sigma gate passes (accept-all-topologies for averages).
 static bool passes_all_exclusivity(const std::string& period_json_tag, const BranchBinder& b) {
     return passes_3sigma_for_topo(period_json_tag, Topology::FD_FD, b)
         || passes_3sigma_for_topo(period_json_tag, Topology::CD_FD, b)
@@ -573,7 +582,7 @@ bool update_bin_means_csv(const std::string& csv_path,
 
     // Resolve per-period CSV columns for writing period means
     std::unordered_map<std::string,int> cxB, cQ2, ct, cphi;
-    for (const const auto& lab : csv_period_labels()) {
+    for (const auto& lab : csv_period_labels()) {
         cxB[lab]  = col(csv, col_xBavg(lab));
         cQ2[lab]  = col(csv, col_Q2avg(lab));
         ct[lab]   = col(csv, col_tavg (lab));
