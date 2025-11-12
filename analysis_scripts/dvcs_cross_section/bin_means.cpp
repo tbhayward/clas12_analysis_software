@@ -7,6 +7,7 @@
 #include "load_binning_scheme.h"
 
 #include <TTree.h>
+#include <TChain.h>
 
 #include <algorithm>
 #include <cassert>
@@ -216,24 +217,37 @@ struct BranchBinder {
 
     void bind(TTree* t) {
         if (!t) return;
-        auto bindI = [&](const char* n, int* a, bool& f){ if (t->GetBranch(n)) { t->SetBranchAddress(n, a); f = true; } };
-        auto bindD = [&](const char* n, double* a, bool& f){ if (t->GetBranch(n)) { t->SetBranchAddress(n, a); f = true; } };
+
+        // If this is a TChain, force-load the first tree so branches are discoverable.
+        if (auto ch = dynamic_cast<TChain*>(t)) {
+            ch->LoadTree(0);   // does not require addresses set
+        }
+
+        auto bindI = [&](const char* n, int* a, bool& f) {
+            // Try to bind regardless; mark present if a branch or leaf with this name exists
+            t->SetBranchAddress(n, a);
+            f = (t->GetBranch(n) != nullptr) || (t->GetLeaf(n) != nullptr);
+        };
+        auto bindD = [&](const char* n, double* a, bool& f) {
+            t->SetBranchAddress(n, a);
+            f = (t->GetBranch(n) != nullptr) || (t->GetLeaf(n) != nullptr);
+        };
 
         bindI("detector1", &detector1, has_d1);
         bindI("detector2", &detector2, has_d2);
 
-        bindD("t1", &t1, has_t1);
-        bindD("open_angle_ep2", &open_angle_ep2, has_open);
-        bindD("pTmiss", &pTmiss, has_pT);
-        bindD("Emiss2", &Emiss2, has_Em2);
-        bindD("Mx2", &Mx2, has_Mx2);
-        bindD("Mx2_1", &Mx2_1, has_Mx2_1);
-        bindD("Mx2_2", &Mx2_2, has_Mx2_2);
-        bindD("xF", &xF, has_xF);
+        bindD("t1",               &t1,               has_t1);
+        bindD("open_angle_ep2",   &open_angle_ep2,   has_open);   // degrees
+        bindD("pTmiss",           &pTmiss,           has_pT);
+        bindD("Emiss2",           &Emiss2,           has_Em2);
+        bindD("Mx2",              &Mx2,              has_Mx2);
+        bindD("Mx2_1",            &Mx2_1,            has_Mx2_1);
+        bindD("Mx2_2",            &Mx2_2,            has_Mx2_2);
+        bindD("xF",               &xF,               has_xF);
 
-        bindD("x", &x, has_x);
-        bindD("Q2", &Q2, has_Q2);
-        bindD("phi2", &phi2, has_phi);
+        bindD("x",                &x,                has_x);
+        bindD("Q2",               &Q2,               has_Q2);
+        bindD("phi2",             &phi2,             has_phi);    // degrees
     }
 
     bool readyForCuts() const {
