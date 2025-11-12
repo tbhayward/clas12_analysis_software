@@ -515,8 +515,8 @@ static PeriodResult process_period(const std::string& period_key, TTree* tree, c
 
         if (i == 0 || (i % cadence) == 0 || i + 1 == N) {
             double pct = (N > 0) ? (100.0 * (double)i / (double)N) : 100.0;
-            print_status_singleline(period_key, pct, (long long)i, (long long)N,
-                                    n_pass_global, n_pass_3sig, n_used_rows, sw.RealTime());
+            // print_status_singleline(period_key, pct, (long long)i, (long long)N,
+            //                         n_pass_global, n_pass_3sig, n_used_rows, sw.RealTime());
             sw.Continue();
         }
     }
