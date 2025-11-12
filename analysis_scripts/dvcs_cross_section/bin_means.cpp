@@ -1,16 +1,13 @@
 // bin_means.cpp
-// Compute per-bin means (xB, Q2, |t|, phi) per period, then fill combined groups,
-// using global cuts AND all derived 3-sigma exclusivity cuts from combined_cuts.json.
-// Notes specific to this analysis:
-//   * Use ONLY the phi2 branch (radians) and convert to degrees.
-//   * phimin/phimax are always provided in the CSV (degrees); wrap-around supported.
-//   * No conditional fallbacks to Delta_phi or phi.
+// Progress-enabled version. Single pass through each TTree per period.
+// Uses ONLY phi2 (radians) -> converts to degrees for CSV phimin/phimax checks.
 
 #include "bin_means.h"
 #include "periods.h"
 #include "load_binning_scheme.h"
 
 #include <TTree.h>
+#include <TStopwatch.h>
 
 #include <algorithm>
 #include <cassert>
@@ -36,13 +33,38 @@
 #include <omp.h>
 #endif
 
-// ---------------- numeric helpers ----------------
-static constexpr double PI       = 3.14159265358979323846;
-static constexpr double RAD2DEG  = 180.0 / PI;
-static constexpr double DEG2RAD  = PI / 180.0;
+static constexpr double PI      = 3.14159265358979323846;
+static constexpr double RAD2DEG = 180.0 / PI;
+static constexpr double DEG2RAD = PI / 180.0;
+
 static const std::string kCutsJSON = "output/jsons/combined_cuts.json";
 
-// We accept all topologies for the averages; they are only used to look up the 3-sigma gates.
+// ---------------- printing helpers ----------------
+static inline void print_banner(const std::string& msg) {
+    std::cout << "[bin_means] " << msg << std::endl;
+}
+static inline void print_status_singleline(const std::string& tag,
+                                           double pct,
+                                           long long i,
+                                           long long N,
+                                           long long pass_global,
+                                           long long pass_3sig,
+                                           long long used_rows,
+                                           double elapsed_s)
+{
+    double rate = (elapsed_s > 0.0) ? (double)i / elapsed_s : 0.0;
+    std::cout << "[bin_means][" << tag << "] "
+              << std::fixed << std::setprecision(1)
+              << pct << "%  "
+              << i << "/" << N
+              << "  global=" << pass_global
+              << "  sig=" << pass_3sig
+              << "  used=" << used_rows
+              << "  rate=" << std::setprecision(2) << rate << " ev/s"
+              << std::endl;
+}
+
+// ---------------- labels and mapping ----------------
 enum class Topology { FD_FD, CD_FD, CD_FT };
 
 static inline const char* topo_tag(Topology t) {
@@ -54,22 +76,11 @@ static inline const char* topo_tag(Topology t) {
     return "FD_FD";
 }
 
-static inline const std::vector<std::string>& csv_period_labels() {
-    static const std::vector<std::string> v = {
-        "Fa18 Inb", "Fa18 Out", "Sp19 Inb", "Sp18 Inb", "Sp18 Out"
-    };
-    return v;
-}
-static inline const std::vector<std::string>& csv_group_labels() {
-    static const std::vector<std::string> v = { "Fa18", "Sp18", "10.6 GeV" };
-    return v;
-}
-
-// Map your tree key to the JSON block and CSV label.
 struct PeriodKeyMap {
     std::string json_tag;   // e.g. "DVCS_Fa18_Inb"
     std::string csv_label;  // e.g. "Fa18 Inb"
 };
+
 static inline PeriodKeyMap period_key_to_tags(const std::string& k) {
     std::string s; s.reserve(k.size());
     for (char c : k) s.push_back((char)std::tolower((unsigned char)c));
@@ -83,7 +94,18 @@ static inline PeriodKeyMap period_key_to_tags(const std::string& k) {
     return {"", ""};
 }
 
-// ---------------- CSV utils ----------------
+static inline const std::vector<std::string>& csv_period_labels() {
+    static const std::vector<std::string> v = {
+        "Fa18 Inb", "Fa18 Out", "Sp19 Inb", "Sp18 Inb", "Sp18 Out"
+    };
+    return v;
+}
+static inline const std::vector<std::string>& csv_group_labels() {
+    static const std::vector<std::string> v = { "Fa18", "Sp18", "10.6 GeV" };
+    return v;
+}
+
+// ---------------- CSV I/O ----------------
 struct CSV {
     std::vector<std::string> header;
     std::unordered_map<std::string,int> index;
@@ -173,10 +195,10 @@ static int col(const CSV& csv, const std::string& name) {
     return it->second;
 }
 
-static inline std::string col_xBavg(const std::string& group)  { return "xBavg, "    + group; }
-static inline std::string col_Q2avg(const std::string& group)  { return "Q2avg, "    + group; }
-static inline std::string col_tavg (const std::string& group)  { return "t_abs_avg, "+ group; }
-static inline std::string col_phiavg(const std::string& group) { return "phiavg, "   + group; }
+static inline std::string col_xBavg(const std::string& lab)  { return "xBavg, "     + lab; }
+static inline std::string col_Q2avg(const std::string& lab)  { return "Q2avg, "     + lab; }
+static inline std::string col_tavg (const std::string& lab)  { return "t_abs_avg, " + lab; }
+static inline std::string col_phiavg(const std::string& lab) { return "phiavg, "    + lab; }
 
 // ---------------- accumulators ----------------
 struct Accum {
@@ -189,21 +211,9 @@ struct Accum {
     double mp() const { return n ? sp / n : std::numeric_limits<double>::quiet_NaN(); }
 };
 
-// ---------------- tuple hasher (if needed later) ----------------
-struct TupleHash {
-    template <class T> static inline void hc(std::size_t& s, const T& v) {
-        std::hash<T> h; s ^= h(v) + 0x9e3779b97f4a7c15ULL + (s<<6) + (s>>2);
-    }
-    template <class... Ts> std::size_t operator()(const std::tuple<Ts...>& t) const {
-        std::size_t seed = 0;
-        std::apply([&](const Ts&... elems){ (hc(seed, elems), ...); }, t);
-        return seed;
-    }
-};
-
-// ---------------- branches ----------------
+// ---------------- branch binder ----------------
 struct BranchBinder {
-    // exclusivity & globals
+    // global/exclusivity inputs
     double t1 = 0.0;               bool has_t1 = false;
     double open_angle_ep2 = 0.0;   bool has_open = false; // degrees
     double pTmiss = 0.0;           bool has_pT = false;
@@ -233,41 +243,36 @@ struct BranchBinder {
 
         bindD("x", &x, has_x);
         bindD("Q2", &Q2, has_Q2);
-        bindD("phi2", &phi2_rad, has_phi2); // ONLY phi2, radians
+        bindD("phi2", &phi2_rad, has_phi2); // ONLY phi2 (radians)
     }
 
     bool readyForCuts() const {
-        // require core globals; the 3-sigma variables are optional and applied if present
         return has_t1 && has_open && has_pT;
     }
     bool readyForAverages() const {
         return has_x && has_Q2 && has_phi2;
     }
-
-    // phi in degrees, wrapped to [0,360)
     double phi_deg() const {
         if (!has_phi2) return std::numeric_limits<double>::quiet_NaN();
         double deg = std::fmod(phi2_rad * RAD2DEG, 360.0);
         if (deg < 0.0) deg += 360.0;
-        // protect against 360.0 exact
         if (deg >= 360.0) deg = std::nextafter(360.0, 0.0);
         return deg;
     }
 };
 
-// ---------------- global cuts ----------------
+// ---------------- cuts ----------------
 static inline bool passes_global(const BranchBinder& b) {
     if (!b.readyForCuts()) return false;
-    if (b.open_angle_ep2 <= 5.0) return false;    // deg
+    if (b.open_angle_ep2 <= 5.0) return false;    // degrees
     if ((-b.t1) > 1.0)          return false;     // |t| < 1.0
     if (b.pTmiss > 0.20)        return false;     // GeV
     return true;
 }
 
-// ---------------- 3-sigma cuts loader ----------------
 struct Sigmas { double mean = std::numeric_limits<double>::quiet_NaN(); double std = std::numeric_limits<double>::quiet_NaN(); };
-using VarMap = std::unordered_map<std::string, Sigmas>;           // var -> {mean,std}
-static std::unordered_map<std::string, VarMap> g_sigma_cache;     // "DVCS_Fa18_Inb_FD_FD" -> map
+using VarMap = std::unordered_map<std::string, Sigmas>;
+static std::unordered_map<std::string, VarMap> g_sigma_cache;
 static std::once_flag g_sigma_once;
 
 static double parse_number(const std::string& s, size_t& i) {
@@ -277,7 +282,6 @@ static double parse_number(const std::string& s, size_t& i) {
     if (st == i) return std::numeric_limits<double>::quiet_NaN();
     return std::strtod(s.c_str() + st, nullptr);
 }
-
 static Sigmas extract_mean_std(const std::string& block, const std::string& var) {
     Sigmas out;
     size_t data_pos = block.find("\"data\"");
@@ -290,7 +294,6 @@ static Sigmas extract_mean_std(const std::string& block, const std::string& var)
     if (spos != std::string::npos) { size_t i = spos; out.std  = parse_number(block, i); }
     return out;
 }
-
 static std::string extract_object(const std::string& full, const std::string& key) {
     const std::string qk = "\"" + key + "\"";
     size_t p = full.find(qk);
@@ -306,7 +309,6 @@ static std::string extract_object(const std::string& full, const std::string& ke
     if (i <= brace) return {};
     return full.substr(brace, i - brace);
 }
-
 static void load_sigmas_once() {
     std::ifstream fin(kCutsJSON);
     if (!fin.is_open()) {
@@ -318,10 +320,7 @@ static void load_sigmas_once() {
     const std::vector<std::string> P = { "DVCS_Fa18_Inb", "DVCS_Fa18_Out", "DVCS_Sp19_Inb",
                                          "DVCS_Sp18_Inb", "DVCS_Sp18_Out" };
     const std::vector<std::string> T = { "FD_FD", "CD_FD", "CD_FT" };
-
-    const std::vector<std::string> VARS = {
-        "Emiss2", "Mx2", "Mx2_1", "Mx2_2", "pTmiss", "theta_gamma_gamma", "xF"
-    };
+    const std::vector<std::string> VARS = { "Emiss2", "Mx2", "Mx2_1", "Mx2_2", "pTmiss", "theta_gamma_gamma", "xF" };
 
     for (const auto& p : P) {
         for (const auto& t : T) {
@@ -337,14 +336,11 @@ static void load_sigmas_once() {
         }
     }
 }
-
 enum class CutMode { TwoSided, UpperOnly };
-
 static CutMode var_mode(const std::string& var) {
     if (var == "Emiss2" || var == "pTmiss" || var == "theta_gamma_gamma") return CutMode::UpperOnly;
-    return CutMode::TwoSided; // Mx2, Mx2_1, Mx2_2, xF
+    return CutMode::TwoSided;
 }
-
 static bool passes_3sigma_for_topo(const std::string& period_json_tag,
                                    Topology topo,
                                    const BranchBinder& b) {
@@ -356,11 +352,10 @@ static bool passes_3sigma_for_topo(const std::string& period_json_tag,
     if (it == g_sigma_cache.end()) return true;
 
     const VarMap& vm = it->second;
-
     auto check = [&](const char* var, bool has_val, double val)->bool {
         auto itv = vm.find(var);
-        if (itv == vm.end()) return true;          // no derived cut for this var -> pass
-        if (!has_val) return true;                 // branch not available -> pass
+        if (itv == vm.end()) return true;
+        if (!has_val) return true;
         const Sigmas s = itv->second;
         if (!std::isfinite(s.mean) || !std::isfinite(s.std)) return true;
 
@@ -373,7 +368,6 @@ static bool passes_3sigma_for_topo(const std::string& period_json_tag,
         }
     };
 
-    // theta: JSON stored in radians; branch open_angle_ep2 is degrees
     const bool ok_theta = check("theta_gamma_gamma", b.has_open, b.open_angle_ep2 * DEG2RAD);
     const bool ok_pT    = check("pTmiss",           b.has_pT,   b.pTmiss);
     const bool ok_Em2   = check("Emiss2",           b.has_Em2,  b.Emiss2);
@@ -384,8 +378,7 @@ static bool passes_3sigma_for_topo(const std::string& period_json_tag,
 
     return ok_theta && ok_pT && ok_Em2 && ok_Mx2 && ok_Mx21 && ok_Mx22 && ok_xF;
 }
-
-// Accept if ANY topology 3-sigma gate passes (accept-all-topologies for averages).
+// Accept if ANY topology gate passes.
 static bool passes_all_exclusivity(const std::string& period_json_tag, const BranchBinder& b) {
     return passes_3sigma_for_topo(period_json_tag, Topology::FD_FD, b)
         || passes_3sigma_for_topo(period_json_tag, Topology::CD_FD, b)
@@ -393,27 +386,22 @@ static bool passes_all_exclusivity(const std::string& period_json_tag, const Bra
 }
 
 static inline bool in_range(double v, double a, double b) { return (v >= a) && (v < b); }
-
-// phimin/phimax are degrees; phi_deg is degrees; wrap-around supported.
 static bool row_accepts_phi(double phi_deg, double pmin_deg, double pmax_deg) {
-    // normal case
     if (pmax_deg > pmin_deg) return in_range(phi_deg, pmin_deg, pmax_deg);
-    // range crosses 360 -> 0 boundary; accept outside-gap
-    return (phi_deg >= pmin_deg) || (phi_deg < pmax_deg);
+    return (phi_deg >= pmin_deg) || (phi_deg < pmax_deg); // wrap-around case
 }
-
 static bool row_accepts_kin(const BranchBinder& b,
                             double xBmin, double xBmax,
                             double Q2min, double Q2max,
                             double tmin, double tmax) {
     const double tabs = std::fabs(b.t1);
-    if (!in_range(b.x,   xBmin, xBmax))   return false;
-    if (!in_range(b.Q2,  Q2min, Q2max))   return false;
-    if (!in_range(tabs,  tmin,  tmax))    return false;
+    if (!in_range(b.x,  xBmin, xBmax)) return false;
+    if (!in_range(b.Q2, Q2min, Q2max)) return false;
+    if (!in_range(tabs, tmin, tmax))   return false;
     return true;
 }
 
-// ---------------- per-period processing ----------------
+// ---------------- per period work ----------------
 struct PeriodResult {
     std::unordered_map<int, Accum> per_row; // row index -> Accum
 };
@@ -423,20 +411,15 @@ static PeriodResult process_period(const std::string& period_key, TTree* tree, c
     if (!tree) return R;
 
     PeriodKeyMap tags = period_key_to_tags(period_key);
-    if (tags.json_tag.empty() || tags.csv_label.empty()) {
-        std::cerr << "[bin_means] WARNING: cannot map period key '" << period_key
-                  << "' to JSON/CSV labels; proceeding without 3-sigma cuts for this period."
-                  << std::endl;
-    }
-
     BranchBinder b; b.bind(tree);
+
     if (!b.readyForCuts() || !b.readyForAverages()) {
         std::cerr << "[bin_means] FATAL: Tree for '" << period_key
                   << "' missing branches (t1/open_angle_ep2/pTmiss/x/Q2/phi2)." << std::endl;
         std::exit(EXIT_FAILURE);
     }
 
-    // CSV columns we need
+    // Fetch needed CSV columns once.
     const int c_xBmin = col(csv, "xBmin");
     const int c_xBmax = col(csv, "xBmax");
     const int c_Q2min = col(csv, "Q2min");
@@ -453,48 +436,79 @@ static PeriodResult process_period(const std::string& period_key, TTree* tree, c
         return (e == s.c_str()) ? std::numeric_limits<double>::quiet_NaN() : v;
     };
 
+    // Pre-cache parsed CSV row windows to avoid string->double repeatedly.
+    struct RowWin {
+        double xBmin, xBmax, Q2min, Q2max, tmin, tmax, pmin, pmax;
+        bool valid;
+    };
+    std::vector<RowWin> rows; rows.reserve(csv.rows.size());
+    for (const auto& row : csv.rows) {
+        RowWin w;
+        w.xBmin = toD(row[c_xBmin]); w.xBmax = toD(row[c_xBmax]);
+        w.Q2min = toD(row[c_Q2min]); w.Q2max = toD(row[c_Q2max]);
+        w.tmin  = toD(row[c_tmin]);  w.tmax  = toD(row[c_tmax]);
+        w.pmin  = toD(row[c_pmin]);  w.pmax  = toD(row[c_pmax]);
+        const std::string& vs = row[c_valid];
+        w.valid = (vs == "1" || vs == "1.0" || vs == "true" || vs == "TRUE");
+        rows.push_back(w);
+    }
+
     const Long64_t N = tree->GetEntries();
+    print_banner("Processing period " + period_key + " with " + std::to_string((long long)N) + " entries");
+
+    long long n_pass_global = 0;
+    long long n_pass_3sig   = 0;
+    long long n_used_rows   = 0;
+
+    TStopwatch sw; sw.Start();
+
+    // Progress cadence: print about every 2% or every 1M events, whichever comes first.
+    const Long64_t cadence_by_pct = std::max<Long64_t>( (Long64_t) (0.02 * (double)N), 1 );
+    const Long64_t cadence_by_abs = 1000000;
+    const Long64_t cadence = std::min(cadence_by_pct, cadence_by_abs);
+
     for (Long64_t i = 0; i < N; ++i) {
-        tree->GetEntry(i);
+        tree->GetEntry(i); // single pass through the tree
+
         if (!passes_global(b)) continue;
+        ++n_pass_global;
 
-        // 3-sigma (any topology OK)
         if (!passes_all_exclusivity(tags.json_tag, b)) continue;
+        ++n_pass_3sig;
 
-        // phi in degrees from phi2 (radians)
         const double phi_deg = b.phi_deg();
+        bool used_any_row = false;
 
-        for (int r = 0; r < (int)csv.rows.size(); ++r) {
-            const auto& row = csv.rows[r];
-
-            // valid row?
-            bool valid = true;
-            if (c_valid < (int)row.size()) {
-                const std::string& vs = row[c_valid];
-                valid = (vs == "1" || vs == "1.0" || vs == "true" || vs == "TRUE");
-            }
-            if (!valid) continue;
-
-            const double xBmin  = toD(row[c_xBmin]);
-            const double xBmax  = toD(row[c_xBmax]);
-            const double Q2min  = toD(row[c_Q2min]);
-            const double Q2max  = toD(row[c_Q2max]);
-            const double tmin   = toD(row[c_tmin]);
-            const double tmax   = toD(row[c_tmax]);
-            const double pmin   = toD(row[c_pmin]);
-            const double pmax   = toD(row[c_pmax]);
-
-            if (!row_accepts_kin(b, xBmin, xBmax, Q2min, Q2max, tmin, tmax)) continue;
-            if (!row_accepts_phi(phi_deg, pmin, pmax)) continue;
+        // Test this event against CSV rows (no additional tree reads).
+        for (int r = 0; r < (int)rows.size(); ++r) {
+            const RowWin& w = rows[r];
+            if (!w.valid) continue;
+            if (!row_accepts_kin(b, w.xBmin, w.xBmax, w.Q2min, w.Q2max, w.tmin, w.tmax)) continue;
+            if (!row_accepts_phi(phi_deg, w.pmin, w.pmax)) continue;
 
             R.per_row[r].add(b.x, b.Q2, std::fabs(b.t1), phi_deg);
+            used_any_row = true;
+        }
+        if (used_any_row) ++n_used_rows;
+
+        if (i == 0 || (i % cadence) == 0 || i + 1 == N) {
+            double pct = (N > 0) ? (100.0 * (double)i / (double)N) : 100.0;
+            print_status_singleline(period_key, pct, (long long)i, (long long)N,
+                                    n_pass_global, n_pass_3sig, n_used_rows, sw.RealTime());
+            sw.Continue(); // reset interval timing
         }
     }
+
+    TStopwatch swtot; // simple call to show total not needed; we already printed periodic rates.
+    print_banner("Finished " + period_key +
+                 "  global_pass=" + std::to_string(n_pass_global) +
+                 "  sig_pass="    + std::to_string(n_pass_3sig) +
+                 "  used="        + std::to_string(n_used_rows));
 
     return R;
 }
 
-// ---------------- main entry ----------------
+// ---------------- combine groups and write ----------------
 static inline std::string fmt8(double v) {
     if (!std::isfinite(v)) return std::string();
     std::ostringstream oss; oss << std::fixed << std::setprecision(8) << v;
@@ -503,7 +517,6 @@ static inline std::string fmt8(double v) {
 
 static void fill_combined_groups(CSV& csv,
                                  const std::unordered_map<std::string, std::unordered_map<int, Accum>>& per_period) {
-    // Build helpers: map CSV label -> per-row Accum (already computed)
     auto get = [&](const std::string& lab)->const std::unordered_map<int, Accum>* {
         auto it = per_period.find(lab);
         return (it == per_period.end()) ? nullptr : &it->second;
@@ -513,7 +526,7 @@ static void fill_combined_groups(CSV& csv,
     const auto* Fa18Out = get("Fa18 Out");
     const auto* Sp18Inb = get("Sp18 Inb");
     const auto* Sp18Out = get("Sp18 Out");
-    const auto* Sp19Inb = get("Sp19 Inb");
+    const auto* Sp19Inb = get("Sp19 Inb"); (void)Sp19Inb; // excluded from 10.6 GeV combo
 
     const int c_xB_Fa18   = col(csv, col_xBavg("Fa18"));
     const int c_Q2_Fa18   = col(csv, col_Q2avg("Fa18"));
@@ -542,8 +555,8 @@ static void fill_combined_groups(CSV& csv,
         return a;
     };
 
+    print_banner("Combining period means into Fa18, Sp18, 10.6 GeV groups");
     for (int r = 0; r < (int)csv.rows.size(); ++r) {
-        // Fa18 = Inb + Out
         {
             Accum a = combine({Fa18Inb, Fa18Out}, r);
             if (a.n > 0) {
@@ -553,7 +566,6 @@ static void fill_combined_groups(CSV& csv,
                 csv.rows[r][c_phi_Fa18] = fmt8(a.mp());
             }
         }
-        // Sp18 = Inb + Out
         {
             Accum a = combine({Sp18Inb, Sp18Out}, r);
             if (a.n > 0) {
@@ -563,9 +575,8 @@ static void fill_combined_groups(CSV& csv,
                 csv.rows[r][c_phi_Sp18] = fmt8(a.mp());
             }
         }
-        // 10.6 GeV = Fa18 + Sp18 (exclude Sp19 10.2 GeV)
         {
-            Accum a = combine({Fa18Inb, Fa18Out, Sp18Inb, Sp18Out}, r);
+            Accum a = combine({Fa18Inb, Fa18Out, Sp18Inb, Sp18Out}, r); // 10.6 GeV only
             if (a.n > 0) {
                 csv.rows[r][c_xB_106]  = fmt8(a.mx());
                 csv.rows[r][c_Q2_106]  = fmt8(a.mQ());
@@ -573,7 +584,6 @@ static void fill_combined_groups(CSV& csv,
                 csv.rows[r][c_phi_106] = fmt8(a.mp());
             }
         }
-        (void)Sp19Inb; // intentionally unused for 10.6 GeV group
     }
 }
 
@@ -583,7 +593,7 @@ bool update_bin_means_csv(const std::string& csv_path,
     CSV csv;
     if (!load_csv(csv_path, csv)) return false;
 
-    // Resolve per-period CSV columns for writing period means
+    // Resolve period columns for output once.
     std::unordered_map<std::string,int> cxB, cQ2, ct, cphi;
     for (const auto& lab : csv_period_labels()) {
         cxB[lab]  = col(csv, col_xBavg(lab));
@@ -592,7 +602,7 @@ bool update_bin_means_csv(const std::string& csv_path,
         cphi[lab] = col(csv, col_phiavg(lab));
     }
 
-    // Determine available period keys from dataTrees
+    // Determine available period keys.
     std::vector<std::string> period_keys;
     for (const auto& P : CANONICAL_PERIODS()) {
         auto it = dataTrees.find(P.tree_key);
@@ -603,7 +613,10 @@ bool update_bin_means_csv(const std::string& csv_path,
         std::exit(EXIT_FAILURE);
     }
 
-    // Process periods (optionally in parallel across periods)
+    print_banner("Will process periods:");
+    for (const auto& k : period_keys) std::cout << "  - " << k << std::endl;
+
+    // Process each period (parallel across periods if requested).
     std::vector<PeriodResult> results(period_keys.size());
 
     const int nth = std::max(1, std::min(5, max_workers));
@@ -617,33 +630,36 @@ bool update_bin_means_csv(const std::string& csv_path,
         results[i] = process_period(pk, t, csv);
     }
 
-    // Write period results into CSV cells
+    // Write period means to CSV, and collect for group combos.
     std::unordered_map<std::string, std::unordered_map<int, Accum>> per_period_rows; // label -> row -> Accum
 
     for (int i = 0; i < (int)period_keys.size(); ++i) {
         const std::string& pk = period_keys[i];
         PeriodKeyMap tags = period_key_to_tags(pk);
-        if (tags.csv_label.empty()) continue; // skip unknown
+        if (tags.csv_label.empty()) continue;
 
         const auto& perrow = results[i].per_row;
         per_period_rows[tags.csv_label] = perrow;
 
+        long long filled = 0;
         for (const auto& kv : perrow) {
             int r = kv.first;
             const Accum& a = kv.second;
             if (a.n <= 0) continue;
+            ++filled;
 
             csv.rows[r][cxB[tags.csv_label]]  = fmt8(a.mx());
             csv.rows[r][cQ2[tags.csv_label]]  = fmt8(a.mQ());
             csv.rows[r][ct [tags.csv_label]]  = fmt8(a.mt());
             csv.rows[r][cphi[tags.csv_label]] = fmt8(a.mp());
         }
+        print_banner("Wrote " + std::to_string(filled) + " row means for " + tags.csv_label);
     }
 
-    // Fill combined groups from the period maps (no TTree reread)
+    // Combined groups
     fill_combined_groups(csv, per_period_rows);
 
     if (!write_csv(csv_path, csv)) return false;
-    std::cout << "[bin_means] Updated bin means in: " << csv_path << std::endl;
+    print_banner(std::string("Updated bin means in: ") + csv_path);
     return true;
 }
