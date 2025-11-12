@@ -35,6 +35,9 @@
 #include <omp.h>
 #endif
 
+// If json header is not already pulled in elsewhere:
+#include <nlohmann/json.hpp>
+
 namespace {
 
 [[noreturn]] void fatal(const std::string& msg) {
@@ -233,46 +236,30 @@ static inline std::string safe_label_for_key(const std::string& k) {
     return std::string();
 }
 
-// -------------- topology helpers --------------
+// -------------- topology: fixed set and detector-based resolver --------------
 static const char* TOPO_STRS[3] = {"(FD, FD)","(CD, FD)","(CD, FT)"};
-static const char* TOPO_DIRS[3] = {"FD_FD","CD_FD","CD_FT"}; // for filenames/dirs
-
-static int topo_index_from_string(const std::string& s) {
-    for (int i = 0; i < 3; ++i) if (s == TOPO_STRS[i]) return i;
-    return -1;
-}
+static const char* TOPO_DIRS[3] = {"FD_FD","CD_FD","CD_FT"}; // for filenames
 
 struct TopologyResolver {
-    // Supported encodings:
-    //   1) topology_id or topology_code int 0/1/2 -> (FD,FD)/(CD,FD)/(CD,FT)
-    //   2) is_fd_fd / is_cd_fd / is_cd_ft flags (0/1)
-    bool have_id = false, have_code = false, have_flags = false;
-    int topology_id = -1, topology_code = -1;
-    int is_fd_fd = 0, is_cd_fd = 0, is_cd_ft = 0;
+    int detector1 = 0;
+    int detector2 = 0;
+    bool have_det1 = false, have_det2 = false;
 
     void bind(TTree* t) {
-        have_id   = (t->GetBranch("topology_id")   != nullptr);
-        have_code = (t->GetBranch("topology_code") != nullptr);
-        have_flags= (t->GetBranch("is_fd_fd") && t->GetBranch("is_cd_fd") && t->GetBranch("is_cd_ft"));
-
-        if (have_id)   t->SetBranchAddress("topology_id",   &topology_id);
-        if (have_code) t->SetBranchAddress("topology_code", &topology_code);
-        if (have_flags){
-            t->SetBranchAddress("is_fd_fd", &is_fd_fd);
-            t->SetBranchAddress("is_cd_fd", &is_cd_fd);
-            t->SetBranchAddress("is_cd_ft", &is_cd_ft);
+        have_det1 = (t->GetBranch("detector1") != nullptr);
+        have_det2 = (t->GetBranch("detector2") != nullptr);
+        if (!(have_det1 && have_det2)) {
+            fatal("Missing detector1/detector2 in DVCS tree.");
         }
+        t->SetBranchAddress("detector1", &detector1);
+        t->SetBranchAddress("detector2", &detector2);
     }
 
-    // returns 0,1,2 or -1
+    // Return 0:(FD,FD), 1:(CD,FD), 2:(CD,FT), or -1 if unknown
     int index() const {
-        if (have_id)   { if (topology_id   >= 0 && topology_id   <= 2) return topology_id; }
-        if (have_code) { if (topology_code >= 0 && topology_code <= 2) return topology_code; }
-        if (have_flags) {
-            if (is_fd_fd) return 0;
-            if (is_cd_fd) return 1;
-            if (is_cd_ft) return 2;
-        }
+        if (detector1 == 1 && detector2 == 1) return 0; // FD,FD
+        if (detector1 == 2 && detector2 == 1) return 1; // CD,FD
+        if (detector1 == 2 && detector2 == 0) return 2; // CD,FT
         return -1;
     }
 };
@@ -287,7 +274,6 @@ struct CsvCols {
 
 static inline std::string period_yield_col_base(const std::string& label,
                                                 const std::string& topo_str) {
-    // Example: "raw yield, ep->epg, (FD, FD), exp, Fa18 Inb, "
     std::ostringstream os;
     os << "raw yield, ep->epg, " << topo_str << ", exp, " << label << ", ";
     return os.str();
@@ -313,6 +299,7 @@ static inline double safe_mean(const std::vector<double>& v) {
 }
 
 // Draw one label+topology set of canvases (one canvas per xB range)
+// NOTE: output directory is output/total_counts_plots/<Label> (no topology subfolders)
 static void draw_group_canvases(
     const std::string& label,
     const std::string& topo_str,
@@ -323,7 +310,8 @@ static void draw_group_canvases(
 {
     namespace fs = std::filesystem;
 
-    const std::string out_dir = (fs::path(out_root_dir) / "total_counts_plots" / label / topo_dir).string();
+    // Write into: output/total_counts_plots/<Label>
+    const std::string out_dir = (fs::path(out_root_dir) / "total_counts_plots" / label).string();
     if (!fs::exists(out_dir)) {
         fatal("Missing plot output directory: " + out_dir + " (makeOutputDirs must create it)");
     }
@@ -528,14 +516,19 @@ static inline std::string group_tag_for_key(const std::string& period_key) {
 // ---------------- entry ----------------
 bool update_total_counts_csv(
     const std::string& csv_path,
-    const std::vector<std::string>& periods,
-    const std::vector<std::string>& topologies,
     const std::map<std::string, TTree*>& dvcsDataTrees,
     const std::string& combined_cuts_json,
     const std::string& out_root_dir,
     int max_workers)
 {
     namespace fs = std::filesystem;
+
+    // Assemble canonical DVCS period keys once, standardized for the whole pipeline
+    std::vector<std::string> periods;
+    periods.reserve(CANONICAL_PERIODS().size());
+    for (const auto& P : CANONICAL_PERIODS()) {
+        periods.push_back(P.tree_key); // e.g. "DVCS_Fa18_inb"
+    }
 
     // Backup
     try {
@@ -609,7 +602,7 @@ bool update_total_counts_csv(
         TTree* t = itT->second;
         const PeriodCuts cuts = loadCombinedCuts(combined_cuts_json, period_key);
 
-        // Baseline branches
+        // Baseline branches (must exist)
         int helicity = 0; double x=0.0, Q2=0.0, t1=0.0, phi2 = std::numeric_limits<double>::quiet_NaN();
         if (!t->GetBranch("helicity") || !t->GetBranch("x") || !t->GetBranch("Q2") || !t->GetBranch("t1") || !t->GetBranch("phi2")) {
             #pragma omp critical
@@ -631,11 +624,8 @@ bool update_total_counts_csv(
         std::unordered_map<std::string, BranchBinding> bind;
         bindRequiredBranches_STRICT(t, need, bind);
 
-        // Topology resolver
+        // Topology resolver (detector-based only)
         TopologyResolver topo; topo.bind(t);
-        // Filter requested topologies
-        bool req_ok[3] = {false,false,false};
-        for (const auto& s : topologies) { int ix = topo_index_from_string(s); if (ix >= 0) req_ok[ix] = true; }
 
         // Thread-local map: topo_str -> (row -> RowCounts)
         std::map<std::string, PeriodRowMap> local_by_topo;
@@ -649,7 +639,6 @@ bool update_total_counts_csv(
 
             const int topo_idx = topo.index();
             if (topo_idx < 0 || topo_idx > 2) continue;
-            if (!req_ok[topo_idx]) continue;
             const std::string topo_str = TOPO_STRS[topo_idx];
 
             const double xb  = x;
@@ -685,8 +674,11 @@ bool update_total_counts_csv(
         {
             std::lock_guard<std::mutex> lock(merge_mtx);
             for (const auto& tk : local_by_topo) {
-                ensure_yield_columns(label, tk.first);
-                auto& tgt = counts_by_label_topo[label][tk.first];
+                const std::string topo_str = tk.first;
+                // ensure columns for this label+topology
+                ensure_yield_columns(label, topo_str);
+
+                auto& tgt = counts_by_label_topo[label][topo_str];
                 for (const auto& rkv : tk.second) {
                     tgt[rkv.first].pos += rkv.second.pos;
                     tgt[rkv.first].neg += rkv.second.neg;
@@ -698,14 +690,17 @@ bool update_total_counts_csv(
     // Write per-period, per-topology counts to CSV
     for (const auto& lblkv : counts_by_label_topo) {
         const std::string& label = lblkv.first;
-        for (const auto& tkv : lblkv.second) {
-            const std::string& topo_str = tkv.first;
+        for (int topo_idx = 0; topo_idx < 3; ++topo_idx) {
+            const std::string topo_str = TOPO_STRS[topo_idx];
+            const auto itTopo = lblkv.second.find(topo_str);
+            if (itTopo == lblkv.second.end()) continue;
+
             const std::string base = period_yield_col_base(label, topo_str);
             const int c_unpol = csv.ensure_col(base + "unpol");
             const int c_pos   = csv.ensure_col(base + "pos");
             const int c_neg   = csv.ensure_col(base + "neg");
 
-            for (const auto& rkv : tkv.second) {
+            for (const auto& rkv : itTopo->second) {
                 const int r = rkv.first;
                 const long long pos = rkv.second.pos;
                 const long long neg = rkv.second.neg;
@@ -718,7 +713,7 @@ bool update_total_counts_csv(
         std::cout << "[total_counts] wrote per-topology counts for " << label << "\n";
     }
 
-    // Build combined groups per topology
+    // Build combined groups per topology (always all three)
     std::map<std::string, std::vector<std::string>> group_members = {
         {"Fa18",    {}},
         {"Sp18",    {}},
@@ -735,8 +730,6 @@ bool update_total_counts_csv(
         const auto& members = gkv.second;
 
         for (int topo_idx = 0; topo_idx < 3; ++topo_idx) {
-            if (std::find(topologies.begin(), topologies.end(), std::string(TOPO_STRS[topo_idx])) == topologies.end())
-                continue;
             const std::string topo_str = TOPO_STRS[topo_idx];
             const std::string gbase = combined_yield_col_base(group, topo_str);
             const int c_unpol = csv.ensure_col(gbase + "unpol");
@@ -767,21 +760,17 @@ bool update_total_counts_csv(
     }
     std::cout << "[total_counts] Updated raw yields in: " << csv_path << "\n";
 
-    // Plots: per period and per group, per topology
-    for (const auto& lblkv : counts_by_label_topo) {
-        const std::string& label = lblkv.first;
+    // Plots: per period and per group, per topology (fixed 3)
+    for (const auto& p : periods) {
+        const std::string label = safe_label_for_key(p);
         for (int topo_idx = 0; topo_idx < 3; ++topo_idx) {
-            const std::string topo_str = TOPO_STRS[topo_idx];
-            if (std::find(topologies.begin(), topologies.end(), topo_str) == topologies.end()) continue;
-            draw_group_canvases(label, topo_str, topo_dir_name(topo_idx), csv, cols, out_root_dir);
+            draw_group_canvases(label, TOPO_STRS[topo_idx], topo_dir_name(topo_idx), csv, cols, out_root_dir);
         }
     }
     for (const auto& gkv : group_members) {
         const std::string group = gkv.first;
         for (int topo_idx = 0; topo_idx < 3; ++topo_idx) {
-            const std::string topo_str = TOPO_STRS[topo_idx];
-            if (std::find(topologies.begin(), topologies.end(), topo_str) == topologies.end()) continue;
-            draw_group_canvases(group, topo_str, topo_dir_name(topo_idx), csv, cols, out_root_dir);
+            draw_group_canvases(group, TOPO_STRS[topo_idx], topo_dir_name(topo_idx), csv, cols, out_root_dir);
         }
     }
 
