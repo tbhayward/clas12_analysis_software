@@ -3,6 +3,8 @@
 // canonicalized output directories. Combined groups are plotted from in-memory
 // aggregated period counts with CSV fallback to ensure non-zero curves.
 
+#include <nlohmann/json.hpp>
+
 #include "total_counts.h"
 #include "periods.h"
 #include "load_binning_scheme.h"
@@ -167,6 +169,56 @@ struct CsvDoc {
 };
 
 // ---------------- small utils ----------------
+using json = nlohmann::json;
+
+struct SigmaCut {
+    double mean = std::numeric_limits<double>::quiet_NaN();
+    double std  = std::numeric_limits<double>::quiet_NaN();
+};
+
+using VarCutMap   = std::unordered_map<std::string, SigmaCut>;       // var -> {mean,std}
+using TopoCutMap  = std::unordered_map<std::string, VarCutMap>;      // "DVCS_<PeriodDir>_<TopoDir>" -> VarCutMap
+
+static TopoCutMap load_sigma_cuts_data(const std::string& path) {
+    TopoCutMap out;
+    if (path.empty()) return out;
+
+    std::ifstream fin(path);
+    if (!fin.is_open()) {
+        std::cerr << "[total_counts] WARNING: could not open combined cuts JSON: " << path << "\n";
+        return out;
+    }
+    json j; fin >> j;
+
+    for (auto it = j.begin(); it != j.end(); ++it) {
+        const std::string key = it.key(); // e.g. "DVCS_Fa18_Inb_CD_FD"
+        const json& block = it.value();
+
+        // We are counting DATA here; use the "data" object if present.
+        if (!block.contains("data") || !block["data"].is_object()) continue;
+
+        VarCutMap m;
+        for (auto vit = block["data"].begin(); vit != block["data"].end(); ++vit) {
+            const std::string vname = vit.key(); // Emiss2, Mx2, ...
+            const json& vs = vit.value();
+            SigmaCut sc;
+            if (vs.contains("mean") && vs["mean"].is_number()) sc.mean = vs["mean"].get<double>();
+            if (vs.contains("std")  && vs["std"].is_number())  sc.std  = vs["std"].get<double>();
+            if (std::isfinite(sc.std) && sc.std > 0.0) {
+                m[vname] = sc;
+            }
+        }
+        if (!m.empty()) out[key] = std::move(m);
+    }
+    std::cout << "[total_counts] Loaded sigma cuts for " << out.size() << " topology keys from " << path << "\n";
+    return out;
+}
+
+static inline bool within_3sigma(double val, const SigmaCut& sc) {
+    if (!std::isfinite(val) || !std::isfinite(sc.mean) || !std::isfinite(sc.std) || sc.std <= 0.0) return true;
+    return std::fabs(val - sc.mean) <= 3.0 * sc.std;
+}
+
 static std::string to_lower_nospace(std::string s) {
     std::string out; out.reserve(s.size());
     for (char c : s) {
@@ -840,6 +892,13 @@ bool update_total_counts_csv(
         bind_one_exact_enable(t, "phi2",           b_phi2);
         bind_one_exact_enable(t, "open_angle_ep2", b_open_angle);
         bind_one_exact_enable(t, "pTmiss",         b_pTmiss);
+        BranchBinding b_Emiss2, b_Mx2, b_Mx2_1, b_Mx2_2, b_theta_gg, b_xF;
+        bind_one_exact_enable(t, "Emiss2",            b_Emiss2);
+        bind_one_exact_enable(t, "Mx2",               b_Mx2);
+        bind_one_exact_enable(t, "Mx2_1",             b_Mx2_1);
+        bind_one_exact_enable(t, "Mx2_2",             b_Mx2_2);
+        bind_one_exact_enable(t, "theta_gamma_gamma", b_theta_gg);
+        bind_one_exact_enable(t, "xF",                b_xF);
 
         const Long64_t N=t->GetEntries();
         const Long64_t cadence=cadence_for(N);
@@ -876,6 +935,35 @@ bool update_total_counts_csv(
             ++seen;
 
             if (!passes_global(open_angle_deg, t1, pTmiss)) { dbg.cut_fail++; continue; }
+            const int topo_idx = topo.index();
+            if (topo_idx < 0 || topo_idx > 2) { dbg.topo_bad++; continue; }
+            const std::string topoS = topo_str((Topology)topo_idx);
+
+            // Compose key exactly like the JSON uses: "DVCS_<PeriodDir>_<TopoDir>"
+            const std::string topo_key = std::string("DVCS_") + period_dir_for_label(display_label) + "_" + topo_dir((Topology)topo_idx);
+            auto itTopoCuts = sigmaCuts.find(topo_key);
+            if (itTopoCuts != sigmaCuts.end()) {
+                // Only check vars that appear in the JSON block; missing vars are ignored.
+                auto getv = [&](const std::string& v)->double {
+                    if (v=="Emiss2")            return bb_as_double(b_Emiss2);
+                    if (v=="Mx2")               return bb_as_double(b_Mx2);
+                    if (v=="Mx2_1")             return bb_as_double(b_Mx2_1);
+                    if (v=="Mx2_2")             return bb_as_double(b_Mx2_2);
+                    if (v=="theta_gamma_gamma") return bb_as_double(b_theta_gg);
+                    if (v=="xF")                return bb_as_double(b_xF);
+                    if (v=="pTmiss")            return pTmiss; // also enforce 3σ on pTmiss if provided
+                    return std::numeric_limits<double>::quiet_NaN();
+                };
+
+                bool ok = true;
+                for (const auto& kv : itTopoCuts->second) {
+                    const std::string& vname = kv.first;
+                    const SigmaCut&    sc    = kv.second;
+                    const double val = getv(vname);
+                    if (!within_3sigma(val, sc)) { ok = false; break; }
+                }
+                if (!ok) continue; // fail the 3σ exclusivity for this topology
+            }
             ++kept;
 
             const int topo_idx = topo.index();
