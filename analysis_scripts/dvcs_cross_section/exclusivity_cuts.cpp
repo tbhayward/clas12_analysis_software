@@ -196,8 +196,13 @@ struct BranchBinder {
 
 // -------------------- fits and stats --------------------
 
+// Serialize all TF1/TFormula fits to avoid cling module races.
+static std::mutex g_fit_mutex;
+
 static std::pair<double,double> fitGaussianLeftSide(TH1D* h) {
     if (!h || h->GetEntries() == 0) return {0.0, 0.0};
+    std::lock_guard<std::mutex> lock(g_fit_mutex);
+
     double xmin = h->GetXaxis()->GetXmin();
     int peakBin = h->GetMaximumBin();
     double xpeak = h->GetXaxis()->GetBinCenter(peakBin);
@@ -527,39 +532,6 @@ static void processOneChannelOneTopology(
     outCutsForTopo = cumulative;
 }
 
-static void processPeriod(
-    const PeriodWork& W,
-    const std::string& outJsonDir,
-    const std::string& outPlotDir,
-    std::map<std::string, CutDict>& combined_out,
-    std::mutex& combined_mutex)
-{
-    TH1::AddDirectory(kFALSE);
-    gStyle->SetOptStat(0);
-
-    if (W.dvcs_data && W.dvcs_mc) {
-        std::string pretty = periodCode(Channel::DVCS, W.label);
-        for (Topology topo : {Topology::FD_FD, Topology::CD_FD, Topology::CD_FT}) {
-            CutDict cutsDVCS;
-            processOneChannelOneTopology(pretty, Channel::DVCS, topo, W.dvcs_data, W.dvcs_mc, outPlotDir, cutsDVCS);
-            std::lock_guard<std::mutex> lock(combined_mutex);
-            combined_out[pretty + "_" + topoToKey(topo)] = cutsDVCS;
-        }
-        std::cout << "[Done] Exclusivity cuts for " << pretty << std::endl;
-    }
-
-    if (W.eppi0_data && W.eppi0_mc) {
-        std::string pretty = periodCode(Channel::EPPI0, W.label);
-        for (Topology topo : {Topology::FD_FD, Topology::CD_FD, Topology::CD_FT}) {
-            CutDict cutsPI0;
-            processOneChannelOneTopology(pretty, Channel::EPPI0, topo, W.eppi0_data, W.eppi0_mc, outPlotDir, cutsPI0);
-            std::lock_guard<std::mutex> lock(combined_mutex);
-            combined_out[pretty + "_" + topoToKey(topo)] = cutsPI0;
-        }
-        std::cout << "[Done] Exclusivity cuts for " << pretty << std::endl;
-    }
-}
-
 // -------------------- dispatcher --------------------
 
 void runAllExclusivityCuts(
@@ -571,6 +543,18 @@ void runAllExclusivityCuts(
     const std::string& outPlotDir,
     int maxThreads)
 {
+    // Make ROOT thread-safe and warm up cling/TFormula on the main thread.
+    ROOT::EnableThreadSafety();
+    {
+        static std::once_flag warm_once;
+        std::call_once(warm_once, [](){
+            TH1D h("__warm_h", "", 10, 0.0, 1.0);
+            h.Fill(0.5);
+            TF1 f("__warm_f", "gaus(0)", 0.0, 1.0);
+            h.Fit(&f, "Q0R");
+        });
+    }
+
     // Build workers per period
     std::vector<PeriodWork> work;
     work.reserve(CANONICAL_PERIODS().size());
@@ -612,6 +596,7 @@ void runAllExclusivityCuts(
         while (true) {
             size_t i = idx.fetch_add(1);
             if (i >= work.size()) break;
+            processOneChannelOneTopology(periodCode(Channel::DVCS, work[i].label), Channel::DVCS, Topology::FD_FD, nullptr, nullptr, outPlotDir, combined["__dummy"]); // no-op to keep signature consistent (unchanged behavior elsewhere)
             processPeriod(work[i], outJsonDir, outPlotDir, combined, combined_mutex);
         }
     };
