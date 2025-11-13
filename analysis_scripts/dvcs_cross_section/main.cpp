@@ -132,7 +132,7 @@ int main(int argc, char* argv[]) {
         }
 
         // Parallelize across periods (<=0 means auto thread count)
-        const int max_workers = 0;
+        const int max_workers = 5;
 
         if (!compute_pi0_contamination_overall(
                 eppi0DataTrees,

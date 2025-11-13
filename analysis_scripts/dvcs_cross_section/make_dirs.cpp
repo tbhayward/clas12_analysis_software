@@ -19,7 +19,7 @@ void makeOutputDirs() {
                 "Sp18_Out", "Sp19_Inb", "Fa18", "Sp18", "10.6 GeV"
             }
         },
-        {"output/contamination_ratio",
+        {"output/contamination_plots",
             {"Fa18_Inb", "Fa18_Out", "Sp18_Inb",
                 "Sp18_Out", "Sp19_Inb"
             }
