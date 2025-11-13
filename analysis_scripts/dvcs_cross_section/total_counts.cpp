@@ -822,6 +822,9 @@ bool update_total_counts_csv(
 
     BinCache bins = precache_bins(csv);
 
+    // Load 3σ exclusivity cuts for DATA from the JSON
+    const TopoCutMap sigmaCuts = load_sigma_cuts_data(combined_cuts_json);
+
     CsvCols cols;
     cols.c_xb_min  = csv.col_index("xBmin");
     cols.c_xb_max  = csv.col_index("xBmax");
@@ -965,10 +968,6 @@ bool update_total_counts_csv(
                 if (!ok) continue; // fail the 3σ exclusivity for this topology
             }
             ++kept;
-
-            const int topo_idx = topo.index();
-            if (topo_idx < 0 || topo_idx > 2) { dbg.topo_bad++; continue; }
-            const std::string topoS = topo_str((Topology)topo_idx);
 
             const double phi_deg = wrap_deg_0_360(RAD2DEG(phi2));
             bool used_any=false;
