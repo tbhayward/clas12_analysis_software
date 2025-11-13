@@ -10,8 +10,7 @@
 //   * Pre-cache CSV bin edges into POD arrays to avoid multi-threaded parsing of strings.
 //   * ROOT I/O guarded: SetBranchStatus to needed fields only; skip entries with nb<0.
 //   * Alias-aware header resolution via label_aliases.h.
-//   * NEW: allow a skip-list for CSV writing/lookup (e.g., "fa18_inb_supp"); plots still build
-//          by using in-memory counts instead of reading non-existent CSV columns.
+//   * Skip-list for CSV writing/lookup (e.g., "fa18_inb_supp"); plots still build from in-memory counts.
 
 #include "total_counts.h"
 #include "periods.h"
@@ -79,6 +78,13 @@ static inline double wrap_deg_0_360(double d) {
     return w;
 }
 static inline bool in_range(double v, double a, double b) { return (v >= a) && (v < b); }
+
+// RESTORED: phi-bin acceptance checker (handles wrap-around)
+static bool row_accepts_phi(double phi_deg, double pmin_deg, double pmax_deg) {
+    if (!std::isfinite(phi_deg) || !std::isfinite(pmin_deg) || !std::isfinite(pmax_deg)) return false;
+    if (pmax_deg > pmin_deg) return in_range(phi_deg, pmin_deg, pmax_deg);
+    return (phi_deg >= pmin_deg) || (phi_deg < pmax_deg); // wrap-around
+}
 
 // ---------------- CSV helper ----------------
 struct CsvDoc {
@@ -176,8 +182,8 @@ static std::string to_lower_nospace(std::string s) {
     return out;
 }
 
-// Central place to decide which labels should **not** touch the CSV.
-// Default: skip fa18_inb_supp. Extend if needed.
+// Central place to decide which labels should not touch the CSV.
+// Default: skip fa18_inb_supp or anything containing "supp".
 static bool should_skip_csv_for_label(const std::string& display_label) {
     const std::string k = to_lower_nospace(display_label);
     if (k == "fa18inbsupp" || k == "fa18_inb_supp" || k.find("supp") != std::string::npos) return true;
@@ -490,7 +496,6 @@ static void draw_group_canvases(
     const double head_size = 0.58;
     const double latex_size= 0.065;
 
-    // If CSV columns are missing OR label is in skip list, we will pull Y values from counts_opt.
     const bool force_counts_only = should_skip_csv_for_label(display_label);
 
     for (auto xb : xb_set) {
@@ -549,7 +554,6 @@ static void draw_group_canvases(
             CellData& C = cells[rr*ncols+cc];
             C.X.reserve(rows_for_cell.size()); C.EX.assign(rows_for_cell.size(),0.0);
 
-            // Try CSV columns first (unless we are forced to use counts)
             const int c_pos_csv = force_counts_only ? -1 : find_col_alias(csv.header, topo_str_label, display_label, "pos");
             const int c_neg_csv = force_counts_only ? -1 : find_col_alias(csv.header, topo_str_label, display_label, "neg");
 
@@ -569,7 +573,6 @@ static void draw_group_canvases(
                     yp = csv.as_double(r, c_pos_csv);
                     yn = csv.as_double(r, c_neg_csv);
                 } else if (counts_opt) {
-                    // Use in-memory counts mapped by row index
                     auto topo_it = counts_opt->find(topo_str_label);
                     if (topo_it != counts_opt->end()) {
                         auto rc_it = topo_it->second.find(r);
@@ -736,7 +739,7 @@ bool update_total_counts_csv(
         }
         TTree* t = itT->second;
 
-        // From periods.h: human-readable label (e.g. "Fa18 Inb" or "fa18_inb_supp")
+        // Human-readable label (e.g. "Fa18 Inb" or "fa18_inb_supp")
         std::string display_label;
         for (const auto& P : CANONICAL_PERIODS()) {
             if (P.tree_key == period_key) { display_label = P.label; break; }
@@ -935,8 +938,6 @@ bool update_total_counts_csv(
             for (int r=0; r<csv.nrows(); ++r) {
                 long long pos_sum=0, neg_sum=0;
                 for (const auto& member_display : GG.members) {
-                    // If any member is in skip list (like a supplemental), it simply won't contribute,
-                    // because its CSV columns won't exist; sums are strictly over existing columns.
                     const int p_pos = find_col_alias(csv.header, topoS, member_display, "pos");
                     const int p_neg = find_col_alias(csv.header, topoS, member_display, "neg");
                     if (p_pos>=0) pos_sum += (long long)std::llround(csv.as_double(r, p_pos));
@@ -963,7 +964,7 @@ bool update_total_counts_csv(
         return false;
     }
 
-    // Plots — for labels in the skip list or without CSV columns, we pass counts so plotting doesn't touch CSV.
+    // Plots — for labels in the skip list or without CSV columns, pass counts so plotting doesn't touch CSV.
     for (const auto& P:CANONICAL_PERIODS()) {
         const std::string display_label = P.label;
         const auto it_counts = counts_by_label_topo.find(display_label);
@@ -978,7 +979,6 @@ bool update_total_counts_csv(
         }
     }
     for (const std::string display_group : {"Fa18","Sp18","10.6 GeV"}) {
-        // Groups always read from CSV (by definition).
         for (int ti=0; ti<3; ++ti) {
             draw_group_canvases(display_group,
                                 topo_str((Topology)ti),
