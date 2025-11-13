@@ -64,7 +64,7 @@ int main(int argc, char* argv[]) {
     write_global_cuts_config_json("output/jsons");
     runAllExclusivityCuts(
         dataTrees, recMcTrees, eppi0DataTrees, eppi0RecMcTrees,
-        "output/jsons", "output/exclusivity_plots", 5
+        "output/jsons", "output/exclusivity_plots", 1
     );
     std::cout << "Exclusivity-cut stage finished." << std::endl;
 
