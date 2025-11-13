@@ -117,9 +117,13 @@ int main(int argc, char* argv[]) {
         const std::string csv_main  = "output/csvs/dvcs_pass2_analysis.csv";
         const std::string cuts_json = "output/jsons/combined_cuts.json";
 
+        // Make dirs up front (preferred place)
+        makeOutputDirs();
+
         // Make a backup (the function also backs up to ..._total_counts.csv)
         try {
-            std::filesystem::copy_file(csv_main,
+            std::filesystem::copy_file(
+                csv_main,
                 "output/csvs/dvcs_pass2_analysis_backup_pi0_contamination.csv",
                 std::filesystem::copy_options::overwrite_existing);
             std::cout << "[main] Backed up CSV to dvcs_pass2_analysis_backup_pi0_contamination.csv\n";
@@ -127,13 +131,17 @@ int main(int argc, char* argv[]) {
             std::cerr << "[main] WARNING: backup failed (" << e.what() << "). Continuing.\n";
         }
 
+        // Parallelize across periods (<=0 means auto thread count)
+        const int max_workers = 0;
+
         if (!compute_pi0_contamination_overall(
                 eppi0DataTrees,
                 eppi0RecMcTrees,
                 eppi0BkgTrees,
                 cuts_json,
                 csv_main,
-                output_root))
+                output_root,
+                max_workers))
         {
             std::cerr << "[main] ERROR: compute_pi0_contamination_overall failed.\n";
             std::exit(EXIT_FAILURE);
