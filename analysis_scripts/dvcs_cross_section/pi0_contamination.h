@@ -1,7 +1,6 @@
 #pragma once
 #include <map>
 #include <string>
-#include <vector>
 class TTree;
 
 // Overall (helicity-averaged) pi0 contamination calculator.
@@ -16,11 +15,13 @@ class TTree;
 //   - combined_cuts_json: output/jsons/combined_cuts.json
 //   - dvcs_csv_path:       output/csvs/dvcs_pass2_analysis.csv
 //   - out_root_dir:        "output"
+//   - max_workers:         <=0 means auto (omp_get_max_threads)
 //
 // Behavior:
 //   - Periods to run are auto-inferred from CANONICAL_PERIODS() when the three trees exist.
 //   - Topologies are always aggregated over (FD, FD), (CD, FD), (CD, FT).
 //   - Uses only the CSV for binning and DVCS counts (no external binning scheme).
+//   - Writes per-row contamination ratios into: "contamination ratio, <Period Display>".
 //
 // Output:
 //   - Plots: <out_root_dir>/contamination_plots/<PeriodDir>/plot_contamination_<PeriodDir>_xB_<idx>.png
@@ -32,4 +33,5 @@ bool compute_pi0_contamination_overall(
     const std::map<std::string, TTree*>& eppi0BkgTrees,
     const std::string& combined_cuts_json,
     const std::string& dvcs_csv_path,
-    const std::string& out_root_dir);
+    const std::string& out_root_dir,
+    int max_workers);
