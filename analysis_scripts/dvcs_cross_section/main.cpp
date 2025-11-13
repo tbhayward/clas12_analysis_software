@@ -112,6 +112,35 @@ int main(int argc, char* argv[]) {
         }
     }
 
+    // --------- pi0 contamination (helicity-averaged; DVCS counts from CSV; eppi0 counts re-counted) ----------
+    {
+        const std::string csv_main  = "output/csvs/dvcs_pass2_analysis.csv";
+        const std::string cuts_json = "output/jsons/combined_cuts.json";
+
+        // Make a backup (the function also backs up to ..._total_counts.csv)
+        try {
+            std::filesystem::copy_file(csv_main,
+                "output/csvs/dvcs_pass2_analysis_backup_pi0_contamination.csv",
+                std::filesystem::copy_options::overwrite_existing);
+            std::cout << "[main] Backed up CSV to dvcs_pass2_analysis_backup_pi0_contamination.csv\n";
+        } catch (const std::exception& e) {
+            std::cerr << "[main] WARNING: backup failed (" << e.what() << "). Continuing.\n";
+        }
+
+        if (!compute_pi0_contamination_overall(
+                eppi0DataTrees,
+                eppi0RecMcTrees,
+                eppi0BkgTrees,
+                cuts_json,
+                csv_main,
+                output_root))
+        {
+            std::cerr << "[main] ERROR: compute_pi0_contamination_overall failed.\n";
+            std::exit(EXIT_FAILURE);
+        }
+        std::cout << "pi0 contamination stage finished.\n";
+    }
+
     // // // --------- Total counts after exclusivity cuts (by helicity) ----------
     // const std::string cuts_json_path   = "output/jsons/combined_cuts.json"; 
     // // // produced by exclusivity_cuts
