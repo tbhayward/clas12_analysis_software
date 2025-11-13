@@ -22,7 +22,7 @@
 //   - CSV writes: "contamination ratio, <Period Display>" filled per row.
 //
 // Parallelism:
-//   - Period-level OpenMP parallel for over independent trees.
+//   - Period-level OpenMP parallel for over independent trees (hard-capped at 5 threads).
 // ------------------------------------------------------------
 
 #include "pi0_contamination.h"
@@ -68,6 +68,21 @@ namespace {
 
 static inline bool is_debug() { return std::getenv("PI0_CONTAM_DEBUG") != nullptr; }
 static inline bool trace_rows() { return std::getenv("PI0_CONTAM_TRACE") != nullptr; }
+
+// Hard cap on OpenMP threads for shared ifarm usage.
+static int resolve_threads(int max_workers) {
+    int threads = 1;
+#ifdef _OPENMP
+    threads = (max_workers <= 0) ? omp_get_max_threads() : max_workers;
+    if (const char* env = std::getenv("OMP_NUM_THREADS")) {
+        int env_n = std::max(1, std::atoi(env));
+        threads = std::min(threads, env_n);
+    }
+    if (threads > 5) threads = 5;
+    if (threads < 1) threads = 1;
+#endif
+    return threads;
+}
 
 // ---------- small string utils ----------
 [[noreturn]] static void fatal(const std::string& msg) {
@@ -564,7 +579,7 @@ static void plot_period(
 
                 TLatex lab; lab.SetNDC(); lab.SetTextAlign(13); lab.SetTextSize(0.045);
                 lab.DrawLatex(0.14, 0.96,
-                    Form("Q2 and |t| cell")); // keep simple
+                    Form("Q2 and |t| cell"));
             }
         }
 
@@ -636,11 +651,10 @@ bool compute_pi0_contamination_overall(
     // Mutex for merging CSV writes and printing atomically
     std::mutex csv_mtx;
 
-    // OpenMP parallel over periods
-    int threads = max_workers;
+    // OpenMP parallel over periods (hard-capped at 5 threads)
+    int threads = resolve_threads(max_workers);
 #ifdef _OPENMP
-    if (threads <= 0) threads = omp_get_max_threads();
-    if (threads < 1) threads = 1;
+    std::cout << "[pi0_contamination] Using " << threads << " threads (cap=5)\n";
     #pragma omp parallel for schedule(dynamic) num_threads(threads)
 #endif
     for (int ip=0; ip<(int)jobs.size(); ++ip) {
