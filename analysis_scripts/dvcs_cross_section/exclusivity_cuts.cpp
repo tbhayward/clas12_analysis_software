@@ -17,6 +17,7 @@
 #include <TROOT.h>
 #include <TH1.h>
 #include <TString.h>
+#include <TDataType.h>  // for EDataType (kInt_t, kDouble_t)
 
 // C++ stdlib
 #include <algorithm>
@@ -131,25 +132,51 @@ struct BranchBinder {
     double theta_gamma_gamma = 0.0; bool has_theta_gamma_gamma = false;
     double theta_pi0_pi0 = 0.0;     bool has_theta_pi0_pi0 = false;
 
-    void bind(TTree* t) {
-        auto bindI = [&](const char* n, int* a, bool& f){ if (t->GetBranch(n)) { t->SetBranchAddress(n, a); f = true; } };
-        auto bindD = [&](const char* n, double* a, bool& f){ if (t->GetBranch(n)) { t->SetBranchAddress(n, a); f = true; } };
+    void bind(TTree* t, Channel ch) {
+        if (!t) return;
 
-        bindI("detector1", &detector1, has_detector1);
-        bindI("detector2", &detector2, has_detector2);
+        // Disable everything, then explicitly enable only what we use.
+        t->SetBranchStatus("*", 0);
 
-        bindD("t1", &t1, has_t1);
-        bindD("open_angle_ep2", &open_angle_ep2, has_open_angle_ep2);
+        auto ena = [&](const char* n){ if (t->GetBranch(n)) t->SetBranchStatus(n, 1); };
 
-        bindD("Emiss2", &Emiss2, has_Emiss2);
-        bindD("Mx2", &Mx2, has_Mx2);
-        bindD("Mx2_1", &Mx2_1, has_Mx2_1);
-        bindD("Mx2_2", &Mx2_2, has_Mx2_2);
-        bindD("pTmiss", &pTmiss, has_pTmiss);
-        bindD("xF", &xF, has_xF);
-        bindD("Delta_phi", &Delta_phi, has_Delta_phi);
-        bindD("theta_gamma_gamma", &theta_gamma_gamma, has_theta_gamma_gamma);
-        bindD("theta_pi0_pi0", &theta_pi0_pi0, has_theta_pi0_pi0);
+        ena("detector1");
+        ena("detector2");
+        ena("t1");
+        ena("open_angle_ep2");
+        ena("Emiss2");
+        ena("Mx2");
+        ena("Mx2_1");
+        ena("Mx2_2");
+        ena("pTmiss");
+        ena("xF");
+        ena("Delta_phi");
+        if (ch == Channel::DVCS) ena("theta_gamma_gamma");
+        else                     ena("theta_pi0_pi0");
+
+        // Bind with explicit primitive types to avoid any dictionary lookups.
+        auto bI = [&](const char* n, int* a, bool& f){
+            if (t->GetBranch(n)) { t->SetBranchAddress(n, a, nullptr, nullptr, kInt_t); f = true; }
+        };
+        auto bD = [&](const char* n, double* a, bool& f){
+            if (t->GetBranch(n)) { t->SetBranchAddress(n, a, nullptr, nullptr, kDouble_t); f = true; }
+        };
+
+        bI("detector1", &detector1, has_detector1);
+        bI("detector2", &detector2, has_detector2);
+
+        bD("t1", &t1, has_t1);
+        bD("open_angle_ep2", &open_angle_ep2, has_open_angle_ep2);
+
+        bD("Emiss2", &Emiss2, has_Emiss2);
+        bD("Mx2", &Mx2, has_Mx2);
+        bD("Mx2_1", &Mx2_1, has_Mx2_1);
+        bD("Mx2_2", &Mx2_2, has_Mx2_2);
+        bD("pTmiss", &pTmiss, has_pTmiss);
+        bD("xF", &xF, has_xF);
+        bD("Delta_phi", &Delta_phi, has_Delta_phi);
+        if (ch == Channel::DVCS) bD("theta_gamma_gamma", &theta_gamma_gamma, has_theta_gamma_gamma);
+        else                     bD("theta_pi0_pi0",     &theta_pi0_pi0,     has_theta_pi0_pi0);
     }
 
     std::map<std::string, double> valuesMap(Channel ch) const {
@@ -166,38 +193,6 @@ struct BranchBinder {
         return m;
     }
 };
-
-// -------------------- STRICT branch whitelist (added) --------------------
-
-// Disable every branch, then enable only those this stage actually uses.
-// This prevents ROOT from ever reading unrelated branches (e.g., DepV).
-static void whitelist_exclusivity_branches(TTree* t, Channel ch) {
-    if (!t) return;
-    t->SetBranchStatus("*", 0);
-
-    // Common to both channels
-    const char* common[] = {
-        "detector1",
-        "detector2",
-        "t1",
-        "open_angle_ep2",
-        "Emiss2",
-        "Mx2",
-        "Mx2_1",
-        "Mx2_2",
-        "pTmiss",
-        "xF",
-        "Delta_phi"
-    };
-    for (const char* name : common) t->SetBranchStatus(name, 1);
-
-    // Channel-specific
-    if (ch == Channel::DVCS) {
-        t->SetBranchStatus("theta_gamma_gamma", 1);
-    } else {
-        t->SetBranchStatus("theta_pi0_pi0", 1);
-    }
-}
 
 // -------------------- fits and stats --------------------
 
@@ -271,10 +266,7 @@ static FilledHists fillStageHists(
 
     // Data loop
     if (dataTree) {
-        // ADDED: strict branch whitelist
-        whitelist_exclusivity_branches(dataTree, ch);
-
-        BranchBinder b; b.bind(dataTree);
+        BranchBinder b; b.bind(dataTree, ch);
         Long64_t n = dataTree->GetEntries();
         for (Long64_t i = 0; i < n; ++i) {
             dataTree->GetEntry(i);
@@ -296,10 +288,7 @@ static FilledHists fillStageHists(
 
     // MC loop
     if (mcTree) {
-        // ADDED: strict branch whitelist
-        whitelist_exclusivity_branches(mcTree, ch);
-
-        BranchBinder b; b.bind(mcTree);
+        BranchBinder b; b.bind(mcTree, ch);
         Long64_t n = mcTree->GetEntries();
         for (Long64_t i = 0; i < n; ++i) {
             mcTree->GetEntry(i);
