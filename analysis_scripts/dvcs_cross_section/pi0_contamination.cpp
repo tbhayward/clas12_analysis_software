@@ -1,6 +1,6 @@
 // pi0_contamination.cpp
 // ------------------------------------------------------------
-// Overall (helicity-averaged) pi0 contamination estimator (STRICT, fail-fast)
+// Overall (helicity-averaged) pi0 contamination estimator (robust to CSV aliases)
 //   c = (N_bkg_mc / N_dvcs_csv) * (N_pi0_data / N_pi0_reco_mc)
 // with Poisson errors. DVCS counts come from CSV; eppi0 counts are re-counted.
 //
@@ -23,6 +23,7 @@
 
 #include "pi0_contamination.h"
 #include "periods.h"            // PeriodDef, CANONICAL_PERIODS()
+#include "label_aliases.h"      // topology_aliases(..), period_aliases(..), helicity_aliases(..)
 
 #include <nlohmann/json.hpp>
 
@@ -59,6 +60,8 @@ namespace {
     std::cerr << "[pi0_contamination][FATAL] " << msg << std::endl;
     std::exit(EXIT_FAILURE);
 }
+
+static inline double PI() { return 3.14159265358979323846; }
 
 static inline std::string to_lower(std::string s) {
     std::transform(s.begin(), s.end(), s.begin(), [](unsigned char c){ return (char)std::tolower(c); });
@@ -98,6 +101,44 @@ static inline double wrap_deg(double d) {
     return w;
 }
 
+// === Alias-aware CSV column helpers (local to this TU) =======================
+static int find_col_alias(const std::vector<std::string>& header,
+                          const std::string& topo_str_label,
+                          const std::string& period_display_label,
+                          const std::string& helicity_label) {
+    for (const auto& topo_try : topology_aliases(topo_str_label)) {
+        for (const auto& per_try : period_aliases(period_display_label)) {
+            for (const auto& hel_try : helicity_aliases(helicity_label)) {
+                const std::string candidate =
+                    std::string("raw yield, ep->epg, ") + topo_try +
+                    ", exp, " + per_try + ", " + hel_try;
+                auto it = std::find(header.begin(), header.end(), candidate);
+                if (it != header.end()) return int(it - header.begin());
+            }
+        }
+    }
+    return -1;
+}
+
+static int find_avg_col_alias(const std::vector<std::string>& header,
+                              const std::string& base_prefix,  // e.g. "phiavg, "
+                              const std::string& period_display_label) {
+    // Try exact first
+    {
+        const std::string exact = base_prefix + period_display_label;
+        auto it = std::find(header.begin(), header.end(), exact);
+        if (it != header.end()) return int(it - header.begin());
+    }
+    // Try period aliases
+    for (const auto& per_try : period_aliases(period_display_label)) {
+        const std::string candidate = base_prefix + per_try;
+        auto it = std::find(header.begin(), header.end(), candidate);
+        if (it != header.end()) return int(it - header.begin());
+    }
+    return -1;
+}
+// ============================================================================
+
 // -------- CSV helpers --------
 struct CsvRow {
     double xb_min=0, xb_max=0, q2_min=0, q2_max=0, tab_min=0, tab_max=0;
@@ -116,11 +157,6 @@ static std::vector<std::string> split_csv_line(const std::string& line) {
     }
     out.emplace_back(cur);
     return out;
-}
-
-static int find_col_exact(const std::vector<std::string>& hdr, const std::string& name) {
-    for (int i=0;i<(int)hdr.size();++i) if (hdr[i]==name) return i;
-    return -1;
 }
 
 static int find_col_anycase(const std::vector<std::string>& hdr, const std::vector<std::string>& aliases) {
@@ -150,12 +186,6 @@ static double to_d(const std::string& s, double def=std::numeric_limits<double>:
     try { return std::stod(s); } catch (...) { return def; }
 }
 
-static std::string dvcs_unpol_col(const std::string& topo, const std::string& period_display) {
-    std::ostringstream os;
-    os << "raw yield, ep->epg, " << topo << ", exp, " << period_display << ", unpol";
-    return os.str();
-}
-
 static std::vector<CsvRow> load_csv_rows_and_dvcs_counts(
     const std::string& csv_path,
     const std::string& period_display)
@@ -176,30 +206,33 @@ static std::vector<CsvRow> load_csv_rows_and_dvcs_counts(
 
     int c_phi_min = find_col_anycase(hdr, {"phimin","phi_min"});
     int c_phi_max = find_col_anycase(hdr, {"phimax","phi_max"});
-    int c_phi_avg = -1;
-    {
-        // prefer "phiavg, <Period Display>"
-        const std::string needle = "phiavg, " + to_lower(period_display);
-        for (int i=0;i<(int)hdr.size();++i) if (to_lower(hdr[i]) == needle) { c_phi_avg=i; break; }
-        if (c_phi_avg < 0) c_phi_avg = find_col_contains_lower(hdr, "phiavg");
+
+    // Prefer a period-specific phiavg column, with aliasing
+    int c_phi_avg = find_avg_col_alias(hdr, "phiavg, ", period_display);
+    if (c_phi_avg < 0) {
+        // Fallback: any column that contains "phiavg"
+        c_phi_avg = find_col_contains_lower(hdr, "phiavg");
     }
 
     if (c_xb_min<0||c_xb_max<0||c_q2_min<0||c_q2_max<0||c_tab_min<0||c_tab_max<0) {
         fatal("CSV missing one or more bin-edge columns (xB/Q2/|t|).");
     }
-    // We can live without phimin/phimax if phiavg exists (we create a narrow bin)
     if ((c_phi_min<0 || c_phi_max<0) && c_phi_avg<0) {
         fatal("CSV has neither phimin/phimax nor phiavg.");
     }
 
-    // fixed topologies for aggregation
-    const std::vector<std::string> topos = {"(FD, FD)","(CD, FD)","(CD, FT)"};
-    std::vector<int> dvcs_cols; dvcs_cols.reserve(topos.size());
-    for (const auto& topo : topos) {
-        const std::string cname = dvcs_unpol_col(topo, period_display);
-        int idx = find_col_exact(hdr, cname);
-        if (idx < 0) fatal("DVCS CSV missing column: \"" + cname + "\"");
+    // Resolve DVCS unpol columns for each topology with aliasing.
+    const std::vector<std::string> TOPO_LIST = {"(FD, FD)","(CD, FD)","(CD, FT)"};
+    std::vector<int> dvcs_cols; dvcs_cols.reserve(TOPO_LIST.size());
+    int resolved = 0;
+    for (const auto& topo : TOPO_LIST) {
+        int idx = find_col_alias(hdr, topo, period_display, "unpol");
+        if (idx >= 0) ++resolved;
         dvcs_cols.push_back(idx);
+    }
+    if (resolved == 0) {
+        std::cerr << "[pi0_contamination] WARN: No DVCS unpol raw-yield columns resolved for period \""
+                  << period_display << "\" with any topology aliases. DVCS counts will be zero.\n";
     }
 
     std::vector<CsvRow> rows;
@@ -223,14 +256,19 @@ static std::vector<CsvRow> load_csv_rows_and_dvcs_counts(
             if (c_phi_avg >= 0) r.phiavg = to_d(f[c_phi_avg], std::numeric_limits<double>::quiet_NaN());
         } else {
             double pav = to_d(f[c_phi_avg], std::numeric_limits<double>::quiet_NaN());
-            if (!std::isfinite(pav)) fatal("CSV phiavg value is missing or invalid.");
+            if (!std::isfinite(pav)) {
+                fatal("CSV phiavg value is missing or invalid for a row with no phimin/phimax.");
+            }
             r.phiavg = pav;
+            // Give the row a narrow phi span centered on phiavg (matches plotting expectations).
             r.phimin = pav - 15.0;
             r.phimax = pav + 15.0;
         }
 
         long long sum_unpol = 0;
-        for (int c : dvcs_cols) sum_unpol += to_ll(f[c]);
+        for (int c : dvcs_cols) {
+            if (c >= 0) sum_unpol += to_ll(f[c]);
+        }
         r.n_dvcs_csv = sum_unpol;
 
         rows.push_back(r);
@@ -386,19 +424,6 @@ struct BinderEppi0Data : public BinderCommon {
 struct BinderMC : public BinderCommon {
     void bind(TTree* t) { bind_core(t); }
 };
-
-// -------- Period helpers --------
-template <typename MapT>
-static TTree* getTreeOrDie(const MapT& m, const std::string& key, const char* human) {
-    auto it = m.find(key);
-    if (it != m.end() && it->second) return it->second;
-    std::ostringstream oss;
-    oss << "Missing " << human << " tree under key \"" << key << "\". Available: {";
-    bool first=true; for (const auto& kv : m) { if (!first) oss << ", "; first=false; oss << "\"" << kv.first << "\""; }
-    oss << "}";
-    fatal(oss.str());
-    return nullptr;
-}
 
 // -------- Plotting --------
 struct RowCounts {
@@ -649,7 +674,7 @@ bool compute_pi0_contamination_overall(
                 if (!passes_cuts(CP.data, b.cut_vals())) continue;
 
                 const double xB=b.x, Q2=b.Q2, tt=std::fabs(b.t1);
-                const double phi_deg = wrap_deg(b.phi2 * 180.0 / M_PI);
+                const double phi_deg = wrap_deg(b.phi2 * 180.0 / PI());
                 for (size_t r=0;r<csv_rows.size();++r) {
                     if (row_accepts(csv_rows[r], xB, Q2, tt, phi_deg)) { counts[r].n_pi0_data++; break; }
                 }
@@ -676,7 +701,7 @@ bool compute_pi0_contamination_overall(
                 if (!passes_cuts(CP.mc, b.cut_vals())) continue;
 
                 const double xB=b.x, Q2=b.Q2, tt=std::fabs(b.t1);
-                const double phi_deg = wrap_deg(b.phi2 * 180.0 / M_PI);
+                const double phi_deg = wrap_deg(b.phi2 * 180.0 / PI());
                 for (size_t r=0;r<csv_rows.size();++r) {
                     if (row_accepts(csv_rows[r], xB, Q2, tt, phi_deg)) { counts[r].n_pi0_reco++; break; }
                 }
@@ -703,7 +728,7 @@ bool compute_pi0_contamination_overall(
                 if (!passes_cuts(CP.mc, b.cut_vals())) continue;
 
                 const double xB=b.x, Q2=b.Q2, tt=std::fabs(b.t1);
-                const double phi_deg = wrap_deg(b.phi2 * 180.0 / M_PI);
+                const double phi_deg = wrap_deg(b.phi2 * 180.0 / PI());
                 for (size_t r=0;r<csv_rows.size();++r) {
                     if (row_accepts(csv_rows[r], xB, Q2, tt, phi_deg)) { counts[r].n_pi0_bkg++; break; }
                 }
