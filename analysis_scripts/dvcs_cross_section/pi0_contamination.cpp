@@ -5,9 +5,9 @@
 // with Poisson errors. DVCS counts come from CSV; eppi0 counts are re-counted.
 //
 // STRICT policy (no fallbacks, no auto-add columns):
-//   - Required CSV columns must exist EXACTLY; otherwise fatal() lists missing names.
-//   - No "phiavg" generic fallbacks; must have period-specific "phiavg, <Period Display>".
-//   - No auto-adding "contamination ratio, <Period Display>" — must pre-exist.
+//   - Required CSV columns must exist (via alias-aware lookup); otherwise fatal() lists tried names.
+//   - No auto-adding "contamination ratio, <Period Display>" — must pre-exist under some alias.
+//   - We DO accept header aliases defined in label_aliases.* (period/topology/helicity).
 //
 // Cuts policy:
 //   - Global kinematic gates: open_angle_ep2 > 5 deg, |t1| < 1.0, pTmiss <= 0.20
@@ -20,10 +20,10 @@
 // Binning & phi handling:
 //   - All bins come from the CSV rows (no fixed N_PHI_BINS).
 //   - Each CSV row must define xBmin/xBmax, Q2min/Q2max, t_abs_min/max, phimin/phimax.
-//   - Point placement requires "phiavg, <Period Display>".
+//   - Point placement uses "phiavg, <Period Display>" (alias-aware).
 //
 // Plot title & axes:
-//   - Canvas title shows slice-averaged means from CSV columns:
+//   - Canvas title shows slice-averaged means from CSV columns (alias-aware):
 //       "xBavg, <Period Display>", "Q2avg, <Period Display>", "t_abs_avg, <Period Display>"
 //   - Y axes are standardized to [0, 1].
 //
@@ -32,11 +32,12 @@
 //   - CSV write: fills pre-existing "contamination ratio, <Period Display>" per row (only if all four counts > 0).
 //
 // Parallelism:
-//   - Period-level OpenMP parallel for; threads hard-capped at 5 (never "all cores").
+//   - Period-level OpenMP parallel for; threads hard-capped at 5.
 // ------------------------------------------------------------
 
 #include "pi0_contamination.h"
-#include "periods.h" // PeriodDef, CANONICAL_PERIODS()
+#include "periods.h"          // PeriodDef, CANONICAL_PERIODS()
+#include "label_aliases.h"    // topology_aliases, period_aliases, helicity_aliases
 
 #include <nlohmann/json.hpp>
 
@@ -94,7 +95,7 @@ static int resolve_threads(int max_workers) {
     return threads;
 }
 
-// ---------- small string utils ----------
+// ---------- small string/utils ----------
 [[noreturn]] static void fatal(const std::string& msg) {
     std::cerr << "[pi0_contamination][FATAL] " << msg << std::endl;
     std::exit(EXIT_FAILURE);
@@ -108,7 +109,7 @@ static inline double wrap_deg(double d) {
     return w;
 }
 
-// ---------- CSV doc (strict) ----------
+// ---------- CSV doc (strict, with alias-aware lookups) ----------
 struct CsvDoc {
     std::vector<std::string> header;
     std::map<std::string,int> index;
@@ -171,7 +172,7 @@ struct CsvDoc {
         }
         return true;
     }
-    int col(const std::string& name) const {
+    int col_exact(const std::string& name) const {
         auto it=index.find(name); return (it==index.end())? -1 : it->second;
     }
     double as_double(int r, int c) const {
@@ -185,9 +186,77 @@ struct CsvDoc {
     }
 };
 
-static void require_columns_or_die(const CsvDoc& csv, const std::vector<std::string>& names, const std::string& ctx) {
+// ---------- Alias-aware header resolution ----------
+static int find_col_alias_period_only(const std::vector<std::string>& header,
+                                      const std::string& base_prefix,
+                                      const std::string& period_display) {
+    // Try all period aliases, e.g. "Fa18 Inb", "fa18_inb", etc.
+    for (const auto& per_try : period_aliases(period_display)) {
+        const std::string cand = base_prefix + per_try;
+        auto it = std::find(header.begin(), header.end(), cand);
+        if (it != header.end()) return int(it - header.begin());
+    }
+    return -1;
+}
+
+static int must_col_alias_period_only(const std::vector<std::string>& header,
+                                      const std::string& base_prefix,
+                                      const std::string& period_display,
+                                      const char* what_for) {
+    const int idx = find_col_alias_period_only(header, base_prefix, period_display);
+    if (idx >= 0) return idx;
+    std::ostringstream oss;
+    oss << "Missing CSV column for " << what_for << ". Tried:";
+    for (const auto& a : period_aliases(period_display)) {
+        oss << "\n  \"" << base_prefix << a << "\"";
+    }
+    fatal(oss.str());
+    return -1;
+}
+
+static int find_col_alias_raw_yield(const std::vector<std::string>& header,
+                                    const std::string& topo_str_label,
+                                    const std::string& period_display_label,
+                                    const std::string& helicity_label) {
+    for (const auto& topo_try : topology_aliases(topo_str_label)) {
+        for (const auto& per_try : period_aliases(period_display_label)) {
+            for (const auto& hel_try : helicity_aliases(helicity_label)) {
+                const std::string candidate =
+                    "raw yield, ep->epg, " + topo_try + ", exp, " + per_try + ", " + hel_try;
+                auto it = std::find(header.begin(), header.end(), candidate);
+                if (it != header.end()) return int(it - header.begin());
+            }
+        }
+    }
+    return -1;
+}
+
+static int must_col_alias_raw_yield(const std::vector<std::string>& header,
+                                    const std::string& topo_str_label,
+                                    const std::string& period_display_label,
+                                    const std::string& helicity_label) {
+    const int idx = find_col_alias_raw_yield(header, topo_str_label, period_display_label, helicity_label);
+    if (idx >= 0) return idx;
+    std::ostringstream oss;
+    oss << "Missing DVCS raw-yield column (unpol) for (topo=\"" << topo_str_label
+        << "\", period=\"" << period_display_label << "\"). Tried:";
+    for (const auto& t : topology_aliases(topo_str_label)) {
+        for (const auto& p : period_aliases(period_display_label)) {
+            for (const auto& h : helicity_aliases(helicity_label)) {
+                oss << "\n  \"raw yield, ep->epg, " << t << ", exp, " << p << ", " << h << "\"";
+            }
+        }
+    }
+    fatal(oss.str());
+    return -1;
+}
+
+// ---------- require columns by exact name ----------
+static void require_columns_or_die(const CsvDoc& csv,
+                                   const std::vector<std::string>& names,
+                                   const std::string& ctx) {
     std::vector<std::string> missing;
-    for (const auto& n : names) if (csv.col(n) < 0) missing.push_back(n);
+    for (const auto& n : names) if (csv.col_exact(n) < 0) missing.push_back(n);
     if (!missing.empty()) {
         std::ostringstream oss;
         oss << "Missing required CSV columns for " << ctx << ":\n";
@@ -196,7 +265,7 @@ static void require_columns_or_die(const CsvDoc& csv, const std::vector<std::str
     }
 }
 
-// -------- CSV row materialization (strict) --------
+// -------- CSV row materialization (alias-aware for period/topology/helicity) --------
 struct CsvRow {
     int row_index=-1; // index in CSV data section
     double xb_min=0, xb_max=0, q2_min=0, q2_max=0, tab_min=0, tab_max=0;
@@ -207,46 +276,34 @@ struct CsvRow {
     long long n_dvcs_csv=0;
 };
 
-static std::string dvcs_unpol_col(const std::string& topo, const std::string& period_display) {
-    std::ostringstream os;
-    os << "raw yield, ep->epg, " << topo << ", exp, " << period_display << ", unpol";
-    return os.str();
-}
-
-static std::vector<CsvRow> materialize_rows_for_period_strict(
+static std::vector<CsvRow> materialize_rows_for_period_alias(
     const CsvDoc& csv,
     const std::string& period_display)
 {
-    // Strict column requirements
-    std::vector<std::string> required = {
-        "xBmin", "xBmax", "Q2min", "Q2max", "t_abs_min", "t_abs_max",
-        "phimin", "phimax",
-        "phiavg, " + period_display,
-        "xBavg, " + period_display,
-        "Q2avg, " + period_display,
-        "t_abs_avg, " + period_display,
-        dvcs_unpol_col("(FD, FD)", period_display),
-        dvcs_unpol_col("(CD, FD)", period_display),
-        dvcs_unpol_col("(CD, FT)", period_display)
-    };
-    require_columns_or_die(csv, required, "period \"" + period_display + "\"");
+    // Non-period-specific required columns must exist exactly
+    require_columns_or_die(csv,
+        {"xBmin","xBmax","Q2min","Q2max","t_abs_min","t_abs_max","phimin","phimax"},
+        "bin edges");
 
-    const int c_xb_min   = csv.col("xBmin");
-    const int c_xb_max   = csv.col("xBmax");
-    const int c_q2_min   = csv.col("Q2min");
-    const int c_q2_max   = csv.col("Q2max");
-    const int c_tab_min  = csv.col("t_abs_min");
-    const int c_tab_max  = csv.col("t_abs_max");
-    const int c_phi_min  = csv.col("phimin");
-    const int c_phi_max  = csv.col("phimax");
-    const int c_phi_avg  = csv.col("phiavg, " + period_display);
-    const int c_xb_avg   = csv.col("xBavg, " + period_display);
-    const int c_q2_avg   = csv.col("Q2avg, " + period_display);
-    const int c_tab_avg  = csv.col("t_abs_avg, " + period_display);
+    // Period-specific columns are resolved via aliases
+    const int c_phi_avg  = must_col_alias_period_only(csv.header, "phiavg, ",    period_display, "phiavg");
+    const int c_xb_avg   = must_col_alias_period_only(csv.header, "xBavg, ",     period_display, "xBavg");
+    const int c_q2_avg   = must_col_alias_period_only(csv.header, "Q2avg, ",     period_display, "Q2avg");
+    const int c_tab_avg  = must_col_alias_period_only(csv.header, "t_abs_avg, ", period_display, "t_abs_avg");
 
-    const int c_fd_fd    = csv.col(dvcs_unpol_col("(FD, FD)", period_display));
-    const int c_cd_fd    = csv.col(dvcs_unpol_col("(CD, FD)", period_display));
-    const int c_cd_ft    = csv.col(dvcs_unpol_col("(CD, FT)", period_display));
+    // DVCS unpol counts per topology (alias-aware). We sum FD_FD, CD_FD, CD_FT.
+    const int c_fd_fd = must_col_alias_raw_yield(csv.header, "(FD, FD)", period_display, "unpol");
+    const int c_cd_fd = must_col_alias_raw_yield(csv.header, "(CD, FD)", period_display, "unpol");
+    const int c_cd_ft = must_col_alias_raw_yield(csv.header, "(CD, FT)", period_display, "unpol");
+
+    const int c_xb_min  = csv.col_exact("xBmin");
+    const int c_xb_max  = csv.col_exact("xBmax");
+    const int c_q2_min  = csv.col_exact("Q2min");
+    const int c_q2_max  = csv.col_exact("Q2max");
+    const int c_tab_min = csv.col_exact("t_abs_min");
+    const int c_tab_max = csv.col_exact("t_abs_max");
+    const int c_phi_min = csv.col_exact("phimin");
+    const int c_phi_max = csv.col_exact("phimax");
 
     std::vector<CsvRow> rows;
     rows.reserve(csv.rows.size());
@@ -582,8 +639,8 @@ static void plot_period(
         }
     }
 
-    const std::string fpath = (std::filesystem::path(plot_dir) /
-        ("plot_contamination_" + period_dir + "_xB_" + std::to_string(slice_index) + ".png")).string();
+    const std::string fpath = (std::filesystem::path(out_root_dir) /
+        ("contamination_plots/" + period_dir + "/plot_contamination_" + period_dir + "_xB_" + std::to_string(slice_index) + ".png")).string();
     c->SaveAs(fpath.c_str());
     delete c;
 }
@@ -643,11 +700,14 @@ bool compute_pi0_contamination_overall(
         return true;
     }
 
-    // Strict: require contamination output column to pre-exist for each period
+    // Strict: require contamination output column to pre-exist for each period (alias-aware)
     for (const auto& J : jobs) {
-        const std::string col_out = "contamination ratio, " + J.display;
-        if (csv.col(col_out) < 0) {
-            fatal("CSV missing output column: \"" + col_out + "\"");
+        const int c = find_col_alias_period_only(csv.header, "contamination ratio, ", J.display);
+        if (c < 0) {
+            std::ostringstream oss;
+            oss << "CSV missing output column: \"contamination ratio, <alias>\" for period \"" << J.display << "\". Tried:";
+            for (const auto& a : period_aliases(J.display)) oss << "\n  \"contamination ratio, " << a << "\"";
+            fatal(oss.str());
         }
     }
 
@@ -663,12 +723,12 @@ bool compute_pi0_contamination_overall(
         const auto& J = jobs[ip];
         const std::string period_cased = to_cased_period_key(J.tree_key); // e.g. "Fa18_Inb"
 
-        // Strictly materialize rows & DVCS counts for THIS period
-        std::vector<CsvRow> rows = materialize_rows_for_period_strict(csv, J.display);
+        // Materialize rows & DVCS counts for THIS period (alias-aware)
+        std::vector<CsvRow> rows = materialize_rows_for_period_alias(csv, J.display);
         std::vector<RowCounts> counts(rows.size());
         for (size_t i=0;i<rows.size();++i) {
             counts[i].n_dvcs_csv = rows[i].n_dvcs_csv;
-            counts[i].phi_center = rows[i].phiavg; // period-specific required; no fallback
+            counts[i].phi_center = rows[i].phiavg; // period-specific required; alias-aware lookup already done
         }
 
         // Helper map for slice grouping by xB edges
@@ -766,7 +826,7 @@ bool compute_pi0_contamination_overall(
         {
             BinderMC b; b.bind(tB);
             const Long64_t N = tB->GetEntries(); dbgB.entries = (long long)N;
-            for (Long64_t i=0;i<N;++i) {
+            for (LongLong64_t i=0;i<N;++i) {
                 tB->GetEntry(i);
                 if (!(b.open_angle_ep2 > 5.0)) continue; dbgB.pass_global++;
                 if (!((-b.t1) < 1.0)) continue;
@@ -819,12 +879,9 @@ bool compute_pi0_contamination_overall(
             dbgB.print("BKG_MC", J.display);
         }
 
-        // Write contamination ratios into CSV (strict: column must exist)
-        const std::string col_name = "contamination ratio, " + J.display;
-        const int c_contam = csv.col(col_name);
-        if (c_contam < 0) {
-            fatal("CSV missing output column (unexpected late check): \"" + col_name + "\"");
-        } else {
+        // Write contamination ratios into CSV (alias-aware; column must exist under some alias)
+        const int c_contam = must_col_alias_period_only(csv.header, "contamination ratio, ", J.display, "contamination ratio");
+        {
             size_t wrote=0;
             std::lock_guard<std::mutex> lock(csv_mtx);
             for (size_t i=0;i<rows.size();++i) {
