@@ -1,21 +1,12 @@
-// total_counts.cpp — strict raw-yield writer + plotting + strict group sums
-// - Reads DVCS TTrees, applies global + exclusivity cuts (bin_means parity)
-// - Bins surviving events into CSV rows by (xB, Q2, |t|, phi)
-// - Writes ONLY the canonical raw-yield columns produced by initialize_pass2_csv.cpp
-// - Per-period raw yields: required columns, no auto-creation
-// - Combined-group raw yields (Fa18, Sp18, 10.6 GeV): writing is DISABLED per request (plots only)
-// - Plots per-period and combined groups (combined built from in-memory sums)
-//
-// Hardened:
-//   * Pre-cache CSV bin edges into POD arrays to avoid multi-threaded parsing of strings.
-//   * ROOT I/O guarded: SetBranchStatus to needed fields only; skip entries with nb<0.
-//   * Alias-aware header resolution via label_aliases.h.
-//   * Skip-list for CSV writing/lookup (e.g., "fa18_inb_supp" and combined groups).
+// total_counts.cpp
+// Raw-yield writer + plots with legends, correct axis labels, margins, and
+// canonicalized output directories. Combined groups are plotted from in-memory
+// aggregated period counts (no CSV group columns required).
 
 #include "total_counts.h"
 #include "periods.h"
 #include "load_binning_scheme.h"
-#include "label_aliases.h"  // period_aliases(), topology_aliases(), helicity_aliases()
+#include "label_aliases.h"
 
 #include <TCanvas.h>
 #include <TGraphErrors.h>
@@ -83,7 +74,7 @@ static inline bool in_range(double v, double a, double b) { return (v >= a) && (
 static bool row_accepts_phi(double phi_deg, double pmin_deg, double pmax_deg) {
     if (!std::isfinite(phi_deg) || !std::isfinite(pmin_deg) || !std::isfinite(pmax_deg)) return false;
     if (pmax_deg > pmin_deg) return in_range(phi_deg, pmin_deg, pmax_deg);
-    return (phi_deg >= pmin_deg) || (phi_deg < pmax_deg); // wrap-around
+    return (phi_deg >= pmin_deg) || (phi_deg < pmax_deg);
 }
 
 // ---------------- CSV helper ----------------
@@ -106,7 +97,10 @@ struct CsvDoc {
         bool needq = s.find(',') != std::string::npos || s.find('"') != std::string::npos;
         if (!needq) { os << s; return; }
         os << '"';
-        for (char ch : s) os << (ch=='"'? "\"\"" : std::string(1, ch));
+        for (char ch : s) {
+            if (ch=='"') os << "\"\"";
+            else os << ch;
+        }
         os << '"';
     }
 
@@ -182,20 +176,21 @@ static std::string to_lower_nospace(std::string s) {
     return out;
 }
 
-// Which labels should not touch the CSV (writing/lookup)?:
+// Skip CSV write/lookup for:
 //  - supplemental period(s)
-//  - combined groups (Fa18, Sp18, 10.6 GeV) — writing disabled; plotting allowed
+//  - combined groups (Fa18, Sp18, 10.6 GeV)
 static bool should_skip_csv_for_label(const std::string& display_label) {
     const std::string k = to_lower_nospace(display_label);
     if (k == "fa18inbsupp" || k == "fa18_inb_supp" || k.find("supp") != std::string::npos) return true;
-    if (k == "fa18" || k == "sp18" || k == "10.6gev" || k == "10.6geV" || k == "10.6") return true;
+    if (k == "fa18" || k == "sp18" || k == "10.6gev" || k == "10.6") return true;
     return false;
 }
-static bool should_skip_group_csv_write(const std::string& group_label) {
-    return (group_label=="Fa18" || group_label=="Sp18" || group_label=="10.6 GeV");
+
+static bool is_group_label(const std::string& L) {
+    return (L=="Fa18"||L=="Sp18"||L=="10.6 GeV");
 }
 
-// ------------- Alias-aware header resolution (uses label_aliases.h) -----------
+// ------------- Alias-aware header resolution -----------
 static int find_col_alias(const std::vector<std::string>& header,
                           const std::string& topo_str_label,
                           const std::string& period_display_label,
@@ -224,49 +219,38 @@ static bool try_raw_yield_cols_alias(const CsvDoc& csv,
     return (out.unpol>=0 && out.pos>=0 && out.neg>=0);
 }
 
-static int find_group_col_alias(const CsvDoc& csv,
-                                const std::string& topo_str_label,
-                                const std::string& group_label,
-                                const std::string& helicity_label) {
-    std::vector<std::string> group_tries{group_label};
-    if (group_label=="10.6 GeV") group_tries.push_back("10.6 GeV");
-    for (const auto& topo_try : topology_aliases(topo_str_label)) {
-        for (const auto& g_try : group_tries) {
-            for (const auto& hel_try : helicity_aliases(helicity_label)) {
-                const std::string candidate = "raw yield, ep->epg, " + topo_try + ", exp, " + g_try + ", " + hel_try;
-                int idx = csv.col_index(candidate);
-                if (idx >= 0) return idx;
-            }
-        }
-    }
-    return -1;
-}
-
-static YieldCols require_group_raw_yield_cols_alias(const CsvDoc& csv,
-                                                    const std::string& topo_str_label,
-                                                    const std::string& group_label) {
-    YieldCols yc;
-    yc.unpol = find_group_col_alias(csv, topo_str_label, group_label, "unpol");
-    yc.pos   = find_group_col_alias(csv, topo_str_label, group_label, "pos");
-    yc.neg   = find_group_col_alias(csv, topo_str_label, group_label, "neg");
-    if (yc.unpol<0 || yc.pos<0 || yc.neg<0) {
-        std::ostringstream oss;
-        oss << "Missing group raw-yield columns for \"" << group_label << "\" / \"" << topo_str_label << "\".\n"
-            << "Expected headers like: raw yield, ep->epg, " << topo_str_label << ", exp, " << group_label << ", unpol|pos|neg";
-        fatal(oss.str());
-    }
-    return yc;
-}
-
 // ---------------- directory helpers ----------------
-static inline std::string period_dir_for_label(const std::string& L) {
-    if (L=="Fa18 Inb")      return "Fa18_Inb";
-    if (L=="Fa18 Out")      return "Fa18_Out";
-    if (L=="Sp18 Inb")      return "Sp18_Inb";
-    if (L=="Sp18 Out")      return "Sp18_Out";
-    if (L=="Sp19 Inb")      return "Sp19_Inb";
+static std::string canonical_period_dir(const std::string& L) {
+    // map any capitalization/underscore/space variant to the canonical directory name
+    const std::string k = to_lower_nospace(L);
+    if (k=="fa18inb") return "Fa18_Inb";
+    if (k=="fa18out") return "Fa18_Out";
+    if (k=="fa18inbsupp") return "Fa18_Inb_Supp";
+    if (k=="sp18inb") return "Sp18_Inb";
+    if (k=="sp18out") return "Sp18_Out";
+    if (k=="sp19inb") return "Sp19_Inb";
+    // default: replace spaces with underscores for any unforeseen labels
     std::string s=L; for (char& c:s) if (c==' ') c='_';
     return s;
+}
+
+static std::string canonical_group_dir(const std::string& L) {
+    // keep exact group spellings used by make_dirs: Fa18, Sp18, "10.6 GeV"
+    if (L=="Fa18") return "Fa18";
+    if (L=="Sp18") return "Sp18";
+    if (L=="10.6 GeV") return "10.6 GeV";
+    return L;
+}
+
+static inline std::string period_dir_for_label(const std::string& L) {
+    return canonical_period_dir(L);
+}
+
+static std::string out_root_for_label(const std::string& label, const std::string& out_root_dir) {
+    namespace fs=std::filesystem;
+    const std::string base = (fs::path(out_root_dir) / "total_counts_plots").string();
+    if (is_group_label(label)) return (fs::path(base) / canonical_group_dir(label)).string();
+    return (fs::path(base) / canonical_period_dir(label)).string();
 }
 
 static void ensure_dir(const std::string& p) {
@@ -277,17 +261,6 @@ static void ensure_dir(const std::string& p) {
         if (ec) fatal("Could not create output directory: "+p+" ("+ec.message()+")");
         if (is_debug()) std::cout << "[total_counts] created dir: " << p << "\n";
     }
-}
-
-static bool is_group_label(const std::string& L) {
-    return (L=="Fa18"||L=="Sp18"||L=="10.6 GeV");
-}
-
-static std::string out_root_for_label(const std::string& label, const std::string& out_root_dir) {
-    namespace fs=std::filesystem;
-    const std::string base = (fs::path(out_root_dir) / "total_counts_plots").string();
-    if (is_group_label(label)) return (fs::path(base) / label).string();
-    return (fs::path(base) / period_dir_for_label(label)).string();
 }
 
 // ---------------- topology ----------------
@@ -402,11 +375,11 @@ static void bind_one_exact_enable(TTree* t, const std::string& bname, BranchBind
     else { fatal("Unsupported leaf type '"+tn+"' for branch '"+bname+"'"); }
 }
 
-// ---------------- simple exclusivity policy (bin_means parity) ----------------
+// ---------------- simple exclusivity policy ----------------
 static inline bool passes_global(double open_angle_ep2_deg, double t1, double pTmiss) {
     if (!(open_angle_ep2_deg > 5.0)) return false;
-    if (!((-t1) < 1.0)) return false;       // |t| < 1.0
-    if (!(pTmiss <= 0.20)) return false;    // (GeV)
+    if (!((-t1) < 1.0)) return false;
+    if (!(pTmiss <= 0.20)) return false;
     return true;
 }
 
@@ -418,7 +391,7 @@ struct DebugCounts {
 };
 struct RowCounts { long long pos=0, neg=0; };
 
-// ---------------- Bin-edge pre-cache (thread-safe reads later) ----------------
+// ---------------- Bin-edge pre-cache ----------------
 struct BinCache {
     std::vector<double> xbmin, xbmax, q2min, q2max, tmin, tmax, pmin, pmax;
     int nrows() const { return (int)xbmin.size(); }
@@ -461,8 +434,6 @@ static BinCache precache_bins(const CsvDoc& csv) {
 // ---------------- plotting ----------------
 struct CsvCols { int c_xb_min, c_xb_max, c_q2_min, c_q2_max, c_tab_min, c_tab_max, c_phi_min, c_phi_max; };
 
-// counts_opt: optional pointer to counts for this display_label (by topology),
-// used when CSV columns are absent or label is in skip list.
 static void draw_group_canvases(
     const std::string& display_label,
     const std::string& topo_str_label,
@@ -470,7 +441,7 @@ static void draw_group_canvases(
     const CsvDoc& csv,
     const CsvCols& cols,
     const std::string& out_root_dir,
-    const std::map<std::string, std::unordered_map<int, RowCounts>>* counts_opt // may be nullptr
+    const std::map<std::string, std::unordered_map<int, RowCounts>>* counts_opt
 )
 {
     namespace fs=std::filesystem;
@@ -488,9 +459,9 @@ static void draw_group_canvases(
         if (c_phiavg<0 || c_q2avg<0 || c_tabavg<0 || c_xbavg<0) {
             for (const auto& alt : period_aliases(display_label)) {
                 if (c_phiavg<0) { int ci = csv.col_index("phiavg, "+alt); if (ci>=0) c_phiavg=ci; }
-                if (c_q2avg <0) { int ci = csv.col_index("Q2avg, "+alt);  if (ci>=0) c_q2avg =ci; }
+                if (c_q2avg <0) { int ci = csv.col_index("Q2avg, " +alt); if (ci>=0) c_q2avg =ci; }
                 if (c_tabavg<0) { int ci = csv.col_index("t_abs_avg, "+alt); if (ci>=0) c_tabavg=ci; }
-                if (c_xbavg <0) { int ci = csv.col_index("xBavg, "+alt);  if (ci>=0) c_xbavg =ci; }
+                if (c_xbavg <0) { int ci = csv.col_index("xBavg, " +alt); if (ci>=0) c_xbavg =ci; }
             }
         }
     }
@@ -498,10 +469,25 @@ static void draw_group_canvases(
     std::set<std::pair<double,double>> xb_set;
     for (int r=0;r<csv.nrows();++r) xb_set.emplace(csv.as_double(r,cols.c_xb_min), csv.as_double(r,cols.c_xb_max));
 
-    const double head_size = 0.58;
-    const double latex_size= 0.065;
+    // visual tuning
+    const double head_size = 0.28;     // reduced ~2x from previous
+    const double label_sz  = 0.060;
+    const double title_sz  = 0.070;
+    const double leg_txt   = 0.055;
 
     const bool force_counts_only = should_skip_csv_for_label(display_label);
+
+    // optional one-time summary to confirm combined totals are nonzero
+    static std::once_flag once_flag;
+    std::call_once(once_flag, [&](){
+        if (is_group_label(display_label) && counts_opt) {
+            long long totp=0, totn=0;
+            for (const auto& tk : *counts_opt) {
+                for (const auto& rkv : tk.second) { totp += rkv.second.pos; totn += rkv.second.neg; }
+            }
+            std::cout << "[total_counts] Combined \""<<display_label<<"\" totals: pos="<<totp<<" neg="<<totn<<"\n";
+        }
+    });
 
     for (auto xb : xb_set) {
         std::set<std::pair<double,double>> q2set, tset_all;
@@ -609,6 +595,7 @@ static void draw_group_canvases(
         std::string cname="c_counts_"+period_dir_for_label(display_label)+"_"+topo_dir_label+"_xB_"+std::to_string((int)std::round(xb.first*1000.0));
         TCanvas* c=new TCanvas(cname.c_str(), "", W, H);
 
+        // top bar (title) smaller
         TPad* pTop = new TPad("pTop","pTop",0.0,0.84,1.0,1.0);
         TPad* pGrid= new TPad("pGrid","pGrid",0.0,0.00,1.0,0.84);
         pTop->SetFillStyle(0); pTop->Draw();
@@ -617,7 +604,7 @@ static void draw_group_canvases(
 
         pTop->cd();
         TLatex head; head.SetNDC(); head.SetTextSize(head_size); head.SetTextAlign(22);
-        head.DrawLatex(0.5,0.50, Form("%s   <xB>=%.3g   %s", display_label.c_str(), xb_mean_for_title, topo_str_label.c_str()));
+        head.DrawLatex(0.5,0.55, Form("%s   <xB>=%.3g   %s", display_label.c_str(), xb_mean_for_title, topo_str_label.c_str()));
 
         const double y_lo = 0.0;
         const double y_hi = std::max(1.0, canvas_max*1.15);
@@ -629,17 +616,19 @@ static void draw_group_canvases(
             gPad->SetBottomMargin(0.18);
             gPad->SetLeftMargin(0.125);
             gPad->SetRightMargin(0.07);
+            gPad->SetTickx(1);
+            gPad->SetTicky(1);
 
             TH1* frame=gPad->DrawFrame(0.0, y_lo, 360.0, y_hi);
-            frame->GetXaxis()->SetTitle("phi (deg)");
+            frame->GetXaxis()->SetTitle("#phi (deg)");
             frame->GetYaxis()->SetTitle("Counts");
             frame->GetXaxis()->CenterTitle();
             frame->GetYaxis()->CenterTitle();
             frame->GetXaxis()->SetNdivisions(505);
-            frame->GetXaxis()->SetTitleSize(0.075);
-            frame->GetYaxis()->SetTitleSize(0.075);
-            frame->GetXaxis()->SetLabelSize(0.060);
-            frame->GetYaxis()->SetLabelSize(0.060);
+            frame->GetXaxis()->SetTitleSize(title_sz);
+            frame->GetYaxis()->SetTitleSize(title_sz);
+            frame->GetXaxis()->SetLabelSize(label_sz);
+            frame->GetYaxis()->SetLabelSize(label_sz);
 
             const CellData& C = cells[rr*ncols+cc];
 
@@ -648,6 +637,15 @@ static void draw_group_canvases(
             gp->SetMarkerStyle(24); gp->SetMarkerColor(kRed);  gp->SetLineColor(kRed);  gp->SetLineWidth(1);
             gm->SetMarkerStyle(20); gm->SetMarkerColor(kBlue); gm->SetLineColor(kBlue); gm->SetLineWidth(1);
             gp->Draw("PE1 SAME"); gm->Draw("PE1 SAME");
+
+            // per-pad legend, compact and placed well
+            TLegend* leg = new TLegend(0.60, 0.73, 0.93, 0.92);
+            leg->SetBorderSize(0);
+            leg->SetFillStyle(0);
+            leg->SetTextSize(leg_txt);
+            leg->AddEntry(gp, "+ helicity", "PE");
+            leg->AddEntry(gm, "- helicity", "PE");
+            leg->Draw();
 
             TLatex lab; lab.SetNDC(); lab.SetTextSize(0.065); lab.SetTextAlign(13);
             const double q2m=safe_mean(C.q2means), tm=safe_mean(C.tmeans);
@@ -682,7 +680,6 @@ bool update_total_counts_csv(
     CsvDoc csv;
     if (!csv.load(csv_path)) return false;
 
-    // Pre-cache bin edges into POD arrays (thread-safe later)
     BinCache bins = precache_bins(csv);
 
     CsvCols cols;
@@ -695,7 +692,6 @@ bool update_total_counts_csv(
     cols.c_phi_min = csv.col_index("phimin");
     cols.c_phi_max = csv.col_index("phimax");
 
-    // Canonical period keys from periods.h
     std::vector<std::string> period_keys;
     for (const auto& P : CANONICAL_PERIODS()) {
         if (dvcsDataTrees.count(P.tree_key) && dvcsDataTrees.at(P.tree_key))
@@ -705,7 +701,7 @@ bool update_total_counts_csv(
 
     using PeriodRowMap = std::unordered_map<int, RowCounts>;
     std::mutex merge_mtx;
-    std::map<std::string, std::map<std::string, PeriodRowMap>> counts_by_label_topo; // keyed by display label
+    std::map<std::string, std::map<std::string, PeriodRowMap>> counts_by_label_topo;
 
     auto cadence_for = [](Long64_t N)->Long64_t {
         Long64_t by_pct = (Long64_t)std::max(1.0, std::floor(0.02 * (double)N));
@@ -734,7 +730,6 @@ bool update_total_counts_csv(
         }
         TTree* t = itT->second;
 
-        // Human-readable label (e.g. "Fa18 Inb" or "fa18_inb_supp")
         std::string display_label;
         for (const auto& P : CANONICAL_PERIODS()) {
             if (P.tree_key == period_key) { display_label = P.label; break; }
@@ -747,7 +742,6 @@ bool update_total_counts_csv(
             continue;
         }
 
-        // Enable only needed branches, then bind
         TopologyResolver topo; topo.enable_and_bind(t);
 
         BranchBinding b_helicity, b_x, b_Q2, b_t1, b_phi2, b_open_angle, b_pTmiss;
@@ -755,9 +749,9 @@ bool update_total_counts_csv(
         bind_one_exact_enable(t, "x",              b_x);
         bind_one_exact_enable(t, "Q2",             b_Q2);
         bind_one_exact_enable(t, "t1",             b_t1);
-        bind_one_exact_enable(t, "phi2",           b_phi2);           // radians
-        bind_one_exact_enable(t, "open_angle_ep2", b_open_angle);     // degrees
-        bind_one_exact_enable(t, "pTmiss",         b_pTmiss);         // GeV
+        bind_one_exact_enable(t, "phi2",           b_phi2);
+        bind_one_exact_enable(t, "open_angle_ep2", b_open_angle);
+        bind_one_exact_enable(t, "pTmiss",         b_pTmiss);
 
         const Long64_t N=t->GetEntries();
         const Long64_t cadence=cadence_for(N);
@@ -864,7 +858,6 @@ bool update_total_counts_csv(
             }
         }
 
-        // Merge results
         {
             std::lock_guard<std::mutex> lock(merge_mtx);
             auto& tgt_by_topo = counts_by_label_topo[display_label];
@@ -879,13 +872,13 @@ bool update_total_counts_csv(
         }
     } // omp periods
 
-    // Write per-period raw yields, unless label is in the skip list or headers are missing.
+    // Write per-period raw yields if present and not in skip list
     size_t grand_cells_written=0;
     for (const auto& lblkv : counts_by_label_topo) {
         const std::string display_label = lblkv.first;
 
         if (should_skip_csv_for_label(display_label)) {
-            std::cout << "[total_counts] Skipping CSV write for \"" << display_label << "\" (skip list: supp or group).\n";
+            std::cout << "[total_counts] Skipping CSV write for \"" << display_label << "\" (supplemental or combined-group).\n";
             continue;
         }
 
@@ -915,40 +908,17 @@ bool update_total_counts_csv(
         }
     }
 
-    // Combined groups (plots only; writing disabled)
-    struct CombinedGroup { std::string name; std::vector<std::string> members; };
-    static const std::vector<CombinedGroup> G = {
-        {"Fa18",     {"Fa18 Inb","Fa18 Out"}},
-        {"Sp18",     {"Sp18 Inb","Sp18 Out"}},
-        {"10.6 GeV", {"Fa18 Inb","Fa18 Out","Sp18 Inb","Sp18 Out"}}
-    };
-
-    // (1) If writing were enabled, we would sum from CSV here — but per request we SKIP writing.
-    for (const auto& GG : G) {
-        if (should_skip_group_csv_write(GG.name)) {
-            std::cout << "[total_counts] Skipping CSV write for combined group \"" << GG.name << "\" (plots only).\n";
-            continue;
-        }
-        // (Unreachable with current policy; kept for completeness)
-        for (int ti=0; ti<3; ++ti) {
-            const std::string topoS = topo_str((Topology)ti);
-            // would do: const YieldCols gy = require_group_raw_yield_cols_alias(csv, topoS, GG.name);
-            (void)topoS;
-        }
-    }
-
     if (grand_cells_written==0) {
-        std::cout << "[total_counts] WARNING: wrote zero CSV cells (no matches or headers mismatch, or skip-list only).\n";
+        std::cout << "[total_counts] WARNING: wrote zero CSV cells (headers missing or skip-list only).\n";
     }
 
-    // Save CSV
     if (!csv.save_atomic(csv_path)) {
         std::cerr << "[total_counts] ERROR: failed to save " << csv_path << "\n";
         return false;
     }
 
     // -------- Plotting --------
-    // (A) Per-period plots: if label is skipped or lacks CSV columns, draw from in-memory counts.
+    // (A) Per-period plots
     for (const auto& P:CANONICAL_PERIODS()) {
         const std::string display_label = P.label;
         const auto it_counts = counts_by_label_topo.find(display_label);
@@ -963,13 +933,19 @@ bool update_total_counts_csv(
         }
     }
 
-    // (B) Combined-group plots: build aggregated counts from member period counts (no CSV needed).
+    // (B) Combined-group plots: aggregate from period maps
+    struct CombinedGroup { std::string name; std::vector<std::string> members; };
+    static const std::vector<CombinedGroup> G = {
+        {"Fa18",     {"Fa18 Inb","Fa18 Out"}},
+        {"Sp18",     {"Sp18 Inb","Sp18 Out"}},
+        {"10.6 GeV", {"Fa18 Inb","Fa18 Out","Sp18 Inb","Sp18 Out"}}
+    };
+
     for (const auto& GG : G) {
-        // Build aggregate counts map for this group
         std::map<std::string, std::unordered_map<int, RowCounts>> agg;
         for (const std::string topoS : {std::string("(FD, FD)"), std::string("(CD, FD)"), std::string("(CD, FT)")}) {
             auto& topo_map = agg[topoS];
-            for (const auto& member_display : GG.members) {
+            for (const std::string& member_display : GG.members) {
                 auto it_mem = counts_by_label_topo.find(member_display);
                 if (it_mem == counts_by_label_topo.end()) continue;
                 auto it_topo = it_mem->second.find(topoS);
@@ -986,7 +962,7 @@ bool update_total_counts_csv(
                                 topo_str((Topology)ti),
                                 topo_dir((Topology)ti),
                                 csv, cols, out_root_dir,
-                                &agg); // use aggregated in-memory counts
+                                &agg);
         }
     }
 
