@@ -17,7 +17,7 @@
 #include <TROOT.h>
 #include <TH1.h>
 #include <TString.h>
-#include <TDataType.h>  // for EDataType (kInt_t, kDouble_t)
+#include <TDataType.h>  // kInt_t, kDouble_t and EDataType
 
 // C++ stdlib
 #include <algorithm>
@@ -154,12 +154,12 @@ struct BranchBinder {
         if (ch == Channel::DVCS) ena("theta_gamma_gamma");
         else                     ena("theta_pi0_pi0");
 
-        // Bind with explicit primitive types to avoid any dictionary lookups.
+        // Bind with explicit primitive types (6-arg overload).
         auto bI = [&](const char* n, int* a, bool& f){
-            if (t->GetBranch(n)) { t->SetBranchAddress(n, a, nullptr, nullptr, kInt_t); f = true; }
+            if (t->GetBranch(n)) { t->SetBranchAddress(n, a, nullptr, nullptr, kInt_t, false); f = true; }
         };
         auto bD = [&](const char* n, double* a, bool& f){
-            if (t->GetBranch(n)) { t->SetBranchAddress(n, a, nullptr, nullptr, kDouble_t); f = true; }
+            if (t->GetBranch(n)) { t->SetBranchAddress(n, a, nullptr, nullptr, kDouble_t, false); f = true; }
         };
 
         bI("detector1", &detector1, has_detector1);
