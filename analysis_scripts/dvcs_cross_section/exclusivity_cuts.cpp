@@ -17,7 +17,7 @@
 #include <TROOT.h>
 #include <TH1.h>
 #include <TString.h>
-#include <TDataType.h>  // kInt_t, kDouble_t and EDataType
+#include <TVirtualPad.h>
 
 // C++ stdlib
 #include <algorithm>
@@ -118,6 +118,7 @@ static bool passes3SigmaCuts(const std::map<std::string, Stats>& cuts,
 // -------------------- branch binder --------------------
 
 struct BranchBinder {
+    // Only these branches are ever touched.
     int detector1 = 0, detector2 = 0; bool has_detector1 = false, has_detector2 = false;
 
     double t1 = 0.0;                bool has_t1 = false;
@@ -132,51 +133,30 @@ struct BranchBinder {
     double theta_gamma_gamma = 0.0; bool has_theta_gamma_gamma = false;
     double theta_pi0_pi0 = 0.0;     bool has_theta_pi0_pi0 = false;
 
-    void bind(TTree* t, Channel ch) {
-        if (!t) return;
-
-        // Disable everything, then explicitly enable only what we use.
-        t->SetBranchStatus("*", 0);
-
-        auto ena = [&](const char* n){ if (t->GetBranch(n)) t->SetBranchStatus(n, 1); };
-
-        ena("detector1");
-        ena("detector2");
-        ena("t1");
-        ena("open_angle_ep2");
-        ena("Emiss2");
-        ena("Mx2");
-        ena("Mx2_1");
-        ena("Mx2_2");
-        ena("pTmiss");
-        ena("xF");
-        ena("Delta_phi");
-        if (ch == Channel::DVCS) ena("theta_gamma_gamma");
-        else                     ena("theta_pi0_pi0");
-
-        // Bind with explicit primitive types (6-arg overload).
-        auto bI = [&](const char* n, int* a, bool& f){
-            if (t->GetBranch(n)) { t->SetBranchAddress(n, a, nullptr, nullptr, kInt_t, false); f = true; }
+    void bind(TTree* t) {
+        // Use the 2/3-arg SetBranchAddress to avoid any interpreter type lookups.
+        auto bindI = [&](const char* n, int* a, bool& f) {
+            if (t->GetBranch(n)) { t->SetBranchAddress(n, a, nullptr); f = true; }
         };
-        auto bD = [&](const char* n, double* a, bool& f){
-            if (t->GetBranch(n)) { t->SetBranchAddress(n, a, nullptr, nullptr, kDouble_t, false); f = true; }
+        auto bindD = [&](const char* n, double* a, bool& f) {
+            if (t->GetBranch(n)) { t->SetBranchAddress(n, a, nullptr); f = true; }
         };
 
-        bI("detector1", &detector1, has_detector1);
-        bI("detector2", &detector2, has_detector2);
+        bindI("detector1", &detector1, has_detector1);
+        bindI("detector2", &detector2, has_detector2);
 
-        bD("t1", &t1, has_t1);
-        bD("open_angle_ep2", &open_angle_ep2, has_open_angle_ep2);
+        bindD("t1", &t1, has_t1);
+        bindD("open_angle_ep2", &open_angle_ep2, has_open_angle_ep2);
 
-        bD("Emiss2", &Emiss2, has_Emiss2);
-        bD("Mx2", &Mx2, has_Mx2);
-        bD("Mx2_1", &Mx2_1, has_Mx2_1);
-        bD("Mx2_2", &Mx2_2, has_Mx2_2);
-        bD("pTmiss", &pTmiss, has_pTmiss);
-        bD("xF", &xF, has_xF);
-        bD("Delta_phi", &Delta_phi, has_Delta_phi);
-        if (ch == Channel::DVCS) bD("theta_gamma_gamma", &theta_gamma_gamma, has_theta_gamma_gamma);
-        else                     bD("theta_pi0_pi0",     &theta_pi0_pi0,     has_theta_pi0_pi0);
+        bindD("Emiss2", &Emiss2, has_Emiss2);
+        bindD("Mx2", &Mx2, has_Mx2);
+        bindD("Mx2_1", &Mx2_1, has_Mx2_1);
+        bindD("Mx2_2", &Mx2_2, has_Mx2_2);
+        bindD("pTmiss", &pTmiss, has_pTmiss);
+        bindD("xF", &xF, has_xF);
+        bindD("Delta_phi", &Delta_phi, has_Delta_phi);
+        bindD("theta_gamma_gamma", &theta_gamma_gamma, has_theta_gamma_gamma);
+        bindD("theta_pi0_pi0", &theta_pi0_pi0, has_theta_pi0_pi0);
     }
 
     std::map<std::string, double> valuesMap(Channel ch) const {
@@ -196,13 +176,8 @@ struct BranchBinder {
 
 // -------------------- fits and stats --------------------
 
-// Serialize all TF1/TFormula fits to avoid cling module races.
-static std::mutex g_fit_mutex;
-
 static std::pair<double,double> fitGaussianLeftSide(TH1D* h) {
     if (!h || h->GetEntries() == 0) return {0.0, 0.0};
-    std::lock_guard<std::mutex> lock(g_fit_mutex);
-
     double xmin = h->GetXaxis()->GetXmin();
     int peakBin = h->GetMaximumBin();
     double xpeak = h->GetXaxis()->GetBinCenter(peakBin);
@@ -271,7 +246,7 @@ static FilledHists fillStageHists(
 
     // Data loop
     if (dataTree) {
-        BranchBinder b; b.bind(dataTree, ch);
+        BranchBinder b; b.bind(dataTree);
         Long64_t n = dataTree->GetEntries();
         for (Long64_t i = 0; i < n; ++i) {
             dataTree->GetEntry(i);
@@ -293,7 +268,7 @@ static FilledHists fillStageHists(
 
     // MC loop
     if (mcTree) {
-        BranchBinder b; b.bind(mcTree, ch);
+        BranchBinder b; b.bind(mcTree);
         Long64_t n = mcTree->GetEntries();
         for (Long64_t i = 0; i < n; ++i) {
             mcTree->GetEntry(i);
@@ -329,10 +304,6 @@ static void saveStagePlots(const FilledHists& H, const HistList& cfg, Channel ch
     int cols = 4, rows = (n + cols - 1) / cols;
     TCanvas c("c", "", 2400, rows * 640);
     c.Divide(cols, rows, 0.002, 0.002);
-
-    auto isGaussianVar = [&](const std::string& v)->bool {
-        return (v == "theta_gamma_gamma" || v == "theta_pi0_pi0" || v == "pTmiss");
-    };
 
     {
         std::string title = channelPretty(ch) + "  |  " + prettyPeriod + "  |  " + topoToKey(topo) + "  |  " + suffix;
@@ -532,6 +503,47 @@ static void processOneChannelOneTopology(
     outCutsForTopo = cumulative;
 }
 
+static void processPeriod(
+    const PeriodWork& W,
+    const std::string& outJsonDir,
+    const std::string& outPlotDir,
+    std::map<std::string, CutDict>& combined_out,
+    std::mutex& combined_mutex)
+{
+    TH1::AddDirectory(kFALSE);
+    gStyle->SetOptStat(0);
+
+    if (W.dvcs_data && W.dvcs_mc) {
+        std::string pretty = periodCode(Channel::DVCS, W.label);
+        for (Topology topo : {Topology::FD_FD, Topology::CD_FD, Topology::CD_FT}) {
+            CutDict cutsDVCS;
+            processOneChannelOneTopology(pretty, Channel::DVCS, topo, W.dvcs_data, W.dvcs_mc, outPlotDir, cutsDVCS);
+            std::lock_guard<std::mutex> lock(combined_mutex);
+            combined_out[pretty + "_" + topoToKey(topo)] = cutsDVCS;
+        }
+        std::cout << "[Done] Exclusivity cuts for " << pretty << std::endl;
+    }
+
+    if (W.eppi0_data && W.eppi0_mc) {
+        std::string pretty = periodCode(Channel::EPPI0, W.label);
+        for (Topology topo : {Topology::FD_FD, Topology::CD_FD, Topology::CD_FT}) {
+            CutDict cutsPI0;
+            processOneChannelOneTopology(pretty, Channel::EPPI0, topo, W.eppi0_data, W.eppi0_mc, outPlotDir, cutsPI0);
+            std::lock_guard<std::mutex> lock(combined_mutex);
+            combined_out[pretty + "_" + topoToKey(topo)] = cutsPI0;
+        }
+        std::cout << "[Done] Exclusivity cuts for " << pretty << std::endl;
+    }
+}
+
+// ---- forward declaration for dispatcher (keeps the compiler happy if order changes) ----
+static void processPeriod(
+    const PeriodWork& W,
+    const std::string& outJsonDir,
+    const std::string& outPlotDir,
+    std::map<std::string, CutDict>& combined_out,
+    std::mutex& combined_mutex);
+
 // -------------------- dispatcher --------------------
 
 void runAllExclusivityCuts(
@@ -543,18 +555,6 @@ void runAllExclusivityCuts(
     const std::string& outPlotDir,
     int maxThreads)
 {
-    // Make ROOT thread-safe and warm up cling/TFormula on the main thread.
-    ROOT::EnableThreadSafety();
-    {
-        static std::once_flag warm_once;
-        std::call_once(warm_once, [](){
-            TH1D h("__warm_h", "", 10, 0.0, 1.0);
-            h.Fill(0.5);
-            TF1 f("__warm_f", "gaus(0)", 0.0, 1.0);
-            h.Fit(&f, "Q0R");
-        });
-    }
-
     // Build workers per period
     std::vector<PeriodWork> work;
     work.reserve(CANONICAL_PERIODS().size());
@@ -596,7 +596,6 @@ void runAllExclusivityCuts(
         while (true) {
             size_t i = idx.fetch_add(1);
             if (i >= work.size()) break;
-            processOneChannelOneTopology(periodCode(Channel::DVCS, work[i].label), Channel::DVCS, Topology::FD_FD, nullptr, nullptr, outPlotDir, combined["__dummy"]); // no-op to keep signature consistent (unchanged behavior elsewhere)
             processPeriod(work[i], outJsonDir, outPlotDir, combined, combined_mutex);
         }
     };
