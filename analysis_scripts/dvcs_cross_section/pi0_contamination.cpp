@@ -4,29 +4,39 @@
 //   c = (N_bkg_mc / N_dvcs_csv) * (N_pi0_data / N_pi0_reco_mc)
 // with Poisson errors. DVCS counts come from CSV; eppi0 counts are re-counted.
 //
+// STRICT policy (no fallbacks, no auto-add columns):
+//   - Required CSV columns must exist EXACTLY; otherwise fatal() lists missing names.
+//   - No "phiavg" generic fallbacks; must have period-specific "phiavg, <Period Display>".
+//   - No auto-adding "contamination ratio, <Period Display>" — must pre-exist.
+//
 // Cuts policy:
 //   - Global kinematic gates: open_angle_ep2 > 5 deg, |t1| < 1.0, pTmiss <= 0.20
-//   - Topology must be one of: (FD, FD), (CD, FD), (CD, FT)  [hard-coded]
-//   - 3sigma exclusivity windows:
-//       * eppi0 DATA counts:   use eppi0_*_*  "data" block
-//       * eppi0 RECO MC:       use eppi0_*_*  "mc"   block
-//       * pi0->DVCS BKG MC:    use DVCS_*_*   "mc"   block
+//   - Topology must be one of: (FD, FD), (CD, FD), (CD, FT) [hard-coded]
+//   - 3sigma exclusivity windows loaded from combined_cuts_json
+//       * eppi0 DATA counts:   eppi0_*_*  "data" block
+//       * eppi0 RECO MC:       eppi0_*_*  "mc"   block
+//       * pi0->DVCS BKG MC:    DVCS_*_*   "mc"   block
 //
 // Binning & phi handling:
-//   - All bins come from the Lee CSV rows (no fixed N_PHI_BINS).
-//   - Each CSV row defines xBmin/xBmax, Q2min/Q2max, t_abs_min/max, phimin/phimax (or phiavg fallback).
-//   - DVCS counts are the sum over (FD, FD), (CD, FD), (CD, FT) for the period, helicity-aggregated (unpol).
+//   - All bins come from the CSV rows (no fixed N_PHI_BINS).
+//   - Each CSV row must define xBmin/xBmax, Q2min/Q2max, t_abs_min/max, phimin/phimax.
+//   - Point placement requires "phiavg, <Period Display>".
+//
+// Plot title & axes:
+//   - Canvas title shows slice-averaged means from CSV columns:
+//       "xBavg, <Period Display>", "Q2avg, <Period Display>", "t_abs_avg, <Period Display>"
+//   - Y axes are standardized to [0, 1].
 //
 // Output:
-//   - Plots only: <out_root_dir>/contamination_plots/<PeriodDir>/plot_contamination_<PeriodDir>_xB_<idx>.png
-//   - CSV writes: "contamination ratio, <Period Display>" filled per row.
+//   - Plots: <out_root_dir>/contamination_plots/<PeriodDir>/plot_contamination_<PeriodDir>_xB_<idx>.png
+//   - CSV write: fills pre-existing "contamination ratio, <Period Display>" per row (only if all four counts > 0).
 //
 // Parallelism:
-//   - Period-level OpenMP parallel for over independent trees (hard-capped at 5 threads).
+//   - Period-level OpenMP parallel for; threads hard-capped at 5 (never "all cores").
 // ------------------------------------------------------------
 
 #include "pi0_contamination.h"
-#include "periods.h"            // PeriodDef, CANONICAL_PERIODS()
+#include "periods.h" // PeriodDef, CANONICAL_PERIODS()
 
 #include <nlohmann/json.hpp>
 
@@ -89,31 +99,7 @@ static int resolve_threads(int max_workers) {
     std::cerr << "[pi0_contamination][FATAL] " << msg << std::endl;
     std::exit(EXIT_FAILURE);
 }
-static inline std::string to_lower(std::string s) {
-    std::transform(s.begin(), s.end(), s.begin(), [](unsigned char c){ return (char)std::tolower(c); });
-    return s;
-}
-static inline std::string trim(std::string s) {
-    size_t a=0, b=s.size();
-    while (a<b && std::isspace((unsigned char)s[a])) ++a;
-    while (b>a && std::isspace((unsigned char)s[b-1])) --b;
-    return s.substr(a, b-a);
-}
 static inline std::string period_dir_label(std::string L) { for (char& c:L) if (c==' ') c='_'; return L; }
-
-// ---------- physics/topology helpers ----------
-static inline bool passesTopology(int det1, int det2, const std::string& topo) {
-    if (topo == "(FD, FD)") return (det1==1 && det2==1);
-    if (topo == "(CD, FD)") return (det1==2 && det2==1);
-    if (topo == "(CD, FT)") return (det1==2 && det2==0);
-    return false;
-}
-static inline bool passesGlobal(double t1, double open_angle_ep2, double pTmiss) {
-    if (open_angle_ep2 <= 5.0) return false;
-    if ((-t1) > 1.0)          return false;
-    if (pTmiss > 0.20)        return false;
-    return true;
-}
 static inline double wrap_deg(double d) {
     if (!std::isfinite(d)) return std::numeric_limits<double>::quiet_NaN();
     double w = std::fmod(d, 360.0);
@@ -122,7 +108,7 @@ static inline double wrap_deg(double d) {
     return w;
 }
 
-// ---------- CSV doc (lightweight, internal) ----------
+// ---------- CSV doc (strict) ----------
 struct CsvDoc {
     std::vector<std::string> header;
     std::map<std::string,int> index;
@@ -199,46 +185,68 @@ struct CsvDoc {
     }
 };
 
-// -------- CSV helpers --------
+static void require_columns_or_die(const CsvDoc& csv, const std::vector<std::string>& names, const std::string& ctx) {
+    std::vector<std::string> missing;
+    for (const auto& n : names) if (csv.col(n) < 0) missing.push_back(n);
+    if (!missing.empty()) {
+        std::ostringstream oss;
+        oss << "Missing required CSV columns for " << ctx << ":\n";
+        for (const auto& n : missing) oss << "  - " << n << "\n";
+        fatal(oss.str());
+    }
+}
+
+// -------- CSV row materialization (strict) --------
 struct CsvRow {
     int row_index=-1; // index in CSV data section
     double xb_min=0, xb_max=0, q2_min=0, q2_max=0, tab_min=0, tab_max=0;
     double phimin=0, phimax=360.0, phiavg=std::numeric_limits<double>::quiet_NaN();
+    double xb_avg=std::numeric_limits<double>::quiet_NaN();
+    double q2_avg=std::numeric_limits<double>::quiet_NaN();
+    double tab_avg=std::numeric_limits<double>::quiet_NaN();
     long long n_dvcs_csv=0;
 };
+
 static std::string dvcs_unpol_col(const std::string& topo, const std::string& period_display) {
     std::ostringstream os;
     os << "raw yield, ep->epg, " << topo << ", exp, " << period_display << ", unpol";
     return os.str();
 }
-static std::vector<CsvRow> materialize_rows_for_period(const CsvDoc& csv, const std::string& period_display) {
-    // Required bin-edge columns
-    const int c_xb_min = csv.col("xBmin");
-    const int c_xb_max = csv.col("xBmax");
-    const int c_q2_min = csv.col("Q2min");
-    const int c_q2_max = csv.col("Q2max");
-    const int c_tab_min= csv.col("t_abs_min");
-    const int c_tab_max= csv.col("t_abs_max");
-    if (c_xb_min<0||c_xb_max<0||c_q2_min<0||c_q2_max<0||c_tab_min<0||c_tab_max<0) {
-        fatal("CSV missing one or more bin-edge columns (xB/Q2/|t|).");
-    }
-    int c_phi_min = csv.col("phimin");
-    int c_phi_max = csv.col("phimax");
 
-    // Period-specific phiavg (preferred if present)
-    int c_phi_avg = csv.col("phiavg, " + period_display);
-    if (c_phi_avg < 0) c_phi_avg = csv.col("phiavg"); // loose fallback
+static std::vector<CsvRow> materialize_rows_for_period_strict(
+    const CsvDoc& csv,
+    const std::string& period_display)
+{
+    // Strict column requirements
+    std::vector<std::string> required = {
+        "xBmin", "xBmax", "Q2min", "Q2max", "t_abs_min", "t_abs_max",
+        "phimin", "phimax",
+        "phiavg, " + period_display,
+        "xBavg, " + period_display,
+        "Q2avg, " + period_display,
+        "t_abs_avg, " + period_display,
+        dvcs_unpol_col("(FD, FD)", period_display),
+        dvcs_unpol_col("(CD, FD)", period_display),
+        dvcs_unpol_col("(CD, FT)", period_display)
+    };
+    require_columns_or_die(csv, required, "period \"" + period_display + "\"");
 
-    // DVCS unpol columns per topology for this period
-    const std::vector<std::string> topos = {"(FD, FD)","(CD, FD)","(CD, FT)"};
-    std::vector<int> dvcs_cols;
-    dvcs_cols.reserve(topos.size());
-    for (const auto& topo : topos) {
-        const std::string cname = dvcs_unpol_col(topo, period_display);
-        const int idx = csv.col(cname);
-        if (idx < 0) fatal("DVCS CSV missing column: \"" + cname + "\"");
-        dvcs_cols.push_back(idx);
-    }
+    const int c_xb_min   = csv.col("xBmin");
+    const int c_xb_max   = csv.col("xBmax");
+    const int c_q2_min   = csv.col("Q2min");
+    const int c_q2_max   = csv.col("Q2max");
+    const int c_tab_min  = csv.col("t_abs_min");
+    const int c_tab_max  = csv.col("t_abs_max");
+    const int c_phi_min  = csv.col("phimin");
+    const int c_phi_max  = csv.col("phimax");
+    const int c_phi_avg  = csv.col("phiavg, " + period_display);
+    const int c_xb_avg   = csv.col("xBavg, " + period_display);
+    const int c_q2_avg   = csv.col("Q2avg, " + period_display);
+    const int c_tab_avg  = csv.col("t_abs_avg, " + period_display);
+
+    const int c_fd_fd    = csv.col(dvcs_unpol_col("(FD, FD)", period_display));
+    const int c_cd_fd    = csv.col(dvcs_unpol_col("(CD, FD)", period_display));
+    const int c_cd_ft    = csv.col(dvcs_unpol_col("(CD, FT)", period_display));
 
     std::vector<CsvRow> rows;
     rows.reserve(csv.rows.size());
@@ -252,25 +260,21 @@ static std::vector<CsvRow> materialize_rows_for_period(const CsvDoc& csv, const 
         cr.tab_min = csv.as_double(r, c_tab_min);
         cr.tab_max = csv.as_double(r, c_tab_max);
 
-        if (c_phi_min >= 0 && c_phi_max >= 0) {
-            cr.phimin = csv.as_double(r, c_phi_min);
-            cr.phimax = csv.as_double(r, c_phi_max);
-            if (c_phi_avg >= 0) cr.phiavg = csv.as_double(r, c_phi_avg);
-        } else if (c_phi_avg >= 0) {
-            const double pav = csv.as_double(r, c_phi_avg);
-            if (!std::isfinite(pav)) fatal("CSV phiavg value is missing or invalid.");
-            cr.phiavg = pav;
-            cr.phimin = pav - 15.0;
-            cr.phimax = pav + 15.0;
-        } else {
-            fatal("CSV has neither phimin/phimax nor usable phiavg.");
-        }
+        cr.phimin  = csv.as_double(r, c_phi_min);
+        cr.phimax  = csv.as_double(r, c_phi_max);
+        cr.phiavg  = csv.as_double(r, c_phi_avg);
+
+        cr.xb_avg  = csv.as_double(r, c_xb_avg);
+        cr.q2_avg  = csv.as_double(r, c_q2_avg);
+        cr.tab_avg = csv.as_double(r, c_tab_avg);
 
         long long sum_unpol = 0;
-        for (int c : dvcs_cols) {
-            const double v = csv.as_double(r, c);
-            if (std::isfinite(v) && v > 0) sum_unpol += (long long)std::llround(v);
-        }
+        double vfd = csv.as_double(r, c_fd_fd);
+        double vcf = csv.as_double(r, c_cd_fd);
+        double vct = csv.as_double(r, c_cd_ft);
+        if (std::isfinite(vfd) && vfd > 0) sum_unpol += (long long)std::llround(vfd);
+        if (std::isfinite(vcf) && vcf > 0) sum_unpol += (long long)std::llround(vcf);
+        if (std::isfinite(vct) && vct > 0) sum_unpol += (long long)std::llround(vct);
         cr.n_dvcs_csv = sum_unpol;
 
         rows.push_back(cr);
@@ -278,6 +282,7 @@ static std::vector<CsvRow> materialize_rows_for_period(const CsvDoc& csv, const 
     if (rows.empty()) fatal("DVCS CSV has no data rows.");
     return rows;
 }
+
 static bool row_accepts(const CsvRow& r, double xB, double Q2, double t_abs, double phi_deg) {
     if (!(xB  >= r.xb_min  && xB  < r.xb_max )) return false;
     if (!(Q2  >= r.q2_min  && Q2  < r.q2_max )) return false;
@@ -307,6 +312,7 @@ static inline std::string to_cased_period_key(const std::string& tree_key) {
     }
     return tree_key;
 }
+
 static CutTable load_cuts(const std::string& path) {
     std::ifstream in(path);
     if (!in) fatal("Cannot open cuts JSON: " + path);
@@ -358,7 +364,7 @@ struct BinderCommon {
 
     // optional variables that may appear in cuts
     double Emiss2=0, Mx2=0, Mx2_1=0, Mx2_2=0, theta_gamma_gamma=0, xF=0;
-    double theta_pi0_pi0=0; // appears in eppi0 blocks
+    double theta_pi0_pi0=0;
 
     std::set<std::string> have;
 
@@ -407,7 +413,7 @@ struct BinderCommon {
     }
 };
 struct BinderEppi0Data : public BinderCommon {
-    int helicity=0; // not used for aggregation, but we bind to be consistent
+    int helicity=0;
     void bind(TTree* t) {
         bind_core(t);
         if (!t->GetBranch("helicity")) fatal("Missing 'helicity' in eppi0 DATA tree.");
@@ -439,47 +445,50 @@ struct RowCounts {
     long long n_pi0_bkg=0;
     double    phi_center=std::numeric_limits<double>::quiet_NaN();
 };
+
 static bool dir_exists(const std::string& d) {
     std::error_code ec;
     return std::filesystem::exists(d, ec);
 }
+
 static void plot_period(
     const std::string& period_dir,
     const std::vector<CsvRow>& rows,
     const std::vector<RowCounts>& cnts,
-    const std::string& out_root_dir)
+    const std::string& out_root_dir,
+    const std::vector<int>& rows_in_slice,
+    double xb_mean_slice,
+    double q2_mean_slice,
+    double tab_mean_slice,
+    int slice_index)
 {
-    // Build unique lists for layout from CSV rows
-    auto uniq_ranges = [](const std::vector<CsvRow>& V, char which){
+    // Determine the Q2 and |t| unique cells present in this slice
+    auto uniq_ranges = [](const std::vector<int>& idxs, const std::vector<CsvRow>& V, char which){
         std::set<std::pair<double,double>> st;
-        for (const auto& r : V) {
-            if (which=='x') st.emplace(r.xb_min,  r.xb_max);
-            if (which=='Q') st.emplace(r.q2_min,  r.q2_max);
-            if (which=='t') st.emplace(r.tab_min, r.tab_max);
+        for (int r : idxs) {
+            if (which=='Q') st.emplace(V[r].q2_min,  V[r].q2_max);
+            if (which=='t') st.emplace(V[r].tab_min, V[r].tab_max);
         }
         return std::vector<std::pair<double,double>>(st.begin(), st.end());
     };
-    const auto Xs = uniq_ranges(rows,'x');
-    const auto Qs = uniq_ranges(rows,'Q');
-    const auto Ts = uniq_ranges(rows,'t');
+    const auto Qs = uniq_ranges(rows_in_slice, rows, 'Q');
+    const auto Ts = uniq_ranges(rows_in_slice, rows, 't');
 
     auto find_idx = [](const std::pair<double,double>& r, const std::vector<std::pair<double,double>>& V){
         for (int i=0;i<(int)V.size();++i) if (V[i]==r) return i; return -1;
     };
 
-    struct Key { int ix, iQ, it; };
+    struct Key { int iQ, it; };
     auto lessK = [](const Key& a, const Key& b){
-        if (a.ix != b.ix) return a.ix < b.ix;
         if (a.iQ != b.iQ) return a.iQ < b.iQ;
         return a.it < b.it;
     };
     std::map<Key, std::vector<int>, decltype(lessK)> by_k(lessK);
 
-    for (int r=0; r<(int)rows.size(); ++r) {
-        Key K{find_idx({rows[r].xb_min,rows[r].xb_max}, Xs),
-              find_idx({rows[r].q2_min,rows[r].q2_max}, Qs),
-              find_idx({rows[r].tab_min,rows[r].tab_max}, Ts)};
-        if (K.ix>=0 && K.iQ>=0 && K.it>=0) by_k[K].push_back(r);
+    for (int ridx : rows_in_slice) {
+        Key K{find_idx({rows[ridx].q2_min,rows[ridx].q2_max}, Qs),
+              find_idx({rows[ridx].tab_min,rows[ridx].tab_max}, Ts)};
+        if (K.iQ>=0 && K.it>=0) by_k[K].push_back(ridx);
     }
 
     const std::string plot_dir = (std::filesystem::path(out_root_dir) / "contamination_plots" / period_dir).string();
@@ -488,106 +497,95 @@ static void plot_period(
                   << " (did you run makeOutputDirs()?)\n";
     }
 
-    for (int ix=0; ix<(int)Xs.size(); ++ix) {
-        // find which Q2,t exist for this xB
-        std::set<int> Qset, Tset;
-        for (const auto& kv : by_k) if (kv.first.ix == ix) { Qset.insert(kv.first.iQ); Tset.insert(kv.first.it); }
-        if (Qset.empty() || Tset.empty()) continue;
-        std::vector<int> vQ(Qset.begin(), Qset.end());
-        std::vector<int> vT(Tset.begin(), Tset.end());
+    const int nrows = (int)Qs.size();
+    const int ncols = (int)Ts.size();
+    const int W = 260*ncols + 140;
+    const int H = 230*nrows + 200;
 
-        const int nrows = (int)vQ.size();
-        const int ncols = (int)vT.size();
-        const int W = 260*ncols + 140;
-        const int H = 230*nrows + 180;
+    TCanvas* c = new TCanvas(Form("c_contam_%s_xB%d", period_dir.c_str(), slice_index), "", W, H);
+    TPad* pTop  = new TPad("pTop","pTop", 0.0, 0.90, 1.0, 1.0);
+    pTop->SetFillStyle(0); pTop->Draw();
+    TPad* pGrid = new TPad("pGrid","pGrid", 0.0, 0.0, 1.0, 0.90);
+    pGrid->SetFillStyle(0); pGrid->Draw(); pGrid->Divide(ncols, nrows, 0.0001, 0.0001);
 
-        TCanvas* c = new TCanvas(Form("c_contam_%s_xB%d", period_dir.c_str(), ix), "", W, H);
-        TPad* pTop  = new TPad("pTop","pTop", 0.0, 0.90, 1.0, 1.0);
-        pTop->SetFillStyle(0); pTop->Draw();
-        TPad* pGrid = new TPad("pGrid","pGrid", 0.0, 0.0, 1.0, 0.90);
-        pGrid->SetFillStyle(0); pGrid->Draw(); pGrid->Divide(ncols, nrows, 0.0001, 0.0001);
+    // Larger title, uses slice-averaged means from CSV
+    pTop->cd();
+    TLatex head; head.SetNDC(); head.SetTextAlign(22); head.SetTextSize(0.135);
+    head.DrawLatex(0.5, 0.50,
+        Form("#pi^{0} contamination vs #phi   |   %s   |   <xB>=%.4f   <Q^{2}>=%.4f (GeV^{2})   <|t|>=%.4f (GeV^{2})",
+             period_dir.c_str(), xb_mean_slice, q2_mean_slice, tab_mean_slice));
 
-        pTop->cd();
-        TLatex head; head.SetNDC(); head.SetTextAlign(22); head.SetTextSize(0.115); // larger title
-        head.DrawLatex(0.5, 0.52,
-            Form("#pi^{0} contamination vs #phi   |   %s   |   xB in (%.3g, %.3g)",
-                 period_dir.c_str(), Xs[ix].first, Xs[ix].second));
+    for (int rr=0; rr<nrows; ++rr) {
+        for (int cc=0; cc<ncols; ++cc) {
+            pGrid->cd(rr*ncols+cc+1);
+            gPad->SetGrid(1,1);
+            gPad->SetTopMargin(0.18);
+            gPad->SetBottomMargin(0.14);
+            gPad->SetLeftMargin(0.125);
+            gPad->SetRightMargin(0.06);
 
-        for (int rr=0; rr<nrows; ++rr) {
-            for (int cc=0; cc<ncols; ++cc) {
-                pGrid->cd(rr*ncols+cc+1);
-                gPad->SetGrid(1,1);
-                gPad->SetTopMargin(0.18);
-                gPad->SetBottomMargin(0.14);
-                gPad->SetLeftMargin(0.125);
-                gPad->SetRightMargin(0.06);
+            Key K{rr, cc};
+            auto it = by_k.find(K);
+            TH1* fr = gPad->DrawFrame(0.0, 0.0, 360.0, 1.0); // y fixed 0..1
+            fr->GetXaxis()->SetTitle("#phi (deg)");
+            fr->GetYaxis()->SetTitle("#pi^{0} contamination");
+            fr->GetXaxis()->CenterTitle();
+            fr->GetYaxis()->CenterTitle();
+            fr->GetXaxis()->SetNdivisions(505);
 
-                const Key K{ix, vQ[rr], vT[cc]};
-                auto it = by_k.find(K);
-                if (it == by_k.end()) {
-                    TH1* fr = gPad->DrawFrame(0.0, 0.0, 360.0, 1.0); // y fixed 0..1
-                    fr->GetXaxis()->SetTitle("#phi (deg)");
-                    fr->GetYaxis()->SetTitle("#pi^{0} contamination");
-                    continue;
+            if (it == by_k.end()) continue;
+
+            struct Pt { double x, y, ey; };
+            std::vector<Pt> pts; pts.reserve(it->second.size());
+
+            for (int ridx : it->second) {
+                const auto& R = rows[ridx];
+                const auto& C = cnts[ridx];
+
+                const double Nb = (double)C.n_pi0_bkg;
+                const double Nd = (double)C.n_dvcs_csv;
+                const double Ne = (double)C.n_pi0_data;
+                const double Nr = (double)C.n_pi0_reco;
+
+                double val=std::numeric_limits<double>::quiet_NaN();
+                double err=0.0;
+                if (Nb>0.0 && Nd>0.0 && Ne>0.0 && Nr>0.0) {
+                    val = (Nb/Nd) * (Ne/Nr);
+                    auto rel = [](double n){ return (n>0.0) ? 1.0/std::sqrt(n) : 0.0; };
+                    const double rel2 = std::pow(rel(Nb),2) + std::pow(rel(Nd),2)
+                                      + std::pow(rel(Ne),2) + std::pow(rel(Nr),2);
+                    err = (std::isfinite(val) ? val : 0.0) * std::sqrt(rel2);
                 }
 
-                struct Pt { double x, y, ey; };
-                std::vector<Pt> pts; pts.reserve(it->second.size());
-
-                for (int ridx : it->second) {
-                    const auto& R = rows[ridx];
-                    const auto& C = cnts[ridx];
-
-                    const double Nb = (double)C.n_pi0_bkg;
-                    const double Nd = (double)C.n_dvcs_csv;
-                    const double Ne = (double)C.n_pi0_data;
-                    const double Nr = (double)C.n_pi0_reco;
-
-                    double val=std::numeric_limits<double>::quiet_NaN();
-                    double err=0.0;
-                    if (Nb>0.0 && Nd>0.0 && Ne>0.0 && Nr>0.0) {
-                        val = (Nb/Nd) * (Ne/Nr);
-                        auto rel = [](double n){ return (n>0.0) ? 1.0/std::sqrt(n) : 0.0; };
-                        const double rel2 = std::pow(rel(Nb),2) + std::pow(rel(Nd),2)
-                                          + std::pow(rel(Ne),2) + std::pow(rel(Nr),2);
-                        err = (std::isfinite(val) ? val : 0.0) * std::sqrt(rel2);
-                    }
-
-                    double xc = std::isfinite(C.phi_center) ? C.phi_center : 0.5*(R.phimin + R.phimax);
+                if (std::isfinite(val)) {
+                    double xc = std::isfinite(C.phi_center) ? C.phi_center : R.phiavg;
                     xc = wrap_deg(xc);
-
                     pts.push_back({xc, val, err});
                 }
+            }
 
-                std::sort(pts.begin(), pts.end(), [](const Pt& a, const Pt& b){ return a.x < b.x; });
+            std::sort(pts.begin(), pts.end(), [](const Pt& a, const Pt& b){ return a.x < b.x; });
+            if (!pts.empty()) {
                 std::vector<double> X, Y, eX, eY;
                 X.reserve(pts.size()); Y.reserve(pts.size()); eX.assign(pts.size(),0.0); eY.reserve(pts.size());
                 for (const auto& p : pts) { X.push_back(p.x); Y.push_back(p.y); eY.push_back(p.ey); }
-
-                TH1* fr = gPad->DrawFrame(0.0, 0.0, 360.0, 1.0); // fixed 0..1
-                fr->GetXaxis()->SetTitle("#phi (deg)");
-                fr->GetYaxis()->SetTitle("#pi^{0} contamination");
-                fr->GetXaxis()->CenterTitle();
-                fr->GetYaxis()->CenterTitle();
-                fr->GetXaxis()->SetNdivisions(505);
 
                 TGraphErrors* gr = new TGraphErrors((int)X.size(), X.data(), Y.data(), eX.data(), eY.data());
                 gr->SetMarkerStyle(20);
                 gr->SetMarkerSize(0.9);
                 gr->SetLineWidth(2);
                 gr->Draw("P SAME");
-
-                TLatex lab; lab.SetNDC(); lab.SetTextAlign(13); lab.SetTextSize(0.045);
-                lab.DrawLatex(0.14, 0.96,
-                    Form("Q2 and |t| cell"));
             }
-        }
 
-        const std::string fpath = (std::filesystem::path(plot_dir) /
-            ("plot_contamination_" + period_dir + "_xB_" + std::to_string(ix) + ".png")).string();
-        c->SaveAs(fpath.c_str());
-        delete c;
+            TLatex lab; lab.SetNDC(); lab.SetTextAlign(13); lab.SetTextSize(0.045);
+            lab.DrawLatex(0.14, 0.96, "Q^{2} and |t| cell");
+        }
     }
+
+    const std::string fpath = (std::filesystem::path(plot_dir) /
+        ("plot_contamination_" + period_dir + "_xB_" + std::to_string(slice_index) + ".png")).string();
+    c->SaveAs(fpath.c_str());
+    delete c;
 }
 
 // -------- Diagnostics --------
@@ -619,15 +617,12 @@ bool compute_pi0_contamination_overall(
 {
     namespace fs=std::filesystem;
 
-    // Load CSV once; shared for all periods
+    // Load CSV once
     CsvDoc csv;
     if (!csv.load(dvcs_csv_path)) return false;
 
     // Load 3sigma cuts once
     const CutTable cuts = load_cuts(combined_cuts_json);
-
-    // Canonical topologies we always aggregate over
-    const std::vector<std::string> TOPO_LIST = {"(FD, FD)","(CD, FD)","(CD, FT)"};
 
     // Build worklist of periods that actually have all three trees
     struct Job { std::string tree_key, display, period_dir; };
@@ -648,30 +643,40 @@ bool compute_pi0_contamination_overall(
         return true;
     }
 
-    // Mutex for merging CSV writes and printing atomically
+    // Strict: require contamination output column to pre-exist for each period
+    for (const auto& J : jobs) {
+        const std::string col_out = "contamination ratio, " + J.display;
+        if (csv.col(col_out) < 0) {
+            fatal("CSV missing output column: \"" + col_out + "\"");
+        }
+    }
+
+    // Mutex for CSV write and prints
     std::mutex csv_mtx;
 
-    // OpenMP parallel over periods (hard-capped at 5 threads)
     int threads = resolve_threads(max_workers);
 #ifdef _OPENMP
-    std::cout << "[pi0_contamination] Using " << threads << " threads (cap=5)\n";
+    std::cout << "[pi0_contamination] Using " << threads << " threads (hard cap = 5)\n";
     #pragma omp parallel for schedule(dynamic) num_threads(threads)
 #endif
     for (int ip=0; ip<(int)jobs.size(); ++ip) {
         const auto& J = jobs[ip];
         const std::string period_cased = to_cased_period_key(J.tree_key); // e.g. "Fa18_Inb"
 
-        // Materialize rows and DVCS counts for THIS period from the shared CSV
-        std::vector<CsvRow> rows = materialize_rows_for_period(csv, J.display);
+        // Strictly materialize rows & DVCS counts for THIS period
+        std::vector<CsvRow> rows = materialize_rows_for_period_strict(csv, J.display);
         std::vector<RowCounts> counts(rows.size());
         for (size_t i=0;i<rows.size();++i) {
             counts[i].n_dvcs_csv = rows[i].n_dvcs_csv;
-            counts[i].phi_center  = std::isfinite(rows[i].phiavg)
-                                  ? rows[i].phiavg
-                                  : 0.5*(rows[i].phimin + rows[i].phimax);
+            counts[i].phi_center = rows[i].phiavg; // period-specific required; no fallback
         }
 
-        // Helpers for cuts lookup
+        // Helper map for slice grouping by xB edges
+        std::map<std::pair<double,double>, std::vector<int>> slice_rows;
+        for (int r=0; r<(int)rows.size(); ++r) {
+            slice_rows[{rows[r].xb_min, rows[r].xb_max}].push_back(r);
+        }
+
         auto topo_to_key = [](const std::string& s)->std::string {
             if (s=="(FD, FD)") return "FD_FD";
             if (s=="(CD, FD)") return "CD_FD";
@@ -686,7 +691,7 @@ bool compute_pi0_contamination_overall(
             return it->second;
         };
 
-        // Data, Reco, Bkg trees
+        // Trees
         TTree* tD = getTreeOrDie(eppi0DataTrees, J.tree_key + "_eppi0", "eppi0 DATA");
         TTree* tR = getTreeOrDie(eppi0RecMcTrees, J.tree_key + "_rec_mc", "eppi0 RECO MC");
         TTree* tB = getTreeOrDie(eppi0BkgTrees,   J.tree_key + "_bkg",    "BKG->DVCS MC");
@@ -699,13 +704,17 @@ bool compute_pi0_contamination_overall(
             const Long64_t N = tD->GetEntries(); dbgD.entries = (long long)N;
             for (Long64_t i=0;i<N;++i) {
                 tD->GetEntry(i);
-                if (!passesGlobal(b.t1, b.open_angle_ep2, b.pTmiss)) continue; dbgD.pass_global++;
+                if (!(b.open_angle_ep2 > 5.0)) continue; dbgD.pass_global++;
+                if (!((-b.t1) < 1.0)) continue;
+                if (!(b.pTmiss <= 0.20)) continue;
+
                 std::string matched_topo;
                 int topo_idx=-1;
-                for (int ti=0; ti<(int)TOPO_LIST.size(); ++ti) {
-                    if (passesTopology(b.detector1, b.detector2, TOPO_LIST[ti])) { matched_topo = TOPO_LIST[ti]; topo_idx=ti; break; }
-                }
-                if (matched_topo.empty()) continue; dbgD.pass_topo++; dbgD.by_topo[(topo_idx<0?0:topo_idx)]++;
+                if (b.detector1==1 && b.detector2==1) { matched_topo="(FD, FD)"; topo_idx=0; }
+                else if (b.detector1==2 && b.detector2==1) { matched_topo="(CD, FD)"; topo_idx=1; }
+                else if (b.detector1==2 && b.detector2==0) { matched_topo="(CD, FT)"; topo_idx=2; }
+                else { continue; }
+                dbgD.pass_topo++; dbgD.by_topo[(topo_idx<0?0:topo_idx)]++;
 
                 const std::string topoKey = topo_to_key(matched_topo);
                 const auto& CP = cuts_for("eppi0", topoKey);
@@ -727,13 +736,17 @@ bool compute_pi0_contamination_overall(
             const Long64_t N = tR->GetEntries(); dbgR.entries = (long long)N;
             for (Long64_t i=0;i<N;++i) {
                 tR->GetEntry(i);
-                if (!passesGlobal(b.t1, b.open_angle_ep2, b.pTmiss)) continue; dbgR.pass_global++;
+                if (!(b.open_angle_ep2 > 5.0)) continue; dbgR.pass_global++;
+                if (!((-b.t1) < 1.0)) continue;
+                if (!(b.pTmiss <= 0.20)) continue;
+
                 std::string matched_topo;
                 int topo_idx=-1;
-                for (int ti=0; ti<(int)TOPO_LIST.size(); ++ti) {
-                    if (passesTopology(b.detector1, b.detector2, TOPO_LIST[ti])) { matched_topo = TOPO_LIST[ti]; topo_idx=ti; break; }
-                }
-                if (matched_topo.empty()) continue; dbgR.pass_topo++; dbgR.by_topo[(topo_idx<0?0:topo_idx)]++;
+                if (b.detector1==1 && b.detector2==1) { matched_topo="(FD, FD)"; topo_idx=0; }
+                else if (b.detector1==2 && b.detector2==1) { matched_topo="(CD, FD)"; topo_idx=1; }
+                else if (b.detector1==2 && b.detector2==0) { matched_topo="(CD, FT)"; topo_idx=2; }
+                else { continue; }
+                dbgR.pass_topo++; dbgR.by_topo[(topo_idx<0?0:topo_idx)]++;
 
                 const std::string topoKey = topo_to_key(matched_topo);
                 const auto& CP = cuts_for("eppi0", topoKey);
@@ -755,16 +768,20 @@ bool compute_pi0_contamination_overall(
             const Long64_t N = tB->GetEntries(); dbgB.entries = (long long)N;
             for (Long64_t i=0;i<N;++i) {
                 tB->GetEntry(i);
-                if (!passesGlobal(b.t1, b.open_angle_ep2, b.pTmiss)) continue; dbgB.pass_global++;
+                if (!(b.open_angle_ep2 > 5.0)) continue; dbgB.pass_global++;
+                if (!((-b.t1) < 1.0)) continue;
+                if (!(b.pTmiss <= 0.20)) continue;
+
                 std::string matched_topo;
                 int topo_idx=-1;
-                for (int ti=0; ti<(int)TOPO_LIST.size(); ++ti) {
-                    if (passesTopology(b.detector1, b.detector2, TOPO_LIST[ti])) { matched_topo = TOPO_LIST[ti]; topo_idx=ti; break; }
-                }
-                if (matched_topo.empty()) continue; dbgB.pass_topo++; dbgB.by_topo[(topo_idx<0?0:topo_idx)]++;
+                if (b.detector1==1 && b.detector2==1) { matched_topo="(FD, FD)"; topo_idx=0; }
+                else if (b.detector1==2 && b.detector2==1) { matched_topo="(CD, FD)"; topo_idx=1; }
+                else if (b.detector1==2 && b.detector2==0) { matched_topo="(CD, FT)"; topo_idx=2; }
+                else { continue; }
+                dbgB.pass_topo++; dbgB.by_topo[(topo_idx<0?0:topo_idx)]++;
 
                 const std::string topoKey = topo_to_key(matched_topo);
-                const auto& CP = cuts_for("DVCS", topoKey); // important: DVCS "mc" cuts here
+                const auto& CP = cuts_for("DVCS", topoKey); // DVCS mc cuts
                 if (!passes_cuts(CP.mc, b.cut_vals())) continue; dbgB.pass_cuts++;
 
                 const double xB=b.x, Q2=b.Q2, tt=std::fabs(b.t1);
@@ -777,7 +794,7 @@ bool compute_pi0_contamination_overall(
             }
         }
 
-        // Period summaries (always print; helps catch Sp18 Out issues)
+        // Period summaries (explicit printouts)
         long long Nd_sum=0, Ne_sum=0, Nr_sum=0, Nb_sum=0;
         int rows_with_dvcs=0, rows_with_vals=0;
         for (size_t r=0;r<rows.size();++r) {
@@ -802,14 +819,11 @@ bool compute_pi0_contamination_overall(
             dbgB.print("BKG_MC", J.display);
         }
 
-        // Write contamination ratios into CSV under column: "contamination ratio, <Period Display>"
+        // Write contamination ratios into CSV (strict: column must exist)
         const std::string col_name = "contamination ratio, " + J.display;
         const int c_contam = csv.col(col_name);
         if (c_contam < 0) {
-#ifdef _OPENMP
-            #pragma omp critical
-#endif
-            std::cerr << "[pi0_contamination] WARNING: CSV is missing column \"" << col_name << "\"; skipping write for this period.\n";
+            fatal("CSV missing output column (unexpected late check): \"" + col_name + "\"");
         } else {
             size_t wrote=0;
             std::lock_guard<std::mutex> lock(csv_mtx);
@@ -831,15 +845,28 @@ bool compute_pi0_contamination_overall(
                       << " contamination cells into CSV for " << J.display << "\n";
         }
 
-        // Plots (0..1 y-range; larger title)
-        plot_period(J.period_dir, rows, counts, out_root_dir);
+        // Plots per xB-slice (with slice-averaged means in the title)
+        int slice_idx = 0;
+        for (const auto& kv : slice_rows) {
+            const auto& idxs = kv.second;
+            if (idxs.empty()) { ++slice_idx; continue; }
+
+            double xbmu=0.0, q2mu=0.0, tabmu=0.0;
+            for (int r : idxs) { xbmu += rows[r].xb_avg; q2mu += rows[r].q2_avg; tabmu += rows[r].tab_avg; }
+            xbmu  /= (double)idxs.size();
+            q2mu  /= (double)idxs.size();
+            tabmu /= (double)idxs.size();
+
+            plot_period(J.period_dir, rows, counts, out_root_dir, idxs, xbmu, q2mu, tabmu, slice_idx);
+            ++slice_idx;
+        }
 #ifdef _OPENMP
         #pragma omp critical
 #endif
         std::cout << "[pi0_contamination] Plotted " << J.display << " (" << J.period_dir << ")\n";
     } // omp periods
 
-    // Save the CSV atomically at the end
+    // Save CSV atomically
     if (!csv.save_atomic(dvcs_csv_path)) {
         std::cerr << "[pi0_contamination] ERROR: failed to save " << dvcs_csv_path << "\n";
         return false;
