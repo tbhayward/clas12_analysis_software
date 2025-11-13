@@ -239,8 +239,33 @@ struct BranchBinder {
     void bind(TTree* t) {
         if (!t) return;
 
-        // Serialize only the SetBranchAddress calls; no status gating.
+        // Serialize ROOT calls to avoid cling races.
         std::lock_guard<std::mutex> lock(g_root_bind_mutex);
+
+        // Read ONLY what we need; avoid broken/unused branches like Delta_eta, DepV, etc.
+        t->SetBranchStatus("*", 0);
+
+        auto enable = [&](const char* n){
+            if (t->GetBranch(n)) t->SetBranchStatus(n, 1);
+        };
+
+        // Exclusivity/global cuts
+        enable("t1");
+        enable("open_angle_ep2");
+        enable("pTmiss");
+        enable("Emiss2");
+        enable("Mx2");
+        enable("Mx2_1");
+        enable("Mx2_2");
+        enable("xF");
+
+        // Binning variables
+        enable("x");
+        enable("Q2");
+        enable("phi2"); // radians
+
+        // Keep ROOT's tree cache off here to avoid oddities across multiple threads/files.
+        t->SetCacheSize(0);
 
         auto bindD = [&](const char* n, double* a, bool& f){
             if (t->GetBranch(n)) { t->SetBranchAddress(n, a); f = true; }
@@ -257,7 +282,7 @@ struct BranchBinder {
 
         bindD("x", &x, has_x);
         bindD("Q2", &Q2, has_Q2);
-        bindD("phi2", &phi2_rad, has_phi2); // ONLY phi2 (radians)
+        bindD("phi2", &phi2_rad, has_phi2);
     }
 
     bool readyForCuts() const {
