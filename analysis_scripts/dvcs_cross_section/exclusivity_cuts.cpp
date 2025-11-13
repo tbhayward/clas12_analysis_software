@@ -17,7 +17,7 @@
 #include <TROOT.h>
 #include <TH1.h>
 #include <TString.h>
-#include <TVirtualPad.h>
+#include <TDataType.h>  // kInt_t, kDouble_t and EDataType
 
 // C++ stdlib
 #include <algorithm>
@@ -118,7 +118,6 @@ static bool passes3SigmaCuts(const std::map<std::string, Stats>& cuts,
 // -------------------- branch binder --------------------
 
 struct BranchBinder {
-    // Only these branches are ever touched.
     int detector1 = 0, detector2 = 0; bool has_detector1 = false, has_detector2 = false;
 
     double t1 = 0.0;                bool has_t1 = false;
@@ -133,30 +132,51 @@ struct BranchBinder {
     double theta_gamma_gamma = 0.0; bool has_theta_gamma_gamma = false;
     double theta_pi0_pi0 = 0.0;     bool has_theta_pi0_pi0 = false;
 
-    void bind(TTree* t) {
-        // Use the 2/3-arg SetBranchAddress to avoid any interpreter type lookups.
-        auto bindI = [&](const char* n, int* a, bool& f) {
-            if (t->GetBranch(n)) { t->SetBranchAddress(n, a, nullptr); f = true; }
+    void bind(TTree* t, Channel ch) {
+        if (!t) return;
+
+        // Disable everything, then explicitly enable only what we use.
+        t->SetBranchStatus("*", 0);
+
+        auto ena = [&](const char* n){ if (t->GetBranch(n)) t->SetBranchStatus(n, 1); };
+
+        ena("detector1");
+        ena("detector2");
+        ena("t1");
+        ena("open_angle_ep2");
+        ena("Emiss2");
+        ena("Mx2");
+        ena("Mx2_1");
+        ena("Mx2_2");
+        ena("pTmiss");
+        ena("xF");
+        ena("Delta_phi");
+        if (ch == Channel::DVCS) ena("theta_gamma_gamma");
+        else                     ena("theta_pi0_pi0");
+
+        // Bind with explicit primitive types (6-arg overload).
+        auto bI = [&](const char* n, int* a, bool& f){
+            if (t->GetBranch(n)) { t->SetBranchAddress(n, a, nullptr, nullptr, kInt_t, false); f = true; }
         };
-        auto bindD = [&](const char* n, double* a, bool& f) {
-            if (t->GetBranch(n)) { t->SetBranchAddress(n, a, nullptr); f = true; }
+        auto bD = [&](const char* n, double* a, bool& f){
+            if (t->GetBranch(n)) { t->SetBranchAddress(n, a, nullptr, nullptr, kDouble_t, false); f = true; }
         };
 
-        bindI("detector1", &detector1, has_detector1);
-        bindI("detector2", &detector2, has_detector2);
+        bI("detector1", &detector1, has_detector1);
+        bI("detector2", &detector2, has_detector2);
 
-        bindD("t1", &t1, has_t1);
-        bindD("open_angle_ep2", &open_angle_ep2, has_open_angle_ep2);
+        bD("t1", &t1, has_t1);
+        bD("open_angle_ep2", &open_angle_ep2, has_open_angle_ep2);
 
-        bindD("Emiss2", &Emiss2, has_Emiss2);
-        bindD("Mx2", &Mx2, has_Mx2);
-        bindD("Mx2_1", &Mx2_1, has_Mx2_1);
-        bindD("Mx2_2", &Mx2_2, has_Mx2_2);
-        bindD("pTmiss", &pTmiss, has_pTmiss);
-        bindD("xF", &xF, has_xF);
-        bindD("Delta_phi", &Delta_phi, has_Delta_phi);
-        bindD("theta_gamma_gamma", &theta_gamma_gamma, has_theta_gamma_gamma);
-        bindD("theta_pi0_pi0", &theta_pi0_pi0, has_theta_pi0_pi0);
+        bD("Emiss2", &Emiss2, has_Emiss2);
+        bD("Mx2", &Mx2, has_Mx2);
+        bD("Mx2_1", &Mx2_1, has_Mx2_1);
+        bD("Mx2_2", &Mx2_2, has_Mx2_2);
+        bD("pTmiss", &pTmiss, has_pTmiss);
+        bD("xF", &xF, has_xF);
+        bD("Delta_phi", &Delta_phi, has_Delta_phi);
+        if (ch == Channel::DVCS) bD("theta_gamma_gamma", &theta_gamma_gamma, has_theta_gamma_gamma);
+        else                     bD("theta_pi0_pi0",     &theta_pi0_pi0,     has_theta_pi0_pi0);
     }
 
     std::map<std::string, double> valuesMap(Channel ch) const {
@@ -246,7 +266,7 @@ static FilledHists fillStageHists(
 
     // Data loop
     if (dataTree) {
-        BranchBinder b; b.bind(dataTree);
+        BranchBinder b; b.bind(dataTree, ch);
         Long64_t n = dataTree->GetEntries();
         for (Long64_t i = 0; i < n; ++i) {
             dataTree->GetEntry(i);
@@ -268,7 +288,7 @@ static FilledHists fillStageHists(
 
     // MC loop
     if (mcTree) {
-        BranchBinder b; b.bind(mcTree);
+        BranchBinder b; b.bind(mcTree, ch);
         Long64_t n = mcTree->GetEntries();
         for (Long64_t i = 0; i < n; ++i) {
             mcTree->GetEntry(i);
@@ -304,6 +324,10 @@ static void saveStagePlots(const FilledHists& H, const HistList& cfg, Channel ch
     int cols = 4, rows = (n + cols - 1) / cols;
     TCanvas c("c", "", 2400, rows * 640);
     c.Divide(cols, rows, 0.002, 0.002);
+
+    auto isGaussianVar = [&](const std::string& v)->bool {
+        return (v == "theta_gamma_gamma" || v == "theta_pi0_pi0" || v == "pTmiss");
+    };
 
     {
         std::string title = channelPretty(ch) + "  |  " + prettyPeriod + "  |  " + topoToKey(topo) + "  |  " + suffix;
@@ -535,14 +559,6 @@ static void processPeriod(
         std::cout << "[Done] Exclusivity cuts for " << pretty << std::endl;
     }
 }
-
-// ---- forward declaration for dispatcher (keeps the compiler happy if order changes) ----
-static void processPeriod(
-    const PeriodWork& W,
-    const std::string& outJsonDir,
-    const std::string& outPlotDir,
-    std::map<std::string, CutDict>& combined_out,
-    std::mutex& combined_mutex);
 
 // -------------------- dispatcher --------------------
 
