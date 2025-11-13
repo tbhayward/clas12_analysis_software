@@ -167,6 +167,38 @@ struct BranchBinder {
     }
 };
 
+// -------------------- STRICT branch whitelist (added) --------------------
+
+// Disable every branch, then enable only those this stage actually uses.
+// This prevents ROOT from ever reading unrelated branches (e.g., DepV).
+static void whitelist_exclusivity_branches(TTree* t, Channel ch) {
+    if (!t) return;
+    t->SetBranchStatus("*", 0);
+
+    // Common to both channels
+    const char* common[] = {
+        "detector1",
+        "detector2",
+        "t1",
+        "open_angle_ep2",
+        "Emiss2",
+        "Mx2",
+        "Mx2_1",
+        "Mx2_2",
+        "pTmiss",
+        "xF",
+        "Delta_phi"
+    };
+    for (const char* name : common) t->SetBranchStatus(name, 1);
+
+    // Channel-specific
+    if (ch == Channel::DVCS) {
+        t->SetBranchStatus("theta_gamma_gamma", 1);
+    } else {
+        t->SetBranchStatus("theta_pi0_pi0", 1);
+    }
+}
+
 // -------------------- fits and stats --------------------
 
 static std::pair<double,double> fitGaussianLeftSide(TH1D* h) {
@@ -239,6 +271,9 @@ static FilledHists fillStageHists(
 
     // Data loop
     if (dataTree) {
+        // ADDED: strict branch whitelist
+        whitelist_exclusivity_branches(dataTree, ch);
+
         BranchBinder b; b.bind(dataTree);
         Long64_t n = dataTree->GetEntries();
         for (Long64_t i = 0; i < n; ++i) {
@@ -261,6 +296,9 @@ static FilledHists fillStageHists(
 
     // MC loop
     if (mcTree) {
+        // ADDED: strict branch whitelist
+        whitelist_exclusivity_branches(mcTree, ch);
+
         BranchBinder b; b.bind(mcTree);
         Long64_t n = mcTree->GetEntries();
         for (Long64_t i = 0; i < n; ++i) {
