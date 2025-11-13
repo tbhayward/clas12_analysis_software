@@ -1,10 +1,12 @@
 // total_counts.cpp — strict raw-yield writer + plotting + strict group sums
-// - Reads DVCS TTrees, applies global + exclusivity cuts from JSON
+// - Reads DVCS TTrees, applies global + exclusivity cuts (bin_means parity)
 // - Bins surviving events into CSV rows by (xB, Q2, |t|, phi)
 // - Writes ONLY the canonical raw-yield columns produced by initialize_pass2_csv.cpp
 // - Per-period raw yields: required columns, no auto-creation
 // - Combined-group raw yields (Fa18, Sp18, 10.6 GeV): required columns, sums of member periods
 // - Plots per-period and combined groups
+//
+// Robustness fix: CSV label resolver maps keys like "fa18_inb" to header's "Fa18 Inb"
 
 #include "total_counts.h"
 #include "periods.h"
@@ -23,7 +25,6 @@
 #include <TTree.h>
 #include <TBranch.h>
 #include <TLeaf.h>
-#include <TLeafElement.h>
 
 #include <algorithm>
 #include <atomic>
@@ -49,22 +50,20 @@
 #include <omp.h>
 #endif
 
-#include <nlohmann/json.hpp>
-
 namespace {
 
-// ---------------- small utils ----------------
 static inline bool is_debug() { return std::getenv("TOTAL_COUNTS_DEBUG") != nullptr; }
 static inline bool trace_matches() { return std::getenv("TOTAL_COUNTS_TRACE_MATCHES") != nullptr; }
-static inline bool list_enabled_branches() { return std::getenv("TOTAL_COUNTS_LIST_ENABLED_BRANCHES") != nullptr; }
+static inline bool trace_labels() { return std::getenv("TOTAL_COUNTS_TRACE_LABELS") != nullptr; }
 
 [[noreturn]] void fatal(const std::string& msg) {
     std::cerr << "[total_counts] FATAL: " << msg << std::endl;
     std::exit(EXIT_FAILURE);
 }
 
-static inline double pi() { return std::acos(-1.0); }
-static inline double rad_to_deg(double r) { return r * 180.0 / pi(); }
+static inline double PI() { return 3.14159265358979323846; }
+static inline double RAD2DEG(double r) { return r * 180.0 / PI(); }
+
 static inline double wrap_deg_0_360(double d) {
     if (!std::isfinite(d)) return std::numeric_limits<double>::quiet_NaN();
     double w = std::fmod(d, 360.0);
@@ -77,7 +76,7 @@ static inline bool in_range(double v, double a, double b) { return (v >= a) && (
 static bool row_accepts_phi(double phi_deg, double pmin_deg, double pmax_deg) {
     if (!std::isfinite(phi_deg) || !std::isfinite(pmin_deg) || !std::isfinite(pmax_deg)) return false;
     if (pmax_deg > pmin_deg) return in_range(phi_deg, pmin_deg, pmax_deg);
-    return (phi_deg >= pmin_deg) || (phi_deg < pmax_deg); // wrap case
+    return (phi_deg >= pmin_deg) || (phi_deg < pmax_deg); // wrap-around
 }
 
 // ---------------- CSV helper ----------------
@@ -166,65 +165,130 @@ struct CsvDoc {
     }
 };
 
-// ---------------- cuts config ----------------
-struct SigmaCut { std::string branch; double center=0, sigma=0, nsigma=3; enum Mode{TWO_SIDED,UPPER,LOWER} mode=TWO_SIDED; };
-struct BaseCut  { std::string branch; bool has_min=false,has_max=false,has_eq=false,has_neq=false; double vmin=0,vmax=0; long long eq=0,neq=0; };
-struct PeriodCuts { std::vector<SigmaCut> sigma_cuts; std::vector<BaseCut> base_cuts; };
-
-static SigmaCut::Mode parseMode(const std::string& m) {
-    if (m=="two_sided") return SigmaCut::TWO_SIDED;
-    if (m=="upper")     return SigmaCut::UPPER;
-    if (m=="lower")     return SigmaCut::LOWER;
-    fatal("Unknown sigma cut mode: "+m); return SigmaCut::TWO_SIDED;
+// ---------------- discover and resolve CSV labels ----------------
+static std::string trim_copy(const std::string& s) {
+    size_t a=0, b=s.size();
+    while (a<b && std::isspace((unsigned char)s[a])) ++a;
+    while (b>a && std::isspace((unsigned char)s[b-1])) --b;
+    return s.substr(a,b-a);
 }
-static void parseSigmaCuts(const nlohmann::json& arr, std::vector<SigmaCut>& out) {
-    if (!arr.is_array()) fatal("sigma_cuts must be array");
-    for (const auto& j:arr) {
-        SigmaCut c; c.branch=j.at("branch").get<std::string>();
-        c.center=j.at("center").get<double>(); c.sigma=j.at("sigma").get<double>();
-        c.nsigma=j.value("nsigma",3.0); c.mode=parseMode(j.value("mode",std::string("two_sided")));
-        out.push_back(c);
+static std::string norm_key(std::string s) {
+    std::string out; out.reserve(s.size());
+    for (char c : s) {
+        if (c==' ' || c=='_' || c=='\t') continue;
+        out.push_back((char)std::tolower((unsigned char)c));
     }
-}
-static void parseBaseCuts(const nlohmann::json& arr, std::vector<BaseCut>& out) {
-    if (!arr.is_array()) fatal("base_cuts must be array");
-    for (const auto& j:arr) {
-        BaseCut c; c.branch=j.at("branch").get<std::string>();
-        if (j.contains("min")) { c.has_min=true; c.vmin=j.at("min").get<double>(); }
-        if (j.contains("max")) { c.has_max=true; c.vmax=j.at("max").get<double>(); }
-        if (j.contains("eq"))  { c.has_eq =true; c.eq  =j.at("eq").get<long long>(); }
-        if (j.contains("neq")) { c.has_neq=true; c.neq =j.at("neq").get<long long>(); }
-        if (!(c.has_min||c.has_max||c.has_eq||c.has_neq)) fatal("base_cuts entry for '"+c.branch+"' has no condition");
-        out.push_back(c);
-    }
-}
-static PeriodCuts loadCombinedCuts(const std::string& json_path, const std::string& period_key) {
-    std::ifstream ifs(json_path);
-    if (!ifs) fatal("Cannot open combined cuts JSON: "+json_path);
-    nlohmann::json J; ifs >> J;
-    PeriodCuts cuts;
-    if (J.contains("global")) {
-        const auto& G=J.at("global");
-        if (G.contains("sigma_cuts")) parseSigmaCuts(G.at("sigma_cuts"), cuts.sigma_cuts);
-        if (G.contains("base_cuts"))  parseBaseCuts(G.at("base_cuts"),  cuts.base_cuts);
-    }
-    if (J.contains("period_overrides")) {
-        const auto& PO=J.at("period_overrides");
-        auto it=PO.find(period_key);
-        if (it!=PO.end()) {
-            const auto& P=*it;
-            if (P.contains("sigma_cuts")) { cuts.sigma_cuts.clear(); parseSigmaCuts(P.at("sigma_cuts"), cuts.sigma_cuts); }
-            if (P.contains("base_cuts"))  { cuts.base_cuts.clear();  parseBaseCuts(P.at("base_cuts"),  cuts.base_cuts); }
-        }
-    }
-    for (const auto& c:cuts.sigma_cuts) {
-        if (c.sigma<=0.0) fatal("sigma_cuts: non-positive sigma for '"+c.branch+"'");
-        if (c.nsigma<=0.0) fatal("sigma_cuts: non-positive nsigma for '"+c.branch+"'");
-    }
-    return cuts;
+    return out;
 }
 
-// ---------------- branch binding ----------------
+// Builds an index: normalized label -> canonical label as it appears in the CSV header.
+// It scans header fields like: "raw yield, ep->epg, (FD, FD), exp, Fa18 Inb, pos" etc.
+static std::unordered_map<std::string,std::string> build_label_index(const CsvDoc& csv) {
+    std::unordered_map<std::string,std::string> idx;
+    for (const auto& h : csv.header) {
+        // Quick filter to speed up
+        if (h.find("raw yield, ep->epg") == std::string::npos) continue;
+        size_t exp_pos = h.find(", exp, ");
+        if (exp_pos == std::string::npos) continue;
+        size_t last_comma = h.rfind(',');
+        if (last_comma == std::string::npos || last_comma <= exp_pos+7) continue;
+        std::string label = trim_copy(h.substr(exp_pos + 7, last_comma - (exp_pos + 7)));
+        if (label.empty()) continue;
+        std::string k = norm_key(label);
+        // only first wins; all headers for pos/neg/unpol will map the same label
+        if (!k.empty() && idx.find(k)==idx.end()) idx[k] = label;
+    }
+    if (trace_labels()) {
+        std::cerr << "[total_counts] Discovered CSV labels:\n";
+        for (auto& kv : idx) std::cerr << "  key=" << kv.first << " -> \"" << kv.second << "\"\n";
+    }
+    return idx;
+}
+
+// Given a desired label (possibly "fa18_inb"), find the exact CSV label ("Fa18 Inb") if present.
+static std::string resolve_csv_label(const std::unordered_map<std::string,std::string>& idx,
+                                     const std::string& want) {
+    auto it = idx.find(norm_key(want));
+    return (it==idx.end()) ? want : it->second;
+}
+
+// ---------------- period label helpers (for display/dirs only) ----------------
+static inline std::string period_dir_for_label(const std::string& L) {
+    if (L=="Fa18 Inb")      return "Fa18_Inb";
+    if (L=="Fa18 Out")      return "Fa18_Out";
+    if (L=="Sp18 Inb")      return "Sp18_Inb";
+    if (L=="Sp18 Out")      return "Sp18_Out";
+    if (L=="Sp19 Inb")      return "Sp19_Inb";
+    std::string s=L; for (char& c:s) if (c==' ') c='_';
+    return s;
+}
+
+static void ensure_dir(const std::string& p) {
+    namespace fs=std::filesystem;
+    std::error_code ec;
+    if (!fs::exists(p)) {
+        fs::create_directories(p, ec);
+        if (ec) fatal("Could not create output directory: "+p+" ("+ec.message()+")");
+        if (is_debug()) std::cout << "[total_counts] created dir: " << p << "\n";
+    }
+}
+
+static bool is_group_label(const std::string& L) {
+    return (L=="Fa18"||L=="Sp18"||L=="10.6 GeV");
+}
+
+static std::string out_root_for_label(const std::string& label, const std::string& out_root_dir) {
+    namespace fs=std::filesystem;
+    const std::string base = (fs::path(out_root_dir) / "total_counts_plots").string();
+    if (is_group_label(label)) return (fs::path(base) / label).string();
+    return (fs::path(base) / period_dir_for_label(label)).string();
+}
+
+// ---------------- topology ----------------
+enum class Topology { FD_FD=0, CD_FD=1, CD_FT=2 };
+
+static inline const char* topo_str(Topology t) {
+    switch (t) {
+        case Topology::FD_FD: return "(FD, FD)";
+        case Topology::CD_FD: return "(CD, FD)";
+        case Topology::CD_FT: return "(CD, FT)";
+    }
+    return "(FD, FD)";
+}
+static inline const char* topo_dir(Topology t) {
+    switch (t) {
+        case Topology::FD_FD: return "FD_FD";
+        case Topology::CD_FD: return "CD_FD";
+        case Topology::CD_FT: return "CD_FT";
+    }
+    return "FD_FD";
+}
+
+struct TopologyResolver {
+    int detector1=0, detector2=0; bool have1=false, have2=false;
+    void bind(TTree* t) {
+        have1=(t->GetBranch("detector1")!=nullptr);
+        have2=(t->GetBranch("detector2")!=nullptr);
+        if (!(have1 && have2)) fatal("Missing detector1/detector2 in DVCS tree.");
+        t->SetBranchAddress("detector1", &detector1);
+        t->SetBranchAddress("detector2", &detector2);
+    }
+    int index() const {
+        if (detector1==1 && detector2==1) return (int)Topology::FD_FD;
+        if (detector1==2 && detector2==1) return (int)Topology::CD_FD;
+        if (detector1==2 && detector2==0) return (int)Topology::CD_FT;
+        return -1;
+    }
+};
+
+// ---------------- plotting helpers ----------------
+struct CellData { std::vector<double> X,Yp,Ym,EX,EYp,EYm,q2means,tmeans; };
+static double safe_mean(const std::vector<double>& v){
+    double s=0; int n=0; for(double x:v) if (std::isfinite(x)){ s+=x; ++n; }
+    return n? s/n : std::numeric_limits<double>::quiet_NaN();
+}
+
+// ---------------- branch binding (type-aware) ----------------
 struct BranchBinding {
     std::string name;
     enum class Kind { kDouble,kFloat,kI32,kU32,kI64,kU64,kI16,kU16,kI8,kU8 } kind = Kind::kDouble;
@@ -265,7 +329,11 @@ static inline long long bb_as_ll(const BranchBinding& bb){
     }
     return 0;
 }
+
+static std::mutex g_root_bind_mutex;
+
 static void bind_one_exact(TTree* t, const std::string& bname, BranchBinding& bb) {
+    std::lock_guard<std::mutex> lock(g_root_bind_mutex);
     TBranch* b=t->GetBranch(bname.c_str());
     if (!b) return;
     TLeaf* leaf=b->GetLeaf(bname.c_str());
@@ -283,121 +351,97 @@ static void bind_one_exact(TTree* t, const std::string& bname, BranchBinding& bb
     else if (tn=="UChar_t"||tn=="unsigned char") { bb.kind=BranchBinding::Kind::kU8; t->SetBranchAddress(bname.c_str(), &bb.as_u8); }
     else { fatal("Unsupported leaf type '"+tn+"' for branch '"+bname+"'"); }
 }
-static void bindRequiredBranches_STRICT(TTree* t, const std::vector<std::string>& names, std::unordered_map<std::string,BranchBinding>& out) {
-    out.clear(); out.reserve(names.size());
-    for (const auto& bname : names) {
-        TBranch* b=t->GetBranch(bname.c_str());
-        if (!b) continue;
-        auto [it,ins]=out.emplace(bname, BranchBinding{});
-        it->second.name=bname;
-        bind_one_exact(t, bname, it->second);
-    }
+
+// ---------------- simple exclusivity policy (bin_means parity) ----------------
+// Hard global cuts:
+static inline bool passes_global(double open_angle_ep2_deg, double t1, double pTmiss) {
+    if (!(open_angle_ep2_deg > 5.0)) return false;
+    if (!((-t1) < 1.0)) return false;       // |t| < 1.0
+    if (!(pTmiss <= 0.20)) return false;    // (GeV)
+    return true;
 }
 
-// ---------------- topo + labels ----------------
-static const char* TOPO_STRS[3]={"(FD, FD)","(CD, FD)","(CD, FT)"};
-static const char* TOPO_DIRS[3]={"FD_FD","CD_FD","CD_FT"};
-
-struct TopologyResolver {
-    int detector1=0, detector2=0; bool have1=false, have2=false;
-    void bind(TTree* t) {
-        have1=(t->GetBranch("detector1")!=nullptr);
-        have2=(t->GetBranch("detector2")!=nullptr);
-        if (!(have1 && have2)) fatal("Missing detector1/detector2 in DVCS tree.");
-        t->SetBranchAddress("detector1", &detector1);
-        t->SetBranchAddress("detector2", &detector2);
-    }
-    int index() const {
-        if (detector1==1 && detector2==1) return 0;
-        if (detector1==2 && detector2==1) return 1;
-        if (detector1==2 && detector2==0) return 2;
-        return -1;
-    }
+// ---------------- diagnostics and row counts ----------------
+struct DebugCounts {
+    long long total=0, bad_helicity=0, bad_nan=0, cut_fail=0, topo_bad=0, no_row_match=0;
+    long long kin_ok_phi_fail=0, phi_ok_kin_fail=0, both_ok=0;
 };
+struct RowCounts { long long pos=0, neg=0; };
 
-static inline bool is_canonical_tree_key(const std::string& k) {
-    for (const auto& p:CANONICAL_PERIODS()) if (k==p.tree_key) return true;
-    return false;
-}
-static inline std::string safe_label_for_key(const std::string& k) {
-    for (const auto& p:CANONICAL_PERIODS()) if (k==p.tree_key) return std::string(p.label);
-    fatal("Non-canonical period key: "+k); return {};
-}
-static inline bool is_group_label(const std::string& L) { return (L=="Fa18"||L=="Sp18"||L=="10.6 GeV"); }
+struct YieldCols { int unpol=-1, pos=-1, neg=-1; };
 
-// Canonical period directory names — must match make_dirs.cpp
-static std::string period_dir_for_label(const std::string& L) {
-    if (L=="Fa18 Inb")      return "Fa18_Inb";
-    if (L=="Fa18 Out")      return "Fa18_Out";
-    if (L=="Fa18 Inb Supp") return "Fa18_Inb_Supp";
-    if (L=="Sp18 Inb")      return "Sp18_Inb";
-    if (L=="Sp18 Out")      return "Sp18_Out";
-    if (L=="Sp19 Inb")      return "Sp19_Inb";
-    std::string s=L; for (char& c:s) if (c==' ') c='_';
-    return s;
-}
-
-static void ensure_dir(const std::string& p) {
-    namespace fs=std::filesystem;
-    std::error_code ec;
-    if (!fs::exists(p)) {
-        fs::create_directories(p, ec);
-        if (ec) fatal("Could not create output directory: "+p+" ("+ec.message()+")");
-        if (is_debug()) std::cout << "[total_counts] created dir: " << p << "\n";
+static YieldCols require_raw_yield_cols(const CsvDoc& csv,
+                                        const std::string& csv_label,
+                                        const std::string& topo_str_label) {
+    const std::string base = std::string("raw yield, ep->epg, ")+topo_str_label+", exp, "+csv_label+", ";
+    YieldCols yc;
+    yc.unpol = csv.col_index(base+"unpol");
+    yc.pos   = csv.col_index(base+"pos");
+    yc.neg   = csv.col_index(base+"neg");
+    if (yc.unpol<0 || yc.pos<0 || yc.neg<0) {
+        fatal(std::string("Missing canonical raw-yield columns for \"")+csv_label+"\" / \""+topo_str_label+"\" "
+              "expected \""+base+"unpol|pos|neg\"");
     }
+    return yc;
 }
 
-// Resolve the base plot directory (canonical only).
-static std::string out_root_for_label(const std::string& label, const std::string& out_root_dir) {
-    namespace fs=std::filesystem;
-    const std::string base = (fs::path(out_root_dir) / "total_counts_plots").string();
-    if (is_group_label(label)) {
-        return (fs::path(base) / label).string();
+struct CombinedGroup { std::string name; std::vector<std::string> members; };
+static const std::vector<CombinedGroup>& combined_groups() {
+    static const std::vector<CombinedGroup> G = {
+        {"Fa18",     {"Fa18 Inb","Fa18 Out"}},
+        {"Sp18",     {"Sp18 Inb","Sp18 Out"}},
+        {"10.6 GeV", {"Fa18 Inb","Fa18 Out","Sp18 Inb","Sp18 Out"}}
+    };
+    return G;
+}
+static YieldCols require_group_raw_yield_cols(const CsvDoc& csv,
+                                              const std::string& csv_group_label,
+                                              const std::string& topo_str_label) {
+    const std::string base = std::string("raw yield, ep->epg, ")+topo_str_label+", exp, "+csv_group_label+", ";
+    YieldCols yc;
+    yc.unpol = csv.col_index(base+"unpol");
+    yc.pos   = csv.col_index(base+"pos");
+    yc.neg   = csv.col_index(base+"neg");
+    if (yc.unpol<0 || yc.pos<0 || yc.neg<0) {
+        fatal(std::string("Missing canonical group raw-yield columns for \"")+csv_group_label+"\" / \""+topo_str_label+"\" "
+              "expected \""+base+"unpol|pos|neg\"");
     }
-    return (fs::path(base) / period_dir_for_label(label)).string();
+    return yc;
 }
-
-struct CsvCols {
-    int c_xb_min, c_xb_max, c_q2_min, c_q2_max, c_tab_min, c_tab_max, c_phi_min, c_phi_max;
-};
 
 // ---------------- plotting ----------------
-struct CellData { std::vector<double> X,Yp,Ym,EX,EYp,EYm,q2means,tmeans; };
-
-static double safe_mean(const std::vector<double>& v){
-    double s=0; int n=0; for(double x:v) if (std::isfinite(x)){ s+=x; ++n; }
-    return n? s/n : std::numeric_limits<double>::quiet_NaN();
-}
+struct CsvCols { int c_xb_min, c_xb_max, c_q2_min, c_q2_max, c_tab_min, c_tab_max, c_phi_min, c_phi_max; };
 
 static void draw_group_canvases(
-    const std::string& label,
-    const std::string& topo_str,
-    const std::string& topo_dir,
+    const std::string& display_label,             // for titles and directories
+    const std::string& topo_str_label,
+    const std::string& topo_dir_label,
     const CsvDoc& csv,
     const CsvCols& cols,
+    const std::unordered_map<std::string,std::string>& label_idx,
     const std::string& out_root_dir)
 {
     namespace fs=std::filesystem;
-    const std::string base_dir = out_root_for_label(label, out_root_dir);
+    const std::string base_dir = out_root_for_label(display_label, out_root_dir);
     ensure_dir(base_dir);
-    const std::string out_dir = (fs::path(base_dir) / topo_dir).string();
+    const std::string out_dir = (fs::path(base_dir) / topo_dir_label).string();
     ensure_dir(out_dir);
 
-    if (is_debug()) std::cout << "[total_counts] plotting to " << out_dir << " (label=" << label << ", topo=" << topo_str << ")\n";
+    // Resolve the actual label as it appears in the CSV header
+    const std::string csv_label = resolve_csv_label(label_idx, display_label);
+    if (trace_labels() && csv_label != display_label) {
+        std::cerr << "[total_counts] plot label remap: \"" << display_label << "\" -> \"" << csv_label << "\"\n";
+    }
 
-    const int c_phiavg = csv.has_col("phiavg, "+label)? csv.col_index("phiavg, "+label) : -1;
-    const int c_q2avg  = csv.has_col("Q2avg, " +label)? csv.col_index("Q2avg, " +label) : -1;
-    const int c_tabavg = csv.has_col("t_abs_avg, "+label)? csv.col_index("t_abs_avg, "+label) : -1;
-    const int c_xbavg  = csv.has_col("xBavg, "+label)? csv.col_index("xBavg, "+label) : -1;
+    const int c_phiavg = csv.has_col("phiavg, "+csv_label)? csv.col_index("phiavg, "+csv_label) : -1;
+    const int c_q2avg  = csv.has_col("Q2avg, " +csv_label)? csv.col_index("Q2avg, " +csv_label) : -1;
+    const int c_tabavg = csv.has_col("t_abs_avg, "+csv_label)? csv.col_index("t_abs_avg, "+csv_label) : -1;
+    const int c_xbavg  = csv.has_col("xBavg, "+csv_label)? csv.col_index("xBavg, "+csv_label) : -1;
 
-    // collect unique xB ranges
     std::set<std::pair<double,double>> xb_set;
     for (int r=0;r<csv.nrows();++r) xb_set.emplace(csv.as_double(r,cols.c_xb_min), csv.as_double(r,cols.c_xb_max));
 
-    // aesthetics
     const double head_size = 0.58;
-    const double lab_size  = 0.075;
-    const double tick_size = 0.060;
     const double latex_size= 0.065;
 
     for (auto xb : xb_set) {
@@ -426,7 +470,7 @@ static void draw_group_canvases(
         const int H = 260*nrows + 240;
 
         std::vector<CellData> cells(nrows*ncols);
-        double canvas_max = 1.0; bool need_log=false;
+        double canvas_max = 1.0;
 
         std::vector<double> xbmeans;
         for (int r=0;r<csv.nrows();++r) {
@@ -465,7 +509,7 @@ static void draw_group_canvases(
                 }
                 C.X.push_back(xphi);
 
-                const std::string ybase = std::string("raw yield, ep->epg, ")+topo_str+", exp, "+label+", ";
+                const std::string ybase = std::string("raw yield, ep->epg, ")+topo_str_label+", exp, "+csv_label+", ";
                 const int c_pos = csv.has_col(ybase+"pos")? csv.col_index(ybase+"pos") : -1;
                 const int c_neg = csv.has_col(ybase+"neg")? csv.col_index(ybase+"neg") : -1;
 
@@ -476,17 +520,15 @@ static void draw_group_canvases(
                 C.EYp.push_back(std::isfinite(yp)? std::sqrt(std::max(0.0,yp)) : 0.0);
                 C.EYm.push_back(std::isfinite(yn)? std::sqrt(std::max(0.0,yn)) : 0.0);
 
-                if (c_q2avg>=0)  C.q2means.push_back(csv.as_double(r, c_q2avg));
-                else             C.q2means.push_back(0.5*(qpair.first+qpair.second));
-                if (c_tabavg>=0) C.tmeans.push_back(csv.as_double(r, c_tabavg));
-                else             C.tmeans.push_back(0.5*(tpair.first+tpair.second));
+                C.q2means.push_back(0.5*(qpair.first+qpair.second));
+                C.tmeans.push_back(0.5*(tpair.first+tpair.second));
 
-                if (std::isfinite(yp)) { canvas_max=std::max(canvas_max, yp); if (yp>=500.0) need_log=true; }
-                if (std::isfinite(yn)) { canvas_max=std::max(canvas_max, yn); if (yn>=500.0) need_log=true; }
+                if (std::isfinite(yp)) canvas_max=std::max(canvas_max, yp);
+                if (std::isfinite(yn)) canvas_max=std::max(canvas_max, yn);
             }
         }
 
-        std::string cname="c_counts_"+period_dir_for_label(label)+"_"+topo_dir+"_xB_"+std::to_string((int)std::round(xb.first*1000.0));
+        std::string cname="c_counts_"+period_dir_for_label(display_label)+"_"+topo_dir_label+"_xB_"+std::to_string((int)std::round(xb.first*1000.0));
         TCanvas* c=new TCanvas(cname.c_str(), "", W, H);
 
         TPad* pTop = new TPad("pTop","pTop",0.0,0.84,1.0,1.0);
@@ -496,8 +538,8 @@ static void draw_group_canvases(
         pGrid->Divide(ncols,nrows,0.0001,0.0001);
 
         pTop->cd();
-        TLatex head; head.SetNDC(); head.SetTextSize(0.58); head.SetTextAlign(22);
-        head.DrawLatex(0.5,0.50, Form("%s   <xB>=%.3g   %s", label.c_str(), xb_mean_for_title, topo_str.c_str()));
+        TLatex head; head.SetNDC(); head.SetTextSize(head_size); head.SetTextAlign(22);
+        head.DrawLatex(0.5,0.50, Form("%s   <xB>=%.3g   %s", display_label.c_str(), xb_mean_for_title, topo_str_label.c_str()));
 
         const double y_lo = 0.0;
         const double y_hi = std::max(1.0, canvas_max*1.15);
@@ -507,7 +549,7 @@ static void draw_group_canvases(
             gPad->SetGrid(1,1);
             gPad->SetTopMargin(0.22);
             gPad->SetBottomMargin(0.18);
-            gPad->SetLeftMargin(0.125); // user preference
+            gPad->SetLeftMargin(0.125);
             gPad->SetRightMargin(0.07);
 
             TH1* frame=gPad->DrawFrame(0.0, y_lo, 360.0, y_hi);
@@ -529,7 +571,7 @@ static void draw_group_canvases(
             gm->SetMarkerStyle(20); gm->SetMarkerColor(kBlue); gm->SetLineColor(kBlue); gm->SetLineWidth(1);
             gp->Draw("PE1 SAME"); gm->Draw("PE1 SAME");
 
-            TLatex lab; lab.SetNDC(); lab.SetTextSize(0.065); lab.SetTextAlign(13);
+            TLatex lab; lab.SetNDC(); lab.SetTextSize(latex_size); lab.SetTextAlign(13);
             const double q2m=safe_mean(C.q2means), tm=safe_mean(C.tmeans);
             lab.DrawLatex(0.12, 0.83, Form("Q^{2}=%.3g  |t|=%.3g", q2m, tm));
 
@@ -544,114 +586,25 @@ static void draw_group_canvases(
             leg->Draw();
         }
 
-        const std::string fpath=(fs::path(out_dir)/("plot_total_counts_"+period_dir_for_label(label)+"_"+topo_dir+"_xB_"+std::to_string((int)std::round(xb.first*1000.0))+".png")).string();
+        const std::string fpath=(fs::path(out_dir)/("plot_total_counts_"+period_dir_for_label(display_label)+"_"+topo_dir_label+"_xB_"+std::to_string((int)std::round(xb.first*1000.0))+".png")).string();
         c->SaveAs(fpath.c_str());
         delete c;
     }
 }
 
-// -------------- selection helpers --------------
-static inline bool passBaseCuts(const std::vector<BaseCut>& BC,
-                                const std::unordered_map<std::string,BranchBinding>& B) {
-    for (const auto& c:BC) {
-        auto it=B.find(c.branch); if (it==B.end()) return false;
-        const BranchBinding& bb=it->second; const double v=bb_as_double(bb);
-        if (c.has_eq)  { if (bb_as_ll(bb)!=c.eq) return false; }
-        if (c.has_neq) { if (bb_as_ll(bb)==c.neq) return false; }
-        if (c.has_min) { if (!(v>=c.vmin)) return false; }
-        if (c.has_max) { if (!(v<=c.vmax)) return false; }
-    }
-    return true;
-}
-static inline bool passSigmaCuts(const std::vector<SigmaCut>& SC,
-                                 const std::unordered_map<std::string,BranchBinding>& B) {
-    for (const auto& c:SC) {
-        auto it=B.find(c.branch); if (it==B.end()) return false;
-        const double v=bb_as_double(it->second);
-        const double lo=c.center - c.nsigma*c.sigma, hi=c.center + c.nsigma*c.sigma;
-        if (c.mode==SigmaCut::TWO_SIDED) { if (v<lo || v>hi) return false; }
-        else if (c.mode==SigmaCut::UPPER) { if (v>hi) return false; }
-        else { if (v<lo) return false; }
-    }
-    return true;
-}
-static inline bool passesAllCuts(const PeriodCuts& cuts,
-                                 const std::unordered_map<std::string,BranchBinding>& B) {
-    return passBaseCuts(cuts.base_cuts,B) && passSigmaCuts(cuts.sigma_cuts,B);
-}
-
-// Diagnostics
-struct DebugCounts {
-    long long total=0, bad_helicity=0, bad_nan=0, cut_fail=0, topo_bad=0, no_row_match=0;
-    long long kin_ok_phi_fail=0, phi_ok_kin_fail=0, both_ok=0;
-};
-
-static const char* TOPO_DIR(int idx){ return TOPO_DIRS[idx]; }
-static const char* TOPO_STR(int idx){ return TOPO_STRS[idx]; }
-
-struct RowCounts { long long pos=0, neg=0; };
-
-// Helper: require exact raw-yield columns (no creation, no aliasing)
-struct YieldCols {
-    int unpol=-1, pos=-1, neg=-1;
-};
-static YieldCols require_raw_yield_cols(const CsvDoc& csv,
-                                        const std::string& label,
-                                        const std::string& topo_str) {
-    const std::string base = std::string("raw yield, ep->epg, ")+topo_str+", exp, "+label+", ";
-    YieldCols yc;
-    yc.unpol = csv.col_index(base+"unpol");
-    yc.pos   = csv.col_index(base+"pos");
-    yc.neg   = csv.col_index(base+"neg");
-    if (yc.unpol<0 || yc.pos<0 || yc.neg<0) {
-        fatal(std::string("Missing canonical raw-yield columns for \"")+label+"\" / \""+topo_str+"\" "
-              "expected \""+base+"unpol|pos|neg\"");
-    }
-    return yc;
-}
-
-// Strict groups (matching your schema)
-struct CombinedGroup {
-    std::string name;
-    std::vector<std::string> members; // period labels
-};
-static const std::vector<CombinedGroup>& combined_groups() {
-    static const std::vector<CombinedGroup> G = {
-        {"Fa18",     {"Fa18 Inb","Fa18 Out"}},
-        {"Sp18",     {"Sp18 Inb","Sp18 Out"}},
-        {"10.6 GeV", {"Fa18 Inb","Fa18 Out","Sp18 Inb","Sp18 Out"}}
-    };
-    return G;
-}
-static YieldCols require_group_raw_yield_cols(const CsvDoc& csv,
-                                              const std::string& group_label,
-                                              const std::string& topo_str) {
-    const std::string base = std::string("raw yield, ep->epg, ")+topo_str+", exp, "+group_label+", ";
-    YieldCols yc;
-    yc.unpol = csv.col_index(base+"unpol");
-    yc.pos   = csv.col_index(base+"pos");
-    yc.neg   = csv.col_index(base+"neg");
-    if (yc.unpol<0 || yc.pos<0 || yc.neg<0) {
-        fatal(std::string("Missing canonical group raw-yield columns for \"")+group_label+"\" / \""+topo_str+"\" "
-              "expected \""+base+"unpol|pos|neg\"");
-    }
-    return yc;
-}
-
-} // end anonymous namespace
+} // end anon ns
 
 // ---------------- EXPORTED FUNCTION ----------------
 bool update_total_counts_csv(
     const std::string& csv_path,
     const std::map<std::string, TTree*>& dvcsDataTrees,
-    const std::string& combined_cuts_json,
+    const std::string& combined_cuts_json,   // still accepted; global hard-cuts applied irrespective
     const std::string& out_root_dir,
     int max_workers)
 {
     namespace fs=std::filesystem;
     ROOT::EnableThreadSafety();
 
-    // CSV existence + pre-stats
     const std::string csv_abs = fs::absolute(csv_path).string();
     std::error_code ec;
     uintmax_t size_before = fs::exists(csv_path, ec) ? fs::file_size(csv_path, ec) : 0;
@@ -661,7 +614,9 @@ bool update_total_counts_csv(
     CsvDoc csv;
     if (!csv.load(csv_path)) return false;
 
-    // Required bin-edge columns (fatal if absent)
+    // Build once: header label index for robust lookups
+    const auto label_idx = build_label_index(csv);
+
     CsvCols cols;
     cols.c_xb_min  = csv.col_index("xBmin");
     cols.c_xb_max  = csv.col_index("xBmax");
@@ -676,13 +631,17 @@ bool update_total_counts_csv(
         fatal("Missing one or more required bin-edge columns in CSV.");
     }
 
-    // Canonical periods only
-    std::vector<std::string> periods;
-    for (const auto& P:CANONICAL_PERIODS()) periods.push_back(P.tree_key);
+    // Canonical period keys from periods.h
+    std::vector<std::string> period_keys;
+    for (const auto& P : CANONICAL_PERIODS()) {
+        if (dvcsDataTrees.count(P.tree_key) && dvcsDataTrees.at(P.tree_key))
+            period_keys.push_back(P.tree_key);
+    }
+    if (period_keys.empty()) fatal("No DVCS trees available in dvcsDataTrees.");
 
     using PeriodRowMap = std::unordered_map<int, RowCounts>;
     std::mutex merge_mtx;
-    std::map<std::string, std::map<std::string, PeriodRowMap>> counts_by_label_topo;
+    std::map<std::string, std::map<std::string, PeriodRowMap>> counts_by_label_topo; // keyed by *display* label
 
     auto cadence_for = [](Long64_t N)->Long64_t {
         Long64_t by_pct = (Long64_t)std::max(1.0, std::floor(0.02 * (double)N));
@@ -693,15 +652,9 @@ bool update_total_counts_csv(
 #ifdef _OPENMP
     #pragma omp parallel for schedule(dynamic) num_threads(max_workers)
 #endif
-    for (int ip=0; ip<(int)periods.size(); ++ip) {
-        const std::string period_key = periods[ip];
-        if (!is_canonical_tree_key(period_key)) {
-#ifdef _OPENMP
-            #pragma omp critical
-#endif
-            std::cerr << "[total_counts] Non-canonical period ignored: " << period_key << "\n";
-            continue;
-        }
+    for (int ip=0; ip<(int)period_keys.size(); ++ip) {
+        const std::string period_key = period_keys[ip];
+
         auto itT = dvcsDataTrees.find(period_key);
         if (itT==dvcsDataTrees.end() || !itT->second) {
 #ifdef _OPENMP
@@ -711,64 +664,31 @@ bool update_total_counts_csv(
             continue;
         }
         TTree* t = itT->second;
-        const std::string label = safe_label_for_key(period_key);
 
-        const PeriodCuts cuts = loadCombinedCuts(combined_cuts_json, period_key);
-
-        // Build needed branch list
-        std::vector<std::string> need;
-        for (const auto& c:cuts.base_cuts)  need.push_back(c.branch);
-        for (const auto& c:cuts.sigma_cuts) need.push_back(c.branch);
-        const char* explicit_binds[] = {"helicity","x","Q2","t1","phi2","detector1","detector2"};
-        for (const char* s:explicit_binds) need.push_back(s);
-        std::sort(need.begin(), need.end());
-        need.erase(std::unique(need.begin(), need.end()), need.end());
-
-        // Branch gating
-        t->SetBranchStatus("*", 0);
-        for (const auto& b:need) if (t->GetBranch(b.c_str())) t->SetBranchStatus(b.c_str(), 1);
-
-        if (list_enabled_branches()) {
-#ifdef _OPENMP
-            #pragma omp critical
-#endif
-            {
-                std::cout << "[total_counts]["<<label<<"] Enabled branches:\n";
-                for (const auto& b:need) {
-                    Bool_t st = t->GetBranchStatus(b.c_str());
-                    std::cout << "  - " << b << " : " << (st? "ON":"OFF") << "\n";
-                }
-            }
+        // From periods.h: human-readable label (this is the one you expect like "Fa18 Inb")
+        std::string display_label;
+        for (const auto& P : CANONICAL_PERIODS()) {
+            if (P.tree_key == period_key) { display_label = P.label; break; }
         }
-
-        // Typed binds
-        int helicity=0; double x=0, Q2=0, t1=0, phi2=std::numeric_limits<double>::quiet_NaN();
-        if (!t->GetBranch("helicity") || !t->GetBranch("x") || !t->GetBranch("Q2") ||
-            !t->GetBranch("t1") || !t->GetBranch("phi2")) {
+        if (display_label.empty()) {
 #ifdef _OPENMP
             #pragma omp critical
 #endif
-            std::cerr << "[total_counts] Required branches missing in " << period_key << "\n";
+            std::cerr << "[total_counts] Unknown period key naming: " << period_key << "\n";
             continue;
         }
-        t->SetBranchAddress("helicity",&helicity);
-        t->SetBranchAddress("x",&x);
-        t->SetBranchAddress("Q2",&Q2);
-        t->SetBranchAddress("t1",&t1);
-        t->SetBranchAddress("phi2",&phi2);
+
+        // Bind needed branches
+        BranchBinding b_helicity, b_x, b_Q2, b_t1, b_phi2, b_open_angle, b_pTmiss;
+        bind_one_exact(t, "helicity",       b_helicity);
+        bind_one_exact(t, "x",              b_x);
+        bind_one_exact(t, "Q2",             b_Q2);
+        bind_one_exact(t, "t1",             b_t1);
+        bind_one_exact(t, "phi2",           b_phi2);           // radians
+        bind_one_exact(t, "open_angle_ep2", b_open_angle);     // degrees
+        bind_one_exact(t, "pTmiss",         b_pTmiss);         // GeV
 
         TopologyResolver topo; topo.bind(t);
-
-        // Generic binds for cut variables
-        std::vector<std::string> need_for_binder;
-        for (const auto& b:need) {
-            bool drop=false; for (const char* s:explicit_binds) if (b==s) { drop=true; break; }
-            if (!drop) need_for_binder.push_back(b);
-        }
-        std::unordered_map<std::string,BranchBinding> bind;
-        bindRequiredBranches_STRICT(t, need_for_binder, bind);
-
-        std::map<std::string, PeriodRowMap> local_by_topo;
 
         const Long64_t N=t->GetEntries();
         const Long64_t cadence=cadence_for(N);
@@ -778,27 +698,40 @@ bool update_total_counts_csv(
 #ifdef _OPENMP
         #pragma omp critical
 #endif
-        std::cout << "[total_counts] Start " << label << " with " << (long long)N << " entries\n";
+        std::cout << "[total_counts] Start " << display_label << " with " << (long long)N << " entries\n";
+
+        std::map<std::string, PeriodRowMap> local_by_topo;
 
         for (Long64_t i=0;i<N;++i) {
             t->GetEntry(i);
             dbg.total++;
 
-            if (helicity!=+1 && helicity!=-1) { dbg.bad_helicity++; continue; }
-            if (!std::isfinite(x) || !std::isfinite(Q2) || !std::isfinite(t1) || !std::isfinite(phi2)) { dbg.bad_nan++; continue; }
+            const long long hel = bb_as_ll(b_helicity);
+            if (hel!=+1 && hel!=-1) { dbg.bad_helicity++; continue; }
+
+            const double x   = bb_as_double(b_x);
+            const double Q2  = bb_as_double(b_Q2);
+            const double t1  = bb_as_double(b_t1);
+            const double phi2= bb_as_double(b_phi2);
+            const double open_angle_deg = bb_as_double(b_open_angle);
+            const double pTmiss         = bb_as_double(b_pTmiss);
+
+            if (!std::isfinite(x) || !std::isfinite(Q2) || !std::isfinite(t1) || !std::isfinite(phi2)
+                || !std::isfinite(open_angle_deg) || !std::isfinite(pTmiss)) {
+                dbg.bad_nan++; continue;
+            }
             ++seen;
 
-            // Cuts: global + exclusivity (from combined JSON)
-            if (!passesAllCuts(cuts, bind)) { dbg.cut_fail++; continue; }
+            // Global hard cuts (bin_means parity)
+            if (!passes_global(open_angle_deg, t1, pTmiss)) { dbg.cut_fail++; continue; }
             ++kept;
 
-            const int topo_idx=topo.index();
-            if (topo_idx<0 || topo_idx>2) { dbg.topo_bad++; continue; }
-            const std::string topo_str = TOPO_STR(topo_idx);
+            const int topo_idx = topo.index();
+            if (topo_idx < 0 || topo_idx > 2) { dbg.topo_bad++; continue; }
+            const std::string topoS = topo_str((Topology)topo_idx);
 
-            const double phi_deg = wrap_deg_0_360(rad_to_deg(phi2));
+            const double phi_deg = wrap_deg_0_360(RAD2DEG(phi2));
             bool used_any=false;
-
             bool matched_kin_any=false, matched_phi_any=false;
 
             for (int r=0;r<csv.nrows();++r) {
@@ -820,15 +753,15 @@ bool update_total_counts_csv(
                 matched_phi_any |= phi_ok;
 
                 if (kin_ok && phi_ok) {
-                    RowCounts& rc = local_by_topo[topo_str][r];
-                    if (helicity==+1) rc.pos++; else rc.neg++;
+                    RowCounts& rc = local_by_topo[topoS][r];
+                    if (hel==+1) rc.pos++; else rc.neg++;
                     used_any=true;
 
                     if (trace_matches()) {
 #ifdef _OPENMP
                         #pragma omp critical
 #endif
-                        std::cout << "[total_counts]["<<label<<"] match: row="<<r
+                        std::cout << "[total_counts]["<<display_label<<"] match: row="<<r
                                   << " x="<<x<<" Q2="<<Q2<<" |t|="<<std::fabs(t1)
                                   << " phi="<<phi_deg<<"\n";
                     }
@@ -844,7 +777,7 @@ bool update_total_counts_csv(
 
             if ((i % cadence)==0 && is_debug()) {
                 double pct = (N>0)? 100.0*(double)i/(double)N : 100.0;
-                std::cout << "[total_counts]["<<label<<"] " << std::fixed << std::setprecision(1)
+                std::cout << "[total_counts]["<<display_label<<"] " << std::fixed << std::setprecision(1)
                           << pct << "%  i="<<(long long)i<<" seen="<<seen<<" kept="<<kept<<" used="<<used<<"\n";
             }
         }
@@ -853,9 +786,9 @@ bool update_total_counts_csv(
         #pragma omp critical
 #endif
         {
-            std::cout << "[total_counts] Done " << label << "  seen="<<seen<<" kept="<<kept<<" used="<<used<<"\n";
+            std::cout << "[total_counts] Done " << display_label << "  seen="<<seen<<" kept="<<kept<<" used="<<used<<"\n";
             if (is_debug()) {
-                std::cout << "[total_counts]["<<label<<"] debug: total="<<dbg.total
+                std::cout << "[total_counts]["<<display_label<<"] debug: total="<<dbg.total
                           << " bad_helicity="<<dbg.bad_helicity
                           << " bad_nan="<<dbg.bad_nan
                           << " cut_fail="<<dbg.cut_fail
@@ -868,13 +801,13 @@ bool update_total_counts_csv(
             }
         }
 
-        // Merge into global map
+        // Merge results
         {
             std::lock_guard<std::mutex> lock(merge_mtx);
-            auto& tgt_by_topo = counts_by_label_topo[label];
+            auto& tgt_by_topo = counts_by_label_topo[display_label]; // keep display label as the key
             for (const auto& tk : local_by_topo) {
-                const std::string& topo_str = tk.first;
-                auto& tgt = tgt_by_topo[topo_str];
+                const std::string& topoS = tk.first;
+                auto& tgt = tgt_by_topo[topoS];
                 for (const auto& rkv : tk.second) {
                     tgt[rkv.first].pos += rkv.second.pos;
                     tgt[rkv.first].neg += rkv.second.neg;
@@ -883,17 +816,20 @@ bool update_total_counts_csv(
         }
     } // omp periods
 
-    // Write per-period raw yields to CSV (strict: columns must exist)
+    // Write per-period raw yields (resolve labels against header)
     size_t grand_cells_written=0;
     for (const auto& lblkv : counts_by_label_topo) {
-        const std::string& label = lblkv.first;
-        for (int topo_idx=0; topo_idx<3; ++topo_idx) {
-            const std::string topo_str = TOPO_STR(topo_idx);
-
-            auto itTopo = lblkv.second.find(topo_str);
+        const std::string display_label = lblkv.first;
+        const std::string csv_label = resolve_csv_label(label_idx, display_label);
+        if (trace_labels() && csv_label != display_label) {
+            std::cerr << "[total_counts] write label remap: \"" << display_label << "\" -> \"" << csv_label << "\"\n";
+        }
+        for (int ti=0; ti<3; ++ti) {
+            const std::string topoS = topo_str((Topology)ti);
+            auto itTopo = lblkv.second.find(topoS);
             if (itTopo==lblkv.second.end()) continue;
 
-            const YieldCols yc = require_raw_yield_cols(csv, label, topo_str);
+            const YieldCols yc = require_raw_yield_cols(csv, csv_label, topoS);
 
             size_t cells_written_here=0;
             for (const auto& rkv : itTopo->second) {
@@ -905,31 +841,29 @@ bool update_total_counts_csv(
             }
             grand_cells_written += cells_written_here;
             std::cout << "[total_counts] wrote " << cells_written_here
-                      << " cells for " << label << " / " << topo_str << "\n";
+                      << " cells for " << display_label << " / " << topoS << "\n";
         }
     }
 
-    // -------- Strict combined-group raw yields (Fa18, Sp18, 10.6 GeV) --------
+    // Strict combined-group raw yields
     for (const auto& G : combined_groups()) {
-        const std::string& group = G.name;
-        for (int topo_idx=0; topo_idx<3; ++topo_idx) {
-            const std::string topo_str=TOPO_STR(topo_idx);
-
-            // Require the target group columns to exist
-            const YieldCols gy = require_group_raw_yield_cols(csv, group, topo_str);
+        const std::string display_group = G.name;
+        const std::string csv_group = resolve_csv_label(label_idx, display_group); // usually identical
+        for (int ti=0; ti<3; ++ti) {
+            const std::string topoS = topo_str((Topology)ti);
+            const YieldCols gy = require_group_raw_yield_cols(csv, csv_group, topoS);
 
             size_t cells_written_here=0;
             for (int r=0; r<csv.nrows(); ++r) {
                 long long pos_sum=0, neg_sum=0;
-
-                for (const auto& lbl : G.members) {
-                    const std::string pbase = std::string("raw yield, ep->epg, ")+topo_str+", exp, "+lbl+", ";
+                for (const auto& member_display : G.members) {
+                    const std::string member_csv = resolve_csv_label(label_idx, member_display);
+                    const std::string pbase = std::string("raw yield, ep->epg, ")+topoS+", exp, "+member_csv+", ";
                     const int p_pos = csv.col_index(pbase+"pos");
                     const int p_neg = csv.col_index(pbase+"neg");
                     if (p_pos>=0) pos_sum += (long long)std::llround(csv.as_double(r, p_pos));
                     if (p_neg>=0) neg_sum += (long long)std::llround(csv.as_double(r, p_neg));
                 }
-
                 csv.set(r, gy.pos,   (double)pos_sum); ++cells_written_here;
                 csv.set(r, gy.neg,   (double)neg_sum); ++cells_written_here;
                 csv.set(r, gy.unpol, (double)(pos_sum+neg_sum)); ++cells_written_here;
@@ -937,10 +871,9 @@ bool update_total_counts_csv(
 
             grand_cells_written += cells_written_here;
             std::cout << "[total_counts] wrote " << cells_written_here
-                      << " cells for combined group " << group << " / " << topo_str << "\n";
+                      << " cells for combined group " << display_group << " / " << topoS << "\n";
         }
     }
-    // -------------------------------------------------------------------------
 
     if (grand_cells_written==0) {
         std::cout << "[total_counts] WARNING: wrote zero CSV cells (no matches or headers mismatch).\n";
@@ -952,15 +885,15 @@ bool update_total_counts_csv(
         return false;
     }
 
-    // Plots (per-period + combined groups)
+    // Plots (per-period + combined groups); resolve labels for header lookups internally
     for (const auto& P:CANONICAL_PERIODS()) {
-        const std::string label = P.label;
-        for (int topo_idx=0; topo_idx<3; ++topo_idx)
-            draw_group_canvases(label, TOPO_STR(topo_idx), TOPO_DIR(topo_idx), csv, cols, out_root_dir);
+        const std::string display_label = P.label;
+        for (int ti=0; ti<3; ++ti)
+            draw_group_canvases(display_label, topo_str((Topology)ti), topo_dir((Topology)ti), csv, cols, label_idx, out_root_dir);
     }
-    for (const std::string group : {"Fa18","Sp18","10.6 GeV"}) {
-        for (int topo_idx=0; topo_idx<3; ++topo_idx)
-            draw_group_canvases(group, TOPO_STR(topo_idx), TOPO_DIR(topo_idx), csv, cols, out_root_dir);
+    for (const std::string display_group : {"Fa18","Sp18","10.6 GeV"}) {
+        for (int ti=0; ti<3; ++ti)
+            draw_group_canvases(display_group, topo_str((Topology)ti), topo_dir((Topology)ti), csv, cols, label_idx, out_root_dir);
     }
 
     uintmax_t size_after = fs::file_size(csv_path, ec);
