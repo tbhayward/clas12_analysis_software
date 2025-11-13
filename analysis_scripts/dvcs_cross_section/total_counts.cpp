@@ -1,7 +1,7 @@
 // total_counts.cpp
 // Raw-yield writer + plots with legends, correct axis labels, margins, and
 // canonicalized output directories. Combined groups are plotted from in-memory
-// aggregated period counts with CSV fallback to ensure non-zero curves.
+// aggregated period counts (no CSV group columns required).
 
 #include "total_counts.h"
 #include "periods.h"
@@ -190,13 +190,6 @@ static bool is_group_label(const std::string& L) {
     return (L=="Fa18"||L=="Sp18"||L=="10.6 GeV");
 }
 
-static std::vector<std::string> group_members(const std::string& group_label) {
-    if (group_label=="Fa18")     return {"Fa18 Inb","Fa18 Out"};
-    if (group_label=="Sp18")     return {"Sp18 Inb","Sp18 Out"};
-    if (group_label=="10.6 GeV") return {"Fa18 Inb","Fa18 Out","Sp18 Inb","Sp18 Out"};
-    return {};
-}
-
 // ------------- Alias-aware header resolution -----------
 static int find_col_alias(const std::vector<std::string>& header,
                           const std::string& topo_str_label,
@@ -264,41 +257,6 @@ static void ensure_dir(const std::string& p) {
         fs::create_directories(p, ec);
         if (ec) fatal("Could not create output directory: "+p+" ("+ec.message()+")");
         if (is_debug()) std::cout << "[total_counts] created dir: " << p << "\n";
-    }
-}
-
-// Merge/move any alias-named subdirs into canonical names to stop duplicates.
-static void canonicalize_output_dirs(const std::string& total_counts_root) {
-    namespace fs=std::filesystem;
-    std::error_code ec;
-
-    auto merge_into = [&](const fs::path& src, const fs::path& dst){
-        if (!fs::exists(src)) return;
-        fs::create_directories(dst, ec);
-        for (auto& p : fs::directory_iterator(src)) {
-            fs::path to = dst / p.path().filename();
-            fs::rename(p.path(), to, ec);
-            if (ec) {
-                // fallback copy+remove if rename across filesystems
-                ec.clear();
-                fs::copy(p.path(), to, fs::copy_options::overwrite_existing | fs::copy_options::recursive, ec);
-                fs::remove_all(p.path(), ec);
-            }
-        }
-        fs::remove_all(src, ec);
-    };
-
-    if (!fs::exists(total_counts_root)) return;
-
-    for (auto& p : fs::directory_iterator(total_counts_root)) {
-        if (!p.is_directory()) continue;
-        const std::string name = p.path().filename().string();
-        // recognize either a period-like or group-like name and rewrite
-        std::string canon = canonical_period_dir(name);
-        if (is_group_label(name)) canon = canonical_group_dir(name);
-        if (canon != name) {
-            merge_into(p.path(), fs::path(total_counts_root)/canon);
-        }
     }
 }
 
@@ -473,28 +431,6 @@ static BinCache precache_bins(const CsvDoc& csv) {
 // ---------------- plotting ----------------
 struct CsvCols { int c_xb_min, c_xb_max, c_q2_min, c_q2_max, c_tab_min, c_tab_max, c_phi_min, c_phi_max; };
 
-// Sum from CSV across group members (fallback if aggregated map lacks the row)
-static void sum_csv_for_group_row(const CsvDoc& csv,
-                                  int row_index,
-                                  const std::string& topo_str_label,
-                                  const std::vector<std::string>& members,
-                                  double& sum_pos, double& sum_neg)
-{
-    sum_pos = 0.0; sum_neg = 0.0;
-    bool any=false;
-    for (const auto& m : members) {
-        int cpos = find_col_alias(csv.header, topo_str_label, m, "pos");
-        int cneg = find_col_alias(csv.header, topo_str_label, m, "neg");
-        if (cpos>=0 && cneg>=0) {
-            double vp = csv.as_double(row_index, cpos);
-            double vn = csv.as_double(row_index, cneg);
-            if (std::isfinite(vp)) { sum_pos += vp; any=true; }
-            if (std::isfinite(vn)) { sum_neg += vn; any=true; }
-        }
-    }
-    if (!any) { sum_pos = 0.0; sum_neg = 0.0; }
-}
-
 static void draw_group_canvases(
     const std::string& display_label,
     const std::string& topo_str_label,
@@ -506,13 +442,6 @@ static void draw_group_canvases(
 )
 {
     namespace fs=std::filesystem;
-
-    // Clean up any alias dirs once per process (cheap no-op if already clean)
-    static std::once_flag canon_once;
-    std::call_once(canon_once, [&](){
-        canonicalize_output_dirs((fs::path(out_root_dir)/"total_counts_plots").string());
-    });
-
     const std::string base_dir = out_root_for_label(display_label, out_root_dir);
     ensure_dir(base_dir);
     const std::string out_dir = (fs::path(base_dir) / topo_dir_label).string();
@@ -537,20 +466,18 @@ static void draw_group_canvases(
     std::set<std::pair<double,double>> xb_set;
     for (int r=0;r<csv.nrows();++r) xb_set.emplace(csv.as_double(r,cols.c_xb_min), csv.as_double(r,cols.c_xb_max));
 
-    // visual tuning (smaller titles, restore legend box, keep left padding)
-    const double head_size = 0.14;   // was 0.28
-    const double label_sz  = 0.050;
-    const double title_sz  = 0.045;
-    const double leg_txt   = 0.050;
+    // visual tuning
+    const double head_size = 0.28;     // reduced ~2x from previous
+    const double label_sz  = 0.060;
+    const double title_sz  = 0.070;
+    const double leg_txt   = 0.055;
 
-    const bool is_group = is_group_label(display_label);
     const bool force_counts_only = should_skip_csv_for_label(display_label);
-    const std::vector<std::string> members = is_group ? group_members(display_label) : std::vector<std::string>{};
 
-    // one-time summary of combined totals if applicable
+    // optional one-time summary to confirm combined totals are nonzero
     static std::once_flag once_flag;
     std::call_once(once_flag, [&](){
-        if (is_group && counts_opt) {
+        if (is_group_label(display_label) && counts_opt) {
             long long totp=0, totn=0;
             for (const auto& tk : *counts_opt) {
                 for (const auto& rkv : tk.second) { totp += rkv.second.pos; totn += rkv.second.neg; }
@@ -640,25 +567,12 @@ static void draw_group_canvases(
                         if (rc_it != topo_it->second.end()) {
                             yp = (double)rc_it->second.pos;
                             yn = (double)rc_it->second.neg;
-                        } else if (is_group && !members.empty()) {
-                            // Fallback: sum CSV across the group's member periods for this row
-                            double sp=0.0, sn=0.0;
-                            sum_csv_for_group_row(csv, r, topo_str_label, members, sp, sn);
-                            yp = sp; yn = sn;
                         } else {
                             yp = 0.0; yn = 0.0;
                         }
-                    } else if (is_group && !members.empty()) {
-                        double sp=0.0, sn=0.0;
-                        sum_csv_for_group_row(csv, r, topo_str_label, members, sp, sn);
-                        yp = sp; yn = sn;
                     } else {
                         yp = 0.0; yn = 0.0;
                     }
-                } else if (is_group && !members.empty()) {
-                    double sp=0.0, sn=0.0;
-                    sum_csv_for_group_row(csv, r, topo_str_label, members, sp, sn);
-                    yp = sp; yn = sn;
                 } else {
                     yp = 0.0; yn = 0.0;
                 }
@@ -678,16 +592,16 @@ static void draw_group_canvases(
         std::string cname="c_counts_"+period_dir_for_label(display_label)+"_"+topo_dir_label+"_xB_"+std::to_string((int)std::round(xb.first*1000.0));
         TCanvas* c=new TCanvas(cname.c_str(), "", W, H);
 
-        // smaller top bar
-        TPad* pTop = new TPad("pTop","pTop",0.0,0.86,1.0,1.0);
-        TPad* pGrid= new TPad("pGrid","pGrid",0.0,0.00,1.0,0.86);
+        // top bar (title) smaller
+        TPad* pTop = new TPad("pTop","pTop",0.0,0.84,1.0,1.0);
+        TPad* pGrid= new TPad("pGrid","pGrid",0.0,0.00,1.0,0.84);
         pTop->SetFillStyle(0); pTop->Draw();
         pGrid->SetFillStyle(0); pGrid->Draw();
         pGrid->Divide(ncols,nrows,0.0001,0.0001);
 
         pTop->cd();
         TLatex head; head.SetNDC(); head.SetTextSize(head_size); head.SetTextAlign(22);
-        head.DrawLatex(0.5,0.58, Form("%s   <xB>=%.3g   %s", display_label.c_str(), xb_mean_for_title, topo_str_label.c_str()));
+        head.DrawLatex(0.5,0.55, Form("%s   <xB>=%.3g   %s", display_label.c_str(), xb_mean_for_title, topo_str_label.c_str()));
 
         const double y_lo = 0.0;
         const double y_hi = std::max(1.0, canvas_max*1.15);
@@ -695,9 +609,9 @@ static void draw_group_canvases(
         for (int rr=0; rr<nrows; ++rr) for (int cc=0; cc<ncols; ++cc) {
             pGrid->cd(rr*ncols+cc+1);
             gPad->SetGrid(1,1);
-            gPad->SetTopMargin(0.24);     // a touch more room to prevent clipping at top
+            gPad->SetTopMargin(0.22);
             gPad->SetBottomMargin(0.18);
-            gPad->SetLeftMargin(0.125);   // requested left padding
+            gPad->SetLeftMargin(0.160);  // ensure y-title is never clipped
             gPad->SetRightMargin(0.07);
             gPad->SetTickx(1);
             gPad->SetTicky(1);
@@ -712,8 +626,6 @@ static void draw_group_canvases(
             frame->GetYaxis()->SetTitleSize(title_sz);
             frame->GetXaxis()->SetLabelSize(label_sz);
             frame->GetYaxis()->SetLabelSize(label_sz);
-            frame->GetYaxis()->SetTitleOffset(1.25);   // keep y-title clear of the left edge
-            frame->GetXaxis()->SetTitleOffset(1.05);
 
             const CellData& C = cells[rr*ncols+cc];
 
@@ -723,20 +635,20 @@ static void draw_group_canvases(
             gm->SetMarkerStyle(20); gm->SetMarkerColor(kBlue); gm->SetLineColor(kBlue); gm->SetLineWidth(1);
             gp->Draw("PE1 SAME"); gm->Draw("PE1 SAME");
 
-            // per-pad legend, with border box restored
-            TLegend* leg = new TLegend(0.60, 0.72, 0.93, 0.92);
-            leg->SetBorderSize(1);           // box back on
+            // per-pad legend, now OPAQUE with a box
+            TLegend* leg = new TLegend(0.60, 0.73, 0.93, 0.92);
+            leg->SetBorderSize(1);          // boxed
             leg->SetLineColor(kBlack);
-            leg->SetFillStyle(0);            // transparent fill
+            leg->SetFillStyle(1001);        // solid fill (opaque)
+            leg->SetFillColor(kWhite);      // white background
             leg->SetTextSize(leg_txt);
             leg->AddEntry(gp, "+ helicity", "PE");
             leg->AddEntry(gm, "- helicity", "PE");
             leg->Draw();
 
-            // per-pad kinematics label, nudged clear of the legend and top edge
-            TLatex lab; lab.SetNDC(); lab.SetTextSize(0.058); lab.SetTextAlign(13);
+            TLatex lab; lab.SetNDC(); lab.SetTextSize(0.065); lab.SetTextAlign(13);
             const double q2m=safe_mean(C.q2means), tm=safe_mean(C.tmeans);
-            lab.DrawLatex(0.16, 0.88, Form("Q^{2}=%.3g  |t|=%.3g", q2m, tm));
+            lab.DrawLatex(0.12, 0.83, Form("Q^{2}=%.3g  |t|=%.3g", q2m, tm));
         }
 
         const std::string fpath=(fs::path(out_dir)/("plot_total_counts_"+period_dir_for_label(display_label)+"_"+topo_dir_label+"_xB_"+std::to_string((int)std::round(xb.first*1000.0))+".png")).string();
@@ -1053,7 +965,8 @@ bool update_total_counts_csv(
         }
     }
 
-    uintmax_t size_after = fs::file_size(csv_path, ec);
+    std::error_code ec2;
+    uintmax_t size_after = fs::file_size(csv_path, ec2);
     std::cout << "[total_counts] Updated raw yields in: " << csv_abs
               << "  (cells written: " << grand_cells_written
               << ", size " << size_before << " -> " << size_after << ")\n";
