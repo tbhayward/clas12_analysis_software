@@ -6,13 +6,15 @@
 // - Combined-group raw yields (Fa18, Sp18, 10.6 GeV): required columns, sums of member periods
 // - Plots per-period and combined groups
 //
-// Robustness: header lookups are tolerant using label_aliases (spaces vs underscores, case)
-//             and multiple helicity/topology variants; all numeric reads are range-guarded.
+// Hardened:
+//   * Pre-cache CSV bin edges into POD arrays to avoid multi-threaded parsing of strings.
+//   * ROOT I/O guarded: SetBranchStatus to needed fields only; skip entries with nb<0.
+//   * Alias-aware header resolution via label_aliases.h.
 
 #include "total_counts.h"
 #include "periods.h"
 #include "load_binning_scheme.h"
-#include "label_aliases.h"  // <-- new
+#include "label_aliases.h"  // provides period_aliases(), topology_aliases(), helicity_aliases()
 
 #include <TCanvas.h>
 #include <TGraphErrors.h>
@@ -168,7 +170,76 @@ struct CsvDoc {
     }
 };
 
-// ---------------- directory and label bits ----------------
+// ------------ Alias-aware header resolution (uses label_aliases.h) ------------
+static int find_col_alias(const std::vector<std::string>& header,
+                          const std::string& topo_str_label,
+                          const std::string& period_display_label,
+                          const std::string& helicity_label) {
+    for (const auto& topo_try : topology_aliases(topo_str_label)) {
+        for (const auto& per_try : period_aliases(period_display_label)) {
+            for (const auto& hel_try : helicity_aliases(helicity_label)) {
+                const std::string candidate = "raw yield, ep->epg, " + topo_try + ", exp, " + per_try + ", " + hel_try;
+                auto it = std::find(header.begin(), header.end(), candidate);
+                if (it != header.end()) return int(it - header.begin());
+            }
+        }
+    }
+    return -1;
+}
+
+struct YieldCols { int unpol=-1, pos=-1, neg=-1; };
+
+static YieldCols require_raw_yield_cols_alias(const CsvDoc& csv,
+                                              const std::string& display_period_label,
+                                              const std::string& topo_str_label) {
+    YieldCols yc;
+    yc.unpol = find_col_alias(csv.header, topo_str_label, display_period_label, "unpol");
+    yc.pos   = find_col_alias(csv.header, topo_str_label, display_period_label, "pos");
+    yc.neg   = find_col_alias(csv.header, topo_str_label, display_period_label, "neg");
+    if (yc.unpol<0 || yc.pos<0 || yc.neg<0) {
+        std::ostringstream oss;
+        oss << "Missing raw-yield columns for \"" << display_period_label << "\" / \"" << topo_str_label << "\".\n"
+            << "Expected headers like: raw yield, ep->epg, (FD, FD), exp, Fa18 Inb, unpol|pos|neg";
+        fatal(oss.str());
+    }
+    return yc;
+}
+
+static int find_group_col_alias(const CsvDoc& csv,
+                                const std::string& topo_str_label,
+                                const std::string& group_label,
+                                const std::string& helicity_label) {
+    std::vector<std::string> group_tries{group_label};
+    if (group_label=="10.6 GeV") group_tries.push_back("10.6 GeV");
+    for (const auto& topo_try : topology_aliases(topo_str_label)) {
+        for (const auto& g_try : group_tries) {
+            for (const auto& hel_try : helicity_aliases(helicity_label)) {
+                const std::string candidate = "raw yield, ep->epg, " + topo_try + ", exp, " + g_try + ", " + hel_try;
+                int idx = csv.col_index(candidate);
+                if (idx >= 0) return idx;
+            }
+        }
+    }
+    return -1;
+}
+
+static YieldCols require_group_raw_yield_cols_alias(const CsvDoc& csv,
+                                                    const std::string& topo_str_label,
+                                                    const std::string& group_label) {
+    YieldCols yc;
+    yc.unpol = find_group_col_alias(csv, topo_str_label, group_label, "unpol");
+    yc.pos   = find_group_col_alias(csv, topo_str_label, group_label, "pos");
+    yc.neg   = find_group_col_alias(csv, topo_str_label, group_label, "neg");
+    if (yc.unpol<0 || yc.pos<0 || yc.neg<0) {
+        std::ostringstream oss;
+        oss << "Missing group raw-yield columns for \"" << group_label << "\" / \"" << topo_str_label << "\".\n"
+            << "Expected headers like: raw yield, ep->epg, (FD, FD), exp, " << group_label << ", unpol|pos|neg";
+        fatal(oss.str());
+    }
+    return yc;
+}
+
+// ---------------- directory helpers ----------------
 static inline std::string period_dir_for_label(const std::string& L) {
     if (L=="Fa18 Inb")      return "Fa18_Inb";
     if (L=="Fa18 Out")      return "Fa18_Out";
@@ -222,7 +293,10 @@ static inline const char* topo_dir(Topology t) {
 
 struct TopologyResolver {
     int detector1=0, detector2=0; bool have1=false, have2=false;
-    void bind(TTree* t) {
+    void enable_and_bind(TTree* t) {
+        t->SetBranchStatus("*", 0);
+        t->SetBranchStatus("detector1", 1);
+        t->SetBranchStatus("detector2", 1);
         have1=(t->GetBranch("detector1")!=nullptr);
         have2=(t->GetBranch("detector2")!=nullptr);
         if (!(have1 && have2)) fatal("Missing detector1/detector2 in DVCS tree.");
@@ -288,8 +362,9 @@ static inline long long bb_as_ll(const BranchBinding& bb){
 
 static std::mutex g_root_bind_mutex;
 
-static void bind_one_exact(TTree* t, const std::string& bname, BranchBinding& bb) {
+static void bind_one_exact_enable(TTree* t, const std::string& bname, BranchBinding& bb) {
     std::lock_guard<std::mutex> lock(g_root_bind_mutex);
+    t->SetBranchStatus(bname.c_str(), 1);
     TBranch* b=t->GetBranch(bname.c_str());
     if (!b) return;
     TLeaf* leaf=b->GetLeaf(bname.c_str());
@@ -320,106 +395,55 @@ static inline bool passes_global(double open_angle_ep2_deg, double t1, double pT
 struct DebugCounts {
     long long total=0, bad_helicity=0, bad_nan=0, cut_fail=0, topo_bad=0, no_row_match=0;
     long long kin_ok_phi_fail=0, phi_ok_kin_fail=0, both_ok=0;
+    long long bad_io=0;
 };
 struct RowCounts { long long pos=0, neg=0; };
 
-// ---------- Alias-aware header resolution (uses label_aliases.h) ----------
-static int find_col_alias(const std::vector<std::string>& header,
-                          const std::string& topo_str_label,
-                          const std::string& period_display_label,
-                          const std::string& helicity_label) {
-    for (const auto& topo_try : topology_aliases(topo_str_label)) {
-        for (const auto& per_try : period_aliases(period_display_label)) {
-            for (const auto& hel_try : helicity_aliases(helicity_label)) {
-                const std::string candidate = "raw yield, ep->epg, " + topo_try + ", exp, " + per_try + ", " + hel_try;
-                auto it = std::find(header.begin(), header.end(), candidate);
-                if (it != header.end()) return int(it - header.begin());
-            }
-        }
-    }
-    return -1;
-}
+// ---------------- Bin-edge pre-cache (thread-safe reads later) ----------------
+struct BinCache {
+    std::vector<double> xbmin, xbmax, q2min, q2max, tmin, tmax, pmin, pmax;
+    int nrows() const { return (int)xbmin.size(); }
+};
 
-struct YieldCols { int unpol=-1, pos=-1, neg=-1; };
-
-static YieldCols require_raw_yield_cols_alias(const CsvDoc& csv,
-                                              const std::string& display_period_label,
-                                              const std::string& topo_str_label) {
-    YieldCols yc;
-    yc.unpol = find_col_alias(csv.header, topo_str_label, display_period_label, "unpol");
-    yc.pos   = find_col_alias(csv.header, topo_str_label, display_period_label, "pos");
-    yc.neg   = find_col_alias(csv.header, topo_str_label, display_period_label, "neg");
-    if (yc.unpol<0 || yc.pos<0 || yc.neg<0) {
-        std::ostringstream oss;
-        oss << "Missing raw-yield columns for \"" << display_period_label << "\" / \"" << topo_str_label << "\".\n"
-            << "Tried aliases for period: ";
-        for (auto& p : period_aliases(display_period_label)) oss << "\"" << p << "\" ";
-        oss << "\nTried topologies: ";
-        for (auto& t : topology_aliases(topo_str_label)) oss << "\"" << t << "\" ";
-        oss << "\nExpected headers like: raw yield, ep->epg, (FD, FD), exp, Fa18 Inb, unpol|pos|neg";
-        fatal(oss.str());
-    }
-    return yc;
-}
-
-// For combined groups ("Fa18", "Sp18", "10.6 GeV") we also need to resolve their group columns.
-static int find_group_col_alias(const CsvDoc& csv,
-                                const std::string& topo_str_label,
-                                const std::string& group_label,
-                                const std::string& helicity_label) {
-    // Groups are fairly standardized; still accept simple spacing variants.
-    std::vector<std::string> group_tries;
-    group_tries.push_back(group_label);
-    if (group_label=="10.6 GeV") group_tries.push_back("10.6 GeV"); // explicit
-    // Add a few fallbacks (underscores or multiple spaces collapsed)
-    {
-        std::string sp = group_label; // duplicate
-        // No-op; can add more if needed
-        group_tries.push_back(sp);
-    }
-    for (const auto& topo_try : topology_aliases(topo_str_label)) {
-        for (const auto& g_try : group_tries) {
-            for (const auto& hel_try : helicity_aliases(helicity_label)) {
-                const std::string candidate = "raw yield, ep->epg, " + topo_try + ", exp, " + g_try + ", " + hel_try;
-                int idx = csv.col_index(candidate);
-                if (idx >= 0) return idx;
-            }
-        }
-    }
-    return -1;
-}
-
-static YieldCols require_group_raw_yield_cols_alias(const CsvDoc& csv,
-                                                    const std::string& topo_str_label,
-                                                    const std::string& group_label) {
-    YieldCols yc;
-    yc.unpol = find_group_col_alias(csv, topo_str_label, group_label, "unpol");
-    yc.pos   = find_group_col_alias(csv, topo_str_label, group_label, "pos");
-    yc.neg   = find_group_col_alias(csv, topo_str_label, group_label, "neg");
-    if (yc.unpol<0 || yc.pos<0 || yc.neg<0) {
-        std::ostringstream oss;
-        oss << "Missing group raw-yield columns for \"" << group_label << "\" / \"" << topo_str_label << "\".\n"
-            << "Expected headers like: raw yield, ep->epg, (FD, FD), exp, " << group_label << ", unpol|pos|neg";
-        fatal(oss.str());
-    }
-    return yc;
-}
-
-struct CombinedGroup { std::string name; std::vector<std::string> members; };
-static const std::vector<CombinedGroup>& combined_groups() {
-    static const std::vector<CombinedGroup> G = {
-        {"Fa18",     {"Fa18 Inb","Fa18 Out"}},
-        {"Sp18",     {"Sp18 Inb","Sp18 Out"}},
-        {"10.6 GeV", {"Fa18 Inb","Fa18 Out","Sp18 Inb","Sp18 Out"}}
+static BinCache precache_bins(const CsvDoc& csv) {
+    auto get = [&](const char* name)->int {
+        int idx = csv.col_index(name);
+        if (idx<0) fatal(std::string("Missing bin-edge column: ")+name);
+        return idx;
     };
-    return G;
+    const int cxmin = get("xBmin");
+    const int cxmax = get("xBmax");
+    const int cqmin = get("Q2min");
+    const int cqmax = get("Q2max");
+    const int ctmin = get("t_abs_min");
+    const int ctmax = get("t_abs_max");
+    const int cpmin = get("phimin");
+    const int cpmax = get("phimax");
+
+    BinCache B;
+    const int NR = csv.nrows();
+    B.xbmin.resize(NR); B.xbmax.resize(NR);
+    B.q2min.resize(NR); B.q2max.resize(NR);
+    B.tmin.resize(NR);  B.tmax.resize(NR);
+    B.pmin.resize(NR);  B.pmax.resize(NR);
+    for (int r=0;r<NR;++r) {
+        B.xbmin[r] = csv.as_double(r, cxmin);
+        B.xbmax[r] = csv.as_double(r, cxmax);
+        B.q2min[r] = csv.as_double(r, cqmin);
+        B.q2max[r] = csv.as_double(r, cqmax);
+        B.tmin[r]  = csv.as_double(r, ctmin);
+        B.tmax[r]  = csv.as_double(r, ctmax);
+        B.pmin[r]  = csv.as_double(r, cpmin);
+        B.pmax[r]  = csv.as_double(r, cpmax);
+    }
+    return B;
 }
 
 // ---------------- plotting ----------------
 struct CsvCols { int c_xb_min, c_xb_max, c_q2_min, c_q2_max, c_tab_min, c_tab_max, c_phi_min, c_phi_max; };
 
 static void draw_group_canvases(
-    const std::string& display_label,             // for titles and directories
+    const std::string& display_label,
     const std::string& topo_str_label,
     const std::string& topo_dir_label,
     const CsvDoc& csv,
@@ -432,21 +456,18 @@ static void draw_group_canvases(
     const std::string out_dir = (fs::path(base_dir) / topo_dir_label).string();
     ensure_dir(out_dir);
 
-    // For aux means, try the obvious label forms; fall back to -1 gracefully
     int c_phiavg=-1, c_q2avg=-1, c_tabavg=-1, c_xbavg=-1;
     {
-        // Try exact
         c_phiavg = csv.col_index("phiavg, "+display_label);
         c_q2avg  = csv.col_index("Q2avg, " +display_label);
         c_tabavg = csv.col_index("t_abs_avg, "+display_label);
         c_xbavg  = csv.col_index("xBavg, "+display_label);
-        // Try aliases for period label if not found
         if (c_phiavg<0 || c_q2avg<0 || c_tabavg<0 || c_xbavg<0) {
             for (const auto& alt : period_aliases(display_label)) {
                 if (c_phiavg<0) { int ci = csv.col_index("phiavg, "+alt); if (ci>=0) c_phiavg=ci; }
-                if (c_q2avg <0) { int ci = csv.col_index("Q2avg, "+alt); if (ci>=0) c_q2avg =ci; }
+                if (c_q2avg <0) { int ci = csv.col_index("Q2avg, "+alt);  if (ci>=0) c_q2avg =ci; }
                 if (c_tabavg<0) { int ci = csv.col_index("t_abs_avg, "+alt); if (ci>=0) c_tabavg=ci; }
-                if (c_xbavg <0) { int ci = csv.col_index("xBavg, "+alt); if (ci>=0) c_xbavg =ci; }
+                if (c_xbavg <0) { int ci = csv.col_index("xBavg, "+alt);  if (ci>=0) c_xbavg =ci; }
             }
         }
     }
@@ -522,10 +543,8 @@ static void draw_group_canvases(
                 }
                 C.X.push_back(xphi);
 
-                // Resolve raw-yield columns for this display period + topology via aliases
-                const std::string ytop = topo_str_label;
-                const int c_pos = find_col_alias(csv.header, ytop, display_label, "pos");
-                const int c_neg = find_col_alias(csv.header, ytop, display_label, "neg");
+                const int c_pos = find_col_alias(csv.header, topo_str_label, display_label, "pos");
+                const int c_neg = find_col_alias(csv.header, topo_str_label, display_label, "neg");
 
                 double yp= (c_pos>=0)? csv.as_double(r, c_pos) : std::numeric_limits<double>::quiet_NaN();
                 double yn= (c_neg>=0)? csv.as_double(r, c_neg) : std::numeric_limits<double>::quiet_NaN();
@@ -552,7 +571,7 @@ static void draw_group_canvases(
         pGrid->Divide(ncols,nrows,0.0001,0.0001);
 
         pTop->cd();
-        TLatex head; head.SetNDC(); head.SetTextSize(head_size); head.SetTextAlign(22);
+        TLatex head; head.SetNDC(); head.SetTextSize(0.58); head.SetTextAlign(22);
         head.DrawLatex(0.5,0.50, Form("%s   <xB>=%.3g   %s", display_label.c_str(), xb_mean_for_title, topo_str_label.c_str()));
 
         const double y_lo = 0.0;
@@ -585,7 +604,7 @@ static void draw_group_canvases(
             gm->SetMarkerStyle(20); gm->SetMarkerColor(kBlue); gm->SetLineColor(kBlue); gm->SetLineWidth(1);
             gp->Draw("PE1 SAME"); gm->Draw("PE1 SAME");
 
-            TLatex lab; lab.SetNDC(); lab.SetTextSize(latex_size); lab.SetTextAlign(13);
+            TLatex lab; lab.SetNDC(); lab.SetTextSize(0.065); lab.SetTextAlign(13);
             const double q2m=safe_mean(C.q2means), tm=safe_mean(C.tmeans);
             lab.DrawLatex(0.12, 0.83, Form("Q^{2}=%.3g  |t|=%.3g", q2m, tm));
 
@@ -612,7 +631,7 @@ static void draw_group_canvases(
 bool update_total_counts_csv(
     const std::string& csv_path,
     const std::map<std::string, TTree*>& dvcsDataTrees,
-    const std::string& combined_cuts_json,   // still accepted; global hard-cuts applied irrespective
+    const std::string& combined_cuts_json,
     const std::string& out_root_dir,
     int max_workers)
 {
@@ -628,7 +647,10 @@ bool update_total_counts_csv(
     CsvDoc csv;
     if (!csv.load(csv_path)) return false;
 
-    struct CsvCols cols;
+    // Pre-cache bin edges into POD arrays (thread-safe later)
+    BinCache bins = precache_bins(csv);
+
+    CsvCols cols;
     cols.c_xb_min  = csv.col_index("xBmin");
     cols.c_xb_max  = csv.col_index("xBmax");
     cols.c_q2_min  = csv.col_index("Q2min");
@@ -637,10 +659,6 @@ bool update_total_counts_csv(
     cols.c_tab_max = csv.col_index("t_abs_max");
     cols.c_phi_min = csv.col_index("phimin");
     cols.c_phi_max = csv.col_index("phimax");
-    if (cols.c_xb_min<0 || cols.c_xb_max<0 || cols.c_q2_min<0 || cols.c_q2_max<0 ||
-        cols.c_tab_min<0 || cols.c_tab_max<0 || cols.c_phi_min<0 || cols.c_phi_max<0) {
-        fatal("Missing one or more required bin-edge columns in CSV.");
-    }
 
     // Canonical period keys from periods.h
     std::vector<std::string> period_keys;
@@ -660,8 +678,14 @@ bool update_total_counts_csv(
         return std::min(by_pct, by_abs);
     };
 
+    // Optionally constrain threads if caller set max_workers
+    int threads = max_workers;
 #ifdef _OPENMP
-    #pragma omp parallel for schedule(dynamic) num_threads(max_workers)
+    if (threads <= 0) {
+        threads = omp_get_max_threads();
+    }
+    if (threads < 1) threads = 1;
+    #pragma omp parallel for schedule(dynamic) num_threads(threads)
 #endif
     for (int ip=0; ip<(int)period_keys.size(); ++ip) {
         const std::string period_key = period_keys[ip];
@@ -689,17 +713,17 @@ bool update_total_counts_csv(
             continue;
         }
 
-        // Bind needed branches
-        BranchBinding b_helicity, b_x, b_Q2, b_t1, b_phi2, b_open_angle, b_pTmiss;
-        bind_one_exact(t, "helicity",       b_helicity);
-        bind_one_exact(t, "x",              b_x);
-        bind_one_exact(t, "Q2",             b_Q2);
-        bind_one_exact(t, "t1",             b_t1);
-        bind_one_exact(t, "phi2",           b_phi2);           // radians
-        bind_one_exact(t, "open_angle_ep2", b_open_angle);     // degrees
-        bind_one_exact(t, "pTmiss",         b_pTmiss);         // GeV
+        // Enable only needed branches, then bind
+        TopologyResolver topo; topo.enable_and_bind(t);
 
-        TopologyResolver topo; topo.bind(t);
+        BranchBinding b_helicity, b_x, b_Q2, b_t1, b_phi2, b_open_angle, b_pTmiss;
+        bind_one_exact_enable(t, "helicity",       b_helicity);
+        bind_one_exact_enable(t, "x",              b_x);
+        bind_one_exact_enable(t, "Q2",             b_Q2);
+        bind_one_exact_enable(t, "t1",             b_t1);
+        bind_one_exact_enable(t, "phi2",           b_phi2);           // radians
+        bind_one_exact_enable(t, "open_angle_ep2", b_open_angle);     // degrees
+        bind_one_exact_enable(t, "pTmiss",         b_pTmiss);         // GeV
 
         const Long64_t N=t->GetEntries();
         const Long64_t cadence=cadence_for(N);
@@ -714,7 +738,10 @@ bool update_total_counts_csv(
         std::map<std::string, PeriodRowMap> local_by_topo;
 
         for (Long64_t i=0;i<N;++i) {
-            t->GetEntry(i);
+            // Guard against corrupt baskets (negative means read error)
+            const Long64_t nb = t->GetEntry(i);
+            if (nb < 0) { dbg.bad_io++; continue; }
+
             dbg.total++;
 
             const long long hel = bb_as_ll(b_helicity);
@@ -733,7 +760,6 @@ bool update_total_counts_csv(
             }
             ++seen;
 
-            // Global hard cuts
             if (!passes_global(open_angle_deg, t1, pTmiss)) { dbg.cut_fail++; continue; }
             ++kept;
 
@@ -745,20 +771,13 @@ bool update_total_counts_csv(
             bool used_any=false;
             bool matched_kin_any=false, matched_phi_any=false;
 
-            for (int r=0;r<csv.nrows();++r) {
-                const double xbmin=csv.as_double(r, cols.c_xb_min);
-                const double xbmax=csv.as_double(r, cols.c_xb_max);
-                const double q2min=csv.as_double(r, cols.c_q2_min);
-                const double q2max=csv.as_double(r, cols.c_q2_max);
-                const double tabmin=csv.as_double(r, cols.c_tab_min);
-                const double tabmax=csv.as_double(r, cols.c_tab_max);
-                const double pmin=csv.as_double(r, cols.c_phi_min);
-                const double pmax=csv.as_double(r, cols.c_phi_max);
-
-                const bool kin_ok = in_range(x, xbmin, xbmax) &&
-                                    in_range(Q2, q2min, q2max) &&
-                                    in_range(std::fabs(t1), tabmin, tabmax);
-                const bool phi_ok = row_accepts_phi(phi_deg, pmin, pmax);
+            // Use pre-cached POD arrays (no string parsing, thread-safe)
+            const int NR = bins.nrows();
+            for (int r=0;r<NR;++r) {
+                const bool kin_ok = in_range(x,  bins.xbmin[r], bins.xbmax[r]) &&
+                                    in_range(Q2, bins.q2min[r], bins.q2max[r]) &&
+                                    in_range(std::fabs(t1), bins.tmin[r], bins.tmax[r]);
+                const bool phi_ok = row_accepts_phi(phi_deg, bins.pmin[r], bins.pmax[r]);
 
                 matched_kin_any |= kin_ok;
                 matched_phi_any |= phi_ok;
@@ -808,6 +827,7 @@ bool update_total_counts_csv(
                           << " kin_ok_phi_fail="<<dbg.kin_ok_phi_fail
                           << " phi_ok_kin_fail="<<dbg.phi_ok_kin_fail
                           << " both_ok="<<dbg.both_ok
+                          << " bad_io="<<dbg.bad_io
                           << "\n";
             }
         }
@@ -852,9 +872,16 @@ bool update_total_counts_csv(
         }
     }
 
-    // Strict combined-group raw yields (sum period members found via aliases)
-    for (const auto& G : combined_groups()) {
-        const std::string display_group = G.name;
+    // Strict combined-group raw yields (sum period members via aliases)
+    struct CombinedGroup { std::string name; std::vector<std::string> members; };
+    static const std::vector<CombinedGroup> G = {
+        {"Fa18",     {"Fa18 Inb","Fa18 Out"}},
+        {"Sp18",     {"Sp18 Inb","Sp18 Out"}},
+        {"10.6 GeV", {"Fa18 Inb","Fa18 Out","Sp18 Inb","Sp18 Out"}}
+    };
+
+    for (const auto& GG : G) {
+        const std::string display_group = GG.name;
         for (int ti=0; ti<3; ++ti) {
             const std::string topoS = topo_str((Topology)ti);
             const YieldCols gy = require_group_raw_yield_cols_alias(csv, topoS, display_group);
@@ -862,7 +889,7 @@ bool update_total_counts_csv(
             size_t cells_written_here=0;
             for (int r=0; r<csv.nrows(); ++r) {
                 long long pos_sum=0, neg_sum=0;
-                for (const auto& member_display : G.members) {
+                for (const auto& member_display : GG.members) {
                     const int p_pos = find_col_alias(csv.header, topoS, member_display, "pos");
                     const int p_neg = find_col_alias(csv.header, topoS, member_display, "neg");
                     if (p_pos>=0) pos_sum += (long long)std::llround(csv.as_double(r, p_pos));
@@ -889,7 +916,7 @@ bool update_total_counts_csv(
         return false;
     }
 
-    // Plots (per-period + combined groups) — alias-aware inside draw_group_canvases
+    // Plots
     for (const auto& P:CANONICAL_PERIODS()) {
         const std::string display_label = P.label;
         for (int ti=0; ti<3; ++ti)
