@@ -607,7 +607,7 @@ struct RowCounts { long long pos=0, neg=0; };
 
 // ---------------- EXPORTED FUNCTION (global scope) ----------------
 // Note the leading '::' to ensure global scope definition, fixing the link error.
-bool ::update_total_counts_csv(
+bool update_total_counts_csv(
     const std::string& csv_path,
     const std::map<std::string, TTree*>& dvcsDataTrees,
     const std::string& combined_cuts_json,
