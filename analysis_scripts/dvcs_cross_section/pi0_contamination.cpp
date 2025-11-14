@@ -386,7 +386,7 @@ static inline bool within3(double v, const Stats& s) {
 static bool passes_cuts(const VarCutMap& cuts, const std::map<std::string,double>& vals) {
     for (const auto& kv : cuts) {
         auto it = vals.find(kv.first);
-        if (it == vals.end()) fatal("Cuts reference variable '" + kv.first + "' not available in tree.");
+        if (it == vals.end()) fatal("Cuts reference variable '" + std::string(kv.first) + "' not available in tree.");
         if (!within3(it->second, kv.second)) return false;
     }
     return true;
@@ -651,8 +651,9 @@ static void plot_period(
 
             const auto cm = compute_cell_means(it->second, rows, xb_lo, xb_hi);
             TLatex lab; lab.SetNDC(); lab.SetTextAlign(13); lab.SetTextSize(0.055);
+            // Rounded to hundredths; units removed in the label only.
             lab.DrawLatex(0.12, 0.83,
-                Form("<xB>=%.4f   <Q^{2}>=%.4f (GeV^{2})   <-t>=%.4f (GeV^{2})",
+                Form("<xB>=%.2f   <Q^{2}>=%.2f   <-t>=%.2f",
                      cm.xb, cm.q2, cm.tab));
         }
     }
@@ -865,7 +866,7 @@ bool compute_pi0_contamination_overall(
 
         long long Nd_sum=0, Ne_sum=0, Nr_sum=0, Nb_sum=0;
         int rows_with_dvcs=0, rows_with_vals=0;
-        for (size_t r=0;r<rows.size();++r) {
+        for (size_t r=0; r<rows.size(); ++r) {
             Nd_sum += counts[r].n_dvcs_csv;
             Ne_sum += counts[r].n_pi0_data;
             Nr_sum += counts[r].n_pi0_reco;
