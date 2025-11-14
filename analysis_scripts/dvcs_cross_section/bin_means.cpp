@@ -41,7 +41,7 @@ static constexpr double RAD2DEG = 180.0 / PI;
 static constexpr double DEG2RAD = PI / 180.0;
 
 // Minimum entries required to write a bin's averages
-static constexpr long long MIN_BIN_COUNT = 10;
+static constexpr long long MIN_BIN_COUNT = 1;
 
 static const std::string kCutsJSON = "output/jsons/combined_cuts.json";
 
