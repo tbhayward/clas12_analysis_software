@@ -12,6 +12,7 @@
  *     - Sum the raw yields over all three topologies.
  *     - Read the contamination ratio triple
  *           "contamination ratio, <period>" = (c, c_stat, c_sys)
+ *       If this cell is empty, assume c = 0 and c_stat = c_sys = 0.
  *     - Compute the signal yield S and its statistical error:
  *           N_raw  = sum_topologies raw yield
  *           S      = (1 - c) * N_raw

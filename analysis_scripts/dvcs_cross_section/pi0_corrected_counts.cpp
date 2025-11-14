@@ -405,16 +405,26 @@ static bool fill_signal_yields(CsvDoc& csv) {
             double c_val  = 0.0;
             double c_stat = 0.0;
             double c_sys  = 0.0;
-            bool have_cont = false;
 
             if (!cs.empty()) {
-                have_cont = parse_contamination_triple(cs, c_val, c_stat, c_sys);
-                if (!have_cont) {
+                double cv = 0.0;
+                double cs_stat = 0.0;
+                double cs_sys  = 0.0;
+                const bool ok = parse_contamination_triple(cs, cv, cs_stat, cs_sys);
+                if (!ok) {
                     std::cerr << "[pi0_corrected] FATAL: failed to parse contamination '"
                               << cs << "' for period " << per
                               << " row " << r << "\n";
                     return false;
                 }
+                c_val  = cv;
+                c_stat = cs_stat;
+                c_sys  = cs_sys;
+            } else {
+                // Empty contamination cell: treat as exactly zero contamination
+                c_val  = 0.0;
+                c_stat = 0.0;
+                c_sys  = 0.0;
             }
 
             // compute raw sums over topologies for each helicity
@@ -436,24 +446,6 @@ static bool fill_signal_yields(CsvDoc& csv) {
                     }
                     raw_sum[hel] += v;
                 }
-            }
-
-            const bool any_nonzero =
-                (raw_sum["unpol"] > 0.0) ||
-                (raw_sum["pos"]   > 0.0) ||
-                (raw_sum["neg"]   > 0.0);
-
-            if (any_nonzero && !have_cont) {
-                std::cerr << "[pi0_corrected] FATAL: missing contamination ratio for "
-                          << "period " << per << " row " << r
-                          << " with non-zero raw yields. Run pi0_contamination first.\n";
-                return false;
-            }
-
-            if (!have_cont) {
-                c_val  = 0.0;
-                c_stat = 0.0;
-                c_sys  = 0.0;
             }
 
             // compute signal yields and write as triples
@@ -658,18 +650,24 @@ static void draw_signal_yield_canvases(const std::string& period_label,
                     bool have_cont = false;
 
                     if (!cs.empty()) {
-                        have_cont = parse_contamination_triple(cs, c_val, c_stat, c_sys);
+                        double cv = 0.0;
+                        double cs_stat = 0.0;
+                        double cs_sys  = 0.0;
+                        have_cont = parse_contamination_triple(cs, cv, cs_stat, cs_sys);
                         if (!have_cont) {
                             std::cerr << "[pi0_corrected] FATAL: failed to parse contamination '"
                                       << cs << "' for period " << period_label
                                       << " row " << r << "\n";
                             std::exit(EXIT_FAILURE);
                         }
-                    }
-
-                    if (!have_cont) {
+                        c_val  = cv;
+                        c_stat = cs_stat;
+                        c_sys  = cs_sys;
+                    } else {
+                        // Empty: treat as exactly zero contamination
                         c_val  = 0.0;
                         c_stat = 0.0;
+                        c_sys  = 0.0;
                     }
 
                     // raw yields summed over topologies for pos/neg
