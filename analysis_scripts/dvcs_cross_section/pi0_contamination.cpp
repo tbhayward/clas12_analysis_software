@@ -386,7 +386,7 @@ static inline bool within3(double v, const Stats& s) {
 static bool passes_cuts(const VarCutMap& cuts, const std::map<std::string,double>& vals) {
     for (const auto& kv : cuts) {
         auto it = vals.find(kv.first);
-        if (it == vals.end()) fatal("Cuts reference variable '" + std::string(kv.first) + "' not available in tree.");
+        if (it == vals.end()) fatal("Cuts reference variable '" + kv.first + "' not available in tree.");
         if (!within3(it->second, kv.second)) return false;
     }
     return true;
@@ -581,6 +581,23 @@ static void plot_period(
     for (int rr=0; rr<nrows; ++rr) {
         for (int cc=0; cc<ncols; ++cc) {
             pGrid->cd(rr*ncols+cc+1);
+
+            auto it = by_k.find(Key{rr, cc});
+            if (it == by_k.end()) {
+                // No rows correspond to this (Q2, t) cell -> leave pad blank
+                continue;
+            }
+
+            // Criterion for drawing anything: at least one row in this cell has finite Q2avg and t_abs_avg
+            bool has_avg = false;
+            for (int ridx : it->second) {
+                if (is_fin(rows[ridx].q2_avg) && is_fin(rows[ridx].tab_avg)) { has_avg = true; break; }
+            }
+            if (!has_avg) {
+                // No averages in CSV for this cell -> leave pad completely blank
+                continue;
+            }
+
             gPad->SetGrid(1,1);
             gPad->SetTopMargin(0.24);
             gPad->SetBottomMargin(0.18);
@@ -589,7 +606,7 @@ static void plot_period(
 
             TH1* fr = gPad->DrawFrame(0.0, 0.0, 360.0, 1.0);
             fr->GetXaxis()->SetTitle("#phi (deg)");
-            fr->GetYaxis()->SetTitle("#pi_{0} contamination");
+            fr->GetYaxis()->SetTitle("pi0 contamination");
             fr->GetXaxis()->CenterTitle();
             fr->GetYaxis()->CenterTitle();
             fr->GetXaxis()->SetNdivisions(505);
@@ -597,9 +614,6 @@ static void plot_period(
             fr->GetYaxis()->SetTitleSize(0.070);
             fr->GetXaxis()->SetLabelSize(0.060);
             fr->GetYaxis()->SetLabelSize(0.060);
-
-            auto it = by_k.find(Key{rr, cc});
-            if (it == by_k.end()) continue;
 
             struct Pt { double x, y, ey; };
             std::vector<Pt> pts; pts.reserve(it->second.size());
@@ -651,10 +665,9 @@ static void plot_period(
 
             const auto cm = compute_cell_means(it->second, rows, xb_lo, xb_hi);
             TLatex lab; lab.SetNDC(); lab.SetTextAlign(13); lab.SetTextSize(0.055);
-            // Rounded to hundredths; units removed in the label only.
+            // Rounded to hundredths; units removed; ensure no stray space in Q^{2}.
             lab.DrawLatex(0.12, 0.83,
-                Form("<xB>=%.2f   <Q^{2}>=%.2f   <-t>=%.2f",
-                     cm.xb, cm.q2, cm.tab));
+                Form("<xB>=%.2f   <Q^{2}>=%.2f   <-t>=%.2f", cm.xb, cm.q2, cm.tab));
         }
     }
 
@@ -866,7 +879,7 @@ bool compute_pi0_contamination_overall(
 
         long long Nd_sum=0, Ne_sum=0, Nr_sum=0, Nb_sum=0;
         int rows_with_dvcs=0, rows_with_vals=0;
-        for (size_t r=0; r<rows.size(); ++r) {
+        for (size_t r=0;r<rows.size();++r) {
             Nd_sum += counts[r].n_dvcs_csv;
             Ne_sum += counts[r].n_pi0_data;
             Nr_sum += counts[r].n_pi0_reco;
@@ -888,7 +901,7 @@ bool compute_pi0_contamination_overall(
             dbgB.print("BKG_MC", J.display);
         }
 
-        // Where Ne>0 but any of Nd/Nr/Nb==0, print a brief row-level reason
+        // Row-level diagnostics if desired
         if (trace_rows_env()) {
             for (size_t i=0;i<rows.size();++i) {
                 const auto& R = rows[i];
@@ -937,7 +950,7 @@ bool compute_pi0_contamination_overall(
                     csv.set_string(R.row_index, c_contam, tuple_string(val, estat, esys, 8));
                     ++wrote;
                 } else {
-                    // leave blank; optional noisy trace is handled above
+                    // leave blank
                 }
             }
             if (!csv.save_atomic(dvcs_csv_path)) {
