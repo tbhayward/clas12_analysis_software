@@ -3,7 +3,7 @@
 // Overall pi0 contamination estimator (STRICT: no aliases, no fallbacks)
 // Writes ONLY to an existing header column named exactly:
 //   "contamination ratio, <Period Label>"
-// For Fa18 Inb this is: "contamination ratio, Fa18 Inb"
+// e.g. for Fa18 Inb: "contamination ratio, Fa18 Inb"
 //
 // If that exact column is missing for a period, we fail fast.
 //
@@ -477,7 +477,7 @@ static void plot_period(
         for (int i=0;i<(int)V.size();++i) if (V[i]==r) return i; return -1;
     };
 
-    struct Key { int iQ, it; }; // declare ONCE here
+    struct Key { int iQ, it; };
     auto lessK = [](const Key& a, const Key& b){
         if (a.iQ != b.iQ) return a.iQ < b.iQ;
         return a.it < b.it;
@@ -522,6 +522,7 @@ static void plot_period(
             gPad->SetLeftMargin(0.125);
             gPad->SetRightMargin(0.06);
 
+            struct Key { int iQ, it; }; // shadowing prevented: local-only redeclare removed earlier; kept harmless here
             Key K{rr, cc};
             auto it = by_k.find(K);
 
@@ -640,7 +641,8 @@ bool compute_pi0_contamination_overall(
 
     // Preflight: require exact output column to exist (no creation, no aliasing).
     for (const auto& J : jobs) {
-        const std::string colname = "contamination ratio, " + J.display;
+        const std::string disp = to_title_space(J.display);
+        const std::string colname = "contamination ratio, " + disp;
         const int idx = csv.col(colname);
         if (idx < 0) {
             fatal("CSV missing output column: \"" + colname + "\"");
@@ -809,7 +811,8 @@ bool compute_pi0_contamination_overall(
         }
 
         // Write contamination ratios into the EXACT CSV output column (no creation, no aliasing)
-        const std::string contam_col = "contamination ratio, " + J.display;
+        const std::string disp = to_title_space(J.display);
+        const std::string contam_col = "contamination ratio, " + disp;
         const int c_contam = csv.col(contam_col);
         if (c_contam < 0) {
             fatal("CSV missing output column: \"" + contam_col + "\"");
@@ -833,11 +836,11 @@ bool compute_pi0_contamination_overall(
             {
                 std::cout << "[pi0_contamination] Wrote " << wrote
                           << " values to column \"" << contam_col
-                          << "\" for period " << J.display << "\n";
+                          << "\" for period " << disp << "\n";
             }
         }
 
-        // Per-xB slice plots (compute indices per slice for this period)
+        // Per-xB slice plots
         std::map<std::pair<double,double>, std::vector<int>> slice_rows;
         for (int r=0; r<(int)rows.size(); ++r) {
             slice_rows[{rows[r].xb_min, rows[r].xb_max}].push_back(r);
@@ -853,7 +856,10 @@ bool compute_pi0_contamination_overall(
                 ++n;
             }
             if (n>0) { xb_m/=n; q2_m/=n; t_m/=n; }
-            plot_period(period_dir, rows, counts, out_root_dir, idxs, xb_m, q2_m, t_m, ++slice_idx);
+            const std::string dir_label = [] (const std::string& s){
+                std::string out = s; for (char& c : out) if (c==' ') c='_'; return out;
+            }(disp);
+            plot_period(dir_label, rows, counts, out_root_dir, idxs, xb_m, q2_m, t_m, ++slice_idx);
         }
     } // end ip periods
 
