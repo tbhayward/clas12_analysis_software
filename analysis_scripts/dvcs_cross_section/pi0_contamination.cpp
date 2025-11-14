@@ -606,7 +606,7 @@ static void plot_period(
 
             TH1* fr = gPad->DrawFrame(0.0, 0.0, 360.0, 1.0);
             fr->GetXaxis()->SetTitle("#phi (deg)");
-            fr->GetYaxis()->SetTitle("pi0 contamination");
+            fr->GetYaxis()->SetTitle("#pi_{0} contamination");
             fr->GetXaxis()->CenterTitle();
             fr->GetYaxis()->CenterTitle();
             fr->GetXaxis()->SetNdivisions(505);

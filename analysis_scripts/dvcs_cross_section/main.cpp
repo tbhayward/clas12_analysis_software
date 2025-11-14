@@ -149,30 +149,27 @@ int main(int argc, char* argv[]) {
         std::cout << "pi0 contamination stage finished.\n";
     }
 
-    // // // --------- Total counts after exclusivity cuts (by helicity) ----------
-    // const std::string cuts_json_path   = "output/jsons/combined_cuts.json"; 
-    // // // produced by exclusivity_cuts
+     // --------- Pi0-corrected DVCS signal yields (CSV + plots) ----------
+    {
+        const std::string csv_main   = "output/csvs/dvcs_pass2_analysis.csv";
+        const std::string csv_backup = "output/csvs/dvcs_pass2_analysis_backup_signal_yields.csv";
 
-    // const std::string output_counts_js = "output/jsons/total_counts.json";
-    // compute_total_counts(dvcs_periods, topologies, binning_scheme, dataTrees, cuts_json_path,
-    // output_counts_js, output_root); 
+        // Make a backup before modifying the signal-yield columns
+        try {
+            std::filesystem::copy_file(csv_main, csv_backup,
+                std::filesystem::copy_options::overwrite_existing);
+            std::cout << "[main] Backed up CSV to dvcs_pass2_analysis_backup_signal_yields.csv\n";
+        } catch (const std::exception& e) {
+            std::cerr << "[main] WARNING: backup for signal yields failed ("
+                      << e.what() << "). Continuing.\n";
+        }
 
-    // // Helicity-resolved π0 contamination
-    // // NOTE: pass the OUTPUT ROOT ("output") so the implementation writes:
-    // //   - per-period JSONs to output/jsons/contamination/
-    // //   - combined JSON to output/jsons/
-    // //   - plots to output/contamination_plots/...
-    // compute_pi0_contamination_helicity(
-    //     dvcs_periods,
-    //     topologies,
-    //     binning_scheme,
-    //     dataTrees,
-    //     eppi0DataTrees,
-    //     eppi0RecMcTrees,   // reco MC
-    //     eppi0BkgTrees,     // bkg MC
-    //     cuts_json_path,
-    //     output_root
-    // );
+        if (!update_pi0_corrected_counts_csv(csv_main, output_root)) {
+            std::cerr << "[main] ERROR: update_pi0_corrected_counts_csv failed.\n";
+            std::exit(EXIT_FAILURE);
+        }
+    }
+
 
     // // --------- π0-corrected helicity counts (per φ) ----------
     // const std::string total_counts_json        = "output/jsons/total_counts.json";

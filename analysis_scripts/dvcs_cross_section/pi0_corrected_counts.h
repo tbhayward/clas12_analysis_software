@@ -1,33 +1,42 @@
-#pragma once
+#ifndef PI0_CORRECTED_COUNTS_H
+#define PI0_CORRECTED_COUNTS_H
+
 #include <string>
-#include <vector>
-#include "load_binning_scheme.h"
 
 /**
- * Compute DVCS counts corrected for π0 contamination, helicity-resolved and per φ-bin,
- * with uncertainty propagation:
- *   N_corr,h = N_h * (1 - c_h)
- *   Var(N_corr,h) = (1 - c_h)^2 * Var(N_h) + (N_h)^2 * Var(c_h) with Var(N_h)=N_h (Poisson).
+ * Update the pass-2 CSV with pi0-corrected DVCS signal yields and
+ * produce per-period yield plots (pos/neg helicities versus phi).
  *
- * Inputs:
- *  - periods:               e.g. {"DVCS_Fa18_inb", ...}
- *  - binning_scheme:        from load_binning_scheme(...)
- *  - total_counts_json:     path to output/jsons/total_counts.json (has "groups", including combined)
- *  - contamination_dir:     directory with per-period files contamination_<period>.json
- *  - contamination_combined: file output/jsons/pi0_contamination_combined.json (has "periods" incl. combined groups)
- *  - out_root_dir:          pass "output"
+ * CSV behavior:
+ *   For each row, each period, and each helicity {unpol,pos,neg}:
+ *     - Sum the raw yields over all three topologies.
+ *     - Read the contamination ratio triple
+ *           "contamination ratio, <period>" = (c, c_stat, c_sys)
+ *     - Compute the signal yield S and its statistical error:
+ *           N_raw  = sum_topologies raw yield
+ *           S      = (1 - c) * N_raw
+ *           Var(S) = (1 - c)^2 * N_raw  +  N_raw^2 * c_stat^2
+ *     - Write the result to the column
+ *           "signal yield, ep->epg, exp, <period>, <hel>"
+ *       as a triple "(S, S_stat, S_sys)" with S_sys = 0 for now.
  *
- * Writes:
- *  - Per-group JSONs:       output/jsons/pi0_corrected_counts_<GROUP>.json
- *                           (GROUP is each period plus Spring2018, Fall2018, 10.6_GeV if present)
- *  - Master combined JSON:  output/jsons/pi0_corrected_counts_all_groups.json
- *  - Plots:                 output/pi0_corrected_plots/<GROUP>/plot_pi0corr_<GROUP>_xB_<ix>.png
+ * Plot behavior:
+ *   - For each period (Fa18 Inb, Fa18 Out, Sp18 Inb, Sp18 Out, Sp19 Inb),
+ *     build a grid in xB-Q2-t, and in each cell plot:
+ *       - + helicity (red open circles) and
+ *       - - helicity (blue solid circles)
+ *     vs phi (degrees), using the pi0-corrected signal yields and their
+ *     propagated statistical errors.
+ *   - Plots are saved to:
+ *         <out_root_dir>/signal_yield_plots/<PeriodDir>/
+ *         plot_signal_yield_<PeriodDir>_xB_<idx>.png
+ *     where PeriodDir is the canonical directory name (e.g. Fa18_Inb)
+ *     and idx = round(1000 * xBmin).
+ *
+ * Returns:
+ *   true on success, false on failure (with diagnostics to stderr).
  */
-void compute_pi0_corrected_counts(
-    const std::vector<std::string>& periods,
-    const std::vector<Binning>& binning_scheme,
-    const std::string& total_counts_json,
-    const std::string& contamination_dir,
-    const std::string& contamination_combined,
-    const std::string& out_root_dir
-);
+bool update_pi0_corrected_counts_csv(const std::string& csv_path,
+                                     const std::string& out_root_dir);
+
+#endif // PI0_CORRECTED_COUNTS_H
