@@ -221,7 +221,7 @@ static double safe_mean(const std::vector<double>& v) {
     return n ? s / n : std::numeric_limits<double>::quiet_NaN();
 }
 
-// triple parser: "(value, stat, sys)"
+// contamination triple parser: "(value, stat, sys)"
 static bool parse_contamination_triple(const std::string& s,
                                        double& value,
                                        double& stat,
@@ -579,9 +579,7 @@ static void draw_signal_yield_canvases(const std::string& period_label,
         const int H = 260 * nrows + 240;
 
         std::vector<CellData> cells(nrows * ncols);
-        std::vector<bool> cell_active(nrows * ncols, false);
-        double canvas_max = 0.0;
-        double canvas_min_pos = std::numeric_limits<double>::infinity();
+        double canvas_max = 1.0;
 
         std::vector<double> xbmeans;
         for (int r = 0; r < csv.nrows(); ++r) {
@@ -628,12 +626,9 @@ static void draw_signal_yield_canvases(const std::string& period_label,
                                      csv.as_double(b, c_phi_min);
                           });
 
-                const int cell_index = rr * ncols + cc;
-                CellData& C = cells[cell_index];
+                CellData& C = cells[rr * ncols + cc];
                 C.X.reserve(rows_for_cell.size());
                 C.EX.assign(rows_for_cell.size(), 0.0);
-
-                bool has_q2avg = false;
 
                 for (int r : rows_for_cell) {
                     const double pmin = csv.as_double(r, c_phi_min);
@@ -646,14 +641,6 @@ static void draw_signal_yield_canvases(const std::string& period_label,
                         }
                     }
                     C.X.push_back(xphi);
-
-                    // check if Q2avg is present (for subplot skipping)
-                    if (c_q2avg >= 0) {
-                        const std::string& q2s = csv.rows[r][c_q2avg];
-                        if (!q2s.empty()) {
-                            has_q2avg = true;
-                        }
-                    }
 
                     // contamination for this bin
                     const std::string& cs = csv.rows[r][c_contam];
@@ -713,62 +700,11 @@ static void draw_signal_yield_canvases(const std::string& period_label,
                         : 0.5 * (tpair.first + tpair.second);
                     C.q2means.push_back(q2m);
                     C.tmeans.push_back(tm);
-                }
 
-                // mark this cell active iff:
-                //  - it has at least one non-empty Q2avg entry, AND
-                //  - it has at least one strictly positive yield (pos or neg)
-                bool has_positive_y = false;
-                for (double y : C.Yp) {
-                    if (std::isfinite(y) && y > 0.0) {
-                        has_positive_y = true;
-                        break;
-                    }
-                }
-                if (!has_positive_y) {
-                    for (double y : C.Ym) {
-                        if (std::isfinite(y) && y > 0.0) {
-                            has_positive_y = true;
-                            break;
-                        }
-                    }
-                }
-
-                const bool active = has_q2avg && has_positive_y;
-                cell_active[cell_index] = active;
-
-                if (active) {
-                    for (double y : C.Yp) {
-                        if (std::isfinite(y) && y > 0.0) {
-                            canvas_max = std::max(canvas_max, y);
-                            canvas_min_pos = std::min(canvas_min_pos, y);
-                        }
-                    }
-                    for (double y : C.Ym) {
-                        if (std::isfinite(y) && y > 0.0) {
-                            canvas_max = std::max(canvas_max, y);
-                            canvas_min_pos = std::min(canvas_min_pos, y);
-                        }
-                    }
+                    if (std::isfinite(S_pos)) canvas_max = std::max(canvas_max, S_pos);
+                    if (std::isfinite(S_neg)) canvas_max = std::max(canvas_max, S_neg);
                 }
             }
-        }
-
-        // if no active cells for this xB bin, skip the canvas entirely
-        bool any_active = false;
-        for (bool b : cell_active) {
-            if (b) { any_active = true; break; }
-        }
-        if (!any_active || !std::isfinite(canvas_max) || canvas_max <= 0.0 ||
-            !std::isfinite(canvas_min_pos) || canvas_min_pos <= 0.0) {
-            continue;
-        }
-
-        const double y_hi = canvas_max * 1.15;
-        double y_lo = canvas_min_pos / 1.5;
-        if (!std::isfinite(y_lo) || y_lo <= 0.0 || y_lo >= y_hi) {
-            // fallback for pathological cases; keep it positive for log scale
-            y_lo = std::max(1e-3, y_hi * 1e-3);
         }
 
         std::string cname = "c_sig_" + period_dir + "_xB_" +
@@ -791,6 +727,9 @@ static void draw_signal_yield_canvases(const std::string& period_label,
                             period_label.c_str(),
                             xb_mean_for_title));
 
+        const double y_lo = 0.0;
+        const double y_hi = std::max(1.0, canvas_max * 1.15);
+
         for (int rr = 0; rr < nrows; ++rr) {
             for (int cc = 0; cc < ncols; ++cc) {
                 pGrid->cd(rr * ncols + cc + 1);
@@ -801,17 +740,6 @@ static void draw_signal_yield_canvases(const std::string& period_label,
                 gPad->SetRightMargin(0.07);
                 gPad->SetTickx(1);
                 gPad->SetTicky(1);
-
-                const int cell_index = rr * ncols + cc;
-                const CellData& C = cells[cell_index];
-
-                // Skip subplots with no Q2avg / no yield (leave pad blank)
-                if (!cell_active[cell_index] || C.X.empty()) {
-                    continue;
-                }
-
-                // log-scale y axis
-                gPad->SetLogy(1);
 
                 TH1* frame = gPad->DrawFrame(0.0, y_lo, 360.0, y_hi);
                 frame->GetXaxis()->SetTitle("#phi (deg)");
@@ -825,6 +753,12 @@ static void draw_signal_yield_canvases(const std::string& period_label,
                 frame->GetYaxis()->SetLabelSize(label_sz);
                 frame->GetYaxis()->SetTitleOffset(1.25);
                 frame->GetXaxis()->SetTitleOffset(1.05);
+
+                const CellData& C = cells[rr * ncols + cc];
+
+                if (C.X.empty()) {
+                    continue;
+                }
 
                 TGraphErrors* gp = new TGraphErrors(
                     (int)C.X.size(),
