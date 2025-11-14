@@ -1,42 +1,25 @@
 // pi0_contamination.cpp
 // ------------------------------------------------------------
-// Overall (helicity-averaged) pi0 contamination estimator (STRICT, fail-fast)
-//   c = (N_bkg_mc / N_dvcs_csv) * (N_pi0_data / N_pi0_reco_mc)
-// with Poisson errors. DVCS counts come from CSV; eppi0 counts are re-counted.
+// Overall pi0 contamination estimator (STRICT: no aliases, no fallbacks)
+// Writes ONLY to an existing header column named exactly:
+//   "contamination ratio, <Period Label>"
+// For Fa18 Inb this is: "contamination ratio, Fa18 Inb"
 //
-// STRICT policy (no fallbacks, no auto-add columns):
-//   - Required CSV columns must exist EXACTLY; otherwise fatal() lists missing names.
-//   - No "phiavg" generic fallbacks; must have period-specific "phiavg, <Period Display>".
-//   - No auto-adding "contamination ratio, <Period Display>" — must pre-exist.
+// If that exact column is missing for a period, we fail fast.
 //
-// Cuts policy:
-//   - Global kinematic gates: open_angle_ep2 > 5 deg, |t1| < 1.0, pTmiss <= 0.20
-//   - Topology must be one of: (FD, FD), (CD, FD), (CD, FT) [hard-coded]
-//   - 3sigma exclusivity windows loaded from combined_cuts_json
-//       * eppi0 DATA counts:   eppi0_*_*  "data" block
-//       * eppi0 RECO MC:       eppi0_*_*  "mc"   block
-//       * pi0->DVCS BKG MC:    DVCS_*_*   "mc"   block
+// Cuts policy (strict, from project conventions):
+//   - open_angle_ep2 > 5 deg, (-t1) < 1.0, pTmiss <= 0.20
+//   - 3σ exclusivity cuts loaded from combined_cuts_json
+//   - Topologies: (FD, FD), (CD, FD), (CD, FT)
 //
-// Binning & phi handling:
-//   - All bins come from the CSV rows (no fixed N_PHI_BINS).
-//   - Each CSV row must define xBmin/xBmax, Q2min/Q2max, t_abs_min/max, phimin/phimax.
-//   - Point placement requires "phiavg, <Period Display>".
+// CSV policy (strict):
+//   - Never add columns. Never rename. Fail fast if target column absent.
 //
-// Plot title & axes:
-//   - Canvas title shows slice-averaged means from CSV columns:
-//       "xBavg, <Period Display>", "Q2avg, <Period Display>", "t_abs_avg, <Period Display>"
-//   - Y axes are standardized to [0, 1].
-//
-// Output:
-//   - Plots: <out_root_dir>/contamination_plots/<PeriodDir>/plot_contamination_<PeriodDir>_xB_<idx>.png
-//   - CSV write: fills pre-existing "contamination ratio, <Period Display>" per row (only if all four counts > 0).
-//
-// Parallelism:
-//   - Period-level OpenMP parallel for; threads hard-capped at 5 (never "all cores").
+// Plot aesthetics follow your DVCS total_counts style (margins etc.).
 // ------------------------------------------------------------
 
 #include "pi0_contamination.h"
-#include "periods.h" // PeriodDef, CANONICAL_PERIODS()
+#include "periods.h" // CANONICAL_PERIODS(): vector of { tree_key, label }
 
 #include <nlohmann/json.hpp>
 
@@ -49,6 +32,7 @@
 #include <TH1.h>
 #include <TStyle.h>
 #include <TROOT.h>
+#include <TString.h>
 
 #include <algorithm>
 #include <array>
@@ -79,7 +63,6 @@ namespace {
 static inline bool is_debug() { return std::getenv("PI0_CONTAM_DEBUG") != nullptr; }
 static inline bool trace_rows() { return std::getenv("PI0_CONTAM_TRACE") != nullptr; }
 
-// Hard cap on OpenMP threads for shared ifarm usage.
 static int resolve_threads(int max_workers) {
     int threads = 1;
 #ifdef _OPENMP
@@ -94,21 +77,12 @@ static int resolve_threads(int max_workers) {
     return threads;
 }
 
-// ---------- small string utils ----------
 [[noreturn]] static void fatal(const std::string& msg) {
     std::cerr << "[pi0_contamination][FATAL] " << msg << std::endl;
     std::exit(EXIT_FAILURE);
 }
-static inline std::string period_dir_label(std::string L) { for (char& c:L) if (c==' ') c='_'; return L; }
-static inline double wrap_deg(double d) {
-    if (!std::isfinite(d)) return std::numeric_limits<double>::quiet_NaN();
-    double w = std::fmod(d, 360.0);
-    if (w < 0.0) w += 360.0;
-    if (w >= 360.0) w = std::nextafter(360.0, 0.0);
-    return w;
-}
 
-// ---------- CSV doc (strict) ----------
+// ---------- CSV doc ----------
 struct CsvDoc {
     std::vector<std::string> header;
     std::map<std::string,int> index;
@@ -196,9 +170,29 @@ static void require_columns_or_die(const CsvDoc& csv, const std::vector<std::str
     }
 }
 
+// ---- title-casing helper (deterministic) ----
+static std::string title_case_token(const std::string& tok) {
+    if (tok.empty()) return tok;
+    std::string out = tok;
+    out[0] = (char)std::toupper((unsigned char)out[0]);
+    for (size_t i=1;i<out.size();++i) out[i] = (char)std::tolower((unsigned char)out[i]);
+    return out;
+}
+static std::string to_title_space(const std::string& p) {
+    // e.g., "Fa18 Inb" stays "Fa18 Inb"; "fa18_inb" -> "Fa18 Inb"
+    std::string out; out.reserve(p.size()+2);
+    std::string cur;
+    for (char c : p) {
+        if (c=='_') { if (!cur.empty()) { out += title_case_token(cur); out += ' '; cur.clear(); } }
+        else cur.push_back(c);
+    }
+    if (!cur.empty()) { out += title_case_token(cur); }
+    return out;
+}
+
 // -------- CSV row materialization (strict) --------
 struct CsvRow {
-    int row_index=-1; // index in CSV data section
+    int row_index=-1;
     double xb_min=0, xb_max=0, q2_min=0, q2_max=0, tab_min=0, tab_max=0;
     double phimin=0, phimax=360.0, phiavg=std::numeric_limits<double>::quiet_NaN();
     double xb_avg=std::numeric_limits<double>::quiet_NaN();
@@ -217,19 +211,20 @@ static std::vector<CsvRow> materialize_rows_for_period_strict(
     const CsvDoc& csv,
     const std::string& period_display)
 {
-    // Strict column requirements
+    const std::string disp = to_title_space(period_display);
+
     std::vector<std::string> required = {
         "xBmin", "xBmax", "Q2min", "Q2max", "t_abs_min", "t_abs_max",
         "phimin", "phimax",
-        "phiavg, " + period_display,
-        "xBavg, " + period_display,
-        "Q2avg, " + period_display,
-        "t_abs_avg, " + period_display,
-        dvcs_unpol_col("(FD, FD)", period_display),
-        dvcs_unpol_col("(CD, FD)", period_display),
-        dvcs_unpol_col("(CD, FT)", period_display)
+        "phiavg, " + disp,
+        "xBavg, " + disp,
+        "Q2avg, " + disp,
+        "t_abs_avg, " + disp,
+        dvcs_unpol_col("(FD, FD)", disp),
+        dvcs_unpol_col("(CD, FD)", disp),
+        dvcs_unpol_col("(CD, FT)", disp)
     };
-    require_columns_or_die(csv, required, "period \"" + period_display + "\"");
+    require_columns_or_die(csv, required, "period \"" + disp + "\"");
 
     const int c_xb_min   = csv.col("xBmin");
     const int c_xb_max   = csv.col("xBmax");
@@ -239,14 +234,14 @@ static std::vector<CsvRow> materialize_rows_for_period_strict(
     const int c_tab_max  = csv.col("t_abs_max");
     const int c_phi_min  = csv.col("phimin");
     const int c_phi_max  = csv.col("phimax");
-    const int c_phi_avg  = csv.col("phiavg, " + period_display);
-    const int c_xb_avg   = csv.col("xBavg, " + period_display);
-    const int c_q2_avg   = csv.col("Q2avg, " + period_display);
-    const int c_tab_avg  = csv.col("t_abs_avg, " + period_display);
+    const int c_phi_avg  = csv.col("phiavg, " + disp);
+    const int c_xb_avg   = csv.col("xBavg, " + disp);
+    const int c_q2_avg   = csv.col("Q2avg, " + disp);
+    const int c_tab_avg  = csv.col("t_abs_avg, " + disp);
 
-    const int c_fd_fd    = csv.col(dvcs_unpol_col("(FD, FD)", period_display));
-    const int c_cd_fd    = csv.col(dvcs_unpol_col("(CD, FD)", period_display));
-    const int c_cd_ft    = csv.col(dvcs_unpol_col("(CD, FT)", period_display));
+    const int c_fd_fd    = csv.col(dvcs_unpol_col("(FD, FD)", disp));
+    const int c_cd_fd    = csv.col(dvcs_unpol_col("(CD, FD)", disp));
+    const int c_cd_ft    = csv.col(dvcs_unpol_col("(CD, FT)", disp));
 
     std::vector<CsvRow> rows;
     rows.reserve(csv.rows.size());
@@ -283,6 +278,14 @@ static std::vector<CsvRow> materialize_rows_for_period_strict(
     return rows;
 }
 
+static inline double wrap_deg(double d) {
+    if (!std::isfinite(d)) return std::numeric_limits<double>::quiet_NaN();
+    double w = std::fmod(d, 360.0);
+    if (w < 0.0) w += 360.0;
+    if (w >= 360.0) w = std::nextafter(360.0, 0.0);
+    return w;
+}
+
 static bool row_accepts(const CsvRow& r, double xB, double Q2, double t_abs, double phi_deg) {
     if (!(xB  >= r.xb_min  && xB  < r.xb_max )) return false;
     if (!(Q2  >= r.q2_min  && Q2  < r.q2_max )) return false;
@@ -291,7 +294,7 @@ static bool row_accepts(const CsvRow& r, double xB, double Q2, double t_abs, dou
     double p = wrap_deg(phi_deg);
     double a = wrap_deg(r.phimin), b = wrap_deg(r.phimax);
     if (a <= b) return (p >= a && p < b);
-    return (p >= a || p < b); // wrap-around bin
+    return (p >= a || p < b);
 }
 
 // -------- Cuts loader --------
@@ -320,7 +323,7 @@ static CutTable load_cuts(const std::string& path) {
 
     CutTable out;
     for (auto it = j.begin(); it != j.end(); ++it) {
-        const std::string key = it.key(); // e.g. "eppi0_Fa18_Inb_FD_FD"
+        const std::string key = it.key();
         const auto& blk = it.value();
         CutPair cp;
 
@@ -362,7 +365,6 @@ struct BinderCommon {
     double t1=0, open_angle_ep2=0, pTmiss=0;
     double x=0, Q2=0, phi2=0;
 
-    // optional variables that may appear in cuts
     double Emiss2=0, Mx2=0, Mx2_1=0, Mx2_2=0, theta_gamma_gamma=0, xF=0;
     double theta_pi0_pi0=0;
 
@@ -462,7 +464,6 @@ static void plot_period(
     double tab_mean_slice,
     int slice_index)
 {
-    // Determine the Q2 and |t| unique cells present in this slice
     auto uniq_ranges = [](const std::vector<int>& idxs, const std::vector<CsvRow>& V, char which){
         std::set<std::pair<double,double>> st;
         for (int r : idxs) {
@@ -508,11 +509,10 @@ static void plot_period(
     TPad* pGrid = new TPad("pGrid","pGrid", 0.0, 0.0, 1.0, 0.90);
     pGrid->SetFillStyle(0); pGrid->Draw(); pGrid->Divide(ncols, nrows, 0.0001, 0.0001);
 
-    // Larger title, uses slice-averaged means from CSV
     pTop->cd();
     TLatex head; head.SetNDC(); head.SetTextAlign(22); head.SetTextSize(0.135);
     head.DrawLatex(0.5, 0.50,
-        Form("#pi^{0} contamination vs #phi   |   %s   |   <xB>=%.4f   <Q^{2}>=%.4f (GeV^{2})   <|t|>=%.4f (GeV^{2})",
+        Form("pi0 contamination vs phi   |   %s   |   <xB>=%.4f   <Q^{2}>=%.4f (GeV^{2})   <|t|>=%.4f (GeV^{2})",
              period_dir.c_str(), xb_mean_slice, q2_mean_slice, tab_mean_slice));
 
     for (int rr=0; rr<nrows; ++rr) {
@@ -524,11 +524,13 @@ static void plot_period(
             gPad->SetLeftMargin(0.125);
             gPad->SetRightMargin(0.06);
 
+            struct Key { int iQ, it; };
             Key K{rr, cc};
+
             auto it = by_k.find(K);
-            TH1* fr = gPad->DrawFrame(0.0, 0.0, 360.0, 1.0); // y fixed 0..1
-            fr->GetXaxis()->SetTitle("#phi (deg)");
-            fr->GetYaxis()->SetTitle("#pi^{0} contamination");
+            TH1* fr = gPad->DrawFrame(0.0, 0.0, 360.0, 1.0);
+            fr->GetXaxis()->SetTitle("phi (deg)");
+            fr->GetYaxis()->SetTitle("pi0 contamination");
             fr->GetXaxis()->CenterTitle();
             fr->GetYaxis()->CenterTitle();
             fr->GetXaxis()->SetNdivisions(505);
@@ -617,14 +619,11 @@ bool compute_pi0_contamination_overall(
 {
     namespace fs=std::filesystem;
 
-    // Load CSV once
     CsvDoc csv;
     if (!csv.load(dvcs_csv_path)) return false;
 
-    // Load 3sigma cuts once
     const CutTable cuts = load_cuts(combined_cuts_json);
 
-    // Build worklist of periods that actually have all three trees
     struct Job { std::string tree_key, display, period_dir; };
     std::vector<Job> jobs;
     for (const auto& P : CANONICAL_PERIODS()) {
@@ -635,7 +634,7 @@ bool compute_pi0_contamination_overall(
         if (eppi0DataTrees.count(key_data) && eppi0DataTrees.at(key_data) &&
             eppi0RecMcTrees.count(key_rec) && eppi0RecMcTrees.at(key_rec) &&
             eppi0BkgTrees.count(key_bkg)   && eppi0BkgTrees.at(key_bkg)) {
-            jobs.push_back({tree_key, P.label, period_dir_label(P.label)});
+            jobs.push_back({tree_key, P.label, P.label}); // P.label is like "Fa18 Inb"
         }
     }
     if (jobs.empty()) {
@@ -643,15 +642,15 @@ bool compute_pi0_contamination_overall(
         return true;
     }
 
-    // Strict: require contamination output column to pre-exist for each period
+    // Preflight: require exact output column to exist (no creation, no aliasing).
     for (const auto& J : jobs) {
-        const std::string col_out = "contamination ratio, " + J.display;
-        if (csv.col(col_out) < 0) {
-            fatal("CSV missing output column: \"" + col_out + "\"");
+        const std::string colname = "contamination ratio, " + J.display;
+        const int idx = csv.col(colname);
+        if (idx < 0) {
+            fatal("CSV missing output column: \"" + colname + "\"");
         }
     }
 
-    // Mutex for CSV write and prints
     std::mutex csv_mtx;
 
     int threads = resolve_threads(max_workers);
@@ -661,17 +660,18 @@ bool compute_pi0_contamination_overall(
 #endif
     for (int ip=0; ip<(int)jobs.size(); ++ip) {
         const auto& J = jobs[ip];
-        const std::string period_cased = to_cased_period_key(J.tree_key); // e.g. "Fa18_Inb"
+        const std::string period_cased = to_cased_period_key(J.tree_key);
+        const std::string period_dir   = [] (const std::string& s){
+            std::string out = s; for (char& c : out) if (c==' ') c='_'; return out;
+        }(J.display);
 
-        // Strictly materialize rows & DVCS counts for THIS period
         std::vector<CsvRow> rows = materialize_rows_for_period_strict(csv, J.display);
         std::vector<RowCounts> counts(rows.size());
         for (size_t i=0;i<rows.size();++i) {
             counts[i].n_dvcs_csv = rows[i].n_dvcs_csv;
-            counts[i].phi_center = rows[i].phiavg; // period-specific required; no fallback
+            counts[i].phi_center = rows[i].phiavg;
         }
 
-        // Helper map for slice grouping by xB edges
         std::map<std::pair<double,double>, std::vector<int>> slice_rows;
         for (int r=0; r<(int)rows.size(); ++r) {
             slice_rows[{rows[r].xb_min, rows[r].xb_max}].push_back(r);
@@ -691,7 +691,6 @@ bool compute_pi0_contamination_overall(
             return it->second;
         };
 
-        // Trees
         TTree* tD = getTreeOrDie(eppi0DataTrees, J.tree_key + "_eppi0", "eppi0 DATA");
         TTree* tR = getTreeOrDie(eppi0RecMcTrees, J.tree_key + "_rec_mc", "eppi0 RECO MC");
         TTree* tB = getTreeOrDie(eppi0BkgTrees,   J.tree_key + "_bkg",    "BKG->DVCS MC");
@@ -762,7 +761,7 @@ bool compute_pi0_contamination_overall(
             }
         }
 
-        // pi0->DVCS background MC counting (DVCS cuts, mc)
+        // pi0->DVCS background MC counting (apply DVCS cuts, mc)
         {
             BinderMC b; b.bind(tB);
             const Long64_t N = tB->GetEntries(); dbgB.entries = (long long)N;
@@ -781,7 +780,7 @@ bool compute_pi0_contamination_overall(
                 dbgB.pass_topo++; dbgB.by_topo[(topo_idx<0?0:topo_idx)]++;
 
                 const std::string topoKey = topo_to_key(matched_topo);
-                const auto& CP = cuts_for("DVCS", topoKey); // DVCS mc cuts
+                const auto& CP = cuts_for("DVCS", topoKey);
                 if (!passes_cuts(CP.mc, b.cut_vals())) continue; dbgB.pass_cuts++;
 
                 const double xB=b.x, Q2=b.Q2, tt=std::fabs(b.t1);
@@ -794,7 +793,6 @@ bool compute_pi0_contamination_overall(
             }
         }
 
-        // Period summaries (explicit printouts)
         long long Nd_sum=0, Ne_sum=0, Nr_sum=0, Nb_sum=0;
         int rows_with_dvcs=0, rows_with_vals=0;
         for (size_t r=0;r<rows.size();++r) {
@@ -819,11 +817,11 @@ bool compute_pi0_contamination_overall(
             dbgB.print("BKG_MC", J.display);
         }
 
-        // Write contamination ratios into CSV (strict: column must exist)
-        const std::string col_name = "contamination ratio, " + J.display;
-        const int c_contam = csv.col(col_name);
+        // Write contamination ratios into the EXACT CSV output column (no creation, no aliasing)
+        const std::string contam_col = "contamination ratio, " + J.display;
+        const int c_contam = csv.col(contam_col);
         if (c_contam < 0) {
-            fatal("CSV missing output column (unexpected late check): \"" + col_name + "\"");
+            fatal("CSV missing output column: \"" + contam_col + "\"");
         } else {
             size_t wrote=0;
             std::lock_guard<std::mutex> lock(csv_mtx);
@@ -841,36 +839,37 @@ bool compute_pi0_contamination_overall(
 #ifdef _OPENMP
             #pragma omp critical
 #endif
-            std::cout << "[pi0_contamination] Wrote " << wrote
-                      << " contamination cells into CSV for " << J.display << "\n";
+            {
+                std::cout << "[pi0_contamination] Wrote " << wrote
+                          << " values to column \"" << contam_col
+                          << "\" for period " << J.display << "\n";
+            }
         }
 
-        // Plots per xB-slice (with slice-averaged means in the title)
-        int slice_idx = 0;
+        // Optional per-xB slice plots
+        std::map<std::pair<double,double>, std::vector<int>> slice_rows;
+        for (int r=0; r<(int)rows.size(); ++r) {
+            slice_rows[{rows[r].xb_min, rows[r].xb_max}].push_back(r);
+        }
+        int slice_idx=0;
         for (const auto& kv : slice_rows) {
             const auto& idxs = kv.second;
-            if (idxs.empty()) { ++slice_idx; continue; }
-
-            double xbmu=0.0, q2mu=0.0, tabmu=0.0;
-            for (int r : idxs) { xbmu += rows[r].xb_avg; q2mu += rows[r].q2_avg; tabmu += rows[r].tab_avg; }
-            xbmu  /= (double)idxs.size();
-            q2mu  /= (double)idxs.size();
-            tabmu /= (double)idxs.size();
-
-            plot_period(J.period_dir, rows, counts, out_root_dir, idxs, xbmu, q2mu, tabmu, slice_idx);
-            ++slice_idx;
+            double xb_m=0, q2_m=0, t_m=0; int n=0;
+            for (int ridx : idxs) {
+                xb_m += rows[ridx].xb_avg;
+                q2_m += rows[ridx].q2_avg;
+                t_m  += rows[ridx].tab_avg;
+                ++n;
+            }
+            if (n>0) { xb_m/=n; q2_m/=n; t_m/=n; }
+            plot_period(period_dir, rows, counts, out_root_dir, idxs, xb_m, q2_m, t_m, ++slice_idx);
         }
-#ifdef _OPENMP
-        #pragma omp critical
-#endif
-        std::cout << "[pi0_contamination] Plotted " << J.display << " (" << J.period_dir << ")\n";
-    } // omp periods
+    } // end ip periods
 
-    // Save CSV atomically
+    // Save CSV (atomic)
     if (!csv.save_atomic(dvcs_csv_path)) {
-        std::cerr << "[pi0_contamination] ERROR: failed to save " << dvcs_csv_path << "\n";
-        return false;
+        fatal("Failed to save updated CSV: " + dvcs_csv_path);
     }
-    std::cout << "[pi0_contamination] Updated contamination ratios in: " << fs::absolute(dvcs_csv_path) << "\n";
+
     return true;
 }
