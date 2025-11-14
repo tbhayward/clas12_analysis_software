@@ -3,7 +3,7 @@
 // pi0 contamination estimator (STRICT: no aliases, no fallbacks)
 // Writes ONLY to an existing header column named exactly:
 //   "contamination ratio, <Period Label>"
-// Example: "contamination ratio, Fa18 Inb"
+// The value written is a three-tuple string: "(value, stat, sys)"
 //
 // Threading: counting in parallel, plotting and CSV saving serialized.
 // Output plots go to: <out_root_dir>/contamination_plots/<PeriodDir>/plot_contamination_<PeriodDir>_xB_<idx>.png
@@ -15,6 +15,7 @@
 //
 // CSV policy (strict):
 //   - Never add columns. Never rename. Fail fast if target column absent.
+//   - Store result in-place as "(value, stat, sys)" (commas inside cell are quoted).
 // ------------------------------------------------------------
 
 #include "pi0_contamination.h"
@@ -64,7 +65,7 @@ namespace {
 static constexpr double PI_CONST = 3.14159265358979323846;
 
 static inline bool is_debug() { return std::getenv("PI0_CONTAM_DEBUG") != nullptr; }
-static inline bool trace_rows() { return std::getenv("PI0_CONTAM_TRACE") != nullptr; }
+static inline bool trace_rows_env() { return std::getenv("PI0_CONTAM_TRACE") != nullptr; }
 
 static int resolve_threads(int max_workers) {
     int threads = 1;
@@ -155,12 +156,20 @@ struct CsvDoc {
         if (r<0 || r>=(int)rows.size() || c<0 || c>=(int)header.size()) return std::numeric_limits<double>::quiet_NaN();
         return toD(rows[r][c]);
     }
-    void set_double(int r, int c, double v) {
+    void set_string(int r, int c, const std::string& s) {
         if (r<0 || r>=(int)rows.size() || c<0 || c>=(int)header.size()) return;
-        std::ostringstream oss; oss.setf(std::ios::fixed); oss<<std::setprecision(8)<<v;
-        rows[r][c]=oss.str();
+        rows[r][c] = s;
     }
 };
+
+// Pretty three-tuple "(v, sv, sy)" with fixed precision
+static inline std::string tuple_string(double v, double sv, double sy, int prec=8) {
+    std::ostringstream oss; oss.setf(std::ios::fixed);
+    oss << "(" << std::setprecision(prec) << v
+        << ", " << std::setprecision(prec) << sv
+        << ", " << std::setprecision(prec) << sy << ")";
+    return oss.str();
+}
 
 static void require_columns_or_die(const CsvDoc& csv, const std::vector<std::string>& names, const std::string& ctx) {
     std::vector<std::string> missing;
@@ -459,8 +468,34 @@ static void ensure_dir(const std::string& d) {
     std::filesystem::create_directories(d, ec);
 }
 
-// renamed to avoid clash with C math finite(double)
 static inline bool is_fin(double v) { return std::isfinite(v); }
+
+static double avg_if_finite_or_midbin(double avg, double lo, double hi) {
+    if (is_fin(avg)) return avg;
+    if (std::isfinite(lo) && std::isfinite(hi)) return 0.5*(lo+hi);
+    return std::numeric_limits<double>::quiet_NaN();
+}
+
+struct CellMeans {
+    double xb=std::numeric_limits<double>::quiet_NaN();
+    double q2=std::numeric_limits<double>::quiet_NaN();
+    double tab=std::numeric_limits<double>::quiet_NaN();
+};
+
+// Compute cell means across the set of row indices
+static CellMeans compute_cell_means(const std::vector<int>& ridxs, const std::vector<CsvRow>& rows, double xb_lo, double xb_hi) {
+    double xb_m=0, q2_m=0, t_m=0; int nxb=0,nq2=0,nt=0;
+    for (int r : ridxs) {
+        if (is_fin(rows[r].xb_avg))  { xb_m += rows[r].xb_avg;  ++nxb; }
+        if (is_fin(rows[r].q2_avg))  { q2_m += rows[r].q2_avg;  ++nq2; }
+        if (is_fin(rows[r].tab_avg)) { t_m  += rows[r].tab_avg; ++nt;  }
+    }
+    CellMeans cm;
+    cm.xb  = (nxb>0) ? (xb_m/nxb) : avg_if_finite_or_midbin(std::numeric_limits<double>::quiet_NaN(), xb_lo, xb_hi);
+    cm.q2  = (nq2>0) ? (q2_m/nq2) : std::numeric_limits<double>::quiet_NaN();
+    cm.tab = (nt >0) ? (t_m /nt ) : std::numeric_limits<double>::quiet_NaN();
+    return cm;
+}
 
 static void plot_period(
     const std::string& period_dir,
@@ -468,11 +503,10 @@ static void plot_period(
     const std::vector<RowCounts>& cnts,
     const std::string& out_root_dir,
     const std::vector<int>& rows_in_slice,
-    double xb_mean_slice,
-    double q2_mean_slice,
-    double tab_mean_slice,
+    double xb_lo, double xb_hi,               // NOTE: xB range for this canvas
     int slice_index)
 {
+    // Unique Q2 and t_abs cells for this xB-slice
     auto uniq_ranges = [](const std::vector<int>& idxs, const std::vector<CsvRow>& V, char which){
         std::set<std::pair<double,double>> st;
         for (int r : idxs) {
@@ -488,7 +522,7 @@ static void plot_period(
         for (int i=0;i<(int)V.size();++i) if (V[i]==r) return i; return -1;
     };
 
-    struct Key { int iQ, it; };  // define ONCE
+    struct Key { int iQ, it; };
     auto lessK = [](const Key& a, const Key& b){
         if (a.iQ != b.iQ) return a.iQ < b.iQ;
         return a.it < b.it;
@@ -507,7 +541,7 @@ static void plot_period(
     const int nrows = (int)Qs.size();
     const int ncols = (int)Ts.size();
     const int W = 300*ncols + 160;
-    const int H = 260*nrows + 240;
+    const int H = 260*nrows + 260;
 
     TCanvas* c = new TCanvas(Form("c_contam_%s_xB_%d", period_dir.c_str(), slice_index), "", W, H);
     TPad* pTop  = new TPad("pTop","pTop", 0.0, 0.90, 1.0, 1.0);
@@ -515,25 +549,23 @@ static void plot_period(
     TPad* pGrid = new TPad("pGrid","pGrid", 0.0, 0.0, 1.0, 0.90);
     pGrid->SetFillStyle(0); pGrid->Draw(); pGrid->Divide(ncols, nrows, 0.0001, 0.0001);
 
+    // Canvas title: PERIOD   xB in [lo, hi]
     pTop->cd();
-    TLatex head; head.SetNDC(); head.SetTextAlign(22); head.SetTextSize(0.12);
+    TLatex head; head.SetNDC(); head.SetTextAlign(22); head.SetTextSize(0.16);
     head.DrawLatex(0.5, 0.50,
-        Form("pi0 contamination vs phi  |  %s  |  <xB>=%.4f  <Q2>=%.4f (GeV^2)  <|t|>=%.4f (GeV^2)",
-             period_dir.c_str(), xb_mean_slice, q2_mean_slice, tab_mean_slice));
+        Form("%s   xB in [%.4f, %.4f]", period_dir.c_str(), xb_lo, xb_hi));
 
     for (int rr=0; rr<nrows; ++rr) {
         for (int cc=0; cc<ncols; ++cc) {
             pGrid->cd(rr*ncols+cc+1);
             gPad->SetGrid(1,1);
-            gPad->SetTopMargin(0.22);
+            gPad->SetTopMargin(0.24);
             gPad->SetBottomMargin(0.18);
-            gPad->SetLeftMargin(0.125);   // user pref
+            gPad->SetLeftMargin(0.160);   // extra padding per request
             gPad->SetRightMargin(0.07);
 
-            Key K{rr, cc};  // reuse the SAME Key type
-
             TH1* fr = gPad->DrawFrame(0.0, 0.0, 360.0, 1.0);
-            fr->GetXaxis()->SetTitle("phi (deg)");
+            fr->GetXaxis()->SetTitle("#phi (deg)");
             fr->GetYaxis()->SetTitle("pi0 contamination");
             fr->GetXaxis()->CenterTitle();
             fr->GetYaxis()->CenterTitle();
@@ -543,9 +575,11 @@ static void plot_period(
             fr->GetXaxis()->SetLabelSize(0.060);
             fr->GetYaxis()->SetLabelSize(0.060);
 
-            auto it = by_k.find(K);
+            struct Key K { int iQ, it; };
+            auto it = by_k.find(K{rr, cc});
             if (it == by_k.end()) continue;
 
+            // Build points
             struct Pt { double x, y, ey; };
             std::vector<Pt> pts; pts.reserve(it->second.size());
 
@@ -588,8 +622,12 @@ static void plot_period(
                 gr->Draw("P SAME");
             }
 
+            // Subplot label with <xB>, <Q^{2}>, <-t>
+            const auto cm = compute_cell_means(it->second, rows, xb_lo, xb_hi);
             TLatex lab; lab.SetNDC(); lab.SetTextAlign(13); lab.SetTextSize(0.055);
-            lab.DrawLatex(0.12, 0.83, "Q2 and |t| cell");
+            lab.DrawLatex(0.12, 0.83,
+                Form("<xB>=%.4f   <Q^{2}>=%.4f (GeV^{2})   <-t>=%.4f (GeV^{2})",
+                     cm.xb, cm.q2, cm.tab));
         }
     }
 
@@ -613,13 +651,6 @@ struct BlockDbg {
                   << " topo_counts=("<<by_topo[0]<<","<<by_topo[1]<<","<<by_topo[2]<<")\n";
     }
 };
-
-// ------------ helpers for titles ------------
-static double avg_if_finite_or_midbin(double avg, double lo, double hi) {
-    if (is_fin(avg)) return avg;
-    if (std::isfinite(lo) && std::isfinite(hi)) return 0.5*(lo+hi);
-    return std::numeric_limits<double>::quiet_NaN();
-}
 
 } // end anon ns
 
@@ -681,6 +712,8 @@ bool compute_pi0_contamination_overall(
         const std::string period_dir   = [] (const std::string& s){
             std::string out = s; for (char& c : out) if (c==' ') c='_'; return out;
         }(J.display);
+
+        const bool force_trace_this_period = (to_title_space(J.display) == "Sp18 Out");
 
         std::vector<CsvRow> rows = materialize_rows_for_period_strict(csv, J.display);
         std::vector<RowCounts> counts(rows.size());
@@ -829,7 +862,28 @@ bool compute_pi0_contamination_overall(
             dbgB.print("BKG_MC", J.display);
         }
 
-        // Write contamination ratios into the EXACT CSV output column
+        // Summary on zero drivers (helps understand zeros)
+        {
+            long long zNb=0,zNd=0,zNe=0,zNr=0, ok=0;
+            for (size_t i=0;i<rows.size();++i) {
+                const bool okRow = (counts[i].n_pi0_bkg>0 && counts[i].n_dvcs_csv>0 &&
+                                    counts[i].n_pi0_data>0 && counts[i].n_pi0_reco>0);
+                if (okRow) { ok++; continue; }
+                if (counts[i].n_pi0_bkg<=0) zNb++;
+                if (counts[i].n_dvcs_csv<=0) zNd++;
+                if (counts[i].n_pi0_data<=0) zNe++;
+                if (counts[i].n_pi0_reco<=0) zNr++;
+            }
+#ifdef _OPENMP
+            #pragma omp critical
+#endif
+            {
+                std::cout << "[pi0_contamination]["<<J.display<<"] computable_rows="<<ok
+                          << " zero_Nb="<<zNb<<" zero_Nd="<<zNd<<" zero_Ne="<<zNe<<" zero_Nr="<<zNr << "\n";
+            }
+        }
+
+        // Write contamination ratios (three-tuple) into the EXACT CSV output column
         const std::string disp = to_title_space(J.display);
         const std::string contam_col = "contamination ratio, " + disp;
         const int c_contam = csv.col(contam_col);
@@ -842,27 +896,56 @@ bool compute_pi0_contamination_overall(
 #endif
             {
                 std::lock_guard<std::mutex> lock(csv_mtx);
+
+                const bool trace_rows = trace_rows_env() || (disp == "Sp18 Out");
+
                 for (size_t i=0;i<rows.size();++i) {
-                    const double Nb = (double)counts[i].n_pi0_bkg;
-                    const double Nd = (double)counts[i].n_dvcs_csv;
-                    const double Ne = (double)counts[i].n_pi0_data;
-                    const double Nr = (double)counts[i].n_pi0_reco;
+                    const auto& R = rows[i];
+                    const auto& C = counts[i];
+
+                    const double Nb = (double)C.n_pi0_bkg;
+                    const double Nd = (double)C.n_dvcs_csv;
+                    const double Ne = (double)C.n_pi0_data;
+                    const double Nr = (double)C.n_pi0_reco;
+
+                    double val=std::numeric_limits<double>::quiet_NaN();
+                    double estat=0.0, esys=0.0;
+
                     if (Nb>0.0 && Nd>0.0 && Ne>0.0 && Nr>0.0) {
-                        const double val = (Nb/Nd)*(Ne/Nr);
-                        csv.set_double(rows[i].row_index, c_contam, val);
+                        val = (Nb/Nd) * (Ne/Nr);
+                        auto rel = [](double n){ return (n>0.0) ? 1.0/std::sqrt(n) : 0.0; };
+                        const double rel2 = std::pow(rel(Nb),2) + std::pow(rel(Nd),2)
+                                          + std::pow(rel(Ne),2) + std::pow(rel(Nr),2);
+                        estat = (std::isfinite(val) ? val : 0.0) * std::sqrt(rel2);
+                        esys  = 0.0; // placeholder for future systematics
+                        csv.set_string(R.row_index, c_contam, tuple_string(val, estat, esys, 8));
                         ++wrote;
+                    } else {
+                        // Still write a value? Policy: leave empty to avoid faking zeros.
+                        // We keep cell blank if not computable.
+                        if (trace_rows) {
+                            std::ostringstream os;
+                            os.setf(std::ios::fixed);
+                            os<<std::setprecision(4);
+                            os << "[pi0_contamination][TRACE]["<<disp<<"] row="<<R.row_index
+                               << " xB=["<<R.xb_min<<","<<R.xb_max<<") Q2=["<<R.q2_min<<","<<R.q2_max<<")"
+                               << " |t|=["<<R.tab_min<<","<<R.tab_max<<") phi=["<<R.phimin<<","<<R.phimax<<")"
+                               << " counts{Nb="<<C.n_pi0_bkg<<", Nd="<<C.n_dvcs_csv
+                               << ", Ne="<<C.n_pi0_data<<", Nr="<<C.n_pi0_reco<<"}";
+                            std::cout << os.str() << "\n";
+                        }
                     }
                 }
                 if (!csv.save_atomic(dvcs_csv_path)) {
                     fatal("Failed to save updated CSV: " + dvcs_csv_path);
                 }
                 std::cout << "[pi0_contamination] Wrote " << wrote
-                          << " values to column \"" << contam_col
+                          << " tuple values to column \"" << contam_col
                           << "\" for period " << disp << " (saved)\n";
             }
         }
 
-        // Per-xB slice plots: compute slice means with finite-or-midbin fallback (titles only)
+        // Group rows by xB slice and plot; carry xB range to title
         std::map<std::pair<double,double>, std::vector<int>> slice_rows;
         for (int r=0; r<(int)rows.size(); ++r) {
             slice_rows[{rows[r].xb_min, rows[r].xb_max}].push_back(r);
@@ -875,24 +958,15 @@ bool compute_pi0_contamination_overall(
             int slice_counter_local = 0;
             for (const auto& kv : slice_rows) {
                 const auto& idxs = kv.second;
-                double xb_m=0, q2_m=0, t_m=0; int n_finite_xb=0, n_finite_q2=0, n_finite_t=0;
-                for (int ridx : idxs) {
-                    const auto& R = rows[ridx];
-                    if (is_fin(R.xb_avg))  { xb_m += R.xb_avg;  ++n_finite_xb; }
-                    if (is_fin(R.q2_avg))  { q2_m += R.q2_avg;  ++n_finite_q2; }
-                    if (is_fin(R.tab_avg)) { t_m  += R.tab_avg; ++n_finite_t; }
-                }
-                const double xb_mean_slice2 = (n_finite_xb>0) ? (xb_m/n_finite_xb)
-                    : avg_if_finite_or_midbin(std::numeric_limits<double>::quiet_NaN(), kv.first.first, kv.first.second);
-                const double q2_mean_slice2 = (n_finite_q2>0) ? (q2_m/n_finite_q2) : std::numeric_limits<double>::quiet_NaN();
-                const double t_mean_slice2  = (n_finite_t>0)  ? (t_m/n_finite_t)   : std::numeric_limits<double>::quiet_NaN();
+                const double xb_lo = kv.first.first;
+                const double xb_hi = kv.first.second;
 
                 ++slice_counter_local;
                 const std::string dir_label = [] (const std::string& s){
                     std::string out = s; for (char& c : out) if (c==' ') c='_'; return out;
                 }(disp);
                 plot_period(dir_label, rows, counts, out_root_dir, idxs,
-                            xb_mean_slice2, q2_mean_slice2, t_mean_slice2, slice_counter_local);
+                            xb_lo, xb_hi, slice_counter_local);
             }
         }
     } // end ip periods
