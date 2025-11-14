@@ -9,13 +9,13 @@
 //
 // Cuts policy (strict, from project conventions):
 //   - open_angle_ep2 > 5 deg, (-t1) < 1.0, pTmiss <= 0.20
-//   - 3σ exclusivity cuts loaded from combined_cuts_json
+//   - 3sigma exclusivity cuts loaded from combined_cuts_json
 //   - Topologies: (FD, FD), (CD, FD), (CD, FT)
 //
 // CSV policy (strict):
 //   - Never add columns. Never rename. Fail fast if target column absent.
 //
-// Plot aesthetics follow your DVCS total_counts style (margins etc.).
+// Plot aesthetics: margins consistent with project (left=0.125).
 // ------------------------------------------------------------
 
 #include "pi0_contamination.h"
@@ -179,7 +179,6 @@ static std::string title_case_token(const std::string& tok) {
     return out;
 }
 static std::string to_title_space(const std::string& p) {
-    // e.g., "Fa18 Inb" stays "Fa18 Inb"; "fa18_inb" -> "Fa18 Inb"
     std::string out; out.reserve(p.size()+2);
     std::string cur;
     for (char c : p) {
@@ -304,7 +303,6 @@ struct CutPair { VarCutMap data, mc; };
 using CutTable = std::map<std::string, CutPair>;
 
 static inline std::string to_cased_period_key(const std::string& tree_key) {
-    // "DVCS_Fa18_inb" -> "Fa18_Inb"
     if (tree_key.rfind("DVCS_", 0) == 0) {
         std::string tail = tree_key.substr(5);
         if (tail.size() >= 4) {
@@ -479,7 +477,7 @@ static void plot_period(
         for (int i=0;i<(int)V.size();++i) if (V[i]==r) return i; return -1;
     };
 
-    struct Key { int iQ, it; };
+    struct Key { int iQ, it; }; // declare ONCE here
     auto lessK = [](const Key& a, const Key& b){
         if (a.iQ != b.iQ) return a.iQ < b.iQ;
         return a.it < b.it;
@@ -524,10 +522,9 @@ static void plot_period(
             gPad->SetLeftMargin(0.125);
             gPad->SetRightMargin(0.06);
 
-            struct Key { int iQ, it; };
             Key K{rr, cc};
-
             auto it = by_k.find(K);
+
             TH1* fr = gPad->DrawFrame(0.0, 0.0, 360.0, 1.0);
             fr->GetXaxis()->SetTitle("phi (deg)");
             fr->GetYaxis()->SetTitle("pi0 contamination");
@@ -571,7 +568,6 @@ static void plot_period(
                 std::vector<double> X, Y, eX, eY;
                 X.reserve(pts.size()); Y.reserve(pts.size()); eX.assign(pts.size(),0.0); eY.reserve(pts.size());
                 for (const auto& p : pts) { X.push_back(p.x); Y.push_back(p.y); eY.push_back(p.ey); }
-
                 TGraphErrors* gr = new TGraphErrors((int)X.size(), X.data(), Y.data(), eX.data(), eY.data());
                 gr->SetMarkerStyle(20);
                 gr->SetMarkerSize(0.9);
@@ -634,7 +630,7 @@ bool compute_pi0_contamination_overall(
         if (eppi0DataTrees.count(key_data) && eppi0DataTrees.at(key_data) &&
             eppi0RecMcTrees.count(key_rec) && eppi0RecMcTrees.at(key_rec) &&
             eppi0BkgTrees.count(key_bkg)   && eppi0BkgTrees.at(key_bkg)) {
-            jobs.push_back({tree_key, P.label, P.label}); // P.label is like "Fa18 Inb"
+            jobs.push_back({tree_key, P.label, P.label});
         }
     }
     if (jobs.empty()) {
@@ -670,11 +666,6 @@ bool compute_pi0_contamination_overall(
         for (size_t i=0;i<rows.size();++i) {
             counts[i].n_dvcs_csv = rows[i].n_dvcs_csv;
             counts[i].phi_center = rows[i].phiavg;
-        }
-
-        std::map<std::pair<double,double>, std::vector<int>> slice_rows;
-        for (int r=0; r<(int)rows.size(); ++r) {
-            slice_rows[{rows[r].xb_min, rows[r].xb_max}].push_back(r);
         }
 
         auto topo_to_key = [](const std::string& s)->std::string {
@@ -846,7 +837,7 @@ bool compute_pi0_contamination_overall(
             }
         }
 
-        // Optional per-xB slice plots
+        // Per-xB slice plots (compute indices per slice for this period)
         std::map<std::pair<double,double>, std::vector<int>> slice_rows;
         for (int r=0; r<(int)rows.size(); ++r) {
             slice_rows[{rows[r].xb_min, rows[r].xb_max}].push_back(r);
