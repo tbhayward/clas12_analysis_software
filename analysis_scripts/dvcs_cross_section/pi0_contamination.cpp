@@ -522,7 +522,6 @@ static void plot_period(
             gPad->SetLeftMargin(0.125);
             gPad->SetRightMargin(0.06);
 
-            struct Key { int iQ, it; }; // shadowing prevented: local-only redeclare removed earlier; kept harmless here
             Key K{rr, cc};
             auto it = by_k.find(K);
 
