@@ -503,7 +503,7 @@ static void plot_period(
     const std::vector<RowCounts>& cnts,
     const std::string& out_root_dir,
     const std::vector<int>& rows_in_slice,
-    double xb_lo, double xb_hi,               // NOTE: xB range for this canvas
+    double xb_lo, double xb_hi,               // xB range for this canvas
     int slice_index)
 {
     // Unique Q2 and t_abs cells for this xB-slice
@@ -575,8 +575,8 @@ static void plot_period(
             fr->GetXaxis()->SetLabelSize(0.060);
             fr->GetYaxis()->SetLabelSize(0.060);
 
-            struct Key K { int iQ, it; };
-            auto it = by_k.find(K{rr, cc});
+            // FIX: do NOT redeclare a struct here; use the Key type defined above.
+            auto it = by_k.find(Key{rr, cc});
             if (it == by_k.end()) continue;
 
             // Build points
@@ -921,8 +921,7 @@ bool compute_pi0_contamination_overall(
                         csv.set_string(R.row_index, c_contam, tuple_string(val, estat, esys, 8));
                         ++wrote;
                     } else {
-                        // Still write a value? Policy: leave empty to avoid faking zeros.
-                        // We keep cell blank if not computable.
+                        // leave blank if not computable
                         if (trace_rows) {
                             std::ostringstream os;
                             os.setf(std::ios::fixed);
