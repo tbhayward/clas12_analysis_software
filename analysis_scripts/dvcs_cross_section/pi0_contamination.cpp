@@ -1,25 +1,24 @@
 // pi0_contamination.cpp
 // ------------------------------------------------------------
-// Overall pi0 contamination estimator (STRICT: no aliases, no fallbacks)
+// pi0 contamination estimator (STRICT: no aliases, no fallbacks)
 // Writes ONLY to an existing header column named exactly:
 //   "contamination ratio, <Period Label>"
-// e.g. for Fa18 Inb: "contamination ratio, Fa18 Inb"
+// Example: "contamination ratio, Fa18 Inb"
 //
-// If that exact column is missing for a period, we fail fast.
+// Threading: counting in parallel, plotting and CSV saving serialized.
+// Output plots go to: <out_root_dir>/contamination_plots/<PeriodDir>/plot_contamination_<PeriodDir>_xB_<idx>.png
 //
-// Cuts policy (strict, from project conventions):
+// Cuts policy (strict):
 //   - open_angle_ep2 > 5 deg, (-t1) < 1.0, pTmiss <= 0.20
-//   - 3sigma exclusivity cuts loaded from combined_cuts_json
+//   - 3-sigma exclusivity cuts loaded from combined_cuts_json
 //   - Topologies: (FD, FD), (CD, FD), (CD, FT)
 //
 // CSV policy (strict):
 //   - Never add columns. Never rename. Fail fast if target column absent.
-//
-// Plot aesthetics: margins consistent with project (left=0.125).
 // ------------------------------------------------------------
 
 #include "pi0_contamination.h"
-#include "periods.h" // CANONICAL_PERIODS(): vector of { tree_key, label }
+#include "periods.h"
 
 #include <nlohmann/json.hpp>
 
@@ -36,6 +35,7 @@
 
 #include <algorithm>
 #include <array>
+#include <atomic>
 #include <cctype>
 #include <cmath>
 #include <cstdlib>
@@ -342,7 +342,7 @@ static CutTable load_cuts(const std::string& path) {
         fill_one("mc",   cp.mc);
         if (!cp.data.empty() || !cp.mc.empty()) out[key] = std::move(cp);
     }
-    if (out.empty()) fatal("Cuts JSON contains no DVCS_* or eppi0_* blocks with numeric mean/std.");
+    if (out.empty()) fatal("Cuts JSON contains no usable blocks with numeric mean/std.");
     return out;
 }
 static inline bool within3(double v, const Stats& s) {
@@ -451,6 +451,11 @@ static bool dir_exists(const std::string& d) {
     return std::filesystem::exists(d, ec);
 }
 
+static void ensure_dir(const std::string& d) {
+    std::error_code ec;
+    std::filesystem::create_directories(d, ec);
+}
+
 static void plot_period(
     const std::string& period_dir,
     const std::vector<CsvRow>& rows,
@@ -491,36 +496,33 @@ static void plot_period(
     }
 
     const std::string plot_dir = (std::filesystem::path(out_root_dir) / "contamination_plots" / period_dir).string();
-    if (!dir_exists(plot_dir)) {
-        std::cerr << "[pi0_contamination] WARNING: plot directory missing: " << plot_dir
-                  << " (did you run makeOutputDirs()?)\n";
-    }
+    ensure_dir(plot_dir);
 
     const int nrows = (int)Qs.size();
     const int ncols = (int)Ts.size();
-    const int W = 260*ncols + 140;
-    const int H = 230*nrows + 200;
+    const int W = 300*ncols + 160;
+    const int H = 260*nrows + 240;
 
-    TCanvas* c = new TCanvas(Form("c_contam_%s_xB%d", period_dir.c_str(), slice_index), "", W, H);
+    TCanvas* c = new TCanvas(Form("c_contam_%s_xB_%d", period_dir.c_str(), slice_index), "", W, H);
     TPad* pTop  = new TPad("pTop","pTop", 0.0, 0.90, 1.0, 1.0);
     pTop->SetFillStyle(0); pTop->Draw();
     TPad* pGrid = new TPad("pGrid","pGrid", 0.0, 0.0, 1.0, 0.90);
     pGrid->SetFillStyle(0); pGrid->Draw(); pGrid->Divide(ncols, nrows, 0.0001, 0.0001);
 
     pTop->cd();
-    TLatex head; head.SetNDC(); head.SetTextAlign(22); head.SetTextSize(0.135);
+    TLatex head; head.SetNDC(); head.SetTextAlign(22); head.SetTextSize(0.12);
     head.DrawLatex(0.5, 0.50,
-        Form("pi0 contamination vs phi   |   %s   |   <xB>=%.4f   <Q^{2}>=%.4f (GeV^{2})   <|t|>=%.4f (GeV^{2})",
+        Form("pi0 contamination vs phi  |  %s  |  <xB>=%.4f  <Q2>=%.4f (GeV^2)  <|t|>=%.4f (GeV^2)",
              period_dir.c_str(), xb_mean_slice, q2_mean_slice, tab_mean_slice));
 
     for (int rr=0; rr<nrows; ++rr) {
         for (int cc=0; cc<ncols; ++cc) {
             pGrid->cd(rr*ncols+cc+1);
             gPad->SetGrid(1,1);
-            gPad->SetTopMargin(0.18);
-            gPad->SetBottomMargin(0.14);
+            gPad->SetTopMargin(0.22);
+            gPad->SetBottomMargin(0.18);
             gPad->SetLeftMargin(0.125);
-            gPad->SetRightMargin(0.06);
+            gPad->SetRightMargin(0.07);
 
             Key K{rr, cc};
             auto it = by_k.find(K);
@@ -531,6 +533,10 @@ static void plot_period(
             fr->GetXaxis()->CenterTitle();
             fr->GetYaxis()->CenterTitle();
             fr->GetXaxis()->SetNdivisions(505);
+            fr->GetXaxis()->SetTitleSize(0.070);
+            fr->GetYaxis()->SetTitleSize(0.070);
+            fr->GetXaxis()->SetLabelSize(0.060);
+            fr->GetYaxis()->SetLabelSize(0.060);
 
             if (it == by_k.end()) continue;
 
@@ -566,21 +572,22 @@ static void plot_period(
             std::sort(pts.begin(), pts.end(), [](const Pt& a, const Pt& b){ return a.x < b.x; });
             if (!pts.empty()) {
                 std::vector<double> X, Y, eX, eY;
-                X.reserve(pts.size()); Y.reserve(pts.size()); eX.assign(pts.size(),0.0); eY.reserve(pts.size());
+                X.reserve(pts.size()); Y.reserve(pts.size()); eY.reserve(pts.size());
                 for (const auto& p : pts) { X.push_back(p.x); Y.push_back(p.y); eY.push_back(p.ey); }
+                eX.assign(pts.size(), 0.0);
                 TGraphErrors* gr = new TGraphErrors((int)X.size(), X.data(), Y.data(), eX.data(), eY.data());
                 gr->SetMarkerStyle(20);
-                gr->SetMarkerSize(0.9);
-                gr->SetLineWidth(2);
+                gr->SetMarkerSize(0.7);
+                gr->SetLineWidth(1);
                 gr->Draw("P SAME");
             }
 
-            TLatex lab; lab.SetNDC(); lab.SetTextAlign(13); lab.SetTextSize(0.045);
-            lab.DrawLatex(0.14, 0.96, "Q^{2} and |t| cell");
+            TLatex lab; lab.SetNDC(); lab.SetTextAlign(13); lab.SetTextSize(0.055);
+            lab.DrawLatex(0.12, 0.83, "Q2 and |t| cell");
         }
     }
 
-    const std::string fpath = (std::filesystem::path(out_root_dir) /
+    const std::string fpath = (std::filesystem::path(plot_dir) /
         ("plot_contamination_" + period_dir + "_xB_" + std::to_string(slice_index) + ".png")).string();
     c->SaveAs(fpath.c_str());
     delete c;
@@ -601,7 +608,14 @@ struct BlockDbg {
     }
 };
 
-// ------------ Core ------------
+// ------------ helpers for titles ------------
+static inline bool finite(double v) { return std::isfinite(v); }
+static double avg_if_finite_or_midbin(double avg, double lo, double hi) {
+    if (finite(avg)) return avg;
+    if (finite(lo) && finite(hi)) return 0.5*(lo+hi);
+    return std::numeric_limits<double>::quiet_NaN();
+}
+
 } // end anon ns
 
 bool compute_pi0_contamination_overall(
@@ -613,6 +627,10 @@ bool compute_pi0_contamination_overall(
     const std::string& out_root_dir,
     int max_workers)
 {
+    // Batch mode and ROOT thread safety for I/O. Graphics will still be serialized.
+    gROOT->SetBatch(kTRUE);
+    ROOT::EnableThreadSafety();
+
     namespace fs=std::filesystem;
 
     CsvDoc csv;
@@ -809,7 +827,7 @@ bool compute_pi0_contamination_overall(
             dbgB.print("BKG_MC", J.display);
         }
 
-        // Write contamination ratios into the EXACT CSV output column (no creation, no aliasing)
+        // Write contamination ratios into the EXACT CSV output column
         const std::string disp = to_title_space(J.display);
         const std::string contam_col = "contamination ratio, " + disp;
         const int c_contam = csv.col(contam_col);
@@ -817,55 +835,68 @@ bool compute_pi0_contamination_overall(
             fatal("CSV missing output column: \"" + contam_col + "\"");
         } else {
             size_t wrote=0;
-            std::lock_guard<std::mutex> lock(csv_mtx);
-            for (size_t i=0;i<rows.size();++i) {
-                const double Nb = (double)counts[i].n_pi0_bkg;
-                const double Nd = (double)counts[i].n_dvcs_csv;
-                const double Ne = (double)counts[i].n_pi0_data;
-                const double Nr = (double)counts[i].n_pi0_reco;
-                if (Nb>0.0 && Nd>0.0 && Ne>0.0 && Nr>0.0) {
-                    const double val = (Nb/Nd)*(Ne/Nr);
-                    csv.set_double(rows[i].row_index, c_contam, val);
-                    ++wrote;
-                }
-            }
 #ifdef _OPENMP
             #pragma omp critical
 #endif
             {
+                std::lock_guard<std::mutex> lock(csv_mtx);
+                for (size_t i=0;i<rows.size();++i) {
+                    const double Nb = (double)counts[i].n_pi0_bkg;
+                    const double Nd = (double)counts[i].n_dvcs_csv;
+                    const double Ne = (double)counts[i].n_pi0_data;
+                    const double Nr = (double)counts[i].n_pi0_reco;
+                    if (Nb>0.0 && Nd>0.0 && Ne>0.0 && Nr>0.0) {
+                        const double val = (Nb/Nd)*(Ne/Nr);
+                        csv.set_double(rows[i].row_index, c_contam, val);
+                        ++wrote;
+                    }
+                }
+                // Immediate atomic save per period so earlier work survives any later crash
+                if (!csv.save_atomic(dvcs_csv_path)) {
+                    fatal("Failed to save updated CSV: " + dvcs_csv_path);
+                }
                 std::cout << "[pi0_contamination] Wrote " << wrote
                           << " values to column \"" << contam_col
-                          << "\" for period " << disp << "\n";
+                          << "\" for period " << disp << " (saved)\n";
             }
         }
 
-        // Per-xB slice plots
+        // Per-xB slice plots: compute slice means with finite-or-midbin fallback (titles only)
         std::map<std::pair<double,double>, std::vector<int>> slice_rows;
         for (int r=0; r<(int)rows.size(); ++r) {
             slice_rows[{rows[r].xb_min, rows[r].xb_max}].push_back(r);
         }
-        int slice_idx=0;
-        for (const auto& kv : slice_rows) {
-            const auto& idxs = kv.second;
-            double xb_m=0, q2_m=0, t_m=0; int n=0;
-            for (int ridx : idxs) {
-                xb_m += rows[ridx].xb_avg;
-                q2_m += rows[ridx].q2_avg;
-                t_m  += rows[ridx].tab_avg;
-                ++n;
+
+#ifdef _OPENMP
+        #pragma omp critical  // serialize ROOT graphics
+#endif
+        {
+            for (const auto& kv : slice_rows) {
+                const auto& idxs = kv.second;
+                double xb_m=0, q2_m=0, t_m=0; int n_finite_xb=0, n_finite_q2=0, n_finite_t=0;
+                for (int ridx : idxs) {
+                    const auto& R = rows[ridx];
+                    if (finite(R.xb_avg))  { xb_m += R.xb_avg;  ++n_finite_xb; }
+                    if (finite(R.q2_avg))  { q2_m += R.q2_avg;  ++n_finite_q2; }
+                    if (finite(R.tab_avg)) { t_m  += R.tab_avg; ++n_finite_t; }
+                }
+                const double xb_mean_slice = (n_finite_xb>0) ? (xb_m/n_finite_xb)
+                    : avg_if_finite_or_midbin(std::numeric_limits<double>::quiet_NaN(), kv.first.first, kv.first.second);
+                // For q2,t we do not have a single bin pair per slice; approximate by averaging finite values if present.
+                const double q2_mean_slice = (n_finite_q2>0) ? (q2_m/n_finite_q2) : std::numeric_limits<double>::quiet_NaN();
+                const double t_mean_slice  = (n_finite_t>0)  ? (t_m/n_finite_t)   : std::numeric_limits<double>::quiet_NaN();
+
+                static int slice_counter = 0;
+                ++slice_counter;
+                const std::string dir_label = [] (const std::string& s){
+                    std::string out = s; for (char& c : out) if (c==' ') c='_'; return out;
+                }(disp);
+                plot_period(dir_label, rows, counts, out_root_dir, idxs,
+                            xb_mean_slice, q2_mean_slice, t_mean_slice, slice_counter);
             }
-            if (n>0) { xb_m/=n; q2_m/=n; t_m/=n; }
-            const std::string dir_label = [] (const std::string& s){
-                std::string out = s; for (char& c : out) if (c==' ') c='_'; return out;
-            }(disp);
-            plot_period(dir_label, rows, counts, out_root_dir, idxs, xb_m, q2_m, t_m, ++slice_idx);
         }
     } // end ip periods
 
-    // Save CSV (atomic)
-    if (!csv.save_atomic(dvcs_csv_path)) {
-        fatal("Failed to save updated CSV: " + dvcs_csv_path);
-    }
-
+    // No final save needed; we saved per period.
     return true;
 }
