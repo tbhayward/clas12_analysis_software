@@ -622,7 +622,6 @@ static void plot_period(
                                       + std::pow(rel(Ne),2) + std::pow(rel(Nr),2);
                     err = (std::isfinite(val) ? val : 0.0) * std::sqrt(rel2);
                 } else {
-                    // optional trace to diagnose why a bin is empty
                     if (trace_rows_env()) {
                         std::cout << "[pi0_contamination][TRACE_PLOT] skip row="<<R.row_index
                                   << " {Nd="<< (long long)Nd << ", Nr="<<(long long)Nr
@@ -658,7 +657,6 @@ static void plot_period(
         }
     }
 
-    const std::string plot_dir = (std::filesystem::path(out_root_dir) / "contamination_plots" / period_dir).string();
     const std::string fpath = (std::filesystem::path(plot_dir) /
         ("plot_contamination_" + period_dir + "_xB_" + std::to_string(slice_index) + ".png")).string();
     c->SaveAs(fpath.c_str());
