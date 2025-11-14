@@ -456,6 +456,9 @@ static void ensure_dir(const std::string& d) {
     std::filesystem::create_directories(d, ec);
 }
 
+// renamed to avoid clash with C math finite(double)
+static inline bool is_fin(double v) { return std::isfinite(v); }
+
 static void plot_period(
     const std::string& period_dir,
     const std::vector<CsvRow>& rows,
@@ -524,8 +527,8 @@ static void plot_period(
             gPad->SetLeftMargin(0.125);
             gPad->SetRightMargin(0.07);
 
+            struct Key { int iQ, it; };
             Key K{rr, cc};
-            auto it = by_k.find(K);
 
             TH1* fr = gPad->DrawFrame(0.0, 0.0, 360.0, 1.0);
             fr->GetXaxis()->SetTitle("phi (deg)");
@@ -538,6 +541,7 @@ static void plot_period(
             fr->GetXaxis()->SetLabelSize(0.060);
             fr->GetYaxis()->SetLabelSize(0.060);
 
+            auto it = by_k.find(K);
             if (it == by_k.end()) continue;
 
             struct Pt { double x, y, ey; };
@@ -609,10 +613,9 @@ struct BlockDbg {
 };
 
 // ------------ helpers for titles ------------
-static inline bool finite(double v) { return std::isfinite(v); }
 static double avg_if_finite_or_midbin(double avg, double lo, double hi) {
-    if (finite(avg)) return avg;
-    if (finite(lo) && finite(hi)) return 0.5*(lo+hi);
+    if (is_fin(avg)) return avg;
+    if (std::isfinite(lo) && std::isfinite(hi)) return 0.5*(lo+hi);
     return std::numeric_limits<double>::quiet_NaN();
 }
 
@@ -627,7 +630,6 @@ bool compute_pi0_contamination_overall(
     const std::string& out_root_dir,
     int max_workers)
 {
-    // Batch mode and ROOT thread safety for I/O. Graphics will still be serialized.
     gROOT->SetBatch(kTRUE);
     ROOT::EnableThreadSafety();
 
@@ -851,7 +853,6 @@ bool compute_pi0_contamination_overall(
                         ++wrote;
                     }
                 }
-                // Immediate atomic save per period so earlier work survives any later crash
                 if (!csv.save_atomic(dvcs_csv_path)) {
                     fatal("Failed to save updated CSV: " + dvcs_csv_path);
                 }
@@ -871,32 +872,30 @@ bool compute_pi0_contamination_overall(
         #pragma omp critical  // serialize ROOT graphics
 #endif
         {
+            int slice_counter_local = 0;
             for (const auto& kv : slice_rows) {
                 const auto& idxs = kv.second;
                 double xb_m=0, q2_m=0, t_m=0; int n_finite_xb=0, n_finite_q2=0, n_finite_t=0;
                 for (int ridx : idxs) {
                     const auto& R = rows[ridx];
-                    if (finite(R.xb_avg))  { xb_m += R.xb_avg;  ++n_finite_xb; }
-                    if (finite(R.q2_avg))  { q2_m += R.q2_avg;  ++n_finite_q2; }
-                    if (finite(R.tab_avg)) { t_m  += R.tab_avg; ++n_finite_t; }
+                    if (is_fin(R.xb_avg))  { xb_m += R.xb_avg;  ++n_finite_xb; }
+                    if (is_fin(R.q2_avg))  { q2_m += R.q2_avg;  ++n_finite_q2; }
+                    if (is_fin(R.tab_avg)) { t_m  += R.tab_avg; ++n_finite_t; }
                 }
                 const double xb_mean_slice = (n_finite_xb>0) ? (xb_m/n_finite_xb)
                     : avg_if_finite_or_midbin(std::numeric_limits<double>::quiet_NaN(), kv.first.first, kv.first.second);
-                // For q2,t we do not have a single bin pair per slice; approximate by averaging finite values if present.
                 const double q2_mean_slice = (n_finite_q2>0) ? (q2_m/n_finite_q2) : std::numeric_limits<double>::quiet_NaN();
                 const double t_mean_slice  = (n_finite_t>0)  ? (t_m/n_finite_t)   : std::numeric_limits<double>::quiet_NaN();
 
-                static int slice_counter = 0;
-                ++slice_counter;
+                ++slice_counter_local;
                 const std::string dir_label = [] (const std::string& s){
                     std::string out = s; for (char& c : out) if (c==' ') c='_'; return out;
                 }(disp);
                 plot_period(dir_label, rows, counts, out_root_dir, idxs,
-                            xb_mean_slice, q2_mean_slice, t_mean_slice, slice_counter);
+                            xb_mean_slice, q2_mean_slice, t_mean_slice, slice_counter_local);
             }
         }
     } // end ip periods
 
-    // No final save needed; we saved per period.
     return true;
 }
