@@ -32,6 +32,7 @@
 #include <TStyle.h>
 #include <TROOT.h>
 #include <TString.h>
+#include <TVirtualPad.h>
 
 #include <algorithm>
 #include <array>
@@ -59,6 +60,8 @@
 #endif
 
 namespace {
+
+static constexpr double PI_CONST = 3.14159265358979323846;
 
 static inline bool is_debug() { return std::getenv("PI0_CONTAM_DEBUG") != nullptr; }
 static inline bool trace_rows() { return std::getenv("PI0_CONTAM_TRACE") != nullptr; }
@@ -485,7 +488,7 @@ static void plot_period(
         for (int i=0;i<(int)V.size();++i) if (V[i]==r) return i; return -1;
     };
 
-    struct Key { int iQ, it; };
+    struct Key { int iQ, it; };  // define ONCE
     auto lessK = [](const Key& a, const Key& b){
         if (a.iQ != b.iQ) return a.iQ < b.iQ;
         return a.it < b.it;
@@ -524,11 +527,10 @@ static void plot_period(
             gPad->SetGrid(1,1);
             gPad->SetTopMargin(0.22);
             gPad->SetBottomMargin(0.18);
-            gPad->SetLeftMargin(0.125);
+            gPad->SetLeftMargin(0.125);   // user pref
             gPad->SetRightMargin(0.07);
 
-            struct Key { int iQ, it; };
-            Key K{rr, cc};
+            Key K{rr, cc};  // reuse the SAME Key type
 
             TH1* fr = gPad->DrawFrame(0.0, 0.0, 360.0, 1.0);
             fr->GetXaxis()->SetTitle("phi (deg)");
@@ -633,8 +635,6 @@ bool compute_pi0_contamination_overall(
     gROOT->SetBatch(kTRUE);
     ROOT::EnableThreadSafety();
 
-    namespace fs=std::filesystem;
-
     CsvDoc csv;
     if (!csv.load(dvcs_csv_path)) return false;
 
@@ -732,7 +732,7 @@ bool compute_pi0_contamination_overall(
                 if (!passes_cuts(CP.data, b.cut_vals())) continue; dbgD.pass_cuts++;
 
                 const double xB=b.x, Q2=b.Q2, tt=std::fabs(b.t1);
-                const double phi_deg = wrap_deg(b.phi2 * 180.0 / M_PI);
+                const double phi_deg = wrap_deg(b.phi2 * 180.0 / PI_CONST);
                 bool matched=false;
                 for (size_t r=0;r<rows.size();++r) {
                     if (row_accepts(rows[r], xB, Q2, tt, phi_deg)) { counts[r].n_pi0_data++; matched=true; break; }
@@ -764,7 +764,7 @@ bool compute_pi0_contamination_overall(
                 if (!passes_cuts(CP.mc, b.cut_vals())) continue; dbgR.pass_cuts++;
 
                 const double xB=b.x, Q2=b.Q2, tt=std::fabs(b.t1);
-                const double phi_deg = wrap_deg(b.phi2 * 180.0 / M_PI);
+                const double phi_deg = wrap_deg(b.phi2 * 180.0 / PI_CONST);
                 bool matched=false;
                 for (size_t r=0;r<rows.size();++r) {
                     if (row_accepts(rows[r], xB, Q2, tt, phi_deg)) { counts[r].n_pi0_reco++; matched=true; break; }
@@ -796,7 +796,7 @@ bool compute_pi0_contamination_overall(
                 if (!passes_cuts(CP.mc, b.cut_vals())) continue; dbgB.pass_cuts++;
 
                 const double xB=b.x, Q2=b.Q2, tt=std::fabs(b.t1);
-                const double phi_deg = wrap_deg(b.phi2 * 180.0 / M_PI);
+                const double phi_deg = wrap_deg(b.phi2 * 180.0 / PI_CONST);
                 bool matched=false;
                 for (size_t r=0;r<rows.size();++r) {
                     if (row_accepts(rows[r], xB, Q2, tt, phi_deg)) { counts[r].n_pi0_bkg++; matched=true; break; }
@@ -882,17 +882,17 @@ bool compute_pi0_contamination_overall(
                     if (is_fin(R.q2_avg))  { q2_m += R.q2_avg;  ++n_finite_q2; }
                     if (is_fin(R.tab_avg)) { t_m  += R.tab_avg; ++n_finite_t; }
                 }
-                const double xb_mean_slice = (n_finite_xb>0) ? (xb_m/n_finite_xb)
+                const double xb_mean_slice2 = (n_finite_xb>0) ? (xb_m/n_finite_xb)
                     : avg_if_finite_or_midbin(std::numeric_limits<double>::quiet_NaN(), kv.first.first, kv.first.second);
-                const double q2_mean_slice = (n_finite_q2>0) ? (q2_m/n_finite_q2) : std::numeric_limits<double>::quiet_NaN();
-                const double t_mean_slice  = (n_finite_t>0)  ? (t_m/n_finite_t)   : std::numeric_limits<double>::quiet_NaN();
+                const double q2_mean_slice2 = (n_finite_q2>0) ? (q2_m/n_finite_q2) : std::numeric_limits<double>::quiet_NaN();
+                const double t_mean_slice2  = (n_finite_t>0)  ? (t_m/n_finite_t)   : std::numeric_limits<double>::quiet_NaN();
 
                 ++slice_counter_local;
                 const std::string dir_label = [] (const std::string& s){
                     std::string out = s; for (char& c : out) if (c==' ') c='_'; return out;
                 }(disp);
                 plot_period(dir_label, rows, counts, out_root_dir, idxs,
-                            xb_mean_slice, q2_mean_slice, t_mean_slice, slice_counter_local);
+                            xb_mean_slice2, q2_mean_slice2, t_mean_slice2, slice_counter_local);
             }
         }
     } // end ip periods
