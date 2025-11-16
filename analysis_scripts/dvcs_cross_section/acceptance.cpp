@@ -1,749 +1,1105 @@
 // acceptance.cpp
+// DVCS acceptance from non-radiative MC:
+//   - acceptance, <period> = N_rec / N_gen per (xB, Q2, |t|, phi) bin
+//   - N_rec from reconstructed MC with global DVCS exclusivity cuts
+//     AND 3 sigma cuts loaded from combined_cuts.json
+//   - N_gen from generated MC without exclusivity cuts
+//   - Periods: Fa18 Inb, Fa18 Out, Sp19 Inb, Sp18 Inb, Sp18 Out
+//   - Produces per-period acceptance vs phi plots in the usual
+//     xB by (Q2, |t|) canvas layout under output/acceptance/<PeriodDir>/.
+
 #include "acceptance.h"
 
+#include <nlohmann/json.hpp>
+
+#include <TTree.h>
 #include <TCanvas.h>
 #include <TGraphErrors.h>
-#include <TGaxis.h>
 #include <TLatex.h>
-#include <TLegend.h>
-#include <TStyle.h>
 #include <TPad.h>
 #include <TH1.h>
-#include <TTree.h>
+#include <TLegend.h>
+#include <TROOT.h>
+#include <TStyle.h>
+#include <TError.h>
 
 #include <algorithm>
 #include <cctype>
 #include <cmath>
+#include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <iomanip>
 #include <iostream>
+#include <limits>
 #include <map>
 #include <set>
 #include <sstream>
-#include <stdexcept>
 #include <string>
-#include <tuple>
+#include <unordered_map>
 #include <utility>
 #include <vector>
+#include <cstdio>
 
 namespace {
 
-constexpr int    N_PHI_BINS = 12;
-constexpr double TWO_PI     = 2.0 * M_PI;
+using nlohmann::json;
 
-// ---------------- style bootstrap ----------------
-struct StyleInit {
-    StyleInit() {
-        gStyle->SetOptTitle(0);
-        gStyle->SetOptStat(0);
-        gStyle->SetFrameLineWidth(2);
-        gStyle->SetLineWidth(2);
-        gStyle->SetPadTickX(1);
-        gStyle->SetPadTickY(1);
-        gStyle->SetLegendBorderSize(1);
-        const int rf = 42;
-        gStyle->SetTitleFont(rf, "XYZ");
-        gStyle->SetLabelFont(rf, "XYZ");
-        gStyle->SetTextFont(rf);
+struct CsvDoc {
+    std::vector<std::string> header;
+    std::unordered_map<std::string,int> index;
+    std::vector<std::vector<std::string>> rows;
+
+    static std::vector<std::string> split_csv_line(const std::string& line) {
+        std::vector<std::string> out;
+        std::string cur;
+        bool inq = false;
+        for (char c : line) {
+            if (c == '"') {
+                inq = !inq;
+                continue;
+            }
+            if (c == ',' && !inq) {
+                out.push_back(cur);
+                cur.clear();
+            } else {
+                cur.push_back(c);
+            }
+        }
+        out.push_back(cur);
+        return out;
     }
-} _style_guard;
 
-// ---------------- helpers ----------------
-static inline std::string toLower(std::string s) {
-    std::transform(s.begin(), s.end(), s.begin(),
-                   [](unsigned char c){ return std::tolower(c); });
+    static void write_field(std::ostream& os, const std::string& s) {
+        bool needq = s.find(',') != std::string::npos || s.find('"') != std::string::npos;
+        if (!needq) {
+            os << s;
+            return;
+        }
+        os << '"';
+        for (char ch : s) {
+            if (ch == '"') {
+                os << "\"\"";
+            } else {
+                os << ch;
+            }
+        }
+        os << '"';
+    }
+
+    static double to_double(const std::string& s) {
+        if (s.empty()) return std::numeric_limits<double>::quiet_NaN();
+        char* e = nullptr;
+        double v = std::strtod(s.c_str(), &e);
+        if (e == s.c_str()) {
+            return std::numeric_limits<double>::quiet_NaN();
+        }
+        return v;
+    }
+
+    bool load(const std::string& path) {
+        std::ifstream fin(path);
+        if (!fin.is_open()) {
+            std::cerr << "[acceptance] ERROR: cannot open CSV: " << path << "\n";
+            return false;
+        }
+        std::string line;
+        if (!std::getline(fin, line)) {
+            std::cerr << "[acceptance] ERROR: empty CSV: " << path << "\n";
+            return false;
+        }
+        header = split_csv_line(line);
+        index.clear();
+        for (int i = 0; i < (int)header.size(); ++i) {
+            index[header[i]] = i;
+        }
+        rows.clear();
+        while (std::getline(fin, line)) {
+            if (line.empty()) continue;
+            rows.push_back(split_csv_line(line));
+        }
+        for (auto& r : rows) {
+            r.resize(header.size());
+        }
+        return true;
+    }
+
+    bool save_atomic(const std::string& path) const {
+        const std::string tmp = path + ".tmp";
+        {
+            std::ofstream fout(tmp);
+            if (!fout.is_open()) {
+                std::cerr << "[acceptance] ERROR: cannot write CSV tmp: " << tmp << "\n";
+                return false;
+            }
+            for (size_t i = 0; i < header.size(); ++i) {
+                write_field(fout, header[i]);
+                if (i + 1 < header.size()) fout << ',';
+            }
+            fout << "\n";
+            for (const auto& row : rows) {
+                for (size_t i = 0; i < row.size(); ++i) {
+                    write_field(fout, row[i]);
+                    if (i + 1 < row.size()) fout << ',';
+                }
+                fout << "\n";
+            }
+        }
+        std::error_code ec;
+        std::filesystem::rename(tmp, path, ec);
+        if (ec) {
+            std::remove(path.c_str());
+            std::filesystem::rename(tmp, path, ec);
+            if (ec) {
+                std::cerr << "[acceptance] ERROR: atomic rename failed ("
+                          << ec.message() << ")\n";
+                return false;
+            }
+        }
+        return true;
+    }
+
+    int nrows() const { return (int)rows.size(); }
+
+    int col_index(const std::string& name) const {
+        auto it = index.find(name);
+        return (it == index.end()) ? -1 : it->second;
+    }
+
+    double as_double(int r, int c) const {
+        if (r < 0 || r >= nrows()) return std::numeric_limits<double>::quiet_NaN();
+        if (c < 0 || c >= (int)header.size()) return std::numeric_limits<double>::quiet_NaN();
+        return to_double(rows[r][c]);
+    }
+};
+
+static inline double PI() { return 3.14159265358979323846; }
+
+static inline double RAD2DEG(double r) { return r * 180.0 / PI(); }
+
+static inline double wrap_deg(double phi) {
+    double x = std::fmod(phi, 360.0);
+    if (x < 0.0) x += 360.0;
+    return x;
+}
+
+static inline std::string to_lower_nospace(std::string s) {
+    std::string out;
+    out.reserve(s.size());
+    for (char c : s) {
+        if (c == ' ' || c == '\t' || c == '_') continue;
+        out.push_back((char)std::tolower((unsigned char)c));
+    }
+    return out;
+}
+
+static std::string canonical_period_dir(const std::string& L) {
+    const std::string k = to_lower_nospace(L);
+    if (k == "fa18inb") return "Fa18_Inb";
+    if (k == "fa18out") return "Fa18_Out";
+    if (k == "fa18inbsupp") return "Fa18_Inb_Supp";
+    if (k == "sp18inb") return "Sp18_Inb";
+    if (k == "sp18out") return "Sp18_Out";
+    if (k == "sp19inb") return "Sp19_Inb";
+    std::string s = L;
+    for (char& c : s) {
+        if (c == ' ') c = '_';
+    }
     return s;
 }
 
-static std::string periodToRunTagKey(const std::string& period) {
-    // "DVCS_Fa18_inb" -> "fa18_inb"
-    auto pos = period.find('_');
-    if (pos == std::string::npos || pos + 1 >= period.size()) return toLower(period);
-    return toLower(period.substr(pos + 1));
-}
-
-static std::vector<std::pair<double,double>> uniqueRanges(const std::vector<Binning>& scheme, char which) {
-    std::set<std::pair<double,double>> s;
-    for (const auto& b : scheme) {
-        if (which == 'x') s.emplace(b.xBmin, b.xBmax);
-        else if (which == 'Q') s.emplace(b.Q2min, b.Q2max);
-        else if (which == 't') s.emplace(b.tmin, b.tmax);
-    }
-    return std::vector<std::pair<double,double>>(s.begin(), s.end());
-}
-
-static inline int findIndex(const std::pair<double,double>& range,
-                            const std::vector<std::pair<double,double>>& ranges) {
-    for (int i = 0; i < (int)ranges.size(); ++i) if (ranges[i] == range) return i;
-    return -1;
-}
-
-static inline int phiBinIndex(double phi) {
-    double w = std::fmod(phi, TWO_PI);
-    if (w < 0) w += TWO_PI;
-    const double width = TWO_PI / double(N_PHI_BINS);
-    int ip = int(std::floor(w / width));
-    if (ip < 0) ip = 0;
-    if (ip >= N_PHI_BINS) ip = N_PHI_BINS - 1;
-    return ip;
-}
-
-static inline int findBin1D(double v, const std::vector<std::pair<double,double>>& ranges) {
-    for (int k = 0; k < (int)ranges.size(); ++k) if (v >= ranges[k].first && v < ranges[k].second) return k;
-    return -1;
-}
-
-static inline std::vector<double> phiCentersDeg() {
-    std::vector<double> d(N_PHI_BINS);
-    const double step = 360.0 / double(N_PHI_BINS);
-    for (int i = 0; i < N_PHI_BINS; ++i) d[i] = (i + 0.5) * step;
-    return d;
-}
-
-static void drawDegreeTicks(double xmin, double ymin, double xmax, double labelSize) {
-    TGaxis* ax = new TGaxis(xmin, ymin, xmax, ymin, 0.0, 360.0, 4, "");
-    ax->SetLabelFont(42);
-    ax->SetLabelSize(labelSize);
-    ax->SetLabelOffset(0.012);
-    ax->SetTitle("");
-    ax->SetTickSize(0.02);
-    ax->Draw();
-}
-
-// ---------------- branches ----------------
-struct GenBranch {
-    double x = 0.0, Q2 = 0.0, t1 = 0.0, phi2 = 0.0;
-    bool has_x = false, has_Q2 = false, has_t1 = false, has_phi = false;
-    void bind(TTree* t) {
-        auto bindD = [&](const char* n, double* a, bool& f){ if (t && t->GetBranch(n)) { t->SetBranchAddress(n, a); f = true; } };
-        bindD("x",   &x,   has_x);
-        bindD("Q2",  &Q2,  has_Q2);
-        bindD("t1",  &t1,  has_t1);
-        bindD("phi2",&phi2,has_phi);
-    }
-};
-
-// Reconstructed MC needs all variables that exclusivity_cuts used
-struct RecBranch {
-    double x = 0.0, Q2 = 0.0, t1 = 0.0, phi2 = 0.0;
-    double open_angle_ep2 = 0.0, pTmiss = 0.0;
-    int detector1 = 0, detector2 = 0;
-    // exclusivity variables (bind if present)
-    double Delta_phi = 0.0;
-    double theta_gamma_gamma = 0.0;
-    double xF = 0.0;
-    double Emiss2 = 0.0;
-    double Mx2 = 0.0;
-    double Mx2_1 = 0.0;
-    double Mx2_2 = 0.0;
-
-    bool has_x=false, has_Q2=false, has_t1=false, has_phi=false;
-    bool hasTopo=false, hasOA=false, hasPT=false;
-    bool has_Delta_phi=false, has_theta_gg=false, has_xF=false, has_Emiss2=false, has_Mx2=false, has_Mx2_1=false, has_Mx2_2=false;
-
-    void bind(TTree* t) {
-        auto bindD = [&](const char* n, double* a, bool& f){ if (t && t->GetBranch(n)) { t->SetBranchAddress(n, a); f = true; } };
-        auto bindI = [&](const char* n, int* a, bool& f){ if (t && t->GetBranch(n)) { t->SetBranchAddress(n, a); f = true; } };
-
-        bindD("x",   &x,   has_x);
-        bindD("Q2",  &Q2,  has_Q2);
-        bindD("t1",  &t1,  has_t1);
-        bindD("phi2",&phi2,has_phi);
-        bindD("open_angle_ep2",&open_angle_ep2,hasOA);
-        bindD("pTmiss",&pTmiss,hasPT);
-        bindI("detector1",&detector1,hasTopo);
-        bindI("detector2",&detector2,hasTopo);
-
-        // extras used by exclusivity_cuts
-        bindD("Delta_phi", &Delta_phi, has_Delta_phi);
-        bindD("theta_gamma_gamma", &theta_gamma_gamma, has_theta_gg);
-        bindD("xF", &xF, has_xF);
-        bindD("Emiss2", &Emiss2, has_Emiss2);
-        bindD("Mx2", &Mx2, has_Mx2);
-        bindD("Mx2_1", &Mx2_1, has_Mx2_1);
-        bindD("Mx2_2", &Mx2_2, has_Mx2_2);
-    }
-
-    // Build value map in the same naming as exclusivity_cuts (DVCS channel)
-    std::map<std::string,double> valuesMapDVCS() const {
-        std::map<std::string,double> m;
-        if (has_Delta_phi) m["Delta_phi"] = Delta_phi;
-        if (has_theta_gg)  m["theta_gamma_gamma"] = theta_gamma_gamma;
-        if (hasPT)         m["pTmiss"] = pTmiss;
-        if (has_xF)        m["xF"] = xF;
-        if (has_Emiss2)    m["Emiss2"] = Emiss2;
-        if (has_Mx2)       m["Mx2"] = Mx2;
-        if (has_Mx2_1)     m["Mx2_1"] = Mx2_1;
-        if (has_Mx2_2)     m["Mx2_2"] = Mx2_2;
-        return m;
-    }
-};
-
-// ---------------- global DVCS MC-side kinematic cuts (same as exclusivity_cuts) ----------------
-struct MCCutsFixed {
-    double min_open_angle_deg = 5.0;
-    double max_neg_t_GeV2     = 1.0;
-    double max_pTmiss_GeV     = 0.20;
-};
-static inline bool passesGlobalMCCuts(double t1, double oa_deg, double pTmiss, const MCCutsFixed& c) {
-    if (oa_deg <= c.min_open_angle_deg) return false;
-    if ((-t1) > c.max_neg_t_GeV2)       return false;
-    if (pTmiss > c.max_pTmiss_GeV)      return false;
-    return true;
-}
-
-// ---------------- JSON: load combined_cuts.json (MC stats only) ----------------
-struct Stats { double mean=0.0, std=0.0; };
-using CutMap  = std::map<std::string, Stats>;          // var -> (mean,std)
-using ComboMC = std::map<std::string, CutMap>;         // "DVCS_Fa18_inb_FD_FD" -> CutMap
-
-// crude extractor: find number after a pattern
-static bool extract_number_after(const std::string& s, size_t from, const std::string& pat, double& out) {
-    size_t p = s.find(pat, from); if (p == std::string::npos) return false;
-    p = s.find(':', p); if (p == std::string::npos) return false;
-    size_t a = p + 1;
-    while (a < s.size() && isspace((unsigned char)s[a])) ++a;
-    size_t b = a;
-    while (b < s.size() && (isdigit((unsigned char)s[b]) || s[b]=='-' || s[b]=='+' || s[b]=='.' || s[b]=='e' || s[b]=='E')) ++b;
-    try { out = std::stod(s.substr(a, b - a)); return true; } catch(...) { return false; }
-}
-
-static bool extract_stats_block(const std::string& s, size_t scope_from, const std::string& var, Stats& st) {
-    // look for ..."var":{"mean":X,"std":Y}... inside the "mc":{...} object nearest to scope_from
-    // 1) find "mc" after scope_from
-    size_t pmc = s.find("\"mc\"", scope_from); if (pmc == std::string::npos) return false;
-    size_t lbrace = s.find('{', pmc); if (lbrace == std::string::npos) return false;
-    // naive bracket matching for mc object
-    int depth = 0; size_t i = lbrace;
-    for (; i < s.size(); ++i) {
-        if (s[i] == '{') ++depth;
-        else if (s[i] == '}') { --depth; if (depth == 0) break; }
-    }
-    if (i >= s.size()) return false;
-    size_t mc_end = i;
-    // 2) within mc object, find the variable key
-    size_t pv = s.find("\"" + var + "\"", lbrace);
-    if (pv == std::string::npos || pv > mc_end) return false;
-    // 3) extract mean and std near this variable
-    double mu=0.0, sg=0.0;
-    bool ok1 = extract_number_after(s, pv, "\"mean\"", mu);
-    bool ok2 = extract_number_after(s, pv, "\"std\"",  sg);
-    if (!(ok1 && ok2)) return false;
-    st.mean = mu; st.std = std::abs(sg);
-    return true;
-}
-
-// Produce possible period variants to tolerate case differences in JSON keys.
-// Examples:
-//   "DVCS_Sp18_inb" -> {"DVCS_Sp18_inb", "DVCS_Sp18_Inb"}
-//   "DVCS_Fa18_out" -> {"DVCS_Fa18_out", "DVCS_Fa18_Out"}
-static std::vector<std::string> period_variants(const std::string& period) {
-    std::vector<std::string> v;
-    v.push_back(period);
-    // If ends with _inb or _out, add title-case variant
-    if (period.size() >= 4) {
-        if (period.rfind("_inb") != std::string::npos) {
-            std::string p2 = period;
-            p2.replace(p2.size()-4, 4, "_Inb");
-            v.push_back(p2);
-        } else if (period.rfind("_out") != std::string::npos) {
-            std::string p2 = period;
-            p2.replace(p2.size()-4, 4, "_Out");
-            v.push_back(p2);
+static void ensure_dir(const std::string& p) {
+    namespace fs = std::filesystem;
+    std::error_code ec;
+    if (!fs::exists(p)) {
+        fs::create_directories(p, ec);
+        if (ec) {
+            std::cerr << "[acceptance] FATAL: could not create directory: "
+                      << p << " (" << ec.message() << ")\n";
+            std::exit(EXIT_FAILURE);
         }
     }
-    return v;
 }
 
-static bool load_combined_mc_cuts(const std::string& json_path, const std::vector<std::string>& periods, ComboMC& out) {
-    std::ifstream ifs(json_path);
-    if (!ifs) {
-        std::cerr << "[acc][ERROR] Cannot open combined cuts JSON: " << json_path << "\n";
-        return false;
+static double safe_mean(const std::vector<double>& v) {
+    double s = 0.0;
+    int n = 0;
+    for (double x : v) {
+        if (std::isfinite(x)) {
+            s += x;
+            ++n;
+        }
     }
-    const std::string s((std::istreambuf_iterator<char>(ifs)), std::istreambuf_iterator<char>());
+    return n ? s / n : std::numeric_limits<double>::quiet_NaN();
+}
 
-    static const std::vector<std::string> topoKeys = {"FD_FD", "CD_FD", "CD_FT"};
-    static const std::vector<std::string> vars = {
-        "Delta_phi", "theta_gamma_gamma", "pTmiss", "xF",
-        "Emiss2", "Mx2", "Mx2_1", "Mx2_2"
-    };
+// periods
+static const std::vector<std::string> kPeriods = {
+    "Fa18 Inb",
+    "Fa18 Out",
+    "Sp19 Inb",
+    "Sp18 Inb",
+    "Sp18 Out"
+};
 
-    bool any=false;
-    for (const auto& period : periods) {
-        const auto pvars = period_variants(period); // try both lower and title case suffixes
-        for (const auto& period_try : pvars) {
-            for (const auto& topo : topoKeys) {
-                const std::string comboKey = period_try + "_" + topo; // e.g. "DVCS_Sp18_Inb_FD_FD"
-                size_t pkey = s.find("\"" + comboKey + "\"");
-                if (pkey == std::string::npos) continue;
+// Map period label -> MC tree tags
+struct McTags {
+    std::string genTag;
+    std::string recTag;
+};
 
-                CutMap cmap;
-                for (const auto& v : vars) {
-                    Stats st;
-                    if (extract_stats_block(s, pkey, v, st)) {
-                        cmap[v] = st;
-                    }
-                }
-                if (!cmap.empty()) {
-                    out[comboKey] = std::move(cmap);
-                    any = true;
-                }
+static std::map<std::string, McTags> build_mc_tag_map() {
+    std::map<std::string, McTags> m;
+    m["Fa18 Inb"] = {"DVCS_Fa18_inb_gen", "DVCS_Fa18_inb_rec"};
+    m["Fa18 Out"] = {"DVCS_Fa18_out_gen", "DVCS_Fa18_out_rec"};
+    m["Sp19 Inb"] = {"DVCS_Sp19_inb_gen", "DVCS_Sp19_inb_rec"};
+    m["Sp18 Inb"] = {"DVCS_Sp18_inb_gen", "DVCS_Sp18_inb_rec"};
+    m["Sp18 Out"] = {"DVCS_Sp18_out_gen", "DVCS_Sp18_out_rec"};
+    return m;
+}
+
+// 3 sigma config for DVCS MC (pTmiss)
+struct ThreeSigmaConfig {
+    bool have_pTmiss;
+    double mean_pTmiss;
+    double sigma_pTmiss;
+};
+
+// Recursively search JSON for a single pTmiss node with "mean" and "sigma".
+static void find_pTmiss_node(const json& j,
+                             bool& found,
+                             double& mean,
+                             double& sigma,
+                             int& count)
+{
+    if (found && count > 1) return;
+
+    if (j.is_object()) {
+        auto it = j.find("pTmiss");
+        if (it != j.end() && it->is_object()) {
+            const json& node = *it;
+            if (node.contains("mean") && node.contains("sigma") &&
+                node["mean"].is_number() && node["sigma"].is_number()) {
+                ++count;
+                mean  = node["mean"].get<double>();
+                sigma = node["sigma"].get<double>();
+                found = true;
             }
         }
+        for (auto it2 = j.begin(); it2 != j.end(); ++it2) {
+            find_pTmiss_node(it2.value(), found, mean, sigma, count);
+        }
+    } else if (j.is_array()) {
+        for (const auto& el : j) {
+            find_pTmiss_node(el, found, mean, sigma, count);
+        }
     }
-    return any;
 }
 
-static inline bool within3Sigma(double val, const Stats& s) {
-    return (val >= s.mean - 3.0*s.std) && (val <= s.mean + 3.0*s.std);
+static ThreeSigmaConfig load_three_sigma_config(const std::string& cuts_json_path) {
+    ThreeSigmaConfig cfg;
+    cfg.have_pTmiss   = false;
+    cfg.mean_pTmiss   = 0.0;
+    cfg.sigma_pTmiss  = 0.0;
+
+    std::ifstream fin(cuts_json_path);
+    if (!fin.is_open()) {
+        std::cerr << "[acceptance] FATAL: cannot open cuts JSON: "
+                  << cuts_json_path << "\n";
+        std::exit(EXIT_FAILURE);
+    }
+
+    json j;
+    try {
+        fin >> j;
+    } catch (const std::exception& e) {
+        std::cerr << "[acceptance] FATAL: failed to parse cuts JSON ("
+                  << e.what() << ")\n";
+        std::exit(EXIT_FAILURE);
+    }
+
+    bool found = false;
+    double mean = 0.0;
+    double sigma = 0.0;
+    int count = 0;
+    find_pTmiss_node(j, found, mean, sigma, count);
+
+    if (!found) {
+        std::cerr << "[acceptance] FATAL: no pTmiss entry with mean and sigma "
+                  << "found in cuts JSON " << cuts_json_path << "\n";
+        std::exit(EXIT_FAILURE);
+    }
+    if (count > 1) {
+        std::cerr << "[acceptance] FATAL: multiple pTmiss entries with mean and sigma "
+                  << "found in cuts JSON " << cuts_json_path << "\n";
+        std::exit(EXIT_FAILURE);
+    }
+    if (!(sigma > 0.0)) {
+        std::cerr << "[acceptance] FATAL: non-positive sigma for pTmiss in cuts JSON\n";
+        std::exit(EXIT_FAILURE);
+    }
+
+    cfg.have_pTmiss  = true;
+    cfg.mean_pTmiss  = mean;
+    cfg.sigma_pTmiss = sigma;
+
+    std::cout << "[acceptance] Loaded 3 sigma pTmiss cuts: mean="
+              << cfg.mean_pTmiss << " sigma=" << cfg.sigma_pTmiss
+              << " (3 sigma window will be applied)\n";
+
+    return cfg;
 }
 
-static bool passes3SigmaCuts(const CutMap& cuts_mc, const std::map<std::string,double>& values) {
-    for (const auto& kv : cuts_mc) {
-        const std::string& var = kv.first;
-        auto it = values.find(var);
-        if (it == values.end()) continue; // variable not present in tree: skip
-        if (!within3Sigma(it->second, kv.second)) return false;
+// ---------- binning helpers ----------
+
+struct BinKey {
+    int ix;
+    int iq;
+    int it;
+    int ip;
+
+    bool operator<(const BinKey& o) const {
+        if (ix != o.ix) return ix < o.ix;
+        if (iq != o.iq) return iq < o.iq;
+        if (it != o.it) return it < o.it;
+        return ip < o.ip;
     }
+};
+
+struct Binning {
+    std::vector<double> xb_edges;
+    std::vector<double> q2_edges;
+    std::vector<double> t_edges;
+    std::vector<double> phi_edges;
+    std::map<BinKey,int> key_to_row;
+};
+
+static void build_axis_edges(const CsvDoc& csv,
+                             int c_min,
+                             int c_max,
+                             std::vector<double>& edges)
+{
+    std::set<double> s;
+    const int NR = csv.nrows();
+    for (int r = 0; r < NR; ++r) {
+        const double vmin = csv.as_double(r, c_min);
+        const double vmax = csv.as_double(r, c_max);
+        if (std::isfinite(vmin)) s.insert(vmin);
+        if (std::isfinite(vmax)) s.insert(vmax);
+    }
+    edges.assign(s.begin(), s.end());
+    if (edges.size() < 2) {
+        std::cerr << "[acceptance] FATAL: less than two edges in axis.\n";
+        std::exit(EXIT_FAILURE);
+    }
+}
+
+static int find_interval_index(double vmin,
+                               double vmax,
+                               const std::vector<double>& edges)
+{
+    int idx_min = -1;
+    int idx_max = -1;
+    const int N = (int)edges.size();
+    for (int i = 0; i < N; ++i) {
+        if (std::fabs(edges[i] - vmin) < 1e-9) idx_min = i;
+        if (std::fabs(edges[i] - vmax) < 1e-9) idx_max = i;
+    }
+    if (idx_min < 0 || idx_max < 0) return -1;
+    if (idx_max != idx_min + 1) return -1;
+    return idx_min;
+}
+
+static int find_value_index(double v,
+                            const std::vector<double>& edges)
+{
+    if (!std::isfinite(v)) return -1;
+    const int N = (int)edges.size();
+    if (v < edges.front() || v > edges.back()) return -1;
+    if (std::fabs(v - edges.back()) < 1e-9) return N - 2;
+    auto it = std::upper_bound(edges.begin(), edges.end(), v);
+    if (it == edges.begin() || it == edges.end()) return -1;
+    int idx = (int)(it - edges.begin()) - 1;
+    if (idx < 0 || idx >= N - 1) return -1;
+    return idx;
+}
+
+static Binning build_binning_from_csv(const CsvDoc& csv) {
+    Binning B;
+
+    const int c_xb_min  = csv.col_index("xBmin");
+    const int c_xb_max  = csv.col_index("xBmax");
+    const int c_q2_min  = csv.col_index("Q2min");
+    const int c_q2_max  = csv.col_index("Q2max");
+    const int c_tab_min = csv.col_index("t_abs_min");
+    const int c_tab_max = csv.col_index("t_abs_max");
+    const int c_phi_min = csv.col_index("phimin");
+    const int c_phi_max = csv.col_index("phimax");
+
+    if (c_xb_min < 0 || c_xb_max < 0 ||
+        c_q2_min < 0 || c_q2_max < 0 ||
+        c_tab_min < 0 || c_tab_max < 0 ||
+        c_phi_min < 0 || c_phi_max < 0) {
+        std::cerr << "[acceptance] FATAL: missing one or more bin-edge columns "
+                  << "(xBmin,xBmax,Q2min,Q2max,t_abs_min,t_abs_max,phimin,phimax)\n";
+        std::exit(EXIT_FAILURE);
+    }
+
+    build_axis_edges(csv, c_xb_min,  c_xb_max,  B.xb_edges);
+    build_axis_edges(csv, c_q2_min,  c_q2_max,  B.q2_edges);
+    build_axis_edges(csv, c_tab_min, c_tab_max, B.t_edges);
+    build_axis_edges(csv, c_phi_min, c_phi_max, B.phi_edges);
+
+    const int NR = csv.nrows();
+    for (int r = 0; r < NR; ++r) {
+        const double xbmin  = csv.as_double(r, c_xb_min);
+        const double xbmax  = csv.as_double(r, c_xb_max);
+        const double q2min  = csv.as_double(r, c_q2_min);
+        const double q2max  = csv.as_double(r, c_q2_max);
+        const double tmin   = csv.as_double(r, c_tab_min);
+        const double tmax   = csv.as_double(r, c_tab_max);
+        const double phimin = csv.as_double(r, c_phi_min);
+        const double phimax = csv.as_double(r, c_phi_max);
+
+        const int ix = find_interval_index(xbmin, xbmax, B.xb_edges);
+        const int iq = find_interval_index(q2min, q2max, B.q2_edges);
+        const int it = find_interval_index(tmin,  tmax,  B.t_edges);
+        const int ip = find_interval_index(phimin,phimax,B.phi_edges);
+
+        if (ix < 0 || iq < 0 || it < 0 || ip < 0) {
+            std::cerr << "[acceptance] FATAL: could not map CSV row " << r
+                      << " to a unique 4D bin (xB,Q2,|t|,phi).\n";
+            std::exit(EXIT_FAILURE);
+        }
+
+        BinKey key;
+        key.ix = ix;
+        key.iq = iq;
+        key.it = it;
+        key.ip = ip;
+
+        auto itExisting = B.key_to_row.find(key);
+        if (itExisting != B.key_to_row.end()) {
+            std::cerr << "[acceptance] FATAL: duplicate bin key for rows "
+                      << itExisting->second << " and " << r << ".\n";
+            std::exit(EXIT_FAILURE);
+        }
+        B.key_to_row[key] = r;
+    }
+
+    return B;
+}
+
+// ---------- exclusivity for reconstructed MC (global + 3 sigma) ----------
+
+static bool rec_passes_exclusivity(double t1,
+                                   double open_angle_ep2_deg,
+                                   double pTmiss,
+                                   const ThreeSigmaConfig& cfg)
+{
+    const double t_abs = std::fabs(t1);
+    if (!std::isfinite(t_abs) || t_abs <= 0.0 || t_abs >= 1.0) return false;
+    if (!std::isfinite(open_angle_ep2_deg) || open_angle_ep2_deg <= 5.0) return false;
+    if (!std::isfinite(pTmiss)) return false;
+    if (pTmiss > 0.20) return false;
+
+    if (cfg.have_pTmiss) {
+        const double dev = pTmiss - cfg.mean_pTmiss;
+        if (std::fabs(dev) > 3.0 * cfg.sigma_pTmiss) return false;
+    }
+
     return true;
 }
 
-// ---------------- topology helpers ----------------
-static inline std::string topoKeyFromDet(int d1, int d2) {
-    if (d1 == 1 && d2 == 1) return "FD_FD";
-    if (d1 == 2 && d2 == 1) return "CD_FD";
-    if (d1 == 2 && d2 == 0) return "CD_FT";
-    return ""; // unknown
-}
+// ---------- MC counting ----------
 
-static inline bool topoAllowed(int d1, int d2, const std::vector<std::string>& tops) {
-    for (const auto& t : tops) {
-        if (t == "(FD,FD)" && d1 == 1 && d2 == 1) return true;
-        if (t == "(CD,FD)" && d1 == 2 && d2 == 1) return true;
-        if (t == "(CD,FT)" && d1 == 2 && d2 == 0) return true;
-    }
-    return false;
-}
-
-// ---------------- accumulation ----------------
-struct AccBin {
-    double gen = 0.0;
-    double rec = 0.0;
-};
-using AccMap = std::map<std::tuple<int,int,int,int>, AccBin>; // (ix,iQ,it,ip)
-
-static void accumulate_generated(
-    TTree* t,
-    const std::vector<std::pair<double,double>>& xB_bins,
-    const std::vector<std::pair<double,double>>& Q2_bins,
-    const std::vector<std::pair<double,double>>& t_bins,
-    AccMap& acc)
+static void fill_mc_counts_for_period(const std::string& period_label,
+                                      const Binning& binning,
+                                      const CsvDoc& csv,
+                                      TTree* genTree,
+                                      TTree* recTree,
+                                      const ThreeSigmaConfig& cfg,
+                                      std::vector<double>& gen_counts,
+                                      std::vector<double>& rec_counts)
 {
-    if (!t) return;
-    GenBranch b; b.bind(t);
-    if (!(b.has_x && b.has_Q2 && b.has_t1 && b.has_phi)) return;
-
-    const Long64_t n = t->GetEntries();
-    for (Long64_t i = 0; i < n; ++i) {
-        t->GetEntry(i);
-        double xB = b.x, Q2 = b.Q2, tt = std::fabs(b.t1), phi = b.phi2;
-        int ix = findBin1D(xB, xB_bins), iQ = findBin1D(Q2, Q2_bins), it = findBin1D(tt, t_bins);
-        if (ix < 0 || iQ < 0 || it < 0) continue;
-        int ip = phiBinIndex(phi);
-        acc[std::make_tuple(ix, iQ, it, ip)].gen += 1.0;
+    if (!genTree || !recTree) {
+        std::cerr << "[acceptance] FATAL: null TTree pointer for period "
+                  << period_label << ".\n";
+        std::exit(EXIT_FAILURE);
     }
-}
 
-static void accumulate_reconstructed(
-    TTree* t,
-    const std::vector<std::pair<double,double>>& xB_bins,
-    const std::vector<std::pair<double,double>>& Q2_bins,
-    const std::vector<std::pair<double,double>>& t_bins,
-    const std::vector<std::string>& topologies,
-    const MCCutsFixed& globalCuts,
-    const std::map<std::string, CutMap>& topoCutsForPeriod, // e.g. {"FD_FD":CutMap,...}
-    AccMap& acc)
-{
-    if (!t) return;
-    RecBranch b; b.bind(t);
-    if (!(b.has_x && b.has_Q2 && b.has_t1 && b.has_phi && b.hasTopo && b.hasOA && b.hasPT)) return;
+    const int NR = csv.nrows();
+    gen_counts.assign(NR, 0.0);
+    rec_counts.assign(NR, 0.0);
 
-    const Long64_t n = t->GetEntries();
-    for (Long64_t i = 0; i < n; ++i) {
-        t->GetEntry(i);
+    const char* br_x      = "x";
+    const char* br_Q2     = "Q2";
+    const char* br_t1     = "t1";
+    const char* br_phi2   = "phi2";
+    const char* br_oa_ep2 = "open_angle_ep2";
+    const char* br_pTmiss = "pTmiss";
 
-        if (!topoAllowed(b.detector1, b.detector2, topologies)) continue;
-        if (!passesGlobalMCCuts(b.t1, b.open_angle_ep2, b.pTmiss, globalCuts)) continue;
+    if (!genTree->GetBranch(br_x) ||
+        !genTree->GetBranch(br_Q2) ||
+        !genTree->GetBranch(br_t1) ||
+        !genTree->GetBranch(br_phi2)) {
+        std::cerr << "[acceptance] FATAL: missing one or more branches in genTree for period "
+                  << period_label << " (expected: x, Q2, t1, phi2).\n";
+        std::exit(EXIT_FAILURE);
+    }
 
-        // Topology-specific 3σ windows from combined_cuts.json (MC)
-        const std::string topoKey = topoKeyFromDet(b.detector1, b.detector2);
-        if (topoKey.empty()) continue; // unknown combo
+    if (!recTree->GetBranch(br_x) ||
+        !recTree->GetBranch(br_Q2) ||
+        !recTree->GetBranch(br_t1) ||
+        !recTree->GetBranch(br_phi2) ||
+        !recTree->GetBranch(br_oa_ep2) ||
+        !recTree->GetBranch(br_pTmiss)) {
+        std::cerr << "[acceptance] FATAL: missing one or more branches in recTree for period "
+                  << period_label
+                  << " (expected: x, Q2, t1, phi2, open_angle_ep2, pTmiss).\n";
+        std::exit(EXIT_FAILURE);
+    }
 
-        auto itCuts = topoCutsForPeriod.find(topoKey);
-        if (itCuts != topoCutsForPeriod.end()) {
-            const CutMap& cuts_mc = itCuts->second;
-            if (!passes3SigmaCuts(cuts_mc, b.valuesMapDVCS())) continue;
-        } else {
-            // If this period had no entry for this topology, veto by default to avoid
-            // mixing uncut with cut selections. Comment the next line if you prefer permissive.
+    // generated MC
+    double g_x    = 0.0;
+    double g_Q2   = 0.0;
+    double g_t1   = 0.0;
+    double g_phi2 = 0.0;
+
+    genTree->SetBranchAddress(br_x,    &g_x);
+    genTree->SetBranchAddress(br_Q2,   &g_Q2);
+    genTree->SetBranchAddress(br_t1,   &g_t1);
+    genTree->SetBranchAddress(br_phi2, &g_phi2);
+
+    const Long64_t Ngen = genTree->GetEntries();
+    Long64_t used_gen = 0;
+
+    for (Long64_t i = 0; i < Ngen; ++i) {
+        genTree->GetEntry(i);
+
+        const double xB   = g_x;
+        const double Q2   = g_Q2;
+        const double tAbs = std::fabs(g_t1);
+        const double phiD = wrap_deg(RAD2DEG(g_phi2));
+
+        const int ix = find_value_index(xB,   binning.xb_edges);
+        const int iq = find_value_index(Q2,   binning.q2_edges);
+        const int it = find_value_index(tAbs, binning.t_edges);
+        const int ip = find_value_index(phiD, binning.phi_edges);
+
+        if (ix < 0 || iq < 0 || it < 0 || ip < 0) {
             continue;
         }
 
-        double xB = b.x, Q2 = b.Q2, tt = std::fabs(b.t1), phi = b.phi2;
-        int ix = findBin1D(xB, xB_bins), iQ = findBin1D(Q2, Q2_bins), it = findBin1D(tt, t_bins);
-        if (ix < 0 || iQ < 0 || it < 0) continue;
-        int ip = phiBinIndex(phi);
-        acc[std::make_tuple(ix, iQ, it, ip)].rec += 1.0;
-    }
-}
+        BinKey key;
+        key.ix = ix;
+        key.iq = iq;
+        key.it = it;
+        key.ip = ip;
 
-// ---------------- JSON writer ----------------
-struct PhiArrays {
-    std::vector<double> phi_deg;
-    std::vector<double> acc;
-    std::vector<double> acc_err;
-    std::vector<double> n_gen_phi;
-    std::vector<double> n_rec_phi;
-    double Ngen_cell = 0.0, Nrec_cell = 0.0;
-};
-using CellMap = std::map<std::tuple<int,int,int>, PhiArrays>;
-
-static void write_period_json(
-    const std::string& out_path,
-    int nPhi,
-    const std::vector<std::pair<double,double>>& xB_bins,
-    const std::vector<std::pair<double,double>>& Q2_bins,
-    const std::vector<std::pair<double,double>>& t_bins,
-    const CellMap& cells)
-{
-    std::ofstream ofs(out_path);
-    if (!ofs) { std::cerr << "[acc] Cannot open " << out_path << "\n"; return; }
-    ofs << std::fixed << std::setprecision(8);
-    ofs << "{\n";
-    ofs << "  \"binning_meta\": {\"phi_bins\": " << nPhi
-        << ", \"xB_bins\": " << xB_bins.size()
-        << ", \"Q2_bins\": " << Q2_bins.size()
-        << ", \"t_bins\": " << t_bins.size() << "},\n";
-    ofs << "  \"bins\": {\n";
-    bool first = true;
-    for (const auto& kv : cells) {
-        if (!first) ofs << ",\n"; first = false;
-        int ix, iQ, it; std::tie(ix, iQ, it) = kv.first;
-        const auto& pa = kv.second;
-        ofs << "    \"(" << ix << "," << iQ << "," << it << ")\": {";
-        ofs << "\"phi\":[";
-        for (size_t i = 0; i < pa.phi_deg.size(); ++i) { if (i) ofs << ","; ofs << pa.phi_deg[i]; }
-        ofs << "], \"acc\":[";
-        for (size_t i = 0; i < pa.acc.size(); ++i) { if (i) ofs << ","; ofs << pa.acc[i]; }
-        ofs << "], \"acc_err\":[";
-        for (size_t i = 0; i < pa.acc_err.size(); ++i) { if (i) ofs << ","; ofs << pa.acc_err[i]; }
-        ofs << "], \"counts_gen_phi\":[";
-        for (size_t i = 0; i < pa.n_gen_phi.size(); ++i) { if (i) ofs << ","; ofs << pa.n_gen_phi[i]; }
-        ofs << "], \"counts_rec_phi\":[";
-        for (size_t i = 0; i < pa.n_rec_phi.size(); ++i) { if (i) ofs << ","; ofs << pa.n_rec_phi[i]; }
-        ofs << "], \"total_gen\": " << pa.Ngen_cell << ", \"total_rec\": " << pa.Nrec_cell << "}";
-    }
-    ofs << "\n  }\n}\n";
-}
-
-// ---------------- plotting ----------------
-static void uniqueQT_for_xB(
-    const std::vector<Binning>& scheme,
-    const std::pair<double,double>& xBrange,
-    std::vector<std::pair<double,double>>& Q2_list,
-    std::vector<std::pair<double,double>>& t_list
-) {
-    std::set<std::pair<double,double>> qs, ts;
-    for (const auto& b : scheme) {
-        if (std::make_pair(b.xBmin, b.xBmax) == xBrange) {
-            qs.emplace(b.Q2min, b.Q2max);
-            ts.emplace(b.tmin,  b.tmax);
+        auto itRow = binning.key_to_row.find(key);
+        if (itRow == binning.key_to_row.end()) {
+            continue;
         }
+
+        const int row = itRow->second;
+        if (row < 0 || row >= NR) continue;
+
+        gen_counts[row] += 1.0;
+        ++used_gen;
     }
-    Q2_list.assign(qs.begin(), qs.end());
-    t_list.assign(ts.begin(), ts.end());
+
+    std::cout << "[acceptance] Period " << period_label
+              << " gen MC: total entries = " << Ngen
+              << " ; binned = " << used_gen << "\n";
+
+    // reconstructed MC
+    double r_x      = 0.0;
+    double r_Q2     = 0.0;
+    double r_t1     = 0.0;
+    double r_phi2   = 0.0;
+    double r_oa     = 0.0;
+    double r_pTmiss = 0.0;
+
+    recTree->SetBranchAddress(br_x,      &r_x);
+    recTree->SetBranchAddress(br_Q2,     &r_Q2);
+    recTree->SetBranchAddress(br_t1,     &r_t1);
+    recTree->SetBranchAddress(br_phi2,   &r_phi2);
+    recTree->SetBranchAddress(br_oa_ep2, &r_oa);
+    recTree->SetBranchAddress(br_pTmiss, &r_pTmiss);
+
+    const Long64_t Nrec = recTree->GetEntries();
+    Long64_t used_rec = 0;
+    Long64_t passed_excl = 0;
+
+    for (Long64_t i = 0; i < Nrec; ++i) {
+        recTree->GetEntry(i);
+
+        if (!rec_passes_exclusivity(r_t1, r_oa, r_pTmiss, cfg)) {
+            continue;
+        }
+        ++passed_excl;
+
+        const double xB   = r_x;
+        const double Q2   = r_Q2;
+        const double tAbs = std::fabs(r_t1);
+        const double phiD = wrap_deg(RAD2DEG(r_phi2));
+
+        const int ix = find_value_index(xB,   binning.xb_edges);
+        const int iq = find_value_index(Q2,   binning.q2_edges);
+        const int it = find_value_index(tAbs, binning.t_edges);
+        const int ip = find_value_index(phiD, binning.phi_edges);
+
+        if (ix < 0 || iq < 0 || it < 0 || ip < 0) {
+            continue;
+        }
+
+        BinKey key;
+        key.ix = ix;
+        key.iq = iq;
+        key.it = it;
+        key.ip = ip;
+
+        auto itRow = binning.key_to_row.find(key);
+        if (itRow == binning.key_to_row.end()) {
+            continue;
+        }
+
+        const int row = itRow->second;
+        if (row < 0 || row >= NR) continue;
+
+        rec_counts[row] += 1.0;
+        ++used_rec;
+    }
+
+    std::cout << "[acceptance] Period " << period_label
+              << " rec MC: total entries = " << Nrec
+              << " ; passed exclusivity = " << passed_excl
+              << " ; binned = " << used_rec << "\n";
 }
 
-static void plot_cells_for_period(
-    const std::string& period,
-    const std::vector<Binning>& binning_scheme,
-    const std::vector<std::pair<double,double>>& xB_bins,
-    const std::vector<std::pair<double,double>>& Q2_bins,
-    const std::vector<std::pair<double,double>>& t_bins,
-    const CellMap& cells,
-    const std::string& out_dir_plots)
+// ---------- CSV update and plotting ----------
+
+static bool fill_acceptance_columns(CsvDoc& csv,
+                                    const std::map<std::string, std::vector<double>>& gen_all,
+                                    const std::map<std::string, std::vector<double>>& rec_all)
 {
-    using std::filesystem::create_directories;
-    std::error_code ec;
-    create_directories(out_dir_plots, ec);
+    const int NR = csv.nrows();
 
-    static const auto PHI = phiCentersDeg();
+    std::map<std::string,int> acc_idx;
+    for (const auto& per : kPeriods) {
+        const std::string cname = "acceptance, " + per;
+        int idx = csv.col_index(cname);
+        if (idx < 0) {
+            std::cerr << "[acceptance] FATAL: missing acceptance column '"
+                      << cname << "' in CSV header.\n";
+            return false;
+        }
+        acc_idx[per] = idx;
+    }
 
-    for (int ix = 0; ix < (int)xB_bins.size(); ++ix) {
-        const auto xb = xB_bins[ix];
+    std::size_t cells_written = 0;
+    for (const auto& per : kPeriods) {
+        auto itG = gen_all.find(per);
+        auto itR = rec_all.find(per);
+        if (itG == gen_all.end() || itR == rec_all.end()) {
+            std::cerr << "[acceptance] FATAL: internal error, missing counts for period "
+                      << per << ".\n";
+            return false;
+        }
+        const std::vector<double>& gen = itG->second;
+        const std::vector<double>& rec = itR->second;
+        if ((int)gen.size() != NR || (int)rec.size() != NR) {
+            std::cerr << "[acceptance] FATAL: size mismatch for counts vectors in period "
+                      << per << ".\n";
+            return false;
+        }
 
-        std::vector<std::pair<double,double>> Q2_slice, t_slice;
-        uniqueQT_for_xB(binning_scheme, xb, Q2_slice, t_slice);
-        if (Q2_slice.empty() || t_slice.empty()) continue;
+        const int c_acc = acc_idx[per];
+        double period_gen_sum = 0.0;
+        double period_rec_sum = 0.0;
 
-        const int nrows = (int)t_slice.size();
-        const int ncols = (int)Q2_slice.size();
+        for (int r = 0; r < NR; ++r) {
+            const double Ng = gen[r];
+            const double Nr = rec[r];
 
-        const int W = 280 * ncols + 160;
-        const int H = 240 * nrows + 170;
+            period_gen_sum += Ng;
+            period_rec_sum += Nr;
 
-        std::ostringstream cname; cname << "c_acc_" << period << "_xB" << ix;
-        TCanvas* c = new TCanvas(cname.str().c_str(), cname.str().c_str(), W, H);
+            double acc = 0.0;
+            if (Ng > 0.0) {
+                acc = Nr / Ng;
+            } else {
+                acc = 0.0;
+            }
 
-        TPad* pTop  = new TPad("pTop","pTop", 0.0, 0.915, 1.0, 1.0);
-        pTop->SetFillStyle(0); pTop->SetBorderSize(0); pTop->Draw();
+            std::ostringstream oss;
+            oss.setf(std::ios::fixed);
+            oss << std::setprecision(8) << acc;
+            csv.rows[r][c_acc] = oss.str();
+            ++cells_written;
+        }
 
-        TPad* pGrid = new TPad("pGrid","pGrid", 0.0, 0.00, 1.0, 0.915);
-        pGrid->SetFillStyle(0); pGrid->SetBorderSize(0); pGrid->Draw();
-        pGrid->cd();
-        pGrid->Divide(ncols, nrows, 0.0001, 0.0001);
+        std::cout << "[acceptance] Period " << per
+                  << " summary: total Ng = " << period_gen_sum
+                  << " ; total Nr = " << period_rec_sum << "\n";
+    }
 
-        // Title
-        pTop->cd();
-        TLatex head;
-        head.SetNDC(); head.SetTextAlign(22);
-        head.SetTextFont(42);
-        head.SetTextSize(0.36);
-        std::ostringstream tit;
-        tit << Form("Acceptance  %s   x_{B} #in [%.2g, %.2g]",
-                    period.c_str(), xb.first, xb.second);
-        head.DrawLatex(0.5, 0.55, tit.str().c_str());
+    std::cout << "[acceptance] Filled acceptance columns; cells written: "
+              << cells_written << "\n";
+    return true;
+}
 
-        // Panels
-        for (int r = 0; r < nrows; ++r) {
-            const int it_global = findIndex(t_slice[r], t_bins);
-            if (it_global < 0) continue;
+struct CellData {
+    std::vector<double> X;
+    std::vector<double> Y;
+    std::vector<double> EX;
+    std::vector<double> EY;
+    std::vector<double> q2means;
+    std::vector<double> tmeans;
+};
 
-            for (int ccol = 0; ccol < ncols; ++ccol) {
-                const int iQ_global = findIndex(Q2_slice[ccol], Q2_bins);
-                if (iQ_global < 0) continue;
+static void draw_acceptance_canvases(const std::string& period_label,
+                                     const CsvDoc& csv,
+                                     const std::string& out_root_dir)
+{
+    namespace fs = std::filesystem;
 
-                pGrid->cd(r * ncols + ccol + 1);
-                gPad->SetGrid(1,1);
-                gPad->SetTopMargin(0.08);
-                gPad->SetBottomMargin(0.18);
-                gPad->SetLeftMargin(0.15);
-                gPad->SetRightMargin(0.10);
+    const int c_xb_min  = csv.col_index("xBmin");
+    const int c_xb_max  = csv.col_index("xBmax");
+    const int c_q2_min  = csv.col_index("Q2min");
+    const int c_q2_max  = csv.col_index("Q2max");
+    const int c_tab_min = csv.col_index("t_abs_min");
+    const int c_tab_max = csv.col_index("t_abs_max");
+    const int c_phi_min = csv.col_index("phimin");
+    const int c_phi_max = csv.col_index("phimax");
 
-                // log-scale y for acceptance
-                gPad->SetLogy(1);
-                TH1* frame = gPad->DrawFrame(0.0, 1e-4, 360.0, 1.0);
-                TAxis* ax = frame->GetXaxis();
-                TAxis* ay = frame->GetYaxis();
+    if (c_xb_min < 0 || c_xb_max < 0 || c_q2_min < 0 || c_q2_max < 0 ||
+        c_tab_min < 0 || c_tab_max < 0 || c_phi_min < 0 || c_phi_max < 0) {
+        std::cerr << "[acceptance] FATAL: missing bin-edge columns needed for plotting.\n";
+        std::exit(EXIT_FAILURE);
+    }
 
-                ax->SetLabelSize(0.0001);
-                ax->SetTitle("#phi (deg)");
-                ay->SetTitle("Acceptance");
-                ax->CenterTitle(); ay->CenterTitle();
-                ax->SetNdivisions(505);
-                ax->SetTitleSize(0.060);
-                ay->SetTitleSize(0.060);
-                ay->SetLabelSize(0.048);
-                ax->SetTitleOffset(1.25);
-                ay->SetTitleOffset(1.35);
+    int c_phiavg = csv.col_index("phiavg, " + period_label);
+    int c_q2avg  = csv.col_index("Q2avg, " + period_label);
+    int c_tabavg = csv.col_index("t_abs_avg, " + period_label);
+    int c_xbavg  = csv.col_index("xBavg, " + period_label);
 
-                drawDegreeTicks(gPad->GetUxmin(), gPad->GetUymin(), gPad->GetUxmax(), 0.048);
+    const std::string acc_col_name = "acceptance, " + period_label;
+    const int c_acc = csv.col_index(acc_col_name);
+    if (c_acc < 0) {
+        std::cerr << "[acceptance] FATAL: missing column '" << acc_col_name
+                  << "' for plotting.\n";
+        std::exit(EXIT_FAILURE);
+    }
 
-                auto itCell = cells.find(std::make_tuple(ix, iQ_global, it_global));
-                if (itCell == cells.end()) continue;
-                const auto& pa = itCell->second;
+    std::set<std::pair<double,double>> xb_set;
+    for (int r = 0; r < csv.nrows(); ++r) {
+        xb_set.emplace(csv.as_double(r, c_xb_min), csv.as_double(r, c_xb_max));
+    }
 
-                std::vector<double> x, y, ey;
-                for (int ip = 0; ip < N_PHI_BINS; ++ip) {
-                    double A = pa.acc[ip];
-                    double sA = pa.acc_err[ip];
-                    x.push_back(PHI[ip]);
-                    y.push_back(A);
-                    ey.push_back(std::max(1e-6, sA));
+    const double head_size = 0.14;
+    const double label_sz  = 0.050;
+    const double title_sz  = 0.045;
+
+    const std::string period_dir = canonical_period_dir(period_label);
+    const std::string base_dir =
+        (fs::path(out_root_dir) / "acceptance" / period_dir).string();
+    ensure_dir(base_dir);
+
+    for (auto xb : xb_set) {
+        std::set<std::pair<double,double>> q2set;
+        std::set<std::pair<double,double>> tset_all;
+
+        for (int r = 0; r < csv.nrows(); ++r) {
+            const double xbmin = csv.as_double(r, c_xb_min);
+            const double xbmax = csv.as_double(r, c_xb_max);
+            if (std::fabs(xbmin - xb.first) < 1e-9 &&
+                std::fabs(xbmax - xb.second) < 1e-9) {
+                q2set.emplace(csv.as_double(r, c_q2_min),
+                              csv.as_double(r, c_q2_max));
+            }
+        }
+        for (auto q2r : q2set) {
+            for (int r = 0; r < csv.nrows(); ++r) {
+                const double xbmin = csv.as_double(r, c_xb_min);
+                const double xbmax = csv.as_double(r, c_xb_max);
+                const double q2min = csv.as_double(r, c_q2_min);
+                const double q2max = csv.as_double(r, c_q2_max);
+                if (std::fabs(xbmin - xb.first) < 1e-9 &&
+                    std::fabs(xbmax - xb.second) < 1e-9 &&
+                    std::fabs(q2min - q2r.first) < 1e-9 &&
+                    std::fabs(q2max - q2r.second) < 1e-9) {
+                    tset_all.emplace(csv.as_double(r, c_tab_min),
+                                     csv.as_double(r, c_tab_max));
                 }
-                TGraphErrors* gr = new TGraphErrors(N_PHI_BINS, x.data(), y.data(), nullptr, ey.data());
-                gr->SetMarkerStyle(20);
-                gr->SetMarkerSize(1.0);
-                gr->SetLineWidth(2);
-                gr->Draw("P SAME");
-
-                TLatex lab;
-                lab.SetNDC(); lab.SetTextSize(0.040); lab.SetTextAlign(11);
-                lab.SetTextFont(42);
-                lab.DrawLatex(0.15, 0.94,
-                    Form("Q^{2} #in [%.2g, %.2g],   -t #in [%.2g, %.2g]",
-                         Q2_slice[ccol].first, Q2_slice[ccol].second,
-                         t_slice[r].first,    t_slice[r].second));
             }
         }
 
-        std::ostringstream fout;
-        fout << out_dir_plots << "/plot_acceptance_" << period << "_xB_" << ix << ".png";
-        c->SaveAs(fout.str().c_str());
+        std::vector<std::pair<double,double>> Q2s(q2set.begin(), q2set.end());
+        std::vector<std::pair<double,double>> Ts (tset_all.begin(), tset_all.end());
+        if (Q2s.empty() || Ts.empty()) continue;
+
+        const int nrows = (int)Q2s.size();
+        const int ncols = (int)Ts.size();
+        const int W = 300 * ncols + 160;
+        const int H = 260 * nrows + 240;
+
+        std::vector<CellData> cells(nrows * ncols);
+        double canvas_max = 0.0;
+
+        std::vector<double> xbmeans;
+        for (int r = 0; r < csv.nrows(); ++r) {
+            const double xbmin = csv.as_double(r, c_xb_min);
+            const double xbmax = csv.as_double(r, c_xb_max);
+            if (std::fabs(xbmin - xb.first) < 1e-9 &&
+                std::fabs(xbmax - xb.second) < 1e-9) {
+                if (c_xbavg >= 0) {
+                    xbmeans.push_back(csv.as_double(r, c_xbavg));
+                } else {
+                    xbmeans.push_back(0.5 * (xb.first + xb.second));
+                }
+            }
+        }
+        const double xb_mean_for_title = safe_mean(xbmeans);
+
+        for (int rr = 0; rr < nrows; ++rr) {
+            for (int cc = 0; cc < ncols; ++cc) {
+                const auto& qpair = Q2s[rr];
+                const auto& tpair = Ts[cc];
+
+                std::vector<int> rows_for_cell;
+                for (int r = 0; r < csv.nrows(); ++r) {
+                    const double xbmin = csv.as_double(r, c_xb_min);
+                    const double xbmax = csv.as_double(r, c_xb_max);
+                    const double q2min = csv.as_double(r, c_q2_min);
+                    const double q2max = csv.as_double(r, c_q2_max);
+                    const double tmin  = csv.as_double(r, c_tab_min);
+                    const double tmax  = csv.as_double(r, c_tab_max);
+                    if (std::fabs(xbmin - xb.first) < 1e-9 &&
+                        std::fabs(xbmax - xb.second) < 1e-9 &&
+                        std::fabs(q2min - qpair.first) < 1e-9 &&
+                        std::fabs(q2max - qpair.second) < 1e-9 &&
+                        std::fabs(tmin  - tpair.first) < 1e-9 &&
+                        std::fabs(tmax  - tpair.second) < 1e-9) {
+                        rows_for_cell.push_back(r);
+                    }
+                }
+
+                std::sort(rows_for_cell.begin(), rows_for_cell.end(),
+                          [&](int a, int b) {
+                              return csv.as_double(a, c_phi_min) <
+                                     csv.as_double(b, c_phi_min);
+                          });
+
+                CellData& C = cells[rr * ncols + cc];
+                C.X.reserve(rows_for_cell.size());
+                C.EX.assign(rows_for_cell.size(), 0.0);
+                C.EY.assign(rows_for_cell.size(), 0.0);
+
+                for (int r : rows_for_cell) {
+                    const double pmin = csv.as_double(r, c_phi_min);
+                    const double pmax = csv.as_double(r, c_phi_max);
+                    double xphi = 0.5 * (pmin + pmax);
+                    if (c_phiavg >= 0) {
+                        const double pav = csv.as_double(r, c_phiavg);
+                        if (std::isfinite(pav) && pav > 0.0 && pav < 360.0) {
+                            xphi = pav;
+                        }
+                    }
+                    C.X.push_back(xphi);
+
+                    const double acc = csv.as_double(r, c_acc);
+                    C.Y.push_back(acc);
+
+                    const double q2m = (c_q2avg >= 0)
+                        ? csv.as_double(r, c_q2avg)
+                        : 0.5 * (qpair.first + qpair.second);
+                    const double tm  = (c_tabavg >= 0)
+                        ? csv.as_double(r, c_tabavg)
+                        : 0.5 * (tpair.first + tpair.second);
+                    C.q2means.push_back(q2m);
+                    C.tmeans.push_back(tm);
+
+                    if (std::isfinite(acc)) {
+                        canvas_max = std::max(canvas_max, acc);
+                    }
+                }
+            }
+        }
+
+        std::string cname = "c_acc_" + period_dir + "_xB_" +
+                            std::to_string((int)std::round(xb.first * 1000.0));
+        TCanvas* c = new TCanvas(cname.c_str(), "", W, H);
+
+        TPad* pTop  = new TPad("pTop", "pTop", 0.0, 0.86, 1.0, 1.0);
+        TPad* pGrid = new TPad("pGrid","pGrid",0.0, 0.00, 1.0, 0.86);
+        pTop->SetFillStyle(0);  pTop->Draw();
+        pGrid->SetFillStyle(0); pGrid->Draw();
+        pGrid->Divide(ncols, nrows, 0.0001, 0.0001);
+
+        pTop->cd();
+        TLatex head;
+        head.SetNDC();
+        head.SetTextSize(head_size);
+        head.SetTextAlign(22);
+        head.DrawLatex(0.5, 0.58,
+                       Form("%s   <xB>=%.2f",
+                            period_label.c_str(),
+                            xb_mean_for_title));
+
+        const double y_lo = 0.0;
+        const double y_hi = std::max(1.0, canvas_max * 1.15);
+
+        for (int rr = 0; rr < nrows; ++rr) {
+            for (int cc = 0; cc < ncols; ++cc) {
+                pGrid->cd(rr * ncols + cc + 1);
+                gPad->SetGrid(1, 1);
+                gPad->SetTopMargin(0.24);
+                gPad->SetBottomMargin(0.18);
+                gPad->SetLeftMargin(0.125);
+                gPad->SetRightMargin(0.07);
+                gPad->SetTickx(1);
+                gPad->SetTicky(1);
+
+                TH1* frame = gPad->DrawFrame(0.0, y_lo, 360.0, y_hi);
+                frame->GetXaxis()->SetTitle("#phi (deg)");
+                frame->GetYaxis()->SetTitle("Acceptance");
+                frame->GetXaxis()->CenterTitle();
+                frame->GetYaxis()->CenterTitle();
+                frame->GetXaxis()->SetNdivisions(505);
+                frame->GetXaxis()->SetTitleSize(title_sz);
+                frame->GetYaxis()->SetTitleSize(title_sz);
+                frame->GetXaxis()->SetLabelSize(label_sz);
+                frame->GetYaxis()->SetLabelSize(label_sz);
+                frame->GetYaxis()->SetTitleOffset(1.25);
+                frame->GetXaxis()->SetTitleOffset(1.05);
+
+                const CellData& C = cells[rr * ncols + cc];
+
+                if (C.X.empty()) {
+                    continue;
+                }
+
+                TGraphErrors* gacc = new TGraphErrors(
+                    (int)C.X.size(),
+                    (double*)C.X.data(),
+                    (double*)C.Y.data(),
+                    (double*)C.EX.data(),
+                    (double*)C.EY.data());
+
+                gacc->SetMarkerStyle(20);
+                gacc->SetMarkerColor(kBlack);
+                gacc->SetLineColor(kBlack);
+                gacc->SetLineWidth(1);
+
+                gacc->Draw("PE1 SAME");
+
+                TLatex lab;
+                lab.SetNDC();
+                lab.SetTextSize(0.058);
+                lab.SetTextAlign(13);
+                const double q2m = safe_mean(C.q2means);
+                const double tm  = safe_mean(C.tmeans);
+                lab.DrawLatex(0.16, 0.88,
+                              Form("Q^{2}=%.2f  |t|=%.2f", q2m, tm));
+            }
+        }
+
+        const std::string fpath =
+            (fs::path(base_dir) /
+             ("plot_acceptance_" +
+              period_dir + "_xB_" +
+              std::to_string((int)std::round(xb.first * 1000.0)) +
+              ".png")).string();
+
+        c->SaveAs(fpath.c_str());
         delete c;
     }
 }
 
-// ---------------- key resolution ----------------
-template <typename MapT>
-static TTree* try_keys(const MapT& m, const std::vector<std::string>& keys) {
-    for (const auto& k : keys) {
-        auto it = m.find(k);
-        if (it != m.end()) return it->second;
-    }
-    return nullptr;
-}
+} // end anonymous namespace
 
-} // anon
-
-// =====================================================================
-// Public driver
-// =====================================================================
-void compute_and_plot_acceptance(
-    const std::vector<std::string>& periods,
-    const std::vector<std::string>& topologies,
-    const std::vector<Binning>& binning,
-    const std::map<std::string, TTree*>& genMcTrees,
-    const std::map<std::string, TTree*>& recMcTrees,
-    const std::string& cuts_json_path,
-    const std::string& out_root_dir)
+bool update_acceptance_csv(const std::string& csv_path,
+                           const std::map<std::string, TTree*>& genMcTrees,
+                           const std::map<std::string, TTree*>& recMcTrees,
+                           const std::string& cuts_json,
+                           const std::string& out_root_dir)
 {
     namespace fs = std::filesystem;
 
-    const auto xB_bins = uniqueRanges(binning, 'x');
-    const auto Q2_bins = uniqueRanges(binning, 'Q');
-    const auto t_bins  = uniqueRanges(binning, 't');
-
-    // Load MC-side 3σ windows from combined_cuts.json for all requested periods
-    ComboMC comboCuts;
-    const bool haveCuts = load_combined_mc_cuts(cuts_json_path, periods, comboCuts);
-    if (!haveCuts) {
-        std::ostringstream msg;
-        msg << "[acc][FATAL] No MC cut blocks found in combined cuts JSON for requested periods.\n"
-            << "  JSON path: " << cuts_json_path << "\n"
-            << "  Example expected keys include e.g. \"DVCS_Sp18_inb_FD_FD\" or \"DVCS_Sp18_Inb_FD_FD\".\n"
-            << "  Please verify period naming (inb vs Inb, out vs Out) and re-run exclusivity_cuts.\n";
-        throw std::runtime_error(msg.str());
-    }
-
-    // Output dirs
-    const fs::path json_dir  = fs::path(out_root_dir) / "jsons";
-    const fs::path plot_root = fs::path(out_root_dir) / "acceptance";
+    const std::string csv_abs = fs::absolute(csv_path).string();
     std::error_code ec;
-    fs::create_directories(json_dir, ec);
+    const uintmax_t size_before =
+        fs::exists(csv_path, ec) ? fs::file_size(csv_path, ec) : 0;
 
-    // Global DVCS MC thresholds (same as exclusivity_cuts)
-    const MCCutsFixed globalCuts;
+    std::cout << "[acceptance] CSV: " << csv_abs
+              << " (size=" << size_before << ")\n";
 
-    for (const auto& period : periods) {
-        const std::string runTag = periodToRunTagKey(period);
-
-        // Resolve using the exact period-based keys first (matches load_trees.cpp)
-        const std::vector<std::string> gen_keys = {
-            period + "_gen",   // e.g., "DVCS_Sp18_inb_gen"
-            runTag + "_gen"    // fallback if ever used
-        };
-        const std::vector<std::string> rec_keys = {
-            period + "_rec",       // e.g., "DVCS_Sp18_inb_rec"
-            period + "_rec_mc",    // if alt naming exists
-            runTag + "_rec",       // fallback
-            runTag + "_rec_mc"     // fallback
-        };
-
-        TTree* tGen = try_keys(genMcTrees, gen_keys);
-        TTree* tRec = try_keys(recMcTrees, rec_keys);
-
-        if (!tGen || !tRec) {
-            std::ostringstream tried;
-            tried << "[acc][WARN] Missing MC trees for " << period << " (" << runTag << "). Tried gen keys: ";
-            for (size_t i = 0; i < gen_keys.size(); ++i) { if (i) tried << ", "; tried << "\"" << gen_keys[i] << "\""; }
-            tried << " | rec keys: ";
-            for (size_t i = 0; i < rec_keys.size(); ++i) { if (i) tried << ", "; tried << "\"" << rec_keys[i] << "\""; }
-            tried << " — skipping.\n";
-            std::cerr << tried.str();
-            continue;
-        }
-
-        // Build topology->CutMap for this specific period from the combined set.
-        // We accept either lower-case or title-case period suffix in the JSON.
-        std::map<std::string, CutMap> topoCutsForPeriod;
-        for (const std::string topoKey : {"FD_FD","CD_FD","CD_FT"}) {
-            // Try title-case period key first (matches your JSON), then lower-case.
-            const std::string comboKeyTitle = period + "_" + topoKey; // as-passed (could already be *_Inb/*_Out)
-            const std::string comboKeyLower = [&](){
-                // if period ended with _inb/_out, also try title-case variant
-                auto pv = period_variants(period);
-                // prefer title-case variant if present
-                for (const auto& ptry : pv) {
-                    auto it = comboCuts.find(ptry + "_" + topoKey);
-                    if (it != comboCuts.end()) return ptry + "_" + topoKey;
-                }
-                return period + "_" + topoKey;
-            }();
-
-            auto it1 = comboCuts.find(comboKeyLower);
-            if (it1 != comboCuts.end()) {
-                topoCutsForPeriod[topoKey] = it1->second;
-                continue;
-            }
-            auto it2 = comboCuts.find(comboKeyTitle);
-            if (it2 != comboCuts.end()) {
-                topoCutsForPeriod[topoKey] = it2->second;
-            }
-        }
-
-        // Accumulate
-        AccMap acc;
-        accumulate_generated(tGen, xB_bins, Q2_bins, t_bins, acc);
-        accumulate_reconstructed(tRec, xB_bins, Q2_bins, t_bins, topologies, globalCuts, topoCutsForPeriod, acc);
-
-        // Build per-cell phi arrays
-        const auto PHI_DEG = phiCentersDeg();
-        CellMap cells;
-        for (int ix = 0; ix < (int)xB_bins.size(); ++ix)
-        for (int iQ = 0; iQ < (int)Q2_bins.size(); ++iQ)
-        for (int it = 0; it < (int)t_bins.size();  ++it) {
-            PhiArrays pa;
-            pa.phi_deg = PHI_DEG;
-            pa.acc.resize(N_PHI_BINS, 0.0);
-            pa.acc_err.resize(N_PHI_BINS, 0.0);
-            pa.n_gen_phi.resize(N_PHI_BINS, 0.0);
-            pa.n_rec_phi.resize(N_PHI_BINS, 0.0);
-            pa.Ngen_cell = 0.0; pa.Nrec_cell = 0.0;
-
-            for (int ip = 0; ip < N_PHI_BINS; ++ip) {
-                auto it4 = acc.find(std::make_tuple(ix, iQ, it, ip));
-                double g = 0.0, r = 0.0;
-                if (it4 != acc.end()) { g = it4->second.gen; r = it4->second.rec; }
-                pa.n_gen_phi[ip] = g;
-                pa.n_rec_phi[ip] = r;
-                pa.Ngen_cell += g; pa.Nrec_cell += r;
-
-                double A = 0.0, sA = 0.0;
-                if (g > 0.0) {
-                    A  = r / g;
-                    sA = std::sqrt(std::max(0.0, A * (1.0 - A) / g)); // binomial
-                }
-                if (!std::isfinite(A)) A = 0.0;
-                A = std::clamp(A, 0.0, 1.2);
-                pa.acc[ip]     = A;
-                pa.acc_err[ip] = sA;
-            }
-            cells[std::make_tuple(ix, iQ, it)] = std::move(pa);
-        }
-
-        // Write JSON
-        const fs::path outJ = fs::path(out_root_dir) / "jsons" / ("acceptance_" + period + ".json");
-        write_period_json(outJ.string(), N_PHI_BINS, xB_bins, Q2_bins, t_bins, cells);
-        std::cout << "[acc] Wrote acceptance JSON: " << outJ.string() << "\n";
-
-        // Plots
-        const fs::path outPlots = fs::path(out_root_dir) / "acceptance" / periodToRunTagKey(period);
-        std::error_code ec2; fs::create_directories(outPlots, ec2);
-        plot_cells_for_period(period, binning, xB_bins, Q2_bins, t_bins, cells, outPlots.string());
+    CsvDoc csv;
+    if (!csv.load(csv_path)) {
+        std::cerr << "[acceptance] ERROR: failed to load CSV.\n";
+        return false;
     }
 
-    std::cout << "[acc] Acceptance computation complete.\n";
+    // Build binning from CSV once
+    Binning binning = build_binning_from_csv(csv);
+
+    // Load 3 sigma config (pTmiss) once and use for all periods
+    ThreeSigmaConfig cfg = load_three_sigma_config(cuts_json);
+
+    const auto tagMap = build_mc_tag_map();
+    std::map<std::string, std::vector<double>> gen_all;
+    std::map<std::string, std::vector<double>> rec_all;
+
+    for (const auto& per : kPeriods) {
+        auto itTag = tagMap.find(per);
+        if (itTag == tagMap.end()) {
+            std::cerr << "[acceptance] FATAL: no MC tag mapping for period "
+                      << per << ".\n";
+            return false;
+        }
+        const McTags& tags = itTag->second;
+
+        auto itG = genMcTrees.find(tags.genTag);
+        auto itR = recMcTrees.find(tags.recTag);
+        if (itG == genMcTrees.end() || itR == recMcTrees.end()) {
+            std::cerr << "[acceptance] FATAL: missing MC tree(s) for period "
+                      << per << " (expected tags: gen="
+                      << tags.genTag << " rec=" << tags.recTag << ").\n";
+            return false;
+        }
+
+        std::vector<double> gen_counts;
+        std::vector<double> rec_counts;
+        fill_mc_counts_for_period(per, binning, csv,
+                                  itG->second, itR->second,
+                                  cfg,
+                                  gen_counts, rec_counts);
+        gen_all[per] = gen_counts;
+        rec_all[per] = rec_counts;
+    }
+
+    if (!fill_acceptance_columns(csv, gen_all, rec_all)) {
+        std::cerr << "[acceptance] ERROR: fill_acceptance_columns failed.\n";
+        return false;
+    }
+
+    if (!csv.save_atomic(csv_path)) {
+        std::cerr << "[acceptance] ERROR: failed to save updated CSV.\n";
+        return false;
+    }
+
+    const uintmax_t size_after =
+        fs::exists(csv_path, ec) ? fs::file_size(csv_path, ec) : 0;
+
+    std::cout << "[acceptance] Updated CSV: " << csv_abs
+              << " (size " << size_before << " -> " << size_after << ")\n";
+
+    for (const auto& per : kPeriods) {
+        draw_acceptance_canvases(per, csv, out_root_dir);
+    }
+
+    std::cout << "[acceptance] Acceptance plotting finished.\n";
+    return true;
 }

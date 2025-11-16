@@ -37,11 +37,6 @@ int main(int argc, char* argv[]) {
     // Root of output tree (used by several stages)
     const std::string output_root = "output";
 
-    // // --- Load binning scheme ---
-    // const std::string csv_file_path = "imports/integrated_bin_v2.csv";
-    // auto binning_scheme = load_binning_scheme(csv_file_path);
-    // std::cout << "Loaded binning scheme: " << binning_scheme.size() << " bins" << std::endl;
-
     // Containers for different tree categories
     std::map<std::string, TTree*> dataTrees;        // DVCS data
     std::map<std::string, TTree*> genMcTrees;       // DVCS generated MC (no-rad)
@@ -149,7 +144,7 @@ int main(int argc, char* argv[]) {
         std::cout << "pi0 contamination stage finished.\n";
     }
 
-     // --------- Pi0-corrected DVCS signal yields (CSV + plots) ----------
+    // --------- Pi0-corrected DVCS signal yields (CSV + plots) ----------
     {
         const std::string csv_main   = "output/csvs/dvcs_pass2_analysis.csv";
         const std::string csv_backup = "output/csvs/dvcs_pass2_analysis_backup_signal_yields.csv";
@@ -166,6 +161,29 @@ int main(int argc, char* argv[]) {
 
         if (!update_pi0_corrected_counts_csv(csv_main, output_root)) {
             std::cerr << "[main] ERROR: update_pi0_corrected_counts_csv failed.\n";
+            std::exit(EXIT_FAILURE);
+        }
+    }
+
+    // --------- DVCS MC acceptance (CSV + plots) ----------
+    {
+        const std::string csv_main   = "output/csvs/dvcs_pass2_analysis.csv";
+        const std::string cuts_json  = "output/jsons/combined_cuts.json";
+        const std::string csv_backup = "output/csvs/dvcs_pass2_analysis_backup_acceptance.csv";
+
+        // Make a backup before modifying the acceptance columns
+        try {
+            std::filesystem::copy_file(csv_main, csv_backup,
+                std::filesystem::copy_options::overwrite_existing);
+            std::cout << "[main] Backed up CSV to dvcs_pass2_analysis_backup_acceptance.csv\n";
+        } catch (const std::exception& e) {
+            std::cerr << "[main] WARNING: backup for acceptance failed ("
+                      << e.what() << "). Continuing.\n";
+        }
+
+        if (!update_acceptance_csv(csv_main, genMcTrees, recMcTrees,
+                                   cuts_json, output_root)) {
+            std::cerr << "[main] ERROR: update_acceptance_csv failed.\n";
             std::exit(EXIT_FAILURE);
         }
     }
