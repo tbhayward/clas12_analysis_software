@@ -369,7 +369,10 @@ static bool fill_signal_yields(CsvDoc& csv) {
             if (idx < 0) {
                 std::cerr << "[pi0_corrected] FATAL: missing signal-yield column '"
                           << name.str() << "' in CSV header.\n";
-                return false;
+            ...
+
+
+...             return false;
             }
             sig_idx[per][hel] = idx;
         }
@@ -674,8 +677,34 @@ static void draw_signal_yield_canvases(const std::string& period_label,
                     double raw_pos = 0.0;
                     double raw_neg = 0.0;
                     for (const auto& topo : kTopos) {
-                        raw_pos += csv.as_double(r, raw_idx[topo]["pos"]);
-                        raw_neg += csv.as_double(r, raw_idx[topo]["neg"]);
+                        const int c_pos = raw_idx[topo].at("pos");
+                        const int c_neg = raw_idx[topo].at("neg");
+
+                        const std::string& s_pos = csv.rows[r][c_pos];
+                        const std::string& s_neg = csv.rows[r][c_neg];
+
+                        if (!s_pos.empty()) {
+                            double vpos = CsvDoc::to_double(s_pos);
+                            if (!std::isfinite(vpos)) {
+                                std::cerr << "[pi0_corrected] FATAL: non-numeric raw pos yield in '"
+                                          << "raw yield, ep->epg, " << topo
+                                          << ", exp, " << period_label << ", pos"
+                                          << "' at row " << r << "\n";
+                                std::exit(EXIT_FAILURE);
+                            }
+                            raw_pos += vpos;
+                        }
+                        if (!s_neg.empty()) {
+                            double vneg = CsvDoc::to_double(s_neg);
+                            if (!std::isfinite(vneg)) {
+                                std::cerr << "[pi0_corrected] FATAL: non-numeric raw neg yield in '"
+                                          << "raw yield, ep->epg, " << topo
+                                          << ", exp, " << period_label << ", neg"
+                                          << "' at row " << r << "\n";
+                                std::exit(EXIT_FAILURE);
+                            }
+                            raw_neg += vneg;
+                        }
                     }
 
                     double S_pos = 0.0;

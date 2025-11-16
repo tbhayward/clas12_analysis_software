@@ -196,7 +196,6 @@ public static void main(String[] args) {
 	    	
 		    if (process_event) {
 
-
 		    	int num_photons = research_Event.countByPid(22);
 		    	for (int current_gamma1 = 0; current_gamma1 < num_photons; current_gamma1++) {
 		    		for (int current_gamma2 = 0; current_gamma2 < num_photons; current_gamma2++) {
