@@ -63,7 +63,8 @@ public class BeamEnergy {
         else if (runnum >= 16042 && runnum <= 17065) { Eb = 10.5473; }
         else if (runnum >= 17067 && runnum <= 17724) { Eb = 10.5563; }
         else if (runnum >= 17725 && runnum <= 17811) { Eb = 10.5593; }
-        else if (runnum >= 19249 && runnum <= 19250) { Eb = 6.39463; }
+        else if (runnum >= 19204 && runnum <= 19659) { Eb = 6.39463; }
+        else if (runnum >= 19662 && runnum <= 19893) { Eb = 8.47757; }
 
         final double Eb0 = Eb;
 
