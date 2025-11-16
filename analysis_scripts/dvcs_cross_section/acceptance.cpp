@@ -5,6 +5,9 @@
 //     AND 3 sigma cuts loaded from combined_cuts.json
 //   - N_gen from generated MC without exclusivity cuts
 //   - Periods: Fa18 Inb, Fa18 Out, Sp19 Inb, Sp18 Inb, Sp18 Out
+//   - Acceptance is stored as "(value, stat, sys)" triple
+//     with stat the binomial uncertainty on N_rec / N_gen and
+//     sys = 0 for now.
 //   - Produces per-period acceptance vs phi plots in the usual
 //     xB by (Q2, |t|) canvas layout under output/acceptance/<PeriodDir>/.
 
@@ -18,7 +21,6 @@
 #include <TLatex.h>
 #include <TPad.h>
 #include <TH1.h>
-#include <TLegend.h>
 #include <TROOT.h>
 #include <TStyle.h>
 #include <TError.h>
@@ -44,6 +46,8 @@
 namespace {
 
 using nlohmann::json;
+
+// ---------------- CSV helper ----------------
 
 struct CsvDoc {
     std::vector<std::string> header;
@@ -173,8 +177,9 @@ struct CsvDoc {
     }
 };
 
-static inline double PI() { return 3.14159265358979323846; }
+// ------------- basic helpers -------------
 
+static inline double PI() { return 3.14159265358979323846; }
 static inline double RAD2DEG(double r) { return r * 180.0 / PI(); }
 
 static inline double wrap_deg(double phi) {
@@ -233,7 +238,72 @@ static double safe_mean(const std::vector<double>& v) {
     return n ? s / n : std::numeric_limits<double>::quiet_NaN();
 }
 
-// periods
+// ------------- triple formatting / parsing "(value, stat, sys)" -------------
+
+static std::string format_triple(double v, double s_stat, double s_sys) {
+    std::ostringstream oss;
+    oss.setf(std::ios::fixed);
+    oss << "("
+        << std::setprecision(8) << v << ", "
+        << std::setprecision(8) << s_stat << ", "
+        << std::setprecision(8) << s_sys
+        << ")";
+    return oss.str();
+}
+
+static bool parse_triple(const std::string& s,
+                         double& value,
+                         double& stat,
+                         double& sys)
+{
+    value = std::numeric_limits<double>::quiet_NaN();
+    stat  = std::numeric_limits<double>::quiet_NaN();
+    sys   = std::numeric_limits<double>::quiet_NaN();
+
+    std::string trimmed;
+    trimmed.reserve(s.size());
+    for (char c : s) {
+        if (!std::isspace((unsigned char)c)) trimmed.push_back(c);
+    }
+    if (trimmed.empty()) return false;
+
+    if (trimmed.front() == '(' && trimmed.back() == ')') {
+        trimmed = trimmed.substr(1, trimmed.size() - 2);
+    }
+
+    std::vector<std::string> parts;
+    std::string cur;
+    for (char c : trimmed) {
+        if (c == ',') {
+            parts.push_back(cur);
+            cur.clear();
+        } else {
+            cur.push_back(c);
+        }
+    }
+    parts.push_back(cur);
+
+    if (parts.size() != 3) {
+        return false;
+    }
+
+    char* e1 = nullptr;
+    char* e2 = nullptr;
+    char* e3 = nullptr;
+
+    value = std::strtod(parts[0].c_str(), &e1);
+    stat  = std::strtod(parts[1].c_str(), &e2);
+    sys   = std::strtod(parts[2].c_str(), &e3);
+
+    if (e1 == parts[0].c_str()) return false;
+    if (e2 == parts[1].c_str()) return false;
+    if (e3 == parts[2].c_str()) return false;
+
+    return true;
+}
+
+// ------------- periods and tag mapping -------------
+
 static const std::vector<std::string> kPeriods = {
     "Fa18 Inb",
     "Fa18 Out",
@@ -242,7 +312,6 @@ static const std::vector<std::string> kPeriods = {
     "Sp18 Out"
 };
 
-// Map period label -> MC tree tags
 struct McTags {
     std::string genTag;
     std::string recTag;
@@ -258,14 +327,14 @@ static std::map<std::string, McTags> build_mc_tag_map() {
     return m;
 }
 
-// 3 sigma config for DVCS MC (pTmiss)
+// ------------- 3 sigma config (pTmiss only, for now) -------------
+
 struct ThreeSigmaConfig {
     bool have_pTmiss;
     double mean_pTmiss;
     double sigma_pTmiss;
 };
 
-// Recursively search JSON for a single pTmiss node with "mean" and "sigma".
 static void find_pTmiss_node(const json& j,
                              bool& found,
                              double& mean,
@@ -350,83 +419,20 @@ static ThreeSigmaConfig load_three_sigma_config(const std::string& cuts_json_pat
     return cfg;
 }
 
-// ---------- binning helpers ----------
+// ------------- bin specification per CSV row -------------
 
-struct BinKey {
-    int ix;
-    int iq;
-    int it;
-    int ip;
-
-    bool operator<(const BinKey& o) const {
-        if (ix != o.ix) return ix < o.ix;
-        if (iq != o.iq) return iq < o.iq;
-        if (it != o.it) return it < o.it;
-        return ip < o.ip;
-    }
+struct RowBin {
+    double xbmin, xbmax;
+    double q2min, q2max;
+    double tmin,  tmax;
+    double phimin, phimax;
+    int    row_index;   // index into CsvDoc::rows
 };
 
-struct Binning {
-    std::vector<double> xb_edges;
-    std::vector<double> q2_edges;
-    std::vector<double> t_edges;
-    std::vector<double> phi_edges;
-    std::map<BinKey,int> key_to_row;
-};
-
-static void build_axis_edges(const CsvDoc& csv,
-                             int c_min,
-                             int c_max,
-                             std::vector<double>& edges)
-{
-    std::set<double> s;
-    const int NR = csv.nrows();
-    for (int r = 0; r < NR; ++r) {
-        const double vmin = csv.as_double(r, c_min);
-        const double vmax = csv.as_double(r, c_max);
-        if (std::isfinite(vmin)) s.insert(vmin);
-        if (std::isfinite(vmax)) s.insert(vmax);
-    }
-    edges.assign(s.begin(), s.end());
-    if (edges.size() < 2) {
-        std::cerr << "[acceptance] FATAL: less than two edges in axis.\n";
-        std::exit(EXIT_FAILURE);
-    }
-}
-
-static int find_interval_index(double vmin,
-                               double vmax,
-                               const std::vector<double>& edges)
-{
-    int idx_min = -1;
-    int idx_max = -1;
-    const int N = (int)edges.size();
-    for (int i = 0; i < N; ++i) {
-        if (std::fabs(edges[i] - vmin) < 1e-9) idx_min = i;
-        if (std::fabs(edges[i] - vmax) < 1e-9) idx_max = i;
-    }
-    if (idx_min < 0 || idx_max < 0) return -1;
-    if (idx_max != idx_min + 1) return -1;
-    return idx_min;
-}
-
-static int find_value_index(double v,
-                            const std::vector<double>& edges)
-{
-    if (!std::isfinite(v)) return -1;
-    const int N = (int)edges.size();
-    if (v < edges.front() || v > edges.back()) return -1;
-    if (std::fabs(v - edges.back()) < 1e-9) return N - 2;
-    auto it = std::upper_bound(edges.begin(), edges.end(), v);
-    if (it == edges.begin() || it == edges.end()) return -1;
-    int idx = (int)(it - edges.begin()) - 1;
-    if (idx < 0 || idx >= N - 1) return -1;
-    return idx;
-}
-
-static Binning build_binning_from_csv(const CsvDoc& csv) {
-    Binning B;
-
+// We only build RowBin entries for "standard" phi bins,
+// NOT for phi-integrated bins (phi width >= 360 degrees).
+// That avoids the "row 0" crash and double counting.
+static std::vector<RowBin> build_row_bins(const CsvDoc& csv) {
     const int c_xb_min  = csv.col_index("xBmin");
     const int c_xb_max  = csv.col_index("xBmax");
     const int c_q2_min  = csv.col_index("Q2min");
@@ -445,52 +451,107 @@ static Binning build_binning_from_csv(const CsvDoc& csv) {
         std::exit(EXIT_FAILURE);
     }
 
-    build_axis_edges(csv, c_xb_min,  c_xb_max,  B.xb_edges);
-    build_axis_edges(csv, c_q2_min,  c_q2_max,  B.q2_edges);
-    build_axis_edges(csv, c_tab_min, c_tab_max, B.t_edges);
-    build_axis_edges(csv, c_phi_min, c_phi_max, B.phi_edges);
-
+    std::vector<RowBin> bins;
     const int NR = csv.nrows();
     for (int r = 0; r < NR; ++r) {
-        const double xbmin  = csv.as_double(r, c_xb_min);
-        const double xbmax  = csv.as_double(r, c_xb_max);
-        const double q2min  = csv.as_double(r, c_q2_min);
-        const double q2max  = csv.as_double(r, c_q2_max);
-        const double tmin   = csv.as_double(r, c_tab_min);
-        const double tmax   = csv.as_double(r, c_tab_max);
-        const double phimin = csv.as_double(r, c_phi_min);
-        const double phimax = csv.as_double(r, c_phi_max);
+        RowBin b;
+        b.xbmin  = csv.as_double(r, c_xb_min);
+        b.xbmax  = csv.as_double(r, c_xb_max);
+        b.q2min  = csv.as_double(r, c_q2_min);
+        b.q2max  = csv.as_double(r, c_q2_max);
+        b.tmin   = csv.as_double(r, c_tab_min);
+        b.tmax   = csv.as_double(r, c_tab_max);
+        b.phimin = csv.as_double(r, c_phi_min);
+        b.phimax = csv.as_double(r, c_phi_max);
+        b.row_index = r;
 
-        const int ix = find_interval_index(xbmin, xbmax, B.xb_edges);
-        const int iq = find_interval_index(q2min, q2max, B.q2_edges);
-        const int it = find_interval_index(tmin,  tmax,  B.t_edges);
-        const int ip = find_interval_index(phimin,phimax,B.phi_edges);
-
-        if (ix < 0 || iq < 0 || it < 0 || ip < 0) {
-            std::cerr << "[acceptance] FATAL: could not map CSV row " << r
-                      << " to a unique 4D bin (xB,Q2,|t|,phi).\n";
-            std::exit(EXIT_FAILURE);
+        const double phi_width = b.phimax - b.phimin;
+        if (!std::isfinite(phi_width)) {
+            continue;
         }
 
-        BinKey key;
-        key.ix = ix;
-        key.iq = iq;
-        key.it = it;
-        key.ip = ip;
-
-        auto itExisting = B.key_to_row.find(key);
-        if (itExisting != B.key_to_row.end()) {
-            std::cerr << "[acceptance] FATAL: duplicate bin key for rows "
-                      << itExisting->second << " and " << r << ".\n";
-            std::exit(EXIT_FAILURE);
+        // Skip "phi-integrated" or pathological bins that span (approximately) full 0-360.
+        if (std::fabs(phi_width) >= 359.0) {
+            continue;
         }
-        B.key_to_row[key] = r;
+
+        // Require normal, increasing bin edges.
+        if (!(b.xbmax > b.xbmin &&
+              b.q2max > b.q2min &&
+              b.tmax  > b.tmin  &&
+              b.phimax > b.phimin)) {
+            continue;
+        }
+
+        bins.push_back(b);
     }
 
-    return B;
+    std::cout << "[acceptance] Built " << bins.size()
+              << " RowBin entries out of " << NR << " CSV rows "
+              << "(skipped phi-integrated or invalid bins).\n";
+
+    if (bins.empty()) {
+        std::cerr << "[acceptance] FATAL: no usable bins found in CSV.\n";
+        std::exit(EXIT_FAILURE);
+    }
+
+    return bins;
 }
 
-// ---------- exclusivity for reconstructed MC (global + 3 sigma) ----------
+// For each period, mark which CSV rows actually have data for that period.
+// We follow your request: only compute acceptance where the period-specific
+// averages exist; we use "xBavg, <period>" as the flag.
+static std::map<std::string, std::vector<bool>>
+build_row_has_data(const CsvDoc& csv)
+{
+    const int NR = csv.nrows();
+    std::map<std::string, std::vector<bool>> has_data;
+
+    for (const auto& per : kPeriods) {
+        std::string cname = "xBavg, " + per;
+        int c = csv.col_index(cname);
+        if (c < 0) {
+            std::cerr << "[acceptance] FATAL: missing column '" << cname
+                      << "' needed to decide where to compute acceptance.\n";
+            std::exit(EXIT_FAILURE);
+        }
+
+        std::vector<bool> flags(NR, false);
+        for (int r = 0; r < NR; ++r) {
+            const std::string& cell = csv.rows[r][c];
+            if (cell.empty()) {
+                flags[r] = false;
+            } else {
+                double v = CsvDoc::to_double(cell);
+                flags[r] = std::isfinite(v);
+            }
+        }
+        has_data[per] = flags;
+    }
+
+    return has_data;
+}
+
+// Find which CSV row (if any) an event belongs to, given xB, Q2, |t|, phiDeg.
+// We search only through the compact list of RowBin entries, which map
+// directly back to CSV row indices.
+static int find_row_for_event(double xB,
+                              double Q2,
+                              double tAbs,
+                              double phiDeg,
+                              const std::vector<RowBin>& bins)
+{
+    for (const auto& b : bins) {
+        if (!(xB >= b.xbmin && xB < b.xbmax)) continue;
+        if (!(Q2 >= b.q2min && Q2 < b.q2max)) continue;
+        if (!(tAbs >= b.tmin && tAbs < b.tmax)) continue;
+        if (!(phiDeg >= b.phimin && phiDeg < b.phimax)) continue;
+        return b.row_index;
+    }
+    return -1;
+}
+
+// ------------- exclusivity for reconstructed MC (global + 3 sigma) -------------
 
 static bool rec_passes_exclusivity(double t1,
                                    double open_angle_ep2_deg,
@@ -511,16 +572,17 @@ static bool rec_passes_exclusivity(double t1,
     return true;
 }
 
-// ---------- MC counting ----------
+// ------------- MC counting per period -------------
 
-static void fill_mc_counts_for_period(const std::string& period_label,
-                                      const Binning& binning,
-                                      const CsvDoc& csv,
-                                      TTree* genTree,
-                                      TTree* recTree,
-                                      const ThreeSigmaConfig& cfg,
-                                      std::vector<double>& gen_counts,
-                                      std::vector<double>& rec_counts)
+static void accumulate_counts_for_period(const std::string& period_label,
+                                         const CsvDoc& csv,
+                                         const std::vector<RowBin>& bins,
+                                         const std::vector<bool>& row_has_data,
+                                         TTree* genTree,
+                                         TTree* recTree,
+                                         const ThreeSigmaConfig& cfg,
+                                         std::vector<double>& gen_counts,
+                                         std::vector<double>& rec_counts)
 {
     if (!genTree || !recTree) {
         std::cerr << "[acceptance] FATAL: null TTree pointer for period "
@@ -582,28 +644,11 @@ static void fill_mc_counts_for_period(const std::string& period_label,
         const double tAbs = std::fabs(g_t1);
         const double phiD = wrap_deg(RAD2DEG(g_phi2));
 
-        const int ix = find_value_index(xB,   binning.xb_edges);
-        const int iq = find_value_index(Q2,   binning.q2_edges);
-        const int it = find_value_index(tAbs, binning.t_edges);
-        const int ip = find_value_index(phiD, binning.phi_edges);
-
-        if (ix < 0 || iq < 0 || it < 0 || ip < 0) {
-            continue;
-        }
-
-        BinKey key;
-        key.ix = ix;
-        key.iq = iq;
-        key.it = it;
-        key.ip = ip;
-
-        auto itRow = binning.key_to_row.find(key);
-        if (itRow == binning.key_to_row.end()) {
-            continue;
-        }
-
-        const int row = itRow->second;
+        int row = find_row_for_event(xB, Q2, tAbs, phiD, bins);
         if (row < 0 || row >= NR) continue;
+
+        // Only consider bins where this period actually has data
+        if (!row_has_data[row]) continue;
 
         gen_counts[row] += 1.0;
         ++used_gen;
@@ -611,7 +656,7 @@ static void fill_mc_counts_for_period(const std::string& period_label,
 
     std::cout << "[acceptance] Period " << period_label
               << " gen MC: total entries = " << Ngen
-              << " ; binned = " << used_gen << "\n";
+              << " ; binned (with period-data flag) = " << used_gen << "\n";
 
     // reconstructed MC
     double r_x      = 0.0;
@@ -645,28 +690,10 @@ static void fill_mc_counts_for_period(const std::string& period_label,
         const double tAbs = std::fabs(r_t1);
         const double phiD = wrap_deg(RAD2DEG(r_phi2));
 
-        const int ix = find_value_index(xB,   binning.xb_edges);
-        const int iq = find_value_index(Q2,   binning.q2_edges);
-        const int it = find_value_index(tAbs, binning.t_edges);
-        const int ip = find_value_index(phiD, binning.phi_edges);
-
-        if (ix < 0 || iq < 0 || it < 0 || ip < 0) {
-            continue;
-        }
-
-        BinKey key;
-        key.ix = ix;
-        key.iq = iq;
-        key.it = it;
-        key.ip = ip;
-
-        auto itRow = binning.key_to_row.find(key);
-        if (itRow == binning.key_to_row.end()) {
-            continue;
-        }
-
-        const int row = itRow->second;
+        int row = find_row_for_event(xB, Q2, tAbs, phiD, bins);
         if (row < 0 || row >= NR) continue;
+
+        if (!row_has_data[row]) continue;
 
         rec_counts[row] += 1.0;
         ++used_rec;
@@ -675,14 +702,15 @@ static void fill_mc_counts_for_period(const std::string& period_label,
     std::cout << "[acceptance] Period " << period_label
               << " rec MC: total entries = " << Nrec
               << " ; passed exclusivity = " << passed_excl
-              << " ; binned = " << used_rec << "\n";
+              << " ; binned (with period-data flag) = " << used_rec << "\n";
 }
 
-// ---------- CSV update and plotting ----------
+// ------------- CSV filling (triples) -------------
 
 static bool fill_acceptance_columns(CsvDoc& csv,
                                     const std::map<std::string, std::vector<double>>& gen_all,
-                                    const std::map<std::string, std::vector<double>>& rec_all)
+                                    const std::map<std::string, std::vector<double>>& rec_all,
+                                    const std::map<std::string, std::vector<bool>>& row_has_data)
 {
     const int NR = csv.nrows();
 
@@ -699,44 +727,59 @@ static bool fill_acceptance_columns(CsvDoc& csv,
     }
 
     std::size_t cells_written = 0;
+
     for (const auto& per : kPeriods) {
         auto itG = gen_all.find(per);
         auto itR = rec_all.find(per);
-        if (itG == gen_all.end() || itR == rec_all.end()) {
-            std::cerr << "[acceptance] FATAL: internal error, missing counts for period "
+        auto itD = row_has_data.find(per);
+
+        if (itG == gen_all.end() || itR == rec_all.end() || itD == row_has_data.end()) {
+            std::cerr << "[acceptance] FATAL: internal error, missing counts or flags for period "
                       << per << ".\n";
             return false;
         }
+
         const std::vector<double>& gen = itG->second;
         const std::vector<double>& rec = itR->second;
-        if ((int)gen.size() != NR || (int)rec.size() != NR) {
-            std::cerr << "[acceptance] FATAL: size mismatch for counts vectors in period "
+        const std::vector<bool>&   has = itD->second;
+
+        if ((int)gen.size() != NR || (int)rec.size() != NR || (int)has.size() != NR) {
+            std::cerr << "[acceptance] FATAL: size mismatch for counts/flags vectors in period "
                       << per << ".\n";
             return false;
         }
 
         const int c_acc = acc_idx[per];
+
         double period_gen_sum = 0.0;
         double period_rec_sum = 0.0;
 
         for (int r = 0; r < NR; ++r) {
+            if (!has[r]) {
+                // This period has no data in this bin (xBavg, period is empty);
+                // leave acceptance cell unchanged / empty.
+                continue;
+            }
+
             const double Ng = gen[r];
             const double Nr = rec[r];
 
             period_gen_sum += Ng;
             period_rec_sum += Nr;
 
-            double acc = 0.0;
-            if (Ng > 0.0) {
-                acc = Nr / Ng;
-            } else {
-                acc = 0.0;
+            if (Ng <= 0.0) {
+                // No generated MC in this bin: we cannot define acceptance.
+                // Leave this cell empty.
+                continue;
             }
 
-            std::ostringstream oss;
-            oss.setf(std::ios::fixed);
-            oss << std::setprecision(8) << acc;
-            csv.rows[r][c_acc] = oss.str();
+            const double acc = (Nr > 0.0) ? (Nr / Ng) : 0.0;
+
+            // Binomial error on ratio: sqrt(a * (1 - a) / Ng)
+            const double var = acc * (1.0 - acc) / Ng;
+            const double acc_stat = (var > 0.0) ? std::sqrt(var) : 0.0;
+
+            csv.rows[r][c_acc] = format_triple(acc, acc_stat, 0.0);
             ++cells_written;
         }
 
@@ -745,10 +788,12 @@ static bool fill_acceptance_columns(CsvDoc& csv,
                   << " ; total Nr = " << period_rec_sum << "\n";
     }
 
-    std::cout << "[acceptance] Filled acceptance columns; cells written: "
+    std::cout << "[acceptance] Filled acceptance triple columns; cells written: "
               << cells_written << "\n";
     return true;
 }
+
+// ------------- plotting -------------
 
 struct CellData {
     std::vector<double> X;
@@ -895,7 +940,6 @@ static void draw_acceptance_canvases(const std::string& period_label,
                 CellData& C = cells[rr * ncols + cc];
                 C.X.reserve(rows_for_cell.size());
                 C.EX.assign(rows_for_cell.size(), 0.0);
-                C.EY.assign(rows_for_cell.size(), 0.0);
 
                 for (int r : rows_for_cell) {
                     const double pmin = csv.as_double(r, c_phi_min);
@@ -907,10 +951,27 @@ static void draw_acceptance_canvases(const std::string& period_label,
                             xphi = pav;
                         }
                     }
-                    C.X.push_back(xphi);
 
-                    const double acc = csv.as_double(r, c_acc);
-                    C.Y.push_back(acc);
+                    const std::string& acc_cell = csv.rows[r][c_acc];
+                    if (acc_cell.empty()) {
+                        continue;
+                    }
+                    double acc_val = 0.0;
+                    double acc_stat = 0.0;
+                    double acc_sys = 0.0;
+                    if (!parse_triple(acc_cell, acc_val, acc_stat, acc_sys)) {
+                        // If some cells contain a plain number (e.g. from an older run),
+                        // fall back to simple parsing.
+                        double tmp = CsvDoc::to_double(acc_cell);
+                        if (!std::isfinite(tmp)) continue;
+                        acc_val  = tmp;
+                        acc_stat = 0.0;
+                    }
+
+                    C.X.push_back(xphi);
+                    C.Y.push_back(acc_val);
+                    C.EY.push_back(acc_stat);
+                    C.EX.push_back(0.0);
 
                     const double q2m = (c_q2avg >= 0)
                         ? csv.as_double(r, c_q2avg)
@@ -921,8 +982,8 @@ static void draw_acceptance_canvases(const std::string& period_label,
                     C.q2means.push_back(q2m);
                     C.tmeans.push_back(tm);
 
-                    if (std::isfinite(acc)) {
-                        canvas_max = std::max(canvas_max, acc);
+                    if (std::isfinite(acc_val)) {
+                        canvas_max = std::max(canvas_max, acc_val);
                     }
                 }
             }
@@ -978,6 +1039,7 @@ static void draw_acceptance_canvases(const std::string& period_label,
                 const CellData& C = cells[rr * ncols + cc];
 
                 if (C.X.empty()) {
+                    // leave pad blank (as requested when there is no data)
                     continue;
                 }
 
@@ -1020,6 +1082,8 @@ static void draw_acceptance_canvases(const std::string& period_label,
 
 } // end anonymous namespace
 
+// ------------- public entry point -------------
+
 bool update_acceptance_csv(const std::string& csv_path,
                            const std::map<std::string, TTree*>& genMcTrees,
                            const std::map<std::string, TTree*>& recMcTrees,
@@ -1042,8 +1106,9 @@ bool update_acceptance_csv(const std::string& csv_path,
         return false;
     }
 
-    // Build binning from CSV once
-    Binning binning = build_binning_from_csv(csv);
+    // Build bin list and per-period "has data" flags once
+    std::vector<RowBin> bins = build_row_bins(csv);
+    std::map<std::string, std::vector<bool>> has_data = build_row_has_data(csv);
 
     // Load 3 sigma config (pTmiss) once and use for all periods
     ThreeSigmaConfig cfg = load_three_sigma_config(cuts_json);
@@ -1070,17 +1135,24 @@ bool update_acceptance_csv(const std::string& csv_path,
             return false;
         }
 
+        const std::vector<bool>& flags = has_data[per];
+
         std::vector<double> gen_counts;
         std::vector<double> rec_counts;
-        fill_mc_counts_for_period(per, binning, csv,
-                                  itG->second, itR->second,
-                                  cfg,
-                                  gen_counts, rec_counts);
+        accumulate_counts_for_period(per,
+                                     csv,
+                                     bins,
+                                     flags,
+                                     itG->second,
+                                     itR->second,
+                                     cfg,
+                                     gen_counts,
+                                     rec_counts);
         gen_all[per] = gen_counts;
         rec_all[per] = rec_counts;
     }
 
-    if (!fill_acceptance_columns(csv, gen_all, rec_all)) {
+    if (!fill_acceptance_columns(csv, gen_all, rec_all, has_data)) {
         std::cerr << "[acceptance] ERROR: fill_acceptance_columns failed.\n";
         return false;
     }
