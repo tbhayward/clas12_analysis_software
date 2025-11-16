@@ -153,6 +153,7 @@ public static void main(String[] args) {
 
             boolean process_event = filter.isValid(research_Event) && 
                 (runnum == 11 ||  // MC
+                runnum > 19000 || 
                 userProvidedOverride == 1 || // skip QADB
                 runnum < 3087 || // RGA Sp18 Inb
                 (runnum > 3306 && runnum < 3817) || // RGA Sp18 Inb
