@@ -369,10 +369,7 @@ static bool fill_signal_yields(CsvDoc& csv) {
             if (idx < 0) {
                 std::cerr << "[pi0_corrected] FATAL: missing signal-yield column '"
                           << name.str() << "' in CSV header.\n";
-            ...
-
-
-...             return false;
+                return false;
             }
             sig_idx[per][hel] = idx;
         }
