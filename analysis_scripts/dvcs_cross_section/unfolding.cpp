@@ -219,7 +219,8 @@ static std::string canonical_dir_for_label(const std::string& L) {
     }
     if (k == "fa18") return "Fa18";
     if (k == "sp18") return "Sp18";
-    // CSV label is "2018 (10.6 GeV)", output dir should be "10.6_GeV"
+    // CSV label is "2018 (10.6 GeV)", mean columns use "10.6 GeV",
+    // output dir should be "10.6_GeV"
     if (L == "2018 (10.6 GeV)" || k == "2018(10.6gev)") return "10.6_GeV";
 
     // fallback: spaces to underscore
@@ -228,6 +229,17 @@ static std::string canonical_dir_for_label(const std::string& L) {
         if (c == ' ') c = '_';
     }
     return s;
+}
+
+// For bin-mean columns we need the name that actually appears in the CSV header.
+// Periods: use the label itself (Fa18 Inb, Fa18 Out, Sp18 Inb, Sp18 Out, Sp19 Inb)
+// Groups:
+//   Fa18  -> "Fa18"
+//   Sp18  -> "Sp18"
+//   2018 (10.6 GeV) -> "10.6 GeV"
+static std::string mean_label_for_label(const std::string& L) {
+    if (L == "2018 (10.6 GeV)") return "10.6 GeV";
+    return L;
 }
 
 static void ensure_dir(const std::string& p) {
@@ -620,15 +632,17 @@ static void draw_unfolded_canvases(
         std::exit(EXIT_FAILURE);
     }
 
-    // Bin-mean columns for this label (from bin_means stage)
-    int c_phiavg = csv.col_index("phiavg, " + label);
-    int c_q2avg  = csv.col_index("Q2avg, " + label);
-    int c_tabavg = csv.col_index("t_abs_avg, " + label);
-    int c_xbavg  = csv.col_index("xBavg, " + label);
+    // For mean values, use the actual label that appears in the header.
+    const std::string mean_label = mean_label_for_label(label);
+
+    int c_phiavg = csv.col_index("phiavg, " + mean_label);
+    int c_q2avg  = csv.col_index("Q2avg, " + mean_label);
+    int c_tabavg = csv.col_index("t_abs_avg, " + mean_label);
+    int c_xbavg  = csv.col_index("xBavg, " + mean_label);
 
     if (c_xbavg < 0) {
         std::cerr << "[unfolding] FATAL: missing xBavg column for label '"
-                  << label << "' (expected 'xBavg, " << label << "').\n";
+                  << label << "' (expected 'xBavg, " << mean_label << "').\n";
         std::exit(EXIT_FAILURE);
     }
 
